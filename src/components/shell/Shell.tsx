@@ -3,9 +3,9 @@
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Menu, Moon, Search, Sun, X } from "lucide-react";
+import { AlertCircle, Check, Cloud, HardDrive, Menu, Moon, RefreshCw, Search, Sun, X } from "lucide-react";
 import { NAV } from "./nav";
-import { useEstado, useTema } from "@/lib/store";
+import { cargarDeLaNube, hayNube, useEstado, useSync, useTema } from "@/lib/store";
 import { Avatar, Button, IconButton } from "@/components/ui/ui";
 import { Paleta } from "./Paleta";
 import { Tour } from "./Tour";
@@ -14,8 +14,11 @@ export function Shell({ children }: { children: React.ReactNode }) {
   const ruta = usePathname();
   const estado = useEstado();
   const [tema, setTema] = useTema();
+  const sync = useSync();
   const [menu, setMenu] = useState(false);
   const [paleta, setPaleta] = useState(false);
+
+  useEffect(() => { void cargarDeLaNube(); }, []);
 
   useEffect(() => { setMenu(false); }, [ruta]);
 
@@ -87,6 +90,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
         </div>
 
         <div className="hk-sidebar__footer">
+          <EstadoDatos estado={sync.estado} error={sync.error} />
           <div className="row-3">
             <Avatar nombre={estado.ajustes.responsable || "Apicanta"} />
             <div style={{ minWidth: 0, flex: 1 }}>
@@ -127,6 +131,29 @@ export function Shell({ children }: { children: React.ReactNode }) {
 
       <Paleta abierto={paleta} onCerrar={() => setPaleta(false)} />
       <Tour />
+    </div>
+  );
+}
+
+/* Dice de un vistazo donde estan los datos y si se guardaron. */
+function EstadoDatos({ estado, error }: { estado: ReturnType<typeof useSync>["estado"]; error: string }) {
+  const info = {
+    local:     { ico: <HardDrive size={13} />, texto: "Guardado en este navegador", color: "var(--ink-subtle)" },
+    cargando:  { ico: <RefreshCw size={13} />, texto: "Trayendo tus datos…",        color: "var(--ink-subtle)" },
+    guardando: { ico: <RefreshCw size={13} />, texto: "Guardando…",                 color: "var(--brand)" },
+    listo:     { ico: <Check size={13} />,     texto: "Todo guardado en la nube",   color: "var(--success)" },
+    error:     { ico: <AlertCircle size={13} />, texto: "No se pudo guardar",       color: "var(--danger)" },
+  }[estado];
+
+  return (
+    <div
+      className="row"
+      style={{ gap: 6, marginBottom: "var(--space-3)", color: info.color, fontSize: 12 }}
+      title={error || (hayNube ? "Sincroniza con Supabase" : "Sin base configurada: los datos viven en este navegador")}
+    >
+      {info.ico}
+      <span className="truncate">{info.texto}</span>
+      {hayNube && estado !== "error" && <Cloud size={13} style={{ marginLeft: "auto", opacity: 0.6 }} />}
     </div>
   );
 }

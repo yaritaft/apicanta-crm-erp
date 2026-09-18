@@ -56,14 +56,32 @@ Tema oscuro por defecto (es el de la marca) y tema claro completo para sesiones 
 
 ## Dónde viven los datos
 
-Hoy Apicanta guarda todo en el navegador (`localStorage`). Es privado, anda sin internet
-y no depende de ningún servicio — pero no se comparte entre dispositivos.
+Apicanta guarda en **Supabase** y muestra desde memoria. El patrón es local-first:
 
-Toda la app habla con `src/lib/store.ts` y nunca con el almacenamiento directamente.
-Enchufar Supabase después es reemplazar `leer()` y `guardar()` en ese archivo: ninguna
-pantalla se entera. El modelo de datos de `src/lib/types.ts` ya está pensado como tablas.
+1. Al arrancar trae todo de la nube de una sola vez y lo deja en memoria.
+2. Cada cambio se aplica en memoria al instante — la pantalla nunca espera a la red.
+3. La escritura sale detrás, en una cola que reintenta. El pie de la barra lateral
+   dice en todo momento si está guardado, guardando o si algo falló.
 
-Mientras tanto, **Ajustes → Datos** permite bajar un respaldo en JSON y restaurarlo.
+Si las variables de Supabase no están, la app usa `localStorage` y funciona igual.
+No hay una versión degradada: son el mismo código con otro destino.
+
+| Variable | Para qué |
+|---|---|
+| `NEXT_PUBLIC_SUPABASE_URL` | URL del proyecto |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Clave publicable |
+
+El schema vive en las migraciones del proyecto de Supabase. Las columnas se llaman igual
+que los campos de `src/lib/types.ts` (en camelCase, entre comillas), así que el adaptador
+no necesita capa de mapeo: lo que sale de la base es la forma que espera la app.
+
+> **Sobre el acceso:** la app todavía no tiene login, así que las políticas de RLS dejan
+> leer y escribir con la clave publicable. Esa clave viaja en el bundle del navegador.
+> Mientras siga así, cualquiera con la URL del sitio puede ver y modificar los datos.
+> El paso siguiente es Supabase Auth: RLS ya está activo en las 12 tablas, así que es
+> cambiar las políticas y agregar la pantalla de login.
+
+En **Ajustes → Datos** se puede bajar un respaldo en JSON y restaurarlo.
 
 ## Correr en local
 
@@ -100,7 +118,7 @@ src/
 
 ## Stack
 
-Next.js 16 · React 19 · TypeScript · Tailwind v4 · lucide-react.
+Next.js 16 · React 19 · TypeScript · Tailwind v4 · lucide-react · Supabase.
 
 Sin librería de gráficos, sin librería de tablas, sin librería de estado: menos superficie
 para que algo se rompa y nada que actualizar de urgencia.
