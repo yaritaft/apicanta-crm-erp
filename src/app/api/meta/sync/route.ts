@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { metaConfigurado, tokenDeLaPeticion, traerCampanias } from "@/lib/meta";
 
+/* Lee variables de entorno en cada pedido: nunca cachear. */
+export const dynamic = "force-dynamic";
+
 /* Devuelve las campañas ya normalizadas. No escribe en la base: el
    cliente las guarda con su propia sesión, así todo queda auditado
    a nombre de quien apretó el botón. */

@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { COOKIE_ESTADO, DIALOGO, PERMISOS, oauthConfigurado, tokenDeSistema, urlRedireccion } from "@/lib/meta";
 
+/* Lee variables de entorno en cada pedido: nunca cachear. */
+export const dynamic = "force-dynamic";
+
 export async function GET(req: Request) {
   /* Si el negocio es dueño de la app, Meta no permite OAuth: hay que usar
      un token de usuario del sistema. */

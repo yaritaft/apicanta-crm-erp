@@ -1,11 +1,22 @@
 import { NextResponse } from "next/server";
 import { COOKIE_TOKEN, metaConfigurado, tokenDeLaPeticion, tokenDeSistema, traerCuentas } from "@/lib/meta";
 
+/* Lee variables de entorno en cada pedido: nunca cachear. */
+export const dynamic = "force-dynamic";
+
 export async function GET(req: Request) {
   if (!metaConfigurado()) return NextResponse.json({ conectado: false, motivo: "sin-configurar" });
 
   const token = tokenDeLaPeticion(req);
-  if (!token) return NextResponse.json({ conectado: false, motivo: "sin-sesion" });
+  if (!token) {
+    return NextResponse.json({
+      conectado: false,
+      motivo: "sin-sesion",
+      /* Sólo dice si la variable llegó, nunca su contenido. */
+      hayTokenDeSistema: Boolean(tokenDeSistema()),
+      largoDelToken: tokenDeSistema()?.length ?? 0,
+    });
+  }
 
   try {
     return NextResponse.json({

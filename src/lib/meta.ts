@@ -59,7 +59,30 @@ export interface CampaniaMeta {
   id: string; nombre: string; objetivo: string; estado: string;
   inversion: number; impresiones: number; clicks: number; leads: number;
   desde?: string; hasta?: string;
+  /* Qué tipos de conversión reportó Meta y cuál se usó para contar leads.
+     Sirve para entender de dónde sale el número sin adivinar. */
+  acciones?: Record<string, number>;
+  tipoDeLead?: string;
 }
+
+/* Meta reporta la misma conversión bajo varios nombres a la vez. Para el
+   embudo de Hackear IT (anuncio → landing → formulario propio) la que vale
+   es la del pixel: `fb_pixel_complete_registration`. Las demás quedan como
+   respaldo, en orden de preferencia.
+
+   Importante: se toma la PRIMERA que exista, no la suma ni el máximo. Sumar
+   duplicaría la misma conversión, y el máximo puede colarse con una métrica
+   de otra cosa (una conversación de WhatsApp no es un registro al webinar). */
+const TIPOS_DE_LEAD = [
+  "offsite_conversion.fb_pixel_complete_registration",
+  "omni_complete_registration",
+  "complete_registration",
+  "offsite_complete_registration_add_meta_leads",
+  /* Formulario nativo de Meta, para campañas armadas de esa forma */
+  "lead",
+  "onsite_conversion.lead_grouped",
+  "offsite_conversion.fb_pixel_lead",
+];
 
 export async function traerCampanias(token: string, cuentaId: string, desde: string, hasta: string): Promise<CampaniaMeta[]> {
   const u = new URL(`${GRAPH}/act_${cuentaId.replace(/^act_/, "")}/campaigns`);
@@ -85,9 +108,11 @@ export async function traerCampanias(token: string, cuentaId: string, desde: str
     const ins = c.insights?.data?.[0];
     /* Meta reporta los leads dentro de `actions`, con distintos nombres
        según cómo esté configurada la campaña. */
-    const leads = (ins?.actions ?? [])
-      .filter((a) => ["lead", "onsite_conversion.lead_grouped", "offsite_conversion.fb_pixel_lead"].includes(a.action_type))
-      .reduce((a, x) => a + Number(x.value || 0), 0);
+    const acciones = Object.fromEntries(
+      (ins?.actions ?? []).map((a) => [a.action_type, Number(a.value || 0)]),
+    );
+    const tipoUsado = TIPOS_DE_LEAD.find((t) => acciones[t] !== undefined);
+    const leads = tipoUsado ? acciones[tipoUsado] : 0;
 
     return {
       id: c.id,
@@ -100,6 +125,8 @@ export async function traerCampanias(token: string, cuentaId: string, desde: str
       leads,
       desde: c.start_time,
       hasta: c.stop_time,
+      acciones,
+      tipoDeLead: tipoUsado,
     };
   });
 }

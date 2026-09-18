@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { COOKIE_ESTADO, COOKIE_TOKEN, GRAPH, metaConfigurado, urlRedireccion } from "@/lib/meta";
 
+/* Lee variables de entorno en cada pedido: nunca cachear. */
+export const dynamic = "force-dynamic";
+
 export async function GET(req: Request) {
   const url = new URL(req.url);
   const origen = url.origin;
