@@ -13,6 +13,7 @@ interface Cuenta { id: string; nombre: string; moneda: string; estado: number }
 
 const AVISOS: Record<string, string> = {
   ok: "Meta quedó conectado.",
+  "ya-conectado": "Meta ya está conectado con el token del negocio.",
   cancelado: "Cancelaste la conexión con Meta.",
   "sin-configurar": "Faltan las claves de la app de Meta en el proyecto.",
   "state-invalido": "La conexión no se pudo verificar. Probá de nuevo.",
@@ -27,6 +28,7 @@ export function ConectarMeta() {
 
   const [estado, setEstado] = useState<"mirando" | "sin-configurar" | "desconectado" | "conectado">("mirando");
   const [cuentas, setCuentas] = useState<Cuenta[]>([]);
+  const [porSistema, setPorSistema] = useState(false);
   const [cuentaId, setCuentaId] = useState("");
   const [sincronizando, setSincronizando] = useState(false);
 
@@ -37,6 +39,7 @@ export function ConectarMeta() {
       if (j.conectado) {
         setCuentas(j.cuentas ?? []);
         setCuentaId((c) => c || j.cuentas?.[0]?.id || "");
+        setPorSistema(Boolean(j.porSistema));
         setEstado("conectado");
       } else {
         setEstado(j.motivo === "sin-configurar" ? "sin-configurar" : "desconectado");
@@ -111,9 +114,8 @@ export function ConectarMeta() {
 
       {estado === "sin-configurar" && (
         <p className="t-body t-muted">
-          Para que este botón funcione hay que crear una app en <strong>developers.facebook.com</strong> y
-          cargar <code>META_APP_ID</code> y <code>META_APP_SECRET</code> en las variables del proyecto.
-          Es de una sola vez: después Yari entra con su cuenta de Facebook desde acá y listo.
+          Falta cargar <code>META_SYSTEM_TOKEN</code> en las variables del proyecto: un token de usuario
+          del sistema generado en el Business Manager. Es de una sola vez y no vence.
         </p>
       )}
 
@@ -141,11 +143,14 @@ export function ConectarMeta() {
             <Button variante="brand" cargando={sincronizando} icono={<RefreshCw size={16} />} onClick={() => void sincronizar()}>
               {sincronizando ? "Trayendo…" : "Traer campañas"}
             </Button>
-            <Button variante="ghost" icono={<Unplug size={16} />} onClick={() => void desconectar()}>Desconectar</Button>
+            {!porSistema && (
+              <Button variante="ghost" icono={<Unplug size={16} />} onClick={() => void desconectar()}>Desconectar</Button>
+            )}
           </div>
           <p className="t-sm t-subtle">
             {num(cuentas.length)} cuentas disponibles. Trae los últimos 3 meses; las campañas que ya
             existen se actualizan en vez de duplicarse.
+            {porSistema && " La conexión es con el token del negocio: no vence y no hay que volver a entrar."}
           </p>
         </div>
       )}

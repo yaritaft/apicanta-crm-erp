@@ -13,8 +13,27 @@ export const COOKIE_ESTADO = "apicanta_meta_state";
 /* Lo mínimo para leer campañas y resultados. Nada de escribir. */
 export const PERMISOS = ["ads_read", "business_management"].join(",");
 
-export const metaConfigurado = () =>
+/* Dos formas de hablar con Meta, en este orden:
+
+   1. META_SYSTEM_TOKEN — un token de usuario del sistema generado en el
+      Business Manager. Es el camino correcto cuando el negocio es dueño
+      de la app: no vence, no hay que loguearse y sirve para tareas
+      programadas. Meta directamente no deja usar OAuth en ese caso.
+   2. El flujo OAuth con cookie, para cuando la app es de un tercero. */
+
+export const tokenDeSistema = () => process.env.META_SYSTEM_TOKEN?.trim() || null;
+
+export const oauthConfigurado = () =>
   Boolean(process.env.META_APP_ID && process.env.META_APP_SECRET);
+
+export const metaConfigurado = () => Boolean(tokenDeSistema()) || oauthConfigurado();
+
+/** El token a usar: el del sistema si está, y si no el de la cookie. */
+export function tokenDeLaPeticion(req: Request): string | null {
+  const sistema = tokenDeSistema();
+  if (sistema) return sistema;
+  return req.headers.get("cookie")?.match(new RegExp(`${COOKIE_TOKEN}=([^;]+)`))?.[1] ?? null;
+}
 
 export function urlRedireccion(origen: string) {
   return `${origen}/api/meta/callback`;

@@ -1,8 +1,13 @@
 import { NextResponse } from "next/server";
-import { COOKIE_ESTADO, DIALOGO, PERMISOS, metaConfigurado, urlRedireccion } from "@/lib/meta";
+import { COOKIE_ESTADO, DIALOGO, PERMISOS, oauthConfigurado, tokenDeSistema, urlRedireccion } from "@/lib/meta";
 
 export async function GET(req: Request) {
-  if (!metaConfigurado()) {
+  /* Si el negocio es dueño de la app, Meta no permite OAuth: hay que usar
+     un token de usuario del sistema. */
+  if (tokenDeSistema()) {
+    return NextResponse.redirect(`${new URL(req.url).origin}/marketing?meta=ya-conectado`);
+  }
+  if (!oauthConfigurado()) {
     return NextResponse.json(
       { error: "Falta configurar META_APP_ID y META_APP_SECRET en el proyecto." },
       { status: 503 },

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { COOKIE_TOKEN, metaConfigurado, traerCampanias } from "@/lib/meta";
+import { metaConfigurado, tokenDeLaPeticion, traerCampanias } from "@/lib/meta";
 
 /* Devuelve las campañas ya normalizadas. No escribe en la base: el
    cliente las guarda con su propia sesión, así todo queda auditado
@@ -7,8 +7,8 @@ import { COOKIE_TOKEN, metaConfigurado, traerCampanias } from "@/lib/meta";
 export async function POST(req: Request) {
   if (!metaConfigurado()) return NextResponse.json({ error: "Meta no está configurado." }, { status: 503 });
 
-  const token = req.headers.get("cookie")?.match(new RegExp(`${COOKIE_TOKEN}=([^;]+)`))?.[1];
-  if (!token) return NextResponse.json({ error: "No hay sesión de Meta. Conectá la cuenta primero." }, { status: 401 });
+  const token = tokenDeLaPeticion(req);
+  if (!token) return NextResponse.json({ error: "No hay conexión con Meta. Configurá el token o conectá la cuenta." }, { status: 401 });
 
   const { cuentaId, desde, hasta } = (await req.json()) as { cuentaId?: string; desde?: string; hasta?: string };
   if (!cuentaId) return NextResponse.json({ error: "Falta elegir la cuenta publicitaria." }, { status: 400 });
