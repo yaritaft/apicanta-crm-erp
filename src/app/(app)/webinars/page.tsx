@@ -12,7 +12,7 @@ import { BarChart, Funnel } from "@/components/charts/charts";
 import { useToast } from "@/components/ui/Toast";
 import { acciones, useEstado } from "@/lib/store";
 import { useAbrirDesdeURL } from "@/lib/useQuery";
-import { fechaLarga, isoMinuto, money, num, pct } from "@/lib/format";
+import { fecha, fechaLarga, isoMinuto, money, num, pct } from "@/lib/format";
 import { metricasWebinar } from "@/lib/metricas";
 import type { EstadoWebinar, Webinar } from "@/lib/types";
 
@@ -93,8 +93,8 @@ export default function Webinars() {
 
       {e.webinars.length > 0 && (
         <Card>
-          <CardHead titulo="Registrados por webinar" sub="Cuál convocó más gente." />
-          <BarChart datos={[...e.webinars].sort((a, b) => +new Date(a.fecha) - +new Date(b.fecha)).map((w) => ({ etiqueta: w.titulo.split(" ").slice(0, 2).join(" "), valor: w.registrados }))} formato={num} alto={200} />
+          <CardHead titulo="Registrados por webinar" sub="Ordenados por fecha. Pasá el mouse para ver cuál es cada uno." />
+          <BarChart datos={[...e.webinars].sort((a, b) => +new Date(a.fecha) - +new Date(b.fecha)).map((w) => ({ etiqueta: fecha(w.fecha), valor: w.registrados, completo: w.titulo }))} formato={num} alto={200} />
         </Card>
       )}
 

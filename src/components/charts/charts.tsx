@@ -4,7 +4,20 @@ import React, { useId, useMemo, useState } from "react";
 
 /* Gráficos en SVG puro: sin dependencias, con tooltip y accesibles. */
 
-export interface Punto { etiqueta: string; valor: number; valor2?: number }
+export interface Punto {
+  /* Lo que se lee abajo del eje: corto, porque el espacio es poco. */
+  etiqueta: string;
+  valor: number;
+  valor2?: number;
+  /* El nombre entero, para el tooltip. Si falta, se usa `etiqueta`. */
+  completo?: string;
+}
+
+/* Corta por caracteres, no por palabras: "Cómo conseguir tu primer…" dice algo,
+   "Cómo conseguir" no. */
+export function truncar(texto: string, largo: number): string {
+  return texto.length <= largo ? texto : `${texto.slice(0, largo - 1).trimEnd()}…`;
+}
 
 const C = {
   brand: "var(--brand)", accent: "var(--accent)", success: "var(--success)",
@@ -77,7 +90,7 @@ export function AreaChart({ datos, alto = 200, formato, color = C.accent, color2
           background: "var(--surface-300)", border: "1px solid var(--border-strong)", borderRadius: 8,
           padding: "6px 10px", fontSize: 13, whiteSpace: "nowrap", pointerEvents: "none", boxShadow: "var(--shadow-md)",
         }}>
-          <strong>{datos[hover].etiqueta}</strong>{" · "}
+          <strong>{datos[hover].completo ?? datos[hover].etiqueta}</strong>{" · "}
           <span style={{ fontVariantNumeric: "tabular-nums" }}>{f(datos[hover].valor)}</span>
           {serie2 && <> · <span style={{ color: "var(--ink-subtle)" }}>{serie2} {f(datos[hover].valor2 ?? 0)}</span></>}
         </div>
@@ -134,9 +147,10 @@ export function BarChart({ datos, alto = 200, formato, color = C.brand }: {
         <div style={{
           position: "absolute", top: 4, left: `${((P.l + paso * hover + paso / 2) / W) * 100}%`, transform: "translateX(-50%)",
           background: "var(--surface-300)", border: "1px solid var(--border-strong)", borderRadius: 8,
-          padding: "6px 10px", fontSize: 13, whiteSpace: "nowrap", pointerEvents: "none", boxShadow: "var(--shadow-md)",
+          padding: "6px 10px", fontSize: 13, pointerEvents: "none", boxShadow: "var(--shadow-md)",
+          maxWidth: 260, textAlign: "center",
         }}>
-          <strong>{datos[hover].etiqueta}</strong> · <span style={{ fontVariantNumeric: "tabular-nums" }}>{f(datos[hover].valor)}</span>
+          <strong>{datos[hover].completo ?? datos[hover].etiqueta}</strong> · <span style={{ fontVariantNumeric: "tabular-nums" }}>{f(datos[hover].valor)}</span>
         </div>
       )}
     </div>

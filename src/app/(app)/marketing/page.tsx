@@ -8,7 +8,7 @@ import { Columna, DataTable } from "@/components/ui/DataTable";
 import { ModalForm, Confirmar } from "@/components/ui/Modal";
 import { Drawer, Dato } from "@/components/ui/Drawer";
 import { CamposExtra, DatosExtra } from "@/components/ui/CamposExtra";
-import { COLORES, Donut, BarChart } from "@/components/charts/charts";
+import { COLORES, Donut, BarChart, truncar } from "@/components/charts/charts";
 import { useToast } from "@/components/ui/Toast";
 import { acciones, useEstado } from "@/lib/store";
 import { useAbrirDesdeURL } from "@/lib/useQuery";
@@ -109,7 +109,7 @@ export default function Marketing() {
           {e.campanias.length === 0
             ? <p className="t-sm t-subtle" style={{ padding: 24, textAlign: "center" }}>Cargá una campaña para ver esto.</p>
             : <BarChart
-                datos={e.campanias.map((c) => ({ etiqueta: c.nombre.split("-")[0], valor: metricasCampania(c).cpl }))}
+                datos={e.campanias.map((c) => ({ etiqueta: truncar(c.nombre, 12), valor: metricasCampania(c).cpl, completo: c.nombre }))}
                 formato={(n) => money(n, e.ajustes.monedaBase, 0)} alto={200} color="var(--accent)"
               />}
         </Card>
