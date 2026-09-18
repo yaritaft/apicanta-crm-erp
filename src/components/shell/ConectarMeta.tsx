@@ -27,6 +27,7 @@ export function ConectarMeta() {
   const params = useSearchParams();
 
   const [estado, setEstado] = useState<"mirando" | "sin-configurar" | "desconectado" | "conectado">("mirando");
+  const [limite, setLimite] = useState(false);
   const [cuentas, setCuentas] = useState<Cuenta[]>([]);
   const [porSistema, setPorSistema] = useState(false);
   const [cuentaId, setCuentaId] = useState("");
@@ -36,9 +37,14 @@ export function ConectarMeta() {
     try {
       const r = await fetch("/api/meta/cuentas", { cache: "no-store" });
       const j = await r.json();
+      setLimite(j.motivo === "limite");
       if (j.conectado) {
         setCuentas(j.cuentas ?? []);
         setCuentaId((c) => c || j.cuentas?.[0]?.id || "");
+        setPorSistema(Boolean(j.porSistema));
+        setEstado("conectado");
+      } else if (j.motivo === "limite") {
+        /* Meta nos frenó un rato: la conexión está bien, sólo hay que esperar. */
         setPorSistema(Boolean(j.porSistema));
         setEstado("conectado");
       } else {
@@ -66,7 +72,13 @@ export function ConectarMeta() {
         body: JSON.stringify({ cuentaId }),
       });
       const j = await r.json();
-      if (!r.ok) { toast(j.error ?? "No se pudo traer nada de Meta.", "err"); return; }
+      if (!r.ok) {
+        const esLimite = /too many calls|rate limit/i.test(j.error ?? "");
+        toast(esLimite
+          ? "Meta nos frenó por exceso de consultas. Esperá unos minutos y probá de nuevo."
+          : (j.error ?? "No se pudo traer nada de Meta."), "err");
+        return;
+      }
 
       const traidas: { id: string; nombre: string; objetivo: string; estado: string; inversion: number; impresiones: number; clicks: number; leads: number; desde?: string; hasta?: string }[] = j.campanias ?? [];
       let nuevas = 0, actualizadas = 0;
@@ -152,6 +164,12 @@ export function ConectarMeta() {
             existen se actualizan en vez de duplicarse.
             {porSistema && " La conexión es con el token del negocio: no vence y no hay que volver a entrar."}
           </p>
+          {limite && (
+            <p className="t-sm" style={{ color: "var(--warning)" }}>
+              Meta está limitando las consultas en este momento. La conexión está bien;
+              esperá unos minutos antes de volver a traer campañas.
+            </p>
+          )}
         </div>
       )}
     </Card>
