@@ -220,8 +220,8 @@ export function Donut({ datos, formato, total, totalEtiqueta }: {
         {datos.map((d) => (
           <div key={d.etiqueta} className="row" style={{ gap: 8 }}>
             <i className="chart-legend__dot" style={{ background: d.color }} />
-            <span className="t-sm t-muted truncate">{d.etiqueta}</span>
-            <span className="spacer t-sm t-num t-strong">{f(d.valor)}</span>
+            <span className="t-sm t-muted truncate" style={{ minWidth: 0 }}>{d.etiqueta}</span>
+            <span className="spacer t-sm t-num t-strong" style={{ whiteSpace: "nowrap" }}>{f(d.valor)}</span>
             <span className="t-sm t-subtle t-num" style={{ minWidth: 42, textAlign: "right" }}>
               {((d.valor / suma) * 100).toFixed(0)}%
             </span>
