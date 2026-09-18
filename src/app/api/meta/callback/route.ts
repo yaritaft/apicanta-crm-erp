@@ -30,6 +30,18 @@ export async function GET(req: Request) {
     if (!r1.ok) return volver("error-token");
     const { access_token: corto } = (await r1.json()) as { access_token: string };
 
+    /* Con Login for Business el token que vuelve ya es el del usuario del
+       sistema: dura lo que diga la configuracion y no hay que canjearlo. */
+    if (process.env.META_CONFIG_ID) {
+      const res = volver("ok");
+      res.cookies.set(COOKIE_TOKEN, corto, {
+        httpOnly: true, secure: true, sameSite: "lax", path: "/",
+        maxAge: 60 * 60 * 24 * 365,
+      });
+      res.cookies.delete(COOKIE_ESTADO);
+      return res;
+    }
+
     /* 2) El token corto por uno largo, que dura ~60 días */
     const l = new URL(`${GRAPH}/oauth/access_token`);
     l.searchParams.set("grant_type", "fb_exchange_token");
