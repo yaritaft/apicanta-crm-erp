@@ -72,7 +72,7 @@ export default function Metas() {
             icono={<Target size={22} />}
             titulo="Todavía no pusiste ninguna meta"
             texto="Definí qué querés lograr este mes — facturación, leads, inscriptos — y te muestro en todo momento cuánto te falta."
-            accion={<Button variante="primary" icono={<Plus size={16} />} onClick={() => setForm(VACIA(actual.clave))}>Crear mi primera meta</Button>}
+            accion={<Button variante="brand" icono={<Plus size={16} />} onClick={() => setForm(VACIA(actual.clave))}>Crear mi primera meta</Button>}
           />
         </Card>
       ) : (

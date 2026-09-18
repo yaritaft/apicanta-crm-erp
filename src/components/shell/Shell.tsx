@@ -121,7 +121,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
                 <kbd>⌘K</kbd>
               </span>
             </Button>
-            <Button sm variante="primary" icono={<Plus size={16} />} onClick={() => setCrear(true)}>
+            <Button sm variante="secondary" icono={<Plus size={16} />} onClick={() => setCrear(true)}>
               Crear
             </Button>
           </div>

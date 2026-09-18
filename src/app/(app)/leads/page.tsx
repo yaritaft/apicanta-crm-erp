@@ -149,7 +149,7 @@ export default function Leads() {
               accion={
                 q || etapa !== "todas" || fuente !== "todas"
                   ? <Button variante="secondary" onClick={() => { setQ(""); setEtapa("todas"); setFuente("todas"); }}>Limpiar filtros</Button>
-                  : <Button variante="primary" icono={<Plus size={16} />} onClick={() => setForm(VACIO(e.ajustes.fuentes[0] ?? "", etapaInicial))}>Cargar mi primer lead</Button>
+                  : <Button variante="brand" icono={<Plus size={16} />} onClick={() => setForm(VACIO(e.ajustes.fuentes[0] ?? "", etapaInicial))}>Cargar mi primer lead</Button>
               }
             />
           }

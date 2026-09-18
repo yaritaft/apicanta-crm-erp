@@ -147,7 +147,7 @@ export default function Panel() {
               icono={<CalendarDays size={22} />}
               titulo="No hay sesiones agendadas"
               texto="Cuando agendes una llamada con un lead va a aparecer acá."
-              accion={<Link href="/agenda?nuevo=1"><Button variante="primary">Agendar una sesión</Button></Link>}
+              accion={<Link href="/agenda?nuevo=1"><Button variante="brand">Agendar una sesión</Button></Link>}
             />
           ) : (
             <div className="stack-2">
@@ -172,7 +172,7 @@ export default function Panel() {
               icono={<Target size={22} />}
               titulo="Todavía no pusiste metas"
               texto="Definí qué querés lograr este mes y te muestro cuánto te falta."
-              accion={<Link href="/metas?nuevo=1"><Button variante="primary">Crear una meta</Button></Link>}
+              accion={<Link href="/metas?nuevo=1"><Button variante="brand">Crear una meta</Button></Link>}
             />
           ) : (
             <div className="stack-4">

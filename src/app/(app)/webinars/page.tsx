@@ -112,7 +112,7 @@ export default function Webinars() {
             <Empty
               icono={<Video size={22} />} titulo="Todavía no cargaste ningún webinar"
               texto="Cargá uno con su fecha y cuánta gente se anotó, y te calculo la asistencia, los leads y el retorno."
-              accion={<Button variante="primary" icono={<Plus size={16} />} onClick={() => setForm(VACIO())}>Cargar mi primer webinar</Button>}
+              accion={<Button variante="brand" icono={<Plus size={16} />} onClick={() => setForm(VACIO())}>Cargar mi primer webinar</Button>}
             />
           }
         />

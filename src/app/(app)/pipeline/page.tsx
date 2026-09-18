@@ -90,7 +90,7 @@ export default function Pipeline() {
             icono={<GripVertical size={22} />}
             titulo="El tablero está vacío"
             texto="Cargá tu primer lead y va a aparecer en la primera columna, listo para que lo muevas."
-            accion={<Button variante="primary" icono={<Plus size={16} />} onClick={() => { window.location.href = "/leads?nuevo=1"; }}>Cargar un lead</Button>}
+            accion={<Button variante="brand" icono={<Plus size={16} />} onClick={() => { window.location.href = "/leads?nuevo=1"; }}>Cargar un lead</Button>}
           />
         </Card>
       ) : (

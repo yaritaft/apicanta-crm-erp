@@ -131,7 +131,7 @@ export default function Agenda() {
             icono={<CalendarDays size={22} />}
             titulo={vista === "proximas" ? "No hay nada agendado" : "Nada para mostrar"}
             texto={vista === "proximas" ? "Cuando agendes una llamada va a aparecer acá, ordenada por día." : "Probá con otra vista o sacá el filtro de estado."}
-            accion={<Button variante="primary" icono={<Plus size={16} />} onClick={() => setForm(VACIA(e.ajustes.tiposSesion[0] ?? "Sesión"))}>Agendar una sesión</Button>}
+            accion={<Button variante="brand" icono={<Plus size={16} />} onClick={() => setForm(VACIA(e.ajustes.tiposSesion[0] ?? "Sesión"))}>Agendar una sesión</Button>}
           />
         ) : (
           <div>

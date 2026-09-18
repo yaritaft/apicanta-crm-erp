@@ -141,7 +141,7 @@ export default function Alumnos() {
               accion={
                 q || estado !== "todos"
                   ? <Button variante="secondary" onClick={() => { setQ(""); setEstado("todos"); }}>Limpiar filtros</Button>
-                  : <Button variante="primary" icono={<Plus size={16} />} onClick={() => setForm(VACIO(e.ajustes.planes[0] ?? ""))}>Cargar un alumno</Button>
+                  : <Button variante="brand" icono={<Plus size={16} />} onClick={() => setForm(VACIO(e.ajustes.planes[0] ?? ""))}>Cargar un alumno</Button>
               }
             />
           }

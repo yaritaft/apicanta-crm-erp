@@ -341,7 +341,7 @@ function Campos() {
             icono={<Layers size={22} />}
             titulo="Todavía no agregaste campos propios"
             texto="Las fichas ya traen lo básico. Si necesitás guardar algo más — nivel de inglés, empresa, seniority — agregalo acá y aparece en el formulario."
-            accion={<Button variante="primary" icono={<Plus size={16} />} onClick={() => { setForm({ entidad: "lead", nombre: "", clave: "", tipo: "texto", requerido: false }); setOpciones(""); }}>Agregar un campo</Button>}
+            accion={<Button variante="brand" icono={<Plus size={16} />} onClick={() => { setForm({ entidad: "lead", nombre: "", clave: "", tipo: "texto", requerido: false }); setOpciones(""); }}>Agregar un campo</Button>}
           />
         ) : (
           <div className="stack-2">

@@ -205,7 +205,7 @@ export default function Finanzas() {
               texto={e.transacciones.length === 0 ? "Cargá tu primer ingreso o gasto y empiezo a armarte los gráficos y el resultado del mes." : "Probá sacando algún filtro."}
               accion={
                 e.transacciones.length === 0
-                  ? <Button variante="primary" icono={<Plus size={16} />} onClick={() => setForm(VACIA("ingreso", e.ajustes.categoriasIngreso[0] ?? "", e.ajustes.metodosPago[0] ?? ""))}>Cargar un ingreso</Button>
+                  ? <Button variante="brand" icono={<Plus size={16} />} onClick={() => setForm(VACIA("ingreso", e.ajustes.categoriasIngreso[0] ?? "", e.ajustes.metodosPago[0] ?? ""))}>Cargar un ingreso</Button>
                   : <Button variante="secondary" onClick={() => { setTipo("todos"); setEstado("todos"); setMes("todos"); }}>Limpiar filtros</Button>
               }
             />

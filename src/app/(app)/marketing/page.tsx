@@ -129,7 +129,7 @@ export default function Marketing() {
             <Empty
               icono={<Megaphone size={22} />} titulo="Todavía no cargaste campañas"
               texto="Cargá una con lo que invertiste y los leads que trajo, y te calculo el costo por lead, el CTR y el retorno."
-              accion={<Button variante="primary" icono={<Plus size={16} />} onClick={() => setForm(VACIA())}>Cargar mi primera campaña</Button>}
+              accion={<Button variante="brand" icono={<Plus size={16} />} onClick={() => setForm(VACIA())}>Cargar mi primera campaña</Button>}
             />
           }
         />
