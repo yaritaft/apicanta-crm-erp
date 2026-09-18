@@ -25,6 +25,14 @@ const C = {
   grid: "var(--border)", texto: "var(--ink-subtle)",
 };
 
+/* El eje Y lleva montos como "US$ 80.000". Con un margen fijo la etiqueta
+   se sale de la tarjeta, así que se calcula a partir de la más larga.
+   11px de Geist miden ~6,2px por carácter; +16 de aire contra el borde. */
+function margenIzquierdo(etiquetas: string[]): number {
+  const masLarga = Math.max(0, ...etiquetas.map((e) => e.length));
+  return Math.ceil(masLarga * 6.2) + 16;
+}
+
 function escalaMax(datos: number[]): number {
   const m = Math.max(...datos, 0);
   if (m === 0) return 1;
@@ -40,9 +48,15 @@ export function AreaChart({ datos, alto = 200, formato, color = C.accent, color2
 }) {
   const gid = useId().replace(/:/g, "");
   const [hover, setHover] = useState<number | null>(null);
-  const W = 640, H = alto, P = { t: 12, r: 12, b: 26, l: 48 };
+  const f = formato ?? ((n: number) => String(n));
 
   const max = useMemo(() => escalaMax(datos.flatMap((d) => [d.valor, d.valor2 ?? 0])), [datos]);
+  const ticks = useMemo(() => [0, 0.5, 1].map((t) => max * t), [max]);
+
+  const W = 640, H = alto;
+  /* A la derecha hay que dejar media etiqueta del eje X, que va centrada. */
+  const P = { t: 12, r: 18, b: 26, l: margenIzquierdo(ticks.map(f)) };
+
   if (datos.length === 0) return <div className="t-sm t-subtle" style={{ padding: 24, textAlign: "center" }}>Sin datos todavía.</div>;
 
   const iw = W - P.l - P.r, ih = H - P.t - P.b;
@@ -52,9 +66,6 @@ export function AreaChart({ datos, alto = 200, formato, color = C.accent, color2
   const linea = (k: "valor" | "valor2") =>
     datos.map((d, i) => `${i === 0 ? "M" : "L"}${x(i).toFixed(1)},${y(d[k] ?? 0).toFixed(1)}`).join(" ");
   const area = `${linea("valor")} L${x(datos.length - 1).toFixed(1)},${(P.t + ih).toFixed(1)} L${x(0).toFixed(1)},${(P.t + ih).toFixed(1)} Z`;
-
-  const f = formato ?? ((n: number) => String(n));
-  const ticks = [0, 0.5, 1].map((t) => max * t);
 
   return (
     <div style={{ position: "relative" }}>
@@ -77,7 +88,10 @@ export function AreaChart({ datos, alto = 200, formato, color = C.accent, color2
         <path d={linea("valor")} fill="none" stroke={color} strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" />
         {datos.map((d, i) => (
           <g key={i}>
-            <text x={x(i)} y={H - 8} textAnchor="middle" fontSize="11" fill={C.texto}>{d.etiqueta}</text>
+            <text
+              x={x(i)} y={H - 8} fontSize="11" fill={C.texto}
+              textAnchor={i === 0 ? "start" : i === datos.length - 1 ? "end" : "middle"}
+            >{d.etiqueta}</text>
             <circle cx={x(i)} cy={y(d.valor)} r={hover === i ? 5 : 3.5} fill={color} stroke="var(--surface-100)" strokeWidth="2" />
             <rect x={x(i) - iw / (datos.length * 2)} y={P.t} width={iw / datos.length} height={ih} fill="transparent"
               onMouseEnter={() => setHover(i)} style={{ cursor: "crosshair" }} />
@@ -111,15 +125,19 @@ export function BarChart({ datos, alto = 200, formato, color = C.brand }: {
   datos: Punto[]; alto?: number; formato?: (n: number) => string; color?: string;
 }) {
   const [hover, setHover] = useState<number | null>(null);
-  const W = 640, H = alto, P = { t: 12, r: 12, b: 26, l: 48 };
+  const f = formato ?? ((n: number) => String(n));
+
   const max = useMemo(() => escalaMax(datos.map((d) => d.valor)), [datos]);
+  const ticks = useMemo(() => [0, 0.5, 1].map((t) => max * t), [max]);
+
+  const W = 640, H = alto;
+  const P = { t: 12, r: 18, b: 26, l: margenIzquierdo(ticks.map(f)) };
+
   if (datos.length === 0) return <div className="t-sm t-subtle" style={{ padding: 24, textAlign: "center" }}>Sin datos todavía.</div>;
 
   const iw = W - P.l - P.r, ih = H - P.t - P.b;
   const paso = iw / datos.length;
   const ancho = Math.min(paso * 0.6, 44);
-  const f = formato ?? ((n: number) => String(n));
-  const ticks = [0, 0.5, 1].map((t) => max * t);
 
   return (
     <div style={{ position: "relative" }}>
