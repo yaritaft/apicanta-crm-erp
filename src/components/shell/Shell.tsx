@@ -3,13 +3,12 @@
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Menu, Moon, Search, Sun, X, Plus } from "lucide-react";
+import { Menu, Moon, Search, Sun, X } from "lucide-react";
 import { NAV } from "./nav";
 import { useEstado, useTema } from "@/lib/store";
 import { Avatar, Button, IconButton } from "@/components/ui/ui";
 import { Paleta } from "./Paleta";
 import { Tour } from "./Tour";
-import { CrearRapido } from "./CrearRapido";
 
 export function Shell({ children }: { children: React.ReactNode }) {
   const ruta = usePathname();
@@ -17,7 +16,6 @@ export function Shell({ children }: { children: React.ReactNode }) {
   const [tema, setTema] = useTema();
   const [menu, setMenu] = useState(false);
   const [paleta, setPaleta] = useState(false);
-  const [crear, setCrear] = useState(false);
 
   useEffect(() => { setMenu(false); }, [ruta]);
 
@@ -121,9 +119,6 @@ export function Shell({ children }: { children: React.ReactNode }) {
                 <kbd>⌘K</kbd>
               </span>
             </Button>
-            <Button sm variante="secondary" icono={<Plus size={16} />} onClick={() => setCrear(true)}>
-              Crear
-            </Button>
           </div>
         </header>
 
@@ -131,7 +126,6 @@ export function Shell({ children }: { children: React.ReactNode }) {
       </div>
 
       <Paleta abierto={paleta} onCerrar={() => setPaleta(false)} />
-      <CrearRapido abierto={crear} onCerrar={() => setCrear(false)} />
       <Tour />
     </div>
   );
