@@ -439,14 +439,14 @@ function Integraciones() {
       <Card>
         <CardHead
           titulo="Meta Ads"
-          sub="Para traer la inversión, las impresiones y los leads de tus campañas."
+          sub="Para conectar tu cuenta con un clic, andá a Marketing. Acá sólo van las claves si preferís cargarlas a mano."
           acciones={<Badge variante={e.ajustes.metaToken ? "success" : "neutral"} icono={e.ajustes.metaToken ? <Check size={13} /> : <Plug size={13} />}>{e.ajustes.metaToken ? "Configurado" : "Sin configurar"}</Badge>}
         />
         <div className="form-grid">
           <Field label="ID de la cuenta publicitaria" ayuda="El número que empieza con act_">
             <Input value={v("metaAccountId")} onChange={(ev) => setB({ ...b, metaAccountId: ev.target.value })} onBlur={() => aplicar("metaAccountId")} placeholder="act_1234567890" />
           </Field>
-          <Field label="Token de acceso" ayuda="Se guarda sólo en este navegador.">
+          <Field label="Token de acceso" ayuda="Queda guardado en la base, visible sólo para el equipo.">
             <Input type="password" value={v("metaToken")} onChange={(ev) => setB({ ...b, metaToken: ev.target.value })} onBlur={() => aplicar("metaToken")} placeholder="EAAG…" />
           </Field>
         </div>
@@ -462,7 +462,7 @@ function Integraciones() {
           <Field label="Usuario de Calendly" ayuda="Tu nombre de usuario en la URL.">
             <Input value={v("calendlyUser")} onChange={(ev) => setB({ ...b, calendlyUser: ev.target.value })} onBlur={() => aplicar("calendlyUser")} placeholder="hackearit" />
           </Field>
-          <Field label="Token personal" ayuda="Se guarda sólo en este navegador.">
+          <Field label="Token personal" ayuda="Queda guardado en la base, visible sólo para el equipo.">
             <Input type="password" value={v("calendlyToken")} onChange={(ev) => setB({ ...b, calendlyToken: ev.target.value })} onBlur={() => aplicar("calendlyToken")} placeholder="eyJ…" />
           </Field>
         </div>
