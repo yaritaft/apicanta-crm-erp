@@ -247,21 +247,24 @@ export default function Alumnos() {
 
             <div>
               <div className="t-label" style={{ marginBottom: 12 }}>Pagos</div>
-              {e.transacciones.filter((t) => t.alumnoId === aVisto.id).length === 0 ? (
-                <p className="t-sm t-subtle">Sin pagos registrados.</p>
-              ) : (
-                <div className="stack-2">
-                  {e.transacciones.filter((t) => t.alumnoId === aVisto.id)
-                    .sort((a, b) => +new Date(b.fecha) - +new Date(a.fecha)).slice(0, 6)
-                    .map((t) => (
-                      <div key={t.id} className="agenda-item" style={{ cursor: "default" }}>
-                        <span className="t-sm" style={{ flex: 1 }}>{fechaLarga(t.fecha)}</span>
-                        <span className="t-sm t-num t-strong">{money(t.monto, t.moneda)}</span>
-                        <Badge variante={t.estado === "pagado" ? "success" : "warning"}>{t.estado === "pagado" ? "Pagado" : "Pendiente"}</Badge>
+              {(() => {
+                const ventas = e.ventas.filter((v) => v.contactoId === aVisto.leadId);
+                const ids = e.cuotas.filter((c) => ventas.some((v) => v.id === c.ventaId)).map((c) => c.id);
+                const pagos = e.pagos.filter((p) => ids.includes(p.cuotaId))
+                  .sort((a, b) => +new Date(b.fecha) - +new Date(a.fecha));
+                if (pagos.length === 0) return <p className="t-sm t-subtle">Sin pagos registrados.</p>;
+                return (
+                  <div className="stack-2">
+                    {pagos.slice(0, 6).map((p) => (
+                      <div key={p.id} className="agenda-item" style={{ cursor: "default" }}>
+                        <span className="t-sm" style={{ flex: 1 }}>{fechaLarga(p.fecha)}</span>
+                        <span className="t-sm t-subtle">{e.procesadores.find((x) => x.id === p.procesadorId)?.nombre ?? "—"}</span>
+                        <span className="t-sm t-num t-strong">{money(p.monto, p.moneda)}</span>
                       </div>
                     ))}
-                </div>
-              )}
+                  </div>
+                );
+              })()}
             </div>
 
             {aVisto.notas && (

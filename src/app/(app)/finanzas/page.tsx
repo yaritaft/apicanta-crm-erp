@@ -1,280 +1,426 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
-import { ArrowDownRight, ArrowUpRight, Check, Download, Pencil, Plus, Trash2, Wallet } from "lucide-react";
+import {
+  AlertTriangle, ArrowDownRight, Check, Download, Info, Pencil, Plus, Trash2, Wallet,
+} from "lucide-react";
 import { PageHead } from "@/components/shell/PageHead";
-import { Badge, Button, Card, CardHead, Chip, Empty, Field, IconButton, Input, Select, StatCard, Tabs, Textarea } from "@/components/ui/ui";
+import {
+  Ayuda, Badge, Button, Card, CardHead, Chip, Empty, Field, IconButton, Input,
+  Select, StatCard, Tabs, Textarea,
+} from "@/components/ui/ui";
 import { Columna, DataTable } from "@/components/ui/DataTable";
 import { ModalForm, Confirmar } from "@/components/ui/Modal";
-import { CamposExtra } from "@/components/ui/CamposExtra";
 import { AreaChart, COLORES, Donut } from "@/components/charts/charts";
 import { useToast } from "@/components/ui/Toast";
 import { acciones, useEstado } from "@/lib/store";
 import { useAbrirDesdeURL } from "@/lib/useQuery";
-import { delta, fechaLarga, isoDia, money, pct } from "@/lib/format";
-import { egresosMes, ingresosMes, mrr, porCobrar, ultimosMeses, variacion } from "@/lib/metricas";
-import type { EstadoMovimiento, Moneda, TipoMovimiento, Transaccion } from "@/lib/types";
+import { delta, fechaLarga, isoDia, money, num, pct } from "@/lib/format";
+import { ultimosMeses, variacion } from "@/lib/metricas";
+import {
+  calcularPyL, cashCollected, comisionesDelMes, cuotasVencidas, gastosPorCategoria,
+  porCobrarTotal, revenue, tasaDeMora, totalComisiones,
+} from "@/lib/finanzas";
+import { CATEGORIAS_GASTO } from "@/lib/seed";
+import type { Cuota, Gasto, Moneda } from "@/lib/types";
 
-const ESTADO: Record<EstadoMovimiento, { texto: string; variante: "success" | "warning" | "danger" }> = {
-  "pagado": { texto: "Pagado", variante: "success" },
-  "pendiente": { texto: "Pendiente", variante: "warning" },
-  "vencido": { texto: "Vencido", variante: "danger" },
-};
+type Vista = "pyl" | "cobros" | "gastos" | "comisiones";
 
-const VACIA = (tipo: TipoMovimiento, categoria: string, metodo: string): Omit<Transaccion, "id"> => ({
-  tipo, categoria, concepto: "", monto: 0, moneda: "USD" as Moneda,
-  fecha: new Date().toISOString(), estado: "pagado", metodo, recurrente: false,
-  creadoEn: new Date().toISOString(), extra: {},
+const VACIO = (): Omit<Gasto, "id"> => ({
+  categoria: "Software", grupo: "operativo", concepto: "", monto: 0, moneda: "USD" as Moneda,
+  fecha: new Date().toISOString(), recurrente: false, creadoEn: new Date().toISOString(), extra: {},
 });
 
 export default function Finanzas() {
   const e = useEstado();
   const toast = useToast();
   const url = useAbrirDesdeURL();
-  const [tipo, setTipo] = useState<"todos" | TipoMovimiento>("todos");
-  const [estado, setEstado] = useState<"todos" | EstadoMovimiento>("todos");
-  const [mes, setMes] = useState("todos");
-  const [form, setForm] = useState<(Omit<Transaccion, "id"> & { id?: string }) | null>(null);
-  const [borrar, setBorrar] = useState<Transaccion | null>(null);
+  const [vista, setVista] = useState<Vista>("pyl");
+  const [form, setForm] = useState<(Omit<Gasto, "id"> & { id?: string }) | null>(null);
+  const [borrar, setBorrar] = useState<Gasto | null>(null);
 
   const meses = useMemo(() => ultimosMeses(6), []);
-  const actual = meses[meses.length - 1];
-  const previo = meses[meses.length - 2];
+  const [mesSel, setMesSel] = useState(meses[meses.length - 1].clave);
+  const mes = meses.find((m) => m.clave === mesSel) ?? meses[meses.length - 1];
+  const previo = meses[Math.max(meses.findIndex((m) => m.clave === mesSel) - 1, 0)];
 
-  useEffect(() => {
-    if (url.nuevo) { setForm(VACIA("ingreso", e.ajustes.categoriasIngreso[0] ?? "", e.ajustes.metodosPago[0] ?? "")); url.limpiar(); }
-  }, [url, e.ajustes]);
+  useEffect(() => { if (url.nuevo) { setVista("gastos"); setForm(VACIO()); url.limpiar(); } }, [url]);
 
-  const ingresos = ingresosMes(e, actual);
-  const egresos = egresosMes(e, actual);
-  const neto = ingresos - egresos;
+  const p = useMemo(() => calcularPyL(e, mes), [e, mes]);
+  const pPrev = useMemo(() => calcularPyL(e, previo), [e, previo]);
+  const mon = e.ajustes.monedaBase;
+  const M = (n: number, d = 0) => money(n, mon, d);
 
-  const serie = meses.map((m) => ({ etiqueta: m.etiqueta, valor: ingresosMes(e, m), valor2: egresosMes(e, m) }));
+  const serie = meses.map((m) => ({
+    etiqueta: m.etiqueta, valor: cashCollected(e, m), valor2: revenue(e, m),
+  }));
 
-  const porCategoria = useMemo(() => {
-    const m = new Map<string, number>();
-    for (const t of e.transacciones) {
-      if (t.tipo !== "egreso") continue;
-      const d = new Date(t.fecha);
-      if (d < meses[0].desde) continue;
-      m.set(t.categoria, (m.get(t.categoria) ?? 0) + t.monto);
-    }
-    return [...m.entries()].sort((a, b) => b[1] - a[1])
-      .map(([etiqueta, valor], i) => ({ etiqueta, valor, color: COLORES[i % COLORES.length] }));
-  }, [e.transacciones, meses]);
-
-  const filtradas = useMemo(() => {
-    return e.transacciones.filter((t) => {
-      if (tipo !== "todos" && t.tipo !== tipo) return false;
-      if (estado !== "todos" && t.estado !== estado) return false;
-      if (mes !== "todos") {
-        const m = meses.find((x) => x.clave === mes);
-        if (m) { const d = new Date(t.fecha); if (d < m.desde || d > m.hasta) return false; }
-      }
-      return true;
-    });
-  }, [e.transacciones, tipo, estado, mes, meses]);
-
-  function guardar() {
-    if (!form) return;
-    if (!form.concepto.trim()) { toast("Escribí de qué se trata el movimiento.", "err"); return; }
-    if (form.id) { acciones.actualizar<Transaccion>("transacciones", form.id, form, form.concepto); toast("Movimiento actualizado."); }
-    else { acciones.crear<Transaccion>("transacciones", form, form.concepto); toast(`${form.tipo === "ingreso" ? "Ingreso" : "Egreso"} registrado.`); }
-    setForm(null);
-  }
-
-  const columnas: Columna<Transaccion>[] = [
-    {
-      clave: "concepto", titulo: "Concepto", tipo: "primary", orden: (t) => t.concepto,
-      celda: (t) => (
-        <span style={{ display: "inline-flex", alignItems: "center", gap: 10 }}>
-          <span style={{
-            display: "grid", placeItems: "center", width: 28, height: 28, borderRadius: 8, flex: "none",
-            background: t.tipo === "ingreso" ? "var(--success-soft)" : "var(--danger-soft)",
-            color: t.tipo === "ingreso" ? "var(--success)" : "var(--danger)",
-          }}>
-            {t.tipo === "ingreso" ? <ArrowUpRight size={15} /> : <ArrowDownRight size={15} />}
-          </span>
-          <span className="truncate" style={{ maxWidth: 280, display: "block" }}>{t.concepto}</span>
-        </span>
-      ),
-    },
-    { clave: "categoria", titulo: "Categoría", tipo: "secondary", orden: (t) => t.categoria, celda: (t) => t.categoria },
-    { clave: "fecha", titulo: "Fecha", tipo: "secondary", orden: (t) => t.fecha, celda: (t) => fechaLarga(t.fecha) },
-    { clave: "metodo", titulo: "Método", tipo: "secondary", orden: (t) => t.metodo, celda: (t) => t.metodo || "—" },
-    { clave: "estado", titulo: "Estado", orden: (t) => t.estado, celda: (t) => <Badge variante={ESTADO[t.estado].variante}>{ESTADO[t.estado].texto}</Badge> },
-    {
-      clave: "monto", titulo: "Monto", tipo: "num", orden: (t) => (t.tipo === "ingreso" ? t.monto : -t.monto),
-      celda: (t) => (
-        <span style={{ color: t.tipo === "ingreso" ? "var(--success)" : "var(--ink)", fontWeight: 600 }}>
-          {t.tipo === "ingreso" ? "+" : "−"}{money(t.monto, t.moneda).replace("−", "")}
-        </span>
-      ),
-    },
-  ];
+  const vencidas = useMemo(() => cuotasVencidas(e), [e]);
+  const comisiones = useMemo(() => comisionesDelMes(e, mes), [e, mes]);
+  const totComi = totalComisiones(comisiones);
 
   return (
     <div className="stack-5">
       <PageHead
         titulo="Finanzas"
-        sub="Todo lo que entra y todo lo que sale. Cargá un movimiento y los totales se rehacen solos."
+        sub="Lo facturado y lo realmente cobrado, lado a lado. Todo sale de las ventas, los pagos y los gastos que cargás."
         acciones={
           <>
-            <Button variante="secondary" icono={<Download size={16} />} onClick={() => exportar(e.transacciones)}>Exportar</Button>
-            <Button variante="secondary" icono={<ArrowDownRight size={16} />} onClick={() => setForm(VACIA("egreso", e.ajustes.categoriasEgreso[0] ?? "", e.ajustes.metodosPago[0] ?? ""))}>Nuevo egreso</Button>
-            <Button variante="primary" icono={<Plus size={16} />} onClick={() => setForm(VACIA("ingreso", e.ajustes.categoriasIngreso[0] ?? "", e.ajustes.metodosPago[0] ?? ""))}>Nuevo ingreso</Button>
+            <div style={{ width: 150 }}>
+              <Select value={mesSel} onChange={(ev) => setMesSel(ev.target.value)} aria-label="Mes"
+                opciones={[...meses].reverse().map((m) => ({ valor: m.clave, texto: m.etiqueta }))} />
+            </div>
+            <Button variante="secondary" icono={<Download size={16} />} onClick={() => exportarPyL(e, mes, p)}>Exportar</Button>
+            <Button variante="primary" icono={<Plus size={16} />} onClick={() => { setVista("gastos"); setForm(VACIO()); }}>Nuevo gasto</Button>
           </>
         }
       />
 
       <div className="grid-stats">
-        <StatCard
-          hero etiqueta={`Ingresos de ${actual.etiqueta}`} valor={money(ingresos, e.ajustes.monedaBase)}
-          delta={delta(variacion(ingresos, ingresosMes(e, previo)))} direccion={ingresos >= ingresosMes(e, previo) ? "up" : "down"}
-          contexto={`vs. ${previo.etiqueta}`}
-        />
-        <StatCard
-          etiqueta="Egresos" valor={money(egresos, e.ajustes.monedaBase)}
-          delta={delta(variacion(egresos, egresosMes(e, previo)))} direccion={egresos <= egresosMes(e, previo) ? "up" : "down"}
-          contexto={`vs. ${previo.etiqueta}`}
-        />
-        <StatCard
-          etiqueta="Resultado" valor={money(neto, e.ajustes.monedaBase)}
-          delta={ingresos > 0 ? pct((neto / ingresos) * 100) : "—"} direccion={neto >= 0 ? "up" : "down"}
-          contexto="de margen este mes"
-        />
-        <StatCard
-          etiqueta="Por cobrar" valor={money(porCobrar(e), e.ajustes.monedaBase)}
-          delta={porCobrar(e) > 0 ? "Revisar" : undefined} direccion="accent"
-          contexto={`${e.transacciones.filter((t) => t.tipo === "ingreso" && t.estado !== "pagado").length} facturas abiertas`}
-        />
+        <StatCard hero etiqueta={`Cobrado en ${mes.etiqueta}`} valor={M(p.cashCollected)}
+          delta={delta(variacion(p.cashCollected, pPrev.cashCollected))}
+          direccion={p.cashCollected >= pPrev.cashCollected ? "up" : "down"}
+          contexto={`vs. ${previo.etiqueta}`} ayuda="Cash collected: la plata que efectivamente entró este mes." />
+        <StatCard etiqueta="Facturado" valor={M(p.revenue)}
+          delta={pct(p.tasaCobro, 0)} direccion={p.tasaCobro >= 75 ? "up" : "accent"}
+          contexto="se cobró de lo vendido" ayuda="Revenue: el precio acordado de las ventas cerradas este mes." />
+        <StatCard etiqueta="Profit neto" valor={M(p.netoCC)}
+          delta={p.cashCollected > 0 ? pct((p.netoCC / p.cashCollected) * 100, 0) : "—"}
+          direccion={p.netoCC >= 0 ? "up" : "down"} contexto="de margen sobre lo cobrado" />
+        <StatCard etiqueta="ROAS" valor={p.roasCC > 0 ? `${num(p.roasCC, 1)}x` : "—"}
+          delta={p.roasRev > 0 ? `${num(p.roasRev, 1)}x facturado` : undefined} direccion="accent"
+          contexto="sobre lo cobrado" ayuda="Cuántas veces recuperás lo que ponés en publicidad." />
       </div>
 
-      <div className="grid-2">
-        <Card>
-          <CardHead titulo="Ingresos y egresos" sub="Últimos 6 meses." />
-          <AreaChart datos={serie} serie2="Egresos" formato={(n) => money(n, e.ajustes.monedaBase)} alto={220} />
-        </Card>
-        <Card>
-          <CardHead titulo="En qué se va la plata" sub="Egresos por categoría, últimos 6 meses." />
-          <Donut datos={porCategoria} formato={(n) => money(n, e.ajustes.monedaBase)} total={money(porCategoria.reduce((a, x) => a + x.valor, 0), e.ajustes.monedaBase)} totalEtiqueta="en egresos" />
-        </Card>
-      </div>
+      <Tabs valor={vista} onChange={setVista} opciones={[
+        { valor: "pyl", texto: "Estado de resultados" },
+        { valor: "cobros", texto: `Cobros${vencidas.length ? ` · ${vencidas.length}` : ""}` },
+        { valor: "gastos", texto: "Gastos" },
+        { valor: "comisiones", texto: "Comisiones" },
+      ]} />
 
-      <div className="grid-3">
-        <Card><div className="t-label" style={{ marginBottom: 6 }}>MRR</div><div className="t-num" style={{ fontSize: 26, fontWeight: 600 }}>{money(mrr(e), e.ajustes.monedaBase)}</div><div className="t-sm t-subtle" style={{ marginTop: 4 }}>Ingreso recurrente por cuotas de alumnos activos</div></Card>
-        <Card><div className="t-label" style={{ marginBottom: 6 }}>Promedio mensual</div><div className="t-num" style={{ fontSize: 26, fontWeight: 600 }}>{money(meses.reduce((a, m) => a + ingresosMes(e, m), 0) / meses.length, e.ajustes.monedaBase)}</div><div className="t-sm t-subtle" style={{ marginTop: 4 }}>Ingresos promedio de los últimos 6 meses</div></Card>
-        <Card><div className="t-label" style={{ marginBottom: 6 }}>Acumulado del período</div><div className="t-num" style={{ fontSize: 26, fontWeight: 600 }}>{money(meses.reduce((a, m) => a + ingresosMes(e, m) - egresosMes(e, m), 0), e.ajustes.monedaBase)}</div><div className="t-sm t-subtle" style={{ marginTop: 4 }}>Resultado sumado de los 6 meses</div></Card>
-      </div>
-
-      <Card style={{ padding: 0, overflow: "hidden" }}>
-        <div style={{ padding: "var(--space-4) var(--space-4) 0" }}>
-          <div className="toolbar" style={{ marginBottom: "var(--space-3)" }}>
-            <Tabs valor={tipo} onChange={setTipo} opciones={[{ valor: "todos", texto: "Todo" }, { valor: "ingreso", texto: "Ingresos" }, { valor: "egreso", texto: "Egresos" }]} />
-            <span className="spacer" />
-            <div style={{ width: 180 }}>
-              <Select value={mes} onChange={(ev) => setMes(ev.target.value)} aria-label="Filtrar por mes"
-                opciones={[{ valor: "todos", texto: "Todos los meses" }, ...[...meses].reverse().map((m) => ({ valor: m.clave, texto: m.etiqueta }))]} />
-            </div>
+      {/* ---------------- P&L ---------------- */}
+      {vista === "pyl" && (
+        <div className="stack-4">
+          <div className="grid-2">
+            <Card>
+              <CardHead titulo="Facturado vs. cobrado" sub="Últimos 6 meses. La distancia entre las dos líneas es lo que falta cobrar." />
+              <AreaChart datos={serie} serie2="Facturado" formato={(n) => M(n)} alto={220} />
+            </Card>
+            <Card>
+              <CardHead titulo="En qué se va la plata" sub={`Gastos operativos de ${mes.etiqueta}.`} />
+              <Donut
+                datos={gastosPorCategoria(e, mes, "operativo").slice(0, 7)
+                  .map((g, i) => ({ etiqueta: g.categoria, valor: g.monto, color: COLORES[i % COLORES.length] }))}
+                formato={(n) => M(n)} total={M(p.gastosOperativos)} totalEtiqueta="operativos" />
+            </Card>
           </div>
-          <div className="toolbar">
-            <Chip activo={estado === "todos"} onClick={() => setEstado("todos")}>Cualquier estado</Chip>
-            {(Object.keys(ESTADO) as EstadoMovimiento[]).map((k) => (
-              <Chip key={k} activo={estado === k} onClick={() => setEstado(k)} count={e.transacciones.filter((t) => t.estado === k).length}>{ESTADO[k].texto}</Chip>
-            ))}
+
+          <Card style={{ padding: 0, overflow: "hidden" }}>
+            <div style={{ padding: "var(--space-5) var(--space-5) 0" }}>
+              <CardHead titulo={`Estado de resultados — ${mes.etiqueta}`}
+                sub="Dos columnas porque casi todo se vende en cuotas: una cosa es lo que vendiste y otra la que ya está en la cuenta." />
+            </div>
+            <table className="hk-table">
+              <thead>
+                <tr>
+                  <th>Concepto</th>
+                  <th className="hk-th--num">Sobre lo cobrado</th>
+                  <th className="hk-th--num">Sobre lo facturado</th>
+                </tr>
+              </thead>
+              <tbody>
+                <Linea t="Ingresos" cc={p.cashCollected} rev={p.revenue} fuerte M={M} />
+                <Bloque t="Costos directos" />
+                <Linea t="Comisiones de closers" cc={-p.comisionCloser} rev={-p.comisionCloser} M={M} />
+                <Linea t="Comisión del director" cc={-p.comisionDirector} rev={-p.comisionDirector} M={M} />
+                <Linea t="Procesadores de pago" cc={-p.feesProcesador} rev={-p.feesProcesador} M={M} />
+                {p.otrosDirectos > 0 && <Linea t="Otros costos directos" cc={-p.otrosDirectos} rev={-p.otrosDirectos} M={M} />}
+                <Linea t="Utilidad bruta" cc={p.brutoCC} rev={p.brutoRev} fuerte M={M} />
+                <Bloque t="Gastos operativos" />
+                {gastosPorCategoria(e, mes, "operativo").map((g) => (
+                  <Linea key={g.categoria} t={g.categoria} cc={-g.monto} rev={-g.monto} M={M} />
+                ))}
+                <Linea t="Resultado operativo" cc={p.operativoCC} rev={p.operativoRev} fuerte M={M} />
+                {p.honorariosCeo > 0 && (
+                  <>
+                    <Bloque t="Honorarios del dueño" />
+                    <Linea t="Honorarios del CEO" cc={-p.honorariosCeo} rev={-p.honorariosCeo} M={M} />
+                  </>
+                )}
+                <Linea t="Rentabilidad neta" cc={p.netoCC} rev={p.netoRev} fuerte destacado M={M} />
+              </tbody>
+            </table>
+          </Card>
+
+          <div className="grid-2">
+            <Card>
+              <CardHead titulo="Métricas de adquisición" sub={`${mes.etiqueta}.`} />
+              <dl className="dl">
+                <dt>Ventas</dt><dd className="t-num">{num(p.ventas)}</dd>
+                <dt>Inversión en ads</dt><dd className="t-num">{M(p.inversionAds)}</dd>
+                <dt>CAC</dt><dd className="t-num">{M(p.cac)}</dd>
+                <dt>ROAS cobrado</dt><dd className="t-num">{p.roasCC > 0 ? `${num(p.roasCC, 2)}x` : "—"}</dd>
+                <dt>ROAS facturado</dt><dd className="t-num">{p.roasRev > 0 ? `${num(p.roasRev, 2)}x` : "—"}</dd>
+                <dt>Tasa de cobro</dt><dd className="t-num">{pct(p.tasaCobro)}</dd>
+                <dt>Tasa de mora</dt><dd className="t-num" style={{ color: tasaDeMora(e) > 15 ? "var(--danger)" : undefined }}>{pct(tasaDeMora(e))}</dd>
+              </dl>
+            </Card>
+            <Card>
+              <CardHead titulo="Reparto del profit" sub="Growth partner y socio cobran sobre el resultado operativo." />
+              <dl className="dl">
+                <dt>Resultado operativo</dt><dd className="t-num">{M(p.operativoCC)}</dd>
+                <dt>Growth partner</dt><dd className="t-num">{M(p.growth)}</dd>
+                <dt>Socio</dt><dd className="t-num">{M(p.socio)}</dd>
+                <dt>Queda</dt><dd className="t-num t-strong">{M(p.operativoCC - p.growth - p.socio)}</dd>
+              </dl>
+              <Ayuda titulo="Ojo con esto" icono={<Info size={18} />}>
+                El growth partner no comisiona las ventas marcadas como <strong>excluidas de marketing</strong>
+                (eventos y conocidos), así que su número ya sale prorrateado. Lo del socio, que cobra distinto
+                según el producto, todavía está como un 10% parejo — falta definirlo.
+              </Ayuda>
+            </Card>
           </div>
         </div>
+      )}
 
-        <DataTable
-          filas={filtradas} columnas={columnas} ordenInicial={{ clave: "fecha", desc: true }}
-          acciones={(t) => (
-            <>
-              {t.estado !== "pagado" && (
-                <IconButton etiqueta="Marcar como pagado" onClick={() => { acciones.actualizar<Transaccion>("transacciones", t.id, { estado: "pagado" }, t.concepto, `Se cobró «${t.concepto}».`); toast("Marcado como pagado."); }}>
-                  <Check size={15} />
-                </IconButton>
-              )}
-              <IconButton etiqueta="Editar" onClick={() => setForm({ ...t })}><Pencil size={15} /></IconButton>
-              <IconButton etiqueta="Eliminar" onClick={() => setBorrar(t)}><Trash2 size={15} /></IconButton>
-            </>
+      {/* ---------------- Cobros ---------------- */}
+      {vista === "cobros" && (
+        <div className="stack-4">
+          <div className="grid-stats">
+            <StatCard hero etiqueta="Por cobrar" valor={M(porCobrarTotal(e))} contexto="en cuotas pendientes" />
+            <StatCard etiqueta="Vencido" valor={M(vencidas.reduce((a, c) => a + c.saldo, 0))}
+              delta={vencidas.length > 0 ? `${vencidas.length} cuotas` : undefined} direccion="down"
+              contexto="pasado de fecha" />
+            <StatCard etiqueta="Tasa de mora" valor={pct(tasaDeMora(e))} contexto="de las cuotas ya exigibles" />
+            <StatCard etiqueta="El más atrasado" valor={vencidas.length ? `${vencidas[0].diasAtraso} días` : "—"}
+              contexto={vencidas.length ? vencidas[0].contacto : "Nadie atrasado"} />
+          </div>
+
+          {vencidas.length > 0 && (
+            <Ayuda titulo={`Hay ${vencidas.length} cuotas vencidas sin cobrar`} icono={<AlertTriangle size={18} />}>
+              Suman <strong>{M(vencidas.reduce((a, c) => a + c.saldo, 0))}</strong>. La más vieja lleva{" "}
+              <strong>{vencidas[0].diasAtraso} días</strong> y es de {vencidas[0].contacto}. Marcá el pago cuando entre
+              y desaparece de esta lista.
+            </Ayuda>
           )}
-          vacio={
-            <Empty
-              icono={<Wallet size={22} />}
-              titulo={e.transacciones.length === 0 ? "Todavía no cargaste movimientos" : "Nada con esos filtros"}
-              texto={e.transacciones.length === 0 ? "Cargá tu primer ingreso o gasto y empiezo a armarte los gráficos y el resultado del mes." : "Probá sacando algún filtro."}
-              accion={
-                e.transacciones.length === 0
-                  ? <Button variante="brand" icono={<Plus size={16} />} onClick={() => setForm(VACIA("ingreso", e.ajustes.categoriasIngreso[0] ?? "", e.ajustes.metodosPago[0] ?? ""))}>Cargar un ingreso</Button>
-                  : <Button variante="secondary" onClick={() => { setTipo("todos"); setEstado("todos"); setMes("todos"); }}>Limpiar filtros</Button>
-              }
-            />
-          }
-        />
-      </Card>
 
+          <Card style={{ padding: 0 }}>
+            <DataTable
+              filas={vencidas.map((v) => ({ ...v, id: v.cuotaId }))}
+              ordenInicial={{ clave: "dias", desc: true }}
+              columnas={[
+                { clave: "contacto", titulo: "Cliente", tipo: "primary", orden: (c) => c.contacto, celda: (c) => c.contacto },
+                { clave: "cuota", titulo: "Cuota", tipo: "secondary", orden: (c) => c.numero, celda: (c) => c.numero === 0 ? "Reserva" : `Cuota ${c.numero}` },
+                { clave: "vence", titulo: "Vencía", tipo: "secondary", orden: (c) => c.vence, celda: (c) => fechaLarga(c.vence) },
+                {
+                  clave: "dias", titulo: "Atraso", orden: (c) => c.diasAtraso,
+                  celda: (c) => (
+                    <Badge variante={c.diasAtraso >= 30 ? "danger" : c.diasAtraso >= 14 ? "warning" : "accent"}>
+                      {c.diasAtraso} días
+                    </Badge>
+                  ),
+                },
+                { clave: "saldo", titulo: "Saldo", tipo: "num", orden: (c) => c.saldo, celda: (c) => M(c.saldo) },
+              ]}
+              acciones={(c) => (
+                <IconButton etiqueta="Marcar como cobrada" onClick={() => {
+                  acciones.actualizar<Cuota>("cuotas", c.cuotaId, { estado: "pagada" }, `Cuota de ${c.contacto}`, `Se cobró la cuota ${c.numero} de ${c.contacto}.`);
+                  toast("Cuota marcada como cobrada.");
+                }}><Check size={15} /></IconButton>
+              )}
+              vacio={<Empty icono={<Check size={22} />} titulo="Nadie atrasado" texto="Todas las cuotas exigibles están cobradas. Si aparece una vencida, la vas a ver acá con los días de atraso." />}
+            />
+          </Card>
+        </div>
+      )}
+
+      {/* ---------------- Gastos ---------------- */}
+      {vista === "gastos" && (
+        <Card style={{ padding: 0, overflow: "hidden" }}>
+          <div style={{ padding: "var(--space-4)" }}>
+            <div className="toolbar" style={{ marginBottom: 0 }}>
+              <span className="t-strong">{gastosDelMesLista(e, mes).length} gastos en {mes.etiqueta}</span>
+              <span className="spacer t-num t-muted">
+                {M(gastosDelMesLista(e, mes).reduce((a, g) => a + g.monto, 0))}
+              </span>
+            </div>
+          </div>
+          <DataTable
+            filas={gastosDelMesLista(e, mes)}
+            ordenInicial={{ clave: "fecha", desc: true }}
+            columnas={[
+              { clave: "concepto", titulo: "Concepto", tipo: "primary", orden: (g) => g.concepto, celda: (g) => <span className="truncate" style={{ display: "block", maxWidth: 300 }}>{g.concepto}</span> },
+              { clave: "categoria", titulo: "Categoría", tipo: "secondary", orden: (g) => g.categoria, celda: (g) => g.categoria },
+              { clave: "grupo", titulo: "Bloque", orden: (g) => g.grupo, celda: (g) => <Badge variante={g.grupo === "directo" ? "warning" : g.grupo === "dueno" ? "brand" : "neutral"}>{g.grupo === "dueno" ? "Dueño" : g.grupo === "directo" ? "Directo" : "Operativo"}</Badge> },
+              { clave: "fecha", titulo: "Fecha", tipo: "secondary", orden: (g) => g.fecha, celda: (g) => fechaLarga(g.fecha) },
+              { clave: "monto", titulo: "Monto", tipo: "num", orden: (g) => g.monto, celda: (g) => M(g.monto) },
+            ]}
+            acciones={(g) => (
+              <>
+                <IconButton etiqueta="Editar" onClick={() => setForm({ ...g })}><Pencil size={15} /></IconButton>
+                <IconButton etiqueta="Eliminar" onClick={() => setBorrar(g)}><Trash2 size={15} /></IconButton>
+              </>
+            )}
+            vacio={
+              <Empty icono={<Wallet size={22} />} titulo={`Sin gastos en ${mes.etiqueta}`}
+                texto="Cargá lo que gastaste y el estado de resultados se rehace solo."
+                accion={<Button variante="brand" icono={<Plus size={16} />} onClick={() => setForm(VACIO())}>Cargar un gasto</Button>} />
+            }
+          />
+        </Card>
+      )}
+
+      {/* ---------------- Comisiones ---------------- */}
+      {vista === "comisiones" && (
+        <div className="stack-4">
+          <div className="grid-3">
+            <StatCard hero etiqueta="Closers" valor={M(totComi.closers)} contexto={`${comisiones.filter((c) => c.comisionCloser > 0).length} ventas con comisión`} />
+            <StatCard etiqueta="Director" valor={M(totComi.director)} contexto="5% del neto de procesador" />
+            <StatCard etiqueta="Sin comisión" valor={num(comisiones.filter((c) => c.sinComision).length)} contexto="ventas cerradas por Yari" />
+          </div>
+
+          <Ayuda titulo="Cómo se calcula" icono={<Info size={18} />}>
+            El closer cobra sobre el <strong>cash collected neto de procesador</strong>, no sobre el profit:
+            si entraron US$ 1.000 por Stripe, la base es 1.000 − 2,9% y sobre eso va su porcentaje.
+            El director cobra 5% con la misma base. Si la venta figura a nombre de <strong>Yari</strong>,
+            no comisiona nadie.
+          </Ayuda>
+
+          <Card style={{ padding: 0 }}>
+            <DataTable
+              filas={comisiones.map((c) => ({ ...c, id: c.ventaId }))}
+              ordenInicial={{ clave: "cobrado", desc: true }}
+              columnas={[
+                {
+                  clave: "closer", titulo: "Venta", tipo: "primary", orden: (c) => c.closerNombre,
+                  celda: (c) => {
+                    const v = e.ventas.find((x) => x.id === c.ventaId);
+                    return <span>{v?.contactoNombre ?? "—"} <span className="t-subtle">· {c.closerNombre}</span></span>;
+                  },
+                },
+                { clave: "cobrado", titulo: "Cobrado", tipo: "num", orden: (c) => c.cobradoEnMes, celda: (c) => M(c.cobradoEnMes) },
+                { clave: "neto", titulo: "Neto", tipo: "num", orden: (c) => c.netoProcesador, celda: (c) => M(c.netoProcesador) },
+                { clave: "comiCloser", titulo: "Closer", tipo: "num", orden: (c) => c.comisionCloser, celda: (c) => c.sinComision ? <span className="t-subtle">Sin comisión</span> : M(c.comisionCloser, 2) },
+                { clave: "comiDir", titulo: "Director", tipo: "num", orden: (c) => c.comisionDirector, celda: (c) => c.sinComision ? "—" : M(c.comisionDirector, 2) },
+              ]}
+              vacio={<Empty icono={<Wallet size={22} />} titulo={`Sin cobros en ${mes.etiqueta}`} texto="Cuando entre un pago, la comisión de quien cerró esa venta aparece acá calculada." />}
+            />
+          </Card>
+        </div>
+      )}
+
+      {/* ---------------- Alta / edición de gasto ---------------- */}
       {form && (
         <ModalForm
-          abierto onCerrar={() => setForm(null)} onGuardar={guardar} ancho
-          titulo={form.id ? "Editar movimiento" : form.tipo === "ingreso" ? "Nuevo ingreso" : "Nuevo egreso"}
-          sub="Con el concepto, el monto y la fecha alcanza."
-          guardarTexto={form.id ? "Guardar cambios" : "Registrar"}
+          abierto onCerrar={() => setForm(null)} ancho
+          titulo={form.id ? "Editar gasto" : "Nuevo gasto"}
+          sub="El bloque define en qué parte del estado de resultados cae."
+          guardarTexto={form.id ? "Guardar cambios" : "Registrar gasto"}
           puedeGuardar={form.concepto.trim().length > 0}
+          onGuardar={() => {
+            if (!form.concepto.trim()) { toast("Escribí de qué se trata.", "err"); return; }
+            if (form.id) { acciones.actualizar<Gasto>("gastos", form.id, form, form.concepto); toast("Gasto actualizado."); }
+            else { acciones.crear<Gasto>("gastos", form, form.concepto); toast("Gasto registrado."); }
+            setForm(null);
+          }}
         >
           <div className="form-grid">
-            <Field label="Tipo">
-              <Select
-                value={form.tipo}
-                onChange={(ev) => {
-                  const t = ev.target.value as TipoMovimiento;
-                  const cats = t === "ingreso" ? e.ajustes.categoriasIngreso : e.ajustes.categoriasEgreso;
-                  setForm({ ...form, tipo: t, categoria: cats[0] ?? "" });
-                }}
-                opciones={[{ valor: "ingreso", texto: "Ingreso (entra plata)" }, { valor: "egreso", texto: "Egreso (sale plata)" }]}
-              />
-            </Field>
             <Field label="Categoría">
-              <Select value={form.categoria} onChange={(ev) => setForm({ ...form, categoria: ev.target.value })}
-                opciones={form.tipo === "ingreso" ? e.ajustes.categoriasIngreso : e.ajustes.categoriasEgreso} />
+              <Select value={form.categoria}
+                onChange={(ev) => {
+                  const cat = ev.target.value;
+                  const def = CATEGORIAS_GASTO.find((c) => c.categoria === cat);
+                  setForm({ ...form, categoria: cat, grupo: def?.grupo ?? form.grupo });
+                }}
+                opciones={CATEGORIAS_GASTO.map((c) => c.categoria)} />
             </Field>
-            <Field label="Concepto" span2 ayuda="Qué es, en pocas palabras.">
-              <Input value={form.concepto} onChange={(ev) => setForm({ ...form, concepto: ev.target.value })} placeholder={form.tipo === "ingreso" ? "Cuota Hackear IT Full — Martín Quiroga" : "Meta Ads — inversión de septiembre"} autoFocus />
+            <Field label="Bloque" ayuda="Directo resta antes de la utilidad bruta.">
+              <Select value={form.grupo} onChange={(ev) => setForm({ ...form, grupo: ev.target.value as Gasto["grupo"] })}
+                opciones={[
+                  { valor: "directo", texto: "Costo directo" },
+                  { valor: "operativo", texto: "Gasto operativo" },
+                  { valor: "dueno", texto: "Honorarios del dueño" },
+                ]} />
+            </Field>
+            <Field label="Concepto" span2>
+              <Input value={form.concepto} onChange={(ev) => setForm({ ...form, concepto: ev.target.value })}
+                placeholder="Meta Ads — pauta de septiembre" autoFocus />
             </Field>
             <Field label="Monto"><Input type="number" min={0} step="0.01" value={form.monto} onChange={(ev) => setForm({ ...form, monto: Number(ev.target.value) })} /></Field>
-            <Field label="Moneda"><Select value={form.moneda} onChange={(ev) => setForm({ ...form, moneda: ev.target.value as Moneda })} opciones={["USD", "ARS"]} /></Field>
             <Field label="Fecha"><Input type="date" value={isoDia(form.fecha)} onChange={(ev) => setForm({ ...form, fecha: new Date(ev.target.value + "T12:00:00").toISOString() })} /></Field>
-            <Field label="Estado">
-              <Select value={form.estado} onChange={(ev) => setForm({ ...form, estado: ev.target.value as EstadoMovimiento })}
-                opciones={(Object.keys(ESTADO) as EstadoMovimiento[]).map((k) => ({ valor: k, texto: ESTADO[k].texto }))} />
+            <Field label="Webinar" span2 ayuda="Opcional. Si es un gasto de un webinar puntual, atribuilo y entra en su profit.">
+              <Select value={form.webinarId ?? ""} onChange={(ev) => setForm({ ...form, webinarId: ev.target.value || undefined })}
+                placeholder="Sin atribuir" opciones={e.webinars.map((w) => ({ valor: w.id, texto: w.titulo }))} />
             </Field>
-            <Field label="Método de pago"><Select value={form.metodo} onChange={(ev) => setForm({ ...form, metodo: ev.target.value })} opciones={e.ajustes.metodosPago} /></Field>
-            <Field label="Alumno" ayuda="Opcional. Vincula el pago a su ficha.">
-              <Select value={form.alumnoId ?? ""} onChange={(ev) => setForm({ ...form, alumnoId: ev.target.value || undefined })}
-                placeholder="Sin vincular" opciones={e.alumnos.map((a) => ({ valor: a.id, texto: a.nombre }))} />
-            </Field>
-            <CamposExtra campos={e.campos} entidad="transaccion" valores={form.extra} onChange={(k, v) => setForm({ ...form, extra: { ...form.extra, [k]: v } })} />
+            <Field label="Proveedor"><Input value={form.proveedor ?? ""} onChange={(ev) => setForm({ ...form, proveedor: ev.target.value })} placeholder="Meta" /></Field>
+            <Field label="Notas" span2><Textarea value={form.notas ?? ""} onChange={(ev) => setForm({ ...form, notas: ev.target.value })} rows={2} /></Field>
           </div>
         </ModalForm>
       )}
 
       <Confirmar
         abierto={borrar !== null} onCerrar={() => setBorrar(null)}
-        titulo="¿Eliminar este movimiento?"
-        texto={`Se borra «${borrar?.concepto}» y deja de contar en los totales.`}
-        onConfirmar={() => { if (borrar) { acciones.eliminar("transacciones", borrar.id, borrar.concepto); toast("Movimiento eliminado."); } }}
+        titulo="¿Eliminar este gasto?"
+        texto={`Se borra «${borrar?.concepto}» y el estado de resultados se recalcula.`}
+        onConfirmar={() => { if (borrar) { acciones.eliminar("gastos", borrar.id, borrar.concepto); toast("Gasto eliminado."); } }}
       />
     </div>
   );
 }
 
-function exportar(txs: Transaccion[]) {
-  const cab = ["fecha", "tipo", "categoria", "concepto", "monto", "moneda", "estado", "metodo"];
-  const filas = txs.map((t) => [t.fecha.slice(0, 10), t.tipo, t.categoria, t.concepto, String(t.monto), t.moneda, t.estado, t.metodo]
-    .map((v) => `"${String(v).replace(/"/g, '""')}"`).join(","));
-  const blob = new Blob([[cab.join(","), ...filas].join("\n")], { type: "text/csv;charset=utf-8" });
+/* ---------- Piezas de la tabla del P&L ---------- */
+
+function Linea({ t, cc, rev, fuerte, destacado, M }: {
+  t: string; cc: number; rev: number; fuerte?: boolean; destacado?: boolean; M: (n: number, d?: number) => string;
+}) {
+  const color = destacado ? (cc >= 0 ? "var(--success)" : "var(--danger)") : fuerte ? "var(--ink)" : undefined;
+  return (
+    <tr style={{ cursor: "default", background: fuerte ? "var(--surface-200)" : undefined }}>
+      <td className={fuerte ? "hk-td--primary" : undefined}>{t}</td>
+      <td className="hk-td--num" style={{ color, fontWeight: fuerte ? 700 : undefined }}>{M(cc)}</td>
+      <td className="hk-td--num" style={{ color, fontWeight: fuerte ? 700 : undefined }}>{M(rev)}</td>
+    </tr>
+  );
+}
+
+function Bloque({ t }: { t: string }) {
+  return (
+    <tr style={{ cursor: "default" }}>
+      <td colSpan={3} className="t-label" style={{ paddingTop: 18, paddingBottom: 6, border: 0 }}>{t}</td>
+    </tr>
+  );
+}
+
+function gastosDelMesLista(e: ReturnType<typeof useEstado>, m: { desde: Date; hasta: Date }) {
+  return e.gastos.filter((g) => {
+    const d = new Date(g.fecha).getTime();
+    return d >= m.desde.getTime() && d <= m.hasta.getTime();
+  });
+}
+
+function exportarPyL(e: ReturnType<typeof useEstado>, m: { etiqueta: string }, p: ReturnType<typeof calcularPyL>) {
+  const filas: [string, number, number][] = [
+    ["Ingresos", p.cashCollected, p.revenue],
+    ["Comisiones closers", -p.comisionCloser, -p.comisionCloser],
+    ["Comision director", -p.comisionDirector, -p.comisionDirector],
+    ["Procesadores", -p.feesProcesador, -p.feesProcesador],
+    ["Utilidad bruta", p.brutoCC, p.brutoRev],
+    ["Gastos operativos", -p.gastosOperativos, -p.gastosOperativos],
+    ["Resultado operativo", p.operativoCC, p.operativoRev],
+    ["Honorarios del CEO", -p.honorariosCeo, -p.honorariosCeo],
+    ["Rentabilidad neta", p.netoCC, p.netoRev],
+  ];
+  const csv = [
+    `Estado de resultados,${m.etiqueta}`,
+    "Concepto,Sobre lo cobrado,Sobre lo facturado",
+    ...filas.map(([c, a, b]) => `"${c}",${a.toFixed(2)},${b.toFixed(2)}`),
+  ].join("\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
-  a.download = `apicanta-finanzas-${new Date().toISOString().slice(0, 10)}.csv`;
+  a.download = `apicanta-pyl-${m.etiqueta.replace(" ", "-")}.csv`;
   a.click();
   URL.revokeObjectURL(a.href);
+  void e;
 }

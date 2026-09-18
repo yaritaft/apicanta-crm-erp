@@ -501,7 +501,8 @@ function Datos() {
   const conteos = [
     ["Leads", e.leads.length], ["Alumnos", e.alumnos.length], ["Sesiones", e.sesiones.length],
     ["Webinars", e.webinars.length], ["Campañas", e.campanias.length],
-    ["Movimientos", e.transacciones.length], ["Reportes", e.reportes.length], ["Metas", e.metas.length],
+    ["Ventas", e.ventas.length], ["Pagos", e.pagos.length], ["Gastos", e.gastos.length],
+    ["Reportes", e.reportes.length], ["Metas", e.metas.length],
   ] as const;
 
   return (

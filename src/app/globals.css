@@ -566,3 +566,32 @@ kbd {
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
 }
+
+/* ---------- Login ---------- */
+.login {
+  min-height: 100dvh;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: var(--space-5); padding: var(--space-6) var(--space-4);
+  background:
+    radial-gradient(900px 500px at 50% -10%, var(--brand-soft), transparent 70%),
+    var(--surface-000);
+}
+.login__caja {
+  width: 100%; max-width: 420px; text-align: center;
+  background: var(--surface-100); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); box-shadow: var(--shadow-lg);
+  padding: var(--space-6) var(--space-5);
+  animation: pop 260ms cubic-bezier(.2,.8,.3,1);
+}
+.login__marca {
+  font-family: var(--font-display); font-size: 22px; font-weight: 600;
+  letter-spacing: -.005em; color: var(--ink); margin-bottom: var(--space-5);
+}
+.login__marca em { font-style: normal; color: var(--accent-text); }
+.login__ico {
+  display: grid; place-items: center; width: 52px; height: 52px;
+  border-radius: var(--radius-full); background: var(--brand-soft); color: var(--brand);
+  margin: 0 auto var(--space-4);
+}
+.login__ico--ok { background: var(--success-soft); color: var(--success); }
+.login__pie { max-width: 420px; text-align: center; }

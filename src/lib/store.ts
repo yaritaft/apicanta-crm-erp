@@ -3,7 +3,7 @@
 import { useCallback, useSyncExternalStore } from "react";
 import type {
   AccionActividad, Actividad, Ajustes, Alumno, Campania, CampoPersonalizado,
-  EntidadNombre, EstadoApp, Etapa, ID, Lead, Meta, Reporte, Sesion, Transaccion, Webinar,
+  EntidadNombre, EstadoApp, Etapa, ID, Lead, Meta, Reporte, Sesion, Webinar,
 } from "./types";
 import { construirSemilla, estadoVacio } from "./seed";
 import { hayNube, nube, TABLAS } from "./supabase";
@@ -163,6 +163,12 @@ const OPCIONES_UPSERT = { defaultToNull: false } as const;
 
 let yaCargo = false;
 
+/* Al entrar o salir hay que volver a traer: los datos dependen de quien sos. */
+export function reiniciarCarga() {
+  yaCargo = false;
+  marcar(hayNube ? "cargando" : "local");
+}
+
 export async function cargarDeLaNube(): Promise<void> {
   if (!nube || yaCargo) return;
   const db = nube;
@@ -181,15 +187,37 @@ export async function cargarDeLaNube(): Promise<void> {
       TABLAS.map((t, i) => [t, (resto[i].data ?? []) as unknown[]]),
     ) as Record<string, unknown[]>;
 
-    /* Si no hay etapas, la nube nunca se sembro (o quedo a medias): subimos
-       lo que haya en este navegador en vez de pisarlo con vacio. */
+    /* Antes de decidir nada, confirmamos que podemos leer de verdad: si RLS
+       nos esconde todo por falta de permisos, las listas tambien vienen
+       vacias y no hay que confundir eso con una base sin sembrar. */
+    const permiso = await db.from("etapas").select("id", { count: "exact", head: true });
+    if (permiso.error) {
+      marcar("error", "Tu usuario no tiene acceso a estos datos. Pedí que te agreguen al equipo.");
+      return;
+    }
+
+    /* Base nueva: se siembra entera con lo que haya en este navegador. */
     if (porTabla.etapas.length === 0) {
       await sembrarNube(snapshot());
       marcar("listo");
       return;
     }
 
-    const base = construirSemilla();
+    /* Base ya cargada pero con tablas nuevas vacias (una version anterior
+       del modelo): se completan solo esas. */
+    const semilla = construirSemilla();
+    const vacias = new Set(
+      Object.entries(porTabla).filter(([, filas]) => filas.length === 0).map(([t]) => t),
+    );
+    if (vacias.size > 0) {
+      await completarNube(semilla, vacias);
+      for (const t of vacias) {
+        const r = await db.from(t).select("*");
+        if (!r.error) porTabla[t] = (r.data ?? []) as unknown[];
+      }
+    }
+
+    const base = semilla;
     const { id: _id, ...ajustes } = ajustesRes.data as Ajustes & { id: number };
     void _id;
 
@@ -198,12 +226,19 @@ export async function cargarDeLaNube(): Promise<void> {
       ajustes: { ...base.ajustes, ...ajustes },
       etapas: porTabla.etapas as Etapa[],
       webinars: porTabla.webinars as Webinar[],
+      productos: porTabla.productos as EstadoApp["productos"],
+      procesadores: porTabla.procesadores as EstadoApp["procesadores"],
+      embudos: porTabla.embudos as EstadoApp["embudos"],
+      equipo: porTabla.equipo as EstadoApp["equipo"],
+      ventas: porTabla.ventas as EstadoApp["ventas"],
+      cuotas: porTabla.cuotas as EstadoApp["cuotas"],
+      pagos: porTabla.pagos as EstadoApp["pagos"],
+      gastos: porTabla.gastos as EstadoApp["gastos"],
       leads: porTabla.leads as Lead[],
       alumnos: porTabla.alumnos as Alumno[],
       sesiones: porTabla.sesiones as Sesion[],
       reportes: porTabla.reportes as Reporte[],
       campanias: porTabla.campanias as Campania[],
-      transacciones: porTabla.transacciones as Transaccion[],
       metas: porTabla.metas as Meta[],
       campos: porTabla.campos as CampoPersonalizado[],
       actividad: (porTabla.actividad as Actividad[])
@@ -216,19 +251,37 @@ export async function cargarDeLaNube(): Promise<void> {
   }
 }
 
+/* Las tablas con clave foranea van despues de sus padres. */
+function ordenDeSiembra(e: EstadoApp): [string, unknown[]][] {
+  return [
+    ["productos", e.productos], ["procesadores", e.procesadores],
+    ["embudos", e.embudos], ["equipo", e.equipo],
+    ["etapas", e.etapas], ["webinars", e.webinars], ["leads", e.leads],
+    ["alumnos", e.alumnos], ["sesiones", e.sesiones], ["reportes", e.reportes],
+    ["campanias", e.campanias], ["metas", e.metas], ["campos", e.campos],
+    ["ventas", e.ventas], ["cuotas", e.cuotas], ["pagos", e.pagos], ["gastos", e.gastos],
+    ["actividad", e.actividad],
+  ];
+}
+
 async function sembrarNube(e: EstadoApp) {
   if (!nube) return;
   const ra = await nube.from("ajustes").upsert(filaAjustes(e.ajustes));
   if (ra.error) throw new Error(`ajustes: ${ra.error.message}`);
-  /* Orden importante: las tablas con clave foranea van despues de sus padres. */
-  const orden: [string, unknown[]][] = [
-    ["etapas", e.etapas], ["webinars", e.webinars], ["leads", e.leads],
-    ["alumnos", e.alumnos], ["sesiones", e.sesiones], ["reportes", e.reportes],
-    ["campanias", e.campanias], ["transacciones", e.transacciones],
-    ["metas", e.metas], ["campos", e.campos], ["actividad", e.actividad],
-  ];
-  for (const [tabla, filas] of orden) {
+  for (const [tabla, filas] of ordenDeSiembra(e)) {
     if (filas.length === 0) continue;
+    const r = await nube.from(tabla).upsert(normalizar(filas) as never[], OPCIONES_UPSERT);
+    if (r.error) throw new Error(`${tabla}: ${r.error.message}`);
+  }
+}
+
+/* Siembra sólo lo que falta. Sirve cuando la base ya tiene datos de una
+   versión anterior y aparecen tablas nuevas: se llenan esas y nada más,
+   sin tocar lo que ya está cargado. */
+async function completarNube(e: EstadoApp, vacias: Set<string>) {
+  if (!nube) return;
+  for (const [tabla, filas] of ordenDeSiembra(e)) {
+    if (!vacias.has(tabla) || filas.length === 0) continue;
     const r = await nube.from(tabla).upsert(normalizar(filas) as never[], OPCIONES_UPSERT);
     if (r.error) throw new Error(`${tabla}: ${r.error.message}`);
   }
@@ -238,8 +291,9 @@ async function vaciarNube() {
   if (!nube) return;
   /* Al reves del alta: primero los hijos. */
   const orden = [
-    "actividad", "campos", "metas", "transacciones", "campanias",
-    "reportes", "sesiones", "alumnos", "leads", "webinars", "etapas",
+    "actividad", "campos", "metas", "pagos", "cuotas", "ventas", "gastos",
+    "campanias", "reportes", "sesiones", "alumnos", "leads", "webinars",
+    "etapas", "equipo", "embudos", "procesadores", "productos",
   ];
   for (const tabla of orden) {
     const r = await nube.from(tabla).delete().neq("id", "__nunca__");
@@ -268,12 +322,16 @@ function registrar(
 
 type Coleccion =
   | "leads" | "sesiones" | "webinars" | "alumnos" | "reportes"
-  | "campanias" | "transacciones" | "metas" | "campos" | "etapas";
+  | "campanias" | "metas" | "campos" | "etapas"
+  | "productos" | "procesadores" | "embudos" | "equipo"
+  | "ventas" | "cuotas" | "pagos" | "gastos";
 
 const ENTIDAD_DE: Record<string, Actividad["entidad"]> = {
   leads: "lead", sesiones: "sesion", webinars: "webinar", alumnos: "alumno",
-  campanias: "campania", transacciones: "transaccion", metas: "meta",
+  campanias: "campania", metas: "meta",
+  ventas: "transaccion", cuotas: "transaccion", pagos: "transaccion", gastos: "transaccion",
   reportes: "config", campos: "config", etapas: "config",
+  productos: "config", procesadores: "config", embudos: "config", equipo: "config",
 };
 
 /* ---------- API publica (identica a la de antes) ---------- */
@@ -430,5 +488,5 @@ export function useTema(): ["dark" | "light", (t: "dark" | "light") => void] {
 export { hayNube };
 export type {
   EstadoApp, Lead, Alumno, Sesion, Webinar, Campania,
-  Transaccion, Meta, Etapa, Reporte, CampoPersonalizado, EntidadNombre,
+  Meta, Etapa, Reporte, CampoPersonalizado, EntidadNombre,
 };

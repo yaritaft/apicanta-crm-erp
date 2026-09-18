@@ -3,9 +3,10 @@
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { AlertCircle, Check, Cloud, HardDrive, Menu, Moon, RefreshCw, Search, Sun, X } from "lucide-react";
+import { AlertCircle, Check, Cloud, HardDrive, LogOut, Menu, Moon, RefreshCw, Search, Sun, X } from "lucide-react";
 import { NAV } from "./nav";
-import { cargarDeLaNube, hayNube, useEstado, useSync, useTema } from "@/lib/store";
+import { cargarDeLaNube, hayNube, reiniciarCarga, useEstado, useSync, useTema } from "@/lib/store";
+import { useSalir, useSesion } from "@/lib/auth";
 import { Avatar, Button, IconButton } from "@/components/ui/ui";
 import { Paleta } from "./Paleta";
 import { Tour } from "./Tour";
@@ -15,10 +16,16 @@ export function Shell({ children }: { children: React.ReactNode }) {
   const estado = useEstado();
   const [tema, setTema] = useTema();
   const sync = useSync();
+  const sesion = useSesion();
+  const salir = useSalir();
   const [menu, setMenu] = useState(false);
   const [paleta, setPaleta] = useState(false);
 
-  useEffect(() => { void cargarDeLaNube(); }, []);
+  useEffect(() => {
+    /* Si cambia el usuario, los datos se vuelven a pedir con su sesion. */
+    reiniciarCarga();
+    void cargarDeLaNube();
+  }, [sesion.email]);
 
   useEffect(() => { setMenu(false); }, [ruta]);
 
@@ -95,8 +102,13 @@ export function Shell({ children }: { children: React.ReactNode }) {
             <Avatar nombre={estado.ajustes.responsable || "Apicanta"} />
             <div style={{ minWidth: 0, flex: 1 }}>
               <div className="t-strong truncate" style={{ fontSize: 14 }}>{estado.ajustes.responsable || "Apicanta"}</div>
-              <div className="t-sm t-subtle truncate">{estado.ajustes.negocio}</div>
+              <div className="t-sm t-subtle truncate">{sesion.email ?? estado.ajustes.negocio}</div>
             </div>
+            {!sesion.sinAuth && (
+              <IconButton etiqueta="Cerrar sesión" onClick={() => { void salir(); }}>
+                <LogOut size={17} />
+              </IconButton>
+            )}
             <IconButton
               etiqueta={tema === "dark" ? "Cambiar a modo claro" : "Cambiar a modo oscuro"}
               onClick={() => setTema(tema === "dark" ? "light" : "dark")}

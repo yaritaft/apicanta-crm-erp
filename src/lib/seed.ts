@@ -1,6 +1,7 @@
 import type {
-  Actividad, Ajustes, Alumno, Campania, CampoPersonalizado, EstadoApp, Etapa,
-  Lead, Meta, Reporte, Sesion, Transaccion, Webinar,
+  Actividad, Ajustes, Alumno, Campania, CampoPersonalizado, Cuota, Embudo, EstadoApp,
+  Etapa, Gasto, Lead, Meta, MiembroEquipo, Pago, Procesador, Producto, Reporte,
+  Sesion, Venta, Webinar,
 } from "./types";
 import { inicioSemana, mesClave } from "./format";
 
@@ -16,6 +17,77 @@ const r = rng(20260918);
 const pick = <T,>(xs: readonly T[]): T => xs[Math.floor(r() * xs.length)];
 const entre = (a: number, b: number) => Math.round(a + r() * (b - a));
 const id = (p: string, i: number) => `${p}_${String(i).padStart(4, "0")}`;
+
+
+/* ---------- Catálogos: los valores reales del negocio ---------- */
+
+export const PRODUCTOS: Producto[] = [
+  { id: "prod_mentoria",   nombre: "Mentoría (Hackear IT)", precioLista: 3000, tipo: "principal", activo: true, orden: 0 },
+  { id: "prod_downsell",   nombre: "Downsell",               precioLista: 500, tipo: "downsell",  activo: true, orden: 1 },
+  { id: "prod_resell",     nombre: "Resell Mentoría",       precioLista: 2500, tipo: "principal", activo: true, orden: 2 },
+  { id: "prod_upsell",     nombre: "Upsell",                 precioLista: 800, tipo: "upsell",    activo: true, orden: 3 },
+  { id: "prod_biz",        nombre: "Hackear Biz",           precioLista: 4500, tipo: "principal", activo: true, orden: 4 },
+  { id: "prod_mastermind", nombre: "Mastermind",               precioLista: 0, tipo: "evento",    activo: true, orden: 5 },
+];
+
+export const PROCESADORES: Procesador[] = [
+  { id: "proc_stripe",        nombre: "Stripe",         feeRate: 0.029, activo: true, automatico: true },
+  { id: "proc_paypal",        nombre: "PayPal",         feeRate: 0.049, activo: true, automatico: true },
+  { id: "proc_hotmart",       nombre: "Hotmart",        feeRate: 0.099, activo: true, automatico: true },
+  { id: "proc_mercadopago",   nombre: "Mercado Pago",   feeRate: 0.062, activo: true, automatico: true },
+  { id: "proc_financiera",    nombre: "Financiera",     feeRate: 0,     activo: true, automatico: false },
+  { id: "proc_trust",         nombre: "Trust (cripto)", feeRate: 0,     activo: true, automatico: false },
+  { id: "proc_transferencia", nombre: "Transferencia",  feeRate: 0,     activo: true, automatico: false },
+];
+
+export const EMBUDOS: Embudo[] = [
+  { id: "emb_webinar",     nombre: "Webinar",             activo: true, orden: 0 },
+  { id: "emb_evergreen",   nombre: "Evergreen / VSL",     activo: true, orden: 1 },
+  { id: "emb_setter",      nombre: "Setter IA",           activo: true, orden: 2 },
+  { id: "emb_evento",      nombre: "Evento",              activo: true, orden: 3 },
+  { id: "emb_lanzamiento", nombre: "Lanzamiento interno", activo: true, orden: 4 },
+  { id: "emb_youtube",     nombre: "YouTube orgánico",    activo: true, orden: 5 },
+  { id: "emb_directo",     nombre: "Directo / Conocido",  activo: true, orden: 6 },
+];
+
+export const EQUIPO: MiembroEquipo[] = [
+  { id: "eq_yari",     nombre: "Yari Taft",      rol: "ceo",      comisionRate: 0,    activo: true, sinComision: true,
+    notas: "Cuando figura como closer no comisiona nadie: ni closer, ni director, ni setter." },
+  { id: "eq_director", nombre: "Director comercial", rol: "director", comisionRate: 0.05, activo: true, sinComision: false,
+    notas: "5% del cash collected neto de procesador." },
+  { id: "eq_closer_1", nombre: "Closer 1",       rol: "closer",   comisionRate: 0.10, activo: true, sinComision: false },
+  { id: "eq_closer_2", nombre: "Closer 2",       rol: "closer",   comisionRate: 0.10, activo: true, sinComision: false },
+  { id: "eq_closer_3", nombre: "Closer 3",       rol: "closer",   comisionRate: 0.15, activo: true, sinComision: false },
+  { id: "eq_growth",   nombre: "Agustín Zika",   rol: "growth",   comisionRate: 0.10, activo: true, sinComision: false,
+    notas: "10% del profit. No comisiona las ventas marcadas como excluidas de marketing." },
+  { id: "eq_socio",    nombre: "Socio",          rol: "socio",    comisionRate: 0.10, activo: true, sinComision: false,
+    notas: "10% del profit. Comisiona distinto según producto: falta definir." },
+];
+
+/* Las categorías tal cual salen del P&L que usa Yari */
+export const CATEGORIAS_GASTO: { categoria: string; grupo: Gasto["grupo"] }[] = [
+  { categoria: "Comisiones Financieras", grupo: "directo" },
+  { categoria: "Facturas Stripe",        grupo: "directo" },
+  { categoria: "Referidores",            grupo: "directo" },
+  { categoria: "Equipo / Salarios",      grupo: "operativo" },
+  { categoria: "Contador",               grupo: "operativo" },
+  { categoria: "Software",               grupo: "operativo" },
+  { categoria: "Meta Ads",               grupo: "operativo" },
+  { categoria: "Google Ads",             grupo: "operativo" },
+  { categoria: "TikTok Ads",             grupo: "operativo" },
+  { categoria: "Consultoría",            grupo: "operativo" },
+  { categoria: "Agencia de Marketing",   grupo: "operativo" },
+  { categoria: "Reembolsos",             grupo: "operativo" },
+  { categoria: "Edición de contenido",   grupo: "operativo" },
+  { categoria: "Filmmaker",              grupo: "operativo" },
+  { categoria: "Mantenimiento LLC",      grupo: "operativo" },
+  { categoria: "Gastos de evento",       grupo: "operativo" },
+  { categoria: "Viáticos equipo",        grupo: "operativo" },
+  { categoria: "Formaciones",            grupo: "operativo" },
+  { categoria: "Producción audiovisual", grupo: "operativo" },
+  { categoria: "Comisiones bancarias",   grupo: "operativo" },
+  { categoria: "Honorarios del CEO",     grupo: "dueno" },
+];
 
 const HOY = new Date();
 const dias = (n: number) => {
@@ -100,6 +172,11 @@ export function construirSemilla(): EstadoApp {
     const offset = [-52, -38, -24, -10, 9][i];
     const registrados = entre(220, 900);
     const futuro = offset > 0;
+    const asistentes = futuro ? 0 : Math.round(registrados * (0.34 + r() * 0.2));
+    const grupoWpp = futuro ? 0 : Math.round(registrados * (0.70 + r() * 0.08));
+    const llamadasVivo = futuro ? 0 : Math.round(grupoWpp * (0.04 + r() * 0.04));
+    const llamadasPosterior = futuro ? 0 : Math.round(llamadasVivo * (0.2 + r() * 0.4));
+    const totalLlamadas = llamadasVivo + llamadasPosterior;
     return {
       id: id("web", i + 1),
       titulo,
@@ -107,8 +184,18 @@ export function construirSemilla(): EstadoApp {
       duracionMin: 75,
       estado: futuro ? "programado" : "finalizado",
       registrados,
-      asistentes: futuro ? 0 : Math.round(registrados * (0.34 + r() * 0.2)),
-      inversion: entre(400, 1800),
+      asistentes,
+      inversion: entre(2800, 8500),
+      formularios: registrados,
+      grupoWpp,
+      llamadasVivo,
+      llamadasPosterior,
+      llamadasCanceladas: Math.round(totalLlamadas * r() * 0.1),
+      llamadasInasistidas: Math.round(totalLlamadas * (0.1 + r() * 0.15)),
+      llamadasNoCalificadas: Math.round(totalLlamadas * r() * 0.12),
+      llamadasCalificadas: Math.round(totalLlamadas * (0.5 + r() * 0.25)),
+      inversionDmAds: futuro ? 0 : entre(120, 320),
+      costoWhatsappApi: futuro ? 0 : entre(80, 260),
       enlaceRegistro: `https://hackearit.com/webinar/${i + 1}`,
       enlaceReplay: futuro ? undefined : `https://hackearit.com/replay/${i + 1}`,
       notas: "",
@@ -279,73 +366,158 @@ export function construirSemilla(): EstadoApp {
     };
   });
 
-  /* ---------- Finanzas ---------- */
-  const transacciones: Transaccion[] = [];
-  let t = 0;
-  /* Ingresos: cuotas de alumnos, últimos 5 meses */
-  for (let m = 4; m >= 0; m--) {
-    alumnos.forEach((a) => {
-      const f = new Date(HOY.getFullYear(), HOY.getMonth() - m, Math.min(entre(2, 26), 28));
-      if (f < new Date(a.inicio)) return;
-      if (a.estado === "baja" && m === 0) return;
-      transacciones.push({
-        id: id("tx", ++t),
-        tipo: "ingreso",
-        categoria: "Cuotas",
-        concepto: `Cuota ${a.plan} — ${a.nombre}`,
-        monto: a.cuotaMensual,
-        moneda: "USD",
-        fecha: iso(f),
-        estado: m === 0 && r() > 0.72 ? "pendiente" : "pagado",
-        metodo: pick(AJUSTES.metodosPago),
-        alumnoId: a.id,
-        recurrente: true,
-        creadoEn: iso(f),
-        extra: {},
-      });
-    });
-    /* Pagos únicos y mentorías sueltas */
-    const puntuales = entre(2, 5);
-    for (let k = 0; k < puntuales; k++) {
-      const f = new Date(HOY.getFullYear(), HOY.getMonth() - m, Math.min(entre(2, 26), 28));
-      transacciones.push({
-        id: id("tx", ++t),
-        tipo: "ingreso",
-        categoria: pick(["Pago único", "Mentoría 1:1", "Workshop"]),
-        concepto: `${pick(["Pago único", "Mentoría 1:1", "Workshop"])} — ${pick(NOMBRES)}`,
-        monto: pick([600, 900, 1200, 2400]),
-        moneda: "USD",
-        fecha: iso(f),
-        estado: m === 0 && r() > 0.8 ? "pendiente" : "pagado",
-        metodo: pick(AJUSTES.metodosPago),
-        recurrente: false,
-        creadoEn: iso(f),
-        extra: {},
+  /* ---------- Ventas, cuotas, pagos y gastos ---------- */
+  const ventas: Venta[] = [];
+  const cuotas: Cuota[] = [];
+  const pagos: Pago[] = [];
+  const gastos: Gasto[] = [];
+  let nv = 0, nc = 0, np = 0, ng = 0;
+
+  const closers = EQUIPO.filter((x) => x.rol === "closer");
+  const webinarsPasados = webinars.filter((w) => w.estado === "finalizado");
+
+  /* Una venta por alumno, más algunas sueltas por mes */
+  function crearVenta(nombre: string, cuando: Date, productoId: string, precio: number, opciones: {
+    webinarId?: string; embudoId?: string; contactoId?: string; porYari?: boolean;
+  } = {}) {
+    const porYari = opciones.porYari ?? r() > 0.86;
+    const venta: Venta = {
+      id: id("ven", ++nv),
+      contactoId: opciones.contactoId,
+      contactoNombre: nombre,
+      productoId,
+      webinarId: opciones.webinarId,
+      embudoId: opciones.embudoId ?? "emb_webinar",
+      precioAcordado: precio,
+      moneda: "USD",
+      closerId: porYari ? "eq_yari" : pick(closers).id,
+      directorId: porYari ? undefined : "eq_director",
+      excluidoMarketing: porYari,
+      estado: r() > 0.96 ? "cancelada" : "activa",
+      fecha: iso(cuando),
+      notas: "",
+      creadoEn: iso(cuando),
+      extra: {},
+    };
+    ventas.push(venta);
+
+    /* Plan de cuotas: 1 a 4 pagos, a veces con reserva */
+    const plan = pick([1, 1, 2, 3, 3, 4]);
+    const conReserva = plan > 1 && r() > 0.5;
+    const montoReserva = conReserva ? pick([200, 300, 500]) : 0;
+    const resto = precio - montoReserva;
+    const porCuota = Math.round(resto / plan);
+
+    if (conReserva) {
+      cuotas.push({
+        id: id("cuo", ++nc), ventaId: venta.id, numero: 0, monto: montoReserva,
+        vence: iso(cuando), estado: "pagada", esReserva: true,
       });
     }
-    /* Egresos */
-    const egresos: [string, number, string][] = [
-      ["Publicidad", entre(3800, 6200), "Meta Ads — inversión del mes"],
-      ["Herramientas", entre(240, 420), "Stack (Calendly, Zoom, Notion, Vercel)"],
-      ["Equipo", entre(2600, 3800), "Equipo Apicanta"],
-      ["Producción", entre(600, 1200), "Edición y contenido"],
-      ["Impuestos", entre(900, 1600), "Impuestos y comisiones"],
+    for (let k = 1; k <= plan; k++) {
+      const vence = new Date(cuando);
+      vence.setMonth(vence.getMonth() + (k - 1));
+      const pasada = vence <= HOY;
+      /* Algunas cuotas vencidas quedan impagas: eso alimenta la mora */
+      const pagada = pasada && r() > 0.16;
+      cuotas.push({
+        id: id("cuo", ++nc), ventaId: venta.id, numero: k,
+        monto: k === plan ? resto - porCuota * (plan - 1) : porCuota,
+        vence: iso(vence),
+        estado: venta.estado === "cancelada" && !pasada ? "cancelada" : pagada ? "pagada" : "pendiente",
+        esReserva: false,
+      });
+    }
+
+    /* Pagos de las cuotas pagadas; a veces una cuota se paga con dos métodos */
+    for (const c of cuotas.filter((x) => x.ventaId === venta.id && x.estado === "pagada")) {
+      const partido = r() > 0.85;
+      const trozos = partido ? [Math.round(c.monto * 0.6), c.monto - Math.round(c.monto * 0.6)] : [c.monto];
+      for (const monto of trozos) {
+        const proc = pick(PROCESADORES.filter((x) => x.activo));
+        const fecha = new Date(c.vence ?? venta.fecha);
+        fecha.setDate(fecha.getDate() + entre(0, 6));
+        pagos.push({
+          id: id("pag", ++np), cuotaId: c.id, procesadorId: proc.id,
+          monto, moneda: "USD", feeRate: proc.feeRate,
+          feeMonto: Math.round(monto * proc.feeRate * 100) / 100,
+          fecha: iso(fecha > HOY ? HOY : fecha),
+          referencia: `${proc.nombre.slice(0, 3).toUpperCase()}-${entre(10000, 99999)}`,
+          creadoEn: iso(fecha > HOY ? HOY : fecha),
+        });
+      }
+    }
+  }
+
+  alumnos.forEach((a) => {
+    const lead = leads.find((l) => l.id === a.leadId);
+    crearVenta(a.nombre, new Date(a.inicio), "prod_mentoria", pick([2500, 3000, 3000]), {
+      contactoId: a.leadId,
+      webinarId: lead?.webinarId ?? pick(webinarsPasados).id,
+      embudoId: lead?.fuente === "Webinar" ? "emb_webinar" : pick(EMBUDOS).id,
+    });
+  });
+
+  /* El volumen real del negocio: entre 30 y 45 ventas por mes, con la mezcla
+     de productos que sale del P&L (mayoría mentoría, algo de downsell y resell). */
+  for (let m = 4; m >= 0; m--) {
+    const diaTope = m === 0 ? Math.max(HOY.getDate() - 1, 1) : 28;
+    /* El mes en curso va a mitad de camino: no inventamos ventas del futuro. */
+    const cuantas = m === 0 ? Math.round(entre(30, 44) * (HOY.getDate() / 30)) : entre(30, 44);
+    for (let k = 0; k < cuantas; k++) {
+      const f = new Date(HOY.getFullYear(), HOY.getMonth() - m, Math.min(entre(1, diaTope), 28));
+      const prod = pick([
+        "prod_mentoria", "prod_mentoria", "prod_mentoria", "prod_mentoria",
+        "prod_mentoria", "prod_mentoria", "prod_mentoria",
+        "prod_downsell", "prod_resell", "prod_upsell", "prod_biz",
+      ]);
+      const base = PRODUCTOS.find((x) => x.id === prod)?.precioLista ?? 500;
+      /* Los closers cierran entre 2.500 y 3.000 la mentoría */
+      const precio = prod === "prod_mentoria" ? pick([2500, 2500, 3000, 3000]) : base;
+      crearVenta(pick(NOMBRES), f, prod, precio, {
+        embudoId: pick(["emb_webinar", "emb_webinar", "emb_webinar", "emb_evergreen", "emb_evento", "emb_lanzamiento", "emb_setter"]),
+        webinarId: r() > 0.35 ? pick(webinarsPasados).id : undefined,
+      });
+    }
+  }
+
+  /* Gastos: los de cada webinar y los del mes */
+  webinarsPasados.forEach((w) => {
+    gastos.push({
+      id: id("gas", ++ng), categoria: "Meta Ads", grupo: "operativo",
+      concepto: `Pauta de captación — ${w.titulo}`, monto: w.inversion, moneda: "USD",
+      fecha: w.fecha, webinarId: w.id, recurrente: false, proveedor: "Meta",
+      creadoEn: w.fecha, extra: {},
+    });
+    gastos.push({
+      id: id("gas", ++ng), categoria: "Meta Ads", grupo: "operativo",
+      concepto: `DM Ads — ${w.titulo}`, monto: w.inversionDmAds, moneda: "USD",
+      fecha: w.fecha, webinarId: w.id, recurrente: false, proveedor: "Meta",
+      creadoEn: w.fecha, extra: {},
+    });
+    gastos.push({
+      id: id("gas", ++ng), categoria: "Software", grupo: "operativo",
+      concepto: `WhatsApp API — ${w.titulo}`, monto: w.costoWhatsappApi, moneda: "USD",
+      fecha: w.fecha, webinarId: w.id, recurrente: false, proveedor: "Meta",
+      creadoEn: w.fecha, extra: {},
+    });
+  });
+
+  for (let m = 4; m >= 0; m--) {
+    const fijos: [string, Gasto["grupo"], number, string][] = [
+      ["Equipo / Salarios", "operativo", entre(6500, 8200), "Equipo (sin comisiones)"],
+      ["Software",          "operativo", entre(780, 1150),  "Stack (Calendly, Zoom, Notion, Vercel, Supabase)"],
+      ["Contador",          "operativo", entre(60, 95),     "Contaduría"],
+      ["Edición de contenido","operativo", entre(480, 760), "Edición y contenido"],
+      ["Consultoría",       "operativo", entre(0, 2000),    "Consultoría personalizada"],
+      ["Honorarios del CEO","dueno",     entre(8000, 11000),"Honorarios del CEO"],
     ];
-    egresos.forEach(([cat, monto, concepto]) => {
+    fijos.forEach(([categoria, grupo, monto, concepto]) => {
+      if (monto === 0) return;
       const f = new Date(HOY.getFullYear(), HOY.getMonth() - m, Math.min(entre(3, 25), 28));
-      transacciones.push({
-        id: id("tx", ++t),
-        tipo: "egreso",
-        categoria: cat,
-        concepto,
-        monto,
-        moneda: "USD",
-        fecha: iso(f),
-        estado: "pagado",
-        metodo: pick(AJUSTES.metodosPago),
-        recurrente: true,
-        creadoEn: iso(f),
-        extra: {},
+      gastos.push({
+        id: id("gas", ++ng), categoria, grupo, concepto, monto, moneda: "USD",
+        fecha: iso(f), recurrente: true, creadoEn: iso(f), extra: {},
       });
     });
   }
@@ -375,10 +547,17 @@ export function construirSemilla(): EstadoApp {
     alumnos,
     reportes,
     campanias,
-    transacciones,
     metas,
     campos,
     actividad,
+    productos: PRODUCTOS,
+    procesadores: PROCESADORES,
+    embudos: EMBUDOS,
+    equipo: EQUIPO,
+    ventas,
+    cuotas,
+    pagos,
+    gastos,
   };
 }
 
@@ -388,7 +567,9 @@ export function estadoVacio(): EstadoApp {
     ajustes: { ...AJUSTES, tourVisto: true },
     etapas: ETAPAS,
     leads: [], sesiones: [], webinars: [], alumnos: [], reportes: [],
-    campanias: [], transacciones: [], metas: [], campos: [],
+    campanias: [], metas: [], campos: [],
+    productos: PRODUCTOS, procesadores: PROCESADORES, embudos: EMBUDOS, equipo: EQUIPO,
+    ventas: [], cuotas: [], pagos: [], gastos: [],
     actividad: [{
       id: "act_1", entidad: "config", entidadId: "reset", titulo: "Espacio vacío",
       accion: "creo", detalle: "Se vació el espacio de trabajo. Empezá cargando tu primer lead.",

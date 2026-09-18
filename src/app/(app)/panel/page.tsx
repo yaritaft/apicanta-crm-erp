@@ -10,6 +10,7 @@ import { Badge, Bar, Button, Card, CardHead, Empty, Persona, StatCard } from "@/
 import { AreaChart, Funnel } from "@/components/charts/charts";
 import { useEstado } from "@/lib/store";
 import { delta, fechaHora, money, num, pct, relativo } from "@/lib/format";
+import { cuotasVencidas } from "@/lib/finanzas";
 import {
   ETIQUETA_METRICA, egresosMes, ingresosMes, inscriptosMes, leadsMes, leadsSinContactar,
   mrr, porCobrar, progresoMeta, proximasSesiones, semanasSinReportar, tasaConversion,
@@ -225,9 +226,9 @@ export default function Panel() {
             />
             <Fila
               icono={<Clock size={16} />}
-              texto={`${e.transacciones.filter((t) => t.tipo === "ingreso" && t.estado !== "pagado").length} cobros pendientes`}
-              detalle={money(porCobrar(e), e.ajustes.monedaBase) + " sin cobrar"}
-              tono={porCobrar(e) > 0 ? "warning" : "success"}
+              texto={`${cuotasVencidas(e).length} cuotas vencidas`}
+              detalle={cuotasVencidas(e).length > 0 ? `${money(cuotasVencidas(e).reduce((a, c) => a + c.saldo, 0), e.ajustes.monedaBase)} atrasados · el peor lleva ${cuotasVencidas(e)[0].diasAtraso} días` : "Nadie atrasado"}
+              tono={cuotasVencidas(e).length > 0 ? "danger" : "success"}
               href="/finanzas"
             />
           </div>

@@ -107,7 +107,19 @@ export interface Webinar {
   estado: EstadoWebinar;
   registrados: number;
   asistentes: number;
+  /* Pauta de captación. DM Ads y WhatsApp API van aparte. */
   inversion: number;
+  /* El tracker de Yari */
+  formularios: number;
+  grupoWpp: number;
+  llamadasVivo: number;
+  llamadasPosterior: number;
+  llamadasCanceladas: number;
+  llamadasInasistidas: number;
+  llamadasNoCalificadas: number;
+  llamadasCalificadas: number;
+  inversionDmAds: number;
+  costoWhatsappApi: number;
   enlaceRegistro?: string;
   enlaceReplay?: string;
   notas?: string;
@@ -264,8 +276,130 @@ export interface EstadoApp {
   alumnos: Alumno[];
   reportes: Reporte[];
   campanias: Campania[];
-  transacciones: Transaccion[];
   metas: Meta[];
   campos: CampoPersonalizado[];
   actividad: Actividad[];
+  /* Modelo financiero */
+  productos: Producto[];
+  procesadores: Procesador[];
+  embudos: Embudo[];
+  equipo: MiembroEquipo[];
+  ventas: Venta[];
+  cuotas: Cuota[];
+  pagos: Pago[];
+  gastos: Gasto[];
+}
+
+/* ==================================================================
+   Modelo financiero real de Apicanta
+   Una venta tiene cuotas; cada cuota puede cobrarse con varios
+   métodos de pago. Todo se atribuye a un webinar, un embudo, un
+   closer y un director para poder calcular comisiones y profit.
+   ================================================================== */
+
+export interface Producto {
+  id: ID;
+  nombre: string;
+  precioLista: number;
+  tipo: "principal" | "downsell" | "upsell" | "evento" | "suscripcion";
+  activo: boolean;
+  orden: number;
+}
+
+export interface Procesador {
+  id: ID;
+  nombre: string;
+  /* Fracción: 0.029 = 2,9% */
+  feeRate: number;
+  activo: boolean;
+  /* Trust y la Financiera se concilian a mano */
+  automatico: boolean;
+}
+
+export interface Embudo {
+  id: ID;
+  nombre: string;
+  activo: boolean;
+  orden: number;
+}
+
+export type RolEquipo = "closer" | "director" | "growth" | "socio" | "ceo" | "setter";
+
+export interface MiembroEquipo {
+  id: ID;
+  nombre: string;
+  rol: RolEquipo;
+  comisionRate: number;
+  activo: boolean;
+  desde?: string;
+  /* Yari: si figura como closer, no comisiona nadie */
+  sinComision: boolean;
+  notas?: string;
+}
+
+export type EstadoVenta = "activa" | "cancelada" | "reembolsada";
+
+export interface Venta {
+  id: ID;
+  contactoId?: ID;
+  contactoNombre: string;
+  productoId?: ID;
+  webinarId?: ID;
+  embudoId?: ID;
+  precioAcordado: number;
+  moneda: Moneda;
+  closerId?: ID;
+  directorId?: ID;
+  /* Eventos y conocidos: el growth partner no comisiona */
+  excluidoMarketing: boolean;
+  estado: EstadoVenta;
+  fecha: string;
+  notas?: string;
+  creadoEn: string;
+  extra: Record<string, unknown>;
+}
+
+export type EstadoCuota = "pendiente" | "pagada" | "cancelada";
+
+export interface Cuota {
+  id: ID;
+  ventaId: ID;
+  numero: number;
+  monto: number;
+  vence?: string;
+  estado: EstadoCuota;
+  esReserva: boolean;
+  notas?: string;
+}
+
+export interface Pago {
+  id: ID;
+  cuotaId: ID;
+  procesadorId?: ID;
+  monto: number;
+  moneda: Moneda;
+  feeRate: number;
+  feeMonto: number;
+  fecha: string;
+  referencia?: string;
+  notas?: string;
+  creadoEn: string;
+}
+
+export type GrupoGasto = "directo" | "operativo" | "dueno";
+
+export interface Gasto {
+  id: ID;
+  categoria: string;
+  grupo: GrupoGasto;
+  concepto: string;
+  monto: number;
+  moneda: Moneda;
+  fecha: string;
+  webinarId?: ID;
+  recurrente: boolean;
+  proveedor?: string;
+  notas?: string;
+  creadoEn: string;
+  extra: Record<string, unknown>;
 }

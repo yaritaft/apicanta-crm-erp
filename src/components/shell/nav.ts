@@ -1,6 +1,6 @@
 import {
   LayoutDashboard, Users, Columns3, CalendarDays, Video, Megaphone,
-  GraduationCap, ClipboardList, Wallet, Target, History, Settings,
+  GraduationCap, ClipboardList, Wallet, Target, History, Settings, HandCoins,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
@@ -21,6 +21,7 @@ export const NAV: GrupoNav[] = [
       { href: "/leads", texto: "Leads", icono: Users, ayuda: "Toda la gente interesada" },
       { href: "/pipeline", texto: "Pipeline", icono: Columns3, ayuda: "Arrastrá leads entre etapas" },
       { href: "/agenda", texto: "Agenda", icono: CalendarDays, ayuda: "Las sesiones agendadas" },
+      { href: "/ventas", texto: "Ventas", icono: HandCoins, ayuda: "Cada venta con sus cuotas y cobros" },
     ],
   },
   {

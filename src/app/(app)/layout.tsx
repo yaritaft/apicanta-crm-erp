@@ -1,13 +1,16 @@
 import { Suspense } from "react";
 import { Shell } from "@/components/shell/Shell";
 import { SoloCliente } from "@/components/shell/SoloCliente";
+import { Puerta } from "@/components/shell/Puerta";
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
     <SoloCliente esqueleto={<Arranque />}>
-      <Shell>
-        <Suspense fallback={<Cargando />}>{children}</Suspense>
-      </Shell>
+      <Puerta>
+        <Shell>
+          <Suspense fallback={<Cargando />}>{children}</Suspense>
+        </Shell>
+      </Puerta>
     </SoloCliente>
   );
 }

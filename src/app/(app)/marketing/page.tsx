@@ -8,6 +8,7 @@ import { Columna, DataTable } from "@/components/ui/DataTable";
 import { ModalForm, Confirmar } from "@/components/ui/Modal";
 import { Drawer, Dato } from "@/components/ui/Drawer";
 import { CamposExtra, DatosExtra } from "@/components/ui/CamposExtra";
+import { ConectarMeta } from "@/components/shell/ConectarMeta";
 import { COLORES, Donut, BarChart, truncar } from "@/components/charts/charts";
 import { useToast } from "@/components/ui/Toast";
 import { acciones, useEstado } from "@/lib/store";
@@ -91,13 +92,7 @@ export default function Marketing() {
         />
       </div>
 
-      {!e.ajustes.metaToken && (
-        <Ayuda titulo="Conectá Meta para que los números entren solos" icono={<Plug size={18} />}>
-          Hoy las campañas las cargás a mano y funciona igual. Si pegás tu token de Meta y el ID de la cuenta
-          publicitaria en Ajustes → Integraciones, la inversión, las impresiones y los clicks se van a actualizar
-          sin que toques nada.
-        </Ayuda>
-      )}
+      <ConectarMeta />
 
       <div className="grid-2">
         <Card>

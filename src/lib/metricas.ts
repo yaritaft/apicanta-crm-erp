@@ -1,5 +1,6 @@
 import type { EstadoApp, Meta, MetricaClave } from "./types";
 import { inicioSemana, mesClave, nombreMes } from "./format";
+import { calcularPyL, cashCollected, porCobrarTotal } from "./finanzas";
 
 /* Todo lo que la app calcula vive acá: una sola fuente de verdad
    para los números del panel, finanzas, marketing y metas. */
@@ -22,24 +23,21 @@ const enMes = (iso: string, m: RangoMes) => {
   return d >= m.desde.getTime() && d <= m.hasta.getTime();
 };
 
-/* ---------- Finanzas ---------- */
+/* ---------- Finanzas ----------
+   El cálculo real vive en lib/finanzas.ts; acá quedan los atajos
+   que usan el panel y las metas.                                  */
 
-export function ingresosMes(e: EstadoApp, m: RangoMes, soloPagado = false): number {
-  return e.transacciones
-    .filter((t) => t.tipo === "ingreso" && enMes(t.fecha, m) && (!soloPagado || t.estado === "pagado"))
-    .reduce((a, t) => a + t.monto, 0);
+export function ingresosMes(e: EstadoApp, m: RangoMes): number {
+  return cashCollected(e, m);
 }
 
 export function egresosMes(e: EstadoApp, m: RangoMes): number {
-  return e.transacciones
-    .filter((t) => t.tipo === "egreso" && enMes(t.fecha, m))
-    .reduce((a, t) => a + t.monto, 0);
+  const p = calcularPyL(e, m);
+  return p.totalDirectos + p.gastosOperativos + p.honorariosCeo;
 }
 
 export function porCobrar(e: EstadoApp): number {
-  return e.transacciones
-    .filter((t) => t.tipo === "ingreso" && t.estado !== "pagado")
-    .reduce((a, t) => a + t.monto, 0);
+  return porCobrarTotal(e);
 }
 
 export function mrr(e: EstadoApp): number {
@@ -133,8 +131,8 @@ export function cac(e: EstadoApp): number {
 export function roas(e: EstadoApp): number {
   const inv = inversionTotal(e);
   if (inv === 0) return 0;
-  const ingresos = e.transacciones.filter((t) => t.tipo === "ingreso").reduce((a, t) => a + t.monto, 0);
-  return ingresos / inv;
+  const cobrado = e.pagos.reduce((a, p) => a + p.monto, 0);
+  return cobrado / inv;
 }
 
 export function metricasCampania(c: { inversion: number; impresiones: number; clicks: number; leads: number }) {
@@ -143,26 +141,6 @@ export function metricasCampania(c: { inversion: number; impresiones: number; cl
     cpc: c.clicks > 0 ? c.inversion / c.clicks : 0,
     cpl: c.leads > 0 ? c.inversion / c.leads : 0,
     cpm: c.impresiones > 0 ? (c.inversion / c.impresiones) * 1000 : 0,
-  };
-}
-
-/* ---------- Webinars ---------- */
-
-export function metricasWebinar(e: EstadoApp, webinarId: string) {
-  const w = e.webinars.find((x) => x.id === webinarId);
-  if (!w) return null;
-  const leads = e.leads.filter((l) => l.webinarId === webinarId);
-  const ganada = e.etapas.find((x) => x.esGanada)?.id;
-  const inscriptos = leads.filter((l) => l.etapaId === ganada);
-  const ingresos = inscriptos.reduce((a, l) => a + l.monto, 0);
-  return {
-    asistencia: w.registrados > 0 ? (w.asistentes / w.registrados) * 100 : 0,
-    leads: leads.length,
-    inscriptos: inscriptos.length,
-    conversion: w.asistentes > 0 ? (inscriptos.length / w.asistentes) * 100 : 0,
-    ingresos,
-    roi: w.inversion > 0 ? ((ingresos - w.inversion) / w.inversion) * 100 : 0,
-    costoPorRegistrado: w.registrados > 0 ? w.inversion / w.registrados : 0,
   };
 }
 
