@@ -1,7 +1,7 @@
 import type {
   Actividad, Ajustes, Alumno, Campania, CampoPersonalizado, Cuota, Embudo, EstadoApp,
-  Etapa, Gasto, Lead, Meta, MiembroEquipo, Pago, Procesador, Producto, Reporte,
-  Sesion, Venta, Webinar,
+  Etapa, Gasto, Lead, Meta, MiembroEquipo, Movimiento, Pago, Procesador, Producto,
+  Reporte, Sesion, Venta, Webinar,
 } from "./types";
 import { inicioSemana, mesClave } from "./format";
 
@@ -31,10 +31,11 @@ export const PRODUCTOS: Producto[] = [
 ];
 
 export const PROCESADORES: Procesador[] = [
-  { id: "proc_stripe",        nombre: "Stripe",         feeRate: 0.029, activo: true, automatico: true },
-  { id: "proc_paypal",        nombre: "PayPal",         feeRate: 0.049, activo: true, automatico: true },
-  { id: "proc_hotmart",       nombre: "Hotmart",        feeRate: 0.099, activo: true, automatico: true },
-  { id: "proc_mercadopago",   nombre: "Mercado Pago",   feeRate: 0.062, activo: true, automatico: true },
+  { id: "proc_stripe",        nombre: "Stripe",         feeRate: 0.029, activo: true, automatico: true,  proveedor: "stripe" },
+  { id: "proc_paypal",        nombre: "PayPal",         feeRate: 0.049, activo: true, automatico: true,  proveedor: "paypal" },
+  { id: "proc_hotmart",       nombre: "Hotmart",        feeRate: 0.099, activo: true, automatico: true,  proveedor: "hotmart" },
+  { id: "proc_whop",          nombre: "Whop",           feeRate: 0.030, activo: true, automatico: true,  proveedor: "whop" },
+  { id: "proc_mercadopago",   nombre: "Mercado Pago",   feeRate: 0.062, activo: true, automatico: true,  proveedor: "mercadopago" },
   { id: "proc_financiera",    nombre: "Financiera",     feeRate: 0,     activo: true, automatico: false },
   { id: "proc_trust",         nombre: "Trust (cripto)", feeRate: 0,     activo: true, automatico: false },
   { id: "proc_transferencia", nombre: "Transferencia",  feeRate: 0,     activo: true, automatico: false },
@@ -522,6 +523,126 @@ export function construirSemilla(): EstadoApp {
     });
   }
 
+
+  /* ---------- Movimientos de pasarela ----------
+     Lo que se ve en la bandeja de conciliación: plata que ya entró a
+     Stripe, PayPal, Hotmart o Whop y todavía no está atada a una cuota.
+     Se arma a propósito con los tres casos que aparecen en la realidad:
+     el calce exacto, el cobro partido y el que no es de nadie.          */
+  const movimientos: Movimiento[] = [];
+  let nm = 0;
+
+  const conPasarela = PROCESADORES.filter((p) => p.proveedor);
+  const refDe = (prov: string, i: number) => {
+    const n = String(1000000 + i * 7919).slice(0, 7);
+    return prov === "stripe" ? `pi_3Q${n}Lx` : prov === "paypal" ? `8XJ${n}A` : `${prov.toUpperCase()}-${n}`;
+  };
+
+  function moverPasarela(datos: {
+    monto: number; fecha: string; nombre?: string; email?: string;
+    descripcion?: string; proc?: Procesador;
+  }): Movimiento {
+    const proc = datos.proc ?? pick(conPasarela);
+    const fee = Math.round(datos.monto * proc.feeRate * 100) / 100;
+    const m: Movimiento = {
+      id: id("mov", ++nm),
+      proveedor: proc.proveedor ?? "manual",
+      procesadorId: proc.id,
+      referencia: refDe(proc.proveedor ?? "manual", nm),
+      monto: datos.monto,
+      moneda: "USD",
+      fee,
+      neto: Math.round((datos.monto - fee) * 100) / 100,
+      fecha: datos.fecha,
+      clienteNombre: datos.nombre,
+      clienteEmail: datos.email,
+      descripcion: datos.descripcion,
+      estado: "pendiente",
+      origen: "demo",
+      creadoEn: datos.fecha,
+    };
+    movimientos.push(m);
+    return m;
+  }
+
+  /* Cuotas pendientes recientes: la plata ya entró, falta imputarla. */
+  const pendientesRecientes = cuotas
+    .filter((c) => {
+      if (c.estado !== "pendiente" || !c.vence) return false;
+      const d = new Date(c.vence).getTime();
+      return d > HOY.getTime() - 32 * 86400000 && d <= HOY.getTime() + 3 * 86400000;
+    })
+    .slice(0, 14);
+
+  pendientesRecientes.forEach((c, i) => {
+    const venta = ventas.find((v) => v.id === c.ventaId);
+    if (!venta || venta.estado === "cancelada") return;
+    const lead = leads.find((l) => l.id === venta.contactoId);
+    const cuando = new Date(c.vence ?? venta.fecha);
+    cuando.setDate(cuando.getDate() + entre(0, 4));
+    const fecha = iso(cuando > HOY ? HOY : cuando);
+    const producto = PRODUCTOS.find((p) => p.id === venta.productoId)?.nombre ?? "Mentoría";
+
+    if (i % 5 === 3) {
+      /* Cobro partido: dos movimientos para una sola cuota. */
+      const mitad = Math.round(c.monto * 0.5);
+      moverPasarela({ monto: mitad, fecha, nombre: venta.contactoNombre, email: lead?.email, descripcion: producto });
+      moverPasarela({ monto: c.monto - mitad, fecha, nombre: venta.contactoNombre, email: lead?.email, descripcion: producto });
+    } else if (i % 7 === 5) {
+      /* Entró de más: paga la cuota y adelanta parte de la que viene. */
+      moverPasarela({ monto: c.monto + entre(40, 120), fecha, nombre: venta.contactoNombre, email: lead?.email, descripcion: producto });
+    } else {
+      moverPasarela({ monto: c.monto, fecha, nombre: venta.contactoNombre, email: lead?.email, descripcion: producto });
+    }
+  });
+
+  /* Ruido real: cobros que no son de ninguna venta cargada. */
+  const sueltos: [string, number, string][] = [
+    ["Comunidad — suscripción mensual", 59, "whop"],
+    ["Comunidad — suscripción mensual", 59, "whop"],
+    ["Masterclass entrevistas", 97, "hotmart"],
+  ];
+  sueltos.forEach(([concepto, monto, prov], i) => {
+    const f = dias(-entre(2, 20));
+    moverPasarela({
+      monto, fecha: iso(f), nombre: pick(NOMBRES), descripcion: concepto,
+      proc: PROCESADORES.find((p) => p.proveedor === prov),
+    });
+    void i;
+  });
+
+  /* Los pagos ya registrados también dejan su movimiento, conciliado:
+     así la bandeja muestra historial y no sólo pendientes. */
+  pagos.slice(0, 40).forEach((pago) => {
+    const proc = PROCESADORES.find((p) => p.id === pago.procesadorId);
+    if (!proc?.proveedor) return;
+    const cuota = cuotas.find((c) => c.id === pago.cuotaId);
+    const venta = ventas.find((v) => v.id === cuota?.ventaId);
+    const m: Movimiento = {
+      id: id("mov", ++nm),
+      proveedor: proc.proveedor,
+      procesadorId: proc.id,
+      referencia: pago.referencia ?? refDe(proc.proveedor, nm),
+      monto: pago.monto,
+      moneda: "USD",
+      fee: pago.feeMonto,
+      neto: Math.round((pago.monto - pago.feeMonto) * 100) / 100,
+      fecha: pago.fecha,
+      clienteNombre: venta?.contactoNombre,
+      descripcion: PRODUCTOS.find((p) => p.id === venta?.productoId)?.nombre,
+      estado: "conciliado",
+      pagoId: pago.id,
+      cuotaId: pago.cuotaId,
+      ventaId: venta?.id,
+      conciliadoEn: pago.fecha,
+      conciliadoPor: "Apicanta",
+      origen: "demo",
+      creadoEn: pago.fecha,
+    };
+    movimientos.push(m);
+    pago.movimientoId = m.id;
+  });
+
   /* ---------- Metas ---------- */
   const periodo = mesClave(HOY);
   const metas: Meta[] = [
@@ -558,6 +679,7 @@ export function construirSemilla(): EstadoApp {
     cuotas,
     pagos,
     gastos,
+    movimientos,
   };
 }
 
@@ -569,7 +691,7 @@ export function estadoVacio(): EstadoApp {
     leads: [], sesiones: [], webinars: [], alumnos: [], reportes: [],
     campanias: [], metas: [], campos: [],
     productos: PRODUCTOS, procesadores: PROCESADORES, embudos: EMBUDOS, equipo: EQUIPO,
-    ventas: [], cuotas: [], pagos: [], gastos: [],
+    ventas: [], cuotas: [], pagos: [], gastos: [], movimientos: [],
     actividad: [{
       id: "act_1", entidad: "config", entidadId: "reset", titulo: "Espacio vacío",
       accion: "creo", detalle: "Se vació el espacio de trabajo. Empezá cargando tu primer lead.",

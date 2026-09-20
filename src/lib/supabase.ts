@@ -28,7 +28,20 @@ export const TABLAS = [
   "etapas", "webinars", "leads", "alumnos", "sesiones", "reportes",
   "campanias", "metas", "campos", "actividad",
   "productos", "procesadores", "embudos", "equipo",
-  "ventas", "cuotas", "pagos", "gastos",
+  "ventas", "cuotas", "pagos", "gastos", "movimientos",
 ] as const;
 
 export type Tabla = (typeof TABLAS)[number];
+
+/* Tablas que pueden no existir todavia en una base creada con una version
+   anterior del modelo. Si faltan, la app sigue andando con esa coleccion
+   vacia en vez de caerse entera: el SQL se corre cuando se pueda. */
+export const TABLAS_OPCIONALES = new Set<string>(["movimientos"]);
+
+/* PostgREST avisa que la tabla no esta en el esquema con PGRST205 (y con
+   42P01 si la consulta llego a Postgres). Cualquier otro error es real. */
+export function tablaFaltante(e: { code?: string; message?: string } | null): boolean {
+  if (!e) return false;
+  if (e.code === "PGRST205" || e.code === "42P01") return true;
+  return /schema cache|does not exist/i.test(e.message ?? "");
+}

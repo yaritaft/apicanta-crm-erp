@@ -77,6 +77,10 @@ export function Shell({ children }: { children: React.ReactNode }) {
         />
       )}
 
+      {/* Reserva el ancho en el grid. El menu en si queda fijo encima, que es
+          lo que le permite ensancharse en hover sin empujar el contenido. */}
+      <div className="hk-sidebar-spacer" aria-hidden="true" />
+
       <nav className="hk-sidebar" data-abierto={menu} aria-label="Navegación principal">
         <div className="row" style={{ justifyContent: "space-between" }}>
           <Link href="/panel" className="hk-sidebar__brand" style={{ padding: "8px 12px" }}>

@@ -685,79 +685,102 @@ kbd {
 }
 
 /* ========== Menú colapsable ==========
-   Pedido de Juanchi: ganar ancho para las tablas, y que colapse como en Blue
-   OS — que se desplace limpio y los iconos no se muevan de lugar.
+   Pedido de Juanchi: ganar ancho para las tablas, que colapse limpio con los
+   iconos quietos, y que al pasar el mouse por encima se abra solo.
 
-   El truco de alla, copiado: NO se esconde el texto con display:none, que es
-   lo que hace saltar todo. Se anima el ANCHO, el sidebar recorta con
-   overflow, y los textos hacen fade a width:0. Como ningun padding cambia,
-   cada icono queda exactamente donde estaba.
+   Copiado de Blue OS. Tres piezas:
 
-   El fade es asimetrico a proposito: al colapsar el texto se va rapido
-   (100ms) para no quedar encimado mientras el panel se angosta; al expandir
-   entra con 80ms de delay, para que el ancho llegue antes que la letra. */
+   1. El texto NO se esconde con display:none — eso es lo que hace saltar
+      todo. Se anima el ANCHO, el panel recorta con overflow y los textos
+      hacen fade a width:0. Como ningun padding cambia, cada icono queda
+      exactamente donde estaba.
+   2. El fade es asimetrico: al colapsar el texto se va en 100ms para no
+      quedar encimado mientras el panel se angosta; al expandir entra con
+      80ms de delay, para que el ancho llegue antes que la letra.
+   3. El menu es `fixed` y un espaciador le reserva el lugar en el grid. Por
+      eso en hover se ensancha ENCIMA del contenido en vez de empujarlo. */
 
 .menu-colapsar { display: none; }
+.hk-sidebar-spacer { display: none; }
 
 @media (min-width: 1025px) {
   .menu-colapsar { display: inline-flex; }
+  .marca-larga, .marca-corta { display: inline-block; }
   .marca-corta { display: none; }
 
-  /* El grid sigue al ancho del sidebar, que es el que anima. */
   .app-shell { grid-template-columns: auto 1fr; }
-  .hk-sidebar {
-    width: 260px; overflow-x: hidden;
+
+  .hk-sidebar-spacer {
+    display: block; width: 260px; flex: none;
     transition: width 260ms cubic-bezier(.45, 0, .55, 1);
+  }
+  .app-shell[data-colapsado="true"] .hk-sidebar-spacer { width: 76px; }
+
+  .hk-sidebar {
+    position: fixed; left: 0; top: 0; height: 100dvh;
+    grid-area: 1 / 1; width: 260px; overflow-x: hidden; z-index: 40;
+    transition: width 260ms cubic-bezier(.45, 0, .55, 1),
+                box-shadow 260ms cubic-bezier(.45, 0, .55, 1);
   }
 
   /* 76px = los mismos 16 de padding + 12 del link + 20 del icono, de los dos
-     lados. Sale de no tocar ningun padding, que es justamente lo que mantiene
-     los iconos quietos. */
+     lados. Sale de no tocar ningun padding, que es lo que mantiene los
+     iconos quietos. */
   .app-shell[data-colapsado="true"] .hk-sidebar { width: 76px; }
+
+  /* Hover sobre el menu colapsado: se abre encima, con sombra para que se lea
+     que esta flotando y no que volvio a su lugar. */
+  .app-shell[data-colapsado="true"] .hk-sidebar:hover {
+    width: 260px; box-shadow: var(--shadow-lg); z-index: 60;
+  }
 
   .hk-sidebar__group > span,
   .hk-nav a > span:not(.hk-nav__count),
-  .marca-larga,
-  .hk-sidebar__brand em,
   .hk-sidebar__footer .row-3 > div,
   .hk-sidebar__footer > .row > span {
-    opacity: 1;
+    opacity: 1; display: inline-block; white-space: nowrap; vertical-align: top;
     transition: opacity 200ms cubic-bezier(.45, 0, .55, 1) 80ms;
   }
 
-  .app-shell[data-colapsado="true"] .hk-sidebar__group > span,
-  .app-shell[data-colapsado="true"] .hk-nav a > span:not(.hk-nav__count),
-  .app-shell[data-colapsado="true"] .marca-larga,
-  .app-shell[data-colapsado="true"] .hk-sidebar__brand em,
-  .app-shell[data-colapsado="true"] .hk-sidebar__footer .row-3 > div,
-  .app-shell[data-colapsado="true"] .hk-sidebar__footer > .row > span {
+  .app-shell[data-colapsado="true"] .hk-sidebar:not(:hover) .hk-sidebar__group > span,
+  .app-shell[data-colapsado="true"] .hk-sidebar:not(:hover) .hk-nav a > span:not(.hk-nav__count),
+  .app-shell[data-colapsado="true"] .hk-sidebar:not(:hover) .hk-sidebar__footer .row-3 > div,
+  .app-shell[data-colapsado="true"] .hk-sidebar:not(:hover) .hk-sidebar__footer > .row > span {
     opacity: 0; width: 0; overflow: hidden;
     transition: opacity 100ms cubic-bezier(.45, 0, .55, 1);
   }
 
   /* El bloque del grupo NO se achica: si colapsara a cero, toda la nav se
-     correria 28px para arriba cada vez. Conserva su alto y en lugar del
-     texto aparece una linea, que ademas sigue separando los grupos. Va en
-     un ::before absoluto para no sumar un solo pixel de alto. */
+     correria 28px para arriba cada vez. Conserva su alto y en lugar del texto
+     aparece una linea, que ademas sigue separando los grupos. Va en un
+     ::before absoluto para no sumar ni un pixel de alto. */
   .app-shell[data-colapsado="true"] .hk-sidebar__group { position: relative; }
-  .app-shell[data-colapsado="true"] .hk-sidebar__group::before {
+  .app-shell[data-colapsado="true"] .hk-sidebar:not(:hover) .hk-sidebar__group::before {
     content: ""; position: absolute; left: var(--space-3); right: var(--space-3);
     top: 50%; border-top: 1px solid var(--border);
   }
 
-  .app-shell[data-colapsado="true"] .marca-corta { display: inline; }
+  .app-shell[data-colapsado="true"] .hk-sidebar:not(:hover) .marca-larga { display: none; }
+  .app-shell[data-colapsado="true"] .hk-sidebar:not(:hover) .marca-corta { display: inline-block; }
+  .hk-sidebar__brand { white-space: nowrap; }
+  .app-shell[data-colapsado="true"] .hk-sidebar:not(:hover) .menu-colapsar { display: none; }
 
   /* El contador no entra al lado del icono: pasa a ser un punto en la esquina.
      Se sigue viendo que hay algo pendiente sin ocupar lugar. */
-  .app-shell[data-colapsado="true"] .hk-nav li { position: relative; }
-  .app-shell[data-colapsado="true"] .hk-nav__count {
+  .app-shell[data-colapsado="true"] .hk-sidebar:not(:hover) .hk-nav li { position: relative; }
+  .app-shell[data-colapsado="true"] .hk-sidebar:not(:hover) .hk-nav__count {
     position: absolute; top: 4px; right: 10px;
     width: 7px; height: 7px; padding: 0; min-width: 0;
     border-radius: 50%; background: var(--accent);
     font-size: 0; color: transparent; overflow: hidden;
   }
 
-  .app-shell[data-colapsado="true"] .hk-sidebar__footer .row-3 {
-    flex-direction: column; gap: var(--space-2);
+  /* El pie sigue la misma regla que la nav: la fila NO cambia de direccion.
+     Pasarla a columna corria el avatar de lugar — que es justo lo que no
+     puede pasar. Lo que se va son los botones de salir y de tema, que no
+     entran al lado del avatar en 76px y vuelven en hover, igual que el
+     boton de colapsar. */
+  .app-shell[data-colapsado="true"] .hk-sidebar:not(:hover) .hk-sidebar__footer .row-3 > button {
+    display: none;
   }
 }

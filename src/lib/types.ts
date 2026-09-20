@@ -288,6 +288,7 @@ export interface EstadoApp {
   cuotas: Cuota[];
   pagos: Pago[];
   gastos: Gasto[];
+  movimientos: Movimiento[];
 }
 
 /* ==================================================================
@@ -314,6 +315,54 @@ export interface Procesador {
   activo: boolean;
   /* Trust y la Financiera se concilian a mano */
   automatico: boolean;
+  /* Contra qué pasarela se concilian sus cobros. Sin proveedor, el
+     procesador existe igual pero nunca recibe movimientos solo. */
+  proveedor?: ProveedorPasarela;
+}
+
+/* ---------- Pasarelas de cobro ----------
+   Un movimiento es plata que entró de verdad a una pasarela. Vive suelto
+   hasta que alguien lo concilia contra una cuota: recién ahí nace el Pago.
+   La referencia es la clave de deduplicación: el mismo cobro importado dos
+   veces es un solo movimiento.                                            */
+
+export type ProveedorPasarela =
+  | "stripe"
+  | "paypal"
+  | "hotmart"
+  | "whop"
+  | "mercadopago"
+  | "manual";
+
+export type EstadoMovimiento2 = "pendiente" | "conciliado" | "ignorado";
+
+export interface Movimiento {
+  id: ID;
+  proveedor: ProveedorPasarela;
+  /* Procesador de Apicanta con el que se registra el pago */
+  procesadorId?: ID;
+  /* El id del cobro en la pasarela: pi_3Q…, 8XJ…, etc. */
+  referencia: string;
+  /* Bruto, lo que pagó el cliente */
+  monto: number;
+  moneda: Moneda;
+  /* Lo que se quedó la pasarela, tal como vino. No es una estimación. */
+  fee: number;
+  neto: number;
+  fecha: string;
+  clienteNombre?: string;
+  clienteEmail?: string;
+  descripcion?: string;
+  estado: EstadoMovimiento2;
+  /* Resultado de la conciliación */
+  pagoId?: ID;
+  cuotaId?: ID;
+  ventaId?: ID;
+  conciliadoEn?: string;
+  conciliadoPor?: string;
+  /* De dónde salió: "csv", "api", "webhook", "demo" */
+  origen: string;
+  creadoEn: string;
 }
 
 export interface Embudo {
@@ -376,6 +425,8 @@ export interface Pago {
   id: ID;
   cuotaId: ID;
   procesadorId?: ID;
+  /* Si el pago salió de conciliar un cobro de pasarela */
+  movimientoId?: ID;
   monto: number;
   moneda: Moneda;
   feeRate: number;

@@ -6,7 +6,7 @@ import type {
   EntidadNombre, EstadoApp, Etapa, ID, Lead, Meta, Reporte, Sesion, Webinar,
 } from "./types";
 import { construirSemilla, estadoVacio } from "./seed";
-import { hayNube, nube, TABLAS } from "./supabase";
+import { hayNube, nube, tablaFaltante, TABLAS, TABLAS_OPCIONALES } from "./supabase";
 
 const CLAVE = "apicanta.erp.v1";
 
@@ -143,7 +143,11 @@ async function drenar() {
       const r = op.tipo === "upsert"
         ? await nube.from(op.tabla).upsert(normalizar(op.filas) as never[], OPCIONES_UPSERT)
         : await nube.from(op.tabla).delete().in("id", op.ids);
-      if (r.error) throw errorDeTabla(op.tabla, r.error);
+      /* Tabla opcional sin crear: se descarta la operacion en vez de
+         bloquear la cola. En memoria el dato ya esta. */
+      if (r.error && !(TABLAS_OPCIONALES.has(op.tabla) && tablaFaltante(r.error))) {
+        throw errorDeTabla(op.tabla, r.error);
+      }
       cola.shift();
     }
     marcar("listo");
@@ -192,7 +196,12 @@ export async function cargarDeLaNube(): Promise<void> {
       ...TABLAS.map((t) => db.from(t).select("*")),
     ]);
 
-    for (const [i, r] of resto.entries()) if (r.error) throw errorDeTabla(TABLAS[i], r.error);
+    for (const [i, r] of resto.entries()) {
+      if (!r.error) continue;
+      /* Una tabla opcional que todavia no se creo no rompe la sesion. */
+      if (TABLAS_OPCIONALES.has(TABLAS[i]) && tablaFaltante(r.error)) continue;
+      throw errorDeTabla(TABLAS[i], r.error);
+    }
     if (ajustesRes.error) throw errorDeTabla("ajustes", ajustesRes.error);
 
     const porTabla = Object.fromEntries(
@@ -251,6 +260,7 @@ export async function cargarDeLaNube(): Promise<void> {
       cuotas: porTabla.cuotas as EstadoApp["cuotas"],
       pagos: porTabla.pagos as EstadoApp["pagos"],
       gastos: porTabla.gastos as EstadoApp["gastos"],
+      movimientos: (porTabla.movimientos ?? []) as EstadoApp["movimientos"],
       leads: porTabla.leads as Lead[],
       alumnos: porTabla.alumnos as Alumno[],
       sesiones: porTabla.sesiones as Sesion[],
@@ -290,7 +300,8 @@ function ordenDeSiembra(e: EstadoApp): [string, unknown[]][] {
     ["etapas", e.etapas], ["webinars", e.webinars], ["leads", e.leads],
     ["alumnos", e.alumnos], ["sesiones", e.sesiones], ["reportes", e.reportes],
     ["campanias", e.campanias], ["metas", e.metas], ["campos", e.campos],
-    ["ventas", e.ventas], ["cuotas", e.cuotas], ["pagos", e.pagos], ["gastos", e.gastos],
+    ["ventas", e.ventas], ["cuotas", e.cuotas], ["movimientos", e.movimientos],
+    ["pagos", e.pagos], ["gastos", e.gastos],
     ["actividad", e.actividad],
   ];
 }
@@ -302,7 +313,9 @@ async function sembrarNube(e: EstadoApp) {
   for (const [tabla, filas] of ordenDeSiembra(e)) {
     if (filas.length === 0) continue;
     const r = await nube.from(tabla).upsert(normalizar(filas) as never[], OPCIONES_UPSERT);
-    if (r.error) throw errorDeTabla(tabla, r.error);
+    if (r.error && !(TABLAS_OPCIONALES.has(tabla) && tablaFaltante(r.error))) {
+      throw errorDeTabla(tabla, r.error);
+    }
   }
 }
 
@@ -314,7 +327,9 @@ async function completarNube(e: EstadoApp, vacias: Set<string>) {
   for (const [tabla, filas] of ordenDeSiembra(e)) {
     if (!vacias.has(tabla) || filas.length === 0) continue;
     const r = await nube.from(tabla).upsert(normalizar(filas) as never[], OPCIONES_UPSERT);
-    if (r.error) throw errorDeTabla(tabla, r.error);
+    if (r.error && !(TABLAS_OPCIONALES.has(tabla) && tablaFaltante(r.error))) {
+      throw errorDeTabla(tabla, r.error);
+    }
   }
 }
 
@@ -322,13 +337,15 @@ async function vaciarNube() {
   if (!nube) return;
   /* Al reves del alta: primero los hijos. */
   const orden = [
-    "actividad", "campos", "metas", "pagos", "cuotas", "ventas", "gastos",
+    "actividad", "campos", "metas", "pagos", "movimientos", "cuotas", "ventas", "gastos",
     "campanias", "reportes", "sesiones", "alumnos", "leads", "webinars",
     "etapas", "equipo", "embudos", "procesadores", "productos",
   ];
   for (const tabla of orden) {
     const r = await nube.from(tabla).delete().neq("id", "__nunca__");
-    if (r.error) throw errorDeTabla(tabla, r.error);
+    if (r.error && !(TABLAS_OPCIONALES.has(tabla) && tablaFaltante(r.error))) {
+      throw errorDeTabla(tabla, r.error);
+    }
   }
 }
 
@@ -355,12 +372,13 @@ type Coleccion =
   | "leads" | "sesiones" | "webinars" | "alumnos" | "reportes"
   | "campanias" | "metas" | "campos" | "etapas"
   | "productos" | "procesadores" | "embudos" | "equipo"
-  | "ventas" | "cuotas" | "pagos" | "gastos";
+  | "ventas" | "cuotas" | "pagos" | "gastos" | "movimientos";
 
 const ENTIDAD_DE: Record<string, Actividad["entidad"]> = {
   leads: "lead", sesiones: "sesion", webinars: "webinar", alumnos: "alumno",
   campanias: "campania", metas: "meta",
   ventas: "transaccion", cuotas: "transaccion", pagos: "transaccion", gastos: "transaccion",
+  movimientos: "transaccion",
   reportes: "config", campos: "config", etapas: "config",
   productos: "config", procesadores: "config", embudos: "config", equipo: "config",
 };
