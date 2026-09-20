@@ -219,10 +219,12 @@ export async function cargarDeLaNube(): Promise<void> {
     }
 
     /* Base ya cargada pero con tablas nuevas vacias (una version anterior
-       del modelo): se completan solo esas. */
+       del modelo): se completan solo esas, y solo si son catalogos. */
     const semilla = construirSemilla();
     const vacias = new Set(
-      Object.entries(porTabla).filter(([, filas]) => filas.length === 0).map(([t]) => t),
+      Object.entries(porTabla)
+        .filter(([tabla, filas]) => filas.length === 0 && CATALOGOS.has(tabla))
+        .map(([t]) => t),
     );
     if (vacias.size > 0) {
       await completarNube(semilla, vacias);
@@ -267,6 +269,20 @@ export async function cargarDeLaNube(): Promise<void> {
 }
 
 /* Las tablas con clave foranea van despues de sus padres. */
+/* Lo que la app necesita para funcionar, y que no depende de nadie: sin
+   productos ni procesadores no se puede cargar una venta. Son las unicas
+   tablas que se completan solas.
+
+   Las transaccionales (ventas, cuotas, pagos, gastos, leads, alumnos...) se
+   quedan vacias a proposito: tienen que venir del uso real. Completarlas con
+   la semilla metia ventas inventadas en la base del equipo y encima rompia,
+   porque el closerId de la semilla apunta a un equipo que en la nube tiene
+   otros ids. Si alguien quiere la demo completa, la siembra entera sigue
+   estando para una base nueva. */
+const CATALOGOS = new Set([
+  "productos", "procesadores", "embudos", "equipo", "etapas", "campos",
+]);
+
 function ordenDeSiembra(e: EstadoApp): [string, unknown[]][] {
   return [
     ["productos", e.productos], ["procesadores", e.procesadores],
