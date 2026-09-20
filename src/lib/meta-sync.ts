@@ -41,6 +41,9 @@ async function upsertEnLotes(
 
 export interface ResultadoSync {
   cuentaId: string;
+  /* true cuando la jerarquía se trajo porque la base estaba vacía, no porque
+     tocaba. Sirve para distinguir en los logs un arranque de un sync normal. */
+  arranque?: boolean;
   campaigns: number;
   adsets: number;
   ads: number;
@@ -73,7 +76,21 @@ export async function sincronizarMeta(
      base en vez de pedírselos de nuevo a Meta. */
   let idsDeAnuncios: Set<string>;
 
-  if (conJerarquia) {
+  /* Primera corrida contra una base vacía: si no hay ningún anuncio cargado,
+     TODOS los insights se descartarían por "anuncio desconocido" y el cron
+     marcaría éxito con cero filas. Se arranca sola trayendo la jerarquía en
+     vez de esperar al sync completo de las 5 de la mañana.
+
+     Es el mismo tipo de falla silenciosa que RLS: el sistema dice que anduvo
+     y no guardó nada. */
+  let arranque = false;
+  if (!conJerarquia) {
+    const cuenta = await db.from("ads").select("id", { count: "exact", head: true });
+    if (cuenta.error) throw new Error(`ads: ${cuenta.error.message}`);
+    arranque = (cuenta.count ?? 0) === 0;
+  }
+
+  if (conJerarquia || arranque) {
     const j = await traerJerarquia(token, cuentaId);
 
     await upsertEnLotes(db, "campaigns", j.campaigns.map((c) => ({
@@ -118,7 +135,7 @@ export async function sincronizarMeta(
 
   await upsertEnLotes(db, "ad_insights", filas);
 
-  return { cuentaId, campaigns, adsets, ads, dias: filas.length, desde, hasta };
+  return { cuentaId, arranque, campaigns, adsets, ads, dias: filas.length, desde, hasta };
 }
 
 /* El día de hoy en el calendario del negocio. El cron corre en UTC, y a las
