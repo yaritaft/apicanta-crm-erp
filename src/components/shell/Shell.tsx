@@ -97,7 +97,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
         <div className="hk-sidebar__nav">
           {NAV.map((g) => (
             <div key={g.titulo}>
-              <div className="hk-sidebar__group">{g.titulo}</div>
+              <div className="hk-sidebar__group"><span>{g.titulo}</span></div>
               <ul className="hk-nav">
                 {g.items.map((i) => {
                   const activo = ruta === i.href || ruta.startsWith(i.href + "/");
