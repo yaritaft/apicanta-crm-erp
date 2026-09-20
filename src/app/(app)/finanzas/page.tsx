@@ -3,21 +3,20 @@
 import React, { useMemo, useState } from "react";
 import Link from "next/link";
 import {
-  ArrowDownRight, ArrowRight, Download, Info,
+  ArrowRight, Download,
 } from "lucide-react";
 import { PageHead } from "@/components/shell/PageHead";
-import { Ayuda, Button, Card, CardHead, StatCard } from "@/components/ui/ui";
+import { Button, Card, CardHead, StatCard } from "@/components/ui/ui";
 import { AreaChart, COLORES, Donut } from "@/components/charts/charts";
 import { acciones, useEstado } from "@/lib/store";
-import { delta, fechaLarga, isoDia, money, num, pct } from "@/lib/format";
+import { delta, money, num, pct } from "@/lib/format";
 import { periodoAnterior, rangoDeFechas, ultimosMeses, variacion } from "@/lib/metricas";
 import { DateRangePicker, rangoSub } from "@/components/ui/DateRangePicker";
 import { useRangoURL } from "@/lib/useRango";
 import {
   calcularPyL, cashCollected, comisionesDelMes, cuotasVencidas, gastosPorCategoria,
-  porCobrarTotal, revenue, tasaDeMora, totalComisiones,
+  revenue, totalComisiones,
 } from "@/lib/finanzas";
-import { CATEGORIAS_GASTO } from "@/lib/seed";
 
 export default function Finanzas() {
   const e = useEstado();
@@ -152,34 +151,6 @@ export default function Finanzas() {
             </table>
           </Card>
 
-          <div className="grid-2">
-            <Card>
-              <CardHead titulo="Métricas de adquisición" sub={`${mes.etiqueta}.`} />
-              <dl className="dl">
-                <dt>Ventas</dt><dd className="t-num">{num(p.ventas)}</dd>
-                <dt>Inversión en ads</dt><dd className="t-num">{M(p.inversionAds)}</dd>
-                <dt>CAC</dt><dd className="t-num">{M(p.cac)}</dd>
-                <dt>ROAS cobrado</dt><dd className="t-num">{p.roasCC > 0 ? `${num(p.roasCC, 2)}x` : "—"}</dd>
-                <dt>ROAS facturado</dt><dd className="t-num">{p.roasRev > 0 ? `${num(p.roasRev, 2)}x` : "—"}</dd>
-                <dt>Tasa de cobro</dt><dd className="t-num">{pct(p.tasaCobro)}</dd>
-                <dt>Tasa de mora</dt><dd className="t-num" style={{ color: tasaDeMora(e) > 15 ? "var(--danger)" : undefined }}>{pct(tasaDeMora(e))}</dd>
-              </dl>
-            </Card>
-            <Card>
-              <CardHead titulo="Reparto del profit" sub="Growth partner y socio cobran sobre el resultado operativo." />
-              <dl className="dl">
-                <dt>Resultado operativo</dt><dd className="t-num">{M(p.operativoCC)}</dd>
-                <dt>Growth partner</dt><dd className="t-num">{M(p.growth)}</dd>
-                <dt>Socio</dt><dd className="t-num">{M(p.socio)}</dd>
-                <dt>Queda</dt><dd className="t-num t-strong">{M(p.operativoCC - p.growth - p.socio)}</dd>
-              </dl>
-              <Ayuda titulo="Ojo con esto" icono={<Info size={18} />}>
-                El growth partner no comisiona las ventas marcadas como <strong>excluidas de marketing</strong>
-                (eventos y conocidos), así que su número ya sale prorrateado. Lo del socio, que cobra distinto
-                según el producto, todavía está como un 10% parejo — falta definirlo.
-              </Ayuda>
-            </Card>
-          </div>
       </div>
 
     </div>

@@ -784,3 +784,129 @@ kbd {
     display: none;
   }
 }
+
+/* ============================================================
+   Asistente de venta — una pregunta por pantalla
+   ============================================================ */
+.asistente {
+  position: fixed; inset: 0; z-index: 120;
+  background: var(--surface-000);
+  display: flex; flex-direction: column;
+  animation: fade 160ms ease-out;
+}
+.asistente__progreso { height: 3px; background: var(--surface-300); flex: none; }
+.asistente__progreso-fill { height: 100%; background: var(--brand-fill); transition: width 320ms cubic-bezier(.2,.8,.3,1); }
+.asistente__head {
+  display: flex; align-items: center; gap: var(--space-3);
+  padding: var(--space-4) var(--space-5); flex: none;
+  border-bottom: 1px solid var(--border);
+}
+.asistente__paso-n {
+  font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--ink-subtle); font-variant-numeric: tabular-nums;
+}
+.asistente__ruta { display: flex; align-items: center; gap: 6px; overflow: hidden; }
+.asistente__ruta-item { font-size: 13px; color: var(--ink-subtle); white-space: nowrap; }
+.asistente__ruta-item[data-activo="true"] { color: var(--brand); font-weight: 600; }
+.asistente__ruta-sep { color: var(--border-strong); }
+.asistente__main { flex: 1; overflow-y: auto; padding: var(--space-7) var(--space-5); }
+.asistente__paso {
+  width: 100%; max-width: 680px; margin: 0 auto;
+  display: flex; flex-direction: column; gap: var(--space-5);
+  animation: pasoIn 260ms cubic-bezier(.2,.8,.3,1);
+}
+@keyframes pasoIn { from { opacity: 0; transform: translateY(14px) } to { opacity: 1; transform: none } }
+.asistente__pregunta {
+  font-family: var(--font-display); font-size: 30px; line-height: 38px;
+  font-weight: 600; letter-spacing: -.02em; color: var(--ink);
+}
+.asistente__sub { font-size: 15px; line-height: 22px; color: var(--ink-muted); margin-top: var(--space-2); }
+.asistente__foot {
+  flex: none; display: flex; align-items: center; gap: var(--space-3);
+  padding: var(--space-4) var(--space-5); border-top: 1px solid var(--border);
+  background: var(--surface-100);
+}
+.asistente__pista { font-size: 13px; color: var(--ink-subtle); display: flex; align-items: center; gap: 6px; }
+.asistente .hk-input { height: 52px; font-size: 17px; }
+.asistente .hk-input--area { height: auto; }
+
+/* Opciones seleccionables con teclado */
+.opciones { display: grid; grid-template-columns: repeat(auto-fill, minmax(212px, 1fr)); gap: var(--space-2); }
+.opcion {
+  display: flex; align-items: center; gap: var(--space-3); width: 100%;
+  padding: var(--space-3) var(--space-4); min-height: 56px;
+  border: 1px solid var(--border); border-radius: var(--radius-md);
+  background: var(--surface-100); color: var(--ink); text-align: left;
+  cursor: pointer; transition: border-color 140ms ease-out, background-color 140ms ease-out;
+}
+.opcion:hover { border-color: var(--border-strong); background: var(--surface-200); }
+.opcion[aria-pressed="true"] { border-color: var(--brand-fill); background: var(--brand-soft); }
+.opcion__tecla {
+  flex: none; display: grid; place-items: center; width: 24px; height: 24px;
+  border: 1px solid var(--border-strong); border-radius: var(--radius-sm);
+  font-size: 11px; font-weight: 700; color: var(--ink-subtle);
+}
+.opcion[aria-pressed="true"] .opcion__tecla { border-color: var(--brand-fill); background: var(--brand-fill); color: var(--on-brand); }
+.opcion__texto { min-width: 0; display: flex; flex-direction: column; }
+.opcion__nombre { font-weight: 600; font-size: 15px; }
+.opcion__sub { font-size: 13px; color: var(--ink-subtle); font-variant-numeric: tabular-nums; }
+
+/* Monto grande */
+.monto-grande { display: flex; align-items: baseline; gap: var(--space-3); border-bottom: 2px solid var(--border-strong); padding-bottom: var(--space-2); }
+.monto-grande__signo { font-family: var(--font-display); font-size: 28px; color: var(--ink-subtle); }
+.monto-grande input {
+  flex: 1; min-width: 0; background: transparent; border: 0; outline: 0; color: var(--ink);
+  font-family: var(--font-display); font-size: 40px; line-height: 48px; font-weight: 600;
+  font-variant-numeric: tabular-nums; letter-spacing: -.02em;
+}
+.monto-grande:focus-within { border-bottom-color: var(--brand-fill); }
+
+/* Plan de cuotas */
+.cuota-linea {
+  display: grid; grid-template-columns: 1fr 132px 160px; gap: var(--space-2);
+  align-items: center; padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface-100);
+}
+.cuota-linea__nombre { font-weight: 600; font-size: 15px; display: flex; align-items: center; gap: var(--space-2); }
+.cuota-linea .hk-input { height: 38px; font-size: 14px; }
+
+/* Cobros de una cuota */
+.cobro-bloque { border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface-100); overflow: hidden; }
+.cobro-bloque__head { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-3) var(--space-4); }
+.cobro-bloque__body { padding: 0 var(--space-4) var(--space-4); display: flex; flex-direction: column; gap: var(--space-2); border-top: 1px solid var(--border); padding-top: var(--space-3); }
+.cobro-linea { display: grid; grid-template-columns: 1fr 110px 132px 32px; gap: var(--space-2); align-items: center; }
+.cobro-linea .hk-input { height: 38px; font-size: 14px; }
+
+/* ============================================================
+   Conciliación
+   ============================================================ */
+.mov { border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface-100); overflow: hidden; }
+.mov[data-abierto="true"] { border-color: var(--border-strong); }
+.mov__head { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-3) var(--space-4); width: 100%; background: transparent; border: 0; color: inherit; text-align: left; cursor: pointer; }
+.mov__head:hover { background: var(--surface-200); }
+.mov__marca {
+  flex: none; display: grid; place-items: center; width: 34px; height: 34px;
+  border-radius: var(--radius-sm); background: var(--surface-300); color: var(--ink-muted);
+  font-size: 11px; font-weight: 700; letter-spacing: .04em;
+}
+.mov__cliente { font-weight: 600; font-size: 15px; }
+.mov__meta { font-size: 13px; color: var(--ink-subtle); }
+.mov__monto { font-family: var(--font-display); font-size: 17px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.mov__body { padding: var(--space-4); border-top: 1px solid var(--border); background: var(--surface-000); display: flex; flex-direction: column; gap: var(--space-3); }
+
+.sug { display: flex; align-items: flex-start; gap: var(--space-3); padding: var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface-100); }
+.sug[data-fuerte="true"] { border-color: var(--success); }
+.sug__puntaje { flex: none; width: 52px; text-align: center; }
+.sug__puntaje-n { font-family: var(--font-display); font-size: 18px; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--ink); }
+.sug__puntaje-l { font-size: 11px; color: var(--ink-subtle); text-transform: uppercase; letter-spacing: .06em; }
+.sug__motivos { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.motivo { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; padding: 2px 8px; border-radius: var(--radius-full); background: var(--success-soft); color: var(--success); }
+.motivo--reparo { background: var(--warning-soft); color: var(--warning); }
+
+@media (max-width: 720px) {
+  .asistente__pregunta { font-size: 24px; line-height: 32px; }
+  .asistente__main { padding: var(--space-5) var(--space-4); }
+  .cuota-linea { grid-template-columns: 1fr 1fr; }
+  .cobro-linea { grid-template-columns: 1fr 1fr; }
+  .opciones { grid-template-columns: 1fr; }
+}

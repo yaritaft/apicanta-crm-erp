@@ -27,7 +27,7 @@ import {
 import { CATEGORIAS_GASTO } from "@/lib/seed";
 import type { Cuota, Gasto, Moneda } from "@/lib/types";
 
-type Vista = "cobros" | "gastos" | "comisiones";
+type Vista = "cobros" | "gastos" | "comisiones" | "adquisicion";
 
 const VACIO = (): Omit<Gasto, "id"> => ({
   categoria: "Software", grupo: "operativo", concepto: "", monto: 0, moneda: "USD" as Moneda,
@@ -124,6 +124,7 @@ export default function FinanzasDetalle() {
         { valor: "cobros", texto: `Cobros${vencidas.length ? ` · ${vencidas.length}` : ""}` },
         { valor: "gastos", texto: "Gastos" },
         { valor: "comisiones", texto: "Comisiones" },
+        { valor: "adquisicion", texto: "Adquisición" },
       ]} />
 
       {/* ---------------- P&L ---------------- */}
@@ -252,6 +253,41 @@ export default function FinanzasDetalle() {
               vacio={<Empty icono={<Wallet size={22} />} titulo={`Sin cobros en ${mes.etiqueta}`} texto="Cuando entre un pago, la comisión de quien cerró esa venta aparece acá calculada." />}
             />
           </Card>
+
+          <div className="grid-2">
+            <Card>
+              <CardHead titulo="Reparto del profit" sub="Growth partner y socio cobran sobre el resultado operativo." />
+              <dl className="dl">
+                <dt>Resultado operativo</dt><dd className="t-num">{M(p.operativoCC)}</dd>
+                <dt>Growth partner</dt><dd className="t-num">{M(p.growth)}</dd>
+                <dt>Socio</dt><dd className="t-num">{M(p.socio)}</dd>
+                <dt>Queda</dt><dd className="t-num t-strong">{M(p.operativoCC - p.growth - p.socio)}</dd>
+              </dl>
+              <Ayuda titulo="Ojo con esto" icono={<Info size={18} />}>
+                El growth partner no comisiona las ventas marcadas como <strong>excluidas de marketing</strong>
+                (eventos y conocidos), así que su número ya sale prorrateado. Lo del socio, que cobra distinto
+                según el producto, todavía está como un 10% parejo — falta definirlo.
+              </Ayuda>
+            </Card>
+          </div>
+        </div>
+      )}
+
+      {/* ---------------- Adquisición ---------------- */}
+      {vista === "adquisicion" && (
+        <div className="grid-2">
+            <Card>
+              <CardHead titulo="Métricas de adquisición" sub={`${mes.etiqueta}.`} />
+              <dl className="dl">
+                <dt>Ventas</dt><dd className="t-num">{num(p.ventas)}</dd>
+                <dt>Inversión en ads</dt><dd className="t-num">{M(p.inversionAds)}</dd>
+                <dt>CAC</dt><dd className="t-num">{M(p.cac)}</dd>
+                <dt>ROAS cobrado</dt><dd className="t-num">{p.roasCC > 0 ? `${num(p.roasCC, 2)}x` : "—"}</dd>
+                <dt>ROAS facturado</dt><dd className="t-num">{p.roasRev > 0 ? `${num(p.roasRev, 2)}x` : "—"}</dd>
+                <dt>Tasa de cobro</dt><dd className="t-num">{pct(p.tasaCobro)}</dd>
+                <dt>Tasa de mora</dt><dd className="t-num" style={{ color: tasaDeMora(e) > 15 ? "var(--danger)" : undefined }}>{pct(tasaDeMora(e))}</dd>
+              </dl>
+            </Card>
         </div>
       )}
 

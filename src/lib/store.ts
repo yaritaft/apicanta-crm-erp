@@ -3,8 +3,10 @@
 import { useCallback, useSyncExternalStore } from "react";
 import type {
   AccionActividad, Actividad, Ajustes, Alumno, Campania, CampoPersonalizado,
-  EntidadNombre, EstadoApp, Etapa, ID, Lead, Meta, Reporte, Sesion, Webinar,
+  Cuota, EntidadNombre, EstadoApp, Etapa, ID, Lead, Meta, Movimiento, Pago,
+  Reporte, Sesion, Venta, Webinar,
 } from "./types";
+import { pagoDesdeMovimiento } from "./conciliacion";
 import { construirSemilla, estadoVacio } from "./seed";
 import { hayNube, nube, tablaFaltante, TABLAS, TABLAS_OPCIONALES } from "./supabase";
 
@@ -456,6 +458,224 @@ export const acciones = {
     empujar({ tipo: "upsert", tabla: "alumnos", filas: [alumno] });
     empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
     return alumno.id;
+  },
+
+  /* ---------- Alta completa de una venta ----------
+     El asistente junta la venta, su plan de cuotas y los cobros que ya
+     entraron. Se escribe todo junto: media venta cargada (cuotas sin
+     venta, pagos sin cuota) es peor que ninguna. */
+
+  registrarVenta(datos: {
+    venta: Venta;
+    cuotas: Cuota[];
+    cobros: { cuotaId: ID; procesadorId?: ID; monto: number; fecha: string; referencia?: string; movimientoId?: ID }[];
+  }): ID {
+    const e = snapshot();
+    const { venta } = datos;
+
+    const nuevosPagos: Pago[] = [];
+    const movimientosTocados = new Map<ID, Movimiento>();
+
+    for (const cobro of datos.cobros) {
+      if (cobro.monto <= 0.001) continue;
+      const mov = cobro.movimientoId ? e.movimientos.find((m) => m.id === cobro.movimientoId) : undefined;
+
+      if (mov) {
+        /* El fee lo dice la pasarela, no la tabla de procesadores. */
+        nuevosPagos.push({ ...pagoDesdeMovimiento(mov, cobro.cuotaId, cobro.monto), id: nuevoId("pag") } as Pago);
+        movimientosTocados.set(mov.id, {
+          ...mov, estado: "conciliado",
+          cuotaId: cobro.cuotaId, ventaId: venta.id,
+          conciliadoEn: ahora(), conciliadoPor: e.ajustes.responsable || "Apicanta",
+        });
+        continue;
+      }
+
+      const proc = e.procesadores.find((x) => x.id === cobro.procesadorId);
+      const feeRate = proc?.feeRate ?? 0;
+      nuevosPagos.push({
+        id: nuevoId("pag"), cuotaId: cobro.cuotaId, procesadorId: cobro.procesadorId,
+        monto: Math.round(cobro.monto * 100) / 100, moneda: venta.moneda,
+        feeRate, feeMonto: Math.round(cobro.monto * feeRate * 100) / 100,
+        fecha: cobro.fecha, referencia: cobro.referencia || undefined,
+        creadoEn: ahora(),
+      });
+    }
+
+    /* Cuota saldada por los cobros que vinieron con el alta */
+    const cuotas = datos.cuotas.map((c) => {
+      const cubierto = nuevosPagos.filter((p) => p.cuotaId === c.id).reduce((a, p) => a + p.monto, 0);
+      return cubierto >= c.monto - 0.01 ? { ...c, estado: "pagada" as const } : c;
+    });
+
+    const movimientos = movimientosTocados.size === 0
+      ? e.movimientos
+      : e.movimientos.map((m) => movimientosTocados.get(m.id) ?? m);
+
+    const cobrado = nuevosPagos.reduce((a, p) => a + p.monto, 0);
+    const detalle = cobrado > 0
+      ? `Se cargó la venta de ${venta.contactoNombre} en ${cuotas.length} ${cuotas.length === 1 ? "cuota" : "cuotas"}, con ${nuevosPagos.length} ${nuevosPagos.length === 1 ? "cobro" : "cobros"} ya registrados.`
+      : `Se cargó la venta de ${venta.contactoNombre} en ${cuotas.length} ${cuotas.length === 1 ? "cuota" : "cuotas"}.`;
+    const { lista, nuevo } = registrar(e, "transaccion", venta.id, venta.contactoNombre, "creo", detalle);
+
+    guardar({
+      ...e,
+      ventas: [venta, ...e.ventas],
+      cuotas: [...cuotas, ...e.cuotas],
+      pagos: [...nuevosPagos, ...e.pagos],
+      movimientos,
+      actividad: lista,
+    });
+
+    empujar({ tipo: "upsert", tabla: "ventas", filas: [venta] });
+    empujar({ tipo: "upsert", tabla: "cuotas", filas: cuotas });
+    if (nuevosPagos.length) empujar({ tipo: "upsert", tabla: "pagos", filas: nuevosPagos });
+    if (movimientosTocados.size) empujar({ tipo: "upsert", tabla: "movimientos", filas: [...movimientosTocados.values()] });
+    empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
+    return venta.id;
+  },
+
+  /* ---------- Conciliación ----------
+     Conciliar toca tres tablas a la vez: nace el pago, la cuota puede
+     quedar saldada y el movimiento deja de estar suelto. Va todo en un
+     solo guardar para que la pantalla no muestre estados intermedios
+     ni queden mitades si algo falla. */
+
+  conciliar(movimientoId: ID, imputaciones: { cuotaId: ID; monto: number }[]): boolean {
+    const e = snapshot();
+    const mov = e.movimientos.find((m) => m.id === movimientoId);
+    if (!mov || mov.estado !== "pendiente" || imputaciones.length === 0) return false;
+
+    const nuevosPagos: Pago[] = [];
+    for (const imp of imputaciones) {
+      if (imp.monto <= 0.001) continue;
+      if (!e.cuotas.some((c) => c.id === imp.cuotaId)) continue;
+      nuevosPagos.push({ ...pagoDesdeMovimiento(mov, imp.cuotaId, imp.monto), id: nuevoId("pag") } as Pago);
+    }
+    if (nuevosPagos.length === 0) return false;
+
+    const pagos = [...nuevosPagos, ...e.pagos];
+
+    /* Una cuota se marca pagada cuando la suma de sus pagos la cubre. */
+    const tocadas = new Set(nuevosPagos.map((p) => p.cuotaId));
+    const cuotasCambiadas: Cuota[] = [];
+    const cuotas = e.cuotas.map((c) => {
+      if (!tocadas.has(c.id) || c.estado !== "pendiente") return c;
+      const cubierto = pagos.filter((p) => p.cuotaId === c.id).reduce((a, p) => a + p.monto, 0);
+      if (cubierto < c.monto - 0.01) return c;
+      const actualizada: Cuota = { ...c, estado: "pagada" };
+      cuotasCambiadas.push(actualizada);
+      return actualizada;
+    });
+
+    /* El movimiento puede repartirse entre varias cuotas: sigue pendiente
+       mientras quede plata sin imputar. */
+    const imputado = pagos.filter((p) => p.movimientoId === mov.id).reduce((a, p) => a + p.monto, 0);
+    const saldado = imputado >= mov.monto - 0.01;
+    const unaSola = nuevosPagos.length === 1 && saldado;
+    const venta = e.cuotas.find((c) => c.id === nuevosPagos[0].cuotaId)?.ventaId;
+
+    const actualizado: Movimiento = {
+      ...mov,
+      estado: saldado ? "conciliado" : "pendiente",
+      pagoId: unaSola ? nuevosPagos[0].id : mov.pagoId,
+      cuotaId: unaSola ? nuevosPagos[0].cuotaId : mov.cuotaId,
+      ventaId: unaSola ? venta : mov.ventaId,
+      conciliadoEn: saldado ? ahora() : mov.conciliadoEn,
+      conciliadoPor: saldado ? (e.ajustes.responsable || "Apicanta") : mov.conciliadoPor,
+    };
+    const movimientos = e.movimientos.map((m) => (m.id === mov.id ? actualizado : m));
+
+    const nombre = e.ventas.find((v) => v.id === venta)?.contactoNombre ?? mov.clienteNombre ?? "cobro";
+    const { lista, nuevo } = registrar(
+      e, "transaccion", mov.id, `Cobro de ${nombre}`, "actualizo",
+      `Se concilió ${mov.referencia} con ${nuevosPagos.length === 1 ? "una cuota" : `${nuevosPagos.length} cuotas`} de ${nombre}.`,
+    );
+
+    guardar({ ...e, pagos, cuotas, movimientos, actividad: lista });
+    empujar({ tipo: "upsert", tabla: "pagos", filas: nuevosPagos });
+    if (cuotasCambiadas.length) empujar({ tipo: "upsert", tabla: "cuotas", filas: cuotasCambiadas });
+    empujar({ tipo: "upsert", tabla: "movimientos", filas: [actualizado] });
+    empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
+    return true;
+  },
+
+  /* Deshacer: se borran los pagos que nacieron del movimiento y las cuotas
+     vuelven a estar pendientes. Sin esto, un error de conciliación sólo se
+     arregla a mano y en tres pantallas distintas. */
+  desconciliar(movimientoId: ID): boolean {
+    const e = snapshot();
+    const mov = e.movimientos.find((m) => m.id === movimientoId);
+    if (!mov) return false;
+
+    const suyos = e.pagos.filter((p) => p.movimientoId === mov.id);
+    const ids = suyos.map((p) => p.id);
+    const pagos = e.pagos.filter((p) => !ids.includes(p.id));
+
+    const tocadas = new Set(suyos.map((p) => p.cuotaId));
+    const cuotasCambiadas: Cuota[] = [];
+    const cuotas = e.cuotas.map((c) => {
+      if (!tocadas.has(c.id) || c.estado !== "pagada") return c;
+      const cubierto = pagos.filter((p) => p.cuotaId === c.id).reduce((a, p) => a + p.monto, 0);
+      if (cubierto >= c.monto - 0.01) return c;
+      const actualizada: Cuota = { ...c, estado: "pendiente" };
+      cuotasCambiadas.push(actualizada);
+      return actualizada;
+    });
+
+    const actualizado: Movimiento = {
+      ...mov, estado: "pendiente",
+      pagoId: undefined, cuotaId: undefined, ventaId: undefined,
+      conciliadoEn: undefined, conciliadoPor: undefined,
+    };
+    const movimientos = e.movimientos.map((m) => (m.id === mov.id ? actualizado : m));
+
+    const { lista, nuevo } = registrar(
+      e, "transaccion", mov.id, `Cobro ${mov.referencia}`, "actualizo",
+      `Se deshizo la conciliación de ${mov.referencia}.`,
+    );
+
+    guardar({ ...e, pagos, cuotas, movimientos, actividad: lista });
+    if (ids.length) empujar({ tipo: "delete", tabla: "pagos", ids });
+    if (cuotasCambiadas.length) empujar({ tipo: "upsert", tabla: "cuotas", filas: cuotasCambiadas });
+    empujar({ tipo: "upsert", tabla: "movimientos", filas: [actualizado] });
+    empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
+    return true;
+  },
+
+  marcarMovimiento(movimientoId: ID, estado: Movimiento["estado"]) {
+    const e = snapshot();
+    const mov = e.movimientos.find((m) => m.id === movimientoId);
+    if (!mov) return;
+    const actualizado: Movimiento = { ...mov, estado };
+    guardar({ ...e, movimientos: e.movimientos.map((m) => (m.id === mov.id ? actualizado : m)) });
+    empujar({ tipo: "upsert", tabla: "movimientos", filas: [actualizado] });
+  },
+
+  /* Importar de un CSV o de la API: el mismo cobro traído dos veces tiene
+     que seguir siendo uno solo, así que la referencia manda. */
+  importarMovimientos(filas: Omit<Movimiento, "id" | "estado" | "creadoEn" | "origen">[], origen: string): { nuevos: number; repetidos: number } {
+    const e = snapshot();
+    const vistos = new Set(e.movimientos.map((m) => `${m.proveedor}:${m.referencia}`));
+    const nuevos: Movimiento[] = [];
+
+    for (const f of filas) {
+      const clave = `${f.proveedor}:${f.referencia}`;
+      if (vistos.has(clave)) continue;
+      vistos.add(clave);
+      nuevos.push({ ...f, id: nuevoId("mov"), estado: "pendiente", origen, creadoEn: ahora() });
+    }
+
+    if (nuevos.length === 0) return { nuevos: 0, repetidos: filas.length };
+
+    const { lista, nuevo } = registrar(
+      e, "transaccion", "import", "Cobros importados", "importo",
+      `Entraron ${nuevos.length} cobros de pasarela (${origen}).`,
+    );
+    guardar({ ...e, movimientos: [...nuevos, ...e.movimientos], actividad: lista });
+    empujar({ tipo: "upsert", tabla: "movimientos", filas: nuevos });
+    empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
+    return { nuevos: nuevos.length, repetidos: filas.length - nuevos.length };
   },
 
   ajustes(cambios: Partial<Ajustes>, detalle = "Se actualizaron los ajustes.") {
