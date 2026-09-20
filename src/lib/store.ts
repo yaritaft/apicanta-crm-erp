@@ -106,6 +106,18 @@ export function useSync(): { estado: EstadoSync; error: string } {
   return useSyncExternalStore(suscribir, () => vistaSync, () => VISTA_SERVIDOR);
 }
 
+/* ---------- errores de la nube ---------- */
+
+const SIN_ACCESO = "Tu usuario no tiene acceso a estos datos. Pedí que te agreguen al equipo.";
+
+/* 42501 es la violacion de RLS de Postgres. Sin traducirlo llega a la barra
+   lateral como "new row violates row-level security policy for table...",
+   que no le dice nada a nadie y encima suena a que se rompio algo. */
+function errorDeTabla(tabla: string, e: { message: string; code?: string }): Error {
+  if (e.code === "42501") return new Error(SIN_ACCESO);
+  return new Error(`${tabla}: ${e.message}`);
+}
+
 /* ---------- cola de escritura hacia la nube ---------- */
 
 type Op =
@@ -131,7 +143,7 @@ async function drenar() {
       const r = op.tipo === "upsert"
         ? await nube.from(op.tabla).upsert(normalizar(op.filas) as never[], OPCIONES_UPSERT)
         : await nube.from(op.tabla).delete().in("id", op.ids);
-      if (r.error) throw new Error(`${op.tabla}: ${r.error.message}`);
+      if (r.error) throw errorDeTabla(op.tabla, r.error);
       cola.shift();
     }
     marcar("listo");
@@ -180,19 +192,22 @@ export async function cargarDeLaNube(): Promise<void> {
       ...TABLAS.map((t) => db.from(t).select("*")),
     ]);
 
-    for (const r of resto) if (r.error) throw new Error(r.error.message);
-    if (ajustesRes.error) throw new Error(ajustesRes.error.message);
+    for (const [i, r] of resto.entries()) if (r.error) throw errorDeTabla(TABLAS[i], r.error);
+    if (ajustesRes.error) throw errorDeTabla("ajustes", ajustesRes.error);
 
     const porTabla = Object.fromEntries(
       TABLAS.map((t, i) => [t, (resto[i].data ?? []) as unknown[]]),
     ) as Record<string, unknown[]>;
 
-    /* Antes de decidir nada, confirmamos que podemos leer de verdad: si RLS
-       nos esconde todo por falta de permisos, las listas tambien vienen
-       vacias y no hay que confundir eso con una base sin sembrar. */
-    const permiso = await db.from("etapas").select("id", { count: "exact", head: true });
-    if (permiso.error) {
-      marcar("error", "Tu usuario no tiene acceso a estos datos. Pedí que te agreguen al equipo.");
+    /* RLS no avisa cuando esconde: un SELECT que la politica rechaza vuelve
+       vacio y con 200, no con error, asi que mirar el .error no alcanzaba y
+       un usuario sin permiso terminaba aca creyendo que la base estaba sin
+       sembrar. Se lo preguntamos derecho a la base: es la unica forma de no
+       confundir "no tengo acceso" con "base nueva", y de no volcarle el
+       localStorage de este navegador encima a datos que si existen. */
+    const permiso = await db.rpc("puede_entrar");
+    if (!permiso.error && permiso.data === false) {
+      marcar("error", SIN_ACCESO);
       return;
     }
 
@@ -267,11 +282,11 @@ function ordenDeSiembra(e: EstadoApp): [string, unknown[]][] {
 async function sembrarNube(e: EstadoApp) {
   if (!nube) return;
   const ra = await nube.from("ajustes").upsert(filaAjustes(e.ajustes));
-  if (ra.error) throw new Error(`ajustes: ${ra.error.message}`);
+  if (ra.error) throw errorDeTabla("ajustes", ra.error);
   for (const [tabla, filas] of ordenDeSiembra(e)) {
     if (filas.length === 0) continue;
     const r = await nube.from(tabla).upsert(normalizar(filas) as never[], OPCIONES_UPSERT);
-    if (r.error) throw new Error(`${tabla}: ${r.error.message}`);
+    if (r.error) throw errorDeTabla(tabla, r.error);
   }
 }
 
@@ -283,7 +298,7 @@ async function completarNube(e: EstadoApp, vacias: Set<string>) {
   for (const [tabla, filas] of ordenDeSiembra(e)) {
     if (!vacias.has(tabla) || filas.length === 0) continue;
     const r = await nube.from(tabla).upsert(normalizar(filas) as never[], OPCIONES_UPSERT);
-    if (r.error) throw new Error(`${tabla}: ${r.error.message}`);
+    if (r.error) throw errorDeTabla(tabla, r.error);
   }
 }
 
@@ -297,7 +312,7 @@ async function vaciarNube() {
   ];
   for (const tabla of orden) {
     const r = await nube.from(tabla).delete().neq("id", "__nunca__");
-    if (r.error) throw new Error(`${tabla}: ${r.error.message}`);
+    if (r.error) throw errorDeTabla(tabla, r.error);
   }
 }
 

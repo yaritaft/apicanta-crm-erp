@@ -154,7 +154,9 @@ function EstadoDatos({ estado, error }: { estado: ReturnType<typeof useSync>["es
     cargando:  { ico: <RefreshCw size={13} />, texto: "Trayendo tus datos…",        color: "var(--ink-subtle)" },
     guardando: { ico: <RefreshCw size={13} />, texto: "Guardando…",                 color: "var(--brand)" },
     listo:     { ico: <Check size={13} />,     texto: "Todo guardado en la nube",   color: "var(--success)" },
-    error:     { ico: <AlertCircle size={13} />, texto: "No se pudo guardar",       color: "var(--danger)" },
+    /* El error real vale mas que la etiqueta: "No se pudo guardar" mentia
+       cuando lo que fallaba era el permiso de lectura. */
+    error:     { ico: <AlertCircle size={13} />, texto: error || "No se pudo guardar", color: "var(--danger)" },
   }[estado];
 
   return (
