@@ -16,7 +16,8 @@ import { useToast } from "@/components/ui/Toast";
 import { acciones, useEstado } from "@/lib/store";
 import { useAbrirDesdeURL } from "@/lib/useQuery";
 import { delta, fechaLarga, isoDia, money, num, pct } from "@/lib/format";
-import { ultimosMeses, variacion } from "@/lib/metricas";
+import { periodoAnterior, rangoDeFechas, ultimosMeses, variacion } from "@/lib/metricas";
+import { DateRangePicker, rangoDePreset, rangoSub, type RangoFechas } from "@/components/ui/DateRangePicker";
 import {
   calcularPyL, cashCollected, comisionesDelMes, cuotasVencidas, gastosPorCategoria,
   porCobrarTotal, revenue, tasaDeMora, totalComisiones,
@@ -39,10 +40,29 @@ export default function Finanzas() {
   const [form, setForm] = useState<(Omit<Gasto, "id"> & { id?: string }) | null>(null);
   const [borrar, setBorrar] = useState<Gasto | null>(null);
 
+  /* `meses` queda solo para el grafico de 6 meses, que es una tendencia y no
+     depende del filtro. El filtro ahora es el rango libre. */
   const meses = useMemo(() => ultimosMeses(6), []);
-  const [mesSel, setMesSel] = useState(meses[meses.length - 1].clave);
-  const mes = meses.find((m) => m.clave === mesSel) ?? meses[meses.length - 1];
-  const previo = meses[Math.max(meses.findIndex((m) => m.clave === mesSel) - 1, 0)];
+
+  /* Arranca en "Este mes", que es lo que pidio Yari: entrar y ver el mes en
+     curso sin tocar nada. */
+  const [rango, setRango] = useState<RangoFechas>(() => rangoDePreset("mes", null)!);
+
+  /* "Maximo" tiene que decir la verdad por los dos lados: arranca en el primer
+     dato que existe, y termina en la ultima cuota PROGRAMADA — si terminara
+     hoy, las cuotas que vencen el mes que viene quedarian fuera de pantalla. */
+  const limites = useMemo(() => {
+    const fechas = [...e.ventas.map((v) => v.fecha), ...e.pagos.map((x) => x.fecha), ...e.gastos.map((g) => g.fecha)]
+      .filter(Boolean).map((f) => f.slice(0, 10)).sort();
+    const vence = e.cuotas.map((c) => c.vence).filter(Boolean).map((f) => f!.slice(0, 10)).sort();
+    return { min: fechas[0] ?? null, max: vence[vence.length - 1] ?? null };
+  }, [e.ventas, e.pagos, e.gastos, e.cuotas]);
+
+  const mes = useMemo(() => rangoDeFechas(rango.desde, rango.hasta, rangoSub(rango)), [rango]);
+  const previo = useMemo(() => {
+    const a = periodoAnterior(rango.desde, rango.hasta);
+    return rangoDeFechas(a.desde, a.hasta, "período anterior");
+  }, [rango]);
 
   useEffect(() => { if (url.nuevo) { setVista("gastos"); setForm(VACIO()); url.limpiar(); } }, [url]);
 
@@ -66,10 +86,10 @@ export default function Finanzas() {
         sub="Lo facturado y lo realmente cobrado, lado a lado. Todo sale de las ventas, los pagos y los gastos que cargás."
         acciones={
           <>
-            <div style={{ width: 150 }}>
-              <Select value={mesSel} onChange={(ev) => setMesSel(ev.target.value)} aria-label="Mes"
-                opciones={[...meses].reverse().map((m) => ({ valor: m.clave, texto: m.etiqueta }))} />
-            </div>
+            <DateRangePicker
+              value={rango} minDate={limites.min} maxDate={limites.max}
+              onApply={setRango} footerNota="Días calendario · zona horaria de Argentina"
+            />
             <Button variante="secondary" icono={<Download size={16} />} onClick={() => exportarPyL(e, mes, p)}>Exportar</Button>
             <Button variante="primary" icono={<Plus size={16} />} onClick={() => { setVista("gastos"); setForm(VACIO()); }}>Nuevo gasto</Button>
           </>

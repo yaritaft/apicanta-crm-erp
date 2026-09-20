@@ -18,6 +18,33 @@ export function ultimosMeses(n: number): RangoMes[] {
   return out;
 }
 
+/* Puente entre el DateRangePicker y todo el calculo, que ya trabajaba con
+   rangos aunque se llamaran "mes". El borde derecho va al final del dia: si
+   `hasta` quedara a las 00:00, un pago de esa misma tarde caeria afuera. */
+export function rangoDeFechas(desde: string, hasta: string, etiqueta: string): RangoMes {
+  const [ay, am, ad] = desde.split("-").map(Number);
+  const [by, bm, bd] = hasta.split("-").map(Number);
+  return {
+    clave: `${desde}_${hasta}`,
+    etiqueta,
+    desde: new Date(ay, am - 1, ad),
+    hasta: new Date(by, bm - 1, bd, 23, 59, 59),
+  };
+}
+
+/* El periodo inmediatamente anterior, del mismo largo. Es contra lo que se
+   compara: "vs. periodo anterior" tiene que significar los mismos dias, no
+   "el mes pasado", o comparar 7 dias contra 30. */
+export function periodoAnterior(desde: string, hasta: string): { desde: string; hasta: string } {
+  const a = new Date(`${desde}T00:00:00`), b = new Date(`${hasta}T00:00:00`);
+  const dias = Math.round((b.getTime() - a.getTime()) / 86400000) + 1;
+  const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  return {
+    desde: iso(new Date(a.getFullYear(), a.getMonth(), a.getDate() - dias)),
+    hasta: iso(new Date(a.getFullYear(), a.getMonth(), a.getDate() - 1)),
+  };
+}
+
 const enMes = (iso: string, m: RangoMes) => {
   const d = new Date(iso).getTime();
   return d >= m.desde.getTime() && d <= m.hasta.getTime();

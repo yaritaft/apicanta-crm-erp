@@ -4,8 +4,20 @@
     {
       "name": "apicanta-erp",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev"],
+      "runtimeArgs": [
+        "run",
+        "dev"
+      ],
       "port": 3010
+    },
+    {
+      "name": "apicanta-erp (sin nube)",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev:local"
+      ],
+      "port": 3011
     }
   ]
 }

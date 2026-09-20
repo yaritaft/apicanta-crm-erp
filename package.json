@@ -6,7 +6,8 @@
     "dev": "next dev --port 3010",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "dev:local": "NEXT_PUBLIC_SUPABASE_URL= NEXT_PUBLIC_SUPABASE_ANON_KEY= next dev --port 3011"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.116.0",
