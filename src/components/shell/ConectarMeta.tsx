@@ -22,7 +22,7 @@ const AVISOS: Record<string, string> = {
   error: "Algo falló al conectar con Meta.",
 };
 
-export function ConectarMeta() {
+export function ConectarMeta({ rango }: { rango?: { desde: string; hasta: string } } = {}) {
   const e = useEstado();
   const toast = useToast();
   const params = useSearchParams();
@@ -33,6 +33,7 @@ export function ConectarMeta() {
   const [porSistema, setPorSistema] = useState(false);
   const [cuentaId, setCuentaId] = useState("");
   const [sincronizando, setSincronizando] = useState(false);
+  const [trayendoTodo, setTrayendoTodo] = useState(false);
 
   const mirar = useCallback(async () => {
     try {
@@ -107,6 +108,39 @@ export function ConectarMeta() {
     }
   }
 
+  /* Trae la jerarquia entera y los insights POR DIA del rango.
+
+     Es el reemplazo de `sincronizar`, que guarda una fila por campania con un
+     solo numero de inversion — y por eso el filtro de fechas no puede recortar
+     el gasto. Conviven hasta que Marketing lea de las tablas nuevas. */
+  async function traerTodo() {
+    if (!cuentaId || !rango) return;
+    setTrayendoTodo(true);
+    try {
+      const r = await fetch("/api/meta/jerarquia", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cuentaId, desde: rango.desde, hasta: rango.hasta }),
+      });
+      const j = await r.json();
+      if (!r.ok) {
+        const esLimite = /too many calls|rate limit/i.test(j.error ?? "");
+        toast(esLimite
+          ? "Meta nos frenó por exceso de consultas. Esperá unos minutos y probá de nuevo."
+          : (j.error ?? "No se pudo traer nada de Meta."), "err");
+        return;
+      }
+      const n = acciones.importarMeta({
+        campaigns: j.campaigns ?? [], adsets: j.adsets ?? [],
+        ads: j.ads ?? [], insights: j.insights ?? [], cuentaId,
+      });
+      toast(`${n.campaigns} campañas, ${n.ads} anuncios y ${n.dias} días de datos.`);
+    } catch {
+      toast("No se pudo hablar con Meta.", "err");
+    } finally {
+      setTrayendoTodo(false);
+    }
+  }
+
   async function desconectar() {
     await fetch("/api/meta/cuentas", { method: "DELETE" });
     setEstado("desconectado"); setCuentas([]);
@@ -156,6 +190,11 @@ export function ConectarMeta() {
               <Select value={cuentaId} onChange={(ev) => setCuentaId(ev.target.value)} aria-label="Cuenta publicitaria"
                 opciones={cuentas.map((c) => ({ valor: c.id, texto: `${c.nombre} · ${c.moneda}` }))} />
             </div>
+            {rango && (
+              <Button variante="primary" cargando={trayendoTodo} icono={<RefreshCw size={16} />} onClick={() => void traerTodo()}>
+                {trayendoTodo ? "Trayendo…" : "Traer anuncios y días"}
+              </Button>
+            )}
             <Button variante="brand" cargando={sincronizando} icono={<RefreshCw size={16} />} onClick={() => void sincronizar()}>
               {sincronizando ? "Trayendo…" : "Traer campañas"}
             </Button>

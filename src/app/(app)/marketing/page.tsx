@@ -220,7 +220,7 @@ export default function Marketing() {
             />
           </div>
 
-          <ConectarMeta />
+          <ConectarMeta rango={rango} />
 
           <div className="grid-2">
             <Card>

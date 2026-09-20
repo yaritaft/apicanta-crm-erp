@@ -2,9 +2,9 @@
 
 import { useCallback, useSyncExternalStore } from "react";
 import type {
-  AccionActividad, Actividad, Ajustes, Alumno, Campania, CampoPersonalizado,
-  Cuota, EntidadNombre, EstadoApp, Etapa, ID, Lead, Meta, Movimiento, Pago,
-  Reporte, Sesion, Venta, Webinar,
+  AccionActividad, Actividad, Ad, AdInsight, Adset, Ajustes, Alumno, Campaign,
+  Campania, CampoPersonalizado, Cuota, EntidadNombre, EstadoApp, Etapa, ID,
+  Lead, Meta, Movimiento, Pago, Reporte, Sesion, Venta, Webinar,
 } from "./types";
 import { pagoDesdeMovimiento } from "./conciliacion";
 import { construirSemilla, estadoVacio } from "./seed";
@@ -158,6 +158,16 @@ async function drenar() {
     marcar("error", err instanceof Error ? err.message : "No se pudo guardar en la nube.");
   } finally {
     drenando = false;
+  }
+}
+
+/* PostgREST se atraganta con un upsert de miles de filas de una. Los 6.809
+   dias de spend de Meta van de a 500. La cola procesa en orden, asi que
+   partirlo no rompe el orden de las FKs: campaigns antes que adsets, adsets
+   antes que ads, ads antes que insights. */
+function empujarEnLotes(tabla: string, filas: unknown[], tamano = 500) {
+  for (let i = 0; i < filas.length; i += tamano) {
+    empujar({ tipo: "upsert", tabla, filas: filas.slice(i, i + tamano) });
   }
 }
 
@@ -680,6 +690,81 @@ export const acciones = {
     empujar({ tipo: "upsert", tabla: "movimientos", filas: nuevos });
     empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
     return { nuevos: nuevos.length, repetidos: filas.length - nuevos.length };
+  },
+
+  /* Guarda lo que trajo el sync de Meta: la jerarquia entera mas los insights
+     del rango pedido.
+
+     Los ids son DETERMINISTICOS a partir del id de Meta. Con eso resincronizar
+     pisa en vez de duplicar, y las FKs se resuelven sin buscar nada: el adset
+     ya sabe el id de su campania sin consultar la tabla. */
+  importarMeta(datos: {
+    campaigns: { id: string; nombre: string; objetivo: string; estado: string; desde?: string; hasta?: string }[];
+    adsets: { id: string; campaignId: string; nombre: string; estado: string; desde?: string; hasta?: string }[];
+    ads: { id: string; adsetId: string; campaignId: string; nombre: string; estado: string }[];
+    insights: {
+      adId: string; dia: string;
+      inversion: number; impresiones: number; clicks: number; leads: number;
+      alcance: number; frecuencia: number; ctr: number; cpm: number; cpc: number;
+      clicksEnlace: number; ctrEnlace: number; costoPorClickEnlace: number;
+      acciones: Record<string, number>; tipoDeLead?: string;
+    }[];
+    cuentaId?: string;
+  }): { campaigns: number; adsets: number; ads: number; dias: number } {
+    const e = snapshot();
+    const t = ahora();
+    const cid = (m: string) => `cmp_${m}`;
+    const sid = (m: string) => `set_${m}`;
+    const aid = (m: string) => `ad_${m}`;
+
+    const campaigns: Campaign[] = datos.campaigns.map((c) => ({
+      id: cid(c.id), metaId: c.id, nombre: c.nombre, objetivo: c.objetivo,
+      estado: c.estado, cuentaId: datos.cuentaId, desde: c.desde, hasta: c.hasta,
+      creadoEn: t, extra: {},
+    }));
+    const adsets: Adset[] = datos.adsets.map((a) => ({
+      id: sid(a.id), metaId: a.id, campaignId: cid(a.campaignId), nombre: a.nombre,
+      estado: a.estado, desde: a.desde, hasta: a.hasta, creadoEn: t, extra: {},
+    }));
+    const ads: Ad[] = datos.ads.map((a) => ({
+      id: aid(a.id), metaId: a.id, adsetId: sid(a.adsetId), campaignId: cid(a.campaignId),
+      nombre: a.nombre, estado: a.estado, creadoEn: t, extra: {},
+    }));
+
+    /* Un anuncio del que Meta no devolvio estructura no puede tener insights:
+       la FK los rechazaria y la cola se frenaria entera en ese lote. */
+    const conocidos = new Set(ads.map((a) => a.id));
+    const nuevos: AdInsight[] = datos.insights
+      .filter((i) => conocidos.has(aid(i.adId)))
+      .map((i) => ({
+        id: `${aid(i.adId)}_${i.dia}`, adId: aid(i.adId), dia: i.dia,
+        inversion: i.inversion, impresiones: i.impresiones, clicks: i.clicks, leads: i.leads,
+        alcance: i.alcance, frecuencia: i.frecuencia,
+        ctr: i.ctr, cpm: i.cpm, cpc: i.cpc,
+        clicksEnlace: i.clicksEnlace, ctrEnlace: i.ctrEnlace,
+        costoPorClickEnlace: i.costoPorClickEnlace,
+        acciones: i.acciones, tipoDeLead: i.tipoDeLead, creadoEn: t,
+      }));
+
+    /* El sync trae UN rango. Lo de afuera de ese rango se conserva: si no,
+       sincronizar septiembre borraria agosto. */
+    const pisados = new Set(nuevos.map((i) => i.id));
+    const adInsights = [...e.adInsights.filter((i) => !pisados.has(i.id)), ...nuevos];
+
+    const { lista, nuevo } = registrar(
+      e, "campania", "meta", "Meta", "importo",
+      `Se trajeron ${campaigns.length} campañas, ${ads.length} anuncios y ${nuevos.length} días de datos.`,
+    );
+    guardar({ ...e, campaigns, adsets, ads, adInsights, actividad: lista });
+
+    /* El orden importa por las FKs. */
+    empujarEnLotes("campaigns", campaigns);
+    empujarEnLotes("adsets", adsets);
+    empujarEnLotes("ads", ads);
+    empujarEnLotes("ad_insights", nuevos);
+    empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
+
+    return { campaigns: campaigns.length, adsets: adsets.length, ads: ads.length, dias: nuevos.length };
   },
 
   ajustes(cambios: Partial<Ajustes>, detalle = "Se actualizaron los ajustes.") {
