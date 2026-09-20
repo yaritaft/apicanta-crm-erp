@@ -868,18 +868,20 @@ kbd {
 
 /* Plan de cuotas */
 .cuota-linea {
-  display: grid; grid-template-columns: 1fr 132px 160px; gap: var(--space-2);
+  /* minmax(0,…): sin eso el ancho intrínseco del input desborda la tarjeta */
+  display: grid; grid-template-columns: minmax(0, 1fr) 132px 160px; gap: var(--space-2);
   align-items: center; padding: var(--space-2) var(--space-3);
   border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface-100);
 }
 .cuota-linea__nombre { font-weight: 600; font-size: 15px; display: flex; align-items: center; gap: var(--space-2); }
+.cuota-linea .hk-input, .cobro-bloque .hk-input { min-width: 0; }
 .cuota-linea .hk-input { height: 38px; font-size: 14px; }
 
 /* Cobros de una cuota */
 .cobro-bloque { border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface-100); overflow: hidden; }
 .cobro-bloque__head { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-3) var(--space-4); }
 .cobro-bloque__body { padding: 0 var(--space-4) var(--space-4); display: flex; flex-direction: column; gap: var(--space-2); border-top: 1px solid var(--border); padding-top: var(--space-3); }
-.cobro-linea { display: grid; grid-template-columns: 1fr 110px 132px 32px; gap: var(--space-2); align-items: center; }
+.cobro-linea { display: grid; grid-template-columns: minmax(0, 1fr) 110px 132px 32px; gap: var(--space-2); align-items: center; }
 .cobro-linea .hk-input { height: 38px; font-size: 14px; }
 
 /* ============================================================
@@ -911,9 +913,24 @@ kbd {
 @media (max-width: 720px) {
   .asistente__pregunta { font-size: 24px; line-height: 32px; }
   .asistente__main { padding: var(--space-5) var(--space-4); }
-  .cuota-linea { grid-template-columns: 1fr 1fr; }
-  .cobro-linea { grid-template-columns: 1fr 1fr; }
+  .cuota-linea { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .cobro-linea { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .cuota-linea__nombre { grid-column: 1 / -1; }
   .opciones { grid-template-columns: 1fr; }
+  /* En un teléfono la ruta entera no entra y empuja al contador a tres
+     renglones: queda sólo el paso en el que estás. */
+  .asistente__paso-n { white-space: nowrap; }
+  .asistente__ruta-item, .asistente__ruta-sep { display: none; }
+  .asistente__ruta-item[data-activo="true"] { display: inline; }
+  .asistente__pista { display: none; }
+  .asistente__foot { padding: var(--space-3) var(--space-4); }
+  /* En pantalla angosta los renglones de una cuota se parten en vez de
+     apretarse hasta que "vence 20 sep 2026" cae en cuatro líneas. */
+  .cobro-bloque__head { flex-wrap: wrap; row-gap: 6px; }
+  .cobro-bloque__head > * { white-space: nowrap; }
+  .mov__head { flex-wrap: wrap; }
+  .sug { flex-wrap: wrap; }
+  .sug__puntaje { width: 44px; }
 }
 
 /* Las flechitas del input numérico ensucian los montos grandes del
@@ -921,3 +938,48 @@ kbd {
 .asistente input[type="number"]::-webkit-outer-spin-button,
 .asistente input[type="number"]::-webkit-inner-spin-button { appearance: none; margin: 0; }
 .asistente input[type="number"] { appearance: textfield; -moz-appearance: textfield; }
+
+/* ========== Configurador de columnas ==========
+   El popover del Ads Manager: prender, apagar y arrastrar. */
+
+.cc-pop {
+  position: absolute; top: calc(100% + 6px); right: 0; z-index: 60;
+  width: 300px; background: var(--surface-100);
+  border: 1px solid var(--border); border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg); overflow: hidden;
+}
+.cc-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border); color: var(--ink);
+}
+.cc-body { max-height: 380px; overflow-y: auto; padding: var(--space-2); }
+
+.cc-grupo {
+  font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--ink-subtle); padding: var(--space-3) var(--space-2) var(--space-1);
+}
+
+.cc-item {
+  display: flex; align-items: center; gap: var(--space-2);
+  padding: 7px var(--space-2); border-radius: var(--radius-sm);
+  font-size: 13px; color: var(--ink); cursor: grab;
+  border: 1px solid transparent;
+}
+.cc-item:hover { background: var(--surface-200); }
+/* La línea marca DÓNDE va a caer, no qué se está arrastrando: es la pregunta
+   que uno se hace mientras arrastra. */
+.cc-item--sobre { border-top-color: var(--accent); }
+.cc-item--fija { cursor: default; color: var(--ink-muted); }
+.cc-item--off { cursor: pointer; color: var(--ink-muted); }
+.cc-item--off:hover { color: var(--ink); }
+
+.cc-grip { width: 14px; flex: none; color: var(--ink-subtle); display: inline-flex; }
+.cc-txt { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cc-fija { font-size: 10px; color: var(--ink-subtle); text-transform: uppercase; letter-spacing: .06em; }
+.cc-quitar {
+  border: 0; background: transparent; color: var(--ink-subtle);
+  cursor: pointer; display: inline-flex; padding: 2px; border-radius: var(--radius-sm);
+}
+.cc-quitar:hover { color: var(--danger); background: var(--danger-soft); }
+.cc-sumar { color: var(--accent-text); font-weight: 700; font-size: 15px; }
