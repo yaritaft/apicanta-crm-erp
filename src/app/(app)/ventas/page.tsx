@@ -108,6 +108,7 @@ export default function Ventas() {
           </div>
         </div>
         <DataTable
+          alto={620}
           filas={filas} columnas={columnas} ordenInicial={{ clave: "fecha", desc: true }}
           onFila={(v) => setVer(v.id)} etiquetaFila={(v) => `Ver la venta de ${v.contactoNombre}`}
           acciones={(v) => (

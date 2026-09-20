@@ -130,6 +130,7 @@ export default function Leads() {
         </div>
 
         <DataTable
+          alto={620}
           filas={filtrados}
           columnas={columnas}
           ordenInicial={{ clave: "act", desc: true }}
