@@ -64,3 +64,25 @@ export async function enviarMagicLink(email: string): Promise<{ ok: boolean; err
   if (error) return { ok: false, error: error.message };
   return { ok: true };
 }
+
+/* Supabase contesta en ingles y con mensajes que no dicen que hacer.
+   Los dos primeros son los unicos que ve alguien del equipo en la practica. */
+function enCastellano(mensaje: string): string {
+  const m = mensaje.toLowerCase();
+  if (m.includes("invalid login credentials")) return "Correo o clave incorrectos.";
+  if (m.includes("email not confirmed")) return "El usuario existe pero falta confirmarlo desde Supabase.";
+  if (m.includes("rate limit") || m.includes("too many")) return "Demasiados intentos seguidos. Esperá un minuto.";
+  return mensaje;
+}
+
+/* Entrada con clave: no depende del correo, asi que no la afecta ni el limite
+   de envios de Supabase ni a donde apunte el enlace del magic link. */
+export async function entrarConClave(email: string, clave: string): Promise<{ ok: boolean; error?: string }> {
+  if (!nube) return { ok: false, error: "No hay base configurada." };
+  const { error } = await nube.auth.signInWithPassword({
+    email: email.trim().toLowerCase(),
+    password: clave,
+  });
+  if (error) return { ok: false, error: enCastellano(error.message) };
+  return { ok: true };
+}
