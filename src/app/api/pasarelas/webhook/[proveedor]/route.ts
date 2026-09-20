@@ -77,19 +77,21 @@ function delPayload(proveedor: ProveedorPasarela, cuerpo: Payload): { id?: strin
         } : undefined,
       };
     }
-    case "paypal": {
-      const r = leer(cuerpo, "resource") as Payload | undefined;
-      const id = texto(r?.id);
-      if (!r || !id) return {};
-      const monto = dinero(numero(leer(r, "amount", "value")));
-      const fee = dinero(numero(leer(r, "seller_receivable_breakdown", "paypal_fee", "value")));
+    case "dlocal": {
+      /* dLocal manda el pago entero en el aviso, pero igual se le
+         vuelve a preguntar: el id es lo único que se le cree. */
+      const id = texto(cuerpo.id) ?? texto(leer(cuerpo, "payment", "id"));
+      if (!id) return {};
+      const monto = dinero(numero(cuerpo.amount ?? leer(cuerpo, "payment", "amount")));
       return {
         id,
         movimiento: monto > 0 ? {
-          proveedor: "paypal", referencia: id, monto, fee, neto: dinero(monto - fee),
-          moneda: moneda(texto(leer(r, "amount", "currency_code"))),
-          fecha: texto(r.create_time) ?? new Date().toISOString(),
-          clienteEmail: texto(leer(r, "payer", "email_address"))?.toLowerCase(),
+          proveedor: "dlocal", referencia: id, monto, fee: 0, neto: monto,
+          moneda: moneda(texto(cuerpo.currency)),
+          fecha: texto(cuerpo.approved_date) ?? texto(cuerpo.created_date) ?? new Date().toISOString(),
+          clienteNombre: texto(leer(cuerpo, "payer", "name")),
+          clienteEmail: texto(leer(cuerpo, "payer", "email"))?.toLowerCase(),
+          descripcion: texto(cuerpo.description) ?? texto(cuerpo.order_id),
         } : undefined,
       };
     }

@@ -127,7 +127,7 @@ export default function Ventas() {
       <Ayuda titulo="Cómo se arma una venta" icono={<Info size={18} />}>
         El asistente va de a una pregunta: cliente, producto, precio, quién cerró, de dónde vino
         y cómo se paga. El plan de cuotas se arma solo y se puede tocar cuota por cuota. Si una
-        cuota se cobró mitad por Stripe y mitad por transferencia, van dos cobros sobre la misma
+        cuota se cobró mitad por Stripe y mitad por USDT, van dos cobros sobre la misma
         cuota; y si la plata ya entró a una pasarela, el cobro se concilia ahí mismo y el fee que
         queda registrado es el real.
       </Ayuda>

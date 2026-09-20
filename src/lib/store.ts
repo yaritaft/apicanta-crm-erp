@@ -268,6 +268,10 @@ export async function cargarDeLaNube(): Promise<void> {
       sesiones: porTabla.sesiones as Sesion[],
       reportes: porTabla.reportes as Reporte[],
       campanias: porTabla.campanias as Campania[],
+      campaigns: (porTabla.campaigns ?? []) as EstadoApp["campaigns"],
+      adsets: (porTabla.adsets ?? []) as EstadoApp["adsets"],
+      ads: (porTabla.ads ?? []) as EstadoApp["ads"],
+      adInsights: (porTabla.ad_insights ?? []) as EstadoApp["adInsights"],
       metas: porTabla.metas as Meta[],
       campos: porTabla.campos as CampoPersonalizado[],
       actividad: (porTabla.actividad as Actividad[])

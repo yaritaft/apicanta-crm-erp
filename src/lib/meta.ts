@@ -179,3 +179,141 @@ async function textoDeError(r: Response): Promise<string> {
     return `Meta respondió ${r.status}`;
   }
 }
+
+/* ---------------- Jerarquía completa ----------------
+
+   campaigns → adsets → ads, y aparte los insights por anuncio y por día.
+
+   Van separados a propósito: la estructura cambia poco y los números cambian
+   todos los días. Pedirlos juntos obligaría a traer toda la jerarquía cada vez
+   que se quiere refrescar el gasto de ayer. */
+
+/* Meta pagina TODO. Con 4.522 anuncios y 6.809 días de spend, quedarse con la
+   primera página no da error: devuelve un número más chico, que es peor que
+   fallar — nadie se entera de que el dato está cortado.
+
+   El tope de vueltas es un cinturón: si `paging.next` alguna vez apunta a sí
+   mismo, el bucle termina igual en vez de colgar la pantalla. */
+async function traerTodo<T>(u: URL, token: string, tope = 300): Promise<T[]> {
+  u.searchParams.set("access_token", token);
+  const out: T[] = [];
+  let siguiente: string | null = u.toString();
+  let vueltas = 0;
+
+  while (siguiente && vueltas < tope) {
+    const r = await fetch(siguiente, { cache: "no-store" });
+    if (!r.ok) throw new Error(await textoDeError(r));
+    const j = (await r.json()) as { data?: T[]; paging?: { next?: string } };
+    out.push(...(j.data ?? []));
+    siguiente = j.paging?.next ?? null;
+    vueltas++;
+  }
+  return out;
+}
+
+const act = (cuentaId: string) => `act_${cuentaId.replace(/^act_/, "")}`;
+
+export interface CampaignMeta { id: string; nombre: string; objetivo: string; estado: string; desde?: string; hasta?: string }
+export interface AdsetMeta { id: string; campaignId: string; nombre: string; estado: string; desde?: string; hasta?: string }
+export interface AdMeta { id: string; adsetId: string; campaignId: string; nombre: string; estado: string }
+
+export interface JerarquiaMeta {
+  campaigns: CampaignMeta[];
+  adsets: AdsetMeta[];
+  ads: AdMeta[];
+}
+
+export async function traerJerarquia(token: string, cuentaId: string): Promise<JerarquiaMeta> {
+  const pedir = (edge: string, fields: string) => {
+    const u = new URL(`${GRAPH}/${act(cuentaId)}/${edge}`);
+    u.searchParams.set("fields", fields);
+    u.searchParams.set("limit", "500");
+    return u;
+  };
+
+  /* Las tres en paralelo: no dependen entre sí, y en serie esto tarda el
+     triple para no ganar nada. */
+  const [campaigns, adsets, ads] = await Promise.all([
+    traerTodo<{ id: string; name: string; objective?: string; status?: string; start_time?: string; stop_time?: string }>(
+      pedir("campaigns", "name,objective,status,start_time,stop_time"), token),
+    traerTodo<{ id: string; name: string; campaign_id: string; status?: string; start_time?: string; end_time?: string }>(
+      pedir("adsets", "name,campaign_id,status,start_time,end_time"), token),
+    traerTodo<{ id: string; name: string; adset_id: string; campaign_id: string; status?: string }>(
+      pedir("ads", "name,adset_id,campaign_id,status"), token),
+  ]);
+
+  return {
+    campaigns: campaigns.map((c) => ({
+      id: c.id, nombre: c.name, objetivo: c.objective ?? "",
+      estado: (c.status ?? "").toLowerCase(), desde: c.start_time, hasta: c.stop_time,
+    })),
+    adsets: adsets.map((a) => ({
+      id: a.id, campaignId: a.campaign_id, nombre: a.name,
+      estado: (a.status ?? "").toLowerCase(), desde: a.start_time, hasta: a.end_time,
+    })),
+    ads: ads.map((a) => ({
+      id: a.id, adsetId: a.adset_id, campaignId: a.campaign_id,
+      nombre: a.name, estado: (a.status ?? "").toLowerCase(),
+    })),
+  };
+}
+
+export interface InsightDia {
+  adId: string;
+  dia: string;
+  inversion: number; impresiones: number; clicks: number; leads: number;
+  alcance: number; frecuencia: number;
+  ctr: number; cpm: number; cpc: number;
+  clicksEnlace: number; ctrEnlace: number; costoPorClickEnlace: number;
+  acciones: Record<string, number>;
+  tipoDeLead?: string;
+}
+
+/* Una fila por anuncio y por día.
+
+   `level=ad` + `time_increment=1` es lo que abre el desglose diario. Sin el
+   time_increment, Meta devuelve UN total por el rango entero — que es
+   exactamente lo que teníamos y lo que impedía que el filtro de fechas
+   recortara el gasto. */
+export async function traerInsightsDiarios(
+  token: string, cuentaId: string, desde: string, hasta: string,
+): Promise<InsightDia[]> {
+  const u = new URL(`${GRAPH}/${act(cuentaId)}/insights`);
+  u.searchParams.set("level", "ad");
+  u.searchParams.set("time_increment", "1");
+  u.searchParams.set("time_range", JSON.stringify({ since: desde, until: hasta }));
+  u.searchParams.set("fields", `ad_id,date_start,${CAMPOS_INSIGHTS}`);
+  u.searchParams.set("limit", "500");
+
+  const filas = await traerTodo<{
+    ad_id: string; date_start: string;
+    spend?: string; impressions?: string; clicks?: string;
+    ctr?: string; cpm?: string; cpc?: string;
+    inline_link_clicks?: string; inline_link_click_ctr?: string; cost_per_inline_link_click?: string;
+    reach?: string; frequency?: string;
+    actions?: { action_type: string; value: string }[];
+  }>(u, token);
+
+  return filas.map((f) => {
+    const acciones = Object.fromEntries((f.actions ?? []).map((a) => [a.action_type, Number(a.value || 0)]));
+    const tipoUsado = TIPOS_DE_LEAD.find((t) => acciones[t] !== undefined);
+    return {
+      adId: f.ad_id,
+      dia: f.date_start,
+      inversion: n(f.spend),
+      impresiones: n(f.impressions),
+      clicks: n(f.clicks),
+      leads: tipoUsado ? acciones[tipoUsado] : 0,
+      alcance: n(f.reach),
+      frecuencia: n(f.frequency),
+      ctr: n(f.ctr),
+      cpm: n(f.cpm),
+      cpc: n(f.cpc),
+      clicksEnlace: n(f.inline_link_clicks),
+      ctrEnlace: n(f.inline_link_click_ctr),
+      costoPorClickEnlace: n(f.cost_per_inline_link_click),
+      acciones,
+      tipoDeLead: tipoUsado,
+    };
+  });
+}

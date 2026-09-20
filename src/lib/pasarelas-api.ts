@@ -1,16 +1,20 @@
+import { createHmac } from "node:crypto";
 import type { Moneda, ProveedorPasarela } from "./types";
 
 /* ==================================================================
    Los adaptadores de cada pasarela, del lado del servidor.
 
    Cada una devuelve lo mismo con otro nombre y en otra unidad: Stripe
-   habla en centavos, Hotmart en milisegundos, PayPal manda el fee en
-   negativo. Acá se traduce todo a un solo formato y el resto de la app
+   habla en centavos, Hotmart en milisegundos, Binance devuelve los
+   depósitos sin dueño. Acá se traduce todo a un solo formato y el resto de la app
    no vuelve a saber de dónde vino la plata.
 
    Docs:
    - Stripe        https://docs.stripe.com/api/charges/list
-   - PayPal        https://developer.paypal.com/docs/api/transaction-search/v1/
+   - dLocal        https://docs.dlocal.com/reference/retrieve-a-payment
+   - Mercury       https://docs.mercury.com/reference/get-transactions
+   - Binance       https://developers.binance.com/docs/wallet/capital/deposite-history
+   - Tronscan      https://docs.tronscan.org/api-endpoints/account-and-transfer
    - Hotmart       https://developers.hotmart.com/docs/en/v1/sales/sales-history/
    - Whop          https://dev.whop.com/api-reference
    - Mercado Pago  https://www.mercadopago.com.ar/developers/es/reference/payments/_payments_search/get
@@ -80,63 +84,6 @@ export async function stripe(desde: Date): Promise<MovimientoApi[]> {
         descripcion: (c.description as string | undefined) ?? undefined,
       };
     });
-}
-
-/* ---------- PayPal ---------- */
-
-export async function paypal(desde: Date, hasta: Date): Promise<MovimientoApi[]> {
-  const id = process.env.PAYPAL_CLIENT_ID;
-  const secreto = process.env.PAYPAL_CLIENT_SECRET;
-  if (!id || !secreto) return [];
-  const base = process.env.PAYPAL_ENV === "sandbox"
-    ? "https://api-m.sandbox.paypal.com" : "https://api-m.paypal.com";
-
-  const auth = await fetch(`${base}/v1/oauth2/token`, {
-    method: "POST",
-    headers: {
-      Authorization: `Basic ${Buffer.from(`${id}:${secreto}`).toString("base64")}`,
-      "Content-Type": "application/x-www-form-urlencoded",
-    },
-    body: "grant_type=client_credentials",
-    cache: "no-store",
-  });
-  const tok = await json(auth);
-  if (!auth.ok) throw new Error(String(tok.error_description ?? "No se pudo autenticar con PayPal."));
-
-  /* La búsqueda de transacciones sólo acepta ventanas de 31 días. */
-  const inicio = new Date(Math.max(desde.getTime(), hasta.getTime() - 31 * 86400000));
-  const q = new URLSearchParams({
-    start_date: inicio.toISOString(),
-    end_date: hasta.toISOString(),
-    fields: "transaction_info,payer_info,cart_info",
-    page_size: "100",
-  });
-  const r = await fetch(`${base}/v1/reporting/transactions?${q}`, {
-    headers: { Authorization: `Bearer ${tok.access_token as string}` }, cache: "no-store",
-  });
-  const data = await json(r);
-  if (!r.ok) throw new Error(String((data.message ?? data.error_description) ?? "PayPal rechazó la consulta."));
-
-  const detalles = (data.transaction_details ?? []) as Record<string, never>[];
-  return detalles
-    .map((d) => {
-      const t = (d.transaction_info ?? {}) as Record<string, never>;
-      const p = (d.payer_info ?? {}) as Record<string, never>;
-      const monto = dinero(Number((t.transaction_amount as { value?: string })?.value ?? 0));
-      const fee = Math.abs(dinero(Number((t.fee_amount as { value?: string })?.value ?? 0)));
-      const nombre = (p.payer_name ?? {}) as { alternate_full_name?: string };
-      return {
-        proveedor: "paypal" as const,
-        referencia: String(t.transaction_id ?? ""),
-        monto, fee, neto: dinero(monto - fee),
-        moneda: moneda((t.transaction_amount as { currency_code?: string })?.currency_code),
-        fecha: String(t.transaction_initiation_date ?? new Date().toISOString()),
-        clienteNombre: nombre.alternate_full_name ?? undefined,
-        clienteEmail: (p.email_address as string | undefined)?.toLowerCase(),
-        descripcion: (t.transaction_subject as string | undefined) ?? undefined,
-      };
-    })
-    .filter((m) => m.monto > 0 && m.referencia);
 }
 
 /* ---------- Hotmart ---------- */
@@ -260,15 +207,20 @@ export async function mercadopago(desde: Date): Promise<MovimientoApi[]> {
 export function hayClaves(p: ProveedorPasarela): boolean {
   switch (p) {
     case "stripe": return Boolean(process.env.STRIPE_SECRET_KEY);
-    case "paypal": return Boolean(process.env.PAYPAL_CLIENT_ID && process.env.PAYPAL_CLIENT_SECRET);
     case "hotmart": return Boolean(process.env.HOTMART_CLIENT_ID && process.env.HOTMART_CLIENT_SECRET && process.env.HOTMART_BASIC);
     case "whop": return Boolean(process.env.WHOP_API_KEY);
+    case "dlocal": return Boolean(process.env.DLOCAL_X_LOGIN && process.env.DLOCAL_TRANS_KEY && process.env.DLOCAL_SECRET_KEY);
+    case "mercury": return Boolean(process.env.MERCURY_API_TOKEN);
+    case "binance": return Boolean(process.env.BINANCE_API_KEY && process.env.BINANCE_API_SECRET);
+    case "trust": return Boolean(process.env.TRUST_WALLET_ADDRESS);
     case "mercadopago": return Boolean(process.env.MERCADOPAGO_ACCESS_TOKEN);
     default: return false;
   }
 }
 
-export const PROVEEDORES: ProveedorPasarela[] = ["stripe", "paypal", "hotmart", "whop", "mercadopago"];
+export const PROVEEDORES: ProveedorPasarela[] = [
+  "stripe", "mercadopago", "hotmart", "whop", "dlocal", "mercury", "binance", "trust",
+];
 
 /** Lo que trae cada pasarela en una ventana de tiempo. */
 /* Los ids del catálogo de procesadores son fijos, así que el cobro ya
@@ -278,10 +230,13 @@ export const procesadorDe = (p: ProveedorPasarela): string => `proc_${p}`;
 export function listar(p: ProveedorPasarela, desde: Date, hasta: Date): Promise<MovimientoApi[]> {
   switch (p) {
     case "stripe": return stripe(desde);
-    case "paypal": return paypal(desde, hasta);
     case "hotmart": return hotmart(desde, hasta);
     case "whop": return whop(desde);
     case "mercadopago": return mercadopago(desde);
+    case "dlocal": return dlocal(desde, hasta);
+    case "mercury": return mercury(desde);
+    case "binance": return binance(desde);
+    case "trust": return trust(desde);
     default: return Promise.resolve([]);
   }
 }
@@ -297,7 +252,7 @@ export async function traerUno(p: ProveedorPasarela, id: string): Promise<Movimi
     switch (p) {
       case "stripe": return await unStripe(id);
       case "mercadopago": return await unMercadoPago(id);
-      case "paypal": return await unPayPal(id);
+      case "dlocal": return await unDlocal(id);
       case "hotmart": return await unHotmart(id);
       default: return null;
     }
@@ -370,48 +325,6 @@ async function unMercadoPago(id: string): Promise<MovimientoApi | null> {
   };
 }
 
-async function unPayPal(id: string): Promise<MovimientoApi | null> {
-  const cliente = process.env.PAYPAL_CLIENT_ID;
-  const secreto = process.env.PAYPAL_CLIENT_SECRET;
-  if (!cliente || !secreto) return null;
-  const base = process.env.PAYPAL_ENV === "sandbox"
-    ? "https://api-m.sandbox.paypal.com" : "https://api-m.paypal.com";
-
-  const auth = await fetch(`${base}/v1/oauth2/token`, {
-    method: "POST",
-    headers: {
-      Authorization: `Basic ${Buffer.from(`${cliente}:${secreto}`).toString("base64")}`,
-      "Content-Type": "application/x-www-form-urlencoded",
-    },
-    body: "grant_type=client_credentials",
-    cache: "no-store",
-  });
-  const tok = await json(auth);
-  if (!auth.ok) return null;
-
-  const r = await fetch(`${base}/v2/payments/captures/${id}`, {
-    headers: { Authorization: `Bearer ${tok.access_token as string}` }, cache: "no-store",
-  });
-  const c = await json(r);
-  if (!r.ok) return null;
-
-  const importe = (c.amount ?? {}) as { value?: string; currency_code?: string };
-  const reparto = (c.seller_receivable_breakdown ?? {}) as {
-    paypal_fee?: { value?: string }; net_amount?: { value?: string };
-  };
-  const monto = dinero(Number(importe.value ?? 0));
-  const fee = dinero(Number(reparto.paypal_fee?.value ?? 0));
-
-  return {
-    proveedor: "paypal",
-    referencia: String(c.id),
-    monto, fee,
-    neto: dinero(Number(reparto.net_amount?.value ?? monto - fee)),
-    moneda: moneda(importe.currency_code),
-    fecha: String(c.create_time ?? new Date().toISOString()),
-  };
-}
-
 async function unHotmart(transaccion: string): Promise<MovimientoApi | null> {
   /* Hotmart no expone el cobro suelto: se pide el historial filtrado
      por la transacción del aviso. */
@@ -419,4 +332,200 @@ async function unHotmart(transaccion: string): Promise<MovimientoApi | null> {
   const desde = new Date(hasta.getTime() - 365 * 86400000);
   const todos = await hotmart(desde, hasta);
   return todos.find((m) => m.referencia === transaccion) ?? null;
+}
+
+/* ---------- dLocal ----------
+   Firma propia: HMAC del login + la fecha + el cuerpo, con la clave
+   secreta. Sin la cabecera X-Date exacta que se firmó, rebota. */
+
+function cabecerasDlocal(cuerpo = ""): Record<string, string> | null {
+  const login = process.env.DLOCAL_X_LOGIN;
+  const trans = process.env.DLOCAL_TRANS_KEY;
+  const secreto = process.env.DLOCAL_SECRET_KEY;
+  if (!login || !trans || !secreto) return null;
+  const fecha = new Date().toISOString();
+  const firma = createHmac("sha256", secreto).update(`${login}${fecha}${cuerpo}`).digest("hex");
+  return {
+    "X-Date": fecha,
+    "X-Login": login,
+    "X-Trans-Key": trans,
+    "Content-Type": "application/json",
+    Authorization: `V2-HMAC-SHA256, Signature: ${firma}`,
+  };
+}
+
+const APROBADO_DLOCAL = /paid|authorized/i;
+
+function unaDeDlocal(p: Record<string, never>): MovimientoApi | null {
+  const monto = dinero(Number(p.amount ?? 0));
+  if (monto <= 0) return null;
+  const pagador = (p.payer ?? {}) as { name?: string; email?: string };
+  return {
+    proveedor: "dlocal",
+    referencia: String(p.id ?? ""),
+    monto, fee: 0, neto: monto,
+    moneda: moneda(p.currency as string),
+    fecha: String(p.approved_date ?? p.created_date ?? new Date().toISOString()),
+    clienteNombre: pagador.name ?? undefined,
+    clienteEmail: pagador.email?.toLowerCase(),
+    descripcion: (p.description as string | undefined) ?? (p.order_id as string | undefined),
+  };
+}
+
+export async function dlocal(desde: Date, hasta: Date): Promise<MovimientoApi[]> {
+  const cabeceras = cabecerasDlocal();
+  if (!cabeceras) return [];
+  const q = new URLSearchParams({
+    page: "1", page_size: "100",
+    created_date_from: desde.toISOString(),
+    created_date_to: hasta.toISOString(),
+  });
+  const r = await fetch(`https://api.dlocal.com/payments?${q}`, { headers: cabeceras, cache: "no-store" });
+  const data = await json(r);
+  if (!r.ok) throw new Error(String(data.message ?? data.code ?? "dLocal rechazó la consulta."));
+
+  const filas = (Array.isArray(data) ? data : (data.data ?? [])) as Record<string, never>[];
+  return filas
+    .filter((p) => APROBADO_DLOCAL.test(String(p.status ?? "")))
+    .map(unaDeDlocal)
+    .filter((m): m is MovimientoApi => m !== null && m.referencia !== "");
+}
+
+async function unDlocal(id: string): Promise<MovimientoApi | null> {
+  const cabeceras = cabecerasDlocal();
+  if (!cabeceras) return null;
+  const r = await fetch(`https://api.dlocal.com/payments/${id}`, { headers: cabeceras, cache: "no-store" });
+  const p = await json(r);
+  if (!r.ok || !APROBADO_DLOCAL.test(String(p.status ?? ""))) return null;
+  return unaDeDlocal(p as Record<string, never>);
+}
+
+/* ---------- Mercury ----------
+   El banco no avisa: se le pregunta. Sólo entra lo que suma (amount
+   positivo) y ya está acreditado, no lo que todavía está en camino. */
+
+export async function mercury(desde: Date): Promise<MovimientoApi[]> {
+  const clave = process.env.MERCURY_API_TOKEN;
+  if (!clave) return [];
+  const cabeceras = { Authorization: `Bearer ${clave}` };
+
+  const rc = await fetch("https://api.mercury.com/api/v1/accounts", { headers: cabeceras, cache: "no-store" });
+  const cuentas = await json(rc);
+  if (!rc.ok) throw new Error(String(cuentas.error ?? "Mercury rechazó la consulta."));
+
+  const lista = (cuentas.accounts ?? []) as { id?: string; kind?: string }[];
+  const salida: MovimientoApi[] = [];
+
+  for (const cuenta of lista) {
+    if (!cuenta.id) continue;
+    const q = new URLSearchParams({ limit: "500", start: desde.toISOString().slice(0, 10) });
+    const rt = await fetch(`https://api.mercury.com/api/v1/account/${cuenta.id}/transactions?${q}`, {
+      headers: cabeceras, cache: "no-store",
+    });
+    const data = await json(rt);
+    if (!rt.ok) continue;
+
+    for (const t of (data.transactions ?? []) as Record<string, never>[]) {
+      const monto = dinero(Number(t.amount ?? 0));
+      /* Negativo es plata que sale: no es un cobro. */
+      if (monto <= 0) continue;
+      if (String(t.status ?? "").toLowerCase() === "failed") continue;
+      const fecha = String(t.postedAt ?? t.createdAt ?? "");
+      if (fecha && new Date(fecha) < desde) continue;
+
+      salida.push({
+        proveedor: "mercury",
+        referencia: String(t.id ?? ""),
+        monto, fee: 0, neto: monto,
+        moneda: "USD",
+        fecha: fecha || new Date().toISOString(),
+        clienteNombre: (t.counterpartyName as string | undefined) ?? (t.counterpartyNickname as string | undefined),
+        descripcion: (t.externalMemo as string | undefined) ?? (t.bankDescription as string | undefined) ?? undefined,
+      });
+    }
+  }
+  return salida.filter((m) => m.referencia !== "");
+}
+
+/* ---------- Binance ----------
+   Los depósitos de USDT. La API firma cada consulta con el secreto y
+   exige que el reloj no esté corrido más de unos segundos. */
+
+export async function binance(desde: Date): Promise<MovimientoApi[]> {
+  const clave = process.env.BINANCE_API_KEY;
+  const secreto = process.env.BINANCE_API_SECRET;
+  if (!clave || !secreto) return [];
+
+  const q = new URLSearchParams({
+    startTime: String(desde.getTime()),
+    timestamp: String(Date.now()),
+    recvWindow: "20000",
+  });
+  const firma = createHmac("sha256", secreto).update(q.toString()).digest("hex");
+
+  const r = await fetch(`https://api.binance.com/sapi/v1/capital/deposit/hisrec?${q}&signature=${firma}`, {
+    headers: { "X-MBX-APIKEY": clave }, cache: "no-store",
+  });
+  const data = await json(r);
+  if (!r.ok) throw new Error(String(data.msg ?? "Binance rechazó la consulta."));
+
+  const filas = (Array.isArray(data) ? data : []) as Record<string, never>[];
+  return filas
+    /* 1 = acreditado. 0 es pendiente y 6 está en revisión: no es plata todavía. */
+    .filter((d) => Number(d.status) === 1)
+    .map((d) => {
+      const monto = dinero(Number(d.amount ?? 0));
+      return {
+        proveedor: "binance" as const,
+        referencia: String(d.txId ?? d.id ?? ""),
+        monto, fee: 0, neto: monto,
+        moneda: "USD" as Moneda,
+        fecha: new Date(Number(d.insertTime ?? Date.now())).toISOString(),
+        descripcion: `Depósito ${String(d.coin ?? "USDT")}${d.network ? ` (${String(d.network)})` : ""}`,
+      };
+    })
+    .filter((m) => m.monto > 0 && m.referencia !== "");
+}
+
+/* ---------- Trust (USDT en la blockchain) ----------
+   Una billetera propia no tiene API ni dueño: lo que hay es la cadena,
+   que es pública. Se mira quién le transfirió USDT a la dirección. */
+
+const USDT_TRC20 = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t";
+
+export async function trust(desde: Date): Promise<MovimientoApi[]> {
+  const direccion = process.env.TRUST_WALLET_ADDRESS;
+  if (!direccion) return [];
+
+  const q = new URLSearchParams({
+    limit: "50", start: "0", sort: "-timestamp", count: "true",
+    relatedAddress: direccion, contract_address: USDT_TRC20,
+  });
+  const cabeceras: Record<string, string> = {};
+  if (process.env.TRONSCAN_API_KEY) cabeceras["TRON-PRO-API-KEY"] = process.env.TRONSCAN_API_KEY;
+
+  const r = await fetch(`https://apilist.tronscanapi.com/api/token_trc20/transfers?${q}`, {
+    headers: cabeceras, cache: "no-store",
+  });
+  const data = await json(r);
+  if (!r.ok) throw new Error("Tronscan no respondió la consulta de la billetera.");
+
+  const filas = (data.token_transfers ?? []) as Record<string, never>[];
+  return filas
+    /* Sólo lo que entró a nuestra dirección, no lo que salió. */
+    .filter((t) => String(t.to_address ?? "").toLowerCase() === direccion.toLowerCase())
+    .map((t) => {
+      const info = (t.tokenInfo ?? {}) as { tokenDecimal?: number; tokenAbbr?: string };
+      const decimales = Number(info.tokenDecimal ?? 6);
+      const monto = dinero(Number(t.quant ?? 0) / 10 ** decimales);
+      return {
+        proveedor: "trust" as const,
+        referencia: String(t.transaction_id ?? ""),
+        monto, fee: 0, neto: monto,
+        moneda: "USD" as Moneda,
+        fecha: new Date(Number(t.block_ts ?? Date.now())).toISOString(),
+        descripcion: `${info.tokenAbbr ?? "USDT"} de ${String(t.from_address ?? "").slice(0, 10)}…`,
+      };
+    })
+    .filter((m) => m.monto > 0 && m.referencia !== "" && new Date(m.fecha) >= desde);
 }

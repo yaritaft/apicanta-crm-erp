@@ -281,6 +281,86 @@ export interface Ajustes {
 
 /* ---------- Estado completo ---------- */
 
+/* ---------- Jerarquía de Meta ----------
+
+   campaigns → adsets → ads → ad_insights, igual que el Ads Manager.
+
+   Reemplaza a `Campania`, que era plana y guardaba UN número de inversión por
+   campaña. Ese era el techo del filtro de fechas: se podía elegir qué campañas
+   ver, pero no recortar el gasto a los días elegidos, porque el gasto no tenía
+   días. */
+
+export interface Campaign {
+  id: ID;
+  /* El id del lado de Meta. Separado del nuestro porque una campaña cargada a
+     mano no tiene, y porque el nuestro no puede depender de un tercero. */
+  metaId?: string;
+  nombre: string;
+  objetivo: string;
+  estado: string;
+  cuentaId?: string;
+  desde?: string;
+  hasta?: string;
+  creadoEn: string;
+  extra: Record<string, unknown>;
+}
+
+export interface Adset {
+  id: ID;
+  metaId?: string;
+  campaignId: ID;
+  nombre: string;
+  estado: string;
+  desde?: string;
+  hasta?: string;
+  creadoEn: string;
+  extra: Record<string, unknown>;
+}
+
+export interface Ad {
+  id: ID;
+  metaId?: string;
+  adsetId: ID;
+  /* Repetido a propósito aunque se llegue por el adset: la pantalla agrupa por
+     campaña, y sin esto la pregunta más común de la app pide un join de más. */
+  campaignId: ID;
+  nombre: string;
+  estado: string;
+  creadoEn: string;
+  extra: Record<string, unknown>;
+}
+
+/* Una fila por anuncio y por DÍA. Es lo que hace que el selector de fechas
+   diga la verdad: sumando estas filas sale el gasto de cualquier rango, y
+   hacia arriba, el de cualquier adset o campaña.
+
+   Lo opcional es opcional de verdad: Meta omite la métrica cuando no hubo ese
+   evento, y un 0 mentiría — "gastó y no convirtió" no es "no corrió". */
+export interface AdInsight {
+  /* `<adId>_<dia>`: así volver a sincronizar un día ya traído lo pisa en vez
+     de duplicarlo, sin lógica extra en el store. */
+  id: ID;
+  adId: ID;
+  dia: string;
+  inversion: number;
+  impresiones: number;
+  clicks: number;
+  leads: number;
+  alcance?: number;
+  frecuencia?: number;
+  ctr?: number;
+  cpm?: number;
+  cpc?: number;
+  clicksEnlace?: number;
+  ctrEnlace?: number;
+  costoPorClickEnlace?: number;
+  /* Qué conversiones reportó Meta ese día y cuál se contó como lead. Sirve
+     para entender de dónde sale el número sin adivinar. */
+  acciones: Record<string, number>;
+  tipoDeLead?: string;
+  creadoEn: string;
+}
+
 export interface EstadoApp {
   version: number;
   ajustes: Ajustes;
@@ -290,7 +370,13 @@ export interface EstadoApp {
   webinars: Webinar[];
   alumnos: Alumno[];
   reportes: Reporte[];
+  /* `campanias` sigue viva hasta que Marketing lea de las tablas nuevas y los
+     datos esten migrados. Tirarla antes deja la pantalla en blanco. */
   campanias: Campania[];
+  campaigns: Campaign[];
+  adsets: Adset[];
+  ads: Ad[];
+  adInsights: AdInsight[];
   metas: Meta[];
   campos: CampoPersonalizado[];
   actividad: Actividad[];
@@ -342,11 +428,17 @@ export interface Procesador {
    veces es un solo movimiento.                                            */
 
 export type ProveedorPasarela =
+  /* Cobran online y avisan al instante */
   | "stripe"
-  | "paypal"
+  | "mercadopago"
   | "hotmart"
   | "whop"
-  | "mercadopago"
+  | "dlocal"
+  /* Se consultan cada tanto: no avisan, hay que preguntarles */
+  | "mercury"
+  | "binance"
+  | "trust"
+  /* Lo que sólo entra a mano o por planilla */
   | "manual";
 
 export type EstadoMovimiento2 = "pendiente" | "conciliado" | "ignorado";

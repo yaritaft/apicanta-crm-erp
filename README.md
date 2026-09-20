@@ -22,7 +22,7 @@ lo que se muestra se calcula solo.
 | **Alumnos** | Quién cursa, con qué plan, cómo viene el progreso y si manda su reporte |
 | **Reportes** | El reporte semanal de cada alumno, semana por semana, marcable en un clic |
 | **Ventas** | Un asistente paso a paso arma la venta, su plan de cuotas y los cobros que ya entraron |
-| **Conciliación** | Los cobros de Stripe, PayPal, Hotmart, Whop y Mercado Pago, imputados a la cuota que les corresponde |
+| **Conciliación** | Los cobros de Stripe, Hotmart, Whop, dLocal, Mercado Pago, Mercury, Binance y Trust, imputados a la cuota que les corresponde |
 | **Finanzas** | Ingresos y egresos, por cobrar, MRR, en qué se va la plata |
 | **Actividad** | Todo lo que se creó, editó, movió o borró, con autor y fecha |
 | **Ajustes** | Etapas, listas, campos propios, integraciones y respaldos |
@@ -150,7 +150,8 @@ deshacer, los pagos se borran y las cuotas vuelven a estar pendientes.
 **Cómo entran los cobros**
 
 1. **Importando el CSV** que exporta cada pasarela (Importar → pegás el archivo). El lector
-   entiende las columnas de Stripe, PayPal, Hotmart, Whop y Mercado Pago aunque cada una
+   entiende las columnas de Stripe, Hotmart, Whop, dLocal y Mercado Pago —y las de un resumen
+   bancario— aunque cada una
    les ponga un nombre distinto, y descarta reembolsos y filas de resumen.
 2. **Solo, con las claves puestas.** `GET /api/pasarelas/sync` trae los últimos 60 días de
    cada pasarela que tenga sus variables de entorno (ver `.env.example`). Sin claves, el

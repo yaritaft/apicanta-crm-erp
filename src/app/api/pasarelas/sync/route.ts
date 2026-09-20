@@ -32,13 +32,17 @@ export async function GET(peticion: Request) {
   const url = new URL(peticion.url);
   const { desde, hasta } = desdeHasta(url);
 
-  /* El cron corre sin sesión: para que escriba hay que decirle el
-     secreto. Sin eso, cualquiera podría llenar la base desde afuera. */
-  const quiereGuardar = url.searchParams.get("guardar") === "1";
+  /* El cron corre sin sesión: se identifica con su propio secreto en la
+     cabecera. Que escriba no depende de ningún parámetro en la URL — un
+     query string que se pierda por el camino dejaría al cron corriendo
+     de gusto, sin guardar nada y sin que nadie se entere. */
+  const cronSecreto = process.env.CRON_SECRET;
+  const esCron = Boolean(cronSecreto)
+    && peticion.headers.get("authorization") === `Bearer ${cronSecreto}`;
+
   const secreto = process.env.PASARELAS_WEBHOOK_TOKEN;
-  const autorizado = !secreto
-    || url.searchParams.get("token") === secreto
-    || peticion.headers.get("authorization") === `Bearer ${process.env.CRON_SECRET ?? secreto}`;
+  const autorizado = esCron || !secreto || url.searchParams.get("token") === secreto;
+  const quiereGuardar = esCron || url.searchParams.get("guardar") === "1";
 
   const movimientos: MovimientoApi[] = [];
   const conectadas: ProveedorPasarela[] = [];

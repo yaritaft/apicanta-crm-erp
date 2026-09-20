@@ -27,11 +27,6 @@ export const PASARELAS: FichaPasarela[] = [
     claves: ["STRIPE_SECRET_KEY"], ejemploRef: "pi_3Q…",
   },
   {
-    id: "paypal", nombre: "PayPal",
-    comoExportar: "Actividad → Descargar → CSV de actividad completada.",
-    claves: ["PAYPAL_CLIENT_ID", "PAYPAL_CLIENT_SECRET"], ejemploRef: "8XJ…",
-  },
-  {
     id: "hotmart", nombre: "Hotmart",
     comoExportar: "Ventas → Exportar informe de ventas.",
     claves: ["HOTMART_CLIENT_ID", "HOTMART_CLIENT_SECRET", "HOTMART_BASIC"], ejemploRef: "HP…",
@@ -42,9 +37,34 @@ export const PASARELAS: FichaPasarela[] = [
     claves: ["WHOP_API_KEY"], ejemploRef: "pay_…",
   },
   {
+    id: "dlocal", nombre: "dLocal",
+    comoExportar: "Merchant panel → Payments → Export.",
+    claves: ["DLOCAL_X_LOGIN", "DLOCAL_TRANS_KEY", "DLOCAL_SECRET_KEY"], ejemploRef: "D-4-…",
+  },
+  {
     id: "mercadopago", nombre: "Mercado Pago",
     comoExportar: "Actividad → Reportes → Liberaciones de dinero.",
     claves: ["MERCADOPAGO_ACCESS_TOKEN"], ejemploRef: "1234567890",
+  },
+  {
+    id: "mercury", nombre: "Mercury (ACH / wire)",
+    comoExportar: "Mercury → la cuenta → Statements / Export CSV.",
+    claves: ["MERCURY_API_TOKEN"], ejemploRef: "txn_…",
+  },
+  {
+    id: "binance", nombre: "Binance (USDT)",
+    comoExportar: "Wallet → Transaction History → Export (depósitos de cripto).",
+    claves: ["BINANCE_API_KEY", "BINANCE_API_SECRET"], ejemploRef: "hash de la red",
+  },
+  {
+    id: "trust", nombre: "Trust (USDT)",
+    comoExportar: "No exporta: se mira la blockchain con la dirección de la billetera.",
+    claves: ["TRUST_WALLET_ADDRESS"], ejemploRef: "hash de la red",
+  },
+  {
+    id: "manual", nombre: "Otro (planilla)",
+    comoExportar: "Cualquier CSV con fecha, monto y nombre: Galicia, la financiera o efectivo.",
+    claves: [], ejemploRef: "—",
   },
 ];
 

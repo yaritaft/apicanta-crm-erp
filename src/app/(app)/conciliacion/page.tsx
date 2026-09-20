@@ -96,7 +96,7 @@ export default function Conciliacion() {
     <div className="stack-5">
       <PageHead
         titulo="Conciliación"
-        sub="Los cobros que entraron a Stripe, PayPal, Hotmart o Whop, y a qué cuota corresponde cada uno."
+        sub="Los cobros que entraron a Stripe, Hotmart, Whop, dLocal, Mercado Pago, Mercury, Binance o Trust, y a qué cuota corresponde cada uno."
         acciones={
           <>
             <Button variante="secondary" icono={<Upload size={16} />} onClick={() => setImportar(true)}>Importar</Button>

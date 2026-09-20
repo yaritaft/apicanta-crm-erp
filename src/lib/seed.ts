@@ -30,15 +30,23 @@ export const PRODUCTOS: Producto[] = [
   { id: "prod_mastermind", nombre: "Mastermind",               precioLista: 0, tipo: "evento",    activo: true, orden: 5 },
 ];
 
+/* Los medios de pago reales del negocio. `automatico` es si el cobro
+   puede entrar solo: por webhook o porque se le puede preguntar a la
+   plataforma. Los demás se cargan a mano o pegando su planilla. */
 export const PROCESADORES: Procesador[] = [
-  { id: "proc_stripe",        nombre: "Stripe",         feeRate: 0.029, activo: true, automatico: true,  proveedor: "stripe" },
-  { id: "proc_paypal",        nombre: "PayPal",         feeRate: 0.049, activo: true, automatico: true,  proveedor: "paypal" },
-  { id: "proc_hotmart",       nombre: "Hotmart",        feeRate: 0.099, activo: true, automatico: true,  proveedor: "hotmart" },
-  { id: "proc_whop",          nombre: "Whop",           feeRate: 0.030, activo: true, automatico: true,  proveedor: "whop" },
-  { id: "proc_mercadopago",   nombre: "Mercado Pago",   feeRate: 0.062, activo: true, automatico: true,  proveedor: "mercadopago" },
-  { id: "proc_financiera",    nombre: "Financiera",     feeRate: 0,     activo: true, automatico: false },
-  { id: "proc_trust",         nombre: "Trust (cripto)", feeRate: 0,     activo: true, automatico: false },
-  { id: "proc_transferencia", nombre: "Transferencia",  feeRate: 0,     activo: true, automatico: false },
+  { id: "proc_stripe",           nombre: "Stripe",               feeRate: 0.029, activo: true, automatico: true,  proveedor: "stripe" },
+  { id: "proc_hotmart",          nombre: "Hotmart",              feeRate: 0.099, activo: true, automatico: true,  proveedor: "hotmart" },
+  { id: "proc_whop",             nombre: "Whop",                 feeRate: 0.030, activo: true, automatico: true,  proveedor: "whop" },
+  { id: "proc_dlocal",           nombre: "dLocal",               feeRate: 0.050, activo: true, automatico: true,  proveedor: "dlocal" },
+  { id: "proc_mercadopago",      nombre: "Mercado Pago (Yari)",  feeRate: 0.062, activo: true, automatico: true,  proveedor: "mercadopago" },
+  { id: "proc_mercury",          nombre: "ACH / Wire (Mercury)", feeRate: 0,     activo: true, automatico: true,  proveedor: "mercury" },
+  { id: "proc_binance",          nombre: "USDT (Binance)",       feeRate: 0,     activo: true, automatico: true,  proveedor: "binance" },
+  { id: "proc_trust",            nombre: "USDT (Trust)",         feeRate: 0,     activo: true, automatico: true,  proveedor: "trust" },
+  { id: "proc_financiera_usd",   nombre: "Financiera USD (Juan)", feeRate: 0,    activo: true, automatico: false },
+  { id: "proc_financiera_ars",   nombre: "Financiera ARS (Juan)", feeRate: 0,    activo: true, automatico: false },
+  { id: "proc_galicia_usd",      nombre: "Galicia (USD)",        feeRate: 0,     activo: true, automatico: false },
+  { id: "proc_galicia_ars",      nombre: "Galicia (ARS)",        feeRate: 0,     activo: true, automatico: false },
+  { id: "proc_efectivo",         nombre: "Efectivo USD",         feeRate: 0,     activo: true, automatico: false },
 ];
 
 export const EMBUDOS: Embudo[] = [
@@ -668,6 +676,7 @@ export function construirSemilla(): EstadoApp {
     alumnos,
     reportes,
     campanias,
+    campaigns: [], adsets: [], ads: [], adInsights: [],
     metas,
     campos,
     actividad,
@@ -689,7 +698,8 @@ export function estadoVacio(): EstadoApp {
     ajustes: { ...AJUSTES, tourVisto: true },
     etapas: ETAPAS,
     leads: [], sesiones: [], webinars: [], alumnos: [], reportes: [],
-    campanias: [], metas: [], campos: [],
+    campanias: [], campaigns: [], adsets: [], ads: [], adInsights: [],
+    metas: [], campos: [],
     productos: PRODUCTOS, procesadores: PROCESADORES, embudos: EMBUDOS, equipo: EQUIPO,
     ventas: [], cuotas: [], pagos: [], gastos: [], movimientos: [],
     actividad: [{

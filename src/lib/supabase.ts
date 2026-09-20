@@ -29,6 +29,10 @@ export const TABLAS = [
   "campanias", "metas", "campos", "actividad",
   "productos", "procesadores", "embudos", "equipo",
   "ventas", "cuotas", "pagos", "gastos", "movimientos",
+  /* Jerarquia de Meta. `ad_insights` es la unica cuyo nombre no coincide con
+     su coleccion (`adInsights`): Postgres va en snake_case y la app en
+     camelCase, asi que store.ts la mapea a mano. */
+  "campaigns", "adsets", "ads", "ad_insights",
 ] as const;
 
 export type Tabla = (typeof TABLAS)[number];
@@ -36,7 +40,13 @@ export type Tabla = (typeof TABLAS)[number];
 /* Tablas que pueden no existir todavia en una base creada con una version
    anterior del modelo. Si faltan, la app sigue andando con esa coleccion
    vacia en vez de caerse entera: el SQL se corre cuando se pueda. */
-export const TABLAS_OPCIONALES = new Set<string>(["movimientos"]);
+export const TABLAS_OPCIONALES = new Set<string>([
+  "movimientos",
+  /* Las cuatro de Meta entran como opcionales hasta que el ALTER este corrido
+     en todas las bases. Mientras tanto la app sigue con esas colecciones
+     vacias en vez de caerse entera. */
+  "campaigns", "adsets", "ads", "ad_insights",
+]);
 
 /* PostgREST avisa que la tabla no esta en el esquema con PGRST205 (y con
    42P01 si la consulta llego a Postgres). Cualquier otro error es real. */
