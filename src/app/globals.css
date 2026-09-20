@@ -929,8 +929,13 @@ kbd {
   .cobro-bloque__head { flex-wrap: wrap; row-gap: 6px; }
   .cobro-bloque__head > * { white-space: nowrap; }
   .mov__head { flex-wrap: wrap; }
-  .sug { flex-wrap: wrap; }
-  .sug__puntaje { width: 44px; }
+  /* La sugerencia pasa a columna: apretada en tres columnas, el puntaje
+     se come el ancho y cada motivo queda en una palabra por renglón. */
+  .sug { flex-direction: column; align-items: stretch; gap: var(--space-2); }
+  .sug__puntaje { width: auto; flex-direction: row; align-items: baseline; gap: 6px; text-align: left; }
+  .sug .row { flex-wrap: wrap; }
+  .sug .spacer { margin-left: 0; }
+  .sug > .hk-btn { width: 100%; }
 }
 
 /* Las flechitas del input numérico ensucian los montos grandes del

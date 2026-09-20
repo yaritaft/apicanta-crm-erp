@@ -1,0 +1,9 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "crons": [
+    {
+      "path": "/api/pasarelas/sync?guardar=1",
+      "schedule": "0 * * * *"
+    }
+  ]
+}

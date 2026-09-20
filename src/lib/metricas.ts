@@ -162,13 +162,46 @@ export function roas(e: EstadoApp): number {
   return cobrado / inv;
 }
 
-export function metricasCampania(c: { inversion: number; impresiones: number; clicks: number; leads: number }) {
+/* Si Meta las reporto, se usan las de Meta. Las cuentas de abajo son el
+   respaldo para las campanias cargadas a mano, y no dan exactamente lo mismo:
+   el CTR de Meta sale sobre impresiones servidas y redondea distinto. Entre
+   un numero propio y uno que cierra contra el Ads Manager, gana el segundo.
+
+   El CPL no viene de Meta: depende de que conversion contemos como lead, y eso
+   lo decide la app. */
+export function metricasCampania(c: {
+  inversion: number; impresiones: number; clicks: number; leads: number;
+  ctr?: number; cpc?: number; cpm?: number;
+}) {
   return {
-    ctr: c.impresiones > 0 ? (c.clicks / c.impresiones) * 100 : 0,
-    cpc: c.clicks > 0 ? c.inversion / c.clicks : 0,
+    ctr: c.ctr ?? (c.impresiones > 0 ? (c.clicks / c.impresiones) * 100 : 0),
+    cpc: c.cpc ?? (c.clicks > 0 ? c.inversion / c.clicks : 0),
+    cpm: c.cpm ?? (c.impresiones > 0 ? (c.inversion / c.impresiones) * 1000 : 0),
     cpl: c.leads > 0 ? c.inversion / c.leads : 0,
-    cpm: c.impresiones > 0 ? (c.inversion / c.impresiones) * 1000 : 0,
   };
+}
+
+/* Lo que una campania devolvio en plata.
+
+   La cadena es venta → contacto → lead → lead.campania, y ese ultimo paso es
+   por NOMBRE, no por id: hoy `campania` es texto libre en el lead. Alcanza
+   mientras los nombres se escriban igual, pero se rompe si alguien renombra
+   una campania en Meta. El arreglo de verdad es un `campaniaId` en el lead. */
+export function negocioDeCampania(e: EstadoApp, nombre: string) {
+  const leadsDeLaCampania = new Set(
+    e.leads.filter((l) => l.campania === nombre).map((l) => l.id),
+  );
+  const ventas = e.ventas.filter(
+    (v) => v.estado !== "cancelada" && v.contactoId && leadsDeLaCampania.has(v.contactoId),
+  );
+  const facturado = ventas.reduce((s, v) => s + v.precioAcordado, 0);
+  const idsVenta = new Set(ventas.map((v) => v.id));
+  const cuotas = e.cuotas.filter((c) => idsVenta.has(c.ventaId));
+  const idsCuota = new Set(cuotas.map((c) => c.id));
+  const cobrado = e.pagos
+    .filter((p) => idsCuota.has(p.cuotaId))
+    .reduce((s, p) => s + p.monto, 0);
+  return { ventas: ventas.length, leads: leadsDeLaCampania.size, facturado, cobrado };
 }
 
 /* ---------- Alumnos ---------- */
