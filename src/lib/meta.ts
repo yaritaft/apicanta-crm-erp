@@ -58,6 +58,19 @@ export async function traerCuentas(token: string): Promise<CuentaMeta[]> {
 export interface CampaniaMeta {
   id: string; nombre: string; objetivo: string; estado: string;
   inversion: number; impresiones: number; clicks: number; leads: number;
+  /* Las metricas que Meta calcula. Se piden en vez de derivarlas porque sus
+     definiciones no son las obvias: el CTR de Meta sale sobre impresiones
+     servidas, y redondea distinto. Si las calculara yo, la tabla no le
+     cerraria contra el Ads Manager y no hay peor numero que uno que discute
+     con la fuente. */
+  ctr: number; cpm: number; cpc: number;
+  /* `clicks` son TODOS los clicks — incluye likes, comentarios, ver mas.
+     `clicksEnlace` son los que se fueron a la landing, que es lo que
+     importa para el embudo. Meta los reporta por separado a proposito. */
+  clicksEnlace: number; ctrEnlace: number; costoPorClickEnlace: number;
+  /* Personas distintas alcanzadas, y cuantas veces vio el anuncio cada una.
+     Una frecuencia alta con CTR cayendo es fatiga de creativo. */
+  alcance: number; frecuencia: number;
   desde?: string; hasta?: string;
   /* Qué tipos de conversión reportó Meta y cuál se usó para contar leads.
      Sirve para entender de dónde sale el número sin adivinar. */
@@ -84,11 +97,19 @@ const TIPOS_DE_LEAD = [
   "offsite_conversion.fb_pixel_lead",
 ];
 
+/* Lo que se le pide a cada campania. Son los mismos nombres que usa el Ads
+   Manager, para que las columnas de la tabla le cierren fila por fila. */
+const CAMPOS_INSIGHTS = [
+  "spend", "impressions", "clicks", "ctr", "cpm", "cpc",
+  "inline_link_clicks", "inline_link_click_ctr", "cost_per_inline_link_click",
+  "reach", "frequency", "actions",
+].join(",");
+
 export async function traerCampanias(token: string, cuentaId: string, desde: string, hasta: string): Promise<CampaniaMeta[]> {
   const u = new URL(`${GRAPH}/act_${cuentaId.replace(/^act_/, "")}/campaigns`);
   u.searchParams.set("fields", [
     "name", "objective", "status", "start_time", "stop_time",
-    `insights.time_range({"since":"${desde}","until":"${hasta}"}){spend,impressions,clicks,actions}`,
+    `insights.time_range({"since":"${desde}","until":"${hasta}"}){${CAMPOS_INSIGHTS}}`,
   ].join(","));
   u.searchParams.set("limit", "200");
   u.searchParams.set("access_token", token);
@@ -100,7 +121,13 @@ export async function traerCampanias(token: string, cuentaId: string, desde: str
     data?: {
       id: string; name: string; objective?: string; status?: string;
       start_time?: string; stop_time?: string;
-      insights?: { data?: { spend?: string; impressions?: string; clicks?: string; actions?: { action_type: string; value: string }[] }[] };
+      insights?: { data?: {
+        spend?: string; impressions?: string; clicks?: string;
+        ctr?: string; cpm?: string; cpc?: string;
+        inline_link_clicks?: string; inline_link_click_ctr?: string; cost_per_inline_link_click?: string;
+        reach?: string; frequency?: string;
+        actions?: { action_type: string; value: string }[];
+      }[] };
     }[];
   };
 
@@ -119,10 +146,18 @@ export async function traerCampanias(token: string, cuentaId: string, desde: str
       nombre: c.name,
       objetivo: c.objective ?? "",
       estado: (c.status ?? "").toLowerCase(),
-      inversion: Number(ins?.spend ?? 0),
-      impresiones: Number(ins?.impressions ?? 0),
-      clicks: Number(ins?.clicks ?? 0),
+      inversion: n(ins?.spend),
+      impresiones: n(ins?.impressions),
+      clicks: n(ins?.clicks),
       leads,
+      ctr: n(ins?.ctr),
+      cpm: n(ins?.cpm),
+      cpc: n(ins?.cpc),
+      clicksEnlace: n(ins?.inline_link_clicks),
+      ctrEnlace: n(ins?.inline_link_click_ctr),
+      costoPorClickEnlace: n(ins?.cost_per_inline_link_click),
+      alcance: n(ins?.reach),
+      frecuencia: n(ins?.frequency),
       desde: c.start_time,
       hasta: c.stop_time,
       acciones,
@@ -130,6 +165,11 @@ export async function traerCampanias(token: string, cuentaId: string, desde: str
     };
   });
 }
+
+/* Meta manda los numeros como string, y omite el campo entero cuando la
+   campania no tuvo ese evento. Sin esto, un `undefined` se vuelve NaN y
+   contamina cualquier suma de la tabla. */
+const n = (v: string | undefined) => Number(v ?? 0) || 0;
 
 async function textoDeError(r: Response): Promise<string> {
   try {

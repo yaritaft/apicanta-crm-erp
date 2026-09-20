@@ -6,9 +6,9 @@ import {
 } from "lucide-react";
 import { PageHead } from "@/components/shell/PageHead";
 import {
-  Ayuda, Badge, Button, Card, Chip, Empty, Field, IconButton, Input, Select, StatCard, Textarea,
+  Ayuda, Badge, Button, Card, Chip, Empty, Field, Input, Select, StatCard, Textarea,
 } from "@/components/ui/ui";
-import { Modal, ModalForm } from "@/components/ui/Modal";
+import { ModalForm } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toast";
 import { AsistenteVenta } from "@/components/ventas/AsistenteVenta";
 import { acciones, useEstado } from "@/lib/store";
@@ -65,18 +65,26 @@ export default function Conciliacion() {
       const r = await fetch("/api/pasarelas/sync");
       const data = (await r.json()) as {
         movimientos?: Parameters<typeof acciones.importarMovimientos>[0];
-        conectadas?: string[];
+        conectadas?: ProveedorPasarela[];
+        errores?: { proveedor: string; mensaje: string }[];
         error?: string;
       };
       if (!r.ok) throw new Error(data.error ?? "No se pudo sincronizar.");
+      if (data.errores?.length) {
+        toast(`${nombrePasarela(data.errores[0].proveedor as ProveedorPasarela)}: ${data.errores[0].mensaje}`, "err");
+      }
       if (!data.conectadas?.length) {
-        toast("Todavía no hay pasarelas conectadas. Importá el CSV mientras tanto.", "err");
+        toast("Todavía no hay pasarelas conectadas: faltan las claves. Mientras tanto, importá el CSV.", "err");
         return;
       }
-      const { nuevos, repetidos } = acciones.importarMovimientos(data.movimientos ?? [], "api");
+      /* El procesador es cosa de Apicanta, no de la pasarela: se ata acá. */
+      const conMedio = (data.movimientos ?? []).map((m) => ({
+        ...m, procesadorId: e.procesadores.find((p) => p.proveedor === m.proveedor)?.id,
+      }));
+      const { nuevos, repetidos } = acciones.importarMovimientos(conMedio, "api");
       toast(nuevos === 0
         ? `Sin cobros nuevos (${repetidos} ya estaban).`
-        : `Entraron ${nuevos} cobros de ${data.conectadas.join(", ")}.`);
+        : `Entraron ${nuevos} cobros de ${data.conectadas.map(nombrePasarela).join(", ")}.`);
     } catch (err) {
       toast(err instanceof Error ? err.message : "No se pudo sincronizar.", "err");
     } finally {
@@ -217,7 +225,9 @@ function FilaMovimiento({ mov, M, abierto, onAbrir, onNuevaVenta }: {
     else toast("No se pudo conciliar ese cobro.", "err");
   }
 
-  const venta = mov.ventaId ? e.ventas.find((v) => v.id === mov.ventaId) : undefined;
+  /* En la fila el nombre ya está: el badge dice a qué cuota fue a parar. */
+  const cuota = mov.cuotaId ? e.cuotas.find((c) => c.id === mov.cuotaId) : undefined;
+  const destino = cuota ? (cuota.esReserva ? "Reserva" : `Cuota ${cuota.numero}`) : "Conciliado";
 
   return (
     <div className="mov" data-abierto={abierto}>
@@ -232,7 +242,7 @@ function FilaMovimiento({ mov, M, abierto, onAbrir, onNuevaVenta }: {
         <span className="spacer" />
         {mov.estado === "pendiente" && automatica && <Badge variante="success"><Sparkles size={13} />Calce seguro</Badge>}
         {mov.estado === "conciliado" && (
-          <Badge variante="neutral"><Check size={13} />{venta ? venta.contactoNombre : "Conciliado"}</Badge>
+          <Badge variante="neutral"><Check size={13} />{destino}</Badge>
         )}
         {mov.estado === "ignorado" && <Badge variante="neutral">Ignorado</Badge>}
         <span className="mov__monto">{M(mov.monto, 2)}</span>
@@ -337,7 +347,7 @@ function SugerenciaFila({ s, mov, M, destacada, onConciliar }: {
           </span>
         )}
       </span>
-      <Button sm variante={destacada ? "primary" : "secondary"} onClick={onConciliar}>
+      <Button sm variante={destacada ? "brand" : "secondary"} onClick={onConciliar}>
         Conciliar {M(Math.min(mov.monto, s.saldo), 2)}
       </Button>
     </div>
@@ -410,7 +420,9 @@ function ModalImportar({ onCerrar }: { onCerrar: () => void }) {
           )}
           {previo.descartadas.length > 0 && (
             <span className="t-sm" style={{ color: "var(--warning)" }}>
-              Se saltean {previo.descartadas.length} filas: {previo.descartadas[0].motivo}
+              {previo.descartadas.length === 1
+                ? `Se saltea 1 fila: ${previo.descartadas[0].motivo}`
+                : `Se saltean ${previo.descartadas.length} filas. La primera: ${previo.descartadas[0].motivo}`}
             </span>
           )}
         </div>

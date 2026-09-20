@@ -208,10 +208,22 @@ export function AsistenteVenta({ onCerrar, onListo, desdeMovimiento }: {
   useEffect(() => {
     const onKey = (ev: KeyboardEvent) => {
       if (ev.key === "Escape") { ev.preventDefault(); onCerrar(); return; }
+      const foco = ev.target as HTMLElement | null;
+      const escribiendo = foco?.tagName === "INPUT" || foco?.tagName === "TEXTAREA" || foco?.tagName === "SELECT";
+
+      /* Los números eligen la opción que tienen al lado, como muestra el
+         cartelito de cada tarjeta. Mientras se escribe, un 3 es un 3. */
+      if (!escribiendo && /^[1-9]$/.test(ev.key)) {
+        const opciones = mainRef.current?.querySelectorAll<HTMLButtonElement>(".opcion");
+        const elegida = opciones?.[Number(ev.key) - 1];
+        if (elegida) { ev.preventDefault(); elegida.click(); return; }
+      }
+
       if (ev.key !== "Enter" || ev.shiftKey) return;
-      const t = ev.target as HTMLElement | null;
-      if (t?.tagName === "TEXTAREA") return;
-      if (t?.tagName === "BUTTON" && t.getAttribute("type") !== "submit") return;
+      if (foco?.tagName === "TEXTAREA") return;
+      /* Sobre una opción ya elegida, Enter avanza en vez de volver a
+         tocarla: si no, en el paso del director la desmarcaría. */
+      if (foco?.tagName === "BUTTON" && !foco.classList.contains("opcion")) return;
       ev.preventDefault();
       if (paso.id === "resumen") guardar();
       else avanzar();
@@ -274,7 +286,13 @@ export function AsistenteVenta({ onCerrar, onListo, desdeMovimiento }: {
       <div className="asistente__foot">
         {i > 0 && <Button variante="ghost" icono={<ArrowLeft size={16} />} onClick={volver}>Atrás</Button>}
         <span className="spacer" />
-        {problema && <span className="t-sm" style={{ color: "var(--warning)" }}>{problema}</span>}
+        {problema && (
+          /* En los pasos de plata el desvío es un problema; en los demás,
+             sólo falta completar algo: no se pinta como error. */
+          <span className="t-sm" style={{ color: paso.id === "plan" || paso.id === "cobros" ? "var(--warning)" : "var(--ink-subtle)" }}>
+            {problema}
+          </span>
+        )}
         {paso.id === "resumen" ? (
           <Button variante="primary" icono={<Check size={16} />} onClick={guardar}>Registrar la venta</Button>
         ) : (

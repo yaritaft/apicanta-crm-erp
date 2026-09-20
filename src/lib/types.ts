@@ -175,8 +175,23 @@ export interface Campania {
   estado: EstadoCampania;
   inversion: number;
   impresiones: number;
+  /* Todos los clicks: incluye likes, comentarios y "ver más". */
   clicks: number;
   leads: number;
+  /* Las que calcula Meta. Se guardan en vez de derivarlas para que la tabla
+     cierre contra el Ads Manager fila por fila. */
+  ctr?: number;
+  cpm?: number;
+  cpc?: number;
+  /* Los clicks que se fueron a la landing, que es lo que importa para el
+     embudo. Meta los separa de los clicks totales a proposito. */
+  clicksEnlace?: number;
+  ctrEnlace?: number;
+  costoPorClickEnlace?: number;
+  /* Personas distintas, y cuantas veces vio el anuncio cada una. Frecuencia
+     alta con CTR cayendo es fatiga de creativo. */
+  alcance?: number;
+  frecuencia?: number;
   desde: string;
   hasta?: string;
   creadoEn: string;

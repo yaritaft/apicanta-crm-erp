@@ -1,6 +1,6 @@
 import {
   LayoutDashboard, Users, Columns3, CalendarDays, Video, Megaphone,
-  GraduationCap, ClipboardList, Wallet, Settings, HandCoins,
+  GraduationCap, ClipboardList, Wallet, Settings, HandCoins, ArrowDownUp,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
@@ -41,6 +41,7 @@ export const NAV: GrupoNav[] = [
     titulo: "Administración",
     items: [
       { href: "/finanzas", texto: "Finanzas", icono: Wallet, ayuda: "Ingresos, egresos y qué queda" },
+      { href: "/conciliacion", texto: "Conciliación", icono: ArrowDownUp, ayuda: "Cobros de las pasarelas y a qué cuota van" },
       { href: "/ajustes", texto: "Ajustes", icono: Settings, ayuda: "Etapas, categorías, campos e integraciones" },
     ],
   },

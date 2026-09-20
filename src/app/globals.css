@@ -809,9 +809,14 @@ kbd {
 .asistente__ruta-item { font-size: 13px; color: var(--ink-subtle); white-space: nowrap; }
 .asistente__ruta-item[data-activo="true"] { color: var(--brand); font-weight: 600; }
 .asistente__ruta-sep { color: var(--border-strong); }
-.asistente__main { flex: 1; overflow-y: auto; padding: var(--space-7) var(--space-5); }
+.asistente__main {
+  flex: 1; overflow-y: auto; padding: var(--space-7) var(--space-5);
+  display: flex; flex-direction: column;
+}
 .asistente__paso {
-  width: 100%; max-width: 680px; margin: 0 auto;
+  /* margin auto: centrado vertical cuando el paso entra, y scroll normal
+     desde arriba cuando no entra. */
+  width: 100%; max-width: 680px; margin: auto;
   display: flex; flex-direction: column; gap: var(--space-5);
   animation: pasoIn 260ms cubic-bezier(.2,.8,.3,1);
 }
@@ -896,9 +901,9 @@ kbd {
 
 .sug { display: flex; align-items: flex-start; gap: var(--space-3); padding: var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface-100); }
 .sug[data-fuerte="true"] { border-color: var(--success); }
-.sug__puntaje { flex: none; width: 52px; text-align: center; }
-.sug__puntaje-n { font-family: var(--font-display); font-size: 18px; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--ink); }
-.sug__puntaje-l { font-size: 11px; color: var(--ink-subtle); text-transform: uppercase; letter-spacing: .06em; }
+.sug__puntaje { flex: none; width: 56px; text-align: center; display: flex; flex-direction: column; gap: 2px; }
+.sug__puntaje-n { display: block; font-family: var(--font-display); font-size: 18px; line-height: 22px; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--ink); }
+.sug__puntaje-l { display: block; font-size: 10px; line-height: 12px; color: var(--ink-subtle); text-transform: uppercase; letter-spacing: .06em; }
 .sug__motivos { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
 .motivo { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; padding: 2px 8px; border-radius: var(--radius-full); background: var(--success-soft); color: var(--success); }
 .motivo--reparo { background: var(--warning-soft); color: var(--warning); }
@@ -910,3 +915,9 @@ kbd {
   .cobro-linea { grid-template-columns: 1fr 1fr; }
   .opciones { grid-template-columns: 1fr; }
 }
+
+/* Las flechitas del input numérico ensucian los montos grandes del
+   asistente y nadie las usa: el número se escribe. */
+.asistente input[type="number"]::-webkit-outer-spin-button,
+.asistente input[type="number"]::-webkit-inner-spin-button { appearance: none; margin: 0; }
+.asistente input[type="number"] { appearance: textfield; -moz-appearance: textfield; }

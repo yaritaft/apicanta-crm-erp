@@ -6,6 +6,7 @@ import { AlertCircle, Check, Plug, RefreshCw, Unplug } from "lucide-react";
 import { Badge, Button, Card, CardHead, Select } from "@/components/ui/ui";
 import { useToast } from "@/components/ui/Toast";
 import { acciones, nuevoId, useEstado } from "@/lib/store";
+import type { CampaniaMeta } from "@/lib/meta";
 import { num } from "@/lib/format";
 import type { Campania } from "@/lib/types";
 
@@ -80,7 +81,7 @@ export function ConectarMeta() {
         return;
       }
 
-      const traidas: { id: string; nombre: string; objetivo: string; estado: string; inversion: number; impresiones: number; clicks: number; leads: number; desde?: string; hasta?: string }[] = j.campanias ?? [];
+      const traidas: CampaniaMeta[] = j.campanias ?? [];
       let nuevas = 0, actualizadas = 0;
 
       for (const c of traidas) {
@@ -89,6 +90,9 @@ export function ConectarMeta() {
           nombre: c.nombre, plataforma: "Meta", objetivo: c.objetivo,
           estado: (c.estado === "active" ? "activa" : c.estado === "paused" ? "pausada" : "finalizada") as Campania["estado"],
           inversion: c.inversion, impresiones: c.impresiones, clicks: c.clicks, leads: c.leads,
+          ctr: c.ctr, cpm: c.cpm, cpc: c.cpc,
+          clicksEnlace: c.clicksEnlace, ctrEnlace: c.ctrEnlace, costoPorClickEnlace: c.costoPorClickEnlace,
+          alcance: c.alcance, frecuencia: c.frecuencia,
           desde: c.desde ?? new Date().toISOString(), hasta: c.hasta,
           extra: { metaId: c.id },
         };

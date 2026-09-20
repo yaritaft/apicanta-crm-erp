@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle, Check, HandCoins, Info, Pencil, Plus, Receipt, Trash2,
 } from "lucide-react";
@@ -12,11 +12,14 @@ import {
 import { Columna, DataTable } from "@/components/ui/DataTable";
 import { ModalForm, Confirmar } from "@/components/ui/Modal";
 import { Drawer, Dato } from "@/components/ui/Drawer";
+import { AsistenteVenta } from "@/components/ventas/AsistenteVenta";
 import { useToast } from "@/components/ui/Toast";
 import { acciones, nuevoId, useEstado } from "@/lib/store";
 import { useAbrirDesdeURL } from "@/lib/useQuery";
 import { fechaLarga, isoDia, money, num, pct } from "@/lib/format";
 import { porCobrarTotal, saldoVenta } from "@/lib/finanzas";
+import { parecido } from "@/lib/conciliacion";
+import { nombrePasarela } from "@/lib/pasarelas";
 import type { Cuota, EstadoVenta, Moneda, Pago, Venta } from "@/lib/types";
 
 const ESTADO: Record<EstadoVenta, { texto: string; variante: "success" | "neutral" | "danger" }> = {
@@ -31,17 +34,13 @@ export default function Ventas() {
   const url = useAbrirDesdeURL();
   const [filtro, setFiltro] = useState<"todas" | EstadoVenta | "conSaldo">("todas");
   const [form, setForm] = useState<BorradorVenta | null>(null);
+  const [asistente, setAsistente] = useState(false);
   const [ver, setVer] = useState<string | null>(null);
   const [borrar, setBorrar] = useState<Venta | null>(null);
   const [cobrar, setCobrar] = useState<Cuota | null>(null);
 
-  const estadoRef = useRef(e);
-  estadoRef.current = e;
-
-  /* `e` a propósito fuera de las dependencias: sólo hace falta su valor
-     en el momento en que la URL pide abrir el formulario. */
   useEffect(() => {
-    if (url.nuevo) { setForm(nuevoBorrador(estadoRef.current)); url.limpiar(); }
+    if (url.nuevo) { setAsistente(true); url.limpiar(); }
     else if (url.ver) { setVer(url.ver); url.limpiar(); }
   }, [url]);
 
@@ -88,7 +87,7 @@ export default function Ventas() {
       <PageHead
         titulo="Ventas"
         sub="Cada venta con su plan de cuotas. Una cuota puede cobrarse con varios métodos y cada pago queda atado a su procesador."
-        acciones={<Button variante="primary" icono={<Plus size={16} />} onClick={() => setForm(nuevoBorrador(e))}>Nueva venta</Button>}
+        acciones={<Button variante="primary" icono={<Plus size={16} />} onClick={() => setAsistente(true)}>Nueva venta</Button>}
       />
 
       <div className="grid-stats">
@@ -120,17 +119,25 @@ export default function Ventas() {
           vacio={
             <Empty icono={<HandCoins size={22} />} titulo="Todavía no cargaste ventas"
               texto="Cargá una venta con su plan de cuotas y los cobros empiezan a aparecer solos en Finanzas."
-              accion={<Button variante="brand" icono={<Plus size={16} />} onClick={() => setForm(nuevoBorrador(e))}>Cargar una venta</Button>} />
+              accion={<Button variante="brand" icono={<Plus size={16} />} onClick={() => setAsistente(true)}>Cargar una venta</Button>} />
           }
         />
       </Card>
 
       <Ayuda titulo="Cómo se arma una venta" icono={<Info size={18} />}>
-        Elegís el producto y el precio que cerró el closer, y decís en cuántas cuotas.
-        Apicanta arma el plan solo. Después, a medida que entra la plata, registrás cada pago
-        con su método — y si una cuota se pagó mitad por Stripe y mitad por transferencia,
-        cargás dos pagos sobre la misma cuota.
+        El asistente va de a una pregunta: cliente, producto, precio, quién cerró, de dónde vino
+        y cómo se paga. El plan de cuotas se arma solo y se puede tocar cuota por cuota. Si una
+        cuota se cobró mitad por Stripe y mitad por transferencia, van dos cobros sobre la misma
+        cuota; y si la plata ya entró a una pasarela, el cobro se concilia ahí mismo y el fee que
+        queda registrado es el real.
       </Ayuda>
+
+      {asistente && (
+        <AsistenteVenta
+          onCerrar={() => setAsistente(false)}
+          onListo={(id, nombre) => { setAsistente(false); setVer(id); toast(`Venta de ${nombre} cargada.`); }}
+        />
+      )}
 
       {/* ---------- Alta / edición ---------- */}
       {form && (
@@ -272,15 +279,6 @@ interface BorradorVenta {
   notas: string;
   planCuotas: number;
   reserva: number;
-}
-
-function nuevoBorrador(e: ReturnType<typeof useEstado>): BorradorVenta {
-  return {
-    contactoNombre: "", productoId: e.productos[0]?.id ?? "", precioAcordado: e.productos[0]?.precioLista ?? 0,
-    fecha: new Date().toISOString(), closerId: "", directorId: "eq_director",
-    embudoId: "emb_webinar", webinarId: "", excluidoMarketing: false, estado: "activa",
-    notas: "", planCuotas: 1, reserva: 0,
-  };
 }
 
 function desdeVenta(e: ReturnType<typeof useEstado>, v: Venta): BorradorVenta {
@@ -444,6 +442,15 @@ function FormularioPago({ cuota, onCerrar, onGuardado }: {
   const [fecha, setFecha] = useState(isoDia(new Date().toISOString()));
   const [referencia, setReferencia] = useState("");
 
+  /* Cobros de pasarela que parecen de este cliente: si el pago ya entró,
+     conviene conciliarlo en vez de cargarlo a mano y duplicarlo. */
+  const venta = e.ventas.find((v) => v.id === cuota.ventaId);
+  const candidatos = e.movimientos.filter((m) =>
+    m.estado === "pendiente" && venta && (
+      parecido(m.clienteNombre, venta.contactoNombre) >= 0.5 || Math.abs(m.monto - resta) < 0.5
+    ),
+  ).slice(0, 4);
+
   const proc = e.procesadores.find((p) => p.id === procesadorId);
   const fee = Math.round(monto * (proc?.feeRate ?? 0) * 100) / 100;
   const mon = e.ajustes.monedaBase;
@@ -482,9 +489,30 @@ function FormularioPago({ cuota, onCerrar, onGuardado }: {
           <Input value={referencia} onChange={(ev) => setReferencia(ev.target.value)} placeholder="pi_3Q…" />
         </Field>
       </div>
+      {candidatos.length > 0 && (
+        <div className="stack-2">
+          <span className="t-label">Estos cobros ya entraron a una pasarela</span>
+          {candidatos.map((m) => (
+            <div className="row" key={m.id} style={{ gap: 8, flexWrap: "wrap" }}>
+              <Badge variante="neutral">{nombrePasarela(m.proveedor)}</Badge>
+              <span className="t-sm">{m.clienteNombre ?? "—"}</span>
+              <span className="t-sm t-subtle">{fechaLarga(m.fecha)}</span>
+              <span className="spacer t-sm t-num t-strong">{money(m.monto, mon, 2)}</span>
+              <Button sm variante="secondary" onClick={() => {
+                acciones.conciliar(m.id, [{ cuotaId: cuota.id, monto: Math.min(m.monto, resta) }]);
+                onGuardado();
+              }}>
+                Conciliar con esta cuota
+              </Button>
+            </div>
+          ))}
+        </div>
+      )}
+
       <Ayuda titulo="Se puede pagar en varias partes" icono={<Info size={18} />}>
         Si la cuota se cobró con dos métodos, registrá un pago por cada uno sobre la misma cuota.
-        Apicanta suma los dos y la marca cobrada cuando llega al total.
+        Apicanta suma los dos y la marca cobrada cuando llega al total. Si el cobro ya entró a una
+        pasarela, conciliá en vez de cargarlo a mano: el fee queda con el número real.
       </Ayuda>
     </ModalForm>
   );
