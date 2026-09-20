@@ -227,6 +227,7 @@ export default function Finanzas() {
 
           <Card style={{ padding: 0 }}>
             <DataTable
+              alto={460}
               filas={vencidas.map((v) => ({ ...v, id: v.cuotaId }))}
               ordenInicial={{ clave: "dias", desc: true }}
               columnas={[
@@ -267,6 +268,7 @@ export default function Finanzas() {
             </div>
           </div>
           <DataTable
+            alto={460}
             filas={gastosDelMesLista(e, mes)}
             ordenInicial={{ clave: "fecha", desc: true }}
             columnas={[
@@ -309,6 +311,7 @@ export default function Finanzas() {
 
           <Card style={{ padding: 0 }}>
             <DataTable
+              alto={460}
               filas={comisiones.map((c) => ({ ...c, id: c.ventaId }))}
               ordenInicial={{ clave: "cobrado", desc: true }}
               columnas={[

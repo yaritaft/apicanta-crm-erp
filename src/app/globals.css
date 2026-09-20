@@ -674,3 +674,64 @@ kbd {
   border-top: 1px solid var(--border); background: var(--surface-000);
 }
 .dp-nota { font-size: 11px; color: var(--ink-subtle); margin-right: auto; }
+
+/* Tabla con scroll propio: la pagina no crece con la cantidad de filas.
+   El thead va sticky y opaco — si fuera transparente, las filas pasarian
+   por atras y se leeria todo encimado. */
+.hk-table-wrap--alto { overflow-y: auto; }
+.hk-table-wrap--alto .hk-table thead th {
+  position: sticky; top: 0; z-index: 2;
+  background: var(--surface-100);
+}
+
+/* ========== Menú colapsable ==========
+   Pedido de Juanchi: ganar ancho para las tablas. Colapsado deja 68px de
+   iconos, o sea ~190px mas de pantalla util. Solo en desktop: abajo de 1024
+   el menu ya es un cajon que entra y sale, y ahi colapsar no significa nada. */
+
+.menu-colapsar { display: none; }
+
+@media (min-width: 1025px) {
+  .menu-colapsar { display: inline-flex; }
+  .marca-corta { display: none; }
+
+  .app-shell[data-colapsado="true"] { grid-template-columns: 68px 1fr; }
+  .app-shell[data-colapsado="true"] .hk-sidebar {
+    width: 68px; padding-left: var(--space-2); padding-right: var(--space-2);
+  }
+
+  /* Todo lo que es texto se va; quedan los iconos, centrados. */
+  .app-shell[data-colapsado="true"] .hk-sidebar__group,
+  .app-shell[data-colapsado="true"] .hk-nav a span:not(.hk-nav__count),
+  .app-shell[data-colapsado="true"] .marca-larga,
+  .app-shell[data-colapsado="true"] .hk-sidebar__brand em,
+  .app-shell[data-colapsado="true"] .hk-sidebar__footer .row-3 > div { display: none; }
+
+  .app-shell[data-colapsado="true"] .marca-corta { display: inline; }
+  .app-shell[data-colapsado="true"] .hk-sidebar__brand {
+    padding: var(--space-2) 0 !important; text-align: center; width: 100%;
+  }
+  .app-shell[data-colapsado="true"] .hk-sidebar > .row { flex-direction: column; gap: var(--space-2); }
+
+  .app-shell[data-colapsado="true"] .hk-nav a { justify-content: center; padding: 0; gap: 0; }
+
+  /* El contador no entra al lado del icono: pasa a ser un punto en la esquina.
+     Se sigue viendo que hay algo pendiente sin ocupar lugar. */
+  .app-shell[data-colapsado="true"] .hk-nav li { position: relative; }
+  .app-shell[data-colapsado="true"] .hk-nav__count {
+    position: absolute; top: 4px; right: 8px;
+    width: 7px; height: 7px; padding: 0; min-width: 0;
+    border-radius: 50%; background: var(--accent);
+    font-size: 0; color: transparent; overflow: hidden;
+  }
+
+  .app-shell[data-colapsado="true"] .hk-sidebar__footer .row-3 {
+    flex-direction: column; gap: var(--space-2);
+  }
+
+  /* El estado de guardado queda como icono solo: el texto entero no entra en
+     68px y "Guardado en la nube" cortado a "Guard…" no dice nada. El color
+     del icono ya distingue guardado, guardando y error. */
+  .app-shell[data-colapsado="true"] .hk-sidebar__footer > .row { justify-content: center; }
+  .app-shell[data-colapsado="true"] .hk-sidebar__footer > .row > span { display: none; }
+}

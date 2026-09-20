@@ -1,6 +1,6 @@
 import {
   LayoutDashboard, Users, Columns3, CalendarDays, Video, Megaphone,
-  GraduationCap, ClipboardList, Wallet, Target, History, Settings, HandCoins,
+  GraduationCap, ClipboardList, Wallet, Settings, HandCoins,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
@@ -12,7 +12,6 @@ export const NAV: GrupoNav[] = [
     titulo: "Negocio",
     items: [
       { href: "/panel", texto: "Panel", icono: LayoutDashboard, ayuda: "Cómo viene el mes de un vistazo" },
-      { href: "/metas", texto: "Metas", icono: Target, ayuda: "Los objetivos del mes y cuánto falta" },
     ],
   },
   {
@@ -42,7 +41,6 @@ export const NAV: GrupoNav[] = [
     titulo: "Administración",
     items: [
       { href: "/finanzas", texto: "Finanzas", icono: Wallet, ayuda: "Ingresos, egresos y qué queda" },
-      { href: "/actividad", texto: "Actividad", icono: History, ayuda: "Todo lo que pasó, con fecha y autor" },
       { href: "/ajustes", texto: "Ajustes", icono: Settings, ayuda: "Etapas, categorías, campos e integraciones" },
     ],
   },

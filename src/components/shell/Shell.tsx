@@ -3,7 +3,10 @@
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { AlertCircle, Check, Cloud, HardDrive, LogOut, Menu, Moon, RefreshCw, Search, Sun, X } from "lucide-react";
+import {
+  AlertCircle, Check, Cloud, HardDrive, LogOut, Menu, Moon, PanelLeft, PanelLeftClose,
+  RefreshCw, Search, Sun, X,
+} from "lucide-react";
 import { NAV } from "./nav";
 import { cargarDeLaNube, hayNube, reiniciarCarga, useEstado, useSync, useTema } from "@/lib/store";
 import { useSalir, useSesion } from "@/lib/auth";
@@ -17,6 +20,19 @@ export function Shell({ children }: { children: React.ReactNode }) {
   const [tema, setTema] = useTema();
   const sync = useSync();
   const sesion = useSesion();
+
+  /* Menu colapsado. Se lee despues del montado a proposito: leer localStorage
+     en el primer render rompe la hidratacion, porque el servidor no lo tiene. */
+  const [colapsado, setColapsado] = useState(false);
+  useEffect(() => {
+    try { setColapsado(localStorage.getItem("apicanta:menu") === "colapsado"); } catch { /* modo privado */ }
+  }, []);
+  function alternarMenu() {
+    setColapsado((c) => {
+      try { localStorage.setItem("apicanta:menu", c ? "abierto" : "colapsado"); } catch { /* modo privado */ }
+      return !c;
+    });
+  }
   const salir = useSalir();
   const [menu, setMenu] = useState(false);
   const [paleta, setPaleta] = useState(false);
@@ -53,7 +69,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
   const item = NAV.flatMap((g) => g.items).find((i) => ruta === i.href || ruta.startsWith(i.href + "/"));
 
   return (
-    <div className="app-shell">
+    <div className="app-shell" data-colapsado={colapsado}>
       {menu && (
         <div
           onClick={() => setMenu(false)}
@@ -64,10 +80,17 @@ export function Shell({ children }: { children: React.ReactNode }) {
       <nav className="hk-sidebar" data-abierto={menu} aria-label="Navegación principal">
         <div className="row" style={{ justifyContent: "space-between" }}>
           <Link href="/panel" className="hk-sidebar__brand" style={{ padding: "8px 12px" }}>
-            Apicanta<em>.</em>
+            <span className="marca-larga">Apicanta</span><span className="marca-corta">A</span><em>.</em>
           </Link>
           <IconButton etiqueta="Cerrar menú" onClick={() => setMenu(false)} className="sidebar-toggle">
             <X size={18} />
+          </IconButton>
+          <IconButton
+            etiqueta={colapsado ? "Expandir el menú" : "Colapsar el menú"}
+            onClick={alternarMenu}
+            className="menu-colapsar"
+          >
+            {colapsado ? <PanelLeft size={18} /> : <PanelLeftClose size={18} />}
           </IconButton>
         </div>
 

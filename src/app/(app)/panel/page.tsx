@@ -166,37 +166,6 @@ export default function Panel() {
           )}
         </Card>
 
-        <Card>
-          <CardHead titulo="Metas del mes" sub="Cuánto falta para llegar." acciones={<Link href="/metas"><Button sm variante="ghost" icono={<ArrowRight size={15} />}>Metas</Button></Link>} />
-          {e.metas.length === 0 ? (
-            <Empty
-              icono={<Target size={22} />}
-              titulo="Todavía no pusiste metas"
-              texto="Definí qué querés lograr este mes y te muestro cuánto te falta."
-              accion={<Link href="/metas?nuevo=1"><Button variante="brand">Crear una meta</Button></Link>}
-            />
-          ) : (
-            <div className="stack-4">
-              {e.metas.slice(0, 4).map((m) => {
-                const p = progresoMeta(e, m);
-                const fmt = m.unidad === "moneda" ? (n: number) => money(n, e.ajustes.monedaBase) : m.unidad === "porcentaje" ? pct : num;
-                return (
-                  <div key={m.id}>
-                    <div className="row" style={{ marginBottom: 6 }}>
-                      <span className="t-sm t-strong">{m.nombre}</span>
-                      <span className="spacer t-sm t-num t-muted">{fmt(p.actual)} / {fmt(m.objetivo)}</span>
-                      <span className="t-sm t-num t-strong" style={{ minWidth: 46, textAlign: "right", color: p.pct >= 100 ? "var(--success)" : p.pct >= 60 ? "var(--accent-text)" : "var(--ink-subtle)" }}>
-                        {Math.round(p.pct)}%
-                      </span>
-                    </div>
-                    <Bar valor={p.pct} tono={p.pct >= 100 ? "success" : "accent"} />
-                    <div className="t-sm t-subtle" style={{ marginTop: 4 }}>{ETIQUETA_METRICA[m.metrica]}</div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </Card>
       </div>
 
       <div className="grid-2">
@@ -235,7 +204,7 @@ export default function Panel() {
         </Card>
 
         <Card>
-          <CardHead titulo="Últimos movimientos" sub="Cada cambio queda registrado." acciones={<Link href="/actividad"><Button sm variante="ghost" icono={<ArrowRight size={15} />}>Ver todo</Button></Link>} />
+          <CardHead titulo="Últimos movimientos" sub="Cada cambio queda registrado." />
           <div className="timeline">
             {e.actividad.slice(0, 6).map((a) => (
               <div key={a.id} className="timeline__item">

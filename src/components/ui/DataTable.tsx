@@ -15,7 +15,7 @@ export interface Columna<T> {
 }
 
 export function DataTable<T extends { id: string }>({
-  filas, columnas, onFila, acciones, ordenInicial, vacio, etiquetaFila,
+  filas, columnas, onFila, acciones, ordenInicial, vacio, etiquetaFila, alto,
 }: {
   filas: T[];
   columnas: Columna<T>[];
@@ -24,6 +24,10 @@ export function DataTable<T extends { id: string }>({
   ordenInicial?: { clave: string; desc: boolean };
   vacio: React.ReactNode;
   etiquetaFila?: (fila: T) => string;
+  /* Alto maximo en px. Con esto la tabla scrollea adentro y la pagina deja de
+     estirarse: 52 cuotas vencidas hacian que Finanzas no terminara nunca. El
+     encabezado queda fijo, asi que se sigue sabiendo que columna es cual. */
+  alto?: number;
 }) {
   const [orden, setOrden] = useState(ordenInicial ?? null);
 
@@ -48,7 +52,10 @@ export function DataTable<T extends { id: string }>({
   if (filas.length === 0) return <div className="hk-table-wrap">{vacio}</div>;
 
   return (
-    <div className="hk-table-wrap">
+    <div
+      className={`hk-table-wrap${alto ? " hk-table-wrap--alto" : ""}`}
+      style={alto ? { maxHeight: alto } : undefined}
+    >
       <table className="hk-table">
         <thead>
           <tr>
