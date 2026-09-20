@@ -317,3 +317,19 @@ export async function traerInsightsDiarios(
     };
   });
 }
+
+/* ---------------- Ids de la app a partir de los de Meta ----------------
+
+   UNA sola definicion, usada por los dos caminos de escritura: el cron del
+   servidor y el boton del cliente. Si cada uno los calculara por su lado,
+   bastaria una diferencia de un guion para que el mismo anuncio entrara dos
+   veces y el gasto se contara doble.
+
+   Son deterministicos a proposito: resincronizar pisa la fila en vez de
+   agregar otra, y las FKs se resuelven sin consultar nada — el adset ya sabe
+   el id de su campania. */
+
+export const idCampaign = (metaId: string) => `cmp_${metaId}`;
+export const idAdset = (metaId: string) => `set_${metaId}`;
+export const idAd = (metaId: string) => `ad_${metaId}`;
+export const idInsight = (metaAdId: string, dia: string) => `${idAd(metaAdId)}_${dia}`;

@@ -9,6 +9,7 @@ import type {
 import { pagoDesdeMovimiento } from "./conciliacion";
 import { construirSemilla, estadoVacio } from "./seed";
 import { hayNube, nube, tablaFaltante, TABLAS, TABLAS_OPCIONALES } from "./supabase";
+import { idAd, idAdset, idCampaign } from "./meta";
 
 const CLAVE = "apicanta.erp.v1";
 
@@ -713,9 +714,8 @@ export const acciones = {
   }): { campaigns: number; adsets: number; ads: number; dias: number } {
     const e = snapshot();
     const t = ahora();
-    const cid = (m: string) => `cmp_${m}`;
-    const sid = (m: string) => `set_${m}`;
-    const aid = (m: string) => `ad_${m}`;
+    /* Los mismos que usa el cron: una sola definicion, en lib/meta.ts. */
+    const cid = idCampaign, sid = idAdset, aid = idAd;
 
     const campaigns: Campaign[] = datos.campaigns.map((c) => ({
       id: cid(c.id), metaId: c.id, nombre: c.nombre, objetivo: c.objetivo,

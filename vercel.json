@@ -4,6 +4,10 @@
     {
       "path": "/api/pasarelas/sync",
       "schedule": "0 * * * *"
+    },
+    {
+      "path": "/api/cron/meta",
+      "schedule": "*/15 * * * *"
     }
   ]
 }
