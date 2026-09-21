@@ -3,6 +3,7 @@
 import { useCallback, useSyncExternalStore } from "react";
 import type {
   AccionActividad, Actividad, Ad, AdInsight, Adset, Ajustes, Alumno, Campaign,
+  Contacto,
   Campania, CampoPersonalizado, Cuota, EntidadNombre, EstadoApp, Etapa, ID,
   Lead, Meta, Movimiento, Pago, Reporte, Sesion, Venta, Webinar,
 } from "./types";
@@ -124,8 +125,25 @@ function errorDeTabla(tabla: string, e: { message: string; code?: string }): Err
 /* ---------- cola de escritura hacia la nube ---------- */
 
 type Op =
-  | { tipo: "upsert"; tabla: string; filas: unknown[] }
+  /* `sacadas` son las columnas que se quitaron por no existir todavia en la
+     tabla. Se guarda para no reintentar en loop la misma. */
+  | { tipo: "upsert"; tabla: string; filas: unknown[]; sacadas?: Set<string> }
   | { tipo: "delete"; tabla: string; ids: ID[] };
+
+/* PostgREST avisa con PGRST204 que la fila trae una columna que la tabla no
+   tiene (y Postgres con 42703 si la consulta llego hasta el). Pasa en la
+   ventana entre que se despliega un modelo nuevo y se corre su ALTER.
+
+   Sin esto, el primer lead que alguien guarde en esa ventana deja la cola
+   trabada, y la app dice "No se pudo guardar" para TODO — no para la columna
+   nueva. Una tabla que falta ya se toleraba; una columna que falta rompia
+   igual de feo y no estaba contemplada. */
+function columnaFaltante(e: { code?: string; message?: string } | null): string | null {
+  if (!e) return null;
+  if (e.code !== "PGRST204" && e.code !== "42703") return null;
+  const m = /'([^']+)'|"([^"]+)"/.exec(e.message ?? "");
+  return m ? (m[1] ?? m[2] ?? null) : null;
+}
 
 const cola: Op[] = [];
 let drenando = false;
@@ -146,9 +164,28 @@ async function drenar() {
       const r = op.tipo === "upsert"
         ? await nube.from(op.tabla).upsert(normalizar(op.filas) as never[], OPCIONES_UPSERT)
         : await nube.from(op.tabla).delete().in("id", op.ids);
-      /* Tabla opcional sin crear: se descarta la operacion en vez de
-         bloquear la cola. En memoria el dato ya esta. */
-      if (r.error && !(TABLAS_OPCIONALES.has(op.tabla) && tablaFaltante(r.error))) {
+      if (r.error) {
+        /* Tabla opcional sin crear: se descarta la operacion en vez de
+           bloquear la cola. En memoria el dato ya esta. */
+        if (TABLAS_OPCIONALES.has(op.tabla) && tablaFaltante(r.error)) {
+          cola.shift();
+          continue;
+        }
+        /* Columna que todavia no existe: se saca y se reintenta la MISMA
+           operacion. El resto del dato entra, y ese campo se completa solo
+           cuando el ALTER este corrido. Si ya se habia sacado, no sirvio y se
+           deja fallar en vez de girar para siempre. */
+        if (op.tipo === "upsert") {
+          const col = columnaFaltante(r.error);
+          if (col && !op.sacadas?.has(col)) {
+            op.sacadas = (op.sacadas ?? new Set<string>()).add(col);
+            op.filas = (op.filas as Record<string, unknown>[]).map(
+              ({ [col]: _fuera, ...resto }) => resto,
+            );
+            console.warn(`[store] «${col}» no existe en ${op.tabla}: se guarda sin ese campo.`);
+            continue;
+          }
+        }
         throw errorDeTabla(op.tabla, r.error);
       }
       cola.shift();
@@ -298,7 +335,9 @@ export async function cargarDeLaNube(): Promise<void> {
       alumnos: porTabla.alumnos as Alumno[],
       sesiones: porTabla.sesiones as Sesion[],
       reportes: porTabla.reportes as Reporte[],
-      campanias: porTabla.campanias as Campania[],
+      contactos: (porTabla.contactos ?? []) as EstadoApp["contactos"],
+      /* Opcional: si la tabla no existe, sin el ?? [] la app rompe al mapear. */
+      campanias: (porTabla.campanias ?? []) as Campania[],
       campaigns: (porTabla.campaigns ?? []) as EstadoApp["campaigns"],
       adsets: (porTabla.adsets ?? []) as EstadoApp["adsets"],
       ads: (porTabla.ads ?? []) as EstadoApp["ads"],
@@ -334,7 +373,9 @@ function ordenDeSiembra(e: EstadoApp): [string, unknown[]][] {
   return [
     ["productos", e.productos], ["procesadores", e.procesadores],
     ["embudos", e.embudos], ["equipo", e.equipo],
-    ["etapas", e.etapas], ["webinars", e.webinars], ["leads", e.leads],
+    /* contactos entre webinars y leads: apunta a webinars, y leads le apunta a
+       el. Con la FK en la base, otro orden rechaza la siembra entera. */
+    ["etapas", e.etapas], ["webinars", e.webinars], ["contactos", e.contactos], ["leads", e.leads],
     ["alumnos", e.alumnos], ["sesiones", e.sesiones], ["reportes", e.reportes],
     ["campanias", e.campanias], ["metas", e.metas], ["campos", e.campos],
     ["ventas", e.ventas], ["cuotas", e.cuotas], ["movimientos", e.movimientos],
@@ -375,7 +416,7 @@ async function vaciarNube() {
   /* Al reves del alta: primero los hijos. */
   const orden = [
     "actividad", "campos", "metas", "pagos", "movimientos", "cuotas", "ventas", "gastos",
-    "campanias", "reportes", "sesiones", "alumnos", "leads", "webinars",
+    "campanias", "reportes", "sesiones", "alumnos", "leads", "contactos", "webinars",
     "etapas", "equipo", "embudos", "procesadores", "productos",
   ];
   for (const tabla of orden) {
@@ -406,19 +447,82 @@ function registrar(
 }
 
 type Coleccion =
-  | "leads" | "sesiones" | "webinars" | "alumnos" | "reportes"
+  | "contactos" | "leads" | "sesiones" | "webinars" | "alumnos" | "reportes"
   | "campanias" | "metas" | "campos" | "etapas"
   | "productos" | "procesadores" | "embudos" | "equipo"
   | "ventas" | "cuotas" | "pagos" | "gastos" | "movimientos";
 
 const ENTIDAD_DE: Record<string, Actividad["entidad"]> = {
-  leads: "lead", sesiones: "sesion", webinars: "webinar", alumnos: "alumno",
+  contactos: "contacto", leads: "lead", sesiones: "sesion", webinars: "webinar", alumnos: "alumno",
   campanias: "campania", metas: "meta",
   ventas: "transaccion", cuotas: "transaccion", pagos: "transaccion", gastos: "transaccion",
   movimientos: "transaccion",
   reportes: "config", campos: "config", etapas: "config",
   productos: "config", procesadores: "config", embudos: "config", equipo: "config",
 };
+
+/* ---------- A que contacto va cada lead ----------
+
+   UN solo lugar lo decide: el formulario, el import de CSV y la restauracion
+   de un backup pasan todos por aca. Si cada camino tuviera su version, volveria
+   a pasar lo que la separacion venia a arreglar — dos verdades para la misma
+   persona.
+
+   - Si el lead ya apunta a un contacto que existe, se respeta.
+   - Si no, se busca por email, sin mayusculas ni espacios: es la misma persona
+     volviendo, incluso dos filas del mismo CSV.
+   - Si no hay, nace uno con el id del lead, igual que en la migracion.
+
+   Al reusar un contacto se completan los huecos, no se pisa lo que ya habia.
+   "Hueco" incluye el string vacio: un input de React manda "" y no undefined,
+   y con `??` un telefono vacio no se completaba nunca. */
+const lleno = (v: unknown) => v !== undefined && v !== null && v !== "";
+const completar = <T,>(ya: T, nuevo: T): T => (lleno(ya) ? ya : nuevo);
+
+function asignarContactos(leads: Lead[], contactos: Contacto[]): {
+  leads: Lead[]; contactos: Contacto[]; tocados: Contacto[];
+} {
+  const porId = new Map(contactos.map((c) => [c.id, c] as const));
+  const porEmail = new Map<string, Contacto>();
+  for (const c of contactos) {
+    const k = c.email?.trim().toLowerCase();
+    if (k && !porEmail.has(k)) porEmail.set(k, c);
+  }
+  const tocados = new Map<ID, Contacto>();
+
+  const salida = leads.map((l) => {
+    if (l.contactoId && porId.has(l.contactoId)) return l;
+    const k = l.email?.trim().toLowerCase();
+    const previo = porId.get(l.id) ?? (k ? porEmail.get(k) : undefined);
+    const canal = l.webinarId ? ("webinar" as const) : undefined;
+    const c: Contacto = previo
+      ? {
+          ...previo,
+          telefono: completar(previo.telefono, l.telefono),
+          pais: completar(previo.pais, l.pais),
+          inglesNivel: completar(previo.inglesNivel, l.inglesNivel),
+          aniosExperiencia: completar(previo.aniosExperiencia, l.aniosExperiencia),
+          origenWebinarId: completar(previo.origenWebinarId, l.webinarId),
+          origenCanal: completar(previo.origenCanal, canal),
+        }
+      : {
+          id: l.id,
+          /* NOT NULL en la base. Una fila de CSV sin mail no puede trabar la
+             cola entera con un error que dice "No se pudo guardar". */
+          nombre: l.nombre ?? "", email: l.email ?? "",
+          telefono: l.telefono, pais: l.pais,
+          inglesNivel: l.inglesNivel, aniosExperiencia: l.aniosExperiencia,
+          origenCanal: canal, origenWebinarId: l.webinarId,
+          notas: l.notas, creadoEn: l.creadoEn ?? new Date().toISOString(), extra: {},
+        };
+    porId.set(c.id, c);
+    if (k) porEmail.set(k, c);
+    tocados.set(c.id, c);
+    return { ...l, contactoId: c.id };
+  });
+
+  return { leads: salida, contactos: [...porId.values()], tocados: [...tocados.values()] };
+}
 
 /* ---------- API publica (identica a la de antes) ---------- */
 
@@ -493,6 +597,84 @@ export const acciones = {
     empujar({ tipo: "upsert", tabla: "alumnos", filas: [alumno] });
     empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
     return alumno.id;
+  },
+
+  /* ---------- Alta de lead con su contacto ----------
+
+     Un lead nuevo SIEMPRE nace con un contacto. Sin esto la separacion es
+     decorativa: `contactos` se queda con los que migraron y todo lo que entra
+     despues vuelve a tener la identidad metida adentro de la oportunidad.
+
+     Si ya existe un contacto con ese email, se REUSA — es la misma persona
+     volviendo. Ahi es donde la separacion empieza a pagar: la segunda
+     oportunidad hereda de que anuncio vino la primera vez, que es exactamente
+     lo que hoy se pierde.
+
+     El contacto nuevo se queda con el id del lead, igual que en la migracion.
+     `ventas.contactoId` guarda hoy ids de LEADS (lo leen alumnos, conciliacion
+     y metricas), asi que mientras los ids coincidan ese campo es cierto de las
+     dos maneras. Para una persona que vuelve, el lead nuevo tiene otro id que
+     su contacto: la venta de ESE lead sigue resolviendo contra `leads`, que es
+     lo que el codigo de ventas hace hoy. Cuando ventas pase a apuntar al
+     contacto, esa ambiguedad se termina; hasta entonces existe y conviene
+     saberlo. */
+  altaDeLead(datos: Omit<Lead, "id" | "contactoId">, etiqueta: string): ID {
+    const e = snapshot();
+    const leadId = nuevoId("lea");
+    const { leads: [lead], contactos, tocados } = asignarContactos(
+      [{ ...datos, id: leadId, contactoId: undefined } as Lead], e.contactos,
+    );
+    const reusado = lead.contactoId !== leadId;
+    const { lista, nuevo: act } = registrar(
+      e, "lead", leadId, etiqueta, "creo",
+      reusado ? `Se creó «${etiqueta}» sobre un contacto que ya existía.` : `Se creó «${etiqueta}».`,
+    );
+    guardar({ ...e, contactos, leads: [lead, ...e.leads], actividad: lista });
+    /* Primero el contacto: la FK leads→contactos rechaza un lead que apunte a
+       un contacto todavia no escrito, y la cola respeta el orden. */
+    empujar({ tipo: "upsert", tabla: "contactos", filas: tocados });
+    empujar({ tipo: "upsert", tabla: "leads", filas: [lead] });
+    empujar({ tipo: "upsert", tabla: "actividad", filas: [act] });
+    return leadId;
+  },
+
+  /* Editar un lead arrastra a su contacto en los campos que son de la PERSONA.
+     Si no, se editan en Leads y el contacto queda con el nombre viejo: dos
+     verdades para el mismo dato, que es lo que la separacion venia a evitar. */
+  editarLead(id: ID, cambios: Partial<Lead>, etiqueta: string) {
+    const e = snapshot();
+    const lead = e.leads.find((l) => l.id === id);
+    const contactoId = lead?.contactoId ?? id;
+    const dePersona = {
+      nombre: cambios.nombre, email: cambios.email, telefono: cambios.telefono,
+      pais: cambios.pais, inglesNivel: cambios.inglesNivel,
+      aniosExperiencia: cambios.aniosExperiencia,
+    };
+    /* Vacio NO es un dato: un input de texto de React manda "" cuando esta
+       vacio, nunca undefined. Sin este filtro, editar un lead que no tenia
+       telefono le borraba el telefono al contacto — que es compartido, asi que
+       el dato bueno de OTRA oportunidad de la misma persona desaparecia.
+       Para borrar un dato de la persona esta la ficha del contacto; desde una
+       oportunidad se completa, no se vacia. */
+    const conValor = Object.fromEntries(
+      Object.entries(dePersona).filter(([, v]) => v !== undefined && v !== ""),
+    );
+    const tocaPersona = Object.keys(conValor).length > 0;
+
+    acciones.actualizar<Lead>("leads", id, cambios, etiqueta);
+    if (!tocaPersona) return;
+
+    /* Despues del actualizar: ese guardar ya dejo el estado nuevo, y leerlo de
+       `e` escribiria el contacto con los datos viejos del lead. */
+    const ahoraE = snapshot();
+    const c = ahoraE.contactos.find((x) => x.id === contactoId);
+    if (!c) return;
+    const actualizado: Contacto = { ...c, ...conValor };
+    guardar({
+      ...ahoraE,
+      contactos: ahoraE.contactos.map((x) => (x.id === contactoId ? actualizado : x)),
+    });
+    empujar({ tipo: "upsert", tabla: "contactos", filas: [actualizado] });
   },
 
   /* ---------- Alta completa de una venta ----------
@@ -805,16 +987,27 @@ export const acciones = {
 
   importarLeads(filas: Omit<Lead, "id">[]): number {
     const e = snapshot();
-    const nuevos = filas.map((f) => ({ ...f, id: nuevoId("lead") } as Lead));
+    /* Cada fila nace con su contacto, y dos filas del mismo mail —dentro del
+       CSV o contra lo que ya estaba— van al MISMO contacto. Antes el import
+       creaba leads sin persona: justo el camino por donde entran mas. */
+    const { leads: nuevos, contactos, tocados } = asignarContactos(
+      filas.map((f) => ({ ...f, id: nuevoId("lead"), contactoId: undefined } as Lead)),
+      e.contactos,
+    );
     const { lista, nuevo } = registrar(e, "lead", "import", "Importación", "importo", `Se importaron ${nuevos.length} leads.`);
-    guardar({ ...e, leads: [...nuevos, ...e.leads], actividad: lista });
-    if (nuevos.length) empujar({ tipo: "upsert", tabla: "leads", filas: nuevos });
+    guardar({ ...e, contactos, leads: [...nuevos, ...e.leads], actividad: lista });
+    /* Contactos antes que leads, por la FK. En lotes: un CSV grande de una
+       sola vez es lo que PostgREST no se banca. */
+    empujarEnLotes("contactos", tocados);
+    empujarEnLotes("leads", nuevos);
     empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
     return nuevos.length;
   },
 
   async reiniciarDemo() {
-    const nuevoEstado = construirSemilla();
+    const semilla = construirSemilla();
+    const { leads, contactos } = asignarContactos(semilla.leads, semilla.contactos);
+    const nuevoEstado = { ...semilla, leads, contactos };
     guardar(nuevoEstado);
     if (!nube) return;
     marcar("guardando");
@@ -838,7 +1031,10 @@ export const acciones = {
       const parsed = JSON.parse(json) as EstadoApp;
       if (!parsed || typeof parsed !== "object" || !Array.isArray(parsed.leads)) return false;
       const base = construirSemilla();
-      const nuevoEstado = { ...base, ...parsed, ajustes: { ...base.ajustes, ...(parsed.ajustes ?? {}) } };
+      const armado = { ...base, ...parsed, ajustes: { ...base.ajustes, ...(parsed.ajustes ?? {}) } };
+      /* Un backup de antes de la separacion trae leads sin contacto. */
+      const { leads, contactos } = asignarContactos(armado.leads, armado.contactos ?? []);
+      const nuevoEstado = { ...armado, leads, contactos };
       guardar(nuevoEstado);
       if (nube) {
         marcar("guardando");

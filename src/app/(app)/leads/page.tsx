@@ -16,7 +16,7 @@ import { useToast } from "@/components/ui/Toast";
 import { acciones, useEstado } from "@/lib/store";
 import { useAbrirDesdeURL } from "@/lib/useQuery";
 import { fechaLarga, isoDia, money, num, relativo } from "@/lib/format";
-import { DateRangePicker } from "@/components/ui/DateRangePicker";
+import { DateRangePicker, diaDeNegocio } from "@/components/ui/DateRangePicker";
 import { useRangoURL } from "@/lib/useRango";
 import type { Lead, Moneda } from "@/lib/types";
 
@@ -65,7 +65,9 @@ export default function Leads() {
      `filtrados`, el chip de la etapa elegida mostraria su propio total y los
      demas cero. */
   const enRango = useMemo(() => e.leads.filter((l) => {
-    const dia = (l.creadoEn ?? "").slice(0, 10);
+    /* Por el dia argentino, no el de UTC: un lead cargado a las 22 lleva la
+       fecha de manana en el ISO y se caia del rango que termina hoy. */
+    const dia = diaDeNegocio(l.creadoEn);
     return !dia || (dia >= rango.desde && dia <= rango.hasta);
   }), [e.leads, rango]);
 
@@ -87,11 +89,14 @@ export default function Leads() {
     if (!form) return;
     if (!form.nombre.trim()) { toast("Poné al menos el nombre.", "err"); return; }
     const datos = { ...form, actualizadoEn: new Date().toISOString(), responsable: form.responsable || e.ajustes.responsable };
+    /* Por las acciones de lead, no por `crear`/`actualizar` a secas: son las
+       que mantienen el contacto al día. Un lead nuevo nace con su contacto, y
+       editar el nombre acá no puede dejar al contacto con el nombre viejo. */
     if (form.id) {
-      acciones.actualizar<Lead>("leads", form.id, datos, form.nombre);
+      acciones.editarLead(form.id, datos, form.nombre);
       toast(`Se guardaron los cambios de ${form.nombre}.`);
     } else {
-      acciones.crear<Lead>("leads", datos, form.nombre);
+      acciones.altaDeLead(datos, form.nombre);
       toast(`${form.nombre} ya está en tus leads.`);
     }
     setForm(null);

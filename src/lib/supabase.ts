@@ -25,8 +25,9 @@ export const nube: SupabaseClient | null = hayNube
 /* Las tablas se llaman igual que las colecciones del estado y sus columnas
    igual que los campos de types.ts, asi que no hace falta mapear nada. */
 export const TABLAS = [
-  "etapas", "webinars", "leads", "alumnos", "sesiones", "reportes",
-  "campanias", "metas", "campos", "actividad",
+  "etapas", "webinars", "contactos", "leads", "alumnos", "sesiones", "reportes",
+  "campanias",
+  "metas", "campos", "actividad",
   "productos", "procesadores", "embudos", "equipo",
   "ventas", "cuotas", "pagos", "gastos", "movimientos",
   /* Jerarquia de Meta. `ad_insights` es la unica cuyo nombre no coincide con
@@ -48,6 +49,9 @@ export const TABLAS_OPCIONALES = new Set<string>([
      devolveria PGRST205 y no se romperia Marketing — se romperia la app
      entera al entrar. Asi el dia que se tire, no pasa nada. */
   "campanias",
+  /* `contactos` es nueva: hasta que el SQL corra, la app sigue leyendo la
+     identidad de `leads` como siempre. */
+  "contactos",
   /* Las cuatro de Meta entran como opcionales hasta que el ALTER este corrido
      en todas las bases. Mientras tanto la app sigue con esas colecciones
      vacias en vez de caerse entera. */

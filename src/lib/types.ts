@@ -32,6 +32,7 @@ export interface CampoPersonalizado {
 }
 
 export type EntidadNombre =
+  | "contacto"
   | "lead"
   | "alumno"
   | "sesion"
@@ -59,6 +60,10 @@ export type NivelIngles = "ninguno" | "basico" | "intermedio" | "conversacional"
 
 export interface Lead {
   id: ID;
+  /* La persona. Por ahora el lead conserva ademas su copia de nombre, email,
+     telefono, pais e ingles: sacarlos de una rompe ocho pantallas. El contacto
+     es la fuente de verdad desde ahora; la copia se limpia despues. */
+  contactoId?: ID;
   nombre: string;
   email: string;
   telefono?: string;
@@ -80,6 +85,46 @@ export interface Lead {
   webinarId?: ID;
   creadoEn: string;
   actualizadoEn: string;
+  extra: Record<string, unknown>;
+}
+
+/* ---------- Contactos ----------
+
+   La PERSONA. Un lead es una oportunidad sobre un contacto: "un contacto
+   pudo no haber sido lead, pero un lead es contacto".
+
+   Separarlos permite lo que hoy no se puede: saber de que anuncio vino
+   alguien. El origen es de la persona, no de la oportunidad — si vuelve seis
+   meses despues y se abre un lead nuevo, sigue habiendo venido de aquel
+   anuncio.
+
+   Los canales son los cuatro que ya existen en el backend real
+   (`contacts.origin_channel`, lleno al 100%): webinar, vsl, setter y otro. No
+   se inventa una taxonomia nueva ni se deduce de los UTMs — el dato ya viene
+   clasificado. */
+
+export type CanalOrigen = "webinar" | "vsl" | "setter" | "otro";
+
+export interface Contacto {
+  id: ID;
+  nombre: string;
+  email: string;
+  telefono?: string;
+  pais?: string;
+  /* La calificacion es de la persona, no de la oportunidad. */
+  inglesNivel?: NivelIngles;
+  aniosExperiencia?: number;
+  /* De donde vino. `origenAdId` apunta al anuncio de la jerarquia de Meta y
+     es el vinculo fuerte: un id real, no un texto que alguien escribio. Los
+     UTMs son el respaldo y el detalle — de las agendas de Calendly llegan
+     `utm_source`, `utm_medium` y `utm_content` al 100%, pero `utm_campaign`
+     solo en la mitad. */
+  origenCanal?: CanalOrigen;
+  origenAdId?: ID;
+  origenWebinarId?: ID;
+  utm?: Record<string, string>;
+  notas?: string;
+  creadoEn: string;
   extra: Record<string, unknown>;
 }
 
@@ -382,6 +427,7 @@ export interface EstadoApp {
   reportes: Reporte[];
   /* `campanias` sigue viva hasta que Marketing lea de las tablas nuevas y los
      datos esten migrados. Tirarla antes deja la pantalla en blanco. */
+  contactos: Contacto[];
   campanias: Campania[];
   campaigns: Campaign[];
   adsets: Adset[];
