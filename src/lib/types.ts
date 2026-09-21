@@ -53,6 +53,10 @@ export interface Etapa {
 
 /* ---------- Leads ---------- */
 
+/* Conversacional es el corte que importa: abajo de eso no puede dar una
+   entrevista en USA, y esa es toda la propuesta del programa. */
+export type NivelIngles = "ninguno" | "basico" | "intermedio" | "conversacional" | "nativo";
+
 export interface Lead {
   id: ID;
   nombre: string;
@@ -61,6 +65,12 @@ export interface Lead {
   pais?: string;
   fuente: string;
   campania?: string;
+  /* Lo que Yari mira para calificar a alguien de Hackear IT: si puede
+     sostener una entrevista en ingles y cuanto lleva programando. El backend
+     real ya los tiene como `english_level` y `years_experience`; se usan los
+     mismos conceptos para no divergir el dia que se unifiquen. */
+  inglesNivel?: NivelIngles;
+  aniosExperiencia?: number;
   etapaId: ID;
   monto: number;
   moneda: Moneda;

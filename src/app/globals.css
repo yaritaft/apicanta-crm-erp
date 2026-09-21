@@ -988,3 +988,14 @@ kbd {
 }
 .cc-quitar:hover { color: var(--danger); background: var(--danger-soft); }
 .cc-sumar { color: var(--accent-text); font-weight: 700; font-size: 15px; }
+
+/* Paginador de la tabla. Va pegado abajo cuando la tabla tiene scroll propio:
+   si se fuera con el scroll, habria que bajar hasta el final para cambiar de
+   pagina, que es exactamente lo que la paginacion viene a evitar. */
+.hk-paginador {
+  position: sticky; bottom: 0; z-index: 2;
+  display: flex; align-items: center; gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
+  border-top: 1px solid var(--border); background: var(--surface-100);
+}
+.hk-paginador .hk-btn[disabled] { opacity: .4; pointer-events: none; }

@@ -1,7 +1,7 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
-import { ArrowDown, ArrowUp } from "lucide-react";
+import React, { useEffect, useMemo, useState } from "react";
+import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp } from "lucide-react";
 
 export interface Columna<T> {
   clave: string;
@@ -15,7 +15,7 @@ export interface Columna<T> {
 }
 
 export function DataTable<T extends { id: string }>({
-  filas, columnas, onFila, acciones, ordenInicial, vacio, etiquetaFila, alto,
+  filas, columnas, onFila, acciones, ordenInicial, vacio, etiquetaFila, alto, porPagina,
 }: {
   filas: T[];
   columnas: Columna<T>[];
@@ -24,12 +24,22 @@ export function DataTable<T extends { id: string }>({
   ordenInicial?: { clave: string; desc: boolean };
   vacio: React.ReactNode;
   etiquetaFila?: (fila: T) => string;
+  /* Filas por pagina. Sin esto la tabla dibuja TODAS: con 124 leads ya son 124
+     nodos, y el dia que sean 5.000 el navegador se arrastra. Es lo que pidio
+     Yari — "al no estar paginado esto se va a trabar en algun momento". */
+  porPagina?: number;
   /* Alto maximo en px. Con esto la tabla scrollea adentro y la pagina deja de
      estirarse: 52 cuotas vencidas hacian que Finanzas no terminara nunca. El
      encabezado queda fijo, asi que se sigue sabiendo que columna es cual. */
   alto?: number;
 }) {
   const [orden, setOrden] = useState(ordenInicial ?? null);
+  const [pagina, setPagina] = useState(0);
+
+  /* Volver a la primera al cambiar el filtro o el orden: quedarse en la pagina
+     7 de un resultado que ahora tiene 2 muestra una tabla vacia y parece que
+     no hay nada. */
+  useEffect(() => { setPagina(0); }, [filas, orden]);
 
   const ordenadas = useMemo(() => {
     if (!orden) return filas;
@@ -44,6 +54,13 @@ export function DataTable<T extends { id: string }>({
       return orden.desc ? -cmp : cmp;
     });
   }, [filas, columnas, orden]);
+
+  const total = ordenadas.length;
+  const paginas = porPagina ? Math.max(1, Math.ceil(total / porPagina)) : 1;
+  const actual = Math.min(pagina, paginas - 1);
+  const visibles = porPagina
+    ? ordenadas.slice(actual * porPagina, actual * porPagina + porPagina)
+    : ordenadas;
 
   function alternar(clave: string) {
     setOrden((o) => (o?.clave === clave ? { clave, desc: !o.desc } : { clave, desc: false }));
@@ -79,7 +96,7 @@ export function DataTable<T extends { id: string }>({
           </tr>
         </thead>
         <tbody>
-          {ordenadas.map((f) => (
+          {visibles.map((f) => (
             <tr
               key={f.id}
               onClick={onFila ? () => onFila(f) : undefined}
@@ -103,6 +120,28 @@ export function DataTable<T extends { id: string }>({
           ))}
         </tbody>
       </table>
+
+      {porPagina && paginas > 1 && (
+        <div className="hk-paginador">
+          <span className="t-sm t-subtle">
+            {actual * porPagina + 1}–{Math.min((actual + 1) * porPagina, total)} de {total}
+          </span>
+          <span className="spacer" />
+          <button
+            type="button" className="hk-btn hk-btn--ghost hk-btn--sm"
+            disabled={actual === 0} onClick={() => setPagina(actual - 1)}
+          >
+            <ArrowLeft size={15} />Anterior
+          </button>
+          <span className="t-sm t-muted">{actual + 1} / {paginas}</span>
+          <button
+            type="button" className="hk-btn hk-btn--ghost hk-btn--sm"
+            disabled={actual >= paginas - 1} onClick={() => setPagina(actual + 1)}
+          >
+            Siguiente<ArrowRight size={15} />
+          </button>
+        </div>
+      )}
     </div>
   );
 }

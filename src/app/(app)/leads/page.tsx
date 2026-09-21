@@ -15,7 +15,9 @@ import { CamposExtra, DatosExtra } from "@/components/ui/CamposExtra";
 import { useToast } from "@/components/ui/Toast";
 import { acciones, useEstado } from "@/lib/store";
 import { useAbrirDesdeURL } from "@/lib/useQuery";
-import { fechaLarga, isoDia, money, relativo } from "@/lib/format";
+import { fechaLarga, isoDia, money, num, relativo } from "@/lib/format";
+import { DateRangePicker } from "@/components/ui/DateRangePicker";
+import { useRangoURL } from "@/lib/useRango";
 import type { Lead, Moneda } from "@/lib/types";
 
 const VACIO = (fuente: string, etapaId: string): Omit<Lead, "id"> => ({
@@ -23,6 +25,15 @@ const VACIO = (fuente: string, etapaId: string): Omit<Lead, "id"> => ({
   etapaId, monto: 2400, moneda: "USD" as Moneda, responsable: "", notas: "",
   etiquetas: [], creadoEn: new Date().toISOString(), actualizadoEn: new Date().toISOString(), extra: {},
 });
+
+/* De menor a mayor: el orden importa para poder ordenar la columna, no
+   alfabeticamente — "basico" antes que "nativo" no dice nada. */
+const ORDEN_INGLES = ["ninguno", "basico", "intermedio", "conversacional", "nativo"] as const;
+
+const ETIQUETA_INGLES: Record<string, string> = {
+  ninguno: "Ninguno", basico: "Básico", intermedio: "Intermedio",
+  conversacional: "Conversacional", nativo: "Nativo",
+};
 
 export default function Leads() {
   const e = useEstado();
@@ -32,6 +43,11 @@ export default function Leads() {
   const [q, setQ] = useState("");
   const [etapa, setEtapa] = useState<string>("todas");
   const [fuente, setFuente] = useState<string>("todas");
+  const [ingles, setIngles] = useState<string>("todos");
+  /* El rango va con el mismo componente que el resto de la app, no un
+     selector de mes propio: Yari pidio ver los leads por mes, pero tambien
+     comparar periodos, y un mes suelto no deja hacer eso. */
+  const [rango, setRango] = useRangoURL("mes");
   const [form, setForm] = useState<(Omit<Lead, "id"> & { id?: string }) | null>(null);
   const [ver, setVer] = useState<string | null>(null);
   const [borrar, setBorrar] = useState<Lead | null>(null);
@@ -45,15 +61,24 @@ export default function Leads() {
     else if (url.ver) { setVer(url.ver); url.limpiar(); }
   }, [url, e.ajustes.fuentes, etapaInicial]);
 
+  /* Solo el rango. Los chips de etapa cuentan sobre esto: si contaran sobre
+     `filtrados`, el chip de la etapa elegida mostraria su propio total y los
+     demas cero. */
+  const enRango = useMemo(() => e.leads.filter((l) => {
+    const dia = (l.creadoEn ?? "").slice(0, 10);
+    return !dia || (dia >= rango.desde && dia <= rango.hasta);
+  }), [e.leads, rango]);
+
   const filtrados = useMemo(() => {
     const t = q.trim().toLowerCase();
-    return e.leads.filter((l) => {
+    return enRango.filter((l) => {
       if (etapa !== "todas" && l.etapaId !== etapa) return false;
       if (fuente !== "todas" && l.fuente !== fuente) return false;
+      if (ingles !== "todos" && (l.inglesNivel ?? "") !== ingles) return false;
       if (!t) return true;
       return [l.nombre, l.email, l.telefono, l.pais, l.campania].some((x) => x?.toLowerCase().includes(t));
     });
-  }, [e.leads, q, etapa, fuente]);
+  }, [enRango, q, etapa, fuente, ingles]);
 
   const leadVisto = e.leads.find((l) => l.id === ver) ?? null;
   const etapaDe = (id: string) => e.etapas.find((x) => x.id === id);
@@ -86,6 +111,14 @@ export default function Leads() {
     },
     { clave: "fuente", titulo: "Fuente", tipo: "secondary", orden: (l) => l.fuente, celda: (l) => l.fuente || "—" },
     { clave: "pais", titulo: "País", tipo: "secondary", orden: (l) => l.pais ?? "", celda: (l) => l.pais || "—" },
+    {
+      clave: "ingles", titulo: "Inglés", tipo: "secondary",
+      orden: (l) => ORDEN_INGLES.indexOf(l.inglesNivel ?? "ninguno"),
+      celda: (l) => (l.inglesNivel
+        ? <Badge variante={l.inglesNivel === "conversacional" || l.inglesNivel === "nativo" ? "success" : "neutral"}>{ETIQUETA_INGLES[l.inglesNivel]}</Badge>
+        : "—"),
+    },
+    { clave: "exp", titulo: "Años exp.", tipo: "num", orden: (l) => l.aniosExperiencia ?? -1, celda: (l) => (l.aniosExperiencia == null ? "—" : num(l.aniosExperiencia)) },
     { clave: "monto", titulo: "Valor", tipo: "num", orden: (l) => l.monto, celda: (l) => money(l.monto, l.moneda) },
     { clave: "act", titulo: "Últ. cambio", tipo: "secondary", orden: (l) => l.actualizadoEn, celda: (l) => relativo(l.actualizadoEn) },
   ];
@@ -97,6 +130,10 @@ export default function Leads() {
         sub={`${e.leads.length} personas en total. Cargá una, movela de etapa y cuando compre convertila en alumno.`}
         acciones={
           <>
+            <DateRangePicker
+              value={rango} minDate={null} onApply={setRango}
+              footerNota="Por cuándo entró el lead · zona horaria de Argentina"
+            />
             <Button variante="secondary" icono={<Upload size={16} />} onClick={() => setImportar(true)}>Importar CSV</Button>
             <Button variante="secondary" icono={<Download size={16} />} onClick={() => exportarCSV(e.leads, e.etapas)}>Exportar</Button>
             <Button variante="primary" icono={<Plus size={16} />} onClick={() => setForm(VACIO(e.ajustes.fuentes[0] ?? "", etapaInicial))}>Nuevo lead</Button>
@@ -112,6 +149,15 @@ export default function Leads() {
               placeholder="Buscá por nombre, mail o país…" aria-label="Buscar leads"
             />
             <span className="spacer" />
+            <div style={{ width: 175 }}>
+              <Select
+                value={ingles} onChange={(ev) => setIngles(ev.target.value)} aria-label="Filtrar por nivel de inglés"
+                opciones={[
+                  { valor: "todos", texto: "Cualquier inglés" },
+                  ...ORDEN_INGLES.map((n) => ({ valor: n, texto: ETIQUETA_INGLES[n] })),
+                ]}
+              />
+            </div>
             <div style={{ width: 190 }}>
               <Select
                 value={fuente} onChange={(ev) => setFuente(ev.target.value)} aria-label="Filtrar por fuente"
@@ -120,9 +166,12 @@ export default function Leads() {
             </div>
           </div>
           <div className="toolbar">
-            <Chip activo={etapa === "todas"} onClick={() => setEtapa("todas")} count={e.leads.length}>Todas</Chip>
+            {/* Los contadores salen de lo que el RANGO deja ver, no de la base
+                entera: si el filtro dice "este mes", un chip que cuenta todo
+                el historico le miente al que lo lee. */}
+            <Chip activo={etapa === "todas"} onClick={() => setEtapa("todas")} count={enRango.length}>Todas</Chip>
             {[...e.etapas].sort((a, b) => a.orden - b.orden).map((et) => (
-              <Chip key={et.id} activo={etapa === et.id} onClick={() => setEtapa(et.id)} count={e.leads.filter((l) => l.etapaId === et.id).length}>
+              <Chip key={et.id} activo={etapa === et.id} onClick={() => setEtapa(et.id)} count={enRango.filter((l) => l.etapaId === et.id).length}>
                 {et.nombre}
               </Chip>
             ))}
@@ -131,6 +180,7 @@ export default function Leads() {
 
         <DataTable
           alto={620}
+          porPagina={50}
           filas={filtrados}
           columnas={columnas}
           ordenInicial={{ clave: "act", desc: true }}
@@ -185,6 +235,20 @@ export default function Leads() {
             </Field>
             <Field label="Fuente" ayuda="De dónde vino.">
               <Select value={form.fuente} onChange={(ev) => setForm({ ...form, fuente: ev.target.value })} opciones={e.ajustes.fuentes} placeholder="Elegí una" />
+            </Field>
+            <Field label="Inglés" ayuda="Conversacional es el corte: abajo de eso no da una entrevista en USA.">
+              <Select
+                value={form.inglesNivel ?? ""}
+                onChange={(ev) => setForm({ ...form, inglesNivel: (ev.target.value || undefined) as Lead["inglesNivel"] })}
+                placeholder="Sin evaluar"
+                opciones={ORDEN_INGLES.map((n) => ({ valor: n, texto: ETIQUETA_INGLES[n] }))}
+              />
+            </Field>
+            <Field label="Años de experiencia" ayuda="Vacío es «no sabemos»; 0 es «sin experiencia».">
+              <Input
+                type="number" min={0} value={form.aniosExperiencia ?? ""}
+                onChange={(ev) => setForm({ ...form, aniosExperiencia: ev.target.value === "" ? undefined : Number(ev.target.value) })}
+              />
             </Field>
             <Field label="Valor" ayuda="Cuánto vale si cierra.">
               <Input type="number" min={0} value={form.monto} onChange={(ev) => setForm({ ...form, monto: Number(ev.target.value) })} />
@@ -261,6 +325,8 @@ export default function Leads() {
             <dl className="dl">
               <Dato label="Valor">{money(leadVisto.monto, leadVisto.moneda)}</Dato>
               <Dato label="País">{leadVisto.pais || "—"}</Dato>
+              <Dato label="Inglés">{leadVisto.inglesNivel ? ETIQUETA_INGLES[leadVisto.inglesNivel] : "Sin evaluar"}</Dato>
+              <Dato label="Años de experiencia">{leadVisto.aniosExperiencia == null ? "—" : num(leadVisto.aniosExperiencia)}</Dato>
               <Dato label="Teléfono">{leadVisto.telefono || "—"}</Dato>
               <Dato label="Campaña">{leadVisto.campania || "—"}</Dato>
               <Dato label="Responsable">{leadVisto.responsable || "—"}</Dato>
