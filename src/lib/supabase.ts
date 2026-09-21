@@ -42,6 +42,12 @@ export type Tabla = (typeof TABLAS)[number];
    vacia en vez de caerse entera: el SQL se corre cuando se pueda. */
 export const TABLAS_OPCIONALES = new Set<string>([
   "movimientos",
+  /* `campanias` quedo huerfana: Marketing lee de la jerarquia de Meta y ya
+     nadie le escribe. Se pasa a opcional ANTES de tirarla, no despues: si se
+     borrara de la base estando en TABLAS a secas, el SELECT de cargarDeLaNube
+     devolveria PGRST205 y no se romperia Marketing — se romperia la app
+     entera al entrar. Asi el dia que se tire, no pasa nada. */
+  "campanias",
   /* Las cuatro de Meta entran como opcionales hasta que el ALTER este corrido
      en todas las bases. Mientras tanto la app sigue con esas colecciones
      vacias en vez de caerse entera. */
