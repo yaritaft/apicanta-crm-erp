@@ -134,34 +134,6 @@ export function tasaShow(e: EstadoApp): number {
   return (pasadas.filter((s) => s.estado === "hecha").length / pasadas.length) * 100;
 }
 
-/* ---------- Marketing ---------- */
-
-export function inversionTotal(e: EstadoApp): number {
-  return e.campanias.reduce((a, c) => a + c.inversion, 0);
-}
-
-export function leadsDeCampanias(e: EstadoApp): number {
-  return e.campanias.reduce((a, c) => a + c.leads, 0);
-}
-
-export function cpl(e: EstadoApp): number {
-  const l = leadsDeCampanias(e);
-  return l > 0 ? inversionTotal(e) / l : 0;
-}
-
-export function cac(e: EstadoApp): number {
-  const ganada = e.etapas.find((x) => x.esGanada)?.id;
-  const ins = e.leads.filter((l) => l.etapaId === ganada).length;
-  return ins > 0 ? inversionTotal(e) / ins : 0;
-}
-
-export function roas(e: EstadoApp): number {
-  const inv = inversionTotal(e);
-  if (inv === 0) return 0;
-  const cobrado = e.pagos.reduce((a, p) => a + p.monto, 0);
-  return cobrado / inv;
-}
-
 /* Si Meta las reporto, se usan las de Meta. Las cuentas de abajo son el
    respaldo para las campanias cargadas a mano, y no dan exactamente lo mismo:
    el CTR de Meta sale sobre impresiones servidas y redondea distinto. Entre

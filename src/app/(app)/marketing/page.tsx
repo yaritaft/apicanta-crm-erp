@@ -73,7 +73,6 @@ export default function Marketing() {
   const [rango, setRango] = useRangoURL("mes");
   const [busca, setBusca] = useState("");
   const [fEstado, setFEstado] = useState("");
-  const [fPlataforma, setFPlataforma] = useState("");
 
   const cols = useColumnas("campanias", COLUMNAS, POR_DEFECTO);
 
@@ -163,7 +162,6 @@ export default function Marketing() {
   };
 
   const columnas = cols.visibles.map((k) => DEF[k]).filter(Boolean);
-  const plataformas = [...new Set(e.campanias.map((c) => c.plataforma))];
 
   return (
     <div className="stack-5">
@@ -228,9 +226,6 @@ export default function Marketing() {
             <div style={{ width: 150 }}>
               <Select value={fEstado} onChange={(ev) => setFEstado(ev.target.value)} placeholder="Todos los estados"
                 opciones={(Object.keys(ETIQUETA) as EstadoCampania[]).map((k) => ({ valor: k, texto: ETIQUETA[k].texto }))} />
-            </div>
-            <div style={{ width: 150 }}>
-              <Select value={fPlataforma} onChange={(ev) => setFPlataforma(ev.target.value)} placeholder="Todas las plataformas" opciones={plataformas} />
             </div>
             <span className="spacer" />
             <ConfigColumnas
