@@ -198,6 +198,26 @@ export function reiniciarCarga() {
   marcar(hayNube ? "cargando" : "local");
 }
 
+/* PostgREST corta en 1000 filas por defecto y NO avisa: devuelve 200 con
+   menos datos. Medido en produccion: la base tenia 2.751 anuncios y la app
+   cargaba exactamente 1000, sin un solo error.
+
+   Es la misma clase de falla que RLS escondiendo filas — el sistema informa
+   exito y trae menos — y muerde a cualquier tabla que pase las mil: hoy `ads`,
+   manana `leads` o `pagos`. Se pide por paginas hasta que una venga incompleta,
+   que es la senal de que no hay mas. */
+const PAGINA = 1000;
+
+async function traerTabla(db: NonNullable<typeof nube>, tabla: string) {
+  const filas: unknown[] = [];
+  for (let desde = 0; ; desde += PAGINA) {
+    const r = await db.from(tabla).select("*").range(desde, desde + PAGINA - 1);
+    if (r.error) return { data: null, error: r.error };
+    filas.push(...(r.data ?? []));
+    if ((r.data?.length ?? 0) < PAGINA) return { data: filas, error: null };
+  }
+}
+
 export async function cargarDeLaNube(): Promise<void> {
   if (!nube || yaCargo) return;
   const db = nube;
@@ -206,7 +226,7 @@ export async function cargarDeLaNube(): Promise<void> {
   try {
     const [ajustesRes, ...resto] = await Promise.all([
       db.from("ajustes").select("*").eq("id", 1).maybeSingle(),
-      ...TABLAS.map((t) => db.from(t).select("*")),
+      ...TABLAS.map((t) => traerTabla(db, t)),
     ]);
 
     for (const [i, r] of resto.entries()) {

@@ -110,9 +110,16 @@ export async function sincronizarMeta(
     campaigns = j.campaigns.length; adsets = j.adsets.length; ads = j.ads.length;
     idsDeAnuncios = new Set(j.ads.map((a) => idAd(a.id)));
   } else {
-    const r = await db.from("ads").select("id");
-    if (r.error) throw new Error(`ads: ${r.error.message}`);
-    idsDeAnuncios = new Set((r.data ?? []).map((a) => a.id as string));
+    /* Por paginas: PostgREST corta en 1000 y no avisa. Con 2.751 anuncios,
+       leerlos de una dejaba 1.751 afuera, y sus insights se descartaban
+       despues por "anuncio desconocido" — sin error y sin que nadie lo vea. */
+    idsDeAnuncios = new Set<string>();
+    for (let desde = 0; ; desde += 1000) {
+      const r = await db.from("ads").select("id").range(desde, desde + 999);
+      if (r.error) throw new Error(`ads: ${r.error.message}`);
+      for (const a of r.data ?? []) idsDeAnuncios.add(a.id as string);
+      if ((r.data?.length ?? 0) < 1000) break;
+    }
   }
 
   const insights = await traerInsightsDiarios(token, cuentaId, desde, hasta);
