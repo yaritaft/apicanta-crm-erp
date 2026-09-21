@@ -146,8 +146,38 @@ export function rangoSub(r: RangoFechas): string {
 
 /* Un dia cae en el rango. La comparacion es de strings ISO a proposito:
    ordenan igual que las fechas y no arrastran husos. */
+/* El dia del NEGOCIO, no el de UTC.
+
+   `creadoEn` guarda un INSTANTE. A las 22 de Argentina ya es la 01 del dia
+   siguiente en UTC, asi que cortar el ISO con slice(0, 10) devolvia manana. Y
+   como el rango se arma en hora argentina (TZ_NEGOCIO), todo lo cargado
+   despues de las 21 quedaba afuera de "hoy": desaparecia de la lista justo
+   cuando alguien lo acababa de cargar, sin ningun error ni aviso.
+
+   Es la misma correccion que hoyEnArgentina() en el sync de Meta: el dia lo
+   define el calendario del negocio, no el del servidor.
+
+   Una fecha que ya viene SIN hora se devuelve tal cual. Pasarla por
+   `new Date()` la leeria como medianoche UTC y en Argentina eso es el dia
+   anterior: el arreglo correria un dia para atras todo lo que hoy anda bien. */
+const fmtDiaNegocio = new Intl.DateTimeFormat("en-CA", {
+  timeZone: TZ_NEGOCIO, year: "numeric", month: "2-digit", day: "2-digit",
+});
+
+export function diaDeNegocio(fecha: string | undefined | null): string {
+  if (!fecha) return "";
+  if (fecha.length <= 10) return fecha.slice(0, 10);
+  const d = new Date(fecha);
+  if (Number.isNaN(d.getTime())) return fecha.slice(0, 10);
+  try {
+    return fmtDiaNegocio.format(d);
+  } catch {
+    return fecha.slice(0, 10);
+  }
+}
+
 export function enRango(fecha: string, r: RangoFechas): boolean {
-  const d = fecha.slice(0, 10);
+  const d = diaDeNegocio(fecha);
   return d >= r.desde && d <= r.hasta;
 }
 
