@@ -1,4 +1,4 @@
-import type { EstadoApp, Meta, MetricaClave } from "./types";
+import type { EstadoApp, ID, Meta, MetricaClave } from "./types";
 import { inicioSemana, mesClave, nombreMes } from "./format";
 import { calcularPyL, cashCollected, porCobrarTotal } from "./finanzas";
 
@@ -262,4 +262,100 @@ export const ETIQUETA_METRICA: Record<MetricaClave, string> = {
 export function variacion(actual: number, previo: number): number {
   if (previo === 0) return actual > 0 ? 100 : 0;
   return ((actual - previo) / previo) * 100;
+}
+
+/* ---------- Campañas desde la jerarquía de Meta ----------
+
+   Reemplaza la lectura de `campanias`, que guardaba UN número por campaña y
+   por eso el filtro de fechas no podía recortar el gasto.
+
+   Acá el gasto se arma sumando las filas de `ad_insights` que caen dentro del
+   rango, subiendo de anuncio a campaña. Eso es lo que hace que "últimos 7
+   días" devuelva el gasto de esos 7 días. */
+
+export interface FilaCampania {
+  id: ID;
+  nombre: string;
+  objetivo: string;
+  estado: string;
+  inversion: number;
+  impresiones: number;
+  clicks: number;
+  clicksEnlace: number;
+  leads: number;
+  ctr: number;
+  cpm: number;
+  cpc: number;
+  ctrEnlace: number;
+  cpcEnlace: number;
+  cpl: number;
+  /* Cuántos días y cuántos anuncios aportaron. Un CPL bajísimo con un solo día
+     de datos no es un CPL bajo, es una muestra chica. */
+  dias: number;
+  anuncios: number;
+}
+
+export function campaniasDelRango(
+  e: EstadoApp, desde: string, hasta: string,
+): FilaCampania[] {
+  /* De anuncio a campaña. */
+  const campaniaDe = new Map(e.ads.map((a) => [a.id, a.campaignId]));
+
+  type Acum = {
+    inversion: number; impresiones: number; clicks: number;
+    clicksEnlace: number; leads: number;
+    dias: Set<string>; anuncios: Set<string>;
+  };
+  const vacio = (): Acum => ({
+    inversion: 0, impresiones: 0, clicks: 0, clicksEnlace: 0, leads: 0,
+    dias: new Set(), anuncios: new Set(),
+  });
+
+  const por = new Map<ID, Acum>();
+  for (const i of e.adInsights) {
+    /* Comparacion de strings ISO: ordenan igual que las fechas y no arrastran
+       husos, que es de donde salen los errores de un dia. */
+    if (i.dia < desde || i.dia > hasta) continue;
+    const c = campaniaDe.get(i.adId);
+    if (!c) continue;
+    const a = por.get(c) ?? vacio();
+    a.inversion += i.inversion;
+    a.impresiones += i.impresiones;
+    a.clicks += i.clicks;
+    a.clicksEnlace += i.clicksEnlace ?? 0;
+    a.leads += i.leads;
+    a.dias.add(i.dia);
+    a.anuncios.add(i.adId);
+    por.set(c, a);
+  }
+
+  return e.campaigns
+    .filter((c) => por.has(c.id))
+    .map((c) => {
+      const a = por.get(c.id)!;
+      /* Las derivadas se RECALCULAN sobre los totales del rango; no se
+         promedian las diarias. El promedio de siete CTR no es el CTR de la
+         semana: un dia con tres impresiones pesaria igual que uno con treinta
+         mil. */
+      return {
+        id: c.id, nombre: c.nombre, objetivo: c.objetivo, estado: c.estado,
+        inversion: a.inversion, impresiones: a.impresiones, clicks: a.clicks,
+        clicksEnlace: a.clicksEnlace, leads: a.leads,
+        ctr: a.impresiones > 0 ? (a.clicks / a.impresiones) * 100 : 0,
+        cpm: a.impresiones > 0 ? (a.inversion / a.impresiones) * 1000 : 0,
+        cpc: a.clicks > 0 ? a.inversion / a.clicks : 0,
+        ctrEnlace: a.impresiones > 0 ? (a.clicksEnlace / a.impresiones) * 100 : 0,
+        cpcEnlace: a.clicksEnlace > 0 ? a.inversion / a.clicksEnlace : 0,
+        cpl: a.leads > 0 ? a.inversion / a.leads : 0,
+        dias: a.dias.size, anuncios: a.anuncios.size,
+      };
+    });
+}
+
+/* El primer dia con datos. Sirve de `minDate` del selector, para que "Máximo"
+   no arranque en enero cuando la sincronizacion empieza en septiembre. */
+export function primerDiaConDatos(e: EstadoApp): string | null {
+  let min: string | null = null;
+  for (const i of e.adInsights) if (!min || i.dia < min) min = i.dia;
+  return min;
 }

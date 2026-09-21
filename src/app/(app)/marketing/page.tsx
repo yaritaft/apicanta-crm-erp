@@ -1,17 +1,12 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
-import { Megaphone, Pencil, Plus, Search, Trash2 } from "lucide-react";
+import { Megaphone, Search } from "lucide-react";
 import { PageHead } from "@/components/shell/PageHead";
-import {
-  Badge, Button, Card, CardHead, Empty, Field, IconButton, Input, Select,
-  StatCard, Tabs,
-} from "@/components/ui/ui";
+import { Badge, Button, Card, CardHead, Empty, Input, Select, StatCard, Tabs } from "@/components/ui/ui";
 import { Columna, DataTable } from "@/components/ui/DataTable";
 import { ConfigColumnas, DefColumna, useColumnas } from "@/components/ui/ColumnasConfig";
-import { ModalForm, Confirmar } from "@/components/ui/Modal";
 import { Drawer, Dato } from "@/components/ui/Drawer";
-import { CamposExtra, DatosExtra } from "@/components/ui/CamposExtra";
 import { ConectarMeta } from "@/components/shell/ConectarMeta";
 import { COLORES, Donut, BarChart, truncar } from "@/components/charts/charts";
 import { DateRangePicker, rangoSub } from "@/components/ui/DateRangePicker";
@@ -19,8 +14,8 @@ import { useRangoURL } from "@/lib/useRango";
 import { useToast } from "@/components/ui/Toast";
 import { acciones, useEstado } from "@/lib/store";
 import { useAbrirDesdeURL } from "@/lib/useQuery";
-import { fechaLarga, isoDia, money, num, pct } from "@/lib/format";
-import { metricasCampania, negocioDeCampania } from "@/lib/metricas";
+import { money, num, pct } from "@/lib/format";
+import { campaniasDelRango, negocioDeCampania, primerDiaConDatos, type FilaCampania } from "@/lib/metricas";
 import type { Campania, EstadoCampania } from "@/lib/types";
 
 type Vista = "dashboard" | "campanias";
@@ -30,12 +25,6 @@ const ETIQUETA: Record<EstadoCampania, { texto: string; variante: "success" | "w
   "pausada": { texto: "Pausada", variante: "warning" },
   "finalizada": { texto: "Finalizada", variante: "neutral" },
 };
-
-const VACIA = (): Omit<Campania, "id"> => ({
-  nombre: "", plataforma: "Meta", objetivo: "Conversiones", estado: "activa",
-  inversion: 0, impresiones: 0, clicks: 0, leads: 0,
-  desde: new Date().toISOString(), creadoEn: new Date().toISOString(), extra: {},
-});
 
 /* El catálogo de columnas. Los nombres y el orden son los del Ads Manager,
    para que quien viene de ahí no tenga que traducir nada. */
@@ -79,9 +68,7 @@ export default function Marketing() {
   const toast = useToast();
   const url = useAbrirDesdeURL();
   const [vista, setVista] = useState<Vista>("dashboard");
-  const [form, setForm] = useState<(Omit<Campania, "id"> & { id?: string }) | null>(null);
   const [ver, setVer] = useState<string | null>(null);
-  const [borrar, setBorrar] = useState<Campania | null>(null);
 
   const [rango, setRango] = useRangoURL("mes");
   const [busca, setBusca] = useState("");
@@ -91,31 +78,29 @@ export default function Marketing() {
   const cols = useColumnas("campanias", COLUMNAS, POR_DEFECTO);
 
   useEffect(() => {
-    if (url.nuevo) { setVista("campanias"); setForm(VACIA()); url.limpiar(); }
-    else if (url.ver) { setVista("campanias"); setVer(url.ver); url.limpiar(); }
+    if (url.nuevo || url.ver) { setVista("campanias"); if (url.ver) setVer(url.ver); url.limpiar(); }
   }, [url]);
 
   const M = (n: number, d = 0) => money(n, e.ajustes.monedaBase, d);
 
-  /* Una campaña entra si SOLAPA el rango, no si empezó adentro: una que viene
-     corriendo desde marzo y sigue viva es parte de lo que pasó este mes. */
-  const enRango = useMemo(() => {
-    const desde = new Date(`${rango.desde}T00:00:00`).getTime();
-    const hasta = new Date(`${rango.hasta}T23:59:59`).getTime();
-    return e.campanias.filter((c) => {
-      const a = new Date(c.desde).getTime();
-      const b = c.hasta ? new Date(c.hasta).getTime() : Infinity;
-      return a <= hasta && b >= desde;
-    });
-  }, [e.campanias, rango]);
+  /* Ahora sale de ad_insights: el gasto se suma dia por dia y sube de anuncio
+     a campaña. Por eso el rango recorta de verdad — antes `campanias` tenia UN
+     numero por campaña y el filtro solo podia elegir cuales mostrar. */
+  const enRango = useMemo(
+    () => campaniasDelRango(e, rango.desde, rango.hasta),
+    [e, rango],
+  );
+
+  /* Que "Máximo" no arranque en enero cuando la sincronizacion empieza en
+     septiembre. */
+  const primerDia = useMemo(() => primerDiaConDatos(e), [e]);
 
   const filtradas = useMemo(() => {
     const q = busca.trim().toLowerCase();
     return enRango.filter((c) =>
       (!q || c.nombre.toLowerCase().includes(q) || c.objetivo.toLowerCase().includes(q)) &&
-      (!fEstado || c.estado === fEstado) &&
-      (!fPlataforma || c.plataforma === fPlataforma));
-  }, [enRango, busca, fEstado, fPlataforma]);
+      (!fEstado || c.estado === fEstado));
+  }, [enRango, busca, fEstado]);
 
   /* Los totales salen de lo FILTRADO, no de toda la base: si filtrás por Meta,
      el costo por lead que ves tiene que ser el de Meta. */
@@ -141,37 +126,32 @@ export default function Marketing() {
       .map(([etiqueta, valor], i) => ({ etiqueta, valor, color: COLORES[i % COLORES.length] }));
   }, [e.leads]);
 
-  const cVista = e.campanias.find((c) => c.id === ver) ?? null;
-  const mVista = cVista ? metricasCampania(cVista) : null;
-
-  function guardar() {
-    if (!form) return;
-    if (!form.nombre.trim()) { toast("Ponele un nombre a la campaña.", "err"); return; }
-    if (form.id) { acciones.actualizar<Campania>("campanias", form.id, form, form.nombre); toast("Campaña actualizada."); }
-    else { acciones.crear<Campania>("campanias", form, form.nombre); toast(`«${form.nombre}» creada.`); }
-    setForm(null);
-  }
+  /* La fila agregada del rango, no la campaña cruda: el detalle tiene que
+     mostrar los mismos números que la tabla. */
+  const cVista = enRango.find((c) => c.id === ver) ?? null;
 
   /* Cada columna del catálogo, definida una sola vez. La tabla recibe sólo las
      prendidas, en el orden en que quedaron. */
-  const DEF: Record<string, Columna<Campania>> = {
+  /* Las derivadas ya vienen calculadas sobre los totales del rango, desde
+     campaniasDelRango. No se recalculan acá ni se promedian las diarias: el
+     promedio de siete CTR no es el CTR de la semana. */
+  const DEF: Record<string, Columna<FilaCampania>> = {
     nombre: { clave: "nombre", titulo: "Campaña", tipo: "primary", orden: (c) => c.nombre, celda: (c) => c.nombre },
-    estado: { clave: "estado", titulo: "Estado", orden: (c) => c.estado, celda: (c) => <Badge variante={ETIQUETA[c.estado].variante}>{ETIQUETA[c.estado].texto}</Badge> },
-    plataforma: { clave: "plataforma", titulo: "Plataforma", orden: (c) => c.plataforma, celda: (c) => c.plataforma },
-    objetivo: { clave: "objetivo", titulo: "Objetivo", orden: (c) => c.objetivo, celda: (c) => c.objetivo },
+    estado: { clave: "estado", titulo: "Estado", orden: (c) => c.estado, celda: (c) => <Badge variante={c.estado === "active" ? "success" : c.estado === "paused" ? "warning" : "neutral"}>{c.estado || "—"}</Badge> },
+    objetivo: { clave: "objetivo", titulo: "Objetivo", orden: (c) => c.objetivo, celda: (c) => c.objetivo || "—" },
     inversion: { clave: "inversion", titulo: "Inversión", tipo: "num", orden: (c) => c.inversion, celda: (c) => M(c.inversion) },
-    cpm: { clave: "cpm", titulo: "CPM", tipo: "num", orden: (c) => metricasCampania(c).cpm, celda: (c) => M(metricasCampania(c).cpm, 2) },
+    cpm: { clave: "cpm", titulo: "CPM", tipo: "num", orden: (c) => c.cpm, celda: (c) => M(c.cpm, 2) },
     impresiones: { clave: "impresiones", titulo: "Impresiones", tipo: "num", orden: (c) => c.impresiones, celda: (c) => num(c.impresiones) },
-    alcance: { clave: "alcance", titulo: "Alcance", tipo: "num", orden: (c) => c.alcance ?? 0, celda: (c) => (c.alcance ? num(c.alcance) : "—") },
-    frecuencia: { clave: "frecuencia", titulo: "Frecuencia", tipo: "num", orden: (c) => c.frecuencia ?? 0, celda: (c) => (c.frecuencia ? num(c.frecuencia, 2) : "—") },
+    anuncios: { clave: "anuncios", titulo: "Anuncios", tipo: "num", orden: (c) => c.anuncios, celda: (c) => num(c.anuncios) },
+    dias: { clave: "dias", titulo: "Días con datos", tipo: "num", orden: (c) => c.dias, celda: (c) => num(c.dias) },
     clicks: { clave: "clicks", titulo: "Clicks", tipo: "num", orden: (c) => c.clicks, celda: (c) => num(c.clicks) },
-    ctr: { clave: "ctr", titulo: "CTR", tipo: "num", orden: (c) => metricasCampania(c).ctr, celda: (c) => pct(metricasCampania(c).ctr, 2) },
-    cpc: { clave: "cpc", titulo: "CPC", tipo: "num", orden: (c) => metricasCampania(c).cpc, celda: (c) => M(metricasCampania(c).cpc, 2) },
-    clicksEnlace: { clave: "clicksEnlace", titulo: "Clicks en el enlace", tipo: "num", orden: (c) => c.clicksEnlace ?? 0, celda: (c) => (c.clicksEnlace ? num(c.clicksEnlace) : "—") },
-    ctrEnlace: { clave: "ctrEnlace", titulo: "CTR del enlace", tipo: "num", orden: (c) => c.ctrEnlace ?? 0, celda: (c) => (c.ctrEnlace ? pct(c.ctrEnlace, 2) : "—") },
-    cpcEnlace: { clave: "cpcEnlace", titulo: "Costo por click en enlace", tipo: "num", orden: (c) => c.costoPorClickEnlace ?? 0, celda: (c) => (c.costoPorClickEnlace ? M(c.costoPorClickEnlace, 2) : "—") },
+    ctr: { clave: "ctr", titulo: "CTR", tipo: "num", orden: (c) => c.ctr, celda: (c) => pct(c.ctr, 2) },
+    cpc: { clave: "cpc", titulo: "CPC", tipo: "num", orden: (c) => c.cpc, celda: (c) => M(c.cpc, 2) },
+    clicksEnlace: { clave: "clicksEnlace", titulo: "Clicks en el enlace", tipo: "num", orden: (c) => c.clicksEnlace, celda: (c) => num(c.clicksEnlace) },
+    ctrEnlace: { clave: "ctrEnlace", titulo: "CTR del enlace", tipo: "num", orden: (c) => c.ctrEnlace, celda: (c) => pct(c.ctrEnlace, 2) },
+    cpcEnlace: { clave: "cpcEnlace", titulo: "Costo por click en enlace", tipo: "num", orden: (c) => c.cpcEnlace, celda: (c) => M(c.cpcEnlace, 2) },
     leads: { clave: "leads", titulo: "Leads", tipo: "num", orden: (c) => c.leads, celda: (c) => num(c.leads) },
-    cpl: { clave: "cpl", titulo: "Costo por lead", tipo: "num", orden: (c) => metricasCampania(c).cpl, celda: (c) => M(metricasCampania(c).cpl, 2) },
+    cpl: { clave: "cpl", titulo: "Costo por lead", tipo: "num", orden: (c) => c.cpl, celda: (c) => M(c.cpl, 2) },
     ventas: { clave: "ventas", titulo: "Ventas", tipo: "num", orden: (c) => negocioDeCampania(e, c.nombre).ventas, celda: (c) => num(negocioDeCampania(e, c.nombre).ventas) },
     facturado: { clave: "facturado", titulo: "Facturado", tipo: "num", orden: (c) => negocioDeCampania(e, c.nombre).facturado, celda: (c) => M(negocioDeCampania(e, c.nombre).facturado) },
     cobrado: { clave: "cobrado", titulo: "Cobrado", tipo: "num", orden: (c) => negocioDeCampania(e, c.nombre).cobrado, celda: (c) => M(negocioDeCampania(e, c.nombre).cobrado) },
@@ -193,10 +173,9 @@ export default function Marketing() {
         acciones={
           <>
             <DateRangePicker
-              value={rango} minDate={null} onApply={setRango}
+              value={rango} minDate={primerDia} onApply={setRango}
               footerNota="Días calendario · zona horaria de Argentina"
             />
-            <Button variante="primary" icono={<Plus size={16} />} onClick={() => { setVista("campanias"); setForm(VACIA()); }}>Nueva campaña</Button>
           </>
         }
       />
@@ -232,7 +211,7 @@ export default function Marketing() {
               {filtradas.length === 0
                 ? <p className="t-sm t-subtle" style={{ padding: 24, textAlign: "center" }}>No hay campañas en este período.</p>
                 : <BarChart
-                    datos={filtradas.map((c) => ({ etiqueta: truncar(c.nombre, 12), valor: metricasCampania(c).cpl, completo: c.nombre }))}
+                    datos={filtradas.map((c) => ({ etiqueta: truncar(c.nombre, 12), valor: c.cpl, completo: c.nombre }))}
                     formato={(n) => M(n, 0)} alto={200} color="var(--accent)"
                   />}
             </Card>
@@ -265,22 +244,13 @@ export default function Marketing() {
               filas={filtradas} columnas={columnas} alto={560}
               ordenInicial={{ clave: "inversion", desc: true }}
               onFila={(c) => setVer(c.id)} etiquetaFila={(c) => `Ver ${c.nombre}`}
-              acciones={(c) => (
-                <>
-                  <IconButton etiqueta="Editar" onClick={() => setForm({ ...c })}><Pencil size={15} /></IconButton>
-                  <IconButton etiqueta="Eliminar" onClick={() => setBorrar(c)}><Trash2 size={15} /></IconButton>
-                </>
-              )}
               vacio={
                 <Empty
                   icono={<Megaphone size={22} />}
-                  titulo={e.campanias.length === 0 ? "Todavía no cargaste campañas" : "Ninguna campaña en este período"}
-                  texto={e.campanias.length === 0
-                    ? "Conectá Meta o cargá una a mano con lo que invertiste y los leads que trajo."
+                  titulo={e.campaigns.length === 0 ? "Todavía no trajiste nada de Meta" : "Ninguna campaña gastó en este período"}
+                  texto={e.campaigns.length === 0
+                    ? "Conectá Meta y apretá «Traer anuncios y días» en el Dashboard."
                     : "Probá con otro rango de fechas, o sacá los filtros."}
-                  accion={e.campanias.length === 0
-                    ? <Button variante="brand" icono={<Plus size={16} />} onClick={() => setForm(VACIA())}>Cargar mi primera campaña</Button>
-                    : undefined}
                 />
               }
             />
@@ -288,109 +258,49 @@ export default function Marketing() {
         </div>
       )}
 
-      {form && (
-        <ModalForm
-          abierto onCerrar={() => setForm(null)} onGuardar={guardar} ancho
-          titulo={form.id ? "Editar campaña" : "Nueva campaña"}
-          sub="Copiá los números del administrador de anuncios. Con la inversión y los leads ya te calculo lo importante."
-          guardarTexto={form.id ? "Guardar cambios" : "Crear campaña"}
-          puedeGuardar={form.nombre.trim().length > 0}
-        >
-          <div className="form-grid">
-            <Field label="Nombre" span2>
-              <Input value={form.nombre} onChange={(ev) => setForm({ ...form, nombre: ev.target.value })} placeholder="Remoto-USA-Frío" autoFocus />
-            </Field>
-            <Field label="Plataforma">
-              <Select value={form.plataforma} onChange={(ev) => setForm({ ...form, plataforma: ev.target.value })} opciones={["Meta", "Google", "TikTok", "YouTube", "LinkedIn"]} />
-            </Field>
-            <Field label="Objetivo">
-              <Select value={form.objetivo} onChange={(ev) => setForm({ ...form, objetivo: ev.target.value })} opciones={["Conversiones", "Clientes potenciales", "Tráfico", "Reproducciones", "Alcance"]} />
-            </Field>
-            <Field label="Estado">
-              <Select value={form.estado} onChange={(ev) => setForm({ ...form, estado: ev.target.value as EstadoCampania })}
-                opciones={(Object.keys(ETIQUETA) as EstadoCampania[]).map((k) => ({ valor: k, texto: ETIQUETA[k].texto }))} />
-            </Field>
-            <Field label="Inversión">
-              <Input type="number" min={0} value={form.inversion} onChange={(ev) => setForm({ ...form, inversion: Number(ev.target.value) })} />
-            </Field>
-            <Field label="Impresiones">
-              <Input type="number" min={0} value={form.impresiones} onChange={(ev) => setForm({ ...form, impresiones: Number(ev.target.value) })} />
-            </Field>
-            <Field label="Clicks" ayuda="Todos los clicks, como los reporta Meta.">
-              <Input type="number" min={0} value={form.clicks} onChange={(ev) => setForm({ ...form, clicks: Number(ev.target.value) })} />
-            </Field>
-            <Field label="Clicks en el enlace" ayuda="Los que se fueron a la landing.">
-              <Input type="number" min={0} value={form.clicksEnlace ?? 0} onChange={(ev) => setForm({ ...form, clicksEnlace: Number(ev.target.value) })} />
-            </Field>
-            <Field label="Leads" ayuda="Cuántos formularios completaron.">
-              <Input type="number" min={0} value={form.leads} onChange={(ev) => setForm({ ...form, leads: Number(ev.target.value) })} />
-            </Field>
-            <Field label="Desde">
-              <Input type="date" value={isoDia(form.desde)} onChange={(ev) => setForm({ ...form, desde: new Date(ev.target.value).toISOString() })} />
-            </Field>
-            <CamposExtra campos={e.campos} entidad="campania" valores={form.extra} onChange={(k, v) => setForm({ ...form, extra: { ...form.extra, [k]: v } })} />
-          </div>
-        </ModalForm>
-      )}
-
-      {cVista && mVista && (
+      {cVista && (
         <Drawer
-          abierto onCerrar={() => setVer(null)} titulo={cVista.nombre} sub={`${cVista.plataforma} · ${cVista.objetivo}`}
-          pie={
-            <>
-              <Button variante="secondary" icono={<Pencil size={16} />} onClick={() => { setForm({ ...cVista }); setVer(null); }}>Editar</Button>
-              <Button variante="danger" icono={<Trash2 size={16} />} onClick={() => { setBorrar(cVista); setVer(null); }}>Eliminar</Button>
-            </>
-          }
+          abierto onCerrar={() => setVer(null)} titulo={cVista.nombre}
+          sub={`${cVista.objetivo || "Sin objetivo"} · ${rangoSub(rango)}`}
         >
           <div className="stack-5">
-            <Badge variante={ETIQUETA[cVista.estado].variante}>{ETIQUETA[cVista.estado].texto}</Badge>
-
             <div className="grid-2" style={{ gap: 12 }}>
-              <Mini etiqueta="Costo por lead" valor={M(mVista.cpl, 2)} />
-              <Mini etiqueta="CTR" valor={pct(mVista.ctr, 2)} />
-              <Mini etiqueta="Costo por click" valor={M(mVista.cpc, 2)} />
-              <Mini etiqueta="CPM" valor={M(mVista.cpm, 2)} />
+              <Mini etiqueta="Inversión" valor={M(cVista.inversion)} />
+              <Mini etiqueta="Costo por lead" valor={M(cVista.cpl, 2)} />
+              <Mini etiqueta="CTR" valor={pct(cVista.ctr, 2)} />
+              <Mini etiqueta="Clicks en el enlace" valor={num(cVista.clicksEnlace)} />
             </div>
 
             <dl className="dl">
-              <Dato label="Inversión">{M(cVista.inversion)}</Dato>
               <Dato label="Impresiones">{num(cVista.impresiones)}</Dato>
-              {cVista.alcance ? <Dato label="Alcance">{num(cVista.alcance)}</Dato> : null}
-              {cVista.frecuencia ? <Dato label="Frecuencia">{num(cVista.frecuencia, 2)}</Dato> : null}
               <Dato label="Clicks">{num(cVista.clicks)}</Dato>
-              {cVista.clicksEnlace ? <Dato label="Clicks en el enlace">{num(cVista.clicksEnlace)}</Dato> : null}
               <Dato label="Leads">{num(cVista.leads)}</Dato>
-              <Dato label="Desde">{fechaLarga(cVista.desde)}</Dato>
-              {cVista.hasta && <Dato label="Hasta">{fechaLarga(cVista.hasta)}</Dato>}
-              <DatosExtra campos={e.campos} entidad="campania" valores={cVista.extra} />
+              <Dato label="Anuncios que corrieron">{num(cVista.anuncios)}</Dato>
+              <Dato label="Días con datos">{num(cVista.dias)}</Dato>
             </dl>
 
+            {/* Acá se ven los dos niveles de abajo, que hasta ahora estaban en
+                la base sin que ninguna pantalla los mostrara. */}
             <div>
-              <div className="t-label" style={{ marginBottom: 12 }}>Leads con esta campaña</div>
-              {e.leads.filter((l) => l.campania === cVista.nombre).length === 0 ? (
-                <p className="t-sm t-subtle">Ningún lead quedó etiquetado con esta campaña todavía.</p>
-              ) : (
-                <div className="stack-2">
-                  {e.leads.filter((l) => l.campania === cVista.nombre).slice(0, 8).map((l) => (
-                    <div key={l.id} className="agenda-item" style={{ cursor: "default" }}>
-                      <span className="truncate" style={{ flex: 1 }}>{l.nombre}</span>
-                      <span className="t-sm t-num t-subtle">{money(l.monto, l.moneda)}</span>
+              <div className="t-label" style={{ marginBottom: 12 }}>
+                Conjuntos de anuncios
+              </div>
+              <div className="stack-2">
+                {e.adsets.filter((s) => s.campaignId === cVista.id).map((s) => {
+                  const suyos = e.ads.filter((a) => a.adsetId === s.id);
+                  return (
+                    <div key={s.id} className="agenda-item" style={{ cursor: "default" }}>
+                      <span className="truncate" style={{ flex: 1 }}>{s.nombre}</span>
+                      <span className="t-sm t-num t-subtle">{num(suyos.length)} anuncios</span>
                     </div>
-                  ))}
-                </div>
-              )}
+                  );
+                })}
+              </div>
             </div>
           </div>
         </Drawer>
       )}
 
-      <Confirmar
-        abierto={borrar !== null} onCerrar={() => setBorrar(null)}
-        titulo="¿Eliminar esta campaña?"
-        texto={`Se borra «${borrar?.nombre}» y sus números dejan de contar en los totales.`}
-        onConfirmar={() => { if (borrar) { acciones.eliminar("campanias", borrar.id, borrar.nombre); toast("Campaña eliminada."); } }}
-      />
     </div>
   );
 }
