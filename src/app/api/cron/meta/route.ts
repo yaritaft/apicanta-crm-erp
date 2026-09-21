@@ -49,7 +49,13 @@ export async function GET(req: Request) {
     );
   }
 
-  const completo = new Date().getUTCHours() === HORA_DEL_SYNC_COMPLETO;
+  /* La hora SOLA no alcanza: el cron dispara cada 15 minutos, asi que esa
+     hora tiene cuatro disparos y el sync completo —el mas pesado contra Meta:
+     2.751 anuncios mas 30 dias— corria cuatro veces seguidas, gastando tres
+     veces de mas la cuota que a la 01:00 ya se agoto una vez. Solo el primero
+     de la hora. */
+  const ahora = new Date();
+  const completo = ahora.getUTCHours() === HORA_DEL_SYNC_COMPLETO && ahora.getUTCMinutes() < 15;
   const { desde, hasta } = ventana(completo ? 30 : 3);
 
   try {
