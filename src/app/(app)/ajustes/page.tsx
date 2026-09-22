@@ -1,6 +1,8 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { EtapasServicio } from "@/components/alumnos/EtapasServicio";
 import {
   AlertTriangle, Check, Database, Download, GripVertical, Info, Layers, ListPlus,
   Moon, Plug, Plus, Settings2, Sun, Trash2, Upload, X,
@@ -42,8 +44,16 @@ const TIPOS: { valor: TipoCampo; texto: string }[] = [
 
 const VARIANTES: Etapa["variante"][] = ["info", "brand", "accent", "warning", "success", "danger", "neutral"];
 
+const SECCIONES: Seccion[] = ["negocio", "pipeline", "listas", "campos", "integraciones", "datos"];
+
 export default function Ajustes() {
-  const [seccion, setSeccion] = useState<Seccion>("negocio");
+  /* Se puede entrar directo a una sección por link: el pipeline de alumnos
+     lleva a /ajustes?seccion=pipeline&pipeline=servicio para editar sus etapas. */
+  const params = useSearchParams();
+  const [seccion, setSeccion] = useState<Seccion>(() => {
+    const s = params.get("seccion") as Seccion | null;
+    return s && SECCIONES.includes(s) ? s : "negocio";
+  });
   const [tema, setTema] = useTema();
 
   return (
@@ -66,7 +76,7 @@ export default function Ajustes() {
       />
 
       {seccion === "negocio" && <Negocio tema={tema} setTema={setTema} />}
-      {seccion === "pipeline" && <Etapas />}
+      {seccion === "pipeline" && <EtapasDeLosPipelines />}
       {seccion === "listas" && <Listas />}
       {seccion === "campos" && <Campos />}
       {seccion === "integraciones" && <Integraciones />}
@@ -136,6 +146,27 @@ function Negocio({ tema, setTema }: { tema: "dark" | "light"; setTema: (t: "dark
 }
 
 /* ---------------- Etapas ---------------- */
+
+/* Hay dos tableros: el de ventas (leads, lo de siempre) y el de servicio
+   (alumnos, desde que compran hasta que terminan). Cada uno con sus etapas. */
+function EtapasDeLosPipelines() {
+  const params = useSearchParams();
+  const [cual, setCual] = useState<"ventas" | "servicio">(
+    params.get("pipeline") === "servicio" ? "servicio" : "ventas",
+  );
+  return (
+    <div className="stack-4">
+      <Tabs
+        valor={cual} onChange={setCual}
+        opciones={[
+          { valor: "ventas", texto: "Pipeline de ventas" },
+          { valor: "servicio", texto: "Pipeline de servicio" },
+        ]}
+      />
+      {cual === "ventas" ? <Etapas /> : <EtapasServicio />}
+    </div>
+  );
+}
 
 function Etapas() {
   const e = useEstado();
