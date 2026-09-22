@@ -5,10 +5,13 @@ import {
   CalendarDays, Copy, GraduationCap, Mail, MessageCircle, Pencil, Phone, Plus, ShoppingBag, X,
 } from "lucide-react";
 import {
-  Avatar, Badge, Bar, Button, Empty, IconButton, Select, Tabs,
+  Avatar, Badge, Bar, Button, Chip, Empty, IconButton, Select, Tabs,
 } from "@/components/ui/ui";
 import { Confirmar } from "@/components/ui/Modal";
 import { DatosExtra } from "@/components/ui/CamposExtra";
+import { EditarAlumno, VentaDelAlumno } from "@/components/alumnos/Servicio";
+import { ESTADO_ALUMNO, ESTADOS_ALUMNO, cuandoEmpezo } from "@/components/alumnos/comun";
+import { alumnoDeVenta, etapaDelAlumno, etapasDeServicio } from "@/lib/alumnos";
 import { useToast } from "@/components/ui/Toast";
 import { AsistenteVenta } from "@/components/ventas/AsistenteVenta";
 import { desdeVenta, FormularioVenta, type BorradorVenta } from "@/components/ventas/FormularioVenta";
@@ -20,7 +23,7 @@ import { TarjetaVenta } from "./TarjetaVenta";
 import type { VistaFicha } from "./abrir";
 import { acciones, useEstado } from "@/lib/store";
 import { personaDe, type Persona } from "@/lib/persona";
-import { fechaHora, fechaLarga, money } from "@/lib/format";
+import { fechaHora, fechaLarga, money, relativo } from "@/lib/format";
 import type { Alumno, Cuota, EstadoAlumno, EstadoApp, Venta } from "@/lib/types";
 
 /* ==================================================================
@@ -35,13 +38,6 @@ import type { Alumno, Cuota, EstadoAlumno, EstadoApp, Venta } from "@/lib/types"
    Es como la ficha de Blue OS: una ventana grande en escritorio y
    pantalla completa en el celular.
    ================================================================== */
-
-const ESTADOS_ALUMNO: { valor: EstadoAlumno; texto: string }[] = [
-  { valor: "activo", texto: "Activo" },
-  { valor: "pausado", texto: "Pausado" },
-  { valor: "graduado", texto: "Graduado" },
-  { valor: "baja", texto: "Baja" },
-];
 
 type SolapaVentas = "ventas" | "chat" | "historial" | "utms";
 type SolapaServicio = "servicio" | "chat" | "historial";
@@ -337,29 +333,32 @@ function VistaVentas({ e, p, ventaResaltada }: { e: EstadoApp; p: Persona; venta
 function VistaServicio({ e, p }: { e: EstadoApp; p: Persona }) {
   const toast = useToast();
   const [solapa, setSolapa] = useState<SolapaServicio>("servicio");
+  const [editar, setEditar] = useState<Alumno | null>(null);
+  const etapas = useMemo(() => etapasDeServicio(e), [e]);
 
   /* Un servicio por compra: cada venta con su alumno, y los alumnos que no
      tienen venta (cargados a mano, de antes) también. */
-  const ventaDe = (a: Alumno) => (a as Alumno & { ventaId?: string }).ventaId;
-  const conVenta = p.ventas.map((v) => ({ venta: v as Venta | undefined, alumno: p.alumnos.find((a) => ventaDe(a) === v.id) }));
+  const conVenta = p.ventas.map((v) => {
+    const enlazado = p.alumnos.find((a) => a.ventaId === v.id);
+    /* Un alumno de antes, sin venta enlazada, que por lead o email es de esta
+       compra: es el mismo servicio. Se muestra junto, con el botón para
+       dejarlo enlazado. */
+    const suelto = enlazado ? undefined : alumnoDeVenta(e, v);
+    const alumno = enlazado ?? (suelto && !suelto.ventaId && p.alumnos.includes(suelto) ? suelto : undefined);
+    return { venta: v as Venta | undefined, alumno, sinEnlazar: Boolean(alumno && !enlazado) };
+  });
   const usados = new Set(conVenta.map((x) => x.alumno?.id).filter(Boolean));
   const sueltos = p.alumnos.filter((a) => !usados.has(a.id));
-  /* Una sola venta y un solo alumno sin atar: son el mismo servicio. */
-  if (conVenta.length === 1 && !conVenta[0].alumno && sueltos.length === 1) {
-    conVenta[0].alumno = sueltos.pop();
-  }
-  const servicios = [...conVenta, ...sueltos.map((a) => ({ venta: undefined as Venta | undefined, alumno: a as Alumno | undefined }))];
+  const servicios = [...conVenta, ...sueltos.map((a) => ({ venta: undefined as Venta | undefined, alumno: a as Alumno | undefined, sinEnlazar: false }))];
 
-  function crearServicio(v: Venta) {
-    const producto = e.productos.find((x) => x.id === v.productoId)?.nombre ?? "Mentoría";
-    const ahora = new Date().toISOString();
-    acciones.crear<Alumno>("alumnos", {
-      id: `alu_${v.id}`, nombre: p.nombre, email: p.email, pais: p.pais,
-      cohorte: "", plan: producto, cuotaMensual: 0, moneda: v.moneda, estado: "activo",
-      inicio: v.fecha, progreso: 0, leadId: p.leads[0]?.id, creadoEn: ahora,
-      extra: {}, ...({ ventaId: v.id } as object),
-    } as Alumno, p.nombre);
-    toast(`Servicio de ${producto} creado.`);
+  function guardarEdicion() {
+    if (!editar) return;
+    const nombre = editar.nombre.trim();
+    if (!nombre) { toast("Poné al menos el nombre.", "err"); return; }
+    const { id, ...cambios } = editar;
+    acciones.actualizar<Alumno>("alumnos", id, { ...cambios, nombre }, nombre);
+    toast("Servicio actualizado.");
+    setEditar(null);
   }
 
   return (
@@ -377,58 +376,111 @@ function VistaServicio({ e, p }: { e: EstadoApp; p: Persona }) {
         <div className="stack-4">
           {servicios.length === 0 ? (
             <Empty icono={<GraduationCap size={22} />} titulo="Todavía no tiene servicio"
-              texto="El servicio nace con cada compra. Cuando registres su venta, aparece acá." />
-          ) : servicios.map(({ venta, alumno }, i) => {
-            const producto = venta ? e.productos.find((x) => x.id === venta.productoId)?.nombre ?? "Venta" : alumno?.plan ?? "Servicio";
+              texto="El servicio nace solo con cada compra. Cuando registres su venta, aparece acá." />
+          ) : servicios.map(({ venta, alumno, sinEnlazar }, i) => {
+            const producto = venta ? e.productos.find((x) => x.id === venta.productoId)?.nombre ?? "Venta" : alumno?.plan || "Servicio";
             const reportes = alumno ? e.reportes.filter((r) => r.alumnoId === alumno.id)
               .sort((a, b) => +new Date(b.semanaDel) - +new Date(a.semanaDel)) : [];
+            const etapa = alumno ? etapaDelAlumno(etapas, alumno) : undefined;
             return (
               <div className="venta-card" key={alumno?.id ?? venta?.id ?? i}>
                 <div className="venta-card__head">
                   <span style={{ minWidth: 0, flex: 1 }}>
-                    <span className="t-strong" style={{ fontSize: 16 }}>{producto}</span>
+                    <span className="row-wrap" style={{ gap: 8 }}>
+                      <span className="t-strong" style={{ fontSize: 16 }}>{producto}</span>
+                      {alumno && <Badge variante={ESTADO_ALUMNO[alumno.estado].variante}>{ESTADO_ALUMNO[alumno.estado].texto}</Badge>}
+                    </span>
                     <span className="t-sm t-subtle" style={{ display: "block", marginTop: 2 }}>
                       {venta ? `Compra del ${fechaLarga(venta.fecha)}` : "Sin venta enlazada"}
                       {alumno?.cohorte ? ` · cohorte ${alumno.cohorte}` : ""}
                     </span>
                   </span>
-                  {alumno && (
-                    <div style={{ width: 150 }}>
-                      <Select aria-label="Estado del servicio" value={alumno.estado}
-                        onChange={(ev) => acciones.actualizar<Alumno>("alumnos", alumno.id, { estado: ev.target.value as EstadoAlumno }, alumno.nombre)}
-                        opciones={ESTADOS_ALUMNO} />
-                    </div>
-                  )}
+                  {alumno && <IconButton etiqueta="Editar el servicio" onClick={() => setEditar({ ...alumno })}><Pencil size={15} /></IconButton>}
                 </div>
 
                 {!alumno && venta ? (
                   <div className="row-wrap">
-                    <span className="t-sm t-subtle">Esta compra todavía no tiene su servicio.</span>
-                    <Button sm variante="primary" icono={<Plus size={14} />} onClick={() => crearServicio(venta)}>Crear servicio</Button>
+                    <span className="t-sm t-subtle">
+                      {venta.estado === "activa" ? "Esta compra todavía no tiene su servicio." : "La venta está cancelada: no tiene servicio."}
+                    </span>
+                    {venta.estado === "activa" && (
+                      <Button sm variante="primary" icono={<Plus size={14} />}
+                        onClick={() => { if (acciones.crearServicioDeVenta(venta.id)) toast(`Servicio de ${producto} creado.`); }}>
+                        Crear servicio
+                      </Button>
+                    )}
                   </div>
                 ) : alumno && (
                   <>
+                    <div className="form-grid">
+                      <div className="hk-field">
+                        <span className="hk-label">Etapa del servicio</span>
+                        <Select aria-label="Etapa del servicio" value={etapa?.id ?? ""}
+                          onChange={(ev) => {
+                            const et = etapas.find((x) => x.id === ev.target.value);
+                            if (!et || et.id === etapa?.id) return;
+                            acciones.moverAlumno(alumno.id, et.id);
+                            toast(`${alumno.nombre} → ${et.nombre}`);
+                          }}
+                          opciones={etapas.map((et) => ({ valor: et.id, texto: et.nombre }))} />
+                      </div>
+                      <div className="hk-field">
+                        <span className="hk-label">Estado</span>
+                        <Select aria-label="Estado del servicio" value={alumno.estado}
+                          onChange={(ev) => acciones.actualizar<Alumno>("alumnos", alumno.id, { estado: ev.target.value as EstadoAlumno }, alumno.nombre)}
+                          opciones={ESTADOS_ALUMNO.map((k) => ({ valor: k, texto: ESTADO_ALUMNO[k].texto }))} />
+                      </div>
+                    </div>
+
                     <div>
                       <div className="row t-sm" style={{ marginBottom: 6 }}>
                         <span className="t-subtle">Progreso del programa</span>
                         <span className="spacer t-num t-strong">{alumno.progreso}%</span>
                       </div>
-                      <Bar valor={alumno.progreso} tono={alumno.progreso >= 100 ? "success" : "brand"} />
+                      <Bar valor={alumno.progreso} tono={alumno.progreso >= 80 ? "success" : "brand"} />
+                      <div className="row-wrap" style={{ marginTop: 10 }}>
+                        {[0, 25, 50, 75, 100].map((v) => (
+                          <Chip key={v} activo={alumno.progreso === v}
+                            onClick={() => acciones.actualizar<Alumno>("alumnos", alumno.id, { progreso: v }, alumno.nombre, `${alumno.nombre}: progreso al ${v}%.`)}>
+                            {v}%
+                          </Chip>
+                        ))}
+                      </div>
                     </div>
+
                     <dl className="dl dl--compacta">
                       <dt>Plan</dt><dd>{alumno.plan || "—"}</dd>
-                      <dt>Empezó</dt><dd>{fechaLarga(alumno.inicio)}</dd>
-                      {alumno.cuotaMensual > 0 && <><dt>Cuota mensual</dt><dd className="t-num">{money(alumno.cuotaMensual, alumno.moneda)}</dd></>}
+                      <dt>Empezó</dt><dd>{fechaLarga(alumno.inicio)} · {cuandoEmpezo(relativo(alumno.inicio))}</dd>
+                      <dt>Cuota</dt><dd className="t-num">{alumno.cuotaMensual > 0 ? `${money(alumno.cuotaMensual, alumno.moneda)} por mes` : "Sin cuota mensual"}</dd>
+                      <DatosExtra campos={e.campos} entidad="alumno" valores={alumno.extra} />
                     </dl>
+
+                    {!venta && <VentaDelAlumno alumno={alumno} />}
+                    {venta && sinEnlazar && (
+                      <div className="row-wrap">
+                        <span className="t-sm t-subtle">Este servicio todavía no tiene la venta enlazada.</span>
+                        <Button sm variante="secondary" onClick={() => {
+                          acciones.actualizar<Alumno>("alumnos", alumno.id, { ventaId: venta.id }, alumno.nombre, `Se enlazó a ${alumno.nombre} la venta del ${fechaLarga(venta.fecha)}.`);
+                          toast("Venta enlazada.");
+                        }}>Enlazar la venta</Button>
+                      </div>
+                    )}
+
                     <div className="stack-2">
-                      <div className="t-label">Reportes semanales ({reportes.length})</div>
+                      <div className="row">
+                        <span className="t-label">Reportes semanales ({reportes.length})</span>
+                        <a className="link t-sm spacer" href="/reportes?vista=tabla" style={{ textAlign: "right" }}>Ver todos</a>
+                      </div>
                       {reportes.length === 0 ? (
                         <p className="t-sm t-subtle">Todavía no mandó ningún reporte.</p>
                       ) : reportes.slice(0, 5).map((r) => (
                         <div key={r.id} className="row t-sm" style={{ gap: 8 }}>
                           <span>Semana del {fechaLarga(r.semanaDel)}</span>
+                          {r.estado === "completado" && r.horasEstudio !== undefined && (
+                            <span className="t-subtle t-num">{r.horasEstudio} h · {r.postulaciones ?? 0} post.</span>
+                          )}
                           <span className="spacer" />
-                          <Badge variante={r.estado === "completado" ? "success" : r.estado === "vencido" ? "danger" : r.estado === "pendiente" ? "warning" : "neutral"}>
+                          <Badge variante={r.estado === "completado" ? "success" : r.estado === "vencido" ? "danger" : r.estado === "pendiente" ? "accent" : "neutral"}>
                             {r.estado === "completado" ? "Completado" : r.estado === "vencido" ? "Vencido" : r.estado === "pendiente" ? "Pendiente" : "No enviado"}
                           </Badge>
                         </div>
@@ -444,6 +496,8 @@ function VistaServicio({ e, p }: { e: EstadoApp; p: Persona }) {
       )}
       {solapa === "chat" && <ChatEquipo contactoId={p.clave} comentarios={p.comentarios} />}
       {solapa === "historial" && <HistorialPersona e={e} p={p} />}
+
+      {editar && <EditarAlumno form={editar} setForm={setEditar} onGuardar={guardarEdicion} />}
     </>
   );
 }

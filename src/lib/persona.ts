@@ -78,7 +78,7 @@ export function personaDe(e: EstadoApp, id: ID): Persona | null {
 
   const alumnos = e.alumnos.filter((a) =>
     (a.leadId && idsPersona.has(a.leadId))
-    || (typeof (a as Alumno & { ventaId?: ID }).ventaId === "string" && idsVentas.has((a as Alumno & { ventaId?: ID }).ventaId!))
+    || (a.ventaId && idsVentas.has(a.ventaId))
     || a.id === alumnoSuelto?.id
     || mismoMail(a.email));
 

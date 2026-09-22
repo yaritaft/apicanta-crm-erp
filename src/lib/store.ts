@@ -677,6 +677,24 @@ export const acciones = {
      (`etapasServicio`): por eso tienen acciones propias y no pasan por
      crear/actualizar/eliminar, que usan el nombre de la colección como tabla. */
 
+  /* El servicio de una compra que no lo tiene (ventas cargadas antes de
+     que el alumno naciera solo): la misma regla que al registrar la venta. */
+  crearServicioDeVenta(ventaId: ID): ID | null {
+    const e = snapshot();
+    const venta = e.ventas.find((v) => v.id === ventaId);
+    if (!venta) return null;
+    const r = alumnoDesdeVenta(e, venta);
+    if (!r.tocado) return alumnoDeVenta(e, venta)?.id ?? null;
+    const { lista, nuevo } = registrar(
+      e, "alumno", r.tocado.id, r.tocado.nombre, "creo",
+      `Se creó el servicio de ${r.tocado.nombre} (${r.tocado.plan || "sin plan"}).`,
+    );
+    guardar({ ...e, alumnos: r.alumnos, actividad: lista });
+    empujar({ tipo: "upsert", tabla: "alumnos", filas: [r.tocado] });
+    empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
+    return r.tocado.id;
+  },
+
   moverAlumno(alumnoId: ID, etapaServicioId: ID) {
     const e = snapshot();
     const alumno = e.alumnos.find((a) => a.id === alumnoId);
