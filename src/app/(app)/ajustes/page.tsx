@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   AlertTriangle, Check, Database, Download, GripVertical, Info, Layers, ListPlus,
   Moon, Plug, Plus, Settings2, Sun, Trash2, Upload, X,
@@ -13,6 +13,7 @@ import {
 import { ModalForm, Confirmar } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toast";
 import { acciones, useEstado, useTema } from "@/lib/store";
+import { num, relativo } from "@/lib/format";
 import type { Ajustes as TAjustes, CampoPersonalizado, EntidadNombre, Etapa, TipoCampo } from "@/lib/types";
 
 type Seccion = "negocio" | "pipeline" | "listas" | "campos" | "integraciones" | "datos";
@@ -452,22 +453,54 @@ function Integraciones() {
         </div>
       </Card>
 
-      <Card>
-        <CardHead
-          titulo="Calendly"
-          sub="Para que las llamadas que agenden tus leads caigan directo en la Agenda."
-          acciones={<Badge variante={e.ajustes.calendlyToken ? "success" : "neutral"} icono={e.ajustes.calendlyToken ? <Check size={13} /> : <Plug size={13} />}>{e.ajustes.calendlyToken ? "Configurado" : "Sin configurar"}</Badge>}
-        />
-        <div className="form-grid">
-          <Field label="Usuario de Calendly" ayuda="Tu nombre de usuario en la URL.">
-            <Input value={v("calendlyUser")} onChange={(ev) => setB({ ...b, calendlyUser: ev.target.value })} onBlur={() => aplicar("calendlyUser")} placeholder="hackearit" />
-          </Field>
-          <Field label="Token personal" ayuda="Queda guardado en la base, visible sólo para el equipo.">
-            <Input type="password" value={v("calendlyToken")} onChange={(ev) => setB({ ...b, calendlyToken: ev.target.value })} onBlur={() => aplicar("calendlyToken")} placeholder="eyJ…" />
-          </Field>
-        </div>
-      </Card>
+      <EstadoCalendly />
     </div>
+  );
+}
+
+/* Calendly se conecta del lado del servidor: el token vive en Vercel, no en
+   esta pantalla (antes se guardaba en Ajustes, donde lo podía leer cualquiera
+   que abriera la app). Acá sólo se muestra si está andando, preguntándole al
+   propio webhook, y qué entró. */
+function EstadoCalendly() {
+  const e = useEstado();
+  const [listo, setListo] = useState<boolean | null>(null);
+  useEffect(() => {
+    let vivo = true;
+    fetch("/api/calendly/webhook")
+      .then((r) => r.json())
+      .then((j: { listo?: boolean }) => { if (vivo) setListo(Boolean(j.listo)); })
+      .catch(() => { if (vivo) setListo(false); });
+    return () => { vivo = false; };
+  }, []);
+  /* Sólo las que trajo la integración: tienen el invitado de Calendly. Los
+     datos de ejemplo también dicen origen "calendly" y harían creer que ya
+     entraron llamadas que nunca existieron. */
+  const deCalendly = e.sesiones.filter((s) => s.calendlyInvitadoUri);
+  const ultima = deCalendly.reduce<string | null>((m, s) => (!m || s.creadoEn > m ? s.creadoEn : m), null);
+
+  return (
+    <Card>
+      <CardHead
+        titulo="Calendly"
+        sub="Cada agenda, cancelación y no-show de la organización entra sola a la Agenda."
+        acciones={
+          <Badge variante={listo ? "success" : "neutral"} icono={listo ? <Check size={13} /> : <Plug size={13} />}>
+            {listo === null ? "Revisando…" : listo ? "Conectado" : "Sin configurar"}
+          </Badge>
+        }
+      />
+      <p className="t-sm t-muted">
+        {listo
+          ? "Entra en segundos por webhook, y cada 30 minutos se repescan las que se hayan perdido. Trae el canal, los UTMs y lo que la persona contestó en el formulario."
+          : "Falta configurar en el servidor el token de Calendly y la clave de firma del webhook."}
+      </p>
+      <p className="t-sm t-subtle" style={{ marginTop: 8 }}>
+        {deCalendly.length
+          ? `${num(deCalendly.length)} ${deCalendly.length === 1 ? "llamada entró" : "llamadas entraron"} por Calendly · la última, ${relativo(ultima ?? "")}.`
+          : "Todavía no entró ninguna llamada por Calendly."}
+      </p>
+    </Card>
   );
 }
 

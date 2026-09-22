@@ -8,6 +8,7 @@ import type {
   Lead, Meta, Movimiento, Pago, Reporte, Sesion, Venta, Webinar,
 } from "./types";
 import { pagoDesdeMovimiento } from "./conciliacion";
+import { claveEmail, completar } from "./contactos";
 import { construirSemilla, estadoVacio } from "./seed";
 import { hayNube, nube, tablaFaltante, TABLAS, TABLAS_OPCIONALES } from "./supabase";
 import { idAd, idAdset, idCampaign } from "./meta";
@@ -476,8 +477,6 @@ const ENTIDAD_DE: Record<string, Actividad["entidad"]> = {
    Al reusar un contacto se completan los huecos, no se pisa lo que ya habia.
    "Hueco" incluye el string vacio: un input de React manda "" y no undefined,
    y con `??` un telefono vacio no se completaba nunca. */
-const lleno = (v: unknown) => v !== undefined && v !== null && v !== "";
-const completar = <T,>(ya: T, nuevo: T): T => (lleno(ya) ? ya : nuevo);
 
 function asignarContactos(leads: Lead[], contactos: Contacto[]): {
   leads: Lead[]; contactos: Contacto[]; tocados: Contacto[];
@@ -485,14 +484,14 @@ function asignarContactos(leads: Lead[], contactos: Contacto[]): {
   const porId = new Map(contactos.map((c) => [c.id, c] as const));
   const porEmail = new Map<string, Contacto>();
   for (const c of contactos) {
-    const k = c.email?.trim().toLowerCase();
+    const k = claveEmail(c.email);
     if (k && !porEmail.has(k)) porEmail.set(k, c);
   }
   const tocados = new Map<ID, Contacto>();
 
   const salida = leads.map((l) => {
     if (l.contactoId && porId.has(l.contactoId)) return l;
-    const k = l.email?.trim().toLowerCase();
+    const k = claveEmail(l.email);
     const previo = porId.get(l.id) ?? (k ? porEmail.get(k) : undefined);
     const canal = l.webinarId ? ("webinar" as const) : undefined;
     const c: Contacto = previo

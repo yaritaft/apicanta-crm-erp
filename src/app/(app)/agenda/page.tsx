@@ -6,6 +6,8 @@ import { PageHead } from "@/components/shell/PageHead";
 import { Ayuda, Badge, Button, Card, Chip, Empty, Field, IconButton, Input, Select, StatCard, Tabs, Textarea } from "@/components/ui/ui";
 import { ModalForm, Confirmar } from "@/components/ui/Modal";
 import { Drawer, Dato } from "@/components/ui/Drawer";
+import { Origen } from "@/components/leads/Origen";
+import { ETIQUETA_CANAL } from "@/lib/calendly";
 import { CamposExtra, DatosExtra } from "@/components/ui/CamposExtra";
 import { useToast } from "@/components/ui/Toast";
 import { acciones, useEstado } from "@/lib/store";
@@ -174,10 +176,10 @@ export default function Agenda() {
         )}
       </Card>
 
-      {!e.ajustes.calendlyToken && (
-        <Ayuda titulo="Conectá Calendly para que se llene solo" icono={<Link2 size={18} />}>
-          Hoy las sesiones las cargás a mano. Si pegás tu token de Calendly en Ajustes → Integraciones, las llamadas
-          que agenden tus leads van a caer acá sin que hagas nada.
+      {!e.sesiones.some((s) => s.calendlyInvitadoUri) && (
+        <Ayuda titulo="Las llamadas de Calendly entran solas" icono={<Link2 size={18} />}>
+          Cada vez que alguien agende, cancele o no se presente, aparece acá en segundos, con el canal, los UTMs y
+          lo que contestó en el formulario. Todavía no llegó ninguna.
         </Ayuda>
       )}
 
@@ -259,10 +261,37 @@ export default function Agenda() {
               <Dato label="Email">{sesionVista.email || "—"}</Dato>
               <Dato label="Duración">{sesionVista.duracionMin} min</Dato>
               <Dato label="Origen">{sesionVista.origen === "calendly" ? "Calendly" : "Cargada a mano"}</Dato>
+              {sesionVista.canal && <Dato label="Agendó por">{ETIQUETA_CANAL[sesionVista.canal]}</Dato>}
+              {sesionVista.anfitrion && <Dato label="La atiende">{sesionVista.anfitrion}</Dato>}
+              {sesionVista.reprogramadaDe && <Dato label="Reprogramada">Sí, de otra fecha</Dato>}
+              {sesionVista.motivoCancelacion && <Dato label="Por qué se canceló">{sesionVista.motivoCancelacion}</Dato>}
               <Dato label="Creada">{relativo(sesionVista.creadoEn)}</Dato>
               {sesionVista.leadId && <Dato label="Lead">{e.leads.find((l) => l.id === sesionVista.leadId)?.nombre ?? "—"}</Dato>}
               <DatosExtra campos={e.campos} entidad="sesion" valores={sesionVista.extra} />
             </dl>
+
+            {(sesionVista.contactoId || sesionVista.utm) && (
+              <Origen
+                contacto={e.contactos.find((c) => c.id === sesionVista.contactoId)}
+                utmAgenda={sesionVista.utm}
+              />
+            )}
+
+            {sesionVista.respuestas && sesionVista.respuestas.length > 0 && (
+              <div>
+                <div className="t-label" style={{ marginBottom: 12 }}>Lo que contestó al agendar</div>
+                {/* Pregunta arriba, respuesta abajo: las preguntas del formulario son
+                    largas y en la columna de etiquetas se partían en cuatro renglones. */}
+                <div className="stack-3">
+                  {sesionVista.respuestas.map((q) => (
+                    <div key={q.pregunta}>
+                      <div className="t-sm t-subtle">{q.pregunta}</div>
+                      <div className="t-body">{q.respuesta}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {sesionVista.enlace && (
               <a href={sesionVista.enlace} target="_blank" rel="noreferrer">

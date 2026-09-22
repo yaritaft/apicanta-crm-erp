@@ -123,6 +123,12 @@ export interface Contacto {
   origenAdId?: ID;
   origenWebinarId?: ID;
   utm?: Record<string, string>;
+  /* Del formulario de Calendly, tal cual lo escribió la persona: son texto
+     libre ("React y Node", "Universitario", "1200"), no categorías. */
+  tecnologias?: string;
+  formacion?: string;
+  sueldoUsd?: string;
+  instagram?: string;
   notas?: string;
   creadoEn: string;
   extra: Record<string, unknown>;
@@ -148,6 +154,23 @@ export interface Sesion {
   notas?: string;
   creadoEn: string;
   extra: Record<string, unknown>;
+  /* Lo que trae Calendly. `contactoId` es la persona: una llamada es de un
+     contacto aunque todavía no tenga una oportunidad abierta. */
+  contactoId?: ID;
+  canal?: CanalOrigen;
+  /* Los UTMs con los que agendó: identifican el embudo (Webinar + fecha,
+     Resell, setter, orgánico), no el anuncio. */
+  utm?: Record<string, string>;
+  /* Las preguntas del formulario de Calendly, tal cual se contestaron. */
+  respuestas?: { pregunta: string; respuesta: string }[];
+  /* Quién la atiende: el anfitrión del evento en Calendly (el closer). */
+  anfitrion?: string;
+  calendlyEventoUri?: string;
+  calendlyInvitadoUri?: string;
+  /* Si la reprogramaron, la llamada de antes. */
+  reprogramadaDe?: ID;
+  canceladaEn?: string;
+  motivoCancelacion?: string;
 }
 
 /* ---------- Webinars ---------- */

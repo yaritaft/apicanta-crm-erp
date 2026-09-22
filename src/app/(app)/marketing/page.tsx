@@ -1,9 +1,10 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { Megaphone, Search } from "lucide-react";
 import { PageHead } from "@/components/shell/PageHead";
-import { Badge, Button, Card, CardHead, Empty, Input, Select, StatCard, Tabs } from "@/components/ui/ui";
+import { Badge, Button, Card, CardHead, Empty, Input, Select, StatCard, Tabs, Tag } from "@/components/ui/ui";
 import { Columna, DataTable } from "@/components/ui/DataTable";
 import { ConfigColumnas, DefColumna, useColumnas } from "@/components/ui/ColumnasConfig";
 import { Drawer, Dato } from "@/components/ui/Drawer";
@@ -14,9 +15,9 @@ import { useRangoURL } from "@/lib/useRango";
 import { useToast } from "@/components/ui/Toast";
 import { acciones, useEstado } from "@/lib/store";
 import { useAbrirDesdeURL } from "@/lib/useQuery";
-import { money, num, pct } from "@/lib/format";
+import { money, num, pct, relativo } from "@/lib/format";
 import { campaniasDelRango, negocioDeCampania, primerDiaConDatos, type FilaCampania } from "@/lib/metricas";
-import type { Campania, EstadoCampania } from "@/lib/types";
+import type { Campania, Contacto, EstadoCampania } from "@/lib/types";
 
 type Vista = "dashboard" | "campanias";
 
@@ -127,7 +128,29 @@ export default function Marketing() {
 
   /* La fila agregada del rango, no la campaña cruda: el detalle tiene que
      mostrar los mismos números que la tabla. */
-  const cVista = enRango.find((c) => c.id === ver) ?? null;
+  /* Si la campaña no tuvo gasto en el rango, igual se abre, en cero: desde la
+     ficha de un lead se llega a su campaña por link, y el rango elegido acá
+     no puede hacer que el link no abra nada. */
+  const cVista: FilaCampania | null = enRango.find((c) => c.id === ver) ?? (() => {
+    const c = ver ? e.campaigns.find((x) => x.id === ver) : undefined;
+    return c ? {
+      id: c.id, nombre: c.nombre, objetivo: c.objetivo, estado: c.estado,
+      inversion: 0, impresiones: 0, clicks: 0, clicksEnlace: 0, leads: 0,
+      ctr: 0, cpm: 0, cpc: 0, ctrEnlace: 0, cpcEnlace: 0, cpl: 0, dias: 0, anuncios: 0,
+    } : null;
+  })();
+
+  /* Las personas que vinieron de cada anuncio: el vínculo es el anuncio de
+     origen del contacto. Es lo que el número de "leads" de Meta no dice — el
+     píxel cuenta formularios, esto es la gente que tenemos. */
+  const personasPorAnuncio = useMemo(() => {
+    const m = new Map<string, Contacto[]>();
+    for (const c of e.contactos) {
+      if (!c.origenAdId) continue;
+      m.set(c.origenAdId, [...(m.get(c.origenAdId) ?? []), c]);
+    }
+    return m;
+  }, [e.contactos]);
 
   /* Cada columna del catálogo, definida una sola vez. La tabla recibe sólo las
      prendidas, en el orden en que quedaron. */
@@ -269,7 +292,11 @@ export default function Marketing() {
             <dl className="dl">
               <Dato label="Impresiones">{num(cVista.impresiones)}</Dato>
               <Dato label="Clicks">{num(cVista.clicks)}</Dato>
-              <Dato label="Leads">{num(cVista.leads)}</Dato>
+              <Dato label="Leads según Meta">{num(cVista.leads)}</Dato>
+              <Dato label="Personas que tenemos">
+                {num(e.ads.filter((a) => a.campaignId === cVista.id)
+                  .reduce((n, a) => n + (personasPorAnuncio.get(a.id)?.length ?? 0), 0))}
+              </Dato>
               <Dato label="Anuncios que corrieron">{num(cVista.anuncios)}</Dato>
               <Dato label="Días con datos">{num(cVista.dias)}</Dato>
             </dl>
@@ -283,10 +310,38 @@ export default function Marketing() {
               <div className="stack-2">
                 {e.adsets.filter((s) => s.campaignId === cVista.id).map((s) => {
                   const suyos = e.ads.filter((a) => a.adsetId === s.id);
+                  const conGente = suyos.filter((a) => personasPorAnuncio.has(a.id));
                   return (
-                    <div key={s.id} className="agenda-item" style={{ cursor: "default" }}>
-                      <span className="truncate" style={{ flex: 1 }}>{s.nombre}</span>
-                      <span className="t-sm t-num t-subtle">{num(suyos.length)} anuncios</span>
+                    <div key={s.id} className="stack-2">
+                      <div className="agenda-item" style={{ cursor: "default" }}>
+                        <span className="truncate" style={{ flex: 1 }}>{s.nombre}</span>
+                        <span className="t-sm t-num t-subtle">{num(suyos.length)} {suyos.length === 1 ? "anuncio" : "anuncios"}</span>
+                      </div>
+                      {conGente.map((a) => {
+                        const gente = personasPorAnuncio.get(a.id) ?? [];
+                        return (
+                          <div key={a.id} className="stack-2" style={{ marginLeft: 16 }}>
+                            <div className="row" style={{ gap: 8, alignItems: "center" }}>
+                              <Megaphone size={14} className="t-subtle" style={{ flexShrink: 0 }} />
+                              <span className="t-sm truncate" style={{ flex: 1 }}>{a.nombre}</span>
+                              <Badge variante="accent">{num(gente.length)} {gente.length === 1 ? "persona" : "personas"}</Badge>
+                            </div>
+                            {gente.map((c) => {
+                              const lead = e.leads.find((l) => (l.contactoId ?? l.id) === c.id);
+                              return (
+                                <Link
+                                  key={c.id} href={lead ? `/leads?ver=${lead.id}` : "/leads"}
+                                  className="agenda-item" style={{ marginLeft: 22, textDecoration: "none", color: "inherit" }}
+                                >
+                                  <span className="truncate" style={{ flex: 1 }}>{c.nombre}</span>
+                                  {c.utm?.utm_source && <Tag>{c.utm.utm_source}</Tag>}
+                                  <span className="t-sm t-subtle">{relativo(c.creadoEn)}</span>
+                                </Link>
+                              );
+                            })}
+                          </div>
+                        );
+                      })}
                     </div>
                   );
                 })}

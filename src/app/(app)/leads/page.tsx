@@ -18,6 +18,7 @@ import { useAbrirDesdeURL } from "@/lib/useQuery";
 import { fechaLarga, isoDia, money, num, relativo } from "@/lib/format";
 import { DateRangePicker, diaDeNegocio } from "@/components/ui/DateRangePicker";
 import { useRangoURL } from "@/lib/useRango";
+import { Origen } from "@/components/leads/Origen";
 import type { Lead, Moneda } from "@/lib/types";
 
 const VACIO = (fuente: string, etapaId: string): Omit<Lead, "id"> => ({
@@ -83,6 +84,11 @@ export default function Leads() {
   }, [enRango, q, etapa, fuente, ingles]);
 
   const leadVisto = e.leads.find((l) => l.id === ver) ?? null;
+  /* La persona detrás del lead: de ahí salen el origen, los UTMs y lo que
+     contestó en el formulario de Calendly. */
+  const contactoVisto = leadVisto
+    ? e.contactos.find((c) => c.id === (leadVisto.contactoId ?? leadVisto.id))
+    : undefined;
   const etapaDe = (id: string) => e.etapas.find((x) => x.id === id);
 
   function guardar() {
@@ -332,6 +338,9 @@ export default function Leads() {
               <Dato label="País">{leadVisto.pais || "—"}</Dato>
               <Dato label="Inglés">{leadVisto.inglesNivel ? ETIQUETA_INGLES[leadVisto.inglesNivel] : "Sin evaluar"}</Dato>
               <Dato label="Años de experiencia">{leadVisto.aniosExperiencia == null ? "—" : num(leadVisto.aniosExperiencia)}</Dato>
+              {contactoVisto?.tecnologias && <Dato label="Lenguajes">{contactoVisto.tecnologias}</Dato>}
+              {contactoVisto?.formacion && <Dato label="Formación">{contactoVisto.formacion}</Dato>}
+              {contactoVisto?.sueldoUsd && <Dato label="Gana por mes (USD)">{contactoVisto.sueldoUsd}</Dato>}
               <Dato label="Teléfono">{leadVisto.telefono || "—"}</Dato>
               <Dato label="Campaña">{leadVisto.campania || "—"}</Dato>
               <Dato label="Responsable">{leadVisto.responsable || "—"}</Dato>
@@ -342,6 +351,8 @@ export default function Leads() {
               )}
               <DatosExtra campos={e.campos} entidad="lead" valores={leadVisto.extra} />
             </dl>
+
+            <Origen contacto={contactoVisto} />
 
             {leadVisto.notas && (
               <div>

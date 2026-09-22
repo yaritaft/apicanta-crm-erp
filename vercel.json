@@ -8,6 +8,10 @@
     {
       "path": "/api/cron/meta",
       "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/cron/calendly",
+      "schedule": "20,50 * * * *"
     }
   ]
 }
