@@ -2,6 +2,7 @@ import {
   LayoutDashboard, Users, Columns3, CalendarDays, Video, Megaphone,
   GraduationCap, ClipboardList, Wallet, Settings, HandCoins, ArrowDownUp,
 } from "lucide-react";
+import { SquareKanban } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
 export interface ItemNav { href: string; texto: string; icono: LucideIcon; ayuda: string }
@@ -34,7 +35,10 @@ export const NAV: GrupoNav[] = [
     titulo: "Programa",
     items: [
       { href: "/alumnos", texto: "Alumnos", icono: GraduationCap, ayuda: "Quién está cursando y cómo va" },
-      { href: "/reportes", texto: "Reportes", icono: ClipboardList, ayuda: "El reporte semanal de cada alumno" },
+      /* Es una vista de Alumnos, no otra pantalla: el Shell marca el item más
+         específico, así que acá se prende éste y no los dos. */
+      { href: "/alumnos?vista=pipeline", texto: "Pipeline de servicio", icono: SquareKanban, ayuda: "Arrastrá alumnos entre las etapas del servicio" },
+      { href: "/reportes", texto: "Reportes", icono: ClipboardList, ayuda: "Dashboard y tabla de los reportes de alumnos" },
     ],
   },
   {

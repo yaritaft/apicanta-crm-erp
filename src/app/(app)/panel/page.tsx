@@ -215,7 +215,7 @@ export default function Panel() {
             <div className="stack-2">
               {enRiesgo.map(({ a, semanas }) => (
                 <Link key={a.id} href={`/alumnos?ver=${a.id}`} className="agenda-item">
-                  <Persona nombre={a.nombre} sub={`${a.plan} · ${a.cohorte}`} />
+                  <Persona nombre={a.nombre} sub={[a.plan, a.cohorte].filter(Boolean).join(" · ")} />
                   <span className="spacer" />
                   <Badge variante={semanas >= 3 ? "danger" : "warning"} icono={<Clock size={13} />}>
                     {semanas} semanas sin reportar

@@ -1684,3 +1684,80 @@ a.wb-canal:hover { background: var(--surface-200); border-color: var(--border-st
   .wb-previa { flex-direction: column; align-items: stretch; }
   .wb-previa img { width: 100%; height: auto; aspect-ratio: 16 / 9; }
 }
+
+/* ============================================================
+   Alumnos: pipeline de servicio, etapas y reportes
+   ============================================================ */
+
+/* El color de una etapa, al lado de su nombre: el mismo token que su Badge. */
+.etapa-punto { display: inline-block; width: 8px; height: 8px; border-radius: var(--radius-full); flex: none; }
+
+/* El nombre de la etapa lo escribe el usuario y puede ser largo: sin
+   min-width el título no se achica y empuja el contador fuera de la columna. */
+.alu-pipeline .hk-column__title { min-width: 0; }
+
+/* Tarjeta del pipeline de servicio (va sobre .hk-deal). El nombre es un botón
+   de verdad: es lo que se enfoca con Tab y se mueve con las flechas. */
+.alu-card__top { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
+.alu-card__nombre {
+  flex: 1; min-width: 0; padding: 0; border: 0; background: none;
+  font: inherit; font-weight: 600; color: var(--ink); text-align: left; cursor: pointer;
+  border-radius: var(--radius-sm);
+}
+.alu-card__nombre:hover { color: var(--brand); }
+.alu-card__marcas { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
+.alu-card__alerta { font-size: 12px; line-height: 16px; font-weight: 600; color: var(--warning); }
+.alu-card__alerta--mal { color: var(--danger); }
+
+/* "Mover a…": el botón de cada tarjeta y su menú, fijo sobre la pantalla para
+   que la columna, que scrollea, no lo recorte. */
+.alu-mover {
+  flex: none; display: inline-grid; place-items: center; width: 28px; height: 28px;
+  padding: 0; border: 1px solid transparent; border-radius: var(--radius-sm);
+  background: transparent; color: var(--ink-subtle); cursor: pointer;
+  transition: background-color 150ms ease-out, color 150ms ease-out, border-color 150ms ease-out;
+}
+.alu-mover:hover, .alu-mover[aria-expanded="true"] { background: var(--surface-300); border-color: var(--border); color: var(--ink); }
+.alu-menu {
+  position: fixed; z-index: 130; width: 232px; max-height: 60vh; overflow-y: auto;
+  padding: var(--space-1);
+  background: var(--surface-100); border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md); box-shadow: var(--shadow-lg);
+  animation: pop 140ms cubic-bezier(.2,.8,.3,1);
+}
+.alu-menu__titulo {
+  padding: var(--space-2) var(--space-2) var(--space-1);
+  font-size: 11px; line-height: 16px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--ink-subtle);
+}
+.alu-menu__item {
+  display: flex; align-items: center; gap: var(--space-2); width: 100%; height: 36px;
+  padding: 0 var(--space-2); border: 0; border-radius: var(--radius-sm);
+  background: transparent; color: var(--ink-muted); font-size: 13px; text-align: left; cursor: pointer;
+}
+.alu-menu__item:hover, .alu-menu__item:focus-visible { background: var(--surface-200); color: var(--ink); outline: none; }
+.alu-menu__item[aria-checked="true"] { color: var(--brand); font-weight: 600; }
+.alu-menu__item svg { flex: none; }
+
+/* La venta enlazada, en la ficha del alumno */
+.alu-venta { color: inherit; text-decoration: none; }
+.alu-venta__titulo { display: block; font-weight: 600; color: var(--ink); }
+.alu-venta__ico { flex: none; color: var(--ink-subtle); }
+
+/* Ajustes → Etapas → Pipeline de servicio */
+.etapa-fila { cursor: default; }
+.etapa-fila--sobre { border-color: var(--brand-fill); background: var(--brand-soft); }
+.etapa-fila--arrastrando { opacity: .5; }
+.etapa-fila__flechas { display: flex; flex-direction: column; }
+.etapa-fila__asa { display: inline-flex; color: var(--ink-subtle); cursor: grab; }
+.etapa-fila__nombre { flex: 1; min-width: 0; display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
+
+/* Reportes */
+.rep-texto { display: block; max-width: 280px; white-space: normal; }
+.rep-sin-datos { padding: var(--space-6) 0; text-align: center; }
+.rep-resumen { margin-top: var(--space-3); padding-top: var(--space-3); border-top: 1px solid var(--border); }
+.rep-bloqueo { display: flex; flex-direction: column; gap: 6px; }
+.rep-riesgo { max-height: 360px; overflow-y: auto; padding: 2px; }
+.rep-barra { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
+.rep-barra__buscar { flex: 1 1 220px; min-width: 0; max-width: 340px; }
+.rep-barra__acciones { display: flex; align-items: center; gap: var(--space-2); margin-left: auto; }

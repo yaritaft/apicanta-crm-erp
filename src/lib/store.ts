@@ -7,6 +7,11 @@ import type {
   Campania, CampoPersonalizado, Comentario, Comprobante, Cuota, EntidadNombre, EstadoApp, Etapa, ID,
   Lead, Meta, Movimiento, Pago, Reporte, Sesion, Venta, Webinar,
 } from "./types";
+import type { EtapaServicio } from "./types";
+import {
+  alumnoDeVenta, cuotaMensualDeVenta, etapaDelAlumno, etapaInicialDeServicio, etapasDeServicio,
+  personaDeVenta, planDeVenta,
+} from "./alumnos";
 import { pagoDesdeMovimiento } from "./conciliacion";
 import { claveEmail, completar } from "./contactos";
 import { construirSemilla, estadoVacio } from "./seed";
@@ -322,6 +327,11 @@ export async function cargarDeLaNube(): Promise<void> {
       version: 1,
       ajustes: { ...base.ajustes, ...ajustes },
       etapas: porTabla.etapas as Etapa[],
+      /* Opcional: sin el SQL corrido (o con la tabla vacía) el pipeline de
+         alumnos usa las etapas de siempre en vez de quedarse sin columnas. */
+      etapasServicio: porTabla.etapas_servicio?.length
+        ? (porTabla.etapas_servicio as EtapaServicio[])
+        : base.etapasServicio,
       webinars: porTabla.webinars as Webinar[],
       productos: porTabla.productos as EstadoApp["productos"],
       procesadores: porTabla.procesadores as EstadoApp["procesadores"],
@@ -370,6 +380,7 @@ export async function cargarDeLaNube(): Promise<void> {
    estando para una base nueva. */
 const CATALOGOS = new Set([
   "productos", "procesadores", "embudos", "equipo", "etapas", "campos",
+  "etapas_servicio",
 ]);
 
 function ordenDeSiembra(e: EstadoApp): [string, unknown[]][] {
@@ -385,6 +396,9 @@ function ordenDeSiembra(e: EstadoApp): [string, unknown[]][] {
     ["pagos", e.pagos], ["gastos", e.gastos],
     ["comentarios", e.comentarios ?? []],
     ["actividad", e.actividad],
+    /* Sin FK desde alumnos a propósito (ver alumnos-servicio.sql): puede ir
+       al final sin romper el orden de nadie. */
+    ["etapas_servicio", e.etapasServicio],
   ];
 }
 
@@ -422,6 +436,7 @@ async function vaciarNube() {
     "actividad", "comentarios", "campos", "metas", "pagos", "movimientos", "cuotas", "ventas", "gastos",
     "campanias", "reportes", "sesiones", "alumnos", "leads", "contactos", "webinars",
     "etapas", "equipo", "embudos", "procesadores", "productos",
+    "etapas_servicio",
   ];
   for (const tabla of orden) {
     const r = await nube.from(tabla).delete().neq("id", "__nunca__");
@@ -526,6 +541,61 @@ function asignarContactos(leads: Lead[], contactos: Contacto[]): {
   return { leads: salida, contactos: [...porId.values()], tocados: [...tocados.values()] };
 }
 
+/* ---------- El alumno de cada venta ----------
+
+   Quien compra pasa a ser alumno solo, al registrar la venta. Antes había que
+   acordarse de cargarlo a mano en Alumnos, y el que no se cargaba no entraba
+   nunca al pipeline de servicio: nadie le hacía el onboarding.
+
+   No duplica. Si esa persona ya es alumno (la misma venta, el mismo lead o el
+   mismo mail: la regla vive en lib/alumnos.ts y es la misma del asistente),
+   se le enlaza la venta si no tenía ninguna, y si ya tenía, no se toca: una
+   segunda compra (un upsell) no es un alumno nuevo.
+
+   Si nace, nace con los datos de la persona (el contacto o el lead de la
+   venta; si no hay, el nombre que se escribió), el producto como plan, activo
+   y en la primera etapa del servicio.
+
+   Es pura: devuelve la lista entera y el alumno a subir (null si no cambió
+   nada), así registrarVenta lo guarda en el MISMO `guardar` que la venta y
+   la pantalla nunca ve una venta sin su alumno. `cuotas` es el plan de la
+   venta que se está registrando, que todavía no está en `e.cuotas`. */
+export function alumnoDesdeVenta(e: EstadoApp, venta: Venta, cuotas?: Cuota[]): {
+  alumnos: Alumno[]; tocado: Alumno | null;
+} {
+  const sinCambios = { alumnos: e.alumnos, tocado: null };
+  const ya = alumnoDeVenta(e, venta);
+  if (ya) {
+    if (ya.ventaId) return sinCambios;
+    const enlazado: Alumno = { ...ya, ventaId: venta.id, leadId: ya.leadId ?? venta.contactoId };
+    return { alumnos: e.alumnos.map((a) => (a.id === ya.id ? enlazado : a)), tocado: enlazado };
+  }
+  if (venta.estado !== "activa") return sinCambios;
+  const persona = personaDeVenta(e, venta);
+  if (!persona.nombre) return sinCambios;
+  const nuevo: Alumno = {
+    id: nuevoId("alu"),
+    nombre: persona.nombre,
+    email: persona.email,
+    pais: persona.pais || undefined,
+    /* La cohorte no sale de la venta: se completa en el onboarding. */
+    cohorte: "",
+    plan: planDeVenta(e, venta),
+    cuotaMensual: cuotaMensualDeVenta(cuotas ?? e.cuotas.filter((c) => c.ventaId === venta.id)),
+    moneda: venta.moneda,
+    estado: "activo",
+    inicio: venta.fecha,
+    progreso: 0,
+    leadId: venta.contactoId,
+    notas: "",
+    creadoEn: ahora(),
+    extra: {},
+    etapaServicioId: etapaInicialDeServicio(e),
+    ventaId: venta.id,
+  };
+  return { alumnos: [nuevo, ...e.alumnos], tocado: nuevo };
+}
+
 /* ---------- API publica (identica a la de antes) ---------- */
 
 export const acciones = {
@@ -590,6 +660,7 @@ export const acciones = {
       cohorte: datos.cohorte, plan: datos.plan, cuotaMensual: datos.cuotaMensual,
       moneda: lead.moneda, estado: "activo", inicio: datos.inicio, progreso: 0,
       leadId: lead.id, notas: "", creadoEn: ahora(), extra: {},
+      etapaServicioId: etapaInicialDeServicio(e),
     };
     const leads = e.leads.map((l) => (l.id === leadId ? { ...l, etapaId: ganada?.id ?? l.etapaId, actualizadoEn: ahora() } : l));
     const { lista, nuevo } = registrar(e, "alumno", alumno.id, alumno.nombre, "creo", `${lead.nombre} pasó de lead a alumno (${datos.plan}).`);
@@ -599,6 +670,104 @@ export const acciones = {
     empujar({ tipo: "upsert", tabla: "alumnos", filas: [alumno] });
     empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
     return alumno.id;
+  },
+
+  /* ---------- Pipeline de servicio ----------
+     Las etapas viven en `etapas_servicio`, que no se llama como su colección
+     (`etapasServicio`): por eso tienen acciones propias y no pasan por
+     crear/actualizar/eliminar, que usan el nombre de la colección como tabla. */
+
+  moverAlumno(alumnoId: ID, etapaServicioId: ID) {
+    const e = snapshot();
+    const alumno = e.alumnos.find((a) => a.id === alumnoId);
+    const destino = e.etapasServicio.find((x) => x.id === etapaServicioId);
+    if (!alumno || !destino || alumno.etapaServicioId === etapaServicioId) return;
+    const origen = etapaDelAlumno(etapasDeServicio(e), alumno);
+    const actualizado: Alumno = { ...alumno, etapaServicioId };
+    const { lista, nuevo } = registrar(
+      e, "alumno", alumnoId, alumno.nombre, "movio",
+      `${alumno.nombre}: ${origen?.nombre ?? "—"} → ${destino.nombre}.`,
+    );
+    guardar({ ...e, alumnos: e.alumnos.map((a) => (a.id === alumnoId ? actualizado : a)), actividad: lista });
+    empujar({ tipo: "upsert", tabla: "alumnos", filas: [actualizado] });
+    empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
+  },
+
+  crearEtapaServicio(datos: { nombre: string; color: EtapaServicio["color"] }): ID {
+    const e = snapshot();
+    const etapa: EtapaServicio = {
+      id: nuevoId("ets"), nombre: datos.nombre.trim(), color: datos.color,
+      orden: Math.max(-1, ...e.etapasServicio.map((x) => x.orden)) + 1, creadoEn: ahora(),
+    };
+    const { lista, nuevo } = registrar(e, "config", etapa.id, etapa.nombre, "creo", `Se creó la etapa de servicio «${etapa.nombre}».`);
+    guardar({ ...e, etapasServicio: [...e.etapasServicio, etapa], actividad: lista });
+    empujar({ tipo: "upsert", tabla: "etapas_servicio", filas: [etapa] });
+    empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
+    return etapa.id;
+  },
+
+  editarEtapaServicio(id: ID, cambios: Partial<Pick<EtapaServicio, "nombre" | "color">>) {
+    const e = snapshot();
+    const etapa = e.etapasServicio.find((x) => x.id === id);
+    if (!etapa) return;
+    const actualizada: EtapaServicio = { ...etapa, ...cambios, nombre: (cambios.nombre ?? etapa.nombre).trim() };
+    const detalle = actualizada.nombre !== etapa.nombre
+      ? `La etapa de servicio «${etapa.nombre}» pasó a llamarse «${actualizada.nombre}».`
+      : `Se editó la etapa de servicio «${etapa.nombre}».`;
+    const { lista, nuevo } = registrar(e, "config", id, actualizada.nombre, "actualizo", detalle);
+    guardar({ ...e, etapasServicio: e.etapasServicio.map((x) => (x.id === id ? actualizada : x)), actividad: lista });
+    empujar({ tipo: "upsert", tabla: "etapas_servicio", filas: [actualizada] });
+    empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
+  },
+
+  /* Recibe los ids en el orden nuevo y reescribe el `orden` de cada una: al
+     arrastrar, una etapa puede saltar varias posiciones de una vez. */
+  ordenarEtapasServicio(ids: ID[]) {
+    const e = snapshot();
+    const cambiadas: EtapaServicio[] = [];
+    const etapasServicio = e.etapasServicio.map((x) => {
+      const i = ids.indexOf(x.id);
+      if (i < 0 || x.orden === i) return x;
+      const y = { ...x, orden: i };
+      cambiadas.push(y);
+      return y;
+    });
+    if (cambiadas.length === 0) return;
+    guardar({ ...e, etapasServicio });
+    empujar({ tipo: "upsert", tabla: "etapas_servicio", filas: cambiadas });
+  },
+
+  /* Borrar una etapa con alumnos adentro los pasa antes a otra: un alumno no
+     puede quedar colgado de una columna que ya no existe. "Adentro" es donde
+     se lo ve: si se borra la primera, también se llevan los que no tenían
+     etapa, que se dibujaban ahí. Siempre queda al menos una etapa. */
+  eliminarEtapaServicio(id: ID, destinoId?: ID) {
+    const e = snapshot();
+    const etapas = etapasDeServicio(e);
+    const etapa = etapas.find((x) => x.id === id);
+    if (!etapa || etapas.length <= 1) return;
+    const restantes = etapas.filter((x) => x.id !== id);
+    const destino = restantes.find((x) => x.id === destinoId) ?? restantes[0];
+    const movidos: Alumno[] = [];
+    const alumnos = e.alumnos.map((a) => {
+      if (etapaDelAlumno(etapas, a)?.id !== id) return a;
+      const y: Alumno = { ...a, etapaServicioId: destino.id };
+      movidos.push(y);
+      return y;
+    });
+    const detalle = movidos.length
+      ? `Se eliminó la etapa de servicio «${etapa.nombre}»: ${movidos.length} ${movidos.length === 1 ? "alumno pasó" : "alumnos pasaron"} a «${destino.nombre}».`
+      : `Se eliminó la etapa de servicio «${etapa.nombre}».`;
+    const { lista, nuevo } = registrar(e, "config", id, etapa.nombre, "elimino", detalle);
+    guardar({
+      ...e, alumnos, actividad: lista,
+      etapasServicio: e.etapasServicio.filter((x) => x.id !== id),
+    });
+    /* Primero los alumnos y después la etapa: si algo se corta en el medio,
+       queda una etapa de más, no alumnos apuntando a una que no existe. */
+    if (movidos.length) empujarEnLotes("alumnos", movidos);
+    empujar({ tipo: "delete", tabla: "etapas_servicio", ids: [id] });
+    empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
   },
 
   /* ---------- Alta de lead con su contacto ----------
@@ -781,8 +950,12 @@ export const acciones = {
       : `Se cargó la venta de ${venta.contactoNombre} en ${cuotas.length} ${cuotas.length === 1 ? "cuota" : "cuotas"}.`;
     const { lista, nuevo } = registrar(e, "transaccion", venta.id, venta.contactoNombre, "creo", detalle);
 
+    /* Quien compra pasa a ser alumno (o se enlaza al que ya era). */
+    const conAlumno = alumnoDesdeVenta(e, venta, cuotas);
+
     guardar({
       ...e,
+      alumnos: conAlumno.alumnos,
       ventas: [venta, ...e.ventas],
       cuotas: [...cuotas, ...e.cuotas],
       pagos: [...nuevosPagos, ...e.pagos],
@@ -791,6 +964,7 @@ export const acciones = {
     });
 
     empujar({ tipo: "upsert", tabla: "ventas", filas: [venta] });
+    if (conAlumno.tocado) empujar({ tipo: "upsert", tabla: "alumnos", filas: [conAlumno.tocado] });
     empujar({ tipo: "upsert", tabla: "cuotas", filas: cuotas });
     if (nuevosPagos.length) empujar({ tipo: "upsert", tabla: "pagos", filas: nuevosPagos });
     if (movimientosTocados.size) empujar({ tipo: "upsert", tabla: "movimientos", filas: [...movimientosTocados.values()] });

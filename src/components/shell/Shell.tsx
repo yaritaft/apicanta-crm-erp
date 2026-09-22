@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import {
   AlertCircle, Check, Cloud, HardDrive, LogOut, Menu, Moon, PanelLeft, PanelLeftClose,
   RefreshCw, Search, Sun, X,
@@ -16,6 +16,7 @@ import { Tour } from "./Tour";
 
 export function Shell({ children }: { children: React.ReactNode }) {
   const ruta = usePathname();
+  const busqueda = useSearchParams();
   const estado = useEstado();
   const [tema, setTema] = useTema();
   const sync = useSync();
@@ -43,7 +44,9 @@ export function Shell({ children }: { children: React.ReactNode }) {
     void cargarDeLaNube();
   }, [sesion.email]);
 
-  useEffect(() => { setMenu(false); }, [ruta]);
+  /* También con la búsqueda: ir de Alumnos a su pipeline no cambia la ruta, y
+     en el teléfono el menú se quedaba abierto tapando la pantalla. */
+  useEffect(() => { setMenu(false); }, [ruta, busqueda]);
 
   useEffect(() => {
     document.documentElement.dataset.theme = tema;
@@ -66,7 +69,17 @@ export function Shell({ children }: { children: React.ReactNode }) {
     "/webinars": estado.webinars.length,
   };
 
-  const item = NAV.flatMap((g) => g.items).find((i) => ruta === i.href || ruta.startsWith(i.href + "/"));
+  /* Un item puede ser una vista de otra pantalla (/alumnos?vista=pipeline).
+     Coincide si coincide la ruta y cada parámetro que pide; de los que
+     coinciden gana el más específico, así nunca se prenden dos a la vez. */
+  const coincide = (href: string) => {
+    const [camino, query] = href.split("?");
+    if (ruta !== camino && !ruta.startsWith(camino + "/")) return false;
+    return !query || [...new URLSearchParams(query)].every(([k, v]) => busqueda.get(k) === v);
+  };
+  const item = NAV.flatMap((g) => g.items)
+    .filter((i) => coincide(i.href))
+    .sort((a, b) => b.href.length - a.href.length)[0];
 
   return (
     <div className="app-shell" data-colapsado={colapsado}>
@@ -104,7 +117,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
               <div className="hk-sidebar__group"><span>{g.titulo}</span></div>
               <ul className="hk-nav">
                 {g.items.map((i) => {
-                  const activo = ruta === i.href || ruta.startsWith(i.href + "/");
+                  const activo = i.href === item?.href;
                   const Ico = i.icono;
                   return (
                     <li key={i.href}>

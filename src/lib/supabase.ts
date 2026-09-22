@@ -36,6 +36,9 @@ export const TABLAS = [
      su coleccion (`adInsights`): Postgres va en snake_case y la app en
      camelCase, asi que store.ts la mapea a mano. */
   "campaigns", "adsets", "ads", "ad_insights",
+  /* Las columnas del pipeline de servicio de alumnos. Tampoco coincide con su
+     coleccion (`etapasServicio`): la escriben acciones propias del store. */
+  "etapas_servicio",
 ] as const;
 
 export type Tabla = (typeof TABLAS)[number];
@@ -61,6 +64,9 @@ export const TABLAS_OPCIONALES = new Set<string>([
      en todas las bases. Mientras tanto la app sigue con esas colecciones
      vacias en vez de caerse entera. */
   "campaigns", "adsets", "ads", "ad_insights",
+  /* Nueva (supabase/alumnos-servicio.sql). Hasta que corra, el pipeline de
+     alumnos anda con las etapas de siempre y no guarda los cambios de etapas. */
+  "etapas_servicio",
 ]);
 
 /* PostgREST avisa que la tabla no esta en el esquema con PGRST205 (y con

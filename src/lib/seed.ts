@@ -3,6 +3,7 @@ import type {
   Etapa, Gasto, Lead, Meta, MiembroEquipo, Movimiento, Pago, Procesador, Producto,
   Reporte, Sesion, Venta, Webinar,
 } from "./types";
+import type { EtapaServicio } from "./types";
 import { inicioSemana, mesClave } from "./format";
 
 /* PRNG determinístico: los datos de ejemplo son siempre los mismos. */
@@ -143,6 +144,29 @@ export const ETAPAS: Etapa[] = [
   { id: "et_inscripto", nombre: "Inscripto", variante: "success", probabilidad: 100, esGanada: true, orden: 4 },
   { id: "et_perdido", nombre: "Perdido", variante: "danger", probabilidad: 0, esPerdida: true, orden: 5 },
 ];
+
+/* El pipeline de servicio: el camino de un alumno desde que compra hasta que
+   termina. Los ids son fijos porque supabase/alumnos-servicio.sql siembra
+   estas mismas: la base y la semilla tienen que hablar de las mismas etapas. */
+export const ETAPAS_SERVICIO: EtapaServicio[] = [
+  { id: "ets_nueva",      nombre: "Venta nueva",       color: "info",    orden: 0, creadoEn: "2026-09-22T12:00:00.000Z" },
+  { id: "ets_onboarding", nombre: "Onboarding",        color: "accent",  orden: 1, creadoEn: "2026-09-22T12:00:00.000Z" },
+  { id: "ets_servicio",   nombre: "En servicio",       color: "brand",   orden: 2, creadoEn: "2026-09-22T12:00:00.000Z" },
+  { id: "ets_trabajo",    nombre: "Consiguió trabajo", color: "success", orden: 3, creadoEn: "2026-09-22T12:00:00.000Z" },
+  { id: "ets_finalizado", nombre: "Finalizado",        color: "neutral", orden: 4, creadoEn: "2026-09-22T12:00:00.000Z" },
+];
+
+/* En qué etapa del servicio cae cada alumno de ejemplo: el que recién empezó
+   está en onboarding, el que se fue o terminó en finalizado, y a los que ya
+   van por el final les tocó conseguir trabajo. */
+function etapaDeEjemplo(a: Alumno): string {
+  if (a.estado === "baja") return "ets_finalizado";
+  if (a.estado === "graduado") return r() > 0.4 ? "ets_trabajo" : "ets_finalizado";
+  const dias = (HOY.getTime() - new Date(a.inicio).getTime()) / 86400000;
+  if (dias < 45) return "ets_onboarding";
+  if (a.progreso >= 80) return "ets_trabajo";
+  return "ets_servicio";
+}
 
 export const AJUSTES: Ajustes = {
   negocio: "Hackear IT",
@@ -304,6 +328,7 @@ export function construirSemilla(): EstadoApp {
       extra: {},
     };
   });
+  for (const a of alumnos) a.etapaServicioId = etapaDeEjemplo(a);
 
   /* ---------- Reportes semanales ---------- */
   const reportes: Reporte[] = [];
@@ -494,6 +519,8 @@ export function construirSemilla(): EstadoApp {
       webinarId: lead?.webinarId ?? pick(webinarsPasados).id,
       embudoId: lead?.fuente === "Webinar" ? "emb_webinar" : pick(EMBUDOS).id,
     });
+    /* La venta que lo trajo: la ficha del alumno la muestra y lleva a ella. */
+    a.ventaId = ventas[ventas.length - 1]?.id;
   });
 
   /* El volumen real del negocio: entre 30 y 45 ventas por mes, con la mezcla
@@ -518,6 +545,37 @@ export function construirSemilla(): EstadoApp {
       });
     }
   }
+
+  /* Las mentorías vendidas en los últimos diez días ya tienen su alumno
+     esperando en «Venta nueva»: es lo que hace solo, desde ahora, registrar
+     una venta. Sin esto la primera columna del pipeline de servicio arranca
+     vacía en la demo y no se entiende para qué está. */
+  ventas
+    .filter((v) => !v.contactoId && v.estado === "activa" && v.productoId === "prod_mentoria"
+      && HOY.getTime() - new Date(v.fecha).getTime() <= 10 * 86400000)
+    .sort((a, b) => +new Date(b.fecha) - +new Date(a.fecha))
+    .slice(0, 4)
+    .forEach((v, k) => {
+      const regulares = cuotas.filter((c) => c.ventaId === v.id && !c.esReserva);
+      alumnos.push({
+        id: id("alu", alumnos.length + 1),
+        nombre: v.contactoNombre,
+        email: email(v.contactoNombre, 900 + k),
+        pais: pick(PAISES),
+        cohorte: "",
+        plan: PRODUCTOS.find((p) => p.id === v.productoId)?.nombre ?? "",
+        cuotaMensual: regulares.length > 1 ? regulares[0].monto : 0,
+        moneda: "USD",
+        estado: "activo",
+        inicio: v.fecha,
+        progreso: 0,
+        notas: "",
+        creadoEn: v.fecha,
+        extra: {},
+        etapaServicioId: k === 3 ? "ets_onboarding" : "ets_nueva",
+        ventaId: v.id,
+      });
+    });
 
   /* Gastos: los de cada webinar y los del mes */
   webinarsPasados.forEach((w) => {
@@ -699,6 +757,7 @@ export function construirSemilla(): EstadoApp {
     version: 1,
     ajustes: AJUSTES,
     etapas: ETAPAS,
+    etapasServicio: ETAPAS_SERVICIO,
     leads,
     sesiones,
     webinars,
@@ -728,6 +787,7 @@ export function estadoVacio(): EstadoApp {
     version: 1,
     ajustes: { ...AJUSTES, tourVisto: true },
     etapas: ETAPAS,
+    etapasServicio: ETAPAS_SERVICIO,
     leads: [], sesiones: [], webinars: [], alumnos: [], reportes: [],
     contactos: [], campanias: [], campaigns: [], adsets: [], ads: [], adInsights: [],
     metas: [], campos: [],
