@@ -16,7 +16,7 @@ const PASOS = [
   {
     icono: Users,
     titulo: "Todo empieza por un lead",
-    texto: "Un lead es alguien que mostró interés. Lo cargás en Leads, lo vas moviendo por el Pipeline mientras avanza la conversación, y cuando compra lo convertís en alumno con un botón.",
+    texto: "Un lead es alguien que mostró interés. Entra por Calendly o lo cargás en Leads, lo vas moviendo por el Pipeline mientras avanza la conversación, y cuando registrás su venta pasa solo a Alumnos, al pipeline de servicio.",
   },
   {
     icono: Columns3,

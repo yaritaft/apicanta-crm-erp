@@ -968,8 +968,20 @@ export const acciones = {
       : `Se cargó la venta de ${venta.contactoNombre} en ${cuotas.length} ${cuotas.length === 1 ? "cuota" : "cuotas"}.`;
     const { lista, nuevo } = registrar(e, "transaccion", venta.id, venta.contactoNombre, "creo", detalle);
 
-    /* Quien compra pasa a ser alumno (o se enlaza al que ya era). */
+    /* Quien compra pasa a ser alumno (o se enlaza al que ya era), y eso
+       también queda en la actividad: si no, el alumno aparecía de la nada. */
     const conAlumno = alumnoDesdeVenta(e, venta, cuotas);
+    let actividad = lista;
+    const registros = [nuevo];
+    const alumnoNuevo = conAlumno.tocado && !e.alumnos.some((a) => a.id === conAlumno.tocado!.id) ? conAlumno.tocado : null;
+    if (alumnoNuevo) {
+      const r = registrar(
+        { ...e, actividad: lista }, "alumno", alumnoNuevo.id, alumnoNuevo.nombre, "creo",
+        `${alumnoNuevo.nombre} pasó a Alumnos con su compra (${alumnoNuevo.plan || "sin plan"}).`,
+      );
+      actividad = r.lista;
+      registros.push(r.nuevo);
+    }
 
     guardar({
       ...e,
@@ -978,7 +990,7 @@ export const acciones = {
       cuotas: [...cuotas, ...e.cuotas],
       pagos: [...nuevosPagos, ...e.pagos],
       movimientos,
-      actividad: lista,
+      actividad,
     });
 
     empujar({ tipo: "upsert", tabla: "ventas", filas: [venta] });
@@ -986,7 +998,7 @@ export const acciones = {
     empujar({ tipo: "upsert", tabla: "cuotas", filas: cuotas });
     if (nuevosPagos.length) empujar({ tipo: "upsert", tabla: "pagos", filas: nuevosPagos });
     if (movimientosTocados.size) empujar({ tipo: "upsert", tabla: "movimientos", filas: [...movimientosTocados.values()] });
-    empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
+    empujar({ tipo: "upsert", tabla: "actividad", filas: registros });
     return venta.id;
   },
 

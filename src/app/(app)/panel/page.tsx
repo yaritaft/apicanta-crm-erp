@@ -10,12 +10,13 @@ import { Badge, Bar, Button, Card, CardHead, Empty, Persona, StatCard } from "@/
 import { AreaChart, Funnel } from "@/components/charts/charts";
 import { Desglose, type QueDesglosar } from "@/components/panel/Desglose";
 import { AGENDAR_A_MANO } from "@/lib/funciones";
+import { rachasAHoy } from "@/lib/reportes";
 import { useEstado } from "@/lib/store";
 import { delta, fechaHora, money, num, pct, relativo } from "@/lib/format";
 import { cuotasVencidas } from "@/lib/finanzas";
 import {
   ETIQUETA_METRICA, egresosMes, ingresosMes, inscriptosMes, leadsMes, leadsSinContactar,
-  mrr, porCobrar, progresoMeta, proximasSesiones, semanasSinReportar, tasaConversion,
+  mrr, porCobrar, progresoMeta, proximasSesiones, tasaConversion,
   tasaShow, ultimosMeses, valorPipeline, variacion,
 } from "@/lib/metricas";
 
@@ -67,14 +68,17 @@ export default function Panel() {
     }));
   }, [e]);
 
-  const enRiesgo = useMemo(() =>
-    e.alumnos
+  /* La misma cuenta que Alumnos y Reportes (rachasAHoy): una semana que se
+     debía y no tiene reporte cuenta como sin reportar. */
+  const enRiesgo = useMemo(() => {
+    const rachas = rachasAHoy(e);
+    return e.alumnos
       .filter((a) => a.estado === "activo")
-      .map((a) => ({ a, semanas: semanasSinReportar(e, a.id) }))
+      .map((a) => ({ a, semanas: rachas.get(a.id) ?? 0 }))
       .filter((x) => x.semanas >= 2)
       .sort((a, b) => b.semanas - a.semanas)
-      .slice(0, 5),
-    [e]);
+      .slice(0, 5);
+  }, [e]);
 
   return (
     <div className="stack-6">
