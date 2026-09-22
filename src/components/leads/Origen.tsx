@@ -83,7 +83,7 @@ const posicion = (k: string) => {
   return i === -1 ? ORDEN_UTM.length : i;
 };
 
-function Utms({ titulo, utm }: { titulo: string; utm: Record<string, string> }) {
+export function Utms({ titulo, utm }: { titulo: string; utm: Record<string, string> }) {
   return (
     <div>
       <div className="t-sm t-subtle" style={{ marginBottom: 6 }}>{titulo}</div>

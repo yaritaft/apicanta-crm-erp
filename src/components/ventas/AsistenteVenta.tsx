@@ -115,17 +115,20 @@ function armarPlan(b: Borrador): LineaCuota[] {
   return lineas;
 }
 
-export function AsistenteVenta({ onCerrar, onListo, desdeMovimiento }: {
+export function AsistenteVenta({ onCerrar, onListo, desdeMovimiento, cliente }: {
   onCerrar: () => void;
   onListo: (ventaId: string, nombre: string) => void;
   desdeMovimiento?: Movimiento;
+  /* Abierto desde la ficha de alguien (upsell, renovación): el cliente ya
+     está elegido y se arranca por el producto. */
+  cliente?: { contactoId: string; nombre: string; email: string };
 }) {
   const e = useEstado();
   const mon = e.ajustes.monedaBase;
   const M = useCallback((n: number, d = 0) => money(n, mon, d), [mon]);
 
-  const [i, setI] = useState(0);
-  const [b, setB] = useState<Borrador>(() => inicial(e, desdeMovimiento));
+  const [i, setI] = useState(cliente ? 1 : 0);
+  const [b, setB] = useState<Borrador>(() => inicial(e, desdeMovimiento, cliente));
   const set = useCallback((cambios: Partial<Borrador>) => setB((x) => ({ ...x, ...cambios })), []);
   const mainRef = useRef<HTMLDivElement>(null);
 
@@ -340,12 +343,13 @@ export function AsistenteVenta({ onCerrar, onListo, desdeMovimiento }: {
 
 /* ---------- Estado inicial ---------- */
 
-function inicial(e: EstadoApp, mov?: Movimiento): Borrador {
+function inicial(e: EstadoApp, mov?: Movimiento, cliente?: { contactoId: string; nombre: string; email: string }): Borrador {
   const hoy = new Date().toISOString();
   const producto = e.productos.find((p) => p.activo);
   const b: Borrador = {
-    contactoNombre: mov?.clienteNombre ?? "",
-    contactoEmail: mov?.clienteEmail ?? "",
+    contactoId: cliente?.contactoId,
+    contactoNombre: cliente?.nombre ?? mov?.clienteNombre ?? "",
+    contactoEmail: cliente?.email ?? mov?.clienteEmail ?? "",
     productoId: producto?.id ?? "",
     precioAcordado: mov?.monto ?? producto?.precioLista ?? 0,
     precioTocado: Boolean(mov),

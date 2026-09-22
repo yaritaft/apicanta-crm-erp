@@ -30,6 +30,8 @@ export const TABLAS = [
   "metas", "campos", "actividad",
   "productos", "procesadores", "embudos", "equipo",
   "ventas", "cuotas", "pagos", "gastos", "movimientos",
+  /* El chat del equipo en la ficha de cada persona */
+  "comentarios",
   /* Jerarquia de Meta. `ad_insights` es la unica cuyo nombre no coincide con
      su coleccion (`adInsights`): Postgres va en snake_case y la app en
      camelCase, asi que store.ts la mapea a mano. */
@@ -52,6 +54,9 @@ export const TABLAS_OPCIONALES = new Set<string>([
   /* `contactos` es nueva: hasta que el SQL corra, la app sigue leyendo la
      identidad de `leads` como siempre. */
   "contactos",
+  /* El chat de la ficha: hasta que corra supabase/comentarios.sql, la app
+     anda igual y el chat queda sólo en este navegador. */
+  "comentarios",
   /* Las cuatro de Meta entran como opcionales hasta que el ALTER este corrido
      en todas las bases. Mientras tanto la app sigue con esas colecciones
      vacias en vez de caerse entera. */

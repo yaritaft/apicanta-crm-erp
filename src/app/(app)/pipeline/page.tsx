@@ -1,13 +1,13 @@
 "use client";
 
 import React, { useMemo, useState } from "react";
-import { GripVertical, Info, Plus } from "lucide-react";
+import { GripVertical, Plus } from "lucide-react";
 import { PageHead } from "@/components/shell/PageHead";
-import { Ayuda, Badge, Button, Card, Empty, Persona, Select, StatCard } from "@/components/ui/ui";
-import { Drawer, Dato } from "@/components/ui/Drawer";
+import { Button, Card, Empty, Select, StatCard } from "@/components/ui/ui";
+import { useAbrirFicha } from "@/components/ficha/abrir";
 import { useToast } from "@/components/ui/Toast";
 import { acciones, useEstado } from "@/lib/store";
-import { fechaLarga, money, pct, relativo } from "@/lib/format";
+import { money, pct, relativo } from "@/lib/format";
 import { tasaConversion, valorPipeline } from "@/lib/metricas";
 import type { Lead } from "@/lib/types";
 
@@ -16,7 +16,7 @@ export default function Pipeline() {
   const toast = useToast();
   const [arrastrando, setArrastrando] = useState<string | null>(null);
   const [sobre, setSobre] = useState<string | null>(null);
-  const [ver, setVer] = useState<string | null>(null);
+  const abrirFicha = useAbrirFicha();
   const [fuente, setFuente] = useState("todas");
 
   const etapas = useMemo(() => [...e.etapas].sort((a, b) => a.orden - b.orden), [e.etapas]);
@@ -56,7 +56,6 @@ export default function Pipeline() {
     toast(`${lead.nombre} → ${destino.nombre}`);
   }
 
-  const leadVisto = e.leads.find((l) => l.id === ver) ?? null;
   const etapaDe = (id: string) => e.etapas.find((x) => x.id === id);
 
   return (
@@ -127,11 +126,11 @@ export default function Pipeline() {
                           aria-label={`${l.nombre}, ${et.nombre}. Usá las flechas para moverlo de etapa, Enter para abrirlo.`}
                           onDragStart={() => setArrastrando(l.id)}
                           onDragEnd={() => { setArrastrando(null); setSobre(null); }}
-                          onClick={() => setVer(l.id)}
+                          onClick={() => abrirFicha(l.id)}
                           onKeyDown={(ev) => {
                             if (ev.key === "ArrowRight") { ev.preventDefault(); moverConTeclado(l, 1); }
                             else if (ev.key === "ArrowLeft") { ev.preventDefault(); moverConTeclado(l, -1); }
-                            else if (ev.key === "Enter") { ev.preventDefault(); setVer(l.id); }
+                            else if (ev.key === "Enter") { ev.preventDefault(); abrirFicha(l.id); }
                           }}
                         >
                           <span className="hk-deal__name truncate">{l.nombre}</span>
@@ -154,48 +153,6 @@ export default function Pipeline() {
         </>
       )}
 
-      {leadVisto && (
-        <Drawer
-          abierto onCerrar={() => setVer(null)} titulo={leadVisto.nombre}
-          cabecera={
-            <div className="stack-2">
-              <Persona nombre={leadVisto.nombre} sub={leadVisto.email} size={40} />
-              <div className="row-wrap">
-                {(() => { const et = etapaDe(leadVisto.etapaId); return et ? <Badge variante={et.variante}>{et.nombre}</Badge> : null; })()}
-                <Badge variante="neutral">{leadVisto.fuente || "Sin fuente"}</Badge>
-              </div>
-            </div>
-          }
-          pie={<Button variante="primary" onClick={() => { window.location.href = `/leads?ver=${leadVisto.id}`; }}>Abrir ficha completa</Button>}
-        >
-          <div className="stack-5">
-            <dl className="dl">
-              <Dato label="Valor">{money(leadVisto.monto, leadVisto.moneda)}</Dato>
-              <Dato label="País">{leadVisto.pais || "—"}</Dato>
-              <Dato label="Email">{leadVisto.email || "—"}</Dato>
-              <Dato label="Teléfono">{leadVisto.telefono || "—"}</Dato>
-              <Dato label="Campaña">{leadVisto.campania || "—"}</Dato>
-              <Dato label="Entró">{fechaLarga(leadVisto.creadoEn)}</Dato>
-            </dl>
-            <div>
-              <div className="t-label" style={{ marginBottom: 10 }}>Mover a</div>
-              <div className="row-wrap">
-                {etapas.filter((x) => x.id !== leadVisto.etapaId).map((et) => (
-                  <Button key={et.id} sm variante="secondary" onClick={() => { acciones.moverLead(leadVisto.id, et.id); toast(`${leadVisto.nombre} → ${et.nombre}`); }}>
-                    {et.nombre}
-                  </Button>
-                ))}
-              </div>
-            </div>
-            {leadVisto.notas && (
-              <div>
-                <div className="t-label" style={{ marginBottom: 8 }}>Notas</div>
-                <p className="t-body t-muted" style={{ whiteSpace: "pre-wrap" }}>{leadVisto.notas}</p>
-              </div>
-            )}
-          </div>
-        </Drawer>
-      )}
     </div>
   );
 }

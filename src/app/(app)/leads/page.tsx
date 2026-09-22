@@ -1,24 +1,24 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
-  Check, Download, GraduationCap, Mail, Pencil, Phone, Plus, Search, Trash2, Upload, Users, X,
+  Download, Pencil, Plus, Search, Trash2, Upload, Users,
 } from "lucide-react";
 import { PageHead } from "@/components/shell/PageHead";
 import {
-  Ayuda, Badge, Button, Card, Chip, Empty, Field, IconButton, Input, Persona, Select, Tag, Textarea,
+  Ayuda, Badge, Button, Card, Chip, Empty, Field, IconButton, Input, Persona, Select, Textarea,
 } from "@/components/ui/ui";
 import { Columna, DataTable } from "@/components/ui/DataTable";
 import { ModalForm, Confirmar, Modal } from "@/components/ui/Modal";
-import { Drawer, Dato } from "@/components/ui/Drawer";
-import { CamposExtra, DatosExtra } from "@/components/ui/CamposExtra";
+import { CamposExtra } from "@/components/ui/CamposExtra";
 import { useToast } from "@/components/ui/Toast";
 import { acciones, useEstado } from "@/lib/store";
 import { useAbrirDesdeURL } from "@/lib/useQuery";
-import { fechaLarga, isoDia, money, num, relativo } from "@/lib/format";
+import { useAbrirFicha } from "@/components/ficha/abrir";
+import { money, num, relativo } from "@/lib/format";
 import { DateRangePicker, diaDeNegocio } from "@/components/ui/DateRangePicker";
 import { useRangoURL } from "@/lib/useRango";
-import { Origen } from "@/components/leads/Origen";
 import type { Lead, Moneda } from "@/lib/types";
 
 const VACIO = (fuente: string, etapaId: string): Omit<Lead, "id"> => ({
@@ -40,6 +40,9 @@ export default function Leads() {
   const e = useEstado();
   const toast = useToast();
   const url = useAbrirDesdeURL();
+  const abrirFicha = useAbrirFicha();
+  const params = useSearchParams();
+  const router = useRouter();
 
   const [q, setQ] = useState("");
   const [etapa, setEtapa] = useState<string>("todas");
@@ -50,17 +53,26 @@ export default function Leads() {
      comparar periodos, y un mes suelto no deja hacer eso. */
   const [rango, setRango] = useRangoURL("mes");
   const [form, setForm] = useState<(Omit<Lead, "id"> & { id?: string }) | null>(null);
-  const [ver, setVer] = useState<string | null>(null);
   const [borrar, setBorrar] = useState<Lead | null>(null);
   const [importar, setImportar] = useState(false);
-  const [convertir, setConvertir] = useState<Lead | null>(null);
 
   const etapaInicial = useMemo(() => [...e.etapas].sort((a, b) => a.orden - b.orden)[0]?.id ?? "", [e.etapas]);
 
   useEffect(() => {
     if (url.nuevo) { setForm(VACIO(e.ajustes.fuentes[0] ?? "", etapaInicial)); url.limpiar(); }
-    else if (url.ver) { setVer(url.ver); url.limpiar(); }
-  }, [url, e.ajustes.fuentes, etapaInicial]);
+    /* Los links viejos (?ver=<id>) abren la ficha de la persona, que es la
+       misma desde cualquier pantalla. abrirFicha ya saca el ?ver. */
+    else if (url.ver) abrirFicha(url.ver);
+  }, [url, e.ajustes.fuentes, etapaInicial, abrirFicha]);
+
+  /* La ficha manda a editar los datos de un lead con ?editar=<id>. */
+  useEffect(() => {
+    const id = params.get("editar");
+    if (!id) return;
+    const lead = e.leads.find((l) => l.id === id);
+    if (lead) setForm({ ...lead });
+    router.replace("/leads", { scroll: false });
+  }, [params, e.leads, router]);
 
   /* Solo el rango. Los chips de etapa cuentan sobre esto: si contaran sobre
      `filtrados`, el chip de la etapa elegida mostraria su propio total y los
@@ -83,12 +95,6 @@ export default function Leads() {
     });
   }, [enRango, q, etapa, fuente, ingles]);
 
-  const leadVisto = e.leads.find((l) => l.id === ver) ?? null;
-  /* La persona detrás del lead: de ahí salen el origen, los UTMs y lo que
-     contestó en el formulario de Calendly. */
-  const contactoVisto = leadVisto
-    ? e.contactos.find((c) => c.id === (leadVisto.contactoId ?? leadVisto.id))
-    : undefined;
   const etapaDe = (id: string) => e.etapas.find((x) => x.id === id);
 
   function guardar() {
@@ -195,7 +201,7 @@ export default function Leads() {
           filas={filtrados}
           columnas={columnas}
           ordenInicial={{ clave: "act", desc: true }}
-          onFila={(l) => setVer(l.id)}
+          onFila={(l) => abrirFicha(l.id)}
           etiquetaFila={(l) => `Ver ${l.nombre}`}
           acciones={(l) => (
             <>
@@ -284,133 +290,6 @@ export default function Leads() {
         </ModalForm>
       )}
 
-      {/* ---------- Detalle ---------- */}
-      {leadVisto && (
-        <Drawer
-          abierto onCerrar={() => setVer(null)} titulo={leadVisto.nombre}
-          cabecera={
-            <div className="stack-2">
-              <Persona nombre={leadVisto.nombre} sub={leadVisto.email} size={40} />
-              <div className="row-wrap">
-                {(() => { const et = etapaDe(leadVisto.etapaId); return et ? <Badge variante={et.variante}>{et.nombre}</Badge> : null; })()}
-                <Badge variante="neutral">{leadVisto.fuente || "Sin fuente"}</Badge>
-                {leadVisto.etiquetas.map((t) => <Tag key={t}>{t}</Tag>)}
-              </div>
-            </div>
-          }
-          pie={
-            <>
-              <Button variante="secondary" icono={<Pencil size={16} />} onClick={() => { setForm({ ...leadVisto }); setVer(null); }}>Editar</Button>
-              {!e.alumnos.some((a) => a.leadId === leadVisto.id) && (
-                <Button variante="primary" icono={<GraduationCap size={16} />} onClick={() => setConvertir(leadVisto)}>Convertir en alumno</Button>
-              )}
-            </>
-          }
-        >
-          <div className="stack-5">
-            <div className="row-wrap">
-              {leadVisto.email && (
-                <a href={`mailto:${leadVisto.email}`}><Button sm variante="secondary" icono={<Mail size={15} />}>Escribirle</Button></a>
-              )}
-              {leadVisto.telefono && (
-                <a href={`https://wa.me/${leadVisto.telefono.replace(/\D/g, "")}`} target="_blank" rel="noreferrer">
-                  <Button sm variante="secondary" icono={<Phone size={15} />}>WhatsApp</Button>
-                </a>
-              )}
-            </div>
-
-            <div>
-              <div className="t-label" style={{ marginBottom: 10 }}>Etapa</div>
-              <div style={{ maxWidth: 280 }}>
-                <Select
-                  value={leadVisto.etapaId} aria-label="Etapa del lead"
-                  onChange={(ev) => {
-                    const et = e.etapas.find((x) => x.id === ev.target.value);
-                    if (!et) return;
-                    acciones.moverLead(leadVisto.id, et.id);
-                    toast(`${leadVisto.nombre} → ${et.nombre}`);
-                  }}
-                  opciones={[...e.etapas].sort((a, b) => a.orden - b.orden).map((et) => ({ valor: et.id, texto: et.nombre }))}
-                />
-              </div>
-            </div>
-
-            <dl className="dl">
-              <Dato label="Valor">{money(leadVisto.monto, leadVisto.moneda)}</Dato>
-              <Dato label="País">{leadVisto.pais || "—"}</Dato>
-              <Dato label="Inglés">{leadVisto.inglesNivel ? ETIQUETA_INGLES[leadVisto.inglesNivel] : "Sin evaluar"}</Dato>
-              <Dato label="Años de experiencia">{leadVisto.aniosExperiencia == null ? "—" : num(leadVisto.aniosExperiencia)}</Dato>
-              {contactoVisto?.tecnologias && <Dato label="Lenguajes">{contactoVisto.tecnologias}</Dato>}
-              {contactoVisto?.formacion && <Dato label="Formación">{contactoVisto.formacion}</Dato>}
-              {contactoVisto?.sueldoUsd && <Dato label="Gana por mes (USD)">{contactoVisto.sueldoUsd}</Dato>}
-              <Dato label="Teléfono">{leadVisto.telefono || "—"}</Dato>
-              <Dato label="Campaña">{leadVisto.campania || "—"}</Dato>
-              <Dato label="Responsable">{leadVisto.responsable || "—"}</Dato>
-              <Dato label="Entró">{fechaLarga(leadVisto.creadoEn)}</Dato>
-              <Dato label="Últ. cambio">{relativo(leadVisto.actualizadoEn)}</Dato>
-              {leadVisto.webinarId && (
-                <Dato label="Webinar">{e.webinars.find((w) => w.id === leadVisto.webinarId)?.titulo ?? "—"}</Dato>
-              )}
-              <DatosExtra campos={e.campos} entidad="lead" valores={leadVisto.extra} />
-            </dl>
-
-            <Origen contacto={contactoVisto} />
-
-            {leadVisto.notas && (
-              <div>
-                <div className="t-label" style={{ marginBottom: 8 }}>Notas</div>
-                <p className="t-body t-muted" style={{ whiteSpace: "pre-wrap" }}>{leadVisto.notas}</p>
-              </div>
-            )}
-
-            <div>
-              <div className="t-label" style={{ marginBottom: 12 }}>Sesiones</div>
-              {e.sesiones.filter((s) => s.leadId === leadVisto.id).length === 0 ? (
-                <p className="t-sm t-subtle">Todavía no agendaron ninguna.</p>
-              ) : (
-                <div className="stack-2">
-                  {e.sesiones.filter((s) => s.leadId === leadVisto.id).map((s) => (
-                    <div key={s.id} className="agenda-item" style={{ cursor: "default" }}>
-                      <span className="agenda-item__hora">{isoDia(s.inicia).slice(8)}/{isoDia(s.inicia).slice(5, 7)}</span>
-                      <span style={{ flex: 1, minWidth: 0 }} className="truncate">{s.tipo}</span>
-                      <Badge variante={s.estado === "hecha" ? "success" : s.estado === "no-show" ? "danger" : s.estado === "cancelada" ? "neutral" : "accent"}>
-                        {s.estado === "hecha" ? "Hecha" : s.estado === "no-show" ? "No vino" : s.estado === "cancelada" ? "Cancelada" : "Agendada"}
-                      </Badge>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            <div>
-              <div className="t-label" style={{ marginBottom: 12 }}>Historial</div>
-              <div className="timeline">
-                {e.actividad.filter((a) => a.entidadId === leadVisto.id).slice(0, 8).map((a) => (
-                  <div key={a.id} className="timeline__item">
-                    <span className="timeline__dot"><Check size={13} /></span>
-                    <div>
-                      <div className="timeline__text t-sm">{a.detalle}</div>
-                      <div className="timeline__meta">{a.actor} · {relativo(a.fecha)}</div>
-                    </div>
-                  </div>
-                ))}
-                {e.actividad.filter((a) => a.entidadId === leadVisto.id).length === 0 && (
-                  <p className="t-sm t-subtle">Sin movimientos registrados.</p>
-                )}
-              </div>
-            </div>
-          </div>
-        </Drawer>
-      )}
-
-      {convertir && (
-        <ConvertirModal
-          lead={convertir}
-          onCerrar={() => setConvertir(null)}
-          onHecho={(nombre) => { toast(`${nombre} ahora es alumno.`); setConvertir(null); setVer(null); }}
-        />
-      )}
-
       {importar && <ImportarModal onCerrar={() => setImportar(false)} etapaId={etapaInicial} />}
 
       <Confirmar
@@ -424,35 +303,6 @@ export default function Leads() {
 }
 
 /* ---------- Convertir en alumno ---------- */
-
-function ConvertirModal({ lead, onCerrar, onHecho }: { lead: Lead; onCerrar: () => void; onHecho: (n: string) => void }) {
-  const e = useEstado();
-  const [plan, setPlan] = useState(e.ajustes.planes[0] ?? "");
-  const [cuota, setCuota] = useState(400);
-  const [cohorte, setCohorte] = useState("C9");
-  const [inicio, setInicio] = useState(isoDia(new Date().toISOString()));
-
-  return (
-    <ModalForm
-      abierto onCerrar={onCerrar} titulo={`Convertir a ${lead.nombre} en alumno`}
-      sub="Pasa al programa, el lead queda marcado como inscripto y aparece en Alumnos."
-      guardarTexto="Convertir"
-      onGuardar={() => {
-        acciones.convertirEnAlumno(lead.id, { plan, cuotaMensual: cuota, cohorte, inicio: new Date(inicio).toISOString() });
-        onHecho(lead.nombre);
-      }}
-    >
-      <div className="form-grid">
-        <Field label="Plan"><Select value={plan} onChange={(ev) => setPlan(ev.target.value)} opciones={e.ajustes.planes} /></Field>
-        <Field label="Cuota mensual" ayuda="En USD."><Input type="number" min={0} value={cuota} onChange={(ev) => setCuota(Number(ev.target.value))} /></Field>
-        <Field label="Cohorte"><Input value={cohorte} onChange={(ev) => setCohorte(ev.target.value)} placeholder="C9" /></Field>
-        <Field label="Fecha de inicio"><Input type="date" value={inicio} onChange={(ev) => setInicio(ev.target.value)} /></Field>
-      </div>
-    </ModalForm>
-  );
-}
-
-/* ---------- Importar CSV ---------- */
 
 function ImportarModal({ onCerrar, etapaId }: { onCerrar: () => void; etapaId: string }) {
   const e = useEstado();

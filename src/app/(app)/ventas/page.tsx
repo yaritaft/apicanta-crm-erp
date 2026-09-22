@@ -2,25 +2,23 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import {
-  AlertTriangle, Check, HandCoins, Info, Link2, Paperclip, Pencil, Plus, Receipt, Trash2,
+  HandCoins, Info, Pencil, Plus, Trash2,
 } from "lucide-react";
 import { PageHead } from "@/components/shell/PageHead";
 import {
-  Ayuda, Badge, Bar, Button, Card, Chip, Empty, Field, IconButton, Input,
-  Select, StatCard, Switch, Textarea,
+  Ayuda, Bar, Button, Card, Chip, Empty, IconButton, StatCard,
 } from "@/components/ui/ui";
 import { Columna, DataTable } from "@/components/ui/DataTable";
-import { ModalForm, Confirmar } from "@/components/ui/Modal";
-import { Drawer, Dato } from "@/components/ui/Drawer";
+import { Confirmar } from "@/components/ui/Modal";
 import { AsistenteVenta } from "@/components/ventas/AsistenteVenta";
+import { desdeVenta, FormularioVenta, type BorradorVenta } from "@/components/ventas/FormularioVenta";
 import { useToast } from "@/components/ui/Toast";
-import { acciones, nuevoId, useEstado } from "@/lib/store";
+import { acciones, useEstado } from "@/lib/store";
 import { useAbrirDesdeURL } from "@/lib/useQuery";
-import { fechaLarga, isoDia, money, num, pct } from "@/lib/format";
+import { useAbrirFicha } from "@/components/ficha/abrir";
+import { fechaLarga, money, num, pct } from "@/lib/format";
 import { porCobrarTotal, saldoVenta } from "@/lib/finanzas";
-import { verComprobante } from "@/lib/comprobantes";
-import { RegistrarPago } from "@/components/cobros/RegistrarPago";
-import type { Cuota, EstadoVenta, Moneda, Venta } from "@/lib/types";
+import type { EstadoVenta, Venta } from "@/lib/types";
 
 const ESTADO: Record<EstadoVenta, { texto: string; variante: "success" | "neutral" | "danger" }> = {
   "activa":      { texto: "Activa",      variante: "success" },
@@ -32,17 +30,17 @@ export default function Ventas() {
   const e = useEstado();
   const toast = useToast();
   const url = useAbrirDesdeURL();
+  const abrirFicha = useAbrirFicha();
   const [filtro, setFiltro] = useState<"todas" | EstadoVenta | "conSaldo">("todas");
   const [form, setForm] = useState<BorradorVenta | null>(null);
   const [asistente, setAsistente] = useState(false);
-  const [ver, setVer] = useState<string | null>(null);
   const [borrar, setBorrar] = useState<Venta | null>(null);
-  const [cobrar, setCobrar] = useState<Cuota | null>(null);
 
   useEffect(() => {
     if (url.nuevo) { setAsistente(true); url.limpiar(); }
-    else if (url.ver) { setVer(url.ver); url.limpiar(); }
-  }, [url]);
+    /* ?ver=<venta> abre la ficha de la persona con esa venta a la vista. */
+    else if (url.ver) abrirFicha(url.ver, "ventas", { venta: url.ver });
+  }, [url, abrirFicha]);
 
   const mon = e.ajustes.monedaBase;
   const M = (n: number, d = 0) => money(n, mon, d);
@@ -58,8 +56,6 @@ export default function Ventas() {
   const facturado = activas.reduce((a, v) => a + v.precioAcordado, 0);
   const cobradoTotal = e.pagos.reduce((a, p) => a + p.monto, 0);
 
-  const vVista = e.ventas.find((v) => v.id === ver) ?? null;
-  const saldo = vVista ? saldoVenta(e, vVista.id) : null;
 
   const columnas: Columna<Venta>[] = [
     { clave: "contacto", titulo: "Cliente", tipo: "primary", orden: (v) => v.contactoNombre, celda: (v) => v.contactoNombre },
@@ -110,7 +106,7 @@ export default function Ventas() {
         <DataTable
           alto={620}
           filas={filas} columnas={columnas} ordenInicial={{ clave: "fecha", desc: true }}
-          onFila={(v) => setVer(v.id)} etiquetaFila={(v) => `Ver la venta de ${v.contactoNombre}`}
+          onFila={(v) => abrirFicha(v.id, "ventas", { venta: v.id })} etiquetaFila={(v) => `Ver la ficha de ${v.contactoNombre}`}
           acciones={(v) => (
             <>
               <IconButton etiqueta="Editar" onClick={() => setForm(desdeVenta(e, v))}><Pencil size={15} /></IconButton>
@@ -136,7 +132,7 @@ export default function Ventas() {
       {asistente && (
         <AsistenteVenta
           onCerrar={() => setAsistente(false)}
-          onListo={(id, nombre) => { setAsistente(false); setVer(id); toast(`Venta de ${nombre} cargada.`); }}
+          onListo={(id, nombre) => { setAsistente(false); abrirFicha(id, "ventas", { venta: id }); toast(`Venta de ${nombre} cargada.`); }}
         />
       )}
 
@@ -148,123 +144,6 @@ export default function Ventas() {
         />
       )}
 
-      {/* ---------- Detalle ---------- */}
-      {vVista && saldo && (
-        <Drawer
-          abierto onCerrar={() => setVer(null)} titulo={vVista.contactoNombre}
-          sub={`${e.productos.find((p) => p.id === vVista.productoId)?.nombre ?? "—"} · ${fechaLarga(vVista.fecha)}`}
-          pie={
-            <>
-              <Button variante="secondary" icono={<Pencil size={16} />} onClick={() => { setForm(desdeVenta(e, vVista)); setVer(null); }}>Editar</Button>
-              {vVista.estado === "activa" && (
-                <Button variante="danger" onClick={() => {
-                  acciones.actualizar<Venta>("ventas", vVista.id, { estado: "cancelada" }, vVista.contactoNombre,
-                    `Se canceló la venta de ${vVista.contactoNombre}. Las cuotas quedan registradas.`);
-                  toast("Venta cancelada. Las cuotas quedan como historial.");
-                }}>Cancelar venta</Button>
-              )}
-            </>
-          }
-        >
-          <div className="stack-5">
-            <div className="row-wrap">
-              <Badge variante={ESTADO[vVista.estado].variante}>{ESTADO[vVista.estado].texto}</Badge>
-              {vVista.excluidoMarketing && <Badge variante="warning">Excluida de marketing</Badge>}
-              {e.equipo.find((x) => x.id === vVista.closerId)?.sinComision && <Badge variante="neutral">Sin comisión</Badge>}
-            </div>
-
-            <div>
-              <div className="row" style={{ marginBottom: 8 }}>
-                <span className="t-label">Cobrado</span>
-                <span className="spacer t-num t-strong">{M(saldo.cobrado)} de {M(saldo.total)}</span>
-              </div>
-              <Bar valor={saldo.total > 0 ? (saldo.cobrado / saldo.total) * 100 : 0} tono={saldo.saldo <= 0.01 ? "success" : "accent"} />
-              {saldo.saldo > 0.01 && <p className="t-sm t-subtle" style={{ marginTop: 6 }}>Faltan {M(saldo.saldo)}.</p>}
-            </div>
-
-            <dl className="dl">
-              <Dato label="Precio">{M(vVista.precioAcordado)}</Dato>
-              <Dato label="Closer">{e.equipo.find((x) => x.id === vVista.closerId)?.nombre ?? "—"}</Dato>
-              <Dato label="Director">{e.equipo.find((x) => x.id === vVista.directorId)?.nombre ?? "—"}</Dato>
-              <Dato label="Embudo">{e.embudos.find((x) => x.id === vVista.embudoId)?.nombre ?? "—"}</Dato>
-              <Dato label="Webinar">{e.webinars.find((w) => w.id === vVista.webinarId)?.titulo ?? "—"}</Dato>
-            </dl>
-
-            <div>
-              <div className="t-label" style={{ marginBottom: 12 }}>Cuotas</div>
-              <div className="stack-2">
-                {saldo.cuotas.map((c) => {
-                  const pagos = e.pagos.filter((p) => p.cuotaId === c.id);
-                  const pagado = pagos.reduce((a, p) => a + p.monto, 0);
-                  const resta = c.monto - pagado;
-                  const vencida = c.estado === "pendiente" && c.vence && new Date(c.vence) < new Date() && resta > 0.01;
-                  return (
-                    <div key={c.id} style={{ border: "1px solid var(--border)", borderRadius: "var(--radius-md)", padding: "10px 12px", background: "var(--surface-200)" }}>
-                      <div className="row" style={{ gap: 8 }}>
-                        <span className="t-strong" style={{ color: "var(--ink)" }}>
-                          {c.esReserva ? "Reserva" : `Cuota ${c.numero}`}
-                        </span>
-                        {c.vence && <span className="t-sm t-subtle">vence {fechaLarga(c.vence)}</span>}
-                        <span className="spacer t-num t-strong">{M(c.monto)}</span>
-                        {vencida
-                          ? <Badge variante="danger"><AlertTriangle size={13} />Vencida</Badge>
-                          : resta <= 0.01
-                            ? <Badge variante="success"><Check size={13} />Cobrada</Badge>
-                            : <Badge variante="accent">Pendiente</Badge>}
-                      </div>
-                      {pagos.length > 0 && (
-                        <div className="stack-2" style={{ marginTop: 8 }}>
-                          {pagos.map((p) => (
-                            <div key={p.id} className="row t-sm" style={{ gap: 8, color: "var(--ink-subtle)" }}>
-                              <Receipt size={13} />
-                              <span>{e.procesadores.find((x) => x.id === p.procesadorId)?.nombre ?? "—"}</span>
-                              <span className="t-subtle">{fechaLarga(p.fecha)}</span>
-                              {p.movimientoId && (
-                                <span title="Conciliado con el pago de la pasarela" style={{ display: "inline-flex", color: "var(--success)" }}>
-                                  <Link2 size={13} />
-                                </span>
-                              )}
-                              {p.comprobante && (
-                                <button type="button" className="link t-sm" onClick={() => {
-                                  verComprobante(p.comprobante!).catch((err) => toast(err instanceof Error ? err.message : "No se pudo abrir.", "err"));
-                                }}>
-                                  <Paperclip size={12} /> comprobante
-                                </button>
-                              )}
-                              <span className="spacer t-num">{M(p.monto, 2)}</span>
-                              {p.feeMonto > 0 && <span className="t-num">fee {M(p.feeMonto, 2)}</span>}
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                      {resta > 0.01 && (
-                        <Button sm variante="secondary" style={{ marginTop: 10 }} onClick={() => setCobrar(c)}>
-                          Registrar pago de {M(resta, 2)}
-                        </Button>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-
-            {vVista.notas && (
-              <div>
-                <div className="t-label" style={{ marginBottom: 8 }}>Notas</div>
-                <p className="t-body t-muted" style={{ whiteSpace: "pre-wrap" }}>{vVista.notas}</p>
-              </div>
-            )}
-          </div>
-        </Drawer>
-      )}
-
-      {cobrar && (
-        <RegistrarPago
-          cuota={cobrar} onCerrar={() => setCobrar(null)}
-          onGuardado={(mensaje) => { toast(mensaje); setCobrar(null); }}
-        />
-      )}
-
       <Confirmar
         abierto={borrar !== null} onCerrar={() => setBorrar(null)}
         titulo={`¿Eliminar la venta de ${borrar?.contactoNombre}?`}
@@ -272,172 +151,5 @@ export default function Ventas() {
         onConfirmar={() => { if (borrar) { acciones.eliminar("ventas", borrar.id, borrar.contactoNombre); toast("Venta eliminada."); } }}
       />
     </div>
-  );
-}
-
-/* ================= Formulario de venta ================= */
-
-interface BorradorVenta {
-  id?: string;
-  contactoId?: string;
-  contactoNombre: string;
-  productoId: string;
-  precioAcordado: number;
-  fecha: string;
-  closerId: string;
-  directorId: string;
-  embudoId: string;
-  webinarId: string;
-  excluidoMarketing: boolean;
-  estado: EstadoVenta;
-  notas: string;
-  planCuotas: number;
-  reserva: number;
-}
-
-function desdeVenta(e: ReturnType<typeof useEstado>, v: Venta): BorradorVenta {
-  const cuotas = e.cuotas.filter((c) => c.ventaId === v.id);
-  return {
-    id: v.id, contactoId: v.contactoId, contactoNombre: v.contactoNombre,
-    productoId: v.productoId ?? "", precioAcordado: v.precioAcordado, fecha: v.fecha,
-    closerId: v.closerId ?? "", directorId: v.directorId ?? "", embudoId: v.embudoId ?? "",
-    webinarId: v.webinarId ?? "", excluidoMarketing: v.excluidoMarketing, estado: v.estado,
-    notas: v.notas ?? "",
-    planCuotas: Math.max(cuotas.filter((c) => !c.esReserva).length, 1),
-    reserva: cuotas.find((c) => c.esReserva)?.monto ?? 0,
-  };
-}
-
-function FormularioVenta({ borrador, onCerrar, onGuardado }: {
-  borrador: BorradorVenta; onCerrar: () => void; onGuardado: (n: string) => void;
-}) {
-  const e = useEstado();
-  const toast = useToast();
-  const [f, setF] = useState(borrador);
-  const mon = e.ajustes.monedaBase;
-
-  const closerElegido = e.equipo.find((x) => x.id === f.closerId);
-  const sinComision = Boolean(closerElegido?.sinComision);
-  const resto = f.precioAcordado - f.reserva;
-  const porCuota = f.planCuotas > 0 ? resto / f.planCuotas : 0;
-
-  function guardar() {
-    if (!f.contactoNombre.trim()) { toast("Poné el nombre del cliente.", "err"); return; }
-
-    const ventaId = f.id ?? nuevoId("ven");
-    const datos: Omit<Venta, "id"> = {
-      contactoId: f.contactoId, contactoNombre: f.contactoNombre.trim(),
-      productoId: f.productoId || undefined, webinarId: f.webinarId || undefined,
-      embudoId: f.embudoId || undefined, precioAcordado: f.precioAcordado,
-      moneda: mon as Moneda, closerId: f.closerId || undefined,
-      directorId: sinComision ? undefined : (f.directorId || undefined),
-      excluidoMarketing: f.excluidoMarketing || sinComision,
-      estado: f.estado, fecha: f.fecha, notas: f.notas,
-      creadoEn: new Date().toISOString(), extra: {},
-    };
-
-    if (f.id) {
-      acciones.actualizar<Venta>("ventas", f.id, datos, f.contactoNombre);
-    } else {
-      acciones.crear<Venta>("ventas", { ...datos, id: ventaId }, f.contactoNombre);
-      /* Plan de cuotas: la reserva es la cuota 0 */
-      if (f.reserva > 0) {
-        acciones.crear<Cuota>("cuotas", {
-          id: nuevoId("cuo"), ventaId, numero: 0, monto: f.reserva,
-          vence: f.fecha, estado: "pendiente", esReserva: true,
-        }, `Reserva de ${f.contactoNombre}`);
-      }
-      for (let k = 1; k <= f.planCuotas; k++) {
-        const vence = new Date(f.fecha);
-        vence.setMonth(vence.getMonth() + (k - 1));
-        acciones.crear<Cuota>("cuotas", {
-          id: nuevoId("cuo"), ventaId, numero: k,
-          monto: k === f.planCuotas ? resto - porCuota * (f.planCuotas - 1) : porCuota,
-          vence: vence.toISOString(), estado: "pendiente", esReserva: false,
-        }, `Cuota ${k} de ${f.contactoNombre}`);
-      }
-    }
-    onGuardado(f.contactoNombre);
-  }
-
-  return (
-    <ModalForm
-      abierto onCerrar={onCerrar} onGuardar={guardar} ancho
-      titulo={f.id ? "Editar venta" : "Nueva venta"}
-      sub={f.id ? "El plan de cuotas no se toca desde acá: editá las cuotas en la ficha de la venta." : "Elegí el producto, el precio que cerró y en cuántas cuotas."}
-      guardarTexto={f.id ? "Guardar cambios" : "Registrar venta"}
-      puedeGuardar={f.contactoNombre.trim().length > 0}
-    >
-      <div className="form-grid">
-        <Field label="Cliente" span2 ayuda="Si ya está cargado como lead, elegilo de la lista de abajo.">
-          <Input value={f.contactoNombre} onChange={(ev) => setF({ ...f, contactoNombre: ev.target.value })} placeholder="Martín Quiroga" autoFocus />
-        </Field>
-        <Field label="Vincular a un lead" span2 ayuda="Opcional. Sirve para ver toda su historia junta.">
-          <Select value={f.contactoId ?? ""} placeholder="Sin vincular"
-            onChange={(ev) => {
-              const l = e.leads.find((x) => x.id === ev.target.value);
-              setF({ ...f, contactoId: ev.target.value || undefined, contactoNombre: l?.nombre ?? f.contactoNombre });
-            }}
-            opciones={e.leads.slice(0, 200).map((l) => ({ valor: l.id, texto: `${l.nombre} — ${l.email}` }))} />
-        </Field>
-
-        <Field label="Producto">
-          <Select value={f.productoId}
-            onChange={(ev) => {
-              const p = e.productos.find((x) => x.id === ev.target.value);
-              setF({ ...f, productoId: ev.target.value, precioAcordado: p?.precioLista ?? f.precioAcordado });
-            }}
-            opciones={e.productos.filter((p) => p.activo).map((p) => ({ valor: p.id, texto: p.nombre }))} />
-        </Field>
-        <Field label="Precio cerrado" ayuda="Lo que realmente acordó el closer.">
-          <Input type="number" min={0} value={f.precioAcordado} onChange={(ev) => setF({ ...f, precioAcordado: Number(ev.target.value) })} />
-        </Field>
-
-        <Field label="Closer" ayuda={sinComision ? "Con Yari como closer no comisiona nadie." : undefined}>
-          <Select value={f.closerId} placeholder="Sin asignar"
-            onChange={(ev) => setF({ ...f, closerId: ev.target.value })}
-            opciones={e.equipo.filter((x) => x.activo && (x.rol === "closer" || x.rol === "ceo")).map((x) => ({ valor: x.id, texto: x.nombre }))} />
-        </Field>
-        <Field label="Director">
-          <Select value={sinComision ? "" : f.directorId} disabled={sinComision} placeholder={sinComision ? "No aplica" : "Sin asignar"}
-            onChange={(ev) => setF({ ...f, directorId: ev.target.value })}
-            opciones={e.equipo.filter((x) => x.rol === "director").map((x) => ({ valor: x.id, texto: x.nombre }))} />
-        </Field>
-
-        <Field label="Embudo">
-          <Select value={f.embudoId} onChange={(ev) => setF({ ...f, embudoId: ev.target.value })}
-            opciones={e.embudos.filter((x) => x.activo).map((x) => ({ valor: x.id, texto: x.nombre }))} />
-        </Field>
-        <Field label="Fecha">
-          <Input type="date" value={isoDia(f.fecha)} onChange={(ev) => setF({ ...f, fecha: new Date(ev.target.value + "T12:00:00").toISOString() })} />
-        </Field>
-
-        <Field label="Webinar de origen" span2 ayuda="Si vino de un webinar, atribuilo: así el profit de ese webinar sale bien.">
-          <Select value={f.webinarId} placeholder="Sin atribuir" onChange={(ev) => setF({ ...f, webinarId: ev.target.value })}
-            opciones={e.webinars.map((w) => ({ valor: w.id, texto: w.titulo }))} />
-        </Field>
-
-        {!f.id && (
-          <>
-            <Field label="Reserva" ayuda="Lo que dejó de seña. 0 si pagó todo en cuotas.">
-              <Input type="number" min={0} value={f.reserva} onChange={(ev) => setF({ ...f, reserva: Number(ev.target.value) })} />
-            </Field>
-            <Field label="En cuántas cuotas" ayuda={f.planCuotas > 0 ? `${f.planCuotas} × ${money(porCuota, mon, 2)}` : undefined}>
-              <Input type="number" min={1} max={12} value={f.planCuotas} onChange={(ev) => setF({ ...f, planCuotas: Math.max(1, Number(ev.target.value)) })} />
-            </Field>
-          </>
-        )}
-
-        <div className="span-2 row-3" style={{ padding: "8px 0" }}>
-          <Switch checked={f.excluidoMarketing || sinComision} onChange={(x) => setF({ ...f, excluidoMarketing: x })} etiqueta="Excluida de marketing" />
-          <span className="t-body t-muted">
-            <strong>Excluida de marketing</strong> — el growth partner no comisiona esta venta
-            {sinComision && <span className="t-subtle"> (se marca sola cuando el closer es Yari)</span>}
-          </span>
-        </div>
-
-        <Field label="Notas" span2><Textarea value={f.notas} onChange={(ev) => setF({ ...f, notas: ev.target.value })} rows={2} /></Field>
-      </div>
-    </ModalForm>
   );
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
-import { CalendarDays, Check, ExternalLink, Link2, Pencil, Plus, Trash2, X } from "lucide-react";
+import { CalendarDays, Check, ExternalLink, Link2, Pencil, Plus, Trash2, UserRound, X } from "lucide-react";
 import { PageHead } from "@/components/shell/PageHead";
 import { Ayuda, Badge, Button, Card, Chip, Empty, Field, IconButton, Input, Select, StatCard, Tabs, Textarea } from "@/components/ui/ui";
 import { ModalForm, Confirmar } from "@/components/ui/Modal";
@@ -12,6 +12,7 @@ import { CamposExtra, DatosExtra } from "@/components/ui/CamposExtra";
 import { useToast } from "@/components/ui/Toast";
 import { acciones, useEstado } from "@/lib/store";
 import { useAbrirDesdeURL } from "@/lib/useQuery";
+import { useAbrirFicha } from "@/components/ficha/abrir";
 import { AGENDAR_A_MANO } from "@/lib/funciones";
 import { fechaHora, fechaLarga, hora, isoMinuto, pct, relativo } from "@/lib/format";
 import { sesionesSemana, tasaShow } from "@/lib/metricas";
@@ -37,6 +38,7 @@ const VACIA = (tipo: string): Omit<Sesion, "id"> => {
 
 export default function Agenda() {
   const e = useEstado();
+  const abrirFicha = useAbrirFicha();
   const toast = useToast();
   const url = useAbrirDesdeURL();
   const [vista, setVista] = useState<"proximas" | "pasadas">("proximas");
@@ -243,6 +245,12 @@ export default function Agenda() {
           sub={`${sesionVista.tipo} · ${fechaLarga(sesionVista.inicia)} a las ${hora(sesionVista.inicia)}`}
           pie={
             <>
+              {(sesionVista.contactoId || sesionVista.leadId) && (
+                <Button variante="primary" icono={<UserRound size={16} />}
+                  onClick={() => { const id = sesionVista.contactoId ?? sesionVista.leadId!; setVer(null); abrirFicha(id); }}>
+                  Ver la ficha
+                </Button>
+              )}
               <Button variante="secondary" icono={<Pencil size={16} />} onClick={() => { setForm({ ...sesionVista }); setVer(null); }}>Editar</Button>
               <Button variante="danger" icono={<Trash2 size={16} />} onClick={() => { setBorrar(sesionVista); setVer(null); }}>Eliminar</Button>
             </>

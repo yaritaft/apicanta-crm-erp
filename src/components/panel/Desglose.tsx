@@ -43,7 +43,7 @@ function contenido(e: EstadoApp, que: QueDesglosar, mes: RangoMes): Contenido {
   const M = (n: number, d = 0) => money(n, e.ajustes.monedaBase, d);
   const etapaDe = (l: Lead) => e.etapas.find((x) => x.id === l.etapaId);
   const filaLead = (l: Lead, detalle?: string): Fila => ({
-    id: l.id, titulo: l.nombre, href: `/leads?ver=${l.id}`, valor: money(l.monto, l.moneda),
+    id: l.id, titulo: l.nombre, href: `?ficha=${l.id}&vista=ventas`, valor: money(l.monto, l.moneda),
     detalle: detalle ?? `${etapaDe(l)?.nombre ?? "Sin etapa"} · ${l.fuente || "Sin fuente"} · entró ${relativo(l.creadoEn)}`,
   });
   const cuotaDe = (id: string) => e.cuotas.find((c) => c.id === id);
@@ -61,7 +61,7 @@ function contenido(e: EstadoApp, que: QueDesglosar, mes: RangoMes): Contenido {
         p, fila: {
           id: p.id, titulo: v?.contactoNombre ?? "Pago sin venta",
           detalle: [nombreCuota(c), fecha(p.fecha), procesador(p.procesadorId)].filter(Boolean).join(" · "),
-          valor: M(p.monto), href: v ? `/ventas?ver=${v.id}` : undefined,
+          valor: M(p.monto), href: v ? `?ficha=${v.id}&vista=ventas&venta=${v.id}` : undefined,
         } as Fila,
       };
     });
@@ -84,8 +84,8 @@ function contenido(e: EstadoApp, que: QueDesglosar, mes: RangoMes): Contenido {
       const comisiones: Fila[] = [];
       for (const c of comisionesDelMes(e, mes)) {
         const v = ventaDe(c.ventaId);
-        if (c.comisionCloser > 0) comisiones.push({ id: `${c.ventaId}_closer`, titulo: `${c.closerNombre} · closer`, detalle: `Venta de ${v?.contactoNombre ?? "—"}`, valor: M(c.comisionCloser), href: `/ventas?ver=${c.ventaId}` });
-        if (c.comisionDirector > 0) comisiones.push({ id: `${c.ventaId}_director`, titulo: `${e.equipo.find((x) => x.id === c.directorId)?.nombre ?? "Director"} · director`, detalle: `Venta de ${v?.contactoNombre ?? "—"}`, valor: M(c.comisionDirector), href: `/ventas?ver=${c.ventaId}` });
+        if (c.comisionCloser > 0) comisiones.push({ id: `${c.ventaId}_closer`, titulo: `${c.closerNombre} · closer`, detalle: `Venta de ${v?.contactoNombre ?? "—"}`, valor: M(c.comisionCloser), href: `?ficha=${c.ventaId}&vista=ventas&venta=${c.ventaId}` });
+        if (c.comisionDirector > 0) comisiones.push({ id: `${c.ventaId}_director`, titulo: `${e.equipo.find((x) => x.id === c.directorId)?.nombre ?? "Director"} · director`, detalle: `Venta de ${v?.contactoNombre ?? "—"}`, valor: M(c.comisionDirector), href: `?ficha=${c.ventaId}&vista=ventas&venta=${c.ventaId}` });
       }
       const totalComisiones = comisionesDelMes(e, mes).reduce((a, c) => a + c.comisionCloser + c.comisionDirector, 0);
 
@@ -145,7 +145,7 @@ function contenido(e: EstadoApp, que: QueDesglosar, mes: RangoMes): Contenido {
         titulo: "MRR", sub: "Lo que entra todos los meses por cuotas de alumnos activos",
         resumen: [{ etiqueta: "MRR", valor: M(lista.reduce((a, x) => a + x.cuotaMensual, 0)) }, { etiqueta: "Alumnos activos", valor: num(lista.length) }],
         secciones: [{
-          filas: lista.map((a) => ({ id: a.id, titulo: a.nombre, detalle: `${a.plan} · ${a.cohorte}`, valor: money(a.cuotaMensual, a.moneda), href: `/alumnos?ver=${a.id}` })),
+          filas: lista.map((a) => ({ id: a.id, titulo: a.nombre, detalle: `${a.plan} · ${a.cohorte}`, valor: money(a.cuotaMensual, a.moneda), href: `?ficha=${a.id}&vista=servicio` })),
           vacio: "No hay alumnos activos.",
         }],
       };
@@ -200,7 +200,7 @@ function contenido(e: EstadoApp, que: QueDesglosar, mes: RangoMes): Contenido {
             return {
               id: x.cuota.id, titulo: v?.contactoNombre ?? "Venta sin contacto",
               detalle: `${nombreCuota(x.cuota)}${x.cuota.vence ? ` · vence ${fecha(x.cuota.vence)}` : ""}${x.pagado > 0 ? ` · pagó ${M(x.pagado)}` : ""}`,
-              valor: M(x.saldo), href: v ? `/ventas?ver=${v.id}` : undefined,
+              valor: M(x.saldo), href: v ? `?ficha=${v.id}&vista=ventas&venta=${v.id}` : undefined,
               marca: vencida ? <Badge variante="danger">Vencida</Badge> : undefined,
             };
           }),

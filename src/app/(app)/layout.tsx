@@ -2,6 +2,7 @@ import { Suspense } from "react";
 import { Shell } from "@/components/shell/Shell";
 import { SoloCliente } from "@/components/shell/SoloCliente";
 import { Puerta } from "@/components/shell/Puerta";
+import { FichaGlobal } from "@/components/ficha/FichaGlobal";
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -9,6 +10,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       <Puerta>
         <Shell>
           <Suspense fallback={<Cargando />}>{children}</Suspense>
+          {/* La ficha de una persona se abre por URL desde cualquier pantalla. */}
+          <Suspense fallback={null}><FichaGlobal /></Suspense>
         </Shell>
       </Puerta>
     </SoloCliente>

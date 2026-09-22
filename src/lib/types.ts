@@ -439,6 +439,19 @@ export interface AdInsight {
   creadoEn: string;
 }
 
+/* ---------- Chat del equipo ----------
+   Lo que el equipo habla de una persona, dentro de su ficha. Va por
+   contacto, no por venta ni por alumno: la conversación sigue a la
+   persona aunque compre dos veces o pase a servicio. */
+export interface Comentario {
+  id: ID;
+  contactoId: ID;
+  autor: string;
+  autorEmail?: string;
+  texto: string;
+  creadoEn: string;
+}
+
 export interface EstadoApp {
   version: number;
   ajustes: Ajustes;
@@ -469,6 +482,7 @@ export interface EstadoApp {
   pagos: Pago[];
   gastos: Gasto[];
   movimientos: Movimiento[];
+  comentarios: Comentario[];
 }
 
 /* ==================================================================

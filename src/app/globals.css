@@ -1122,4 +1122,89 @@ kbd {
    usuario de donde está (la llamada reprogramada, por ejemplo). */
 .link { background: none; border: 0; padding: 0; font: inherit; color: var(--brand); cursor: pointer; text-align: left; }
 .link:hover { text-decoration: underline; }
+.link svg { display: inline-block; vertical-align: -2px; margin-right: 4px; }
 .link:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; border-radius: 2px; }
+
+/* ============================================================
+   Ficha de la persona (components/ficha): la misma desde Ventas
+   o Servicio. Ventana grande en escritorio, pantalla completa en
+   el celular.
+   ============================================================ */
+.ficha-fondo {
+  position: fixed; inset: 0; z-index: 110; display: flex; align-items: center; justify-content: center;
+  padding: 3vh 2vw; background: var(--overlay);
+  backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); animation: fade 150ms ease-out;
+}
+.ficha {
+  width: min(1180px, 100%); height: min(920px, 100%); display: flex; flex-direction: column; overflow: hidden;
+  background: var(--surface-000); border: 1px solid var(--border-strong); border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg); animation: pop 200ms cubic-bezier(.2,.8,.3,1);
+}
+.ficha__head {
+  display: flex; align-items: center; gap: var(--space-4); flex: none; flex-wrap: wrap;
+  padding: var(--space-4) var(--space-5); border-bottom: 1px solid var(--border); background: var(--surface-100);
+}
+.ficha__nombre { font-family: var(--font-display); font-size: 22px; line-height: 28px; font-weight: 700; color: var(--ink); letter-spacing: -.01em; margin: 2px 0 0; }
+.ficha__acciones { display: flex; align-items: center; gap: var(--space-3); margin-left: auto; }
+.ficha__cuerpo { flex: 1; min-height: 0; display: grid; grid-template-columns: 320px minmax(0, 1fr); }
+.ficha__lado {
+  overflow-y: auto; padding: var(--space-5); display: flex; flex-direction: column; gap: var(--space-5);
+  border-right: 1px solid var(--border); background: var(--surface-100);
+}
+.ficha__principal { overflow-y: auto; padding: var(--space-5); display: flex; flex-direction: column; gap: var(--space-4); min-width: 0; }
+.segmento { display: inline-flex; gap: 2px; padding: 3px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-200); }
+.segmento button {
+  padding: 6px 16px; border: 0; border-radius: 7px; background: transparent; color: var(--ink-muted);
+  font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap;
+  transition: background-color 150ms ease-out, color 150ms ease-out;
+}
+.segmento button:hover { color: var(--ink); }
+.segmento button[aria-selected="true"] { background: var(--brand-fill); color: var(--on-brand); }
+.dato-fila { display: flex; align-items: center; gap: var(--space-2); min-height: 36px; }
+.dato-fila .link { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+.dl--compacta { grid-template-columns: auto minmax(0, 1fr); gap: 6px var(--space-4); font-size: 13px; }
+.llamada-fila {
+  display: flex; align-items: center; gap: var(--space-2); padding: 8px 10px; border: 1px solid var(--border);
+  border-radius: var(--radius-md); background: var(--surface-000); color: inherit; text-decoration: none;
+}
+.llamada-fila:hover { border-color: var(--border-strong); background: var(--surface-200); }
+.venta-card {
+  display: flex; flex-direction: column; gap: var(--space-3); padding: var(--space-4);
+  border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface-100);
+  scroll-margin-top: var(--space-4);
+}
+.venta-card[data-resaltada] { border-color: var(--brand); box-shadow: 0 0 0 1px var(--brand); }
+.venta-card__head { display: flex; align-items: flex-start; gap: var(--space-3); }
+.cuota-fila { display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface-000); }
+.caja-suave { padding: var(--space-4); border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface-100); }
+.chat { display: flex; flex-direction: column; gap: var(--space-3); min-height: 360px; }
+.chat__lista { display: flex; flex-direction: column; gap: var(--space-4); }
+.chat__msj { display: flex; gap: var(--space-3); align-items: flex-start; }
+.chat__texto { margin: 4px 0 0; padding: 8px 12px; border-radius: 2px 12px 12px 12px; background: var(--brand-soft); color: var(--ink); font-size: 14px; line-height: 21px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.chat__borrar { display: inline-flex; padding: 2px; border: 0; background: transparent; color: var(--ink-subtle); cursor: pointer; border-radius: 4px; opacity: 0; }
+.chat__msj:hover .chat__borrar, .chat__borrar:focus-visible { opacity: 1; }
+.chat__caja {
+  position: sticky; bottom: 0; display: flex; align-items: flex-end; gap: var(--space-2); padding: var(--space-3);
+  border: 1px solid var(--border-strong); border-radius: var(--radius-md); background: var(--surface-200);
+}
+.chat__caja textarea { flex: 1; min-width: 0; resize: none; border: 0; outline: 0; background: transparent; color: var(--ink); font: inherit; font-size: 14px; line-height: 21px; }
+.linea-tiempo { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.linea-tiempo__item { display: flex; gap: var(--space-3); padding: 0 0 var(--space-4); position: relative; }
+.linea-tiempo__item::before { content: ""; position: absolute; left: 14px; top: 30px; bottom: 0; width: 1px; background: var(--border); }
+.linea-tiempo__item:last-child::before { display: none; }
+.linea-tiempo__icono {
+  flex: none; width: 29px; height: 29px; display: grid; place-items: center; border-radius: 50%;
+  background: var(--surface-200); border: 1px solid var(--border); color: var(--ink-muted);
+}
+.linea-tiempo__item[data-tono="success"] .linea-tiempo__icono { color: var(--success); }
+.linea-tiempo__item[data-tono="danger"] .linea-tiempo__icono { color: var(--danger); }
+.linea-tiempo__item[data-tono="accent"] .linea-tiempo__icono { color: var(--accent-text); }
+@media (max-width: 860px) {
+  .ficha-fondo { padding: 0; }
+  .ficha { width: 100%; height: 100%; border: 0; border-radius: 0; }
+  .ficha__head { padding: var(--space-3) var(--space-4); gap: var(--space-3); }
+  .ficha__acciones { width: 100%; justify-content: space-between; }
+  .ficha__cuerpo { display: block; overflow-y: auto; }
+  .ficha__lado { overflow: visible; border-right: 0; border-bottom: 1px solid var(--border); padding: var(--space-4); }
+  .ficha__principal { overflow: visible; padding: var(--space-4); }
+}

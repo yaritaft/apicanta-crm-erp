@@ -4,7 +4,7 @@ import { useCallback, useSyncExternalStore } from "react";
 import type {
   AccionActividad, Actividad, Ad, AdInsight, Adset, Ajustes, Alumno, Campaign,
   Contacto,
-  Campania, CampoPersonalizado, Comprobante, Cuota, EntidadNombre, EstadoApp, Etapa, ID,
+  Campania, CampoPersonalizado, Comentario, Comprobante, Cuota, EntidadNombre, EstadoApp, Etapa, ID,
   Lead, Meta, Movimiento, Pago, Reporte, Sesion, Venta, Webinar,
 } from "./types";
 import { pagoDesdeMovimiento } from "./conciliacion";
@@ -337,6 +337,8 @@ export async function cargarDeLaNube(): Promise<void> {
       sesiones: porTabla.sesiones as Sesion[],
       reportes: porTabla.reportes as Reporte[],
       contactos: (porTabla.contactos ?? []) as EstadoApp["contactos"],
+      comentarios: ((porTabla.comentarios ?? []) as EstadoApp["comentarios"])
+        .sort((a, b) => +new Date(a.creadoEn) - +new Date(b.creadoEn)),
       /* Opcional: si la tabla no existe, sin el ?? [] la app rompe al mapear. */
       campanias: (porTabla.campanias ?? []) as Campania[],
       campaigns: (porTabla.campaigns ?? []) as EstadoApp["campaigns"],
@@ -381,6 +383,7 @@ function ordenDeSiembra(e: EstadoApp): [string, unknown[]][] {
     ["campanias", e.campanias], ["metas", e.metas], ["campos", e.campos],
     ["ventas", e.ventas], ["cuotas", e.cuotas], ["movimientos", e.movimientos],
     ["pagos", e.pagos], ["gastos", e.gastos],
+    ["comentarios", e.comentarios ?? []],
     ["actividad", e.actividad],
   ];
 }
@@ -416,7 +419,7 @@ async function vaciarNube() {
   if (!nube) return;
   /* Al reves del alta: primero los hijos. */
   const orden = [
-    "actividad", "campos", "metas", "pagos", "movimientos", "cuotas", "ventas", "gastos",
+    "actividad", "comentarios", "campos", "metas", "pagos", "movimientos", "cuotas", "ventas", "gastos",
     "campanias", "reportes", "sesiones", "alumnos", "leads", "contactos", "webinars",
     "etapas", "equipo", "embudos", "procesadores", "productos",
   ];
@@ -674,6 +677,26 @@ export const acciones = {
       contactos: ahoraE.contactos.map((x) => (x.id === contactoId ? actualizado : x)),
     });
     empujar({ tipo: "upsert", tabla: "contactos", filas: [actualizado] });
+  },
+
+  /* ---------- Chat del equipo, en la ficha de cada persona ---------- */
+
+  comentar(contactoId: ID, texto: string, autor: string, autorEmail?: string): void {
+    const limpio = texto.trim();
+    if (!limpio) return;
+    const e = snapshot();
+    const c: Comentario = {
+      id: nuevoId("com"), contactoId, autor, texto: limpio, creadoEn: ahora(),
+      ...(autorEmail ? { autorEmail } : {}),
+    };
+    guardar({ ...e, comentarios: [...(e.comentarios ?? []), c] });
+    empujar({ tipo: "upsert", tabla: "comentarios", filas: [c] });
+  },
+
+  borrarComentario(id: ID): void {
+    const e = snapshot();
+    guardar({ ...e, comentarios: (e.comentarios ?? []).filter((c) => c.id !== id) });
+    empujar({ tipo: "delete", tabla: "comentarios", ids: [id] });
   },
 
   /* ---------- Alta completa de una venta ----------

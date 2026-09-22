@@ -690,6 +690,7 @@ export function construirSemilla(): EstadoApp {
     pagos,
     gastos,
     movimientos,
+    comentarios: [],
   };
 }
 
@@ -702,7 +703,7 @@ export function estadoVacio(): EstadoApp {
     contactos: [], campanias: [], campaigns: [], adsets: [], ads: [], adInsights: [],
     metas: [], campos: [],
     productos: PRODUCTOS, procesadores: PROCESADORES, embudos: EMBUDOS, equipo: EQUIPO,
-    ventas: [], cuotas: [], pagos: [], gastos: [], movimientos: [],
+    ventas: [], cuotas: [], pagos: [], gastos: [], movimientos: [], comentarios: [],
     actividad: [{
       id: "act_1", entidad: "config", entidadId: "reset", titulo: "Espacio vacío",
       accion: "creo", detalle: "Se vació el espacio de trabajo. Empezá cargando tu primer lead.",
