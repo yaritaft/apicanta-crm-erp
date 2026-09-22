@@ -1,4 +1,5 @@
 import type { Cuota, EstadoApp, ID, Movimiento, Pago, Venta } from "./types";
+import { nombrePasarela } from "./pasarelas";
 
 /* ==================================================================
    Conciliación.
@@ -74,6 +75,9 @@ const etiquetaCuota = (c: Cuota) => (c.esReserva ? "Reserva" : `Cuota ${c.numero
 
 export function sugerenciasPara(e: EstadoApp, mov: Movimiento, limite = 4): Sugerencia[] {
   if (mov.estado !== "pendiente") return [];
+  /* De un pago ya usado en parte (la reserva de una venta), sólo lo que queda. */
+  const monto = restoDeMovimiento(e, mov);
+  if (monto <= 0.01) return [];
 
   const ventas = new Map<ID, Venta>(e.ventas.map((v) => [v.id, v]));
   const out: Sugerencia[] = [];
@@ -91,20 +95,20 @@ export function sugerenciasPara(e: EstadoApp, mov: Movimiento, limite = 4): Suge
     let puntaje = 0;
 
     /* 1. El monto, que es lo que más pesa */
-    const dif = Math.abs(mov.monto - saldo);
+    const dif = Math.abs(monto - saldo);
     if (dif <= 0.5) {
       puntaje += 55;
       motivos.push("El monto calza exacto con lo que falta");
     } else if (dif / saldo <= 0.01) {
       puntaje += 44;
       motivos.push("El monto calza con menos de 1% de diferencia");
-    } else if (Math.abs(mov.monto - c.monto) <= 0.5) {
+    } else if (Math.abs(monto - c.monto) <= 0.5) {
       puntaje += 40;
       motivos.push("Es el total de la cuota");
-    } else if (mov.monto < saldo) {
+    } else if (monto < saldo) {
       puntaje += 16;
       reparos.push("Alcanza para una parte de la cuota");
-    } else if (mov.monto <= saldo * 2) {
+    } else if (monto <= saldo * 2) {
       puntaje += 8;
       reparos.push("Entró más de lo que falta en esta cuota");
     } else {
@@ -162,8 +166,8 @@ export function sugerenciasPara(e: EstadoApp, mov: Movimiento, limite = 4): Suge
       puntaje: Math.max(0, Math.min(100, Math.round(puntaje))),
       motivos,
       reparos,
-      dejaSaldo: Math.max(0, Math.round((saldo - mov.monto) * 100) / 100),
-      sobra: Math.max(0, Math.round((mov.monto - saldo) * 100) / 100),
+      dejaSaldo: Math.max(0, Math.round((saldo - monto) * 100) / 100),
+      sobra: Math.max(0, Math.round((monto - saldo) * 100) / 100),
     });
   }
 
@@ -201,7 +205,8 @@ export function propuestas(e: EstadoApp, movs?: Movimiento[]): Propuesta[] {
 export function resumenConciliacion(e: EstadoApp) {
   const pendientes = e.movimientos.filter((m) => m.estado === "pendiente");
   const conciliados = e.movimientos.filter((m) => m.estado === "conciliado");
-  const sinConciliar = pendientes.reduce((a, m) => a + m.monto, 0);
+  /* Lo que falta imputar: de un pago usado a medias, sólo lo que queda. */
+  const sinConciliar = pendientes.reduce((a, m) => a + restoDeMovimiento(e, m), 0);
   const autos = propuestas(e, pendientes).filter((p) => p.automatica);
   return {
     pendientes: pendientes.length,
@@ -233,4 +238,25 @@ export function pagoDesdeMovimiento(mov: Movimiento, cuotaId: ID, montoImputado:
     referencia: mov.referencia,
     creadoEn: new Date().toISOString(),
   };
+}
+
+/* ---------- Medio de pago de un movimiento ----------
+   Con qué se registra el cobro: el procesador de Apicanta atado a esa
+   pasarela ("USDT (Trust)", "ACH / Wire (Mercury)"); si no hay, el
+   nombre de la pasarela. Es lo que la gente reconoce, no "ST". */
+
+export function procesadorDeMovimiento(e: EstadoApp, mov: Movimiento) {
+  return (mov.procesadorId ? e.procesadores.find((p) => p.id === mov.procesadorId) : undefined)
+    ?? e.procesadores.find((p) => p.proveedor === mov.proveedor);
+}
+
+export function medioDeMovimiento(e: EstadoApp, mov: Movimiento): string {
+  return procesadorDeMovimiento(e, mov)?.nombre ?? nombrePasarela(mov.proveedor);
+}
+
+/* Lo que queda sin imputar de un movimiento: un pago de pasarela puede
+   repartirse entre varias cuotas (la reserva y la primera cuota juntas). */
+export function restoDeMovimiento(e: EstadoApp, mov: Movimiento): number {
+  const imputado = e.pagos.filter((p) => p.movimientoId === mov.id).reduce((a, p) => a + p.monto, 0);
+  return Math.round((mov.monto - imputado) * 100) / 100;
 }

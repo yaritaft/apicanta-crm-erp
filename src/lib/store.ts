@@ -4,7 +4,7 @@ import { useCallback, useSyncExternalStore } from "react";
 import type {
   AccionActividad, Actividad, Ad, AdInsight, Adset, Ajustes, Alumno, Campaign,
   Contacto,
-  Campania, CampoPersonalizado, Cuota, EntidadNombre, EstadoApp, Etapa, ID,
+  Campania, CampoPersonalizado, Comprobante, Cuota, EntidadNombre, EstadoApp, Etapa, ID,
   Lead, Meta, Movimiento, Pago, Reporte, Sesion, Venta, Webinar,
 } from "./types";
 import { pagoDesdeMovimiento } from "./conciliacion";
@@ -684,13 +684,15 @@ export const acciones = {
   registrarVenta(datos: {
     venta: Venta;
     cuotas: Cuota[];
-    cobros: { cuotaId: ID; procesadorId?: ID; monto: number; fecha: string; referencia?: string; movimientoId?: ID }[];
+    cobros: {
+      cuotaId: ID; procesadorId?: ID; monto: number; fecha: string; referencia?: string;
+      movimientoId?: ID; comprobante?: Comprobante;
+    }[];
   }): ID {
     const e = snapshot();
     const { venta } = datos;
 
     const nuevosPagos: Pago[] = [];
-    const movimientosTocados = new Map<ID, Movimiento>();
 
     for (const cobro of datos.cobros) {
       if (cobro.monto <= 0.001) continue;
@@ -698,12 +700,10 @@ export const acciones = {
 
       if (mov) {
         /* El fee lo dice la pasarela, no la tabla de procesadores. */
-        nuevosPagos.push({ ...pagoDesdeMovimiento(mov, cobro.cuotaId, cobro.monto), id: nuevoId("pag") } as Pago);
-        movimientosTocados.set(mov.id, {
-          ...mov, estado: "conciliado",
-          cuotaId: cobro.cuotaId, ventaId: venta.id,
-          conciliadoEn: ahora(), conciliadoPor: e.ajustes.responsable || "Apicanta",
-        });
+        nuevosPagos.push({
+          ...pagoDesdeMovimiento(mov, cobro.cuotaId, cobro.monto), id: nuevoId("pag"),
+          ...(cobro.comprobante ? { comprobante: cobro.comprobante } : {}),
+        } as Pago);
         continue;
       }
 
@@ -714,7 +714,31 @@ export const acciones = {
         monto: Math.round(cobro.monto * 100) / 100, moneda: venta.moneda,
         feeRate, feeMonto: Math.round(cobro.monto * feeRate * 100) / 100,
         fecha: cobro.fecha, referencia: cobro.referencia || undefined,
+        comprobante: cobro.comprobante,
         creadoEn: ahora(),
+      });
+    }
+
+    /* Un pago de pasarela puede cubrir más de una cuota (la reserva y la
+       primera, juntas) o quedar a medias: se da por conciliado recién
+       cuando lo imputado, contando lo que ya estaba en la base, llega a
+       su monto. Igual que en conciliar(). */
+    const movimientosTocados = new Map<ID, Movimiento>();
+    for (const id of new Set(nuevosPagos.map((p) => p.movimientoId).filter(Boolean) as ID[])) {
+      const mov = e.movimientos.find((m) => m.id === id);
+      if (!mov) continue;
+      const suyos = [...nuevosPagos, ...e.pagos].filter((p) => p.movimientoId === id);
+      const imputado = suyos.reduce((a, p) => a + p.monto, 0);
+      const saldado = imputado >= mov.monto - 0.01;
+      const unaSola = suyos.length === 1;
+      movimientosTocados.set(id, {
+        ...mov,
+        estado: saldado ? "conciliado" : "pendiente",
+        pagoId: unaSola ? suyos[0].id : mov.pagoId,
+        cuotaId: unaSola ? suyos[0].cuotaId : mov.cuotaId,
+        ventaId: venta.id,
+        conciliadoEn: saldado ? ahora() : mov.conciliadoEn,
+        conciliadoPor: saldado ? (e.ajustes.responsable || "Apicanta") : mov.conciliadoPor,
       });
     }
 
@@ -749,6 +773,139 @@ export const acciones = {
     if (movimientosTocados.size) empujar({ tipo: "upsert", tabla: "movimientos", filas: [...movimientosTocados.values()] });
     empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
     return venta.id;
+  },
+
+  /* ---------- Pago de una cuota ya cargada ----------
+     Uno o varios cobros (uno por medio de pago), conciliados contra una
+     pasarela o con su comprobante. Si lo cobrado no cubre la cuota, el
+     saldo se reacomoda según `reajuste`:
+     - "repartir": la cuota queda en lo que se pagó y el saldo se reparte
+       parejo entre las cuotas pendientes que siguen;
+     - "proxima": el saldo se suma entero a la próxima cuota pendiente;
+     - "pendiente": la cuota queda como estaba, con su saldo.
+     Si no hay cuotas después, el saldo pasa a una cuota nueva un mes más
+     tarde. El total de la venta no cambia nunca: sólo se mueve el saldo. */
+
+  registrarPago(datos: {
+    cuotaId: ID;
+    cobros: {
+      procesadorId?: ID; monto: number; fecha: string; referencia?: string;
+      movimientoId?: ID; comprobante?: Comprobante;
+    }[];
+    reajuste: "repartir" | "proxima" | "pendiente";
+  }): boolean {
+    const e = snapshot();
+    const cuota = e.cuotas.find((c) => c.id === datos.cuotaId);
+    const venta = cuota ? e.ventas.find((v) => v.id === cuota.ventaId) : undefined;
+    if (!cuota || !venta) return false;
+    const r2 = (n: number) => Math.round(n * 100) / 100;
+
+    const nuevosPagos: Pago[] = [];
+    for (const cobro of datos.cobros) {
+      if (cobro.monto <= 0.001) continue;
+      const mov = cobro.movimientoId ? e.movimientos.find((m) => m.id === cobro.movimientoId) : undefined;
+      if (mov) {
+        nuevosPagos.push({
+          ...pagoDesdeMovimiento(mov, cuota.id, cobro.monto), id: nuevoId("pag"),
+          ...(cobro.comprobante ? { comprobante: cobro.comprobante } : {}),
+        } as Pago);
+        continue;
+      }
+      const proc = e.procesadores.find((x) => x.id === cobro.procesadorId);
+      const feeRate = proc?.feeRate ?? 0;
+      nuevosPagos.push({
+        id: nuevoId("pag"), cuotaId: cuota.id, procesadorId: cobro.procesadorId,
+        monto: r2(cobro.monto), moneda: venta.moneda,
+        feeRate, feeMonto: r2(cobro.monto * feeRate),
+        fecha: cobro.fecha, referencia: cobro.referencia || undefined,
+        comprobante: cobro.comprobante, creadoEn: ahora(),
+      });
+    }
+    if (nuevosPagos.length === 0) return false;
+
+    const pagos = [...nuevosPagos, ...e.pagos];
+    const cubierto = r2(pagos.filter((p) => p.cuotaId === cuota.id).reduce((a, p) => a + p.monto, 0));
+    const saldo = r2(cuota.monto - cubierto);
+
+    const cambiadas = new Map<ID, Cuota>();
+    let nueva: Cuota | undefined;
+    let detalleReajuste = "";
+
+    if (saldo <= 0.01) {
+      cambiadas.set(cuota.id, { ...cuota, estado: "pagada" });
+    } else if (datos.reajuste !== "pendiente") {
+      /* La cuota queda en lo que se pagó, y saldada. */
+      cambiadas.set(cuota.id, { ...cuota, monto: cubierto, estado: "pagada" });
+      const orden = (c: Cuota) => c.numero;
+      const siguientes = e.cuotas
+        .filter((c) => c.ventaId === venta.id && c.id !== cuota.id && c.estado === "pendiente" && orden(c) > orden(cuota))
+        .sort((a, b) => orden(a) - orden(b));
+
+      if (siguientes.length === 0) {
+        const ultima = e.cuotas.filter((c) => c.ventaId === venta.id).sort((a, b) => orden(b) - orden(a))[0] ?? cuota;
+        const vence = new Date(ultima.vence ?? cuota.vence ?? ahora());
+        vence.setMonth(vence.getMonth() + 1);
+        nueva = {
+          id: nuevoId("cuo"), ventaId: venta.id, numero: orden(ultima) + 1, monto: saldo,
+          vence: vence.toISOString(), estado: "pendiente", esReserva: false,
+        };
+        detalleReajuste = ` El saldo de ${saldo} pasó a una cuota nueva, la ${nueva.numero}.`;
+      } else if (datos.reajuste === "proxima") {
+        const prox = siguientes[0];
+        cambiadas.set(prox.id, { ...prox, monto: r2(prox.monto + saldo) });
+        detalleReajuste = ` El saldo de ${saldo} se sumó a la cuota ${prox.numero}.`;
+      } else {
+        const parte = Math.floor((saldo / siguientes.length) * 100) / 100;
+        siguientes.forEach((c, k) => {
+          const extra = k === siguientes.length - 1 ? r2(saldo - parte * (siguientes.length - 1)) : parte;
+          cambiadas.set(c.id, { ...c, monto: r2(c.monto + extra) });
+        });
+        detalleReajuste = ` El saldo de ${saldo} se repartió en ${siguientes.length === 1 ? "la cuota que sigue" : `las ${siguientes.length} cuotas que siguen`}.`;
+      }
+    }
+
+    const cuotas = [
+      ...(nueva ? [nueva] : []),
+      ...e.cuotas.map((c) => cambiadas.get(c.id) ?? c),
+    ];
+
+    /* Igual que al registrar una venta: el pago de pasarela se da por
+       conciliado cuando lo imputado llega a su monto. */
+    const movimientosTocados = new Map<ID, Movimiento>();
+    for (const id of new Set(nuevosPagos.map((p) => p.movimientoId).filter(Boolean) as ID[])) {
+      const mov = e.movimientos.find((m) => m.id === id);
+      if (!mov) continue;
+      const suyos = pagos.filter((p) => p.movimientoId === id);
+      const saldado = suyos.reduce((a, p) => a + p.monto, 0) >= mov.monto - 0.01;
+      const unaSola = suyos.length === 1;
+      movimientosTocados.set(id, {
+        ...mov,
+        estado: saldado ? "conciliado" : "pendiente",
+        pagoId: unaSola ? suyos[0].id : mov.pagoId,
+        cuotaId: unaSola ? suyos[0].cuotaId : mov.cuotaId,
+        ventaId: venta.id,
+        conciliadoEn: saldado ? ahora() : mov.conciliadoEn,
+        conciliadoPor: saldado ? (e.ajustes.responsable || "Apicanta") : mov.conciliadoPor,
+      });
+    }
+    const movimientos = movimientosTocados.size === 0
+      ? e.movimientos
+      : e.movimientos.map((m) => movimientosTocados.get(m.id) ?? m);
+
+    const cobrado = r2(nuevosPagos.reduce((a, p) => a + p.monto, 0));
+    const nombreCuota = cuota.esReserva ? "la reserva" : `la cuota ${cuota.numero}`;
+    const { lista, nuevo } = registrar(
+      e, "transaccion", venta.id, venta.contactoNombre, "actualizo",
+      `Se registró un pago de ${cobrado} en ${nombreCuota} de ${venta.contactoNombre}.${detalleReajuste}`,
+    );
+
+    guardar({ ...e, pagos, cuotas, movimientos, actividad: lista });
+    empujar({ tipo: "upsert", tabla: "pagos", filas: nuevosPagos });
+    const cuotasEscritas = [...(nueva ? [nueva] : []), ...cambiadas.values()];
+    if (cuotasEscritas.length) empujar({ tipo: "upsert", tabla: "cuotas", filas: cuotasEscritas });
+    if (movimientosTocados.size) empujar({ tipo: "upsert", tabla: "movimientos", filas: [...movimientosTocados.values()] });
+    empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
+    return true;
   },
 
   /* ---------- Conciliación ----------

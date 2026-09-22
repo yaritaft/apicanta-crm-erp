@@ -367,7 +367,8 @@ a { color: inherit; text-decoration: none; }
 
 /* ---------- Modal ---------- */
 .modal-backdrop {
-  position: fixed; inset: 0; z-index: 100;
+  /* Encima del asistente a pantalla completa (120), debajo de la búsqueda y los avisos. */
+  position: fixed; inset: 0; z-index: 130;
   background: var(--overlay);
   backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
   display: flex; align-items: flex-start; justify-content: center;
@@ -895,6 +896,57 @@ kbd {
 .cobro-bloque__body { padding: 0 var(--space-4) var(--space-4); display: flex; flex-direction: column; gap: var(--space-2); border-top: 1px solid var(--border); padding-top: var(--space-3); }
 .cobro-linea { display: grid; grid-template-columns: minmax(0, 1fr) 110px 132px 32px; gap: var(--space-2); align-items: center; }
 .cobro-linea .hk-input { height: 38px; font-size: 14px; }
+/* Cada cobro: una línea con medio, monto y fecha, y debajo cómo se prueba
+   (conciliado contra la pasarela, o con su comprobante). */
+.cobro-item { display: flex; flex-direction: column; gap: var(--space-2); padding-bottom: var(--space-3); border-bottom: 1px dashed var(--border); }
+.cobro-item:last-of-type { border-bottom: 0; padding-bottom: 0; }
+.cobro-prueba { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--space-2); }
+.conciliar-btn {
+  display: flex; align-items: center; gap: var(--space-2); min-height: 52px; padding: 8px 12px;
+  border: 1px dashed var(--border-strong); border-radius: var(--radius-md); background: transparent;
+  color: var(--ink); text-align: left; cursor: pointer; font: inherit;
+  transition: border-color 150ms ease-out, background-color 150ms ease-out;
+}
+.conciliar-btn:hover { border-color: var(--brand); background: var(--brand-soft); }
+.conciliar-btn:disabled { cursor: default; opacity: .6; }
+.conciliar-btn:disabled:hover { border-color: var(--border-strong); background: transparent; }
+.conciliado-caja {
+  display: flex; align-items: center; gap: var(--space-2); min-height: 52px; padding: 8px 10px 8px 12px;
+  border: 1px solid color-mix(in srgb, var(--success) 45%, transparent); border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--success) 10%, transparent);
+}
+.comprobante {
+  position: relative; display: flex; flex-direction: column; gap: 4px; min-width: 0;
+  border: 1px dashed var(--border-strong); border-radius: var(--radius-md);
+  transition: border-color 150ms ease-out, background-color 150ms ease-out;
+}
+.comprobante[data-obligatorio="true"] { border-color: color-mix(in srgb, var(--accent) 70%, transparent); }
+.comprobante[data-encima="true"], .comprobante:focus-within { border-color: var(--brand); background: var(--brand-soft); }
+.comprobante__boton {
+  display: flex; align-items: center; gap: var(--space-2); min-height: 50px; width: 100%; padding: 8px 12px;
+  background: transparent; border: 0; color: var(--ink); text-align: left; cursor: pointer; font: inherit;
+}
+.comprobante--listo {
+  flex-direction: row; align-items: center; flex-wrap: wrap; gap: var(--space-2); min-height: 52px; padding: 6px 6px 6px 12px;
+  border-style: solid; border-color: var(--border);  background: var(--surface-200);
+}
+.comprobante__error { flex-basis: 100%; padding: 0 12px 8px; font-size: 13px; color: var(--danger); }
+.cobro-subitems { display: flex; flex-direction: column; gap: 4px; margin: 2px 0 6px 14px; padding-left: 12px; border-left: 2px solid var(--border); }
+.pagos-lista { display: flex; flex-direction: column; gap: var(--space-2); max-height: min(60vh, 560px); overflow-y: auto; }
+.pago-fila {
+  display: flex; align-items: center; gap: var(--space-3); width: 100%; padding: 10px 12px;
+  border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface-100);
+  color: inherit; text-align: left; cursor: pointer; font: inherit;
+  transition: border-color 150ms ease-out, background-color 150ms ease-out;
+}
+.pago-fila:hover, .pago-fila:focus-visible { border-color: var(--brand); background: var(--surface-200); }
+.pago-fila__fecha { width: 88px; flex: none; }
+.pago-fila__monto { flex: none; text-align: right; }
+/* Vista previa del reajuste de cuotas: nombre, antes → después. */
+.reajuste-fila { display: grid; grid-template-columns: minmax(0, 1fr) auto 14px minmax(88px, auto); gap: var(--space-2); align-items: center; font-size: 13px; }
+.reajuste-fila > :not(:first-child) { white-space: nowrap; text-align: right; }
+.gira { animation: gira 900ms linear infinite; }
+@keyframes gira { to { transform: rotate(360deg) } }
 
 /* ============================================================
    Conciliación
@@ -903,10 +955,11 @@ kbd {
 .mov[data-abierto="true"] { border-color: var(--border-strong); }
 .mov__head { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-3) var(--space-4); width: 100%; background: transparent; border: 0; color: inherit; text-align: left; cursor: pointer; }
 .mov__head:hover { background: var(--surface-200); }
-.mov__marca {
-  flex: none; display: grid; place-items: center; width: 34px; height: 34px;
-  border-radius: var(--radius-sm); background: var(--surface-300); color: var(--ink-muted);
-  font-size: 11px; font-weight: 700; letter-spacing: .04em;
+/* El medio de pago con su nombre entero: "ST" no lo reconocía nadie. */
+.mov__medio {
+  flex: none; max-width: 150px; padding: 4px 10px; border-radius: var(--radius-full);
+  background: var(--brand-soft); color: var(--brand); font-size: 12px; font-weight: 600;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .mov__cliente { font-weight: 600; font-size: 15px; }
 .mov__meta { font-size: 13px; color: var(--ink-subtle); }
@@ -927,6 +980,9 @@ kbd {
   .asistente__main { padding: var(--space-5) var(--space-4); }
   .cuota-linea { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
   .cobro-linea { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .cobro-prueba { grid-template-columns: minmax(0, 1fr); }
+  .pago-fila { flex-wrap: wrap; row-gap: 4px; }
+  .pago-fila__fecha { width: auto; flex-basis: 100%; }
   .cuota-linea__nombre { grid-column: 1 / -1; }
   .opciones { grid-template-columns: 1fr; }
   /* En un teléfono la ruta entera no entra y empuja al contador a tres

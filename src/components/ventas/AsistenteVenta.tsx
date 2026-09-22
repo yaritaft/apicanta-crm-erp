@@ -2,13 +2,17 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  ArrowLeft, Check, CornerDownLeft, Link2, Plus, Sparkles, Trash2, UserPlus, X,
+  ArrowLeft, Check, CornerDownLeft, Link2, Paperclip, Sparkles, UserPlus, X,
 } from "lucide-react";
 import { Badge, Button, Chip, IconButton, Input, Select, Switch, Textarea } from "@/components/ui/ui";
+import {
+  agregarMedio, cobroNuevo, EditorCobros, problemaDeCobros, problemaDePasarelas, type CobroBorrador,
+} from "@/components/cobros/EditorCobros";
+import { disponibleDe } from "@/components/cobros/SelectorMovimiento";
 import { acciones, nuevoId, useEstado } from "@/lib/store";
 import { fechaLarga, isoDia, money, pct } from "@/lib/format";
-import { parecido } from "@/lib/conciliacion";
-import { nombrePasarela } from "@/lib/pasarelas";
+import { medioDeMovimiento, parecido, procesadorDeMovimiento } from "@/lib/conciliacion";
+import { descartarComprobante } from "@/lib/comprobantes";
 import type { Cuota, EstadoApp, Movimiento, Venta } from "@/lib/types";
 
 /* ==================================================================
@@ -23,15 +27,8 @@ import type { Cuota, EstadoApp, Movimiento, Venta } from "@/lib/types";
    atado a un cobro real de una pasarela. Eso se decide acá, no después.
    ================================================================== */
 
-interface Cobro {
-  id: string;
-  procesadorId: string;
-  monto: number;
-  fecha: string;
-  referencia: string;
-  /* Si sale de un cobro que ya entró a la pasarela */
-  movimientoId?: string;
-}
+/* Un cobro: un medio de pago dentro de una cuota (ver EditorCobros). */
+type Cobro = CobroBorrador;
 
 interface LineaCuota {
   id: string;
@@ -152,7 +149,21 @@ export function AsistenteVenta({ onCerrar, onListo, desdeMovimiento }: {
   const cobrosTodos = b.cuotas.flatMap((c) => c.cobros);
   const totalCobrado = sumar(cobrosTodos);
 
-  const problema = useMemo(() => validar(paso.id, b, diferenciaPlan), [paso.id, b, diferenciaPlan]);
+  /* Comprobantes subiéndose: mientras haya alguno, no se avanza ni se guarda. */
+  const [subiendo, setSubiendo] = useState<Set<string>>(() => new Set());
+  const onSubiendo = useCallback((cobroId: string, si: boolean) => {
+    setSubiendo((ya) => {
+      if (ya.has(cobroId) === si) return ya;
+      const otro = new Set(ya);
+      if (si) otro.add(cobroId); else otro.delete(cobroId);
+      return otro;
+    });
+  }, []);
+
+  const problema = useMemo(
+    () => validar(paso.id, b, diferenciaPlan, { e, subiendo: subiendo.size }),
+    [paso.id, b, diferenciaPlan, e, subiendo.size],
+  );
   const puedeAvanzar = problema === null;
 
   const avanzar = useCallback(() => {
@@ -213,6 +224,7 @@ export function AsistenteVenta({ onCerrar, onListo, desdeMovimiento }: {
         fecha: p.fecha,
         referencia: p.referencia,
         movimientoId: p.movimientoId,
+        comprobante: p.comprobante,
       })),
     );
 
@@ -223,6 +235,9 @@ export function AsistenteVenta({ onCerrar, onListo, desdeMovimiento }: {
   /* Teclado: Enter avanza, Esc sale. En un textarea Enter escribe. */
   useEffect(() => {
     const onKey = (ev: KeyboardEvent) => {
+      /* Un modal abierto encima (elegir un pago de la pasarela) maneja sus
+         teclas, y un desplegable o calendario abierto también. */
+      if (document.querySelector(".modal-backdrop, [data-flotante-abierto]")) return;
       if (ev.key === "Escape") { ev.preventDefault(); onCerrar(); return; }
       const foco = ev.target as HTMLElement | null;
       const escribiendo = foco?.tagName === "INPUT" || foco?.tagName === "TEXTAREA" || foco?.tagName === "SELECT";
@@ -241,7 +256,7 @@ export function AsistenteVenta({ onCerrar, onListo, desdeMovimiento }: {
          tocarla: si no, en el paso del director la desmarcaría. */
       if (foco?.tagName === "BUTTON" && !foco.classList.contains("opcion")) return;
       ev.preventDefault();
-      if (paso.id === "resumen") guardar();
+      if (paso.id === "resumen") { if (puedeAvanzar) guardar(); }
       else avanzar();
     };
     document.addEventListener("keydown", onKey);
@@ -292,7 +307,7 @@ export function AsistenteVenta({ onCerrar, onListo, desdeMovimiento }: {
           {paso.id === "equipo" && <PasoEquipo b={b} set={set} e={e} sinComision={sinComision} />}
           {paso.id === "origen" && <PasoOrigen b={b} set={set} e={e} />}
           {paso.id === "plan" && <PasoPlan b={b} setB={setB} M={M} diferencia={diferenciaPlan} />}
-          {paso.id === "cobros" && <PasoCobros b={b} setB={setB} e={e} M={M} />}
+          {paso.id === "cobros" && <PasoCobros b={b} setB={setB} e={e} M={M} onSubiendo={onSubiendo} />}
           {paso.id === "resumen" && (
             <PasoResumen b={b} set={set} e={e} M={M} sinComision={sinComision} totalCobrado={totalCobrado} />
           )}
@@ -310,7 +325,7 @@ export function AsistenteVenta({ onCerrar, onListo, desdeMovimiento }: {
           </span>
         )}
         {paso.id === "resumen" ? (
-          <Button variante="primary" icono={<Check size={16} />} onClick={guardar}>Registrar la venta</Button>
+          <Button variante="primary" icono={<Check size={16} />} onClick={guardar} disabled={!puedeAvanzar}>Registrar la venta</Button>
         ) : (
           <>
             <span className="asistente__pista"><kbd>Enter</kbd><CornerDownLeft size={13} /></span>
@@ -361,7 +376,7 @@ function inicial(e: EstadoApp, mov?: Movimiento): Borrador {
 
 /* ---------- Validación por paso ---------- */
 
-function validar(paso: PasoId, b: Borrador, diferencia: number): string | null {
+function validar(paso: PasoId, b: Borrador, diferencia: number, ctx: { e: EstadoApp; subiendo: number }): string | null {
   switch (paso) {
     case "cliente":
       return b.contactoNombre.trim().length >= 2 ? null : "Escribí el nombre del cliente";
@@ -380,11 +395,17 @@ function validar(paso: PasoId, b: Borrador, diferencia: number): string | null {
           : `Las cuotas suman ${Math.abs(diferencia).toFixed(2)} de más`;
       }
       return null;
-    case "cobros": {
+    case "cobros":
+    case "resumen": {
+      const nombre = (c: LineaCuota) => (c.esReserva ? "la reserva" : `la cuota ${c.numero}`);
       const mal = b.cuotas.find((c) => sumar(c.cobros) > c.monto + 0.01);
-      if (mal) return `Los cobros de ${mal.esReserva ? "la reserva" : `la cuota ${mal.numero}`} superan su monto`;
-      const sinMedio = b.cuotas.some((c) => c.cobros.some((p) => !p.procesadorId));
-      return sinMedio ? "Elegí el medio de pago de cada cobro" : null;
+      if (mal) return `Los cobros de ${nombre(mal)} superan su monto`;
+      if (ctx.subiendo > 0) return "Esperá que termine de subir el comprobante";
+      for (const c of b.cuotas) {
+        const p = problemaDeCobros(ctx.e, c.cobros, nombre(c));
+        if (p) return p;
+      }
+      return problemaDePasarelas(ctx.e, b.cuotas.flatMap((c) => c.cobros));
     }
     default:
       return null;
@@ -649,16 +670,19 @@ function PasoPlan({ b, setB, M, diferencia }: {
             onChange={(ev) => setB((x) => ({ ...x, reserva: Number(ev.target.value), planTocado: false }))} />
           <span className="hk-help">Lo que dejó de seña el día que cerró.</span>
         </div>
-        <div className="hk-field">
-          <label className="hk-label">Frecuencia</label>
-          <Select value={b.frecuencia}
-            onChange={(ev) => setB((x) => ({ ...x, frecuencia: ev.target.value as Frecuencia, planTocado: false }))}
-            opciones={[
-              { valor: "mensual", texto: "Mensual" },
-              { valor: "quincenal", texto: "Quincenal" },
-              { valor: "semanal", texto: "Semanal" },
-            ]} />
-        </div>
+        {/* Con un solo pago no hay nada que espaciar. */}
+        {b.cantidadCuotas > 1 && (
+          <div className="hk-field">
+            <label className="hk-label">Frecuencia</label>
+            <Select value={b.frecuencia}
+              onChange={(ev) => setB((x) => ({ ...x, frecuencia: ev.target.value as Frecuencia, planTocado: false }))}
+              opciones={[
+                { valor: "mensual", texto: "Mensual" },
+                { valor: "quincenal", texto: "Quincenal" },
+                { valor: "semanal", texto: "Semanal" },
+              ]} />
+          </div>
+        )}
       </div>
 
       <div className="stack-2">
@@ -697,17 +721,28 @@ function PasoPlan({ b, setB, M, diferencia }: {
 
 /* ---------- Paso 7: cobros y conciliación ---------- */
 
-function PasoCobros({ b, setB, e, M }: {
+function PasoCobros({ b, setB, e, M, onSubiendo }: {
   b: Borrador; setB: React.Dispatch<React.SetStateAction<Borrador>>;
   e: EstadoApp; M: (n: number, d?: number) => string;
+  onSubiendo: (cobroId: string, subiendo: boolean) => void;
 }) {
   const procesadores = e.procesadores.filter((p) => p.activo);
-  const usados = new Set(b.cuotas.flatMap((c) => c.cobros.map((p) => p.movimientoId)).filter(Boolean) as string[]);
 
-  /* Cobros de pasarela sin conciliar que parecen de este cliente. */
+  /* Lo que usan de cada pago de pasarela los cobros de las OTRAS cuotas. */
+  const usadoFuera = useCallback((cuotaId?: string) => {
+    const usado = new Map<string, number>();
+    for (const c of b.cuotas) {
+      if (c.id === cuotaId) continue;
+      for (const p of c.cobros) if (p.movimientoId) usado.set(p.movimientoId, (usado.get(p.movimientoId) ?? 0) + p.monto);
+    }
+    return usado;
+  }, [b.cuotas]);
+
+  /* Pagos de pasarela sin conciliar que parecen de este cliente. */
   const candidatos = useMemo(() => {
-    const pendientes = e.movimientos.filter((m) => m.estado === "pendiente" && !usados.has(m.id));
-    return pendientes
+    const usado = usadoFuera();
+    return e.movimientos
+      .filter((m) => m.estado === "pendiente" && disponibleDe(m, e.pagos, usado) > 0.009)
       .map((m) => {
         const porNombre = parecido(m.clienteNombre, b.contactoNombre);
         const porMail = b.contactoEmail && m.clienteEmail
@@ -718,72 +753,53 @@ function PasoCobros({ b, setB, e, M }: {
       .sort((x, y) => y.afinidad - x.afinidad)
       .slice(0, 6)
       .map((x) => x.m);
-  }, [e.movimientos, b.contactoNombre, b.contactoEmail, usados]);
+  }, [e.movimientos, e.pagos, b.contactoNombre, b.contactoEmail, usadoFuera]);
 
-  const editarCobro = (cuotaId: string, cobroId: string, cambios: Partial<Cobro>) =>
-    setB((x) => ({
-      ...x,
-      cuotas: x.cuotas.map((c) => c.id !== cuotaId ? c : {
-        ...c, cobros: c.cobros.map((p) => (p.id === cobroId ? { ...p, ...cambios } : p)),
-      }),
-    }));
+  const cambiarCobros = (cuotaId: string) => (f: (cobros: Cobro[]) => Cobro[]) =>
+    setB((x) => ({ ...x, cuotas: x.cuotas.map((c) => (c.id === cuotaId ? { ...c, cobros: f(c.cobros) } : c)) }));
 
-  const quitarCobro = (cuotaId: string, cobroId: string) =>
-    setB((x) => ({
-      ...x,
-      cuotas: x.cuotas.map((c) => c.id !== cuotaId ? c : { ...c, cobros: c.cobros.filter((p) => p.id !== cobroId) }),
-    }));
-
-  const agregarCobro = (cuotaId: string, cobro?: Partial<Cobro>) =>
-    setB((x) => ({
-      ...x,
-      cuotas: x.cuotas.map((c) => {
-        if (c.id !== cuotaId) return c;
-        const falta = redondear(c.monto - sumar(c.cobros));
-        return {
-          ...c,
-          cobros: [...c.cobros, {
-            id: nuevoId("cob"),
-            procesadorId: cobro?.procesadorId ?? procesadores[0]?.id ?? "",
-            monto: cobro?.monto ?? Math.max(falta, 0),
-            fecha: cobro?.fecha ?? new Date().toISOString(),
-            referencia: cobro?.referencia ?? "",
-            movimientoId: cobro?.movimientoId,
-          }],
-        };
-      }),
-    }));
+  const vaciarCuota = (cuotaId: string) => {
+    for (const p of b.cuotas.find((c) => c.id === cuotaId)?.cobros ?? []) {
+      if (p.comprobante) void descartarComprobante(p.comprobante);
+      onSubiendo(p.id, false);
+    }
+    cambiarCobros(cuotaId)(() => []);
+  };
 
   return (
     <>
       <Pregunta
         texto="¿Algo de esto ya entró?"
-        sub="Una cuota puede cobrarse con varios medios: cargá un cobro por cada uno. Lo que no se cobró todavía queda pendiente y aparece en Por cobrar."
+        sub="Marcá lo que ya se cobró. Cada cobro se prueba conciliándolo con el pago que llegó a la pasarela o subiendo el comprobante. Lo que no se cobró queda en Por cobrar."
       />
 
       {candidatos.length > 0 && (
         <div className="help-card">
           <Sparkles size={18} />
           <div style={{ minWidth: 0, flex: 1 }}>
-            <div className="help-card__title">Hay cobros en las pasarelas que parecen de este cliente</div>
+            <div className="help-card__title">Hay pagos en las pasarelas que parecen de este cliente</div>
             <div className="help-card__text" style={{ marginBottom: 8 }}>
               Si los usás, el cobro queda conciliado y el fee que se registra es el real de la pasarela.
             </div>
             <div className="stack-2">
               {candidatos.map((m) => (
                 <div className="row" key={m.id} style={{ gap: 8, flexWrap: "wrap" }}>
-                  <Badge variante="neutral">{nombrePasarela(m.proveedor)}</Badge>
+                  <Badge variante="neutral">{medioDeMovimiento(e, m)}</Badge>
                   <span className="t-sm">{m.clienteNombre ?? "—"}</span>
                   <span className="t-sm t-subtle">{fechaLarga(m.fecha)}</span>
                   <span className="t-sm t-num t-strong spacer">{M(m.monto, 2)}</span>
                   <Select
-                    value="" placeholder="Imputar a…"
+                    value="" placeholder="Imputar a…" aria-label={`Imputar el pago de ${m.clienteNombre ?? "este cliente"}`}
                     onChange={(ev) => {
-                      if (!ev.target.value) return;
-                      agregarCobro(ev.target.value, {
-                        procesadorId: m.procesadorId ?? "", monto: m.monto,
-                        fecha: m.fecha, referencia: m.referencia, movimientoId: m.id,
-                      });
+                      const cuota = b.cuotas.find((c) => c.id === ev.target.value);
+                      if (!cuota) return;
+                      const disponible = disponibleDe(m, e.pagos, usadoFuera());
+                      const falta = redondear(cuota.monto - sumar(cuota.cobros));
+                      cambiarCobros(cuota.id)((xs) => [...xs, cobroNuevo(
+                        procesadorDeMovimiento(e, m)?.id ?? "",
+                        Math.min(disponible, falta > 0.01 ? falta : disponible),
+                        { fecha: m.fecha, referencia: m.referencia, movimientoId: m.id },
+                      )]);
                     }}
                     opciones={b.cuotas.map((c) => ({
                       valor: c.id,
@@ -809,55 +825,29 @@ function PasoCobros({ b, setB, e, M }: {
                 <span className="t-sm t-subtle">vence {fechaLarga(c.vence)}</span>
                 <span className="spacer t-num t-strong">{M(c.monto, 2)}</span>
                 {abierto
-                  ? (falta <= 0.01
-                      ? <Badge variante="success"><Check size={13} />Cobrada</Badge>
-                      : <Badge variante="accent">Falta {M(falta, 2)}</Badge>)
+                  ? (falta < -0.01
+                      ? <Badge variante="warning">Sobran {M(-falta, 2)}</Badge>
+                      : falta <= 0.01
+                        ? <Badge variante="success"><Check size={13} />Cobrada</Badge>
+                        : <Badge variante="accent">Falta {M(falta, 2)}</Badge>)
                   : <Badge variante="neutral">Pendiente</Badge>}
                 <Switch
                   checked={abierto}
-                  etiqueta={`Marcar como cobrada la ${c.esReserva ? "reserva" : `cuota ${c.numero}`}`}
+                  etiqueta={`Marcar como cobrada ${c.esReserva ? "la reserva" : `la cuota ${c.numero}`}`}
                   onChange={(v) => {
-                    if (v) agregarCobro(c.id);
-                    else setB((x) => ({ ...x, cuotas: x.cuotas.map((y) => (y.id === c.id ? { ...y, cobros: [] } : y)) }));
+                    if (v) cambiarCobros(c.id)((xs) => agregarMedio(xs, c.monto, procesadores[0]?.id ?? ""));
+                    else vaciarCuota(c.id);
                   }}
                 />
               </div>
 
               {abierto && (
                 <div className="cobro-bloque__body">
-                  {c.cobros.map((p) => (
-                    <React.Fragment key={p.id}>
-                      <div className="cobro-linea">
-                        <Select
-                          value={p.procesadorId} placeholder="Medio de pago"
-                          disabled={Boolean(p.movimientoId)}
-                          onChange={(ev) => editarCobro(c.id, p.id, { procesadorId: ev.target.value })}
-                          opciones={procesadores.map((x) => ({ valor: x.id, texto: x.nombre }))}
-                        />
-                        <Input type="number" min={0} step="0.01" value={p.monto} aria-label="Monto del cobro"
-                          onChange={(ev) => editarCobro(c.id, p.id, { monto: Number(ev.target.value) })} />
-                        <Input type="date" value={isoDia(p.fecha)} aria-label="Fecha del cobro"
-                          onChange={(ev) => editarCobro(c.id, p.id, { fecha: new Date(ev.target.value + "T12:00:00").toISOString() })} />
-                        <IconButton etiqueta="Quitar este cobro" onClick={() => quitarCobro(c.id, p.id)}>
-                          <Trash2 size={15} />
-                        </IconButton>
-                      </div>
-                      {p.movimientoId ? (
-                        <span className="t-sm" style={{ color: "var(--success)", display: "flex", alignItems: "center", gap: 6 }}>
-                          <Link2 size={13} />
-                          Conciliado con {p.referencia} — el fee es el que cobró la pasarela
-                        </span>
-                      ) : (
-                        <Input value={p.referencia} placeholder="Referencia del pago (opcional)"
-                          onChange={(ev) => editarCobro(c.id, p.id, { referencia: ev.target.value })} />
-                      )}
-                    </React.Fragment>
-                  ))}
-                  {falta > 0.01 && (
-                    <Button sm variante="ghost" icono={<Plus size={14} />} onClick={() => agregarCobro(c.id)}>
-                      Agregar otro medio de pago
-                    </Button>
-                  )}
+                  <EditorCobros
+                    e={e} cobros={c.cobros} onCambio={cambiarCobros(c.id)} objetivo={c.monto}
+                    cliente={{ nombre: b.contactoNombre, email: b.contactoEmail }}
+                    usadoFuera={usadoFuera(c.id)} onSubiendo={onSubiendo}
+                  />
                 </div>
               )}
             </div>
@@ -900,15 +890,33 @@ function PasoResumen({ b, set, e, M, sinComision, totalCobrado }: {
         {b.cuotas.map((c) => {
           const cobrado = sumar(c.cobros);
           return (
-            <div className="row t-sm" key={c.id} style={{ gap: 8 }}>
-              <span className="t-strong">{c.esReserva ? "Reserva" : `Cuota ${c.numero}`}</span>
-              <span className="t-subtle">{fechaLarga(c.vence)}</span>
-              <span className="spacer t-num">{M(c.monto, 2)}</span>
-              {cobrado >= c.monto - 0.01
-                ? <Badge variante="success"><Check size={13} />Cobrada</Badge>
-                : cobrado > 0
-                  ? <Badge variante="accent">Parcial {M(cobrado, 2)}</Badge>
-                  : <Badge variante="neutral">Pendiente</Badge>}
+            <div key={c.id}>
+              <div className="row t-sm" style={{ gap: 8 }}>
+                <span className="t-strong">{c.esReserva ? "Reserva" : `Cuota ${c.numero}`}</span>
+                <span className="t-subtle">{fechaLarga(c.vence)}</span>
+                <span className="spacer t-num">{M(c.monto, 2)}</span>
+                {cobrado >= c.monto - 0.01
+                  ? <Badge variante="success"><Check size={13} />Cobrada</Badge>
+                  : cobrado > 0
+                    ? <Badge variante="accent">Parcial {M(cobrado, 2)}</Badge>
+                    : <Badge variante="neutral">Pendiente</Badge>}
+              </div>
+              {/* Con qué se pagó: un renglón por medio, y cómo se prueba cada uno. */}
+              {c.cobros.length > 0 && (
+                <div className="cobro-subitems">
+                  {c.cobros.map((p) => (
+                    <div className="row t-sm" key={p.id} style={{ gap: 8 }}>
+                      <span className="t-muted">{e.procesadores.find((x) => x.id === p.procesadorId)?.nombre ?? "Sin medio"}</span>
+                      {p.movimientoId
+                        ? <span className="t-subtle" style={{ display: "inline-flex", alignItems: "center", gap: 4 }}><Link2 size={12} />conciliado</span>
+                        : p.comprobante
+                          ? <span className="t-subtle" style={{ display: "inline-flex", alignItems: "center", gap: 4 }}><Paperclip size={12} />comprobante</span>
+                          : null}
+                      <span className="spacer t-num">{M(p.monto, 2)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           );
         })}

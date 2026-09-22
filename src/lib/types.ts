@@ -607,12 +607,25 @@ export interface Cuota {
   notas?: string;
 }
 
+/* El archivo que prueba un pago: foto de la transferencia, PDF del recibo.
+   Vive en el bucket privado `comprobantes` de Supabase; acá sólo la ruta.
+   Sin nube (modo local) la ruta es el archivo mismo como data URL. */
+export interface Comprobante {
+  ruta: string;
+  nombre: string;
+  tipo: string;
+  tamanio: number;
+  subidoEn: string;
+}
+
 export interface Pago {
   id: ID;
   cuotaId: ID;
   procesadorId?: ID;
   /* Si el pago salió de conciliar un cobro de pasarela */
   movimientoId?: ID;
+  /* Obligatorio si el pago NO se concilió: es la única prueba de que entró. */
+  comprobante?: Comprobante;
   monto: number;
   moneda: Moneda;
   feeRate: number;

@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 import { Button, IconButton } from "./ui";
 
@@ -9,11 +10,23 @@ export function Modal({ abierto, onCerrar, titulo, sub, children, pie, ancho }: 
   children: React.ReactNode; pie?: React.ReactNode; ancho?: boolean;
 }) {
   const ref = useRef<HTMLDivElement>(null);
+  const fondo = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!abierto) return;
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onCerrar(); };
-    document.addEventListener("keydown", onKey);
+    /* En captura y cortando la propagación: Esc cierra SÓLO el modal, no
+       también el drawer o el asistente que quedaron abajo. Si hay un
+       desplegable o un calendario abierto adentro, Esc es de ellos. */
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || document.querySelector("[data-flotante-abierto]")) return;
+      /* Con dos modales (elegir un pago dentro de "Registrar pago"), Esc
+         cierra sólo el de arriba: el último que se montó en el body. */
+      const todos = document.querySelectorAll(".modal-backdrop");
+      if (todos[todos.length - 1] !== fondo.current) return;
+      e.stopPropagation();
+      onCerrar();
+    };
+    document.addEventListener("keydown", onKey, true);
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     const t = window.setTimeout(() => {
@@ -21,7 +34,7 @@ export function Modal({ abierto, onCerrar, titulo, sub, children, pie, ancho }: 
       foco?.focus();
     }, 60);
     return () => {
-      document.removeEventListener("keydown", onKey);
+      document.removeEventListener("keydown", onKey, true);
       document.body.style.overflow = prev;
       window.clearTimeout(t);
     };
@@ -29,8 +42,10 @@ export function Modal({ abierto, onCerrar, titulo, sub, children, pie, ancho }: 
 
   if (!abierto) return null;
 
-  return (
-    <div className="modal-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) onCerrar(); }}>
+  /* Al body: así queda encima de cualquier cosa (el asistente de venta va
+     a pantalla completa) y ningún contenedor con transform lo encierra. */
+  return createPortal(
+    <div className="modal-backdrop" ref={fondo} onMouseDown={(e) => { if (e.target === e.currentTarget) onCerrar(); }}>
       <div className={`modal${ancho ? " modal--wide" : ""}`} role="dialog" aria-modal="true" aria-label={titulo} ref={ref}>
         <div className="modal__head">
           <div style={{ minWidth: 0, flex: 1 }}>
@@ -42,7 +57,8 @@ export function Modal({ abierto, onCerrar, titulo, sub, children, pie, ancho }: 
         <div className="modal__body">{children}</div>
         {pie && <div className="modal__foot">{pie}</div>}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 

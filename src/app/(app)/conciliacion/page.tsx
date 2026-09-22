@@ -15,7 +15,7 @@ import { acciones, useEstado } from "@/lib/store";
 import { nube } from "@/lib/supabase";
 import { fechaLarga, money, pct } from "@/lib/format";
 import {
-  esAutomatica, propuestas, resumenConciliacion, saldoDeCuota, sugerenciasPara,
+  esAutomatica, medioDeMovimiento, propuestas, restoDeMovimiento, resumenConciliacion, saldoDeCuota, sugerenciasPara,
   type Sugerencia,
 } from "@/lib/conciliacion";
 import { importarCSV, PASARELAS, nombrePasarela } from "@/lib/pasarelas";
@@ -50,12 +50,25 @@ export default function Conciliacion() {
       .sort((a, b) => +new Date(b.fecha) - +new Date(a.fecha));
   }, [e.movimientos, filtro, pasarela]);
 
+  /* Los medios que tienen algo en la pestaña elegida, con cuántos: filtrar
+     por uno que está vacío no sirve de nada. */
+  const medios = useMemo(() => {
+    const cuenta = new Map<ProveedorPasarela, { nombre: string; n: number }>();
+    for (const m of e.movimientos) {
+      if (m.estado !== filtro) continue;
+      const ya = cuenta.get(m.proveedor);
+      if (ya) ya.n++;
+      else cuenta.set(m.proveedor, { nombre: medioDeMovimiento(e, m), n: 1 });
+    }
+    return [...cuenta.entries()].sort((a, b) => b[1].n - a[1].n);
+  }, [e, filtro]);
+
   function conciliarTodosLosSeguros() {
     const autos = propuestas(e).filter((p) => p.automatica);
     let hechos = 0;
     for (const p of autos) {
       const s = p.sugerencias[0];
-      if (acciones.conciliar(p.movimiento.id, [{ cuotaId: s.cuotaId, monto: p.movimiento.monto }])) hechos++;
+      if (acciones.conciliar(p.movimiento.id, [{ cuotaId: s.cuotaId, monto: restoDeMovimiento(e, p.movimiento) }])) hechos++;
     }
     toast(hechos === 0 ? "No había cobros con calce seguro." : `Se conciliaron ${hechos} cobros.`);
   }
@@ -143,15 +156,19 @@ export default function Conciliacion() {
               <Chip key={k} activo={filtro === k} onClick={() => setFiltro(k)}
                 count={e.movimientos.filter((m) => m.estado === k).length}>{t}</Chip>
             ))}
-            <span className="spacer" />
-            <Select
-              value={pasarela} onChange={(ev) => setPasarela(ev.target.value as ProveedorPasarela | "todas")}
-              opciones={[
-                { valor: "todas", texto: "Todas las pasarelas" },
-                ...PASARELAS.map((p) => ({ valor: p.id, texto: p.nombre })),
-              ]}
-            />
           </div>
+          {medios.length > 0 && (
+            <div className="row-wrap" style={{ marginTop: "var(--space-3)" }} role="group" aria-label="Filtrar por medio de pago">
+              <span className="t-label" style={{ marginRight: 4 }}>Medio de pago</span>
+              <Chip activo={pasarela === "todas"} onClick={() => setPasarela("todas")}
+                count={medios.reduce((a, [, x]) => a + x.n, 0)}>Todos</Chip>
+              {medios.map(([id, x]) => (
+                <Chip key={id} activo={pasarela === id} onClick={() => setPasarela(pasarela === id ? "todas" : id)} count={x.n}>
+                  {x.nombre}
+                </Chip>
+              ))}
+            </div>
+          )}
         </div>
 
         <div style={{ padding: "0 var(--space-4) var(--space-4)", display: "flex", flexDirection: "column", gap: "var(--space-2)" }}>
@@ -225,6 +242,9 @@ function FilaMovimiento({ mov, M, abierto, onAbrir, onNuevaVenta }: {
       .slice(0, 6);
   }, [e, busqueda]);
 
+  /* Si ya se imputó una parte (desde el alta de una venta), lo que queda. */
+  const resto = restoDeMovimiento(e, mov);
+
   function conciliar(cuotaId: string, monto: number) {
     if (acciones.conciliar(mov.id, [{ cuotaId, monto }])) toast("Cobro conciliado.");
     else toast("No se pudo conciliar ese cobro.", "err");
@@ -237,7 +257,7 @@ function FilaMovimiento({ mov, M, abierto, onAbrir, onNuevaVenta }: {
   return (
     <div className="mov" data-abierto={abierto}>
       <button type="button" className="mov__head" onClick={onAbrir} aria-expanded={abierto}>
-        <span className="mov__marca">{nombrePasarela(mov.proveedor).slice(0, 2).toUpperCase()}</span>
+        <span className="mov__medio" title="Medio de pago">{medioDeMovimiento(e, mov)}</span>
         <span style={{ minWidth: 0 }}>
           <span className="mov__cliente truncate" style={{ display: "block" }}>{mov.clienteNombre ?? "Sin nombre"}</span>
           <span className="mov__meta truncate" style={{ display: "block" }}>
@@ -250,12 +270,20 @@ function FilaMovimiento({ mov, M, abierto, onAbrir, onNuevaVenta }: {
           <Badge variante="neutral"><Check size={13} />{destino}</Badge>
         )}
         {mov.estado === "ignorado" && <Badge variante="neutral">Ignorado</Badge>}
-        <span className="mov__monto">{M(mov.monto, 2)}</span>
+        <span className="mov__monto">
+          {M(mov.monto, 2)}
+          {mov.estado === "pendiente" && resto < mov.monto - 0.009 && (
+            <span className="t-sm t-subtle" style={{ display: "block", fontFamily: "var(--font-sans)", fontWeight: 400 }}>
+              quedan {M(resto, 2)}
+            </span>
+          )}
+        </span>
       </button>
 
       {abierto && (
         <div className="mov__body">
           <dl className="dl">
+            <dt>Medio de pago</dt><dd>{medioDeMovimiento(e, mov)}</dd>
             <dt>Pasarela</dt><dd>{nombrePasarela(mov.proveedor)}</dd>
             <dt>Bruto</dt><dd className="t-num">{M(mov.monto, 2)}</dd>
             <dt>Fee</dt><dd className="t-num">{M(mov.fee, 2)} {mov.monto > 0 && <span className="t-subtle">({pct((mov.fee / mov.monto) * 100, 1)})</span>}</dd>
@@ -273,7 +301,7 @@ function FilaMovimiento({ mov, M, abierto, onAbrir, onNuevaVenta }: {
               )}
               {sugerencias.map((s, k) => (
                 <SugerenciaFila key={s.cuotaId} s={s} mov={mov} M={M} destacada={k === 0 && automatica}
-                  onConciliar={() => conciliar(s.cuotaId, Math.min(mov.monto, s.saldo))} />
+                  onConciliar={() => conciliar(s.cuotaId, Math.min(resto, s.saldo))} />
               ))}
 
               <div className="stack-2" style={{ marginTop: 4 }}>
@@ -285,7 +313,7 @@ function FilaMovimiento({ mov, M, abierto, onAbrir, onNuevaVenta }: {
                     <span className="t-sm t-strong">{v?.contactoNombre}</span>
                     <span className="t-sm t-subtle">{c.esReserva ? "Reserva" : `Cuota ${c.numero}`}</span>
                     <span className="spacer t-sm t-num">falta {M(saldoDeCuota(e, c), 2)}</span>
-                    <Button sm variante="secondary" onClick={() => conciliar(c.id, Math.min(mov.monto, saldoDeCuota(e, c)))}>
+                    <Button sm variante="secondary" onClick={() => conciliar(c.id, Math.min(resto, saldoDeCuota(e, c)))}>
                       Imputar acá
                     </Button>
                   </div>
@@ -328,6 +356,7 @@ function SugerenciaFila({ s, mov, M, destacada, onConciliar }: {
   s: Sugerencia; mov: Movimiento; M: (n: number, d?: number) => string;
   destacada: boolean; onConciliar: () => void;
 }) {
+  const e = useEstado();
   return (
     <div className="sug" data-fuerte={destacada}>
       <span className="sug__puntaje">
@@ -353,7 +382,7 @@ function SugerenciaFila({ s, mov, M, destacada, onConciliar }: {
         )}
       </span>
       <Button sm variante={destacada ? "brand" : "secondary"} onClick={onConciliar}>
-        Conciliar {M(Math.min(mov.monto, s.saldo), 2)}
+        Conciliar {M(Math.min(restoDeMovimiento(e, mov), s.saldo), 2)}
       </Button>
     </div>
   );

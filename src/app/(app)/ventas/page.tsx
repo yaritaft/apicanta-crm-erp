@@ -2,7 +2,7 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import {
-  AlertTriangle, Check, HandCoins, Info, Pencil, Plus, Receipt, Trash2,
+  AlertTriangle, Check, HandCoins, Info, Link2, Paperclip, Pencil, Plus, Receipt, Trash2,
 } from "lucide-react";
 import { PageHead } from "@/components/shell/PageHead";
 import {
@@ -18,9 +18,9 @@ import { acciones, nuevoId, useEstado } from "@/lib/store";
 import { useAbrirDesdeURL } from "@/lib/useQuery";
 import { fechaLarga, isoDia, money, num, pct } from "@/lib/format";
 import { porCobrarTotal, saldoVenta } from "@/lib/finanzas";
-import { parecido } from "@/lib/conciliacion";
-import { nombrePasarela } from "@/lib/pasarelas";
-import type { Cuota, EstadoVenta, Moneda, Pago, Venta } from "@/lib/types";
+import { verComprobante } from "@/lib/comprobantes";
+import { RegistrarPago } from "@/components/cobros/RegistrarPago";
+import type { Cuota, EstadoVenta, Moneda, Venta } from "@/lib/types";
 
 const ESTADO: Record<EstadoVenta, { texto: string; variante: "success" | "neutral" | "danger" }> = {
   "activa":      { texto: "Activa",      variante: "success" },
@@ -218,6 +218,19 @@ export default function Ventas() {
                             <div key={p.id} className="row t-sm" style={{ gap: 8, color: "var(--ink-subtle)" }}>
                               <Receipt size={13} />
                               <span>{e.procesadores.find((x) => x.id === p.procesadorId)?.nombre ?? "—"}</span>
+                              <span className="t-subtle">{fechaLarga(p.fecha)}</span>
+                              {p.movimientoId && (
+                                <span title="Conciliado con el pago de la pasarela" style={{ display: "inline-flex", color: "var(--success)" }}>
+                                  <Link2 size={13} />
+                                </span>
+                              )}
+                              {p.comprobante && (
+                                <button type="button" className="link t-sm" onClick={() => {
+                                  verComprobante(p.comprobante!).catch((err) => toast(err instanceof Error ? err.message : "No se pudo abrir.", "err"));
+                                }}>
+                                  <Paperclip size={12} /> comprobante
+                                </button>
+                              )}
                               <span className="spacer t-num">{M(p.monto, 2)}</span>
                               {p.feeMonto > 0 && <span className="t-num">fee {M(p.feeMonto, 2)}</span>}
                             </div>
@@ -246,9 +259,9 @@ export default function Ventas() {
       )}
 
       {cobrar && (
-        <FormularioPago
+        <RegistrarPago
           cuota={cobrar} onCerrar={() => setCobrar(null)}
-          onGuardado={() => { toast("Pago registrado."); setCobrar(null); }}
+          onGuardado={(mensaje) => { toast(mensaje); setCobrar(null); }}
         />
       )}
 
@@ -425,96 +438,6 @@ function FormularioVenta({ borrador, onCerrar, onGuardado }: {
 
         <Field label="Notas" span2><Textarea value={f.notas} onChange={(ev) => setF({ ...f, notas: ev.target.value })} rows={2} /></Field>
       </div>
-    </ModalForm>
-  );
-}
-
-/* ================= Registrar un pago ================= */
-
-function FormularioPago({ cuota, onCerrar, onGuardado }: {
-  cuota: Cuota; onCerrar: () => void; onGuardado: () => void;
-}) {
-  const e = useEstado();
-  const pagado = e.pagos.filter((p) => p.cuotaId === cuota.id).reduce((a, p) => a + p.monto, 0);
-  const resta = cuota.monto - pagado;
-
-  const [monto, setMonto] = useState(Math.round(resta * 100) / 100);
-  const [procesadorId, setProcesadorId] = useState(e.procesadores[0]?.id ?? "");
-  const [fecha, setFecha] = useState(isoDia(new Date().toISOString()));
-  const [referencia, setReferencia] = useState("");
-
-  /* Cobros de pasarela que parecen de este cliente: si el pago ya entró,
-     conviene conciliarlo en vez de cargarlo a mano y duplicarlo. */
-  const venta = e.ventas.find((v) => v.id === cuota.ventaId);
-  const candidatos = e.movimientos.filter((m) =>
-    m.estado === "pendiente" && venta && (
-      parecido(m.clienteNombre, venta.contactoNombre) >= 0.5 || Math.abs(m.monto - resta) < 0.5
-    ),
-  ).slice(0, 4);
-
-  const proc = e.procesadores.find((p) => p.id === procesadorId);
-  const fee = Math.round(monto * (proc?.feeRate ?? 0) * 100) / 100;
-  const mon = e.ajustes.monedaBase;
-
-  return (
-    <ModalForm
-      abierto onCerrar={onCerrar}
-      titulo="Registrar un pago"
-      sub={`${cuota.esReserva ? "Reserva" : `Cuota ${cuota.numero}`} · faltan ${money(resta, mon, 2)}`}
-      guardarTexto="Registrar"
-      puedeGuardar={monto > 0}
-      onGuardar={() => {
-        acciones.crear<Pago>("pagos", {
-          cuotaId: cuota.id, procesadorId: procesadorId || undefined,
-          monto, moneda: mon as Moneda, feeRate: proc?.feeRate ?? 0, feeMonto: fee,
-          fecha: new Date(fecha + "T12:00:00").toISOString(),
-          referencia: referencia || undefined, creadoEn: new Date().toISOString(),
-        }, `Pago de ${money(monto, mon)}`);
-        /* Si con esto la cuota queda saldada, se marca cobrada. */
-        if (pagado + monto >= cuota.monto - 0.01) {
-          acciones.actualizarSilencioso<Cuota>("cuotas", cuota.id, { estado: "pagada" });
-        }
-        onGuardado();
-      }}
-    >
-      <div className="form-grid">
-        <Field label="Monto" ayuda={resta > monto ? `Queda un saldo de ${money(resta - monto, mon, 2)}` : "Salda la cuota"}>
-          <Input type="number" min={0} step="0.01" value={monto} onChange={(ev) => setMonto(Number(ev.target.value))} autoFocus />
-        </Field>
-        <Field label="Método" ayuda={proc ? `Comisión ${pct((proc.feeRate) * 100, 1)} — ${money(fee, mon, 2)}` : undefined}>
-          <Select value={procesadorId} onChange={(ev) => setProcesadorId(ev.target.value)}
-            opciones={e.procesadores.filter((p) => p.activo).map((p) => ({ valor: p.id, texto: p.nombre }))} />
-        </Field>
-        <Field label="Fecha"><Input type="date" value={fecha} onChange={(ev) => setFecha(ev.target.value)} /></Field>
-        <Field label="Referencia" ayuda="El ID del pago en Stripe, PayPal, etc.">
-          <Input value={referencia} onChange={(ev) => setReferencia(ev.target.value)} placeholder="pi_3Q…" />
-        </Field>
-      </div>
-      {candidatos.length > 0 && (
-        <div className="stack-2">
-          <span className="t-label">Estos cobros ya entraron a una pasarela</span>
-          {candidatos.map((m) => (
-            <div className="row" key={m.id} style={{ gap: 8, flexWrap: "wrap" }}>
-              <Badge variante="neutral">{nombrePasarela(m.proveedor)}</Badge>
-              <span className="t-sm">{m.clienteNombre ?? "—"}</span>
-              <span className="t-sm t-subtle">{fechaLarga(m.fecha)}</span>
-              <span className="spacer t-sm t-num t-strong">{money(m.monto, mon, 2)}</span>
-              <Button sm variante="secondary" onClick={() => {
-                acciones.conciliar(m.id, [{ cuotaId: cuota.id, monto: Math.min(m.monto, resta) }]);
-                onGuardado();
-              }}>
-                Conciliar con esta cuota
-              </Button>
-            </div>
-          ))}
-        </div>
-      )}
-
-      <Ayuda titulo="Se puede pagar en varias partes" icono={<Info size={18} />}>
-        Si la cuota se cobró con dos métodos, registrá un pago por cada uno sobre la misma cuota.
-        Apicanta suma los dos y la marca cobrada cuando llega al total. Si el cobro ya entró a una
-        pasarela, conciliá en vez de cargarlo a mano: el fee queda con el número real.
-      </Ayuda>
     </ModalForm>
   );
 }

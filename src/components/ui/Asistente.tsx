@@ -61,6 +61,8 @@ export function Asistente({
   useEffect(() => {
     const onKey = (ev: KeyboardEvent) => {
       if (ev.defaultPrevented) return;
+      /* Un modal abierto encima (elegir un pago, confirmar algo) maneja sus teclas. */
+      if (document.querySelector(".modal-backdrop")) return;
       if (ev.key === "Escape") {
         /* Un desplegable o un calendario abierto se cierra primero. */
         if (document.querySelector("[data-flotante-abierto]")) return;
