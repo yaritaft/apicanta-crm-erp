@@ -1025,3 +1025,82 @@ kbd {
 .link { background: none; border: 0; padding: 0; font: inherit; color: var(--brand); cursor: pointer; text-align: left; }
 .link:hover { text-decoration: underline; }
 .link:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; border-radius: 2px; }
+
+/* ============================================================
+   Marketing: campañas → conjuntos → anuncios
+   La tabla estilo Administrador de anuncios: totales al pie, "mostrar más",
+   la fila en la que se está parado y las migas de los filtros.
+   ============================================================ */
+
+/* Totales al pie, pegados abajo mientras se scrollea, como en Meta: el total
+   se lee sin bajar hasta el final. Opacos por lo mismo que el encabezado. La
+   línea de arriba va como sombra: con border-collapse, un borde no viaja con
+   la celda pegada y se pierde al scrollear. */
+.hk-table tfoot td {
+  position: sticky; bottom: 0; z-index: 1;
+  background: var(--surface-200); color: var(--ink); font-weight: 600;
+  box-shadow: inset 0 1px 0 var(--border-strong);
+  border-bottom: 0; height: 44px;
+}
+.hk-table tfoot td.hk-td--num { font-weight: 600; }
+
+/* La fila que filtra al nivel de abajo, o la que está abierta en el detalle. */
+.hk-table tbody tr[data-activa="true"] td { background: var(--brand-soft); }
+.hk-table tbody tr[data-activa="true"] td:first-child { box-shadow: inset 3px 0 0 var(--brand-fill); }
+
+/* "Mostrar más": al final de la lista, y quieto a lo ancho aunque la tabla
+   scrollee de costado. */
+.hk-mas {
+  position: sticky; left: 0;
+  display: flex; align-items: center; justify-content: center; gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-top: 1px solid var(--border);
+}
+
+/* Migas: dentro de qué campaña y de qué conjunto se está mirando. */
+.mk-barra { display: flex; flex-direction: column; gap: var(--space-3); min-width: 0; }
+.mk-migas { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; min-width: 0; }
+.mk-migas__sep { color: var(--ink-subtle); flex: none; }
+.mk-miga {
+  display: inline-flex; align-items: center; gap: 6px; min-width: 0; max-width: 100%;
+  height: 32px; padding: 0 4px 0 12px; border-radius: var(--radius-full);
+  background: var(--brand-soft); border: 1px solid var(--brand-fill);
+  font-size: 13px; color: var(--ink);
+}
+.mk-miga__tipo { color: var(--brand); font-weight: 600; flex: none; }
+.mk-miga__nombre {
+  min-width: 0; max-width: 360px; font-weight: 600;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.mk-miga__quitar {
+  flex: none; display: grid; place-items: center; width: 24px; height: 24px;
+  border: 0; border-radius: var(--radius-full); background: transparent;
+  color: var(--ink-subtle); cursor: pointer;
+  transition: background-color 150ms ease-out, color 150ms ease-out;
+}
+.mk-miga__quitar:hover { background: var(--surface-300); color: var(--ink); }
+.mk-miga__quitar:focus-visible { outline: 2px solid var(--brand); outline-offset: 1px; }
+
+/* Los nombres de Meta son largos ("[V2][WEBINAR 23/09] Video 3 - Hook…"): se
+   cortan con puntos suspensivos y el entero queda en el title. La flecha
+   avisa que la fila baja un nivel. */
+.mk-nombre { display: flex; align-items: center; gap: 6px; max-width: 360px; min-width: 0; }
+.mk-nombre__txt { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mk-nombre__ir { flex: none; color: var(--ink-subtle); transition: color 150ms ease-out, transform 150ms ease-out; }
+.hk-table tbody tr:hover .mk-nombre__ir,
+.hk-table tbody tr:focus-visible .mk-nombre__ir { color: var(--brand); transform: translateX(2px); }
+.mk-contexto { display: block; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* El camino del anuncio en su detalle: campaña › conjunto, cada uno un link. */
+.mk-ruta { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.mk-ruta .link {
+  min-width: 0; font-size: 13px; line-height: 20px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+@media (max-width: 720px) {
+  .mk-nombre { max-width: 220px; }
+  .mk-contexto { max-width: 140px; }
+  .mk-miga__nombre { max-width: 180px; }
+  .mk-ruta { flex-wrap: wrap; }
+}

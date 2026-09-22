@@ -2,6 +2,7 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp } from "lucide-react";
+import { num } from "@/lib/format";
 
 export interface Columna<T> {
   clave: string;
@@ -12,10 +13,14 @@ export interface Columna<T> {
   orden?: (fila: T) => string | number;
   tipo?: "primary" | "num" | "secondary";
   ancho?: number;
+  /* Lo que va en la fila de totales, al pie. Con que una columna lo tenga, la
+     tabla dibuja esa fila: el total se lee debajo de su columna, no aparte. */
+  pie?: React.ReactNode;
 }
 
 export function DataTable<T extends { id: string }>({
   filas, columnas, onFila, acciones, ordenInicial, vacio, etiquetaFila, alto, porPagina,
+  mostrarMas, filaActiva,
 }: {
   filas: T[];
   columnas: Columna<T>[];
@@ -32,9 +37,22 @@ export function DataTable<T extends { id: string }>({
      estirarse: 52 cuotas vencidas hacian que Finanzas no terminara nunca. El
      encabezado queda fijo, asi que se sigue sabiendo que columna es cual. */
   alto?: number;
+  /* La otra forma de cortar: de a N filas, con un boton al final para traer
+     N mas. Para listas que se leen de corrido, como los anuncios de Meta, donde
+     la fila de totales tiene que quedar pegada abajo. No se combina con
+     `porPagina`. */
+  mostrarMas?: number;
+  /* La fila que esta abierta en un detalle, o la que filtra a otra tabla: se
+     pinta, para no perder de vista donde se esta parado. */
+  filaActiva?: (fila: T) => boolean;
 }) {
   const [orden, setOrden] = useState(ordenInicial ?? null);
   const [pagina, setPagina] = useState(0);
+  const [limite, setLimite] = useState(mostrarMas ?? 0);
+
+  /* Mismo criterio que la pagina: otro filtro u otro orden arrancan de nuevo
+     desde las primeras. */
+  useEffect(() => { setLimite(mostrarMas ?? 0); }, [filas, orden, mostrarMas]);
 
   /* Volver a la primera al cambiar el filtro o el orden: quedarse en la pagina
      7 de un resultado que ahora tiene 2 muestra una tabla vacia y parece que
@@ -61,6 +79,8 @@ export function DataTable<T extends { id: string }>({
   const visibles = porPagina
     ? ordenadas.slice(actual * porPagina, actual * porPagina + porPagina)
     : ordenadas;
+  const mostradas = mostrarMas ? visibles.slice(0, limite) : visibles;
+  const conPie = columnas.some((c) => c.pie !== undefined);
 
   function alternar(clave: string) {
     setOrden((o) => (o?.clave === clave ? { clave, desc: !o.desc } : { clave, desc: false }));
@@ -96,9 +116,10 @@ export function DataTable<T extends { id: string }>({
           </tr>
         </thead>
         <tbody>
-          {visibles.map((f) => (
+          {mostradas.map((f) => (
             <tr
               key={f.id}
+              data-activa={filaActiva?.(f) ? "true" : undefined}
               onClick={onFila ? () => onFila(f) : undefined}
               tabIndex={onFila ? 0 : undefined}
               role={onFila ? "button" : undefined}
@@ -119,7 +140,29 @@ export function DataTable<T extends { id: string }>({
             </tr>
           ))}
         </tbody>
+        {conPie && (
+          <tfoot>
+            <tr>
+              {columnas.map((c) => (
+                <td key={c.clave} className={c.tipo ? `hk-td--${c.tipo}` : undefined}>{c.pie}</td>
+              ))}
+              {acciones && <td />}
+            </tr>
+          </tfoot>
+        )}
       </table>
+
+      {!!mostrarMas && limite < total && (
+        <div className="hk-mas">
+          <span className="t-sm t-subtle t-num">{num(limite)} de {num(total)}</span>
+          <button
+            type="button" className="hk-btn hk-btn--secondary hk-btn--sm"
+            onClick={() => setLimite((l) => l + mostrarMas)}
+          >
+            Mostrar {num(Math.min(mostrarMas, total - limite))} más
+          </button>
+        </div>
+      )}
 
       {porPagina && paginas > 1 && (
         <div className="hk-paginador">

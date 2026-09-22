@@ -43,8 +43,11 @@ export function Origen({ contacto, utmAgenda }: { contacto?: Contacto; utmAgenda
           )}
 
           {ad ? (
+            /* Al anuncio, no a la campaña: Marketing abre su detalle con la
+               campaña y el conjunto ya filtrados, y ahí están las otras
+               personas que entraron por el mismo anuncio. */
             <Link
-              href={`/marketing?ver=${ad.campaignId}`}
+              href={`/marketing?anuncio=${ad.id}`}
               style={{
                 display: "flex", gap: 12, alignItems: "center", padding: "12px 14px",
                 background: "var(--surface-200)", border: "1px solid var(--border)",

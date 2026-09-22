@@ -1,6 +1,7 @@
-import type { EstadoApp, ID, Meta, MetricaClave } from "./types";
+import type { Ad, Contacto, EstadoApp, ID, Lead, Meta, MetricaClave } from "./types";
 import { inicioSemana, mesClave, nombreMes } from "./format";
 import { calcularPyL, cashCollected, porCobrarTotal } from "./finanzas";
+import { diaDeNegocio } from "@/components/ui/DateRangePicker";
 
 /* Todo lo que la app calcula vive acá: una sola fuente de verdad
    para los números del panel, finanzas, marketing y metas. */
@@ -176,7 +177,11 @@ export function metricasCampania(c: {
    La cadena es venta → contacto → lead → lead.campania, y ese ultimo paso es
    por NOMBRE, no por id: hoy `campania` es texto libre en el lead. Alcanza
    mientras los nombres se escriban igual, pero se rompe si alguien renombra
-   una campania en Meta. El arreglo de verdad es un `campaniaId` en el lead. */
+   una campania en Meta. El arreglo de verdad es un `campaniaId` en el lead.
+
+   Ya no la usa ninguna pantalla: Marketing atribuye por PERSONA, con el
+   anuncio de origen del contacto (ver `filasMeta`). Queda hasta que se unan
+   las ramas en curso, por si alguna la llama; despues se puede borrar. */
 export function negocioDeCampania(e: EstadoApp, nombre: string) {
   const leadsDeLaCampania = new Set(
     e.leads.filter((l) => l.campania === nombre).map((l) => l.id),
@@ -288,58 +293,399 @@ export interface FilaCampania {
 export function campaniasDelRango(
   e: EstadoApp, desde: string, hasta: string,
 ): FilaCampania[] {
-  /* De anuncio a campaña. */
-  const campaniaDe = new Map(e.ads.map((a) => [a.id, a.campaignId]));
+  /* Es el nivel campaña de `filasMeta`, recortado a las que tuvieron días de
+     datos en el rango, que es lo que esta función devolvió siempre. Una sola
+     cuenta: el Panel y la tabla de Marketing no pueden dar distinto. Las
+     personas que suma `filasMeta` acá no entran, así que el resultado es el
+     mismo de antes, número por número. */
+  return filasMeta(e, desde, hasta, "campania", { incluirSinActividad: true })
+    .filter((f) => f.dias > 0)
+    .map((f) => ({
+      id: f.id, nombre: f.nombre, objetivo: f.objetivo, estado: f.estado,
+      inversion: f.inversion, impresiones: f.impresiones, clicks: f.clicks,
+      clicksEnlace: f.clicksEnlace, leads: f.leads,
+      ctr: f.ctr, cpm: f.cpm, cpc: f.cpc,
+      ctrEnlace: f.ctrEnlace, cpcEnlace: f.cpcEnlace, cpl: f.cpl,
+      dias: f.dias, anuncios: f.anuncios,
+    }));
+}
 
-  type Acum = {
-    inversion: number; impresiones: number; clicks: number;
-    clicksEnlace: number; leads: number;
-    dias: Set<string>; anuncios: Set<string>;
+/* ---------- Marketing por nivel: campaña → conjunto → anuncio ----------
+
+   Las tres tablas de Marketing son las del Administrador de anuncios: los
+   mismos números a tres alturas. Salen de UNA función para que los niveles no
+   puedan discutir entre sí: los conjuntos de una campaña suman lo que dice la
+   fila de la campaña porque las dos se arman con las mismas filas de
+   ad_insights, recorridas en el mismo orden.
+
+   A lo de Meta se le suma lo nuestro: las personas que entraron por cada
+   anuncio (contactos con `origenAdId`) y lo que esas personas compraron. Es lo
+   que reemplaza a `negocioDeCampania`, que atribuía por el NOMBRE de la
+   campaña y se rompía con cualquier renombre. */
+
+export type NivelMeta = "campania" | "conjunto" | "anuncio";
+
+export interface FiltroMeta {
+  /* Sólo lo que cuelga de esta campaña, este conjunto o este anuncio. */
+  campaignId?: ID | null;
+  adsetId?: ID | null;
+  adId?: ID | null;
+  /* Por defecto sólo aparece lo que tuvo actividad en el rango: días con datos
+     de Meta o personas que entraron. Con esto aparece todo lo que cuelga del
+     filtro aunque esté en cero: sirve para encontrar lo pausado que no gastó. */
+  incluirSinActividad?: boolean;
+}
+
+/* Lo que se suma de fila en fila. */
+interface SumasMeta {
+  inversion: number;
+  impresiones: number;
+  clicks: number;
+  clicksEnlace: number;
+  leads: number;
+  /* Suma del alcance de cada día. Meta cuenta personas DISTINTAS en el
+     período; sumando días, quien lo vio el lunes y el martes cuenta dos veces.
+     null si Meta nunca lo informó: un 0 diría "no lo vio nadie". */
+  alcance: number | null;
+  /* Las impresiones de los días que traen alcance: la frecuencia se calcula
+     sólo sobre esos, o un día sin alcance la inflaría. */
+  impresionesConAlcance: number;
+  /* Lo nuestro: contactos que entraron por estos anuncios en el rango, y lo
+     que compraron (en cualquier fecha: el ciclo de venta es largo, y la
+     venta de octubre es hija del anuncio de septiembre). */
+  personas: number;
+  ventas: number;
+  facturado: number;
+  cobrado: number;
+}
+
+export interface MetricasMeta extends SumasMeta {
+  ctr: number;
+  cpm: number;
+  cpc: number;
+  ctrEnlace: number;
+  cpcEnlace: number;
+  cpl: number;
+  /* Impresiones por persona alcanzada, día por día: la frecuencia diaria
+     promedio. Alta con el CTR cayendo es fatiga de creativo. */
+  frecuencia: number | null;
+  costoPorPersona: number;
+  /* Cobrado sobre inversión, no facturado: una venta en cuotas que no se
+     cobró todavía no devolvió nada. */
+  roas: number;
+  costoPorVenta: number;
+}
+
+export interface FilaMeta extends FilaCampania, MetricasMeta {
+  nivel: NivelMeta;
+  /* El estado de entrega, normalizado (ver `claveEstado`). `estado` queda
+     tal cual lo mandó Meta. */
+  entrega: string;
+  campaignId: ID;
+  campaignNombre: string;
+  /* El conjunto de la fila: el propio en el nivel conjunto, el padre en el
+     nivel anuncio. */
+  adsetId?: ID;
+  adsetNombre?: string;
+}
+
+const SUMAS_EN_CERO: SumasMeta = {
+  inversion: 0, impresiones: 0, clicks: 0, clicksEnlace: 0, leads: 0,
+  alcance: null, impresionesConAlcance: 0,
+  personas: 0, ventas: 0, facturado: 0, cobrado: 0,
+};
+
+/* Las derivadas se RECALCULAN sobre las sumas; no se promedian. El promedio de
+   siete CTR no es el CTR de la semana: un día con tres impresiones pesaría
+   igual que uno con treinta mil. La misma cuenta sirve para cada fila y para
+   la de totales. */
+function derivar(s: SumasMeta): MetricasMeta {
+  return {
+    ...s,
+    ctr: s.impresiones > 0 ? (s.clicks / s.impresiones) * 100 : 0,
+    cpm: s.impresiones > 0 ? (s.inversion / s.impresiones) * 1000 : 0,
+    cpc: s.clicks > 0 ? s.inversion / s.clicks : 0,
+    ctrEnlace: s.impresiones > 0 ? (s.clicksEnlace / s.impresiones) * 100 : 0,
+    cpcEnlace: s.clicksEnlace > 0 ? s.inversion / s.clicksEnlace : 0,
+    cpl: s.leads > 0 ? s.inversion / s.leads : 0,
+    frecuencia: s.alcance ? s.impresionesConAlcance / s.alcance : null,
+    costoPorPersona: s.personas > 0 ? s.inversion / s.personas : 0,
+    roas: s.inversion > 0 ? s.cobrado / s.inversion : 0,
+    costoPorVenta: s.ventas > 0 ? s.inversion / s.ventas : 0,
   };
-  const vacio = (): Acum => ({
-    inversion: 0, impresiones: 0, clicks: 0, clicksEnlace: 0, leads: 0,
-    dias: new Set(), anuncios: new Set(),
-  });
+}
 
-  const por = new Map<ID, Acum>();
+/* Meta manda el estado en mayúsculas (ACTIVE, PAUSED, ARCHIVED, DELETED) y el
+   sync lo guarda en minúsculas; lo que entró por otro camino puede venir de
+   cualquiera de las dos formas, y la tabla vieja lo guardaba en castellano.
+   Todo se compara contra esta clave. */
+const ALIAS_ESTADO: Record<string, string> = {
+  activa: "active", activo: "active", pausada: "paused", pausado: "paused",
+  archivada: "archived", archivado: "archived", finalizada: "archived",
+};
+
+export function claveEstado(estado: string | null | undefined): string {
+  const k = (estado ?? "").trim().toLowerCase();
+  return ALIAS_ESTADO[k] ?? k;
+}
+
+/* Lo que Meta llama "entrega": un anuncio activo adentro de una campaña
+   pausada no sale. El estado propio dice lo que se configuró; éste dice si
+   corre, que es lo que se quiere ver al filtrar por "Activo". */
+function entregaDe(propio: string, conjunto?: string, campania?: string): string {
+  const p = claveEstado(propio);
+  if (p !== "active") return p || "sin-estado";
+  const c = claveEstado(campania);
+  if (c && c !== "active") return "campaign_paused";
+  const s = claveEstado(conjunto);
+  if (s && s !== "active") return "adset_paused";
+  return p;
+}
+
+export interface NegocioPersona { ventas: number; facturado: number; cobrado: number }
+
+/* Lo que compró cada persona, por id de contacto.
+
+   `venta.contactoId` guarda a veces el id del contacto y a veces el de un
+   lead (las ventas de antes de separar contactos). En los migrados el
+   contacto lleva el mismo id que su lead; en los nuevos, el lead dice cuál es
+   su contacto. Las canceladas no cuentan, igual que en Finanzas. */
+export function negocioPorPersona(e: EstadoApp): Map<ID, NegocioPersona> {
+  const contactos = new Set(e.contactos.map((c) => c.id));
+  const contactoDeLead = new Map(e.leads.map((l) => [l.id, l.contactoId ?? l.id]));
+  const ventaDeCuota = new Map(e.cuotas.map((c) => [c.id, c.ventaId]));
+  const cobradoDeVenta = new Map<ID, number>();
+  for (const p of e.pagos) {
+    const v = ventaDeCuota.get(p.cuotaId);
+    if (v) cobradoDeVenta.set(v, (cobradoDeVenta.get(v) ?? 0) + p.monto);
+  }
+
+  const out = new Map<ID, NegocioPersona>();
+  for (const v of e.ventas) {
+    if (v.estado === "cancelada" || !v.contactoId) continue;
+    const persona = contactos.has(v.contactoId) ? v.contactoId : contactoDeLead.get(v.contactoId);
+    if (!persona) continue;
+    const n = out.get(persona) ?? { ventas: 0, facturado: 0, cobrado: 0 };
+    n.ventas += 1;
+    n.facturado += v.precioAcordado;
+    n.cobrado += cobradoDeVenta.get(v.id) ?? 0;
+    out.set(persona, n);
+  }
+  return out;
+}
+
+/* Las filas de un nivel en el rango, con lo de Meta y lo nuestro. */
+export function filasMeta(
+  e: EstadoApp, desde: string, hasta: string, nivel: NivelMeta, filtro: FiltroMeta = {},
+): FilaMeta[] {
+  const ads = new Map(e.ads.map((a) => [a.id, a]));
+  const adsets = new Map(e.adsets.map((s) => [s.id, s]));
+  const campaigns = new Map(e.campaigns.map((c) => [c.id, c]));
+
+  /* Qué anuncios cuentan, y a qué fila suma cada uno. */
+  const entra = (a: Ad) =>
+    (!filtro.campaignId || a.campaignId === filtro.campaignId) &&
+    (!filtro.adsetId || a.adsetId === filtro.adsetId) &&
+    (!filtro.adId || a.id === filtro.adId);
+  const filaDe = (a: Ad) => (nivel === "campania" ? a.campaignId : nivel === "conjunto" ? a.adsetId : a.id);
+
+  type Acum = SumasMeta & { dias: Set<string>; anuncios: Set<string> };
+  const acums = new Map<ID, Acum>();
+  const acum = (k: ID): Acum => {
+    let a = acums.get(k);
+    if (!a) {
+      a = { ...SUMAS_EN_CERO, dias: new Set(), anuncios: new Set() };
+      acums.set(k, a);
+    }
+    return a;
+  };
+
+  /* Lo de Meta: las filas diarias que caen en el rango. */
   for (const i of e.adInsights) {
     /* Comparacion de strings ISO: ordenan igual que las fechas y no arrastran
        husos, que es de donde salen los errores de un dia. */
     if (i.dia < desde || i.dia > hasta) continue;
-    const c = campaniaDe.get(i.adId);
-    if (!c) continue;
-    const a = por.get(c) ?? vacio();
+    const ad = ads.get(i.adId);
+    if (!ad || !entra(ad)) continue;
+    const a = acum(filaDe(ad));
     a.inversion += i.inversion;
     a.impresiones += i.impresiones;
     a.clicks += i.clicks;
     a.clicksEnlace += i.clicksEnlace ?? 0;
     a.leads += i.leads;
+    if (i.alcance != null) {
+      a.alcance = (a.alcance ?? 0) + i.alcance;
+      a.impresionesConAlcance += i.impresiones;
+    }
     a.dias.add(i.dia);
     a.anuncios.add(i.adId);
-    por.set(c, a);
   }
 
-  return e.campaigns
-    .filter((c) => por.has(c.id))
-    .map((c) => {
-      const a = por.get(c.id)!;
-      /* Las derivadas se RECALCULAN sobre los totales del rango; no se
-         promedian las diarias. El promedio de siete CTR no es el CTR de la
-         semana: un dia con tres impresiones pesaria igual que uno con treinta
-         mil. */
-      return {
+  /* Lo nuestro: las personas que entraron por esos anuncios en el rango. Por
+     el día del negocio, no el de UTC: alguien que se registró a las 22 de
+     Argentina entró ese día, aunque el ISO ya diga el siguiente. */
+  const negocio = negocioPorPersona(e);
+  for (const c of e.contactos) {
+    if (!c.origenAdId) continue;
+    const ad = ads.get(c.origenAdId);
+    if (!ad || !entra(ad)) continue;
+    const dia = diaDeNegocio(c.creadoEn);
+    if (!dia || dia < desde || dia > hasta) continue;
+    const a = acum(filaDe(ad));
+    a.personas += 1;
+    const n = negocio.get(c.id);
+    if (n) {
+      a.ventas += n.ventas;
+      a.facturado += n.facturado;
+      a.cobrado += n.cobrado;
+    }
+  }
+
+  /* Las filas, en el orden en que las guarda la base. */
+  type Base = Pick<FilaMeta, "id" | "nombre" | "objetivo" | "estado" | "entrega" | "campaignId" | "adsetId">;
+  const adDelFiltro = filtro.adId ? ads.get(filtro.adId) : undefined;
+  const setDelFiltro = filtro.adsetId ? adsets.get(filtro.adsetId) : undefined;
+  let bases: Base[];
+  if (nivel === "campania") {
+    bases = e.campaigns
+      .filter((c) =>
+        (!filtro.campaignId || c.id === filtro.campaignId) &&
+        (!filtro.adsetId || setDelFiltro?.campaignId === c.id) &&
+        (!filtro.adId || adDelFiltro?.campaignId === c.id))
+      .map((c) => ({
         id: c.id, nombre: c.nombre, objetivo: c.objetivo, estado: c.estado,
-        inversion: a.inversion, impresiones: a.impresiones, clicks: a.clicks,
-        clicksEnlace: a.clicksEnlace, leads: a.leads,
-        ctr: a.impresiones > 0 ? (a.clicks / a.impresiones) * 100 : 0,
-        cpm: a.impresiones > 0 ? (a.inversion / a.impresiones) * 1000 : 0,
-        cpc: a.clicks > 0 ? a.inversion / a.clicks : 0,
-        ctrEnlace: a.impresiones > 0 ? (a.clicksEnlace / a.impresiones) * 100 : 0,
-        cpcEnlace: a.clicksEnlace > 0 ? a.inversion / a.clicksEnlace : 0,
-        cpl: a.leads > 0 ? a.inversion / a.leads : 0,
-        dias: a.dias.size, anuncios: a.anuncios.size,
+        entrega: entregaDe(c.estado), campaignId: c.id,
+      }));
+  } else if (nivel === "conjunto") {
+    bases = e.adsets
+      .filter((s) =>
+        (!filtro.campaignId || s.campaignId === filtro.campaignId) &&
+        (!filtro.adsetId || s.id === filtro.adsetId) &&
+        (!filtro.adId || adDelFiltro?.adsetId === s.id))
+      .map((s) => {
+        const c = campaigns.get(s.campaignId);
+        return {
+          id: s.id, nombre: s.nombre, objetivo: c?.objetivo ?? "", estado: s.estado,
+          entrega: entregaDe(s.estado, undefined, c?.estado),
+          campaignId: s.campaignId, adsetId: s.id,
+        };
+      });
+  } else {
+    bases = e.ads.filter(entra).map((a) => {
+      const c = campaigns.get(a.campaignId);
+      const s = adsets.get(a.adsetId);
+      return {
+        id: a.id, nombre: a.nombre, objetivo: c?.objetivo ?? "", estado: a.estado,
+        entrega: entregaDe(a.estado, s?.estado, c?.estado),
+        campaignId: a.campaignId, adsetId: a.adsetId,
       };
     });
+  }
+
+  return bases
+    /* Un acumulado existe sólo si hubo días de datos o personas. */
+    .filter((b) => filtro.incluirSinActividad || acums.has(b.id))
+    .map((b) => {
+      const a = acums.get(b.id);
+      const { dias, anuncios, ...sumas } = a ?? { ...SUMAS_EN_CERO, dias: new Set<string>(), anuncios: new Set<string>() };
+      return {
+        ...b,
+        nivel,
+        campaignNombre: campaigns.get(b.campaignId)?.nombre ?? "",
+        adsetNombre: b.adsetId ? adsets.get(b.adsetId)?.nombre : undefined,
+        ...derivar(sumas),
+        dias: dias.size,
+        anuncios: anuncios.size,
+      };
+    });
+}
+
+/* La fila de totales de una tabla, y los KPIs de arriba: se suma lo sumable y
+   las derivadas se recalculan sobre esos totales, igual que en cada fila. */
+export function totalesMeta(filas: FilaMeta[]): MetricasMeta & { anuncios: number } {
+  const s: SumasMeta = { ...SUMAS_EN_CERO };
+  let anuncios = 0;
+  for (const f of filas) {
+    s.inversion += f.inversion;
+    s.impresiones += f.impresiones;
+    s.clicks += f.clicks;
+    s.clicksEnlace += f.clicksEnlace;
+    s.leads += f.leads;
+    if (f.alcance != null) s.alcance = (s.alcance ?? 0) + f.alcance;
+    s.impresionesConAlcance += f.impresionesConAlcance;
+    s.personas += f.personas;
+    s.ventas += f.ventas;
+    s.facturado += f.facturado;
+    s.cobrado += f.cobrado;
+    anuncios += f.anuncios;
+  }
+  return { ...derivar(s), anuncios };
+}
+
+export interface PersonaDelAnuncio extends NegocioPersona {
+  contacto: Contacto;
+  /* La oportunidad más nueva de la persona: es la ficha que abre Leads. */
+  leadId?: ID;
+  /* El día del negocio en que entró, y si cae en el rango elegido. */
+  dia: string;
+  enRango: boolean;
+}
+
+/* Todas las personas que entraron por un anuncio, las más nuevas primero. Las
+   de afuera del rango también: si se llega desde la ficha de alguien que vino
+   hace dos meses, el detalle no puede decir que por ahí no entró nadie. */
+export function personasDelAnuncio(e: EstadoApp, adId: ID, desde: string, hasta: string): PersonaDelAnuncio[] {
+  const suyas = e.contactos.filter((c) => c.origenAdId === adId);
+  if (suyas.length === 0) return [];
+
+  const ids = new Set(suyas.map((c) => c.id));
+  const leadDe = new Map<ID, Lead>();
+  for (const l of e.leads) {
+    const c = l.contactoId ?? l.id;
+    if (!ids.has(c)) continue;
+    const previo = leadDe.get(c);
+    if (!previo || +new Date(l.creadoEn) > +new Date(previo.creadoEn)) leadDe.set(c, l);
+  }
+
+  const negocio = negocioPorPersona(e);
+  return suyas
+    .map((c) => {
+      const dia = diaDeNegocio(c.creadoEn);
+      return {
+        ventas: 0, facturado: 0, cobrado: 0, ...negocio.get(c.id),
+        contacto: c, leadId: leadDe.get(c.id)?.id, dia,
+        enRango: Boolean(dia) && dia >= desde && dia <= hasta,
+      };
+    })
+    .sort((a, b) => +new Date(b.contacto.creadoEn) - +new Date(a.contacto.creadoEn));
+}
+
+/* El gasto de un anuncio día por día, para el gráfico de su detalle. Los días
+   del medio sin fila van en cero: en el gráfico, un día sin gasto tiene que
+   verse como un pozo, no desaparecer. */
+export function gastoDiario(
+  e: EstadoApp, adId: ID, desde: string, hasta: string,
+): { dia: string; inversion: number }[] {
+  const por = new Map<string, number>();
+  for (const i of e.adInsights) {
+    if (i.adId !== adId || i.dia < desde || i.dia > hasta) continue;
+    por.set(i.dia, (por.get(i.dia) ?? 0) + i.inversion);
+  }
+  if (por.size === 0) return [];
+
+  const dias = [...por.keys()].sort();
+  const ultimo = dias[dias.length - 1];
+  const out: { dia: string; inversion: number }[] = [];
+  /* Fechas calendario: se avanza en UTC para que ningún huso corra el día. El
+     tope es un cinturón por si algún día llega con otro formato. */
+  const [y, m, d] = dias[0].split("-").map(Number);
+  for (let n = 0; n < 800; n++) {
+    const t = new Date(Date.UTC(y, m - 1, d + n));
+    const dia = `${t.getUTCFullYear()}-${String(t.getUTCMonth() + 1).padStart(2, "0")}-${String(t.getUTCDate()).padStart(2, "0")}`;
+    if (Number.isNaN(t.getTime()) || dia > ultimo) break;
+    out.push({ dia, inversion: por.get(dia) ?? 0 });
+  }
+  return out;
 }
 
 /* El primer dia con datos. Sirve de `minDate` del selector, para que "Máximo"
