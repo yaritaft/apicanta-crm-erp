@@ -1,3 +1,4 @@
+import { createClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
 import { guardarMovimientos, hayServidor } from "@/lib/servidor";
 import { hayClaves, listar, procesadorDe, PROVEEDORES, type MovimientoApi } from "@/lib/pasarelas-api";
@@ -18,6 +19,24 @@ import type { ProveedorPasarela } from "@/lib/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+/* Quien pide desde la pantalla de Conciliación manda su sesión de
+   Supabase. Se le pregunta a la base si puede entrar, con la MISMA
+   función que usan las políticas de RLS: una sola regla para decidir
+   quién ve la plata, no dos que se puedan desalinear. */
+async function esDelEquipo(peticion: Request): Promise<boolean> {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const anonima = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const jwt = peticion.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
+  if (!url || !anonima || !jwt) return false;
+
+  const db = createClient(url, anonima, {
+    auth: { persistSession: false },
+    global: { headers: { Authorization: `Bearer ${jwt}` } },
+  });
+  const r = await db.rpc("puede_entrar");
+  return !r.error && r.data === true;
+}
 
 /* Ventana por defecto: 60 días. Alcanza para las cuotas del mes y para
    las que se atrasaron, sin traer años de historia en cada click. */
@@ -40,8 +59,18 @@ export async function GET(peticion: Request) {
   const esCron = Boolean(cronSecreto)
     && peticion.headers.get("authorization") === `Bearer ${cronSecreto}`;
 
+  /* Esta ruta devuelve cobros con nombre, correo y monto de cada cliente:
+     sin credencial no contesta nada. Pasa el cron, el token de las
+     pasarelas, o una persona del equipo con su sesión. Sin secreto
+     configurado (desarrollo local) queda abierta. */
   const secreto = process.env.PASARELAS_WEBHOOK_TOKEN;
-  const autorizado = esCron || !secreto || url.searchParams.get("token") === secreto;
+  const autorizado = esCron
+    || !secreto
+    || url.searchParams.get("token") === secreto
+    || await esDelEquipo(peticion);
+  if (!autorizado) {
+    return NextResponse.json({ error: "Hace falta iniciar sesión para ver los cobros." }, { status: 401 });
+  }
   const quiereGuardar = esCron || url.searchParams.get("guardar") === "1";
 
   const movimientos: MovimientoApi[] = [];
@@ -61,7 +90,7 @@ export async function GET(peticion: Request) {
   movimientos.sort((a, b) => +new Date(b.fecha) - +new Date(a.fecha));
 
   let guardados = 0;
-  if (quiereGuardar && autorizado && hayServidor) {
+  if (quiereGuardar && hayServidor) {
     const r = await guardarMovimientos(movimientos.map((m) => ({
       ...m, procesadorId: procesadorDe(m.proveedor), origen: "api",
     })));

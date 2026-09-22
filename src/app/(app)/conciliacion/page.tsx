@@ -12,6 +12,7 @@ import { ModalForm } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toast";
 import { AsistenteVenta } from "@/components/ventas/AsistenteVenta";
 import { acciones, useEstado } from "@/lib/store";
+import { nube } from "@/lib/supabase";
 import { fechaLarga, money, pct } from "@/lib/format";
 import {
   esAutomatica, propuestas, resumenConciliacion, saldoDeCuota, sugerenciasPara,
@@ -62,7 +63,11 @@ export default function Conciliacion() {
   async function sincronizar() {
     setSincronizando(true);
     try {
-      const r = await fetch("/api/pasarelas/sync");
+      /* La ruta devuelve datos de clientes: va con la sesión de quien pide. */
+      const sesion = nube ? (await nube.auth.getSession()).data.session : null;
+      const r = await fetch("/api/pasarelas/sync", {
+        headers: sesion ? { Authorization: `Bearer ${sesion.access_token}` } : {},
+      });
       const data = (await r.json()) as {
         movimientos?: Parameters<typeof acciones.importarMovimientos>[0];
         conectadas?: ProveedorPasarela[];

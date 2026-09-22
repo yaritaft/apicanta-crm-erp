@@ -21,7 +21,7 @@ export function nubeServidor(): SupabaseClient | null {
   return createClient(url, servicio, { auth: { persistSession: false } });
 }
 
-export type MovimientoNuevo = Omit<Movimiento, "id" | "estado" | "creadoEn">;
+export type MovimientoNuevo = Omit<Movimiento, "id" | "estado" | "creadoEn"> & { estado?: Movimiento["estado"] };
 
 /** Guarda cobros de pasarela sin pisar los que ya estaban conciliados. */
 export async function guardarMovimientos(filas: MovimientoNuevo[]): Promise<{ guardados: number; error?: string }> {
@@ -33,17 +33,23 @@ export async function guardarMovimientos(filas: MovimientoNuevo[]): Promise<{ gu
   const completas = filas.map((f) => ({
     ...f,
     id: `mov_${f.proveedor}_${f.referencia}`.slice(0, 120),
-    estado: "pendiente" as const,
+    estado: f.estado ?? ("pendiente" as const),
     creadoEn: ahora,
   }));
 
   /* ignoreDuplicates: si el cobro ya estaba (la pasarela reintenta el
      webhook, o alguien importó el CSV antes), no se toca. Pisarlo
-     volvería a "pendiente" algo que ya se concilió. */
+     volvería a "pendiente" algo que ya se concilió.
+
+     El select() al final es lo que hace honesto al número: con
+     ignoreDuplicates, Postgres devuelve sólo las filas que realmente
+     insertó. Sin eso, el cron informaría "142 guardados" cada hora
+     aunque no hubiera entrado un solo cobro nuevo. */
   const r = await db
     .from("movimientos")
-    .upsert(completas, { onConflict: "proveedor,referencia", ignoreDuplicates: true, defaultToNull: false });
+    .upsert(completas, { onConflict: "proveedor,referencia", ignoreDuplicates: true, defaultToNull: false })
+    .select("id");
 
   if (r.error) return { guardados: 0, error: r.error.message };
-  return { guardados: completas.length };
+  return { guardados: (r.data ?? []).length };
 }

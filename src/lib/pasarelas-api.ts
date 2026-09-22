@@ -21,6 +21,9 @@ import type { Moneda, ProveedorPasarela } from "./types";
    ================================================================== */
 
 export interface MovimientoApi {
+  /* Casi siempre queda "pendiente" y lo define quien guarda. Se llena acá
+     sólo cuando ya sabemos que ese cobro no hay que conciliarlo. */
+  estado?: "pendiente" | "ignorado";
   proveedor: ProveedorPasarela;
   referencia: string;
   monto: number;
@@ -48,7 +51,19 @@ function desdeHasta(url: URL) {
 export async function json(r: Response): Promise<Record<string, unknown>> {
   const texto = await r.text();
   try { return JSON.parse(texto) as Record<string, unknown>; }
-  catch { throw new Error(texto.slice(0, 200)); }
+  catch { return { crudo: texto.slice(0, 300) }; }
+}
+
+/* Cuando una plataforma dice que no, el error tiene que decir QUÉ dijo:
+   el status HTTP y su mensaje. "X rechazó la consulta" no sirve para
+   arreglar nada. Nunca se incluyen nuestras claves, sólo su respuesta. */
+export function rechazo(quien: string, r: Response, data: Record<string, unknown>): Error {
+  const candidato = data.message ?? data.error_description ?? data.error ?? data.msg
+    ?? data.errors ?? data.detail ?? data.crudo;
+  const texto = typeof candidato === "string"
+    ? candidato
+    : JSON.stringify(candidato ?? data);
+  return new Error(`${quien} respondió ${r.status}: ${texto.slice(0, 240)}`);
 }
 
 /* ---------- Stripe ---------- */
@@ -62,7 +77,7 @@ export async function stripe(desde: Date): Promise<MovimientoApi[]> {
     headers: { Authorization: `Bearer ${clave}` }, cache: "no-store",
   });
   const data = await json(r);
-  if (!r.ok) throw new Error((data.error as { message?: string })?.message ?? "Stripe rechazó la consulta.");
+  if (!r.ok) throw rechazo("Stripe", r, data);
 
   const filas = (data.data ?? []) as Record<string, never>[];
   return filas
@@ -88,6 +103,30 @@ export async function stripe(desde: Date): Promise<MovimientoApi[]> {
 
 /* ---------- Hotmart ---------- */
 
+/* Hotmart pagina con un cursor: se sigue pidiendo hasta que no haya
+   próxima página, con un tope para no quedarse dando vueltas. */
+async function paginasHotmart(
+  ruta: string, parametros: Record<string, string>, token: string,
+): Promise<Record<string, never>[]> {
+  const items: Record<string, never>[] = [];
+  let cursor: string | undefined;
+  for (let pagina = 0; pagina < 20; pagina++) {
+    const q = new URLSearchParams({ ...parametros, max_results: "100" });
+    if (cursor) q.set("page_token", cursor);
+    const r = await fetch(`https://developers.hotmart.com/payments/api/v1/${ruta}?${q}`, {
+      /* Sin Content-Type, Hotmart contesta 400 aunque sea un GET. */
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      cache: "no-store",
+    });
+    const data = await json(r);
+    if (!r.ok) throw rechazo(`Hotmart (${ruta})`, r, data);
+    items.push(...((data.items ?? []) as Record<string, never>[]));
+    cursor = (data.page_info as { next_page_token?: string } | undefined)?.next_page_token;
+    if (!cursor) break;
+  }
+  return items;
+}
+
 export async function hotmart(desde: Date, hasta: Date): Promise<MovimientoApi[]> {
   const id = process.env.HOTMART_CLIENT_ID;
   const secreto = process.env.HOTMART_CLIENT_SECRET;
@@ -96,39 +135,53 @@ export async function hotmart(desde: Date, hasta: Date): Promise<MovimientoApi[]
 
   const auth = await fetch(
     `https://api-sec-vlc.hotmart.com/security/oauth/token?grant_type=client_credentials&client_id=${id}&client_secret=${secreto}`,
-    { method: "POST", headers: { Authorization: `Basic ${basic}` }, cache: "no-store" },
+    {
+      method: "POST",
+      headers: { Authorization: `Basic ${basic}`, "Content-Type": "application/x-www-form-urlencoded" },
+      cache: "no-store",
+    },
   );
   const tok = await json(auth);
-  if (!auth.ok) throw new Error(String(tok.error_description ?? "No se pudo autenticar con Hotmart."));
+  if (!auth.ok) throw rechazo("Hotmart (login)", auth, tok);
+  const token = tok.access_token as string;
 
-  const q = new URLSearchParams({
-    start_date: String(desde.getTime()),
-    end_date: String(hasta.getTime()),
-    max_results: "100",
-    transaction_status: "APPROVED",
-  });
-  const r = await fetch(`https://developers.hotmart.com/payments/api/v1/sales/history?${q}`, {
-    headers: { Authorization: `Bearer ${tok.access_token as string}` }, cache: "no-store",
-  });
-  const data = await json(r);
-  if (!r.ok) throw new Error(String(data.message ?? "Hotmart rechazó la consulta."));
+  /* Sin filtro de estado, Hotmart devuelve sólo APPROVED y COMPLETE, que
+     es justo la plata que entró. Filtrar por APPROVED dejaba afuera las
+     compras ya completadas. */
+  const rango = { start_date: String(desde.getTime()), end_date: String(hasta.getTime()) };
 
-  const items = (data.items ?? []) as Record<string, never>[];
-  return items.map((it) => {
+  const [ventas, comisiones] = await Promise.all([
+    paginasHotmart("sales/history", rango, token),
+    /* La comisión no viene en el historial: va en otro endpoint. Es lo
+       que le queda al productor después de Hotmart, coproductores y
+       afiliados — o sea, la plata que efectivamente llega. */
+    paginasHotmart("sales/commissions", { ...rango, commission_as: "PRODUCER" }, token).catch(() => []),
+  ]);
+
+  const netoPorTransaccion = new Map<string, number>();
+  for (const c of comisiones) {
+    const lista = (c.commissions ?? []) as { commission?: { value?: number }; source?: string }[];
+    const nuestra = lista.find((x) => x.source === "PRODUCER")?.commission?.value;
+    if (nuestra !== undefined) netoPorTransaccion.set(String(c.transaction ?? ""), Number(nuestra));
+  }
+
+  return ventas.map((it) => {
     const compra = (it.purchase ?? {}) as Record<string, never>;
     const precio = (compra.price ?? {}) as { value?: number; currency_code?: string };
-    const comision = (it.commissions ?? []) as { commission?: { value?: number }; source?: string }[];
-    const nuestra = comision.find((c) => c.source === "PRODUCER")?.commission?.value;
+    const referencia = String(compra.transaction ?? "");
     const monto = dinero(Number(precio.value ?? 0));
-    const neto = nuestra !== undefined ? dinero(Number(nuestra)) : monto;
+    const nuestra = netoPorTransaccion.get(referencia);
+    const neto = nuestra !== undefined ? dinero(nuestra) : monto;
     const comprador = (it.buyer ?? {}) as { name?: string; email?: string };
     const producto = (it.product ?? {}) as { name?: string };
     return {
       proveedor: "hotmart" as const,
-      referencia: String(compra.transaction ?? ""),
-      monto, fee: dinero(monto - neto), neto,
+      referencia,
+      monto, fee: dinero(Math.max(monto - neto, 0)), neto,
       moneda: moneda(precio.currency_code),
-      fecha: new Date(Number(compra.order_date ?? Date.now())).toISOString(),
+      /* La fecha que importa es cuándo se aprobó el pago, no cuándo se
+         generó la orden: un boleto puede aprobarse días después. */
+      fecha: new Date(Number(compra.approved_date ?? compra.order_date ?? Date.now())).toISOString(),
       clienteNombre: comprador.name ?? undefined,
       clienteEmail: comprador.email?.toLowerCase(),
       descripcion: producto.name ?? undefined,
@@ -145,7 +198,7 @@ export async function whop(desde: Date): Promise<MovimientoApi[]> {
     headers: { Authorization: `Bearer ${clave}` }, cache: "no-store",
   });
   const data = await json(r);
-  if (!r.ok) throw new Error(String(data.error ?? "Whop rechazó la consulta."));
+  if (!r.ok) throw rechazo("Whop", r, data);
 
   const filas = (data.data ?? []) as Record<string, never>[];
   return filas
@@ -180,7 +233,7 @@ export async function mercadopago(desde: Date): Promise<MovimientoApi[]> {
     headers: { Authorization: `Bearer ${clave}` }, cache: "no-store",
   });
   const data = await json(r);
-  if (!r.ok) throw new Error(String(data.message ?? "Mercado Pago rechazó la consulta."));
+  if (!r.ok) throw rechazo("Mercado Pago", r, data);
 
   const filas = (data.results ?? []) as Record<string, never>[];
   return filas.map((p) => {
@@ -382,7 +435,7 @@ export async function dlocal(desde: Date, hasta: Date): Promise<MovimientoApi[]>
   });
   const r = await fetch(`https://api.dlocal.com/payments?${q}`, { headers: cabeceras, cache: "no-store" });
   const data = await json(r);
-  if (!r.ok) throw new Error(String(data.message ?? data.code ?? "dLocal rechazó la consulta."));
+  if (!r.ok) throw rechazo("dLocal", r, data);
 
   const filas = (Array.isArray(data) ? data : (data.data ?? [])) as Record<string, never>[];
   return filas
@@ -400,18 +453,37 @@ async function unDlocal(id: string): Promise<MovimientoApi | null> {
   return unaDeDlocal(p as Record<string, never>);
 }
 
+/* Lo que entra a Mercury desde estas contrapartes NO es un cliente: es
+   una pasarela depositando lo que ya cobró (y que ya entró cobro por
+   cobro desde esa pasarela), o el propio banco devolviendo cashback.
+   Dejarlo pasar contaría la misma plata dos veces: en 60 días eran
+   US$ 113.000 de Stripe, Hotmart y Whop repetidos. */
+const NO_ES_CLIENTE = /\b(stripe|hotmart|whop|dlocal|mercado\s*pago|paypal|mercury)\b/i;
+
+/* Estos tres son, según Yari, vías por las que Hotmart liquida la plata —
+   pero dijo "creo que", así que no se descartan: entran marcados como
+   ignorados. Quedan a la vista en su pestaña, fuera del camino, y si
+   alguno resulta ser un cliente se recupera con un clic desde la
+   pantalla, sin tocar el código. */
+const LIQUIDACION_PROBABLE = /\b(arx|bridge|masspay)\b/i;
+
 /* ---------- Mercury ----------
    El banco no avisa: se le pregunta. Sólo entra lo que suma (amount
    positivo) y ya está acreditado, no lo que todavía está en camino. */
 
 export async function mercury(desde: Date): Promise<MovimientoApi[]> {
-  const clave = process.env.MERCURY_API_TOKEN;
-  if (!clave) return [];
+  const crudo = process.env.MERCURY_API_TOKEN?.trim();
+  if (!crudo) return [];
+  /* El token de Mercury es "secret-token:mercury_production_…" entero. Al
+     copiarlo del panel es muy fácil quedarse sólo con la segunda parte, y
+     Mercury responde 401 sin más. Se completa acá en vez de pedirle a
+     nadie que lo vuelva a pegar. */
+  const clave = crudo.startsWith("secret-token:") ? crudo : `secret-token:${crudo}`;
   const cabeceras = { Authorization: `Bearer ${clave}` };
 
   const rc = await fetch("https://api.mercury.com/api/v1/accounts", { headers: cabeceras, cache: "no-store" });
   const cuentas = await json(rc);
-  if (!rc.ok) throw new Error(String(cuentas.error ?? "Mercury rechazó la consulta."));
+  if (!rc.ok) throw rechazo("Mercury (cuentas)", rc, cuentas);
 
   const lista = (cuentas.accounts ?? []) as { id?: string; kind?: string }[];
   const salida: MovimientoApi[] = [];
@@ -423,18 +495,23 @@ export async function mercury(desde: Date): Promise<MovimientoApi[]> {
       headers: cabeceras, cache: "no-store",
     });
     const data = await json(rt);
-    if (!rt.ok) continue;
+    if (!rt.ok) throw rechazo(`Mercury (movimientos de ${cuenta.id})`, rt, data);
 
     for (const t of (data.transactions ?? []) as Record<string, never>[]) {
       const monto = dinero(Number(t.amount ?? 0));
       /* Negativo es plata que sale: no es un cobro. */
       if (monto <= 0) continue;
+      /* Entre cuentas propias de Mercury tampoco. */
+      if (String(t.kind ?? "") === "internalTransfer") continue;
+      const contraparte = String(t.counterpartyName ?? t.counterpartyNickname ?? "");
+      if (NO_ES_CLIENTE.test(contraparte)) continue;
       if (String(t.status ?? "").toLowerCase() === "failed") continue;
       const fecha = String(t.postedAt ?? t.createdAt ?? "");
       if (fecha && new Date(fecha) < desde) continue;
 
       salida.push({
         proveedor: "mercury",
+        estado: LIQUIDACION_PROBABLE.test(contraparte) ? "ignorado" : "pendiente",
         referencia: String(t.id ?? ""),
         monto, fee: 0, neto: monto,
         moneda: "USD",
@@ -467,7 +544,7 @@ export async function binance(desde: Date): Promise<MovimientoApi[]> {
     headers: { "X-MBX-APIKEY": clave }, cache: "no-store",
   });
   const data = await json(r);
-  if (!r.ok) throw new Error(String(data.msg ?? "Binance rechazó la consulta."));
+  if (!r.ok) throw rechazo("Binance", r, data);
 
   const filas = (Array.isArray(data) ? data : []) as Record<string, never>[];
   return filas
@@ -508,7 +585,7 @@ export async function trust(desde: Date): Promise<MovimientoApi[]> {
     headers: cabeceras, cache: "no-store",
   });
   const data = await json(r);
-  if (!r.ok) throw new Error("Tronscan no respondió la consulta de la billetera.");
+  if (!r.ok) throw rechazo("Tronscan", r, data);
 
   const filas = (data.token_transfers ?? []) as Record<string, never>[];
   return filas
