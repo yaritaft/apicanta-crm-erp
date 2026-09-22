@@ -52,6 +52,20 @@ export interface Etapa {
   orden: number;
 }
 
+/* El pipeline de SERVICIO: por dónde pasa un alumno desde que compra hasta
+   que termina (venta nueva, onboarding, en servicio...). Es otro tablero que
+   el de ventas: acá no hay probabilidad de cierre, la venta ya se cerró.
+   Tabla `etapas_servicio`. */
+export interface EtapaServicio {
+  id: ID;
+  nombre: string;
+  /* La misma paleta de variantes que el Badge, para pintar igual que las
+     etapas de ventas. */
+  color: Etapa["variante"];
+  orden: number;
+  creadoEn: string;
+}
+
 /* ---------- Leads ---------- */
 
 /* Conversacional es el corte que importa: abajo de eso no puede dar una
@@ -225,6 +239,11 @@ export interface Alumno {
   notas?: string;
   creadoEn: string;
   extra: Record<string, unknown>;
+  /* En qué columna del pipeline de servicio está. Sin etapa, o con una que
+     ya se borró, se dibuja en la primera: nunca queda fuera del tablero. */
+  etapaServicioId?: ID;
+  /* La venta que lo trajo. Se enlaza sola al registrar la venta. */
+  ventaId?: ID;
 }
 
 export type EstadoReporte = "completado" | "pendiente" | "vencido" | "no-enviado";
@@ -443,6 +462,7 @@ export interface EstadoApp {
   version: number;
   ajustes: Ajustes;
   etapas: Etapa[];
+  etapasServicio: EtapaServicio[];
   leads: Lead[];
   sesiones: Sesion[];
   webinars: Webinar[];
