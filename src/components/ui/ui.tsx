@@ -2,6 +2,7 @@
 
 import React from "react";
 import { iniciales } from "@/lib/format";
+import { CampoFecha, Desplegable } from "./Campos";
 
 /* ---------------- Button ---------------- */
 
@@ -125,6 +126,18 @@ export function Field({ label, ayuda, error, children, span2 }: {
 }
 
 export function Input({ icono, error, ...props }: React.InputHTMLAttributes<HTMLInputElement> & { icono?: React.ReactNode; error?: boolean }) {
+  /* Las fechas usan el calendario propio (Campos.tsx): el nativo se ve
+     distinto en cada sistema. Misma API: value "aaaa-mm-dd" y ev.target.value. */
+  if (props.type === "date" || props.type === "datetime-local") {
+    return (
+      <CampoFecha
+        conHora={props.type === "datetime-local"}
+        value={props.value} onChange={props.onChange} disabled={props.disabled} autoFocus={props.autoFocus}
+        min={props.min} max={props.max} required={props.required} placeholder={props.placeholder}
+        id={props.id} style={props.style} className={props.className} aria-label={props["aria-label"]}
+      />
+    );
+  }
   return (
     <div className={`hk-input${error ? " hk-input--error" : ""}`}>
       {icono}
@@ -141,20 +154,18 @@ export function Textarea({ rows = 3, ...props }: React.TextareaHTMLAttributes<HT
   );
 }
 
+/* Desplegable propio (Campos.tsx) con la API del <select>: value,
+   onChange(ev => ev.target.value), opciones y placeholder. */
 export function Select({ opciones, placeholder, error, ...props }: React.SelectHTMLAttributes<HTMLSelectElement> & {
   opciones: readonly (string | { valor: string; texto: string })[]; placeholder?: string; error?: boolean;
 }) {
   return (
-    <div className={`hk-input hk-input--select${error ? " hk-input--error" : ""}`}>
-      <select {...props}>
-        {placeholder && <option value="">{placeholder}</option>}
-        {opciones.map((o) => {
-          const v = typeof o === "string" ? o : o.valor;
-          const t = typeof o === "string" ? o : o.texto;
-          return <option key={v} value={v}>{t}</option>;
-        })}
-      </select>
-    </div>
+    <Desplegable
+      opciones={opciones} placeholder={placeholder} error={error}
+      value={props.value} onChange={props.onChange} disabled={props.disabled} autoFocus={props.autoFocus}
+      id={props.id} name={props.name} style={props.style} className={props.className}
+      aria-label={props["aria-label"]} aria-labelledby={props["aria-labelledby"]}
+    />
   );
 }
 

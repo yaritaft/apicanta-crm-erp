@@ -97,7 +97,9 @@ export default function Agenda() {
     <div className="stack-5">
       <PageHead
         titulo="Agenda"
-        sub="Todas las llamadas, de Calendly o cargadas a mano. Marcá si la persona vino o no para que el número de asistencia sea real."
+        sub={AGENDAR_A_MANO
+          ? "Todas las llamadas, de Calendly o cargadas a mano. Marcá si la persona vino o no para que el número de asistencia sea real."
+          : "Las llamadas entran solas desde Calendly. Marcá si la persona vino o no para que el número de asistencia sea real."}
         acciones={AGENDAR_A_MANO ? <Button variante="primary" icono={<Plus size={16} />} onClick={() => setForm(VACIA(e.ajustes.tiposSesion[0] ?? "Sesión"))}>Agendar sesión</Button> : undefined}
       />
 

@@ -122,11 +122,13 @@ export function RegistrarPago({ cuota, onCerrar, onGuardado }: {
         </div>
       </div>
 
-      <div className="row t-sm" style={{ gap: 8 }}>
-        <span className="t-subtle">Se cobra</span>
-        <span className="t-num t-strong">{M(cobrado)}</span>
-        <span className="t-subtle">de {M(resta)}</span>
-        {problema && <span className="spacer" style={{ color: "var(--warning)", textAlign: "right" }}>{problema}</span>}
+      <div className="stack-2">
+        <div className="row t-sm" style={{ gap: 6 }}>
+          <span className="t-subtle">Se cobra</span>
+          <span className="t-num t-strong">{M(cobrado)}</span>
+          <span className="t-subtle">de {M(resta)}</span>
+        </div>
+        {problema && <p className="t-sm" style={{ color: "var(--warning)" }}>{problema}</p>}
       </div>
 
       {saldo > 0.01 && cobrado > 0 && (

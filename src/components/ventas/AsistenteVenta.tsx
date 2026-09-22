@@ -240,7 +240,8 @@ export function AsistenteVenta({ onCerrar, onListo, desdeMovimiento }: {
       if (document.querySelector(".modal-backdrop, [data-flotante-abierto]")) return;
       if (ev.key === "Escape") { ev.preventDefault(); onCerrar(); return; }
       const foco = ev.target as HTMLElement | null;
-      const escribiendo = foco?.tagName === "INPUT" || foco?.tagName === "TEXTAREA" || foco?.tagName === "SELECT";
+      const escribiendo = foco?.tagName === "INPUT" || foco?.tagName === "TEXTAREA" || foco?.tagName === "SELECT"
+        || Boolean(foco?.classList.contains("sel") || foco?.classList.contains("fecha"));
 
       /* Los números eligen la opción que tienen al lado, como muestra el
          cartelito de cada tarjeta. Mientras se escribe, un 3 es un 3. */
@@ -272,7 +273,7 @@ export function AsistenteVenta({ onCerrar, onListo, desdeMovimiento }: {
   /* Foco en el primer control de cada paso. */
   useEffect(() => {
     const t = window.setTimeout(() => {
-      mainRef.current?.querySelector<HTMLElement>("input, textarea, select, .opcion")?.focus();
+      mainRef.current?.querySelector<HTMLElement>("input, textarea, select, .sel, .fecha, .opcion")?.focus();
     }, 80);
     return () => window.clearTimeout(t);
   }, [i]);
