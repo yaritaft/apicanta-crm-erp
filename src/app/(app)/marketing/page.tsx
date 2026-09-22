@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { ChevronRight, Megaphone, Search, SearchX, X } from "lucide-react";
 import { PageHead } from "@/components/shell/PageHead";
@@ -16,6 +15,7 @@ import { ConectarMeta } from "@/components/shell/ConectarMeta";
 import { AreaChart, BarChart, COLORES, Donut, truncar } from "@/components/charts/charts";
 import { DateRangePicker, diaDeNegocio, rangoSub, type RangoFechas } from "@/components/ui/DateRangePicker";
 import { useRangoURL } from "@/lib/useRango";
+import { useAbrirFicha } from "@/components/ficha/abrir";
 import { useToast } from "@/components/ui/Toast";
 import { useEstado, useSync } from "@/lib/store";
 import { money, num, pct, relativo } from "@/lib/format";
@@ -795,6 +795,7 @@ function DetalleAnuncio({ ad, rango, M, onCerrar, onIr }: {
    tiene un lead abierto, no hay ficha que abrir y la fila no es link. */
 function FilaPersona({ p, M }: { p: PersonaDelAnuncio; M: FormatoPlata }) {
   const c = p.contacto;
+  const abrirFicha = useAbrirFicha();
   const cuerpo = (
     <>
       <Avatar nombre={c.nombre || "?"} size={32} />
@@ -810,18 +811,17 @@ function FilaPersona({ p, M }: { p: PersonaDelAnuncio; M: FormatoPlata }) {
     </>
   );
 
-  return p.leadId ? (
-    <Link
-      href={`/leads?ver=${p.leadId}`} className="agenda-item"
-      style={{ textDecoration: "none", color: "inherit" }} aria-label={`Abrir la ficha de ${c.nombre}`}
+  /* La ficha se abre encima de Marketing: al cerrarla, la tabla sigue
+     filtrada donde estaba. */
+  return (
+    <button
+      type="button" className="agenda-item" onClick={() => abrirFicha(c.id)}
+      style={{ width: "100%", textAlign: "left", font: "inherit", color: "inherit" }}
+      aria-label={`Abrir la ficha de ${c.nombre || "esta persona"}`}
     >
       {cuerpo}
       <ChevronRight size={16} className="t-subtle" style={{ flexShrink: 0 }} aria-hidden />
-    </Link>
-  ) : (
-    <div className="agenda-item" style={{ cursor: "default" }} title="Todavía no tiene un lead abierto">
-      {cuerpo}
-    </div>
+    </button>
   );
 }
 
