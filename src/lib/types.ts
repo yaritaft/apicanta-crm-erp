@@ -200,6 +200,9 @@ export interface Webinar {
   costoWhatsappApi: number;
   enlaceRegistro?: string;
   enlaceReplay?: string;
+  /* El vivo o la grabación en YouTube: la ficha del webinar lo embebe y trae
+     sus vistas, comentarios y los suscriptores del canal. */
+  youtubeUrl?: string;
   notas?: string;
   creadoEn: string;
   extra: Record<string, unknown>;

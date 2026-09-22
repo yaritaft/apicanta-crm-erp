@@ -51,7 +51,7 @@ export function Paleta({ abierto, onCerrar }: { abierto: boolean; onCerrar: () =
       }
       for (const w of e.webinars) {
         if (normal(w.titulo).includes(term)) {
-          out.push({ id: `w${w.id}`, grupo: "Webinars", texto: w.titulo, sub: fechaHora(w.fecha), icono: <Search size={18} />, ir: `/webinars?ver=${w.id}` });
+          out.push({ id: `w${w.id}`, grupo: "Webinars", texto: w.titulo, sub: fechaHora(w.fecha), icono: <Search size={18} />, ir: `/webinars/${w.id}` });
         }
       }
       for (const s of e.sesiones) {

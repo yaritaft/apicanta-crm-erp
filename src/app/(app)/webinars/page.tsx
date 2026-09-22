@@ -1,297 +1,382 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
-import { ExternalLink, Info, Pencil, Plus, Trash2, Video } from "lucide-react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Info, Pencil, Plus, Video, Youtube } from "lucide-react";
 import { PageHead } from "@/components/shell/PageHead";
-import {
-  Ayuda, Badge, Button, Card, CardHead, Empty, Field, IconButton, Input, Select, StatCard, Textarea,
-} from "@/components/ui/ui";
-import { Columna, DataTable } from "@/components/ui/DataTable";
-import { ModalForm, Confirmar } from "@/components/ui/Modal";
-import { Drawer, Dato } from "@/components/ui/Drawer";
-import { CamposExtra, DatosExtra } from "@/components/ui/CamposExtra";
-import { AreaChart, Funnel } from "@/components/charts/charts";
+import { Ayuda, Badge, Button, Card, CardHead, Chip, Empty, StatCard } from "@/components/ui/ui";
+import { ConfigColumnas, type DefColumna, useColumnas } from "@/components/ui/ColumnasConfig";
+import { DateRangePicker, diaDeNegocio, enRango, rangoMax, rangoSub } from "@/components/ui/DateRangePicker";
+import { AreaChart } from "@/components/charts/charts";
 import { useToast } from "@/components/ui/Toast";
-import { acciones, useEstado } from "@/lib/store";
-import { useAbrirDesdeURL } from "@/lib/useQuery";
-import { fecha, fechaLarga, isoMinuto, money, num, pct } from "@/lib/format";
-import { metricasDeWebinar, serieDeWebinars } from "@/lib/webinar";
-import type { EstadoWebinar, Webinar } from "@/lib/types";
+import { Planilla, type ColumnaPlanilla } from "@/components/webinars/Planilla";
+import { FiltroWebinars } from "@/components/webinars/FiltroWebinars";
+import { AsistenteWebinar } from "@/components/webinars/AsistenteWebinar";
+import { guardarMetrica, guardarWebinar } from "@/components/webinars/guardar";
+import { diaCorto, diaYHora, hoyArgentina } from "@/components/webinars/fechas";
+import { CLAVE_LISTA, ESTADO_WEBINAR, ESTADOS, tonoRoas } from "@/components/webinars/estado";
+import { useEstado } from "@/lib/store";
+import { useRangoURL } from "@/lib/useRango";
+import { money, num, pct } from "@/lib/format";
+import {
+  CAMPOS_MANUALES, metricasDeWebinar, sumarMetricas, type MetricasWebinar,
+} from "@/lib/webinar";
+import type { CampoPersonalizado, EstadoWebinar, Webinar } from "@/lib/types";
 
-const ETIQUETA: Record<EstadoWebinar, { texto: string; variante: "neutral" | "accent" | "danger" | "success" }> = {
-  "borrador":   { texto: "Borrador",   variante: "neutral" },
-  "programado": { texto: "Programado", variante: "accent" },
-  "en-vivo":    { texto: "En vivo",    variante: "danger" },
-  "finalizado": { texto: "Finalizado", variante: "success" },
-};
+/* ==================================================================
+   Webinars: una planilla viva.
 
-const VACIO = (): Omit<Webinar, "id"> => {
-  const d = new Date(); d.setDate(d.getDate() + 14); d.setHours(19, 0, 0, 0);
-  return {
-    titulo: "", fecha: d.toISOString(), duracionMin: 75, estado: "programado",
-    registrados: 0, asistentes: 0, inversion: 0,
-    formularios: 0, grupoWpp: 0, llamadasVivo: 0, llamadasPosterior: 0,
-    llamadasCanceladas: 0, llamadasInasistidas: 0, llamadasNoCalificadas: 0,
-    llamadasCalificadas: 0, inversionDmAds: 0, costoWhatsappApi: 0,
-    enlaceRegistro: "", enlaceReplay: "", notas: "",
-    creadoEn: new Date().toISOString(), extra: {},
-  };
-};
+   Cada fila es un webinar y cada número que se carga a mano se escribe
+   en la celda, como en Excel: la pauta, los formularios, el grupo, las
+   llamadas. Lo demás (costos, tasas, ROAS, profit) se recalcula en el
+   momento. Los filtros de arriba recortan todo junto: KPIs, gráfico,
+   planilla y totales.
+   ================================================================== */
+
+/* Lo que se calcula solo. `vacio` = si el divisor es cero, se muestra una
+   raya: un CPA de US$ 0 cuando no hubo ventas diría que salió gratis. */
+type Tipo = "plata" | "costo" | "cantidad" | "tasa" | "roas" | "profit";
+const CALCULADAS: {
+  clave: keyof MetricasWebinar; titulo: string; grupo: string; ayuda: string; tipo: Tipo; decimales?: number;
+}[] = [
+  { clave: "inversionTotal", titulo: "Inversión total", grupo: "Inversión", ayuda: "Pauta + DM Ads + WhatsApp API.", tipo: "plata" },
+  { clave: "llamadas", titulo: "Llamadas agendadas", grupo: "Llamadas", ayuda: "Las agendadas en el vivo más las de después.", tipo: "cantidad" },
+  { clave: "cplFormulario", titulo: "Costo por formulario", grupo: "Costos", ayuda: "Inversión total sobre formularios.", tipo: "costo", decimales: 2 },
+  { clave: "cplGrupo", titulo: "Costo por unión al grupo", grupo: "Costos", ayuda: "Inversión total sobre los que entraron al grupo.", tipo: "costo", decimales: 2 },
+  { clave: "cpLlamada", titulo: "Costo por llamada", grupo: "Costos", ayuda: "Inversión total sobre llamadas agendadas.", tipo: "costo" },
+  { clave: "cpLlamadaCalificada", titulo: "Costo por llamada calificada", grupo: "Costos", ayuda: "Inversión total sobre llamadas calificadas.", tipo: "costo" },
+  { clave: "cpa", titulo: "CPA", grupo: "Costos", ayuda: "Inversión total sobre ventas: lo que costó cada venta.", tipo: "costo" },
+  { clave: "asistenciaFormulario", titulo: "Form → grupo", grupo: "Conversión", ayuda: "De los que completaron el formulario, cuántos entraron al grupo.", tipo: "tasa" },
+  { clave: "asistenciaTaller", titulo: "Asistencia", grupo: "Conversión", ayuda: "Del grupo, cuántos estuvieron en el vivo.", tipo: "tasa" },
+  { clave: "porcentajeAgenda", titulo: "Grupo → agenda", grupo: "Conversión", ayuda: "Del grupo, cuántos agendaron una llamada.", tipo: "tasa" },
+  { clave: "agendaSobreAsisten", titulo: "Asisten → agenda", grupo: "Conversión", ayuda: "De los que vieron el vivo, cuántos agendaron.", tipo: "tasa" },
+  { clave: "convLeadVenta", titulo: "Grupo → venta", grupo: "Conversión", ayuda: "Del grupo, cuántos compraron.", tipo: "tasa", decimales: 2 },
+  { clave: "tasaCierre", titulo: "Tasa de cierre", grupo: "Conversión", ayuda: "Ventas sobre llamadas calificadas.", tipo: "tasa" },
+  { clave: "ventas", titulo: "Ventas", grupo: "Plata", ayuda: "Las ventas cargadas con este webinar como origen. Entran solas.", tipo: "cantidad" },
+  { clave: "facturado", titulo: "Facturado", grupo: "Plata", ayuda: "El precio acordado de esas ventas.", tipo: "plata" },
+  { clave: "cobrado", titulo: "Cobrado", grupo: "Plata", ayuda: "La plata que ya entró de esas ventas.", tipo: "plata" },
+  { clave: "comisiones", titulo: "Comisiones", grupo: "Plata", ayuda: "Closer y director, sobre lo cobrado neto de procesador.", tipo: "plata" },
+  { clave: "procesador", titulo: "Procesador", grupo: "Plata", ayuda: "Lo que se quedaron las pasarelas de pago.", tipo: "plata" },
+  { clave: "roasRev", titulo: "ROAS facturado", grupo: "Plata", ayuda: "Facturado sobre inversión total.", tipo: "roas" },
+  { clave: "roasCC", titulo: "ROAS cobrado", grupo: "Plata", ayuda: "Cobrado sobre inversión total.", tipo: "roas" },
+  { clave: "beneficioRev", titulo: "Profit facturado", grupo: "Plata", ayuda: "Facturado menos inversión, comisiones y procesador.", tipo: "profit" },
+  { clave: "beneficioCC", titulo: "Profit cobrado", grupo: "Plata", ayuda: "Cobrado menos inversión, comisiones y procesador.", tipo: "profit" },
+];
+
+const COLUMNAS_FIJAS: DefColumna[] = [
+  { clave: "titulo", titulo: "Webinar", fija: true },
+  { clave: "fecha", titulo: "Fecha", grupo: "Identidad", ayuda: "Día y hora del vivo, en hora de Argentina." },
+  { clave: "estado", titulo: "Estado", grupo: "Identidad" },
+  ...CAMPOS_MANUALES.map((c) => ({ clave: c.campo, titulo: c.titulo, grupo: `${c.grupo} · a mano`, ayuda: c.ayuda })),
+  ...CALCULADAS.map((c) => ({ clave: c.clave, titulo: c.titulo, grupo: c.grupo, ayuda: c.ayuda })),
+];
+
+/* Lo que se carga todos los días a la vista, más los cuatro números que
+   dicen si el webinar funcionó. El resto se prende desde "Columnas". */
+const POR_DEFECTO = [
+  "titulo", "fecha", "estado",
+  "inversion", "inversionDmAds", "costoWhatsappApi",
+  "formularios", "grupoWpp", "asistentes",
+  "llamadasVivo", "llamadasPosterior", "llamadasCalificadas",
+  "cplFormulario", "cpa", "ventas", "roasCC", "beneficioCC",
+];
+
+const esNumerico = (c: CampoPersonalizado) => c.tipo === "numero" || c.tipo === "moneda";
 
 export default function Webinars() {
   const e = useEstado();
   const toast = useToast();
-  const url = useAbrirDesdeURL();
-  const [form, setForm] = useState<(Omit<Webinar, "id"> & { id?: string }) | null>(null);
-  const [ver, setVer] = useState<string | null>(null);
-  const [borrar, setBorrar] = useState<Webinar | null>(null);
-
-  useEffect(() => {
-    if (url.nuevo) { setForm(VACIO()); url.limpiar(); }
-    else if (url.ver) { setVer(url.ver); url.limpiar(); }
-  }, [url]);
+  const router = useRouter();
+  const params = useSearchParams();
+  const [nuevo, setNuevo] = useState(false);
 
   const mon = e.ajustes.monedaBase;
-  const M = (n: number, d = 0) => money(n, mon, d);
-  const serie = useMemo(() => serieDeWebinars(e), [e]);
+  const M = useCallback((n: number, d = 0) => money(n, mon, d), [mon]);
 
-  const totales = useMemo(() => {
-    const inv = serie.reduce((a, x) => a + x.m.inversionTotal, 0);
-    const cc = serie.reduce((a, x) => a + x.m.cobrado, 0);
-    const rev = serie.reduce((a, x) => a + x.m.facturado, 0);
-    return {
-      inv, cc, rev,
-      roasCC: inv > 0 ? cc / inv : 0,
-      roasRev: inv > 0 ? rev / inv : 0,
-      formularios: serie.reduce((a, x) => a + x.m.formularios, 0),
-      ventas: serie.reduce((a, x) => a + x.m.ventas, 0),
-    };
-  }, [serie]);
+  /* Los filtros viven en la URL, como en Leads y Marketing: se puede mandar
+     el link de "los webinars de agosto" y volver de la ficha los conserva. */
+  const setParams = useCallback((cambios: Record<string, string | null>) => {
+    const q = new URLSearchParams(params.toString());
+    for (const [k, v] of Object.entries(cambios)) {
+      if (v) q.set(k, v); else q.delete(k);
+    }
+    const s = q.toString();
+    router.replace(s ? `/webinars?${s}` : "/webinars", { scroll: false });
+  }, [params, router]);
 
-  const wVisto = e.webinars.find((w) => w.id === ver) ?? null;
-  const mVisto = wVisto ? metricasDeWebinar(e, wVisto) : null;
+  /* Links viejos: ?ver=<id> abría el panel lateral, que ahora es una
+     pantalla propia. ?nuevo=1 abre el asistente. */
+  useEffect(() => {
+    const ver = params.get("ver");
+    if (ver) { router.replace(`/webinars/${encodeURIComponent(ver)}`); return; }
+    if (params.get("nuevo") === "1") { setNuevo(true); setParams({ nuevo: null }); }
+  }, [params, router, setParams]);
 
-  function guardar() {
-    if (!form) return;
-    if (!form.titulo.trim()) { toast("Ponele un título al webinar.", "err"); return; }
-    if (form.id) { acciones.actualizar<Webinar>("webinars", form.id, form, form.titulo); toast("Webinar actualizado."); }
-    else { acciones.crear<Webinar>("webinars", form, form.titulo); toast(`«${form.titulo}» creado.`); }
-    setForm(null);
-  }
+  useEffect(() => {
+    const q = params.toString();
+    try { sessionStorage.setItem(CLAVE_LISTA, q ? `/webinars?${q}` : "/webinars"); } catch { /* modo privado */ }
+  }, [params]);
 
-  const columnas: Columna<Webinar>[] = [
-    { clave: "titulo", titulo: "Webinar", tipo: "primary", orden: (w) => w.fecha, celda: (w) => <span className="truncate" style={{ display: "block", maxWidth: 260 }}>{w.titulo}</span> },
-    { clave: "fecha", titulo: "Fecha", tipo: "secondary", orden: (w) => w.fecha, celda: (w) => fechaLarga(w.fecha) },
-    { clave: "inv", titulo: "Inversión", tipo: "num", orden: (w) => metricasDeWebinar(e, w).inversionTotal, celda: (w) => M(metricasDeWebinar(e, w).inversionTotal) },
-    { clave: "form", titulo: "Formularios", tipo: "num", orden: (w) => w.formularios, celda: (w) => num(w.formularios) },
-    { clave: "ventas", titulo: "Ventas", tipo: "num", orden: (w) => metricasDeWebinar(e, w).ventas, celda: (w) => num(metricasDeWebinar(e, w).ventas) },
-    {
-      clave: "roas", titulo: "ROAS cobrado", tipo: "num", orden: (w) => metricasDeWebinar(e, w).roasCC,
+  /* ---------- Período ----------
+     Arranca en "Máximo": son dos webinars por mes, y los que vienen también
+     tienen que verse (el que se crea para dentro de dos semanas no puede
+     desaparecer de la lista). "Máximo" se recalcula siempre contra los
+     datos, así un webinar nuevo más adelante no queda afuera de un rango
+     guardado en la URL. */
+  const limites = useMemo(() => {
+    const dias = e.webinars.map((w) => diaDeNegocio(w.fecha)).filter(Boolean).sort();
+    const hoy = hoyArgentina();
+    const ultimo = dias[dias.length - 1];
+    return { min: dias[0] ?? null, max: ultimo && ultimo > hoy ? ultimo : hoy };
+  }, [e.webinars]);
+  const [rangoURL, setRango] = useRangoURL("max");
+  const sinPeriodo = !params.get("periodo");
+  const rango = useMemo(
+    () => (sinPeriodo || rangoURL.preset === "max" ? rangoMax(limites.min, limites.max) : rangoURL),
+    [sinPeriodo, rangoURL, limites],
+  );
+  const periodoTexto = rango.preset === "max" ? "desde el primero" : rangoSub(rango);
+
+  const estado = (ESTADOS as string[]).includes(params.get("estado") ?? "") ? (params.get("estado") as EstadoWebinar) : null;
+  const elegidos = useMemo(() => (params.get("webinars") ?? "").split(",").filter(Boolean), [params]);
+
+  const fuera = useMemo(
+    () => new Set(e.webinars.filter((w) => !enRango(w.fecha, rango)).map((w) => w.id)),
+    [e.webinars, rango],
+  );
+  /* Todo menos el estado: sobre esto cuentan los chips, así el chip elegido
+     no se queda con todo y los demás en cero. */
+  const base = useMemo(
+    () => e.webinars.filter((w) => !fuera.has(w.id) && (elegidos.length === 0 || elegidos.includes(w.id))),
+    [e.webinars, fuera, elegidos],
+  );
+  const filtrados = useMemo(() => base.filter((w) => !estado || w.estado === estado), [base, estado]);
+  const hayFiltros = Boolean(estado || elegidos.length > 0 || (!sinPeriodo && rangoURL.preset !== "max"));
+
+  /* Una vez por webinar y por cambio: la planilla lee de acá en cada celda. */
+  const metricas = useMemo(
+    () => new Map(filtrados.map((w) => [w.id, metricasDeWebinar(e, w)] as const)),
+    [e, filtrados],
+  );
+  const total = useMemo(() => sumarMetricas([...metricas.values()]), [metricas]);
+  const m = (w: Webinar) => metricas.get(w.id) ?? metricasDeWebinar(e, w);
+
+  const serie = useMemo(
+    () => filtrados
+      .filter((w) => w.estado === "finalizado")
+      .sort((a, b) => +new Date(a.fecha) - +new Date(b.fecha))
+      .map((w) => ({ webinar: w, m: metricas.get(w.id)! })),
+    [filtrados, metricas],
+  );
+
+  /* ---------- Columnas ----------
+     Los campos que se agregan en Ajustes para los webinars también son
+     columnas: los numéricos se cargan en la celda, igual que los demás. */
+  const propios = useMemo(() => e.campos.filter((c) => c.entidad === "webinar"), [e.campos]);
+  const todas = useMemo<DefColumna[]>(
+    () => [...COLUMNAS_FIJAS, ...propios.map((c) => ({ clave: `extra:${c.clave}`, titulo: c.nombre, grupo: "Campos propios", ayuda: c.ayuda }))],
+    [propios],
+  );
+  const cols = useColumnas("webinars", todas, POR_DEFECTO);
+
+  const mostrar = (tipo: Tipo, n: number, decimales = 0): React.ReactNode => {
+    if (tipo === "plata") return M(n, decimales);
+    if (tipo === "cantidad") return num(n);
+    if (n === 0) return <span className="t-subtle">—</span>;
+    if (tipo === "costo") return M(n, decimales);
+    if (tipo === "tasa") return pct(n, decimales || 1);
+    if (tipo === "roas") return <span style={{ color: tonoRoas(n), fontWeight: 600 }}>{num(n, 2)}x</span>;
+    return <span style={{ color: n >= 0 ? "var(--success)" : "var(--danger)", fontWeight: 600 }}>{M(n)}</span>;
+  };
+
+  const DEF: Record<string, ColumnaPlanilla<Webinar>> = {
+    titulo: {
+      clave: "titulo", titulo: "Webinar", orden: (w) => (w.titulo ?? "").toLowerCase(),
+      enlace: (w, nav) => (
+        <Link href={`/webinars/${w.id}`} className="planilla__enlace" title={`Abrir «${w.titulo}»`} {...nav}>
+          <span className="truncate">{w.titulo || "Sin título"}</span>
+          {w.youtubeUrl && <Youtube size={14} className="planilla__yt" aria-label="Tiene video" />}
+        </Link>
+      ),
+    },
+    fecha: { clave: "fecha", titulo: "Fecha", orden: (w) => +new Date(w.fecha), celda: (w) => <span className="t-subtle">{diaYHora(w.fecha)}</span> },
+    estado: {
+      clave: "estado", titulo: "Estado", orden: (w) => ESTADOS.indexOf(w.estado),
       celda: (w) => {
-        const r = metricasDeWebinar(e, w).roasCC;
-        if (r === 0) return <span className="t-subtle">—</span>;
-        return <span style={{ color: r >= 3 ? "var(--success)" : r >= 1.5 ? "var(--warning)" : "var(--danger)", fontWeight: 600 }}>{num(r, 2)}x</span>;
+        const et = ESTADO_WEBINAR[w.estado] ?? ESTADO_WEBINAR.borrador;
+        return <Badge variante={et.variante}>{et.texto}</Badge>;
       },
     },
-  ];
+  };
+
+  for (const c of CAMPOS_MANUALES) {
+    const formato = (n: number) => (c.moneda ? M(n) : num(n));
+    DEF[c.campo] = {
+      clave: c.campo, titulo: c.titulo, ayuda: c.ayuda, num: true,
+      orden: (w) => w[c.campo],
+      editable: {
+        valor: (w) => w[c.campo],
+        guardar: (w, n) => guardarMetrica(w, c.campo, n, formato),
+        formato,
+        decimales: c.moneda ? 2 : 0,
+        etiqueta: (w) => `${c.largo} de «${w.titulo}»`,
+      },
+      total: formato(filtrados.reduce((a, w) => a + w[c.campo], 0)),
+    };
+  }
+
+  for (const c of CALCULADAS) {
+    DEF[c.clave] = {
+      clave: c.clave, titulo: c.titulo, ayuda: c.ayuda, num: true,
+      orden: (w) => m(w)[c.clave],
+      celda: (w) => mostrar(c.tipo, m(w)[c.clave], c.decimales),
+      total: mostrar(c.tipo, total[c.clave], c.decimales),
+    };
+  }
+
+  for (const c of propios) {
+    const clave = `extra:${c.clave}`;
+    if (esNumerico(c)) {
+      const formato = (n: number) => (c.tipo === "moneda" ? M(n) : num(n, Number.isInteger(n) ? 0 : 2));
+      const valor = (w: Webinar) => Number(w.extra?.[c.clave] ?? 0) || 0;
+      DEF[clave] = {
+        clave, titulo: c.nombre, ayuda: c.ayuda, num: true, orden: valor,
+        editable: {
+          valor, formato, decimales: 2,
+          etiqueta: (w) => `${c.nombre} de «${w.titulo}»`,
+          guardar: (w, n) => guardarWebinar(
+            w, { extra: { ...w.extra, [c.clave]: n } },
+            `${c.nombre} de «${w.titulo}»: ${formato(valor(w))} → ${formato(n)}.`,
+          ),
+        },
+        total: formato(filtrados.reduce((a, w) => a + valor(w), 0)),
+      };
+    } else {
+      const texto = (w: Webinar) => {
+        const v = w.extra?.[c.clave];
+        if (c.tipo === "booleano") return v ? "Sí" : "No";
+        return v === undefined || v === null || v === "" ? "—" : String(v);
+      };
+      DEF[clave] = { clave, titulo: c.nombre, ayuda: c.ayuda, orden: texto, celda: texto };
+    }
+  }
+
+  const columnas = cols.visibles.map((k) => DEF[k]).filter(Boolean);
+
+  function limpiarFiltros() {
+    setParams({ estado: null, webinars: null, periodo: null, desde: null, hasta: null });
+  }
 
   return (
     <div className="stack-5">
       <PageHead
         titulo="Webinars"
-        sub="Cada webinar con los números que venís midiendo: del formulario al grupo, del grupo a la llamada, de la llamada a la venta."
-        acciones={<Button variante="primary" icono={<Plus size={16} />} onClick={() => setForm(VACIO())}>Nuevo webinar</Button>}
+        sub="Cada webinar con sus números, del formulario a la venta. Se cargan en la planilla, como en Excel, y todo lo demás se calcula solo."
+        acciones={
+          <>
+            <DateRangePicker
+              value={rango} minDate={limites.min} maxDate={limites.max} onApply={setRango}
+              footerNota="Por el día del vivo · hora de Argentina"
+            />
+            <FiltroWebinars
+              webinars={e.webinars} elegidos={elegidos} fuera={fuera}
+              onCambiar={(ids) => setParams({ webinars: ids.length ? ids.join(",") : null })}
+            />
+            <Button variante="primary" icono={<Plus size={16} />} onClick={() => setNuevo(true)}>Nuevo webinar</Button>
+          </>
+        }
       />
 
+      {e.webinars.length > 0 && (
+        <div className="row-wrap">
+          <Chip activo={!estado} onClick={() => setParams({ estado: null })} count={base.length}>Todos</Chip>
+          {ESTADOS.map((k) => (
+            <Chip key={k} activo={estado === k} onClick={() => setParams({ estado: estado === k ? null : k })}
+              count={base.filter((w) => w.estado === k).length}>
+              {ESTADO_WEBINAR[k].texto}
+            </Chip>
+          ))}
+          {hayFiltros && (
+            <button type="button" className="link t-sm" style={{ marginLeft: 8 }} onClick={limpiarFiltros}>Limpiar filtros</button>
+          )}
+        </div>
+      )}
+
       <div className="grid-stats">
-        <StatCard hero etiqueta="ROAS cobrado" valor={totales.roasCC > 0 ? `${num(totales.roasCC, 2)}x` : "—"}
-          delta={totales.roasRev > 0 ? `${num(totales.roasRev, 2)}x facturado` : undefined} direccion="accent"
-          contexto={`${serie.length} webinars`} ayuda="Cash collected sobre la inversión total (pauta + DM Ads + WhatsApp API)." />
-        <StatCard etiqueta="Inversión total" valor={M(totales.inv)} contexto="pauta, DM Ads y WhatsApp API" />
-        <StatCard etiqueta="Formularios" valor={num(totales.formularios)}
-          contexto={totales.formularios > 0 ? `${M(totales.inv / totales.formularios, 2)} cada uno` : "—"} />
-        <StatCard etiqueta="Ventas" valor={num(totales.ventas)}
-          contexto={totales.ventas > 0 ? `${M(totales.inv / totales.ventas)} de CPA` : "sin ventas todavía"} />
+        <StatCard
+          hero etiqueta="ROAS cobrado" valor={total.roasCC > 0 ? `${num(total.roasCC, 2)}x` : "—"}
+          delta={total.roasRev > 0 ? `${num(total.roasRev, 2)}x facturado` : undefined} direccion="accent"
+          contexto={`${filtrados.length} ${filtrados.length === 1 ? "webinar" : "webinars"} · ${periodoTexto}`}
+          ayuda="Cash collected sobre la inversión total (pauta + DM Ads + WhatsApp API)."
+        />
+        <StatCard etiqueta="Inversión total" valor={M(total.inversionTotal)} contexto="pauta, DM Ads y WhatsApp API" />
+        <StatCard
+          etiqueta="Formularios" valor={num(total.formularios)}
+          contexto={total.formularios > 0 ? `${M(total.cplFormulario, 2)} cada uno` : "todavía sin cargar"}
+        />
+        <StatCard
+          etiqueta="Profit cobrado" valor={M(total.beneficioCC)}
+          contexto={total.ventas > 0
+            ? `${num(total.ventas)} ${total.ventas === 1 ? "venta" : "ventas"} · ${M(total.cpa)} de CPA`
+            : "sin ventas todavía"}
+          ayuda="Lo cobrado menos pauta, DM Ads, WhatsApp API, comisiones y procesador."
+        />
       </div>
 
       {serie.length > 1 && (
         <Card>
           <CardHead titulo="Evolución del ROAS" sub="Webinar a webinar, en orden. La línea llena es lo cobrado; la punteada, lo facturado." />
           <AreaChart
-            datos={serie.map(({ webinar, m }) => ({
-              etiqueta: fecha(webinar.fecha), valor: m.roasCC, valor2: m.roasRev, completo: webinar.titulo,
+            datos={serie.map(({ webinar, m: x }) => ({
+              etiqueta: diaCorto(webinar.fecha).replace(/ \d{4}$/, ""), valor: x.roasCC, valor2: x.roasRev, completo: webinar.titulo,
             }))}
             serie="ROAS cobrado" serie2="ROAS facturado" formato={(n) => `${num(n, 1)}x`} alto={220}
           />
         </Card>
       )}
 
-      <Card style={{ padding: 0 }}>
-        <DataTable
-          filas={e.webinars} columnas={columnas} ordenInicial={{ clave: "fecha", desc: true }}
-          onFila={(w) => setVer(w.id)} etiquetaFila={(w) => `Ver ${w.titulo}`}
-          acciones={(w) => (
-            <>
-              <IconButton etiqueta="Editar" onClick={() => setForm({ ...w })}><Pencil size={15} /></IconButton>
-              <IconButton etiqueta="Eliminar" onClick={() => setBorrar(w)}><Trash2 size={15} /></IconButton>
-            </>
-          )}
+      <Card className="planilla-card">
+        <div className="planilla-cabeza">
+          <div style={{ minWidth: 0, flex: "1 1 320px" }}>
+            <h2 className="card-head__title">Planilla</h2>
+            <p className="card-head__sub">
+              Las columnas con <Pencil size={11} aria-label="lápiz" /> se cargan a mano: click en la celda, escribí y
+              Enter para bajar, o Tab para pasar a la de al lado. Esc deja todo como estaba. El título abre la ficha
+              del webinar.
+            </p>
+          </div>
+          <ConfigColumnas
+            todas={todas} visibles={cols.visibles}
+            alternar={cols.alternar} mover={cols.mover} restaurar={cols.restaurar}
+          />
+        </div>
+        <Planilla
+          filas={filtrados}
+          columnas={columnas}
+          etiqueta="Planilla de webinars"
+          ordenInicial={{ clave: "fecha", desc: true }}
+          totalEtiqueta={<span>Total <span className="t-subtle t-num">· {filtrados.length}</span></span>}
+          onError={(msg) => toast(msg, "err")}
           vacio={
-            <Empty icono={<Video size={22} />} titulo="Todavía no cargaste ningún webinar"
-              texto="Cargá uno con la inversión y los números del embudo, y te calculo el costo por formulario, el CPA, el ROAS y el profit."
-              accion={<Button variante="brand" icono={<Plus size={16} />} onClick={() => setForm(VACIO())}>Cargar mi primer webinar</Button>} />
+            e.webinars.length === 0 ? (
+              <Empty
+                icono={<Video size={22} />}
+                titulo="Todavía no cargaste ningún webinar"
+                texto="Crealo con el título y la fecha. Los números los vas cargando acá mismo, como en una planilla, a medida que pasan."
+                accion={<Button variante="brand" icono={<Plus size={16} />} onClick={() => setNuevo(true)}>Crear el primero</Button>}
+              />
+            ) : (
+              <Empty
+                icono={<Video size={22} />}
+                titulo="Ningún webinar coincide con los filtros"
+                texto="Probá con otro período, otro estado o sacá los webinars elegidos."
+                accion={<Button variante="secondary" onClick={limpiarFiltros}>Limpiar filtros</Button>}
+              />
+            )
           }
         />
       </Card>
-
-      {/* ---------- Alta / edición ---------- */}
-      {form && (
-        <ModalForm
-          abierto onCerrar={() => setForm(null)} onGuardar={guardar} ancho
-          titulo={form.id ? "Editar webinar" : "Nuevo webinar"}
-          sub="Con el título y la fecha alcanza para empezar. Los números del embudo los cargás después del vivo."
-          guardarTexto={form.id ? "Guardar cambios" : "Crear webinar"}
-          puedeGuardar={form.titulo.trim().length > 0}
-        >
-          <div className="form-grid">
-            <Field label="Título" span2>
-              <Input value={form.titulo} onChange={(ev) => setForm({ ...form, titulo: ev.target.value })}
-                placeholder="Cómo conseguir tu primer trabajo remoto en USA" autoFocus />
-            </Field>
-            <Field label="Fecha y hora">
-              <Input type="datetime-local" value={isoMinuto(form.fecha)} onChange={(ev) => setForm({ ...form, fecha: new Date(ev.target.value).toISOString() })} />
-            </Field>
-            <Field label="Estado">
-              <Select value={form.estado} onChange={(ev) => setForm({ ...form, estado: ev.target.value as EstadoWebinar })}
-                opciones={(Object.keys(ETIQUETA) as EstadoWebinar[]).map((k) => ({ valor: k, texto: ETIQUETA[k].texto }))} />
-            </Field>
-
-            <div className="span-2 t-label" style={{ marginTop: 8 }}>Inversión</div>
-            <Field label="Pauta de captación"><Input type="number" min={0} value={form.inversion} onChange={(ev) => setForm({ ...form, inversion: Number(ev.target.value) })} /></Field>
-            <Field label="DM Ads"><Input type="number" min={0} value={form.inversionDmAds} onChange={(ev) => setForm({ ...form, inversionDmAds: Number(ev.target.value) })} /></Field>
-            <Field label="WhatsApp API" span2 ayuda={`Inversión total del webinar: ${M(form.inversion + form.inversionDmAds + form.costoWhatsappApi)}`}>
-              <Input type="number" min={0} value={form.costoWhatsappApi} onChange={(ev) => setForm({ ...form, costoWhatsappApi: Number(ev.target.value) })} />
-            </Field>
-
-            <div className="span-2 t-label" style={{ marginTop: 8 }}>Embudo</div>
-            <Field label="Formularios completados"><Input type="number" min={0} value={form.formularios} onChange={(ev) => setForm({ ...form, formularios: Number(ev.target.value), registrados: Number(ev.target.value) })} /></Field>
-            <Field label="Se unieron al grupo"><Input type="number" min={0} value={form.grupoWpp} onChange={(ev) => setForm({ ...form, grupoWpp: Number(ev.target.value) })} /></Field>
-            <Field label="Asistieron al taller" span2><Input type="number" min={0} value={form.asistentes} onChange={(ev) => setForm({ ...form, asistentes: Number(ev.target.value) })} /></Field>
-
-            <div className="span-2 t-label" style={{ marginTop: 8 }}>Llamadas</div>
-            <Field label="Agendadas en el vivo"><Input type="number" min={0} value={form.llamadasVivo} onChange={(ev) => setForm({ ...form, llamadasVivo: Number(ev.target.value) })} /></Field>
-            <Field label="Agendadas después"><Input type="number" min={0} value={form.llamadasPosterior} onChange={(ev) => setForm({ ...form, llamadasPosterior: Number(ev.target.value) })} /></Field>
-            <Field label="Canceladas"><Input type="number" min={0} value={form.llamadasCanceladas} onChange={(ev) => setForm({ ...form, llamadasCanceladas: Number(ev.target.value) })} /></Field>
-            <Field label="No asistieron"><Input type="number" min={0} value={form.llamadasInasistidas} onChange={(ev) => setForm({ ...form, llamadasInasistidas: Number(ev.target.value) })} /></Field>
-            <Field label="No calificadas"><Input type="number" min={0} value={form.llamadasNoCalificadas} onChange={(ev) => setForm({ ...form, llamadasNoCalificadas: Number(ev.target.value) })} /></Field>
-            <Field label="Calificadas"><Input type="number" min={0} value={form.llamadasCalificadas} onChange={(ev) => setForm({ ...form, llamadasCalificadas: Number(ev.target.value) })} /></Field>
-
-            <div className="span-2 t-label" style={{ marginTop: 8 }}>Enlaces y notas</div>
-            <Field label="Link de registro" span2><Input value={form.enlaceRegistro ?? ""} onChange={(ev) => setForm({ ...form, enlaceRegistro: ev.target.value })} /></Field>
-            <Field label="Link del replay" span2><Input value={form.enlaceReplay ?? ""} onChange={(ev) => setForm({ ...form, enlaceReplay: ev.target.value })} /></Field>
-            <Field label="Qué pasó en este webinar" span2 ayuda="Lo que cambiaste, lo que funcionó, lo que salió mal. Esto es lo que después te explica por qué un webinar rindió distinto.">
-              <Textarea value={form.notas ?? ""} onChange={(ev) => setForm({ ...form, notas: ev.target.value })} rows={4}
-                placeholder="No hice el recordatorio del día anterior. Poca gente se unió al grupo. Reutilicé el 100% de los ads." />
-            </Field>
-            <CamposExtra campos={e.campos} entidad="webinar" valores={form.extra} onChange={(k, v) => setForm({ ...form, extra: { ...form.extra, [k]: v } })} />
-          </div>
-        </ModalForm>
-      )}
-
-      {/* ---------- Detalle ---------- */}
-      {wVisto && mVisto && (
-        <Drawer
-          abierto onCerrar={() => setVer(null)} titulo={wVisto.titulo} sub={fechaLarga(wVisto.fecha)}
-          pie={
-            <>
-              <Button variante="secondary" icono={<Pencil size={16} />} onClick={() => { setForm({ ...wVisto }); setVer(null); }}>Editar</Button>
-              <Button variante="danger" icono={<Trash2 size={16} />} onClick={() => { setBorrar(wVisto); setVer(null); }}>Eliminar</Button>
-            </>
-          }
-        >
-          <div className="stack-5">
-            <div className="row-wrap">
-              <Badge variante={ETIQUETA[wVisto.estado].variante}>{ETIQUETA[wVisto.estado].texto}</Badge>
-              {mVisto.roasCC > 0 && (
-                <Badge variante={mVisto.roasCC >= 3 ? "success" : mVisto.roasCC >= 1.5 ? "warning" : "danger"}>
-                  ROAS {num(mVisto.roasCC, 2)}x
-                </Badge>
-              )}
-            </div>
-
-            <div>
-              <div className="t-label" style={{ marginBottom: 12 }}>El embudo, paso a paso</div>
-              <Funnel
-                pasos={[
-                  { etiqueta: "Formularios", valor: mVisto.formularios, color: "var(--info)" },
-                  { etiqueta: "Grupo de WhatsApp", valor: mVisto.grupoWpp, color: "var(--brand-fill)" },
-                  { etiqueta: "Asistieron al taller", valor: mVisto.asistentes, color: "var(--accent)" },
-                  { etiqueta: "Llamadas agendadas", valor: mVisto.llamadas, color: "var(--warning)" },
-                  { etiqueta: "Calificadas", valor: mVisto.llamadasCalificadas, color: "var(--info)" },
-                  { etiqueta: "Ventas", valor: mVisto.ventas, color: "var(--success)" },
-                ]}
-                formato={num}
-              />
-            </div>
-
-            <div>
-              <div className="t-label" style={{ marginBottom: 12 }}>Cuánto costó cada paso</div>
-              <div className="grid-2" style={{ gap: 12 }}>
-                <Mini etiqueta="Por formulario" valor={M(mVisto.cplFormulario, 2)} />
-                <Mini etiqueta="Por unión al grupo" valor={M(mVisto.cplGrupo, 2)} />
-                <Mini etiqueta="Por llamada" valor={M(mVisto.cpLlamada, 2)} />
-                <Mini etiqueta="Por llamada calificada" valor={M(mVisto.cpLlamadaCalificada, 2)} />
-                <Mini etiqueta="CPA" valor={M(mVisto.cpa)} />
-                <Mini etiqueta="Inversión total" valor={M(mVisto.inversionTotal)} />
-              </div>
-            </div>
-
-            <div>
-              <div className="t-label" style={{ marginBottom: 12 }}>Conversiones</div>
-              <dl className="dl">
-                <Dato label="Form → grupo">{pct(mVisto.asistenciaFormulario)}</Dato>
-                <Dato label="Asistencia">{pct(mVisto.asistenciaTaller)}</Dato>
-                <Dato label="Grupo → agenda">{pct(mVisto.porcentajeAgenda)}</Dato>
-                <Dato label="Asisten → agenda">{pct(mVisto.agendaSobreAsisten)}</Dato>
-                <Dato label="Grupo → venta">{pct(mVisto.convLeadVenta, 2)}</Dato>
-                <Dato label="Tasa de cierre">{pct(mVisto.tasaCierre)}</Dato>
-              </dl>
-            </div>
-
-            <div>
-              <div className="t-label" style={{ marginBottom: 12 }}>La plata</div>
-              <dl className="dl">
-                <Dato label="Facturado">{M(mVisto.facturado)}</Dato>
-                <Dato label="Cobrado">{M(mVisto.cobrado)}</Dato>
-                <Dato label="Comisiones">{M(mVisto.comisiones)}</Dato>
-                <Dato label="ROAS facturado">{mVisto.roasRev > 0 ? `${num(mVisto.roasRev, 2)}x` : "—"}</Dato>
-                <Dato label="ROAS cobrado">{mVisto.roasCC > 0 ? `${num(mVisto.roasCC, 2)}x` : "—"}</Dato>
-              </dl>
-              <div className="grid-2" style={{ gap: 12, marginTop: 12 }}>
-                <Mini etiqueta="Profit facturado" valor={M(mVisto.beneficioRev)} tono={mVisto.beneficioRev >= 0 ? "success" : "danger"} />
-                <Mini etiqueta="Profit cobrado" valor={M(mVisto.beneficioCC)} tono={mVisto.beneficioCC >= 0 ? "success" : "danger"} />
-              </div>
-              <p className="t-sm t-subtle" style={{ marginTop: 10 }}>
-                Profit = la plata menos pauta, DM Ads, WhatsApp API, comisiones y procesador.
-              </p>
-            </div>
-
-            {wVisto.notas && (
-              <div>
-                <div className="t-label" style={{ marginBottom: 8 }}>Qué pasó en este webinar</div>
-                <p className="t-body t-muted" style={{ whiteSpace: "pre-wrap" }}>{wVisto.notas}</p>
-              </div>
-            )}
-
-            <div className="row-wrap">
-              {wVisto.enlaceRegistro && <a href={wVisto.enlaceRegistro} target="_blank" rel="noreferrer"><Button sm variante="secondary" icono={<ExternalLink size={15} />}>Registro</Button></a>}
-              {wVisto.enlaceReplay && <a href={wVisto.enlaceReplay} target="_blank" rel="noreferrer"><Button sm variante="secondary" icono={<ExternalLink size={15} />}>Replay</Button></a>}
-            </div>
-
-            <dl className="dl"><DatosExtra campos={e.campos} entidad="webinar" valores={wVisto.extra} /></dl>
-          </div>
-        </Drawer>
-      )}
 
       <Ayuda titulo="Por qué hay dos ROAS" icono={<Info size={18} />}>
         El <strong>facturado</strong> asume que todas las cuotas se van a pagar; el <strong>cobrado</strong> sólo
@@ -299,21 +384,16 @@ export default function Webinars() {
         todavía falta cobrar. Los dos importan y por eso van siempre juntos.
       </Ayuda>
 
-      <Confirmar
-        abierto={borrar !== null} onCerrar={() => setBorrar(null)}
-        titulo="¿Eliminar este webinar?"
-        texto={`Se borra «${borrar?.titulo}» y sus números. Las ventas que trajo quedan, pero pierden la atribución.`}
-        onConfirmar={() => { if (borrar) { acciones.eliminar("webinars", borrar.id, borrar.titulo); toast("Webinar eliminado."); } }}
-      />
-    </div>
-  );
-}
-
-function Mini({ etiqueta, valor, tono }: { etiqueta: string; valor: string; tono?: "success" | "danger" }) {
-  return (
-    <div style={{ background: "var(--surface-200)", border: "1px solid var(--border)", borderRadius: "var(--radius-md)", padding: "12px 14px" }}>
-      <div className="t-label" style={{ marginBottom: 4 }}>{etiqueta}</div>
-      <div className="t-num" style={{ fontSize: 19, fontWeight: 600, color: tono === "success" ? "var(--success)" : tono === "danger" ? "var(--danger)" : "var(--ink)" }}>{valor}</div>
+      {nuevo && (
+        <AsistenteWebinar
+          onCerrar={() => setNuevo(false)}
+          onCreado={(id, titulo) => {
+            setNuevo(false);
+            toast(`«${titulo}» ya está. Los números los cargás en la ficha o en la planilla.`);
+            router.push(`/webinars/${id}`);
+          }}
+        />
+      )}
     </div>
   );
 }
