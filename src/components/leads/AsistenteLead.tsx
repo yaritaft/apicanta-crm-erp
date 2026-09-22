@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { UserRound } from "lucide-react";
 import { Asistente, Pregunta } from "@/components/ui/Asistente";
 import { Field, Input, Select, Textarea } from "@/components/ui/ui";
@@ -8,6 +8,7 @@ import { CamposExtra } from "@/components/ui/CamposExtra";
 import { useAbrirFicha } from "@/components/ficha/abrir";
 import { useEstado } from "@/lib/store";
 import { claveEmail } from "@/lib/contactos";
+import { useUsuarioActual } from "@/lib/usuario";
 import type { Lead, Moneda } from "@/lib/types";
 
 /* ==================================================================
@@ -40,6 +41,13 @@ export function AsistenteLead({ inicial, onCerrar, onGuardar }: {
   const [f, setF] = useState<BorradorLead>(inicial);
   const [paso, setPaso] = useState(0);
   const set = (cambios: Partial<BorradorLead>) => setF((x) => ({ ...x, ...cambios }));
+
+  /* Un lead nuevo queda a cargo de quien lo carga, si es del equipo. */
+  const yo = useUsuarioActual();
+  useEffect(() => {
+    if (!yo.miembro || f.id) return;
+    setF((x) => (x.responsable ? x : { ...x, responsable: yo.miembro!.nombre }));
+  }, [yo.miembro, f.id]);
 
   /* Si el email ya es de alguien, mejor abrir su ficha que duplicarlo. */
   const yaExiste = useMemo(() => {

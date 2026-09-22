@@ -276,7 +276,7 @@ function VistaVentas({ e, p, ventaResaltada }: { e: EstadoApp; p: Persona; venta
             <Empty
               icono={<ShoppingBag size={22} />} titulo="Todavía no compró"
               texto="Cuando cierre, registrá la venta desde acá: queda pegada a su historia."
-              accion={<Button variante="brand" icono={<Plus size={16} />} onClick={() => setNuevaVenta(true)}>Registrar venta</Button>}
+              accion={<Button variante="primary" icono={<Plus size={16} />} onClick={() => setNuevaVenta(true)}>Registrar venta</Button>}
             />
           ) : (
             <>
@@ -288,7 +288,7 @@ function VistaVentas({ e, p, ventaResaltada }: { e: EstadoApp; p: Persona; venta
                   onCancelar={() => setCancelar(v)}
                 />
               ))}
-              <Button variante="brand" icono={<Plus size={16} />} onClick={() => setNuevaVenta(true)} style={{ alignSelf: "flex-start" }}>
+              <Button variante="primary" icono={<Plus size={16} />} onClick={() => setNuevaVenta(true)} style={{ alignSelf: "flex-start" }}>
                 Nueva venta · upsell o renovación
               </Button>
             </>

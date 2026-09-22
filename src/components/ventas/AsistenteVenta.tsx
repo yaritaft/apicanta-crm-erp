@@ -13,7 +13,8 @@ import { acciones, nuevoId, useEstado } from "@/lib/store";
 import { fechaLarga, isoDia, money, pct } from "@/lib/format";
 import { medioDeMovimiento, parecido, procesadorDeMovimiento } from "@/lib/conciliacion";
 import { descartarComprobante } from "@/lib/comprobantes";
-import type { Cuota, EstadoApp, Movimiento, Venta } from "@/lib/types";
+import type { Cuota, EstadoApp, MiembroEquipo, Movimiento, Venta } from "@/lib/types";
+import { useUsuarioActual } from "@/lib/usuario";
 
 /* ==================================================================
    Asistente de venta.
@@ -128,11 +129,21 @@ export function AsistenteVenta({ onCerrar, onListo, desdeMovimiento, cliente }: 
   const M = useCallback((n: number, d = 0) => money(n, mon, d), [mon]);
 
   const [i, setI] = useState(cliente ? 1 : 0);
+  /* Quien carga la venta, si es del equipo: queda elegido como closer. */
+  const yo = useUsuarioActual();
+  const preelegido = useRef(false);
   const [b, setB] = useState<Borrador>(() => inicial(e, desdeMovimiento, cliente));
   const set = useCallback((cambios: Partial<Borrador>) => setB((x) => ({ ...x, ...cambios })), []);
   const mainRef = useRef<HTMLDivElement>(null);
 
   const paso = PASOS[i];
+
+  useEffect(() => {
+    const m = yo.miembro;
+    if (preelegido.current || !m || !m.activo || (m.rol !== "closer" && m.rol !== "ceo")) return;
+    preelegido.current = true;
+    setB((x) => (x.closerId ? x : { ...x, closerId: m.id }));
+  }, [yo.miembro]);
 
   /* El plan se rearma solo mientras nadie lo toque a mano. */
   useEffect(() => {
@@ -308,7 +319,7 @@ export function AsistenteVenta({ onCerrar, onListo, desdeMovimiento, cliente }: 
           {paso.id === "cliente" && <PasoCliente b={b} set={set} e={e} />}
           {paso.id === "producto" && <PasoProducto b={b} set={set} e={e} M={M} />}
           {paso.id === "precio" && <PasoPrecio b={b} set={set} e={e} M={M} />}
-          {paso.id === "equipo" && <PasoEquipo b={b} set={set} e={e} sinComision={sinComision} />}
+          {paso.id === "equipo" && <PasoEquipo b={b} set={set} e={e} sinComision={sinComision} yo={yo.miembro} />}
           {paso.id === "origen" && <PasoOrigen b={b} set={set} e={e} />}
           {paso.id === "plan" && <PasoPlan b={b} setB={setB} M={M} diferencia={diferenciaPlan} />}
           {paso.id === "cobros" && <PasoCobros b={b} setB={setB} e={e} M={M} onSubiendo={onSubiendo} />}
@@ -575,10 +586,14 @@ function PasoPrecio({ b, set, e, M }: {
 
 /* ---------- Paso 4: equipo ---------- */
 
-function PasoEquipo({ b, set, e, sinComision }: {
+function PasoEquipo({ b, set, e, sinComision, yo }: {
   b: Borrador; set: (c: Partial<Borrador>) => void; e: EstadoApp; sinComision: boolean;
+  yo?: MiembroEquipo;
 }) {
-  const closers = e.equipo.filter((x) => x.activo && (x.rol === "closer" || x.rol === "ceo"));
+  /* Yari (CEO) como closer sólo le aparece a Yari. Si la app no sabe quién
+     está cargando (sin email en Ajustes → Equipo), se muestran todos. */
+  const veCeo = !yo || yo.rol === "ceo" || b.closerId === e.equipo.find((x) => x.rol === "ceo")?.id;
+  const closers = e.equipo.filter((x) => x.activo && (x.rol === "closer" || (x.rol === "ceo" && veCeo)));
   const directores = e.equipo.filter((x) => x.rol === "director");
   return (
     <>

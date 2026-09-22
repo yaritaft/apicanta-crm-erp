@@ -607,6 +607,9 @@ export interface MiembroEquipo {
   /* Yari: si figura como closer, no comisiona nadie */
   sinComision: boolean;
   notas?: string;
+  /* El email con el que entra a la app: así se sabe quién está usándola
+     (el closer que carga una venta queda elegido solo). */
+  email?: string;
 }
 
 export type EstadoVenta = "activa" | "cancelada" | "reembolsada";
