@@ -46,7 +46,7 @@ export function Paleta({ abierto, onCerrar }: { abierto: boolean; onCerrar: () =
       }
       for (const a of e.alumnos) {
         if (normal(a.nombre).includes(term) || normal(a.email).includes(term)) {
-          out.push({ id: `a${a.id}`, grupo: "Alumnos", texto: a.nombre, sub: `${a.plan} · ${a.cohorte}`, icono: <span className="hk-avatar" style={{ width: 22, height: 22, fontSize: 10 }}>{a.nombre.slice(0, 1)}</span>, ir: `/alumnos?ver=${a.id}` });
+          out.push({ id: `a${a.id}`, grupo: "Alumnos", texto: a.nombre, sub: [a.plan, a.cohorte].filter(Boolean).join(" · "), icono: <span className="hk-avatar" style={{ width: 22, height: 22, fontSize: 10 }}>{a.nombre.slice(0, 1)}</span>, ir: `/alumnos?ver=${a.id}` });
         }
       }
       for (const w of e.webinars) {

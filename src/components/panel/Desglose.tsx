@@ -145,7 +145,7 @@ function contenido(e: EstadoApp, que: QueDesglosar, mes: RangoMes): Contenido {
         titulo: "MRR", sub: "Lo que entra todos los meses por cuotas de alumnos activos",
         resumen: [{ etiqueta: "MRR", valor: M(lista.reduce((a, x) => a + x.cuotaMensual, 0)) }, { etiqueta: "Alumnos activos", valor: num(lista.length) }],
         secciones: [{
-          filas: lista.map((a) => ({ id: a.id, titulo: a.nombre, detalle: `${a.plan} · ${a.cohorte}`, valor: money(a.cuotaMensual, a.moneda), href: `/alumnos?ver=${a.id}` })),
+          filas: lista.map((a) => ({ id: a.id, titulo: a.nombre, detalle: [a.plan, a.cohorte].filter(Boolean).join(" · "), valor: money(a.cuotaMensual, a.moneda), href: `/alumnos?ver=${a.id}` })),
           vacio: "No hay alumnos activos.",
         }],
       };
