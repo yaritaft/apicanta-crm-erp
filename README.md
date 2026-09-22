@@ -19,8 +19,8 @@ lo que se muestra se calcula solo.
 | **Agenda** | Sesiones por día, marcar si la persona vino o no, medir la asistencia real |
 | **Webinars** | Registrados, asistencia, leads que trajo, conversión, ingresos y retorno |
 | **Marketing** | Campañas de Meta con costo por lead, costo por alumno, CTR, CPC, CPM y ROAS |
-| **Alumnos** | Quién cursa, con qué plan, cómo viene el progreso y si manda su reporte |
-| **Reportes** | El reporte semanal de cada alumno, semana por semana, marcable en un clic |
+| **Alumnos** | Quién cursa y cómo viene, en lista o en el pipeline de servicio (venta nueva → onboarding → en servicio…). Cada venta registrada crea su alumno sola |
+| **Reportes** | Dashboard y tabla de los reportes por rango de fechas: respuesta, horas, postulaciones, entrevistas, bloqueos y quién está en riesgo, marcable en un clic |
 | **Ventas** | Un asistente paso a paso arma la venta, su plan de cuotas y los cobros que ya entraron |
 | **Conciliación** | Los cobros de Stripe, Hotmart, Whop, dLocal, Mercado Pago, Mercury, Binance y Trust, imputados a la cuota que les corresponde |
 | **Finanzas** | Ingresos y egresos, por cobrar, MRR, en qué se va la plata |
@@ -32,6 +32,8 @@ lo que se muestra se calcula solo.
 No hay nada cableado en el código que el usuario no pueda cambiar desde **Ajustes**:
 
 - **Etapas del pipeline** — nombre, color, probabilidad de cierre, orden, cuál es «ganada» y cuál «perdida».
+- **Etapas del servicio** — las columnas del pipeline de alumnos: nombre, color y orden. Al borrar una, sus
+  alumnos pasan a la que elijas. En Supabase necesitan `supabase/alumnos-servicio.sql`.
 - **Listas** — fuentes de leads, planes, tipos de sesión, categorías de ingreso y egreso, métodos de pago.
 - **Campos propios** — agregar campos a leads, alumnos, sesiones, webinars, campañas o movimientos.
   Aparecen solos en el formulario y en la ficha, con el tipo de dato que elijas.
