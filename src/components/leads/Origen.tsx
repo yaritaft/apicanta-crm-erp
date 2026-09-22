@@ -74,12 +74,21 @@ export function Origen({ contacto, utmAgenda }: { contacto?: Contacto; utmAgenda
   );
 }
 
+/* Siempre en el orden en que se leen, de lo general a lo particular. La base
+   (jsonb) guarda las claves en su propio orden —las cortas primero—, y "term"
+   salía antes que "source". */
+const ORDEN_UTM = ["utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_term"];
+const posicion = (k: string) => {
+  const i = ORDEN_UTM.indexOf(k);
+  return i === -1 ? ORDEN_UTM.length : i;
+};
+
 function Utms({ titulo, utm }: { titulo: string; utm: Record<string, string> }) {
   return (
     <div>
       <div className="t-sm t-subtle" style={{ marginBottom: 6 }}>{titulo}</div>
       <div className="row-wrap">
-        {Object.entries(utm).map(([k, v]) => (
+        {Object.entries(utm).sort(([a], [b]) => posicion(a) - posicion(b)).map(([k, v]) => (
           <Tag key={k}>{k.replace(/^utm_/, "")}: {v}</Tag>
         ))}
       </div>
