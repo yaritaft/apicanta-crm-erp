@@ -10,16 +10,49 @@ import {
   Ayuda, Badge, Button, Card, Chip, Empty, Field, IconButton, Input, Persona, Select, Textarea,
 } from "@/components/ui/ui";
 import { Columna, DataTable } from "@/components/ui/DataTable";
+import { ConfigColumnas, DefColumna, useColumnas } from "@/components/ui/ColumnasConfig";
+import { ETIQUETA_CANAL } from "@/lib/calendly";
 import { ModalForm, Confirmar, Modal } from "@/components/ui/Modal";
 import { CamposExtra } from "@/components/ui/CamposExtra";
 import { useToast } from "@/components/ui/Toast";
 import { acciones, useEstado } from "@/lib/store";
 import { useAbrirDesdeURL } from "@/lib/useQuery";
 import { useAbrirFicha } from "@/components/ficha/abrir";
-import { money, num, relativo } from "@/lib/format";
+import { AsistenteLead, ETIQUETA_INGLES, ORDEN_INGLES, type BorradorLead } from "@/components/leads/AsistenteLead";
+import { fechaHora, fechaLarga, money, num, relativo } from "@/lib/format";
 import { DateRangePicker, diaDeNegocio } from "@/components/ui/DateRangePicker";
 import { useRangoURL } from "@/lib/useRango";
 import type { Lead, Moneda } from "@/lib/types";
+
+/* Las columnas que se pueden prender, como en el Administrador de anuncios.
+   Cada uno elige las suyas (se guardan en su navegador). */
+const COLUMNAS_LEADS: DefColumna[] = [
+  { clave: "nombre", titulo: "Lead", fija: true },
+  { clave: "etapa", titulo: "Etapa", grupo: "Pipeline" },
+  { clave: "monto", titulo: "Valor", grupo: "Pipeline", ayuda: "Cuánto vale si cierra" },
+  { clave: "responsable", titulo: "Responsable", grupo: "Pipeline" },
+  { clave: "act", titulo: "Últ. cambio", grupo: "Pipeline" },
+  { clave: "creado", titulo: "Entró", grupo: "Pipeline", ayuda: "Cuándo se cargó el lead" },
+  { clave: "fuente", titulo: "Fuente", grupo: "Origen" },
+  { clave: "campania", titulo: "Campaña", grupo: "Origen" },
+  { clave: "canal", titulo: "Entró por", grupo: "Origen", ayuda: "Webinar, VSL o setter: el embudo con el que llegó" },
+  { clave: "anuncio", titulo: "Anuncio", grupo: "Origen", ayuda: "El anuncio de Meta con el que se registró" },
+  { clave: "utmSource", titulo: "utm_source", grupo: "Origen" },
+  { clave: "utmCampaign", titulo: "utm_campaign", grupo: "Origen" },
+  { clave: "webinar", titulo: "Webinar", grupo: "Origen" },
+  { clave: "email", titulo: "Email", grupo: "Contacto" },
+  { clave: "telefono", titulo: "Teléfono", grupo: "Contacto" },
+  { clave: "pais", titulo: "País", grupo: "Contacto" },
+  { clave: "ingles", titulo: "Inglés", grupo: "Perfil" },
+  { clave: "exp", titulo: "Años exp.", grupo: "Perfil" },
+  { clave: "tecnologias", titulo: "Lenguajes", grupo: "Perfil" },
+  { clave: "formacion", titulo: "Formación", grupo: "Perfil" },
+  { clave: "sueldo", titulo: "Gana por mes (USD)", grupo: "Perfil" },
+  { clave: "llamadas", titulo: "Llamadas", grupo: "Actividad", ayuda: "Cuántas agendó, contando las canceladas" },
+  { clave: "proxLlamada", titulo: "Próxima llamada", grupo: "Actividad" },
+  { clave: "compras", titulo: "Compró", grupo: "Actividad", ayuda: "Lo facturado en sus ventas activas" },
+];
+const POR_DEFECTO_LEADS = ["nombre", "etapa", "fuente", "pais", "ingles", "exp", "monto", "act"];
 
 const VACIO = (fuente: string, etapaId: string): Omit<Lead, "id"> => ({
   nombre: "", email: "", telefono: "", pais: "", fuente, campania: "",
@@ -27,14 +60,6 @@ const VACIO = (fuente: string, etapaId: string): Omit<Lead, "id"> => ({
   etiquetas: [], creadoEn: new Date().toISOString(), actualizadoEn: new Date().toISOString(), extra: {},
 });
 
-/* De menor a mayor: el orden importa para poder ordenar la columna, no
-   alfabeticamente — "basico" antes que "nativo" no dice nada. */
-const ORDEN_INGLES = ["ninguno", "basico", "intermedio", "conversacional", "nativo"] as const;
-
-const ETIQUETA_INGLES: Record<string, string> = {
-  ninguno: "Ninguno", basico: "Básico", intermedio: "Intermedio",
-  conversacional: "Conversacional", nativo: "Nativo",
-};
 
 export default function Leads() {
   const e = useEstado();
@@ -55,6 +80,7 @@ export default function Leads() {
   const [form, setForm] = useState<(Omit<Lead, "id"> & { id?: string }) | null>(null);
   const [borrar, setBorrar] = useState<Lead | null>(null);
   const [importar, setImportar] = useState(false);
+  const cols = useColumnas("leads", COLUMNAS_LEADS, POR_DEFECTO_LEADS);
 
   const etapaInicial = useMemo(() => [...e.etapas].sort((a, b) => a.orden - b.orden)[0]?.id ?? "", [e.etapas]);
 
@@ -97,8 +123,8 @@ export default function Leads() {
 
   const etapaDe = (id: string) => e.etapas.find((x) => x.id === id);
 
-  function guardar() {
-    if (!form) return;
+  function guardar(borrador: BorradorLead) {
+    const form = borrador;
     if (!form.nombre.trim()) { toast("Poné al menos el nombre.", "err"); return; }
     const datos = { ...form, actualizadoEn: new Date().toISOString(), responsable: form.responsable || e.ajustes.responsable };
     /* Por las acciones de lead, no por `crear`/`actualizar` a secas: son las
@@ -114,31 +140,93 @@ export default function Leads() {
     setForm(null);
   }
 
-  const columnas: Columna<Lead>[] = [
-    {
+  /* Lo que cada fila necesita de otras tablas, indexado una vez: con
+     cientos de leads, buscarlo celda por celda se nota. */
+  const ind = useMemo(() => {
+    const contacto = new Map(e.contactos.map((c) => [c.id, c]));
+    const llamadas = new Map<string, typeof e.sesiones>();
+    for (const s of e.sesiones) {
+      for (const k of [s.leadId, s.contactoId]) {
+        if (!k) continue;
+        const ya = llamadas.get(k) ?? [];
+        if (!ya.includes(s)) ya.push(s);
+        llamadas.set(k, ya);
+      }
+    }
+    const compras = new Map<string, number>();
+    for (const v of e.ventas) if (v.contactoId && v.estado !== "cancelada") compras.set(v.contactoId, (compras.get(v.contactoId) ?? 0) + v.precioAcordado);
+    const anuncio = new Map(e.ads.map((a) => [a.id, a.nombre]));
+    const webinar = new Map(e.webinars.map((w) => [w.id, w.titulo]));
+    return { contacto, llamadas, compras, anuncio, webinar };
+  }, [e.contactos, e.sesiones, e.ventas, e.ads, e.webinars]);
+  const contactoDe = (l: Lead) => ind.contacto.get(l.contactoId ?? l.id);
+  const llamadasDe = (l: Lead) => {
+    const xs = [...(ind.llamadas.get(l.id) ?? []), ...(ind.llamadas.get(l.contactoId ?? "") ?? [])];
+    return [...new Set(xs)];
+  };
+  const ahoraIso = new Date().toISOString();
+
+  const todasLasColumnas: Record<string, Columna<Lead>> = {
+    nombre: {
       clave: "nombre", titulo: "Lead", tipo: "primary", orden: (l) => l.nombre,
       celda: (l) => <Persona nombre={l.nombre} sub={l.email} />,
     },
-    {
+    etapa: {
       clave: "etapa", titulo: "Etapa", orden: (l) => etapaDe(l.etapaId)?.orden ?? 99,
       celda: (l) => {
         const et = etapaDe(l.etapaId);
         return et ? <Badge variante={et.variante}>{et.nombre}</Badge> : <span>—</span>;
       },
     },
-    { clave: "fuente", titulo: "Fuente", tipo: "secondary", orden: (l) => l.fuente, celda: (l) => l.fuente || "—" },
-    { clave: "pais", titulo: "País", tipo: "secondary", orden: (l) => l.pais ?? "", celda: (l) => l.pais || "—" },
-    {
+    fuente: { clave: "fuente", titulo: "Fuente", tipo: "secondary", orden: (l) => l.fuente, celda: (l) => l.fuente || "—" },
+    pais: { clave: "pais", titulo: "País", tipo: "secondary", orden: (l) => l.pais ?? "", celda: (l) => l.pais || "—" },
+    ingles: {
       clave: "ingles", titulo: "Inglés", tipo: "secondary",
       orden: (l) => ORDEN_INGLES.indexOf(l.inglesNivel ?? "ninguno"),
       celda: (l) => (l.inglesNivel
         ? <Badge variante={l.inglesNivel === "conversacional" || l.inglesNivel === "nativo" ? "success" : "neutral"}>{ETIQUETA_INGLES[l.inglesNivel]}</Badge>
         : "—"),
     },
-    { clave: "exp", titulo: "Años exp.", tipo: "num", orden: (l) => l.aniosExperiencia ?? -1, celda: (l) => (l.aniosExperiencia == null ? "—" : num(l.aniosExperiencia)) },
-    { clave: "monto", titulo: "Valor", tipo: "num", orden: (l) => l.monto, celda: (l) => money(l.monto, l.moneda) },
-    { clave: "act", titulo: "Últ. cambio", tipo: "secondary", orden: (l) => l.actualizadoEn, celda: (l) => relativo(l.actualizadoEn) },
-  ];
+    exp: { clave: "exp", titulo: "Años exp.", tipo: "num", orden: (l) => l.aniosExperiencia ?? -1, celda: (l) => (l.aniosExperiencia == null ? "—" : num(l.aniosExperiencia)) },
+    monto: { clave: "monto", titulo: "Valor", tipo: "num", orden: (l) => l.monto, celda: (l) => money(l.monto, l.moneda) },
+    act: { clave: "act", titulo: "Últ. cambio", tipo: "secondary", orden: (l) => l.actualizadoEn, celda: (l) => relativo(l.actualizadoEn) },
+    creado: { clave: "creado", titulo: "Entró", tipo: "secondary", orden: (l) => l.creadoEn, celda: (l) => fechaLarga(l.creadoEn) },
+    responsable: { clave: "responsable", titulo: "Responsable", tipo: "secondary", orden: (l) => l.responsable, celda: (l) => l.responsable || "—" },
+    email: { clave: "email", titulo: "Email", tipo: "secondary", orden: (l) => l.email, celda: (l) => l.email || "—" },
+    telefono: { clave: "telefono", titulo: "Teléfono", tipo: "secondary", orden: (l) => l.telefono ?? "", celda: (l) => l.telefono || "—" },
+    campania: { clave: "campania", titulo: "Campaña", tipo: "secondary", orden: (l) => l.campania ?? "", celda: (l) => l.campania || "—" },
+    canal: {
+      clave: "canal", titulo: "Entró por", tipo: "secondary",
+      orden: (l) => contactoDe(l)?.origenCanal ?? "",
+      celda: (l) => { const c = contactoDe(l)?.origenCanal; return c ? ETIQUETA_CANAL[c] : "—"; },
+    },
+    anuncio: {
+      clave: "anuncio", titulo: "Anuncio", tipo: "secondary",
+      orden: (l) => ind.anuncio.get(contactoDe(l)?.origenAdId ?? "") ?? "",
+      celda: (l) => ind.anuncio.get(contactoDe(l)?.origenAdId ?? "") ?? "—",
+    },
+    utmSource: { clave: "utmSource", titulo: "utm_source", tipo: "secondary", orden: (l) => contactoDe(l)?.utm?.utm_source ?? "", celda: (l) => contactoDe(l)?.utm?.utm_source ?? "—" },
+    utmCampaign: { clave: "utmCampaign", titulo: "utm_campaign", tipo: "secondary", orden: (l) => contactoDe(l)?.utm?.utm_campaign ?? "", celda: (l) => contactoDe(l)?.utm?.utm_campaign ?? "—" },
+    webinar: { clave: "webinar", titulo: "Webinar", tipo: "secondary", orden: (l) => ind.webinar.get(l.webinarId ?? "") ?? "", celda: (l) => ind.webinar.get(l.webinarId ?? "") ?? "—" },
+    tecnologias: { clave: "tecnologias", titulo: "Lenguajes", tipo: "secondary", orden: (l) => contactoDe(l)?.tecnologias ?? "", celda: (l) => contactoDe(l)?.tecnologias || "—" },
+    formacion: { clave: "formacion", titulo: "Formación", tipo: "secondary", orden: (l) => contactoDe(l)?.formacion ?? "", celda: (l) => contactoDe(l)?.formacion || "—" },
+    sueldo: { clave: "sueldo", titulo: "Gana por mes", tipo: "num", orden: (l) => Number(contactoDe(l)?.sueldoUsd) || -1, celda: (l) => contactoDe(l)?.sueldoUsd || "—" },
+    llamadas: { clave: "llamadas", titulo: "Llamadas", tipo: "num", orden: (l) => llamadasDe(l).length, celda: (l) => num(llamadasDe(l).length) },
+    proxLlamada: {
+      clave: "proxLlamada", titulo: "Próxima llamada", tipo: "secondary",
+      orden: (l) => llamadasDe(l).filter((x) => x.estado === "agendada" && x.inicia >= ahoraIso).map((x) => x.inicia).sort()[0] ?? "9999",
+      celda: (l) => {
+        const prox = llamadasDe(l).filter((x) => x.estado === "agendada" && x.inicia >= ahoraIso).map((x) => x.inicia).sort()[0];
+        return prox ? fechaHora(prox) : "—";
+      },
+    },
+    compras: {
+      clave: "compras", titulo: "Compró", tipo: "num",
+      orden: (l) => (ind.compras.get(l.id) ?? 0) + (ind.compras.get(l.contactoId ?? "") ?? 0),
+      celda: (l) => { const t = (ind.compras.get(l.id) ?? 0) + (ind.compras.get(l.contactoId ?? "") ?? 0); return t ? money(t, l.moneda) : "—"; },
+    },
+  };
+  const columnas = cols.visibles.map((k) => todasLasColumnas[k]).filter(Boolean);
 
   return (
     <div className="stack-5">
@@ -181,6 +269,10 @@ export default function Leads() {
                 opciones={[{ valor: "todas", texto: "Todas las fuentes" }, ...e.ajustes.fuentes.map((f) => ({ valor: f, texto: f }))]}
               />
             </div>
+            <ConfigColumnas
+              todas={COLUMNAS_LEADS} visibles={cols.visibles}
+              alternar={cols.alternar} mover={cols.mover} restaurar={cols.restaurar}
+            />
           </div>
           <div className="toolbar">
             {/* Los contadores salen de lo que el RANGO deja ver, no de la base
@@ -226,68 +318,10 @@ export default function Leads() {
 
       {/* ---------- Alta / edición ---------- */}
       {form && (
-        <ModalForm
-          abierto onCerrar={() => setForm(null)} onGuardar={guardar} ancho
-          titulo={form.id ? "Editar lead" : "Nuevo lead"}
-          sub={form.id ? "Cambiá lo que necesites y guardá." : "Sólo el nombre es obligatorio. El resto lo completás cuando lo tengas."}
-          guardarTexto={form.id ? "Guardar cambios" : "Crear lead"}
-          puedeGuardar={form.nombre.trim().length > 0}
-        >
-          <div className="form-grid">
-            <Field label="Nombre y apellido" ayuda="Lo único obligatorio.">
-              <Input value={form.nombre} onChange={(ev) => setForm({ ...form, nombre: ev.target.value })} placeholder="Martín Quiroga" autoFocus />
-            </Field>
-            <Field label="Email">
-              <Input type="email" value={form.email} onChange={(ev) => setForm({ ...form, email: ev.target.value })} placeholder="martin@gmail.com" />
-            </Field>
-            <Field label="Teléfono">
-              <Input value={form.telefono ?? ""} onChange={(ev) => setForm({ ...form, telefono: ev.target.value })} placeholder="+54 9 11 5555-5555" />
-            </Field>
-            <Field label="País">
-              <Input value={form.pais ?? ""} onChange={(ev) => setForm({ ...form, pais: ev.target.value })} placeholder="Argentina" />
-            </Field>
-            <Field label="Etapa" ayuda="Después la cambiás arrastrando en el Pipeline.">
-              <Select value={form.etapaId} onChange={(ev) => setForm({ ...form, etapaId: ev.target.value })}
-                opciones={[...e.etapas].sort((a, b) => a.orden - b.orden).map((x) => ({ valor: x.id, texto: x.nombre }))} />
-            </Field>
-            <Field label="Fuente" ayuda="De dónde vino.">
-              <Select value={form.fuente} onChange={(ev) => setForm({ ...form, fuente: ev.target.value })} opciones={e.ajustes.fuentes} placeholder="Elegí una" />
-            </Field>
-            <Field label="Inglés" ayuda="Conversacional es el corte: abajo de eso no da una entrevista en USA.">
-              <Select
-                value={form.inglesNivel ?? ""}
-                onChange={(ev) => setForm({ ...form, inglesNivel: (ev.target.value || undefined) as Lead["inglesNivel"] })}
-                placeholder="Sin evaluar"
-                opciones={ORDEN_INGLES.map((n) => ({ valor: n, texto: ETIQUETA_INGLES[n] }))}
-              />
-            </Field>
-            <Field label="Años de experiencia" ayuda="Vacío es «no sabemos»; 0 es «sin experiencia».">
-              <Input
-                type="number" min={0} value={form.aniosExperiencia ?? ""}
-                onChange={(ev) => setForm({ ...form, aniosExperiencia: ev.target.value === "" ? undefined : Number(ev.target.value) })}
-              />
-            </Field>
-            <Field label="Valor" ayuda="Cuánto vale si cierra.">
-              <Input type="number" min={0} value={form.monto} onChange={(ev) => setForm({ ...form, monto: Number(ev.target.value) })} />
-            </Field>
-            <Field label="Moneda">
-              <Select value={form.moneda} onChange={(ev) => setForm({ ...form, moneda: ev.target.value as Moneda })} opciones={["USD", "ARS"]} />
-            </Field>
-            <Field label="Campaña" ayuda="Si vino de un anuncio, cuál.">
-              <Input value={form.campania ?? ""} onChange={(ev) => setForm({ ...form, campania: ev.target.value })} placeholder="Remoto-USA-Frío" />
-            </Field>
-            <Field label="Responsable">
-              <Input value={form.responsable} onChange={(ev) => setForm({ ...form, responsable: ev.target.value })} placeholder={e.ajustes.responsable} />
-            </Field>
-            <Field label="Notas" span2 ayuda="Lo que hablaron, qué necesita, cuándo volver a escribirle.">
-              <Textarea value={form.notas ?? ""} onChange={(ev) => setForm({ ...form, notas: ev.target.value })} rows={3} />
-            </Field>
-            <CamposExtra
-              campos={e.campos} entidad="lead" valores={form.extra}
-              onChange={(k, v) => setForm({ ...form, extra: { ...form.extra, [k]: v } })}
-            />
-          </div>
-        </ModalForm>
+        <AsistenteLead
+          inicial={form} onCerrar={() => setForm(null)}
+          onGuardar={(datos) => guardar(datos)}
+        />
       )}
 
       {importar && <ImportarModal onCerrar={() => setImportar(false)} etapaId={etapaInicial} />}
