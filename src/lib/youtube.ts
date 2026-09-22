@@ -95,6 +95,22 @@ export interface DatosYoutube {
   aviso?: string;
 }
 
+/* Lo que devuelve /api/youtube/vivos: los vivos del canal (terminados,
+   en el aire y programados), del más nuevo al más viejo. */
+export interface VivoDelCanal {
+  id: string;
+  titulo: string;
+  miniatura?: string;
+  /* Cuándo empezó o está programado */
+  cuando: string;
+  estado: VivoYoutube["estado"];
+}
+
+export interface VivosDelCanal {
+  canal: { id: string; nombre: string };
+  vivos: VivoDelCanal[];
+}
+
 /* PT1H2M3S → 3723. Lo que no se entiende es 0. */
 export function segundosDeDuracion(iso: string | undefined): number {
   const m = /^P(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?)?$/.exec(iso ?? "");

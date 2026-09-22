@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   ExternalLink, Eye, Link2, MessageCircle, RefreshCw, ThumbsUp, Trash2, Youtube,
 } from "lucide-react";
@@ -8,12 +8,13 @@ import { Avatar, Badge, Button, Card, Input } from "@/components/ui/ui";
 import { useToast } from "@/components/ui/Toast";
 import { num, relativo } from "@/lib/format";
 import {
-  duracionLegible, embebidoDe, idDeYoutube, partirConLinks, videoDe, type DatosYoutube,
+  duracionLegible, embebidoDe, idDeYoutube, partirConLinks, videoDe, type DatosYoutube, type VivoDelCanal,
 } from "@/lib/youtube";
+import { useEstado } from "@/lib/store";
 import type { Webinar } from "@/lib/types";
-import { diaCorto, diaYHora } from "./fechas";
+import { diaCorto, diaYHora, partesArgentina } from "./fechas";
 import { guardarWebinar } from "./guardar";
-import { useYoutube } from "./useYoutube";
+import { useVivosDelCanal, useYoutube } from "./useYoutube";
 
 /* ==================================================================
    El video del webinar: el vivo o la grabación, embebido, con lo que
@@ -41,6 +42,14 @@ export function VideoWebinar({ w, className }: { w: Webinar; className?: string 
   if (!id || cambiando) {
     return (
       <Card className={className}>
+        <PropuestaDeVivo
+          w={w}
+          onElegir={(v) => {
+            guardarWebinar(w, { youtubeUrl: videoDe(v.id) }, `Se enlazó a «${w.titulo}» el vivo de YouTube «${v.titulo}».`);
+            setCambiando(false);
+            setRecienPegado(true);
+          }}
+        />
         <PegarLink
           w={w}
           inicial={w.youtubeUrl ?? ""}
@@ -334,6 +343,82 @@ function Descripcion({ texto }: { texto: string }) {
           {abierta ? "Mostrar menos" : "Mostrar la descripción completa"}
         </button>
       )}
+    </div>
+  );
+}
+
+/* ---------- Sin video: el vivo de este día, propuesto solo ----------
+   Con la clave de YouTube, se buscan los vivos del canal (el que tienen los
+   otros webinars) y se propone el del mismo día. Si no hay, los de tres
+   días para acá o para allá. Nada se enlaza sin que alguien lo elija. */
+
+function PropuestaDeVivo({ w, onElegir }: { w: Webinar; onElegir: (v: VivoDelCanal) => void }) {
+  const e = useEstado();
+  const [descartados, setDescartados] = useState<Set<string>>(() => new Set());
+
+  /* Los videos de los otros webinars: de ahí sale el canal, y no se
+     proponen de nuevo. Los más recientes primero. */
+  const { conocidos, usados } = useMemo(() => {
+    const otros = e.webinars
+      .filter((x) => x.id !== w.id)
+      .sort((a, b) => +new Date(b.fecha) - +new Date(a.fecha))
+      .map((x) => idDeYoutube(x.youtubeUrl) ?? idDeYoutube(x.enlaceReplay))
+      .filter((x): x is string => Boolean(x));
+    return { conocidos: [...new Set(otros)].slice(0, 10), usados: new Set(otros) };
+  }, [e.webinars, w.id]);
+
+  const vivos = useVivosDelCanal(conocidos);
+
+  if (vivos.estado === "sin-videos") {
+    return <p className="wb-propuesta__nota">Cuando algún webinar tenga su link de YouTube, en los demás te propongo solo el vivo de su día.</p>;
+  }
+  if (vivos.estado === "sin-clave") {
+    return <p className="wb-propuesta__nota">Con la clave de YouTube conectada, acá te propongo solo el vivo de este día de tu canal.</p>;
+  }
+  if (vivos.estado === "cargando") {
+    return <p className="wb-propuesta__nota" aria-live="polite">Buscando el vivo de este día en tu canal…</p>;
+  }
+  if (vivos.estado === "error") return <p className="wb-propuesta__nota">{vivos.error}</p>;
+
+  const { canal } = vivos.datos;
+  const dia = partesArgentina(w.fecha).dia;
+  const libres = vivos.datos.vivos.filter((v) => !usados.has(v.id) && !descartados.has(v.id));
+  const mismoDia = libres.filter((v) => partesArgentina(v.cuando).dia === dia);
+  const cerca = mismoDia.length ? [] : libres
+    .filter((v) => Math.abs(new Date(v.cuando).getTime() - new Date(w.fecha).getTime()) <= 3 * 86_400_000)
+    .slice(0, 3);
+
+  if (mismoDia.length === 0 && cerca.length === 0) {
+    return <p className="wb-propuesta__nota">No encontré un vivo cerca del {diaCorto(w.fecha)} en {canal.nombre || "el canal"}. Si ya está, pegá el link abajo.</p>;
+  }
+
+  const lista = mismoDia.length ? mismoDia : cerca;
+  return (
+    <div className="wb-propuesta" aria-live="polite">
+      <div className="t-label">
+        {mismoDia.length
+          ? `Encontré el vivo de este día en ${canal.nombre || "tu canal"}`
+          : "No hay un vivo el mismo día. ¿Es alguno de estos?"}
+      </div>
+      {lista.map((v) => (
+        <div className="wb-propuesta__item" key={v.id}>
+          {v.miniatura
+            /* eslint-disable-next-line @next/next/no-img-element -- miniatura pública de YouTube */
+            ? <img src={v.miniatura} alt="" width={160} height={90} referrerPolicy="no-referrer" />
+            : <span className="wb-propuesta__sin-img"><Youtube size={22} /></span>}
+          <span style={{ minWidth: 0, flex: 1 }}>
+            <span className="t-strong" style={{ display: "block" }}>{v.titulo || "Video sin título"}</span>
+            <span className="t-sm t-subtle t-num" style={{ display: "block" }}>
+              {v.estado === "programado" ? "Programado para el " : v.estado === "en-vivo" ? "En vivo desde el " : "Transmitido el "}
+              {diaYHora(v.cuando)} hs
+            </span>
+          </span>
+          <span className="row" style={{ gap: 6, flexWrap: "wrap" }}>
+            <Button sm variante="primary" onClick={() => onElegir(v)}>Usar este</Button>
+            <Button sm variante="ghost" onClick={() => setDescartados((x) => new Set(x).add(v.id))}>No es este</Button>
+          </span>
+        </div>
+      ))}
     </div>
   );
 }

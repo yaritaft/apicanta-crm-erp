@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { nube } from "@/lib/supabase";
-import type { DatosYoutube } from "@/lib/youtube";
+import type { DatosYoutube, VivosDelCanal } from "@/lib/youtube";
 
 /* ==================================================================
    Los datos de un video, pedidos a NUESTRA ruta /api/youtube (nunca a
@@ -29,13 +29,19 @@ class ErrorYoutube extends Error {
   }
 }
 
-async function pedir(id: string): Promise<DatosYoutube> {
+/* La sesión de Supabase: las rutas de YouTube sólo le contestan al equipo. */
+async function cabeceras(): Promise<Record<string, string>> {
   const headers: Record<string, string> = {};
   if (nube) {
     const { data } = await nube.auth.getSession();
     const token = data.session?.access_token;
     if (token) headers.Authorization = `Bearer ${token}`;
   }
+  return headers;
+}
+
+async function pedir(id: string): Promise<DatosYoutube> {
+  const headers = await cabeceras();
   let r: Response;
   try {
     r = await fetch(`/api/youtube?id=${encodeURIComponent(id)}`, { headers });
@@ -106,4 +112,55 @@ export async function datosDeYoutube(id: string): Promise<DatosYoutube | null> {
 
 export async function tituloDeYoutube(id: string): Promise<string | null> {
   return (await datosDeYoutube(id))?.titulo ?? null;
+}
+
+/* ---------- Los vivos del canal ----------
+   Para proponerle a un webinar sin link el vivo de su día. El canal sale
+   de los videos que ya tienen otros webinars (`conocidos`). Queda en
+   memoria mientras la pestaña esté abierta: pasar de un webinar a otro no
+   vuelve a gastar cuota de YouTube. */
+
+export type EstadoVivos =
+  | { estado: "sin-videos" }
+  | { estado: "cargando" }
+  | { estado: "listo"; datos: VivosDelCanal }
+  | { estado: "sin-clave" }
+  | { estado: "error"; error: string };
+
+const memoriaVivos = new Map<string, VivosDelCanal>();
+
+export function useVivosDelCanal(conocidos: string[]): EstadoVivos {
+  const clave = conocidos.slice(0, 10).join(",");
+  const [estado, setEstado] = useState<EstadoVivos>(() => {
+    if (!clave) return { estado: "sin-videos" };
+    const ya = memoriaVivos.get(clave);
+    return ya ? { estado: "listo", datos: ya } : { estado: "cargando" };
+  });
+
+  useEffect(() => {
+    if (!clave) { setEstado({ estado: "sin-videos" }); return; }
+    const ya = memoriaVivos.get(clave);
+    if (ya) { setEstado({ estado: "listo", datos: ya }); return; }
+    let vivo = true;
+    setEstado({ estado: "cargando" });
+    (async () => {
+      try {
+        const r = await fetch(`/api/youtube/vivos?videos=${encodeURIComponent(clave)}`, { headers: await cabeceras() });
+        const cuerpo = (await r.json().catch(() => null)) as (VivosDelCanal & { error?: string; sinClave?: boolean }) | null;
+        if (!vivo) return;
+        if (cuerpo?.sinClave) { setEstado({ estado: "sin-clave" }); return; }
+        if (!r.ok || !cuerpo || cuerpo.error) {
+          setEstado({ estado: "error", error: cuerpo?.error ?? "No pude buscar los vivos del canal." });
+          return;
+        }
+        memoriaVivos.set(clave, cuerpo);
+        setEstado({ estado: "listo", datos: cuerpo });
+      } catch {
+        if (vivo) setEstado({ estado: "error", error: "No hay conexión: no pude buscar los vivos del canal." });
+      }
+    })();
+    return () => { vivo = false; };
+  }, [clave]);
+
+  return estado;
 }
