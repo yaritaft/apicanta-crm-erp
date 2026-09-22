@@ -284,3 +284,169 @@ export function saldoVenta(e: EstadoApp, ventaId: string) {
   const total = cuotas.reduce((a, c) => a + (c.estado === "cancelada" ? 0 : c.monto), 0);
   return { total, cobrado, saldo: total - cobrado, cuotas: cuotas.sort((a, b) => a.numero - b.numero) };
 }
+
+/* ==================================================================
+   El detalle de cada renglón del estado de resultados.
+
+   Cada función devuelve, agrupada, la MISMA lista que calcularPyL ya
+   suma: pagosDelMes, ventasDelMes, comisionesDelMes y gastosDelMes. No
+   hay una cuenta paralela, así que el detalle no puede sumar distinto
+   que el renglón que lo abre — y si mañana cambia una fórmula, el
+   detalle cambia con ella.
+   ================================================================== */
+
+type PagoApp = EstadoApp["pagos"][number];
+type CuotaApp = EstadoApp["cuotas"][number];
+
+const normalNombre = (s: string) =>
+  s.trim().toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/\s+/g, " ");
+
+export interface PagoDetallado { pago: PagoApp; cuota?: CuotaApp; venta?: Venta }
+
+/** Ingresos por cliente: lo cobrado (sus pagos del período) y lo facturado
+ *  (sus ventas del período), lado a lado. Un pago cuya cuota no tiene venta
+ *  igual suma al cobrado, así que va a un grupo propio en vez de perderse. */
+export interface IngresoCliente {
+  clave: string;
+  nombre: string;
+  cobrado: number;
+  facturado: number;
+  pagos: PagoDetallado[];
+  ventas: Venta[];
+}
+
+export function ingresosPorCliente(e: EstadoApp, m: RangoMes): IngresoCliente[] {
+  const cuotaDe = new Map(e.cuotas.map((c) => [c.id, c] as const));
+  const ventaDe = new Map(e.ventas.map((v) => [v.id, v] as const));
+  const grupos = new Map<string, IngresoCliente>();
+
+  /* La persona es el contacto si la venta lo tiene; si no, el nombre tal
+     como se escribió, para no juntar a dos personas distintas sin nombre. */
+  const grupoDe = (v?: Venta): IngresoCliente => {
+    const clave = !v ? "sin-venta" : v.contactoId ? `c:${v.contactoId}` : `n:${normalNombre(v.contactoNombre)}`;
+    let g = grupos.get(clave);
+    if (!g) {
+      g = {
+        clave, nombre: v ? (v.contactoNombre.trim() || "Sin nombre") : "Pagos sin venta",
+        cobrado: 0, facturado: 0, pagos: [], ventas: [],
+      };
+      grupos.set(clave, g);
+    }
+    return g;
+  };
+
+  for (const p of pagosDelMes(e, m)) {
+    const cuota = cuotaDe.get(p.cuotaId);
+    const venta = cuota ? ventaDe.get(cuota.ventaId) : undefined;
+    const g = grupoDe(venta);
+    g.cobrado += p.monto;
+    g.pagos.push({ pago: p, cuota, venta });
+  }
+  for (const v of ventasDelMes(e, m)) {
+    const g = grupoDe(v);
+    g.facturado += v.precioAcordado;
+    g.ventas.push(v);
+  }
+
+  for (const g of grupos.values()) {
+    g.pagos.sort((a, b) => +new Date(b.pago.fecha) - +new Date(a.pago.fecha));
+    g.ventas.sort((a, b) => +new Date(b.fecha) - +new Date(a.fecha));
+  }
+  return [...grupos.values()].sort((a, b) =>
+    b.cobrado - a.cobrado || b.facturado - a.facturado || a.nombre.localeCompare(b.nombre, "es"));
+}
+
+/** Comisiones de closers por persona, y dentro, venta por venta. Quien no
+ *  comisiona (Yari) aparece igual, en cero: explica por qué esas ventas no
+ *  suman. */
+export interface ComisionesCloser {
+  clave: string;
+  closerId?: string;
+  nombre: string;
+  tasa: number;
+  sinComision: boolean;
+  total: number;
+  ventas: ComisionVenta[];
+}
+
+export function comisionesPorCloser(e: EstadoApp, m: RangoMes): ComisionesCloser[] {
+  const grupos = new Map<string, ComisionesCloser>();
+  for (const c of comisionesDelMes(e, m)) {
+    const clave = c.closerId ?? "sin-closer";
+    let g = grupos.get(clave);
+    if (!g) {
+      const x = e.equipo.find((q) => q.id === c.closerId);
+      g = {
+        clave, closerId: c.closerId, nombre: c.closerNombre,
+        tasa: x?.comisionRate ?? 0, sinComision: c.sinComision, total: 0, ventas: [],
+      };
+      grupos.set(clave, g);
+    }
+    g.total += c.comisionCloser;
+    g.ventas.push(c);
+  }
+  for (const g of grupos.values()) g.ventas.sort((a, b) => b.comisionCloser - a.comisionCloser);
+  return [...grupos.values()].sort((a, b) => b.total - a.total || a.nombre.localeCompare(b.nombre, "es"));
+}
+
+/** Comisión del director, venta por venta. Las que no le dejan nada (las
+ *  cerró Yari, o no tienen director) suman cero: se cuentan aparte. */
+export function comisionesDelDirector(e: EstadoApp, m: RangoMes): { ventas: ComisionVenta[]; sinComision: number } {
+  const todas = comisionesDelMes(e, m);
+  const ventas = todas.filter((c) => c.comisionDirector !== 0).sort((a, b) => b.comisionDirector - a.comisionDirector);
+  return { ventas, sinComision: todas.length - ventas.length };
+}
+
+/** Lo que se quedó cada procesador, pago por pago. Los pagos sin fee
+ *  (transferencias, USDT) no suman nada: se cuentan aparte. */
+export interface FeesProcesador {
+  clave: string;
+  procesadorId?: string;
+  nombre: string;
+  total: number;
+  pagos: PagoDetallado[];
+}
+
+export function feesPorProcesador(e: EstadoApp, m: RangoMes): { procesadores: FeesProcesador[]; sinFee: number } {
+  const cuotaDe = new Map(e.cuotas.map((c) => [c.id, c] as const));
+  const ventaDe = new Map(e.ventas.map((v) => [v.id, v] as const));
+  const grupos = new Map<string, FeesProcesador>();
+  let sinFee = 0;
+  for (const p of pagosDelMes(e, m)) {
+    if (p.feeMonto === 0) { sinFee++; continue; }
+    const clave = p.procesadorId ?? "sin-medio";
+    let g = grupos.get(clave);
+    if (!g) {
+      g = {
+        clave, procesadorId: p.procesadorId,
+        nombre: e.procesadores.find((x) => x.id === p.procesadorId)?.nombre ?? "Sin medio de pago",
+        total: 0, pagos: [],
+      };
+      grupos.set(clave, g);
+    }
+    const cuota = cuotaDe.get(p.cuotaId);
+    g.total += p.feeMonto;
+    g.pagos.push({ pago: p, cuota, venta: cuota ? ventaDe.get(cuota.ventaId) : undefined });
+  }
+  for (const g of grupos.values()) g.pagos.sort((a, b) => b.pago.feeMonto - a.pago.feeMonto);
+  return {
+    procesadores: [...grupos.values()].sort((a, b) => b.total - a.total || a.nombre.localeCompare(b.nombre, "es")),
+    sinFee,
+  };
+}
+
+/** Los gastos de un bloque del P&L por categoría, cada una con sus gastos.
+ *  Es gastosPorCategoria con la lista adentro. */
+export interface GastosCategoria { categoria: string; total: number; gastos: Gasto[] }
+
+export function gastosPorCategoriaDetalle(e: EstadoApp, m: RangoMes, grupo?: Gasto["grupo"]): GastosCategoria[] {
+  const grupos = new Map<string, GastosCategoria>();
+  for (const g of gastosDelMes(e, m, grupo)) {
+    let c = grupos.get(g.categoria);
+    if (!c) { c = { categoria: g.categoria, total: 0, gastos: [] }; grupos.set(g.categoria, c); }
+    c.total += g.monto;
+    c.gastos.push(g);
+  }
+  for (const c of grupos.values()) c.gastos.sort((a, b) => +new Date(b.fecha) - +new Date(a.fecha) || b.monto - a.monto);
+  return [...grupos.values()].sort((a, b) => b.total - a.total || a.categoria.localeCompare(b.categoria, "es"));
+}
