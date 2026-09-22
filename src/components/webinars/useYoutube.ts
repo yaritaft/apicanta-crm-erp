@@ -89,16 +89,21 @@ export function useYoutube(id: string | null): EstadoYoutube & { recargar: () =>
   return { ...estado, recargar };
 }
 
-/* Para el asistente: el título del video, sin estado, para confirmar que el
-   link es el que se quería pegar. */
-export async function tituloDeYoutube(id: string): Promise<string | null> {
+/* Para el asistente: los datos del video sin estado, para confirmar que el
+   link es el que se quería pegar y completar solo el título (y la fecha del
+   vivo, cuando está la clave). null = no se pudo. */
+export async function datosDeYoutube(id: string): Promise<DatosYoutube | null> {
   const ya = memoria.get(id);
-  if (ya) return ya.titulo;
+  if (ya) return ya;
   try {
     const datos = await pedir(id);
     memoria.set(id, datos);
-    return datos.titulo;
+    return datos;
   } catch {
     return null;
   }
+}
+
+export async function tituloDeYoutube(id: string): Promise<string | null> {
+  return (await datosDeYoutube(id))?.titulo ?? null;
 }

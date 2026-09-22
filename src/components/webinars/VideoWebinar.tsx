@@ -1,10 +1,11 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   ExternalLink, Eye, Link2, MessageCircle, RefreshCw, ThumbsUp, Trash2, Youtube,
 } from "lucide-react";
 import { Avatar, Badge, Button, Card, Input } from "@/components/ui/ui";
+import { useToast } from "@/components/ui/Toast";
 import { num, relativo } from "@/lib/format";
 import {
   duracionLegible, embebidoDe, idDeYoutube, partirConLinks, videoDe, type DatosYoutube,
@@ -26,6 +27,9 @@ import { useYoutube } from "./useYoutube";
 
 export function VideoWebinar({ w, className }: { w: Webinar; className?: string }) {
   const [cambiando, setCambiando] = useState(false);
+  /* El link recién pegado: cuando lleguen los datos del video, lo que la
+     ficha no sabía (la fecha del vivo) se completa solo. */
+  const [recienPegado, setRecienPegado] = useState(false);
 
   /* Si nunca se cargó el link pero el del replay es de YouTube, se usa ése:
      muchos webinars viejos lo tienen ahí. Un "" guardado es "sin video"
@@ -40,7 +44,7 @@ export function VideoWebinar({ w, className }: { w: Webinar; className?: string 
         <PegarLink
           w={w}
           inicial={w.youtubeUrl ?? ""}
-          onListo={() => setCambiando(false)}
+          onListo={() => { setCambiando(false); setRecienPegado(true); }}
           onCancelar={cambiando ? () => setCambiando(false) : undefined}
         />
       </Card>
@@ -51,7 +55,10 @@ export function VideoWebinar({ w, className }: { w: Webinar; className?: string 
     <Card className={`wb-video${className ? ` ${className}` : ""}`}>
       <Reproductor id={id} titulo={w.titulo} />
       <InfoVideo
+        w={w}
         id={id}
+        recienPegado={recienPegado}
+        onCompletado={() => setRecienPegado(false)}
         delReplay={Boolean(delReplay)}
         onCambiar={() => setCambiando(true)}
         onQuitar={() => guardarWebinar(w, { youtubeUrl: "" }, `Se sacó el video de YouTube de «${w.titulo}».`)}
@@ -76,10 +83,30 @@ function Reproductor({ id, titulo }: { id: string; titulo: string }) {
   );
 }
 
-function InfoVideo({ id, delReplay, onCambiar, onQuitar }: {
-  id: string; delReplay: boolean; onCambiar: () => void; onQuitar: () => void;
+function InfoVideo({ w, id, recienPegado, onCompletado, delReplay, onCambiar, onQuitar }: {
+  w: Webinar; id: string; recienPegado: boolean; onCompletado: () => void;
+  delReplay: boolean; onCambiar: () => void; onQuitar: () => void;
 }) {
   const yt = useYoutube(id);
+  const toast = useToast();
+
+  /* Recién pegado el link: si YouTube dice cuándo es (o fue) el vivo y la
+     ficha tiene otra fecha, manda YouTube. El título no se pisa: se ofrece
+     abajo, porque el webinar puede anunciarse con otro nombre. */
+  const datosListos = yt.estado === "listo" ? yt.datos : null;
+  useEffect(() => {
+    if (!recienPegado || !datosListos) return;
+    onCompletado();
+    const cuando = datosListos.vivo?.inicio ?? datosListos.vivo?.programado;
+    if (cuando && Math.abs(new Date(cuando).getTime() - new Date(w.fecha).getTime()) > 30 * 60_000) {
+      guardarWebinar(w, { fecha: cuando }, `La fecha de «${w.titulo}» se tomó del vivo en YouTube: ${diaYHora(cuando)}.`);
+      toast(`Tomé la fecha del vivo de YouTube: ${diaYHora(cuando)}.`);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- corre una vez por link pegado
+  }, [recienPegado, datosListos]);
+  /* Sin la clave de YouTube no hay números reales: esto muestra cómo va a
+     quedar, con números de ejemplo marcados como tales. */
+  const [vistaPrevia, setVistaPrevia] = useState(false);
 
   const acciones = (
     <div className="row-wrap wb-video__acciones">
@@ -148,18 +175,44 @@ function InfoVideo({ id, delReplay, onCambiar, onQuitar }: {
             <Cifra icono={<Youtube size={15} />} etiqueta="Mirando ahora" valor={d.vivo.espectadores} />
           )}
         </div>
+      ) : vistaPrevia ? (
+        <div className="wb-ejemplo" role="group" aria-label="Vista previa con números de ejemplo">
+          <div className="row-wrap" style={{ gap: 8 }}>
+            <Badge variante="warning">Ejemplo</Badge>
+            <span className="t-sm t-muted" style={{ flex: 1, minWidth: 180 }}>
+              Así se va a ver cuando esté la clave de YouTube. Estos números son inventados.
+            </span>
+            <button type="button" className="link t-sm" onClick={() => setVistaPrevia(false)}>Ocultar</button>
+          </div>
+          <div className="wb-cifras">
+            <Cifra icono={<Eye size={15} />} etiqueta="Vistas" valor={ejemploDe(id).vistas} />
+            <Cifra icono={<ThumbsUp size={15} />} etiqueta="Me gusta" valor={ejemploDe(id).likes} />
+            <Cifra icono={<MessageCircle size={15} />} etiqueta="Comentarios" valor={ejemploDe(id).comentarios} />
+          </div>
+        </div>
       ) : null}
 
-      {d.aviso && (
+      {d.aviso && !vistaPrevia && (
         <p className="wb-aviso t-sm">
           <Youtube size={16} aria-hidden />
-          <span>{d.aviso}</span>
+          <span style={{ flex: 1 }}>{d.aviso}</span>
+          {!d.completo && (
+            <button type="button" className="link t-sm" onClick={() => setVistaPrevia(true)}>Ver cómo va a quedar</button>
+          )}
         </p>
       )}
 
-      <Canal d={d} />
+      <SugerenciasDelVideo w={w} d={d} />
 
-      {d.descripcion && <Descripcion texto={d.descripcion} />}
+      <Canal d={d} suscriptoresEjemplo={vistaPrevia && !d.completo ? ejemploDe(id).suscriptores : undefined} />
+
+      {d.descripcion
+        ? <Descripcion texto={d.descripcion} />
+        : vistaPrevia && !d.completo && (
+          <p className="wb-desc wb-desc--ejemplo">
+            Acá va la descripción del video tal como está en YouTube, con sus links y sus capítulos.
+          </p>
+        )}
 
       {acciones}
     </div>
@@ -194,14 +247,16 @@ function Cifra({ icono, etiqueta, valor, siFalta = "—" }: {
   );
 }
 
-function Canal({ d }: { d: DatosYoutube }) {
+function Canal({ d, suscriptoresEjemplo }: { d: DatosYoutube; suscriptoresEjemplo?: number }) {
   const c = d.canal;
   if (!c.nombre) return null;
-  const subs = c.suscriptoresOcultos
-    ? "El canal oculta sus suscriptores"
-    : c.suscriptores !== undefined
-      ? `${num(c.suscriptores)} suscriptores`
-      : d.completo ? "Sin dato de suscriptores" : null;
+  const subs = suscriptoresEjemplo !== undefined
+    ? `${num(suscriptoresEjemplo)} suscriptores · ejemplo`
+    : c.suscriptoresOcultos
+      ? "El canal oculta sus suscriptores"
+      : c.suscriptores !== undefined
+        ? `${num(c.suscriptores)} suscriptores`
+        : d.completo ? "Sin dato de suscriptores" : null;
   const contenido = (
     <>
       {c.avatar
@@ -217,6 +272,46 @@ function Canal({ d }: { d: DatosYoutube }) {
   return c.url
     ? <a href={c.url} target="_blank" rel="noopener noreferrer" className="wb-canal">{contenido}</a>
     : <div className="wb-canal">{contenido}</div>;
+}
+
+/* Números de ejemplo para la vista previa: salen del id del video, así el
+   mismo video muestra siempre los mismos y no parecen tirados al azar.
+   Son proporciones típicas de un vivo (likes ≈ 4 %, comentarios ≈ 0,6 %). */
+function ejemploDe(id: string) {
+  let h = 0;
+  for (const c of id) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+  const vistas = 1_200 + (h % 18_000);
+  return {
+    vistas,
+    likes: Math.round(vistas * (0.03 + (h % 7) / 400)),
+    comentarios: Math.round(vistas * (0.004 + (h % 5) / 1000)),
+    suscriptores: 8_000 + (h % 60_000),
+  };
+}
+
+/* Lo que YouTube sabe del webinar y la ficha todavía no tiene: el título
+   con el que se publicó y el día y la hora del vivo (este último, con la
+   clave). Se ofrece, no se pisa: puede que se anuncie con otro nombre. */
+function SugerenciasDelVideo({ w, d }: { w: Webinar; d: DatosYoutube }) {
+  const normal = (t: string) => t.trim().toLowerCase().replace(/\s+/g, " ");
+  const otroTitulo = d.titulo && normal(d.titulo) !== normal(w.titulo) ? d.titulo : null;
+  const cuando = d.vivo?.inicio ?? d.vivo?.programado;
+  const otraFecha = cuando && Math.abs(new Date(cuando).getTime() - new Date(w.fecha).getTime()) > 30 * 60_000 ? cuando : null;
+  if (!otroTitulo && !otraFecha) return null;
+  return (
+    <div className="row-wrap wb-sugerencias">
+      {otroTitulo && (
+        <Button sm variante="secondary" onClick={() => guardarWebinar(w, { titulo: otroTitulo }, `«${w.titulo}» pasó a llamarse como en YouTube: «${otroTitulo}».`)}>
+          Usar el título de YouTube
+        </Button>
+      )}
+      {otraFecha && (
+        <Button sm variante="secondary" onClick={() => guardarWebinar(w, { fecha: otraFecha }, `La fecha de «${w.titulo}» pasó a la del vivo: ${diaYHora(otraFecha)}.`)}>
+          Usar la fecha del vivo ({diaYHora(otraFecha)})
+        </Button>
+      )}
+    </div>
+  );
 }
 
 /* La descripción de un vivo suele ser larga (links, capítulos, redes):
@@ -253,6 +348,15 @@ function PegarLink({ w, inicial, onListo, onCancelar }: {
     inicial && !idDeYoutube(inicial) ? "El link guardado no es de un video de YouTube." : null,
   );
   const id = idDeYoutube(link);
+
+  /* Pegar un link válido alcanza: se guarda solo y aparecen el video y sus
+     datos. El botón queda para quien escribe el link a mano. */
+  useEffect(() => {
+    if (!id || link.trim() === (w.youtubeUrl ?? "").trim()) return;
+    const t = window.setTimeout(() => guardar(), 350);
+    return () => window.clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- guardar lee el link de este render
+  }, [id, link]);
 
   function guardar() {
     const limpio = link.trim();

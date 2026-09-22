@@ -1778,3 +1778,14 @@ a.wb-canal:hover { background: var(--surface-200); border-color: var(--border-st
   .equipo-fila { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
   .equipo-fila__nombre, .equipo-fila__switches, .equipo-fila > :nth-child(4) { grid-column: 1 / -1; }
 }
+
+/* ---------- Webinar: vista previa sin clave de YouTube y sugerencias ---------- */
+.wb-ejemplo {
+  display: flex; flex-direction: column; gap: var(--space-3); padding: var(--space-3);
+  border: 1px dashed color-mix(in srgb, var(--warning) 60%, transparent); border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--warning) 6%, transparent);
+}
+.wb-desc--ejemplo { color: var(--ink-subtle); font-style: italic; }
+.wb-sugerencias { gap: var(--space-2); }
+.wb-aviso { flex-wrap: wrap; }
+.wb-aviso .link { white-space: nowrap; }
