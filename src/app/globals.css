@@ -1207,7 +1207,9 @@ kbd {
   .ficha__cuerpo { display: block; overflow-y: auto; }
   .ficha__lado { overflow: visible; border-right: 0; border-bottom: 1px solid var(--border); padding: var(--space-4); }
   .ficha__principal { overflow: visible; padding: var(--space-4); }
+}
 
+/* ============================================================
    Marketing: campañas → conjuntos → anuncios
    La tabla estilo Administrador de anuncios: totales al pie, "mostrar más",
    la fila en la que se está parado y las migas de los filtros.
@@ -1284,7 +1286,9 @@ kbd {
   .mk-contexto { max-width: 140px; }
   .mk-miga__nombre { max-width: 180px; }
   .mk-ruta { flex-wrap: wrap; }
+}
 
+/* ============================================================
    Finanzas — estado de resultados que se abre, y carga de gastos
    ============================================================ */
 
