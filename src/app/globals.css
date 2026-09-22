@@ -1284,4 +1284,109 @@ kbd {
   .mk-contexto { max-width: 140px; }
   .mk-miga__nombre { max-width: 180px; }
   .mk-ruta { flex-wrap: wrap; }
+
+   Finanzas — estado de resultados que se abre, y carga de gastos
+   ============================================================ */
+
+/* Encabezado de la tarjeta: en angosto el botón baja en vez de apretar el título. */
+.pyl-head { display: flex; align-items: flex-start; gap: var(--space-3); flex-wrap: wrap; padding: var(--space-5) var(--space-5) var(--space-4); }
+.pyl-head__texto { flex: 1 1 320px; min-width: 0; }
+
+/* Concepto y dos montos. Los montos tienen ancho fijo para que las cifras
+   queden alineadas en todos los niveles; la sangría va en el concepto. */
+.pyl { --pyl-col: 168px; --pyl-sangria: 20px; }
+.pyl__cabecera, .pyl__fila {
+  display: grid; grid-template-columns: minmax(0, 1fr) var(--pyl-col) var(--pyl-col);
+  column-gap: var(--space-4); align-items: center;
+  padding: 0 var(--space-5); border-bottom: 1px solid var(--border);
+}
+.pyl__cabecera { padding-top: var(--space-3); padding-bottom: var(--space-3); border-top: 1px solid var(--border); border-bottom-color: var(--border-strong); }
+.pyl__cabecera > span { font-size: 12px; line-height: 16px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-subtle); }
+.pyl__cabecera > span + span { text-align: right; }
+.pyl > [role="rowgroup"]:last-child > .pyl__fila:last-child { border-bottom: 0; }
+
+.pyl__fila { min-height: 48px; transition: background-color 120ms ease-out; }
+.pyl__fila--abrible, .pyl__fila--link { cursor: pointer; }
+.pyl__fila--abrible:hover, .pyl__fila--link:hover { background: var(--surface-200); }
+.pyl__fila--bloque { min-height: 0; padding-top: var(--space-4); padding-bottom: var(--space-2); border-bottom: 0; }
+.pyl__fila--bloque > [role="cell"] { grid-column: 1 / -1; }
+.pyl__fila--resultado, .pyl__fila--neto { background: var(--surface-200); }
+.pyl__fila--resultado:hover, .pyl__fila--neto:hover { background: var(--surface-300); }
+.pyl__fila--resultado .pyl__titulo, .pyl__fila--neto .pyl__titulo,
+.pyl__fila--resultado .pyl__monto, .pyl__fila--neto .pyl__monto { font-weight: 700; }
+/* El detalle va un escalón más hundido que el renglón que lo abre. */
+.pyl__fila--detalle { background: var(--surface-000); min-height: 40px; }
+
+.pyl__concepto { min-width: 0; padding: var(--space-2) 0 var(--space-2) calc(var(--nivel, 0) * var(--pyl-sangria)); }
+.pyl__linea { display: flex; align-items: flex-start; gap: var(--space-2); min-width: 0; max-width: 100%; color: inherit; text-decoration: none; }
+.pyl__toggle { background: none; border: 0; padding: 0; margin: 0; font: inherit; color: inherit; text-align: left; cursor: pointer; border-radius: var(--radius-sm); }
+.pyl__toggle:focus-visible, .pyl__link:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: var(--radius-sm); }
+/* 3px: centra el ícono de 16 en la primera línea de 22 del título. */
+.pyl__chevron, .pyl__hueco { flex: none; width: 16px; height: 16px; margin-top: 3px; }
+.pyl__chevron { color: var(--ink-subtle); transition: transform 160ms ease-out, color 160ms ease-out; }
+.pyl__toggle[aria-expanded="true"] .pyl__chevron { transform: rotate(90deg); color: var(--brand); }
+.pyl__textos { display: flex; flex-direction: column; min-width: 0; }
+.pyl__titulo { color: var(--ink); font-size: 15px; line-height: 22px; font-weight: 600; overflow-wrap: anywhere; }
+.pyl__fila--detalle .pyl__titulo { font-size: 14px; font-weight: 500; }
+.pyl__fila--link:hover .pyl__titulo { color: var(--brand); }
+.pyl__sub { font-size: 12px; line-height: 16px; color: var(--ink-subtle); overflow-wrap: anywhere; }
+
+.pyl__monto { padding: var(--space-2) 0; text-align: right; font-size: 13px; line-height: 20px; font-weight: 500; font-variant-numeric: tabular-nums; color: var(--ink); white-space: nowrap; }
+.pyl__fila--detalle .pyl__monto { color: var(--ink-muted); }
+.pyl__monto--vacio { color: var(--ink-subtle); }
+
+.pyl__fila--nota { min-height: 0; background: var(--surface-000); }
+.pyl__nota { grid-column: 1 / -1; padding: var(--space-2) 0 var(--space-2) calc(var(--nivel, 0) * var(--pyl-sangria) + 24px); font-size: 13px; line-height: 20px; color: var(--ink-subtle); }
+.pyl__fila--mas .pyl__titulo { color: var(--brand); font-weight: 600; }
+
+/* El gasto que se acaba de cargar se marca un momento donde cayó. */
+.pyl__fila--marcada { animation: pylMarca 2400ms ease-out; }
+@keyframes pylMarca {
+  0%, 45% { background: var(--brand-soft); box-shadow: inset 3px 0 0 var(--brand-fill); }
+  100% { box-shadow: inset 3px 0 0 transparent; }
+}
+
+@media (max-width: 720px) {
+  .pyl-head { padding: var(--space-4) var(--space-4) var(--space-3); }
+  .pyl { --pyl-sangria: 14px; }
+  /* En un teléfono las tres columnas no entran: el concepto va arriba y los
+     dos montos abajo, cada uno con su etiqueta, alineados con el título. */
+  .pyl__cabecera { display: none; }
+  .pyl__fila {
+    grid-template-columns: calc(var(--nivel, 0) * var(--pyl-sangria) + 24px) minmax(0, 1fr) minmax(0, 1fr);
+    column-gap: 0; padding: 0 var(--space-4);
+  }
+  .pyl__concepto { grid-column: 1 / -1; padding-bottom: 2px; }
+  .pyl__monto { grid-row: 2; text-align: left; padding: 0 var(--space-2) var(--space-2) 0; font-size: clamp(11px, 3.4vw, 13px); }
+  .pyl__monto--cc { grid-column: 2; }
+  .pyl__monto--rev { grid-column: 3; }
+  .pyl__monto::before {
+    content: attr(data-etiqueta); display: block;
+    font-size: 10px; line-height: 14px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
+    color: var(--ink-subtle);
+  }
+  .pyl__monto--vacio { display: none; }
+  .pyl__fila--bloque, .pyl__fila--nota { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* Lista de gastos */
+.gastos-filtros { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
+.gastos-filtros__busca { flex: 1 1 240px; max-width: 360px; min-width: 0; }
+.gastos-filtros__categoria { flex: 0 1 260px; min-width: 0; }
+.gastos-total { display: flex; align-items: baseline; flex-wrap: wrap; gap: var(--space-1) var(--space-3); padding: var(--space-4) var(--space-5); }
+/* La tabla ya está dentro de la tarjeta: sin su propio borde, sólo la línea de arriba. */
+.gastos-card > .hk-table-wrap { border-width: 1px 0 0; border-radius: 0; }
+@media (max-width: 720px) {
+  .gastos-filtros__busca, .gastos-filtros__categoria { flex-basis: 100%; max-width: none; }
+  .gastos-total { padding: var(--space-3) var(--space-4); }
+}
+
+/* Asistente de gasto y ficha */
+.gasto-grupo { display: flex; align-items: baseline; flex-wrap: wrap; gap: 2px var(--space-2); }
+.gasto-equivale { font-family: var(--font-display); font-size: 22px; line-height: 40px; font-weight: 600; color: var(--ink); }
+.gasto-cambiar { margin-left: var(--space-2); }
+.ficha-gasto__monto {
+  display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-3);
+  font-family: var(--font-display); font-size: 32px; line-height: 36px; font-weight: 600;
+  letter-spacing: -.02em; color: var(--ink);
 }

@@ -73,29 +73,58 @@ export const EQUIPO: MiembroEquipo[] = [
     notas: "10% del profit. Comisiona distinto según producto: falta definir." },
 ];
 
-/* Las categorías tal cual salen del P&L que usa Yari */
-export const CATEGORIAS_GASTO: { categoria: string; grupo: Gasto["grupo"] }[] = [
-  { categoria: "Comisiones Financieras", grupo: "directo" },
-  { categoria: "Facturas Stripe",        grupo: "directo" },
-  { categoria: "Referidores",            grupo: "directo" },
-  { categoria: "Equipo / Salarios",      grupo: "operativo" },
-  { categoria: "Contador",               grupo: "operativo" },
-  { categoria: "Software",               grupo: "operativo" },
-  { categoria: "Meta Ads",               grupo: "operativo" },
-  { categoria: "Google Ads",             grupo: "operativo" },
-  { categoria: "TikTok Ads",             grupo: "operativo" },
-  { categoria: "Consultoría",            grupo: "operativo" },
-  { categoria: "Agencia de Marketing",   grupo: "operativo" },
-  { categoria: "Reembolsos",             grupo: "operativo" },
-  { categoria: "Edición de contenido",   grupo: "operativo" },
-  { categoria: "Filmmaker",              grupo: "operativo" },
-  { categoria: "Mantenimiento LLC",      grupo: "operativo" },
-  { categoria: "Gastos de evento",       grupo: "operativo" },
-  { categoria: "Viáticos equipo",        grupo: "operativo" },
-  { categoria: "Formaciones",            grupo: "operativo" },
-  { categoria: "Producción audiovisual", grupo: "operativo" },
-  { categoria: "Comisiones bancarias",   grupo: "operativo" },
-  { categoria: "Honorarios del CEO",     grupo: "dueno" },
+/* Una categoría de gasto y el renglón del P&L en el que cae. */
+export interface CategoriaGasto {
+  categoria: string;
+  grupo: Gasto["grupo"];
+  /* Lo que se lee debajo de la tarjeta al elegirla. */
+  ayuda?: string;
+  /* Palabras que, si aparecen en lo que se pagó, sugieren esta categoría.
+     Sin tildes y en minúscula: se comparan contra el texto normalizado. */
+  claves?: string[];
+}
+
+/* Las categorías del estado de resultados de Yari, en el orden de su
+   planilla (hojas "Gastos_vieja" y "Dashboard P&L").
+
+   - Los nombres que ya existían quedan tal cual aunque la planilla diga
+     otra cosa ("META ADS", "Consultoría Personalizada"): los gastos se
+     agrupan por este texto, y renombrar parte en dos la historia de una
+     categoría. "Meta Ads", "Google Ads" y "TikTok Ads" además arman la
+     inversión en publicidad del ROAS y el CAC.
+   - Closers y director NO están: el ERP los calcula solo desde los
+     cobros. Cargarlos como gasto los contaría dos veces.
+   - La hoja nueva de gastos agrupa distinto (Software, Equipo, ADS) y
+     parte Equipo en fijo, variable y bonus: eso es el "fijo / variable"
+     de cada gasto, no una categoría aparte. */
+export const CATEGORIAS_GASTO: CategoriaGasto[] = [
+  /* Costos directos: restan antes de la utilidad bruta */
+  { categoria: "Setters",                    grupo: "directo",   ayuda: "Lo que cobran los setters", claves: ["setter"] },
+  { categoria: "Comisiones Financieras",     grupo: "directo",   ayuda: "Lo que cobra la financiera por los cobros en cuotas", claves: ["financiera"] },
+  { categoria: "Facturas Stripe",            grupo: "directo",   ayuda: "Lo que cobra Stripe por facturar", claves: ["stripe"] },
+  { categoria: "Emisión factura Financiera", grupo: "directo",   ayuda: "Lo que cuesta facturar por la financiera", claves: ["factura financiera", "facturacion financiera", "emision"] },
+  { categoria: "Referidores",                grupo: "directo",   ayuda: "Comisión por clientes referidos", claves: ["referid"] },
+  /* Gastos operativos */
+  { categoria: "Equipo / Salarios",          grupo: "operativo", ayuda: "Sueldos del equipo no comercial: fijos, variables y bonus", claves: ["sueldo", "salario", "equipo", "bonus", "nomina"] },
+  { categoria: "Contador",                   grupo: "operativo", ayuda: "Contaduría de la LLC", claves: ["contador", "contable", "contadur"] },
+  { categoria: "Software",                   grupo: "operativo", ayuda: "Herramientas y suscripciones", claves: ["software", "suscripcion", "licencia", "zoom", "notion", "calendly", "vercel", "supabase", "slack", "chatgpt", "openai", "claude", "canva", "manychat", "whatsapp api", "workspace", "hosting", "dominio"] },
+  { categoria: "Meta Ads",                   grupo: "operativo", ayuda: "Pauta en Facebook e Instagram", claves: ["meta", "facebook", "instagram", "pauta", "dm ads"] },
+  { categoria: "Google Ads",                 grupo: "operativo", ayuda: "Pauta en Google y YouTube", claves: ["google ads", "adwords", "youtube ads"] },
+  { categoria: "TikTok Ads",                 grupo: "operativo", ayuda: "Pauta en TikTok", claves: ["tiktok"] },
+  { categoria: "Consultoría",                grupo: "operativo", ayuda: "Consultoría personalizada", claves: ["consultor"] },
+  { categoria: "Agencia de Marketing",       grupo: "operativo", ayuda: "La agencia que lleva la pauta o el contenido", claves: ["agencia"] },
+  { categoria: "Reembolsos",                 grupo: "operativo", ayuda: "Plata devuelta a clientes", claves: ["reembols", "devolucion", "refund"] },
+  { categoria: "Edición de contenido",       grupo: "operativo", ayuda: "Edición de videos y contenido", claves: ["edicion", "editor"] },
+  { categoria: "Filmmaker",                  grupo: "operativo", ayuda: "Grabaciones", claves: ["filmmaker", "filmaker", "grabacion", "camarografo"] },
+  { categoria: "Mantenimiento LLC",          grupo: "operativo", ayuda: "Tener la LLC al día", claves: ["llc", "registered agent", "franchise"] },
+  { categoria: "Gastos de evento",           grupo: "operativo", ayuda: "Producción de eventos: Mastermind, cenas", claves: ["evento", "mastermind", "cena", "salon"] },
+  { categoria: "Viáticos equipo",            grupo: "operativo", ayuda: "Pasajes, hoteles y traslados", claves: ["viatico", "pasaje", "vuelo", "hotel", "uber", "traslado"] },
+  { categoria: "Formaciones",                grupo: "operativo", ayuda: "Cursos y capacitaciones", claves: ["formacion", "curso", "capacitacion"] },
+  { categoria: "Producción audiovisual",     grupo: "operativo", ayuda: "Estudio, equipos y producción de video", claves: ["audiovisual", "estudio"] },
+  { categoria: "Comisiones bancarias",       grupo: "operativo", ayuda: "Costos de transferencias y bancos", claves: ["bancari", "banco", "wire", "transferencia", "fee transaction"] },
+  { categoria: "Pendiente de revisión",      grupo: "operativo", ayuda: "Lo que todavía no sabés dónde va: revisalo después" },
+  /* Honorarios del dueño: después del resultado operativo */
+  { categoria: "Honorarios del CEO",         grupo: "dueno",     ayuda: "Lo que se paga el dueño", claves: ["honorario", "ceo"] },
 ];
 
 const HOY = new Date();
