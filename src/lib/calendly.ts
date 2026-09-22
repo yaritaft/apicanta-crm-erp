@@ -151,6 +151,15 @@ export function utmDe(tracking: InvitadoCalendly["tracking"]): Record<string, st
 /* `utm_source=Webinar` + `utm_medium=09-09` es el webinar del 9 de
    septiembre. Si hay varios con ese día y mes (años distintos), el más
    cercano a la fecha de la agenda. */
+const FORMATO_DIA_AR = new Intl.DateTimeFormat("en-CA", {
+  timeZone: "America/Argentina/Buenos_Aires", year: "numeric", month: "2-digit", day: "2-digit",
+});
+function diaArgentina(fecha: string): string {
+  if (/^\d{4}-\d{2}-\d{2}$/.test(fecha)) return fecha;
+  const d = new Date(fecha);
+  return Number.isNaN(d.getTime()) ? "" : FORMATO_DIA_AR.format(d);
+}
+
 export function webinarDeUtm(
   utm: Record<string, string> | undefined,
   webinars: { id: string; fecha: string }[],
@@ -161,8 +170,10 @@ export function webinarDeUtm(
   if (!m) return undefined;
   const dia = Number(m[1]), mes = Number(m[2]);
   const ref = new Date(cuando).getTime();
+  /* El día del webinar en Argentina, no en UTC: uno a las 21:00 ya es el
+     día siguiente en el ISO y no calzaba con el "09-09" del UTM. */
   const candidatos = webinars.filter((w) => {
-    const [, mm, dd] = (w.fecha ?? "").slice(0, 10).split("-").map(Number);
+    const [, mm, dd] = diaArgentina(w.fecha ?? "").split("-").map(Number);
     return mm === mes && dd === dia;
   });
   candidatos.sort((a, b) => Math.abs(new Date(a.fecha).getTime() - ref) - Math.abs(new Date(b.fecha).getTime() - ref));

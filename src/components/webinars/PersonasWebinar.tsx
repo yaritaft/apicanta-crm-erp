@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useMemo, useState } from "react";
-import Link from "next/link";
+import { useAbrirFicha } from "@/components/ficha/abrir";
 import { Search, Users } from "lucide-react";
 import { Badge, Button, Card, CardHead, Empty, Input, Persona, Tag, type VarianteBadge } from "@/components/ui/ui";
 import { type Columna, DataTable } from "@/components/ui/DataTable";
@@ -67,6 +67,7 @@ export function PersonasWebinar({ w }: { w: Webinar }) {
     () => personasDeWebinar(e, w.id).sort((a, b) => +new Date(b.entro ?? 0) - +new Date(a.entro ?? 0)),
     [e, w.id],
   );
+  const abrirFicha = useAbrirFicha();
   const etapa = (id?: string) => e.etapas.find((x) => x.id === id);
 
   const filtradas = useMemo(() => {
@@ -83,13 +84,7 @@ export function PersonasWebinar({ w }: { w: Webinar }) {
   const DEF: Record<string, Columna<PersonaDeWebinar>> = {
     nombre: {
       clave: "nombre", titulo: "Persona", tipo: "primary", orden: (p) => (p.nombre ?? "").toLowerCase(),
-      celda: (p) => p.leadId
-        ? (
-          <Link href={`/leads?ver=${encodeURIComponent(p.leadId)}`} className="wb-persona" title={`Abrir a ${p.nombre} en Leads`}>
-            <Persona nombre={p.nombre || "Sin nombre"} sub={p.email} />
-          </Link>
-        )
-        : <Persona nombre={p.nombre || "Sin nombre"} sub={p.email ?? "Sin oportunidad en Leads"} />,
+      celda: (p) => <Persona nombre={p.nombre || "Sin nombre"} sub={p.email ?? (p.leadId ? undefined : "Sin oportunidad en Leads")} />,
     },
     email: { clave: "email", titulo: "Email", tipo: "secondary", orden: (p) => p.email ?? "", celda: (p) => p.email || "—" },
     telefono: { clave: "telefono", titulo: "Teléfono", tipo: "secondary", orden: (p) => p.telefono ?? "", celda: (p) => p.telefono || "—" },
@@ -185,6 +180,9 @@ export function PersonasWebinar({ w }: { w: Webinar }) {
         filas={filtradas}
         columnas={columnas}
         porPagina={25}
+        /* La ficha se abre encima del webinar: al cerrarla, seguís acá. */
+        onFila={(p) => abrirFicha(p.contactoId ?? p.leadId ?? p.id)}
+        etiquetaFila={(p) => `Abrir la ficha de ${p.nombre || "esta persona"}`}
         vacio={
           personas.length === 0 ? (
             <Empty
