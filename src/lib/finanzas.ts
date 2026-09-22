@@ -25,14 +25,21 @@ export function revenue(e: EstadoApp, m: RangoMes): number {
   return ventasDelMes(e, m).reduce((a, v) => a + v.precioAcordado, 0);
 }
 
+/** Los pagos que entraron en el mes. Lo usan el total y el desglose del
+ *  Panel: los dos salen de la misma lista, así el panel lateral no puede
+ *  sumar distinto que la tarjeta. */
+export function pagosDelMes(e: EstadoApp, m: RangoMes) {
+  return e.pagos.filter((p) => enRango(p.fecha, m));
+}
+
 /** Lo cobrado: los pagos que entraron en el mes, sin importar cuándo se vendió. */
 export function cashCollected(e: EstadoApp, m: RangoMes): number {
-  return e.pagos.filter((p) => enRango(p.fecha, m)).reduce((a, p) => a + p.monto, 0);
+  return pagosDelMes(e, m).reduce((a, p) => a + p.monto, 0);
 }
 
 /** Lo que se quedaron Stripe, PayPal y compañía. */
 export function feesProcesador(e: EstadoApp, m: RangoMes): number {
-  return e.pagos.filter((p) => enRango(p.fecha, m)).reduce((a, p) => a + p.feeMonto, 0);
+  return pagosDelMes(e, m).reduce((a, p) => a + p.feeMonto, 0);
 }
 
 /** Cash collected sobre revenue: de todo lo que vendemos, cuánto entra. */
@@ -252,13 +259,20 @@ export function tasaDeMora(e: EstadoApp): number {
   return (cuotasVencidas(e).length / exigibles.length) * 100;
 }
 
-export function porCobrarTotal(e: EstadoApp): number {
+/** Cada cuota pendiente con lo que falta cobrarle. Misma lista para el total
+ *  y para el desglose del Panel. */
+export function cuotasPorCobrar(e: EstadoApp) {
   return e.cuotas
     .filter((c) => c.estado === "pendiente")
-    .reduce((a, c) => {
+    .map((c) => {
       const pagado = e.pagos.filter((p) => p.cuotaId === c.id).reduce((x, p) => x + p.monto, 0);
-      return a + Math.max(c.monto - pagado, 0);
-    }, 0);
+      return { cuota: c, pagado, saldo: Math.max(c.monto - pagado, 0) };
+    })
+    .filter((x) => x.saldo > 0);
+}
+
+export function porCobrarTotal(e: EstadoApp): number {
+  return cuotasPorCobrar(e).reduce((a, x) => a + x.saldo, 0);
 }
 
 /* ---------- Saldo de una venta ---------- */

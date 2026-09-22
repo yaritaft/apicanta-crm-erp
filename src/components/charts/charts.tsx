@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useId, useMemo, useState } from "react";
+import React, { useEffect, useId, useMemo, useRef, useState } from "react";
 
 /* Gráficos en SVG puro: sin dependencias, con tooltip y accesibles. */
 
@@ -33,6 +33,32 @@ function margenIzquierdo(etiquetas: string[]): number {
   return Math.ceil(masLarga * 6.2) + 16;
 }
 
+/* El SVG se dibuja al ancho real de su caja. Con un viewBox fijo y
+   `preserveAspectRatio="none"` el texto se estiraba con la tarjeta: en una
+   pantalla ancha los números del eje salían chatos y anchos. */
+function useAncho(): [React.RefObject<HTMLDivElement | null>, number] {
+  const ref = useRef<HTMLDivElement>(null);
+  const [ancho, setAncho] = useState(640);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const medir = () => { if (el.clientWidth > 0) setAncho(el.clientWidth); };
+    medir();
+    const ro = new ResizeObserver(medir);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  return [ref, Math.max(ancho, 240)];
+}
+
+/* Cada cuántas etiquetas del eje X se escribe una, para que no se pisen. */
+function saltoDeEtiquetas(etiquetas: string[], anchoUtil: number): number {
+  if (etiquetas.length === 0) return 1;
+  const masLarga = Math.max(...etiquetas.map((e) => e.length));
+  const porEtiqueta = masLarga * 6.2 + 14;
+  return Math.max(1, Math.ceil((etiquetas.length * porEtiqueta) / Math.max(anchoUtil, 1)));
+}
+
 function escalaMax(datos: number[]): number {
   const m = Math.max(...datos, 0);
   if (m === 0) return 1;
@@ -42,18 +68,21 @@ function escalaMax(datos: number[]): number {
 
 /* ---------------- Área / Línea ---------------- */
 
-export function AreaChart({ datos, alto = 200, formato, color = C.accent, color2 = C.brand, serie2 }: {
+export function AreaChart({ datos, alto = 200, formato, color = C.accent, color2 = C.brand, serie = "Ingresos", serie2 }: {
   datos: Punto[]; alto?: number; formato?: (n: number) => string;
-  color?: string; color2?: string; serie2?: string;
+  color?: string; color2?: string;
+  /* Cómo se llama cada línea en la leyenda y en el tooltip */
+  serie?: string; serie2?: string;
 }) {
   const gid = useId().replace(/:/g, "");
+  const [caja, W] = useAncho();
   const [hover, setHover] = useState<number | null>(null);
   const f = formato ?? ((n: number) => String(n));
 
   const max = useMemo(() => escalaMax(datos.flatMap((d) => [d.valor, d.valor2 ?? 0])), [datos]);
   const ticks = useMemo(() => [0, 0.5, 1].map((t) => max * t), [max]);
 
-  const W = 640, H = alto;
+  const H = alto;
   /* A la derecha hay que dejar media etiqueta del eje X, que va centrada. */
   const P = { t: 12, r: 18, b: 26, l: margenIzquierdo(ticks.map(f)) };
 
@@ -66,10 +95,12 @@ export function AreaChart({ datos, alto = 200, formato, color = C.accent, color2
   const linea = (k: "valor" | "valor2") =>
     datos.map((d, i) => `${i === 0 ? "M" : "L"}${x(i).toFixed(1)},${y(d[k] ?? 0).toFixed(1)}`).join(" ");
   const area = `${linea("valor")} L${x(datos.length - 1).toFixed(1)},${(P.t + ih).toFixed(1)} L${x(0).toFixed(1)},${(P.t + ih).toFixed(1)} Z`;
+  const salto = saltoDeEtiquetas(datos.map((d) => d.etiqueta), iw);
+  const conEtiqueta = (i: number) => i === datos.length - 1 || (i % salto === 0 && datos.length - 1 - i >= salto / 2);
 
   return (
-    <div style={{ position: "relative" }}>
-      <svg className="chart" viewBox={`0 0 ${W} ${H}`} role="img" aria-label="Gráfico de evolución" preserveAspectRatio="none" style={{ height: alto }}
+    <div style={{ position: "relative" }} ref={caja}>
+      <svg className="chart" width={W} height={H} viewBox={`0 0 ${W} ${H}`} role="img" aria-label="Gráfico de evolución"
         onMouseLeave={() => setHover(null)}>
         <defs>
           <linearGradient id={`g${gid}`} x1="0" y1="0" x2="0" y2="1">
@@ -88,10 +119,12 @@ export function AreaChart({ datos, alto = 200, formato, color = C.accent, color2
         <path d={linea("valor")} fill="none" stroke={color} strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" />
         {datos.map((d, i) => (
           <g key={i}>
-            <text
-              x={x(i)} y={H - 8} fontSize="11" fill={C.texto}
-              textAnchor={i === 0 ? "start" : i === datos.length - 1 ? "end" : "middle"}
-            >{d.etiqueta}</text>
+            {conEtiqueta(i) && (
+              <text
+                x={x(i)} y={H - 8} fontSize="11" fill={C.texto}
+                textAnchor={i === 0 ? "start" : i === datos.length - 1 ? "end" : "middle"}
+              >{d.etiqueta}</text>
+            )}
             <circle cx={x(i)} cy={y(d.valor)} r={hover === i ? 5 : 3.5} fill={color} stroke="var(--surface-100)" strokeWidth="2" />
             <rect x={x(i) - iw / (datos.length * 2)} y={P.t} width={iw / datos.length} height={ih} fill="transparent"
               onMouseEnter={() => setHover(i)} style={{ cursor: "crosshair" }} />
@@ -105,13 +138,14 @@ export function AreaChart({ datos, alto = 200, formato, color = C.accent, color2
           padding: "6px 10px", fontSize: 13, whiteSpace: "nowrap", pointerEvents: "none", boxShadow: "var(--shadow-md)",
         }}>
           <strong>{datos[hover].completo ?? datos[hover].etiqueta}</strong>{" · "}
+          {serie2 && <span style={{ color: "var(--ink-subtle)" }}>{serie} </span>}
           <span style={{ fontVariantNumeric: "tabular-nums" }}>{f(datos[hover].valor)}</span>
           {serie2 && <> · <span style={{ color: "var(--ink-subtle)" }}>{serie2} {f(datos[hover].valor2 ?? 0)}</span></>}
         </div>
       )}
       {serie2 && (
         <div className="chart-legend">
-          <span className="chart-legend__item"><i className="chart-legend__dot" style={{ background: color }} />Ingresos</span>
+          <span className="chart-legend__item"><i className="chart-legend__dot" style={{ background: color }} />{serie}</span>
           <span className="chart-legend__item"><i className="chart-legend__dot" style={{ background: color2 }} />{serie2}</span>
         </div>
       )}
@@ -125,12 +159,13 @@ export function BarChart({ datos, alto = 200, formato, color = C.brand }: {
   datos: Punto[]; alto?: number; formato?: (n: number) => string; color?: string;
 }) {
   const [hover, setHover] = useState<number | null>(null);
+  const [caja, W] = useAncho();
   const f = formato ?? ((n: number) => String(n));
 
   const max = useMemo(() => escalaMax(datos.map((d) => d.valor)), [datos]);
   const ticks = useMemo(() => [0, 0.5, 1].map((t) => max * t), [max]);
 
-  const W = 640, H = alto;
+  const H = alto;
   const P = { t: 12, r: 18, b: 26, l: margenIzquierdo(ticks.map(f)) };
 
   if (datos.length === 0) return <div className="t-sm t-subtle" style={{ padding: 24, textAlign: "center" }}>Sin datos todavía.</div>;
@@ -138,10 +173,11 @@ export function BarChart({ datos, alto = 200, formato, color = C.brand }: {
   const iw = W - P.l - P.r, ih = H - P.t - P.b;
   const paso = iw / datos.length;
   const ancho = Math.min(paso * 0.6, 44);
+  const salto = saltoDeEtiquetas(datos.map((d) => d.etiqueta), iw);
 
   return (
-    <div style={{ position: "relative" }}>
-      <svg className="chart" viewBox={`0 0 ${W} ${H}`} role="img" aria-label="Gráfico de barras" preserveAspectRatio="none" style={{ height: alto }} onMouseLeave={() => setHover(null)}>
+    <div style={{ position: "relative" }} ref={caja}>
+      <svg className="chart" width={W} height={H} viewBox={`0 0 ${W} ${H}`} role="img" aria-label="Gráfico de barras" onMouseLeave={() => setHover(null)}>
         {ticks.map((t, i) => (
           <g key={i}>
             <line x1={P.l} x2={W - P.r} y1={P.t + ih - (t / max) * ih} y2={P.t + ih - (t / max) * ih} stroke={C.grid} />
@@ -156,7 +192,7 @@ export function BarChart({ datos, alto = 200, formato, color = C.brand }: {
               <rect x={cx - paso / 2} y={P.t} width={paso} height={ih} fill="transparent" />
               <rect x={cx - ancho / 2} y={P.t + ih - h} width={ancho} height={h} rx="5"
                 fill={color} opacity={hover === null || hover === i ? 1 : 0.45} />
-              <text x={cx} y={H - 8} textAnchor="middle" fontSize="11" fill={C.texto}>{d.etiqueta}</text>
+              {i % salto === 0 && <text x={cx} y={H - 8} textAnchor="middle" fontSize="11" fill={C.texto}>{d.etiqueta}</text>}
             </g>
           );
         })}
@@ -177,9 +213,11 @@ export function BarChart({ datos, alto = 200, formato, color = C.brand }: {
 
 /* ---------------- Embudo ---------------- */
 
-export function Funnel({ pasos, formato }: {
+export function Funnel({ pasos, formato, onPaso }: {
   pasos: { etiqueta: string; valor: number; color?: string }[];
   formato?: (n: number) => string;
+  /* Con onPaso cada etapa se abre: quién está en ese escalón. */
+  onPaso?: (i: number) => void;
 }) {
   const max = Math.max(...pasos.map((p) => p.valor), 1);
   const f = formato ?? ((n: number) => String(n));
@@ -188,8 +226,17 @@ export function Funnel({ pasos, formato }: {
       {pasos.map((p, i) => {
         const prev = i === 0 ? null : pasos[i - 1].valor;
         const conv = prev && prev > 0 ? (p.valor / prev) * 100 : null;
+        const clic = onPaso
+          ? {
+              role: "button", tabIndex: 0, className: "funnel-paso", "aria-label": `${p.etiqueta}: ver quiénes`,
+              onClick: () => onPaso(i),
+              onKeyDown: (ev: React.KeyboardEvent) => {
+                if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); onPaso(i); }
+              },
+            }
+          : {};
         return (
-          <div key={p.etiqueta}>
+          <div key={p.etiqueta} {...clic}>
             <div className="row" style={{ marginBottom: 6 }}>
               <span className="t-sm t-strong">{p.etiqueta}</span>
               <span className="spacer t-sm t-num t-muted">{f(p.valor)}</span>

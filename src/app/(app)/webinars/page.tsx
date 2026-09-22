@@ -121,7 +121,7 @@ export default function Webinars() {
             datos={serie.map(({ webinar, m }) => ({
               etiqueta: fecha(webinar.fecha), valor: m.roasCC, valor2: m.roasRev, completo: webinar.titulo,
             }))}
-            serie2="ROAS facturado" formato={(n) => `${num(n, 1)}x`} alto={220}
+            serie="ROAS cobrado" serie2="ROAS facturado" formato={(n) => `${num(n, 1)}x`} alto={220}
           />
         </Card>
       )}

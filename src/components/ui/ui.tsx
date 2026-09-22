@@ -82,13 +82,24 @@ export function CardHead({ titulo, sub, acciones }: { titulo: string; sub?: stri
 
 /* ---------------- StatCard ---------------- */
 
-export function StatCard({ etiqueta, valor, delta, direccion = "neutral", contexto, hero, ayuda }: {
+export function StatCard({ etiqueta, valor, delta, direccion = "neutral", contexto, hero, ayuda, onClick }: {
   etiqueta: string; valor: string; delta?: string;
   direccion?: "up" | "down" | "accent" | "neutral";
   contexto?: string; hero?: boolean; ayuda?: string;
+  /* Con onClick la tarjeta abre lo que forma el número: un número que no se
+     puede abrir es un número en el que hay que confiar a ciegas. */
+  onClick?: () => void;
 }) {
+  const clic = onClick
+    ? {
+        role: "button", tabIndex: 0, onClick, "aria-label": `${etiqueta}: ver el detalle`,
+        onKeyDown: (ev: React.KeyboardEvent) => {
+          if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); onClick(); }
+        },
+      }
+    : {};
   return (
-    <div className={`hk-card hk-stat${hero ? " hk-stat--hero" : ""}`} title={ayuda}>
+    <div className={`hk-card hk-stat${hero ? " hk-stat--hero" : ""}${onClick ? " hk-stat--link" : ""}`} title={ayuda} {...clic}>
       <span className="hk-stat__label">{etiqueta}</span>
       <span className="hk-stat__value">{valor}</span>
       <span className="hk-stat__meta">

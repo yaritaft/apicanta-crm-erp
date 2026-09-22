@@ -95,11 +95,6 @@ export default function Pipeline() {
         </Card>
       ) : (
         <>
-          <Ayuda titulo="Cómo se usa" icono={<Info size={18} />}>
-            Agarrá una tarjeta y soltala en otra columna. Si preferís el teclado, seleccioná una tarjeta con Tab y
-            usá <kbd>←</kbd> y <kbd>→</kbd>. Cada columna te dice cuántos leads tiene y cuánta plata suma.
-          </Ayuda>
-
           <div className="hk-pipeline">
             {etapas.map((et) => {
               const items = porEtapa[et.id] ?? [];

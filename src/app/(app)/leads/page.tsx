@@ -320,16 +320,18 @@ export default function Leads() {
             </div>
 
             <div>
-              <div className="t-label" style={{ marginBottom: 10 }}>Mover de etapa</div>
-              <div className="row-wrap">
-                {[...e.etapas].sort((a, b) => a.orden - b.orden).map((et) => (
-                  <Chip
-                    key={et.id} activo={et.id === leadVisto.etapaId}
-                    onClick={() => { acciones.moverLead(leadVisto.id, et.id); toast(`${leadVisto.nombre} → ${et.nombre}`); }}
-                  >
-                    {et.nombre}
-                  </Chip>
-                ))}
+              <div className="t-label" style={{ marginBottom: 10 }}>Etapa</div>
+              <div style={{ maxWidth: 280 }}>
+                <Select
+                  value={leadVisto.etapaId} aria-label="Etapa del lead"
+                  onChange={(ev) => {
+                    const et = e.etapas.find((x) => x.id === ev.target.value);
+                    if (!et) return;
+                    acciones.moverLead(leadVisto.id, et.id);
+                    toast(`${leadVisto.nombre} → ${et.nombre}`);
+                  }}
+                  opciones={[...e.etapas].sort((a, b) => a.orden - b.orden).map((et) => ({ valor: et.id, texto: et.nombre }))}
+                />
               </div>
             </div>
 

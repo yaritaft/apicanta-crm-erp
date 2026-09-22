@@ -67,8 +67,12 @@ export function porCobrar(e: EstadoApp): number {
   return porCobrarTotal(e);
 }
 
+export function alumnosActivos(e: EstadoApp) {
+  return e.alumnos.filter((a) => a.estado === "activo");
+}
+
 export function mrr(e: EstadoApp): number {
-  return e.alumnos.filter((a) => a.estado === "activo").reduce((a, x) => a + x.cuotaMensual, 0);
+  return alumnosActivos(e).reduce((a, x) => a + x.cuotaMensual, 0);
 }
 
 /* ---------- Leads y pipeline ---------- */
@@ -82,26 +86,40 @@ export function inscriptosMes(e: EstadoApp, m: RangoMes) {
   return e.leads.filter((l) => l.etapaId === ganada && enMes(l.actualizadoEn, m));
 }
 
+/* Cada lead abierto con lo que vale ponderado por la probabilidad de su
+   etapa. El total del Panel y su desglose salen de esta misma lista. */
+export function leadsDelPipeline(e: EstadoApp) {
+  const abiertas = new Set(e.etapas.filter((x) => !x.esGanada && !x.esPerdida).map((x) => x.id));
+  return e.leads
+    .filter((l) => abiertas.has(l.etapaId))
+    .map((l) => {
+      const etapa = e.etapas.find((x) => x.id === l.etapaId);
+      const probabilidad = etapa?.probabilidad ?? 0;
+      return { lead: l, etapa, probabilidad, ponderado: l.monto * (probabilidad / 100) };
+    });
+}
+
 export function valorPipeline(e: EstadoApp): { bruto: number; ponderado: number } {
-  const abiertas = e.etapas.filter((x) => !x.esGanada && !x.esPerdida).map((x) => x.id);
-  let bruto = 0, ponderado = 0;
-  for (const l of e.leads) {
-    if (!abiertas.includes(l.etapaId)) continue;
-    const et = e.etapas.find((x) => x.id === l.etapaId);
-    bruto += l.monto;
-    ponderado += l.monto * ((et?.probabilidad ?? 0) / 100);
-  }
-  return { bruto, ponderado };
+  const filas = leadsDelPipeline(e);
+  return {
+    bruto: filas.reduce((a, f) => a + f.lead.monto, 0),
+    ponderado: filas.reduce((a, f) => a + f.ponderado, 0),
+  };
+}
+
+/* Los leads que ya se definieron, separados. La tasa y su desglose salen de acá. */
+export function leadsCerrados(e: EstadoApp) {
+  const etapaDe = (l: { etapaId: string }) => e.etapas.find((x) => x.id === l.etapaId);
+  return {
+    ganados: e.leads.filter((l) => etapaDe(l)?.esGanada),
+    perdidos: e.leads.filter((l) => etapaDe(l)?.esPerdida),
+  };
 }
 
 export function tasaConversion(e: EstadoApp): number {
-  const ganada = e.etapas.find((x) => x.esGanada)?.id;
-  const cerrados = e.leads.filter((l) => {
-    const et = e.etapas.find((x) => x.id === l.etapaId);
-    return et?.esGanada || et?.esPerdida;
-  });
-  if (cerrados.length === 0) return 0;
-  return (cerrados.filter((l) => l.etapaId === ganada).length / cerrados.length) * 100;
+  const { ganados, perdidos } = leadsCerrados(e);
+  const cerrados = ganados.length + perdidos.length;
+  return cerrados === 0 ? 0 : (ganados.length / cerrados) * 100;
 }
 
 export function leadsSinContactar(e: EstadoApp) {

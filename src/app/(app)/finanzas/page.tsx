@@ -103,7 +103,7 @@ export default function Finanzas() {
           <div className="grid-2">
             <Card>
               <CardHead titulo="Facturado vs. cobrado" sub="Últimos 6 meses. La distancia entre las dos líneas es lo que falta cobrar." />
-              <AreaChart datos={serie} serie2="Facturado" formato={(n) => M(n)} alto={220} />
+              <AreaChart datos={serie} serie="Cobrado" serie2="Facturado" formato={(n) => M(n)} alto={220} />
             </Card>
             <Card>
               <CardHead titulo="En qué se va la plata" sub={`Gastos operativos de ${mes.etiqueta}.`} />

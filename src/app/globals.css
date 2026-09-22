@@ -325,7 +325,10 @@ a { color: inherit; text-decoration: none; }
 
 /* ---------- Toolbar (buscador + filtros) ---------- */
 .toolbar { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; margin-bottom: var(--space-4); }
-.toolbar .hk-input { min-width: 260px; flex: 0 1 320px; }
+/* Sólo el buscador suelto: la regla vieja agarraba también los desplegables
+   (Select también es .hk-input), que viven en cajas de 175-190 px — les
+   forzaba 260 px, se pisaban entre sí y se salían de la tarjeta. */
+.toolbar > .hk-input:not(.hk-input--select) { min-width: 260px; flex: 0 1 320px; }
 
 .chip {
   display: inline-flex; align-items: center; gap: var(--space-1);
@@ -520,6 +523,8 @@ kbd {
 .agenda-item { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface-100); cursor: pointer; transition: border-color 150ms ease-out, background-color 150ms ease-out; }
 .agenda-item:hover { border-color: var(--border-strong); background: var(--surface-200); }
 .agenda-item__hora { font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--ink); width: 44px; flex: none; }
+.agenda-item__quien { flex: 1; min-width: 0; }
+.agenda-item__cola { display: flex; align-items: center; gap: var(--space-3); flex: none; }
 
 /* ---------- Misc ---------- */
 .divider { height: 1px; background: var(--border); border: 0; margin: 0; }
@@ -553,7 +558,12 @@ kbd {
   .dl { grid-template-columns: 1fr; gap: 2px var(--space-4); }
   .dl dd { margin-bottom: var(--space-2); }
   .drawer { width: 100vw; }
-  .agenda-day { grid-template-columns: 64px 1fr; }
+  /* La columna del día no puede estirarse con el contenido, y la fila de cada
+     llamada baja estados y acciones a una segunda línea. */
+  .agenda-day { grid-template-columns: 64px minmax(0, 1fr); gap: var(--space-3); }
+  .agenda-item { flex-wrap: wrap; row-gap: var(--space-2); }
+  .agenda-item__quien { flex-basis: calc(100% - 44px - var(--space-3)); }
+  .agenda-item__cola { margin-left: calc(44px + var(--space-3)); flex-wrap: wrap; gap: var(--space-2); }
   .toast-wrap { left: var(--space-4); right: var(--space-4); bottom: var(--space-4); }
   .toast { min-width: 0; max-width: none; }
 }
@@ -837,6 +847,8 @@ kbd {
 
 /* Opciones seleccionables con teclado */
 .opciones { display: grid; grid-template-columns: repeat(auto-fill, minmax(212px, 1fr)); gap: var(--space-2); }
+/* Una por renglón: para listas de personas, donde el nombre y el mail tienen que leerse enteros. */
+.opciones--lista { grid-template-columns: 1fr; }
 .opcion {
   display: flex; align-items: center; gap: var(--space-3); width: 100%;
   padding: var(--space-3) var(--space-4); min-height: 56px;
@@ -999,3 +1011,17 @@ kbd {
   border-top: 1px solid var(--border); background: var(--surface-100);
 }
 .hk-paginador .hk-btn[disabled] { opacity: .4; pointer-events: none; }
+
+/* ---------- Tarjetas y etapas que se abren ---------- */
+.hk-stat--link { cursor: pointer; transition: border-color 150ms ease-out, background-color 150ms ease-out; }
+.hk-stat--link:hover { border-color: var(--border-strong); }
+.hk-stat--link:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+.funnel-paso { cursor: pointer; border-radius: var(--radius-sm); padding: 4px; margin: -4px; transition: background-color 150ms ease-out; }
+.funnel-paso:hover { background: var(--surface-200); }
+.funnel-paso:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+
+/* Un botón que se lee como enlace: para saltar a otro registro sin sacar al
+   usuario de donde está (la llamada reprogramada, por ejemplo). */
+.link { background: none; border: 0; padding: 0; font: inherit; color: var(--brand); cursor: pointer; text-align: left; }
+.link:hover { text-decoration: underline; }
+.link:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; border-radius: 2px; }

@@ -2,7 +2,7 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  ArrowLeft, Check, CornerDownLeft, Link2, Plus, Sparkles, Trash2, X,
+  ArrowLeft, Check, CornerDownLeft, Link2, Plus, Sparkles, Trash2, UserPlus, X,
 } from "lucide-react";
 import { Badge, Button, Chip, IconButton, Input, Select, Switch, Textarea } from "@/components/ui/ui";
 import { acciones, nuevoId, useEstado } from "@/lib/store";
@@ -59,6 +59,9 @@ type Frecuencia = "mensual" | "quincenal" | "semanal";
 
 interface Borrador {
   contactoId?: string;
+  /* La persona no estaba cargada: se crea como lead inscripto recién al
+     guardar la venta, así cancelar el asistente no deja un lead suelto. */
+  crearContacto?: boolean;
   contactoNombre: string;
   contactoEmail: string;
   productoId: string;
@@ -165,9 +168,22 @@ export function AsistenteVenta({ onCerrar, onListo, desdeMovimiento }: {
 
   function guardar() {
     const ventaId = nuevoId("ven");
+    let contactoId = b.contactoId;
+    if (!contactoId && b.crearContacto && b.contactoNombre.trim()) {
+      const ahora = new Date().toISOString();
+      contactoId = acciones.altaDeLead({
+        nombre: b.contactoNombre.trim(), email: b.contactoEmail.trim(), telefono: "", pais: "",
+        fuente: b.webinarId ? "Webinar" : "", webinarId: b.webinarId || undefined,
+        /* Compró: entra directo en la etapa ganada. */
+        etapaId: e.etapas.find((x) => x.esGanada)?.id ?? e.etapas[0]?.id ?? "",
+        monto: redondear(b.precioAcordado), moneda: mon,
+        responsable: e.equipo.find((x) => x.id === b.closerId)?.nombre ?? "",
+        etiquetas: [], creadoEn: ahora, actualizadoEn: ahora, extra: {},
+      }, b.contactoNombre.trim());
+    }
     const venta: Venta = {
       id: ventaId,
-      contactoId: b.contactoId,
+      contactoId,
       contactoNombre: b.contactoNombre.trim(),
       productoId: b.productoId || undefined,
       webinarId: b.webinarId || undefined,
@@ -427,16 +443,37 @@ function PasoCliente({ b, set, e }: { b: Borrador; set: (c: Partial<Borrador>) =
           <span className="t-sm t-subtle">{b.contactoEmail}</span>
         </div>
       )}
-      {sugeridos.length > 0 && !b.contactoId && (
+      {b.crearContacto && !b.contactoId && (
         <div className="stack-2">
-          <span className="t-label">Leads que coinciden</span>
-          <div className="opciones">
+          <div className="row-wrap">
+            <Badge variante="accent"><UserPlus size={13} />Contacto nuevo: se crea al guardar la venta</Badge>
+            <button type="button" className="link t-sm" onClick={() => set({ crearContacto: false })}>Deshacer</button>
+          </div>
+          <Input
+            type="email" value={b.contactoEmail} placeholder="Su email (opcional)"
+            onChange={(ev) => set({ contactoEmail: ev.target.value })}
+          />
+        </div>
+      )}
+      {!b.contactoId && q.length >= 2 && (sugeridos.length > 0 || !b.crearContacto) && (
+        <div className="stack-2">
+          {sugeridos.length > 0 && <span className="t-label">Leads que coinciden</span>}
+          {/* En lista, uno por renglón: en grilla, el nombre y el mail
+              quedaban cortados y costaba leer cuál era cuál. */}
+          <div className="opciones opciones--lista">
             {sugeridos.map((l) => (
               <Opcion
                 key={l.id} nombre={l.nombre} sub={l.email} activo={false}
-                onClick={() => set({ contactoId: l.id, contactoNombre: l.nombre, contactoEmail: l.email })}
+                onClick={() => set({ contactoId: l.id, contactoNombre: l.nombre, contactoEmail: l.email, crearContacto: false })}
               />
             ))}
+            {!b.crearContacto && !sugeridos.some((l) => l.nombre.trim().toLowerCase() === q) && (
+              <Opcion
+                nombre={`Crear «${b.contactoNombre.trim()}» como contacto nuevo`}
+                sub="No está cargado: queda como lead inscripto, pegado a esta venta"
+                activo={false} onClick={() => set({ crearContacto: true })}
+              />
+            )}
           </div>
         </div>
       )}
@@ -526,17 +563,12 @@ function PasoEquipo({ b, set, e, sinComision }: {
             key={x.id} tecla={String(k + 1)} nombre={x.nombre}
             sub={x.sinComision ? "No comisiona nadie" : `Comisión ${pct(x.comisionRate * 100, 0)}`}
             activo={b.closerId === x.id}
-            onClick={() => set({ closerId: x.id })}
+            onClick={() => set({ closerId: b.closerId === x.id ? "" : x.id })}
           />
         ))}
       </div>
 
-      {sinComision ? (
-        <p className="t-sm t-muted">
-          Con {e.equipo.find((x) => x.id === b.closerId)?.nombre} como closer no comisiona nadie, así que
-          la venta se marca sola como excluida de marketing.
-        </p>
-      ) : (
+      {sinComision ? null : (
         <div className="stack-2">
           <span className="t-label">Director</span>
           <div className="opciones">

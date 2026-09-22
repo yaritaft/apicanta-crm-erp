@@ -1,13 +1,15 @@
 "use client";
 
-import React, { useMemo } from "react";
+import React, { useMemo, useState } from "react";
 import Link from "next/link";
 import {
-  ArrowRight, CalendarDays, Clock, Plus, Target, TriangleAlert, Video, Check, X as XIco,
+  ArrowRight, CalendarDays, Clock, Plus, Target, TriangleAlert, Video, Check,
 } from "lucide-react";
 import { PageHead } from "@/components/shell/PageHead";
 import { Badge, Bar, Button, Card, CardHead, Empty, Persona, StatCard } from "@/components/ui/ui";
 import { AreaChart, Funnel } from "@/components/charts/charts";
+import { Desglose, type QueDesglosar } from "@/components/panel/Desglose";
+import { AGENDAR_A_MANO } from "@/lib/funciones";
 import { useEstado } from "@/lib/store";
 import { delta, fechaHora, money, num, pct, relativo } from "@/lib/format";
 import { cuotasVencidas } from "@/lib/finanzas";
@@ -22,6 +24,9 @@ export default function Panel() {
   const meses = useMemo(() => ultimosMeses(6), []);
   const mesActual = meses[meses.length - 1];
   const mesPrevio = meses[meses.length - 2];
+  /* Qué número se está abriendo en el panel lateral. */
+  const [desglose, setDesglose] = useState<QueDesglosar | null>(null);
+  const abrir = (que: QueDesglosar) => () => setDesglose(que);
 
   const ingresos = ingresosMes(e, mesActual);
   const ingresosPrev = ingresosMes(e, mesPrevio);
@@ -50,6 +55,7 @@ export default function Panel() {
       warning: "var(--warning)", success: "var(--success)", danger: "var(--danger)", neutral: "var(--surface-300)",
     };
     return ordenadas.map((et, i) => ({
+      id: et.id,
       etiqueta: et.nombre,
       /* Cada etapa cuenta los leads que llegaron hasta ahí o más lejos. */
       valor: e.leads.filter((l) => {
@@ -80,25 +86,25 @@ export default function Panel() {
 
       <div className="grid-stats">
         <StatCard
-          hero etiqueta="Ingresos del mes" valor={money(ingresos, e.ajustes.monedaBase)}
+          hero etiqueta="Ingresos del mes" onClick={abrir({ tipo: "ingresos" })} valor={money(ingresos, e.ajustes.monedaBase)}
           delta={delta(variacion(ingresos, ingresosPrev))} direccion={ingresos >= ingresosPrev ? "up" : "down"}
           contexto={`vs. ${mesPrevio.etiqueta}`}
           ayuda="Suma de todos los ingresos con fecha de este mes, cobrados o por cobrar."
         />
         <StatCard
-          etiqueta="Resultado del mes" valor={money(neto, e.ajustes.monedaBase)}
+          etiqueta="Resultado del mes" onClick={abrir({ tipo: "resultado" })} valor={money(neto, e.ajustes.monedaBase)}
           delta={ingresos > 0 ? pct((neto / ingresos) * 100) : "—"} direccion={neto >= 0 ? "up" : "down"}
           contexto="de margen"
           ayuda="Ingresos menos egresos de este mes."
         />
         <StatCard
-          etiqueta="Leads nuevos" valor={num(leadsAhora)}
+          etiqueta="Leads nuevos" onClick={abrir({ tipo: "leads" })} valor={num(leadsAhora)}
           delta={delta(variacion(leadsAhora, leadsAntes))} direccion={leadsAhora >= leadsAntes ? "up" : "down"}
           contexto={`vs. ${mesPrevio.etiqueta}`}
           ayuda="Personas que entraron este mes."
         />
         <StatCard
-          etiqueta="Inscriptos" valor={num(inscriptos)}
+          etiqueta="Inscriptos" onClick={abrir({ tipo: "inscriptos" })} valor={num(inscriptos)}
           delta={delta(variacion(inscriptos, inscriptosPrev))} direccion={inscriptos >= inscriptosPrev ? "up" : "down"}
           contexto={`vs. ${mesPrevio.etiqueta}`}
           ayuda="Leads que cerraron y pasaron a alumno este mes."
@@ -106,72 +112,20 @@ export default function Panel() {
       </div>
 
       <div className="grid-stats">
-        <StatCard etiqueta="MRR" valor={money(mrr(e), e.ajustes.monedaBase)} contexto={`${e.alumnos.filter((a) => a.estado === "activo").length} alumnos activos`} ayuda="Lo que entra todos los meses por cuotas de alumnos activos." />
-        <StatCard etiqueta="Pipeline ponderado" valor={money(pipe.ponderado, e.ajustes.monedaBase)} contexto={`de ${money(pipe.bruto, e.ajustes.monedaBase)} abiertos`} ayuda="El valor del pipeline ajustado por la probabilidad de cada etapa." />
-        <StatCard etiqueta="Tasa de cierre" valor={pct(tasaConversion(e))} contexto="de los leads cerrados" ayuda="De los leads que ya se definieron, cuántos terminaron inscribiéndose." />
+        <StatCard etiqueta="MRR" onClick={abrir({ tipo: "mrr" })} valor={money(mrr(e), e.ajustes.monedaBase)} contexto={`${e.alumnos.filter((a) => a.estado === "activo").length} alumnos activos`} ayuda="Lo que entra todos los meses por cuotas de alumnos activos." />
+        <StatCard etiqueta="Pipeline ponderado" onClick={abrir({ tipo: "pipeline" })} valor={money(pipe.ponderado, e.ajustes.monedaBase)} contexto={`de ${money(pipe.bruto, e.ajustes.monedaBase)} abiertos`} ayuda="El valor del pipeline ajustado por la probabilidad de cada etapa." />
+        <StatCard etiqueta="Tasa de cierre" onClick={abrir({ tipo: "cierre" })} valor={pct(tasaConversion(e))} contexto="de los leads cerrados" ayuda="De los leads que ya se definieron, cuántos terminaron inscribiéndose." />
         <StatCard
-          etiqueta="Por cobrar" valor={money(porCobrar(e), e.ajustes.monedaBase)}
+          etiqueta="Por cobrar" onClick={abrir({ tipo: "cobrar" })} valor={money(porCobrar(e), e.ajustes.monedaBase)}
           delta={porCobrar(e) > 0 ? "Revisar" : undefined} direccion="accent"
           contexto="pendiente de pago" ayuda="Ingresos ya registrados que todavía no se cobraron."
         />
       </div>
 
-      <div className="grid-2">
-        <Card>
-          <CardHead
-            titulo="Ingresos y egresos"
-            sub="Últimos 6 meses. Pasá el mouse para ver cada mes."
-            acciones={<Link href="/finanzas"><Button sm variante="ghost" icono={<ArrowRight size={15} />}>Finanzas</Button></Link>}
-          />
-          <AreaChart datos={serie} serie2="Egresos" formato={(n) => money(n, e.ajustes.monedaBase)} alto={220} />
-        </Card>
-
-        <Card>
-          <CardHead
-            titulo="Embudo de ventas"
-            sub="Cuánta gente llega a cada etapa y cuánta pasa a la siguiente."
-            acciones={<Link href="/pipeline"><Button sm variante="ghost" icono={<ArrowRight size={15} />}>Pipeline</Button></Link>}
-          />
-          <Funnel pasos={embudo} />
-        </Card>
-      </div>
-
-      <div className="grid-2">
-        <Card>
-          <CardHead
-            titulo="Próximas sesiones"
-            sub={`${proximas.length === 0 ? "Nada" : proximas.length} en agenda · ${pct(tasaShow(e))} de asistencia histórica`}
-            acciones={<Link href="/agenda"><Button sm variante="ghost" icono={<ArrowRight size={15} />}>Agenda</Button></Link>}
-          />
-          {proximas.length === 0 ? (
-            <Empty
-              icono={<CalendarDays size={22} />}
-              titulo="No hay sesiones agendadas"
-              texto="Cuando agendes una llamada con un lead va a aparecer acá."
-              accion={<Link href="/agenda?nuevo=1"><Button variante="brand">Agendar una sesión</Button></Link>}
-            />
-          ) : (
-            <div className="stack-2">
-              {proximas.map((s) => (
-                <Link key={s.id} href={`/agenda?ver=${s.id}`} className="agenda-item">
-                  <span className="agenda-item__hora">{fechaHora(s.inicia).split(" · ")[1]}</span>
-                  <span style={{ flex: 1, minWidth: 0 }}>
-                    <span className="truncate t-strong" style={{ display: "block", color: "var(--ink)" }}>{s.invitado}</span>
-                    <span className="truncate t-sm t-subtle" style={{ display: "block" }}>{s.tipo} · {relativo(s.inicia)}</span>
-                  </span>
-                  {s.origen === "calendly" && <Badge variante="info">Calendly</Badge>}
-                </Link>
-              ))}
-            </div>
-          )}
-        </Card>
-
-      </div>
-
-      <div className="grid-2">
-        <Card>
+      {/* Arriba: lo que hay que mirar hoy (pedido de Yari). */}
+      <Card>
           <CardHead titulo="Requiere atención" sub="Lo que te conviene mirar hoy." />
-          <div className="stack-3">
+          <div className="grid-2" style={{ gap: "var(--space-3)" }}>
             <Fila
               icono={<Clock size={16} />}
               texto={`${sinContactar.length} leads sin contactar`}
@@ -203,42 +157,77 @@ export default function Panel() {
           </div>
         </Card>
 
+      <div className="grid-2">
         <Card>
-          <CardHead titulo="Últimos movimientos" sub="Cada cambio queda registrado." />
-          <div className="timeline">
-            {e.actividad.slice(0, 6).map((a) => (
-              <div key={a.id} className="timeline__item">
-                <span className="timeline__dot">
-                  {a.accion === "creo" ? <Plus size={13} /> : a.accion === "elimino" ? <XIco size={13} /> : <Check size={13} />}
-                </span>
-                <div style={{ minWidth: 0 }}>
-                  <div className="timeline__text">{a.detalle}</div>
-                  <div className="timeline__meta">{a.actor} · {relativo(a.fecha)}</div>
-                </div>
-              </div>
-            ))}
-          </div>
+          <CardHead
+            titulo="Ingresos y egresos"
+            sub="Últimos 6 meses. Pasá el mouse para ver cada mes."
+            acciones={<Link href="/finanzas"><Button sm variante="ghost" icono={<ArrowRight size={15} />}>Finanzas</Button></Link>}
+          />
+          <AreaChart datos={serie} serie2="Egresos" formato={(n) => money(n, e.ajustes.monedaBase)} alto={220} />
+        </Card>
+
+        <Card>
+          <CardHead
+            titulo="Embudo de ventas"
+            sub="Cuánta gente llega a cada etapa y cuánta pasa a la siguiente."
+            acciones={<Link href="/pipeline"><Button sm variante="ghost" icono={<ArrowRight size={15} />}>Pipeline</Button></Link>}
+          />
+          <Funnel pasos={embudo} onPaso={(i) => setDesglose({ tipo: "etapa", etapaId: embudo[i].id })} />
         </Card>
       </div>
 
-      <Card>
-        <CardHead titulo="Alumnos que necesitan seguimiento" sub="Activos que no mandaron su reporte hace 2 semanas o más." acciones={<Link href="/reportes"><Button sm variante="ghost" icono={<ArrowRight size={15} />}>Reportes</Button></Link>} />
-        {enRiesgo.length === 0 ? (
-          <Empty icono={<Check size={22} />} titulo="Todos al día" texto="Ningún alumno activo tiene dos o más semanas sin reportar. Buen trabajo." />
-        ) : (
-          <div className="stack-2">
-            {enRiesgo.map(({ a, semanas }) => (
-              <Link key={a.id} href={`/alumnos?ver=${a.id}`} className="agenda-item">
-                <Persona nombre={a.nombre} sub={`${a.plan} · ${a.cohorte}`} />
-                <span className="spacer" />
-                <Badge variante={semanas >= 3 ? "danger" : "warning"} icono={<Clock size={13} />}>
-                  {semanas} semanas sin reportar
-                </Badge>
-              </Link>
-            ))}
-          </div>
-        )}
-      </Card>
+      <div className="grid-2">
+        <Card>
+          <CardHead
+            titulo="Próximas sesiones"
+            sub={`${proximas.length === 0 ? "Nada" : proximas.length} en agenda · ${pct(tasaShow(e))} de asistencia histórica`}
+            acciones={<Link href="/agenda"><Button sm variante="ghost" icono={<ArrowRight size={15} />}>Agenda</Button></Link>}
+          />
+          {proximas.length === 0 ? (
+            <Empty
+              icono={<CalendarDays size={22} />}
+              titulo="No hay sesiones agendadas"
+              texto="Cuando alguien agende por Calendly va a aparecer acá, sola."
+              accion={AGENDAR_A_MANO ? <Link href="/agenda?nuevo=1"><Button variante="brand">Agendar una sesión</Button></Link> : undefined}
+            />
+          ) : (
+            <div className="stack-2">
+              {proximas.map((s) => (
+                <Link key={s.id} href={`/agenda?ver=${s.id}`} className="agenda-item">
+                  <span className="agenda-item__hora">{fechaHora(s.inicia).split(" · ")[1]}</span>
+                  <span style={{ flex: 1, minWidth: 0 }}>
+                    <span className="truncate t-strong" style={{ display: "block", color: "var(--ink)" }}>{s.invitado}</span>
+                    <span className="truncate t-sm t-subtle" style={{ display: "block" }}>{s.tipo} · {relativo(s.inicia)}</span>
+                  </span>
+                  {s.origen === "calendly" && <Badge variante="info">Calendly</Badge>}
+                </Link>
+              ))}
+            </div>
+          )}
+        </Card>
+
+        <Card>
+          <CardHead titulo="Alumnos que necesitan seguimiento" sub="Activos que no mandaron su reporte hace 2 semanas o más." acciones={<Link href="/reportes"><Button sm variante="ghost" icono={<ArrowRight size={15} />}>Reportes</Button></Link>} />
+          {enRiesgo.length === 0 ? (
+            <Empty icono={<Check size={22} />} titulo="Todos al día" texto="Ningún alumno activo tiene dos o más semanas sin reportar. Buen trabajo." />
+          ) : (
+            <div className="stack-2">
+              {enRiesgo.map(({ a, semanas }) => (
+                <Link key={a.id} href={`/alumnos?ver=${a.id}`} className="agenda-item">
+                  <Persona nombre={a.nombre} sub={`${a.plan} · ${a.cohorte}`} />
+                  <span className="spacer" />
+                  <Badge variante={semanas >= 3 ? "danger" : "warning"} icono={<Clock size={13} />}>
+                    {semanas} semanas sin reportar
+                  </Badge>
+                </Link>
+              ))}
+            </div>
+          )}
+        </Card>
+      </div>
+
+      {desglose && <Desglose que={desglose} mes={mesActual} onCerrar={() => setDesglose(null)} />}
     </div>
   );
 }
