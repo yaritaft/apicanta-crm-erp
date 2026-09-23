@@ -229,14 +229,13 @@ function AgendasDelPitch({ desde, className }: { desde: string; className?: stri
       </div>
       {lista.length > 0 && (
         <div className="vivo-agendas__lista">
-          {lista.slice(0, 6).map((x) => (
+          {lista.map((x) => (
             <div key={x.id} className="vivo-agendas__fila">
               <span className="t-strong truncate" style={{ flex: 1, minWidth: 0 }}>{x.nombre}</span>
               {x.closer && <span className="t-sm t-subtle truncate">{x.closer}</span>}
               <span className="t-sm t-subtle t-num" style={{ whiteSpace: "nowrap" }}>{hora(x.agendadaEn)} hs</span>
             </div>
           ))}
-          {lista.length > 6 && <span className="t-sm t-subtle">y {num(lista.length - 6)} más</span>}
         </div>
       )}
     </Card>
