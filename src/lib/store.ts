@@ -1208,6 +1208,7 @@ export const acciones = {
       procesadores: reemplazar(e.procesadores, r.procesadores),
       embudos: reemplazar(e.embudos, r.embudos),
       contactos: reemplazar(e.contactos, r.contactos),
+      leads: reemplazar(e.leads, r.leads),
       ventas: reemplazar(e.ventas, r.ventas),
       cuotas: reemplazar(e.cuotas.filter((c) => !sobran.has(c.id)), r.cuotas),
       pagos: reemplazar(e.pagos, r.pagos),
@@ -1221,6 +1222,7 @@ export const acciones = {
     if (r.embudos.length) empujar({ tipo: "upsert", tabla: "embudos", filas: r.embudos });
     if (r.proyectos.length) empujar({ tipo: "upsert", tabla: "ajustes", filas: [filaAjustes(ajustes)] });
     empujarEnLotes("contactos", r.contactos);
+    empujarEnLotes("leads", r.leads);
     empujarEnLotes("ventas", r.ventas);
     empujarEnLotes("cuotas", r.cuotas);
     empujarEnLotes("pagos", r.pagos);

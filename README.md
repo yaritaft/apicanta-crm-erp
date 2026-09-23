@@ -21,7 +21,7 @@ lo que se muestra se calcula solo.
 | **Marketing** | Campañas de Meta con costo por lead, costo por alumno, CTR, CPC, CPM y ROAS |
 | **Alumnos** | Quién cursa y cómo viene, en lista o en el pipeline de servicio (venta nueva → onboarding → en servicio…). Cada venta registrada crea su alumno sola |
 | **Reportes** | Dashboard y tabla de los reportes por rango de fechas: respuesta, horas, postulaciones, entrevistas, bloqueos y quién está en riesgo, marcable en un clic |
-| **Ventas** | Un asistente paso a paso arma la venta, su plan de cuotas y los cobros que ya entraron |
+| **Ventas** | Un asistente paso a paso arma la venta, su plan de cuotas y los cobros que ya entraron, con los nombres de la planilla de Angelo. Importa y exporta la hoja Ventas de esa planilla |
 | **Conciliación** | Los cobros de Stripe, Hotmart, Whop, dLocal, Mercado Pago, Mercury, Binance y Trust, imputados a la cuota que les corresponde |
 | **Finanzas** | El estado de resultados sobre lo cobrado y lo facturado; en el detalle, las cuotas vencidas, los gastos y las comisiones. Los KPIs viven en Dashboard & KPIs |
 | **Actividad** | Todo lo que se creó, editó, movió o borró, con autor y fecha |
@@ -32,6 +32,9 @@ lo que se muestra se calcula solo.
 No hay nada cableado en el código que el usuario no pueda cambiar desde **Ajustes**:
 
 - **Etapas del pipeline** — nombre, color, probabilidad de cierre, orden, cuál es «ganada» y cuál «perdida».
+- **Ventas** — servicios (precio de lista y tipo), cuentas recaudadoras (con su comisión real), estrategias
+  (cuál es el embudo de webinar), proyectos y el porcentaje del referidor. Los nombres son los de la planilla
+  de Angelo.
 - **Etapas del servicio** — las columnas del pipeline de alumnos: nombre, color y orden. Al borrar una, sus
   alumnos pasan a la que elijas. En Supabase necesitan `supabase/alumnos-servicio.sql`.
 - **Listas** — fuentes de leads, planes, tipos de sesión, categorías de ingreso y egreso, métodos de pago.
@@ -166,3 +169,21 @@ sigue siendo uno solo.
 Editor. Crea la tabla `movimientos` con su política de RLS y agrega dos columnas. Hasta que
 eso pase, la app no se rompe: la tabla que falta se saltea y los cobros viven sólo en el
 navegador.
+
+
+## La planilla de Angelo
+
+Las ventas se cargaban en la hoja Ventas del "Centro de control" (Google Sheets): una fila por cobro, con
+los datos de la venta repetidos. La app guarda lo mismo con los mismos nombres —Servicio adquirido,
+Proyecto, Estrategia utilizada, Vendedor, Cuenta recaudadora, Característica de pago, Ventas Nuevas vs
+Cuotas, tipo de cambio, quién transfirió, CUIT, chequeado, setter, referidor— pero separado en venta,
+cuotas y cobros, que es lo que permite los vencimientos y la mora.
+
+- **Importar** (Ventas → Importar planilla): el .xlsx entero o la hoja Ventas en .csv. La fila con valor
+  total abre la venta; las siguientes de la misma persona y servicio son sus cobros; lo que falta cobrar
+  es valor total menos cobrado, como la hoja Estado_Clientes. Reimportar actualiza, no duplica. Las reglas
+  están en `src/lib/angelo.ts`.
+- **Exportar** (Ventas → Exportar planilla): la hoja Ventas con sus 36 columnas.
+- La comisión del procesador es la real: la de la pasarela si el cobro se concilia; si no, la de la cuenta,
+  que se corrige a mano en Finanzas → Detalle → Procesadores.
+- Antes de usarlo contra Supabase hay que correr `supabase/modelo-angelo.sql` (sólo agrega columnas).

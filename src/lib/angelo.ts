@@ -1,5 +1,5 @@
 import type {
-  Contacto, Cuota, Embudo, EstadoApp, ID, IngresoComunidad, MiembroEquipo, Pago, Procesador,
+  Contacto, Cuota, Embudo, EstadoApp, ID, IngresoComunidad, Lead, MiembroEquipo, Pago, Procesador,
   Producto, TipoVentaPago, Venta, Webinar,
 } from "./types";
 
@@ -341,6 +341,10 @@ export interface AvisoImport { tipo: string; texto: string; filas: number[] }
 
 export interface ResultadoImport {
   contactos: Contacto[];
+  /* La venta cuelga de un lead (en la base, ventas.contactoId → leads):
+     quien compró y no tenía uno queda como lead inscripto, como hace el
+     asistente de venta. */
+  leads: Lead[];
   ventas: Venta[];
   cuotas: Cuota[];
   pagos: Pago[];
@@ -458,6 +462,30 @@ export function importarPlanilla(e: EstadoApp, filasCrudas: FilaVentas[], opcion
     return nuevo;
   };
 
+  /* La oportunidad de la persona: la que ya tenía (la más nueva) o una
+     inscripta nueva, etiquetada para encontrarla. */
+  const leadDeContacto = new Map<ID, Lead>();
+  for (const l of e.leads ?? []) {
+    const c = l.contactoId ?? l.id;
+    const previo = leadDeContacto.get(c);
+    if (!previo || l.creadoEn > previo.creadoEn) leadDeContacto.set(c, l);
+  }
+  const ganada = (e.etapas ?? []).find((x) => x.esGanada)?.id ?? (e.etapas ?? [])[0]?.id ?? "";
+  const leadsNuevos = new Map<ID, Lead>();
+  const leadDe = (persona: Contacto, venta: { fecha: string; precio: number; vendedor: string; estrategia: string; webinarId?: ID }): Lead => {
+    const ya = leadDeContacto.get(persona.id) ?? leadsNuevos.get(persona.id);
+    if (ya) return ya;
+    const nuevo: Lead = {
+      id: `lead_ef_${hash(persona.id)}`, contactoId: persona.id,
+      nombre: persona.nombre, email: persona.email, telefono: persona.telefono, pais: persona.pais,
+      fuente: venta.estrategia, etapaId: ganada, monto: venta.precio, moneda: "USD",
+      responsable: venta.vendedor, etiquetas: ["Planilla de Angelo"], webinarId: venta.webinarId,
+      creadoEn: venta.fecha, actualizadoEn: venta.fecha, extra: {},
+    };
+    leadsNuevos.set(persona.id, nuevo);
+    return nuevo;
+  };
+
   /* ---------- Filas → ventas ---------- */
   const ordenadas = [...filasCrudas].sort((a, b) => a.fecha.localeCompare(b.fecha) || a.fila - b.fila);
   const porGrupo = new Map<string, FilaVentas[]>();
@@ -539,9 +567,14 @@ export function importarPlanilla(e: EstadoApp, filasCrudas: FilaVentas[], opcion
       && (!director.desde || apertura.fecha >= director.desde));
 
     const ventaId = idUnico(`ven_ef_${hash(`${persona.id}|${normalizarTexto(apertura.servicio)}|${apertura.fecha}|${apertura.valorTotal}|${apertura.montoUsd}`)}`);
+    const webinarId = webinarDeProyecto(proyecto, e.webinars, apertura.fecha)?.id;
+    const lead = leadDe(persona, {
+      fecha: apertura.fecha, precio: valorTotal, vendedor: closer?.nombre ?? "",
+      estrategia: emb?.nombre ?? "", webinarId,
+    });
     const venta: Venta = {
-      id: ventaId, contactoId: persona.id, contactoNombre: persona.nombre || apertura.nombre,
-      productoId: prod?.id, webinarId: webinarDeProyecto(proyecto, e.webinars, apertura.fecha)?.id,
+      id: ventaId, contactoId: lead.id, contactoNombre: persona.nombre || apertura.nombre,
+      productoId: prod?.id, webinarId,
       embudoId: emb?.id, precioAcordado: r2(valorTotal), moneda: "USD",
       closerId: closer?.id, directorId: conDirector ? director!.id : undefined,
       excluidoMarketing: sinComision, estado, fecha: apertura.fecha,
@@ -649,6 +682,7 @@ export function importarPlanilla(e: EstadoApp, filasCrudas: FilaVentas[], opcion
   const personas = new Set(ventas.map((v) => v.contactoId));
   return {
     contactos: [...contactosNuevos.values()],
+    leads: [...leadsNuevos.values()],
     ventas, cuotas, pagos, cuotasQueSobran,
     equipo: creados.equipo, productos: creados.productos, procesadores: creados.procesadores, embudos: creados.embudos,
     proyectos,
