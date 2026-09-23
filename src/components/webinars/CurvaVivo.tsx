@@ -20,6 +20,8 @@ export interface PuntoCurva {
   valor: number;
   /* Barras chicas abajo (mensajes del chat). */
   barra?: number;
+  /* Agendas de Calendly en ese minuto: un punto verde sobre la curva. */
+  agendas?: number;
   /* Lo que se lee en el tooltip además del valor. */
   detalle?: string;
 }
@@ -53,6 +55,7 @@ export function CurvaVivo({
   }, [puntos]);
   const maxB = useMemo(() => Math.max(1, ...puntos.map((p) => p.barra ?? 0)), [puntos]);
   const hayBarras = Boolean(serieBarra) && puntos.some((p) => (p.barra ?? 0) > 0);
+  const hayAgendas = puntos.some((p) => (p.agendas ?? 0) > 0);
 
   if (puntos.length === 0) return null;
 
@@ -162,6 +165,17 @@ export function CurvaVivo({
           );
         })}
 
+        {/* Las agendas: un punto verde en el minuto en que llegaron, con la
+            cantidad arriba si fueron varias. */}
+        {hayAgendas && puntos.map((p) => (p.agendas ?? 0) > 0 && (
+          <g key={`a${p.min}`} pointerEvents="none">
+            <circle cx={x(p.min)} cy={y(p.valor)} r={(p.agendas ?? 0) > 1 ? 6 : 4.5} fill="var(--success)" stroke="var(--surface-100)" strokeWidth="2" />
+            {(p.agendas ?? 0) > 1 && (
+              <text x={x(p.min)} y={y(p.valor) - 10} fontSize="11" fontWeight="700" fill="var(--success)" textAnchor="middle">{p.agendas}</text>
+            )}
+          </g>
+        ))}
+
         {pico && (
           <g>
             <circle cx={x(pico.min)} cy={y(pico.valor)} r="5" fill="var(--accent)" stroke="var(--surface-100)" strokeWidth="2" />
@@ -189,12 +203,16 @@ export function CurvaVivo({
           {serieBarra && mostrado.barra !== undefined && (
             <> · <span className="t-num">{num(mostrado.barra)}</span> <span className="t-subtle">{serieBarra.toLowerCase()}</span></>
           )}
+          {(mostrado.agendas ?? 0) > 0 && (
+            <> · <span className="t-num" style={{ color: "var(--success)", fontWeight: 600 }}>{num(mostrado.agendas ?? 0)} {mostrado.agendas === 1 ? "agenda" : "agendas"}</span></>
+          )}
         </div>
       )}
 
       <div className="chart-legend">
         <span className="chart-legend__item"><i className="chart-legend__dot" style={{ background: "var(--accent)" }} />{serie}</span>
         {hayBarras && <span className="chart-legend__item"><i className="chart-legend__dot" style={{ background: "var(--info)" }} />{serieBarra}</span>}
+        {hayAgendas && <span className="chart-legend__item"><i className="chart-legend__dot" style={{ background: "var(--success)" }} />Agendas</span>}
         {marcas.some((m) => m.tono === "pitch") && (
           <span className="chart-legend__item"><i className="chart-legend__dot" style={{ background: "var(--warning)" }} />Pitch</span>
         )}

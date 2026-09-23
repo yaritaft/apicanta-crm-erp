@@ -14,7 +14,9 @@ import { ConversacionWebinar } from "./ConversacionWebinar";
 import { CurvaVivo, type Marca } from "./CurvaVivo";
 import { diaCorto, diaYHora, partesArgentina } from "./fechas";
 import { guardarWebinar } from "./guardar";
-import { conectarAnalytics, useAgendasDesde, useAhora, useAnalytics, useDatosVivo, type Ahora } from "./useVivo";
+import {
+  conectarAnalytics, useAgendasDesde, useAgendasWebinar, useAhora, useAnalytics, useDatosVivo, type Ahora,
+} from "./useVivo";
 import "./vivo.css";
 import { useYoutube } from "./useYoutube";
 
@@ -252,6 +254,12 @@ function VivoWebinar({ w, videoId, vivo, className }: {
   const enElAire = datos?.estado.estado === "en-vivo";
   const an = useAnalytics(videoId, desdeDe(w));
   const yt = useYoutube(videoId);
+  const ag = useAgendasWebinar(w.id);
+  const datosAg = ag.estado === "listo" ? ag.datos : null;
+  const horasAgendas = useMemo(
+    () => (datosAg ? datosAg.agendas.filter((x) => !x.cancelada).map((x) => x.agendadaEn) : []),
+    [datosAg],
+  );
 
   /* Vuelta de Google después de conectar el canal. */
   useEffect(() => {
@@ -346,6 +354,7 @@ function VivoWebinar({ w, videoId, vivo, className }: {
           w={w} a={a} datos={datos} cargando={vivo.estado === "cargando"} error={vivo.estado === "error" ? vivo.error : null}
           ejemplo={ejemplo} enElAire={enElAire} onEjemplo={() => setEjemplo(true)} onRecargar={vivo.recargar}
           fuente={muestra?.fuente} conectado={an.estado === "listo" && an.datos.conectado}
+          agendas={ejemplo ? [] : horasAgendas}
         />
       )}
       {pestania === "retencion" && <Retencion an={an} duracionSeg={yt.estado === "listo" ? yt.datos.duracionSeg : undefined} a={a} ejemplo={ejemplo} />}
@@ -357,10 +366,12 @@ function VivoWebinar({ w, videoId, vivo, className }: {
 
 /* ---------- Espectadores ---------- */
 
-function Espectadores({ w, a, datos, cargando, error, ejemplo, enElAire, onEjemplo, onRecargar, fuente, conectado }: {
+function Espectadores({ w, a, datos, cargando, error, ejemplo, enElAire, onEjemplo, onRecargar, fuente, conectado, agendas }: {
   w: Webinar; a: AnalisisVivo | null; datos: DatosVivo | null; cargando: boolean; error: string | null;
   ejemplo: boolean; enElAire: boolean; onEjemplo: () => void; onRecargar: () => void;
   fuente?: Fuente; conectado: boolean;
+  /* Cuándo se agendó cada llamada de Calendly de este webinar (sin las canceladas). */
+  agendas: string[];
 }) {
   const toast = useToast();
   const [elegido, setElegido] = useState<number | null>(null);
@@ -385,6 +396,16 @@ function Espectadores({ w, a, datos, cargando, error, ejemplo, enElAire, onEjemp
 
   const inicio = a.inicio;
   const pitch = a.pitch;
+  /* Cada agenda, en el minuto del vivo en que llegó (al punto más cercano
+     que haya: si ese minuto no tiene muestra, al anterior). */
+  const agendasPorMinuto = new Map<number, number>();
+  for (const t of agendas) {
+    const min = Math.floor((+new Date(t) - +new Date(inicio)) / MIN);
+    if (min < 0 || min > a.duracionMin) continue;
+    let k = a.puntos[0].min;
+    for (const p of a.puntos) { if (p.min <= min) k = p.min; else break; }
+    agendasPorMinuto.set(k, (agendasPorMinuto.get(k) ?? 0) + 1);
+  }
   const minPitch = pitch?.enElPitch.min;
 
   function marcarPitch(min: number) {
@@ -417,7 +438,7 @@ function Espectadores({ w, a, datos, cargando, error, ejemplo, enElAire, onEjemp
       <CurvaVivo
         etiqueta="Espectadores del vivo, minuto a minuto. Tocá un minuto para marcar el pitch."
         serie="Mirando" serieBarra="Mensajes"
-        puntos={a.puntos.map((p) => ({ min: p.min, valor: p.espectadores, barra: p.chat, detalle: `${hora(p.t)} hs` }))}
+        puntos={a.puntos.map((p) => ({ min: p.min, valor: p.espectadores, barra: p.chat, agendas: agendasPorMinuto.get(p.min), detalle: `${hora(p.t)} hs` }))}
         pico={{ min: a.pico.min, valor: a.pico.espectadores }}
         marcas={marcas}
         elegido={elegido}
