@@ -626,24 +626,39 @@ export interface MiembroEquipo {
 
 export type EstadoVenta = "activa" | "cancelada" | "reembolsada";
 
+/* "Ingreso a la comunidad" de la planilla de Angelo. */
+export type IngresoComunidad = "Si" | "No" | "En espera" | "N/A";
+
+/* Una venta. Los nombres de la planilla de Angelo van al lado de cada
+   campo: "Servicio adquirido" es el producto, "Estrategia utilizada" el
+   embudo, "Vendedor" el closer y "Valor total de la venta" el precio. */
 export interface Venta {
   id: ID;
   contactoId?: ID;
   contactoNombre: string;
-  productoId?: ID;
+  productoId?: ID;           // Servicio adquirido
   webinarId?: ID;
-  embudoId?: ID;
-  precioAcordado: number;
+  embudoId?: ID;             // Estrategia utilizada
+  precioAcordado: number;    // Valor total de la venta
   moneda: Moneda;
-  closerId?: ID;
+  closerId?: ID;             // Vendedor
   directorId?: ID;
   /* Eventos y conocidos: el growth partner no comisiona */
   excluidoMarketing: boolean;
   estado: EstadoVenta;
   fecha: string;
-  notas?: string;
+  notas?: string;            // Observaciones / Plan de pagos
   creadoEn: string;
   extra: Record<string, unknown>;
+  /* Proyecto: MENT, DOWN, WEB-13/04/26… (lista en Ajustes → Ventas). */
+  proyecto?: string;
+  /* Nombre del setter: un miembro del equipo con rol setter. */
+  setterId?: ID;
+  /* Nombre del referidor y su número de teléfono: quien refiere no es del
+     equipo, por eso va escrito y no elegido. */
+  referidorNombre?: string;
+  referidorTelefono?: string;
+  ingresoComunidad?: IngresoComunidad;
 }
 
 export type EstadoCuota = "pendiente" | "pagada" | "cancelada";
@@ -670,22 +685,43 @@ export interface Comprobante {
   subidoEn: string;
 }
 
+/* "Característica de pago" y "Ventas Nuevas vs Cuotas" de la planilla. */
+export type TipoVentaPago = "Venta Nueva" | "Cuota" | "Solo Reserva";
+
+/* Un cobro: una fila de la hoja "Ventas" de la planilla de Angelo. "Fecha
+   del pago", "Cuenta recaudadora" (el procesador), "Monto abonado USD" y
+   "Costo total de procesamiento" (feeMonto) son los campos de siempre. */
 export interface Pago {
   id: ID;
   cuotaId: ID;
-  procesadorId?: ID;
+  procesadorId?: ID;         // Cuenta recaudadora
   /* Si el pago salió de conciliar un cobro de pasarela */
   movimientoId?: ID;
   /* Obligatorio si el pago NO se concilió: es la única prueba de que entró. */
   comprobante?: Comprobante;
-  monto: number;
+  monto: number;             // Monto abonado USD
   moneda: Moneda;
   feeRate: number;
-  feeMonto: number;
-  fecha: string;
+  feeMonto: number;          // Costo total de procesamiento
+  fecha: string;             // Fecha del pago
   referencia?: string;
   notas?: string;
   creadoEn: string;
+  /* Reserva, Cuota #1…#6, Paid in full, Pago completado o Reembolso. */
+  caracteristica?: string;
+  tipoVenta?: TipoVentaPago;
+  /* Si se pagó en pesos: el tipo de cambio y lo que entró en ARS. */
+  tipoCambio?: number;
+  montoArs?: number;
+  pagador?: string;          // Nombre de quien transfirió
+  cuit?: string;             // Cuit (Si pagó a financiera)
+  chequeado?: boolean;       // Pasado Financiera / Chequeado en plataforma
+  /* El "Comprobante" de la planilla: un link o lo que se escribió. Los
+     cobros nuevos suben el archivo (comprobante). */
+  comprobanteLink?: string;
+  /* La comisión del procesador la puso alguien a mano en Finanzas: no se
+     recalcula con la tasa de la cuenta. */
+  feeManual?: boolean;
 }
 
 export type GrupoGasto = "directo" | "operativo" | "dueno";

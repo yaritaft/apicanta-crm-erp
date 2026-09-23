@@ -236,6 +236,8 @@ export function pagoDesdeMovimiento(mov: Movimiento, cuotaId: ID, montoImputado:
     feeMonto,
     fecha: mov.fecha,
     referencia: mov.referencia,
+    /* Conciliado es chequeado en la plataforma: la plata está en la pasarela. */
+    chequeado: true,
     creadoEn: new Date().toISOString(),
   };
 }

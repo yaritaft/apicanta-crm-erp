@@ -21,11 +21,12 @@ import { fechaLarga, money } from "@/lib/format";
 import { rangoDeFechas } from "@/lib/metricas";
 import { DateRangePicker, rangoSub } from "@/components/ui/DateRangePicker";
 import { useRangoURL } from "@/lib/useRango";
-import { calcularPyL, comisionesDelMes, cuotasVencidas } from "@/lib/finanzas";
+import { calcularPyL, comisionesDelMes, comisionesSetterYReferidor, cuotasVencidas } from "@/lib/finanzas";
+import { CobrosProcesador } from "@/components/finanzas/CobrosProcesador";
 import type { Cuota, Gasto } from "@/lib/types";
 
-type Vista = "cobros" | "gastos" | "comisiones";
-const VISTAS: Vista[] = ["cobros", "gastos", "comisiones"];
+type Vista = "cobros" | "procesadores" | "gastos" | "comisiones";
+const VISTAS: Vista[] = ["cobros", "procesadores", "gastos", "comisiones"];
 
 export default function FinanzasDetalle() {
   const e = useEstado();
@@ -84,6 +85,7 @@ export default function FinanzasDetalle() {
 
   const vencidas = useMemo(() => cuotasVencidas(e), [e]);
   const comisiones = useMemo(() => comisionesDelMes(e, mes), [e, mes]);
+  const setRef = useMemo(() => comisionesSetterYReferidor(e, mes), [e, mes]);
 
   return (
     <div className="stack-5">
@@ -106,6 +108,7 @@ export default function FinanzasDetalle() {
 
       <Tabs valor={vista} onChange={setVista} opciones={[
         { valor: "cobros", texto: `Cobros${vencidas.length ? ` · ${vencidas.length}` : ""}` },
+        { valor: "procesadores", texto: "Procesadores" },
         { valor: "gastos", texto: "Gastos" },
         { valor: "comisiones", texto: "Comisiones" },
       ]} />
@@ -151,6 +154,9 @@ export default function FinanzasDetalle() {
           </Card>
         </div>
       )}
+
+      {/* ---------------- Comisión del procesador, cobro por cobro ---------------- */}
+      {vista === "procesadores" && <CobrosProcesador e={e} mes={mes} />}
 
       {/* ---------------- Gastos ---------------- */}
       {vista === "gastos" && (
@@ -208,6 +214,23 @@ export default function FinanzasDetalle() {
                 El growth partner no comisiona las ventas marcadas como <strong>excluidas de marketing</strong>
                 (eventos y conocidos), así que su número ya sale prorrateado. Lo del socio, que cobra distinto
                 según el producto, todavía está como un 10% parejo — falta definirlo.
+              </Ayuda>
+            </Card>
+            <Card>
+              <CardHead titulo="Setters y referidores" sub="Como en la planilla de Angelo: un porcentaje de lo que entró, sin descontar el procesador." />
+              {setRef.porPersona.length === 0 ? (
+                <p className="t-sm t-subtle">Ninguna venta con setter o referidor cobró en {mes.etiqueta}.</p>
+              ) : (
+                <dl className="dl">
+                  {setRef.porPersona.map((x) => (
+                    <React.Fragment key={x.nombre}><dt>{x.nombre}</dt><dd className="t-num">{M(x.total, 2)}</dd></React.Fragment>
+                  ))}
+                  <dt>Total</dt><dd className="t-num t-strong">{M(setRef.setter + setRef.referidor, 2)}</dd>
+                </dl>
+              )}
+              <Ayuda titulo="No se resta dos veces" icono={<Info size={18} />}>
+                Es lo que les toca por lo que entró. Lo que se les paga entra al estado de resultados como gasto
+                (Setters, Referidores), igual que en la planilla.
               </Ayuda>
             </Card>
           </div>

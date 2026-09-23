@@ -13,6 +13,7 @@ import {
   personaDeVenta, planDeVenta,
 } from "./alumnos";
 import { pagoDesdeMovimiento } from "./conciliacion";
+import { caracteristicaDePago, montoArsDe, tipoVentaDePago } from "./angelo";
 import { claveEmail, completar } from "./contactos";
 import { construirSemilla, estadoVacio } from "./seed";
 import { hayNube, nube, tablaFaltante, TABLAS, TABLAS_OPCIONALES } from "./supabase";
@@ -598,6 +599,43 @@ export function alumnoDesdeVenta(e: EstadoApp, venta: Venta, cuotas?: Cuota[]): 
 
 /* ---------- API publica (identica a la de antes) ---------- */
 
+/* Lo que la planilla de Angelo guarda de cada cobro ("Característica de
+   pago", "Ventas Nuevas vs Cuotas", el monto en pesos), calculado cuando el
+   cobro entra. Se guarda y no se recalcula: es lo que se dijo ese día,
+   igual que en la planilla. */
+function conDatosDePlanilla(nuevos: Pago[], cuotasVenta: Cuota[], pagosVentaAntes: Pago[], esAlta: boolean): Pago[] {
+  const cobradoAntes = pagosVentaAntes.reduce((a, p) => a + p.monto, 0);
+  const cobradoAhora = nuevos.reduce((a, p) => a + p.monto, 0);
+  const tipoVenta = tipoVentaDePago({ cuotasVenta, esAlta: esAlta || pagosVentaAntes.length === 0 });
+  return nuevos.map((p) => {
+    const cuota = cuotasVenta.find((c) => c.id === p.cuotaId);
+    return {
+      ...p,
+      caracteristica: p.caracteristica
+        ?? (cuota ? caracteristicaDePago({ cuota, cuotasVenta, cobradoAntes, cobradoAhora }) : undefined),
+      tipoVenta: p.tipoVenta ?? tipoVenta,
+      montoArs: p.montoArs ?? montoArsDe(p.monto, p.tipoCambio),
+    };
+  });
+}
+
+/* Lo que se carga de un cobro además del monto: los datos de la planilla. */
+export interface DatosCobro {
+  procesadorId?: ID; monto: number; fecha: string; referencia?: string;
+  movimientoId?: ID; comprobante?: Comprobante;
+  tipoCambio?: number; pagador?: string; cuit?: string; chequeado?: boolean;
+}
+
+/* Los datos de la planilla que trae el cobro, sin los vacíos. */
+function extrasDeCobro(c: DatosCobro): Partial<Pago> {
+  return {
+    ...(c.tipoCambio && c.tipoCambio > 0 ? { tipoCambio: c.tipoCambio } : {}),
+    ...(c.pagador?.trim() ? { pagador: c.pagador.trim() } : {}),
+    ...(c.cuit?.trim() ? { cuit: c.cuit.trim() } : {}),
+    ...(c.chequeado ? { chequeado: true } : {}),
+  };
+}
+
 export const acciones = {
   crear<T extends { id: ID }>(coleccion: Coleccion, registro: Omit<T, "id"> & { id?: ID }, etiqueta: string): ID {
     const e = snapshot();
@@ -894,15 +932,12 @@ export const acciones = {
   registrarVenta(datos: {
     venta: Venta;
     cuotas: Cuota[];
-    cobros: {
-      cuotaId: ID; procesadorId?: ID; monto: number; fecha: string; referencia?: string;
-      movimientoId?: ID; comprobante?: Comprobante;
-    }[];
+    cobros: (DatosCobro & { cuotaId: ID })[];
   }): ID {
     const e = snapshot();
     const { venta } = datos;
 
-    const nuevosPagos: Pago[] = [];
+    let nuevosPagos: Pago[] = [];
 
     for (const cobro of datos.cobros) {
       if (cobro.monto <= 0.001) continue;
@@ -913,6 +948,7 @@ export const acciones = {
         nuevosPagos.push({
           ...pagoDesdeMovimiento(mov, cobro.cuotaId, cobro.monto), id: nuevoId("pag"),
           ...(cobro.comprobante ? { comprobante: cobro.comprobante } : {}),
+          ...extrasDeCobro(cobro), chequeado: true,
         } as Pago);
         continue;
       }
@@ -925,9 +961,11 @@ export const acciones = {
         feeRate, feeMonto: Math.round(cobro.monto * feeRate * 100) / 100,
         fecha: cobro.fecha, referencia: cobro.referencia || undefined,
         comprobante: cobro.comprobante,
+        ...extrasDeCobro(cobro),
         creadoEn: ahora(),
       });
     }
+    nuevosPagos = conDatosDePlanilla(nuevosPagos, datos.cuotas, [], true);
 
     /* Un pago de pasarela puede cubrir más de una cuota (la reserva y la
        primera, juntas) o quedar a medias: se da por conciliado recién
@@ -1015,10 +1053,7 @@ export const acciones = {
 
   registrarPago(datos: {
     cuotaId: ID;
-    cobros: {
-      procesadorId?: ID; monto: number; fecha: string; referencia?: string;
-      movimientoId?: ID; comprobante?: Comprobante;
-    }[];
+    cobros: DatosCobro[];
     reajuste: "repartir" | "proxima" | "pendiente";
   }): boolean {
     const e = snapshot();
@@ -1027,7 +1062,7 @@ export const acciones = {
     if (!cuota || !venta) return false;
     const r2 = (n: number) => Math.round(n * 100) / 100;
 
-    const nuevosPagos: Pago[] = [];
+    let nuevosPagos: Pago[] = [];
     for (const cobro of datos.cobros) {
       if (cobro.monto <= 0.001) continue;
       const mov = cobro.movimientoId ? e.movimientos.find((m) => m.id === cobro.movimientoId) : undefined;
@@ -1035,6 +1070,7 @@ export const acciones = {
         nuevosPagos.push({
           ...pagoDesdeMovimiento(mov, cuota.id, cobro.monto), id: nuevoId("pag"),
           ...(cobro.comprobante ? { comprobante: cobro.comprobante } : {}),
+          ...extrasDeCobro(cobro), chequeado: true,
         } as Pago);
         continue;
       }
@@ -1045,10 +1081,15 @@ export const acciones = {
         monto: r2(cobro.monto), moneda: venta.moneda,
         feeRate, feeMonto: r2(cobro.monto * feeRate),
         fecha: cobro.fecha, referencia: cobro.referencia || undefined,
-        comprobante: cobro.comprobante, creadoEn: ahora(),
+        comprobante: cobro.comprobante, ...extrasDeCobro(cobro), creadoEn: ahora(),
       });
     }
     if (nuevosPagos.length === 0) return false;
+    {
+      const cuotasVenta = e.cuotas.filter((c) => c.ventaId === venta.id);
+      const idsCuotas = new Set(cuotasVenta.map((c) => c.id));
+      nuevosPagos = conDatosDePlanilla(nuevosPagos, cuotasVenta, e.pagos.filter((p) => idsCuotas.has(p.cuotaId)), false);
+    }
 
     const pagos = [...nuevosPagos, ...e.pagos];
     const cubierto = r2(pagos.filter((p) => p.cuotaId === cuota.id).reduce((a, p) => a + p.monto, 0));
@@ -1135,6 +1176,63 @@ export const acciones = {
     return true;
   },
 
+  /* ---------- Un cobro ya cargado: lo que se corrige desde Finanzas ----------
+     La comisión del procesador de un cobro que no se concilió (la
+     Financiera, Trust, una transferencia): se pone a mano y queda marcada,
+     así no la pisa la tasa de la cuenta. La de un cobro conciliado no se
+     toca: es la real de la pasarela. También el tilde de "Pasado Financiera
+     / Chequeado en plataforma" y los datos de quien pagó. */
+  editarPago(id: ID, cambios: {
+    feeMonto?: number; chequeado?: boolean; pagador?: string; cuit?: string; tipoCambio?: number;
+  }): boolean {
+    const e = snapshot();
+    const pago = e.pagos.find((p) => p.id === id);
+    if (!pago) return false;
+    const r2 = (n: number) => Math.round(n * 100) / 100;
+    const actualizado: Pago = { ...pago };
+    const partes: string[] = [];
+
+    if (cambios.feeMonto !== undefined && !pago.movimientoId) {
+      const fee = Math.max(0, r2(cambios.feeMonto));
+      if (fee !== pago.feeMonto || !pago.feeManual) {
+        actualizado.feeMonto = fee;
+        actualizado.feeRate = pago.monto > 0 ? Math.round((fee / pago.monto) * 10000) / 10000 : 0;
+        actualizado.feeManual = true;
+        partes.push(`la comisión del procesador quedó en ${fee}`);
+      }
+    }
+    if (cambios.chequeado !== undefined && cambios.chequeado !== Boolean(pago.chequeado)) {
+      actualizado.chequeado = cambios.chequeado;
+      partes.push(cambios.chequeado ? "quedó chequeado" : "dejó de estar chequeado");
+    }
+    if (cambios.pagador !== undefined && cambios.pagador.trim() !== (pago.pagador ?? "")) {
+      actualizado.pagador = cambios.pagador.trim();
+      partes.push("se cambió quién transfirió");
+    }
+    if (cambios.cuit !== undefined && cambios.cuit.trim() !== (pago.cuit ?? "")) {
+      actualizado.cuit = cambios.cuit.trim();
+      partes.push("se cambió el CUIT");
+    }
+    if (cambios.tipoCambio !== undefined && cambios.tipoCambio !== pago.tipoCambio) {
+      const tc = cambios.tipoCambio > 0 ? cambios.tipoCambio : undefined;
+      actualizado.tipoCambio = tc;
+      actualizado.montoArs = tc ? r2(pago.monto * tc) : undefined;
+      partes.push(tc ? `el tipo de cambio quedó en ${tc}` : "se sacó el tipo de cambio");
+    }
+    if (partes.length === 0) return false;
+
+    const cuota = e.cuotas.find((c) => c.id === pago.cuotaId);
+    const venta = cuota ? e.ventas.find((v) => v.id === cuota.ventaId) : undefined;
+    const { lista, nuevo } = registrar(
+      e, "transaccion", venta?.id ?? pago.id, venta?.contactoNombre ?? "Cobro", "actualizo",
+      `Cobro del ${pago.fecha.slice(0, 10)}${venta ? ` de ${venta.contactoNombre}` : ""}: ${partes.join(", ")}.`,
+    );
+    guardar({ ...e, pagos: e.pagos.map((p) => (p.id === id ? actualizado : p)), actividad: lista });
+    empujar({ tipo: "upsert", tabla: "pagos", filas: [actualizado] });
+    empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
+    return true;
+  },
+
   /* ---------- Conciliación ----------
      Conciliar toca tres tablas a la vez: nace el pago, la cuota puede
      quedar saldada y el movimiento deja de estar suelto. Va todo en un
@@ -1146,13 +1244,27 @@ export const acciones = {
     const mov = e.movimientos.find((m) => m.id === movimientoId);
     if (!mov || mov.estado !== "pendiente" || imputaciones.length === 0) return false;
 
-    const nuevosPagos: Pago[] = [];
+    let nuevosPagos: Pago[] = [];
     for (const imp of imputaciones) {
       if (imp.monto <= 0.001) continue;
       if (!e.cuotas.some((c) => c.id === imp.cuotaId)) continue;
       nuevosPagos.push({ ...pagoDesdeMovimiento(mov, imp.cuotaId, imp.monto), id: nuevoId("pag") } as Pago);
     }
     if (nuevosPagos.length === 0) return false;
+    {
+      /* Un movimiento puede repartirse entre cuotas de ventas distintas: la
+         característica se calcula venta por venta. */
+      const porVenta = new Map<ID, Pago[]>();
+      for (const p of nuevosPagos) {
+        const v = e.cuotas.find((c) => c.id === p.cuotaId)?.ventaId ?? "";
+        porVenta.set(v, [...(porVenta.get(v) ?? []), p]);
+      }
+      nuevosPagos = [...porVenta.entries()].flatMap(([v, ps]) => {
+        const cuotasVenta = e.cuotas.filter((c) => c.ventaId === v);
+        const ids = new Set(cuotasVenta.map((c) => c.id));
+        return conDatosDePlanilla(ps, cuotasVenta, e.pagos.filter((p) => ids.has(p.cuotaId)), false);
+      });
+    }
 
     const pagos = [...nuevosPagos, ...e.pagos];
 

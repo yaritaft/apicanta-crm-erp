@@ -115,6 +115,54 @@ export function totalComisiones(cs: ComisionVenta[]) {
   };
 }
 
+/* ---------- Setter y referidor ----------
+   Como en la planilla de Angelo: un porcentaje de lo que entra (bruto, sin
+   descontar el procesador). El del setter es el de su fila de Equipo; el
+   del referidor, el de Ajustes → Ventas. Si la venta la cerró Yari no
+   comisiona nadie. Es informativo: lo que se les paga entra al P&L como
+   gasto (Setters, Referidores), igual que en la planilla, así no se cuenta
+   dos veces. */
+
+export function comisionSetterDePago(e: EstadoApp, venta: Venta | undefined, monto: number): number {
+  if (!venta?.setterId) return 0;
+  if (e.equipo.find((x) => x.id === venta.closerId)?.sinComision) return 0;
+  const setter = e.equipo.find((x) => x.id === venta.setterId);
+  return setter ? Math.round(monto * setter.comisionRate * 100) / 100 : 0;
+}
+
+export function comisionReferidorDePago(e: EstadoApp, venta: Venta | undefined, monto: number): number {
+  if (!venta?.referidorNombre?.trim()) return 0;
+  if (e.equipo.find((x) => x.id === venta.closerId)?.sinComision) return 0;
+  return Math.round(monto * (e.ajustes.comisionReferidor ?? 0) * 100) / 100;
+}
+
+/** Lo que les toca a setters y referidores por lo que entró en el período. */
+export function comisionesSetterYReferidor(e: EstadoApp, m: RangoMes) {
+  const cuotaDe = new Map(e.cuotas.map((c) => [c.id, c] as const));
+  const ventaDe = new Map(e.ventas.map((v) => [v.id, v] as const));
+  let setter = 0, referidor = 0;
+  const porPersona = new Map<string, number>();
+  for (const p of pagosDelMes(e, m)) {
+    const cuota = cuotaDe.get(p.cuotaId);
+    const venta = cuota ? ventaDe.get(cuota.ventaId) : undefined;
+    const cs = comisionSetterDePago(e, venta, p.monto);
+    const cr = comisionReferidorDePago(e, venta, p.monto);
+    setter += cs; referidor += cr;
+    if (cs) {
+      const nombre = e.equipo.find((x) => x.id === venta?.setterId)?.nombre ?? "Setter";
+      porPersona.set(nombre, (porPersona.get(nombre) ?? 0) + cs);
+    }
+    if (cr) {
+      const nombre = `${venta?.referidorNombre?.trim()} (referidor)`;
+      porPersona.set(nombre, (porPersona.get(nombre) ?? 0) + cr);
+    }
+  }
+  return {
+    setter, referidor,
+    porPersona: [...porPersona.entries()].map(([nombre, total]) => ({ nombre, total })).sort((a, b) => b.total - a.total),
+  };
+}
+
 /* ---------- Gastos ---------- */
 
 export function gastosDelMes(e: EstadoApp, m: RangoMes, grupo?: Gasto["grupo"]): Gasto[] {
