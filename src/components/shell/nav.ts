@@ -12,7 +12,7 @@ export const NAV: GrupoNav[] = [
   {
     titulo: "Negocio",
     items: [
-      { href: "/panel", texto: "Panel", icono: LayoutDashboard, ayuda: "Cómo viene el mes de un vistazo" },
+      { href: "/panel", texto: "Dashboard & KPIs", icono: LayoutDashboard, ayuda: "Todas las métricas del negocio en una tabla" },
     ],
   },
   {

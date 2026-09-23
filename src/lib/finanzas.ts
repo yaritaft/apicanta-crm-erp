@@ -68,11 +68,22 @@ export interface ComisionVenta {
 export function comisionesDelMes(e: EstadoApp, m: RangoMes): ComisionVenta[] {
   const out: ComisionVenta[] = [];
 
+  /* Los pagos del período agrupados por venta, de una pasada. Buscarlos venta
+     por venta recorría todas las cuotas y todos los pagos para cada una, y
+     el Dashboard hace esta cuenta una vez por cada día del rango. */
+  const ventaDeCuota = new Map(e.cuotas.map((c) => [c.id, c.ventaId] as const));
+  const pagosPorVenta = new Map<string, typeof e.pagos>();
+  for (const p of pagosDelMes(e, m)) {
+    const v = ventaDeCuota.get(p.cuotaId);
+    if (!v) continue;
+    const xs = pagosPorVenta.get(v);
+    if (xs) xs.push(p); else pagosPorVenta.set(v, [p]);
+  }
+
   for (const v of e.ventas) {
     if (v.estado === "cancelada") continue;
 
-    const cuotas = e.cuotas.filter((c) => c.ventaId === v.id).map((c) => c.id);
-    const pagosMes = e.pagos.filter((p) => cuotas.includes(p.cuotaId) && enRango(p.fecha, m));
+    const pagosMes = pagosPorVenta.get(v.id) ?? [];
     if (pagosMes.length === 0) continue;
 
     const cobrado = pagosMes.reduce((a, p) => a + p.monto, 0);

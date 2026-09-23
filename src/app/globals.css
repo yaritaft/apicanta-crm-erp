@@ -1863,3 +1863,144 @@ a.wb-canal:hover { background: var(--surface-200); border-color: var(--border-st
   .wb-charla__cuando { margin-left: 0; width: 100%; }
   .wb-vivo__kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
+
+/* ============================================================
+   Dashboard & KPIs — la tabla maestra
+   Sobre la grilla de la planilla: primera columna fija y encabezado
+   pegado arriba. Acá sólo lo propio: áreas, temas, la columna
+   destacada y la variación.
+   ============================================================ */
+/* La cabecera: las áreas a la izquierda y los filtros a la derecha, en
+   una línea que cruza la página. wrap-reverse hace que, si no entran, los
+   filtros suban a una línea propia y las pestañas sigan apoyadas sobre la
+   raya, que es donde va su subrayado. */
+.kpis-cabecera {
+  display: flex; flex-wrap: wrap-reverse; align-items: center; gap: var(--space-2) var(--space-4);
+  border-bottom: 1px solid var(--border);
+}
+.kpis-areas {
+  display: flex; align-self: stretch; gap: 14px; max-width: 100%;
+  overflow-x: auto; scrollbar-width: none;
+}
+.kpis-areas::-webkit-scrollbar { display: none; }
+.kpis-area {
+  position: relative; flex: none; min-height: 52px; padding: 0 2px; border: 0; background: none;
+  color: var(--ink-muted); font: inherit; font-size: 14px; font-weight: 500; white-space: nowrap; cursor: pointer;
+  transition: color 150ms ease-out;
+}
+.kpis-area:hover { color: var(--ink); }
+.kpis-area[aria-selected="true"] { color: var(--ink); font-weight: 600; }
+.kpis-area[aria-selected="true"]::after {
+  content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 2px;
+  border-radius: 2px 2px 0 0; background: var(--brand);
+}
+.kpis-area:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; border-radius: var(--radius-sm); }
+
+/* Los filtros de la vista, en una fila. */
+.kpis-barra { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; margin-left: auto; padding: var(--space-2) 0; }
+.kpis-barra .dp-pill { padding: 0 10px; }
+.kpis-comparar--on, .kpis-comparar--on:hover { background: var(--brand-soft); border-color: var(--brand-fill); color: var(--brand); font-weight: 600; }
+.kpis-vista-pop { left: 0; right: auto; width: min(360px, calc(100vw - 32px)); }
+.kpis-vista-pop .fw-item { align-items: center; }
+.kpis-vista-check { flex: none; width: 16px; color: var(--brand); display: inline-flex; }
+/* El filtro de embudo o webinar: una sola lista con las dos secciones. */
+.kpis-segmento-lista { max-height: min(460px, 70vh); }
+.kpis-segmento-lista .kpis-vista-titulo { padding: var(--space-3) var(--space-2) var(--space-1); }
+.kpis-segmento-busca { padding: 0 0 var(--space-1); }
+.kpis-vista-titulo { padding: var(--space-3) var(--space-3) 0; font-size: 11px; line-height: 14px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-subtle); }
+
+.kpis-card .planilla-caja { border-top: 0; border-radius: var(--radius-lg); }
+.kpis-caja { max-height: min(80vh, 920px); scroll-padding: 48px 140px 0 var(--planilla-fija, 280px); }
+.kpis thead th:first-child { border-top-left-radius: var(--radius-lg); }
+.kpis thead th:last-child { border-top-right-radius: var(--radius-lg); }
+
+.kpis .planilla__fija { min-width: 280px; max-width: 320px; }
+.kpis thead th { min-width: 120px; max-width: 168px; }
+/* Una columna por día: angostas, que entren varias a la vista. El Total
+   conserva el ancho de siempre. */
+.kpis--dias thead th:not(.planilla__fija):not(.kpis__col--destacada) { min-width: 84px; }
+.kpis--dias thead th.kpis__col--destacada { min-width: 132px; }
+.kpis thead th.planilla__fija { vertical-align: bottom; }
+.kpis__th { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
+.kpis__th-titulo { display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kpis__th-sub {
+  font-size: 11px; line-height: 14px; font-weight: 500; letter-spacing: 0; text-transform: none;
+  color: var(--ink-subtle); white-space: nowrap; font-variant-numeric: tabular-nums;
+}
+
+/* La columna que se está mirando: el período elegido, el mes en curso, el total. */
+.kpis .kpis__col--destacada { background: color-mix(in srgb, var(--brand-soft) 55%, var(--surface-100)); }
+.kpis thead th.kpis__col--destacada { color: var(--brand); }
+.kpis td.kpis__col--destacada .planilla__ro { color: var(--ink); font-weight: 600; }
+
+/* El Total queda fijo a la derecha, como las métricas a la izquierda: se
+   recorren los días y el total no se va. La sombra marca que hay columnas
+   pasando por debajo. */
+.kpis .kpis__col--total {
+  position: sticky; right: 0; z-index: 2;
+  box-shadow: inset 1px 0 0 var(--border-strong), -12px 0 16px -14px var(--overlay);
+}
+.kpis thead th.kpis__col--total { z-index: 4; }
+
+/* Etiqueta de la fila: lleva a la pantalla donde vive el número. */
+.kpis__etiqueta { font-weight: 500; }
+.kpis tbody th .planilla__enlace { color: var(--ink); }
+span.kpis__etiqueta:hover { color: var(--ink); text-decoration: none; }
+.kpis__hoy {
+  flex: none; display: inline-flex; align-items: center; height: 18px; padding: 0 6px;
+  border-radius: var(--radius-sm); background: var(--info-soft); color: var(--info);
+  font-size: 11px; font-weight: 600; letter-spacing: .02em;
+}
+
+/* Área (TOFU, MOFU…) y tema: filas que ocupan todo el ancho. El texto
+   se queda pegado a la izquierda al scrollear de costado. */
+.kpis tr.kpis__seccion > th {
+  height: auto; padding: 0; background: var(--surface-000);
+  border-top: 1px solid var(--border-strong); border-bottom: 1px solid var(--border);
+}
+.kpis tbody tr.kpis__seccion:first-child > th { border-top: 0; }
+.kpis__seccion-texto {
+  position: sticky; left: 0; display: inline-flex; align-items: baseline; flex-wrap: wrap; gap: 4px var(--space-3);
+  padding: var(--space-4) var(--space-4) var(--space-3);
+}
+.kpis__seccion-titulo { font-family: var(--font-display); font-size: 17px; line-height: 24px; font-weight: 600; color: var(--ink); }
+.kpis__etapa {
+  display: inline-flex; align-items: center; height: 20px; padding: 0 8px; border-radius: var(--radius-full);
+  background: var(--brand-soft); color: var(--brand); font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+}
+.kpis__seccion-sub { font-size: 13px; line-height: 20px; font-weight: 400; color: var(--ink-subtle); }
+.kpis tr.kpis__grupo > th { height: 32px; padding: 0; background: var(--surface-100); vertical-align: bottom; }
+.kpis__grupo-texto {
+  position: sticky; left: 0; display: inline-block; padding: 10px var(--space-3) 6px;
+  font-size: 11px; line-height: 14px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-subtle);
+}
+.kpis tbody tr.kpis__seccion:hover > *, .kpis tbody tr.kpis__grupo:hover > * { background: inherit; }
+.kpis tbody tr.kpis__grupo:hover > th { background: var(--surface-100); }
+.kpis tbody tr.kpis__seccion:hover > th { background: var(--surface-000); }
+
+/* Un número que abre lo que lo forma. */
+.kpis__abrir {
+  width: 100%; justify-content: flex-end; border: 0; background: none; font: inherit; cursor: pointer;
+  text-decoration: underline dotted var(--border-strong); text-underline-offset: 4px;
+}
+.kpis__abrir:hover { color: var(--brand); text-decoration-color: currentColor; }
+
+.kpis__delta { display: inline-flex; align-items: center; gap: 2px; font-size: 12px; line-height: 16px; font-weight: 700; color: var(--ink-subtle); font-variant-numeric: tabular-nums; }
+
+/* Comparando: el número arriba y la variación abajo, en la misma celda. */
+.kpis--comparar tbody tr:not(.kpis__seccion):not(.kpis__grupo) > * { height: 56px; }
+.kpis--comparar .planilla__ro { height: 56px; }
+.kpis--comparar tbody th .planilla__enlace { height: 56px; }
+.kpis__par { display: flex; flex-direction: column; align-items: flex-end; justify-content: center; gap: 2px; }
+.kpis__th-vs { color: var(--ink-muted); }
+.kpis__delta--up { color: var(--success); }
+.kpis__delta--down { color: var(--danger); }
+
+@media (max-width: 720px) {
+  .kpis .planilla__fija, .kpis .planilla__enlace { min-width: 180px; max-width: 200px; }
+  .kpis-caja { max-height: 76vh; scroll-padding-left: 180px; }
+}
+
+/* Un filtro con forma de píldora puesto en la barra de arriba: a la altura
+   de los botones chicos que tiene al lado. */
+.app-topbar__actions .dp-pill { height: 32px; }

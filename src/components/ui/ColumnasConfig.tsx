@@ -72,12 +72,16 @@ export function useColumnas(tabla: string, todas: DefColumna[], porDefecto: stri
   return { visibles, alternar, mover, restaurar, esVisible: (k: string) => visibles.includes(k) };
 }
 
-export function ConfigColumnas({ todas, visibles, alternar, mover, restaurar }: {
+export function ConfigColumnas({ todas, visibles, alternar, mover, restaurar, titulo = "Columnas", icono, conCuenta = true }: {
   todas: DefColumna[];
   visibles: string[];
   alternar: (k: string) => void;
   mover: (desde: string, hasta: string) => void;
   restaurar: () => void;
+  /* Sirve igual para filas: el Dashboard lo usa con sus métricas. */
+  titulo?: string;
+  icono?: React.ReactNode;
+  conCuenta?: boolean;
 }) {
   const [abierto, setAbierto] = useState(false);
   const [arrastrando, setArrastrando] = useState<string | null>(null);
@@ -111,15 +115,15 @@ export function ConfigColumnas({ todas, visibles, alternar, mover, restaurar }: 
   return (
     <div ref={raiz} style={{ position: "relative" }}>
       <button type="button" className={`dp-pill${abierto ? " dp-pill--open" : ""}`} onClick={() => setAbierto((v) => !v)}>
-        <Columns3 size={14} />
-        Columnas · {visibles.length}
+        {icono ?? <Columns3 size={14} />}
+        {conCuenta ? `${titulo} · ${visibles.length}` : titulo}
         <span className="dp-caret">▾</span>
       </button>
 
       {abierto && (
         <div className="cc-pop">
           <div className="cc-head">
-            <strong>Columnas</strong>
+            <strong>{titulo}</strong>
             <button type="button" className="hk-btn hk-btn--ghost hk-btn--sm" onClick={restaurar}>
               <RotateCcw size={14} />Restaurar
             </button>

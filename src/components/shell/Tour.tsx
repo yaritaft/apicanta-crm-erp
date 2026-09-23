@@ -26,7 +26,7 @@ const PASOS = [
   {
     icono: Wallet,
     titulo: "Los números se calculan solos",
-    texto: "Panel, Marketing y Finanzas leen los mismos datos que vos cargás. Si sumás un lead o cobrás una cuota, los gráficos se actualizan al instante. En Metas ponés tus objetivos del mes y ves cuánto falta.",
+    texto: "Dashboard & KPIs, Marketing y Finanzas leen los mismos datos que vos cargás. Si sumás un lead o cobrás una cuota, los gráficos se actualizan al instante. En Metas ponés tus objetivos del mes y ves cuánto falta.",
   },
   {
     icono: Settings,

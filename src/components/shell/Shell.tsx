@@ -13,6 +13,7 @@ import { useSalir, useSesion } from "@/lib/auth";
 import { Avatar, Button, IconButton } from "@/components/ui/ui";
 import { Paleta } from "./Paleta";
 import { Tour } from "./Tour";
+import { ID_ACCIONES_TOPBAR } from "./AccionesTopbar";
 
 export function Shell({ children }: { children: React.ReactNode }) {
   const ruta = usePathname();
@@ -169,6 +170,8 @@ export function Shell({ children }: { children: React.ReactNode }) {
             <span className="t-sm t-subtle truncate">{item?.ayuda ?? ""}</span>
           </div>
           <div className="app-topbar__actions">
+            {/* Lo que pone cada pantalla (ver AccionesTopbar). */}
+            <div id={ID_ACCIONES_TOPBAR} style={{ display: "contents" }} />
             <Button sm variante="secondary" icono={<Search size={16} />} onClick={() => setPaleta(true)}>
               <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
                 Buscar

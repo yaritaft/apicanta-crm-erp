@@ -1,257 +1,231 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
-import Link from "next/link";
-import {
-  ArrowRight, CalendarDays, Clock, Plus, Target, TriangleAlert, Video, Check,
-} from "lucide-react";
-import { PageHead } from "@/components/shell/PageHead";
-import { Badge, Bar, Button, Card, CardHead, Empty, Persona, StatCard } from "@/components/ui/ui";
-import { AreaChart, Funnel } from "@/components/charts/charts";
+import React, { useCallback, useMemo, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { ArrowLeftRight, Clock, Download, ListChecks } from "lucide-react";
+import { Button, Card, Empty } from "@/components/ui/ui";
+import { DateRangePicker, diaDeNegocio, rangoStr, rangoSub } from "@/components/ui/DateRangePicker";
 import { Desglose, type QueDesglosar } from "@/components/panel/Desglose";
-import { AGENDAR_A_MANO } from "@/lib/funciones";
-import { rachasAHoy } from "@/lib/reportes";
+import { FiltroVista } from "@/components/panel/FiltroVista";
+import { FiltroSegmento } from "@/components/panel/FiltroSegmento";
+import { useFilasKpi } from "@/components/panel/useFilasKpi";
+import { ConfigColumnas, type DefColumna } from "@/components/ui/ColumnasConfig";
+import { AccionesTopbar } from "@/components/shell/AccionesTopbar";
+import { TablaKpis, variacionKpi, type FilaKpi } from "@/components/panel/TablaKpis";
 import { useEstado } from "@/lib/store";
-import { delta, fechaHora, money, num, pct, relativo } from "@/lib/format";
-import { cuotasVencidas } from "@/lib/finanzas";
+import { useRangoURL } from "@/lib/useRango";
+import { rangoDeFechas, type RangoMes } from "@/lib/metricas";
 import {
-  ETIQUETA_METRICA, egresosMes, ingresosMes, inscriptosMes, leadsMes, leadsSinContactar,
-  mrr, porCobrar, progresoMeta, proximasSesiones, tasaConversion,
-  tasaShow, ultimosMeses, valorPipeline, variacion,
-} from "@/lib/metricas";
+  catalogo, conFiltro, conPrevios, Contexto, cortesPorDia, cortesPorMes, SECCIONES, valorEn, webinarsParaFiltro,
+  type Corte, type DefKpi, type FiltroKpi, type SeccionKpi,
+} from "@/lib/kpis";
 
-export default function Panel() {
+/* Las columnas son siempre tiempo. Qué parte del negocio se mira (un
+   embudo, un webinar) es otro filtro, aparte: FiltroSegmento. */
+type Vista = "periodo" | "meses";
+
+const VISTAS: { valor: Vista; texto: string; ayuda: string }[] = [
+  { valor: "periodo", texto: "Por día", ayuda: "Una columna por día del período y el total al final. Con más de 3 meses, una por mes." },
+  { valor: "meses", texto: "Por mes", ayuda: "Los 6 meses que terminan en el mes elegido y el total de los seis." },
+];
+
+export default function DashboardKpis() {
   const e = useEstado();
-  const meses = useMemo(() => ultimosMeses(6), []);
-  const mesActual = meses[meses.length - 1];
-  const mesPrevio = meses[meses.length - 2];
-  /* Qué número se está abriendo en el panel lateral. */
-  const [desglose, setDesglose] = useState<QueDesglosar | null>(null);
-  const abrir = (que: QueDesglosar) => () => setDesglose(que);
+  const params = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
+  const mon = e.ajustes.monedaBase;
 
-  const ingresos = ingresosMes(e, mesActual);
-  const ingresosPrev = ingresosMes(e, mesPrevio);
-  const egresos = egresosMes(e, mesActual);
-  const neto = ingresos - egresos;
+  /* El período, las columnas, el filtro, el área y la comparación viven en
+     la URL, como en Finanzas: se puede mandar el link a "cobranza del
+     webinar del 13/09, día por día". */
+  const [rango, setRango] = useRangoURL("mes");
+  const comparar = params.get("comparar") === "1";
+  const vista: Vista = (VISTAS.some((v) => v.valor === params.get("vista")) ? params.get("vista") : "periodo") as Vista;
+  const area = (SECCIONES.some((s) => s.id === params.get("area")) ? params.get("area") : "todo") as SeccionKpi | "todo";
+  const setParams = useCallback((cambios: Record<string, string | null | undefined>) => {
+    const q = new URLSearchParams(params.toString());
+    for (const [k, v] of Object.entries(cambios)) {
+      if (v) q.set(k, v); else q.delete(k);
+    }
+    router.replace(`${pathname}?${q.toString()}`, { scroll: false });
+  }, [params, pathname, router]);
+  const setParam = useCallback((k: string, v: string | null) => setParams({ [k]: v }), [setParams]);
 
-  const leadsAhora = leadsMes(e, mesActual).length;
-  const leadsAntes = leadsMes(e, mesPrevio).length;
-  const inscriptos = inscriptosMes(e, mesActual).length;
-  const inscriptosPrev = inscriptosMes(e, mesPrevio).length;
+  /* Un filtro que apunta a algo que ya no existe se ignora. */
+  const webinarsFiltro = useMemo(() => webinarsParaFiltro(e), [e]);
+  const embudosFiltro = useMemo(() => [...e.embudos].filter((x) => x.activo).sort((a, b) => a.orden - b.orden), [e.embudos]);
+  const filtro: FiltroKpi = useMemo(() => {
+    const w = params.get("webinar"), em = params.get("embudo");
+    if (w && webinarsFiltro.some((x) => x.id === w)) return { webinarId: w };
+    if (em && e.embudos.some((x) => x.id === em)) return { embudoId: em };
+    return {};
+  }, [params, webinarsFiltro, e.embudos]);
 
-  const pipe = valorPipeline(e);
-  const sinContactar = leadsSinContactar(e);
-  const proximas = proximasSesiones(e, 5);
+  const [desglose, setDesglose] = useState<{ que: QueDesglosar; mes: RangoMes } | null>(null);
 
-  const serie = meses.map((m) => ({
-    etiqueta: m.etiqueta,
-    valor: ingresosMes(e, m),
-    valor2: egresosMes(e, m),
-  }));
+  /* "Máximo" arranca en el primer dato que existe. */
+  const minimo = useMemo(() => {
+    const fechas = [
+      ...e.ventas.map((v) => v.fecha), ...e.pagos.map((p) => p.fecha), ...e.gastos.map((x) => x.fecha),
+      ...e.webinars.map((w) => w.fecha), ...e.contactos.map((c) => c.creadoEn),
+    ].filter(Boolean).map((f) => diaDeNegocio(f)).sort();
+    return fechas[0] ?? null;
+  }, [e.ventas, e.pagos, e.gastos, e.webinars, e.contactos]);
 
-  const embudo = useMemo(() => {
-    const ordenadas = [...e.etapas].filter((x) => !x.esPerdida).sort((a, b) => a.orden - b.orden);
-    const colores: Record<string, string> = {
-      info: "var(--info)", brand: "var(--brand-fill)", accent: "var(--accent)",
-      warning: "var(--warning)", success: "var(--success)", danger: "var(--danger)", neutral: "var(--surface-300)",
-    };
-    return ordenadas.map((et, i) => ({
-      id: et.id,
-      etiqueta: et.nombre,
-      /* Cada etapa cuenta los leads que llegaron hasta ahí o más lejos. */
-      valor: e.leads.filter((l) => {
-        const suya = e.etapas.find((x) => x.id === l.etapaId);
-        return suya && !suya.esPerdida && suya.orden >= et.orden;
-      }).length,
-      color: colores[et.variante] ?? "var(--brand-fill)",
-      _i: i,
-    }));
-  }, [e]);
+  /* Las columnas (tiempo), con el filtro puesto en cada una. Comparar es
+     aparte: cada columna se mide contra su paso anterior, con el mismo
+     filtro (ver conPrevios). */
+  const cortes: Corte[] = useMemo(() => {
+    const tiempo = vista === "meses" ? cortesPorMes(rango.hasta) : cortesPorDia(rango.desde, rango.hasta, rangoSub(rango));
+    const filtradas = conFiltro(tiempo, filtro);
+    return comparar ? conPrevios(filtradas) : filtradas;
+  }, [rango, vista, filtro, comparar]);
 
-  /* La misma cuenta que Alumnos y Reportes (rachasAHoy): una semana que se
-     debía y no tiene reporte cuenta como sin reportar. */
-  const enRiesgo = useMemo(() => {
-    const rachas = rachasAHoy(e);
-    return e.alumnos
-      .filter((a) => a.estado === "activo")
-      .map((a) => ({ a, semanas: rachas.get(a.id) ?? 0 }))
-      .filter((x) => x.semanas >= 2)
-      .sort((a, b) => b.semanas - a.semanas)
-      .slice(0, 5);
-  }, [e]);
+  /* Cada celda, calculada una vez. Una fila sin ningún dato no se muestra:
+     filtrando un webinar, el P&L o el gasto de Meta no existen (no tienen
+     webinar), y una fila de guiones no dice nada. */
+  const todas: FilaKpi[] = useMemo(() => {
+    const ctx = cortes.map((c) => new Contexto(e, c));
+    const ctxPrevio = cortes.map((c) => (c.previo ? new Contexto(e, c.previo) : null));
+    const tiene = (v: number | null, def: DefKpi) => v !== null && (!def.ocultarEnCero || v !== 0);
+    return catalogo(e)
+      .map((def) => ({
+        def,
+        valores: ctx.map((c) => valorEn(def, c)),
+        previos: ctxPrevio.map((c) => (c ? valorEn(def, c) : null)),
+      }))
+      .filter((f) => f.valores.some((v) => tiene(v, f.def)));
+  }, [e, cortes]);
+
+  /* Qué métricas se ven y en qué orden: lo elige cada uno (useFilasKpi). */
+  const defs = useMemo(() => todas.map((f) => f.def), [todas]);
+  const config = useFilasKpi(defs);
+  const enArea = useMemo(() => {
+    const porId = new Map(todas.map((f) => [f.def.id, f]));
+    return config.ordenadas
+      .filter((d) => area === "todo" || d.seccion === area)
+      .map((d) => porId.get(d.id)!);
+  }, [todas, config.ordenadas, area]);
+  const filas = enArea.filter((f) => !config.ocultas.has(f.def.id));
+  const opcionesFilas: DefColumna[] = useMemo(
+    () => enArea.map((f) => ({
+      clave: f.def.id, titulo: f.def.etiqueta, ayuda: f.def.ayuda,
+      grupo: SECCIONES.find((x) => x.id === f.def.seccion)?.titulo,
+    })),
+    [enArea],
+  );
+
+  const abrir = (def: DefKpi, c: Corte) => {
+    if (def.desglose) setDesglose({ que: def.desglose, mes: rangoDeFechas(c.desde, c.hasta, c.sub ?? c.titulo) });
+  };
+
+  const areas: { id: SeccionKpi | "todo"; titulo: string }[] = [{ id: "todo", titulo: "Todo" }, ...SECCIONES];
+  const elegirArea = (id: SeccionKpi | "todo") => setParam("area", id === "todo" ? null : id);
 
   return (
-    <div className="stack-6">
-      <PageHead
-        titulo={`Hola, ${(e.ajustes.responsable || "Yari").split(" ")[0]}`}
-        sub={`Así viene ${mesActual.etiqueta}. Los números se calculan solos con lo que vas cargando.`}
-        acciones={<Button variante="primary" icono={<Plus size={16} />} onClick={() => { window.location.href = "/leads?nuevo=1"; }}>Nuevo lead</Button>}
-      />
+    <div className="stack-4">
+      {/* Una sola línea: las áreas a la izquierda, como pestañas (de TOFU a
+          servicio), y los filtros de la vista a la derecha. Si no entran,
+          los filtros suben a una línea propia y las pestañas quedan
+          apoyadas sobre la raya. */}
+      <div className="kpis-cabecera">
+        <div className="kpis-areas" role="tablist" aria-label="Área del negocio">
+          {areas.map((a, i) => (
+            <button
+              key={a.id} type="button" role="tab" className="kpis-area"
+              aria-selected={area === a.id} tabIndex={area === a.id ? 0 : -1}
+              onClick={() => elegirArea(a.id)}
+              onKeyDown={(ev) => {
+                const paso = ev.key === "ArrowRight" ? 1 : ev.key === "ArrowLeft" ? -1 : 0;
+                if (!paso) return;
+                ev.preventDefault();
+                const sig = areas[(i + paso + areas.length) % areas.length];
+                elegirArea(sig.id);
+                (ev.currentTarget.parentElement?.children[(i + paso + areas.length) % areas.length] as HTMLElement | undefined)?.focus();
+              }}
+            >
+              {a.titulo}
+            </button>
+          ))}
+        </div>
 
-      <div className="grid-stats">
-        <StatCard
-          hero etiqueta="Ingresos del mes" onClick={abrir({ tipo: "ingresos" })} valor={money(ingresos, e.ajustes.monedaBase)}
-          delta={delta(variacion(ingresos, ingresosPrev))} direccion={ingresos >= ingresosPrev ? "up" : "down"}
-          contexto={`vs. ${mesPrevio.etiqueta}`}
-          ayuda="Suma de todos los ingresos con fecha de este mes, cobrados o por cobrar."
-        />
-        <StatCard
-          etiqueta="Resultado del mes" onClick={abrir({ tipo: "resultado" })} valor={money(neto, e.ajustes.monedaBase)}
-          delta={ingresos > 0 ? pct((neto / ingresos) * 100) : "—"} direccion={neto >= 0 ? "up" : "down"}
-          contexto="de margen"
-          ayuda="Ingresos menos egresos de este mes."
-        />
-        <StatCard
-          etiqueta="Leads nuevos" onClick={abrir({ tipo: "leads" })} valor={num(leadsAhora)}
-          delta={delta(variacion(leadsAhora, leadsAntes))} direccion={leadsAhora >= leadsAntes ? "up" : "down"}
-          contexto={`vs. ${mesPrevio.etiqueta}`}
-          ayuda="Personas que entraron este mes."
-        />
-        <StatCard
-          etiqueta="Inscriptos" onClick={abrir({ tipo: "inscriptos" })} valor={num(inscriptos)}
-          delta={delta(variacion(inscriptos, inscriptosPrev))} direccion={inscriptos >= inscriptosPrev ? "up" : "down"}
-          contexto={`vs. ${mesPrevio.etiqueta}`}
-          ayuda="Leads que cerraron y pasaron a alumno este mes."
-        />
-      </div>
-
-      <div className="grid-stats">
-        <StatCard etiqueta="MRR" onClick={abrir({ tipo: "mrr" })} valor={money(mrr(e), e.ajustes.monedaBase)} contexto={`${e.alumnos.filter((a) => a.estado === "activo").length} alumnos activos`} ayuda="Lo que entra todos los meses por cuotas de alumnos activos." />
-        <StatCard etiqueta="Pipeline ponderado" onClick={abrir({ tipo: "pipeline" })} valor={money(pipe.ponderado, e.ajustes.monedaBase)} contexto={`de ${money(pipe.bruto, e.ajustes.monedaBase)} abiertos`} ayuda="El valor del pipeline ajustado por la probabilidad de cada etapa." />
-        <StatCard etiqueta="Tasa de cierre" onClick={abrir({ tipo: "cierre" })} valor={pct(tasaConversion(e))} contexto="de los leads cerrados" ayuda="De los leads que ya se definieron, cuántos terminaron inscribiéndose." />
-        <StatCard
-          etiqueta="Por cobrar" onClick={abrir({ tipo: "cobrar" })} valor={money(porCobrar(e), e.ajustes.monedaBase)}
-          delta={porCobrar(e) > 0 ? "Revisar" : undefined} direccion="accent"
-          contexto="pendiente de pago" ayuda="Ingresos ya registrados que todavía no se cobraron."
-        />
-      </div>
-
-      {/* Arriba: lo que hay que mirar hoy (pedido de Yari). */}
-      <Card>
-          <CardHead titulo="Requiere atención" sub="Lo que te conviene mirar hoy." />
-          <div className="grid-2" style={{ gap: "var(--space-3)" }}>
-            <Fila
-              icono={<Clock size={16} />}
-              texto={`${sinContactar.length} leads sin contactar`}
-              detalle={sinContactar.length > 0 ? `El más viejo entró ${relativo([...sinContactar].sort((a, b) => +new Date(a.creadoEn) - +new Date(b.creadoEn))[0].creadoEn)}` : "Estás al día"}
-              tono={sinContactar.length > 5 ? "warning" : sinContactar.length > 0 ? "info" : "success"}
-              href="/leads"
-            />
-            <Fila
-              icono={<TriangleAlert size={16} />}
-              texto={`${enRiesgo.length} alumnos sin reportar`}
-              detalle={enRiesgo.length > 0 ? `${enRiesgo[0].a.nombre} lleva ${enRiesgo[0].semanas} semanas` : "Todos al día"}
-              tono={enRiesgo.length > 0 ? "danger" : "success"}
-              href="/reportes"
-            />
-            <Fila
-              icono={<Video size={16} />}
-              texto={`${e.webinars.filter((w) => w.estado === "programado").length} webinars por venir`}
-              detalle={e.webinars.filter((w) => w.estado === "programado")[0]?.titulo ?? "Sin webinars programados"}
-              tono="info"
-              href="/webinars"
-            />
-            <Fila
-              icono={<Clock size={16} />}
-              texto={`${cuotasVencidas(e).length} cuotas vencidas`}
-              detalle={cuotasVencidas(e).length > 0 ? `${money(cuotasVencidas(e).reduce((a, c) => a + c.saldo, 0), e.ajustes.monedaBase)} atrasados · el peor lleva ${cuotasVencidas(e)[0].diasAtraso} días` : "Nadie atrasado"}
-              tono={cuotasVencidas(e).length > 0 ? "danger" : "success"}
-              href="/finanzas"
-            />
-          </div>
-        </Card>
-
-      <div className="grid-2">
-        <Card>
-          <CardHead
-            titulo="Ingresos y egresos"
-            sub="Últimos 6 meses. Pasá el mouse para ver cada mes."
-            acciones={<Link href="/finanzas"><Button sm variante="ghost" icono={<ArrowRight size={15} />}>Finanzas</Button></Link>}
+        <div className="kpis-barra">
+          <button
+            type="button" className={`dp-pill kpis-comparar${comparar ? " kpis-comparar--on" : ""}`}
+            aria-pressed={comparar} onClick={() => setParam("comparar", comparar ? null : "1")}
+            title="Debajo de cada número, cuánto cambió contra el paso anterior: el período anterior, el mes anterior o el webinar anterior"
+          >
+            <ArrowLeftRight size={14} />
+            Comparar períodos
+          </button>
+          <FiltroVista valor={vista} opciones={VISTAS} onCambiar={(v) => setParam("vista", v === "periodo" ? null : v)} />
+          <FiltroSegmento
+            filtro={filtro} embudos={embudosFiltro} webinars={webinarsFiltro}
+            onCambiar={(f) => setParams({ embudo: f.embudoId, webinar: f.webinarId })}
           />
-          <AreaChart datos={serie} serie2="Egresos" formato={(n) => money(n, e.ajustes.monedaBase)} alto={220} />
-        </Card>
-
-        <Card>
-          <CardHead
-            titulo="Embudo de ventas"
-            sub="Cuánta gente llega a cada etapa y cuánta pasa a la siguiente."
-            acciones={<Link href="/pipeline"><Button sm variante="ghost" icono={<ArrowRight size={15} />}>Pipeline</Button></Link>}
-          />
-          <Funnel pasos={embudo} onPaso={(i) => setDesglose({ tipo: "etapa", etapaId: embudo[i].id })} />
-        </Card>
+          <DateRangePicker value={rango} minDate={minimo} onApply={setRango} footerNota="Días calendario · zona horaria de Argentina" />
+        </div>
       </div>
 
-      <div className="grid-2">
-        <Card>
-          <CardHead
-            titulo="Próximas sesiones"
-            sub={`${proximas.length === 0 ? "Nada" : proximas.length} en agenda · ${pct(tasaShow(e))} de asistencia histórica`}
-            acciones={<Link href="/agenda"><Button sm variante="ghost" icono={<ArrowRight size={15} />}>Agenda</Button></Link>}
+      {/* Lo que se hace con la tabla entera va arriba, junto a Buscar. */}
+      <AccionesTopbar>
+        <ConfigColumnas
+          titulo="Métricas" icono={<ListChecks size={14} />} conCuenta={false}
+          todas={opcionesFilas} visibles={filas.map((f) => f.def.id)}
+          alternar={config.alternar} mover={config.mover} restaurar={config.restaurar}
+        />
+        <Button sm variante="secondary" icono={<Download size={16} />} onClick={() => exportar(filas, cortes, comparar, rangoStr(rango))}>
+          Exportar
+        </Button>
+      </AccionesTopbar>
+
+      <Card className="planilla-card kpis-card">
+        {filas.length === 0 ? (
+          <Empty
+            icono={<Clock size={22} />}
+            titulo="Nada para mostrar en esta vista"
+            texto={filtro.embudoId || filtro.webinarId
+              ? "Con este filtro, esta área no tiene números: puede que no se puedan atribuir a un embudo o webinar todavía, o que los hayas apagado en «Métricas»."
+              : "Esta área no tiene métricas para mostrar: puede que las hayas apagado en «Métricas»."}
           />
-          {proximas.length === 0 ? (
-            <Empty
-              icono={<CalendarDays size={22} />}
-              titulo="No hay sesiones agendadas"
-              texto="Cuando alguien agende por Calendly va a aparecer acá, sola."
-              accion={AGENDAR_A_MANO ? <Link href="/agenda?nuevo=1"><Button variante="brand">Agendar una sesión</Button></Link> : undefined}
-            />
-          ) : (
-            <div className="stack-2">
-              {proximas.map((s) => (
-                <Link key={s.id} href={`/agenda?ver=${s.id}`} className="agenda-item">
-                  <span className="agenda-item__hora">{fechaHora(s.inicia).split(" · ")[1]}</span>
-                  <span style={{ flex: 1, minWidth: 0 }}>
-                    <span className="truncate t-strong" style={{ display: "block", color: "var(--ink)" }}>{s.invitado}</span>
-                    <span className="truncate t-sm t-subtle" style={{ display: "block" }}>{s.tipo} · {relativo(s.inicia)}</span>
-                  </span>
-                  {s.origen === "calendly" && <Badge variante="info">Calendly</Badge>}
-                </Link>
-              ))}
-            </div>
-          )}
-        </Card>
+        ) : (
+          <TablaKpis
+            filas={filas} cortes={cortes} comparar={comparar} moneda={mon} porDia={vista === "periodo"}
+            conSecciones={area === "todo"} onAbrir={abrir}
+          />
+        )}
+      </Card>
 
-        <Card>
-          <CardHead titulo="Alumnos que necesitan seguimiento" sub="Activos que no mandaron su reporte hace 2 semanas o más." acciones={<Link href="/reportes"><Button sm variante="ghost" icono={<ArrowRight size={15} />}>Reportes</Button></Link>} />
-          {enRiesgo.length === 0 ? (
-            <Empty icono={<Check size={22} />} titulo="Todos al día" texto="Ningún alumno activo tiene dos o más semanas sin reportar. Buen trabajo." />
-          ) : (
-            <div className="stack-2">
-              {enRiesgo.map(({ a, semanas }) => (
-                <Link key={a.id} href={`/alumnos?ver=${a.id}`} className="agenda-item">
-                  <Persona nombre={a.nombre} sub={[a.plan, a.cohorte].filter(Boolean).join(" · ")} />
-                  <span className="spacer" />
-                  <Badge variante={semanas >= 3 ? "danger" : "warning"} icono={<Clock size={13} />}>
-                    {semanas} semanas sin reportar
-                  </Badge>
-                </Link>
-              ))}
-            </div>
-          )}
-        </Card>
-      </div>
-
-      {desglose && <Desglose que={desglose} mes={mesActual} onCerrar={() => setDesglose(null)} />}
+      {desglose && <Desglose que={desglose.que} mes={desglose.mes} onCerrar={() => setDesglose(null)} />}
     </div>
   );
 }
 
-function Fila({ icono, texto, detalle, tono, href }: {
-  icono: React.ReactNode; texto: string; detalle: string;
-  tono: "success" | "warning" | "danger" | "info"; href: string;
-}) {
-  const color = { success: "var(--success)", warning: "var(--warning)", danger: "var(--danger)", info: "var(--info)" }[tono];
-  const fondo = { success: "var(--success-soft)", warning: "var(--warning-soft)", danger: "var(--danger-soft)", info: "var(--info-soft)" }[tono];
-  return (
-    <Link href={href} className="agenda-item">
-      <span style={{ display: "grid", placeItems: "center", width: 32, height: 32, borderRadius: 8, background: fondo, color, flex: "none" }}>
-        {icono}
-      </span>
-      <span style={{ flex: 1, minWidth: 0 }}>
-        <span className="truncate t-strong" style={{ display: "block", color: "var(--ink)" }}>{texto}</span>
-        <span className="truncate t-sm t-subtle" style={{ display: "block" }}>{detalle}</span>
-      </span>
-      <ArrowRight size={16} color="var(--ink-subtle)" />
-    </Link>
-  );
+/* El CSV lleva lo que se ve: las filas del área elegida, con los números
+   crudos para poder seguir haciendo cuentas en una planilla. Comparando,
+   cada columna va seguida de su valor anterior y la variación. */
+function exportar(filas: FilaKpi[], cortes: Corte[], comparar: boolean, periodo: string) {
+  const esc = (s: string) => `"${s.replace(/"/g, '""')}"`;
+  const crudo = (v: number | null) => (v === null ? "" : String(Math.round(v * 100) / 100));
+  const titulos = cortes.flatMap((c) => {
+    const t = c.sub ? `${c.titulo} (${c.sub})` : c.titulo;
+    return comparar ? [t, `${t} · anterior`, `${t} · variación`] : [t];
+  });
+  const lineas = [
+    ["Área", "Tema", "Métrica", ...titulos].map(esc).join(","),
+    ...filas.map((f) => {
+      const area = SECCIONES.find((s) => s.id === f.def.seccion)?.titulo ?? "";
+      const celdas = f.valores.flatMap((v, i) => comparar
+        ? [crudo(v), crudo(f.previos[i]), esc(variacionKpi(f.def, v, f.previos[i])?.texto ?? "")]
+        : [crudo(v)]);
+      return [esc(area), esc(f.def.grupo), esc(f.def.etiqueta), ...celdas].join(",");
+    }),
+  ];
+  const blob = new Blob([lineas.join("\n")], { type: "text/csv;charset=utf-8" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `apicanta-kpis-${periodo.replace(/\s+/g, "-")}.csv`;
+  a.click();
+  URL.revokeObjectURL(a.href);
 }
