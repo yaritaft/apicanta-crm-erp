@@ -1,7 +1,7 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
-import { Activity, BarChart3, Flag, Link2, RefreshCw, Radio, X } from "lucide-react";
+import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
+import { Activity, BarChart3, Flag, Link2, RefreshCw, X } from "lucide-react";
 import { AreaChart } from "@/components/charts/charts";
 import { Badge, Bar, Button, Card, CardHead, Empty, Tabs } from "@/components/ui/ui";
 import { useToast } from "@/components/ui/Toast";
@@ -14,7 +14,8 @@ import { ConversacionWebinar } from "./ConversacionWebinar";
 import { CurvaVivo, type Marca } from "./CurvaVivo";
 import { diaCorto, diaYHora, partesArgentina } from "./fechas";
 import { guardarWebinar } from "./guardar";
-import { conectarAnalytics, useAnalytics, useDatosVivo } from "./useVivo";
+import { conectarAnalytics, useAhora, useAnalytics, useDatosVivo, type Ahora } from "./useVivo";
+import "./vivo.css";
 import { useYoutube } from "./useYoutube";
 
 /* ==================================================================
@@ -37,16 +38,123 @@ const MIN = 60_000;
 const hora = (iso: string) => diaYHora(iso).split(" · ")[1] ?? "";
 const enMinuto = (inicio: string, min: number) => new Date(+new Date(inicio) + min * MIN).toISOString();
 
-/* Las dos tarjetas del vivo comparten lo guardado: se pide una sola vez. */
-export function PanelVivo({ w, videoId }: { w: Webinar; videoId: string }) {
-  /* Se sigue cada minuto si YouTube dijo que está en el aire, o si estamos
-     cerca de la hora del webinar (puede arrancar en cualquier momento). */
+/* ---------- Lo del vivo, compartido ----------
+   La barra "En vivo" (arriba de la ficha) y las dos tarjetas (abajo) usan
+   lo mismo: se pide una sola vez acá y se reparte. */
+
+interface ContextoVivo {
+  vivo: ReturnType<typeof useDatosVivo>;
+  ahora: Ahora | null;
+  enElAire: boolean;
+}
+const Ctx = createContext<ContextoVivo | null>(null);
+
+export function VivoProvider({ w, videoId, children }: { w: Webinar; videoId: string; children: React.ReactNode }) {
+  /* Se sigue si YouTube dijo que está en el aire, o si estamos cerca de la
+     hora del webinar (puede arrancar en cualquier momento). En el aire,
+     cada 20 segundos; cerca, cada minuto. */
   const f = +new Date(w.fecha);
   const cerca = Date.now() > f - 60 * MIN && Date.now() < f + 6 * 60 * MIN;
-  const [seguir, setSeguir] = useState(cerca);
-  const vivo = useDatosVivo(videoId, seguir);
-  const enElAire = vivo.estado === "listo" && vivo.datos.estado.estado === "en-vivo";
-  useEffect(() => { setSeguir(cerca || enElAire); }, [cerca, enElAire]);
+  const [enElAireAntes, setEnElAireAntes] = useState(false);
+  const vivo = useDatosVivo(videoId, enElAireAntes ? 20_000 : cerca ? 60_000 : undefined);
+  const guardadoEnVivo = vivo.estado === "listo" && vivo.datos.estado.estado === "en-vivo";
+  const a = useAhora(videoId, cerca || guardadoEnVivo);
+  const ahora = a.estado === "listo" ? a.datos : null;
+  /* Manda YouTube ahora mismo; si todavía no contestó, lo último guardado. */
+  const enElAire = ahora ? ahora.estado === "en-vivo" : guardadoEnVivo;
+  useEffect(() => { setEnElAireAntes(enElAire); }, [enElAire]);
+  return <Ctx.Provider value={{ vivo, ahora, enElAire }}>{children}</Ctx.Provider>;
+}
+
+/* ---------- La barra "En vivo" ----------
+   Arriba de la ficha, pegada mientras se baja: cuántos miran ahora (cada
+   15 segundos), el pico, el minuto del vivo, el chat y el botón para marcar
+   el pitch en el segundo exacto. Después del pitch, cuánta gente se fue
+   desde ahí, en directo. */
+
+export function BannerVivo({ w }: { w: Webinar }) {
+  const c = useContext(Ctx);
+  const toast = useToast();
+  const datos = c?.vivo.estado === "listo" ? c.vivo.datos : null;
+  const inicio = c?.ahora?.inicio ?? datos?.estado.inicio;
+  const a = useMemo(
+    () => (datos ? analizarVivo(datos.minutos, datos.chat, { inicio, pitchEn: w.pitchEn }) : null),
+    [datos, inicio, w.pitchEn],
+  );
+  if (!c?.enElAire) return null;
+
+  const ultimo = a?.puntos[a.puntos.length - 1];
+  const mirando = c.ahora?.espectadores ?? ultimo?.espectadores;
+  const minVivo = inicio ? Math.max(0, Math.floor((Date.now() - +new Date(inicio)) / MIN)) : undefined;
+  const enPitch = a?.pitch?.enElPitch.espectadores;
+  const fuga = enPitch !== undefined && mirando !== undefined ? mirando - enPitch : undefined;
+  const minPitch = w.pitchEn && inicio ? Math.max(0, Math.floor((+new Date(w.pitchEn) - +new Date(inicio)) / MIN)) : undefined;
+
+  function arrancaPitch() {
+    const iso = new Date().toISOString();
+    const hh = new Date(iso).toLocaleTimeString("es-AR", { timeZone: "America/Argentina/Buenos_Aires", hour12: false });
+    guardarWebinar(w, { pitchEn: iso }, `El pitch de «${w.titulo}» arrancó a las ${hh}${minVivo !== undefined ? ` (${minutoLegible(minVivo)} del vivo)` : ""}.`);
+    toast(`Pitch marcado a las ${hh}.`);
+  }
+
+  return (
+    <div className="vivo-barra" role="region" aria-label="Webinar en vivo" aria-live="polite">
+      <div className="vivo-barra__estado">
+        <span className="vivo-etiqueta"><span className="vivo-punto" aria-hidden />En vivo</span>
+        <span className="t-sm t-subtle t-num">
+          {inicio ? `desde las ${hora(inicio)} hs` : "en el aire"}{minVivo !== undefined ? ` · ${minutoLegible(minVivo)}` : ""}
+        </span>
+      </div>
+      <div className="vivo-barra__datos">
+        <div className="vivo-dato">
+          <span className="t-label">Mirando ahora</span>
+          <span className="vivo-dato__valor vivo-dato__valor--grande t-num">{mirando !== undefined ? num(mirando) : "—"}</span>
+        </div>
+        {a && (
+          <div className="vivo-dato">
+            <span className="t-label">Pico</span>
+            <span className="vivo-dato__valor t-num">{num(a.pico.espectadores)}</span>
+            <span className="t-sm t-subtle t-num">{minutoLegible(a.pico.min)} · {hora(a.pico.t)} hs</span>
+          </div>
+        )}
+        <div className="vivo-dato">
+          <span className="t-label">Chat</span>
+          <span className="vivo-dato__valor t-num">{num(datos?.chatTotal ?? 0)}</span>
+          <span className="t-sm t-subtle">mensajes</span>
+        </div>
+        {w.pitchEn && (
+          <div className="vivo-dato">
+            <span className="t-label">Desde el pitch</span>
+            <span className="vivo-dato__valor t-num" style={{ color: fuga !== undefined && fuga < 0 ? "var(--danger)" : undefined }}>
+              {fuga === undefined ? "—" : fuga < 0 ? `${num(fuga)} · ${pct((fuga / Math.max(1, enPitch ?? 1)) * 100, 0)}` : `+${num(fuga)}`}
+            </span>
+            <span className="t-sm t-subtle t-num">
+              {minPitch !== undefined ? `pitch en el ${minutoLegible(minPitch)}` : "pitch marcado"}{enPitch !== undefined ? ` · había ${num(enPitch)}` : ""}
+            </span>
+          </div>
+        )}
+      </div>
+      <div className="vivo-barra__acciones">
+        {w.pitchEn ? (
+          <Button sm variante="ghost" onClick={() => {
+            guardarWebinar(w, { pitchEn: null }, `Se sacó la marca del pitch de «${w.titulo}».`);
+            toast("Se sacó la marca del pitch.");
+          }}>Deshacer el pitch</Button>
+        ) : (
+          <Button variante="primary" icono={<Flag size={18} />} lg className="vivo-pitch-btn" onClick={arrancaPitch}>
+            Arranca el pitch
+          </Button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* Las dos tarjetas del vivo. Van adentro de VivoProvider. */
+export function PanelVivo({ w, videoId }: { w: Webinar; videoId: string }) {
+  const c = useContext(Ctx);
+  if (!c) return null;
+  const { vivo } = c;
   return (
     <>
       <VivoWebinar w={w} videoId={videoId} vivo={vivo} />
@@ -135,7 +243,7 @@ function VivoWebinar({ w, videoId, vivo }: { w: Webinar; videoId: string; vivo: 
         sub={sub}
         acciones={
           <div className="row" style={{ gap: 8 }}>
-            {enElAire && <Badge variante="danger" icono={<Radio size={12} />}>En vivo</Badge>}
+            {enElAire && <span className="vivo-etiqueta"><span className="vivo-punto" aria-hidden />En vivo</span>}
             {ejemplo && <Badge variante="warning">Ejemplo</Badge>}
             {ejemplo && <Button sm variante="ghost" icono={<X size={15} />} onClick={() => setEjemplo(false)}>Salir del ejemplo</Button>}
           </div>

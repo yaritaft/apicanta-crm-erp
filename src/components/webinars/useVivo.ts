@@ -63,8 +63,10 @@ function usePedido<T>(ruta: string | null, cadaMs?: number): Estado<T> & { recar
   return { ...estado, recargar };
 }
 
-export function useDatosVivo(videoId: string, seguir: boolean) {
-  return usePedido<DatosVivo>(`/api/youtube/vivo?video=${encodeURIComponent(videoId)}`, seguir ? 60_000 : undefined);
+/* cadaMs: cada cuánto volver a pedir (en el aire, cada 20 s: el cron guarda
+   una muestra por minuto y así aparece enseguida). */
+export function useDatosVivo(videoId: string, cadaMs?: number) {
+  return usePedido<DatosVivo>(`/api/youtube/vivo?video=${encodeURIComponent(videoId)}`, cadaMs);
 }
 
 export function useComentarios(videoId: string) {
@@ -121,4 +123,28 @@ export async function desconectarAnalytics(): Promise<string | null> {
   } catch {
     return "No hay conexión: no pude desconectar el canal.";
   }
+}
+
+/* ---------- En vivo, ahora ---------- */
+
+export interface Ahora {
+  estado: "en-vivo" | "programado" | "terminado" | "video";
+  espectadores?: number;
+  vistas?: number;
+  likes?: number;
+  inicio?: string;
+  fin?: string;
+  t: string;
+}
+
+/* Cuántos miran ahora: cada 15 segundos mientras `activo`. */
+export function useAhora(videoId: string, activo: boolean) {
+  return usePedido<Ahora>(activo ? `/api/youtube/ahora?video=${encodeURIComponent(videoId)}` : null, 15_000);
+}
+
+export interface WebinarEnVivo { videoId: string; webinarId: string; inicio: string | null; espectadores?: number }
+
+/* Qué webinars están en el aire (según el cron): cada 30 segundos. */
+export function useEnVivo() {
+  return usePedido<{ vivos: WebinarEnVivo[] }>("/api/youtube/en-vivo", 30_000);
 }

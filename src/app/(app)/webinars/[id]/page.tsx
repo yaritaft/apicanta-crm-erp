@@ -13,7 +13,7 @@ import {
 } from "@/components/webinars/FichaNumeros";
 import { TarjetaCambios, TarjetaNotas } from "@/components/webinars/FichaNotas";
 import { PersonasWebinar } from "@/components/webinars/PersonasWebinar";
-import { PanelVivo } from "@/components/webinars/VivoWebinar";
+import { BannerVivo, PanelVivo, VivoProvider } from "@/components/webinars/VivoWebinar";
 import { guardarWebinar } from "@/components/webinars/guardar";
 import { CLAVE_LISTA, ESTADO_WEBINAR, ESTADOS } from "@/components/webinars/estado";
 import {
@@ -89,7 +89,7 @@ export default function WebinarFicha() {
     );
   }
 
-  return (
+  const contenido = (
     <div className="stack-5" onKeyDown={navegar}>
       <Link href={volver} className="wb-volver"><ArrowLeft size={15} />Webinars</Link>
 
@@ -114,6 +114,8 @@ export default function WebinarFicha() {
           <Button variante="ghost" icono={<Trash2 size={16} />} onClick={() => setBorrar(true)}>Eliminar</Button>
         </div>
       </div>
+
+      {videoId && <BannerVivo w={w} />}
 
       <div className="wb-detalle">
         <div className="wb-col">
@@ -147,6 +149,10 @@ export default function WebinarFicha() {
       />
     </div>
   );
+
+  /* Con video, todo va adentro de VivoProvider: la barra "En vivo" de
+     arriba y las tarjetas del vivo de abajo comparten lo que se pide. */
+  return videoId ? <VivoProvider w={w} videoId={videoId}>{contenido}</VivoProvider> : contenido;
 }
 
 /* ---------- El título, editable en el lugar ---------- */

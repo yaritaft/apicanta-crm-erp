@@ -30,6 +30,8 @@ const DIA = 24 * HORA;
 
 interface FilaWebinar {
   id: string;
+  titulo?: string;
+  estado?: string;
   fecha: string;
   youtubeUrl?: string | null;
   enlaceReplay?: string | null;
@@ -87,7 +89,7 @@ export async function seguirVivos(ahora = new Date()): Promise<ResultadoSeguimie
   const t = ahora.getTime();
   const rw = await db
     .from("webinars")
-    .select("id, fecha, youtubeUrl, enlaceReplay")
+    .select("id, titulo, estado, fecha, youtubeUrl, enlaceReplay")
     .gte("fecha", new Date(t - 30 * DIA).toISOString())
     .lte("fecha", new Date(t + 6 * HORA).toISOString());
   if (rw.error) { res.errores.push(`webinars: ${rw.error.message}`); return res; }
@@ -136,6 +138,10 @@ export async function seguirVivos(ahora = new Date()): Promise<ResultadoSeguimie
 
     const muestras: Record<string, unknown>[] = [];
     const nuevosEstados: Record<string, unknown>[] = [];
+    /* El estado del webinar sigue al vivo: "En vivo" mientras está en el
+       aire y "Finalizado" cuando termina. Sólo se toca si hace falta, así
+       no pisa lo que alguien haya puesto a mano en otro momento. */
+    const cambiosEstado: { id: string; titulo: string; estado: "en-vivo" | "finalizado" }[] = [];
     for (const v of rv.items) {
       if (!v.id) continue;
       const w = porVideo.get(v.id);
@@ -173,6 +179,11 @@ export async function seguirVivos(ahora = new Date()): Promise<ResultadoSeguimie
         ultimaMuestra: guardar ? ahora.toISOString() : anterior?.ultimaMuestra ?? null,
       };
       if (enVivo) res.enVivo++;
+      if (enVivo && (w.estado === "programado" || w.estado === "borrador")) {
+        cambiosEstado.push({ id: w.id, titulo: w.titulo ?? "", estado: "en-vivo" });
+      } else if (estado === "terminado" && w.estado === "en-vivo") {
+        cambiosEstado.push({ id: w.id, titulo: w.titulo ?? "", estado: "finalizado" });
+      }
       /* El chat: en el aire y también en la sala de espera (programado y
          cerca de su hora), donde la gente ya saluda. Así además se sabe
          antes de que arranque si YouTube deja leerlo. Si cambió el chat
@@ -196,6 +207,18 @@ export async function seguirVivos(ahora = new Date()): Promise<ResultadoSeguimie
       const r = await db.from("yt_muestras").upsert(muestras, { onConflict: "videoId,minuto" });
       if (r.error) res.errores.push(`yt_muestras: ${r.error.message}`);
       else res.muestras += muestras.length;
+    }
+    for (const c of cambiosEstado) {
+      const r = await db.from("webinars").update({ estado: c.estado }).eq("id", c.id);
+      if (r.error) { res.errores.push(`webinars ${c.id}: ${r.error.message}`); continue; }
+      const ahoraIso = new Date().toISOString();
+      await db.from("actividad").insert({
+        id: `act_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`,
+        accion: "actualizo", actor: "YouTube", entidad: "webinar", entidadId: c.id, titulo: c.titulo, fecha: ahoraIso,
+        detalle: c.estado === "en-vivo"
+          ? `«${c.titulo}» salió al aire en YouTube: pasó a en vivo.`
+          : `«${c.titulo}» terminó en YouTube: pasó a finalizado.`,
+      });
     }
     if (nuevosEstados.length) {
       const r = await db.from("yt_estado").upsert(nuevosEstados, { onConflict: "videoId", defaultToNull: false });
