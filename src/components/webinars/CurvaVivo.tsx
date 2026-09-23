@@ -42,6 +42,9 @@ export function CurvaVivo({
 }) {
   const [caja, W] = useAncho();
   const [hover, setHover] = useState<number | null>(null);
+  /* El borde de foco sólo cuando se llegó con el teclado: con el mouse, al
+     tocar la curva para elegir un minuto, quedaba un rectángulo alrededor. */
+  const [porTeclado, setPorTeclado] = useState(true);
 
   const maxV = useMemo(() => {
     const m = Math.max(1, ...puntos.map((p) => p.valor));
@@ -66,8 +69,11 @@ export function CurvaVivo({
   const linea = puntos.map((p, i) => `${i === 0 ? "M" : "L"}${x(p.min).toFixed(1)},${y(p.valor).toFixed(1)}`).join(" ");
   const area = `${linea} L${x(puntos[puntos.length - 1].min).toFixed(1)},${(P.t + ih).toFixed(1)} L${x(puntos[0].min).toFixed(1)},${(P.t + ih).toFixed(1)} Z`;
 
-  /* Marcas del eje X cada 15 minutos (o 30 si es largo o la caja es angosta). */
-  const paso = minMax > 150 || iw < 420 ? 30 : 15;
+  /* Marcas del eje X: el paso más chico (5, 10, 15, 30 min, 1 h…) con el que
+     las etiquetas entran sin pisarse en el ancho de la caja. */
+  const anchoEtiqueta = 6.2 * 7 + 18;
+  const paso = [5, 10, 15, 30, 60, 90, 120, 180, 240, 360, 480, 720]
+    .find((p) => (minMax / p + 1) * anchoEtiqueta <= iw) ?? Math.ceil(minMax / 4);
   const ticksX: number[] = [];
   for (let m = 0; m <= minMax; m += paso) ticksX.push(m);
 
@@ -95,12 +101,15 @@ export function CurvaVivo({
         aria-valuenow={onElegir ? (iElegido != null ? puntos[iElegido].min : undefined) : undefined}
         aria-valuetext={onElegir && iElegido != null ? `${minutoLegible(puntos[iElegido].min)}: ${formato(puntos[iElegido].valor)} ${serie.toLowerCase()}` : undefined}
         tabIndex={onElegir ? 0 : undefined}
-        style={{ cursor: onElegir ? "crosshair" : undefined, touchAction: "pan-y" }}
+        style={{ cursor: onElegir ? "crosshair" : undefined, touchAction: "pan-y", outline: porTeclado ? undefined : "none" }}
+        onPointerDown={() => setPorTeclado(false)}
+        onBlur={() => setPorTeclado(true)}
         onPointerMove={(ev) => setHover(desdeEvento(ev))}
         onPointerLeave={() => setHover(null)}
         onClick={(ev) => onElegir?.(puntos[desdeEvento(ev)].min)}
         onKeyDown={(ev) => {
           if (!onElegir) return;
+          setPorTeclado(true);
           const i = iElegido ?? (pico ? indice(pico.min) : 0);
           const salto = ev.shiftKey ? 10 : 1;
           if (ev.key === "ArrowRight") { ev.preventDefault(); onElegir(puntos[Math.min(puntos.length - 1, i + salto)].min); }
