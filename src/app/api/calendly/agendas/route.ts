@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { esDelEquipo, hayEquipoConfigurado } from "@/lib/equipo-servidor";
+import { resumirAgendas } from "@/lib/agendas-webinar";
+import { sesionesCalendly } from "@/lib/agendas-sync";
 import { nubeServidor } from "@/lib/servidor";
+import { videoDelWebinar } from "@/lib/youtube";
 
 /* ==================================================================
    Las agendas de Calendly desde un momento (?desde=ISO), para la ficha
@@ -17,7 +20,29 @@ export async function GET(peticion: Request) {
   if (hayEquipoConfigurado() && !(await esDelEquipo(peticion))) {
     return NextResponse.json({ error: "Hace falta iniciar sesión." }, { status: 401 });
   }
-  const desde = new URL(peticion.url).searchParams.get("desde") ?? "";
+  const url = new URL(peticion.url);
+
+  /* ?webinar=ID: las agendas de ese webinar, en el vivo o después (lo mismo
+     que el cron pasa a la planilla), con cada persona. */
+  const webinarId = url.searchParams.get("webinar");
+  if (webinarId) {
+    const db = nubeServidor();
+    if (!db) return NextResponse.json({ vivo: 0, despues: 0, canceladas: 0, noVino: 0, agendas: [] });
+    const rw = await db.from("webinars").select("id, fecha, duracionMin, youtubeUrl, enlaceReplay").eq("id", webinarId).maybeSingle();
+    if (rw.error || !rw.data) return NextResponse.json({ error: "No encontré ese webinar." }, { status: 404 });
+    const w = rw.data as { fecha: string; duracionMin: number; youtubeUrl?: string | null; enlaceReplay?: string | null };
+    const v = videoDelWebinar(w);
+    const re = v ? await db.from("yt_estado").select("inicio, fin").eq("videoId", v).maybeSingle() : null;
+    try {
+      const sesiones = await sesionesCalendly(db, new Date(+new Date(w.fecha) - 2 * 86_400_000).toISOString());
+      const r = resumirAgendas(sesiones, w, (re?.data ?? {}) as { inicio?: string | null; fin?: string | null });
+      return NextResponse.json(r, { headers: { "Cache-Control": "private, max-age=10" } });
+    } catch {
+      return NextResponse.json({ error: "No pude leer las agendas." }, { status: 502 });
+    }
+  }
+
+  const desde = url.searchParams.get("desde") ?? "";
   if (Number.isNaN(Date.parse(desde))) return NextResponse.json({ error: "Falta desde cuándo contar." }, { status: 400 });
 
   const db = nubeServidor();

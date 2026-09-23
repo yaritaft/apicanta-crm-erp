@@ -161,3 +161,10 @@ export function useAgendasDesde(desde: string | null, activo: boolean) {
     desde && activo ? `/api/calendly/agendas?desde=${encodeURIComponent(desde)}` : null, 10_000,
   );
 }
+
+/* Las agendas de un webinar, en el vivo o después (cada 30 s). */
+export function useAgendasWebinar(webinarId: string) {
+  return usePedido<import("@/lib/agendas-webinar").ResumenAgendas>(
+    `/api/calendly/agendas?webinar=${encodeURIComponent(webinarId)}`, 30_000,
+  );
+}

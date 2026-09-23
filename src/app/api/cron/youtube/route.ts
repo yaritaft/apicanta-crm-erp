@@ -1,11 +1,13 @@
 import { NextResponse } from "next/server";
+import { completarLlamadas } from "@/lib/agendas-sync";
 import { seguirVivos } from "@/lib/youtube-vivo";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 /* Cada minuto: si hay un webinar en el aire, guarda cuántos lo están
-   mirando y lo nuevo del chat (lib/youtube-vivo.ts). Si no hay ninguno
+   mirando y lo nuevo del chat (lib/youtube-vivo.ts), y completa las
+   llamadas de cada webinar con las agendas de Calendly (lib/agendas-sync.ts). Si no hay ninguno
    cerca de su hora, no le pregunta nada a YouTube y termina en un par de
    milisegundos. */
 
@@ -18,8 +20,11 @@ export async function GET(req: Request) {
   }
   try {
     const r = await seguirVivos();
-    if (r.mirados > 0 || r.errores.length) console.log("[cron/youtube]", JSON.stringify(r));
-    return NextResponse.json(r, { status: r.errores.length ? 207 : 200 });
+    /* Y de paso, las agendas de Calendly de cada webinar a la planilla. */
+    const l = await completarLlamadas().catch((e: unknown) => ({ actualizados: 0, errores: [e instanceof Error ? e.message : "agendas"] }));
+    const errores = [...r.errores, ...l.errores];
+    if (r.mirados > 0 || l.actualizados > 0 || errores.length) console.log("[cron/youtube]", JSON.stringify({ ...r, llamadas: l.actualizados, errores }));
+    return NextResponse.json({ ...r, llamadas: l.actualizados, errores }, { status: errores.length ? 207 : 200 });
   } catch (e) {
     const error = e instanceof Error ? e.message : "No se pudo seguir los vivos.";
     console.error("[cron/youtube] fallo entero:", error);

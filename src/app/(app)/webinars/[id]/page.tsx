@@ -13,6 +13,7 @@ import {
 } from "@/components/webinars/FichaNumeros";
 import { TarjetaCambios, TarjetaNotas } from "@/components/webinars/FichaNotas";
 import { PersonasWebinar } from "@/components/webinars/PersonasWebinar";
+import { AgendasWebinar } from "@/components/webinars/AgendasWebinar";
 import {
   BannerVivo, ChatDelVivo, FilaVideo, SoloEnVivo, TarjetaVivo, VivoProvider,
 } from "@/components/webinars/VivoWebinar";
@@ -141,6 +142,7 @@ export default function WebinarFicha() {
         <div className="wb-col">
           {/* En vivo, el resultado deja su lugar de arriba al chat y baja acá. */}
           <SoloEnVivo><TarjetaResultado m={m} className="wb-o2" /></SoloEnVivo>
+          <AgendasWebinar w={w} className="wb-o2" />
           <TarjetaInversion w={w} m={m} className="wb-o3" />
           <TarjetaCaptacion w={w} m={m} className="wb-o4" />
           <TarjetaLlamadas w={w} m={m} className="wb-o5" />

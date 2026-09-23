@@ -1,0 +1,92 @@
+"use client";
+
+import React from "react";
+import { CalendarCheck } from "lucide-react";
+import { Badge, Card, CardHead, Empty, type VarianteBadge } from "@/components/ui/ui";
+import { num } from "@/lib/format";
+import { claveDeFecha } from "@/lib/agendas-webinar";
+import type { Webinar } from "@/lib/types";
+import { diaYHora } from "./fechas";
+import { useAgendasWebinar } from "./useVivo";
+
+/* ==================================================================
+   Las agendas de Calendly del webinar: cuántas se hicieron en el vivo,
+   cuántas después y cuántas se cancelaron, con cada persona.
+
+   Son las mismas que el cron pasa solo a "Llamadas en vivo", "Llamadas
+   después" y "Canceladas" (lib/agendas-webinar.ts). Se actualiza cada 30
+   segundos: el webhook de Calendly las trae en segundos.
+   ================================================================== */
+
+const ESTADO: Record<string, { texto: string; variante: VarianteBadge }> = {
+  agendada: { texto: "Agendada", variante: "accent" },
+  hecha: { texto: "Hecha", variante: "success" },
+  "no-show": { texto: "No vino", variante: "danger" },
+  cancelada: { texto: "Cancelada", variante: "neutral" },
+};
+
+export function AgendasWebinar({ w, className }: { w: Webinar; className?: string }) {
+  const r = useAgendasWebinar(w.id);
+  const d = r.estado === "listo" ? r.datos : null;
+  const clave = claveDeFecha(w.fecha);
+
+  return (
+    <Card className={className}>
+      <CardHead
+        titulo="Agendas de Calendly"
+        sub={`Las que llegan con los UTMs de este webinar (utm_medium=${clave}). Completan solas las llamadas de la planilla.`}
+      />
+      {r.estado === "cargando" && <div className="skeleton" style={{ height: 120 }} aria-busy="true" aria-label="Trayendo las agendas" />}
+      {r.estado === "error" && <p className="t-sm t-muted">{r.error}</p>}
+      {d && (
+        <div className="stack-4">
+          <div className="wb-kpis" style={{ gridTemplateColumns: "repeat(3, minmax(0, 1fr))", marginBottom: 0 }}>
+            <Kpi etiqueta="En el vivo" valor={d.vivo} />
+            <Kpi etiqueta="Después" valor={d.despues} />
+            <Kpi etiqueta="Canceladas" valor={d.canceladas} tenue />
+          </div>
+          {d.agendas.length === 0 ? (
+            <Empty
+              icono={<CalendarCheck size={22} />}
+              titulo="Todavía no hay agendas de este webinar"
+              texto="Aparecen solas cuando alguien agenda desde el link del vivo o el de después."
+            />
+          ) : (
+            <div className="wb-filas">
+              {d.agendas.map((a) => {
+                const e = ESTADO[a.estado] ?? ESTADO.agendada;
+                return (
+                  <div key={a.id} className="wb-fila">
+                    <span className="wb-fila__texto">
+                      <span className="wb-fila__nombre">
+                        <span className="truncate">{a.nombre}</span>
+                        <Badge variante={a.momento === "vivo" ? "danger" : "info"}>{a.momento === "vivo" ? "En el vivo" : "Después"}</Badge>
+                      </span>
+                      <span className="wb-fila__detalle">
+                        Agendó el {diaYHora(a.agendadaEn)} hs
+                        {a.closer ? ` · ${a.closer}` : ""}
+                        {a.llamada ? ` · llamada el ${diaYHora(a.llamada)} hs` : ""}
+                        {a.por === "hora" ? " · por la hora" : ""}
+                      </span>
+                    </span>
+                    <Badge variante={e.variante}>{e.texto}</Badge>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          {d.noVino > 0 && <p className="t-sm t-subtle">{num(d.noVino)} no se presentaron a la llamada.</p>}
+        </div>
+      )}
+    </Card>
+  );
+}
+
+function Kpi({ etiqueta, valor, tenue }: { etiqueta: string; valor: number; tenue?: boolean }) {
+  return (
+    <div className="wb-kpi">
+      <span className="t-label">{etiqueta}</span>
+      <span className="wb-kpi__valor t-num" style={tenue ? { color: "var(--ink-subtle)" } : undefined}>{num(valor)}</span>
+    </div>
+  );
+}
