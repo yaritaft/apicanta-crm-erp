@@ -380,6 +380,10 @@ export interface Ajustes {
   calendlyToken: string;
   tema: "dark" | "light";
   tourVisto: boolean;
+  /* Los "Proyectos" de la planilla de Angelo: MENT, DOWN, WEB-13/04/26… */
+  proyectos: string[];
+  /* Lo que cobra quien refiere una venta, sobre lo que entra (0,1 = 10%). */
+  comisionReferidor: number;
 }
 
 /* ---------- Estado completo ---------- */
@@ -591,11 +595,16 @@ export interface Movimiento {
   creadoEn: string;
 }
 
+/* Las "Estrategias utilizadas" de la planilla de Angelo. */
 export interface Embudo {
   id: ID;
   nombre: string;
   activo: boolean;
   orden: number;
+  /* El embudo de los webinars. En la planilla se llama "Lanzamiento", así
+     que no se puede deducir del nombre: con esto el Dashboard sabe a qué
+     embudo pertenecen los números de la planilla de webinars. */
+  esWebinar?: boolean;
 }
 
 export type RolEquipo = "closer" | "director" | "growth" | "socio" | "ceo" | "setter";

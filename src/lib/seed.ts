@@ -22,52 +22,89 @@ const id = (p: string, i: number) => `${p}_${String(i).padStart(4, "0")}`;
 
 /* ---------- Catálogos: los valores reales del negocio ---------- */
 
+/* Los "Servicios / Productos" de la planilla de Angelo, con los mismos
+   nombres y en el mismo orden (hoja Configuración). La planilla no tiene
+   precios de lista: los seis que ya estaban conservan el suyo y el resto
+   lleva el valor más común con el que se vendió. El tipo es de la app (lo
+   usa el Dashboard para contar mentorías aparte de downsells y eventos) y
+   se cambia en Ajustes → Ventas. */
 export const PRODUCTOS: Producto[] = [
-  { id: "prod_mentoria",   nombre: "Mentoría (Hackear IT)", precioLista: 3000, tipo: "principal", activo: true, orden: 0 },
-  { id: "prod_downsell",   nombre: "Downsell",               precioLista: 500, tipo: "downsell",  activo: true, orden: 1 },
-  { id: "prod_resell",     nombre: "Resell Mentoría",       precioLista: 2500, tipo: "principal", activo: true, orden: 2 },
-  { id: "prod_upsell",     nombre: "Upsell",                 precioLista: 800, tipo: "upsell",    activo: true, orden: 3 },
-  { id: "prod_biz",        nombre: "Hackear Biz",           precioLista: 4500, tipo: "principal", activo: true, orden: 4 },
-  { id: "prod_mastermind", nombre: "Mastermind",               precioLista: 0, tipo: "evento",    activo: true, orden: 5 },
+  { id: "prod_mentoria",          nombre: "Mentoría",                    precioLista: 3000, tipo: "principal", activo: true, orden: 0 },
+  { id: "prod_downsell",          nombre: "Downsell",                    precioLista: 500,  tipo: "downsell",  activo: true, orden: 1 },
+  { id: "prod_resultados",        nombre: "Resultados",                  precioLista: 299,  tipo: "downsell",  activo: true, orden: 2 },
+  { id: "prod_resell",            nombre: "Resell Mentoría",             precioLista: 2500, tipo: "principal", activo: true, orden: 3 },
+  { id: "prod_mastermind",        nombre: "Mastermind",                  precioLista: 400,  tipo: "evento",    activo: true, orden: 4 },
+  { id: "prod_prueba",            nombre: "Prueba",                      precioLista: 0,    tipo: "evento",    activo: true, orden: 5 },
+  { id: "prod_cena_premaster",    nombre: "Cena - Pre Master",           precioLista: 50,   tipo: "evento",    activo: true, orden: 6 },
+  { id: "prod_resell_mastermind", nombre: "Resell Mastermind Mayo 2026", precioLista: 2150, tipo: "evento",    activo: true, orden: 7 },
+  { id: "prod_upsell",            nombre: "Upsell",                      precioLista: 800,  tipo: "upsell",    activo: true, orden: 8 },
+  { id: "prod_cena",              nombre: "Cena",                        precioLista: 70,   tipo: "evento",    activo: true, orden: 9 },
+  { id: "prod_biz",               nombre: "Hackear Biz",                 precioLista: 4500, tipo: "principal", activo: true, orden: 10 },
+  { id: "prod_hackear_ai",        nombre: "Hackear AI",                  precioLista: 3000, tipo: "principal", activo: true, orden: 11 },
+  { id: "prod_hackear_it",        nombre: "Hackear IT",                  precioLista: 3000, tipo: "principal", activo: true, orden: 12 },
+  { id: "prod_principals",        nombre: "Principals",                  precioLista: 0,    tipo: "principal", activo: true, orden: 13 },
+  { id: "prod_upgrade_ai",        nombre: "Upgrade AI",                  precioLista: 499,  tipo: "upsell",    activo: true, orden: 14 },
 ];
 
-/* Los medios de pago reales del negocio. `automatico` es si el cobro
-   puede entrar solo: por webhook o porque se le puede preguntar a la
-   plataforma. Los demás se cargan a mano o pegando su planilla. */
+/* Las "Cuentas recaudadoras" de la planilla de Angelo, con sus nombres y
+   en su orden. `automatico` es si el cobro puede entrar solo: por webhook o
+   porque se le puede preguntar a la plataforma. La tasa es la que cobra
+   cada una de verdad; cuando el cobro se concilia manda el fee real de la
+   pasarela, y el de los medios que no se concilian se carga en Finanzas. */
 export const PROCESADORES: Procesador[] = [
-  { id: "proc_stripe",           nombre: "Stripe",               feeRate: 0.029, activo: true, automatico: true,  proveedor: "stripe" },
-  { id: "proc_hotmart",          nombre: "Hotmart",              feeRate: 0.099, activo: true, automatico: true,  proveedor: "hotmart" },
-  { id: "proc_whop",             nombre: "Whop",                 feeRate: 0.030, activo: true, automatico: true,  proveedor: "whop" },
-  { id: "proc_dlocal",           nombre: "dLocal",               feeRate: 0.050, activo: true, automatico: true,  proveedor: "dlocal" },
-  { id: "proc_mercadopago",      nombre: "Mercado Pago (Yari)",  feeRate: 0.062, activo: true, automatico: true,  proveedor: "mercadopago" },
-  { id: "proc_mercury",          nombre: "ACH / Wire (Mercury)", feeRate: 0,     activo: true, automatico: true,  proveedor: "mercury" },
-  { id: "proc_binance",          nombre: "USDT (Binance)",       feeRate: 0,     activo: true, automatico: true,  proveedor: "binance" },
-  { id: "proc_trust",            nombre: "USDT (Trust)",         feeRate: 0,     activo: true, automatico: true,  proveedor: "trust" },
-  { id: "proc_financiera_usd",   nombre: "Financiera USD (Juan)", feeRate: 0,    activo: true, automatico: false },
-  { id: "proc_financiera_ars",   nombre: "Financiera ARS (Juan)", feeRate: 0,    activo: true, automatico: false },
-  { id: "proc_galicia_usd",      nombre: "Galicia (USD)",        feeRate: 0,     activo: true, automatico: false },
-  { id: "proc_galicia_ars",      nombre: "Galicia (ARS)",        feeRate: 0,     activo: true, automatico: false },
-  { id: "proc_efectivo",         nombre: "Efectivo USD",         feeRate: 0,     activo: true, automatico: false },
+  { id: "proc_financiera_ars",   nombre: "Financiera ARS Juan", feeRate: 0,     activo: true, automatico: false },
+  { id: "proc_financiera_usd",   nombre: "Financiera USD Juan", feeRate: 0,     activo: true, automatico: false },
+  { id: "proc_stripe",           nombre: "Stripe",              feeRate: 0.029, activo: true, automatico: true,  proveedor: "stripe" },
+  { id: "proc_mercury",          nombre: "ACH-WIRE Mercury",    feeRate: 0,     activo: true, automatico: true,  proveedor: "mercury" },
+  { id: "proc_binance",          nombre: "USDT Binance",        feeRate: 0,     activo: true, automatico: true,  proveedor: "binance" },
+  { id: "proc_dlocal",           nombre: "Dlocal",              feeRate: 0.050, activo: true, automatico: true,  proveedor: "dlocal" },
+  { id: "proc_trust",            nombre: "USDT Trust",          feeRate: 0,     activo: true, automatico: true,  proveedor: "trust" },
+  { id: "proc_mercadopago",      nombre: "Mercado Pago Yari",   feeRate: 0.062, activo: true, automatico: true,  proveedor: "mercadopago" },
+  { id: "proc_galicia_ars",      nombre: "Galicia (ARS)",       feeRate: 0,     activo: true, automatico: false },
+  { id: "proc_galicia_usd",      nombre: "Galicia (USD)",       feeRate: 0,     activo: true, automatico: false },
+  { id: "proc_hotmart",          nombre: "Hotmart",             feeRate: 0.099, activo: true, automatico: true,  proveedor: "hotmart" },
+  { id: "proc_efectivo",         nombre: "Efectivo USD",        feeRate: 0,     activo: true, automatico: false },
+  { id: "proc_whop",             nombre: "Whop",                feeRate: 0.030, activo: true, automatico: true,  proveedor: "whop" },
 ];
 
+/* Las "Estrategias utilizadas" de la planilla de Angelo. "Lanzamiento" es
+   el embudo de los webinars (todas las ventas con proyecto WEB-… vienen de
+   ahí): conserva el id del viejo "Webinar" para que lo que ya apuntaba al
+   embudo de webinar siga apuntando al mismo. */
 export const EMBUDOS: Embudo[] = [
-  { id: "emb_webinar",     nombre: "Webinar",             activo: true, orden: 0 },
-  { id: "emb_evergreen",   nombre: "Evergreen / VSL",     activo: true, orden: 1 },
-  { id: "emb_setter",      nombre: "Setter IA",           activo: true, orden: 2 },
-  { id: "emb_evento",      nombre: "Evento",              activo: true, orden: 3 },
-  { id: "emb_lanzamiento", nombre: "Lanzamiento interno", activo: true, orden: 4 },
-  { id: "emb_youtube",     nombre: "YouTube orgánico",    activo: true, orden: 5 },
-  { id: "emb_directo",     nombre: "Directo / Conocido",  activo: true, orden: 6 },
+  { id: "emb_webinar",        nombre: "Lanzamiento",       activo: true, orden: 0, esWebinar: true },
+  { id: "emb_vsl_martin",     nombre: "VSL Martin",        activo: true, orden: 1 },
+  { id: "emb_vsl_landing",    nombre: "VSL Landing",       activo: true, orden: 2 },
+  { id: "emb_setter",         nombre: "Setter",            activo: true, orden: 3 },
+  { id: "emb_organico",       nombre: "Orgánico",          activo: true, orden: 4 },
+  { id: "emb_venta_interna",  nombre: "Venta interna",     activo: true, orden: 5 },
+  { id: "emb_referido",       nombre: "Referido",          activo: true, orden: 6 },
+  { id: "emb_aon",            nombre: "AON",               activo: true, orden: 7 },
+  { id: "emb_prueba",         nombre: "Prueba",            activo: true, orden: 8 },
+  { id: "emb_cena_premaster", nombre: "CENA - PRE MASTER", activo: true, orden: 9 },
+  { id: "emb_mastermind",     nombre: "Mastermind",        activo: true, orden: 10 },
+  { id: "emb_cena_colombia",  nombre: "Cena Colombia",     activo: true, orden: 11 },
+  { id: "emb_vsl_youtube",    nombre: "VSL YOUTUBE",       activo: true, orden: 12 },
+  { id: "emb_funnel_angie",   nombre: "Funnel-Angie",      activo: true, orden: 13 },
+  { id: "emb_vsl_wp",         nombre: "VSL-WP",            activo: true, orden: 14 },
 ];
 
+/* Los "Vendedores" y "Setters" de la planilla de Angelo, con sus nombres.
+   Los porcentajes de los closers son los de su hoja Config (sobre el neto
+   de procesador); los que no figuran ahí llevan el 15% por defecto. */
 export const EQUIPO: MiembroEquipo[] = [
-  { id: "eq_yari",     nombre: "Yari Taft",      rol: "ceo",      comisionRate: 0,    activo: true, sinComision: true,
+  { id: "eq_yari",     nombre: "Yari",               rol: "ceo",      comisionRate: 0,    activo: true, sinComision: true,
     notas: "Cuando figura como closer no comisiona nadie: ni closer, ni director, ni setter." },
   { id: "eq_director", nombre: "Director comercial", rol: "director", comisionRate: 0.05, activo: true, sinComision: false,
-    notas: "5% del cash collected neto de procesador." },
-  { id: "eq_closer_1", nombre: "Closer 1",       rol: "closer",   comisionRate: 0.10, activo: true, sinComision: false },
-  { id: "eq_closer_2", nombre: "Closer 2",       rol: "closer",   comisionRate: 0.10, activo: true, sinComision: false },
-  { id: "eq_closer_3", nombre: "Closer 3",       rol: "closer",   comisionRate: 0.15, activo: true, sinComision: false },
+    desde: "2026-07-01T12:00:00.000Z", notas: "5% del cash collected neto de procesador." },
+  { id: "eq_mariano",         nombre: "Mariano",         rol: "closer", comisionRate: 0.15, activo: true, sinComision: false },
+  { id: "eq_valentin",        nombre: "Valentín",        rol: "closer", comisionRate: 0.15, activo: true, sinComision: false },
+  { id: "eq_marianela",       nombre: "Marianela",       rol: "closer", comisionRate: 0.15, activo: true, sinComision: false },
+  { id: "eq_martin",          nombre: "Martín",          rol: "closer", comisionRate: 0.10, activo: true, sinComision: false },
+  { id: "eq_dante",           nombre: "Dante Barbieri",  rol: "closer", comisionRate: 0.10, activo: true, sinComision: false },
+  { id: "eq_valentin_abadia", nombre: "Valentin Abadia", rol: "closer", comisionRate: 0.15, activo: true, sinComision: false },
+  { id: "eq_daniel",          nombre: "Daniel",          rol: "setter", comisionRate: 0.10, activo: true, sinComision: false,
+    notas: "10% de lo que entra en las ventas que agendó (Configuración de la planilla)." },
   { id: "eq_growth",   nombre: "Agustín Zika",   rol: "growth",   comisionRate: 0.10, activo: true, sinComision: false,
     notas: "10% del profit. No comisiona las ventas marcadas como excluidas de marketing." },
   { id: "eq_socio",    nombre: "Socio",          rol: "socio",    comisionRate: 0.10, activo: true, sinComision: false,
@@ -185,6 +222,9 @@ export const AJUSTES: Ajustes = {
   calendlyToken: "",
   tema: "dark",
   tourVisto: false,
+  /* Los "Proyectos" de la planilla de Angelo, tal cual. */
+  proyectos: ["MENT", "DOWN", "WEB-1/10", "WEB-29/10", "WEB-17/9", "RESULTADOS", "WEB-12/11", "WEB-26/11", "RESELL", "WEB-17/12", "WEB-27/8", "WEB-06/08", "WEB-14/01/26", "WEB-28/01/26", "WEB-09/02/26", "WEB-25/02/26", "WEB-05/03/26", "WEB-18/03/26", "WEB-30/03/26", "WEB-13/04/26", "Entrada 24/25 Mayo", "WEB-20/04/26", "WEB-27/04/26", "Prueba", "Cena", "Resell Master May-26", "Upsell", "Hackear Biz", "Principals", "RESERVA", "AI"],
+  comisionReferidor: 0.1,
 };
 
 const PILA_NOMBRES = [
@@ -540,7 +580,7 @@ export function construirSemilla(): EstadoApp {
       /* Los closers cierran entre 2.500 y 3.000 la mentoría */
       const precio = prod === "prod_mentoria" ? pick([2500, 2500, 3000, 3000]) : base;
       crearVenta(pick(NOMBRES), f, prod, precio, {
-        embudoId: pick(["emb_webinar", "emb_webinar", "emb_webinar", "emb_evergreen", "emb_evento", "emb_lanzamiento", "emb_setter"]),
+        embudoId: pick(["emb_webinar", "emb_webinar", "emb_webinar", "emb_vsl_martin", "emb_mastermind", "emb_venta_interna", "emb_setter"]),
         webinarId: r() > 0.35 ? pick(webinarsPasados).id : undefined,
       });
     }

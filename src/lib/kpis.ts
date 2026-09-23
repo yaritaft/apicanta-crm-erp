@@ -76,9 +76,11 @@ interface Indices {
   tipoProducto: Map<ID, string>;
   contactoPorId: Map<ID, Contacto>;
   leadPorId: Map<ID, Lead>;
-  /* Los embudos que son "el de webinar": los que se llaman así. No se
-     deduce de las ventas: una venta de webinar cargada con otro embudo
-     haría que ese embudo se lleve las agendas y los registros de webinar. */
+  /* Los embudos que son "el de webinar": los marcados así en Ajustes (en la
+     planilla de Angelo se llama "Lanzamiento") o, si ninguno lo está, los
+     que se llaman "webinar". No se deduce de las ventas: una venta de
+     webinar cargada con otro embudo haría que ese embudo se lleve las
+     agendas y los registros de webinar. */
   embudosWebinar: Set<ID>;
 }
 
@@ -92,7 +94,8 @@ function indices(e: EstadoApp): Indices {
     const xs = cuotasPorVenta.get(c.ventaId);
     if (xs) xs.push(c); else cuotasPorVenta.set(c.ventaId, [c]);
   }
-  const embudosWebinar = new Set(e.embudos.filter((x) => /webinar/i.test(x.nombre)).map((x) => x.id));
+  const marcados = e.embudos.filter((x) => x.esWebinar);
+  const embudosWebinar = new Set((marcados.length ? marcados : e.embudos.filter((x) => /webinar/i.test(x.nombre))).map((x) => x.id));
   ix = {
     ventaPorId: new Map(e.ventas.map((v) => [v.id, v])),
     cuotaPorId: new Map(e.cuotas.map((c) => [c.id, c])),
