@@ -172,10 +172,12 @@ export async function seguirVivos(ahora = new Date()): Promise<ResultadoSeguimie
         actualizadoEn: ahora.toISOString(),
         ultimaMuestra: guardar ? ahora.toISOString() : anterior?.ultimaMuestra ?? null,
       };
-      if (enVivo) {
-        res.enVivo++;
-        /* El chat del vivo. Si cambió (otro vivo en el mismo link), se
-           empieza de cero. */
+      if (enVivo) res.enVivo++;
+      /* El chat: en el aire y también en la sala de espera (programado y
+         cerca de su hora), donde la gente ya saluda. Así además se sabe
+         antes de que arranque si YouTube deja leerlo. Si cambió el chat
+         (otro vivo en el mismo link), se empieza de cero. */
+      if (enVivo || (estado === "programado" && cercaDeSuHora(w))) {
         const liveChatId = d?.activeLiveChatId ?? anterior?.liveChatId ?? null;
         const pagina = liveChatId && liveChatId === anterior?.liveChatId ? anterior?.paginaChat ?? null : null;
         if (liveChatId) {
