@@ -170,7 +170,7 @@ function reparto(f: Filas | { error: string }, dim: string, met: string, met2?: 
     clave: String(fila[i] ?? ""),
     valor: valor(f, fila, met) ?? 0,
     valor2: met2 ? valor(f, fila, met2) : undefined,
-  }));
+  })).filter((x) => x.valor > 0);
 }
 
 export async function analyticsDeVideo(videoId: string, desde: string): Promise<AnalyticsVideo | { error: string }> {
@@ -203,10 +203,15 @@ export async function analyticsDeVideo(videoId: string, desde: string): Promise<
   const faltan: string[] = [];
   const f0 = resumen.filas[0] ?? [];
   const c0 = "error" in concurrentes ? null : concurrentes.filas[0];
-  if ("error" in concurrentes) faltan.push("espectadores concurrentes");
-
   const pm = "error" in porMinuto ? null : porMinuto;
-  if (!pm) faltan.push("espectadores minuto a minuto");
+
+  /* Un video subido (no un vivo) no tiene espectadores concurrentes: YouTube
+     contesta con error y eso no es "algo que falta". Sólo se avisa si el
+     video tuvo vistas en vivo. */
+  const repVivo = reparto(vivo, "liveOrOnDemand", "views", "estimatedMinutesWatched");
+  const fueVivo = (repVivo ?? []).some((f) => f.clave === "LIVE" && f.valor > 0);
+  if (fueVivo && "error" in concurrentes) faltan.push("espectadores concurrentes");
+  if (fueVivo && !pm) faltan.push("espectadores minuto a minuto");
 
   const ret = "error" in retencion ? null : retencion;
   if (!ret) faltan.push("retención");
@@ -256,7 +261,7 @@ export async function analyticsDeVideo(videoId: string, desde: string): Promise<
           pico: valor(pm, fila, "peakConcurrentViewers"),
         })).sort((a, b) => a.min - b.min)
       : [],
-    vivoVsGrabacion: o(reparto(vivo, "liveOrOnDemand", "views", "estimatedMinutesWatched"), "vivo contra grabación"),
+    vivoVsGrabacion: o(repVivo, "vivo contra grabación"),
     fuentes: o(reparto(fuentes, "insightTrafficSourceType", "views", "estimatedMinutesWatched"), "fuentes de tráfico"),
     paises: o(reparto(paises, "country", "views", "estimatedMinutesWatched"), "países"),
     edades: lista(edades),
