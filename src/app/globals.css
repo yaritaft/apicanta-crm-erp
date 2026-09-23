@@ -1153,6 +1153,10 @@ kbd {
   border-right: 1px solid var(--border); background: var(--surface-100);
 }
 .ficha__principal { overflow-y: auto; padding: var(--space-5); display: flex; flex-direction: column; gap: var(--space-4); min-width: 0; }
+/* Las columnas scrollean: lo de adentro no se achica. Sin esto, lo que tiene
+   su propio scroll (las solapas) queda con alto mínimo 0 y, con varias ventas,
+   se aplastaba hasta ser una barrita oscura sin texto. */
+.ficha__lado > *, .ficha__principal > * { flex-shrink: 0; }
 .segmento { display: inline-flex; gap: 2px; padding: 3px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-200); }
 .segmento button {
   padding: 6px 16px; border: 0; border-radius: 7px; background: transparent; color: var(--ink-muted);
