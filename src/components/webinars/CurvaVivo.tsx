@@ -137,11 +137,15 @@ export function CurvaVivo({
           </text>
         ))}
 
-        {hayBarras && puntos.map((p) => (p.barra ?? 0) > 0 && (
-          <rect key={`b${p.min}`} x={x(p.min) - Math.max(1, iw / minMax / 2 - 0.5)} width={Math.max(1.5, iw / minMax - 1)}
-            y={P.t + ih - ((p.barra ?? 0) / maxB) * altoBarra} height={((p.barra ?? 0) / maxB) * altoBarra}
-            fill="var(--info)" opacity="0.35" />
-        ))}
+        {hayBarras && puntos.map((p) => {
+          if ((p.barra ?? 0) <= 0) return null;
+          /* Una barra por minuto: nunca más ancha que 8px (con pocos minutos
+             quedaban enormes) y siempre adentro del gráfico. */
+          const ancho = Math.min(8, Math.max(1.5, (iw / (minMax + 1)) * 0.7));
+          const bx = Math.min(W - P.r - ancho, Math.max(P.l, x(p.min) - ancho / 2));
+          const h = ((p.barra ?? 0) / maxB) * altoBarra;
+          return <rect key={`b${p.min}`} x={bx} width={ancho} y={P.t + ih - h} height={h} fill="var(--info)" opacity="0.35" rx="1" />;
+        })}
 
         <path d={area} fill="url(#wb-curva-g)" />
         <path d={linea} fill="none" stroke="var(--accent)" strokeWidth="2.25" strokeLinejoin="round" strokeLinecap="round" />

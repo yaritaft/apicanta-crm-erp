@@ -68,7 +68,10 @@ export function ConversacionWebinar({ w, videoId, vivo }: {
 }) {
   const datos = vivo.estado === "listo" ? vivo.datos : null;
   const hayChat = (datos?.chat.length ?? 0) > 0;
-  const [pestania, setPestania] = useState<Pestania>(hayChat ? "chat" : "comentarios");
+  /* Mientras nadie elija, se muestra el chat si hay (en un vivo, llega
+     unos minutos después de abrir la ficha) y si no, los comentarios. */
+  const [elegida, setPestania] = useState<Pestania | null>(null);
+  const pestania: Pestania = elegida ?? (hayChat ? "chat" : "comentarios");
   const comentarios = useComentarios(videoId);
   const conocido = useConocidos(w);
 
