@@ -52,3 +52,28 @@
   .vivo-pitch-btn { width: 100%; justify-content: center; }
   .vivo-dato__valor--grande { font-size: 26px; line-height: 32px; }
 }
+
+/* Agendas de Calendly desde el pitch, arriba del chat en vivo */
+.vivo-agendas { border-color: color-mix(in srgb, var(--success) 45%, transparent); background: color-mix(in srgb, var(--success) 7%, var(--surface-100)); }
+.vivo-agendas__numero { font-family: var(--font-display); font-size: 40px; line-height: 44px; font-weight: 700; color: var(--success); }
+.vivo-agendas__lista { display: flex; flex-direction: column; margin-top: var(--space-3); border-top: 1px solid var(--border); }
+.vivo-agendas__fila { display: flex; align-items: center; gap: var(--space-3); padding: 7px 0; border-bottom: 1px solid var(--border); min-width: 0; }
+.vivo-agendas__fila:last-child { border-bottom: 0; }
+
+/* ---------- La fila del video ----------
+   En pantalla ancha, video y columna lado a lado. En vivo, la columna del
+   chat va absoluta adentro de su celda: así no estira la fila y queda
+   cortada a la altura del video, con el chat scrolleando adentro. */
+.wb-arriba { display: flex; flex-direction: column; gap: var(--space-5); }
+.wb-arriba__chat-dentro { display: flex; flex-direction: column; gap: var(--space-4); }
+.wb-arriba__chat .wb-charla__lista { max-height: 420px; }
+@media (min-width: 1280px) {
+  .wb-arriba { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr); align-items: start; }
+  .wb-arriba--vivo { align-items: stretch; }
+  .wb-arriba__chat { position: relative; min-height: 360px; }
+  .wb-arriba__chat-dentro { position: absolute; inset: 0; }
+  .wb-arriba__chat .vivo-agendas { flex: none; }
+  .wb-charla--vivo { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+  .wb-charla--vivo > .stack-3 { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+  .wb-arriba__chat .wb-charla__lista { flex: 1; min-height: 0; max-height: none; }
+}

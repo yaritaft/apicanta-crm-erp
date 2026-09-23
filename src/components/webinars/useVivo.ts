@@ -148,3 +148,16 @@ export interface WebinarEnVivo { videoId: string; webinarId: string; inicio: str
 export function useEnVivo() {
   return usePedido<{ vivos: WebinarEnVivo[] }>("/api/youtube/en-vivo", 30_000);
 }
+
+/* ---------- Agendas de Calendly desde el pitch ---------- */
+
+export interface AgendaCalendly {
+  id: string; nombre: string; agendadaEn: string; llamada: string; estado: string; closer?: string; delWebinar: boolean;
+}
+
+/* Cada 10 segundos mientras haya `desde` (el pitch marcado y el vivo en el aire). */
+export function useAgendasDesde(desde: string | null, activo: boolean) {
+  return usePedido<{ agendas: AgendaCalendly[] }>(
+    desde && activo ? `/api/calendly/agendas?desde=${encodeURIComponent(desde)}` : null, 10_000,
+  );
+}

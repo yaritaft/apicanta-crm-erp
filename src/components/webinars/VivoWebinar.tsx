@@ -14,7 +14,7 @@ import { ConversacionWebinar } from "./ConversacionWebinar";
 import { CurvaVivo, type Marca } from "./CurvaVivo";
 import { diaCorto, diaYHora, partesArgentina } from "./fechas";
 import { guardarWebinar } from "./guardar";
-import { conectarAnalytics, useAhora, useAnalytics, useDatosVivo, type Ahora } from "./useVivo";
+import { conectarAnalytics, useAgendasDesde, useAhora, useAnalytics, useDatosVivo, type Ahora } from "./useVivo";
 import "./vivo.css";
 import { useYoutube } from "./useYoutube";
 
@@ -166,7 +166,80 @@ export function ChatDelVivo({ w, videoId, lugar, className }: {
 }) {
   const c = useContext(Ctx);
   if (!c || (lugar === "columna") !== c.enElAire) return null;
-  return <ConversacionWebinar w={w} videoId={videoId} vivo={c.vivo} enVivo={lugar === "columna"} className={className} />;
+  if (lugar === "abajo") return <ConversacionWebinar w={w} videoId={videoId} vivo={c.vivo} className={className} />;
+  /* En vivo: arriba del chat, las agendas desde que arrancó el pitch. En el
+     celular, el mismo orden (className) para que queden juntos. */
+  return (
+    <>
+      {w.pitchEn && <AgendasDelPitch desde={w.pitchEn} className={className} />}
+      <ConversacionWebinar w={w} videoId={videoId} vivo={c.vivo} enVivo className={className} />
+    </>
+  );
+}
+
+/* ---------- La fila del video ----------
+   El video a la izquierda. A la derecha, mientras está en el aire, las
+   agendas y el chat, cortados a la altura del video (el chat scrollea
+   adentro); si no, lo que venga en `sinVivo` (el resultado). Sin
+   VivoProvider (webinar sin video) es siempre `sinVivo`. */
+
+export function FilaVideo({ videoId, video, chat, sinVivo }: {
+  videoId: string | null; video: React.ReactNode; chat: React.ReactNode; sinVivo: React.ReactNode;
+}) {
+  const c = useContext(Ctx);
+  const enVivo = Boolean(videoId && c?.enElAire);
+  return (
+    <div className={`wb-arriba${enVivo ? " wb-arriba--vivo" : ""}`}>
+      {video}
+      {enVivo ? <div className="wb-arriba__chat"><div className="wb-arriba__chat-dentro">{chat}</div></div> : sinVivo}
+    </div>
+  );
+}
+
+/* Lo de adentro sólo mientras el webinar está en el aire. */
+export function SoloEnVivo({ children }: { children: React.ReactNode }) {
+  const c = useContext(Ctx);
+  return c?.enElAire ? <>{children}</> : null;
+}
+
+/* ---------- Agendas desde el pitch ----------
+   Cuántas llamadas se agendaron en Calendly desde que se tocó "Arranca el
+   pitch". Llegan por el webhook en segundos y la tarjeta pregunta cada 10
+   segundos: se ve subir el número en directo. */
+
+function AgendasDelPitch({ desde, className }: { desde: string; className?: string }) {
+  const r = useAgendasDesde(desde, true);
+  const lista = r.estado === "listo" ? r.datos.agendas : [];
+  const delWebinar = lista.filter((x) => x.delWebinar).length;
+  const minutos = Math.max(1, (Date.now() - +new Date(desde)) / MIN);
+  return (
+    <Card className={`vivo-agendas${className ? ` ${className}` : ""}`}>
+      <div className="row" style={{ justifyContent: "space-between", alignItems: "flex-start" }}>
+        <div className="stack-1">
+          <span className="t-label">Agendas desde el pitch</span>
+          <span className="vivo-agendas__numero t-num">{r.estado === "cargando" ? "…" : num(lista.length)}</span>
+          <span className="t-sm t-subtle t-num">
+            {r.estado === "error"
+              ? r.error
+              : `${num(delWebinar)} del webinar · pitch a las ${hora(desde)} hs · ${num(lista.length / minutos, 1)} por minuto`}
+          </span>
+        </div>
+        <span className="vivo-etiqueta"><span className="vivo-punto" aria-hidden />Calendly</span>
+      </div>
+      {lista.length > 0 && (
+        <div className="vivo-agendas__lista">
+          {lista.slice(0, 6).map((x) => (
+            <div key={x.id} className="vivo-agendas__fila">
+              <span className="t-strong truncate" style={{ flex: 1, minWidth: 0 }}>{x.nombre}</span>
+              {x.closer && <span className="t-sm t-subtle truncate">{x.closer}</span>}
+              <span className="t-sm t-subtle t-num" style={{ whiteSpace: "nowrap" }}>{hora(x.agendadaEn)} hs</span>
+            </div>
+          ))}
+          {lista.length > 6 && <span className="t-sm t-subtle">y {num(lista.length - 6)} más</span>}
+        </div>
+      )}
+    </Card>
+  );
 }
 
 function VivoWebinar({ w, videoId, vivo, className }: {

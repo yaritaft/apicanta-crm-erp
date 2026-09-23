@@ -84,7 +84,7 @@ export function ConversacionWebinar({ w, videoId, vivo, enVivo, className }: {
 
   if (enVivo) {
     return (
-      <Card className={`wb-charla${className ? ` ${className}` : ""}`}>
+      <Card className={`wb-charla wb-charla--vivo${className ? ` ${className}` : ""}`}>
         <CardHead
           titulo="Chat en vivo"
           sub="Los mensajes más nuevos arriba, con quién es cada uno en la base"
@@ -177,6 +177,24 @@ function Chat({ w, datos, cargando, conocido, enVivo }: {
     );
   }
 
+  const lista = (
+    <Lista
+      vacio="Ningún mensaje coincide con los filtros."
+      items={filtrados.slice(0, cuantos).map((m) => ({
+        id: m.id, autor: m.autor, foto: m.foto, texto: m.texto, cuando: `${minutoLegible(minDe(m.t))} · ${diaYHora(m.t).split(" · ")[1]} hs`,
+        marca: m.esDueno ? "Canal" : m.esModerador ? "Moderador" : m.monto ? `Super Chat ${m.monto}` : undefined,
+        conocido: conocido(m.autor),
+      }))}
+    />
+  );
+  const masBoton = filtrados.length > cuantos && (
+    <div><Button variante="secondary" onClick={() => setCuantos((c) => c + POR_PAGINA * 2)}>Mostrar más ({num(filtrados.length - cuantos)} quedan)</Button></div>
+  );
+
+  /* En vivo, sólo los mensajes: el resumen, los que más escribieron y los
+     filtros ocupaban lugar mientras se mira el vivo. Vuelven cuando termina. */
+  if (enVivo) return <div className="stack-3">{lista}{masBoton}</div>;
+
   const cortado = datos && datos.chatTotal > chat.length;
   return (
     <div className="stack-4">
@@ -207,17 +225,8 @@ function Chat({ w, datos, cargando, conocido, enVivo }: {
         {w.pitchEn && <Chip activo={enPitch} onClick={() => setEnPitch((v) => !v)}>Desde el pitch</Chip>}
       </div>
 
-      <Lista
-        vacio="Ningún mensaje coincide con los filtros."
-        items={filtrados.slice(0, cuantos).map((m) => ({
-          id: m.id, autor: m.autor, foto: m.foto, texto: m.texto, cuando: `${minutoLegible(minDe(m.t))} · ${diaYHora(m.t).split(" · ")[1]} hs`,
-          marca: m.esDueno ? "Canal" : m.esModerador ? "Moderador" : m.monto ? `Super Chat ${m.monto}` : undefined,
-          conocido: conocido(m.autor),
-        }))}
-      />
-      {filtrados.length > cuantos && (
-        <div><Button variante="secondary" onClick={() => setCuantos((c) => c + POR_PAGINA * 2)}>Mostrar más ({num(filtrados.length - cuantos)} quedan)</Button></div>
-      )}
+      {lista}
+      {masBoton}
     </div>
   );
 }
