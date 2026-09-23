@@ -2,7 +2,7 @@
 
 import React, { useCallback, useMemo, useState } from "react";
 import { Link2, Plus, Trash2, Unlink } from "lucide-react";
-import { Button, IconButton, Input, Select } from "@/components/ui/ui";
+import { Button, IconButton, Input, Select, Switch } from "@/components/ui/ui";
 import { CampoComprobante } from "@/components/cobros/CampoComprobante";
 import { disponibleDe, SelectorMovimiento, type PagoDisponible } from "@/components/cobros/SelectorMovimiento";
 import { nuevoId } from "@/lib/store";
@@ -27,13 +27,27 @@ import type { Comprobante, EstadoApp, ID } from "@/lib/types";
 
 export interface CobroBorrador {
   id: string;
-  procesadorId: string;
-  monto: number;
-  fecha: string;
+  procesadorId: string;      // Cuenta recaudadora
+  monto: number;             // Monto abonado USD
+  fecha: string;             // Fecha del pago
   referencia: string;
   /* Si sale de un pago que ya entró a la pasarela */
   movimientoId?: ID;
   comprobante?: Comprobante;
+  /* Lo demás que pide la planilla de Angelo */
+  tipoCambio?: number;       // Tipo de cambio ARS, si pagó en pesos
+  pagador?: string;          // Nombre de quien transfirió
+  cuit?: string;             // Cuit (Si pagó a financiera)
+  chequeado?: boolean;       // Pasado Financiera / Chequeado en plataforma
+}
+
+/* Lo que va al store de un cobro: el mismo borrador, sin el id de pantalla. */
+export function datosDeCobro(p: CobroBorrador) {
+  return {
+    procesadorId: p.procesadorId || undefined, monto: p.monto, fecha: p.fecha,
+    referencia: p.referencia, movimientoId: p.movimientoId, comprobante: p.comprobante,
+    tipoCambio: p.tipoCambio, pagador: p.pagador, cuit: p.cuit, chequeado: p.chequeado,
+  };
 }
 
 const redondear = (n: number) => Math.round(n * 100) / 100;
@@ -67,7 +81,7 @@ export function agregarMedio(cobros: CobroBorrador[], objetivo: number, procesad
 /* Lo que falta para poder guardar estos cobros, o null. `nombre` es cómo
    se lee la cuota en la frase: "la reserva", "la cuota 2". */
 export function problemaDeCobros(e: EstadoApp, cobros: CobroBorrador[], nombre: string): string | null {
-  if (cobros.some((p) => !p.procesadorId)) return `Elegí el medio de pago de ${nombre}`;
+  if (cobros.some((p) => !p.procesadorId)) return `Elegí la cuenta recaudadora de ${nombre}`;
   if (cobros.some((p) => !(p.monto > 0))) return `Un cobro de ${nombre} está en cero: poné el monto o sacalo`;
   for (const p of cobros) {
     if (p.movimientoId || p.comprobante) continue;
@@ -161,14 +175,14 @@ export function EditorCobros({ e, cobros, onCambio, objetivo, cliente, usadoFuer
           <div className="cobro-item" key={p.id}>
             <div className="cobro-linea">
               <Select
-                value={p.procesadorId} placeholder="Medio de pago" aria-label="Medio de pago"
+                value={p.procesadorId} placeholder="Cuenta recaudadora" aria-label="Cuenta recaudadora"
                 disabled={Boolean(p.movimientoId)}
                 onChange={(ev) => editar(p.id, { procesadorId: ev.target.value })}
                 opciones={procesadores.map((x) => ({ valor: x.id, texto: x.nombre }))}
               />
-              <Input type="number" min={0} step="0.01" value={p.monto} aria-label="Monto del cobro"
+              <Input type="number" min={0} step="0.01" value={p.monto} aria-label="Monto abonado USD" title="Monto abonado USD"
                 onChange={(ev) => editar(p.id, { monto: Number(ev.target.value) })} />
-              <Input type="date" value={isoDia(p.fecha)} aria-label="Fecha del cobro" disabled={Boolean(p.movimientoId)}
+              <Input type="date" value={isoDia(p.fecha)} aria-label="Fecha del pago" title="Fecha del pago" disabled={Boolean(p.movimientoId)}
                 onChange={(ev) => { if (ev.target.value) editar(p.id, { fecha: new Date(ev.target.value + "T12:00:00").toISOString() }); }} />
               <IconButton etiqueta="Quitar este cobro" onClick={() => quitar(p)}>
                 <Trash2 size={15} />
@@ -220,8 +234,37 @@ export function EditorCobros({ e, cobros, onCambio, objetivo, cliente, usadoFuer
             </div>
 
             {!p.movimientoId && (
-              <Input value={p.referencia} placeholder="Referencia del pago (opcional)" aria-label="Referencia del pago"
-                onChange={(ev) => editar(p.id, { referencia: ev.target.value })} />
+              <>
+                {/* Lo demás que pide la planilla: con qué cambio entró si fue
+                    en pesos, quién mandó la plata y, para la Financiera, su
+                    CUIT. Es lo que después se usa para conciliar a mano. */}
+                <div className="cobro-extra">
+                  <Input
+                    type="number" min={0} step="0.01" value={p.tipoCambio ?? ""} placeholder="Tipo de cambio ARS"
+                    aria-label="Tipo de cambio ARS (si pagó en pesos)" title="Tipo de cambio ARS (si pagó en pesos)"
+                    onChange={(ev) => editar(p.id, { tipoCambio: ev.target.value ? Number(ev.target.value) : undefined })}
+                  />
+                  <Input
+                    value={p.pagador ?? ""} placeholder="Nombre de quien transfirió" aria-label="Nombre de quien transfirió"
+                    onChange={(ev) => editar(p.id, { pagador: ev.target.value })}
+                  />
+                  {/financiera/i.test(proc?.nombre ?? "") && (
+                    <Input
+                      value={p.cuit ?? ""} placeholder="Cuit (Si pagó a financiera)" aria-label="Cuit (Si pagó a financiera)"
+                      onChange={(ev) => editar(p.id, { cuit: ev.target.value })}
+                    />
+                  )}
+                </div>
+                <label className="row" style={{ gap: 8 }}>
+                  <Switch
+                    checked={Boolean(p.chequeado)} etiqueta="Pasado Financiera / Chequeado en plataforma"
+                    onChange={(v) => editar(p.id, { chequeado: v })}
+                  />
+                  <span className="t-sm t-muted">Pasado Financiera / Chequeado en plataforma</span>
+                </label>
+                <Input value={p.referencia} placeholder="Referencia del pago (opcional)" aria-label="Referencia del pago"
+                  onChange={(ev) => editar(p.id, { referencia: ev.target.value })} />
+              </>
             )}
           </div>
         );
@@ -231,7 +274,7 @@ export function EditorCobros({ e, cobros, onCambio, objetivo, cliente, usadoFuer
         sm variante="ghost" icono={<Plus size={14} />} style={{ alignSelf: "flex-start" }}
         onClick={() => onCambio((xs) => agregarMedio(xs, objetivo, procesadores[0]?.id ?? ""))}
       >
-        Agregar otro medio de pago
+        Agregar otra cuenta recaudadora
       </Button>
 
       {elegido && (

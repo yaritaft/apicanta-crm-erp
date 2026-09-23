@@ -54,11 +54,13 @@ export default function Ventas() {
 
 
   const columnas: Columna<Venta>[] = [
-    { clave: "contacto", titulo: "Cliente", tipo: "primary", orden: (v) => v.contactoNombre, celda: (v) => v.contactoNombre },
-    { clave: "producto", titulo: "Producto", tipo: "secondary", orden: (v) => v.productoId ?? "", celda: (v) => e.productos.find((p) => p.id === v.productoId)?.nombre ?? "—" },
-    { clave: "closer", titulo: "Closer", tipo: "secondary", orden: (v) => v.closerId ?? "", celda: (v) => e.equipo.find((x) => x.id === v.closerId)?.nombre ?? "—" },
+    { clave: "contacto", titulo: "Nombre Completo", tipo: "primary", orden: (v) => v.contactoNombre, celda: (v) => v.contactoNombre },
+    { clave: "producto", titulo: "Servicio adquirido", tipo: "secondary", orden: (v) => v.productoId ?? "", celda: (v) => e.productos.find((p) => p.id === v.productoId)?.nombre ?? "—" },
+    { clave: "proyecto", titulo: "Proyecto", tipo: "secondary", orden: (v) => v.proyecto ?? "", celda: (v) => v.proyecto || "—" },
+    { clave: "estrategia", titulo: "Estrategia", tipo: "secondary", orden: (v) => e.embudos.find((x) => x.id === v.embudoId)?.nombre ?? "", celda: (v) => e.embudos.find((x) => x.id === v.embudoId)?.nombre ?? "—" },
+    { clave: "closer", titulo: "Vendedor", tipo: "secondary", orden: (v) => v.closerId ?? "", celda: (v) => e.equipo.find((x) => x.id === v.closerId)?.nombre ?? "—" },
     { clave: "fecha", titulo: "Fecha", tipo: "secondary", orden: (v) => v.fecha, celda: (v) => fechaLarga(v.fecha) },
-    { clave: "precio", titulo: "Precio", tipo: "num", orden: (v) => v.precioAcordado, celda: (v) => M(v.precioAcordado) },
+    { clave: "precio", titulo: "Valor total", tipo: "num", orden: (v) => v.precioAcordado, celda: (v) => M(v.precioAcordado) },
     {
       clave: "saldo", titulo: "Cobrado", orden: (v) => { const s = saldoVenta(e, v.id); return s.total > 0 ? s.cobrado / s.total : 0; },
       celda: (v) => {

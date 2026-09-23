@@ -6,7 +6,8 @@ import { ModalForm } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toast";
 import { acciones, nuevoId, useEstado } from "@/lib/store";
 import { isoDia, money } from "@/lib/format";
-import type { Cuota, EstadoVenta, Moneda, Venta } from "@/lib/types";
+import type { Cuota, EstadoVenta, IngresoComunidad, Moneda, Venta } from "@/lib/types";
+import { INGRESOS_COMUNIDAD, proyectoDeWebinar, webinarDeProyecto } from "@/lib/angelo";
 
 /* Editar una venta ya cargada (y el alta vieja, en un solo formulario).
    Vive aparte porque lo usan la pantalla de Ventas y la ficha de la
@@ -30,6 +31,11 @@ export interface BorradorVenta {
   notas: string;
   planCuotas: number;
   reserva: number;
+  proyecto: string;
+  setterId: string;
+  referidorNombre: string;
+  referidorTelefono: string;
+  ingresoComunidad: IngresoComunidad | "";
 }
 
 export function desdeVenta(e: ReturnType<typeof useEstado>, v: Venta): BorradorVenta {
@@ -42,6 +48,9 @@ export function desdeVenta(e: ReturnType<typeof useEstado>, v: Venta): BorradorV
     notas: v.notas ?? "",
     planCuotas: Math.max(cuotas.filter((c) => !c.esReserva).length, 1),
     reserva: cuotas.find((c) => c.esReserva)?.monto ?? 0,
+    proyecto: v.proyecto ?? "", setterId: v.setterId ?? "",
+    referidorNombre: v.referidorNombre ?? "", referidorTelefono: v.referidorTelefono ?? "",
+    ingresoComunidad: v.ingresoComunidad ?? "",
   };
 }
 
@@ -62,15 +71,21 @@ export function FormularioVenta({ borrador, onCerrar, onGuardado }: {
     if (!f.contactoNombre.trim()) { toast("Poné el nombre del cliente.", "err"); return; }
 
     const ventaId = f.id ?? nuevoId("ven");
+    const webinarId = f.webinarId || webinarDeProyecto(f.proyecto, e.webinars, f.fecha)?.id;
+    /* Vacío y no undefined: undefined no viaja al guardar y la base se
+       quedaría con el valor viejo. */
     const datos: Omit<Venta, "id"> = {
       contactoId: f.contactoId, contactoNombre: f.contactoNombre.trim(),
-      productoId: f.productoId || undefined, webinarId: f.webinarId || undefined,
+      productoId: f.productoId || undefined, webinarId: webinarId || undefined,
       embudoId: f.embudoId || undefined, precioAcordado: f.precioAcordado,
       moneda: mon as Moneda, closerId: f.closerId || undefined,
       directorId: sinComision ? undefined : (f.directorId || undefined),
       excluidoMarketing: f.excluidoMarketing || sinComision,
       estado: f.estado, fecha: f.fecha, notas: f.notas,
       creadoEn: new Date().toISOString(), extra: {},
+      proyecto: f.proyecto, setterId: f.setterId,
+      referidorNombre: f.referidorNombre.trim(), referidorTelefono: f.referidorTelefono.trim(),
+      ingresoComunidad: f.ingresoComunidad || undefined,
     };
 
     if (f.id) {
@@ -106,7 +121,7 @@ export function FormularioVenta({ borrador, onCerrar, onGuardado }: {
       puedeGuardar={f.contactoNombre.trim().length > 0}
     >
       <div className="form-grid">
-        <Field label="Cliente" span2 ayuda="Si ya está cargado como lead, elegilo de la lista de abajo.">
+        <Field label="Nombre Completo" span2 ayuda="Si ya está cargado como lead, elegilo de la lista de abajo.">
           <Input value={f.contactoNombre} onChange={(ev) => setF({ ...f, contactoNombre: ev.target.value })} placeholder="Martín Quiroga" autoFocus />
         </Field>
         <Field label="Vincular a un lead" span2 ayuda="Opcional. Sirve para ver toda su historia junta.">
@@ -118,7 +133,7 @@ export function FormularioVenta({ borrador, onCerrar, onGuardado }: {
             opciones={e.leads.slice(0, 200).map((l) => ({ valor: l.id, texto: `${l.nombre} — ${l.email}` }))} />
         </Field>
 
-        <Field label="Producto">
+        <Field label="Servicio adquirido">
           <Select value={f.productoId}
             onChange={(ev) => {
               const p = e.productos.find((x) => x.id === ev.target.value);
@@ -126,11 +141,11 @@ export function FormularioVenta({ borrador, onCerrar, onGuardado }: {
             }}
             opciones={e.productos.filter((p) => p.activo).map((p) => ({ valor: p.id, texto: p.nombre }))} />
         </Field>
-        <Field label="Precio cerrado" ayuda="Lo que realmente acordó el closer.">
+        <Field label="Valor total de la venta" ayuda="Lo que realmente acordó el vendedor.">
           <Input type="number" min={0} value={f.precioAcordado} onChange={(ev) => setF({ ...f, precioAcordado: Number(ev.target.value) })} />
         </Field>
 
-        <Field label="Closer" ayuda={sinComision ? "Con Yari como closer no comisiona nadie." : undefined}>
+        <Field label="Vendedor" ayuda={sinComision ? "Con Yari como vendedor no comisiona nadie." : undefined}>
           <Select value={f.closerId} placeholder="Sin asignar"
             onChange={(ev) => setF({ ...f, closerId: ev.target.value })}
             opciones={e.equipo.filter((x) => x.activo && (x.rol === "closer" || x.rol === "ceo")).map((x) => ({ valor: x.id, texto: x.nombre }))} />
@@ -141,17 +156,40 @@ export function FormularioVenta({ borrador, onCerrar, onGuardado }: {
             opciones={e.equipo.filter((x) => x.rol === "director").map((x) => ({ valor: x.id, texto: x.nombre }))} />
         </Field>
 
-        <Field label="Embudo">
+        <Field label="Estrategia utilizada">
           <Select value={f.embudoId} onChange={(ev) => setF({ ...f, embudoId: ev.target.value })}
-            opciones={e.embudos.filter((x) => x.activo).map((x) => ({ valor: x.id, texto: x.nombre }))} />
+            opciones={e.embudos.filter((x) => x.activo || x.id === f.embudoId).sort((a, b) => a.orden - b.orden).map((x) => ({ valor: x.id, texto: x.nombre }))} />
         </Field>
         <Field label="Fecha">
           <Input type="date" value={isoDia(f.fecha)} onChange={(ev) => setF({ ...f, fecha: new Date(ev.target.value + "T12:00:00").toISOString() })} />
         </Field>
 
-        <Field label="Webinar de origen" span2 ayuda="Si vino de un webinar, atribuilo: así el profit de ese webinar sale bien.">
+        <Field label="Proyecto" ayuda="Un WEB-día/mes/año ata la venta a ese webinar solo.">
+          <Select value={f.proyecto} placeholder="Sin proyecto"
+            onChange={(ev) => {
+              const w = webinarDeProyecto(ev.target.value, e.webinars, f.fecha);
+              setF({ ...f, proyecto: ev.target.value, ...(w ? { webinarId: w.id } : {}) });
+            }}
+            opciones={[...new Set([...(f.proyecto ? [f.proyecto] : []), ...e.webinars.slice().sort((a, b) => +new Date(b.fecha) - +new Date(a.fecha)).slice(0, 6).map((w) => proyectoDeWebinar(w.fecha)), ...(e.ajustes.proyectos ?? [])])]} />
+        </Field>
+        <Field label="Webinar de origen" ayuda="Si vino de un webinar, atribuilo: así el profit de ese webinar sale bien.">
           <Select value={f.webinarId} placeholder="Sin atribuir" onChange={(ev) => setF({ ...f, webinarId: ev.target.value })}
             opciones={e.webinars.map((w) => ({ valor: w.id, texto: w.titulo }))} />
+        </Field>
+
+        <Field label="Nombre del setter" ayuda="Sólo si la estrategia fue Setter: comisiona sobre lo que entra.">
+          <Select value={f.setterId} placeholder="Sin setter" onChange={(ev) => setF({ ...f, setterId: ev.target.value })}
+            opciones={e.equipo.filter((x) => x.rol === "setter" && (x.activo || x.id === f.setterId)).map((x) => ({ valor: x.id, texto: x.nombre }))} />
+        </Field>
+        <Field label="Ingreso a la comunidad">
+          <Select value={f.ingresoComunidad} placeholder="Sin definir"
+            onChange={(ev) => setF({ ...f, ingresoComunidad: ev.target.value as IngresoComunidad })} opciones={INGRESOS_COMUNIDAD} />
+        </Field>
+        <Field label="Nombre del referidor" ayuda="Si fue un referido: comisiona sobre lo que entra.">
+          <Input value={f.referidorNombre} onChange={(ev) => setF({ ...f, referidorNombre: ev.target.value })} placeholder="Quién lo refirió" />
+        </Field>
+        <Field label="Número de teléfono" ayuda="Del referidor.">
+          <Input type="tel" value={f.referidorTelefono} onChange={(ev) => setF({ ...f, referidorTelefono: ev.target.value })} />
         </Field>
 
         {!f.id && (
@@ -159,7 +197,7 @@ export function FormularioVenta({ borrador, onCerrar, onGuardado }: {
             <Field label="Reserva" ayuda="Lo que dejó de seña. 0 si pagó todo en cuotas.">
               <Input type="number" min={0} value={f.reserva} onChange={(ev) => setF({ ...f, reserva: Number(ev.target.value) })} />
             </Field>
-            <Field label="En cuántas cuotas" ayuda={f.planCuotas > 0 ? `${f.planCuotas} × ${money(porCuota, mon, 2)}` : undefined}>
+            <Field label="Plan de pago (cuotas)" ayuda={f.planCuotas > 0 ? `${f.planCuotas} × ${money(porCuota, mon, 2)}` : undefined}>
               <Input type="number" min={1} max={12} value={f.planCuotas} onChange={(ev) => setF({ ...f, planCuotas: Math.max(1, Number(ev.target.value)) })} />
             </Field>
           </>
@@ -173,7 +211,7 @@ export function FormularioVenta({ borrador, onCerrar, onGuardado }: {
           </span>
         </div>
 
-        <Field label="Notas" span2><Textarea value={f.notas} onChange={(ev) => setF({ ...f, notas: ev.target.value })} rows={2} /></Field>
+        <Field label="Observaciones / Plan de pagos" span2><Textarea value={f.notas} onChange={(ev) => setF({ ...f, notas: ev.target.value })} rows={2} /></Field>
       </div>
     </ModalForm>
   );

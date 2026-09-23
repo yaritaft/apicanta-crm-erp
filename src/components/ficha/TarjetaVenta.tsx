@@ -8,6 +8,7 @@ import { saldoVenta } from "@/lib/finanzas";
 import { verComprobante } from "@/lib/comprobantes";
 import { fechaLarga, money } from "@/lib/format";
 import type { Cuota, EstadoApp, EstadoVenta, Venta } from "@/lib/types";
+import { planDePago, tipoDePago } from "@/lib/angelo";
 
 /* ==================================================================
    Una venta dentro de la ficha: qué compró, cuánto lleva pagado y cada
@@ -35,7 +36,9 @@ export function TarjetaVenta({ e, venta, resaltada, onPagar, onEditar, onCancela
   const closer = e.equipo.find((x) => x.id === venta.closerId)?.nombre;
   const embudo = e.embudos.find((x) => x.id === venta.embudoId)?.nombre;
   const webinar = e.webinars.find((x) => x.id === venta.webinarId)?.titulo;
+  const setter = e.equipo.find((x) => x.id === venta.setterId)?.nombre;
   const activa = venta.estado === "activa";
+  const cuotasVenta = e.cuotas.filter((c) => c.ventaId === venta.id);
 
   return (
     <div className="venta-card" data-resaltada={resaltada || undefined} id={`venta-${venta.id}`}>
@@ -48,9 +51,16 @@ export function TarjetaVenta({ e, venta, resaltada, onPagar, onEditar, onCancela
           </span>
           <span className="t-sm t-subtle" style={{ display: "block", marginTop: 2 }}>
             {fechaLarga(venta.fecha)}
-            {closer ? ` · cerró ${closer}` : ""}
+            {closer ? ` · vendedor ${closer}` : ""}
             {embudo ? ` · ${embudo}` : ""}
-            {webinar ? ` · ${webinar}` : ""}
+            {venta.proyecto ? ` · ${venta.proyecto}` : ""}
+            {webinar && !venta.proyecto ? ` · ${webinar}` : ""}
+          </span>
+          <span className="t-sm t-subtle" style={{ display: "block" }}>
+            {tipoDePago(venta, cuotasVenta)} · {planDePago(venta, cuotasVenta)}
+            {setter ? ` · setter ${setter}` : ""}
+            {venta.referidorNombre ? ` · referido por ${venta.referidorNombre}` : ""}
+            {venta.ingresoComunidad ? ` · comunidad: ${venta.ingresoComunidad}` : ""}
           </span>
         </span>
         <span className="t-num t-strong" style={{ fontSize: 17, whiteSpace: "nowrap" }}>{M(venta.precioAcordado)}</span>
@@ -92,8 +102,20 @@ export function TarjetaVenta({ e, venta, resaltada, onPagar, onEditar, onCancela
                   {pagos.map((p) => (
                     <div key={p.id} className="row t-sm" style={{ gap: 8, flexWrap: "wrap" }}>
                       <Receipt size={13} className="t-subtle" />
-                      <span className="t-muted">{e.procesadores.find((x) => x.id === p.procesadorId)?.nombre ?? "Sin medio"}</span>
+                      <span className="t-muted">{e.procesadores.find((x) => x.id === p.procesadorId)?.nombre ?? "Sin cuenta"}</span>
                       <span className="t-subtle">{fechaLarga(p.fecha)}</span>
+                      {p.caracteristica && <Badge variante="neutral">{p.caracteristica}</Badge>}
+                      {p.chequeado && !p.movimientoId && (
+                        <span className="t-subtle" title="Pasado Financiera / Chequeado en plataforma" style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+                          <Check size={12} />chequeado
+                        </span>
+                      )}
+                      {p.pagador && <span className="t-subtle" title="Nombre de quien transfirió">de {p.pagador}</span>}
+                      {p.comprobanteLink && !p.comprobante && (
+                        /^https?:\/\//.test(p.comprobanteLink)
+                          ? <a className="link t-sm" href={p.comprobanteLink} target="_blank" rel="noreferrer"><Paperclip size={12} /> comprobante</a>
+                          : <span className="t-subtle" title="Comprobante (de la planilla)"><Paperclip size={12} /> {p.comprobanteLink}</span>
+                      )}
                       {p.movimientoId && (
                         <span className="t-subtle" title="Conciliado con el pago de la pasarela" style={{ display: "inline-flex", alignItems: "center", gap: 4, color: "var(--success)" }}>
                           <Link2 size={12} />conciliado

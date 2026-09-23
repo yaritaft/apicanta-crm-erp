@@ -5,7 +5,7 @@ import { ArrowRight } from "lucide-react";
 import { Chip } from "@/components/ui/ui";
 import { ModalForm } from "@/components/ui/Modal";
 import {
-  agregarMedio, EditorCobros, problemaDeCobros, problemaDePasarelas, type CobroBorrador,
+  agregarMedio, datosDeCobro, EditorCobros, problemaDeCobros, problemaDePasarelas, type CobroBorrador,
 } from "@/components/cobros/EditorCobros";
 import { acciones, useEstado } from "@/lib/store";
 import { fechaLarga, money } from "@/lib/format";
@@ -89,10 +89,7 @@ export function RegistrarPago({ cuota, onCerrar, onGuardado }: {
     if (problema) return;
     const ok = acciones.registrarPago({
       cuotaId: cuota.id,
-      cobros: cobros.map((p) => ({
-        procesadorId: p.procesadorId || undefined, monto: p.monto, fecha: p.fecha,
-        referencia: p.referencia, movimientoId: p.movimientoId, comprobante: p.comprobante,
-      })),
+      cobros: cobros.map(datosDeCobro),
       reajuste: saldo > 0.01 ? reajuste : "pendiente",
     });
     if (!ok) return;

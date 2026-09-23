@@ -6,14 +6,15 @@ import {
 } from "lucide-react";
 import { Badge, Button, Chip, IconButton, Input, Select, Switch, Textarea } from "@/components/ui/ui";
 import {
-  agregarMedio, cobroNuevo, EditorCobros, problemaDeCobros, problemaDePasarelas, type CobroBorrador,
+  agregarMedio, cobroNuevo, datosDeCobro, EditorCobros, problemaDeCobros, problemaDePasarelas, type CobroBorrador,
 } from "@/components/cobros/EditorCobros";
 import { disponibleDe } from "@/components/cobros/SelectorMovimiento";
 import { acciones, nuevoId, useEstado } from "@/lib/store";
 import { fechaLarga, isoDia, money, pct } from "@/lib/format";
 import { medioDeMovimiento, parecido, procesadorDeMovimiento } from "@/lib/conciliacion";
 import { descartarComprobante } from "@/lib/comprobantes";
-import type { Cuota, EstadoApp, MiembroEquipo, Movimiento, Venta } from "@/lib/types";
+import type { Cuota, EstadoApp, IngresoComunidad, MiembroEquipo, Movimiento, Venta } from "@/lib/types";
+import { INGRESOS_COMUNIDAD, PAISES, planDePago, proyectoDeWebinar, webinarDeProyecto } from "@/lib/angelo";
 import { useUsuarioActual } from "@/lib/usuario";
 
 /* ==================================================================
@@ -42,13 +43,15 @@ interface LineaCuota {
 
 type PasoId = "cliente" | "producto" | "precio" | "equipo" | "origen" | "plan" | "cobros" | "resumen";
 
+/* Los nombres de la planilla de Angelo: quien cargaba ahí reconoce cada
+   paso por su columna. */
 const PASOS: { id: PasoId; titulo: string }[] = [
   { id: "cliente",  titulo: "Cliente" },
-  { id: "producto", titulo: "Producto" },
-  { id: "precio",   titulo: "Precio" },
-  { id: "equipo",   titulo: "Equipo" },
+  { id: "producto", titulo: "Servicio" },
+  { id: "precio",   titulo: "Valor total" },
+  { id: "equipo",   titulo: "Vendedor" },
   { id: "origen",   titulo: "Origen" },
-  { id: "plan",     titulo: "Plan de cobro" },
+  { id: "plan",     titulo: "Plan de pago" },
   { id: "cobros",   titulo: "Cobros" },
   { id: "resumen",  titulo: "Resumen" },
 ];
@@ -62,6 +65,8 @@ interface Borrador {
   crearContacto?: boolean;
   contactoNombre: string;
   contactoEmail: string;
+  contactoPais: string;
+  contactoTelefono: string;
   productoId: string;
   precioAcordado: number;
   precioTocado: boolean;
@@ -78,6 +83,12 @@ interface Borrador {
   primerVencimiento: string;
   cuotas: LineaCuota[];
   planTocado: boolean;
+  /* Lo demás de la planilla */
+  proyecto: string;
+  setterId: string;
+  referidorNombre: string;
+  referidorTelefono: string;
+  ingresoComunidad: IngresoComunidad | "";
 }
 
 const redondear = (n: number) => Math.round(n * 100) / 100;
@@ -197,7 +208,8 @@ export function AsistenteVenta({ onCerrar, onListo, desdeMovimiento, cliente }: 
     if (!contactoId && b.crearContacto && b.contactoNombre.trim()) {
       const ahora = new Date().toISOString();
       contactoId = acciones.altaDeLead({
-        nombre: b.contactoNombre.trim(), email: b.contactoEmail.trim(), telefono: "", pais: "",
+        nombre: b.contactoNombre.trim(), email: b.contactoEmail.trim(),
+        telefono: b.contactoTelefono.trim(), pais: b.contactoPais,
         fuente: b.webinarId ? "Webinar" : "", webinarId: b.webinarId || undefined,
         /* Compró: entra directo en la etapa ganada. */
         etapaId: e.etapas.find((x) => x.esGanada)?.id ?? e.etapas[0]?.id ?? "",
@@ -206,12 +218,16 @@ export function AsistenteVenta({ onCerrar, onListo, desdeMovimiento, cliente }: 
         etiquetas: [], creadoEn: ahora, actualizadoEn: ahora, extra: {},
       }, b.contactoNombre.trim());
     }
+    /* El proyecto WEB-día/mes/año ya dice de qué webinar vino. */
+    const webinarId = b.webinarId || webinarDeProyecto(b.proyecto, e.webinars, b.fecha)?.id;
+    const esSetter = /setter/i.test(e.embudos.find((x) => x.id === b.embudoId)?.nombre ?? "");
+    const esReferido = /referid/i.test(e.embudos.find((x) => x.id === b.embudoId)?.nombre ?? "");
     const venta: Venta = {
       id: ventaId,
       contactoId,
       contactoNombre: b.contactoNombre.trim(),
       productoId: b.productoId || undefined,
-      webinarId: b.webinarId || undefined,
+      webinarId: webinarId || undefined,
       embudoId: b.embudoId || undefined,
       precioAcordado: redondear(b.precioAcordado),
       moneda: mon,
@@ -223,6 +239,11 @@ export function AsistenteVenta({ onCerrar, onListo, desdeMovimiento, cliente }: 
       notas: b.notas,
       creadoEn: new Date().toISOString(),
       extra: {},
+      proyecto: b.proyecto || undefined,
+      setterId: esSetter && b.setterId ? b.setterId : undefined,
+      referidorNombre: esReferido && b.referidorNombre.trim() ? b.referidorNombre.trim() : undefined,
+      referidorTelefono: esReferido && b.referidorTelefono.trim() ? b.referidorTelefono.trim() : undefined,
+      ingresoComunidad: b.ingresoComunidad || undefined,
     };
 
     const cuotas: Cuota[] = b.cuotas.map((c) => ({
@@ -232,13 +253,7 @@ export function AsistenteVenta({ onCerrar, onListo, desdeMovimiento, cliente }: 
 
     const cobros = b.cuotas.flatMap((c) =>
       c.cobros.filter((p) => p.monto > 0).map((p) => ({
-        cuotaId: c.id,
-        procesadorId: p.procesadorId || undefined,
-        monto: redondear(p.monto),
-        fecha: p.fecha,
-        referencia: p.referencia,
-        movimientoId: p.movimientoId,
-        comprobante: p.comprobante,
+        ...datosDeCobro(p), cuotaId: c.id, monto: redondear(p.monto),
       })),
     );
 
@@ -361,6 +376,8 @@ function inicial(e: EstadoApp, mov?: Movimiento, cliente?: { contactoId: string;
     contactoId: cliente?.contactoId,
     contactoNombre: cliente?.nombre ?? mov?.clienteNombre ?? "",
     contactoEmail: cliente?.email ?? mov?.clienteEmail ?? "",
+    contactoPais: "",
+    contactoTelefono: "",
     productoId: producto?.id ?? "",
     precioAcordado: mov?.monto ?? producto?.precioLista ?? 0,
     precioTocado: Boolean(mov),
@@ -377,6 +394,11 @@ function inicial(e: EstadoApp, mov?: Movimiento, cliente?: { contactoId: string;
     primerVencimiento: mov?.fecha ?? hoy,
     cuotas: [],
     planTocado: false,
+    proyecto: "",
+    setterId: "",
+    referidorNombre: "",
+    referidorTelefono: "",
+    ingresoComunidad: "",
   };
   b.cuotas = armarPlan(b);
   /* Si el asistente se abrió desde un cobro suelto, ese cobro ya viene
@@ -397,13 +419,13 @@ function validar(paso: PasoId, b: Borrador, diferencia: number, ctx: { e: Estado
     case "cliente":
       return b.contactoNombre.trim().length >= 2 ? null : "Escribí el nombre del cliente";
     case "producto":
-      return b.productoId ? null : "Elegí un producto";
+      return b.productoId ? null : "Elegí el servicio adquirido";
     case "precio":
-      return b.precioAcordado > 0 ? null : "El precio tiene que ser mayor a cero";
+      return b.precioAcordado > 0 ? null : "El valor total tiene que ser mayor a cero";
     case "equipo":
-      return b.closerId ? null : "Decí quién cerró la venta";
+      return b.closerId ? null : "Decí quién es el vendedor";
     case "origen":
-      return b.embudoId ? null : "Elegí el embudo";
+      return b.embudoId ? null : "Elegí la estrategia utilizada";
     case "plan":
       if (Math.abs(diferencia) > 0.5) {
         return diferencia > 0
@@ -467,7 +489,7 @@ function PasoCliente({ b, set, e }: { b: Borrador; set: (c: Partial<Borrador>) =
 
   return (
     <>
-      <Pregunta texto="¿Quién compró?" sub="Escribí el nombre. Si ya está cargado como lead, elegilo de la lista y la venta queda pegada a su historia." />
+      <Pregunta texto="¿Quién compró?" sub="Nombre completo. Si ya está cargado como lead, elegilo de la lista y la venta queda pegada a su historia; si no, cargá su email, país y teléfono." />
       <Input
         value={b.contactoNombre}
         onChange={(ev) => set({ contactoNombre: ev.target.value, contactoId: undefined })}
@@ -487,9 +509,19 @@ function PasoCliente({ b, set, e }: { b: Borrador; set: (c: Partial<Borrador>) =
             <button type="button" className="link t-sm" onClick={() => set({ crearContacto: false })}>Deshacer</button>
           </div>
           <Input
-            type="email" value={b.contactoEmail} placeholder="Su email (opcional)"
+            type="email" value={b.contactoEmail} placeholder="Email" aria-label="Email"
             onChange={(ev) => set({ contactoEmail: ev.target.value })}
           />
+          <div className="form-grid">
+            <Select
+              value={b.contactoPais} placeholder="País del cliente" aria-label="País del cliente"
+              onChange={(ev) => set({ contactoPais: ev.target.value })} opciones={PAISES}
+            />
+            <Input
+              type="tel" value={b.contactoTelefono} placeholder="Teléfono" aria-label="Teléfono"
+              onChange={(ev) => set({ contactoTelefono: ev.target.value })}
+            />
+          </div>
         </div>
       )}
       {!b.contactoId && q.length >= 2 && (sugeridos.length > 0 || !b.crearContacto) && (
@@ -526,7 +558,7 @@ function PasoProducto({ b, set, e, M }: {
   const productos = e.productos.filter((p) => p.activo);
   return (
     <>
-      <Pregunta texto="¿Qué le vendiste?" sub="El precio de lista se carga solo; en el próximo paso lo ajustás a lo que cerró el closer." />
+      <Pregunta texto="¿Qué servicio adquirió?" sub="El precio de lista se carga solo; en el próximo paso ponés el valor total de la venta." />
       <div className="opciones">
         {productos.map((p, k) => (
           <Opcion
@@ -556,14 +588,14 @@ function PasoPrecio({ b, set, e, M }: {
 
   return (
     <>
-      <Pregunta texto="¿A cuánto lo cerró?" sub={lista > 0 ? `El precio de lista de ${producto?.nombre} es ${M(lista)}.` : undefined} />
+      <Pregunta texto="¿Cuál es el valor total de la venta?" sub={lista > 0 ? `El precio de lista de ${producto?.nombre} es ${M(lista)}.` : undefined} />
       <div className="monto-grande">
         <span className="monto-grande__signo">US$</span>
         <input
           type="number" min={0} step="1" inputMode="decimal"
           value={b.precioAcordado || ""}
           onChange={(ev) => set({ precioAcordado: Number(ev.target.value), precioTocado: true })}
-          aria-label="Precio cerrado"
+          aria-label="Valor total de la venta"
         />
       </div>
       <div className="row-wrap">
@@ -597,7 +629,7 @@ function PasoEquipo({ b, set, e, sinComision, yo }: {
   const directores = e.equipo.filter((x) => x.rol === "director");
   return (
     <>
-      <Pregunta texto="¿Quién la cerró?" sub="De acá salen las comisiones: el closer cobra sobre lo que entra, neto de procesador." />
+      <Pregunta texto="¿Quién es el vendedor?" sub="De acá salen las comisiones: el vendedor cobra sobre lo que entra, neto de procesador." />
       <div className="opciones">
         {closers.map((x, k) => (
           <Opcion
@@ -631,21 +663,73 @@ function PasoEquipo({ b, set, e, sinComision, yo }: {
 
 function PasoOrigen({ b, set, e }: { b: Borrador; set: (c: Partial<Borrador>) => void; e: EstadoApp }) {
   const webinars = [...e.webinars].sort((a, c) => +new Date(c.fecha) - +new Date(a.fecha)).slice(0, 12);
+  const estrategia = e.embudos.find((x) => x.id === b.embudoId);
+  const esSetter = /setter/i.test(estrategia?.nombre ?? "");
+  const esReferido = /referid/i.test(estrategia?.nombre ?? "");
+  const setters = e.equipo.filter((x) => x.activo && x.rol === "setter");
+  /* Los proyectos de la lista, y los de los últimos webinars que todavía no
+     están: así el del webinar de la semana no hay que escribirlo. */
+  const proyectos = useMemo(() => {
+    const lista = e.ajustes.proyectos ?? [];
+    const deWebinars = webinars.map((w) => proyectoDeWebinar(w.fecha)).filter((x) => !lista.includes(x));
+    return [...deWebinars, ...lista];
+  }, [e.ajustes.proyectos, webinars]);
+
+  function elegirProyecto(proyecto: string) {
+    const w = webinarDeProyecto(proyecto, e.webinars, b.fecha);
+    set({ proyecto, ...(w ? { webinarId: w.id } : {}) });
+  }
+
   return (
     <>
-      <Pregunta texto="¿De dónde salió?" sub="Sin esto el profit por webinar y el costo de adquisición salen mal." />
-      <div className="opciones">
-        {e.embudos.filter((x) => x.activo).map((x, k) => (
-          <Opcion key={x.id} tecla={String(k + 1)} nombre={x.nombre} activo={b.embudoId === x.id} onClick={() => set({ embudoId: x.id })} />
-        ))}
-      </div>
+      <Pregunta texto="¿De dónde salió?" sub="La estrategia utilizada y el proyecto. Sin esto el profit por webinar y el costo de adquisición salen mal." />
       <div className="stack-2">
-        <span className="t-label">Webinar de origen</span>
-        <Select
-          value={b.webinarId} placeholder="Sin atribuir"
-          onChange={(ev) => set({ webinarId: ev.target.value })}
-          opciones={webinars.map((w) => ({ valor: w.id, texto: `${w.titulo} — ${fechaLarga(w.fecha)}` }))}
-        />
+        <span className="t-label">Estrategia utilizada</span>
+        <div className="opciones">
+          {e.embudos.filter((x) => x.activo).sort((x, y) => x.orden - y.orden).map((x, k) => (
+            <Opcion key={x.id} tecla={k < 9 ? String(k + 1) : undefined} nombre={x.nombre} activo={b.embudoId === x.id} onClick={() => set({ embudoId: x.id })} />
+          ))}
+        </div>
+      </div>
+
+      {esSetter && (
+        <div className="stack-2">
+          <span className="t-label">Nombre del setter</span>
+          <Select
+            value={b.setterId} placeholder={setters.length ? "Elegí el setter" : "No hay setters en Ajustes → Equipo"}
+            onChange={(ev) => set({ setterId: ev.target.value })}
+            opciones={setters.map((x) => ({ valor: x.id, texto: x.nombre }))}
+          />
+        </div>
+      )}
+
+      {esReferido && (
+        <div className="form-grid">
+          <div className="hk-field">
+            <label className="hk-label">Nombre del referidor</label>
+            <Input value={b.referidorNombre} onChange={(ev) => set({ referidorNombre: ev.target.value })} placeholder="Quién lo refirió" />
+          </div>
+          <div className="hk-field">
+            <label className="hk-label">Número de teléfono</label>
+            <Input type="tel" value={b.referidorTelefono} onChange={(ev) => set({ referidorTelefono: ev.target.value })} placeholder="Del referidor" />
+          </div>
+        </div>
+      )}
+
+      <div className="form-grid">
+        <div className="hk-field">
+          <label className="hk-label">Proyecto</label>
+          <Select value={b.proyecto} placeholder="Sin proyecto" onChange={(ev) => elegirProyecto(ev.target.value)} opciones={proyectos} />
+          <span className="hk-help">Un WEB-día/mes/año ata la venta a ese webinar solo.</span>
+        </div>
+        <div className="hk-field">
+          <label className="hk-label">Webinar de origen</label>
+          <Select
+            value={b.webinarId} placeholder="Sin atribuir"
+            onChange={(ev) => set({ webinarId: ev.target.value })}
+            opciones={webinars.map((w) => ({ valor: w.id, texto: `${w.titulo} — ${fechaLarga(w.fecha)}` }))}
+          />
+        </div>
       </div>
       <div className="stack-2">
         <span className="t-label">Fecha de la venta</span>
@@ -672,13 +756,13 @@ function PasoPlan({ b, setB, M, diferencia }: {
 
   return (
     <>
-      <Pregunta texto="¿Cómo lo va a pagar?" sub="La reserva es una cuota más. Después podés mover monto y fecha de cualquiera." />
+      <Pregunta texto="¿Cuál es el plan de pago?" sub="La reserva es una cuota más. Después podés mover monto y fecha de cualquiera." />
 
       <div className="row-wrap">
-        {[1, 2, 3, 4, 6].map((n) => (
+        {[1, 2, 3, 4, 5, 6].map((n) => (
           <Chip key={n} activo={b.cantidadCuotas === n && !b.planTocado}
             onClick={() => setB((x) => ({ ...x, cantidadCuotas: n, planTocado: false }))}>
-            {n === 1 ? "Un solo pago" : `${n} cuotas`}
+            {n === 1 ? "1 Cuota" : `${n} Cuotas`}
           </Chip>
         ))}
       </div>
@@ -888,7 +972,9 @@ function PasoResumen({ b, set, e, M, sinComision, totalCobrado }: {
   const closer = e.equipo.find((x) => x.id === b.closerId);
   const director = e.equipo.find((x) => x.id === b.directorId);
   const embudo = e.embudos.find((x) => x.id === b.embudoId);
-  const webinar = e.webinars.find((x) => x.id === b.webinarId);
+  const webinar = e.webinars.find((x) => x.id === b.webinarId)
+    ?? webinarDeProyecto(b.proyecto, e.webinars, b.fecha);
+  const setter = /setter/i.test(embudo?.nombre ?? "") ? e.equipo.find((x) => x.id === b.setterId) : undefined;
   const conciliados = b.cuotas.flatMap((c) => c.cobros).filter((p) => p.movimientoId).length;
 
   return (
@@ -896,12 +982,16 @@ function PasoResumen({ b, set, e, M, sinComision, totalCobrado }: {
       <Pregunta texto="Así queda la venta" sub="Revisá y confirmá. Después se puede editar todo desde la ficha." />
 
       <dl className="dl">
-        <dt>Cliente</dt><dd>{b.contactoNombre}</dd>
-        <dt>Producto</dt><dd>{producto?.nombre ?? "—"}</dd>
-        <dt>Precio</dt><dd className="t-num">{M(b.precioAcordado, 2)}</dd>
-        <dt>Closer</dt><dd>{closer?.nombre ?? "—"}{sinComision && <span className="t-subtle"> · no comisiona nadie</span>}</dd>
+        <dt>Nombre Completo</dt><dd>{b.contactoNombre}</dd>
+        <dt>Servicio adquirido</dt><dd>{producto?.nombre ?? "—"}</dd>
+        <dt>Valor total</dt><dd className="t-num">{M(b.precioAcordado, 2)}</dd>
+        <dt>Vendedor</dt><dd>{closer?.nombre ?? "—"}{sinComision && <span className="t-subtle"> · no comisiona nadie</span>}</dd>
         {!sinComision && <><dt>Director</dt><dd>{director?.nombre ?? "—"}</dd></>}
-        <dt>Origen</dt><dd>{embudo?.nombre ?? "—"}{webinar ? ` · ${webinar.titulo}` : ""}</dd>
+        <dt>Estrategia</dt><dd>{embudo?.nombre ?? "—"}{webinar ? ` · ${webinar.titulo}` : ""}</dd>
+        {b.proyecto && <><dt>Proyecto</dt><dd>{b.proyecto}</dd></>}
+        {setter && <><dt>Setter</dt><dd>{setter.nombre}</dd></>}
+        {b.referidorNombre.trim() && /referid/i.test(embudo?.nombre ?? "") && <><dt>Referidor</dt><dd>{b.referidorNombre}{b.referidorTelefono ? ` · ${b.referidorTelefono}` : ""}</dd></>}
+        <dt>Plan de pago</dt><dd>{planDePago({ estado: "activa" } as Venta, b.cuotas.map((c) => ({ esReserva: c.esReserva }) as Cuota))}{b.reserva > 0 ? ` + reserva de ${M(b.reserva)}` : ""}</dd>
         <dt>Fecha</dt><dd>{fechaLarga(b.fecha)}</dd>
       </dl>
 
@@ -960,8 +1050,14 @@ function PasoResumen({ b, set, e, M, sinComision, totalCobrado }: {
         </span>
       </div>
 
+      <div className="hk-field" style={{ maxWidth: 280 }}>
+        <label className="hk-label">Ingreso a la comunidad</label>
+        <Select value={b.ingresoComunidad} placeholder="Sin definir"
+          onChange={(ev) => set({ ingresoComunidad: ev.target.value as IngresoComunidad })} opciones={INGRESOS_COMUNIDAD} />
+      </div>
+
       <div className="hk-field">
-        <label className="hk-label">Notas</label>
+        <label className="hk-label">Observaciones / Plan de pagos</label>
         <Textarea rows={2} value={b.notas} onChange={(ev) => set({ notas: ev.target.value })}
           placeholder="Lo que haya que recordar de esta venta" />
       </div>
