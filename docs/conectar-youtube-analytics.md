@@ -77,9 +77,12 @@ La dirección de la app es **`https://apicanta-erp.vercel.app`**.
 La hace **alguien que sea dueño o administrador del canal de YouTube de
 Hackear IT**, con esa cuenta de Google.
 
-13. En el ERP, abrí cualquier webinar que tenga link de YouTube.
-14. Bajá hasta **"El vivo, minuto a minuto"** → pestaña **Retención** →
-    **Conectar el canal**.
+13. En el ERP, andá a **Ajustes → Integraciones** y bajá hasta la tarjeta
+    **YouTube** (o entrá directo a
+    `https://apicanta-erp.vercel.app/ajustes?seccion=integraciones`).
+14. Tocá **Conectar el canal**. (También está en la ficha de cualquier
+    webinar con video: **"El vivo, minuto a minuto"** → pestaña
+    **Retención**.)
 15. Google pide elegir una cuenta: elegí la que maneja el canal. Si el canal
     es una "cuenta de marca", te pide elegir el canal: elegí **Hackear IT**.
 16. Va a aparecer "Google no verificó esta app". Tocá

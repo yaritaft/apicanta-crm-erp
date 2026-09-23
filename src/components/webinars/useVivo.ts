@@ -79,13 +79,14 @@ export function useAnalytics(videoId: string, desde: string) {
   return { ...r, actualizar: () => (fresco ? r.recargar() : setFresco(true)) };
 }
 
-/* Manda a Google a quien tenga acceso al canal. Vuelve a la misma ficha. */
+/* Manda a Google a quien tenga acceso al canal. Vuelve a la misma pantalla. */
 export async function conectarAnalytics(quien?: string): Promise<string | null> {
   try {
     const r = await fetch("/api/youtube/conectar", {
       method: "POST",
       headers: { ...(await cabeceras()), "Content-Type": "application/json" },
-      body: JSON.stringify({ volver: window.location.pathname, quien }),
+      /* Con la búsqueda: desde Ajustes vuelve a ?seccion=integraciones. */
+      body: JSON.stringify({ volver: window.location.pathname + window.location.search, quien }),
     });
     const j = (await r.json().catch(() => null)) as { url?: string; error?: string } | null;
     if (!r.ok || !j?.url) return j?.error ?? "No pude arrancar la conexión con YouTube.";
@@ -93,5 +94,31 @@ export async function conectarAnalytics(quien?: string): Promise<string | null> 
     return null;
   } catch {
     return "No hay conexión: no pude arrancar la conexión con YouTube.";
+  }
+}
+
+/* ---------- Para Ajustes → Integraciones ---------- */
+
+export interface EstadoConexionYoutube {
+  hayClave: boolean;
+  configurado: boolean;
+  hayBase: boolean;
+  conectado: boolean;
+  canal: string | null;
+  conectadoPor: string | null;
+  conectadoEn: string | null;
+}
+
+export function useConexionYoutube() {
+  return usePedido<EstadoConexionYoutube>("/api/youtube/conectar");
+}
+
+export async function desconectarAnalytics(): Promise<string | null> {
+  try {
+    const r = await fetch("/api/youtube/conectar", { method: "DELETE", headers: await cabeceras() });
+    const j = (await r.json().catch(() => null)) as { error?: string } | null;
+    return r.ok ? null : j?.error ?? "No pude desconectar el canal.";
+  } catch {
+    return "No hay conexión: no pude desconectar el canal.";
   }
 }

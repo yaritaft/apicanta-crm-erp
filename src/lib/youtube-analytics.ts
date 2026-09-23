@@ -124,12 +124,15 @@ export async function canalPropio(acceso: string): Promise<{ id?: string; nombre
   return { id: c?.id, nombre: c?.snippet?.title };
 }
 
-export interface Conexion { refreshToken: string; canalId?: string; canalNombre?: string }
+export interface Conexion {
+  refreshToken: string; canalId?: string; canalNombre?: string; conectadoPor?: string; conectadoEn?: string;
+}
 
 export async function conexion(): Promise<Conexion | null> {
   const db = nubeServidor();
   if (!db) return null;
-  const r = await db.from("yt_conexion").select("refreshToken, canalId, canalNombre").eq("id", "canal").maybeSingle();
+  const r = await db.from("yt_conexion")
+    .select("refreshToken, canalId, canalNombre, conectadoPor, conectadoEn").eq("id", "canal").maybeSingle();
   if (r.error || !r.data) return null;
   return r.data as Conexion;
 }

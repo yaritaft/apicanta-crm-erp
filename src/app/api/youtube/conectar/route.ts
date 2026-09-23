@@ -1,7 +1,38 @@
 import { NextResponse } from "next/server";
 import { esDelEquipo, hayEquipoConfigurado } from "@/lib/equipo-servidor";
-import { hayServidor } from "@/lib/servidor";
-import { analyticsConfigurado, crearEstado, PERMISOS, urlRedireccion } from "@/lib/youtube-analytics";
+import { hayServidor, nubeServidor } from "@/lib/servidor";
+import { analyticsConfigurado, conexion, crearEstado, PERMISOS, urlRedireccion } from "@/lib/youtube-analytics";
+
+/* GET: cómo está la conexión, para Ajustes → Integraciones. Nunca devuelve
+   el token: sólo si hay, de qué canal y quién lo conectó. */
+export async function GET(peticion: Request) {
+  if (hayEquipoConfigurado() && !(await esDelEquipo(peticion))) {
+    return NextResponse.json({ error: "Hace falta iniciar sesión." }, { status: 401 });
+  }
+  const c = await conexion();
+  return NextResponse.json({
+    hayClave: Boolean(process.env.YOUTUBE_API_KEY?.trim()),
+    configurado: analyticsConfigurado(),
+    hayBase: hayServidor,
+    conectado: Boolean(c),
+    canal: c?.canalNombre ?? null,
+    conectadoPor: c?.conectadoPor ?? null,
+    conectadoEn: c?.conectadoEn ?? null,
+  });
+}
+
+/* DELETE: desconectar el canal. Se borra el permiso y lo que se trajo con él. */
+export async function DELETE(peticion: Request) {
+  if (hayEquipoConfigurado() && !(await esDelEquipo(peticion))) {
+    return NextResponse.json({ error: "Hace falta iniciar sesión." }, { status: 401 });
+  }
+  const db = nubeServidor();
+  if (!db) return NextResponse.json({ error: "No hay base configurada." }, { status: 503 });
+  const r = await db.from("yt_conexion").delete().eq("id", "canal");
+  if (r.error) return NextResponse.json({ error: "No pude desconectar el canal." }, { status: 502 });
+  await db.from("yt_analytics").delete().neq("videoId", "");
+  return NextResponse.json({ ok: true });
+}
 
 /* Arranca la conexión con YouTube Analytics: devuelve la URL de Google a
    la que la pantalla manda a quien tenga acceso al canal. Es un POST con

@@ -8,6 +8,7 @@ import {
   Moon, Plug, Plus, Settings2, Sun, Trash2, Upload, X,
 } from "lucide-react";
 import { Equipo } from "@/components/ajustes/Equipo";
+import { YoutubeIntegracion } from "@/components/ajustes/YoutubeIntegracion";
 import { PageHead } from "@/components/shell/PageHead";
 import {
   Ayuda, Badge, Button, Card, CardHead, Empty, Field, IconButton, Input,
@@ -467,7 +468,7 @@ function Integraciones() {
     <div className="stack-4">
       <Ayuda titulo="Apicanta funciona sin conectar nada" icono={<Info size={18} />}>
         Todo lo que ves anda cargando los datos a mano. Estas conexiones son para ahorrarte ese trabajo: cuando estén
-        puestas, la inversión de Meta y las sesiones de Calendly entran solas. Las claves quedan guardadas en este
+        puestas, la inversión de Meta, las sesiones de Calendly y los vivos de YouTube entran solos. Las claves quedan guardadas en este
         navegador, nunca se comparten.
       </Ayuda>
 
@@ -488,6 +489,7 @@ function Integraciones() {
       </Card>
 
       <EstadoCalendly />
+      <YoutubeIntegracion />
     </div>
   );
 }
