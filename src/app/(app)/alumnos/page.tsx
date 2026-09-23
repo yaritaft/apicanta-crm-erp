@@ -8,7 +8,7 @@ import {
 } from "lucide-react";
 import { PageHead } from "@/components/shell/PageHead";
 import {
-  Badge, Bar, Button, Card, Chip, Empty, IconButton, Input, Persona, StatCard, Tabs, Tag,
+  Badge, Bar, Button, Card, Chip, Empty, IconButton, Input, Persona, Tabs, Tag,
 } from "@/components/ui/ui";
 import { Columna, DataTable } from "@/components/ui/DataTable";
 import { Confirmar } from "@/components/ui/Modal";
@@ -22,8 +22,7 @@ import { acciones, useEstado } from "@/lib/store";
 import { useAbrirDesdeURL } from "@/lib/useQuery";
 import { etapaDelAlumno, etapasDeServicio } from "@/lib/alumnos";
 import { rachasAHoy } from "@/lib/reportes";
-import { money, num, pct } from "@/lib/format";
-import { mrr } from "@/lib/metricas";
+import { money, num } from "@/lib/format";
 import type { Alumno, EstadoAlumno } from "@/lib/types";
 
 type Vista = "lista" | "pipeline";
@@ -83,9 +82,6 @@ export default function Alumnos() {
 
   const hayFiltros = q.trim() !== "" || estado !== "todos";
   const limpiarFiltros = () => { setQ(""); setEstado("todos"); };
-
-  const activos = e.alumnos.filter((a) => a.estado === "activo");
-  const enRiesgo = activos.filter((a) => sinReportar(a) >= 2).length;
 
   function guardar() {
     if (!form) return;
@@ -178,17 +174,6 @@ export default function Alumnos() {
         sub="Quién está cursando, en qué etapa del servicio está y si manda su reporte semanal."
         acciones={<Button variante="primary" icono={<Plus size={16} />} onClick={() => setAsistente(true)}>Nuevo alumno</Button>}
       />
-
-      <div className="grid-stats">
-        <StatCard hero etiqueta="Alumnos activos" valor={num(activos.length)} contexto={`de ${num(e.alumnos.length)} en total`} />
-        <StatCard etiqueta="MRR" valor={money(mrr(e), e.ajustes.monedaBase)} contexto="por cuotas de los activos" />
-        <StatCard etiqueta="Progreso promedio" valor={pct(activos.length ? activos.reduce((s, a) => s + a.progreso, 0) / activos.length : 0, 0)} contexto="del programa" />
-        <StatCard
-          etiqueta="Sin reportar" valor={num(enRiesgo)}
-          delta={enRiesgo > 0 ? "Seguir" : undefined} direccion="accent"
-          contexto="2 semanas o más"
-        />
-      </div>
 
       <Tabs
         valor={vista} onChange={cambiarVista}

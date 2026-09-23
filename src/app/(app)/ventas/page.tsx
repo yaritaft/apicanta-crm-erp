@@ -6,7 +6,7 @@ import {
 } from "lucide-react";
 import { PageHead } from "@/components/shell/PageHead";
 import {
-  Ayuda, Bar, Button, Card, Chip, Empty, IconButton, StatCard,
+  Ayuda, Bar, Button, Card, Chip, Empty, IconButton,
 } from "@/components/ui/ui";
 import { Columna, DataTable } from "@/components/ui/DataTable";
 import { Confirmar } from "@/components/ui/Modal";
@@ -16,8 +16,8 @@ import { useToast } from "@/components/ui/Toast";
 import { acciones, useEstado } from "@/lib/store";
 import { useAbrirDesdeURL } from "@/lib/useQuery";
 import { useAbrirFicha } from "@/components/ficha/abrir";
-import { fechaLarga, money, num, pct } from "@/lib/format";
-import { porCobrarTotal, saldoVenta } from "@/lib/finanzas";
+import { fechaLarga, money } from "@/lib/format";
+import { saldoVenta } from "@/lib/finanzas";
 import type { EstadoVenta, Venta } from "@/lib/types";
 
 const ESTADO: Record<EstadoVenta, { texto: string; variante: "success" | "neutral" | "danger" }> = {
@@ -52,10 +52,6 @@ export default function Ventas() {
     return xs;
   }, [e, filtro]);
 
-  const activas = e.ventas.filter((v) => v.estado === "activa");
-  const facturado = activas.reduce((a, v) => a + v.precioAcordado, 0);
-  const cobradoTotal = e.pagos.reduce((a, p) => a + p.monto, 0);
-
 
   const columnas: Columna<Venta>[] = [
     { clave: "contacto", titulo: "Cliente", tipo: "primary", orden: (v) => v.contactoNombre, celda: (v) => v.contactoNombre },
@@ -85,13 +81,6 @@ export default function Ventas() {
         sub="Cada venta con su plan de cuotas. Una cuota puede cobrarse con varios métodos y cada pago queda atado a su procesador."
         acciones={<Button variante="primary" icono={<Plus size={16} />} onClick={() => setAsistente(true)}>Nueva venta</Button>}
       />
-
-      <div className="grid-stats">
-        <StatCard hero etiqueta="Facturado" valor={M(facturado)} contexto={`${activas.length} ventas activas`} />
-        <StatCard etiqueta="Cobrado" valor={M(cobradoTotal)} delta={facturado > 0 ? pct((cobradoTotal / facturado) * 100, 0) : undefined} direccion="up" contexto="de lo vendido" />
-        <StatCard etiqueta="Por cobrar" valor={M(porCobrarTotal(e))} contexto="en cuotas pendientes" />
-        <StatCard etiqueta="Ticket promedio" valor={M(activas.length ? facturado / activas.length : 0)} contexto="por venta" />
-      </div>
 
       <Card style={{ padding: 0, overflow: "hidden" }}>
         <div style={{ padding: "var(--space-4)" }}>

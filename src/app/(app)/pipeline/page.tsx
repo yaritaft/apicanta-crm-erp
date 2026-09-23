@@ -3,12 +3,11 @@
 import React, { useMemo, useState } from "react";
 import { GripVertical, Plus } from "lucide-react";
 import { PageHead } from "@/components/shell/PageHead";
-import { Button, Card, Empty, Select, StatCard } from "@/components/ui/ui";
+import { Button, Card, Empty, Select } from "@/components/ui/ui";
 import { useAbrirFicha } from "@/components/ficha/abrir";
 import { useToast } from "@/components/ui/Toast";
 import { acciones, useEstado } from "@/lib/store";
-import { money, pct, relativo } from "@/lib/format";
-import { tasaConversion, valorPipeline } from "@/lib/metricas";
+import { money, relativo } from "@/lib/format";
 import type { Lead } from "@/lib/types";
 
 export default function Pipeline() {
@@ -20,7 +19,6 @@ export default function Pipeline() {
   const [fuente, setFuente] = useState("todas");
 
   const etapas = useMemo(() => [...e.etapas].sort((a, b) => a.orden - b.orden), [e.etapas]);
-  const pipe = valorPipeline(e);
 
   const leads = useMemo(
     () => (fuente === "todas" ? e.leads : e.leads.filter((l) => l.fuente === fuente)),
@@ -56,7 +54,6 @@ export default function Pipeline() {
     toast(`${lead.nombre} → ${destino.nombre}`);
   }
 
-  const etapaDe = (id: string) => e.etapas.find((x) => x.id === id);
 
   return (
     <div className="stack-5">
@@ -75,13 +72,6 @@ export default function Pipeline() {
           </>
         }
       />
-
-      <div className="grid-stats">
-        <StatCard hero etiqueta="Pipeline abierto" valor={money(pipe.bruto, e.ajustes.monedaBase)} contexto={`${leads.filter((l) => { const x = etapaDe(l.etapaId); return x && !x.esGanada && !x.esPerdida; }).length} leads en juego`} />
-        <StatCard etiqueta="Ponderado" valor={money(pipe.ponderado, e.ajustes.monedaBase)} contexto="según probabilidad de cada etapa" />
-        <StatCard etiqueta="Tasa de cierre" valor={pct(tasaConversion(e))} contexto="de los leads ya definidos" />
-        <StatCard etiqueta="Ticket promedio" valor={money(leads.length ? leads.reduce((a, l) => a + l.monto, 0) / leads.length : 0, e.ajustes.monedaBase)} contexto="por lead" />
-      </div>
 
       {e.leads.length === 0 ? (
         <Card>

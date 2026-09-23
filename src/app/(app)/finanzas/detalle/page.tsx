@@ -8,7 +8,7 @@ import {
 } from "lucide-react";
 import { PageHead } from "@/components/shell/PageHead";
 import {
-  Ayuda, Badge, Button, Card, CardHead, Empty, IconButton, StatCard, Tabs,
+  Ayuda, Badge, Button, Card, CardHead, Empty, IconButton, Tabs,
 } from "@/components/ui/ui";
 import { DataTable } from "@/components/ui/DataTable";
 import { Confirmar } from "@/components/ui/Modal";
@@ -17,18 +17,15 @@ import { ListaGastos } from "@/components/finanzas/ListaGastos";
 import { FichaGasto } from "@/components/finanzas/FichaGasto";
 import { AsistenteGasto } from "@/components/finanzas/AsistenteGasto";
 import { acciones, useEstado } from "@/lib/store";
-import { delta, fechaLarga, money, num, pct } from "@/lib/format";
-import { periodoAnterior, rangoDeFechas, variacion } from "@/lib/metricas";
+import { fechaLarga, money } from "@/lib/format";
+import { rangoDeFechas } from "@/lib/metricas";
 import { DateRangePicker, rangoSub } from "@/components/ui/DateRangePicker";
 import { useRangoURL } from "@/lib/useRango";
-import {
-  calcularPyL, comisionesDelMes, cuotasVencidas,
-  porCobrarTotal, tasaDeMora, totalComisiones,
-} from "@/lib/finanzas";
+import { calcularPyL, comisionesDelMes, cuotasVencidas } from "@/lib/finanzas";
 import type { Cuota, Gasto } from "@/lib/types";
 
-type Vista = "cobros" | "gastos" | "comisiones" | "adquisicion";
-const VISTAS: Vista[] = ["cobros", "gastos", "comisiones", "adquisicion"];
+type Vista = "cobros" | "gastos" | "comisiones";
+const VISTAS: Vista[] = ["cobros", "gastos", "comisiones"];
 
 export default function FinanzasDetalle() {
   const e = useEstado();
@@ -61,10 +58,6 @@ export default function FinanzasDetalle() {
 
   /* Volver al resumen sin perder el periodo que estabas mirando. */
   const qs = new URLSearchParams({ periodo: rango.preset, desde: rango.desde, hasta: rango.hasta }).toString();
-  const previo = useMemo(() => {
-    const a = periodoAnterior(rango.desde, rango.hasta);
-    return rangoDeFechas(a.desde, a.hasta, "período anterior");
-  }, [rango]);
 
   /* ?vista=gastos&ver=<id> abre la ficha de un gasto (así llega el estado de
      resultados) y ?nuevo=1 abre el asistente. Se limpian sólo esos: el
@@ -86,13 +79,11 @@ export default function FinanzasDetalle() {
   const gVista = verId ? e.gastos.find((g) => g.id === verId) ?? null : null;
 
   const p = useMemo(() => calcularPyL(e, mes), [e, mes]);
-  const pPrev = useMemo(() => calcularPyL(e, previo), [e, previo]);
   const mon = e.ajustes.monedaBase;
   const M = (n: number, d = 0) => money(n, mon, d);
 
   const vencidas = useMemo(() => cuotasVencidas(e), [e]);
   const comisiones = useMemo(() => comisionesDelMes(e, mes), [e, mes]);
-  const totComi = totalComisiones(comisiones);
 
   return (
     <div className="stack-5">
@@ -113,42 +104,15 @@ export default function FinanzasDetalle() {
         }
       />
 
-      <div className="grid-stats">
-        <StatCard hero etiqueta={`Cobrado en ${mes.etiqueta}`} valor={M(p.cashCollected)}
-          delta={delta(variacion(p.cashCollected, pPrev.cashCollected))}
-          direccion={p.cashCollected >= pPrev.cashCollected ? "up" : "down"}
-          contexto={`vs. ${previo.etiqueta}`} ayuda="Cash collected: la plata que efectivamente entró este mes." />
-        <StatCard etiqueta="Facturado" valor={M(p.revenue)}
-          delta={pct(p.tasaCobro, 0)} direccion={p.tasaCobro >= 75 ? "up" : "accent"}
-          contexto="se cobró de lo vendido" ayuda="Revenue: el precio acordado de las ventas cerradas este mes." />
-        <StatCard etiqueta="Profit neto" valor={M(p.netoCC)}
-          delta={p.cashCollected > 0 ? pct((p.netoCC / p.cashCollected) * 100, 0) : "—"}
-          direccion={p.netoCC >= 0 ? "up" : "down"} contexto="de margen sobre lo cobrado" />
-        <StatCard etiqueta="ROAS" valor={p.roasCC > 0 ? `${num(p.roasCC, 1)}x` : "—"}
-          delta={p.roasRev > 0 ? `${num(p.roasRev, 1)}x facturado` : undefined} direccion="accent"
-          contexto="sobre lo cobrado" ayuda="Cuántas veces recuperás lo que ponés en publicidad." />
-      </div>
-
       <Tabs valor={vista} onChange={setVista} opciones={[
         { valor: "cobros", texto: `Cobros${vencidas.length ? ` · ${vencidas.length}` : ""}` },
         { valor: "gastos", texto: "Gastos" },
         { valor: "comisiones", texto: "Comisiones" },
-        { valor: "adquisicion", texto: "Adquisición" },
       ]} />
 
       {/* ---------------- P&L ---------------- */}
       {vista === "cobros" && (
         <div className="stack-4">
-          <div className="grid-stats">
-            <StatCard hero etiqueta="Por cobrar" valor={M(porCobrarTotal(e))} contexto="en cuotas pendientes" />
-            <StatCard etiqueta="Vencido" valor={M(vencidas.reduce((a, c) => a + c.saldo, 0))}
-              delta={vencidas.length > 0 ? `${vencidas.length} cuotas` : undefined} direccion="down"
-              contexto="pasado de fecha" />
-            <StatCard etiqueta="Tasa de mora" valor={pct(tasaDeMora(e))} contexto="de las cuotas ya exigibles" />
-            <StatCard etiqueta="El más atrasado" valor={vencidas.length ? `${vencidas[0].diasAtraso} días` : "—"}
-              contexto={vencidas.length ? vencidas[0].contacto : "Nadie atrasado"} />
-          </div>
-
           {vencidas.length > 0 && (
             <Ayuda titulo={`Hay ${vencidas.length} cuotas vencidas sin cobrar`} icono={<AlertTriangle size={18} />}>
               Suman <strong>{M(vencidas.reduce((a, c) => a + c.saldo, 0))}</strong>. La más vieja lleva{" "}
@@ -202,12 +166,6 @@ export default function FinanzasDetalle() {
       {/* ---------------- Comisiones ---------------- */}
       {vista === "comisiones" && (
         <div className="stack-4">
-          <div className="grid-3">
-            <StatCard hero etiqueta="Closers" valor={M(totComi.closers)} contexto={`${comisiones.filter((c) => c.comisionCloser > 0).length} ventas con comisión`} />
-            <StatCard etiqueta="Director" valor={M(totComi.director)} contexto="5% del neto de procesador" />
-            <StatCard etiqueta="Sin comisión" valor={num(comisiones.filter((c) => c.sinComision).length)} contexto="ventas cerradas por Yari" />
-          </div>
-
           <Ayuda titulo="Cómo se calcula" icono={<Info size={18} />}>
             El closer cobra sobre el <strong>cash collected neto de procesador</strong>, no sobre el profit:
             si entraron US$ 1.000 por Stripe, la base es 1.000 − 2,9% y sobre eso va su porcentaje.
@@ -253,24 +211,6 @@ export default function FinanzasDetalle() {
               </Ayuda>
             </Card>
           </div>
-        </div>
-      )}
-
-      {/* ---------------- Adquisición ---------------- */}
-      {vista === "adquisicion" && (
-        <div className="grid-2">
-            <Card>
-              <CardHead titulo="Métricas de adquisición" sub={`${mes.etiqueta}.`} />
-              <dl className="dl">
-                <dt>Ventas</dt><dd className="t-num">{num(p.ventas)}</dd>
-                <dt>Inversión en ads</dt><dd className="t-num">{M(p.inversionAds)}</dd>
-                <dt>CAC</dt><dd className="t-num">{M(p.cac)}</dd>
-                <dt>ROAS cobrado</dt><dd className="t-num">{p.roasCC > 0 ? `${num(p.roasCC, 2)}x` : "—"}</dd>
-                <dt>ROAS facturado</dt><dd className="t-num">{p.roasRev > 0 ? `${num(p.roasRev, 2)}x` : "—"}</dd>
-                <dt>Tasa de cobro</dt><dd className="t-num">{pct(p.tasaCobro)}</dd>
-                <dt>Tasa de mora</dt><dd className="t-num" style={{ color: tasaDeMora(e) > 15 ? "var(--danger)" : undefined }}>{pct(tasaDeMora(e))}</dd>
-              </dl>
-            </Card>
         </div>
       )}
 

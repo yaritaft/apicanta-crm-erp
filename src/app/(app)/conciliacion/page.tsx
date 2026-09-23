@@ -6,7 +6,7 @@ import {
 } from "lucide-react";
 import { PageHead } from "@/components/shell/PageHead";
 import {
-  Ayuda, Badge, Button, Card, Chip, Empty, Field, Input, Select, StatCard, Textarea,
+  Ayuda, Badge, Button, Card, Chip, Empty, Field, Input, Select, Textarea,
 } from "@/components/ui/ui";
 import { ModalForm } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toast";
@@ -124,13 +124,6 @@ export default function Conciliacion() {
           </>
         }
       />
-
-      <div className="grid-stats">
-        <StatCard hero etiqueta="Sin conciliar" valor={M(resumen.sinConciliar)} contexto={`${resumen.pendientes} cobros esperando`} />
-        <StatCard etiqueta="Calce seguro" valor={String(resumen.automaticos)} contexto={`${M(resumen.montoAutomatico)} listos para imputar`} />
-        <StatCard etiqueta="Conciliados" valor={String(resumen.conciliados)} contexto="cobros ya imputados" />
-        <StatCard etiqueta="Fee de pasarelas" valor={M(resumen.feeReal)} contexto="lo que se quedaron, real" />
-      </div>
 
       {filtro === "pendiente" && resumen.automaticos > 0 && (
         <div className="help-card">

@@ -3,7 +3,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { CalendarDays, Check, ExternalLink, Link2, Pencil, Plus, Trash2, UserRound, X } from "lucide-react";
 import { PageHead } from "@/components/shell/PageHead";
-import { Ayuda, Badge, Button, Card, Chip, Empty, Field, IconButton, Input, Select, StatCard, Tabs, Textarea } from "@/components/ui/ui";
+import { Ayuda, Badge, Button, Card, Chip, Empty, Field, IconButton, Input, Select, Tabs, Textarea } from "@/components/ui/ui";
 import { ModalForm, Confirmar } from "@/components/ui/Modal";
 import { Drawer, Dato } from "@/components/ui/Drawer";
 import { Origen } from "@/components/leads/Origen";
@@ -14,8 +14,7 @@ import { acciones, useEstado } from "@/lib/store";
 import { useAbrirDesdeURL } from "@/lib/useQuery";
 import { useAbrirFicha } from "@/components/ficha/abrir";
 import { AGENDAR_A_MANO } from "@/lib/funciones";
-import { fechaHora, fechaLarga, hora, isoMinuto, pct, relativo } from "@/lib/format";
-import { sesionesSemana, tasaShow } from "@/lib/metricas";
+import { fechaHora, fechaLarga, hora, isoMinuto, relativo } from "@/lib/format";
 import type { EstadoSesion, Sesion } from "@/lib/types";
 
 const ETIQUETA: Record<EstadoSesion, { texto: string; variante: "accent" | "success" | "danger" | "neutral" }> = {
@@ -53,7 +52,6 @@ export default function Agenda() {
   }, [url, e.ajustes.tiposSesion]);
 
   const ahora = Date.now();
-  const deSemana = sesionesSemana(e);
 
   const lista = useMemo(() => {
     let xs = e.sesiones;
@@ -62,7 +60,7 @@ export default function Agenda() {
     if (estado !== "todos") xs = xs.filter((s) => s.estado === estado);
     return [...xs].sort((a, b) =>
       vista === "pasadas" ? +new Date(b.inicia) - +new Date(a.inicia) : +new Date(a.inicia) - +new Date(b.inicia));
-  }, [e.sesiones, vista, estado, ahora, deSemana]);
+  }, [e.sesiones, vista, estado, ahora]);
 
   const porDia = useMemo(() => {
     const m = new Map<string, Sesion[]>();
@@ -104,13 +102,6 @@ export default function Agenda() {
           : "Las llamadas entran solas desde Calendly. Marcá si la persona vino o no para que el número de asistencia sea real."}
         acciones={AGENDAR_A_MANO ? <Button variante="primary" icono={<Plus size={16} />} onClick={() => setForm(VACIA(e.ajustes.tiposSesion[0] ?? "Sesión"))}>Agendar sesión</Button> : undefined}
       />
-
-      <div className="grid-stats">
-        <StatCard hero etiqueta="Esta semana" valor={String(deSemana.length)} contexto="sesiones en el calendario" />
-        <StatCard etiqueta="Por venir" valor={String(e.sesiones.filter((s) => s.estado === "agendada" && new Date(s.inicia).getTime() >= ahora).length)} contexto="todavía sin hacer" />
-        <StatCard etiqueta="Asistencia" valor={pct(tasaShow(e))} contexto="de las sesiones ya pasadas" ayuda="Cuántas de las sesiones que ya pasaron terminaron en reunión real." />
-        <StatCard etiqueta="No-shows" valor={String(e.sesiones.filter((s) => s.estado === "no-show").length)} delta={e.sesiones.filter((s) => s.estado === "no-show").length > 0 ? "Revisar" : undefined} direccion="accent" contexto="gente que no vino" />
-      </div>
 
       <Card>
         <div className="toolbar">

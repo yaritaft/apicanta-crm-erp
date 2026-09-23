@@ -12,18 +12,18 @@ lo que se muestra se calcula solo.
 
 | Área | Qué podés hacer |
 |---|---|
-| **Panel** | Ver cómo viene el mes: ingresos, resultado, leads, inscriptos, MRR, pipeline, qué requiere atención hoy |
+| **Dashboard & KPIs** | Todas las métricas del negocio en una tabla maestra, de la publicidad (TOFU) a la plata que queda: día por día o mes por mes con el total al final, comparando contra el período anterior y filtrando por embudo o por webinar |
 | **Metas** | Poner objetivos del mes y verlos avanzar solos con los datos reales |
 | **Leads** | Cargar, buscar, filtrar, importar por CSV, exportar, y convertir en alumno |
 | **Pipeline** | Tablero kanban: arrastrar leads entre etapas (también con el teclado) |
-| **Agenda** | Sesiones por día, marcar si la persona vino o no, medir la asistencia real |
+| **Agenda** | Sesiones por día y marcar si la persona vino o no. La asistencia se mide en Dashboard & KPIs |
 | **Webinars** | Registrados, asistencia, leads que trajo, conversión, ingresos y retorno |
 | **Marketing** | Campañas de Meta con costo por lead, costo por alumno, CTR, CPC, CPM y ROAS |
 | **Alumnos** | Quién cursa y cómo viene, en lista o en el pipeline de servicio (venta nueva → onboarding → en servicio…). Cada venta registrada crea su alumno sola |
 | **Reportes** | Dashboard y tabla de los reportes por rango de fechas: respuesta, horas, postulaciones, entrevistas, bloqueos y quién está en riesgo, marcable en un clic |
 | **Ventas** | Un asistente paso a paso arma la venta, su plan de cuotas y los cobros que ya entraron |
 | **Conciliación** | Los cobros de Stripe, Hotmart, Whop, dLocal, Mercado Pago, Mercury, Binance y Trust, imputados a la cuota que les corresponde |
-| **Finanzas** | Ingresos y egresos, por cobrar, MRR, en qué se va la plata |
+| **Finanzas** | El estado de resultados sobre lo cobrado y lo facturado; en el detalle, las cuotas vencidas, los gastos y las comisiones. Los KPIs viven en Dashboard & KPIs |
 | **Actividad** | Todo lo que se creó, editó, movió o borró, con autor y fecha |
 | **Ajustes** | Etapas, listas, campos propios, integraciones y respaldos |
 
