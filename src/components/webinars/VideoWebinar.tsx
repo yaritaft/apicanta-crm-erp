@@ -180,9 +180,8 @@ function InfoVideo({ w, id, recienPegado, onCompletado, delReplay, onCambiar, on
           <Cifra icono={<Eye size={15} />} etiqueta="Vistas" valor={d.vistas} />
           <Cifra icono={<ThumbsUp size={15} />} etiqueta="Me gusta" valor={d.likes} siFalta="Ocultos" />
           <Cifra icono={<MessageCircle size={15} />} etiqueta="Comentarios" valor={d.comentarios} siFalta="Cerrados" />
-          {d.vivo?.estado === "en-vivo" && d.vivo.espectadores !== undefined && (
-            <Cifra icono={<Youtube size={15} />} etiqueta="Mirando ahora" valor={d.vivo.espectadores} />
-          )}
+          {/* "Mirando ahora" no va acá: este dato queda media hora en cache y
+              contradecía a la barra "En vivo", que pregunta cada 15 segundos. */}
         </div>
       ) : vistaPrevia ? (
         <div className="wb-ejemplo" role="group" aria-label="Vista previa con números de ejemplo">
