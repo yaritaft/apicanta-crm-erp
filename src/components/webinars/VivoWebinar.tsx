@@ -150,20 +150,28 @@ export function BannerVivo({ w }: { w: Webinar }) {
   );
 }
 
-/* Las dos tarjetas del vivo. Van adentro de VivoProvider. */
-export function PanelVivo({ w, videoId }: { w: Webinar; videoId: string }) {
+/* Las tarjetas del vivo. Van adentro de VivoProvider.
+   - TarjetaVivo: el minuto a minuto, abajo del video.
+   - ChatDelVivo: el chat. lugar="columna" sólo aparece mientras está en
+     el aire (en la columna de la derecha); lugar="abajo" sólo cuando no
+     (abajo de todo, con los comentarios). */
+export function TarjetaVivo({ w, videoId, className }: { w: Webinar; videoId: string; className?: string }) {
   const c = useContext(Ctx);
   if (!c) return null;
-  const { vivo } = c;
-  return (
-    <>
-      <VivoWebinar w={w} videoId={videoId} vivo={vivo} />
-      <ConversacionWebinar w={w} videoId={videoId} vivo={vivo} />
-    </>
-  );
+  return <VivoWebinar w={w} videoId={videoId} vivo={c.vivo} className={className} />;
 }
 
-function VivoWebinar({ w, videoId, vivo }: { w: Webinar; videoId: string; vivo: ReturnType<typeof useDatosVivo> }) {
+export function ChatDelVivo({ w, videoId, lugar, className }: {
+  w: Webinar; videoId: string; lugar: "columna" | "abajo"; className?: string;
+}) {
+  const c = useContext(Ctx);
+  if (!c || (lugar === "columna") !== c.enElAire) return null;
+  return <ConversacionWebinar w={w} videoId={videoId} vivo={c.vivo} enVivo={lugar === "columna"} className={className} />;
+}
+
+function VivoWebinar({ w, videoId, vivo, className }: {
+  w: Webinar; videoId: string; vivo: ReturnType<typeof useDatosVivo>; className?: string;
+}) {
   const toast = useToast();
   const [pestania, setPestania] = useState<Pestania>("espectadores");
   const [ejemplo, setEjemplo] = useState(false);
@@ -237,7 +245,7 @@ function VivoWebinar({ w, videoId, vivo }: { w: Webinar; videoId: string; vivo: 
   })();
 
   return (
-    <Card className="wb-vivo">
+    <Card className={`wb-vivo${className ? ` ${className}` : ""}`}>
       <CardHead
         titulo="El vivo, minuto a minuto"
         sub={sub}

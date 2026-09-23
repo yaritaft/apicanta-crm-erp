@@ -13,7 +13,7 @@ import {
 } from "@/components/webinars/FichaNumeros";
 import { TarjetaCambios, TarjetaNotas } from "@/components/webinars/FichaNotas";
 import { PersonasWebinar } from "@/components/webinars/PersonasWebinar";
-import { BannerVivo, PanelVivo, VivoProvider } from "@/components/webinars/VivoWebinar";
+import { BannerVivo, ChatDelVivo, TarjetaVivo, VivoProvider } from "@/components/webinars/VivoWebinar";
 import { guardarWebinar } from "@/components/webinars/guardar";
 import { CLAVE_LISTA, ESTADO_WEBINAR, ESTADOS } from "@/components/webinars/estado";
 import {
@@ -29,9 +29,10 @@ import type { EstadoWebinar, Webinar } from "@/lib/types";
 
    A la izquierda el video (el vivo o la grabación, con lo que dice
    YouTube) y a la derecha todos los números del lanzamiento, que se
-   cargan ahí mismo. Abajo, el vivo minuto a minuto y lo que dijo la gente
-   en el chat y los comentarios (si tiene video), y la gente que trajo. En
-   el celular va todo en una columna, con los números antes que las notas.
+   cargan ahí mismo. Abajo del video, el vivo minuto a minuto; mientras
+   está en el aire, el chat va arriba a la derecha, y después baja con los
+   comentarios. Al final, la gente que trajo. En el celular va todo en una
+   columna, con los números antes que las notas.
    ================================================================== */
 
 export default function WebinarFicha() {
@@ -120,11 +121,14 @@ export default function WebinarFicha() {
       <div className="wb-detalle">
         <div className="wb-col">
           <VideoWebinar w={w} className="wb-o1" />
+          {/* En el celular, con el mismo orden que el video: queda justo abajo. */}
+          {videoId && <TarjetaVivo w={w} videoId={videoId} className="wb-o1" />}
           <TarjetaEmbudo m={m} className="wb-o6" />
           <TarjetaNotas w={w} className="wb-o7" />
           <TarjetaCambios w={w} className="wb-o8" />
         </div>
         <div className="wb-col">
+          {videoId && <ChatDelVivo w={w} videoId={videoId} lugar="columna" className="wb-o1" />}
           <TarjetaResultado m={m} className="wb-o2" />
           <TarjetaInversion w={w} m={m} className="wb-o3" />
           <TarjetaCaptacion w={w} m={m} className="wb-o4" />
@@ -132,7 +136,7 @@ export default function WebinarFicha() {
         </div>
       </div>
 
-      {videoId && <PanelVivo w={w} videoId={videoId} />}
+      {videoId && <ChatDelVivo w={w} videoId={videoId} lugar="abajo" />}
 
       <PersonasWebinar w={w} />
 

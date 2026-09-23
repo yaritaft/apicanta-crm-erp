@@ -2,13 +2,13 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import {
-  ExternalLink, Eye, Link2, MessageCircle, RefreshCw, ThumbsUp, Trash2, Youtube,
+  ExternalLink, Link2, RefreshCw, Trash2, Youtube,
 } from "lucide-react";
-import { Avatar, Badge, Button, Card, Input } from "@/components/ui/ui";
+import { Badge, Button, Card, Input } from "@/components/ui/ui";
 import { useToast } from "@/components/ui/Toast";
-import { num, relativo } from "@/lib/format";
+import { relativo } from "@/lib/format";
 import {
-  duracionLegible, embebidoDe, idDeYoutube, partirConLinks, videoDe, type DatosYoutube, type VivoDelCanal,
+  duracionLegible, embebidoDe, idDeYoutube, videoDe, type DatosYoutube, type VivoDelCanal,
 } from "@/lib/youtube";
 import { useEstado } from "@/lib/store";
 import type { Webinar } from "@/lib/types";
@@ -21,7 +21,7 @@ import { useVivosDelCanal, useYoutube } from "./useYoutube";
    dice YouTube de él abajo.
 
    El embebido no depende de nada: con el link alcanza. Los números
-   (vistas, likes, comentarios, suscriptores) vienen de /api/youtube, que
+   (el título, la fecha del vivo y su estado) vienen de /api/youtube, que
    necesita la clave de YouTube; sin ella se ve igual el video, el título
    y el canal, y se avisa qué falta.
    ================================================================== */
@@ -113,9 +113,6 @@ function InfoVideo({ w, id, recienPegado, onCompletado, delReplay, onCambiar, on
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- corre una vez por link pegado
   }, [recienPegado, datosListos]);
-  /* Sin la clave de YouTube no hay números reales: esto muestra cómo va a
-     quedar, con números de ejemplo marcados como tales. */
-  const [vistaPrevia, setVistaPrevia] = useState(false);
 
   const acciones = (
     <div className="row-wrap wb-video__acciones">
@@ -175,52 +172,17 @@ function InfoVideo({ w, id, recienPegado, onCompletado, delReplay, onCambiar, on
         </p>
       </div>
 
-      {d.completo ? (
-        <div className="wb-cifras">
-          <Cifra icono={<Eye size={15} />} etiqueta="Vistas" valor={d.vistas} />
-          <Cifra icono={<ThumbsUp size={15} />} etiqueta="Me gusta" valor={d.likes} siFalta="Ocultos" />
-          <Cifra icono={<MessageCircle size={15} />} etiqueta="Comentarios" valor={d.comentarios} siFalta="Cerrados" />
-          {/* "Mirando ahora" no va acá: este dato queda media hora en cache y
-              contradecía a la barra "En vivo", que pregunta cada 15 segundos. */}
-        </div>
-      ) : vistaPrevia ? (
-        <div className="wb-ejemplo" role="group" aria-label="Vista previa con números de ejemplo">
-          <div className="row-wrap" style={{ gap: 8 }}>
-            <Badge variante="warning">Ejemplo</Badge>
-            <span className="t-sm t-muted" style={{ flex: 1, minWidth: 180 }}>
-              Así se va a ver cuando esté la clave de YouTube. Estos números son inventados.
-            </span>
-            <button type="button" className="link t-sm" onClick={() => setVistaPrevia(false)}>Ocultar</button>
-          </div>
-          <div className="wb-cifras">
-            <Cifra icono={<Eye size={15} />} etiqueta="Vistas" valor={ejemploDe(id).vistas} />
-            <Cifra icono={<ThumbsUp size={15} />} etiqueta="Me gusta" valor={ejemploDe(id).likes} />
-            <Cifra icono={<MessageCircle size={15} />} etiqueta="Comentarios" valor={ejemploDe(id).comentarios} />
-          </div>
-        </div>
-      ) : null}
-
-      {d.aviso && !vistaPrevia && (
+      {/* Vistas, likes, canal y descripción ya no van acá: ocupaban lugar con
+          datos poco útiles. Las vistas y los likes están en "El vivo, minuto a
+          minuto" → Después del vivo. Queda el aviso si falta la clave. */}
+      {d.aviso && (
         <p className="wb-aviso t-sm">
           <Youtube size={16} aria-hidden />
           <span style={{ flex: 1 }}>{d.aviso}</span>
-          {!d.completo && (
-            <button type="button" className="link t-sm" onClick={() => setVistaPrevia(true)}>Ver cómo va a quedar</button>
-          )}
         </p>
       )}
 
       <SugerenciasDelVideo w={w} d={d} />
-
-      <Canal d={d} suscriptoresEjemplo={vistaPrevia && !d.completo ? ejemploDe(id).suscriptores : undefined} />
-
-      {d.descripcion
-        ? <Descripcion texto={d.descripcion} />
-        : vistaPrevia && !d.completo && (
-          <p className="wb-desc wb-desc--ejemplo">
-            Acá va la descripción del video tal como está en YouTube, con sus links y sus capítulos.
-          </p>
-        )}
 
       {acciones}
     </div>
@@ -240,61 +202,6 @@ function EstadoVivo({ d }: { d: DatosYoutube }) {
   if (d.vivo?.estado === "en-vivo") return <Badge variante="danger">En vivo</Badge>;
   if (d.vivo?.estado === "programado") return <Badge variante="accent">Programado</Badge>;
   return null;
-}
-
-function Cifra({ icono, etiqueta, valor, siFalta = "—" }: {
-  icono: React.ReactNode; etiqueta: string; valor?: number; siFalta?: string;
-}) {
-  return (
-    <div className="wb-cifra">
-      <span className="wb-cifra__etiqueta">{icono}{etiqueta}</span>
-      <span className={`wb-cifra__valor t-num${valor === undefined ? " t-subtle" : ""}`}>
-        {valor === undefined ? siFalta : num(valor)}
-      </span>
-    </div>
-  );
-}
-
-function Canal({ d, suscriptoresEjemplo }: { d: DatosYoutube; suscriptoresEjemplo?: number }) {
-  const c = d.canal;
-  if (!c.nombre) return null;
-  const subs = suscriptoresEjemplo !== undefined
-    ? `${num(suscriptoresEjemplo)} suscriptores · ejemplo`
-    : c.suscriptoresOcultos
-      ? "El canal oculta sus suscriptores"
-      : c.suscriptores !== undefined
-        ? `${num(c.suscriptores)} suscriptores`
-        : d.completo ? "Sin dato de suscriptores" : null;
-  const contenido = (
-    <>
-      {c.avatar
-        /* eslint-disable-next-line @next/next/no-img-element -- avatar público de YouTube */
-        ? <img src={c.avatar} alt="" width={36} height={36} className="wb-canal__avatar" referrerPolicy="no-referrer" />
-        : <Avatar nombre={c.nombre} size={36} />}
-      <span style={{ minWidth: 0 }}>
-        <span className="t-strong truncate" style={{ display: "block" }}>{c.nombre}</span>
-        {subs && <span className="t-sm t-subtle t-num" style={{ display: "block" }}>{subs}</span>}
-      </span>
-    </>
-  );
-  return c.url
-    ? <a href={c.url} target="_blank" rel="noopener noreferrer" className="wb-canal">{contenido}</a>
-    : <div className="wb-canal">{contenido}</div>;
-}
-
-/* Números de ejemplo para la vista previa: salen del id del video, así el
-   mismo video muestra siempre los mismos y no parecen tirados al azar.
-   Son proporciones típicas de un vivo (likes ≈ 4 %, comentarios ≈ 0,6 %). */
-function ejemploDe(id: string) {
-  let h = 0;
-  for (const c of id) h = (h * 31 + c.charCodeAt(0)) >>> 0;
-  const vistas = 1_200 + (h % 18_000);
-  return {
-    vistas,
-    likes: Math.round(vistas * (0.03 + (h % 7) / 400)),
-    comentarios: Math.round(vistas * (0.004 + (h % 5) / 1000)),
-    suscriptores: 8_000 + (h % 60_000),
-  };
 }
 
 /* Lo que YouTube sabe del webinar y la ficha todavía no tiene: el título
@@ -317,30 +224,6 @@ function SugerenciasDelVideo({ w, d }: { w: Webinar; d: DatosYoutube }) {
         <Button sm variante="secondary" onClick={() => guardarWebinar(w, { fecha: otraFecha }, `La fecha de «${w.titulo}» pasó a la del vivo: ${diaYHora(otraFecha)}.`)}>
           Usar la fecha del vivo ({diaYHora(otraFecha)})
         </Button>
-      )}
-    </div>
-  );
-}
-
-/* La descripción de un vivo suele ser larga (links, capítulos, redes):
-   arranca corta y se abre a pedido. Los links se pueden tocar, pero sólo
-   los http(s): el texto viene de afuera. */
-function Descripcion({ texto }: { texto: string }) {
-  const [abierta, setAbierta] = useState(false);
-  const larga = texto.length > 280 || texto.split("\n").length > 5;
-  return (
-    <div className="stack-2">
-      <p className={`wb-desc${larga && !abierta ? " wb-desc--corta" : ""}`}>
-        {partirConLinks(texto).map((p, i) =>
-          p.url
-            ? <a key={i} href={p.url} target="_blank" rel="noopener noreferrer nofollow" className="link">{p.texto}</a>
-            : <React.Fragment key={i}>{p.texto}</React.Fragment>,
-        )}
-      </p>
-      {larga && (
-        <button type="button" className="link t-sm" aria-expanded={abierta} onClick={() => setAbierta((v) => !v)}>
-          {abierta ? "Mostrar menos" : "Mostrar la descripción completa"}
-        </button>
       )}
     </div>
   );

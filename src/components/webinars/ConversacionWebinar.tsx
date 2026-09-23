@@ -63,8 +63,11 @@ function useConocidos(w: Webinar): (autor: string) => Conocido | undefined {
   }, [e, w.id]);
 }
 
-export function ConversacionWebinar({ w, videoId, vivo }: {
-  w: Webinar; videoId: string; vivo: ReturnType<typeof useDatosVivo>;
+/* enVivo: mientras el webinar está en el aire va en la columna de la
+   derecha, sólo con el chat y los mensajes más nuevos arriba. Después
+   vuelve abajo de todo, con el chat y los comentarios. */
+export function ConversacionWebinar({ w, videoId, vivo, enVivo, className }: {
+  w: Webinar; videoId: string; vivo: ReturnType<typeof useDatosVivo>; enVivo?: boolean; className?: string;
 }) {
   const datos = vivo.estado === "listo" ? vivo.datos : null;
   const hayChat = (datos?.chat.length ?? 0) > 0;
@@ -79,8 +82,21 @@ export function ConversacionWebinar({ w, videoId, vivo }: {
     ? comentarios.datos.comentarios.reduce((s, c) => s + 1 + c.respuestas.length, 0)
     : null;
 
+  if (enVivo) {
+    return (
+      <Card className={`wb-charla${className ? ` ${className}` : ""}`}>
+        <CardHead
+          titulo="Chat en vivo"
+          sub="Los mensajes más nuevos arriba, con quién es cada uno en la base"
+          acciones={<span className="vivo-etiqueta"><span className="vivo-punto" aria-hidden />{num(datos?.chatTotal ?? 0)}</span>}
+        />
+        <Chat w={w} datos={datos} cargando={vivo.estado === "cargando"} conocido={conocido} enVivo />
+      </Card>
+    );
+  }
+
   return (
-    <Card className="wb-charla">
+    <Card className={`wb-charla${className ? ` ${className}` : ""}`}>
       <CardHead
         titulo="Lo que dijo la gente"
         sub="El chat del vivo y los comentarios del video, con quién es cada uno en la base"
@@ -103,8 +119,8 @@ export function ConversacionWebinar({ w, videoId, vivo }: {
 
 /* ---------- Chat ---------- */
 
-function Chat({ w, datos, cargando, conocido }: {
-  w: Webinar; datos: DatosVivo | null; cargando: boolean; conocido: (a: string) => Conocido | undefined;
+function Chat({ w, datos, cargando, conocido, enVivo }: {
+  w: Webinar; datos: DatosVivo | null; cargando: boolean; conocido: (a: string) => Conocido | undefined; enVivo?: boolean;
 }) {
   const [q, setQ] = useState("");
   const [preguntas, setPreguntas] = useState(false);
@@ -138,13 +154,15 @@ function Chat({ w, datos, cargando, conocido }: {
   const filtrados = useMemo(() => {
     const t = q.trim().toLowerCase();
     const pitch = w.pitchEn ? +new Date(w.pitchEn) : null;
-    return chat.filter((m) =>
+    const lista = chat.filter((m) =>
       (!t || m.texto.toLowerCase().includes(t) || m.autor.toLowerCase().includes(t))
       && (!preguntas || m.texto.includes("?"))
       && (!conocidos || conocido(m.autor))
       && (!enPitch || (pitch !== null && +new Date(m.t) >= pitch))
       && (!autor || m.autor === autor));
-  }, [chat, q, preguntas, conocidos, enPitch, autor, conocido, w.pitchEn]);
+    /* En vivo, lo último que se escribió es lo que importa: arriba. */
+    return enVivo ? lista.reverse() : lista;
+  }, [chat, q, preguntas, conocidos, enPitch, autor, conocido, w.pitchEn, enVivo]);
 
   if (cargando && !datos) return <div className="skeleton" style={{ height: 240 }} aria-busy="true" aria-label="Trayendo el chat" />;
   if (chat.length === 0) {
