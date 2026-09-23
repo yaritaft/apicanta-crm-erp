@@ -108,7 +108,8 @@ export function BannerVivo({ w }: { w: Webinar }) {
       <div className="vivo-barra__datos">
         <div className="vivo-dato">
           <span className="t-label">Mirando ahora</span>
-          <span className="vivo-dato__valor vivo-dato__valor--grande t-num">{mirando !== undefined ? num(mirando) : "—"}</span>
+          <span className="vivo-dato__valor t-num">{mirando !== undefined ? num(mirando) : "—"}</span>
+          <span className="t-sm t-subtle">en este momento</span>
         </div>
         {a && (
           <div className="vivo-dato">
