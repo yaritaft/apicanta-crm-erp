@@ -323,24 +323,23 @@ function VivoWebinar({ w, videoId, vivo, className }: {
         titulo="El vivo, minuto a minuto"
         sub={sub}
         acciones={
-          <div className="row" style={{ gap: 8 }}>
+          /* A la derecha del título: "En vivo" y, al lado, las pestañas. */
+          <div className="wb-vivo__cabeza">
             {enElAire && <span className="vivo-etiqueta"><span className="vivo-punto" aria-hidden />En vivo</span>}
             {ejemplo && <Badge variante="warning">Ejemplo</Badge>}
             {ejemplo && <Button sm variante="ghost" icono={<X size={15} />} onClick={() => setEjemplo(false)}>Salir del ejemplo</Button>}
+            <Tabs<Pestania>
+              valor={pestania} onChange={setPestania}
+              opciones={[
+                { valor: "espectadores", texto: "Espectadores" },
+                { valor: "retencion", texto: "Retención" },
+                { valor: "audiencia", texto: "Audiencia" },
+                { valor: "despues", texto: "Después del vivo" },
+              ]}
+            />
           </div>
         }
       />
-      <div className="wb-vivo__tabs">
-        <Tabs<Pestania>
-          valor={pestania} onChange={setPestania}
-          opciones={[
-            { valor: "espectadores", texto: "Espectadores" },
-            { valor: "retencion", texto: "Retención" },
-            { valor: "audiencia", texto: "Audiencia" },
-            { valor: "despues", texto: "Después del vivo" },
-          ]}
-        />
-      </div>
 
       {pestania === "espectadores" && (
         <Espectadores

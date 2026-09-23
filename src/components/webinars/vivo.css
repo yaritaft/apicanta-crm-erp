@@ -77,3 +77,8 @@
   .wb-charla--vivo > .stack-3 { flex: 1; min-height: 0; display: flex; flex-direction: column; }
   .wb-arriba__chat .wb-charla__lista { flex: 1; min-height: 0; max-height: none; }
 }
+
+/* La cabecera de "El vivo, minuto a minuto": el título a la izquierda y, a
+   la derecha, "En vivo" y las pestañas. En pantallas angostas bajan. */
+.wb-vivo > .card-head { flex-wrap: wrap; row-gap: var(--space-3); }
+.wb-vivo__cabeza { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-3); justify-content: flex-end; margin-left: auto; }
