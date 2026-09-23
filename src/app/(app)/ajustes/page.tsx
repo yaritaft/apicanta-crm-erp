@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { EtapasServicio } from "@/components/alumnos/EtapasServicio";
 import {
@@ -453,44 +454,74 @@ function Campos() {
 /* ---------------- Integraciones ---------------- */
 
 function Integraciones() {
-  const e = useEstado();
-  const toast = useToast();
-  const [b, setB] = useState<Partial<TAjustes>>({});
-  const v = <K extends keyof TAjustes>(k: K) => (b[k] ?? e.ajustes[k]) as string;
-  const aplicar = <K extends keyof TAjustes>(k: K) => {
-    if (b[k] === undefined || b[k] === e.ajustes[k]) return;
-    acciones.ajustes({ [k]: b[k] } as Partial<TAjustes>, "Se actualizó una integración.");
-    toast("Guardado.");
-    setB((x) => { const n = { ...x }; delete n[k]; return n; });
-  };
-
   return (
     <div className="stack-4">
       <Ayuda titulo="Apicanta funciona sin conectar nada" icono={<Info size={18} />}>
         Todo lo que ves anda cargando los datos a mano. Estas conexiones son para ahorrarte ese trabajo: cuando estén
-        puestas, la inversión de Meta, las sesiones de Calendly y los vivos de YouTube entran solos. Las claves quedan guardadas en este
-        navegador, nunca se comparten.
+        puestas, la inversión de Meta, las sesiones de Calendly y los vivos de YouTube entran solos. Las claves viven
+        en el servidor (en Vercel), nunca en esta pantalla.
       </Ayuda>
 
-      <Card>
-        <CardHead
-          titulo="Meta Ads"
-          sub="Para conectar tu cuenta con un clic, andá a Marketing. Acá sólo van las claves si preferís cargarlas a mano."
-          acciones={<Badge variante={e.ajustes.metaToken ? "success" : "neutral"} icono={e.ajustes.metaToken ? <Check size={13} /> : <Plug size={13} />}>{e.ajustes.metaToken ? "Configurado" : "Sin configurar"}</Badge>}
-        />
-        <div className="form-grid">
-          <Field label="ID de la cuenta publicitaria" ayuda="El número que empieza con act_">
-            <Input value={v("metaAccountId")} onChange={(ev) => setB({ ...b, metaAccountId: ev.target.value })} onBlur={() => aplicar("metaAccountId")} placeholder="act_1234567890" />
-          </Field>
-          <Field label="Token de acceso" ayuda="Queda guardado en la base, visible sólo para el equipo.">
-            <Input type="password" value={v("metaToken")} onChange={(ev) => setB({ ...b, metaToken: ev.target.value })} onBlur={() => aplicar("metaToken")} placeholder="EAAG…" />
-          </Field>
-        </div>
-      </Card>
-
+      <EstadoMeta />
       <EstadoCalendly />
       <YoutubeIntegracion />
     </div>
+  );
+}
+
+/* Meta se conecta del lado del servidor: con el token del negocio
+   (META_SYSTEM_TOKEN, en Vercel) o con el login de Meta desde Marketing.
+   Acá se muestra si está andando preguntándole a la misma ruta que usa
+   Marketing. Antes había dos campos para pegar la cuenta y el token a mano,
+   pero nada los leía: decían "Sin configurar" con Meta conectado. */
+function EstadoMeta() {
+  const [estado, setEstado] = useState<
+    { conectado: boolean; porSistema?: boolean; cuentas?: { id: string; nombre: string }[]; motivo?: string } | null
+  >(null);
+  useEffect(() => {
+    let vivo = true;
+    fetch("/api/meta/cuentas", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((j) => { if (vivo) setEstado(j); })
+      .catch(() => { if (vivo) setEstado({ conectado: false, motivo: "error" }); });
+    return () => { vivo = false; };
+  }, []);
+
+  /* Meta frenó por límite: la conexión está bien, sólo hay que esperar. */
+  const conectado = Boolean(estado?.conectado || estado?.motivo === "limite");
+  const cuentas = estado?.cuentas ?? [];
+
+  return (
+    <Card>
+      <CardHead
+        titulo="Meta Ads"
+        sub="La inversión, las campañas y los anuncios entran solos a Marketing."
+        acciones={
+          <Badge variante={conectado ? "success" : "neutral"} icono={conectado ? <Check size={13} /> : <Plug size={13} />}>
+            {estado === null ? "Revisando…" : conectado ? "Conectado" : "Sin conectar"}
+          </Badge>
+        }
+      />
+      <p className="t-sm t-muted">
+        {estado === null
+          ? "Preguntándole a Meta…"
+          : conectado
+            ? estado.porSistema
+              ? "Conectado con el token del negocio, configurado en el servidor: no depende de quién tenga la sesión abierta."
+              : "Conectado con tu sesión de Meta, en este navegador."
+            : estado.motivo === "sin-configurar"
+              ? "Falta configurar en el servidor el token del negocio (META_SYSTEM_TOKEN) o la app de Meta."
+              : estado.motivo === "error"
+                ? "Meta no respondió bien. Probá de nuevo en un rato."
+                : "Falta conectar tu cuenta de Meta: se hace con un clic desde Marketing."}
+      </p>
+      <p className="t-sm t-subtle" style={{ marginTop: 8 }}>
+        {conectado && cuentas.length > 0
+          ? `${num(cuentas.length)} ${cuentas.length === 1 ? "cuenta publicitaria" : "cuentas publicitarias"}: ${cuentas.map((c) => c.nombre).join(", ")}. `
+          : ""}
+        <Link href="/marketing" className="link">{conectado ? "Ver en Marketing" : "Ir a Marketing para conectar"}</Link>
+      </p>
+    </Card>
   );
 }
 
