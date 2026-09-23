@@ -210,8 +210,25 @@ export async function analyticsDeVideo(videoId: string, desde: string): Promise<
      video tuvo vistas en vivo. */
   const repVivo = reparto(vivo, "liveOrOnDemand", "views", "estimatedMinutesWatched");
   const fueVivo = (repVivo ?? []).some((f) => f.clave === "LIVE" && f.valor > 0);
-  if (fueVivo && "error" in concurrentes) faltan.push("espectadores concurrentes");
   if (fueVivo && !pm) faltan.push("espectadores minuto a minuto");
+
+  /* livestreamPosition viene en SEGUNDOS desde el inicio (0, 60, 120…),
+     aunque la documentación diga "un minuto": se pasa a minutos. */
+  const porMinuto_ = pm
+    ? pm.filas.map((fila) => ({
+        seg: valor(pm, fila, "livestreamPosition") ?? 0,
+        promedio: valor(pm, fila, "averageConcurrentViewers"),
+        pico: valor(pm, fila, "peakConcurrentViewers"),
+      })).sort((a, b) => a.seg - b.seg)
+    : [];
+  const enSegundos = porMinuto_.some((x, i) => i > 0 && x.seg - porMinuto_[i - 1].seg >= 60);
+  const minutos = porMinuto_.map(({ seg, ...r }) => ({ min: enSegundos ? Math.round(seg / 60) : seg, ...r }));
+
+  /* El total de concurrentes a veces falla (YouTube contesta 500) aunque el
+     minuto a minuto ande: se saca de ahí. */
+  const picoMin = minutos.length ? Math.max(...minutos.map((x) => x.pico ?? x.promedio ?? 0)) : undefined;
+  const promMin = minutos.length ? minutos.reduce((t, x) => t + (x.promedio ?? 0), 0) / minutos.length : undefined;
+  if (fueVivo && "error" in concurrentes && !minutos.length) faltan.push("espectadores concurrentes");
 
   const ret = "error" in retencion ? null : retencion;
   if (!ret) faltan.push("retención");
@@ -244,8 +261,9 @@ export async function analyticsDeVideo(videoId: string, desde: string): Promise<
       suscriptoresGanados: valor(resumen, f0, "subscribersGained"),
       suscriptoresPerdidos: valor(resumen, f0, "subscribersLost"),
       compartidos: valor(resumen, f0, "shares"),
-      picoConcurrentes: c0 && !("error" in concurrentes) ? valor(concurrentes, c0, "peakConcurrentViewers") : undefined,
-      promedioConcurrentes: c0 && !("error" in concurrentes) ? valor(concurrentes, c0, "averageConcurrentViewers") : undefined,
+      picoConcurrentes: (c0 && !("error" in concurrentes) ? valor(concurrentes, c0, "peakConcurrentViewers") : undefined) ?? picoMin,
+      promedioConcurrentes: (c0 && !("error" in concurrentes) ? valor(concurrentes, c0, "averageConcurrentViewers") : undefined)
+        ?? (promMin !== undefined ? Math.round(promMin) : undefined),
     },
     retencion: ret
       ? ret.filas.map((fila) => ({
@@ -254,13 +272,7 @@ export async function analyticsDeVideo(videoId: string, desde: string): Promise<
           relativa: valor(ret, fila, "relativeRetentionPerformance"),
         })).sort((a, b) => a.ratio - b.ratio)
       : [],
-    porMinuto: pm
-      ? pm.filas.map((fila) => ({
-          min: valor(pm, fila, "livestreamPosition") ?? 0,
-          promedio: valor(pm, fila, "averageConcurrentViewers"),
-          pico: valor(pm, fila, "peakConcurrentViewers"),
-        })).sort((a, b) => a.min - b.min)
-      : [],
+    porMinuto: minutos,
     vivoVsGrabacion: o(repVivo, "vivo contra grabación"),
     fuentes: o(reparto(fuentes, "insightTrafficSourceType", "views", "estimatedMinutesWatched"), "fuentes de tráfico"),
     paises: o(reparto(paises, "country", "views", "estimatedMinutesWatched"), "países"),
