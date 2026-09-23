@@ -2,7 +2,7 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import {
-  HandCoins, Info, Pencil, Plus, Trash2,
+  Download, HandCoins, Info, Pencil, Plus, Trash2, Upload,
 } from "lucide-react";
 import { PageHead } from "@/components/shell/PageHead";
 import {
@@ -11,6 +11,8 @@ import {
 import { Columna, DataTable } from "@/components/ui/DataTable";
 import { Confirmar } from "@/components/ui/Modal";
 import { AsistenteVenta } from "@/components/ventas/AsistenteVenta";
+import { ImportarPlanilla } from "@/components/ventas/ImportarPlanilla";
+import { aCSV, filasParaPlanilla } from "@/lib/exportarPlanilla";
 import { desdeVenta, FormularioVenta, type BorradorVenta } from "@/components/ventas/FormularioVenta";
 import { useToast } from "@/components/ui/Toast";
 import { acciones, useEstado } from "@/lib/store";
@@ -35,6 +37,18 @@ export default function Ventas() {
   const [form, setForm] = useState<BorradorVenta | null>(null);
   const [asistente, setAsistente] = useState(false);
   const [borrar, setBorrar] = useState<Venta | null>(null);
+  const [importando, setImportando] = useState(false);
+
+  /* La hoja Ventas de la planilla de Angelo, con sus 36 columnas. */
+  function exportarPlanilla() {
+    const blob = new Blob(["\ufeff" + aCSV(filasParaPlanilla(e))], { type: "text/csv;charset=utf-8" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `ventas-planilla-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+    toast("Se bajó la hoja Ventas con las columnas de la planilla.");
+  }
 
   useEffect(() => {
     if (url.nuevo) { setAsistente(true); url.limpiar(); }
@@ -81,7 +95,13 @@ export default function Ventas() {
       <PageHead
         titulo="Ventas"
         sub="Cada venta con su plan de cuotas. Una cuota puede cobrarse con varios métodos y cada pago queda atado a su procesador."
-        acciones={<Button variante="primary" icono={<Plus size={16} />} onClick={() => setAsistente(true)}>Nueva venta</Button>}
+        acciones={
+          <>
+            <Button variante="secondary" icono={<Upload size={16} />} onClick={() => setImportando(true)}>Importar planilla</Button>
+            <Button variante="secondary" icono={<Download size={16} />} onClick={exportarPlanilla}>Exportar planilla</Button>
+            <Button variante="primary" icono={<Plus size={16} />} onClick={() => setAsistente(true)}>Nueva venta</Button>
+          </>
+        }
       />
 
       <Card style={{ padding: 0, overflow: "hidden" }}>
@@ -119,6 +139,10 @@ export default function Ventas() {
         cuota; y si la plata ya entró a una pasarela, el cobro se concilia ahí mismo y el fee que
         queda registrado es el real.
       </Ayuda>
+
+      {importando && (
+        <ImportarPlanilla onCerrar={() => setImportando(false)} onListo={(m) => { setImportando(false); toast(m); }} />
+      )}
 
       {asistente && (
         <AsistenteVenta

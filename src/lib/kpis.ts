@@ -11,6 +11,7 @@ import { rachasAHoy } from "./reportes";
 import { etapaDelAlumno, etapasDeServicio } from "./alumnos";
 import { diaDeNegocio } from "@/components/ui/DateRangePicker";
 import type { QueDesglosar } from "@/components/panel/Desglose";
+import { esSoloReserva } from "./angelo";
 
 /* ==================================================================
    Dashboard & KPIs: la tabla maestra del negocio.
@@ -173,6 +174,14 @@ export class Contexto {
   /** Las ventas que cuentan: sin las canceladas, igual que Finanzas. */
   ventas(): Venta[] {
     return this.memo("ventas", () => this.ventasTodas().filter((v) => v.estado !== "cancelada"));
+  }
+
+  /** Las que se cuentan como venta: sin las que son sólo una reserva ("una
+   *  reserva no la considero una venta", Yari). Su plata sí cuenta como
+   *  cobrada y facturada. */
+  ventasContables(): Venta[] {
+    return this.memo("ventasContables", () =>
+      this.ventas().filter((v) => !esSoloReserva(this.ix.cuotasPorVenta.get(v.id) ?? [])));
   }
 
   /** Los pagos que entraron en el período (de ventas de cualquier fecha). */
@@ -442,13 +451,13 @@ export function catalogo(e: EstadoApp): DefKpi[] {
 
   /* ================= BOFU: Ventas ================= */
 
-  const deTipo = (c: Contexto, tipo: string) => c.ventas().filter((v) => v.productoId && c.ix.tipoProducto.get(v.productoId) === tipo).length;
+  const deTipo = (c: Contexto, tipo: string) => c.ventasContables().filter((v) => v.productoId && c.ix.tipoProducto.get(v.productoId) === tipo).length;
   const enCuotas = (c: Contexto, n: number, oMas = false) =>
-    c.ventas().filter((v) => { const k = c.cuotasDe(v).length; return oMas ? k >= n : k === n; }).length;
+    c.ventasContables().filter((v) => { const k = c.cuotasDe(v).length; return oMas ? k >= n : k === n; }).length;
 
   add("ventas", "Ventas", [
     { id: "v_n", etiqueta: "Ventas", formato: "cantidad", mejor: "sube", href: "/ventas",
-      ayuda: "Ventas cerradas en el período, sin las canceladas.", valor: (c) => c.ventas().length },
+      ayuda: "Ventas cerradas en el período, sin las canceladas ni las que son sólo una reserva.", valor: (c) => c.ventasContables().length },
     { id: "v_principal", etiqueta: "Programas (mentorías)", formato: "cantidad", mejor: "sube", href: "/ventas",
       ayuda: "Ventas de un producto principal. Para Yari, una venta es una mentoría: el downsell y la reserva no cuentan como venta.",
       valor: (c) => deTipo(c, "principal") },
@@ -461,13 +470,13 @@ export function catalogo(e: EstadoApp): DefKpi[] {
     { id: "v_fact", etiqueta: "Facturado", formato: "moneda", mejor: "sube", href: "/ventas",
       ayuda: "Revenue: el precio acordado de las ventas del período.", valor: (c) => c.facturado() },
     { id: "v_ticket", etiqueta: "Ticket promedio", formato: "moneda", mejor: "sube", href: "/ventas",
-      ayuda: "Facturado sobre ventas.", valor: (c) => div(c.facturado(), c.ventas().length) },
+      ayuda: "Facturado sobre ventas.", valor: (c) => div(c.facturado(), c.ventasContables().length) },
   ]);
 
   add("ventas", "Conversión", [
     { id: "v_ag_venta", etiqueta: "Agenda → venta", formato: "pct", mejor: "sube", href: "/agenda",
       ayuda: "Ventas del período sobre llamadas agendadas en el período.",
-      valor: (c) => { const a = agendadas(c); return a ? pctDe(c.ventas().length, a.length) : null; } },
+      valor: (c) => { const a = agendadas(c); return a ? pctDe(c.ventasContables().length, a.length) : null; } },
     { id: "w_cierre", etiqueta: "Cierre sobre calificadas (webinar)", formato: "pct", mejor: "sube", href: "/webinars",
       ayuda: "Ventas del webinar sobre sus llamadas calificadas.", valor: (c) => w(c, (m) => m.tasaCierre) },
     { id: "w_grupo_venta", etiqueta: "Grupo → venta (webinar)", formato: "pct", mejor: "sube", href: "/webinars",

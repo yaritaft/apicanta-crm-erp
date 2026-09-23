@@ -1763,6 +1763,15 @@ a.wb-canal:hover { background: var(--surface-200); border-color: var(--border-st
 .rep-barra__buscar { flex: 1 1 220px; min-width: 0; max-width: 340px; }
 .rep-barra__acciones { display: flex; align-items: center; gap: var(--space-2); margin-left: auto; }
 
+/* ---------- Importar la planilla de Angelo ---------- */
+.importar-caja {
+  display: flex; align-items: center; gap: var(--space-3); padding: var(--space-4);
+  border: 1px dashed var(--border-strong); border-radius: var(--radius-md); background: var(--surface-100);
+  cursor: pointer; color: var(--ink);
+}
+.importar-caja:hover { background: var(--surface-200); }
+.importar-caja > svg { flex: none; color: var(--brand); }
+
 /* ---------- Cobro: lo demás que pide la planilla de Angelo ---------- */
 .cobro-extra { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: var(--space-2); }
 .cobro-extra .hk-input { height: 36px; font-size: 14px; }

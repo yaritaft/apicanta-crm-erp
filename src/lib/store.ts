@@ -13,7 +13,7 @@ import {
   personaDeVenta, planDeVenta,
 } from "./alumnos";
 import { pagoDesdeMovimiento } from "./conciliacion";
-import { caracteristicaDePago, montoArsDe, tipoVentaDePago } from "./angelo";
+import { caracteristicaDePago, montoArsDe, tipoVentaDePago, type ResultadoImport } from "./angelo";
 import { claveEmail, completar } from "./contactos";
 import { construirSemilla, estadoVacio } from "./seed";
 import { hayNube, nube, tablaFaltante, TABLAS, TABLAS_OPCIONALES } from "./supabase";
@@ -1174,6 +1174,58 @@ export const acciones = {
     if (movimientosTocados.size) empujar({ tipo: "upsert", tabla: "movimientos", filas: [...movimientosTocados.values()] });
     empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
     return true;
+  },
+
+  /* ---------- Importar la hoja Ventas de la planilla de Angelo ----------
+     Lo que armó importarPlanilla (lib/angelo.ts) entra de una: lo que ya
+     estaba con el mismo id se reemplaza, lo nuevo se suma. Por eso se puede
+     reimportar la planilla las veces que haga falta sin duplicar nada. */
+  importarPlanilla(r: ResultadoImport): void {
+    const e = snapshot();
+    const reemplazar = <T extends { id: ID }>(lista: T[], nuevos: T[]): T[] => {
+      const ids = new Set(nuevos.map((x) => x.id));
+      return [...nuevos, ...lista.filter((x) => !ids.has(x.id))];
+    };
+    /* Una cuota que el plan nuevo ya no tiene se borra, salvo que tenga un
+       cobro cargado en la app (no en la planilla): ese no se pierde. */
+    const pagosImportados = new Set(r.pagos.map((p) => p.id));
+    const conCobroPropio = new Set(e.pagos.filter((p) => !pagosImportados.has(p.id)).map((p) => p.cuotaId));
+    const sobran = new Set(r.cuotasQueSobran.filter((id) => !conCobroPropio.has(id)));
+
+    const ajustes = r.proyectos.length
+      ? { ...e.ajustes, proyectos: [...(e.ajustes.proyectos ?? []), ...r.proyectos] }
+      : e.ajustes;
+    const { lista, nuevo } = registrar(
+      e, "transaccion", "planilla-angelo", "Planilla de Angelo", "importo",
+      `Se importó la hoja Ventas: ${r.resumen.ventas} ventas y ${r.resumen.cobros} cobros de ${r.resumen.personas} personas (${r.resumen.filas} filas).`,
+    );
+
+    guardar({
+      ...e,
+      ajustes,
+      equipo: reemplazar(e.equipo, r.equipo),
+      productos: reemplazar(e.productos, r.productos),
+      procesadores: reemplazar(e.procesadores, r.procesadores),
+      embudos: reemplazar(e.embudos, r.embudos),
+      contactos: reemplazar(e.contactos, r.contactos),
+      ventas: reemplazar(e.ventas, r.ventas),
+      cuotas: reemplazar(e.cuotas.filter((c) => !sobran.has(c.id)), r.cuotas),
+      pagos: reemplazar(e.pagos, r.pagos),
+      actividad: lista,
+    });
+
+    /* En orden: primero lo que los demás nombran. */
+    if (r.equipo.length) empujar({ tipo: "upsert", tabla: "equipo", filas: r.equipo });
+    if (r.productos.length) empujar({ tipo: "upsert", tabla: "productos", filas: r.productos });
+    if (r.procesadores.length) empujar({ tipo: "upsert", tabla: "procesadores", filas: r.procesadores });
+    if (r.embudos.length) empujar({ tipo: "upsert", tabla: "embudos", filas: r.embudos });
+    if (r.proyectos.length) empujar({ tipo: "upsert", tabla: "ajustes", filas: [filaAjustes(ajustes)] });
+    empujarEnLotes("contactos", r.contactos);
+    empujarEnLotes("ventas", r.ventas);
+    empujarEnLotes("cuotas", r.cuotas);
+    empujarEnLotes("pagos", r.pagos);
+    if (sobran.size) empujar({ tipo: "delete", tabla: "cuotas", ids: [...sobran] });
+    empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
   },
 
   /* ---------- Un cobro ya cargado: lo que se corrige desde Finanzas ----------
