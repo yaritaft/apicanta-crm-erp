@@ -23,6 +23,7 @@ export interface VideoApi {
   liveStreamingDetails?: {
     actualStartTime?: string; actualEndTime?: string;
     scheduledStartTime?: string; concurrentViewers?: string;
+    activeLiveChatId?: string;
   };
   contentDetails?: { duration?: string };
 }
@@ -48,18 +49,20 @@ export const mejor = (m: Miniaturas | undefined, orden: string[]) =>
   orden.map((k) => m?.[k]?.url).find(Boolean);
 
 export async function pedirApi<T>(
-  recurso: "videos" | "channels" | "playlistItems" | "search", params: Record<string, string>, clave: string,
+  recurso: "videos" | "channels" | "playlistItems" | "search" | "commentThreads" | "comments" | "liveChat/messages",
+  params: Record<string, string>, clave: string,
+  /* 0 = sin cache: el cron necesita el número de este minuto, no el de hace media hora. */
   cacheSeg: number = MEDIA_HORA,
-): Promise<{ ok: true; items: T[] } | { ok: false; status: number; error: string }> {
+): Promise<{ ok: true; items: T[]; cuerpo: Record<string, unknown> } | { ok: false; status: number; error: string; motivos: string }> {
   const q = new URLSearchParams({ ...params, key: clave });
   let r: Response;
   try {
     r = await fetch(`${API}/${recurso}?${q}`, {
-      next: { revalidate: cacheSeg },
+      ...(cacheSeg > 0 ? { next: { revalidate: cacheSeg } } : { cache: "no-store" as const }),
       signal: AbortSignal.timeout(ESPERA_MS),
     });
   } catch {
-    return { ok: false, status: 504, error: "YouTube no contestó a tiempo." };
+    return { ok: false, status: 504, error: "YouTube no contestó a tiempo.", motivos: "timeout" };
   }
   const cuerpo = (await r.json().catch(() => null)) as ({ items?: T[] } & ErrorApi) | null;
   if (!r.ok) {
@@ -69,9 +72,14 @@ export async function pedirApi<T>(
     ].filter(Boolean).join(",");
     /* Al log va el motivo, nunca la URL: la URL lleva la clave. */
     console.error(`[youtube] ${recurso} respondió ${r.status} (${motivos || "sin motivo"})`);
-    return { ok: false, status: 502, error: explicar(r.status, motivos, cuerpo?.error?.message ?? "") };
+    /* 404 de Google (video, chat o comentarios que no existen) se deja pasar
+       como 404: quien llama decide si es un error o "no hay". */
+    return {
+      ok: false, status: r.status === 404 ? 404 : 502, motivos,
+      error: explicar(r.status, motivos, cuerpo?.error?.message ?? ""),
+    };
   }
-  return { ok: true, items: cuerpo?.items ?? [] };
+  return { ok: true, items: cuerpo?.items ?? [], cuerpo: (cuerpo ?? {}) as Record<string, unknown> };
 }
 
 /* Los errores de Google, dichos para quien los tiene que arreglar. */
@@ -84,6 +92,11 @@ export function explicar(status: number, motivos: string, mensaje: string): stri
   }
   if (/referer|referrer/.test(m)) {
     return "La clave está limitada a sitios web y el servidor no es uno: limitala sólo a la YouTube Data API v3.";
+  }
+  if (/commentsdisabled/.test(m)) return "El video tiene los comentarios cerrados.";
+  if (/livechatended|livechatnotfound|livechatdisabled/.test(m)) return "El chat del vivo ya no está disponible.";
+  if (/forbidden|insufficientpermissions|login_required|unauthorized/.test(m)) {
+    return "YouTube no deja leer esto sólo con la clave.";
   }
   if (/api_key_service_blocked|blocked/.test(m)) return "La clave no tiene permiso para la YouTube Data API v3.";
   return `YouTube respondió con un error (${status}).`;

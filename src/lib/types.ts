@@ -217,6 +217,9 @@ export interface Webinar {
   /* El vivo o la grabación en YouTube: la ficha del webinar lo embebe y trae
      sus vistas, comentarios y los suscriptores del canal. */
   youtubeUrl?: string;
+  /* Cuándo arrancó el pitch de ventas en el vivo: la curva de espectadores
+     marca ahí la línea, y se mide cuánta gente se fue desde ese minuto. */
+  pitchEn?: string | null;
   notas?: string;
   creadoEn: string;
   extra: Record<string, unknown>;

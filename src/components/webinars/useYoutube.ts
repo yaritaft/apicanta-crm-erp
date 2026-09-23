@@ -30,7 +30,7 @@ class ErrorYoutube extends Error {
 }
 
 /* La sesión de Supabase: las rutas de YouTube sólo le contestan al equipo. */
-async function cabeceras(): Promise<Record<string, string>> {
+export async function cabeceras(): Promise<Record<string, string>> {
   const headers: Record<string, string> = {};
   if (nube) {
     const { data } = await nube.auth.getSession();

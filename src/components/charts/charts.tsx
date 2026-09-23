@@ -36,7 +36,7 @@ function margenIzquierdo(etiquetas: string[]): number {
 /* El SVG se dibuja al ancho real de su caja. Con un viewBox fijo y
    `preserveAspectRatio="none"` el texto se estiraba con la tarjeta: en una
    pantalla ancha los números del eje salían chatos y anchos. */
-function useAncho(): [React.RefObject<HTMLDivElement | null>, number] {
+export function useAncho(): [React.RefObject<HTMLDivElement | null>, number] {
   const ref = useRef<HTMLDivElement>(null);
   const [ancho, setAncho] = useState(640);
   useEffect(() => {

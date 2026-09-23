@@ -13,6 +13,7 @@ import {
 } from "@/components/webinars/FichaNumeros";
 import { TarjetaCambios, TarjetaNotas } from "@/components/webinars/FichaNotas";
 import { PersonasWebinar } from "@/components/webinars/PersonasWebinar";
+import { PanelVivo } from "@/components/webinars/VivoWebinar";
 import { guardarWebinar } from "@/components/webinars/guardar";
 import { CLAVE_LISTA, ESTADO_WEBINAR, ESTADOS } from "@/components/webinars/estado";
 import {
@@ -20,6 +21,7 @@ import {
 } from "@/components/webinars/fechas";
 import { acciones, useEstado, useSync } from "@/lib/store";
 import { metricasDeWebinar } from "@/lib/webinar";
+import { videoDelWebinar } from "@/lib/youtube";
 import type { EstadoWebinar, Webinar } from "@/lib/types";
 
 /* ==================================================================
@@ -27,8 +29,9 @@ import type { EstadoWebinar, Webinar } from "@/lib/types";
 
    A la izquierda el video (el vivo o la grabación, con lo que dice
    YouTube) y a la derecha todos los números del lanzamiento, que se
-   cargan ahí mismo. Abajo, la gente que trajo. En el celular va todo en
-   una columna, con los números antes que las notas.
+   cargan ahí mismo. Abajo, el vivo minuto a minuto y lo que dijo la gente
+   en el chat y los comentarios (si tiene video), y la gente que trajo. En
+   el celular va todo en una columna, con los números antes que las notas.
    ================================================================== */
 
 export default function WebinarFicha() {
@@ -52,6 +55,7 @@ export default function WebinarFicha() {
 
   const w = e.webinars.find((x) => x.id === id);
   const m = useMemo(() => (w ? metricasDeWebinar(e, w) : null), [e, w]);
+  const videoId = w ? videoDelWebinar(w) : null;
 
   /* Flechas arriba y abajo entre los números de la ficha, como en la planilla. */
   function navegar(ev: React.KeyboardEvent) {
@@ -125,6 +129,8 @@ export default function WebinarFicha() {
           <TarjetaLlamadas w={w} m={m} className="wb-o5" />
         </div>
       </div>
+
+      {videoId && <PanelVivo w={w} videoId={videoId} />}
 
       <PersonasWebinar w={w} />
 

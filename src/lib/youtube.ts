@@ -44,6 +44,13 @@ export function idDeYoutube(enlace: string | null | undefined): string | null {
   return id && ID_YOUTUBE.test(id) ? id : null;
 }
 
+/* El video de un webinar: su link propio; si nunca se cargó, el del replay
+   (muchos webinars viejos lo tienen ahí). Un "" guardado es "sin video" a
+   propósito. El cron usa el mismo criterio. */
+export function videoDelWebinar(w: { youtubeUrl?: string | null; enlaceReplay?: string | null }): string | null {
+  return idDeYoutube(w.youtubeUrl) ?? (w.youtubeUrl == null ? idDeYoutube(w.enlaceReplay) : null);
+}
+
 /* youtube-nocookie: YouTube no deja cookies hasta que alguien le da play. */
 export const embebidoDe = (id: string) =>
   `https://www.youtube-nocookie.com/embed/${id}?rel=0&modestbranding=1`;
@@ -154,3 +161,124 @@ export function partirConLinks(texto: string): Pedazo[] {
   if (desde < texto.length) out.push({ texto: texto.slice(desde) });
   return out;
 }
+
+/* ---------- Lo que devuelve /api/youtube/vivo ----------
+
+   El vivo minuto a minuto. Lo junta /api/cron/youtube mientras el webinar
+   está en el aire: YouTube sólo dice cuántos miran EN ESE MOMENTO, así que
+   lo que no se guardó en el minuto no se puede pedir después. */
+
+export interface MuestraVivo {
+  /* El minuto, en ISO */
+  t: string;
+  enVivo: boolean;
+  espectadores?: number;
+  vistas?: number;
+  likes?: number;
+  comentarios?: number;
+}
+
+export interface MensajeChat {
+  id: string;
+  t: string;
+  autor: string;
+  autorCanalId?: string;
+  foto?: string;
+  esDueno?: boolean;
+  esModerador?: boolean;
+  tipo?: string;
+  texto: string;
+  monto?: string;
+}
+
+export interface EstadoVivoGuardado {
+  estado?: "programado" | "en-vivo" | "terminado" | "video";
+  programado?: string;
+  inicio?: string;
+  fin?: string;
+  /* Por qué no se pudo leer el chat, dicho para mostrarlo tal cual. */
+  errorChat?: string;
+  ultimaMuestra?: string;
+}
+
+export interface DatosVivo {
+  /* false: no hay base (la app corre local) y no hay nada guardado. */
+  hayBase: boolean;
+  estado: EstadoVivoGuardado;
+  /* Durante el vivo, una por minuto. */
+  minutos: MuestraVivo[];
+  /* Después del vivo, una por hora y después una por día. */
+  despues: MuestraVivo[];
+  chat: MensajeChat[];
+  /* El chat puede ser enorme: si se cortó, cuántos había en total. */
+  chatTotal: number;
+}
+
+/* ---------- Lo que devuelve /api/youtube/comentarios ---------- */
+
+export interface ComentarioYoutube {
+  id: string;
+  autor: string;
+  autorCanalId?: string;
+  foto?: string;
+  texto: string;
+  likes: number;
+  t: string;
+  editado?: boolean;
+  respuestas: ComentarioYoutube[];
+  /* Cuántas respuestas tiene en YouTube (pueden venir menos). */
+  totalRespuestas?: number;
+}
+
+export interface ComentariosYoutube {
+  comentarios: ComentarioYoutube[];
+  /* true: había más de los que se trajeron. */
+  cortado: boolean;
+  /* Los comentarios están cerrados en el video. */
+  cerrados?: boolean;
+}
+
+/* ---------- Lo que devuelve /api/youtube/analytics ----------
+
+   YouTube Analytics necesita que el dueño del canal le dé permiso a la app
+   (OAuth). Trae lo que la clave sola no puede: la retención de la
+   grabación, el tiempo de reproducción, de dónde llegó la gente, países,
+   edades y dispositivos. */
+
+export interface FilaReparto { clave: string; valor: number; valor2?: number }
+
+export interface AnalyticsVideo {
+  traidoEn: string;
+  /* Desde qué día cuenta YouTube (Analytics tarda dos o tres días). */
+  desde: string;
+  hasta: string;
+  resumen: {
+    vistas?: number;
+    minutosVistos?: number;
+    duracionMediaSeg?: number;
+    porcentajeMedio?: number;
+    suscriptoresGanados?: number;
+    suscriptoresPerdidos?: number;
+    compartidos?: number;
+    picoConcurrentes?: number;
+    promedioConcurrentes?: number;
+  };
+  /* elapsedVideoTimeRatio (0,01…1) → qué parte de la gente sigue mirando
+     (audienceWatchRatio, puede pasar de 1 si vuelven a ver). */
+  retencion: { ratio: number; mirando: number; relativa?: number }[];
+  /* Los espectadores a la vez en cada minuto del vivo (livestreamPosition):
+     lo mismo que guarda el cron, pero también para los vivos pasados. */
+  porMinuto?: { min: number; promedio?: number; pico?: number }[];
+  vivoVsGrabacion: FilaReparto[];
+  fuentes: FilaReparto[];
+  paises: FilaReparto[];
+  edades: FilaReparto[];
+  generos: FilaReparto[];
+  dispositivos: FilaReparto[];
+  /* Los reportes que YouTube no quiso dar, para decirlo sin romper el resto. */
+  faltan: string[];
+}
+
+export type EstadoAnalytics =
+  | { conectado: false; configurado: boolean; motivo?: string }
+  | { conectado: true; canal?: string; datos?: AnalyticsVideo; error?: string };
