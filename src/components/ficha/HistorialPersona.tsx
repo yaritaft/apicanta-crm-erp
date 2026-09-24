@@ -91,8 +91,10 @@ export function HistorialPersona({ e, p }: { e: EstadoApp; p: Persona }) {
     return <Empty icono={<ArrowRightLeft size={22} />} titulo="Sin historia todavía" texto="Cuando agende, compre o pague, va a aparecer acá." />;
   }
 
+  /* Con scroll propio: con cada llamada y cada pago la historia crece, y
+     las solapas de arriba tienen que seguir a la vista. */
   return (
-    <ol className="linea-tiempo">
+    <ol className="linea-tiempo lista-scroll">
       {eventos.map((ev, i) => (
         <li key={i} className="linea-tiempo__item" data-tono={ev.tono}>
           <span className="linea-tiempo__icono">{ev.icono}</span>

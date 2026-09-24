@@ -43,16 +43,20 @@ export function UtmsPersona({ e, p }: { e: EstadoApp; p: Persona }) {
         {agendas.length === 0 ? (
           <p className="t-sm t-subtle">Ninguna llamada trajo UTMs todavía. Las de Calendly los traen solas.</p>
         ) : (
-          agendas.map((s) => (
-            <div key={s.id} className="caja-suave stack-2">
-              <div className="row-wrap t-sm">
-                <span className="t-strong">{s.tipo || s.titulo}</span>
-                <span className="t-subtle">agendó el {fechaHora(s.creadoEn)}</span>
-                {s.canal && <Tag>entró por: {ETIQUETA_CANAL[s.canal]}</Tag>}
+          /* Una por agenda, reprogramaciones incluidas: con scroll, así lo de
+             las ventas de abajo no queda lejos. */
+          <div className="stack-3 lista-scroll">
+            {agendas.map((s) => (
+              <div key={s.id} className="caja-suave stack-2">
+                <div className="row-wrap t-sm">
+                  <span className="t-strong">{s.tipo || s.titulo}</span>
+                  <span className="t-subtle">agendó el {fechaHora(s.creadoEn)}</span>
+                  {s.canal && <Tag>entró por: {ETIQUETA_CANAL[s.canal]}</Tag>}
+                </div>
+                {s.utm && Object.keys(s.utm).length > 0 && <Utms titulo="UTMs con los que agendó" utm={s.utm} />}
               </div>
-              {s.utm && Object.keys(s.utm).length > 0 && <Utms titulo="UTMs con los que agendó" utm={s.utm} />}
-            </div>
-          ))
+            ))}
+          </div>
         )}
       </div>
 

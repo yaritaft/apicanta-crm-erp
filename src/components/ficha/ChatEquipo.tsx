@@ -34,7 +34,9 @@ export function ChatEquipo({ contactoId, comentarios }: { contactoId: string; co
 
   return (
     <div className="chat">
-      <div className="chat__lista" role="log" aria-label="Mensajes del equipo">
+      {/* Los mensajes scrollean adentro, como en cualquier chat: la ficha no
+          se estira con la charla y la caja para escribir queda abajo. */}
+      <div className="chat__lista lista-scroll" role="log" aria-label="Mensajes del equipo">
         {cuantos === 0 ? (
           <Empty
             icono={<MessageSquare size={22} />}
