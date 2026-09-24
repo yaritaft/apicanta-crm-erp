@@ -13,8 +13,9 @@ import { acciones, nuevoId, useEstado } from "@/lib/store";
 import { fechaLarga, isoDia, money, pct } from "@/lib/format";
 import { medioDeMovimiento, parecido, procesadorDeMovimiento } from "@/lib/conciliacion";
 import { descartarComprobante } from "@/lib/comprobantes";
-import type { Cuota, EstadoApp, IngresoComunidad, MiembroEquipo, Movimiento, Venta } from "@/lib/types";
-import { INGRESOS_COMUNIDAD, PAISES, planDePago, proyectoDeWebinar, webinarDeProyecto } from "@/lib/angelo";
+import type { Cuota, EstadoApp, MiembroEquipo, Movimiento, Venta } from "@/lib/types";
+import { PAISES, planDePago, webinarDeProyecto } from "@/lib/angelo";
+import { origenDeRegla, origenDeUtm, textoUtm } from "@/lib/utms";
 import { useUsuarioActual } from "@/lib/usuario";
 
 /* ==================================================================
@@ -27,6 +28,10 @@ import { useUsuarioActual } from "@/lib/usuario";
    La última parte es la que importa: una venta se cobra en cuotas, una
    cuota puede cobrarse con varios medios, y cada medio puede venir
    atado a un cobro real de una pasarela. Eso se decide acá, no después.
+
+   De dónde salió la venta no se pregunta: lo dicen las UTMs con las que
+   llegó quien compró (Ajustes → UTMs). El resumen lo muestra, y si la
+   UTM todavía no tiene regla, se completa después solo.
    ================================================================== */
 
 /* Un cobro: un medio de pago dentro de una cuota (ver EditorCobros). */
@@ -41,7 +46,7 @@ interface LineaCuota {
   cobros: Cobro[];
 }
 
-type PasoId = "cliente" | "producto" | "precio" | "equipo" | "origen" | "plan" | "cobros" | "resumen";
+type PasoId = "cliente" | "producto" | "precio" | "equipo" | "plan" | "cobros" | "resumen";
 
 /* Los nombres de la planilla de Angelo: quien cargaba ahí reconoce cada
    paso por su columna. */
@@ -50,7 +55,6 @@ const PASOS: { id: PasoId; titulo: string }[] = [
   { id: "producto", titulo: "Servicio" },
   { id: "precio",   titulo: "Valor total" },
   { id: "equipo",   titulo: "Vendedor" },
-  { id: "origen",   titulo: "Origen" },
   { id: "plan",     titulo: "Plan de pago" },
   { id: "cobros",   titulo: "Cobros" },
   { id: "resumen",  titulo: "Resumen" },
@@ -88,7 +92,8 @@ interface Borrador {
   setterId: string;
   referidorNombre: string;
   referidorTelefono: string;
-  ingresoComunidad: IngresoComunidad | "";
+  /* "¿Es referido?": recién con el sí se piden nombre y teléfono. */
+  esReferido: boolean;
 }
 
 const redondear = (n: number) => Math.round(n * 100) / 100;
@@ -218,17 +223,21 @@ export function AsistenteVenta({ onCerrar, onListo, desdeMovimiento, cliente }: 
         etiquetas: [], creadoEn: ahora, actualizadoEn: ahora, extra: {},
       }, b.contactoNombre.trim());
     }
-    /* El proyecto WEB-día/mes/año ya dice de qué webinar vino. */
-    const webinarId = b.webinarId || webinarDeProyecto(b.proyecto, e.webinars, b.fecha)?.id;
-    const esSetter = /setter/i.test(e.embudos.find((x) => x.id === b.embudoId)?.nombre ?? "");
-    const esReferido = /referid/i.test(e.embudos.find((x) => x.id === b.embudoId)?.nombre ?? "");
+    /* El origen sale de la UTM de quien compró; si no tiene una con regla,
+       lo que traía el lead (su webinar). El proyecto WEB-día/mes/año ya
+       dice de qué webinar vino. */
+    const o = origenDeUtm(e, contactoId, b.fecha);
+    const de = o ? origenDeRegla(o.regla) : {};
+    const embudoId = de.embudoId ?? (b.embudoId || undefined);
+    const proyecto = de.proyecto ?? (b.proyecto || undefined);
+    const webinarId = de.webinarId ?? (b.webinarId || webinarDeProyecto(proyecto, e.webinars, b.fecha)?.id);
     const venta: Venta = {
       id: ventaId,
       contactoId,
       contactoNombre: b.contactoNombre.trim(),
       productoId: b.productoId || undefined,
       webinarId: webinarId || undefined,
-      embudoId: b.embudoId || undefined,
+      embudoId,
       precioAcordado: redondear(b.precioAcordado),
       moneda: mon,
       closerId: b.closerId || undefined,
@@ -239,11 +248,10 @@ export function AsistenteVenta({ onCerrar, onListo, desdeMovimiento, cliente }: 
       notas: b.notas,
       creadoEn: new Date().toISOString(),
       extra: {},
-      proyecto: b.proyecto || undefined,
-      setterId: esSetter && b.setterId ? b.setterId : undefined,
-      referidorNombre: esReferido && b.referidorNombre.trim() ? b.referidorNombre.trim() : undefined,
-      referidorTelefono: esReferido && b.referidorTelefono.trim() ? b.referidorTelefono.trim() : undefined,
-      ingresoComunidad: b.ingresoComunidad || undefined,
+      proyecto,
+      setterId: b.setterId || undefined,
+      referidorNombre: b.esReferido && b.referidorNombre.trim() ? b.referidorNombre.trim() : undefined,
+      referidorTelefono: b.esReferido && b.referidorTelefono.trim() ? b.referidorTelefono.trim() : undefined,
     };
 
     const cuotas: Cuota[] = b.cuotas.map((c) => ({
@@ -335,7 +343,6 @@ export function AsistenteVenta({ onCerrar, onListo, desdeMovimiento, cliente }: 
           {paso.id === "producto" && <PasoProducto b={b} set={set} e={e} M={M} />}
           {paso.id === "precio" && <PasoPrecio b={b} set={set} e={e} M={M} />}
           {paso.id === "equipo" && <PasoEquipo b={b} set={set} e={e} sinComision={sinComision} yo={yo.miembro} />}
-          {paso.id === "origen" && <PasoOrigen b={b} set={set} e={e} />}
           {paso.id === "plan" && <PasoPlan b={b} setB={setB} M={M} diferencia={diferenciaPlan} />}
           {paso.id === "cobros" && <PasoCobros b={b} setB={setB} e={e} M={M} onSubiendo={onSubiendo} />}
           {paso.id === "resumen" && (
@@ -383,7 +390,10 @@ function inicial(e: EstadoApp, mov?: Movimiento, cliente?: { contactoId: string;
     precioTocado: Boolean(mov),
     closerId: "",
     directorId: e.equipo.find((x) => x.rol === "director")?.id ?? "",
-    embudoId: e.embudos.find((x) => x.activo)?.id ?? "",
+    /* Sin estrategia de entrada: la pone la UTM al guardar. Antes arrancaba
+       con la primera de la lista y, sin el paso de origen, todo habría
+       quedado como Lanzamiento sin que nadie lo eligiera. */
+    embudoId: "",
     webinarId: "",
     fecha: mov?.fecha ?? hoy,
     excluidoMarketing: false,
@@ -398,7 +408,7 @@ function inicial(e: EstadoApp, mov?: Movimiento, cliente?: { contactoId: string;
     setterId: "",
     referidorNombre: "",
     referidorTelefono: "",
-    ingresoComunidad: "",
+    esReferido: false,
   };
   b.cuotas = armarPlan(b);
   /* Si el asistente se abrió desde un cobro suelto, ese cobro ya viene
@@ -423,9 +433,8 @@ function validar(paso: PasoId, b: Borrador, diferencia: number, ctx: { e: Estado
     case "precio":
       return b.precioAcordado > 0 ? null : "El valor total tiene que ser mayor a cero";
     case "equipo":
-      return b.closerId ? null : "Decí quién es el vendedor";
-    case "origen":
-      return b.embudoId ? null : "Elegí la estrategia utilizada";
+      if (!b.closerId) return "Decí quién es el vendedor";
+      return b.esReferido && !b.referidorNombre.trim() ? "Poné el nombre del referidor" : null;
     case "plan":
       if (Math.abs(diferencia) > 0.5) {
         return diferencia > 0
@@ -616,7 +625,7 @@ function PasoPrecio({ b, set, e, M }: {
   );
 }
 
-/* ---------- Paso 4: equipo ---------- */
+/* ---------- Paso 4: vendedor, director, setter y referido ---------- */
 
 function PasoEquipo({ b, set, e, sinComision, yo }: {
   b: Borrador; set: (c: Partial<Borrador>) => void; e: EstadoApp; sinComision: boolean;
@@ -627,83 +636,50 @@ function PasoEquipo({ b, set, e, sinComision, yo }: {
   const veCeo = !yo || yo.rol === "ceo" || b.closerId === e.equipo.find((x) => x.rol === "ceo")?.id;
   const closers = e.equipo.filter((x) => x.activo && (x.rol === "closer" || (x.rol === "ceo" && veCeo)));
   const directores = e.equipo.filter((x) => x.rol === "director");
+  const setters = e.equipo.filter((x) => x.activo && x.rol === "setter");
+  const comision = (x: MiembroEquipo) => (x.sinComision ? "no comisiona nadie" : `comisión ${pct(x.comisionRate * 100, 0)}`);
   return (
     <>
       <Pregunta texto="¿Quién es el vendedor?" sub="De acá salen las comisiones: el vendedor cobra sobre lo que entra, neto de procesador." />
-      <div className="opciones">
-        {closers.map((x, k) => (
-          <Opcion
-            key={x.id} tecla={String(k + 1)} nombre={x.nombre}
-            sub={x.sinComision ? "No comisiona nadie" : `Comisión ${pct(x.comisionRate * 100, 0)}`}
-            activo={b.closerId === x.id}
-            onClick={() => set({ closerId: b.closerId === x.id ? "" : x.id })}
-          />
-        ))}
+      <div className="hk-field">
+        <label className="hk-label">Vendedor</label>
+        <Select
+          value={b.closerId} placeholder="Elegí el vendedor" aria-label="Vendedor"
+          onChange={(ev) => set({ closerId: ev.target.value })}
+          opciones={closers.map((x) => ({ valor: x.id, texto: `${x.nombre} · ${comision(x)}` }))}
+        />
       </div>
 
-      {sinComision ? null : (
-        <div className="stack-2">
-          <span className="t-label">Director</span>
-          <div className="opciones">
-            {directores.map((x) => (
-              <Opcion
-                key={x.id} nombre={x.nombre} sub={`Comisión ${pct(x.comisionRate * 100, 0)}`}
-                activo={b.directorId === x.id}
-                onClick={() => set({ directorId: b.directorId === x.id ? "" : x.id })}
-              />
-            ))}
+      <div className="form-grid">
+        {!sinComision && directores.length > 0 && (
+          <div className="hk-field">
+            <label className="hk-label">Director</label>
+            <Select
+              value={b.directorId} aria-label="Director"
+              onChange={(ev) => set({ directorId: ev.target.value })}
+              opciones={[{ valor: "", texto: "Sin director" }, ...directores.map((x) => ({ valor: x.id, texto: `${x.nombre} · ${comision(x)}` }))]}
+            />
           </div>
+        )}
+        <div className="hk-field">
+          <label className="hk-label">¿Tuvo setter?</label>
+          <Select
+            value={b.setterId} aria-label="Nombre del setter"
+            onChange={(ev) => set({ setterId: ev.target.value })}
+            opciones={[{ valor: "", texto: "Sin setter" }, ...setters.map((x) => ({ valor: x.id, texto: `${x.nombre} · ${comision(x)}` }))]}
+          />
         </div>
-      )}
-    </>
-  );
-}
-
-/* ---------- Paso 5: origen ---------- */
-
-function PasoOrigen({ b, set, e }: { b: Borrador; set: (c: Partial<Borrador>) => void; e: EstadoApp }) {
-  const webinars = [...e.webinars].sort((a, c) => +new Date(c.fecha) - +new Date(a.fecha)).slice(0, 12);
-  const estrategia = e.embudos.find((x) => x.id === b.embudoId);
-  const esSetter = /setter/i.test(estrategia?.nombre ?? "");
-  const esReferido = /referid/i.test(estrategia?.nombre ?? "");
-  const setters = e.equipo.filter((x) => x.activo && x.rol === "setter");
-  /* Los proyectos de la lista, y los de los últimos webinars que todavía no
-     están: así el del webinar de la semana no hay que escribirlo. */
-  const proyectos = useMemo(() => {
-    const lista = e.ajustes.proyectos ?? [];
-    const deWebinars = webinars.map((w) => proyectoDeWebinar(w.fecha)).filter((x) => !lista.includes(x));
-    return [...deWebinars, ...lista];
-  }, [e.ajustes.proyectos, webinars]);
-
-  function elegirProyecto(proyecto: string) {
-    const w = webinarDeProyecto(proyecto, e.webinars, b.fecha);
-    set({ proyecto, ...(w ? { webinarId: w.id } : {}) });
-  }
-
-  return (
-    <>
-      <Pregunta texto="¿De dónde salió?" sub="La estrategia utilizada y el proyecto. Sin esto el profit por webinar y el costo de adquisición salen mal." />
-      <div className="stack-2">
-        <span className="t-label">Estrategia utilizada</span>
-        <div className="opciones">
-          {e.embudos.filter((x) => x.activo).sort((x, y) => x.orden - y.orden).map((x, k) => (
-            <Opcion key={x.id} tecla={k < 9 ? String(k + 1) : undefined} nombre={x.nombre} activo={b.embudoId === x.id} onClick={() => set({ embudoId: x.id })} />
-          ))}
+        <div className="hk-field">
+          <label className="hk-label">¿Es referido?</label>
+          <Select
+            value={b.esReferido ? "si" : "no"} aria-label="¿Es referido?"
+            onChange={(ev) => set({ esReferido: ev.target.value === "si" })}
+            opciones={[{ valor: "no", texto: "No" }, { valor: "si", texto: `Sí · el referidor cobra ${pct((e.ajustes.comisionReferidor ?? 0.1) * 100, 0)}` }]}
+          />
         </div>
       </div>
 
-      {esSetter && (
-        <div className="stack-2">
-          <span className="t-label">Nombre del setter</span>
-          <Select
-            value={b.setterId} placeholder={setters.length ? "Elegí el setter" : "No hay setters en Ajustes → Equipo"}
-            onChange={(ev) => set({ setterId: ev.target.value })}
-            opciones={setters.map((x) => ({ valor: x.id, texto: x.nombre }))}
-          />
-        </div>
-      )}
-
-      {esReferido && (
+      {b.esReferido && (
         <div className="form-grid">
           <div className="hk-field">
             <label className="hk-label">Nombre del referidor</label>
@@ -715,29 +691,6 @@ function PasoOrigen({ b, set, e }: { b: Borrador; set: (c: Partial<Borrador>) =>
           </div>
         </div>
       )}
-
-      <div className="form-grid">
-        <div className="hk-field">
-          <label className="hk-label">Proyecto</label>
-          <Select value={b.proyecto} placeholder="Sin proyecto" onChange={(ev) => elegirProyecto(ev.target.value)} opciones={proyectos} />
-          <span className="hk-help">Un WEB-día/mes/año ata la venta a ese webinar solo.</span>
-        </div>
-        <div className="hk-field">
-          <label className="hk-label">Webinar de origen</label>
-          <Select
-            value={b.webinarId} placeholder="Sin atribuir"
-            onChange={(ev) => set({ webinarId: ev.target.value })}
-            opciones={webinars.map((w) => ({ valor: w.id, texto: `${w.titulo} — ${fechaLarga(w.fecha)}` }))}
-          />
-        </div>
-      </div>
-      <div className="stack-2">
-        <span className="t-label">Fecha de la venta</span>
-        <Input
-          type="date" value={isoDia(b.fecha)}
-          onChange={(ev) => set({ fecha: new Date(ev.target.value + "T12:00:00").toISOString(), primerVencimiento: new Date(ev.target.value + "T12:00:00").toISOString() })}
-        />
-      </div>
     </>
   );
 }
@@ -758,13 +711,26 @@ function PasoPlan({ b, setB, M, diferencia }: {
     <>
       <Pregunta texto="¿Cuál es el plan de pago?" sub="La reserva es una cuota más. Después podés mover monto y fecha de cualquiera." />
 
-      <div className="row-wrap">
-        {[1, 2, 3, 4, 5, 6].map((n) => (
-          <Chip key={n} activo={b.cantidadCuotas === n && !b.planTocado}
-            onClick={() => setB((x) => ({ ...x, cantidadCuotas: n, planTocado: false }))}>
-            {n === 1 ? "1 Cuota" : `${n} Cuotas`}
-          </Chip>
-        ))}
+      <div className="form-grid">
+        <div className="hk-field">
+          <label className="hk-label">Fecha de la venta</label>
+          <Input
+            type="date" value={isoDia(b.fecha)} aria-label="Fecha de la venta"
+            onChange={(ev) => {
+              if (!ev.target.value) return;
+              const f = new Date(ev.target.value + "T12:00:00").toISOString();
+              setB((x) => ({ ...x, fecha: f, primerVencimiento: f }));
+            }}
+          />
+        </div>
+        <div className="hk-field">
+          <label className="hk-label">Plan de pago</label>
+          <Select
+            value={b.planTocado ? "" : String(b.cantidadCuotas)} placeholder="A mano" aria-label="Plan de pago"
+            onChange={(ev) => setB((x) => ({ ...x, cantidadCuotas: Number(ev.target.value), planTocado: false }))}
+            opciones={[1, 2, 3, 4, 5, 6].map((n) => ({ valor: String(n), texto: n === 1 ? "1 Cuota" : `${n} Cuotas` }))}
+          />
+        </div>
       </div>
 
       <div className="form-grid">
@@ -971,10 +937,15 @@ function PasoResumen({ b, set, e, M, sinComision, totalCobrado }: {
   const producto = e.productos.find((p) => p.id === b.productoId);
   const closer = e.equipo.find((x) => x.id === b.closerId);
   const director = e.equipo.find((x) => x.id === b.directorId);
-  const embudo = e.embudos.find((x) => x.id === b.embudoId);
-  const webinar = e.webinars.find((x) => x.id === b.webinarId)
-    ?? webinarDeProyecto(b.proyecto, e.webinars, b.fecha);
-  const setter = /setter/i.test(embudo?.nombre ?? "") ? e.equipo.find((x) => x.id === b.setterId) : undefined;
+  /* El origen, como va a quedar: el de la UTM con regla o, si no hay, lo
+     que traía el lead. */
+  const o = origenDeUtm(e, b.contactoId, b.fecha);
+  const de = o ? origenDeRegla(o.regla) : {};
+  const embudo = e.embudos.find((x) => x.id === (de.embudoId ?? b.embudoId));
+  const proyecto = de.proyecto ?? b.proyecto;
+  const webinar = e.webinars.find((x) => x.id === (de.webinarId ?? b.webinarId))
+    ?? webinarDeProyecto(proyecto, e.webinars, b.fecha);
+  const setter = e.equipo.find((x) => x.id === b.setterId);
   const conciliados = b.cuotas.flatMap((c) => c.cobros).filter((p) => p.movimientoId).length;
 
   return (
@@ -987,10 +958,18 @@ function PasoResumen({ b, set, e, M, sinComision, totalCobrado }: {
         <dt>Valor total</dt><dd className="t-num">{M(b.precioAcordado, 2)}</dd>
         <dt>Vendedor</dt><dd>{closer?.nombre ?? "—"}{sinComision && <span className="t-subtle"> · no comisiona nadie</span>}</dd>
         {!sinComision && <><dt>Director</dt><dd>{director?.nombre ?? "—"}</dd></>}
-        <dt>Estrategia</dt><dd>{embudo?.nombre ?? "—"}{webinar ? ` · ${webinar.titulo}` : ""}</dd>
-        {b.proyecto && <><dt>Proyecto</dt><dd>{b.proyecto}</dd></>}
+        <dt>Origen</dt>
+        <dd>
+          {embudo || proyecto || webinar
+            ? [embudo?.nombre, proyecto, webinar?.titulo].filter(Boolean).join(" · ")
+            : <span className="t-subtle">Sin origen todavía</span>}
+          <span className="t-sm t-subtle" style={{ display: "block" }}>
+            {o ? `De la UTM ${textoUtm(o.utm)}.`
+              : "Quien compró no llegó con una UTM que tenga regla: cuando se asigne en Ajustes → UTMs, se completa solo."}
+          </span>
+        </dd>
         {setter && <><dt>Setter</dt><dd>{setter.nombre}</dd></>}
-        {b.referidorNombre.trim() && /referid/i.test(embudo?.nombre ?? "") && <><dt>Referidor</dt><dd>{b.referidorNombre}{b.referidorTelefono ? ` · ${b.referidorTelefono}` : ""}</dd></>}
+        {b.esReferido && b.referidorNombre.trim() && <><dt>Referidor</dt><dd>{b.referidorNombre}{b.referidorTelefono ? ` · ${b.referidorTelefono}` : ""}</dd></>}
         <dt>Plan de pago</dt><dd>{planDePago({ estado: "activa" } as Venta, b.cuotas.map((c) => ({ esReserva: c.esReserva }) as Cuota))}{b.reserva > 0 ? ` + reserva de ${M(b.reserva)}` : ""}</dd>
         <dt>Fecha</dt><dd>{fechaLarga(b.fecha)}</dd>
       </dl>
@@ -1048,12 +1027,6 @@ function PasoResumen({ b, set, e, M, sinComision, totalCobrado }: {
           <strong>Excluida de marketing</strong> — el growth partner no comisiona esta venta
           {sinComision && <span className="t-subtle"> (se marca sola con este closer)</span>}
         </span>
-      </div>
-
-      <div className="hk-field" style={{ maxWidth: 280 }}>
-        <label className="hk-label">Ingreso a la comunidad</label>
-        <Select value={b.ingresoComunidad} placeholder="Sin definir"
-          onChange={(ev) => set({ ingresoComunidad: ev.target.value as IngresoComunidad })} opciones={INGRESOS_COMUNIDAD} />
       </div>
 
       <div className="hk-field">

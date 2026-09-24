@@ -6,8 +6,8 @@ import { ModalForm } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toast";
 import { acciones, nuevoId, useEstado } from "@/lib/store";
 import { isoDia, money } from "@/lib/format";
-import type { Cuota, EstadoVenta, IngresoComunidad, Moneda, Venta } from "@/lib/types";
-import { INGRESOS_COMUNIDAD, proyectoDeWebinar, webinarDeProyecto } from "@/lib/angelo";
+import type { Cuota, EstadoVenta, Moneda, Venta } from "@/lib/types";
+import { proyectoDeWebinar, webinarDeProyecto } from "@/lib/angelo";
 
 /* Editar una venta ya cargada (y el alta vieja, en un solo formulario).
    Vive aparte porque lo usan la pantalla de Ventas y la ficha de la
@@ -35,7 +35,6 @@ export interface BorradorVenta {
   setterId: string;
   referidorNombre: string;
   referidorTelefono: string;
-  ingresoComunidad: IngresoComunidad | "";
 }
 
 export function desdeVenta(e: ReturnType<typeof useEstado>, v: Venta): BorradorVenta {
@@ -50,7 +49,6 @@ export function desdeVenta(e: ReturnType<typeof useEstado>, v: Venta): BorradorV
     reserva: cuotas.find((c) => c.esReserva)?.monto ?? 0,
     proyecto: v.proyecto ?? "", setterId: v.setterId ?? "",
     referidorNombre: v.referidorNombre ?? "", referidorTelefono: v.referidorTelefono ?? "",
-    ingresoComunidad: v.ingresoComunidad ?? "",
   };
 }
 
@@ -85,7 +83,8 @@ export function FormularioVenta({ borrador, onCerrar, onGuardado }: {
       creadoEn: new Date().toISOString(), extra: {},
       proyecto: f.proyecto, setterId: f.setterId,
       referidorNombre: f.referidorNombre.trim(), referidorTelefono: f.referidorTelefono.trim(),
-      ingresoComunidad: f.ingresoComunidad || undefined,
+      /* "Ingreso a la comunidad" se marca en la solapa Servicio: no va acá,
+         así editar la venta no lo pisa. */
     };
 
     if (f.id) {
@@ -177,13 +176,9 @@ export function FormularioVenta({ borrador, onCerrar, onGuardado }: {
             opciones={e.webinars.map((w) => ({ valor: w.id, texto: w.titulo }))} />
         </Field>
 
-        <Field label="Nombre del setter" ayuda="Sólo si la estrategia fue Setter: comisiona sobre lo que entra.">
+        <Field label="Nombre del setter" ayuda="Si hubo setter: comisiona sobre lo que entra.">
           <Select value={f.setterId} placeholder="Sin setter" onChange={(ev) => setF({ ...f, setterId: ev.target.value })}
             opciones={e.equipo.filter((x) => x.rol === "setter" && (x.activo || x.id === f.setterId)).map((x) => ({ valor: x.id, texto: x.nombre }))} />
-        </Field>
-        <Field label="Ingreso a la comunidad">
-          <Select value={f.ingresoComunidad} placeholder="Sin definir"
-            onChange={(ev) => setF({ ...f, ingresoComunidad: ev.target.value as IngresoComunidad })} opciones={INGRESOS_COMUNIDAD} />
         </Field>
         <Field label="Nombre del referidor" ayuda="Si fue un referido: comisiona sobre lo que entra.">
           <Input value={f.referidorNombre} onChange={(ev) => setF({ ...f, referidorNombre: ev.target.value })} placeholder="Quién lo refirió" />

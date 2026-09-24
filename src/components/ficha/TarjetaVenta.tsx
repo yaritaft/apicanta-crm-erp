@@ -82,7 +82,6 @@ export function TarjetaVenta({ e, venta, resaltada, abierta, onAlternar, onPagar
               {tipoDePago(venta, cuotasVenta)} · {planDePago(venta, cuotasVenta)}
               {setter ? ` · setter ${setter}` : ""}
               {venta.referidorNombre ? ` · referido por ${venta.referidorNombre}` : ""}
-              {venta.ingresoComunidad ? ` · comunidad: ${venta.ingresoComunidad}` : ""}
             </span>
           )}
         </span>

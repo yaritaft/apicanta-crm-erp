@@ -26,7 +26,8 @@ import { acciones, useEstado } from "@/lib/store";
 import { personaDe, type Persona } from "@/lib/persona";
 import { saldoVenta } from "@/lib/finanzas";
 import { fechaHora, fechaLarga, money, relativo } from "@/lib/format";
-import type { Alumno, Cuota, EstadoAlumno, EstadoApp, Venta } from "@/lib/types";
+import type { Alumno, Cuota, EstadoAlumno, EstadoApp, IngresoComunidad, Venta } from "@/lib/types";
+import { INGRESOS_COMUNIDAD } from "@/lib/angelo";
 
 /* ==================================================================
    La ficha de una persona. La misma, se abra desde donde se abra.
@@ -464,6 +465,22 @@ function VistaServicio({ e, p }: { e: EstadoApp; p: Persona }) {
                               onChange={(ev) => acciones.actualizar<Alumno>("alumnos", alumno.id, { estado: ev.target.value as EstadoAlumno }, alumno.nombre)}
                               opciones={ESTADOS_ALUMNO.map((k) => ({ valor: k, texto: ESTADO_ALUMNO[k].texto }))} />
                           </div>
+                          {/* Si ya lo sumaron a la comunidad del programa. Es la columna
+                              "Ingreso a la comunidad" de la planilla: vive en la venta
+                              (sale en la exportación), pero se marca acá, cuando arranca. */}
+                          {venta && (
+                            <div className="hk-field">
+                              <span className="hk-label">Ingreso a la comunidad</span>
+                              <Select aria-label="Ingreso a la comunidad" value={venta.ingresoComunidad ?? ""} placeholder="Sin definir"
+                                onChange={(ev) => {
+                                  const v = ev.target.value as IngresoComunidad | "";
+                                  acciones.actualizar<Venta>("ventas", venta.id, { ingresoComunidad: v || undefined }, venta.contactoNombre,
+                                    `${venta.contactoNombre}: ingreso a la comunidad «${v || "sin definir"}».`);
+                                  toast("Ingreso a la comunidad guardado.");
+                                }}
+                                opciones={INGRESOS_COMUNIDAD} />
+                            </div>
+                          )}
                         </div>
 
                         <div>
