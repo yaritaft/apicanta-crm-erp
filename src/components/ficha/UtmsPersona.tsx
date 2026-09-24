@@ -47,32 +47,35 @@ export function UtmsPersona({ e, p }: { e: EstadoApp; p: Persona }) {
       {formularios.length > 0 && (
         <div className="stack-3">
           <div className="t-label">Formularios de Meta</div>
-          {formularios.map((f) => {
-            const webinar = e.webinars.find((w) => w.id === f.webinarId);
-            return (
-              <div key={f.leadgenId} className="caja-suave stack-2">
-                <div className="row-wrap t-sm">
-                  <span className="t-strong">{f.formulario}</span>
-                  <span className="t-subtle">se anotó el {fechaHora(f.creado)}</span>
-                  <Tag>{f.plataforma === "ig" ? "Instagram" : "Facebook"}</Tag>
-                  {webinar && <Tag>webinar: {webinar.titulo}</Tag>}
-                </div>
-                {(f.campania || f.anuncio) && (
-                  <div className="row-wrap t-sm t-subtle">
-                    {f.campania && <span>campaña: {f.campania}</span>}
-                    {f.anuncio && <span>anuncio: {f.anuncio}</span>}
+          {/* Una por formulario enviado: con scroll, como las agendas. */}
+          <div className="stack-3 lista-scroll">
+            {formularios.map((f) => {
+              const webinar = e.webinars.find((w) => w.id === f.webinarId);
+              return (
+                <div key={f.leadgenId} className="caja-suave stack-2">
+                  <div className="row-wrap t-sm">
+                    <span className="t-strong">{f.formulario}</span>
+                    <span className="t-subtle">se anotó el {fechaHora(f.creado)}</span>
+                    <Tag>{f.plataforma === "ig" ? "Instagram" : "Facebook"}</Tag>
+                    {webinar && <Tag>webinar: {webinar.titulo}</Tag>}
                   </div>
-                )}
-                {f.respuestas.length > 0 && (
-                  <dl className="dl dl--compacta">
-                    {f.respuestas.map((q) => (
-                      <React.Fragment key={q.pregunta}><dt>{q.pregunta}</dt><dd>{q.respuesta}</dd></React.Fragment>
-                    ))}
-                  </dl>
-                )}
-              </div>
-            );
-          })}
+                  {(f.campania || f.anuncio) && (
+                    <div className="row-wrap t-sm t-subtle">
+                      {f.campania && <span>campaña: {f.campania}</span>}
+                      {f.anuncio && <span>anuncio: {f.anuncio}</span>}
+                    </div>
+                  )}
+                  {f.respuestas.length > 0 && (
+                    <dl className="dl dl--compacta">
+                      {f.respuestas.map((q) => (
+                        <React.Fragment key={q.pregunta}><dt>{q.pregunta}</dt><dd>{q.respuesta}</dd></React.Fragment>
+                      ))}
+                    </dl>
+                  )}
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
 
@@ -81,16 +84,20 @@ export function UtmsPersona({ e, p }: { e: EstadoApp; p: Persona }) {
         {agendas.length === 0 ? (
           <p className="t-sm t-subtle">Ninguna llamada trajo UTMs todavía. Las de Calendly los traen solas.</p>
         ) : (
-          agendas.map((s) => (
-            <div key={s.id} className="caja-suave stack-2">
-              <div className="row-wrap t-sm">
-                <span className="t-strong">{s.tipo || s.titulo}</span>
-                <span className="t-subtle">agendó el {fechaHora(s.creadoEn)}</span>
-                {s.canal && <Tag>entró por: {ETIQUETA_CANAL[s.canal]}</Tag>}
+          /* Una por agenda, reprogramaciones incluidas: con scroll, así lo de
+             las ventas de abajo no queda lejos. */
+          <div className="stack-3 lista-scroll">
+            {agendas.map((s) => (
+              <div key={s.id} className="caja-suave stack-2">
+                <div className="row-wrap t-sm">
+                  <span className="t-strong">{s.tipo || s.titulo}</span>
+                  <span className="t-subtle">agendó el {fechaHora(s.creadoEn)}</span>
+                  {s.canal && <Tag>entró por: {ETIQUETA_CANAL[s.canal]}</Tag>}
+                </div>
+                {s.utm && Object.keys(s.utm).length > 0 && <Utms titulo="UTMs con los que agendó" utm={s.utm} />}
               </div>
-              {s.utm && Object.keys(s.utm).length > 0 && <Utms titulo="UTMs con los que agendó" utm={s.utm} />}
-            </div>
-          ))
+            ))}
+          </div>
         )}
       </div>
 

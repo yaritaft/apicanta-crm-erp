@@ -64,7 +64,8 @@ export function AgendasWebinar({ w, className }: { w: Webinar; className?: strin
               texto="Aparecen solas cuando alguien agenda desde el link del vivo o el de después."
             />
           ) : (
-            <div className="wb-filas">
+            /* Con scroll adentro: la lista no estira la ficha y los números de arriba no se mueven. */
+            <div className="wb-filas lista-scroll">
               {d.agendas.map((a) => {
                 const e = ESTADO[a.estado] ?? ESTADO.agendada;
                 return (

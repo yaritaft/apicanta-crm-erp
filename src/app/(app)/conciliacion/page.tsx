@@ -164,7 +164,9 @@ export default function Conciliacion() {
           )}
         </div>
 
-        <div style={{ padding: "0 var(--space-4) var(--space-4)", display: "flex", flexDirection: "column", gap: "var(--space-2)" }}>
+        {/* Con scroll adentro: los conciliados se juntan de a cientos y la
+            bandeja no puede estirar la página para siempre. */}
+        <div className="lista-scroll" style={{ padding: "0 var(--space-4) var(--space-4)", display: "flex", flexDirection: "column", gap: "var(--space-2)" }}>
           {filas.length === 0 ? (
             <Empty
               icono={<ArrowDownUp size={22} />}

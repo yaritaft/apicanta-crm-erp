@@ -103,7 +103,7 @@ export function AccesosApp({ accesos, onVerMiembro }: { accesos: Accesos; onVerM
         <div className="skeleton" style={{ height: 160 }} />
       ) : (
         <DataTable
-          filas={filas} columnas={columnas}
+          filas={filas} columnas={columnas} alto={560}
           vacio={<Empty icono={<ShieldCheck size={22} />} titulo="Nadie tiene acceso" texto="Dale acceso a alguien del equipo." />}
           acciones={(f) => (
             <>

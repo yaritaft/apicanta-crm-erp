@@ -81,8 +81,9 @@ export function ListaEquipo({ accesos, onVer }: { accesos: Accesos; onVer: (id: 
         sub="Tocá a alguien para cargar su sueldo, sus variables y sobre qué se miden, o para darle acceso a la app."
         acciones={<Button variante="primary" icono={<Plus size={16} />} onClick={() => setNueva(true)}>Agregar persona</Button>}
       />
+      {/* La lista sólo crece (los que se van quedan apagados): scroll propio, como las demás. */}
       <DataTable
-        filas={filas} columnas={columnas} onFila={(f) => onVer(f.id)} etiquetaFila={(f) => `Abrir a ${f.nombre}`}
+        filas={filas} columnas={columnas} onFila={(f) => onVer(f.id)} etiquetaFila={(f) => `Abrir a ${f.nombre}`} alto={560}
         vacio={<Empty icono={<UserRound size={22} />} titulo="Todavía no hay nadie" texto="Agregá a las personas del equipo para cargar lo que cobra cada una." />}
       />
       {inactivos > 0 && (

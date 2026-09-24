@@ -108,7 +108,9 @@ export function ImportarPlanilla({ onCerrar, onListo }: { onCerrar: () => void; 
           {creados.length > 0 && (
             <div className="stack-2">
               <span className="t-label">Nombres que la app no tenía: se agregan</span>
-              <div className="row-wrap">{creados.map((x) => <Badge key={x} variante="info">{x}</Badge>)}</div>
+              {/* La primera vez son decenas (un proyecto por webinar): con scroll,
+                  así el botón de importar no queda al fondo. */}
+              <div className="row-wrap lista-scroll">{creados.map((x) => <Badge key={x} variante="info">{x}</Badge>)}</div>
             </div>
           )}
 

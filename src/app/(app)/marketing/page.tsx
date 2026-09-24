@@ -763,7 +763,8 @@ function DetalleAnuncio({ ad, rango, M, onCerrar, onIr }: {
                 Todavía no hay nadie que sepamos que entró por acá. Una persona queda atada a su anuncio cuando se registra desde la landing.
               </p>
             ) : (
-              <div className="stack-2">
+              /* Un anuncio que anda trae cientos: la lista scrollea adentro. */
+              <div className="stack-2 lista-scroll">
                 {enRango.length === 0 && (
                   <p className="t-sm t-subtle">Nadie en {rangoSub(rango)}.</p>
                 )}

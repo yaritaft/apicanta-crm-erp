@@ -257,7 +257,9 @@ export function Desglose({ que, mes, onCerrar }: { que: QueDesglosar; mes: Rango
             {s.filas.length === 0 ? (
               <p className="t-sm t-subtle">{s.vacio ?? "Nada en este período."}</p>
             ) : (
-              <div className="stack-2">
+              /* Cada sección con su scroll: cien pagos no empujan las comisiones
+                 y los gastos al fondo del panel. */
+              <div className="stack-2 lista-scroll">
                 {s.filas.slice(0, TOPE).map((f) => <FilaDesglose key={f.id} f={f} />)}
                 {s.filas.length > TOPE && <p className="t-sm t-subtle">y {num(s.filas.length - TOPE)} más.</p>}
               </div>
