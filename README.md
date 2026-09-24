@@ -236,7 +236,9 @@ Una sección que ven sólo los dueños (Yari y Juan Cruz), con tres solapas:
   sin nombres (Finanzas la ve todo el equipo). Las comisiones de closers y del director y el
   reparto del profit no se cargan: Finanzas ya las calcula de las ventas, y la tasa con la que
   las calcula (`equipo.comisionRate`) se escribe desde lo que cobra cada uno, así los dos lados
-  dan lo mismo. Después se marca a quién ya se le pagó; reabrirla saca sus gastos de Finanzas.
+  dan lo mismo. Quien vende y no tiene nada cargado aparece igual con la comisión que le calcula
+  Finanzas, también si ya no está en el equipo y entraron cuotas de ventas suyas. Después se marca a
+  quién ya se le pagó; reabrirla saca sus gastos de Finanzas.
 - **Accesos a la app.** Dar y quitar accesos y elegir el nivel. «Dar acceso y generar clave» crea
   el usuario y muestra la clave una sola vez, lista para mandar; lo hace `/api/accesos` con la
   clave de servicio y sólo si quien pide es dueño. La base no deja quedarse sin ningún dueño.
