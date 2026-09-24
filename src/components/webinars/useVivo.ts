@@ -77,8 +77,9 @@ export function useAlCambiar(escuchas: Escucha[], alCambiar: (fila?: Record<stri
 }
 
 /* Por si Realtime se corta (una red que bloquea websockets): igual se
-   vuelve a pedir, pero muy de vez en cuando. */
-const RESPALDO_MS = 120_000;
+   vuelve a pedir, pero una vez por hora, para no llenar de pedidos a
+   Supabase ni a Vercel. */
+const RESPALDO_MS = 3_600_000;
 
 function usePedido<T>(ruta: string | null, cadaMs?: number, escuchas: Escucha[] = []): Estado<T> & { recargar: () => void } {
   const [estado, setEstado] = useState<Estado<T>>({ estado: "cargando" });
@@ -189,7 +190,8 @@ export interface Ahora {
   t: string;
 }
 
-/* Cuántos miran ahora: cada 15 segundos mientras `activo`. */
+/* Cuántos miran ahora: cada 15 segundos mientras `activo` (sólo con el
+   vivo en el aire: YouTube no avisa, hay que preguntarle). */
 export function useAhora(videoId: string, activo: boolean) {
   return usePedido<Ahora>(activo ? `/api/youtube/ahora?video=${encodeURIComponent(videoId)}` : null, 15_000);
 }
@@ -265,7 +267,7 @@ export function useWebinarsAlDia(ids: string[]) {
   }, [clave]);
 
   /* Al entrar, una vez; después, cada cambio que avise Realtime (y de
-     respaldo, cada dos minutos). */
+     respaldo, una vez por hora). */
   useEffect(() => {
     void traer();
     const t = window.setInterval(() => { if (document.visibilityState === "visible") void traer(); }, RESPALDO_MS);

@@ -52,18 +52,20 @@ interface ContextoVivo {
 const Ctx = createContext<ContextoVivo | null>(null);
 
 export function VivoProvider({ w, videoId, children }: { w: Webinar; videoId: string; children: React.ReactNode }) {
-  /* Se sigue si YouTube dijo que está en el aire, o si estamos cerca de la
-     hora del webinar (puede arrancar en cualquier momento). En el aire,
-     cada 20 segundos; cerca, cada minuto. */
+  /* Lo del vivo se actualiza por Realtime (cada minuto que guarda el cron,
+     cada mensaje, cuando sale al aire o termina). Sin Realtime (la app
+     local) se pregunta: en el aire cada 20 s, cerca de la hora cada minuto. */
   const f = +new Date(w.fecha);
   const cerca = Date.now() > f - 60 * MIN && Date.now() < f + 6 * 60 * MIN;
   const [enElAireAntes, setEnElAireAntes] = useState(false);
   const vivo = useDatosVivo(videoId, enElAireAntes ? 20_000 : cerca ? 60_000 : undefined);
   const guardadoEnVivo = vivo.estado === "listo" && vivo.datos.estado.estado === "en-vivo";
-  const a = useAhora(videoId, cerca || guardadoEnVivo);
+  /* "Mirando ahora" se le pregunta a YouTube sólo mientras está en el aire.
+     Que arranque lo avisa Realtime (el cron marca el vivo en yt_estado). */
+  const a = useAhora(videoId, guardadoEnVivo);
   const ahora = a.estado === "listo" ? a.datos : null;
   /* Manda YouTube ahora mismo; si todavía no contestó, lo último guardado. */
-  const enElAire = ahora ? ahora.estado === "en-vivo" : guardadoEnVivo;
+  const enElAire = guardadoEnVivo && (ahora ? ahora.estado === "en-vivo" : true);
   useEffect(() => { setEnElAireAntes(enElAire); }, [enElAire]);
   return <Ctx.Provider value={{ vivo, ahora, enElAire }}>{children}</Ctx.Provider>;
 }
