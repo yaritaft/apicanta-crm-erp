@@ -7,6 +7,7 @@ import { ETIQUETA_CANAL } from "@/lib/calendly";
 import { fechaHora, fechaLarga } from "@/lib/format";
 import type { Persona } from "@/lib/persona";
 import type { EstadoApp } from "@/lib/types";
+import type { InscripcionMeta } from "@/lib/meta-leads-sync";
 
 /* ==================================================================
    Todo el historial de atribución de la persona, en orden: con qué
@@ -14,10 +15,15 @@ import type { EstadoApp } from "@/lib/types";
    UTMs de Calendly), y a qué embudo y webinar quedó atribuida cada
    venta. Separado por toque, a propósito: mezclarlos haría creer que
    una agenda vino del anuncio o al revés.
+
+   Los formularios de Meta van aparte: cada vez que se anotó en uno, con
+   sus respuestas, su anuncio y el webinar al que quedó atada.
    ================================================================== */
 
 export function UtmsPersona({ e, p }: { e: EstadoApp; p: Persona }) {
   const agendas = p.sesiones.filter((s) => (s.utm && Object.keys(s.utm).length > 0) || s.canal);
+  const formularios = (Array.isArray(p.contacto?.extra?.formulariosMeta) ? (p.contacto!.extra.formulariosMeta as InscripcionMeta[]) : [])
+    .slice().sort((a, b) => b.creado.localeCompare(a.creado));
 
   return (
     <div className="stack-5">
@@ -35,6 +41,38 @@ export function UtmsPersona({ e, p }: { e: EstadoApp; p: Persona }) {
               {l.campania && <Tag>campaña: {l.campania}</Tag>}
             </div>
           ))}
+        </div>
+      )}
+
+      {formularios.length > 0 && (
+        <div className="stack-3">
+          <div className="t-label">Formularios de Meta</div>
+          {formularios.map((f) => {
+            const webinar = e.webinars.find((w) => w.id === f.webinarId);
+            return (
+              <div key={f.leadgenId} className="caja-suave stack-2">
+                <div className="row-wrap t-sm">
+                  <span className="t-strong">{f.formulario}</span>
+                  <span className="t-subtle">se anotó el {fechaHora(f.creado)}</span>
+                  <Tag>{f.plataforma === "ig" ? "Instagram" : "Facebook"}</Tag>
+                  {webinar && <Tag>webinar: {webinar.titulo}</Tag>}
+                </div>
+                {(f.campania || f.anuncio) && (
+                  <div className="row-wrap t-sm t-subtle">
+                    {f.campania && <span>campaña: {f.campania}</span>}
+                    {f.anuncio && <span>anuncio: {f.anuncio}</span>}
+                  </div>
+                )}
+                {f.respuestas.length > 0 && (
+                  <dl className="dl dl--compacta">
+                    {f.respuestas.map((q) => (
+                      <React.Fragment key={q.pregunta}><dt>{q.pregunta}</dt><dd>{q.respuesta}</dd></React.Fragment>
+                    ))}
+                  </dl>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
 

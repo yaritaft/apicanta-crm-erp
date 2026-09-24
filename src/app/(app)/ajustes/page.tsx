@@ -11,6 +11,7 @@ import {
 import { Equipo } from "@/components/ajustes/Equipo";
 import { CatalogosVenta } from "@/components/ajustes/CatalogosVenta";
 import { ConfigUtms } from "@/components/ajustes/ConfigUtms";
+import { FormulariosMeta } from "@/components/ajustes/FormulariosMeta";
 import { YoutubeIntegracion } from "@/components/ajustes/YoutubeIntegracion";
 import { PageHead } from "@/components/shell/PageHead";
 import {
@@ -469,6 +470,7 @@ function Integraciones() {
       </Ayuda>
 
       <EstadoMeta />
+      <FormulariosMeta />
       <EstadoCalendly />
       <YoutubeIntegracion />
     </div>

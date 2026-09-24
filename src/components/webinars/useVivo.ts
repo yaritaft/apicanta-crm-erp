@@ -242,12 +242,13 @@ export async function atribuirAgenda(id: string, momento: "vivo" | "despues" | "
 
 /* ---------- Lo que el cron completa solo, al día ----------
    La app carga los datos una vez al abrir. Las llamadas (Calendly), los
-   asistentes, el estado y las vistas de la grabación los escriben el cron
-   o el webhook en la base mientras la pantalla está abierta: Realtime avisa
+   asistentes, los formularios (Meta), el estado y las vistas de la
+   grabación los escriben el cron o el webhook en la base mientras la
+   pantalla está abierta: Realtime avisa
    al instante y se aplican en memoria (sin volver a escribirlos), así el
    embudo, la planilla y las tarjetas dicen lo mismo que las agendas. */
 
-const CAMPOS_DEL_CRON = ["estado", "asistentes", "llamadasVivo", "llamadasPosterior", "llamadasCanceladas", "extra"] as const;
+const CAMPOS_DEL_CRON = ["estado", "asistentes", "formularios", "llamadasVivo", "llamadasPosterior", "llamadasCanceladas", "extra"] as const;
 
 function aplicar(filas: Record<string, unknown>[]) {
   acciones.aplicarDeLaNube<Webinar>("webinars", Object.fromEntries(
