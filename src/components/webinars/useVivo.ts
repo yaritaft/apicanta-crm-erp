@@ -61,12 +61,18 @@ export function useAlCambiar(escuchas: Escucha[], alCambiar: (fila?: Record<stri
         "postgres_changes" as never,
         { event: "*", schema: "public", table: tabla, ...(filtro ? { filter: filtro } : {}) },
         (p: { new?: Record<string, unknown> }) => {
+          console.info("[realtime] cambio en", tabla);
           window.clearTimeout(espera);
           espera = window.setTimeout(() => ref.current(p.new), 400);
         },
       );
     }
-    canal.subscribe();
+    /* El estado de la suscripción queda en la consola: si Realtime no
+       conecta, se ve acá (y el respaldo de cada dos minutos sigue andando). */
+    canal.subscribe((estado, err) => {
+      if (estado !== "SUBSCRIBED") console.warn("[realtime]", clave, estado, err?.message ?? "");
+      else console.info("[realtime] escuchando", clave);
+    });
     return () => { window.clearTimeout(espera); void db.removeChannel(canal); };
   }, [clave]);
 }
