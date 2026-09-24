@@ -70,3 +70,43 @@ export async function GET(peticion: Request) {
   });
   return NextResponse.json({ agendas }, { headers: { "Cache-Control": "private, max-age=5" } });
 }
+
+/* PATCH { id, momento: "vivo" | "despues" | "fuera" | "auto", quien }:
+   corregir a mano la atribución de una agenda. Se guarda en
+   sesiones.extra.atribucion, sin tocar nada más de la sesión (el webhook de
+   Calendly la puede estar actualizando al mismo tiempo). El cron recalcula
+   la planilla en el minuto siguiente. */
+export async function PATCH(peticion: Request) {
+  if (hayEquipoConfigurado() && !(await esDelEquipo(peticion))) {
+    return NextResponse.json({ error: "Hace falta iniciar sesión." }, { status: 401 });
+  }
+  const b = (await peticion.json().catch(() => ({}))) as { id?: string; momento?: string; quien?: string; webinarId?: string };
+  if (!b.id || !["vivo", "despues", "fuera", "auto"].includes(b.momento ?? "")) {
+    return NextResponse.json({ error: "Falta la agenda o a dónde atribuirla." }, { status: 400 });
+  }
+  const db = nubeServidor();
+  if (!db) return NextResponse.json({ error: "No hay base configurada." }, { status: 503 });
+
+  const r = await db.from("sesiones").select("extra, invitado").eq("id", b.id).maybeSingle();
+  if (r.error || !r.data) return NextResponse.json({ error: "No encontré esa agenda." }, { status: 404 });
+  const extra = { ...((r.data.extra ?? {}) as Record<string, unknown>) };
+  const quien = b.quien?.slice(0, 120) || "Alguien del equipo";
+  if (b.momento === "auto") delete extra.atribucion;
+  else {
+    extra.atribucion = {
+      ...(b.momento === "fuera" ? { fuera: true } : { momento: b.momento }),
+      por: quien, en: new Date().toISOString(),
+    };
+  }
+  const u = await db.from("sesiones").update({ extra }).eq("id", b.id);
+  if (u.error) return NextResponse.json({ error: "No pude guardar el cambio." }, { status: 502 });
+
+  const texto = { vivo: "en el vivo", despues: "después del vivo", fuera: "fuera de este webinar", auto: "automática (por el link o la hora)" }[b.momento as string];
+  await db.from("actividad").insert({
+    id: `act_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`,
+    accion: "actualizo", actor: quien, entidad: b.webinarId ? "webinar" : "sesion", entidadId: b.webinarId ?? b.id,
+    titulo: (r.data.invitado as string | null) ?? "Agenda", fecha: new Date().toISOString(),
+    detalle: `La agenda de ${(r.data.invitado as string | null) ?? "alguien"} quedó atribuida ${texto}.`,
+  });
+  return NextResponse.json({ ok: true });
+}

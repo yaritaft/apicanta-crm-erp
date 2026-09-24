@@ -87,3 +87,7 @@
    la derecha, "En vivo" y las pestañas. En pantallas angostas bajan. */
 .wb-vivo > .card-head { flex-wrap: wrap; row-gap: var(--space-3); }
 .wb-vivo__cabeza { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-3); justify-content: flex-end; margin-left: auto; }
+
+/* Agendas de Calendly en la ficha: los badges del embudo y el selector */
+.wb-agenda__badges { display: flex; flex-wrap: wrap; gap: 4px; margin: 3px 0 2px; }
+.wb-agenda__select { flex: none; width: 200px; }

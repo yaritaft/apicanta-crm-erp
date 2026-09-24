@@ -168,3 +168,17 @@ export function useAgendasWebinar(webinarId: string) {
     `/api/calendly/agendas?webinar=${encodeURIComponent(webinarId)}`, 30_000,
   );
 }
+
+export async function atribuirAgenda(id: string, momento: "vivo" | "despues" | "fuera" | "auto", webinarId: string, quien?: string): Promise<string | null> {
+  try {
+    const r = await fetch("/api/calendly/agendas", {
+      method: "PATCH",
+      headers: { ...(await cabeceras()), "Content-Type": "application/json" },
+      body: JSON.stringify({ id, momento, webinarId, quien }),
+    });
+    const j = (await r.json().catch(() => null)) as { error?: string } | null;
+    return r.ok ? null : j?.error ?? "No pude cambiar la atribución.";
+  } catch {
+    return "No hay conexión: no pude cambiar la atribución.";
+  }
+}
