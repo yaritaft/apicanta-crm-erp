@@ -384,6 +384,24 @@ export interface Ajustes {
   proyectos: string[];
   /* Lo que cobra quien refiere una venta, sobre lo que entra (0,1 = 10%). */
   comisionReferidor: number;
+  /* De qué estrategia, proyecto y webinar es cada UTM. La venta toma su
+     origen de acá, con los UTMs de quien compró. */
+  reglasUtm: ReglaUtm[];
+}
+
+/* Una UTM armada para un lanzamiento o una campaña: los valores que tienen
+   que coincidir (vacío = cualquiera) y a qué se asigna lo que llega con
+   ella. La del webinar del 23/09 es source "Webinar" + medium "23-09". */
+export interface ReglaUtm {
+  id: ID;
+  source?: string;
+  medium?: string;
+  campaign?: string;
+  content?: string;
+  embudoId?: ID;             // Estrategia utilizada
+  proyecto?: string;         // WEB-23/09/26
+  webinarId?: ID;
+  creadoEn: string;
 }
 
 /* ---------- Estado completo ---------- */
@@ -542,6 +560,20 @@ export interface Procesador {
   /* Contra qué pasarela se concilian sus cobros. Sin proveedor, el
      procesador existe igual pero nunca recibe movimientos solo. */
   proveedor?: ProveedorPasarela;
+  /* En qué moneda recibe. Las de pesos piden el tipo de cambio del cobro. */
+  moneda?: Moneda;
+  /* Las cuentas a las que transfiere el cliente (las de la Financiera):
+     salen en la tabla de la derecha del reporte para la Financiera. */
+  cuentasBancarias?: CuentaBancaria[];
+}
+
+export interface CuentaBancaria {
+  titular: string;
+  banco: string;
+  numero: string;            // N° de cuenta
+  alias: string;
+  cbu: string;               // CBU/CVU
+  cuit: string;
 }
 
 /* ---------- Pasarelas de cobro ----------
@@ -715,6 +747,14 @@ export interface Pago {
   montoArs?: number;
   pagador?: string;          // Nombre de quien transfirió
   cuit?: string;             // Cuit (Si pagó a financiera)
+  /* El CBU/CVU desde el que transfirió el cliente. Obligatorio si pagó a
+     la Financiera: con esto ella encuentra la transferencia. */
+  cvu?: string;
+  /* Lo que decía el blue venta cuando se cargó el cobro, y de dónde salió
+     ("DolarHoy 23/09/26 21:20"). Si el closer cambió el tipo de cambio,
+     acá queda el original para compararlo. */
+  tipoCambioBlue?: number;
+  tipoCambioFuente?: string;
   chequeado?: boolean;       // Pasado Financiera / Chequeado en plataforma
   /* El "Comprobante" de la planilla: un link o lo que se escribió. Los
      cobros nuevos suben el archivo (comprobante). */

@@ -52,15 +52,15 @@ export const PRODUCTOS: Producto[] = [
    cada una de verdad; cuando el cobro se concilia manda el fee real de la
    pasarela, y el de los medios que no se concilian se carga en Finanzas. */
 export const PROCESADORES: Procesador[] = [
-  { id: "proc_financiera_ars",   nombre: "Financiera ARS Juan", feeRate: 0,     activo: true, automatico: false },
+  { id: "proc_financiera_ars",   nombre: "Financiera ARS Juan", feeRate: 0,     activo: true, automatico: false, moneda: "ARS" },
   { id: "proc_financiera_usd",   nombre: "Financiera USD Juan", feeRate: 0,     activo: true, automatico: false },
   { id: "proc_stripe",           nombre: "Stripe",              feeRate: 0.029, activo: true, automatico: true,  proveedor: "stripe" },
   { id: "proc_mercury",          nombre: "ACH-WIRE Mercury",    feeRate: 0,     activo: true, automatico: true,  proveedor: "mercury" },
   { id: "proc_binance",          nombre: "USDT Binance",        feeRate: 0,     activo: true, automatico: true,  proveedor: "binance" },
   { id: "proc_dlocal",           nombre: "Dlocal",              feeRate: 0.050, activo: true, automatico: true,  proveedor: "dlocal" },
   { id: "proc_trust",            nombre: "USDT Trust",          feeRate: 0,     activo: true, automatico: true,  proveedor: "trust" },
-  { id: "proc_mercadopago",      nombre: "Mercado Pago Yari",   feeRate: 0.062, activo: true, automatico: true,  proveedor: "mercadopago" },
-  { id: "proc_galicia_ars",      nombre: "Galicia (ARS)",       feeRate: 0,     activo: true, automatico: false },
+  { id: "proc_mercadopago",      nombre: "Mercado Pago Yari",   feeRate: 0.062, activo: true, automatico: true,  proveedor: "mercadopago", moneda: "ARS" },
+  { id: "proc_galicia_ars",      nombre: "Galicia (ARS)",       feeRate: 0,     activo: true, automatico: false, moneda: "ARS" },
   { id: "proc_galicia_usd",      nombre: "Galicia (USD)",       feeRate: 0,     activo: true, automatico: false },
   { id: "proc_hotmart",          nombre: "Hotmart",             feeRate: 0.099, activo: true, automatico: true,  proveedor: "hotmart" },
   { id: "proc_efectivo",         nombre: "Efectivo USD",        feeRate: 0,     activo: true, automatico: false },
@@ -225,6 +225,7 @@ export const AJUSTES: Ajustes = {
   /* Los "Proyectos" de la planilla de Angelo, tal cual. */
   proyectos: ["MENT", "DOWN", "WEB-1/10", "WEB-29/10", "WEB-17/9", "RESULTADOS", "WEB-12/11", "WEB-26/11", "RESELL", "WEB-17/12", "WEB-27/8", "WEB-06/08", "WEB-14/01/26", "WEB-28/01/26", "WEB-09/02/26", "WEB-25/02/26", "WEB-05/03/26", "WEB-18/03/26", "WEB-30/03/26", "WEB-13/04/26", "Entrada 24/25 Mayo", "WEB-20/04/26", "WEB-27/04/26", "Prueba", "Cena", "Resell Master May-26", "Upsell", "Hackear Biz", "Principals", "RESERVA", "AI"],
   comisionReferidor: 0.1,
+  reglasUtm: [],
 };
 
 const PILA_NOMBRES = [
