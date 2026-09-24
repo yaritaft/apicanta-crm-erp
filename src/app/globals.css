@@ -888,6 +888,21 @@ kbd {
 .asistente__pista { font-size: 13px; color: var(--ink-subtle); display: flex; align-items: center; gap: 6px; }
 .asistente .hk-input { height: 52px; font-size: 17px; }
 .asistente .hk-input--area { height: auto; }
+/* Embebido: el mismo paso a paso, adentro de la ficha en vez de tapar la
+   pantalla (Registrar pago). Más chico y pegado arriba: la ficha ya
+   tiene su título y su scroll. */
+.asistente--embebido {
+  position: relative; inset: auto; z-index: auto; animation: none;
+  border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden;
+  background: var(--surface-100);
+}
+.ficha__principal > .asistente--embebido { flex: 1 1 auto; min-height: 420px; }
+.asistente--embebido .asistente__head { padding: var(--space-3) var(--space-4); }
+.asistente--embebido .asistente__main { padding: var(--space-5) var(--space-4); }
+.asistente--embebido .asistente__paso { margin: 0 auto; max-width: 620px; gap: var(--space-4); }
+.asistente--embebido .asistente__pregunta { font-size: 22px; line-height: 30px; }
+.asistente--embebido .asistente__foot { padding: var(--space-3) var(--space-4); }
+.asistente--embebido .hk-input { height: 44px; font-size: 15px; }
 
 /* Opciones seleccionables con teclado */
 .opciones { display: grid; grid-template-columns: repeat(auto-fill, minmax(212px, 1fr)); gap: var(--space-2); }
@@ -1790,6 +1805,11 @@ a.wb-canal:hover { background: var(--surface-200); border-color: var(--border-st
 /* ---------- Cobro: lo demás que pide la planilla de Angelo ---------- */
 .cobro-extra { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: var(--space-2); }
 .cobro-extra .hk-input { height: 36px; font-size: 14px; }
+/* El tipo de cambio (con el blue de referencia) y el CBU/CVU: el campo y,
+   abajo, lo que dice la app de lo que se escribió. */
+.cambio-campo { display: flex; flex-direction: column; gap: 4px; }
+.cambio-campo .hk-input { height: 36px; font-size: 14px; }
+.cambio-campo__fila { display: grid; grid-template-columns: minmax(0, 200px) auto; gap: var(--space-3); align-items: center; }
 
 /* ---------- Ajustes → Ventas: servicios, cuentas y estrategias ---------- */
 .catalogo-lista { display: flex; flex-direction: column; gap: var(--space-2); }

@@ -24,7 +24,7 @@ export interface PasoAsistente {
 
 export function Asistente({
   etiqueta, pasos, actual, onCambiarPaso, problema = null, problemaEsError = false,
-  onCerrar, terminarTexto, onTerminar, children,
+  onCerrar, terminarTexto, onTerminar, embebido = false, children,
 }: {
   /* Lo que lee un lector de pantalla: "Nuevo webinar" */
   etiqueta: string;
@@ -38,6 +38,8 @@ export function Asistente({
   onCerrar: () => void;
   terminarTexto: string;
   onTerminar: () => void;
+  /* Adentro de otra pantalla (la ficha) en vez de taparla entera. */
+  embebido?: boolean;
   children: React.ReactNode;
 }) {
   const mainRef = useRef<HTMLDivElement>(null);
@@ -94,10 +96,11 @@ export function Asistente({
   }, [avanzar, onCerrar]);
 
   useEffect(() => {
+    if (embebido) return;
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     return () => { document.body.style.overflow = prev; };
-  }, []);
+  }, [embebido]);
 
   /* Foco en el primer control de cada paso. */
   useEffect(() => {
@@ -110,7 +113,10 @@ export function Asistente({
   const progreso = ((actual + (puedeAvanzar ? 1 : 0.35)) / pasos.length) * 100;
 
   return (
-    <div className="asistente" role="dialog" aria-modal="true" aria-label={etiqueta}>
+    <div
+      className={`asistente${embebido ? " asistente--embebido" : ""}`}
+      role={embebido ? "region" : "dialog"} aria-modal={embebido ? undefined : true} aria-label={etiqueta}
+    >
       <div className="asistente__progreso">
         <div className="asistente__progreso-fill" style={{ width: `${progreso}%` }} />
       </div>

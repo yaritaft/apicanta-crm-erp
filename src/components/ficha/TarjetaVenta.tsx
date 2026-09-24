@@ -133,6 +133,16 @@ export function TarjetaVenta({ e, venta, resaltada, abierta, onAlternar, onPagar
                           </span>
                         )}
                         {p.pagador && <span className="t-subtle" title="Nombre de quien transfirió">de {p.pagador}</span>}
+                        {p.tipoCambio && (
+                          <span
+                            className="t-subtle t-num"
+                            title={p.tipoCambioBlue ? `Blue venta ${p.tipoCambioFuente ?? ""}: ${money(p.tipoCambioBlue, "ARS", 2)}` : "Tipo de cambio ARS"}
+                          >
+                            cambio {money(p.tipoCambio, "ARS", 2)}
+                            {p.tipoCambioBlue && p.tipoCambioBlue !== p.tipoCambio ? ` · a mano (blue ${money(p.tipoCambioBlue, "ARS", 2)})` : ""}
+                          </span>
+                        )}
+                        {p.cvu && <span className="t-subtle t-num" title="CBU/CVU desde el que transfirió">CBU/CVU …{p.cvu.slice(-6)}</span>}
                         {p.comprobanteLink && !p.comprobante && (
                           /^https?:\/\//.test(p.comprobanteLink)
                             ? <a className="link t-sm" href={p.comprobanteLink} target="_blank" rel="noreferrer"><Paperclip size={12} /> comprobante</a>

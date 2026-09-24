@@ -624,14 +624,20 @@ export interface DatosCobro {
   procesadorId?: ID; monto: number; fecha: string; referencia?: string;
   movimientoId?: ID; comprobante?: Comprobante;
   tipoCambio?: number; pagador?: string; cuit?: string; chequeado?: boolean;
+  cvu?: string; tipoCambioBlue?: number; tipoCambioFuente?: string;
 }
 
-/* Los datos de la planilla que trae el cobro, sin los vacíos. */
+/* Los datos de la planilla que trae el cobro, sin los vacíos. El blue de
+   referencia va sólo con un tipo de cambio: es contra qué se compara. */
 function extrasDeCobro(c: DatosCobro): Partial<Pago> {
+  const conCambio = Boolean(c.tipoCambio && c.tipoCambio > 0);
   return {
-    ...(c.tipoCambio && c.tipoCambio > 0 ? { tipoCambio: c.tipoCambio } : {}),
+    ...(conCambio ? { tipoCambio: c.tipoCambio } : {}),
+    ...(conCambio && c.tipoCambioBlue && c.tipoCambioBlue > 0
+      ? { tipoCambioBlue: c.tipoCambioBlue, tipoCambioFuente: c.tipoCambioFuente } : {}),
     ...(c.pagador?.trim() ? { pagador: c.pagador.trim() } : {}),
     ...(c.cuit?.trim() ? { cuit: c.cuit.trim() } : {}),
+    ...(c.cvu?.trim() ? { cvu: c.cvu.replace(/[\s.-]/g, "") } : {}),
     ...(c.chequeado ? { chequeado: true } : {}),
   };
 }
@@ -1237,7 +1243,7 @@ export const acciones = {
      toca: es la real de la pasarela. También el tilde de "Pasado Financiera
      / Chequeado en plataforma" y los datos de quien pagó. */
   editarPago(id: ID, cambios: {
-    feeMonto?: number; chequeado?: boolean; pagador?: string; cuit?: string; tipoCambio?: number;
+    feeMonto?: number; chequeado?: boolean; pagador?: string; cuit?: string; tipoCambio?: number; cvu?: string;
   }): boolean {
     const e = snapshot();
     const pago = e.pagos.find((p) => p.id === id);
@@ -1266,6 +1272,10 @@ export const acciones = {
     if (cambios.cuit !== undefined && cambios.cuit.trim() !== (pago.cuit ?? "")) {
       actualizado.cuit = cambios.cuit.trim();
       partes.push("se cambió el CUIT");
+    }
+    if (cambios.cvu !== undefined && cambios.cvu.replace(/[\s.-]/g, "") !== (pago.cvu ?? "")) {
+      actualizado.cvu = cambios.cvu.replace(/[\s.-]/g, "");
+      partes.push("se cambió el CBU/CVU");
     }
     if (cambios.tipoCambio !== undefined && cambios.tipoCambio !== pago.tipoCambio) {
       const tc = cambios.tipoCambio > 0 ? cambios.tipoCambio : undefined;

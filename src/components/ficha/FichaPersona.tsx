@@ -261,6 +261,21 @@ function VistaVentas({ e, p, ventaResaltada }: { e: EstadoApp; p: Persona; venta
     return () => window.clearTimeout(t);
   }, [ventaResaltada, variasVentas]);
 
+  /* Registrar un pago va embebido: la columna de la venta pasa a ser el
+     paso a paso, y al terminar (o salir) vuelve a la lista con esa venta
+     a la vista. */
+  function terminarPago(mensaje?: string) {
+    const ventaId = pagar?.ventaId;
+    if (mensaje) toast(mensaje);
+    setPagar(null);
+    if (ventaId) {
+      window.setTimeout(() => document.getElementById(`venta-${ventaId}`)?.scrollIntoView({ block: "nearest" }), 60);
+    }
+  }
+  if (pagar) {
+    return <RegistrarPago embebido cuota={pagar} onCerrar={() => terminarPago()} onGuardado={terminarPago} />;
+  }
+
   return (
     <>
       <Tabs<SolapaVentas>
@@ -310,9 +325,6 @@ function VistaVentas({ e, p, ventaResaltada }: { e: EstadoApp; p: Persona; venta
       {solapa === "historial" && <HistorialPersona e={e} p={p} />}
       {solapa === "utms" && <UtmsPersona e={e} p={p} />}
 
-      {pagar && (
-        <RegistrarPago cuota={pagar} onCerrar={() => setPagar(null)} onGuardado={(m) => { toast(m); setPagar(null); }} />
-      )}
       {editar && (
         <FormularioVenta borrador={editar} onCerrar={() => setEditar(null)}
           onGuardado={(n) => { toast(`Venta de ${n} actualizada.`); setEditar(null); }} />
