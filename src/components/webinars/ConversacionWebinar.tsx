@@ -88,7 +88,8 @@ export function ConversacionWebinar({ w, videoId, vivo, enVivo, className }: {
         <CardHead
           titulo="Chat en vivo"
           sub="Los mensajes más nuevos arriba, con quién es cada uno en la base"
-          acciones={<span className="vivo-etiqueta"><span className="vivo-punto" aria-hidden />{num(datos?.chatTotal ?? 0)}</span>}
+          /* Sólo el punto: un número acá se leía como "gente chateando ahora". */
+          acciones={<span className="vivo-punto" role="img" aria-label="En vivo" title="En vivo" />}
         />
         <Chat w={w} datos={datos} cargando={vivo.estado === "cargando"} conocido={conocido} enVivo />
       </Card>
