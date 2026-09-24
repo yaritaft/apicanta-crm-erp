@@ -18,9 +18,11 @@ export interface Columna<T> {
   pie?: React.ReactNode;
 }
 
+type Orden = { clave: string; desc: boolean };
+
 export function DataTable<T extends { id: string }>({
   filas, columnas, onFila, acciones, ordenInicial, vacio, etiquetaFila, alto, porPagina,
-  mostrarMas, filaActiva,
+  mostrarMas, filaActiva, orden: ordenDeAfuera, onOrden, pagina: paginaDeAfuera, onPagina,
 }: {
   filas: T[];
   columnas: Columna<T>[];
@@ -45,23 +47,41 @@ export function DataTable<T extends { id: string }>({
   /* La fila que esta abierta en un detalle, o la que filtra a otra tabla: se
      pinta, para no perder de vista donde se esta parado. */
   filaActiva?: (fila: T) => boolean;
+  /* Orden y pagina manejados desde afuera, para las pantallas que los guardan
+     en la URL (ver useParamsURL): con `onOrden` la tabla muestra `orden` y
+     avisa cada clic en vez de acordarse ella; con `onPagina`, lo mismo con la
+     pagina (cuenta desde 0). Volver a la primera cuando cambia el filtro o el
+     orden pasa a ser de quien la maneja: la tabla no puede escribir la URL
+     por su cuenta, y si lo hiciera al montarse pisaria la pagina del link.
+     Sin estos props, la tabla hace todo sola, como siempre. */
+  orden?: Orden | null;
+  onOrden?: (orden: Orden) => void;
+  pagina?: number;
+  onPagina?: (pagina: number) => void;
 }) {
-  const [orden, setOrden] = useState(ordenInicial ?? null);
-  const [pagina, setPagina] = useState(0);
+  const [ordenPropio, setOrdenPropio] = useState<Orden | null>(ordenInicial ?? null);
+  const [paginaPropia, setPaginaPropia] = useState(0);
   const [limite, setLimite] = useState(mostrarMas ?? 0);
+  const orden = onOrden ? ordenDeAfuera ?? null : ordenPropio;
+  const pagina = onPagina ? paginaDeAfuera ?? 0 : paginaPropia;
+  const paginaPropiaActiva = !onPagina;
+  /* Por valor: un orden que llega de afuera es un objeto nuevo en cada
+     render, y eso no quiere decir que haya cambiado. */
+  const claveOrden = orden?.clave;
+  const descOrden = orden?.desc ?? false;
 
   /* Mismo criterio que la pagina: otro filtro u otro orden arrancan de nuevo
      desde las primeras. */
-  useEffect(() => { setLimite(mostrarMas ?? 0); }, [filas, orden, mostrarMas]);
+  useEffect(() => { setLimite(mostrarMas ?? 0); }, [filas, claveOrden, descOrden, mostrarMas]);
 
   /* Volver a la primera al cambiar el filtro o el orden: quedarse en la pagina
      7 de un resultado que ahora tiene 2 muestra una tabla vacia y parece que
      no hay nada. */
-  useEffect(() => { setPagina(0); }, [filas, orden]);
+  useEffect(() => { if (paginaPropiaActiva) setPaginaPropia(0); }, [filas, claveOrden, descOrden, paginaPropiaActiva]);
 
   const ordenadas = useMemo(() => {
-    if (!orden) return filas;
-    const col = columnas.find((c) => c.clave === orden.clave);
+    if (!claveOrden) return filas;
+    const col = columnas.find((c) => c.clave === claveOrden);
     if (!col?.orden) return filas;
     const fn = col.orden;
     return [...filas].sort((a, b) => {
@@ -69,9 +89,9 @@ export function DataTable<T extends { id: string }>({
       const cmp = typeof va === "number" && typeof vb === "number"
         ? va - vb
         : String(va).localeCompare(String(vb), "es");
-      return orden.desc ? -cmp : cmp;
+      return descOrden ? -cmp : cmp;
     });
-  }, [filas, columnas, orden]);
+  }, [filas, columnas, claveOrden, descOrden]);
 
   const total = ordenadas.length;
   const paginas = porPagina ? Math.max(1, Math.ceil(total / porPagina)) : 1;
@@ -83,8 +103,12 @@ export function DataTable<T extends { id: string }>({
   const conPie = columnas.some((c) => c.pie !== undefined);
 
   function alternar(clave: string) {
-    setOrden((o) => (o?.clave === clave ? { clave, desc: !o.desc } : { clave, desc: false }));
+    const siguiente = (o: Orden | null): Orden => (o?.clave === clave ? { clave, desc: !o.desc } : { clave, desc: false });
+    if (onOrden) onOrden(siguiente(orden));
+    else setOrdenPropio(siguiente);
   }
+
+  const irA = (p: number) => (onPagina ? onPagina(p) : setPaginaPropia(p));
 
   if (filas.length === 0) return <div className="hk-table-wrap">{vacio}</div>;
 
@@ -172,14 +196,14 @@ export function DataTable<T extends { id: string }>({
           <span className="spacer" />
           <button
             type="button" className="hk-btn hk-btn--ghost hk-btn--sm"
-            disabled={actual === 0} onClick={() => setPagina(actual - 1)}
+            disabled={actual === 0} onClick={() => irA(actual - 1)}
           >
             <ArrowLeft size={15} />Anterior
           </button>
           <span className="t-sm t-muted">{actual + 1} / {paginas}</span>
           <button
             type="button" className="hk-btn hk-btn--ghost hk-btn--sm"
-            disabled={actual >= paginas - 1} onClick={() => setPagina(actual + 1)}
+            disabled={actual >= paginas - 1} onClick={() => irA(actual + 1)}
           >
             Siguiente<ArrowRight size={15} />
           </button>

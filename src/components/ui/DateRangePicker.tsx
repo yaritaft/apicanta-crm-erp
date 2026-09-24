@@ -54,6 +54,10 @@ function hoyEn(tz?: string | null): Date {
    Con `futuro` los presets cambian de naturaleza — lo usa la Agenda, donde el
    dato son sesiones AGENDADAS: "Esta semana" pasa a ser la semana COMPLETA
    (hasta el domingo) y aparecen Manana, La semana que viene, Proximos 7 y 30.
+   Tambien "Todo lo proximo" y "Todo lo pasado", que eran las dos pestanas de
+   la Agenda: de hoy a la ultima llamada agendada, y de la primera a hoy. La
+   pantalla los corta ademas por la HORA (lo que ya empezo es pasado); el
+   selector solo sabe de dias.
 
    `maxDate` es el espejo de `minDate`: mueve el final de "Maximo" hasta donde
    hay dato real. Nacio en Finanzas, donde el dato futuro no son agendas sino
@@ -71,20 +75,25 @@ function presets(
   const iniMes = (delta: number) => iso(new Date(T.getFullYear(), T.getMonth() + delta, 1));
 
   if (futuro) {
+    const hoy = iso(T);
     return [
-      { id: "hoy", label: "Hoy", rango: () => [iso(T), iso(T)] },
+      /* Nunca un rango al reves: sin llamadas por delante, "todo lo proximo"
+         es hoy y nada mas. */
+      { id: "proximo", label: "Todo lo próximo", rango: () => [hoy, maxDate ? (maxDate > hoy ? maxDate : hoy) : finMes(1)] },
+      { id: "hoy", label: "Hoy", rango: () => [hoy, hoy] },
       { id: "manana", label: "Mañana", rango: () => [iso(addDias(T, 1)), iso(addDias(T, 1))] },
       { id: "semana", label: "Esta semana", rango: () => [iso(lunes), iso(addDias(lunes, 6))] },
       { id: "semana_prox", label: "La semana que viene", rango: () => [iso(addDias(lunes, 7)), iso(addDias(lunes, 13))] },
-      { id: "prox7", label: "Próximos 7 días", rango: () => [iso(T), iso(addDias(T, 6))] },
-      { id: "prox30", label: "Próximos 30 días", rango: () => [iso(T), iso(addDias(T, 29))] },
+      { id: "prox7", label: "Próximos 7 días", rango: () => [hoy, iso(addDias(T, 6))] },
+      { id: "prox30", label: "Próximos 30 días", rango: () => [hoy, iso(addDias(T, 29))] },
       { id: "mes", label: "Este mes", rango: () => [iniMes(0), finMes(0)] },
       { id: "mes_prox", label: "El mes que viene", rango: () => [iniMes(1), finMes(1)] },
       { id: "ayer", label: "Ayer", rango: () => [iso(addDias(T, -1)), iso(addDias(T, -1))] },
       { id: "semana_pasada", label: "La semana pasada", rango: () => [iso(addDias(lunes, -7)), iso(addDias(lunes, -1))] },
       { id: "mes_pasado", label: "El mes pasado", rango: () => [iniMes(-1), finMes(-1)] },
-      { id: "anio_pasado", label: "Año pasado", rango: () => [iso(new Date(T.getFullYear() - 1, 0, 1)), iso(new Date(T.getFullYear() - 1, 11, 31))] },
       { id: "u30", label: "Últimos 30 días", rango: () => ult(30) },
+      { id: "anio_pasado", label: "Año pasado", rango: () => [iso(new Date(T.getFullYear() - 1, 0, 1)), iso(new Date(T.getFullYear() - 1, 11, 31))] },
+      { id: "pasado", label: "Todo lo pasado", rango: () => [minDate ? (minDate < hoy ? minDate : hoy) : iso(new Date(T.getFullYear(), 0, 1)), hoy] },
       { id: "max", label: "Máximo", rango: () => [minDate ?? iso(new Date(T.getFullYear(), 0, 1)), maxDate ?? finMes(1)] },
     ];
   }
@@ -106,6 +115,11 @@ function presets(
     { id: "max", label: "Máximo", rango: () => [minDate ?? iso(new Date(T.getFullYear(), 0, 1)), maxDate ?? iso(T)] },
   ];
 }
+
+/* Los presets cuyas puntas salen de los datos (`minDate`/`maxDate`) y no del
+   calendario: sin esas fechas no se pueden volver a calcular, asi que un link
+   guardado los lleva con sus fechas puestas (ver useRangoURL). */
+export const PRESETS_DE_LOS_DATOS: ReadonlySet<string> = new Set(["max", "proximo", "pasado"]);
 
 export function presetLabel(id: string): string {
   const p = presets(null).find((x) => x.id === id) ?? presets(null, true).find((x) => x.id === id);
@@ -278,7 +292,7 @@ export function DateRangePicker({
     const r = p.getBoundingClientRect();
     if (r.left < clip.left + 8) setDx((d) => d + (clip.left + 8 - r.left));
     p.scrollIntoView({ block: "nearest" });
-    /* El rail entra en 340px pero los presets son 12 o 14: si el activo esta
+    /* El rail entra en 340px pero los presets son 13 o 16: si el activo esta
        abajo, abrir el picker no muestra cual esta puesto. */
     railRef.current?.querySelector(".dp-preset--on")?.scrollIntoView({ block: "nearest" });
   }, [open, up]);
