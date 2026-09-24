@@ -47,32 +47,35 @@ export function UtmsPersona({ e, p }: { e: EstadoApp; p: Persona }) {
       {formularios.length > 0 && (
         <div className="stack-3">
           <div className="t-label">Formularios de Meta</div>
-          {formularios.map((f) => {
-            const webinar = e.webinars.find((w) => w.id === f.webinarId);
-            return (
-              <div key={f.leadgenId} className="caja-suave stack-2">
-                <div className="row-wrap t-sm">
-                  <span className="t-strong">{f.formulario}</span>
-                  <span className="t-subtle">se anotó el {fechaHora(f.creado)}</span>
-                  <Tag>{f.plataforma === "ig" ? "Instagram" : "Facebook"}</Tag>
-                  {webinar && <Tag>webinar: {webinar.titulo}</Tag>}
-                </div>
-                {(f.campania || f.anuncio) && (
-                  <div className="row-wrap t-sm t-subtle">
-                    {f.campania && <span>campaña: {f.campania}</span>}
-                    {f.anuncio && <span>anuncio: {f.anuncio}</span>}
+          {/* Una por formulario enviado: con scroll, como las agendas. */}
+          <div className="stack-3 lista-scroll">
+            {formularios.map((f) => {
+              const webinar = e.webinars.find((w) => w.id === f.webinarId);
+              return (
+                <div key={f.leadgenId} className="caja-suave stack-2">
+                  <div className="row-wrap t-sm">
+                    <span className="t-strong">{f.formulario}</span>
+                    <span className="t-subtle">se anotó el {fechaHora(f.creado)}</span>
+                    <Tag>{f.plataforma === "ig" ? "Instagram" : "Facebook"}</Tag>
+                    {webinar && <Tag>webinar: {webinar.titulo}</Tag>}
                   </div>
-                )}
-                {f.respuestas.length > 0 && (
-                  <dl className="dl dl--compacta">
-                    {f.respuestas.map((q) => (
-                      <React.Fragment key={q.pregunta}><dt>{q.pregunta}</dt><dd>{q.respuesta}</dd></React.Fragment>
-                    ))}
-                  </dl>
-                )}
-              </div>
-            );
-          })}
+                  {(f.campania || f.anuncio) && (
+                    <div className="row-wrap t-sm t-subtle">
+                      {f.campania && <span>campaña: {f.campania}</span>}
+                      {f.anuncio && <span>anuncio: {f.anuncio}</span>}
+                    </div>
+                  )}
+                  {f.respuestas.length > 0 && (
+                    <dl className="dl dl--compacta">
+                      {f.respuestas.map((q) => (
+                        <React.Fragment key={q.pregunta}><dt>{q.pregunta}</dt><dd>{q.respuesta}</dd></React.Fragment>
+                      ))}
+                    </dl>
+                  )}
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
 
