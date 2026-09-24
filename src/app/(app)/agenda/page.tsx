@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, ArrowRight, CalendarDays, Check, ExternalLink, Link2, Pencil, Plus, Search, Trash2, UserRound, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, CalendarDays, Check, ExternalLink, Link2, Pencil, Plus, Search, Star, Trash2, UserRound, X } from "lucide-react";
 import { PageHead } from "@/components/shell/PageHead";
 import { Ayuda, Badge, Button, Card, Empty, Field, IconButton, Input, Select, Textarea } from "@/components/ui/ui";
 import { ModalForm, Confirmar } from "@/components/ui/Modal";
@@ -11,6 +11,7 @@ import { CopiarLink, Filtro, opcionesDe, SIN, type OpcionFiltro } from "@/compon
 import { Origen } from "@/components/leads/Origen";
 import { ETIQUETA_CANAL } from "@/lib/calendly";
 import { embudoDe } from "@/lib/agendas-webinar";
+import { evaluarAgenda, textoEvaluacion } from "@/lib/calificacion";
 import { CamposExtra, DatosExtra } from "@/components/ui/CamposExtra";
 import { useToast } from "@/components/ui/Toast";
 import { acciones, useEstado } from "@/lib/store";
@@ -38,15 +39,16 @@ const DOW = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"];
    - tipo: el tipo de sesión tal cual, o "sin"
    - anfitrion: quien la atiende (el closer en Calendly), o "sin"
    - canal: webinar · vsl · setter · otro · sin (Calendly sin canal) · manual
+   - calificada: si · no (invierte +1000, inglés y carrera: lib/calificacion.ts)
    - pag: la página, desde 1 */
-const VISTA_AGENDA = { estado: "", tipo: "", anfitrion: "", canal: "", pag: "1" };
+const VISTA_AGENDA = { estado: "", tipo: "", anfitrion: "", canal: "", calificada: "", pag: "1" };
 
 /* Llamadas por página. Se corta entre un día y otro, nunca en el medio de
    uno: ver `paginas` más abajo. */
 const POR_PAGINA = 30;
 
-type Faceta = "estado" | "tipo" | "anfitrion" | "canal";
-const FACETAS: Faceta[] = ["estado", "tipo", "anfitrion", "canal"];
+type Faceta = "estado" | "tipo" | "anfitrion" | "canal" | "calificada";
+const FACETAS: Faceta[] = ["estado", "tipo", "anfitrion", "canal", "calificada"];
 
 /* De dónde vino: el canal de Calendly o, si se cargó a mano, eso. Son
    excluyentes, así que van en un solo desplegable. */
@@ -62,7 +64,13 @@ const valorDe: Record<Faceta, (s: Sesion) => string> = {
   tipo: (s) => s.tipo?.trim() || SIN,
   anfitrion: (s) => s.anfitrion?.trim() || SIN,
   canal: canalDe,
+  calificada: (s) => (evaluarAgenda(s).calificada ? "si" : "no"),
 };
+
+const CALIFICACION: OpcionFiltro[] = [
+  { valor: "si", texto: "Calificadas" },
+  { valor: "no", texto: "No calificadas" },
+];
 
 /* El día de la llamada es el del negocio (Argentina), el mismo con el que se
    arman los períodos: si no, una llamada de las 22 caería en "mañana". */
@@ -134,6 +142,7 @@ export default function Agenda() {
     tipo: opcionesDe(e.sesiones.map(valorDe.tipo), (t) => t, "Sin tipo"),
     anfitrion: opcionesDe(e.sesiones.map(valorDe.anfitrion), (a) => a, "Sin anfitrión"),
     canal: CANALES.filter((c) => e.sesiones.some((s) => canalDe(s) === c.valor)),
+    calificada: CALIFICACION,
   }), [e.sesiones]);
 
   /* Un filtro de la URL que ya no existe (un anfitrión que se fue, un link
@@ -204,7 +213,7 @@ export default function Agenda() {
   const hayFiltros = FACETAS.some((k) => f[k]) || busca.trim() !== "";
   function limpiarFiltros() {
     setBusca("");
-    setVista({ estado: null, tipo: null, anfitrion: null, canal: null, pag: null }, { q: null });
+    setVista({ estado: null, tipo: null, anfitrion: null, canal: null, calificada: null, pag: null }, { q: null });
   }
 
   const sesionVista = e.sesiones.find((s) => s.id === ver) ?? null;
@@ -251,6 +260,8 @@ export default function Agenda() {
         <div className="toolbar" style={{ marginBottom: "var(--space-3)" }}>
           <Filtro etiqueta="Filtrar por estado" todos="Todos los estados" valor={f.estado}
             opciones={conCuenta(opciones.estado, cuentas.estado)} onCambiar={(v) => filtrar("estado", v)} />
+          <Filtro etiqueta="Filtrar por calificación" todos="Calificadas y no" valor={f.calificada}
+            opciones={conCuenta(opciones.calificada, cuentas.calificada)} onCambiar={(v) => filtrar("calificada", v)} />
           {opciones.tipo.length > 1 && (
             <Filtro etiqueta="Filtrar por tipo de sesión" todos="Todos los tipos" valor={f.tipo}
               opciones={conCuenta(opciones.tipo, cuentas.tipo)} onCambiar={(v) => filtrar("tipo", v)} />
@@ -311,7 +322,15 @@ export default function Agenda() {
                         onKeyDown={(ev) => { if (ev.key === "Enter") setVer(s.id); }}>
                         <span className="agenda-item__hora">{hora(s.inicia)}</span>
                         <span className="agenda-item__quien">
-                          <span className="truncate t-strong" style={{ display: "block", color: "var(--ink)" }}>{s.invitado}</span>
+                          <span className="truncate t-strong" style={{ display: "block", color: "var(--ink)" }}>
+                            {/* La agenda calificada lleva su estrellita; el porqué, al pasar el mouse. */}
+                            {valorDe.calificada(s) === "si" && (
+                              <span className="estrella-calificada" title={textoEvaluacion(evaluarAgenda(s))}>
+                                <Star size={14} fill="currentColor" aria-label="Agenda calificada" />
+                              </span>
+                            )}
+                            {s.invitado}
+                          </span>
                           <span className="truncate t-sm t-subtle" style={{ display: "block" }}>{s.tipo} · {s.duracionMin} min</span>
                         </span>
                         <span className="agenda-item__cola">
@@ -456,6 +475,7 @@ export default function Agenda() {
               <Dato label="Origen">{sesionVista.origen === "calendly" ? "Calendly" : "Cargada a mano"}</Dato>
               {sesionVista.canal && <Dato label="Agendó por">{ETIQUETA_CANAL[sesionVista.canal]}</Dato>}
               {(sesionVista.canal || sesionVista.utm) && <Dato label="Embudo"><BadgeEmbudo s={sesionVista} /></Dato>}
+              <Dato label="Calificación">{textoEvaluacion(evaluarAgenda(sesionVista))}</Dato>
               {sesionVista.anfitrion && <Dato label="La atiende">{sesionVista.anfitrion}</Dato>}
               {/* Calendly avisa la reprogramación como una cancelación de la vieja
                   más una agenda nueva que la referencia: las dos quedan

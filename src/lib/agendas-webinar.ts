@@ -1,3 +1,5 @@
+import { evaluarAgenda } from "./calificacion";
+
 /* ==================================================================
    Las agendas de Calendly de un webinar: cuáles son suyas y si se
    hicieron en el vivo o después.
@@ -33,6 +35,8 @@ export interface SesionCalendly {
   anfitrion?: string | null;
   utm?: Record<string, string> | null;
   extra?: Record<string, unknown> | null;
+  /* Lo que contestó en el formulario de Calendly: de ahí sale si califica. */
+  respuestas?: { pregunta: string; respuesta: string }[] | null;
 }
 
 /* La corrección a mano, guardada en sesiones.extra.atribucion. */
@@ -90,6 +94,8 @@ export interface AgendaDelWebinar {
   link?: LinkWebinar;
   utm: string;
   corregidoPor?: string;
+  /* Invierte +1000, inglés conversacional y carrera (lib/calificacion.ts). */
+  calificada: boolean;
 }
 
 export interface ResumenAgendas {
@@ -97,6 +103,10 @@ export interface ResumenAgendas {
   despues: number;
   canceladas: number;
   noVino: number;
+  /* De las que siguen en pie (ni canceladas ni "no vino"): las que califican
+     y las que no, para "Llamadas calificadas / No calificadas". */
+  calificadas: number;
+  noCalificadas: number;
   agendas: AgendaDelWebinar[];
 }
 
@@ -160,6 +170,7 @@ export function resumirAgendas(
         momento,
         cancelada: s.estado === "cancelada",
         por,
+        calificada: evaluarAgenda(s).calificada,
       };
     })
     .sort((a, b) => +new Date(b.agendadaEn) - +new Date(a.agendadaEn));
@@ -170,6 +181,8 @@ export function resumirAgendas(
     despues: cuentan.filter((a) => !a.cancelada && a.momento === "despues").length,
     canceladas: cuentan.filter((a) => a.cancelada).length,
     noVino: cuentan.filter((a) => a.estado === "no-show").length,
+    calificadas: cuentan.filter((a) => !a.cancelada && a.estado !== "no-show" && a.calificada).length,
+    noCalificadas: cuentan.filter((a) => !a.cancelada && a.estado !== "no-show" && !a.calificada).length,
     agendas,
   };
 }

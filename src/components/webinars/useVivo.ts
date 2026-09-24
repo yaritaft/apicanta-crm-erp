@@ -248,7 +248,7 @@ export async function atribuirAgenda(id: string, momento: "vivo" | "despues" | "
    al instante y se aplican en memoria (sin volver a escribirlos), así el
    embudo, la planilla y las tarjetas dicen lo mismo que las agendas. */
 
-const CAMPOS_DEL_CRON = ["estado", "asistentes", "formularios", "llamadasVivo", "llamadasPosterior", "llamadasCanceladas", "extra"] as const;
+const CAMPOS_DEL_CRON = ["estado", "asistentes", "formularios", "llamadasVivo", "llamadasPosterior", "llamadasCanceladas", "llamadasCalificadas", "llamadasNoCalificadas", "extra"] as const;
 
 function aplicar(filas: Record<string, unknown>[]) {
   acciones.aplicarDeLaNube<Webinar>("webinars", Object.fromEntries(

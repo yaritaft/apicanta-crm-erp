@@ -1,3 +1,4 @@
+import { evaluarAgenda } from "./calificacion";
 import type { Contacto, Cuota, EstadoApp, ID, Lead, Pago, Sesion, Venta, Webinar } from "./types";
 import {
   calcularPyL, comisionesDelMes, cuotasPorCobrar, cuotasVencidas, gastosDelMes, pagosDelMes, type PyL,
@@ -417,6 +418,7 @@ export function catalogo(e: EstadoApp): DefKpi[] {
      gente que vino de ese webinar. null si el filtro no se puede atribuir. */
   const agendadas = (c: Contexto) => c.sesiones()?.filter((s) => c.enDias(s.creadoEn)) ?? null;
   const pasadas = (c: Contexto, estado: string) => c.sesiones()?.filter((s) => s.estado === estado && c.enDias(s.inicia)).length ?? null;
+  const calificadas = (c: Contexto) => agendadas(c)?.filter((s) => evaluarAgenda(s).calificada).length ?? null;
 
   add("agenda", "Agenda (Calendly)", [
     { id: "ag_nuevas", etiqueta: "Llamadas agendadas", formato: "cantidad", mejor: "sube", href: "/agenda",
@@ -424,6 +426,17 @@ export function catalogo(e: EstadoApp): DefKpi[] {
     { id: "ag_costo", etiqueta: "Costo por agenda", formato: "moneda", mejor: "baja", href: "/agenda",
       ayuda: "Inversión en publicidad sobre las llamadas agendadas en el período.",
       valor: (c) => g(c, () => div(c.py()!.inversionAds, agendadas(c)?.length ?? 0)) },
+    /* Agenda calificada: puede invertir 1000 USD o más, inglés conversacional
+       y carrera, según lo que contestó en Calendly (lib/calificacion.ts). */
+    { id: "ag_calif", etiqueta: "Agendas calificadas", formato: "cantidad", mejor: "sube", href: "/agenda?calificada=si",
+      ayuda: "Agendas del período de gente que califica: puede invertir 1000 USD o más, tiene inglés conversacional y carrera (lo que contestó en Calendly).",
+      valor: (c) => calificadas(c) },
+    { id: "ag_calif_pct", etiqueta: "% de agendas calificadas", formato: "pct", mejor: "sube", href: "/agenda?calificada=si",
+      ayuda: "Agendas calificadas sobre todas las agendas del período.",
+      valor: (c) => { const n = calificadas(c), t = agendadas(c)?.length ?? null; return n === null || t === null ? null : pctDe(n, t); } },
+    { id: "ag_costo_calif", etiqueta: "Costo por agenda calificada", formato: "moneda", mejor: "baja", href: "/agenda?calificada=si",
+      ayuda: "Inversión en publicidad sobre las agendas calificadas del período.",
+      valor: (c) => g(c, () => div(c.py()!.inversionAds, calificadas(c) ?? 0)) },
     { id: "ag_hechas", etiqueta: "Llamadas hechas", formato: "cantidad", mejor: "sube", href: "/agenda",
       ayuda: "Llamadas del período que se hicieron.", valor: (c) => pasadas(c, "hecha") },
     { id: "ag_noshow", etiqueta: "No vinieron", formato: "cantidad", mejor: "baja", href: "/agenda",

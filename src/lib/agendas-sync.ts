@@ -5,6 +5,9 @@ import { videoDelWebinar } from "./youtube";
 /* ==================================================================
    Completar solas "Llamadas en vivo", "Llamadas después" y "Canceladas"
    de cada webinar con las agendas de Calendly (lib/agendas-webinar.ts).
+   También "Llamadas calificadas" y "No calificadas", con la regla del
+   equipo (lib/calificacion.ts); esas dos sin pisar un número cargado a
+   mano (extra.llamadasCalificadasAuto, como "Asistieron al vivo").
 
    Lo corre /api/cron/youtube cada minuto. Sólo toca webinars desde que
    entró la primera agenda de Calendly: los anteriores se cargaron a mano
@@ -19,13 +22,15 @@ interface FilaWebinar {
   id: string; titulo: string; fecha: string; duracionMin: number;
   youtubeUrl?: string | null; enlaceReplay?: string | null;
   llamadasVivo: number; llamadasPosterior: number; llamadasCanceladas: number;
+  llamadasCalificadas: number; llamadasNoCalificadas: number;
+  extra?: Record<string, unknown> | null;
 }
 
 export async function sesionesCalendly(db: Db, desde: string): Promise<SesionCalendly[]> {
   const out: SesionCalendly[] = [];
   for (let a = 0; a < 5000; a += 1000) {
     const r = await db.from("sesiones")
-      .select("id, invitado, creadoEn, inicia, estado, canal, anfitrion, utm, extra")
+      .select("id, invitado, creadoEn, inicia, estado, canal, anfitrion, utm, extra, respuestas")
       .not("calendlyInvitadoUri", "is", null)
       .gte("creadoEn", desde)
       .order("creadoEn")
@@ -48,7 +53,7 @@ export async function completarLlamadas(): Promise<{ actualizados: number; error
   const desde = new Date(Math.max(+new Date(primera.data.creadoEn as string) - DIA, Date.now() - 60 * DIA)).toISOString();
 
   const rw = await db.from("webinars")
-    .select("id, titulo, fecha, duracionMin, youtubeUrl, enlaceReplay, llamadasVivo, llamadasPosterior, llamadasCanceladas")
+    .select("id, titulo, fecha, duracionMin, youtubeUrl, enlaceReplay, llamadasVivo, llamadasPosterior, llamadasCanceladas, llamadasCalificadas, llamadasNoCalificadas, extra")
     .gte("fecha", desde).lte("fecha", new Date(Date.now() + DIA).toISOString());
   if (rw.error) { res.errores.push(`webinars: ${rw.error.message}`); return res; }
   const webinars = (rw.data ?? []) as FilaWebinar[];
@@ -68,6 +73,16 @@ export async function completarLlamadas(): Promise<{ actualizados: number; error
     if (r.vivo !== w.llamadasVivo) cambios.llamadasVivo = r.vivo;
     if (r.despues !== w.llamadasPosterior) cambios.llamadasPosterior = r.despues;
     if (r.canceladas !== w.llamadasCanceladas) cambios.llamadasCanceladas = r.canceladas;
+    /* Calificadas y no calificadas: sólo si el número es el que puso esto
+       (o 0). Uno cargado a mano manda. */
+    const extra = { ...(w.extra ?? {}) };
+    for (const [campo, valor] of [["llamadasCalificadas", r.calificadas], ["llamadasNoCalificadas", r.noCalificadas]] as const) {
+      const clave = `${campo}Auto`;
+      const auto = typeof extra[clave] === "number" ? extra[clave] : undefined;
+      const aMano = w[campo] !== 0 && w[campo] !== auto;
+      if (!aMano && valor !== w[campo]) { cambios[campo] = valor; extra[clave] = valor; }
+    }
+    if (cambios.llamadasCalificadas !== undefined || cambios.llamadasNoCalificadas !== undefined) cambios.extra = extra;
     if (Object.keys(cambios).length === 0) continue;
 
     const u = await db.from("webinars").update(cambios).eq("id", w.id);
@@ -77,6 +92,8 @@ export async function completarLlamadas(): Promise<{ actualizados: number; error
       cambios.llamadasVivo !== undefined && `en el vivo ${w.llamadasVivo} → ${r.vivo}`,
       cambios.llamadasPosterior !== undefined && `después ${w.llamadasPosterior} → ${r.despues}`,
       cambios.llamadasCanceladas !== undefined && `canceladas ${w.llamadasCanceladas} → ${r.canceladas}`,
+      cambios.llamadasCalificadas !== undefined && `calificadas ${w.llamadasCalificadas} → ${r.calificadas}`,
+      cambios.llamadasNoCalificadas !== undefined && `no calificadas ${w.llamadasNoCalificadas} → ${r.noCalificadas}`,
     ].filter(Boolean).join(", ");
     await db.from("actividad").insert({
       id: `act_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`,

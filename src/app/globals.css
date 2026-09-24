@@ -33,6 +33,7 @@
   --danger-soft: #3c1c26;
   --warning: #f6b04a;
   --warning-soft: #3a2c14;
+  --estrella: #f5c542;
   --info: #c4a3ff;
   --info-soft: #2a1c4d;
   --focus: #f7941d;
@@ -68,6 +69,7 @@
   --danger-soft: #fde8ec;
   --warning: #9a5a00;
   --warning-soft: #fff4de;
+  --estrella: #d99a00;
   --info: #5b21b6;
   --info-soft: #ede4fb;
   --focus: #6f34b8;
@@ -776,6 +778,10 @@ kbd {
    Chrome, una lista corta (que todavía no scrollea) se tragaba la rueda y
    la página no bajaba con el mouse encima. */
 .lista-scroll { max-height: min(60vh, 560px); overflow-y: auto; flex-shrink: 0; }
+
+/* La estrellita de la agenda calificada (invierte +1000, inglés
+   conversacional y carrera: lib/calificacion.ts). Dorada en los dos temas. */
+.estrella-calificada { display: inline-flex; flex: none; color: var(--estrella); vertical-align: -2px; margin-right: 4px; }
 .lista-scroll > * { flex-shrink: 0; }
 
 /* ========== Menú colapsable ==========

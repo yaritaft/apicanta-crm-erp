@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { CalendarCheck } from "lucide-react";
+import { CalendarCheck, Star } from "lucide-react";
 import { Badge, Card, CardHead, Empty, Select, type VarianteBadge } from "@/components/ui/ui";
 import { useToast } from "@/components/ui/Toast";
 import { num } from "@/lib/format";
@@ -72,7 +72,14 @@ export function AgendasWebinar({ w, className }: { w: Webinar; className?: strin
                   <div key={a.id} className="wb-fila" style={a.fuera ? { opacity: 0.55 } : undefined}>
                     <span className="wb-fila__texto">
                       <span className="wb-fila__nombre">
-                        <span className="truncate">{a.nombre}</span>
+                        <span className="truncate">
+                          {a.calificada && (
+                            <span className="estrella-calificada" title="Agenda calificada: invierte +1000, inglés conversacional y carrera">
+                              <Star size={14} fill="currentColor" aria-label="Agenda calificada" />
+                            </span>
+                          )}
+                          {a.nombre}
+                        </span>
                         <Badge variante={e.variante}>{e.texto}</Badge>
                       </span>
                       <span className="wb-agenda__badges">
