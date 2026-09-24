@@ -16,16 +16,16 @@ lo que se muestra se calcula solo.
 | **Metas** | Poner objetivos del mes y verlos avanzar solos con los datos reales |
 | **Leads** | Cargar, buscar, filtrar, importar por CSV, exportar, y convertir en alumno |
 | **Pipeline** | Tablero kanban: arrastrar leads entre etapas (también con el teclado) |
-| **Agenda** | Sesiones por día y marcar si la persona vino o no. La asistencia se mide en Dashboard & KPIs |
+| **Agenda** | Sesiones por día, por período (hoy, esta semana, la semana pasada o un rango), filtradas por estado, tipo, anfitrión y canal, de a páginas. Se marca si la persona vino o no; la asistencia se mide en Dashboard & KPIs |
 | **Webinars** | Registrados, asistencia, leads que trajo, conversión, ingresos y retorno |
 | **Marketing** | Campañas de Meta con costo por lead, costo por alumno, CTR, CPC, CPM y ROAS |
 | **Alumnos** | Quién cursa y cómo viene, en lista o en el pipeline de servicio (venta nueva → onboarding → en servicio…). Cada venta registrada crea su alumno sola |
 | **Reportes** | Dashboard y tabla de los reportes por rango de fechas: respuesta, horas, postulaciones, entrevistas, bloqueos y quién está en riesgo, marcable en un clic |
-| **Ventas** | Un asistente paso a paso arma la venta, su plan de cuotas y los cobros que ya entraron, con los nombres de la planilla de Angelo. Importa y exporta la hoja Ventas de esa planilla |
+| **Ventas** | Un asistente paso a paso arma la venta, su plan de cuotas y los cobros que ya entraron, con los nombres de la planilla de Angelo; el origen sale de la UTM de quien compró. La lista se filtra por período, vendedor, servicio, estrategia, proyecto y cuenta. Importa y exporta la hoja Ventas de esa planilla |
 | **Conciliación** | Los cobros de Stripe, Hotmart, Whop, dLocal, Mercado Pago, Mercury, Binance y Trust, imputados a la cuota que les corresponde |
 | **Finanzas** | El estado de resultados sobre lo cobrado y lo facturado; en el detalle, las cuotas vencidas, los gastos y las comisiones. Los KPIs viven en Dashboard & KPIs |
 | **Actividad** | Todo lo que se creó, editó, movió o borró, con autor y fecha |
-| **Ajustes** | Etapas, listas, campos propios, integraciones y respaldos |
+| **Ajustes** | Servicios, cuentas recaudadoras, estrategias y proyectos; de qué es cada UTM; etapas, listas, campos propios, integraciones y respaldos |
 
 ## Todo es modificable
 
@@ -134,6 +134,13 @@ Sin librería de gráficos, sin librería de tablas, sin librería de estado: me
 para que algo se rompa y nada que actualizar de urgencia.
 
 
+## Reportes por link
+
+En Ventas, Agenda y Dashboard & KPIs todo lo que se elige —período, filtros, búsqueda, orden, página,
+columnas, comparar— queda en la URL. Un reporte armado se guarda en favoritos o se le pasa a otra persona
+con **Copiar link**, y se abre igual. Lo que está en su valor de siempre no se escribe, así los links quedan
+cortos. Los nombres de cada parámetro están en `src/lib/useParamsURL.ts` y en cada pantalla.
+
 ## Cobros y conciliación
 
 Una venta se cobra en cuotas, y una cuota puede cobrarse con varios medios: mitad por
@@ -187,3 +194,24 @@ cuotas y cobros, que es lo que permite los vencimientos y la mora.
 - La comisión del procesador es la real: la de la pasarela si el cobro se concilia; si no, la de la cuenta,
   que se corrige a mano en Finanzas → Detalle → Procesadores.
 - Antes de usarlo contra Supabase hay que correr `supabase/modelo-angelo.sql` (sólo agrega columnas).
+
+## De dónde viene cada venta: las UTMs
+
+El origen de una venta (Estrategia utilizada, Proyecto y webinar) no lo elige el closer: sale de los UTMs
+con los que llegó quien compró —sus agendas de Calendly, la más reciente primero, y su primer contacto—.
+En **Ajustes → UTMs** cada UTM se asigna a una estrategia, un proyecto y un webinar: la del webinar del
+23/09 es `utm_source=Webinar` + `utm_medium=23-09`. La pantalla lista las UTMs que llegaron sin asignar,
+trae armada la sugerencia para las de webinar y completa de una vez el origen de las ventas que no lo
+tenían, sin pisar lo que alguien eligió a mano. Las reglas están en `src/lib/utms.ts`.
+
+## Cobros en pesos y la Financiera
+
+- **Registrar un pago** es un paso a paso (cuánto y por dónde, la prueba, los datos de la transferencia,
+  qué hacer si pagó menos, resumen). Desde la ficha va embebido en la columna de la venta.
+- En las cuentas en pesos el tipo de cambio arranca con el **blue venta**: el de DolarHoy si el pago es
+  de hoy, el cierre de ese día (ArgentinaDatos) si es de otro (`/api/dolar`). El closer lo puede cambiar;
+  el cobro guarda los dos, con la fuente y la hora.
+- Si pagó a la Financiera, el **CBU/CVU** desde el que transfirió es obligatorio y se valida con sus
+  dígitos verificadores. Va al reporte para la Financiera, con el nombre, el CUIT y el comprobante.
+- Antes de usarlo contra Supabase hay que correr `supabase/utms-y-financiera.sql` (agrega columnas y
+  marca en pesos las cuentas en ARS).
