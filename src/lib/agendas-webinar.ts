@@ -11,6 +11,10 @@
      después, después.
    Las canceladas se cuentan aparte, estén en el vivo o después.
 
+   Y se puede corregir a mano (extra.atribucion en la sesión): pasar una
+   agenda al vivo o a después, o sacarla del webinar. Manda sobre todo lo
+   anterior; "automático" la devuelve a la regla.
+
    Lo usan el cron (que completa solo "Llamadas en vivo", "Llamadas
    después" y "Canceladas" de la planilla) y la ficha del webinar.
    ================================================================== */
@@ -28,6 +32,45 @@ export interface SesionCalendly {
   canal?: string | null;
   anfitrion?: string | null;
   utm?: Record<string, string> | null;
+  extra?: Record<string, unknown> | null;
+}
+
+/* La corrección a mano, guardada en sesiones.extra.atribucion. */
+export interface Atribucion {
+  momento?: "vivo" | "despues";
+  /* No es de este webinar aunque traiga sus UTMs. */
+  fuera?: boolean;
+  por?: string;
+  en?: string;
+}
+
+export function atribucionDe(extra: Record<string, unknown> | null | undefined): Atribucion | undefined {
+  const a = extra?.atribucion;
+  return a && typeof a === "object" ? (a as Atribucion) : undefined;
+}
+
+/* ---------- De qué embudo vino ----------
+   El badge de cada agenda: "Webinar 23-09 · EnVivo", "Webinar 23-09 · link
+   viejo", "VSL · IG"… Sale de los UTMs y, si no hay, del tipo de evento. */
+
+export type LinkWebinar = "EnVivo" | "PostWebinar" | "viejo";
+
+const CANAL: Record<string, string> = { webinar: "Webinar", vsl: "VSL", setter: "Setter", otro: "Otro" };
+
+export function embudoDe(s: { canal?: string | null; utm?: Record<string, string> | null }): {
+  texto: string; link?: LinkWebinar; utm: string;
+} {
+  const u = s.utm ?? {};
+  const utm = Object.entries(u).filter(([, v]) => v).map(([k, v]) => `${k.replace(/^utm_/, "")}=${v}`).join(" · ");
+  if (/webinar/i.test(u.utm_source ?? "")) {
+    const fecha = normalFecha(u.utm_medium) ?? normalFecha(u.utm_content) ?? normalFecha(u.utm_campaign);
+    const c = (u.utm_content ?? "").trim();
+    const link: LinkWebinar = CONTENIDO_VIVO.test(c) ? "EnVivo" : CONTENIDO_DESPUES.test(c) ? "PostWebinar" : "viejo";
+    return { texto: `Webinar${fecha ? ` ${fecha}` : ""}`, link, utm };
+  }
+  const base = CANAL[s.canal ?? ""] ?? (u.utm_source ? u.utm_source : "Sin UTMs");
+  const detalle = u.utm_source && CANAL[s.canal ?? ""] ? u.utm_source : u.utm_medium;
+  return { texto: detalle && detalle !== base ? `${base} · ${detalle}` : base, utm };
 }
 
 export interface AgendaDelWebinar {
@@ -39,8 +82,14 @@ export interface AgendaDelWebinar {
   closer?: string;
   momento: "vivo" | "despues";
   cancelada: boolean;
-  /* Cómo se decidió el momento: por el link (utm_content) o por la hora. */
-  por: "link" | "hora";
+  /* Cómo se decidió: por el link (utm_content), por la hora o a mano. */
+  por: "link" | "hora" | "manual";
+  /* Sacada a mano del webinar: se muestra (para poder volverla), no cuenta. */
+  fuera: boolean;
+  embudo: string;
+  link?: LinkWebinar;
+  utm: string;
+  corregidoPor?: string;
 }
 
 export interface ResumenAgendas {
@@ -88,12 +137,20 @@ export function resumirAgendas(
     .filter((s) => esDelWebinar(s, clave))
     .map((s) => {
       const contenido = (s.utm?.utm_content ?? "").trim();
+      const a = atribucionDe(s.extra);
+      const e = embudoDe(s);
       let momento: AgendaDelWebinar["momento"];
       let por: AgendaDelWebinar["por"] = "link";
-      if (CONTENIDO_VIVO.test(contenido)) momento = "vivo";
+      if (a?.momento) { momento = a.momento; por = "manual"; }
+      else if (CONTENIDO_VIVO.test(contenido)) momento = "vivo";
       else if (CONTENIDO_DESPUES.test(contenido)) momento = "despues";
       else { momento = +new Date(s.creadoEn) <= +new Date(fin) ? "vivo" : "despues"; por = "hora"; }
       return {
+        fuera: Boolean(a?.fuera),
+        embudo: e.texto,
+        link: e.link,
+        utm: e.utm,
+        corregidoPor: a && (a.momento || a.fuera) ? a.por : undefined,
         id: s.id,
         nombre: s.invitado || "Sin nombre",
         agendadaEn: s.creadoEn,
@@ -107,11 +164,12 @@ export function resumirAgendas(
     })
     .sort((a, b) => +new Date(b.agendadaEn) - +new Date(a.agendadaEn));
 
+  const cuentan = agendas.filter((a) => !a.fuera);
   return {
-    vivo: agendas.filter((a) => !a.cancelada && a.momento === "vivo").length,
-    despues: agendas.filter((a) => !a.cancelada && a.momento === "despues").length,
-    canceladas: agendas.filter((a) => a.cancelada).length,
-    noVino: agendas.filter((a) => a.estado === "no-show").length,
+    vivo: cuentan.filter((a) => !a.cancelada && a.momento === "vivo").length,
+    despues: cuentan.filter((a) => !a.cancelada && a.momento === "despues").length,
+    canceladas: cuentan.filter((a) => a.cancelada).length,
+    noVino: cuentan.filter((a) => a.estado === "no-show").length,
     agendas,
   };
 }

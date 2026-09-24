@@ -25,7 +25,7 @@ export async function sesionesCalendly(db: Db, desde: string): Promise<SesionCal
   const out: SesionCalendly[] = [];
   for (let a = 0; a < 5000; a += 1000) {
     const r = await db.from("sesiones")
-      .select("id, invitado, creadoEn, inicia, estado, canal, anfitrion, utm")
+      .select("id, invitado, creadoEn, inicia, estado, canal, anfitrion, utm, extra")
       .not("calendlyInvitadoUri", "is", null)
       .gte("creadoEn", desde)
       .order("creadoEn")

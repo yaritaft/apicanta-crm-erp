@@ -1,13 +1,16 @@
 "use client";
 
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { CalendarCheck } from "lucide-react";
-import { Badge, Card, CardHead, Empty, type VarianteBadge } from "@/components/ui/ui";
+import { Badge, Card, CardHead, Empty, Select, type VarianteBadge } from "@/components/ui/ui";
+import { useToast } from "@/components/ui/Toast";
 import { num } from "@/lib/format";
-import { claveDeFecha } from "@/lib/agendas-webinar";
+import { acciones } from "@/lib/store";
+import { useUsuarioActual } from "@/lib/usuario";
+import { claveDeFecha, type AgendaDelWebinar } from "@/lib/agendas-webinar";
 import type { Webinar } from "@/lib/types";
 import { diaYHora } from "./fechas";
-import { useAgendasWebinar } from "./useVivo";
+import { atribuirAgenda, useAgendasWebinar } from "./useVivo";
 
 /* ==================================================================
    Las agendas de Calendly del webinar: cuántas se hicieron en el vivo,
@@ -28,6 +31,15 @@ const ESTADO: Record<string, { texto: string; variante: VarianteBadge }> = {
 export function AgendasWebinar({ w, className }: { w: Webinar; className?: string }) {
   const r = useAgendasWebinar(w.id);
   const d = r.estado === "listo" ? r.datos : null;
+
+  /* Lo mismo que el cron va a escribir en la planilla, ya: así el embudo y
+     las llamadas de la ficha no esperan su vuelta (sólo en memoria). */
+  useEffect(() => {
+    if (!d) return;
+    acciones.aplicarDeLaNube<Webinar>("webinars", {
+      [w.id]: { llamadasVivo: d.vivo, llamadasPosterior: d.despues, llamadasCanceladas: d.canceladas },
+    });
+  }, [d, w.id]);
   const clave = claveDeFecha(w.fecha);
 
   return (
@@ -56,20 +68,30 @@ export function AgendasWebinar({ w, className }: { w: Webinar; className?: strin
               {d.agendas.map((a) => {
                 const e = ESTADO[a.estado] ?? ESTADO.agendada;
                 return (
-                  <div key={a.id} className="wb-fila">
+                  <div key={a.id} className="wb-fila" style={a.fuera ? { opacity: 0.55 } : undefined}>
                     <span className="wb-fila__texto">
                       <span className="wb-fila__nombre">
                         <span className="truncate">{a.nombre}</span>
-                        <Badge variante={a.momento === "vivo" ? "danger" : "info"}>{a.momento === "vivo" ? "En el vivo" : "Después"}</Badge>
+                        <Badge variante={e.variante}>{e.texto}</Badge>
+                      </span>
+                      <span className="wb-agenda__badges">
+                        {/* Por qué link vino (el embudo ya se sabe: es este webinar). El
+                            link viejo, en amarillo; los UTMs al pasar el mouse. */}
+                        <span title={a.utm || "Sin UTMs"}>
+                          <Badge variante={a.link === "viejo" ? "warning" : "neutral"}>
+                            {a.link === "viejo" ? "Link viejo" : a.link ?? "Sin link"}
+                          </Badge>
+                        </span>
+                        {a.por === "manual" && <Badge variante="brand">Corregida{a.corregidoPor ? ` por ${a.corregidoPor}` : ""}</Badge>}
                       </span>
                       <span className="wb-fila__detalle">
                         Agendó el {diaYHora(a.agendadaEn)} hs
                         {a.closer ? ` · ${a.closer}` : ""}
                         {a.llamada ? ` · llamada el ${diaYHora(a.llamada)} hs` : ""}
-                        {a.por === "hora" ? " · por la hora" : ""}
+                        {a.por === "hora" ? " · atribuida por la hora" : ""}
                       </span>
                     </span>
-                    <Badge variante={e.variante}>{e.texto}</Badge>
+                    <SelectorAtribucion a={a} webinarId={w.id} onCambio={r.recargar} />
                   </div>
                 );
               })}
@@ -79,6 +101,40 @@ export function AgendasWebinar({ w, className }: { w: Webinar; className?: strin
         </div>
       )}
     </Card>
+  );
+}
+
+/* Dónde cuenta esta agenda. "Automático" deja que decida el link (o la
+   hora); lo demás es una corrección a mano, que queda en la actividad. */
+function SelectorAtribucion({ a, webinarId, onCambio }: { a: AgendaDelWebinar; webinarId: string; onCambio: () => void }) {
+  const toast = useToast();
+  const yo = useUsuarioActual();
+  const [guardando, setGuardando] = useState(false);
+  const valor = a.fuera ? "fuera" : a.por === "manual" ? a.momento : "auto";
+  const auto = a.momento === "vivo" ? "Automático · en el vivo" : "Automático · después";
+  return (
+    <div className="wb-agenda__select">
+      <Select
+        value={valor} disabled={guardando}
+        aria-label={`Atribución de la agenda de ${a.nombre}`}
+        opciones={[
+          { valor: "auto", texto: a.por === "manual" || a.fuera ? "Automático" : auto },
+          { valor: "vivo", texto: "En el vivo" },
+          { valor: "despues", texto: "Después" },
+          { valor: "fuera", texto: "No es de este webinar" },
+        ]}
+        onChange={async (ev) => {
+          const nuevo = ev.target.value as "vivo" | "despues" | "fuera" | "auto";
+          if (nuevo === valor) return;
+          setGuardando(true);
+          const error = await atribuirAgenda(a.id, nuevo, webinarId, yo.nombre || yo.email || undefined);
+          setGuardando(false);
+          if (error) { toast(error, "err"); return; }
+          toast("Listo: la planilla se actualiza en un minuto.");
+          onCambio();
+        }}
+      />
+    </div>
   );
 }
 

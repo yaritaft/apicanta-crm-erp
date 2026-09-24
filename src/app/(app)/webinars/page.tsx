@@ -16,6 +16,7 @@ import { AsistenteWebinar } from "@/components/webinars/AsistenteWebinar";
 import { guardarMetrica, guardarWebinar } from "@/components/webinars/guardar";
 import { diaCorto, diaYHora, hoyArgentina } from "@/components/webinars/fechas";
 import { AvisoEnVivo } from "@/components/webinars/AvisoEnVivo";
+import { useWebinarsAlDia } from "@/components/webinars/useVivo";
 import { CLAVE_LISTA, ESTADO_WEBINAR, ESTADOS, tonoRoas } from "@/components/webinars/estado";
 import { useEstado } from "@/lib/store";
 import { useRangoURL } from "@/lib/useRango";
@@ -87,6 +88,8 @@ const esNumerico = (c: CampoPersonalizado) => c.tipo === "numero" || c.tipo === 
 
 export default function Webinars() {
   const e = useEstado();
+  /* Las llamadas, los asistentes y el estado que completa el cron, al día. */
+  useWebinarsAlDia(e.webinars.map((w) => w.id));
   const toast = useToast();
   const router = useRouter();
   const params = useSearchParams();

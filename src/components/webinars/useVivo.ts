@@ -1,6 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { acciones } from "@/lib/store";
+import { nube } from "@/lib/supabase";
+import type { Webinar } from "@/lib/types";
 import type { ComentariosYoutube, DatosVivo, EstadoAnalytics } from "@/lib/youtube";
 import { cabeceras } from "./useYoutube";
 
@@ -162,9 +165,52 @@ export function useAgendasDesde(desde: string | null, activo: boolean) {
   );
 }
 
-/* Las agendas de un webinar, en el vivo o después (cada 30 s). */
+/* Las agendas de un webinar, en el vivo o después (cada 15 s). */
 export function useAgendasWebinar(webinarId: string) {
   return usePedido<import("@/lib/agendas-webinar").ResumenAgendas>(
-    `/api/calendly/agendas?webinar=${encodeURIComponent(webinarId)}`, 30_000,
+    `/api/calendly/agendas?webinar=${encodeURIComponent(webinarId)}`, 15_000,
   );
+}
+
+export async function atribuirAgenda(id: string, momento: "vivo" | "despues" | "fuera" | "auto", webinarId: string, quien?: string): Promise<string | null> {
+  try {
+    const r = await fetch("/api/calendly/agendas", {
+      method: "PATCH",
+      headers: { ...(await cabeceras()), "Content-Type": "application/json" },
+      body: JSON.stringify({ id, momento, webinarId, quien }),
+    });
+    const j = (await r.json().catch(() => null)) as { error?: string } | null;
+    return r.ok ? null : j?.error ?? "No pude cambiar la atribución.";
+  } catch {
+    return "No hay conexión: no pude cambiar la atribución.";
+  }
+}
+
+/* ---------- Lo que el cron completa solo, al día ----------
+   La app carga los datos una vez al abrir. Las llamadas (Calendly), los
+   asistentes, el estado y las vistas de la grabación los escribe el cron
+   en la base mientras la pantalla está abierta: cada 20 segundos se traen
+   y se aplican en memoria (sin volver a escribirlos), así el embudo, la
+   planilla y las tarjetas dicen lo mismo que las agendas. */
+
+const CAMPOS_DEL_CRON = "id, estado, asistentes, llamadasVivo, llamadasPosterior, llamadasCanceladas, extra";
+
+export function useWebinarsAlDia(ids: string[]) {
+  const clave = [...ids].sort().join(",");
+  useEffect(() => {
+    if (!nube || !clave) return;
+    const db = nube;
+    let vivo = true;
+    const traer = async () => {
+      if (document.visibilityState !== "visible") return;
+      const r = await db.from("webinars").select(CAMPOS_DEL_CRON).in("id", clave.split(","));
+      if (!vivo || r.error || !r.data) return;
+      acciones.aplicarDeLaNube<Webinar>("webinars", Object.fromEntries(
+        (r.data as (Partial<Webinar> & { id: string })[]).map(({ id, ...resto }) => [id, resto]),
+      ));
+    };
+    void traer();
+    const t = window.setInterval(traer, 20_000);
+    return () => { vivo = false; window.clearInterval(t); };
+  }, [clave]);
 }

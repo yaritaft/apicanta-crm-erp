@@ -10,6 +10,7 @@ import { DateRangePicker, diaDeNegocio } from "@/components/ui/DateRangePicker";
 import { CopiarLink, Filtro, opcionesDe, SIN, type OpcionFiltro } from "@/components/ui/Filtros";
 import { Origen } from "@/components/leads/Origen";
 import { ETIQUETA_CANAL } from "@/lib/calendly";
+import { embudoDe } from "@/lib/agendas-webinar";
 import { CamposExtra, DatosExtra } from "@/components/ui/CamposExtra";
 import { useToast } from "@/components/ui/Toast";
 import { acciones, useEstado } from "@/lib/store";
@@ -314,6 +315,7 @@ export default function Agenda() {
                           <span className="truncate t-sm t-subtle" style={{ display: "block" }}>{s.tipo} · {s.duracionMin} min</span>
                         </span>
                         <span className="agenda-item__cola">
+                          <BadgeEmbudo s={s} />
                           {s.origen === "calendly" && <Badge variante="info"><Link2 size={13} />Calendly</Badge>}
                           <Badge variante={ETIQUETA[s.estado].variante}>{ETIQUETA[s.estado].texto}</Badge>
                           <span onClick={(ev) => ev.stopPropagation()} style={{ display: "flex", gap: 2 }}>
@@ -453,6 +455,7 @@ export default function Agenda() {
               <Dato label="Duración">{sesionVista.duracionMin} min</Dato>
               <Dato label="Origen">{sesionVista.origen === "calendly" ? "Calendly" : "Cargada a mano"}</Dato>
               {sesionVista.canal && <Dato label="Agendó por">{ETIQUETA_CANAL[sesionVista.canal]}</Dato>}
+              {(sesionVista.canal || sesionVista.utm) && <Dato label="Embudo"><BadgeEmbudo s={sesionVista} /></Dato>}
               {sesionVista.anfitrion && <Dato label="La atiende">{sesionVista.anfitrion}</Dato>}
               {/* Calendly avisa la reprogramación como una cancelación de la vieja
                   más una agenda nueva que la referencia: las dos quedan
@@ -527,5 +530,20 @@ export default function Agenda() {
         onConfirmar={() => { if (borrar) { acciones.eliminar("sesiones", borrar.id, `${borrar.tipo} — ${borrar.invitado}`); toast("Sesión eliminada."); } }}
       />
     </div>
+  );
+}
+
+/* De qué embudo vino la llamada, por los UTMs de la agenda: "Webinar 23-09 ·
+   EnVivo", "Webinar 23-09 · PostWebinar", "VSL · Landing-Organic"… Un link
+   viejo del webinar (sin EnVivo ni PostWebinar) va en amarillo. Sin canal
+   ni UTMs (una llamada cargada a mano) no muestra nada. */
+function BadgeEmbudo({ s }: { s: Sesion }) {
+  if (!s.canal && !s.utm) return null;
+  const e = embudoDe({ canal: s.canal, utm: s.utm });
+  const variante = e.link === "viejo" ? "warning" : e.link ? "accent" : "neutral";
+  return (
+    <span title={e.utm || "Sin UTMs"}>
+      <Badge variante={variante}>{e.texto}{e.link ? ` · ${e.link === "viejo" ? "link viejo" : e.link}` : ""}</Badge>
+    </span>
   );
 }
