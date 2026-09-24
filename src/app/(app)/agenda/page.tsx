@@ -323,13 +323,14 @@ export default function Agenda() {
                         <span className="agenda-item__hora">{hora(s.inicia)}</span>
                         <span className="agenda-item__quien">
                           <span className="truncate t-strong" style={{ display: "block", color: "var(--ink)" }}>
-                            {/* La agenda calificada lleva su estrellita; el porqué, al pasar el mouse. */}
+                            {s.invitado}
+                            {/* La agenda calificada lleva su estrellita, a la derecha del
+                                nombre; el porqué, al pasar el mouse. */}
                             {valorDe.calificada(s) === "si" && (
                               <span className="estrella-calificada" title={textoEvaluacion(evaluarAgenda(s))}>
                                 <Star size={14} fill="currentColor" aria-label="Agenda calificada" />
                               </span>
                             )}
-                            {s.invitado}
                           </span>
                           <span className="truncate t-sm t-subtle" style={{ display: "block" }}>{s.tipo} · {s.duracionMin} min</span>
                         </span>

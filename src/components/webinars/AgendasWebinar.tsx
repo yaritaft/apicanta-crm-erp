@@ -73,12 +73,12 @@ export function AgendasWebinar({ w, className }: { w: Webinar; className?: strin
                     <span className="wb-fila__texto">
                       <span className="wb-fila__nombre">
                         <span className="truncate">
+                          {a.nombre}
                           {a.calificada && (
                             <span className="estrella-calificada" title="Agenda calificada: invierte +1000, inglés conversacional y carrera">
                               <Star size={14} fill="currentColor" aria-label="Agenda calificada" />
                             </span>
                           )}
-                          {a.nombre}
                         </span>
                         <Badge variante={e.variante}>{e.texto}</Badge>
                       </span>

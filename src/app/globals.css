@@ -781,7 +781,7 @@ kbd {
 
 /* La estrellita de la agenda calificada (invierte +1000, inglés
    conversacional y carrera: lib/calificacion.ts). Dorada en los dos temas. */
-.estrella-calificada { display: inline-flex; flex: none; color: var(--estrella); vertical-align: -2px; margin-right: 4px; }
+.estrella-calificada { display: inline-flex; flex: none; color: var(--estrella); vertical-align: -2px; margin-left: 5px; }
 .lista-scroll > * { flex-shrink: 0; }
 
 /* ========== Menú colapsable ==========
