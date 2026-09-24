@@ -13,7 +13,7 @@ import { useToast } from "@/components/ui/Toast";
 import { acciones, nuevoId, useEstado } from "@/lib/store";
 import { useParamsURL } from "@/lib/useParamsURL";
 import { useUsuarioActual } from "@/lib/usuario";
-import { fechaLarga, num } from "@/lib/format";
+import { fechaLarga, money, num } from "@/lib/format";
 import { escribirMonto, infoGrupo, categoriaDe, leerMonto } from "@/lib/gastos";
 import { pedirBlue } from "@/lib/dolar";
 import {
@@ -160,9 +160,10 @@ export function LiquidacionMes({ onVerPersona }: { onVerPersona: (miembroId: str
       )}
 
       <div className="grid-stats">
-        <StatCard hero etiqueta="A pagar" valor={plata(r.total, base)} contexto={pagaPesos ? aPagarTexto(r.aPagar) : `${r.personas.length} personas`} />
-        <StatCard etiqueta="Fijo" valor={plata(r.fijo, base)} contexto="Sueldos y abonos" />
-        <StatCard etiqueta="Variable" valor={plata(r.variable, base)} contexto="Comisiones, bonos y piezas" />
+        {/* Redondeados: con centavos no entran en la tarjeta. Los centavos están en cada persona. */}
+        <StatCard hero etiqueta="A pagar" valor={money(r.total, base)} contexto={pagaPesos ? aPagarTexto(r.aPagar) : `${r.personas.length} personas`} />
+        <StatCard etiqueta="Fijo" valor={money(r.fijo, base)} contexto="Sueldos y abonos" />
+        <StatCard etiqueta="Variable" valor={money(r.variable, base)} contexto="Comisiones, bonos y piezas" />
         {cerrada
           ? <StatCard etiqueta="Pagados" valor={`${pagados} de ${r.personas.length}`} contexto={pagados === r.personas.length ? "No queda nadie" : "Marcalos al transferir"} />
           : <StatCard
