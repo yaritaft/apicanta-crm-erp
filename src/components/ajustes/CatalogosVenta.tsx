@@ -1,12 +1,14 @@
 "use client";
 
 import React, { useState } from "react";
-import { Link2, Plus, X } from "lucide-react";
-import { Badge, Button, Card, CardHead, Input, Select, Switch } from "@/components/ui/ui";
+import { Landmark, Link2, Plus, Trash2, X } from "lucide-react";
+import { Badge, Button, Card, CardHead, Field, IconButton, Input, Select, Switch } from "@/components/ui/ui";
+import { ModalForm } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toast";
 import { acciones, nuevoId, useEstado } from "@/lib/store";
 import { nombrePasarela } from "@/lib/pasarelas";
-import type { Embudo, Procesador, Producto } from "@/lib/types";
+import { bancoDeCbu, limpiarCbu, validarCbu } from "@/lib/cbu";
+import type { CuentaBancaria, Embudo, Moneda, Procesador, Producto } from "@/lib/types";
 
 /* ==================================================================
    Lo que se elige al cargar una venta, con los nombres de la planilla
@@ -93,9 +95,17 @@ function Servicios() {
 
 /* ---------- Cuentas recaudadoras ---------- */
 
+const MONEDAS: { valor: Moneda; texto: string }[] = [
+  { valor: "USD", texto: "USD" },
+  { valor: "ARS", texto: "ARS" },
+];
+
 function Cuentas() {
   const e = useEstado();
   const toast = useToast();
+  /* La cuenta a la que se le están editando las cuentas bancarias. */
+  const [bancarias, setBancarias] = useState<string | null>(null);
+  const enEdicion = bancarias ? e.procesadores.find((p) => p.id === bancarias) : undefined;
   const cambiar = (p: Procesador, cambios: Partial<Procesador>, aviso?: string) => {
     acciones.actualizarSilencioso<Procesador>("procesadores", p.id, cambios);
     if (aviso) toast(aviso);
@@ -111,40 +121,167 @@ function Cuentas() {
     <Card>
       <CardHead
         titulo="Cuentas recaudadoras"
-        sub="Por dónde entra la plata. La comisión es la que cobra cada una: si el cobro se concilia con la pasarela manda el fee real; si no, se usa esta y se puede corregir a mano en Finanzas."
+        sub="Por dónde entra la plata. La comisión es la que cobra cada una: si el cobro se concilia con la pasarela manda el fee real; si no, se usa esta y se puede corregir a mano en Finanzas. Las que reciben pesos piden el tipo de cambio del cobro, y sus cuentas bancarias salen en el reporte para la Financiera."
         acciones={<Button variante="secondary" icono={<Plus size={16} />} onClick={agregar}>Agregar cuenta</Button>}
       />
       <div className="catalogo-lista">
         <div className="catalogo-fila catalogo-fila--cabeza catalogo-fila--cuenta" aria-hidden>
-          <span>Nombre</span><span>Comisión (%)</span><span>Cómo se prueba</span><span />
+          <span>Nombre</span><span>Comisión (%)</span><span>Moneda</span><span>Cómo se prueba</span><span>Cuentas bancarias</span><span />
         </div>
-        {e.procesadores.map((p) => (
-          <div className="catalogo-fila catalogo-fila--cuenta" key={p.id} data-inactivo={!p.activo || undefined}>
-            <Input
-              id={`cat-${p.id}`} aria-label="Nombre de la cuenta" defaultValue={p.nombre}
-              onBlur={(ev) => { const v = ev.target.value.trim(); if (v && v !== p.nombre) cambiar(p, { nombre: v }, "Nombre guardado."); }}
-            />
-            <Input
-              aria-label={`Comisión de ${p.nombre} (%)`} type="number" min={0} max={100} step={0.1}
-              defaultValue={Math.round(p.feeRate * 10000) / 100}
-              onBlur={(ev) => {
-                const v = Number(ev.target.value);
-                if (Number.isFinite(v) && v >= 0 && v <= 100 && v / 100 !== p.feeRate) cambiar(p, { feeRate: v / 100 }, "Comisión guardada.");
-              }}
-            />
-            <span>
-              {p.proveedor
-                ? <Badge variante="success"><Link2 size={13} />Se concilia con {nombrePasarela(p.proveedor)}</Badge>
-                : <Badge variante="neutral">Con comprobante</Badge>}
-            </span>
-            <label className="row" style={{ gap: 8 }}>
-              <Switch checked={p.activo} etiqueta={`${p.nombre} activa`} onChange={(v) => cambiar(p, { activo: v })} />
-              <span className="t-sm t-muted">Activa</span>
-            </label>
-          </div>
-        ))}
+        {e.procesadores.map((p) => {
+          const n = p.cuentasBancarias?.length ?? 0;
+          return (
+            <div className="catalogo-fila catalogo-fila--cuenta" key={p.id} data-inactivo={!p.activo || undefined}>
+              <Input
+                id={`cat-${p.id}`} aria-label="Nombre de la cuenta" defaultValue={p.nombre}
+                onBlur={(ev) => { const v = ev.target.value.trim(); if (v && v !== p.nombre) cambiar(p, { nombre: v }, "Nombre guardado."); }}
+              />
+              <Input
+                aria-label={`Comisión de ${p.nombre} (%)`} type="number" min={0} max={100} step={0.1}
+                defaultValue={Math.round(p.feeRate * 10000) / 100}
+                onBlur={(ev) => {
+                  const v = Number(ev.target.value);
+                  if (Number.isFinite(v) && v >= 0 && v <= 100 && v / 100 !== p.feeRate) cambiar(p, { feeRate: v / 100 }, "Comisión guardada.");
+                }}
+              />
+              <Select
+                aria-label={`Moneda en la que recibe ${p.nombre}`} value={p.moneda ?? "USD"} opciones={MONEDAS}
+                onChange={(ev) => cambiar(p, { moneda: ev.target.value as Moneda }, `${p.nombre} recibe ${ev.target.value === "ARS" ? "pesos" : "dólares"}.`)}
+              />
+              <span>
+                {p.proveedor
+                  ? <Badge variante="success"><Link2 size={13} />Se concilia con {nombrePasarela(p.proveedor)}</Badge>
+                  : <Badge variante="neutral">Con comprobante</Badge>}
+              </span>
+              <Button
+                sm variante={n ? "secondary" : "ghost"} icono={<Landmark size={15} />}
+                aria-label={`Cuentas bancarias de ${p.nombre}`} title={`Cuentas bancarias de ${p.nombre}`}
+                onClick={() => setBancarias(p.id)}
+              >
+                {n ? `${n} ${n === 1 ? "cuenta" : "cuentas"}` : "Agregar"}
+              </Button>
+              <label className="row" style={{ gap: 8 }}>
+                <Switch checked={p.activo} etiqueta={`${p.nombre} activa`} onChange={(v) => cambiar(p, { activo: v })} />
+                <span className="t-sm t-muted">Activa</span>
+              </label>
+            </div>
+          );
+        })}
       </div>
+      {enEdicion && <CuentasBancarias key={enEdicion.id} p={enEdicion} onCerrar={() => setBancarias(null)} />}
     </Card>
+  );
+}
+
+/* ---------- Cuentas bancarias de una cuenta recaudadora ----------
+   Las cuentas a las que transfiere el cliente (las de la Financiera):
+   son la tabla de la derecha del reporte. Se editan en borrador y se
+   guardan juntas; una fila que quedó vacía se descarta. */
+
+const CUENTA_VACIA: CuentaBancaria = { titular: "", banco: "", numero: "", alias: "", cbu: "", cuit: "" };
+const vacia = (c: CuentaBancaria) => !Object.values(c).some((v) => v.trim());
+/* Lo guardado viene de un jsonb: un campo puede faltar o venir en null. */
+const aBorrador = (c: Partial<CuentaBancaria>): CuentaBancaria => ({
+  titular: c.titular ?? "", banco: c.banco ?? "", numero: c.numero ?? "", alias: c.alias ?? "", cbu: c.cbu ?? "", cuit: c.cuit ?? "",
+});
+
+/* Lo que se dice abajo del CBU mientras se escribe: el banco en cuanto
+   se reconoce, cuántos números van y, completo, si está bien. */
+function estadoCbu(texto: string, mostrarFaltante: boolean): { error?: string; ayuda?: string } {
+  const d = limpiarCbu(texto);
+  if (!d) return { ayuda: "22 números: el banco sale solo." };
+  const banco = bancoDeCbu(d);
+  if (!/^\d+$/.test(d) || d.length > 22) return { error: "Un CBU/CVU son 22 números, sin letras." };
+  if (d.length < 22) {
+    const cuenta = `${d.length} de 22 números`;
+    return mostrarFaltante ? { error: `Está incompleto: ${cuenta}.` } : { ayuda: banco ? `${banco} · ${cuenta}` : cuenta };
+  }
+  if (!validarCbu(d)) return { error: "No es un CBU/CVU válido: revisá los números." };
+  return { ayuda: banco ? `Es de ${banco}.` : "Es válido. El banco no se reconoce: escribilo." };
+}
+
+function CuentasBancarias({ p, onCerrar }: { p: Procesador; onCerrar: () => void }) {
+  const toast = useToast();
+  const [lista, setLista] = useState<CuentaBancaria[]>(() =>
+    p.cuentasBancarias?.length ? p.cuentasBancarias.map(aBorrador) : [{ ...CUENTA_VACIA }]);
+  /* Los errores de lo incompleto aparecen recién al querer guardar. */
+  const [intento, setIntento] = useState(false);
+
+  const cambiar = (i: number, campo: keyof CuentaBancaria, valor: string) =>
+    setLista((xs) => xs.map((c, k) => (k === i ? { ...c, [campo]: valor } : c)));
+
+  const problemas = lista.map((c) => (vacia(c) ? {} : {
+    titular: c.titular.trim() ? undefined : "Falta el nombre del titular.",
+    cbu: estadoCbu(c.cbu, true).error,
+  }));
+
+  function guardar() {
+    setIntento(true);
+    if (problemas.some((x) => x.titular || x.cbu)) return;
+    const limpias = lista.filter((c) => !vacia(c)).map((c) => ({
+      titular: c.titular.trim(),
+      banco: c.banco.trim() || bancoDeCbu(c.cbu),
+      numero: c.numero.trim(),
+      alias: c.alias.trim(),
+      cbu: limpiarCbu(c.cbu),
+      cuit: c.cuit.trim(),
+    }));
+    acciones.actualizarSilencioso<Procesador>("procesadores", p.id, { cuentasBancarias: limpias });
+    toast(limpias.length ? `Cuentas bancarias de ${p.nombre} guardadas.` : `${p.nombre} quedó sin cuentas bancarias.`);
+    onCerrar();
+  }
+
+  return (
+    <ModalForm
+      abierto ancho onCerrar={onCerrar} onGuardar={guardar}
+      titulo={`Cuentas bancarias de ${p.nombre}`}
+      sub="Las cuentas a las que transfiere el cliente. Salen en la tabla de la derecha del reporte para la Financiera."
+    >
+      <div className="cuentas-bancarias">
+        {lista.map((c, i) => {
+          const cbu = estadoCbu(c.cbu, intento);
+          return (
+            <div className="cuenta-bancaria" key={i}>
+              <div className="cuenta-bancaria__cabeza">
+                <span className="hk-label">Cuenta {i + 1}</span>
+                <IconButton etiqueta={`Sacar la cuenta ${i + 1}`} onClick={() => setLista((xs) => xs.filter((_, k) => k !== i))}>
+                  <Trash2 size={15} />
+                </IconButton>
+              </div>
+              <div className="cuenta-bancaria__campos">
+                <Field label="Titular" error={intento ? problemas[i].titular : undefined}>
+                  <Input value={c.titular} onChange={(ev) => cambiar(i, "titular", ev.target.value)} placeholder="Nombre o razón social" />
+                </Field>
+                <Field label="CUIT">
+                  <Input value={c.cuit} onChange={(ev) => cambiar(i, "cuit", ev.target.value)} placeholder="30-12345678-9" inputMode="numeric" />
+                </Field>
+                <Field label="CBU/CVU" error={cbu.error} ayuda={cbu.ayuda}>
+                  <Input
+                    value={c.cbu} onChange={(ev) => cambiar(i, "cbu", ev.target.value)} error={Boolean(cbu.error)}
+                    placeholder="0000000000000000000000" inputMode="numeric" className="cuenta-bancaria__cbu"
+                  />
+                </Field>
+                <Field label="Banco" ayuda={c.banco.trim() || !bancoDeCbu(c.cbu) ? undefined : "Si lo dejás vacío va el del CBU."}>
+                  <Input value={c.banco} onChange={(ev) => cambiar(i, "banco", ev.target.value)} placeholder={bancoDeCbu(c.cbu) || "Banco"} />
+                </Field>
+                <Field label="Alias">
+                  <Input value={c.alias} onChange={(ev) => cambiar(i, "alias", ev.target.value)} placeholder="nombre.alias.banco" />
+                </Field>
+                <Field label="N° de cuenta">
+                  <Input value={c.numero} onChange={(ev) => cambiar(i, "numero", ev.target.value)} placeholder="Como figura en el banco" />
+                </Field>
+              </div>
+            </div>
+          );
+        })}
+        {lista.length === 0 && <p className="t-sm t-subtle">Sin cuentas bancarias: en el reporte, la tabla de la derecha sale sólo con los títulos.</p>}
+        <div>
+          <Button variante="secondary" icono={<Plus size={16} />} onClick={() => setLista((xs) => [...xs, { ...CUENTA_VACIA }])}>
+            Agregar cuenta bancaria
+          </Button>
+        </div>
+      </div>
+    </ModalForm>
   );
 }
 
