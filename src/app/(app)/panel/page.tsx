@@ -1,10 +1,11 @@
 "use client";
 
-import React, { useCallback, useMemo, useState } from "react";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import React, { useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { ArrowLeftRight, Clock, Download, ListChecks } from "lucide-react";
 import { Button, Card, Empty } from "@/components/ui/ui";
 import { DateRangePicker, diaDeNegocio, rangoStr, rangoSub } from "@/components/ui/DateRangePicker";
+import { CopiarLink } from "@/components/ui/Filtros";
 import { Desglose, type QueDesglosar } from "@/components/panel/Desglose";
 import { FiltroVista } from "@/components/panel/FiltroVista";
 import { FiltroSegmento } from "@/components/panel/FiltroSegmento";
@@ -14,6 +15,7 @@ import { AccionesTopbar } from "@/components/shell/AccionesTopbar";
 import { TablaKpis, variacionKpi, type FilaKpi } from "@/components/panel/TablaKpis";
 import { useEstado } from "@/lib/store";
 import { useRangoURL } from "@/lib/useRango";
+import { useParamsURL } from "@/lib/useParamsURL";
 import { rangoDeFechas, type RangoMes } from "@/lib/metricas";
 import {
   catalogo, conFiltro, conPrevios, Contexto, cortesPorDia, cortesPorMes, SECCIONES, valorEn, webinarsParaFiltro,
@@ -22,45 +24,49 @@ import {
 
 /* Las columnas son siempre tiempo. Qué parte del negocio se mira (un
    embudo, un webinar) es otro filtro, aparte: FiltroSegmento. */
-type Vista = "periodo" | "meses";
+type Columnas = "dia" | "mes";
 
-const VISTAS: { valor: Vista; texto: string; ayuda: string }[] = [
-  { valor: "periodo", texto: "Por día", ayuda: "Una columna por día del período y el total al final. Con más de 3 meses, una por mes." },
-  { valor: "meses", texto: "Por mes", ayuda: "Los 6 meses que terminan en el mes elegido y el total de los seis." },
+const COLUMNAS: { valor: Columnas; texto: string; ayuda: string }[] = [
+  { valor: "dia", texto: "Por día", ayuda: "Una columna por día del período y el total al final. Con más de 3 meses, una por mes." },
+  { valor: "mes", texto: "Por mes", ayuda: "Los 6 meses que terminan en el mes elegido y el total de los seis." },
 ];
+
+/* Todo lo que arma la vista va en la URL (ver lib/useParamsURL.ts), además
+   del período: se puede mandar el link a "cobranza del webinar del 13/09,
+   día por día" y el otro lo ve igual. Lo que no se escribe es lo de siempre.
+   - area: una de SECCIONES (lib/kpis.ts); sin ella, Todo
+   - columnas: dia · mes
+   - comparar: 1 para ver la variación contra el paso anterior
+   - embudo / webinar: el id; se usa uno u otro, nunca los dos
+   Qué métricas se ven y en qué orden NO va: es de cada uno (useFilasKpi).
+
+   Las columnas se llamaban ?vista, pero la ficha de una persona también
+   escribe ?vista (ventas o servicio): abrir una desde el Desglose pasaba la
+   tabla a "Por día", y al cerrarla se perdía "Por mes". Un link viejo con
+   ?vista=meses se sigue entendiendo. */
+const VISTA_PANEL = { area: "todo", columnas: "dia", comparar: "", embudo: "", webinar: "" };
 
 export default function DashboardKpis() {
   const e = useEstado();
   const params = useSearchParams();
-  const router = useRouter();
-  const pathname = usePathname();
   const mon = e.ajustes.monedaBase;
 
-  /* El período, las columnas, el filtro, el área y la comparación viven en
-     la URL, como en Finanzas: se puede mandar el link a "cobranza del
-     webinar del 13/09, día por día". */
   const [rango, setRango] = useRangoURL("mes");
-  const comparar = params.get("comparar") === "1";
-  const vista: Vista = (VISTAS.some((v) => v.valor === params.get("vista")) ? params.get("vista") : "periodo") as Vista;
-  const area = (SECCIONES.some((s) => s.id === params.get("area")) ? params.get("area") : "todo") as SeccionKpi | "todo";
-  const setParams = useCallback((cambios: Record<string, string | null | undefined>) => {
-    const q = new URLSearchParams(params.toString());
-    for (const [k, v] of Object.entries(cambios)) {
-      if (v) q.set(k, v); else q.delete(k);
-    }
-    router.replace(`${pathname}?${q.toString()}`, { scroll: false });
-  }, [params, pathname, router]);
-  const setParam = useCallback((k: string, v: string | null) => setParams({ [k]: v }), [setParams]);
+  const [vista, setVista] = useParamsURL(VISTA_PANEL);
+  const comparar = vista.comparar === "1";
+  const columnasViejas = !params.get("columnas") && params.get("vista") === "meses";
+  const columnas: Columnas = vista.columnas === "mes" || columnasViejas ? "mes" : "dia";
+  const area = (SECCIONES.some((s) => s.id === vista.area) ? vista.area : "todo") as SeccionKpi | "todo";
 
   /* Un filtro que apunta a algo que ya no existe se ignora. */
   const webinarsFiltro = useMemo(() => webinarsParaFiltro(e), [e]);
   const embudosFiltro = useMemo(() => [...e.embudos].filter((x) => x.activo).sort((a, b) => a.orden - b.orden), [e.embudos]);
   const filtro: FiltroKpi = useMemo(() => {
-    const w = params.get("webinar"), em = params.get("embudo");
+    const w = vista.webinar, em = vista.embudo;
     if (w && webinarsFiltro.some((x) => x.id === w)) return { webinarId: w };
     if (em && e.embudos.some((x) => x.id === em)) return { embudoId: em };
     return {};
-  }, [params, webinarsFiltro, e.embudos]);
+  }, [vista.webinar, vista.embudo, webinarsFiltro, e.embudos]);
 
   const [desglose, setDesglose] = useState<{ que: QueDesglosar; mes: RangoMes } | null>(null);
 
@@ -77,10 +83,10 @@ export default function DashboardKpis() {
      aparte: cada columna se mide contra su paso anterior, con el mismo
      filtro (ver conPrevios). */
   const cortes: Corte[] = useMemo(() => {
-    const tiempo = vista === "meses" ? cortesPorMes(rango.hasta) : cortesPorDia(rango.desde, rango.hasta, rangoSub(rango));
+    const tiempo = columnas === "mes" ? cortesPorMes(rango.hasta) : cortesPorDia(rango.desde, rango.hasta, rangoSub(rango));
     const filtradas = conFiltro(tiempo, filtro);
     return comparar ? conPrevios(filtradas) : filtradas;
-  }, [rango, vista, filtro, comparar]);
+  }, [rango, columnas, filtro, comparar]);
 
   /* Cada celda, calculada una vez. Una fila sin ningún dato no se muestra:
      filtrando un webinar, el P&L o el gasto de Meta no existen (no tienen
@@ -121,7 +127,7 @@ export default function DashboardKpis() {
   };
 
   const areas: { id: SeccionKpi | "todo"; titulo: string }[] = [{ id: "todo", titulo: "Todo" }, ...SECCIONES];
-  const elegirArea = (id: SeccionKpi | "todo") => setParam("area", id === "todo" ? null : id);
+  const elegirArea = (id: SeccionKpi | "todo") => setVista({ area: id });
 
   return (
     <div className="stack-4">
@@ -153,16 +159,19 @@ export default function DashboardKpis() {
         <div className="kpis-barra">
           <button
             type="button" className={`dp-pill kpis-comparar${comparar ? " kpis-comparar--on" : ""}`}
-            aria-pressed={comparar} onClick={() => setParam("comparar", comparar ? null : "1")}
+            aria-pressed={comparar} onClick={() => setVista({ comparar: comparar ? null : "1" })}
             title="Debajo de cada número, cuánto cambió contra el paso anterior: el período anterior, el mes anterior o el webinar anterior"
           >
             <ArrowLeftRight size={14} />
             Comparar períodos
           </button>
-          <FiltroVista valor={vista} opciones={VISTAS} onCambiar={(v) => setParam("vista", v === "periodo" ? null : v)} />
+          <FiltroVista
+            valor={columnas} opciones={COLUMNAS}
+            onCambiar={(v) => setVista({ columnas: v }, columnasViejas ? { vista: null } : undefined)}
+          />
           <FiltroSegmento
             filtro={filtro} embudos={embudosFiltro} webinars={webinarsFiltro}
-            onCambiar={(f) => setParams({ embudo: f.embudoId, webinar: f.webinarId })}
+            onCambiar={(f) => setVista({ embudo: f.embudoId ?? null, webinar: f.webinarId ?? null })}
           />
           <DateRangePicker value={rango} minDate={minimo} onApply={setRango} footerNota="Días calendario · zona horaria de Argentina" />
         </div>
@@ -175,6 +184,7 @@ export default function DashboardKpis() {
           todas={opcionesFilas} visibles={filas.map((f) => f.def.id)}
           alternar={config.alternar} mover={config.mover} restaurar={config.restaurar}
         />
+        <CopiarLink />
         <Button sm variante="secondary" icono={<Download size={16} />} onClick={() => exportar(filas, cortes, comparar, rangoStr(rango))}>
           Exportar
         </Button>
@@ -191,7 +201,7 @@ export default function DashboardKpis() {
           />
         ) : (
           <TablaKpis
-            filas={filas} cortes={cortes} comparar={comparar} moneda={mon} porDia={vista === "periodo"}
+            filas={filas} cortes={cortes} comparar={comparar} moneda={mon} porDia={columnas === "dia"}
             conSecciones={area === "todo"} onAbrir={abrir}
           />
         )}
