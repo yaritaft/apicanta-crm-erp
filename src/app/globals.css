@@ -2159,7 +2159,8 @@ span.kpis__etiqueta:hover { color: var(--ink); text-decoration: none; }
 
 .liq-cabecera { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); flex-wrap: wrap; }
 .liq-mes { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; min-width: 0; }
-.liq-mes__nombre { margin: 0 var(--space-1); }
+.liq-mes__nav { display: flex; align-items: center; gap: var(--space-1); min-width: 0; }
+.liq-mes__nombre { margin: 0 var(--space-1); min-width: 0; }
 
 /* Persona y monto; debajo, cada renglón de lo que cobra. El monto tiene
    ancho fijo para que las cifras queden alineadas, como en Finanzas. */
@@ -2205,7 +2206,8 @@ span.kpis__etiqueta:hover { color: var(--ink); text-decoration: none; }
 }
 .liq__fila--linea .liq__monto { font-size: 13px; font-weight: 500; color: var(--ink-muted); }
 .liq__nota { padding: var(--space-2) 0 var(--space-2) var(--liq-sangria); font-size: 13px; line-height: 20px; color: var(--ink-subtle); }
-.liq__nota--aviso { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; color: var(--warning); }
+.liq__nota--aviso { display: flex; align-items: flex-start; gap: 6px; color: var(--warning); }
+.liq__nota--aviso > svg { flex: none; margin-top: 3px; }
 .liq__acciones { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; padding: var(--space-2) 0 var(--space-3) calc(var(--liq-sangria) - 8px); }
 .liq__pagado { gap: 10px; margin-left: auto; }
 .liq__form { display: flex; align-items: flex-end; gap: var(--space-3); flex-wrap: wrap; padding: var(--space-3) 0 var(--space-3) var(--liq-sangria); }
@@ -2248,6 +2250,7 @@ span.kpis__etiqueta:hover { color: var(--ink); text-decoration: none; }
 }
 
 @media (max-width: 720px) {
+  .liq-mes__nombre { font-size: 18px; line-height: 24px; }
   .liq { --liq-col: 112px; --liq-sangria: 12px; }
   .liq__fila { padding: 0 var(--space-4); column-gap: var(--space-2); }
   .liq__concepto--linea { flex-direction: column; align-items: flex-start; }

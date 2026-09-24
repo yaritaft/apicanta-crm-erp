@@ -53,12 +53,14 @@ export function ListaEquipo({ accesos, onVer }: { accesos: Accesos; onVer: (id: 
     { clave: "rol", titulo: "En ventas", orden: (f) => textoRol(f.rol), celda: (f) => (f.rol === "otro" ? <span className="t-subtle">—</span> : textoRol(f.rol)) },
     {
       clave: "cobra", titulo: "Qué cobra", orden: (f) => f.cobra,
-      celda: (f) => (
-        <span className="row" style={{ gap: 8 }}>
-          <span className={f.cobra === "Sin cargar" ? "t-subtle" : undefined}>{f.cobra}</span>
-          {f.aDefinir && <Badge variante="warning">A definir</Badge>}
-        </span>
-      ),
+      celda: (f) => (f.cobra === "A definir"
+        ? <Badge variante="warning">A definir</Badge>
+        : (
+          <span className="row" style={{ gap: 8 }}>
+            <span className={f.cobra === "Sin cargar" ? "t-subtle" : undefined}>{f.cobra}</span>
+            {f.aDefinir && <Badge variante="warning">A definir</Badge>}
+          </span>
+        )),
     },
     {
       clave: "acceso", titulo: "Acceso a la app",

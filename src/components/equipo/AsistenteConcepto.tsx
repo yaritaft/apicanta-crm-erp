@@ -152,8 +152,9 @@ function validar(paso: PasoId, b: Borrador): string | null {
       if (b.base === "manual" && !b.unidad.trim()) return "Escribí qué se cuenta";
       return null;
     case "tasa": {
+      /* 0% vale: es la forma de decir que alguien que vende ya no comisiona. */
       const t = leerMonto(b.tasa);
-      return t > 0 && t <= 100 ? null : "Escribí un porcentaje entre 0 y 100";
+      return t >= 0 && t <= 100 ? null : "Escribí un porcentaje entre 0 y 100";
     }
     case "tramo":
       if (!(leerMonto(b.cada) > 0)) return "Escribí cada cuánto";
@@ -236,7 +237,8 @@ function PasoTipo({ b, set, miembro, editando }: { b: Borrador; set: Poner; miem
           <Opcion
             key={t.tipo} tecla={String(k + 1)} nombre={t.nombre} sub={t.sub}
             activo={b.tipo === t.tipo}
-            onClick={() => set({ tipo: t.tipo, ...(t.tipo === "tramo" && b.base === "profit" ? { base: "cash-neto" } : {}) })}
+            /* Un porcentaje es de plata: si venía de un tramo de llamadas, vuelve al cash. */
+            onClick={() => set({ tipo: t.tipo, ...(t.tipo === "porcentaje" && !infoBase(b.base).plata ? { base: "cash-neto" } : {}) })}
           />
         ))}
       </div>
@@ -542,11 +544,12 @@ function PasoResumen({ b, set, e, final, editando, pasos, irA, miembro }: {
         </div>
         <div className="hk-field">
           <label className="hk-label">Desde (opcional)</label>
-          <Input type="date" value={b.desde} onChange={(ev) => set({ desde: ev.target.value })} aria-label="Desde" />
+          {/* required={false}: son opcionales, así el calendario ofrece "Borrar". */}
+          <Input type="date" value={b.desde} onChange={(ev) => set({ desde: ev.target.value })} aria-label="Desde" required={false} />
         </div>
         <div className="hk-field">
           <label className="hk-label">Hasta (opcional)</label>
-          <Input type="date" value={b.hasta} onChange={(ev) => set({ hasta: ev.target.value })} aria-label="Hasta" />
+          <Input type="date" value={b.hasta} onChange={(ev) => set({ hasta: ev.target.value })} aria-label="Hasta" required={false} />
           <span className="hk-help">Un fijo que empieza o termina a mitad de mes se prorratea por días.</span>
         </div>
         <div className="hk-field span-2">

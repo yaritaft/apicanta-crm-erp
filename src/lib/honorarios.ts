@@ -227,15 +227,32 @@ export function decimalesTasa(t?: number): number {
   return Number.isInteger(x) ? 0 : Number.isInteger(Math.round(x * 1e3) / 1e2) ? 1 : 2;
 }
 
-/** Lo que cobra alguien, en una línea: "US$ 1.700 fijo + 2 variables". */
+const PORCENTAJE_CORTO: Partial<Record<BaseMedicion, string>> = {
+  "cash": "del cash", "cash-neto": "del cash post pasarelas", "facturado": "de lo facturado", "profit": "del profit",
+};
+const TRAMOS_DE: Record<BaseMedicion, string> = {
+  "cash": "cash", "cash-neto": "cash", "facturado": "facturación", "profit": "profit",
+  "ventas": "ventas", "llamadas": "llamadas", "llamadas-hechas": "llamadas", "manual": "cantidad",
+};
+
+/** Lo que cobra alguien, en una línea: "US$ 1.700 fijo + bono + tramos de
+ *  cash", "15% del cash post pasarelas", "5 tarifas por pieza". */
 export function resumenEsquema(esq: EsquemaPago | undefined): string {
   if (!esq || esq.conceptos.length === 0) return esq?.pendiente?.trim() ? "A definir" : "Sin cargar";
-  const fijos = esq.conceptos.filter((c) => c.tipo === "fijo");
-  const variables = esq.conceptos.length - fijos.length;
   const porMoneda = new Map<Moneda, number>();
-  for (const c of fijos) porMoneda.set(c.moneda, (porMoneda.get(c.moneda) ?? 0) + (c.monto ?? 0));
+  for (const c of esq.conceptos) {
+    if (c.tipo === "fijo") porMoneda.set(c.moneda, (porMoneda.get(c.moneda) ?? 0) + (c.monto ?? 0));
+  }
   const partes = [...porMoneda.entries()].map(([m, n]) => `${plata(n, m)} fijo`);
-  if (variables) partes.push(variables === 1 ? "1 variable" : `${variables} variables`);
+  const bonos = esq.conceptos.filter((c) => c.tipo === "bono").length;
+  if (bonos) partes.push(bonos === 1 ? "bono" : `${bonos} bonos`);
+  for (const c of esq.conceptos) {
+    if (c.tipo === "porcentaje") partes.push(`${pct((c.tasa ?? 0) * 100, decimalesTasa(c.tasa))} ${PORCENTAJE_CORTO[c.base ?? "cash"] ?? ""}`.trim());
+  }
+  const tramos = [...new Set(esq.conceptos.filter((c) => c.tipo === "tramo").map((c) => TRAMOS_DE[c.base ?? "manual"]))];
+  if (tramos.length) partes.push(`tramos de ${tramos.join(" y ")}`);
+  const piezas = esq.conceptos.filter((c) => c.tipo === "unidad").length;
+  if (piezas) partes.push(piezas === 1 ? "1 tarifa por pieza" : `${piezas} tarifas por pieza`);
   return partes.join(" + ");
 }
 
@@ -510,6 +527,8 @@ function linea(
     clave: c.id, conceptoId: c.id, tipo: c.tipo, nombre: c.nombre, detalle, moneda: c.moneda,
     monto, montoBase: r2(aMonedaBase(monto, c.moneda, cx.base, cx.tc)),
     variable: c.tipo !== "fijo", medido, enFinanzas: calculaFinanzas(m, c), falta, corregido,
+    ...(c.tipo === "porcentaje" || c.tipo === "tramo" ? { base: c.base ?? "manual" } : {}),
+    ...(c.tipo === "unidad" || c.base === "manual" ? { unidad: c.unidad?.trim() || undefined } : {}),
   };
 }
 
@@ -527,12 +546,30 @@ function lineaExtra(cx: Contexto, x: ExtraLiquidacion): LineaLiquidada {
 
 /** Quiénes entran en la liquidación: los activos con algo cargado, y los
  *  activos sin nada cargado (salvo el CEO), para que nadie quede afuera
- *  sin que se note. */
+ *  sin que se note. Los que ya no están entran sólo si Finanzas les calcula
+ *  comisión en el mes (ver comisionDeFinanzas). */
 export function miembrosALiquidar(e: EstadoApp): MiembroEquipo[] {
-  const conEsquema = new Set(e.honorarios.map((h) => h.miembroId));
+  const conEsquema = new Set(e.honorarios.filter((h) => h.conceptos.length > 0).map((h) => h.miembroId));
+  const conAlgo = new Set(e.honorarios.map((h) => h.miembroId));
   return e.equipo
-    .filter((m) => m.activo && (conEsquema.has(m.id) || m.rol !== "ceo"))
+    .filter((m) => (m.activo && (conAlgo.has(m.id) || m.rol !== "ceo")) || (!m.activo && !conEsquema.has(m.id) && tasaImplicita(m) > 0))
     .sort((a, b) => a.nombre.localeCompare(b.nombre, "es"));
+}
+
+/* Quien vende y no tiene nada cargado en lo que cobra igual le cuesta
+   comisión a Finanzas, que la calcula con equipo.comisionRate. Para que la
+   liquidación no diga menos que Finanzas, ese renglón sale igual, con esa
+   tasa y avisado. */
+const tasaImplicita = (m: MiembroEquipo) =>
+  (m.rol === "closer" || m.rol === "director") && !m.sinComision ? m.comisionRate : 0;
+
+export const ID_COMISION_DE_FINANZAS = "finanzas";
+
+function comisionDeFinanzas(m: MiembroEquipo): ConceptoPago {
+  return {
+    id: ID_COMISION_DE_FINANZAS, tipo: "porcentaje", nombre: "Comisión", moneda: "USD",
+    tasa: m.comisionRate, base: "cash-neto", alcance: m.rol === "director" ? "director" : "closer",
+  };
 }
 
 /** La liquidación del mes, calculada con los datos de hoy. Una liquidación
@@ -555,15 +592,18 @@ export function calcularLiquidacion(e: EstadoApp, periodo: string, liq?: Liquida
     const esq = esquemaDe.get(m.id);
     const sinCargar = !esq || esq.conceptos.length === 0;
     const pendiente = esq?.pendiente?.trim() || undefined;
+    /* Sin nada cargado, lo que le calcula Finanzas: su comisión con la tasa de siempre. */
+    const conceptos = sinCargar && tasaImplicita(m) > 0 ? [comisionDeFinanzas(m)] : esq?.conceptos ?? [];
     const fila: Fila = {
       m, lineas: [],
       persona: {
         miembroId: m.id, nombre: m.nombre, puesto: m.puesto?.trim() || undefined,
         categoriaGasto: esq?.categoriaGasto?.trim() || categoriaPorDefecto(m),
-        lineas: [], aPagar: {}, total: 0, fijo: 0, variable: 0, pendiente, ...(sinCargar ? { sinCargar } : {}),
+        lineas: [], aPagar: {}, total: 0, fijo: 0, variable: 0, pendiente,
+        ...(sinCargar ? { sinCargar } : {}), ...(!m.activo ? { inactivo: true } : {}),
       },
     };
-    for (const c of esq?.conceptos ?? []) {
+    for (const c of conceptos) {
       if (c.base === "profit" && (c.tipo === "porcentaje" || c.tipo === "tramo") && entradas[claveEntrada(m.id, c.id)]?.cantidad === undefined) {
         delProfit.push({ fila, i: fila.lineas.length, c });
         fila.lineas.push(null);
@@ -593,13 +633,16 @@ export function calcularLiquidacion(e: EstadoApp, periodo: string, liq?: Liquida
   }
 
   const personas = filas.map(({ persona, lineas }) => {
-    const ls = lineas.filter((l): l is LineaLiquidada => l !== null);
+    const ls = lineas.filter((l): l is LineaLiquidada => l !== null)
+      .map((l) => (l.conceptoId === ID_COMISION_DE_FINANZAS && !l.corregido
+        ? { ...l, detalle: `${l.detalle} · con la tasa que usa Finanzas: no tiene cargado lo que cobra` }
+        : l));
     const aPagar: Partial<Record<Moneda, number>> = {};
     for (const l of ls) aPagar[l.moneda] = r2((aPagar[l.moneda] ?? 0) + l.monto);
     const fijo = r2(ls.filter((l) => !l.variable).reduce((a, l) => a + l.montoBase, 0));
     const variable = r2(ls.filter((l) => l.variable).reduce((a, l) => a + l.montoBase, 0));
     return { ...persona, lineas: ls, aPagar, fijo, variable, total: r2(fijo + variable) };
-  });
+  }).filter((p) => !p.inactivo || Math.abs(p.total) >= 0.005 || p.lineas.some((l) => l.corregido));
 
   const aPagar: Partial<Record<Moneda, number>> = {};
   for (const p of personas) {
@@ -618,7 +661,7 @@ export function calcularLiquidacion(e: EstadoApp, periodo: string, liq?: Liquida
  *  definir y lo que se paga en pesos sin tipo de cambio. */
 export function faltantes(r: ResultadoLiquidacion) {
   const lineas = r.personas.flatMap((p) => p.lineas.filter((l) => l.falta).map((l) => ({ persona: p, linea: l })));
-  const pendientes = r.personas.filter((p) => p.pendiente || p.sinCargar);
+  const pendientes = r.personas.filter((p) => !p.inactivo && (p.pendiente || p.sinCargar));
   const sinCambio = !(r.tipoCambio > 0) && r.personas.some((p) => p.lineas.some((l) => l.moneda !== "USD" && l.monto !== 0));
   return { lineas, pendientes, sinCambio };
 }

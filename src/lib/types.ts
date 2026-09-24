@@ -908,6 +908,10 @@ export interface LineaLiquidada {
   /* El monto en la moneda base, con el tipo de cambio de la liquidación. */
   montoBase: number;
   variable: boolean;
+  /* Sobre qué se midió y la pieza que se cuenta: con esto la pantalla sabe
+     qué se carga en el renglón (cuántas piezas, cuántas llamadas). */
+  base?: BaseMedicion;
+  unidad?: string;
   /* Lo medido (cash, llamadas, piezas), si hay. */
   medido?: number;
   /* Las comisiones de closers y del director y el reparto del profit:
@@ -933,8 +937,12 @@ export interface PersonaLiquidada {
   variable: number;
   /* Lo que falta definir de su arreglo (el aviso del esquema). */
   pendiente?: string;
-  /* No tiene nada cargado en lo que cobra: no se le liquida nada. */
+  /* No tiene nada cargado en lo que cobra: no se le liquida nada (salvo la
+     comisión que Finanzas le calcula con su tasa, si vende). */
   sinCargar?: boolean;
+  /* Ya no está en el equipo, pero Finanzas le calcula comisión por cuotas de
+     ventas suyas que entraron en el mes. */
+  inactivo?: boolean;
 }
 
 export interface ResultadoLiquidacion {

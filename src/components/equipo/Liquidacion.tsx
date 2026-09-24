@@ -21,7 +21,7 @@ import {
   idLiquidacion, infoBase, liquidacionCsv, moverPeriodo, nombrePeriodo, periodoDe, plata, textoParaEnviar,
 } from "@/lib/honorarios";
 import type {
-  ConceptoPago, EntradaLiquidacion, EstadoApp, LineaLiquidada, Liquidacion, Moneda, PersonaLiquidada, ResultadoLiquidacion,
+  EntradaLiquidacion, EstadoApp, LineaLiquidada, Liquidacion, Moneda, PersonaLiquidada, ResultadoLiquidacion,
 } from "@/lib/types";
 
 /* ==================================================================
@@ -110,7 +110,10 @@ export function LiquidacionMes({ onVerPersona }: { onVerPersona: (miembroId: str
   };
 
   const pagados = r.personas.filter((x) => liq.pagos[x.miembroId]).length;
+  /* Alguien cobra en pesos: hace falta el tipo de cambio. Y si ya hay pesos
+     para transferir, el total se dice en las dos monedas. */
   const hayPesos = r.personas.some((x) => x.lineas.some((l) => l.moneda !== "USD"));
+  const pagaPesos = Math.abs(r.aPagar.ARS ?? 0) >= 0.005;
   const base = e.ajustes.monedaBase;
 
   function exportar() {
@@ -132,9 +135,11 @@ export function LiquidacionMes({ onVerPersona }: { onVerPersona: (miembroId: str
     <div className="stack-4">
       <div className="liq-cabecera">
         <div className="liq-mes">
-          <IconButton etiqueta="Mes anterior" onClick={() => cambiar({ mes: moverPeriodo(periodo, -1) })}><ChevronLeft size={18} /></IconButton>
-          <h2 className="t-h2 liq-mes__nombre">Liquidación de {nombrePeriodo(periodo)}</h2>
-          <IconButton etiqueta="Mes siguiente" onClick={() => cambiar({ mes: moverPeriodo(periodo, 1) })}><ChevronRight size={18} /></IconButton>
+          <div className="liq-mes__nav">
+            <IconButton etiqueta="Mes anterior" onClick={() => cambiar({ mes: moverPeriodo(periodo, -1) })}><ChevronLeft size={18} /></IconButton>
+            <h2 className="t-h2 liq-mes__nombre">Liquidación de {nombrePeriodo(periodo)}</h2>
+            <IconButton etiqueta="Mes siguiente" onClick={() => cambiar({ mes: moverPeriodo(periodo, 1) })}><ChevronRight size={18} /></IconButton>
+          </div>
           {estado}
           {periodo !== hoyPeriodo() && (
             <button type="button" className="link t-sm" onClick={() => cambiar({ mes: null })}>Ir a este mes</button>
@@ -155,7 +160,7 @@ export function LiquidacionMes({ onVerPersona }: { onVerPersona: (miembroId: str
       )}
 
       <div className="grid-stats">
-        <StatCard hero etiqueta="A pagar" valor={plata(r.total, base)} contexto={hayPesos ? aPagarTexto(r.aPagar) : `${r.personas.length} personas`} />
+        <StatCard hero etiqueta="A pagar" valor={plata(r.total, base)} contexto={pagaPesos ? aPagarTexto(r.aPagar) : `${r.personas.length} personas`} />
         <StatCard etiqueta="Fijo" valor={plata(r.fijo, base)} contexto="Sueldos y abonos" />
         <StatCard etiqueta="Variable" valor={plata(r.variable, base)} contexto="Comisiones, bonos y piezas" />
         {cerrada
@@ -207,7 +212,7 @@ export function LiquidacionMes({ onVerPersona }: { onVerPersona: (miembroId: str
           <div className="liq" role="table" aria-label={`Liquidación de ${nombrePeriodo(periodo)}`}>
             {r.personas.map((persona) => (
               <FilaPersona
-                key={persona.miembroId} persona={persona} e={e} liq={liq} cerrada={cerrada} periodo={periodo}
+                key={persona.miembroId} persona={persona} liq={liq} cerrada={cerrada}
                 abierta={abiertos.has(persona.miembroId)} onAlternar={() => alternar(persona.miembroId)}
                 onEntrada={(conceptoId, cambio) => guardarEntrada(persona.miembroId, conceptoId, cambio)}
                 onExtras={(extras) => guardar({ extras })}
@@ -334,9 +339,9 @@ function CampoNumero({ valor, onCambiar, etiqueta, placeholder, autoFocus }: {
 /* ---------- Una persona ---------- */
 
 function FilaPersona({
-  persona, e, liq, cerrada, periodo, abierta, onAlternar, onEntrada, onExtras, onPagado, onVerPersona, onCopiar,
+  persona, liq, cerrada, abierta, onAlternar, onEntrada, onExtras, onPagado, onVerPersona, onCopiar,
 }: {
-  persona: PersonaLiquidada; e: EstadoApp; liq: Liquidacion; cerrada: boolean; periodo: string;
+  persona: PersonaLiquidada; liq: Liquidacion; cerrada: boolean;
   abierta: boolean; onAlternar: () => void;
   onEntrada: (conceptoId: string, cambio: Partial<EntradaLiquidacion> | null) => void;
   onExtras: (extras: Liquidacion["extras"]) => void;
@@ -344,7 +349,6 @@ function FilaPersona({
 }) {
   const faltan = persona.lineas.filter((l) => l.falta).length;
   const pago = liq.pagos[persona.miembroId];
-  const esquema = e.honorarios.find((h) => h.miembroId === persona.miembroId);
   const [agregando, setAgregando] = useState(false);
 
   return (
@@ -359,9 +363,10 @@ function FilaPersona({
             </span>
           </button>
           <span className="liq__marcas">
+            {persona.inactivo && <Badge variante="neutral">Ya no está</Badge>}
             {persona.pendiente
               ? <Badge variante="warning">A definir</Badge>
-              : persona.sinCargar && <Badge variante="neutral">Sin cargar</Badge>}
+              : persona.sinCargar && !persona.inactivo && <Badge variante="neutral">Sin cargar</Badge>}
             {!cerrada && faltan > 0 && <Badge variante="accent">Falta cargar {faltan}</Badge>}
             {cerrada && (pago ? <Badge variante="success" icono={<Check size={12} />}>Pagado</Badge> : <Badge variante="neutral">Por pagar</Badge>)}
           </span>
@@ -374,8 +379,15 @@ function FilaPersona({
           {(persona.pendiente || persona.sinCargar) && (
             <div role="row" className="liq__fila liq__fila--nota">
               <div role="cell" className="liq__nota liq__nota--aviso">
-                <AlertTriangle size={14} /> {persona.pendiente ?? "Todavía no tiene cargado lo que cobra: no se le liquida nada."}
+                <AlertTriangle size={14} />
+                <span>
+                {persona.inactivo
+                  ? "Ya no está en el equipo, pero este mes entraron cuotas de ventas suyas y Finanzas le cuenta la comisión. Si no le corresponde, corregila a cero acá y en su ficha cargale una comisión de 0%."
+                  : persona.pendiente ?? (persona.lineas.length
+                    ? "No tiene cargado lo que cobra: su comisión sale con la tasa que usa Finanzas."
+                    : "Todavía no tiene cargado lo que cobra: no se le liquida nada.")}
                 {" "}<button type="button" className="link" onClick={onVerPersona}>{persona.sinCargar ? "Cargar lo que cobra" : "Ver lo que cobra"}</button>
+                </span>
               </div>
             </div>
           )}
@@ -387,7 +399,6 @@ function FilaPersona({
           {persona.lineas.map((l) => (
             <Linea
               key={l.clave} l={l} cerrada={cerrada} entrada={l.conceptoId ? liq.entradas[claveEntrada(persona.miembroId, l.conceptoId)] : undefined}
-              concepto={esquema?.conceptos.find((c) => c.id === l.conceptoId)}
               onEntrada={(cambio) => l.conceptoId && onEntrada(l.conceptoId, cambio)}
               onBorrarExtra={() => onExtras(liq.extras.filter((x) => `extra:${x.id}` !== l.clave))}
             />
@@ -421,14 +432,13 @@ function FilaPersona({
 
 /* ---------- Un renglón ---------- */
 
-function Linea({ l, cerrada, entrada, concepto, onEntrada, onBorrarExtra }: {
+function Linea({ l, cerrada, entrada, onEntrada, onBorrarExtra }: {
   l: LineaLiquidada; cerrada: boolean; entrada?: EntradaLiquidacion;
-  concepto?: ConceptoPago;
   onEntrada: (cambio: Partial<EntradaLiquidacion> | null) => void;
   onBorrarExtra: () => void;
 }) {
   const [corrigiendo, setCorrigiendo] = useState(false);
-  const base = infoBase(concepto?.base);
+  const base = infoBase(l.base);
   /* Lo que se carga en el renglón mismo: cuántas piezas, o cuántas ventas o
      llamadas si lo contado por la app no es lo real. */
   const cuentaPiezas = l.tipo === "unidad";
@@ -461,7 +471,7 @@ function Linea({ l, cerrada, entrada, concepto, onEntrada, onBorrarExtra }: {
                     placeholder={cuentaPiezas ? "¿Cuántas?" : l.medido !== undefined ? num(l.medido) : "0"}
                     onCambiar={(n) => onEntrada({ cantidad: n })}
                   />
-                  <span className="t-sm t-subtle">{cuentaPiezas ? concepto?.unidad || "piezas" : "cantidad"}</span>
+                  <span className="t-sm t-subtle">{cuentaPiezas ? l.unidad || "piezas" : l.base === "manual" ? l.unidad || "cantidad" : infoBase(l.base).nombre.toLowerCase()}</span>
                 </span>
               )}
               {l.tipo === "extra" ? (
