@@ -65,10 +65,11 @@ export function AgendasWebinar({ w, className }: { w: Webinar; className?: strin
                         <Badge variante={e.variante}>{e.texto}</Badge>
                       </span>
                       <span className="wb-agenda__badges">
-                        {/* De qué embudo y por qué link vino: el link viejo, en amarillo. */}
+                        {/* Por qué link vino (el embudo ya se sabe: es este webinar). El
+                            link viejo, en amarillo; los UTMs al pasar el mouse. */}
                         <span title={a.utm || "Sin UTMs"}>
                           <Badge variante={a.link === "viejo" ? "warning" : "neutral"}>
-                            {a.embudo}{a.link ? ` · ${a.link === "viejo" ? "link viejo" : a.link}` : ""}
+                            {a.link === "viejo" ? "Link viejo" : a.link ?? "Sin link"}
                           </Badge>
                         </span>
                         {a.por === "manual" && <Badge variante="brand">Corregida{a.corregidoPor ? ` por ${a.corregidoPor}` : ""}</Badge>}
