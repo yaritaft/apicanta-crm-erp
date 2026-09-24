@@ -1896,6 +1896,17 @@ a.wb-canal:hover { background: var(--surface-200); border-color: var(--border-st
   border: 0; background: none; padding: 0 var(--space-2);
   font-size: 11px; line-height: 14px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-subtle);
 }
+/* Con la lista cortada (.lista-scroll), los títulos quedan pegados arriba y
+   opacos, como el thead de las tablas: si no, las filas pasan por atrás y se
+   lee todo encimado. El fondo baja hasta la primera fila (el margen negativo
+   lo descuenta, así quieta no se mueve nada) para que una fila a medio pasar
+   no asome pegada a los títulos. El scroll-padding deja a la vista, debajo
+   de ellos, la fila a la que se llega con el teclado. */
+.lista-scroll > .catalogo-fila--cabeza {
+  position: sticky; top: 0; z-index: 1; background: var(--surface-100);
+  padding-bottom: var(--space-2); margin-bottom: calc(var(--space-2) * -1);
+}
+.lista-scroll:has(> .catalogo-fila--cabeza) { scroll-padding-top: 24px; }
 /* Las seis columnas de una cuenta no entran al lado del menú: dos renglones de tres. */
 @media (max-width: 1240px) {
   .catalogo-fila--cuenta { grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr); }

@@ -125,7 +125,8 @@ export function ConfigUtms() {
           <Empty icono={<Link2 size={22} />} titulo="Todavía no hay UTMs asignadas"
             texto="Agregá la del webinar o asigná abajo las que ya llegaron." />
         ) : (
-          <div className="catalogo-lista">
+          /* Una regla por webinar: se juntan de a decenas, con scroll. */
+          <div className="catalogo-lista lista-scroll">
             {reglas.map((r) => (
               <div className="utm-regla" key={r.id}>
                 <div className="utm-regla__utm">
@@ -174,7 +175,8 @@ export function ConfigUtms() {
         {sinAsignar.length === 0 ? (
           <p className="t-sm t-subtle">Todas las UTMs que llegaron ya tienen de qué son.</p>
         ) : (
-          <div className="catalogo-lista">
+          /* Crece con cada link nuevo que llega: con scroll adentro. */
+          <div className="catalogo-lista lista-scroll">
             {sinAsignar.map((d) => {
               const w = d.sugerida?.webinarId ? e.webinars.find((x) => x.id === d.sugerida!.webinarId) : undefined;
               return (
