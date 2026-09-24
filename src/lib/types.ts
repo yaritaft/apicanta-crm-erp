@@ -531,6 +531,10 @@ export interface EstadoApp {
   gastos: Gasto[];
   movimientos: Movimiento[];
   comentarios: Comentario[];
+  /* Lo que cobra cada uno y las liquidaciones. Sólo las leen los dueños:
+     para el resto del equipo llegan vacías. */
+  honorarios: EsquemaPago[];
+  liquidaciones: Liquidacion[];
 }
 
 /* ==================================================================
@@ -639,7 +643,10 @@ export interface Embudo {
   esWebinar?: boolean;
 }
 
-export type RolEquipo = "closer" | "director" | "growth" | "socio" | "ceo" | "setter";
+/* El rol en las ventas: dice en qué lista aparece cada uno (vendedor,
+   setter, director) y quién entra al reparto del profit. "otro" es el que
+   no vende: operaciones, contenido, edición. */
+export type RolEquipo = "closer" | "director" | "growth" | "socio" | "ceo" | "setter" | "otro";
 
 export interface MiembroEquipo {
   id: ID;
@@ -654,6 +661,9 @@ export interface MiembroEquipo {
   /* El email con el que entra a la app: así se sabe quién está usándola
      (el closer que carga una venta queda elegido solo). */
   email?: string;
+  /* Lo que hace, como se dice en el equipo: COO, Trafficker, Customer
+     Success Manager. El rol de arriba es sólo para las ventas. */
+  puesto?: string;
 }
 
 export type EstadoVenta = "activa" | "cancelada" | "reembolsada";
@@ -780,4 +790,189 @@ export interface Gasto {
   notas?: string;
   creadoEn: string;
   extra: Record<string, unknown>;
+}
+
+/* ==================================================================
+   Honorarios del equipo: lo que cobra cada persona y la liquidación de
+   cada mes. Viven en `honorarios` y `liquidaciones`, dos tablas que sólo
+   leen y escriben los dueños (RLS con es_dueno()): el resto del equipo
+   no las ve ni pidiéndolas por la API.
+   ================================================================== */
+
+/* Cómo se arma una parte de lo que cobra alguien. */
+export type TipoConcepto =
+  | "fijo"        // un monto por mes: sueldo, abono, honorario
+  | "bono"        // un monto que se decide al liquidar: se ganó o no
+  | "porcentaje"  // un % de algo que se mide
+  | "tramo"       // un monto por cada X de algo que se mide
+  | "unidad";     // una tarifa por pieza; cuántas, se carga al liquidar
+
+/* Sobre qué se mide un variable. */
+export type BaseMedicion =
+  | "cash"             // Cash collected: todo lo que entró
+  | "cash-neto"        // Cash collected post pasarelas: menos la comisión del procesador
+  | "facturado"        // El valor total de las ventas cerradas en el mes
+  | "profit"           // El resultado operativo sobre lo cobrado
+  | "ventas"           // Cuántas ventas se cerraron
+  | "llamadas"         // Llamadas agendadas (Agenda)
+  | "llamadas-hechas"  // Llamadas que se hicieron
+  | "manual";          // Una cantidad que se carga al liquidar
+
+/* De qué ventas sale lo medido, cuando sale de las ventas. */
+export type AlcanceVentas = "todas" | "closer" | "setter" | "director";
+
+export interface ConceptoPago {
+  id: ID;
+  tipo: TipoConcepto;
+  nombre: string;
+  moneda: Moneda;
+  /* fijo, bono y tramo: el monto. unidad: la tarifa por pieza. */
+  monto?: number;
+  /* porcentaje: fracción, 0.15 = 15%. */
+  tasa?: number;
+  /* porcentaje y tramo: qué se mide. */
+  base?: BaseMedicion;
+  /* tramo: cada cuánto de la base se paga el monto (100.000 USD, 15 llamadas). */
+  cada?: number;
+  /* Cuando la base sale de las ventas: de cuáles. */
+  alcance?: AlcanceVentas;
+  /* Sólo las ventas de estos servicios (Hackear AI). Vacío: todos. */
+  productoIds?: ID[];
+  /* Sin las ventas que cerró alguien que no comisiona (Yari). */
+  sinVentasSinComision?: boolean;
+  /* Sin las ventas marcadas "Excluida de marketing". En el profit se
+     descuenta la parte de esas ventas, como el reparto de Finanzas. */
+  sinExcluidasMarketing?: boolean;
+  /* llamadas: sólo las que llegaron con este utm_source ("Resell"). */
+  utmSource?: string;
+  /* unidad: cómo se llama la pieza, en singular ("reel complejo"). */
+  unidad?: string;
+  /* bono: qué tiene que pasar para ganarlo. Se lee al liquidar. */
+  condicion?: string;
+  /* Vigencia, YYYY-MM-DD. Un fijo que empieza o termina a mitad de mes
+     se prorratea por días; un variable mide sólo esos días. */
+  desde?: string;
+  hasta?: string;
+  notas?: string;
+}
+
+/* Lo que cobra una persona: uno por persona, id `hon_<miembroId>`. */
+export interface EsquemaPago {
+  id: ID;
+  miembroId: ID;
+  conceptos: ConceptoPago[];
+  /* En qué renglón de Finanzas cae lo que se le paga (una categoría de gasto). */
+  categoriaGasto: string;
+  /* Lo que todavía no se sabe ("consultar con Yari"): la liquidación lo avisa. */
+  pendiente?: string;
+  notas?: string;
+  actualizadoEn: string;
+  actualizadoPor?: string;
+}
+
+export type EstadoLiquidacion = "abierta" | "cerrada";
+
+/* Lo que se carga a mano al liquidar, por persona y concepto
+   (clave `miembroId:conceptoId`). */
+export interface EntradaLiquidacion {
+  /* unidad: cuántas piezas. porcentaje y tramo: lo medido, corregido a mano. */
+  cantidad?: number;
+  /* bono: si lo ganó. Sin dato, lo ganó. */
+  cumplido?: boolean;
+  /* El monto del renglón corregido a mano: pisa la cuenta. */
+  monto?: number;
+  nota?: string;
+}
+
+/* Un monto que no sale de ningún concepto: un adelanto, un reintegro,
+   una diferencia del mes anterior. Negativo, descuenta. */
+export interface ExtraLiquidacion {
+  id: ID;
+  miembroId: ID;
+  concepto: string;
+  monto: number;
+  moneda: Moneda;
+}
+
+export interface LineaLiquidada {
+  /* conceptoId, o `extra:<id>` */
+  clave: string;
+  conceptoId?: ID;
+  extraId?: ID;
+  tipo: TipoConcepto | "extra";
+  nombre: string;
+  /* Cómo se llegó al monto, dicho en castellano. */
+  detalle: string;
+  moneda: Moneda;
+  monto: number;
+  /* El monto en la moneda base, con el tipo de cambio de la liquidación. */
+  montoBase: number;
+  variable: boolean;
+  /* Lo medido (cash, llamadas, piezas), si hay. */
+  medido?: number;
+  /* Las comisiones de closers y del director y el reparto del profit:
+     Finanzas ya las calcula de las ventas, así que al cerrar no se cargan
+     como gasto (se contarían dos veces). */
+  enFinanzas: boolean;
+  /* Lo que falta cargar para que el renglón esté completo. */
+  falta?: string;
+  corregido?: boolean;
+}
+
+export interface PersonaLiquidada {
+  miembroId: ID;
+  nombre: string;
+  puesto?: string;
+  categoriaGasto: string;
+  lineas: LineaLiquidada[];
+  /* Lo que se le transfiere en cada moneda. */
+  aPagar: Partial<Record<Moneda, number>>;
+  /* Todo junto en la moneda base: el total, y cuánto es fijo y cuánto variable. */
+  total: number;
+  fijo: number;
+  variable: number;
+  /* Lo que falta definir de su arreglo (el aviso del esquema). */
+  pendiente?: string;
+  /* No tiene nada cargado en lo que cobra: no se le liquida nada. */
+  sinCargar?: boolean;
+}
+
+export interface ResultadoLiquidacion {
+  personas: PersonaLiquidada[];
+  total: number;
+  fijo: number;
+  variable: number;
+  aPagar: Partial<Record<Moneda, number>>;
+  tipoCambio: number;
+  /* El profit del mes con esta liquidación adentro: la base de los % del profit. */
+  profit: number;
+  calculadoEn: string;
+}
+
+export interface PagoLiquidacion {
+  pagadoEn: string;
+  por?: string;
+}
+
+export interface Liquidacion {
+  /* `liq_<periodo>` */
+  id: ID;
+  /* El mes: "2026-09". */
+  periodo: string;
+  estado: EstadoLiquidacion;
+  entradas: Record<string, EntradaLiquidacion>;
+  extras: ExtraLiquidacion[];
+  /* Pesos por dólar para lo que se paga en ARS. */
+  tipoCambio?: number;
+  /* Al cerrar, la foto de lo que se paga: cerrada no se recalcula aunque
+     después entre un cobro atrasado. */
+  resultado?: ResultadoLiquidacion | null;
+  /* A quién ya se le pagó, por miembroId. */
+  pagos: Record<ID, PagoLiquidacion>;
+  /* Los gastos que se cargaron en Finanzas al cerrar. */
+  gastoIds: ID[];
+  cerradaEn?: string | null;
+  cerradaPor?: string | null;
+  creadoEn: string;
+  actualizadoEn?: string;
 }

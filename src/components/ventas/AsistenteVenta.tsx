@@ -632,7 +632,7 @@ function PasoEquipo({ b, set, e, sinComision, yo }: {
   yo?: MiembroEquipo;
 }) {
   /* Yari (CEO) como closer sólo le aparece a Yari. Si la app no sabe quién
-     está cargando (sin email en Ajustes → Equipo), se muestran todos. */
+     está cargando (sin email en Equipo y honorarios), se muestran todos. */
   const veCeo = !yo || yo.rol === "ceo" || b.closerId === e.equipo.find((x) => x.rol === "ceo")?.id;
   const closers = e.equipo.filter((x) => x.activo && (x.rol === "closer" || (x.rol === "ceo" && veCeo)));
   const directores = e.equipo.filter((x) => x.rol === "director");

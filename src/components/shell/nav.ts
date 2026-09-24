@@ -1,11 +1,15 @@
 import {
   LayoutDashboard, Users, Columns3, CalendarDays, Video, Megaphone,
-  GraduationCap, ClipboardList, Wallet, Settings, HandCoins, ArrowDownUp,
+  GraduationCap, ClipboardList, Wallet, Settings, HandCoins, ArrowDownUp, Banknote,
 } from "lucide-react";
 import { SquareKanban } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
-export interface ItemNav { href: string; texto: string; icono: LucideIcon; ayuda: string }
+export interface ItemNav {
+  href: string; texto: string; icono: LucideIcon; ayuda: string;
+  /* Sólo aparece para los dueños (usuarios_permitidos.rol = 'dueno'). */
+  soloDuenos?: boolean;
+}
 export interface GrupoNav { titulo: string; items: ItemNav[] }
 
 export const NAV: GrupoNav[] = [
@@ -46,9 +50,15 @@ export const NAV: GrupoNav[] = [
     items: [
       { href: "/finanzas", texto: "Finanzas", icono: Wallet, ayuda: "Ingresos, egresos y qué queda" },
       { href: "/conciliacion", texto: "Conciliación", icono: ArrowDownUp, ayuda: "Cobros de las pasarelas y a qué cuota van" },
+      { href: "/equipo", texto: "Equipo y honorarios", icono: Banknote, ayuda: "Quién es quién, con qué entra a la app y cuánto cobra", soloDuenos: true },
       { href: "/ajustes", texto: "Ajustes", icono: Settings, ayuda: "Etapas, categorías, campos e integraciones" },
     ],
   },
 ];
 
 export const TODOS_LOS_ITEMS = NAV.flatMap((g) => g.items);
+
+/* El menú de quien está usando la app: sin lo que es sólo de los dueños. */
+export function navPara(esDueno: boolean): GrupoNav[] {
+  return NAV.map((g) => ({ ...g, items: g.items.filter((i) => esDueno || !i.soloDuenos) })).filter((g) => g.items.length > 0);
+}

@@ -8,7 +8,6 @@ import {
   AlertTriangle, Check, Database, Download, GripVertical, Info, Layers, ListPlus,
   Moon, Plug, Plus, Settings2, Sun, Trash2, Upload, X,
 } from "lucide-react";
-import { Equipo } from "@/components/ajustes/Equipo";
 import { CatalogosVenta } from "@/components/ajustes/CatalogosVenta";
 import { ConfigUtms } from "@/components/ajustes/ConfigUtms";
 import { FormulariosMeta } from "@/components/ajustes/FormulariosMeta";
@@ -24,7 +23,7 @@ import { acciones, useEstado, useTema } from "@/lib/store";
 import { num, relativo } from "@/lib/format";
 import type { Ajustes as TAjustes, CampoPersonalizado, EntidadNombre, Etapa, TipoCampo } from "@/lib/types";
 
-type Seccion = "negocio" | "equipo" | "ventas" | "utms" | "pipeline" | "listas" | "campos" | "integraciones" | "datos";
+type Seccion = "negocio" | "ventas" | "utms" | "pipeline" | "listas" | "campos" | "integraciones" | "datos";
 
 const ENTIDADES: { valor: EntidadNombre; texto: string }[] = [
   { valor: "lead", texto: "Leads" },
@@ -50,7 +49,7 @@ const TIPOS: { valor: TipoCampo; texto: string }[] = [
 
 const VARIANTES: Etapa["variante"][] = ["info", "brand", "accent", "warning", "success", "danger", "neutral"];
 
-const SECCIONES: Seccion[] = ["negocio", "equipo", "ventas", "utms", "pipeline", "listas", "campos", "integraciones", "datos"];
+const SECCIONES: Seccion[] = ["negocio", "ventas", "utms", "pipeline", "listas", "campos", "integraciones", "datos"];
 
 export default function Ajustes() {
   /* Se puede entrar directo a una sección por link: el pipeline de alumnos
@@ -73,7 +72,6 @@ export default function Ajustes() {
         valor={seccion} onChange={setSeccion}
         opciones={[
           { valor: "negocio", texto: "Negocio" },
-          { valor: "equipo", texto: "Equipo" },
           { valor: "ventas", texto: "Ventas" },
           { valor: "utms", texto: "UTMs" },
           { valor: "pipeline", texto: "Etapas" },
@@ -85,7 +83,6 @@ export default function Ajustes() {
       />
 
       {seccion === "negocio" && <Negocio tema={tema} setTema={setTema} />}
-      {seccion === "equipo" && <Equipo />}
       {seccion === "ventas" && <CatalogosVenta />}
       {seccion === "utms" && <ConfigUtms />}
       {seccion === "pipeline" && <EtapasDeLosPipelines />}

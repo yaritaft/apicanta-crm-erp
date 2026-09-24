@@ -7,9 +7,10 @@ import {
   AlertCircle, Check, Cloud, HardDrive, LogOut, Menu, Moon, PanelLeft, PanelLeftClose,
   RefreshCw, Search, Sun, X,
 } from "lucide-react";
-import { NAV } from "./nav";
+import { navPara } from "./nav";
 import { cargarDeLaNube, hayNube, reiniciarCarga, useEstado, useSync, useTema } from "@/lib/store";
 import { useSalir, useSesion } from "@/lib/auth";
+import { useNivelAcceso } from "@/lib/acceso";
 import { Avatar, Button, IconButton } from "@/components/ui/ui";
 import { Paleta } from "./Paleta";
 import { Tour } from "./Tour";
@@ -22,6 +23,8 @@ export function Shell({ children }: { children: React.ReactNode }) {
   const [tema, setTema] = useTema();
   const sync = useSync();
   const sesion = useSesion();
+  const { esDueno } = useNivelAcceso();
+  const nav = navPara(esDueno);
 
   /* Menu colapsado. Se lee despues del montado a proposito: leer localStorage
      en el primer render rompe la hidratacion, porque el servidor no lo tiene. */
@@ -78,7 +81,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
     if (ruta !== camino && !ruta.startsWith(camino + "/")) return false;
     return !query || [...new URLSearchParams(query)].every(([k, v]) => busqueda.get(k) === v);
   };
-  const item = NAV.flatMap((g) => g.items)
+  const item = nav.flatMap((g) => g.items)
     .filter((i) => coincide(i.href))
     .sort((a, b) => b.href.length - a.href.length)[0];
 
@@ -113,7 +116,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
         </div>
 
         <div className="hk-sidebar__nav">
-          {NAV.map((g) => (
+          {nav.map((g) => (
             <div key={g.titulo}>
               <div className="hk-sidebar__group"><span>{g.titulo}</span></div>
               <ul className="hk-nav">

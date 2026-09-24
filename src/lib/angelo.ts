@@ -400,7 +400,7 @@ export function importarPlanilla(e: EstadoApp, filasCrudas: FilaVentas[], opcion
     const nuevo: MiembroEquipo = {
       id: `eq_ef_${hash(n)}`, nombre: nombre.trim(), rol, comisionRate: rol === "setter" ? 0.1 : 0.15,
       activo: true, sinComision: false,
-      notas: "Lo trajo la planilla de Angelo: revisá su comisión en Ajustes → Equipo.",
+      notas: "Lo trajo la planilla de Angelo: revisá lo que cobra en Equipo y honorarios.",
     };
     equipo.push(nuevo); creados.equipo.push(nuevo);
     avisar(`nuevo-${rol}`, `${rol === "setter" ? "Setters" : "Vendedores"} que no estaban en el equipo: se agregaron con ${rol === "setter" ? "10" : "15"}% de comisión.`, fila);

@@ -7,7 +7,8 @@ import type {
   Campania, CampoPersonalizado, Comentario, Comprobante, Cuota, EntidadNombre, EstadoApp, Etapa, ID,
   Lead, Meta, Movimiento, Pago, Reporte, Sesion, Venta, Webinar,
 } from "./types";
-import type { EtapaServicio } from "./types";
+import type { EsquemaPago, EtapaServicio, Gasto, ID as IdMiembro, Liquidacion, MiembroEquipo, ResultadoLiquidacion } from "./types";
+import { nombrePeriodo, tasaParaFinanzas } from "./honorarios";
 import {
   alumnoDeVenta, cuotaMensualDeVenta, etapaDelAlumno, etapaInicialDeServicio, etapasDeServicio,
   personaDeVenta, planDeVenta,
@@ -16,7 +17,7 @@ import { pagoDesdeMovimiento } from "./conciliacion";
 import { caracteristicaDePago, montoArsDe, tipoVentaDePago, type ResultadoImport } from "./angelo";
 import { claveEmail, completar } from "./contactos";
 import { construirSemilla, estadoVacio } from "./seed";
-import { hayNube, nube, tablaFaltante, TABLAS, TABLAS_OPCIONALES } from "./supabase";
+import { hayNube, nube, tablaFaltante, TABLAS, TABLAS_DE_DUENOS, TABLAS_OPCIONALES } from "./supabase";
 import { idAd, idAdset, idCampaign } from "./meta";
 
 const CLAVE = "apicanta.erp.v1";
@@ -350,6 +351,9 @@ export async function cargarDeLaNube(): Promise<void> {
       contactos: (porTabla.contactos ?? []) as EstadoApp["contactos"],
       comentarios: ((porTabla.comentarios ?? []) as EstadoApp["comentarios"])
         .sort((a, b) => +new Date(a.creadoEn) - +new Date(b.creadoEn)),
+      /* Vacías para quien no es dueño: RLS las esconde. */
+      honorarios: (porTabla.honorarios ?? []) as EstadoApp["honorarios"],
+      liquidaciones: (porTabla.liquidaciones ?? []) as EstadoApp["liquidaciones"],
       /* Opcional: si la tabla no existe, sin el ?? [] la app rompe al mapear. */
       campanias: (porTabla.campanias ?? []) as Campania[],
       campaigns: (porTabla.campaigns ?? []) as EstadoApp["campaigns"],
@@ -400,8 +404,14 @@ function ordenDeSiembra(e: EstadoApp): [string, unknown[]][] {
     /* Sin FK desde alumnos a propósito (ver alumnos-servicio.sql): puede ir
        al final sin romper el orden de nadie. */
     ["etapas_servicio", e.etapasServicio],
+    /* Sin FK tampoco (ver honorarios.sql). */
+    ["honorarios", e.honorarios ?? []], ["liquidaciones", e.liquidaciones ?? []],
   ];
 }
+
+/* Una tabla de dueños que rechaza a quien no lo es: se saltea, como una
+   tabla opcional que falta. Cortar ahí dejaría la base a medio restaurar. */
+const esDeDuenosSinPermiso = (tabla: string, e: { code?: string }) => TABLAS_DE_DUENOS.has(tabla) && e.code === "42501";
 
 async function sembrarNube(e: EstadoApp) {
   if (!nube) return;
@@ -410,7 +420,7 @@ async function sembrarNube(e: EstadoApp) {
   for (const [tabla, filas] of ordenDeSiembra(e)) {
     if (filas.length === 0) continue;
     const r = await nube.from(tabla).upsert(normalizar(filas) as never[], OPCIONES_UPSERT);
-    if (r.error && !(TABLAS_OPCIONALES.has(tabla) && tablaFaltante(r.error))) {
+    if (r.error && !(TABLAS_OPCIONALES.has(tabla) && tablaFaltante(r.error)) && !esDeDuenosSinPermiso(tabla, r.error)) {
       throw errorDeTabla(tabla, r.error);
     }
   }
@@ -432,8 +442,10 @@ async function completarNube(e: EstadoApp, vacias: Set<string>) {
 
 async function vaciarNube() {
   if (!nube) return;
-  /* Al reves del alta: primero los hijos. */
+  /* Al reves del alta: primero los hijos. Las de dueños, para quien no lo
+     es, no borran nada (RLS) y no dan error. */
   const orden = [
+    "liquidaciones", "honorarios",
     "actividad", "comentarios", "campos", "metas", "pagos", "movimientos", "cuotas", "ventas", "gastos",
     "campanias", "reportes", "sesiones", "alumnos", "leads", "contactos", "webinars",
     "etapas", "equipo", "embudos", "procesadores", "productos",
@@ -1602,6 +1614,120 @@ export const acciones = {
     empujarEnLotes("leads", nuevos);
     empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
     return nuevos.length;
+  },
+
+  /* ---------- Equipo y honorarios ----------
+     Lo que cobra cada uno no pasa por Actividad: la lee todo el equipo, y
+     esto es sólo de los dueños. La única huella que deja ahí es la de los
+     gastos que la liquidación carga en Finanzas, sin montos por persona. */
+
+  /* Crea o edita a alguien del equipo. Si cambia su rol, la tasa con la
+     que Finanzas lo calcula se vuelve a leer de lo que cobra. */
+  guardarMiembro(m: MiembroEquipo) {
+    const e = snapshot();
+    const tasa = tasaParaFinanzas(m, e.honorarios.find((h) => h.miembroId === m.id));
+    const fila = tasa === undefined ? m : { ...m, comisionRate: tasa };
+    const existe = e.equipo.some((x) => x.id === m.id);
+    guardar({ ...e, equipo: existe ? e.equipo.map((x) => (x.id === m.id ? fila : x)) : [...e.equipo, fila] });
+    empujar({ tipo: "upsert", tabla: "equipo", filas: [fila] });
+  },
+
+  /* Guarda lo que cobra alguien y alinea su comisionRate: la tasa con la
+     que Finanzas calcula su comisión (o el reparto) tiene que ser la del
+     esquema, o Finanzas y la liquidación dirían números distintos. */
+  guardarEsquema(esq: EsquemaPago, por?: string) {
+    const e = snapshot();
+    const actualizado: EsquemaPago = { ...esq, actualizadoEn: ahora(), ...(por ? { actualizadoPor: por } : {}) };
+    const existe = e.honorarios.some((h) => h.id === esq.id);
+    const honorarios = existe ? e.honorarios.map((h) => (h.id === esq.id ? actualizado : h)) : [...e.honorarios, actualizado];
+    const m = e.equipo.find((x) => x.id === esq.miembroId);
+    const tasa = m ? tasaParaFinanzas(m, actualizado) : undefined;
+    let equipo = e.equipo;
+    if (m && tasa !== undefined && Math.abs(tasa - m.comisionRate) > 1e-9) {
+      const fila = { ...m, comisionRate: tasa };
+      equipo = e.equipo.map((x) => (x.id === m.id ? fila : x));
+      empujar({ tipo: "upsert", tabla: "equipo", filas: [fila] });
+    }
+    guardar({ ...e, equipo, honorarios });
+    empujar({ tipo: "upsert", tabla: "honorarios", filas: [actualizado] });
+  },
+
+  /* Lo que se carga mientras la liquidación está abierta: cantidades,
+     bonos, correcciones, montos a mano, el tipo de cambio. */
+  guardarLiquidacion(liq: Liquidacion) {
+    const e = snapshot();
+    const actualizada: Liquidacion = { ...liq, actualizadoEn: ahora() };
+    const existe = e.liquidaciones.some((x) => x.id === liq.id);
+    guardar({
+      ...e,
+      liquidaciones: existe ? e.liquidaciones.map((x) => (x.id === liq.id ? actualizada : x)) : [...e.liquidaciones, actualizada],
+    });
+    empujar({ tipo: "upsert", tabla: "liquidaciones", filas: [actualizada] });
+  },
+
+  /* Cerrar: se guarda la foto de lo que se paga y los sueldos entran a
+     Finanzas como gastos del mes (uno por categoría, sin nombres). Si la
+     liquidación ya había cargado gastos (se reabrió), se reemplazan. */
+  cerrarLiquidacion(liq: Liquidacion, resultado: ResultadoLiquidacion, gastos: Gasto[], por: string) {
+    const e = snapshot();
+    const cuando = ahora();
+    const cerrada: Liquidacion = {
+      ...liq, estado: "cerrada", resultado, gastoIds: gastos.map((g) => g.id),
+      cerradaEn: cuando, cerradaPor: por, actualizadoEn: cuando,
+    };
+    const nuevos = new Set(gastos.map((g) => g.id));
+    const viejos = e.gastos.filter((g) => g.extra?.liquidacionId === liq.id && !nuevos.has(g.id)).map((g) => g.id);
+    const nombre = nombrePeriodo(liq.periodo);
+    const { lista, nuevo } = registrar(
+      e, "transaccion", liq.id, `Sueldos de ${nombre}`, "creo",
+      gastos.length
+        ? `Se cerró la liquidación de ${nombre}: los sueldos entraron a Finanzas en ${gastos.length === 1 ? "un gasto" : `${gastos.length} gastos`}.`
+        : `Se cerró la liquidación de ${nombre}.`,
+    );
+    const existe = e.liquidaciones.some((x) => x.id === liq.id);
+    guardar({
+      ...e,
+      liquidaciones: existe ? e.liquidaciones.map((x) => (x.id === liq.id ? cerrada : x)) : [...e.liquidaciones, cerrada],
+      gastos: [...gastos, ...e.gastos.filter((g) => g.extra?.liquidacionId !== liq.id)],
+      actividad: lista,
+    });
+    if (viejos.length) empujar({ tipo: "delete", tabla: "gastos", ids: viejos });
+    if (gastos.length) empujar({ tipo: "upsert", tabla: "gastos", filas: gastos });
+    empujar({ tipo: "upsert", tabla: "liquidaciones", filas: [cerrada] });
+    empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
+  },
+
+  /* Reabrir: vuelve a calcularse con los datos de hoy y sus gastos salen de
+     Finanzas. Lo marcado como pagado se desmarca: lo que se pague va a ser
+     lo que dé al volver a cerrar. */
+  reabrirLiquidacion(liq: Liquidacion) {
+    const e = snapshot();
+    const abierta: Liquidacion = {
+      ...liq, estado: "abierta", resultado: null, pagos: {}, gastoIds: [],
+      cerradaEn: null, cerradaPor: null, actualizadoEn: ahora(),
+    };
+    const sacar = e.gastos.filter((g) => g.extra?.liquidacionId === liq.id).map((g) => g.id);
+    const nombre = nombrePeriodo(liq.periodo);
+    const { lista, nuevo } = registrar(
+      e, "transaccion", liq.id, `Sueldos de ${nombre}`, "actualizo",
+      `Se reabrió la liquidación de ${nombre}: sus gastos salieron de Finanzas hasta que se vuelva a cerrar.`,
+    );
+    guardar({
+      ...e,
+      liquidaciones: e.liquidaciones.map((x) => (x.id === liq.id ? abierta : x)),
+      gastos: e.gastos.filter((g) => g.extra?.liquidacionId !== liq.id),
+      actividad: lista,
+    });
+    if (sacar.length) empujar({ tipo: "delete", tabla: "gastos", ids: sacar });
+    empujar({ tipo: "upsert", tabla: "liquidaciones", filas: [abierta] });
+    empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
+  },
+
+  marcarPagado(liq: Liquidacion, miembroId: IdMiembro, pagado: boolean, por?: string) {
+    const pagos = { ...liq.pagos };
+    if (pagado) pagos[miembroId] = { pagadoEn: ahora(), ...(por ? { por } : {}) };
+    else delete pagos[miembroId];
+    acciones.guardarLiquidacion({ ...liq, pagos });
   },
 
   async reiniciarDemo() {
