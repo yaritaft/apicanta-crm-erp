@@ -290,7 +290,11 @@ export function TarjetaEmbudo({ w, m, className }: { w: Webinar; m: MetricasWebi
       <div className="chart-legend" style={{ marginTop: "var(--space-3)" }}>
         <span className="chart-legend__item"><i className="chart-legend__dot" style={{ background: COLOR_VIVO }} />En el vivo</span>
         {todo && <span className="chart-legend__item"><i className="chart-legend__dot" style={{ background: COLOR_DESPUES }} />Después del vivo</span>}
-        {todo && grabacion === 0 && <span className="t-sm t-subtle">Las vistas de la grabación aparecen cuando termina el vivo.</span>}
+        {todo && grabacion === 0 && (
+          <span className="t-sm t-subtle">
+            Todavía no hay vistas de la grabación: se toman una vez por hora después del vivo (y las definitivas, de YouTube Analytics, a los dos o tres días).
+          </span>
+        )}
       </div>
       <dl className="dl wb-dl" style={{ marginTop: "var(--space-5)" }}>
         <Dato label="Form → grupo">{pct(m.asistenciaFormulario)}</Dato>
