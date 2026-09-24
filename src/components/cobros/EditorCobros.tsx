@@ -12,6 +12,7 @@ import { descartarComprobante } from "@/lib/comprobantes";
 import { nombrePasarela } from "@/lib/pasarelas";
 import { fuenteDe, useBlue } from "@/lib/dolar";
 import { bancoDeCbu, validarCbu } from "@/lib/cbu";
+import { esCuentaEnPesos } from "@/lib/reporteFinanciera";
 import type { Comprobante, EstadoApp, ID, Procesador } from "@/lib/types";
 
 /* ==================================================================
@@ -64,8 +65,7 @@ export function datosDeCobro(p: CobroBorrador) {
    tipo de cambio; una cuenta sin la moneda cargada se reconoce por el
    nombre ("Galicia (ARS)"). */
 export const esFinanciera = (proc?: Procesador) => /financiera/i.test(proc?.nombre ?? "");
-export const enPesos = (proc?: Procesador) =>
-  proc?.moneda ? proc.moneda === "ARS" : /\bARS\b|pesos/i.test(proc?.nombre ?? "");
+export const enPesos = (proc?: Procesador) => Boolean(proc && esCuentaEnPesos(proc));
 
 const redondear = (n: number) => Math.round(n * 100) / 100;
 const sumar = (xs: { monto: number }[]) => redondear(xs.reduce((a, x) => a + x.monto, 0));

@@ -81,7 +81,12 @@ export function diaArgentina(fecha: string): string {
 const sinAcentos = (s: string) => s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
 const redondear = (n: number) => Math.round(n * 100) / 100;
 
-export const formatoDeCuenta = (p: Procesador): FormatoCorte => (p.moneda === "ARS" ? "ARS" : "USD");
+/* Una cuenta sin la moneda cargada se reconoce por el nombre ("Financiera
+   ARS Juan"), igual que al registrar el pago: si no, salía con el formato
+   de dólares. */
+export const esCuentaEnPesos = (p: Procesador): boolean =>
+  p.moneda ? p.moneda === "ARS" : /\bARS\b|pesos/i.test(p.nombre);
+export const formatoDeCuenta = (p: Procesador): FormatoCorte => (esCuentaEnPesos(p) ? "ARS" : "USD");
 
 /** Las cuentas que tienen corte: las que se llaman Financiera y las que
  *  tienen cuentas bancarias cargadas. Las activas primero. */
@@ -94,7 +99,7 @@ export function cuentasConCorte(e: EstadoApp): Procesador[] {
 /** La que se elige sola: la Financiera en pesos. */
 export function cuentaPorDefecto(cuentas: Procesador[]): Procesador | undefined {
   return cuentas.find((p) => p.id === "proc_financiera_ars")
-    ?? cuentas.find((p) => p.moneda === "ARS" && sinAcentos(p.nombre).includes("financiera"))
+    ?? cuentas.find((p) => esCuentaEnPesos(p) && sinAcentos(p.nombre).includes("financiera"))
     ?? cuentas[0];
 }
 
