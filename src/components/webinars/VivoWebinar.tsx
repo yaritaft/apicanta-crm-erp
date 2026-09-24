@@ -425,7 +425,14 @@ function Espectadores({ w, a, datos, cargando, error, ejemplo, enElAire, onEjemp
   return (
     <div className="stack-4">
       <div className="wb-vivo__kpis">
-        <Kpi etiqueta="Pico" valor={num(a.pico.espectadores)} sub={`${minutoLegible(a.pico.min)} · ${hora(a.pico.t)} hs`} />
+        <Kpi etiqueta="Pico" valor={num(a.pico.espectadores)} sub={`${minutoLegible(a.pico.min)} · ${hora(a.pico.t)} hs · a la vez`} />
+        {!ejemplo && w.asistentes > 0 && (
+          <Kpi
+            etiqueta="Asistieron" valor={`≈ ${num(w.asistentes)}`}
+            sub={w.extra?.asistentesFuente === "analytics" ? "vistas en vivo · YouTube Analytics" : "vistas durante el vivo"}
+            ayuda="Cuánta gente pasó por el vivo. YouTube no da personas únicas: son las vistas del vivo, y quien se fue y volvió cuenta dos veces. Se completa solo; si alguien lo carga a mano, no se pisa."
+          />
+        )}
         <Kpi etiqueta="Promedio" valor={num(Math.round(a.promedio))} sub={`${pct(a.retencionMedia * 100, 0)} del pico en promedio`} />
         <Kpi
           etiqueta="Minutos vistos" valor={num(Math.round(a.minutosVistos))}
