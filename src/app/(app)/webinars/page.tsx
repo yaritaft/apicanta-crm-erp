@@ -17,6 +17,7 @@ import { guardarMetrica, guardarWebinar } from "@/components/webinars/guardar";
 import { diaCorto, diaYHora, hoyArgentina } from "@/components/webinars/fechas";
 import { AvisoEnVivo } from "@/components/webinars/AvisoEnVivo";
 import { useWebinarsAlDia } from "@/components/webinars/useVivo";
+import { EmbudoDosModos, grabacionDe } from "@/components/webinars/FichaNumeros";
 import { CLAVE_LISTA, ESTADO_WEBINAR, ESTADOS, tonoRoas } from "@/components/webinars/estado";
 import { useEstado } from "@/lib/store";
 import { useRangoURL } from "@/lib/useRango";
@@ -340,6 +341,20 @@ export default function Webinars() {
             serie="ROAS cobrado" serie2="ROAS facturado" formato={(n) => `${num(n, 1)}x`} alto={220}
           />
         </Card>
+      )}
+
+      {filtrados.length > 0 && (
+        <EmbudoDosModos
+          titulo="El embudo de los webinars"
+          sub={`La suma de los ${num(filtrados.length)} webinars filtrados: cuánta gente llegó a cada escalón.`}
+          d={{
+            formularios: total.formularios, grupoWpp: total.grupoWpp, asistentes: total.asistentes,
+            grabacion: filtrados.reduce((a, w) => a + grabacionDe(w), 0),
+            llamadasVivo: filtrados.reduce((a, w) => a + w.llamadasVivo, 0),
+            llamadasPosterior: filtrados.reduce((a, w) => a + w.llamadasPosterior, 0),
+            calificadas: total.llamadasCalificadas, ventas: total.ventas,
+          }}
+        />
       )}
 
       <Card className="planilla-card">

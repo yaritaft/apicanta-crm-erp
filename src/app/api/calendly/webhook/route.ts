@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { completarLlamadas } from "@/lib/agendas-sync";
 import { hayCalendly, type EventoCalendly, type InvitadoCalendly } from "@/lib/calendly";
 import { firmaCalendlyValida } from "@/lib/calendly-firma";
 import { ingresarInvitado } from "@/lib/calendly-sync";
@@ -53,7 +54,10 @@ export async function POST(peticion: Request) {
       invitado: payload.email ? (payload as unknown as InvitadoCalendly) : undefined,
       evento: payload.scheduled_event as EventoCalendly | undefined,
     });
-    console.log("[calendly/webhook]", JSON.stringify({ tipo, ...r }));
+    /* En el momento: las llamadas del webinar se recalculan ya (no en la
+       vuelta del cron), y Realtime le avisa a las pantallas abiertas. */
+    const l = await completarLlamadas().catch(() => ({ actualizados: 0, errores: [] as string[] }));
+    console.log("[calendly/webhook]", JSON.stringify({ tipo, ...r, webinars: l.actualizados }));
     return NextResponse.json({ ok: true, ...r });
   } catch (e) {
     const error = e instanceof Error ? e.message : "No se pudo guardar la agenda.";
