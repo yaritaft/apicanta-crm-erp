@@ -1800,16 +1800,34 @@ a.wb-canal:hover { background: var(--surface-200); border-color: var(--border-st
 .catalogo-fila .hk-input { height: 38px; font-size: 14px; }
 .catalogo-fila[data-inactivo] { opacity: .6; }
 .catalogo-fila--servicio { grid-template-columns: minmax(180px, 1.6fr) 140px minmax(140px, 1fr) auto; }
-.catalogo-fila--cuenta { grid-template-columns: minmax(180px, 1.4fr) 120px minmax(180px, 1.2fr) auto; }
+/* Anchos fijos en lo que no es texto: la cabecera es otra grilla y tiene que caer igual. */
+.catalogo-fila--cuenta { grid-template-columns: minmax(140px, 1.2fr) 96px 88px minmax(150px, 1.6fr) 128px 84px; }
+.catalogo-fila--cuenta > .hk-btn { justify-self: start; }
+.catalogo-fila--cuenta .hk-badge { white-space: normal; height: auto; min-height: 24px; }
 .catalogo-fila--estrategia { grid-template-columns: minmax(180px, 1.6fr) auto auto; }
 .catalogo-fila--cabeza {
   border: 0; background: none; padding: 0 var(--space-2);
   font-size: 11px; line-height: 14px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-subtle);
 }
+/* Las seis columnas de una cuenta no entran al lado del menú: dos renglones de tres. */
+@media (max-width: 1240px) {
+  .catalogo-fila--cuenta { grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr); }
+  .catalogo-fila--cuenta.catalogo-fila--cabeza { display: none; }
+}
 @media (max-width: 900px) {
   .catalogo-fila--servicio, .catalogo-fila--cuenta { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
   .catalogo-fila--servicio > :first-child, .catalogo-fila--cuenta > :first-child { grid-column: 1 / -1; }
   .catalogo-fila--cabeza { display: none; }
+}
+
+/* Las cuentas bancarias de una cuenta recaudadora (en su modal) */
+.cuentas-bancarias { display: flex; flex-direction: column; gap: var(--space-3); }
+.cuenta-bancaria { padding: var(--space-2) var(--space-4) var(--space-4); border: 1px solid var(--border); border-radius: var(--radius-md); }
+.cuenta-bancaria__cabeza { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); margin-bottom: var(--space-2); }
+.cuenta-bancaria__campos { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-3); }
+.cuenta-bancaria__cbu { font-variant-numeric: tabular-nums; }
+@media (max-width: 720px) {
+  .cuenta-bancaria__campos { grid-template-columns: minmax(0, 1fr); }
 }
 
 /* ---------- Ajustes → Equipo ---------- */
