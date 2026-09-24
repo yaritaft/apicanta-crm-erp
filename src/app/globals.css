@@ -1180,6 +1180,17 @@ kbd {
 }
 .venta-card[data-resaltada] { border-color: var(--brand); box-shadow: 0 0 0 1px var(--brand); }
 .venta-card__head { display: flex; align-items: flex-start; gap: var(--space-3); }
+/* Los programas se pliegan: la cabeza es el botón (ficha/Plegable.tsx). El
+   chevron es el del P&L: gira y toma el violeta al abrir. */
+.venta-card__toggle {
+  flex: 1; min-width: 0; display: flex; align-items: flex-start; gap: var(--space-2);
+  padding: 0; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer;
+}
+.venta-card__chevron { flex: none; width: 16px; height: 16px; margin-top: 3px; color: var(--ink-subtle); transition: transform 160ms ease-out, color 160ms ease-out; }
+.venta-card__toggle:hover .venta-card__chevron { color: var(--ink); }
+.venta-card__toggle[aria-expanded="true"] .venta-card__chevron { transform: rotate(90deg); color: var(--brand); }
+.venta-card__monto { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; white-space: nowrap; }
+.venta-card__cuerpo { display: flex; flex-direction: column; gap: var(--space-3); }
 .cuota-fila { display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface-000); }
 .caja-suave { padding: var(--space-4); border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface-100); }
 .chat { display: flex; flex-direction: column; gap: var(--space-3); min-height: 360px; }

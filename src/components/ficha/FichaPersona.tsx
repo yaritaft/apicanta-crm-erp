@@ -20,9 +20,11 @@ import { ChatEquipo } from "./ChatEquipo";
 import { HistorialPersona } from "./HistorialPersona";
 import { UtmsPersona } from "./UtmsPersona";
 import { TarjetaVenta } from "./TarjetaVenta";
+import { CabezaPlegable, usePlegado } from "./Plegable";
 import type { VistaFicha } from "./abrir";
 import { acciones, useEstado } from "@/lib/store";
 import { personaDe, type Persona } from "@/lib/persona";
+import { saldoVenta } from "@/lib/finanzas";
 import { fechaHora, fechaLarga, money, relativo } from "@/lib/format";
 import type { Alumno, Cuota, EstadoAlumno, EstadoApp, Venta } from "@/lib/types";
 
@@ -248,6 +250,7 @@ function VistaVentas({ e, p, ventaResaltada }: { e: EstadoApp; p: Persona; venta
   const [editar, setEditar] = useState<BorradorVenta | null>(null);
   const [cancelar, setCancelar] = useState<Venta | null>(null);
   const [nuevaVenta, setNuevaVenta] = useState(false);
+  const plegado = usePlegado();
 
   /* Si se abrió desde una venta, esa venta a la vista. */
   const variasVentas = p.ventas.length > 1;
@@ -280,14 +283,22 @@ function VistaVentas({ e, p, ventaResaltada }: { e: EstadoApp; p: Persona; venta
             />
           ) : (
             <>
-              {p.ventas.map((v) => (
-                <TarjetaVenta
-                  key={v.id} e={e} venta={v} resaltada={v.id === ventaResaltada}
-                  onPagar={setPagar}
-                  onEditar={() => setEditar(desdeVenta(e, v))}
-                  onCancelar={() => setCancelar(v)}
-                />
-              ))}
+              {p.ventas.map((v) => {
+                /* Abierto lo que está en curso: la única, la que se buscó o la
+                   que tiene cuotas por cobrar. Lo saldado o cancelado, plegado. */
+                const porDefecto = !variasVentas || v.id === ventaResaltada
+                  || (v.estado === "activa" && saldoVenta(e, v.id).saldo > 0.01);
+                return (
+                  <TarjetaVenta
+                    key={v.id} e={e} venta={v} resaltada={v.id === ventaResaltada}
+                    abierta={plegado.abierta(v.id, porDefecto)}
+                    onAlternar={() => plegado.alternar(v.id, porDefecto)}
+                    onPagar={setPagar}
+                    onEditar={() => setEditar(desdeVenta(e, v))}
+                    onCancelar={() => setCancelar(v)}
+                  />
+                );
+              })}
               <Button variante="primary" icono={<Plus size={16} />} onClick={() => setNuevaVenta(true)} style={{ alignSelf: "flex-start" }}>
                 Nueva venta · upsell o renovación
               </Button>
@@ -335,6 +346,7 @@ function VistaServicio({ e, p }: { e: EstadoApp; p: Persona }) {
   const [solapa, setSolapa] = useState<SolapaServicio>("servicio");
   const [editar, setEditar] = useState<Alumno | null>(null);
   const etapas = useMemo(() => etapasDeServicio(e), [e]);
+  const plegado = usePlegado();
 
   /* Un servicio por compra: cada venta con su alumno, y los alumnos que no
      tienen venta (cargados a mano, de antes) también. */
@@ -382,9 +394,16 @@ function VistaServicio({ e, p }: { e: EstadoApp; p: Persona }) {
             const reportes = alumno ? e.reportes.filter((r) => r.alumnoId === alumno.id)
               .sort((a, b) => +new Date(b.semanaDel) - +new Date(a.semanaDel)) : [];
             const etapa = alumno ? etapaDelAlumno(etapas, alumno) : undefined;
+            const clave = alumno?.id ?? venta?.id ?? String(i);
+            /* Abierto lo que está en curso; lo graduado o dado de baja, plegado. */
+            const porDefecto = servicios.length === 1 || !alumno || alumno.estado === "activo" || alumno.estado === "pausado";
+            const abierta = plegado.abierta(clave, porDefecto);
             return (
-              <div className="venta-card" key={alumno?.id ?? venta?.id ?? i}>
-                <div className="venta-card__head">
+              <div className="venta-card" key={clave}>
+                <CabezaPlegable
+                  abierta={abierta} onAlternar={() => plegado.alternar(clave, porDefecto)} cuerpoId={`servicio-${clave}`}
+                  accion={alumno && <IconButton etiqueta="Editar el servicio" onClick={() => setEditar({ ...alumno })}><Pencil size={15} /></IconButton>}
+                >
                   <span style={{ minWidth: 0, flex: 1 }}>
                     <span className="row-wrap" style={{ gap: 8 }}>
                       <span className="t-strong" style={{ fontSize: 16 }}>{producto}</span>
@@ -393,101 +412,106 @@ function VistaServicio({ e, p }: { e: EstadoApp; p: Persona }) {
                     <span className="t-sm t-subtle" style={{ display: "block", marginTop: 2 }}>
                       {venta ? `Compra del ${fechaLarga(venta.fecha)}` : "Sin venta enlazada"}
                       {alumno?.cohorte ? ` · cohorte ${alumno.cohorte}` : ""}
+                      {!abierta && etapa ? ` · ${etapa.nombre}` : ""}
+                      {!abierta && alumno ? ` · progreso ${alumno.progreso}%` : ""}
                     </span>
                   </span>
-                  {alumno && <IconButton etiqueta="Editar el servicio" onClick={() => setEditar({ ...alumno })}><Pencil size={15} /></IconButton>}
-                </div>
+                </CabezaPlegable>
 
-                {!alumno && venta ? (
-                  <div className="row-wrap">
-                    <span className="t-sm t-subtle">
-                      {venta.estado === "activa" ? "Esta compra todavía no tiene su servicio." : "La venta está cancelada: no tiene servicio."}
-                    </span>
-                    {venta.estado === "activa" && (
-                      <Button sm variante="primary" icono={<Plus size={14} />}
-                        onClick={() => { if (acciones.crearServicioDeVenta(venta.id)) toast(`Servicio de ${producto} creado.`); }}>
-                        Crear servicio
-                      </Button>
+                {abierta && (
+                  <div className="venta-card__cuerpo" id={`servicio-${clave}`}>
+                    {!alumno && venta ? (
+                      <div className="row-wrap">
+                        <span className="t-sm t-subtle">
+                          {venta.estado === "activa" ? "Esta compra todavía no tiene su servicio." : "La venta está cancelada: no tiene servicio."}
+                        </span>
+                        {venta.estado === "activa" && (
+                          <Button sm variante="primary" icono={<Plus size={14} />}
+                            onClick={() => { if (acciones.crearServicioDeVenta(venta.id)) toast(`Servicio de ${producto} creado.`); }}>
+                            Crear servicio
+                          </Button>
+                        )}
+                      </div>
+                    ) : alumno && (
+                      <>
+                        <div className="form-grid">
+                          <div className="hk-field">
+                            <span className="hk-label">Etapa del servicio</span>
+                            <Select aria-label="Etapa del servicio" value={etapa?.id ?? ""}
+                              onChange={(ev) => {
+                                const et = etapas.find((x) => x.id === ev.target.value);
+                                if (!et || et.id === etapa?.id) return;
+                                acciones.moverAlumno(alumno.id, et.id);
+                                toast(`${alumno.nombre} → ${et.nombre}`);
+                              }}
+                              opciones={etapas.map((et) => ({ valor: et.id, texto: et.nombre }))} />
+                          </div>
+                          <div className="hk-field">
+                            <span className="hk-label">Estado</span>
+                            <Select aria-label="Estado del servicio" value={alumno.estado}
+                              onChange={(ev) => acciones.actualizar<Alumno>("alumnos", alumno.id, { estado: ev.target.value as EstadoAlumno }, alumno.nombre)}
+                              opciones={ESTADOS_ALUMNO.map((k) => ({ valor: k, texto: ESTADO_ALUMNO[k].texto }))} />
+                          </div>
+                        </div>
+
+                        <div>
+                          <div className="row t-sm" style={{ marginBottom: 6 }}>
+                            <span className="t-subtle">Progreso del programa</span>
+                            <span className="spacer t-num t-strong">{alumno.progreso}%</span>
+                          </div>
+                          <Bar valor={alumno.progreso} tono={alumno.progreso >= 80 ? "success" : "brand"} />
+                          <div className="row-wrap" style={{ marginTop: 10 }}>
+                            {[0, 25, 50, 75, 100].map((v) => (
+                              <Chip key={v} activo={alumno.progreso === v}
+                                onClick={() => acciones.actualizar<Alumno>("alumnos", alumno.id, { progreso: v }, alumno.nombre, `${alumno.nombre}: progreso al ${v}%.`)}>
+                                {v}%
+                              </Chip>
+                            ))}
+                          </div>
+                        </div>
+
+                        <dl className="dl dl--compacta">
+                          <dt>Plan</dt><dd>{alumno.plan || "—"}</dd>
+                          <dt>Empezó</dt><dd>{fechaLarga(alumno.inicio)} · {cuandoEmpezo(relativo(alumno.inicio))}</dd>
+                          <dt>Cuota</dt><dd className="t-num">{alumno.cuotaMensual > 0 ? `${money(alumno.cuotaMensual, alumno.moneda)} por mes` : "Sin cuota mensual"}</dd>
+                          <DatosExtra campos={e.campos} entidad="alumno" valores={alumno.extra} />
+                        </dl>
+
+                        {!venta && <VentaDelAlumno alumno={alumno} />}
+                        {venta && sinEnlazar && (
+                          <div className="row-wrap">
+                            <span className="t-sm t-subtle">Este servicio todavía no tiene la venta enlazada.</span>
+                            <Button sm variante="secondary" onClick={() => {
+                              acciones.actualizar<Alumno>("alumnos", alumno.id, { ventaId: venta.id }, alumno.nombre, `Se enlazó a ${alumno.nombre} la venta del ${fechaLarga(venta.fecha)}.`);
+                              toast("Venta enlazada.");
+                            }}>Enlazar la venta</Button>
+                          </div>
+                        )}
+
+                        <div className="stack-2">
+                          <div className="row">
+                            <span className="t-label">Reportes semanales ({reportes.length})</span>
+                            <a className="link t-sm spacer" href="/reportes?vista=tabla" style={{ textAlign: "right" }}>Ver todos</a>
+                          </div>
+                          {reportes.length === 0 ? (
+                            <p className="t-sm t-subtle">Todavía no mandó ningún reporte.</p>
+                          ) : reportes.slice(0, 5).map((r) => (
+                            <div key={r.id} className="row t-sm" style={{ gap: 8 }}>
+                              <span>Semana del {fechaLarga(r.semanaDel)}</span>
+                              {r.estado === "completado" && r.horasEstudio !== undefined && (
+                                <span className="t-subtle t-num">{r.horasEstudio} h · {r.postulaciones ?? 0} post.</span>
+                              )}
+                              <span className="spacer" />
+                              <Badge variante={r.estado === "completado" ? "success" : r.estado === "vencido" ? "danger" : r.estado === "pendiente" ? "accent" : "neutral"}>
+                                {r.estado === "completado" ? "Completado" : r.estado === "vencido" ? "Vencido" : r.estado === "pendiente" ? "Pendiente" : "No enviado"}
+                              </Badge>
+                            </div>
+                          ))}
+                        </div>
+                        {alumno.notas && <p className="t-sm t-muted" style={{ whiteSpace: "pre-wrap" }}>{alumno.notas}</p>}
+                      </>
                     )}
                   </div>
-                ) : alumno && (
-                  <>
-                    <div className="form-grid">
-                      <div className="hk-field">
-                        <span className="hk-label">Etapa del servicio</span>
-                        <Select aria-label="Etapa del servicio" value={etapa?.id ?? ""}
-                          onChange={(ev) => {
-                            const et = etapas.find((x) => x.id === ev.target.value);
-                            if (!et || et.id === etapa?.id) return;
-                            acciones.moverAlumno(alumno.id, et.id);
-                            toast(`${alumno.nombre} → ${et.nombre}`);
-                          }}
-                          opciones={etapas.map((et) => ({ valor: et.id, texto: et.nombre }))} />
-                      </div>
-                      <div className="hk-field">
-                        <span className="hk-label">Estado</span>
-                        <Select aria-label="Estado del servicio" value={alumno.estado}
-                          onChange={(ev) => acciones.actualizar<Alumno>("alumnos", alumno.id, { estado: ev.target.value as EstadoAlumno }, alumno.nombre)}
-                          opciones={ESTADOS_ALUMNO.map((k) => ({ valor: k, texto: ESTADO_ALUMNO[k].texto }))} />
-                      </div>
-                    </div>
-
-                    <div>
-                      <div className="row t-sm" style={{ marginBottom: 6 }}>
-                        <span className="t-subtle">Progreso del programa</span>
-                        <span className="spacer t-num t-strong">{alumno.progreso}%</span>
-                      </div>
-                      <Bar valor={alumno.progreso} tono={alumno.progreso >= 80 ? "success" : "brand"} />
-                      <div className="row-wrap" style={{ marginTop: 10 }}>
-                        {[0, 25, 50, 75, 100].map((v) => (
-                          <Chip key={v} activo={alumno.progreso === v}
-                            onClick={() => acciones.actualizar<Alumno>("alumnos", alumno.id, { progreso: v }, alumno.nombre, `${alumno.nombre}: progreso al ${v}%.`)}>
-                            {v}%
-                          </Chip>
-                        ))}
-                      </div>
-                    </div>
-
-                    <dl className="dl dl--compacta">
-                      <dt>Plan</dt><dd>{alumno.plan || "—"}</dd>
-                      <dt>Empezó</dt><dd>{fechaLarga(alumno.inicio)} · {cuandoEmpezo(relativo(alumno.inicio))}</dd>
-                      <dt>Cuota</dt><dd className="t-num">{alumno.cuotaMensual > 0 ? `${money(alumno.cuotaMensual, alumno.moneda)} por mes` : "Sin cuota mensual"}</dd>
-                      <DatosExtra campos={e.campos} entidad="alumno" valores={alumno.extra} />
-                    </dl>
-
-                    {!venta && <VentaDelAlumno alumno={alumno} />}
-                    {venta && sinEnlazar && (
-                      <div className="row-wrap">
-                        <span className="t-sm t-subtle">Este servicio todavía no tiene la venta enlazada.</span>
-                        <Button sm variante="secondary" onClick={() => {
-                          acciones.actualizar<Alumno>("alumnos", alumno.id, { ventaId: venta.id }, alumno.nombre, `Se enlazó a ${alumno.nombre} la venta del ${fechaLarga(venta.fecha)}.`);
-                          toast("Venta enlazada.");
-                        }}>Enlazar la venta</Button>
-                      </div>
-                    )}
-
-                    <div className="stack-2">
-                      <div className="row">
-                        <span className="t-label">Reportes semanales ({reportes.length})</span>
-                        <a className="link t-sm spacer" href="/reportes?vista=tabla" style={{ textAlign: "right" }}>Ver todos</a>
-                      </div>
-                      {reportes.length === 0 ? (
-                        <p className="t-sm t-subtle">Todavía no mandó ningún reporte.</p>
-                      ) : reportes.slice(0, 5).map((r) => (
-                        <div key={r.id} className="row t-sm" style={{ gap: 8 }}>
-                          <span>Semana del {fechaLarga(r.semanaDel)}</span>
-                          {r.estado === "completado" && r.horasEstudio !== undefined && (
-                            <span className="t-subtle t-num">{r.horasEstudio} h · {r.postulaciones ?? 0} post.</span>
-                          )}
-                          <span className="spacer" />
-                          <Badge variante={r.estado === "completado" ? "success" : r.estado === "vencido" ? "danger" : r.estado === "pendiente" ? "accent" : "neutral"}>
-                            {r.estado === "completado" ? "Completado" : r.estado === "vencido" ? "Vencido" : r.estado === "pendiente" ? "Pendiente" : "No enviado"}
-                          </Badge>
-                        </div>
-                      ))}
-                    </div>
-                    {alumno.notas && <p className="t-sm t-muted" style={{ whiteSpace: "pre-wrap" }}>{alumno.notas}</p>}
-                  </>
                 )}
               </div>
             );
