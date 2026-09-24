@@ -580,6 +580,13 @@ kbd {
 .agenda-item__hora { font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--ink); width: 44px; flex: none; }
 .agenda-item__quien { flex: 1; min-width: 0; }
 .agenda-item__cola { display: flex; align-items: center; gap: var(--space-3); flex: none; }
+/* El paginador de las tablas (.hk-paginador), a todo el ancho de la tarjeta
+   y apoyado en su borde de abajo: la Agenda no es una tabla, pero se pagina
+   igual. */
+.agenda-paginador {
+  margin: var(--space-3) calc(var(--space-5) * -1) calc(var(--space-5) * -1);
+  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+}
 
 /* ---------- Misc ---------- */
 .divider { height: 1px; background: var(--border); border: 0; margin: 0; }
@@ -619,6 +626,7 @@ kbd {
   .agenda-item { flex-wrap: wrap; row-gap: var(--space-2); }
   .agenda-item__quien { flex-basis: calc(100% - 44px - var(--space-3)); }
   .agenda-item__cola { margin-left: calc(44px + var(--space-3)); flex: 0 1 calc(100% - 44px - var(--space-3)); min-width: 0; flex-wrap: wrap; gap: var(--space-2); }
+  .agenda-paginador { margin: var(--space-3) calc(var(--space-4) * -1) calc(var(--space-4) * -1); }
   /* De a dos por renglón, a lo ancho, en vez de una columna dentada. Sin el
      min-width, el texto largo ("Todos los vendedores") no deja achicar la
      caja y quedan de a uno: mejor cortado con puntos suspensivos. */
