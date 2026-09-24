@@ -4,6 +4,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Search, CornerDownLeft } from "lucide-react";
 import { TODOS_LOS_ITEMS } from "./nav";
+import { useNivelAcceso } from "@/lib/acceso";
 import { useEstado } from "@/lib/store";
 import { fechaHora, money } from "@/lib/format";
 
@@ -19,6 +20,7 @@ function normal(s: string) {
 export function Paleta({ abierto, onCerrar }: { abierto: boolean; onCerrar: () => void }) {
   const router = useRouter();
   const e = useEstado();
+  const { esDueno } = useNivelAcceso();
   const [q, setQ] = useState("");
   const [activo, setActivo] = useState(0);
   const input = useRef<HTMLInputElement>(null);
@@ -32,6 +34,7 @@ export function Paleta({ abierto, onCerrar }: { abierto: boolean; onCerrar: () =
     const out: Resultado[] = [];
 
     for (const i of TODOS_LOS_ITEMS) {
+      if (i.soloDuenos && !esDueno) continue;
       if (!term || normal(i.texto).includes(term) || normal(i.ayuda).includes(term)) {
         const Ico = i.icono;
         out.push({ id: `nav${i.href}`, grupo: "Ir a", texto: i.texto, sub: i.ayuda, icono: <Ico size={18} />, ir: i.href });
@@ -61,7 +64,7 @@ export function Paleta({ abierto, onCerrar }: { abierto: boolean; onCerrar: () =
       }
     }
     return out.slice(0, 24);
-  }, [q, e]);
+  }, [q, e, esDueno]);
 
   useEffect(() => { setActivo(0); }, [q]);
 

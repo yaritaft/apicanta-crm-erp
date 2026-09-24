@@ -24,6 +24,7 @@ lo que se muestra se calcula solo.
 | **Ventas** | Un asistente paso a paso arma la venta, su plan de cuotas y los cobros que ya entraron, con los nombres de la planilla de Angelo; el origen sale de la UTM de quien compró. La lista se filtra por período, vendedor, servicio, estrategia, proyecto y cuenta. Importa y exporta la hoja Ventas de esa planilla |
 | **Conciliación** | Los cobros de Stripe, Hotmart, Whop, dLocal, Mercado Pago, Mercury, Binance y Trust, imputados a la cuota que les corresponde |
 | **Finanzas** | El estado de resultados sobre lo cobrado y lo facturado; en el detalle, las cuotas vencidas, los gastos y las comisiones. Los KPIs viven en Dashboard & KPIs |
+| **Equipo y honorarios** | Sólo para los dueños: quién es quién, con qué entra a la app, qué cobra cada uno (fijo, bonos, comisiones, tramos y piezas, y sobre qué se mide cada variable) y la liquidación de cada mes, que se calcula sola y al cerrarla entra a Finanzas |
 | **Actividad** | Todo lo que se creó, editó, movió o borró, con autor y fecha |
 | **Ajustes** | Servicios, cuentas recaudadoras, estrategias y proyectos; de qué es cada UTM; etapas, listas, campos propios, integraciones y respaldos |
 
@@ -82,11 +83,11 @@ El schema vive en las migraciones del proyecto de Supabase. Las columnas se llam
 que los campos de `src/lib/types.ts` (en camelCase, entre comillas), así que el adaptador
 no necesita capa de mapeo: lo que sale de la base es la forma que espera la app.
 
-> **Sobre el acceso:** la app todavía no tiene login, así que las políticas de RLS dejan
-> leer y escribir con la clave publicable. Esa clave viaja en el bundle del navegador.
-> Mientras siga así, cualquiera con la URL del sitio puede ver y modificar los datos.
-> El paso siguiente es Supabase Auth: RLS ya está activo en las 12 tablas, así que es
-> cambiar las políticas y agregar la pantalla de login.
+> **Sobre el acceso:** se entra con correo y clave (o con un enlace por correo), y sólo ve
+> datos quien está en `usuarios_permitidos`: las políticas de RLS preguntan `puede_entrar()`.
+> Hay dos niveles: **dueño** (todo, incluido Equipo y honorarios) y **equipo** (todo menos
+> eso). Lo que cobra cada uno vive en `honorarios` y `liquidaciones`, que sólo se leen con
+> `es_dueno()`: para el resto llegan vacías aunque las pidan por la API.
 
 En **Ajustes → Datos** se puede bajar un respaldo en JSON y restaurarlo.
 
@@ -215,3 +216,32 @@ tenían, sin pisar lo que alguien eligió a mano. Las reglas están en `src/lib/
   dígitos verificadores. Va al reporte para la Financiera, con el nombre, el CUIT y el comprobante.
 - Antes de usarlo contra Supabase hay que correr `supabase/utms-y-financiera.sql` (agrega columnas y
   marca en pesos las cuentas en ARS).
+
+## Equipo y honorarios
+
+Una sección que ven sólo los dueños (Yari y Juan Cruz), con tres solapas:
+
+- **Equipo y lo que cobra.** Cada persona tiene su puesto, su rol en las ventas (closer, setter,
+  director, growth, socio o ninguno), el correo con el que entra y lo que cobra, armado con
+  conceptos: un **fijo** mensual, un **bono** que se decide al liquidar, una **comisión (%)**, un
+  monto **por cada tramo** (US$ 500 cada US$ 100.000, US$ 100 cada 15 llamadas) o una tarifa
+  **por pieza** (reels, sesiones, minutos). Cada variable dice sobre qué se mide: cash collected,
+  cash collected post pasarelas, lo facturado, el profit, ventas cerradas, llamadas de la Agenda
+  (con su utm_source) o una cantidad que se carga a mano; y, si sale de las ventas, de cuáles (las
+  que cerró, agendó o dirige, o todas, con filtro de servicio). Cada concepto puede tener vigencia:
+  un fijo que empieza o termina a mitad de mes se prorratea.
+- **Liquidación del mes.** Se calcula sola con los cobros, las ventas, la Agenda y Finanzas; lo que
+  la app no puede saber (cuántos reels, si ganó el bono) se carga en el renglón. Al **cerrarla**
+  queda la foto de lo que se paga y los sueldos entran a Finanzas como un gasto por categoría,
+  sin nombres (Finanzas la ve todo el equipo). Las comisiones de closers y del director y el
+  reparto del profit no se cargan: Finanzas ya las calcula de las ventas, y la tasa con la que
+  las calcula (`equipo.comisionRate`) se escribe desde lo que cobra cada uno, así los dos lados
+  dan lo mismo. Quien vende y no tiene nada cargado aparece igual con la comisión que le calcula
+  Finanzas, también si ya no está en el equipo y entraron cuotas de ventas suyas. Después se marca a
+  quién ya se le pagó; reabrirla saca sus gastos de Finanzas.
+- **Accesos a la app.** Dar y quitar accesos y elegir el nivel. «Dar acceso y generar clave» crea
+  el usuario y muestra la clave una sola vez, lista para mandar; lo hace `/api/accesos` con la
+  clave de servicio y sólo si quien pide es dueño. La base no deja quedarse sin ningún dueño.
+
+Las reglas del cálculo están en `src/lib/honorarios.ts`. Antes de usarlo contra Supabase hay que
+correr `supabase/honorarios.sql` (tablas, políticas, niveles de acceso y la columna `puesto`).

@@ -39,6 +39,9 @@ export const TABLAS = [
   /* Las columnas del pipeline de servicio de alumnos. Tampoco coincide con su
      coleccion (`etapasServicio`): la escriben acciones propias del store. */
   "etapas_servicio",
+  /* Lo que cobra cada uno y las liquidaciones. Sólo las leen los dueños: para
+     el resto el SELECT vuelve vacío (RLS), sin error. */
+  "honorarios", "liquidaciones",
 ] as const;
 
 export type Tabla = (typeof TABLAS)[number];
@@ -67,7 +70,15 @@ export const TABLAS_OPCIONALES = new Set<string>([
   /* Nueva (supabase/alumnos-servicio.sql). Hasta que corra, el pipeline de
      alumnos anda con las etapas de siempre y no guarda los cambios de etapas. */
   "etapas_servicio",
+  /* Nuevas (supabase/honorarios.sql). Hasta que corra, Equipo y honorarios no
+     aparece para nadie y el resto de la app sigue igual. */
+  "honorarios", "liquidaciones",
 ]);
+
+/* Las tablas que sólo leen y escriben los dueños. Para cualquier otro, la
+   base rechaza la escritura (42501): restaurar un respaldo o volver a la
+   demo las saltea en vez de cortarse a la mitad. */
+export const TABLAS_DE_DUENOS = new Set<string>(["honorarios", "liquidaciones"]);
 
 /* PostgREST avisa que la tabla no esta en el esquema con PGRST205 (y con
    42P01 si la consulta llego a Postgres). Cualquier otro error es real. */

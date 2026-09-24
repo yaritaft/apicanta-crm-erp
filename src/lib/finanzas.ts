@@ -246,10 +246,7 @@ export function calcularPyL(e: EstadoApp, m: RangoMes): PyL {
 
   /* Growth partner y socio cobran del profit. El growth no cobra de las
      ventas marcadas como excluidas de marketing, así que se prorratea. */
-  const ventasMes = ventasDelMes(e, m);
-  const revTotal = ventasMes.reduce((a, v) => a + v.precioAcordado, 0);
-  const revMarketing = ventasMes.filter((v) => !v.excluidoMarketing).reduce((a, v) => a + v.precioAcordado, 0);
-  const parteMarketing = revTotal > 0 ? revMarketing / revTotal : 1;
+  const parte = parteMarketing(e, m);
 
   const tasaGrowth = e.equipo.find((x) => x.rol === "growth")?.comisionRate ?? 0;
   const tasaSocio = e.equipo.find((x) => x.rol === "socio")?.comisionRate ?? 0;
@@ -267,9 +264,19 @@ export function calcularPyL(e: EstadoApp, m: RangoMes): PyL {
     roasCC: inversionAds > 0 ? cc / inversionAds : 0,
     roasRev: inversionAds > 0 ? rev / inversionAds : 0,
     cac: nVentas > 0 ? inversionAds / nVentas : 0,
-    growth: baseReparto * tasaGrowth * parteMarketing,
+    growth: baseReparto * tasaGrowth * parte,
     socio: baseReparto * tasaSocio,
   };
+}
+
+/** Qué parte de lo vendido en el período no está excluida de marketing: la
+ *  del profit que le toca al growth partner. Se mide sobre lo facturado, como
+ *  siempre calculó el reparto; la liquidación de sueldos usa esta misma. */
+export function parteMarketing(e: EstadoApp, m: RangoMes): number {
+  const ventasMes = ventasDelMes(e, m);
+  const revTotal = ventasMes.reduce((a, v) => a + v.precioAcordado, 0);
+  const revMarketing = ventasMes.filter((v) => !v.excluidoMarketing).reduce((a, v) => a + v.precioAcordado, 0);
+  return revTotal > 0 ? revMarketing / revTotal : 1;
 }
 
 /* ---------- Mora: lo que Yari quiere ver con alarmas ---------- */
