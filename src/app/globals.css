@@ -342,6 +342,17 @@ a { color: inherit; text-decoration: none; }
 .chip:hover { background: var(--surface-200); color: var(--ink); }
 .chip[aria-pressed="true"] { background: var(--brand-soft); border-color: var(--brand-fill); color: var(--brand); font-weight: 600; }
 .chip__count { font-variant-numeric: tabular-nums; opacity: .75; font-size: 12px; }
+/* Un filtro desplegable con algo elegido se prende como el chip: se ve de un
+   vistazo qué está recortando la lista (ui/Filtros.tsx). 200px es lo que
+   ocupa "Todos los vendedores" sin cortarse. */
+.filtro { flex: none; width: 200px; max-width: 100%; }
+.filtro--on .sel { background: var(--brand-soft); border-color: var(--brand-fill); }
+.filtro--on .sel__valor { color: var(--brand); font-weight: 600; }
+.filtro--on .hk-input--select::after { border-color: var(--brand); }
+/* En las pantallas-reporte el buscador va después de los filtros y ocupa lo
+   que queda del renglón; si no entra, baja entero a uno propio en vez de
+   dejar un desplegable suelto abajo. */
+.toolbar > .buscador { flex: 1 1 220px; min-width: 200px; }
 
 /* ---------- Tabla ---------- */
 .hk-table-wrap { overflow-x: auto; }
@@ -569,6 +580,13 @@ kbd {
 .agenda-item__hora { font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--ink); width: 44px; flex: none; }
 .agenda-item__quien { flex: 1; min-width: 0; }
 .agenda-item__cola { display: flex; align-items: center; gap: var(--space-3); flex: none; }
+/* El paginador de las tablas (.hk-paginador), a todo el ancho de la tarjeta
+   y apoyado en su borde de abajo: la Agenda no es una tabla, pero se pagina
+   igual. */
+.agenda-paginador {
+  margin: var(--space-3) calc(var(--space-5) * -1) calc(var(--space-5) * -1);
+  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+}
 
 /* ---------- Misc ---------- */
 .divider { height: 1px; background: var(--border); border: 0; margin: 0; }
@@ -608,6 +626,14 @@ kbd {
   .agenda-item { flex-wrap: wrap; row-gap: var(--space-2); }
   .agenda-item__quien { flex-basis: calc(100% - 44px - var(--space-3)); }
   .agenda-item__cola { margin-left: calc(44px + var(--space-3)); flex: 0 1 calc(100% - 44px - var(--space-3)); min-width: 0; flex-wrap: wrap; gap: var(--space-2); }
+  .agenda-paginador { margin: var(--space-3) calc(var(--space-4) * -1) calc(var(--space-4) * -1); }
+  /* De a dos por renglón, a lo ancho, en vez de una columna dentada. Sin el
+     min-width, el texto largo ("Todos los vendedores") no deja achicar la
+     caja y quedan de a uno: mejor cortado con puntos suspensivos. */
+  .filtro { flex: 1 1 140px; width: auto; min-width: 0; }
+  /* En la barra de arriba no entra el texto: queda el ícono solo. */
+  .app-topbar__actions .copiar-link { width: 32px; padding: 0; }
+  .app-topbar__actions .copiar-link__texto { display: none; }
   .toast-wrap { left: var(--space-4); right: var(--space-4); bottom: var(--space-4); }
   .toast { min-width: 0; max-width: none; }
 }

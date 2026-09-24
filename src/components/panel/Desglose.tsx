@@ -1,8 +1,8 @@
 "use client";
 
-import Link from "next/link";
 import { Badge, Tag } from "@/components/ui/ui";
 import { Drawer } from "@/components/ui/Drawer";
+import { useAbrirFicha, type VistaFicha } from "@/components/ficha/abrir";
 import { useEstado } from "@/lib/store";
 import { fecha, money, num, pct, relativo } from "@/lib/format";
 import { comisionesDelMes, cuotasPorCobrar, gastosDelMes, pagosDelMes } from "@/lib/finanzas";
@@ -24,7 +24,10 @@ export type QueDesglosar =
   | { tipo: "mrr" } | { tipo: "pipeline" } | { tipo: "cierre" } | { tipo: "cobrar" }
   | { tipo: "etapa"; etapaId: string };
 
-interface Fila { id: string; titulo: string; detalle?: string; valor?: string; href?: string; marca?: React.ReactNode }
+/* `ficha`: a quién abre la fila. Se abre con useAbrirFicha, que suma la ficha
+   a la URL sin tocar lo demás; un link relativo (?ficha=…) reemplazaba la
+   query entera y el Dashboard perdía el período, el área y las columnas. */
+interface Fila { id: string; titulo: string; detalle?: string; valor?: string; ficha?: { id: string; vista?: VistaFicha; venta?: string }; marca?: React.ReactNode }
 interface Seccion { titulo?: string; total?: string; filas: Fila[]; vacio?: string }
 interface Contenido { titulo: string; sub: string; resumen: { etiqueta: string; valor: string }[]; secciones: Seccion[] }
 
@@ -43,7 +46,7 @@ function contenido(e: EstadoApp, que: QueDesglosar, mes: RangoMes): Contenido {
   const M = (n: number, d = 0) => money(n, e.ajustes.monedaBase, d);
   const etapaDe = (l: Lead) => e.etapas.find((x) => x.id === l.etapaId);
   const filaLead = (l: Lead, detalle?: string): Fila => ({
-    id: l.id, titulo: l.nombre, href: `?ficha=${l.id}&vista=ventas`, valor: money(l.monto, l.moneda),
+    id: l.id, titulo: l.nombre, ficha: { id: l.id }, valor: money(l.monto, l.moneda),
     detalle: detalle ?? `${etapaDe(l)?.nombre ?? "Sin etapa"} · ${l.fuente || "Sin fuente"} · entró ${relativo(l.creadoEn)}`,
   });
   const cuotaDe = (id: string) => e.cuotas.find((c) => c.id === id);
@@ -61,7 +64,7 @@ function contenido(e: EstadoApp, que: QueDesglosar, mes: RangoMes): Contenido {
         p, fila: {
           id: p.id, titulo: v?.contactoNombre ?? "Pago sin venta",
           detalle: [nombreCuota(c), fecha(p.fecha), procesador(p.procesadorId)].filter(Boolean).join(" · "),
-          valor: M(p.monto), href: v ? `?ficha=${v.id}&vista=ventas&venta=${v.id}` : undefined,
+          valor: M(p.monto), ficha: v ? { id: v.id, venta: v.id } : undefined,
         } as Fila,
       };
     });
@@ -84,8 +87,8 @@ function contenido(e: EstadoApp, que: QueDesglosar, mes: RangoMes): Contenido {
       const comisiones: Fila[] = [];
       for (const c of comisionesDelMes(e, mes)) {
         const v = ventaDe(c.ventaId);
-        if (c.comisionCloser > 0) comisiones.push({ id: `${c.ventaId}_closer`, titulo: `${c.closerNombre} · closer`, detalle: `Venta de ${v?.contactoNombre ?? "—"}`, valor: M(c.comisionCloser), href: `?ficha=${c.ventaId}&vista=ventas&venta=${c.ventaId}` });
-        if (c.comisionDirector > 0) comisiones.push({ id: `${c.ventaId}_director`, titulo: `${e.equipo.find((x) => x.id === c.directorId)?.nombre ?? "Director"} · director`, detalle: `Venta de ${v?.contactoNombre ?? "—"}`, valor: M(c.comisionDirector), href: `?ficha=${c.ventaId}&vista=ventas&venta=${c.ventaId}` });
+        if (c.comisionCloser > 0) comisiones.push({ id: `${c.ventaId}_closer`, titulo: `${c.closerNombre} · closer`, detalle: `Venta de ${v?.contactoNombre ?? "—"}`, valor: M(c.comisionCloser), ficha: { id: c.ventaId, venta: c.ventaId } });
+        if (c.comisionDirector > 0) comisiones.push({ id: `${c.ventaId}_director`, titulo: `${e.equipo.find((x) => x.id === c.directorId)?.nombre ?? "Director"} · director`, detalle: `Venta de ${v?.contactoNombre ?? "—"}`, valor: M(c.comisionDirector), ficha: { id: c.ventaId, venta: c.ventaId } });
       }
       const totalComisiones = comisionesDelMes(e, mes).reduce((a, c) => a + c.comisionCloser + c.comisionDirector, 0);
 
@@ -145,7 +148,7 @@ function contenido(e: EstadoApp, que: QueDesglosar, mes: RangoMes): Contenido {
         titulo: "MRR", sub: "Lo que entra todos los meses por cuotas de alumnos activos",
         resumen: [{ etiqueta: "MRR", valor: M(lista.reduce((a, x) => a + x.cuotaMensual, 0)) }, { etiqueta: "Alumnos activos", valor: num(lista.length) }],
         secciones: [{
-          filas: lista.map((a) => ({ id: a.id, titulo: a.nombre, detalle: [a.plan, a.cohorte].filter(Boolean).join(" · "), valor: money(a.cuotaMensual, a.moneda), href: `?ficha=${a.id}&vista=servicio` })),
+          filas: lista.map((a) => ({ id: a.id, titulo: a.nombre, detalle: [a.plan, a.cohorte].filter(Boolean).join(" · "), valor: money(a.cuotaMensual, a.moneda), ficha: { id: a.id, vista: "servicio" } })),
           vacio: "No hay alumnos activos.",
         }],
       };
@@ -200,7 +203,7 @@ function contenido(e: EstadoApp, que: QueDesglosar, mes: RangoMes): Contenido {
             return {
               id: x.cuota.id, titulo: v?.contactoNombre ?? "Venta sin contacto",
               detalle: `${nombreCuota(x.cuota)}${x.cuota.vence ? ` · vence ${fecha(x.cuota.vence)}` : ""}${x.pagado > 0 ? ` · pagó ${M(x.pagado)}` : ""}`,
-              valor: M(x.saldo), href: v ? `?ficha=${v.id}&vista=ventas&venta=${v.id}` : undefined,
+              valor: M(x.saldo), ficha: v ? { id: v.id, venta: v.id } : undefined,
               marca: vencida ? <Badge variante="danger">Vencida</Badge> : undefined,
             };
           }),
@@ -267,6 +270,7 @@ export function Desglose({ que, mes, onCerrar }: { que: QueDesglosar; mes: Rango
 }
 
 function FilaDesglose({ f }: { f: Fila }) {
+  const abrirFicha = useAbrirFicha();
   const marca = marcaDeDato(f.id);
   const cuerpo = (
     <>
@@ -279,7 +283,16 @@ function FilaDesglose({ f }: { f: Fila }) {
       {f.valor && <span className="t-num t-strong" style={{ whiteSpace: "nowrap", color: "var(--ink)" }}>{f.valor}</span>}
     </>
   );
-  return f.href
-    ? <Link href={f.href} className="agenda-item">{cuerpo}</Link>
+  const ficha = f.ficha;
+  return ficha
+    ? (
+      <button
+        type="button" className="agenda-item"
+        style={{ width: "100%", textAlign: "left", font: "inherit", color: "inherit" }}
+        onClick={() => abrirFicha(ficha.id, ficha.vista, ficha.venta ? { venta: ficha.venta } : undefined)}
+      >
+        {cuerpo}
+      </button>
+    )
     : <div className="agenda-item" style={{ cursor: "default" }}>{cuerpo}</div>;
 }

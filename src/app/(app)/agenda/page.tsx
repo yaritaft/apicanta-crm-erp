@@ -1,21 +1,25 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
-import { CalendarDays, Check, ExternalLink, Link2, Pencil, Plus, Trash2, UserRound, X } from "lucide-react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { ArrowLeft, ArrowRight, CalendarDays, Check, ExternalLink, Link2, Pencil, Plus, Search, Trash2, UserRound, X } from "lucide-react";
 import { PageHead } from "@/components/shell/PageHead";
-import { Ayuda, Badge, Button, Card, Chip, Empty, Field, IconButton, Input, Select, Tabs, Textarea } from "@/components/ui/ui";
+import { Ayuda, Badge, Button, Card, Empty, Field, IconButton, Input, Select, Textarea } from "@/components/ui/ui";
 import { ModalForm, Confirmar } from "@/components/ui/Modal";
 import { Drawer, Dato } from "@/components/ui/Drawer";
+import { DateRangePicker, diaDeNegocio } from "@/components/ui/DateRangePicker";
+import { CopiarLink, Filtro, opcionesDe, SIN, type OpcionFiltro } from "@/components/ui/Filtros";
 import { Origen } from "@/components/leads/Origen";
 import { ETIQUETA_CANAL } from "@/lib/calendly";
 import { CamposExtra, DatosExtra } from "@/components/ui/CamposExtra";
 import { useToast } from "@/components/ui/Toast";
 import { acciones, useEstado } from "@/lib/store";
 import { useAbrirDesdeURL } from "@/lib/useQuery";
+import { useRangoURL } from "@/lib/useRango";
+import { paginaDeURL, useBusquedaURL, useParamsURL } from "@/lib/useParamsURL";
 import { useAbrirFicha } from "@/components/ficha/abrir";
 import { AGENDAR_A_MANO } from "@/lib/funciones";
-import { fechaHora, fechaLarga, hora, isoMinuto, relativo } from "@/lib/format";
-import type { EstadoSesion, Sesion } from "@/lib/types";
+import { fechaHora, fechaLarga, hora, isoMinuto, num, relativo } from "@/lib/format";
+import type { CanalOrigen, EstadoSesion, Sesion } from "@/lib/types";
 
 const ETIQUETA: Record<EstadoSesion, { texto: string; variante: "accent" | "success" | "danger" | "neutral" }> = {
   "agendada": { texto: "Agendada", variante: "accent" },
@@ -25,6 +29,46 @@ const ETIQUETA: Record<EstadoSesion, { texto: string; variante: "accent" | "succ
 };
 
 const DOW = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"];
+
+/* La Agenda se arma desde la URL (ver lib/useParamsURL.ts), igual que
+   Ventas: el período va en ?periodo — arranca en "Todo lo próximo", que es
+   lo que antes era la pestaña Próximas — y el resto acá. Vacío es "todos".
+   - estado: agendada · hecha · no-show · cancelada
+   - tipo: el tipo de sesión tal cual, o "sin"
+   - anfitrion: quien la atiende (el closer en Calendly), o "sin"
+   - canal: webinar · vsl · setter · otro · sin (Calendly sin canal) · manual
+   - pag: la página, desde 1 */
+const VISTA_AGENDA = { estado: "", tipo: "", anfitrion: "", canal: "", pag: "1" };
+
+/* Llamadas por página. Se corta entre un día y otro, nunca en el medio de
+   uno: ver `paginas` más abajo. */
+const POR_PAGINA = 30;
+
+type Faceta = "estado" | "tipo" | "anfitrion" | "canal";
+const FACETAS: Faceta[] = ["estado", "tipo", "anfitrion", "canal"];
+
+/* De dónde vino: el canal de Calendly o, si se cargó a mano, eso. Son
+   excluyentes, así que van en un solo desplegable. */
+const canalDe = (s: Sesion) => (s.origen === "manual" ? "manual" : s.canal ?? SIN);
+const CANALES: OpcionFiltro[] = [
+  ...(Object.keys(ETIQUETA_CANAL) as CanalOrigen[]).map((k) => ({ valor: k, texto: ETIQUETA_CANAL[k] })),
+  { valor: SIN, texto: "Calendly, sin canal" },
+  { valor: "manual", texto: "Cargada a mano" },
+];
+
+const valorDe: Record<Faceta, (s: Sesion) => string> = {
+  estado: (s) => s.estado,
+  tipo: (s) => s.tipo?.trim() || SIN,
+  anfitrion: (s) => s.anfitrion?.trim() || SIN,
+  canal: canalDe,
+};
+
+/* El día de la llamada es el del negocio (Argentina), el mismo con el que se
+   arman los períodos: si no, una llamada de las 22 caería en "mañana". */
+const diaDe = (s: Sesion) => diaDeNegocio(s.inicia);
+
+/* Sin mayúsculas ni tildes: "benitez" encuentra a "Benítez". */
+const normal = (s: string) => s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 
 const VACIA = (tipo: string): Omit<Sesion, "id"> => {
   const d = new Date(); d.setHours(d.getHours() + 24, 0, 0, 0);
@@ -40,40 +84,129 @@ export default function Agenda() {
   const abrirFicha = useAbrirFicha();
   const toast = useToast();
   const url = useAbrirDesdeURL();
-  const [vista, setVista] = useState<"proximas" | "pasadas">("proximas");
-  const [estado, setEstado] = useState<"todos" | EstadoSesion>("todos");
   const [form, setForm] = useState<(Omit<Sesion, "id"> & { id?: string }) | null>(null);
   const [ver, setVer] = useState<string | null>(null);
   const [borrar, setBorrar] = useState<Sesion | null>(null);
+  const lista = useRef<HTMLDivElement>(null);
+
+  const [vista, setVista] = useParamsURL(VISTA_AGENDA);
+  const [busca, setBusca] = useBusquedaURL("q", ["pag"]);
 
   useEffect(() => {
     if (url.nuevo) { if (AGENDAR_A_MANO) setForm(VACIA(e.ajustes.tiposSesion[0] ?? "Sesión")); url.limpiar(); }
     else if (url.ver) { setVer(url.ver); url.limpiar(); }
   }, [url, e.ajustes.tiposSesion]);
 
-  const ahora = Date.now();
+  /* ---------- Período ----------
+     "Todo lo próximo" llega hasta la última llamada agendada y "Todo lo
+     pasado" arranca en la primera: los límites salen de los datos, así una
+     llamada nueva nunca queda afuera de un link guardado. */
+  const hoy = diaDeNegocio(new Date().toISOString());
+  const limites = useMemo(() => {
+    const dias = e.sesiones.map(diaDe).filter(Boolean).sort();
+    const ultimo = dias[dias.length - 1];
+    return { min: dias[0] ?? null, max: ultimo && ultimo > hoy ? ultimo : hoy };
+  }, [e.sesiones, hoy]);
+  const [rango, setRango] = useRangoURL("proximo", { futuro: true, limites });
 
-  const lista = useMemo(() => {
-    let xs = e.sesiones;
-    if (vista === "proximas") xs = xs.filter((s) => new Date(s.inicia).getTime() >= ahora - 3600000);
-    else xs = xs.filter((s) => new Date(s.inicia).getTime() < ahora);
-    if (estado !== "todos") xs = xs.filter((s) => s.estado === estado);
-    return [...xs].sort((a, b) =>
-      vista === "pasadas" ? +new Date(b.inicia) - +new Date(a.inicia) : +new Date(a.inicia) - +new Date(b.inicia));
-  }, [e.sesiones, vista, estado, ahora]);
+  /* Las dos que eran pestañas se cortan también por la HORA, como antes:
+     "Todo lo próximo" es desde una hora atrás (la llamada que está empezando
+     no desaparece) y "Todo lo pasado", lo que ya empezó. Los demás períodos
+     son días enteros: "Hoy" muestra el día completo. `ahora` va al minuto
+     para no recalcular la lista en cada render. */
+  const ahora = Math.floor(Date.now() / 60000) * 60000;
+  const enPeriodo = useMemo(() => e.sesiones.filter((s) => {
+    const dia = diaDe(s);
+    if (!dia || dia < rango.desde || dia > rango.hasta) return false;
+    if (rango.preset === "proximo") return new Date(s.inicia).getTime() >= ahora - 3600000;
+    if (rango.preset === "pasado") return new Date(s.inicia).getTime() < ahora;
+    return true;
+  }), [e.sesiones, rango, ahora]);
+
+  /* Lo que ya pasó se lee de lo último para atrás; lo que viene, en orden. */
+  const alReves = rango.preset === "pasado" || rango.hasta < hoy;
+
+  /* Cada desplegable ofrece lo que existe en las llamadas; el estado, los
+     cuatro de siempre. */
+  const opciones = useMemo<Record<Faceta, OpcionFiltro[]>>(() => ({
+    estado: (Object.keys(ETIQUETA) as EstadoSesion[]).map((k) => ({ valor: k, texto: ETIQUETA[k].texto })),
+    tipo: opcionesDe(e.sesiones.map(valorDe.tipo), (t) => t, "Sin tipo"),
+    anfitrion: opcionesDe(e.sesiones.map(valorDe.anfitrion), (a) => a, "Sin anfitrión"),
+    canal: CANALES.filter((c) => e.sesiones.some((s) => canalDe(s) === c.valor)),
+  }), [e.sesiones]);
+
+  /* Un filtro de la URL que ya no existe (un anfitrión que se fue, un link
+     viejo) se ignora en vez de dejar la agenda vacía sin explicación. */
+  const f = useMemo(() => Object.fromEntries(FACETAS.map((k) => [
+    k, opciones[k].some((o) => o.valor === vista[k]) ? vista[k] : "",
+  ])) as Record<Faceta, string>, [vista, opciones]);
+
+  /* Las llamadas que quedan, y cuántas hay de cada opción. Cada desplegable
+     cuenta sobre lo que dejan pasar los DEMÁS filtros, el período y la
+     búsqueda: el número dice cuántas vas a ver si lo elegís. */
+  const { visibles, cuentas } = useMemo(() => {
+    const t = normal(busca.trim());
+    const base = t ? enPeriodo.filter((s) => normal(`${s.invitado} ${s.email ?? ""}`).includes(t)) : enPeriodo;
+    const pasa = (s: Sesion, salvo?: Faceta) => FACETAS.every((k) => k === salvo || !f[k] || valorDe[k](s) === f[k]);
+    const cuentas = Object.fromEntries(FACETAS.map((k) => {
+      const m = new Map<string, number>();
+      for (const s of base) if (pasa(s, k)) m.set(valorDe[k](s), (m.get(valorDe[k](s)) ?? 0) + 1);
+      return [k, m];
+    })) as Record<Faceta, Map<string, number>>;
+    const visibles = base.filter((s) => pasa(s)).sort((a, b) => (alReves ? -1 : 1) * (+new Date(a.inicia) - +new Date(b.inicia)));
+    return { visibles, cuentas };
+  }, [enPeriodo, busca, f, alReves]);
 
   const porDia = useMemo(() => {
     const m = new Map<string, Sesion[]>();
-    for (const s of lista) {
-      const k = new Date(s.inicia).toDateString();
+    for (const s of visibles) {
+      const k = diaDe(s);
       if (!m.has(k)) m.set(k, []);
       m.get(k)!.push(s);
     }
     return [...m.entries()];
-  }, [lista]);
+  }, [visibles]);
+
+  /* Páginas de días enteros. Una página junta días hasta POR_PAGINA
+     llamadas; un día que solo ya pasa ese número va entero en la suya.
+     Partir un día entre dos páginas haría creer que ese día hubo menos. */
+  const paginas = useMemo(() => {
+    const out: [string, Sesion[]][][] = [];
+    let actual: [string, Sesion[]][] = [];
+    let n = 0;
+    for (const dia of porDia) {
+      if (actual.length > 0 && n + dia[1].length > POR_PAGINA) { out.push(actual); actual = []; n = 0; }
+      actual.push(dia);
+      n += dia[1].length;
+    }
+    if (actual.length > 0) out.push(actual);
+    return out;
+  }, [porDia]);
+  const pagina = Math.min(paginaDeURL(vista.pag), Math.max(1, paginas.length)) - 1;
+  const enPagina = paginas[pagina] ?? [];
+  const cuantas = (dias: [string, Sesion[]][]) => dias.reduce((a, [, xs]) => a + xs.length, 0);
+  const antes = paginas.slice(0, pagina).reduce((a, p) => a + cuantas(p), 0);
+
+  function irAPagina(p: number) {
+    setVista({ pag: String(p + 1) });
+    /* Con el paginador de abajo, la página nueva se empieza a leer por su
+       primer día y no desde donde había quedado el scroll. */
+    const arriba = lista.current?.getBoundingClientRect().top;
+    if (arriba !== undefined && arriba < 0) window.scrollTo({ top: window.scrollY + arriba - 96 });
+  }
+
+  /* Cambiar un filtro vuelve a la primera página. */
+  const filtrar = (faceta: Faceta, valor: string) => setVista({ [faceta]: valor || null, pag: null });
+  const conCuenta = (xs: OpcionFiltro[], m: Map<string, number>) => xs.map((o) => ({ ...o, cuenta: m.get(o.valor) ?? 0 }));
+
+  /* Limpia lo que recorta la lista; el período queda, que se elige arriba. */
+  const hayFiltros = FACETAS.some((k) => f[k]) || busca.trim() !== "";
+  function limpiarFiltros() {
+    setBusca("");
+    setVista({ estado: null, tipo: null, anfitrion: null, canal: null, pag: null }, { q: null });
+  }
 
   const sesionVista = e.sesiones.find((s) => s.id === ver) ?? null;
-  const hoy = new Date().toDateString();
 
   function guardar() {
     if (!form) return;
@@ -100,44 +233,70 @@ export default function Agenda() {
         sub={AGENDAR_A_MANO
           ? "Todas las llamadas, de Calendly o cargadas a mano. Marcá si la persona vino o no para que el número de asistencia sea real."
           : "Las llamadas entran solas desde Calendly. Marcá si la persona vino o no para que el número de asistencia sea real."}
-        acciones={AGENDAR_A_MANO ? <Button variante="primary" icono={<Plus size={16} />} onClick={() => setForm(VACIA(e.ajustes.tiposSesion[0] ?? "Sesión"))}>Agendar sesión</Button> : undefined}
+        acciones={
+          <>
+            <DateRangePicker
+              value={rango} minDate={limites.min} maxDate={limites.max} futuro
+              onApply={(r) => setRango(r, { pag: null })}
+              footerNota="Por el día de la llamada · hora de Argentina"
+            />
+            {AGENDAR_A_MANO && <Button variante="primary" icono={<Plus size={16} />} onClick={() => setForm(VACIA(e.ajustes.tiposSesion[0] ?? "Sesión"))}>Agendar sesión</Button>}
+          </>
+        }
       />
 
       <Card>
-        <div className="toolbar">
-          <Tabs
-            valor={vista} onChange={setVista}
-            opciones={[
-              { valor: "proximas", texto: "Próximas" },
-              { valor: "pasadas", texto: "Pasadas" },
-            ]}
-          />
-          <span className="spacer" />
-          <div style={{ width: 200 }}>
-            <Select
-              value={estado} aria-label="Filtrar por estado"
-              onChange={(ev) => setEstado(ev.target.value as "todos" | EstadoSesion)}
-              opciones={[
-                { valor: "todos", texto: "Todos los estados" },
-                ...(Object.keys(ETIQUETA) as EstadoSesion[]).map((k) => ({
-                  valor: k, texto: `${ETIQUETA[k].texto} (${e.sesiones.filter((s) => s.estado === k).length})`,
-                })),
-              ]}
+        {/* Un desplegable de una sola opción no recorta nada: no se muestra. */}
+        <div className="toolbar" style={{ marginBottom: "var(--space-3)" }}>
+          <Filtro etiqueta="Filtrar por estado" todos="Todos los estados" valor={f.estado}
+            opciones={conCuenta(opciones.estado, cuentas.estado)} onCambiar={(v) => filtrar("estado", v)} />
+          {opciones.tipo.length > 1 && (
+            <Filtro etiqueta="Filtrar por tipo de sesión" todos="Todos los tipos" valor={f.tipo}
+              opciones={conCuenta(opciones.tipo, cuentas.tipo)} onCambiar={(v) => filtrar("tipo", v)} />
+          )}
+          {opciones.anfitrion.length > 1 && (
+            <Filtro etiqueta="Filtrar por anfitrión" todos="Todos los anfitriones" valor={f.anfitrion}
+              opciones={conCuenta(opciones.anfitrion, cuentas.anfitrion)} onCambiar={(v) => filtrar("anfitrion", v)} />
+          )}
+          {opciones.canal.length > 1 && (
+            <Filtro etiqueta="Filtrar por canal" todos="Todos los canales" valor={f.canal}
+              opciones={conCuenta(opciones.canal, cuentas.canal)} onCambiar={(v) => filtrar("canal", v)} />
+          )}
+          <div className="buscador">
+            <Input
+              icono={<Search size={18} />} value={busca} onChange={(ev) => setBusca(ev.target.value)}
+              placeholder="Buscá por nombre o email…" aria-label="Buscar llamadas por invitado o email"
             />
           </div>
         </div>
+        <div className="toolbar">
+          <span className="t-sm t-subtle t-num">
+            {num(visibles.length)} {visibles.length === 1 ? "llamada" : "llamadas"}
+            {visibles.length > 1 && (alReves ? " · de la última a la primera" : " · de la primera a la última")}
+          </span>
+          <span className="spacer" />
+          {hayFiltros && <Button sm variante="ghost" onClick={limpiarFiltros}>Limpiar filtros</Button>}
+          <CopiarLink />
+        </div>
 
-        {porDia.length === 0 ? (
+        {visibles.length === 0 ? (
           <Empty
             icono={<CalendarDays size={22} />}
-            titulo={vista === "proximas" ? "No hay nada agendado" : "Nada para mostrar"}
-            texto={vista === "proximas" ? "Cuando agendes una llamada va a aparecer acá, ordenada por día." : "Probá con otra vista o sacá el filtro de estado."}
-            accion={AGENDAR_A_MANO ? <Button variante="brand" icono={<Plus size={16} />} onClick={() => setForm(VACIA(e.ajustes.tiposSesion[0] ?? "Sesión"))}>Agendar una sesión</Button> : undefined}
+            titulo={hayFiltros ? "Ninguna llamada coincide" : rango.preset === "proximo" ? "No hay nada agendado" : "Nada para mostrar"}
+            texto={hayFiltros
+              ? "Probá con otro período o sacá algún filtro."
+              : rango.preset === "proximo"
+                ? "Cuando agendes una llamada va a aparecer acá, ordenada por día."
+                : "No hay llamadas en este período. Probá con otro."}
+            accion={hayFiltros
+              ? <Button variante="secondary" onClick={limpiarFiltros}>Limpiar filtros</Button>
+              : AGENDAR_A_MANO ? <Button variante="brand" icono={<Plus size={16} />} onClick={() => setForm(VACIA(e.ajustes.tiposSesion[0] ?? "Sesión"))}>Agendar una sesión</Button> : undefined}
           />
         ) : (
-          <div>
-            {porDia.map(([dia, items]) => {
-              const d = new Date(dia);
+          <div ref={lista}>
+            {enPagina.map(([dia, items]) => {
+              const [a, m, n] = dia.split("-").map(Number);
+              const d = new Date(a, m - 1, n);
               return (
                 <div key={dia} className={`agenda-day${dia === hoy ? " agenda-day--hoy" : ""}`}>
                   <div className="agenda-day__label">
@@ -173,6 +332,31 @@ export default function Agenda() {
                 </div>
               );
             })}
+          </div>
+        )}
+
+        {/* El mismo paginador de las tablas: pegado abajo mientras se recorren
+            los días, para no tener que bajar hasta el final a cambiar de
+            página. */}
+        {paginas.length > 1 && (
+          <div className="hk-paginador agenda-paginador">
+            <span className="t-sm t-subtle t-num">
+              {num(antes + 1)}–{num(antes + cuantas(enPagina))} de {num(visibles.length)}
+            </span>
+            <span className="spacer" />
+            <button
+              type="button" className="hk-btn hk-btn--ghost hk-btn--sm"
+              disabled={pagina === 0} onClick={() => irAPagina(pagina - 1)}
+            >
+              <ArrowLeft size={15} />Anterior
+            </button>
+            <span className="t-sm t-muted">{pagina + 1} / {paginas.length}</span>
+            <button
+              type="button" className="hk-btn hk-btn--ghost hk-btn--sm"
+              disabled={pagina >= paginas.length - 1} onClick={() => irAPagina(pagina + 1)}
+            >
+              Siguiente<ArrowRight size={15} />
+            </button>
           </div>
         )}
       </Card>

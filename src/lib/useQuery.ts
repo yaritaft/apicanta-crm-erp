@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
+import { useEscribirURL } from "@/lib/useParamsURL";
 
 /* Lee ?nuevo=1 y ?ver=<id> para abrir modales desde enlaces.
 
@@ -10,7 +11,7 @@ import { useRouter, useSearchParams } from "next/navigation";
    entrarían en bucle. */
 export function useAbrirDesdeURL(): { nuevo: boolean; ver: string | null; limpiar: () => void } {
   const params = useSearchParams();
-  const router = useRouter();
+  const escribir = useEscribirURL();
   const [estado, setEstado] = useState<{ nuevo: boolean; ver: string | null }>({ nuevo: false, ver: null });
   const consumido = useRef(false);
 
@@ -21,12 +22,17 @@ export function useAbrirDesdeURL(): { nuevo: boolean; ver: string | null; limpia
     if (nuevo || ver) { consumido.current = true; setEstado({ nuevo, ver }); }
   }, [params]);
 
+  /* Saca sólo ?nuevo y ?ver, que son de un solo uso. Antes borraba la query
+     entera, y con ella los filtros, el orden y el período que ahora viven en
+     la URL: abrir "Nueva venta" desde un link te dejaba el reporte pelado.
+     `escribir` es estable (lee la URL al llamarlo), así que `limpiar`
+     también, y el objeto de arriba no cambia por esto. */
   const limpiar = useCallback(() => {
     setEstado({ nuevo: false, ver: null });
-    if (typeof window !== "undefined" && window.location.search) {
-      router.replace(window.location.pathname);
-    }
-  }, [router]);
+    if (typeof window === "undefined") return;
+    const q = new URLSearchParams(window.location.search);
+    if (q.has("nuevo") || q.has("ver")) escribir({ nuevo: null, ver: null });
+  }, [escribir]);
 
   return useMemo(
     () => ({ nuevo: estado.nuevo, ver: estado.ver, limpiar }),
