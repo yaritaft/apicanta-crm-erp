@@ -61,7 +61,6 @@ export function useAlCambiar(escuchas: Escucha[], alCambiar: (fila?: Record<stri
         "postgres_changes" as never,
         { event: "*", schema: "public", table: tabla, ...(filtro ? { filter: filtro } : {}) },
         (p: { new?: Record<string, unknown> }) => {
-          console.info("[realtime] cambio en", tabla);
           window.clearTimeout(espera);
           espera = window.setTimeout(() => ref.current(p.new), 400);
         },
@@ -273,7 +272,10 @@ export function useWebinarsAlDia(ids: string[]) {
     return () => window.clearInterval(t);
   }, [traer]);
 
+  /* El aviso es sólo el gatillo: con RLS puede llegar sin la fila, así que
+     se vuelve a pedir lo que cambió (una consulta chiquita). */
   useAlCambiar(clave ? [{ tabla: "webinars" }] : [], (fila) => {
-    if (fila && typeof fila.id === "string" && clave.split(",").includes(fila.id)) aplicar([fila]);
+    if (fila && typeof fila.id === "string" && !clave.split(",").includes(fila.id)) return;
+    void traer();
   });
 }
