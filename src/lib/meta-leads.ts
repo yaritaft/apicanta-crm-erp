@@ -1,17 +1,24 @@
+import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { GRAPH } from "./meta";
 
 /* ==================================================================
    Los formularios de Meta (Lead Ads): quién se anotó en un formulario
    instantáneo de Facebook o Instagram.
 
-   Con el token de sistema se piden las páginas del negocio (cada una
-   trae su token de página), sus formularios con las preguntas y los
-   leads de cada formulario. Meta guarda los leads sólo 90 días: por eso
-   se traen solos y no hace falta entrar a descargarlos.
+   Entran por webhook: Meta avisa al instante cada lead nuevo (el campo
+   "leadgen" de la página) y con ese aviso se pide ESE lead a la API. No
+   hay consultas periódicas, así no se gasta el límite de Meta. Para lo
+   anterior al webhook hay un botón que trae los últimos 90 días (lo que
+   guarda Meta), una vez.
+
+   La suscripción se hace con lo que ya tenemos: el token de sistema para
+   las páginas y el App Secret para la app. El token de verificación del
+   webhook sale del App Secret, así no hay otra clave que guardar.
 
    Lo que tiene que tener el usuario del sistema en el Business Manager,
    además de lo de anuncios: los permisos leads_retrieval,
-   pages_show_list, pages_read_engagement y pages_manage_ads, la página
+   pages_show_list, pages_read_engagement, pages_manage_metadata (para
+   suscribir la página al webhook) y pages_manage_ads, la página
    asignada, y el acceso a los clientes potenciales (Configuración del
    negocio → Integraciones → Acceso a clientes potenciales). Si falta
    algo, el error lo dice con esas palabras.
@@ -38,7 +45,7 @@ export interface LeadMeta {
 
 interface ErrorGraph { message?: string; code?: number; error_subcode?: number }
 
-const PERMISOS_LEADS = "leads_retrieval, pages_show_list, pages_read_engagement y pages_manage_ads";
+const PERMISOS_LEADS = "leads_retrieval, pages_show_list, pages_read_engagement, pages_manage_metadata y pages_manage_ads";
 
 function errorDeMeta(err: ErrorGraph | undefined, status: number): Error {
   const msg = err?.message ?? `Meta respondió ${status}`;
@@ -157,4 +164,130 @@ export function respuestasDe(l: LeadMeta, f?: FormularioMeta): { pregunta: strin
       pregunta: f?.preguntas[c.nombre] ?? c.nombre.replace(/_/g, " "),
       respuesta: c.valores.map((v) => v.replace(/_/g, " ").trim()).join(", "),
     }));
+}
+
+/* ---------- Un lead puntual, para el aviso del webhook ---------- */
+
+/** El token de una página, pedido con el token de sistema. */
+export async function paginaPorId(id: string, tokenSistema: string): Promise<PaginaMeta> {
+  const u = new URL(`${GRAPH}/${id}`);
+  u.searchParams.set("fields", "id,name,access_token");
+  u.searchParams.set("access_token", tokenSistema);
+  const p = await pedir<{ id: string; name: string; access_token?: string }>(u);
+  if (!p.access_token) throw new Error(`El usuario del sistema no tiene la página ${p.name ?? id} asignada.`);
+  return { id: p.id, nombre: p.name, token: p.access_token };
+}
+
+export async function formularioPorId(id: string, p: PaginaMeta): Promise<FormularioMeta> {
+  const u = new URL(`${GRAPH}/${id}`);
+  u.searchParams.set("fields", "id,name,status,questions{key,label}");
+  u.searchParams.set("access_token", p.token);
+  const f = await pedir<{ id: string; name: string; status: string; questions?: { key: string; label?: string }[] }>(u);
+  return {
+    id: f.id, nombre: f.name, estado: f.status,
+    preguntas: Object.fromEntries((f.questions ?? []).map((q) => [q.key, q.label || q.key])),
+  };
+}
+
+export async function leadPorId(id: string, formularioId: string, p: PaginaMeta): Promise<LeadMeta> {
+  const u = new URL(`${GRAPH}/${id}`);
+  u.searchParams.set("fields", CAMPOS_LEAD);
+  u.searchParams.set("access_token", p.token);
+  return leadDe(await pedir<LeadCrudo>(u), formularioId);
+}
+
+/* ---------- La suscripción al webhook ---------- */
+
+const tokenDeApp = () => {
+  const id = process.env.META_APP_ID?.trim();
+  const secreto = process.env.META_APP_SECRET?.trim();
+  return id && secreto ? { id, secreto, token: `${id}|${secreto}` } : null;
+};
+
+/** El token con el que Meta verifica el webhook: sale del App Secret. */
+export function tokenDeVerificacion(): string | null {
+  const secreto = process.env.META_APP_SECRET?.trim();
+  return secreto ? createHash("sha256").update(`apicanta-leadgen:${secreto}`).digest("hex").slice(0, 32) : null;
+}
+
+/** Que el aviso lo haya mandado Meta: la firma es un HMAC del cuerpo con el App Secret. */
+export function firmaValida(cuerpo: string, cabecera: string | null): boolean {
+  const secreto = process.env.META_APP_SECRET?.trim();
+  if (!secreto || !cabecera?.startsWith("sha256=")) return false;
+  const esperada = createHmac("sha256", secreto).update(cuerpo, "utf8").digest();
+  const recibida = Buffer.from(cabecera.slice(7), "hex");
+  return recibida.length === esperada.length && timingSafeEqual(recibida, esperada);
+}
+
+export interface EstadoWebhook {
+  app: { activo: boolean; callback?: string; error?: string };
+  paginas: { id: string; nombre: string; suscripta: boolean; error?: string }[];
+}
+
+/** Si la app escucha "leadgen" y en qué dirección, y qué páginas le avisan. */
+export async function estadoWebhook(tokenSistema: string): Promise<EstadoWebhook> {
+  const out: EstadoWebhook = { app: { activo: false }, paginas: [] };
+  const app = tokenDeApp();
+  if (!app) out.app.error = "Faltan META_APP_ID y META_APP_SECRET en el servidor.";
+  else {
+    try {
+      const u = new URL(`${GRAPH}/${app.id}/subscriptions`);
+      u.searchParams.set("access_token", app.token);
+      const j = await pedir<{ data?: { object: string; callback_url: string; active: boolean; fields?: { name: string }[] }[] }>(u);
+      const pagina = (j.data ?? []).find((s) => s.object === "page" && s.fields?.some((f) => f.name === "leadgen"));
+      out.app = { activo: Boolean(pagina?.active), callback: pagina?.callback_url };
+    } catch (err) {
+      out.app.error = err instanceof Error ? err.message : String(err);
+    }
+  }
+  let paginas: PaginaMeta[] = [];
+  try {
+    paginas = await paginasDelNegocio(tokenSistema);
+  } catch (err) {
+    out.paginas.push({ id: "", nombre: "Páginas", suscripta: false, error: err instanceof Error ? err.message : String(err) });
+    return out;
+  }
+  for (const p of paginas) {
+    try {
+      const u = new URL(`${GRAPH}/${p.id}/subscribed_apps`);
+      u.searchParams.set("access_token", p.token);
+      const j = await pedir<{ data?: { id: string; subscribed_fields?: string[] }[] }>(u);
+      const suscripta = (j.data ?? []).some((a) => a.id === app?.id && a.subscribed_fields?.includes("leadgen"));
+      out.paginas.push({ id: p.id, nombre: p.nombre, suscripta });
+    } catch (err) {
+      out.paginas.push({ id: p.id, nombre: p.nombre, suscripta: false, error: err instanceof Error ? err.message : String(err) });
+    }
+  }
+  return out;
+}
+
+/**
+ * Activa los avisos: la app escucha "leadgen" de las páginas en `callback`
+ * (Meta la verifica en el momento con un GET), y cada página se suscribe a
+ * la app. Se puede correr de nuevo: si ya estaba, queda igual.
+ */
+export async function activarWebhook(tokenSistema: string, callback: string): Promise<EstadoWebhook> {
+  const app = tokenDeApp();
+  const verificacion = tokenDeVerificacion();
+  if (!app || !verificacion) throw new Error("Faltan META_APP_ID y META_APP_SECRET en el servidor.");
+  const u = new URL(`${GRAPH}/${app.id}/subscriptions`);
+  u.searchParams.set("object", "page");
+  u.searchParams.set("callback_url", callback);
+  u.searchParams.set("fields", "leadgen");
+  u.searchParams.set("verify_token", verificacion);
+  u.searchParams.set("include_values", "true");
+  u.searchParams.set("access_token", app.token);
+  const r = await fetch(u, { method: "POST", cache: "no-store", signal: AbortSignal.timeout(20000) });
+  const j = (await r.json().catch(() => ({}))) as { error?: ErrorGraph };
+  if (!r.ok || j.error) throw errorDeMeta(j.error, r.status);
+
+  for (const p of await paginasDelNegocio(tokenSistema)) {
+    const s = new URL(`${GRAPH}/${p.id}/subscribed_apps`);
+    s.searchParams.set("subscribed_fields", "leadgen");
+    s.searchParams.set("access_token", p.token);
+    const rs = await fetch(s, { method: "POST", cache: "no-store", signal: AbortSignal.timeout(20000) });
+    const js = (await rs.json().catch(() => ({}))) as { error?: ErrorGraph };
+    if (!rs.ok || js.error) throw errorDeMeta(js.error, rs.status);
+  }
+  return estadoWebhook(tokenSistema);
 }

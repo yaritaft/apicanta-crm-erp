@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { metaConfigurado, tokenDeSistema, traerCuentas } from "@/lib/meta";
 import { sincronizarMeta, ventana } from "@/lib/meta-sync";
-import { sincronizarLeadsMeta } from "@/lib/meta-leads-sync";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -79,14 +78,7 @@ export async function GET(req: Request) {
       }
     }
 
-    /* Los formularios de Meta, después de los anuncios: los leads nuevos de
-       los últimos días (el repaso de las 5 AM mira la semana). Si fallan, no
-       arrastran al sync de anuncios, que ya terminó. */
-    const formularios = await sincronizarLeadsMeta({ dias: completo ? 7 : 2 }).catch((e) => ({
-      errores: [e instanceof Error ? e.message : "No se pudieron leer los formularios."],
-    }));
-
-    const salida = { modo: completo ? "completo" : "rapido", desde, hasta, resultados, fallidas, formularios };
+    const salida = { modo: completo ? "completo" : "rapido", desde, hasta, resultados, fallidas };
     console.log("[cron/meta]", JSON.stringify(salida));
 
     /* 207 cuando alguna falló: el cron figura como corrido, pero queda

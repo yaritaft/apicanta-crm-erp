@@ -1,7 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { idAd, tokenDeSistema } from "./meta";
 import {
-  datosPersonales, formulariosDe, leadsDe, paginasDelNegocio, respuestasDe,
+  datosPersonales, formularioPorId, formulariosDe, leadPorId, leadsDe, paginaPorId, paginasDelNegocio, respuestasDe,
   type FormularioMeta, type LeadMeta, type PaginaMeta,
 } from "./meta-leads";
 import { aniosDeTexto, nivelDeIngles, respuestaA, webinarDeUtm } from "./calendly";
@@ -13,9 +13,12 @@ import type { Contacto, Lead, ReglaUtm } from "./types";
 /* ==================================================================
    Los formularios de Meta entran solos al CRM.
 
-   Cada 15 minutos (el cron de Meta) se piden los leads nuevos de todos
-   los formularios de las páginas del negocio, y con el botón "Traer
-   ahora" de Ajustes, los de los últimos 90 días (lo que guarda Meta).
+   Entran por webhook: cada vez que alguien se anota, Meta avisa (ver
+   app/api/meta/leads/webhook) y se pide ese lead a la API. No hay un
+   cron que consulte cada tanto: con muchos formularios, eso se comería
+   el límite de Meta. Lo que ya estaba antes de activar los avisos se
+   trae una vez con el botón de Ajustes (los últimos 90 días, lo que
+   guarda Meta).
 
    Por cada lead:
    - El contacto: el mismo email es la misma persona. Si ya estaba, se
@@ -106,12 +109,17 @@ interface Contexto {
   conocidas: Set<string>;
 }
 
-async function contexto(db: SupabaseClient): Promise<Contexto> {
+/* `conConocidas`: para la carga de 90 días, las inscripciones que ya están,
+   así no se vuelven a procesar. El webhook trae de a una y no le hace falta:
+   reingresar la misma reemplaza la inscripción, no la duplica. */
+async function contexto(db: SupabaseClient, conConocidas = true): Promise<Contexto> {
   const [w, a, et, c] = await Promise.all([
     db.from("webinars").select("id,fecha"),
     db.from("ajustes").select("reglasUtm").limit(1),
     db.from("etapas").select("id,orden,esGanada,esPerdida"),
-    db.from("contactos").select("extra").not("extra->formulariosMeta", "is", null),
+    conConocidas
+      ? db.from("contactos").select("extra").not("extra->formulariosMeta", "is", null)
+      : Promise.resolve({ data: [], error: null }),
   ]);
   for (const r of [w, a, et, c]) if (r.error) throw new Error(r.error.message);
   const etapas = ((et.data ?? []) as { id: string; orden: number; esGanada?: boolean; esPerdida?: boolean }[])
@@ -213,13 +221,15 @@ async function ingresar(ctx: Contexto, l: LeadMeta, f: FormularioMeta, res: Resu
 /* "Formularios" de cada webinar = sus inscripciones. Como "Asistieron al
    vivo": no se pisa un número cargado a mano; sólo se escribe si el campo
    está en 0 o todavía tiene el último número que puso esto. */
-async function completarFormularios(ctx: Contexto, res: ResultadoLeadsMeta): Promise<void> {
+async function completarFormularios(ctx: Contexto, res: ResultadoLeadsMeta, soloWebinars?: Set<string>): Promise<void> {
   const { db } = ctx;
   const c = await db.from("contactos").select("extra").not("extra->formulariosMeta", "is", null);
   if (c.error) { res.errores.push(`contactos: ${c.error.message}`); return; }
   const porWebinar = new Map<string, number>();
   for (const fila of (c.data ?? []) as Pick<Contacto, "extra">[]) {
-    for (const i of inscripcionesDe(fila)) if (i.webinarId) porWebinar.set(i.webinarId, (porWebinar.get(i.webinarId) ?? 0) + 1);
+    for (const i of inscripcionesDe(fila)) {
+      if (i.webinarId && (!soloWebinars || soloWebinars.has(i.webinarId))) porWebinar.set(i.webinarId, (porWebinar.get(i.webinarId) ?? 0) + 1);
+    }
   }
   if (porWebinar.size === 0) return;
   const w = await db.from("webinars").select("id,formularios,extra").in("id", [...porWebinar.keys()]);
@@ -237,16 +247,65 @@ async function completarFormularios(ctx: Contexto, res: ResultadoLeadsMeta): Pro
   }
 }
 
+const resultadoVacio = (): ResultadoLeadsMeta => ({
+  paginas: [], formularios: [], leadsLeidos: 0, inscripcionesNuevas: 0,
+  contactosNuevos: 0, leadsNuevos: 0, webinarsActualizados: 0, errores: [],
+});
+
+export interface AvisoLeadgen { leadgen_id?: string; page_id?: string; form_id?: string }
+
+/**
+ * Lo que manda el webhook: por cada aviso, se pide el lead a la API (el
+ * cuerpo del aviso no se usa para los datos: lo podría haber escrito
+ * cualquiera; la firma se revisa antes, en la ruta) y se guarda.
+ */
+export async function ingresarAvisosMeta(avisos: AvisoLeadgen[]): Promise<ResultadoLeadsMeta> {
+  const res = resultadoVacio();
+  const token = tokenDeSistema();
+  if (!token) { res.errores.push("Falta META_SYSTEM_TOKEN."); return res; }
+  const db = nubeServidor();
+  if (!db) { res.errores.push("Falta SUPABASE_SERVICE_ROLE_KEY."); return res; }
+  const ctx = await contexto(db, false);
+  const paginas = new Map<string, PaginaMeta>();
+  const formularios = new Map<string, FormularioMeta>();
+  const webinarsTocados = new Set<string>();
+
+  for (const a of avisos) {
+    if (!a.leadgen_id || !a.page_id) continue;
+    try {
+      let p = paginas.get(a.page_id);
+      if (!p) { p = await paginaPorId(a.page_id, token); paginas.set(a.page_id, p); }
+      const l = await leadPorId(a.leadgen_id, a.form_id ?? "", p);
+      const fid = l.formularioId || a.form_id || "";
+      let f = formularios.get(fid);
+      if (!f) {
+        f = fid ? await formularioPorId(fid, p) : { id: "", nombre: "Formulario de Meta", estado: "", preguntas: {} };
+        formularios.set(fid, f);
+      }
+      res.leadsLeidos++;
+      const antes = res.inscripcionesNuevas;
+      await ingresar(ctx, l, f, res);
+      if (res.inscripcionesNuevas > antes) {
+        const regla = reglaQueCalza(ctx.reglas, normalizarUtm(utmDeMeta(l)));
+        const w = regla?.webinarId ?? webinarDeNombres([l.campania, l.conjunto, l.anuncio, f.nombre], ctx.webinars, l.creado);
+        if (w) webinarsTocados.add(w);
+      }
+    } catch (err) {
+      res.errores.push(`lead ${a.leadgen_id}: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+  res.paginas = [...paginas.values()].map((p) => p.nombre);
+  if (webinarsTocados.size) await completarFormularios(ctx, res, webinarsTocados);
+  return res;
+}
+
 /**
  * Trae los leads de los formularios de Meta de los últimos `dias` y los
- * guarda. `limite` corta cuántos nuevos procesa por corrida: lo que queda,
+ * guarda: la carga de lo anterior a los avisos, con el botón de Ajustes. `limite` corta cuántos nuevos procesa por corrida: lo que queda,
  * lo toma la siguiente (reingresar no duplica).
  */
 export async function sincronizarLeadsMeta({ dias = 3, limite = 400 }: { dias?: number; limite?: number } = {}): Promise<ResultadoLeadsMeta> {
-  const res: ResultadoLeadsMeta = {
-    paginas: [], formularios: [], leadsLeidos: 0, inscripcionesNuevas: 0,
-    contactosNuevos: 0, leadsNuevos: 0, webinarsActualizados: 0, errores: [],
-  };
+  const res = resultadoVacio();
   const token = tokenDeSistema();
   if (!token) { res.errores.push("Falta META_SYSTEM_TOKEN: sin el token de sistema no se pueden leer los formularios."); return res; }
   const db = nubeServidor();
