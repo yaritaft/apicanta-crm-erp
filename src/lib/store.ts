@@ -1537,6 +1537,30 @@ export const acciones = {
     empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
   },
 
+  /* El origen que sale de las UTMs (Ajustes → UTMs), en las ventas que no
+     lo tenían: una sola entrada en la actividad para todas. */
+  completarOrigenes(lista: { id: ID; cambios: Partial<Venta> }[]): number {
+    if (lista.length === 0) return 0;
+    const e = snapshot();
+    const porId = new Map(lista.map((x) => [x.id, x.cambios]));
+    const tocadas: Venta[] = [];
+    const ventas = e.ventas.map((v) => {
+      const c = porId.get(v.id);
+      if (!c) return v;
+      const nueva = { ...v, ...c };
+      tocadas.push(nueva);
+      return nueva;
+    });
+    const { lista: actividad, nuevo } = registrar(
+      e, "config", "utms", "UTMs", "actualizo",
+      `Se completó el origen de ${tocadas.length} ${tocadas.length === 1 ? "venta" : "ventas"} con las UTMs.`,
+    );
+    guardar({ ...e, ventas, actividad });
+    empujarEnLotes("ventas", tocadas);
+    empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
+    return tocadas.length;
+  },
+
   ajustesSilencioso(cambios: Partial<Ajustes>) {
     const e = snapshot();
     const ajustes = { ...e.ajustes, ...cambios };

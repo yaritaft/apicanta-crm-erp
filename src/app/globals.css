@@ -1812,6 +1812,20 @@ a.wb-canal:hover { background: var(--surface-200); border-color: var(--border-st
 .cambio-campo__fila { display: grid; grid-template-columns: minmax(0, 200px) auto; gap: var(--space-3); align-items: center; }
 
 /* ---------- Ajustes → Ventas: servicios, cuentas y estrategias ---------- */
+/* Ajustes → UTMs: cada regla en dos renglones, lo que tiene que traer el
+   link y de qué es; abajo, las que llegaron sin asignar. */
+.utm-regla { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface-000); }
+.utm-regla .hk-input { height: 36px; font-size: 14px; }
+.utm-regla__utm { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)) auto; gap: var(--space-2); align-items: center; }
+.utm-regla__destino { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.4fr) auto; gap: var(--space-2); align-items: center; }
+.utm-regla__cuenta { white-space: nowrap; }
+.utm-detectada { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; padding: var(--space-2) 0; border-bottom: 1px solid var(--border); }
+.utm-detectada:last-child { border-bottom: 0; }
+.utm-detectada__utm { display: flex; gap: 6px; flex-wrap: wrap; flex: 1; min-width: 0; }
+@media (max-width: 760px) {
+  .utm-regla__utm, .utm-regla__destino { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+}
+
 .catalogo-lista { display: flex; flex-direction: column; gap: var(--space-2); }
 .catalogo-fila {
   display: grid; gap: var(--space-2); align-items: center; padding: var(--space-2);
