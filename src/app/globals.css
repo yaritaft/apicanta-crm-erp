@@ -1411,6 +1411,19 @@ kbd {
   letter-spacing: -.02em; color: var(--ink);
 }
 
+/* Reporte para la Financiera (Detalle → Procesadores): lo que va a salir, antes de bajarlo */
+.reporte-fin {
+  display: flex; flex-direction: column; gap: var(--space-3); padding: var(--space-4);
+  border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface-200);
+}
+.reporte-fin__cifras { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: var(--space-1) var(--space-3); color: var(--ink-muted); }
+.reporte-fin__numero { font-family: var(--font-display); font-size: 28px; line-height: 32px; font-weight: 600; color: var(--ink); font-variant-numeric: tabular-nums; }
+.reporte-fin__aviso { display: flex; align-items: flex-start; gap: var(--space-2); font-size: 13px; line-height: 20px; color: var(--ink-muted); }
+.reporte-fin__aviso strong { color: var(--ink); font-weight: 600; }
+/* El color con que queda pintada la fila en el Excel. */
+.reporte-fin__color { flex: none; width: 14px; height: 14px; margin-top: 3px; border-radius: 4px; border: 1px solid var(--border-strong); }
+.reporte-fin__lista { margin: var(--space-1) 0 0; padding-left: var(--space-4); list-style: disc; }
+
 /* ============================================================
    Webinars — la planilla, la ficha y el video
    ============================================================ */
