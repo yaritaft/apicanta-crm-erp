@@ -66,7 +66,9 @@ function Servicios() {
         sub="Lo que se vende. El tipo separa las mentorías de los downsells y los eventos en el Dashboard."
         acciones={<Button variante="secondary" icono={<Plus size={16} />} onClick={agregar}>Agregar servicio</Button>}
       />
-      <div className="catalogo-lista">
+      {/* Nada se borra (lo viejo se apaga), así que estas listas sólo crecen:
+          con scroll adentro y los títulos de las columnas pegados arriba. */}
+      <div className="catalogo-lista lista-scroll">
         <div className="catalogo-fila catalogo-fila--cabeza catalogo-fila--servicio" aria-hidden>
           <span>Nombre</span><span>Precio de lista</span><span>Tipo</span><span />
         </div>
@@ -124,7 +126,8 @@ function Cuentas() {
         sub="Por dónde entra la plata. La comisión es la que cobra cada una: si el cobro se concilia con la pasarela manda el fee real; si no, se usa esta y se puede corregir a mano en Finanzas. Las que reciben pesos piden el tipo de cambio del cobro, y sus cuentas bancarias salen en el reporte para la Financiera."
         acciones={<Button variante="secondary" icono={<Plus size={16} />} onClick={agregar}>Agregar cuenta</Button>}
       />
-      <div className="catalogo-lista">
+      {/* Con scroll, como los servicios: las cuentas apagadas quedan. */}
+      <div className="catalogo-lista lista-scroll">
         <div className="catalogo-fila catalogo-fila--cabeza catalogo-fila--cuenta" aria-hidden>
           <span>Nombre</span><span>Comisión (%)</span><span>Moneda</span><span>Cómo se prueba</span><span>Cuentas bancarias</span><span />
         </div>
@@ -310,7 +313,8 @@ function Estrategias() {
         sub="De dónde salió cada venta. La que es el embudo de webinar suma los números de la planilla de webinars en el Dashboard."
         acciones={<Button variante="secondary" icono={<Plus size={16} />} onClick={agregar}>Agregar estrategia</Button>}
       />
-      <div className="catalogo-lista">
+      {/* Con scroll, como los servicios: las estrategias apagadas quedan. */}
+      <div className="catalogo-lista lista-scroll">
         {lista.map((x) => (
           <div className="catalogo-fila catalogo-fila--estrategia" key={x.id} data-inactivo={!x.activo || undefined}>
             <Input
@@ -357,7 +361,8 @@ function Proyectos() {
   return (
     <Card>
       <CardHead titulo="Proyectos" sub="MENT, DOWN, WEB-13/04/26… Un proyecto WEB-día/mes/año queda atado solo al webinar de ese día." />
-      <div className="row-wrap" style={{ marginBottom: 14, minHeight: 32 }}>
+      {/* Uno por webinar, y la importación suma los de la planilla: con scroll. */}
+      <div className="row-wrap lista-scroll" style={{ marginBottom: 14, minHeight: 32 }}>
         {items.length === 0 && <span className="t-sm t-subtle">La lista está vacía. Agregá el primero abajo.</span>}
         {items.map((x) => (
           <span key={x} className="chip" style={{ cursor: "default" }}>

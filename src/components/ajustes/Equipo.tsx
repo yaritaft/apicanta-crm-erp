@@ -73,7 +73,8 @@ export function Equipo() {
       {ordenados.length === 0 ? (
         <Empty icono={<UserRound size={22} />} titulo="Todavía no hay nadie" texto="Agregá a las personas del equipo para asignar ventas y calcular comisiones." />
       ) : (
-        <div className="equipo-lista">
+        /* Los que se van quedan apagados al final: la lista sólo crece, con scroll. */
+        <div className="equipo-lista lista-scroll">
           {ordenados.map((m) => {
             const soyYo = Boolean(yo.email && m.email?.trim().toLowerCase() === yo.email.toLowerCase());
             return (
