@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { acciones } from "@/lib/store";
 import { nube } from "@/lib/supabase";
 import type { Webinar } from "@/lib/types";
@@ -37,9 +37,53 @@ async function pedirJson<T>(ruta: string): Promise<T> {
   return cuerpo;
 }
 
-function usePedido<T>(ruta: string | null, cadaMs?: number): Estado<T> & { recargar: () => void } {
+/* ---------- Realtime ----------
+   En vez de preguntar cada tantos segundos, la pantalla se suscribe a los
+   cambios de la base (supabase/realtime-webinars.sql): cuando entra una
+   agenda de Calendly, el cron guarda un minuto del vivo o actualiza un
+   webinar, Supabase avisa y se vuelve a pedir en el momento. Varios avisos
+   juntos (el chat llega de a tandas) se juntan en uno. */
+
+export interface Escucha { tabla: string; filtro?: string }
+
+export function useAlCambiar(escuchas: Escucha[], alCambiar: (fila?: Record<string, unknown>) => void) {
+  const clave = escuchas.map((x) => `${x.tabla}:${x.filtro ?? ""}`).join("|");
+  const ref = useRef(alCambiar);
+  ref.current = alCambiar;
+  useEffect(() => {
+    if (!nube || !clave) return;
+    const db = nube;
+    let espera: number | undefined;
+    const canal = db.channel(`apicanta:${clave}:${Math.random().toString(36).slice(2, 8)}`);
+    for (const e of clave.split("|")) {
+      const [tabla, filtro] = e.split(":");
+      canal.on(
+        "postgres_changes" as never,
+        { event: "*", schema: "public", table: tabla, ...(filtro ? { filter: filtro } : {}) },
+        (p: { new?: Record<string, unknown> }) => {
+          window.clearTimeout(espera);
+          espera = window.setTimeout(() => ref.current(p.new), 400);
+        },
+      );
+    }
+    /* El estado de la suscripción queda en la consola: si Realtime no
+       conecta, se ve acá (y el respaldo de cada dos minutos sigue andando). */
+    canal.subscribe((estado, err) => {
+      if (estado !== "SUBSCRIBED") console.warn("[realtime]", clave, estado, err?.message ?? "");
+      else console.info("[realtime] escuchando", clave);
+    });
+    return () => { window.clearTimeout(espera); void db.removeChannel(canal); };
+  }, [clave]);
+}
+
+/* Por si Realtime se corta (una red que bloquea websockets): igual se
+   vuelve a pedir, pero muy de vez en cuando. */
+const RESPALDO_MS = 120_000;
+
+function usePedido<T>(ruta: string | null, cadaMs?: number, escuchas: Escucha[] = []): Estado<T> & { recargar: () => void } {
   const [estado, setEstado] = useState<Estado<T>>({ estado: "cargando" });
   const [vuelta, setVuelta] = useState(0);
+  useAlCambiar(ruta ? escuchas : [], () => setVuelta((v) => v + 1));
 
   useEffect(() => {
     if (!ruta) return;
@@ -69,7 +113,12 @@ function usePedido<T>(ruta: string | null, cadaMs?: number): Estado<T> & { recar
 /* cadaMs: cada cuánto volver a pedir (en el aire, cada 20 s: el cron guarda
    una muestra por minuto y así aparece enseguida). */
 export function useDatosVivo(videoId: string, cadaMs?: number) {
-  return usePedido<DatosVivo>(`/api/youtube/vivo?video=${encodeURIComponent(videoId)}`, cadaMs);
+  const f = `videoId=eq.${videoId}`;
+  return usePedido<DatosVivo>(
+    `/api/youtube/vivo?video=${encodeURIComponent(videoId)}`,
+    cadaMs && nube ? RESPALDO_MS : cadaMs,
+    [{ tabla: "yt_muestras", filtro: f }, { tabla: "yt_chat", filtro: f }, { tabla: "yt_estado", filtro: f }],
+  );
 }
 
 export function useComentarios(videoId: string) {
@@ -147,9 +196,9 @@ export function useAhora(videoId: string, activo: boolean) {
 
 export interface WebinarEnVivo { videoId: string; webinarId: string; inicio: string | null; espectadores?: number }
 
-/* Qué webinars están en el aire (según el cron): cada 30 segundos. */
+/* Qué webinars están en el aire (según el cron): al instante. */
 export function useEnVivo() {
-  return usePedido<{ vivos: WebinarEnVivo[] }>("/api/youtube/en-vivo", 30_000);
+  return usePedido<{ vivos: WebinarEnVivo[] }>("/api/youtube/en-vivo", nube ? RESPALDO_MS : 30_000, [{ tabla: "yt_estado" }]);
 }
 
 /* ---------- Agendas de Calendly desde el pitch ---------- */
@@ -158,17 +207,20 @@ export interface AgendaCalendly {
   id: string; nombre: string; agendadaEn: string; llamada: string; estado: string; closer?: string; delWebinar: boolean;
 }
 
-/* Cada 10 segundos mientras haya `desde` (el pitch marcado y el vivo en el aire). */
+/* Al instante, mientras haya `desde` (el pitch marcado y el vivo en el aire). */
 export function useAgendasDesde(desde: string | null, activo: boolean) {
   return usePedido<{ agendas: AgendaCalendly[] }>(
-    desde && activo ? `/api/calendly/agendas?desde=${encodeURIComponent(desde)}` : null, 10_000,
+    desde && activo ? `/api/calendly/agendas?desde=${encodeURIComponent(desde)}` : null,
+    nube ? RESPALDO_MS : 10_000, [{ tabla: "sesiones" }],
   );
 }
 
-/* Las agendas de un webinar, en el vivo o después (cada 15 s). */
+/* Las agendas de un webinar, en el vivo o después: al instante, cuando
+   entra o cambia una agenda. */
 export function useAgendasWebinar(webinarId: string) {
   return usePedido<import("@/lib/agendas-webinar").ResumenAgendas>(
-    `/api/calendly/agendas?webinar=${encodeURIComponent(webinarId)}`, 15_000,
+    `/api/calendly/agendas?webinar=${encodeURIComponent(webinarId)}`,
+    nube ? RESPALDO_MS : 15_000, [{ tabla: "sesiones" }],
   );
 }
 
@@ -188,29 +240,42 @@ export async function atribuirAgenda(id: string, momento: "vivo" | "despues" | "
 
 /* ---------- Lo que el cron completa solo, al día ----------
    La app carga los datos una vez al abrir. Las llamadas (Calendly), los
-   asistentes, el estado y las vistas de la grabación los escribe el cron
-   en la base mientras la pantalla está abierta: cada 20 segundos se traen
-   y se aplican en memoria (sin volver a escribirlos), así el embudo, la
-   planilla y las tarjetas dicen lo mismo que las agendas. */
+   asistentes, el estado y las vistas de la grabación los escriben el cron
+   o el webhook en la base mientras la pantalla está abierta: Realtime avisa
+   al instante y se aplican en memoria (sin volver a escribirlos), así el
+   embudo, la planilla y las tarjetas dicen lo mismo que las agendas. */
 
-const CAMPOS_DEL_CRON = "id, estado, asistentes, llamadasVivo, llamadasPosterior, llamadasCanceladas, extra";
+const CAMPOS_DEL_CRON = ["estado", "asistentes", "llamadasVivo", "llamadasPosterior", "llamadasCanceladas", "extra"] as const;
+
+function aplicar(filas: Record<string, unknown>[]) {
+  acciones.aplicarDeLaNube<Webinar>("webinars", Object.fromEntries(
+    filas.filter((f) => typeof f.id === "string").map((f) => [
+      f.id as string,
+      Object.fromEntries(CAMPOS_DEL_CRON.filter((k) => k in f).map((k) => [k, f[k]])) as Partial<Webinar>,
+    ]),
+  ));
+}
 
 export function useWebinarsAlDia(ids: string[]) {
   const clave = [...ids].sort().join(",");
-  useEffect(() => {
+  const traer = useCallback(async () => {
     if (!nube || !clave) return;
-    const db = nube;
-    let vivo = true;
-    const traer = async () => {
-      if (document.visibilityState !== "visible") return;
-      const r = await db.from("webinars").select(CAMPOS_DEL_CRON).in("id", clave.split(","));
-      if (!vivo || r.error || !r.data) return;
-      acciones.aplicarDeLaNube<Webinar>("webinars", Object.fromEntries(
-        (r.data as (Partial<Webinar> & { id: string })[]).map(({ id, ...resto }) => [id, resto]),
-      ));
-    };
-    void traer();
-    const t = window.setInterval(traer, 20_000);
-    return () => { vivo = false; window.clearInterval(t); };
+    const r = await nube.from("webinars").select(`id, ${CAMPOS_DEL_CRON.join(", ")}`).in("id", clave.split(","));
+    if (!r.error && r.data) aplicar(r.data as unknown as Record<string, unknown>[]);
   }, [clave]);
+
+  /* Al entrar, una vez; después, cada cambio que avise Realtime (y de
+     respaldo, cada dos minutos). */
+  useEffect(() => {
+    void traer();
+    const t = window.setInterval(() => { if (document.visibilityState === "visible") void traer(); }, RESPALDO_MS);
+    return () => window.clearInterval(t);
+  }, [traer]);
+
+  /* El aviso es sólo el gatillo: con RLS puede llegar sin la fila, así que
+     se vuelve a pedir lo que cambió (una consulta chiquita). */
+  useAlCambiar(clave ? [{ tabla: "webinars" }] : [], (fila) => {
+    if (fila && typeof fila.id === "string" && !clave.split(",").includes(fila.id)) return;
+    void traer();
+  });
 }

@@ -252,19 +252,31 @@ export function TarjetaLlamadas({ w, m, className }: { w: Webinar; m: MetricasWe
 /* Dos modos: "En vivo" (los que vieron el vivo y las agendas que se
    hicieron durante) y "Con post vivo" (suma lo de después: las vistas de la
    grabación y las agendas del link de después), con lo del vivo y lo de
-   después en dos colores dentro de la misma barra. */
-const COLOR_VIVO = "var(--danger)";
-const COLOR_DESPUES = "var(--info)";
+   después en dos colores dentro de la misma barra. Lo usan la ficha (un
+   webinar) y la lista de webinars (la suma de los filtrados). */
+export const COLOR_VIVO = "var(--danger)";
+export const COLOR_DESPUES = "var(--info)";
 
-export function TarjetaEmbudo({ w, m, className }: { w: Webinar; m: MetricasWebinar; className?: string }) {
+export interface DatosEmbudo {
+  formularios: number; grupoWpp: number;
+  asistentes: number; grabacion: number;
+  llamadasVivo: number; llamadasPosterior: number;
+  calificadas: number; ventas: number;
+}
+
+export const grabacionDe = (w: Webinar) =>
+  (typeof w.extra?.vistasGrabacion === "number" ? (w.extra.vistasGrabacion as number) : 0);
+
+export function EmbudoDosModos({ d, titulo, sub, className, children }: {
+  d: DatosEmbudo; titulo: string; sub: string; className?: string; children?: React.ReactNode;
+}) {
   const [modo, setModo] = React.useState<"vivo" | "todo">("vivo");
-  const grabacion = typeof w.extra?.vistasGrabacion === "number" ? (w.extra.vistasGrabacion as number) : 0;
   const todo = modo === "todo";
   return (
     <Card className={`wb-embudo${className ? ` ${className}` : ""}`}>
       <CardHead
-        titulo="El embudo, paso a paso"
-        sub="Cuánta gente llegó a cada escalón y cuánta pasó al siguiente."
+        titulo={titulo}
+        sub={sub}
         acciones={
           <Tabs<"vivo" | "todo">
             valor={modo} onChange={setModo}
@@ -274,28 +286,42 @@ export function TarjetaEmbudo({ w, m, className }: { w: Webinar; m: MetricasWebi
       />
       <Funnel
         pasos={[
-          { etiqueta: "Formularios", valor: m.formularios, color: "var(--brand-fill)" },
-          { etiqueta: "Grupo de WhatsApp", valor: m.grupoWpp, color: "var(--brand-fill)" },
+          { etiqueta: "Formularios", valor: d.formularios, color: "var(--brand-fill)" },
+          { etiqueta: "Grupo de WhatsApp", valor: d.grupoWpp, color: "var(--brand-fill)" },
           todo
-            ? { etiqueta: "Vieron el vivo o la grabación", valor: m.asistentes, color: COLOR_VIVO, valor2: grabacion, color2: COLOR_DESPUES }
-            : { etiqueta: "Asistieron al vivo", valor: m.asistentes, color: COLOR_VIVO },
+            ? { etiqueta: "Vieron el vivo o la grabación", valor: d.asistentes, color: COLOR_VIVO, valor2: d.grabacion, color2: COLOR_DESPUES }
+            : { etiqueta: "Asistieron al vivo", valor: d.asistentes, color: COLOR_VIVO },
           todo
-            ? { etiqueta: "Llamadas agendadas", valor: w.llamadasVivo, color: COLOR_VIVO, valor2: w.llamadasPosterior, color2: COLOR_DESPUES }
-            : { etiqueta: "Agendadas en el vivo", valor: w.llamadasVivo, color: COLOR_VIVO },
-          { etiqueta: "Calificadas", valor: m.llamadasCalificadas, color: "var(--brand-fill)" },
-          { etiqueta: "Ventas", valor: m.ventas, color: "var(--success)" },
+            ? { etiqueta: "Llamadas agendadas", valor: d.llamadasVivo, color: COLOR_VIVO, valor2: d.llamadasPosterior, color2: COLOR_DESPUES }
+            : { etiqueta: "Agendadas en el vivo", valor: d.llamadasVivo, color: COLOR_VIVO },
+          { etiqueta: "Calificadas", valor: d.calificadas, color: "var(--brand-fill)" },
+          { etiqueta: "Ventas", valor: d.ventas, color: "var(--success)" },
         ]}
         formato={num}
       />
       <div className="chart-legend" style={{ marginTop: "var(--space-3)" }}>
         <span className="chart-legend__item"><i className="chart-legend__dot" style={{ background: COLOR_VIVO }} />En el vivo</span>
         {todo && <span className="chart-legend__item"><i className="chart-legend__dot" style={{ background: COLOR_DESPUES }} />Después del vivo</span>}
-        {todo && grabacion === 0 && (
+        {todo && d.grabacion === 0 && (
           <span className="t-sm t-subtle">
             Todavía no hay vistas de la grabación: se toman una vez por hora después del vivo (y las definitivas, de YouTube Analytics, a los dos o tres días).
           </span>
         )}
       </div>
+      {children}
+    </Card>
+  );
+}
+
+export function TarjetaEmbudo({ w, m, className }: { w: Webinar; m: MetricasWebinar; className?: string }) {
+  return (
+    <EmbudoDosModos
+      titulo="El embudo, paso a paso" sub="Cuánta gente llegó a cada escalón y cuánta pasó al siguiente." className={className}
+      d={{
+        formularios: m.formularios, grupoWpp: m.grupoWpp, asistentes: m.asistentes, grabacion: grabacionDe(w),
+        llamadasVivo: w.llamadasVivo, llamadasPosterior: w.llamadasPosterior, calificadas: m.llamadasCalificadas, ventas: m.ventas,
+      }}
+    >
       <dl className="dl wb-dl" style={{ marginTop: "var(--space-5)" }}>
         <Dato label="Form → grupo">{pct(m.asistenciaFormulario)}</Dato>
         <Dato label="Asistencia">{pct(m.asistenciaTaller)}</Dato>
@@ -304,6 +330,6 @@ export function TarjetaEmbudo({ w, m, className }: { w: Webinar; m: MetricasWebi
         <Dato label="Grupo → venta">{pct(m.convLeadVenta, 2)}</Dato>
         <Dato label="Tasa de cierre">{pct(m.tasaCierre)}</Dato>
       </dl>
-    </Card>
+    </EmbudoDosModos>
   );
 }
