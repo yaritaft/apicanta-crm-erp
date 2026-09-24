@@ -1,10 +1,11 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { CalendarCheck } from "lucide-react";
 import { Badge, Card, CardHead, Empty, Select, type VarianteBadge } from "@/components/ui/ui";
 import { useToast } from "@/components/ui/Toast";
 import { num } from "@/lib/format";
+import { acciones } from "@/lib/store";
 import { useUsuarioActual } from "@/lib/usuario";
 import { claveDeFecha, type AgendaDelWebinar } from "@/lib/agendas-webinar";
 import type { Webinar } from "@/lib/types";
@@ -30,6 +31,15 @@ const ESTADO: Record<string, { texto: string; variante: VarianteBadge }> = {
 export function AgendasWebinar({ w, className }: { w: Webinar; className?: string }) {
   const r = useAgendasWebinar(w.id);
   const d = r.estado === "listo" ? r.datos : null;
+
+  /* Lo mismo que el cron va a escribir en la planilla, ya: así el embudo y
+     las llamadas de la ficha no esperan su vuelta (sólo en memoria). */
+  useEffect(() => {
+    if (!d) return;
+    acciones.aplicarDeLaNube<Webinar>("webinars", {
+      [w.id]: { llamadasVivo: d.vivo, llamadasPosterior: d.despues, llamadasCanceladas: d.canceladas },
+    });
+  }, [d, w.id]);
   const clave = claveDeFecha(w.fecha);
 
   return (

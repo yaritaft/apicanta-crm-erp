@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { Card, CardHead } from "@/components/ui/ui";
+import { Card, CardHead, Tabs } from "@/components/ui/ui";
 import { Dato } from "@/components/ui/Drawer";
 import { Funnel } from "@/components/charts/charts";
 import { useToast } from "@/components/ui/Toast";
@@ -249,21 +249,49 @@ export function TarjetaLlamadas({ w, m, className }: { w: Webinar; m: MetricasWe
 
 /* ---------- Embudo ---------- */
 
-export function TarjetaEmbudo({ m, className }: { m: MetricasWebinar; className?: string }) {
+/* Dos modos: "En vivo" (los que vieron el vivo y las agendas que se
+   hicieron durante) y "Con post vivo" (suma lo de después: las vistas de la
+   grabación y las agendas del link de después), con lo del vivo y lo de
+   después en dos colores dentro de la misma barra. */
+const COLOR_VIVO = "var(--danger)";
+const COLOR_DESPUES = "var(--info)";
+
+export function TarjetaEmbudo({ w, m, className }: { w: Webinar; m: MetricasWebinar; className?: string }) {
+  const [modo, setModo] = React.useState<"vivo" | "todo">("vivo");
+  const grabacion = typeof w.extra?.vistasGrabacion === "number" ? (w.extra.vistasGrabacion as number) : 0;
+  const todo = modo === "todo";
   return (
-    <Card className={className}>
-      <CardHead titulo="El embudo, paso a paso" sub="Cuánta gente llegó a cada escalón y cuánta pasó al siguiente." />
+    <Card className={`wb-embudo${className ? ` ${className}` : ""}`}>
+      <CardHead
+        titulo="El embudo, paso a paso"
+        sub="Cuánta gente llegó a cada escalón y cuánta pasó al siguiente."
+        acciones={
+          <Tabs<"vivo" | "todo">
+            valor={modo} onChange={setModo}
+            opciones={[{ valor: "vivo", texto: "En vivo" }, { valor: "todo", texto: "Con post vivo" }]}
+          />
+        }
+      />
       <Funnel
         pasos={[
-          { etiqueta: "Formularios", valor: m.formularios, color: "var(--info)" },
+          { etiqueta: "Formularios", valor: m.formularios, color: "var(--brand-fill)" },
           { etiqueta: "Grupo de WhatsApp", valor: m.grupoWpp, color: "var(--brand-fill)" },
-          { etiqueta: "Asistieron al vivo", valor: m.asistentes, color: "var(--brand)" },
-          { etiqueta: "Llamadas agendadas", valor: m.llamadas, color: "var(--info)" },
+          todo
+            ? { etiqueta: "Vieron el vivo o la grabación", valor: m.asistentes, color: COLOR_VIVO, valor2: grabacion, color2: COLOR_DESPUES }
+            : { etiqueta: "Asistieron al vivo", valor: m.asistentes, color: COLOR_VIVO },
+          todo
+            ? { etiqueta: "Llamadas agendadas", valor: w.llamadasVivo, color: COLOR_VIVO, valor2: w.llamadasPosterior, color2: COLOR_DESPUES }
+            : { etiqueta: "Agendadas en el vivo", valor: w.llamadasVivo, color: COLOR_VIVO },
           { etiqueta: "Calificadas", valor: m.llamadasCalificadas, color: "var(--brand-fill)" },
           { etiqueta: "Ventas", valor: m.ventas, color: "var(--success)" },
         ]}
         formato={num}
       />
+      <div className="chart-legend" style={{ marginTop: "var(--space-3)" }}>
+        <span className="chart-legend__item"><i className="chart-legend__dot" style={{ background: COLOR_VIVO }} />En el vivo</span>
+        {todo && <span className="chart-legend__item"><i className="chart-legend__dot" style={{ background: COLOR_DESPUES }} />Después del vivo</span>}
+        {todo && grabacion === 0 && <span className="t-sm t-subtle">Las vistas de la grabación aparecen cuando termina el vivo.</span>}
+      </div>
       <dl className="dl wb-dl" style={{ marginTop: "var(--space-5)" }}>
         <Dato label="Form → grupo">{pct(m.asistenciaFormulario)}</Dato>
         <Dato label="Asistencia">{pct(m.asistenciaTaller)}</Dato>

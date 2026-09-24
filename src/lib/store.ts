@@ -619,6 +619,23 @@ export const acciones = {
     empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
   },
 
+  /* Lo que cambió en la base sin pasar por esta pantalla (lo escriben el
+     cron o un webhook): se aplica SÓLO en memoria, sin volver a escribirlo.
+     Si se empujara, una pestaña vieja podría pisar un número más nuevo. */
+  aplicarDeLaNube<T extends { id: ID }>(coleccion: Coleccion, cambiosPorId: Record<ID, Partial<T>>) {
+    const e = snapshot();
+    let cambio = false;
+    const lista = (e[coleccion] as unknown as T[]).map((x) => {
+      const c = cambiosPorId[x.id];
+      if (!c) return x;
+      const distinto = Object.entries(c).some(([k, v]) => JSON.stringify((x as Record<string, unknown>)[k]) !== JSON.stringify(v));
+      if (!distinto) return x;
+      cambio = true;
+      return { ...x, ...c };
+    });
+    if (cambio) guardar({ ...e, [coleccion]: lista } as EstadoApp);
+  },
+
   actualizarSilencioso<T extends { id: ID }>(coleccion: Coleccion, id: ID, cambios: Partial<T>) {
     const e = snapshot();
     const lista = (e[coleccion] as unknown as T[]).map((x) => (x.id === id ? { ...x, ...cambios } : x));

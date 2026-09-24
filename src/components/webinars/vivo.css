@@ -91,3 +91,6 @@
 /* Agendas de Calendly en la ficha: los badges del embudo y el selector */
 .wb-agenda__badges { display: flex; flex-wrap: wrap; gap: 4px; margin: 3px 0 2px; }
 .wb-agenda__select { flex: none; width: 200px; }
+
+/* El embudo: los dos modos al lado del título, y abajo si no entran. */
+.wb-embudo > .card-head { flex-wrap: wrap; row-gap: var(--space-3); }

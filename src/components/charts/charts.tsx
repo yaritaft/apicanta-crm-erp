@@ -214,18 +214,21 @@ export function BarChart({ datos, alto = 200, formato, color = C.brand }: {
 /* ---------------- Embudo ---------------- */
 
 export function Funnel({ pasos, formato, onPaso }: {
-  pasos: { etiqueta: string; valor: number; color?: string }[];
+  /* valor2: una segunda parte apilada en la misma barra, con color2 (por
+     ejemplo, lo del vivo y lo de después). El paso vale valor + valor2. */
+  pasos: { etiqueta: string; valor: number; color?: string; valor2?: number; color2?: string }[];
   formato?: (n: number) => string;
   /* Con onPaso cada etapa se abre: quién está en ese escalón. */
   onPaso?: (i: number) => void;
 }) {
-  const max = Math.max(...pasos.map((p) => p.valor), 1);
+  const total = (p: { valor: number; valor2?: number }) => p.valor + (p.valor2 ?? 0);
+  const max = Math.max(...pasos.map(total), 1);
   const f = formato ?? ((n: number) => String(n));
   return (
     <div className="stack-3">
       {pasos.map((p, i) => {
-        const prev = i === 0 ? null : pasos[i - 1].valor;
-        const conv = prev && prev > 0 ? (p.valor / prev) * 100 : null;
+        const prev = i === 0 ? null : total(pasos[i - 1]);
+        const conv = prev && prev > 0 ? (total(p) / prev) * 100 : null;
         const clic = onPaso
           ? {
               role: "button", tabIndex: 0, className: "funnel-paso", "aria-label": `${p.etiqueta}: ver quiénes`,
@@ -239,19 +242,29 @@ export function Funnel({ pasos, formato, onPaso }: {
           <div key={p.etiqueta} {...clic}>
             <div className="row" style={{ marginBottom: 6 }}>
               <span className="t-sm t-strong">{p.etiqueta}</span>
-              <span className="spacer t-sm t-num t-muted">{f(p.valor)}</span>
+              <span className="spacer t-sm t-num t-muted">
+                {f(total(p))}
+                {p.valor2 !== undefined && p.valor2 > 0 && <span className="t-subtle"> · {f(p.valor)} + {f(p.valor2)}</span>}
+              </span>
               {conv !== null && (
                 <span className="t-sm t-num" style={{ color: conv >= 40 ? "var(--success)" : conv >= 20 ? "var(--warning)" : "var(--ink-subtle)", minWidth: 52, textAlign: "right" }}>
                   {conv.toFixed(0).replace(".", ",")}%
                 </span>
               )}
             </div>
-            <div className="bar" style={{ height: 28, borderRadius: "var(--radius-sm)" }}>
+            <div className="bar" style={{ height: 28, borderRadius: "var(--radius-sm)", display: "flex", gap: p.valor2 ? 2 : 0 }}>
               <div style={{
                 height: "100%", width: `${(p.valor / max) * 100}%`,
                 background: p.color ?? C.brand, borderRadius: "var(--radius-sm)",
                 transition: "width 500ms cubic-bezier(.2,.8,.3,1)",
               }} />
+              {p.valor2 !== undefined && p.valor2 > 0 && (
+                <div style={{
+                  height: "100%", width: `${(p.valor2 / max) * 100}%`,
+                  background: p.color2 ?? C.info, borderRadius: "var(--radius-sm)",
+                  transition: "width 500ms cubic-bezier(.2,.8,.3,1)",
+                }} />
+              )}
             </div>
           </div>
         );

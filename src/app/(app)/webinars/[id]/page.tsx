@@ -14,6 +14,7 @@ import {
 import { TarjetaCambios, TarjetaNotas } from "@/components/webinars/FichaNotas";
 import { PersonasWebinar } from "@/components/webinars/PersonasWebinar";
 import { AgendasWebinar } from "@/components/webinars/AgendasWebinar";
+import { useWebinarsAlDia } from "@/components/webinars/useVivo";
 import {
   BannerVivo, ChatDelVivo, FilaVideo, SoloEnVivo, TarjetaVivo, VivoProvider,
 } from "@/components/webinars/VivoWebinar";
@@ -59,6 +60,8 @@ export default function WebinarFicha() {
   }, []);
 
   const w = e.webinars.find((x) => x.id === id);
+  /* Las llamadas, los asistentes y el estado que completa el cron, al día. */
+  useWebinarsAlDia(w ? [w.id] : []);
   const m = useMemo(() => (w ? metricasDeWebinar(e, w) : null), [e, w]);
   const videoId = w ? videoDelWebinar(w) : null;
 
@@ -135,7 +138,7 @@ export default function WebinarFicha() {
 
       <div className="wb-detalle">
         <div className="wb-col">
-          <TarjetaEmbudo m={m} className="wb-o6" />
+          <TarjetaEmbudo w={w} m={m} className="wb-o6" />
           <TarjetaNotas w={w} className="wb-o7" />
           <TarjetaCambios w={w} className="wb-o8" />
         </div>

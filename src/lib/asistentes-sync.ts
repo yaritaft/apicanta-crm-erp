@@ -18,6 +18,9 @@ import { analyticsDeVideo, conexion } from "./youtube-analytics";
    No pisa lo cargado a mano: sólo escribe si el campo está en 0 o si
    todavía tiene el último número que puso él (extra.asistentesAuto).
 
+   De paso guarda las vistas de la grabación (extra.vistasGrabacion): las
+   que vinieron después del vivo, para el embudo "con post vivo".
+
    Lo corre /api/cron/youtube cada minuto; casi siempre no hace nada.
    ================================================================== */
 
@@ -29,6 +32,7 @@ interface FilaWebinar {
 }
 
 const vistasEnVivo = (d?: AnalyticsVideo | null) => d?.vivoVsGrabacion?.find((f) => f.clave === "LIVE")?.valor;
+const vistasGrabacion = (d?: AnalyticsVideo | null) => d?.vivoVsGrabacion?.find((f) => f.clave === "ON_DEMAND")?.valor;
 
 export async function completarAsistentes(): Promise<{ actualizados: number; errores: string[] }> {
   const res = { actualizados: 0, errores: [] as string[] };
@@ -73,32 +77,58 @@ export async function completarAsistentes(): Promise<{ actualizados: number; err
   }
 
   for (const { w, v } of webinars) {
-    let valor = vistasEnVivo(analytics.get(v)?.datos);
+    const d = analytics.get(v)?.datos;
+    let valor = vistasEnVivo(d);
+    let grabacion = vistasGrabacion(d);
     let fuente = "analytics";
-    if (valor === undefined) {
-      /* Sólo cuando el vivo ya terminó: durante, el número todavía crece. */
-      if (estados.get(v)?.estado !== "terminado") continue;
-      const m = await db.from("yt_muestras").select("vistas").eq("videoId", v).eq("enVivo", true)
-        .not("vistas", "is", null).order("minuto", { ascending: false }).limit(1).maybeSingle();
-      valor = (m.data?.vistas as number | undefined) ?? undefined;
-      fuente = "vivo";
+    const terminado = estados.get(v)?.estado === "terminado";
+    if (valor === undefined || grabacion === undefined) {
+      /* Sin Analytics, lo que guardó el cron. Sólo con el vivo terminado:
+         durante, los números todavía crecen. Las vistas de la grabación son
+         las de ahora menos las que tenía al cortar el vivo. */
+      if (!terminado) continue;
+      const [enVivo, ahora] = await Promise.all([
+        db.from("yt_muestras").select("vistas").eq("videoId", v).eq("enVivo", true)
+          .not("vistas", "is", null).order("minuto", { ascending: false }).limit(1).maybeSingle(),
+        db.from("yt_muestras").select("vistas").eq("videoId", v).eq("enVivo", false)
+          .not("vistas", "is", null).order("minuto", { ascending: false }).limit(1).maybeSingle(),
+      ]);
+      const alCortar = enVivo.data?.vistas as number | undefined;
+      if (valor === undefined) { valor = alCortar; fuente = "vivo"; }
+      if (grabacion === undefined && alCortar !== undefined) {
+        const ult = ahora.data?.vistas as number | undefined;
+        grabacion = ult !== undefined ? Math.max(0, ult - alCortar) : 0;
+      }
     }
-    if (valor === undefined || valor === w.asistentes) continue;
-    const extra = { ...(w.extra ?? {}) };
-    const auto = typeof extra.asistentesAuto === "number" ? extra.asistentesAuto : undefined;
-    if (w.asistentes !== 0 && w.asistentes !== auto) continue; /* lo cargó alguien a mano */
 
-    extra.asistentesAuto = valor;
-    extra.asistentesFuente = fuente;
-    const u = await db.from("webinars").update({ asistentes: valor, extra }).eq("id", w.id);
+    const extra = { ...(w.extra ?? {}) };
+    const cambios: Record<string, unknown> = {};
+    const partes: string[] = [];
+
+    const auto = typeof extra.asistentesAuto === "number" ? extra.asistentesAuto : undefined;
+    const aMano = w.asistentes !== 0 && w.asistentes !== auto;
+    if (valor !== undefined && valor !== w.asistentes && !aMano) {
+      cambios.asistentes = valor;
+      extra.asistentesAuto = valor;
+      extra.asistentesFuente = fuente;
+      partes.push(`asistieron al vivo ${w.asistentes} → ${valor} (${fuente === "analytics" ? "vistas en vivo según YouTube Analytics" : "vistas al terminar el vivo"})`);
+    }
+    if (grabacion !== undefined && grabacion !== extra.vistasGrabacion) {
+      extra.vistasGrabacion = grabacion;
+    }
+    if (JSON.stringify(extra) === JSON.stringify(w.extra ?? {}) && !("asistentes" in cambios)) continue;
+    cambios.extra = extra;
+
+    const u = await db.from("webinars").update(cambios).eq("id", w.id);
     if (u.error) { res.errores.push(`webinar ${w.id}: ${u.error.message}`); continue; }
     res.actualizados++;
-    await db.from("actividad").insert({
-      id: `act_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`,
-      accion: "actualizo", actor: "YouTube", entidad: "webinar", entidadId: w.id, titulo: w.titulo,
-      fecha: new Date().toISOString(),
-      detalle: `Asistieron al vivo de «${w.titulo}»: ${w.asistentes} → ${valor} (${fuente === "analytics" ? "vistas en vivo según YouTube Analytics" : "vistas al terminar el vivo"}).`,
-    });
+    if (partes.length) {
+      await db.from("actividad").insert({
+        id: `act_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`,
+        accion: "actualizo", actor: "YouTube", entidad: "webinar", entidadId: w.id, titulo: w.titulo,
+        fecha: new Date().toISOString(), detalle: `«${w.titulo}»: ${partes.join(", ")}.`,
+      });
+    }
   }
   return res;
 }
