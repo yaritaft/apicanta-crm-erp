@@ -60,13 +60,36 @@ function marcar(s: EstadoSync, error = "") {
   oyentes.forEach((f) => f());
 }
 
-/* ---------- almacenamiento local ---------- */
+/* ---------- almacenamiento local ----------
+   Sin la nube, el navegador guarda todo: es lo único que hay.
+
+   Con la nube, el navegador guarda una copia para dibujar al instante al
+   abrir, mientras llega la base. Esa copia va sin los anuncios de Meta y
+   sus métricas diarias (más de la mitad del peso: 3 de 5,4 MB en septiembre
+   de 2026), que se traen enteros de la nube cada vez. Entera pasaba el
+   límite del navegador (~5 MB): no se podía escribir y quedaba congelada en
+   una versión vieja, con los datos de ejemplo y ventas de menos, que se veía
+   unos segundos cada vez que se abría la app. Va en otra clave para no leer
+   nunca esa copia vieja, que se borra. */
+const CLAVE_NUBE = "apicanta.erp.nube.v1";
+const SOLO_EN_LA_NUBE = { campaigns: [], adsets: [], ads: [], adInsights: [] } satisfies Partial<EstadoApp>;
+/* Tope de la copia: deja lugar a la sesión de Supabase y a las preferencias,
+   que viven en el mismo espacio. */
+const TOPE_COPIA = 4_000_000;
+
+/* Con qué se dibuja antes de leer nada: sin la nube, la demo (la semilla);
+   con la nube, vacío mientras carga: la semilla son personas y ventas
+   inventadas, y se veían unos segundos como si fueran del equipo. */
+function inicial(): EstadoApp {
+  return hayNube ? { ...estadoVacio(), actividad: [] } : construirSemilla();
+}
 
 function leerLocal(): EstadoApp {
-  if (typeof window === "undefined") return construirSemilla();
+  if (typeof window === "undefined") return inicial();
   try {
-    const crudo = window.localStorage.getItem(CLAVE);
-    const base = construirSemilla();
+    if (hayNube) window.localStorage.removeItem(CLAVE);
+    const crudo = window.localStorage.getItem(hayNube ? CLAVE_NUBE : CLAVE);
+    const base = inicial();
     if (!crudo) return base;
     const parsed = JSON.parse(crudo) as EstadoApp;
     return {
@@ -76,16 +99,28 @@ function leerLocal(): EstadoApp {
       etapas: parsed.etapas?.length ? parsed.etapas : base.etapas,
     };
   } catch {
-    return construirSemilla();
+    return inicial();
   }
 }
 
 function escribirLocal(e: EstadoApp) {
   if (typeof window === "undefined") return;
+  if (!hayNube) {
+    try {
+      window.localStorage.setItem(CLAVE, JSON.stringify(e));
+    } catch {
+      /* Cuota llena: seguimos en memoria para no cortar la sesion. */
+    }
+    return;
+  }
+  /* Con la nube, mejor sin copia que con una vieja: se vería al abrir, y un
+     cambio hecho en esos segundos se haría sobre datos viejos. */
   try {
-    window.localStorage.setItem(CLAVE, JSON.stringify(e));
+    const json = JSON.stringify({ ...e, ...SOLO_EN_LA_NUBE });
+    if (json.length > TOPE_COPIA) window.localStorage.removeItem(CLAVE_NUBE);
+    else window.localStorage.setItem(CLAVE_NUBE, json);
   } catch {
-    /* Cuota llena: seguimos en memoria para no cortar la sesion. */
+    try { window.localStorage.removeItem(CLAVE_NUBE); } catch { /* modo privado */ }
   }
 }
 
@@ -102,7 +137,7 @@ function snapshot(): EstadoApp {
 
 let SERVIDOR_CACHE: EstadoApp | null = null;
 const snapshotServidor = (): EstadoApp =>
-  SERVIDOR_CACHE ?? (SERVIDOR_CACHE = construirSemilla());
+  SERVIDOR_CACHE ?? (SERVIDOR_CACHE = inicial());
 
 function suscribir(f: () => void) {
   oyentes.add(f);

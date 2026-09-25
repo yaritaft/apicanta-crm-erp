@@ -13,8 +13,10 @@ export const viewport: Viewport = {
   initialScale: 1,
 };
 
-/* Aplica el tema guardado antes del primer pintado: sin parpadeo. */
-const TEMA_INICIAL = `(function(){try{var s=localStorage.getItem("apicanta.erp.v1");if(s){var t=JSON.parse(s).ajustes&&JSON.parse(s).ajustes.tema;if(t)document.documentElement.dataset.theme=t}}catch(e){}})();`;
+/* Aplica el tema guardado antes del primer pintado: sin parpadeo. Con la
+   nube la copia va en otra clave (lib/store.ts); sin la nube, en la de
+   siempre. */
+const TEMA_INICIAL = `(function(){try{var s=localStorage.getItem("apicanta.erp.nube.v1")||localStorage.getItem("apicanta.erp.v1");if(s){var a=JSON.parse(s).ajustes;var t=a&&a.tema;if(t)document.documentElement.dataset.theme=t}}catch(e){}})();`;
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
