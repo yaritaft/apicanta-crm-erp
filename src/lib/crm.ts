@@ -115,9 +115,12 @@ export function tablasDe(a: Ajustes): TablaCrm[] {
     .concat(propias.filter((p) => !TABLAS_POR_DEFECTO.some((t) => t.id === p.id)));
 }
 
+export const reglaDeTabla = (tablaId: string, tipo: string): boolean => REGLA_TABLA[tablaId]?.test(tipo) ?? false;
+
 export function entraEnTabla(s: Pick<Sesion, "tipo">, t: TablaCrm): boolean {
-  if (t.tipos) return t.tipos.includes(s.tipo);
-  return REGLA_TABLA[t.id]?.test(s.tipo ?? "") ?? false;
+  if (t.excluir?.includes(s.tipo)) return false;
+  if (t.incluir?.includes(s.tipo)) return true;
+  return reglaDeTabla(t.id, s.tipo ?? "");
 }
 
 export function conConfig(a: Ajustes, cambios: Partial<ConfigCrm>): ConfigCrm {

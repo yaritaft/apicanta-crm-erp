@@ -4,7 +4,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useRouter, useSearchParams } from "next/navigation";
 import { ChevronDown, Menu, PhoneCall, RefreshCcw, Search, Sheet, X } from "lucide-react";
 import { useToast } from "@/components/ui/Toast";
-import { acciones, escrituraPendiente, useEstado } from "@/lib/store";
+import { acciones, escrituraPendiente, estadoSync, useEstado } from "@/lib/store";
 import { nube } from "@/lib/supabase";
 import { AGENDAR_A_MANO } from "@/lib/funciones";
 import {
@@ -32,6 +32,9 @@ import { useVistasGuardadas, usePreferencia, type AjusteVista, type VistaPropia 
 
 export function Crm() {
   const e = useEstado();
+  /* Lo último de la memoria, para los avisos de Realtime y los callbacks. */
+  const estadoRef = useRef(e);
+  estadoRef.current = e;
   const toast = useToast();
   const router = useRouter();
   const params = useSearchParams();
@@ -87,13 +90,23 @@ export function Crm() {
   const cambiada = !esPropia && Object.keys(ajuste).some((k) => !["anchos", "columnas"].includes(k));
   const cambiarVista = useCallback((parcial: AjusteVista) => guardadas.cambiar(base.id, parcial, esPropia), [guardadas, base.id, esPropia]);
 
+  /* Otra vista u otra tabla: la fila recién editada deja de estar retenida
+     (si no, se colaba en la vista nueva aunque no pasara su filtro). */
+  const soltarRetenida = () => {
+    if (!retenidaRef.current) return;
+    retenidaRef.current = null;
+    setRetenida(null);
+    setReordenar((n) => n + 1);
+  };
   function elegirVista(id: string) {
+    soltarRetenida();
     setPanelAngosto(false);
     setUltima({ ...ultima, [tablaId]: id });
     escribirUrl({ v: id === "todas" ? null : id, registro: null });
     setMarcadas(new Set());
   }
   function elegirTabla(id: string) {
+    soltarRetenida();
     escribirUrl({ tabla: id === tablas[0].id ? null : id, v: null, registro: null });
     setMarcadas(new Set());
   }
@@ -174,7 +187,9 @@ export function Crm() {
   /* ---------- Guardar lo que carga el equipo ----------
      Cada cambio queda en una pila para deshacerlo con ⌘Z (con el estado de
      la llamada de antes: elegir «Compra Full» también la marcó como hecha). */
-  type Cambio = { id: string; clave: ClaveCampo; antes: string; estado: Sesion["estado"]; nombre: string };
+  /* `estado`: el de la llamada antes del cambio, sólo si el cambio lo movió
+     (un Estado de Llamada que la marcó hecha o que no vino). */
+  type Cambio = { id: string; clave: ClaveCampo; antes: string; estado?: Sesion["estado"]; nombre: string };
   /* Una entrada por gesto: cambiar varias filas juntas se deshace de una vez. */
   const deshacer = useRef<Cambio[][]>([]);
   const escribirCampo = useCallback((f: FilaCrm, clave: ClaveCampo, valor: string, detalle?: string): Cambio | null => {
@@ -182,11 +197,12 @@ export function Crm() {
     if (!campo || campo.origen !== "equipo") return null;
     const antes = String((f.sesion as unknown as Record<string, unknown>)[clave] ?? "");
     if (antes === valor.trim()) return null;
+    const efecto = clave === "estadoLlamada" ? opcionesDe(estadoRef.current.ajustes, "estadoLlamada").find((o) => o.nombre === valor)?.llamada : undefined;
     acciones.editarLlamada(
       f.id, { [clave]: valor } as Partial<Sesion>,
       detalle ?? (valor ? `${f.nombre}: ${campo.titulo} → ${valor.length > 60 ? `${valor.slice(0, 60)}…` : valor}.` : `${f.nombre}: se vació ${campo.titulo}.`),
     );
-    return { id: f.id, clave, antes, estado: f.sesion.estado, nombre: f.nombre };
+    return { id: f.id, clave, antes, estado: efecto && efecto !== f.sesion.estado ? f.sesion.estado : undefined, nombre: f.nombre };
   }, []);
   const recordar = (cambios: Cambio[]) => { if (cambios.length) deshacer.current = [...deshacer.current.slice(-49), cambios]; };
   const guardarCampo = useCallback((f: FilaCrm, clave: ClaveCampo, valor: string) => {
@@ -204,7 +220,10 @@ export function Crm() {
     const ultimos = deshacer.current.pop();
     if (!ultimos?.length) { toast("No hay nada para deshacer.", "info"); return; }
     for (const u of ultimos) {
-      acciones.editarLlamada(u.id, { [u.clave]: u.antes, estado: u.estado } as Partial<Sesion>, `${u.nombre}: se deshizo el cambio de ${CAMPO[u.clave].titulo}.`);
+      acciones.editarLlamada(
+        u.id, { [u.clave]: u.antes, ...(u.estado ? { estado: u.estado } : {}) } as Partial<Sesion>,
+        `${u.nombre}: se deshizo el cambio de ${CAMPO[u.clave].titulo}.`,
+      );
     }
     const titulo = CAMPO[ultimos[0].clave].titulo;
     toast(ultimos.length === 1 ? `Deshecho: ${titulo} de ${ultimos[0].nombre}.` : `Deshecho: ${titulo} en ${ultimos.length} agendas.`, "info");
@@ -241,11 +260,62 @@ export function Crm() {
   /* ---------- Lo que llega de Calendly en vivo ---------- */
   const [nuevas, setNuevas] = useState<Set<string>>(new Set());
   const [enVivo, setEnVivo] = useState(false);
-  const estadoRef = useRef(e);
-  estadoRef.current = e;
   useEffect(() => {
     if (!nube) return;
     const db = nube;
+    let vivo = true;
+
+    /* Las que no estaban en memoria: se prenden un momento y la persona y su
+       oportunidad (que el webhook escribió un instante antes) se traen para
+       que la ficha abra completa. */
+    const recibir = (filas: Sesion[], avisar: boolean) => {
+      const conocidas = new Set(estadoRef.current.sesiones.map((x) => x.id));
+      const libres = filas.filter((s) => !escrituraPendiente("sesiones", s.id));
+      acciones.recibirDeLaNube("sesiones", libres);
+      const llegadas = libres.filter((s) => !conocidas.has(s.id));
+      if (llegadas.length === 0) return;
+      for (const [tabla, campo] of [["contactos", "contactoId"], ["leads", "leadId"]] as const) {
+        const ids = [...new Set(llegadas.map((s) => s[campo]).filter((x): x is string => Boolean(x)))];
+        if (ids.length) {
+          void db.from(tabla).select("*").in("id", ids).then((r) => {
+            if (vivo && r.data?.length) acciones.recibirDeLaNube(tabla, r.data as { id: string }[]);
+          });
+        }
+      }
+      const delCrm = filasCrm({ ...estadoRef.current, sesiones: llegadas });
+      if (delCrm.length === 0) return;
+      setNuevas((n) => { const x = new Set(n); for (const f of delCrm) x.add(f.id); return x; });
+      window.setTimeout(() => setNuevas((n) => { const x = new Set(n); for (const f of delCrm) x.delete(f.id); return x; }), 8000);
+      if (!avisar) return;
+      const f = delCrm[0];
+      toast(delCrm.length === 1
+        ? `Nueva agenda: ${f.nombre}${f.funnel ? ` · ${f.funnel}` : ""}${f.closer ? ` · con ${f.closer}` : ""}.`
+        : `Llegaron ${delCrm.length} agendas nuevas.`);
+    };
+
+    /* Al conectarse (y al reconectarse después de un corte) se trae todo
+       otra vez: lo que llegó mientras la pantalla estaba cerrada, sin
+       conexión o en otra parte de la app entra acá, sin recargar. */
+    const ponerseAlDia = async () => {
+      /* Mientras la app todavía está trayendo todo de la nube, lo que hay en
+         memoria no es la base (es lo del navegador): esa carga ya llega al día. */
+      if (estadoSync() === "cargando") return;
+      const filas: Sesion[] = [];
+      for (let desde = 0; ; desde += 1000) {
+        const r = await db.from("sesiones").select("*").range(desde, desde + 999);
+        if (r.error || !vivo) return;
+        filas.push(...((r.data ?? []) as Sesion[]));
+        if ((r.data?.length ?? 0) < 1000) break;
+      }
+      if (estadoSync() === "cargando") return;
+      const conocidas = new Set(estadoRef.current.sesiones.map((x) => x.id));
+      /* Lo que se borró en la base mientras tanto, también se va de acá. */
+      const enLaBase = new Set(filas.map((s) => s.id));
+      const borradas = [...conocidas].filter((id) => !enLaBase.has(id) && !escrituraPendiente("sesiones", id));
+      if (borradas.length) acciones.recibirDeLaNube("sesiones", [], borradas);
+      recibir(filas, true);
+    };
+
     const canal = db.channel(`crm:${Math.random().toString(36).slice(2, 8)}`);
     canal.on(
       "postgres_changes" as never,
@@ -256,34 +326,20 @@ export function Crm() {
           return;
         }
         const id = p.new?.id ? String(p.new.id) : "";
-        if (!id) return;
+        if (!id || escrituraPendiente("sesiones", id) || estadoSync() === "cargando") return;
         /* La fila se vuelve a pedir en vez de usar la del aviso: en un UPDATE,
            Realtime puede no mandar las columnas grandes que no cambiaron (las
            respuestas del formulario) y la memoria se quedaría sin ellas. */
-        if (escrituraPendiente("sesiones", id)) return;
         const { data } = await db.from("sesiones").select("*").eq("id", id).maybeSingle();
-        const s = data as Sesion | null;
-        if (!s || escrituraPendiente("sesiones", id)) return;
-        const nueva = !estadoRef.current.sesiones.some((x) => x.id === s.id);
-        acciones.recibirDeLaNube("sesiones", [s]);
-        if (!nueva) return;
-        /* La persona y su oportunidad las escribió el webhook un instante
-           antes: se traen para que su ficha abra completa. */
-        for (const [tabla, id] of [["contactos", s.contactoId], ["leads", s.leadId]] as const) {
-          if (!id) continue;
-          void db.from(tabla).select("*").eq("id", id).then((r) => {
-            if (r.data?.length) acciones.recibirDeLaNube(tabla, r.data as { id: string }[]);
-          });
-        }
-        const f = filasCrm({ ...estadoRef.current, sesiones: [s] })[0];
-        if (!f) return;
-        setNuevas((n) => new Set(n).add(s.id));
-        window.setTimeout(() => setNuevas((n) => { const x = new Set(n); x.delete(s.id); return x; }), 8000);
-        toast(`Nueva agenda: ${f.nombre}${f.funnel ? ` · ${f.funnel}` : ""}${f.closer ? ` · con ${f.closer}` : ""}.`);
+        if (vivo && data) recibir([data as Sesion], true);
       },
     );
-    canal.subscribe((estado) => setEnVivo(estado === "SUBSCRIBED"));
-    return () => { void db.removeChannel(canal); };
+    canal.subscribe((estado) => {
+      if (!vivo) return;
+      setEnVivo(estado === "SUBSCRIBED");
+      if (estado === "SUBSCRIBED") void ponerseAlDia();
+    });
+    return () => { vivo = false; void db.removeChannel(canal); };
   }, [toast]);
 
   /* ---------- Menús ---------- */

@@ -2824,12 +2824,26 @@ span.kpis__etiqueta:hover { color: var(--ink); text-decoration: none; }
   .crm-vistas { position: absolute; z-index: 20; top: 0; bottom: 0; left: 0; box-shadow: 8px 0 24px rgba(0, 0, 0, .12); }
   .crm-cuerpo-app { position: relative; }
 }
+/* Angosto: los campos arriba y los comentarios abajo, todo en un solo
+   scroll. Ninguna de las dos partes se achica (si no, el contenido de los
+   campos se desborda por encima de los comentarios). */
 @media (max-width: 900px) {
   .crm-registro__partes { flex-direction: column; overflow-y: auto; }
-  .crm-registro__cuerpo { overflow: visible; }
-  .crm-registro__lado { width: auto; border-left: 0; border-top: 1px solid var(--crm-linea); min-height: 360px; }
+  .crm-registro__cuerpo { flex: none; overflow: visible; }
+  .crm-registro__lado { flex: none; width: auto; border-left: 0; border-top: 1px solid var(--crm-linea); height: 420px; }
 }
 @media (max-width: 720px) {
+  /* El registro: flechas y botones arriba, el nombre entero abajo. */
+  .crm-registro__cabeza { flex-wrap: wrap; row-gap: 6px; padding: 10px 12px; }
+  .crm-registro__nav { order: 1; }
+  .crm-registro__acciones { order: 2; margin-left: auto; gap: 6px; }
+  .crm-registro__titulo { order: 3; flex-basis: 100%; }
+  .crm-registro__titulo h2 { white-space: normal; font-size: 18px; line-height: 24px; }
+  .crm-registro__titulo p { white-space: normal; }
+  .crm-registro .crm-boton__texto { display: none; }
+  .crm-registro .crm-registro__acciones .crm-boton { width: 34px; padding: 0; }
+  .crm-registro__cuerpo { padding: 4px 12px 20px; }
+  .crm-registro__grupo { padding: 12px 12px 4px; }
   .crm-barra { gap: 2px; padding: 0 6px; }
   .crm-barra__espacio { flex: 0 0 4px; }
   .crm .crm-vista-nombre { flex: 0 0 auto; max-width: 42vw; padding: 0 4px; }

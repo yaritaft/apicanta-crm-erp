@@ -700,6 +700,24 @@ export const acciones = {
     empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
   },
 
+  /* Como actualizar, pero a la base va sólo lo que cambió (un UPDATE de esas
+     columnas, no la fila entera). Para las filas que también escriben otros
+     —las llamadas: el webhook de Calendly, el CRM desde otra pestaña—, que
+     esta copia puede tener vieja: con la fila entera, marcar «Se hizo» en la
+     Agenda borraba lo que el setter había cargado en el CRM esa mañana. */
+  actualizarParcial<T extends { id: ID }>(coleccion: Coleccion, id: ID, cambios: Partial<T>, etiqueta: string, detalle?: string) {
+    if (Object.keys(cambios).length === 0) return;
+    const e = snapshot();
+    const lista = (e[coleccion] as unknown as T[]).map((x) => (x.id === id ? { ...x, ...cambios } : x));
+    const { lista: act, nuevo } = registrar(e, ENTIDAD_DE[coleccion] ?? "config", id, etiqueta, "actualizo", detalle ?? `Se editó «${etiqueta}».`);
+    guardar({ ...e, [coleccion]: lista, actividad: act } as EstadoApp);
+    empujar({
+      tipo: "update", tabla: coleccion, id,
+      cambios: Object.fromEntries(Object.entries(cambios).map(([k, v]) => [k, v === undefined ? null : v])),
+    });
+    empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
+  },
+
   /* Lo que cambió en la base sin pasar por esta pantalla (lo escriben el
      cron o un webhook): se aplica SÓLO en memoria, sin volver a escribirlo.
      Si se empujara, una pestaña vieja podría pisar un número más nuevo. */
@@ -789,11 +807,19 @@ export const acciones = {
      cargado con ella, como en Airtable. */
   configurarCrm(crm: NonNullable<Ajustes["crm"]>, renombres: { campo: "preCall" | "estadoPreCall" | "estadoLlamada"; de: string; a: string }[] = [], detalle = "Se cambió la configuración del CRM.") {
     const e = snapshot();
+    /* Todos los renombres de una vez, desde el valor original: intercambiar
+       dos nombres (A→B y B→A) o renombrar a uno que se borra no se pisan. */
+    const mapas = new Map<string, Map<string, string>>();
+    for (const r of renombres) {
+      if (!mapas.has(r.campo)) mapas.set(r.campo, new Map());
+      mapas.get(r.campo)!.set(r.de, r.a);
+    }
     const tocadas: Sesion[] = [];
     const sesiones = renombres.length === 0 ? e.sesiones : e.sesiones.map((s) => {
       let y = s;
-      for (const r of renombres) {
-        if (y[r.campo] === r.de) y = { ...y, [r.campo]: r.a || undefined };
+      for (const [campo, mapa] of mapas) {
+        const actual = s[campo as "preCall"];
+        if (actual !== undefined && mapa.has(actual)) y = { ...y, [campo]: mapa.get(actual) || undefined };
       }
       if (y !== s) tocadas.push(y);
       return y;
@@ -804,7 +830,7 @@ export const acciones = {
     empujar({ tipo: "upsert", tabla: "ajustes", filas: [filaAjustes(ajustes)] });
     for (const s of tocadas) {
       const cambios: Record<string, unknown> = {};
-      for (const r of renombres) cambios[r.campo] = s[r.campo] ?? null;
+      for (const campo of mapas.keys()) cambios[campo] = s[campo as "preCall"] ?? null;
       empujar({ tipo: "update", tabla: "sesiones", id: s.id, cambios });
     }
     empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });

@@ -420,11 +420,14 @@ export interface OpcionCrm {
 export type CampoOpcionesCrm = "preCall" | "estadoLlamada" | "estadoPreCall";
 
 /* Una tabla del CRM (Booking Calls, Agendas Resells): qué tipos de evento
-   de Calendly entran. Sin `tipos`, los que dice su regla de siempre. */
+   de Calendly entran. Cada tabla tiene su regla (asesoramiento, auditoría) y
+   se le suman o se le sacan tipos a mano: así un tipo de evento nuevo de
+   Calendly sigue cayendo solo en la tabla que le corresponde. */
 export interface TablaCrm {
   id: string;
   nombre: string;
-  tipos?: string[];
+  incluir?: string[];
+  excluir?: string[];
 }
 
 export interface ConfigCrm {

@@ -222,7 +222,12 @@ export default function Agenda() {
     if (!form) return;
     if (!form.invitado.trim()) { toast("Poné a nombre de quién es la sesión.", "err"); return; }
     if (form.id) {
-      acciones.actualizar<Sesion>("sesiones", form.id, form, `${form.tipo} — ${form.invitado}`);
+      /* Sólo lo que se cambió en el formulario: la fila entera pisaría lo que
+         cargaron otros mientras tanto (el CRM, el webhook de Calendly). */
+      const antes = e.sesiones.find((x) => x.id === form.id);
+      const cambios = Object.fromEntries(Object.entries(form).filter(([k, v]) =>
+        k !== "id" && JSON.stringify(v) !== JSON.stringify((antes as unknown as Record<string, unknown> | undefined)?.[k]))) as Partial<Sesion>;
+      acciones.actualizarParcial<Sesion>("sesiones", form.id, cambios, `${form.tipo} — ${form.invitado}`);
       toast("Sesión actualizada.");
     } else {
       acciones.crear<Sesion>("sesiones", form, `${form.tipo} — ${form.invitado}`);
@@ -232,7 +237,7 @@ export default function Agenda() {
   }
 
   function cambiarEstado(s: Sesion, nuevo: EstadoSesion) {
-    acciones.actualizar<Sesion>("sesiones", s.id, { estado: nuevo }, `${s.tipo} — ${s.invitado}`, `${s.invitado}: la sesión pasó a «${ETIQUETA[nuevo].texto}».`);
+    acciones.actualizarParcial<Sesion>("sesiones", s.id, { estado: nuevo }, `${s.tipo} — ${s.invitado}`, `${s.invitado}: la sesión pasó a «${ETIQUETA[nuevo].texto}».`);
     toast(`Marcada como ${ETIQUETA[nuevo].texto.toLowerCase()}.`);
   }
 

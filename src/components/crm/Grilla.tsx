@@ -189,7 +189,19 @@ export function Grilla(p: PropsGrilla) {
     if (el) { el.scrollTop = 0; el.scrollLeft = 0; }
     setActivaEstado(null);
     setEdicion(null);
+    p.onActiva?.(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [p.reinicio]);
+
+  /* El editor de una línea vive en la celda: si su fila deja de dibujarse
+     (se scrolleó lejos), guarda al desmontarse y la edición termina acá.
+     Si no, las flechas quedaban muertas y al volver se reabría con la tecla
+     del principio, lista para pisar el link guardado. */
+  useEffect(() => {
+    if (!edicion) return;
+    const k = indiceDe.get(edicion.id);
+    if (k === undefined || k < desde || k >= hasta) setEdicion(null);
+  }, [edicion, indiceDe, desde, hasta]);
 
   /* Si la fila activa desaparece (otro filtro), no queda nada elegido. */
   useEffect(() => {

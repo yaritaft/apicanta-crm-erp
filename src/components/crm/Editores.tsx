@@ -27,7 +27,9 @@ export function SelectorOpciones({
 }) {
   const [q, setQ] = useState(inicial);
   const lista = opciones.filter((o) => sinTildes(o.nombre).includes(sinTildes(q.trim())));
-  const [i, setI] = useState(() => Math.max(0, opciones.findIndex((o) => o.nombre === valor)));
+  /* Abierta escribiendo, la resaltada es la primera que coincide; si no, la
+     que ya tenía la celda. */
+  const [i, setI] = useState(() => (inicial ? 0 : Math.max(0, opciones.findIndex((o) => o.nombre === valor))));
   const listaRef = useRef<HTMLDivElement>(null);
   const k = Math.min(i, Math.max(0, lista.length - 1));
 

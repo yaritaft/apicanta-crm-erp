@@ -4,7 +4,7 @@ import React, { useMemo, useRef, useState } from "react";
 import { Check, ChevronDown, ChevronRight, Plus, Search, Settings, Sheet } from "lucide-react";
 import { acciones, useEstado } from "@/lib/store";
 import { useToast } from "@/components/ui/Toast";
-import { conConfig, entraEnTabla, sinTildes, type SeccionVistas, type VistaCrm } from "@/lib/crm";
+import { conConfig, entraEnTabla, reglaDeTabla, sinTildes, type SeccionVistas, type VistaCrm } from "@/lib/crm";
 import type { Sesion, TablaCrm } from "@/lib/types";
 import { Flotante } from "./piezas";
 import { usePreferencia, type VistaPropia } from "./useVistas";
@@ -134,11 +134,24 @@ function ConfigTablas({ ancla, onCerrar, tabla, tablas, sesiones }: {
   const enOtra = (t: string) => tablas.find((x) => x.id !== tabla.id && entraEnTabla({ tipo: t }, x));
 
   function guardar() {
+    const todos = tipos.map(([t]) => t);
     const nuevas = tablas.map((x) => {
-      if (x.id === tabla.id) return { ...x, tipos: [...elegidos] };
-      /* Un tipo va a una sola tabla: si se sumó acá, sale de la otra. */
-      const suyos = tipos.map(([t]) => t).filter((t) => entraEnTabla({ tipo: t }, x) && !elegidos.has(t));
-      return { ...x, tipos: suyos };
+      /* Esta tabla: se suma lo tildado que su regla no toma y se saca lo que
+         su regla toma pero se destildó. Lo que Calendly traiga nuevo sigue
+         entrando por la regla. */
+      if (x.id === tabla.id) {
+        return {
+          ...x,
+          incluir: [...elegidos].filter((t) => !reglaDeTabla(x.id, t)),
+          excluir: todos.filter((t) => reglaDeTabla(x.id, t) && !elegidos.has(t)),
+        };
+      }
+      /* Un tipo va a una sola tabla: lo que se tildó acá sale de las otras. */
+      return {
+        ...x,
+        incluir: (x.incluir ?? []).filter((t) => !elegidos.has(t)),
+        excluir: [...new Set([...(x.excluir ?? []), ...[...elegidos].filter((t) => reglaDeTabla(x.id, t))])],
+      };
     });
     acciones.configurarCrm(conConfig(e.ajustes, { tablas: nuevas }), [], `Cambió qué agendas entran en «${tabla.nombre}».`);
     toast(`Listo: «${tabla.nombre}» muestra ${elegidos.size} ${elegidos.size === 1 ? "tipo" : "tipos"} de agenda.`);

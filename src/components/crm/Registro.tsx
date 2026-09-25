@@ -43,7 +43,8 @@ export function Registro({ f, opciones, pintar, onGuardar, onCerrar, onFicha, an
     const onKey = (ev: KeyboardEvent) => {
       const t = ev.target as HTMLElement;
       const escribiendo = t.tagName === "INPUT" || t.tagName === "TEXTAREA";
-      if (ev.key === "Escape") { onCerrar(); return; }
+      /* Primero se suelta el campo que se está escribiendo: su onBlur guarda. */
+      if (ev.key === "Escape") { (document.activeElement as HTMLElement | null)?.blur?.(); onCerrar(); return; }
       if (escribiendo) return;
       if (ev.key === "ArrowUp" && anterior) { ev.preventDefault(); anterior(); }
       if (ev.key === "ArrowDown" && siguiente) { ev.preventDefault(); siguiente(); }
@@ -94,13 +95,13 @@ export function Registro({ f, opciones, pintar, onGuardar, onCerrar, onFicha, an
           </div>
           <div className="crm-registro__acciones">
             {s.enlace && (
-              <a className="crm-boton crm-boton--quieto" href={s.enlace} target="_blank" rel="noreferrer">
-                <ExternalLink size={14} aria-hidden />Abrir la reunión
+              <a className="crm-boton crm-boton--quieto" href={s.enlace} target="_blank" rel="noreferrer" aria-label="Abrir la reunión" title="Abrir la reunión">
+                <ExternalLink size={14} aria-hidden /><span className="crm-boton__texto">Abrir la reunión</span>
               </a>
             )}
             {persona && (
-              <button type="button" className="crm-boton crm-boton--quieto" onClick={() => onFicha(persona)}>
-                <UserRound size={14} aria-hidden />Ver la ficha
+              <button type="button" className="crm-boton crm-boton--quieto" onClick={() => onFicha(persona)} aria-label="Ver la ficha" title="Ver la ficha de la persona">
+                <UserRound size={14} aria-hidden /><span className="crm-boton__texto">Ver la ficha</span>
               </button>
             )}
             <button type="button" className="crm-icono" aria-label="Cerrar" onClick={onCerrar}><X size={18} aria-hidden /></button>
@@ -233,13 +234,40 @@ function ValorRegistro({ f, c, opciones, pintar, onGuardar }: {
 function TextoEditable({ f, c, onGuardar }: { f: FilaCrm; c: CampoCrm; onGuardar: (f: FilaCrm, clave: ClaveCampo, valor: string) => void }) {
   const actual = String(valorDe(f, c.clave));
   const [t, setT] = useState(actual);
-  useEffect(() => { setT(actual); }, [actual, f.id]);
-  const guardar = () => { if (t.trim() !== actual.trim()) onGuardar(f, c.clave, t); };
+  /* Lo que llega de la base (otro del equipo, Realtime) no pisa lo que se
+     está escribiendo: se toma recién cuando el campo no tiene el foco. */
+  const enfocado = useRef(false);
+  useEffect(() => { if (!enfocado.current) setT(actual); }, [actual]);
+  /* Lo escrito y todavía no guardado. Si el registro se cierra o pasa a
+     otro sin que el campo pierda el foco (Esc, las flechas), se guarda en
+     la agenda en la que se escribió — no en la que se abre. */
+  const sucio = useRef(false);
+  const texto = useRef(t);
+  texto.current = t;
+  const guardarRef = useRef(onGuardar);
+  guardarRef.current = onGuardar;
+  useEffect(() => {
+    const fila = f;
+    setT(String(valorDe(fila, c.clave)));
+    return () => {
+      if (!sucio.current) return;
+      sucio.current = false;
+      guardarRef.current(fila, c.clave, texto.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [f.id]);
+  const cambiar = (v: string) => { sucio.current = true; setT(v); };
+  const guardar = () => {
+    if (!sucio.current) return;
+    sucio.current = false;
+    if (t.trim() !== actual.trim()) onGuardar(f, c.clave, t);
+  };
   if (c.tipo === "texto-largo") {
     return (
       <textarea
         className="crm-registro__caja crm-registro__texto" rows={4} value={t} aria-label={c.titulo}
-        placeholder="Lo que pasó en la llamada…" onChange={(ev) => setT(ev.target.value)} onBlur={guardar}
+        placeholder="Lo que pasó en la llamada…" onChange={(ev) => cambiar(ev.target.value)}
+        onFocus={() => { enfocado.current = true; }} onBlur={() => { enfocado.current = false; guardar(); }}
       />
     );
   }
@@ -248,7 +276,8 @@ function TextoEditable({ f, c, onGuardar }: { f: FilaCrm; c: CampoCrm; onGuardar
       <input
         className="crm-registro__caja" value={t} aria-label={c.titulo} spellCheck={false}
         placeholder={c.tipo === "url" ? "https://fathom.video/share/…" : ""}
-        onChange={(ev) => setT(ev.target.value)} onBlur={guardar}
+        onChange={(ev) => cambiar(ev.target.value)}
+        onFocus={() => { enfocado.current = true; }} onBlur={() => { enfocado.current = false; guardar(); }}
         onKeyDown={(ev) => { if (ev.key === "Enter") { ev.preventDefault(); (ev.target as HTMLInputElement).blur(); } }}
       />
       {c.tipo === "url" && actual && (
