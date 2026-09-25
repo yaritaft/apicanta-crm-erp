@@ -137,11 +137,11 @@ type Op =
   /* `sacadas` son las columnas que se quitaron por no existir todavia en la
      tabla. Se guarda para no reintentar en loop la misma. */
   | { tipo: "upsert"; tabla: string; filas: unknown[]; sacadas?: Set<string> }
-  /* Sólo las columnas que cambiaron de UNA fila (null borra el dato). Para
-     filas que también escribe el servidor, como las llamadas que trae
-     Calendly: un upsert con la copia entera de esta pestaña podría pisar lo
-     que el webhook acaba de cambiar. */
-  | { tipo: "update"; tabla: string; id: ID; cambios: Record<string, unknown>; sacadas?: Set<string> }
+  /* Sólo las columnas que cambiaron (null borra el dato), las mismas en
+     todas esas filas. Para filas que también escribe el servidor, como las
+     llamadas que trae Calendly: un upsert con la copia entera de esta
+     pestaña podría pisar lo que el webhook acaba de cambiar. */
+  | { tipo: "update"; tabla: string; ids: ID[]; cambios: Record<string, unknown>; sacadas?: Set<string> }
   | { tipo: "delete"; tabla: string; ids: ID[] };
 
 /* PostgREST avisa con PGRST204 que la fila trae una columna que la tabla no
@@ -167,15 +167,22 @@ let drenando = false;
    pantalla: no se aplica (llega otro aviso cuando se termine de escribir). */
 export function escrituraPendiente(tabla: string, id: ID): boolean {
   return cola.some((op) => op.tabla === tabla && (
-    op.tipo === "update" ? op.id === id
-      : op.tipo === "upsert" ? (op.filas as { id?: ID }[]).some((f) => f.id === id)
-      : op.ids.includes(id)));
+    op.tipo === "upsert" ? (op.filas as { id?: ID }[]).some((f) => f.id === id) : op.ids.includes(id)));
 }
 
 function empujar(op: Op) {
   if (!nube) return;
   cola.push(op);
   void drenar();
+}
+
+/* El mismo cambio en varias filas va en un solo UPDATE, de a 100 (los ids
+   viajan en la URL): cargarle un Pre-Call a 300 agendas no son 300 idas y
+   vueltas. */
+function empujarUpdate(tabla: string, ids: ID[], cambios: Record<string, unknown>) {
+  for (let i = 0; i < ids.length; i += 100) {
+    empujar({ tipo: "update", tabla, ids: ids.slice(i, i + 100), cambios });
+  }
 }
 
 async function drenar() {
@@ -188,7 +195,7 @@ async function drenar() {
       const r = op.tipo === "upsert"
         ? await nube.from(op.tabla).upsert(normalizar(op.filas) as never[], OPCIONES_UPSERT)
         : op.tipo === "update"
-          ? await nube.from(op.tabla).update(op.cambios as never).eq("id", op.id)
+          ? await nube.from(op.tabla).update(op.cambios as never).in("id", op.ids)
           : await nube.from(op.tabla).delete().in("id", op.ids);
       if (r.error) {
         /* Tabla opcional sin crear: se descarta la operacion en vez de
@@ -492,16 +499,24 @@ export function nuevoId(prefijo: string): string {
 
 const ahora = () => new Date().toISOString();
 
+function nuevaActividad(
+  e: EstadoApp, entidad: Actividad["entidad"], entidadId: ID,
+  titulo: string, accion: AccionActividad, detalle: string, id = nuevoId("act"),
+): Actividad {
+  return { id, entidad, entidadId, titulo, accion, detalle, actor: e.ajustes.responsable || "Apicanta", fecha: ahora() };
+}
+
 function registrar(
   e: EstadoApp, entidad: Actividad["entidad"], entidadId: ID,
   titulo: string, accion: AccionActividad, detalle: string,
 ): { lista: Actividad[]; nuevo: Actividad } {
-  const nuevo: Actividad = {
-    id: nuevoId("act"), entidad, entidadId, titulo, accion, detalle,
-    actor: e.ajustes.responsable || "Apicanta", fecha: ahora(),
-  };
+  const nuevo = nuevaActividad(e, entidad, entidadId, titulo, accion, detalle);
   return { lista: [nuevo, ...e.actividad].slice(0, 400), nuevo };
 }
+
+/* Lo que el CRM carga sobre una agenda. `estado` sólo lo manda deshacer:
+   devuelve la llamada a como estaba. */
+type CambiosLlamada = Partial<Pick<Sesion, "preCall" | "estadoPreCall" | "estadoLlamada" | "notas" | "grabacion" | "estado">>;
 
 type Coleccion =
   | "contactos" | "leads" | "sesiones" | "webinars" | "alumnos" | "reportes"
@@ -711,10 +726,7 @@ export const acciones = {
     const lista = (e[coleccion] as unknown as T[]).map((x) => (x.id === id ? { ...x, ...cambios } : x));
     const { lista: act, nuevo } = registrar(e, ENTIDAD_DE[coleccion] ?? "config", id, etiqueta, "actualizo", detalle ?? `Se editó «${etiqueta}».`);
     guardar({ ...e, [coleccion]: lista, actividad: act } as EstadoApp);
-    empujar({
-      tipo: "update", tabla: coleccion, id,
-      cambios: Object.fromEntries(Object.entries(cambios).map(([k, v]) => [k, v === undefined ? null : v])),
-    });
+    empujarUpdate(coleccion, [id], Object.fromEntries(Object.entries(cambios).map(([k, v]) => [k, v === undefined ? null : v])));
     empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
   },
 
@@ -774,32 +786,56 @@ export const acciones = {
      El Estado de Llamada dice además si la llamada se hizo: elegir «Compra
      Full» es lo mismo que marcar «Se hizo» en la Agenda, e «Inasistió», que
      «No vino». Así la asistencia del Dashboard no se carga dos veces. */
-  editarLlamada(
-    id: ID,
-    /* `estado` sólo lo manda deshacer: devuelve la llamada a como estaba. */
-    cambios: Partial<Pick<Sesion, "preCall" | "estadoPreCall" | "estadoLlamada" | "notas" | "grabacion" | "estado">>,
-    detalle: string,
-  ) {
+  editarLlamada(id: ID, cambios: CambiosLlamada, detalle: string) {
+    acciones.editarLlamadas([{ id, cambios, detalle }]);
+  },
+
+  /* Lo mismo en varias agendas de una vez (elegir filas y cargarles el
+     mismo Pre-Call, o deshacerlo): se guarda una sola vez. Agenda por agenda,
+     con miles cargadas, cada una volvía a escribir todo el estado y la
+     pantalla se quedaba congelada. */
+  editarLlamadas(lista: { id: ID; cambios: CambiosLlamada; detalle: string }[]) {
     const e = snapshot();
-    const s = e.sesiones.find((x) => x.id === id);
-    if (!s) return;
-    const limpio: Partial<Sesion> = {};
-    for (const [k, v] of Object.entries(cambios)) {
-      (limpio as Record<string, unknown>)[k] = typeof v === "string" && v.trim() === "" ? undefined : v;
+    const porId = new Map(e.sesiones.map((s) => [s.id, s]));
+    const opciones = opcionesDe(e.ajustes, "estadoLlamada");
+    const hechas = new Map<ID, Sesion>();
+    const aLaNube = new Map<ID, Record<string, unknown>>();
+    const nuevas: Actividad[] = [];
+    /* Un id por tanda, más el orden: con miles en el mismo milisegundo, los
+       sufijos al azar de nuevoId llegaban a repetirse, y un upsert con dos
+       filas del mismo id falla entero. */
+    const base = nuevoId("act");
+    for (const { id, cambios, detalle } of lista) {
+      const s = hechas.get(id) ?? porId.get(id);
+      if (!s) continue;
+      const limpio: Partial<Sesion> = {};
+      for (const [k, v] of Object.entries(cambios)) {
+        (limpio as Record<string, unknown>)[k] = typeof v === "string" && v.trim() === "" ? undefined : v;
+      }
+      if (limpio.estadoLlamada && !("estado" in cambios)) {
+        const op = opciones.find((o) => o.nombre === limpio.estadoLlamada);
+        if (op?.llamada && s.estado !== op.llamada) limpio.estado = op.llamada;
+      }
+      if ("estado" in cambios && !cambios.estado) delete limpio.estado;
+      hechas.set(id, { ...s, ...limpio });
+      aLaNube.set(id, { ...aLaNube.get(id), ...Object.fromEntries(Object.entries(limpio).map(([k, v]) => [k, v ?? null])) });
+      nuevas.push(nuevaActividad(e, "sesion", id, `${s.tipo} — ${s.invitado}`, "actualizo", detalle, `${base}_${nuevas.length.toString(36)}`));
     }
-    if (limpio.estadoLlamada && !("estado" in cambios)) {
-      const op = opcionesDe(e.ajustes, "estadoLlamada").find((o) => o.nombre === limpio.estadoLlamada);
-      if (op?.llamada && s.estado !== op.llamada) limpio.estado = op.llamada;
-    }
-    if ("estado" in cambios && !cambios.estado) delete limpio.estado;
-    const actualizada: Sesion = { ...s, ...limpio };
-    const { lista, nuevo } = registrar(e, "sesion", id, `${s.tipo} — ${s.invitado}`, "actualizo", detalle);
-    guardar({ ...e, sesiones: e.sesiones.map((x) => (x.id === id ? actualizada : x)), actividad: lista });
-    empujar({
-      tipo: "update", tabla: "sesiones", id,
-      cambios: Object.fromEntries(Object.entries(limpio).map(([k, v]) => [k, v ?? null])),
+    if (hechas.size === 0) return;
+    guardar({
+      ...e,
+      sesiones: e.sesiones.map((x) => hechas.get(x.id) ?? x),
+      actividad: [...nuevas.reverse(), ...e.actividad].slice(0, 400),
     });
-    empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
+    /* Las agendas con el mismo cambio van juntas en un UPDATE. */
+    const grupos = new Map<string, { cambios: Record<string, unknown>; ids: ID[] }>();
+    for (const [id, cambios] of aLaNube) {
+      const clave = JSON.stringify(cambios);
+      const g = grupos.get(clave);
+      if (g) g.ids.push(id); else grupos.set(clave, { cambios, ids: [id] });
+    }
+    for (const g of grupos.values()) empujarUpdate("sesiones", g.ids, g.cambios);
+    empujarEnLotes("actividad", nuevas);
   },
 
   /* La configuración del CRM (opciones de cada campo, qué agendas entran en
@@ -828,11 +864,15 @@ export const acciones = {
     const { lista, nuevo } = registrar(e, "config", "crm", "CRM", "actualizo", detalle);
     guardar({ ...e, ajustes, sesiones, actividad: lista });
     empujar({ tipo: "upsert", tabla: "ajustes", filas: [filaAjustes(ajustes)] });
+    const grupos = new Map<string, { cambios: Record<string, unknown>; ids: ID[] }>();
     for (const s of tocadas) {
       const cambios: Record<string, unknown> = {};
       for (const campo of mapas.keys()) cambios[campo] = s[campo as "preCall"] ?? null;
-      empujar({ tipo: "update", tabla: "sesiones", id: s.id, cambios });
+      const clave = JSON.stringify(cambios);
+      const g = grupos.get(clave);
+      if (g) g.ids.push(s.id); else grupos.set(clave, { cambios, ids: [s.id] });
     }
+    for (const g of grupos.values()) empujarUpdate("sesiones", g.ids, g.cambios);
     empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
   },
 

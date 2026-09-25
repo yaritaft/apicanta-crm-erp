@@ -192,57 +192,62 @@ export function Crm() {
   type Cambio = { id: string; clave: ClaveCampo; antes: string; estado?: Sesion["estado"]; nombre: string };
   /* Una entrada por gesto: cambiar varias filas juntas se deshace de una vez. */
   const deshacer = useRef<Cambio[][]>([]);
-  const escribirCampo = useCallback((f: FilaCrm, clave: ClaveCampo, valor: string, detalle?: string): Cambio | null => {
+  type Pedido = Parameters<typeof acciones.editarLlamadas>[0][number];
+  /* Qué escribir para dejar `valor` en ese campo y cómo se deshace (null si
+     el campo no es del equipo o ya tenía ese valor). */
+  const cambioDe = useCallback((f: FilaCrm, clave: ClaveCampo, valor: string, detalle?: string): { cambio: Cambio; pedido: Pedido } | null => {
     const campo = CAMPO[clave];
     if (!campo || campo.origen !== "equipo") return null;
     const antes = String((f.sesion as unknown as Record<string, unknown>)[clave] ?? "");
     if (antes === valor.trim()) return null;
     const efecto = clave === "estadoLlamada" ? opcionesDe(estadoRef.current.ajustes, "estadoLlamada").find((o) => o.nombre === valor)?.llamada : undefined;
-    acciones.editarLlamada(
-      f.id, { [clave]: valor } as Partial<Sesion>,
-      detalle ?? (valor ? `${f.nombre}: ${campo.titulo} → ${valor.length > 60 ? `${valor.slice(0, 60)}…` : valor}.` : `${f.nombre}: se vació ${campo.titulo}.`),
-    );
-    return { id: f.id, clave, antes, estado: efecto && efecto !== f.sesion.estado ? f.sesion.estado : undefined, nombre: f.nombre };
+    return {
+      cambio: { id: f.id, clave, antes, estado: efecto && efecto !== f.sesion.estado ? f.sesion.estado : undefined, nombre: f.nombre },
+      pedido: {
+        id: f.id, cambios: { [clave]: valor } as Partial<Sesion>,
+        detalle: detalle ?? (valor ? `${f.nombre}: ${campo.titulo} → ${valor.length > 60 ? `${valor.slice(0, 60)}…` : valor}.` : `${f.nombre}: se vació ${campo.titulo}.`),
+      },
+    };
   }, []);
   const recordar = (cambios: Cambio[]) => { if (cambios.length) deshacer.current = [...deshacer.current.slice(-49), cambios]; };
   const guardarCampo = useCallback((f: FilaCrm, clave: ClaveCampo, valor: string) => {
-    const cambio = escribirCampo(f, clave, valor);
-    if (!cambio) return;
-    recordar([cambio]);
+    const c = cambioDe(f, clave, valor);
+    if (!c) return;
+    acciones.editarLlamadas([c.pedido]);
+    recordar([c.cambio]);
     retenidaRef.current = f.id;
     setRetenida(f.id);
     const opcion = clave === "estadoLlamada" ? opciones.estadoLlamada.find((o) => o.nombre === valor) : undefined;
     if (opcion?.llamada && f.sesion.estado !== opcion.llamada) {
       toast(opcion.llamada === "hecha" ? "En la Agenda la llamada quedó como hecha." : "En la Agenda la llamada quedó como que no vino.", "info");
     }
-  }, [escribirCampo, opciones.estadoLlamada, toast]);
+  }, [cambioDe, opciones.estadoLlamada, toast]);
   const onDeshacer = useCallback(() => {
     const ultimos = deshacer.current.pop();
     if (!ultimos?.length) { toast("No hay nada para deshacer.", "info"); return; }
-    for (const u of ultimos) {
-      acciones.editarLlamada(
-        u.id, { [u.clave]: u.antes, ...(u.estado ? { estado: u.estado } : {}) } as Partial<Sesion>,
-        `${u.nombre}: se deshizo el cambio de ${CAMPO[u.clave].titulo}.`,
-      );
-    }
+    acciones.editarLlamadas(ultimos.map((u) => ({
+      id: u.id,
+      cambios: { [u.clave]: u.antes, ...(u.estado ? { estado: u.estado } : {}) } as Partial<Sesion>,
+      detalle: `${u.nombre}: se deshizo el cambio de ${CAMPO[u.clave].titulo}.`,
+    })));
     const titulo = CAMPO[ultimos[0].clave].titulo;
     toast(ultimos.length === 1 ? `Deshecho: ${titulo} de ${ultimos[0].nombre}.` : `Deshecho: ${titulo} en ${ultimos.length} agendas.`, "info");
   }, [toast]);
 
-  /* Lo mismo para todas las filas elegidas con la casilla. */
+  /* Lo mismo para todas las filas elegidas con la casilla, guardado de una
+     vez (y deshecho de una vez). */
   const aplicarAVarias = useCallback((clave: CampoOpcionesCrm, valor: string, ids: Set<string>) => {
     const campo = CAMPO[clave];
-    const cambios: Cambio[] = [];
-    for (const f of filasTabla) {
-      if (!ids.has(f.id)) continue;
-      const c = escribirCampo(f, clave, valor, `${f.nombre}: ${campo.titulo} → ${valor || "vacío"} (a varias juntas).`);
-      if (c) cambios.push(c);
-    }
-    recordar(cambios);
-    const n = cambios.length;
+    const hechos = filasTabla
+      .filter((f) => ids.has(f.id))
+      .map((f) => cambioDe(f, clave, valor, `${f.nombre}: ${campo.titulo} → ${valor || "vacío"} (a varias juntas).`))
+      .filter((c) => c !== null);
+    acciones.editarLlamadas(hechos.map((h) => h.pedido));
+    recordar(hechos.map((h) => h.cambio));
+    const n = hechos.length;
     toast(n ? `${campo.titulo}: «${valor}» en ${n} ${n === 1 ? "agenda" : "agendas"}. ⌘Z lo deshace.` : "Ya tenían ese valor.");
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filasTabla, escribirCampo, toast]);
+  }, [filasTabla, cambioDe, toast]);
 
   const onActiva = useCallback((id: string | null) => {
     if (!retenidaRef.current || retenidaRef.current === id) return;

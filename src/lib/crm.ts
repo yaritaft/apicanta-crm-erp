@@ -320,6 +320,17 @@ export function mesDe(iso?: string | null): string {
    y el año sale del webinar cargado más cercano a cuando agendó. Así las
    agendas de un mismo webinar caen juntas, lleguen en el formato que
    lleguen. */
+/* claveDeFecha arma un formateador de fechas en cada llamada: por cada
+   agenda con link viejo se pedía la de todos los webinars, y con miles de
+   agendas se llevaba casi todo el tiempo de cada cambio. Los webinars son
+   pocos: se recuerda la clave de cada fecha. */
+const CLAVES_DE_FECHA = new Map<string, string>();
+function claveDe(iso: string): string {
+  let c = CLAVES_DE_FECHA.get(iso);
+  if (c === undefined) { c = claveDeFecha(iso); CLAVES_DE_FECHA.set(iso, c); }
+  return c;
+}
+
 export function lanzamientoDe(
   utm: Record<string, string> | null | undefined,
   webinars: { fecha: string }[] = [],
@@ -330,7 +341,7 @@ export function lanzamientoDe(
   if (l.fecha) return `${l.funnel}_${l.fecha}`;
   if (!l.diaMes) return "";
   const ref = agendo ? Date.parse(agendo) : Date.now();
-  const w = webinars.filter((x) => claveDeFecha(x.fecha) === l.diaMes)
+  const w = webinars.filter((x) => claveDe(x.fecha) === l.diaMes)
     .sort((a, b) => Math.abs(Date.parse(a.fecha) - ref) - Math.abs(Date.parse(b.fecha) - ref))[0];
   return `${l.funnel}_${w ? diaAR(w.fecha) : l.diaMes}`;
 }
@@ -394,7 +405,8 @@ export function filasCrm(e: Pick<EstadoApp, "sesiones" | "contactos" | "ajustes"
   const porPersona = new Map<string, Sesion[]>();
   for (const { s, tabla } of entran) {
     const k = `${tabla}|${personaDe(s)}`;
-    porPersona.set(k, [...(porPersona.get(k) ?? []), s]);
+    const xs = porPersona.get(k);
+    if (xs) xs.push(s); else porPersona.set(k, [s]);
   }
   const segundas = new Set<string>();
   for (const xs of porPersona.values()) {
@@ -403,42 +415,64 @@ export function filasCrm(e: Pick<EstadoApp, "sesiones" | "contactos" | "ajustes"
   }
 
   return entran.map(({ s, tabla }) => {
-    const qa = s.respuestas ?? [];
     const c = contactos.get(s.contactoId ?? "") ?? contactos.get(s.leadId ?? "");
-    const auto = s.estadoLlamada ? "" : estadoAutomatico(s, estados, segundas.has(s.id));
-    const u = s.utm ?? {};
-    return {
-      id: s.id, sesion: s, tabla, personaId: personaDe(s),
-      nombre: s.invitado?.trim() || c?.nombre || "",
-      llamada: s.inicia,
-      closer: s.anfitrion?.trim() ?? "",
-      telefono: respuestaA(qa, /(whatsapp|telefono|celular|numero)/) ?? c?.telefono ?? "",
-      email: s.email ?? c?.email ?? "",
-      preCall: s.preCall ?? "",
-      estadoLlamada: s.estadoLlamada || auto,
-      estadoAuto: !s.estadoLlamada && Boolean(auto),
-      notas: s.notas ?? "",
-      funnel: funnelDe(s),
-      utmSource: u.utm_source ?? "",
-      utmMedium: u.utm_medium ?? "",
-      utmContent: u.utm_content ?? "",
-      utmCampaign: u.utm_campaign ?? "",
-      grabacion: s.grabacion ?? "",
-      anios: respuestaA(qa, /(anos.*program|program.*anos)/) ?? "",
-      ingles: respuestaA(qa, /ingles/) ?? "",
-      lenguajes: partir(respuestaA(qa, /(lenguaje|framework|tecnolog)/) ?? c?.tecnologias),
-      inversion: respuestaA(qa, /(invertir|inversion|te define mejor|claridad en la llamada)/) ?? "",
-      mes: mesDe(s.inicia),
-      estadoPreCall: s.estadoPreCall ?? "",
-      calificada: evaluarAgenda(s, c).calificada ? "Sí" : "No",
-      formacion: partir(respuestaA(qa, /(formacion|estudio)/) ?? c?.formacion),
-      ingreso: respuestaA(qa, /(ganas|sueldo|salario)/) ?? c?.sueldoUsd ?? "",
-      instagram: respuestaA(qa, /instagram/) ?? c?.instagram ?? "",
-      agendo: s.creadoEn,
-      tipo: s.tipo ?? "",
-      lanzamiento: lanzamientoDe(u, e.webinars, s.creadoEn),
-    };
+    const segunda = segundas.has(s.id);
+    const previa = FILAS.get(s);
+    if (previa && previa.c === c && previa.segunda === segunda && previa.tabla === tabla
+      && previa.ajustes === e.ajustes && previa.webinars === e.webinars) return previa.fila;
+    const fila = armarFila(s, tabla, c, estados, segunda, e.webinars);
+    FILAS.set(s, { c, segunda, tabla, ajustes: e.ajustes, webinars: e.webinars, fila });
+    return fila;
   });
+}
+
+/* La fila de cada agenda se recuerda mientras no cambie nada de lo que la
+   arma (la agenda, su persona, si es la segunda, la tabla, la configuración,
+   los webinars): cargar una celda no vuelve a leer las respuestas de las
+   otras miles. El store nunca edita una agenda en el lugar, la reemplaza,
+   así que alcanza con comparar los objetos. */
+const FILAS = new WeakMap<Sesion, {
+  c: Contacto | undefined; segunda: boolean; tabla: string;
+  ajustes: EstadoApp["ajustes"]; webinars: EstadoApp["webinars"]; fila: FilaCrm;
+}>();
+
+function armarFila(
+  s: Sesion, tabla: string, c: Contacto | undefined, estados: OpcionCrm[], segunda: boolean, webinars: EstadoApp["webinars"],
+): FilaCrm {
+  const qa = s.respuestas ?? [];
+  const auto = s.estadoLlamada ? "" : estadoAutomatico(s, estados, segunda);
+  const u = s.utm ?? {};
+  return {
+    id: s.id, sesion: s, tabla, personaId: personaDe(s),
+    nombre: s.invitado?.trim() || c?.nombre || "",
+    llamada: s.inicia,
+    closer: s.anfitrion?.trim() ?? "",
+    telefono: respuestaA(qa, /(whatsapp|telefono|celular|numero)/) ?? c?.telefono ?? "",
+    email: s.email ?? c?.email ?? "",
+    preCall: s.preCall ?? "",
+    estadoLlamada: s.estadoLlamada || auto,
+    estadoAuto: !s.estadoLlamada && Boolean(auto),
+    notas: s.notas ?? "",
+    funnel: funnelDe(s),
+    utmSource: u.utm_source ?? "",
+    utmMedium: u.utm_medium ?? "",
+    utmContent: u.utm_content ?? "",
+    utmCampaign: u.utm_campaign ?? "",
+    grabacion: s.grabacion ?? "",
+    anios: respuestaA(qa, /(anos.*program|program.*anos)/) ?? "",
+    ingles: respuestaA(qa, /ingles/) ?? "",
+    lenguajes: partir(respuestaA(qa, /(lenguaje|framework|tecnolog)/) ?? c?.tecnologias),
+    inversion: respuestaA(qa, /(invertir|inversion|te define mejor|claridad en la llamada)/) ?? "",
+    mes: mesDe(s.inicia),
+    estadoPreCall: s.estadoPreCall ?? "",
+    calificada: evaluarAgenda(s, c).calificada ? "Sí" : "No",
+    formacion: partir(respuestaA(qa, /(formacion|estudio)/) ?? c?.formacion),
+    ingreso: respuestaA(qa, /(ganas|sueldo|salario)/) ?? c?.sueldoUsd ?? "",
+    instagram: respuestaA(qa, /instagram/) ?? c?.instagram ?? "",
+    agendo: s.creadoEn,
+    tipo: s.tipo ?? "",
+    lanzamiento: lanzamientoDe(u, webinars, s.creadoEn),
+  };
 }
 
 /* ---------- El color de cada valor ----------

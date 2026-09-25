@@ -2658,6 +2658,9 @@ span.kpis__etiqueta:hover { color: var(--ink); text-decoration: none; }
 
 /* ---------- Menús flotantes ---------- */
 .crm-pop {
+  /* En un celular ningún menú es más ancho que la pantalla (Ordenar y las
+     opciones de una columna piden 440 y 520 px). */
+  max-width: calc(100vw - 16px);
   z-index: 90; overflow: auto; border-radius: 6px; padding: 8px;
   background: var(--crm-pop-fondo); color: var(--crm-tinta); box-shadow: var(--crm-pop-sombra);
   font-size: 13px; line-height: 18px;
@@ -2759,6 +2762,13 @@ span.kpis__etiqueta:hover { color: var(--ink); text-decoration: none; }
 .crm-opciones__nombre { flex: 1; }
 .crm-opciones__efecto { width: 150px; flex: none; }
 .crm-opciones__auto { display: inline-flex; color: var(--crm-auto); }
+/* En un celular el nombre ocupa el renglón y lo que dice de la llamada va
+   abajo: al lado, «Seguimiento de Pago» quedaba en «Seguimient». */
+@media (max-width: 560px) {
+  .crm-opciones__fila { flex-wrap: wrap; row-gap: 4px; }
+  .crm-opciones__nombre { min-width: 0; }
+  .crm-opciones__efecto { order: 1; flex: 1 0 calc(100% - 52px); margin-left: 44px; }
+}
 .crm-opciones__muestra { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px 6px 4px; margin-top: 6px; border-top: 1px solid var(--crm-linea); }
 .crm-pop .crm-color { width: 22px; height: 22px; border-radius: 50%; flex: none; box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .12); }
 .crm-pop .crm-color--chico { width: 18px; height: 18px; border-radius: 4px; }
