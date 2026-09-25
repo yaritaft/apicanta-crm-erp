@@ -1881,6 +1881,24 @@ a.wb-canal:hover { background: var(--surface-200); border-color: var(--border-st
 .utm-detectada { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; padding: var(--space-2) 0; border-bottom: 1px solid var(--border); }
 .utm-detectada:last-child { border-bottom: 0; }
 .utm-detectada__utm { display: flex; gap: 6px; flex-wrap: wrap; flex: 1; min-width: 0; }
+.utm-detectada__origen { flex-basis: 100%; }
+/* El creador de UTMs: cada link en su renglón, en monoespaciada y cortando
+   donde haga falta (un link no tiene espacios), con su botón de copiar. */
+.utm-link { display: flex; flex-direction: column; gap: 4px; }
+.utm-link__fila { display: flex; align-items: flex-start; gap: var(--space-2); }
+.utm-link__codigo {
+  flex: 1; min-width: 0; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius-md);
+  background: var(--surface-000); font-size: 12.5px; line-height: 18px; overflow-wrap: anywhere; color: var(--ink);
+}
+/* El estándar: el patrón de utm_campaign y qué estrategia es. */
+.utm-estandar { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: var(--space-3); align-items: center; padding: var(--space-2) 0; border-bottom: 1px solid var(--border); }
+.utm-estandar:last-child { border-bottom: 0; }
+.utm-estandar .hk-input, .utm-estandar .sel { height: 36px; font-size: 14px; }
+.utm-estandar__funnel { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.utm-estandar__funnel code { font-size: 13px; color: var(--ink); }
+.utm-diccionario summary { cursor: pointer; }
+.utm-diccionario[open] summary { margin-bottom: var(--space-2); }
+@media (max-width: 760px) { .utm-estandar { grid-template-columns: minmax(0, 1fr); } }
 @media (max-width: 760px) {
   .utm-regla__utm, .utm-regla__destino { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
 }
