@@ -42,11 +42,12 @@ const PALETA: Record<ColorCrm, string> = {
 
 export const COLORES: ColorCrm[] = Object.keys(PALETA) as ColorCrm[];
 
+/* `suave`: los pasteles, que en el tema oscuro se apagan sobre el fondo.
+   El amarillo fuerte se queda fuerte, pero con letra oscura (como Airtable). */
 export function estiloColor(color: ColorCrm | undefined): { fondo: string; texto: string; suave: boolean } {
   const c = color && PALETA[color] ? color : "gris1";
-  const tono = Number(c.slice(-1));
-  const suave = tono <= 2 || c === "amarillo3";
-  return { fondo: PALETA[c], texto: suave ? "#1d1f25" : "#ffffff", suave };
+  const suave = Number(c.slice(-1)) <= 2;
+  return { fondo: PALETA[c], texto: suave || c === "amarillo3" ? "#1d1f25" : "#ffffff", suave };
 }
 
 /* ---------- Las opciones de lo que carga el equipo ----------
