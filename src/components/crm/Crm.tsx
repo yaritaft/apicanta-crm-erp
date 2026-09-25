@@ -4,7 +4,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useRouter, useSearchParams } from "next/navigation";
 import { ChevronDown, Menu, PhoneCall, RefreshCcw, Search, Sheet, X } from "lucide-react";
 import { useToast } from "@/components/ui/Toast";
-import { acciones, useEstado } from "@/lib/store";
+import { acciones, escrituraPendiente, useEstado } from "@/lib/store";
 import { nube } from "@/lib/supabase";
 import { AGENDAR_A_MANO } from "@/lib/funciones";
 import {
@@ -250,13 +250,20 @@ export function Crm() {
     canal.on(
       "postgres_changes" as never,
       { event: "*", schema: "public", table: "sesiones" },
-      (p: { eventType: string; new?: Record<string, unknown>; old?: Record<string, unknown> }) => {
+      async (p: { eventType: string; new?: Record<string, unknown>; old?: Record<string, unknown> }) => {
         if (p.eventType === "DELETE") {
           if (p.old?.id) acciones.recibirDeLaNube("sesiones", [], [String(p.old.id)]);
           return;
         }
-        const s = p.new as unknown as Sesion | undefined;
-        if (!s?.id) return;
+        const id = p.new?.id ? String(p.new.id) : "";
+        if (!id) return;
+        /* La fila se vuelve a pedir en vez de usar la del aviso: en un UPDATE,
+           Realtime puede no mandar las columnas grandes que no cambiaron (las
+           respuestas del formulario) y la memoria se quedaría sin ellas. */
+        if (escrituraPendiente("sesiones", id)) return;
+        const { data } = await db.from("sesiones").select("*").eq("id", id).maybeSingle();
+        const s = data as Sesion | null;
+        if (!s || escrituraPendiente("sesiones", id)) return;
         const nueva = !estadoRef.current.sesiones.some((x) => x.id === s.id);
         acciones.recibirDeLaNube("sesiones", [s]);
         if (!nueva) return;

@@ -162,6 +162,16 @@ function columnaFaltante(e: { code?: string; message?: string } | null): string 
 const cola: Op[] = [];
 let drenando = false;
 
+/* ¿Hay un cambio de esta fila que todavía no llegó a la base? Mientras lo
+   haya, lo que avisa Realtime de ella es más viejo que lo que está en
+   pantalla: no se aplica (llega otro aviso cuando se termine de escribir). */
+export function escrituraPendiente(tabla: string, id: ID): boolean {
+  return cola.some((op) => op.tabla === tabla && (
+    op.tipo === "update" ? op.id === id
+      : op.tipo === "upsert" ? (op.filas as { id?: ID }[]).some((f) => f.id === id)
+      : op.ids.includes(id)));
+}
+
 function empujar(op: Op) {
   if (!nube) return;
   cola.push(op);
