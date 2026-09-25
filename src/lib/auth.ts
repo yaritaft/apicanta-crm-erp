@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { hayNube, nube } from "./supabase";
+import { olvidarCopiaLocal } from "./store";
 
 export interface Sesion {
   cargando: boolean;
@@ -45,6 +46,9 @@ export function useSesion(): Sesion {
 export function useSalir() {
   return useCallback(async () => {
     if (!nube) return;
+    /* La copia del navegador se va antes que la sesión: lo que vio este
+       usuario no queda para el que entre después. */
+    olvidarCopiaLocal();
     await nube.auth.signOut();
     /* Recarga limpia: el store vuelve a arrancar sin datos de la sesion anterior. */
     if (typeof window !== "undefined") window.location.href = "/";

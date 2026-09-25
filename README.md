@@ -92,6 +92,8 @@ no necesita capa de mapeo: lo que sale de la base es la forma que espera la app.
 > Hay dos niveles: **dueño** (todo, incluido Equipo y honorarios) y **equipo** (todo menos
 > eso). Lo que cobra cada uno vive en `honorarios` y `liquidaciones`, que sólo se leen con
 > `es_dueno()`: para el resto llegan vacías aunque las pidan por la API.
+> Tampoco quedan en el navegador: la copia que guarda para abrir rápido va sin ellas, y al
+> cerrar sesión se borra entera.
 
 En **Ajustes → Datos** se puede bajar un respaldo en JSON y restaurarlo.
 

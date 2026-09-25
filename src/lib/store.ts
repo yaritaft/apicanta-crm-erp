@@ -70,9 +70,15 @@ function marcar(s: EstadoSync, error = "") {
    límite del navegador (~5 MB): no se podía escribir y quedaba congelada en
    una versión vieja, con los datos de ejemplo y ventas de menos, que se veía
    unos segundos cada vez que se abría la app. Va en otra clave para no leer
-   nunca esa copia vieja, que se borra. */
+   nunca esa copia vieja, que se borra.
+
+   Tampoco van lo que cobra cada uno ni las liquidaciones: son de los dueños
+   y no tienen que quedar en una compu, aunque se cierre la sesión o la use
+   otro. Se traen de la base cada vez, y al salir se borra la copia entera. */
 const CLAVE_NUBE = "apicanta.erp.nube.v1";
-const SOLO_EN_LA_NUBE = { campaigns: [], adsets: [], ads: [], adInsights: [] } satisfies Partial<EstadoApp>;
+const soloEnLaNube = () => ({
+  campaigns: [], adsets: [], ads: [], adInsights: [], honorarios: [], liquidaciones: [],
+}) satisfies Partial<EstadoApp>;
 /* Tope de la copia: deja lugar a la sesión de Supabase y a las preferencias,
    que viven en el mismo espacio. */
 const TOPE_COPIA = 4_000_000;
@@ -92,9 +98,14 @@ function leerLocal(): EstadoApp {
     const base = inicial();
     if (!crudo) return base;
     const parsed = JSON.parse(crudo) as EstadoApp;
+    const copia = hayNube ? { ...parsed, ...soloEnLaNube() } : parsed;
+    /* Las copias de antes traían los sueldos: se reescriben sin ellos. */
+    if (hayNube && (parsed.honorarios?.length || parsed.liquidaciones?.length)) {
+      window.localStorage.setItem(CLAVE_NUBE, JSON.stringify(copia));
+    }
     return {
       ...base,
-      ...parsed,
+      ...copia,
       ajustes: { ...base.ajustes, ...(parsed.ajustes ?? {}) },
       etapas: parsed.etapas?.length ? parsed.etapas : base.etapas,
     };
@@ -103,8 +114,18 @@ function leerLocal(): EstadoApp {
   }
 }
 
-function escribirLocal(e: EstadoApp) {
+/* Al salir se borra la copia, y hasta que la página se recarga no se vuelve
+   a escribir: lo que vio esta sesión no queda para el que entre después. */
+let sinCopia = false;
+
+export function olvidarCopiaLocal() {
+  sinCopia = true;
   if (typeof window === "undefined") return;
+  try { window.localStorage.removeItem(CLAVE_NUBE); } catch { /* modo privado */ }
+}
+
+function escribirLocal(e: EstadoApp) {
+  if (typeof window === "undefined" || sinCopia) return;
   if (!hayNube) {
     try {
       window.localStorage.setItem(CLAVE, JSON.stringify(e));
@@ -116,7 +137,7 @@ function escribirLocal(e: EstadoApp) {
   /* Con la nube, mejor sin copia que con una vieja: se vería al abrir, y un
      cambio hecho en esos segundos se haría sobre datos viejos. */
   try {
-    const json = JSON.stringify({ ...e, ...SOLO_EN_LA_NUBE });
+    const json = JSON.stringify({ ...e, ...soloEnLaNube() });
     if (json.length > TOPE_COPIA) window.localStorage.removeItem(CLAVE_NUBE);
     else window.localStorage.setItem(CLAVE_NUBE, json);
   } catch {

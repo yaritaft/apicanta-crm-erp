@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { Lock } from "lucide-react";
+import { CloudOff, Lock } from "lucide-react";
 import { PageHead } from "@/components/shell/PageHead";
 import { Card, Empty, Tabs } from "@/components/ui/ui";
 import { LiquidacionMes } from "@/components/equipo/Liquidacion";
@@ -9,6 +9,7 @@ import { ListaEquipo } from "@/components/equipo/ListaEquipo";
 import { FichaMiembro } from "@/components/equipo/FichaMiembro";
 import { AccesosApp } from "@/components/equipo/Accesos";
 import { useAccesos, useNivelAcceso } from "@/lib/acceso";
+import { useSelector, useSync } from "@/lib/store";
 import { useParamsURL } from "@/lib/useParamsURL";
 
 /* ==================================================================
@@ -18,6 +19,10 @@ import { useParamsURL } from "@/lib/useParamsURL";
    Esconder la sección es comodidad: lo que la protege es la base. Las
    tablas `honorarios` y `liquidaciones` sólo se leen con es_dueno(), así
    que para cualquier otro llegan vacías aunque las pida por la API.
+
+   Tampoco se guardan en la copia del navegador (store.ts): se traen de la
+   base cada vez. Hasta que llegan, la sección espera; mostrarla vacía diría
+   "Sin cargar" de todos.
 
    En la URL: ?seccion= (liquidacion, equipo, accesos), ?mes=2026-09 y
    ?persona=<id> para la ficha abierta. No se usa ?vista= porque es de la
@@ -32,6 +37,8 @@ export default function EquipoYHonorarios() {
   const [p, cambiar] = useParamsURL({ seccion: "liquidacion", persona: "" });
   const seccion = (SECCIONES as string[]).includes(p.seccion) ? (p.seccion as Seccion) : "liquidacion";
   const accesos = useAccesos(acceso.esDueno);
+  const sync = useSync();
+  const hayEsquemas = useSelector((e) => e.honorarios.length > 0);
 
   const cabecera = (
     <PageHead
@@ -40,7 +47,7 @@ export default function EquipoYHonorarios() {
     />
   );
 
-  if (acceso.cargando) {
+  if (acceso.cargando || sync.estado === "cargando") {
     return (
       <div className="stack-5" aria-busy="true">
         {cabecera}
@@ -57,6 +64,20 @@ export default function EquipoYHonorarios() {
           <Empty
             icono={<Lock size={22} />} titulo="Esta sección es de los dueños"
             texto="Lo que cobra cada uno y los accesos a la app los ven y los cambian sólo los dueños. Si necesitás algo de acá, pediselo a ellos."
+          />
+        </Card>
+      </div>
+    );
+  }
+
+  if (sync.estado === "error" && !hayEsquemas) {
+    return (
+      <div className="stack-5">
+        {cabecera}
+        <Card>
+          <Empty
+            icono={<CloudOff size={22} />} titulo="No llegó lo que cobra cada uno"
+            texto="Esta sección no se guarda en el navegador: se trae de la base cada vez, y esta vez no se pudo. Revisá la conexión y recargá la página."
           />
         </Card>
       </div>
