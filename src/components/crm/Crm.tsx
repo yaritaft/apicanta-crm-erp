@@ -55,7 +55,7 @@ export function Crm() {
   /* ---------- Las filas ---------- */
   const filasTodas = useMemo(() => filasCrm(e), [e]);
   const filasTabla = useMemo(() => filasTodas.filter((f) => f.tabla === tablaId), [filasTodas, tablaId]);
-  const pintar = useMemo(() => pintor(e.ajustes, filasTabla), [e.ajustes, filasTabla]);
+  const pintar = useMemo(() => pintor(e.ajustes, filasTabla, e.equipo), [e.ajustes, filasTabla, e.equipo]);
   const opciones = useMemo<Record<CampoOpcionesCrm, OpcionCrm[]>>(() => ({
     preCall: opcionesDe(e.ajustes, "preCall"),
     estadoLlamada: opcionesDe(e.ajustes, "estadoLlamada"),

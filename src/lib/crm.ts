@@ -4,7 +4,7 @@ import { claveDeFecha } from "./agendas-webinar";
 import { claveEmail } from "./contactos";
 import { EVENTOS, leerUtm, NOMBRE_FUNNEL, type Funnel } from "./utm-estandar";
 import type {
-  Ajustes, CampoOpcionesCrm, ColorCrm, ConfigCrm, Contacto, EstadoApp, OpcionCrm, Sesion, TablaCrm,
+  Ajustes, CampoOpcionesCrm, ColorCrm, ConfigCrm, Contacto, EstadoApp, MiembroEquipo, OpcionCrm, Sesion, TablaCrm,
 } from "./types";
 
 /* ==================================================================
@@ -444,11 +444,15 @@ function colorAnios(v: string): ColorCrm {
   return "rojo1";
 }
 
+/* El orden importa: «Conversacional aunque cometo errores y no soy super
+   fluido» es conversacional (no fluido), y «Muy bueno, ningún problema» no
+   puede caer en «ninguno» por decir «ningún». */
 function colorIngles(v: string): ColorCrm {
   const t = sinTildes(v);
   if (/no conversacional|basico|bajo|poco|principiante/.test(t)) return "verde1";
-  if (/muy bueno|nativ|bilingu|fluido|avanzado|excelente/.test(t)) return "verde4";
+  if (/muy bueno|nativ|bilingu|avanzado|excelente/.test(t)) return "verde4";
   if (/conversacional|intermedio/.test(t)) return "verde2";
+  if (/fluido|fluent/.test(t)) return "verde4";
   if (/nada|cero|\b0\b|ningun/.test(t)) return "rojo1";
   return "gris1";
 }
@@ -477,26 +481,46 @@ const COLOR_FUNNEL: Record<string, ColorCrm> = {
 
 /* Los closers, cada uno con su color: el mismo en la columna y en el
    puntito de sus vistas. Por orden alfabético, así no cambia de un día
-   para el otro. */
-const COLORES_CLOSER = ["amarillo", "azul", "rojo", "verde", "violeta", "naranja", "cian", "rosa", "turquesa"] as const;
+   para el otro (Dante amarillo y Valentín rojo, como en el Airtable).
 
-export function coloresDeCloser(filas: FilaCrm[]): Map<string, (typeof COLORES_CLOSER)[number]> {
-  const nombres = [...new Set(filas.map((f) => f.closer).filter(Boolean))]
+   Tiene sección en la barra de vistas quien está en el equipo o atiende
+   seguido: un anfitrión de prueba con una agenda suelta no la llena (sus
+   agendas siguen en Todas) ni le corre el color a los demás. */
+const COLORES_CLOSER = ["amarillo", "azul", "rojo", "verde", "violeta", "naranja", "cian", "rosa", "turquesa"] as const;
+type ColorCloser = (typeof COLORES_CLOSER)[number];
+
+const nombreCorto = (n: string) => sinTildes(n).split(/\s+/).slice(0, 2).join(" ");
+
+export function closersConSeccion(filas: FilaCrm[], equipo: Pick<MiembroEquipo, "nombre">[]): string[] {
+  const delEquipo = equipo.map((m) => nombreCorto(m.nombre));
+  const cuantas = new Map<string, number>();
+  for (const f of filas) if (f.closer) cuantas.set(f.closer, (cuantas.get(f.closer) ?? 0) + 1);
+  return [...cuantas.keys()]
+    .filter((c) => {
+      const n = nombreCorto(c);
+      return (cuantas.get(c) ?? 0) >= 3 || delEquipo.some((m) => m === n || (m.includes(" ") && n.startsWith(m)));
+    })
     .sort((a, b) => sinTildes(a).localeCompare(sinTildes(b)));
-  return new Map(nombres.map((n, i) => [n, COLORES_CLOSER[i % COLORES_CLOSER.length]]));
+}
+
+export function coloresDeCloser(filas: FilaCrm[], equipo: Pick<MiembroEquipo, "nombre">[]): Map<string, ColorCloser> {
+  const primeros = closersConSeccion(filas, equipo);
+  const resto = [...new Set(filas.map((f) => f.closer).filter((c) => c && !primeros.includes(c)))]
+    .sort((a, b) => sinTildes(a).localeCompare(sinTildes(b)));
+  return new Map([...primeros, ...resto].map((n, i) => [n, COLORES_CLOSER[i % COLORES_CLOSER.length]]));
 }
 
 export interface Pintor {
   (clave: ClaveCampo, valor: string): ColorCrm;
 }
 
-export function pintor(a: Ajustes, filas: FilaCrm[]): Pintor {
+export function pintor(a: Ajustes, filas: FilaCrm[], equipo: Pick<MiembroEquipo, "nombre">[] = []): Pintor {
   const opciones = {
     preCall: new Map(opcionesDe(a, "preCall").map((o) => [o.nombre, o.color])),
     estadoLlamada: new Map(opcionesDe(a, "estadoLlamada").map((o) => [o.nombre, o.color])),
     estadoPreCall: new Map(opcionesDe(a, "estadoPreCall").map((o) => [o.nombre, o.color])),
   };
-  const closers = coloresDeCloser(filas);
+  const closers = coloresDeCloser(filas, equipo);
   return (clave, valor) => {
     switch (clave) {
       case "preCall": case "estadoLlamada": case "estadoPreCall":
@@ -716,9 +740,12 @@ export function vistasDe(
   ];
 
   /* Un closer por sección, con su color. Los períodos van por el día de la
-     llamada, en orden de la primera a la última. */
-  const colores = coloresDeCloser(filas);
-  for (const [closer, color] of colores) {
+     llamada, en orden de la primera a la última. Tiene sección quien está en
+     el equipo o atiende seguido: un anfitrión de prueba con una agenda suelta
+     no llena la barra (sus agendas siguen en Todas). */
+  const colores = coloresDeCloser(filas, e.equipo);
+  for (const closer of closersConSeccion(filas, e.equipo)) {
+    const color = colores.get(closer) ?? "gris";
     const marca = { color: colorMarca(color), forma: "punto" as const };
     const base: CondicionSinId[] = [{ campo: "closer", op: "alguno", valor: [closer] }];
     const porDia = (id: string, nombre: string, periodo: Periodo) => vista({
