@@ -526,6 +526,13 @@ a { color: inherit; text-decoration: none; }
 .toast--ok { border-color: var(--success); }
 .toast--err { border-color: var(--danger); }
 .toast svg { flex: none; }
+.toast > span { flex: 1; min-width: 0; }
+.toast__accion {
+  flex: none; height: 30px; padding: 0 12px; border-radius: var(--radius-sm);
+  background: var(--brand); color: #fff; border: 0; font: inherit; font-size: 14px; font-weight: 600;
+  cursor: pointer; white-space: nowrap;
+}
+.toast__accion:hover { filter: brightness(1.08); }
 
 /* ---------- Command palette ---------- */
 .cmd-backdrop { position: fixed; inset: 0; z-index: 150; background: var(--overlay); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); display: flex; align-items: flex-start; justify-content: center; padding: 12vh var(--space-4) var(--space-4); animation: fade 120ms ease-out; }
@@ -2575,6 +2582,17 @@ span.kpis__etiqueta:hover { color: var(--ink); text-decoration: none; }
 }
 .crm-td--activa > .crm-chip, .crm-td--activa > .crm-txt, .crm-td--activa > .crm-link, .crm-td--activa > .crm-chips { overflow: hidden; }
 .crm-td__flecha { margin-left: auto; flex: none; color: var(--crm-tinta-2); }
+/* La venta de la llamada, al lado del Estado de Llamada: cargada (la bolsa
+   verde) o por cargar (el botón punteado, porque compró y falta). */
+.crm-venta {
+  flex: none; margin-left: auto; display: inline-flex; align-items: center; gap: 1px;
+  height: 20px; padding: 0 5px; border-radius: 10px; font: inherit;
+  color: var(--crm-azul); background: transparent; border: 1px dashed var(--crm-azul); cursor: pointer;
+}
+.crm-venta:hover { background: var(--crm-herr-ocultar); border-style: solid; }
+.crm-venta--ok { border: 0; padding: 0 2px; color: #20a33b; cursor: default; }
+:root:not([data-theme="light"]) .crm .crm-venta--ok { color: #5fd07a; }
+.crm-venta + .crm-td__flecha { margin-left: 0; }
 .crm-td__input {
   width: 100%; height: 100%; border: 0; outline: none; background: var(--crm-fondo);
   font: inherit; font-size: 13px; color: var(--crm-tinta); padding: 0;
@@ -2693,8 +2711,8 @@ span.kpis__etiqueta:hover { color: var(--ink); text-decoration: none; }
 }
 .crm-pop .crm-boton--quieto, .crm .crm-boton, .crm-registro .crm-boton--quieto { background: var(--crm-quieto); color: var(--crm-tinta); }
 .crm-pop .crm-boton--quieto:hover, .crm .crm-boton:hover, .crm-registro .crm-boton--quieto:hover { background: var(--crm-quieto-hover); }
-.crm-pop .crm-boton--azul { background: var(--crm-azul); color: #fff; }
-.crm-pop .crm-boton--azul:hover { filter: brightness(1.08); }
+.crm-pop .crm-boton--azul, .crm-registro .crm-boton--azul { background: var(--crm-azul); color: #fff; border: 0; cursor: pointer; }
+.crm-pop .crm-boton--azul:hover, .crm-registro .crm-boton--azul:hover { filter: brightness(1.08); }
 .crm-pop .crm-boton--link { background: none; color: var(--crm-azul); padding: 0 6px; }
 .crm-pop .crm-boton--link:hover { background: var(--crm-vista-hover); }
 .crm-input, .crm-select {
@@ -2761,10 +2779,11 @@ span.kpis__etiqueta:hover { color: var(--ink); text-decoration: none; }
 .crm-opciones__fila:hover { background: var(--crm-vista-hover); }
 .crm-opciones__nombre { flex: 1; }
 .crm-opciones__efecto { width: 150px; flex: none; }
+.crm-opciones__oportunidad { width: 170px; }
 .crm-opciones__auto { display: inline-flex; color: var(--crm-auto); }
 /* En un celular el nombre ocupa el renglón y lo que dice de la llamada va
    abajo: al lado, «Seguimiento de Pago» quedaba en «Seguimient». */
-@media (max-width: 560px) {
+@media (max-width: 760px) {
   .crm-opciones__fila { flex-wrap: wrap; row-gap: 4px; }
   .crm-opciones__nombre { min-width: 0; }
   .crm-opciones__efecto { order: 1; flex: 1 0 calc(100% - 52px); margin-left: 44px; }
@@ -2811,6 +2830,18 @@ span.kpis__etiqueta:hover { color: var(--ink); text-decoration: none; }
 .crm-registro__grupo h3 { display: flex; align-items: center; gap: 10px; margin: 0 0 10px; font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--crm-tinta-2); }
 .crm-registro__nota { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 400; letter-spacing: 0; text-transform: none; color: var(--crm-tinta-3); }
 .crm-registro__campo { margin-bottom: 12px; }
+/* La etapa de la oportunidad y la venta, debajo del Estado de Llamada. */
+.crm-registro__oportunidad {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin-top: 8px;
+  font-size: 13px; color: var(--crm-tinta-2);
+}
+.crm-registro__oportunidad strong { color: var(--crm-tinta); font-weight: 600; }
+.crm-registro .crm-registro__venta {
+  display: inline-flex; align-items: center; gap: 6px; padding: 0; border: 0; background: none;
+  font: inherit; color: #1f8f36; cursor: pointer; text-align: left;
+}
+.crm-registro .crm-registro__venta:hover { text-decoration: underline; }
+:root:not([data-theme="light"]) .crm-registro .crm-registro__venta { color: #5fd07a; }
 .crm-registro__etiqueta { display: flex; align-items: center; gap: 6px; margin-bottom: 5px; font-size: 12px; font-weight: 500; color: var(--crm-tinta-2); }
 .crm-registro__caja {
   display: flex; align-items: center; gap: 6px; width: 100%; min-height: 34px; padding: 5px 10px;

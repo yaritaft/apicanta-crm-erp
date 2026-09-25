@@ -8,8 +8,8 @@ import { acciones, escrituraPendiente, estadoSync, useEstado } from "@/lib/store
 import { nube } from "@/lib/supabase";
 import { AGENDAR_A_MANO } from "@/lib/funciones";
 import {
-  CAMPO, CAMPOS, coincideBusqueda, estiloColor, filasCrm, ocultosDeTabla, opcionesDe, ordenar, pasa,
-  pintor, tablasDe, valorDe, vistasDe,
+  CAMPO, CAMPOS, coincideBusqueda, esCompra, estiloColor, filasCrm, ocultosDeTabla, opcionesDe, ordenar, pasa,
+  miembroDeCloser, pintor, tablasDe, valorDe, vistasDe,
   type ClaveCampo, type FilaCrm, type VistaCrm,
 } from "@/lib/crm";
 import type { CampoOpcionesCrm, OpcionCrm, Sesion } from "@/lib/types";
@@ -19,6 +19,8 @@ import { PanelVistas } from "./PanelVistas";
 import { Registro } from "./Registro";
 import { MenuColumna } from "./MenuColumna";
 import { SelectorOpciones } from "./Editores";
+import { AsistenteVenta } from "@/components/ventas/AsistenteVenta";
+import { leadDeSesion } from "@/lib/etapas-auto";
 import { useVistasGuardadas, usePreferencia, type AjusteVista, type VistaPropia } from "./useVistas";
 
 /* ==================================================================
@@ -184,14 +186,23 @@ export function Crm() {
     return (f: FilaCrm) => colores.get(String(valorDe(f, campo)));
   }, [v.color, opciones]);
 
+  /* ---------- Cargar la venta desde una llamada ---------- */
+  const [ventaPara, setVentaPara] = useState<string | null>(null);
+  const filaVenta = ventaPara ? filasTodas.find((f) => f.id === ventaPara) : undefined;
+  /* La venta apunta al lead de la persona (la base lo exige). */
+  const leadVenta = filaVenta ? leadDeSesion(e.leads, filaVenta.sesion) : undefined;
+
   /* ---------- Guardar lo que carga el equipo ----------
      Cada cambio queda en una pila para deshacerlo con ⌘Z (con el estado de
      la llamada de antes: elegir «Compra Full» también la marcó como hecha). */
   /* `estado`: el de la llamada antes del cambio, sólo si el cambio lo movió
      (un Estado de Llamada que la marcó hecha o que no vino). */
   type Cambio = { id: string; clave: ClaveCampo; antes: string; estado?: Sesion["estado"]; nombre: string };
-  /* Una entrada por gesto: cambiar varias filas juntas se deshace de una vez. */
-  const deshacer = useRef<Cambio[][]>([]);
+  /* Una entrada por gesto: cambiar varias filas juntas se deshace de una
+     vez. Con la etapa que tenía cada lead que el cambio movió (un «NO
+     Calificado» lo pasa a Perdido): deshacer lo devuelve a donde estaba. */
+  type Gesto = { cambios: Cambio[]; etapas: Record<string, string> };
+  const deshacer = useRef<Gesto[]>([]);
   type Pedido = Parameters<typeof acciones.editarLlamadas>[0][number];
   /* Qué escribir para dejar `valor` en ese campo y cómo se deshace (null si
      el campo no es del equipo o ya tenía ese valor). */
@@ -209,27 +220,40 @@ export function Crm() {
       },
     };
   }, []);
-  const recordar = (cambios: Cambio[]) => { if (cambios.length) deshacer.current = [...deshacer.current.slice(-49), cambios]; };
+  const recordar = (cambios: Cambio[], etapas: Record<string, string>) => {
+    if (cambios.length) deshacer.current = [...deshacer.current.slice(-49), { cambios, etapas }];
+  };
   const guardarCampo = useCallback((f: FilaCrm, clave: ClaveCampo, valor: string) => {
     const c = cambioDe(f, clave, valor);
     if (!c) return;
-    acciones.editarLlamadas([c.pedido]);
-    recordar([c.cambio]);
+    const { etapasAntes, movidos } = acciones.editarLlamadas([c.pedido]);
+    recordar([c.cambio], etapasAntes);
     retenidaRef.current = f.id;
     setRetenida(f.id);
     const opcion = clave === "estadoLlamada" ? opciones.estadoLlamada.find((o) => o.nombre === valor) : undefined;
-    if (opcion?.llamada && f.sesion.estado !== opcion.llamada) {
-      toast(opcion.llamada === "hecha" ? "En la Agenda la llamada quedó como hecha." : "En la Agenda la llamada quedó como que no vino.", "info");
+    /* Lo que el cambio movió en otras pantallas, en un solo aviso. */
+    const avisos = [
+      opcion?.llamada && f.sesion.estado !== opcion.llamada
+        ? (opcion.llamada === "hecha" ? "En la Agenda quedó como hecha." : "En la Agenda quedó como que no vino.") : "",
+      ...movidos.map((m) => (m.etapa ? `La oportunidad pasó a ${m.etapa}.` : "")),
+    ].filter(Boolean).join(" ");
+    /* Una compra sin la venta cargada: el botón para cargarla ahí mismo. */
+    if (esCompra(opcion) && !f.venta) {
+      toast(`${f.nombre || "La llamada"}: ${valor}. ${avisos} ¿Cargás la venta?`.replace(/\s+/g, " "), "info",
+        { texto: "Cargar la venta", onClick: () => setVentaPara(f.id) });
+    } else if (avisos) {
+      toast(avisos, "info");
     }
   }, [cambioDe, opciones.estadoLlamada, toast]);
   const onDeshacer = useCallback(() => {
-    const ultimos = deshacer.current.pop();
-    if (!ultimos?.length) { toast("No hay nada para deshacer.", "info"); return; }
+    const ultimo = deshacer.current.pop();
+    if (!ultimo?.cambios.length) { toast("No hay nada para deshacer.", "info"); return; }
+    const ultimos = ultimo.cambios;
     acciones.editarLlamadas(ultimos.map((u) => ({
       id: u.id,
       cambios: { [u.clave]: u.antes, ...(u.estado ? { estado: u.estado } : {}) } as Partial<Sesion>,
       detalle: `${u.nombre}: se deshizo el cambio de ${CAMPO[u.clave].titulo}.`,
-    })));
+    })), ultimo.etapas);
     const titulo = CAMPO[ultimos[0].clave].titulo;
     toast(ultimos.length === 1 ? `Deshecho: ${titulo} de ${ultimos[0].nombre}.` : `Deshecho: ${titulo} en ${ultimos.length} agendas.`, "info");
   }, [toast]);
@@ -242,8 +266,8 @@ export function Crm() {
       .filter((f) => ids.has(f.id))
       .map((f) => cambioDe(f, clave, valor, `${f.nombre}: ${campo.titulo} → ${valor || "vacío"} (a varias juntas).`))
       .filter((c) => c !== null);
-    acciones.editarLlamadas(hechos.map((h) => h.pedido));
-    recordar(hechos.map((h) => h.cambio));
+    const { etapasAntes } = acciones.editarLlamadas(hechos.map((h) => h.pedido));
+    recordar(hechos.map((h) => h.cambio), etapasAntes);
     const n = hechos.length;
     toast(n ? `${campo.titulo}: «${valor}» en ${n} ${n === 1 ? "agenda" : "agendas"}. ⌘Z lo deshace.` : "Ya tenían ese valor.");
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -485,6 +509,7 @@ export function Crm() {
           totalFilas={filasVista.length}
           onActiva={onActiva}
           onDeshacer={onDeshacer}
+          onCargarVenta={(f) => setVentaPara(f.id)}
           reinicio={`${tablaId}:${base.id}`}
           pie={marcadas.size > 0 ? (
             <Masivo
@@ -533,9 +558,22 @@ export function Crm() {
         <Registro
           f={registro} opciones={opciones} pintar={pintar}
           onGuardar={guardarCampo} onCerrar={cerrarRegistro} onFicha={verFicha}
+          onCargarVenta={(f) => setVentaPara(f.id)}
           anterior={posRegistro > 0 ? () => escribirUrl({ registro: filasVista[posRegistro - 1].id }) : undefined}
           siguiente={posRegistro >= 0 && posRegistro < filasVista.length - 1 ? () => escribirUrl({ registro: filasVista[posRegistro + 1].id }) : undefined}
           posicion={posRegistro >= 0 ? `${posRegistro + 1} de ${filasVista.length}` : undefined}
+        />
+      )}
+
+      {/* La venta de una llamada que terminó en compra: el asistente de
+          Ventas, con la persona y el closer ya elegidos y atado a la llamada. */}
+      {filaVenta && (
+        <AsistenteVenta
+          cliente={leadVenta ? { contactoId: leadVenta.id, nombre: filaVenta.nombre, email: filaVenta.email } : undefined}
+          closerId={miembroDeCloser(filaVenta.closer, e.equipo)?.id}
+          sesionId={filaVenta.id}
+          onCerrar={() => setVentaPara(null)}
+          onListo={(_id, nombre) => { setVentaPara(null); toast(`Venta de ${nombre} registrada: ya está en Ventas, su servicio y su ficha.`); }}
         />
       )}
     </div>

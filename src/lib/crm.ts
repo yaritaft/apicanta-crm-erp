@@ -2,9 +2,10 @@ import { aniosDeTexto, ETIQUETA_CANAL, respuestaA } from "./calendly";
 import { evaluarAgenda, pisoDeInversion } from "./calificacion";
 import { claveDeFecha } from "./agendas-webinar";
 import { claveEmail } from "./contactos";
+import { money } from "./format";
 import { EVENTOS, leerUtm, NOMBRE_FUNNEL, type Funnel } from "./utm-estandar";
 import type {
-  Ajustes, CampoOpcionesCrm, ColorCrm, ConfigCrm, Contacto, EstadoApp, MiembroEquipo, OpcionCrm, Sesion, TablaCrm,
+  Ajustes, CampoOpcionesCrm, ColorCrm, ConfigCrm, Contacto, EstadoApp, Lead, MiembroEquipo, OpcionCrm, Sesion, TablaCrm, Venta,
 } from "./types";
 
 /* ==================================================================
@@ -63,19 +64,19 @@ export const OPCIONES_POR_DEFECTO: Record<CampoOpcionesCrm, OpcionCrm[]> = {
     { nombre: "COMPLETAR", color: "gris4" },
   ],
   estadoLlamada: [
-    { nombre: "Compra Full", color: "verde4", llamada: "hecha" },
-    { nombre: "Compra Cuotas", color: "verde2", llamada: "hecha" },
-    { nombre: "Reserva", color: "verde1", llamada: "hecha" },
+    { nombre: "Compra Full", color: "verde4", llamada: "hecha", oportunidad: "compra-full" },
+    { nombre: "Compra Cuotas", color: "verde2", llamada: "hecha", oportunidad: "compra-cuotas" },
+    { nombre: "Reserva", color: "verde1", llamada: "hecha", oportunidad: "reserva" },
     { nombre: "Seguimiento de Pago", color: "verde1", llamada: "hecha" },
     { nombre: "Seguimiento Nutrición", color: "amarillo2", llamada: "hecha" },
     { nombre: "Califica Downsell", color: "naranja2", llamada: "hecha" },
-    { nombre: "Compra Downsell", color: "naranja4", llamada: "hecha" },
+    { nombre: "Compra Downsell", color: "naranja4", llamada: "hecha", oportunidad: "downsell" },
     { nombre: "Llamada Interrumpida", color: "azul2", llamada: "hecha" },
     { nombre: "Dejó de Contestar", color: "rojo2", llamada: "no-show" },
     { nombre: "Inasistió", color: "rojo2", llamada: "no-show", auto: "no-show" },
-    { nombre: "Lead descartado", color: "rojo3" },
-    { nombre: "NO Calificado", color: "naranja5", llamada: "hecha" },
-    { nombre: "Devolución", color: "rojo4" },
+    { nombre: "Lead descartado", color: "rojo3", oportunidad: "perdida" },
+    { nombre: "NO Calificado", color: "naranja5", llamada: "hecha", oportunidad: "perdida" },
+    { nombre: "Devolución", color: "rojo4", oportunidad: "devolucion" },
     { nombre: "2da Agenda (auto)", color: "gris1", auto: "segunda" },
     { nombre: "Canceló (auto)", color: "gris2", auto: "cancelada" },
   ],
@@ -90,6 +91,10 @@ export function opcionesDe(a: Ajustes, campo: CampoOpcionesCrm): OpcionCrm[] {
   const propias = a.crm?.opciones?.[campo];
   return propias && propias.length > 0 ? propias : OPCIONES_POR_DEFECTO[campo];
 }
+
+/* Un Estado de Llamada que es una compra: ofrece cargar la venta. */
+export const esCompra = (o?: Pick<OpcionCrm, "oportunidad">) =>
+  o?.oportunidad === "compra-full" || o?.oportunidad === "compra-cuotas" || o?.oportunidad === "reserva" || o?.oportunidad === "downsell";
 
 /* ---------- Las tablas ----------
    Como en el Airtable: «Booking Calls» son las llamadas de asesoramiento
@@ -267,7 +272,12 @@ export interface FilaCrm {
   tipo: string;
   /* "23-09" si vino de un webinar: arma las vistas de Lanzamientos. */
   lanzamiento: string;
+  /* La venta que salió de esta agenda, si ya se cargó (de esa persona,
+     desde que agendó): "Mentoría · US$ 2.400". */
+  venta?: VentaDeFila;
 }
+
+export interface VentaDeFila { id: string; texto: string; fecha: string }
 
 export type ValorCampo = string | string[];
 
@@ -388,11 +398,26 @@ export function estadoAutomatico(
   return "";
 }
 
-export function filasCrm(e: Pick<EstadoApp, "sesiones" | "contactos" | "ajustes" | "webinars">): FilaCrm[] {
+export function filasCrm(
+  e: Pick<EstadoApp, "sesiones" | "contactos" | "ajustes" | "webinars"> & Partial<Pick<EstadoApp, "ventas" | "productos" | "leads">>,
+): FilaCrm[] {
   const tablas = tablasDe(e.ajustes);
   const estados = opcionesDe(e.ajustes, "estadoLlamada");
   const contactos = new Map<string, Contacto>(e.contactos.map((c) => [c.id, c]));
   const reemplazadas = new Set(e.sesiones.map((s) => s.reprogramadaDe).filter((x): x is string => Boolean(x)));
+
+  /* Las ventas en pie de cada persona (la venta apunta a su lead, que en
+     las agendas de Calendly tiene el mismo id que el contacto). */
+  const ventasDe = new Map<string, Venta[]>();
+  for (const v of e.ventas ?? []) {
+    if (!v.contactoId || v.estado === "cancelada") continue;
+    const xs = ventasDe.get(v.contactoId);
+    if (xs) xs.push(v); else ventasDe.set(v.contactoId, [v]);
+  }
+  const productos = new Map((e.productos ?? []).map((p) => [p.id, p.nombre]));
+  /* La oportunidad de cada agenda: sus datos son el respaldo de los de la
+     persona (hay personas que sólo tienen lead, sin contacto). */
+  const leads = new Map((e.leads ?? []).map((l) => [l.id, l]));
 
   const entran: { s: Sesion; tabla: string }[] = [];
   for (const s of e.sesiones) {
@@ -416,14 +441,31 @@ export function filasCrm(e: Pick<EstadoApp, "sesiones" | "contactos" | "ajustes"
 
   return entran.map(({ s, tabla }) => {
     const c = contactos.get(s.contactoId ?? "") ?? contactos.get(s.leadId ?? "");
+    const l = leads.get(s.leadId ?? "");
     const segunda = segundas.has(s.id);
+    const venta = ventaDeAgenda(s, ventasDe, productos);
     const previa = FILAS.get(s);
-    if (previa && previa.c === c && previa.segunda === segunda && previa.tabla === tabla
-      && previa.ajustes === e.ajustes && previa.webinars === e.webinars) return previa.fila;
-    const fila = armarFila(s, tabla, c, estados, segunda, e.webinars);
-    FILAS.set(s, { c, segunda, tabla, ajustes: e.ajustes, webinars: e.webinars, fila });
+    if (previa && previa.c === c && previa.l === l && previa.segunda === segunda && previa.tabla === tabla
+      && previa.ajustes === e.ajustes && previa.webinars === e.webinars
+      && previa.fila.venta?.id === venta?.id && previa.fila.venta?.texto === venta?.texto) return previa.fila;
+    const fila: FilaCrm = { ...armarFila(s, tabla, c, l, estados, segunda, e.webinars), ...(venta ? { venta } : {}) };
+    FILAS.set(s, { c, l, segunda, tabla, ajustes: e.ajustes, webinars: e.webinars, fila });
     return fila;
   });
+}
+
+/* La venta que salió de una agenda: la primera de esa persona desde el día
+   antes de que agendara (la de un alumno de antes no es de esta llamada). */
+function ventaDeAgenda(s: Sesion, ventasDe: Map<string, Venta[]>, productos: Map<string, string>): VentaDeFila | undefined {
+  const suyas = [...new Set([...(ventasDe.get(s.leadId ?? "") ?? []), ...(ventasDe.get(s.contactoId ?? "") ?? [])])];
+  if (suyas.length === 0) return undefined;
+  const desde = new Date(s.creadoEn).getTime() - 86_400_000;
+  const v = suyas
+    .filter((x) => new Date(x.fecha).getTime() >= desde)
+    .sort((a, b) => a.fecha.localeCompare(b.fecha))[0];
+  if (!v) return undefined;
+  const producto = (v.productoId && productos.get(v.productoId)) || "Venta";
+  return { id: v.id, texto: `${producto} · ${money(v.precioAcordado, v.moneda)}`, fecha: v.fecha };
 }
 
 /* La fila de cada agenda se recuerda mientras no cambie nada de lo que la
@@ -432,23 +474,25 @@ export function filasCrm(e: Pick<EstadoApp, "sesiones" | "contactos" | "ajustes"
    otras miles. El store nunca edita una agenda en el lugar, la reemplaza,
    así que alcanza con comparar los objetos. */
 const FILAS = new WeakMap<Sesion, {
-  c: Contacto | undefined; segunda: boolean; tabla: string;
+  c: Contacto | undefined; l: Lead | undefined; segunda: boolean; tabla: string;
   ajustes: EstadoApp["ajustes"]; webinars: EstadoApp["webinars"]; fila: FilaCrm;
 }>();
 
 function armarFila(
-  s: Sesion, tabla: string, c: Contacto | undefined, estados: OpcionCrm[], segunda: boolean, webinars: EstadoApp["webinars"],
+  s: Sesion, tabla: string, c: Contacto | undefined, l: Lead | undefined,
+  estados: OpcionCrm[], segunda: boolean, webinars: EstadoApp["webinars"],
 ): FilaCrm {
   const qa = s.respuestas ?? [];
   const auto = s.estadoLlamada ? "" : estadoAutomatico(s, estados, segunda);
   const u = s.utm ?? {};
   return {
     id: s.id, sesion: s, tabla, personaId: personaDe(s),
-    nombre: s.invitado?.trim() || c?.nombre || "",
+    nombre: s.invitado?.trim() || c?.nombre || l?.nombre || "",
     llamada: s.inicia,
     closer: s.anfitrion?.trim() ?? "",
-    telefono: respuestaA(qa, /(whatsapp|telefono|celular|numero)/) ?? c?.telefono ?? "",
-    email: s.email ?? c?.email ?? "",
+    /* El de la persona primero: si se corrigió en la ficha, se ve corregido. */
+    telefono: c?.telefono || l?.telefono || (respuestaA(qa, /(whatsapp|telefono|celular|numero)/) ?? ""),
+    email: s.email || c?.email || l?.email || "",
     preCall: s.preCall ?? "",
     estadoLlamada: s.estadoLlamada || auto,
     estadoAuto: !s.estadoLlamada && Boolean(auto),
@@ -550,6 +594,16 @@ function porLlegada(filas: FilaCrm[]): { closer: string; n: number }[] {
   return [...datos.entries()]
     .sort((a, b) => a[1].primera.localeCompare(b[1].primera) || sinTildes(a[0]).localeCompare(sinTildes(b[0])))
     .map(([closer, d]) => ({ closer, n: d.n }));
+}
+
+/* El miembro del equipo que es el anfitrión de Calendly ("Dante Barbieri"
+   en Calendly puede ser "Dante" en Equipo): el mismo nombre o uno que
+   empieza como el otro. */
+export function miembroDeCloser<M extends Pick<MiembroEquipo, "nombre">>(closer: string, equipo: M[]): M | undefined {
+  const c = nombreCorto(closer);
+  if (!c) return undefined;
+  return equipo.find((m) => nombreCorto(m.nombre) === c)
+    ?? equipo.find((m) => { const n = nombreCorto(m.nombre); return Boolean(n) && (c.startsWith(`${n} `) || n.startsWith(`${c} `)); });
 }
 
 export function closersConSeccion(filas: FilaCrm[], equipo: Pick<MiembroEquipo, "nombre">[]): string[] {

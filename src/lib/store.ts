@@ -5,7 +5,7 @@ import type {
   AccionActividad, Actividad, Ad, AdInsight, Adset, Ajustes, Alumno, Campaign,
   Contacto,
   Campania, CampoPersonalizado, Comentario, Comprobante, Cuota, EntidadNombre, EstadoApp, Etapa, ID,
-  Lead, Meta, Movimiento, Pago, Reporte, Sesion, Venta, Webinar,
+  Lead, Meta, Movimiento, OpcionCrm, OportunidadCrm, Pago, Reporte, Sesion, Venta, Webinar,
 } from "./types";
 import type { EsquemaPago, EtapaServicio, Gasto, ID as IdMiembro, Liquidacion, MiembroEquipo, ResultadoLiquidacion } from "./types";
 import { nombrePeriodo, tasaParaFinanzas } from "./honorarios";
@@ -19,7 +19,9 @@ import { claveEmail, completar } from "./contactos";
 import { construirSemilla, estadoVacio } from "./seed";
 import { hayNube, nube, tablaFaltante, TABLAS, TABLAS_DE_DUENOS, TABLAS_OPCIONALES } from "./supabase";
 import { idAd, idAdset, idCampaign } from "./meta";
-import { opcionesDe } from "./crm";
+import { entraEnTabla, esCompra, opcionesDe, tablasDe } from "./crm";
+import { etapaTrasEventos, eventosDeLlamada, leadDeSesion, type EventoEtapa } from "./etapas-auto";
+import { personaDe } from "./persona";
 
 const CLAVE = "apicanta.erp.v1";
 
@@ -517,6 +519,150 @@ function registrar(
 /* Lo que el CRM carga sobre una agenda. `estado` sólo lo manda deshacer:
    devuelve la llamada a como estaba. */
 type CambiosLlamada = Partial<Pick<Sesion, "preCall" | "estadoPreCall" | "estadoLlamada" | "notas" | "grabacion" | "estado">>;
+type PedidoLlamada = { id: ID; cambios: CambiosLlamada; detalle: string };
+
+/* ---------- Llamadas, y la etapa de sus leads ----------
+   Lo que cambia al cargar algo en una o varias llamadas, todavía sin
+   guardar: las agendas nuevas, lo que va a la base y, si la llamada dice
+   algo de la oportunidad (se hizo, compró, se perdió), la etapa de su lead
+   (lib/etapas-auto.ts). Lo guardan el CRM, la Agenda y el alta de una venta,
+   cada uno junto con lo suyo y de una sola vez. */
+interface Tanda {
+  sesiones: Map<ID, Sesion>;
+  aLaNube: Map<ID, Record<string, unknown>>;
+  leads: Map<ID, Lead>;
+  /* La etapa que tenía cada lead antes de la tanda: con eso se deshace. */
+  etapasAntes: Record<ID, ID>;
+  actividad: Actividad[];
+  cuando: string;
+  /* Un id de actividad por tanda, más el orden: con miles en el mismo
+     milisegundo, los sufijos al azar de nuevoId llegaban a repetirse, y un
+     upsert con dos filas del mismo id falla entero. */
+  base: string;
+}
+
+function nuevaTanda(): Tanda {
+  return { sesiones: new Map(), aLaNube: new Map(), leads: new Map(), etapasAntes: {}, actividad: [], cuando: ahora(), base: nuevoId("act") };
+}
+
+function anotar(t: Tanda, e: EstadoApp, entidad: Actividad["entidad"], id: ID, titulo: string, accion: AccionActividad, detalle: string) {
+  t.actividad.push(nuevaActividad(e, entidad, id, titulo, accion, detalle, `${t.base}_${t.actividad.length.toString(36)}`));
+}
+
+/* Pasa un lead de etapa dentro de la tanda (si los eventos lo mueven). */
+function moverEnTanda(t: Tanda, e: EstadoApp, lead: Lead, eventos: EventoEtapa[], motivo: string) {
+  const actual = t.leads.get(lead.id) ?? lead;
+  const nueva = etapaTrasEventos(actual.etapaId, eventos, e.etapas);
+  if (!nueva) return;
+  fijarEtapa(t, e, actual, nueva, motivo);
+}
+
+function fijarEtapa(t: Tanda, e: EstadoApp, lead: Lead, etapaId: ID, motivo: string) {
+  const actual = t.leads.get(lead.id) ?? lead;
+  if (actual.etapaId === etapaId) return;
+  if (!(lead.id in t.etapasAntes)) t.etapasAntes[lead.id] = actual.etapaId;
+  t.leads.set(lead.id, { ...actual, etapaId, actualizadoEn: t.cuando });
+  const nombre = (id: ID) => e.etapas.find((x) => x.id === id)?.nombre ?? "—";
+  anotar(t, e, "lead", lead.id, lead.nombre, "movio", `${lead.nombre}: ${nombre(actual.etapaId)} → ${nombre(etapaId)} (${motivo}).`);
+}
+
+/* Las llamadas de la tanda, con lo que cada cambio dice de su lead. Con
+   `restaurar` (deshacer), las etapas vuelven a esas en vez de moverse solas. */
+function cargarLlamadas(t: Tanda, e: EstadoApp, lista: PedidoLlamada[], restaurar?: Record<ID, ID>) {
+  const opciones = opcionesDe(e.ajustes, "estadoLlamada");
+  const porId = new Map(e.sesiones.map((s) => [s.id, s]));
+  const tocadas = new Set<ID>();
+  for (const { id, cambios, detalle } of lista) {
+    const s = t.sesiones.get(id) ?? porId.get(id);
+    if (!s) continue;
+    tocadas.add(id);
+    const limpio: Partial<Sesion> = {};
+    for (const [k, v] of Object.entries(cambios)) {
+      (limpio as Record<string, unknown>)[k] = typeof v === "string" && v.trim() === "" ? undefined : v;
+    }
+    if (limpio.estadoLlamada && !("estado" in cambios)) {
+      const op = opciones.find((o) => o.nombre === limpio.estadoLlamada);
+      if (op?.llamada && s.estado !== op.llamada) limpio.estado = op.llamada;
+    }
+    if ("estado" in cambios && !cambios.estado) delete limpio.estado;
+    t.sesiones.set(id, { ...s, ...limpio });
+    t.aLaNube.set(id, { ...t.aLaNube.get(id), ...Object.fromEntries(Object.entries(limpio).map(([k, v]) => [k, v ?? null])) });
+    anotar(t, e, "sesion", id, `${s.tipo} — ${s.invitado}`, "actualizo", detalle);
+  }
+  if (restaurar) {
+    for (const [leadId, etapaId] of Object.entries(restaurar)) {
+      const lead = t.leads.get(leadId) ?? e.leads.find((l) => l.id === leadId);
+      if (lead) fijarEtapa(t, e, lead, etapaId, "se deshizo el cambio");
+    }
+    return;
+  }
+  for (const id of tocadas) {
+    const antes = porId.get(id), despues = t.sesiones.get(id);
+    if (!antes || !despues) continue;
+    const eventos = eventosDeLlamada(antes, despues, opciones);
+    const lead = eventos.length ? leadDeSesion(e.leads, despues) : undefined;
+    if (lead) moverEnTanda(t, e, lead, eventos, `por su llamada del ${fechaCorta(despues.inicia)}`);
+  }
+}
+
+/* Lo que la tanda manda a la base: las agendas y los leads con el mismo
+   cambio van juntos en un UPDATE; la actividad, de a 500. */
+function empujarTanda(t: Tanda) {
+  const agrupar = (filas: Iterable<[ID, Record<string, unknown>]>) => {
+    const grupos = new Map<string, { cambios: Record<string, unknown>; ids: ID[] }>();
+    for (const [id, cambios] of filas) {
+      const clave = JSON.stringify(cambios);
+      const g = grupos.get(clave);
+      if (g) g.ids.push(id); else grupos.set(clave, { cambios, ids: [id] });
+    }
+    return grupos.values();
+  };
+  for (const g of agrupar(t.aLaNube)) empujarUpdate("sesiones", g.ids, g.cambios);
+  for (const g of agrupar([...t.leads.values()].map((l) => [l.id, { etapaId: l.etapaId, actualizadoEn: l.actualizadoEn }] as [ID, Record<string, unknown>]))) {
+    empujarUpdate("leads", g.ids, g.cambios);
+  }
+  empujarEnLotes("actividad", t.actividad);
+}
+
+/* El estado con la tanda aplicada (sin guardarlo). */
+function conTanda(e: EstadoApp, t: Tanda): EstadoApp {
+  return {
+    ...e,
+    sesiones: t.sesiones.size ? e.sesiones.map((x) => t.sesiones.get(x.id) ?? x) : e.sesiones,
+    leads: t.leads.size ? e.leads.map((l) => t.leads.get(l.id) ?? l) : e.leads,
+    actividad: [...[...t.actividad].reverse(), ...e.actividad].slice(0, 400),
+  };
+}
+
+/* La llamada de la que salió una venta: la del CRM desde la que se cargó
+   o, si no, la última llamada de venta de esa persona hasta el día de la
+   venta (una agenda posterior es otra historia). */
+function llamadaDeVenta(e: EstadoApp, venta: Venta, sesionId?: ID): Sesion | undefined {
+  if (sesionId) return e.sesiones.find((s) => s.id === sesionId);
+  const p = venta.contactoId ? personaDe(e, venta.contactoId) : null;
+  if (!p) return undefined;
+  const tablas = tablasDe(e.ajustes);
+  const tope = new Date(venta.fecha).getTime() + 86_400_000;
+  const deVenta = p.sesiones.filter((s) => s.estado !== "cancelada" && tablas.some((x) => entraEnTabla(s, x)));
+  return deVenta.find((s) => new Date(s.inicia).getTime() <= tope);
+}
+
+/* El estado de compra que corresponde a una venta: de downsell si el
+   producto lo es, con reserva si el plan arranca con una, en cuotas si son
+   varias y, si no, al contado. */
+function opcionDeCompra(e: EstadoApp, venta: Venta, cuotas: Cuota[]): OpcionCrm | undefined {
+  const opciones = opcionesDe(e.ajustes, "estadoLlamada");
+  const regulares = cuotas.filter((c) => !c.esReserva && c.estado !== "cancelada");
+  const tipo: OportunidadCrm = e.productos.find((p) => p.id === venta.productoId)?.tipo === "downsell" ? "downsell"
+    : cuotas.some((c) => c.esReserva) ? "reserva"
+    : regulares.length > 1 ? "compra-cuotas" : "compra-full";
+  return opciones.find((o) => o.oportunidad === tipo) ?? opciones.find((o) => esCompra(o));
+}
+
+const fechaCorta = (iso?: string) => {
+  const d = iso ? new Date(iso) : null;
+  return d && !Number.isNaN(d.getTime()) ? `${d.getDate()}/${d.getMonth() + 1}` : "—";
+};
 
 type Coleccion =
   | "contactos" | "leads" | "sesiones" | "webinars" | "alumnos" | "reportes"
@@ -699,9 +845,19 @@ export const acciones = {
     const e = snapshot();
     const nuevo = { ...registro, id: registro.id ?? nuevoId(coleccion.slice(0, 3)) } as T;
     const { lista, nuevo: act } = registrar(e, ENTIDAD_DE[coleccion] ?? "config", nuevo.id, etiqueta, "creo", `Se creó «${etiqueta}».`);
-    guardar({ ...e, [coleccion]: [nuevo, ...(e[coleccion] as unknown as T[])], actividad: lista } as EstadoApp);
+    /* Una llamada agendada a mano en la Agenda mueve a su lead igual que
+       una de Calendly: a Sesión agendada (lib/etapas-auto.ts). */
+    const t = nuevaTanda();
+    if (coleccion === "sesiones") {
+      const s = nuevo as unknown as Sesion;
+      const lead = s.estado !== "cancelada" ? leadDeSesion(e.leads, s) : undefined;
+      if (lead) moverEnTanda(t, e, lead, s.estado === "hecha" ? ["agendo", "llamada-hecha"] : ["agendo"], "agendó una llamada");
+    }
+    const siguiente = { ...e, [coleccion]: [nuevo, ...(e[coleccion] as unknown as T[])], actividad: lista } as EstadoApp;
+    guardar(t.leads.size ? conTanda(siguiente, t) : siguiente);
     empujar({ tipo: "upsert", tabla: coleccion, filas: [nuevo] });
     empujar({ tipo: "upsert", tabla: "actividad", filas: [act] });
+    if (t.leads.size) empujarTanda(t);
     return nuevo.id;
   },
 
@@ -725,9 +881,21 @@ export const acciones = {
     const e = snapshot();
     const lista = (e[coleccion] as unknown as T[]).map((x) => (x.id === id ? { ...x, ...cambios } : x));
     const { lista: act, nuevo } = registrar(e, ENTIDAD_DE[coleccion] ?? "config", id, etiqueta, "actualizo", detalle ?? `Se editó «${etiqueta}».`);
-    guardar({ ...e, [coleccion]: lista, actividad: act } as EstadoApp);
+    /* Una llamada marcada como hecha en la Agenda pasa a su lead a
+       Propuesta, igual que desde el CRM (lib/etapas-auto.ts). */
+    const t = nuevaTanda();
+    if (coleccion === "sesiones") {
+      const antes = e.sesiones.find((s) => s.id === id);
+      const despues = (lista as unknown as Sesion[]).find((s) => s.id === id);
+      const eventos = antes && despues ? eventosDeLlamada(antes, despues, opcionesDe(e.ajustes, "estadoLlamada")) : [];
+      const lead = eventos.length && despues ? leadDeSesion(e.leads, despues) : undefined;
+      if (lead && despues) moverEnTanda(t, e, lead, eventos, `por su llamada del ${fechaCorta(despues.inicia)}`);
+    }
+    const siguiente = { ...e, [coleccion]: lista, actividad: act } as EstadoApp;
+    guardar(t.leads.size ? conTanda(siguiente, t) : siguiente);
     empujarUpdate(coleccion, [id], Object.fromEntries(Object.entries(cambios).map(([k, v]) => [k, v === undefined ? null : v])));
     empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
+    if (t.leads.size) empujarTanda(t);
   },
 
   /* Lo que cambió en la base sin pasar por esta pantalla (lo escriben el
@@ -793,49 +961,25 @@ export const acciones = {
   /* Lo mismo en varias agendas de una vez (elegir filas y cargarles el
      mismo Pre-Call, o deshacerlo): se guarda una sola vez. Agenda por agenda,
      con miles cargadas, cada una volvía a escribir todo el estado y la
-     pantalla se quedaba congelada. */
-  editarLlamadas(lista: { id: ID; cambios: CambiosLlamada; detalle: string }[]) {
+     pantalla se quedaba congelada.
+
+     Devuelve la etapa que tenía cada lead que se movió, para deshacerlo:
+     con `restaurarEtapas` los leads vuelven a esas en vez de moverse solos. */
+  editarLlamadas(lista: PedidoLlamada[], restaurarEtapas?: Record<ID, ID>): {
+    etapasAntes: Record<ID, ID>;
+    /* A qué etapa pasó cada lead que se movió, para avisarlo. */
+    movidos: { leadId: ID; etapa: string }[];
+  } {
     const e = snapshot();
-    const porId = new Map(e.sesiones.map((s) => [s.id, s]));
-    const opciones = opcionesDe(e.ajustes, "estadoLlamada");
-    const hechas = new Map<ID, Sesion>();
-    const aLaNube = new Map<ID, Record<string, unknown>>();
-    const nuevas: Actividad[] = [];
-    /* Un id por tanda, más el orden: con miles en el mismo milisegundo, los
-       sufijos al azar de nuevoId llegaban a repetirse, y un upsert con dos
-       filas del mismo id falla entero. */
-    const base = nuevoId("act");
-    for (const { id, cambios, detalle } of lista) {
-      const s = hechas.get(id) ?? porId.get(id);
-      if (!s) continue;
-      const limpio: Partial<Sesion> = {};
-      for (const [k, v] of Object.entries(cambios)) {
-        (limpio as Record<string, unknown>)[k] = typeof v === "string" && v.trim() === "" ? undefined : v;
-      }
-      if (limpio.estadoLlamada && !("estado" in cambios)) {
-        const op = opciones.find((o) => o.nombre === limpio.estadoLlamada);
-        if (op?.llamada && s.estado !== op.llamada) limpio.estado = op.llamada;
-      }
-      if ("estado" in cambios && !cambios.estado) delete limpio.estado;
-      hechas.set(id, { ...s, ...limpio });
-      aLaNube.set(id, { ...aLaNube.get(id), ...Object.fromEntries(Object.entries(limpio).map(([k, v]) => [k, v ?? null])) });
-      nuevas.push(nuevaActividad(e, "sesion", id, `${s.tipo} — ${s.invitado}`, "actualizo", detalle, `${base}_${nuevas.length.toString(36)}`));
-    }
-    if (hechas.size === 0) return;
-    guardar({
-      ...e,
-      sesiones: e.sesiones.map((x) => hechas.get(x.id) ?? x),
-      actividad: [...nuevas.reverse(), ...e.actividad].slice(0, 400),
-    });
-    /* Las agendas con el mismo cambio van juntas en un UPDATE. */
-    const grupos = new Map<string, { cambios: Record<string, unknown>; ids: ID[] }>();
-    for (const [id, cambios] of aLaNube) {
-      const clave = JSON.stringify(cambios);
-      const g = grupos.get(clave);
-      if (g) g.ids.push(id); else grupos.set(clave, { cambios, ids: [id] });
-    }
-    for (const g of grupos.values()) empujarUpdate("sesiones", g.ids, g.cambios);
-    empujarEnLotes("actividad", nuevas);
+    const t = nuevaTanda();
+    cargarLlamadas(t, e, lista, restaurarEtapas);
+    if (t.sesiones.size === 0 && t.leads.size === 0) return { etapasAntes: {}, movidos: [] };
+    guardar(conTanda(e, t));
+    empujarTanda(t);
+    return {
+      etapasAntes: t.etapasAntes,
+      movidos: [...t.leads.values()].map((l) => ({ leadId: l.id, etapa: e.etapas.find((x) => x.id === l.etapaId)?.nombre ?? "" })),
+    };
   },
 
   /* La configuración del CRM (opciones de cada campo, qué agendas entran en
@@ -1106,13 +1250,80 @@ export const acciones = {
        `e` escribiria el contacto con los datos viejos del lead. */
     const ahoraE = snapshot();
     const c = ahoraE.contactos.find((x) => x.id === contactoId);
-    if (!c) return;
-    const actualizado: Contacto = { ...c, ...conValor };
+    if (c) {
+      const actualizado: Contacto = { ...c, ...conValor };
+      guardar({
+        ...ahoraE,
+        contactos: ahoraE.contactos.map((x) => (x.id === contactoId ? actualizado : x)),
+      });
+      empujar({ tipo: "upsert", tabla: "contactos", filas: [actualizado] });
+    }
+
+    /* Y el nombre, el mail o el teléfono que se corrigieron, en todo lo
+       demás de la persona: sus llamadas (CRM y Agenda), sus ventas, su
+       servicio y sus otras oportunidades. Sólo lo que cambió en este
+       formulario: guardar otro dato no reescribe el nombre en todos lados. */
+    const cambio = (k: "nombre" | "email" | "telefono") =>
+      cambios[k] !== undefined && cambios[k] !== "" && cambios[k] !== lead?.[k] ? cambios[k] : undefined;
+    acciones.corregirPersona(id, { nombre: cambio("nombre"), email: cambio("email"), telefono: cambio("telefono") });
+  },
+
+  /* ---------- Los datos de la persona, una sola versión ----------
+     El nombre, el mail y el teléfono se corrigen donde sea (Leads, la
+     ficha, la Agenda, el servicio, una venta) y quedan corregidos en todos
+     lados: el contacto, sus oportunidades, sus llamadas (el CRM y la
+     Agenda), sus ventas y su servicio. Vacío no es un dato: no borra nada.
+     A la base va sólo esa columna de cada fila, no la fila entera. */
+  corregirPersona(idPersona: ID, cambios: { nombre?: string; email?: string; telefono?: string }) {
+    const e = snapshot();
+    const p = personaDe(e, idPersona);
+    if (!p) return;
+    const nombre = cambios.nombre?.trim() || undefined;
+    const email = cambios.email?.trim() || undefined;
+    const telefono = cambios.telefono?.trim() || undefined;
+    if (!nombre && !email && !telefono) return;
+
+    /* Cada colección con sus nombres de columna para lo mismo. */
+    const tocar = <T extends { id: ID }>(filas: T[], campos: Partial<Record<keyof T, string | undefined>>) => {
+      const valores = Object.fromEntries(Object.entries(campos).filter(([, v]) => v !== undefined)) as Partial<T>;
+      const claves = Object.keys(valores) as (keyof T)[];
+      return claves.length === 0 ? [] : filas.filter((x) => claves.some((k) => x[k] !== valores[k])).map((x) => ({ fila: { ...x, ...valores }, valores }));
+    };
+    const contactos = p.contacto ? tocar([p.contacto], { nombre, email, telefono }) : [];
+    const leads = tocar(p.leads, { nombre, email, telefono });
+    const sesiones = tocar(p.sesiones, { invitado: nombre, email });
+    const ventas = tocar(p.ventas, { contactoNombre: nombre });
+    const alumnos = tocar(p.alumnos, { nombre, email });
+    const total = contactos.length + leads.length + sesiones.length + ventas.length + alumnos.length;
+    if (total === 0) return;
+
+    const cuando = ahora();
+    const reemplazar = <T extends { id: ID }>(lista: T[], cambiadas: { fila: T }[], extra: Partial<T> = {}) => {
+      if (cambiadas.length === 0) return lista;
+      const por = new Map(cambiadas.map((c) => [c.fila.id, { ...c.fila, ...extra }]));
+      return lista.map((x) => por.get(x.id) ?? x);
+    };
+    const que = [nombre && `el nombre (${nombre})`, email && `el mail (${email})`, telefono && `el teléfono (${telefono})`].filter(Boolean).join(", ");
+    const { lista, nuevo } = registrar(e, "contacto", p.clave, nombre ?? p.nombre, "actualizo",
+      `Se corrigió ${que} en todos lados: ${total} ${total === 1 ? "registro" : "registros"} (contacto, oportunidades, llamadas, ventas y servicio).`);
     guardar({
-      ...ahoraE,
-      contactos: ahoraE.contactos.map((x) => (x.id === contactoId ? actualizado : x)),
+      ...e,
+      contactos: reemplazar(e.contactos, contactos),
+      leads: reemplazar(e.leads, leads, { actualizadoEn: cuando }),
+      sesiones: reemplazar(e.sesiones, sesiones),
+      ventas: reemplazar(e.ventas, ventas),
+      alumnos: reemplazar(e.alumnos, alumnos),
+      actividad: lista,
     });
-    empujar({ tipo: "upsert", tabla: "contactos", filas: [actualizado] });
+    const aLaBase = (tabla: string, cambiadas: { fila: { id: ID }; valores: object }[], extra: object = {}) => {
+      if (cambiadas.length) empujarUpdate(tabla, cambiadas.map((c) => c.fila.id), { ...cambiadas[0].valores, ...extra });
+    };
+    aLaBase("contactos", contactos);
+    aLaBase("leads", leads, { actualizadoEn: cuando });
+    aLaBase("sesiones", sesiones);
+    aLaBase("ventas", ventas);
+    aLaBase("alumnos", alumnos);
+    empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
   },
 
   /* ---------- Chat del equipo, en la ficha de cada persona ---------- */
@@ -1144,6 +1355,8 @@ export const acciones = {
     venta: Venta;
     cuotas: Cuota[];
     cobros: (DatosCobro & { cuotaId: ID })[];
+    /* La llamada del CRM desde la que se cargó (si no, la última de la persona). */
+    sesionId?: ID;
   }): ID {
     const e = snapshot();
     const { venta } = datos;
@@ -1232,7 +1445,26 @@ export const acciones = {
       registros.push(r.nuevo);
     }
 
-    guardar({
+    /* El CRM se entera: la llamada de la que salió la venta toma el estado
+       de compra que corresponde (si nadie le había puesto uno) y su lead
+       pasa a la etapa ganada (lib/etapas-auto.ts). */
+    const t = nuevaTanda();
+    const llamada = llamadaDeVenta(e, venta, datos.sesionId);
+    if (llamada && !llamada.estadoLlamada) {
+      const op = opcionDeCompra(e, venta, cuotas);
+      if (op) {
+        cargarLlamadas(t, e, [{
+          id: llamada.id, cambios: { estadoLlamada: op.nombre },
+          detalle: `${llamada.invitado}: Estado de Llamada → ${op.nombre} (por la venta).`,
+        }]);
+      }
+    }
+    const lead = (venta.contactoId ? e.leads.find((l) => l.id === venta.contactoId) : undefined)
+      ?? (venta.contactoId ? leadDeSesion(e.leads, { contactoId: venta.contactoId }) : undefined)
+      ?? (llamada ? leadDeSesion(e.leads, llamada) : undefined);
+    if (lead) moverEnTanda(t, e, t.leads.get(lead.id) ?? lead, ["compro"], "cargó la venta");
+
+    guardar(conTanda({
       ...e,
       alumnos: conAlumno.alumnos,
       ventas: [venta, ...e.ventas],
@@ -1240,7 +1472,7 @@ export const acciones = {
       pagos: [...nuevosPagos, ...e.pagos],
       movimientos,
       actividad,
-    });
+    }, t));
 
     empujar({ tipo: "upsert", tabla: "ventas", filas: [venta] });
     if (conAlumno.tocado) empujar({ tipo: "upsert", tabla: "alumnos", filas: [conAlumno.tocado] });
@@ -1248,6 +1480,7 @@ export const acciones = {
     if (nuevosPagos.length) empujar({ tipo: "upsert", tabla: "pagos", filas: nuevosPagos });
     if (movimientosTocados.size) empujar({ tipo: "upsert", tabla: "movimientos", filas: [...movimientosTocados.values()] });
     empujar({ tipo: "upsert", tabla: "actividad", filas: registros });
+    empujarTanda(t);
     return venta.id;
   },
 

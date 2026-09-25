@@ -88,7 +88,13 @@ export default function Alumnos() {
     const nombre = form.nombre.trim();
     if (!nombre) { toast("Poné al menos el nombre.", "err"); return; }
     const { id, ...cambios } = form;
+    const antes = e.alumnos.find((a) => a.id === id);
     acciones.actualizar<Alumno>("alumnos", id, { ...cambios, nombre }, nombre);
+    /* El nombre y el mail son de la persona: se corrigen en todos lados. */
+    acciones.corregirPersona(antes?.leadId ?? id, {
+      nombre: nombre !== antes?.nombre ? nombre : undefined,
+      email: cambios.email !== antes?.email ? cambios.email : undefined,
+    });
     toast("Alumno actualizado.");
     setForm(null);
   }

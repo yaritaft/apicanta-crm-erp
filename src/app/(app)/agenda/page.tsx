@@ -11,6 +11,7 @@ import { CopiarLink, Filtro, opcionesDe, SIN, type OpcionFiltro } from "@/compon
 import { Origen } from "@/components/leads/Origen";
 import { ETIQUETA_CANAL } from "@/lib/calendly";
 import { embudoDe } from "@/lib/agendas-webinar";
+import { entraEnTabla, tablasDe } from "@/lib/crm";
 import { evaluarAgenda, textoEvaluacion } from "@/lib/calificacion";
 import { CamposExtra, DatosExtra } from "@/components/ui/CamposExtra";
 import { useToast } from "@/components/ui/Toast";
@@ -228,6 +229,12 @@ export default function Agenda() {
       const cambios = Object.fromEntries(Object.entries(form).filter(([k, v]) =>
         k !== "id" && JSON.stringify(v) !== JSON.stringify((antes as unknown as Record<string, unknown> | undefined)?.[k]))) as Partial<Sesion>;
       acciones.actualizarParcial<Sesion>("sesiones", form.id, cambios, `${form.tipo} — ${form.invitado}`);
+      /* El nombre o el mail corregidos son de la persona: quedan corregidos
+         en todos lados (el CRM, su ficha, sus ventas y su servicio). */
+      const persona = antes?.contactoId ?? antes?.leadId;
+      if (persona && ("invitado" in cambios || "email" in cambios)) {
+        acciones.corregirPersona(persona, { nombre: cambios.invitado, email: cambios.email ?? undefined });
+      }
       toast("Sesión actualizada.");
     } else {
       acciones.crear<Sesion>("sesiones", form, `${form.tipo} — ${form.invitado}`);
@@ -483,6 +490,18 @@ export default function Agenda() {
               {(sesionVista.canal || sesionVista.utm) && <Dato label="Embudo"><BadgeEmbudo s={sesionVista} /></Dato>}
               <Dato label="Calificación">{textoEvaluacion(evaluarAgenda(sesionVista))}</Dato>
               {sesionVista.anfitrion && <Dato label="La atiende">{sesionVista.anfitrion}</Dato>}
+              {/* Lo que el equipo cargó en el CRM sobre esta llamada, con el
+                  link a su registro (es la misma llamada). */}
+              {(() => {
+                const tabla = tablasDe(e.ajustes).find((t) => entraEnTabla(sesionVista, t));
+                if (!tabla) return null;
+                const cargado = [sesionVista.estadoLlamada, sesionVista.preCall].filter(Boolean).join(" · ");
+                return (
+                  <Dato label="En el CRM">
+                    <a className="link" href={`/crm?tabla=${tabla.id}&registro=${sesionVista.id}`}>{cargado || "Ver su registro"}</a>
+                  </Dato>
+                );
+              })()}
               {/* Calendly avisa la reprogramación como una cancelación de la vieja
                   más una agenda nueva que la referencia: las dos quedan
                   enlazadas, así se sigue la cadena en cualquier dirección. */}
@@ -506,7 +525,11 @@ export default function Agenda() {
               })()}
               {sesionVista.motivoCancelacion && <Dato label="Por qué se canceló">{sesionVista.motivoCancelacion}</Dato>}
               <Dato label="Creada">{relativo(sesionVista.creadoEn)}</Dato>
-              {sesionVista.leadId && <Dato label="Lead">{e.leads.find((l) => l.id === sesionVista.leadId)?.nombre ?? "—"}</Dato>}
+              {sesionVista.leadId && (() => {
+                const lead = e.leads.find((l) => l.id === sesionVista.leadId);
+                const etapa = e.etapas.find((x) => x.id === lead?.etapaId)?.nombre;
+                return <Dato label="Lead">{lead ? `${lead.nombre}${etapa ? ` · ${etapa}` : ""}` : "—"}</Dato>;
+              })()}
               <DatosExtra campos={e.campos} entidad="sesion" valores={sesionVista.extra} />
             </dl>
 

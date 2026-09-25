@@ -132,13 +132,17 @@ function armarPlan(b: Borrador): LineaCuota[] {
   return lineas;
 }
 
-export function AsistenteVenta({ onCerrar, onListo, desdeMovimiento, cliente }: {
+export function AsistenteVenta({ onCerrar, onListo, desdeMovimiento, cliente, closerId, sesionId }: {
   onCerrar: () => void;
   onListo: (ventaId: string, nombre: string) => void;
   desdeMovimiento?: Movimiento;
   /* Abierto desde la ficha de alguien (upsell, renovación): el cliente ya
      está elegido y se arranca por el producto. */
   cliente?: { contactoId: string; nombre: string; email: string };
+  /* Abierto desde el CRM: el closer de la llamada ya viene elegido, y la
+     venta queda atada a esa llamada (su Estado de Llamada y su etapa). */
+  closerId?: string;
+  sesionId?: string;
 }) {
   const e = useEstado();
   const mon = e.ajustes.monedaBase;
@@ -148,7 +152,7 @@ export function AsistenteVenta({ onCerrar, onListo, desdeMovimiento, cliente }: 
   /* Quien carga la venta, si es del equipo: queda elegido como closer. */
   const yo = useUsuarioActual();
   const preelegido = useRef(false);
-  const [b, setB] = useState<Borrador>(() => inicial(e, desdeMovimiento, cliente));
+  const [b, setB] = useState<Borrador>(() => ({ ...inicial(e, desdeMovimiento, cliente), ...(closerId ? { closerId } : {}) }));
   const set = useCallback((cambios: Partial<Borrador>) => setB((x) => ({ ...x, ...cambios })), []);
   const mainRef = useRef<HTMLDivElement>(null);
 
@@ -266,7 +270,7 @@ export function AsistenteVenta({ onCerrar, onListo, desdeMovimiento, cliente }: 
       })),
     );
 
-    acciones.registrarVenta({ venta, cuotas, cobros });
+    acciones.registrarVenta({ venta, cuotas, cobros, sesionId });
     onListo(ventaId, venta.contactoNombre);
   }
 

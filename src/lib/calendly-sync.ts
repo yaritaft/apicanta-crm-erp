@@ -9,13 +9,16 @@
    - el CONTACTO: la persona, por email. Si ya existía, se completan los
      huecos con lo del formulario sin pisar lo que ya había (mismas reglas
      que el formulario de Leads, en `contactos.ts`);
-   - un LEAD en "Sesión agendada", sólo si la persona no tenía ninguna
-     oportunidad abierta;
+   - un LEAD en "Sesión agendada" si la persona no tenía ninguna
+     oportunidad; si ya tenía, esa pasa a Sesión agendada cuando estaba
+     antes o se había perdido (lib/etapas-auto.ts);
    - la LLAMADA, con canal, UTMs, respuestas del formulario y anfitrión.
 
    Lo que el equipo cargó en la Agenda no se pisa: si una llamada ya se
    marcó como hecha, que Calendly la vuelva a mandar no la devuelve a
-   "agendada". Calendly sólo decide si se canceló o si fue no-show.
+   "agendada". Calendly sólo decide si se canceló o si fue no-show. Tampoco
+   se pisan el nombre y el mail corregidos, ni lo que otras pantallas
+   guardaron en `extra`.
    ================================================================== */
 
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -26,7 +29,8 @@ import {
 } from "./calendly";
 import { claveEmail, completar } from "./contactos";
 import { nubeServidor } from "./servidor";
-import type { Contacto, Lead, Sesion } from "./types";
+import { etapaPorEvento } from "./etapas-auto";
+import type { Contacto, Etapa, Lead, Sesion } from "./types";
 
 /* "Sesión agendada" en las etapas de la base. */
 const ETAPA_SESION = "et_sesion";
@@ -48,7 +52,10 @@ interface Contexto {
   db: SupabaseClient;
   webinars?: { id: string; fecha: string }[];
   etapaSesion?: string | null;
+  etapas?: EtapaBase[];
 }
+
+type EtapaBase = Pick<Etapa, "id" | "nombre" | "orden" | "esGanada" | "esPerdida">;
 
 export function contextoCalendly(): Contexto {
   const db = nubeServidor();
@@ -64,10 +71,17 @@ async function webinarsDe(ctx: Contexto) {
   return ctx.webinars;
 }
 
+async function etapasDe(ctx: Contexto): Promise<EtapaBase[]> {
+  if (!ctx.etapas) {
+    const r = await ctx.db.from("etapas").select("id,nombre,orden,esGanada,esPerdida");
+    ctx.etapas = (r.data ?? []) as EtapaBase[];
+  }
+  return ctx.etapas;
+}
+
 async function etapaSesionDe(ctx: Contexto): Promise<string | null> {
   if (ctx.etapaSesion !== undefined) return ctx.etapaSesion;
-  const r = await ctx.db.from("etapas").select("id,nombre,orden");
-  const etapas = (r.data ?? []) as { id: string; nombre: string; orden: number }[];
+  const etapas = await etapasDe(ctx);
   ctx.etapaSesion = etapas.find((x) => x.id === ETAPA_SESION)?.id
     ?? etapas.find((x) => /sesi.n agendada/i.test(x.nombre))?.id
     ?? null;
@@ -153,9 +167,11 @@ export async function ingresarInvitado(
   if (rc.error) throw new Error(`contactos: ${rc.error.message}`);
 
   /* ---------- 2. La oportunidad: sólo si no tenía ninguna ---------- */
-  const suya = await db.from("leads").select("id").eq("contactoId", contacto.id).limit(1);
+  const suya = await db.from("leads").select("id,etapaId").eq("contactoId", contacto.id)
+    .order("actualizadoEn", { ascending: false }).limit(1);
   if (suya.error) throw new Error(`leads: ${suya.error.message}`);
-  let leadId = (suya.data?.[0] as { id: string } | undefined)?.id;
+  const leadPrevio = suya.data?.[0] as { id: string; etapaId?: string | null } | undefined;
+  let leadId = leadPrevio?.id;
   let leadNuevo = false;
 
   if (!leadId && inv.status === "active") {
@@ -175,17 +191,21 @@ export async function ingresarInvitado(
 
   /* ---------- 3. La llamada ---------- */
   const sesionId = idSesionCalendly(inv.uri);
-  const ya = await db.from("sesiones").select("estado,titulo,tipo,notas").eq("id", sesionId).limit(1);
+  const ya = await db.from("sesiones").select("estado,titulo,tipo,notas,invitado,email,extra").eq("id", sesionId).limit(1);
   if (ya.error) throw new Error(`sesiones: ${ya.error.message}`);
-  const antes = ya.data?.[0] as Pick<Sesion, "estado" | "titulo" | "tipo" | "notas"> | undefined;
+  const antes = ya.data?.[0] as Pick<Sesion, "estado" | "titulo" | "tipo" | "notas" | "invitado" | "email" | "extra"> | undefined;
 
   /* Una reprogramación sigue la historia de la agenda de antes: lo que el
-     closer ya había anotado pasa a la nueva, que es la que muestra el CRM
-     (la vieja queda cancelada y no se ve). */
-  let notasDeAntes: string | undefined;
+     closer y el setter ya habían cargado (las notas y el Pre-Call) pasa a
+     la nueva, que es la que muestra el CRM (la vieja queda cancelada y no se
+     ve). El Estado Pre-Call no: «Reagendar» ya se resolvió al reprogramar y
+     «Confirmado» era para el horario viejo; la nueva se confirma de nuevo.
+     Con `*`: si la base todavía no tiene las columnas del CRM, no falla. */
+  let deAntes: Pick<Sesion, "notas" | "preCall"> = {};
   if (!antes && inv.old_invitee) {
-    const vieja = await db.from("sesiones").select("notas").eq("id", idSesionCalendly(inv.old_invitee)).limit(1);
-    notasDeAntes = (vieja.data?.[0] as Pick<Sesion, "notas"> | undefined)?.notas || undefined;
+    const vieja = await db.from("sesiones").select("*").eq("id", idSesionCalendly(inv.old_invitee)).limit(1);
+    const v = vieja.data?.[0] as Partial<Sesion> | undefined;
+    deAntes = { notas: v?.notas || undefined, preCall: v?.preCall || undefined };
   }
 
   const estado = estadoDe(inv) ?? antes?.estado ?? "agendada";
@@ -195,12 +215,19 @@ export async function ingresarInvitado(
     id: sesionId,
     titulo: antes?.titulo || ev.name,
     tipo: antes?.tipo || ev.name,
-    notas: antes ? antes.notas : notasDeAntes,
+    notas: antes ? antes.notas : deAntes.notas,
+    ...(antes ? {} : { preCall: deAntes.preCall }),
     leadId, contactoId: contacto.id,
-    invitado: inv.name, email: inv.email,
+    /* La persona tiene un solo nombre: si ya estaba (o se corrigió en la
+       ficha), las agendas nuevas usan ése, y volver a traer una agenda no
+       pisa la corrección. */
+    invitado: antes?.invitado || previo?.nombre || inv.name,
+    email: antes?.email || inv.email,
     inicia: ev.start_time, duracionMin: minutos,
     estado, enlace: enlaceDe(ev), origen: "calendly",
-    creadoEn: inv.created_at, extra: {},
+    /* Lo que otras pantallas guardan en extra (la atribución a un webinar
+       corregida a mano) no se borra al volver a traerla. */
+    creadoEn: inv.created_at, extra: antes?.extra ?? {},
     canal, utm, respuestas: qa.length ? qa : undefined, anfitrion,
     calendlyEventoUri: ev.uri, calendlyInvitadoUri: inv.uri,
     reprogramadaDe: inv.old_invitee ? idSesionCalendly(inv.old_invitee) : undefined,
@@ -209,6 +236,19 @@ export async function ingresarInvitado(
       ? (inv.rescheduled ? "Reprogramada" : inv.cancellation?.reason || undefined)
       : undefined,
   };
+
+  /* ---------- 4. La etapa de la oportunidad que ya tenía ----------
+     Agendar la pasa a Sesión agendada si estaba antes (o se había perdido);
+     a quien ya compró o ya tuvo la llamada no lo mueve (lib/etapas-auto.ts).
+     Antes de guardar la llamada: Realtime avisa al CRM cuando entra la
+     llamada, y el CRM trae en ese momento la oportunidad ya movida. */
+  if (!antes && !leadNuevo && leadPrevio && inv.status === "active") {
+    const destino = etapaPorEvento(leadPrevio.etapaId ?? undefined, "agendo", await etapasDe(ctx));
+    if (destino) {
+      const rl = await db.from("leads").update({ etapaId: destino, actualizadoEn: ahora }).eq("id", leadPrevio.id);
+      if (rl.error) throw new Error(`leads: ${rl.error.message}`);
+    }
+  }
 
   const rs = await db.from("sesiones").upsert(limpio(sesion), { defaultToNull: false });
   if (rs.error) throw new Error(`sesiones: ${rs.error.message}`);

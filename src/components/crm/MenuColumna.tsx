@@ -7,7 +7,7 @@ import {
 import { useToast } from "@/components/ui/Toast";
 import { acciones } from "@/lib/store";
 import { CAMPO, COLORES, conConfig, estiloColor, opcionesDe, type ClaveCampo } from "@/lib/crm";
-import type { Ajustes, CampoOpcionesCrm, ColorCrm, OpcionCrm, Sesion } from "@/lib/types";
+import type { Ajustes, CampoOpcionesCrm, ColorCrm, OpcionCrm, OportunidadCrm, Sesion } from "@/lib/types";
 import { Chip, Flotante, IconoCampo } from "./piezas";
 
 /* ==================================================================
@@ -94,6 +94,19 @@ const EFECTOS: { valor: "" | "hecha" | "no-show"; texto: string }[] = [
   { valor: "no-show", texto: "No vino" },
 ];
 
+/* Qué dice de la oportunidad: una compra ofrece cargar la venta y la venta
+   elige sola cuál; perdida pasa el lead a Perdido (lib/etapas-auto.ts). */
+const OPORTUNIDADES: { valor: "" | OportunidadCrm; texto: string }[] = [
+  { valor: "", texto: "No toca la etapa" },
+  { valor: "compra-full", texto: "Compró al contado" },
+  { valor: "compra-cuotas", texto: "Compró en cuotas" },
+  { valor: "reserva", texto: "Reservó (seña)" },
+  { valor: "downsell", texto: "Compró el downsell" },
+  { valor: "perdida", texto: "Oportunidad perdida" },
+  /* Perdida aunque ya hubiera comprado. */
+  { valor: "devolucion", texto: "Devolución" },
+];
+
 const AUTO_TEXTO: Record<NonNullable<OpcionCrm["auto"]>, string> = {
   "no-show": "Se pone sola cuando la llamada queda como que no vino.",
   cancelada: "Se pone sola cuando canceló y no volvió a agendar.",
@@ -125,7 +138,7 @@ function EditarOpciones({ campo, titulo, ancla, onCerrar, ajustes, sesiones }: {
     ];
     const limpias: OpcionCrm[] = ops.map(({ _k, _antes, ...o }) => {
       void _k; void _antes;
-      return { ...o, nombre: o.nombre.trim(), ...(o.llamada ? {} : { llamada: undefined }) };
+      return { ...o, nombre: o.nombre.trim(), ...(o.llamada ? {} : { llamada: undefined }), ...(o.oportunidad ? {} : { oportunidad: undefined }) };
     });
     acciones.configurarCrm(
       conConfig(ajustes, { opciones: { ...(ajustes.crm?.opciones ?? {}), [campo]: limpias } }),
@@ -138,9 +151,12 @@ function EditarOpciones({ campo, titulo, ancla, onCerrar, ajustes, sesiones }: {
   }
 
   return (
-    <Flotante ancla={ancla} onCerrar={onCerrar} className="crm-pop--herr crm-opciones" ancho={campo === "estadoLlamada" ? 520 : 400}>
+    <Flotante ancla={ancla} onCerrar={onCerrar} className="crm-pop--herr crm-opciones" ancho={campo === "estadoLlamada" ? 700 : 400}>
       <div className="crm-pop__titulo">Opciones de «{titulo}»</div>
-      <p className="crm-pop__nota">Arrastrá para cambiar el orden (es el orden de la lista y el de ordenar). Renombrar una opción la cambia también en las agendas que la tienen.</p>
+      <p className="crm-pop__nota">
+        Arrastrá para cambiar el orden (es el orden de la lista y el de ordenar). Renombrar una opción la cambia también en las agendas que la tienen.
+        {campo === "estadoLlamada" && " Lo que dice de la llamada la marca en la Agenda; lo que dice de la oportunidad mueve su etapa (una devolución la pierde aunque haya comprado) y, si es una compra, ofrece cargar la venta."}
+      </p>
       <div className="crm-opciones__lista">
         {ops.map((o) => {
           const est = estiloColor(o.color);
@@ -171,6 +187,12 @@ function EditarOpciones({ campo, titulo, ancla, onCerrar, ajustes, sesiones }: {
                 <select className="crm-select crm-opciones__efecto" value={o.llamada ?? ""} aria-label="Qué dice de la llamada"
                   onChange={(ev) => cambiar(o._k, { llamada: (ev.target.value || undefined) as OpcionCrm["llamada"] })}>
                   {EFECTOS.map((x) => <option key={x.valor} value={x.valor}>{x.texto}</option>)}
+                </select>
+              )}
+              {campo === "estadoLlamada" && (
+                <select className="crm-select crm-opciones__efecto crm-opciones__oportunidad" value={o.oportunidad ?? ""} aria-label="Qué dice de la oportunidad"
+                  onChange={(ev) => cambiar(o._k, { oportunidad: (ev.target.value || undefined) as OpcionCrm["oportunidad"] })}>
+                  {OPORTUNIDADES.map((x) => <option key={x.valor} value={x.valor}>{x.texto}</option>)}
                 </select>
               )}
               {o.auto && <span className="crm-opciones__auto" title={AUTO_TEXTO[o.auto]}><Zap size={11} fill="currentColor" strokeWidth={0} aria-label={AUTO_TEXTO[o.auto]} /></span>}

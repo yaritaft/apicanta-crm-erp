@@ -125,6 +125,7 @@ src/
     ├── types.ts             # el modelo de dominio completo
     ├── store.ts             # el motor de datos (y el único punto a cambiar por Supabase)
     ├── crm.ts               # las columnas del CRM, cómo se arma cada fila, vistas y filtros
+    ├── etapas-auto.ts       # la etapa de cada oportunidad se mueve sola (llamada, venta, Calendly)
     ├── metricas.ts          # todos los cálculos del negocio, en un solo lugar
     ├── finanzas.ts          # el P&L, comisiones y mora, como los mide Yari
     ├── conciliacion.ts      # el motor que propone a qué cuota va cada cobro
@@ -231,6 +232,28 @@ pisa con el webhook de Calendly.
   clase cero o Q&A que trajo agendas. Ocultar campos, filtrar, agrupar, ordenar, colorear filas y el alto de las
   filas funcionan como en Airtable; lo que cada uno cambia de una vista, y las vistas que se crea, quedan en su
   navegador. Tabla, vista y registro abierto van en la URL: el link lleva a lo mismo.
+
+**Todo conectado.** Cada fila del CRM *es* la llamada de la Agenda, y lo que se carga en un lado se ve en los demás:
+
+- **Agenda**: el Estado de Llamada marca la llamada como hecha o que no vino (y de ahí la asistencia del Dashboard y
+  de cada webinar); lo que se marca en la Agenda pone solo «Inasistió» o «Canceló (auto)». El detalle de la llamada en
+  la Agenda muestra lo cargado en el CRM, con el link a su registro.
+- **Ventas**: al elegir un estado de compra («Compra Full», «Compra Cuotas», «Reserva», «Compra Downsell») aparece
+  **Cargar la venta**: el asistente de Ventas con la persona y el closer ya elegidos, atado a esa llamada. Si la venta
+  se carga por otro lado, la llamada de la que salió toma sola el estado de compra que corresponde (al contado, en
+  cuotas, con reserva o de downsell), si nadie le había puesto uno. La celda muestra la bolsa verde con la venta
+  cargada, o el botón punteado si compró y falta cargarla. La venta crea su servicio, como siempre.
+- **Etapas de la oportunidad** (lo que antes se arrastraba en el Pipeline): se mueven solas. Agendar → Sesión
+  agendada; la llamada se hizo → Propuesta; se cargó la venta → Inscripto; «NO Calificado» o «Lead descartado» →
+  Perdido (salvo que ya haya comprado); «Devolución» → Perdido aunque haya comprado. Sólo avanzan (una llamada hecha
+  no le saca la compra a nadie), volver a agendar reabre al que se había perdido y ⌘Z las devuelve a donde estaban.
+  Qué dice cada estado de la llamada y de la oportunidad se elige en sus opciones. Las reglas están en
+  `src/lib/etapas-auto.ts` y las usan el CRM, la Agenda, Ventas y la entrada de Calendly.
+- **La persona tiene una sola versión**: el nombre, el mail o el teléfono corregidos en Leads, la ficha, la Agenda,
+  el servicio o una venta quedan corregidos en todos lados (contacto, oportunidades, llamadas, ventas y servicio), y
+  Calendly no los vuelve a pisar. Los comentarios del registro son el chat de su ficha.
+- **Reprogramaciones**: la agenda nueva hereda las notas y el Pre-Call de la vieja. El Estado Pre-Call no: la nueva
+  se confirma de nuevo.
 
 Las reglas están en `src/lib/crm.ts` y la pantalla en `src/components/crm/`. Antes de usarlo contra Supabase hay
 que correr `supabase/crm.sql` (cuatro columnas en `sesiones` y la configuración en `ajustes.crm`).

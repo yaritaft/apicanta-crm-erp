@@ -415,7 +415,14 @@ export interface OpcionCrm {
      llamada quedó como que no vino, "cancelada" si canceló y no volvió a
      agendar, "segunda" si ya había agendado antes. */
   auto?: "no-show" | "cancelada" | "segunda";
+  /* Qué dice de la oportunidad. Una compra ofrece cargar la venta (y una
+     venta cargada elige sola la que corresponde: al contado, en cuotas, con
+     reserva o de downsell); "perdida" pasa el lead a Perdido, salvo que ya
+     haya comprado; "devolucion", aunque haya comprado. */
+  oportunidad?: OportunidadCrm;
 }
+
+export type OportunidadCrm = "compra-full" | "compra-cuotas" | "reserva" | "downsell" | "perdida" | "devolucion";
 
 export type CampoOpcionesCrm = "preCall" | "estadoLlamada" | "estadoPreCall";
 

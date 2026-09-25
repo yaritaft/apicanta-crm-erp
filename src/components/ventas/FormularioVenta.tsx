@@ -88,7 +88,13 @@ export function FormularioVenta({ borrador, onCerrar, onGuardado }: {
     };
 
     if (f.id) {
+      const antes = e.ventas.find((v) => v.id === f.id);
       acciones.actualizar<Venta>("ventas", f.id, datos, f.contactoNombre);
+      /* Se corrigió el nombre del cliente, no se cambió de persona: queda
+         corregido en todos lados (su ficha, el CRM, la Agenda, su servicio). */
+      if (f.contactoId && antes?.contactoId === f.contactoId && antes.contactoNombre !== datos.contactoNombre) {
+        acciones.corregirPersona(f.contactoId, { nombre: datos.contactoNombre });
+      }
     } else {
       acciones.crear<Venta>("ventas", { ...datos, id: ventaId }, f.contactoNombre);
       /* Plan de cuotas: la reserva es la cuota 0 */

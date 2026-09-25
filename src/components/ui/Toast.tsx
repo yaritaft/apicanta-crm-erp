@@ -4,20 +4,24 @@ import React, { createContext, useCallback, useContext, useMemo, useState } from
 import { Check, AlertCircle, Info } from "lucide-react";
 
 type Tono = "ok" | "err" | "info";
-interface Aviso { id: number; texto: string; tono: Tono }
+/* Un botón en el aviso ("Cargar la venta"): el aviso dura más y se va al
+   usarlo. */
+export interface AccionAviso { texto: string; onClick: () => void }
+interface Aviso { id: number; texto: string; tono: Tono; accion?: AccionAviso }
 
-const Ctx = createContext<(texto: string, tono?: Tono) => void>(() => {});
+const Ctx = createContext<(texto: string, tono?: Tono, accion?: AccionAviso) => void>(() => {});
 
 export function useToast() { return useContext(Ctx); }
 
 export function ToastProvider({ children }: { children: React.ReactNode }) {
   const [avisos, setAvisos] = useState<Aviso[]>([]);
+  const sacar = useCallback((id: number) => setAvisos((a) => a.filter((x) => x.id !== id)), []);
 
-  const push = useCallback((texto: string, tono: Tono = "ok") => {
+  const push = useCallback((texto: string, tono: Tono = "ok", accion?: AccionAviso) => {
     const id = Date.now() + Math.random();
-    setAvisos((a) => [...a, { id, texto, tono }]);
-    window.setTimeout(() => setAvisos((a) => a.filter((x) => x.id !== id)), 3600);
-  }, []);
+    setAvisos((a) => [...a, { id, texto, tono, accion }]);
+    window.setTimeout(() => sacar(id), accion ? 9000 : 3600);
+  }, [sacar]);
 
   const valor = useMemo(() => push, [push]);
 
@@ -31,6 +35,11 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
               : a.tono === "err" ? <AlertCircle size={18} color="var(--danger)" />
               : <Info size={18} color="var(--brand)" />}
             <span>{a.texto}</span>
+            {a.accion && (
+              <button type="button" className="toast__accion" onClick={() => { a.accion!.onClick(); sacar(a.id); }}>
+                {a.accion.texto}
+              </button>
+            )}
           </div>
         ))}
       </div>

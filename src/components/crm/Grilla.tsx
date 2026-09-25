@@ -1,9 +1,9 @@
 "use client";
 
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, ChevronRight, Maximize2, Plus, Star } from "lucide-react";
+import { ChevronDown, ChevronRight, Maximize2, Plus, ShoppingBag, Star } from "lucide-react";
 import {
-  CAMPO, fechaCrm, textoDe, valorDe,
+  CAMPO, esCompra, fechaCrm, textoDe, valorDe,
   type CampoCrm, type ClaveCampo, type FilaCrm, type Pintor,
 } from "@/lib/crm";
 import type { CampoOpcionesCrm, OpcionCrm } from "@/lib/types";
@@ -70,6 +70,8 @@ export interface PropsGrilla {
   onActiva?: (id: string | null) => void;
   /* Cambia con la tabla y la vista: la grilla vuelve arriba a la izquierda. */
   reinicio?: string;
+  /* Una llamada que terminó en compra y no tiene la venta cargada. */
+  onCargarVenta?: (f: FilaCrm) => void;
 }
 
 interface Activa { id: string; col: number }
@@ -82,6 +84,7 @@ export function Grilla(p: PropsGrilla) {
   const {
     items, primario, columnas, anchos, alto, pintar, opciones, tintes, colorFila, marcadas,
     onMarcar, onAbrir, onGuardar, onAncho, onEncabezado, onMas, onGrupo, onError, nuevas, totalFilas, pie, vacio,
+    onCargarVenta,
   } = p;
   const caja = useRef<HTMLDivElement>(null);
   const [vista, setVista] = useState({ top: 0, alto: 800, ancho: 1200 });
@@ -353,9 +356,29 @@ export function Grilla(p: PropsGrilla) {
       case "seleccion": {
         if (!v) return null;
         const chip = <Chip texto={String(v)} color={pintar(c.clave, String(v))} />;
-        return c.clave === "estadoLlamada" && f.estadoAuto
+        if (c.clave !== "estadoLlamada") return chip;
+        const valor = f.estadoAuto
           ? <span className="crm-auto-valor" title="Lo puso el CRM solo. Elegí otro para cambiarlo.">{chip}</span>
           : chip;
+        /* La venta de esa llamada: cargada, o el botón para cargarla si el
+           estado dice que compró. */
+        if (f.venta) {
+          return <>{valor}<span className="crm-venta crm-venta--ok" title={`Venta cargada: ${f.venta.texto}`}><ShoppingBag size={13} aria-label="Venta cargada" /></span></>;
+        }
+        if (onCargarVenta && esCompra(opciones.estadoLlamada.find((o) => o.nombre === v))) {
+          return (
+            <>
+              {valor}
+              <button
+                type="button" className="crm-venta" title="Compró, pero falta cargar la venta" aria-label={`Cargar la venta de ${f.nombre}`}
+                onMouseDown={(ev) => ev.stopPropagation()} onClick={() => onCargarVenta(f)}
+              >
+                <ShoppingBag size={13} aria-hidden /><Plus size={10} strokeWidth={3} aria-hidden />
+              </button>
+            </>
+          );
+        }
+        return valor;
       }
       case "multiple":
         return (v as string[]).length ? (

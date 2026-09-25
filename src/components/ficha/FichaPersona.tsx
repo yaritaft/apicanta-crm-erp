@@ -202,7 +202,9 @@ function Lateral({ e, p }: { e: EstadoApp; p: Persona }) {
               <CalendarDays size={14} className="t-subtle" />
               <span style={{ minWidth: 0, flex: 1 }}>
                 <span className="truncate t-sm t-strong" style={{ display: "block" }}>{fechaHora(s.inicia)}</span>
-                <span className="truncate t-sm t-subtle" style={{ display: "block" }}>{s.tipo || s.titulo}</span>
+                <span className="truncate t-sm t-subtle" style={{ display: "block" }}>
+                  {s.tipo || s.titulo}{s.estadoLlamada ? ` · ${s.estadoLlamada}` : ""}
+                </span>
               </span>
               <Badge variante={s.estado === "hecha" ? "success" : s.estado === "no-show" || s.estado === "cancelada" ? "danger" : "info"}>
                 {s.estado === "hecha" ? "Hecha" : s.estado === "no-show" ? "No vino" : s.estado === "cancelada" ? "Cancelada" : "Agendada"}
@@ -381,7 +383,13 @@ function VistaServicio({ e, p }: { e: EstadoApp; p: Persona }) {
     const nombre = editar.nombre.trim();
     if (!nombre) { toast("Poné al menos el nombre.", "err"); return; }
     const { id, ...cambios } = editar;
+    const antes = e.alumnos.find((a) => a.id === id);
     acciones.actualizar<Alumno>("alumnos", id, { ...cambios, nombre }, nombre);
+    /* El nombre y el mail son de la persona: se corrigen en todos lados. */
+    acciones.corregirPersona(antes?.leadId ?? id, {
+      nombre: nombre !== antes?.nombre ? nombre : undefined,
+      email: cambios.email !== antes?.email ? cambios.email : undefined,
+    });
     toast("Servicio actualizado.");
     setEditar(null);
   }

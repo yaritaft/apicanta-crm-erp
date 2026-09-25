@@ -2,12 +2,13 @@
 
 import React, { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { ChevronDown, ChevronUp, ExternalLink, History, MessageSquare, Star, UserRound, X } from "lucide-react";
+import { ChevronDown, ChevronUp, ExternalLink, History, MessageSquare, ShoppingBag, Star, UserRound, X } from "lucide-react";
 import { ChatEquipo } from "@/components/ficha/ChatEquipo";
 import { useEstado } from "@/lib/store";
-import { fechaHora, relativo } from "@/lib/format";
+import { fechaHora, fechaLarga, relativo } from "@/lib/format";
+import { leadDeSesion } from "@/lib/etapas-auto";
 import {
-  CAMPOS, fechaCrm, valorDe,
+  CAMPOS, esCompra, fechaCrm, valorDe,
   type CampoCrm, type ClaveCampo, type FilaCrm, type Pintor,
 } from "@/lib/crm";
 import type { CampoOpcionesCrm, OpcionCrm } from "@/lib/types";
@@ -24,13 +25,14 @@ import { SelectorOpciones } from "./Editores";
 
 const digitos = (s: string) => s.replace(/[^\d]/g, "");
 
-export function Registro({ f, opciones, pintar, onGuardar, onCerrar, onFicha, anterior, siguiente, posicion }: {
+export function Registro({ f, opciones, pintar, onGuardar, onCerrar, onFicha, onCargarVenta, anterior, siguiente, posicion }: {
   f: FilaCrm;
   opciones: Record<CampoOpcionesCrm, OpcionCrm[]>;
   pintar: Pintor;
   onGuardar: (f: FilaCrm, clave: ClaveCampo, valor: string) => void;
   onCerrar: () => void;
   onFicha: (persona: string) => void;
+  onCargarVenta: (f: FilaCrm) => void;
   anterior?: () => void;
   siguiente?: () => void;
   posicion?: string;
@@ -41,6 +43,9 @@ export function Registro({ f, opciones, pintar, onGuardar, onCerrar, onFicha, an
 
   useEffect(() => {
     const onKey = (ev: KeyboardEvent) => {
+      /* Con el asistente de venta abierto encima, las teclas son suyas: Esc
+         lo cierra a él y el registro queda, con la venta ya cargada. */
+      if (document.querySelector(".asistente")) return;
       const t = ev.target as HTMLElement;
       const escribiendo = t.tagName === "INPUT" || t.tagName === "TEXTAREA";
       /* Primero se suelta el campo que se está escribiendo: su onBlur guarda. */
@@ -119,6 +124,9 @@ export function Registro({ f, opciones, pintar, onGuardar, onCerrar, onFicha, an
                     <IconoCampo tipo={c.tipo} size={14} />{c.titulo}{c.origen === "agenda" && <MarcaAuto />}
                   </div>
                   <ValorRegistro f={f} c={c} opciones={opciones} pintar={pintar} onGuardar={onGuardar} />
+                  {c.clave === "estadoLlamada" && (
+                    <Oportunidad f={f} opciones={opciones.estadoLlamada} onCargarVenta={onCargarVenta} onFicha={onFicha} />
+                  )}
                 </div>
               ))}
             </section>
@@ -285,6 +293,41 @@ function TextoEditable({ f, c, onGuardar }: { f: FilaCrm; c: CampoCrm; onGuardar
           <ExternalLink size={16} aria-hidden />
         </a>
       )}
+    </div>
+  );
+}
+
+/* Debajo del Estado de Llamada: en qué etapa está su oportunidad (se mueve
+   sola con la llamada y la venta) y la venta que salió de esta llamada, o
+   el botón para cargarla si compró y falta. */
+function Oportunidad({ f, opciones, onCargarVenta, onFicha }: {
+  f: FilaCrm;
+  opciones: OpcionCrm[];
+  onCargarVenta: (f: FilaCrm) => void;
+  onFicha: (persona: string) => void;
+}) {
+  const e = useEstado();
+  const lead = leadDeSesion(e.leads, f.sesion);
+  const etapa = lead ? e.etapas.find((x) => x.id === lead.etapaId) : undefined;
+  const compro = esCompra(opciones.find((o) => o.nombre === f.estadoLlamada));
+  const persona = f.sesion.contactoId ?? f.sesion.leadId;
+  if (!etapa && !f.venta && !compro) return null;
+  return (
+    <div className="crm-registro__oportunidad">
+      {etapa && (
+        <span title="La etapa de su oportunidad: se mueve sola con la llamada y la venta.">
+          Oportunidad: <strong>{etapa.nombre}</strong>
+        </span>
+      )}
+      {f.venta ? (
+        <button type="button" className="crm-registro__venta" onClick={() => persona && onFicha(persona)} title="Ver la venta en su ficha">
+          <ShoppingBag size={14} aria-hidden />Venta cargada: {f.venta.texto} · {fechaLarga(f.venta.fecha)}
+        </button>
+      ) : compro ? (
+        <button type="button" className="crm-boton crm-boton--azul" onClick={() => onCargarVenta(f)}>
+          <ShoppingBag size={14} aria-hidden />Cargar la venta
+        </button>
+      ) : null}
     </div>
   );
 }
