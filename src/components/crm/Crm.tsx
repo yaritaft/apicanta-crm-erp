@@ -4,7 +4,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useRouter, useSearchParams } from "next/navigation";
 import { ChevronDown, Menu, PhoneCall, RefreshCcw, Search, Sheet, X } from "lucide-react";
 import { useToast } from "@/components/ui/Toast";
-import { acciones, escrituraPendiente, estadoSync, useEstado } from "@/lib/store";
+import { acciones, escrituraPendiente, estadoSync, useEstado, type CambioEtapa } from "@/lib/store";
 import { nube } from "@/lib/supabase";
 import { AGENDAR_A_MANO } from "@/lib/funciones";
 import {
@@ -201,7 +201,7 @@ export function Crm() {
   /* Una entrada por gesto: cambiar varias filas juntas se deshace de una
      vez. Con la etapa que tenía cada lead que el cambio movió (un «NO
      Calificado» lo pasa a Perdido): deshacer lo devuelve a donde estaba. */
-  type Gesto = { cambios: Cambio[]; etapas: Record<string, string> };
+  type Gesto = { cambios: Cambio[]; etapas: Record<string, CambioEtapa> };
   const deshacer = useRef<Gesto[]>([]);
   type Pedido = Parameters<typeof acciones.editarLlamadas>[0][number];
   /* Qué escribir para dejar `valor` en ese campo y cómo se deshace (null si
@@ -220,14 +220,14 @@ export function Crm() {
       },
     };
   }, []);
-  const recordar = (cambios: Cambio[], etapas: Record<string, string>) => {
+  const recordar = (cambios: Cambio[], etapas: Record<string, CambioEtapa>) => {
     if (cambios.length) deshacer.current = [...deshacer.current.slice(-49), { cambios, etapas }];
   };
   const guardarCampo = useCallback((f: FilaCrm, clave: ClaveCampo, valor: string) => {
     const c = cambioDe(f, clave, valor);
     if (!c) return;
-    const { etapasAntes, movidos } = acciones.editarLlamadas([c.pedido]);
-    recordar([c.cambio], etapasAntes);
+    const { etapas, movidos } = acciones.editarLlamadas([c.pedido]);
+    recordar([c.cambio], etapas);
     retenidaRef.current = f.id;
     setRetenida(f.id);
     const opcion = clave === "estadoLlamada" ? opciones.estadoLlamada.find((o) => o.nombre === valor) : undefined;
@@ -266,8 +266,8 @@ export function Crm() {
       .filter((f) => ids.has(f.id))
       .map((f) => cambioDe(f, clave, valor, `${f.nombre}: ${campo.titulo} → ${valor || "vacío"} (a varias juntas).`))
       .filter((c) => c !== null);
-    const { etapasAntes } = acciones.editarLlamadas(hechos.map((h) => h.pedido));
-    recordar(hechos.map((h) => h.cambio), etapasAntes);
+    const { etapas } = acciones.editarLlamadas(hechos.map((h) => h.pedido));
+    recordar(hechos.map((h) => h.cambio), etapas);
     const n = hechos.length;
     toast(n ? `${campo.titulo}: «${valor}» en ${n} ${n === 1 ? "agenda" : "agendas"}. ⌘Z lo deshace.` : "Ya tenían ese valor.");
     // eslint-disable-next-line react-hooks/exhaustive-deps

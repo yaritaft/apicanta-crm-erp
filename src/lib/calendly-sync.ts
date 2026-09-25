@@ -168,7 +168,7 @@ export async function ingresarInvitado(
 
   /* ---------- 2. La oportunidad: sólo si no tenía ninguna ---------- */
   const suya = await db.from("leads").select("id,etapaId").eq("contactoId", contacto.id)
-    .order("actualizadoEn", { ascending: false }).limit(1);
+    .order("actualizadoEn", { ascending: false, nullsFirst: false }).limit(1);
   if (suya.error) throw new Error(`leads: ${suya.error.message}`);
   const leadPrevio = suya.data?.[0] as { id: string; etapaId?: string | null } | undefined;
   let leadId = leadPrevio?.id;

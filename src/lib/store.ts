@@ -19,7 +19,7 @@ import { claveEmail, completar } from "./contactos";
 import { construirSemilla, estadoVacio } from "./seed";
 import { hayNube, nube, tablaFaltante, TABLAS, TABLAS_DE_DUENOS, TABLAS_OPCIONALES } from "./supabase";
 import { idAd, idAdset, idCampaign } from "./meta";
-import { entraEnTabla, esCompra, opcionesDe, tablasDe } from "./crm";
+import { entraEnTabla, esCompra, opcionesDe, tablasDe, ventaEsDeLlamada } from "./crm";
 import { etapaTrasEventos, eventosDeLlamada, leadDeSesion, type EventoEtapa } from "./etapas-auto";
 import { personaDe } from "./persona";
 
@@ -520,6 +520,7 @@ function registrar(
    devuelve la llamada a como estaba. */
 type CambiosLlamada = Partial<Pick<Sesion, "preCall" | "estadoPreCall" | "estadoLlamada" | "notas" | "grabacion" | "estado">>;
 type PedidoLlamada = { id: ID; cambios: CambiosLlamada; detalle: string };
+export type CambioEtapa = { antes: ID; despues: ID };
 
 /* ---------- Llamadas, y la etapa de sus leads ----------
    Lo que cambia al cargar algo en una o varias llamadas, todavía sin
@@ -531,8 +532,8 @@ interface Tanda {
   sesiones: Map<ID, Sesion>;
   aLaNube: Map<ID, Record<string, unknown>>;
   leads: Map<ID, Lead>;
-  /* La etapa que tenía cada lead antes de la tanda: con eso se deshace. */
-  etapasAntes: Record<ID, ID>;
+  /* Cada lead que la tanda movió: de qué etapa a cuál. Con eso se deshace. */
+  etapas: Record<ID, CambioEtapa>;
   actividad: Actividad[];
   cuando: string;
   /* Un id de actividad por tanda, más el orden: con miles en el mismo
@@ -542,7 +543,7 @@ interface Tanda {
 }
 
 function nuevaTanda(): Tanda {
-  return { sesiones: new Map(), aLaNube: new Map(), leads: new Map(), etapasAntes: {}, actividad: [], cuando: ahora(), base: nuevoId("act") };
+  return { sesiones: new Map(), aLaNube: new Map(), leads: new Map(), etapas: {}, actividad: [], cuando: ahora(), base: nuevoId("act") };
 }
 
 function anotar(t: Tanda, e: EstadoApp, entidad: Actividad["entidad"], id: ID, titulo: string, accion: AccionActividad, detalle: string) {
@@ -560,15 +561,17 @@ function moverEnTanda(t: Tanda, e: EstadoApp, lead: Lead, eventos: EventoEtapa[]
 function fijarEtapa(t: Tanda, e: EstadoApp, lead: Lead, etapaId: ID, motivo: string) {
   const actual = t.leads.get(lead.id) ?? lead;
   if (actual.etapaId === etapaId) return;
-  if (!(lead.id in t.etapasAntes)) t.etapasAntes[lead.id] = actual.etapaId;
+  t.etapas[lead.id] = { antes: t.etapas[lead.id]?.antes ?? actual.etapaId, despues: etapaId };
   t.leads.set(lead.id, { ...actual, etapaId, actualizadoEn: t.cuando });
   const nombre = (id: ID) => e.etapas.find((x) => x.id === id)?.nombre ?? "—";
   anotar(t, e, "lead", lead.id, lead.nombre, "movio", `${lead.nombre}: ${nombre(actual.etapaId)} → ${nombre(etapaId)} (${motivo}).`);
 }
 
 /* Las llamadas de la tanda, con lo que cada cambio dice de su lead. Con
-   `restaurar` (deshacer), las etapas vuelven a esas en vez de moverse solas. */
-function cargarLlamadas(t: Tanda, e: EstadoApp, lista: PedidoLlamada[], restaurar?: Record<ID, ID>) {
+   `restaurar` (deshacer), cada lead vuelve a la etapa de antes en vez de
+   moverse solo, salvo que otra cosa lo haya movido después (se cargó la
+   venta): ahí manda lo último. */
+function cargarLlamadas(t: Tanda, e: EstadoApp, lista: PedidoLlamada[], restaurar?: Record<ID, CambioEtapa>) {
   const opciones = opcionesDe(e.ajustes, "estadoLlamada");
   const porId = new Map(e.sesiones.map((s) => [s.id, s]));
   const tocadas = new Set<ID>();
@@ -590,9 +593,9 @@ function cargarLlamadas(t: Tanda, e: EstadoApp, lista: PedidoLlamada[], restaura
     anotar(t, e, "sesion", id, `${s.tipo} — ${s.invitado}`, "actualizo", detalle);
   }
   if (restaurar) {
-    for (const [leadId, etapaId] of Object.entries(restaurar)) {
+    for (const [leadId, { antes, despues }] of Object.entries(restaurar)) {
       const lead = t.leads.get(leadId) ?? e.leads.find((l) => l.id === leadId);
-      if (lead) fijarEtapa(t, e, lead, etapaId, "se deshizo el cambio");
+      if (lead && lead.etapaId === despues) fijarEtapa(t, e, lead, antes, "se deshizo el cambio");
     }
     return;
   }
@@ -636,15 +639,16 @@ function conTanda(e: EstadoApp, t: Tanda): EstadoApp {
 
 /* La llamada de la que salió una venta: la del CRM desde la que se cargó
    o, si no, la última llamada de venta de esa persona hasta el día de la
-   venta (una agenda posterior es otra historia). */
+   venta y dentro de su ventana (lib/crm.ts): una agenda posterior, o una de
+   hace meses de alguien que vuelve a comprar, es otra historia. */
 function llamadaDeVenta(e: EstadoApp, venta: Venta, sesionId?: ID): Sesion | undefined {
   if (sesionId) return e.sesiones.find((s) => s.id === sesionId);
   const p = venta.contactoId ? personaDe(e, venta.contactoId) : null;
   if (!p) return undefined;
   const tablas = tablasDe(e.ajustes);
   const tope = new Date(venta.fecha).getTime() + 86_400_000;
-  const deVenta = p.sesiones.filter((s) => s.estado !== "cancelada" && tablas.some((x) => entraEnTabla(s, x)));
-  return deVenta.find((s) => new Date(s.inicia).getTime() <= tope);
+  return p.sesiones.find((s) => s.estado !== "cancelada" && tablas.some((x) => entraEnTabla(s, x))
+    && new Date(s.inicia).getTime() <= tope && ventaEsDeLlamada(s, venta.fecha));
 }
 
 /* El estado de compra que corresponde a una venta: de downsell si el
@@ -963,21 +967,22 @@ export const acciones = {
      con miles cargadas, cada una volvía a escribir todo el estado y la
      pantalla se quedaba congelada.
 
-     Devuelve la etapa que tenía cada lead que se movió, para deshacerlo:
-     con `restaurarEtapas` los leads vuelven a esas en vez de moverse solos. */
-  editarLlamadas(lista: PedidoLlamada[], restaurarEtapas?: Record<ID, ID>): {
-    etapasAntes: Record<ID, ID>;
+     Devuelve de qué etapa a cuál pasó cada lead que se movió, para
+     deshacerlo: con `restaurarEtapas` vuelven a la de antes en vez de
+     moverse solos (si nada los movió después). */
+  editarLlamadas(lista: PedidoLlamada[], restaurarEtapas?: Record<ID, CambioEtapa>): {
+    etapas: Record<ID, CambioEtapa>;
     /* A qué etapa pasó cada lead que se movió, para avisarlo. */
     movidos: { leadId: ID; etapa: string }[];
   } {
     const e = snapshot();
     const t = nuevaTanda();
     cargarLlamadas(t, e, lista, restaurarEtapas);
-    if (t.sesiones.size === 0 && t.leads.size === 0) return { etapasAntes: {}, movidos: [] };
+    if (t.sesiones.size === 0 && t.leads.size === 0) return { etapas: {}, movidos: [] };
     guardar(conTanda(e, t));
     empujarTanda(t);
     return {
-      etapasAntes: t.etapasAntes,
+      etapas: t.etapas,
       movidos: [...t.leads.values()].map((l) => ({ leadId: l.id, etapa: e.etapas.find((x) => x.id === l.etapaId)?.nombre ?? "" })),
     };
   },

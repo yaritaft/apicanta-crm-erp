@@ -454,14 +454,24 @@ export function filasCrm(
   });
 }
 
-/* La venta que salió de una agenda: la primera de esa persona desde el día
-   antes de que agendara (la de un alumno de antes no es de esta llamada). */
+/* Una venta sale de una llamada si se cerró desde el día antes de agendar
+   hasta DIAS_VENTA días después de la llamada: la de un alumno de antes, o
+   una compra de meses más tarde, es otra historia. */
+export const DIAS_VENTA = 60;
+
+export function ventaEsDeLlamada(s: Pick<Sesion, "creadoEn" | "inicia">, fechaVenta: string): boolean {
+  const v = new Date(fechaVenta).getTime();
+  const desde = new Date(s.creadoEn).getTime() - DIA_MS;
+  const hasta = Math.max(new Date(s.inicia).getTime(), desde) + DIAS_VENTA * DIA_MS;
+  return v >= desde && v <= hasta;
+}
+
+/* La venta que salió de una agenda: la primera de esa persona en su ventana. */
 function ventaDeAgenda(s: Sesion, ventasDe: Map<string, Venta[]>, productos: Map<string, string>): VentaDeFila | undefined {
   const suyas = [...new Set([...(ventasDe.get(s.leadId ?? "") ?? []), ...(ventasDe.get(s.contactoId ?? "") ?? [])])];
   if (suyas.length === 0) return undefined;
-  const desde = new Date(s.creadoEn).getTime() - 86_400_000;
   const v = suyas
-    .filter((x) => new Date(x.fecha).getTime() >= desde)
+    .filter((x) => ventaEsDeLlamada(s, x.fecha))
     .sort((a, b) => a.fecha.localeCompare(b.fecha))[0];
   if (!v) return undefined;
   const producto = (v.productoId && productos.get(v.productoId)) || "Venta";
