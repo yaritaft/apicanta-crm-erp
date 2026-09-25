@@ -218,6 +218,13 @@ export const CAMPO: Record<string, CampoCrm> = Object.fromEntries(CAMPOS.map((c)
 /* Lo que se ve de entrada: las columnas del Airtable, en su orden. */
 export const OCULTOS_POR_DEFECTO: ClaveCampo[] = ["calificada", "formacion", "ingreso", "instagram", "agendo", "tipo"];
 
+/* Las agendas de auditoría de los resells no hacen las preguntas de
+   calificación (son alumnos): esas columnas arrancan ocultas ahí. */
+export const OCULTOS_DE_TABLA: Record<string, ClaveCampo[]> = {
+  resells: [...OCULTOS_POR_DEFECTO, "anios", "ingles", "lenguajes", "inversion", "utmMedium", "utmCampaign", "utmContent"],
+};
+export const ocultosDeTabla = (tabla: string) => OCULTOS_DE_TABLA[tabla] ?? OCULTOS_POR_DEFECTO;
+
 /* ---------- La fila ---------- */
 
 export interface FilaCrm {
@@ -571,6 +578,13 @@ export interface Condicion {
   valor?: string | string[];
 }
 
+/* Cómo se filtra un campo: las fórmulas que se ven como etiqueta (Funnel,
+   Mes, Agenda calificada) se eligen de una lista, como un select. */
+export function tipoDeFiltro(c: CampoCrm | undefined): TipoCampo {
+  if (!c) return "texto";
+  return c.tipo === "formula" && c.etiqueta ? "seleccion" : c.tipo;
+}
+
 export function operadoresDe(tipo: TipoCampo | "lanzamiento"): { valor: Operador; texto: string }[] {
   const vacios = [{ valor: "vacio" as const, texto: "está vacío" }, { valor: "no-vacio" as const, texto: "no está vacío" }];
   if (tipo === "fecha") return [{ valor: "periodo", texto: "es" }, ...vacios];
@@ -721,7 +735,7 @@ type CondicionSinId = Omit<Condicion, "id">;
 
 /* Las condiciones de una vista armada llevan ids fijos: la vista se vuelve
    a armar con cada agenda nueva, y el filtro abierto no puede perderlas. */
-const vista = (
+const vistaBase = (
   v: Omit<VistaCrm, "conjuncion" | "ocultos" | "orden" | "filtros"> & Partial<Omit<VistaCrm, "filtros">> & { filtros: CondicionSinId[] },
 ): VistaCrm => ({
   conjuncion: "y", ocultos: OCULTOS_POR_DEFECTO, orden: [{ campo: "agendo", desc: true }], ...v,
@@ -734,7 +748,10 @@ export const colorMarca = (nombre: string) => PALETA[`${nombre}3` as ColorCrm] ?
 export function vistasDe(
   filas: FilaCrm[],
   e: Pick<EstadoApp, "equipo" | "webinars" | "ajustes">,
+  tabla = "booking",
 ): SeccionVistas[] {
+  const ocultos = ocultosDeTabla(tabla);
+  const vista = (v: Parameters<typeof vistaBase>[0]) => vistaBase({ ocultos, ...v });
   const secciones: SeccionVistas[] = [
     { id: "general", vistas: [vista({ id: "todas", nombre: "Todas", marca: { color: PALETA.azul3, forma: "punto" }, filtros: [] })] },
   ];

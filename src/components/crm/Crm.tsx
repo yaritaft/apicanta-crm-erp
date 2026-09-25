@@ -8,7 +8,7 @@ import { acciones, useEstado } from "@/lib/store";
 import { nube } from "@/lib/supabase";
 import { AGENDAR_A_MANO } from "@/lib/funciones";
 import {
-  CAMPO, CAMPOS, OCULTOS_POR_DEFECTO, coincideBusqueda, estiloColor, filasCrm, opcionesDe, ordenar, pasa,
+  CAMPO, CAMPOS, coincideBusqueda, estiloColor, filasCrm, ocultosDeTabla, opcionesDe, ordenar, pasa,
   pintor, tablasDe, valorDe, vistasDe,
   type ClaveCampo, type FilaCrm, type VistaCrm,
 } from "@/lib/crm";
@@ -18,6 +18,7 @@ import { BarraVista } from "./Barra";
 import { PanelVistas } from "./PanelVistas";
 import { Registro } from "./Registro";
 import { MenuColumna } from "./MenuColumna";
+import { SelectorOpciones } from "./Editores";
 import { useVistasGuardadas, usePreferencia, type AjusteVista, type VistaPropia } from "./useVistas";
 
 /* ==================================================================
@@ -64,7 +65,7 @@ export function Crm() {
 
   /* ---------- Vistas ---------- */
   const guardadas = useVistasGuardadas(tablaId);
-  const secciones = useMemo(() => vistasDe(filasTabla, e), [filasTabla, e]);
+  const secciones = useMemo(() => vistasDe(filasTabla, e, tablaId), [filasTabla, e, tablaId]);
   const armadas = useMemo(() => secciones.flatMap((s) => s.vistas), [secciones]);
   const todasLasVistas: VistaCrm[] = useMemo(() => [...guardadas.propias, ...armadas], [guardadas.propias, armadas]);
   const vistaId = (vistaUrl && todasLasVistas.some((v) => v.id === vistaUrl) ? vistaUrl : null)
@@ -76,7 +77,7 @@ export function Crm() {
     filtros: ajuste.filtros ?? base.filtros,
     conjuncion: ajuste.conjuncion ?? base.conjuncion,
     orden: ajuste.orden ?? base.orden,
-    ocultos: ajuste.ocultos ?? (base as VistaPropia).ocultos ?? OCULTOS_POR_DEFECTO,
+    ocultos: ajuste.ocultos ?? base.ocultos ?? ocultosDeTabla(tablaId),
     columnas: ajuste.columnas ?? (base as VistaPropia).columnas,
     anchos: ajuste.anchos ?? (base as VistaPropia).anchos ?? {},
     alto: ajuste.alto ?? (base as VistaPropia).alto ?? "corta",
@@ -170,23 +171,59 @@ export function Crm() {
     return (f: FilaCrm) => colores.get(String(valorDe(f, campo)));
   }, [v.color, opciones]);
 
-  /* ---------- Guardar lo que carga el equipo ---------- */
-  const guardarCampo = useCallback((f: FilaCrm, clave: ClaveCampo, valor: string) => {
+  /* ---------- Guardar lo que carga el equipo ----------
+     Cada cambio queda en una pila para deshacerlo con ⌘Z (con el estado de
+     la llamada de antes: elegir «Compra Full» también la marcó como hecha). */
+  type Cambio = { id: string; clave: ClaveCampo; antes: string; estado: Sesion["estado"]; nombre: string };
+  /* Una entrada por gesto: cambiar varias filas juntas se deshace de una vez. */
+  const deshacer = useRef<Cambio[][]>([]);
+  const escribirCampo = useCallback((f: FilaCrm, clave: ClaveCampo, valor: string, detalle?: string): Cambio | null => {
     const campo = CAMPO[clave];
-    if (!campo || campo.origen !== "equipo") return;
+    if (!campo || campo.origen !== "equipo") return null;
     const antes = String((f.sesion as unknown as Record<string, unknown>)[clave] ?? "");
-    if (antes === valor.trim()) return;
-    const opcion = clave === "estadoLlamada" ? opciones.estadoLlamada.find((o) => o.nombre === valor) : undefined;
+    if (antes === valor.trim()) return null;
     acciones.editarLlamada(
       f.id, { [clave]: valor } as Partial<Sesion>,
-      valor ? `${f.nombre}: ${campo.titulo} → ${valor.length > 60 ? `${valor.slice(0, 60)}…` : valor}.` : `${f.nombre}: se vació ${campo.titulo}.`,
+      detalle ?? (valor ? `${f.nombre}: ${campo.titulo} → ${valor.length > 60 ? `${valor.slice(0, 60)}…` : valor}.` : `${f.nombre}: se vació ${campo.titulo}.`),
     );
+    return { id: f.id, clave, antes, estado: f.sesion.estado, nombre: f.nombre };
+  }, []);
+  const recordar = (cambios: Cambio[]) => { if (cambios.length) deshacer.current = [...deshacer.current.slice(-49), cambios]; };
+  const guardarCampo = useCallback((f: FilaCrm, clave: ClaveCampo, valor: string) => {
+    const cambio = escribirCampo(f, clave, valor);
+    if (!cambio) return;
+    recordar([cambio]);
     retenidaRef.current = f.id;
     setRetenida(f.id);
+    const opcion = clave === "estadoLlamada" ? opciones.estadoLlamada.find((o) => o.nombre === valor) : undefined;
     if (opcion?.llamada && f.sesion.estado !== opcion.llamada) {
       toast(opcion.llamada === "hecha" ? "En la Agenda la llamada quedó como hecha." : "En la Agenda la llamada quedó como que no vino.", "info");
     }
-  }, [opciones.estadoLlamada, toast]);
+  }, [escribirCampo, opciones.estadoLlamada, toast]);
+  const onDeshacer = useCallback(() => {
+    const ultimos = deshacer.current.pop();
+    if (!ultimos?.length) { toast("No hay nada para deshacer.", "info"); return; }
+    for (const u of ultimos) {
+      acciones.editarLlamada(u.id, { [u.clave]: u.antes, estado: u.estado } as Partial<Sesion>, `${u.nombre}: se deshizo el cambio de ${CAMPO[u.clave].titulo}.`);
+    }
+    const titulo = CAMPO[ultimos[0].clave].titulo;
+    toast(ultimos.length === 1 ? `Deshecho: ${titulo} de ${ultimos[0].nombre}.` : `Deshecho: ${titulo} en ${ultimos.length} agendas.`, "info");
+  }, [toast]);
+
+  /* Lo mismo para todas las filas elegidas con la casilla. */
+  const aplicarAVarias = useCallback((clave: CampoOpcionesCrm, valor: string, ids: Set<string>) => {
+    const campo = CAMPO[clave];
+    const cambios: Cambio[] = [];
+    for (const f of filasTabla) {
+      if (!ids.has(f.id)) continue;
+      const c = escribirCampo(f, clave, valor, `${f.nombre}: ${campo.titulo} → ${valor || "vacío"} (a varias juntas).`);
+      if (c) cambios.push(c);
+    }
+    recordar(cambios);
+    const n = cambios.length;
+    toast(n ? `${campo.titulo}: «${valor}» en ${n} ${n === 1 ? "agenda" : "agendas"}. ⌘Z lo deshace.` : "Ya tenían ese valor.");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filasTabla, escribirCampo, toast]);
 
   const onActiva = useCallback((id: string | null) => {
     if (!retenidaRef.current || retenidaRef.current === id) return;
@@ -379,8 +416,15 @@ export function Crm() {
           nuevas={nuevas}
           totalFilas={filasVista.length}
           onActiva={onActiva}
+          onDeshacer={onDeshacer}
           reinicio={`${tablaId}:${base.id}`}
-          pie={(
+          pie={marcadas.size > 0 ? (
+            <Masivo
+              n={marcadas.size} opciones={opciones}
+              onAplicar={(clave, valor) => aplicarAVarias(clave, valor, marcadas)}
+              onSoltar={() => setMarcadas(new Set())}
+            />
+          ) : (
             <span className="crm-anadir" title={`Cada agenda de Calendly aparece acá sola, en segundos.${AGENDAR_A_MANO ? "" : " No se cargan a mano."}`}>
               <span className={`crm-pulso${enVivo || !nube ? " crm-pulso--on" : ""}`} aria-hidden />
               Entran solas
@@ -441,4 +485,36 @@ function useAngosto(): boolean {
     return () => mq.removeEventListener("change", cambiar);
   }, []);
   return angosto;
+}
+
+/* Con filas elegidas, el botón de abajo cambia: se carga lo mismo en todas
+   (el setter marca «1° Mje Enviado» a las del día de una vez). */
+function Masivo({ n, opciones, onAplicar, onSoltar }: {
+  n: number;
+  opciones: Record<CampoOpcionesCrm, OpcionCrm[]>;
+  onAplicar: (clave: CampoOpcionesCrm, valor: string) => void;
+  onSoltar: () => void;
+}) {
+  const [abierto, setAbierto] = useState<{ clave: CampoOpcionesCrm; el: HTMLElement } | null>(null);
+  const campos: CampoOpcionesCrm[] = ["preCall", "estadoLlamada", "estadoPreCall"];
+  return (
+    <span className="crm-anadir crm-masivo">
+      <strong>{n} {n === 1 ? "elegida" : "elegidas"}</strong>
+      {campos.map((c) => (
+        <button key={c} type="button" className="crm-masivo__campo" onClick={(ev) => setAbierto({ clave: c, el: ev.currentTarget })}>
+          {CAMPO[c].titulo}<ChevronDown size={14} aria-hidden />
+        </button>
+      ))}
+      <button type="button" className="crm-masivo__soltar" aria-label="Soltar las elegidas" title="Soltar las elegidas" onClick={onSoltar}>
+        <X size={14} aria-hidden />
+      </button>
+      {abierto && (
+        <SelectorOpciones
+          ancla={abierto.el} opciones={opciones[abierto.clave]} valor="" ancho={220}
+          onElegir={(v) => { onAplicar(abierto.clave, v); setAbierto(null); }}
+          onCerrar={() => setAbierto(null)}
+        />
+      )}
+    </span>
+  );
 }

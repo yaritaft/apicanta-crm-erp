@@ -748,7 +748,8 @@ export const acciones = {
      «No vino». Así la asistencia del Dashboard no se carga dos veces. */
   editarLlamada(
     id: ID,
-    cambios: Partial<Pick<Sesion, "preCall" | "estadoPreCall" | "estadoLlamada" | "notas" | "grabacion">>,
+    /* `estado` sólo lo manda deshacer: devuelve la llamada a como estaba. */
+    cambios: Partial<Pick<Sesion, "preCall" | "estadoPreCall" | "estadoLlamada" | "notas" | "grabacion" | "estado">>,
     detalle: string,
   ) {
     const e = snapshot();
@@ -758,10 +759,11 @@ export const acciones = {
     for (const [k, v] of Object.entries(cambios)) {
       (limpio as Record<string, unknown>)[k] = typeof v === "string" && v.trim() === "" ? undefined : v;
     }
-    if (limpio.estadoLlamada) {
+    if (limpio.estadoLlamada && !("estado" in cambios)) {
       const op = opcionesDe(e.ajustes, "estadoLlamada").find((o) => o.nombre === limpio.estadoLlamada);
       if (op?.llamada && s.estado !== op.llamada) limpio.estado = op.llamada;
     }
+    if ("estado" in cambios && !cambios.estado) delete limpio.estado;
     const actualizada: Sesion = { ...s, ...limpio };
     const { lista, nuevo } = registrar(e, "sesion", id, `${s.tipo} — ${s.invitado}`, "actualizo", detalle);
     guardar({ ...e, sesiones: e.sesiones.map((x) => (x.id === id ? actualizada : x)), actividad: lista });

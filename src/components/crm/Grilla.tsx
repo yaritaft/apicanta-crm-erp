@@ -56,6 +56,8 @@ export interface PropsGrilla {
   onAncho: (clave: string, px: number) => void;
   onEncabezado: (clave: ClaveCampo, el: HTMLElement) => void;
   onMas: (el: HTMLElement) => void;
+  /* ⌘Z: deshace el último cambio (lo lleva la página, que sabe qué era). */
+  onDeshacer?: () => void;
   onGrupo: (clave: string) => void;
   onError: (mensaje: string) => void;
   /* Las que acaban de llegar de Calendly: se prenden un momento. */
@@ -220,9 +222,12 @@ export function Grilla(p: PropsGrilla) {
 
   function onKeyDown(ev: React.KeyboardEvent<HTMLDivElement>) {
     if (edicion) return;
-    const t = ev.target as HTMLElement;
-    if (t.tagName === "INPUT" || t.tagName === "TEXTAREA") return;
+    /* Sólo con el foco en la grilla misma: un botón del encabezado, un link
+       o un editor (que viven en un portal pero burbujean por React) manejan
+       sus propias teclas. */
+    if (ev.target !== ev.currentTarget) return;
     if (!activa) {
+      if ((ev.metaKey || ev.ctrlKey) && ev.key.toLowerCase() === "z" && !ev.shiftKey) { ev.preventDefault(); p.onDeshacer?.(); return; }
       if (["ArrowDown", "ArrowUp", "ArrowLeft", "ArrowRight", "Enter"].includes(ev.key)) {
         const primera = items[filasEnOrden[0]];
         if (primera?.tipo === "fila") { ev.preventDefault(); irA(primera.f.id, 0); }
@@ -237,6 +242,11 @@ export function Grilla(p: PropsGrilla) {
     if (mod && ev.key.toLowerCase() === "c") {
       ev.preventDefault();
       void navigator.clipboard?.writeText(textoDe(f, c.clave));
+      return;
+    }
+    if (mod && ev.key.toLowerCase() === "z" && !ev.shiftKey) {
+      ev.preventDefault();
+      p.onDeshacer?.();
       return;
     }
     if (mod) return;
@@ -271,7 +281,7 @@ export function Grilla(p: PropsGrilla) {
   }
 
   function onPaste(ev: React.ClipboardEvent<HTMLDivElement>) {
-    if (edicion || !activa) return;
+    if (edicion || !activa || ev.target !== ev.currentTarget) return;
     const f = filaDe(activa.id);
     const c = todas[activa.col];
     if (!f || !c || !editable(c)) return;

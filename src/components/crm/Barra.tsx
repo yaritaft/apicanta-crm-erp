@@ -7,7 +7,7 @@ import {
 } from "lucide-react";
 import { useToast } from "@/components/ui/Toast";
 import {
-  CAMPO, CAMPOS, PERIODOS, completa, nuevaCondicion, operadoresDe, sinTildes, valoresDe,
+  CAMPO, CAMPOS, PERIODOS, completa, nuevaCondicion, operadoresDe, sinTildes, tipoDeFiltro, valoresDe,
   type ClaveCampo, type Condicion, type FilaCrm, type Orden, type Pintor, type VistaCrm,
 } from "@/lib/crm";
 import type { CampoOpcionesCrm, OpcionCrm } from "@/lib/types";
@@ -84,8 +84,7 @@ export function BarraVista(p: PropsBarra) {
   useEffect(() => {
     if (!p.filtrarPor) return;
     const campo = p.filtrarPor;
-    const c = CAMPO[campo];
-    p.onCambiar({ filtros: [...p.filtros, nuevaCondicion({ campo, op: c?.tipo === "fecha" ? "periodo" : c?.tipo === "seleccion" || c?.tipo === "multiple" ? "alguno" : "contiene" })] });
+    p.onCambiar({ filtros: [...p.filtros, nuevaCondicion({ campo, op: operadoresDe(tipoDeFiltro(CAMPO[campo]))[0].valor })] });
     setAbierta("filtrar");
     p.onFiltrarUsado?.();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -386,7 +385,7 @@ function PopFiltrar({ ancla, onCerrar, filtros, conjuncion, filas, opciones, pin
       <div className="crm-filtrar__reglas">
         {visibles.map((c, i) => {
           const campo = CAMPO[c.campo];
-          const tipo = campo?.tipo ?? "texto";
+          const tipo = tipoDeFiltro(campo);
           const ops = operadoresDe(tipo);
           const conValores = c.op !== "vacio" && c.op !== "no-vacio";
           return (
@@ -401,10 +400,7 @@ function PopFiltrar({ ancla, onCerrar, filtros, conjuncion, filas, opciones, pin
               </span>
               <SelectorCampo
                 valor={c.campo}
-                onCambiar={(k) => {
-                  const t = CAMPO[k]?.tipo ?? "texto";
-                  cambiar(c.id, { campo: k, op: operadoresDe(t)[0].valor, valor: undefined });
-                }}
+                onCambiar={(k) => cambiar(c.id, { campo: k, op: operadoresDe(tipoDeFiltro(CAMPO[k]))[0].valor, valor: undefined })}
                 excluir={["id"]}
               />
               <select className="crm-select" value={c.op} aria-label="Condición" onChange={(ev) => cambiar(c.id, { op: ev.target.value as Condicion["op"] })}>
@@ -416,7 +412,7 @@ function PopFiltrar({ ancla, onCerrar, filtros, conjuncion, filas, opciones, pin
                     <option value="">Elegí…</option>
                     {PERIODOS.map((x) => <option key={x.valor} value={x.valor}>{x.texto}</option>)}
                   </select>
-                ) : tipo === "seleccion" || tipo === "multiple" || campo?.etiqueta ? (
+                ) : tipo === "seleccion" || tipo === "multiple" ? (
                   <ElegirValores
                     campo={c.campo} valor={Array.isArray(c.valor) ? c.valor : c.valor ? [c.valor] : []}
                     opciones={campo?.opciones ? opciones[campo.opciones].map((o) => o.nombre) : valoresDe(filas, c.campo)}

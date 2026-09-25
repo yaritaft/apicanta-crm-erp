@@ -2,7 +2,10 @@
 
 import React, { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { ChevronDown, ChevronUp, ExternalLink, Star, UserRound, X } from "lucide-react";
+import { ChevronDown, ChevronUp, ExternalLink, History, MessageSquare, Star, UserRound, X } from "lucide-react";
+import { ChatEquipo } from "@/components/ficha/ChatEquipo";
+import { useEstado } from "@/lib/store";
+import { fechaHora, relativo } from "@/lib/format";
 import {
   CAMPOS, fechaCrm, valorDe,
   type CampoCrm, type ClaveCampo, type FilaCrm, type Pintor,
@@ -33,6 +36,8 @@ export function Registro({ f, opciones, pintar, onGuardar, onCerrar, onFicha, an
   posicion?: string;
 }) {
   const caja = useRef<HTMLDivElement>(null);
+  const e = useEstado();
+  const [lado, setLado] = useState<"chat" | "actividad">("chat");
 
   useEffect(() => {
     const onKey = (ev: KeyboardEvent) => {
@@ -102,6 +107,7 @@ export function Registro({ f, opciones, pintar, onGuardar, onCerrar, onFicha, an
           </div>
         </header>
 
+        <div className="crm-registro__partes">
         <div className="crm-registro__cuerpo">
           {grupos.map((g) => (
             <section key={g.titulo} className="crm-registro__grupo">
@@ -130,6 +136,38 @@ export function Registro({ f, opciones, pintar, onGuardar, onCerrar, onFicha, an
               </dl>
             </section>
           )}
+        </div>
+
+        {/* A la derecha, como en Airtable: lo que habla el equipo de la
+            persona (el mismo chat de su ficha) y la historia de esta agenda. */}
+        <aside className="crm-registro__lado">
+          <div className="crm-registro__pestanias" role="tablist">
+            <button type="button" role="tab" aria-selected={lado === "chat"} className={lado === "chat" ? "crm-registro__pestania--on" : ""} onClick={() => setLado("chat")}>
+              <MessageSquare size={14} aria-hidden />Comentarios
+            </button>
+            <button type="button" role="tab" aria-selected={lado === "actividad"} className={lado === "actividad" ? "crm-registro__pestania--on" : ""} onClick={() => setLado("actividad")}>
+              <History size={14} aria-hidden />Actividad
+            </button>
+          </div>
+          {lado === "chat" ? (
+            persona
+              ? <ChatEquipo contactoId={persona} comentarios={(e.comentarios ?? []).filter((c) => c.contactoId === persona)} />
+              : <p className="crm-registro__vacio">Esta agenda no tiene una persona enlazada.</p>
+          ) : (
+            <ol className="crm-registro__historia">
+              {e.actividad.filter((a) => a.entidadId === f.id).map((a) => (
+                <li key={a.id}>
+                  <span>{a.detalle}</span>
+                  <span className="crm-registro__cuando" title={fechaHora(a.fecha)}>{a.actor} · {relativo(a.fecha)}</span>
+                </li>
+              ))}
+              <li>
+                <span>Agendó por Calendly{f.closer ? ` con ${f.closer}` : ""}.</span>
+                <span className="crm-registro__cuando" title={fechaHora(s.creadoEn)}>{relativo(s.creadoEn)}</span>
+              </li>
+            </ol>
+          )}
+        </aside>
         </div>
       </div>
     </div>,
