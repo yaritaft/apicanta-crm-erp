@@ -394,7 +394,7 @@ function Referidor() {
   const actual = e.ajustes.comisionReferidor ?? 0.1;
   return (
     <Card>
-      <CardHead titulo="Comisión del referidor" sub="Lo que cobra quien refiere una venta, sobre lo que entra. La del setter se pone en su fila de Equipo." />
+      <CardHead titulo="Comisión del referidor" sub="Lo que cobra quien refiere una venta, sobre lo que entra post pasarelas. La del setter se pone en Equipo y honorarios." />
       <div className="row" style={{ gap: 8, maxWidth: 220 }}>
         <Input
           aria-label="Comisión del referidor (%)" type="number" min={0} max={100} step={0.5}

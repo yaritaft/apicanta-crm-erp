@@ -176,11 +176,11 @@ export function FormularioVenta({ borrador, onCerrar, onGuardado }: {
             opciones={e.webinars.map((w) => ({ valor: w.id, texto: w.titulo }))} />
         </Field>
 
-        <Field label="Nombre del setter" ayuda="Si hubo setter: comisiona sobre lo que entra.">
+        <Field label="Nombre del setter" ayuda="Si hubo setter: comisiona sobre lo que entra post pasarelas.">
           <Select value={f.setterId} placeholder="Sin setter" onChange={(ev) => setF({ ...f, setterId: ev.target.value })}
             opciones={e.equipo.filter((x) => x.rol === "setter" && (x.activo || x.id === f.setterId)).map((x) => ({ valor: x.id, texto: x.nombre }))} />
         </Field>
-        <Field label="Nombre del referidor" ayuda="Si fue un referido: comisiona sobre lo que entra.">
+        <Field label="Nombre del referidor" ayuda="Si fue un referido: comisiona sobre lo que entra post pasarelas.">
           <Input value={f.referidorNombre} onChange={(ev) => setF({ ...f, referidorNombre: ev.target.value })} placeholder="Quién lo refirió" />
         </Field>
         <Field label="Número de teléfono" ayuda="Del referidor.">
