@@ -217,7 +217,7 @@ export default function FinanzasDetalle() {
               </Ayuda>
             </Card>
             <Card>
-              <CardHead titulo="Setters y referidores" sub="Como en la planilla de Angelo: un porcentaje de lo que entró, sin descontar el procesador." />
+              <CardHead titulo="Setters y referidores" sub="Un porcentaje de lo que entró post pasarelas, como todas las comisiones." />
               {setRef.porPersona.length === 0 ? (
                 <p className="t-sm t-subtle">Ninguna venta con setter o referidor cobró en {mes.etiqueta}.</p>
               ) : (
