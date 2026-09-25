@@ -16,6 +16,7 @@
    ================================================================== */
 
 import type { CanalOrigen, EstadoSesion, NivelIngles } from "./types";
+import { leerUtm } from "./utm-estandar";
 
 const API = "https://api.calendly.com";
 
@@ -148,8 +149,10 @@ export function utmDe(tracking: InvitadoCalendly["tracking"]): Record<string, st
   return Object.keys(utm).length ? utm : undefined;
 }
 
-/* `utm_source=Webinar` + `utm_medium=09-09` es el webinar del 9 de
-   septiembre. Si hay varios con ese día y mes (años distintos), el más
+/* De qué webinar es una agenda. En el estándar (lib/utm-estandar.ts),
+   utm_campaign=webinar_20260909 es el webinar de ese día. En el formato
+   viejo, `utm_source=Webinar` + `utm_medium=09-09` es el del 9 de
+   septiembre: si hay varios con ese día y mes (años distintos), el más
    cercano a la fecha de la agenda. */
 const FORMATO_DIA_AR = new Intl.DateTimeFormat("en-CA", {
   timeZone: "America/Argentina/Buenos_Aires", year: "numeric", month: "2-digit", day: "2-digit",
@@ -165,7 +168,13 @@ export function webinarDeUtm(
   webinars: { id: string; fecha: string }[],
   cuando: string,
 ): string | undefined {
-  if (!utm || !/webinar/i.test(utm.utm_source ?? "")) return undefined;
+  if (!utm) return undefined;
+  const l = leerUtm(utm);
+  if (l.formato === "estandar") {
+    if (l.funnel !== "webinar" || !l.fecha) return undefined;
+    return webinars.find((w) => diaArgentina(w.fecha ?? "") === l.fecha)?.id;
+  }
+  if (!/webinar/i.test(utm.utm_source ?? "")) return undefined;
   const m = (utm.utm_medium ?? utm.utm_content ?? "").match(/^(\d{1,2})[-/.](\d{1,2})$/);
   if (!m) return undefined;
   const dia = Number(m[1]), mes = Number(m[2]);

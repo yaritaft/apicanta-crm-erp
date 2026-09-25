@@ -1,14 +1,17 @@
 import { evaluarAgenda } from "./calificacion";
+import { EVENTOS, fechaUtm, leerUtm, MOMENTOS_EVENTO, NOMBRE_FUNNEL, textoUtm } from "./utm-estandar";
 
 /* ==================================================================
    Las agendas de Calendly de un webinar: cuáles son suyas y si se
    hicieron en el vivo o después.
 
-   Es del webinar la agenda que trae utm_source=Webinar y la fecha del
-   webinar ("23-09") en utm_medium (o en utm_content, como venían los
-   links viejos). Se hizo en el vivo o después según utm_content:
-   - EnVivo → en el vivo (el link que se muestra durante la transmisión);
-   - PostWebinar → después (el link del seguimiento);
+   Es del webinar la agenda que trae su UTM. En el estándar (lib/
+   utm-estandar.ts), utm_campaign=webinar_aaaammdd con la fecha entera;
+   en el formato viejo, utm_source=Webinar y la fecha ("23-09") en
+   utm_medium (o en utm_content, como venían los links de antes). Se hizo
+   en el vivo o después según utm_content:
+   - vivo (EnVivo en el viejo) → en el vivo, el link de la transmisión;
+   - replay o seguimiento (PostWebinar en el viejo) → después;
    - sin eso, por la hora: hasta que terminó la transmisión, en el vivo;
      después, después.
    Las canceladas se cuentan aparte, estén en el vivo o después.
@@ -21,7 +24,7 @@ import { evaluarAgenda } from "./calificacion";
    después" y "Canceladas" de la planilla) y la ficha del webinar.
    ================================================================== */
 
-export const CONTENIDO_VIVO = /^en[\s_-]?vivo$/i;
+export const CONTENIDO_VIVO = /^(en[\s_-]?)?vivo$/i;
 /* El link de después del webinar: utm_content=PostWebinar (y variantes). */
 export const CONTENIDO_DESPUES = /^(post[\s_-]?webinar|post|posterior|despues|después|replay|grabaci[oó]n|seguimiento)$/i;
 
@@ -57,7 +60,9 @@ export function atribucionDe(extra: Record<string, unknown> | null | undefined):
    El badge de cada agenda: "Webinar 23-09 · EnVivo", "Webinar 23-09 · link
    viejo", "VSL · IG"… Sale de los UTMs y, si no hay, del tipo de evento. */
 
-export type LinkWebinar = "EnVivo" | "PostWebinar" | "viejo";
+/* EnVivo y PostWebinar son los links viejos; vivo, replay y seguimiento, los
+   del estándar. "viejo" es un link del webinar que no dice cuál es. */
+export type LinkWebinar = "EnVivo" | "PostWebinar" | "viejo" | "vivo" | "replay" | "seguimiento";
 
 const CANAL: Record<string, string> = { webinar: "Webinar", vsl: "VSL", setter: "Setter", otro: "Otro" };
 
@@ -66,6 +71,20 @@ export function embudoDe(s: { canal?: string | null; utm?: Record<string, string
 } {
   const u = s.utm ?? {};
   const utm = Object.entries(u).filter(([, v]) => v).map(([k, v]) => `${k.replace(/^utm_/, "")}=${v}`).join(" · ");
+  /* El estándar: el funnel sale del prefijo de la campaña. En los eventos
+     (webinar, clase cero, Q&A), la fecha y el link (vivo, replay,
+     seguimiento) van aparte, como en el viejo. */
+  const l = leerUtm(u);
+  if (l.formato === "estandar" && l.funnel) {
+    if (EVENTOS.includes(l.funnel)) {
+      const dia = l.fecha ? `${l.fecha.slice(8, 10)}-${l.fecha.slice(5, 7)}` : "";
+      const link = (MOMENTOS_EVENTO as readonly string[]).includes(l.contenido ?? "") ? l.contenido as LinkWebinar : undefined;
+      return { texto: `${NOMBRE_FUNNEL[l.funnel]}${dia ? ` ${dia}` : ""}`, link, utm };
+    }
+    return { texto: textoUtm(l) ?? NOMBRE_FUNNEL[l.funnel], utm };
+  }
+  /* direct / none: llegó sola, sin un link nuestro. */
+  if (l.formato === "sin-utm" && u.utm_source === "direct") return { texto: CANAL[s.canal ?? ""] ? `${CANAL[s.canal ?? ""]} · directo` : "Directo", utm };
   if (/webinar/i.test(u.utm_source ?? "")) {
     const fecha = normalFecha(u.utm_medium) ?? normalFecha(u.utm_content) ?? normalFecha(u.utm_campaign);
     const c = (u.utm_content ?? "").trim();
@@ -127,8 +146,15 @@ const normalFecha = (s: string | undefined) => {
   return m ? `${m[1].padStart(2, "0")}-${m[2].padStart(2, "0")}` : null;
 };
 
-export function esDelWebinar(s: SesionCalendly, clave: string): boolean {
+/* `clave` es el día y mes del webinar ("24-09"), para el formato viejo;
+   `dia`, la fecha entera (aaaa-mm-dd), para el estándar, que la trae. */
+export function esDelWebinar(s: SesionCalendly, clave: string, dia?: string): boolean {
   const u = s.utm ?? {};
+  const l = leerUtm(u);
+  if (l.formato === "estandar") {
+    if (l.funnel !== "webinar" || !l.fecha) return false;
+    return dia ? l.fecha === dia : `${l.fecha.slice(8, 10)}-${l.fecha.slice(5, 7)}` === clave;
+  }
   if (!/webinar/i.test(u.utm_source ?? "")) return false;
   return [u.utm_medium, u.utm_content, u.utm_campaign].some((x) => normalFecha(x) === clave);
 }
@@ -139,12 +165,14 @@ export function resumirAgendas(
   vivo: { inicio?: string | null; fin?: string | null } = {},
 ): ResumenAgendas {
   const clave = claveDeFecha(webinar.fecha);
+  const f = fechaUtm(webinar.fecha);
+  const dia = `${f.slice(0, 4)}-${f.slice(4, 6)}-${f.slice(6, 8)}`;
   const inicio = vivo.inicio ?? webinar.fecha;
   /* Si el vivo no terminó (o no se siguió), el fin es el que dice la ficha. */
   const fin = vivo.fin ?? new Date(+new Date(inicio) + (webinar.duracionMin || 180) * 60_000).toISOString();
 
   const agendas: AgendaDelWebinar[] = sesiones
-    .filter((s) => esDelWebinar(s, clave))
+    .filter((s) => esDelWebinar(s, clave, dia))
     .map((s) => {
       const contenido = (s.utm?.utm_content ?? "").trim();
       const a = atribucionDe(s.extra);

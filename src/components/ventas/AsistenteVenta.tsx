@@ -15,7 +15,7 @@ import { medioDeMovimiento, parecido, procesadorDeMovimiento } from "@/lib/conci
 import { descartarComprobante } from "@/lib/comprobantes";
 import type { Cuota, EstadoApp, MiembroEquipo, Movimiento, Venta } from "@/lib/types";
 import { PAISES, planDePago, webinarDeProyecto } from "@/lib/angelo";
-import { origenDeRegla, origenDeUtm, textoUtm } from "@/lib/utms";
+import { origenDeUtm, textoUtm } from "@/lib/utms";
 import { useUsuarioActual } from "@/lib/usuario";
 
 /* ==================================================================
@@ -227,10 +227,9 @@ export function AsistenteVenta({ onCerrar, onListo, desdeMovimiento, cliente }: 
        lo que traía el lead (su webinar). El proyecto WEB-día/mes/año ya
        dice de qué webinar vino. */
     const o = origenDeUtm(e, contactoId, b.fecha);
-    const de = o ? origenDeRegla(o.regla) : {};
-    const embudoId = de.embudoId ?? (b.embudoId || undefined);
-    const proyecto = de.proyecto ?? (b.proyecto || undefined);
-    const webinarId = de.webinarId ?? (b.webinarId || webinarDeProyecto(proyecto, e.webinars, b.fecha)?.id);
+    const embudoId = o?.embudoId ?? (b.embudoId || undefined);
+    const proyecto = o?.proyecto ?? (b.proyecto || undefined);
+    const webinarId = o?.webinarId ?? (b.webinarId || webinarDeProyecto(proyecto, e.webinars, b.fecha)?.id);
     const venta: Venta = {
       id: ventaId,
       contactoId,
@@ -249,8 +248,10 @@ export function AsistenteVenta({ onCerrar, onListo, desdeMovimiento, cliente }: 
       creadoEn: new Date().toISOString(),
       extra: {},
       proyecto,
-      setterId: b.setterId || undefined,
-      referidorNombre: b.esReferido && b.referidorNombre.trim() ? b.referidorNombre.trim() : undefined,
+      /* Si el closer no los eligió, los que dice el link (setter_{nombre},
+         el referidor en utm_content). */
+      setterId: b.setterId || o?.setterId || undefined,
+      referidorNombre: b.esReferido && b.referidorNombre.trim() ? b.referidorNombre.trim() : o?.referidorNombre,
       referidorTelefono: b.esReferido && b.referidorTelefono.trim() ? b.referidorTelefono.trim() : undefined,
     };
 
@@ -937,15 +938,15 @@ function PasoResumen({ b, set, e, M, sinComision, totalCobrado }: {
   const producto = e.productos.find((p) => p.id === b.productoId);
   const closer = e.equipo.find((x) => x.id === b.closerId);
   const director = e.equipo.find((x) => x.id === b.directorId);
-  /* El origen, como va a quedar: el de la UTM con regla o, si no hay, lo
-     que traía el lead. */
+  /* El origen, como va a quedar: el de la UTM de quien compró (el estándar
+     o una regla de Ajustes) o, si no dice nada, lo que traía el lead. */
   const o = origenDeUtm(e, b.contactoId, b.fecha);
-  const de = o ? origenDeRegla(o.regla) : {};
-  const embudo = e.embudos.find((x) => x.id === (de.embudoId ?? b.embudoId));
-  const proyecto = de.proyecto ?? b.proyecto;
-  const webinar = e.webinars.find((x) => x.id === (de.webinarId ?? b.webinarId))
+  const embudo = e.embudos.find((x) => x.id === (o?.embudoId ?? b.embudoId));
+  const proyecto = o?.proyecto ?? b.proyecto;
+  const webinar = e.webinars.find((x) => x.id === (o?.webinarId ?? b.webinarId))
     ?? webinarDeProyecto(proyecto, e.webinars, b.fecha);
-  const setter = e.equipo.find((x) => x.id === b.setterId);
+  const setter = e.equipo.find((x) => x.id === (b.setterId || o?.setterId));
+  const referidor = b.esReferido && b.referidorNombre.trim() ? b.referidorNombre.trim() : o?.referidorNombre;
   const conciliados = b.cuotas.flatMap((c) => c.cobros).filter((p) => p.movimientoId).length;
 
   return (
@@ -965,11 +966,11 @@ function PasoResumen({ b, set, e, M, sinComision, totalCobrado }: {
             : <span className="t-subtle">Sin origen todavía</span>}
           <span className="t-sm t-subtle" style={{ display: "block" }}>
             {o ? `De la UTM ${textoUtm(o.utm)}.`
-              : "Quien compró no llegó con una UTM que tenga regla: cuando se asigne en Ajustes → UTMs, se completa solo."}
+              : "Quien compró no llegó con una UTM del estándar ni con una que tenga regla: si se asigna en Ajustes → UTMs, se completa solo."}
           </span>
         </dd>
         {setter && <><dt>Setter</dt><dd>{setter.nombre}</dd></>}
-        {b.esReferido && b.referidorNombre.trim() && <><dt>Referidor</dt><dd>{b.referidorNombre}{b.referidorTelefono ? ` · ${b.referidorTelefono}` : ""}</dd></>}
+        {referidor && <><dt>Referidor</dt><dd>{referidor}{b.esReferido && b.referidorTelefono ? ` · ${b.referidorTelefono}` : ""}</dd></>}
         <dt>Plan de pago</dt><dd>{planDePago({ estado: "activa" } as Venta, b.cuotas.map((c) => ({ esReserva: c.esReserva }) as Cuota))}{b.reserva > 0 ? ` + reserva de ${M(b.reserva)}` : ""}</dd>
         <dt>Fecha</dt><dd>{fechaLarga(b.fecha)}</dd>
       </dl>

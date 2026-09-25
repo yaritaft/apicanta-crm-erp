@@ -102,7 +102,8 @@ export async function ingresarInvitado(
 
   const ahora = new Date().toISOString();
   const qa = respuestasDe(inv);
-  const utm = utmDe(inv.tracking);
+  /* Sin UTMs, lo que dice el estándar: llegó sola, sin un link nuestro. */
+  const utm = utmDe(inv.tracking) ?? { utm_source: "direct", utm_medium: "none" };
   const canal = canalDeEvento(ev.name);
   const anfitrion = anfitrionDe(ev);
   const webinarId = webinarDeUtm(utm, await webinarsDe(ctx), inv.created_at);

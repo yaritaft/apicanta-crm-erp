@@ -76,12 +76,14 @@ const exacto = (s: string) => s.replace(/[\\%_]/g, (c) => `\\${c}`);
 const inscripcionesDe = (c: Pick<Contacto, "extra"> | null | undefined): InscripcionMeta[] =>
   Array.isArray(c?.extra?.formulariosMeta) ? (c!.extra.formulariosMeta as InscripcionMeta[]) : [];
 
-/* Lo que Meta dice del origen, con los nombres de UTM de siempre. */
+/* Lo que Meta dice del origen, como la fila "Pauta Meta" del estándar de
+   UTMs: meta / paid / la campaña / el conjunto / el anuncio. */
 function utmDeMeta(l: LeadMeta): Record<string, string> {
   return Object.fromEntries(Object.entries({
-    utm_source: l.plataforma === "ig" ? "instagram" : "facebook",
-    utm_medium: "formulario",
+    utm_source: "meta",
+    utm_medium: "paid",
     utm_campaign: l.campania,
+    utm_term: l.conjunto,
     utm_content: l.anuncio,
   }).filter(([, v]) => v)) as Record<string, string>;
 }
@@ -91,6 +93,9 @@ function utmDeMeta(l: LeadMeta): Record<string, string> {
    el más cercano a cuándo se anotó). */
 function webinarDeNombres(nombres: (string | undefined)[], webinars: { id: string; fecha: string }[], cuando: string): string | undefined {
   for (const n of nombres) {
+    /* El estándar: la campaña se llama webinar_aaaammdd. */
+    const estandar = webinarDeUtm({ utm_campaign: (n ?? "").trim().toLowerCase() }, webinars, cuando);
+    if (estandar) return estandar;
     if (!n || !/webinar|lanzamiento|\bweb\b/i.test(n)) continue;
     const m = n.match(/(\d{1,2})[/.-](\d{1,2})(?!\d)/);
     if (!m) continue;
