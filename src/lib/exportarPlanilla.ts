@@ -9,7 +9,9 @@ import { comisionReferidorDePago, comisionSetterDePago } from "./finanzas";
    una fila por cobro, el "Valor total de la venta" sólo en la primera
    fila de cada venta (como la cargaba la planilla) y los "¿Tuvo
    setter?" / "¿Es referido?" en SI. Una venta sin cobros va igual, con
-   el monto en cero, para que no se pierda.
+   el monto en cero, para que no se pierda. La comisión del setter y la
+   del referidor van post pasarelas, que es como se pagan (la planilla
+   las sacaba del bruto).
 
    Sirve para seguir usando los reportes de la planilla, o para volver
    a pegarla en Google Sheets.
@@ -64,8 +66,8 @@ export function filasParaPlanilla(e: EstadoApp): string[][] {
       const caracteristica = p?.caracteristica
         ?? (cuota ? (cuota.esReserva ? "Reserva" : `Cuota #${cuota.numero}`) : v.estado === "reembolsada" ? "Reembolso" : "");
       const tipoVenta = p?.tipoVenta ?? (k === 0 ? (cuotas.every((c) => c.esReserva) && cuotas.length ? "Solo Reserva" : "Venta Nueva") : "Cuota");
-      const comSetter = p ? comisionSetterDePago(e, v, monto) : 0;
-      const comReferidor = p ? comisionReferidorDePago(e, v, monto) : 0;
+      const comSetter = p ? comisionSetterDePago(e, v, p) : 0;
+      const comReferidor = p ? comisionReferidorDePago(e, v, p) : 0;
       const cuando = p?.fecha ?? v.fecha;
       filas.push({
         orden: `${cuando}|${v.id}|${k}`,

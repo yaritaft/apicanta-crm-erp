@@ -198,12 +198,25 @@ cuotas y cobros, que es lo que permite los vencimientos y la mora.
 
 ## De dónde viene cada venta: las UTMs
 
-El origen de una venta (Estrategia utilizada, Proyecto y webinar) no lo elige el closer: sale de los UTMs
-con los que llegó quien compró —sus agendas de Calendly, la más reciente primero, y su primer contacto—.
-En **Ajustes → UTMs** cada UTM se asigna a una estrategia, un proyecto y un webinar: la del webinar del
-23/09 es `utm_source=Webinar` + `utm_medium=23-09`. La pantalla lista las UTMs que llegaron sin asignar,
-trae armada la sugerencia para las de webinar y completa de una vez el origen de las ventas que no lo
-tenían, sin pisar lo que alguien eligió a mano. Las reglas están en `src/lib/utms.ts`.
+Los links con UTMs siguen el **estándar de UTMs** de Yari (24/09/2026), que está en `src/lib/utm-estandar.ts`:
+todo en minúscula, sin tildes ni espacios; `_` separa campos y `-` separa palabras; fechas `aaaammdd`; y
+`utm_campaign` arranca con el funnel (`vsl`, `vsl-yt`, `webinar`, `clase0`, `qa`, `setter`, `referido`). Cada vía de
+agenda tiene una sola combinación: por ejemplo, el replay de un webinar es
+`utm_source=email&utm_medium=email&utm_campaign=webinar_20260924&utm_content=replay`.
+
+En **Ajustes → UTMs** está el **creador de UTMs**: se elige el caso (pauta de Meta a una VSL, VSL orgánica, VSL de
+YouTube, webinar, clase cero, Q&A, setter o referido), se completa lo que cambia y sale el link listo para copiar
+(en los eventos, los tres: vivo, replay y seguimiento), con cómo lo va a leer la app.
+
+El origen de una venta no lo elige el closer: sale de los UTMs de quien compró, los de sus agendas de Calendly (last
+touch, la más reciente primero) y los de su primer contacto (first touch). Del estándar sale casi todo solo: la
+estrategia (del funnel: `vsl_martin` es VSL Martin), el webinar y su proyecto (de la fecha), el setter (de
+`setter_{nombre}`) y el referidor (de `utm_content`). Clase cero y Q&A no tienen una estrategia de la planilla: se
+eligen en la misma pantalla. Para los links que no siguen el estándar hay reglas propias, que mandan (`*` al final es
+«empieza con»). Los links viejos del webinar (`utm_source=Webinar` + `utm_medium=23-09`) se siguen leyendo.
+
+Una agenda sin UTMs queda con `source=direct` y `medium=none`: llegó sola, sin un link nuestro. Las reglas están en
+`src/lib/utms.ts`.
 
 ## Cobros en pesos y la Financiera
 

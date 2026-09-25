@@ -389,7 +389,7 @@ export interface Ajustes {
   tourVisto: boolean;
   /* Los "Proyectos" de la planilla de Angelo: MENT, DOWN, WEB-13/04/26… */
   proyectos: string[];
-  /* Lo que cobra quien refiere una venta, sobre lo que entra (0,1 = 10%). */
+  /* Lo que cobra quien refiere una venta, sobre lo que entra post pasarelas (0,1 = 10%). */
   comisionReferidor: number;
   /* De qué estrategia, proyecto y webinar es cada UTM. La venta toma su
      origen de acá, con los UTMs de quien compró. */

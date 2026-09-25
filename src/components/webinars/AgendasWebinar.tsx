@@ -8,6 +8,7 @@ import { num } from "@/lib/format";
 import { acciones } from "@/lib/store";
 import { useUsuarioActual } from "@/lib/usuario";
 import { claveDeFecha, type AgendaDelWebinar } from "@/lib/agendas-webinar";
+import { fechaUtm } from "@/lib/utm-estandar";
 import type { Webinar } from "@/lib/types";
 import { diaYHora } from "./fechas";
 import { atribuirAgenda, useAgendasWebinar } from "./useVivo";
@@ -46,7 +47,7 @@ export function AgendasWebinar({ w, className }: { w: Webinar; className?: strin
     <Card className={className}>
       <CardHead
         titulo="Agendas de Calendly"
-        sub={`Las que llegan con los UTMs de este webinar (utm_medium=${clave}). Completan solas las llamadas de la planilla.`}
+        sub={`Las que llegan con los UTMs de este webinar (utm_campaign=webinar_${fechaUtm(w.fecha)}; los links de antes, utm_medium=${clave}). Completan solas las llamadas de la planilla.`}
       />
       {r.estado === "cargando" && <div className="skeleton" style={{ height: 120 }} aria-busy="true" aria-label="Trayendo las agendas" />}
       {r.estado === "error" && <p className="t-sm t-muted">{r.error}</p>}

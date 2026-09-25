@@ -1,4 +1,4 @@
-import type { EstadoApp, Gasto, Venta } from "./types";
+import type { EstadoApp, Gasto, Pago, Venta } from "./types";
 import type { RangoMes } from "./metricas";
 
 /* ==================================================================
@@ -116,24 +116,26 @@ export function totalComisiones(cs: ComisionVenta[]) {
 }
 
 /* ---------- Setter y referidor ----------
-   Como en la planilla de Angelo: un porcentaje de lo que entra (bruto, sin
-   descontar el procesador). El del setter es el de su fila de Equipo; el
-   del referidor, el de Ajustes → Ventas. Si la venta la cerró Yari no
-   comisiona nadie. Es informativo: lo que se les paga entra al P&L como
-   gasto (Setters, Referidores), igual que en la planilla, así no se cuenta
-   dos veces. */
+   Un porcentaje de lo que entra post pasarelas (descontado el procesador),
+   como todas las comisiones: la planilla de Angelo lo hacía sobre el bruto.
+   El del setter es el de su fila de Equipo; el del referidor, el de
+   Ajustes → Ventas. Si la venta la cerró Yari no comisiona nadie. Es
+   informativo: lo que se les paga entra al P&L como gasto (Setters,
+   Referidores), igual que en la planilla, así no se cuenta dos veces. */
 
-export function comisionSetterDePago(e: EstadoApp, venta: Venta | undefined, monto: number): number {
+const netoDe = (p: Pago) => p.monto - p.feeMonto;
+
+export function comisionSetterDePago(e: EstadoApp, venta: Venta | undefined, p: Pago): number {
   if (!venta?.setterId) return 0;
   if (e.equipo.find((x) => x.id === venta.closerId)?.sinComision) return 0;
   const setter = e.equipo.find((x) => x.id === venta.setterId);
-  return setter ? Math.round(monto * setter.comisionRate * 100) / 100 : 0;
+  return setter ? Math.round(netoDe(p) * setter.comisionRate * 100) / 100 : 0;
 }
 
-export function comisionReferidorDePago(e: EstadoApp, venta: Venta | undefined, monto: number): number {
+export function comisionReferidorDePago(e: EstadoApp, venta: Venta | undefined, p: Pago): number {
   if (!venta?.referidorNombre?.trim()) return 0;
   if (e.equipo.find((x) => x.id === venta.closerId)?.sinComision) return 0;
-  return Math.round(monto * (e.ajustes.comisionReferidor ?? 0) * 100) / 100;
+  return Math.round(netoDe(p) * (e.ajustes.comisionReferidor ?? 0) * 100) / 100;
 }
 
 /** Lo que les toca a setters y referidores por lo que entró en el período. */
@@ -145,8 +147,8 @@ export function comisionesSetterYReferidor(e: EstadoApp, m: RangoMes) {
   for (const p of pagosDelMes(e, m)) {
     const cuota = cuotaDe.get(p.cuotaId);
     const venta = cuota ? ventaDe.get(cuota.ventaId) : undefined;
-    const cs = comisionSetterDePago(e, venta, p.monto);
-    const cr = comisionReferidorDePago(e, venta, p.monto);
+    const cs = comisionSetterDePago(e, venta, p);
+    const cr = comisionReferidorDePago(e, venta, p);
     setter += cs; referidor += cr;
     if (cs) {
       const nombre = e.equipo.find((x) => x.id === venta?.setterId)?.nombre ?? "Setter";
