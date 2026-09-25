@@ -179,6 +179,15 @@ export async function ingresarInvitado(
   if (ya.error) throw new Error(`sesiones: ${ya.error.message}`);
   const antes = ya.data?.[0] as Pick<Sesion, "estado" | "titulo" | "tipo" | "notas"> | undefined;
 
+  /* Una reprogramación sigue la historia de la agenda de antes: lo que el
+     closer ya había anotado pasa a la nueva, que es la que muestra el CRM
+     (la vieja queda cancelada y no se ve). */
+  let notasDeAntes: string | undefined;
+  if (!antes && inv.old_invitee) {
+    const vieja = await db.from("sesiones").select("notas").eq("id", idSesionCalendly(inv.old_invitee)).limit(1);
+    notasDeAntes = (vieja.data?.[0] as Pick<Sesion, "notas"> | undefined)?.notas || undefined;
+  }
+
   const estado = estadoDe(inv) ?? antes?.estado ?? "agendada";
   const minutos = Math.max(1, Math.round((+new Date(ev.end_time) - +new Date(ev.start_time)) / 60000));
 
@@ -186,7 +195,7 @@ export async function ingresarInvitado(
     id: sesionId,
     titulo: antes?.titulo || ev.name,
     tipo: antes?.tipo || ev.name,
-    notas: antes?.notas,
+    notas: antes ? antes.notas : notasDeAntes,
     leadId, contactoId: contacto.id,
     invitado: inv.name, email: inv.email,
     inicia: ev.start_time, duracionMin: minutos,

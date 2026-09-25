@@ -5,6 +5,7 @@ import type {
 } from "./types";
 import type { EtapaServicio } from "./types";
 import { inicioSemana, mesClave } from "./format";
+import { fechaUtm } from "./utm-estandar";
 
 /* PRNG determinístico: los datos de ejemplo son siempre los mismos. */
 function rng(semilla: number) {
@@ -897,13 +898,17 @@ function agendasDeEjemplo(leads: Lead[], webinars: Webinar[]): Sesion[] {
   const planes: Plan[] = [];
   const [ultimo, anterior] = finalizados;
   const offset = (iso: string) => (new Date(iso).getTime() - ahora) / 86400000;
+  /* El último webinar ya con el estándar de UTMs (lib/utm-estandar.ts):
+     utm_campaign=webinar_aaaammdd y utm_content vivo, replay o seguimiento.
+     El anterior, con los links viejos (Webinar + 23-09 + EnVivo). */
   if (ultimo) {
     const d = offset(ultimo.fecha);
+    const campania = `webinar_${fechaUtm(ultimo.fecha)}`;
     for (let i = 0; i < 46; i++) {
       const vivo = i < 30;
       planes.push({
         tipo: "Llamada de Asesoramiento - Webinar - Team", canal: "webinar",
-        utm: { utm_source: "Webinar", utm_medium: diaMes(new Date(ultimo.fecha)), utm_content: vivo ? "EnVivo" : "PostWebinar" },
+        utm: { utm_source: vivo || i % 2 ? "email" : "whatsapp", utm_medium: "email", utm_campaign: campania, utm_content: vivo ? "vivo" : i % 3 ? "seguimiento" : "replay" },
         desde: vivo ? d : d + 1, hasta: vivo ? d + 0.1 : -0.5,
       });
     }
@@ -921,12 +926,14 @@ function agendasDeEjemplo(leads: Lead[], webinars: Webinar[]): Sesion[] {
   for (let i = 0; i < 9; i++) {
     planes.push({
       tipo: "Llamada de Asesoramiento - VSL - Team", canal: "vsl",
-      utm: i % 3 === 0 ? { utm_source: "YT", utm_medium: "Bio" } : { utm_source: "Landing-Organic", utm_medium: elegir(["IG", "YT"]) },
+      utm: i % 3 === 0
+        ? { utm_source: "youtube", utm_medium: "organic", utm_campaign: "vsl-yt", utm_content: elegir(["como-conseguir-trabajo-remoto", "entrevistas-usa"]) }
+        : { utm_source: "instagram", utm_medium: "organic", utm_campaign: "vsl_organica", utm_content: elegir(["bio", "historia", "post"]) },
       desde: -8, hasta: -0.2,
     });
   }
   for (let i = 0; i < 7; i++) {
-    planes.push({ tipo: "Llamada de Asesoramiento - Setter", canal: "setter", utm: { utm_source: "setter-ia", utm_medium: "IG" }, desde: -7, hasta: -0.2 });
+    planes.push({ tipo: "Llamada de Asesoramiento - Setter", canal: "setter", utm: { utm_source: "setter", utm_medium: "outbound", utm_campaign: "setter_daniel", utm_content: elegir(["dm", "comentario"]) }, desde: -7, hasta: -0.2 });
   }
   for (let i = 0; i < 6; i++) {
     planes.push({ tipo: "Llamada de Auditoría", canal: "otro", utm: { utm_source: "Resell" }, desde: -12, hasta: -0.5 });

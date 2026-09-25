@@ -15,7 +15,7 @@ lo que se muestra se calcula solo.
 | **Dashboard & KPIs** | Todas las métricas del negocio en una tabla maestra, de la publicidad (TOFU) a la plata que queda: día por día o mes por mes con el total al final, comparando contra el período anterior y filtrando por embudo o por webinar |
 | **Metas** | Poner objetivos del mes y verlos avanzar solos con los datos reales |
 | **Leads** | Cargar, buscar, filtrar, importar por CSV, exportar, y convertir en alumno |
-| **Pipeline** | Tablero kanban: arrastrar leads entre etapas (también con el teclado) |
+| **CRM** | Las agendas de Calendly como en el Airtable de ventas (Booking Calls y Agendas Resells): cada agenda entra sola, en vivo, con lo que contestó en el formulario; el equipo carga el Pre-Call, cómo salió la llamada, las notas y la grabación en la celda misma. Vistas por closer y por día, del setter y de cada lanzamiento |
 | **Agenda** | Sesiones por día, por período (hoy, esta semana, la semana pasada o un rango), filtradas por estado, tipo, anfitrión y canal, de a páginas. Se marca si la persona vino o no; la asistencia se mide en Dashboard & KPIs |
 | **Webinars** | Registrados, asistencia, leads que trajo, conversión, ingresos y retorno |
 | **Marketing** | Campañas de Meta con costo por lead, costo por alumno, CTR, CPC, CPM y ROAS |
@@ -32,7 +32,11 @@ lo que se muestra se calcula solo.
 
 No hay nada cableado en el código que el usuario no pueda cambiar desde **Ajustes**:
 
-- **Etapas del pipeline** — nombre, color, probabilidad de cierre, orden, cuál es «ganada» y cuál «perdida».
+- **Etapas de los leads** — nombre, color, probabilidad de cierre, orden, cuál es «ganada» y cuál «perdida».
+  La etapa de cada lead se cambia desde su ficha.
+- **CRM** — las opciones de Pre-Call, Estado de Llamada y Estado Pre-Call (nombre, color, orden y qué dice
+  de la llamada), desde el encabezado de cada columna; qué tipos de evento de Calendly entran en cada tabla,
+  desde el engranaje de la barra de vistas.
 - **Ventas** — servicios (precio de lista y tipo), cuentas recaudadoras (con su comisión real), estrategias
   (cuál es el embudo de webinar), proyectos y el porcentaje del referidor. Los nombres son los de la planilla
   de Angelo.
@@ -115,10 +119,12 @@ src/
 ├── components/
 │   ├── ui/                  # Button, Input, Badge, Card, StatCard, DataTable, Modal, Drawer, Toast…
 │   ├── charts/              # área, barras, embudo y dona en SVG puro, sin dependencias
+│   ├── crm/                 # la grilla tipo Airtable, sus vistas, filtros y el registro abierto
 │   └── shell/               # sidebar, barra superior, paleta ⌘K, guía, crear rápido
 └── lib/
     ├── types.ts             # el modelo de dominio completo
     ├── store.ts             # el motor de datos (y el único punto a cambiar por Supabase)
+    ├── crm.ts               # las columnas del CRM, cómo se arma cada fila, vistas y filtros
     ├── metricas.ts          # todos los cálculos del negocio, en un solo lugar
     ├── finanzas.ts          # el P&L, comisiones y mora, como los mide Yari
     ├── conciliacion.ts      # el motor que propone a qué cuota va cada cobro
@@ -195,6 +201,39 @@ cuotas y cobros, que es lo que permite los vencimientos y la mora.
 - La comisión del procesador es la real: la de la pasarela si el cobro se concilia; si no, la de la cuenta,
   que se corrige a mano en Finanzas → Detalle → Procesadores.
 - Antes de usarlo contra Supabase hay que correr `supabase/modelo-angelo.sql` (sólo agrega columnas).
+
+## El CRM (Booking Calls)
+
+Reemplaza al Pipeline: una planilla como la de Airtable con **una fila por agenda de Calendly** (una llamada de
+venta, no una persona: si alguien agenda dos veces son dos filas). Las agendas entran solas: el webhook de Calendly
+las escribe en la base y Realtime las trae a la pantalla en segundos, sin recargar, con la fila resaltada un momento.
+Hay dos tablas, como en el Airtable: **Booking Calls** (las llamadas de asesoramiento: webinar, VSL, setter) y
+**Agendas Resells** (las de auditoría). Qué tipo de evento va a cada una se elige en el engranaje.
+
+**Las columnas que se llenan solas** llevan un rayo (⚡) en el encabezado: Nombre Completo, Fecha de llamada,
+Closer (el anfitrión en Calendly), WhatsApp, Email, UTM Source, Medium, Campaign y Content, y lo que contestó en el
+formulario — Años de trabajo, Nivel de inglés, Lenguajes, Capacidad de Inversión (y, ocultas, Formación, Gana por
+mes, Instagram, Agendó el y Tipo de llamada). Se pintan por lo que dicen: verde oscuro lo mejor, rosa lo que no
+alcanza. Funnel (del estándar de UTMs o del tipo de evento), Mes, Record ID y Agenda calificada son fórmulas.
+
+**Las que carga el equipo** se editan en la celda, como en Airtable (clic o Enter para abrir, escribir busca la
+opción, Supr la vacía, flechas y Tab para moverse, Espacio abre el registro entero): **Pre-Call**, **Estado de
+Llamada**, **Notas de llamada**, **Grabación** y **Estado Pre-Call**. A la base va sólo lo que cambió, así no se
+pisa con el webhook de Calendly.
+
+- El Estado de Llamada también dice si la llamada se hizo: «Compra Full» es lo mismo que marcar «Se hizo» en la
+  Agenda, e «Inasistió», «No vino». Cada opción dice qué marca (se edita con sus opciones).
+- Mientras nadie lo cargue, se pone solo: **Inasistió** si la llamada quedó como que no vino, **Canceló (auto)** si
+  canceló y no volvió a agendar, y **2da Agenda (auto)** si la persona ya había agendado antes. Una agenda
+  reprogramada no es otra fila: la reemplaza la nueva.
+- **Vistas**: Todas; cada closer con Ayer, Hoy, Semana, Mes y Todas (por el día de la llamada, en hora de
+  Argentina); el setter (sus agendas, Sin Respuesta, Reagendar y No asistió); y un **Lanzamiento** por webinar,
+  clase cero o Q&A que trajo agendas. Ocultar campos, filtrar, agrupar, ordenar, colorear filas y el alto de las
+  filas funcionan como en Airtable; lo que cada uno cambia de una vista, y las vistas que se crea, quedan en su
+  navegador. Tabla, vista y registro abierto van en la URL: el link lleva a lo mismo.
+
+Las reglas están en `src/lib/crm.ts` y la pantalla en `src/components/crm/`. Antes de usarlo contra Supabase hay
+que correr `supabase/crm.sql` (cuatro columnas en `sesiones` y la configuración en `ajustes.crm`).
 
 ## De dónde viene cada venta: las UTMs
 

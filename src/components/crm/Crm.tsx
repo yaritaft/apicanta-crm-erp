@@ -35,11 +35,13 @@ export function Crm() {
   const router = useRouter();
   const params = useSearchParams();
 
-  /* ---------- Tabla y vista: en la URL, así el link lleva a lo mismo ---------- */
+  /* ---------- Tabla y vista: en la URL, así el link lleva a lo mismo ----------
+     La vista va en ?v y no en ?vista: ?vista es de la ficha de la persona
+     (ventas o servicio), que se abre encima de cualquier pantalla. */
   const tablas = useMemo(() => tablasDe(e.ajustes), [e.ajustes]);
   const tablaId = tablas.some((t) => t.id === params.get("tabla")) ? params.get("tabla")! : tablas[0].id;
   const [ultima, setUltima] = usePreferencia<Record<string, string>>("ultima-vista", {});
-  const vistaUrl = params.get("vista");
+  const vistaUrl = params.get("v");
   const registroId = params.get("registro");
 
   const escribirUrl = useCallback((cambios: Record<string, string | null>, push = false) => {
@@ -85,12 +87,13 @@ export function Crm() {
   const cambiarVista = useCallback((parcial: AjusteVista) => guardadas.cambiar(base.id, parcial, esPropia), [guardadas, base.id, esPropia]);
 
   function elegirVista(id: string) {
+    setPanelAngosto(false);
     setUltima({ ...ultima, [tablaId]: id });
-    escribirUrl({ vista: id === "todas" ? null : id, registro: null });
+    escribirUrl({ v: id === "todas" ? null : id, registro: null });
     setMarcadas(new Set());
   }
   function elegirTabla(id: string) {
-    escribirUrl({ tabla: id === tablas[0].id ? null : id, vista: null, registro: null });
+    escribirUrl({ tabla: id === tablas[0].id ? null : id, v: null, registro: null });
     setMarcadas(new Set());
   }
 
@@ -109,6 +112,9 @@ export function Crm() {
      si no, desaparece o salta de lugar mientras se carga. */
   const [busqueda, setBusqueda] = useState("");
   const [retenida, setRetenida] = useState<string | null>(null);
+  /* Sube cuando se suelta la fila retenida: recién ahí se vuelve a ordenar. */
+  const [reordenar, setReordenar] = useState(0);
+  const retenidaRef = useRef<string | null>(null);
   const visiblesClaves = useMemo(() => ["nombre" as ClaveCampo, ...columnas.map((c) => c.clave)], [columnas]);
   const filtradas = useMemo(() => filasTabla.filter((f) => f.id === retenida
     || (pasa(f, v.filtros, v.conjuncion) && coincideBusqueda(f, busqueda, visiblesClaves))),
@@ -120,9 +126,9 @@ export function Crm() {
   const ordenIds = useMemo(() => {
     const criterio = [...(v.agrupar ? [{ campo: v.agrupar, desc: false }] : []), ...v.orden];
     return ordenar(ultimas.current, criterio, e.ajustes).map((f) => f.id);
-    // Sólo el conjunto, el criterio y la fila retenida: ver arriba.
+    // Sólo el conjunto, el criterio y cuando se suelta la fila retenida: ver arriba.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [idsClave, JSON.stringify(v.orden), v.agrupar, retenida === null]);
+  }, [idsClave, JSON.stringify(v.orden), v.agrupar, reordenar]);
   const porId = useMemo(() => new Map(filtradas.map((f) => [f.id, f])), [filtradas]);
   const filasVista = useMemo(() => ordenIds.map((id) => porId.get(id)).filter((f): f is FilaCrm => Boolean(f)), [ordenIds, porId]);
 
@@ -175,6 +181,7 @@ export function Crm() {
       f.id, { [clave]: valor } as Partial<Sesion>,
       valor ? `${f.nombre}: ${campo.titulo} → ${valor.length > 60 ? `${valor.slice(0, 60)}…` : valor}.` : `${f.nombre}: se vació ${campo.titulo}.`,
     );
+    retenidaRef.current = f.id;
     setRetenida(f.id);
     if (opcion?.llamada && f.sesion.estado !== opcion.llamada) {
       toast(opcion.llamada === "hecha" ? "En la Agenda la llamada quedó como hecha." : "En la Agenda la llamada quedó como que no vino.", "info");
@@ -182,7 +189,10 @@ export function Crm() {
   }, [opciones.estadoLlamada, toast]);
 
   const onActiva = useCallback((id: string | null) => {
-    setRetenida((r) => (r && r !== id ? null : r));
+    if (!retenidaRef.current || retenidaRef.current === id) return;
+    retenidaRef.current = null;
+    setRetenida(null);
+    setReordenar((n) => n + 1);
   }, []);
 
   /* ---------- Filas elegidas con la casilla ---------- */
@@ -234,7 +244,13 @@ export function Crm() {
 
   /* ---------- Menús ---------- */
   const [menuColumna, setMenuColumna] = useState<{ clave: ClaveCampo; el: HTMLElement } | null>(null);
-  const [panelAbierto, setPanelAbierto] = usePreferencia("panel-vistas", true);
+  /* En una pantalla angosta la barra de vistas tapa la grilla: arranca
+     cerrada y se cierra sola al elegir una vista. */
+  const [panelAncho, setPanelAncho] = usePreferencia("panel-vistas", true);
+  const [panelAngosto, setPanelAngosto] = useState(false);
+  const angosto = useAngosto();
+  const panelAbierto = angosto ? panelAngosto : panelAncho;
+  const setPanelAbierto = (v: boolean) => (angosto ? setPanelAngosto(v) : setPanelAncho(v));
   const [buscando, setBuscando] = useState(false);
   const [pedirCampos, setPedirCampos] = useState<HTMLElement | null>(null);
   const [filtrarPor, setFiltrarPor] = useState<ClaveCampo | null>(null);
@@ -251,6 +267,12 @@ export function Crm() {
     if (conPush.current) { conPush.current = false; router.back(); return; }
     escribirUrl({ registro: null });
   }, [escribirUrl, router]);
+  /* De un registro a la ficha de la persona en una sola navegación: cerrar
+     y abrir por separado (back y push) se pisan. */
+  const verFicha = useCallback((persona: string) => {
+    conPush.current = false;
+    escribirUrl({ registro: null, ficha: persona, vista: "ventas" });
+  }, [escribirUrl]);
 
   const tabla = tablas.find((t) => t.id === tablaId)!;
   const hayFiltros = v.filtros.some((c) => c.campo !== "lanzamiento");
@@ -270,9 +292,9 @@ export function Crm() {
             {t.id === tablaId && <ChevronDown size={14} className="crm-tabla__flecha" aria-hidden />}
           </button>
         ))}
-        <span className="crm-tablas__vivo" title={nube ? (enVivo ? "Conectado: las agendas nuevas aparecen solas" : "Conectando…") : "Sin nube: se ven los datos de este navegador"}>
+        <span className="crm-tablas__vivo" title={nube ? (enVivo ? "Conectado: las agendas nuevas aparecen solas, sin recargar" : "Conectando con la base…") : "Sin nube: se ven los datos guardados en este navegador"}>
           <span className={`crm-pulso${enVivo ? " crm-pulso--on" : ""}`} aria-hidden />
-          {nube ? (enVivo ? "En vivo" : "Conectando…") : "Datos de ejemplo"}
+          {nube ? (enVivo ? "En vivo" : "Conectando…") : "En este navegador"}
         </span>
       </div>
 
@@ -321,6 +343,7 @@ export function Crm() {
       )}
 
       <div className="crm-cuerpo-app">
+        {panelAbierto && angosto && <div className="crm-vistas-fondo" onClick={() => setPanelAngosto(false)} aria-hidden />}
         {panelAbierto && (
           <PanelVistas
             secciones={secciones} propias={guardadas.propias} activa={base.id}
@@ -356,6 +379,7 @@ export function Crm() {
           nuevas={nuevas}
           totalFilas={filasVista.length}
           onActiva={onActiva}
+          reinicio={`${tablaId}:${base.id}`}
           pie={(
             <span className="crm-anadir" title={`Cada agenda de Calendly aparece acá sola, en segundos.${AGENDAR_A_MANO ? "" : " No se cargan a mano."}`}>
               <span className={`crm-pulso${enVivo || !nube ? " crm-pulso--on" : ""}`} aria-hidden />
@@ -396,7 +420,7 @@ export function Crm() {
       {registro && (
         <Registro
           f={registro} opciones={opciones} pintar={pintar}
-          onGuardar={guardarCampo} onCerrar={cerrarRegistro}
+          onGuardar={guardarCampo} onCerrar={cerrarRegistro} onFicha={verFicha}
           anterior={posRegistro > 0 ? () => escribirUrl({ registro: filasVista[posRegistro - 1].id }) : undefined}
           siguiente={posRegistro >= 0 && posRegistro < filasVista.length - 1 ? () => escribirUrl({ registro: filasVista[posRegistro + 1].id }) : undefined}
           posicion={posRegistro >= 0 ? `${posRegistro + 1} de ${filasVista.length}` : undefined}
@@ -404,4 +428,17 @@ export function Crm() {
       )}
     </div>
   );
+}
+
+/* ¿La pantalla es angosta (la barra de vistas va encima de la grilla)? */
+function useAngosto(): boolean {
+  const [angosto, setAngosto] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 1024px)");
+    const cambiar = () => setAngosto(mq.matches);
+    cambiar();
+    mq.addEventListener("change", cambiar);
+    return () => mq.removeEventListener("change", cambiar);
+  }, []);
+  return angosto;
 }

@@ -3,7 +3,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { ChevronDown, ChevronUp, ExternalLink, Star, UserRound, X } from "lucide-react";
-import { useAbrirFicha } from "@/components/ficha/abrir";
 import {
   CAMPOS, fechaCrm, valorDe,
   type CampoCrm, type ClaveCampo, type FilaCrm, type Pintor,
@@ -22,17 +21,17 @@ import { SelectorOpciones } from "./Editores";
 
 const digitos = (s: string) => s.replace(/[^\d]/g, "");
 
-export function Registro({ f, opciones, pintar, onGuardar, onCerrar, anterior, siguiente, posicion }: {
+export function Registro({ f, opciones, pintar, onGuardar, onCerrar, onFicha, anterior, siguiente, posicion }: {
   f: FilaCrm;
   opciones: Record<CampoOpcionesCrm, OpcionCrm[]>;
   pintar: Pintor;
   onGuardar: (f: FilaCrm, clave: ClaveCampo, valor: string) => void;
   onCerrar: () => void;
+  onFicha: (persona: string) => void;
   anterior?: () => void;
   siguiente?: () => void;
   posicion?: string;
 }) {
-  const abrirFicha = useAbrirFicha();
   const caja = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -95,7 +94,7 @@ export function Registro({ f, opciones, pintar, onGuardar, onCerrar, anterior, s
               </a>
             )}
             {persona && (
-              <button type="button" className="crm-boton crm-boton--quieto" onClick={() => { onCerrar(); abrirFicha(persona); }}>
+              <button type="button" className="crm-boton crm-boton--quieto" onClick={() => onFicha(persona)}>
                 <UserRound size={14} aria-hidden />Ver la ficha
               </button>
             )}

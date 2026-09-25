@@ -2590,7 +2590,11 @@ span.kpis__etiqueta:hover { color: var(--ink); text-decoration: none; }
 .crm .crm-link:hover, .crm-registro .crm-link:hover { color: var(--crm-azul); }
 .crm-chips { display: flex; align-items: center; gap: 4px; min-width: 0; overflow: hidden; }
 .crm-auto-valor { display: inline-flex; min-width: 0; }
-/* Filas más altas: el texto baja de renglón y las etiquetas se acomodan. */
+/* Filas más altas: el texto baja de renglón y las etiquetas se acomodan;
+   el número y la casilla quedan arriba, alineados con la primera línea. */
+.crm-grilla--alta .crm-fila .crm-num { align-items: flex-start; padding-top: 7px; }
+.crm-grilla--alta .crm-num__color { top: 5px; bottom: 5px; }
+.crm-grilla--alta .crm-num__abrir { margin-top: -3px; }
 .crm-td--alta { align-items: flex-start; padding-top: 7px; padding-bottom: 6px; }
 .crm-td--alta .crm-txt { white-space: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: var(--crm-renglones, 2); }
 .crm-td--alta .crm-chips { flex-wrap: wrap; align-content: flex-start; }
@@ -2786,13 +2790,23 @@ span.kpis__etiqueta:hover { color: var(--ink); text-decoration: none; }
 .crm-registro__qa dt { font-size: 12px; color: var(--crm-tinta-2); }
 .crm-registro__qa dd { margin: 2px 0 0; white-space: pre-wrap; }
 
+.crm-vistas-fondo { position: absolute; inset: 0; z-index: 19; background: rgba(15, 12, 30, .18); }
 @media (max-width: 1024px) {
   .crm-vistas { position: absolute; z-index: 20; top: 0; bottom: 0; left: 0; box-shadow: 8px 0 24px rgba(0, 0, 0, .12); }
   .crm-cuerpo-app { position: relative; }
 }
 @media (max-width: 720px) {
-  .crm-herramientas { gap: 2px; }
-  .crm .crm-herr { width: 32px; }
+  .crm-barra { gap: 2px; padding: 0 6px; }
+  .crm-barra__espacio { flex: 0 0 4px; }
+  .crm .crm-vista-nombre { flex: 0 0 auto; max-width: 42vw; padding: 0 4px; }
+  .crm-vista-nombre__de { display: none; }
+  .crm-herramientas { gap: 2px; flex: 1 1 0; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+  /* A la derecha si entran; si no, se scrollean desde el primero (con
+     justify-content: flex-end los primeros quedarían fuera de alcance). */
+  .crm-herramientas > :first-child { margin-left: auto; }
+  .crm-herramientas::-webkit-scrollbar { display: none; }
+  .crm .crm-herr { width: 32px; flex: none; }
+  .crm-cambiada { display: none !important; }
   .crm-tablas__vivo { display: none; }
   .crm-registro-fondo { padding: 0; }
   .crm-registro { max-height: 100dvh; height: 100dvh; border-radius: 0; }

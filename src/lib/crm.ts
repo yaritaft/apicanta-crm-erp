@@ -2,6 +2,7 @@ import { aniosDeTexto, ETIQUETA_CANAL, respuestaA } from "./calendly";
 import { evaluarAgenda, pisoDeInversion } from "./calificacion";
 import { claveDeFecha } from "./agendas-webinar";
 import { claveEmail } from "./contactos";
+import { EVENTOS, leerUtm, NOMBRE_FUNNEL, type Funnel } from "./utm-estandar";
 import type {
   Ajustes, CampoOpcionesCrm, ColorCrm, ConfigCrm, Contacto, EstadoApp, OpcionCrm, Sesion, TablaCrm,
 } from "./types";
@@ -174,11 +175,13 @@ export const CAMPOS: CampoCrm[] = [
   { clave: "funnel", titulo: "Funnel", tipo: "formula", origen: "calculado", ancho: 180, etiqueta: true,
     fuente: "Sale del tipo de evento de Calendly y del utm_source: Webinar, VSL, Setter, Resell." },
   { clave: "utmSource", titulo: "UTM Source", tipo: "seleccion", origen: "agenda", ancho: 180,
-    fuente: "El utm_source del link con el que agendó." },
+    fuente: "El utm_source del link con el que agendó (direct si llegó sin UTMs)." },
   { clave: "utmMedium", titulo: "UTM Medium", tipo: "seleccion", origen: "agenda", ancho: 180,
-    fuente: "El utm_medium: en los webinars, la fecha del vivo (23-09)." },
+    fuente: "El utm_medium: paid, organic, email, outbound o referral (en los links viejos del webinar, la fecha: 23-09)." },
+  { clave: "utmCampaign", titulo: "UTM Campaign", tipo: "seleccion", origen: "agenda", ancho: 200,
+    fuente: "El utm_campaign: en el estándar arranca con el funnel (webinar_20260924, vsl_organica, setter_daniel)." },
   { clave: "utmContent", titulo: "UTM Content", tipo: "seleccion", origen: "agenda", ancho: 180,
-    fuente: "El utm_content: EnVivo, PostWebinar…" },
+    fuente: "El utm_content: vivo, replay o seguimiento en los eventos (EnVivo o PostWebinar en los links viejos)." },
   { clave: "grabacion", titulo: "Grabación", tipo: "url", origen: "equipo", ancho: 284,
     fuente: "El link a la grabación de la llamada (Fathom)." },
   { clave: "anios", titulo: "Años de trabajo", tipo: "seleccion", origen: "agenda", ancho: 172,
@@ -208,14 +211,12 @@ export const CAMPOS: CampoCrm[] = [
     fuente: "Cuándo agendó en Calendly." },
   { clave: "tipo", titulo: "Tipo de llamada", tipo: "seleccion", origen: "agenda", ancho: 290,
     fuente: "El tipo de evento de Calendly." },
-  { clave: "utmCampaign", titulo: "UTM Campaign", tipo: "seleccion", origen: "agenda", ancho: 180,
-    fuente: "El utm_campaign, cuando viene." },
 ];
 
 export const CAMPO: Record<string, CampoCrm> = Object.fromEntries(CAMPOS.map((c) => [c.clave, c]));
 
 /* Lo que se ve de entrada: las columnas del Airtable, en su orden. */
-export const OCULTOS_POR_DEFECTO: ClaveCampo[] = ["calificada", "formacion", "ingreso", "instagram", "agendo", "tipo", "utmCampaign"];
+export const OCULTOS_POR_DEFECTO: ClaveCampo[] = ["calificada", "formacion", "ingreso", "instagram", "agendo", "tipo"];
 
 /* ---------- La fila ---------- */
 
@@ -301,28 +302,50 @@ export function mesDe(iso?: string | null): string {
   return `${m}. ${MESES[m - 1]}`;
 }
 
-const normalFecha = (s?: string) => {
-  const m = /^(\d{1,2})[-/.](\d{1,2})$/.exec((s ?? "").trim());
-  return m ? `${m[1].padStart(2, "0")}-${m[2].padStart(2, "0")}` : "";
-};
-
-export function lanzamientoDe(utm?: Record<string, string> | null): string {
-  if (!utm || !/webinar/i.test(utm.utm_source ?? "")) return "";
-  return normalFecha(utm.utm_medium) || normalFecha(utm.utm_content) || normalFecha(utm.utm_campaign);
+/* ---------- Lanzamientos ----------
+   De qué evento (webinar, clase cero, Q&A) es una agenda: "webinar_2026-09-24".
+   En el estándar de UTMs (lib/utm-estandar.ts) la fecha viene entera en
+   utm_campaign; en el formato viejo sólo el día y el mes (utm_medium=23-09),
+   y el año sale del webinar cargado más cercano a cuando agendó. Así las
+   agendas de un mismo webinar caen juntas, lleguen en el formato que
+   lleguen. */
+export function lanzamientoDe(
+  utm: Record<string, string> | null | undefined,
+  webinars: { fecha: string }[] = [],
+  agendo?: string,
+): string {
+  const l = leerUtm(utm);
+  if (!l.funnel || !EVENTOS.includes(l.funnel)) return "";
+  if (l.fecha) return `${l.funnel}_${l.fecha}`;
+  if (!l.diaMes) return "";
+  const ref = agendo ? Date.parse(agendo) : Date.now();
+  const w = webinars.filter((x) => claveDeFecha(x.fecha) === l.diaMes)
+    .sort((a, b) => Math.abs(Date.parse(a.fecha) - ref) - Math.abs(Date.parse(b.fecha) - ref))[0];
+  return `${l.funnel}_${w ? diaAR(w.fecha) : l.diaMes}`;
 }
 
-/* El Funnel del Airtable: Webinar, VSL, Setter, Resell… Sale del
-   utm_source y, si no alcanza, del tipo de evento. */
+/* "Webinar 24-09-26", como las vistas de Lanzamientos del Airtable. */
+export function nombreLanzamiento(clave: string): string {
+  const [funnel, fecha] = clave.split("_");
+  const nombre = NOMBRE_FUNNEL[funnel as Funnel] ?? funnel;
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(fecha ?? "");
+  return `${nombre} ${m ? `${m[3]}-${m[2]}-${m[1].slice(2)}` : fecha ?? ""}`.trim();
+}
+
+/* El Funnel del Airtable: Webinar, VSL, Setter, Resell… En el estándar sale
+   del prefijo de utm_campaign; en los links viejos, del utm_source y, si no
+   alcanza, del tipo de evento de Calendly. */
 export function funnelDe(s: Pick<Sesion, "utm" | "canal">): string {
+  const l = leerUtm(s.utm);
+  if (l.funnel) return l.funnel === "vsl-yt" ? "VSL" : NOMBRE_FUNNEL[l.funnel];
   const src = sinTildes(s.utm?.utm_source ?? "");
-  if (/webinar/.test(src)) return "Webinar";
   if (/resell/.test(src)) return "Resell";
   if (/setter/.test(src) || s.canal === "setter") return "Setter";
   if (s.canal === "vsl" || /landing|vsl|youtube|^yt$/.test(src)) return "VSL";
   if (s.canal === "webinar") return "Webinar";
   if (/organic|instagram|^ig$/.test(src)) return "Orgánico";
   if (s.canal) return ETIQUETA_CANAL[s.canal];
-  return s.utm?.utm_source ?? "";
+  return src && src !== "direct" ? s.utm?.utm_source ?? "" : "";
 }
 
 const personaDe = (s: Sesion) => s.contactoId || s.leadId || claveEmail(s.email) || s.id;
@@ -343,7 +366,7 @@ export function estadoAutomatico(
   return "";
 }
 
-export function filasCrm(e: Pick<EstadoApp, "sesiones" | "contactos" | "ajustes">): FilaCrm[] {
+export function filasCrm(e: Pick<EstadoApp, "sesiones" | "contactos" | "ajustes" | "webinars">): FilaCrm[] {
   const tablas = tablasDe(e.ajustes);
   const estados = opcionesDe(e.ajustes, "estadoLlamada");
   const contactos = new Map<string, Contacto>(e.contactos.map((c) => [c.id, c]));
@@ -402,7 +425,7 @@ export function filasCrm(e: Pick<EstadoApp, "sesiones" | "contactos" | "ajustes"
       instagram: respuestaA(qa, /instagram/) ?? c?.instagram ?? "",
       agendo: s.creadoEn,
       tipo: s.tipo ?? "",
-      lanzamiento: lanzamientoDe(u),
+      lanzamiento: lanzamientoDe(u, e.webinars, s.creadoEn),
     };
   });
 }
@@ -449,6 +472,7 @@ function colorFormacion(v: string): ColorCrm {
 
 const COLOR_FUNNEL: Record<string, ColorCrm> = {
   Webinar: "cian1", VSL: "violeta1", Setter: "amarillo1", Resell: "verde1", "Orgánico": "turquesa1", Otro: "gris1",
+  "Clase cero": "turquesa1", "Q&A": "rosa1", Referido: "naranja1",
 };
 
 /* Los closers, cada uno con su color: el mismo en la columna y en el
@@ -735,23 +759,24 @@ export function vistasDe(
     secciones.push({ id, titulo: de, marca, vistas });
   }
 
-  /* Un lanzamiento por webinar que trajo agendas, el último primero. */
-  const conAgendas = new Set(filas.map((f) => f.lanzamiento).filter(Boolean));
-  const lanzamientos: { clave: string; fecha: string }[] = [];
-  for (const w of [...e.webinars].sort((a, b) => b.fecha.localeCompare(a.fecha))) {
-    const clave = claveDeFecha(w.fecha);
-    if (!conAgendas.has(clave) || lanzamientos.some((l) => l.clave === clave)) continue;
-    lanzamientos.push({ clave, fecha: w.fecha });
-  }
-  /* Los que llegaron con la fecha de un webinar que no está cargado. */
-  for (const clave of conAgendas) if (!lanzamientos.some((l) => l.clave === clave)) lanzamientos.push({ clave, fecha: "" });
+  /* Un lanzamiento por evento (webinar, clase cero, Q&A) que trajo
+     agendas, el último primero. Los que sólo tienen día y mes (links
+     viejos de un webinar que no está cargado) van al final. */
+  const fechaDe = (k: string) => k.split("_")[1] ?? "";
+  const lanzamientos = [...new Set(filas.map((f) => f.lanzamiento).filter(Boolean))]
+    .sort((a, b) => {
+      const fa = fechaDe(a), fb = fechaDe(b);
+      const la = fa.length === 10, lb = fb.length === 10;
+      if (la !== lb) return la ? -1 : 1;
+      return fb.localeCompare(fa) || a.localeCompare(b);
+    });
   if (lanzamientos.length > 0) {
     secciones.push({
       id: "lanzamientos", titulo: "Lanzamientos",
-      vistas: lanzamientos.map((l) => vista({
-        id: `web-${l.clave}`,
-        nombre: `Webinar ${l.clave}${l.fecha ? `-${diaAR(l.fecha).slice(2, 4)}` : ""}`,
-        filtros: [{ campo: "lanzamiento", op: "alguno", valor: [l.clave] }],
+      vistas: lanzamientos.map((clave) => vista({
+        id: `lanz-${clave}`,
+        nombre: nombreLanzamiento(clave),
+        filtros: [{ campo: "lanzamiento", op: "alguno", valor: [clave] }],
       })),
     });
   }

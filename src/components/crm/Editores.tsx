@@ -96,7 +96,7 @@ export function EditorTextoLargo({ ancla, valor, inicial, onGuardar, onCerrar, t
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
-    el.focus();
+    el.focus({ preventScroll: true });
     el.setSelectionRange(el.value.length, el.value.length);
   }, []);
   const ancho = Math.max(360, ancla?.offsetWidth ?? 0);

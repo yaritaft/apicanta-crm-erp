@@ -124,6 +124,9 @@ export function Flotante({
   useLayoutEffect(() => {
     if (!ancla) return;
     const ubicar = () => {
+      /* El ancla se fue de la pantalla (la fila se scrolleó lejos y la
+         grilla dejó de dibujarla): el menú se cierra en vez de quedar suelto. */
+      if (!ancla.isConnected) { cerrar.current(); return; }
       const r = ancla.getBoundingClientRect();
       const w = caja.current?.offsetWidth ?? ancho ?? 280;
       const h = caja.current?.offsetHeight ?? 200;
@@ -139,8 +142,10 @@ export function Flotante({
     ubicar();
     const obs = new ResizeObserver(ubicar);
     if (caja.current) obs.observe(caja.current);
+    /* Sigue al ancla si se scrollea lo que la contiene (la grilla). */
     window.addEventListener("resize", ubicar);
-    return () => { obs.disconnect(); window.removeEventListener("resize", ubicar); };
+    window.addEventListener("scroll", ubicar, true);
+    return () => { obs.disconnect(); window.removeEventListener("resize", ubicar); window.removeEventListener("scroll", ubicar, true); };
   }, [ancla, alinear, ancho, arriba, cubrir]);
 
   useEffect(() => {
@@ -172,7 +177,9 @@ export function Flotante({
       className={`crm-pop${className ? ` ${className}` : ""}`}
       style={{
         position: "fixed", top: pos?.top ?? -9999, left: pos?.left ?? -9999,
-        width: ancho, maxHeight: pos?.maxH, visibility: pos ? "visible" : "hidden",
+        /* Transparente (no oculto) hasta ubicarse: así el campo de adentro
+           ya puede tomar el foco al montarse. */
+        width: ancho, maxHeight: pos?.maxH, opacity: pos ? 1 : 0,
       }}
       onMouseDown={(ev) => ev.stopPropagation()}
     >

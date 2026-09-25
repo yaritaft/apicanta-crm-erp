@@ -66,6 +66,8 @@ export interface PropsGrilla {
   /* La fila que se acaba de editar no salta de lugar ni se esconde hasta
      que se elige otra: avisa cuál es la activa. */
   onActiva?: (id: string | null) => void;
+  /* Cambia con la tabla y la vista: la grilla vuelve arriba a la izquierda. */
+  reinicio?: string;
 }
 
 interface Activa { id: string; col: number }
@@ -80,7 +82,7 @@ export function Grilla(p: PropsGrilla) {
     onMarcar, onAbrir, onGuardar, onAncho, onEncabezado, onMas, onGrupo, onError, nuevas, totalFilas, pie, vacio,
   } = p;
   const caja = useRef<HTMLDivElement>(null);
-  const [vista, setVista] = useState({ top: 0, alto: 800 });
+  const [vista, setVista] = useState({ top: 0, alto: 800, ancho: 1200 });
   const [activa, setActivaEstado] = useState<Activa | null>(null);
   const [edicion, setEdicion] = useState<Edicion | null>(null);
   const [anchoVivo, setAnchoVivo] = useState<{ clave: string; px: number } | null>(null);
@@ -93,7 +95,13 @@ export function Grilla(p: PropsGrilla) {
 
   /* ---------- Medidas ---------- */
   const todas = useMemo(() => [primario, ...columnas], [primario, columnas]);
-  const ancho = useCallback((c: CampoCrm) => (anchoVivo?.clave === c.clave ? anchoVivo.px : anchos[c.clave] ?? c.ancho), [anchos, anchoVivo]);
+  /* En un teléfono el nombre no puede tapar media pantalla: la columna fija
+     deja siempre lugar para ver al menos otra. */
+  const tope = Math.max(120, vista.ancho - NUM - 130);
+  const ancho = useCallback((c: CampoCrm) => {
+    const w = anchoVivo?.clave === c.clave ? anchoVivo.px : anchos[c.clave] ?? c.ancho;
+    return c.clave === primario.clave ? Math.min(w, tope) : w;
+  }, [anchos, anchoVivo, primario.clave, tope]);
   const fijo = NUM + ancho(primario);
   const izquierdas = useMemo(() => {
     let x = fijo;
@@ -121,7 +129,7 @@ export function Grilla(p: PropsGrilla) {
   useLayoutEffect(() => {
     const el = caja.current;
     if (!el) return;
-    const medir = () => setVista({ top: el.scrollTop, alto: el.clientHeight });
+    const medir = () => setVista({ top: el.scrollTop, alto: el.clientHeight, ancho: el.clientWidth });
     medir();
     const obs = new ResizeObserver(medir);
     obs.observe(el);
@@ -131,10 +139,7 @@ export function Grilla(p: PropsGrilla) {
   const onScroll = () => {
     const el = caja.current;
     if (!el) return;
-    setVista({ top: el.scrollTop, alto: el.clientHeight });
-    /* El editor flotante no sigue a la celda: al scrollear se cierra (y el
-       texto largo guarda lo que se escribió). */
-    if (edicion && todas[edicion.col]?.tipo !== "url") setEdicion(null);
+    setVista({ top: el.scrollTop, alto: el.clientHeight, ancho: el.clientWidth });
   };
 
   const buscar = (y: number) => {
@@ -175,6 +180,14 @@ export function Grilla(p: PropsGrilla) {
     const it = items[destino];
     if (it?.tipo === "fila") irA(it.f.id, col);
   };
+
+  /* Otra vista: arranca arriba a la izquierda y sin nada elegido. */
+  useEffect(() => {
+    const el = caja.current;
+    if (el) { el.scrollTop = 0; el.scrollLeft = 0; }
+    setActivaEstado(null);
+    setEdicion(null);
+  }, [p.reinicio]);
 
   /* Si la fila activa desaparece (otro filtro), no queda nada elegido. */
   useEffect(() => {
@@ -238,7 +251,11 @@ export function Grilla(p: PropsGrilla) {
       PageUp: () => moverFilas(id, col, -10),
       PageDown: () => moverFilas(id, col, 10),
     };
+    /* Tab en la última columna (o Mayús+Tab en la primera) sale de la grilla. */
+    if (ev.key === "Tab" && (ev.shiftKey ? col === 0 : col === todas.length - 1)) { setActiva(null); return; }
     if (saltos[ev.key]) { ev.preventDefault(); saltos[ev.key](); return; }
+    /* El nombre llega de la agenda: Enter ahí abre el registro entero. */
+    if ((ev.key === "Enter" || ev.key === "F2") && col === 0) { ev.preventDefault(); onAbrir(id); return; }
     if (ev.key === "Enter" || ev.key === "F2") { ev.preventDefault(); editar(activa); return; }
     if (ev.key === " ") { ev.preventDefault(); onAbrir(id); return; }
     if (ev.key === "Escape") { setActiva(null); return; }
@@ -335,7 +352,10 @@ export function Grilla(p: PropsGrilla) {
   const hayFilas = filasVisibles.length > 0;
 
   return (
-    <div className="crm-grilla">
+    <div
+      className={`crm-grilla${alto > 32 ? " crm-grilla--alta" : ""}`}
+      style={{ "--crm-renglones": Math.max(1, Math.floor((alto - 12) / 19)) } as React.CSSProperties}
+    >
       <div
         ref={caja}
         className="crm-grilla__caja"
