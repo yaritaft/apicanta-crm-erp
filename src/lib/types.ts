@@ -185,6 +185,13 @@ export interface Sesion {
   reprogramadaDe?: ID;
   canceladaEn?: string;
   motivoCancelacion?: string;
+  /* Lo que carga el equipo en el CRM (Booking Calls), como en el Airtable
+     de ventas. El resto de la fila sale de la agenda misma. Se guardan con
+     el nombre de la opción, igual que un campo de selección de Airtable. */
+  preCall?: string;          // 1° Mje Enviado, 1° Llamada, 2° Mje Enviado…
+  estadoPreCall?: string;    // Confirmado, Reagendar, Sin Respuesta
+  estadoLlamada?: string;    // Compra Full, Seguimiento Nutrición, Inasistió…
+  grabacion?: string;        // El link de Fathom
 }
 
 /* ---------- Webinars ---------- */
@@ -387,6 +394,42 @@ export interface Ajustes {
   /* De qué estrategia, proyecto y webinar es cada UTM. La venta toma su
      origen de acá, con los UTMs de quien compró. */
   reglasUtm: ReglaUtm[];
+  /* El CRM: las opciones de los campos que carga el equipo y qué agendas
+     entran en cada tabla. Sin esto, los valores de siempre (lib/crm.ts). */
+  crm?: ConfigCrm;
+}
+
+/* ---------- CRM (Booking Calls) ---------- */
+
+/* La paleta de las etiquetas, la de Airtable: cada color en cinco tonos,
+   del más claro (1) al más oscuro (5). */
+export type ColorCrm = `${"azul" | "cian" | "turquesa" | "verde" | "amarillo" | "naranja" | "rojo" | "rosa" | "violeta" | "gris"}${1 | 2 | 3 | 4 | 5}`;
+
+export interface OpcionCrm {
+  nombre: string;
+  color: ColorCrm;
+  /* Qué dice de la llamada: "hecha" la cuenta como hecha en la Agenda y el
+     Dashboard; "no-show", como que no vino. Sin esto no la toca. */
+  llamada?: "hecha" | "no-show";
+  /* La pone el CRM solo, mientras nadie cargue otra: "no-show" cuando la
+     llamada quedó como que no vino, "cancelada" si canceló y no volvió a
+     agendar, "segunda" si ya había agendado antes. */
+  auto?: "no-show" | "cancelada" | "segunda";
+}
+
+export type CampoOpcionesCrm = "preCall" | "estadoLlamada" | "estadoPreCall";
+
+/* Una tabla del CRM (Booking Calls, Agendas Resells): qué tipos de evento
+   de Calendly entran. Sin `tipos`, los que dice su regla de siempre. */
+export interface TablaCrm {
+  id: string;
+  nombre: string;
+  tipos?: string[];
+}
+
+export interface ConfigCrm {
+  opciones?: Partial<Record<CampoOpcionesCrm, OpcionCrm[]>>;
+  tablas?: TablaCrm[];
 }
 
 /* Una UTM armada para un lanzamiento o una campaña: los valores que tienen

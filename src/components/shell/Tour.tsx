@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Compass, Users, Columns3, Wallet, Settings } from "lucide-react";
+import { Compass, Users, Sheet, Wallet, Settings } from "lucide-react";
 import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/ui";
 import { acciones, useEstado } from "@/lib/store";
@@ -16,12 +16,12 @@ const PASOS = [
   {
     icono: Users,
     titulo: "Todo empieza por un lead",
-    texto: "Un lead es alguien que mostró interés. Entra por Calendly o lo cargás en Leads, lo vas moviendo por el Pipeline mientras avanza la conversación, y cuando registrás su venta pasa solo a Alumnos, al pipeline de servicio.",
+    texto: "Un lead es alguien que mostró interés. Entra por Calendly o lo cargás en Leads, el equipo sigue cada llamada en el CRM, y cuando registrás su venta pasa solo a Alumnos, al pipeline de servicio.",
   },
   {
-    icono: Columns3,
-    titulo: "El Pipeline es un tablero",
-    texto: "Arrastrá las tarjetas de una columna a la otra, igual que un pizarrón. Cada columna te muestra cuánta plata hay en esa etapa. No hay que guardar nada: se guarda solo.",
+    icono: Sheet,
+    titulo: "El CRM es una planilla, como Airtable",
+    texto: "Cada agenda de Calendly aparece sola, con lo que contestó en el formulario. El equipo carga el Pre-Call, cómo salió la llamada y las notas, en la celda misma. Las vistas de la izquierda arman el día de cada closer. Se guarda solo.",
   },
   {
     icono: Wallet,
@@ -31,7 +31,7 @@ const PASOS = [
   {
     icono: Settings,
     titulo: "Todo se puede cambiar",
-    texto: "En Ajustes cambiás las etapas del pipeline, las fuentes, las categorías de plata, los planes — y podés agregar campos propios a cualquier ficha. También conectás Meta y Calendly. Nada está fijo.",
+    texto: "En Ajustes cambiás las etapas de los leads, las fuentes, las categorías de plata, los planes — y podés agregar campos propios a cualquier ficha. También conectás Meta y Calendly. Nada está fijo.",
   },
 ];
 

@@ -452,13 +452,13 @@ export function catalogo(e: EstadoApp): DefKpi[] {
   ]);
 
   add("agenda", "Pipeline de ventas", [
-    { id: "pipe_abierto", etiqueta: "Pipeline abierto", formato: "moneda", foto: true, href: "/pipeline",
+    { id: "pipe_abierto", etiqueta: "Pipeline abierto", formato: "moneda", foto: true, href: "/leads",
       ayuda: "Lo que valen los leads que todavía no se definieron.", valor: (c) => g(c, () => valorPipeline(c.e).bruto) },
-    { id: "pipe_pond", etiqueta: "Pipeline ponderado", formato: "moneda", foto: true, href: "/pipeline", desglose: { tipo: "pipeline" },
+    { id: "pipe_pond", etiqueta: "Pipeline ponderado", formato: "moneda", foto: true, href: "/leads", desglose: { tipo: "pipeline" },
       ayuda: "El pipeline abierto ajustado por la probabilidad de cada etapa.", valor: (c) => g(c, () => valorPipeline(c.e).ponderado) },
-    { id: "pipe_sincontactar", etiqueta: "Leads sin contactar", formato: "cantidad", mejor: "baja", foto: true, href: "/pipeline",
+    { id: "pipe_sincontactar", etiqueta: "Leads sin contactar", formato: "cantidad", mejor: "baja", foto: true, href: "/leads",
       ayuda: "Leads en la primera etapa del pipeline.", valor: (c) => g(c, () => leadsSinContactar(c.e).length) },
-    { id: "pipe_cierre", etiqueta: "Tasa de cierre del pipeline", formato: "pct", mejor: "sube", foto: true, href: "/pipeline", desglose: { tipo: "cierre" },
+    { id: "pipe_cierre", etiqueta: "Tasa de cierre del pipeline", formato: "pct", mejor: "sube", foto: true, href: "/leads", desglose: { tipo: "cierre" },
       ayuda: "De los leads que ya se definieron, cuántos se ganaron.", valor: (c) => g(c, () => tasaConversion(c.e)) },
   ]);
 

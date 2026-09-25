@@ -443,6 +443,8 @@ export function construirSemilla(): EstadoApp {
     });
   });
 
+  sesiones.push(...agendasDeEjemplo(leads, webinars));
+
   /* ---------- Campañas Meta ---------- */
   const campanias: Campania[] = [
     { nombre: "Remoto-USA-Frío", objetivo: "Conversiones", estado: "activa" as const, inv: 4200 },
@@ -822,6 +824,180 @@ export function construirSemilla(): EstadoApp {
     comentarios: [],
     honorarios: [], liquidaciones: [],
   };
+}
+
+/* ---------- Agendas de Calendly: el CRM ----------
+   Como llegan las de verdad: el tipo de evento, el closer, los UTMs del
+   webinar y lo que contestaron en el formulario, con las mismas preguntas.
+   Las que ya pasaron traen lo que carga el equipo (Pre-Call, Estado de
+   Llamada, notas, grabación). Van con su propio generador para no cambiar
+   el resto de los datos de ejemplo. */
+
+const PREGUNTA = {
+  telefono: "Numero de telefono (Whatsapp)",
+  lenguajes: "Con que lenguajes y frameworks trabajas o trabajaste ?",
+  ingles: "Cuál es tu nivel de ingles?",
+  formacion: "Cuál es tu nivel de formación?",
+  anios: "Hace cuantos años trabajas en programación?",
+  gana: "Cuánto ganas mensualmente en dólares?",
+  inversion: "En el caso que veas claridad en la llamada sobre cómo conseguir un trabajo que te pague de 3000 USD a 6000 USD de forma garantizada qué situación te define mejor?",
+};
+const ANIOS = ["1 año", "2 a 4 años", "2 a 4 años", "2 a 4 años", "5 años o mas", "5 años o mas", "5 años o mas", "Unos meses"];
+const INGLES = [
+  "Nivel básico NO CONVERSACIONAL", "Nivel básico NO CONVERSACIONAL", "Nivel básico NO CONVERSACIONAL",
+  "Conversacional aunque cometo errores", "Conversacional aunque cometo errores",
+  "Muy bueno, ningún problema con el inglés", "Muy bueno, ningún problema con el inglés", "Nada, 0 ingles",
+];
+const LENGUAJES = [
+  "Javascript / Typescript", "Javascript / Typescript", "Javascript / Typescript", "React", "Python + Django",
+  "Java + Spring", "C# + .NET", "Angular", "NodeJS / Express / NestJs", "PHP + Laravel",
+];
+const FORMACION = ["Universitaria completa", "Universitaria avanzada incompleta", "Autodidacta", "Bootcamp", "Cursos", "Terciario / Tecnicatura"];
+const GANA = ["Menos de 500 USD", "Entre 500 - 1500 USD", "Entre 500 - 1500 USD", "Entre 1500 - 2500 USD", "Entre 2500 - 5000 USD", "Más de 5000 USD"];
+const INVERSION = [
+  "Puedo invertir en mí menos de 600 USD", "Puedo invertir en mí de 600 a 1000 USD",
+  "Puedo invertir en mí de 1000 a 2000 USD", "Puedo invertir en mí de 1000 a 2000 USD", "Puedo invertir en mí más de 2000 USD",
+];
+const CLOSERS_CALENDLY = ["Dante Barbieri", "Valentín Abadía", "Mariano Arias"];
+const NOTAS_LLAMADA = [
+  "Sin ahorros por ahora, quiere empezar el mes que viene",
+  "Paga la primera cuota esta semana",
+  "Muchas dudas con el inglés, se trabajaron las objeciones y cerró en la llamada",
+  "Gana 1600 USD, quiere dar el salto a una empresa de afuera",
+  "Pocas herramientas pero muchas ganas, se compromete a juntar la reserva",
+  "Dejó la seña, quedamos en hablar el viernes para el resto",
+  "Le falta confianza, lo vemos en el seguimiento",
+  "3 cuotas, paga la segunda a fin de mes",
+  "Semi-senior estancado, miedo a quedarse sin trabajo",
+  "Muy seco en la llamada, cree que puede solo",
+  "Lo tiene que hablar con la pareja",
+];
+const ESTADOS_HECHA = [
+  "Compra Full", "Compra Cuotas", "Compra Cuotas", "Reserva", "Seguimiento de Pago",
+  "Seguimiento Nutrición", "Seguimiento Nutrición", "Seguimiento Nutrición", "Califica Downsell",
+  "Compra Downsell", "Llamada Interrumpida", "NO Calificado", "Lead descartado",
+];
+
+function agendasDeEjemplo(leads: Lead[], webinars: Webinar[]): Sesion[] {
+  const g = rng(20260925);
+  const elegir = <T,>(xs: readonly T[]): T => xs[Math.floor(g() * xs.length)];
+  const rango = (a: number, b: number) => Math.round(a + g() * (b - a));
+  const ahora = HOY.getTime();
+  const letras = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
+  const codigo = (n: number) => Array.from({ length: n }, () => letras[Math.floor(g() * letras.length)]).join("");
+  const diaMes = (d: Date) => {
+    const p = new Intl.DateTimeFormat("es-AR", { timeZone: "America/Argentina/Buenos_Aires", day: "2-digit", month: "2-digit" }).formatToParts(d);
+    return `${(p.find((x) => x.type === "day")?.value ?? "").padStart(2, "0")}-${(p.find((x) => x.type === "month")?.value ?? "").padStart(2, "0")}`;
+  };
+  const finalizados = webinars.filter((w) => w.estado === "finalizado").sort((a, b) => b.fecha.localeCompare(a.fecha));
+
+  /* Qué agendas hay: por webinar (en el vivo y después), por VSL, por el
+     setter y las de auditoría de los resells. */
+  type Plan = { tipo: string; canal: Sesion["canal"]; utm: Record<string, string>; desde: number; hasta: number };
+  const planes: Plan[] = [];
+  const [ultimo, anterior] = finalizados;
+  const offset = (iso: string) => (new Date(iso).getTime() - ahora) / 86400000;
+  if (ultimo) {
+    const d = offset(ultimo.fecha);
+    for (let i = 0; i < 46; i++) {
+      const vivo = i < 30;
+      planes.push({
+        tipo: "Llamada de Asesoramiento - Webinar - Team", canal: "webinar",
+        utm: { utm_source: "Webinar", utm_medium: diaMes(new Date(ultimo.fecha)), utm_content: vivo ? "EnVivo" : "PostWebinar" },
+        desde: vivo ? d : d + 1, hasta: vivo ? d + 0.1 : -0.5,
+      });
+    }
+  }
+  if (anterior) {
+    const d = offset(anterior.fecha);
+    for (let i = 0; i < 22; i++) {
+      planes.push({
+        tipo: "Llamada de Asesoramiento - Webinar - Team", canal: "webinar",
+        utm: { utm_source: "Webinar", utm_medium: diaMes(new Date(anterior.fecha)), utm_content: i < 15 ? "EnVivo" : "PostWebinar" },
+        desde: d, hasta: d + 5,
+      });
+    }
+  }
+  for (let i = 0; i < 9; i++) {
+    planes.push({
+      tipo: "Llamada de Asesoramiento - VSL - Team", canal: "vsl",
+      utm: i % 3 === 0 ? { utm_source: "YT", utm_medium: "Bio" } : { utm_source: "Landing-Organic", utm_medium: elegir(["IG", "YT"]) },
+      desde: -8, hasta: -0.2,
+    });
+  }
+  for (let i = 0; i < 7; i++) {
+    planes.push({ tipo: "Llamada de Asesoramiento - Setter", canal: "setter", utm: { utm_source: "setter-ia", utm_medium: "IG" }, desde: -7, hasta: -0.2 });
+  }
+  for (let i = 0; i < 6; i++) {
+    planes.push({ tipo: "Llamada de Auditoría", canal: "otro", utm: { utm_source: "Resell" }, desde: -12, hasta: -0.5 });
+  }
+
+  const personas = leads.slice(20, 20 + planes.length);
+  const salida: Sesion[] = [];
+  planes.forEach((p, i) => {
+    const l = personas[i % personas.length];
+    const agendo = new Date(ahora + rango(p.desde * 1440, p.hasta * 1440) * 60000);
+    const inicia = new Date(agendo.getTime() + rango(20, 96) * 3600000);
+    inicia.setUTCMinutes(0, 0, 0);
+    inicia.setUTCHours(rango(12, 23));
+    if (inicia.getTime() < agendo.getTime() + 2 * 3600000) inicia.setUTCDate(inicia.getUTCDate() + 1);
+    const pasada = inicia.getTime() < ahora;
+    const x = g();
+    const estado: Sesion["estado"] = !pasada ? (x > 0.95 ? "cancelada" : "agendada") : x > 0.84 ? "no-show" : x > 0.8 ? "cancelada" : "hecha";
+    const lenguajes = [...new Set([elegir(LENGUAJES), ...(g() > 0.55 ? [elegir(LENGUAJES)] : [])])];
+    const formacion = [...new Set([elegir(FORMACION), ...(g() > 0.6 ? [elegir(FORMACION)] : [])])];
+    const respuestas = p.tipo === "Llamada de Auditoría"
+      ? [{ pregunta: PREGUNTA.telefono, respuesta: l.telefono ?? "" }]
+      : [
+          { pregunta: PREGUNTA.telefono, respuesta: l.telefono ?? "" },
+          { pregunta: PREGUNTA.lenguajes, respuesta: lenguajes.join("\n") },
+          { pregunta: PREGUNTA.ingles, respuesta: elegir(INGLES) },
+          { pregunta: PREGUNTA.formacion, respuesta: formacion.join("\n") },
+          { pregunta: PREGUNTA.anios, respuesta: elegir(ANIOS) },
+          { pregunta: PREGUNTA.gana, respuesta: elegir(GANA) },
+          { pregunta: PREGUNTA.inversion, respuesta: elegir(INVERSION) },
+        ];
+    const s: Sesion = {
+      id: `cal_demo_${String(i + 1).padStart(3, "0")}`,
+      titulo: p.tipo, tipo: p.tipo, leadId: l.id,
+      invitado: l.nombre, email: l.email,
+      inicia: inicia.toISOString(), duracionMin: 45, estado,
+      enlace: `https://meet.google.com/${codigo(3).toLowerCase()}-${codigo(4).toLowerCase()}-${codigo(3).toLowerCase()}`,
+      origen: "calendly", notas: "", creadoEn: agendo.toISOString(), extra: {},
+      canal: p.canal, utm: p.utm, respuestas, anfitrion: elegir(CLOSERS_CALENDLY),
+      calendlyInvitadoUri: `https://api.calendly.com/scheduled_events/demo/invitees/${i + 1}`,
+    };
+    /* Lo que ya cargó el equipo: el seguimiento antes de la llamada y, si
+       pasó, cómo salió. */
+    const horas = (inicia.getTime() - ahora) / 3600000;
+    if (estado !== "cancelada" && horas < 48) {
+      s.preCall = horas < 0 ? elegir(["2° Mje Enviado", "2° Mje Enviado", "2° Mje Enviado", "1° Mje Enviado", "2° Llamada"]) : elegir(["1° Mje Enviado", "1° Mje Enviado", "1° Llamada"]);
+      s.estadoPreCall = horas < 0 ? (estado === "no-show" ? "Reagendar" : "Confirmado") : g() > 0.5 ? "Confirmado" : undefined;
+    }
+    if (estado === "hecha") {
+      s.estadoLlamada = elegir(ESTADOS_HECHA);
+      s.grabacion = `https://fathom.video/share/${codigo(20)}`;
+      if (g() > 0.2) s.notas = elegir(NOTAS_LLAMADA);
+    }
+    if (estado === "no-show" && g() > 0.5) s.estadoPreCall = "Sin Respuesta";
+    if (estado === "cancelada") s.canceladaEn = new Date(Math.min(ahora, inicia.getTime()) - 3600000 * 5).toISOString();
+    salida.push(s);
+  });
+
+  /* Alguien que vuelve a agendar (la segunda sale «2da Agenda (auto)») y
+     una reprogramación (la vieja no se ve: la reemplaza la nueva). */
+  const vuelve = salida.find((s) => s.estado === "hecha" && s.canal === "webinar");
+  if (vuelve) {
+    const inicia = new Date(ahora + 26 * 3600000); inicia.setUTCMinutes(0, 0, 0);
+    salida.push({ ...vuelve, id: "cal_demo_vuelve", inicia: inicia.toISOString(), estado: "agendada", creadoEn: new Date(ahora - 5 * 3600000).toISOString(), preCall: "1° Mje Enviado", estadoPreCall: undefined, estadoLlamada: undefined, grabacion: undefined, notas: "", calendlyInvitadoUri: undefined });
+  }
+  const mueve = salida.find((s) => s.estado === "agendada" && s.canal === "webinar");
+  if (mueve) {
+    const vieja: Sesion = { ...mueve, id: "cal_demo_reprogramada", estado: "cancelada", motivoCancelacion: "Reprogramada", canceladaEn: new Date(ahora - 30 * 3600000).toISOString(), inicia: new Date(new Date(mueve.inicia).getTime() - 24 * 3600000).toISOString(), calendlyInvitadoUri: undefined };
+    mueve.reprogramadaDe = vieja.id;
+    salida.push(vieja);
+  }
+  return salida;
 }
 
 export function estadoVacio(): EstadoApp {

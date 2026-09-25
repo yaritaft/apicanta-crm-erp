@@ -19,6 +19,7 @@ import { claveEmail, completar } from "./contactos";
 import { construirSemilla, estadoVacio } from "./seed";
 import { hayNube, nube, tablaFaltante, TABLAS, TABLAS_DE_DUENOS, TABLAS_OPCIONALES } from "./supabase";
 import { idAd, idAdset, idCampaign } from "./meta";
+import { opcionesDe } from "./crm";
 
 const CLAVE = "apicanta.erp.v1";
 
@@ -136,6 +137,11 @@ type Op =
   /* `sacadas` son las columnas que se quitaron por no existir todavia en la
      tabla. Se guarda para no reintentar en loop la misma. */
   | { tipo: "upsert"; tabla: string; filas: unknown[]; sacadas?: Set<string> }
+  /* Sólo las columnas que cambiaron de UNA fila (null borra el dato). Para
+     filas que también escribe el servidor, como las llamadas que trae
+     Calendly: un upsert con la copia entera de esta pestaña podría pisar lo
+     que el webhook acaba de cambiar. */
+  | { tipo: "update"; tabla: string; id: ID; cambios: Record<string, unknown>; sacadas?: Set<string> }
   | { tipo: "delete"; tabla: string; ids: ID[] };
 
 /* PostgREST avisa con PGRST204 que la fila trae una columna que la tabla no
@@ -171,7 +177,9 @@ async function drenar() {
       const op = cola[0];
       const r = op.tipo === "upsert"
         ? await nube.from(op.tabla).upsert(normalizar(op.filas) as never[], OPCIONES_UPSERT)
-        : await nube.from(op.tabla).delete().in("id", op.ids);
+        : op.tipo === "update"
+          ? await nube.from(op.tabla).update(op.cambios as never).eq("id", op.id)
+          : await nube.from(op.tabla).delete().in("id", op.ids);
       if (r.error) {
         /* Tabla opcional sin crear: se descarta la operacion en vez de
            bloquear la cola. En memoria el dato ya esta. */
@@ -183,14 +191,21 @@ async function drenar() {
            operacion. El resto del dato entra, y ese campo se completa solo
            cuando el ALTER este corrido. Si ya se habia sacado, no sirvio y se
            deja fallar en vez de girar para siempre. */
-        if (op.tipo === "upsert") {
+        if (op.tipo === "upsert" || op.tipo === "update") {
           const col = columnaFaltante(r.error);
           if (col && !op.sacadas?.has(col)) {
             op.sacadas = (op.sacadas ?? new Set<string>()).add(col);
-            op.filas = (op.filas as Record<string, unknown>[]).map(
-              ({ [col]: _fuera, ...resto }) => resto,
-            );
+            if (op.tipo === "upsert") {
+              op.filas = (op.filas as Record<string, unknown>[]).map(
+                ({ [col]: _fuera, ...resto }) => resto,
+              );
+            } else {
+              const { [col]: _fuera, ...resto } = op.cambios;
+              op.cambios = resto;
+            }
             console.warn(`[store] «${col}» no existe en ${op.tabla}: se guarda sin ese campo.`);
+            /* Un update que se quedó sin columnas no tiene nada que mandar. */
+            if (op.tipo === "update" && Object.keys(op.cambios).length === 0) cola.shift();
             continue;
           }
         }
@@ -698,6 +713,89 @@ export const acciones = {
     guardar({ ...e, [coleccion]: lista } as EstadoApp);
     const fila = lista.find((x) => x.id === id);
     if (fila) empujar({ tipo: "upsert", tabla: coleccion, filas: [fila] });
+  },
+
+  /* Filas que llegaron por Realtime (una agenda nueva de Calendly, una
+     cancelación, lo que cargó otro del equipo): entran a la memoria sin
+     volver a escribirse. A diferencia de aplicarDeLaNube, también suma las
+     que no estaban y saca las que se borraron. */
+  recibirDeLaNube<T extends { id: ID }>(coleccion: Coleccion, filas: T[], borrados: ID[] = []) {
+    const e = snapshot();
+    const llegan = new Map(filas.map((f) => [f.id, f] as const));
+    const fuera = new Set(borrados);
+    let cambio = false;
+    const lista = (e[coleccion] as unknown as T[]).flatMap((x) => {
+      if (fuera.has(x.id)) { cambio = true; return []; }
+      const n = llegan.get(x.id);
+      if (!n) return [x];
+      llegan.delete(x.id);
+      const junto = { ...x, ...n };
+      if (JSON.stringify(junto) === JSON.stringify(x)) return [x];
+      cambio = true;
+      return [junto];
+    });
+    const nuevas = [...llegan.values()];
+    if (!cambio && nuevas.length === 0) return;
+    guardar({ ...e, [coleccion]: [...nuevas, ...lista] } as EstadoApp);
+  },
+
+  /* ---------- El CRM ----------
+     Lo que el equipo carga sobre una agenda: Pre-Call, Estado de Llamada,
+     notas, grabación y Estado Pre-Call. A la base va sólo lo que cambió.
+
+     El Estado de Llamada dice además si la llamada se hizo: elegir «Compra
+     Full» es lo mismo que marcar «Se hizo» en la Agenda, e «Inasistió», que
+     «No vino». Así la asistencia del Dashboard no se carga dos veces. */
+  editarLlamada(
+    id: ID,
+    cambios: Partial<Pick<Sesion, "preCall" | "estadoPreCall" | "estadoLlamada" | "notas" | "grabacion">>,
+    detalle: string,
+  ) {
+    const e = snapshot();
+    const s = e.sesiones.find((x) => x.id === id);
+    if (!s) return;
+    const limpio: Partial<Sesion> = {};
+    for (const [k, v] of Object.entries(cambios)) {
+      (limpio as Record<string, unknown>)[k] = typeof v === "string" && v.trim() === "" ? undefined : v;
+    }
+    if (limpio.estadoLlamada) {
+      const op = opcionesDe(e.ajustes, "estadoLlamada").find((o) => o.nombre === limpio.estadoLlamada);
+      if (op?.llamada && s.estado !== op.llamada) limpio.estado = op.llamada;
+    }
+    const actualizada: Sesion = { ...s, ...limpio };
+    const { lista, nuevo } = registrar(e, "sesion", id, `${s.tipo} — ${s.invitado}`, "actualizo", detalle);
+    guardar({ ...e, sesiones: e.sesiones.map((x) => (x.id === id ? actualizada : x)), actividad: lista });
+    empujar({
+      tipo: "update", tabla: "sesiones", id,
+      cambios: Object.fromEntries(Object.entries(limpio).map(([k, v]) => [k, v ?? null])),
+    });
+    empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
+  },
+
+  /* La configuración del CRM (opciones de cada campo, qué agendas entran en
+     cada tabla). Renombrar una opción renombra también lo que ya estaba
+     cargado con ella, como en Airtable. */
+  configurarCrm(crm: NonNullable<Ajustes["crm"]>, renombres: { campo: "preCall" | "estadoPreCall" | "estadoLlamada"; de: string; a: string }[] = [], detalle = "Se cambió la configuración del CRM.") {
+    const e = snapshot();
+    const tocadas: Sesion[] = [];
+    const sesiones = renombres.length === 0 ? e.sesiones : e.sesiones.map((s) => {
+      let y = s;
+      for (const r of renombres) {
+        if (y[r.campo] === r.de) y = { ...y, [r.campo]: r.a || undefined };
+      }
+      if (y !== s) tocadas.push(y);
+      return y;
+    });
+    const ajustes = { ...e.ajustes, crm };
+    const { lista, nuevo } = registrar(e, "config", "crm", "CRM", "actualizo", detalle);
+    guardar({ ...e, ajustes, sesiones, actividad: lista });
+    empujar({ tipo: "upsert", tabla: "ajustes", filas: [filaAjustes(ajustes)] });
+    for (const s of tocadas) {
+      const cambios: Record<string, unknown> = {};
+      for (const r of renombres) cambios[r.campo] = s[r.campo] ?? null;
+      empujar({ tipo: "update", tabla: "sesiones", id: s.id, cambios });
+    }
+    empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
   },
 
   eliminar(coleccion: Coleccion, id: ID, etiqueta: string) {
