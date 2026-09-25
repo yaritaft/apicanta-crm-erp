@@ -273,8 +273,17 @@ export function Grilla(p: PropsGrilla) {
       PageUp: () => moverFilas(id, col, -10),
       PageDown: () => moverFilas(id, col, 10),
     };
-    /* Tab en la última columna (o Mayús+Tab en la primera) sale de la grilla. */
-    if (ev.key === "Tab" && (ev.shiftKey ? col === 0 : col === todas.length - 1)) { setActiva(null); return; }
+    /* Tab al final de la fila sigue en la primera celda de la de abajo (y
+       Mayús+Tab al principio, en la última de la de arriba), como en
+       Airtable; recién en la primera o la última celda de todas sale de la
+       grilla. */
+    if (ev.key === "Tab" && (ev.shiftKey ? col === 0 : col === todas.length - 1)) {
+      const pos = filasEnOrden.indexOf(indiceDe.get(id) ?? -1);
+      const otra = items[filasEnOrden[pos + (ev.shiftKey ? -1 : 1)]];
+      if (otra?.tipo === "fila") { ev.preventDefault(); irA(otra.f.id, ev.shiftKey ? todas.length - 1 : 0); return; }
+      setActiva(null);
+      return;
+    }
     if (saltos[ev.key]) { ev.preventDefault(); saltos[ev.key](); return; }
     /* El nombre llega de la agenda: Enter ahí abre el registro entero. */
     if ((ev.key === "Enter" || ev.key === "F2") && col === 0) { ev.preventDefault(); onAbrir(id); return; }

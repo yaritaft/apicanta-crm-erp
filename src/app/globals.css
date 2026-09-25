@@ -2602,7 +2602,7 @@ span.kpis__etiqueta:hover { color: var(--ink); text-decoration: none; }
 .crm-grilla--alta .crm-num__color { top: 5px; bottom: 5px; }
 .crm-grilla--alta .crm-num__abrir { margin-top: -3px; }
 .crm-td--alta { align-items: flex-start; padding-top: 7px; padding-bottom: 6px; }
-.crm-td--alta .crm-txt { white-space: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: var(--crm-renglones, 2); }
+.crm-td--alta .crm-txt { white-space: pre-line; overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: var(--crm-renglones, 2); }
 .crm-td--alta .crm-chips { flex-wrap: wrap; align-content: flex-start; }
 
 /* ---------- Etiquetas (select de Airtable) ---------- */

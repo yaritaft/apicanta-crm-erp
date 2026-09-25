@@ -491,8 +491,9 @@ const COLOR_FUNNEL: Record<string, ColorCrm> = {
 };
 
 /* Los closers, cada uno con su color: el mismo en la columna y en el
-   puntito de sus vistas. Por orden alfabético, así no cambia de un día
-   para el otro (Dante amarillo y Valentín rojo, como en el Airtable).
+   puntito de sus vistas. Por orden de llegada (su primera agenda), así el
+   que entra nuevo toma el color que sigue y a los demás no les cambia
+   (Dante amarillo y Valentín rojo, como en el Airtable).
 
    Tiene sección en la barra de vistas quien está en el equipo o atiende
    seguido: un anfitrión de prueba con una agenda suelta no la llena (sus
@@ -502,22 +503,34 @@ type ColorCloser = (typeof COLORES_CLOSER)[number];
 
 const nombreCorto = (n: string) => sinTildes(n).split(/\s+/).slice(0, 2).join(" ");
 
+/* Cada closer y cuándo agendaron con él por primera vez, del más viejo al
+   más nuevo (a igual fecha, por nombre). */
+function porLlegada(filas: FilaCrm[]): { closer: string; n: number }[] {
+  const datos = new Map<string, { primera: string; n: number }>();
+  for (const f of filas) {
+    if (!f.closer) continue;
+    const d = datos.get(f.closer);
+    if (!d) datos.set(f.closer, { primera: f.agendo, n: 1 });
+    else { d.n++; if (f.agendo < d.primera) d.primera = f.agendo; }
+  }
+  return [...datos.entries()]
+    .sort((a, b) => a[1].primera.localeCompare(b[1].primera) || sinTildes(a[0]).localeCompare(sinTildes(b[0])))
+    .map(([closer, d]) => ({ closer, n: d.n }));
+}
+
 export function closersConSeccion(filas: FilaCrm[], equipo: Pick<MiembroEquipo, "nombre">[]): string[] {
   const delEquipo = equipo.map((m) => nombreCorto(m.nombre));
-  const cuantas = new Map<string, number>();
-  for (const f of filas) if (f.closer) cuantas.set(f.closer, (cuantas.get(f.closer) ?? 0) + 1);
-  return [...cuantas.keys()]
-    .filter((c) => {
-      const n = nombreCorto(c);
-      return (cuantas.get(c) ?? 0) >= 3 || delEquipo.some((m) => m === n || (m.includes(" ") && n.startsWith(m)));
+  return porLlegada(filas)
+    .filter(({ closer, n }) => {
+      const corto = nombreCorto(closer);
+      return n >= 3 || delEquipo.some((m) => m === corto || (m.includes(" ") && corto.startsWith(m)));
     })
-    .sort((a, b) => sinTildes(a).localeCompare(sinTildes(b)));
+    .map((x) => x.closer);
 }
 
 export function coloresDeCloser(filas: FilaCrm[], equipo: Pick<MiembroEquipo, "nombre">[]): Map<string, ColorCloser> {
   const primeros = closersConSeccion(filas, equipo);
-  const resto = [...new Set(filas.map((f) => f.closer).filter((c) => c && !primeros.includes(c)))]
-    .sort((a, b) => sinTildes(a).localeCompare(sinTildes(b)));
+  const resto = porLlegada(filas).map((x) => x.closer).filter((c) => !primeros.includes(c));
   return new Map([...primeros, ...resto].map((n, i) => [n, COLORES_CLOSER[i % COLORES_CLOSER.length]]));
 }
 
