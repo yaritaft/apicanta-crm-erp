@@ -392,10 +392,12 @@ export function tasaDeMora(e: EstadoApp): number {
  *  y para el desglose del Panel. */
 export function cuotasPorCobrar(e: EstadoApp) {
   const activas = ventasActivas(e);
+  const pagadoDe = new Map<string, number>();
+  for (const p of e.pagos) pagadoDe.set(p.cuotaId, (pagadoDe.get(p.cuotaId) ?? 0) + p.monto);
   return e.cuotas
     .filter((c) => c.estado === "pendiente" && activas.has(c.ventaId))
     .map((c) => {
-      const pagado = e.pagos.filter((p) => p.cuotaId === c.id).reduce((x, p) => x + p.monto, 0);
+      const pagado = pagadoDe.get(c.id) ?? 0;
       return { cuota: c, pagado, saldo: Math.max(c.monto - pagado, 0) };
     })
     .filter((x) => x.saldo > 0);

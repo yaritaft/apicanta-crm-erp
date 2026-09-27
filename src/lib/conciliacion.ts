@@ -43,10 +43,62 @@ export function parecido(a?: string, b?: string): number {
   return comunes / Math.min(ta.length, tb.length);
 }
 
+/* ---------- Índices ----------
+   Lo que se busca una y otra vez (cuánto se pagó de cada cuota, la venta de
+   una cuota, por qué medios pagó cada venta) se arma una vez por estado.
+   Sin esto, proponer a qué cuota va cada cobro recorría todos los pagos por
+   cada cuota y por cada cobro: casi un segundo con los datos de hoy, y la
+   pantalla lo pide en cada render. */
+
+interface Indice {
+  pagos: EstadoApp["pagos"]; cuotas: EstadoApp["cuotas"]; ventas: EstadoApp["ventas"];
+  leads: EstadoApp["leads"]; productos: EstadoApp["productos"];
+  pagadoCuota: Map<ID, number>;
+  imputadoMov: Map<ID, number>;
+  cuota: Map<ID, Cuota>;
+  venta: Map<ID, Venta>;
+  lead: Map<ID, EstadoApp["leads"][number]>;
+  producto: Map<ID, string>;
+  /* Por qué medios (procesadorId) ya pagó cada venta. */
+  medios: Map<ID, Set<ID | undefined>>;
+  /* Los pagos sin conciliar de cada cuenta, para buscar los ya cargados. */
+  sueltosPorCuenta: Map<ID, Pago[]>;
+}
+
+let IX: Indice | null = null;
+
+function indice(e: EstadoApp): Indice {
+  if (IX && IX.pagos === e.pagos && IX.cuotas === e.cuotas && IX.ventas === e.ventas
+    && IX.leads === e.leads && IX.productos === e.productos) return IX;
+  const cuota = new Map(e.cuotas.map((c) => [c.id, c] as const));
+  const pagadoCuota = new Map<ID, number>();
+  const imputadoMov = new Map<ID, number>();
+  const medios = new Map<ID, Set<ID | undefined>>();
+  const sueltosPorCuenta = new Map<ID, Pago[]>();
+  for (const p of e.pagos) {
+    pagadoCuota.set(p.cuotaId, (pagadoCuota.get(p.cuotaId) ?? 0) + p.monto);
+    if (p.movimientoId) imputadoMov.set(p.movimientoId, (imputadoMov.get(p.movimientoId) ?? 0) + p.monto);
+    const v = cuota.get(p.cuotaId)?.ventaId;
+    if (v) { const m = medios.get(v) ?? new Set(); m.add(p.procesadorId); medios.set(v, m); }
+    if (!p.movimientoId && p.procesadorId) {
+      const xs = sueltosPorCuenta.get(p.procesadorId);
+      if (xs) xs.push(p); else sueltosPorCuenta.set(p.procesadorId, [p]);
+    }
+  }
+  IX = {
+    pagos: e.pagos, cuotas: e.cuotas, ventas: e.ventas, leads: e.leads, productos: e.productos,
+    pagadoCuota, imputadoMov, cuota, medios, sueltosPorCuenta,
+    venta: new Map(e.ventas.map((v) => [v.id, v] as const)),
+    lead: new Map(e.leads.map((l) => [l.id, l] as const)),
+    producto: new Map(e.productos.map((x) => [x.id, x.nombre] as const)),
+  };
+  return IX;
+}
+
 /* ---------- Saldos ---------- */
 
 export function pagadoDeCuota(e: EstadoApp, cuotaId: ID): number {
-  return e.pagos.filter((p) => p.cuotaId === cuotaId).reduce((a, p) => a + p.monto, 0);
+  return indice(e).pagadoCuota.get(cuotaId) ?? 0;
 }
 
 export function saldoDeCuota(e: EstadoApp, cuota: Cuota): number {
@@ -79,7 +131,8 @@ export function sugerenciasPara(e: EstadoApp, mov: Movimiento, limite = 4): Suge
   const monto = restoDeMovimiento(e, mov);
   if (monto <= 0.01) return [];
 
-  const ventas = new Map<ID, Venta>(e.ventas.map((v) => [v.id, v]));
+  const ix = indice(e);
+  const ventas = ix.venta;
   const out: Sugerencia[] = [];
 
   for (const c of e.cuotas) {
@@ -116,7 +169,7 @@ export function sugerenciasPara(e: EstadoApp, mov: Movimiento, limite = 4): Suge
     }
 
     /* 2. Quién pagó */
-    const lead = venta.contactoId ? e.leads.find((l) => l.id === venta.contactoId) : undefined;
+    const lead = venta.contactoId ? ix.lead.get(venta.contactoId) : undefined;
     const mismoMail = Boolean(
       mov.clienteEmail && lead?.email && mov.clienteEmail.toLowerCase() === lead.email.toLowerCase(),
     );
@@ -139,12 +192,11 @@ export function sugerenciasPara(e: EstadoApp, mov: Movimiento, limite = 4): Suge
     }
 
     /* 4. Por dónde */
-    const cuotasVenta = e.cuotas.filter((x) => x.ventaId === venta.id).map((x) => x.id);
-    const yaUso = e.pagos.some((p) => cuotasVenta.includes(p.cuotaId) && p.procesadorId === mov.procesadorId);
+    const yaUso = Boolean(ix.medios.get(venta.id)?.has(mov.procesadorId));
     if (yaUso) { puntaje += 6; motivos.push("Ya pagó por acá antes"); }
 
     /* 5. Qué compró */
-    const producto = e.productos.find((p) => p.id === venta.productoId)?.nombre;
+    const producto = venta.productoId ? ix.producto.get(venta.productoId) : undefined;
     if (producto && mov.descripcion && parecido(mov.descripcion, producto) >= 0.5) {
       puntaje += 6;
       motivos.push("El concepto es el del producto");
@@ -208,15 +260,15 @@ export function pagosYaCargados(e: EstadoApp, mov: Movimiento): PagoYaCargado[] 
   if (mov.estado !== "pendiente") return [];
   const proc = procesadorDeMovimiento(e, mov);
   if (!proc) return [];
+  const ix = indice(e);
   const out: PagoYaCargado[] = [];
   const t = new Date(mov.fecha).getTime();
-  for (const p of e.pagos) {
-    if (p.procesadorId !== proc.id || p.movimientoId) continue;
+  for (const p of ix.sueltosPorCuenta.get(proc.id) ?? []) {
     if (Math.abs(p.monto - mov.monto) > Math.max(1, mov.monto * 0.02)) continue;
     const dias = Math.abs(new Date(p.fecha).getTime() - t) / DIA;
     if (dias > 7) continue;
-    const cuota = e.cuotas.find((c) => c.id === p.cuotaId);
-    const venta = cuota ? e.ventas.find((v) => v.id === cuota.ventaId) : undefined;
+    const cuota = ix.cuota.get(p.cuotaId);
+    const venta = cuota ? ix.venta.get(cuota.ventaId) : undefined;
     const motivos: string[] = [];
     let puntaje = 0;
     if (Math.abs(p.monto - mov.monto) <= 0.01) { puntaje += 40; motivos.push("mismo monto"); } else { puntaje += 25; motivos.push("monto casi igual"); }
@@ -328,6 +380,6 @@ export function medioDeMovimiento(e: EstadoApp, mov: Movimiento): string {
 /* Lo que queda sin imputar de un movimiento: un pago de pasarela puede
    repartirse entre varias cuotas (la reserva y la primera cuota juntas). */
 export function restoDeMovimiento(e: EstadoApp, mov: Movimiento): number {
-  const imputado = e.pagos.filter((p) => p.movimientoId === mov.id).reduce((a, p) => a + p.monto, 0);
+  const imputado = indice(e).imputadoMov.get(mov.id) ?? 0;
   return Math.round((mov.monto - imputado) * 100) / 100;
 }
