@@ -16,6 +16,7 @@ import { AsistenteWebinar } from "@/components/webinars/AsistenteWebinar";
 import { guardarMetrica, guardarWebinar } from "@/components/webinars/guardar";
 import { diaCorto, diaYHora, hoyArgentina } from "@/components/webinars/fechas";
 import { AvisoEnVivo } from "@/components/webinars/AvisoEnVivo";
+import { AtarVentas } from "@/components/webinars/AtarVentas";
 import { useWebinarsAlDia } from "@/components/webinars/useVivo";
 import { EmbudoDosModos, grabacionDe } from "@/components/webinars/FichaNumeros";
 import { CLAVE_LISTA, ESTADO_WEBINAR, ESTADOS, tonoRoas } from "@/components/webinars/estado";
@@ -294,6 +295,8 @@ export default function Webinars() {
       />
 
       <AvisoEnVivo />
+
+      <AtarVentas e={e} />
 
       {e.webinars.length > 0 && (
         <div className="row-wrap">

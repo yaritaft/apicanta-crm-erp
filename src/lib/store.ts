@@ -15,6 +15,7 @@ import {
 } from "./alumnos";
 import { pagoDesdeMovimiento } from "./conciliacion";
 import { cobrosConOtraTasa, conTasa } from "./finanzas";
+import { ventasParaAtar, webinarNuevoDeProyecto, webinarsQueFaltan } from "./atar-webinars";
 import { caracteristicaDePago, montoArsDe, tipoVentaDePago, type ResultadoImport } from "./angelo";
 import { claveEmail, completar } from "./contactos";
 import { construirSemilla, estadoVacio } from "./seed";
@@ -1859,6 +1860,36 @@ export const acciones = {
     empujar({ tipo: "upsert", tabla: "pagos", filas: [actualizado] });
     empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
     return true;
+  },
+
+  /* ---------- Qué webinar trajo cada venta (lib/atar-webinars.ts) ----------
+     Crea los webinars viejos que nombran los proyectos WEB- de la planilla y
+     ata cada venta sin webinar al suyo. A la base va sólo el webinarId de
+     cada venta (un UPDATE), así no pisa nada que se haya editado en otro lado. */
+  atarVentasAWebinars(): { webinars: number; ventas: number } {
+    const e0 = snapshot();
+    const cuando = ahora();
+    const nuevos = webinarsQueFaltan(e0).map((w) => webinarNuevoDeProyecto(w, nuevoId("web"), cuando));
+    const e = nuevos.length ? { ...e0, webinars: [...e0.webinars, ...nuevos] } : e0;
+    const atar = ventasParaAtar(e);
+    if (nuevos.length === 0 && atar.length === 0) return { webinars: 0, ventas: 0 };
+    const porVenta = new Map(atar.map((a) => [a.venta.id, a.webinarId] as const));
+    const { lista, nuevo } = registrar(
+      e, "webinar", "atar-webinars", "Ventas de cada webinar", "actualizo",
+      `Se ataron ${atar.length} ventas a su webinar (${atar.filter((a) => a.motivo === "proyecto").length} por el proyecto, `
+      + `${atar.filter((a) => a.motivo === "utm").length} por los UTMs y ${atar.filter((a) => a.motivo === "fecha").length} por la fecha)`
+      + (nuevos.length ? ` y se ${nuevos.length === 1 ? "creó un webinar" : `crearon ${nuevos.length} webinars`} de la planilla.` : "."),
+    );
+    guardar({
+      ...e, actividad: lista,
+      ventas: e.ventas.map((v) => (porVenta.has(v.id) ? { ...v, webinarId: porVenta.get(v.id) } : v)),
+    });
+    if (nuevos.length) empujarEnLotes("webinars", nuevos);
+    const porWebinar = new Map<ID, ID[]>();
+    for (const a of atar) porWebinar.set(a.webinarId, [...(porWebinar.get(a.webinarId) ?? []), a.venta.id]);
+    for (const [webinarId, ids] of porWebinar) empujarUpdate("ventas", ids, { webinarId });
+    empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
+    return { webinars: nuevos.length, ventas: atar.length };
   },
 
   /* ---------- La tasa de una cuenta, en los cobros que ya la usaban ----------
