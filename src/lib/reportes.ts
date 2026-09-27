@@ -1,5 +1,5 @@
 import type { Alumno, EstadoApp, EstadoReporte, ID, Reporte } from "./types";
-import { diaDeNegocio } from "@/components/ui/DateRangePicker";
+import { diaDeNegocio } from "./dia-negocio";
 
 /* ------------------------------------------------------------------
    Reportes por semana.

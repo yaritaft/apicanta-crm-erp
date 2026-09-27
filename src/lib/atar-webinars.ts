@@ -1,7 +1,7 @@
 import type { EstadoApp, ID, Venta, Webinar } from "./types";
 import { webinarDeProyecto } from "./angelo";
 import { origenDeUtm } from "./utms";
-import { diaDeNegocio } from "@/components/ui/DateRangePicker";
+import { diaDeNegocio } from "./dia-negocio";
 
 /* ==================================================================
    Qué webinar trajo cada venta.

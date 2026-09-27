@@ -11,7 +11,7 @@ import { metricasDeWebinar, numerosDelWebinar, sumarMetricas, type MetricasWebin
 import { inversionDelEmbudo } from "./embudos";
 import { rachasAHoy } from "./reportes";
 import { etapaDelAlumno, etapasDeServicio } from "./alumnos";
-import { diaDeNegocio } from "@/components/ui/DateRangePicker";
+import { diaDeNegocio } from "./dia-negocio";
 import type { QueDesglosar } from "@/components/panel/Desglose";
 import { esSoloReserva } from "./angelo";
 

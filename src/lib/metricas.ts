@@ -1,7 +1,7 @@
 import type { Ad, Contacto, EstadoApp, ID, Lead, Meta, MetricaClave } from "./types";
 import { inicioSemana, mesClave, nombreMes } from "./format";
 import { calcularPyL, cashCollected, porCobrarTotal } from "./finanzas";
-import { diaDeNegocio } from "@/components/ui/DateRangePicker";
+import { diaDeNegocio } from "./dia-negocio";
 
 /* Todo lo que la app calcula vive acá: una sola fuente de verdad
    para los números del panel, finanzas, marketing y metas. */
