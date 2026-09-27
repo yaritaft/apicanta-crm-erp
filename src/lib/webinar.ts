@@ -370,8 +370,13 @@ export function personasDeWebinar(e: EstadoApp, webinarId: string): PersonaDeWeb
     p.entro = p.entro ?? l.creadoEn;
   };
 
+  /* Se registró a este webinar: en la landing (extra.registrosWebinar) o en
+     un formulario de Meta (extra.formulariosMeta), aunque su origen sea otro
+     webinar anterior. */
+  const seRegistro = (c: Contacto) => [c.extra?.registrosWebinar, c.extra?.formulariosMeta]
+    .some((xs) => Array.isArray(xs) && (xs as { webinarId?: string }[]).some((r) => r.webinarId === webinarId));
   for (const c of e.contactos) {
-    if (c.origenWebinarId === webinarId) deContacto(fila(c.id, c.nombre), c);
+    if (c.origenWebinarId === webinarId || seRegistro(c)) deContacto(fila(c.id, c.nombre), c);
   }
   for (const l of e.leads) {
     if (l.webinarId !== webinarId) continue;

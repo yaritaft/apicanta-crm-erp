@@ -16,6 +16,10 @@
     {
       "path": "/api/cron/youtube",
       "schedule": "* * * * *"
+    },
+    {
+      "path": "/api/cron/meta-capi",
+      "schedule": "10,40 * * * *"
     }
   ]
 }
