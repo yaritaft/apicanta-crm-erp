@@ -186,17 +186,83 @@ export function esAutomatica(ss: Sugerencia[]): boolean {
   return true;
 }
 
+/* ---------- El cobro ya está cargado ----------
+   Muchos cobros de pasarela ya están en la app como pago: se cargaron a
+   mano o vinieron de la planilla de Angelo. Imputarlos a una cuota
+   crearía otro pago por la misma plata (y el motor, que busca cuotas con
+   saldo, propondría la siguiente cuota de la misma persona). Lo correcto
+   es atarlos al pago que ya existe: no suma plata y le pone la comisión
+   real de la pasarela. Se busca en la misma cuenta, con el mismo monto
+   (±2%) y hasta 7 días de diferencia. */
+
+export interface PagoYaCargado {
+  pago: Pago;
+  cuota?: Cuota;
+  venta?: Venta;
+  puntaje: number;
+  motivos: string[];
+  dias: number;
+}
+
+export function pagosYaCargados(e: EstadoApp, mov: Movimiento): PagoYaCargado[] {
+  if (mov.estado !== "pendiente") return [];
+  const proc = procesadorDeMovimiento(e, mov);
+  if (!proc) return [];
+  const out: PagoYaCargado[] = [];
+  const t = new Date(mov.fecha).getTime();
+  for (const p of e.pagos) {
+    if (p.procesadorId !== proc.id || p.movimientoId) continue;
+    if (Math.abs(p.monto - mov.monto) > Math.max(1, mov.monto * 0.02)) continue;
+    const dias = Math.abs(new Date(p.fecha).getTime() - t) / DIA;
+    if (dias > 7) continue;
+    const cuota = e.cuotas.find((c) => c.id === p.cuotaId);
+    const venta = cuota ? e.ventas.find((v) => v.id === cuota.ventaId) : undefined;
+    const motivos: string[] = [];
+    let puntaje = 0;
+    if (Math.abs(p.monto - mov.monto) <= 0.01) { puntaje += 40; motivos.push("mismo monto"); } else { puntaje += 25; motivos.push("monto casi igual"); }
+    if (dias < 1) { puntaje += 30; motivos.push("mismo día"); } else if (dias <= 3) { puntaje += 20; motivos.push(`${Math.round(dias)} días de diferencia`); } else { puntaje += 8; motivos.push(`${Math.round(dias)} días de diferencia`); }
+    const nombre = Math.max(parecido(mov.clienteNombre, venta?.contactoNombre), parecido(mov.clienteNombre, p.pagador));
+    if (nombre >= 0.99) { puntaje += 30; motivos.push("mismo nombre"); } else if (nombre >= 0.5) { puntaje += 15; motivos.push("nombre parecido"); }
+    out.push({ pago: p, cuota, venta, puntaje, motivos, dias });
+  }
+  return out.sort((a, b) => b.puntaje - a.puntaje || a.dias - b.dias);
+}
+
+/** Cada cobro con el pago ya cargado que es seguro que es él: buen
+ *  puntaje, le gana claro al segundo y ningún otro cobro lo reclama mejor
+ *  (un pago va con un solo cobro). */
+export function vinculosSeguros(e: EstadoApp, movs?: Movimiento[]): { movimiento: Movimiento; pago: Pago }[] {
+  const lista = movs ?? e.movimientos.filter((m) => m.estado === "pendiente");
+  const candidatos = lista.flatMap((movimiento) => {
+    const [primero, segundo] = pagosYaCargados(e, movimiento);
+    if (!primero || primero.puntaje < 70) return [];
+    if (segundo && primero.puntaje - segundo.puntaje < 15) return [];
+    return [{ movimiento, pago: primero.pago, puntaje: primero.puntaje }];
+  }).sort((a, b) => b.puntaje - a.puntaje);
+  const usados = new Set<ID>();
+  const out: { movimiento: Movimiento; pago: Pago }[] = [];
+  for (const c of candidatos) {
+    if (usados.has(c.pago.id)) continue;
+    usados.add(c.pago.id);
+    out.push({ movimiento: c.movimiento, pago: c.pago });
+  }
+  return out;
+}
+
 export interface Propuesta {
   movimiento: Movimiento;
   sugerencias: Sugerencia[];
   automatica: boolean;
+  /* Ya hay un pago cargado que puede ser este cobro: no se imputa solo. */
+  yaCargado: boolean;
 }
 
 export function propuestas(e: EstadoApp, movs?: Movimiento[]): Propuesta[] {
   const lista = movs ?? e.movimientos.filter((m) => m.estado === "pendiente");
   return lista.map((movimiento) => {
     const ss = sugerenciasPara(e, movimiento);
-    return { movimiento, sugerencias: ss, automatica: esAutomatica(ss) };
+    const yaCargado = pagosYaCargados(e, movimiento).length > 0;
+    return { movimiento, sugerencias: ss, automatica: !yaCargado && esAutomatica(ss), yaCargado };
   });
 }
 
@@ -208,7 +274,10 @@ export function resumenConciliacion(e: EstadoApp) {
   /* Lo que falta imputar: de un pago usado a medias, sólo lo que queda. */
   const sinConciliar = pendientes.reduce((a, m) => a + restoDeMovimiento(e, m), 0);
   const autos = propuestas(e, pendientes).filter((p) => p.automatica);
+  const vinculos = vinculosSeguros(e, pendientes);
   return {
+    /* Cobros que ya están cargados como pago y se atan solos. */
+    vinculables: vinculos.length,
     pendientes: pendientes.length,
     sinConciliar,
     conciliados: conciliados.length,

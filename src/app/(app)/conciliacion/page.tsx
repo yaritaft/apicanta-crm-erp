@@ -2,7 +2,7 @@
 
 import React, { useMemo, useState } from "react";
 import {
-  ArrowDownUp, Check, EyeOff, Info, Plus, RefreshCw, Search, Sparkles, Undo2, Upload,
+  ArrowDownUp, Check, EyeOff, Info, Link2, Plus, RefreshCw, Search, Sparkles, Undo2, Upload,
 } from "lucide-react";
 import { PageHead } from "@/components/shell/PageHead";
 import {
@@ -15,7 +15,8 @@ import { acciones, useEstado } from "@/lib/store";
 import { nube } from "@/lib/supabase";
 import { fechaLarga, money, pct } from "@/lib/format";
 import {
-  esAutomatica, medioDeMovimiento, propuestas, restoDeMovimiento, resumenConciliacion, saldoDeCuota, sugerenciasPara,
+  esAutomatica, medioDeMovimiento, pagosYaCargados, propuestas, restoDeMovimiento, resumenConciliacion, saldoDeCuota, sugerenciasPara,
+  vinculosSeguros,
   type Sugerencia,
 } from "@/lib/conciliacion";
 import { importarCSV, PASARELAS, nombrePasarela } from "@/lib/pasarelas";
@@ -62,6 +63,11 @@ export default function Conciliacion() {
     }
     return [...cuenta.entries()].sort((a, b) => b[1].n - a[1].n);
   }, [e, filtro]);
+
+  function atarLosYaCargados() {
+    const n = acciones.vincularConPagos(vinculosSeguros(e).map((v) => ({ movimientoId: v.movimiento.id, pagoId: v.pago.id })));
+    toast(n === 0 ? "No había cobros para atar." : `${n === 1 ? "Se ató un cobro" : `Se ataron ${n} cobros`} a su pago: tienen la comisión real y no se sumó plata.`);
+  }
 
   function conciliarTodosLosSeguros() {
     const autos = propuestas(e).filter((p) => p.automatica);
@@ -124,6 +130,24 @@ export default function Conciliacion() {
           </>
         }
       />
+
+      {filtro === "pendiente" && resumen.vinculables > 0 && (
+        <div className="help-card">
+          <Link2 size={18} />
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div className="help-card__title">
+              {resumen.vinculables === 1 ? "Un cobro ya está cargado" : `${resumen.vinculables} cobros ya están cargados`} como pago
+            </div>
+            <div className="help-card__text">
+              Se cargaron a mano o vinieron de la planilla: misma cuenta, mismo monto y la misma semana. Imputarlos a una
+              cuota contaría la plata dos veces; atarlos al pago no suma nada y le pone la comisión real de la pasarela.
+            </div>
+          </div>
+          <Button variante="primary" icono={<Link2 size={16} />} onClick={atarLosYaCargados}>
+            Atar {resumen.vinculables}
+          </Button>
+        </div>
+      )}
 
       {filtro === "pendiente" && resumen.automaticos > 0 && (
         <div className="help-card">
@@ -225,7 +249,8 @@ function FilaMovimiento({ mov, M, abierto, onAbrir, onNuevaVenta }: {
     () => (mov.estado === "pendiente" ? sugerenciasPara(e, mov) : []),
     [e, mov],
   );
-  const automatica = esAutomatica(sugerencias);
+  const yaCargados = useMemo(() => pagosYaCargados(e, mov), [e, mov]);
+  const automatica = yaCargados.length === 0 && esAutomatica(sugerencias);
 
   const manuales = useMemo(() => {
     const q = busqueda.trim().toLowerCase();
@@ -261,6 +286,7 @@ function FilaMovimiento({ mov, M, abierto, onAbrir, onNuevaVenta }: {
         </span>
         <span className="spacer" />
         {mov.estado === "pendiente" && automatica && <Badge variante="success"><Sparkles size={13} />Calce seguro</Badge>}
+        {mov.estado === "pendiente" && yaCargados.length > 0 && <Badge variante="accent"><Link2 size={13} />Ya cargado</Badge>}
         {mov.estado === "conciliado" && (
           <Badge variante="neutral"><Check size={13} />{destino}</Badge>
         )}
@@ -288,6 +314,25 @@ function FilaMovimiento({ mov, M, abierto, onAbrir, onNuevaVenta }: {
 
           {mov.estado === "pendiente" ? (
             <>
+              {yaCargados.length > 0 && (
+                <>
+                  <div className="t-label">Ya está cargado como pago</div>
+                  {yaCargados.slice(0, 3).map((x) => (
+                    <div className="row-wrap" key={x.pago.id} style={{ gap: 8 }}>
+                      <span className="t-sm t-strong">{x.venta?.contactoNombre ?? x.pago.pagador ?? "Sin venta"}</span>
+                      <span className="t-sm t-subtle">
+                        {x.cuota ? (x.cuota.esReserva ? "Reserva" : `Cuota ${x.cuota.numero}`) : ""} · {fechaLarga(x.pago.fecha)} · {x.motivos.join(", ")}
+                      </span>
+                      <span className="spacer t-sm t-num">{M(x.pago.monto, 2)}</span>
+                      <Button sm variante="secondary" icono={<Link2 size={14} />}
+                        onClick={() => { if (acciones.vincularConPagos([{ movimientoId: mov.id, pagoId: x.pago.id }])) toast("Cobro atado a su pago."); }}>
+                        Es este pago
+                      </Button>
+                    </div>
+                  ))}
+                  <p className="t-sm t-muted">Si no es ninguno, imputalo a una cuota como siempre.</p>
+                </>
+              )}
               <div className="t-label">A qué cuota corresponde</div>
               {sugerencias.length === 0 && (
                 <p className="t-sm t-muted">
@@ -328,7 +373,7 @@ function FilaMovimiento({ mov, M, abierto, onAbrir, onNuevaVenta }: {
           ) : mov.estado === "conciliado" ? (
             <div className="row-wrap">
               <span className="t-sm t-muted">
-                Imputado {mov.conciliadoEn ? `el ${fechaLarga(mov.conciliadoEn)}` : ""}
+                {mov.vinculado ? "Atado al pago que ya estaba cargado" : "Imputado"} {mov.conciliadoEn ? `el ${fechaLarga(mov.conciliadoEn)}` : ""}
                 {mov.conciliadoPor ? ` por ${mov.conciliadoPor}` : ""}.
               </span>
               <Button sm variante="ghost" icono={<Undo2 size={14} />} className="spacer"

@@ -2020,13 +2020,84 @@ export const acciones = {
     return true;
   },
 
+  /* Atar un cobro de pasarela al pago que ya estaba cargado (de la planilla
+     o a mano): no nace otro pago ni se mueve el cash collected. El pago toma
+     la comisión real de la pasarela y queda chequeado. Ver pagosYaCargados. */
+  vincularConPagos(pares: { movimientoId: ID; pagoId: ID }[]): number {
+    const e = snapshot();
+    const movPorId = new Map(e.movimientos.map((m) => [m.id, m] as const));
+    const pagoPorId = new Map(e.pagos.map((p) => [p.id, p] as const));
+    const r2 = (n: number) => Math.round(n * 100) / 100;
+    const pagosCambiados = new Map<ID, Pago>();
+    const movsCambiados = new Map<ID, Movimiento>();
+    const cuando = ahora();
+    for (const { movimientoId, pagoId } of pares) {
+      const mov = movPorId.get(movimientoId);
+      const pago = pagoPorId.get(pagoId);
+      if (!mov || mov.estado !== "pendiente" || !pago || pago.movimientoId || pagosCambiados.has(pago.id)) continue;
+      const fee = mov.monto > 0 ? r2(mov.fee * (pago.monto / mov.monto)) : 0;
+      pagosCambiados.set(pago.id, {
+        ...pago, movimientoId: mov.id, feeMonto: fee, feeRate: pago.monto > 0 ? Math.round((fee / pago.monto) * 10000) / 10000 : 0,
+        feeManual: false, chequeado: true, referencia: pago.referencia || mov.referencia,
+      });
+      movsCambiados.set(mov.id, {
+        ...mov, estado: "conciliado", vinculado: true, pagoId: pago.id, cuotaId: pago.cuotaId,
+        ventaId: e.cuotas.find((c) => c.id === pago.cuotaId)?.ventaId,
+        conciliadoEn: cuando, conciliadoPor: e.ajustes.responsable || "Apicanta",
+      });
+    }
+    if (pagosCambiados.size === 0) return 0;
+    const { lista, nuevo } = registrar(
+      e, "transaccion", "vincular-cobros", "Conciliación", "actualizo",
+      pagosCambiados.size === 1
+        ? "Se ató un cobro de pasarela al pago que ya estaba cargado: tiene la comisión real y no se suma plata."
+        : `Se ataron ${pagosCambiados.size} cobros de pasarela a los pagos que ya estaban cargados: tienen la comisión real y no se suma plata.`,
+    );
+    guardar({
+      ...e, actividad: lista,
+      pagos: e.pagos.map((p) => pagosCambiados.get(p.id) ?? p),
+      movimientos: e.movimientos.map((m) => movsCambiados.get(m.id) ?? m),
+    });
+    empujarEnLotes("pagos", [...pagosCambiados.values()]);
+    empujarEnLotes("movimientos", [...movsCambiados.values()]);
+    empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
+    return pagosCambiados.size;
+  },
+
   /* Deshacer: se borran los pagos que nacieron del movimiento y las cuotas
      vuelven a estar pendientes. Sin esto, un error de conciliación sólo se
-     arregla a mano y en tres pantallas distintas. */
+     arregla a mano y en tres pantallas distintas. Si el cobro se había
+     atado a un pago que ya estaba cargado, se desata: el pago queda (vuelve
+     a la tasa de su cuenta) y el cobro vuelve a la bandeja. */
   desconciliar(movimientoId: ID): boolean {
     const e = snapshot();
     const mov = e.movimientos.find((m) => m.id === movimientoId);
     if (!mov) return false;
+    if (mov.vinculado) {
+      const tasa = (id?: ID) => e.procesadores.find((p) => p.id === id)?.feeRate ?? 0;
+      const desatados = e.pagos.filter((p) => p.movimientoId === mov.id).map((p) => ({
+        ...p, movimientoId: undefined, feeRate: tasa(p.procesadorId), feeMonto: Math.round(p.monto * tasa(p.procesadorId) * 100) / 100,
+      }));
+      const actualizado: Movimiento = {
+        ...mov, estado: "pendiente", vinculado: false,
+        pagoId: undefined, cuotaId: undefined, ventaId: undefined, conciliadoEn: undefined, conciliadoPor: undefined,
+      };
+      const porId = new Map(desatados.map((p) => [p.id, p] as const));
+      const { lista, nuevo } = registrar(
+        e, "transaccion", mov.id, `Cobro ${mov.referencia}`, "actualizo",
+        `Se desató ${mov.referencia} del pago que ya estaba cargado: el pago queda y el cobro vuelve a la bandeja.`,
+      );
+      guardar({
+        ...e, actividad: lista,
+        pagos: e.pagos.map((p) => porId.get(p.id) ?? p),
+        movimientos: e.movimientos.map((m) => (m.id === mov.id ? actualizado : m)),
+      });
+      /* undefined no viaja: movimientoId tiene que ir como null para que la base lo borre. */
+      for (const p of desatados) empujarUpdate("pagos", [p.id], { movimientoId: null, feeRate: p.feeRate, feeMonto: p.feeMonto });
+      empujarUpdate("movimientos", [mov.id], { estado: "pendiente", vinculado: false, pagoId: null, cuotaId: null, ventaId: null, conciliadoEn: null, conciliadoPor: null });
+      empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
+      return true;
+    }
 
     const suyos = e.pagos.filter((p) => p.movimientoId === mov.id);
     const ids = suyos.map((p) => p.id);

@@ -714,6 +714,9 @@ export interface Movimiento {
   ventaId?: ID;
   conciliadoEn?: string;
   conciliadoPor?: string;
+  /* Se concilió atándolo a un pago que ya estaba cargado (de la planilla o
+     a mano), no creando uno: deshacer lo desata, no borra el pago. */
+  vinculado?: boolean;
   /* De dónde salió: "csv", "api", "webhook", "demo" */
   origen: string;
   creadoEn: string;
