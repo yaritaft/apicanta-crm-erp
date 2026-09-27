@@ -1,6 +1,6 @@
 import {
   LayoutDashboard, Users, Sheet, CalendarDays, Video, Megaphone,
-  GraduationCap, ClipboardList, Wallet, Settings, HandCoins, ArrowDownUp, Banknote, Landmark,
+  GraduationCap, ClipboardList, Wallet, Settings, HandCoins, ArrowDownUp, Banknote, Landmark, UserCheck,
 } from "lucide-react";
 import { SquareKanban } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
@@ -26,6 +26,7 @@ export const NAV: GrupoNav[] = [
       { href: "/crm", texto: "CRM", icono: Sheet, ayuda: "Cada agenda de Calendly con su seguimiento, como el Airtable de ventas" },
       { href: "/agenda", texto: "Agenda", icono: CalendarDays, ayuda: "Las sesiones agendadas" },
       { href: "/ventas", texto: "Ventas", icono: HandCoins, ayuda: "Cada venta con sus cuotas y cobros" },
+      { href: "/clientes", texto: "Clientes", icono: UserCheck, ayuda: "La gente que compró: qué compró, cuánto pagó y si está al día" },
     ],
   },
   {
