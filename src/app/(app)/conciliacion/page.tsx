@@ -43,7 +43,9 @@ export default function Conciliacion() {
   const [nuevaVenta, setNuevaVenta] = useState<Movimiento | null>(null);
   const [sincronizando, setSincronizando] = useState(false);
 
-  const resumen = resumenConciliacion(e);
+  /* Recorre todos los cobros pendientes contra todas las cuotas: se calcula
+     cuando cambian los datos, no a cada clic (abrir un cobro, filtrar). */
+  const resumen = useMemo(() => resumenConciliacion(e), [e]);
 
   const filas = useMemo(() => {
     return e.movimientos
