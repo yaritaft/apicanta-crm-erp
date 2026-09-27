@@ -158,7 +158,8 @@ export function formatear(v: number, formato: FormatoKpi, moneda: Moneda): strin
        centavos; el resto, redondo. */
     case "moneda":
     case "resultado": return money(v, moneda, v !== 0 && Math.abs(v) < 10 ? 2 : 0);
-    case "cantidad": return num(v);
+    /* Las ventas equivalentes pueden no ser enteras: con un decimal. */
+    case "cantidad": return num(v, Number.isInteger(v) ? 0 : 1);
     case "pct": return pct(v, 1);
     case "x": return `${num(v, 2)}x`;
     case "dias": return `${num(v)} ${v === 1 ? "día" : "días"}`;

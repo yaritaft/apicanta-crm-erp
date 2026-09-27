@@ -467,6 +467,19 @@ export function catalogo(e: EstadoApp): DefKpi[] {
   const deTipo = (c: Contexto, tipo: string) => c.ventasContables().filter((v) => v.productoId && c.ix.tipoProducto.get(v.productoId) === tipo).length;
   const enCuotas = (c: Contexto, n: number, oMas = false) =>
     c.ventasContables().filter((v) => { const k = c.cuotasDe(v).length; return oMas ? k >= n : k === n; }).length;
+  /* Programas + (downsells + reservas) / ticket del programa. La plata de
+     las reservas es la seña de las ventas que quedaron en sólo reserva. */
+  const ventasEquivalentes = (c: Contexto): number | null => {
+    const tipo = (v: Venta) => (v.productoId ? c.ix.tipoProducto.get(v.productoId) : undefined);
+    const programas = c.ventasContables().filter((v) => tipo(v) === "principal");
+    const ticket = div(programas.reduce((a, v) => a + v.precioAcordado, 0), programas.length);
+    if (!ticket) return null;
+    const downsells = c.ventasContables().filter((v) => tipo(v) === "downsell").reduce((a, v) => a + v.precioAcordado, 0);
+    const reservas = c.ventas()
+      .filter((v) => esSoloReserva(c.ix.cuotasPorVenta.get(v.id) ?? []))
+      .reduce((a, v) => a + (c.ix.cuotasPorVenta.get(v.id) ?? []).reduce((x, q) => x + q.monto, 0), 0);
+    return Math.round((programas.length + (downsells + reservas) / ticket) * 10) / 10;
+  };
 
   add("ventas", "Ventas", [
     { id: "v_n", etiqueta: "Ventas", formato: "cantidad", mejor: "sube", href: "/ventas",
@@ -484,6 +497,12 @@ export function catalogo(e: EstadoApp): DefKpi[] {
       ayuda: "Revenue: el precio acordado de las ventas del período.", valor: (c) => c.facturado() },
     { id: "v_ticket", etiqueta: "Ticket promedio", formato: "moneda", mejor: "sube", href: "/ventas",
       ayuda: "Facturado sobre ventas.", valor: (c) => div(c.facturado(), c.ventasContables().length) },
+    { id: "v_1_pct", etiqueta: "Pagaron todo de una", formato: "pct", mejor: "sube", href: "/ventas",
+      ayuda: "Ventas en un solo pago sobre todas las ventas del período: cuánta gente paga el programa entero de entrada.",
+      valor: (c) => pctDe(enCuotas(c, 1), c.ventasContables().length) },
+    { id: "v_equiv", etiqueta: "Ventas equivalentes", formato: "cantidad", mejor: "sube", href: "/ventas",
+      ayuda: "Como las cuenta Yari: los programas vendidos más lo que juntaron los downsells y las reservas, pasado a programas con el ticket promedio del programa. Cinco downsells de 500 con un programa de 2.500 son una venta más.",
+      valor: (c) => ventasEquivalentes(c) },
   ]);
 
   add("ventas", "Conversión", [
