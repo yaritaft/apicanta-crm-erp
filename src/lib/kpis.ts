@@ -622,7 +622,7 @@ export function catalogo(e: EstadoApp): DefKpi[] {
      los honorarios del dueño van abajo, en el resultado. */
   const porCategoria = new Map<string, number>();
   for (const x of e.gastos) {
-    if (x.grupo === "dueno") continue;
+    if (x.grupo === "dueno" || x.grupo === "retiro") continue;
     porCategoria.set(x.categoria, (porCategoria.get(x.categoria) ?? 0) + x.monto);
   }
   add("rentabilidad", "Gastos", [
@@ -631,7 +631,7 @@ export function catalogo(e: EstadoApp): DefKpi[] {
     ...[...porCategoria.entries()].sort((a, b) => b[1] - a[1]).map(([cat]) => ({
       id: `r_cat:${cat}`, etiqueta: cat, formato: "moneda" as const, ocultarEnCero: true, href: "/finanzas/detalle?vista=gastos",
       ayuda: `Los gastos cargados como «${cat}».`,
-      valor: (c: Contexto) => g(c, () => gastosDelMes(c.e, c.m!).filter((x) => x.categoria === cat && x.grupo !== "dueno").reduce((a, x) => a + x.monto, 0)),
+      valor: (c: Contexto) => g(c, () => gastosDelMes(c.e, c.m!).filter((x) => x.categoria === cat && x.grupo !== "dueno" && x.grupo !== "retiro").reduce((a, x) => a + x.monto, 0)),
     })),
   ]);
 

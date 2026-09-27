@@ -1,6 +1,6 @@
 import {
   LayoutDashboard, Users, Sheet, CalendarDays, Video, Megaphone,
-  GraduationCap, ClipboardList, Wallet, Settings, HandCoins, ArrowDownUp, Banknote,
+  GraduationCap, ClipboardList, Wallet, Settings, HandCoins, ArrowDownUp, Banknote, Landmark,
 } from "lucide-react";
 import { SquareKanban } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
@@ -49,6 +49,7 @@ export const NAV: GrupoNav[] = [
     titulo: "Administración",
     items: [
       { href: "/finanzas", texto: "Finanzas", icono: Wallet, ayuda: "Ingresos, egresos y qué queda" },
+      { href: "/finanzas/caja", texto: "Caja", icono: Landmark, ayuda: "Arqueos, meses de vida y retiros" },
       { href: "/conciliacion", texto: "Conciliación", icono: ArrowDownUp, ayuda: "Cobros de las pasarelas y a qué cuota van" },
       { href: "/equipo", texto: "Equipo y honorarios", icono: Banknote, ayuda: "Quién es quién, con qué entra a la app y cuánto cobra", soloDuenos: true },
       { href: "/ajustes", texto: "Ajustes", icono: Settings, ayuda: "Etapas, categorías, campos e integraciones" },

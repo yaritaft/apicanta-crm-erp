@@ -4,7 +4,7 @@ import { useCallback, useSyncExternalStore } from "react";
 import type {
   AccionActividad, Actividad, Ad, AdInsight, Adset, Ajustes, Alumno, Campaign,
   Contacto,
-  Campania, CampoPersonalizado, Comentario, Comprobante, Cuota, EntidadNombre, EstadoApp, Etapa, ID,
+  Arqueo, Campania, CampoPersonalizado, Comentario, Comprobante, Cuota, EntidadNombre, EstadoApp, Etapa, ID,
   Lead, Meta, Movimiento, OpcionCrm, OportunidadCrm, Pago, Reporte, Sesion, Venta, Webinar,
 } from "./types";
 import type { EsquemaPago, EtapaServicio, Gasto, ID as IdMiembro, Liquidacion, MiembroEquipo, ResultadoLiquidacion } from "./types";
@@ -443,6 +443,8 @@ export async function cargarDeLaNube(): Promise<void> {
       contactos: (porTabla.contactos ?? []) as EstadoApp["contactos"],
       comentarios: ((porTabla.comentarios ?? []) as EstadoApp["comentarios"])
         .sort((a, b) => +new Date(a.creadoEn) - +new Date(b.creadoEn)),
+      arqueos: ((porTabla.arqueos ?? []) as EstadoApp["arqueos"])
+        .sort((a, b) => +new Date(a.fecha) - +new Date(b.fecha)),
       /* Vacías para quien no es dueño: RLS las esconde. */
       honorarios: (porTabla.honorarios ?? []) as EstadoApp["honorarios"],
       liquidaciones: (porTabla.liquidaciones ?? []) as EstadoApp["liquidaciones"],
@@ -492,6 +494,7 @@ function ordenDeSiembra(e: EstadoApp): [string, unknown[]][] {
     ["ventas", e.ventas], ["cuotas", e.cuotas], ["movimientos", e.movimientos],
     ["pagos", e.pagos], ["gastos", e.gastos],
     ["comentarios", e.comentarios ?? []],
+    ["arqueos", e.arqueos ?? []],
     ["actividad", e.actividad],
     /* Sin FK desde alumnos a propósito (ver alumnos-servicio.sql): puede ir
        al final sin romper el orden de nadie. */
@@ -538,7 +541,7 @@ async function vaciarNube() {
      es, no borran nada (RLS) y no dan error. */
   const orden = [
     "liquidaciones", "honorarios",
-    "actividad", "comentarios", "campos", "metas", "pagos", "movimientos", "cuotas", "ventas", "gastos",
+    "actividad", "comentarios", "arqueos", "campos", "metas", "pagos", "movimientos", "cuotas", "ventas", "gastos",
     "campanias", "reportes", "sesiones", "alumnos", "leads", "contactos", "webinars",
     "etapas", "equipo", "embudos", "procesadores", "productos",
     "etapas_servicio",
@@ -1471,6 +1474,30 @@ export const acciones = {
     const e = snapshot();
     guardar({ ...e, comentarios: (e.comentarios ?? []).filter((c) => c.id !== id) });
     empujar({ tipo: "delete", tabla: "comentarios", ids: [id] });
+  },
+
+  /* ---------- Arqueo de caja (lib/caja.ts) ---------- */
+
+  guardarArqueo(arqueo: Arqueo): void {
+    const e = snapshot();
+    const lista = [...(e.arqueos ?? []).filter((a) => a.id !== arqueo.id), arqueo]
+      .sort((a, b) => +new Date(a.fecha) - +new Date(b.fecha));
+    const dif = arqueo.diferencia;
+    const { lista: act, nuevo } = registrar(
+      e, "transaccion", arqueo.id, "Arqueo de caja", "creo",
+      `Arqueo del ${arqueo.fecha.slice(0, 10)}: en las cuentas hay ${Math.round(arqueo.total).toLocaleString("es-AR")}`
+      + (dif === null || dif === undefined ? "." : Math.abs(dif) < 1 ? ", justo lo que esperaba la app."
+        : `, ${Math.round(Math.abs(dif)).toLocaleString("es-AR")} ${dif > 0 ? "más" : "menos"} de lo que esperaba la app.`),
+    );
+    guardar({ ...e, arqueos: lista, actividad: act });
+    empujar({ tipo: "upsert", tabla: "arqueos", filas: [arqueo] });
+    empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
+  },
+
+  borrarArqueo(id: ID): void {
+    const e = snapshot();
+    guardar({ ...e, arqueos: (e.arqueos ?? []).filter((a) => a.id !== id) });
+    empujar({ tipo: "delete", tabla: "arqueos", ids: [id] });
   },
 
   /* ---------- Alta completa de una venta ----------

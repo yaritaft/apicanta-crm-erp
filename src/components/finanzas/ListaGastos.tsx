@@ -37,7 +37,7 @@ const COLUMNAS: DefColumna[] = [
 const POR_DEFECTO = ["concepto", "categoria", "grupo", "fecha", "tipo", "monto"];
 
 export const VARIANTE_GRUPO: Record<GrupoGasto, "warning" | "neutral" | "brand"> = {
-  directo: "warning", operativo: "neutral", dueno: "brand",
+  directo: "warning", operativo: "neutral", dueno: "brand", retiro: "neutral",
 };
 
 export function ListaGastos({ e, mes, onNuevo, onVer, onEditar, onBorrar }: {

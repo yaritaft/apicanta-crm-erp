@@ -41,8 +41,10 @@ export function FichaGasto({ gasto, e, onCerrar, onEditar, onBorrar }: {
         <Badge variante={VARIANTE_GRUPO[gasto.grupo] ?? "neutral"}>{grupo.titulo}</Badge>
       </div>
       <p className="t-sm t-subtle">
-        Resta en «{gasto.grupo === "directo" ? "Otros costos directos" : gasto.grupo === "dueno" ? "Honorarios del CEO" : "Gastos operativos"}»
-        del estado de resultados, en las dos columnas. {grupo.ayuda}
+        {gasto.grupo === "retiro"
+          ? <>No resta del estado de resultados: sale de la caja (Finanzas → Caja). {grupo.ayuda}</>
+          : <>Resta en «{gasto.grupo === "directo" ? "Otros costos directos" : gasto.grupo === "dueno" ? "Honorarios del CEO" : "Gastos operativos"}»
+            {" "}del estado de resultados, en las dos columnas. {grupo.ayuda}</>}
       </p>
 
       <dl className="dl">

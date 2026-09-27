@@ -588,6 +588,41 @@ export interface EstadoApp {
      para el resto del equipo llegan vacías. */
   honorarios: EsquemaPago[];
   liquidaciones: Liquidacion[];
+  /* Los arqueos de caja: cuánto había de verdad en cada cuenta. */
+  arqueos: Arqueo[];
+}
+
+/* ==================================================================
+   Arqueo de caja: lo que hay de verdad en cada cuenta en un momento
+   ("¿cuánta plata tenés en Trust?"). Contra lo que la app esperaba,
+   dice si las cuentas dan (lib/caja.ts).
+   ================================================================== */
+
+export interface SaldoCuenta {
+  procesadorId: ID;
+  /* En la moneda de la cuenta. */
+  monto: number;
+  moneda: Moneda;
+  /* Lo mismo en la moneda base, con el tipo de cambio del arqueo. */
+  montoBase: number;
+  nota?: string;
+}
+
+export interface Arqueo {
+  id: ID;
+  /* Cuándo se contó. */
+  fecha: string;
+  saldos: SaldoCuenta[];
+  /* Pesos por dólar para las cuentas en ARS. */
+  tipoCambio?: number;
+  /* Todo junto en la moneda base. */
+  total: number;
+  /* Lo que la app esperaba al guardarlo y la diferencia: la foto de ese día. */
+  esperado?: number | null;
+  diferencia?: number | null;
+  notas?: string;
+  por?: string;
+  creadoEn: string;
 }
 
 /* ==================================================================
@@ -827,7 +862,9 @@ export interface Pago {
   feeManual?: boolean;
 }
 
-export type GrupoGasto = "directo" | "operativo" | "dueno";
+/* "retiro": plata que el dueño saca de la caja (el retiro de fin de año).
+   No es un gasto del negocio: no resta del profit, sí de la caja. */
+export type GrupoGasto = "directo" | "operativo" | "dueno" | "retiro";
 
 export interface Gasto {
   id: ID;

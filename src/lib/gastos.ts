@@ -12,6 +12,7 @@ export const GRUPOS_GASTO: { grupo: GrupoGasto; titulo: string; corto: string; a
   { grupo: "directo",   titulo: "Costos directos",      corto: "Directo",   ayuda: "Restan antes de la utilidad bruta: lo que cuesta cada venta." },
   { grupo: "operativo", titulo: "Gastos operativos",    corto: "Operativo", ayuda: "Lo que cuesta tener el negocio andando." },
   { grupo: "dueno",     titulo: "Honorarios del dueño", corto: "Dueño",     ayuda: "Lo que se lleva el dueño, después del resultado operativo." },
+  { grupo: "retiro",    titulo: "Retiros del dueño",    corto: "Retiro",    ayuda: "Plata que sale de la caja pero no es un gasto: el retiro de beneficios. No resta del profit." },
 ];
 
 export function infoGrupo(g: GrupoGasto) {

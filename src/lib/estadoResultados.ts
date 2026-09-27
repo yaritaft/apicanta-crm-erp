@@ -46,11 +46,13 @@ export const TOPE = 12;
 /* El renglón del P&L en el que cae cada grupo de gasto. Lo usa la página
    para abrir el renglón del gasto que se acaba de cargar. */
 export const RENGLON_DE_GRUPO: Record<GrupoGasto, string> = {
-  directo: "directos", operativo: "operativos", dueno: "honorarios",
+  /* Los retiros no están en el estado de resultados: no hay renglón que abrir. */
+  directo: "directos", operativo: "operativos", dueno: "honorarios", retiro: "",
 };
 
 export function rutaDeGasto(g: Pick<Gasto, "id" | "grupo" | "categoria">): string[] {
   const r = RENGLON_DE_GRUPO[g.grupo];
+  if (!r) return [];
   return [r, `${r}/c:${g.categoria}`, `${r}/c:${g.categoria}/g:${g.id}`];
 }
 

@@ -164,6 +164,8 @@ export const CATEGORIAS_GASTO: CategoriaGasto[] = [
   { categoria: "Pendiente de revisión",      grupo: "operativo", ayuda: "Lo que todavía no sabés dónde va: revisalo después" },
   /* Honorarios del dueño: después del resultado operativo */
   { categoria: "Honorarios del CEO",         grupo: "dueno",     ayuda: "Lo que se paga el dueño", claves: ["honorario", "ceo"] },
+  /* Retiros: salen de la caja, no del profit */
+  { categoria: "Retiro de beneficios",       grupo: "retiro",    ayuda: "Lo que el dueño saca de la caja (el retiro de fin de año)", claves: ["retiro", "beneficio"] },
 ];
 
 const HOY = new Date();
@@ -823,6 +825,7 @@ export function construirSemilla(): EstadoApp {
     gastos,
     movimientos,
     comentarios: [],
+    arqueos: [],
     honorarios: [], liquidaciones: [],
   };
 }
@@ -1017,7 +1020,7 @@ export function estadoVacio(): EstadoApp {
     contactos: [], campanias: [], campaigns: [], adsets: [], ads: [], adInsights: [],
     metas: [], campos: [],
     productos: PRODUCTOS, procesadores: PROCESADORES, embudos: EMBUDOS, equipo: EQUIPO,
-    ventas: [], cuotas: [], pagos: [], gastos: [], movimientos: [], comentarios: [],
+    ventas: [], cuotas: [], pagos: [], gastos: [], movimientos: [], comentarios: [], arqueos: [],
     honorarios: [], liquidaciones: [],
     actividad: [{
       id: "act_1", entidad: "config", entidadId: "reset", titulo: "Espacio vacío",
