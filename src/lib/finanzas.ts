@@ -42,6 +42,25 @@ export function feesProcesador(e: EstadoApp, m: RangoMes): number {
   return pagosDelMes(e, m).reduce((a, p) => a + p.feeMonto, 0);
 }
 
+/* ---------- La tasa de la cuenta en los cobros ya cargados ----------
+   Un cobro que no se concilió ni se corrigió a mano toma la comisión de la
+   tasa de su cuenta recaudadora al cargarse. Si después la tasa cambia,
+   estos son los que quedaron con la vieja: los conciliados tienen el fee
+   real de la pasarela y los corregidos a mano, el que se pagó de verdad,
+   así que no entran. */
+
+const r2 = (n: number) => Math.round(n * 100) / 100;
+
+export function cobrosConOtraTasa(e: EstadoApp, procesadorId: string, tasa: number): Pago[] {
+  return e.pagos.filter((p) => p.procesadorId === procesadorId && !p.movimientoId && !p.feeManual
+    && Math.abs(p.feeMonto - r2(p.monto * tasa)) > 0.004);
+}
+
+/** El mismo cobro con la comisión de la tasa. */
+export function conTasa(p: Pago, tasa: number): Pago {
+  return { ...p, feeRate: tasa, feeMonto: r2(p.monto * tasa) };
+}
+
 /** Cash collected sobre revenue: de todo lo que vendemos, cuánto entra. */
 export function tasaDeCobro(e: EstadoApp, m: RangoMes): number {
   const r = revenue(e, m);

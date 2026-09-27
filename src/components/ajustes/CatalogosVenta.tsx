@@ -3,10 +3,12 @@
 import React, { useState } from "react";
 import { Landmark, Link2, Plus, Trash2, X } from "lucide-react";
 import { Badge, Button, Card, CardHead, Field, IconButton, Input, Select, Switch } from "@/components/ui/ui";
-import { ModalForm } from "@/components/ui/Modal";
+import { Modal, ModalForm } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toast";
 import { acciones, nuevoId, useEstado } from "@/lib/store";
 import { nombrePasarela } from "@/lib/pasarelas";
+import { cobrosConOtraTasa } from "@/lib/finanzas";
+import { money } from "@/lib/format";
 import { bancoDeCbu, limpiarCbu, validarCbu } from "@/lib/cbu";
 import type { CuentaBancaria, Embudo, Moneda, Procesador, Producto } from "@/lib/types";
 
@@ -108,10 +110,24 @@ function Cuentas() {
   /* La cuenta a la que se le están editando las cuentas bancarias. */
   const [bancarias, setBancarias] = useState<string | null>(null);
   const enEdicion = bancarias ? e.procesadores.find((p) => p.id === bancarias) : undefined;
+  /* La cuenta a la que se le acaba de cambiar la comisión y tiene cobros
+     cargados con la tasa vieja: se pregunta si pasan a la nueva. */
+  const [recalcular, setRecalcular] = useState<{ id: string; nombre: string; tasa: number; n: number; antes: number; despues: number } | null>(null);
   const cambiar = (p: Procesador, cambios: Partial<Procesador>, aviso?: string) => {
     acciones.actualizarSilencioso<Procesador>("procesadores", p.id, cambios);
     if (aviso) toast(aviso);
   };
+  function cambiarTasa(p: Procesador, tasa: number) {
+    const viejos = cobrosConOtraTasa(e, p.id, tasa);
+    cambiar(p, { feeRate: tasa }, viejos.length ? undefined : "Comisión guardada.");
+    if (viejos.length) {
+      setRecalcular({
+        id: p.id, nombre: p.nombre, tasa, n: viejos.length,
+        antes: viejos.reduce((a, x) => a + x.feeMonto, 0),
+        despues: viejos.reduce((a, x) => a + Math.round(x.monto * tasa * 100) / 100, 0),
+      });
+    }
+  }
   function agregar() {
     const id = nuevoId("proc");
     acciones.crear<Procesador>("procesadores", {
@@ -123,7 +139,7 @@ function Cuentas() {
     <Card>
       <CardHead
         titulo="Cuentas recaudadoras"
-        sub="Por dónde entra la plata. La comisión es la que cobra cada una: si el cobro se concilia con la pasarela manda el fee real; si no, se usa esta y se puede corregir a mano en Finanzas. Las que reciben pesos piden el tipo de cambio del cobro, y sus cuentas bancarias salen en el reporte para la Financiera."
+        sub="Por dónde entra la plata. La comisión es la que cobra cada una: si el cobro se concilia con la pasarela manda el fee real; si no, se usa esta y se puede corregir a mano en Finanzas. Al cambiarla, elegís si los cobros que ya la usaban pasan a la nueva. Las que reciben pesos piden el tipo de cambio del cobro, y sus cuentas bancarias salen en el reporte para la Financiera."
         acciones={<Button variante="secondary" icono={<Plus size={16} />} onClick={agregar}>Agregar cuenta</Button>}
       />
       {/* Con scroll, como los servicios: las cuentas apagadas quedan. */}
@@ -144,7 +160,7 @@ function Cuentas() {
                 defaultValue={Math.round(p.feeRate * 10000) / 100}
                 onBlur={(ev) => {
                   const v = Number(ev.target.value);
-                  if (Number.isFinite(v) && v >= 0 && v <= 100 && v / 100 !== p.feeRate) cambiar(p, { feeRate: v / 100 }, "Comisión guardada.");
+                  if (Number.isFinite(v) && v >= 0 && v <= 100 && v / 100 !== p.feeRate) cambiarTasa(p, v / 100);
                 }}
               />
               <Select
@@ -172,6 +188,36 @@ function Cuentas() {
         })}
       </div>
       {enEdicion && <CuentasBancarias key={enEdicion.id} p={enEdicion} onCerrar={() => setBancarias(null)} />}
+      {recalcular && (
+        <Modal
+          abierto onCerrar={() => setRecalcular(null)}
+          titulo={`¿Recalculo los cobros de ${recalcular.nombre}?`}
+          pie={
+            <>
+              <Button variante="ghost" onClick={() => { setRecalcular(null); toast("Comisión guardada: vale para los cobros nuevos."); }}>
+                Sólo los cobros nuevos
+              </Button>
+              <span className="spacer" />
+              <Button variante="primary" onClick={() => {
+                const n = acciones.aplicarTasaDeCuenta(recalcular.id);
+                setRecalcular(null);
+                toast(n ? `Comisión guardada y ${n === 1 ? "un cobro recalculado" : `${n} cobros recalculados`}.` : "Comisión guardada.");
+              }}>
+                Recalcular {recalcular.n === 1 ? "el cobro" : `${recalcular.n} cobros`}
+              </Button>
+            </>
+          }
+        >
+          <p className="t-body t-muted">
+            {recalcular.n === 1 ? "Hay un cobro" : `Hay ${recalcular.n} cobros`} de {recalcular.nombre} cargados con la tasa de la
+            cuenta. Con {(recalcular.tasa * 100).toLocaleString("es-AR", { maximumFractionDigits: 2 })}% su comisión pasa de{" "}
+            <strong className="t-num">{money(recalcular.antes, e.ajustes.monedaBase, 2)}</strong> a{" "}
+            <strong className="t-num">{money(recalcular.despues, e.ajustes.monedaBase, 2)}</strong>, y con ella el cash post
+            pasarelas sobre el que comisiona el equipo. Los conciliados con la pasarela, los corregidos a mano en Finanzas y
+            las liquidaciones ya cerradas no cambian.
+          </p>
+        </Modal>
+      )}
     </Card>
   );
 }

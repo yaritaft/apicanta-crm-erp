@@ -14,6 +14,7 @@ import {
   personaDeVenta, planDeVenta,
 } from "./alumnos";
 import { pagoDesdeMovimiento } from "./conciliacion";
+import { cobrosConOtraTasa, conTasa } from "./finanzas";
 import { caracteristicaDePago, montoArsDe, tipoVentaDePago, type ResultadoImport } from "./angelo";
 import { claveEmail, completar } from "./contactos";
 import { construirSemilla, estadoVacio } from "./seed";
@@ -1794,6 +1795,28 @@ export const acciones = {
     empujar({ tipo: "upsert", tabla: "pagos", filas: [actualizado] });
     empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
     return true;
+  },
+
+  /* ---------- La tasa de una cuenta, en los cobros que ya la usaban ----------
+     Al cambiar la comisión de una cuenta recaudadora, quien la cambia elige
+     si los cobros ya cargados con la tasa de la cuenta pasan a la nueva.
+     Los conciliados y los corregidos a mano no se tocan (cobrosConOtraTasa). */
+  aplicarTasaDeCuenta(procesadorId: ID): number {
+    const e = snapshot();
+    const proc = e.procesadores.find((p) => p.id === procesadorId);
+    if (!proc) return 0;
+    const cambiados = cobrosConOtraTasa(e, proc.id, proc.feeRate).map((p) => conTasa(p, proc.feeRate));
+    if (cambiados.length === 0) return 0;
+    const porId = new Map(cambiados.map((p) => [p.id, p] as const));
+    const pct = `${(proc.feeRate * 100).toLocaleString("es-AR", { maximumFractionDigits: 2 })}%`;
+    const { lista, nuevo } = registrar(
+      e, "transaccion", proc.id, proc.nombre, "actualizo",
+      `La comisión de ${proc.nombre} quedó en ${pct}: se recalcularon ${cambiados.length === 1 ? "un cobro" : `${cambiados.length} cobros`} que usaban la tasa de la cuenta.`,
+    );
+    guardar({ ...e, pagos: e.pagos.map((p) => porId.get(p.id) ?? p), actividad: lista });
+    empujarEnLotes("pagos", cambiados);
+    empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
+    return cambiados.length;
   },
 
   /* ---------- Conciliación ----------

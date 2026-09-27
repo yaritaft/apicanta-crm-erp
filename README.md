@@ -201,8 +201,10 @@ cuotas y cobros, que es lo que permite los vencimientos y la mora.
   es valor total menos cobrado, como la hoja Estado_Clientes. Reimportar actualiza, no duplica. Las reglas
   están en `src/lib/angelo.ts`.
 - **Exportar** (Ventas → Exportar planilla): la hoja Ventas con sus 36 columnas.
-- La comisión del procesador es la real: la de la pasarela si el cobro se concilia; si no, la de la cuenta,
-  que se corrige a mano en Finanzas → Detalle → Procesadores.
+- La comisión del procesador es la real: la de la pasarela si el cobro se concilia; si no, la de la cuenta
+  (Ajustes → Ventas → Cuentas recaudadoras), que se corrige a mano cobro por cobro en Finanzas → Detalle →
+  Procesadores. Al cambiar la de una cuenta se elige si los cobros que ya la usaban pasan a la nueva; los
+  conciliados y los corregidos a mano no se tocan. La Financiera cobra el 6%, como en la planilla.
 - Antes de usarlo contra Supabase hay que correr `supabase/modelo-angelo.sql` (sólo agrega columnas).
 
 ## El CRM (Booking Calls)
