@@ -36,6 +36,8 @@ export interface MetricasWebinar {
   comisiones: number;
   /* Lo que se quedaron los procesadores de pago */
   procesador: number;
+  /* Los gastos de Finanzas atribuidos a este webinar (se eligen al cargarlos). */
+  otrosGastos: number;
   roasRev: number;
   roasCC: number;
   beneficioRev: number;
@@ -51,16 +53,17 @@ const pctDiv = (a: number, b: number) => (b > 0 ? (a / b) * 100 : 0);
    el promedio de cinco ROAS no es el ROAS de los cinco. */
 type Base = Pick<MetricasWebinar,
   | "inversionTotal" | "formularios" | "grupoWpp" | "asistentes" | "llamadas"
-  | "llamadasCalificadas" | "ventas" | "facturado" | "cobrado" | "comisiones" | "procesador">;
+  | "llamadasCalificadas" | "ventas" | "facturado" | "cobrado" | "comisiones" | "procesador" | "otrosGastos">;
 
 const CLAVES_BASE: (keyof Base)[] = [
   "inversionTotal", "formularios", "grupoWpp", "asistentes", "llamadas",
-  "llamadasCalificadas", "ventas", "facturado", "cobrado", "comisiones", "procesador",
+  "llamadasCalificadas", "ventas", "facturado", "cobrado", "comisiones", "procesador", "otrosGastos",
 ];
 
 function derivar(b: Base): MetricasWebinar {
-  /* Profit del webinar = plata − (pauta + DM + WAPI) − comisiones − procesador */
-  const descuentos = b.inversionTotal + b.comisiones + b.procesador;
+  /* Profit del webinar = plata − (pauta + DM + WAPI) − comisiones − procesador,
+     y los gastos que se cargaron como de este webinar. */
+  const descuentos = b.inversionTotal + b.comisiones + b.procesador + b.otrosGastos;
   return {
     ...b,
     cplFormulario: div(b.inversionTotal, b.formularios),
@@ -224,6 +227,7 @@ export function metricasDeWebinar(e: EstadoApp, webinar: Webinar): MetricasWebin
     cobrado,
     comisiones,
     procesador: fees,
+    otrosGastos: e.gastos.filter((g) => g.webinarId === webinar.id).reduce((a, g) => a + g.monto, 0),
   });
 }
 

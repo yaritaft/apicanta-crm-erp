@@ -8,6 +8,7 @@ import {
   valorPipeline, type MetricasMeta, type RangoMes,
 } from "./metricas";
 import { metricasDeWebinar, numerosDelWebinar, sumarMetricas, type MetricasWebinar } from "./webinar";
+import { inversionDelEmbudo } from "./embudos";
 import { rachasAHoy } from "./reportes";
 import { etapaDelAlumno, etapasDeServicio } from "./alumnos";
 import { diaDeNegocio } from "@/components/ui/DateRangePicker";
@@ -215,6 +216,13 @@ export class Contexto {
         director: cs.reduce((a, c) => a + c.comisionDirector, 0),
       };
     });
+  }
+
+  /** Lo invertido en el embudo del filtro (lib/embudos.ts). Sólo con un
+   *  embudo elegido: en general es la publicidad de Finanzas. */
+  inversionEmbudo(): number | null {
+    return this.memo("invEmbudo", () =>
+      this.filtro.embudoId && !this.filtro.webinarId ? inversionDelEmbudo(this.e, this.filtro.embudoId, this.m) : null);
   }
 
   /** Los webinars con fecha en el corte, con los números de su planilla. */
@@ -517,14 +525,20 @@ export function catalogo(e: EstadoApp): DefKpi[] {
 
   add("ventas", "Costo de adquisición y retorno", [
     { id: "cac", etiqueta: "CAC", formato: "moneda", mejor: "baja", href: "/finanzas",
-      ayuda: "Inversión en publicidad sobre ventas del período. Es el de Finanzas.",
-      valor: (c) => g(c, () => { const p = c.py()!; return p.ventas > 0 ? p.cac : null; }) },
+      ayuda: "Inversión en publicidad sobre ventas del período. Es el de Finanzas. Con un embudo elegido, lo invertido en ese embudo sobre sus ventas.",
+      valor: (c) => {
+        const inv = c.inversionEmbudo();
+        if (inv !== null) return inv > 0 ? div(inv, c.ventasContables().length) : null;
+        return g(c, () => { const p = c.py()!; return p.ventas > 0 ? p.cac : null; });
+      } },
     { id: "w_cac", etiqueta: "CAC del webinar", formato: "moneda", mejor: "baja", href: "/webinars",
       ayuda: "Inversión del webinar sobre sus ventas.", valor: (c) => w(c, (m) => (m.ventas > 0 ? m.cpa : null)) },
     { id: "roas_cc", etiqueta: "ROAS sobre lo cobrado", formato: "x", mejor: "sube", href: "/finanzas",
-      ayuda: "Cash collected sobre inversión en publicidad.", valor: (c) => g(c, () => c.py()!.roasCC || null) },
+      ayuda: "Cash collected sobre inversión en publicidad (con un embudo elegido, la de ese embudo).",
+      valor: (c) => { const inv = c.inversionEmbudo(); return inv !== null ? (inv > 0 ? c.cobrado() / inv : null) : g(c, () => c.py()!.roasCC || null); } },
     { id: "roas_rev", etiqueta: "ROAS sobre lo facturado", formato: "x", mejor: "sube", href: "/finanzas",
-      ayuda: "Facturado sobre inversión en publicidad: como si todos pagaran todas las cuotas.", valor: (c) => g(c, () => c.py()!.roasRev || null) },
+      ayuda: "Facturado sobre inversión en publicidad: como si todos pagaran todas las cuotas.",
+      valor: (c) => { const inv = c.inversionEmbudo(); return inv !== null ? (inv > 0 ? c.facturado() / inv : null) : g(c, () => c.py()!.roasRev || null); } },
     { id: "w_roas_cc", etiqueta: "ROAS del webinar (cobrado)", formato: "x", mejor: "sube", href: "/webinars",
       ayuda: "Lo cobrado de las ventas del webinar sobre su inversión.", valor: (c) => w(c, (m) => m.roasCC) },
     { id: "w_roas_rev", etiqueta: "ROAS del webinar (facturado)", formato: "x", mejor: "sube", href: "/webinars",
@@ -641,6 +655,18 @@ export function catalogo(e: EstadoApp): DefKpi[] {
     { id: "r_queda", etiqueta: "Queda para el negocio", formato: "resultado", mejor: "sube", href: "/finanzas",
       ayuda: "Profit neto menos growth partner y socio: lo que ganó el negocio después de pagarle a todo el mundo.",
       valor: (c) => g(c, () => { const p = c.py()!; return p.netoCC - p.growth - p.socio; }) },
+  ]);
+
+  add("rentabilidad", "Profit del embudo", [
+    { id: "e_inv", etiqueta: "Inversión del embudo", formato: "moneda", href: "/finanzas",
+      ayuda: "Con un embudo elegido: lo invertido en él (sus webinars, sus campañas de Meta y los gastos cargados con ese embudo).",
+      valor: (c) => c.inversionEmbudo() },
+    { id: "e_profit_cc", etiqueta: "Profit del embudo (cobrado)", formato: "resultado", mejor: "sube", href: "/finanzas",
+      ayuda: "Con un embudo elegido: lo cobrado menos procesador, comisiones e inversión del embudo. Sin los gastos fijos de la empresa.",
+      valor: (c) => { const inv = c.inversionEmbudo(); if (inv === null) return null; const k = c.comisiones(); return c.cobrado() - c.fees() - k.closers - k.director - inv; } },
+    { id: "e_profit_rev", etiqueta: "Profit del embudo (facturado)", formato: "resultado", mejor: "sube", href: "/finanzas",
+      ayuda: "La misma cuenta sobre lo facturado.",
+      valor: (c) => { const inv = c.inversionEmbudo(); if (inv === null) return null; const k = c.comisiones(); return c.facturado() - c.fees() - k.closers - k.director - inv; } },
   ]);
 
   add("rentabilidad", "Profit del webinar", [

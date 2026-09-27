@@ -12,6 +12,7 @@ import {
 } from "@/lib/gastos";
 import type { CategoriaGasto } from "@/lib/seed";
 import type { EstadoApp, Gasto, GrupoGasto, Moneda } from "@/lib/types";
+import { embudoDeGasto } from "@/lib/embudos";
 
 /* ==================================================================
    Cargar un gasto, una pregunta por pantalla.
@@ -54,6 +55,8 @@ interface Borrador {
   recurrente: boolean;
   proveedor: string;
   webinarId: string;
+  /* La estrategia (embudo) a la que se le carga: entra en su CAC y su profit. */
+  embudoId: string;
   notas: string;
   /* El gasto anterior del que se copió, para marcarlo en la lista. */
   copiadoDe?: string;
@@ -75,7 +78,7 @@ function inicial(e: EstadoApp, gasto?: Gasto | null): Borrador {
     return {
       concepto: "", categoria: "", grupo: "operativo", categoriaElegida: false, nueva: false,
       monto: "", moneda: base, tipoCambio: tc, fecha: mediodia(new Date()), recurrente: false,
-      proveedor: "", webinarId: "", notas: "",
+      proveedor: "", webinarId: "", embudoId: "", notas: "",
     };
   }
   const orig = montoOriginal(gasto);
@@ -86,7 +89,7 @@ function inicial(e: EstadoApp, gasto?: Gasto | null): Borrador {
     moneda: orig ? orig.moneda : (gasto.moneda ?? base),
     tipoCambio: orig ? escribirMonto(orig.tipoCambio) : tc,
     fecha: gasto.fecha, recurrente: Boolean(gasto.recurrente),
-    proveedor: gasto.proveedor ?? "", webinarId: gasto.webinarId ?? "", notas: gasto.notas ?? "",
+    proveedor: gasto.proveedor ?? "", webinarId: gasto.webinarId ?? "", embudoId: embudoDeGasto(gasto) ?? "", notas: gasto.notas ?? "",
   };
 }
 
@@ -140,10 +143,11 @@ export function AsistenteGasto({ gasto, onCerrar, onListo }: {
     const concepto = b.concepto.trim();
     /* Lo pagado en otra moneda queda guardado tal cual, al lado del monto
        convertido que es el que suma el estado de resultados. */
-    const { montoOriginal: _m, monedaOriginal: _o, tipoCambio: _t, ...extraLimpio } = gasto?.extra ?? {};
+    const { montoOriginal: _m, monedaOriginal: _o, tipoCambio: _t, embudoId: _e, ...extraLimpio } = gasto?.extra ?? {};
+    const conEmbudo = b.embudoId ? { ...extraLimpio, embudoId: b.embudoId } : extraLimpio;
     const extra = b.moneda === base
-      ? extraLimpio
-      : { ...extraLimpio, montoOriginal: redondear(montoNum), monedaOriginal: b.moneda, tipoCambio: tc };
+      ? conEmbudo
+      : { ...conEmbudo, montoOriginal: redondear(montoNum), monedaOriginal: b.moneda, tipoCambio: tc };
 
     const datos: Omit<Gasto, "id"> = {
       categoria: b.categoria.trim(),
@@ -452,6 +456,7 @@ function PasoResumen({ b, set, e, M, base, convertido, editando, irA }: {
     () => [...e.webinars].sort((a, c) => +new Date(c.fecha) - +new Date(a.fecha)).slice(0, 24),
     [e.webinars],
   );
+  const embudos = useMemo(() => e.embudos.filter((x) => x.activo || x.id === b.embudoId).sort((a, c) => a.orden - c.orden), [e.embudos, b.embudoId]);
   const cambiar = (id: PasoId) => (
     <button type="button" className="link t-sm gasto-cambiar" onClick={() => irA(PASOS.findIndex((x) => x.id === id))}>
       Cambiar
@@ -495,6 +500,17 @@ function PasoResumen({ b, set, e, M, base, convertido, editando, irA }: {
               opciones={webinars.map((w) => ({ valor: w.id, texto: `${w.titulo} — ${fechaLarga(w.fecha)}` }))}
             />
             <span className="hk-help">Si es de un webinar puntual, entra en su profit.</span>
+          </div>
+        )}
+        {embudos.length > 0 && (
+          <div className="hk-field">
+            <label className="hk-label" htmlFor="gasto-embudo">Estrategia (embudo)</label>
+            <Select
+              id="gasto-embudo" value={b.embudoId} placeholder="De toda la empresa"
+              onChange={(ev) => set({ embudoId: ev.target.value })}
+              opciones={embudos.map((x) => ({ valor: x.id, texto: x.nombre }))}
+            />
+            <span className="hk-help">Si es de un embudo (la VSL, el setter), entra en su CAC y su profit. Los fijos, sin embudo.</span>
           </div>
         )}
         <div className="hk-field span-2">

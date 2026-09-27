@@ -17,6 +17,7 @@ import { useRangoURL } from "@/lib/useRango";
 import { calcularPyL, cuotasVencidas, gastosPorCategoria } from "@/lib/finanzas";
 import type { EstadoApp, Gasto } from "@/lib/types";
 import { AlarmaCobranza } from "@/components/finanzas/AlarmaCobranza";
+import { PorEmbudo } from "@/components/finanzas/PorEmbudo";
 
 export default function Finanzas() {
   const e = useEstado();
@@ -98,6 +99,7 @@ export default function Finanzas() {
           e={e} mes={mes} p={p} hrefGasto={hrefGasto} enfoque={enfoque}
           onCargarGasto={() => setCargando(true)}
         />
+        <PorEmbudo e={e} mes={mes} />
       </div>
 
       {cargando && <AsistenteGasto onCerrar={() => setCargando(false)} onListo={alCargar} />}
