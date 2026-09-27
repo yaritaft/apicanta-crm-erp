@@ -22,8 +22,10 @@ lo que se muestra se calcula solo.
 | **Alumnos** | Quién cursa y cómo viene, en lista o en el pipeline de servicio (venta nueva → onboarding → en servicio…). Cada venta registrada crea su alumno sola |
 | **Reportes** | Dashboard y tabla de los reportes por rango de fechas: respuesta, horas, postulaciones, entrevistas, bloqueos y quién está en riesgo, marcable en un clic |
 | **Ventas** | Un asistente paso a paso arma la venta, su plan de cuotas y los cobros que ya entraron, con los nombres de la planilla de Angelo; el origen sale de la UTM de quien compró. La lista se filtra por período, vendedor, servicio, estrategia, proyecto y cuenta. Importa y exporta la hoja Ventas de esa planilla |
+| **Clientes** | La gente que compró: qué compró, cuánto pagó, cuánto le falta y si está al día, atrasada, pagó todo o se dio de baja. Sale de las ventas: no hay nada que cargar |
 | **Conciliación** | Los cobros de Stripe, Hotmart, Whop, dLocal, Mercado Pago, Mercury, Binance y Trust, imputados a la cuota que les corresponde |
-| **Finanzas** | El estado de resultados sobre lo cobrado y lo facturado; en el detalle, las cuotas vencidas, los gastos y las comisiones. Los KPIs viven en Dashboard & KPIs |
+| **Finanzas** | El estado de resultados sobre lo cobrado y lo facturado y el resultado de cada embudo (CAC, ROAS y profit); en el detalle, las cuotas vencidas (con alarma desde los 7 días de atraso), los gastos y las comisiones. Los KPIs viven en Dashboard & KPIs |
+| **Caja** | Los arqueos (cuánto hay de verdad en cada cuenta contra lo que la app esperaba), los meses de vida contra el colchón de 6 meses y los retiros del dueño |
 | **Equipo y honorarios** | Sólo para los dueños: quién es quién, con qué entra a la app, qué cobra cada uno (fijo, bonos, comisiones, tramos y piezas, y sobre qué se mide cada variable) y la liquidación de cada mes, que se calcula sola y al cerrarla entra a Finanzas |
 | **Actividad** | Todo lo que se creó, editó, movió o borró, con autor y fecha |
 | **Ajustes** | Servicios, cuentas recaudadoras, estrategias y proyectos; de qué es cada UTM; etapas, listas, campos propios, integraciones y respaldos |
@@ -324,3 +326,28 @@ Una sección que ven sólo los dueños (Yari y Juan Cruz), con tres solapas:
 
 Las reglas del cálculo están en `src/lib/honorarios.ts`. Antes de usarlo contra Supabase hay que
 correr `supabase/honorarios.sql` (tablas, políticas, niveles de acceso y la columna `puesto`).
+
+
+## Lo que salió de la reunión con Yari (18/09)
+
+- **Gastos reales**: los de enero a septiembre de 2026 vienen de la hoja Gastos_vieja de la planilla de Angelo
+  (ids `gas_ef_*`). No se cargan closers, director ni comisiones de procesamiento: la app los calcula de los cobros.
+- **Dar de baja una venta** (cancelada o reembolsada, desde la ficha): las cuotas que faltaban cobrar quedan escritas
+  como canceladas (borrado lógico), dejan de ser por cobrar y mora, y su servicio pasa a baja. Reactivarla las devuelve.
+- **Alarmas de cobranza**: desde los 7 días de atraso, contador rojo al lado de Finanzas y aviso en el Dashboard y en
+  Finanzas (cuántos pasaron los 15 y los 20 días y quién es el más atrasado).
+- **Webinars**: cada venta se ata a su webinar (por el proyecto WEB-, los UTMs o, en el embudo de webinar, por la fecha:
+  el último vivo antes de la venta, hasta 14 días); los proyectos WEB- de la planilla se crean como webinars. La pauta,
+  los formularios y los DM Ads salen de Meta (campañas «[WEBINAR dd/mm]» y «DM …») si están en cero, con un rayo.
+  Los gastos cargados con un webinar entran en su profit. `lib/atar-webinars.ts`, `lib/webinar.ts`.
+- **Por embudo** (`lib/embudos.ts`): CAC, ROAS y profit de cada estrategia; la inversión del webinar es la de sus
+  webinars, la de los demás sus campañas de Meta y los gastos cargados con ese embudo.
+- **Caja** (`lib/caja.ts`, Finanzas → Caja): arqueo por cuenta (con lo que entró según la app al lado, para la
+  Financiera y Trust), caja esperada, meses de vida y retiros del dueño (grupo de gasto «retiro»: sale de la caja, no
+  del profit). Tabla `arqueos`: `supabase/arqueos.sql`.
+- **Comisión de cada cuenta**: al cambiarla, se elige si los cobros que ya la usaban pasan a la nueva.
+- **Conciliación**: los cobros de pasarela que ya estaban cargados como pago se atan a ese pago (no suma plata y le pone
+  la comisión real) en vez de imputarse a otra cuota. Columna `movimientos.vinculado`: `supabase/movimientos-vinculado.sql`.
+- **Dashboard**: cuántos pagan todo de una y las ventas equivalentes (downsells y reservas pasados a programas).
+- **La landing del webinar** manda cada registro a `/api/webinar/registro` (pre-lead) y la **Conversions API de Meta**
+  recibe Lead, Schedule y Purchase. Guía: `docs/registro-webinar.md`. Tabla `capi_enviados`: `supabase/capi-enviados.sql`.
