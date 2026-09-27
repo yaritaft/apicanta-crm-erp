@@ -351,3 +351,6 @@ correr `supabase/honorarios.sql` (tablas, políticas, niveles de acceso y la col
 - **Dashboard**: cuántos pagan todo de una y las ventas equivalentes (downsells y reservas pasados a programas).
 - **La landing del webinar** manda cada registro a `/api/webinar/registro` (pre-lead) y la **Conversions API de Meta**
   recibe Lead, Schedule y Purchase. Guía: `docs/registro-webinar.md`. Tabla `capi_enviados`: `supabase/capi-enviados.sql`.
+- **Fecha de salida del equipo** (`equipo.hasta`, `supabase/equipo-hasta.sql`): un director cobra sólo lo que entró hasta
+  que se fue, como pidió Yari («si el director de la venta no es el que está ahora, no comisiona»). Noelia Perelo quedó
+  como directora de las ventas de abril a junio de 2026, hasta el 30/06.

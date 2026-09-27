@@ -123,6 +123,15 @@ export function FichaMiembro({ miembroId, accesos, onCerrar }: {
               <Switch checked={m.activo} onChange={(v) => cambiar({ activo: v }, v ? "Vuelve a estar en el equipo." : "Ya no está: no se liquida ni aparece al cargar ventas.")} etiqueta={`${m.nombre} está en el equipo`} />
               <span className="t-sm">Está en el equipo</span>
             </label>
+            {!m.activo && (
+              <label className="row" style={{ gap: 10 }} title={m.rol === "director" ? "Como director cobra sólo lo que entró hasta este día." : "El último día que estuvo."}>
+                <span className="t-sm">Estuvo hasta</span>
+                <span style={{ width: 170 }}>
+                  <Input type="date" value={m.hasta ?? ""} aria-label={`Hasta cuándo estuvo ${m.nombre}`}
+                    onChange={(ev) => cambiar({ hasta: ev.target.value || (null as unknown as undefined) }, ev.target.value ? "Fecha de salida guardada." : "Sin fecha de salida.")} />
+                </span>
+              </label>
+            )}
             {(m.rol === "closer" || m.rol === "ceo") && (
               <label className="row" style={{ gap: 10 }} title="Si cierra una venta, no comisiona nadie: ni closer, ni director, ni setter.">
                 <Switch checked={m.sinComision} onChange={(v) => cambiar({ sinComision: v })} etiqueta={`Con ${m.nombre} no comisiona nadie`} />

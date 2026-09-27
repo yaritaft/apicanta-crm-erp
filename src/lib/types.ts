@@ -755,6 +755,10 @@ export interface MiembroEquipo {
   /* Lo que hace, como se dice en el equipo: COO, Trafficker, Customer
      Success Manager. El rol de arriba es sólo para las ventas. */
   puesto?: string;
+  /* Hasta cuándo estuvo (YYYY-MM-DD). Un director cobra sólo lo que entra
+     hasta ese día: "si el director de la venta no es el que está ahora, no
+     comisiona" (Yari). Las cuotas que entran después no le dejan nada. */
+  hasta?: string;
 }
 
 export type EstadoVenta = "activa" | "cancelada" | "reembolsada";

@@ -569,6 +569,8 @@ function comisionDeFinanzas(m: MiembroEquipo): ConceptoPago {
   return {
     id: ID_COMISION_DE_FINANZAS, tipo: "porcentaje", nombre: "Comisión", moneda: "USD",
     tasa: m.comisionRate, base: "cash-neto", alcance: m.rol === "director" ? "director" : "closer",
+    /* Un director que ya se fue cobra sólo lo que entró hasta su salida. */
+    ...(m.rol === "director" && m.hasta ? { hasta: m.hasta } : {}),
   };
 }
 

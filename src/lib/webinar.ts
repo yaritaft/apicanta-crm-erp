@@ -1,6 +1,7 @@
 import type {
   CanalOrigen, Contacto, EstadoApp, Lead, NivelIngles, Sesion, Venta, Webinar,
 } from "./types";
+import { cobraDirector } from "./finanzas";
 
 /* ==================================================================
    Las métricas que Yari viene trackeando webinar a webinar desde 2023.
@@ -199,9 +200,13 @@ export function metricasDeWebinar(e: EstadoApp, webinar: Webinar): MetricasWebin
   const fees = pagos.reduce((a, p) => a + p.feeMonto, 0);
 
   const netoPorVenta = new Map<string, number>();
+  /* Lo del director, sólo lo que entró mientras era director (cobraDirector). */
+  const netoDirectorPorVenta = new Map<string, number>();
+  const directorDe = new Map(ventas.map((v) => [v.id, e.equipo.find((x) => x.id === v.directorId)] as const));
   for (const p of pagos) {
     const v = ventaDeCuota.get(p.cuotaId) as string;
     netoPorVenta.set(v, (netoPorVenta.get(v) ?? 0) + (p.monto - p.feeMonto));
+    if (cobraDirector(directorDe.get(v), p.fecha)) netoDirectorPorVenta.set(v, (netoDirectorPorVenta.get(v) ?? 0) + (p.monto - p.feeMonto));
   }
 
   /* Comisiones: closer + director sobre el neto de procesador,
@@ -211,8 +216,8 @@ export function metricasDeWebinar(e: EstadoApp, webinar: Webinar): MetricasWebin
     const closer = e.equipo.find((x) => x.id === v.closerId);
     if (closer?.sinComision) continue;
     const neto = netoPorVenta.get(v.id) ?? 0;
-    const director = e.equipo.find((x) => x.id === v.directorId);
-    comisiones += neto * ((closer?.comisionRate ?? 0) + (director?.comisionRate ?? 0));
+    const director = directorDe.get(v.id);
+    comisiones += neto * (closer?.comisionRate ?? 0) + (netoDirectorPorVenta.get(v.id) ?? 0) * (director?.comisionRate ?? 0);
   }
 
   return derivar({

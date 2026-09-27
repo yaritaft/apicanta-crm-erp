@@ -84,6 +84,12 @@ export interface ComisionVenta {
   sinComision: boolean;
 }
 
+/* El director cobra sólo los cobros que entraron mientras era director
+   (hasta su fecha de salida, si la tiene): las cuotas que entran después de
+   que se fue no le dejan nada a nadie (MiembroEquipo.hasta). */
+export const cobraDirector = (director: { hasta?: string } | undefined, fechaPago: string) =>
+  !director?.hasta || new Date(fechaPago).getTime() - 3 * 3600000 < new Date(`${director.hasta}T00:00:00Z`).getTime() + 86400000;
+
 export function comisionesDelMes(e: EstadoApp, m: RangoMes): ComisionVenta[] {
   const out: ComisionVenta[] = [];
 
@@ -111,6 +117,7 @@ export function comisionesDelMes(e: EstadoApp, m: RangoMes): ComisionVenta[] {
     const closer = e.equipo.find((x) => x.id === v.closerId);
     const director = e.equipo.find((x) => x.id === v.directorId);
     const sinComision = Boolean(closer?.sinComision);
+    const netoDirector = pagosMes.filter((p) => cobraDirector(director, p.fecha)).reduce((a, p) => a + (p.monto - p.feeMonto), 0);
 
     out.push({
       ventaId: v.id,
@@ -120,7 +127,7 @@ export function comisionesDelMes(e: EstadoApp, m: RangoMes): ComisionVenta[] {
       closerNombre: closer?.nombre ?? "Sin asignar",
       comisionCloser: sinComision ? 0 : neto * (closer?.comisionRate ?? 0),
       directorId: v.directorId,
-      comisionDirector: sinComision ? 0 : neto * (director?.comisionRate ?? 0),
+      comisionDirector: sinComision ? 0 : netoDirector * (director?.comisionRate ?? 0),
       sinComision,
     });
   }
