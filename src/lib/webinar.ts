@@ -83,7 +83,102 @@ function derivar(b: Base): MetricasWebinar {
   };
 }
 
-export function metricasDeWebinar(e: EstadoApp, w: Webinar): MetricasWebinar {
+/* ==================================================================
+   Lo que Meta sabe de cada webinar
+
+   Las campañas de captación se llaman «[WEBINAR 23/09] …»: su gasto es la
+   pauta del webinar y sus leads, los formularios completados. Los DM Ads
+   son las campañas «DM …» (DM WP API): cada día de gasto va al próximo
+   webinar, el que ese día se estaba calentando. WhatsApp API no pasa por
+   Meta Ads: sigue a mano.
+
+   Lo cargado a mano manda: Meta sólo llena lo que está en cero.
+   ================================================================== */
+
+export interface MetaDelWebinar { pauta: number; formularios: number; dmAds: number }
+
+const RE_CAMPANIA_WEBINAR = /WEBINAR\s*(\d{1,2})\s*\/\s*(\d{1,2})/i;
+const RE_CAMPANIA_DM = /(^|[^a-z])DM([^a-z]|$)/i;
+
+/* El día de Argentina de un instante (los vivos son a las 19). */
+const diaAr = (iso: string) => new Date(new Date(iso).getTime() - 3 * 3600000).toISOString().slice(0, 10);
+const diasEntre = (a: string, b: string) => (new Date(`${b}T12:00:00Z`).getTime() - new Date(`${a}T12:00:00Z`).getTime()) / 86400000;
+
+/* Se calcula una vez por cada combinación de anuncios y webinars: la
+   planilla lo pide para cada fila a cada celda que se carga. */
+const META_WEBINAR = new WeakMap<object, WeakMap<object, Map<string, MetaDelWebinar>>>();
+
+function metaPorWebinar(e: EstadoApp): Map<string, MetaDelWebinar> {
+  const insights = e.adInsights ?? [];
+  let porWebinars = META_WEBINAR.get(insights);
+  if (!porWebinars) { porWebinars = new WeakMap(); META_WEBINAR.set(insights, porWebinars); }
+  const guardado = porWebinars.get(e.webinars);
+  if (guardado) return guardado;
+  const out = new Map<string, MetaDelWebinar>();
+  porWebinars.set(e.webinars, out);
+  if (!insights.length || !e.webinars.length) return out;
+
+  const campania = new Map((e.campaigns ?? []).map((c) => [c.id, c.nombre] as const));
+  const campaniaDeAd = new Map((e.ads ?? []).map((a) => [a.id, campania.get(a.campaignId) ?? ""] as const));
+  const webinars = [...e.webinars].map((w) => ({ w, dia: diaAr(w.fecha) })).sort((a, b) => a.dia.localeCompare(b.dia));
+  const de = (id: string) => {
+    let m = out.get(id);
+    if (!m) { m = { pauta: 0, formularios: 0, dmAds: 0 }; out.set(id, m); }
+    return m;
+  };
+
+  for (const i of insights) {
+    const nombre = campaniaDeAd.get(i.adId) ?? "";
+    const m = RE_CAMPANIA_WEBINAR.exec(nombre);
+    if (m) {
+      /* El webinar de ese día y mes cuyo vivo está cerca de cuando corrió el anuncio. */
+      const dd = Number(m[1]), mm = Number(m[2]);
+      const w = webinars.find(({ dia }) => Number(dia.slice(8, 10)) === dd && Number(dia.slice(5, 7)) === mm
+        && diasEntre(i.dia, dia) >= -10 && diasEntre(i.dia, dia) <= 45);
+      if (w) { const x = de(w.w.id); x.pauta += i.inversion; x.formularios += i.leads; }
+      continue;
+    }
+    if (RE_CAMPANIA_DM.test(nombre)) {
+      const w = webinars.find(({ dia }) => dia >= i.dia && diasEntre(i.dia, dia) <= 21);
+      if (w) de(w.w.id).dmAds += i.inversion;
+    }
+  }
+  for (const m of out.values()) {
+    m.pauta = Math.round(m.pauta * 100) / 100;
+    m.dmAds = Math.round(m.dmAds * 100) / 100;
+  }
+  return out;
+}
+
+export function metaDelWebinar(e: EstadoApp, w: Webinar): MetaDelWebinar | undefined {
+  return metaPorWebinar(e).get(w.id);
+}
+
+/** El webinar con lo que falta cargar tomado de Meta. */
+export function numerosDelWebinar(e: EstadoApp, w: Webinar): Webinar {
+  const m = metaDelWebinar(e, w);
+  if (!m) return w;
+  return {
+    ...w,
+    inversion: w.inversion || m.pauta,
+    formularios: w.formularios || m.formularios,
+    inversionDmAds: w.inversionDmAds || m.dmAds,
+  };
+}
+
+/** Qué números del webinar salen de Meta (los que están en cero a mano). */
+export function camposDeMeta(e: EstadoApp, w: Webinar): Set<CampoManual> {
+  const m = metaDelWebinar(e, w);
+  const out = new Set<CampoManual>();
+  if (!m) return out;
+  if (!w.inversion && m.pauta) out.add("inversion");
+  if (!w.formularios && m.formularios) out.add("formularios");
+  if (!w.inversionDmAds && m.dmAds) out.add("inversionDmAds");
+  return out;
+}
+
+export function metricasDeWebinar(e: EstadoApp, webinar: Webinar): MetricasWebinar {
+  const w = numerosDelWebinar(e, webinar);
   const inversionTotal = w.inversion + w.inversionDmAds + w.costoWhatsappApi;
   const llamadas = w.llamadasVivo + w.llamadasPosterior;
 

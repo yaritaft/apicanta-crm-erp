@@ -40,6 +40,8 @@ export interface ColumnaPlanilla<T> {
     formato: (n: number) => string;
     decimales?: number;
     etiqueta: (f: T) => string;
+    /* De dónde salió el valor si no se cargó a mano ("De Meta"). */
+    auto?: (f: T) => string | undefined;
   };
   /* Lo que va en la fila de totales. */
   total?: React.ReactNode;
@@ -216,7 +218,7 @@ export function Planilla<T extends { id: string }>({
                     <td key={c.clave} className="planilla__celda planilla__num">
                       <CeldaEditable
                         valor={ed.valor(f)} formato={ed.formato} decimales={ed.decimales}
-                        etiqueta={ed.etiqueta(f)} onGuardar={(x) => ed.guardar(f, x)}
+                        etiqueta={ed.etiqueta(f)} onGuardar={(x) => ed.guardar(f, x)} auto={ed.auto?.(f)}
                         tabIndex={n.tabIndex} celda={n["data-celda"]}
                         onMover={(hacia) => mover(r, i, hacia)} onError={onError}
                       />

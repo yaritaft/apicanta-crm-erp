@@ -15,7 +15,7 @@ import { diaDeNegocio } from "@/components/ui/DateRangePicker";
    2. Los UTMs de quien compró (sus agendas de Calendly).
    3. La fecha: una venta del embudo de webinar es del último webinar
       anterior a la venta (por día de Argentina: lo vendido durante el vivo
-      es de ese vivo), hasta que empieza el siguiente y no más de 21 días.
+      es de ese vivo), hasta que empieza el siguiente y no más de 14 días.
 
    Sólo se llena lo que falta: un webinar elegido a mano no se pisa.
    ================================================================== */
@@ -24,8 +24,10 @@ export type MotivoWebinar = "proyecto" | "utm" | "fecha";
 
 export interface VentaParaAtar { venta: Venta; webinarId: ID; motivo: MotivoWebinar }
 
-/* Los días que una venta sigue siendo del último webinar si no hubo otro. */
-const DIAS_DEL_WEBINAR = 21;
+/* Los días que una venta sigue siendo del último webinar si no hubo otro:
+   hacen uno cada 15 días, así que más allá de eso puede ser de un webinar
+   que no está cargado y no se adivina. */
+const DIAS_DEL_WEBINAR = 14;
 
 /** Los embudos de webinar: los marcados así en Ajustes o, si ninguno, los
  *  que se llaman webinar o lanzamiento (el nombre de la planilla). */

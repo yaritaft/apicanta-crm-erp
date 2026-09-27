@@ -7,7 +7,7 @@ import {
   filasMeta, leadsMes, leadsSinContactar, mrr, periodoAnterior, rangoDeFechas, tasaConversion, totalesMeta,
   valorPipeline, type MetricasMeta, type RangoMes,
 } from "./metricas";
-import { metricasDeWebinar, sumarMetricas, type MetricasWebinar } from "./webinar";
+import { metricasDeWebinar, numerosDelWebinar, sumarMetricas, type MetricasWebinar } from "./webinar";
 import { rachasAHoy } from "./reportes";
 import { etapaDelAlumno, etapasDeServicio } from "./alumnos";
 import { diaDeNegocio } from "@/components/ui/DateRangePicker";
@@ -342,9 +342,9 @@ export function catalogo(e: EstadoApp): DefKpi[] {
       ayuda: "Los gastos cargados como Meta Ads, Google Ads o TikTok Ads. Es la base del ROAS y el CAC de Finanzas.",
       valor: (c) => g(c, () => c.py()!.inversionAds) },
     { id: "w_pauta", etiqueta: "Pauta de captación (webinars)", formato: "moneda", href: "/webinars",
-      ayuda: "La pauta cargada en la planilla de cada webinar del período.", valor: (c) => w(c, () => c.webinars().reduce((a, x) => a + x.inversion, 0)) },
+      ayuda: "La pauta de cada webinar del período: la cargada en la planilla o, si está en cero, la de sus campañas de Meta.", valor: (c) => w(c, () => c.webinars().reduce((a, x) => a + numerosDelWebinar(c.e, x).inversion, 0)) },
     { id: "w_dm", etiqueta: "DM Ads (webinars)", formato: "moneda", href: "/webinars",
-      ayuda: "Los anuncios a mensaje directo de cada webinar.", valor: (c) => w(c, () => c.webinars().reduce((a, x) => a + x.inversionDmAds, 0)) },
+      ayuda: "Los anuncios a mensaje directo de cada webinar.", valor: (c) => w(c, () => c.webinars().reduce((a, x) => a + numerosDelWebinar(c.e, x).inversionDmAds, 0)) },
     { id: "w_wapi", etiqueta: "WhatsApp API (webinars)", formato: "moneda", href: "/webinars",
       ayuda: "Lo que cobró WhatsApp por los mensajes de cada webinar.", valor: (c) => w(c, () => c.webinars().reduce((a, x) => a + x.costoWhatsappApi, 0)) },
     { id: "w_inv", etiqueta: "Inversión total del webinar", formato: "moneda", href: "/webinars",

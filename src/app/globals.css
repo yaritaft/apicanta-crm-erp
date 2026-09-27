@@ -567,6 +567,10 @@ kbd {
 .alarma__titulo { font-weight: 600; color: var(--ink); }
 .alarma__texto { font-size: 13px; line-height: 20px; color: var(--ink-muted); }
 .hk-nav__count--alerta { color: var(--danger); font-weight: 600; }
+/* Una celda de la planilla que salió sola (de Meta): el rayo, como las
+   columnas automáticas del CRM, y el número un poco más apagado. */
+.celda-ed__auto { color: var(--accent); flex: none; margin-right: 4px; }
+[data-auto] .celda-ed__valor { color: var(--ink-muted); }
 
 /* ---------- Charts ---------- */
 .chart { width: 100%; display: block; overflow: visible; }

@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { Check, Pencil } from "lucide-react";
+import { Check, Pencil, Zap } from "lucide-react";
 
 /* ==================================================================
    Un número que se edita donde está, como una celda de Excel.
@@ -52,7 +52,7 @@ function aTexto(n: number, decimales: number): string {
 
 export function CeldaEditable({
   valor, onGuardar, formato = (n) => String(n), etiqueta, decimales = 0, min = 0,
-  onMover, onError, tabIndex = 0, celda, grande, ayuda,
+  onMover, onError, tabIndex = 0, celda, grande, ayuda, auto,
 }: {
   valor: number;
   onGuardar: (n: number) => void;
@@ -72,6 +72,9 @@ export function CeldaEditable({
   /* La versión de la ficha: número más grande y lápiz a la vista. */
   grande?: boolean;
   ayuda?: string;
+  /* El valor no se cargó: salió solo (de Meta). Dice de dónde; cargarlo a
+     mano lo reemplaza. */
+  auto?: string;
 }) {
   const [editando, setEditando] = useState(false);
   const [texto, setTexto] = useState("");
@@ -192,8 +195,9 @@ export function CeldaEditable({
       tabIndex={tabIndex}
       data-celda={celda}
       className={clases}
-      aria-label={`${etiqueta}: ${formato(valor)}`}
-      title={ayuda ?? "Click o Enter para cambiarlo"}
+      aria-label={`${etiqueta}: ${formato(valor)}${auto ? ` (${auto})` : ""}`}
+      title={auto ? `${auto}. Click o Enter para cargarlo a mano.` : ayuda ?? "Click o Enter para cambiarlo"}
+      data-auto={auto ? true : undefined}
       onClick={() => empezar()}
       onKeyDown={(ev) => {
         if (ev.metaKey || ev.ctrlKey || ev.altKey) return;
@@ -211,6 +215,7 @@ export function CeldaEditable({
       }}
     >
       {senal === "ok" && <Check size={13} className="celda-ed__marca" aria-hidden />}
+      {auto && <Zap size={11} className="celda-ed__auto" aria-hidden />}
       <span className="celda-ed__valor">{formato(valor)}</span>
       {grande && <Pencil size={13} className="celda-ed__lapiz" aria-hidden />}
       <span className="celda-ed__aviso" aria-live="polite">

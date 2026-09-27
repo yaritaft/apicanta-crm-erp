@@ -24,7 +24,7 @@ import { useEstado } from "@/lib/store";
 import { useRangoURL } from "@/lib/useRango";
 import { money, num, pct } from "@/lib/format";
 import {
-  CAMPOS_MANUALES, metricasDeWebinar, sumarMetricas, type MetricasWebinar,
+  CAMPOS_MANUALES, camposDeMeta, metricasDeWebinar, numerosDelWebinar, sumarMetricas, type MetricasWebinar,
 } from "@/lib/webinar";
 import type { CampoPersonalizado, EstadoWebinar, Webinar } from "@/lib/types";
 
@@ -216,19 +216,23 @@ export default function Webinars() {
     },
   };
 
+  /* La pauta, los formularios y los DM Ads que están en cero salen de las
+     campañas de Meta del webinar (lib/webinar.ts, numerosDelWebinar). */
+  const efectivo = (w: Webinar) => numerosDelWebinar(e, w);
   for (const c of CAMPOS_MANUALES) {
     const formato = (n: number) => (c.moneda ? M(n) : num(n));
     DEF[c.campo] = {
       clave: c.campo, titulo: c.titulo, ayuda: c.ayuda, num: true,
-      orden: (w) => w[c.campo],
+      orden: (w) => efectivo(w)[c.campo],
       editable: {
-        valor: (w) => w[c.campo],
+        valor: (w) => efectivo(w)[c.campo],
         guardar: (w, n) => guardarMetrica(w, c.campo, n, formato),
         formato,
         decimales: c.moneda ? 2 : 0,
         etiqueta: (w) => `${c.largo} de «${w.titulo}»`,
+        auto: (w) => (camposDeMeta(e, w).has(c.campo) ? "De sus campañas de Meta" : undefined),
       },
-      total: formato(filtrados.reduce((a, w) => a + w[c.campo], 0)),
+      total: formato(filtrados.reduce((a, w) => a + efectivo(w)[c.campo], 0)),
     };
   }
 
