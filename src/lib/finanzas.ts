@@ -317,16 +317,20 @@ export interface CuotaVencida {
 export function cuotasVencidas(e: EstadoApp): CuotaVencida[] {
   const hoy = Date.now();
   const out: CuotaVencida[] = [];
+  /* Con índices: el menú lateral la calcula a cada cambio para la alarma. */
+  const ventaDe = new Map(e.ventas.map((v) => [v.id, v] as const));
+  const pagadoDe = new Map<string, number>();
+  for (const p of e.pagos) pagadoDe.set(p.cuotaId, (pagadoDe.get(p.cuotaId) ?? 0) + p.monto);
 
   for (const c of e.cuotas) {
     if (c.estado !== "pendiente" || !c.vence) continue;
     const vence = new Date(c.vence).getTime();
     if (vence >= hoy) continue;
 
-    const venta = e.ventas.find((v) => v.id === c.ventaId);
+    const venta = ventaDe.get(c.ventaId);
     if (!venta || venta.estado !== "activa") continue;
 
-    const pagado = e.pagos.filter((p) => p.cuotaId === c.id).reduce((a, p) => a + p.monto, 0);
+    const pagado = pagadoDe.get(c.id) ?? 0;
     const saldo = c.monto - pagado;
     if (saldo <= 0.01) continue;
 
@@ -338,6 +342,38 @@ export function cuotasVencidas(e: EstadoApp): CuotaVencida[] {
     });
   }
   return out.sort((a, b) => b.diasAtraso - a.diasAtraso);
+}
+
+/* ---------- Las alarmas de cobranza ----------
+   "Que salten alarmas: che, hay un tipo que tendría que haber pagado hace
+   20 días y no pagó" (Yari). Se cuentan clientes (ventas), no cuotas: el
+   que debe dos cuotas es una sola persona a la que hay que llamar. Salta
+   desde los 7 días; el menú lateral y el Dashboard la muestran solos. */
+
+export const UMBRALES_ATRASO = [7, 15, 20] as const;
+
+export interface AlarmaCobranza {
+  /* Clientes con alguna cuota vencida hace al menos 7, 15 y 20 días. */
+  clientes: Record<(typeof UMBRALES_ATRASO)[number], number>;
+  /* Lo que deben, sumado, los que pasaron los 7 días. */
+  saldo: number;
+  peor?: CuotaVencida;
+}
+
+export function alarmaCobranza(e: EstadoApp, vencidas = cuotasVencidas(e)): AlarmaCobranza {
+  const peorPorVenta = new Map<string, number>();
+  let saldo = 0;
+  for (const c of vencidas) {
+    if (c.diasAtraso < UMBRALES_ATRASO[0]) continue;
+    saldo += c.saldo;
+    peorPorVenta.set(c.ventaId, Math.max(peorPorVenta.get(c.ventaId) ?? 0, c.diasAtraso));
+  }
+  const dias = [...peorPorVenta.values()];
+  return {
+    clientes: { 7: dias.length, 15: dias.filter((d) => d >= 15).length, 20: dias.filter((d) => d >= 20).length },
+    saldo,
+    peor: vencidas[0] && vencidas[0].diasAtraso >= UMBRALES_ATRASO[0] ? vencidas[0] : undefined,
+  };
 }
 
 /* Las cuotas de una venta dada de baja no se cobran: no son mora ni plata por cobrar. */

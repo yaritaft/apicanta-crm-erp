@@ -8,7 +8,7 @@ import {
 } from "lucide-react";
 import { PageHead } from "@/components/shell/PageHead";
 import {
-  Ayuda, Badge, Button, Card, CardHead, Empty, IconButton, Tabs,
+  Ayuda, Badge, Button, Card, CardHead, Chip, Empty, IconButton, Tabs,
 } from "@/components/ui/ui";
 import { DataTable } from "@/components/ui/DataTable";
 import { Confirmar } from "@/components/ui/Modal";
@@ -21,7 +21,8 @@ import { fechaLarga, money } from "@/lib/format";
 import { rangoDeFechas } from "@/lib/metricas";
 import { DateRangePicker, rangoSub } from "@/components/ui/DateRangePicker";
 import { useRangoURL } from "@/lib/useRango";
-import { calcularPyL, comisionesDelMes, comisionesSetterYReferidor, cuotasVencidas } from "@/lib/finanzas";
+import { calcularPyL, comisionesDelMes, comisionesSetterYReferidor, cuotasVencidas, UMBRALES_ATRASO } from "@/lib/finanzas";
+import { useAbrirFicha } from "@/components/ficha/abrir";
 import { CobrosProcesador } from "@/components/finanzas/CobrosProcesador";
 import type { Cuota, Gasto } from "@/lib/types";
 
@@ -64,6 +65,9 @@ export default function FinanzasDetalle() {
      resultados) y ?nuevo=1 abre el asistente. Se limpian sólo esos: el
      período tiene que seguir en la URL, y useAbrirDesdeURL borraría todo. */
   useEffect(() => {
+    /* Con una ficha abierta (desde una cuota vencida), `vista` es la de la
+       ficha (ventas o servicio): no es de esta pantalla. */
+    if (params.get("ficha")) return;
     const v = params.get("vista");
     const ver = params.get("ver");
     const nuevo = params.get("nuevo") === "1";
@@ -84,6 +88,15 @@ export default function FinanzasDetalle() {
   const M = (n: number, d = 0) => money(n, mon, d);
 
   const vencidas = useMemo(() => cuotasVencidas(e), [e]);
+  /* ?atraso=7 (lo manda la alarma): sólo las cuotas con al menos esos días. */
+  const atraso = Number(params.get("atraso")) || 0;
+  const setAtraso = (n: number) => {
+    const u = new URLSearchParams(params.toString());
+    if (n) u.set("atraso", String(n)); else u.delete("atraso");
+    router.replace(`${pathname}?${u.toString()}`, { scroll: false });
+  };
+  const vencidasVista = atraso ? vencidas.filter((c) => c.diasAtraso >= atraso) : vencidas;
+  const abrirFicha = useAbrirFicha();
   const comisiones = useMemo(() => comisionesDelMes(e, mes), [e, mes]);
   const setRef = useMemo(() => comisionesSetterYReferidor(e, mes), [e, mes]);
 
@@ -124,10 +137,21 @@ export default function FinanzasDetalle() {
             </Ayuda>
           )}
 
+          <div className="row-wrap">
+            <Chip activo={atraso === 0} onClick={() => setAtraso(0)} count={vencidas.length}>Todas las vencidas</Chip>
+            {UMBRALES_ATRASO.map((d) => (
+              <Chip key={d} activo={atraso === d} onClick={() => setAtraso(d)} count={vencidas.filter((c) => c.diasAtraso >= d).length}>
+                {d} días o más
+              </Chip>
+            ))}
+          </div>
+
           <Card style={{ padding: 0 }}>
             <DataTable
               alto={460}
-              filas={vencidas.map((v) => ({ ...v, id: v.cuotaId }))}
+              filas={vencidasVista.map((v) => ({ ...v, id: v.cuotaId }))}
+              onFila={(c) => abrirFicha(c.ventaId)}
+              etiquetaFila={(c) => `Abrir la ficha de ${c.contacto}`}
               ordenInicial={{ clave: "dias", desc: true }}
               columnas={[
                 { clave: "contacto", titulo: "Cliente", tipo: "primary", orden: (c) => c.contacto, celda: (c) => c.contacto },

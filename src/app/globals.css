@@ -561,6 +561,13 @@ kbd {
 .help-card__title { font-weight: 600; color: var(--ink); margin-bottom: 2px; }
 .help-card__text { font-size: 13px; line-height: 20px; color: var(--ink-muted); }
 
+/* La alarma de cobranza: como la ayuda, pero en rojo. Salta sola. */
+.alarma { background: var(--danger-soft); border: 1px solid var(--danger); border-radius: var(--radius-lg); padding: var(--space-3) var(--space-4); display: flex; gap: var(--space-3); align-items: center; flex-wrap: wrap; }
+.alarma > svg { color: var(--danger); flex: none; }
+.alarma__titulo { font-weight: 600; color: var(--ink); }
+.alarma__texto { font-size: 13px; line-height: 20px; color: var(--ink-muted); }
+.hk-nav__count--alerta { color: var(--danger); font-weight: 600; }
+
 /* ---------- Charts ---------- */
 .chart { width: 100%; display: block; overflow: visible; }
 .chart-legend { display: flex; flex-wrap: wrap; gap: var(--space-3); margin-top: var(--space-3); }
@@ -881,6 +888,7 @@ kbd {
     border-radius: 50%; background: var(--accent);
     font-size: 0; color: transparent; overflow: hidden;
   }
+  .app-shell[data-colapsado="true"] .hk-sidebar:not(:hover) .hk-nav__count--alerta { background: var(--danger); }
 
   /* El pie sigue la misma regla que la nav: la fila NO cambia de direccion.
      Pasarla a columna corria el avatar de lugar — que es justo lo que no

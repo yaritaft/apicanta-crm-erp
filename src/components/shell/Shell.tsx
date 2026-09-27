@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import {
@@ -8,6 +8,7 @@ import {
   RefreshCw, Search, Sun, X,
 } from "lucide-react";
 import { navPara } from "./nav";
+import { alarmaCobranza } from "@/lib/finanzas";
 import { cargarDeLaNube, hayNube, reiniciarCarga, useEstado, useSync, useTema } from "@/lib/store";
 import { useSalir, useSesion } from "@/lib/auth";
 import { useNivelAcceso } from "@/lib/acceso";
@@ -65,6 +66,19 @@ export function Shell({ children }: { children: React.ReactNode }) {
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, []);
+
+  /* La alarma de cobranza: clientes con 7 días o más de atraso, en rojo al
+     lado de Finanzas. Se calcula sólo cuando cambian las cuotas, los pagos o
+     las ventas, no a cada tecla. */
+  const { cuotas, pagos, ventas } = estado;
+  const atrasados = useMemo(
+    () => alarmaCobranza({ ...estado, cuotas, pagos, ventas }).clientes[7],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [cuotas, pagos, ventas],
+  );
+  const alertas: Record<string, { n: number; titulo: string }> = {
+    "/finanzas": { n: atrasados, titulo: `${atrasados === 1 ? "Un cliente atrasado" : `${atrasados} clientes atrasados`} hace 7 días o más` },
+  };
 
   const contadores: Record<string, number> = {
     "/leads": estado.leads.length,
@@ -128,7 +142,11 @@ export function Shell({ children }: { children: React.ReactNode }) {
                       <Link href={i.href} aria-current={activo ? "page" : undefined} title={i.ayuda}>
                         <Ico />
                         <span>{i.texto}</span>
-                        {contadores[i.href] !== undefined && contadores[i.href] > 0 && (
+                        {alertas[i.href]?.n > 0 ? (
+                          <span className="hk-nav__count hk-nav__count--alerta" title={alertas[i.href].titulo} aria-label={alertas[i.href].titulo}>
+                            {alertas[i.href].n}
+                          </span>
+                        ) : contadores[i.href] !== undefined && contadores[i.href] > 0 && (
                           <span className="hk-nav__count">{contadores[i.href]}</span>
                         )}
                       </Link>

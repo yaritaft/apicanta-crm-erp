@@ -16,6 +16,7 @@ import { DateRangePicker, rangoSub } from "@/components/ui/DateRangePicker";
 import { useRangoURL } from "@/lib/useRango";
 import { calcularPyL, cuotasVencidas, gastosPorCategoria } from "@/lib/finanzas";
 import type { EstadoApp, Gasto } from "@/lib/types";
+import { AlarmaCobranza } from "@/components/finanzas/AlarmaCobranza";
 
 export default function Finanzas() {
   const e = useEstado();
@@ -89,6 +90,8 @@ export default function Finanzas() {
           </>
         }
       />
+
+      <AlarmaCobranza e={e} />
 
       <div className="stack-4">
         <EstadoResultados
