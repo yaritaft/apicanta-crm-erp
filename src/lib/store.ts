@@ -901,6 +901,56 @@ function extrasDeCobro(c: DatosCobro): Partial<Pago> {
   };
 }
 
+/* ---------- La baja de una venta ----------
+   Cancelada o reembolsada, la venta se va: las cuotas que faltaban cobrar
+   se cancelan y su servicio pasa a baja. Es un borrado lógico, como pidió
+   Yari: las cuotas quedan escritas como canceladas, no se borran, y lo
+   cobrado queda como historial. Una cuota con algo pagado no se cancela
+   (su plata existe); deja de contar como por cobrar porque la venta ya no
+   está activa. Si la venta vuelve a activarse, esas mismas cuotas vuelven
+   a estar pendientes y el servicio, al estado que tenía. */
+
+const CUOTAS_DE_LA_BAJA = "cuotasCanceladasConLaBaja";
+const ESTADO_ANTES_DE_LA_BAJA = "estadoAntesDeLaBaja";
+
+export const esBaja = (v: Pick<Venta, "estado">) => v.estado === "cancelada" || v.estado === "reembolsada";
+
+/** Las cuotas que cancelaría dar de baja la venta: pendientes y sin nada pagado. */
+export function cuotasQueCancelaLaBaja(e: EstadoApp, ventaId: ID): Cuota[] {
+  const pagado = new Map<ID, number>();
+  for (const p of e.pagos) pagado.set(p.cuotaId, (pagado.get(p.cuotaId) ?? 0) + p.monto);
+  return e.cuotas.filter((c) => c.ventaId === ventaId && c.estado === "pendiente" && (pagado.get(c.id) ?? 0) < 0.01);
+}
+
+function efectoDeBaja(e: EstadoApp, antes: Venta, despues: Venta): { venta: Venta; cuotas: Cuota[]; alumnos: Alumno[] } | null {
+  if (esBaja(antes) === esBaja(despues)) {
+    /* Editar una venta que sigue de baja no le borra qué cuotas canceló. */
+    if (esBaja(despues) && antes.extra?.[CUOTAS_DE_LA_BAJA] && !despues.extra?.[CUOTAS_DE_LA_BAJA]) {
+      return { venta: { ...despues, extra: { ...despues.extra, [CUOTAS_DE_LA_BAJA]: antes.extra[CUOTAS_DE_LA_BAJA] } }, cuotas: [], alumnos: [] };
+    }
+    return null;
+  }
+  if (esBaja(despues)) {
+    const cuotas = cuotasQueCancelaLaBaja(e, despues.id).map((c) => ({ ...c, estado: "cancelada" as const }));
+    const alumnos = e.alumnos.filter((a) => a.ventaId === despues.id && a.estado !== "baja")
+      .map((a) => ({ ...a, estado: "baja" as const, extra: { ...a.extra, [ESTADO_ANTES_DE_LA_BAJA]: a.estado } }));
+    return {
+      venta: { ...despues, extra: { ...despues.extra, [CUOTAS_DE_LA_BAJA]: cuotas.map((c) => c.id), bajaEn: ahora() } },
+      cuotas, alumnos,
+    };
+  }
+  /* Vuelve: lo que canceló la baja, pendiente otra vez. */
+  const ids = new Set((antes.extra?.[CUOTAS_DE_LA_BAJA] as ID[] | undefined) ?? []);
+  const cuotas = e.cuotas.filter((c) => ids.has(c.id) && c.estado === "cancelada").map((c) => ({ ...c, estado: "pendiente" as const }));
+  const alumnos = e.alumnos.filter((a) => a.ventaId === despues.id && a.estado === "baja" && a.extra?.[ESTADO_ANTES_DE_LA_BAJA])
+    .map((a) => {
+      const { [ESTADO_ANTES_DE_LA_BAJA]: previo, ...extra } = a.extra;
+      return { ...a, estado: previo as Alumno["estado"], extra };
+    });
+  const { [CUOTAS_DE_LA_BAJA]: _c, bajaEn: _b, ...extra } = { ...antes.extra, ...despues.extra };
+  return { venta: { ...despues, extra }, cuotas, alumnos };
+}
+
 export const acciones = {
   crear<T extends { id: ID }>(coleccion: Coleccion, registro: Omit<T, "id"> & { id?: ID }, etiqueta: string): ID {
     const e = snapshot();
@@ -924,11 +974,25 @@ export const acciones = {
 
   actualizar<T extends { id: ID }>(coleccion: Coleccion, id: ID, cambios: Partial<T>, etiqueta: string, detalle?: string) {
     const e = snapshot();
-    const lista = (e[coleccion] as unknown as T[]).map((x) => (x.id === id ? { ...x, ...cambios } : x));
+    let lista = (e[coleccion] as unknown as T[]).map((x) => (x.id === id ? { ...x, ...cambios } : x));
     const { lista: act, nuevo } = registrar(e, ENTIDAD_DE[coleccion] ?? "config", id, etiqueta, "actualizo", detalle ?? `Se editó «${etiqueta}».`);
-    guardar({ ...e, [coleccion]: lista, actividad: act } as EstadoApp);
+    /* Una venta que se da de baja (o vuelve) arrastra sus cuotas y su servicio. */
+    const antes = coleccion === "ventas" ? e.ventas.find((v) => v.id === id) : undefined;
+    const baja = antes ? efectoDeBaja(e, antes, (lista as unknown as Venta[]).find((v) => v.id === id) ?? antes) : null;
+    if (baja) lista = (lista as unknown as Venta[]).map((v) => (v.id === id ? baja.venta : v)) as unknown as T[];
+    const cuotasPorId = new Map((baja?.cuotas ?? []).map((c) => [c.id, c] as const));
+    const alumnosPorId = new Map((baja?.alumnos ?? []).map((a) => [a.id, a] as const));
+    guardar({
+      ...e, [coleccion]: lista, actividad: act,
+      ...(baja ? {
+        cuotas: e.cuotas.map((c) => cuotasPorId.get(c.id) ?? c),
+        alumnos: e.alumnos.map((a) => alumnosPorId.get(a.id) ?? a),
+      } : {}),
+    } as EstadoApp);
     const fila = lista.find((x) => x.id === id);
     if (fila) empujar({ tipo: "upsert", tabla: coleccion, filas: [fila] });
+    if (baja?.cuotas.length) empujarEnLotes("cuotas", baja.cuotas);
+    if (baja?.alumnos.length) empujar({ tipo: "upsert", tabla: "alumnos", filas: baja.alumnos });
     empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
   },
 

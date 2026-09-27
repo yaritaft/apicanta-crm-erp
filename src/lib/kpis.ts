@@ -538,7 +538,7 @@ export function catalogo(e: EstadoApp): DefKpi[] {
       ayuda: "Cuotas vencidas sin pagar sobre todas las que ya vencieron. El que se atrasa pero sigue: no es una cancelación.",
       valor: (c) => {
         const exigibles = c.e.cuotas.filter((x) => x.vence && new Date(x.vence).getTime() < Date.now() && x.estado !== "cancelada"
-          && c.ventaEnCorte(c.ix.ventaPorId.get(x.ventaId)));
+          && c.ix.ventaPorId.get(x.ventaId)?.estado === "activa" && c.ventaEnCorte(c.ix.ventaPorId.get(x.ventaId)));
         return exigibles.length ? (c.vencidas().length / exigibles.length) * 100 : 0;
       } },
     { id: "c_7", etiqueta: "Clientes con 7 días o más de atraso", formato: "cantidad", mejor: "baja", foto: true, href: "/finanzas/detalle",

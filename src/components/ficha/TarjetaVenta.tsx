@@ -27,12 +27,13 @@ const ESTADO: Record<EstadoVenta, { texto: string; variante: "success" | "neutra
   reembolsada: { texto: "Reembolsada", variante: "danger" },
 };
 
-export function TarjetaVenta({ e, venta, resaltada, abierta, onAlternar, onPagar, onEditar, onCancelar }: {
+export function TarjetaVenta({ e, venta, resaltada, abierta, onAlternar, onPagar, onEditar, onEstado }: {
   e: EstadoApp; venta: Venta; resaltada?: boolean;
   abierta: boolean; onAlternar: () => void;
   onPagar: (cuota: Cuota) => void;
   onEditar: () => void;
-  onCancelar: () => void;
+  /* Darla de baja (cancelada o reembolsada) o reactivarla. */
+  onEstado: (estado: EstadoVenta) => void;
 }) {
   const toast = useToast();
   const M = (n: number, d = 0) => money(n, venta.moneda, d);
@@ -175,11 +176,16 @@ export function TarjetaVenta({ e, venta, resaltada, abierta, onAlternar, onPagar
 
           {venta.notas && <p className="t-sm t-muted" style={{ whiteSpace: "pre-wrap" }}>{venta.notas}</p>}
 
-          {activa && (
-            <div className="row" style={{ justifyContent: "flex-end" }}>
-              <Button sm variante="ghost" onClick={onCancelar}>Cancelar venta</Button>
-            </div>
-          )}
+          <div className="row" style={{ justifyContent: "flex-end", gap: 8 }}>
+            {activa ? (
+              <>
+                <Button sm variante="ghost" onClick={() => onEstado("reembolsada")}>Marcar reembolsada</Button>
+                <Button sm variante="ghost" onClick={() => onEstado("cancelada")}>Cancelar venta</Button>
+              </>
+            ) : (
+              <Button sm variante="ghost" onClick={() => onEstado("activa")}>Reactivar venta</Button>
+            )}
+          </div>
         </div>
       )}
     </div>

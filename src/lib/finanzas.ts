@@ -324,7 +324,7 @@ export function cuotasVencidas(e: EstadoApp): CuotaVencida[] {
     if (vence >= hoy) continue;
 
     const venta = e.ventas.find((v) => v.id === c.ventaId);
-    if (!venta || venta.estado === "cancelada") continue;
+    if (!venta || venta.estado !== "activa") continue;
 
     const pagado = e.pagos.filter((p) => p.cuotaId === c.id).reduce((a, p) => a + p.monto, 0);
     const saldo = c.monto - pagado;
@@ -340,8 +340,14 @@ export function cuotasVencidas(e: EstadoApp): CuotaVencida[] {
   return out.sort((a, b) => b.diasAtraso - a.diasAtraso);
 }
 
+/* Las cuotas de una venta dada de baja no se cobran: no son mora ni plata por cobrar. */
+function ventasActivas(e: EstadoApp): Set<string> {
+  return new Set(e.ventas.filter((v) => v.estado === "activa").map((v) => v.id));
+}
+
 export function tasaDeMora(e: EstadoApp): number {
-  const exigibles = e.cuotas.filter((c) => c.vence && new Date(c.vence).getTime() < Date.now() && c.estado !== "cancelada");
+  const activas = ventasActivas(e);
+  const exigibles = e.cuotas.filter((c) => c.vence && new Date(c.vence).getTime() < Date.now() && c.estado !== "cancelada" && activas.has(c.ventaId));
   if (exigibles.length === 0) return 0;
   return (cuotasVencidas(e).length / exigibles.length) * 100;
 }
@@ -349,8 +355,9 @@ export function tasaDeMora(e: EstadoApp): number {
 /** Cada cuota pendiente con lo que falta cobrarle. Misma lista para el total
  *  y para el desglose del Panel. */
 export function cuotasPorCobrar(e: EstadoApp) {
+  const activas = ventasActivas(e);
   return e.cuotas
-    .filter((c) => c.estado === "pendiente")
+    .filter((c) => c.estado === "pendiente" && activas.has(c.ventaId))
     .map((c) => {
       const pagado = e.pagos.filter((p) => p.cuotaId === c.id).reduce((x, p) => x + p.monto, 0);
       return { cuota: c, pagado, saldo: Math.max(c.monto - pagado, 0) };

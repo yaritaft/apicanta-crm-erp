@@ -22,11 +22,11 @@ import { UtmsPersona } from "./UtmsPersona";
 import { TarjetaVenta } from "./TarjetaVenta";
 import { CabezaPlegable, usePlegado } from "./Plegable";
 import type { VistaFicha } from "./abrir";
-import { acciones, useEstado } from "@/lib/store";
+import { acciones, cuotasQueCancelaLaBaja, useEstado } from "@/lib/store";
 import { personaDe, type Persona } from "@/lib/persona";
 import { saldoVenta } from "@/lib/finanzas";
 import { fechaHora, fechaLarga, money, relativo } from "@/lib/format";
-import type { Alumno, Cuota, EstadoAlumno, EstadoApp, IngresoComunidad, Venta } from "@/lib/types";
+import type { Alumno, Cuota, EstadoAlumno, EstadoApp, EstadoVenta, IngresoComunidad, Venta } from "@/lib/types";
 import { INGRESOS_COMUNIDAD } from "@/lib/angelo";
 
 /* ==================================================================
@@ -251,7 +251,8 @@ function VistaVentas({ e, p, ventaResaltada }: { e: EstadoApp; p: Persona; venta
   const [solapa, setSolapa] = useState<SolapaVentas>("ventas");
   const [pagar, setPagar] = useState<Cuota | null>(null);
   const [editar, setEditar] = useState<BorradorVenta | null>(null);
-  const [cancelar, setCancelar] = useState<Venta | null>(null);
+  /* La venta que se da de baja o se reactiva, y a qué estado pasa. */
+  const [baja, setBaja] = useState<{ venta: Venta; estado: EstadoVenta } | null>(null);
   const [nuevaVenta, setNuevaVenta] = useState(false);
   const plegado = usePlegado();
 
@@ -313,7 +314,7 @@ function VistaVentas({ e, p, ventaResaltada }: { e: EstadoApp; p: Persona; venta
                     onAlternar={() => plegado.alternar(v.id, porDefecto)}
                     onPagar={setPagar}
                     onEditar={() => setEditar(desdeVenta(e, v))}
-                    onCancelar={() => setCancelar(v)}
+                    onEstado={(estado) => setBaja({ venta: v, estado })}
                   />
                 );
               })}
@@ -332,17 +333,7 @@ function VistaVentas({ e, p, ventaResaltada }: { e: EstadoApp; p: Persona; venta
         <FormularioVenta borrador={editar} onCerrar={() => setEditar(null)}
           onGuardado={(n) => { toast(`Venta de ${n} actualizada.`); setEditar(null); }} />
       )}
-      <Confirmar
-        abierto={cancelar !== null} onCerrar={() => setCancelar(null)} confirmarTexto="Cancelar la venta"
-        titulo={`¿Cancelar la venta de ${cancelar?.contactoNombre ?? ""}?`}
-        texto="Las cuotas y los pagos quedan como historial; la venta deja de contar como activa."
-        onConfirmar={() => {
-          if (!cancelar) return;
-          acciones.actualizar<Venta>("ventas", cancelar.id, { estado: "cancelada" }, cancelar.contactoNombre,
-            `Se canceló la venta de ${cancelar.contactoNombre}. Las cuotas quedan registradas.`);
-          toast("Venta cancelada. Las cuotas quedan como historial.");
-        }}
-      />
+      {baja && <ConfirmarBaja e={e} venta={baja.venta} estado={baja.estado} onCerrar={() => setBaja(null)} />}
       {nuevaVenta && (
         <AsistenteVenta
           cliente={{ contactoId: p.leads[0]?.id ?? p.clave, nombre: p.nombre, email: p.email }}
@@ -351,6 +342,59 @@ function VistaVentas({ e, p, ventaResaltada }: { e: EstadoApp; p: Persona; venta
         />
       )}
     </>
+  );
+}
+
+/* ---------- Dar de baja una venta, o reactivarla ----------
+   Lo que pasa se dice antes de confirmar: cuántas cuotas se cancelan y
+   cuánta plata deja de estar por cobrar (store.ts, efectoDeBaja). */
+
+function ConfirmarBaja({ e, venta, estado, onCerrar }: {
+  e: EstadoApp; venta: Venta; estado: EstadoVenta; onCerrar: () => void;
+}) {
+  const toast = useToast();
+  const M = (n: number) => money(n, venta.moneda, 2);
+  const nombre = venta.contactoNombre;
+  const servicio = e.alumnos.some((a) => a.ventaId === venta.id);
+
+  let titulo: string, texto: string, boton: string, detalle: string, aviso: string;
+  if (estado === "activa") {
+    const ids = new Set((venta.extra?.cuotasCanceladasConLaBaja as string[] | undefined) ?? []);
+    const vuelven = e.cuotas.filter((c) => ids.has(c.id) && c.estado === "cancelada");
+    const monto = vuelven.reduce((a, c) => a + c.monto, 0);
+    titulo = `¿Reactivar la venta de ${nombre}?`;
+    texto = (vuelven.length
+      ? `Vuelve a estar activa y ${vuelven.length === 1 ? "la cuota que se canceló con la baja vuelve" : `las ${vuelven.length} cuotas que se cancelaron con la baja vuelven`} a estar pendientes (${M(monto)}).`
+      : "Vuelve a estar activa. No había cuotas canceladas por la baja.")
+      + (servicio ? " Su servicio vuelve al estado que tenía." : "");
+    boton = "Reactivar la venta";
+    detalle = `Se reactivó la venta de ${nombre}${vuelven.length ? `: ${vuelven.length} cuotas vuelven a estar pendientes` : ""}.`;
+    aviso = "Venta reactivada.";
+  } else {
+    const cuotas = cuotasQueCancelaLaBaja(e, venta.id);
+    const monto = cuotas.reduce((a, c) => a + c.monto, 0);
+    const reembolso = estado === "reembolsada";
+    titulo = reembolso ? `¿Marcar como reembolsada la venta de ${nombre}?` : `¿Cancelar la venta de ${nombre}?`;
+    texto = (cuotas.length
+      ? `${cuotas.length === 1 ? "La cuota que faltaba cobrar queda cancelada" : `Las ${cuotas.length} cuotas que faltaban cobrar quedan canceladas`} (${M(monto)}): no se borran, quedan escritas como canceladas y dejan de contar como por cobrar y como mora.`
+      : "No le quedan cuotas por cobrar.")
+      + (servicio ? " Su servicio pasa a baja." : "")
+      + " Lo cobrado queda como historial."
+      + (reembolso ? " La plata devuelta cargala como gasto en Reembolsos." : "")
+      + " Se puede reactivar.";
+    boton = reembolso ? "Marcar reembolsada" : "Cancelar la venta";
+    detalle = `${reembolso ? "Se marcó como reembolsada" : "Se canceló"} la venta de ${nombre}${cuotas.length ? `: ${cuotas.length} cuotas por ${M(monto)} quedan canceladas` : ""}.`;
+    aviso = reembolso ? "Venta marcada como reembolsada." : "Venta cancelada. Las cuotas quedan como historial.";
+  }
+
+  return (
+    <Confirmar
+      abierto onCerrar={onCerrar} confirmarTexto={boton} titulo={titulo} texto={texto}
+      onConfirmar={() => {
+        acciones.actualizar<Venta>("ventas", venta.id, { estado }, nombre, detalle);
+        toast(aviso);
+      }}
+    />
   );
 }
 

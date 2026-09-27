@@ -89,7 +89,10 @@ export function FormularioVenta({ borrador, onCerrar, onGuardado }: {
 
     if (f.id) {
       const antes = e.ventas.find((v) => v.id === f.id);
-      acciones.actualizar<Venta>("ventas", f.id, datos, f.contactoNombre);
+      /* Editar no pisa cuándo se creó ni lo que guarda `extra` (qué cuotas
+         canceló la baja, de dónde vino). */
+      const { creadoEn: _creado, extra: _extra, ...cambios } = datos;
+      acciones.actualizar<Venta>("ventas", f.id, cambios, f.contactoNombre);
       /* Se corrigió el nombre del cliente, no se cambió de persona: queda
          corregido en todos lados (su ficha, el CRM, la Agenda, su servicio). */
       if (f.contactoId && antes?.contactoId === f.contactoId && antes.contactoNombre !== datos.contactoNombre) {
