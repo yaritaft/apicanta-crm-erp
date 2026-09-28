@@ -366,15 +366,16 @@ export function cuotasVencidas(e: EstadoApp): CuotaVencida[] {
 }
 
 /* ---------- Las alarmas de cobranza ----------
-   "Que salten alarmas: che, hay un tipo que tendría que haber pagado hace
-   20 días y no pagó" (Yari). Se cuentan clientes (ventas), no cuotas: el
+   "Que figure como che, Pepe lleva siete días atrasado, 10, 12, 15, 20:
+   que salten alarmas" (Yari). Se cuentan clientes (ventas), no cuotas: el
    que debe dos cuotas es una sola persona a la que hay que llamar. Salta
-   desde los 7 días; el menú lateral y el Dashboard la muestran solos. */
+   desde los 7 días; el menú lateral y el Dashboard la muestran solos, y
+   cada escalón tiene su chip en Finanzas y su fila en el Dashboard. */
 
-export const UMBRALES_ATRASO = [7, 15, 20] as const;
+export const UMBRALES_ATRASO = [7, 10, 12, 15, 20] as const;
 
 export interface AlarmaCobranza {
-  /* Clientes con alguna cuota vencida hace al menos 7, 15 y 20 días. */
+  /* Clientes con alguna cuota vencida hace al menos 7, 10, 12, 15 y 20 días. */
   clientes: Record<(typeof UMBRALES_ATRASO)[number], number>;
   /* Lo que deben, sumado, los que pasaron los 7 días. */
   saldo: number;
@@ -391,7 +392,7 @@ export function alarmaCobranza(e: EstadoApp, vencidas = cuotasVencidas(e)): Alar
   }
   const dias = [...peorPorVenta.values()];
   return {
-    clientes: { 7: dias.length, 15: dias.filter((d) => d >= 15).length, 20: dias.filter((d) => d >= 20).length },
+    clientes: Object.fromEntries(UMBRALES_ATRASO.map((u) => [u, dias.filter((d) => d >= u).length])) as AlarmaCobranza["clientes"],
     saldo,
     peor: vencidas[0] && vencidas[0].diasAtraso >= UMBRALES_ATRASO[0] ? vencidas[0] : undefined,
   };
