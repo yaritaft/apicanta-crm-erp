@@ -1,6 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
-import { guardarMovimientos, hayServidor } from "@/lib/servidor";
+import { guardarMovimientos, hayServidor, referenciasCompletas } from "@/lib/servidor";
 import { hayClaves, listar, procesadorDe, PROVEEDORES, type MovimientoApi } from "@/lib/pasarelas-api";
 import type { ProveedorPasarela } from "@/lib/types";
 
@@ -77,24 +77,35 @@ export async function GET(peticion: Request) {
   const conectadas: ProveedorPasarela[] = [];
   const errores: { proveedor: string; mensaje: string }[] = [];
 
+  /* Whop manda quién pagó y la comisión en el detalle de cada pago, un
+     pedido por cobro: se pide sólo para los que en la base están incompletos. */
+  const completosWhop = hayClaves("whop") ? await referenciasCompletas("whop") : null;
+
   await Promise.all(PROVEEDORES.map(async (proveedor) => {
     if (!hayClaves(proveedor)) return;
     conectadas.push(proveedor);
+    const avisos: string[] = [];
     try {
-      movimientos.push(...await listar(proveedor, desde, hasta));
+      movimientos.push(...await listar(proveedor, desde, hasta, {
+        avisos,
+        necesitaDetalle: proveedor === "whop" && completosWhop ? (m) => !completosWhop.has(m.referencia) : undefined,
+      }));
     } catch (err) {
       errores.push({ proveedor, mensaje: err instanceof Error ? err.message : "Error desconocido." });
     }
+    for (const mensaje of avisos) errores.push({ proveedor, mensaje });
   }));
 
   movimientos.sort((a, b) => +new Date(b.fecha) - +new Date(a.fecha));
 
   let guardados = 0;
+  let completados = 0;
   if (quiereGuardar && hayServidor) {
     const r = await guardarMovimientos(movimientos.map((m) => ({
       ...m, procesadorId: procesadorDe(m.proveedor), origen: "api",
     })));
     guardados = r.guardados;
+    completados = r.completados;
     if (r.error) errores.push({ proveedor: "supabase", mensaje: r.error });
   }
 
@@ -102,6 +113,7 @@ export async function GET(peticion: Request) {
     conectadas,
     errores,
     guardados,
+    completados,
     desde: desde.toISOString(),
     movimientos,
   });

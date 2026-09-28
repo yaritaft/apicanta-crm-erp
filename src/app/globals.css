@@ -1103,7 +1103,11 @@ kbd {
 }
 .mov__cliente { font-weight: 600; font-size: 15px; }
 .mov__meta { font-size: 13px; color: var(--ink-subtle); }
-.mov__monto { font-family: var(--font-display); font-size: 17px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.mov__monto { font-family: var(--font-display); font-size: 17px; font-weight: 600; font-variant-numeric: tabular-nums; text-align: right; }
+/* Lo que se quedó la pasarela, abajo del monto: se ve sin abrir el cobro. */
+.mov__fee { display: block; font-family: var(--font-sans); font-size: 12px; font-weight: 500; color: var(--ink-subtle); }
+.mov__fee[data-pendiente="true"] { color: var(--warning); }
+.mov__metodo { color: var(--ink-muted); }
 .mov__body { padding: var(--space-4); border-top: 1px solid var(--border); background: var(--surface-000); display: flex; flex-direction: column; gap: var(--space-3); }
 
 .sug { display: flex; align-items: flex-start; gap: var(--space-3); padding: var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface-100); }

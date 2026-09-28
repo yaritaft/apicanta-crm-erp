@@ -146,6 +146,13 @@ const ALIAS: Record<string, string[]> = {
     "customer email", "buyer_email", "user_email", "from email address",
     "email", "correo", "email del comprador", "payer_email",
   ],
+  clienteTelefono: [
+    "customer phone", "buyer_phone", "phone", "teléfono", "telefono", "celular", "whatsapp",
+  ],
+  metodo: [
+    "payment method type", "payment method", "card brand", "método de pago", "metodo de pago",
+    "forma de pago", "medio de pago", "payment_type",
+  ],
   descripcion: [
     "description", "product_name", "producto", "product", "item title",
     "concepto", "descripción", "plan", "subject",
@@ -263,6 +270,8 @@ export function importarCSV(
       fecha: aFecha(dato(f, "fecha")),
       clienteNombre: dato(f, "clienteNombre") || undefined,
       clienteEmail: dato(f, "clienteEmail")?.toLowerCase() || undefined,
+      clienteTelefono: dato(f, "clienteTelefono") || undefined,
+      metodo: dato(f, "metodo") || undefined,
       descripcion: dato(f, "descripcion") || undefined,
     });
   }

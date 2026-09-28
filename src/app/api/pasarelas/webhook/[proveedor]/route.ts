@@ -64,6 +64,10 @@ function delPayload(proveedor: ProveedorPasarela, cuerpo: Payload): { id?: strin
       const obj = leer(cuerpo, "data", "object") as Payload | undefined;
       const id = texto(obj?.id);
       if (!obj || !id) return {};
+      /* La sesión del checkout (cs_…) no es un cobro: es el mismo pago que
+         llega también como cargo. Sólo sirve para ir a buscar su cargo; si
+         no se puede, el cargo entra por su propio aviso y por la sync. */
+      if (id.startsWith("cs_")) return { id };
       const monto = dinero(numero(obj.amount ?? obj.amount_total) / 100);
       return {
         id,
@@ -73,6 +77,7 @@ function delPayload(proveedor: ProveedorPasarela, cuerpo: Payload): { id?: strin
           fecha: new Date(numero(obj.created) * 1000 || Date.now()).toISOString(),
           clienteNombre: texto(leer(obj, "billing_details", "name")),
           clienteEmail: texto(leer(obj, "billing_details", "email"))?.toLowerCase(),
+          clienteTelefono: texto(leer(obj, "billing_details", "phone")),
           descripcion: texto(obj.description),
         } : undefined,
       };
@@ -91,6 +96,7 @@ function delPayload(proveedor: ProveedorPasarela, cuerpo: Payload): { id?: strin
           fecha: texto(cuerpo.approved_date) ?? texto(cuerpo.created_date) ?? new Date().toISOString(),
           clienteNombre: texto(leer(cuerpo, "payer", "name")),
           clienteEmail: texto(leer(cuerpo, "payer", "email"))?.toLowerCase(),
+          clienteTelefono: texto(leer(cuerpo, "payer", "phone")),
           descripcion: texto(cuerpo.description) ?? texto(cuerpo.order_id),
         } : undefined,
       };
@@ -108,6 +114,7 @@ function delPayload(proveedor: ProveedorPasarela, cuerpo: Payload): { id?: strin
           fecha: new Date(numero(compra.order_date) || Date.now()).toISOString(),
           clienteNombre: texto(leer(cuerpo, "data", "buyer", "name")),
           clienteEmail: texto(leer(cuerpo, "data", "buyer", "email"))?.toLowerCase(),
+          clienteTelefono: texto(leer(cuerpo, "data", "buyer", "checkout_phone")) ?? texto(leer(cuerpo, "data", "buyer", "phone")),
           descripcion: texto(leer(cuerpo, "data", "product", "name")),
         } : undefined,
       };
@@ -124,8 +131,9 @@ function delPayload(proveedor: ProveedorPasarela, cuerpo: Payload): { id?: strin
           proveedor: "whop", referencia: id, monto, fee, neto: dinero(monto - fee),
           moneda: moneda(texto(d.currency)),
           fecha: new Date(numero(d.paid_at ?? d.created_at) * 1000 || Date.now()).toISOString(),
-          clienteNombre: texto(leer(d, "user", "name")) ?? texto(leer(d, "user", "username")),
+          clienteNombre: texto(leer(d, "user", "name")) ?? texto(leer(d, "billing_address", "name")) ?? texto(leer(d, "user", "username")),
           clienteEmail: texto(leer(d, "user", "email"))?.toLowerCase(),
+          clienteTelefono: texto(leer(d, "member", "phone")) ?? texto(d.customer_phone),
           descripcion: texto(d.product_title),
         } : undefined,
       };

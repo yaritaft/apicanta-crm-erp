@@ -13,11 +13,12 @@ import {
   alumnoDeVenta, cuotaMensualDeVenta, etapaDelAlumno, etapaInicialDeServicio, etapasDeServicio,
   personaDeVenta, planDeVenta,
 } from "./alumnos";
-import { pagoDesdeMovimiento } from "./conciliacion";
+import { pagoDesdeMovimiento, tasaEstimada } from "./conciliacion";
 import { cobrosConOtraTasa, conTasa } from "./finanzas";
 import { ventasParaAtar, webinarNuevoDeProyecto, webinarsQueFaltan } from "./atar-webinars";
 import { caracteristicaDePago, montoArsDe, tipoVentaDePago, type ResultadoImport } from "./angelo";
 import { claveEmail, completar } from "./contactos";
+import { feeDelPago, feeDesconocido, parcheDeCobro, type ParcheDeCobro } from "./completar-cobros";
 import { construirSemilla, estadoVacio } from "./seed";
 import { hayNube, nube, tablaFaltante, TABLAS, TABLAS_DE_DUENOS, TABLAS_OPCIONALES } from "./supabase";
 import { idAd, idAdset, idCampaign } from "./meta";
@@ -1524,7 +1525,7 @@ export const acciones = {
       if (mov) {
         /* El fee lo dice la pasarela, no la tabla de procesadores. */
         nuevosPagos.push({
-          ...pagoDesdeMovimiento(mov, cobro.cuotaId, cobro.monto), id: nuevoId("pag"),
+          ...pagoDesdeMovimiento(mov, cobro.cuotaId, cobro.monto, tasaEstimada(e, mov)), id: nuevoId("pag"),
           ...(cobro.comprobante ? { comprobante: cobro.comprobante } : {}),
           ...extrasDeCobro(cobro), chequeado: true,
         } as Pago);
@@ -1666,7 +1667,7 @@ export const acciones = {
       const mov = cobro.movimientoId ? e.movimientos.find((m) => m.id === cobro.movimientoId) : undefined;
       if (mov) {
         nuevosPagos.push({
-          ...pagoDesdeMovimiento(mov, cuota.id, cobro.monto), id: nuevoId("pag"),
+          ...pagoDesdeMovimiento(mov, cuota.id, cobro.monto, tasaEstimada(e, mov)), id: nuevoId("pag"),
           ...(cobro.comprobante ? { comprobante: cobro.comprobante } : {}),
           ...extrasDeCobro(cobro), chequeado: true,
         } as Pago);
@@ -1956,7 +1957,7 @@ export const acciones = {
     for (const imp of imputaciones) {
       if (imp.monto <= 0.001) continue;
       if (!e.cuotas.some((c) => c.id === imp.cuotaId)) continue;
-      nuevosPagos.push({ ...pagoDesdeMovimiento(mov, imp.cuotaId, imp.monto), id: nuevoId("pag") } as Pago);
+      nuevosPagos.push({ ...pagoDesdeMovimiento(mov, imp.cuotaId, imp.monto, tasaEstimada(e, mov)), id: nuevoId("pag") } as Pago);
     }
     if (nuevosPagos.length === 0) return false;
     {
@@ -2035,9 +2036,14 @@ export const acciones = {
       const mov = movPorId.get(movimientoId);
       const pago = pagoPorId.get(pagoId);
       if (!mov || mov.estado !== "pendiente" || !pago || pago.movimientoId || pagosCambiados.has(pago.id)) continue;
-      const fee = mov.monto > 0 ? r2(mov.fee * (pago.monto / mov.monto)) : 0;
+      /* Con la comisión real el pago toma la suya. Si la pasarela todavía
+         no la mandó (Whop no la traía, Stripe tarda), conserva la que tenía:
+         ponerle 0 inflaba el cash post pasarelas y las comisiones. */
+      const real = !feeDesconocido(mov);
+      const fee = !real ? pago.feeMonto : mov.monto > 0 ? r2(mov.fee * (pago.monto / mov.monto)) : 0;
       pagosCambiados.set(pago.id, {
-        ...pago, movimientoId: mov.id, feeMonto: fee, feeRate: pago.monto > 0 ? Math.round((fee / pago.monto) * 10000) / 10000 : 0,
+        ...pago, movimientoId: mov.id, feeMonto: fee,
+        feeRate: !real ? pago.feeRate : pago.monto > 0 ? Math.round((fee / pago.monto) * 10000) / 10000 : 0,
         feeManual: false, chequeado: true, referencia: pago.referencia || mov.referencia,
       });
       movsCambiados.set(mov.id, {
@@ -2145,28 +2151,61 @@ export const acciones = {
 
   /* Importar de un CSV o de la API: el mismo cobro traído dos veces tiene
      que seguir siendo uno solo, así que la referencia manda. */
-  importarMovimientos(filas: Omit<Movimiento, "id" | "estado" | "creadoEn" | "origen">[], origen: string): { nuevos: number; repetidos: number } {
+  importarMovimientos(filas: Omit<Movimiento, "id" | "estado" | "creadoEn" | "origen">[], origen: string): { nuevos: number; repetidos: number; completados: number } {
     const e = snapshot();
-    const vistos = new Set(e.movimientos.map((m) => `${m.proveedor}:${m.referencia}`));
+    const porClave = new Map<string, Movimiento>(e.movimientos.map((m) => [`${m.proveedor}:${m.referencia}`, m]));
+    const vistos = new Set<string>(porClave.keys());
     const nuevos: Movimiento[] = [];
+    /* Los que ya estaban no se duplican, pero se completa lo que les faltaba:
+       quién pagó, cómo, y la comisión real si todavía no se sabía. */
+    const parches = new Map<ID, ParcheDeCobro>();
 
     for (const f of filas) {
       const clave = `${f.proveedor}:${f.referencia}`;
+      const ya = porClave.get(clave);
+      if (ya) {
+        const p = parcheDeCobro({ ...ya, ...(parches.get(ya.id) ?? {}) }, f);
+        if (p) parches.set(ya.id, { ...(parches.get(ya.id) ?? {}), ...p });
+        continue;
+      }
       if (vistos.has(clave)) continue;
       vistos.add(clave);
       nuevos.push({ ...f, id: nuevoId("mov"), estado: "pendiente", origen, creadoEn: ahora() });
     }
 
-    if (nuevos.length === 0) return { nuevos: 0, repetidos: filas.length };
+    if (nuevos.length === 0 && parches.size === 0) return { nuevos: 0, repetidos: filas.length, completados: 0 };
 
-    const { lista, nuevo } = registrar(
-      e, "transaccion", "import", "Cobros importados", "importo",
-      `Entraron ${nuevos.length} cobros de pasarela (${origen}).`,
-    );
-    guardar({ ...e, movimientos: [...nuevos, ...e.movimientos], actividad: lista });
-    empujar({ tipo: "upsert", tabla: "movimientos", filas: nuevos });
-    empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
-    return { nuevos: nuevos.length, repetidos: filas.length - nuevos.length };
+    /* Los pagos de un cobro conciliado toman la comisión real, en proporción. */
+    const pagosCambiados = new Map<ID, Pago>();
+    for (const [id, parche] of parches) {
+      if (parche.fee === undefined) continue;
+      const mov = e.movimientos.find((m) => m.id === id)!;
+      for (const pago of e.pagos) {
+        if (pago.movimientoId !== id) continue;
+        const cambio = feeDelPago(pago, mov, parche.fee);
+        if (cambio) pagosCambiados.set(pago.id, { ...pago, ...cambio });
+      }
+    }
+
+    let lista = e.actividad;
+    let nuevo: ReturnType<typeof registrar>["nuevo"] | undefined;
+    if (nuevos.length > 0) {
+      ({ lista, nuevo } = registrar(
+        e, "transaccion", "import", "Cobros importados", "importo",
+        `Entraron ${nuevos.length} cobros de pasarela (${origen}).`,
+      ));
+    }
+    guardar({
+      ...e,
+      movimientos: [...nuevos, ...e.movimientos.map((m) => (parches.has(m.id) ? { ...m, ...parches.get(m.id) } : m))],
+      pagos: pagosCambiados.size ? e.pagos.map((p) => pagosCambiados.get(p.id) ?? p) : e.pagos,
+      actividad: lista,
+    });
+    if (nuevos.length) empujar({ tipo: "upsert", tabla: "movimientos", filas: nuevos });
+    for (const [id, parche] of parches) empujarUpdate("movimientos", [id], parche);
+    for (const p of pagosCambiados.values()) empujarUpdate("pagos", [p.id], { feeMonto: p.feeMonto, feeRate: p.feeRate });
+    if (nuevo) empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
+    return { nuevos: nuevos.length, repetidos: filas.length - nuevos.length, completados: parches.size };
   },
 
   /* Guarda lo que trajo el sync de Meta: la jerarquia entera mas los insights

@@ -1,5 +1,7 @@
 import type { Cuota, EstadoApp, ID, Movimiento, Pago, Venta } from "./types";
 import { nombrePasarela } from "./pasarelas";
+import { claveEmail } from "./contactos";
+import { feeDesconocido } from "./completar-cobros";
 
 /* ==================================================================
    Conciliación.
@@ -272,7 +274,8 @@ export function pagosYaCargados(e: EstadoApp, mov: Movimiento): PagoYaCargado[] 
     const motivos: string[] = [];
     let puntaje = 0;
     if (Math.abs(p.monto - mov.monto) <= 0.01) { puntaje += 40; motivos.push("mismo monto"); } else { puntaje += 25; motivos.push("monto casi igual"); }
-    if (dias < 1) { puntaje += 30; motivos.push("mismo día"); } else if (dias <= 3) { puntaje += 20; motivos.push(`${Math.round(dias)} días de diferencia`); } else { puntaje += 8; motivos.push(`${Math.round(dias)} días de diferencia`); }
+    const diferencia = Math.round(dias) === 1 ? "un día de diferencia" : `${Math.round(dias)} días de diferencia`;
+    if (dias < 1) { puntaje += 30; motivos.push("mismo día"); } else if (dias <= 3) { puntaje += 20; motivos.push(diferencia); } else { puntaje += 8; motivos.push(diferencia); }
     const nombre = Math.max(parecido(mov.clienteNombre, venta?.contactoNombre), parecido(mov.clienteNombre, p.pagador));
     if (nombre >= 0.99) { puntaje += 30; motivos.push("mismo nombre"); } else if (nombre >= 0.5) { puntaje += 15; motivos.push("nombre parecido"); }
     out.push({ pago: p, cuota, venta, puntaje, motivos, dias });
@@ -342,18 +345,23 @@ export function resumenConciliacion(e: EstadoApp) {
 
 /* ---------- Pago que nace de un movimiento ---------- */
 
-export function pagoDesdeMovimiento(mov: Movimiento, cuotaId: ID, montoImputado: number): Omit<Pago, "id"> {
+export function pagoDesdeMovimiento(mov: Movimiento, cuotaId: ID, montoImputado: number, tasaEstimada = 0): Omit<Pago, "id"> {
   /* El fee se prorratea si el movimiento se parte entre dos cuotas: el
-     total que se quedó la pasarela no cambia. */
+     total que se quedó la pasarela no cambia. Si la pasarela todavía no
+     mandó su comisión (Stripe la calcula después del aviso), se usa la
+     tasa de la cuenta hasta que llegue la real: con 0, el cash post
+     pasarelas y las comisiones del equipo salían de más. */
   const proporcion = mov.monto > 0 ? montoImputado / mov.monto : 1;
-  const feeMonto = Math.round(mov.fee * proporcion * 100) / 100;
+  const desconocido = feeDesconocido(mov);
+  const feeMonto = Math.round((desconocido ? montoImputado * tasaEstimada : mov.fee * proporcion) * 100) / 100;
+  const feeRate = desconocido ? tasaEstimada : mov.monto > 0 ? Math.round((mov.fee / mov.monto) * 10000) / 10000 : 0;
   return {
     cuotaId,
     procesadorId: mov.procesadorId,
     movimientoId: mov.id,
     monto: Math.round(montoImputado * 100) / 100,
     moneda: mov.moneda,
-    feeRate: mov.monto > 0 ? Math.round((mov.fee / mov.monto) * 10000) / 10000 : 0,
+    feeRate,
     feeMonto,
     fecha: mov.fecha,
     referencia: mov.referencia,
@@ -382,4 +390,122 @@ export function medioDeMovimiento(e: EstadoApp, mov: Movimiento): string {
 export function restoDeMovimiento(e: EstadoApp, mov: Movimiento): number {
   const imputado = indice(e).imputadoMov.get(mov.id) ?? 0;
   return Math.round((mov.monto - imputado) * 100) / 100;
+}
+
+/** La tasa de la cuenta del cobro: lo que se usa mientras la pasarela no
+ *  mande la comisión real. */
+export const tasaEstimada = (e: EstadoApp, mov: Movimiento): number => procesadorDeMovimiento(e, mov)?.feeRate ?? 0;
+
+/* ---------- Quién pagó ----------
+   Lo que dice la pasarela y, si no alcanza, lo que sabe Apicanta: la venta
+   a la que se concilió el cobro, el contacto con ese correo, quien ya pagó
+   antes desde la misma billetera de USDT, o el único contacto con ese
+   nombre. Así un cobro de Trust, que sólo trae una billetera, igual dice
+   de quién es cuando esa persona ya pagó antes. */
+
+export interface QuienPago {
+  nombre?: string;
+  email?: string;
+  telefono?: string;
+  /* La ficha para abrir, si es alguien que ya está en Apicanta */
+  fichaId?: ID;
+  /* De dónde salió lo que no mandó la pasarela */
+  fuente?: "venta" | "correo" | "billetera" | "nombre";
+}
+
+interface Persona { id: ID; nombre: string; email?: string; telefono?: string }
+
+interface IndicePersonas {
+  contactos: EstadoApp["contactos"]; leads: EstadoApp["leads"]; ventas: EstadoApp["ventas"];
+  movimientos: EstadoApp["movimientos"]; pagos: EstadoApp["pagos"]; cuotas: EstadoApp["cuotas"];
+  porEmail: Map<string, Persona>;
+  porNombre: Map<string, Persona[]>;
+  lead: Map<ID, Persona>;
+  venta: Map<ID, Venta>;
+  ventaDeMov: Map<ID, ID>;
+  porBilletera: Map<string, ID>;
+}
+
+let IP: IndicePersonas | null = null;
+
+/** La billetera de un cobro en cripto: "USDT de TPQNPnSLA9…" o entera. */
+export function billeteraDe(m: Pick<Movimiento, "proveedor" | "descripcion">): string | undefined {
+  if (m.proveedor !== "trust" && m.proveedor !== "binance") return undefined;
+  return m.descripcion?.match(/\b(T[1-9A-HJ-NP-Za-km-z]{9,40})/)?.[1];
+}
+
+function personas(e: EstadoApp): IndicePersonas {
+  if (IP && IP.contactos === e.contactos && IP.leads === e.leads && IP.ventas === e.ventas
+    && IP.movimientos === e.movimientos && IP.pagos === e.pagos && IP.cuotas === e.cuotas) return IP;
+  const porEmail = new Map<string, Persona>();
+  const porNombre = new Map<string, Persona[]>();
+  const agregar = (p: Persona) => {
+    const k = claveEmail(p.email);
+    const ya = k ? porEmail.get(k) : undefined;
+    if (k && !ya) porEmail.set(k, p);
+    else if (ya && !ya.telefono && p.telefono) ya.telefono = p.telefono;
+    const n = normalizar(p.nombre);
+    if (!n) return;
+    const lista = porNombre.get(n) ?? [];
+    /* La misma persona puede estar como contacto y como lead: cuenta una vez. */
+    if (!lista.some((x) => (k && claveEmail(x.email) === k) || x.id === p.id)) lista.push(p);
+    porNombre.set(n, lista);
+  };
+  for (const c of e.contactos ?? []) agregar({ id: c.id, nombre: c.nombre, email: c.email, telefono: c.telefono });
+  const lead = new Map<ID, Persona>();
+  for (const l of e.leads) {
+    const p: Persona = { id: l.id, nombre: l.nombre, email: l.email, telefono: l.telefono };
+    lead.set(l.id, p);
+    agregar(p);
+  }
+  const venta = new Map(e.ventas.map((v) => [v.id, v] as const));
+  const cuotaVenta = new Map(e.cuotas.map((c) => [c.id, c.ventaId] as const));
+  const ventaDeMov = new Map<ID, ID>();
+  for (const p of e.pagos) {
+    const v = p.movimientoId ? cuotaVenta.get(p.cuotaId) : undefined;
+    if (p.movimientoId && v && !ventaDeMov.has(p.movimientoId)) ventaDeMov.set(p.movimientoId, v);
+  }
+  const porBilletera = new Map<string, ID>();
+  for (const m of e.movimientos) {
+    const b = billeteraDe(m);
+    const v = m.ventaId ?? ventaDeMov.get(m.id);
+    if (b && v) porBilletera.set(b.slice(0, 10), v);
+  }
+  IP = {
+    contactos: e.contactos, leads: e.leads, ventas: e.ventas, movimientos: e.movimientos, pagos: e.pagos, cuotas: e.cuotas,
+    porEmail, porNombre, lead, venta, ventaDeMov, porBilletera,
+  };
+  return IP;
+}
+
+function personaDeVenta(ix: IndicePersonas, ventaId: ID): Persona | undefined {
+  const v = ix.venta.get(ventaId);
+  if (!v) return undefined;
+  const l = v.contactoId ? ix.lead.get(v.contactoId) : undefined;
+  return l ?? { id: v.id, nombre: v.contactoNombre };
+}
+
+export function quienPago(e: EstadoApp, mov: Movimiento): QuienPago {
+  const ix = personas(e);
+  let persona: Persona | undefined;
+  let fuente: QuienPago["fuente"];
+  const ventaId = mov.ventaId ?? ix.ventaDeMov.get(mov.id);
+  if (ventaId) { persona = personaDeVenta(ix, ventaId); fuente = "venta"; }
+  if (!persona && mov.clienteEmail) { persona = ix.porEmail.get(claveEmail(mov.clienteEmail)); fuente = "correo"; }
+  if (!persona) {
+    const b = billeteraDe(mov);
+    const v = b ? ix.porBilletera.get(b.slice(0, 10)) : undefined;
+    if (v) { persona = personaDeVenta(ix, v); fuente = "billetera"; }
+  }
+  if (!persona && mov.clienteNombre) {
+    const lista = ix.porNombre.get(normalizar(mov.clienteNombre));
+    if (lista?.length === 1) { persona = lista[0]; fuente = "nombre"; }
+  }
+  return {
+    nombre: mov.clienteNombre || persona?.nombre,
+    email: mov.clienteEmail || persona?.email || undefined,
+    telefono: mov.clienteTelefono || persona?.telefono || undefined,
+    fichaId: persona?.id,
+    fuente: persona ? fuente : undefined,
+  };
 }

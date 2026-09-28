@@ -33,11 +33,45 @@ export interface MovimientoApi {
   fecha: string;
   clienteNombre?: string;
   clienteEmail?: string;
+  clienteTelefono?: string;
+  metodo?: string;
   descripcion?: string;
+}
+
+/* Para la sync: qué cobros necesitan que se pida su detalle (los que ya
+   están completos en la base no) y dónde anotar lo que salió mal sin
+   frenar al resto. */
+export interface OpcionesListar {
+  necesitaDetalle?: (m: MovimientoApi) => boolean;
+  avisos?: string[];
 }
 
 export const dinero = (n: number) => Math.round(n * 100) / 100;
 export const moneda = (s?: string): Moneda => (s ?? "").toUpperCase() === "ARS" ? "ARS" : "USD";
+
+type Obj = Record<string, unknown>;
+const txt = (v: unknown): string | undefined => (typeof v === "string" && v.trim() !== "" ? v.trim() : undefined);
+/* Un número que vino de verdad: null, "" o undefined no son 0. */
+const num = (v: unknown): number | undefined => {
+  if (v === null || v === undefined || v === "") return undefined;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : undefined;
+};
+
+/* "visa" -> "Visa", "american_express" -> "American Express". */
+const marca = (s?: string): string | undefined =>
+  s ? s.replace(/[_-]+/g, " ").replace(/\b\w/g, (l) => l.toUpperCase()).replace(/\bAmex\b/i, "American Express") : undefined;
+
+/* "Tarjeta Visa ···4242", con la billetera si pagó con Apple Pay o Google Pay. */
+function tarjeta(marcaCruda?: string, ultimos?: string, billetera?: string): string {
+  const b = billetera ? ({ apple_pay: "Apple Pay", google_pay: "Google Pay", link: "Link", samsung_pay: "Samsung Pay" } as Record<string, string>)[billetera] ?? marca(billetera) : undefined;
+  return [`Tarjeta${marcaCruda ? ` ${marca(marcaCruda)}` : ""}${ultimos ? ` ···${ultimos}` : ""}`, b].filter(Boolean).join(" · ");
+}
+
+/* De a pocos a la vez: cada pasarela tiene su límite de pedidos. */
+async function enTandas<T>(items: T[], tanda: number, f: (x: T) => Promise<void>): Promise<void> {
+  for (let i = 0; i < items.length; i += tanda) await Promise.all(items.slice(i, i + tanda).map(f));
+}
 
 /* Ventana por defecto: 60 días. Alcanza para las cuotas del mes y para
    las que se atrasaron, sin traer años de historia en cada click. */
@@ -68,37 +102,83 @@ export function rechazo(quien: string, r: Response, data: Record<string, unknown
 
 /* ---------- Stripe ---------- */
 
+/* Quién pagó: lo que cargó en el checkout y, si falta algo, lo que Stripe
+   sabe del cliente. `sesion` son los datos de la sesión del checkout,
+   cuando el aviso vino por ahí. */
+function pagadorStripe(c: Obj, sesion?: Obj): { nombre?: string; email?: string; telefono?: string } {
+  const b = (c.billing_details ?? {}) as Obj;
+  const cliente = (c.customer && typeof c.customer === "object" ? c.customer : {}) as Obj;
+  const s = sesion ?? {};
+  return {
+    nombre: txt(b.name) ?? txt(s.name) ?? txt(cliente.name),
+    email: (txt(b.email) ?? txt(c.receipt_email) ?? txt(s.email) ?? txt(cliente.email))?.toLowerCase(),
+    telefono: txt(b.phone) ?? txt(s.phone) ?? txt(cliente.phone),
+  };
+}
+
+/* Cómo pagó dentro de Stripe: tarjeta (con Apple Pay o Link), débito ACH,
+   transferencia, Klarna… */
+function metodoStripe(c: Obj): string | undefined {
+  const d = (c.payment_method_details ?? {}) as Obj;
+  const tipo = txt(d.type);
+  if (!tipo) return undefined;
+  if (tipo === "card") {
+    const t = (d.card ?? {}) as Obj;
+    return tarjeta(txt(t.brand), txt(t.last4), txt((t.wallet as Obj | undefined)?.type));
+  }
+  const nombres: Record<string, string> = {
+    us_bank_account: "Débito bancario (ACH)", ach_debit: "Débito bancario (ACH)", ach_credit_transfer: "Transferencia ACH",
+    customer_balance: "Transferencia bancaria", link: "Link", klarna: "Klarna", affirm: "Affirm",
+    afterpay_clearpay: "Afterpay", cashapp: "Cash App", paypal: "PayPal", sepa_debit: "Débito SEPA",
+  };
+  return nombres[tipo] ?? marca(tipo);
+}
+
+/* El cobro de Stripe es siempre el cargo (ch_ o py_): es el que tiene la
+   comisión, en su balance_transaction. */
+function deCargoStripe(c: Obj, sesion?: Obj): MovimientoApi {
+  const bt = (c.balance_transaction && typeof c.balance_transaction === "object" ? c.balance_transaction : null) as Obj | null;
+  const monto = dinero(Number(c.amount ?? 0) / 100);
+  const fee = dinero((num(bt?.fee) ?? 0) / 100);
+  const neto = num(bt?.net);
+  const quien = pagadorStripe(c, sesion);
+  return {
+    metodo: metodoStripe(c),
+    proveedor: "stripe",
+    referencia: String(c.id),
+    monto, fee,
+    neto: neto !== undefined ? dinero(neto / 100) : dinero(monto - fee),
+    moneda: moneda(c.currency as string),
+    fecha: new Date(Number(c.created ?? 0) * 1000).toISOString(),
+    clienteNombre: quien.nombre,
+    clienteEmail: quien.email,
+    clienteTelefono: quien.telefono,
+    descripcion: txt(c.description),
+  };
+}
+
 export async function stripe(desde: Date): Promise<MovimientoApi[]> {
   const clave = process.env.STRIPE_SECRET_KEY;
   if (!clave) return [];
-  const q = new URLSearchParams({ limit: "100", "created[gte]": String(Math.floor(desde.getTime() / 1000)) });
-  q.append("expand[]", "data.balance_transaction");
-  const r = await fetch(`https://api.stripe.com/v1/charges?${q}`, {
-    headers: { Authorization: `Bearer ${clave}` }, cache: "no-store",
-  });
-  const data = await json(r);
-  if (!r.ok) throw rechazo("Stripe", r, data);
-
-  const filas = (data.data ?? []) as Record<string, never>[];
-  return filas
-    .filter((c) => c.status === "succeeded" && !c.refunded)
-    .map((c) => {
-      const bt = c.balance_transaction as { fee?: number; net?: number } | null;
-      const monto = dinero(Number(c.amount ?? 0) / 100);
-      const fee = dinero(Number(bt?.fee ?? 0) / 100);
-      const detalles = (c.billing_details ?? {}) as { name?: string; email?: string };
-      return {
-        proveedor: "stripe" as const,
-        referencia: String(c.id),
-        monto, fee,
-        neto: bt?.net !== undefined ? dinero(Number(bt.net) / 100) : dinero(monto - fee),
-        moneda: moneda(c.currency as string),
-        fecha: new Date(Number(c.created ?? 0) * 1000).toISOString(),
-        clienteNombre: detalles.name ?? undefined,
-        clienteEmail: (detalles.email ?? (c.receipt_email as string | undefined))?.toLowerCase(),
-        descripcion: (c.description as string | undefined) ?? undefined,
-      };
+  const salida: MovimientoApi[] = [];
+  let despuesDe: string | undefined;
+  /* Stripe devuelve de a 100: se sigue pidiendo mientras haya más. */
+  for (let pagina = 0; pagina < 10; pagina++) {
+    const q = new URLSearchParams({ limit: "100", "created[gte]": String(Math.floor(desde.getTime() / 1000)) });
+    q.append("expand[]", "data.balance_transaction");
+    q.append("expand[]", "data.customer");
+    if (despuesDe) q.set("starting_after", despuesDe);
+    const r = await fetch(`https://api.stripe.com/v1/charges?${q}`, {
+      headers: { Authorization: `Bearer ${clave}` }, cache: "no-store",
     });
+    const data = await json(r);
+    if (!r.ok) throw rechazo("Stripe", r, data);
+    const filas = (data.data ?? []) as Obj[];
+    salida.push(...filas.filter((c) => c.status === "succeeded" && !c.refunded).map((c) => deCargoStripe(c)));
+    if (!data.has_more || filas.length === 0) break;
+    despuesDe = String(filas[filas.length - 1].id);
+  }
+  return salida;
 }
 
 /* ---------- Hotmart ---------- */
@@ -125,6 +205,16 @@ async function paginasHotmart(
     if (!cursor) break;
   }
   return items;
+}
+
+function metodoHotmart(tipo?: string, cuotas?: number): string | undefined {
+  if (!tipo) return undefined;
+  const nombres: Record<string, string> = {
+    CREDIT_CARD: "Tarjeta", PIX: "PIX", BILLET: "Boleto", PAYPAL: "PayPal", GOOGLE_PAY: "Google Pay",
+    APPLE_PAY: "Apple Pay", DIRECT_DEBIT: "Débito", HOTCARD: "Hotcard", SAMSUNG_PAY: "Samsung Pay",
+  };
+  const base = nombres[tipo] ?? marca(tipo.toLowerCase());
+  return cuotas && cuotas > 1 ? `${base} en ${cuotas} cuotas` : base;
 }
 
 export async function hotmart(desde: Date, hasta: Date): Promise<MovimientoApi[]> {
@@ -172,7 +262,8 @@ export async function hotmart(desde: Date, hasta: Date): Promise<MovimientoApi[]
     const monto = dinero(Number(precio.value ?? 0));
     const nuestra = netoPorTransaccion.get(referencia);
     const neto = nuestra !== undefined ? dinero(nuestra) : monto;
-    const comprador = (it.buyer ?? {}) as { name?: string; email?: string };
+    const comprador = (it.buyer ?? {}) as { name?: string; email?: string; phone?: string; checkout_phone?: string };
+    const pago = (compra.payment ?? {}) as { type?: string; installments_number?: number };
     const producto = (it.product ?? {}) as { name?: string };
     return {
       proveedor: "hotmart" as const,
@@ -184,43 +275,134 @@ export async function hotmart(desde: Date, hasta: Date): Promise<MovimientoApi[]
       fecha: new Date(Number(compra.approved_date ?? compra.order_date ?? Date.now())).toISOString(),
       clienteNombre: comprador.name ?? undefined,
       clienteEmail: comprador.email?.toLowerCase(),
+      clienteTelefono: txt(comprador.phone) ?? txt(comprador.checkout_phone),
+      metodo: metodoHotmart(pago.type, pago.installments_number),
       descripcion: producto.name ?? undefined,
     };
   }).filter((m) => m.referencia && m.monto > 0);
 }
 
-/* ---------- Whop ---------- */
+/* ---------- Whop ----------
+   La lista (API v5) trae el monto y la fecha, pero no quién pagó ni cuánto
+   se quedó Whop: los 50 cobros de Whop entraban sin nombre, sin correo y
+   con comisión 0. Eso está en el detalle de cada pago de la API nueva
+   (v1), que se pide sólo para los cobros que todavía no lo tienen. */
 
-export async function whop(desde: Date): Promise<MovimientoApi[]> {
-  const clave = process.env.WHOP_API_KEY;
-  if (!clave) return [];
-  const r = await fetch("https://api.whop.com/api/v5/company/payments?per=50&status=paid", {
+interface DetalleWhop { nombre?: string; email?: string; telefono?: string; metodo?: string; fee?: number; descripcion?: string }
+
+function metodoWhop(p: Obj): string | undefined {
+  const tipo = txt(p.payment_method_type) ?? txt((p.payment_method as Obj | undefined)?.payment_method_type);
+  if (tipo === "card" || txt(p.card_brand)) return tarjeta(txt(p.card_brand), txt(p.card_last4));
+  if (!tipo) return undefined;
+  const nombres: Record<string, string> = { crypto: "Cripto", paypal: "PayPal", apple_pay: "Apple Pay", google_pay: "Google Pay", ach: "Débito bancario (ACH)", bank_transfer: "Transferencia" };
+  return nombres[tipo] ?? marca(tipo);
+}
+
+async function detalleWhop(id: string, clave: string): Promise<DetalleWhop> {
+  const r = await fetch(`https://api.whop.com/api/v1/payments/${encodeURIComponent(id)}`, {
     headers: { Authorization: `Bearer ${clave}` }, cache: "no-store",
   });
-  const data = await json(r);
-  if (!r.ok) throw rechazo("Whop", r, data);
+  const p = await json(r);
+  if (!r.ok) throw rechazo("Whop (detalle del pago)", r, p);
+  const usuario = (p.user ?? {}) as Obj;
+  const miembro = (p.member ?? {}) as Obj;
+  const membresia = (p.membership ?? {}) as Obj;
+  const facturacion = (p.billing_address ?? {}) as Obj;
+  const producto = (p.product ?? {}) as Obj;
+  /* La comisión es lo que va de lo cobrado a lo que queda después de las
+     comisiones; si no viene, la suma de las comisiones que lista. */
+  const total = num(p.total) ?? num(p.subtotal);
+  const despues = num(p.amount_after_fees);
+  const listadas = Array.isArray(p.fees) ? (p.fees as Obj[]).reduce((a, f) => a + Math.abs(num(f.amount) ?? 0), 0) : 0;
+  const fee = total !== undefined && despues !== undefined && total >= despues ? total - despues : listadas;
+  return {
+    nombre: txt(usuario.name) ?? txt(facturacion.name) ?? txt(usuario.username),
+    email: txt(usuario.email)?.toLowerCase(),
+    telefono: txt(miembro.phone) ?? txt(p.customer_phone) ?? txt(membresia.phone_number),
+    metodo: metodoWhop(p),
+    fee: fee > 0 ? dinero(fee) : undefined,
+    descripcion: txt(producto.title),
+  };
+}
 
-  const filas = (data.data ?? []) as Record<string, never>[];
-  return filas
+export async function whop(desde: Date, opciones: OpcionesListar = {}): Promise<MovimientoApi[]> {
+  const clave = process.env.WHOP_API_KEY;
+  if (!clave) return [];
+
+  const filas: Obj[] = [];
+  for (let pagina = 1; pagina <= 10; pagina++) {
+    const r = await fetch(`https://api.whop.com/api/v5/company/payments?per=50&status=paid&page=${pagina}`, {
+      headers: { Authorization: `Bearer ${clave}` }, cache: "no-store",
+    });
+    const data = await json(r);
+    if (!r.ok) throw rechazo("Whop", r, data);
+    const estas = (data.data ?? []) as Obj[];
+    filas.push(...estas);
+    /* Vienen de la más nueva a la más vieja: cuando la página ya es anterior
+       a la ventana, no hace falta seguir. */
+    const paginas = num((data.pagination as Obj | undefined)?.total_pages) ?? 1;
+    const masVieja = estas.length ? Number(estas[estas.length - 1].paid_at ?? estas[estas.length - 1].created_at ?? 0) * 1000 : 0;
+    if (estas.length === 0 || pagina >= paginas || masVieja < desde.getTime()) break;
+  }
+
+  const vistos = new Set<string>();
+  const lista: MovimientoApi[] = filas
+    .filter((p) => { const id = String(p.id ?? ""); if (vistos.has(id)) return false; vistos.add(id); return true; })
     .map((p) => {
       const monto = dinero(Number(p.final_amount ?? p.subtotal ?? 0));
-      const fee = dinero(Number(p.payment_processing_fee ?? 0) + Number(p.whop_fee ?? 0));
-      const usuario = (p.user ?? {}) as { email?: string; name?: string; username?: string };
+      const fee = dinero((num(p.payment_processing_fee) ?? 0) + (num(p.whop_fee) ?? 0));
+      const usuario = (p.user && typeof p.user === "object" ? p.user : {}) as Obj;
       return {
         proveedor: "whop" as const,
         referencia: String(p.id ?? ""),
         monto, fee, neto: dinero(monto - fee),
         moneda: moneda(p.currency as string),
         fecha: new Date(Number(p.paid_at ?? p.created_at ?? 0) * 1000).toISOString(),
-        clienteNombre: usuario.name ?? usuario.username ?? undefined,
-        clienteEmail: usuario.email?.toLowerCase(),
-        descripcion: (p.product_title as string | undefined) ?? undefined,
+        clienteNombre: txt(usuario.name) ?? txt(usuario.username),
+        clienteEmail: txt(usuario.email)?.toLowerCase(),
+        metodo: metodoWhop(p),
+        descripcion: txt(p.product_title),
       };
     })
     .filter((m) => m.referencia && m.monto > 0 && new Date(m.fecha) >= desde);
+
+  const faltan = lista.filter((m) => (!m.clienteEmail || !m.metodo || m.fee === 0) && (opciones.necesitaDetalle?.(m) ?? true));
+  let fallo: string | undefined;
+  await enTandas(faltan, 4, async (m) => {
+    if (fallo) return;
+    try {
+      const d = await detalleWhop(m.referencia, clave);
+      m.clienteNombre ??= d.nombre;
+      m.clienteEmail ??= d.email;
+      m.clienteTelefono ??= d.telefono;
+      m.metodo ??= d.metodo;
+      m.descripcion ??= d.descripcion;
+      if (m.fee === 0 && d.fee !== undefined && d.fee < m.monto) { m.fee = d.fee; m.neto = dinero(m.monto - d.fee); }
+    } catch (err) {
+      /* Si la clave no tiene permiso para ver el detalle, falla igual para
+         todos: se avisa una vez y los cobros entran como antes. */
+      fallo = err instanceof Error ? err.message : "Error desconocido.";
+    }
+  });
+  if (fallo) opciones.avisos?.push(`No se pudo ver quién pagó ni la comisión: ${fallo}`);
+  return lista;
 }
 
 /* ---------- Mercado Pago ---------- */
+
+const telefonoMP = (t?: { area_code?: string; number?: string }): string | undefined =>
+  [txt(t?.area_code), txt(t?.number)].filter(Boolean).join(" ") || undefined;
+
+function metodoMP(p: Obj): string | undefined {
+  const tipo = txt(p.payment_type_id);
+  const medio = txt(p.payment_method_id);
+  const ultimos = txt((p.card as Obj | undefined)?.last_four_digits);
+  if (tipo === "credit_card" || tipo === "debit_card" || tipo === "prepaid_card") {
+    return `${tarjeta(medio, ultimos)}${tipo === "debit_card" ? " (débito)" : ""}`;
+  }
+  const nombres: Record<string, string> = { account_money: "Dinero en cuenta", ticket: "Efectivo (cupón)", bank_transfer: "Transferencia", atm: "Cajero" };
+  return tipo ? nombres[tipo] ?? marca(tipo) : undefined;
+}
 
 export async function mercadopago(desde: Date): Promise<MovimientoApi[]> {
   const clave = process.env.MERCADOPAGO_ACCESS_TOKEN;
@@ -240,7 +422,7 @@ export async function mercadopago(desde: Date): Promise<MovimientoApi[]> {
     const monto = dinero(Number(p.transaction_amount ?? 0));
     const detalle = (p.transaction_details ?? {}) as { net_received_amount?: number };
     const neto = dinero(Number(detalle.net_received_amount ?? monto));
-    const pagador = (p.payer ?? {}) as { email?: string; first_name?: string; last_name?: string };
+    const pagador = (p.payer ?? {}) as { email?: string; first_name?: string; last_name?: string; phone?: { area_code?: string; number?: string } };
     return {
       proveedor: "mercadopago" as const,
       referencia: String(p.id ?? ""),
@@ -249,6 +431,8 @@ export async function mercadopago(desde: Date): Promise<MovimientoApi[]> {
       fecha: String(p.date_approved ?? p.date_created ?? new Date().toISOString()),
       clienteNombre: [pagador.first_name, pagador.last_name].filter(Boolean).join(" ") || undefined,
       clienteEmail: pagador.email?.toLowerCase(),
+      clienteTelefono: telefonoMP(pagador.phone),
+      metodo: metodoMP(p as Obj),
       descripcion: (p.description as string | undefined) ?? undefined,
     };
   }).filter((m) => m.monto > 0);
@@ -280,11 +464,11 @@ export const PROVEEDORES: ProveedorPasarela[] = [
    entra sabiendo con qué medio de pago se va a registrar. */
 export const procesadorDe = (p: ProveedorPasarela): string => `proc_${p}`;
 
-export function listar(p: ProveedorPasarela, desde: Date, hasta: Date): Promise<MovimientoApi[]> {
+export function listar(p: ProveedorPasarela, desde: Date, hasta: Date, opciones: OpcionesListar = {}): Promise<MovimientoApi[]> {
   switch (p) {
     case "stripe": return stripe(desde);
     case "hotmart": return hotmart(desde, hasta);
-    case "whop": return whop(desde);
+    case "whop": return whop(desde, opciones);
     case "mercadopago": return mercadopago(desde);
     case "dlocal": return dlocal(desde, hasta);
     case "mercury": return mercury(desde);
@@ -317,39 +501,34 @@ export async function traerUno(p: ProveedorPasarela, id: string): Promise<Movimi
 async function unStripe(id: string): Promise<MovimientoApi | null> {
   const clave = process.env.STRIPE_SECRET_KEY;
   if (!clave) return null;
-
-  /* El aviso puede traer el intento o el cargo. Del intento se llega al
-     cargo, que es el que tiene el fee. */
-  const esIntento = id.startsWith("pi_");
-  const ruta = esIntento
-    ? `payment_intents/${id}?expand[]=latest_charge.balance_transaction`
-    : `charges/${id}?expand[]=balance_transaction`;
-
-  const r = await fetch(`https://api.stripe.com/v1/${ruta}`, {
-    headers: { Authorization: `Bearer ${clave}` }, cache: "no-store",
-  });
-  const data = await json(r);
-  if (!r.ok) return null;
-
-  const c = (esIntento ? data.latest_charge : data) as Record<string, never> | null;
-  if (!c || c.status !== "succeeded") return null;
-
-  const bt = c.balance_transaction as { fee?: number; net?: number } | null;
-  const monto = dinero(Number(c.amount ?? 0) / 100);
-  const fee = dinero(Number(bt?.fee ?? 0) / 100);
-  const detalles = (c.billing_details ?? {}) as { name?: string; email?: string };
-
-  return {
-    proveedor: "stripe",
-    referencia: String(c.id),
-    monto, fee,
-    neto: bt?.net !== undefined ? dinero(Number(bt.net) / 100) : dinero(monto - fee),
-    moneda: moneda(c.currency as string),
-    fecha: new Date(Number(c.created ?? 0) * 1000).toISOString(),
-    clienteNombre: detalles.name ?? undefined,
-    clienteEmail: (detalles.email ?? (c.receipt_email as string | undefined))?.toLowerCase(),
-    descripcion: (c.description as string | undefined) ?? undefined,
+  const pedir = async (ruta: string): Promise<Obj | null> => {
+    const r = await fetch(`https://api.stripe.com/v1/${ruta}`, {
+      headers: { Authorization: `Bearer ${clave}` }, cache: "no-store",
+    });
+    const data = await json(r);
+    return r.ok ? data : null;
   };
+
+  /* El aviso puede traer el cargo, el intento de pago o la sesión del
+     checkout (cs_…). El cobro se guarda siempre como el cargo: es el que
+     tiene la comisión, y guardar la sesión aparte contaba dos veces el
+     mismo pago, sin nombre ni correo. De la sesión se toman los datos que
+     cargó la persona en el checkout. */
+  let cargo: Obj | null = null;
+  let sesion: Obj | undefined;
+  if (id.startsWith("cs_")) {
+    const s = await pedir(`checkout/sessions/${id}?expand[]=payment_intent.latest_charge.balance_transaction&expand[]=payment_intent.latest_charge.customer`);
+    sesion = (s?.customer_details ?? undefined) as Obj | undefined;
+    const intento = s?.payment_intent;
+    cargo = (intento && typeof intento === "object" ? (intento as Obj).latest_charge : null) as Obj | null;
+  } else if (id.startsWith("pi_")) {
+    const intento = await pedir(`payment_intents/${id}?expand[]=latest_charge.balance_transaction&expand[]=latest_charge.customer`);
+    cargo = (intento?.latest_charge ?? null) as Obj | null;
+  } else {
+    cargo = await pedir(`charges/${id}?expand[]=balance_transaction&expand[]=customer`);
+  }
+  if (!cargo || typeof cargo !== "object" || cargo.status !== "succeeded") return null;
+  return deCargoStripe(cargo, sesion);
 }
 
 async function unMercadoPago(id: string): Promise<MovimientoApi | null> {
@@ -364,7 +543,7 @@ async function unMercadoPago(id: string): Promise<MovimientoApi | null> {
   const monto = dinero(Number(p.transaction_amount ?? 0));
   const detalle = (p.transaction_details ?? {}) as { net_received_amount?: number };
   const neto = dinero(Number(detalle.net_received_amount ?? monto));
-  const pagador = (p.payer ?? {}) as { email?: string; first_name?: string; last_name?: string };
+  const pagador = (p.payer ?? {}) as { email?: string; first_name?: string; last_name?: string; phone?: { area_code?: string; number?: string } };
 
   return {
     proveedor: "mercadopago",
@@ -374,6 +553,8 @@ async function unMercadoPago(id: string): Promise<MovimientoApi | null> {
     fecha: String(p.date_approved ?? p.date_created ?? new Date().toISOString()),
     clienteNombre: [pagador.first_name, pagador.last_name].filter(Boolean).join(" ") || undefined,
     clienteEmail: pagador.email?.toLowerCase(),
+    clienteTelefono: telefonoMP(pagador.phone),
+    metodo: metodoMP(p),
     descripcion: (p.description as string | undefined) ?? undefined,
   };
 }
@@ -409,10 +590,18 @@ function cabecerasDlocal(cuerpo = ""): Record<string, string> | null {
 
 const APROBADO_DLOCAL = /paid|authorized/i;
 
+function metodoDlocal(p: Obj): string | undefined {
+  const tipo = txt(p.payment_method_type) ?? txt(p.payment_method_flow);
+  const t = (p.card ?? {}) as Obj;
+  if (tipo === "CARD" || txt(t.brand)) return tarjeta(txt(t.brand), txt(t.last4));
+  const nombres: Record<string, string> = { BANK_TRANSFER: "Transferencia", TICKET: "Efectivo (cupón)", WALLET: "Billetera" };
+  return tipo ? nombres[tipo] ?? marca(tipo.toLowerCase()) : undefined;
+}
+
 function unaDeDlocal(p: Record<string, never>): MovimientoApi | null {
   const monto = dinero(Number(p.amount ?? 0));
   if (monto <= 0) return null;
-  const pagador = (p.payer ?? {}) as { name?: string; email?: string };
+  const pagador = (p.payer ?? {}) as { name?: string; email?: string; phone?: string };
   return {
     proveedor: "dlocal",
     referencia: String(p.id ?? ""),
@@ -421,6 +610,8 @@ function unaDeDlocal(p: Record<string, never>): MovimientoApi | null {
     fecha: String(p.approved_date ?? p.created_date ?? new Date().toISOString()),
     clienteNombre: pagador.name ?? undefined,
     clienteEmail: pagador.email?.toLowerCase(),
+    clienteTelefono: txt(pagador.phone),
+    metodo: metodoDlocal(p as Obj),
     descripcion: (p.description as string | undefined) ?? (p.order_id as string | undefined),
   };
 }
@@ -466,6 +657,15 @@ const NO_ES_CLIENTE = /\b(stripe|hotmart|whop|dlocal|mercado\s*pago|paypal|mercu
    alguno resulta ser un cliente se recupera con un clic desde la
    pantalla, sin tocar el código. */
 const LIQUIDACION_PROBABLE = /\b(arx|bridge|masspay)\b/i;
+
+/* Mercury junta ACH y wire en una sola cuenta: el tipo de movimiento dice cuál fue. */
+function metodoMercury(kind: string): string | undefined {
+  const nombres: Record<string, string> = {
+    externalTransfer: "Transferencia ACH", incomingDomesticWire: "Wire", incomingInternationalWire: "Wire internacional",
+    checkDeposit: "Cheque", treasuryTransfer: "Transferencia desde Treasury", other: "Otro",
+  };
+  return kind ? nombres[kind] ?? marca(kind.replace(/([a-z])([A-Z])/g, "$1 $2").toLowerCase()) : undefined;
+}
 
 /* ---------- Mercury ----------
    El banco no avisa: se le pregunta. Sólo entra lo que suma (amount
@@ -517,6 +717,7 @@ export async function mercury(desde: Date): Promise<MovimientoApi[]> {
         moneda: "USD",
         fecha: fecha || new Date().toISOString(),
         clienteNombre: (t.counterpartyName as string | undefined) ?? (t.counterpartyNickname as string | undefined),
+        metodo: metodoMercury(String(t.kind ?? "")),
         descripcion: (t.externalMemo as string | undefined) ?? (t.bankDescription as string | undefined) ?? undefined,
       });
     }
@@ -558,6 +759,7 @@ export async function binance(desde: Date): Promise<MovimientoApi[]> {
         monto, fee: 0, neto: monto,
         moneda: "USD" as Moneda,
         fecha: new Date(Number(d.insertTime ?? Date.now())).toISOString(),
+        metodo: `${String(d.coin ?? "USDT")}${d.network ? ` (${String(d.network)})` : ""}`,
         descripcion: `Depósito ${String(d.coin ?? "USDT")}${d.network ? ` (${String(d.network)})` : ""}`,
       };
     })
@@ -601,7 +803,10 @@ export async function trust(desde: Date): Promise<MovimientoApi[]> {
         monto, fee: 0, neto: monto,
         moneda: "USD" as Moneda,
         fecha: new Date(Number(t.block_ts ?? Date.now())).toISOString(),
-        descripcion: `${info.tokenAbbr ?? "USDT"} de ${String(t.from_address ?? "").slice(0, 10)}…`,
+        /* La billetera entera: es lo único que dice quién pagó, y con ella la
+           conciliación reconoce a quien ya pagó antes desde ahí. */
+        metodo: `${info.tokenAbbr ?? "USDT"} (TRC20)`,
+        descripcion: `${info.tokenAbbr ?? "USDT"} de ${String(t.from_address ?? "")}`,
       };
     })
     .filter((m) => m.monto > 0 && m.referencia !== "" && new Date(m.fecha) >= desde);

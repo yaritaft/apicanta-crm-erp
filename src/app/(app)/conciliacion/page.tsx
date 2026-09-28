@@ -15,10 +15,12 @@ import { acciones, useEstado } from "@/lib/store";
 import { nube } from "@/lib/supabase";
 import { fechaLarga, money, pct } from "@/lib/format";
 import {
-  esAutomatica, medioDeMovimiento, pagosYaCargados, propuestas, restoDeMovimiento, resumenConciliacion, saldoDeCuota, sugerenciasPara,
-  vinculosSeguros,
-  type Sugerencia,
+  billeteraDe, esAutomatica, medioDeMovimiento, pagosYaCargados, propuestas, quienPago, restoDeMovimiento, resumenConciliacion, saldoDeCuota,
+  sugerenciasPara, tasaEstimada, vinculosSeguros,
+  type QuienPago, type Sugerencia,
 } from "@/lib/conciliacion";
+import { COBRAN_COMISION, feeDesconocido } from "@/lib/completar-cobros";
+import { useAbrirFicha } from "@/components/ficha/abrir";
 import { importarCSV, PASARELAS, nombrePasarela } from "@/lib/pasarelas";
 import type { EstadoMovimiento2, Movimiento, ProveedorPasarela } from "@/lib/types";
 
@@ -107,10 +109,13 @@ export default function Conciliacion() {
       const conMedio = (data.movimientos ?? []).map((m) => ({
         ...m, procesadorId: e.procesadores.find((p) => p.proveedor === m.proveedor)?.id,
       }));
-      const { nuevos, repetidos } = acciones.importarMovimientos(conMedio, "api");
+      const { nuevos, repetidos, completados } = acciones.importarMovimientos(conMedio, "api");
+      const completos = completados > 0
+        ? ` Se completaron ${completados === 1 ? "los datos de un cobro" : `los datos de ${completados} cobros`} que ya estaban.`
+        : "";
       toast(nuevos === 0
-        ? `Sin cobros nuevos (${repetidos} ya estaban).`
-        : `Entraron ${nuevos} cobros de ${data.conectadas.map(nombrePasarela).join(", ")}.`);
+        ? `Sin cobros nuevos (${repetidos} ya estaban).${completos}`
+        : `Entraron ${nuevos} cobros de ${data.conectadas.map(nombrePasarela).join(", ")}.${completos}`);
     } catch (err) {
       toast(err instanceof Error ? err.message : "No se pudo sincronizar.", "err");
     } finally {
@@ -276,14 +281,25 @@ function FilaMovimiento({ mov, M, abierto, onAbrir, onNuevaVenta }: {
   const cuota = mov.cuotaId ? e.cuotas.find((c) => c.id === mov.cuotaId) : undefined;
   const destino = cuota ? (cuota.esReserva ? "Reserva" : `Cuota ${cuota.numero}`) : "Conciliado";
 
+  /* Quién pagó: lo que mandó la pasarela y, si no alcanza, lo que sabe Apicanta. */
+  const quien = useMemo(() => quienPago(e, mov), [e, mov]);
+  const abrirFicha = useAbrirFicha();
+  const billetera = billeteraDe(mov);
+  const nombre = quien.nombre ?? (billetera ? `Billetera ${billetera.slice(0, 6)}…${billetera.slice(-4)}` : "Sin nombre");
+  const contacto = [quien.email, quien.telefono].filter(Boolean).join(" · ");
+  const cobraComision = COBRAN_COMISION.has(mov.proveedor);
+  const sinFee = feeDesconocido(mov);
+
   return (
     <div className="mov" data-abierto={abierto}>
       <button type="button" className="mov__head" onClick={onAbrir} aria-expanded={abierto}>
         <span className="mov__medio" title="Medio de pago">{medioDeMovimiento(e, mov)}</span>
         <span style={{ minWidth: 0 }}>
-          <span className="mov__cliente truncate" style={{ display: "block" }}>{mov.clienteNombre ?? "Sin nombre"}</span>
+          <span className="mov__cliente truncate" style={{ display: "block" }}>{nombre}</span>
           <span className="mov__meta truncate" style={{ display: "block" }}>
-            {fechaLarga(mov.fecha)} · {mov.referencia}{mov.descripcion ? ` · ${mov.descripcion}` : ""}
+            {fechaLarga(mov.fecha)}
+            {mov.metodo && <span className="mov__metodo"> · {mov.metodo}</span>}
+            {contacto ? ` · ${contacto}` : ""}
           </span>
         </span>
         <span className="spacer" />
@@ -295,6 +311,11 @@ function FilaMovimiento({ mov, M, abierto, onAbrir, onNuevaVenta }: {
         {mov.estado === "ignorado" && <Badge variante="neutral">Ignorado</Badge>}
         <span className="mov__monto">
           {M(mov.monto, 2)}
+          {cobraComision && (
+            <span className="mov__fee" data-pendiente={sinFee}>
+              {sinFee ? "comisión por llegar" : `comisión ${pct((mov.fee / mov.monto) * 100, 1)}`}
+            </span>
+          )}
           {mov.estado === "pendiente" && resto < mov.monto - 0.009 && (
             <span className="t-sm t-subtle" style={{ display: "block", fontFamily: "var(--font-sans)", fontWeight: 400 }}>
               quedan {M(resto, 2)}
@@ -306,13 +327,43 @@ function FilaMovimiento({ mov, M, abierto, onAbrir, onNuevaVenta }: {
       {abierto && (
         <div className="mov__body">
           <dl className="dl">
-            <dt>Medio de pago</dt><dd>{medioDeMovimiento(e, mov)}</dd>
-            <dt>Pasarela</dt><dd>{nombrePasarela(mov.proveedor)}</dd>
+            <dt>Entró por</dt><dd>{medioDeMovimiento(e, mov)}{mov.metodo ? ` · ${mov.metodo}` : ""}</dd>
+            <dt>Quién pagó</dt>
+            <dd>
+              {quien.nombre ?? (billetera ? "La billetera no dice de quién es: todavía no pagó nadie conocido desde ahí" : `${nombrePasarela(mov.proveedor)} no mandó el nombre`)}
+              {!mov.clienteNombre && quien.nombre && quien.fuente && <span className="t-subtle"> · {FUENTE[quien.fuente]}</span>}
+            </dd>
+            {quien.email && (
+              <><dt>Correo</dt><dd>{quien.email}{!mov.clienteEmail && <span className="t-subtle"> · de su ficha</span>}</dd></>
+            )}
+            {quien.telefono && (
+              <>
+                <dt>Teléfono</dt>
+                <dd>
+                  {quien.telefono}
+                  {!mov.clienteTelefono && <span className="t-subtle"> · de su ficha</span>}
+                  {quien.telefono.replace(/\D/g, "").length >= 8 && (
+                    <> · <a href={`https://wa.me/${quien.telefono.replace(/\D/g, "")}`} target="_blank" rel="noreferrer">WhatsApp</a></>
+                  )}
+                </dd>
+              </>
+            )}
+            {billetera && <><dt>Billetera</dt><dd className="t-num" style={{ wordBreak: "break-all" }}>{billetera}</dd></>}
             <dt>Bruto</dt><dd className="t-num">{M(mov.monto, 2)}</dd>
-            <dt>Fee</dt><dd className="t-num">{M(mov.fee, 2)} {mov.monto > 0 && <span className="t-subtle">({pct((mov.fee / mov.monto) * 100, 1)})</span>}</dd>
-            <dt>Neto</dt><dd className="t-num">{M(mov.neto, 2)}</dd>
-            {mov.clienteEmail && <><dt>Correo</dt><dd>{mov.clienteEmail}</dd></>}
+            <dt>Comisión</dt>
+            <dd className="t-num">
+              {sinFee
+                ? `Todavía no la mandó ${nombrePasarela(mov.proveedor)}. Si lo conciliás ahora, el pago usa la de la cuenta (${pct(tasaEstimada(e, mov) * 100, 1)}) y se corrige solo cuando llegue.`
+                : <>{M(mov.fee, 2)} {mov.monto > 0 && <span className="t-subtle">({pct((mov.fee / mov.monto) * 100, 1)})</span>}</>}
+            </dd>
+            <dt>Neto</dt><dd className="t-num">{sinFee ? "Cuando llegue la comisión" : M(mov.neto, 2)}</dd>
+            <dt>Referencia</dt><dd className="t-sm" style={{ wordBreak: "break-all" }}>{mov.referencia}{mov.descripcion && !billetera ? ` · ${mov.descripcion}` : ""}</dd>
           </dl>
+          {quien.fichaId && (
+            <div className="row-wrap">
+              <Button sm variante="ghost" onClick={() => abrirFicha(quien.fichaId!)}>Abrir la ficha de {nombre}</Button>
+            </div>
+          )}
 
           {mov.estado === "pendiente" ? (
             <>
@@ -393,6 +444,14 @@ function FilaMovimiento({ mov, M, abierto, onAbrir, onNuevaVenta }: {
     </div>
   );
 }
+
+/* De dónde salió lo que la pasarela no mandó. */
+const FUENTE: Record<NonNullable<QuienPago["fuente"]>, string> = {
+  venta: "de la venta conciliada",
+  correo: "del contacto con ese correo",
+  billetera: "ya pagó antes desde esta billetera",
+  nombre: "del contacto con ese nombre",
+};
 
 function SugerenciaFila({ s, mov, M, destacada, onConciliar }: {
   s: Sugerencia; mov: Movimiento; M: (n: number, d?: number) => string;

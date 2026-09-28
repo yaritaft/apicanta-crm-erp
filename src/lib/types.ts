@@ -704,8 +704,14 @@ export interface Movimiento {
   fee: number;
   neto: number;
   fecha: string;
+  /* Quién pagó, según la pasarela. Si no lo manda (una billetera de USDT,
+     una transferencia), la conciliación lo busca entre los contactos. */
   clienteNombre?: string;
   clienteEmail?: string;
+  clienteTelefono?: string;
+  /* Cómo pagó dentro de la pasarela: "Tarjeta Visa ···4242", "Wire",
+     "USDT (TRC20)". La cuenta sola ("Stripe") no dice de dónde vino. */
+  metodo?: string;
   descripcion?: string;
   estado: EstadoMovimiento2;
   /* Resultado de la conciliación */
