@@ -2,7 +2,7 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import {
-  Download, HandCoins, Info, Pencil, Plus, Search, Trash2, Upload,
+  Download, HandCoins, Info, Pencil, Plus, Receipt, Search, Trash2, Upload,
 } from "lucide-react";
 import { PageHead } from "@/components/shell/PageHead";
 import {
@@ -13,6 +13,7 @@ import { DateRangePicker, diaDeNegocio } from "@/components/ui/DateRangePicker";
 import { CopiarLink, Filtro, opcionesDe, SIN, type OpcionFiltro } from "@/components/ui/Filtros";
 import { Confirmar } from "@/components/ui/Modal";
 import { AsistenteVenta } from "@/components/ventas/AsistenteVenta";
+import { CargarCuota } from "@/components/cobros/CargarCuota";
 import { ImportarPlanilla } from "@/components/ventas/ImportarPlanilla";
 import { aCSV, filasParaPlanilla } from "@/lib/exportarPlanilla";
 import { desdeVenta, FormularioVenta, type BorradorVenta } from "@/components/ventas/FormularioVenta";
@@ -72,6 +73,9 @@ export default function Ventas() {
   const abrirFicha = useAbrirFicha();
   const [form, setForm] = useState<BorradorVenta | null>(null);
   const [asistente, setAsistente] = useState(false);
+  /* Cargar el pago de una cuota: abierto sin elegir (null = buscar a la
+     persona) o con la cuota ya elegida desde el asistente de venta. */
+  const [pagoCuota, setPagoCuota] = useState<{ cuotaId?: string } | null>(null);
   const [borrar, setBorrar] = useState<Venta | null>(null);
   const [importando, setImportando] = useState(false);
 
@@ -263,6 +267,7 @@ export default function Ventas() {
             />
             <Button variante="secondary" icono={<Upload size={16} />} onClick={() => setImportando(true)}>Importar planilla</Button>
             <Button variante="secondary" icono={<Download size={16} />} onClick={exportarPlanilla}>Exportar planilla</Button>
+            <Button variante="secondary" icono={<Receipt size={16} />} onClick={() => setPagoCuota({})}>Cargar pago de cuota</Button>
             <Button variante="primary" icono={<Plus size={16} />} onClick={() => setAsistente(true)}>Nueva venta</Button>
           </>
         }
@@ -352,6 +357,15 @@ export default function Ventas() {
         <AsistenteVenta
           onCerrar={() => setAsistente(false)}
           onListo={(id, nombre) => { setAsistente(false); abrirFicha(id, "ventas", { venta: id }); toast(`Venta de ${nombre} cargada.`); }}
+          onPagoDeCuota={(cuotaId) => { setAsistente(false); setPagoCuota({ cuotaId }); }}
+        />
+      )}
+
+      {pagoCuota && (
+        <CargarCuota
+          cuotaId={pagoCuota.cuotaId}
+          onCerrar={() => setPagoCuota(null)}
+          onListo={(mensaje) => { setPagoCuota(null); toast(mensaje); }}
         />
       )}
 

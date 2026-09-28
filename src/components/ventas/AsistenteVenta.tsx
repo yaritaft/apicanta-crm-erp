@@ -2,16 +2,18 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  ArrowLeft, Check, CornerDownLeft, Link2, Paperclip, Sparkles, UserPlus, X,
+  ArrowLeft, Check, CornerDownLeft, Link2, Paperclip, Search, Sparkles, UserPlus, X,
 } from "lucide-react";
-import { Badge, Button, Chip, IconButton, Input, Select, Switch, Textarea } from "@/components/ui/ui";
+import { Avatar, Badge, Button, Chip, Field, IconButton, Input, Select, Switch, Textarea } from "@/components/ui/ui";
 import {
   agregarMedio, cobroNuevo, datosDeCobro, EditorCobros, problemaDeCobros, problemaDePasarelas, type CobroBorrador,
 } from "@/components/cobros/EditorCobros";
 import { disponibleDe } from "@/components/cobros/SelectorMovimiento";
 import { acciones, nuevoId, useEstado } from "@/lib/store";
 import { fechaLarga, isoDia, money, pct } from "@/lib/format";
-import { medioDeMovimiento, parecido, procesadorDeMovimiento } from "@/lib/conciliacion";
+import { medioDeMovimiento, normalizar, parecido, procesadorDeMovimiento } from "@/lib/conciliacion";
+import { buscarPersonas, nombreDeCuota, personaPorId, type PersonaBuscada } from "@/lib/buscar-cliente";
+import { claveEmail } from "@/lib/contactos";
 import { descartarComprobante } from "@/lib/comprobantes";
 import type { Cuota, EstadoApp, MiembroEquipo, Movimiento, Venta } from "@/lib/types";
 import { PAISES, planDePago, webinarDeProyecto } from "@/lib/angelo";
@@ -132,9 +134,12 @@ function armarPlan(b: Borrador): LineaCuota[] {
   return lineas;
 }
 
-export function AsistenteVenta({ onCerrar, onListo, desdeMovimiento, cliente, closerId, sesionId }: {
+export function AsistenteVenta({ onCerrar, onListo, desdeMovimiento, cliente, closerId, sesionId, onPagoDeCuota }: {
   onCerrar: () => void;
   onListo: (ventaId: string, nombre: string) => void;
+  /* Si quien compró ya debe una cuota, lo que se viene a cargar puede ser
+     ese pago y no una venta nueva: esto lo lleva a cargar el pago. */
+  onPagoDeCuota?: (cuotaId: string) => void;
   desdeMovimiento?: Movimiento;
   /* Abierto desde la ficha de alguien (upsell, renovación): el cliente ya
      está elegido y se arranca por el producto. */
@@ -344,7 +349,7 @@ export function AsistenteVenta({ onCerrar, onListo, desdeMovimiento, cliente, cl
 
       <div className="asistente__main" ref={mainRef}>
         <div className="asistente__paso" key={paso.id}>
-          {paso.id === "cliente" && <PasoCliente b={b} set={set} e={e} />}
+          {paso.id === "cliente" && <PasoCliente b={b} set={set} e={e} M={M} onPagoDeCuota={onPagoDeCuota} />}
           {paso.id === "producto" && <PasoProducto b={b} set={set} e={e} M={M} />}
           {paso.id === "precio" && <PasoPrecio b={b} set={set} e={e} M={M} />}
           {paso.id === "equipo" && <PasoEquipo b={b} set={set} e={e} sinComision={sinComision} yo={yo.miembro} />}
@@ -385,11 +390,13 @@ function inicial(e: EstadoApp, mov?: Movimiento, cliente?: { contactoId: string;
   const hoy = new Date().toISOString();
   const producto = e.productos.find((p) => p.activo);
   const b: Borrador = {
-    contactoId: cliente?.contactoId,
+    /* Desde un cobro: si su correo es de alguien que ya está, queda elegido. */
+    contactoId: cliente?.contactoId
+      ?? (mov?.clienteEmail ? e.leads.find((l) => l.email && claveEmail(l.email) === claveEmail(mov.clienteEmail))?.id : undefined),
     contactoNombre: cliente?.nombre ?? mov?.clienteNombre ?? "",
     contactoEmail: cliente?.email ?? mov?.clienteEmail ?? "",
     contactoPais: "",
-    contactoTelefono: "",
+    contactoTelefono: mov?.clienteTelefono ?? "",
     productoId: producto?.id ?? "",
     precioAcordado: mov?.monto ?? producto?.precioLista ?? 0,
     precioTocado: Boolean(mov),
@@ -432,7 +439,9 @@ function inicial(e: EstadoApp, mov?: Movimiento, cliente?: { contactoId: string;
 function validar(paso: PasoId, b: Borrador, diferencia: number, ctx: { e: EstadoApp; subiendo: number }): string | null {
   switch (paso) {
     case "cliente":
-      return b.contactoNombre.trim().length >= 2 ? null : "Escribí el nombre del cliente";
+      if (b.contactoId) return null;
+      if (b.crearContacto) return b.contactoNombre.trim().length >= 2 ? null : "Escribí el nombre del cliente";
+      return b.contactoNombre.trim().length >= 2 ? "Elegí al cliente de la lista o crealo como nuevo" : "Buscá al cliente";
     case "producto":
       return b.productoId ? null : "Elegí el servicio adquirido";
     case "precio":
@@ -475,8 +484,10 @@ function Pregunta({ texto, sub }: { texto: string; sub?: string }) {
   );
 }
 
-function Opcion({ tecla, nombre, sub, activo, onClick }: {
+function Opcion({ tecla, nombre, sub, activo, onClick, extra }: {
   tecla?: string; nombre: string; sub?: string; activo: boolean; onClick: () => void;
+  /* Lo que va a la derecha: el estado de una persona, por ejemplo. */
+  extra?: React.ReactNode;
 }) {
   return (
     <button type="button" className="opcion" aria-pressed={activo} onClick={onClick}>
@@ -485,79 +496,133 @@ function Opcion({ tecla, nombre, sub, activo, onClick }: {
         <span className="opcion__nombre">{nombre}</span>
         {sub && <span className="opcion__sub">{sub}</span>}
       </span>
-      {activo && <Check size={16} style={{ marginLeft: "auto", color: "var(--brand)" }} />}
+      {extra && <span className="opcion__extra">{extra}</span>}
+      {activo && <Check size={16} style={{ marginLeft: extra ? 8 : "auto", color: "var(--brand)" }} />}
     </button>
   );
 }
 
-/* ---------- Paso 1: cliente ---------- */
+/* ---------- Paso 1: cliente ----------
+   Se busca a la persona por nombre, correo o teléfono y se elige de la
+   lista; si no está, se carga como cliente nueva con sus datos a la
+   vista. Arriba y fijo: antes el paso estaba centrado y saltaba cada vez
+   que aparecía o desaparecía la lista. */
 
-function PasoCliente({ b, set, e }: { b: Borrador; set: (c: Partial<Borrador>) => void; e: EstadoApp }) {
-  const q = b.contactoNombre.trim().toLowerCase();
-  const sugeridos = useMemo(() => {
-    if (q.length < 2) return [];
-    return e.leads
-      .filter((l) => l.nombre.toLowerCase().includes(q) || l.email.toLowerCase().includes(q))
-      .slice(0, 5);
-  }, [e.leads, q]);
+/* Lo que se sabe de cada persona de la lista, a la derecha. */
+function EstadoPersona({ p, M }: { p: PersonaBuscada; M: (n: number, d?: number) => string }) {
+  const debe = p.cuotas.reduce((a, c) => a + c.saldo, 0);
+  if (debe > 0) return <Badge variante={p.cuotas.some((c) => c.diasAtraso > 0) ? "danger" : "accent"}>Debe {M(debe)}</Badge>;
+  if (p.compras > 0) return <Badge variante="success">{p.compras === 1 ? "Ya compró" : `${p.compras} compras`}</Badge>;
+  return <Badge variante="neutral">Lead</Badge>;
+}
+
+function PasoCliente({ b, set, e, M, onPagoDeCuota }: {
+  b: Borrador; set: (c: Partial<Borrador>) => void; e: EstadoApp; M: (n: number, d?: number) => string;
+  onPagoDeCuota?: (cuotaId: string) => void;
+}) {
+  const elegido = personaPorId(e, b.contactoId);
+  const escrito = b.contactoNombre.trim();
+  const resultados = useMemo(
+    () => (b.contactoId || b.crearContacto ? [] : buscarPersonas(e, b.contactoNombre)),
+    [e, b.contactoNombre, b.contactoId, b.crearContacto],
+  );
+  const esAlguno = resultados.some((p) => normalizar(p.nombre) === normalizar(escrito));
+  const nombreCorto = elegido?.nombre.split(" ")[0] ?? "";
 
   return (
     <>
-      <Pregunta texto="¿Quién compró?" sub="Nombre completo. Si ya está cargado como lead, elegilo de la lista y la venta queda pegada a su historia; si no, cargá su email, país y teléfono." />
-      <Input
-        value={b.contactoNombre}
-        onChange={(ev) => set({ contactoNombre: ev.target.value, contactoId: undefined })}
-        placeholder="Martín Quiroga"
-        autoFocus
+      <Pregunta
+        texto="¿Quién compró?"
+        sub="Buscalo por nombre, correo o teléfono. Si ya está en Apicanta, la venta queda pegada a su historia; si no, se carga como cliente nuevo."
       />
-      {b.contactoId && (
-        <div className="row-wrap">
-          <Badge variante="brand"><Link2 size={13} />Vinculado a un lead</Badge>
-          <span className="t-sm t-subtle">{b.contactoEmail}</span>
-        </div>
-      )}
-      {b.crearContacto && !b.contactoId && (
-        <div className="stack-2">
-          <div className="row-wrap">
-            <Badge variante="accent"><UserPlus size={13} />Contacto nuevo: se crea al guardar la venta</Badge>
-            <button type="button" className="link t-sm" onClick={() => set({ crearContacto: false })}>Deshacer</button>
+
+      {elegido ? (
+        <div className="cliente-elegido">
+          <Avatar nombre={elegido.nombre} size={40} />
+          <div className="cliente-elegido__datos">
+            <span className="cliente-elegido__nombre">{elegido.nombre}</span>
+            <span className="t-sm t-subtle">{[elegido.email, elegido.telefono].filter(Boolean).join(" · ") || "Sin correo ni teléfono"}</span>
           </div>
-          <Input
-            type="email" value={b.contactoEmail} placeholder="Email" aria-label="Email"
-            onChange={(ev) => set({ contactoEmail: ev.target.value })}
-          />
+          <EstadoPersona p={elegido} M={M} />
+          <Button sm variante="ghost" onClick={() => set({ contactoId: undefined, contactoNombre: "", contactoEmail: "", contactoTelefono: "" })}>
+            Cambiar
+          </Button>
+        </div>
+      ) : b.crearContacto ? (
+        <div className="cliente-nuevo">
+          <div className="cliente-nuevo__cab">
+            <UserPlus size={16} />
+            <span className="t-strong">Cliente nuevo</span>
+            <span className="t-sm t-subtle">Se crea al guardar la venta.</span>
+            <span className="spacer" />
+            <button type="button" className="link t-sm" onClick={() => set({ crearContacto: false })}>Volver a buscar</button>
+          </div>
           <div className="form-grid">
-            <Select
-              value={b.contactoPais} placeholder="País del cliente" aria-label="País del cliente"
-              onChange={(ev) => set({ contactoPais: ev.target.value })} opciones={PAISES}
-            />
-            <Input
-              type="tel" value={b.contactoTelefono} placeholder="Teléfono" aria-label="Teléfono"
-              onChange={(ev) => set({ contactoTelefono: ev.target.value })}
-            />
+            <Field label="Nombre completo" span2>
+              <Input value={b.contactoNombre} onChange={(ev) => set({ contactoNombre: ev.target.value })} aria-label="Nombre completo" />
+            </Field>
+            <Field label="Correo">
+              <Input type="email" value={b.contactoEmail} placeholder="nombre@correo.com" aria-label="Correo"
+                onChange={(ev) => set({ contactoEmail: ev.target.value })} />
+            </Field>
+            <Field label="Teléfono">
+              <Input type="tel" value={b.contactoTelefono} placeholder="+54 9 11 5555 5555" aria-label="Teléfono"
+                onChange={(ev) => set({ contactoTelefono: ev.target.value })} />
+            </Field>
+            <Field label="País" span2>
+              <Select value={b.contactoPais} placeholder="Elegí el país" aria-label="País del cliente"
+                onChange={(ev) => set({ contactoPais: ev.target.value })} opciones={PAISES} />
+            </Field>
           </div>
         </div>
+      ) : (
+        <>
+          <Input
+            icono={<Search size={16} />} value={b.contactoNombre} autoFocus aria-label="Buscar al cliente"
+            onChange={(ev) => set({ contactoNombre: ev.target.value, contactoId: undefined })}
+            placeholder="Nombre, correo o teléfono"
+          />
+          {(resultados.length > 0 || escrito.length >= 2) && (
+            <div className="stack-2">
+              {resultados.length > 0 && <span className="t-label">Ya están en Apicanta</span>}
+              <div className="opciones opciones--lista">
+                {resultados.map((p) => (
+                  <Opcion
+                    key={p.id} nombre={p.nombre} activo={false}
+                    sub={[p.email, p.telefono].filter(Boolean).join(" · ") || "Sin correo ni teléfono"}
+                    extra={<EstadoPersona p={p} M={M} />}
+                    onClick={() => set({ contactoId: p.id, contactoNombre: p.nombre, contactoEmail: p.email ?? "", contactoTelefono: p.telefono ?? "", crearContacto: false })}
+                  />
+                ))}
+                {escrito.length >= 2 && !esAlguno && (
+                  <Opcion
+                    nombre={`Crear «${escrito}» como cliente nuevo`}
+                    sub="No está en Apicanta: se carga con su correo, teléfono y país"
+                    activo={false} onClick={() => set({ crearContacto: true })}
+                  />
+                )}
+              </div>
+            </div>
+          )}
+        </>
       )}
-      {!b.contactoId && q.length >= 2 && (sugeridos.length > 0 || !b.crearContacto) && (
-        <div className="stack-2">
-          {sugeridos.length > 0 && <span className="t-label">Leads que coinciden</span>}
-          {/* En lista, uno por renglón: en grilla, el nombre y el mail
-              quedaban cortados y costaba leer cuál era cuál. */}
-          <div className="opciones opciones--lista">
-            {sugeridos.map((l) => (
-              <Opcion
-                key={l.id} nombre={l.nombre} sub={l.email} activo={false}
-                onClick={() => set({ contactoId: l.id, contactoNombre: l.nombre, contactoEmail: l.email, crearContacto: false })}
-              />
-            ))}
-            {!b.crearContacto && !sugeridos.some((l) => l.nombre.trim().toLowerCase() === q) && (
-              <Opcion
-                nombre={`Crear «${b.contactoNombre.trim()}» como contacto nuevo`}
-                sub="No está cargado: queda como lead inscripto, pegado a esta venta"
-                activo={false} onClick={() => set({ crearContacto: true })}
-              />
-            )}
-          </div>
+
+      {elegido && elegido.cuotas.length > 0 && onPagoDeCuota && (
+        <div className="aviso-cuotas">
+          <span className="t-strong">¿Venís a cargar el pago de una cuota?</span>
+          <span className="t-sm t-muted">
+            {elegido.cuotas.length === 1 ? `${nombreCorto} tiene una cuota por pagar.` : `${nombreCorto} tiene ${elegido.cuotas.length} cuotas por pagar.`}
+            {" "}El pago se carga en su cuota: no hace falta una venta nueva.
+          </span>
+          {elegido.cuotas.slice(0, 3).map((c) => (
+            <div className="aviso-cuotas__fila" key={c.cuota.id}>
+              <span className="t-sm">
+                <strong>{nombreDeCuota(c)}</strong>
+                <span className="t-subtle"> · faltan {M(c.saldo)} · {c.diasAtraso > 0 ? `venció hace ${c.diasAtraso} ${c.diasAtraso === 1 ? "día" : "días"}` : c.cuota.vence ? `vence el ${fechaLarga(c.cuota.vence)}` : "sin fecha"}</span>
+              </span>
+              <Button sm variante="secondary" onClick={() => onPagoDeCuota(c.cuota.id)}>Cargar este pago</Button>
+            </div>
+          ))}
         </div>
       )}
     </>
@@ -958,7 +1023,14 @@ function PasoResumen({ b, set, e, M, sinComision, totalCobrado }: {
       <Pregunta texto="Así queda la venta" sub="Revisá y confirmá. Después se puede editar todo desde la ficha." />
 
       <dl className="dl">
-        <dt>Nombre Completo</dt><dd>{b.contactoNombre}</dd>
+        <dt>Quién compró</dt>
+        <dd>
+          {b.contactoNombre}
+          {!b.contactoId && b.crearContacto && <span className="t-subtle"> · cliente nuevo</span>}
+        </dd>
+        {(b.contactoEmail || b.contactoTelefono) && (
+          <><dt>Contacto</dt><dd>{[b.contactoEmail, b.contactoTelefono].filter(Boolean).join(" · ")}</dd></>
+        )}
         <dt>Servicio adquirido</dt><dd>{producto?.nombre ?? "—"}</dd>
         <dt>Valor total</dt><dd className="t-num">{M(b.precioAcordado, 2)}</dd>
         <dt>Vendedor</dt><dd>{closer?.nombre ?? "—"}{sinComision && <span className="t-subtle"> · no comisiona nadie</span>}</dd>

@@ -15,7 +15,7 @@ import { acciones, useEstado } from "@/lib/store";
 import { nube } from "@/lib/supabase";
 import { fechaLarga, money, pct } from "@/lib/format";
 import {
-  billeteraDe, esAutomatica, medioDeMovimiento, pagosYaCargados, propuestas, quienPago, restoDeMovimiento, resumenConciliacion, saldoDeCuota,
+  billeteraDe, esAutomatica, medioDeMovimiento, normalizar, pagosYaCargados, propuestas, quienPago, restoDeMovimiento, resumenConciliacion, saldoDeCuota,
   sugerenciasPara, tasaEstimada, vinculosSeguros,
   type QuienPago, type Sugerencia,
 } from "@/lib/conciliacion";
@@ -44,16 +44,27 @@ export default function Conciliacion() {
   const [importar, setImportar] = useState(false);
   const [nuevaVenta, setNuevaVenta] = useState<Movimiento | null>(null);
   const [sincronizando, setSincronizando] = useState(false);
+  const [busca, setBusca] = useState("");
 
   /* Recorre todos los cobros pendientes contra todas las cuotas: se calcula
      cuando cambian los datos, no a cada clic (abrir un cobro, filtrar). */
   const resumen = useMemo(() => resumenConciliacion(e), [e]);
 
+  /* Buscar por quién pagó (nombre, correo, teléfono), cómo, la referencia o
+     el monto: con cientos de cobros de Whop y Stripe, la lista sola no alcanza. */
   const filas = useMemo(() => {
+    const q = normalizar(busca);
+    const monto = Number(busca.replace(/[^\d.,]/g, "").replace(/\.(?=\d{3}\b)/g, "").replace(",", "."));
     return e.movimientos
       .filter((m) => m.estado === filtro && (pasarela === "todas" || m.proveedor === pasarela))
+      .filter((m) => {
+        if (!q) return true;
+        if (Number.isFinite(monto) && monto > 0 && Math.abs(m.monto - monto) < 0.5) return true;
+        const quien = quienPago(e, m);
+        return normalizar([quien.nombre, quien.email, quien.telefono, m.metodo, m.referencia, m.descripcion].filter(Boolean).join(" ")).includes(q);
+      })
       .sort((a, b) => +new Date(b.fecha) - +new Date(a.fecha));
-  }, [e.movimientos, filtro, pasarela]);
+  }, [e, filtro, pasarela, busca]);
 
   /* Los medios que tienen algo en la pestaña elegida, con cuántos: filtrar
      por uno que está vacío no sirve de nada. */
@@ -181,6 +192,12 @@ export default function Conciliacion() {
                 count={e.movimientos.filter((m) => m.estado === k).length}>{t}</Chip>
             ))}
           </div>
+          <div style={{ marginTop: "var(--space-3)", maxWidth: 520 }}>
+            <Input
+              icono={<Search size={15} />} value={busca} onChange={(ev) => setBusca(ev.target.value)}
+              placeholder="Buscar por nombre, correo, teléfono, monto o referencia" aria-label="Buscar cobros"
+            />
+          </div>
           {medios.length > 0 && (
             <div className="row-wrap" style={{ marginTop: "var(--space-3)" }} role="group" aria-label="Filtrar por medio de pago">
               <span className="t-label" style={{ marginRight: 4 }}>Medio de pago</span>
@@ -201,7 +218,7 @@ export default function Conciliacion() {
           {filas.length === 0 ? (
             <Empty
               icono={<ArrowDownUp size={22} />}
-              titulo={filtro === "pendiente" ? "No queda nada sin conciliar" : "Nada por acá"}
+              titulo={busca.trim() ? "Ningún cobro coincide con la búsqueda" : filtro === "pendiente" ? "No queda nada sin conciliar" : "Nada por acá"}
               texto={filtro === "pendiente"
                 ? "Cuando entre plata a una pasarela, el cobro aparece en esta bandeja hasta que se impute a una cuota."
                 : "Los cobros que vayas conciliando o ignorando quedan guardados en esta pestaña."}
