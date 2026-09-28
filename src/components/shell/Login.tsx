@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { ArrowRight, Check, KeyRound, Mail } from "lucide-react";
 import { Button, Field, Input } from "@/components/ui/ui";
 import { entrarConClave, enviarMagicLink } from "@/lib/auth";
@@ -10,12 +10,39 @@ import { entrarConClave, enviarMagicLink } from "@/lib/auth";
    otro lado. El enlace queda como alternativa para el que no quiere recordar nada. */
 type Modo = "clave" | "enlace";
 
+/* Si se volvió del enlace del correo y no se pudo entrar, se dice por qué.
+   Supabase avisa en la URL si venció o ya se usó; si llega el código pero
+   no hay sesión, el enlace se abrió en otro navegador (el flujo PKCE sólo
+   lo acepta en el mismo que lo pidió) o ya se había usado. */
+const DEL_ENLACE = ["code", "error", "error_code", "error_description"];
+
+function avisoDelEnlace(): string {
+  if (typeof window === "undefined") return "";
+  const u = new URL(window.location.href);
+  const hash = new URLSearchParams(u.hash.slice(1));
+  const dato = (k: string) => u.searchParams.get(k) ?? hash.get(k);
+  if (dato("error_code") === "otp_expired") return "El enlace del correo venció o ya se usó. Pedí otro.";
+  if (dato("error") || dato("error_code")) return "No se pudo entrar con ese enlace. Pedí otro o entrá con tu clave.";
+  if (dato("code")) return "No se pudo entrar con ese enlace: sirve una sola vez y hay que abrirlo en el mismo navegador donde se pidió. Pedí otro desde acá.";
+  return "";
+}
+
 export function Login() {
-  const [modo, setModo] = useState<Modo>("clave");
+  const [aviso] = useState(avisoDelEnlace);
+  const [modo, setModo] = useState<Modo>(() => (aviso ? "enlace" : "clave"));
   const [email, setEmail] = useState("");
   const [clave, setClave] = useState("");
   const [estado, setEstado] = useState<"pidiendo" | "enviando" | "enviado">("pidiendo");
   const [error, setError] = useState("");
+
+  /* Lo del enlace fallido sale de la URL: ya se leyó, y si quedara se
+     arrastraría a la app al entrar. */
+  useEffect(() => {
+    if (!aviso) return;
+    const u = new URL(window.location.href);
+    for (const k of DEL_ENLACE) u.searchParams.delete(k);
+    window.history.replaceState(window.history.state, "", u.pathname + u.search);
+  }, [aviso]);
 
   function cambiarModo(nuevo: Modo) {
     setModo(nuevo); setError(""); setEstado("pidiendo");
@@ -68,6 +95,9 @@ export function Login() {
                 ? "Poné tu correo y tu clave."
                 : "Poné tu correo y te mandamos un enlace para entrar. Sin contraseñas."}
             </p>
+            {aviso && (
+              <p className="t-sm" role="alert" style={{ color: "var(--danger)", marginBottom: 16 }}>{aviso}</p>
+            )}
 
             <form onSubmit={entrar} className="stack-4" style={{ textAlign: "left" }}>
               <Field label="Tu correo" error={modo === "enlace" ? error : undefined}>
