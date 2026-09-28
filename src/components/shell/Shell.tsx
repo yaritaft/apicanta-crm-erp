@@ -12,6 +12,7 @@ import { alarmaCobranza } from "@/lib/finanzas";
 import { cargarDeLaNube, hayNube, reiniciarCarga, useEstado, useSync, useTema } from "@/lib/store";
 import { useSalir, useSesion } from "@/lib/auth";
 import { useNivelAcceso } from "@/lib/acceso";
+import { useRecordarVistas } from "@/lib/recordarVistas";
 import { Avatar, Button, IconButton } from "@/components/ui/ui";
 import { Paleta } from "./Paleta";
 import { Tour } from "./Tour";
@@ -26,6 +27,9 @@ export function Shell({ children }: { children: React.ReactNode }) {
   const sesion = useSesion();
   const { esDueno } = useNivelAcceso();
   const nav = navPara(esDueno);
+  /* Cada pantalla vuelve como se dejó: con sus filtros, su orden y su
+     período. El menú lleva directo a lo último que se vio en cada una. */
+  const hrefRecordado = useRecordarVistas();
 
   /* Menu colapsado. Se lee despues del montado a proposito: leer localStorage
      en el primer render rompe la hidratacion, porque el servidor no lo tiene. */
@@ -139,7 +143,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
                   const Ico = i.icono;
                   return (
                     <li key={i.href}>
-                      <Link href={i.href} aria-current={activo ? "page" : undefined} title={i.ayuda}>
+                      <Link href={hrefRecordado(i.href)} aria-current={activo ? "page" : undefined} title={i.ayuda}>
                         <Ico />
                         <span>{i.texto}</span>
                         {alertas[i.href]?.n > 0 ? (

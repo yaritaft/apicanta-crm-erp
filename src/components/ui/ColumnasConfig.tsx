@@ -5,10 +5,17 @@
 
    La configuración vive en localStorage y no en la base: es una preferencia
    de quien mira, no un dato del negocio. Si se guardara en `ajustes`, Yari
-   moviendo una columna se la movería a todo el equipo. */
+   moviendo una columna se la movería a todo el equipo.
+
+   Un link copiado sí las lleva (?cols-<tabla>, lib/compartirLink): quien lo
+   abre ve las columnas de quien lo mandó hasta que toque alguna, y ahí
+   pasan a ser las suyas. */
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { Columns3, GripVertical, RotateCcw, X } from "lucide-react";
+import { aLista, deLista, useAporteAlLink } from "@/lib/compartirLink";
+import { useEscribirURL } from "@/lib/useParamsURL";
 
 export interface DefColumna {
   clave: string;
@@ -41,33 +48,49 @@ export function useColumnas(tabla: string, todas: DefColumna[], porDefecto: stri
     } catch { /* modo privado, o JSON de una versión anterior */ }
   }, [tabla, todas]);
 
+  /* Las columnas que trae un link copiado, si trae. */
+  const params = useSearchParams();
+  const escribirURL = useEscribirURL();
+  const enURL = `cols-${tabla}`;
+  const delLinkCrudo = params.get(enURL);
+  const delLink = useMemo(() => {
+    const ks = deLista(delLinkCrudo)?.filter((k) => todas.some((c) => c.clave === k)) ?? [];
+    return ks.length ? ks : null;
+  }, [delLinkCrudo, todas]);
+  const actual = delLink ?? orden;
+
+  /* Tocar una columna la hace propia: se guarda y el link deja de mandar. */
   const guardar = useCallback((nuevo: string[]) => {
     setOrden(nuevo);
     try { localStorage.setItem(clave(tabla), JSON.stringify(nuevo)); } catch { /* modo privado */ }
-  }, [tabla]);
+    if (delLinkCrudo !== null) escribirURL({ [enURL]: null });
+  }, [tabla, delLinkCrudo, enURL, escribirURL]);
 
   const alternar = useCallback((k: string) => {
     if (fijas.includes(k)) return;
-    guardar(orden.includes(k) ? orden.filter((x) => x !== k) : [...orden, k]);
-  }, [orden, fijas, guardar]);
+    guardar(actual.includes(k) ? actual.filter((x) => x !== k) : [...actual, k]);
+  }, [actual, fijas, guardar]);
 
   const mover = useCallback((desde: string, hasta: string) => {
     if (desde === hasta || fijas.includes(desde)) return;
-    const sin = orden.filter((k) => k !== desde);
+    const sin = actual.filter((k) => k !== desde);
     const i = sin.indexOf(hasta);
     guardar([...sin.slice(0, i), desde, ...sin.slice(i)]);
-  }, [orden, fijas, guardar]);
+  }, [actual, fijas, guardar]);
 
   const restaurar = useCallback(() => {
     try { localStorage.removeItem(clave(tabla)); } catch { /* modo privado */ }
     setOrden(porDefecto);
-  }, [tabla, porDefecto]);
+    if (delLinkCrudo !== null) escribirURL({ [enURL]: null });
+  }, [tabla, porDefecto, delLinkCrudo, enURL, escribirURL]);
 
   /* Las fijas van siempre adelante, existan o no en lo guardado. */
   const visibles = useMemo(
-    () => [...fijas, ...orden.filter((k) => !fijas.includes(k))],
-    [fijas, orden],
+    () => [...fijas, ...actual.filter((k) => !fijas.includes(k))],
+    [fijas, actual],
   );
+
+  useAporteAlLink(() => ({ [enURL]: aLista(visibles.filter((k) => !fijas.includes(k))) }));
 
   return { visibles, alternar, mover, restaurar, esVisible: (k: string) => visibles.includes(k) };
 }

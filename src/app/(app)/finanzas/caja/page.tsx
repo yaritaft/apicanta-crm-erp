@@ -14,6 +14,8 @@ import {
   MESES_DE_COLCHON, cajaEsperada, entradasPorCuenta, runway, ultimoArqueo, type MovimientoCaja,
 } from "@/lib/caja";
 import type { Arqueo, EstadoApp, Gasto, Moneda, SaldoCuenta } from "@/lib/types";
+import { CopiarLink } from "@/components/ui/Filtros";
+import { useTablaURL } from "@/lib/useParamsURL";
 
 /* ==================================================================
    Caja: cuánta plata hay de verdad, cuántos meses de vida le da al
@@ -37,6 +39,9 @@ export default function Caja() {
   const [retirando, setRetirando] = useState(false);
   const [ver, setVer] = useState<Arqueo | null>(null);
   const [borrar, setBorrar] = useState<Arqueo | null>(null);
+  /* El orden de cada cuadro va en el link: ?orden-arqueos y ?orden-retiros. */
+  const tablaArqueos = useTablaURL("arqueos", { clave: "fecha", desc: true }, ["fecha", "total", "esperado", "dif", "por"]);
+  const tablaRetiros = useTablaURL("retiros", { clave: "fecha", desc: true }, ["fecha", "concepto", "monto"]);
 
   const ultimo = ultimoArqueo(e);
   const mov = useMemo(() => (ultimo ? cajaEsperada(e, ultimo, hoyIso()) : null), [e, ultimo]);
@@ -57,6 +62,7 @@ export default function Caja() {
         sub="Cuánta plata hay de verdad en las cuentas, si da con lo que la app esperaba y cuántos meses de vida le da al negocio."
         acciones={
           <>
+            <CopiarLink sm={false} />
             <Button variante="secondary" icono={<HandCoins size={16} />} onClick={() => setRetirando(true)}>Registrar retiro</Button>
             <Button variante="primary" icono={<Plus size={16} />} onClick={() => setArqueando(true)}>Hacer un arqueo</Button>
           </>
@@ -106,7 +112,7 @@ export default function Caja() {
         </div>
         <DataTable
           filas={arqueos}
-          ordenInicial={{ clave: "fecha", desc: true }}
+          orden={tablaArqueos.orden} onOrden={tablaArqueos.onOrden}
           onFila={(a) => setVer(a)}
           etiquetaFila={(a) => `Ver el arqueo del ${fechaLarga(a.fecha)}`}
           columnas={[
@@ -127,7 +133,7 @@ export default function Caja() {
         </div>
         <DataTable
           filas={retiros}
-          ordenInicial={{ clave: "fecha", desc: true }}
+          orden={tablaRetiros.orden} onOrden={tablaRetiros.onOrden}
           columnas={[
             { clave: "fecha", titulo: "Fecha", tipo: "primary", orden: (g) => g.fecha, celda: (g) => fechaLarga(g.fecha) },
             { clave: "concepto", titulo: "Concepto", tipo: "secondary", orden: (g) => g.concepto, celda: (g) => g.concepto },

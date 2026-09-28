@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { hayNube, nube } from "./supabase";
 import { olvidarCopiaLocal } from "./store";
+import { anotarDestino, olvidarVistas } from "./recordarVistas";
 
 export interface Sesion {
   cargando: boolean;
@@ -49,6 +50,7 @@ export function useSalir() {
     /* La copia del navegador se va antes que la sesión: lo que vio este
        usuario no queda para el que entre después. */
     olvidarCopiaLocal();
+    olvidarVistas();
     await nube.auth.signOut();
     /* Recarga limpia: el store vuelve a arrancar sin datos de la sesion anterior. */
     if (typeof window !== "undefined") window.location.href = "/";
@@ -57,6 +59,7 @@ export function useSalir() {
 
 export async function enviarMagicLink(email: string): Promise<{ ok: boolean; error?: string }> {
   if (!nube) return { ok: false, error: "No hay base configurada." };
+  anotarDestino();
   const { error } = await nube.auth.signInWithOtp({
     email: email.trim().toLowerCase(),
     options: {

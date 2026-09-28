@@ -151,3 +151,22 @@ export function paginaDeURL(valor: string): number {
   const n = Number.parseInt(valor, 10);
   return Number.isFinite(n) && n > 0 ? n : 1;
 }
+
+/* El orden y la página de una tabla en la URL, listos para pasárselos a
+   DataTable (o el orden a la Planilla). `prefijo` separa dos tablas de la
+   misma pantalla: con "arqueos" son ?orden-arqueos y ?pag-arqueos; sin
+   prefijo, ?orden y ?pag. `validas` son las columnas que ordenan: una que
+   no está (un link viejo, una columna apagada) vuelve al orden de siempre.
+   Sin orden inicial, la tabla va como vienen las filas. */
+export function useTablaURL(prefijo: string, ordenInicial: OrdenTabla | null, validas: readonly string[]) {
+  const kOrden = prefijo ? `orden-${prefijo}` : "orden";
+  const kPag = prefijo ? `pag-${prefijo}` : "pag";
+  const [v, cambiar] = useParamsURL({ [kOrden]: ordenInicial ? ordenAURL(ordenInicial) : "", [kPag]: "1" });
+  const o = ordenDeURL(v[kOrden], validas, ordenInicial ?? { clave: "", desc: false });
+  return {
+    orden: o.clave ? o : null,
+    onOrden: (x: OrdenTabla) => cambiar({ [kOrden]: ordenAURL(x), [kPag]: null }),
+    pagina: paginaDeURL(v[kPag]) - 1,
+    onPagina: (p: number) => cambiar({ [kPag]: String(p + 1) }),
+  };
+}

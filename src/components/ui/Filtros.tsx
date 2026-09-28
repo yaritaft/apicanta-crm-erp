@@ -5,6 +5,7 @@ import { Link2 } from "lucide-react";
 import { Button, Select } from "./ui";
 import { useToast } from "./Toast";
 import { num } from "@/lib/format";
+import { aportesAlLink } from "@/lib/compartirLink";
 
 /* ==================================================================
    Las piezas de una pantalla que se lee como reporte: el filtro
@@ -61,8 +62,10 @@ export function CopiarLink({ sm = true }: { sm?: boolean }) {
 
   function copiar() {
     const url = new URL(window.location.href);
-    url.searchParams.delete("nuevo");
-    url.searchParams.delete("ver");
+    for (const k of ["nuevo", "ver", "code"]) url.searchParams.delete(k);
+    /* Lo que es de cada uno (columnas, métricas, la vista del CRM) viaja en
+       el link: quien lo abre ve lo mismo (lib/compartirLink). */
+    for (const [k, v] of Object.entries(aportesAlLink())) url.searchParams.set(k, v);
     const fallo = () => toast("No se pudo copiar. Copiá la dirección desde la barra del navegador.", "err");
     if (!navigator.clipboard) { fallo(); return; }
     navigator.clipboard.writeText(url.toString()).then(

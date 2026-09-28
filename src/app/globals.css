@@ -2455,6 +2455,14 @@ span.kpis__etiqueta:hover { color: var(--ink); text-decoration: none; }
   margin-left: auto; align-self: center; display: inline-flex; align-items: center; gap: 6px;
   font-size: 12px; color: var(--crm-tinta-2);
 }
+/* «Copiar link» con el trato del CRM: chico y de texto, como el resto de la
+   barra (acá `.crm button` le saca el borde y el relleno de siempre). */
+.crm .crm-tablas .copiar-link {
+  align-self: center; display: inline-flex; align-items: center; gap: 6px; flex: none;
+  height: 26px; margin-left: 10px; padding: 0 8px; border-radius: 6px;
+  font-size: 12px; font-weight: 500; color: var(--crm-tinta-2);
+}
+.crm .crm-tablas .copiar-link:hover { background: var(--crm-tabla-hover); color: var(--crm-tinta); }
 .crm-pulso { width: 8px; height: 8px; border-radius: 50%; background: var(--crm-tinta-3); flex: none; }
 .crm-pulso--on { background: #20c933; animation: crm-pulso 2s ease-out infinite; }
 @keyframes crm-pulso { 0% { box-shadow: 0 0 0 0 #20c93366; } 70% { box-shadow: 0 0 0 6px #20c93300; } 100% { box-shadow: 0 0 0 0 #20c93300; } }
@@ -2952,6 +2960,11 @@ span.kpis__etiqueta:hover { color: var(--ink); text-decoration: none; }
   .crm .crm-herr { width: 32px; flex: none; }
   .crm-cambiada { display: none !important; }
   .crm-tablas__vivo { display: none; }
+  /* En el teléfono, sólo el ícono: con el texto, las pestañas se partían en
+     dos renglones. El nombre sigue en aria-label. */
+  .crm .crm-tablas .copiar-link { margin-left: auto; width: 30px; padding: 0; justify-content: center; }
+  .crm .crm-tablas .copiar-link__texto { display: none; }
+  .crm .crm-tabla { white-space: nowrap; }
   .crm-registro-fondo { padding: 0; }
   .crm-registro { max-height: 100dvh; height: 100dvh; border-radius: 0; }
   .crm-registro__acciones .crm-boton { padding: 0 8px; }

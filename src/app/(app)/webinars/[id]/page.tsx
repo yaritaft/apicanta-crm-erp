@@ -20,6 +20,7 @@ import {
 } from "@/components/webinars/VivoWebinar";
 import { guardarWebinar } from "@/components/webinars/guardar";
 import { CLAVE_LISTA, ESTADO_WEBINAR, ESTADOS } from "@/components/webinars/estado";
+import { CopiarLink } from "@/components/ui/Filtros";
 import {
   diaYHora, fechaCompleta, hoyArgentina, isoDesdeArgentina, partesArgentina,
 } from "@/components/webinars/fechas";
@@ -119,6 +120,7 @@ export default function WebinarFicha() {
               opciones={ESTADOS.map((k) => ({ valor: k, texto: ESTADO_WEBINAR[k].texto }))}
             />
           </div>
+          <CopiarLink sm={false} />
           <Button variante="ghost" icono={<Trash2 size={16} />} onClick={() => setBorrar(true)}>Eliminar</Button>
         </div>
       </div>

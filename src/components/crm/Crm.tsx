@@ -22,6 +22,10 @@ import { SelectorOpciones } from "./Editores";
 import { AsistenteVenta } from "@/components/ventas/AsistenteVenta";
 import { leadDeSesion } from "@/lib/etapas-auto";
 import { useVistasGuardadas, usePreferencia, type AjusteVista, type VistaPropia } from "./useVistas";
+import { idDeVistaEnLink, vistaALink, vistaDeLink } from "./vistaCompartida";
+import { CopiarLink } from "@/components/ui/Filtros";
+import { useAporteAlLink } from "@/lib/compartirLink";
+import { useBusquedaURL } from "@/lib/useParamsURL";
 
 /* ==================================================================
    El CRM de ventas, como el Airtable del equipo: una tabla por tipo de
@@ -92,6 +96,32 @@ export function Crm() {
   const cambiada = !esPropia && Object.keys(ajuste).some((k) => !["anchos", "columnas"].includes(k));
   const cambiarVista = useCallback((parcial: AjusteVista) => guardadas.cambiar(base.id, parcial, esPropia), [guardadas, base.id, esPropia]);
 
+  /* «Copiar link» lleva la vista entera, como se está viendo: las vistas son
+     de cada uno, y con ?v sólo abriría la de quien lo recibe. */
+  useAporteAlLink(() => ({ compartida: vistaALink({ nombre: base.nombre, ...v }) }));
+
+  /* Un link con ?compartida trae una vista armada por otro: queda como vista
+     propia, con su nombre, y se abre. El mismo link no la duplica. */
+  const compartida = params.get("compartida");
+  useEffect(() => {
+    if (!compartida || !guardadas.listo) return;
+    const recibida = vistaDeLink(compartida);
+    if (!recibida) {
+      escribirUrl({ compartida: null });
+      toast("No se pudo abrir la vista del link: llegó incompleto.", "err");
+      return;
+    }
+    const id = idDeVistaEnLink(compartida);
+    const { nombre, ...config } = recibida;
+    if (guardadas.propias.some((p) => p.id === id)) guardadas.cambiar(id, config, true);
+    else guardadas.crear({ ...config, id, nombre, propia: true });
+    setUltima({ ...ultima, [tablaId]: id });
+    escribirUrl({ compartida: null, v: id });
+    toast(`«${nombre}» quedó en tus vistas, tal como la mandaron.`);
+    // Una vez por link: el resto se lee al momento.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [compartida, guardadas.listo]);
+
   /* Otra vista u otra tabla: la fila recién editada deja de estar retenida
      (si no, se colaba en la vista nueva aunque no pasara su filtro). */
   const soltarRetenida = () => {
@@ -126,7 +156,8 @@ export function Crm() {
      La fila que se acaba de editar se queda donde está (aunque ya no pase
      el filtro o su orden cambie) hasta que se elige otra, como en Airtable:
      si no, desaparece o salta de lugar mientras se carga. */
-  const [busqueda, setBusqueda] = useState("");
+  /* La búsqueda va en el link (?q). */
+  const [busqueda, setBusqueda] = useBusquedaURL("q");
   const [retenida, setRetenida] = useState<string | null>(null);
   /* Sube cuando se suelta la fila retenida: recién ahí se vuelve a ordenar. */
   const [reordenar, setReordenar] = useState(0);
@@ -380,7 +411,7 @@ export function Crm() {
   const angosto = useAngosto();
   const panelAbierto = angosto ? panelAngosto : panelAncho;
   const setPanelAbierto = (v: boolean) => (angosto ? setPanelAngosto(v) : setPanelAncho(v));
-  const [buscando, setBuscando] = useState(false);
+  const [buscando, setBuscando] = useState(() => busqueda !== "");
   const [pedirCampos, setPedirCampos] = useState<HTMLElement | null>(null);
   const [filtrarPor, setFiltrarPor] = useState<ClaveCampo | null>(null);
 
@@ -425,6 +456,7 @@ export function Crm() {
           <span className={`crm-pulso${enVivo ? " crm-pulso--on" : ""}`} aria-hidden />
           {nube ? (enVivo ? "En vivo" : "Conectando…") : "En este navegador"}
         </span>
+        <CopiarLink />
       </div>
 
       {/* ---------- La barra de la vista ---------- */}

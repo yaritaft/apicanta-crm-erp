@@ -8,6 +8,7 @@ import { DateRangePicker, rangoDePreset, type RangoFechas } from "@/components/u
 import { ModalForm } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toast";
 import { acciones } from "@/lib/store";
+import { useParamsURL, useTablaURL } from "@/lib/useParamsURL";
 import { fechaLarga, money } from "@/lib/format";
 import { pagosDelMes } from "@/lib/finanzas";
 import { hayNube } from "@/lib/supabase";
@@ -31,6 +32,10 @@ import type { Cuota, EstadoApp, Pago, Venta } from "@/lib/types";
    ================================================================== */
 
 type Filtro = "todos" | "sin-conciliar" | "sin-chequear" | "a-mano";
+const FILTROS: Filtro[] = ["todos", "sin-conciliar", "sin-chequear", "a-mano"];
+/* Lo que se mira va en el link: ?mostrar (sin-conciliar, a-mano,
+   sin-chequear) y ?orden. Salir de la pestaña los saca (finanzas/detalle). */
+export const PARAMS_PROCESADORES = ["mostrar", "orden", "pag"] as const;
 
 interface Fila {
   id: string;
@@ -43,7 +48,9 @@ export function CobrosProcesador({ e, mes }: { e: EstadoApp; mes: RangoMes }) {
   const toast = useToast();
   const mon = e.ajustes.monedaBase;
   const M = (n: number) => money(n, mon, 2);
-  const [filtro, setFiltro] = useState<Filtro>("todos");
+  const [enURL, setEnURL] = useParamsURL({ mostrar: "todos" });
+  const filtro: Filtro = FILTROS.includes(enURL.mostrar as Filtro) ? (enURL.mostrar as Filtro) : "todos";
+  const setFiltro = (f: Filtro) => setEnURL({ mostrar: f });
   const [reporte, setReporte] = useState(false);
 
   const todas: Fila[] = useMemo(() => {
@@ -116,6 +123,8 @@ export function CobrosProcesador({ e, mes }: { e: EstadoApp; mes: RangoMes }) {
     },
   ];
 
+  const tabla = useTablaURL("", { clave: "fecha", desc: true }, columnas.filter((c) => c.orden).map((c) => c.clave));
+
   return (
     <div className="stack-4">
       <Ayuda titulo="De dónde sale cada comisión" icono={<Info size={18} />}>
@@ -140,7 +149,7 @@ export function CobrosProcesador({ e, mes }: { e: EstadoApp; mes: RangoMes }) {
       <Card style={{ padding: 0 }}>
         <DataTable
           alto={520}
-          filas={filas} columnas={columnas} ordenInicial={{ clave: "fecha", desc: true }}
+          filas={filas} columnas={columnas} orden={tabla.orden} onOrden={tabla.onOrden}
           vacio={<Empty icono={<Wallet size={22} />} titulo={`Sin cobros en ${mes.etiqueta}`} texto="Cuando entre un cobro, su comisión aparece acá: la real si se concilió, o la de la cuenta para corregir." />}
         />
       </Card>

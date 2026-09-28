@@ -11,6 +11,7 @@ import { AccesosApp } from "@/components/equipo/Accesos";
 import { useAccesos, useNivelAcceso } from "@/lib/acceso";
 import { useSelector, useSync } from "@/lib/store";
 import { useParamsURL } from "@/lib/useParamsURL";
+import { CopiarLink } from "@/components/ui/Filtros";
 
 /* ==================================================================
    Equipo y honorarios: quién es quién, con qué entra a la app, cuánto
@@ -44,6 +45,7 @@ export default function EquipoYHonorarios() {
     <PageHead
       titulo="Equipo y honorarios"
       sub="Quién es quién, con qué entra a la app y cuánto cobra: el fijo, los variables y sobre qué se mide cada uno. La liquidación de cada mes se calcula sola. Sólo la ven los dueños."
+      acciones={acceso.esDueno ? <CopiarLink sm={false} /> : undefined}
     />
   );
 

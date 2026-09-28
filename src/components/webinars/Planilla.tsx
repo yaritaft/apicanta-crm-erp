@@ -47,12 +47,18 @@ export interface ColumnaPlanilla<T> {
   total?: React.ReactNode;
 }
 
+type OrdenPlanilla = { clave: string; desc: boolean };
+
 export function Planilla<T extends { id: string }>({
-  filas, columnas, ordenInicial, vacio, etiqueta, totalEtiqueta, onError,
+  filas, columnas, ordenInicial, orden: ordenDeAfuera, onOrden, vacio, etiqueta, totalEtiqueta, onError,
 }: {
   filas: T[];
   columnas: ColumnaPlanilla<T>[];
-  ordenInicial?: { clave: string; desc: boolean };
+  ordenInicial?: OrdenPlanilla;
+  /* El orden manejado desde afuera, para guardarlo en la URL (useTablaURL):
+     con `onOrden`, la planilla muestra `orden` y avisa los clics. */
+  orden?: OrdenPlanilla | null;
+  onOrden?: (orden: OrdenPlanilla) => void;
   vacio: React.ReactNode;
   /* Nombre de la grilla para lectores de pantalla. */
   etiqueta: string;
@@ -60,7 +66,12 @@ export function Planilla<T extends { id: string }>({
   totalEtiqueta?: React.ReactNode;
   onError?: (mensaje: string) => void;
 }) {
-  const [orden, setOrden] = useState(ordenInicial ?? null);
+  const [ordenPropio, setOrdenPropio] = useState<OrdenPlanilla | null>(ordenInicial ?? null);
+  const orden = onOrden ? ordenDeAfuera ?? null : ordenPropio;
+  /* Por valor: el orden que llega de afuera es un objeto nuevo en cada
+     render, y con él la planilla volvería a ordenar a cada tecla. */
+  const claveOrden = orden?.clave;
+  const descOrden = orden?.desc ?? false;
   const [activa, setActiva] = useState<[number, number]>([0, 0]);
   const cajaRef = useRef<HTMLDivElement>(null);
   const tablaRef = useRef<HTMLTableElement>(null);
@@ -72,19 +83,19 @@ export function Planilla<T extends { id: string }>({
      ordena cuando se lo pedís, no mientras escribís. */
   const conjunto = filas.map((f) => f.id).join("|");
   const ordenIds = useMemo(() => {
-    const col = orden ? columnas.find((c) => c.clave === orden.clave) : undefined;
-    if (!orden || !col?.orden) return filas.map((f) => f.id);
+    const col = claveOrden ? columnas.find((c) => c.clave === claveOrden) : undefined;
+    if (!claveOrden || !col?.orden) return filas.map((f) => f.id);
     const fn = col.orden;
     return [...filas].sort((a, b) => {
       const va = fn(a), vb = fn(b);
       const cmp = typeof va === "number" && typeof vb === "number"
         ? va - vb
         : String(va).localeCompare(String(vb), "es");
-      return orden.desc ? -cmp : cmp;
+      return descOrden ? -cmp : cmp;
     }).map((f) => f.id);
     // Sólo el conjunto y el criterio: ver el comentario de arriba.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [conjunto, orden]);
+  }, [conjunto, claveOrden, descOrden]);
 
   const porId = new Map(filas.map((f) => [f.id, f] as const));
   const ordenadas = ordenIds.map((id) => porId.get(id)).filter((f): f is T => Boolean(f));
@@ -162,7 +173,10 @@ export function Planilla<T extends { id: string }>({
   function alternar(c: ColumnaPlanilla<T>) {
     /* Los números arrancan de mayor a menor: lo primero que se quiere ver
        es el que más vendió, no el que menos. */
-    setOrden((o) => (o?.clave === c.clave ? { clave: c.clave, desc: !o.desc } : { clave: c.clave, desc: Boolean(c.num) }));
+    const siguiente = (o: OrdenPlanilla | null): OrdenPlanilla =>
+      (o?.clave === c.clave ? { clave: c.clave, desc: !o.desc } : { clave: c.clave, desc: Boolean(c.num) });
+    if (onOrden) onOrden(siguiente(orden));
+    else setOrdenPropio(siguiente);
   }
 
   if (filas.length === 0) return <>{vacio}</>;

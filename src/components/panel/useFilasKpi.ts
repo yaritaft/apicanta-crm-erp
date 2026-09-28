@@ -1,7 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { SECCIONES, type DefKpi } from "@/lib/kpis";
+import { aLista, deLista, useAporteAlLink } from "@/lib/compartirLink";
+import { useEscribirURL } from "@/lib/useParamsURL";
 
 /* Qué métricas se ven en el Dashboard y en qué orden. Es el mismo trato que
    las columnas de Leads o Webinars (ColumnasConfig): se prenden, se apagan
@@ -11,7 +14,12 @@ import { SECCIONES, type DefKpi } from "@/lib/kpis";
    mira, no un dato del negocio. Se guarda el orden y lo apagado, no lo
    prendido: así una métrica nueva (una categoría de gasto que aparece, una
    etapa de servicio que se crea) se ve sola, al final de su área, en vez de
-   quedar escondida hasta que alguien la busque. */
+   quedar escondida hasta que alguien la busque.
+
+   Un link copiado sí lleva las de quien lo mandó (?metricas-ocultas y
+   ?metricas-orden, lib/compartirLink): quien lo abre ve esas hasta que
+   prenda, apague o mueva alguna, y ahí pasan a ser las suyas. "-" es
+   "ninguna oculta". */
 
 const CLAVE = "apicanta:kpis:filas";
 
@@ -19,7 +27,18 @@ interface Guardado { orden: string[]; ocultas: string[] }
 const VACIO: Guardado = { orden: [], ocultas: [] };
 
 export function useFilasKpi(defs: DefKpi[]) {
-  const [g, setG] = useState<Guardado>(VACIO);
+  const [propio, setG] = useState<Guardado>(VACIO);
+  const params = useSearchParams();
+  const escribirURL = useEscribirURL();
+  const ocultasURL = params.get("metricas-ocultas");
+  const ordenURL = params.get("metricas-orden");
+  const delLink = ocultasURL !== null || ordenURL !== null;
+  const g = useMemo<Guardado>(
+    () => (delLink
+      ? { ocultas: ocultasURL === "-" ? [] : deLista(ocultasURL) ?? [], orden: deLista(ordenURL) ?? [] }
+      : propio),
+    [delLink, ocultasURL, ordenURL, propio],
+  );
 
   /* Después del montado: en el primer render localStorage no existe. */
   useEffect(() => {
@@ -29,10 +48,13 @@ export function useFilasKpi(defs: DefKpi[]) {
     } catch { /* modo privado, o algo que no es JSON */ }
   }, []);
 
+  /* Tocar una métrica hace propias las del link: se guardan y el link deja
+     de mandar. */
   const guardar = useCallback((n: Guardado) => {
     setG(n);
     try { localStorage.setItem(CLAVE, JSON.stringify(n)); } catch { /* modo privado */ }
-  }, []);
+    if (delLink) escribirURL({ "metricas-ocultas": null, "metricas-orden": null });
+  }, [delLink, escribirURL]);
 
   /* El orden de la tabla: primero el área (de TOFU a servicio, eso no se
      mueve) y adentro, el que eligió la persona. Lo que no está guardado va
@@ -65,7 +87,13 @@ export function useFilasKpi(defs: DefKpi[]) {
   const restaurar = useCallback(() => {
     try { localStorage.removeItem(CLAVE); } catch { /* modo privado */ }
     setG(VACIO);
-  }, []);
+    if (delLink) escribirURL({ "metricas-ocultas": null, "metricas-orden": null });
+  }, [delLink, escribirURL]);
+
+  useAporteAlLink(() => ({
+    "metricas-ocultas": aLista(g.ocultas) || "-",
+    ...(g.orden.length ? { "metricas-orden": aLista(g.orden) } : {}),
+  }));
 
   return { ordenadas, ocultas, alternar, mover, restaurar };
 }

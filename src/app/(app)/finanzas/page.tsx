@@ -14,6 +14,7 @@ import { fechaLarga } from "@/lib/format";
 import { rangoDeFechas, type RangoMes } from "@/lib/metricas";
 import { DateRangePicker, rangoSub } from "@/components/ui/DateRangePicker";
 import { useRangoURL } from "@/lib/useRango";
+import { CopiarLink } from "@/components/ui/Filtros";
 import { calcularPyL, cuotasVencidas, gastosPorCategoria } from "@/lib/finanzas";
 import type { EstadoApp, Gasto } from "@/lib/types";
 import { AlarmaCobranza } from "@/components/finanzas/AlarmaCobranza";
@@ -81,6 +82,7 @@ export default function Finanzas() {
               value={rango} minDate={limites.min} maxDate={limites.max}
               onApply={setRango} footerNota="Días calendario · zona horaria de Argentina"
             />
+            <CopiarLink sm={false} />
             <Button variante="secondary" icono={<Download size={16} />} onClick={() => exportarPyL(e, mes, p)}>Exportar</Button>
             <Link href={`/finanzas/detalle?${qs}`}>
               <Button variante="secondary" icono={<ArrowRight size={16} />}>

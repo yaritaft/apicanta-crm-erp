@@ -7,6 +7,7 @@ import { money, num } from "@/lib/format";
 import { resultadoPorEmbudo, type ResultadoEmbudo } from "@/lib/embudos";
 import type { RangoMes } from "@/lib/metricas";
 import type { EstadoApp } from "@/lib/types";
+import { useTablaURL } from "@/lib/useParamsURL";
 
 /* ==================================================================
    El resultado de cada embudo en el período: CAC, ROAS y profit por
@@ -40,6 +41,9 @@ export function PorEmbudo({ e, mes }: { e: EstadoApp; mes: RangoMes }) {
     { clave: "profitRev", titulo: "Profit (facturado)", tipo: "num", orden: (f) => f.profitRev, celda: (f) => signo(f.profitRev), pie: signo(suma("profitRev")) },
   ];
 
+  /* El orden va en el link como ?orden-embudos. */
+  const tabla = useTablaURL("embudos", { clave: "cobrado", desc: true }, columnas.filter((c) => c.orden).map((c) => c.clave));
+
   return (
     <Card style={{ padding: 0 }}>
       <div style={{ padding: "var(--space-4) var(--space-4) 0" }}>
@@ -48,7 +52,7 @@ export function PorEmbudo({ e, mes }: { e: EstadoApp; mes: RangoMes }) {
           sub="Cada estrategia con sus ventas, lo que se invirtió en ella y lo que dejó: lo cobrado (o facturado) menos procesador, comisiones e inversión. La inversión del webinar es la de sus webinars; la de los demás, sus campañas de Meta y los gastos cargados con ese embudo. Los fijos de la empresa no se reparten."
         />
       </div>
-      <DataTable filas={filas} columnas={columnas} ordenInicial={{ clave: "cobrado", desc: true }}
+      <DataTable filas={filas} columnas={columnas} orden={tabla.orden} onOrden={tabla.onOrden}
         vacio={<p className="t-sm t-muted" style={{ padding: 16 }}>No hubo ventas, cobros ni inversión en el período.</p>} />
     </Card>
   );

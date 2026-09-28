@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useMemo } from "react";
 import { useAbrirFicha } from "@/components/ficha/abrir";
 import { Search, Users } from "lucide-react";
 import { Badge, Button, Card, CardHead, Empty, Input, Persona, Tag, type VarianteBadge } from "@/components/ui/ui";
@@ -11,6 +11,7 @@ import { useEstado } from "@/lib/store";
 import { money, num } from "@/lib/format";
 import { personasDeWebinar, type PersonaDeWebinar } from "@/lib/webinar";
 import type { EstadoSesion, Webinar } from "@/lib/types";
+import { useBusquedaURL, useTablaURL } from "@/lib/useParamsURL";
 import { diaCorto, diaYHora } from "./fechas";
 
 /* ==================================================================
@@ -58,7 +59,8 @@ const POR_DEFECTO = ["nombre", "pais", "etapa", "llamada", "estadoLlamada", "ven
 
 export function PersonasWebinar({ w }: { w: Webinar }) {
   const e = useEstado();
-  const [q, setQ] = useState("");
+  /* La búsqueda, el orden y la página van en el link (?q, ?orden, ?pag). */
+  const [q, setQ] = useBusquedaURL("q", ["pag"]);
   const cols = useColumnas("webinar-personas", COLUMNAS, POR_DEFECTO);
   const M = (n: number) => money(n, e.ajustes.monedaBase);
 
@@ -152,6 +154,7 @@ export function PersonasWebinar({ w }: { w: Webinar }) {
   }
 
   const columnas = cols.visibles.map((k) => DEF[k]).filter(Boolean);
+  const tabla = useTablaURL("", null, columnas.filter((c) => c.orden).map((c) => c.clave));
 
   return (
     <Card style={{ padding: 0 }}>
@@ -180,6 +183,7 @@ export function PersonasWebinar({ w }: { w: Webinar }) {
         filas={filtradas}
         columnas={columnas}
         porPagina={25}
+        orden={tabla.orden} onOrden={tabla.onOrden} pagina={tabla.pagina} onPagina={tabla.onPagina}
         /* La ficha se abre encima del webinar: al cerrarla, seguís acá. */
         onFila={(p) => abrirFicha(p.contactoId ?? p.leadId ?? p.id)}
         etiquetaFila={(p) => `Abrir la ficha de ${p.nombre || "esta persona"}`}

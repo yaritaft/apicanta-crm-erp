@@ -22,10 +22,10 @@ import { rangoDeFechas } from "@/lib/metricas";
 import { DateRangePicker, rangoSub } from "@/components/ui/DateRangePicker";
 import { useRangoURL } from "@/lib/useRango";
 import { CopiarLink } from "@/components/ui/Filtros";
-import { useParamsURL } from "@/lib/useParamsURL";
+import { useParamsURL, useTablaURL } from "@/lib/useParamsURL";
 import { calcularPyL, comisionesDelMes, comisionesSetterYReferidor, cuotasVencidas, UMBRALES_ATRASO } from "@/lib/finanzas";
 import { useAbrirFicha } from "@/components/ficha/abrir";
-import { CobrosProcesador } from "@/components/finanzas/CobrosProcesador";
+import { CobrosProcesador, PARAMS_PROCESADORES } from "@/components/finanzas/CobrosProcesador";
 import type { Cuota, Gasto } from "@/lib/types";
 
 type Vista = "cobros" | "procesadores" | "gastos" | "comisiones";
@@ -46,12 +46,13 @@ export default function FinanzasDetalle() {
   const params = useSearchParams();
   const [enURL, setEnURL] = useParamsURL(VISTA_DETALLE);
   const vista: Vista = (VISTAS as string[]).includes(enURL.seccion) ? (enURL.seccion as Vista) : "cobros";
-  /* Los filtros de Gastos son de esa pestaña: al salir se sacan, así el link
-     de otra pestaña no arrastra un filtro que no se ve. */
-  const setVista = (v: Vista) => setEnURL(
-    { seccion: v },
-    v === "gastos" ? {} : Object.fromEntries(PARAMS_GASTOS.map((k) => [k, null])),
-  );
+  /* Los filtros y el orden son de cada pestaña: al pasar a otra se sacan,
+     así el link no arrastra un filtro que no se ve. */
+  const setVista = (v: Vista) => {
+    if (v === vista) return;
+    const deLaPestana = new Set<string>([...PARAMS_GASTOS, ...PARAMS_PROCESADORES, "atraso"]);
+    setEnURL({ seccion: v }, Object.fromEntries([...deLaPestana].map((k) => [k, null])));
+  };
   /* El asistente abierto: con un gasto edita, con null carga uno nuevo. */
   const [asistente, setAsistente] = useState<{ gasto: Gasto | null } | null>(null);
   const [verId, setVerId] = useState<string | null>(null);
@@ -107,6 +108,9 @@ export default function FinanzasDetalle() {
   const vencidasVista = atraso ? vencidas.filter((c) => c.diasAtraso >= atraso) : vencidas;
   const abrirFicha = useAbrirFicha();
   const comisiones = useMemo(() => comisionesDelMes(e, mes), [e, mes]);
+  /* El orden de cada tabla va en el link (?orden): una pestaña a la vez. */
+  const tablaCobros = useTablaURL("", { clave: "dias", desc: true }, ["contacto", "cuota", "vence", "dias", "saldo"]);
+  const tablaComisiones = useTablaURL("", { clave: "cobrado", desc: true }, ["closer", "cobrado", "neto", "comiCloser", "comiDir"]);
   const setRef = useMemo(() => comisionesSetterYReferidor(e, mes), [e, mes]);
 
   return (
@@ -162,7 +166,7 @@ export default function FinanzasDetalle() {
               filas={vencidasVista.map((v) => ({ ...v, id: v.cuotaId }))}
               onFila={(c) => abrirFicha(c.ventaId)}
               etiquetaFila={(c) => `Abrir la ficha de ${c.contacto}`}
-              ordenInicial={{ clave: "dias", desc: true }}
+              orden={tablaCobros.orden} onOrden={tablaCobros.onOrden}
               columnas={[
                 { clave: "contacto", titulo: "Cliente", tipo: "primary", orden: (c) => c.contacto, celda: (c) => c.contacto },
                 { clave: "cuota", titulo: "Cuota", tipo: "secondary", orden: (c) => c.numero, celda: (c) => c.numero === 0 ? "Reserva" : `Cuota ${c.numero}` },
@@ -217,7 +221,7 @@ export default function FinanzasDetalle() {
             <DataTable
               alto={460}
               filas={comisiones.map((c) => ({ ...c, id: c.ventaId }))}
-              ordenInicial={{ clave: "cobrado", desc: true }}
+              orden={tablaComisiones.orden} onOrden={tablaComisiones.onOrden}
               columnas={[
                 {
                   clave: "closer", titulo: "Venta", tipo: "primary", orden: (c) => c.closerNombre,

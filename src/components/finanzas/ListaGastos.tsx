@@ -43,7 +43,7 @@ const COLUMNAS: DefColumna[] = [
    - orden: la columna, con "-" adelante si va de mayor a menor
    - pag: la página, desde 1
    Salir de la pestaña Gastos los saca (finanzas/detalle). */
-export const PARAMS_GASTOS = ["q", "bloque", "categoria", "orden", "pag"] as const;
+export const PARAMS_GASTOS = ["q", "bloque", "categoria", "orden", "pag", "cols-gastos"] as const;
 const VISTA_GASTOS = { bloque: "", categoria: "", orden: "-fecha", pag: "1" };
 const ORDEN_INICIAL = { clave: "fecha", desc: true };
 

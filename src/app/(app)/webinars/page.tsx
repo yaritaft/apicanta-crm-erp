@@ -23,6 +23,7 @@ import { CLAVE_LISTA, ESTADO_WEBINAR, ESTADOS, tonoRoas } from "@/components/web
 import { useEstado } from "@/lib/store";
 import { useRangoURL } from "@/lib/useRango";
 import { CopiarLink } from "@/components/ui/Filtros";
+import { useTablaURL } from "@/lib/useParamsURL";
 import { money, num, pct } from "@/lib/format";
 import {
   CAMPOS_MANUALES, camposDeMeta, metricasDeWebinar, numerosDelWebinar, sumarMetricas, type MetricasWebinar,
@@ -274,6 +275,8 @@ export default function Webinars() {
   }
 
   const columnas = cols.visibles.map((k) => DEF[k]).filter(Boolean);
+  /* El orden de la planilla también va en el link (?orden). */
+  const tabla = useTablaURL("", { clave: "fecha", desc: true }, columnas.filter((c) => c.orden).map((c) => c.clave));
 
   function limpiarFiltros() {
     setParams({ estado: null, webinars: null, periodo: null, desde: null, hasta: null });
@@ -385,7 +388,7 @@ export default function Webinars() {
           filas={filtrados}
           columnas={columnas}
           etiqueta="Planilla de webinars"
-          ordenInicial={{ clave: "fecha", desc: true }}
+          orden={tabla.orden} onOrden={tabla.onOrden}
           totalEtiqueta={<span>Total <span className="t-subtle t-num">· {filtrados.length}</span></span>}
           onError={(msg) => toast(msg, "err")}
           vacio={
