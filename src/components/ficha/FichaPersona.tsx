@@ -572,7 +572,7 @@ function VistaServicio({ e, p }: { e: EstadoApp; p: Persona }) {
                         <div className="stack-2">
                           <div className="row">
                             <span className="t-label">Reportes semanales ({reportes.length})</span>
-                            <a className="link t-sm spacer" href="/reportes?vista=tabla" style={{ textAlign: "right" }}>Ver todos</a>
+                            <a className="link t-sm spacer" href="/reportes?seccion=tabla" style={{ textAlign: "right" }}>Ver todos</a>
                           </div>
                           {reportes.length === 0 ? (
                             <p className="t-sm t-subtle">Todavía no mandó ningún reporte.</p>

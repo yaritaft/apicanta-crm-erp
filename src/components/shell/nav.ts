@@ -42,7 +42,7 @@ export const NAV: GrupoNav[] = [
       { href: "/alumnos", texto: "Alumnos", icono: GraduationCap, ayuda: "Quién está cursando y cómo va" },
       /* Es una vista de Alumnos, no otra pantalla: el Shell marca el item más
          específico, así que acá se prende éste y no los dos. */
-      { href: "/alumnos?vista=pipeline", texto: "Pipeline de servicio", icono: SquareKanban, ayuda: "Arrastrá alumnos entre las etapas del servicio" },
+      { href: "/alumnos?seccion=pipeline", texto: "Pipeline de servicio", icono: SquareKanban, ayuda: "Arrastrá alumnos entre las etapas del servicio" },
       { href: "/reportes", texto: "Reportes", icono: ClipboardList, ayuda: "Dashboard y tabla de los reportes de alumnos" },
     ],
   },

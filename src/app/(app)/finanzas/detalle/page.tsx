@@ -2,7 +2,7 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import {
   AlertTriangle, ArrowLeft, Check, Info, Plus, Wallet,
 } from "lucide-react";
@@ -13,7 +13,7 @@ import {
 import { DataTable } from "@/components/ui/DataTable";
 import { Confirmar } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toast";
-import { ListaGastos } from "@/components/finanzas/ListaGastos";
+import { ListaGastos, PARAMS_GASTOS } from "@/components/finanzas/ListaGastos";
 import { FichaGasto } from "@/components/finanzas/FichaGasto";
 import { AsistenteGasto } from "@/components/finanzas/AsistenteGasto";
 import { acciones, useEstado } from "@/lib/store";
@@ -21,6 +21,8 @@ import { fechaLarga, money } from "@/lib/format";
 import { rangoDeFechas } from "@/lib/metricas";
 import { DateRangePicker, rangoSub } from "@/components/ui/DateRangePicker";
 import { useRangoURL } from "@/lib/useRango";
+import { CopiarLink } from "@/components/ui/Filtros";
+import { useParamsURL } from "@/lib/useParamsURL";
 import { calcularPyL, comisionesDelMes, comisionesSetterYReferidor, cuotasVencidas, UMBRALES_ATRASO } from "@/lib/finanzas";
 import { useAbrirFicha } from "@/components/ficha/abrir";
 import { CobrosProcesador } from "@/components/finanzas/CobrosProcesador";
@@ -29,13 +31,27 @@ import type { Cuota, Gasto } from "@/lib/types";
 type Vista = "cobros" | "procesadores" | "gastos" | "comisiones";
 const VISTAS: Vista[] = ["cobros", "procesadores", "gastos", "comisiones"];
 
+/* Lo que se está mirando vive en la URL (lib/useParamsURL), con el período
+   aparte en ?periodo:
+   - seccion: cobros (por defecto), procesadores, gastos o comisiones
+   - atraso: en Cobros, sólo las cuotas con al menos esos días (7, 15 o 20)
+   La pestaña no va en ?vista, que es de la ficha de una persona: abrir una
+   desde una cuota vencida la pisaba. Un link viejo con ?vista=gastos se
+   sigue entendiendo. */
+const VISTA_DETALLE = { seccion: "cobros", atraso: "" };
+
 export default function FinanzasDetalle() {
   const e = useEstado();
   const toast = useToast();
   const params = useSearchParams();
-  const router = useRouter();
-  const pathname = usePathname();
-  const [vista, setVista] = useState<Vista>("cobros");
+  const [enURL, setEnURL] = useParamsURL(VISTA_DETALLE);
+  const vista: Vista = (VISTAS as string[]).includes(enURL.seccion) ? (enURL.seccion as Vista) : "cobros";
+  /* Los filtros de Gastos son de esa pestaña: al salir se sacan, así el link
+     de otra pestaña no arrastra un filtro que no se ve. */
+  const setVista = (v: Vista) => setEnURL(
+    { seccion: v },
+    v === "gastos" ? {} : Object.fromEntries(PARAMS_GASTOS.map((k) => [k, null])),
+  );
   /* El asistente abierto: con un gasto edita, con null carga uno nuevo. */
   const [asistente, setAsistente] = useState<{ gasto: Gasto | null } | null>(null);
   const [verId, setVerId] = useState<string | null>(null);
@@ -61,9 +77,9 @@ export default function FinanzasDetalle() {
   /* Volver al resumen sin perder el periodo que estabas mirando. */
   const qs = new URLSearchParams({ periodo: rango.preset, desde: rango.desde, hasta: rango.hasta }).toString();
 
-  /* ?vista=gastos&ver=<id> abre la ficha de un gasto (así llega el estado de
-     resultados) y ?nuevo=1 abre el asistente. Se limpian sólo esos: el
-     período tiene que seguir en la URL, y useAbrirDesdeURL borraría todo. */
+  /* ?ver=<id> abre la ficha de un gasto (así llega el estado de resultados)
+     y ?nuevo=1 abre el asistente; los dos llevan a Gastos. Se sacan sólo
+     esos, que son de un solo uso: el período y la pestaña quedan. */
   useEffect(() => {
     /* Con una ficha abierta (desde una cuota vencida), `vista` es la de la
        ficha (ventas o servicio): no es de esta pantalla. */
@@ -72,14 +88,11 @@ export default function FinanzasDetalle() {
     const ver = params.get("ver");
     const nuevo = params.get("nuevo") === "1";
     if (!v && !ver && !nuevo) return;
-    if (v && (VISTAS as string[]).includes(v)) setVista(v as Vista);
-    if (ver) { setVista("gastos"); setVerId(ver); }
-    if (nuevo) { setVista("gastos"); setAsistente({ gasto: null }); }
-    const q = new URLSearchParams(params.toString());
-    q.delete("vista"); q.delete("ver"); q.delete("nuevo");
-    const resto = q.toString();
-    router.replace(resto ? `${pathname}?${resto}` : pathname, { scroll: false });
-  }, [params, pathname, router]);
+    let seccion: Vista | null = v && (VISTAS as string[]).includes(v) ? (v as Vista) : null;
+    if (ver) { seccion = "gastos"; setVerId(ver); }
+    if (nuevo) { seccion = "gastos"; setAsistente({ gasto: null }); }
+    setEnURL(seccion ? { seccion } : {}, { vista: null, ver: null, nuevo: null });
+  }, [params, setEnURL]);
 
   const gVista = verId ? e.gastos.find((g) => g.id === verId) ?? null : null;
 
@@ -89,12 +102,8 @@ export default function FinanzasDetalle() {
 
   const vencidas = useMemo(() => cuotasVencidas(e), [e]);
   /* ?atraso=7 (lo manda la alarma): sólo las cuotas con al menos esos días. */
-  const atraso = Number(params.get("atraso")) || 0;
-  const setAtraso = (n: number) => {
-    const u = new URLSearchParams(params.toString());
-    if (n) u.set("atraso", String(n)); else u.delete("atraso");
-    router.replace(`${pathname}?${u.toString()}`, { scroll: false });
-  };
+  const atraso = Number(enURL.atraso) || 0;
+  const setAtraso = (n: number) => setEnURL({ atraso: n ? String(n) : null });
   const vencidasVista = atraso ? vencidas.filter((c) => c.diasAtraso >= atraso) : vencidas;
   const abrirFicha = useAbrirFicha();
   const comisiones = useMemo(() => comisionesDelMes(e, mes), [e, mes]);
@@ -114,6 +123,7 @@ export default function FinanzasDetalle() {
               value={rango} minDate={limites.min} maxDate={limites.max}
               onApply={setRango} footerNota="Días calendario · zona horaria de Argentina"
             />
+            <CopiarLink sm={false} />
             <Button variante="primary" icono={<Plus size={16} />} onClick={() => { setVista("gastos"); setAsistente({ gasto: null }); }}>Cargar gasto</Button>
           </>
         }

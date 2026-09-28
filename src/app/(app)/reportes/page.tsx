@@ -1,8 +1,7 @@
 "use client";
 
-import React, { useCallback, useMemo, useState } from "react";
+import React, { useMemo } from "react";
 import Link from "next/link";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { AlertTriangle, Check, ClipboardList, Clock, Download, Info, Search, X } from "lucide-react";
 import { PageHead } from "@/components/shell/PageHead";
 import { Ayuda, Badge, Bar, Button, Card, CardHead, Chip, Empty, Input, Persona, StatCard, Tabs, Tag } from "@/components/ui/ui";
@@ -14,6 +13,8 @@ import { useToast } from "@/components/ui/Toast";
 import { BadgeEtapa, ESTADO_ALUMNO } from "@/components/alumnos/comun";
 import { acciones, useEstado } from "@/lib/store";
 import { useRangoURL } from "@/lib/useRango";
+import { CopiarLink } from "@/components/ui/Filtros";
+import { ordenAURL, ordenDeURL, paginaDeURL, useBusquedaURL, useParamsURL } from "@/lib/useParamsURL";
 import { etapaDelAlumno, etapasDeServicio } from "@/lib/alumnos";
 import {
   deDia, filasDeReportes, hoyDelNegocio, lunesDelDia, primeraSemanaEsperada, rachasHasta, type FilaReporte,
@@ -56,6 +57,19 @@ const COLUMNAS: DefColumna[] = [
 ];
 const POR_DEFECTO = ["alumno", "semana", "estado", "horas", "postulaciones", "entrevistas", "bloqueo"];
 
+/* Lo que se está mirando vive en la URL (lib/useParamsURL): se guarda en
+   favoritos o se manda el link y se ve tal cual. El período va aparte, en
+   ?periodo.
+   - seccion: dashboard (por defecto) o tabla. No va en ?vista, que es de la
+     ficha de una persona; un link viejo con ?vista=tabla se sigue entendiendo.
+   - metrica: horas, postulaciones o entrevistas, en "Actividad por semana"
+   - estado: completado, pendiente, vencido o no-enviado
+   - q: el alumno
+   - orden: la columna, con "-" adelante si va de mayor a menor
+   - pag: la página, desde 1 */
+const VISTA_REPORTES = { seccion: "dashboard", vista: "", metrica: "postulaciones", estado: "todos", orden: "-semana", pag: "1" };
+const ORDEN_INICIAL = { clave: "semana", desc: true };
+
 const MESES = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
 const diaYMes = (dia: string) => { const d = deDia(dia); return `${d.getDate()} ${MESES[d.getMonth()]}`; };
 const barraCorta = (dia: string) => { const d = deDia(dia); return `${d.getDate()}/${d.getMonth() + 1}`; };
@@ -65,22 +79,16 @@ const unDecimal = (n: number) => num(n, Number.isInteger(n) ? 0 : 1);
 export default function Reportes() {
   const e = useEstado();
   const toast = useToast();
-  const params = useSearchParams();
-  const router = useRouter();
-  const pathname = usePathname();
 
   const [rango, setRango] = useRangoURL("mes");
-  const vista: Vista = params.get("vista") === "tabla" ? "tabla" : "dashboard";
-  const cambiarVista = useCallback((v: Vista) => {
-    const q = new URLSearchParams(params.toString());
-    if (v === "tabla") q.set("vista", "tabla"); else q.delete("vista");
-    const s = q.toString();
-    router.replace(s ? `${pathname}?${s}` : pathname, { scroll: false });
-  }, [params, pathname, router]);
-
-  const [busca, setBusca] = useState("");
-  const [filtro, setFiltro] = useState<"todos" | EstadoReporte>("todos");
-  const [metrica, setMetrica] = useState<Metrica>("postulaciones");
+  const [enURL, setEnURL] = useParamsURL(VISTA_REPORTES);
+  const vista: Vista = enURL.seccion === "tabla" || enURL.vista === "tabla" ? "tabla" : "dashboard";
+  const cambiarVista = (v: Vista) => setEnURL({ seccion: v }, enURL.vista === "tabla" ? { vista: null } : {});
+  const [busca, setBusca] = useBusquedaURL("q", ["pag"]);
+  const filtro: "todos" | EstadoReporte = ESTADOS.includes(enURL.estado as EstadoReporte) ? (enURL.estado as EstadoReporte) : "todos";
+  const setFiltro = (f: "todos" | EstadoReporte) => setEnURL({ estado: f, pag: null });
+  const metrica: Metrica = Object.hasOwn(METRICAS, enURL.metrica) ? (enURL.metrica as Metrica) : "postulaciones";
+  const setMetrica = (m: Metrica) => setEnURL({ metrica: m });
   const cols = useColumnas("reportes", COLUMNAS, POR_DEFECTO);
 
   /* Todo sale de acá: tabla, números y gráficos cuentan las mismas filas. */
@@ -287,10 +295,13 @@ export default function Reportes() {
         titulo="Reportes"
         sub="Cómo vienen los alumnos: quién reporta cada semana, cuánto estudia, a cuántos trabajos se postula y qué lo frena."
         acciones={
-          <DateRangePicker
-            value={rango} minDate={primeraSemana} onApply={setRango}
-            footerNota="Semanas que tocan el período · hora de Argentina"
-          />
+          <>
+            <DateRangePicker
+              value={rango} minDate={primeraSemana} onApply={setRango}
+              footerNota="Semanas que tocan el período · hora de Argentina"
+            />
+            <CopiarLink sm={false} />
+          </>
         }
       />
 
@@ -442,14 +453,15 @@ export default function Reportes() {
           <Card style={{ padding: 0 }}>
             <DataTable
               filas={filtradas} columnas={columnas} alto={620} porPagina={100}
-              ordenInicial={{ clave: "semana", desc: true }}
+              orden={ordenDeURL(enURL.orden, cols.visibles, ORDEN_INICIAL)} onOrden={(o) => setEnURL({ orden: ordenAURL(o), pag: null })}
+              pagina={paginaDeURL(enURL.pag) - 1} onPagina={(p) => setEnURL({ pag: String(p + 1) })}
               vacio={
                 <Empty
                   icono={<ClipboardList size={22} />}
                   titulo={total === 0 ? "No hay reportes en este período" : "Nada con ese filtro"}
                   texto={total === 0 ? "Probá con otro rango de fechas." : "Probá con otro estado o sacá la búsqueda."}
                   accion={total > 0
-                    ? <Button variante="secondary" onClick={() => { setFiltro("todos"); setBusca(""); }}>Limpiar filtros</Button>
+                    ? <Button variante="secondary" onClick={() => { setBusca(""); setEnURL({ estado: null, pag: null }, { q: null }); }}>Limpiar filtros</Button>
                     : undefined}
                 />
               }

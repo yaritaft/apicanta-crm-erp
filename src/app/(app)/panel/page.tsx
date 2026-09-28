@@ -54,6 +54,15 @@ export default function DashboardKpis() {
 
   const [rango, setRango] = useRangoURL("mes");
   const [vista, setVista] = useParamsURL(VISTA_PANEL);
+  /* El nombre de cada métrica lleva a su pantalla con este mismo período:
+     "Llamadas agendadas" de septiembre abre la Agenda de septiembre. Se pasa
+     tal cual está en la URL; sin nada, es el mes, que es el de siempre acá
+     pero no en todas (la Agenda arranca en lo próximo). */
+  const periodoDelLink = useMemo(() => {
+    const q = new URLSearchParams({ periodo: params.get("periodo") ?? "mes" });
+    for (const k of ["desde", "hasta"]) { const v = params.get(k); if (v) q.set(k, v); }
+    return q.toString();
+  }, [params]);
   const comparar = vista.comparar === "1";
   const columnasViejas = !params.get("columnas") && params.get("vista") === "meses";
   const columnas: Columnas = vista.columnas === "mes" || columnasViejas ? "mes" : "dia";
@@ -205,7 +214,7 @@ export default function DashboardKpis() {
         ) : (
           <TablaKpis
             filas={filas} cortes={cortes} comparar={comparar} moneda={mon} porDia={columnas === "dia"}
-            conSecciones={area === "todo"} onAbrir={abrir}
+            conSecciones={area === "todo"} onAbrir={abrir} periodo={periodoDelLink}
           />
         )}
       </Card>

@@ -20,6 +20,8 @@ import {
   type QuienPago, type Sugerencia,
 } from "@/lib/conciliacion";
 import { COBRAN_COMISION, feeDesconocido } from "@/lib/completar-cobros";
+import { CopiarLink } from "@/components/ui/Filtros";
+import { useBusquedaURL, useParamsURL } from "@/lib/useParamsURL";
 import { useAbrirFicha } from "@/components/ficha/abrir";
 import { importarCSV, PASARELAS, nombrePasarela } from "@/lib/pasarelas";
 import type { EstadoMovimiento2, Movimiento, ProveedorPasarela } from "@/lib/types";
@@ -32,19 +34,32 @@ import type { EstadoMovimiento2, Movimiento, ProveedorPasarela } from "@/lib/typ
    pago y mueve el cash collected. Apicanta propone, la persona firma.
    ================================================================== */
 
+/* Lo que se está mirando vive en la URL: se puede guardar o mandar el link
+   con la bandeja ya filtrada.
+   - estado: pendiente (por defecto), conciliado o ignorado
+   - medio: la pasarela (stripe, whop, trust…)
+   - q: nombre, correo, teléfono, monto o referencia */
+const VISTA_CONCILIACION = { estado: "pendiente", medio: "todas" };
+const ESTADOS_MOV: EstadoMovimiento2[] = ["pendiente", "conciliado", "ignorado"];
+
 export default function Conciliacion() {
   const e = useEstado();
   const toast = useToast();
   const mon = e.ajustes.monedaBase;
   const M = (n: number, d = 0) => money(n, mon, d);
 
-  const [filtro, setFiltro] = useState<EstadoMovimiento2>("pendiente");
-  const [pasarela, setPasarela] = useState<ProveedorPasarela | "todas">("todas");
+  const [vista, setVista] = useParamsURL(VISTA_CONCILIACION);
+  const filtro: EstadoMovimiento2 = ESTADOS_MOV.includes(vista.estado as EstadoMovimiento2) ? (vista.estado as EstadoMovimiento2) : "pendiente";
+  /* Una pasarela que no existe (un link escrito a mano) es "todas": si no,
+     la bandeja quedaba vacía sin ningún chip prendido que lo explique. */
+  const pasarela: ProveedorPasarela | "todas" = PASARELAS.some((p) => p.id === vista.medio) ? (vista.medio as ProveedorPasarela) : "todas";
+  const setFiltro = (f: EstadoMovimiento2) => setVista({ estado: f });
+  const setPasarela = (p: ProveedorPasarela | "todas") => setVista({ medio: p });
   const [abierto, setAbierto] = useState<string | null>(null);
   const [importar, setImportar] = useState(false);
   const [nuevaVenta, setNuevaVenta] = useState<Movimiento | null>(null);
   const [sincronizando, setSincronizando] = useState(false);
-  const [busca, setBusca] = useState("");
+  const [busca, setBusca] = useBusquedaURL("q");
 
   /* Recorre todos los cobros pendientes contra todas las cuotas: se calcula
      cuando cambian los datos, no a cada clic (abrir un cobro, filtrar). */
@@ -191,6 +206,8 @@ export default function Conciliacion() {
               <Chip key={k} activo={filtro === k} onClick={() => setFiltro(k)}
                 count={e.movimientos.filter((m) => m.estado === k).length}>{t}</Chip>
             ))}
+            <span className="spacer" />
+            <CopiarLink />
           </div>
           <div style={{ marginTop: "var(--space-3)", maxWidth: 520 }}>
             <Input

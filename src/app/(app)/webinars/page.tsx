@@ -22,6 +22,7 @@ import { EmbudoDosModos, grabacionDe } from "@/components/webinars/FichaNumeros"
 import { CLAVE_LISTA, ESTADO_WEBINAR, ESTADOS, tonoRoas } from "@/components/webinars/estado";
 import { useEstado } from "@/lib/store";
 import { useRangoURL } from "@/lib/useRango";
+import { CopiarLink } from "@/components/ui/Filtros";
 import { money, num, pct } from "@/lib/format";
 import {
   CAMPOS_MANUALES, camposDeMeta, metricasDeWebinar, numerosDelWebinar, sumarMetricas, type MetricasWebinar,
@@ -293,6 +294,7 @@ export default function Webinars() {
               webinars={e.webinars} elegidos={elegidos} fuera={fuera}
               onCambiar={(ids) => setParams({ webinars: ids.length ? ids.join(",") : null })}
             />
+            <CopiarLink sm={false} />
             <Button variante="primary" icono={<Plus size={16} />} onClick={() => setNuevo(true)}>Nuevo webinar</Button>
           </>
         }

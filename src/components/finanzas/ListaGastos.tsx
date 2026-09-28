@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useMemo } from "react";
 import { Pencil, Plus, Search, Trash2, Wallet } from "lucide-react";
 import { Badge, Button, Card, Chip, Empty, IconButton, Input, Select } from "@/components/ui/ui";
 import { type Columna, DataTable } from "@/components/ui/DataTable";
@@ -10,6 +10,7 @@ import { gastosDelMes } from "@/lib/finanzas";
 import { GRUPOS_GASTO, infoGrupo, montoOriginal, normalizar } from "@/lib/gastos";
 import type { RangoMes } from "@/lib/metricas";
 import type { EstadoApp, Gasto, GrupoGasto } from "@/lib/types";
+import { ordenAURL, ordenDeURL, paginaDeURL, useBusquedaURL, useParamsURL } from "@/lib/useParamsURL";
 
 /* ==================================================================
    La lista de gastos del período.
@@ -33,6 +34,19 @@ const COLUMNAS: DefColumna[] = [
   { clave: "notas", titulo: "Notas", grupo: "Detalle" },
 ];
 
+/* Los filtros van en la URL (lib/useParamsURL), como la pestaña y el
+   período: el link lleva la lista tal cual se está mirando, y una categoría
+   del Dashboard abre acá ya filtrada.
+   - q: concepto, categoría, proveedor o nota
+   - bloque: directo, operativo, dueno o retiro
+   - categoria: tal cual se cargó
+   - orden: la columna, con "-" adelante si va de mayor a menor
+   - pag: la página, desde 1
+   Salir de la pestaña Gastos los saca (finanzas/detalle). */
+export const PARAMS_GASTOS = ["q", "bloque", "categoria", "orden", "pag"] as const;
+const VISTA_GASTOS = { bloque: "", categoria: "", orden: "-fecha", pag: "1" };
+const ORDEN_INICIAL = { clave: "fecha", desc: true };
+
 /* Seis, el máximo del design system antes de mandar algo a la ficha. */
 const POR_DEFECTO = ["concepto", "categoria", "grupo", "fecha", "tipo", "monto"];
 
@@ -51,9 +65,11 @@ export function ListaGastos({ e, mes, onNuevo, onVer, onEditar, onBorrar }: {
   const M = (n: number, d = 2) => money(n, e.ajustes.monedaBase, d);
   const cols = useColumnas("gastos", COLUMNAS, POR_DEFECTO);
 
-  const [busca, setBusca] = useState("");
-  const [grupo, setGrupo] = useState<GrupoGasto | "">("");
-  const [categoria, setCategoria] = useState("");
+  const [vista, setVista] = useParamsURL(VISTA_GASTOS);
+  const [busca, setBusca] = useBusquedaURL("q", ["pag"]);
+  const grupo = (GRUPOS_GASTO.some((g) => g.grupo === vista.bloque) ? vista.bloque : "") as GrupoGasto | "";
+  const categoria = vista.categoria;
+  const setCategoria = (c: string) => setVista({ categoria: c || null, pag: null });
 
   const delPeriodo = useMemo(() => gastosDelMes(e, mes), [e, mes]);
 
@@ -82,7 +98,7 @@ export function ListaGastos({ e, mes, onNuevo, onVer, onEditar, onBorrar }: {
   const total = filtrados.reduce((a, g) => a + g.monto, 0);
   const totalPeriodo = delPeriodo.reduce((a, g) => a + g.monto, 0);
   const hayFiltro = Boolean(busca.trim() || grupo || categoria);
-  const sacarFiltros = () => { setBusca(""); setGrupo(""); setCategoria(""); };
+  const sacarFiltros = () => { setBusca(""); setVista({ bloque: null, categoria: null, pag: null }, { q: null }); };
 
   const webinar = (id?: string) => (id ? e.webinars.find((w) => w.id === id)?.titulo : undefined);
 
@@ -145,9 +161,9 @@ export function ListaGastos({ e, mes, onNuevo, onVer, onEditar, onBorrar }: {
       </div>
 
       <div className="row-wrap" role="group" aria-label="Bloque del estado de resultados">
-        <Chip activo={grupo === ""} onClick={() => setGrupo("")} count={delPeriodo.length}>Todos</Chip>
+        <Chip activo={grupo === ""} onClick={() => setVista({ bloque: null, pag: null })} count={delPeriodo.length}>Todos</Chip>
         {GRUPOS_GASTO.map((g) => (
-          <Chip key={g.grupo} activo={grupo === g.grupo} onClick={() => { setGrupo(grupo === g.grupo ? "" : g.grupo); setCategoria(""); }} count={porGrupo[g.grupo] ?? 0}>
+          <Chip key={g.grupo} activo={grupo === g.grupo} onClick={() => setVista({ bloque: grupo === g.grupo ? null : g.grupo, categoria: null, pag: null })} count={porGrupo[g.grupo] ?? 0}>
             {g.titulo}
           </Chip>
         ))}
@@ -165,7 +181,8 @@ export function ListaGastos({ e, mes, onNuevo, onVer, onEditar, onBorrar }: {
         <DataTable
           alto={520} porPagina={50}
           filas={filtrados} columnas={columnas}
-          ordenInicial={{ clave: "fecha", desc: true }}
+          orden={ordenDeURL(vista.orden, cols.visibles, ORDEN_INICIAL)} onOrden={(o) => setVista({ orden: ordenAURL(o), pag: null })}
+          pagina={paginaDeURL(vista.pag) - 1} onPagina={(p) => setVista({ pag: String(p + 1) })}
           onFila={onVer} etiquetaFila={(g) => `Ver ${g.concepto || g.categoria}`}
           acciones={(g) => (
             <>

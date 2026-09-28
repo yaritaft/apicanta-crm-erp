@@ -50,7 +50,7 @@ export default function Finanzas() {
   /* Un gasto del estado de resultados abre su ficha en la lista de gastos,
      con el mismo período. */
   const hrefGasto = useCallback(
-    (id: string) => `/finanzas/detalle?${qs}&vista=gastos&ver=${encodeURIComponent(id)}`,
+    (id: string) => `/finanzas/detalle?${qs}&seccion=gastos&ver=${encodeURIComponent(id)}`,
     [qs],
   );
 

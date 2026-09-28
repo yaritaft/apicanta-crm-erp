@@ -87,7 +87,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
     "/webinars": estado.webinars.length,
   };
 
-  /* Un item puede ser una vista de otra pantalla (/alumnos?vista=pipeline).
+  /* Un item puede ser una vista de otra pantalla (/alumnos?seccion=pipeline).
      Coincide si coincide la ruta y cada parámetro que pide; de los que
      coinciden gana el más específico, así nunca se prenden dos a la vez. */
   const coincide = (href: string) => {

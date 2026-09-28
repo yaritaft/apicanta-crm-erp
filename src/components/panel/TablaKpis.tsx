@@ -24,7 +24,7 @@ export interface FilaKpi {
 }
 
 export function TablaKpis({
-  filas, cortes, comparar, moneda, conSecciones, onAbrir, porDia,
+  filas, cortes, comparar, moneda, conSecciones, onAbrir, porDia, periodo,
 }: {
   filas: FilaKpi[];
   cortes: Corte[];
@@ -36,6 +36,9 @@ export function TablaKpis({
   onAbrir?: (def: DefKpi, corte: Corte) => void;
   /* Muchas columnas angostas: una por día. */
   porDia?: boolean;
+  /* ?periodo=…&desde=…&hasta=… del Dashboard, para que el link de cada
+     métrica abra su pantalla en el mismo período. */
+  periodo?: string;
 }) {
   const columnas = cortes.length + 1;
 
@@ -96,7 +99,7 @@ export function TablaKpis({
                     {gr.filas.map((f) => (
                       <tr key={f.def.id}>
                         <th scope="row" className="planilla__fija">
-                          <Etiqueta def={f.def} />
+                          <Etiqueta def={f.def} periodo={periodo} />
                         </th>
                         {f.valores.map((v, i) => {
                           const corte = cortes[i];
@@ -140,7 +143,18 @@ export function TablaKpis({
   );
 }
 
-function Etiqueta({ def }: { def: DefKpi }) {
+/* Las fotos de hoy no dependen del período: van sin él. Un link que ya
+   trae su propio período lo conserva. */
+function conPeriodo(href: string, periodo: string | undefined, foto: boolean | undefined): string {
+  if (!periodo || foto) return href;
+  const [ruta, query = ""] = href.split("?");
+  const q = new URLSearchParams(query);
+  if (q.has("periodo")) return href;
+  for (const [k, v] of new URLSearchParams(periodo)) q.set(k, v);
+  return `${ruta}?${q.toString()}`;
+}
+
+function Etiqueta({ def, periodo }: { def: DefKpi; periodo?: string }) {
   const texto = (
     <>
       <span className="truncate">{def.etiqueta}</span>
@@ -148,7 +162,7 @@ function Etiqueta({ def }: { def: DefKpi }) {
     </>
   );
   return def.href
-    ? <Link href={def.href} className="planilla__enlace kpis__etiqueta" title={def.ayuda}>{texto}</Link>
+    ? <Link href={conPeriodo(def.href, periodo, def.foto)} className="planilla__enlace kpis__etiqueta" title={def.ayuda}>{texto}</Link>
     : <span className="planilla__enlace kpis__etiqueta" title={def.ayuda}>{texto}</span>;
 }
 

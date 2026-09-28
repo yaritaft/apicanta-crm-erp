@@ -574,11 +574,11 @@ export function catalogo(e: EstadoApp): DefKpi[] {
           && c.ix.ventaPorId.get(x.ventaId)?.estado === "activa" && c.ventaEnCorte(c.ix.ventaPorId.get(x.ventaId)));
         return exigibles.length ? (c.vencidas().length / exigibles.length) * 100 : 0;
       } },
-    { id: "c_7", etiqueta: "Clientes con 7 días o más de atraso", formato: "cantidad", mejor: "baja", foto: true, href: "/finanzas/detalle",
+    { id: "c_7", etiqueta: "Clientes con 7 días o más de atraso", formato: "cantidad", mejor: "baja", foto: true, href: "/finanzas/detalle?atraso=7",
       ayuda: "Ventas con al menos una cuota vencida hace 7 días o más.", valor: (c) => clientesAtrasados(c, 7) },
-    { id: "c_15", etiqueta: "Clientes con 15 días o más", formato: "cantidad", mejor: "baja", foto: true, href: "/finanzas/detalle",
+    { id: "c_15", etiqueta: "Clientes con 15 días o más", formato: "cantidad", mejor: "baja", foto: true, href: "/finanzas/detalle?atraso=15",
       ayuda: "Ventas con al menos una cuota vencida hace 15 días o más.", valor: (c) => clientesAtrasados(c, 15) },
-    { id: "c_20", etiqueta: "Clientes con 20 días o más", formato: "cantidad", mejor: "baja", foto: true, href: "/finanzas/detalle",
+    { id: "c_20", etiqueta: "Clientes con 20 días o más", formato: "cantidad", mejor: "baja", foto: true, href: "/finanzas/detalle?atraso=20",
       ayuda: "Ventas con al menos una cuota vencida hace 20 días o más: las que tendrían que tener a alguien encima.", valor: (c) => clientesAtrasados(c, 20) },
     { id: "c_peor", etiqueta: "El más atrasado", formato: "dias", mejor: "baja", foto: true, href: "/finanzas/detalle",
       ayuda: "Los días de atraso de la cuota más vieja sin pagar.", valor: (c) => c.vencidas()[0]?.diasAtraso ?? 0 },
@@ -629,7 +629,7 @@ export function catalogo(e: EstadoApp): DefKpi[] {
     { id: "r_opex", etiqueta: "Gastos operativos", formato: "moneda", mejor: "baja", href: "/finanzas",
       ayuda: "Todo lo que cuesta tener el negocio andando.", valor: (c) => g(c, () => c.py()!.gastosOperativos) },
     ...[...porCategoria.entries()].sort((a, b) => b[1] - a[1]).map(([cat]) => ({
-      id: `r_cat:${cat}`, etiqueta: cat, formato: "moneda" as const, ocultarEnCero: true, href: "/finanzas/detalle?vista=gastos",
+      id: `r_cat:${cat}`, etiqueta: cat, formato: "moneda" as const, ocultarEnCero: true, href: `/finanzas/detalle?seccion=gastos&categoria=${encodeURIComponent(cat)}`,
       ayuda: `Los gastos cargados como «${cat}».`,
       valor: (c: Contexto) => g(c, () => gastosDelMes(c.e, c.m!).filter((x) => x.categoria === cat && x.grupo !== "dueno" && x.grupo !== "retiro").reduce((a, x) => a + x.monto, 0)),
     })),
@@ -696,7 +696,7 @@ export function catalogo(e: EstadoApp): DefKpi[] {
 
   const etapas = etapasDeServicio(e);
   add("servicio", "Pipeline de servicio", etapas.map((et) => ({
-    id: `s_etapa:${et.id}`, etiqueta: et.nombre, formato: "cantidad" as const, foto: true, href: "/alumnos?vista=pipeline",
+    id: `s_etapa:${et.id}`, etiqueta: et.nombre, formato: "cantidad" as const, foto: true, href: "/alumnos?seccion=pipeline",
     ayuda: `Alumnos en la etapa «${et.nombre}» del pipeline de servicio.`,
     valor: (c: Contexto) => g(c, () => c.e.alumnos.filter((a) => etapaDelAlumno(etapas, a)?.id === et.id).length),
   })));

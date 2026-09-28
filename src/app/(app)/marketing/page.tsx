@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { ChevronRight, Megaphone, Search, SearchX, X } from "lucide-react";
 import { PageHead } from "@/components/shell/PageHead";
 import {
@@ -15,6 +15,8 @@ import { ConectarMeta } from "@/components/shell/ConectarMeta";
 import { AreaChart, BarChart, COLORES, Donut, truncar } from "@/components/charts/charts";
 import { DateRangePicker, diaDeNegocio, rangoSub, type RangoFechas } from "@/components/ui/DateRangePicker";
 import { useRangoURL } from "@/lib/useRango";
+import { CopiarLink } from "@/components/ui/Filtros";
+import { ordenAURL, ordenDeURL, useBusquedaURL, useEscribirURL, useParamsURL } from "@/lib/useParamsURL";
 import { useAbrirFicha } from "@/components/ficha/abrir";
 import { useToast } from "@/components/ui/Toast";
 import { useEstado, useSync } from "@/lib/store";
@@ -261,13 +263,24 @@ function definirColumnas(
 
 type CambiosURL = Partial<Record<"nivel" | "campania" | "conjunto" | "anuncio" | "ver", string | null>>;
 
+/* Los filtros de las tablas también van en la URL (lib/useParamsURL), como
+   el nivel, la campaña y el conjunto: el link se guarda o se manda y se ve
+   tal cual. Cada nivel tiene su búsqueda y su estado: buscar un anuncio no
+   tiene por qué vaciar la tabla de campañas.
+   - q-campanias, q-conjuntos, q-anuncios: el nombre (en campañas, también el objetivo)
+   - estado-campanias, estado-conjuntos, estado-anuncios: la entrega en Meta
+   - sin-actividad: 1 para ver también lo que no gastó ni trajo a nadie
+   - orden: la columna, con "-" adelante si va de mayor a menor */
+const FILTROS_MARKETING = {
+  "estado-campanias": "", "estado-conjuntos": "", "estado-anuncios": "", "sin-actividad": "", orden: "-inversion",
+};
+const ORDEN_INICIAL = { clave: "inversion", desc: true };
+
 export default function Marketing() {
   const e = useEstado();
   const sync = useSync();
   const toast = useToast();
   const params = useSearchParams();
-  const router = useRouter();
-  const pathname = usePathname();
   const [rango, setRango] = useRangoURL("mes");
   const { desde, hasta } = rango;
 
@@ -285,17 +298,10 @@ export default function Marketing() {
   const anuncioId = params.get("anuncio");
   const verViejo = params.get("ver");
 
-  const navegar = useCallback((cambios: CambiosURL) => {
-    const q = new URLSearchParams(params.toString());
-    for (const [k, v] of Object.entries(cambios)) {
-      if (v) q.set(k, v);
-      else q.delete(k);
-    }
-    const s = q.toString();
-    /* replace y no push, igual que el rango: bajar de nivel no es cambiar de
-       pantalla, y Atrás tiene que sacar de Marketing, no deshacer clicks. */
-    router.replace(s ? `${pathname}?${s}` : pathname, { scroll: false });
-  }, [params, pathname, router]);
+  /* replace y no push, igual que el rango: bajar de nivel no es cambiar de
+     pantalla, y Atrás tiene que sacar de Marketing, no deshacer clicks. Deja
+     el resto de la query como está (el período, los filtros). */
+  const navegar: (cambios: CambiosURL) => void = useEscribirURL();
 
   /* Los links viejos (?ver=<campaña>) abrían el panel lateral de la campaña.
      Ahora eso es entrar a ella: sus conjuntos, filtrados. */
@@ -337,9 +343,21 @@ export default function Marketing() {
 
   /* Cada nivel con su búsqueda y su estado: buscar un anuncio no tiene por
      qué vaciar la tabla de campañas. */
-  const [busca, setBusca] = useState<Record<Nivel, string>>({ campanias: "", conjuntos: "", anuncios: "" });
-  const [fEstado, setFEstado] = useState<Record<Nivel, string>>({ campanias: "", conjuntos: "", anuncios: "" });
-  const [todas, setTodas] = useState(false);
+  const [filtros, setFiltros] = useParamsURL(FILTROS_MARKETING);
+  const [qCampanias, setQCampanias] = useBusquedaURL("q-campanias");
+  const [qConjuntos, setQConjuntos] = useBusquedaURL("q-conjuntos");
+  const [qAnuncios, setQAnuncios] = useBusquedaURL("q-anuncios");
+  const busca = useMemo<Record<Nivel, string>>(
+    () => ({ campanias: qCampanias, conjuntos: qConjuntos, anuncios: qAnuncios }),
+    [qCampanias, qConjuntos, qAnuncios],
+  );
+  const setBuscaDe: Record<Nivel, (texto: string) => void> = { campanias: setQCampanias, conjuntos: setQConjuntos, anuncios: setQAnuncios };
+  const fEstado = useMemo<Record<Nivel, string>>(
+    () => ({ campanias: filtros["estado-campanias"], conjuntos: filtros["estado-conjuntos"], anuncios: filtros["estado-anuncios"] }),
+    [filtros],
+  );
+  const todas = filtros["sin-actividad"] === "1";
+  const setTodas = (v: boolean) => setFiltros({ "sin-actividad": v ? "1" : null });
 
   const colsCampanias = useColumnas("marketing-campanias", CATALOGO.campanias, POR_DEFECTO.campanias);
   const colsConjuntos = useColumnas("marketing-conjuntos", CATALOGO.conjuntos, POR_DEFECTO.conjuntos);
@@ -469,7 +487,7 @@ export default function Marketing() {
           titulo={`${p.fem ? "Ninguna" : "Ningún"} ${p.uno} coincide`}
           texto="Probá con otro nombre, o sacá el filtro de estado."
           accion={
-            <Button variante="secondary" onClick={() => { setBusca({ ...busca, [n]: "" }); setFEstado({ ...fEstado, [n]: "" }); }}>
+            <Button variante="secondary" onClick={() => { setBuscaDe[n](""); setFiltros({ [`estado-${n}`]: null }, { [`q-${n}`]: null }); }}>
               Limpiar filtros
             </Button>
           }
@@ -504,10 +522,13 @@ export default function Marketing() {
         titulo="Marketing"
         sub="Lo que invertís y qué te devuelve: por campaña, por conjunto y por anuncio."
         acciones={
-          <DateRangePicker
-            value={rango} minDate={primerDia} onApply={setRango}
-            footerNota="Días calendario · zona horaria de Argentina"
-          />
+          <>
+            <DateRangePicker
+              value={rango} minDate={primerDia} onApply={setRango}
+              footerNota="Días calendario · zona horaria de Argentina"
+            />
+            <CopiarLink sm={false} />
+          </>
         }
       />
 
@@ -570,16 +591,16 @@ export default function Marketing() {
             <div className="toolbar" style={{ marginBottom: 0 }}>
               <Input
                 icono={<Search size={16} />} value={busca[nivel]}
-                onChange={(ev) => setBusca({ ...busca, [nivel]: ev.target.value })}
+                onChange={(ev) => setBuscaDe[nivel](ev.target.value)}
                 placeholder={PALABRAS[nivel].buscar} aria-label={PALABRAS[nivel].buscar}
               />
               <div style={{ width: 210 }}>
                 <Select
-                  value={fEstado[nivel]} onChange={(ev) => setFEstado({ ...fEstado, [nivel]: ev.target.value })}
+                  value={fEstado[nivel]} onChange={(ev) => setFiltros({ [`estado-${nivel}`]: ev.target.value || null })}
                   placeholder="Todos los estados" opciones={opcionesEstado} aria-label="Filtrar por estado"
                 />
               </div>
-              <Chip activo={todas} onClick={() => setTodas((v) => !v)}>Incluir sin actividad</Chip>
+              <Chip activo={todas} onClick={() => setTodas(!todas)}>Incluir sin actividad</Chip>
               <span className="spacer" />
               <ConfigColumnas
                 todas={CATALOGO[nivel]} visibles={cols.visibles}
@@ -591,7 +612,8 @@ export default function Marketing() {
           <DataTable
             key={nivel}
             filas={filtradas[nivel]} columnas={columnas} alto={600} mostrarMas={50}
-            ordenInicial={{ clave: "inversion", desc: true }}
+            orden={ordenDeURL(filtros.orden, columnas.map((c) => c.clave), ORDEN_INICIAL)}
+            onOrden={(o) => setFiltros({ orden: ordenAURL(o) })}
             onFila={abrir}
             filaActiva={(f) => f.id === activa}
             etiquetaFila={(f) => (nivel === "campanias"

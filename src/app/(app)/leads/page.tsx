@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import {
   Download, Pencil, Plus, Search, Trash2, Upload, Users,
 } from "lucide-react";
@@ -22,6 +22,8 @@ import { AsistenteLead, ETIQUETA_INGLES, ORDEN_INGLES, type BorradorLead } from 
 import { fechaHora, fechaLarga, money, num, relativo } from "@/lib/format";
 import { DateRangePicker, diaDeNegocio } from "@/components/ui/DateRangePicker";
 import { useRangoURL } from "@/lib/useRango";
+import { CopiarLink } from "@/components/ui/Filtros";
+import { ordenAURL, ordenDeURL, paginaDeURL, useBusquedaURL, useEscribirURL, useParamsURL } from "@/lib/useParamsURL";
 import type { Lead, Moneda } from "@/lib/types";
 
 /* Las columnas que se pueden prender, como en el Administrador de anuncios.
@@ -54,6 +56,18 @@ const COLUMNAS_LEADS: DefColumna[] = [
 ];
 const POR_DEFECTO_LEADS = ["nombre", "etapa", "fuente", "pais", "ingles", "exp", "monto", "act"];
 
+/* Lo que se está mirando vive en la URL (lib/useParamsURL): se guarda en
+   favoritos o se manda el link y se ve tal cual. El período va aparte, en
+   ?periodo.
+   - etapa: el id de la etapa
+   - fuente: la fuente tal cual la tiene el lead
+   - ingles: el nivel (basico, intermedio, conversacional…)
+   - q: nombre, correo, teléfono, país o campaña
+   - orden: la columna, con "-" adelante si va de mayor a menor
+   - pag: la página, desde 1 */
+const VISTA_LEADS = { etapa: "todas", fuente: "todas", ingles: "todos", orden: "-act", pag: "1" };
+const ORDEN_INICIAL = { clave: "act", desc: true };
+
 const VACIO = (fuente: string, etapaId: string): Omit<Lead, "id"> => ({
   nombre: "", email: "", telefono: "", pais: "", fuente, campania: "",
   etapaId, monto: 2400, moneda: "USD" as Moneda, responsable: "", notas: "",
@@ -67,12 +81,16 @@ export default function Leads() {
   const url = useAbrirDesdeURL();
   const abrirFicha = useAbrirFicha();
   const params = useSearchParams();
-  const router = useRouter();
+  const escribirURL = useEscribirURL();
 
-  const [q, setQ] = useState("");
-  const [etapa, setEtapa] = useState<string>("todas");
-  const [fuente, setFuente] = useState<string>("todas");
-  const [ingles, setIngles] = useState<string>("todos");
+  const [vista, setVista] = useParamsURL(VISTA_LEADS);
+  const [q, setQ] = useBusquedaURL("q", ["pag"]);
+  const { etapa, fuente, ingles } = vista;
+  /* Otro filtro vuelve a la primera página: quedarse en la 7 de un resultado
+     que ahora tiene 2 muestra una tabla vacía. */
+  const setEtapa = (v: string) => setVista({ etapa: v, pag: null });
+  const setFuente = (v: string) => setVista({ fuente: v, pag: null });
+  const setIngles = (v: string) => setVista({ ingles: v, pag: null });
   /* El rango va con el mismo componente que el resto de la app, no un
      selector de mes propio: Yari pidio ver los leads por mes, pero tambien
      comparar periodos, y un mes suelto no deja hacer eso. */
@@ -97,8 +115,9 @@ export default function Leads() {
     if (!id) return;
     const lead = e.leads.find((l) => l.id === id);
     if (lead) setForm({ ...lead });
-    router.replace("/leads", { scroll: false });
-  }, [params, e.leads, router]);
+    /* Sólo se saca el ?editar: los filtros y el período quedan. */
+    escribirURL({ editar: null });
+  }, [params, e.leads, escribirURL]);
 
   /* Solo el rango. Los chips de etapa cuentan sobre esto: si contaran sobre
      `filtrados`, el chip de la etapa elegida mostraria su propio total y los
@@ -109,6 +128,20 @@ export default function Leads() {
     const dia = diaDeNegocio(l.creadoEn);
     return !dia || (dia >= rango.desde && dia <= rango.hasta);
   }), [e.leads, rango]);
+
+  /* Las fuentes de Ajustes y también las que traen los leads: la mayoría
+     entró por un lanzamiento o un VSL que no están en Ajustes, y sin esto no
+     se podían filtrar ni verse elegidas desde un link. Primero las que más
+     leads tienen en el período; la elegida queda aunque no tenga ninguno. */
+  const fuentes = useMemo(() => {
+    const cuenta = new Map<string, number>();
+    for (const l of enRango) if (l.fuente) cuenta.set(l.fuente, (cuenta.get(l.fuente) ?? 0) + 1);
+    const todas = new Set([...e.ajustes.fuentes, ...e.leads.map((l) => l.fuente).filter(Boolean)]);
+    if (fuente !== "todas") todas.add(fuente);
+    return [...todas]
+      .sort((a, b) => (cuenta.get(b) ?? 0) - (cuenta.get(a) ?? 0) || a.localeCompare(b, "es"))
+      .map((f) => ({ valor: f, texto: `${f} · ${num(cuenta.get(f) ?? 0)}` }));
+  }, [e.ajustes.fuentes, e.leads, enRango, fuente]);
 
   const filtrados = useMemo(() => {
     const t = q.trim().toLowerCase();
@@ -122,6 +155,13 @@ export default function Leads() {
   }, [enRango, q, etapa, fuente, ingles]);
 
   const etapaDe = (id: string) => e.etapas.find((x) => x.id === id);
+
+  /* Limpia lo que recorta la lista. El período y el orden quedan. */
+  const hayFiltros = q.trim() !== "" || etapa !== "todas" || fuente !== "todas" || ingles !== "todos";
+  function limpiarFiltros() {
+    setQ("");
+    setVista({ etapa: null, fuente: null, ingles: null, pag: null }, { q: null });
+  }
 
   function guardar(borrador: BorradorLead) {
     const form = borrador;
@@ -266,13 +306,14 @@ export default function Leads() {
             <div style={{ width: 190 }}>
               <Select
                 value={fuente} onChange={(ev) => setFuente(ev.target.value)} aria-label="Filtrar por fuente"
-                opciones={[{ valor: "todas", texto: "Todas las fuentes" }, ...e.ajustes.fuentes.map((f) => ({ valor: f, texto: f }))]}
+                opciones={[{ valor: "todas", texto: "Todas las fuentes" }, ...fuentes]}
               />
             </div>
             <ConfigColumnas
               todas={COLUMNAS_LEADS} visibles={cols.visibles}
               alternar={cols.alternar} mover={cols.mover} restaurar={cols.restaurar}
             />
+            <CopiarLink />
           </div>
           <div className="toolbar">
             {/* Los contadores salen de lo que el RANGO deja ver, no de la base
@@ -292,7 +333,10 @@ export default function Leads() {
           porPagina={50}
           filas={filtrados}
           columnas={columnas}
-          ordenInicial={{ clave: "act", desc: true }}
+          /* Una columna que el que abre el link no tiene prendida vuelve al
+             orden de siempre: ordenar por algo que no se ve confunde. */
+          orden={ordenDeURL(vista.orden, cols.visibles, ORDEN_INICIAL)} onOrden={(o) => setVista({ orden: ordenAURL(o), pag: null })}
+          pagina={paginaDeURL(vista.pag) - 1} onPagina={(p) => setVista({ pag: String(p + 1) })}
           onFila={(l) => abrirFicha(l.id)}
           etiquetaFila={(l) => `Ver ${l.nombre}`}
           acciones={(l) => (
@@ -304,11 +348,11 @@ export default function Leads() {
           vacio={
             <Empty
               icono={<Users size={22} />}
-              titulo={q || etapa !== "todas" || fuente !== "todas" ? "Ningún lead coincide" : "Todavía no hay leads"}
-              texto={q || etapa !== "todas" || fuente !== "todas" ? "Probá con otro texto o sacá los filtros." : "Cargá el primero a mano o importá un CSV que ya tengas."}
+              titulo={hayFiltros ? "Ningún lead coincide" : "Todavía no hay leads"}
+              texto={hayFiltros ? "Probá con otro texto o sacá los filtros." : "Cargá el primero a mano o importá un CSV que ya tengas."}
               accion={
-                q || etapa !== "todas" || fuente !== "todas"
-                  ? <Button variante="secondary" onClick={() => { setQ(""); setEtapa("todas"); setFuente("todas"); }}>Limpiar filtros</Button>
+                hayFiltros
+                  ? <Button variante="secondary" onClick={limpiarFiltros}>Limpiar filtros</Button>
                   : <Button variante="brand" icono={<Plus size={16} />} onClick={() => setForm(VACIO(e.ajustes.fuentes[0] ?? "", etapaInicial))}>Cargar mi primer lead</Button>
               }
             />

@@ -1,8 +1,7 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   Check, Clock, GraduationCap, Pencil, Plus, Search, Settings2, Trash2,
 } from "lucide-react";
@@ -20,12 +19,29 @@ import { PipelineServicio } from "@/components/alumnos/PipelineServicio";
 import { BadgeEtapa, ESTADO_ALUMNO, ESTADOS_ALUMNO } from "@/components/alumnos/comun";
 import { acciones, useEstado } from "@/lib/store";
 import { useAbrirDesdeURL } from "@/lib/useQuery";
+import { CopiarLink } from "@/components/ui/Filtros";
+import { ordenAURL, ordenDeURL, paginaDeURL, useBusquedaURL, useParamsURL } from "@/lib/useParamsURL";
 import { etapaDelAlumno, etapasDeServicio } from "@/lib/alumnos";
 import { rachasAHoy } from "@/lib/reportes";
 import { money, num } from "@/lib/format";
 import type { Alumno, EstadoAlumno } from "@/lib/types";
 
 type Vista = "lista" | "pipeline";
+
+/* Lo que se está mirando vive en la URL (lib/useParamsURL): el menú lateral
+   entra directo al pipeline (/alumnos?seccion=pipeline), y el link se puede
+   guardar o mandar y se ve tal cual.
+   - seccion: lista (por defecto) o pipeline. No va en ?vista, que es de la
+     ficha de una persona: abrir una desde el pipeline pasaba el fondo a la
+     lista. Un link viejo con ?vista=pipeline se sigue entendiendo.
+   - estado: activo, pausado, egresado o baja
+   - q: nombre, correo, cohorte, plan o país
+   - orden: la columna, con "-" adelante si va de mayor a menor. Sin orden,
+     los que entraron último van arriba.
+   - pag: la página, desde 1 */
+const VISTA_ALUMNOS = { seccion: "lista", vista: "", estado: "todos", orden: "", pag: "1" };
+const COLUMNAS_QUE_ORDENAN = ["nombre", "etapa", "plan", "progreso", "reporte", "cuota"];
+const SIN_ORDEN = { clave: "", desc: false };
 
 /* Sin mayúsculas ni tildes: "benitez" encuentra a "Benítez". */
 const normal = (s: string) => s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
@@ -35,22 +51,18 @@ export default function Alumnos() {
   const toast = useToast();
   const url = useAbrirDesdeURL();
   const abrirFicha = useAbrirFicha();
-  const params = useSearchParams();
-  const router = useRouter();
-  const pathname = usePathname();
 
-  /* La vista vive en la URL: el menú lateral entra directo al pipeline
-     (/alumnos?vista=pipeline), y el link se puede mandar o guardar. */
-  const vista: Vista = params.get("vista") === "pipeline" ? "pipeline" : "lista";
-  const cambiarVista = useCallback((v: Vista) => {
-    const q = new URLSearchParams(params.toString());
-    if (v === "pipeline") q.set("vista", "pipeline"); else q.delete("vista");
-    const s = q.toString();
-    router.replace(s ? `${pathname}?${s}` : pathname, { scroll: false });
-  }, [params, pathname, router]);
-
-  const [q, setQ] = useState("");
-  const [estado, setEstado] = useState<"todos" | EstadoAlumno>("todos");
+  const [enURL, setEnURL] = useParamsURL(VISTA_ALUMNOS);
+  /* La ficha nunca escribe "pipeline" en ?vista: si está, es un link viejo. */
+  const vista: Vista = enURL.seccion === "pipeline" || enURL.vista === "pipeline" ? "pipeline" : "lista";
+  const cambiarVista = (v: Vista) => setEnURL({ seccion: v }, enURL.vista === "pipeline" ? { vista: null } : {});
+  useEffect(() => {
+    if (enURL.vista === "pipeline") setEnURL({ seccion: "pipeline", vista: null });
+  }, [enURL.vista, setEnURL]);
+  const [q, setQ] = useBusquedaURL("q", ["pag"]);
+  const estado: "todos" | EstadoAlumno = ESTADOS_ALUMNO.includes(enURL.estado as EstadoAlumno) ? (enURL.estado as EstadoAlumno) : "todos";
+  const setEstado = (v: "todos" | EstadoAlumno) => setEnURL({ estado: v, pag: null });
+  const orden = ordenDeURL(enURL.orden, COLUMNAS_QUE_ORDENAN, SIN_ORDEN);
   const [asistente, setAsistente] = useState(false);
   const [form, setForm] = useState<Alumno | null>(null);
   const [borrar, setBorrar] = useState<Alumno | null>(null);
@@ -81,7 +93,7 @@ export default function Alumnos() {
   }, [e.alumnos, q, estado]);
 
   const hayFiltros = q.trim() !== "" || estado !== "todos";
-  const limpiarFiltros = () => { setQ(""); setEstado("todos"); };
+  const limpiarFiltros = () => { setQ(""); setEnURL({ estado: null, pag: null }, { q: null }); };
 
   function guardar() {
     if (!form) return;
@@ -178,7 +190,12 @@ export default function Alumnos() {
       <PageHead
         titulo="Alumnos"
         sub="Quién está cursando, en qué etapa del servicio está y si manda su reporte semanal."
-        acciones={<Button variante="primary" icono={<Plus size={16} />} onClick={() => setAsistente(true)}>Nuevo alumno</Button>}
+        acciones={
+          <>
+            <CopiarLink sm={false} />
+            <Button variante="primary" icono={<Plus size={16} />} onClick={() => setAsistente(true)}>Nuevo alumno</Button>
+          </>
+        }
       />
 
       <Tabs
@@ -196,6 +213,8 @@ export default function Alumnos() {
           </div>
           <DataTable
             filas={filtrados} columnas={columnas} alto={620} porPagina={50}
+            orden={orden.clave ? orden : null} onOrden={(o) => setEnURL({ orden: ordenAURL(o), pag: null })}
+            pagina={paginaDeURL(enURL.pag) - 1} onPagina={(p) => setEnURL({ pag: String(p + 1) })}
             onFila={(a) => abrirFicha(a.id, "servicio")} etiquetaFila={(a) => `Ver la ficha de ${a.nombre}`}
             acciones={(a) => (
               <>
