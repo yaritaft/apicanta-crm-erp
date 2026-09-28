@@ -330,7 +330,7 @@ function FilaMovimiento({ mov, M, abierto, onAbrir, onNuevaVenta }: {
           {M(mov.monto, 2)}
           {cobraComision && (
             <span className="mov__fee" data-pendiente={sinFee}>
-              {sinFee ? "comisión por llegar" : `comisión ${pct((mov.fee / mov.monto) * 100, 1)}`}
+              {sinFee ? `comisión estimada ${pct(tasaEstimada(e, mov) * 100, 1)}` : `comisión ${pct((mov.fee / mov.monto) * 100, 1)}`}
             </span>
           )}
           {mov.estado === "pendiente" && resto < mov.monto - 0.009 && (
@@ -370,7 +370,7 @@ function FilaMovimiento({ mov, M, abierto, onAbrir, onNuevaVenta }: {
             <dt>Comisión</dt>
             <dd className="t-num">
               {sinFee
-                ? `Todavía no la mandó ${nombrePasarela(mov.proveedor)}. Si lo conciliás ahora, el pago usa la de la cuenta (${pct(tasaEstimada(e, mov) * 100, 1)}) y se corrige solo cuando llegue.`
+                ? `${nombrePasarela(mov.proveedor)} no la mandó todavía. Al conciliar se usa la de la cuenta (${pct(tasaEstimada(e, mov) * 100, 1)}); si la manda después, se corrige sola.`
                 : <>{M(mov.fee, 2)} {mov.monto > 0 && <span className="t-subtle">({pct((mov.fee / mov.monto) * 100, 1)})</span>}</>}
             </dd>
             <dt>Neto</dt><dd className="t-num">{sinFee ? "Cuando llegue la comisión" : M(mov.neto, 2)}</dd>
