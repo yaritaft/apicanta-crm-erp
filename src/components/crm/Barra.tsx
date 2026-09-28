@@ -6,6 +6,7 @@ import {
   PaintBucket, Pencil, Plus, RotateCcw, Search, Sheet, SquareArrowOutUpRight, SquareMenu, Trash2, X,
 } from "lucide-react";
 import { useToast } from "@/components/ui/Toast";
+import { aportesAlLink } from "@/lib/compartirLink";
 import {
   CAMPO, CAMPOS, PERIODOS, completa, nuevaCondicion, operadoresDe, sinTildes, tipoDeFiltro, valoresDe,
   type ClaveCampo, type Condicion, type FilaCrm, type Orden, type Pintor, type VistaCrm,
@@ -93,9 +94,13 @@ export function BarraVista(p: PropsBarra) {
   const nOcultos = p.ocultos.length;
   const nFiltros = p.filtros.filter((c) => c.campo !== "lanzamiento" && completa(c)).length;
 
+  /* El mismo link que «Copiar link» de las pestañas: con la vista entera
+     (lib/compartirLink), así el que lo abre la ve igual aunque sea una vista
+     propia o esté cambiada. Sólo con ?v vería la suya. */
   function copiarLink() {
     const url = new URL(window.location.href);
     url.searchParams.delete("registro");
+    for (const [k, valor] of Object.entries(aportesAlLink())) url.searchParams.set(k, valor);
     navigator.clipboard?.writeText(url.toString()).then(
       () => toast("Link copiado: el que lo abra ve esta misma vista."),
       () => toast("No se pudo copiar. Copiá la dirección desde la barra del navegador.", "err"),
