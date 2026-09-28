@@ -144,10 +144,11 @@ export default function FinanzasDetalle() {
       {vista === "cobros" && (
         <div className="stack-4">
           {vencidas.length > 0 && (
-            <Ayuda titulo={`Hay ${vencidas.length} cuotas vencidas sin cobrar`} icono={<AlertTriangle size={18} />}>
-              Suman <strong>{M(vencidas.reduce((a, c) => a + c.saldo, 0))}</strong>. La más vieja lleva{" "}
-              <strong>{vencidas[0].diasAtraso} días</strong> y es de {vencidas[0].contacto}. Marcá el pago cuando entre
-              y desaparece de esta lista.
+            <Ayuda titulo={vencidas.length === 1 ? "Hay 1 cuota vencida sin cobrar" : `Hay ${vencidas.length} cuotas vencidas sin cobrar`} icono={<AlertTriangle size={18} />}>
+              {vencidas.length === 1 ? "Es de" : "Suman"} <strong>{M(vencidas.reduce((a, c) => a + c.saldo, 0))}</strong>.{" "}
+              {vencidas.length === 1 ? "Lleva" : "La más vieja lleva"}{" "}
+              <strong>{vencidas[0].diasAtraso} {vencidas[0].diasAtraso === 1 ? "día" : "días"}</strong> y es de {vencidas[0].contacto}.
+              Marcá el pago cuando entre y desaparece de esta lista.
             </Ayuda>
           )}
 

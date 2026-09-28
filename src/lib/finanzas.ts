@@ -1,5 +1,6 @@
-import type { EstadoApp, Gasto, Pago, Venta } from "./types";
+import type { Cuota, EstadoApp, Gasto, Pago, Venta } from "./types";
 import type { RangoMes } from "./metricas";
+import { esSoloReserva } from "./angelo";
 
 /* ==================================================================
    El P&L de Yari, calculado igual que en su planilla.
@@ -18,6 +19,19 @@ const enRango = (iso: string, m: RangoMes) => {
 
 export function ventasDelMes(e: EstadoApp, m: RangoMes): Venta[] {
   return e.ventas.filter((v) => v.estado !== "cancelada" && enRango(v.fecha, m));
+}
+
+/** Las que cuentan como venta: sin las que son sólo una reserva ("una
+ *  reserva no la considero una venta", Yari). Su plata sí cuenta como
+ *  facturada y cobrada. Es la regla de la fila «Ventas» del Dashboard, y el
+ *  CAC divide por esto en todos lados: el del P&L, el de cada embudo y el
+ *  del Dashboard dan lo mismo. */
+export function ventasContablesDelMes(e: EstadoApp, m: RangoMes): Venta[] {
+  const ventas = ventasDelMes(e, m);
+  const ids = new Set(ventas.map((v) => v.id));
+  const cuotasDe = new Map<string, Cuota[]>();
+  for (const c of e.cuotas) if (ids.has(c.ventaId)) cuotasDe.set(c.ventaId, [...(cuotasDe.get(c.ventaId) ?? []), c]);
+  return ventas.filter((v) => !esSoloReserva(cuotasDe.get(v.id) ?? []));
 }
 
 /** Lo facturado: el precio acordado de las ventas cerradas en el mes. */
@@ -270,7 +284,7 @@ export function calcularPyL(e: EstadoApp, m: RangoMes): PyL {
   const netoCC = operativoCC - honorariosCeo;
   const netoRev = operativoRev - honorariosCeo;
 
-  const nVentas = ventasDelMes(e, m).length;
+  const nVentas = ventasContablesDelMes(e, m).length;
 
   /* Growth partner y socio cobran del profit. El growth no cobra de las
      ventas marcadas como excluidas de marketing, así que se prorratea. */

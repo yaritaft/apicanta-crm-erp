@@ -1,6 +1,6 @@
 import type { EstadoApp, ID, Venta } from "./types";
 import type { RangoMes } from "./metricas";
-import { comisionesDelMes, pagosDelMes, ventasDelMes } from "./finanzas";
+import { comisionesDelMes, pagosDelMes, ventasContablesDelMes, ventasDelMes } from "./finanzas";
 import { metricasDeWebinar } from "./webinar";
 import { slugUtm } from "./utm-estandar";
 
@@ -104,7 +104,14 @@ export function resultadoPorEmbudo(e: EstadoApp, m: RangoMes): ResultadoEmbudo[]
   };
   const embudoDe = (v?: Venta) => (v?.embudoId && e.embudos.some((b) => b.id === v.embudoId) ? v.embudoId : undefined);
 
-  for (const v of ventasDelMes(e, m)) { const f = fila(embudoDe(v)); f.ventas++; f.facturado += v.precioAcordado; }
+  /* Una reserva sola no es una venta (ventasContablesDelMes): no suma al
+     conteo ni baja el CAC, pero su plata sí entra en lo facturado. */
+  const contables = new Set(ventasContablesDelMes(e, m).map((v) => v.id));
+  for (const v of ventasDelMes(e, m)) {
+    const f = fila(embudoDe(v));
+    if (contables.has(v.id)) f.ventas++;
+    f.facturado += v.precioAcordado;
+  }
   for (const p of pagosDelMes(e, m)) {
     const f = fila(embudoDe(ventaPorId.get(ventaDeCuota.get(p.cuotaId) ?? "")));
     f.cobrado += p.monto; f.procesador += p.feeMonto;

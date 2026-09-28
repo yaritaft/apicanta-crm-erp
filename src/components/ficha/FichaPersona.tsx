@@ -368,7 +368,7 @@ function ConfirmarBaja({ e, venta, estado, onCerrar }: {
       : "Vuelve a estar activa. No había cuotas canceladas por la baja.")
       + (servicio ? " Su servicio vuelve al estado que tenía." : "");
     boton = "Reactivar la venta";
-    detalle = `Se reactivó la venta de ${nombre}${vuelven.length ? `: ${vuelven.length} cuotas vuelven a estar pendientes` : ""}.`;
+    detalle = `Se reactivó la venta de ${nombre}${vuelven.length ? `: ${vuelven.length === 1 ? "1 cuota vuelve" : `${vuelven.length} cuotas vuelven`} a estar pendientes` : ""}.`;
     aviso = "Venta reactivada.";
   } else {
     const cuotas = cuotasQueCancelaLaBaja(e, venta.id);
@@ -383,7 +383,7 @@ function ConfirmarBaja({ e, venta, estado, onCerrar }: {
       + (reembolso ? " La plata devuelta cargala como gasto en Reembolsos." : "")
       + " Se puede reactivar.";
     boton = reembolso ? "Marcar reembolsada" : "Cancelar la venta";
-    detalle = `${reembolso ? "Se marcó como reembolsada" : "Se canceló"} la venta de ${nombre}${cuotas.length ? `: ${cuotas.length} cuotas por ${M(monto)} quedan canceladas` : ""}.`;
+    detalle = `${reembolso ? "Se marcó como reembolsada" : "Se canceló"} la venta de ${nombre}${cuotas.length ? `: ${cuotas.length === 1 ? `1 cuota por ${M(monto)} queda cancelada` : `${cuotas.length} cuotas por ${M(monto)} quedan canceladas`}` : ""}.`;
     aviso = reembolso ? "Venta marcada como reembolsada." : "Venta cancelada. Las cuotas quedan como historial.";
   }
 

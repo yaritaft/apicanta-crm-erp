@@ -80,7 +80,11 @@ export function TarjetaVenta({ e, venta, resaltada, abierta, onAlternar, onPagar
           </span>
           {abierta && (
             <span className="t-sm t-subtle" style={{ display: "block" }}>
-              {tipoDePago(venta, cuotasVenta)} · {planDePago(venta, cuotasVenta)}
+              {/* Cancelada o reembolsada, el plan también dice «Se dio de baja»:
+                  se muestra una vez cómo terminó, no «Se dio de baja · Se dio de baja». */}
+              {venta.estado === "activa"
+                ? `${tipoDePago(venta, cuotasVenta)} · ${planDePago(venta, cuotasVenta)}`
+                : tipoDePago(venta, cuotasVenta)}
               {setter ? ` · setter ${setter}` : ""}
               {venta.referidorNombre ? ` · referido por ${venta.referidorNombre}` : ""}
             </span>
