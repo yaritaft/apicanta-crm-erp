@@ -84,9 +84,15 @@
 }
 
 /* La cabecera de "El vivo, minuto a minuto": el título a la izquierda y, a
-   la derecha, "En vivo" y las pestañas. En pantallas angostas bajan. */
+   la derecha, "En vivo" y las pestañas. En pantallas angostas bajan, y si
+   las cuatro pestañas no entran se desplazan dentro de su caja, como todas
+   las .tabs, en vez de estirar la ficha. Para eso las dos cajas que las
+   envuelven (la de las acciones de CardHead y esta) tienen que poder
+   achicarse: un ítem flex no baja de lo que mide su contenido sin
+   min-width: 0, y en el teléfono la ficha scrolleaba de costado. */
 .wb-vivo > .card-head { flex-wrap: wrap; row-gap: var(--space-3); }
-.wb-vivo__cabeza { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-3); justify-content: flex-end; margin-left: auto; }
+.wb-vivo > .card-head > .spacer { min-width: 0; max-width: 100%; }
+.wb-vivo__cabeza { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-3); justify-content: flex-end; margin-left: auto; min-width: 0; max-width: 100%; }
 
 /* Agendas de Calendly en la ficha: los badges del embudo y el selector */
 .wb-agenda__badges { display: flex; flex-wrap: wrap; gap: 4px; margin: 3px 0 2px; }
