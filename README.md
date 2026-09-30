@@ -430,3 +430,6 @@ correr `supabase/honorarios.sql` (tablas, políticas, niveles de acceso y la col
   servicio preguntan `nivel_area()` (`lib/permisos-servidor.ts`); las de Meta, que contestaban sin sesión con el token
   del sistema, ahora piden Marketing. El tema claro/oscuro pasó a ser de cada navegador, y Ajustes → Datos (respaldos,
   vaciar) es sólo de los dueños. `pruebas/permisos.ts` compara las reglas de la app con las de la base.
+  Las personas, los leads y la actividad llevan `creadoPor` (el correo de la sesión, lo completa la base): cada uno ve
+  lo que creó, así el closer puede cargar a alguien nuevo, y la actividad sabe quién hizo cada cosa. «Lo suyo» se
+  calcula una vez por consulta (`mis_*()`, `son_mios()`): el closer carga todo en menos de 100 ms.

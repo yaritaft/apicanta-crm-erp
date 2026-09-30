@@ -253,6 +253,24 @@ $$;
 
 -- ---------- lo que es de uno ----------
 
+create or replace function public.mi_email()
+returns text
+language sql stable
+as $$
+  select lower(coalesce(auth.jwt() ->> 'email', ''));
+$$;
+
+-- Quién creó cada persona, cada lead y cada entrada de la actividad: lo
+-- completa la base con el correo de la sesión (la app no lo manda; el
+-- webhook de Calendly, con la clave de servicio, deja ''). Con eso quien ve
+-- sólo lo suyo ve también lo que creó: una persona nueva, la de una venta
+-- que no venía de una llamada, todavía no tiene llamadas ni ventas. La app
+-- guarda con insert-o-update, y la base le pide a la fila nueva que ya
+-- cumpla la regla de lectura. Lo encontró el ensayo.
+alter table public.contactos add column if not exists "creadoPor" text default lower(coalesce(auth.jwt() ->> 'email', ''));
+alter table public.leads add column if not exists "creadoPor" text default lower(coalesce(auth.jwt() ->> 'email', ''));
+alter table public.actividad add column if not exists "creadoPor" text default lower(coalesce(auth.jwt() ->> 'email', ''));
+
 -- "Valentín Abadía" → "valentin abadia": sin tildes, en minúscula y con las
 -- dos primeras palabras, como nombreCorto() de src/lib/crm.ts.
 create or replace function public.nombre_corto(t text)
@@ -284,8 +302,39 @@ as $$
 $$;
 
 -- Lo de uno, calculado una vez por consulta: las políticas lo llaman con
--- (select …) y cada fila sólo se fija si está en la lista. Fila por fila
--- serían miles de cruces entre leads, llamadas y equipo en cada lectura.
+-- (select …)::text[] y cada fila sólo se fija si está en la lista. Fila por
+-- fila serían miles de cruces entre leads, llamadas y equipo en cada
+-- lectura. El ::text[] no es de adorno: sin él, «= any((select …))» se lee
+-- como una subconsulta de filas y no como la lista.
+
+-- Adentro de cada función pasa lo mismo: toda lista que se usa en un WHERE
+-- va como (select …), que la base calcula una vez. Llamarla a secas en el
+-- WHERE la recalcula por cada fila, y como unas usan a otras (los leads usan
+-- las llamadas, las personas usan los leads) se multiplica hasta el timeout:
+-- lo encontró el ensayo con los datos de Dante.
+
+-- De una lista de nombres (anfitriones de Calendly, responsables de leads),
+-- los que son uno: la misma regla que miembro_de_nombre(), pero con los
+-- nombres cortos de Equipo calculados una sola vez para toda la lista.
+create or replace function public.son_mios(nombres text[])
+returns text[]
+language sql stable security definer
+set search_path = public
+as $$
+  with yo as materialized (select public.mi_miembro_id() as id),
+       eq as materialized (select e.id, public.nombre_corto(e.nombre) as c, e.activo from public.equipo e),
+       n  as materialized (select distinct x as nombre, public.nombre_corto(x) as c
+                           from unnest(nombres) as x where coalesce(x, '') <> ''),
+       quien as (
+         select n.nombre, coalesce(
+           (select eq.id from eq where n.c <> '' and eq.c = n.c order by eq.activo desc, eq.id limit 1),
+           (select eq.id from eq where n.c <> '' and eq.c <> ''
+              and (n.c like eq.c || ' %' or eq.c like n.c || ' %')
+            order by eq.activo desc, eq.id limit 1)) as miembro
+         from n)
+  select coalesce(array_agg(quien.nombre), array[]::text[])
+  from quien, yo where yo.id is not null and quien.miembro = yo.id;
+$$;
 
 -- Los anfitriones de Calendly que son uno (tal cual vienen escritos).
 create or replace function public.mis_anfitriones()
@@ -293,10 +342,7 @@ returns text[]
 language sql stable security definer
 set search_path = public
 as $$
-  with yo as (select public.mi_miembro_id() as id)
-  select coalesce(array_agg(x.a), array[]::text[])
-  from (select distinct s.anfitrion as a from public.sesiones s where coalesce(s.anfitrion, '') <> '') x, yo
-  where yo.id is not null and public.miembro_de_nombre(x.a) = yo.id;
+  select public.son_mios(array(select distinct s.anfitrion from public.sesiones s where coalesce(s.anfitrion, '') <> ''));
 $$;
 
 create or replace function public.mis_sesiones()
@@ -305,21 +351,20 @@ language sql stable security definer
 set search_path = public
 as $$
   select coalesce(array_agg(s.id), array[]::text[])
-  from public.sesiones s where s.anfitrion = any(public.mis_anfitriones());
+  from public.sesiones s
+  where s.anfitrion = any((select public.mis_anfitriones())::text[]);
 $$;
 
--- Las ventas de uno: de closer o de setter, y las que tienen cuotas que heredó.
 create or replace function public.mis_ventas()
 returns text[]
 language sql stable security definer
 set search_path = public
 as $$
-  with yo as (select public.mi_miembro_id() as id)
   select coalesce(array_agg(v.id), array[]::text[])
-  from public.ventas v, yo
-  where yo.id is not null
-    and (v."closerId" = yo.id or v."setterId" = yo.id
-         or exists (select 1 from public.cuotas c where c."ventaId" = v.id and c."closerId" = yo.id));
+  from public.ventas v
+  where v."closerId" = (select public.mi_miembro_id())
+     or v."setterId" = (select public.mi_miembro_id())
+     or v.id in (select c."ventaId" from public.cuotas c where c."closerId" = (select public.mi_miembro_id()));
 $$;
 
 create or replace function public.mis_cuotas()
@@ -327,44 +372,56 @@ returns text[]
 language sql stable security definer
 set search_path = public
 as $$
-  with yo as (select public.mi_miembro_id() as id), mv as (select public.mis_ventas() as ids)
   select coalesce(array_agg(c.id), array[]::text[])
-  from public.cuotas c, yo, mv
-  where yo.id is not null and (c."closerId" = yo.id or c."ventaId" = any(mv.ids));
+  from public.cuotas c
+  where c."closerId" = (select public.mi_miembro_id())
+     or c."ventaId" = any((select public.mis_ventas())::text[]);
 $$;
 
 -- Los leads de uno: es su responsable, o tienen una llamada suya (por el
--- lead o por la persona), o una venta suya (ventas.contactoId es el lead).
+-- lead o por la persona), o una venta suya (ventas.contactoId es el lead),
+-- o los creó él. Cada lista se arma una vez y cada lead sólo se compara
+-- contra ellas: con subconsultas, la base recorría las llamadas por cada
+-- lead (700 ms en el ensayo).
 create or replace function public.mis_leads()
 returns text[]
 language sql stable security definer
 set search_path = public
 as $$
-  with yo as (select public.mi_miembro_id() as id),
-       resp as (
-         select coalesce(array_agg(x.r), array[]::text[]) as r
-         from (select distinct l.responsable as r from public.leads l where coalesce(l.responsable, '') <> '') x, yo
-         where yo.id is not null and public.miembro_de_nombre(x.r) = yo.id),
-       ses as (select s."leadId", s."contactoId" from public.sesiones s where s.id = any(public.mis_sesiones())),
-       mv as (select public.mis_ventas() as ids)
-  select coalesce(array_agg(distinct l.id), array[]::text[])
-  from public.leads l, resp, mv
+  with resp as materialized (
+         select public.son_mios(array(select distinct l.responsable from public.leads l where coalesce(l.responsable, '') <> '')) as r),
+       ses as materialized (
+         select coalesce(array_agg(distinct s."leadId") filter (where s."leadId" is not null), array[]::text[]) as leads,
+                coalesce(array_agg(distinct s."contactoId") filter (where s."contactoId" is not null), array[]::text[]) as personas
+         from public.sesiones s where s.id = any((select public.mis_sesiones())::text[])),
+       ven as materialized (
+         select coalesce(array_agg(distinct v."contactoId") filter (where v."contactoId" is not null), array[]::text[]) as leads
+         from public.ventas v where v.id = any((select public.mis_ventas())::text[])),
+       yo as materialized (select public.mi_email() as email)
+  select coalesce(array_agg(l.id), array[]::text[])
+  from public.leads l, resp, ses, ven, yo
   where l.responsable = any(resp.r)
-     or l.id in (select "leadId" from ses where "leadId" is not null)
-     or (l."contactoId" is not null and l."contactoId" in (select "contactoId" from ses where "contactoId" is not null))
-     or l.id in (select v."contactoId" from public.ventas v where v.id = any(mv.ids) and v."contactoId" is not null);
+     or l.id = any(ses.leads)
+     or l."contactoId" = any(ses.personas)
+     or l.id = any(ven.leads)
+     or (l."creadoPor" <> '' and l."creadoPor" = yo.email);
 $$;
 
--- Las personas de uno: las de sus llamadas y las de sus leads.
+-- Las personas de uno: las de sus llamadas, las de sus leads y las que creó.
 create or replace function public.mis_contactos()
 returns text[]
 language sql stable security definer
 set search_path = public
 as $$
+  with ml as materialized (select public.mis_leads() as ids),
+       ses as materialized (select public.mis_sesiones() as ids),
+       yo as materialized (select public.mi_email() as email)
   select coalesce(array_agg(distinct x.c), array[]::text[]) from (
-    select s."contactoId" as c from public.sesiones s where s.id = any(public.mis_sesiones()) and s."contactoId" is not null
+    select s."contactoId" as c from public.sesiones s, ses where s.id = any(ses.ids) and s."contactoId" is not null
     union
-    select l."contactoId" from public.leads l where l.id = any(public.mis_leads()) and l."contactoId" is not null
+    select l."contactoId" from public.leads l, ml where l.id = any(ml.ids) and l."contactoId" is not null
+    union
+    select c.id from public.contactos c, yo where c."creadoPor" <> '' and c."creadoPor" = yo.email
   ) x;
 $$;
 
@@ -372,8 +429,10 @@ grant execute on function public.mi_acceso() to authenticated;
 grant execute on function public.nivel_area(text) to authenticated;
 grant execute on function public.solo_lo_suyo() to authenticated;
 grant execute on function public.mi_miembro_id() to authenticated;
+grant execute on function public.mi_email() to authenticated;
 grant execute on function public.ve(text) to authenticated;
 grant execute on function public.edita(text) to authenticated;
+grant execute on function public.son_mios(text[]) to authenticated;
 grant execute on function public.mis_anfitriones() to authenticated;
 grant execute on function public.mis_sesiones() to authenticated;
 grant execute on function public.mis_ventas() to authenticated;
@@ -431,20 +490,22 @@ do $$
 declare r record;
 begin
   for r in select * from (values
-    ('sesiones',    'anfitrion = any((select public.mis_anfitriones()))',
-                    'anfitrion = any((select public.mis_anfitriones()))'),
-    ('ventas',      'id = any((select public.mis_ventas()))',
-                    '("closerId" = (select public.mi_miembro_id()) or "setterId" = (select public.mi_miembro_id()) or id = any((select public.mis_ventas())))'),
-    ('cuotas',      '("closerId" = (select public.mi_miembro_id()) or "ventaId" = any((select public.mis_ventas())))',
-                    '("closerId" = (select public.mi_miembro_id()) or "ventaId" = any((select public.mis_ventas())))'),
-    ('pagos',       '"cuotaId" = any((select public.mis_cuotas()))',
-                    '"cuotaId" = any((select public.mis_cuotas()))'),
+    ('sesiones',    'anfitrion = any((select public.mis_anfitriones())::text[])',
+                    'anfitrion = any((select public.mis_anfitriones())::text[])'),
+    -- La venta es suya por su closer o su setter (así también la que recién
+    -- carga, que todavía no está en mis_ventas), o por cuotas que heredó.
+    ('ventas',      '("closerId" = (select public.mi_miembro_id()) or "setterId" = (select public.mi_miembro_id()) or id = any((select public.mis_ventas())::text[]))',
+                    '("closerId" = (select public.mi_miembro_id()) or "setterId" = (select public.mi_miembro_id()) or id = any((select public.mis_ventas())::text[]))'),
+    ('cuotas',      '("closerId" = (select public.mi_miembro_id()) or "ventaId" = any((select public.mis_ventas())::text[]))',
+                    '("closerId" = (select public.mi_miembro_id()) or "ventaId" = any((select public.mis_ventas())::text[]))'),
+    ('pagos',       '"cuotaId" = any((select public.mis_cuotas())::text[])',
+                    '"cuotaId" = any((select public.mis_cuotas())::text[])'),
     -- Una persona nueva (la de una venta que no venía de una llamada) todavía
     -- no está atada a nada: se puede crear; la venta la ata después.
-    ('leads',       'id = any((select public.mis_leads()))', 'true'),
-    ('contactos',   'id = any((select public.mis_contactos()))', 'true'),
-    ('comentarios', '"contactoId" = any((select public.mis_contactos()))',
-                    '"contactoId" = any((select public.mis_contactos()))')
+    ('leads',       '(id = any((select public.mis_leads())::text[]) or ("creadoPor" <> '''' and "creadoPor" = (select public.mi_email())))', 'true'),
+    ('contactos',   '(id = any((select public.mis_contactos())::text[]) or ("creadoPor" <> '''' and "creadoPor" = (select public.mi_email())))', 'true'),
+    ('comentarios', '"contactoId" = any((select public.mis_contactos())::text[])',
+                    '"contactoId" = any((select public.mis_contactos())::text[])')
   ) as v(t, alcance, alcance_nuevo)
   loop
     if to_regclass('public.' || r.t) is null then continue; end if;
@@ -476,18 +537,18 @@ drop policy if exists borrar_alumnos on public.alumnos;
 create policy ver_alumnos on public.alumnos for select to authenticated using (
   (select public.ve('alumnos'))
   or ((select public.edita('ventas')) and "ventaId" is not null
-      and ((select not public.solo_lo_suyo()) or "ventaId" = any((select public.mis_ventas())))));
+      and ((select not public.solo_lo_suyo()) or "ventaId" = any((select public.mis_ventas())::text[]))));
 create policy crear_alumnos on public.alumnos for insert to authenticated with check (
   (select public.edita('alumnos'))
   or ((select public.edita('ventas')) and "ventaId" is not null
-      and ((select not public.solo_lo_suyo()) or "ventaId" = any((select public.mis_ventas())))));
+      and ((select not public.solo_lo_suyo()) or "ventaId" = any((select public.mis_ventas())::text[]))));
 create policy editar_alumnos on public.alumnos for update to authenticated
   using ((select public.edita('alumnos'))
     or ((select public.edita('ventas')) and "ventaId" is not null
-        and ((select not public.solo_lo_suyo()) or "ventaId" = any((select public.mis_ventas())))))
+        and ((select not public.solo_lo_suyo()) or "ventaId" = any((select public.mis_ventas())::text[]))))
   with check ((select public.edita('alumnos'))
     or ((select public.edita('ventas')) and "ventaId" is not null
-        and ((select not public.solo_lo_suyo()) or "ventaId" = any((select public.mis_ventas())))));
+        and ((select not public.solo_lo_suyo()) or "ventaId" = any((select public.mis_ventas())::text[]))));
 create policy borrar_alumnos on public.alumnos for delete to authenticated using ((select public.edita('alumnos')));
 
 -- Gastos: Finanzas; y los cargados con un webinar, quien ve los webinars
@@ -514,17 +575,20 @@ drop policy if exists crear_actividad on public.actividad;
 drop policy if exists editar_actividad on public.actividad;
 drop policy if exists borrar_actividad on public.actividad;
 create policy ver_actividad on public.actividad for select to authenticated using (
-  (select public.es_dueno()) or case entidad
+  (select public.es_dueno())
+  -- Lo que anotó uno mismo (la base sabe quién: creadoPor).
+  or ("creadoPor" <> '' and "creadoPor" = (select public.mi_email()))
+  or case entidad
     when 'lead'        then (select public.ve('leads'))
-                            and ((select not public.solo_lo_suyo()) or "entidadId" = any((select public.mis_leads())))
+                            and ((select not public.solo_lo_suyo()) or "entidadId" = any((select public.mis_leads())::text[]))
     when 'contacto'    then (select public.ve('contactos'))
-                            and ((select not public.solo_lo_suyo()) or "entidadId" = any((select public.mis_contactos())))
+                            and ((select not public.solo_lo_suyo()) or "entidadId" = any((select public.mis_contactos())::text[]))
     when 'sesion'      then (select public.ve('sesiones'))
-                            and ((select not public.solo_lo_suyo()) or "entidadId" = any((select public.mis_sesiones())))
+                            and ((select not public.solo_lo_suyo()) or "entidadId" = any((select public.mis_sesiones())::text[]))
     -- Los cobros y las ventas; los arqueos y las importaciones, sólo Finanzas.
     when 'transaccion' then (select public.ve('movimientos'))
                             or ((select public.ve('ventas')) and exists (select 1 from public.ventas v where v.id = "entidadId")
-                                and ((select not public.solo_lo_suyo()) or "entidadId" = any((select public.mis_ventas()))))
+                                and ((select not public.solo_lo_suyo()) or "entidadId" = any((select public.mis_ventas())::text[])))
     when 'alumno'      then (select public.ve('alumnos'))
     when 'webinar'     then (select public.ve('webinars'))
     when 'campania'    then (select public.ve('ad_insights'))
