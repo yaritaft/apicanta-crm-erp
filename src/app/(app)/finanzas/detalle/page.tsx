@@ -215,20 +215,21 @@ export default function FinanzasDetalle() {
             El closer cobra sobre el <strong>cash collected neto de procesador</strong>, no sobre el profit:
             si entraron US$ 1.000 por Stripe, la base es 1.000 − 2,9% y sobre eso va su porcentaje.
             El director cobra 5% con la misma base. Si la venta figura a nombre de <strong>Yari</strong>,
-            no comisiona nadie.
+            no comisiona nadie. Desde el día en que alguien dejó el equipo no cobra más, y si sus cuotas
+            pasaron a otro closer (en Equipo, en su ficha), lo que se cobre de ellas es del que las heredó.
           </Ayuda>
 
           <Card style={{ padding: 0 }}>
             <DataTable
               alto={460}
-              filas={comisiones.map((c) => ({ ...c, id: c.ventaId }))}
+              filas={comisiones}
               orden={tablaComisiones.orden} onOrden={tablaComisiones.onOrden}
               columnas={[
                 {
                   clave: "closer", titulo: "Venta", tipo: "primary", orden: (c) => c.closerNombre,
                   celda: (c) => {
                     const v = e.ventas.find((x) => x.id === c.ventaId);
-                    return <span>{v?.contactoNombre ?? "—"} <span className="t-subtle">· {c.closerNombre}</span></span>;
+                    return <span>{v?.contactoNombre ?? "—"} <span className="t-subtle">· {c.closerNombre}{c.heredadaDe ? ` (cuotas heredadas de ${c.heredadaDe})` : ""}</span></span>;
                   },
                 },
                 { clave: "cobrado", titulo: "Cobrado", tipo: "num", orden: (c) => c.cobradoEnMes, celda: (c) => M(c.cobradoEnMes) },

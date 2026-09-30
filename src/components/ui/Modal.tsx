@@ -83,9 +83,11 @@ export function ModalForm({ abierto, onCerrar, onGuardar, titulo, sub, children,
   );
 }
 
-export function Confirmar({ abierto, onCerrar, onConfirmar, titulo, texto, confirmarTexto = "Eliminar" }: {
+export function Confirmar({ abierto, onCerrar, onConfirmar, titulo, texto, confirmarTexto = "Eliminar", variante = "danger" }: {
   abierto: boolean; onCerrar: () => void; onConfirmar: () => void;
   titulo: string; texto: string; confirmarTexto?: string;
+  /* "primary" cuando lo que se confirma se puede deshacer (no borra nada). */
+  variante?: "danger" | "primary";
 }) {
   return (
     <Modal
@@ -94,7 +96,7 @@ export function Confirmar({ abierto, onCerrar, onConfirmar, titulo, texto, confi
         <>
           <Button variante="ghost" onClick={onCerrar}>Cancelar</Button>
           <span className="spacer" />
-          <Button variante="danger" onClick={() => { onConfirmar(); onCerrar(); }}>{confirmarTexto}</Button>
+          <Button variante={variante} onClick={() => { onConfirmar(); onCerrar(); }}>{confirmarTexto}</Button>
         </>
       }
     >

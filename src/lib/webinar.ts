@@ -1,7 +1,7 @@
 import type {
-  CanalOrigen, Contacto, EstadoApp, Lead, NivelIngles, Sesion, Venta, Webinar,
+  CanalOrigen, Contacto, Cuota, EstadoApp, Lead, NivelIngles, Sesion, Venta, Webinar,
 } from "./types";
-import { cobraDirector } from "./finanzas";
+import { closerDeCuota, cobraDirector, cobraEnFecha } from "./finanzas";
 
 /* ==================================================================
    Las métricas que Yari viene trackeando webinar a webinar desde 2023.
@@ -192,32 +192,29 @@ export function metricasDeWebinar(e: EstadoApp, webinar: Webinar): MetricasWebin
   /* De qué venta es cada cuota, sólo para las ventas de este webinar. Con
      índices y no con filter+includes anidados: la planilla recalcula esto
      para cada webinar a cada celda que se carga. */
-  const idsVentas = new Set(ventas.map((v) => v.id));
-  const ventaDeCuota = new Map<string, string>();
-  for (const c of e.cuotas) if (idsVentas.has(c.ventaId)) ventaDeCuota.set(c.id, c.ventaId);
-  const pagos = e.pagos.filter((p) => ventaDeCuota.has(p.cuotaId));
+  const ventaPorId = new Map(ventas.map((v) => [v.id, v] as const));
+  const cuotaDe = new Map<string, Cuota>();
+  for (const c of e.cuotas) if (ventaPorId.has(c.ventaId)) cuotaDe.set(c.id, c);
+  const pagos = e.pagos.filter((p) => cuotaDe.has(p.cuotaId));
   const cobrado = pagos.reduce((a, p) => a + p.monto, 0);
   const fees = pagos.reduce((a, p) => a + p.feeMonto, 0);
 
-  const netoPorVenta = new Map<string, number>();
-  /* Lo del director, sólo lo que entró mientras era director (cobraDirector). */
-  const netoDirectorPorVenta = new Map<string, number>();
-  const directorDe = new Map(ventas.map((v) => [v.id, e.equipo.find((x) => x.id === v.directorId)] as const));
-  for (const p of pagos) {
-    const v = ventaDeCuota.get(p.cuotaId) as string;
-    netoPorVenta.set(v, (netoPorVenta.get(v) ?? 0) + (p.monto - p.feeMonto));
-    if (cobraDirector(directorDe.get(v), p.fecha)) netoDirectorPorVenta.set(v, (netoDirectorPorVenta.get(v) ?? 0) + (p.monto - p.feeMonto));
-  }
-
-  /* Comisiones: closer + director sobre el neto de procesador,
-     salvo que la venta la haya cerrado Yari. */
+  /* Comisiones: closer + director sobre el neto de procesador de cada
+     cobro, salvo que la venta la haya cerrado Yari. El closer es el de la
+     cuota (el que la heredó, si el suyo se fue), y nadie cobra lo que entró
+     después de irse (cobraEnFecha): lo mismo que Finanzas. */
+  const miembro = new Map(e.equipo.map((x) => [x.id, x] as const));
   let comisiones = 0;
-  for (const v of ventas) {
-    const closer = e.equipo.find((x) => x.id === v.closerId);
-    if (closer?.sinComision) continue;
-    const neto = netoPorVenta.get(v.id) ?? 0;
-    const director = directorDe.get(v.id);
-    comisiones += neto * (closer?.comisionRate ?? 0) + (netoDirectorPorVenta.get(v.id) ?? 0) * (director?.comisionRate ?? 0);
+  for (const p of pagos) {
+    const c = cuotaDe.get(p.cuotaId) as Cuota;
+    const v = ventaPorId.get(c.ventaId) as Venta;
+    if (v.closerId && miembro.get(v.closerId)?.sinComision) continue;
+    const neto = p.monto - p.feeMonto;
+    const closerId = closerDeCuota(v, c);
+    const closer = closerId ? miembro.get(closerId) : undefined;
+    const director = v.directorId ? miembro.get(v.directorId) : undefined;
+    if (cobraEnFecha(closer, p.fecha)) comisiones += neto * (closer?.comisionRate ?? 0);
+    if (cobraDirector(director, p.fecha)) comisiones += neto * (director?.comisionRate ?? 0);
   }
 
   return derivar({

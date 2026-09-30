@@ -114,11 +114,11 @@ export function armarEstadoResultados(
           : `Ventas sin closer · ${cant(g.ventas.length, "venta", "ventas")}`,
       cc: -g.total, rev: -g.total,
       hijos: g.ventas.map((c): NodoPyL => ({
-        id: `closers/${g.clave}/v:${c.ventaId}`,
+        id: `closers/${g.clave}/v:${c.id}`,
         titulo: ventaDe(c.ventaId)?.contactoNombre ?? "Venta",
         sub: c.sinComision
           ? `${M(c.cobradoEnMes, 2)} cobrado · sin comisión`
-          : `${M(c.cobradoEnMes, 2)} cobrado · ${M(c.netoProcesador, 2)} neto de procesador`,
+          : `${M(c.cobradoEnMes, 2)} cobrado · ${M(c.netoProcesador, 2)} neto de procesador${c.heredadaDe ? ` · cuotas heredadas de ${c.heredadaDe}` : ""}`,
         cc: -c.comisionCloser, rev: -c.comisionCloser, href: hrefVenta(c.ventaId),
       })),
     })),
@@ -132,7 +132,7 @@ export function armarEstadoResultados(
     hijos: dir.ventas.map((c): NodoPyL => {
       const d = e.equipo.find((x) => x.id === c.directorId);
       return {
-        id: `director/v:${c.ventaId}`,
+        id: `director/v:${c.id}`,
         titulo: ventaDe(c.ventaId)?.contactoNombre ?? "Venta",
         sub: `${d?.nombre ?? "Director"} · ${pct((d?.comisionRate ?? 0) * 100, 0)} de ${M(c.netoProcesador, 2)} neto de procesador`,
         cc: -c.comisionDirector, rev: -c.comisionDirector, href: hrefVenta(c.ventaId),

@@ -1,0 +1,12 @@
+-- ==================================================================
+-- Las cuotas que hereda otro closer (Yari, 29/09: "los closers que se
+-- fueron no siguen cobrando nada; lo que hacemos es pasarle las cuotas a
+-- otro closer").
+--
+-- cuotas."closerId": quién comisiona los cobros de esa cuota, si no es el
+-- closer de la venta. Vacío = el de la venta. Se carga desde Equipo, en la
+-- ficha del closer que se fue («Pasar sus cuotas a…»).
+--
+-- Sin esta columna la app descarta ese dato al guardar.
+-- ==================================================================
+alter table cuotas add column if not exists "closerId" text references equipo(id) on delete set null;

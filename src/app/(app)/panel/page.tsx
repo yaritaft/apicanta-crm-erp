@@ -2,7 +2,7 @@
 
 import React, { useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { ArrowLeftRight, Clock, Download, ListChecks } from "lucide-react";
+import { ArrowLeftRight, Clock, Download, EyeOff, ListChecks } from "lucide-react";
 import { Button, Card, Empty } from "@/components/ui/ui";
 import { DateRangePicker, diaDeNegocio, rangoStr, rangoSub } from "@/components/ui/DateRangePicker";
 import { CopiarLink } from "@/components/ui/Filtros";
@@ -12,9 +12,11 @@ import { FiltroSegmento } from "@/components/panel/FiltroSegmento";
 import { useFilasKpi } from "@/components/panel/useFilasKpi";
 import { ConfigColumnas, type DefColumna } from "@/components/ui/ColumnasConfig";
 import { AccionesTopbar } from "@/components/shell/AccionesTopbar";
+import { useToast } from "@/components/ui/Toast";
 import { AlarmaCobranza } from "@/components/finanzas/AlarmaCobranza";
 import { TablaKpis, variacionKpi, type FilaKpi } from "@/components/panel/TablaKpis";
 import { useEstado } from "@/lib/store";
+import { num } from "@/lib/format";
 import { useRangoURL } from "@/lib/useRango";
 import { useParamsURL } from "@/lib/useParamsURL";
 import { rangoDeFechas, type RangoMes } from "@/lib/metricas";
@@ -124,6 +126,19 @@ export default function DashboardKpis() {
       .map((d) => porId.get(d.id)!);
   }, [todas, config.ordenadas, area]);
   const filas = enArea.filter((f) => !config.ocultas.has(f.def.id));
+  /* Las ocultas se pueden mirar sin volver a prenderlas: van atenuadas y
+     con el ojo para devolverlas. El CSV lleva sólo las que se ven. */
+  const [verOcultas, setVerOcultas] = useState(false);
+  const cuantasOcultas = enArea.length - filas.length;
+  const filasTabla = verOcultas ? enArea : filas;
+  const toast = useToast();
+  const alternarFila = (def: DefKpi) => {
+    const estaba = config.ocultas.has(def.id);
+    config.alternar(def.id);
+    /* Devuelta la última, no queda nada que mirar aparte. */
+    if (estaba && cuantasOcultas === 1) setVerOcultas(false);
+    if (!estaba) toast(`Ocultaste «${def.etiqueta}». Queda guardado en tu usuario.`, "ok", { texto: "Deshacer", onClick: () => config.alternar(def.id) });
+  };
   const opcionesFilas: DefColumna[] = useMemo(
     () => enArea.map((f) => ({
       clave: f.def.id, titulo: f.def.etiqueta, ayuda: f.def.ayuda,
@@ -203,7 +218,7 @@ export default function DashboardKpis() {
       </AccionesTopbar>
 
       <Card className="planilla-card kpis-card">
-        {filas.length === 0 ? (
+        {filasTabla.length === 0 ? (
           <Empty
             icono={<Clock size={22} />}
             titulo="Nada para mostrar en esta vista"
@@ -213,9 +228,22 @@ export default function DashboardKpis() {
           />
         ) : (
           <TablaKpis
-            filas={filas} cortes={cortes} comparar={comparar} moneda={mon} porDia={columnas === "dia"}
+            filas={filasTabla} cortes={cortes} comparar={comparar} moneda={mon} porDia={columnas === "dia"}
             conSecciones={area === "todo"} onAbrir={abrir} periodo={periodoDelLink}
+            onAlternar={alternarFila} ocultas={verOcultas ? config.ocultas : undefined}
           />
+        )}
+        {cuantasOcultas > 0 && (
+          <div className="kpis-ocultas">
+            <EyeOff size={14} aria-hidden />
+            <span>
+              {cuantasOcultas === 1 ? "1 métrica oculta" : `${num(cuantasOcultas)} métricas ocultas`}
+              {area === "todo" ? "" : " en esta área"}
+            </span>
+            <button type="button" className="link" aria-pressed={verOcultas} onClick={() => setVerOcultas((v) => !v)}>
+              {verOcultas ? "Esconderlas" : "Mostrarlas"}
+            </button>
+          </div>
         )}
       </Card>
 

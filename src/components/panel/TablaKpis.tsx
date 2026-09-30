@@ -2,7 +2,7 @@
 
 import React from "react";
 import Link from "next/link";
-import { ArrowDownRight, ArrowUpRight } from "lucide-react";
+import { ArrowDownRight, ArrowUpRight, Eye, EyeOff } from "lucide-react";
 import { tonoRoas } from "@/components/webinars/estado";
 import { money, num, pct } from "@/lib/format";
 import { SECCIONES, type Corte, type DefKpi, type FormatoKpi, type SeccionKpi } from "@/lib/kpis";
@@ -24,7 +24,7 @@ export interface FilaKpi {
 }
 
 export function TablaKpis({
-  filas, cortes, comparar, moneda, conSecciones, onAbrir, porDia, periodo,
+  filas, cortes, comparar, moneda, conSecciones, onAbrir, porDia, periodo, onAlternar, ocultas,
 }: {
   filas: FilaKpi[];
   cortes: Corte[];
@@ -39,6 +39,10 @@ export function TablaKpis({
   /* ?periodo=…&desde=…&hasta=… del Dashboard, para que el link de cada
      métrica abra su pantalla en el mismo período. */
   periodo?: string;
+  /* Ocultar una fila desde la fila misma, o volver a mostrarla. */
+  onAlternar?: (def: DefKpi) => void;
+  /* Mirando las ocultas: van atenuadas, con el ojo para devolverlas. */
+  ocultas?: Set<string>;
 }) {
   const columnas = cortes.length + 1;
 
@@ -96,42 +100,56 @@ export function TablaKpis({
                     <tr className="kpis__grupo">
                       <th scope="colgroup" colSpan={columnas}><span className="kpis__grupo-texto">{gr.grupo}</span></th>
                     </tr>
-                    {gr.filas.map((f) => (
-                      <tr key={f.def.id}>
-                        <th scope="row" className="planilla__fija">
-                          <Etiqueta def={f.def} periodo={periodo} />
-                        </th>
-                        {f.valores.map((v, i) => {
-                          const corte = cortes[i];
-                          const abrible = onAbrir && f.def.desglose && v !== null && !corte.filtro;
-                          const valor = <Valor v={v} formato={f.def.formato} moneda={moneda} />;
-                          const contenido = comparar
-                            ? (
-                              <span className="kpis__par">
-                                {valor}
-                                <Delta def={f.def} actual={v} previo={f.previos[i]} corte={corte} moneda={moneda} />
-                              </span>
-                            )
-                            : valor;
-                          return (
-                            <td key={corte.clave} className={`planilla__num${corte.destacado ? " kpis__col--destacada" : ""}${corte.total ? " kpis__col--total" : ""}`}>
-                              {abrible ? (
+                    {gr.filas.map((f) => {
+                      const oculta = ocultas?.has(f.def.id) ?? false;
+                      return (
+                        <tr key={f.def.id} className={oculta ? "kpis__fila--oculta" : undefined}>
+                          <th scope="row" className="planilla__fija">
+                            <span className="kpis__rotulo">
+                              <Etiqueta def={f.def} periodo={periodo} />
+                              {onAlternar && (
                                 <button
-                                  type="button" className="planilla__ro kpis__abrir"
-                                  onClick={() => onAbrir!(f.def, corte)}
-                                  aria-label={`${f.def.etiqueta}, ${corte.titulo}: ver qué lo forma`}
-                                  title="Ver qué forma este número"
+                                  type="button" className="kpis__ojo" onClick={() => onAlternar(f.def)}
+                                  aria-label={oculta ? `Volver a mostrar «${f.def.etiqueta}»` : `Ocultar «${f.def.etiqueta}»`}
+                                  title={oculta ? "Volver a mostrarla" : "Ocultar esta fila. Queda guardado en tu usuario."}
                                 >
-                                  {contenido}
+                                  {oculta ? <Eye size={14} /> : <EyeOff size={14} />}
                                 </button>
-                              ) : (
-                                <span className="planilla__ro">{contenido}</span>
                               )}
-                            </td>
-                          );
-                        })}
-                      </tr>
-                    ))}
+                            </span>
+                          </th>
+                          {f.valores.map((v, i) => {
+                            const corte = cortes[i];
+                            const abrible = onAbrir && f.def.desglose && v !== null && !corte.filtro;
+                            const valor = <Valor v={v} formato={f.def.formato} moneda={moneda} />;
+                            const contenido = comparar
+                              ? (
+                                <span className="kpis__par">
+                                  {valor}
+                                  <Delta def={f.def} actual={v} previo={f.previos[i]} corte={corte} moneda={moneda} />
+                                </span>
+                              )
+                              : valor;
+                            return (
+                              <td key={corte.clave} className={`planilla__num${corte.destacado ? " kpis__col--destacada" : ""}${corte.total ? " kpis__col--total" : ""}`}>
+                                {abrible ? (
+                                  <button
+                                    type="button" className="planilla__ro kpis__abrir"
+                                    onClick={() => onAbrir!(f.def, corte)}
+                                    aria-label={`${f.def.etiqueta}, ${corte.titulo}: ver qué lo forma`}
+                                    title="Ver qué forma este número"
+                                  >
+                                    {contenido}
+                                  </button>
+                                ) : (
+                                  <span className="planilla__ro">{contenido}</span>
+                                )}
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      );
+                    })}
                   </React.Fragment>
                 ))}
               </React.Fragment>

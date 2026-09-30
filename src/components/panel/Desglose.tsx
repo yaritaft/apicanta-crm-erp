@@ -87,8 +87,8 @@ function contenido(e: EstadoApp, que: QueDesglosar, mes: RangoMes): Contenido {
       const comisiones: Fila[] = [];
       for (const c of comisionesDelMes(e, mes)) {
         const v = ventaDe(c.ventaId);
-        if (c.comisionCloser > 0) comisiones.push({ id: `${c.ventaId}_closer`, titulo: `${c.closerNombre} · closer`, detalle: `Venta de ${v?.contactoNombre ?? "—"}`, valor: M(c.comisionCloser), ficha: { id: c.ventaId, venta: c.ventaId } });
-        if (c.comisionDirector > 0) comisiones.push({ id: `${c.ventaId}_director`, titulo: `${e.equipo.find((x) => x.id === c.directorId)?.nombre ?? "Director"} · director`, detalle: `Venta de ${v?.contactoNombre ?? "—"}`, valor: M(c.comisionDirector), ficha: { id: c.ventaId, venta: c.ventaId } });
+        if (c.comisionCloser > 0) comisiones.push({ id: `${c.id}_closer`, titulo: `${c.closerNombre} · closer`, detalle: `Venta de ${v?.contactoNombre ?? "—"}`, valor: M(c.comisionCloser), ficha: { id: c.ventaId, venta: c.ventaId } });
+        if (c.comisionDirector > 0) comisiones.push({ id: `${c.id}_director`, titulo: `${e.equipo.find((x) => x.id === c.directorId)?.nombre ?? "Director"} · director`, detalle: `Venta de ${v?.contactoNombre ?? "—"}`, valor: M(c.comisionDirector), ficha: { id: c.ventaId, venta: c.ventaId } });
       }
       const totalComisiones = comisionesDelMes(e, mes).reduce((a, c) => a + c.comisionCloser + c.comisionDirector, 0);
 

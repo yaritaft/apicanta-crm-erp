@@ -16,6 +16,7 @@ import {
 import type { ConceptoPago, EsquemaPago, MiembroEquipo, RolEquipo } from "@/lib/types";
 import { AsistenteConcepto } from "./AsistenteConcepto";
 import { ClaveGenerada } from "./ClaveGenerada";
+import { CuotasDelCloser } from "./CuotasDelCloser";
 
 /* ==================================================================
    La ficha de alguien del equipo: quién es, qué cobra y con qué entra a
@@ -140,6 +141,9 @@ export function FichaMiembro({ miembroId, accesos, onCerrar }: {
             )}
           </div>
         </section>
+
+        {/* ---------- Sus cuotas por cobrar (y pasarlas a otro si se fue) ---------- */}
+        {m.rol === "closer" && <CuotasDelCloser m={m} />}
 
         {/* ---------- Qué cobra ---------- */}
         <section className="stack-3">

@@ -1,10 +1,10 @@
 import type {
   AlcanceVentas, BaseMedicion, ConceptoPago, EntradaLiquidacion, EsquemaPago, EstadoApp, ExtraLiquidacion,
-  Gasto, ID, LineaLiquidada, Liquidacion, MiembroEquipo, Moneda, PersonaLiquidada,
+  Gasto, ID, LineaLiquidada, Liquidacion, MiembroEquipo, Moneda, Pago, PersonaLiquidada,
   ResultadoLiquidacion, TipoConcepto, Venta,
 } from "./types";
 import type { RangoMes } from "./metricas";
-import { calcularPyL, pagosDelMes, parteMarketing, ventasDelMes } from "./finanzas";
+import { calcularPyL, closerDeCuota, cobraEnFecha, pagosDelMes, parteMarketing, ventasDelMes } from "./finanzas";
 import { aMonedaBase, categoriaDe, normalizar } from "./gastos";
 import { fechaLarga, money, num, pct } from "./format";
 
@@ -332,17 +332,22 @@ interface Contexto {
   base: Moneda;
   tc: number;
   ventaDeCuota: Map<ID, Venta>;
+  /* El closer de cada cuota: el que la heredó o el de la venta. */
+  closerDeCuota: Map<ID, ID | undefined>;
   equipo: Map<ID, MiembroEquipo>;
 }
 
 function armarContexto(e: EstadoApp, rango: RangoMes, tc: number): Contexto {
   const ventas = new Map(e.ventas.map((v) => [v.id, v] as const));
   const ventaDeCuota = new Map<ID, Venta>();
+  const closerDe = new Map<ID, ID | undefined>();
   for (const c of e.cuotas) {
     const v = ventas.get(c.ventaId);
-    if (v) ventaDeCuota.set(c.id, v);
+    if (!v) continue;
+    ventaDeCuota.set(c.id, v);
+    closerDe.set(c.id, closerDeCuota(v, c));
   }
-  return { e, rango, base: e.ajustes.monedaBase, tc, ventaDeCuota, equipo: new Map(e.equipo.map((m) => [m.id, m] as const)) };
+  return { e, rango, base: e.ajustes.monedaBase, tc, ventaDeCuota, closerDeCuota: closerDe, equipo: new Map(e.equipo.map((m) => [m.id, m] as const)) };
 }
 
 /* Todo lo cobrado de la empresa, sin filtro: tiene que dar lo mismo que el
@@ -353,12 +358,16 @@ const esTotal = (c: ConceptoPago) =>
 /* Si una venta cuenta para este concepto. Con cualquier filtro, las ventas
    canceladas no cuentan (como en las comisiones de Finanzas), y en las del
    closer, el setter o el director tampoco las que cerró quien no comisiona:
-   "si la venta la cerró Yari, no comisiona nadie". */
-function cuenta(cx: Contexto, c: ConceptoPago, m: MiembroEquipo, v: Venta | undefined): boolean {
+   "si la venta la cerró Yari, no comisiona nadie".
+   Con un cobro (`p`), el del closer va para el closer de la cuota (el que
+   la heredó, si el suyo se fue), y quien ya no está no suma lo que entró
+   después de su fecha de salida: lo mismo que Finanzas. */
+function cuenta(cx: Contexto, c: ConceptoPago, m: MiembroEquipo, v: Venta | undefined, p?: Pago): boolean {
   if (esTotal(c)) return true;
   if (!v || v.estado === "cancelada") return false;
   const alcance = c.alcance ?? "todas";
-  if (alcance === "closer" && v.closerId !== m.id) return false;
+  if (alcance === "closer" && (p ? cx.closerDeCuota.get(p.cuotaId) : v.closerId) !== m.id) return false;
+  if (p && (alcance === "closer" || alcance === "director") && !cobraEnFecha(m, p.fecha)) return false;
   if (alcance === "setter" && v.setterId !== m.id) return false;
   if (alcance === "director" && v.directorId !== m.id) return false;
   if (c.productoIds?.length && !(v.productoId && c.productoIds.includes(v.productoId))) return false;
@@ -383,7 +392,7 @@ function medir(cx: Contexto, c: ConceptoPago, m: MiembroEquipo, r: RangoMes): Me
     case "cash": case "cash-neto": {
       let valor = 0, n = 0;
       for (const p of pagosDelMes(cx.e, r)) {
-        if (!cuenta(cx, c, m, cx.ventaDeCuota.get(p.cuotaId))) continue;
+        if (!cuenta(cx, c, m, cx.ventaDeCuota.get(p.cuotaId), p)) continue;
         valor += b === "cash" ? p.monto : p.monto - p.feeMonto;
         n++;
       }
@@ -437,7 +446,9 @@ interface Profit { profit: number; parte: number }
 function linea(
   cx: Contexto, m: MiembroEquipo, c: ConceptoPago, entrada: EntradaLiquidacion | undefined, prof?: Profit,
 ): LineaLiquidada | null {
-  const vig = vigenciaEnMes(c, cx.rango);
+  /* Quien se fue cobra hasta su fecha de salida: el fijo, prorrateado. */
+  const hasta = m.hasta && (!c.hasta || m.hasta < c.hasta) ? m.hasta : c.hasta;
+  const vig = vigenciaEnMes({ desde: c.desde, hasta }, cx.rango);
   if (!vig) return null;
   const M = (n: number, mon: Moneda = c.moneda) => plata(n, mon);
   const parcial = vig.dias < vig.diasMes;
@@ -546,13 +557,22 @@ function lineaExtra(cx: Contexto, x: ExtraLiquidacion): LineaLiquidada {
 
 /** Quiénes entran en la liquidación: los activos con algo cargado, y los
  *  activos sin nada cargado (salvo el CEO), para que nadie quede afuera
- *  sin que se note. Los que ya no están entran sólo si Finanzas les calcula
- *  comisión en el mes (ver comisionDeFinanzas). */
-export function miembrosALiquidar(e: EstadoApp): MiembroEquipo[] {
+ *  sin que se note. De los que ya no están:
+ *  - con esquema, sólo el período en que se fueron (tienen fecha de salida
+ *    y es de este período o después): cobran los días que estuvieron. Sin
+ *    fecha de salida no entran, como siempre: su fijo no sigue corriendo.
+ *  - sin esquema, si Finanzas les calcula comisión (ver comisionDeFinanzas)
+ *    y no se fueron antes del período.
+ *  `desde` es el primer día del período. Los que no tienen nada en el mes
+ *  se sacan después (calcularLiquidacion). */
+export function miembrosALiquidar(e: EstadoApp, desde?: string): MiembroEquipo[] {
   const conEsquema = new Set(e.honorarios.filter((h) => h.conceptos.length > 0).map((h) => h.miembroId));
   const conAlgo = new Set(e.honorarios.map((h) => h.miembroId));
+  const estuvo = (m: MiembroEquipo) => !desde || !m.hasta || m.hasta >= desde;
   return e.equipo
-    .filter((m) => (m.activo && (conAlgo.has(m.id) || m.rol !== "ceo")) || (!m.activo && !conEsquema.has(m.id) && tasaImplicita(m) > 0))
+    .filter((m) => (m.activo && (conAlgo.has(m.id) || m.rol !== "ceo"))
+      || (!m.activo && conEsquema.has(m.id) && Boolean(m.hasta) && estuvo(m))
+      || (!m.activo && !conEsquema.has(m.id) && tasaImplicita(m) > 0 && estuvo(m)))
     .sort((a, b) => a.nombre.localeCompare(b.nombre, "es"));
 }
 
@@ -590,7 +610,7 @@ export function calcularLiquidacion(e: EstadoApp, periodo: string, liq?: Liquida
   const filas: Fila[] = [];
   const delProfit: { fila: Fila; i: number; c: ConceptoPago }[] = [];
 
-  for (const m of miembrosALiquidar(e)) {
+  for (const m of miembrosALiquidar(e, periodo.slice(0, 7) + "-01")) {
     const esq = esquemaDe.get(m.id);
     const sinCargar = !esq || esq.conceptos.length === 0;
     const pendiente = esq?.pendiente?.trim() || undefined;

@@ -13,6 +13,7 @@ import { NOMBRE_VIA } from "@/lib/vias-webinar";
 import type { Webinar } from "@/lib/types";
 import { diaYHora } from "./fechas";
 import { atribuirAgenda, useAgendasWebinar } from "./useVivo";
+import { MarcaPitch } from "./MarcaPitch";
 
 /* ==================================================================
    Las agendas de Calendly del webinar: cuántas se hicieron en el vivo,
@@ -22,6 +23,8 @@ import { atribuirAgenda, useAgendasWebinar } from "./useVivo";
    Son las mismas que el cron pasa solo a "Llamadas en vivo", "Llamadas
    después" y "Canceladas" (lib/agendas-webinar.ts). Se actualiza cada 30
    segundos: el webhook de Calendly las trae en segundos.
+
+   Arriba, el pitch marcado a mano (MarcaPitch): anda con o sin YouTube.
    ================================================================== */
 
 const ESTADO: Record<string, { texto: string; variante: VarianteBadge }> = {
@@ -51,6 +54,7 @@ export function AgendasWebinar({ w, className }: { w: Webinar; className?: strin
         titulo="Agendas de Calendly"
         sub={`Las que llegan con los links de este webinar, de su clase cero y de su Q&A (utm_campaign=webinar_${fechaUtm(w.fecha)}, clase0_webinar_${fechaUtm(w.fecha)} y qa_webinar_${fechaUtm(w.fecha)}; los links de antes, utm_medium=${clave}). Completan solas las llamadas de la planilla.`}
       />
+      <MarcaPitch w={w} agendas={d?.agendas} />
       {r.estado === "cargando" && <div className="skeleton" style={{ height: 120 }} aria-busy="true" aria-label="Trayendo las agendas" />}
       {r.estado === "error" && <p className="t-sm t-muted">{r.error}</p>}
       {d && (

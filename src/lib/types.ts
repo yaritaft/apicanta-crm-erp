@@ -832,6 +832,10 @@ export interface Cuota {
   estado: EstadoCuota;
   esReserva: boolean;
   notas?: string;
+  /* Quién comisiona los cobros de esta cuota, si no es el closer de la
+     venta: el que la heredó cuando el suyo se fue ("lo que hacemos es
+     pasarle las cuotas a otro closer", Yari 29/09). */
+  closerId?: ID;
 }
 
 /* El archivo que prueba un pago: foto de la transferencia, PDF del recibo.

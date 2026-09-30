@@ -112,6 +112,12 @@ export function TarjetaVenta({ e, venta, resaltada, abierta, onAlternar, onPagar
                 <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
                   <span className="t-strong">{c.esReserva ? "Reserva" : `Cuota ${c.numero}`}</span>
                   {c.vence && <span className="t-sm t-subtle">vence {fechaLarga(c.vence)}</span>}
+                  {/* La heredó otro closer: sus cobros comisionan para él. */}
+                  {c.closerId && c.closerId !== venta.closerId && (
+                    <span className="t-sm t-subtle" title="Esta cuota la heredó otro closer: lo que se cobre comisiona para él.">
+                      · comisiona {e.equipo.find((x) => x.id === c.closerId)?.nombre ?? "otro closer"}
+                    </span>
+                  )}
                   <span className="spacer t-num t-strong">{M(c.monto, 2)}</span>
                   {c.estado === "cancelada"
                     ? <Badge variante="neutral">Cancelada</Badge>

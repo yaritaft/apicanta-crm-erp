@@ -86,7 +86,10 @@ export function tasaDeCobro(e: EstadoApp, m: RangoMes): number {
    el profit. El director, lo mismo con su porcentaje. Si la venta la
    cerró Yari, no comisiona nadie.                                      */
 
+/* Una fila por venta y por closer: si parte de sus cuotas las heredó otro
+   closer, los cobros de ese mes se reparten en dos filas. */
 export interface ComisionVenta {
+  id: string;
   ventaId: string;
   cobradoEnMes: number;
   netoProcesador: number;
@@ -96,13 +99,21 @@ export interface ComisionVenta {
   directorId?: string;
   comisionDirector: number;
   sinComision: boolean;
+  /* El closer de la venta, si esta fila es de cuotas que heredó otro. */
+  heredadaDe?: string;
 }
 
-/* El director cobra sólo los cobros que entraron mientras era director
-   (hasta su fecha de salida, si la tiene): las cuotas que entran después de
-   que se fue no le dejan nada a nadie (MiembroEquipo.hasta). */
-export const cobraDirector = (director: { hasta?: string } | undefined, fechaPago: string) =>
-  !director?.hasta || new Date(fechaPago).getTime() - 3 * 3600000 < new Date(`${director.hasta}T00:00:00Z`).getTime() + 86400000;
+/* Quien se fue cobra sólo lo que entró mientras estaba (hasta su fecha de
+   salida, si la tiene): las cuotas que entran después no le dejan nada.
+   Vale para el director y para los closers (MiembroEquipo.hasta); por eso
+   a los closers que se van se les pasan las cuotas a otro. */
+export const cobraEnFecha = (m: { hasta?: string } | undefined, fechaPago: string) =>
+  !m?.hasta || new Date(fechaPago).getTime() - 3 * 3600000 < new Date(`${m.hasta}T00:00:00Z`).getTime() + 86400000;
+export const cobraDirector = cobraEnFecha;
+
+/** Quién comisiona los cobros de una cuota: el que la heredó o, si nadie,
+ *  el closer de la venta. */
+export const closerDeCuota = (v: { closerId?: string }, c?: { closerId?: string }) => c?.closerId || v.closerId;
 
 export function comisionesDelMes(e: EstadoApp, m: RangoMes): ComisionVenta[] {
   const out: ComisionVenta[] = [];
@@ -110,14 +121,15 @@ export function comisionesDelMes(e: EstadoApp, m: RangoMes): ComisionVenta[] {
   /* Los pagos del período agrupados por venta, de una pasada. Buscarlos venta
      por venta recorría todas las cuotas y todos los pagos para cada una, y
      el Dashboard hace esta cuenta una vez por cada día del rango. */
-  const ventaDeCuota = new Map(e.cuotas.map((c) => [c.id, c.ventaId] as const));
+  const cuotaPorId = new Map(e.cuotas.map((c) => [c.id, c] as const));
   const pagosPorVenta = new Map<string, typeof e.pagos>();
   for (const p of pagosDelMes(e, m)) {
-    const v = ventaDeCuota.get(p.cuotaId);
+    const v = cuotaPorId.get(p.cuotaId)?.ventaId;
     if (!v) continue;
     const xs = pagosPorVenta.get(v);
     if (xs) xs.push(p); else pagosPorVenta.set(v, [p]);
   }
+  const miembro = new Map(e.equipo.map((x) => [x.id, x] as const));
 
   for (const v of e.ventas) {
     if (v.estado === "cancelada") continue;
@@ -125,25 +137,35 @@ export function comisionesDelMes(e: EstadoApp, m: RangoMes): ComisionVenta[] {
     const pagosMes = pagosPorVenta.get(v.id) ?? [];
     if (pagosMes.length === 0) continue;
 
-    const cobrado = pagosMes.reduce((a, p) => a + p.monto, 0);
-    const neto = pagosMes.reduce((a, p) => a + (p.monto - p.feeMonto), 0);
+    /* Si la cerró quien no comisiona (Yari), no comisiona nadie. */
+    const deLaVenta = v.closerId ? miembro.get(v.closerId) : undefined;
+    const sinComision = Boolean(deLaVenta?.sinComision);
+    const director = v.directorId ? miembro.get(v.directorId) : undefined;
 
-    const closer = e.equipo.find((x) => x.id === v.closerId);
-    const director = e.equipo.find((x) => x.id === v.directorId);
-    const sinComision = Boolean(closer?.sinComision);
-    const netoDirector = pagosMes.filter((p) => cobraDirector(director, p.fecha)).reduce((a, p) => a + (p.monto - p.feeMonto), 0);
-
-    out.push({
-      ventaId: v.id,
-      cobradoEnMes: cobrado,
-      netoProcesador: neto,
-      closerId: v.closerId,
-      closerNombre: closer?.nombre ?? "Sin asignar",
-      comisionCloser: sinComision ? 0 : neto * (closer?.comisionRate ?? 0),
-      directorId: v.directorId,
-      comisionDirector: sinComision ? 0 : netoDirector * (director?.comisionRate ?? 0),
-      sinComision,
-    });
+    /* Los cobros de cada closer: el de la venta y el que heredó alguna cuota. */
+    const porCloser = new Map<string, typeof e.pagos>();
+    for (const p of pagosMes) {
+      const k = closerDeCuota(v, cuotaPorId.get(p.cuotaId)) ?? "";
+      const xs = porCloser.get(k);
+      if (xs) xs.push(p); else porCloser.set(k, [p]);
+    }
+    for (const [k, pagos] of porCloser) {
+      const closer = k ? miembro.get(k) : undefined;
+      const neto = (xs: typeof pagos) => xs.reduce((a, p) => a + (p.monto - p.feeMonto), 0);
+      out.push({
+        id: porCloser.size > 1 ? `${v.id}:${k || "sin"}` : v.id,
+        ventaId: v.id,
+        cobradoEnMes: pagos.reduce((a, p) => a + p.monto, 0),
+        netoProcesador: neto(pagos),
+        closerId: k || undefined,
+        closerNombre: closer?.nombre ?? "Sin asignar",
+        comisionCloser: sinComision ? 0 : neto(pagos.filter((p) => cobraEnFecha(closer, p.fecha))) * (closer?.comisionRate ?? 0),
+        directorId: v.directorId,
+        comisionDirector: sinComision ? 0 : neto(pagos.filter((p) => cobraDirector(director, p.fecha))) * (director?.comisionRate ?? 0),
+        sinComision,
+        ...(k && k !== v.closerId ? { heredadaDe: deLaVenta?.nombre ?? "otro closer" } : {}),
+      });
+    }
   }
   return out;
 }

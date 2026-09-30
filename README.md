@@ -97,6 +97,10 @@ no necesita capa de mapeo: lo que sale de la base es la forma que espera la app.
 > Tampoco quedan en el navegador: la copia que guarda para abrir rápido va sin ellas, y al
 > cerrar sesión se borra entera.
 
+Cómo le gusta ver la app a cada uno (qué filas del Dashboard oculta y en qué orden) no es un dato
+del negocio: va en `preferencias`, una fila por usuario, que cada uno lee y escribe sólo para sí
+(`lib/preferencias.ts`, `supabase/preferencias.sql`). Sin esa tabla queda sólo en el navegador.
+
 En **Ajustes → Datos** se puede bajar un respaldo en JSON y restaurarlo.
 
 ## Correr en local
@@ -352,8 +356,12 @@ Una sección que ven sólo los dueños (Yari y Juan Cruz), con tres solapas:
   reparto del profit no se cargan: Finanzas ya las calcula de las ventas, y la tasa con la que
   las calcula (`equipo.comisionRate`) se escribe desde lo que cobra cada uno, así los dos lados
   dan lo mismo. Quien vende y no tiene nada cargado aparece igual con la comisión que le calcula
-  Finanzas, también si ya no está en el equipo y entraron cuotas de ventas suyas. Después se marca a
-  quién ya se le pagó; reabrirla saca sus gastos de Finanzas.
+  Finanzas, también si ya no está en el equipo y entraron cuotas de ventas suyas antes de su fecha de
+  salida. Después se marca a quién ya se le pagó; reabrirla saca sus gastos de Finanzas.
+- **Las cuotas de un closer que se fue.** En su ficha, «Sus cuotas por cobrar» dice cuántas le quedan y
+  «Pasar sus cuotas a…» se las da a otro closer: desde ahí lo que se cobre de ellas comisiona para el
+  que las heredó, en Finanzas, en el resultado del webinar y en la liquidación. Lo ya cobrado sigue
+  siendo de quien cerró la venta, y en la ficha del que las heredó se pueden devolver.
 - **Accesos a la app.** Dar y quitar accesos y elegir el nivel. «Dar acceso y generar clave» crea
   el usuario y muestra la clave una sola vez, lista para mandar; lo hace `/api/accesos` con la
   clave de servicio y sólo si quien pide es dueño. La base no deja quedarse sin ningún dueño.
@@ -388,3 +396,19 @@ correr `supabase/honorarios.sql` (tablas, políticas, niveles de acceso y la col
 - **Fecha de salida del equipo** (`equipo.hasta`, `supabase/equipo-hasta.sql`): un director cobra sólo lo que entró hasta
   que se fue, como pidió Yari («si el director de la venta no es el que está ahora, no comisiona»). Noelia Perelo quedó
   como directora de las ventas de abril a junio de 2026, hasta el 30/06.
+
+## Lo que pidió Yari el 29/09
+
+- **Filas del Dashboard, por usuario**: se ocultan desde la fila misma (el ojo que aparece al pasar por encima, con
+  «Deshacer») o desde «Métricas», y quedan guardadas en el usuario, no en el navegador: se ven igual en cualquier
+  compu. Abajo de la tabla, «N métricas ocultas · Mostrarlas» las muestra atenuadas para devolverlas. Lo que alguien
+  ya tenía oculto en su navegador pasa a su usuario la primera vez. Tabla `preferencias`: `supabase/preferencias.sql`.
+- **El pitch, a mano y sin YouTube**: en la tarjeta «Agendas de Calendly» de cada webinar se marca a qué hora arrancó
+  («Arranca ahora» durante el vivo, o escribiendo la hora después) y se corrige cuando se quiera. Dice en qué minuto
+  del vivo fue y cuántas de las agendas del vivo llegaron desde ahí (`lib/pitch.ts`). Con video, la curva de
+  espectadores lo marca además con su línea.
+- **Los closers que se fueron no cobran más**: desde su fecha de salida (`equipo.hasta`) no comisiona ni el closer ni
+  el director, y sus cuotas por cobrar se pasan a otro closer desde su ficha en Equipo (`cuotas.closerId`,
+  `supabase/cuotas-closer.sql`; `lib/cuotas-closer.ts`). Finanzas, el resultado de cada webinar y la liquidación usan
+  la misma regla (`closerDeCuota` y `cobraEnFecha` en `lib/finanzas.ts`); el cobro de una cuota heredada aparece como
+  «cuotas heredadas de …». La ficha de la venta dice en cada cuota quién la comisiona si no es el closer de la venta.

@@ -1114,6 +1114,21 @@ export const acciones = {
     };
   },
 
+  /* Pasar cuotas a otro closer: desde ahora sus cobros comisionan para él
+     (lib/finanzas.ts: closerDeCuota). La venta sigue a nombre de quien la
+     cerró. `null` las devuelve al closer de la venta. Una sola escritura a
+     la base y un registro en la actividad. */
+  reasignarCuotas(ids: ID[], closerId: ID | null, detalle: string) {
+    if (ids.length === 0) return;
+    const e = snapshot();
+    const cuales = new Set(ids);
+    const cuotas = e.cuotas.map((c) => (cuales.has(c.id) ? { ...c, closerId: closerId ?? undefined } : c));
+    const { lista: act, nuevo } = registrar(e, "config", closerId ?? ids[0], "Cuotas de closer", "actualizo", detalle);
+    guardar({ ...e, cuotas, actividad: act });
+    empujarUpdate("cuotas", ids, { closerId });
+    empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
+  },
+
   /* La configuración del CRM (opciones de cada campo, qué agendas entran en
      cada tabla). Renombrar una opción renombra también lo que ya estaba
      cargado con ella, como en Airtable. */
