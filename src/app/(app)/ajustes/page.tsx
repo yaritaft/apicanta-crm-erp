@@ -12,6 +12,7 @@ import { CatalogosVenta } from "@/components/ajustes/CatalogosVenta";
 import { ConfigUtms } from "@/components/ajustes/ConfigUtms";
 import { FormulariosMeta } from "@/components/ajustes/FormulariosMeta";
 import { YoutubeIntegracion } from "@/components/ajustes/YoutubeIntegracion";
+import { FathomIntegracion } from "@/components/ajustes/FathomIntegracion";
 import { PageHead } from "@/components/shell/PageHead";
 import {
   Ayuda, Badge, Button, Card, CardHead, Empty, Field, IconButton, Input,
@@ -486,13 +487,14 @@ function Integraciones() {
     <div className="stack-4">
       <Ayuda titulo="Apicanta funciona sin conectar nada" icono={<Info size={18} />}>
         Todo lo que ves anda cargando los datos a mano. Estas conexiones son para ahorrarte ese trabajo: cuando estén
-        puestas, la inversión de Meta, las sesiones de Calendly y los vivos de YouTube entran solos. Las claves viven
+        puestas, la inversión de Meta, las sesiones de Calendly, las grabaciones de Fathom y los vivos de YouTube entran solos. Las claves viven
         en el servidor (en Vercel), nunca en esta pantalla.
       </Ayuda>
 
       <EstadoMeta />
       <FormulariosMeta />
       <EstadoCalendly />
+      <FathomIntegracion />
       <YoutubeIntegracion />
     </div>
   );

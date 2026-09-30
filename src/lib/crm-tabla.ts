@@ -33,6 +33,8 @@ export interface FilaTabla {
   cierre: string;        // aaaa-mm-dd
   via: string;
   ad: string;
+  /* El ad sin copias ni formato (anguloDe): las copias de un anuncio son el mismo ángulo. */
+  angulo: string;
   campania: string;
   pais: string;
   edad: string;
@@ -102,6 +104,19 @@ export function adDe(s: Pick<Sesion, "utm">, c?: Pick<Contacto, "utm"> | null): 
   return { ad: "", campania: "" };
 }
 
+/** El ángulo de un ad: su nombre sin las copias ni el formato del archivo.
+    En Meta los ads se llaman como su video y se duplican («MERCADO
+    SATURADO.mp4 - Copia 2»): todas las copias son el mismo ángulo. */
+export function anguloDe(ad: string): string {
+  let s = ad.trim();
+  for (let i = 0; i < 4; i++) {
+    const antes = s;
+    s = s.replace(/\s*-\s*copia(\s*\d+)?\s*$/i, "").replace(/\s*\.(mp4|mov|m4v|webm|jpe?g|png|gif|m)\s*$/i, "").trim();
+    if (s === antes) break;
+  }
+  return s.replace(/\s+/g, " ");
+}
+
 /* ---------- Las filas ---------- */
 
 export function filasTabla(
@@ -136,7 +151,7 @@ export function filasTabla(
       oferta: s.hizoOferta === true ? "Sí" : s.hizoOferta === false ? "No" : "",
       cierre: s.cierreEstimado ?? "",
       via: viaDe(s, f),
-      ad, campania,
+      ad, angulo: anguloDe(ad), campania,
       pais: c?.pais?.trim() || paisDeTelefono(f.telefono),
       edad: respuestaA(qa, /(\bedad\b|cuantos anos tenes|que edad)/) ?? "",
       tecnologias: f.lenguajes,
@@ -161,7 +176,7 @@ export function filasTabla(
 
 export type ClaveColumna =
   | "llamada" | "nombre" | "closer" | "estado" | "resultado" | "objecion" | "oferta" | "cierre"
-  | "via" | "ad" | "campania" | "pais" | "edad" | "tecnologias" | "ingles" | "experiencia" | "formacion"
+  | "via" | "ad" | "angulo" | "campania" | "pais" | "edad" | "tecnologias" | "ingles" | "experiencia" | "formacion"
   | "ingreso" | "inversion" | "calificada" | "grabacion" | "venta" | "email" | "telefono" | "agendo" | "notas";
 
 export interface ColumnaTabla {
@@ -197,6 +212,7 @@ export const COLUMNAS: ColumnaTabla[] = [
   { clave: "venta", titulo: "Venta", grupo: "Resultado", valores: (f) => [f.venta ? "Con venta" : "Sin venta"], orden: (f) => f.venta, ancho: 190 },
   { clave: "via", titulo: "Vía", grupo: "Origen", valores: (f) => uno(f.via), ancho: 170 },
   { clave: "ad", titulo: "Ad", grupo: "Origen", valores: (f) => uno(f.ad), ancho: 200 },
+  { clave: "angulo", titulo: "Ángulo", grupo: "Origen", valores: (f) => uno(f.angulo), ancho: 190 },
   { clave: "campania", titulo: "Campaña", grupo: "Origen", valores: (f) => uno(f.campania), ancho: 200 },
   { clave: "pais", titulo: "País", grupo: "Perfil", valores: (f) => uno(f.pais), ancho: 130 },
   { clave: "edad", titulo: "Edad", grupo: "Perfil", valores: (f) => uno(f.edad), ancho: 90 },
@@ -352,4 +368,4 @@ export function porDimension(filas: FilaTabla[], clave: ClaveColumna): FilaDimen
 }
 
 /* Las columnas que tienen sentido para abrir el análisis. */
-export const DIMENSIONES: ClaveColumna[] = ["objecion", "pais", "edad", "tecnologias", "ingreso", "inversion", "ingles", "experiencia", "ad", "via", "closer", "calificada"];
+export const DIMENSIONES: ClaveColumna[] = ["objecion", "pais", "edad", "tecnologias", "ingreso", "inversion", "ingles", "experiencia", "angulo", "ad", "via", "closer", "calificada"];

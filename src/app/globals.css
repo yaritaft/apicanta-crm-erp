@@ -3172,3 +3172,33 @@ span.kpis__etiqueta:hover { color: var(--ink); text-decoration: none; }
 .tipos-tabla__celda--editar { background: color-mix(in srgb, var(--success) 10%, transparent); }
 .tipos-tabla__celda--ver { background: color-mix(in srgb, var(--info) 10%, transparent); }
 .tipos-tabla__num { text-align: right; padding-right: var(--space-3); }
+
+/* La grabación de Fathom de una llamada, en la ficha (GrabacionFathom). */
+.fathom {
+  display: flex; flex-direction: column; gap: var(--space-2);
+  padding: var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-md);
+  background: var(--surface-100);
+}
+.fathom__cabeza { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); }
+.fathom__marca { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; color: var(--ink); }
+.fathom__marca svg { color: var(--brand); }
+.fathom__resumen { font-size: 13px; line-height: 20px; color: var(--ink); }
+.fathom__resumen--corto { max-height: 180px; overflow: hidden; -webkit-mask-image: linear-gradient(#000 70%, transparent); mask-image: linear-gradient(#000 70%, transparent); }
+.fathom__acc { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; font-size: 13px; line-height: 20px; }
+.fathom__acc li { display: flex; gap: 6px; align-items: flex-start; }
+.fathom__acc li svg { flex: none; margin-top: 3px; color: var(--ink-subtle); }
+.fathom__trans {
+  list-style: none; margin: 0; padding: 0; max-height: 360px; overflow: auto;
+  display: flex; flex-direction: column; gap: 6px; font-size: 13px; line-height: 20px;
+}
+.fathom__trans li { display: grid; grid-template-columns: 64px 1fr; gap: var(--space-2); }
+.fathom__t { font-size: 12px; }
+
+/* Markdown de los resúmenes (components/ui/Markdown). */
+.md { display: flex; flex-direction: column; gap: 4px; }
+.md__titulo { margin: var(--space-2) 0 0; font-size: 13px; line-height: 20px; font-weight: 700; color: var(--ink); }
+.md__titulo:first-child { margin-top: 0; }
+.md__parrafo { margin: 0; }
+.md__item { position: relative; }
+.md__vineta { position: absolute; margin-left: -14px; color: var(--ink-subtle); }
+.md code { font-size: 12px; padding: 0 4px; border-radius: 4px; background: var(--surface-300); }

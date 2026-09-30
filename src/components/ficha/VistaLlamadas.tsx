@@ -8,7 +8,9 @@ import { textoFecha } from "@/components/crm-tabla/FiltroColumna";
 import { VARIANTE_RESULTADO } from "@/components/crm-tabla/resultado";
 import { filasTabla, type FilaTabla } from "@/lib/crm-tabla";
 import type { Persona } from "@/lib/persona";
+import type { Grabacion } from "@/lib/fathom";
 import type { EstadoApp } from "@/lib/types";
+import { GrabacionFathom, useGrabaciones } from "./GrabacionFathom";
 
 /* ==================================================================
    La ficha, vista Llamadas: lo del CRM de esta persona, ordenado.
@@ -17,7 +19,8 @@ import type { EstadoApp } from "@/lib/types";
    cada llamada con cómo terminó: el resultado, la objeción, si hubo
    oferta, para cuándo se estima el cierre, la grabación y las notas. La
    que ya pasó y nadie cargó se carga desde acá (el mismo EOD, para esa
-   llamada sola).
+   llamada sola). Si Fathom la grabó, abajo va lo suyo: el resumen, los
+   accionables y la transcripción (GrabacionFathom).
    ================================================================== */
 
 const HORA = new Intl.DateTimeFormat("es-AR", { timeZone: "America/Argentina/Buenos_Aires", hour: "2-digit", minute: "2-digit", hour12: false });
@@ -31,6 +34,7 @@ export function VistaLlamadas({ e, p }: { e: EstadoApp; p: Persona }) {
     const ids = new Set(p.sesiones.map((s) => s.id));
     return filasTabla(e).filter((f) => ids.has(f.id)).sort((a, b) => b.llamada.localeCompare(a.llamada));
   }, [e, p.sesiones]);
+  const { porSesion } = useGrabaciones(filas.map((f) => f.id));
 
   if (p.sesiones.length === 0) {
     return (
@@ -81,7 +85,7 @@ export function VistaLlamadas({ e, p }: { e: EstadoApp; p: Persona }) {
 
       <section className="stack-3">
         <span className="t-label">Llamadas ({filas.length})</span>
-        {filas.map((f) => <Llamada key={f.id} f={f} onCargar={() => setCargar(f.id)} />)}
+        {filas.map((f) => <Llamada key={f.id} f={f} grabaciones={porSesion.get(f.id) ?? []} onCargar={() => setCargar(f.id)} />)}
       </section>
 
       {cargar && <Eod soloSesionId={cargar} onCerrar={() => setCargar(null)} />}
@@ -89,14 +93,15 @@ export function VistaLlamadas({ e, p }: { e: EstadoApp; p: Persona }) {
   );
 }
 
-function Llamada({ f, onCargar }: { f: FilaTabla; onCargar: () => void }) {
+function Llamada({ f, grabaciones, onCargar }: { f: FilaTabla; grabaciones: Grabacion[]; onCargar: () => void }) {
   const cargable = f.sinCargar || f.sesion.resultado;
   const detalles: [string, React.ReactNode][] = ([
     ["Objeción", f.objecion],
     ["¿Hizo la oferta?", f.oferta],
     ["Cierre estimado", f.cierre ? textoFecha(f.cierre) : ""],
     ["Venta", f.venta ? <span className="crm-t__venta">{f.venta}</span> : ""],
-    ["Grabación", f.grabacion ? <a className="link" href={f.grabacion} target="_blank" rel="noopener noreferrer"><ExternalLink size={13} /> Verla</a> : ""],
+    /* Con Fathom, el link va en su bloque de abajo. */
+    ["Grabación", f.grabacion && grabaciones.length === 0 ? <a className="link" href={f.grabacion} target="_blank" rel="noopener noreferrer"><ExternalLink size={13} /> Verla</a> : ""],
   ] as [string, React.ReactNode][]).filter(([, v]) => v);
   return (
     <article className="ficha-ll__llamada">
@@ -114,6 +119,7 @@ function Llamada({ f, onCargar }: { f: FilaTabla; onCargar: () => void }) {
         </dl>
       )}
       {f.notas && <p className="t-sm t-muted" style={{ whiteSpace: "pre-wrap", margin: 0 }}>{f.notas}</p>}
+      {grabaciones.map((g) => <GrabacionFathom key={g.id} g={g} />)}
       {cargable && (
         <div>
           <Button sm variante={f.sinCargar ? "primary" : "ghost"} icono={f.sinCargar ? <ClipboardCheck size={14} /> : <Pencil size={14} />} onClick={onCargar}>

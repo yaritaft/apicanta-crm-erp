@@ -433,3 +433,14 @@ correr `supabase/honorarios.sql` (tablas, políticas, niveles de acceso y la col
   Las personas, los leads y la actividad llevan `creadoPor` (el correo de la sesión, lo completa la base): cada uno ve
   lo que creó, así el closer puede cargar a alguien nuevo, y la actividad sabe quién hizo cada cosa. «Lo suyo» se
   calcula una vez por consulta (`mis_*()`, `son_mios()`): el closer carga todo en menos de 100 ms.
+- **Fathom** (`lib/fathom.ts`, `lib/fathom-servidor.ts`, `supabase/fathom.sql`): cada llamada con su grabación, el
+  resumen, los accionables y la transcripción, sin que el closer pegue nada. En Ajustes → Integraciones, «Conectar»
+  crea el webhook en Fathom (con `FATHOM_API_KEY`, que vive en Vercel) y guarda su secreto en `fathom_conexion`, que
+  sólo lee el servidor; desde ahí cada reunión llega a `/api/fathom/webhook`, se verifica su firma (Standard Webhooks)
+  y se ata a su llamada de Calendly por el correo del invitado y la hora (±4 h; con dos, la del closer que grabó). «Traer
+  lo anterior» pide a su API las reuniones de los últimos días. Se ven en la ficha de la persona, en Llamadas: el link,
+  el resumen, los accionables y la transcripción con buscador. Las transcripciones no se cargan al abrir la app: se piden
+  al abrir la ficha, y el closer ve sólo las de sus llamadas (RLS).
+- **El ángulo del ad** (`anguloDe` en `lib/crm-tabla.ts`): en Meta los ads se llaman como su video y se duplican
+  («MERCADO SATURADO.mp4 - Copia 2»); el ángulo es ese nombre sin copias ni formato. Es columna del CRM y corte en «Por
+  qué no se cierra».
