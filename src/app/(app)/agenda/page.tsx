@@ -456,7 +456,7 @@ export default function Agenda() {
             <>
               {(sesionVista.contactoId || sesionVista.leadId) && (
                 <Button variante="primary" icono={<UserRound size={16} />}
-                  onClick={() => { const id = sesionVista.contactoId ?? sesionVista.leadId!; setVer(null); abrirFicha(id); }}>
+                  onClick={() => { const id = sesionVista.contactoId ?? sesionVista.leadId!; setVer(null); abrirFicha(id, "llamadas"); }}>
                   Ver la ficha
                 </Button>
               )}

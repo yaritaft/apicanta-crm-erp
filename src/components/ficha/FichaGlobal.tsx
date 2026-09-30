@@ -16,7 +16,7 @@ export function FichaGlobal() {
     <FichaPersona
       key={id}
       id={id}
-      vista={params.get("vista") === "servicio" ? "servicio" : "ventas"}
+      vista={params.get("vista") === "servicio" ? "servicio" : params.get("vista") === "llamadas" ? "llamadas" : "ventas"}
       ventaResaltada={params.get("venta")}
       onCerrar={cerrar}
       onVista={cambiarVista}

@@ -22,6 +22,7 @@ import { useToast } from "@/components/ui/Toast";
 import { acciones, useEstado, useTema } from "@/lib/store";
 import { num, relativo } from "@/lib/format";
 import type { Ajustes as TAjustes, CampoPersonalizado, EntidadNombre, Etapa, TipoCampo } from "@/lib/types";
+import { objecionesDe } from "@/lib/eod";
 
 type Seccion = "negocio" | "ventas" | "utms" | "pipeline" | "listas" | "campos" | "integraciones" | "datos";
 
@@ -290,30 +291,46 @@ const LISTAS: { clave: keyof TAjustes; titulo: string; sub: string }[] = [
 ];
 
 function Listas() {
+  const e = useEstado();
   return (
     <div className="grid-2">
       {LISTAS.map((l) => <ListaEditable key={String(l.clave)} clave={l.clave} titulo={l.titulo} sub={l.sub} />)}
+      {/* Las objeciones que elige el closer en su cierre del día (lib/eod.ts):
+          viven en la configuración del CRM. */}
+      <ListaEditable
+        titulo="Objeciones del cierre del día" sub="Por qué no cerró: lo que elige el closer en su EOD, con un clic."
+        items={objecionesDe(e.ajustes)}
+        onGuardar={(objeciones, detalle) => acciones.ajustes({ crm: { ...(e.ajustes.crm ?? {}), objeciones } }, detalle)}
+      />
     </div>
   );
 }
 
-function ListaEditable({ clave, titulo, sub }: { clave: keyof TAjustes; titulo: string; sub: string }) {
+function ListaEditable({ clave, titulo, sub, items: propios, onGuardar }: {
+  titulo: string; sub: string;
+  /* Una lista de ajustes por su clave, o una propia con cómo se guarda. */
+  clave?: keyof TAjustes; items?: string[]; onGuardar?: (items: string[], detalle: string) => void;
+}) {
   const e = useEstado();
   const toast = useToast();
   const [nuevo, setNuevo] = useState("");
-  const items = (e.ajustes[clave] as string[]) ?? [];
+  const items = propios ?? (clave ? (e.ajustes[clave] as string[]) : undefined) ?? [];
+  const guardar = (xs: string[], detalle: string) => {
+    if (onGuardar) onGuardar(xs, detalle);
+    else if (clave) acciones.ajustes({ [clave]: xs } as Partial<TAjustes>, detalle);
+  };
 
   function agregar() {
     const t = nuevo.trim();
     if (!t) return;
     if (items.includes(t)) { toast("Esa opción ya está en la lista.", "err"); return; }
-    acciones.ajustes({ [clave]: [...items, t] } as Partial<TAjustes>, `Se agregó «${t}» a ${titulo.toLowerCase()}.`);
+    guardar([...items, t], `Se agregó «${t}» a ${titulo.toLowerCase()}.`);
     setNuevo("");
     toast(`«${t}» agregado.`);
   }
 
   function quitar(x: string) {
-    acciones.ajustes({ [clave]: items.filter((i) => i !== x) } as Partial<TAjustes>, `Se quitó «${x}» de ${titulo.toLowerCase()}.`);
+    guardar(items.filter((i) => i !== x), `Se quitó «${x}» de ${titulo.toLowerCase()}.`);
     toast(`«${x}» quitado.`);
   }
 

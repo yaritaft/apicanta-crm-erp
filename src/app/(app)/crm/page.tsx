@@ -1,8 +1,9 @@
 "use client";
 
-import { Crm } from "@/components/crm/Crm";
+import { CrmTabla } from "@/components/crm-tabla/CrmTabla";
 
-/* El CRM de ventas: cada agenda de Calendly, como el Airtable del equipo. */
+/* El CRM: cada llamada en una tabla que se filtra como un Excel, y el
+   cierre del día de cada closer (EOD). */
 export default function PaginaCrm() {
-  return <Crm />;
+  return <CrmTabla />;
 }

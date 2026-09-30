@@ -13,7 +13,7 @@ import { useRouter } from "next/navigation";
    quién pertenece.
    ================================================================== */
 
-export type VistaFicha = "ventas" | "servicio";
+export type VistaFicha = "llamadas" | "ventas" | "servicio";
 
 /* Si la abrimos nosotros con push, cerrarla es volver atrás (el Atrás del
    navegador y la ✕ hacen lo mismo). Si se entró por un link directo, no

@@ -16,6 +16,9 @@ export interface Columna<T> {
   /* Lo que va en la fila de totales, al pie. Con que una columna lo tenga, la
      tabla dibuja esa fila: el total se lee debajo de su columna, no aparte. */
   pie?: React.ReactNode;
+  /* Un encabezado propio en vez del título (el menú de filtro del CRM, como
+     en Excel): con esto el clic en el encabezado no ordena, lo maneja él. */
+  encabezado?: React.ReactNode;
 }
 
 type Orden = { clave: string; desc: boolean };
@@ -123,13 +126,13 @@ export function DataTable<T extends { id: string }>({
             {columnas.map((c) => (
               <th
                 key={c.clave}
-                className={`${c.tipo === "num" ? "hk-th--num " : ""}${c.orden ? "sortable" : ""}`}
+                className={`${c.tipo === "num" ? "hk-th--num " : ""}${c.orden && !c.encabezado ? "sortable" : ""}`}
                 style={c.ancho ? { width: c.ancho } : undefined}
-                onClick={c.orden ? () => alternar(c.clave) : undefined}
+                onClick={c.orden && !c.encabezado ? () => alternar(c.clave) : undefined}
                 aria-sort={orden?.clave === c.clave ? (orden.desc ? "descending" : "ascending") : undefined}
               >
-                {c.titulo}
-                {orden?.clave === c.clave && (
+                {c.encabezado ?? c.titulo}
+                {!c.encabezado && orden?.clave === c.clave && (
                   <span className="sort-ico">
                     {orden.desc ? <ArrowDown size={14} /> : <ArrowUp size={14} />}
                   </span>

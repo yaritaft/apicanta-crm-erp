@@ -192,7 +192,20 @@ export interface Sesion {
   estadoPreCall?: string;    // Confirmado, Reagendar, Sin Respuesta
   estadoLlamada?: string;    // Compra Full, Seguimiento Nutrición, Inasistió…
   grabacion?: string;        // El link de Fathom
+  /* El cierre del día del closer (EOD, lib/eod.ts): cómo terminó la
+     llamada y, si no cerró, por qué. Como en Blue OS: el resultado, la
+     objeción, si hizo la oferta y para cuándo estima cerrarlo. */
+  resultado?: ResultadoLlamada;
+  objecion?: string;
+  hizoOferta?: boolean;
+  cierreEstimado?: string;   // aaaa-mm-dd
+  eodEn?: string;            // cuándo lo cargó
+  eodPor?: string;           // quién
 }
+
+/* Cómo terminó una llamada: con cierre (compró), sin cierre, no se
+   presentó o se reprogramó. */
+export type ResultadoLlamada = "compro" | "no-compro" | "no-vino" | "reprogramo";
 
 /* ---------- Webinars ---------- */
 
@@ -440,6 +453,8 @@ export interface TablaCrm {
 export interface ConfigCrm {
   opciones?: Partial<Record<CampoOpcionesCrm, OpcionCrm[]>>;
   tablas?: TablaCrm[];
+  /* Las objeciones que elige el closer en el EOD (lib/eod.ts). */
+  objeciones?: string[];
 }
 
 /* Una UTM armada para un lanzamiento o una campaña: los valores que tienen

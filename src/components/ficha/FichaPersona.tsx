@@ -20,6 +20,7 @@ import { ChatEquipo } from "./ChatEquipo";
 import { HistorialPersona } from "./HistorialPersona";
 import { UtmsPersona } from "./UtmsPersona";
 import { TarjetaVenta } from "./TarjetaVenta";
+import { VistaLlamadas } from "./VistaLlamadas";
 import { CabezaPlegable, usePlegado } from "./Plegable";
 import type { VistaFicha } from "./abrir";
 import { acciones, cuotasQueCancelaLaBaja, useEstado } from "@/lib/store";
@@ -81,9 +82,11 @@ export function FichaPersona({ id, vista, ventaResaltada, onCerrar, onVista }: {
             <div className="ficha__cuerpo">
               <Lateral e={e} p={p} />
               <div className="ficha__principal">
-                {vista === "ventas"
-                  ? <VistaVentas e={e} p={p} ventaResaltada={ventaResaltada} />
-                  : <VistaServicio e={e} p={p} />}
+                {vista === "llamadas"
+                  ? <VistaLlamadas e={e} p={p} />
+                  : vista === "ventas"
+                    ? <VistaVentas e={e} p={p} ventaResaltada={ventaResaltada} />
+                    : <VistaServicio e={e} p={p} />}
               </div>
             </div>
           </>
@@ -116,9 +119,9 @@ function Cabecera({ e, p, vista, onVista, onCerrar }: {
       </div>
       <div className="ficha__acciones">
         <div className="segmento" role="tablist" aria-label="Qué mirar de la persona">
-          {(["ventas", "servicio"] as const).map((v) => (
+          {(["llamadas", "ventas", "servicio"] as const).map((v) => (
             <button key={v} type="button" role="tab" aria-selected={vista === v} onClick={() => onVista(v)}>
-              {v === "ventas" ? "Ventas" : "Servicio"}
+              {v === "llamadas" ? "Llamadas" : v === "ventas" ? "Ventas" : "Servicio"}
             </button>
           ))}
         </div>

@@ -209,9 +209,29 @@ cuotas y cobros, que es lo que permite los vencimientos y la mora.
   conciliados y los corregidos a mano no se tocan. La Financiera cobra el 6%, como en la planilla.
 - Antes de usarlo contra Supabase hay que correr `supabase/modelo-angelo.sql` (sólo agrega columnas).
 
-## El CRM (Booking Calls)
+## El CRM: una tabla como un Excel, y el cierre del día
 
-Reemplaza al Pipeline: una planilla como la de Airtable con **una fila por agenda de Calendly** (una llamada de
+Yari (29/09) quería salir de Airtable: "lo fácil le gana a todo". El **CRM** (`/crm`) es una tabla con **una fila
+por llamada** y todo lo que se sabe de la persona, sin cargar nada a mano: el resultado, la objeción, si hubo oferta
+y el cierre estimado; por qué vía y con qué ad llegó; país (del prefijo del teléfono), edad, tecnologías, inglés,
+cuánto gana y cuánto puede invertir; la grabación y la venta. **Cada columna se filtra con un clic en su título**,
+como en Excel: se tildan los valores, o «Sólo» deja uno. El período, la búsqueda, los filtros y el orden van en el
+link (`?solo-pais=Argentina|México&sin-resultado=Por venir`) y la pantalla vuelve como se dejó. «Por qué no se
+cierra» muestra, con los mismos filtros, cuánto se cierra de lo que se presentó, las objeciones y todo eso abierto
+por país, edad, tecnología, plata, ad, vía o closer (`lib/crm-tabla.ts`).
+
+El **cierre del día (EOD)** es lo único que carga el closer: al final del día pasa por sus llamadas de a una, como un
+Typeform (`components/crm-tabla/Eod.tsx`, `lib/eod.ts`, inspirado en Blue OS). Compró: se carga la venta en el
+asistente de siempre y pasa a cliente. No compró: por qué (la lista de objeciones), si hizo la oferta y para cuándo
+estima cerrarlo. No se presentó o se reprogramó. Suma las que quedaron sin cargar de las últimas dos semanas. Lo
+mismo se carga desde la ficha de la persona, que tiene la vista **Llamadas** con su perfil, de dónde vino y cada
+llamada. Antes de usarlo contra Supabase hay que correr `supabase/eod.sql` (seis columnas en `sesiones`).
+
+La planilla como la de Airtable que había antes sigue en `/crm/grilla`, fuera del menú.
+
+### La grilla de antes (Booking Calls)
+
+Reemplazó al Pipeline: una planilla como la de Airtable con **una fila por agenda de Calendly** (una llamada de
 venta, no una persona: si alguien agenda dos veces son dos filas). Las agendas entran solas: el webhook de Calendly
 las escribe en la base y Realtime las trae a la pantalla en segundos, sin recargar, con la fila resaltada un momento.
 Hay dos tablas, como en el Airtable: **Booking Calls** (las llamadas de asesoramiento: webinar, VSL, setter) y

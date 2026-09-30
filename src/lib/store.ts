@@ -580,7 +580,8 @@ function registrar(
 
 /* Lo que el CRM carga sobre una agenda. `estado` sólo lo manda deshacer:
    devuelve la llamada a como estaba. */
-type CambiosLlamada = Partial<Pick<Sesion, "preCall" | "estadoPreCall" | "estadoLlamada" | "notas" | "grabacion" | "estado">>;
+type CambiosLlamada = Partial<Pick<Sesion, "preCall" | "estadoPreCall" | "estadoLlamada" | "notas" | "grabacion" | "estado"
+  | "resultado" | "objecion" | "hizoOferta" | "cierreEstimado" | "eodEn" | "eodPor">>;
 type PedidoLlamada = { id: ID; cambios: CambiosLlamada; detalle: string };
 export type CambioEtapa = { antes: ID; despues: ID };
 
