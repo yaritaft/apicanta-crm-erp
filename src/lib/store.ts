@@ -241,6 +241,15 @@ export function escrituraPendiente(tabla: string, id: ID): boolean {
 let acceso: MiAcceso | null = null;
 export function fijarAcceso(a: MiAcceso | null) { acceso = a; }
 
+/* Lo que la cuenta puede editar; mientras no se sabe quién es, todo (decide
+   la base). Lo usan los cambios que un gesto hace solo en otras tablas: la
+   etapa del lead, la llamada de la que salió una venta, el nombre corregido
+   en todos lados. Si la cuenta no edita esa tabla, se saltean en silencio:
+   quien carga una venta desde Administración no tiene por qué ver un error
+   por la llamada del CRM, que no es suya. Lo que la persona cambia a
+   propósito sí pasa por empujar(), que avisa si no se puede. */
+const puedo = (tabla: string) => !acceso || puedeEditar(acceso, tabla);
+
 const oyentesNegadas = new Set<(tabla: string, motivo?: string) => void>();
 export function alNegarseEscritura(f: (tabla: string, motivo?: string) => void): () => void {
   oyentesNegadas.add(f);
@@ -689,7 +698,7 @@ function moverEnTanda(t: Tanda, e: EstadoApp, lead: Lead, eventos: EventoEtapa[]
 
 function fijarEtapa(t: Tanda, e: EstadoApp, lead: Lead, etapaId: ID, motivo: string) {
   const actual = t.leads.get(lead.id) ?? lead;
-  if (actual.etapaId === etapaId) return;
+  if (actual.etapaId === etapaId || !puedo("leads")) return;
   t.etapas[lead.id] = { antes: t.etapas[lead.id]?.antes ?? actual.etapaId, despues: etapaId };
   t.leads.set(lead.id, { ...actual, etapaId, actualizadoEn: t.cuando });
   const nombre = (id: ID) => e.etapas.find((x) => x.id === id)?.nombre ?? "—";
@@ -1525,11 +1534,13 @@ export const acciones = {
       const claves = Object.keys(valores) as (keyof T)[];
       return claves.length === 0 ? [] : filas.filter((x) => claves.some((k) => x[k] !== valores[k])).map((x) => ({ fila: { ...x, ...valores }, valores }));
     };
-    const contactos = p.contacto ? tocar([p.contacto], { nombre, email, telefono }) : [];
-    const leads = tocar(p.leads, { nombre, email, telefono });
-    const sesiones = tocar(p.sesiones, { invitado: nombre, email });
-    const ventas = tocar(p.ventas, { contactoNombre: nombre });
-    const alumnos = tocar(p.alumnos, { nombre, email });
+    /* Sólo en lo que la cuenta edita: el resto queda como está. */
+    const si = <T,>(tabla: string, cambiadas: T[]) => (puedo(tabla) ? cambiadas : []);
+    const contactos = si("contactos", p.contacto ? tocar([p.contacto], { nombre, email, telefono }) : []);
+    const leads = si("leads", tocar(p.leads, { nombre, email, telefono }));
+    const sesiones = si("sesiones", tocar(p.sesiones, { invitado: nombre, email }));
+    const ventas = si("ventas", tocar(p.ventas, { contactoNombre: nombre }));
+    const alumnos = si("alumnos", tocar(p.alumnos, { nombre, email }));
     const total = contactos.length + leads.length + sesiones.length + ventas.length + alumnos.length;
     if (total === 0) return;
 
@@ -1710,7 +1721,7 @@ export const acciones = {
        pasa a la etapa ganada (lib/etapas-auto.ts). */
     const t = nuevaTanda();
     const llamada = llamadaDeVenta(e, venta, datos.sesionId);
-    if (llamada && !llamada.estadoLlamada) {
+    if (llamada && !llamada.estadoLlamada && puedo("sesiones")) {
       const op = opcionDeCompra(e, venta, cuotas);
       if (op) {
         cargarLlamadas(t, e, [{
