@@ -1,18 +1,23 @@
 import { NextResponse } from "next/server";
 import { nubeServidor } from "@/lib/servidor";
 import { exigirArea } from "@/lib/permisos-servidor";
-import { borrarWebhook, crearWebhook, guardarGrabacion, hayApiFathom, reunionesDesde } from "@/lib/fathom-servidor";
+import { desdeParaImportar } from "@/lib/fathom";
+import { borrarWebhook, crearWebhook, EsperarAFathom, guardarGrabacion, hayApiFathom, reunionesDesde } from "@/lib/fathom-servidor";
 
 /* ==================================================================
    Fathom, desde Ajustes → Integraciones.
 
    GET: cómo está (si hay clave, si el webhook está conectado, cuántas
-   grabaciones llegaron y cuántas se ataron a su llamada).
+   grabaciones se guardaron atadas a su llamada y desde cuándo hay
+   llamadas de Calendly para atarlas).
    POST { accion }:
    - "conectar": crea el webhook en Fathom apuntando a /api/fathom/webhook
      y guarda su secreto en `fathom_conexion` (no pasa por el navegador).
-   - "importar": trae una página de reuniones desde `desde` (y `cursor`
-     para la siguiente); la pantalla sigue pidiendo hasta que no haya más.
+   - "importar": trae una página de reuniones (y `cursor` para la
+     siguiente) desde el día antes de la primera llamada de Calendly; se
+     guardan sólo las que tienen su llamada, el resto se descarta. Si
+     Fathom pide esperar, contesta `esperar` (segundos) y la pantalla
+     vuelve a pedir la misma página después.
    - "desconectar": borra el webhook de Fathom.
    Lo ve quien ve los Ajustes; lo cambia quien los edita.
    ================================================================== */
@@ -35,11 +40,12 @@ export async function GET(peticion: Request) {
   if (noPuede) return noPuede;
   const db = nubeServidor();
   if (!db) return NextResponse.json({ clave: hayApiFathom(), conectado: false, grabaciones: 0, atadas: 0 });
-  const [c, total, atadas, ultima] = await Promise.all([
+  const [c, total, atadas, ultima, primera] = await Promise.all([
     db.from("fathom_conexion").select("url, paraElEquipo, conectadoEn, conectadoPor").eq("id", 1).maybeSingle(),
     db.from("grabaciones").select("id", { count: "exact", head: true }),
     db.from("grabaciones").select("id", { count: "exact", head: true }).not("sesionId", "is", null),
     db.from("grabaciones").select("creadoEn").order("creadoEn", { ascending: false }).limit(1).maybeSingle(),
+    primeraLlamada(db),
   ]);
   const faltaTabla = [c, total].some((r) => r.error && /grabaciones|fathom_conexion|PGRST205|42P01/.test(`${r.error.code} ${r.error.message}`));
   const con = c.data as { url?: string; paraElEquipo?: boolean; conectadoEn?: string; conectadoPor?: string } | null;
@@ -54,7 +60,14 @@ export async function GET(peticion: Request) {
     grabaciones: total.count ?? 0,
     atadas: atadas.count ?? 0,
     ultima: (ultima.data as { creadoEn?: string } | null)?.creadoEn ?? null,
+    desde: desdeParaImportar(null, primera, Date.now()),
   }, { headers: { "Cache-Control": "no-store" } });
+}
+
+/** Cuándo es la primera llamada de Calendly (con correo) que hay en la app. */
+async function primeraLlamada(db: NonNullable<ReturnType<typeof nubeServidor>>): Promise<string | null> {
+  const r = await db.from("sesiones").select("inicia").not("email", "is", null).order("inicia", { ascending: true }).limit(1).maybeSingle();
+  return (r.data as { inicia?: string } | null)?.inicia ?? null;
 }
 
 export async function POST(peticion: Request) {
@@ -92,16 +105,23 @@ export async function POST(peticion: Request) {
     }
 
     if (b.accion === "importar") {
-      const desde = b.desde && !Number.isNaN(Date.parse(b.desde)) ? new Date(b.desde).toISOString()
-        : new Date(Date.now() - 90 * 86_400_000).toISOString();
-      const pagina = await reunionesDesde(desde, b.cursor ?? null);
-      let guardadas = 0, atadas = 0;
+      const desde = desdeParaImportar(b.desde, await primeraLlamada(db), Date.now());
+      if (!desde) return NextResponse.json({ ok: true, sinLlamadas: true, atadas: 0, descartadas: 0, siguiente: null });
+      let pagina;
+      try {
+        pagina = await reunionesDesde(desde, b.cursor ?? null);
+      } catch (err) {
+        if (err instanceof EsperarAFathom) return NextResponse.json({ ok: true, esperar: err.segundos, atadas: 0, descartadas: 0 });
+        throw err;
+      }
+      let atadas = 0, descartadas = 0;
       for (const item of pagina.items) {
         const r = await guardarGrabacion(db, item);
-        if (r.ok) guardadas++;
-        if (r.sesionId) atadas++;
+        /* Sin recording_id no hay nada que guardar; un error de la base, sí se avisa. */
+        if (!r.ok && !r.error?.includes("recording_id")) throw new Error(`No se pudo guardar una grabación: ${r.error}`);
+        if (r.guardada) atadas++; else descartadas++;
       }
-      return NextResponse.json({ ok: true, guardadas, atadas, siguiente: pagina.siguiente });
+      return NextResponse.json({ ok: true, atadas, descartadas, siguiente: pagina.siguiente, desde });
     }
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : "No se pudo hablar con Fathom." }, { status: 502 });

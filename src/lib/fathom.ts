@@ -6,8 +6,9 @@
    Fathom avisa por webhook cuando una reunión está lista (api/fathom/
    webhook) y lo de antes se trae por su API (api/fathom). Cada reunión se
    ata a su llamada de Calendly por el correo del invitado y la hora, como
-   en Blue OS. Acá, lo que no toca la red ni la base, para poder probarlo:
-   cómo se lee una reunión de Fathom y con qué llamada va.
+   en Blue OS; la que no tiene llamada (personal o interna) no se guarda.
+   Acá, lo que no toca la red ni la base, para poder probarlo: cómo se lee
+   una reunión de Fathom, con qué llamada va y si se guarda.
    ================================================================== */
 
 export interface InvitadoGrabacion { nombre?: string; email?: string; externo?: boolean }
@@ -130,6 +131,48 @@ export function llamadaDe(
   const esDeQuienGrabo = (a?: string | null) => Boolean(quienGrabo && a && corto(a) === corto(quienGrabo));
   candidatas.sort((a, b) => Number(esDeQuienGrabo(b.l.anfitrion)) - Number(esDeQuienGrabo(a.l.anfitrion)) || a.delta - b.delta);
   return candidatas[0].l.id;
+}
+
+/* ---------- si se guarda ----------
+   Sólo se guardan las grabaciones de las llamadas de venta: las que tienen
+   su llamada de Calendly en la app. Una reunión personal o interna, sin
+   llamada, se descarta sin guardar nada ("si es una llamada personal que no
+   tiene ningún evento de Calendly asociado, no traerlo", Yari 30/09). */
+
+export interface DecisionGrabacion { guardar: boolean; sesionId: string | null; por: Grabacion["emparejadaPor"] }
+
+/** Qué hacer con una grabación que llega: `antes` es la que ya estaba
+    guardada (si había) y `encontrada`, la llamada que se le encontró ahora. */
+export function decidirGrabacion(
+  antes: Pick<Grabacion, "sesionId" | "emparejadaPor"> | null | undefined,
+  encontrada: string | null,
+): DecisionGrabacion {
+  /* La que se ató a mano no se desata sola. */
+  if (antes?.emparejadaPor === "a-mano" && antes.sesionId) return { guardar: true, sesionId: antes.sesionId, por: "a-mano" };
+  if (encontrada) return { guardar: true, sesionId: encontrada, por: "email-y-hora" };
+  /* Si ya estaba atada y ahora no se encuentra (la llamada se movió), sigue con la de antes. */
+  if (antes?.sesionId) return { guardar: true, sesionId: antes.sesionId, por: antes.emparejadaPor ?? "email-y-hora" };
+  return { guardar: false, sesionId: null, por: null };
+}
+
+/** Desde cuándo pedirle a Fathom lo anterior: no antes del día previo a la
+    primera llamada de Calendly que hay en la app (lo de antes no tiene con
+    qué atarse) ni de un año atrás. null si no hay ninguna llamada. */
+export function desdeParaImportar(pedido: string | null | undefined, primeraLlamada: string | null | undefined, ahora: number): string | null {
+  const primera = Date.parse(primeraLlamada ?? "");
+  if (!Number.isFinite(primera)) return null;
+  const piso = Math.max(primera - 86_400_000, ahora - 365 * 86_400_000);
+  const pedida = Date.parse(pedido ?? "");
+  return new Date(Number.isFinite(pedida) ? Math.max(pedida, piso) : piso).toISOString();
+}
+
+/** Cuánto esperar cuando Fathom contesta 429, de su Retry-After (segundos
+    o una fecha): entre 5 segundos y 2 minutos; sin el dato, un minuto. */
+export function segundosDeEspera(retryAfter: string | null | undefined, ahora: number): number {
+  const v = (retryAfter ?? "").trim();
+  let s = v === "" ? NaN : /^\d+(\.\d+)?$/.test(v) ? Number(v) : (Date.parse(v) - ahora) / 1000;
+  if (!Number.isFinite(s)) s = 60;
+  return Math.min(120, Math.max(5, Math.ceil(s)));
 }
 
 /** Cuánto duró, "34 min", de lo que grabó Fathom. */

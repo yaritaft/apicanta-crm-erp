@@ -1,11 +1,12 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { leerReunion, llamadaDe, type Grabacion, type LlamadaCandidata } from "./fathom";
+import { decidirGrabacion, leerReunion, llamadaDe, segundosDeEspera, type Grabacion, type LlamadaCandidata } from "./fathom";
 
 /* ==================================================================
    Fathom del lado del servidor: su API (con FATHOM_API_KEY, que vive en
    Vercel y nunca llega al navegador), la firma de su webhook y guardar
-   cada grabación atada a su llamada.
+   cada grabación atada a su llamada. Las que no tienen llamada de
+   Calendly (personales o internas) no se guardan.
 
    El secreto del webhook lo devuelve Fathom al crearlo (api/fathom,
    «Conectar») y se guarda en `fathom_conexion`, que sólo lee el servidor.
@@ -58,22 +59,21 @@ export async function secretoWebhook(db: SupabaseClient): Promise<string | null>
 
 /* ---------- guardar una grabación ---------- */
 
-/** Guarda una reunión de Fathom y la ata a su llamada. Una grabación que se
-    ató a mano no se desata sola. Le pone el link a la llamada si no tenía
+export interface ResultadoGrabacion { ok: boolean; guardada: boolean; sesionId: string | null; error?: string }
+
+/** Guarda una reunión de Fathom atada a su llamada de Calendly. La que no
+    tiene llamada (personal o interna) no se guarda: `guardada: false`
+    (lib/fathom, decidirGrabacion). Le pone el link a la llamada si no tenía
     (el closer lo podía pegar en el cierre del día: ése se respeta). */
-export async function guardarGrabacion(db: SupabaseClient, payload: unknown): Promise<{ ok: boolean; sesionId: string | null; error?: string }> {
+export async function guardarGrabacion(db: SupabaseClient, payload: unknown): Promise<ResultadoGrabacion> {
   const g = leerReunion(payload);
-  if (!g) return { ok: false, sesionId: null, error: "La reunión no trae recording_id." };
+  if (!g) return { ok: false, guardada: false, sesionId: null, error: "La reunión no trae recording_id." };
 
   const previa = await db.from("grabaciones").select("sesionId, emparejadaPor, creadoEn").eq("id", g.id).maybeSingle();
-  const antes = previa.data as { sesionId: string | null; emparejadaPor: string | null; creadoEn: string } | null;
+  const antes = previa.data as { sesionId: string | null; emparejadaPor: Grabacion["emparejadaPor"]; creadoEn: string } | null;
 
-  let sesionId: string | null = null;
-  let por: Grabacion["emparejadaPor"] = null;
-  if (antes?.emparejadaPor === "a-mano") {
-    sesionId = antes.sesionId;
-    por = "a-mano";
-  } else {
+  let encontrada: string | null = null;
+  if (antes?.emparejadaPor !== "a-mano") {
     const t = Date.parse(g.empieza ?? g.grabadaDesde ?? g.creadoEn ?? "");
     if (Number.isFinite(t)) {
       const [ll, eq] = await Promise.all([
@@ -81,26 +81,40 @@ export async function guardarGrabacion(db: SupabaseClient, payload: unknown): Pr
           .gte("inicia", new Date(t - 4 * 3600_000).toISOString()).lte("inicia", new Date(t + 4 * 3600_000).toISOString()),
         db.from("equipo").select("nombre, email"),
       ]);
-      if (ll.error) return { ok: false, sesionId: null, error: ll.error.message };
-      sesionId = llamadaDe(g, (ll.data ?? []) as LlamadaCandidata[], (eq.data ?? []) as { nombre: string; email?: string | null }[]);
-      if (sesionId) por = "email-y-hora";
+      if (ll.error) return { ok: false, guardada: false, sesionId: null, error: ll.error.message };
+      encontrada = llamadaDe(g, (ll.data ?? []) as LlamadaCandidata[], (eq.data ?? []) as { nombre: string; email?: string | null }[]);
     }
   }
 
-  const ahora = new Date().toISOString();
-  const fila = { ...g, sesionId, emparejadaPor: por, creadoEn: antes?.creadoEn ?? g.creadoEn ?? ahora, actualizadoEn: ahora };
-  const r = await db.from("grabaciones").upsert(fila, { onConflict: "id" });
-  if (r.error) return { ok: false, sesionId, error: r.error.message };
+  const d = decidirGrabacion(antes, encontrada);
+  if (!d.guardar) return { ok: true, guardada: false, sesionId: null };
 
-  if (sesionId && g.shareUrl) {
-    await db.from("sesiones").update({ grabacion: g.shareUrl }).eq("id", sesionId).or("grabacion.is.null,grabacion.eq.");
+  const ahora = new Date().toISOString();
+  const fila = { ...g, sesionId: d.sesionId, emparejadaPor: d.por, creadoEn: antes?.creadoEn ?? g.creadoEn ?? ahora, actualizadoEn: ahora };
+  const r = await db.from("grabaciones").upsert(fila, { onConflict: "id" });
+  if (r.error) return { ok: false, guardada: false, sesionId: d.sesionId, error: r.error.message };
+
+  if (d.sesionId && g.shareUrl) {
+    await db.from("sesiones").update({ grabacion: g.shareUrl }).eq("id", d.sesionId).or("grabacion.is.null,grabacion.eq.");
   }
-  return { ok: true, sesionId };
+  return { ok: true, guardada: true, sesionId: d.sesionId };
 }
 
 /* ---------- la API ---------- */
 
 export interface PaginaReuniones { items: unknown[]; siguiente: string | null }
+
+/** Fathom contestó 429: pide esperar `segundos` antes de volver a pedir.
+    Las páginas con transcripción son «pedidos pesados»: 30 por minuto, y
+    cuando tiene mucho trabajo, 5. */
+export class EsperarAFathom extends Error {
+  segundos: number;
+  constructor(segundos: number) {
+    super(`Fathom pidió esperar ${segundos} s.`);
+    this.name = "EsperarAFathom";
+    this.segundos = segundos;
+  }
+}
 
 /** Una página de reuniones de Fathom, con resumen, transcripción y
     accionables, creadas desde `desde`. */
@@ -111,7 +125,12 @@ export async function reunionesDesde(desde: string, cursor?: string | null): Pro
   });
   if (cursor) q.set("cursor", cursor);
   const r = await fathom(`/meetings?${q}`);
-  if (!r.ok) throw new Error(await errorDe(r));
+  if (r.status === 429) throw new EsperarAFathom(segundosDeEspera(r.headers.get("retry-after"), Date.now()));
+  if (!r.ok) {
+    const error = await errorDe(r);
+    console.error("[fathom] /meetings:", error);
+    throw new Error(error);
+  }
   const j = (await r.json()) as { items?: unknown[]; next_cursor?: string | null };
   return { items: j.items ?? [], siguiente: j.next_cursor ?? null };
 }

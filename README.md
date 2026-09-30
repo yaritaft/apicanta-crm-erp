@@ -437,10 +437,13 @@ correr `supabase/honorarios.sql` (tablas, políticas, niveles de acceso y la col
   resumen, los accionables y la transcripción, sin que el closer pegue nada. En Ajustes → Integraciones, «Conectar»
   crea el webhook en Fathom (con `FATHOM_API_KEY`, que vive en Vercel) y guarda su secreto en `fathom_conexion`, que
   sólo lee el servidor; desde ahí cada reunión llega a `/api/fathom/webhook`, se verifica su firma (Standard Webhooks)
-  y se ata a su llamada de Calendly por el correo del invitado y la hora (±4 h; con dos, la del closer que grabó). «Traer
-  lo anterior» pide a su API las reuniones de los últimos días. Se ven en la ficha de la persona, en Llamadas: el link,
-  el resumen, los accionables y la transcripción con buscador. Las transcripciones no se cargan al abrir la app: se piden
-  al abrir la ficha, y el closer ve sólo las de sus llamadas (RLS).
+  y se ata a su llamada de Calendly por el correo del invitado y la hora (±4 h; con dos, la del closer que grabó). Sólo
+  se guardan las de una llamada de Calendly: una reunión personal o interna se descarta sin guardar nada (Yari, 30/09;
+  `decidirGrabacion`). «Traer lo anterior» pide a su API las reuniones desde el día antes de la primera llamada de
+  Calendly que hay en la app (lo de antes no tiene con qué atarse); las páginas con transcripción son pedidos «pesados»
+  para Fathom (30 por minuto, 5 cuando está cargado): si contesta 429, la pantalla espera su `Retry-After` y sigue. Se
+  ven en la ficha de la persona, en Llamadas: el link, el resumen, los accionables y la transcripción con buscador. Las
+  transcripciones no se cargan al abrir la app: se piden al abrir la ficha, y el closer ve sólo las de sus llamadas (RLS).
 - **El ángulo del ad** (`anguloDe` en `lib/crm-tabla.ts`): en Meta los ads se llaman como su video y se duplican
   («MERCADO SATURADO.mp4 - Copia 2»); el ángulo es ese nombre sin copias ni formato. Es columna del CRM y corte en «Por
   qué no se cierra».

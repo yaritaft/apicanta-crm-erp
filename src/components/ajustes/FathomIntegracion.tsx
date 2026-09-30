@@ -1,30 +1,32 @@
 "use client";
 
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Check, Download, Plug, RefreshCw, Unplug } from "lucide-react";
-import { Badge, Button, Card, CardHead, Select } from "@/components/ui/ui";
+import { Badge, Button, Card, CardHead } from "@/components/ui/ui";
 import { Confirmar } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toast";
 import { cabeceras } from "@/components/webinars/useYoutube";
-import { num, relativo } from "@/lib/format";
+import { fecha, num, relativo } from "@/lib/format";
 import { hayNube } from "@/lib/store";
 
 /* ==================================================================
-   Fathom, en Ajustes → Integraciones: que cada llamada tenga sola su
-   grabación, el resumen, los accionables y la transcripción.
+   Fathom, en Ajustes → Integraciones: que cada llamada de venta tenga
+   sola su grabación, el resumen, los accionables y la transcripción.
 
    - La clave (FATHOM_API_KEY) vive en Vercel.
    - «Conectar» crea el webhook en Fathom: desde ahí, cada reunión que
-     termina llega sola y se ata a su llamada por el correo del invitado y
-     la hora. El secreto del webhook lo guarda el servidor.
-   - «Traer lo anterior» pide a Fathom las reuniones de los últimos días,
-     de a una página, hasta que no hay más.
+     termina llega sola y se ata a su llamada de Calendly por el correo del
+     invitado y la hora. La que no tiene llamada (personal o interna) se
+     descarta sin guardarse. El secreto del webhook lo guarda el servidor.
+   - «Traer lo anterior» pide a Fathom las reuniones desde el día antes de
+     la primera llamada de Calendly que hay en la app, de a una página,
+     hasta que no hay más. Si Fathom pide una pausa, espera y sigue.
    ================================================================== */
 
 interface Estado {
   clave: boolean; tablas?: boolean; conectado: boolean; aMano?: boolean; paraElEquipo?: boolean;
   conectadoEn?: string | null; conectadoPor?: string | null;
-  grabaciones: number; atadas: number; ultima?: string | null; error?: string;
+  grabaciones: number; atadas: number; ultima?: string | null; desde?: string | null; error?: string;
 }
 
 async function pedir(metodo: "GET" | "POST", cuerpo?: object) {
@@ -38,20 +40,21 @@ async function pedir(metodo: "GET" | "POST", cuerpo?: object) {
   return j;
 }
 
-const DIAS = [
-  { valor: "30", texto: "Los últimos 30 días" },
-  { valor: "90", texto: "Los últimos 90 días" },
-  { valor: "180", texto: "Los últimos 6 meses" },
-  { valor: "365", texto: "El último año" },
-];
+const dormir = (ms: number) => new Promise((listo) => setTimeout(listo, ms));
+
+/* Cuántas veces se espera a Fathom antes de dejar para otro momento. */
+const PAUSAS_MAXIMAS = 40;
 
 export function FathomIntegracion() {
   const toast = useToast();
   const [estado, setEstado] = useState<Estado | null>(null);
   const [trabajando, setTrabajando] = useState<string | null>(null);
-  const [dias, setDias] = useState("90");
-  const [avance, setAvance] = useState<{ guardadas: number; atadas: number } | null>(null);
+  const [avance, setAvance] = useState<{ atadas: number; descartadas: number } | null>(null);
+  const [pausa, setPausa] = useState<number | null>(null);
   const [desconectar, setDesconectar] = useState(false);
+  /* Si se cierra la pantalla en medio de «Traer lo anterior», se deja de pedir. */
+  const montado = useRef(true);
+  useEffect(() => () => { montado.current = false; }, []);
 
   const recargar = useCallback(async () => {
     if (!hayNube) { setEstado({ clave: false, conectado: false, grabaciones: 0, atadas: 0 }); return; }
@@ -65,8 +68,8 @@ export function FathomIntegracion() {
     try {
       const j = await pedir("POST", { accion: "conectar" });
       toast(j.yaEstaba ? "Ya estaba conectado." : j.paraElEquipo
-        ? "Fathom conectado: llegan las reuniones de todo el equipo."
-        : "Fathom conectado: llegan las reuniones de quien tiene la clave y las que le comparten.");
+        ? "Fathom conectado: llegan las llamadas de venta de todo el equipo."
+        : "Fathom conectado: llegan las de quien tiene la clave y las que le comparten.");
       await recargar();
     } catch (err) { toast(err instanceof Error ? err.message : "No se pudo conectar.", "err"); }
     setTrabajando(null);
@@ -74,30 +77,45 @@ export function FathomIntegracion() {
 
   async function importar() {
     setTrabajando("importar");
-    const desde = new Date(Date.now() - Number(dias) * 86_400_000).toISOString();
-    let cursor: string | null = null, guardadas = 0, atadas = 0;
+    setAvance({ atadas: 0, descartadas: 0 });
+    let cursor: string | null = null, atadas = 0, descartadas = 0, pausas = 0, sinLlamadas = false;
     try {
-      for (let i = 0; i < 200; i++) {
-        const j = await pedir("POST", { accion: "importar", desde, cursor });
-        guardadas += Number(j.guardadas ?? 0);
+      for (let i = 0; i < 500 && montado.current; i++) {
+        const j = await pedir("POST", { accion: "importar", cursor });
+        if (j.sinLlamadas) { sinLlamadas = true; break; }
+        if (typeof j.esperar === "number") {
+          /* Fathom pidió una pausa: se espera lo que dice y se pide la misma página. */
+          if (++pausas > PAUSAS_MAXIMAS) throw new Error("Fathom sigue pidiendo pausas. Probá de nuevo en un rato: lo que ya se trajo queda guardado.");
+          for (let s = Math.ceil(j.esperar); s > 0 && montado.current; s--) { setPausa(s); await dormir(1000); }
+          setPausa(null);
+          continue;
+        }
         atadas += Number(j.atadas ?? 0);
-        setAvance({ guardadas, atadas });
+        descartadas += Number(j.descartadas ?? 0);
+        setAvance({ atadas, descartadas });
         cursor = (j.siguiente as string | null) ?? null;
         if (!cursor) break;
       }
-      toast(`Listo: ${num(guardadas)} ${guardadas === 1 ? "grabación" : "grabaciones"}, ${num(atadas)} atadas a su llamada.`);
-    } catch (err) { toast(err instanceof Error ? err.message : "No se pudo traer.", "err"); }
+      if (!montado.current) return;
+      toast(sinLlamadas
+        ? "Todavía no hay llamadas de Calendly en la app: no hay con qué atar las grabaciones."
+        : `Listo: ${num(atadas)} ${atadas === 1 ? "grabación atada" : "grabaciones atadas"} a su llamada.${descartadas
+          ? ` ${num(descartadas)} ${descartadas === 1 ? "no tenía" : "no tenían"} llamada de Calendly y no se ${descartadas === 1 ? "guardó" : "guardaron"}.` : ""}`);
+    } catch (err) { if (montado.current) toast(err instanceof Error ? err.message : "No se pudo traer.", "err"); }
+    if (!montado.current) return;
+    setPausa(null);
     setTrabajando(null);
     await recargar();
   }
 
+  /* Las que llegaron antes de que se descartaran las que no tienen llamada. */
   const sinAtar = estado ? estado.grabaciones - estado.atadas : 0;
 
   return (
     <Card>
       <CardHead
         titulo="Fathom"
-        sub="Cada llamada con su grabación: el link, el resumen, los accionables y la transcripción llegan solos y se ven en la ficha de la persona, en Llamadas."
+        sub="Cada llamada de venta con su grabación: el link, el resumen, los accionables y la transcripción llegan solos y se ven en la ficha de la persona, en Llamadas."
         acciones={estado?.conectado
           ? <Badge variante="success" icono={<Check size={12} />}>Conectado</Badge>
           : <Badge variante="neutral">Sin conectar</Badge>}
@@ -119,14 +137,18 @@ export function FathomIntegracion() {
           {estado.conectado ? (
             <p className="t-sm t-muted">
               {estado.aMano
-                ? "El webhook se creó a mano en Fathom (con FATHOM_WEBHOOK_SECRET en Vercel)."
+                ? "El webhook se creó a mano en Fathom (con FATHOM_WEBHOOK_SECRET en Vercel). "
                 : `Conectado ${estado.conectadoEn ? relativo(estado.conectadoEn) : ""}${estado.conectadoPor ? ` por ${estado.conectadoPor}` : ""}. `}
               {!estado.aMano && (estado.paraElEquipo
-                ? "Llegan las reuniones de todo el equipo de Fathom."
-                : "Llegan las reuniones de quien tiene la clave y las que le comparten: para las de cada closer, que las compartan con ese usuario o que estén en el mismo equipo de Fathom.")}
+                ? "Llegan las reuniones de todo el equipo de Fathom. "
+                : "Llegan las reuniones de quien tiene la clave y las que le comparten: para las de cada closer, que las compartan con ese usuario o que estén en el mismo equipo de Fathom. ")}
+              Se guardan sólo las de una llamada de Calendly: las personales o internas se descartan sin guardarse.
             </p>
           ) : (
-            <p className="t-sm t-muted">Al conectar, Fathom avisa cada vez que termina una reunión y la app la ata sola a su llamada, por el correo del invitado y la hora.</p>
+            <p className="t-sm t-muted">
+              Al conectar, Fathom avisa cada vez que termina una reunión y la app la ata sola a su llamada de Calendly, por el correo del invitado y la hora.
+              Las que no tienen llamada (personales o internas) no se guardan.
+            </p>
           )}
 
           <div className="row-wrap" style={{ gap: 8 }}>
@@ -134,9 +156,6 @@ export function FathomIntegracion() {
               <Button variante="primary" icono={<Plug size={16} />} disabled={!estado.clave || estado.tablas === false || Boolean(trabajando)}
                 cargando={trabajando === "conectar"} onClick={() => void conectar()}>Conectar</Button>
             )}
-            <div style={{ width: 200 }}>
-              <Select value={dias} aria-label="Desde cuándo traer" opciones={DIAS} onChange={(ev) => setDias(ev.target.value)} />
-            </div>
             <Button variante="secondary" icono={<Download size={16} />} disabled={!estado.clave || estado.tablas === false || Boolean(trabajando)}
               cargando={trabajando === "importar"} onClick={() => void importar()}>Traer lo anterior</Button>
             <Button sm variante="ghost" icono={<RefreshCw size={14} />} disabled={Boolean(trabajando)} onClick={() => void recargar()}>Actualizar</Button>
@@ -144,19 +163,26 @@ export function FathomIntegracion() {
               <Button sm variante="ghost" icono={<Unplug size={14} />} disabled={Boolean(trabajando)} onClick={() => setDesconectar(true)}>Desconectar</Button>
             )}
           </div>
+          <p className="t-sm t-subtle">
+            {estado.desde
+              ? `«Traer lo anterior» busca desde el ${fecha(estado.desde)}: antes no hay llamadas de Calendly en la app para atarlas.`
+              : "«Traer lo anterior» busca desde la primera llamada de Calendly que haya en la app."}
+          </p>
           {trabajando === "importar" && avance && (
-            <p className="t-sm t-subtle" role="status">Trayendo… {num(avance.guardadas)} grabaciones, {num(avance.atadas)} atadas.</p>
+            <p className="t-sm t-subtle" role="status">
+              {pausa
+                ? `Fathom pidió una pausa: sigo en ${pausa} s… (van ${num(avance.atadas)} atadas)`
+                : `Trayendo… ${num(avance.atadas)} atadas a su llamada, ${num(avance.descartadas)} sin llamada (no se guardan).`}
+            </p>
           )}
 
-          <div className="wb-kpis" style={{ gridTemplateColumns: "repeat(3, minmax(0, 1fr))", marginBottom: 0 }}>
-            <Kpi etiqueta="Grabaciones" valor={num(estado.grabaciones)} />
-            <Kpi etiqueta="Atadas a su llamada" valor={num(estado.atadas)} />
-            <Kpi etiqueta="Sin llamada" valor={num(sinAtar)} tenue />
+          <div className="wb-kpis" style={{ gridTemplateColumns: "repeat(2, minmax(0, 1fr))", marginBottom: 0 }}>
+            <Kpi etiqueta="Llamadas con grabación" valor={num(estado.atadas)} />
+            <Kpi etiqueta="La última llegó" valor={estado.ultima ? relativo(estado.ultima) : "—"} tenue={!estado.ultima} />
           </div>
-          {estado.ultima && <p className="t-sm t-subtle">La última llegó {relativo(estado.ultima)}.</p>}
           {sinAtar > 0 && (
             <p className="t-sm t-subtle">
-              Las que quedan sin llamada son reuniones sin invitado de Calendly a esa hora (internas, o de alguien que agendó con otro correo).
+              Hay {num(sinAtar)} {sinAtar === 1 ? "grabación guardada" : "grabaciones guardadas"} sin llamada, de antes de que se descartaran: no se muestran en ningún lado.
             </p>
           )}
         </div>
