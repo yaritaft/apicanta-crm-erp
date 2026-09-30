@@ -250,9 +250,27 @@ export function alNegarseEscritura(f: (tabla: string, motivo?: string) => void):
 let resincronizar: number | undefined;
 function negada(tabla: string, motivo?: string) {
   oyentesNegadas.forEach((f) => f(tabla, motivo));
+  resincronizarAlVaciarse();
+}
+
+/* Se vuelve a traer todo recién cuando la cola se vació. Si quedan
+   escrituras que la base sí acepta (una venta, sus cuotas y sus cobros van
+   en varias), traer antes pisaría la memoria con una base que todavía no
+   las tiene: la venta desaparecía de la pantalla hasta la próxima carga,
+   aunque en la base quedaba bien (lo vio la sesión del CRM). Si la cola
+   quedó trabada por un error, no se trae nada: se perdería lo pendiente. */
+function resincronizarAlVaciarse() {
   if (typeof window === "undefined") return;
   window.clearTimeout(resincronizar);
-  resincronizar = window.setTimeout(() => { reiniciarCarga(); void cargarDeLaNube(); }, 400);
+  resincronizar = window.setTimeout(() => {
+    if (cola.length > 0 || drenando) {
+      if (!drenando && sync === "error") return;
+      resincronizarAlVaciarse();
+      return;
+    }
+    reiniciarCarga();
+    void cargarDeLaNube();
+  }, 400);
 }
 
 function empujar(op: Op) {
