@@ -1,20 +1,28 @@
 import { evaluarAgenda } from "./calificacion";
-import { EVENTOS, fechaUtm, leerUtm, MOMENTOS_EVENTO, NOMBRE_FUNNEL, textoUtm } from "./utm-estandar";
+import { diaDelWebinar, diaUtm, EVENTOS, leerUtm, MOMENTOS_EVENTO, NOMBRE_FUNNEL, textoUtm } from "./utm-estandar";
 
 /* ==================================================================
-   Las agendas de Calendly de un webinar: cuáles son suyas y si se
-   hicieron en el vivo o después.
+   Las agendas de Calendly de un webinar: cuáles son suyas, por qué vía
+   llegaron y si se hicieron en el vivo o después.
 
    Es del webinar la agenda que trae su UTM. En el estándar (lib/
    utm-estandar.ts), utm_campaign=webinar_aaaammdd con la fecha entera;
    en el formato viejo, utm_source=Webinar y la fecha ("23-09") en
-   utm_medium (o en utm_content, como venían los links de antes). Se hizo
-   en el vivo o después según utm_content:
+   utm_medium (o en utm_content, como venían los links de antes).
+
+   También son suyas las de su clase cero y su Q&A: el lanzamiento entero
+   (clase0_webinar_aaaammdd, qa_webinar_aaaammdd; los links de antes, con
+   la fecha de la clase, son del último webinar hasta ese día). Cada agenda
+   sabe por qué vía llegó, para ver cuánto rinde cada una (Yari, 25/09).
+
+   Se hizo en el vivo o después según utm_content:
    - vivo (EnVivo en el viejo) → en el vivo, el link de la transmisión;
    - replay o seguimiento (PostWebinar en el viejo) → después;
    - sin eso, por la hora: hasta que terminó la transmisión, en el vivo;
      después, después.
-   Las canceladas se cuentan aparte, estén en el vivo o después.
+   La clase cero y el Q&A son después del vivo del webinar, digan lo que
+   digan: su "vivo" es el de la clase. Las canceladas se cuentan aparte,
+   estén en el vivo o después.
 
    Y se puede corregir a mano (extra.atribucion en la sesión): pasar una
    agenda al vivo o a después, o sacarla del webinar. Manda sobre todo lo
@@ -40,7 +48,12 @@ export interface SesionCalendly {
   extra?: Record<string, unknown> | null;
   /* Lo que contestó en el formulario de Calendly: de ahí sale si califica. */
   respuestas?: { pregunta: string; respuesta: string }[] | null;
+  /* La persona: con esto se sabe por qué vía llegó cada venta. */
+  contactoId?: string | null;
 }
+
+/* Por qué vía del lanzamiento llegó una agenda. */
+export type ViaLanzamiento = "webinar" | "clase0" | "qa";
 
 /* La corrección a mano, guardada en sesiones.extra.atribucion. */
 export interface Atribucion {
@@ -77,9 +90,12 @@ export function embudoDe(s: { canal?: string | null; utm?: Record<string, string
   const l = leerUtm(u);
   if (l.formato === "estandar" && l.funnel) {
     if (EVENTOS.includes(l.funnel)) {
-      const dia = l.fecha ? `${l.fecha.slice(8, 10)}-${l.fecha.slice(5, 7)}` : "";
+      const ddmm = (iso: string) => `${iso.slice(8, 10)}-${iso.slice(5, 7)}`;
       const link = (MOMENTOS_EVENTO as readonly string[]).includes(l.contenido ?? "") ? l.contenido as LinkWebinar : undefined;
-      return { texto: `${NOMBRE_FUNNEL[l.funnel]}${dia ? ` ${dia}` : ""}`, link, utm };
+      /* "Clase cero del webinar 24-09"; los links de antes, "Clase cero 29-09". */
+      const texto = l.funnel !== "webinar" && l.fechaWebinar ? `${NOMBRE_FUNNEL[l.funnel]} del webinar ${ddmm(l.fechaWebinar)}`
+        : `${NOMBRE_FUNNEL[l.funnel]}${l.fecha ? ` ${ddmm(l.fecha)}` : ""}`;
+      return { texto, link, utm };
     }
     return { texto: textoUtm(l) ?? NOMBRE_FUNNEL[l.funnel], utm };
   }
@@ -98,6 +114,9 @@ export function embudoDe(s: { canal?: string | null; utm?: Record<string, string
 
 export interface AgendaDelWebinar {
   id: string;
+  /* Webinar, clase cero o Q&A de este webinar. */
+  via: ViaLanzamiento;
+  contactoId?: string;
   nombre: string;
   agendadaEn: string;
   llamada?: string;
@@ -146,40 +165,49 @@ const normalFecha = (s: string | undefined) => {
   return m ? `${m[1].padStart(2, "0")}-${m[2].padStart(2, "0")}` : null;
 };
 
-/* `clave` es el día y mes del webinar ("24-09"), para el formato viejo;
-   `dia`, la fecha entera (aaaa-mm-dd), para el estándar, que la trae. */
-export function esDelWebinar(s: SesionCalendly, clave: string, dia?: string): boolean {
+/* Por qué vía del lanzamiento de este webinar llegó una agenda, o null si
+   no es de este webinar. `clave` es el día y mes del webinar ("24-09"),
+   para el formato viejo; `dia`, la fecha entera (aaaa-mm-dd), para el
+   estándar, que la trae; `dias`, los de todos los webinars, para saber
+   de cuál es un link de clase cero o Q&A de antes, que sólo traía la
+   fecha de la clase (sin ellos, se mira sólo este). */
+export function viaDe(s: SesionCalendly, clave: string, dia: string, dias?: string[]): ViaLanzamiento | null {
   const u = s.utm ?? {};
   const l = leerUtm(u);
   if (l.formato === "estandar") {
-    if (l.funnel !== "webinar" || !l.fecha) return false;
-    return dia ? l.fecha === dia : `${l.fecha.slice(8, 10)}-${l.fecha.slice(5, 7)}` === clave;
+    if (!l.funnel || !EVENTOS.includes(l.funnel)) return null;
+    return diaDelWebinar(l, dias ?? [dia]) === dia ? l.funnel as ViaLanzamiento : null;
   }
-  if (!/webinar/i.test(u.utm_source ?? "")) return false;
-  return [u.utm_medium, u.utm_content, u.utm_campaign].some((x) => normalFecha(x) === clave);
+  if (!/webinar/i.test(u.utm_source ?? "")) return null;
+  return [u.utm_medium, u.utm_content, u.utm_campaign].some((x) => normalFecha(x) === clave) ? "webinar" : null;
 }
 
+/* `diasDeWebinars`: el día (aaaa-mm-dd) de cada webinar cargado, para los
+   links de clase cero y Q&A de antes (ver viaDe). */
 export function resumirAgendas(
   sesiones: SesionCalendly[],
   webinar: { fecha: string; duracionMin?: number },
   vivo: { inicio?: string | null; fin?: string | null } = {},
+  diasDeWebinars?: string[],
 ): ResumenAgendas {
   const clave = claveDeFecha(webinar.fecha);
-  const f = fechaUtm(webinar.fecha);
-  const dia = `${f.slice(0, 4)}-${f.slice(4, 6)}-${f.slice(6, 8)}`;
+  const dia = diaUtm(webinar.fecha);
   const inicio = vivo.inicio ?? webinar.fecha;
   /* Si el vivo no terminó (o no se siguió), el fin es el que dice la ficha. */
   const fin = vivo.fin ?? new Date(+new Date(inicio) + (webinar.duracionMin || 180) * 60_000).toISOString();
 
   const agendas: AgendaDelWebinar[] = sesiones
-    .filter((s) => esDelWebinar(s, clave, dia))
-    .map((s) => {
+    .map((s) => ({ s, via: viaDe(s, clave, dia, diasDeWebinars) }))
+    .filter((x): x is { s: SesionCalendly; via: ViaLanzamiento } => x.via !== null)
+    .map(({ s, via }) => {
       const contenido = (s.utm?.utm_content ?? "").trim();
       const a = atribucionDe(s.extra);
       const e = embudoDe(s);
       let momento: AgendaDelWebinar["momento"];
       let por: AgendaDelWebinar["por"] = "link";
       if (a?.momento) { momento = a.momento; por = "manual"; }
+      /* La clase cero y el Q&A son después del vivo del webinar. */
+      else if (via !== "webinar") momento = "despues";
       else if (CONTENIDO_VIVO.test(contenido)) momento = "vivo";
       else if (CONTENIDO_DESPUES.test(contenido)) momento = "despues";
       else { momento = +new Date(s.creadoEn) <= +new Date(fin) ? "vivo" : "despues"; por = "hora"; }
@@ -190,6 +218,8 @@ export function resumirAgendas(
         utm: e.utm,
         corregidoPor: a && (a.momento || a.fuera) ? a.por : undefined,
         id: s.id,
+        via,
+        contactoId: s.contactoId ?? undefined,
         nombre: s.invitado || "Sin nombre",
         agendadaEn: s.creadoEn,
         llamada: s.inicia ?? undefined,

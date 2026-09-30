@@ -4,6 +4,7 @@ import { resumirAgendas } from "@/lib/agendas-webinar";
 import { sesionesCalendly } from "@/lib/agendas-sync";
 import { nubeServidor } from "@/lib/servidor";
 import { videoDelWebinar } from "@/lib/youtube";
+import { diaUtm } from "@/lib/utm-estandar";
 
 /* ==================================================================
    Las agendas de Calendly desde un momento (?desde=ISO), para la ficha
@@ -33,9 +34,12 @@ export async function GET(peticion: Request) {
     const w = rw.data as { fecha: string; duracionMin: number; youtubeUrl?: string | null; enlaceReplay?: string | null };
     const v = videoDelWebinar(w);
     const re = v ? await db.from("yt_estado").select("inicio, fin").eq("videoId", v).maybeSingle() : null;
+    /* Para los links de clase cero y Q&A de antes, que sólo traían la fecha de la clase. */
+    const rf = await db.from("webinars").select("fecha");
+    const dias = ((rf.data ?? []) as { fecha: string }[]).map((x) => diaUtm(x.fecha));
     try {
       const sesiones = await sesionesCalendly(db, new Date(+new Date(w.fecha) - 2 * 86_400_000).toISOString());
-      const r = resumirAgendas(sesiones, w, (re?.data ?? {}) as { inicio?: string | null; fin?: string | null });
+      const r = resumirAgendas(sesiones, w, (re?.data ?? {}) as { inicio?: string | null; fin?: string | null }, rf.error ? undefined : dias);
       return NextResponse.json(r, { headers: { "Cache-Control": "private, max-age=10" } });
     } catch {
       return NextResponse.json({ error: "No pude leer las agendas." }, { status: 502 });

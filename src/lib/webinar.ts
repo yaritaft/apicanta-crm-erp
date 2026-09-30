@@ -285,7 +285,7 @@ export const CAMPOS_MANUALES: DefCampoManual[] = [
   { campo: "grupoWpp", titulo: "Grupo", largo: "Se unieron al grupo", grupo: "Captación", moneda: false, ayuda: "Los que entraron al grupo de WhatsApp." },
   { campo: "asistentes", titulo: "Asistentes", largo: "Asistieron al vivo", grupo: "Captación", moneda: false, ayuda: "Los que estuvieron en el vivo." },
   { campo: "llamadasVivo", titulo: "Llamadas en vivo", largo: "Agendadas en el vivo", grupo: "Llamadas", moneda: false, ayuda: "Llamadas agendadas durante el vivo." },
-  { campo: "llamadasPosterior", titulo: "Llamadas después", largo: "Agendadas después", grupo: "Llamadas", moneda: false, ayuda: "Llamadas agendadas después del vivo, con el replay o el seguimiento." },
+  { campo: "llamadasPosterior", titulo: "Llamadas después", largo: "Agendadas después", grupo: "Llamadas", moneda: false, ayuda: "Llamadas agendadas después del vivo: con el replay, el seguimiento, la clase cero o el Q&A." },
   { campo: "llamadasCanceladas", titulo: "Canceladas", largo: "Canceladas", grupo: "Llamadas", moneda: false, ayuda: "Llamadas que se cancelaron." },
   { campo: "llamadasInasistidas", titulo: "No asistieron", largo: "No asistieron", grupo: "Llamadas", moneda: false, ayuda: "Llamadas a las que la persona no se presentó." },
   { campo: "llamadasNoCalificadas", titulo: "No calificadas", largo: "No calificadas", grupo: "Llamadas", moneda: false, ayuda: "Llamadas hechas con gente que no calificaba para el programa." },

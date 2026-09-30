@@ -1734,6 +1734,16 @@ kbd {
    adentro (el modal de eliminar, un calendario flotante) se ubique contra
    la ficha en vez de contra la pantalla. */
 .wb-detalle { display: flex; flex-direction: column; gap: var(--space-5); }
+/* De dónde vinieron las agendas: el link, debajo de su vía. La vía queda
+   fija a la izquierda mientras se corren los números; en el celular, en
+   dos renglones si hace falta, así entran los números al lado. */
+.hk-table td.hk-td--primary .wb-via__link { padding-left: var(--space-4); color: var(--ink-muted); font-weight: 500; }
+.wb-vias .hk-table th:first-child, .wb-vias .hk-table td:first-child { position: sticky; left: 0; z-index: 2; background: var(--surface-100); }
+.wb-vias .hk-table tbody tr:hover td:first-child { background: var(--surface-200); }
+.wb-vias .hk-table tfoot td:first-child { background: var(--surface-200); z-index: 3; }
+@media (max-width: 760px) {
+  .wb-vias .hk-table th:first-child, .wb-vias .hk-table td:first-child { white-space: normal; min-width: 7.5rem; max-width: 9.5rem; }
+}
 .wb-col { display: contents; }
 .wb-o1 { order: 1; } .wb-o2 { order: 2; } .wb-o3 { order: 3; } .wb-o4 { order: 4; }
 .wb-o5 { order: 5; } .wb-o6 { order: 6; } .wb-o7 { order: 7; } .wb-o8 { order: 8; }

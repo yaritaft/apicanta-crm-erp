@@ -1,7 +1,7 @@
 import type { EstadoApp, ID, ReglaUtm, Venta } from "./types";
 import { webinarDeUtm } from "./calendly";
 import { proyectoDeWebinar } from "./angelo";
-import { leerUtm, slugUtm, type Funnel } from "./utm-estandar";
+import { EVENTOS, leerUtm, slugUtm, type Funnel } from "./utm-estandar";
 
 /* ==================================================================
    De dónde viene una venta, por las UTMs.
@@ -13,12 +13,14 @@ import { leerUtm, slugUtm, type Funnel } from "./utm-estandar";
    finanzas (Estrategia utilizada y Proyecto).
 
    Con el estándar de UTMs (lib/utm-estandar.ts) casi todo sale solo:
-   - la estrategia, del funnel (el prefijo de utm_campaign): webinar →
-     la estrategia de webinar, vsl-yt → VSL YOUTUBE, vsl_martin → VSL
-     Martin, vsl_organica → Orgánico, setter → Setter, referido →
-     Referido. Clase cero y Q&A no tienen una de la planilla: se eligen
-     en Ajustes → UTMs;
-   - el webinar y su proyecto (WEB-dd/mm/aa), de la fecha: webinar_aaaammdd;
+   - la estrategia, del funnel (el prefijo de utm_campaign): webinar,
+     clase cero y Q&A → la estrategia de webinar (la clase cero y el Q&A
+     son parte del lanzamiento del webinar, Yari 25/09), vsl-yt → VSL
+     YOUTUBE, vsl_martin → VSL Martin, vsl_organica → Orgánico, setter →
+     Setter, referido → Referido;
+   - el webinar y su proyecto (WEB-dd/mm/aa), de la fecha: webinar_aaaammdd,
+     y en la clase cero y el Q&A, del webinar que dice el link
+     (clase0_webinar_aaaammdd);
    - el setter, de setter_{nombre}; el referidor, de utm_content.
    Los links viejos del webinar (source Webinar + medium 23-09) también.
 
@@ -79,7 +81,9 @@ export function textoUtm(u: Utm): string {
 export function estrategiaDeFunnel(e: EstadoApp, funnel: Funnel, detalle?: string): ID | undefined {
   const por = (re: RegExp) => e.embudos.find((x) => re.test(x.nombre))?.id;
   switch (funnel) {
-    case "webinar": return e.embudos.find((x) => x.esWebinar)?.id ?? por(/lanzamiento|webinar/i);
+    case "webinar":
+    case "clase0":
+    case "qa": return e.embudos.find((x) => x.esWebinar)?.id ?? por(/lanzamiento|webinar/i);
     case "vsl-yt": return por(/youtube/i);
     case "vsl":
       if (!detalle) return undefined;
@@ -119,7 +123,7 @@ export function origenDe(e: EstadoApp, utm: Utm, cuando: string): OrigenUtm | nu
   const o: OrigenUtm = { utm, funnel: l.funnel };
   if (l.funnel) {
     o.embudoId = estrategiaDeFunnel(e, l.funnel, l.detalle);
-    if (l.funnel === "webinar") {
+    if (EVENTOS.includes(l.funnel)) {
       const w = e.webinars.find((x) => x.id === webinarDeUtm(crudo, e.webinars, cuando));
       if (w) { o.webinarId = w.id; o.proyecto = proyectoDeWebinar(w.fecha); }
     }

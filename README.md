@@ -277,11 +277,25 @@ YouTube, webinar, clase cero, Q&A, setter o referido), se completa lo que cambia
 (en los eventos, los tres: vivo, replay y seguimiento), con cómo lo va a leer la app.
 
 El origen de una venta no lo elige el closer: sale de los UTMs de quien compró, los de sus agendas de Calendly (last
-touch, la más reciente primero) y los de su primer contacto (first touch). Del estándar sale casi todo solo: la
+touch, la más reciente primero) y los de su primer contacto (first touch). Del estándar sale todo solo: la
 estrategia (del funnel: `vsl_martin` es VSL Martin), el webinar y su proyecto (de la fecha), el setter (de
-`setter_{nombre}`) y el referidor (de `utm_content`). Clase cero y Q&A no tienen una estrategia de la planilla: se
-eligen en la misma pantalla. Para los links que no siguen el estándar hay reglas propias, que mandan (`*` al final es
-«empieza con»). Los links viejos del webinar (`utm_source=Webinar` + `utm_medium=23-09`) se siguen leyendo.
+`setter_{nombre}`) y el referidor (de `utm_content`). Para los links que no siguen el estándar hay reglas propias, que
+mandan (`*` al final es «empieza con»). Los links viejos del webinar (`utm_source=Webinar` + `utm_medium=23-09`) se
+siguen leyendo.
+
+La **clase cero** y el **Q&A** son parte del lanzamiento del webinar (Yari, 25/09): el link dice de qué webinar son,
+con la fecha del webinar (`clase0_webinar_20260924`, `qa_webinar_20260924`), así nadie tiene que calcular a cuál le
+corresponde. Sus ventas van con la estrategia **Webinar** (en la planilla se llamaba «Lanzamiento»; el importador lo
+sigue leyendo), su webinar y su proyecto. Los links que traían sólo la fecha de la clase (`clase0_20260929`) se leen
+como del último webinar hasta ese día (hasta 21 días antes), y Ajustes → UTMs los marca como fuera del estándar.
+
+**De dónde vinieron las agendas.** Cada webinar cuenta las agendas de todo su lanzamiento, separadas por vía: el vivo,
+el replay y el seguimiento del webinar, la clase cero y el Q&A (`lib/agendas-webinar.ts`). La ficha del webinar tiene
+la tabla con agendas, calificadas, ventas, cierre, facturado y cobrado de cada vía; una venta es de la vía por la que
+agendó esa persona (su última agenda del lanzamiento hasta el día de la venta), y las de quien no agendó por esos
+links van aparte (`lib/vias-webinar.ts`). En el Dashboard, «Webinar y agenda» tiene las agendas con el replay, del
+seguimiento, de la clase cero y del Q&A, y «Ventas» las ventas de cada vía. «Llamadas después» de la planilla es todo
+lo de después del vivo: replay, seguimiento, clase cero y Q&A.
 
 Una agenda sin UTMs queda con `source=direct` y `medium=none`: llegó sola, sin un link nuestro. Las reglas están en
 `src/lib/utms.ts`.

@@ -24,8 +24,9 @@ import type { EstadoApp, ReglaUtm } from "@/lib/types";
      (lib/utm-estandar.ts): se elige el caso, se completa lo que cambia
      (la fecha, el setter, el video…) y sale el link listo para copiar,
      con cómo lo va a leer la app.
-   - El estándar: qué estrategia de la planilla es cada funnel. Casi todo
-     sale solo; clase cero y Q&A se eligen acá.
+   - El estándar: qué estrategia de la planilla es cada funnel. Sale solo
+     (la clase cero y el Q&A van con el webinar, del que son parte), y se
+     puede cambiar acá.
    - Las reglas propias, para los links que no siguen el estándar (los
      viejos, o una campaña especial).
    - Las UTMs que llegaron, con de qué quedó cada una y si siguen el
@@ -34,7 +35,7 @@ import type { EstadoApp, ReglaUtm } from "@/lib/types";
 
 const ETIQUETA: Record<CampoUtm, string> = { source: "utm_source", medium: "utm_medium", campaign: "utm_campaign", content: "utm_content" };
 
-/* Cómo se ve el origen que la app le da a una UTM: "Lanzamiento · WEB-24/09/26". */
+/* Cómo se ve el origen que la app le da a una UTM: "Webinar · WEB-24/09/26". */
 function textoOrigen(e: EstadoApp, o: OrigenUtm | null): string {
   if (!o) return "Sin asignar";
   const partes = [
@@ -95,7 +96,7 @@ function CreadorUtm() {
     return [{ nombre: "", utm: armarUtm(caso, v) }];
   }, [c, caso, v]);
 
-  const falta = c.pide.includes("fecha") && !v.fecha ? "Elegí la fecha del evento"
+  const falta = c.pide.includes("fecha") && !v.fecha ? (caso === "webinar" ? "Elegí la fecha del evento" : "Elegí de qué webinar es")
     : c.pide.includes("setter") && !v.setter ? "Elegí el setter"
       : c.pide.includes("referidor") && !v.referidor?.trim() ? "Escribí quién refirió"
         : null;
@@ -140,14 +141,16 @@ function CreadorUtm() {
         {c.pide.length > 0 && (
           <div className="form-grid">
             {c.pide.includes("fecha") && (
+              /* En la clase cero y el Q&A, la fecha es la del webinar del que
+                 son parte: el link dice de qué webinar son. */
               <div className="hk-field">
-                <label className="hk-label">Fecha del evento</label>
-                {caso === "webinar" && webinars.length > 0 ? (
+                <label className="hk-label">{caso === "webinar" ? "Fecha del evento" : "De qué webinar es"}</label>
+                {webinars.length > 0 ? (
                   <Select value={v.fecha ?? ""} placeholder="Elegí el webinar" aria-label="Webinar"
                     onChange={(ev) => setV({ ...v, fecha: ev.target.value })}
                     opciones={webinars.map((w) => ({ valor: w.fecha, texto: `${fechaLarga(w.fecha)} — ${w.titulo}` }))} />
                 ) : (
-                  <Input type="date" value={v.fecha?.slice(0, 10) ?? ""} aria-label="Fecha del evento"
+                  <Input type="date" value={v.fecha?.slice(0, 10) ?? ""} aria-label={caso === "webinar" ? "Fecha del evento" : "Fecha del webinar"}
                     onChange={(ev) => setV({ ...v, fecha: ev.target.value || undefined })} />
                 )}
               </div>
@@ -233,8 +236,8 @@ function CreadorUtm() {
 
 const FILAS_ESTANDAR: { funnel: Funnel; patron: string; regla: string; como: string }[] = [
   { funnel: "webinar", patron: "webinar_aaaammdd", regla: "webinar_*", como: "El webinar y su proyecto salen de la fecha." },
-  { funnel: "clase0", patron: "clase0_aaaammdd", regla: "clase0_*", como: "Vivo, replay o seguimiento, como el webinar." },
-  { funnel: "qa", patron: "qa_aaaammdd", regla: "qa_*", como: "Vivo, replay o seguimiento, como el webinar." },
+  { funnel: "clase0", patron: "clase0_webinar_aaaammdd", regla: "clase0_*", como: "La fecha es la del webinar del que es parte: el webinar y su proyecto salen de ahí." },
+  { funnel: "qa", patron: "qa_webinar_aaaammdd", regla: "qa_*", como: "La fecha es la del webinar del que es parte: el webinar y su proyecto salen de ahí." },
   { funnel: "vsl-yt", patron: "vsl-yt", regla: "vsl-yt*", como: "El video va en utm_content." },
   { funnel: "setter", patron: "setter_{nombre}", regla: "setter_*", como: "El setter de la venta sale del nombre." },
   { funnel: "referido", patron: "referido", regla: "referido*", como: "El referidor de la venta sale de utm_content." },

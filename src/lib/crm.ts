@@ -3,7 +3,7 @@ import { evaluarAgenda, pisoDeInversion } from "./calificacion";
 import { claveDeFecha } from "./agendas-webinar";
 import { claveEmail } from "./contactos";
 import { money } from "./format";
-import { EVENTOS, leerUtm, NOMBRE_FUNNEL, type Funnel } from "./utm-estandar";
+import { diaDelWebinar, EVENTOS, leerUtm, NOMBRE_FUNNEL, type Funnel } from "./utm-estandar";
 import type {
   Ajustes, CampoOpcionesCrm, ColorCrm, ConfigCrm, Contacto, EstadoApp, Lead, MiembroEquipo, OpcionCrm, Sesion, TablaCrm, Venta,
 } from "./types";
@@ -329,7 +329,11 @@ export function mesDe(iso?: string | null): string {
    utm_campaign; en el formato viejo sólo el día y el mes (utm_medium=23-09),
    y el año sale del webinar cargado más cercano a cuando agendó. Así las
    agendas de un mismo webinar caen juntas, lleguen en el formato que
-   lleguen. */
+   lleguen.
+   La clase cero y el Q&A van con el día de su webinar, que el link dice
+   (clase0_webinar_20260924): "clase0_2026-09-24_webinar". Los links de
+   antes traían la fecha de la clase: son del último webinar hasta ese día
+   y, si no hay ninguno, quedan con la fecha de la clase. */
 /* claveDeFecha arma un formateador de fechas en cada llamada: por cada
    agenda con link viejo se pedía la de todos los webinars, y con miles de
    agendas se llevaba casi todo el tiempo de cada cambio. Los webinars son
@@ -341,6 +345,14 @@ function claveDe(iso: string): string {
   return c;
 }
 
+/* El día de cada webinar se recuerda, igual que su clave. */
+const DIAS_DE_FECHA = new Map<string, string>();
+function diaDe(iso: string): string {
+  let d = DIAS_DE_FECHA.get(iso);
+  if (d === undefined) { d = diaAR(iso); DIAS_DE_FECHA.set(iso, d); }
+  return d;
+}
+
 export function lanzamientoDe(
   utm: Record<string, string> | null | undefined,
   webinars: { fecha: string }[] = [],
@@ -348,6 +360,10 @@ export function lanzamientoDe(
 ): string {
   const l = leerUtm(utm);
   if (!l.funnel || !EVENTOS.includes(l.funnel)) return "";
+  if (l.formato === "estandar" && l.funnel !== "webinar") {
+    const dia = diaDelWebinar(l, l.fechaWebinar ? [] : webinars.map((w) => diaDe(w.fecha)));
+    if (dia) return `${l.funnel}_${dia}_webinar`;
+  }
   if (l.fecha) return `${l.funnel}_${l.fecha}`;
   if (!l.diaMes) return "";
   const ref = agendo ? Date.parse(agendo) : Date.now();
@@ -356,12 +372,14 @@ export function lanzamientoDe(
   return `${l.funnel}_${w ? diaAR(w.fecha) : l.diaMes}`;
 }
 
-/* "Webinar 24-09-26", como las vistas de Lanzamientos del Airtable. */
+/* "Webinar 24-09-26", como las vistas de Lanzamientos del Airtable; "Clase
+   cero del webinar 24-09-26". */
 export function nombreLanzamiento(clave: string): string {
-  const [funnel, fecha] = clave.split("_");
+  const [funnel, fecha, deWebinar] = clave.split("_");
   const nombre = NOMBRE_FUNNEL[funnel as Funnel] ?? funnel;
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(fecha ?? "");
-  return `${nombre} ${m ? `${m[3]}-${m[2]}-${m[1].slice(2)}` : fecha ?? ""}`.trim();
+  const dia = m ? `${m[3]}-${m[2]}-${m[1].slice(2)}` : fecha ?? "";
+  return (deWebinar === "webinar" ? `${nombre} del webinar ${dia}` : `${nombre} ${dia}`).trim();
 }
 
 /* El Funnel del Airtable: Webinar, VSL, Setter, Resell… En el estándar sale
@@ -921,13 +939,15 @@ export function vistasDe(
   /* Un lanzamiento por evento (webinar, clase cero, Q&A) que trajo
      agendas, el último primero. Los que sólo tienen día y mes (links
      viejos de un webinar que no está cargado) van al final. */
+  /* Cada webinar con su clase cero y su Q&A abajo: van con el día del webinar. */
   const fechaDe = (k: string) => k.split("_")[1] ?? "";
+  const eventoDe = (k: string) => EVENTOS.indexOf(k.split("_")[0] as Funnel);
   const lanzamientos = [...new Set(filas.map((f) => f.lanzamiento).filter(Boolean))]
     .sort((a, b) => {
       const fa = fechaDe(a), fb = fechaDe(b);
       const la = fa.length === 10, lb = fb.length === 10;
       if (la !== lb) return la ? -1 : 1;
-      return fb.localeCompare(fa) || a.localeCompare(b);
+      return fb.localeCompare(fa) || eventoDe(a) - eventoDe(b) || a.localeCompare(b);
     });
   if (lanzamientos.length > 0) {
     secciones.push({

@@ -14,6 +14,7 @@ import {
 import { TarjetaCambios, TarjetaNotas } from "@/components/webinars/FichaNotas";
 import { PersonasWebinar } from "@/components/webinars/PersonasWebinar";
 import { AgendasWebinar } from "@/components/webinars/AgendasWebinar";
+import { TarjetaVias } from "@/components/webinars/ViasWebinar";
 import { useWebinarsAlDia } from "@/components/webinars/useVivo";
 import {
   BannerVivo, ChatDelVivo, FilaVideo, SoloEnVivo, TarjetaVivo, VivoProvider,
@@ -153,6 +154,9 @@ export default function WebinarFicha() {
           <TarjetaLlamadas w={w} m={m} className="wb-o5" />
         </div>
       </div>
+
+      {/* A todo lo ancho: de dónde vinieron las agendas y cuánto vendió cada vía. */}
+      <TarjetaVias w={w} />
 
       {videoId && <ChatDelVivo w={w} videoId={videoId} lugar="abajo" />}
 

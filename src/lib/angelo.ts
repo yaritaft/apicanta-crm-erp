@@ -431,6 +431,10 @@ export function importarPlanilla(e: EstadoApp, filasCrudas: FilaVentas[], opcion
     if (!n) return undefined;
     const x = embudos.find((p) => normalizarTexto(p.nombre) === n);
     if (x) return x;
+    /* La planilla le dice "Lanzamiento" al embudo del webinar; en la app se
+       llama "Webinar" (Yari, 25/09). */
+    const delWebinar = n === normalizarTexto("Lanzamiento") ? embudos.find((p) => p.esWebinar) : undefined;
+    if (delWebinar) return delWebinar;
     const nuevo: Embudo = { id: `emb_ef_${hash(n)}`, nombre: nombre.trim(), activo: true, orden: embudos.length };
     embudos.push(nuevo); creados.embudos.push(nuevo);
     avisar("nueva-estrategia", "Estrategias que no estaban: se agregaron.", fila);

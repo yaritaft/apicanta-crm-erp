@@ -8,7 +8,8 @@ import { diaDeNegocio } from "./dia-negocio";
 
    Sin el webinar atado, el profit y el ROAS de cada webinar dan vacío. Las
    ventas de la planilla de Angelo lo decían con el proyecto (WEB-13/04/26)
-   hasta abril; desde mayo el embudo de webinar ("Lanzamiento") va con MENT
+   hasta abril; desde mayo el embudo de webinar ("Lanzamiento" en la
+   planilla, "Webinar" en la app) va con MENT
    o DOWN y el webinar no queda escrito. Se busca en este orden:
 
    1. El proyecto WEB-día/mes, si lo tiene.

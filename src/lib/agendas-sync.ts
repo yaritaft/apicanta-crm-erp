@@ -1,10 +1,13 @@
 import { nubeServidor } from "./servidor";
 import { resumirAgendas, type SesionCalendly } from "./agendas-webinar";
+import { diaUtm } from "./utm-estandar";
 import { videoDelWebinar } from "./youtube";
 
 /* ==================================================================
    Completar solas "Llamadas en vivo", "Llamadas después" y "Canceladas"
    de cada webinar con las agendas de Calendly (lib/agendas-webinar.ts).
+   "Después" es todo lo que llegó después del vivo: el replay, el
+   seguimiento, la clase cero y el Q&A de ese webinar.
    También "Llamadas calificadas" y "No calificadas", con la regla del
    equipo (lib/calificacion.ts); esas dos sin pisar un número cargado a
    mano (extra.llamadasCalificadasAuto, como "Asistieron al vivo").
@@ -30,7 +33,7 @@ export async function sesionesCalendly(db: Db, desde: string): Promise<SesionCal
   const out: SesionCalendly[] = [];
   for (let a = 0; a < 5000; a += 1000) {
     const r = await db.from("sesiones")
-      .select("id, invitado, creadoEn, inicia, estado, canal, anfitrion, utm, extra, respuestas")
+      .select("id, invitado, creadoEn, inicia, estado, canal, anfitrion, utm, extra, respuestas, contactoId")
       .not("calendlyInvitadoUri", "is", null)
       .gte("creadoEn", desde)
       .order("creadoEn")
@@ -66,9 +69,11 @@ export async function completarLlamadas(): Promise<{ actualizados: number; error
     : { data: [], error: null };
   const vivos = new Map(((re.data ?? []) as { videoId: string; inicio: string | null; fin: string | null }[]).map((e) => [e.videoId, e]));
 
+  /* Para los links de clase cero y Q&A de antes, que sólo traían la fecha de la clase. */
+  const dias = webinars.map((w) => diaUtm(w.fecha));
   for (const w of webinars) {
     const v = videoDelWebinar(w);
-    const r = resumirAgendas(sesiones, w, v ? vivos.get(v) ?? {} : {});
+    const r = resumirAgendas(sesiones, w, v ? vivos.get(v) ?? {} : {}, dias);
     const cambios: Partial<FilaWebinar> = {};
     if (r.vivo !== w.llamadasVivo) cambios.llamadasVivo = r.vivo;
     if (r.despues !== w.llamadasPosterior) cambios.llamadasPosterior = r.despues;

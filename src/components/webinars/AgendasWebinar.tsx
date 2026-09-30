@@ -9,13 +9,15 @@ import { acciones } from "@/lib/store";
 import { useUsuarioActual } from "@/lib/usuario";
 import { claveDeFecha, type AgendaDelWebinar } from "@/lib/agendas-webinar";
 import { fechaUtm } from "@/lib/utm-estandar";
+import { NOMBRE_VIA } from "@/lib/vias-webinar";
 import type { Webinar } from "@/lib/types";
 import { diaYHora } from "./fechas";
 import { atribuirAgenda, useAgendasWebinar } from "./useVivo";
 
 /* ==================================================================
    Las agendas de Calendly del webinar: cuántas se hicieron en el vivo,
-   cuántas después y cuántas se cancelaron, con cada persona.
+   cuántas después y cuántas se cancelaron, con cada persona. Son las del
+   webinar y las de su clase cero y su Q&A, que cuentan como después.
 
    Son las mismas que el cron pasa solo a "Llamadas en vivo", "Llamadas
    después" y "Canceladas" (lib/agendas-webinar.ts). Se actualiza cada 30
@@ -47,7 +49,7 @@ export function AgendasWebinar({ w, className }: { w: Webinar; className?: strin
     <Card className={className}>
       <CardHead
         titulo="Agendas de Calendly"
-        sub={`Las que llegan con los UTMs de este webinar (utm_campaign=webinar_${fechaUtm(w.fecha)}; los links de antes, utm_medium=${clave}). Completan solas las llamadas de la planilla.`}
+        sub={`Las que llegan con los links de este webinar, de su clase cero y de su Q&A (utm_campaign=webinar_${fechaUtm(w.fecha)}, clase0_webinar_${fechaUtm(w.fecha)} y qa_webinar_${fechaUtm(w.fecha)}; los links de antes, utm_medium=${clave}). Completan solas las llamadas de la planilla.`}
       />
       {r.estado === "cargando" && <div className="skeleton" style={{ height: 120 }} aria-busy="true" aria-label="Trayendo las agendas" />}
       {r.estado === "error" && <p className="t-sm t-muted">{r.error}</p>}
@@ -62,7 +64,7 @@ export function AgendasWebinar({ w, className }: { w: Webinar; className?: strin
             <Empty
               icono={<CalendarCheck size={22} />}
               titulo="Todavía no hay agendas de este webinar"
-              texto="Aparecen solas cuando alguien agenda desde el link del vivo o el de después."
+              texto="Aparecen solas cuando alguien agenda desde un link del webinar, de su clase cero o de su Q&A."
             />
           ) : (
             /* Con scroll adentro: la lista no estira la ficha y los números de arriba no se mueven. */
@@ -84,10 +86,12 @@ export function AgendasWebinar({ w, className }: { w: Webinar; className?: strin
                         <Badge variante={e.variante}>{e.texto}</Badge>
                       </span>
                       <span className="wb-agenda__badges">
-                        {/* Por qué link vino (el embudo ya se sabe: es este webinar). El
-                            link viejo, en amarillo; los UTMs al pasar el mouse. */}
+                        {/* Por qué link vino (el embudo ya se sabe: es este webinar, y
+                            si es de su clase cero o su Q&A, se dice). El link viejo, en
+                            amarillo; los UTMs al pasar el mouse. */}
                         <span title={a.utm || "Sin UTMs"}>
                           <Badge variante={a.link === "viejo" ? "warning" : "neutral"}>
+                            {a.via !== "webinar" ? `${NOMBRE_VIA[a.via]} · ` : ""}
                             {a.link === "viejo" ? "Link viejo" : a.link ?? "Sin link"}
                           </Badge>
                         </span>

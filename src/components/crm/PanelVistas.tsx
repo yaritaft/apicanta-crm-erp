@@ -111,7 +111,8 @@ function ItemVista({ v, activa, onElegir }: { v: VistaCrm; activa: boolean; onEl
     >
       <Sheet size={16} className="crm-vista__icono" aria-hidden />
       {v.marca && <Marca {...v.marca} />}
-      <span className="crm-vista__nombre">{v.nombre}</span>
+      {/* Los nombres largos («Clase cero del webinar 24-09-26») se cortan: entero al pasar el mouse. */}
+      <span className="crm-vista__nombre" title={v.nombre}>{v.nombre}</span>
     </button>
   );
 }

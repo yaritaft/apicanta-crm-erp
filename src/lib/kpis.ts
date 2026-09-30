@@ -8,6 +8,8 @@ import {
   valorPipeline, type MetricasMeta, type RangoMes,
 } from "./metricas";
 import { metricasDeWebinar, numerosDelWebinar, sumarMetricas, type MetricasWebinar } from "./webinar";
+import { numerosDe, rendimientoPorVia, type LinkVia, type NumerosVia } from "./vias-webinar";
+import type { ViaLanzamiento } from "./agendas-webinar";
 import { inversionDelEmbudo } from "./embudos";
 import { rachasAHoy } from "./reportes";
 import { etapaDelAlumno, etapasDeServicio } from "./alumnos";
@@ -80,7 +82,7 @@ interface Indices {
   contactoPorId: Map<ID, Contacto>;
   leadPorId: Map<ID, Lead>;
   /* Los embudos que son "el de webinar": los marcados así en Ajustes (en la
-     planilla de Angelo se llama "Lanzamiento") o, si ninguno lo está, los
+     planilla de Angelo se llamaba "Lanzamiento") o, si ninguno lo está, los
      que se llaman "webinar". No se deduce de las ventas: una venta de
      webinar cargada con otro embudo haría que ese embudo se lleve las
      agendas y los registros de webinar. */
@@ -332,6 +334,16 @@ const div = (a: number, b: number): number | null => (b > 0 ? a / b : null);
 const pctDe = (a: number, b: number): number | null => (b > 0 ? (a / b) * 100 : null);
 /* Lo que sólo existe en el corte general (P&L, Meta, agenda...). */
 const g = <T,>(c: Contexto, f: () => T): T | null => (c.general ? f() : null);
+/* Por vía del lanzamiento (lib/vias-webinar.ts), sumando los webinars del
+   corte. null si con este corte no hay webinars o si ninguno tiene agendas
+   con los links del lanzamiento (los de antes de Calendly): ahí un 0 diría
+   que la vía no trajo nada, y no se sabe. */
+const via = (c: Contexto, v: ViaLanzamiento, link: LinkVia | undefined, f: (n: NumerosVia) => number): number | null => {
+  const ws = c.webinars();
+  if (ws.length === 0) return null;
+  const r = rendimientoPorVia(c.e, ws);
+  return r.hayAgendas ? f(numerosDe(r, v, link)) : null;
+};
 const w = (c: Contexto, f: (m: MetricasWebinar) => number | null): number | null => {
   const m = c.web();
   return m ? f(m) : null;
@@ -409,7 +421,20 @@ export function catalogo(e: EstadoApp): DefKpi[] {
     { id: "w_ll_vivo", etiqueta: "Agendas en el vivo", formato: "cantidad", mejor: "sube", href: "/webinars",
       ayuda: "Llamadas agendadas durante el vivo.", valor: (c) => w(c, () => c.webinars().reduce((a, x) => a + x.llamadasVivo, 0)) },
     { id: "w_ll_post", etiqueta: "Agendas después del vivo", formato: "cantidad", mejor: "sube", href: "/webinars",
-      ayuda: "Llamadas agendadas después, con el replay o el seguimiento.", valor: (c) => w(c, () => c.webinars().reduce((a, x) => a + x.llamadasPosterior, 0)) },
+      ayuda: "Llamadas agendadas después del vivo: con el replay, el seguimiento, la clase cero o el Q&A.", valor: (c) => w(c, () => c.webinars().reduce((a, x) => a + x.llamadasPosterior, 0)) },
+    /* De dónde vinieron las de después (Yari, 25/09): cada vía por separado. */
+    { id: "w_ll_replay", etiqueta: "Agendas con el replay", formato: "cantidad", mejor: "sube", href: "/webinars",
+      ayuda: "Agendas con el link de la grabación del webinar (utm_content=replay). Parte de «Agendas después del vivo».",
+      valor: (c) => via(c, "webinar", "replay", (n) => n.agendas) },
+    { id: "w_ll_seguimiento", etiqueta: "Agendas del seguimiento", formato: "cantidad", mejor: "sube", href: "/webinars",
+      ayuda: "Agendas con el link de los mails o mensajes de después del webinar (utm_content=seguimiento). Parte de «Agendas después del vivo».",
+      valor: (c) => via(c, "webinar", "seguimiento", (n) => n.agendas) },
+    { id: "w_ll_clase0", etiqueta: "Agendas de la clase cero", formato: "cantidad", mejor: "sube", href: "/webinars",
+      ayuda: "Agendas con los links de la clase cero del webinar (vivo, replay y seguimiento). Parte de «Agendas después del vivo».",
+      valor: (c) => via(c, "clase0", undefined, (n) => n.agendas) },
+    { id: "w_ll_qa", etiqueta: "Agendas del Q&A", formato: "cantidad", mejor: "sube", href: "/webinars",
+      ayuda: "Agendas con los links del Q&A del webinar (vivo, replay y seguimiento). Parte de «Agendas después del vivo».",
+      valor: (c) => via(c, "qa", undefined, (n) => n.agendas) },
     { id: "w_ll", etiqueta: "Agendas del webinar", formato: "cantidad", mejor: "sube", href: "/webinars",
       ayuda: "En el vivo + después.", valor: (c) => w(c, (m) => m.llamadas) },
     { id: "w_pct_agenda", etiqueta: "Grupo → agenda", formato: "pct", mejor: "sube", href: "/webinars",
@@ -521,6 +546,21 @@ export function catalogo(e: EstadoApp): DefKpi[] {
       ayuda: "Ventas del webinar sobre sus llamadas calificadas.", valor: (c) => w(c, (m) => m.tasaCierre) },
     { id: "w_grupo_venta", etiqueta: "Grupo → venta (webinar)", formato: "pct", mejor: "sube", href: "/webinars",
       ayuda: "Ventas del webinar sobre los que entraron al grupo.", valor: (c) => w(c, (m) => m.convLeadVenta) },
+  ]);
+
+  /* Una venta del webinar es de la vía por la que agendó esa persona
+     (lib/vias-webinar.ts): así se ve cuánto vende cada cosa. */
+  add("ventas", "Ventas del webinar, por vía", [
+    { id: "wv_vivo", etiqueta: "Ventas del vivo", formato: "cantidad", mejor: "sube", href: "/webinars",
+      ayuda: "Ventas del webinar de gente que agendó en el vivo.", valor: (c) => via(c, "webinar", "vivo", (n) => n.ventas) },
+    { id: "wv_replay", etiqueta: "Ventas del replay", formato: "cantidad", mejor: "sube", href: "/webinars",
+      ayuda: "Ventas del webinar de gente que agendó con el link de la grabación.", valor: (c) => via(c, "webinar", "replay", (n) => n.ventas) },
+    { id: "wv_seguimiento", etiqueta: "Ventas del seguimiento", formato: "cantidad", mejor: "sube", href: "/webinars",
+      ayuda: "Ventas del webinar de gente que agendó con el link de los mails o mensajes de después.", valor: (c) => via(c, "webinar", "seguimiento", (n) => n.ventas) },
+    { id: "wv_clase0", etiqueta: "Ventas de la clase cero", formato: "cantidad", mejor: "sube", href: "/webinars",
+      ayuda: "Ventas del webinar de gente que agendó con un link de la clase cero.", valor: (c) => via(c, "clase0", undefined, (n) => n.ventas) },
+    { id: "wv_qa", etiqueta: "Ventas del Q&A", formato: "cantidad", mejor: "sube", href: "/webinars",
+      ayuda: "Ventas del webinar de gente que agendó con un link del Q&A.", valor: (c) => via(c, "qa", undefined, (n) => n.ventas) },
   ]);
 
   add("ventas", "Costo de adquisición y retorno", [

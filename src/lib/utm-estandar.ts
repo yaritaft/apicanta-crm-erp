@@ -9,6 +9,11 @@
    - las fechas van aaaammdd;
    - utm_campaign arranca con el funnel: {funnel}_{detalle}. Ese prefijo
      es lo que dice por qué vía agendó;
+   - la clase cero y el Q&A dicen de qué webinar son, con la fecha del
+     webinar: clase0_webinar_aaaammdd, qa_webinar_aaaammdd. Con la fecha
+     de la clase sola había que calcular a qué webinar le correspondía
+     (Yari, 25/09). Los links armados así antes se siguen leyendo: son del
+     último webinar hasta esa fecha;
    - sólo los cinco parámetros de siempre, y sólo los valores del
      diccionario (uno nuevo se agrega acá antes de usarlo).
 
@@ -61,7 +66,8 @@ export interface CasoUtm {
   id: IdCaso;
   nombre: string;
   funnel: Funnel;
-  /* Lo que el creador pregunta para armar el link. */
+  /* Lo que el creador pregunta para armar el link. "fecha" es la del
+     webinar (en la clase cero y el Q&A, la del webinar al que pertenecen). */
   pide: ("fecha" | "fuenteEvento" | "momento" | "lugarVsl" | "video" | "setter" | "canalSetter" | "referidor")[];
   nota: string;
 }
@@ -76,9 +82,9 @@ export const CASOS: CasoUtm[] = [
   { id: "webinar", nombre: "Webinar", funnel: "webinar", pide: ["fecha", "fuenteEvento", "momento"],
     nota: "vivo: el link que se muestra durante el evento; replay: el de la grabación; seguimiento: el de los mails o mensajes de después." },
   { id: "clase0", nombre: "Clase cero", funnel: "clase0", pide: ["fecha", "fuenteEvento", "momento"],
-    nota: "Igual que el webinar: vivo, replay o seguimiento." },
+    nota: "El link dice de qué webinar es la clase cero (clase0_webinar_aaaammdd, con la fecha del webinar). Vivo, replay o seguimiento, igual que el webinar." },
   { id: "qa", nombre: "Q&A", funnel: "qa", pide: ["fecha", "fuenteEvento", "momento"],
-    nota: "Igual que el webinar: vivo, replay o seguimiento." },
+    nota: "El link dice de qué webinar es el Q&A (qa_webinar_aaaammdd, con la fecha del webinar). Vivo, replay o seguimiento, igual que el webinar." },
   { id: "setter", nombre: "Setter orgánico", funnel: "setter", pide: ["setter", "canalSetter"],
     nota: "Un link por setter: por DM o por comentario." },
   { id: "referido", nombre: "Referido", funnel: "referido", pide: ["referidor"],
@@ -86,7 +92,7 @@ export const CASOS: CasoUtm[] = [
 ];
 
 export interface ValoresCaso {
-  fecha?: string;          // ISO o aaaa-mm-dd
+  fecha?: string;          // la del webinar, ISO o aaaa-mm-dd
   fuenteEvento?: "email" | "whatsapp";
   momento?: MomentoEvento;
   lugarVsl?: "bio" | "historia" | "post";
@@ -107,11 +113,13 @@ export function armarUtm(caso: IdCaso, v: ValoresCaso = {}): Utm {
       return { utm_source: "youtube", utm_medium: "organic", utm_campaign: "vsl-yt", utm_content: slugUtm(v.video ?? "") || "desconocido" };
     case "webinar":
     case "clase0":
-    case "qa":
+    case "qa": {
+      const fecha = v.fecha ? fechaUtm(v.fecha) : "aaaammdd";
       return {
         utm_source: v.fuenteEvento ?? "email", utm_medium: "email",
-        utm_campaign: `${caso}_${v.fecha ? fechaUtm(v.fecha) : "aaaammdd"}`, utm_content: v.momento ?? "vivo",
+        utm_campaign: caso === "webinar" ? `webinar_${fecha}` : `${caso}_webinar_${fecha}`, utm_content: v.momento ?? "vivo",
       };
+    }
     case "setter":
       return { utm_source: "setter", utm_medium: "outbound", utm_campaign: `setter_${slugUtm(v.setter ?? "") || "nombre-setter"}`, utm_content: v.canalSetter ?? "dm" };
     case "referido":
@@ -153,7 +161,12 @@ export function problemasDeUtm(u: Utm): string[] {
   if (u.utm_source && !(FUENTES as readonly string[]).includes(u.utm_source)) out.push(`utm_source "${u.utm_source}" no está en el diccionario`);
   if (u.utm_medium && !(MEDIOS as readonly string[]).includes(u.utm_medium)) out.push(`utm_medium "${u.utm_medium}" no está en el diccionario`);
   if (u.utm_campaign && !/^\{\{.+\}\}$/.test(u.utm_campaign) && !l.funnel) out.push(`utm_campaign "${u.utm_campaign}" no arranca con un funnel (${FUNNELS.join(", ")})`);
-  if (l.funnel && EVENTOS.includes(l.funnel) && !l.fecha) out.push(`la fecha de ${u.utm_campaign} tiene que ser aaaammdd`);
+  if (l.funnel === "webinar" && !l.fecha) out.push(`la fecha de ${u.utm_campaign} tiene que ser aaaammdd`);
+  if ((l.funnel === "clase0" || l.funnel === "qa") && !l.fechaWebinar) {
+    out.push(l.fecha
+      ? `${u.utm_campaign} no dice de qué webinar es: va ${l.funnel}_webinar_aaaammdd, con la fecha del webinar`
+      : `${u.utm_campaign} tiene que ser ${l.funnel}_webinar_aaaammdd, con la fecha del webinar`);
+  }
   return out;
 }
 
@@ -164,8 +177,14 @@ export interface UtmLeida {
   funnel?: Funnel;
   /* Lo que va después del funnel: vsl_{martin}, setter_{daniel}. */
   detalle?: string;
-  /* De un evento en el estándar: aaaa-mm-dd. */
+  /* De un evento en el estándar: aaaa-mm-dd. En la clase cero y el Q&A,
+     sólo en los links de antes (clase0_aaaammdd), que traían la fecha de
+     la clase. */
   fecha?: string;
+  /* El webinar del evento, aaaa-mm-dd: el del link en el webinar
+     (webinar_aaaammdd) y en la clase cero y el Q&A que lo dicen
+     (clase0_webinar_aaaammdd). */
+  fechaWebinar?: string;
   /* Del formato viejo: sólo día y mes, "23-09". */
   diaMes?: string;
   /* De un evento: vivo o después (replay, seguimiento), si el link lo dice. */
@@ -193,8 +212,11 @@ export function leerUtm(crudo: Record<string, string | undefined> | null | undef
   if (m) {
     const funnel = m[1] as Funnel;
     const detalle = m[2];
-    const fecha = EVENTOS.includes(funnel) && detalle && /^\d{8}$/.test(detalle) ? isoDeFechaUtm(detalle) : undefined;
-    return { formato: "estandar", funnel, detalle, fecha, momento: EVENTOS.includes(funnel) ? momento : undefined, contenido };
+    const evento = EVENTOS.includes(funnel);
+    const fecha = evento && detalle && /^\d{8}$/.test(detalle) ? isoDeFechaUtm(detalle) : undefined;
+    const delWebinar = evento && funnel !== "webinar" ? /^webinar_(\d{8})$/.exec(detalle ?? "") : null;
+    const fechaWebinar = funnel === "webinar" ? fecha : delWebinar ? isoDeFechaUtm(delWebinar[1]) : undefined;
+    return { formato: "estandar", funnel, detalle, fecha, fechaWebinar, momento: evento ? momento : undefined, contenido };
   }
   /* El formato viejo del webinar: utm_source=Webinar y la fecha en el medium
      (o en el content o la campaign, como venían los links de antes). */
@@ -205,12 +227,43 @@ export function leerUtm(crudo: Record<string, string | undefined> | null | undef
   return { formato: "otro", contenido };
 }
 
-/** "Webinar 24/09 · replay", "VSL martin", "Setter · daniel". */
+/* ---------- De qué webinar es un evento ---------- */
+
+/** El día del webinar (aaaa-mm-dd, en Argentina) de un instante. */
+export const diaUtm = (iso: string) => isoDeFechaUtm(fechaUtm(iso));
+
+/* Hasta cuántos días después de su webinar se hace una clase cero o un Q&A. */
+const DIAS_DEL_LANZAMIENTO = 21;
+
+/** El día del webinar al que pertenece un link de evento (webinar, clase
+ *  cero o Q&A del estándar), o undefined si no es de un evento. Los links
+ *  que lo dicen, directo; los de antes de la clase cero y el Q&A (con la
+ *  fecha de la clase), el último webinar de `diasDeWebinars` hasta esa
+ *  fecha, si fue a lo sumo 21 días antes. */
+export function diaDelWebinar(l: UtmLeida, diasDeWebinars: string[]): string | undefined {
+  if (l.formato !== "estandar" || !l.funnel || !EVENTOS.includes(l.funnel)) return undefined;
+  if (l.fechaWebinar) return l.fechaWebinar;
+  if (!l.fecha) return undefined;
+  const hasta = Date.parse(l.fecha);
+  let mejor: string | undefined;
+  for (const d of diasDeWebinars) {
+    const t = Date.parse(d);
+    if (t > hasta || hasta - t > DIAS_DEL_LANZAMIENTO * 86_400_000) continue;
+    if (!mejor || d > mejor) mejor = d;
+  }
+  return mejor;
+}
+
+/** "Webinar 24/09 · replay", "Clase cero del webinar 24/09 · vivo", "VSL martin", "Setter · daniel". */
 export function textoUtm(l: UtmLeida): string | undefined {
   if (!l.funnel) return undefined;
   const nombre = NOMBRE_FUNNEL[l.funnel];
-  const dia = l.fecha ? `${l.fecha.slice(8, 10)}/${l.fecha.slice(5, 7)}` : l.diaMes?.replace("-", "/");
-  if (EVENTOS.includes(l.funnel)) return [`${nombre}${dia ? ` ${dia}` : ""}`, l.contenido].filter(Boolean).join(" · ");
+  const ddmm = (iso: string) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
+  if (EVENTOS.includes(l.funnel)) {
+    const cual = l.funnel !== "webinar" && l.fechaWebinar ? `${nombre} del webinar ${ddmm(l.fechaWebinar)}`
+      : `${nombre}${l.fecha ? ` ${ddmm(l.fecha)}` : l.diaMes ? ` ${l.diaMes.replace("-", "/")}` : ""}`;
+    return [cual, l.contenido].filter(Boolean).join(" · ");
+  }
   if (l.funnel === "vsl") return l.detalle === "organica" ? `VSL orgánica${l.contenido ? ` · ${l.contenido}` : ""}` : `VSL${l.detalle ? ` ${l.detalle}` : ""}`;
   if (l.funnel === "vsl-yt") return `VSL de YouTube${l.contenido ? ` · ${l.contenido}` : ""}`;
   if (l.funnel === "setter") return `Setter${l.detalle ? ` · ${l.detalle}` : ""}`;

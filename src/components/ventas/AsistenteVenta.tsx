@@ -404,7 +404,7 @@ function inicial(e: EstadoApp, mov?: Movimiento, cliente?: { contactoId: string;
     directorId: e.equipo.find((x) => x.rol === "director")?.id ?? "",
     /* Sin estrategia de entrada: la pone la UTM al guardar. Antes arrancaba
        con la primera de la lista y, sin el paso de origen, todo habría
-       quedado como Lanzamiento sin que nadie lo eligiera. */
+       quedado con la estrategia del webinar sin que nadie la eligiera. */
     embudoId: "",
     webinarId: "",
     fecha: mov?.fecha ?? hoy,

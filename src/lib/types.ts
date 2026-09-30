@@ -734,9 +734,11 @@ export interface Embudo {
   nombre: string;
   activo: boolean;
   orden: number;
-  /* El embudo de los webinars. En la planilla se llama "Lanzamiento", así
+  /* El embudo de los webinars. En la planilla se llamaba "Lanzamiento", así
      que no se puede deducir del nombre: con esto el Dashboard sabe a qué
-     embudo pertenecen los números de la planilla de webinars. */
+     embudo pertenecen los números de la planilla de webinars, y la
+     importación de la planilla le sigue mandando lo que dice
+     "Lanzamiento". */
   esWebinar?: boolean;
 }
 

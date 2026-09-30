@@ -68,12 +68,12 @@ export const PROCESADORES: Procesador[] = [
   { id: "proc_whop",             nombre: "Whop",                feeRate: 0.030, activo: true, automatico: true,  proveedor: "whop" },
 ];
 
-/* Las "Estrategias utilizadas" de la planilla de Angelo. "Lanzamiento" es
-   el embudo de los webinars (todas las ventas con proyecto WEB-… vienen de
-   ahí): conserva el id del viejo "Webinar" para que lo que ya apuntaba al
-   embudo de webinar siga apuntando al mismo. */
+/* Las "Estrategias utilizadas" de la planilla de Angelo. "Webinar" es el
+   embudo de los webinars (todas las ventas con proyecto WEB-… vienen de
+   ahí). En la planilla se llamaba "Lanzamiento": Yari pidió llamarlo
+   webinar, como corresponde (25/09), y el importador lo sigue leyendo. */
 export const EMBUDOS: Embudo[] = [
-  { id: "emb_webinar",        nombre: "Lanzamiento",       activo: true, orden: 0, esWebinar: true },
+  { id: "emb_webinar",        nombre: "Webinar",           activo: true, orden: 0, esWebinar: true },
   { id: "emb_vsl_martin",     nombre: "VSL Martin",        activo: true, orden: 1 },
   { id: "emb_vsl_landing",    nombre: "VSL Landing",       activo: true, orden: 2 },
   { id: "emb_setter",         nombre: "Setter",            activo: true, orden: 3 },
