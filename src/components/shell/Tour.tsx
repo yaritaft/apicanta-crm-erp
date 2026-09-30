@@ -6,6 +6,8 @@ import { Compass, Users, Sheet, Wallet, Settings } from "lucide-react";
 import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/ui";
 import { acciones, useEstado } from "@/lib/store";
+import { useAcceso } from "@/lib/acceso";
+import { nivelEn } from "@/lib/permisos";
 
 const PASOS = [
   {
@@ -43,7 +45,10 @@ export function Tour() {
 
   useEffect(() => { setMontado(true); }, []);
 
-  const abierto = montado && !e.ajustes.tourVisto;
+  /* El recorrido es de toda la app y cerrarlo se anota en los Ajustes: lo
+     ve quien edita los Ajustes (dueños y «Todo menos honorarios»). */
+  const { acceso } = useAcceso();
+  const abierto = montado && !e.ajustes.tourVisto && nivelEn(acceso, "ajustes") === 2;
   if (!abierto) return null;
 
   const p = PASOS[paso];

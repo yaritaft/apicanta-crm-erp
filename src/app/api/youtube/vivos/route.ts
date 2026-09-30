@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { esDelEquipo, hayEquipoConfigurado } from "@/lib/equipo-servidor";
+import { exigirArea } from "@/lib/permisos-servidor";
 import { ID_YOUTUBE, type VivoDelCanal } from "@/lib/youtube";
 import { MEDIA_HORA, mejor, pedirApi, type VideoApi } from "@/lib/youtube-servidor";
 
@@ -29,9 +29,8 @@ type Encontrado = { id?: { videoId?: string } };
 type CanalConSubidas = { contentDetails?: { relatedPlaylists?: { uploads?: string } }; snippet?: { title?: string } };
 
 export async function GET(peticion: Request) {
-  if (hayEquipoConfigurado() && !(await esDelEquipo(peticion))) {
-    return NextResponse.json({ error: "Hace falta iniciar sesión para buscar en YouTube." }, { status: 401 });
-  }
+  const noPuede = await exigirArea(peticion, ["webinars", "marketing"], 1);
+  if (noPuede) return noPuede;
 
   const url = new URL(peticion.url);
   const conocidos = [...new Set((url.searchParams.get("videos") ?? "").split(",").map((s) => s.trim()))]

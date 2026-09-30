@@ -1,14 +1,13 @@
 import { NextResponse } from "next/server";
-import { esDelEquipo, hayEquipoConfigurado } from "@/lib/equipo-servidor";
+import { exigirArea } from "@/lib/permisos-servidor";
 import { hayServidor, nubeServidor } from "@/lib/servidor";
 import { analyticsConfigurado, conexion, crearEstado, PERMISOS, urlRedireccion } from "@/lib/youtube-analytics";
 
 /* GET: cómo está la conexión, para Ajustes → Integraciones. Nunca devuelve
    el token: sólo si hay, de qué canal y quién lo conectó. */
 export async function GET(peticion: Request) {
-  if (hayEquipoConfigurado() && !(await esDelEquipo(peticion))) {
-    return NextResponse.json({ error: "Hace falta iniciar sesión." }, { status: 401 });
-  }
+  const noPuede = await exigirArea(peticion, ["webinars", "ajustes"], 1);
+  if (noPuede) return noPuede;
   const c = await conexion();
   return NextResponse.json({
     hayClave: Boolean(process.env.YOUTUBE_API_KEY?.trim()),
@@ -23,9 +22,8 @@ export async function GET(peticion: Request) {
 
 /* DELETE: desconectar el canal. Se borra el permiso y lo que se trajo con él. */
 export async function DELETE(peticion: Request) {
-  if (hayEquipoConfigurado() && !(await esDelEquipo(peticion))) {
-    return NextResponse.json({ error: "Hace falta iniciar sesión." }, { status: 401 });
-  }
+  const noPuede = await exigirArea(peticion, ["webinars", "ajustes"], 2);
+  if (noPuede) return noPuede;
   const db = nubeServidor();
   if (!db) return NextResponse.json({ error: "No hay base configurada." }, { status: 503 });
   const r = await db.from("yt_conexion").delete().eq("id", "canal");
@@ -43,9 +41,8 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function POST(peticion: Request) {
-  if (hayEquipoConfigurado() && !(await esDelEquipo(peticion))) {
-    return NextResponse.json({ error: "Hace falta iniciar sesión para conectar YouTube." }, { status: 401 });
-  }
+  const noPuede = await exigirArea(peticion, ["webinars", "ajustes"], 2);
+  if (noPuede) return noPuede;
   if (!analyticsConfigurado()) {
     return NextResponse.json({ error: "Falta configurar GOOGLE_CLIENT_ID y GOOGLE_CLIENT_SECRET en el proyecto." }, { status: 503 });
   }

@@ -1,3 +1,4 @@
+import { exigirArea } from "@/lib/permisos-servidor";
 import { NextResponse } from "next/server";
 import {
   metaConfigurado, tokenDeLaPeticion, traerInsightsDiarios, traerJerarquia,
@@ -17,6 +18,9 @@ export const maxDuration = 300;
    cliente lo guarda con su propia sesión, así todo queda auditado a nombre de
    quien apretó el botón. */
 export async function POST(req: Request) {
+  /* Antes contestaba sin sesión, con el token del sistema. */
+  const noPuede = await exigirArea(req, ["marketing"], 2);
+  if (noPuede) return noPuede;
   if (!metaConfigurado()) {
     return NextResponse.json({ error: "Meta no está configurado." }, { status: 503 });
   }

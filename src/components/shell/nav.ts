@@ -4,11 +4,12 @@ import {
 } from "lucide-react";
 import { SquareKanban } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
+import { nivelDeRuta, type MiAcceso } from "@/lib/permisos";
 
+/* Quién ve cada item lo dice su ruta (lib/permisos: areaDeRuta): Equipo y
+   honorarios, sólo los dueños; el resto, según el tipo de cuenta. */
 export interface ItemNav {
   href: string; texto: string; icono: LucideIcon; ayuda: string;
-  /* Sólo aparece para los dueños (usuarios_permitidos.rol = 'dueno'). */
-  soloDuenos?: boolean;
 }
 export interface GrupoNav { titulo: string; items: ItemNav[] }
 
@@ -52,7 +53,7 @@ export const NAV: GrupoNav[] = [
       { href: "/finanzas", texto: "Finanzas", icono: Wallet, ayuda: "Ingresos, egresos y qué queda" },
       { href: "/finanzas/caja", texto: "Caja", icono: Landmark, ayuda: "Arqueos, meses de vida y retiros" },
       { href: "/conciliacion", texto: "Conciliación", icono: ArrowDownUp, ayuda: "Cobros de las pasarelas y a qué cuota van" },
-      { href: "/equipo", texto: "Equipo y honorarios", icono: Banknote, ayuda: "Quién es quién, con qué entra a la app y cuánto cobra", soloDuenos: true },
+      { href: "/equipo", texto: "Equipo y honorarios", icono: Banknote, ayuda: "Quién es quién, con qué entra a la app y cuánto cobra" },
       { href: "/ajustes", texto: "Ajustes", icono: Settings, ayuda: "Etapas, categorías, campos e integraciones" },
     ],
   },
@@ -60,7 +61,13 @@ export const NAV: GrupoNav[] = [
 
 export const TODOS_LOS_ITEMS = NAV.flatMap((g) => g.items);
 
-/* El menú de quien está usando la app: sin lo que es sólo de los dueños. */
-export function navPara(esDueno: boolean): GrupoNav[] {
-  return NAV.map((g) => ({ ...g, items: g.items.filter((i) => esDueno || !i.soloDuenos) })).filter((g) => g.items.length > 0);
+/* El menú de quien está usando la app: lo que su tipo de cuenta ve. */
+export function navPara(a: MiAcceso | null): GrupoNav[] {
+  return NAV.map((g) => ({ ...g, items: g.items.filter((i) => nivelDeRuta(a, i.href) > 0) })).filter((g) => g.items.length > 0);
+}
+
+/* A dónde va el inicio: el Dashboard, o la primera pantalla que ve (el
+   closer, al CRM). */
+export function inicioPara(a: MiAcceso | null): string {
+  return navPara(a)[0]?.items[0]?.href ?? "/panel";
 }

@@ -44,6 +44,9 @@ export const TABLAS = [
   /* Lo que cobra cada uno y las liquidaciones. Sólo las leen los dueños: para
      el resto el SELECT vuelve vacío (RLS), sin error. */
   "honorarios", "liquidaciones",
+  /* Los tipos de cuenta (supabase/tipos-cuenta.sql): qué ve y edita cada uno.
+     Tampoco se llama como su colección (`tiposCuenta`). */
+  "tipos_cuenta",
 ] as const;
 
 export type Tabla = (typeof TABLAS)[number];
@@ -77,12 +80,14 @@ export const TABLAS_OPCIONALES = new Set<string>([
   /* Nuevas (supabase/honorarios.sql). Hasta que corra, Equipo y honorarios no
      aparece para nadie y el resto de la app sigue igual. */
   "honorarios", "liquidaciones",
+  /* Nueva (supabase/tipos-cuenta.sql). Hasta que corra, los tipos de siempre. */
+  "tipos_cuenta",
 ]);
 
 /* Las tablas que sólo leen y escriben los dueños. Para cualquier otro, la
    base rechaza la escritura (42501): restaurar un respaldo o volver a la
    demo las saltea en vez de cortarse a la mitad. */
-export const TABLAS_DE_DUENOS = new Set<string>(["honorarios", "liquidaciones"]);
+export const TABLAS_DE_DUENOS = new Set<string>(["honorarios", "liquidaciones", "tipos_cuenta"]);
 
 /* PostgREST avisa que la tabla no esta en el esquema con PGRST205 (y con
    42P01 si la consulta llego a Postgres). Cualquier otro error es real. */

@@ -7,7 +7,7 @@ import { DataTable, type Columna } from "@/components/ui/DataTable";
 import { ModalForm } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toast";
 import { acciones, hayNube, nuevoId, useEstado } from "@/lib/store";
-import { emailValido, type useAccesos } from "@/lib/acceso";
+import { emailValido, useTiposCuenta, type useAccesos } from "@/lib/acceso";
 import { resumenEsquema } from "@/lib/honorarios";
 import type { MiembroEquipo, RolEquipo } from "@/lib/types";
 import { ROLES, textoRol } from "./FichaMiembro";
@@ -19,9 +19,10 @@ import { ROLES, textoRol } from "./FichaMiembro";
 
 type Accesos = ReturnType<typeof useAccesos>;
 
-interface Fila extends MiembroEquipo { cobra: string; aDefinir: boolean; acceso: "dueno" | "equipo" | null }
+interface Fila extends MiembroEquipo { cobra: string; aDefinir: boolean; acceso: string | null }
 
 export function ListaEquipo({ accesos, onVer }: { accesos: Accesos; onVer: (id: string) => void }) {
+  const tipos = useTiposCuenta();
   const e = useEstado();
   const toast = useToast();
   const [todos, setTodos] = useState(false);
@@ -68,7 +69,7 @@ export function ListaEquipo({ accesos, onVer }: { accesos: Accesos; onVer: (id: 
       celda: (f) => !hayNube
         ? <span className="t-subtle">—</span>
         : f.acceso === "dueno" ? <Badge variante="brand">Dueño</Badge>
-          : f.acceso ? <Badge variante="success">Tiene acceso</Badge>
+          : f.acceso ? <Badge variante="success">{tipos.find((t) => t.id === f.acceso)?.nombre ?? "Tiene acceso"}</Badge>
             : <span className="t-subtle">{f.email ? "Sin acceso" : "Sin correo"}</span>,
     },
     {

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { esDelEquipo, hayEquipoConfigurado } from "@/lib/equipo-servidor";
+import { exigirArea } from "@/lib/permisos-servidor";
 import { resumirAgendas } from "@/lib/agendas-webinar";
 import { sesionesCalendly } from "@/lib/agendas-sync";
 import { nubeServidor } from "@/lib/servidor";
@@ -18,9 +18,8 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(peticion: Request) {
-  if (hayEquipoConfigurado() && !(await esDelEquipo(peticion))) {
-    return NextResponse.json({ error: "Hace falta iniciar sesión." }, { status: 401 });
-  }
+  const noPuede = await exigirArea(peticion, ["webinars"], 1);
+  if (noPuede) return noPuede;
   const url = new URL(peticion.url);
 
   /* ?webinar=ID: las agendas de ese webinar, en el vivo o después (lo mismo
@@ -81,9 +80,8 @@ export async function GET(peticion: Request) {
    Calendly la puede estar actualizando al mismo tiempo). El cron recalcula
    la planilla en el minuto siguiente. */
 export async function PATCH(peticion: Request) {
-  if (hayEquipoConfigurado() && !(await esDelEquipo(peticion))) {
-    return NextResponse.json({ error: "Hace falta iniciar sesión." }, { status: 401 });
-  }
+  const noPuede = await exigirArea(peticion, ["webinars"], 2);
+  if (noPuede) return noPuede;
   const b = (await peticion.json().catch(() => ({}))) as { id?: string; momento?: string; quien?: string; webinarId?: string };
   if (!b.id || !["vivo", "despues", "fuera", "auto"].includes(b.momento ?? "")) {
     return NextResponse.json({ error: "Falta la agenda o a dónde atribuirla." }, { status: 400 });

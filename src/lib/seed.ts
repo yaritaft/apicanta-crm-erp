@@ -6,6 +6,7 @@ import type {
 import type { EtapaServicio } from "./types";
 import { inicioSemana, mesClave } from "./format";
 import { fechaUtm } from "./utm-estandar";
+import { TIPOS_POR_DEFECTO } from "./permisos";
 
 /* PRNG determinístico: los datos de ejemplo son siempre los mismos. */
 function rng(semilla: number) {
@@ -804,6 +805,7 @@ export function construirSemilla(): EstadoApp {
     ajustes: AJUSTES,
     etapas: ETAPAS,
     etapasServicio: ETAPAS_SERVICIO,
+    tiposCuenta: TIPOS_POR_DEFECTO,
     leads,
     sesiones,
     webinars,
@@ -1016,6 +1018,7 @@ export function estadoVacio(): EstadoApp {
     ajustes: { ...AJUSTES, tourVisto: true },
     etapas: ETAPAS,
     etapasServicio: ETAPAS_SERVICIO,
+    tiposCuenta: TIPOS_POR_DEFECTO,
     leads: [], sesiones: [], webinars: [], alumnos: [], reportes: [],
     contactos: [], campanias: [], campaigns: [], adsets: [], ads: [], adInsights: [],
     metas: [], campos: [],

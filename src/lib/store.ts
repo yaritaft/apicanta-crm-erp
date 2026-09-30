@@ -7,7 +7,7 @@ import type {
   Arqueo, Campania, CampoPersonalizado, Comentario, Comprobante, Cuota, EntidadNombre, EstadoApp, Etapa, ID,
   Lead, Meta, Movimiento, OpcionCrm, OportunidadCrm, Pago, Reporte, Sesion, Venta, Webinar,
 } from "./types";
-import type { EsquemaPago, EtapaServicio, Gasto, ID as IdMiembro, Liquidacion, MiembroEquipo, ResultadoLiquidacion } from "./types";
+import type { EsquemaPago, EtapaServicio, Gasto, ID as IdMiembro, Liquidacion, MiembroEquipo, ResultadoLiquidacion, TipoCuenta } from "./types";
 import { nombrePeriodo, tasaParaFinanzas } from "./honorarios";
 import {
   alumnoDeVenta, cuotaMensualDeVenta, etapaDelAlumno, etapaInicialDeServicio, etapasDeServicio,
@@ -25,6 +25,7 @@ import { idAd, idAdset, idCampaign } from "./meta";
 import { entraEnTabla, esCompra, opcionesDe, tablasDe, ventaEsDeLlamada } from "./crm";
 import { etapaTrasEventos, eventosDeLlamada, leadDeSesion, type EventoEtapa } from "./etapas-auto";
 import { personaDe } from "./persona";
+import { puedeEditar, TIPOS_POR_DEFECTO, type MiAcceso } from "./permisos";
 
 const CLAVE = "apicanta.erp.v1";
 
@@ -231,8 +232,32 @@ export function escrituraPendiente(tabla: string, id: ID): boolean {
     op.tipo === "upsert" ? (op.filas as { id?: ID }[]).some((f) => f.id === id) : op.ids.includes(id)));
 }
 
+/* ---------- quién escribe ----------
+   El Shell avisa quién está usando la app (lib/acceso.ts, fijarAcceso). Con
+   eso la cola no manda lo que la base va a rechazar por su tipo de cuenta
+   (supabase/tipos-cuenta.sql): se avisa y se vuelve a traer todo, así la
+   pantalla muestra lo que de verdad quedó. Mientras no se sabe quién es,
+   manda todo y decide la base. */
+let acceso: MiAcceso | null = null;
+export function fijarAcceso(a: MiAcceso | null) { acceso = a; }
+
+const oyentesNegadas = new Set<(tabla: string, motivo?: string) => void>();
+export function alNegarseEscritura(f: (tabla: string, motivo?: string) => void): () => void {
+  oyentesNegadas.add(f);
+  return () => { oyentesNegadas.delete(f); };
+}
+
+let resincronizar: number | undefined;
+function negada(tabla: string, motivo?: string) {
+  oyentesNegadas.forEach((f) => f(tabla, motivo));
+  if (typeof window === "undefined") return;
+  window.clearTimeout(resincronizar);
+  resincronizar = window.setTimeout(() => { reiniciarCarga(); void cargarDeLaNube(); }, 400);
+}
+
 function empujar(op: Op) {
   if (!nube) return;
+  if (acceso && !puedeEditar(acceso, op.tabla)) { negada(op.tabla); return; }
   cola.push(op);
   void drenar();
 }
@@ -259,6 +284,21 @@ async function drenar() {
           ? await nube.from(op.tabla).update(op.cambios as never).in("id", op.ids)
           : await nube.from(op.tabla).delete().in("id", op.ids);
       if (r.error) {
+        /* La base no lo deja por el tipo de cuenta de quien escribe: se
+           descarta (no se va a poder nunca) en vez de trabar todo lo que
+           viene atrás, y se avisa. */
+        if (r.error.code === "42501") {
+          cola.shift();
+          negada(op.tabla);
+          continue;
+        }
+        /* Un borrado que la base frena porque otra cosa todavía lo usa (un
+           tipo de cuenta con gente): tampoco se va a poder, no traba nada. */
+        if (r.error.code === "23503" && op.tipo === "delete") {
+          cola.shift();
+          negada(op.tabla, "No se pudo borrar: todavía lo usa otra cosa. Vuelve a como estaba.");
+          continue;
+        }
         /* Tabla opcional sin crear: se descarta la operacion en vez de
            bloquear la cola. En memoria el dato ya esta. */
         if (TABLAS_OPCIONALES.has(op.tabla) && tablaFaltante(r.error)) {
@@ -391,8 +431,14 @@ export async function cargarDeLaNube(): Promise<void> {
       return;
     }
 
+    /* Sembrar o completar catálogos sólo lo hace un dueño: a otro tipo de
+       cuenta una tabla vacía puede ser algo que no le toca ver, no una base
+       nueva. Sin la función (una base de antes), como siempre. */
+    const dueno = await db.rpc("es_dueno");
+    const soyDueno = dueno.error ? true : dueno.data === true;
+
     /* Base nueva: se siembra entera con lo que haya en este navegador. */
-    if (porTabla.etapas.length === 0) {
+    if (porTabla.etapas.length === 0 && soyDueno) {
       await sembrarNube(snapshot());
       marcar("listo");
       return;
@@ -406,7 +452,7 @@ export async function cargarDeLaNube(): Promise<void> {
         .filter(([tabla, filas]) => filas.length === 0 && CATALOGOS.has(tabla))
         .map(([t]) => t),
     );
-    if (vacias.size > 0) {
+    if (vacias.size > 0 && soyDueno) {
       await completarNube(semilla, vacias);
       for (const t of vacias) {
         const r = await db.from(t).select("*");
@@ -427,6 +473,8 @@ export async function cargarDeLaNube(): Promise<void> {
       etapasServicio: porTabla.etapas_servicio?.length
         ? (porTabla.etapas_servicio as EtapaServicio[])
         : base.etapasServicio,
+      /* Opcional: sin supabase/tipos-cuenta.sql, los de siempre. */
+      tiposCuenta: porTabla.tipos_cuenta?.length ? (porTabla.tipos_cuenta as TipoCuenta[]) : TIPOS_POR_DEFECTO,
       webinars: porTabla.webinars as Webinar[],
       productos: porTabla.productos as EstadoApp["productos"],
       procesadores: porTabla.procesadores as EstadoApp["procesadores"],
@@ -1126,6 +1174,29 @@ export const acciones = {
     const { lista: act, nuevo } = registrar(e, "config", closerId ?? ids[0], "Cuotas de closer", "actualizo", detalle);
     guardar({ ...e, cuotas, actividad: act });
     empujarUpdate("cuotas", ids, { closerId });
+    empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
+  },
+
+  /* Los tipos de cuenta (Equipo → Tipos de cuenta). Los escriben sólo los
+     dueños (la base rechaza a cualquier otro) y el de Dueño no se toca. */
+  guardarTipoCuenta(t: TipoCuenta, detalle: string) {
+    if (t.id === "dueno") return;
+    const e = snapshot();
+    const fila: TipoCuenta = { ...t, actualizadoEn: ahora() };
+    const existe = e.tiposCuenta.some((x) => x.id === t.id);
+    const tiposCuenta = existe ? e.tiposCuenta.map((x) => (x.id === t.id ? fila : x)) : [...e.tiposCuenta, fila];
+    const { lista, nuevo } = registrar(e, "config", t.id, "Tipos de cuenta", existe ? "actualizo" : "creo", detalle);
+    guardar({ ...e, tiposCuenta, actividad: lista });
+    empujar({ tipo: "upsert", tabla: "tipos_cuenta", filas: [fila] });
+    empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
+  },
+
+  borrarTipoCuenta(id: ID, detalle: string) {
+    if (id === "dueno" || id === "equipo") return;
+    const e = snapshot();
+    const { lista, nuevo } = registrar(e, "config", id, "Tipos de cuenta", "elimino", detalle);
+    guardar({ ...e, tiposCuenta: e.tiposCuenta.filter((x) => x.id !== id), actividad: lista });
+    empujar({ tipo: "delete", tabla: "tipos_cuenta", ids: [id] });
     empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
   },
 
@@ -2517,13 +2588,39 @@ export const acciones = {
 
 export function useAcciones() { return acciones; }
 
+/* El tema es de quien mira, en este navegador: antes iba en los ajustes de
+   todos, y un closer que lo cambiaba escribía la configuración del negocio.
+   Lo de los ajustes queda de valor inicial. layout.tsx lo lee antes de
+   pintar. */
+const CLAVE_TEMA = "apicanta:tema";
+let temaPropio: "dark" | "light" | null | undefined;
+const oyentesTema = new Set<() => void>();
+
+function leerTema(): "dark" | "light" | null {
+  if (temaPropio === undefined) {
+    try {
+      const t = typeof window === "undefined" ? null : window.localStorage.getItem(CLAVE_TEMA);
+      temaPropio = t === "dark" || t === "light" ? t : null;
+    } catch { temaPropio = null; }
+  }
+  return temaPropio;
+}
+
+function suscribirTema(f: () => void) {
+  oyentesTema.add(f);
+  return () => { oyentesTema.delete(f); };
+}
+
 export function useTema(): ["dark" | "light", (t: "dark" | "light") => void] {
-  const tema = useSelector((e) => e.ajustes.tema);
+  const deAjustes = useSelector((e) => e.ajustes.tema);
+  const propio = useSyncExternalStore(suscribirTema, leerTema, () => null);
   const set = useCallback((t: "dark" | "light") => {
-    acciones.ajustesSilencioso({ tema: t });
+    temaPropio = t;
+    try { window.localStorage.setItem(CLAVE_TEMA, t); } catch { /* modo privado */ }
+    oyentesTema.forEach((f) => f());
     if (typeof document !== "undefined") document.documentElement.dataset.theme = t;
   }, []);
-  return [tema, set];
+  return [propio ?? deAjustes, set];
 }
 
 export { hayNube };

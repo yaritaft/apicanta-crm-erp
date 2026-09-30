@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { esDelEquipo, hayEquipoConfigurado } from "@/lib/equipo-servidor";
+import { exigirArea } from "@/lib/permisos-servidor";
 import { nubeServidor } from "@/lib/servidor";
 import { ID_YOUTUBE, type DatosVivo, type MensajeChat, type MuestraVivo } from "@/lib/youtube";
 
@@ -46,9 +46,8 @@ const muestra = (m: FilaMuestra): MuestraVivo => ({
 });
 
 export async function GET(peticion: Request) {
-  if (hayEquipoConfigurado() && !(await esDelEquipo(peticion))) {
-    return NextResponse.json({ error: "Hace falta iniciar sesión para ver el vivo." }, { status: 401 });
-  }
+  const noPuede = await exigirArea(peticion, ["webinars", "marketing"], 1);
+  if (noPuede) return noPuede;
   const id = new URL(peticion.url).searchParams.get("video")?.trim() ?? "";
   if (!ID_YOUTUBE.test(id)) return NextResponse.json({ error: "Eso no es el id de un video de YouTube." }, { status: 400 });
 

@@ -9,6 +9,7 @@ import { acciones, useEstado } from "@/lib/store";
 import type { CampaniaMeta } from "@/lib/meta";
 import { num } from "@/lib/format";
 import type { Campania } from "@/lib/types";
+import { cabeceras } from "@/components/webinars/useYoutube";
 
 interface Cuenta { id: string; nombre: string; moneda: string; estado: number }
 
@@ -36,7 +37,7 @@ export function ConectarMeta({ rango }: { rango?: { desde: string; hasta: string
 
   const mirar = useCallback(async () => {
     try {
-      const r = await fetch("/api/meta/cuentas", { cache: "no-store" });
+      const r = await fetch("/api/meta/cuentas", { cache: "no-store", headers: await cabeceras() });
       const j = await r.json();
       setLimite(j.motivo === "limite");
       if (j.conectado) {
@@ -75,7 +76,7 @@ export function ConectarMeta({ rango }: { rango?: { desde: string; hasta: string
     setTrayendoTodo(true);
     try {
       const r = await fetch("/api/meta/jerarquia", {
-        method: "POST", headers: { "Content-Type": "application/json" },
+        method: "POST", headers: { "Content-Type": "application/json", ...(await cabeceras()) },
         body: JSON.stringify({ cuentaId, desde: rango.desde, hasta: rango.hasta }),
       });
       const j = await r.json();
@@ -99,7 +100,7 @@ export function ConectarMeta({ rango }: { rango?: { desde: string; hasta: string
   }
 
   async function desconectar() {
-    await fetch("/api/meta/cuentas", { method: "DELETE" });
+    await fetch("/api/meta/cuentas", { method: "DELETE", headers: await cabeceras() });
     setEstado("desconectado"); setCuentas([]);
     toast("Meta desconectado.");
   }

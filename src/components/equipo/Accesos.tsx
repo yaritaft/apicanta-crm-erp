@@ -8,15 +8,18 @@ import { Confirmar, ModalForm } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toast";
 import { hayNube, useEstado } from "@/lib/store";
 import { useUsuarioActual } from "@/lib/usuario";
-import { emailValido, generarClave, NIVELES, type Acceso, type NivelAcceso, type useAccesos } from "@/lib/acceso";
+import { emailValido, generarClave, tipoSugerido, useTiposCuenta, type Acceso, type useAccesos } from "@/lib/acceso";
+import { resumenDeTipo } from "@/lib/permisos";
+import type { RolEquipo, TipoCuenta } from "@/lib/types";
 import { fechaLarga } from "@/lib/format";
 import { ClaveGenerada } from "./ClaveGenerada";
 
 /* ==================================================================
-   Quién entra a la app y qué ve. Es la misma lista que mira la base
-   (usuarios_permitidos): quien no está, entra al login y no ve nada.
-   También están los que no son del equipo que cobra (el correo de
-   Apicanta, el de pruebas).
+   Quién entra a la app y con qué tipo de cuenta. Es la misma lista que
+   mira la base (usuarios_permitidos): quien no está, entra al login y no
+   ve nada. Qué ve cada tipo se arma en «Tipos de cuenta». También están
+   los que no son del equipo que cobra (el correo de Apicanta, el de
+   pruebas).
    ================================================================== */
 
 type Accesos = ReturnType<typeof useAccesos>;
@@ -27,6 +30,8 @@ export function AccesosApp({ accesos, onVerMiembro }: { accesos: Accesos; onVerM
   const e = useEstado();
   const toast = useToast();
   const yo = useUsuarioActual();
+  const tipos = useTiposCuenta();
+  const orden = useMemo(() => new Map(tipos.map((t, i) => [t.id, i] as const)), [tipos]);
   const [nuevo, setNuevo] = useState(false);
   const [clave, setClave] = useState<{ nombre: string; email: string; clave: string } | null>(null);
   const [quitando, setQuitando] = useState<Acceso | null>(null);
@@ -35,7 +40,7 @@ export function AccesosApp({ accesos, onVerMiembro }: { accesos: Accesos; onVerM
   const filas = useMemo<Fila[]>(() => (accesos.lista ?? []).map((a) => ({
     ...a, id: a.email,
     miembro: e.equipo.find((m) => m.email?.trim().toLowerCase() === a.email)?.id,
-  })).sort((a, b) => (a.rol === b.rol ? a.email.localeCompare(b.email) : a.rol === "dueno" ? -1 : 1)), [accesos.lista, e.equipo]);
+  })).sort((a, b) => (orden.get(a.rol) ?? 99) - (orden.get(b.rol) ?? 99) || a.email.localeCompare(b.email)), [accesos.lista, e.equipo, orden]);
 
   if (!hayNube) {
     return (
@@ -47,7 +52,7 @@ export function AccesosApp({ accesos, onVerMiembro }: { accesos: Accesos; onVerM
 
   const soyYo = (email: string) => Boolean(yo.email && yo.email.toLowerCase() === email);
 
-  const claveNueva = async (a: { email: string; nombre: string; rol: NivelAcceso }) => {
+  const claveNueva = async (a: { email: string; nombre: string; rol: string }) => {
     setTrabajando(a.email);
     const r = await generarClave(a);
     setTrabajando(null);
@@ -68,14 +73,14 @@ export function AccesosApp({ accesos, onVerMiembro }: { accesos: Accesos; onVerM
       ),
     },
     {
-      clave: "rol", titulo: "Qué ve", orden: (f) => f.rol,
+      clave: "rol", titulo: "Tipo de cuenta", orden: (f) => orden.get(f.rol) ?? 99,
       celda: (f) => (
-        <span onClick={(ev) => ev.stopPropagation()} style={{ display: "inline-block", minWidth: 150 }}>
+        <span onClick={(ev) => ev.stopPropagation()} style={{ display: "inline-block", minWidth: 190 }}>
           <Select
-            value={f.rol} disabled={soyYo(f.email)} aria-label={`Qué ve ${f.email}`}
-            opciones={NIVELES.map((n) => ({ valor: n.valor, texto: n.texto }))}
+            value={f.rol} disabled={soyYo(f.email)} aria-label={`Tipo de cuenta de ${f.email}`}
+            opciones={opcionesDeTipo(tipos, f.rol)}
             onChange={async (ev) => {
-              const error = await accesos.guardar({ email: f.email, nombre: f.nombre, rol: ev.target.value as NivelAcceso });
+              const error = await accesos.guardar({ email: f.email, nombre: f.nombre, rol: ev.target.value });
               toast(error ?? "Guardado: el cambio se ve la próxima vez que entre.", error ? "err" : "ok");
             }}
           />
@@ -95,7 +100,7 @@ export function AccesosApp({ accesos, onVerMiembro }: { accesos: Accesos; onVerM
     <Card>
       <CardHead
         titulo="Accesos a la app"
-        sub="Quién entra y qué ve. Los dueños ven todo, incluido lo que cobra cada uno; el resto del equipo, todo menos esta sección."
+        sub="Quién entra y con qué tipo de cuenta. Qué ve y edita cada tipo se arma en «Tipos de cuenta»; lo controla la base, no sólo la pantalla."
         acciones={<Button variante="primary" icono={<UserPlus size={16} />} onClick={() => setNuevo(true)}>Dar acceso</Button>}
       />
       {accesos.error && <p className="t-sm" style={{ color: "var(--danger)", marginBottom: 12 }}>{accesos.error}</p>}
@@ -120,6 +125,7 @@ export function AccesosApp({ accesos, onVerMiembro }: { accesos: Accesos; onVerM
 
       {nuevo && (
         <DarAcceso
+          tipos={tipos}
           onCerrar={() => setNuevo(false)}
           sugerencias={e.equipo.filter((m) => m.activo && m.email && !(accesos.lista ?? []).some((a) => a.email === m.email!.trim().toLowerCase()))}
           onDar={async (a, conClave) => {
@@ -149,14 +155,22 @@ export function AccesosApp({ accesos, onVerMiembro }: { accesos: Accesos; onVerM
   );
 }
 
-function DarAcceso({ sugerencias, onCerrar, onDar }: {
-  sugerencias: { id: string; nombre: string; email?: string }[];
+/* Las opciones del tipo: los que hay, y el que tiene si ya no existe. */
+function opcionesDeTipo(tipos: TipoCuenta[], actual?: string) {
+  const xs = tipos.map((t) => ({ valor: t.id, texto: t.nombre }));
+  return actual && !tipos.some((t) => t.id === actual) ? [...xs, { valor: actual, texto: actual }] : xs;
+}
+
+function DarAcceso({ tipos, sugerencias, onCerrar, onDar }: {
+  tipos: TipoCuenta[];
+  sugerencias: { id: string; nombre: string; email?: string; rol?: RolEquipo }[];
   onCerrar: () => void;
-  onDar: (a: { email: string; nombre: string; rol: NivelAcceso }, conClave: boolean) => void;
+  onDar: (a: { email: string; nombre: string; rol: string }, conClave: boolean) => void;
 }) {
   const [email, setEmail] = useState("");
   const [nombre, setNombre] = useState("");
-  const [rol, setRol] = useState<NivelAcceso>("equipo");
+  const [rol, setRol] = useState<string>("equipo");
+  const tipo = tipos.find((t) => t.id === rol);
   const [conClave, setConClave] = useState(true);
   const correo = email.trim().toLowerCase();
   const error = correo && !emailValido(correo) ? "Ese correo no parece válido." : undefined;
@@ -173,7 +187,7 @@ function DarAcceso({ sugerencias, onCerrar, onDar }: {
           <span className="t-label">Del equipo, sin acceso</span>
           <div className="row-wrap">
             {sugerencias.map((m) => (
-              <button key={m.id} type="button" className="chip" aria-pressed={correo === m.email} onClick={() => { setEmail(m.email ?? ""); setNombre(m.nombre); }}>
+              <button key={m.id} type="button" className="chip" aria-pressed={correo === m.email} onClick={() => { setEmail(m.email ?? ""); setNombre(m.nombre); setRol(tipoSugerido(m.rol)); }}>
                 {m.nombre}
               </button>
             ))}
@@ -187,8 +201,8 @@ function DarAcceso({ sugerencias, onCerrar, onDar }: {
         <Field label="Nombre">
           <Input value={nombre} onChange={(ev) => setNombre(ev.target.value)} placeholder="Manuel Pérez" />
         </Field>
-        <Field label="Qué ve" ayuda={NIVELES.find((n) => n.valor === rol)?.sub}>
-          <Select value={rol} opciones={NIVELES.map((n) => ({ valor: n.valor, texto: n.texto }))} onChange={(ev) => setRol(ev.target.value as NivelAcceso)} />
+        <Field label="Tipo de cuenta" ayuda={tipo ? `${tipo.descripcion || resumenDeTipo(tipo)}` : undefined}>
+          <Select value={rol} opciones={opcionesDeTipo(tipos)} onChange={(ev) => setRol(ev.target.value)} />
         </Field>
         <Field label="Cómo entra">
           <Select

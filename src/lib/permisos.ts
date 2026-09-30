@@ -1,0 +1,264 @@
+import type { SeccionKpi } from "./kpis";
+import type { AreaId, AreasDeTipo, TipoCuenta } from "./types";
+
+export type { AreaId, AreasDeTipo, NivelArea, TipoCuenta } from "./types";
+
+/* ==================================================================
+   Qué ve y qué edita cada tipo de cuenta (Yari 29/09: "falta el apartado
+   de ajustes para ir asignando los distintos tipos de cuentas a la gente
+   que usa el sistema").
+
+   Un tipo dice, por área de la app, si la ve o la edita, y si en las
+   llamadas, las ventas y la gente ve sólo lo suyo (el closer). Los tipos
+   viven en la tabla `tipos_cuenta` y los dueños los cambian en Equipo →
+   Tipos de cuenta. El de Dueño es fijo: todo.
+
+   Lo que protege los datos es la base (supabase/tipos-cuenta.sql): LEEN y
+   EDITAN son las mismas listas que areas_que_leen() y areas_que_editan(),
+   y una prueba compara las dos. Acá se usan para el menú, las pantallas y
+   para no mandar a la base algo que va a rechazar.
+   ================================================================== */
+
+export const AREAS: { id: AreaId; nombre: string; pantallas: string }[] = [
+  { id: "panel", nombre: "Dashboard", pantallas: "Dashboard & KPIs: sólo las partes de las áreas que ve" },
+  { id: "leads", nombre: "Leads", pantallas: "Leads" },
+  { id: "crm", nombre: "CRM y Agenda", pantallas: "CRM, cierre del día y Agenda" },
+  { id: "ventas", nombre: "Ventas y Clientes", pantallas: "Ventas, Clientes, cuotas y cobros" },
+  { id: "webinars", nombre: "Webinars", pantallas: "Webinars" },
+  { id: "marketing", nombre: "Marketing", pantallas: "Marketing (Meta)" },
+  { id: "alumnos", nombre: "Alumnos", pantallas: "Alumnos, Pipeline de servicio y Reportes" },
+  { id: "finanzas", nombre: "Finanzas", pantallas: "Finanzas, Caja y Conciliación" },
+  { id: "ajustes", nombre: "Ajustes", pantallas: "Ajustes" },
+];
+
+const TODO: AreasDeTipo = Object.fromEntries(AREAS.map((a) => [a.id, "editar"])) as AreasDeTipo;
+
+/* Los mismos que siembra supabase/tipos-cuenta.sql. */
+export const TIPOS_POR_DEFECTO: TipoCuenta[] = [
+  { id: "dueno", nombre: "Dueño", descripcion: "Todo, incluido lo que cobra cada uno y los accesos a la app.", areas: TODO, soloLoSuyo: false, orden: 0 },
+  { id: "equipo", nombre: "Todo menos honorarios", descripcion: "Toda la app menos Equipo y honorarios.", areas: TODO, soloLoSuyo: false, orden: 1 },
+  {
+    id: "director", nombre: "Director comercial", orden: 2, soloLoSuyo: false,
+    descripcion: "Leads, CRM, Agenda, Ventas y Clientes de todos los closers. Ve los webinars y el Dashboard, sin Finanzas.",
+    areas: { panel: "ver", leads: "editar", crm: "editar", ventas: "editar", webinars: "ver" },
+  },
+  {
+    id: "closer", nombre: "Closer", orden: 3, soloLoSuyo: true,
+    descripcion: "Sus llamadas en el CRM y la Agenda, su cierre del día, sus ventas y sus clientes.",
+    areas: { crm: "editar", ventas: "editar" },
+  },
+  {
+    id: "setter", nombre: "Setter", orden: 4, soloLoSuyo: false,
+    descripcion: "Los leads y la Agenda, sin montos de venta.",
+    areas: { leads: "editar", crm: "ver" },
+  },
+  {
+    id: "admin", nombre: "Administración", orden: 5, soloLoSuyo: false,
+    descripcion: "Finanzas, Caja, Conciliación, Ventas y Clientes. En el Dashboard, cobranza y rentabilidad.",
+    areas: { panel: "ver", ventas: "editar", finanzas: "editar" },
+  },
+  {
+    id: "marketing", nombre: "Marketing", orden: 6, soloLoSuyo: false,
+    descripcion: "Webinars y Marketing; ve los leads. En el Dashboard, adquisición y el webinar.",
+    areas: { panel: "ver", leads: "ver", webinars: "editar", marketing: "editar" },
+  },
+];
+
+/* ---------- quién está usando la app ---------- */
+
+export interface MiAcceso {
+  tipo: string;
+  nombre: string;
+  areas: AreasDeTipo;
+  soloLoSuyo: boolean;
+  /* Quién es en Equipo (por su correo): con eso se sabe qué es "lo suyo". */
+  miembroId?: string;
+}
+
+export const ACCESO_DUENO: MiAcceso = { tipo: "dueno", nombre: "Dueño", areas: TODO, soloLoSuyo: false };
+
+export const esDueno = (a: MiAcceso | null | undefined) => a?.tipo === "dueno";
+
+/** 0: no la ve · 1: la ve · 2: la edita. */
+export function nivelEn(a: MiAcceso | null | undefined, area: AreaId): 0 | 1 | 2 {
+  if (!a) return 0;
+  if (esDueno(a)) return 2;
+  const n = a.areas?.[area];
+  return n === "editar" ? 2 : n === "ver" ? 1 : 0;
+}
+
+/* ---------- qué tablas lee y edita cada área ----------
+   Iguales a areas_que_leen() y areas_que_editan() de la base. Lo que no
+   está en LEEN lo lee cualquiera (configuración, catálogos, webinars); lo
+   que no está en EDITAN, sólo un dueño (equipo, tipos_cuenta, accesos,
+   honorarios, liquidaciones). */
+
+const PERSONAS: AreaId[] = ["leads", "crm", "ventas", "webinars", "alumnos", "finanzas", "marketing"];
+const VENTAS: AreaId[] = ["ventas", "finanzas", "webinars", "marketing", "alumnos"];
+const YOUTUBE: AreaId[] = ["webinars", "marketing"];
+
+export const LEEN: Record<string, AreaId[]> = {
+  leads: PERSONAS,
+  contactos: PERSONAS,
+  comentarios: ["leads", "crm", "ventas", "alumnos", "finanzas"],
+  sesiones: ["crm", "leads", "webinars", "marketing", "ventas"],
+  ventas: VENTAS,
+  cuotas: VENTAS,
+  pagos: VENTAS,
+  alumnos: ["alumnos"],
+  reportes: ["alumnos"],
+  gastos: ["finanzas"],
+  movimientos: ["finanzas"],
+  arqueos: ["finanzas"],
+  transacciones: ["finanzas"],
+  ad_insights: ["marketing", "webinars", "finanzas"],
+  campanias: ["marketing", "webinars"],
+  yt_analytics: YOUTUBE,
+  yt_chat: YOUTUBE,
+  yt_estado: YOUTUBE,
+  yt_muestras: YOUTUBE,
+  /* Sólo los dueños. */
+  honorarios: [],
+  liquidaciones: [],
+  usuarios_permitidos: [],
+};
+
+export const EDITAN: Record<string, AreaId[]> = {
+  leads: ["leads", "crm", "ventas"],
+  contactos: ["leads", "crm", "ventas"],
+  comentarios: ["leads", "crm", "ventas", "alumnos", "finanzas"],
+  sesiones: ["crm", "leads"],
+  ventas: ["ventas", "finanzas"],
+  cuotas: ["ventas", "finanzas"],
+  pagos: ["ventas", "finanzas"],
+  alumnos: ["alumnos"],
+  reportes: ["alumnos"],
+  etapas_servicio: ["alumnos"],
+  webinars: ["webinars"],
+  campaigns: ["marketing"],
+  adsets: ["marketing"],
+  ads: ["marketing"],
+  ad_insights: ["marketing"],
+  campanias: ["marketing"],
+  gastos: ["finanzas"],
+  movimientos: ["finanzas"],
+  arqueos: ["finanzas"],
+  transacciones: ["finanzas"],
+  ajustes: ["ajustes"],
+  campos: ["ajustes"],
+  etapas: ["ajustes"],
+  embudos: ["ajustes"],
+  productos: ["ajustes"],
+  procesadores: ["ajustes"],
+  metas: ["ajustes"],
+};
+
+/* Lo que cualquiera que entra escribe: lo que hizo (actividad) y sus
+   preferencias. Y el servicio que nace de una venta lo crea quien la carga
+   (la base lo deja con Ventas editable, aunque no vea Alumnos). */
+const LIBRES = new Set(["actividad", "preferencias"]);
+
+export function puedeLeer(a: MiAcceso | null | undefined, tabla: string): boolean {
+  if (!a) return false;
+  if (esDueno(a)) return true;
+  const areas = LEEN[tabla];
+  return !areas || areas.some((x) => nivelEn(a, x) >= 1);
+}
+
+export function puedeEditar(a: MiAcceso | null | undefined, tabla: string): boolean {
+  if (!a) return false;
+  if (esDueno(a) || LIBRES.has(tabla)) return true;
+  if (tabla === "alumnos" && nivelEn(a, "ventas") === 2) return true;
+  return (EDITAN[tabla] ?? []).some((x) => nivelEn(a, x) === 2);
+}
+
+/* ---------- las pantallas ---------- */
+
+/* De qué área es cada pantalla, por el comienzo de la ruta. "equipo" es
+   Equipo y honorarios: sólo los dueños, no se reparte. */
+const RUTAS: [string, AreaId | "equipo"][] = [
+  ["/panel", "panel"],
+  ["/leads", "leads"],
+  ["/crm", "crm"],
+  ["/agenda", "crm"],
+  ["/pipeline", "crm"],
+  ["/ventas", "ventas"],
+  ["/clientes", "ventas"],
+  ["/webinars", "webinars"],
+  ["/marketing", "marketing"],
+  ["/alumnos", "alumnos"],
+  ["/reportes", "alumnos"],
+  ["/finanzas", "finanzas"],
+  ["/conciliacion", "finanzas"],
+  ["/equipo", "equipo"],
+  ["/ajustes", "ajustes"],
+];
+
+export function areaDeRuta(ruta: string): AreaId | "equipo" | null {
+  const r = ruta.split("?")[0];
+  return RUTAS.find(([p]) => r === p || r.startsWith(`${p}/`))?.[1] ?? null;
+}
+
+/** 0: no la ve · 1: sólo mirar · 2: la usa entera. */
+export function nivelDeRuta(a: MiAcceso | null | undefined, ruta: string): 0 | 1 | 2 {
+  const area = areaDeRuta(ruta);
+  if (area === null) return 2;
+  if (area === "equipo") return esDueno(a) ? 2 : 0;
+  return nivelEn(a, area);
+}
+
+/* Las secciones del Dashboard y las áreas que necesita cada una: se ve la
+   sección si el tipo ve alguna (y el Dashboard). Adquisición sale de Meta;
+   el webinar y la agenda, de los webinars o del CRM; lo demás, de ventas,
+   finanzas o alumnos. */
+export const AREAS_DE_SECCION: Record<SeccionKpi, AreaId[]> = {
+  adquisicion: ["marketing"],
+  agenda: ["webinars", "crm"],
+  ventas: ["ventas"],
+  cobranza: ["ventas", "finanzas"],
+  rentabilidad: ["finanzas"],
+  servicio: ["alumnos"],
+};
+
+export function veSeccion(a: MiAcceso | null | undefined, s: SeccionKpi): boolean {
+  if (esDueno(a)) return true;
+  return nivelEn(a, "panel") >= 1 && AREAS_DE_SECCION[s].some((x) => nivelEn(a, x) >= 1);
+}
+
+/* ---------- los tipos que se editan ---------- */
+
+/** Un tipo válido para guardar: nombre, y áreas con 'ver' o 'editar'. */
+export function tipoLimpio(t: TipoCuenta): TipoCuenta {
+  const areas: AreasDeTipo = {};
+  for (const a of AREAS) {
+    const n = t.areas[a.id];
+    if (n === "ver" || n === "editar") areas[a.id] = n;
+  }
+  return { ...t, nombre: t.nombre.trim() || "Sin nombre", descripcion: t.descripcion.trim(), areas };
+}
+
+/** Lo que ve un tipo, en una línea: «Edita CRM y Agenda, Ventas y Clientes; ve Webinars». */
+export function resumenDeTipo(t: Pick<TipoCuenta, "id" | "areas" | "soloLoSuyo">): string {
+  if (t.id === "dueno") return "Todo, incluidos Equipo y honorarios.";
+  const edita = AREAS.filter((a) => t.areas[a.id] === "editar").map((a) => a.nombre);
+  const ve = AREAS.filter((a) => t.areas[a.id] === "ver").map((a) => a.nombre);
+  /* «CRM y Agenda, Ventas y Clientes»: si algún nombre ya lleva «y», con comas. */
+  const lista = (xs: string[]) => (xs.length <= 1 ? xs.join("")
+    : xs.some((x) => x.includes(" y ")) ? xs.join(", ") : `${xs.slice(0, -1).join(", ")} y ${xs[xs.length - 1]}`);
+  const partes = [edita.length ? `Edita ${lista(edita)}` : "", ve.length ? `${edita.length ? "ve" : "Ve"} ${lista(ve)}` : ""].filter(Boolean);
+  if (partes.length === 0) return "No ve nada todavía.";
+  return `${partes.join("; ")}.${t.soloLoSuyo ? " Sólo lo suyo." : ""}`;
+}
+
+/* Para el aviso cuando la base no deja guardar algo: «no puede cambiar las ventas». */
+const QUE_ES: Record<string, string> = {
+  ventas: "las ventas", cuotas: "las cuotas", pagos: "los cobros", leads: "los leads", contactos: "las personas",
+  sesiones: "las llamadas", comentarios: "los comentarios", alumnos: "los alumnos", reportes: "los reportes",
+  etapas_servicio: "las etapas del servicio", webinars: "los webinars", gastos: "los gastos",
+  movimientos: "la conciliación", arqueos: "la caja", transacciones: "las transacciones", ajustes: "los Ajustes",
+  etapas: "las etapas", embudos: "las estrategias", productos: "los servicios", procesadores: "las cuentas recaudadoras",
+  campos: "los campos", metas: "las metas", equipo: "el equipo", tipos_cuenta: "los tipos de cuenta",
+  campaigns: "Marketing", adsets: "Marketing", ads: "Marketing", ad_insights: "Marketing", campanias: "Marketing",
+  honorarios: "los honorarios", liquidaciones: "la liquidación",
+};
+export const queEsTabla = (tabla: string) => QUE_ES[tabla] ?? "esto";

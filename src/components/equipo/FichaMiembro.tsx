@@ -8,7 +8,8 @@ import { Confirmar } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toast";
 import { acciones, hayNube, useEstado } from "@/lib/store";
 import { useUsuarioActual } from "@/lib/usuario";
-import { emailValido, generarClave, NIVELES, type NivelAcceso, type useAccesos } from "@/lib/acceso";
+import { emailValido, generarClave, tipoSugerido, useTiposCuenta, type useAccesos } from "@/lib/acceso";
+import { resumenDeTipo } from "@/lib/permisos";
 import { categoriasDisponibles, infoGrupo } from "@/lib/gastos";
 import {
   TIPOS_CONCEPTO, categoriaPorDefecto, describirConcepto, idEsquema, nombrePeriodo, plata,
@@ -252,7 +253,8 @@ export function FichaMiembro({ miembroId, accesos, onCerrar }: {
 
 function AccesoMiembro({ m, accesos, yoEmail }: { m: MiembroEquipo; accesos: Accesos; yoEmail: string | null }) {
   const toast = useToast();
-  const [nivel, setNivel] = useState<NivelAcceso>("equipo");
+  const tipos = useTiposCuenta();
+  const [nivel, setNivel] = useState<string>(tipoSugerido(m.rol));
   const [trabajando, setTrabajando] = useState(false);
   const [clave, setClave] = useState<string | null>(null);
   const [quitando, setQuitando] = useState(false);
@@ -269,7 +271,16 @@ function AccesoMiembro({ m, accesos, yoEmail }: { m: MiembroEquipo; accesos: Acc
   const acceso = accesos.lista.find((a) => a.email === email);
   const soyYo = Boolean(yoEmail && yoEmail.toLowerCase() === email);
 
-  const conClave = async (rol: NivelAcceso) => {
+  const ayudaDe = (id: string) => {
+    const t = tipos.find((x) => x.id === id);
+    return t ? t.descripcion || resumenDeTipo(t) : undefined;
+  };
+  const opciones = (actual?: string) => {
+    const xs = tipos.map((t) => ({ valor: t.id, texto: t.nombre }));
+    return actual && !tipos.some((t) => t.id === actual) ? [...xs, { valor: actual, texto: actual }] : xs;
+  };
+
+  const conClave = async (rol: string) => {
     setTrabajando(true);
     const r = await generarClave({ email, nombre: m.nombre, rol });
     setTrabajando(false);
@@ -284,17 +295,17 @@ function AccesoMiembro({ m, accesos, yoEmail }: { m: MiembroEquipo; accesos: Acc
         <div className="stack-3">
           <div className="row-wrap">
             <Badge variante={acceso.rol === "dueno" ? "brand" : "success"} icono={<ShieldCheck size={12} />}>
-              {acceso.rol === "dueno" ? "Dueño" : "Tiene acceso"}
+              {tipos.find((t) => t.id === acceso.rol)?.nombre ?? "Tiene acceso"}
             </Badge>
             <span className="t-sm t-subtle">Entra con {email}{soyYo ? " (sos vos)" : ""}.</span>
           </div>
           <div className="form-grid">
-            <Field label="Qué ve" ayuda={NIVELES.find((n) => n.valor === acceso.rol)?.sub}>
+            <Field label="Tipo de cuenta" ayuda={ayudaDe(acceso.rol)}>
               <Select
-                value={acceso.rol} disabled={soyYo} aria-label="Qué ve"
-                opciones={NIVELES.map((n) => ({ valor: n.valor, texto: n.texto }))}
+                value={acceso.rol} disabled={soyYo} aria-label="Tipo de cuenta"
+                opciones={opciones(acceso.rol)}
                 onChange={async (ev) => {
-                  const error = await accesos.guardar({ email, nombre: acceso.nombre || m.nombre, rol: ev.target.value as NivelAcceso });
+                  const error = await accesos.guardar({ email, nombre: acceso.nombre || m.nombre, rol: ev.target.value });
                   toast(error ?? "Guardado: el cambio se ve la próxima vez que entre.", error ? "err" : "ok");
                 }}
               />
@@ -311,8 +322,8 @@ function AccesoMiembro({ m, accesos, yoEmail }: { m: MiembroEquipo; accesos: Acc
         <div className="stack-3">
           <p className="t-sm t-muted">No tiene acceso. Al dárselo se genera una clave para mandarle; entra con {email}.</p>
           <div className="form-grid">
-            <Field label="Qué va a ver" ayuda={NIVELES.find((n) => n.valor === nivel)?.sub}>
-              <Select value={nivel} aria-label="Qué va a ver" opciones={NIVELES.map((n) => ({ valor: n.valor, texto: n.texto }))} onChange={(ev) => setNivel(ev.target.value as NivelAcceso)} />
+            <Field label="Tipo de cuenta" ayuda={ayudaDe(nivel)}>
+              <Select value={nivel} aria-label="Tipo de cuenta" opciones={opciones()} onChange={(ev) => setNivel(ev.target.value)} />
             </Field>
           </div>
           <div className="row-wrap">

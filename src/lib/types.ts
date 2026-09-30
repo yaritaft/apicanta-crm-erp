@@ -567,11 +567,33 @@ export interface Comentario {
   creadoEn: string;
 }
 
+/* ---------- Tipos de cuenta ----------
+   Qué áreas de la app ve y edita cada tipo, y si ve sólo lo suyo (el
+   closer). Tabla `tipos_cuenta`; las reglas, en lib/permisos.ts y en la
+   base (supabase/tipos-cuenta.sql). */
+
+export type AreaId = "panel" | "leads" | "crm" | "ventas" | "webinars" | "marketing" | "alumnos" | "finanzas" | "ajustes";
+export type NivelArea = "ver" | "editar";
+export type AreasDeTipo = Partial<Record<AreaId, NivelArea>>;
+
+export interface TipoCuenta {
+  id: ID;
+  nombre: string;
+  descripcion: string;
+  areas: AreasDeTipo;
+  /* Llamadas, ventas y personas: sólo las suyas. */
+  soloLoSuyo: boolean;
+  orden: number;
+  actualizadoEn?: string;
+}
+
 export interface EstadoApp {
   version: number;
   ajustes: Ajustes;
   etapas: Etapa[];
   etapasServicio: EtapaServicio[];
+  /* Los tipos de cuenta (Equipo → Tipos de cuenta). */
+  tiposCuenta: TipoCuenta[];
   leads: Lead[];
   sesiones: Sesion[];
   webinars: Webinar[];

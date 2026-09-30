@@ -6,7 +6,7 @@ import { nubeServidor } from "@/lib/servidor";
    Dar acceso con clave: un dueño pide una clave nueva para alguien y se
    la pasa. Crea el usuario de Supabase si no existe (ya confirmado, sin
    mail de por medio) o le cambia la clave si ya existía, y lo deja en
-   `usuarios_permitidos` con su nivel.
+   `usuarios_permitidos` con su tipo de cuenta.
 
    Crear usuarios pide la clave de servicio, que saltea RLS: por eso vive
    acá y no en el navegador. Antes de usarla se le pregunta a la base si
@@ -67,10 +67,15 @@ export async function POST(peticion: Request) {
   const cuerpo = (await peticion.json().catch(() => ({}))) as { email?: string; nombre?: string; rol?: string };
   const email = String(cuerpo.email ?? "").trim().toLowerCase();
   const nombre = String(cuerpo.nombre ?? "").trim();
-  const rol = cuerpo.rol === "dueno" ? "dueno" : "equipo";
   if (!EMAIL.test(email)) {
     return NextResponse.json({ error: "Ese correo no parece válido." }, { status: 400 });
   }
+  /* El tipo de cuenta tiene que existir (supabase/tipos-cuenta.sql). En una
+     base de antes, sin la tabla, sólo están Dueño y Equipo. */
+  const pedido = String(cuerpo.rol ?? "equipo");
+  const tipo = await admin.from("tipos_cuenta").select("id").eq("id", pedido).maybeSingle();
+  const rol = tipo.error ? (pedido === "dueno" ? "dueno" : "equipo") : tipo.data ? pedido : null;
+  if (!rol) return NextResponse.json({ error: "Ese tipo de cuenta no existe." }, { status: 400 });
 
   /* Primero la lista: sin estar en ella, la clave no serviría de nada. */
   const lista = await admin.from("usuarios_permitidos").upsert({ email, nombre, rol }, { onConflict: "email" });

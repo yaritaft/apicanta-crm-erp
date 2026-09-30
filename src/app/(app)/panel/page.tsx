@@ -16,6 +16,8 @@ import { useToast } from "@/components/ui/Toast";
 import { AlarmaCobranza } from "@/components/finanzas/AlarmaCobranza";
 import { TablaKpis, variacionKpi, type FilaKpi } from "@/components/panel/TablaKpis";
 import { useEstado } from "@/lib/store";
+import { useAcceso } from "@/lib/acceso";
+import { veSeccion } from "@/lib/permisos";
 import { num } from "@/lib/format";
 import { useRangoURL } from "@/lib/useRango";
 import { useParamsURL } from "@/lib/useParamsURL";
@@ -68,7 +70,12 @@ export default function DashboardKpis() {
   const comparar = vista.comparar === "1";
   const columnasViejas = !params.get("columnas") && params.get("vista") === "meses";
   const columnas: Columnas = vista.columnas === "mes" || columnasViejas ? "mes" : "dia";
-  const area = (SECCIONES.some((s) => s.id === vista.area) ? vista.area : "todo") as SeccionKpi | "todo";
+  /* Cada tipo de cuenta ve las secciones de sus áreas (lib/permisos:
+     veSeccion): Marketing, adquisición y el webinar; Administración,
+     cobranza y rentabilidad. Los números de lo demás ni llegan de la base. */
+  const { acceso } = useAcceso();
+  const secciones = useMemo(() => SECCIONES.filter((s) => veSeccion(acceso, s.id)), [acceso]);
+  const area = (secciones.some((s) => s.id === vista.area) ? vista.area : "todo") as SeccionKpi | "todo";
 
   /* Un filtro que apunta a algo que ya no existe se ignora. */
   const webinarsFiltro = useMemo(() => webinarsParaFiltro(e), [e]);
@@ -108,13 +115,14 @@ export default function DashboardKpis() {
     const ctxPrevio = cortes.map((c) => (c.previo ? new Contexto(e, c.previo) : null));
     const tiene = (v: number | null, def: DefKpi) => v !== null && (!def.ocultarEnCero || v !== 0);
     return catalogo(e)
+      .filter((def) => secciones.some((s) => s.id === def.seccion))
       .map((def) => ({
         def,
         valores: ctx.map((c) => valorEn(def, c)),
         previos: ctxPrevio.map((c) => (c ? valorEn(def, c) : null)),
       }))
       .filter((f) => f.valores.some((v) => tiene(v, f.def)));
-  }, [e, cortes]);
+  }, [e, cortes, secciones]);
 
   /* Qué métricas se ven y en qué orden: lo elige cada uno (useFilasKpi). */
   const defs = useMemo(() => todas.map((f) => f.def), [todas]);
@@ -151,12 +159,12 @@ export default function DashboardKpis() {
     if (def.desglose) setDesglose({ que: def.desglose, mes: rangoDeFechas(c.desde, c.hasta, c.sub ?? c.titulo) });
   };
 
-  const areas: { id: SeccionKpi | "todo"; titulo: string }[] = [{ id: "todo", titulo: "Todo" }, ...SECCIONES];
+  const areas: { id: SeccionKpi | "todo"; titulo: string }[] = [{ id: "todo", titulo: "Todo" }, ...secciones];
   const elegirArea = (id: SeccionKpi | "todo") => setVista({ area: id });
 
   return (
     <div className="stack-4">
-      <AlarmaCobranza e={e} />
+      {veSeccion(acceso, "cobranza") && <AlarmaCobranza e={e} />}
 
       {/* Una sola línea: las áreas a la izquierda, como pestañas (de TOFU a
           servicio), y los filtros de la vista a la derecha. Si no entran,

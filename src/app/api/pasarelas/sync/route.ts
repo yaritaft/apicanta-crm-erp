@@ -1,5 +1,5 @@
-import { createClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
+import { nivelDelPedido } from "@/lib/permisos-servidor";
 import { guardarMovimientos, hayServidor, referenciasCompletas } from "@/lib/servidor";
 import { hayClaves, listar, procesadorDe, PROVEEDORES, type MovimientoApi } from "@/lib/pasarelas-api";
 import type { ProveedorPasarela } from "@/lib/types";
@@ -21,22 +21,10 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /* Quien pide desde la pantalla de Conciliación manda su sesión de
-   Supabase. Se le pregunta a la base si puede entrar, con la MISMA
-   función que usan las políticas de RLS: una sola regla para decidir
-   quién ve la plata, no dos que se puedan desalinear. */
-async function esDelEquipo(peticion: Request): Promise<boolean> {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const anonima = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-  const jwt = peticion.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
-  if (!url || !anonima || !jwt) return false;
-
-  const db = createClient(url, anonima, {
-    auth: { persistSession: false },
-    global: { headers: { Authorization: `Bearer ${jwt}` } },
-  });
-  const r = await db.rpc("puede_entrar");
-  return !r.error && r.data === true;
-}
+   Supabase. Se le pregunta a la base qué nivel tiene en Finanzas, con la
+   MISMA función que usan las políticas de RLS (lib/permisos-servidor):
+   una sola regla para decidir quién ve la plata, no dos que se puedan
+   desalinear. Ver, Finanzas; guardar, Finanzas editable. */
 
 /* Ventana por defecto: 60 días. Alcanza para las cuotas del mes y para
    las que se atrasaron, sin traer años de historia en cada click. */
@@ -64,14 +52,18 @@ export async function GET(peticion: Request) {
      pasarelas, o una persona del equipo con su sesión. Sin secreto
      configurado (desarrollo local) queda abierta. */
   const secreto = process.env.PASARELAS_WEBHOOK_TOKEN;
-  const autorizado = esCron
-    || !secreto
-    || url.searchParams.get("token") === secreto
-    || await esDelEquipo(peticion);
-  if (!autorizado) {
+  const conCredencial = esCron || !secreto || url.searchParams.get("token") === secreto;
+  const nivel = conCredencial ? 2 : (await nivelDelPedido(peticion, ["finanzas"])) ?? -1;
+  if (nivel < 0) {
     return NextResponse.json({ error: "Hace falta iniciar sesión para ver los cobros." }, { status: 401 });
   }
+  if (nivel < 1) {
+    return NextResponse.json({ error: "Tu tipo de cuenta no ve los cobros de las pasarelas." }, { status: 403 });
+  }
   const quiereGuardar = esCron || url.searchParams.get("guardar") === "1";
+  if (quiereGuardar && nivel < 2) {
+    return NextResponse.json({ error: "Tu tipo de cuenta no puede guardar cobros." }, { status: 403 });
+  }
 
   const movimientos: MovimientoApi[] = [];
   const conectadas: ProveedorPasarela[] = [];

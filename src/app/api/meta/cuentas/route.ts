@@ -1,3 +1,4 @@
+import { exigirArea } from "@/lib/permisos-servidor";
 import { NextResponse } from "next/server";
 import { COOKIE_TOKEN, metaConfigurado, tokenDeLaPeticion, tokenDeSistema, traerCuentas, type CuentaMeta } from "@/lib/meta";
 
@@ -13,6 +14,10 @@ let cache: { cuentas: CuentaMeta[]; hasta: number } | null = null;
 const esLimite = (m: string) => /too many calls|rate limit|#17|#4\b/i.test(m);
 
 export async function GET(req: Request) {
+  /* Con el token del sistema le contestaba a cualquiera, con o sin sesión:
+     ahora, sólo a quien ve Marketing o los Ajustes. */
+  const noPuede = await exigirArea(req, ["marketing", "ajustes"], 1);
+  if (noPuede) return noPuede;
   if (!metaConfigurado()) return NextResponse.json({ conectado: false, motivo: "sin-configurar" });
 
   const token = tokenDeLaPeticion(req);
@@ -49,7 +54,9 @@ export async function GET(req: Request) {
   }
 }
 
-export async function DELETE() {
+export async function DELETE(req: Request) {
+  const noPuede = await exigirArea(req, ["marketing", "ajustes"], 2);
+  if (noPuede) return noPuede;
   if (tokenDeSistema()) {
     return NextResponse.json(
       { error: "La conexión se configura con una variable del proyecto, no desde acá." },

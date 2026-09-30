@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { esDelEquipo, hayEquipoConfigurado } from "@/lib/equipo-servidor";
+import { exigirArea } from "@/lib/permisos-servidor";
 import { tokenDeSistema } from "@/lib/meta";
 import { activarWebhook, estadoWebhook } from "@/lib/meta-leads";
 import { sincronizarLeadsMeta } from "@/lib/meta-leads-sync";
@@ -22,19 +22,17 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
-async function permitido(peticion: Request) {
-  return !hayEquipoConfigurado() || (await esDelEquipo(peticion));
-}
-
 export async function GET(peticion: Request) {
-  if (!(await permitido(peticion))) return NextResponse.json({ error: "Hace falta iniciar sesión." }, { status: 401 });
+  const noPuede = await exigirArea(peticion, ["marketing", "ajustes"], 1);
+  if (noPuede) return noPuede;
   const token = tokenDeSistema();
   if (!token) return NextResponse.json({ error: "Falta META_SYSTEM_TOKEN en el servidor." }, { status: 503 });
   return NextResponse.json(await estadoWebhook(token));
 }
 
 export async function POST(peticion: Request) {
-  if (!(await permitido(peticion))) return NextResponse.json({ error: "Hace falta iniciar sesión." }, { status: 401 });
+  const noPuede = await exigirArea(peticion, ["marketing", "ajustes"], 2);
+  if (noPuede) return noPuede;
   const cuerpo = (await peticion.json().catch(() => ({}))) as { accion?: string; dias?: number };
   const token = tokenDeSistema();
   if (!token) return NextResponse.json({ error: "Falta META_SYSTEM_TOKEN en el servidor." }, { status: 503 });

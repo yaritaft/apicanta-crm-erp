@@ -2,18 +2,22 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { usePathname, useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
-  AlertCircle, Check, Cloud, HardDrive, LogOut, Menu, Moon, PanelLeft, PanelLeftClose,
+  AlertCircle, Check, Cloud, Eye, HardDrive, Lock, LogOut, Menu, Moon, PanelLeft, PanelLeftClose,
   RefreshCw, Search, Sun, X,
 } from "lucide-react";
-import { navPara } from "./nav";
+import { inicioPara, navPara } from "./nav";
 import { alarmaCobranza } from "@/lib/finanzas";
-import { cargarDeLaNube, hayNube, reiniciarCarga, useEstado, useSync, useTema } from "@/lib/store";
+import {
+  alNegarseEscritura, cargarDeLaNube, fijarAcceso, hayNube, reiniciarCarga, useEstado, useSync, useTema,
+} from "@/lib/store";
 import { useSalir, useSesion } from "@/lib/auth";
-import { useNivelAcceso } from "@/lib/acceso";
+import { elegirVerComo, useAcceso, useVerComo } from "@/lib/acceso";
+import { areaDeRuta, nivelDeRuta, queEsTabla } from "@/lib/permisos";
 import { useRecordarVistas } from "@/lib/recordarVistas";
-import { Avatar, Button, IconButton } from "@/components/ui/ui";
+import { Avatar, Button, Card, Empty, IconButton } from "@/components/ui/ui";
+import { useToast } from "@/components/ui/Toast";
 import { Paleta } from "./Paleta";
 import { Tour } from "./Tour";
 import { ID_ACCIONES_TOPBAR } from "./AccionesTopbar";
@@ -25,8 +29,28 @@ export function Shell({ children }: { children: React.ReactNode }) {
   const [tema, setTema] = useTema();
   const sync = useSync();
   const sesion = useSesion();
-  const { esDueno } = useNivelAcceso();
-  const nav = navPara(esDueno);
+  const router = useRouter();
+  const toast = useToast();
+  /* Qué ve según su tipo de cuenta (lib/acceso, lib/permisos): el menú,
+     la pantalla y lo que la cola manda a la base. */
+  const { acceso, cargando: cargandoAcceso } = useAcceso();
+  const nav = navPara(acceso);
+  const inicio = inicioPara(acceso);
+  const nivelRuta = nivelDeRuta(acceso, ruta);
+  const verComo = useVerComo();
+  useEffect(() => { fijarAcceso(acceso); }, [acceso]);
+  useEffect(() => {
+    let ultimo = 0;
+    return alNegarseEscritura((tabla, motivo) => {
+      if (Date.now() - ultimo < 4000) return;
+      ultimo = Date.now();
+      toast(motivo ?? `Tu tipo de cuenta no puede cambiar ${queEsTabla(tabla)}: vuelve a como estaba.`, "err");
+    });
+  }, [toast]);
+  /* El inicio es el Dashboard; quien no lo ve arranca en su primera pantalla. */
+  useEffect(() => {
+    if (acceso && nivelRuta === 0 && ruta === "/panel" && inicio !== "/panel") router.replace(inicio);
+  }, [acceso, nivelRuta, ruta, inicio, router]);
   /* Cada pantalla vuelve como se dejó: con sus filtros, su orden y su
      período. El menú lleva directo a lo último que se vio en cada una. */
   const hrefRecordado = useRecordarVistas();
@@ -118,7 +142,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
 
       <nav className="hk-sidebar" data-abierto={menu} aria-label="Navegación principal">
         <div className="row" style={{ justifyContent: "space-between" }}>
-          <Link href="/panel" className="hk-sidebar__brand" style={{ padding: "8px 12px" }}>
+          <Link href={inicio} className="hk-sidebar__brand" style={{ padding: "8px 12px" }}>
             <span className="marca-larga">Apicanta</span><span className="marca-corta">A</span><em>.</em>
           </Link>
           <IconButton etiqueta="Cerrar menú" onClick={() => setMenu(false)} className="sidebar-toggle">
@@ -206,7 +230,43 @@ export function Shell({ children }: { children: React.ReactNode }) {
           </div>
         </header>
 
-        <main className="app-content">{children}</main>
+        <main className="app-content">
+          {verComo && (
+            <div className="aviso-tipo" role="status">
+              <Eye size={15} aria-hidden />
+              <span>Estás viendo la app como <strong>{acceso?.nombre ?? verComo}</strong>: el menú y los permisos de ese tipo. Sólo en la app local; lo suyo lo recorta la base.</span>
+              <button type="button" className="link" onClick={() => elegirVerComo(null)}>Volver a Dueño</button>
+            </div>
+          )}
+          {hayNube && cargandoAcceso ? (
+            <div className="skeleton" style={{ height: 320 }} aria-busy="true" aria-label="Viendo qué podés ver" />
+          ) : !acceso ? (
+            <Card>
+              <Empty
+                icono={<Lock size={22} />} titulo="Tu usuario no tiene acceso"
+                texto="Entraste, pero tu correo no está entre los accesos a la app, o no se pudo saber qué podés ver. Pediles a los dueños que te den acceso, o recargá la página."
+              />
+            </Card>
+          ) : nivelRuta === 0 ? (
+            <Card>
+              <Empty
+                icono={<Lock size={22} />} titulo="Esta pantalla no es de tu tipo de cuenta"
+                texto={`Con tu tipo de cuenta (${acceso.nombre}) no se ve. Si la necesitás, pediselo a los dueños.`}
+                accion={<Link href={inicio}><Button variante="secondary">Ir a mi inicio</Button></Link>}
+              />
+            </Card>
+          ) : (
+            <>
+              {nivelRuta === 1 && areaDeRuta(ruta) !== "panel" && (
+                <div className="aviso-tipo" role="note">
+                  <Eye size={15} aria-hidden />
+                  <span>Con tu tipo de cuenta esta pantalla es para mirar: lo que cambies no se guarda.</span>
+                </div>
+              )}
+              {children}
+            </>
+          )}
+        </main>
       </div>
 
       <Paleta abierto={paleta} onCerrar={() => setPaleta(false)} />

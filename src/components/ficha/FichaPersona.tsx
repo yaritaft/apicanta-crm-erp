@@ -24,6 +24,8 @@ import { VistaLlamadas } from "./VistaLlamadas";
 import { CabezaPlegable, usePlegado } from "./Plegable";
 import type { VistaFicha } from "./abrir";
 import { acciones, cuotasQueCancelaLaBaja, useEstado } from "@/lib/store";
+import { useAcceso } from "@/lib/acceso";
+import { nivelEn, type MiAcceso } from "@/lib/permisos";
 import { personaDe, type Persona } from "@/lib/persona";
 import { saldoVenta } from "@/lib/finanzas";
 import { fechaHora, fechaLarga, money, relativo } from "@/lib/format";
@@ -52,6 +54,11 @@ export function FichaPersona({ id, vista, ventaResaltada, onCerrar, onVista }: {
 }) {
   const e = useEstado();
   const p = useMemo(() => personaDe(e, id), [e, id]);
+  /* Cada tipo de cuenta ve las vistas de sus áreas: el setter, sin ventas;
+     el closer, sin el servicio. */
+  const { acceso } = useAcceso();
+  const vistas = vistasDe(acceso);
+  const vistaReal = vistas.includes(vista) ? vista : vistas[0] ?? vista;
 
   /* Esc cierra, salvo que haya algo abierto encima (un pago, un desplegable,
      el asistente de venta): eso se cierra primero. */
@@ -78,15 +85,17 @@ export function FichaPersona({ id, vista, ventaResaltada, onCerrar, onVista }: {
           </div>
         ) : (
           <>
-            <Cabecera e={e} p={p} vista={vista} onVista={onVista} onCerrar={onCerrar} />
+            <Cabecera e={e} p={p} vista={vistaReal} vistas={vistas} onVista={onVista} onCerrar={onCerrar} />
             <div className="ficha__cuerpo">
               <Lateral e={e} p={p} />
               <div className="ficha__principal">
-                {vista === "llamadas"
-                  ? <VistaLlamadas e={e} p={p} />
-                  : vista === "ventas"
-                    ? <VistaVentas e={e} p={p} ventaResaltada={ventaResaltada} />
-                    : <VistaServicio e={e} p={p} />}
+                {vistas.length === 0
+                  ? null
+                  : vistaReal === "llamadas"
+                    ? <VistaLlamadas e={e} p={p} />
+                    : vistaReal === "ventas"
+                      ? <VistaVentas e={e} p={p} ventaResaltada={ventaResaltada} />
+                      : <VistaServicio e={e} p={p} />}
               </div>
             </div>
           </>
@@ -98,8 +107,17 @@ export function FichaPersona({ id, vista, ventaResaltada, onCerrar, onVista }: {
 
 /* ---------- Cabecera ---------- */
 
-function Cabecera({ e, p, vista, onVista, onCerrar }: {
-  e: EstadoApp; p: Persona; vista: VistaFicha; onVista: (v: VistaFicha) => void; onCerrar: () => void;
+/* Llamadas: CRM o Leads. Ventas: Ventas o Finanzas. Servicio: Alumnos. */
+function vistasDe(a: MiAcceso | null): VistaFicha[] {
+  const xs: VistaFicha[] = [];
+  if (nivelEn(a, "crm") >= 1 || nivelEn(a, "leads") >= 1) xs.push("llamadas");
+  if (nivelEn(a, "ventas") >= 1 || nivelEn(a, "finanzas") >= 1) xs.push("ventas");
+  if (nivelEn(a, "alumnos") >= 1) xs.push("servicio");
+  return xs;
+}
+
+function Cabecera({ e, p, vista, vistas, onVista, onCerrar }: {
+  e: EstadoApp; p: Persona; vista: VistaFicha; vistas: VistaFicha[]; onVista: (v: VistaFicha) => void; onCerrar: () => void;
 }) {
   const lead = p.leads[0];
   const etapa = lead ? e.etapas.find((x) => x.id === lead.etapaId) : undefined;
@@ -119,7 +137,7 @@ function Cabecera({ e, p, vista, onVista, onCerrar }: {
       </div>
       <div className="ficha__acciones">
         <div className="segmento" role="tablist" aria-label="Qué mirar de la persona">
-          {(["llamadas", "ventas", "servicio"] as const).map((v) => (
+          {vistas.map((v) => (
             <button key={v} type="button" role="tab" aria-selected={vista === v} onClick={() => onVista(v)}>
               {v === "llamadas" ? "Llamadas" : v === "ventas" ? "Ventas" : "Servicio"}
             </button>

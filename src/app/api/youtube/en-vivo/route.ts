@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { esDelEquipo, hayEquipoConfigurado } from "@/lib/equipo-servidor";
+import { exigirArea } from "@/lib/permisos-servidor";
 import { nubeServidor } from "@/lib/servidor";
 
 /* Qué webinars están en el aire ahora, según el cron (que revisa cada
@@ -11,9 +11,8 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(peticion: Request) {
-  if (hayEquipoConfigurado() && !(await esDelEquipo(peticion))) {
-    return NextResponse.json({ error: "Hace falta iniciar sesión." }, { status: 401 });
-  }
+  const noPuede = await exigirArea(peticion, ["webinars", "marketing"], 1);
+  if (noPuede) return noPuede;
   const db = nubeServidor();
   if (!db) return NextResponse.json({ vivos: [] });
   const r = await db.from("yt_estado")

@@ -3147,3 +3147,28 @@ span.kpis__etiqueta:hover { color: var(--ink); text-decoration: none; }
 .cuotas-closer__lista li { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: var(--space-3); align-items: center; padding: 8px var(--space-3); border-bottom: 1px solid var(--border); }
 .cuotas-closer__lista li:last-child { border-bottom: 0; }
 @media (max-width: 560px) { .cuotas-closer__lista li { grid-template-columns: minmax(0, 1fr) auto; } .cuotas-closer__lista li > :nth-child(2) { grid-column: 1 / -1; order: 3; } }
+
+/* El aviso arriba de la pantalla: «estás viendo como…» (local) o «esta
+   pantalla es para mirar» (tipo de cuenta que la ve y no la edita). */
+.aviso-tipo {
+  display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2);
+  margin-bottom: var(--space-4); padding: 10px var(--space-3);
+  border: 1px solid color-mix(in srgb, var(--info) 40%, var(--border)); border-radius: var(--radius-md);
+  background: var(--info-soft); color: var(--ink); font-size: 13px; line-height: 20px;
+}
+.aviso-tipo svg { flex: none; color: var(--info); }
+.aviso-tipo .link { margin-left: auto; }
+
+/* Equipo → Tipos de cuenta: un tipo por fila, un área por columna. */
+.tipos-vercomo { gap: var(--space-2); align-items: center; margin-bottom: var(--space-4); color: var(--ink-subtle); }
+.tipos-caja { max-height: none; }
+.tipos-tabla th, .tipos-tabla td { vertical-align: middle; }
+.tipos-tabla thead th { white-space: nowrap; font-size: 12px; }
+.tipos-tabla .planilla__fija { min-width: 240px; max-width: 280px; }
+.tipos-tabla__tipo { display: flex; flex-direction: column; gap: 2px; padding: var(--space-2) var(--space-3); font-weight: 400; }
+.tipos-tabla__tipo .t-strong { display: inline-flex; align-items: center; gap: 4px; color: var(--ink); }
+.tipos-tabla__tipo .t-subtle { white-space: normal; line-height: 16px; }
+.tipos-tabla__celda { min-width: 104px; padding: 4px 6px; }
+.tipos-tabla__celda--editar { background: color-mix(in srgb, var(--success) 10%, transparent); }
+.tipos-tabla__celda--ver { background: color-mix(in srgb, var(--info) 10%, transparent); }
+.tipos-tabla__num { text-align: right; padding-right: var(--space-3); }

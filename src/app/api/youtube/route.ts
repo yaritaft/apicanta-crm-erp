@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { esDelEquipo, hayEquipoConfigurado } from "@/lib/equipo-servidor";
+import { exigirArea } from "@/lib/permisos-servidor";
 import {
   ESPERA_MS, MEDIA_HORA, mejor, numero, pedirApi, type CanalApi, type VideoApi,
 } from "@/lib/youtube-servidor";
@@ -33,9 +33,8 @@ type Resultado = { ok: true; datos: DatosYoutube } | { ok: false; status: number
 export async function GET(peticion: Request) {
   /* Sólo el equipo. Sin Supabase configurado (la app corriendo local, sin
      login) no hay a quién preguntarle y se contesta igual. */
-  if (hayEquipoConfigurado() && !(await esDelEquipo(peticion))) {
-    return NextResponse.json({ error: "Hace falta iniciar sesión para ver los datos de YouTube." }, { status: 401 });
-  }
+  const noPuede = await exigirArea(peticion, ["webinars", "marketing"], 1);
+  if (noPuede) return noPuede;
 
   const url = new URL(peticion.url);
   const crudo = url.searchParams.get("id");

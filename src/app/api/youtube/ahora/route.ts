@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { esDelEquipo, hayEquipoConfigurado } from "@/lib/equipo-servidor";
+import { exigirArea } from "@/lib/permisos-servidor";
 import { ID_YOUTUBE } from "@/lib/youtube";
 import { numero, pedirApi, type VideoApi } from "@/lib/youtube-servidor";
 
@@ -12,9 +12,8 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(peticion: Request) {
-  if (hayEquipoConfigurado() && !(await esDelEquipo(peticion))) {
-    return NextResponse.json({ error: "Hace falta iniciar sesión." }, { status: 401 });
-  }
+  const noPuede = await exigirArea(peticion, ["webinars", "marketing"], 1);
+  if (noPuede) return noPuede;
   const id = new URL(peticion.url).searchParams.get("video")?.trim() ?? "";
   if (!ID_YOUTUBE.test(id)) return NextResponse.json({ error: "Eso no es el id de un video de YouTube." }, { status: 400 });
   const clave = process.env.YOUTUBE_API_KEY?.trim();

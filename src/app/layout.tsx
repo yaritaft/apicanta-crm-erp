@@ -16,7 +16,7 @@ export const viewport: Viewport = {
 /* Aplica el tema guardado antes del primer pintado: sin parpadeo. Con la
    nube la copia va en otra clave (lib/store.ts); sin la nube, en la de
    siempre. */
-const TEMA_INICIAL = `(function(){try{var s=localStorage.getItem("apicanta.erp.nube.v1")||localStorage.getItem("apicanta.erp.v1");if(s){var a=JSON.parse(s).ajustes;var t=a&&a.tema;if(t)document.documentElement.dataset.theme=t}}catch(e){}})();`;
+const TEMA_INICIAL = `(function(){try{var p=localStorage.getItem("apicanta:tema");if(p==="dark"||p==="light"){document.documentElement.dataset.theme=p;return}var s=localStorage.getItem("apicanta.erp.nube.v1")||localStorage.getItem("apicanta.erp.v1");if(s){var a=JSON.parse(s).ajustes;var t=a&&a.tema;if(t)document.documentElement.dataset.theme=t}}catch(e){}})();`;
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (

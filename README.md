@@ -90,10 +90,13 @@ que los campos de `src/lib/types.ts` (en camelCase, entre comillas), así que el
 no necesita capa de mapeo: lo que sale de la base es la forma que espera la app.
 
 > **Sobre el acceso:** se entra con correo y clave (o con un enlace por correo), y sólo ve
-> datos quien está en `usuarios_permitidos`: las políticas de RLS preguntan `puede_entrar()`.
-> Hay dos niveles: **dueño** (todo, incluido Equipo y honorarios) y **equipo** (todo menos
-> eso). Lo que cobra cada uno vive en `honorarios` y `liquidaciones`, que sólo se leen con
-> `es_dueno()`: para el resto llegan vacías aunque las pidan por la API.
+> datos quien está en `usuarios_permitidos`, con un **tipo de cuenta** (`tipos_cuenta`): Dueño,
+> Todo menos honorarios, Director comercial, Closer, Setter, Administración, Marketing, o los que
+> agreguen los dueños. Cada tipo dice qué áreas ve y cuáles edita, y si ve sólo lo suyo. Lo
+> decide la base: las políticas de RLS preguntan `ve(tabla)`, `edita(tabla)` y, para el closer,
+> `mis_ventas()`, `mis_leads()`… (`supabase/tipos-cuenta.sql`); lo que no ve le llega vacío y lo
+> que no edita se rechaza. Lo que cobra cada uno vive en `honorarios` y `liquidaciones`, que
+> sólo se leen con `es_dueno()`.
 > Tampoco quedan en el navegador: la copia que guarda para abrir rápido va sin ellas, y al
 > cerrar sesión se borra entera.
 
@@ -362,9 +365,14 @@ Una sección que ven sólo los dueños (Yari y Juan Cruz), con tres solapas:
   «Pasar sus cuotas a…» se las da a otro closer: desde ahí lo que se cobre de ellas comisiona para el
   que las heredó, en Finanzas, en el resultado del webinar y en la liquidación. Lo ya cobrado sigue
   siendo de quien cerró la venta, y en la ficha del que las heredó se pueden devolver.
-- **Accesos a la app.** Dar y quitar accesos y elegir el nivel. «Dar acceso y generar clave» crea
+- **Accesos a la app.** Dar y quitar accesos y elegir el tipo de cuenta (al darle acceso a alguien
+  del equipo se propone el de su rol: closer, setter, director, marketing). «Dar acceso y generar clave» crea
   el usuario y muestra la clave una sola vez, lista para mandar; lo hace `/api/accesos` con la
   clave de servicio y sólo si quien pide es dueño. La base no deja quedarse sin ningún dueño.
+- **Tipos de cuenta.** Una tabla con un tipo por fila y un área por columna (Dashboard, Leads, CRM
+  y Agenda, Ventas y Clientes, Webinars, Marketing, Alumnos, Finanzas, Ajustes): en cada una, no
+  la ve, la ve o la edita; y «Sólo lo suyo». Se agregan tipos nuevos partiendo de otro. En la app
+  local, «Ver como…» muestra el menú y los permisos de cada tipo.
 
 Las reglas del cálculo están en `src/lib/honorarios.ts`. Antes de usarlo contra Supabase hay que
 correr `supabase/honorarios.sql` (tablas, políticas, niveles de acceso y la columna `puesto`).
@@ -412,3 +420,13 @@ correr `supabase/honorarios.sql` (tablas, políticas, niveles de acceso y la col
   `supabase/cuotas-closer.sql`; `lib/cuotas-closer.ts`). Finanzas, el resultado de cada webinar y la liquidación usan
   la misma regla (`closerDeCuota` y `cobraEnFecha` en `lib/finanzas.ts`); el cobro de una cuota heredada aparece como
   «cuotas heredadas de …». La ficha de la venta dice en cada cuota quién la comisiona si no es el closer de la venta.
+- **Tipos de cuenta** (`lib/permisos.ts`, `supabase/tipos-cuenta.sql`): cada persona con acceso tiene un tipo, y
+  cada tipo ve y edita sólo sus áreas, trabado en la base con RLS (lo que no ve le llega vacío, lo que no edita se
+  rechaza, también por la API). El closer ve **sólo lo suyo**: las llamadas donde es el anfitrión de Calendly (por su
+  nombre en Equipo), sus ventas (de closer, de setter o con cuotas que heredó) con sus cuotas y cobros, y la gente de
+  esas llamadas y ventas. El menú, el inicio (el closer arranca en el CRM), el buscador, las secciones del Dashboard y
+  las vistas de la ficha siguen al tipo; una pantalla que el tipo ve y no edita avisa que es para mirar; si algo no se
+  puede guardar, se avisa y vuelve a como estaba, sin trabar la cola. Las rutas de `/api` que leen con la clave de
+  servicio preguntan `nivel_area()` (`lib/permisos-servidor.ts`); las de Meta, que contestaban sin sesión con el token
+  del sistema, ahora piden Marketing. El tema claro/oscuro pasó a ser de cada navegador, y Ajustes → Datos (respaldos,
+  vaciar) es sólo de los dueños. `pruebas/permisos.ts` compara las reglas de la app con las de la base.

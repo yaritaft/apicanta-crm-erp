@@ -4,7 +4,8 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Search, CornerDownLeft } from "lucide-react";
 import { TODOS_LOS_ITEMS } from "./nav";
-import { useNivelAcceso } from "@/lib/acceso";
+import { useAcceso } from "@/lib/acceso";
+import { nivelDeRuta } from "@/lib/permisos";
 import { useEstado } from "@/lib/store";
 import { fechaHora, money } from "@/lib/format";
 
@@ -20,7 +21,7 @@ function normal(s: string) {
 export function Paleta({ abierto, onCerrar }: { abierto: boolean; onCerrar: () => void }) {
   const router = useRouter();
   const e = useEstado();
-  const { esDueno } = useNivelAcceso();
+  const { acceso } = useAcceso();
   const [q, setQ] = useState("");
   const [activo, setActivo] = useState(0);
   const input = useRef<HTMLInputElement>(null);
@@ -33,8 +34,11 @@ export function Paleta({ abierto, onCerrar }: { abierto: boolean; onCerrar: () =
     const term = normal(q.trim());
     const out: Resultado[] = [];
 
+    /* Sólo lo que su tipo de cuenta ve, y sólo lo que lleva a una pantalla
+       que ve (los datos ya llegan recortados por la base). */
+    const ve = (ruta: string) => nivelDeRuta(acceso, ruta) > 0;
     for (const i of TODOS_LOS_ITEMS) {
-      if (i.soloDuenos && !esDueno) continue;
+      if (!ve(i.href)) continue;
       if (!term || normal(i.texto).includes(term) || normal(i.ayuda).includes(term)) {
         const Ico = i.icono;
         out.push({ id: `nav${i.href}`, grupo: "Ir a", texto: i.texto, sub: i.ayuda, icono: <Ico size={18} />, ir: i.href });
@@ -42,29 +46,29 @@ export function Paleta({ abierto, onCerrar }: { abierto: boolean; onCerrar: () =
     }
 
     if (term.length >= 2) {
-      for (const l of e.leads) {
+      for (const l of ve("/leads") ? e.leads : []) {
         if (normal(l.nombre).includes(term) || normal(l.email).includes(term)) {
           out.push({ id: `l${l.id}`, grupo: "Leads", texto: l.nombre, sub: `${l.email} · ${money(l.monto, l.moneda)}`, icono: <span className="hk-avatar" style={{ width: 22, height: 22, fontSize: 10 }}>{l.nombre.slice(0, 1)}</span>, ir: `/leads?ver=${l.id}` });
         }
       }
-      for (const a of e.alumnos) {
+      for (const a of ve("/alumnos") ? e.alumnos : []) {
         if (normal(a.nombre).includes(term) || normal(a.email).includes(term)) {
           out.push({ id: `a${a.id}`, grupo: "Alumnos", texto: a.nombre, sub: [a.plan, a.cohorte].filter(Boolean).join(" · "), icono: <span className="hk-avatar" style={{ width: 22, height: 22, fontSize: 10 }}>{a.nombre.slice(0, 1)}</span>, ir: `/alumnos?ver=${a.id}` });
         }
       }
-      for (const w of e.webinars) {
+      for (const w of ve("/webinars") ? e.webinars : []) {
         if (normal(w.titulo).includes(term)) {
           out.push({ id: `w${w.id}`, grupo: "Webinars", texto: w.titulo, sub: fechaHora(w.fecha), icono: <Search size={18} />, ir: `/webinars/${w.id}` });
         }
       }
-      for (const s of e.sesiones) {
+      for (const s of ve("/agenda") ? e.sesiones : []) {
         if (normal(s.invitado).includes(term) || normal(s.titulo).includes(term)) {
           out.push({ id: `s${s.id}`, grupo: "Agenda", texto: `${s.titulo} — ${s.invitado}`, sub: fechaHora(s.inicia), icono: <Search size={18} />, ir: `/agenda?ver=${s.id}` });
         }
       }
     }
     return out.slice(0, 24);
-  }, [q, e, esDueno]);
+  }, [q, e, acceso]);
 
   useEffect(() => { setActivo(0); }, [q]);
 

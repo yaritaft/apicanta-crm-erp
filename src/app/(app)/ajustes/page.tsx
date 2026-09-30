@@ -20,9 +20,11 @@ import {
 import { ModalForm, Confirmar } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toast";
 import { acciones, useEstado, useTema } from "@/lib/store";
+import { useAcceso } from "@/lib/acceso";
 import { num, relativo } from "@/lib/format";
 import type { Ajustes as TAjustes, CampoPersonalizado, EntidadNombre, Etapa, TipoCampo } from "@/lib/types";
 import { objecionesDe } from "@/lib/eod";
+import { cabeceras } from "@/components/webinars/useYoutube";
 
 type Seccion = "negocio" | "ventas" | "utms" | "pipeline" | "listas" | "campos" | "integraciones" | "datos";
 
@@ -61,6 +63,11 @@ export default function Ajustes() {
     return s && SECCIONES.includes(s) ? s : "negocio";
   });
   const [tema, setTema] = useTema();
+  /* Datos (respaldos, restaurar, volver a la demo, vaciar) es sólo de los
+     dueños: la base le deja borrar a quien edita cada área, así que esto lo
+     cuida la pantalla. */
+  const { esDueno } = useAcceso();
+  const verSeccion = seccion === "datos" && !esDueno ? "negocio" : seccion;
 
   return (
     <div className="stack-5">
@@ -70,7 +77,7 @@ export default function Ajustes() {
       />
 
       <Tabs
-        valor={seccion} onChange={setSeccion}
+        valor={verSeccion} onChange={setSeccion}
         opciones={[
           { valor: "negocio", texto: "Negocio" },
           { valor: "ventas", texto: "Ventas" },
@@ -79,20 +86,20 @@ export default function Ajustes() {
           { valor: "listas", texto: "Listas" },
           { valor: "campos", texto: "Campos propios" },
           { valor: "integraciones", texto: "Integraciones" },
-          { valor: "datos", texto: "Datos" },
+          ...(esDueno ? [{ valor: "datos" as const, texto: "Datos" }] : []),
         ]}
       />
 
-      {seccion === "negocio" && <Negocio tema={tema} setTema={setTema} />}
-      {seccion === "ventas" && <CatalogosVenta />}
-      {seccion === "utms" && <ConfigUtms />}
-      {seccion === "pipeline" && <EtapasDeLosPipelines />}
-      {seccion === "listas" && <Listas />}
-      {seccion === "campos" && <Campos />}
-      {seccion === "integraciones" && <Integraciones />}
-      {seccion === "datos" && <Datos />}
+      {verSeccion === "negocio" && <Negocio tema={tema} setTema={setTema} />}
+      {verSeccion === "ventas" && <CatalogosVenta />}
+      {verSeccion === "utms" && <ConfigUtms />}
+      {verSeccion === "pipeline" && <EtapasDeLosPipelines />}
+      {verSeccion === "listas" && <Listas />}
+      {verSeccion === "campos" && <Campos />}
+      {verSeccion === "integraciones" && <Integraciones />}
+      {verSeccion === "datos" && <Datos />}
 
-      {seccion === "negocio" && (
+      {verSeccion === "negocio" && (
         <Ayuda titulo="Los cambios se guardan al instante" icono={<Info size={18} />}>
           No hay botón de «guardar todo»: cada cosa que tocás queda aplicada apenas salís del campo,
           y el cambio se registra en Actividad por si después querés saber qué pasó.
@@ -502,7 +509,8 @@ function EstadoMeta() {
   >(null);
   useEffect(() => {
     let vivo = true;
-    fetch("/api/meta/cuentas", { cache: "no-store" })
+    cabeceras()
+      .then((headers) => fetch("/api/meta/cuentas", { cache: "no-store", headers }))
       .then((r) => r.json())
       .then((j) => { if (vivo) setEstado(j); })
       .catch(() => { if (vivo) setEstado({ conectado: false, motivo: "error" }); });
