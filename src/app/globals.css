@@ -3167,6 +3167,27 @@ span.kpis__etiqueta:hover { color: var(--ink); text-decoration: none; }
 .mk-previa iframe { width: 100%; max-width: 360px; height: 100%; border: 0; background: #fff; }
 .mk-previa--sin { display: flex; align-items: center; justify-content: flex-start; gap: var(--space-2); margin: 0; padding: var(--space-3) var(--space-4); }
 .mk-previa--sin svg { flex: none; }
+/* El video o la imagen del anuncio, directo y con su forma: el ancho sale
+   de la proporción del archivo, hasta el alto que entra en pantalla. Un
+   vertical queda angosto y alto; un horizontal, de lado a lado. */
+.mk-medio {
+  --alto-max: min(64vh, 560px);
+  position: relative; margin: 0 auto; width: min(100%, calc(var(--alto-max) * var(--proporcion)));
+  aspect-ratio: var(--proporcion); border-radius: var(--radius-lg); overflow: hidden; background: #000;
+}
+.mk-medio > video, .mk-medio > img { display: block; width: 100%; height: 100%; object-fit: contain; border: 0; }
+.mk-medio__chip {
+  position: absolute; top: 8px; left: 8px; padding: 2px 8px; border-radius: var(--radius-full);
+  background: rgba(0, 0, 0, .62); color: #fff; font-size: 12px; line-height: 18px; font-weight: 600; pointer-events: none;
+}
+/* Varios (un carrusel, o uno por lugar): en fila, para pasar de costado. */
+.mk-medios { display: flex; gap: var(--space-3); overflow-x: auto; scroll-snap-type: x proximity; padding-bottom: var(--space-2); }
+.mk-medio--en-fila { --alto-max: min(56vh, 460px); flex: none; margin: 0; width: min(86%, calc(var(--alto-max) * var(--proporcion))); scroll-snap-align: center; }
+/* Lo que dice el anuncio. */
+.mk-copy { display: flex; flex-direction: column; gap: var(--space-2); }
+.mk-copy__titulo { font-weight: 600; color: var(--ink); overflow-wrap: anywhere; }
+.mk-copy__texto { margin: 0; font-size: 14px; line-height: 21px; color: var(--ink-muted); white-space: pre-wrap; overflow-wrap: anywhere; }
+.mk-copy__texto--corto { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; line-clamp: 3; overflow: hidden; }
 /* Corregir en la celda, como en un Excel (components/crm-tabla/CeldaEditable).
    La celda entera es el botón: el margen negativo le come el relleno al td. */
 .crm-t .hk-table tbody tr { cursor: default; }

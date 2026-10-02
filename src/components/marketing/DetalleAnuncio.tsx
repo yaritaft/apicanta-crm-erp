@@ -2,6 +2,7 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import { ChevronRight, ImageOff } from "lucide-react";
+import { formaDe, type CreativoVisto, type MedioAnuncio } from "@/lib/meta-creativo";
 import { Avatar, Badge, Tag } from "@/components/ui/ui";
 import { Drawer, Dato } from "@/components/ui/Drawer";
 import { AreaChart } from "@/components/charts/charts";
@@ -15,10 +16,10 @@ import type { Ad } from "@/lib/types";
 import { estadoDeAnuncio } from "./estados";
 
 /* ==================================================================
-   El detalle de un anuncio: arriba el anuncio mismo, como lo muestra
-   Meta (imagen, video o carrusel), y abajo sus números del período y
-   las personas que entraron por él. Lo abren Marketing (la tabla de
-   anuncios) y el Dashboard (el gasto en Meta, anuncio por anuncio).
+   El detalle de un anuncio: arriba el anuncio mismo (su video o su
+   imagen, con su forma), y abajo sus números del período y las personas
+   que entraron por él. Lo abren Marketing (la tabla de anuncios) y el
+   Dashboard (el gasto en Meta, anuncio por anuncio).
    ================================================================== */
 
 export type FormatoPlata = (n: number, decimales?: number) => string;
@@ -167,45 +168,160 @@ export function DetalleAnuncio({ ad, rango, M, onCerrar, onIr }: {
   );
 }
 
-/* ---------- El anuncio, como lo muestra Meta ----------
-   Meta arma la vista previa de cualquier formato (imagen, video, carrusel)
-   en un marco propio; acá se le pide cada vez que se abre el detalle
-   (api/meta/preview), porque el link que da vence. Sin conexión con Meta,
+/* ---------- El anuncio mismo ----------
+   Se le pide al servidor cada vez que se abre el detalle (api/meta/preview),
+   porque los links que da Meta vencen. Llega el material del anuncio (el
+   video o la imagen, las tarjetas de un carrusel, o uno por lugar si tiene
+   distinto material para el Feed y para Historias y Reels) y se muestra
+   directo, cada uno con su forma. Si del creativo no sale ningún archivo,
+   queda la vista previa que arma Meta, en su marco. Sin conexión con Meta,
    o si el anuncio ya no existe, se dice y el resto del detalle sigue. */
 
-type Vista = { estado: "cargando" } | { estado: "lista"; src: string; alto: number } | { estado: "sin"; motivo: string };
+type Marco = { src: string; alto: number; aviso?: string };
+type Vista =
+  | { estado: "cargando" }
+  | { estado: "material"; material: CreativoVisto }
+  | { estado: "marco"; marco: Marco }
+  | { estado: "sin"; motivo: string };
+
+/* Para probar la pantalla sin Meta (la app sin nube): lo que contestaría
+   el servidor, guardado a mano en este navegador. */
+const CLAVE_DE_PRUEBA = "apicanta.previa-de-prueba";
+function materialDePrueba(): CreativoVisto | null {
+  try {
+    const j = JSON.parse(window.localStorage.getItem(CLAVE_DE_PRUEBA) ?? "null") as CreativoVisto | null;
+    return j && Array.isArray(j.medios) && j.medios.length > 0 ? j : null;
+  } catch { return null; }
+}
 
 function VistaPreviaAnuncio({ ad }: { ad: Ad }) {
   const [vista, setVista] = useState<Vista>({ estado: "cargando" });
+  /* «Ver como lo muestra Meta»: el marco, a pedido, debajo del material. */
+  const [marco, setMarco] = useState<Marco | "cargando" | "no" | null>(null);
   const metaId = ad.metaId ?? "";
 
   useEffect(() => {
-    if (!hayNube) { setVista({ estado: "sin", motivo: "El anuncio se ve en la app publicada: acá no hay conexión con Meta." }); return; }
+    setMarco(null);
+    if (!hayNube) {
+      const prueba = materialDePrueba();
+      setVista(prueba ? { estado: "material", material: prueba } : { estado: "sin", motivo: "El anuncio se ve en la app publicada: acá no hay conexión con Meta." });
+      return;
+    }
     if (!metaId) { setVista({ estado: "sin", motivo: "Este anuncio no vino de Meta: no tiene vista previa." }); return; }
     let vivo = true;
     setVista({ estado: "cargando" });
     (async () => {
       try {
         const r = await fetch(`/api/meta/preview?ad=${encodeURIComponent(metaId)}`, { cache: "no-store", headers: await cabeceras() });
-        const j = (await r.json().catch(() => ({}))) as { src?: string; alto?: number; error?: string };
+        const j = (await r.json().catch(() => ({}))) as Partial<CreativoVisto> & { src?: string; alto?: number; aviso?: string; error?: string };
         if (!vivo) return;
-        setVista(r.ok && j.src ? { estado: "lista", src: j.src, alto: j.alto ?? 620 } : { estado: "sin", motivo: j.error ?? "Meta no devolvió la vista previa de este anuncio." });
+        if (r.ok && j.medios?.length) setVista({ estado: "material", material: { ...j, medios: j.medios } });
+        else if (r.ok && j.src) setVista({ estado: "marco", marco: { src: j.src, alto: j.alto ?? 620, aviso: j.aviso } });
+        else setVista({ estado: "sin", motivo: j.error ?? "Meta no devolvió este anuncio." });
       } catch {
-        if (vivo) setVista({ estado: "sin", motivo: "No se pudo pedir la vista previa a Meta." });
+        if (vivo) setVista({ estado: "sin", motivo: "No se pudo pedir el anuncio a Meta." });
       }
     })();
     return () => { vivo = false; };
   }, [metaId]);
 
+  async function verElMarco() {
+    setMarco("cargando");
+    try {
+      const r = await fetch(`/api/meta/preview?ad=${encodeURIComponent(metaId)}&marco=1`, { cache: "no-store", headers: await cabeceras() });
+      const j = (await r.json().catch(() => ({}))) as { src?: string; alto?: number };
+      setMarco(r.ok && j.src ? { src: j.src, alto: j.alto ?? 620 } : "no");
+    } catch {
+      setMarco("no");
+    }
+  }
+
   if (vista.estado === "sin") {
     return <p className="mk-previa mk-previa--sin t-sm t-subtle"><ImageOff size={15} aria-hidden /> {vista.motivo}</p>;
   }
+  if (vista.estado === "cargando") {
+    return <div className="mk-previa" style={{ height: 420 }}><div className="skeleton" style={{ width: "100%", height: "100%" }} aria-label="Cargando el anuncio" /></div>;
+  }
+  if (vista.estado === "marco") return <MarcoDeMeta marco={vista.marco} nombre={ad.nombre} />;
+
   return (
-    <div className="mk-previa" style={{ height: vista.estado === "lista" ? vista.alto : 420 }}>
-      {vista.estado === "cargando"
-        ? <div className="skeleton" style={{ width: "100%", height: "100%" }} aria-label="Cargando el anuncio" />
-        : <iframe src={vista.src} title={`El anuncio ${ad.nombre}`} loading="lazy" scrolling="yes" referrerPolicy="no-referrer" />}
+    <div className="stack-3">
+      <MaterialDelAnuncio material={vista.material} nombre={ad.nombre} />
+      {hayNube && metaId && (
+        marco === null ? <div><button type="button" className="link t-sm" onClick={() => void verElMarco()}>Ver como lo muestra Meta</button></div>
+          : marco === "cargando" ? <div className="mk-previa" style={{ height: 420 }}><div className="skeleton" style={{ width: "100%", height: "100%" }} aria-label="Cargando la vista de Meta" /></div>
+            : marco === "no" ? <p className="t-sm t-subtle">Meta no devolvió su vista previa de este anuncio.</p>
+              : <MarcoDeMeta marco={marco} nombre={ad.nombre} />
+      )}
     </div>
+  );
+}
+
+function MarcoDeMeta({ marco, nombre }: { marco: Marco; nombre: string }) {
+  return (
+    <div className="stack-2">
+      <div className="mk-previa" style={{ height: marco.alto }}>
+        <iframe src={marco.src} title={`El anuncio ${nombre}, como lo muestra Meta`} loading="lazy" scrolling="yes" referrerPolicy="no-referrer" />
+      </div>
+      {/* Por qué no se ve el video o la imagen directo. */}
+      {marco.aviso && <p className="t-sm t-subtle" style={{ margin: 0 }}>{marco.aviso}</p>}
+    </div>
+  );
+}
+
+/* El video o la imagen, sin nada alrededor. Uno solo va centrado; varios
+   (un carrusel, o uno por lugar), en fila para pasar de costado. */
+function MaterialDelAnuncio({ material, nombre }: { material: CreativoVisto; nombre: string }) {
+  const { medios, texto, titulo, boton } = material;
+  const [todo, setTodo] = useState(false);
+  const largo = (texto?.length ?? 0) > 180 || (texto?.split("\n").length ?? 0) > 3;
+  return (
+    <div className="stack-3">
+      {medios.length === 1
+        ? <Medio m={medios[0]} nombre={nombre} />
+        : (
+          <div className="mk-medios" role="list" aria-label="El material del anuncio">
+            {medios.map((m, i) => <Medio key={`${m.src}-${i}`} m={m} nombre={nombre} chip={m.etiqueta ?? `${i + 1} de ${medios.length}`} enFila />)}
+          </div>
+        )}
+      {(titulo || texto || boton) && (
+        <div className="mk-copy">
+          {titulo && <div className="mk-copy__titulo">{titulo}</div>}
+          {texto && <p className={`mk-copy__texto${todo || !largo ? "" : " mk-copy__texto--corto"}`}>{texto}</p>}
+          <div className="row-wrap">
+            {largo && <button type="button" className="link t-sm" onClick={() => setTodo(!todo)}>{todo ? "Ver menos" : "Ver todo el texto"}</button>}
+            {boton && <Tag>Botón: {boton}</Tag>}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Medio({ m, nombre, chip, enFila }: { m: MedioAnuncio; nombre: string; chip?: string; enFila?: boolean }) {
+  /* La forma sale del tamaño que mandó Meta; si no vino, del archivo al cargar. */
+  const [tam, setTam] = useState(m.ancho && m.alto ? { w: m.ancho, h: m.alto } : null);
+  const medir = (w: number, h: number) => { if (w > 0 && h > 0 && (!tam || tam.w !== w || tam.h !== h)) setTam({ w, h }); };
+  const forma = formaDe(tam?.w, tam?.h);
+  const dice = `${m.tipo === "video" ? "Video" : m.sinArchivo ? "Portada del video" : "Imagen"}${forma ? ` · ${forma.toLowerCase()}` : ""} del anuncio ${nombre}`;
+  return (
+    <figure
+      className={`mk-medio${enFila ? " mk-medio--en-fila" : ""}`} role={enFila ? "listitem" : undefined}
+      style={{ "--proporcion": String(tam ? tam.w / tam.h : 4 / 5) } as React.CSSProperties}
+    >
+      {m.tipo === "video" ? (
+        <video
+          controls playsInline preload="metadata" poster={m.poster} src={m.src} aria-label={dice}
+          onLoadedMetadata={(ev) => medir(ev.currentTarget.videoWidth, ev.currentTarget.videoHeight)}
+        />
+      ) : (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={m.src} alt={dice} loading="lazy" onLoad={(ev) => medir(ev.currentTarget.naturalWidth, ev.currentTarget.naturalHeight)} />
+      )}
+      {(chip || m.sinArchivo) && (
+        <figcaption className="mk-medio__chip">{[chip, m.sinArchivo ? "Portada del video" : ""].filter(Boolean).join(" · ")}</figcaption>
+      )}
+    </figure>
   );
 }
 

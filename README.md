@@ -563,7 +563,13 @@ correr `supabase/honorarios.sql` (tablas, políticas, niveles de acceso y la col
   hechas, canceladas, no vinieron), las ventas, los pagos, los gastos, las cuotas vencidas, los alumnos y, para la
   plata en anuncios, los anuncios de Meta de esos días. Cada fila lleva a la ficha, a su pantalla o al detalle del
   anuncio. Lo que es una cuenta (costo por agenda, tasas, CTR, CPC, ticket, CAC, ROAS) no se abre, ni un número en cero.
-- **El anuncio, arriba de su detalle** (`components/marketing/DetalleAnuncio.tsx`, `api/meta/preview`): la vista previa
-  que arma Meta para cualquier formato (imagen, video, carrusel). Se pide cada vez que se abre, porque el link vence; de
-  lo que devuelve Meta se usa sólo el link y el tamaño (`lib/meta-preview.ts`). El mismo detalle se abre desde Marketing
-  y desde el Dashboard.
+- **El anuncio, arriba de su detalle** (`components/marketing/DetalleAnuncio.tsx`, `api/meta/preview`,
+  `lib/meta-creativo.ts`): el video o la imagen mismos, directo y con su forma (vertical, cuadrado u horizontal), no la
+  página que arma Meta. El servidor lee el creativo del anuncio y pide cada archivo: el video (`/{video}?fields=source,
+  picture,format`) o la imagen (`/act_x/adimages`); si es un carrusel, sus tarjetas, y si tiene distinto material por
+  lugar (`asset_feed_spec`), uno por lugar con su etiqueta («Historias y Reels», «Feed»). Debajo va el texto del anuncio
+  y «Ver como lo muestra Meta», que abre la vista previa de Meta en su marco (`lib/meta-preview.ts`). Si Meta no entrega
+  ningún archivo (un video del que sólo da la portada), se muestra ese marco y se dice por qué. Los links vencen: se
+  pide cada vez que se abre y no se guarda. Sólo links de Meta llegan a la página. El mismo detalle se abre desde
+  Marketing y desde el Dashboard. Sin nube, se puede probar guardando la respuesta en `localStorage`
+  (`apicanta.previa-de-prueba`).
