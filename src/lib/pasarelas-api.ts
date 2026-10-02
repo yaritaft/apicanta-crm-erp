@@ -1,5 +1,6 @@
 import { createHmac } from "node:crypto";
 import type { Moneda, ProveedorPasarela } from "./types";
+import { cuentaDeContraparte, type Punta } from "./traspasos";
 
 /* ==================================================================
    Los adaptadores de cada pasarela, del lado del servidor.
@@ -44,6 +45,10 @@ export interface MovimientoApi {
 export interface OpcionesListar {
   necesitaDetalle?: (m: MovimientoApi) => boolean;
   avisos?: string[];
+  /* Dónde anotar la plata que pasó entre cuentas propias (el depósito de
+     una pasarela en el banco): no es un cobro, es la punta de un pase
+     (lib/traspasos.ts). */
+  puntas?: Punta[];
 }
 
 export const dinero = (n: number) => Math.round(n * 100) / 100;
@@ -175,6 +180,49 @@ export async function stripe(desde: Date): Promise<MovimientoApi[]> {
     if (!r.ok) throw rechazo("Stripe", r, data);
     const filas = (data.data ?? []) as Obj[];
     salida.push(...filas.filter((c) => c.status === "succeeded" && !c.refunded).map((c) => deCargoStripe(c)));
+    if (!data.has_more || filas.length === 0) break;
+    despuesDe = String(filas[filas.length - 1].id);
+  }
+  return salida;
+}
+
+/* Los retiros de Stripe al banco no son cobros: son la SALIDA de un pase
+   entre cuentas propias (lib/traspasos.ts). Stripe sabe cuándo lo mandó;
+   la llegada la ve el banco. Un retiro negativo es Stripe debitando del
+   banco: plata que le llega. */
+export function puntaDeRetiroStripe(p: Record<string, unknown>): Punta | null {
+  const estado = String(p.status ?? "");
+  if (estado === "failed" || estado === "canceled") return null;
+  const monto = dinero(Number(p.amount ?? 0) / 100);
+  const creado = Number(p.created ?? 0);
+  if (!monto || !p.id || !(creado > 0)) return null;
+  return {
+    lado: monto > 0 ? "salida" : "llegada",
+    cuentaId: procesadorDe("stripe"),
+    monto: Math.abs(monto),
+    moneda: moneda(p.currency as string),
+    fecha: new Date(creado * 1000).toISOString(),
+    ref: `stripe:${String(p.id)}`,
+    contraparte: txt(p.statement_descriptor) ?? txt(p.description),
+    seguro: true,
+  };
+}
+
+export async function retirosDeStripe(desde: Date): Promise<Punta[]> {
+  const clave = process.env.STRIPE_SECRET_KEY;
+  if (!clave) return [];
+  const salida: Punta[] = [];
+  let despuesDe: string | undefined;
+  for (let pagina = 0; pagina < 5; pagina++) {
+    const q = new URLSearchParams({ limit: "100", "created[gte]": String(Math.floor(desde.getTime() / 1000)) });
+    if (despuesDe) q.set("starting_after", despuesDe);
+    const r = await fetch(`https://api.stripe.com/v1/payouts?${q}`, {
+      headers: { Authorization: `Bearer ${clave}` }, cache: "no-store",
+    });
+    const data = await json(r);
+    if (!r.ok) throw rechazo("Stripe (retiros)", r, data);
+    const filas = (data.data ?? []) as Obj[];
+    for (const f of filas) { const x = puntaDeRetiroStripe(f); if (x) salida.push(x); }
     if (!data.has_more || filas.length === 0) break;
     despuesDe = String(filas[filas.length - 1].id);
   }
@@ -471,7 +519,7 @@ export function listar(p: ProveedorPasarela, desde: Date, hasta: Date, opciones:
     case "whop": return whop(desde, opciones);
     case "mercadopago": return mercadopago(desde);
     case "dlocal": return dlocal(desde, hasta);
-    case "mercury": return mercury(desde);
+    case "mercury": return mercury(desde, opciones);
     case "binance": return binance(desde);
     case "trust": return trust(desde);
     default: return Promise.resolve([]);
@@ -667,11 +715,42 @@ function metodoMercury(kind: string): string | undefined {
   return kind ? nombres[kind] ?? marca(kind.replace(/([a-z])([A-Z])/g, "$1 $2").toLowerCase()) : undefined;
 }
 
-/* ---------- Mercury ----------
-   El banco no avisa: se le pregunta. Sólo entra lo que suma (amount
-   positivo) y ya está acreditado, no lo que todavía está en camino. */
+/* Un movimiento de Mercury con una cuenta propia del otro lado es la punta
+   de un pase entre cuentas (lib/traspasos.ts), no un cobro: lo que entra
+   desde una pasarela es la LLEGADA; lo que sale hacia una, la SALIDA (ésa
+   se propone: también podría ser un pago). Entre cuentas del mismo Mercury
+   no hay pase: para la app es una sola cuenta. Sólo lo ya acreditado. */
+export function puntaDeMercury(t: Record<string, unknown>): Punta | null {
+  const monto = dinero(Number(t.amount ?? 0));
+  if (!monto || !t.id) return null;
+  if (String(t.kind ?? "") === "internalTransfer") return null;
+  const estado = String(t.status ?? "").toLowerCase();
+  if (estado === "failed" || estado === "cancelled" || estado === "pending") return null;
+  const contraparte = String(t.counterpartyName ?? t.counterpartyNickname ?? "").trim();
+  const otra = cuentaDeContraparte(contraparte);
+  if (!otra) return null;
+  const fecha = String(t.postedAt ?? t.createdAt ?? "");
+  if (!fecha || Number.isNaN(Date.parse(fecha))) return null;
+  return {
+    lado: monto > 0 ? "llegada" : "salida",
+    cuentaId: procesadorDe("mercury"),
+    otraCuentaId: otra.cuentaId,
+    monto: Math.abs(monto),
+    moneda: "USD",
+    fecha: new Date(fecha).toISOString(),
+    ref: `mercury:${String(t.id)}`,
+    contraparte: contraparte || undefined,
+    seguro: monto > 0 && otra.seguro,
+  };
+}
 
-export async function mercury(desde: Date): Promise<MovimientoApi[]> {
+/* ---------- Mercury ----------
+   El banco no avisa: se le pregunta. Como cobro sólo entra lo que suma
+   (amount positivo) y ya está acreditado, no lo que todavía está en
+   camino. Lo que es de una cuenta propia se anota aparte, como punta de
+   un pase (`opciones.puntas`). */
+
+export async function mercury(desde: Date, opciones: OpcionesListar = {}): Promise<MovimientoApi[]> {
   const crudo = process.env.MERCURY_API_TOKEN?.trim();
   if (!crudo) return [];
   /* El token de Mercury es "secret-token:mercury_production_…" entero. Al
@@ -698,6 +777,8 @@ export async function mercury(desde: Date): Promise<MovimientoApi[]> {
     if (!rt.ok) throw rechazo(`Mercury (movimientos de ${cuenta.id})`, rt, data);
 
     for (const t of (data.transactions ?? []) as Record<string, never>[]) {
+      const punta = opciones.puntas ? puntaDeMercury(t) : null;
+      if (punta && new Date(punta.fecha) >= desde) opciones.puntas!.push(punta);
       const monto = dinero(Number(t.amount ?? 0));
       /* Negativo es plata que sale: no es un cobro. */
       if (monto <= 0) continue;

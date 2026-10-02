@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { nivelDelPedido } from "@/lib/permisos-servidor";
-import { guardarMovimientos, hayServidor, referenciasCompletas } from "@/lib/servidor";
-import { hayClaves, listar, procesadorDe, PROVEEDORES, type MovimientoApi } from "@/lib/pasarelas-api";
+import { guardarMovimientos, guardarPuntas, hayServidor, referenciasCompletas } from "@/lib/servidor";
+import { hayClaves, listar, procesadorDe, PROVEEDORES, retirosDeStripe, type MovimientoApi } from "@/lib/pasarelas-api";
+import type { Punta } from "@/lib/traspasos";
 import type { ProveedorPasarela } from "@/lib/types";
 
 /* ==================================================================
@@ -15,6 +16,18 @@ import type { ProveedorPasarela } from "@/lib/types";
    Con ?guardar=1 además los escribe en la base. Es lo que llama el cron
    de Vercel como red de seguridad: si un webhook se perdió, en la
    próxima pasada el cobro entra igual.
+
+   De paso junta lo que NO es un cobro pero pasó por las cuentas: la plata
+   que se movió entre cuentas propias (el depósito de Stripe en Mercury, un
+   retiro de Stripe). Son las puntas de los movimientos entre cuentas de la
+   Caja (lib/traspasos.ts): viajan en la respuesta y, al guardar, se atan
+   entre sí y con los que ya estaban cargados.
+
+   Con ?solo=pases se pregunta sólo eso: a las cuentas que ven pasar plata
+   entre cuentas (Mercury, los retiros de Stripe), sin traer los cobros.
+   Es lo que usa «Buscar en las cuentas» de la Caja, con ?guardar=1: guarda
+   el servidor, que parte de lo que hay en la base ahora y no de lo que
+   cargó hace un rato el navegador de quien pide (`pasesGuardados`).
    ================================================================== */
 
 export const runtime = "nodejs";
@@ -25,6 +38,9 @@ export const dynamic = "force-dynamic";
    MISMA función que usan las políticas de RLS (lib/permisos-servidor):
    una sola regla para decidir quién ve la plata, no dos que se puedan
    desalinear. Ver, Finanzas; guardar, Finanzas editable. */
+
+/* Las que ven la plata moverse entre cuentas propias. */
+const VEN_PASES: ProveedorPasarela[] = ["mercury", "stripe"];
 
 /* Ventana por defecto: 60 días. Alcanza para las cuotas del mes y para
    las que se atrasaron, sin traer años de historia en cada click. */
@@ -60,30 +76,50 @@ export async function GET(peticion: Request) {
   if (nivel < 1) {
     return NextResponse.json({ error: "Tu tipo de cuenta no ve los cobros de las pasarelas." }, { status: 403 });
   }
+  const soloPases = url.searchParams.get("solo") === "pases";
   const quiereGuardar = esCron || url.searchParams.get("guardar") === "1";
   if (quiereGuardar && nivel < 2) {
-    return NextResponse.json({ error: "Tu tipo de cuenta no puede guardar cobros." }, { status: 403 });
+    return NextResponse.json({
+      error: soloPases ? "Tu tipo de cuenta no puede guardar movimientos entre cuentas." : "Tu tipo de cuenta no puede guardar cobros.",
+    }, { status: 403 });
   }
 
   const movimientos: MovimientoApi[] = [];
+  const puntas: Punta[] = [];
   const conectadas: ProveedorPasarela[] = [];
   const errores: { proveedor: string; mensaje: string }[] = [];
 
   /* Whop manda quién pagó y la comisión en el detalle de cada pago, un
      pedido por cobro: se pide sólo para los que en la base están incompletos. */
-  const completosWhop = hayClaves("whop") ? await referenciasCompletas("whop") : null;
+  const completosWhop = !soloPases && hayClaves("whop") ? await referenciasCompletas("whop") : null;
 
   await Promise.all(PROVEEDORES.map(async (proveedor) => {
     if (!hayClaves(proveedor)) return;
+    if (soloPases && !VEN_PASES.includes(proveedor)) return;
     conectadas.push(proveedor);
     const avisos: string[] = [];
-    try {
-      movimientos.push(...await listar(proveedor, desde, hasta, {
-        avisos,
-        necesitaDetalle: proveedor === "whop" && completosWhop ? (m) => !completosWhop.has(m.referencia) : undefined,
-      }));
-    } catch (err) {
-      errores.push({ proveedor, mensaje: err instanceof Error ? err.message : "Error desconocido." });
+    /* Los cobros de Stripe no dicen nada de los pases: sólo sus retiros. */
+    if (!soloPases || proveedor !== "stripe") {
+      try {
+        const cobros = await listar(proveedor, desde, hasta, {
+          avisos, puntas,
+          necesitaDetalle: proveedor === "whop" && completosWhop ? (m) => !completosWhop.has(m.referencia) : undefined,
+        });
+        if (!soloPases) movimientos.push(...cobros);
+      } catch (err) {
+        errores.push({ proveedor, mensaje: err instanceof Error ? err.message : "Error desconocido." });
+      }
+    }
+    /* Los retiros de Stripe al banco, aparte: si la clave no los deja ver,
+       los cobros entran igual. Sólo cuando se van a usar (el cron y la
+       Caja): quien sincroniza cobros desde Conciliación no tiene por qué
+       esperar otro pedido ni ver un aviso de algo que no pidió. */
+    if (proveedor === "stripe" && (soloPases || quiereGuardar)) {
+      try {
+        puntas.push(...await retirosDeStripe(desde));
+      } catch (err) {
+        avisos.push(`No se pudieron ver los retiros al banco: ${err instanceof Error ? err.message : "error desconocido"}`);
+      }
     }
     for (const mensaje of avisos) errores.push({ proveedor, mensaje });
   }));
@@ -92,7 +128,7 @@ export async function GET(peticion: Request) {
 
   let guardados = 0;
   let completados = 0;
-  if (quiereGuardar && hayServidor) {
+  if (quiereGuardar && hayServidor && !soloPases) {
     const r = await guardarMovimientos(movimientos.map((m) => ({
       ...m, procesadorId: procesadorDe(m.proveedor), origen: "api",
     })));
@@ -101,12 +137,28 @@ export async function GET(peticion: Request) {
     if (r.error) errores.push({ proveedor: "supabase", mensaje: r.error });
   }
 
+  /* Los movimientos entre cuentas: se guardan con el mismo permiso. Sin su
+     tabla todavía, no es un error: quedan sólo en la respuesta. */
+  let pases = { nuevos: 0, conciliados: 0 };
+  /* Si quedaron guardados acá: si no (falta la tabla, o el servidor no tiene
+     cómo escribir), los ata y los guarda la pantalla con `puntas`. */
+  let pasesGuardados = false;
+  if (quiereGuardar && hayServidor) {
+    const r = await guardarPuntas(puntas);
+    pases = { nuevos: r.nuevos, conciliados: r.conciliados };
+    pasesGuardados = !r.error && !r.sinTabla;
+    if (r.error) errores.push({ proveedor: "supabase", mensaje: r.error });
+  }
+
   return NextResponse.json({
     conectadas,
     errores,
     guardados,
     completados,
+    pases,
+    pasesGuardados,
     desde: desde.toISOString(),
     movimientos,
+    puntas,
   });
 }

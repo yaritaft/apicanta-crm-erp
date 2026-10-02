@@ -1,6 +1,7 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import type { Movimiento } from "./types";
+import type { Movimiento, Traspaso } from "./types";
 import { feeDelPago, parcheDeCobro } from "./completar-cobros";
+import { conciliarPuntas, type Punta } from "./traspasos";
 
 /* ==================================================================
    Cliente de Supabase del lado del servidor.
@@ -102,4 +103,53 @@ export async function referenciasCompletas(proveedor: string): Promise<Set<strin
   if (r.error) return null;
   return new Set(((r.data ?? []) as { referencia: string; clienteEmail?: string | null; metodo?: string | null; fee: number }[])
     .filter((m) => m.clienteEmail && m.metodo && m.fee > 0).map((m) => m.referencia));
+}
+
+/* ---------- Movimientos entre cuentas ---------- */
+
+const faltaLaTabla = (e: { code?: string; message?: string }) =>
+  e.code === "PGRST205" || e.code === "42P01" || /schema cache|does not exist/i.test(e.message ?? "");
+
+/** Guarda lo que la sincronización vio pasar entre cuentas propias (el
+ *  depósito de Stripe en Mercury, un retiro de Stripe): la punta que ya
+ *  estaba no se repite, la que es de un pase cargado se le ata y el resto
+ *  entran como pases nuevos (lib/traspasos.ts: las mismas reglas que usa la
+ *  pantalla). Sin la tabla (falta correr supabase/traspasos.sql) no guarda
+ *  nada y lo dice, sin tumbar al resto de la sincronización. */
+export async function guardarPuntas(puntas: Punta[]): Promise<{ nuevos: number; conciliados: number; sinTabla?: boolean; error?: string }> {
+  if (puntas.length === 0) return { nuevos: 0, conciliados: 0 };
+  const db = nubeServidor();
+  if (!db) return { nuevos: 0, conciliados: 0, error: "Falta SUPABASE_SERVICE_ROLE_KEY: no se pueden guardar los movimientos entre cuentas." };
+
+  /* Los pases de esos días, con margen: un pase está a lo sumo a diez días de sus puntas. */
+  const primera = Math.min(...puntas.map((p) => Date.parse(p.fecha)).filter(Number.isFinite));
+  const desde = new Date((Number.isFinite(primera) ? primera : Date.now()) - 15 * 86400000).toISOString();
+  const ya = await db.from("traspasos").select("*").gte("fecha", desde);
+  if (ya.error) return faltaLaTabla(ya.error) ? { nuevos: 0, conciliados: 0, sinTabla: true } : { nuevos: 0, conciliados: 0, error: ya.error.message };
+  const existentes = new Map(((ya.data ?? []) as Traspaso[]).map((t) => [t.id, t]));
+  /* Y los que ya tienen alguna de estas puntas, estén donde estén: a un
+     pase le pueden haber corregido la fecha, y su punta no entra dos veces. */
+  const refs = [...new Set(puntas.map((p) => p.ref).filter(Boolean))];
+  for (let i = 0; i < refs.length; i += 80) {
+    const lote = refs.slice(i, i + 80);
+    for (const columna of ["salidaRef", "llegadaRef"]) {
+      const mas = await db.from("traspasos").select("*").in(columna, lote);
+      if (mas.error) return { nuevos: 0, conciliados: 0, error: mas.error.message };
+      for (const t of (mas.data ?? []) as Traspaso[]) existentes.set(t.id, t);
+    }
+  }
+
+  const r = conciliarPuntas([...existentes.values()], puntas, new Date().toISOString());
+  let nuevos = 0;
+  if (r.nuevos.length) {
+    /* El id sale de la punta: si otra pasada (o la pantalla) ya lo guardó, no se pisa. */
+    const ins = await db.from("traspasos").upsert(r.nuevos, { onConflict: "id", ignoreDuplicates: true, defaultToNull: false }).select("id");
+    if (ins.error) return { nuevos: 0, conciliados: 0, error: ins.error.message };
+    nuevos = (ins.data ?? []).length;
+  }
+  for (const c of r.cambios) {
+    const u = await db.from("traspasos").update(c.cambios).eq("id", c.id);
+    if (u.error) return { nuevos, conciliados: 0, error: u.error.message };
+  }
+  return { nuevos, conciliados: r.conciliados };
 }

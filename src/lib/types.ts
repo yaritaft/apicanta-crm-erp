@@ -629,6 +629,8 @@ export interface EstadoApp {
   liquidaciones: Liquidacion[];
   /* Los arqueos de caja: cuánto había de verdad en cada cuenta. */
   arqueos: Arqueo[];
+  /* Los movimientos entre cuentas propias (lib/traspasos.ts). */
+  traspasos: Traspaso[];
 }
 
 /* ==================================================================
@@ -660,6 +662,49 @@ export interface Arqueo {
   esperado?: number | null;
   diferencia?: number | null;
   notas?: string;
+  por?: string;
+  creadoEn: string;
+}
+
+/* ==================================================================
+   Movimiento entre cuentas propias: plata que pasa de una cuenta a otra
+   (Stripe deposita en Mercury, de Mercury a la Financiera). No es un
+   ingreso ni un gasto. Se carga a mano o lo detecta la sincronización de
+   las cuentas (lib/traspasos.ts).
+   ================================================================== */
+
+/* "propuesto": lo detectó la sincronización pero no está segura de que sea
+   un pase, hay que confirmarlo. "ignorado": alguien dijo que no lo es. */
+export type EstadoTraspaso = "confirmado" | "propuesto" | "ignorado";
+
+export interface Traspaso {
+  id: ID;
+  /* Cuándo salió (o cuándo llegó, si sólo se sabe eso). */
+  fecha: string;
+  /* De qué cuenta salió y a cuál llegó (procesadores). */
+  origenId?: ID;
+  destinoId?: ID;
+  /* Lo que salió, en la moneda de la cuenta de origen, y lo que llegó, en
+     la de destino. En la misma moneda, la diferencia es lo que costó. */
+  montoSale: number;
+  monedaSale: Moneda;
+  montoLlega: number;
+  monedaLlega: Moneda;
+  /* Cuándo llegó, si fue otro día. */
+  fechaLlega?: string;
+  estado: EstadoTraspaso;
+  /* Las dos puntas, como las vio la sincronización: la salida
+     ("stripe:po_1Q…") y la llegada ("mercury:6f1c…"). Con las dos, el pase
+     está conciliado; con una sola, falta ver la otra. */
+  salidaRef?: string;
+  llegadaRef?: string;
+  /* Lo que dice el banco de la otra parte: "STRIPE", "Hotmart BV". */
+  contraparte?: string;
+  /* El gasto con lo que costó el pase (Comisiones bancarias). */
+  gastoId?: ID;
+  notas?: string;
+  /* "manual" o "api". */
+  origen: string;
   por?: string;
   creadoEn: string;
 }

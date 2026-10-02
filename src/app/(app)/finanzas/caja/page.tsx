@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useMemo, useState } from "react";
-import { HandCoins, Info, Landmark, Plus, Trash2 } from "lucide-react";
+import { ArrowRightLeft, HandCoins, Info, Landmark, Plus, Trash2 } from "lucide-react";
 import { PageHead } from "@/components/shell/PageHead";
 import { Ayuda, Badge, Button, Card, CardHead, Empty, Field, IconButton, Input, Select, StatCard, Textarea } from "@/components/ui/ui";
 import { DataTable } from "@/components/ui/DataTable";
@@ -11,10 +11,12 @@ import { acciones, nuevoId, useEstado } from "@/lib/store";
 import { fechaLarga, money, num } from "@/lib/format";
 import { aMonedaBase, escribirMonto, leerMonto } from "@/lib/gastos";
 import {
-  MESES_DE_COLCHON, cajaEsperada, entradasPorCuenta, runway, ultimoArqueo, type MovimientoCaja,
+  MESES_DE_COLCHON, cajaEsperada, runway, ultimoArqueo, type MovimientoCaja,
 } from "@/lib/caja";
-import type { Arqueo, EstadoApp, Gasto, Moneda, SaldoCuenta } from "@/lib/types";
+import { saldosEsperados } from "@/lib/traspasos";
+import type { Arqueo, EstadoApp, Gasto, Moneda, SaldoCuenta, Traspaso } from "@/lib/types";
 import { CopiarLink } from "@/components/ui/Filtros";
+import { FormTraspaso, PasesEntreCuentas } from "@/components/finanzas/PasesEntreCuentas";
 import { useTablaURL } from "@/lib/useParamsURL";
 
 /* ==================================================================
@@ -25,6 +27,10 @@ import { useTablaURL } from "@/lib/useParamsURL";
    plata tenés en Trust? Y así hacía el arqueo". Acá se cuenta cada cuenta
    (las que tienen API y las que no) y la app lo compara con lo que
    esperaba.
+
+   La plata que pasa de una cuenta a otra (lib/traspasos.ts) no mueve el
+   total, pero sí lo que tendría que haber en cada una: con los
+   movimientos entre cuentas cargados, el arqueo lo dice cuenta por cuenta.
    ================================================================== */
 
 const hoyIso = () => new Date().toISOString();
@@ -37,6 +43,8 @@ export default function Caja() {
   const M = (n: number, d = 0) => money(n, mon, d);
   const [arqueando, setArqueando] = useState(false);
   const [retirando, setRetirando] = useState(false);
+  /* El movimiento entre cuentas que se corrige, o uno nuevo. */
+  const [pase, setPase] = useState<Traspaso | "nuevo" | null>(null);
   const [ver, setVer] = useState<Arqueo | null>(null);
   const [borrar, setBorrar] = useState<Arqueo | null>(null);
   /* El orden de cada cuadro va en el link: ?orden-arqueos y ?orden-retiros. */
@@ -63,6 +71,7 @@ export default function Caja() {
         acciones={
           <>
             <CopiarLink sm={false} />
+            <Button variante="secondary" icono={<ArrowRightLeft size={16} />} onClick={() => setPase("nuevo")}>Movimiento entre cuentas</Button>
             <Button variante="secondary" icono={<HandCoins size={16} />} onClick={() => setRetirando(true)}>Registrar retiro</Button>
             <Button variante="primary" icono={<Plus size={16} />} onClick={() => setArqueando(true)}>Hacer un arqueo</Button>
           </>
@@ -82,7 +91,7 @@ export default function Caja() {
           <div className="grid-stats">
             <StatCard
               hero etiqueta="Caja esperada hoy" valor={M(caja ?? 0)}
-              contexto={`Último arqueo: ${M(ultimo.total)} el ${fechaLarga(ultimo.fecha)}`}
+              contexto={`Último arqueo: ${M(ultimo.total)} el ${fechaLarga(ultimo.fecha)}${mov && mov.enCamino > 0 ? ` · ${M(mov.enCamino)} están en camino entre cuentas` : ""}`}
             />
             <StatCard
               etiqueta="Meses de vida" valor={vida.mesesDeVida === null ? "—" : num(vida.mesesDeVida, 1)}
@@ -105,6 +114,8 @@ export default function Caja() {
           {mov && <Movimiento mov={mov} M={M} />}
         </>
       )}
+
+      <PasesEntreCuentas e={e} onNuevo={() => setPase("nuevo")} onEditar={(t) => setPase(t)} />
 
       <Card style={{ padding: 0 }}>
         <div style={{ padding: "var(--space-4) var(--space-4) 0" }}>
@@ -147,7 +158,10 @@ export default function Caja() {
         La caja esperada parte del último arqueo y le suma lo cobrado, menos procesadores, comisiones de closers y
         director, los gastos cargados, el growth partner y el socio, y los retiros. Las comisiones se pagan a mes
         vencido: al principio de mes la diferencia puede ser eso. Los meses de vida son la caja sobre lo que cuesta un
-        mes sin vender (gastos operativos y honorarios del CEO: sueldos, ads, software).
+        mes sin vender (gastos operativos y honorarios del CEO: sueldos, ads, software). Un movimiento entre cuentas
+        no cambia el total: sólo lo que tendría que haber en cada cuenta, y lo que costó el pase, que va como gasto.
+        Mientras la plata viaja de una cuenta a otra sigue siendo de la caja, pero no está en ninguna: por eso el
+        arqueo la descuenta de lo que tiene que dar al contar.
       </Ayuda>
 
       {arqueando && <NuevoArqueo e={e} onCerrar={() => setArqueando(false)} onListo={(a) => {
@@ -155,6 +169,12 @@ export default function Caja() {
         toast(a.diferencia === null || a.diferencia === undefined ? "Arqueo guardado: es el punto de partida."
           : Math.abs(a.diferencia) < 1 ? "Arqueo guardado: las cuentas dan." : `Arqueo guardado: ${a.diferencia > 0 ? "sobran" : "faltan"} ${M(Math.abs(a.diferencia))}.`);
       }} />}
+      {pase && (
+        <FormTraspaso
+          e={e} traspaso={pase === "nuevo" ? null : pase} onCerrar={() => setPase(null)}
+          onListo={(mensaje) => { setPase(null); toast(mensaje); }}
+        />
+      )}
       {retirando && <NuevoRetiro e={e} onCerrar={() => setRetirando(false)} onListo={() => { setRetirando(false); toast("Retiro registrado."); }} />}
       {ver && <VerArqueo e={e} a={ver} onCerrar={() => setVer(null)} />}
       <Confirmar
@@ -175,6 +195,7 @@ function Diferencia({ d, M }: { d?: number | null; M: (n: number, dec?: number) 
 function Movimiento({ mov, M }: { mov: MovimientoCaja; M: (n: number, d?: number) => string }) {
   const filas: [string, number, string?][] = [
     ["Caja del último arqueo", mov.inicial],
+    ...(mov.enCaminoAntes ? [["+ Estaba en camino al contar", mov.enCaminoAntes, "Había salido de una cuenta y no había llegado a la otra"] as [string, number, string]] : []),
     ["+ Cobrado", mov.cobrado, "Todo lo que entró por las cuentas"],
     ["− Procesadores", -mov.procesador],
     ["− Comisiones de closers y director", -mov.comisiones, "Se pagan a mes vencido"],
@@ -194,6 +215,14 @@ function Movimiento({ mov, M }: { mov: MovimientoCaja; M: (n: number, d?: number
         ))}
         <dt className="caja-mov__total">= Caja esperada hoy</dt>
         <dd className="caja-mov__total t-num">{M(mov.esperado)}</dd>
+        {mov.enCamino > 0 && (
+          <>
+            <dt>− En camino entre cuentas<span className="t-sm t-subtle"> · Salió de una y todavía no llegó a la otra: al contar no está en ninguna</span></dt>
+            <dd className="t-num">{M(-mov.enCamino)}</dd>
+            <dt>= Lo que tendría que dar al contar las cuentas</dt>
+            <dd className="t-num">{M(mov.enCuentas)}</dd>
+          </>
+        )}
       </dl>
     </Card>
   );
@@ -212,9 +241,14 @@ function NuevoArqueo({ e, onCerrar, onListo }: { e: EstadoApp; onCerrar: () => v
   /* Si es hoy, ahora; si es otro día, a las 20 de ese día. */
   const fecha = dia === diaAr(hoyIso()) ? hoyIso() : new Date(`${dia}T23:00:00.000Z`).toISOString();
   const previo = ultimoArqueo(e, fecha);
-  const entro = useMemo(() => entradasPorCuenta(e, previo?.fecha ?? null, fecha), [e, previo, fecha]);
-  const cuentas = e.procesadores.filter((p) => p.activo || entro.has(p.id) || previo?.saldos.some((s) => s.procesadorId === p.id));
+  /* Lo que tendría que haber en cada cuenta, en su moneda. */
+  const porCuenta = useMemo(() => saldosEsperados(e, previo, fecha), [e, previo, fecha]);
+  const cuentas = e.procesadores.filter((p) => {
+    const s = porCuenta.get(p.id);
+    return p.activo || Boolean(s && (s.entro || s.pases || s.salio)) || previo?.saldos.some((x) => x.procesadorId === p.id);
+  });
   const tipoCambio = leerMonto(tc);
+  const hayPases = cuentas.some((p) => porCuenta.get(p.id)?.pases);
 
   const saldos: SaldoCuenta[] = cuentas.flatMap((p) => {
     const t = textos[p.id];
@@ -225,7 +259,9 @@ function NuevoArqueo({ e, onCerrar, onListo }: { e: EstadoApp; onCerrar: () => v
     return [{ procesadorId: p.id, monto, moneda, montoBase: Math.round(aMonedaBase(monto, moneda, base, tipoCambio) * 100) / 100 }];
   });
   const total = Math.round(saldos.reduce((a, s) => a + s.montoBase, 0) * 100) / 100;
-  const esperado = previo ? cajaEsperada(e, previo, fecha).esperado : null;
+  /* Contra lo que tiene que dar al contar: lo que viaja entre cuentas no está en ninguna. */
+  const mov = previo ? cajaEsperada(e, previo, fecha, tipoCambio) : null;
+  const esperado = mov ? mov.enCuentas : null;
   const hayPesos = cuentas.some((p) => p.moneda === "ARS");
   const faltaTc = hayPesos && saldos.some((s) => s.moneda === "ARS") && !(tipoCambio > 0);
 
@@ -259,27 +295,49 @@ function NuevoArqueo({ e, onCerrar, onListo }: { e: EstadoApp; onCerrar: () => v
         <div className="arqueo-fila arqueo-fila--cabeza" role="row">
           <span role="columnheader">Cuenta</span>
           <span role="columnheader">Último arqueo</span>
-          <span role="columnheader">Entró desde entonces</span>
+          <span role="columnheader">Cobró</span>
+          <span role="columnheader">Pases</span>
+          <span role="columnheader">Tendría que haber</span>
           <span role="columnheader">Hay de verdad</span>
         </div>
         {cuentas.map((p) => {
-          const antes = previo?.saldos.find((s) => s.procesadorId === p.id);
+          const s = porCuenta.get(p.id);
           const moneda = p.moneda ?? "USD";
+          const enSuMoneda = (n: number, signo = false) => `${signo && n > 0 ? "+ " : n < 0 ? "− " : ""}${money(Math.abs(n), moneda)}`;
+          const contado = textos[p.id]?.trim() ? leerMonto(textos[p.id]) : NaN;
+          const dif = s?.esperado !== undefined && Number.isFinite(contado) ? Math.round((contado - s.esperado) * 100) / 100 : null;
           return (
             <div className="arqueo-fila" role="row" key={p.id}>
               <span role="cell" className="t-strong">{p.nombre}{moneda === "ARS" && <span className="t-sm t-subtle"> · en pesos</span>}</span>
-              <span role="cell" className="t-num t-muted">{antes ? money(antes.monto, antes.moneda) : "—"}</span>
-              <span role="cell" className="t-num t-muted" title="Lo cobrado por esta cuenta, neto de su comisión, según la app">{entro.get(p.id) ? M(entro.get(p.id)!) : "—"}</span>
-              <span role="cell">
+              <span role="cell" data-titulo="Último arqueo" className="t-num t-muted">{s?.anterior !== undefined ? money(s.anterior, moneda) : "—"}</span>
+              <span role="cell" data-titulo="Cobró" className="t-num t-muted" title="Lo cobrado por esta cuenta desde el último arqueo, neto de su comisión">{s?.entro ? enSuMoneda(s.entro, true) : "—"}</span>
+              <span role="cell" data-titulo="Pases" className="t-num t-muted" title="Lo que recibió de otras cuentas menos lo que les mandó">{s?.pases ? enSuMoneda(s.pases, true) : "—"}</span>
+              <span role="cell" data-titulo="Tendría que haber" className="t-num" title={s?.salio ? `Ya descuenta ${money(s.salio, moneda)} de retiros que salieron de esta cuenta` : undefined}>
+                {s?.esperado !== undefined ? money(s.esperado, moneda) : "—"}
+              </span>
+              <span role="cell" className="arqueo-fila__hay">
                 <Input
                   aria-label={`Saldo de ${p.nombre}`} inputMode="decimal" placeholder={moneda === "ARS" ? "$ 0" : "US$ 0"}
                   value={textos[p.id] ?? ""} onChange={(ev) => setTextos({ ...textos, [p.id]: ev.target.value })}
                 />
+                {dif !== null && (
+                  <span className={`arqueo-fila__dif${Math.abs(dif) < 1 ? " arqueo-fila__dif--da" : ""}`}>
+                    {Math.abs(dif) < 1 ? "Da" : `${dif > 0 ? "Sobran" : "Faltan"} ${money(Math.abs(dif), moneda)}`}
+                  </span>
+                )}
               </span>
             </div>
           );
         })}
       </div>
+      {previo && (
+        <p className="t-sm t-subtle arqueo-nota">
+          «Tendría que haber» es lo del último arqueo más lo que cobró la cuenta, más o menos los movimientos entre cuentas
+          {hayPases ? "" : " (todavía no hay ninguno cargado desde entonces)"} y menos los retiros que dicen de qué cuenta salieron.
+          No descuenta los gastos ni los sueldos, porque la app no sabe de qué cuenta se pagó cada uno: en la cuenta desde la que
+          pagás va a faltar eso. El control que tiene que dar es el del total.
+        </p>
+      )}
       <div className="arqueo-resumen">
         <span>Contado <strong className="t-num">{M(total)}</strong></span>
         {esperado !== null ? (
@@ -288,6 +346,11 @@ function NuevoArqueo({ e, onCerrar, onListo }: { e: EstadoApp; onCerrar: () => v
             {saldos.length > 0 && <Diferencia d={Math.round((total - esperado) * 100) / 100} M={M} />}
           </>
         ) : <span className="t-subtle">Es el primer arqueo: queda como punto de partida.</span>}
+        {mov && mov.enCamino > 0 && (
+          <span className="t-sm t-subtle arqueo-resumen__nota">
+            El esperado ya descuenta {M(mov.enCamino)} que están en camino entre cuentas: salieron de una y todavía no se vieron llegar a la otra.
+          </span>
+        )}
       </div>
       <Field label="Notas" span2><Textarea rows={2} value={notas} onChange={(ev) => setNotas(ev.target.value)} placeholder="Qué se revisó, qué no dio" /></Field>
     </ModalForm>

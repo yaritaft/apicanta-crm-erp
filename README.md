@@ -25,7 +25,7 @@ lo que se muestra se calcula solo.
 | **Clientes** | La gente que compró: qué compró, cuánto pagó, cuánto le falta y si está al día, atrasada, pagó todo o se dio de baja. Sale de las ventas: no hay nada que cargar |
 | **Conciliación** | Los cobros de Stripe, Hotmart, Whop, dLocal, Mercado Pago, Mercury, Binance y Trust, imputados a la cuota que les corresponde |
 | **Finanzas** | El estado de resultados sobre lo cobrado y lo facturado y el resultado de cada embudo (CAC, ROAS y profit); en el detalle, las cuotas vencidas (con alarma desde los 7 días de atraso), los gastos y las comisiones. Los KPIs viven en Dashboard & KPIs |
-| **Caja** | Los arqueos (cuánto hay de verdad en cada cuenta contra lo que la app esperaba), los meses de vida contra el colchón de 6 meses y los retiros del dueño |
+| **Caja** | Los arqueos (cuánto hay de verdad en cada cuenta contra lo que la app esperaba, en total y cuenta por cuenta), los movimientos entre cuentas propias (cargados a mano o detectados en Mercury y Stripe, con la salida conciliada contra la llegada), los meses de vida contra el colchón de 6 meses y los retiros del dueño |
 | **Equipo y honorarios** | Sólo para los dueños: quién es quién, con qué entra a la app, qué cobra cada uno (fijo, bonos, comisiones, tramos y piezas, y sobre qué se mide cada variable) y la liquidación de cada mes, que se calcula sola y al cerrarla entra a Finanzas |
 | **Actividad** | Todo lo que se creó, editó, movió o borró, con autor y fecha |
 | **Ajustes** | Servicios, cuentas recaudadoras, estrategias y proyectos; de qué es cada UTM; etapas, listas, campos propios, integraciones y respaldos |
@@ -469,6 +469,29 @@ correr `supabase/honorarios.sql` (tablas, políticas, niveles de acceso y la col
 - **Caja** (`lib/caja.ts`, Finanzas → Caja): arqueo por cuenta (con lo que entró según la app al lado, para la
   Financiera y Trust), caja esperada, meses de vida y retiros del dueño (grupo de gasto «retiro»: sale de la caja, no
   del profit). Tabla `arqueos`: `supabase/arqueos.sql`.
+- **Movimientos entre cuentas** (`lib/traspasos.ts`, `components/finanzas/PasesEntreCuentas.tsx`, Finanzas → Caja): la
+  plata que pasa de una cuenta propia a otra (Stripe deposita en Mercury, de Mercury a la Financiera). No es ingreso ni
+  gasto: no toca el P&L ni el total de la caja; lo que cuesta el pase (lo que salió menos lo que llegó, en la misma
+  moneda) se carga como gasto en «Comisiones bancarias»; entre pesos y dólares no hay costo, hay un tipo de cambio.
+  - Se cargan a mano («Movimiento entre cuentas») o los detecta la sincronización: Mercury ve llegar los depósitos de
+    Stripe, Hotmart, Whop, dLocal, Mercado Pago y PayPal (antes se descartaban para no contar la plata dos veces) y
+    Stripe dice cuándo mandó cada retiro (`/v1/payouts`). Cada dato de ésos es una **punta** (`salidaRef`,
+    `llegadaRef`). Lo dudoso (ARX, Bridge, MassPay, Binance, lo que sale de Mercury hacia una cuenta propia) entra
+    «por confirmar».
+  - Estados: **conciliado** (se vio salir y llegar), **en camino** (salió y todavía no llegó), **salió y no llegó**
+    (más de 7 días), **detectado** (lo vio una sola cuenta: la otra no avisa), **a mano**, **por confirmar** y
+    descartado. La llegada se ata a la salida por cuentas, monto (2% o un dólar) y fecha (de un día antes a diez
+    después); lo cargado a mano conserva sus montos y recibe las puntas.
+  - El cron de cada hora (`/api/pasarelas/sync`) los guarda (`guardarPuntas` en `lib/servidor.ts`); «Buscar en las
+    cuentas» pide lo mismo en el momento (`?solo=pases&guardar=1`). La pantalla y el servidor usan las mismas reglas
+    (`conciliarPuntas`).
+  - Con eso el arqueo muestra, por cuenta, el último arqueo, lo que cobró, los pases y lo que **tendría que haber**
+    (`saldosEsperados`). No descuenta gastos ni sueldos (la app no sabe de qué cuenta se pagó cada uno): el control
+    que tiene que dar es el total. Lo que está en camino no está en ninguna cuenta: el esperado del arqueo lo
+    descuenta, y lo que viajaba cuando se contó el arqueo anterior se suma (`cajaEsperada`: `enCamino`,
+    `enCaminoAntes`, `enCuentas`).
+  - Tabla `traspasos`: `supabase/traspasos.sql` (la ve quien ve Finanzas y la cambia quien edita Finanzas). Sin la
+    tabla la app anda igual: los movimientos quedan en el navegador de quien los carga.
 - **Comisión de cada cuenta**: al cambiarla, se elige si los cobros que ya la usaban pasan a la nueva.
 - **Conciliación**: los cobros de pasarela que ya estaban cargados como pago se atan a ese pago (no suma plata y le pone
   la comisión real) en vez de imputarse a otra cuota. Columna `movimientos.vinculado`: `supabase/movimientos-vinculado.sql`.

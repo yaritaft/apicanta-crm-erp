@@ -578,16 +578,54 @@ kbd {
 .caja-mov dd { margin: 0; text-align: right; color: var(--ink); font-size: 14px; }
 .caja-mov__total { border-top: 1px solid var(--border); padding-top: var(--space-2); font-weight: 600; color: var(--ink) !important; }
 .arqueo-tabla { display: flex; flex-direction: column; margin: var(--space-4) 0; border: 1px solid var(--border); border-radius: var(--radius-md); overflow: hidden; }
-.arqueo-fila { display: grid; grid-template-columns: minmax(140px, 1.4fr) 1fr 1fr minmax(120px, 1fr); gap: var(--space-3); align-items: center; padding: 6px var(--space-3); border-top: 1px solid var(--border); font-size: 14px; }
+/* Cuenta | último arqueo | cobró | pases | tendría que haber | hay de verdad. */
+.arqueo-fila { display: grid; grid-template-columns: minmax(130px, 1.5fr) repeat(4, minmax(0, 1fr)) minmax(124px, 1.1fr); gap: var(--space-3); align-items: center; padding: 6px var(--space-3); border-top: 1px solid var(--border); font-size: 14px; }
 .arqueo-fila:first-child { border-top: 0; }
-.arqueo-fila > span:nth-child(2), .arqueo-fila > span:nth-child(3) { text-align: right; }
-.arqueo-fila--cabeza { background: var(--surface-200); font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-subtle); }
+.arqueo-fila > span:nth-child(n+2):nth-child(-n+5) { text-align: right; }
+.arqueo-fila--cabeza { background: var(--surface-200); font-size: 11px; line-height: 14px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--ink-subtle); padding-block: var(--space-2); }
+.arqueo-fila__hay { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+/* Lo contado contra lo que tendría que haber en esa cuenta. */
+.arqueo-fila__dif { font-size: 12px; line-height: 16px; color: var(--warning); font-variant-numeric: tabular-nums; }
+.arqueo-fila__dif--da { color: var(--success); }
+.arqueo-nota { margin: calc(var(--space-2) * -1) 0 var(--space-3); line-height: 19px; }
+.arqueo-resumen__nota { flex: 1 1 100%; line-height: 19px; }
 .arqueo-resumen { display: flex; gap: var(--space-4); align-items: center; flex-wrap: wrap; margin-bottom: var(--space-3); font-size: 14px; color: var(--ink-muted); }
-@media (max-width: 640px) {
-  .arqueo-fila { grid-template-columns: 1fr 1fr; }
+@media (max-width: 720px) {
+  /* Cada cuenta, una ficha: el nombre arriba, los cuatro números de a dos
+     con su nombre, y abajo lo que se cuenta. */
+  .arqueo-fila { grid-template-columns: 1fr 1fr; gap: var(--space-2) var(--space-3); padding-block: var(--space-3); }
   .arqueo-fila--cabeza { display: none; }
-  .arqueo-fila > span:nth-child(2), .arqueo-fila > span:nth-child(3) { text-align: left; }
+  .arqueo-fila > span:first-child, .arqueo-fila__hay { grid-column: 1 / -1; }
+  .arqueo-fila > span:nth-child(n+2):nth-child(-n+5) { text-align: left; }
+  .arqueo-fila > span[data-titulo]::before { content: attr(data-titulo); display: block; font-size: 11px; line-height: 14px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--ink-subtle); }
 }
+
+/* ---------- Movimientos entre cuentas (Finanzas → Caja) ---------- */
+.pases__filtros { margin-bottom: var(--space-3); }
+/* El día que salió y, abajo, el día que llegó si fue otro. */
+.pases__fecha { display: inline-flex; flex-direction: column; line-height: 20px; }
+.pases__llego { font-size: 12px; line-height: 16px; font-weight: 500; color: var(--ink-subtle); }
+/* En pantallas angostas el botón de la tarjeta baja debajo del texto. */
+.pases__cabeza .card-head { flex-wrap: wrap; }
+.pases__cabeza .card-head > div:first-child { flex: 1 1 320px; }
+/* De qué cuenta a cuál: los dos nombres con la flecha en el medio. */
+.pases__ruta, .pases__a { display: inline-flex; align-items: center; gap: 6px; min-width: 0; max-width: 100%; }
+.pases__ruta svg { flex: none; color: var(--ink-subtle); }
+@media (max-width: 1380px) {
+  /* Sin lugar para una línea: la cuenta de salida arriba y la de llegada abajo. */
+  .pases__ruta { flex-direction: column; align-items: flex-start; gap: 0; line-height: 20px; }
+}
+/* «¿Es un movimiento entre cuentas?»: los dos botones, siempre a la vista. */
+.row-actions:has(.pases__decidir) { opacity: 1; }
+.pases__decidir { display: inline-flex; gap: 2px; }
+.pases__decidir .hk-btn { height: 28px; padding: 0 var(--space-2); gap: 4px; }
+.pases__vacio { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-3); padding: var(--space-4); }
+/* En el formulario: lo que el movimiento dice antes de guardarlo. */
+.pases__costo { display: flex; align-items: flex-start; gap: var(--space-2); padding: var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface-200); font-size: 14px; line-height: 20px; color: var(--ink-muted); cursor: pointer; }
+.pases__costo input { margin-top: 3px; flex: none; accent-color: var(--brand); }
+.pases__costo strong { color: var(--ink); font-variant-numeric: tabular-nums; }
+.pases__nota { line-height: 19px; }
+.pases__nota--ojo { color: var(--warning); }
 
 /* ---------- Charts ---------- */
 .chart { width: 100%; display: block; overflow: visible; }

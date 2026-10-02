@@ -165,6 +165,7 @@ as $$
     when 'gastos'        then array['finanzas']
     when 'movimientos'   then array['finanzas']
     when 'arqueos'       then array['finanzas']
+    when 'traspasos'     then array['finanzas']
     when 'transacciones' then array['finanzas']
     when 'ad_insights'   then array['marketing','webinars','finanzas']
     when 'campanias'     then array['marketing','webinars']
@@ -208,6 +209,7 @@ as $$
     when 'gastos'          then array['finanzas']
     when 'movimientos'     then array['finanzas']
     when 'arqueos'         then array['finanzas']
+    when 'traspasos'       then array['finanzas']
     when 'transacciones'   then array['finanzas']
     when 'ajustes'         then array['ajustes']
     when 'campos'          then array['ajustes']
@@ -451,7 +453,7 @@ begin
   foreach t in array array[
     'ajustes', 'campos', 'etapas', 'embudos', 'productos', 'procesadores', 'metas', 'equipo',
     'etapas_servicio', 'webinars', 'campaigns', 'adsets', 'ads', 'ad_insights', 'campanias',
-    'movimientos', 'arqueos', 'transacciones', 'reportes', 'tipos_cuenta'
+    'movimientos', 'arqueos', 'traspasos', 'transacciones', 'reportes', 'tipos_cuenta'
   ] loop
     if to_regclass('public.' || t) is null then continue; end if;
     execute format('alter table public.%I enable row level security', t);

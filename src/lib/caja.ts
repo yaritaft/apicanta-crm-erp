@@ -1,6 +1,7 @@
-import type { Arqueo, EstadoApp, ID } from "./types";
+import type { Arqueo, EstadoApp } from "./types";
 import type { RangoMes } from "./metricas";
 import { calcularPyL, gastosDelMes } from "./finanzas";
+import { enCamino } from "./traspasos";
 
 /* ==================================================================
    La caja: cuánta plata hay de verdad y si las cuentas dan.
@@ -21,6 +22,12 @@ import { calcularPyL, gastosDelMes } from "./finanzas";
    Si lo contado no da con lo esperado, falta cargar algo (un gasto, una
    venta) o hay un cobro que no entró. Las comisiones se pagan a mes
    vencido: al principio de mes la diferencia puede ser eso.
+
+   La plata que pasa de una cuenta a otra (lib/traspasos.ts) no cambia la
+   caja, pero mientras viaja no está en ninguna cuenta: lo que tiene que
+   dar al contar es la caja esperada menos lo que está en camino. Y lo que
+   estaba en camino cuando se contó el arqueo anterior no se contó en
+   ninguna: se suma, porque después llegó.
 
    Los meses de vida son la caja sobre lo que cuesta un mes sin vender
    (gastos operativos y honorarios del CEO: sueldos, ads, software), con
@@ -44,44 +51,49 @@ export interface MovimientoCaja {
   desde: string;
   hasta: string;
   inicial: number;
+  /* Lo que al contar el arqueo anterior estaba en camino entre dos
+     cuentas: no se contó en ninguna y es plata de la caja. */
+  enCaminoAntes: number;
   cobrado: number;
   procesador: number;
   comisiones: number;
   gastos: number;
   reparto: number;
   retiros: number;
+  /* La plata del negocio, esté en una cuenta o viajando entre dos. */
   esperado: number;
+  /* La que ahora está en camino: salió de una cuenta y no llegó a la otra. */
+  enCamino: number;
+  /* Lo que tendría que dar al contar las cuentas: la esperada menos la
+     que está en camino. */
+  enCuentas: number;
 }
 
-/** Lo que la app espera que haya en la caja en `hasta`, partiendo de un arqueo. */
-export function cajaEsperada(e: EstadoApp, desde: Pick<Arqueo, "fecha" | "total">, hasta: string): MovimientoCaja {
+/** Lo que la app espera que haya en la caja en `hasta`, partiendo de un
+    arqueo. El tipo de cambio es para lo que viaje entre cuentas en pesos. */
+export function cajaEsperada(
+  e: EstadoApp, desde: Pick<Arqueo, "fecha" | "total">, hasta: string, tipoCambio = e.ajustes.tipoCambio,
+): MovimientoCaja {
   const m = rangoEntre(desde.fecha, hasta);
   const p = calcularPyL(e, m);
   const retiros = gastosDelMes(e, m, "retiro").reduce((a, g) => a + g.monto, 0);
   const gastos = p.otrosDirectos + p.gastosOperativos + p.honorariosCeo;
   const comisiones = p.comisionCloser + p.comisionDirector;
   const reparto = p.growth + p.socio;
+  const enCaminoAntes = enCamino(e, desde.fecha, tipoCambio);
+  const viajando = enCamino(e, hasta, tipoCambio);
+  const esperado = r2(desde.total + enCaminoAntes + p.cashCollected - p.feesProcesador - comisiones - gastos - reparto - retiros);
   return {
     desde: desde.fecha, hasta,
-    inicial: desde.total,
+    inicial: desde.total, enCaminoAntes,
     cobrado: r2(p.cashCollected), procesador: r2(p.feesProcesador), comisiones: r2(comisiones),
     gastos: r2(gastos), reparto: r2(reparto), retiros: r2(retiros),
-    esperado: r2(desde.total + p.cashCollected - p.feesProcesador - comisiones - gastos - reparto - retiros),
+    esperado, enCamino: viajando, enCuentas: r2(esperado - viajando),
   };
 }
 
-/** Lo que entró a cada cuenta (neto de su comisión) entre dos momentos. */
-export function entradasPorCuenta(e: EstadoApp, desdeIso: string | null, hastaIso: string): Map<ID, number> {
-  const desde = desdeIso ? new Date(desdeIso).getTime() : -Infinity;
-  const hasta = new Date(hastaIso).getTime();
-  const out = new Map<ID, number>();
-  for (const p of e.pagos) {
-    const t = new Date(p.fecha).getTime();
-    if (t <= desde || t > hasta || !p.procesadorId) continue;
-    out.set(p.procesadorId, r2((out.get(p.procesadorId) ?? 0) + p.monto - p.feeMonto));
-  }
-  return out;
-}
+/* Lo que tendría que haber en cada cuenta (lo que cobró, lo que pasó de
+   una a otra, lo que se retiró) está en lib/traspasos.ts: saldosEsperados. */
 
 export interface Runway {
   /* Lo que cuesta un mes sin vender, promedio de los últimos tres cerrados. */

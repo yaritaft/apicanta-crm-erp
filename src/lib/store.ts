@@ -7,7 +7,8 @@ import type {
   Arqueo, Campania, CampoPersonalizado, Comentario, Comprobante, Cuota, EntidadNombre, EstadoApp, Etapa, ID,
   Lead, Meta, Movimiento, OpcionCrm, OportunidadCrm, Pago, Reporte, Sesion, Venta, Webinar,
 } from "./types";
-import type { EsquemaPago, EtapaServicio, Gasto, ID as IdMiembro, Liquidacion, MiembroEquipo, ResultadoLiquidacion, TipoCuenta } from "./types";
+import type { EsquemaPago, EstadoTraspaso, EtapaServicio, Gasto, ID as IdMiembro, Liquidacion, MiembroEquipo, ResultadoLiquidacion, TipoCuenta, Traspaso } from "./types";
+import { conciliarPuntas, rutaDe, type Punta } from "./traspasos";
 import { nombrePeriodo, tasaParaFinanzas } from "./honorarios";
 import {
   alumnoDeVenta, cuotaMensualDeVenta, etapaDelAlumno, etapaInicialDeServicio, etapasDeServicio,
@@ -523,6 +524,8 @@ export async function cargarDeLaNube(): Promise<void> {
         .sort((a, b) => +new Date(a.creadoEn) - +new Date(b.creadoEn)),
       arqueos: ((porTabla.arqueos ?? []) as EstadoApp["arqueos"])
         .sort((a, b) => +new Date(a.fecha) - +new Date(b.fecha)),
+      /* Opcional: sin supabase/traspasos.sql, ninguno. */
+      traspasos: (porTabla.traspasos ?? []) as EstadoApp["traspasos"],
       /* Vacías para quien no es dueño: RLS las esconde. */
       honorarios: (porTabla.honorarios ?? []) as EstadoApp["honorarios"],
       liquidaciones: (porTabla.liquidaciones ?? []) as EstadoApp["liquidaciones"],
@@ -573,6 +576,7 @@ function ordenDeSiembra(e: EstadoApp): [string, unknown[]][] {
     ["pagos", e.pagos], ["gastos", e.gastos],
     ["comentarios", e.comentarios ?? []],
     ["arqueos", e.arqueos ?? []],
+    ["traspasos", e.traspasos ?? []],
     ["actividad", e.actividad],
     /* Sin FK desde alumnos a propósito (ver alumnos-servicio.sql): puede ir
        al final sin romper el orden de nadie. */
@@ -619,7 +623,7 @@ async function vaciarNube() {
      es, no borran nada (RLS) y no dan error. */
   const orden = [
     "liquidaciones", "honorarios",
-    "actividad", "comentarios", "arqueos", "campos", "metas", "pagos", "movimientos", "cuotas", "ventas", "gastos",
+    "actividad", "comentarios", "arqueos", "traspasos", "campos", "metas", "pagos", "movimientos", "cuotas", "ventas", "gastos",
     "campanias", "reportes", "sesiones", "alumnos", "leads", "contactos", "webinars",
     "etapas", "equipo", "embudos", "procesadores", "productos",
     "etapas_servicio",
@@ -1668,6 +1672,105 @@ export const acciones = {
     const e = snapshot();
     guardar({ ...e, arqueos: (e.arqueos ?? []).filter((a) => a.id !== id) });
     empujar({ tipo: "delete", tabla: "arqueos", ids: [id] });
+  },
+
+  /* ---------- Movimientos entre cuentas (lib/traspasos.ts) ----------
+     Plata que pasa de una cuenta propia a otra: no es ingreso ni gasto. */
+
+  /* Guarda uno (nuevo o corregido) y, junto, el gasto con lo que costó:
+     `gasto` es el que le toca ahora (null si no costó nada o no se quiere
+     cargar); el que tenía antes se borra. */
+  guardarTraspaso(t: Traspaso, gasto: Gasto | null = null): void {
+    const e = snapshot();
+    const antes = (e.traspasos ?? []).find((x) => x.id === t.id);
+    const con: Traspaso = { ...t, gastoId: gasto?.id };
+    const viejo = antes?.gastoId && antes.gastoId !== gasto?.id ? antes.gastoId : undefined;
+    const gastos = [...e.gastos.filter((g) => g.id !== viejo && g.id !== gasto?.id), ...(gasto ? [gasto] : [])];
+    const { lista: act, nuevo } = registrar(
+      e, "transaccion", t.id, "Movimiento entre cuentas", antes ? "actualizo" : "creo",
+      `${antes ? "Se corrigió" : "Se cargó"} un movimiento entre cuentas: ${rutaDe(e, t)}, ${Math.round(t.montoSale).toLocaleString("es-AR")} ${t.monedaSale}`
+      + (gasto ? `; costó ${Math.round(gasto.monto).toLocaleString("es-AR")}, que quedó como gasto.` : "."),
+    );
+    guardar({ ...e, traspasos: [...(e.traspasos ?? []).filter((x) => x.id !== t.id), con], gastos, actividad: act });
+    empujar({ tipo: "upsert", tabla: "traspasos", filas: [con] });
+    /* Lo que se vació al corregir (la nota, el gasto) viaja aparte: una
+       clave que falta no pisa lo que hay en la base. */
+    const vaciado = antes
+      ? Object.keys(antes).filter((k) => (antes as unknown as Record<string, unknown>)[k] !== undefined && (con as unknown as Record<string, unknown>)[k] === undefined)
+      : [];
+    if (vaciado.length) empujarUpdate("traspasos", [t.id], Object.fromEntries(vaciado.map((k) => [k, null])));
+    if (gasto) empujar({ tipo: "upsert", tabla: "gastos", filas: [gasto] });
+    if (viejo) empujar({ tipo: "delete", tabla: "gastos", ids: [viejo] });
+    empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
+  },
+
+  /* Confirmar el que propuso la sincronización, o decir que no es un pase
+     (ahí se va también el gasto de su costo, si tenía). */
+  marcarTraspaso(id: ID, estado: EstadoTraspaso): void {
+    const e = snapshot();
+    const t = (e.traspasos ?? []).find((x) => x.id === id);
+    if (!t || t.estado === estado) return;
+    const sinGasto = estado === "ignorado" ? t.gastoId : undefined;
+    const { lista: act, nuevo } = registrar(
+      e, "transaccion", id, "Movimiento entre cuentas", "actualizo",
+      estado === "ignorado" ? `Se marcó que no es un movimiento entre cuentas: ${rutaDe(e, t)}.`
+        : `Se confirmó el movimiento entre cuentas: ${rutaDe(e, t)}.`,
+    );
+    guardar({
+      ...e,
+      traspasos: (e.traspasos ?? []).map((x) => (x.id === id ? { ...x, estado, ...(sinGasto ? { gastoId: undefined } : {}) } : x)),
+      gastos: sinGasto ? e.gastos.filter((g) => g.id !== sinGasto) : e.gastos,
+      actividad: act,
+    });
+    empujarUpdate("traspasos", [id], { estado, ...(sinGasto ? { gastoId: null } : {}) });
+    if (sinGasto) empujar({ tipo: "delete", tabla: "gastos", ids: [sinGasto] });
+    empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
+  },
+
+  borrarTraspaso(id: ID): void {
+    const e = snapshot();
+    const t = (e.traspasos ?? []).find((x) => x.id === id);
+    if (!t) return;
+    guardar({
+      ...e,
+      traspasos: (e.traspasos ?? []).filter((x) => x.id !== id),
+      gastos: t.gastoId ? e.gastos.filter((g) => g.id !== t.gastoId) : e.gastos,
+    });
+    empujar({ tipo: "delete", tabla: "traspasos", ids: [id] });
+    if (t.gastoId) empujar({ tipo: "delete", tabla: "gastos", ids: [t.gastoId] });
+  },
+
+  /* Lo que vio la sincronización de las cuentas (un depósito de Stripe en
+     Mercury, un retiro de Stripe): la punta que ya está no se repite, la
+     que es de un pase cargado se le ata y el resto son pases nuevos. Las
+     mismas reglas que usa el cron del servidor. */
+  importarPuntas(puntas: Punta[]): { nuevos: number; conciliados: number } {
+    const e = snapshot();
+    const r = conciliarPuntas(e.traspasos ?? [], puntas, ahora());
+    if (r.nuevos.length === 0 && r.cambios.length === 0) return { nuevos: 0, conciliados: 0 };
+    const cambios = new Map(r.cambios.map((c) => [c.id, c.cambios] as const));
+    guardar({
+      ...e,
+      traspasos: [...(e.traspasos ?? []).map((t) => (cambios.has(t.id) ? { ...t, ...cambios.get(t.id) } : t)), ...r.nuevos],
+    });
+    if (r.nuevos.length) empujarEnLotes("traspasos", r.nuevos);
+    for (const c of r.cambios) empujarUpdate("traspasos", [c.id], c.cambios as Record<string, unknown>);
+    return { nuevos: r.nuevos.length, conciliados: r.conciliados };
+  },
+
+  /* Vuelve a traer los movimientos entre cuentas de la base: el servidor
+     acaba de guardar lo que encontró en las cuentas (o lo hizo el cron) y
+     así se ve sin recargar. Antes espera a que no quede nada de ellos por
+     escribir, para no pisar con la base lo que todavía no le llegó. */
+  async traerTraspasos(): Promise<boolean> {
+    if (!nube) return false;
+    const pendiente = () => cola.some((op) => op.tabla === "traspasos");
+    for (let i = 0; i < 40 && pendiente(); i++) await new Promise((r) => setTimeout(r, 150));
+    if (pendiente()) return false;
+    const r = await traerTabla(nube, "traspasos");
+    if (r.error || pendiente()) return false;
+    guardar({ ...snapshot(), traspasos: (r.data ?? []) as Traspaso[] });
+    return true;
   },
 
   /* ---------- Alta completa de una venta ----------
