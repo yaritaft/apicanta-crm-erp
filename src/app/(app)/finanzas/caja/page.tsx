@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useMemo, useState } from "react";
-import { ArrowRightLeft, HandCoins, Info, Landmark, Plus, Trash2 } from "lucide-react";
+import { ArrowRightLeft, Check, HandCoins, Info, Landmark, Plus, Trash2 } from "lucide-react";
 import { PageHead } from "@/components/shell/PageHead";
 import { Ayuda, Badge, Button, Card, CardHead, Empty, Field, IconButton, Input, Select, StatCard, Textarea } from "@/components/ui/ui";
 import { DataTable } from "@/components/ui/DataTable";
@@ -306,6 +306,15 @@ function NuevoArqueo({ e, onCerrar, onListo }: { e: EstadoApp; onCerrar: () => v
           const enSuMoneda = (n: number, signo = false) => `${signo && n > 0 ? "+ " : n < 0 ? "− " : ""}${money(Math.abs(n), moneda)}`;
           const contado = textos[p.id]?.trim() ? leerMonto(textos[p.id]) : NaN;
           const dif = s?.esperado !== undefined && Number.isFinite(contado) ? Math.round((contado - s.esperado) * 100) / 100 : null;
+          /* Lo contado contra lo que tendría que haber: el casillero se pinta
+             (verde si da, ámbar si no) y adentro va el tilde o la diferencia. */
+          const da = dif !== null && Math.abs(dif) < 1;
+          /* En pesos la diferencia puede ser de millones: adentro va corta (−1,25 M) y entera al pasar el mouse. */
+          const cuanto = dif === null ? 0 : Math.abs(dif);
+          const marca = dif === null || da ? ""
+            : `${dif > 0 ? "+" : "−"}${cuanto >= 1e6 ? `${(cuanto / 1e6).toLocaleString("es-AR", { maximumFractionDigits: 2 })} M` : num(cuanto)}`;
+          const dice = dif === null ? undefined : da ? "Da con lo que tendría que haber en esta cuenta"
+            : `${dif > 0 ? "Sobran" : "Faltan"} ${money(Math.abs(dif), moneda)} contra lo que tendría que haber en esta cuenta`;
           return (
             <div className="arqueo-fila" role="row" key={p.id}>
               <span role="cell" className="t-strong">{p.nombre}{moneda === "ARS" && <span className="t-sm t-subtle"> · en pesos</span>}</span>
@@ -315,16 +324,17 @@ function NuevoArqueo({ e, onCerrar, onListo }: { e: EstadoApp; onCerrar: () => v
               <span role="cell" data-titulo="Tendría que haber" className="t-num" title={s?.salio ? `Ya descuenta ${money(s.salio, moneda)} de retiros que salieron de esta cuenta` : undefined}>
                 {s?.esperado !== undefined ? money(s.esperado, moneda) : "—"}
               </span>
-              <span role="cell" className="arqueo-fila__hay">
+              <span
+                role="cell" className="arqueo-hay" title={dice} data-estado={dif === null ? undefined : da ? "da" : "difiere"}
+                style={marca ? { "--marca": `${Math.round(marca.length * 6.5)}px` } as React.CSSProperties : undefined}
+              >
                 <Input
                   aria-label={`Saldo de ${p.nombre}`} inputMode="decimal" placeholder={moneda === "ARS" ? "$ 0" : "US$ 0"}
                   value={textos[p.id] ?? ""} onChange={(ev) => setTextos({ ...textos, [p.id]: ev.target.value })}
                 />
-                {dif !== null && (
-                  <span className={`arqueo-fila__dif${Math.abs(dif) < 1 ? " arqueo-fila__dif--da" : ""}`}>
-                    {Math.abs(dif) < 1 ? "Da" : `${dif > 0 ? "Sobran" : "Faltan"} ${money(Math.abs(dif), moneda)}`}
-                  </span>
-                )}
+                {dif !== null && (da
+                  ? <Check size={16} className="arqueo-hay__marca" aria-label={dice} />
+                  : <span className="arqueo-hay__marca" aria-label={dice}>{marca}</span>)}
               </span>
             </div>
           );

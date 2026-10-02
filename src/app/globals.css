@@ -579,14 +579,20 @@ kbd {
 .caja-mov__total { border-top: 1px solid var(--border); padding-top: var(--space-2); font-weight: 600; color: var(--ink) !important; }
 .arqueo-tabla { display: flex; flex-direction: column; margin: var(--space-4) 0; border: 1px solid var(--border); border-radius: var(--radius-md); overflow: hidden; }
 /* Cuenta | último arqueo | cobró | pases | tendría que haber | hay de verdad. */
-.arqueo-fila { display: grid; grid-template-columns: minmax(130px, 1.5fr) repeat(4, minmax(0, 1fr)) minmax(124px, 1.1fr); gap: var(--space-3); align-items: center; padding: 6px var(--space-3); border-top: 1px solid var(--border); font-size: 14px; }
+.arqueo-fila { display: grid; grid-template-columns: minmax(130px, 1.5fr) repeat(4, minmax(0, 1fr)) minmax(160px, 1.6fr); gap: var(--space-3); align-items: center; padding: 6px var(--space-3); border-top: 1px solid var(--border); font-size: 14px; }
 .arqueo-fila:first-child { border-top: 0; }
 .arqueo-fila > span:nth-child(n+2):nth-child(-n+5) { text-align: right; }
 .arqueo-fila--cabeza { background: var(--surface-200); font-size: 11px; line-height: 14px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--ink-subtle); padding-block: var(--space-2); }
-.arqueo-fila__hay { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-/* Lo contado contra lo que tendría que haber en esa cuenta. */
-.arqueo-fila__dif { font-size: 12px; line-height: 16px; color: var(--warning); font-variant-numeric: tabular-nums; }
-.arqueo-fila__dif--da { color: var(--success); }
+/* Lo contado contra lo que tendría que haber en esa cuenta: el casillero se
+   pinta (verde si da, ámbar si no) y adentro va el tilde o la diferencia. */
+.arqueo-hay { position: relative; display: block; min-width: 0; }
+.arqueo-hay[data-estado] .hk-input { padding-right: calc(var(--marca, 16px) + 20px); transition: border-color 150ms ease-out, background-color 150ms ease-out; }
+.arqueo-hay[data-estado="da"] .hk-input { border-color: var(--success); background: var(--success-soft); }
+.arqueo-hay[data-estado="difiere"] .hk-input { border-color: var(--warning); background: var(--warning-soft); }
+.arqueo-hay__marca { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); pointer-events: none; font-size: 12px; line-height: 16px; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; color: var(--warning); }
+.arqueo-hay[data-estado="da"] .arqueo-hay__marca { color: var(--success); }
+/* El arqueo tiene seis columnas: un poco más de aire que los demás formularios anchos. */
+.modal:has(.arqueo-tabla) { max-width: 960px; }
 .arqueo-nota { margin: calc(var(--space-2) * -1) 0 var(--space-3); line-height: 19px; }
 .arqueo-resumen__nota { flex: 1 1 100%; line-height: 19px; }
 .arqueo-resumen { display: flex; gap: var(--space-4); align-items: center; flex-wrap: wrap; margin-bottom: var(--space-3); font-size: 14px; color: var(--ink-muted); }
@@ -595,7 +601,7 @@ kbd {
      con su nombre, y abajo lo que se cuenta. */
   .arqueo-fila { grid-template-columns: 1fr 1fr; gap: var(--space-2) var(--space-3); padding-block: var(--space-3); }
   .arqueo-fila--cabeza { display: none; }
-  .arqueo-fila > span:first-child, .arqueo-fila__hay { grid-column: 1 / -1; }
+  .arqueo-fila > span:first-child, .arqueo-hay { grid-column: 1 / -1; }
   .arqueo-fila > span:nth-child(n+2):nth-child(-n+5) { text-align: left; }
   .arqueo-fila > span[data-titulo]::before { content: attr(data-titulo); display: block; font-size: 11px; line-height: 14px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--ink-subtle); }
 }
