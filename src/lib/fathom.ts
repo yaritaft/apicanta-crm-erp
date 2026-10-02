@@ -166,6 +166,54 @@ export function desdeParaImportar(pedido: string | null | undefined, primeraLlam
   return new Date(Number.isFinite(pedida) ? Math.max(pedida, piso) : piso).toISOString();
 }
 
+/* ---------- atar a mano ----------
+   Si la grabación de una llamada no se ató sola (la persona entró con otro
+   mail, o a un Meet armado en el momento), en el cierre del día se busca
+   entre las que grabó el closer de esa llamada, alrededor de ese día, y se
+   elige. Sólo las de ese closer: las reuniones de los demás no se listan. */
+
+export interface CandidataGrabacion {
+  recordingId: string;
+  titulo: string;
+  empieza: string | null;
+  duracion: string;
+  /* Los invitados que no son quien grabó, por nombre (o por correo). */
+  invitados: string[];
+  shareUrl: string | null;
+  /* Si ya está guardada atada a otra llamada. */
+  otraLlamada?: boolean;
+}
+
+/** Las reuniones de Fathom como candidatas para una llamada, de la más
+    cercana en el tiempo a la más lejana. */
+export function candidatasPara(items: unknown[], inicia: string): CandidataGrabacion[] {
+  const t = Date.parse(inicia);
+  return items
+    .map((x) => leerReunion(x))
+    .filter((g): g is Grabacion => g !== null)
+    .map((g) => {
+      const cuando = g.empieza ?? g.grabadaDesde ?? g.creadoEn ?? null;
+      return {
+        lejos: Math.abs(Date.parse(cuando ?? "") - t),
+        c: {
+          recordingId: g.recordingId, titulo: g.titulo, empieza: cuando, duracion: duracion(g),
+          invitados: g.invitados.filter((i) => !i.email || i.email !== g.grabadoPor).map((i) => i.nombre || i.email || "").filter(Boolean),
+          shareUrl: g.shareUrl ?? null,
+        } as CandidataGrabacion,
+      };
+    })
+    .sort((a, b) => (Number.isFinite(a.lejos) ? a.lejos : Infinity) - (Number.isFinite(b.lejos) ? b.lejos : Infinity))
+    .map((x) => x.c);
+}
+
+/** Entre qué momentos buscar las grabaciones de una llamada: desde medio
+    día antes hasta un día y medio después (Fathom las crea cuando terminan). */
+export function ventanaDeBusqueda(inicia: string): { desde: string; hasta: string } | null {
+  const t = Date.parse(inicia);
+  if (!Number.isFinite(t)) return null;
+  return { desde: new Date(t - 12 * 3600_000).toISOString(), hasta: new Date(t + 36 * 3600_000).toISOString() };
+}
+
 /** Cuánto esperar cuando Fathom contesta 429, de su Retry-After (segundos
     o una fecha): entre 5 segundos y 2 minutos; sin el dato, un minuto. */
 export function segundosDeEspera(retryAfter: string | null | undefined, ahora: number): number {

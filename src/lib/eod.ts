@@ -1,4 +1,4 @@
-import type { Ajustes, EstadoApp, OpcionCrm, ResultadoLlamada, Sesion } from "./types";
+import type { Ajustes, EstadoApp, EstadoSesion, OpcionCrm, ResultadoLlamada, Sesion } from "./types";
 import { miembroDeCloser, opcionesDe, sinTildes } from "./crm";
 import { diaDeNegocio } from "./dia-negocio";
 
@@ -40,7 +40,10 @@ export const TEXTO_RESULTADO: Record<ResultadoLlamada, string> = {
 };
 
 export interface RespuestaEod {
-  resultado: ResultadoLlamada;
+  /* Puede faltar si sólo se cambió el estado (una que se canceló por WhatsApp). */
+  resultado?: ResultadoLlamada;
+  /* El estado de la llamada: lo pone el resultado y se puede cambiar. */
+  estado?: EstadoSesion;
   objecion?: string;
   hizoOferta?: boolean;
   /* aaaa-mm-dd, o null: "no se va a cerrar". */
@@ -49,9 +52,20 @@ export interface RespuestaEod {
   grabacion?: string;
 }
 
-/* Lo que falta para dar por cargada una llamada. */
+/** El estado en el que queda la llamada con ese resultado: compró o no
+    compró, se hizo; no se presentó, no vino; reprogramada, como estaba. */
+export function estadoPorResultado(r: ResultadoLlamada, actual: EstadoSesion): EstadoSesion {
+  if (r === "compro" || r === "no-compro") return "hecha";
+  if (r === "no-vino") return "no-show";
+  return actual;
+}
+
+export const TEXTO_ESTADO: Record<EstadoSesion, string> = { agendada: "Agendada", hecha: "Hecha", "no-show": "No vino", cancelada: "Cancelada" };
+
+/* Lo que falta para dar por cargada una llamada. Una cancelada no tiene
+   resultado que cargar. */
 export function faltaEnRespuesta(r: RespuestaEod | undefined): string | null {
-  if (!r) return "Elegí cómo terminó la llamada";
+  if (!r?.resultado) return r?.estado === "cancelada" ? null : "Elegí cómo terminó la llamada";
   if (r.resultado !== "no-compro") return null;
   if (!r.objecion) return "Elegí por qué no cerró";
   if (r.hizoOferta === undefined) return "Contá si hiciste la oferta";
@@ -69,6 +83,14 @@ function opcion(opciones: OpcionCrm[], nombre: RegExp, cumple?: (o: OpcionCrm) =
 export function cambiosDelEod(
   r: RespuestaEod, s: Pick<Sesion, "notas" | "estadoLlamada">, a: Ajustes, quien: string, cuando: string,
 ): Partial<Sesion> {
+  /* Sólo el estado (una cancelada): no es un cierre del día. */
+  if (!r.resultado) {
+    const soloEstado: Partial<Sesion> = r.estado ? { estado: r.estado } : {};
+    const nota = r.nota?.trim();
+    if (nota && !(s.notas ?? "").includes(nota)) soloEstado.notas = s.notas?.trim() ? `${s.notas.trim()}\n${nota}` : nota;
+    if (r.grabacion?.trim()) soloEstado.grabacion = r.grabacion.trim();
+    return soloEstado;
+  }
   const opciones = opcionesDe(a, "estadoLlamada");
   const c: Partial<Sesion> = { resultado: r.resultado, eodEn: cuando, eodPor: quien };
   if (r.resultado === "no-compro") {
@@ -97,6 +119,8 @@ export function cambiosDelEod(
   const nota = r.nota?.trim();
   if (nota && !(s.notas ?? "").includes(nota)) c.notas = s.notas?.trim() ? `${s.notas.trim()}\n${nota}` : nota;
   if (r.grabacion?.trim()) c.grabacion = r.grabacion.trim();
+  /* El estado que eligió a mano le gana al que pone el resultado. */
+  if (r.estado) c.estado = r.estado;
   return c;
 }
 

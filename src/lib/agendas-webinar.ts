@@ -189,6 +189,9 @@ export function resumirAgendas(
   webinar: { fecha: string; duracionMin?: number },
   vivo: { inicio?: string | null; fin?: string | null } = {},
   diasDeWebinars?: string[],
+  /* La persona de cada agenda, para que la estrella mire lo que el equipo
+     le corrigió a mano (lib/perfil.ts). Sin esto, lo que contestó. */
+  personaDe?: (s: SesionCalendly) => Parameters<typeof evaluarAgenda>[1],
 ): ResumenAgendas {
   const clave = claveDeFecha(webinar.fecha);
   const dia = diaUtm(webinar.fecha);
@@ -228,7 +231,7 @@ export function resumirAgendas(
         momento,
         cancelada: s.estado === "cancelada",
         por,
-        calificada: evaluarAgenda(s).calificada,
+        calificada: evaluarAgenda(s, personaDe?.(s)).calificada,
       };
     })
     .sort((a, b) => +new Date(b.agendadaEn) - +new Date(a.agendadaEn));

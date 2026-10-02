@@ -60,12 +60,16 @@ const CANALES: OpcionFiltro[] = [
   { valor: "manual", texto: "Cargada a mano" },
 ];
 
-const valorDe: Record<Faceta, (s: Sesion) => string> = {
+/* La persona de la llamada (su contacto o su lead): la estrella mira lo
+   que el equipo le corrigió a mano (lib/perfil.ts). */
+type PersonaDeAgenda = Parameters<typeof evaluarAgenda>[1];
+
+const valorDe: Record<Faceta, (s: Sesion, persona?: PersonaDeAgenda) => string> = {
   estado: (s) => s.estado,
   tipo: (s) => s.tipo?.trim() || SIN,
   anfitrion: (s) => s.anfitrion?.trim() || SIN,
   canal: canalDe,
-  calificada: (s) => (evaluarAgenda(s).calificada ? "si" : "no"),
+  calificada: (s, persona) => (evaluarAgenda(s, persona).calificada ? "si" : "no"),
 };
 
 const CALIFICACION: OpcionFiltro[] = [
@@ -136,12 +140,18 @@ export default function Agenda() {
   /* Lo que ya pasó se lee de lo último para atrás; lo que viene, en orden. */
   const alReves = rango.preset === "pasado" || rango.hasta < hoy;
 
+  const personaDe = useMemo(() => {
+    const contactos = new Map(e.contactos.map((c) => [c.id, c] as const));
+    const leads = new Map(e.leads.map((l) => [l.id, l] as const));
+    return (s: Sesion): PersonaDeAgenda => contactos.get(s.contactoId ?? "") ?? leads.get(s.leadId ?? "");
+  }, [e.contactos, e.leads]);
+
   /* Cada desplegable ofrece lo que existe en las llamadas; el estado, los
      cuatro de siempre. */
   const opciones = useMemo<Record<Faceta, OpcionFiltro[]>>(() => ({
     estado: (Object.keys(ETIQUETA) as EstadoSesion[]).map((k) => ({ valor: k, texto: ETIQUETA[k].texto })),
-    tipo: opcionesDe(e.sesiones.map(valorDe.tipo), (t) => t, "Sin tipo"),
-    anfitrion: opcionesDe(e.sesiones.map(valorDe.anfitrion), (a) => a, "Sin anfitrión"),
+    tipo: opcionesDe(e.sesiones.map((s) => valorDe.tipo(s)), (t) => t, "Sin tipo"),
+    anfitrion: opcionesDe(e.sesiones.map((s) => valorDe.anfitrion(s)), (a) => a, "Sin anfitrión"),
     canal: CANALES.filter((c) => e.sesiones.some((s) => canalDe(s) === c.valor)),
     calificada: CALIFICACION,
   }), [e.sesiones]);
@@ -158,15 +168,15 @@ export default function Agenda() {
   const { visibles, cuentas } = useMemo(() => {
     const t = normal(busca.trim());
     const base = t ? enPeriodo.filter((s) => normal(`${s.invitado} ${s.email ?? ""}`).includes(t)) : enPeriodo;
-    const pasa = (s: Sesion, salvo?: Faceta) => FACETAS.every((k) => k === salvo || !f[k] || valorDe[k](s) === f[k]);
+    const pasa = (s: Sesion, salvo?: Faceta) => FACETAS.every((k) => k === salvo || !f[k] || valorDe[k](s, personaDe(s)) === f[k]);
     const cuentas = Object.fromEntries(FACETAS.map((k) => {
       const m = new Map<string, number>();
-      for (const s of base) if (pasa(s, k)) m.set(valorDe[k](s), (m.get(valorDe[k](s)) ?? 0) + 1);
+      for (const s of base) if (pasa(s, k)) { const v = valorDe[k](s, personaDe(s)); m.set(v, (m.get(v) ?? 0) + 1); }
       return [k, m];
     })) as Record<Faceta, Map<string, number>>;
     const visibles = base.filter((s) => pasa(s)).sort((a, b) => (alReves ? -1 : 1) * (+new Date(a.inicia) - +new Date(b.inicia)));
     return { visibles, cuentas };
-  }, [enPeriodo, busca, f, alReves]);
+  }, [enPeriodo, busca, f, alReves, personaDe]);
 
   const porDia = useMemo(() => {
     const m = new Map<string, Sesion[]>();
@@ -338,8 +348,8 @@ export default function Agenda() {
                             {s.invitado}
                             {/* La agenda calificada lleva su estrellita, a la derecha del
                                 nombre; el porqué, al pasar el mouse. */}
-                            {valorDe.calificada(s) === "si" && (
-                              <span className="estrella-calificada" title={textoEvaluacion(evaluarAgenda(s))}>
+                            {valorDe.calificada(s, personaDe(s)) === "si" && (
+                              <span className="estrella-calificada" title={textoEvaluacion(evaluarAgenda(s, personaDe(s)))}>
                                 <Star size={14} fill="currentColor" aria-label="Agenda calificada" />
                               </span>
                             )}
@@ -488,7 +498,7 @@ export default function Agenda() {
               <Dato label="Origen">{sesionVista.origen === "calendly" ? "Calendly" : "Cargada a mano"}</Dato>
               {sesionVista.canal && <Dato label="Agendó por">{ETIQUETA_CANAL[sesionVista.canal]}</Dato>}
               {(sesionVista.canal || sesionVista.utm) && <Dato label="Embudo"><BadgeEmbudo s={sesionVista} /></Dato>}
-              <Dato label="Calificación">{textoEvaluacion(evaluarAgenda(sesionVista))}</Dato>
+              <Dato label="Calificación">{textoEvaluacion(evaluarAgenda(sesionVista, personaDe(sesionVista)))}</Dato>
               {sesionVista.anfitrion && <Dato label="La atiende">{sesionVista.anfitrion}</Dato>}
               {/* Lo que el equipo cargó en el CRM sobre esta llamada, con el
                   link a su registro (es la misma llamada). */}

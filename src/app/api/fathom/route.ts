@@ -1,8 +1,11 @@
 import { NextResponse } from "next/server";
 import { nubeServidor } from "@/lib/servidor";
-import { exigirArea } from "@/lib/permisos-servidor";
-import { desdeParaImportar } from "@/lib/fathom";
-import { borrarWebhook, crearWebhook, EsperarAFathom, guardarGrabacion, hayApiFathom, reunionesDesde } from "@/lib/fathom-servidor";
+import { baseDelPedido, exigirArea } from "@/lib/permisos-servidor";
+import { candidatasPara, desdeParaImportar, leerReunion, ventanaDeBusqueda } from "@/lib/fathom";
+import { miembroDeCloser } from "@/lib/crm";
+import {
+  atarGrabacion, borrarWebhook, crearWebhook, EsperarAFathom, guardarGrabacion, hayApiFathom, reunionesDe, reunionesDesde,
+} from "@/lib/fathom-servidor";
 
 /* ==================================================================
    Fathom, desde Ajustes → Integraciones.
@@ -20,6 +23,15 @@ import { borrarWebhook, crearWebhook, EsperarAFathom, guardarGrabacion, hayApiFa
      vuelve a pedir la misma página después.
    - "desconectar": borra el webhook de Fathom.
    Lo ve quien ve los Ajustes; lo cambia quien los edita.
+
+   Y dos del cierre del día, para quien edita el CRM, sobre una llamada
+   que esa persona ve (el closer, las suyas):
+   - "buscar": las grabaciones de Fathom del closer de la llamada, cerca
+     de ese día, para elegir la que no se ató sola. Sólo quien la atendió
+     o un dueño: entre las de un closer puede haber reuniones que no son
+     de ventas, y sus títulos no son para todo el equipo.
+   - "atar": guarda la elegida atada a esa llamada, con su resumen y su
+     transcripción.
    ================================================================== */
 
 export const runtime = "nodejs";
@@ -71,14 +83,60 @@ async function primeraLlamada(db: NonNullable<ReturnType<typeof nubeServidor>>):
 }
 
 export async function POST(peticion: Request) {
-  const noPuede = await exigirArea(peticion, ["ajustes"], 2);
+  const b = (await peticion.json().catch(() => ({}))) as { accion?: string; desde?: string; cursor?: string; sesionId?: string; recordingId?: string };
+  const deUnaLlamada = b.accion === "buscar" || b.accion === "atar";
+  const noPuede = await exigirArea(peticion, deUnaLlamada ? ["crm"] : ["ajustes"], 2);
   if (noPuede) return noPuede;
   const db = nubeServidor();
   if (!db) return NextResponse.json({ error: "Sin base configurada." }, { status: 503 });
   if (!hayApiFathom()) return NextResponse.json({ error: "Falta FATHOM_API_KEY en Vercel." }, { status: 503 });
-  const b = (await peticion.json().catch(() => ({}))) as { accion?: string; desde?: string; cursor?: string };
 
   try {
+    if (deUnaLlamada) {
+      /* La llamada, leída con la sesión de quien pide: si no la ve, no la toca. */
+      const mia = baseDelPedido(peticion);
+      if (!mia) return NextResponse.json({ error: "Hace falta iniciar sesión." }, { status: 401 });
+      const suya = await mia.from("sesiones").select("id, inicia, anfitrion").eq("id", b.sesionId ?? "").maybeSingle();
+      const s = suya.data as { id: string; inicia: string; anfitrion?: string | null } | null;
+      if (!s) return NextResponse.json({ error: "No encontramos esa llamada." }, { status: 404 });
+      const eq = await db.from("equipo").select("id, nombre, email");
+      const closer = miembroDeCloser(s.anfitrion ?? "", (eq.data ?? []) as { id: string; nombre: string; email?: string | null }[]);
+      const yo = (await mia.rpc("mi_acceso")).data as { tipo?: string; miembroId?: string | null } | null;
+      if (yo?.tipo !== "dueno" && (!closer || yo?.miembroId !== closer.id)) {
+        return NextResponse.json({ error: `Las grabaciones de ${s.anfitrion || "esa llamada"} las busca quien la atendió o un dueño.` }, { status: 403 });
+      }
+      const correo = closer?.email?.trim().toLowerCase();
+      if (!correo) {
+        return NextResponse.json({ error: `Falta el mail de ${s.anfitrion || "quien atendió la llamada"} en Equipo: con eso se buscan sus grabaciones en Fathom.` }, { status: 422 });
+      }
+      const ventana = ventanaDeBusqueda(s.inicia);
+      if (!ventana) return NextResponse.json({ error: "La llamada no tiene fecha." }, { status: 422 });
+
+      let items: unknown[];
+      try {
+        items = await reunionesDe(correo, ventana.desde, ventana.hasta, b.accion === "atar");
+      } catch (err) {
+        if (err instanceof EsperarAFathom) return NextResponse.json({ ok: true, esperar: err.segundos });
+        throw err;
+      }
+
+      if (b.accion === "buscar") {
+        const candidatas = candidatasPara(items, s.inicia);
+        const ya = candidatas.length
+          ? await db.from("grabaciones").select("recordingId, sesionId").in("recordingId", candidatas.map((c) => c.recordingId))
+          : null;
+        const deOtra = new Set(((ya?.data ?? []) as { recordingId: string; sesionId: string | null }[])
+          .filter((x) => x.sesionId && x.sesionId !== s.id).map((x) => x.recordingId));
+        return NextResponse.json({ ok: true, candidatas: candidatas.map((c) => ({ ...c, otraLlamada: deOtra.has(c.recordingId) })) });
+      }
+
+      const elegida = items.find((x) => leerReunion(x)?.recordingId === String(b.recordingId ?? ""));
+      if (!elegida) return NextResponse.json({ error: "Esa grabación ya no está entre las de ese closer en Fathom." }, { status: 404 });
+      const r = await atarGrabacion(db, elegida, s.id);
+      if (!r.ok) return NextResponse.json({ error: `No se pudo guardar la grabación: ${r.error}` }, { status: 500 });
+      return NextResponse.json({ ok: true, shareUrl: r.shareUrl });
+    }
+
     if (b.accion === "conectar") {
       const ya = await db.from("fathom_conexion").select("id").eq("id", 1).maybeSingle();
       if (ya.data) return NextResponse.json({ ok: true, yaEstaba: true });

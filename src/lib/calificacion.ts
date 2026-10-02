@@ -1,4 +1,5 @@
-import { nivelDeIngles, respuestaA } from "./calendly";
+import { nivelDeIngles } from "./calendly";
+import { conCorrecciones, corregidoDe, respuestaPerfil } from "./perfil";
 import type { NivelIngles } from "./types";
 
 /* ==================================================================
@@ -15,8 +16,10 @@ import type { NivelIngles } from "./types";
 
    Si la agenda no trae las respuestas (una cargada a mano), el inglés
    y la formación salen de lo que se sabe del contacto; la inversión
-   sólo la pregunta Calendly, así que sin ella no califica. Lo usan la
-   Agenda (la estrellita), el Dashboard y la planilla de cada webinar.
+   sólo la pregunta Calendly, así que sin ella no califica. Lo que el
+   equipo corrigió a mano de la persona (lib/perfil.ts) pisa lo que
+   contestó. Lo usan la Agenda (la estrellita), el CRM, el Dashboard y
+   la planilla de cada webinar.
    ================================================================== */
 
 export type Criterio = "si" | "no" | "sin-dato";
@@ -55,17 +58,18 @@ export function tieneCarrera(formacion?: string): Criterio {
 
 export function evaluarAgenda(
   sesion: { respuestas?: { pregunta: string; respuesta: string }[] | null },
-  contacto?: { inglesNivel?: NivelIngles | null; formacion?: string | null } | null,
+  /* La persona: su contacto o, si no tiene, su lead. */
+  contacto?: { inglesNivel?: NivelIngles | null; formacion?: string | null; extra?: Record<string, unknown> | null } | null,
 ): EvaluacionAgenda {
-  const qa = sesion.respuestas ?? [];
+  const qa = conCorrecciones(sesion.respuestas, corregidoDe(contacto));
 
-  const piso = pisoDeInversion(respuestaA(qa, /(invertir|inversion|te define mejor|claridad en la llamada)/));
+  const piso = pisoDeInversion(respuestaPerfil(qa, "inversion"));
   const inversion: Criterio = piso === undefined ? "sin-dato" : piso >= INVERSION_MINIMA ? "si" : "no";
 
-  const nivel = nivelDeIngles(respuestaA(qa, /ingles/)) ?? contacto?.inglesNivel ?? undefined;
+  const nivel = nivelDeIngles(respuestaPerfil(qa, "ingles")) ?? contacto?.inglesNivel ?? undefined;
   const ingles: Criterio = !nivel ? "sin-dato" : INGLES_QUE_CALIFICA.includes(nivel) ? "si" : "no";
 
-  const carrera = tieneCarrera(respuestaA(qa, /(formacion|estudio)/) ?? contacto?.formacion ?? undefined);
+  const carrera = tieneCarrera(respuestaPerfil(qa, "formacion") ?? contacto?.formacion ?? undefined);
 
   return { calificada: inversion === "si" && ingles === "si" && carrera === "si", inversion, ingles, carrera };
 }

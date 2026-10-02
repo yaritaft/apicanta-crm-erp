@@ -2,7 +2,7 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import {
-  CalendarDays, Copy, GraduationCap, Mail, MessageCircle, Pencil, Phone, Plus, ShoppingBag, X,
+  Copy, GraduationCap, Mail, MessageCircle, Pencil, Phone, Plus, ShoppingBag, X,
 } from "lucide-react";
 import {
   Avatar, Badge, Bar, Button, Chip, Empty, IconButton, Select, Tabs,
@@ -26,20 +26,23 @@ import type { VistaFicha } from "./abrir";
 import { acciones, cuotasQueCancelaLaBaja, useEstado } from "@/lib/store";
 import { useAcceso } from "@/lib/acceso";
 import { nivelEn, type MiAcceso } from "@/lib/permisos";
+import { filasDePersona, filasTabla, type FilaTabla } from "@/lib/crm-tabla";
 import { personaDe, type Persona } from "@/lib/persona";
 import { saldoVenta } from "@/lib/finanzas";
-import { fechaHora, fechaLarga, money, relativo } from "@/lib/format";
+import { fechaLarga, money, relativo } from "@/lib/format";
 import type { Alumno, Cuota, EstadoAlumno, EstadoApp, EstadoVenta, IngresoComunidad, Venta } from "@/lib/types";
 import { INGRESOS_COMUNIDAD } from "@/lib/angelo";
 
 /* ==================================================================
    La ficha de una persona. La misma, se abra desde donde se abra.
 
-   Arriba a la derecha, dos pestañas: VENTAS (cómo llegó, sus llamadas,
-   lo que compró y cómo lo va pagando) y SERVICIO (lo que se le está
-   dando por cada compra). A la izquierda, siempre, cómo contactarla y
-   su perfil. El chat del equipo está en las dos: la conversación es
-   sobre la persona, no sobre un área.
+   Arriba a la derecha, las vistas: LLAMADAS (cada llamada y cómo
+   terminó), VENTAS (lo que compró y cómo lo va pagando) y SERVICIO (lo
+   que se le está dando por cada compra). A la izquierda, siempre, la
+   persona: cómo contactarla, su oportunidad y de dónde vino. Quién es
+   va arriba de sus llamadas. Cada dato está en un solo lugar (02/10: «no quiero que sobre data ni
+   cosas duplicadas»). El chat del equipo está en ventas y servicio: la
+   conversación es sobre la persona, no sobre un área.
 
    Es como la ficha de Blue OS: una ventana grande en escritorio y
    pantalla completa en el celular.
@@ -54,6 +57,9 @@ export function FichaPersona({ id, vista, ventaResaltada, onCerrar, onVista }: {
 }) {
   const e = useEstado();
   const p = useMemo(() => personaDe(e, id), [e, id]);
+  /* Sus llamadas como filas del CRM, de la más nueva a la más vieja: de ahí
+     salen su perfil (a la izquierda) y la vista Llamadas. */
+  const filas = useMemo(() => (p && p.sesiones.length ? filasDePersona(filasTabla(e), p.sesiones.map((s) => s.id)) : []), [e, p]);
   /* Cada tipo de cuenta ve las vistas de sus áreas: el setter, sin ventas;
      el closer, sin el servicio. */
   const { acceso } = useAcceso();
@@ -87,12 +93,12 @@ export function FichaPersona({ id, vista, ventaResaltada, onCerrar, onVista }: {
           <>
             <Cabecera e={e} p={p} vista={vistaReal} vistas={vistas} onVista={onVista} onCerrar={onCerrar} />
             <div className="ficha__cuerpo">
-              <Lateral e={e} p={p} />
+              <Lateral e={e} p={p} filas={filas} />
               <div className="ficha__principal">
                 {vistas.length === 0
                   ? null
                   : vistaReal === "llamadas"
-                    ? <VistaLlamadas e={e} p={p} />
+                    ? <VistaLlamadas p={p} filas={filas} />
                     : vistaReal === "ventas"
                       ? <VistaVentas e={e} p={p} ventaResaltada={ventaResaltada} />
                       : <VistaServicio e={e} p={p} />}
@@ -119,8 +125,8 @@ function vistasDe(a: MiAcceso | null): VistaFicha[] {
 function Cabecera({ e, p, vista, vistas, onVista, onCerrar }: {
   e: EstadoApp; p: Persona; vista: VistaFicha; vistas: VistaFicha[]; onVista: (v: VistaFicha) => void; onCerrar: () => void;
 }) {
-  const lead = p.leads[0];
-  const etapa = lead ? e.etapas.find((x) => x.id === lead.etapaId) : undefined;
+  /* La etapa y el país no van acá: están una vez, a la izquierda. Sin
+     oportunidad ni compras, la etiqueta dice al menos que es un contacto. */
   const alumno = p.alumnos[0];
   return (
     <header className="ficha__head">
@@ -129,10 +135,8 @@ function Cabecera({ e, p, vista, vistas, onVista, onCerrar }: {
         <div className="t-label">Ficha del contacto</div>
         <h2 className="ficha__nombre truncate">{p.nombre}</h2>
         <div className="row-wrap" style={{ gap: 6, marginTop: 4 }}>
-          {etapa && <Badge variante={etapa.variante}>{etapa.nombre}</Badge>}
           {p.ventas.length > 0 && <Badge variante="success"><ShoppingBag size={12} />{p.ventas.length === 1 ? "Cliente" : `Cliente · ${p.ventas.length} compras`}</Badge>}
           {alumno && <Badge variante="brand"><GraduationCap size={12} />Alumno {alumno.estado}</Badge>}
-          {p.pais && <Badge variante="neutral">{p.pais}</Badge>}
         </div>
       </div>
       <div className="ficha__acciones">
@@ -149,9 +153,13 @@ function Cabecera({ e, p, vista, vistas, onVista, onCerrar }: {
   );
 }
 
-/* ---------- Columna izquierda: cómo contactarla y su perfil ---------- */
+/* ---------- Columna izquierda: la persona ----------
+   Cómo contactarla, su oportunidad y de dónde vino, en todas las vistas.
+   Cada dato una sola vez: quién es (lo que contestó al agendar) va
+   arriba de sus llamadas (PerfilPersona), y a la derecha queda lo de cada
+   vista: sus llamadas, sus ventas, su servicio. */
 
-function Lateral({ e, p }: { e: EstadoApp; p: Persona }) {
+function Lateral({ e, p, filas }: { e: EstadoApp; p: Persona; filas: FilaTabla[] }) {
   const toast = useToast();
   const c = p.contacto;
   const lead = p.leads[0];
@@ -164,13 +172,14 @@ function Lateral({ e, p }: { e: EstadoApp; p: Persona }) {
     );
   };
 
-  const perfil: [string, React.ReactNode][] = [
-    ["Inglés", c?.inglesNivel ?? lead?.inglesNivel],
-    ["Años programando", c?.aniosExperiencia ?? lead?.aniosExperiencia],
-    ["Lenguajes", c?.tecnologias],
-    ["Formación", c?.formacion],
-    ["Gana por mes (USD)", c?.sueldoUsd],
-  ].filter(([, v]) => v !== undefined && v !== null && v !== "") as [string, React.ReactNode][];
+  /* De dónde vino: por qué vía agendó cada vez y con qué anuncio. */
+  const vias = [...new Set(filas.map((f) => f.via).filter(Boolean))];
+  const ad = filas.map((f) => f.ad).find(Boolean) ?? "";
+  const campania = filas.map((f) => f.campania).find(Boolean) ?? lead?.campania ?? "";
+  const webinar = lead?.webinarId ? e.webinars.find((w) => w.id === lead.webinarId)?.titulo : undefined;
+  /* La fuente del lead, si dice algo que las vías no dicen. */
+  const fuente = lead?.fuente && !vias.some((v) => v.toLowerCase().includes(lead.fuente.toLowerCase())) ? lead.fuente : "";
+  const entro = lead?.creadoEn ?? c?.creadoEn;
 
   return (
     <aside className="ficha__lado">
@@ -193,47 +202,26 @@ function Lateral({ e, p }: { e: EstadoApp; p: Persona }) {
           />
           <dl className="dl dl--compacta">
             <dt>Valor</dt><dd className="t-num">{money(lead.monto, lead.moneda)}</dd>
-            <dt>Fuente</dt><dd>{lead.fuente || "—"}</dd>
-            {lead.campania && <><dt>Campaña</dt><dd className="truncate">{lead.campania}</dd></>}
             <dt>Responsable</dt><dd>{lead.responsable || "—"}</dd>
-            {lead.webinarId && <><dt>Webinar</dt><dd className="truncate">{e.webinars.find((w) => w.id === lead.webinarId)?.titulo ?? "—"}</dd></>}
-            <dt>Entró</dt><dd>{fechaLarga(lead.creadoEn)}</dd>
             <DatosExtra campos={e.campos} entidad="lead" valores={lead.extra} />
           </dl>
           <a className="link t-sm" href={`/leads?editar=${lead.id}`}><Pencil size={13} /> Editar los datos</a>
         </section>
       )}
 
-      {perfil.length > 0 && (
+      {(vias.length > 0 || ad || campania || webinar || fuente || entro) && (
         <section>
-          <div className="t-label" style={{ marginBottom: 8 }}>Perfil</div>
+          <div className="t-label" style={{ marginBottom: 8 }}>De dónde vino</div>
           <dl className="dl dl--compacta">
-            {perfil.map(([k, v]) => (<React.Fragment key={k}><dt>{k}</dt><dd>{String(v)}</dd></React.Fragment>))}
+            {vias.length > 0 && <><dt>Vía</dt><dd>{vias.join(" · ")}</dd></>}
+            {fuente && <><dt>Fuente</dt><dd>{fuente}</dd></>}
+            {ad && <><dt>Ad</dt><dd className="truncate" title={ad}>{ad}</dd></>}
+            {campania && <><dt>Campaña</dt><dd className="truncate" title={campania}>{campania}</dd></>}
+            {webinar && <><dt>Webinar</dt><dd className="truncate" title={webinar}>{webinar}</dd></>}
+            {entro && <><dt>Entró</dt><dd>{fechaLarga(entro)}</dd></>}
           </dl>
         </section>
       )}
-
-      <section className="stack-2">
-        <div className="t-label">Llamadas ({p.sesiones.length})</div>
-        {p.sesiones.length === 0 ? (
-          <p className="t-sm t-subtle">Todavía no agendó. Cuando lo haga por Calendly, aparece acá.</p>
-        ) : (
-          p.sesiones.slice(0, 6).map((s) => (
-            <a key={s.id} className="llamada-fila" href={`/agenda?ver=${s.id}`}>
-              <CalendarDays size={14} className="t-subtle" />
-              <span style={{ minWidth: 0, flex: 1 }}>
-                <span className="truncate t-sm t-strong" style={{ display: "block" }}>{fechaHora(s.inicia)}</span>
-                <span className="truncate t-sm t-subtle" style={{ display: "block" }}>
-                  {s.tipo || s.titulo}{s.estadoLlamada ? ` · ${s.estadoLlamada}` : ""}
-                </span>
-              </span>
-              <Badge variante={s.estado === "hecha" ? "success" : s.estado === "no-show" || s.estado === "cancelada" ? "danger" : "info"}>
-                {s.estado === "hecha" ? "Hecha" : s.estado === "no-show" ? "No vino" : s.estado === "cancelada" ? "Cancelada" : "Agendada"}
-              </Badge>
-            </a>
-          ))
-        )}
-      </section>
 
       {(c?.notas || lead?.notas) && (
         <section>

@@ -25,6 +25,7 @@ import { idAd, idAdset, idCampaign } from "./meta";
 import { entraEnTabla, esCompra, opcionesDe, tablasDe, ventaEsDeLlamada } from "./crm";
 import { etapaTrasEventos, eventosDeLlamada, leadDeSesion, type EventoEtapa } from "./etapas-auto";
 import { personaDe } from "./persona";
+import { extraConCorreccion, tituloPerfil, type CampoPerfil } from "./perfil";
 import { puedeEditar, TIPOS_POR_DEFECTO, type MiAcceso } from "./permisos";
 
 const CLAVE = "apicanta.erp.v1";
@@ -653,10 +654,11 @@ function registrar(
   return { lista: [nuevo, ...e.actividad].slice(0, 400), nuevo };
 }
 
-/* Lo que el CRM carga sobre una agenda. `estado` sólo lo manda deshacer:
-   devuelve la llamada a como estaba. */
-type CambiosLlamada = Partial<Pick<Sesion, "preCall" | "estadoPreCall" | "estadoLlamada" | "notas" | "grabacion" | "estado"
-  | "resultado" | "objecion" | "hizoOferta" | "cierreEstimado" | "eodEn" | "eodPor">>;
+/* Lo que el CRM carga sobre una agenda. `estado` lo mandan deshacer
+   (devuelve la llamada a como estaba) y la tabla del CRM, que corrige el
+   estado y el closer en la celda. */
+export type CambiosLlamada = Partial<Pick<Sesion, "preCall" | "estadoPreCall" | "estadoLlamada" | "notas" | "grabacion" | "estado"
+  | "resultado" | "objecion" | "hizoOferta" | "cierreEstimado" | "eodEn" | "eodPor" | "anfitrion">>;
 type PedidoLlamada = { id: ID; cambios: CambiosLlamada; detalle: string };
 export type CambioEtapa = { antes: ID; despues: ID };
 
@@ -1571,6 +1573,50 @@ export const acciones = {
     aLaBase("ventas", ventas);
     aLaBase("alumnos", alumnos);
     empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
+  },
+
+  /* ---------- Lo que se sabe de la persona, corregido a mano ----------
+     El país y lo que contestó al agendar (edad, tecnologías, inglés,
+     experiencia, formación, cuánto gana y cuánto puede invertir) se
+     corrigen en la celda del CRM o en la ficha. Queda en la persona —su
+     contacto o, si no tiene, su lead— y vale para todas sus llamadas
+     (lib/perfil.ts). Vacío saca la corrección: vuelve a lo que contestó. */
+  corregirPerfil(idPersona: ID, campo: CampoPerfil | "pais", valor: string, detalle?: string): boolean {
+    const e = snapshot();
+    const p = personaDe(e, idPersona);
+    if (!p) return false;
+    const limpio = valor.trim();
+    const contacto = p.contacto;
+    const lead = contacto ? undefined : p.leads[0];
+    if (!contacto && !lead) return false;
+    const que = campo === "pais" ? "País" : tituloPerfil(campo);
+    const { lista, nuevo } = registrar(e, "contacto", p.clave, p.nombre, "actualizo",
+      detalle ?? (limpio ? `${p.nombre}: ${que} → ${limpio}.` : `${p.nombre}: se vació ${que}.`));
+
+    if (campo === "pais") {
+      /* El país es una columna de la persona y de sus oportunidades. */
+      const leads = p.leads.filter((l) => (l.pais ?? "") !== limpio);
+      const cuando = ahora();
+      guardar({
+        ...e,
+        contactos: contacto ? e.contactos.map((c) => (c.id === contacto.id ? { ...c, pais: limpio || undefined } : c)) : e.contactos,
+        leads: leads.length ? e.leads.map((l) => (leads.some((x) => x.id === l.id) ? { ...l, pais: limpio || undefined, actualizadoEn: cuando } : l)) : e.leads,
+        actividad: lista,
+      });
+      if (contacto) empujarUpdate("contactos", [contacto.id], { pais: limpio || null });
+      if (leads.length && puedo("leads")) empujarUpdate("leads", leads.map((l) => l.id), { pais: limpio || null, actualizadoEn: cuando });
+    } else if (contacto) {
+      const extra = extraConCorreccion(contacto.extra, campo, limpio);
+      guardar({ ...e, contactos: e.contactos.map((c) => (c.id === contacto.id ? { ...c, extra } : c)), actividad: lista });
+      empujarUpdate("contactos", [contacto.id], { extra });
+    } else if (lead) {
+      const extra = extraConCorreccion(lead.extra, campo, limpio);
+      const cuando = ahora();
+      guardar({ ...e, leads: e.leads.map((l) => (l.id === lead.id ? { ...l, extra, actualizadoEn: cuando } : l)), actividad: lista });
+      empujarUpdate("leads", [lead.id], { extra, actualizadoEn: cuando });
+    }
+    empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
+    return true;
   },
 
   /* ---------- Chat del equipo, en la ficha de cada persona ---------- */

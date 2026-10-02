@@ -105,6 +105,15 @@ function deCalendly(e: EstadoApp) {
   return c;
 }
 
+/* Los contactos por id, una vez por lista: la estrella de cada agenda mira
+   lo que el equipo le corrigió a la persona (lib/perfil.ts). */
+const PERSONAS = new WeakMap<EstadoApp["contactos"], Map<string, EstadoApp["contactos"][number]>>();
+function personasDe(e: EstadoApp) {
+  let m = PERSONAS.get(e.contactos);
+  if (!m) { m = new Map(e.contactos.map((x) => [x.id, x] as const)); PERSONAS.set(e.contactos, m); }
+  return m;
+}
+
 /** Las agendas del lanzamiento de un webinar (el webinar, su clase cero y
  *  su Q&A), como las cuenta la ficha. Sin el vivo de YouTube, las que no
  *  dicen su link se ubican por la hora con la duración de la ficha. */
@@ -113,7 +122,8 @@ export function agendasDelLanzamiento(e: EstadoApp, w: Webinar): AgendaDelWebina
   let r = c.porWebinar.get(w.id);
   if (!r) {
     const candidatas = [...(c.porDia.get(diaUtm(w.fecha)) ?? []), ...(c.porDia.get(`dm:${claveDeFecha(w.fecha)}`) ?? [])];
-    r = resumirAgendas(candidatas, w, {}, c.dias).agendas.filter((a) => !a.fuera);
+    const personas = personasDe(e);
+    r = resumirAgendas(candidatas, w, {}, c.dias, (s) => personas.get(s.contactoId ?? "")).agendas.filter((a) => !a.fuera);
     c.porWebinar.set(w.id, r);
   }
   return r;

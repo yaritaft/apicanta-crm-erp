@@ -124,10 +124,10 @@ export function Asistente({
       <div className="asistente__head">
         <span className="asistente__paso-n">{actual + 1} / {pasos.length}</span>
         <span className="asistente__ruta">
-          {pasos.map((p, k) => (
-            <React.Fragment key={p.id}>
-              {k > 0 && <span className="asistente__ruta-sep">·</span>}
-              <span className="asistente__ruta-item" data-activo={k === actual}>{p.titulo}</span>
+          {rutaVisible(pasos.length, actual).map((k, n, xs) => (
+            <React.Fragment key={pasos[k].id}>
+              {n > 0 && <span className="asistente__ruta-sep">{k - xs[n - 1] > 1 ? "…" : "·"}</span>}
+              <span className="asistente__ruta-item" data-activo={k === actual}>{pasos[k].titulo}</span>
             </React.Fragment>
           ))}
         </span>
@@ -162,6 +162,16 @@ export function Asistente({
 }
 
 /* La pregunta grande de cada paso, con su aclaración. */
+/* Qué pasos se nombran arriba. Con pocos, todos; con muchos (el cierre
+   del día de 30 llamadas) no entran y la fila se cortaba a la mitad: el
+   primero, el último y el actual con sus vecinos, con «…» en los saltos. */
+const PASOS_A_LA_VISTA = 7;
+export function rutaVisible(total: number, actual: number): number[] {
+  if (total <= PASOS_A_LA_VISTA) return Array.from({ length: total }, (_, k) => k);
+  const cerca = [actual - 1, actual, actual + 1].filter((k) => k >= 0 && k < total);
+  return [...new Set([0, ...cerca, total - 1])].sort((a, b) => a - b);
+}
+
 export function Pregunta({ texto, sub }: { texto: string; sub?: string }) {
   return (
     <div>

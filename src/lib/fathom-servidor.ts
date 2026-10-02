@@ -102,7 +102,47 @@ export async function guardarGrabacion(db: SupabaseClient, payload: unknown): Pr
 
 /* ---------- la API ---------- */
 
+/** Guarda una reunión atada a mano a esa llamada (el cierre del día:
+    «Buscar en Fathom»). No se desata sola, y su link queda en la llamada. */
+export async function atarGrabacion(db: SupabaseClient, payload: unknown, sesionId: string): Promise<{ ok: boolean; shareUrl: string | null; error?: string }> {
+  const g = leerReunion(payload);
+  if (!g) return { ok: false, shareUrl: null, error: "La reunión no trae recording_id." };
+  const previa = await db.from("grabaciones").select("creadoEn").eq("id", g.id).maybeSingle();
+  const ahora = new Date().toISOString();
+  const creadoEn = (previa.data as { creadoEn?: string } | null)?.creadoEn ?? g.creadoEn ?? ahora;
+  const r = await db.from("grabaciones").upsert({ ...g, sesionId, emparejadaPor: "a-mano", creadoEn, actualizadoEn: ahora }, { onConflict: "id" });
+  if (r.error) return { ok: false, shareUrl: null, error: r.error.message };
+  if (g.shareUrl) await db.from("sesiones").update({ grabacion: g.shareUrl }).eq("id", sesionId);
+  return { ok: true, shareUrl: g.shareUrl ?? null };
+}
+
 export interface PaginaReuniones { items: unknown[]; siguiente: string | null }
+
+/** Las reuniones que grabó una persona (por su correo) entre dos momentos.
+    Sin el contenido alcanza para elegir; con él (una sola, la elegida) es
+    un pedido pesado. Hasta 4 páginas: es un día y medio de un closer. */
+export async function reunionesDe(grabadoPor: string, desde: string, hasta: string, conContenido = false): Promise<unknown[]> {
+  const items: unknown[] = [];
+  let cursor: string | null = null;
+  for (let i = 0; i < 4; i++) {
+    const q = new URLSearchParams({ created_after: desde, created_before: hasta });
+    q.append("recorded_by[]", grabadoPor);
+    if (conContenido) { q.set("include_summary", "true"); q.set("include_transcript", "true"); q.set("include_action_items", "true"); }
+    if (cursor) q.set("cursor", cursor);
+    const r = await fathom(`/meetings?${q}`);
+    if (r.status === 429) throw new EsperarAFathom(segundosDeEspera(r.headers.get("retry-after"), Date.now()));
+    if (!r.ok) {
+      const error = await errorDe(r);
+      console.error("[fathom] /meetings (de un closer):", error);
+      throw new Error(error);
+    }
+    const j = (await r.json()) as { items?: unknown[]; next_cursor?: string | null };
+    items.push(...(j.items ?? []));
+    cursor = j.next_cursor ?? null;
+    if (!cursor) break;
+  }
+  return items;
+}
 
 /** Fathom contestó 429: pide esperar `segundos` antes de volver a pedir.
     Las páginas con transcripción son «pedidos pesados»: 30 por minuto, y

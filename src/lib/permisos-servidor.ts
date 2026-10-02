@@ -1,4 +1,4 @@
-import { createClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
 import { hayEquipoConfigurado } from "./equipo-servidor";
 import type { AreaId } from "./types";
@@ -36,6 +36,17 @@ export async function nivelDelPedido(peticion: Request, areas: AreaId[]): Promis
     if (mayor === 2) break;
   }
   return mayor;
+}
+
+/** La base con la sesión de quien pide: lo que lea pasa por sus políticas
+    (el closer, sólo lo suyo). Para las rutas que tocan UNA cosa a pedido de
+    alguien: antes de hacerlo con la clave de servicio, se fijan si la ve. */
+export function baseDelPedido(peticion: Request): SupabaseClient | null {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const anonima = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const jwt = peticion.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
+  if (!url || !anonima || !jwt) return null;
+  return createClient(url, anonima, { auth: { persistSession: false }, global: { headers: { Authorization: `Bearer ${jwt}` } } });
 }
 
 /** null si puede; si no, la respuesta que corresponde (401 o 403). */

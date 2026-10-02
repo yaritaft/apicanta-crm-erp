@@ -1,12 +1,13 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useRef, useState } from "react";
 import { Check, ShoppingBag, Star } from "lucide-react";
-import { Asistente, Opcion, Pregunta, type PasoAsistente } from "@/components/ui/Asistente";
-import { Badge, Button, Chip, Input, Select, Textarea } from "@/components/ui/ui";
+import { Asistente, Pregunta, type PasoAsistente } from "@/components/ui/Asistente";
+import { Badge, Button, Input, Select, Textarea } from "@/components/ui/ui";
 import { useToast } from "@/components/ui/Toast";
 import { AsistenteVenta } from "@/components/ventas/AsistenteVenta";
 import { acciones, useEstado } from "@/lib/store";
+import { useAcceso } from "@/lib/acceso";
 import { useUsuarioActual } from "@/lib/usuario";
 import { num } from "@/lib/format";
 import { diaDeNegocio } from "@/lib/dia-negocio";
@@ -14,21 +15,22 @@ import { miembroDeCloser } from "@/lib/crm";
 import { leadDeSesion } from "@/lib/etapas-auto";
 import { filasTabla, type FilaTabla } from "@/lib/crm-tabla";
 import {
-  atajosDeCierre, cambiosDelEod, closersConLlamadas, esDelCloser, faltaEnRespuesta, llamadasDelDia, objecionesDe,
-  respuestaDe, TEXTO_RESULTADO, type RespuestaEod,
+  atajosDeCierre, cambiosDelEod, closersConLlamadas, esDelCloser, estadoPorResultado, faltaEnRespuesta, llamadasDelDia, objecionesDe,
+  respuestaDe, TEXTO_ESTADO, TEXTO_RESULTADO, type RespuestaEod,
 } from "@/lib/eod";
-import type { ResultadoLlamada, Sesion } from "@/lib/types";
+import type { EstadoSesion, ResultadoLlamada, Sesion } from "@/lib/types";
 import { VARIANTE_RESULTADO } from "./resultado";
 import { textoFecha } from "./FiltroColumna";
+import { GrabacionDeLlamada } from "./GrabacionDeLlamada";
 
 /* ==================================================================
    El cierre del día (EOD), como un Typeform: una pantalla por llamada.
 
    Arriba de cada una, lo que ya se sabe de la persona (de dónde vino, el
    ad, el país, qué contestó): no se vuelve a cargar. Abajo, cómo terminó,
-   con un clic, y si no cerró, por qué, si hizo la oferta y para cuándo
-   estima cerrarlo. Si compró, se carga la venta en el asistente de
-   siempre, con la persona y el closer ya elegidos.
+   y si no cerró, por qué, si hizo la oferta y para cuándo estima
+   cerrarlo: cada cosa en su desplegable. Si compró, se carga la venta en
+   el asistente de siempre, con la persona y el closer ya elegidos.
 
    Cada llamada se guarda al pasar a la siguiente: si se cierra a la
    mitad, lo cargado queda. Suma las llamadas de días anteriores que
@@ -38,9 +40,16 @@ import { textoFecha } from "./FiltroColumna";
 const HORA = new Intl.DateTimeFormat("es-AR", { timeZone: "America/Argentina/Buenos_Aires", hour: "2-digit", minute: "2-digit", hour12: false });
 const DIAS_PENDIENTES = 14;
 
+/* El nombre de pila, escrito como nombre: en Calendly cada uno lo carga
+   como quiere («EDISON», «sebastian»). */
+const nombreDePila = (nombre: string) => {
+  const n = nombre.trim().split(/\s+/)[0] ?? "";
+  return n ? n.charAt(0).toLocaleUpperCase("es") + n.slice(1).toLocaleLowerCase("es") : nombre;
+};
+
 const OPCIONES_RESULTADO: { valor: ResultadoLlamada; nombre: string; sub: string }[] = [
   { valor: "compro", nombre: "Compró", sub: "Se carga la venta y pasa a cliente" },
-  { valor: "no-compro", nombre: "No compró", sub: "Contás por qué, en dos clics" },
+  { valor: "no-compro", nombre: "No compró", sub: "Contás por qué, si hiciste la oferta y para cuándo lo ves" },
   { valor: "no-vino", nombre: "No se presentó", sub: "Queda como que no vino" },
   { valor: "reprogramo", nombre: "Se reprogramó", sub: "La agenda nueva entra sola de Calendly" },
 ];
@@ -49,6 +58,7 @@ export function Eod({ onCerrar, soloSesionId }: { onCerrar: () => void; soloSesi
   const e = useEstado();
   const toast = useToast();
   const yo = useUsuarioActual();
+  const { esDueno } = useAcceso();
   const hoy = diaDeNegocio(new Date().toISOString());
   const closers = useMemo(() => closersConLlamadas(e), [e]);
   const soyCloser = yo.miembro && closers.includes(yo.miembro.nombre) ? yo.miembro.nombre : "";
@@ -89,7 +99,7 @@ export function Eod({ onCerrar, soloSesionId }: { onCerrar: () => void; soloSesi
   const conInicio = !soloSesionId;
   const pasos: PasoAsistente[] = [
     ...(conInicio ? [{ id: "inicio", titulo: "Tu día" }] : []),
-    ...llamadas.map((s) => ({ id: s.id, titulo: (filas.get(s.id)?.nombre || s.invitado || "Llamada").split(" ")[0] })),
+    ...llamadas.map((s) => ({ id: s.id, titulo: nombreDePila(filas.get(s.id)?.nombre || s.invitado || "Llamada") })),
     { id: "fin", titulo: "Listo" },
   ];
   const actual = pasos[paso];
@@ -100,6 +110,8 @@ export function Eod({ onCerrar, soloSesionId }: { onCerrar: () => void; soloSesi
     setResp((p) => {
       const previa = p[s.id] ?? respuestaDe(s);
       const nueva = { ...(previa ?? {}), ...cambios } as RespuestaEod;
+      /* El resultado dice cómo quedó la llamada (hecha, no vino); después se puede cambiar a mano. */
+      if (cambios.resultado && cambios.estado === undefined) nueva.estado = estadoPorResultado(cambios.resultado, s.estado);
       return { ...p, [s.id]: nueva };
     });
     setGuardadas((g) => { const n = new Set(g); n.delete(s.id); return n; });
@@ -111,7 +123,9 @@ export function Eod({ onCerrar, soloSesionId }: { onCerrar: () => void; soloSesi
     const s = ultimaDe(id);
     if (!r || !s || guardadas.has(id) || faltaEnRespuesta(r)) return false;
     acciones.editarLlamada(id, cambiosDelEod(r, s, e.ajustes, yo.nombre, new Date().toISOString()),
-      `Cierre del día${closer ? ` de ${closer}` : ""}: ${TEXTO_RESULTADO[r.resultado]}${r.objecion ? ` (${r.objecion})` : ""}.`);
+      r.resultado
+        ? `Cierre del día${closer ? ` de ${closer}` : ""}: ${TEXTO_RESULTADO[r.resultado]}${r.objecion ? ` (${r.objecion})` : ""}.`
+        : `Cierre del día${closer ? ` de ${closer}` : ""}: la llamada quedó como ${TEXTO_ESTADO[r.estado ?? s.estado].toLowerCase()}.`);
     setGuardadas((g) => new Set(g).add(id));
     return true;
   }
@@ -175,6 +189,7 @@ export function Eod({ onCerrar, soloSesionId }: { onCerrar: () => void; soloSesi
           key={sesion.id} s={ultimaDe(sesion.id) ?? sesion} f={filas.get(sesion.id)} hoy={hoy}
           r={respuesta(sesion)} objeciones={objecionesDe(e.ajustes)}
           onResponder={(c) => responder(sesion, c)}
+          buscaEnFathom={esDueno || Boolean(yo.miembro && esDelCloser(sesion, yo.miembro.nombre, e.equipo))}
           onVender={() => setVendiendo(sesion.id)}
           onSaltear={() => setPaso(paso + 1)}
         />
@@ -194,6 +209,8 @@ function Inicio({ closers, closer, fijo, onCloser, dia, hoy, onDia, delDia, pend
   delDia: number; pendientes: number; conPendientes: boolean; onConPendientes: (v: boolean) => void;
 }) {
   const ayer = new Date(Date.parse(`${hoy}T12:00:00Z`) - 86_400_000).toISOString().slice(0, 10);
+  /* «Otro día» deja el desplegable ahí aunque se elija justo hoy o ayer. */
+  const [otroDia, setOtroDia] = useState(dia !== hoy && dia !== ayer);
   return (
     <div className="stack-5">
       <Pregunta texto={fijo ? `Cerrá tu día, ${closer.split(" ")[0]}` : "¿De quién es el día?"}
@@ -204,15 +221,29 @@ function Inicio({ closers, closer, fijo, onCloser, dia, hoy, onDia, delDia, pend
             opciones={closers.map((c) => ({ valor: c, texto: c }))} />
         </div>
       )}
-      <div className="stack-2">
-        <span className="t-label">¿Qué día?</span>
-        <div className="row-wrap" style={{ gap: 8 }}>
-          <Chip activo={dia === hoy} onClick={() => onDia(hoy)}>Hoy</Chip>
-          <Chip activo={dia === ayer} onClick={() => onDia(ayer)}>Ayer</Chip>
-          <div style={{ width: 170 }}>
+      <div className="crm-eod__campos" style={{ maxWidth: 420 }}>
+        <div className="crm-eod__campo">
+          <span className="t-label">¿Qué día?</span>
+          <Select
+            aria-label="Qué día" value={otroDia ? "otro" : dia === ayer ? "ayer" : "hoy"}
+            opciones={[
+              { valor: "hoy", texto: `Hoy (${textoFecha(hoy)})` },
+              { valor: "ayer", texto: `Ayer (${textoFecha(ayer)})` },
+              { valor: "otro", texto: "Otro día…" },
+            ]}
+            onChange={(ev) => {
+              const v = ev.target.value;
+              setOtroDia(v === "otro");
+              if (v !== "otro") onDia(v === "ayer" ? ayer : hoy);
+            }}
+          />
+        </div>
+        {otroDia && (
+          <div className="crm-eod__campo">
+            <span className="t-label">¿Cuál?</span>
             <Input type="date" value={dia} max={hoy} aria-label="Otro día" onChange={(ev) => ev.target.value && onDia(ev.target.value)} />
           </div>
-        </div>
+        )}
       </div>
       {closer && (
         <div className="crm-eod__cuenta">
@@ -234,21 +265,35 @@ function Inicio({ closers, closer, fijo, onCloser, dia, hoy, onDia, delDia, pend
 
 /* ---------- Una llamada ---------- */
 
-function PasoLlamada({ s, f, hoy, r, objeciones, onResponder, onVender, onSaltear }: {
+function PasoLlamada({ s, f, hoy, r, objeciones, buscaEnFathom, onResponder, onVender, onSaltear }: {
   s: Sesion; f?: FilaTabla; hoy: string; r?: RespuestaEod; objeciones: string[];
+  /* Quien atendió la llamada o un dueño: puede buscar su grabación en Fathom. */
+  buscaEnFathom: boolean;
   onResponder: (c: Partial<RespuestaEod>) => void; onVender: () => void; onSaltear: () => void;
 }) {
   const nombre = f?.nombre || s.invitado || "la persona";
   const dia = diaDeNegocio(s.inicia);
-  const atajos = atajosDeCierre(hoy);
+  /* Los atajos del cierre (esta semana, este mes, más adelante), sin
+     repetir el día: un domingo que es fin de mes es una sola opción. */
+  const atajos = atajosDeCierre(hoy).filter((a, i, xs) => xs.findIndex((b) => b.valor === a.valor) === i);
+  const cajaCierre = useRef<HTMLDivElement>(null);
+  /* «Otra fecha» deja el desplegable ahí hasta que se elige el día. */
+  const [otraFecha, setOtraFecha] = useState(() => typeof r?.cierreEstimado === "string" && !atajos.some((a) => a.valor === r.cierreEstimado));
+  const cierre = r?.cierreEstimado;
+  const valorCierre = cierre === null ? "nunca" : otraFecha ? "otra" : cierre ?? "";
+  const elegido = OPCIONES_RESULTADO.find((o) => o.valor === r?.resultado);
   const datos: [string, string][] = ([
     ["Vía", f?.via ?? ""], ["Ad", f?.ad ?? ""], ["País", f?.pais ?? ""], ["Edad", f?.edad ?? ""],
     ["Tecnologías", f?.tecnologias.join(", ") ?? ""], ["Inglés", f?.ingles ?? ""], ["Experiencia", f?.experiencia ?? ""],
     ["Gana por mes", f?.ingreso ?? ""], ["Puede invertir", f?.inversion ?? ""],
   ] as [string, string][]).filter(([, v]) => v);
 
+  /* Al elegir cómo terminó, la persona y la pregunta se corren a la
+     izquierda y lo que sigue (por qué, la oferta, el cierre, la nota)
+     aparece a la derecha: todo en una pantalla, sin bajar. */
   return (
-    <div className="stack-5">
+    <div className={`crm-eod__paso${r ? " crm-eod__paso--abierto" : ""}`}>
+      <div className="crm-eod__izq stack-5">
       <div className="crm-eod__ficha">
         <div className="row-wrap" style={{ gap: 8, alignItems: "center" }}>
           <span className="crm-eod__nombre">{nombre}</span>
@@ -264,14 +309,37 @@ function PasoLlamada({ s, f, hoy, r, objeciones, onResponder, onVender, onSaltea
         )}
       </div>
 
-      <Pregunta texto={`¿Cómo terminó la llamada con ${nombre.split(" ")[0]}?`} />
-      <div className="opciones">
-        {OPCIONES_RESULTADO.map((o, k) => (
-          <Opcion key={o.valor} tecla={String(k + 1)} nombre={o.nombre} sub={o.sub} activo={r?.resultado === o.valor}
-            onClick={() => onResponder(o.valor === "no-compro" ? { resultado: o.valor } : { resultado: o.valor, objecion: undefined, hizoOferta: undefined, cierreEstimado: undefined })} />
-        ))}
+      <Pregunta texto={`¿Cómo terminó la llamada con ${nombreDePila(nombre)}?`} />
+      <div className="crm-eod__campos">
+        <div className="crm-eod__campo">
+          <span className="t-label">Resultado</span>
+          <Select
+            aria-label="Cómo terminó la llamada" value={r?.resultado ?? ""} placeholder="Elegí cómo terminó" autoFocus={!r}
+            opciones={OPCIONES_RESULTADO.map((o) => ({ valor: o.valor, texto: o.nombre }))}
+            onChange={(ev) => {
+              const v = ev.target.value as ResultadoLlamada | "";
+              if (!v) return;
+              onResponder(v === "no-compro" ? { resultado: v } : { resultado: v, objecion: undefined, hizoOferta: undefined, cierreEstimado: undefined });
+            }}
+          />
+          {elegido && <span className="t-sm t-subtle">{elegido.sub}.</span>}
+        </div>
+        {/* Cómo quedó la llamada: lo pone el resultado y se puede cambiar. */}
+        <div className="crm-eod__campo">
+          <span className="t-label">Estado de la llamada</span>
+          <Select
+            aria-label="Estado de la llamada" value={r?.estado ?? s.estado}
+            opciones={(Object.keys(TEXTO_ESTADO) as EstadoSesion[]).map((k) => ({ valor: k, texto: TEXTO_ESTADO[k] }))}
+            onChange={(ev) => onResponder({ estado: ev.target.value as EstadoSesion })}
+          />
+        </div>
       </div>
 
+      <button type="button" className="link t-sm" style={{ alignSelf: "flex-start" }} onClick={onSaltear}>Saltear esta llamada por ahora</button>
+      </div>
+
+      <div className="crm-eod__der" aria-hidden={!r}>
+      <div className="crm-eod__der-caja stack-4">
       {r?.resultado === "compro" && (
         <div className="crm-eod__bloque">
           {f?.venta ? (
@@ -279,35 +347,62 @@ function PasoLlamada({ s, f, hoy, r, objeciones, onResponder, onVender, onSaltea
           ) : (
             <>
               <Button variante="primary" icono={<ShoppingBag size={16} />} onClick={onVender}>Cargar la venta</Button>
-              <p className="t-sm t-subtle">Se abre el asistente de venta con {nombre.split(" ")[0]} y el closer ya elegidos. Al guardarla pasa a cliente y la llamada queda con cierre. Si la carga otra persona, seguí.</p>
+              <p className="t-sm t-subtle">Se abre el asistente de venta con {nombreDePila(nombre)} y el closer ya elegidos. Al guardarla pasa a cliente y la llamada queda con cierre. Si la carga otra persona, seguí.</p>
             </>
           )}
         </div>
       )}
 
       {r?.resultado === "no-compro" && (
-        <div className="crm-eod__bloque stack-4">
-          <div className="stack-2">
-            <span className="t-label">¿Por qué no cerró?</span>
-            <div className="row-wrap" style={{ gap: 8 }}>
-              {objeciones.map((o) => <Chip key={o} activo={r.objecion === o} onClick={() => onResponder({ objecion: o })}>{o}</Chip>)}
+        <div className="crm-eod__bloque">
+          <div className="crm-eod__campos">
+            <div className="crm-eod__campo">
+              <span className="t-label">¿Por qué no cerró?</span>
+              <Select
+                aria-label="Por qué no cerró" value={r.objecion ?? ""} placeholder="Elegí la objeción"
+                /* Una objeción que ya no está en la lista de Ajustes se sigue viendo. */
+                opciones={r.objecion && !objeciones.includes(r.objecion) ? [...objeciones, r.objecion] : objeciones}
+                onChange={(ev) => onResponder({ objecion: ev.target.value || undefined })}
+              />
             </div>
-          </div>
-          <div className="stack-2">
-            <span className="t-label">¿Hiciste la oferta?</span>
-            <div className="row-wrap" style={{ gap: 8 }}>
-              <Chip activo={r.hizoOferta === true} onClick={() => onResponder({ hizoOferta: true })}>Sí</Chip>
-              <Chip activo={r.hizoOferta === false} onClick={() => onResponder({ hizoOferta: false })}>No</Chip>
+            <div className="crm-eod__campo">
+              <span className="t-label">¿Hiciste la oferta?</span>
+              <Select
+                aria-label="Hiciste la oferta" value={r.hizoOferta === undefined ? "" : r.hizoOferta ? "si" : "no"} placeholder="Elegí"
+                opciones={[{ valor: "si", texto: "Sí" }, { valor: "no", texto: "No" }]}
+                onChange={(ev) => onResponder({ hizoOferta: ev.target.value ? ev.target.value === "si" : undefined })}
+              />
             </div>
-          </div>
-          <div className="stack-2">
-            <span className="t-label">¿Para cuándo estimás cerrarlo?</span>
-            <div className="row-wrap" style={{ gap: 8, alignItems: "center" }}>
-              {atajos.map((a) => <Chip key={a.texto} activo={r.cierreEstimado === a.valor} onClick={() => onResponder({ cierreEstimado: a.valor })}>{a.texto}</Chip>)}
-              <Chip activo={r.cierreEstimado === null} onClick={() => onResponder({ cierreEstimado: null })}>No se va a cerrar</Chip>
-              <div style={{ width: 170 }}>
-                <Input type="date" value={r.cierreEstimado ?? ""} min={hoy} aria-label="Otra fecha"
-                  onChange={(ev) => onResponder({ cierreEstimado: ev.target.value || undefined })} />
+            {/* A lo ancho. Con «Otra fecha» el desplegable se acorta y, en el
+                lugar que deja, aparece el día para elegir. */}
+            <div className="crm-eod__campo crm-eod__campo--ancho">
+              <span className="t-label">¿Para cuándo estimás cerrarlo?</span>
+              <div className={`crm-eod__cierre${otraFecha ? " crm-eod__cierre--fecha" : ""}`} ref={cajaCierre}>
+              <div className="crm-eod__cierre-cuando">
+              <Select
+                aria-label="Para cuándo estimás cerrarlo" value={valorCierre} placeholder="Elegí cuándo"
+                opciones={[
+                  ...atajos.map((a) => ({ valor: a.valor, texto: `${a.texto} (${textoFecha(a.valor)})` })),
+                  { valor: "nunca", texto: "No se va a cerrar" },
+                  { valor: "otra", texto: "Otra fecha…" },
+                ]}
+                onChange={(ev) => {
+                  const v = ev.target.value;
+                  setOtraFecha(v === "otra");
+                  /* «Otra fecha» conserva la que ya había, para corregirla. */
+                  if (v === "otra") onResponder({ cierreEstimado: typeof cierre === "string" ? cierre : undefined });
+                  else onResponder({ cierreEstimado: v === "nunca" ? null : v || undefined });
+                  /* El día, a mano en cuanto aparece. */
+                  if (v === "otra") window.setTimeout(() => cajaCierre.current?.querySelector<HTMLElement>(".crm-eod__cierre-dia input, .crm-eod__cierre-dia .fecha")?.focus(), 240);
+                }}
+              />
+              </div>
+              <div className="crm-eod__cierre-dia" aria-hidden={!otraFecha}>
+                {otraFecha && (
+                  <Input type="date" value={cierre ?? ""} min={hoy} aria-label="Qué día"
+                    onChange={(ev) => onResponder({ cierreEstimado: ev.target.value || undefined })} />
+                )}
+              </div>
               </div>
             </div>
           </div>
@@ -315,22 +410,17 @@ function PasoLlamada({ s, f, hoy, r, objeciones, onResponder, onVender, onSaltea
       )}
 
       {r && (
-        <div className="stack-3" style={{ maxWidth: 620 }}>
+        <div className="stack-3">
           <div className="stack-2">
             <span className="t-label">Nota <span className="t-subtle">(opcional)</span></span>
             <Textarea rows={2} value={r.nota ?? ""} onChange={(ev) => onResponder({ nota: ev.target.value })}
               placeholder={r.resultado === "no-compro" ? "Qué dijo, qué le falta, cuándo lo volvés a llamar…" : "Algo para acordarse"} />
           </div>
-          {!s.grabacion && (
-            <div className="stack-2">
-              <span className="t-label">Link de la grabación <span className="t-subtle">(opcional)</span></span>
-              <Input value={r.grabacion ?? ""} onChange={(ev) => onResponder({ grabacion: ev.target.value })} placeholder="https://fathom.video/…" />
-            </div>
-          )}
+          <GrabacionDeLlamada s={s} valor={r.grabacion ?? s.grabacion ?? ""} buscar={buscaEnFathom} onCambiar={(link) => onResponder({ grabacion: link })} />
         </div>
       )}
-
-      <button type="button" className="link t-sm" style={{ alignSelf: "flex-start" }} onClick={onSaltear}>Saltear esta llamada por ahora</button>
+      </div>
+      </div>
     </div>
   );
 }
@@ -345,7 +435,7 @@ function Fin({ llamadas }: { llamadas: { s: Sesion; f?: FilaTabla; r?: Respuesta
         sub={cargadas === llamadas.length ? "Todo queda en el CRM y en la ficha de cada persona." : "Las que salteaste siguen como «Sin cargar»: las podés cargar después."} />
       <div className="crm-eod__resumen">
         {llamadas.map(({ s, f, r }) => {
-          const texto = r ? TEXTO_RESULTADO[r.resultado] : "Sin cargar";
+          const texto = r?.resultado ? TEXTO_RESULTADO[r.resultado] : r?.estado === "cancelada" ? "Cancelada" : "Sin cargar";
           return (
             <div key={s.id} className="crm-eod__fila">
               <span className="truncate t-strong">{f?.nombre || s.invitado}</span>

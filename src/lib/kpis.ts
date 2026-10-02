@@ -451,7 +451,8 @@ export function catalogo(e: EstadoApp): DefKpi[] {
      gente que vino de ese webinar. null si el filtro no se puede atribuir. */
   const agendadas = (c: Contexto) => c.sesiones()?.filter((s) => c.enDias(s.creadoEn)) ?? null;
   const pasadas = (c: Contexto, estado: string) => c.sesiones()?.filter((s) => s.estado === estado && c.enDias(s.inicia)).length ?? null;
-  const calificadas = (c: Contexto) => agendadas(c)?.filter((s) => evaluarAgenda(s).calificada).length ?? null;
+  const personaDe = (c: Contexto, s: Sesion) => c.ix.contactoPorId.get(s.contactoId ?? "") ?? c.ix.leadPorId.get(s.leadId ?? "");
+  const calificadas = (c: Contexto) => agendadas(c)?.filter((s) => evaluarAgenda(s, personaDe(c, s)).calificada).length ?? null;
 
   add("agenda", "Agenda (Calendly)", [
     { id: "ag_nuevas", etiqueta: "Llamadas agendadas", formato: "cantidad", mejor: "sube", href: "/agenda",

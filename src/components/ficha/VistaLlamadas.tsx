@@ -1,93 +1,50 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
-import { CalendarDays, ClipboardCheck, ExternalLink, Pencil, Star } from "lucide-react";
+import React, { useState } from "react";
+import { CalendarDays, ClipboardCheck, ExternalLink, Pencil } from "lucide-react";
 import { Badge, Button, Empty } from "@/components/ui/ui";
 import { Eod } from "@/components/crm-tabla/Eod";
 import { textoFecha } from "@/components/crm-tabla/FiltroColumna";
 import { VARIANTE_RESULTADO } from "@/components/crm-tabla/resultado";
-import { filasTabla, type FilaTabla } from "@/lib/crm-tabla";
+import type { FilaTabla } from "@/lib/crm-tabla";
 import type { Persona } from "@/lib/persona";
 import type { Grabacion } from "@/lib/fathom";
-import type { EstadoApp } from "@/lib/types";
 import { GrabacionFathom, useGrabaciones } from "./GrabacionFathom";
+import { PerfilPersona } from "./PerfilPersona";
 
 /* ==================================================================
-   La ficha, vista Llamadas: lo del CRM de esta persona, ordenado.
+   La ficha, vista Llamadas: cada llamada de esta persona con cómo
+   terminó: el resultado, la objeción, si hubo oferta, para cuándo se
+   estima el cierre, la grabación y las notas. La que ya pasó y nadie
+   cargó se carga desde acá (el mismo EOD, para esa llamada sola). Si
+   Fathom la grabó, abajo va lo suyo: el resumen, los accionables y la
+   transcripción (GrabacionFathom).
 
-   Arriba, quién es (lo que contestó al agendar) y de dónde vino. Abajo,
-   cada llamada con cómo terminó: el resultado, la objeción, si hubo
-   oferta, para cuándo se estima el cierre, la grabación y las notas. La
-   que ya pasó y nadie cargó se carga desde acá (el mismo EOD, para esa
-   llamada sola). Si Fathom la grabó, abajo va lo suyo: el resumen, los
-   accionables y la transcripción (GrabacionFathom).
+   Arriba, quién es (PerfilPersona): cada dato una sola vez en la ficha.
+   De dónde vino está a la izquierda (FichaPersona, Lateral).
    ================================================================== */
 
 const HORA = new Intl.DateTimeFormat("es-AR", { timeZone: "America/Argentina/Buenos_Aires", hour: "2-digit", minute: "2-digit", hour12: false });
 
-/* El primer valor que no esté vacío, de la llamada más nueva a la más vieja. */
-const primero = (filas: FilaTabla[], f: (x: FilaTabla) => string) => filas.map(f).find((v) => v) ?? "";
-
-export function VistaLlamadas({ e, p }: { e: EstadoApp; p: Persona }) {
+export function VistaLlamadas({ p, filas }: { p: Persona; /* Sus llamadas, de la más nueva a la más vieja. */ filas: FilaTabla[] }) {
   const [cargar, setCargar] = useState<string | null>(null);
-  const filas = useMemo(() => {
-    const ids = new Set(p.sesiones.map((s) => s.id));
-    return filasTabla(e).filter((f) => ids.has(f.id)).sort((a, b) => b.llamada.localeCompare(a.llamada));
-  }, [e, p.sesiones]);
   const { porSesion } = useGrabaciones(filas.map((f) => f.id));
 
   if (p.sesiones.length === 0) {
     return (
-      <Empty icono={<CalendarDays size={22} />} titulo="Todavía no agendó"
-        texto="Cuando agende por Calendly, acá aparece cada llamada con todo lo que contestó y cómo terminó." />
+      <div className="stack-5 ficha-ll">
+        <PerfilPersona p={p} filas={filas} />
+        <Empty icono={<CalendarDays size={22} />} titulo="Todavía no agendó"
+          texto="Cuando agende por Calendly, acá aparece cada llamada con cómo terminó." />
+      </div>
     );
   }
 
-  const perfil: [string, string][] = ([
-    ["País", primero(filas, (f) => f.pais) || p.pais || ""],
-    ["Edad", primero(filas, (f) => f.edad)],
-    ["Tecnologías", primero(filas, (f) => f.tecnologias.join(", "))],
-    ["Inglés", primero(filas, (f) => f.ingles)],
-    ["Experiencia", primero(filas, (f) => f.experiencia)],
-    ["Formación", primero(filas, (f) => f.formacion.join(", "))],
-    ["Gana por mes", primero(filas, (f) => f.ingreso)],
-    ["Puede invertir", primero(filas, (f) => f.inversion)],
-  ] as [string, string][]).filter(([, v]) => v);
-  const calificada = filas.some((f) => f.calificada === "Sí");
-  const ad = primero(filas, (f) => f.ad);
-  const campania = primero(filas, (f) => f.campania);
-  const vias = [...new Set(filas.map((f) => f.via).filter(Boolean))];
-
   return (
-    <div className="stack-5 ficha-ll">
-      <section className="ficha-ll__bloque">
-        <div className="row-wrap" style={{ gap: 8, alignItems: "center" }}>
-          <span className="t-label">Quién es</span>
-          {calificada && <Badge variante="warning"><Star size={12} fill="currentColor" />Agenda calificada</Badge>}
-        </div>
-        {perfil.length === 0 ? (
-          <p className="t-sm t-subtle">No contestó el formulario de Calendly.</p>
-        ) : (
-          <dl className="ficha-ll__datos">
-            {perfil.map(([k, v]) => (<div key={k}><dt>{k}</dt><dd title={v}>{v}</dd></div>))}
-          </dl>
-        )}
-      </section>
-
-      <section className="ficha-ll__bloque">
-        <span className="t-label">De dónde vino</span>
-        <dl className="ficha-ll__datos">
-          <div><dt>Por qué vía agendó</dt><dd>{vias.join(" · ") || "—"}</dd></div>
-          <div><dt>Ad</dt><dd title={ad}>{ad || "—"}</dd></div>
-          {campania && <div><dt>Campaña</dt><dd title={campania}>{campania}</dd></div>}
-        </dl>
-      </section>
-
-      <section className="stack-3">
-        <span className="t-label">Llamadas ({filas.length})</span>
-        {filas.map((f) => <Llamada key={f.id} f={f} grabaciones={porSesion.get(f.id) ?? []} onCargar={() => setCargar(f.id)} />)}
-      </section>
-
+    <div className="stack-4 ficha-ll">
+      <PerfilPersona p={p} filas={filas} />
+      <span className="t-label">Llamadas ({filas.length})</span>
+      {filas.map((f) => <Llamada key={f.id} f={f} grabaciones={porSesion.get(f.id) ?? []} onCargar={() => setCargar(f.id)} />)}
       {cargar && <Eod soloSesionId={cargar} onCerrar={() => setCargar(null)} />}
     </div>
   );

@@ -939,9 +939,9 @@ kbd {
 }
 .asistente__paso-n {
   font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
-  color: var(--ink-subtle); font-variant-numeric: tabular-nums;
+  color: var(--ink-subtle); font-variant-numeric: tabular-nums; white-space: nowrap; flex: none;
 }
-.asistente__ruta { display: flex; align-items: center; gap: 6px; overflow: hidden; }
+.asistente__ruta { display: flex; align-items: center; gap: 6px; overflow: hidden; min-width: 0; }
 .asistente__ruta-item { font-size: 13px; color: var(--ink-subtle); white-space: nowrap; }
 .asistente__ruta-item[data-activo="true"] { color: var(--brand); font-weight: 600; }
 .asistente__ruta-sep { color: var(--border-strong); }
@@ -1291,6 +1291,8 @@ kbd {
 .dato-fila { display: flex; align-items: center; gap: var(--space-2); min-height: 36px; }
 .dato-fila .link { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
 .dl--compacta { grid-template-columns: auto minmax(0, 1fr); gap: 6px var(--space-4); font-size: 13px; }
+/* Un dato de la ficha que se corrige con un clic (lib/perfil). */
+.ficha__editable { margin: -4px -8px; padding: 4px 8px; min-height: 28px; }
 .llamada-fila {
   display: flex; align-items: center; gap: var(--space-2); padding: 8px 10px; border: 1px solid var(--border);
   border-radius: var(--radius-md); background: var(--surface-000); color: inherit; text-decoration: none;
@@ -3036,6 +3038,30 @@ span.kpis__etiqueta:hover { color: var(--ink); text-decoration: none; }
 .crm-t__venta { color: var(--success); font-weight: 600; }
 .crm-t .hk-table td { max-width: 280px; }
 .crm-t .hk-table td > .truncate { display: block; }
+/* Corregir en la celda, como en un Excel (components/crm-tabla/CeldaEditable).
+   La celda entera es el botón: el margen negativo le come el relleno al td. */
+.crm-t .hk-table tbody tr { cursor: default; }
+.crm-t__editable {
+  display: flex; align-items: center; min-width: 0; min-height: 36px;
+  margin: -4px -12px; padding: 4px 12px; border-radius: var(--radius-sm); cursor: cell;
+}
+.crm-t__editable > .truncate, .crm-t__fija > .truncate { display: block; min-width: 0; }
+.crm-t__editable:hover { background: var(--surface-100); box-shadow: inset 0 0 0 1px var(--border-strong); }
+.crm-t__editable:focus-visible { outline: 0; box-shadow: inset 0 0 0 2px var(--brand); }
+.crm-t__editable--abierta, .crm-t__editable--abierta:hover { background: var(--surface-100); box-shadow: inset 0 0 0 2px var(--brand); cursor: text; }
+/* Lo que el equipo corrigió a mano lleva un punto. */
+.crm-t__editable--corregida::after { content: ""; flex: none; width: 6px; height: 6px; margin-left: 6px; border-radius: 50%; background: var(--info); }
+.crm-t__input {
+  width: 100%; min-width: 120px; height: 28px; padding: 0; border: 0; outline: 0; background: transparent;
+  color: var(--ink); font: inherit; color-scheme: light dark;
+}
+.crm-t__fija { display: block; min-width: 0; }
+/* El nombre abre la ficha; el lápiz lo corrige. */
+.crm-t__abrir { border: 0; background: none; padding: 0; font: inherit; font-weight: 600; color: var(--ink); cursor: pointer; text-align: left; min-width: 0; }
+.crm-t__abrir:hover { color: var(--brand); text-decoration: underline; }
+.crm-t__lapiz { display: inline-flex; flex: none; margin-left: 4px; padding: 4px; border: 0; border-radius: var(--radius-sm); background: none; color: var(--ink-subtle); cursor: pointer; opacity: 0; }
+.crm-t .hk-table tbody tr:hover .crm-t__lapiz, .crm-t__lapiz:focus-visible { opacity: 1; }
+.crm-t__lapiz:hover { color: var(--ink); background: var(--surface-300, var(--surface-200)); }
 /* La persona queda fija a la izquierda mientras se corren las columnas. */
 .crm-t .hk-table th:first-child, .crm-t .hk-table td:first-child {
   position: sticky; left: 0; z-index: 2; background: var(--surface-100); box-shadow: inset -1px 0 0 var(--border);
@@ -3119,9 +3145,53 @@ span.kpis__etiqueta:hover { color: var(--ink); text-decoration: none; }
 .crm-eod__datos { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: var(--space-2) var(--space-4); margin: 0; }
 .crm-eod__datos div { min-width: 0; }
 .crm-eod__datos dt { font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-subtle); }
-.crm-eod__datos dd { margin: 2px 0 0; font-size: 14px; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.crm-eod__datos dd { margin: 2px 0 0; font-size: 14px; line-height: 20px; color: var(--ink); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow-wrap: anywhere; }
 .crm-eod__bloque { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-3); padding: var(--space-4); border-radius: var(--radius-lg); background: var(--surface-200); }
 .crm-eod__ok { display: flex; align-items: center; gap: 8px; margin: 0; color: var(--success); font-weight: 600; }
+/* El paso de una llamada. Sin resultado, la persona y la pregunta van al
+   centro; al elegirlo se corren a la izquierda y lo que sigue aparece a la
+   derecha, sin bajar. El ancho de la derecha es fijo por dentro: el texto
+   no se reacomoda mientras se abre. */
+.asistente__paso:has(.crm-eod__paso) { max-width: 1180px; }
+.crm-eod__paso { display: flex; justify-content: center; align-items: flex-start; width: 100%; }
+.crm-eod__izq { flex: 0 1 680px; min-width: 0; transition: flex-basis 460ms cubic-bezier(.22, 1, .36, 1); }
+.crm-eod__der {
+  flex: 0 1 0px; max-width: 0; min-width: 0; margin-left: 0; overflow: hidden; opacity: 0; transform: translateX(28px);
+  transition: flex-basis 460ms cubic-bezier(.22, 1, .36, 1), max-width 460ms cubic-bezier(.22, 1, .36, 1),
+    margin-left 460ms cubic-bezier(.22, 1, .36, 1), transform 460ms cubic-bezier(.22, 1, .36, 1), opacity 300ms ease 120ms;
+}
+.crm-eod__der-caja { width: 540px; max-width: calc(100vw - 2 * var(--space-5)); }
+.crm-eod__paso--abierto .crm-eod__izq { flex-basis: 520px; }
+.crm-eod__paso--abierto .crm-eod__der { flex-basis: 540px; max-width: 540px; margin-left: var(--space-7); opacity: 1; transform: none; }
+/* Angosto no entran los dos: lo que sigue va abajo, como antes. */
+@media (max-width: 1100px) {
+  .crm-eod__paso { flex-direction: column; align-items: stretch; gap: var(--space-5); }
+  .crm-eod__izq, .crm-eod__paso--abierto .crm-eod__izq { flex-basis: auto; }
+  .crm-eod__der { display: none; }
+  .crm-eod__paso--abierto .crm-eod__der { display: block; flex-basis: auto; max-width: none; margin-left: 0; animation: pasoIn 260ms cubic-bezier(.2, .8, .3, 1); }
+  .crm-eod__der-caja { width: auto; max-width: none; }
+}
+@media (prefers-reduced-motion: reduce) { .crm-eod__izq, .crm-eod__der { transition: none; } }
+/* Las grabaciones de Fathom para elegir la de una llamada. */
+.crm-eod__grabaciones { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; max-height: 260px; overflow-y: auto; }
+.crm-eod__grabaciones li { display: flex; align-items: center; gap: var(--space-3); min-width: 0; padding: 10px var(--space-3); border-bottom: 1px solid var(--border); }
+.crm-eod__grabaciones li:last-child { border-bottom: 0; }
+/* Cada pregunta, con su desplegable: de a dos por renglón si entran. */
+.crm-eod__campos { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: var(--space-4); align-items: start; width: 100%; }
+.crm-eod__campo { display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; }
+.crm-eod__campo--ancho { grid-column: 1 / -1; }
+/* Para cuándo se estima el cierre: el desplegable a lo ancho; con «Otra
+   fecha» se acorta y el día aparece en el lugar que deja. */
+.crm-eod__cierre { display: flex; align-items: stretch; min-width: 0; }
+.crm-eod__cierre-cuando { flex: 1 1 100%; min-width: 0; transition: flex-basis 380ms cubic-bezier(.22, 1, .36, 1); }
+.crm-eod__cierre-dia {
+  flex: 0 0 0px; max-width: 0; min-width: 0; margin-left: 0; opacity: 0; overflow: hidden;
+  transition: flex-basis 380ms cubic-bezier(.22, 1, .36, 1), max-width 380ms cubic-bezier(.22, 1, .36, 1),
+    margin-left 380ms cubic-bezier(.22, 1, .36, 1), opacity 240ms ease 110ms;
+}
+.crm-eod__cierre--fecha .crm-eod__cierre-cuando { flex-basis: 50%; }
+.crm-eod__cierre--fecha .crm-eod__cierre-dia { flex: 1 1 50%; max-width: 50%; margin-left: var(--space-3); opacity: 1; }
+@media (prefers-reduced-motion: reduce) { .crm-eod__cierre-cuando, .crm-eod__cierre-dia { transition: none; } }
 .crm-eod__cuenta { display: flex; align-items: center; gap: var(--space-4); padding: var(--space-4); border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface-100); }
 .crm-eod__numero { font-size: 40px; font-weight: 700; line-height: 1; color: var(--brand); }
 .crm-eod__pendientes { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 14px; color: var(--ink-muted); cursor: pointer; }
@@ -3137,6 +3207,9 @@ span.kpis__etiqueta:hover { color: var(--ink); text-decoration: none; }
 .ficha-ll__datos dt, .ficha-ll__detalle dt { font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-subtle); }
 .ficha-ll__datos dd, .ficha-ll__detalle dd { margin: 2px 0 0; font-size: 14px; color: var(--ink); overflow: hidden; text-overflow: ellipsis; }
 .ficha-ll__datos dd { white-space: nowrap; }
+/* Quién es: se lee entero (no se corta con «…») y se corrige con un clic. */
+.ficha-ll__datos--perfil { grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); }
+.ficha-ll__datos--perfil dd { white-space: normal; overflow: visible; overflow-wrap: anywhere; line-height: 20px; }
 .ficha-ll__llamada { display: flex; flex-direction: column; gap: var(--space-3); padding: var(--space-4); border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface-100); }
 .ficha-ll__cabeza { display: flex; align-items: center; gap: var(--space-3); min-width: 0; }
 .ficha-ll__detalle { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: var(--space-2) var(--space-4); margin: 0; }

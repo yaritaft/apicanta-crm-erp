@@ -1,5 +1,6 @@
 import { aniosDeTexto, ETIQUETA_CANAL, respuestaA } from "./calendly";
 import { evaluarAgenda, pisoDeInversion } from "./calificacion";
+import { conCorrecciones, corregidoDe, respuestaPerfil } from "./perfil";
 import { claveDeFecha } from "./agendas-webinar";
 import { claveEmail } from "./contactos";
 import { money } from "./format";
@@ -288,7 +289,7 @@ export function valorDe(f: FilaCrm, clave: ClaveCampo): ValorCampo {
 export const sinTildes = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
 
 /* Las respuestas con varias opciones vienen una por renglón. */
-const partir = (s?: string) => (s ?? "").split(/\r?\n|;/).map((x) => x.trim()).filter(Boolean);
+export const partir = (s?: string) => (s ?? "").split(/\r?\n|;/).map((x) => x.trim()).filter(Boolean);
 
 const FORMATO_DIA = new Intl.DateTimeFormat("en-CA", {
   timeZone: "America/Argentina/Buenos_Aires", year: "numeric", month: "2-digit", day: "2-digit",
@@ -510,7 +511,8 @@ function armarFila(
   s: Sesion, tabla: string, c: Contacto | undefined, l: Lead | undefined,
   estados: OpcionCrm[], segunda: boolean, webinars: EstadoApp["webinars"],
 ): FilaCrm {
-  const qa = s.respuestas ?? [];
+  /* Lo que contestó al agendar, con lo que el equipo le corrigió a mano. */
+  const qa = conCorrecciones(s.respuestas, corregidoDe(c, l));
   const auto = s.estadoLlamada ? "" : estadoAutomatico(s, estados, segunda);
   const u = s.utm ?? {};
   return {
@@ -531,15 +533,15 @@ function armarFila(
     utmContent: u.utm_content ?? "",
     utmCampaign: u.utm_campaign ?? "",
     grabacion: s.grabacion ?? "",
-    anios: respuestaA(qa, /(anos.*program|program.*anos)/) ?? "",
-    ingles: respuestaA(qa, /ingles/) ?? "",
-    lenguajes: partir(respuestaA(qa, /(lenguaje|framework|tecnolog)/) ?? c?.tecnologias),
-    inversion: respuestaA(qa, /(invertir|inversion|te define mejor|claridad en la llamada)/) ?? "",
+    anios: respuestaPerfil(qa, "experiencia") ?? "",
+    ingles: respuestaPerfil(qa, "ingles") ?? "",
+    lenguajes: partir(respuestaPerfil(qa, "tecnologias") ?? c?.tecnologias),
+    inversion: respuestaPerfil(qa, "inversion") ?? "",
     mes: mesDe(s.inicia),
     estadoPreCall: s.estadoPreCall ?? "",
-    calificada: evaluarAgenda(s, c).calificada ? "Sí" : "No",
-    formacion: partir(respuestaA(qa, /(formacion|estudio)/) ?? c?.formacion),
-    ingreso: respuestaA(qa, /(ganas|sueldo|salario)/) ?? c?.sueldoUsd ?? "",
+    calificada: evaluarAgenda(s, c ?? l).calificada ? "Sí" : "No",
+    formacion: partir(respuestaPerfil(qa, "formacion") ?? c?.formacion),
+    ingreso: respuestaPerfil(qa, "ingreso") ?? c?.sueldoUsd ?? "",
     instagram: respuestaA(qa, /instagram/) ?? c?.instagram ?? "",
     agendo: s.creadoEn,
     tipo: s.tipo ?? "",

@@ -1,9 +1,10 @@
-import type { Contacto, EstadoApp, Sesion } from "./types";
-import { filasCrm, opcionesDe, sinTildes, type FilaCrm } from "./crm";
-import { respuestaA } from "./calendly";
+import type { Ajustes, Contacto, EstadoApp, EstadoSesion, Lead, ResultadoLlamada, Sesion } from "./types";
+import { filasCrm, opcionesDe, partir, sinTildes, type FilaCrm } from "./crm";
 import { diaDeNegocio } from "./dia-negocio";
 import { EVENTOS, leerUtm, NOMBRE_FUNNEL } from "./utm-estandar";
-import { TEXTO_RESULTADO } from "./eod";
+import { cambiosDelEod, respuestaDe, TEXTO_RESULTADO } from "./eod";
+import { conCorrecciones, corregidoDe, respuestaPerfil, type CampoPerfil, type Corregido } from "./perfil";
+import type { CambiosLlamada } from "./store";
 
 /* ==================================================================
    El CRM como una tabla fácil, como un Excel (Yari, 29/09): "lo fácil le
@@ -15,6 +16,9 @@ import { TEXTO_RESULTADO } from "./eod";
    y suman lo que carga el closer en su EOD (lib/eod.ts) y lo que se
    deduce solo: por qué vía y con qué ad llegó, el país (del prefijo del
    teléfono) y la edad (si el formulario la pregunta).
+
+   Y se corrige ahí mismo, en la celda, como en un Excel (02/10): ver
+   «Editar», más abajo.
    ================================================================== */
 
 export interface FilaTabla {
@@ -37,6 +41,8 @@ export interface FilaTabla {
   angulo: string;
   campania: string;
   pais: string;
+  /* El país cargado en la persona; vacío si sale del prefijo del teléfono. */
+  paisCargado: string;
   edad: string;
   tecnologias: string[];
   ingles: string;
@@ -53,9 +59,12 @@ export interface FilaTabla {
   notas: string;
   /* Ya pasó, no se canceló y nadie cargó cómo terminó. */
   sinCargar: boolean;
+  /* Lo que el equipo le corrigió a mano a la persona (lib/perfil.ts). */
+  corregido: Corregido;
 }
 
-const ESTADO: Record<string, string> = { agendada: "Agendada", hecha: "Hecha", "no-show": "No vino", cancelada: "Cancelada" };
+const ESTADO: Record<EstadoSesion, string> = { agendada: "Agendada", hecha: "Hecha", "no-show": "No vino", cancelada: "Cancelada" };
+const SIN_CORREGIR: Corregido = {};
 
 /* ---------- El país, por el prefijo del teléfono ----------
    Los de Calendly llegan con el + y el código del país. Sin el +, no se
@@ -69,6 +78,8 @@ const PREFIJOS: [string, string][] = ([
   ["52", "México"], ["51", "Perú"], ["49", "Alemania"], ["44", "Reino Unido"], ["39", "Italia"], ["34", "España"],
   ["33", "Francia"], ["1", "Estados Unidos"],
 ] as [string, string][]).sort((a, b) => b[0].length - a[0].length);
+
+export const PAISES = [...new Set(PREFIJOS.map(([, pais]) => pais))].sort((a, b) => a.localeCompare(b, "es"));
 
 export function paisDeTelefono(tel?: string | null): string {
   const t = (tel ?? "").trim();
@@ -124,12 +135,15 @@ export function filasTabla(
   ahora = Date.now(),
 ): FilaTabla[] {
   const contactos = new Map(e.contactos.map((c) => [c.id, c]));
+  const leads = new Map(e.leads.map((l) => [l.id, l]));
   const estados = opcionesDe(e.ajustes, "estadoLlamada");
   const deEstado = new Map(estados.map((o) => [o.nombre, o]));
   return filasCrm(e).map((f) => {
     const s = f.sesion;
     const c = contactos.get(s.contactoId ?? "") ?? contactos.get(s.leadId ?? "");
-    const qa = s.respuestas ?? [];
+    const l = leads.get(s.leadId ?? "");
+    const corregido = corregidoDe(c, l);
+    const qa = conCorrecciones(s.respuestas, corregido);
     const { ad, campania } = adDe(s, c);
     const paso = Date.parse(s.inicia) <= ahora;
     /* Lo que cargó el closer manda; si no, lo que se sabe: la venta, que no
@@ -152,8 +166,9 @@ export function filasTabla(
       cierre: s.cierreEstimado ?? "",
       via: viaDe(s, f),
       ad, angulo: anguloDe(ad), campania,
-      pais: c?.pais?.trim() || paisDeTelefono(f.telefono),
-      edad: respuestaA(qa, /(\bedad\b|cuantos anos tenes|que edad)/) ?? "",
+      pais: c?.pais?.trim() || l?.pais?.trim() || paisDeTelefono(f.telefono),
+      paisCargado: c?.pais?.trim() || l?.pais?.trim() || "",
+      edad: respuestaPerfil(qa, "edad") ?? "",
       tecnologias: f.lenguajes,
       ingles: f.ingles,
       experiencia: f.anios,
@@ -168,6 +183,7 @@ export function filasTabla(
       agendo: s.creadoEn,
       notas: f.notas,
       sinCargar: resultado === "Sin cargar",
+      corregido: corregido ?? SIN_CORREGIR,
     };
   });
 }
@@ -236,6 +252,166 @@ export const VISIBLES_POR_DEFECTO: ClaveColumna[] = [
   "llamada", "nombre", "closer", "resultado", "objecion", "oferta", "cierre", "via", "ad", "pais",
   "tecnologias", "ingles", "ingreso", "inversion", "calificada", "grabacion", "venta",
 ];
+
+/* ---------- Editar ----------
+   Como en un Excel: se corrige en la celda. Lo que es de la llamada (el
+   closer, el estado, el resultado, la objeción, la oferta, el cierre
+   estimado, la grabación y las notas) se guarda en la llamada. Lo que es
+   de la persona (el nombre, el mail, el teléfono, el país y lo que
+   contestó al agendar) se guarda en la persona y cambia en todas sus
+   llamadas. Lo que sale solo no se edita: cuándo es la llamada y cuándo
+   agendó (Calendly), por dónde llegó y con qué ad (el link), si califica
+   (una cuenta) y la venta (se carga en Ventas). */
+
+export type EditorColumna = "texto" | "largo" | "fecha" | "opciones" | "sugerencias" | "lista";
+
+export const EDITOR: Partial<Record<ClaveColumna, EditorColumna>> = {
+  nombre: "texto", email: "texto", telefono: "texto",
+  closer: "opciones", estado: "opciones", resultado: "opciones", objecion: "opciones", oferta: "opciones",
+  cierre: "fecha", grabacion: "texto", notas: "largo",
+  pais: "sugerencias", edad: "texto", ingles: "sugerencias", experiencia: "sugerencias", ingreso: "sugerencias", inversion: "sugerencias",
+  tecnologias: "lista", formacion: "lista",
+};
+
+/* Por qué no se edita cada columna que sale sola. */
+export const POR_QUE_NO: Partial<Record<ClaveColumna, string>> = {
+  llamada: "El día y la hora los pone Calendly: se cambian reprogramando.",
+  agendo: "Cuándo agendó, según Calendly.",
+  via: "Sale del link con el que agendó.",
+  ad: "Sale del link del anuncio con el que llegó.",
+  angulo: "Sale del nombre del anuncio.",
+  campania: "Sale del link del anuncio con el que llegó.",
+  calificada: "Se calcula sola: puede invertir 1000 USD o más, inglés conversacional y carrera. Cambia si corregís esos datos.",
+  venta: "La venta se carga en Ventas o en el cierre del día.",
+};
+
+const PERFIL_DE: Partial<Record<ClaveColumna, CampoPerfil | "pais">> = {
+  pais: "pais", edad: "edad", tecnologias: "tecnologias", ingles: "ingles", experiencia: "experiencia",
+  formacion: "formacion", ingreso: "ingreso", inversion: "inversion",
+};
+const ESTADO_DE = Object.fromEntries(Object.entries(ESTADO).map(([k, v]) => [v, k])) as Record<string, EstadoSesion>;
+const RESULTADO_DE = Object.fromEntries(Object.entries(TEXTO_RESULTADO).map(([k, v]) => [v, k])) as Record<string, ResultadoLlamada>;
+
+export const OPCIONES_ESTADO = Object.values(ESTADO);
+export const OPCIONES_RESULTADO = Object.values(TEXTO_RESULTADO);
+
+/** Lo que hay en la celda, como texto para editar. */
+export function valorEditable(f: FilaTabla, clave: ClaveColumna): string {
+  switch (clave) {
+    /* «Sin cargar», «Por venir» y «Cancelada» no son algo que se cargó. */
+    case "resultado": return f.sesion.resultado ? TEXTO_RESULTADO[f.sesion.resultado] : "";
+    case "tecnologias": return f.tecnologias.join(", ");
+    case "formacion": return f.formacion.join(", ");
+    case "grabacion": return f.grabacion;
+    case "notas": return f.notas;
+    default: return String((f as unknown as Record<string, unknown>)[clave] ?? "");
+  }
+}
+
+/* Lo que hay que escribir para dejar una celda con un valor. */
+export type Escritura =
+  | { tipo: "llamada"; id: string; cambios: CambiosLlamada; detalle: string }
+  | { tipo: "persona"; id: string; cambios: { nombre?: string; email?: string; telefono?: string }; detalle: string }
+  | { tipo: "perfil"; id: string; campo: CampoPerfil | "pais"; valor: string; detalle: string };
+
+/** Qué se guarda al dejar `valor` en esa celda; null si la columna no se
+    edita o ya decía eso. Vaciar un dato de la persona que contestó en
+    Calendly vuelve a lo que contestó. */
+export function escrituraDe(
+  f: FilaTabla, clave: ClaveColumna, valor: string,
+  ctx: { ajustes: Ajustes; quien: string; cuando: string },
+): Escritura | null {
+  const editor = EDITOR[clave];
+  if (!editor) return null;
+  const titulo = COLUMNA[clave].titulo;
+  const lista = editor === "lista";
+  /* Las listas (tecnologías, formación) se escriben con comas y se guardan una por renglón. */
+  const limpio = lista ? valor.split(/[,;\n]/).map((x) => x.trim()).filter(Boolean).join(", ") : valor.trim();
+  if (limpio === valorEditable(f, clave).trim()) return null;
+  const quien = f.nombre || "Sin nombre";
+  const detalle = limpio ? `${quien}: ${titulo} → ${limpio.length > 60 ? `${limpio.slice(0, 60)}…` : limpio}.` : `${quien}: se vació ${titulo}.`;
+  const s = f.sesion;
+
+  if (clave === "nombre" || clave === "email" || clave === "telefono") {
+    /* Vacío no es un dato: no borra el nombre, el mail ni el teléfono. */
+    return limpio ? { tipo: "persona", id: f.personaId, cambios: { [clave]: limpio }, detalle } : null;
+  }
+  const perfil = PERFIL_DE[clave];
+  if (perfil) return { tipo: "perfil", id: f.personaId, campo: perfil, valor: lista ? limpio.split(", ").join("\n") : limpio, detalle };
+
+  const llamada = (cambios: CambiosLlamada): Escritura => ({ tipo: "llamada", id: s.id, cambios, detalle });
+  switch (clave) {
+    case "closer": return limpio ? llamada({ anfitrion: limpio }) : null;
+    case "estado": return ESTADO_DE[limpio] ? llamada({ estado: ESTADO_DE[limpio] }) : null;
+    case "resultado": {
+      const r = RESULTADO_DE[limpio];
+      /* Vaciarlo deja la llamada sin cargar otra vez. */
+      if (!r) return limpio ? null : llamada({ resultado: undefined, objecion: undefined, hizoOferta: undefined, cierreEstimado: undefined, eodEn: undefined, eodPor: undefined });
+      const previa = respuestaDe(s);
+      return llamada(cambiosDelEod(
+        { resultado: r, objecion: s.objecion, hizoOferta: s.hizoOferta, cierreEstimado: previa?.resultado === "no-compro" ? previa.cierreEstimado : s.cierreEstimado },
+        s, ctx.ajustes, ctx.quien, ctx.cuando));
+    }
+    case "objecion": {
+      /* Una objeción dice que no cerró: si la llamada no tenía resultado
+         (ni venta), queda «Sin cierre», como en el cierre del día. */
+      if (!limpio || f.venta || s.resultado === "compro") return llamada({ objecion: limpio || undefined });
+      const previa = respuestaDe(s);
+      return llamada(cambiosDelEod(
+        { resultado: "no-compro", objecion: limpio, hizoOferta: s.hizoOferta, cierreEstimado: previa?.resultado === "no-compro" ? previa.cierreEstimado : s.cierreEstimado },
+        s, ctx.ajustes, ctx.quien, ctx.cuando));
+    }
+    case "oferta": return llamada({ hizoOferta: limpio === "Sí" ? true : limpio === "No" ? false : undefined });
+    case "cierre": return llamada({ cierreEstimado: /^\d{4}-\d{2}-\d{2}$/.test(limpio) ? limpio : undefined });
+    case "grabacion": return llamada({ grabacion: limpio });
+    case "notas": return llamada({ notas: valor.trim() });
+    default: return null;
+  }
+}
+
+/* ---------- El perfil, para la ficha ----------
+   Lo que se sabe de la persona, cada dato una sola vez: el de su llamada
+   más nueva que lo tenga y, si nunca agendó, lo que hay en su contacto. */
+
+export interface DatoPerfil { clave: ClaveColumna; campo: CampoPerfil | "pais"; titulo: string; valor: string; corregido: boolean }
+
+const COLUMNAS_PERFIL: ClaveColumna[] = ["pais", "edad", "tecnologias", "ingles", "experiencia", "formacion", "ingreso", "inversion"];
+const NIVEL_INGLES: Record<string, string> = { ninguno: "Ninguno", basico: "Básico", intermedio: "Intermedio", conversacional: "Conversacional", nativo: "Nativo" };
+
+/** Las llamadas de una persona, de la más nueva a la más vieja. */
+export function filasDePersona(filas: FilaTabla[], sesionIds: Iterable<string>): FilaTabla[] {
+  const ids = new Set(sesionIds);
+  return filas.filter((f) => ids.has(f.id)).sort((a, b) => b.llamada.localeCompare(a.llamada));
+}
+
+/** `filas`: las llamadas de la persona, de la más nueva a la más vieja. */
+export function perfilDe(filas: FilaTabla[], c?: Contacto | null, l?: Lead | null): DatoPerfil[] {
+  const corregido = filas[0]?.corregido ?? corregidoDe(c, l) ?? {};
+  const anios = c?.aniosExperiencia ?? l?.aniosExperiencia;
+  const deLaPersona: Partial<Record<ClaveColumna, string>> = {
+    pais: c?.pais ?? l?.pais ?? "",
+    tecnologias: partir(c?.tecnologias).join(", "),
+    ingles: NIVEL_INGLES[c?.inglesNivel ?? l?.inglesNivel ?? ""] ?? "",
+    experiencia: anios === undefined || anios === null ? "" : `${anios} ${anios === 1 ? "año" : "años"}`,
+    formacion: partir(c?.formacion).join(", "),
+    ingreso: c?.sueldoUsd ?? "",
+  };
+  return COLUMNAS_PERFIL.map((clave) => {
+    const campo = PERFIL_DE[clave]!;
+    const propio = campo === "pais" ? undefined : corregido[campo];
+    const deLlamada = filas.map((f) => valorEditable(f, clave)).find((v) => v) ?? "";
+    return {
+      clave, campo, titulo: COLUMNA[clave].titulo, corregido: Boolean(propio),
+      valor: deLlamada || (propio ? partir(propio).join(", ") : "") || deLaPersona[clave] || "",
+    };
+  });
+}
+
+/** Un valor escrito en una celda, como se guarda: las listas (tecnologías,
+    formación), una por renglón. */
+export function valorParaGuardar(clave: ClaveColumna, valor: string): string {
+  return EDITOR[clave] === "lista" ? valor.split(/[,;\n]/).map((x) => x.trim()).filter(Boolean).join("\n") : valor.trim();
+}
 
 /* ---------- Filtrar ----------
    Como en Excel: en la lista de cada columna se destilda lo que no se
