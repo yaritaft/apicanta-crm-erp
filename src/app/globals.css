@@ -2263,7 +2263,8 @@ span.kpis__etiqueta:hover { color: var(--ink); text-decoration: none; }
   width: 100%; justify-content: flex-end; border: 0; background: none; font: inherit; cursor: pointer;
   text-decoration: underline dotted var(--border-strong); text-underline-offset: 4px;
 }
-.kpis__abrir:hover { color: var(--brand); text-decoration-color: currentColor; }
+.kpis__abrir:hover { color: var(--brand); text-decoration-color: currentColor; background: var(--brand-soft); }
+.kpis__abrir:focus-visible { outline: 2px solid var(--brand); outline-offset: -2px; }
 
 .kpis__delta { display: inline-flex; align-items: center; gap: 2px; font-size: 12px; line-height: 16px; font-weight: 700; color: var(--ink-subtle); font-variant-numeric: tabular-nums; }
 
@@ -3038,6 +3039,12 @@ span.kpis__etiqueta:hover { color: var(--ink); text-decoration: none; }
 .crm-t__venta { color: var(--success); font-weight: 600; }
 .crm-t .hk-table td { max-width: 280px; }
 .crm-t .hk-table td > .truncate { display: block; }
+/* El anuncio mismo, arriba de su detalle (components/marketing/DetalleAnuncio):
+   el marco de Meta, centrado y con el ancho de un celular. */
+.mk-previa { display: flex; justify-content: center; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface-200); overflow: hidden; }
+.mk-previa iframe { width: 100%; max-width: 360px; height: 100%; border: 0; background: #fff; }
+.mk-previa--sin { display: flex; align-items: center; justify-content: flex-start; gap: var(--space-2); margin: 0; padding: var(--space-3) var(--space-4); }
+.mk-previa--sin svg { flex: none; }
 /* Corregir en la celda, como en un Excel (components/crm-tabla/CeldaEditable).
    La celda entera es el botón: el margen negativo le come el relleno al td. */
 .crm-t .hk-table tbody tr { cursor: default; }

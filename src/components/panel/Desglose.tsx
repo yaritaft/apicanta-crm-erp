@@ -1,9 +1,14 @@
 "use client";
 
+import { useMemo } from "react";
+import { useRouter } from "next/navigation";
+import { ChevronRight } from "lucide-react";
 import { Badge, Tag } from "@/components/ui/ui";
 import { Drawer } from "@/components/ui/Drawer";
 import { useAbrirFicha, type VistaFicha } from "@/components/ficha/abrir";
 import { useEstado } from "@/lib/store";
+import { Contexto, type Corte, type DefKpi } from "@/lib/kpis";
+import type { FilaDetalle } from "@/lib/kpis-detalle";
 import { fecha, money, num, pct, relativo } from "@/lib/format";
 import { comisionesDelMes, cuotasPorCobrar, gastosDelMes, pagosDelMes } from "@/lib/finanzas";
 import {
@@ -297,4 +302,91 @@ function FilaDesglose({ f }: { f: Fila }) {
       </button>
     )
     : <div className="agenda-item" style={{ cursor: "default" }}>{cuerpo}</div>;
+}
+
+/* ==================================================================
+   Lo que forma cualquier número del Dashboard (02/10): los registros
+   detrás de la celda, para ir a verlos. Qué lista es la de cada métrica
+   está en lib/kpis.ts (detalle), con la misma cuenta que el número: acá
+   sólo se dibuja. Cada fila lleva a su ficha, a su anuncio (el detalle de
+   Marketing, con el anuncio arriba) o a su pantalla.
+   ================================================================== */
+
+export function DetalleDeKpi({ def, corte, onCerrar, onAnuncio }: {
+  def: DefKpi; corte: Corte; onCerrar: () => void;
+  /* Un anuncio de la lista: lo abre quien usa el panel, en su detalle. */
+  onAnuncio: (adId: string) => void;
+}) {
+  const e = useEstado();
+  const partes = useMemo(() => def.detalle?.(new Contexto(e, corte)) ?? null, [e, def, corte]);
+  const cuando = [corte.titulo, corte.sub].filter(Boolean).join(" · ");
+  return (
+    <Drawer abierto onCerrar={onCerrar} titulo={def.etiqueta} sub={cuando}>
+      <div className="stack-5">
+        <p className="t-sm t-muted" style={{ margin: 0 }}>{def.ayuda}</p>
+        {!partes ? (
+          <p className="t-sm t-subtle">Con este filtro, este número no se puede abrir.</p>
+        ) : (
+          <>
+            <div className="grid-2" style={{ gap: 12 }}>
+              {partes.resumen.map((r) => (
+                <div key={r.etiqueta} style={{ background: "var(--surface-200)", border: "1px solid var(--border)", borderRadius: "var(--radius-md)", padding: "12px 14px" }}>
+                  <div className="t-label" style={{ marginBottom: 4 }}>{r.etiqueta}</div>
+                  <div className="t-num" style={{ fontSize: 20, fontWeight: 600, color: "var(--ink)" }}>{r.valor}</div>
+                </div>
+              ))}
+            </div>
+            {partes.secciones.map((sec, i) => (
+              <div key={sec.titulo ?? i}>
+                {(sec.titulo || sec.total) && (
+                  <div className="row" style={{ marginBottom: 10 }}>
+                    <span className="t-label">{sec.titulo}</span>
+                    <span className="spacer t-sm t-num t-muted">{sec.total}</span>
+                  </div>
+                )}
+                {sec.filas.length === 0 ? (
+                  <p className="t-sm t-subtle">{sec.vacio ?? "Nada en este período."}</p>
+                ) : (
+                  <div className={`stack-2${partes.secciones.length > 1 ? " lista-scroll" : ""}`}>
+                    {sec.filas.slice(0, TOPE).map((f) => <FilaDeDetalle key={f.id} f={f} onAnuncio={onAnuncio} />)}
+                    {sec.filas.length > TOPE && <p className="t-sm t-subtle">y {num(sec.filas.length - TOPE)} más.</p>}
+                  </div>
+                )}
+              </div>
+            ))}
+          </>
+        )}
+      </div>
+    </Drawer>
+  );
+}
+
+function FilaDeDetalle({ f, onAnuncio }: { f: FilaDetalle; onAnuncio: (adId: string) => void }) {
+  const abrirFicha = useAbrirFicha();
+  const router = useRouter();
+  const prueba = marcaDeDato(f.id);
+  const lleva = Boolean(f.ficha || f.anuncio || f.href);
+  const cuerpo = (
+    <>
+      <span style={{ flex: 1, minWidth: 0 }}>
+        <span className="truncate t-strong" style={{ display: "block", color: "var(--ink)" }}>{f.titulo}</span>
+        {f.detalle && <span className="truncate t-sm t-subtle" style={{ display: "block" }}>{f.detalle}</span>}
+      </span>
+      {f.marca && <Badge variante={f.marca.variante}>{f.marca.texto}</Badge>}
+      {prueba && <Tag>{prueba}</Tag>}
+      {f.valor && <span className="t-num t-strong" style={{ whiteSpace: "nowrap", color: "var(--ink)" }}>{f.valor}</span>}
+      {lleva && <ChevronRight size={16} className="t-subtle" style={{ flexShrink: 0 }} aria-hidden />}
+    </>
+  );
+  if (!lleva) return <div className="agenda-item" style={{ cursor: "default" }}>{cuerpo}</div>;
+  const ir = () => {
+    if (f.ficha) abrirFicha(f.ficha.id, f.ficha.vista, f.ficha.venta ? { venta: f.ficha.venta } : undefined);
+    else if (f.anuncio) onAnuncio(f.anuncio);
+    else if (f.href) router.push(f.href);
+  };
+  return (
+    <button type="button" className="agenda-item" style={{ width: "100%", textAlign: "left", font: "inherit", color: "inherit" }} onClick={ir}>
+      {cuerpo}
+    </button>
+  );
 }

@@ -1,12 +1,13 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import React, { useCallback, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowLeftRight, Clock, Download, EyeOff, ListChecks } from "lucide-react";
 import { Button, Card, Empty } from "@/components/ui/ui";
 import { DateRangePicker, diaDeNegocio, rangoStr, rangoSub } from "@/components/ui/DateRangePicker";
 import { CopiarLink } from "@/components/ui/Filtros";
-import { Desglose, type QueDesglosar } from "@/components/panel/Desglose";
+import { Desglose, DetalleDeKpi, type QueDesglosar } from "@/components/panel/Desglose";
+import { DetalleAnuncio, type FormatoPlata } from "@/components/marketing/DetalleAnuncio";
 import { FiltroVista } from "@/components/panel/FiltroVista";
 import { FiltroSegmento } from "@/components/panel/FiltroSegmento";
 import { useFilasKpi } from "@/components/panel/useFilasKpi";
@@ -18,7 +19,7 @@ import { TablaKpis, variacionKpi, type FilaKpi } from "@/components/panel/TablaK
 import { useEstado } from "@/lib/store";
 import { useAcceso } from "@/lib/acceso";
 import { veSeccion } from "@/lib/permisos";
-import { num } from "@/lib/format";
+import { money, num } from "@/lib/format";
 import { useRangoURL } from "@/lib/useRango";
 import { useParamsURL } from "@/lib/useParamsURL";
 import { rangoDeFechas, type RangoMes } from "@/lib/metricas";
@@ -88,6 +89,13 @@ export default function DashboardKpis() {
   }, [vista.webinar, vista.embudo, webinarsFiltro, e.embudos]);
 
   const [desglose, setDesglose] = useState<{ que: QueDesglosar; mes: RangoMes } | null>(null);
+  /* El número que se abrió (los registros que lo forman) y, desde su lista,
+     el anuncio que se está mirando. */
+  const [detalle, setDetalle] = useState<{ def: DefKpi; corte: Corte } | null>(null);
+  const [anuncioId, setAnuncioId] = useState<string | null>(null);
+  const anuncio = anuncioId ? e.ads.find((a) => a.id === anuncioId) : undefined;
+  const router = useRouter();
+  const M = useCallback<FormatoPlata>((n, d = 0) => money(n, mon, d), [mon]);
 
   /* "Máximo" arranca en el primer dato que existe. */
   const minimo = useMemo(() => {
@@ -156,7 +164,8 @@ export default function DashboardKpis() {
   );
 
   const abrir = (def: DefKpi, c: Corte) => {
-    if (def.desglose) setDesglose({ que: def.desglose, mes: rangoDeFechas(c.desde, c.hasta, c.sub ?? c.titulo) });
+    if (def.detalle) setDetalle({ def, corte: c });
+    else if (def.desglose) setDesglose({ que: def.desglose, mes: rangoDeFechas(c.desde, c.hasta, c.sub ?? c.titulo) });
   };
 
   const areas: { id: SeccionKpi | "todo"; titulo: string }[] = [{ id: "todo", titulo: "Todo" }, ...secciones];
@@ -256,6 +265,20 @@ export default function DashboardKpis() {
       </Card>
 
       {desglose && <Desglose que={desglose.que} mes={desglose.mes} onCerrar={() => setDesglose(null)} />}
+      {detalle && !anuncio && (
+        <DetalleDeKpi def={detalle.def} corte={detalle.corte} onCerrar={() => setDetalle(null)} onAnuncio={setAnuncioId} />
+      )}
+      {/* El anuncio, con los días de la columna que se abrió. Al cerrarlo vuelve la lista. */}
+      {detalle && anuncio && (
+        <DetalleAnuncio
+          ad={anuncio} M={M} rango={{ preset: "custom", desde: detalle.corte.desde, hasta: detalle.corte.hasta }}
+          onCerrar={() => setAnuncioId(null)}
+          onIr={(d) => router.push(`/marketing?${new URLSearchParams({
+            nivel: d.nivel, ...(d.campania ? { campania: d.campania } : {}), ...(d.conjunto ? { conjunto: d.conjunto } : {}),
+            periodo: "custom", desde: detalle.corte.desde, hasta: detalle.corte.hasta,
+          })}`)}
+        />
+      )}
     </div>
   );
 }

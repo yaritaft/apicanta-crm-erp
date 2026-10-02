@@ -243,9 +243,14 @@ export function gastosPorCategoria(e: EstadoApp, m: RangoMes, grupo?: Gasto["gru
   return [...acc.entries()].sort((a, b) => b[1] - a[1]).map(([categoria, monto]) => ({ categoria, monto }));
 }
 
-export function inversionPublicidad(e: EstadoApp, m: RangoMes): number {
+/** Los gastos del período cargados como publicidad. */
+export function gastosDePublicidad(e: EstadoApp, m: RangoMes): Gasto[] {
   const ads = ["Meta Ads", "Google Ads", "TikTok Ads"];
-  return gastosDelMes(e, m).filter((g) => ads.includes(g.categoria)).reduce((a, g) => a + g.monto, 0);
+  return gastosDelMes(e, m).filter((g) => ads.includes(g.categoria));
+}
+
+export function inversionPublicidad(e: EstadoApp, m: RangoMes): number {
+  return gastosDePublicidad(e, m).reduce((a, g) => a + g.monto, 0);
 }
 
 /* ---------- El P&L completo ---------- */

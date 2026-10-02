@@ -1,12 +1,16 @@
 import { evaluarAgenda } from "./calificacion";
 import type { Contacto, Cuota, EstadoApp, ID, Lead, Pago, Sesion, Venta, Webinar } from "./types";
 import {
-  calcularPyL, comisionesDelMes, cuotasPorCobrar, cuotasVencidas, gastosDelMes, pagosDelMes, type PyL,
+  calcularPyL, comisionesDelMes, cuotasPorCobrar, cuotasVencidas, gastosDelMes, gastosDePublicidad, pagosDelMes, type ComisionVenta, type PyL,
 } from "./finanzas";
 import {
-  filasMeta, leadsMes, leadsSinContactar, mrr, periodoAnterior, rangoDeFechas, tasaConversion, totalesMeta,
+  filasMeta, leadsDelPipeline, leadsMes, leadsSinContactar, mrr, periodoAnterior, rangoDeFechas, tasaConversion, totalesMeta,
   valorPipeline, type MetricasMeta, type RangoMes,
 } from "./metricas";
+import {
+  deAlumnos, deAnuncios, deAtrasados, deComisiones, deFees, deGastos, deLeads, deLlamadas, deMovimientos, dePagos, dePersonas,
+  dePublicidad, deVencidas, deVentas, deWebinars, type PartesDetalle,
+} from "./kpis-detalle";
 import { metricasDeWebinar, numerosDelWebinar, sumarMetricas, type MetricasWebinar } from "./webinar";
 import { numerosDe, rendimientoPorVia, type LinkVia, type NumerosVia } from "./vias-webinar";
 import type { ViaLanzamiento } from "./agendas-webinar";
@@ -209,10 +213,16 @@ export class Contexto {
     return this.memo("py", () => (this.general ? calcularPyL(this.e, this.m) : null));
   }
 
+  /** Lo que comisiona cada venta del corte por lo cobrado en el período. */
+  comisionesPorVenta(): ComisionVenta[] {
+    return this.memo("comisionesPorVenta", () =>
+      comisionesDelMes(this.e, this.m).filter((c) => this.ventaEnCorte(this.ix.ventaPorId.get(c.ventaId))));
+  }
+
   /** Comisiones de closers y director de las ventas del corte. */
   comisiones(): { closers: number; director: number } {
     return this.memo("comisiones", () => {
-      const cs = comisionesDelMes(this.e, this.m).filter((c) => this.ventaEnCorte(this.ix.ventaPorId.get(c.ventaId)));
+      const cs = this.comisionesPorVenta();
       return {
         closers: cs.reduce((a, c) => a + c.comisionCloser, 0),
         director: cs.reduce((a, c) => a + c.comisionDirector, 0),
@@ -324,6 +334,10 @@ export interface DefKpi {
   href?: string;
   /* El panel lateral que abre el número, en los cortes por fechas. */
   desglose?: QueDesglosar;
+  /* Los registros que forman el número, para ir a verlos (lib/kpis-detalle).
+     Lo completa catalogo(), al final. Sin esto (ni desglose) la celda no se
+     abre: una tasa o un costo por unidad no tienen qué mostrar. */
+  detalle?: (c: Contexto) => PartesDetalle | null;
   /* Filas que sólo existen si tienen algo (una por categoría de gasto). */
   ocultarEnCero?: boolean;
   /* null: el número no existe para ese corte (se muestra "—"). */
@@ -450,9 +464,12 @@ export function catalogo(e: EstadoApp): DefKpi[] {
   /* Las llamadas del filtro: todas sin filtro; con un webinar, las de la
      gente que vino de ese webinar. null si el filtro no se puede atribuir. */
   const agendadas = (c: Contexto) => c.sesiones()?.filter((s) => c.enDias(s.creadoEn)) ?? null;
-  const pasadas = (c: Contexto, estado: string) => c.sesiones()?.filter((s) => s.estado === estado && c.enDias(s.inicia)).length ?? null;
+  const lasPasadas = (c: Contexto, estado: string) => c.sesiones()?.filter((s) => s.estado === estado && c.enDias(s.inicia)) ?? null;
+  const pasadas = (c: Contexto, estado: string) => lasPasadas(c, estado)?.length ?? null;
   const personaDe = (c: Contexto, s: Sesion) => c.ix.contactoPorId.get(s.contactoId ?? "") ?? c.ix.leadPorId.get(s.leadId ?? "");
-  const calificadas = (c: Contexto) => agendadas(c)?.filter((s) => evaluarAgenda(s, personaDe(c, s)).calificada).length ?? null;
+  const lasCalificadas = (c: Contexto) => agendadas(c)?.filter((s) => evaluarAgenda(s, personaDe(c, s)).calificada) ?? null;
+  const calificadas = (c: Contexto) => lasCalificadas(c)?.length ?? null;
+  const porVenir = (c: Contexto) => c.sesiones()?.filter((s) => s.estado === "agendada" && new Date(s.inicia).getTime() >= Date.now()) ?? null;
 
   add("agenda", "Agenda (Calendly)", [
     { id: "ag_nuevas", etiqueta: "Llamadas agendadas", formato: "cantidad", mejor: "sube", href: "/agenda",
@@ -482,7 +499,7 @@ export function catalogo(e: EstadoApp): DefKpi[] {
       valor: (c) => { const h = pasadas(c, "hecha"), n = pasadas(c, "no-show"); return h === null || n === null ? null : pctDe(h, h + n); } },
     { id: "ag_porvenir", etiqueta: "Llamadas por venir", formato: "cantidad", foto: true, href: "/agenda",
       ayuda: "Agendadas que todavía no pasaron.",
-      valor: (c) => c.sesiones()?.filter((s) => s.estado === "agendada" && new Date(s.inicia).getTime() >= Date.now()).length ?? null },
+      valor: (c) => porVenir(c)?.length ?? null },
   ]);
 
   add("agenda", "Pipeline de ventas", [
@@ -498,9 +515,11 @@ export function catalogo(e: EstadoApp): DefKpi[] {
 
   /* ================= BOFU: Ventas ================= */
 
-  const deTipo = (c: Contexto, tipo: string) => c.ventasContables().filter((v) => v.productoId && c.ix.tipoProducto.get(v.productoId) === tipo).length;
-  const enCuotas = (c: Contexto, n: number, oMas = false) =>
-    c.ventasContables().filter((v) => { const k = c.cuotasDe(v).length; return oMas ? k >= n : k === n; }).length;
+  const lasDeTipo = (c: Contexto, tipo: string) => c.ventasContables().filter((v) => v.productoId && c.ix.tipoProducto.get(v.productoId) === tipo);
+  const deTipo = (c: Contexto, tipo: string) => lasDeTipo(c, tipo).length;
+  const lasEnCuotas = (c: Contexto, n: number, oMas = false) =>
+    c.ventasContables().filter((v) => { const k = c.cuotasDe(v).length; return oMas ? k >= n : k === n; });
+  const enCuotas = (c: Contexto, n: number, oMas = false) => lasEnCuotas(c, n, oMas).length;
   /* Programas + (downsells + reservas) / ticket del programa. La plata de
      las reservas es la seña de las ventas que quedaron en sólo reserva. */
   const ventasEquivalentes = (c: Contexto): number | null => {
@@ -745,6 +764,99 @@ export function catalogo(e: EstadoApp): DefKpi[] {
     ayuda: `Alumnos en la etapa «${et.nombre}» del pipeline de servicio.`,
     valor: (c: Contexto) => g(c, () => c.e.alumnos.filter((a) => etapaDelAlumno(etapas, a)?.id === et.id).length),
   })));
+
+  /* ================= Qué forma cada número =================
+     Los registros detrás de cada celda (lib/kpis-detalle.ts), con la misma
+     lista que cuenta el número. Lo que es una cuenta sobre otros números
+     (tasas, costos por unidad, ROAS, CAC, ticket, profit) no tiene qué
+     mostrar y no se abre. Los del webinar se abren por webinar: son los
+     números de su planilla. */
+  type Detalle = (c: Contexto) => PartesDetalle | null;
+  const webinars = (cuenta: (c: Contexto, x: Webinar) => number | null, formato: "moneda" | "cantidad", etiqueta: string): Detalle =>
+    (c) => (c.webinars().length ? deWebinars(c, c.webinars(), (x) => cuenta(c, x), formato, etiqueta) : null);
+  const deVia = (v: ViaLanzamiento, link: LinkVia | undefined, f: (n: NumerosVia) => number, etiqueta: string): Detalle =>
+    webinars((c, x) => { const r = rendimientoPorVia(c.e, [x]); return r.hayAgendas ? f(numerosDe(r, v, link)) : null; }, "cantidad", etiqueta);
+  const llamadas = (lista: (c: Contexto) => Sesion[] | null, orden: "llamada" | "agendo" = "llamada"): Detalle =>
+    (c) => { const xs = lista(c); return xs ? deLlamadas(c, xs, orden) : null; };
+  const ventas = (lista: (c: Contexto) => Venta[]): Detalle => (c) => deVentas(c, lista(c));
+  const gastos = (lista: (c: Contexto) => EstadoApp["gastos"], etiqueta: string): Detalle => (c) => g(c, () => deGastos(c, lista(c), etiqueta));
+  const alumnos = (lista: (c: Contexto) => EstadoApp["alumnos"]): Detalle => (c) => g(c, () => deAlumnos(c, lista(c)));
+  const atrasados = (dias: number): Detalle => (c) => deAtrasados(c, c.vencidas(), dias);
+
+  const detalles: Record<string, Detalle> = {
+    /* Adquisición */
+    inv_ads: (c) => g(c, () => dePublicidad(c, gastosDePublicidad(c.e, c.m))),
+    w_pauta: webinars((c, x) => numerosDelWebinar(c.e, x).inversion, "moneda", "Pauta"),
+    w_dm: webinars((c, x) => numerosDelWebinar(c.e, x).inversionDmAds, "moneda", "DM Ads"),
+    w_wapi: webinars((_c, x) => x.costoWhatsappApi, "moneda", "WhatsApp API"),
+    w_inv: webinars((c, x) => metricasDeWebinar(c.e, x).inversionTotal, "moneda", "Inversión"),
+    meta_gasto: (c) => g(c, () => deAnuncios(c, "inversion")),
+    meta_impr: (c) => g(c, () => deAnuncios(c, "impresiones")),
+    meta_leads: (c) => g(c, () => deAnuncios(c, "leads")),
+    w_form: webinars((c, x) => metricasDeWebinar(c.e, x).formularios, "cantidad", "Formularios"),
+    w_grupo: webinars((c, x) => metricasDeWebinar(c.e, x).grupoWpp, "cantidad", "En el grupo"),
+    personas: (c) => { const xs = c.contactos(); return xs ? dePersonas(c, xs) : null; },
+    leads_nuevos: (c) => { const xs = c.leadsNuevos(); return xs ? deLeads(c, xs) : null; },
+    /* Webinar y agenda */
+    w_asist: webinars((c, x) => metricasDeWebinar(c.e, x).asistentes, "cantidad", "Asistieron"),
+    w_ll_vivo: webinars((_c, x) => x.llamadasVivo, "cantidad", "Agendas en el vivo"),
+    w_ll_post: webinars((_c, x) => x.llamadasPosterior, "cantidad", "Agendas después"),
+    w_ll_replay: deVia("webinar", "replay", (n) => n.agendas, "Agendas con el replay"),
+    w_ll_seguimiento: deVia("webinar", "seguimiento", (n) => n.agendas, "Agendas del seguimiento"),
+    w_ll_clase0: deVia("clase0", undefined, (n) => n.agendas, "Agendas de la clase cero"),
+    w_ll_qa: deVia("qa", undefined, (n) => n.agendas, "Agendas del Q&A"),
+    w_ll: webinars((c, x) => metricasDeWebinar(c.e, x).llamadas, "cantidad", "Agendas"),
+    w_ll_calif: webinars((c, x) => metricasDeWebinar(c.e, x).llamadasCalificadas, "cantidad", "Calificadas"),
+    ag_nuevas: llamadas(agendadas, "agendo"),
+    ag_calif: llamadas(lasCalificadas, "agendo"),
+    ag_hechas: llamadas((c) => lasPasadas(c, "hecha")),
+    ag_noshow: llamadas((c) => lasPasadas(c, "no-show")),
+    ag_canceladas: llamadas((c) => lasPasadas(c, "cancelada")),
+    ag_porvenir: llamadas(porVenir),
+    pipe_abierto: (c) => g(c, () => deLeads(c, leadsDelPipeline(c.e).map((x) => x.lead))),
+    pipe_sincontactar: (c) => g(c, () => deLeads(c, leadsSinContactar(c.e))),
+    /* Ventas */
+    v_n: ventas((c) => c.ventasContables()),
+    v_principal: ventas((c) => lasDeTipo(c, "principal")),
+    v_downsell: ventas((c) => lasDeTipo(c, "downsell")),
+    v_upsell: ventas((c) => lasDeTipo(c, "upsell")),
+    v_1: ventas((c) => lasEnCuotas(c, 1)),
+    v_2: ventas((c) => lasEnCuotas(c, 2)),
+    v_3: ventas((c) => lasEnCuotas(c, 3)),
+    v_4: ventas((c) => lasEnCuotas(c, 4, true)),
+    v_fact: ventas((c) => c.ventas()),
+    wv_vivo: deVia("webinar", "vivo", (n) => n.ventas, "Ventas del vivo"),
+    wv_replay: deVia("webinar", "replay", (n) => n.ventas, "Ventas del replay"),
+    wv_seguimiento: deVia("webinar", "seguimiento", (n) => n.ventas, "Ventas del seguimiento"),
+    wv_clase0: deVia("clase0", undefined, (n) => n.ventas, "Ventas de la clase cero"),
+    wv_qa: deVia("qa", undefined, (n) => n.ventas, "Ventas del Q&A"),
+    /* Cobranza */
+    c_cc: (c) => dePagos(c, c.pagos()),
+    c_reservas: (c) => dePagos(c, c.pagos().filter((p) => c.ix.cuotaPorId.get(p.cuotaId)?.esReserva)),
+    c_vencido: (c) => deVencidas(c, c.vencidas()),
+    c_vencidas: (c) => deVencidas(c, c.vencidas()),
+    c_7: atrasados(7), c_10: atrasados(10), c_12: atrasados(12), c_15: atrasados(15), c_20: atrasados(20),
+    c_peor: (c) => deVencidas(c, c.vencidas().slice(0, 1)),
+    c_canceladas: ventas((c) => c.ventasTodas().filter((v) => v.estado === "cancelada")),
+    c_reembolsadas: ventas((c) => c.ventasTodas().filter((v) => v.estado === "reembolsada")),
+    c_sinconciliar: (c) => g(c, () => deMovimientos(c, c.e.movimientos.filter((x) => x.estado === "pendiente"))),
+    /* Rentabilidad */
+    r_fees: (c) => deFees(c, c.pagos()),
+    r_closers: (c) => deComisiones(c, c.comisionesPorVenta(), "closer"),
+    r_director: (c) => deComisiones(c, c.comisionesPorVenta(), "director"),
+    r_directos: gastos((c) => gastosDelMes(c.e, c.m, "directo"), "Costos directos"),
+    r_opex: gastos((c) => gastosDelMes(c.e, c.m, "operativo"), "Gastos operativos"),
+    r_ceo: gastos((c) => gastosDelMes(c.e, c.m, "dueno"), "Honorarios"),
+    /* Servicio */
+    s_activos: alumnos(activos),
+    s_nuevos: alumnos((c) => c.e.alumnos.filter((a) => c.enDias(a.inicio))),
+    s_sinreportar: alumnos((c) => { const r = rachasAHoy(c.e); return activos(c).filter((a) => (r.get(a.id) ?? 0) >= 2); }),
+  };
+  for (const cat of porCategoria.keys()) {
+    detalles[`r_cat:${cat}`] = gastos((c) => gastosDelMes(c.e, c.m).filter((x) => x.categoria === cat && x.grupo !== "dueno" && x.grupo !== "retiro"), cat);
+  }
+  for (const et of etapas) detalles[`s_etapa:${et.id}`] = alumnos((c) => c.e.alumnos.filter((a) => etapaDelAlumno(etapas, a)?.id === et.id));
+  for (const d of lista) if (detalles[d.id]) d.detalle = detalles[d.id];
 
   return lista;
 }

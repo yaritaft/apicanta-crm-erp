@@ -234,6 +234,25 @@ estima cerrarlo. No se presentó o se reprogramó. Suma las que quedaron sin car
 mismo se carga desde la ficha de la persona, que tiene la vista **Llamadas** con su perfil, de dónde vino y cada
 llamada. Antes de usarlo contra Supabase hay que correr `supabase/eod.sql` (seis columnas en `sesiones`).
 
+**Se corrige en la celda** (02/10: "deberían ser editables y poder corregir ahí mismo, como un Excel"). Un clic
+abre la celda, Enter guarda y el aviso trae «Deshacer» (`CeldaEditable`, `escrituraDe` en `lib/crm-tabla.ts`). Lo que
+es de la llamada (closer, estado, resultado, objeción, oferta, cierre estimado, grabación, notas) cambia esa llamada,
+con los mismos efectos que el cierre del día. Lo que es de la persona (nombre, mail, teléfono, país y lo que contestó
+al agendar) queda en la persona y cambia en todas sus llamadas: lo que contestó no se pisa, la corrección va en
+`extra.corregido` de su contacto y se aplica encima de las respuestas (`lib/perfil.ts`), así la ven igual el CRM, la
+ficha, la estrella de calificada, la Agenda y el Dashboard; vaciar la celda vuelve a lo que contestó. Lo que sale solo
+(la fecha, la vía, el ad, si califica, la venta) no se edita y lo dice al pasar el mouse. El nombre abre la ficha.
+Cada tipo de cuenta corrige lo que edita, y la base lo traba igual.
+
+El cierre del día es todo desplegables, con el estado de la llamada ya cargado. Al elegir cómo terminó, la persona se
+corre a la izquierda y lo que sigue aparece a la derecha, sin bajar. El link de la grabación viene cargado si Fathom
+la ató; si no, se pega o se busca entre las grabaciones de Fathom del closer de esa llamada y se ata (`api/fathom`:
+buscar y atar; sólo quien la atendió o un dueño, porque entre las de un closer puede haber reuniones que no son de
+ventas).
+
+La **ficha** tiene cada dato una sola vez: a la izquierda, cómo contactarla, su oportunidad y de dónde vino; en la
+vista Llamadas, quién es (`PerfilPersona`, se corrige con un clic) y cada llamada.
+
 La planilla como la de Airtable que había antes sigue en `/crm/grilla`, fuera del menú.
 
 ### La grilla de antes (Booking Calls)
@@ -447,3 +466,12 @@ correr `supabase/honorarios.sql` (tablas, políticas, niveles de acceso y la col
 - **El ángulo del ad** (`anguloDe` en `lib/crm-tabla.ts`): en Meta los ads se llaman como su video y se duplican
   («MERCADO SATURADO.mp4 - Copia 2»); el ángulo es ese nombre sin copias ni formato. Es columna del CRM y corte en «Por
   qué no se cierra».
+- **Los números del Dashboard se abren** (02/10; `lib/kpis.ts`: `detalle`, `lib/kpis-detalle.ts`, `DetalleDeKpi`): un clic
+  en una celda muestra los registros que la forman, con la misma lista que cuenta el número: las llamadas (agendadas,
+  hechas, canceladas, no vinieron), las ventas, los pagos, los gastos, las cuotas vencidas, los alumnos y, para la
+  plata en anuncios, los anuncios de Meta de esos días. Cada fila lleva a la ficha, a su pantalla o al detalle del
+  anuncio. Lo que es una cuenta (costo por agenda, tasas, CTR, CPC, ticket, CAC, ROAS) no se abre, ni un número en cero.
+- **El anuncio, arriba de su detalle** (`components/marketing/DetalleAnuncio.tsx`, `api/meta/preview`): la vista previa
+  que arma Meta para cualquier formato (imagen, video, carrusel). Se pide cada vez que se abre, porque el link vence; de
+  lo que devuelve Meta se usa sólo el link y el tamaño (`lib/meta-preview.ts`). El mismo detalle se abre desde Marketing
+  y desde el Dashboard.

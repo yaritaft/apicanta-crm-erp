@@ -120,7 +120,9 @@ export function TablaKpis({
                           </th>
                           {f.valores.map((v, i) => {
                             const corte = cortes[i];
-                            const abrible = onAbrir && f.def.desglose && v !== null && !corte.filtro;
+                            /* Se abre lo que tiene registros detrás (un número en cero no
+                               tiene nada que mostrar; una tasa o un costo por unidad, tampoco). */
+                            const abrible = onAbrir && v !== null && ((f.def.detalle && v !== 0) || (f.def.desglose && !corte.filtro));
                             const valor = <Valor v={v} formato={f.def.formato} moneda={moneda} />;
                             const contenido = comparar
                               ? (
