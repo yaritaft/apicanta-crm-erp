@@ -421,6 +421,18 @@ a { color: inherit; text-decoration: none; }
 .drawer__head { padding: var(--space-5); border-bottom: 1px solid var(--border); display: flex; align-items: flex-start; gap: var(--space-3); }
 .drawer__body { flex: 1; overflow-y: auto; padding: var(--space-5); display: flex; flex-direction: column; gap: var(--space-5); }
 .drawer__foot { padding: var(--space-4) var(--space-5); border-top: 1px solid var(--border); display: flex; gap: var(--space-2); }
+/* El mismo panel como ventana en el medio de la pantalla (el detalle de un
+   anuncio). Queda en la capa del panel: lo que se abra desde adentro (la
+   ficha de una persona) va arriba. */
+.drawer-backdrop--pop { backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
+.drawer.drawer--pop {
+  inset: 0; margin: auto;
+  width: min(1040px, calc(100vw - 2 * var(--space-4)));
+  height: fit-content; max-height: calc(100vh - 2 * var(--space-5));
+  border: 1px solid var(--border); border-radius: var(--radius-lg);
+  animation: pop 200ms cubic-bezier(.2,.8,.3,1);
+}
+.drawer--pop .drawer__body { min-height: 0; }
 
 /* ---------- Lista de definición (detalle) ---------- */
 .dl { display: grid; grid-template-columns: minmax(128px, max-content) 1fr; gap: var(--space-2) var(--space-4); align-items: baseline; }
@@ -3183,6 +3195,20 @@ span.kpis__etiqueta:hover { color: var(--ink); text-decoration: none; }
 /* Varios (un carrusel, o uno por lugar): en fila, para pasar de costado. */
 .mk-medios { display: flex; gap: var(--space-3); overflow-x: auto; scroll-snap-type: x proximity; padding-bottom: var(--space-2); }
 .mk-medio--en-fila { --alto-max: min(56vh, 460px); flex: none; margin: 0; width: min(86%, calc(var(--alto-max) * var(--proporcion))); scroll-snap-align: center; }
+/* El detalle del anuncio en su ventana: el anuncio a la izquierda, a la
+   vista mientras se recorren los números de la derecha. */
+.anuncio-pop { display: grid; grid-template-columns: minmax(0, 400px) minmax(0, 1fr); gap: var(--space-6); align-items: start; }
+.anuncio-pop--solo { grid-template-columns: minmax(0, 1fr); }
+.anuncio-pop__medio { position: sticky; top: 0; min-width: 0; }
+.anuncio-pop__datos { min-width: 0; }
+.anuncio-pop__medio .mk-medio { --alto-max: min(calc(100vh - 310px), 620px); }
+.anuncio-pop__medio .mk-medio--en-fila { --alto-max: min(calc(100vh - 350px), 520px); }
+@media (max-width: 900px) {
+  .anuncio-pop { grid-template-columns: minmax(0, 1fr); gap: var(--space-5); }
+  .anuncio-pop__medio { position: static; }
+  .anuncio-pop__medio .mk-medio { --alto-max: min(60vh, 520px); }
+  .anuncio-pop__medio .mk-medio--en-fila { --alto-max: min(52vh, 440px); }
+}
 /* Lo que dice el anuncio. */
 .mk-copy { display: flex; flex-direction: column; gap: var(--space-2); }
 .mk-copy__titulo { font-weight: 600; color: var(--ink); overflow-wrap: anywhere; }

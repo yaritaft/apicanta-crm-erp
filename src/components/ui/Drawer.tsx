@@ -4,9 +4,13 @@ import React, { useEffect } from "react";
 import { X } from "lucide-react";
 import { IconButton } from "./ui";
 
-export function Drawer({ abierto, onCerrar, titulo, sub, children, pie, cabecera }: {
+export function Drawer({ abierto, onCerrar, titulo, sub, children, pie, cabecera, emergente }: {
   abierto: boolean; onCerrar: () => void; titulo: string; sub?: string;
   children: React.ReactNode; pie?: React.ReactNode; cabecera?: React.ReactNode;
+  /* Como ventana en el medio de la pantalla y no como panel de costado (el
+     detalle de un anuncio). Es la misma capa: una ficha que se abra desde
+     adentro queda arriba, como con el panel. */
+  emergente?: boolean;
 }) {
   useEffect(() => {
     if (!abierto) return;
@@ -21,8 +25,8 @@ export function Drawer({ abierto, onCerrar, titulo, sub, children, pie, cabecera
 
   return (
     <>
-      <div className="drawer-backdrop" onClick={onCerrar} />
-      <aside className="drawer" role="dialog" aria-modal="true" aria-label={titulo}>
+      <div className={`drawer-backdrop${emergente ? " drawer-backdrop--pop" : ""}`} onClick={onCerrar} />
+      <aside className={`drawer${emergente ? " drawer--pop" : ""}`} role="dialog" aria-modal="true" aria-label={titulo}>
         <div className="drawer__head">
           <div style={{ minWidth: 0, flex: 1 }}>
             {cabecera ?? (

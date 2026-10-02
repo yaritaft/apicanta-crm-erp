@@ -16,10 +16,12 @@ import type { Ad } from "@/lib/types";
 import { estadoDeAnuncio } from "./estados";
 
 /* ==================================================================
-   El detalle de un anuncio: arriba el anuncio mismo (su video o su
-   imagen, con su forma), y abajo sus números del período y las personas
-   que entraron por él. Lo abren Marketing (la tabla de anuncios) y el
-   Dashboard (el gasto en Meta, anuncio por anuncio).
+   El detalle de un anuncio, en una ventana en el medio de la pantalla: a
+   la izquierda el anuncio mismo (su video o su imagen, con su forma), que
+   queda a la vista, y a la derecha sus números del período y las personas
+   que entraron por él. En una pantalla angosta, uno debajo del otro. Lo
+   abren Marketing (la tabla de anuncios) y el Dashboard (el gasto en
+   Meta, anuncio por anuncio).
    ================================================================== */
 
 export type FormatoPlata = (n: number, decimales?: number) => string;
@@ -56,7 +58,7 @@ export function DetalleAnuncio({ ad, rango, M, onCerrar, onIr }: {
 
   return (
     <Drawer
-      abierto onCerrar={onCerrar} titulo={ad.nombre}
+      emergente abierto onCerrar={onCerrar} titulo={ad.nombre}
       cabecera={
         <div className="stack-2">
           <h2 className="t-h2" style={{ overflowWrap: "anywhere" }}>{ad.nombre || "Anuncio sin nombre"}</h2>
@@ -82,10 +84,10 @@ export function DetalleAnuncio({ ad, rango, M, onCerrar, onIr }: {
         </div>
       }
     >
-      <div className="stack-5">
-        <VistaPreviaAnuncio ad={ad} />
+      <div className={`anuncio-pop${f ? "" : " anuncio-pop--solo"}`}>
+        <div className="anuncio-pop__medio"><VistaPreviaAnuncio ad={ad} /></div>
       {f && (
-        <div className="stack-5">
+        <div className="stack-5 anuncio-pop__datos">
           <div className="grid-2" style={{ gap: 12 }}>
             <Mini etiqueta="Inversión" valor={M(f.inversion)} />
             <Mini etiqueta="Personas" valor={num(f.personas)} />
