@@ -235,15 +235,39 @@ async function pedir(fetchFn: typeof fetch, url: URL): Promise<Obj> {
   return j;
 }
 
+/* Para entender, desde los registros del servidor, por qué un anuncio no se
+   pudo mostrar directo: cómo es su creativo y qué contestó Meta por cada
+   archivo. Sin links ni claves: sólo nombres de campos y mensajes de Meta. */
+export interface DiagnosticoMaterial { forma: string; refs: number; fallas: string[] }
+
+/** Cómo es un creativo, dicho corto: su tipo y los campos que trae. */
+export function formaDelCreativo(creativo: unknown): string {
+  const c = obj(creativo);
+  if (!c) return "sin creativo";
+  const historia = obj(c.object_story_spec);
+  const feed = obj(c.asset_feed_spec);
+  const tiene = [
+    id(c.video_id) ? "video_id" : "", txt(c.image_url) ? "image_url" : "", txt(c.image_hash) ? "image_hash" : "",
+    ...Object.keys(historia ?? {}).filter((k) => k.endsWith("_data")).map((k) => `object_story_spec.${k}`),
+    feed ? `asset_feed_spec(${lista(feed.videos).length} videos, ${lista(feed.images).length} imágenes)` : "",
+  ].filter(Boolean);
+  return `${txt(c.object_type) ?? "sin tipo"} · ${tiene.join(", ") || "sin medios a la vista"}`;
+}
+
 /** El material del anuncio: su creativo, y de ahí cada video e imagen.
- *  Si un video o una imagen no se puede leer (permisos), el resto sigue. */
-export async function traerMaterialDelAnuncio(graph: string, token: string, adId: string, fetchFn: typeof fetch = fetch): Promise<CreativoVisto> {
+ *  Si un video o una imagen no se puede leer (permisos), el resto sigue, y
+ *  queda anotado en `diagnostico` (si se pasa). */
+export async function traerMaterialDelAnuncio(
+  graph: string, token: string, adId: string, fetchFn: typeof fetch = fetch, diagnostico?: DiagnosticoMaterial,
+): Promise<CreativoVisto> {
+  const anotar = (que: string, e: unknown) => diagnostico?.fallas.push(`${que}: ${e instanceof Error ? e.message : "error"}`);
   const u = new URL(`${graph}/${adId}`);
   u.searchParams.set("fields", `account_id,creative{${CAMPOS_CREATIVO}}`);
   u.searchParams.set("access_token", token);
   const ad = await pedir(fetchFn, u);
   const creativo = obj(ad.creative);
   const refs = refsDelCreativo(creativo);
+  if (diagnostico) { diagnostico.forma = formaDelCreativo(creativo); diagnostico.refs = refs.length; }
 
   const videos = new Map<string, VideoMeta>();
   const imagenes = new Map<string, ImagenMeta>();
@@ -255,7 +279,11 @@ export async function traerMaterialDelAnuncio(graph: string, token: string, adId
       const v = new URL(`${graph}/${videoId}`);
       v.searchParams.set("fields", "source,picture,format");
       v.searchParams.set("access_token", token);
-      try { videos.set(videoId, (await pedir(fetchFn, v)) as VideoMeta); } catch { /* sin permiso para ese video: queda su portada */ }
+      try {
+        const video = (await pedir(fetchFn, v)) as VideoMeta;
+        videos.set(videoId, video);
+        if (!esDeMeta(video.source)) anotar(`video ${videoId}`, new Error("Meta no devolvió el archivo (source)"));
+      } catch (e) { anotar(`video ${videoId}`, e); /* sin permiso para ese video: queda su portada */ }
     }),
     (async () => {
       const cuenta = id(ad.account_id);
@@ -269,7 +297,7 @@ export async function traerMaterialDelAnuncio(graph: string, token: string, adId
           const h = txt(x.hash);
           if (h) imagenes.set(h, x as ImagenMeta);
         }
-      } catch { /* quedan los links que ya traía el creativo */ }
+      } catch (e) { anotar("imágenes de la cuenta", e); /* quedan los links que ya traía el creativo */ }
     })(),
   ]);
 

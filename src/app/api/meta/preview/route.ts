@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { exigirArea } from "@/lib/permisos-servidor";
 import { GRAPH, metaConfigurado, tokenDeLaPeticion } from "@/lib/meta";
 import { leerVistaPrevia, type VistaPrevia } from "@/lib/meta-preview";
-import { ErrorDeMeta, tieneArchivo, traerMaterialDelAnuncio, type CreativoVisto } from "@/lib/meta-creativo";
+import { ErrorDeMeta, tieneArchivo, traerMaterialDelAnuncio, type CreativoVisto, type DiagnosticoMaterial } from "@/lib/meta-creativo";
 
 /* ==================================================================
    El anuncio, para verlo en su detalle (Marketing y el Dashboard).
@@ -75,13 +75,21 @@ export async function GET(req: Request) {
   let material: CreativoVisto | null = null;
   let aviso: string | undefined;
   if (q.get("marco") !== "1") {
+    /* Lo que no se pudo leer queda en los registros del servidor, para saber
+       por qué un anuncio no se ve directo (sin links ni claves). */
+    const diagnostico: DiagnosticoMaterial = { forma: "", refs: 0, fallas: [] };
     try {
-      material = await traerMaterialDelAnuncio(GRAPH, token, ad);
-      if (tieneArchivo(material)) return NextResponse.json(material, sinGuardar);
+      material = await traerMaterialDelAnuncio(GRAPH, token, ad, fetch, diagnostico);
+      const conArchivo = tieneArchivo(material);
+      if (!conArchivo || diagnostico.fallas.length > 0) {
+        console.warn("[meta/preview]", JSON.stringify({ ad, directo: conArchivo, medios: material.medios.length, ...diagnostico }));
+      }
+      if (conArchivo) return NextResponse.json(material, sinGuardar);
       aviso = material.medios.length > 0
         ? "Meta no entregó el archivo del video de este anuncio: se ve como lo arma Meta."
         : "El creativo de este anuncio no trae un video ni una imagen que se pueda mostrar directo: se ve como lo arma Meta.";
     } catch (e) {
+      console.warn("[meta/preview]", JSON.stringify({ ad, directo: false, error: e instanceof Error ? e.message : "error", ...diagnostico }));
       if (e instanceof ErrorDeMeta && sinAcceso(e.status, e.codigo)) return NextResponse.json({ error: e.message }, { status: 502 });
       aviso = "No se pudo leer el creativo de este anuncio: se ve como lo arma Meta.";
     }
