@@ -1,4 +1,4 @@
-import type { Cuota, EstadoApp, Gasto, Pago, Venta } from "./types";
+import type { Cuota, EstadoApp, Gasto, MiembroEquipo, Pago, Venta } from "./types";
 import type { RangoMes } from "./metricas";
 import { esSoloReserva } from "./angelo";
 
@@ -91,12 +91,17 @@ export function tasaDeCobro(e: EstadoApp, m: RangoMes): number {
 export interface ComisionVenta {
   id: string;
   ventaId: string;
+  /* El servicio vendido: de él puede depender el % de cada uno. */
+  productoId?: string;
   cobradoEnMes: number;
   netoProcesador: number;
   closerId?: string;
   closerNombre: string;
+  /* El % que se le aplicó al closer en esta venta (el de su servicio, o el general). */
+  tasaCloser: number;
   comisionCloser: number;
   directorId?: string;
+  tasaDirector: number;
   comisionDirector: number;
   sinComision: boolean;
   /* El closer de la venta, si esta fila es de cuotas que heredó otro. */
@@ -110,6 +115,13 @@ export interface ComisionVenta {
 export const cobraEnFecha = (m: { hasta?: string } | undefined, fechaPago: string) =>
   !m?.hasta || new Date(fechaPago).getTime() - 3 * 3600000 < new Date(`${m.hasta}T00:00:00Z`).getTime() + 86400000;
 export const cobraDirector = cobraEnFecha;
+
+/** El % con el que alguien comisiona una venta: el de ese servicio, si lo
+ *  tiene cargado aparte, o el general. Lo usan Finanzas, la caja y la
+ *  planilla; la liquidación llega a lo mismo desde lo que cobra la persona
+ *  (lib/honorarios.ts). */
+export const tasaDeComision = (m: Pick<MiembroEquipo, "comisionRate" | "comisionServicios"> | undefined, productoId?: string): number =>
+  !m ? 0 : (productoId !== undefined ? m.comisionServicios?.[productoId] : undefined) ?? m.comisionRate ?? 0;
 
 /** Quién comisiona los cobros de una cuota: el que la heredó o, si nadie,
  *  el closer de la venta. */
@@ -152,16 +164,21 @@ export function comisionesDelMes(e: EstadoApp, m: RangoMes): ComisionVenta[] {
     for (const [k, pagos] of porCloser) {
       const closer = k ? miembro.get(k) : undefined;
       const neto = (xs: typeof pagos) => xs.reduce((a, p) => a + (p.monto - p.feeMonto), 0);
+      const tasaCloser = sinComision ? 0 : tasaDeComision(closer, v.productoId);
+      const tasaDirector = sinComision ? 0 : tasaDeComision(director, v.productoId);
       out.push({
         id: porCloser.size > 1 ? `${v.id}:${k || "sin"}` : v.id,
         ventaId: v.id,
+        productoId: v.productoId,
         cobradoEnMes: pagos.reduce((a, p) => a + p.monto, 0),
         netoProcesador: neto(pagos),
         closerId: k || undefined,
         closerNombre: closer?.nombre ?? "Sin asignar",
-        comisionCloser: sinComision ? 0 : neto(pagos.filter((p) => cobraEnFecha(closer, p.fecha))) * (closer?.comisionRate ?? 0),
+        tasaCloser,
+        comisionCloser: neto(pagos.filter((p) => cobraEnFecha(closer, p.fecha))) * tasaCloser,
         directorId: v.directorId,
-        comisionDirector: sinComision ? 0 : neto(pagos.filter((p) => cobraDirector(director, p.fecha))) * (director?.comisionRate ?? 0),
+        tasaDirector,
+        comisionDirector: neto(pagos.filter((p) => cobraDirector(director, p.fecha))) * tasaDirector,
         sinComision,
         ...(k && k !== v.closerId ? { heredadaDe: deLaVenta?.nombre ?? "otro closer" } : {}),
       });
@@ -191,7 +208,7 @@ export function comisionSetterDePago(e: EstadoApp, venta: Venta | undefined, p: 
   if (!venta?.setterId) return 0;
   if (e.equipo.find((x) => x.id === venta.closerId)?.sinComision) return 0;
   const setter = e.equipo.find((x) => x.id === venta.setterId);
-  return setter ? Math.round(netoDe(p) * setter.comisionRate * 100) / 100 : 0;
+  return setter ? Math.round(netoDe(p) * tasaDeComision(setter, venta.productoId) * 100) / 100 : 0;
 }
 
 export function comisionReferidorDePago(e: EstadoApp, venta: Venta | undefined, p: Pago): number {

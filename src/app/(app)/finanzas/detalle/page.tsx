@@ -17,7 +17,7 @@ import { ListaGastos, PARAMS_GASTOS } from "@/components/finanzas/ListaGastos";
 import { FichaGasto } from "@/components/finanzas/FichaGasto";
 import { AsistenteGasto } from "@/components/finanzas/AsistenteGasto";
 import { acciones, useEstado } from "@/lib/store";
-import { fechaLarga, money } from "@/lib/format";
+import { fechaLarga, money, tasaTexto } from "@/lib/format";
 import { rangoDeFechas } from "@/lib/metricas";
 import { DateRangePicker, rangoSub } from "@/components/ui/DateRangePicker";
 import { useRangoURL } from "@/lib/useRango";
@@ -26,6 +26,8 @@ import { useParamsURL, useTablaURL } from "@/lib/useParamsURL";
 import { calcularPyL, comisionesDelMes, comisionesSetterYReferidor, cuotasVencidas, UMBRALES_ATRASO } from "@/lib/finanzas";
 import { useAbrirFicha } from "@/components/ficha/abrir";
 import { CobrosProcesador, PARAMS_PROCESADORES } from "@/components/finanzas/CobrosProcesador";
+import { CuadroComisiones } from "@/components/finanzas/CuadroComisiones";
+import { useNivelAcceso } from "@/lib/acceso";
 import type { Cuota, Gasto } from "@/lib/types";
 
 type Vista = "cobros" | "procesadores" | "gastos" | "comisiones";
@@ -110,7 +112,8 @@ export default function FinanzasDetalle() {
   const comisiones = useMemo(() => comisionesDelMes(e, mes), [e, mes]);
   /* El orden de cada tabla va en el link (?orden): una pestaña a la vez. */
   const tablaCobros = useTablaURL("", { clave: "dias", desc: true }, ["contacto", "cuota", "vence", "dias", "saldo"]);
-  const tablaComisiones = useTablaURL("", { clave: "cobrado", desc: true }, ["closer", "cobrado", "neto", "comiCloser", "comiDir"]);
+  const tablaComisiones = useTablaURL("", { clave: "cobrado", desc: true }, ["closer", "servicio", "cobrado", "neto", "tasa", "comiCloser", "comiDir"]);
+  const { esDueno } = useNivelAcceso();
   const setRef = useMemo(() => comisionesSetterYReferidor(e, mes), [e, mes]);
 
   return (
@@ -211,12 +214,22 @@ export default function FinanzasDetalle() {
       {/* ---------------- Comisiones ---------------- */}
       {vista === "comisiones" && (
         <div className="stack-4">
+          <Card>
+            <CardHead
+              titulo="Cómo comisiona cada uno"
+              sub={`El % que cobra cada persona de lo que entra de sus ventas, neto de procesador. Puede ser distinto según el servicio.${esDueno ? "" : " Los % los cambian los dueños, en Equipo y honorarios."}`}
+              acciones={esDueno ? <Link href="/equipo?seccion=comisiones" className="hk-btn hk-btn--secondary hk-btn--sm">Cambiar los %</Link> : undefined}
+            />
+            <CuadroComisiones e={e} />
+          </Card>
+
           <Ayuda titulo="Cómo se calcula" icono={<Info size={18} />}>
-            El closer cobra sobre el <strong>cash collected neto de procesador</strong>, no sobre el profit:
-            si entraron US$ 1.000 por Stripe, la base es 1.000 − 2,9% y sobre eso va su porcentaje.
-            El director cobra 5% con la misma base. Si la venta figura a nombre de <strong>Yari</strong>,
-            no comisiona nadie. Desde el día en que alguien dejó el equipo no cobra más, y si sus cuotas
-            pasaron a otro closer (en Equipo, en su ficha), lo que se cobre de ellas es del que las heredó.
+            Cada uno cobra sobre el <strong>cash collected neto de procesador</strong>, no sobre el profit:
+            si entraron US$ 1.000 por Stripe, la base es 1.000 − 2,9% y sobre eso va su porcentaje, que es
+            el del cuadro: el del servicio vendido si tiene uno propio, o el general. El director cobra con
+            la misma base. Si la venta figura a nombre de <strong>Yari</strong>, no comisiona nadie. Desde
+            el día en que alguien dejó el equipo no cobra más, y si sus cuotas pasaron a otro closer (en
+            Equipo, en su ficha), lo que se cobre de ellas es del que las heredó.
           </Ayuda>
 
           <Card style={{ padding: 0 }}>
@@ -232,8 +245,16 @@ export default function FinanzasDetalle() {
                     return <span>{v?.contactoNombre ?? "—"} <span className="t-subtle">· {c.closerNombre}{c.heredadaDe ? ` (cuotas heredadas de ${c.heredadaDe})` : ""}</span></span>;
                   },
                 },
+                {
+                  clave: "servicio", titulo: "Servicio", tipo: "secondary", orden: (c) => e.productos.find((x) => x.id === c.productoId)?.nombre ?? "",
+                  celda: (c) => e.productos.find((x) => x.id === c.productoId)?.nombre ?? "—",
+                },
                 { clave: "cobrado", titulo: "Cobrado", tipo: "num", orden: (c) => c.cobradoEnMes, celda: (c) => M(c.cobradoEnMes) },
                 { clave: "neto", titulo: "Neto", tipo: "num", orden: (c) => c.netoProcesador, celda: (c) => M(c.netoProcesador) },
+                {
+                  clave: "tasa", titulo: "% closer", tipo: "num", orden: (c) => c.tasaCloser,
+                  celda: (c) => c.sinComision || !c.closerId ? "—" : <span title="El % del closer en este servicio">{tasaTexto(c.tasaCloser)}</span>,
+                },
                 { clave: "comiCloser", titulo: "Closer", tipo: "num", orden: (c) => c.comisionCloser, celda: (c) => c.sinComision ? <span className="t-subtle">Sin comisión</span> : M(c.comisionCloser, 2) },
                 { clave: "comiDir", titulo: "Director", tipo: "num", orden: (c) => c.comisionDirector, celda: (c) => c.sinComision ? "—" : M(c.comisionDirector, 2) },
               ]}

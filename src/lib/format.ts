@@ -23,6 +23,13 @@ export function pct(n: number, decimales = 1): string {
   return `${signo}${num(Math.abs(n), decimales)}%`;
 }
 
+/** Una tasa (fracción) como porcentaje, con los decimales que tenga, hasta
+ *  dos: 0.15 → "15%", 0.125 → "12,5%", 0.0725 → "7,25%". */
+export function tasaTexto(t: number): string {
+  const x = Math.round((t || 0) * 1e6) / 1e4;
+  return pct(x, Number.isInteger(x) ? 0 : Number.isInteger(Math.round(x * 1e3) / 1e2) ? 1 : 2);
+}
+
 export function delta(n: number, decimales = 1): string {
   if (!Number.isFinite(n)) return "—";
   if (n === 0) return "0%";

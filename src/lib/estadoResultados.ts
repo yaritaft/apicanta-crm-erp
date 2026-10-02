@@ -1,4 +1,4 @@
-import { fechaLarga, pct } from "./format";
+import { fechaLarga, pct, tasaTexto } from "./format";
 import {
   comisionesDelDirector, comisionesPorCloser, feesPorProcesador, gastosPorCategoriaDetalle,
   ingresosPorCliente, type IngresoCliente, type PyL,
@@ -68,6 +68,13 @@ export function armarEstadoResultados(
   const cuota = (c?: Cuota) => (!c ? "Pago" : c.esReserva ? "Reserva" : `Cuota ${c.numero}`);
   const cant = (n: number, uno: string, varios: string) => `${n} ${n === 1 ? uno : varios}`;
   const margen = (a: number, b: number) => (b > 0 ? pct((a / b) * 100, 1) : "—");
+  const servicioDe = (id?: string) => (producto(id) ? ` · ${producto(id)}` : "");
+  /* El % de un closer en sus ventas del período: uno solo, o de cuánto a
+     cuánto si comisiona distinto según el servicio. */
+  const tasasDe = (ts: number[]) => {
+    const u = [...new Set(ts.map((t) => Math.round(t * 1e6) / 1e6))].sort((a, b) => a - b);
+    return u.length <= 1 ? tasaTexto(u[0] ?? 0) : `${tasaTexto(u[0])} a ${tasaTexto(u[u.length - 1])} (según el servicio)`;
+  };
 
   /* ---------- Ingresos: por cliente, pagos a lo cobrado y ventas a lo facturado ---------- */
   const subCliente = (c: IngresoCliente) =>
@@ -110,7 +117,7 @@ export function armarEstadoResultados(
       sub: g.sinComision
         ? `No comisiona nadie · ${cant(g.ventas.length, "venta", "ventas")}`
         : g.closerId
-          ? `${pct(g.tasa * 100, 0)} del cobrado neto de procesador · ${cant(g.ventas.length, "venta", "ventas")}`
+          ? `${tasasDe(g.ventas.map((c) => c.tasaCloser))} del cobrado neto de procesador · ${cant(g.ventas.length, "venta", "ventas")}`
           : `Ventas sin closer · ${cant(g.ventas.length, "venta", "ventas")}`,
       cc: -g.total, rev: -g.total,
       hijos: g.ventas.map((c): NodoPyL => ({
@@ -118,7 +125,7 @@ export function armarEstadoResultados(
         titulo: ventaDe(c.ventaId)?.contactoNombre ?? "Venta",
         sub: c.sinComision
           ? `${M(c.cobradoEnMes, 2)} cobrado · sin comisión`
-          : `${M(c.cobradoEnMes, 2)} cobrado · ${M(c.netoProcesador, 2)} neto de procesador${c.heredadaDe ? ` · cuotas heredadas de ${c.heredadaDe}` : ""}`,
+          : `${tasaTexto(c.tasaCloser)} de ${M(c.netoProcesador, 2)} neto de procesador (${M(c.cobradoEnMes, 2)} cobrado)${servicioDe(c.productoId)}${c.heredadaDe ? ` · cuotas heredadas de ${c.heredadaDe}` : ""}`,
         cc: -c.comisionCloser, rev: -c.comisionCloser, href: hrefVenta(c.ventaId),
       })),
     })),
@@ -134,7 +141,7 @@ export function armarEstadoResultados(
       return {
         id: `director/v:${c.id}`,
         titulo: ventaDe(c.ventaId)?.contactoNombre ?? "Venta",
-        sub: `${d?.nombre ?? "Director"} · ${pct((d?.comisionRate ?? 0) * 100, 0)} de ${M(c.netoProcesador, 2)} neto de procesador`,
+        sub: `${d?.nombre ?? "Director"} · ${tasaTexto(c.tasaDirector)} de ${M(c.netoProcesador, 2)} neto de procesador${servicioDe(c.productoId)}`,
         cc: -c.comisionDirector, rev: -c.comisionDirector, href: hrefVenta(c.ventaId),
       };
     }),

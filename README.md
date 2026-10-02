@@ -469,6 +469,21 @@ correr `supabase/honorarios.sql` (tablas, políticas, niveles de acceso y la col
 - **Caja** (`lib/caja.ts`, Finanzas → Caja): arqueo por cuenta (con lo que entró según la app al lado, para la
   Financiera y Trust), caja esperada, meses de vida y retiros del dueño (grupo de gasto «retiro»: sale de la caja, no
   del profit). Tabla `arqueos`: `supabase/arqueos.sql`.
+- **Un % general y otro por servicio** (`lib/comisiones.ts`, `components/finanzas/CuadroComisiones.tsx`): quien vende,
+  agenda o dirige ventas tiene un % general y puede tener uno propio para algunos servicios; en esas ventas vale el
+  propio **en vez** del general («es diferente el % por closer y por servicio vendido», Angelo).
+  - El cuadro «Cómo comisiona cada uno» (persona × servicio) se **ve** en Finanzas → Detalle → Comisiones y se
+    **cambia** tocando la celda en Equipo y honorarios → Comisiones (dueños). La lista venta por venta muestra el
+    servicio y el % aplicado.
+  - Cada % es un concepto de lo que cobra la persona: la comisión general, y una «Comisión · Servicio» por cada
+    servicio distinto (`conComisionGeneral`, `conComisionDeServicio`). Las dos son hermanas (porcentaje, misma base y
+    alcance) y un cobro entra en una sola (`cuenta()` en `lib/honorarios.ts`); si dos nombran el mismo servicio, vale
+    la primera.
+  - Al guardar, `equipo.comisionRate` y `equipo.comisionServicios` (servicio → fracción) se escriben desde el esquema
+    (`tasaParaFinanzas`, `tasasPorServicio`); Finanzas, la caja, el resultado de cada webinar y la planilla usan
+    `tasaDeComision(persona, servicio)`. La liquidación llega a lo mismo por su lado y lo marca «Ya está en Finanzas».
+  - Columna `equipo."comisionServicios"`: `supabase/comisiones-servicio.sql`. Sin la columna la app anda igual y el %
+    por servicio queda sólo en el navegador de quien lo cargó.
 - **Movimientos entre cuentas** (`lib/traspasos.ts`, `components/finanzas/PasesEntreCuentas.tsx`, Finanzas → Caja): la
   plata que pasa de una cuenta propia a otra (Stripe deposita en Mercury, de Mercury a la Financiera). No es ingreso ni
   gasto: no toca el P&L ni el total de la caja; lo que cuesta el pase (lo que salió menos lo que llegó, en la misma

@@ -1,7 +1,7 @@
 import type {
   CanalOrigen, Contacto, Cuota, EstadoApp, Lead, NivelIngles, Sesion, Venta, Webinar,
 } from "./types";
-import { closerDeCuota, cobraDirector, cobraEnFecha } from "./finanzas";
+import { closerDeCuota, cobraDirector, cobraEnFecha, tasaDeComision } from "./finanzas";
 
 /* ==================================================================
    Las métricas que Yari viene trackeando webinar a webinar desde 2023.
@@ -213,8 +213,8 @@ export function metricasDeWebinar(e: EstadoApp, webinar: Webinar): MetricasWebin
     const closerId = closerDeCuota(v, c);
     const closer = closerId ? miembro.get(closerId) : undefined;
     const director = v.directorId ? miembro.get(v.directorId) : undefined;
-    if (cobraEnFecha(closer, p.fecha)) comisiones += neto * (closer?.comisionRate ?? 0);
-    if (cobraDirector(director, p.fecha)) comisiones += neto * (director?.comisionRate ?? 0);
+    if (cobraEnFecha(closer, p.fecha)) comisiones += neto * tasaDeComision(closer, v.productoId);
+    if (cobraDirector(director, p.fecha)) comisiones += neto * tasaDeComision(director, v.productoId);
   }
 
   return derivar({

@@ -165,7 +165,7 @@ export function FichaMiembro({ miembroId, accesos, onCerrar }: {
                       {c.nombre}
                       <span className="tag">{TIPOS_CONCEPTO.find((t) => t.tipo === c.tipo)?.nombre}</span>
                     </span>
-                    <span className="con-item__frase">{describirConcepto(c, e)}</span>
+                    <span className="con-item__frase">{describirConcepto(c, e, esquema.conceptos)}</span>
                     {c.notas && <span className="con-item__nota">{c.notas}</span>}
                   </button>
                   <IconButton etiqueta={`Editar ${c.nombre}`} onClick={() => setEditando(c)}><Pencil size={15} /></IconButton>

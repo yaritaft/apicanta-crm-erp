@@ -606,6 +606,44 @@ kbd {
   .arqueo-fila > span[data-titulo]::before { content: attr(data-titulo); display: block; font-size: 11px; line-height: 14px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--ink-subtle); }
 }
 
+/* ---------- Cómo comisiona cada uno (Finanzas → Detalle, Equipo y honorarios) ---------- */
+.cuadro-com__tabla { overflow-x: auto; border: 1px solid var(--border); border-radius: var(--radius-md); }
+.cuadro-com table { width: 100%; border-collapse: collapse; font-size: 14px; line-height: 20px; }
+.cuadro-com th, .cuadro-com td { padding: 6px var(--space-3); border-bottom: 1px solid var(--border); white-space: nowrap; text-align: left; }
+.cuadro-com tbody tr:last-child > * { border-bottom: 0; }
+.cuadro-com thead th { font-size: 11px; line-height: 14px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-subtle); background: var(--surface-200); padding-block: var(--space-2); }
+.cuadro-com thead th.cuadro-com__num { text-align: center; }
+.cuadro-com tbody th { font-weight: 600; color: var(--ink); }
+/* Al correr la tabla de costado (teléfono), el nombre queda a la vista. */
+.cuadro-com tr > :first-child { position: sticky; left: 0; z-index: 1; background: var(--surface-100); }
+.cuadro-com thead tr > :first-child { background: var(--surface-200); }
+.cuadro-com__persona { background: none; border: 0; padding: 0; font: inherit; color: inherit; text-align: left; }
+button.cuadro-com__persona { cursor: pointer; }
+button.cuadro-com__persona:hover { color: var(--brand); text-decoration: underline; }
+.cuadro-com__rol { color: var(--ink-subtle); font-size: 13px; }
+.cuadro-com__nota { color: var(--ink-subtle); font-size: 13px; }
+/* Cada celda, una pastilla: apagada si es el % general, pintada si el
+   servicio tiene el suyo. */
+.cuadro-com__celda { text-align: center !important; font-variant-numeric: tabular-nums; }
+.cuadro-com__celda > span, .cuadro-com__boton {
+  display: inline-block; min-width: 68px; padding: 5px 10px; border: 1px solid transparent; border-radius: var(--radius-md);
+  background: none; font: inherit; font-variant-numeric: tabular-nums; color: var(--ink-subtle); text-align: center;
+}
+.cuadro-com__celda[data-general] > * { color: var(--ink); font-weight: 600; }
+.cuadro-com__celda[data-propio] > *, .cuadro-com__muestra[data-propio] { background: var(--brand-soft); border-color: var(--brand-fill); color: var(--brand); font-weight: 600; }
+.cuadro-com__boton { cursor: pointer; transition: border-color 120ms ease-out, background-color 120ms ease-out; }
+.cuadro-com__boton:hover { border-color: var(--border-strong); background: var(--surface-200); color: var(--ink); }
+.cuadro-com__boton:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.cuadro-com__campo {
+  width: 68px; padding: 5px 6px; border: 1px solid var(--focus); border-radius: var(--radius-md); background: var(--surface-200);
+  color: var(--ink); font: inherit; font-variant-numeric: tabular-nums; text-align: center; outline: 0;
+}
+.cuadro-com tr[data-inactivo] > * { opacity: .62; }
+.cuadro-com__pie { display: flex; align-items: center; gap: var(--space-3) var(--space-4); flex-wrap: wrap; margin-top: var(--space-3); }
+.cuadro-com__leyenda { flex: 1 1 320px; font-size: 13px; line-height: 20px; color: var(--ink-subtle); }
+.cuadro-com__mas { flex: 0 0 220px; }
+.cuadro-com__muestra { display: inline-block; width: 14px; height: 14px; border: 1px solid transparent; border-radius: 4px; vertical-align: -2px; margin-right: 4px; }
+
 /* ---------- Movimientos entre cuentas (Finanzas → Caja) ---------- */
 .pases__filtros { margin-bottom: var(--space-3); }
 /* El día que salió y, abajo, el día que llegó si fue otro. */

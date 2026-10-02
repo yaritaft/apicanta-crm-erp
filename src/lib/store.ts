@@ -9,7 +9,7 @@ import type {
 } from "./types";
 import type { EsquemaPago, EstadoTraspaso, EtapaServicio, Gasto, ID as IdMiembro, Liquidacion, MiembroEquipo, ResultadoLiquidacion, TipoCuenta, Traspaso } from "./types";
 import { conciliarPuntas, rutaDe, type Punta } from "./traspasos";
-import { nombrePeriodo, tasaParaFinanzas } from "./honorarios";
+import { mismasTasas, nombrePeriodo, tasaParaFinanzas, tasasPorServicio } from "./honorarios";
 import {
   alumnoDeVenta, cuotaMensualDeVenta, etapaDelAlumno, etapaInicialDeServicio, etapasDeServicio,
   personaDeVenta, planDeVenta,
@@ -2619,19 +2619,23 @@ export const acciones = {
      gastos que la liquidación carga en Finanzas, sin montos por persona. */
 
   /* Crea o edita a alguien del equipo. Si cambia su rol, la tasa con la
-     que Finanzas lo calcula se vuelve a leer de lo que cobra. */
+     que Finanzas lo calcula (la general y la de cada servicio que comisiona
+     distinto) se vuelve a leer de lo que cobra. */
   guardarMiembro(m: MiembroEquipo) {
     const e = snapshot();
-    const tasa = tasaParaFinanzas(m, e.honorarios.find((h) => h.miembroId === m.id));
-    const fila = tasa === undefined ? m : { ...m, comisionRate: tasa };
+    const esq = e.honorarios.find((h) => h.miembroId === m.id);
+    const tasa = tasaParaFinanzas(m, esq);
+    const servicios = tasasPorServicio(m, esq);
+    const fila = tasa === undefined ? m : { ...m, comisionRate: tasa, ...(servicios ? { comisionServicios: servicios } : {}) };
     const existe = e.equipo.some((x) => x.id === m.id);
     guardar({ ...e, equipo: existe ? e.equipo.map((x) => (x.id === m.id ? fila : x)) : [...e.equipo, fila] });
     empujar({ tipo: "upsert", tabla: "equipo", filas: [fila] });
   },
 
-  /* Guarda lo que cobra alguien y alinea su comisionRate: la tasa con la
-     que Finanzas calcula su comisión (o el reparto) tiene que ser la del
-     esquema, o Finanzas y la liquidación dirían números distintos. */
+  /* Guarda lo que cobra alguien y alinea su comisionRate y su % por
+     servicio: la tasa con la que Finanzas calcula su comisión (o el reparto)
+     tiene que ser la del esquema, o Finanzas y la liquidación dirían números
+     distintos. */
   guardarEsquema(esq: EsquemaPago, por?: string) {
     const e = snapshot();
     const actualizado: EsquemaPago = { ...esq, actualizadoEn: ahora(), ...(por ? { actualizadoPor: por } : {}) };
@@ -2639,9 +2643,10 @@ export const acciones = {
     const honorarios = existe ? e.honorarios.map((h) => (h.id === esq.id ? actualizado : h)) : [...e.honorarios, actualizado];
     const m = e.equipo.find((x) => x.id === esq.miembroId);
     const tasa = m ? tasaParaFinanzas(m, actualizado) : undefined;
+    const servicios = m ? tasasPorServicio(m, actualizado) : undefined;
     let equipo = e.equipo;
-    if (m && tasa !== undefined && Math.abs(tasa - m.comisionRate) > 1e-9) {
-      const fila = { ...m, comisionRate: tasa };
+    if (m && tasa !== undefined && (Math.abs(tasa - m.comisionRate) > 1e-9 || !mismasTasas(servicios, m.comisionServicios))) {
+      const fila = { ...m, comisionRate: tasa, comisionServicios: servicios ?? {} };
       equipo = e.equipo.map((x) => (x.id === m.id ? fila : x));
       empujar({ tipo: "upsert", tabla: "equipo", filas: [fila] });
     }

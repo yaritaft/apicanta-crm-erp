@@ -10,7 +10,8 @@ import {
 } from "@/components/cobros/EditorCobros";
 import { disponibleDe } from "@/components/cobros/SelectorMovimiento";
 import { acciones, nuevoId, useEstado } from "@/lib/store";
-import { fechaLarga, isoDia, money, pct } from "@/lib/format";
+import { fechaLarga, isoDia, money, pct, tasaTexto } from "@/lib/format";
+import { tasaDeComision } from "@/lib/finanzas";
 import { medioDeMovimiento, normalizar, parecido, procesadorDeMovimiento } from "@/lib/conciliacion";
 import { buscarPersonas, nombreDeCuota, personaPorId, type PersonaBuscada } from "@/lib/buscar-cliente";
 import { claveEmail } from "@/lib/contactos";
@@ -707,7 +708,8 @@ function PasoEquipo({ b, set, e, sinComision, yo }: {
   const closers = e.equipo.filter((x) => x.activo && (x.rol === "closer" || (x.rol === "ceo" && veCeo)));
   const directores = e.equipo.filter((x) => x.rol === "director");
   const setters = e.equipo.filter((x) => x.activo && x.rol === "setter");
-  const comision = (x: MiembroEquipo) => (x.sinComision ? "no comisiona nadie" : `comisión ${pct(x.comisionRate * 100, 0)}`);
+  /* El % de cada uno en el servicio de esta venta: puede no ser el general. */
+  const comision = (x: MiembroEquipo) => (x.sinComision ? "no comisiona nadie" : `comisión ${tasaTexto(tasaDeComision(x, b.productoId || undefined))}`);
   return (
     <>
       <Pregunta texto="¿Quién es el vendedor?" sub="De acá salen las comisiones: el vendedor cobra sobre lo que entra, neto de procesador." />

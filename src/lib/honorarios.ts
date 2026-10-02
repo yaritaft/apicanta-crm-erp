@@ -4,7 +4,7 @@ import type {
   ResultadoLiquidacion, TipoConcepto, Venta,
 } from "./types";
 import type { RangoMes } from "./metricas";
-import { calcularPyL, closerDeCuota, cobraEnFecha, pagosDelMes, parteMarketing, ventasDelMes } from "./finanzas";
+import { calcularPyL, closerDeCuota, cobraEnFecha, pagosDelMes, parteMarketing, tasaDeComision, ventasDelMes } from "./finanzas";
 import { aMonedaBase, categoriaDe, normalizar } from "./gastos";
 import { fechaLarga, money, num, pct } from "./format";
 
@@ -155,11 +155,16 @@ type Catalogos = Pick<EstadoApp, "equipo" | "productos" | "ajustes">;
 const porCada = (n: number, [uno, varios]: [string, string]) =>
   n === 1 ? uno : `${num(n, Number.isInteger(n) ? 0 : 2)} ${varios}`;
 
-function filtros(c: ConceptoPago, e: Catalogos): string[] {
+function filtros(c: ConceptoPago, e: Catalogos, hermanos?: ConceptoPago[]): string[] {
   const out: string[] = [];
+  const nombresDe = (ids: ID[]) => ids.map((id) => e.productos.find((p) => p.id === id)?.nombre).filter(Boolean);
   if (c.productoIds?.length) {
-    const nombres = c.productoIds.map((id) => e.productos.find((p) => p.id === id)?.nombre).filter(Boolean);
+    const nombres = nombresDe(c.productoIds);
     if (nombres.length) out.push(`sólo ${nombres.join(", ")}`);
+  } else if (hermanos) {
+    /* Los servicios que tienen su propio %: en ésos no vale esta comisión. */
+    const propios = nombresDe([...serviciosConComisionPropia(hermanos, c)]);
+    if (propios.length) out.push(`menos ${propios.join(", ")}, que ${propios.length === 1 ? "tiene su propio %" : "tienen su propio %"}`);
   }
   if (c.sinVentasSinComision && (c.alcance ?? "todas") === "todas") out.push(`sin las que cerró ${quienesNoComisionan(e)}`);
   if (c.sinExcluidasMarketing) out.push("sin las excluidas de marketing");
@@ -168,10 +173,10 @@ function filtros(c: ConceptoPago, e: Catalogos): string[] {
 
 /* Lo que se mide, con su alcance: "del cash collected post pasarelas de las
    ventas que cerró", "llamadas agendadas con utm_source Resell". */
-function queSeMide(c: ConceptoPago, e: Catalogos, cada?: number): string {
+function queSeMide(c: ConceptoPago, e: Catalogos, cada?: number, hermanos?: ConceptoPago[]): string {
   const b = c.base ?? "manual";
   const alcance = c.alcance ?? "todas";
-  const extra = filtros(c, e);
+  const extra = filtros(c, e, hermanos);
   const conFiltros = (s: string) => (extra.length ? `${s} (${extra.join(", ")})` : s);
   const n = cada ?? 0;
   switch (b) {
@@ -206,14 +211,16 @@ function vigenciaTexto(c: Pick<ConceptoPago, "desde" | "hasta">): string {
 
 /** La regla dicha en castellano: "15% del cash collected post pasarelas de
  *  las ventas que cerró", "US$ 500 por cada US$ 100.000 de cash collected
- *  post pasarelas del negocio". */
-export function describirConcepto(c: ConceptoPago, e: Catalogos): string {
+ *  post pasarelas del negocio". Con `hermanos` (todo lo que cobra la
+ *  persona), la comisión general dice qué servicios quedan afuera porque
+ *  tienen su propio %. */
+export function describirConcepto(c: ConceptoPago, e: Catalogos, hermanos?: ConceptoPago[]): string {
   const M = (n?: number) => plata(n ?? 0, c.moneda);
   let frase: string;
   switch (c.tipo) {
     case "fijo": frase = `${M(c.monto)} por mes`; break;
     case "bono": frase = `${M(c.monto)} si lo gana${c.condicion?.trim() ? ` (${c.condicion.trim()})` : ""}`; break;
-    case "porcentaje": frase = `${pct((c.tasa ?? 0) * 100, decimalesTasa(c.tasa))} ${queSeMide(c, e)}`; break;
+    case "porcentaje": frase = `${pct((c.tasa ?? 0) * 100, decimalesTasa(c.tasa))} ${queSeMide(c, e, undefined, hermanos)}`; break;
     case "tramo": frase = `${M(c.monto)} por cada ${queSeMide(c, e, c.cada ?? 0)}`; break;
     case "unidad": frase = `${M(c.monto)} por ${c.unidad?.trim() || "pieza"}`; break;
   }
@@ -277,21 +284,76 @@ export function vigenciaEnMes(c: Pick<ConceptoPago, "desde" | "hasta">, r: Rango
   return { rango: { ...r, desde: d, hasta: h }, dias: diasEntre(d, h), diasMes: diasEntre(r.desde, r.hasta) };
 }
 
+/* ---------- Un % general y otro por servicio ----------
+   "Es diferente el % por closer y por servicio vendido" (Angelo, 02/10).
+   La comisión de las ventas que alguien cerró, agendó o dirige puede tener
+   un % general y otro para algunos servicios. La que nombra servicios vale
+   para ésos EN VEZ de la general: las dos son «hermanas» (porcentaje, misma
+   base y mismo alcance) y un cobro entra en una sola. Si dos nombran el
+   mismo servicio, vale la primera. */
+
+type Vigencia = Pick<ConceptoPago, "desde" | "hasta">;
+const valeEl = (c: Vigencia, dia: string) => (!c.desde || c.desde.slice(0, 10) <= dia) && (!c.hasta || c.hasta.slice(0, 10) >= dia);
+/* El día de un cobro, en la hora de acá: el mismo borde que las fechas de salida. */
+const diaDe = (iso: string) => new Date(new Date(iso).getTime() - 3 * 3600000).toISOString().slice(0, 10);
+
+/** Una comisión sobre las ventas de alguien (las que cerró, agendó o dirige). */
+export const esComisionDeVentas = (c: ConceptoPago): boolean =>
+  c.tipo === "porcentaje" && (c.base === "cash" || c.base === "cash-neto")
+  && (c.alcance === "closer" || c.alcance === "setter" || c.alcance === "director");
+
+const sonHermanas = (a: ConceptoPago, b: ConceptoPago) =>
+  esComisionDeVentas(a) && esComisionDeVentas(b) && a.base === b.base && a.alcance === b.alcance;
+
+/** La comisión hermana de `c` que nombra ese servicio y vale ese día (la
+ *  primera, si hay más de una). */
+function comisionDelServicio(conceptos: ConceptoPago[], c: ConceptoPago, productoId: ID | undefined, dia?: string): ConceptoPago | undefined {
+  if (!productoId) return undefined;
+  return conceptos.find((x) => x.productoIds?.includes(productoId) && sonHermanas(x, c) && (!dia || valeEl(x, dia)));
+}
+
+/** Los servicios que tienen su propio % al lado de la comisión general `c`. */
+export function serviciosConComisionPropia(conceptos: ConceptoPago[], c: ConceptoPago, dia?: string): Set<ID> {
+  const out = new Set<ID>();
+  if (!esComisionDeVentas(c) || c.productoIds?.length) return out;
+  for (const x of conceptos) {
+    if (x.id === c.id || !x.productoIds?.length || !sonHermanas(x, c) || (dia && !valeEl(x, dia))) continue;
+    for (const id of x.productoIds) out.add(id);
+  }
+  return out;
+}
+
 /* ---------- Qué entra en Finanzas por su cuenta ----------
    Finanzas calcula sola, de las ventas, la comisión de cada closer y del
-   director (cash post pasarelas × equipo.comisionRate) y el reparto del
+   director (cash post pasarelas × su % en ese servicio) y el reparto del
    profit del growth partner y del socio. Esos renglones no se cargan como
    gasto al cerrar: se contarían dos veces. Para que Finanzas diga lo mismo
-   que la liquidación, `comisionRate` se escribe desde el esquema
-   (tasaParaFinanzas) cada vez que se guarda. */
+   que la liquidación, `comisionRate` y `comisionServicios` se escriben
+   desde el esquema (tasaParaFinanzas, tasasPorServicio) cada vez que se
+   guarda. */
 
 export function calculaFinanzas(m: Pick<MiembroEquipo, "rol">, c: ConceptoPago): boolean {
   if (c.tipo !== "porcentaje") return false;
   if (c.base === "profit") return m.rol === "growth" || m.rol === "socio";
-  if (c.base !== "cash-neto" || c.productoIds?.length) return false;
+  if (c.base !== "cash-neto") return false;
   if (c.alcance === "closer") return m.rol === "closer" || m.rol === "ceo";
   if (c.alcance === "director") return m.rol === "director";
   return false;
+}
+
+/* La comisión de la persona según su rol: la que Finanzas (closer, director,
+   growth, socio) o la planilla (setter) le calculan. */
+function esLaDeSuRol(m: Pick<MiembroEquipo, "rol">): ((c: ConceptoPago) => boolean) | null {
+  switch (m.rol) {
+    case "closer": case "ceo": case "director": case "growth": case "socio":
+      return (c) => calculaFinanzas(m, c);
+    /* El setter no es un renglón de Finanzas (lo que cobra entra como gasto),
+       pero su porcentaje es el que usa la planilla de Angelo al exportar. */
+    case "setter":
+      return (c) => c.tipo === "porcentaje" && c.alcance === "setter" && (c.base === "cash" || c.base === "cash-neto");
+    default:
+      return null;
+  }
 }
 
 const hoyIso = () => {
@@ -305,23 +367,39 @@ const hoyIso = () => {
  *  cierra ventas y además las dirige, Finanzas usa la de su rol. */
 export function tasaParaFinanzas(m: Pick<MiembroEquipo, "rol">, esq: EsquemaPago | undefined): number | undefined {
   if (!esq || esq.conceptos.length === 0) return undefined;
-  let es: (c: ConceptoPago) => boolean;
-  switch (m.rol) {
-    case "closer": case "ceo": case "director": case "growth": case "socio":
-      es = (c) => calculaFinanzas(m, c);
-      break;
-    /* El setter no es un renglón de Finanzas (lo que cobra entra como gasto),
-       pero su porcentaje es el que usa la planilla de Angelo al exportar. */
-    case "setter":
-      es = (c) => c.tipo === "porcentaje" && c.alcance === "setter" && (c.base === "cash" || c.base === "cash-neto");
-      break;
-    default:
-      return undefined;
-  }
+  const suya = esLaDeSuRol(m);
+  if (!suya) return undefined;
+  /* La general: la que no nombra servicios. Con sólo comisiones por
+     servicio, lo demás no comisiona: 0. */
+  const es = (c: ConceptoPago) => suya(c) && !c.productoIds?.length;
   const hoy = hoyIso();
-  const vigente = (c: ConceptoPago) => (!c.desde || c.desde <= hoy) && (!c.hasta || c.hasta >= hoy);
-  const c = esq.conceptos.find((x) => es(x) && vigente(x)) ?? esq.conceptos.find(es);
+  const c = esq.conceptos.find((x) => es(x) && valeEl(x, hoy)) ?? esq.conceptos.find(es);
   return c ? (c.tasa ?? 0) : 0;
+}
+
+/** El % de cada servicio que comisiona distinto del general, para Finanzas
+ *  (`equipo.comisionServicios`). undefined: el esquema no dice nada y queda
+ *  lo que estaba, como en tasaParaFinanzas. Sin servicios aparte, {}. */
+export function tasasPorServicio(m: Pick<MiembroEquipo, "rol">, esq: EsquemaPago | undefined): Record<ID, number> | undefined {
+  if (!esq || esq.conceptos.length === 0) return undefined;
+  const suya = esLaDeSuRol(m);
+  if (!suya) return undefined;
+  const hoy = hoyIso();
+  const out: Record<ID, number> = {};
+  for (const c of esq.conceptos) {
+    if (!suya(c) || !esComisionDeVentas(c) || !c.productoIds?.length || !valeEl(c, hoy)) continue;
+    /* Si dos nombran el mismo servicio, vale la primera. */
+    for (const id of c.productoIds) if (!(id in out)) out[id] = c.tasa ?? 0;
+  }
+  return out;
+}
+
+/** Si dos mapas de % por servicio dicen lo mismo. */
+export function mismasTasas(a: Record<ID, number> | undefined, b: Record<ID, number> | undefined): boolean {
+  const x = a ?? {}, y = b ?? {};
+  const claves = new Set([...Object.keys(x), ...Object.keys(y)]);
+  for (const k of claves) if (!(k in x) || !(k in y) || Math.abs(x[k] - y[k]) > 1e-9) return false;
+  return true;
 }
 
 /* ---------- Medir ---------- */
@@ -362,9 +440,14 @@ const esTotal = (c: ConceptoPago) =>
    Con un cobro (`p`), el del closer va para el closer de la cuota (el que
    la heredó, si el suyo se fue), y quien ya no está no suma lo que entró
    después de su fecha de salida: lo mismo que Finanzas. */
-function cuenta(cx: Contexto, c: ConceptoPago, m: MiembroEquipo, v: Venta | undefined, p?: Pago): boolean {
+function cuenta(cx: Contexto, c: ConceptoPago, m: MiembroEquipo, v: Venta | undefined, p?: Pago, hermanos?: ConceptoPago[]): boolean {
   if (esTotal(c)) return true;
   if (!v || v.estado === "cancelada") return false;
+  /* Un % general y otro por servicio: el cobro entra en uno solo. */
+  if (hermanos && esComisionDeVentas(c)) {
+    const propia = comisionDelServicio(hermanos, c, v.productoId, p ? diaDe(p.fecha) : undefined);
+    if (propia && propia.id !== c.id) return false;
+  }
   const alcance = c.alcance ?? "todas";
   if (alcance === "closer" && (p ? cx.closerDeCuota.get(p.cuotaId) : v.closerId) !== m.id) return false;
   if (p && (alcance === "closer" || alcance === "director") && !cobraEnFecha(m, p.fecha)) return false;
@@ -386,13 +469,13 @@ interface Medido { valor: number; cuantos: string }
 
 /* Lo que se mide en los días del concepto. null: no se mide solo (el profit
    se calcula aparte y lo manual se carga). */
-function medir(cx: Contexto, c: ConceptoPago, m: MiembroEquipo, r: RangoMes): Medido | null {
+function medir(cx: Contexto, c: ConceptoPago, m: MiembroEquipo, r: RangoMes, hermanos?: ConceptoPago[]): Medido | null {
   const b = c.base ?? "manual";
   switch (b) {
     case "cash": case "cash-neto": {
       let valor = 0, n = 0;
       for (const p of pagosDelMes(cx.e, r)) {
-        if (!cuenta(cx, c, m, cx.ventaDeCuota.get(p.cuotaId), p)) continue;
+        if (!cuenta(cx, c, m, cx.ventaDeCuota.get(p.cuotaId), p, hermanos)) continue;
         valor += b === "cash" ? p.monto : p.monto - p.feeMonto;
         n++;
       }
@@ -445,6 +528,8 @@ interface Profit { profit: number; parte: number }
 
 function linea(
   cx: Contexto, m: MiembroEquipo, c: ConceptoPago, entrada: EntradaLiquidacion | undefined, prof?: Profit,
+  /* Todo lo que cobra la persona: para que un cobro no entre en dos comisiones. */
+  hermanos?: ConceptoPago[],
 ): LineaLiquidada | null {
   /* Quien se fue cobra hasta su fecha de salida: el fijo, prorrateado. */
   const hasta = m.hasta && (!c.hasta || m.hasta < c.hasta) ? m.hasta : c.hasta;
@@ -504,7 +589,7 @@ function linea(
             ? `el ${pct(parte * 100, 0)} de ${plata(p.profit, cx.base)}: lo demás es de ventas excluidas de marketing`
             : "el resultado operativo del mes";
       } else {
-        const x = medir(cx, c, m, vig.rango);
+        const x = medir(cx, c, m, vig.rango, hermanos);
         if (x) { valor = x.valor; origen = x.cuantos; } else { falta = "Cargá la cantidad"; origen = "falta cargarla"; }
       }
       if (parcial && b !== "manual" && b !== "profit" && entrada?.cantidad === undefined) {
@@ -581,17 +666,27 @@ export function miembrosALiquidar(e: EstadoApp, desde?: string): MiembroEquipo[]
    liquidación no diga menos que Finanzas, ese renglón sale igual, con esa
    tasa y avisado. */
 const tasaImplicita = (m: MiembroEquipo) =>
-  (m.rol === "closer" || m.rol === "director") && !m.sinComision ? m.comisionRate : 0;
+  (m.rol === "closer" || m.rol === "director") && !m.sinComision
+    ? Math.max(m.comisionRate, ...Object.values(m.comisionServicios ?? {})) : 0;
 
 export const ID_COMISION_DE_FINANZAS = "finanzas";
 
-function comisionDeFinanzas(m: MiembroEquipo): ConceptoPago {
-  return {
-    id: ID_COMISION_DE_FINANZAS, tipo: "porcentaje", nombre: "Comisión", moneda: "USD",
-    tasa: m.comisionRate, base: "cash-neto", alcance: m.rol === "director" ? "director" : "closer",
+function comisionDeFinanzas(m: MiembroEquipo): ConceptoPago[] {
+  const comun = {
+    tipo: "porcentaje" as const, moneda: "USD" as const, base: "cash-neto" as const,
+    alcance: m.rol === "director" ? "director" as const : "closer" as const,
     /* Un director que ya se fue cobra sólo lo que entró hasta su salida. */
     ...(m.rol === "director" && m.hasta ? { hasta: m.hasta } : {}),
   };
+  /* Los servicios con su propio %, agrupados por tasa: un renglón por cada una. */
+  const porTasa = new Map<number, ID[]>();
+  for (const [id, t] of Object.entries(m.comisionServicios ?? {})) porTasa.set(t, [...(porTasa.get(t) ?? []), id]);
+  return [
+    { ...comun, id: ID_COMISION_DE_FINANZAS, nombre: "Comisión", tasa: m.comisionRate },
+    ...[...porTasa.entries()].map(([tasa, productoIds], i) => ({
+      ...comun, id: `${ID_COMISION_DE_FINANZAS}:${i}`, nombre: "Comisión por servicio", tasa, productoIds,
+    })),
+  ];
 }
 
 /** La liquidación del mes, calculada con los datos de hoy. Una liquidación
@@ -615,7 +710,7 @@ export function calcularLiquidacion(e: EstadoApp, periodo: string, liq?: Liquida
     const sinCargar = !esq || esq.conceptos.length === 0;
     const pendiente = esq?.pendiente?.trim() || undefined;
     /* Sin nada cargado, lo que le calcula Finanzas: su comisión con la tasa de siempre. */
-    const conceptos = sinCargar && tasaImplicita(m) > 0 ? [comisionDeFinanzas(m)] : esq?.conceptos ?? [];
+    const conceptos = sinCargar && tasaImplicita(m) > 0 ? comisionDeFinanzas(m) : esq?.conceptos ?? [];
     const fila: Fila = {
       m, lineas: [],
       persona: {
@@ -631,7 +726,7 @@ export function calcularLiquidacion(e: EstadoApp, periodo: string, liq?: Liquida
         fila.lineas.push(null);
         continue;
       }
-      fila.lineas.push(linea(cx, m, c, entradas[claveEntrada(m.id, c.id)]));
+      fila.lineas.push(linea(cx, m, c, entradas[claveEntrada(m.id, c.id)], undefined, conceptos));
     }
     for (const x of extras) if (x.miembroId === m.id) fila.lineas.push(lineaExtra(cx, x));
     filas.push(fila);
@@ -656,7 +751,7 @@ export function calcularLiquidacion(e: EstadoApp, periodo: string, liq?: Liquida
 
   const personas = filas.map(({ persona, lineas }) => {
     const ls = lineas.filter((l): l is LineaLiquidada => l !== null)
-      .map((l) => (l.conceptoId === ID_COMISION_DE_FINANZAS && !l.corregido
+      .map((l) => (l.conceptoId?.split(":")[0] === ID_COMISION_DE_FINANZAS && !l.corregido
         ? { ...l, detalle: `${l.detalle} · con la tasa que usa Finanzas: no tiene cargado lo que cobra` }
         : l));
     const aPagar: Partial<Record<Moneda, number>> = {};

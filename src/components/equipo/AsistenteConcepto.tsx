@@ -429,7 +429,11 @@ function PasoDeQue({ b, set, e, miembro }: { b: Borrador; set: Poner; e: EstadoA
             <Chip key={p.id} activo={b.productoIds.includes(p.id)} onClick={() => alternar(p.id)}>{p.nombre}</Chip>
           ))}
         </div>
-        <span className="t-sm t-subtle">Sin elegir ninguno, cuentan todos.</span>
+        <span className="t-sm t-subtle">
+          Sin elegir ninguno, cuentan todos.
+          {b.tipo === "porcentaje" && b.alcance !== "todas" && (b.base === "cash" || b.base === "cash-neto")
+            ? " Si elegís alguno, en esas ventas vale este % en vez de su comisión general." : ""}
+        </span>
       </div>
       <div className="stack-2">
         {b.alcance === "todas" && (

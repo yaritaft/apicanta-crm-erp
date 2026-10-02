@@ -3,14 +3,15 @@
 import React from "react";
 import { CloudOff, Lock } from "lucide-react";
 import { PageHead } from "@/components/shell/PageHead";
-import { Card, Empty, Tabs } from "@/components/ui/ui";
+import { Card, CardHead, Empty, Tabs } from "@/components/ui/ui";
+import { CuadroComisiones } from "@/components/finanzas/CuadroComisiones";
 import { LiquidacionMes } from "@/components/equipo/Liquidacion";
 import { ListaEquipo } from "@/components/equipo/ListaEquipo";
 import { FichaMiembro } from "@/components/equipo/FichaMiembro";
 import { AccesosApp } from "@/components/equipo/Accesos";
 import { TiposCuenta } from "@/components/equipo/TiposCuenta";
 import { useAccesos, useNivelAcceso } from "@/lib/acceso";
-import { useSelector, useSync } from "@/lib/store";
+import { useEstado, useSelector, useSync } from "@/lib/store";
 import { useParamsURL } from "@/lib/useParamsURL";
 import { CopiarLink } from "@/components/ui/Filtros";
 
@@ -26,13 +27,13 @@ import { CopiarLink } from "@/components/ui/Filtros";
    base cada vez. Hasta que llegan, la sección espera; mostrarla vacía diría
    "Sin cargar" de todos.
 
-   En la URL: ?seccion= (liquidacion, equipo, accesos, tipos), ?mes=2026-09 y
+   En la URL: ?seccion= (liquidacion, equipo, comisiones, accesos, tipos), ?mes=2026-09 y
    ?persona=<id> para la ficha abierta. No se usa ?vista= porque es de la
    ficha global de personas.
    ================================================================== */
 
-type Seccion = "liquidacion" | "equipo" | "accesos" | "tipos";
-const SECCIONES: Seccion[] = ["liquidacion", "equipo", "accesos", "tipos"];
+type Seccion = "liquidacion" | "equipo" | "comisiones" | "accesos" | "tipos";
+const SECCIONES: Seccion[] = ["liquidacion", "equipo", "comisiones", "accesos", "tipos"];
 
 export default function EquipoYHonorarios() {
   const acceso = useNivelAcceso();
@@ -97,15 +98,32 @@ export default function EquipoYHonorarios() {
         opciones={[
           { valor: "liquidacion", texto: "Liquidación del mes" },
           { valor: "equipo", texto: "Equipo y lo que cobra" },
+          { valor: "comisiones", texto: "Comisiones" },
           { valor: "accesos", texto: "Accesos a la app" },
           { valor: "tipos", texto: "Tipos de cuenta" },
         ]}
       />
       {seccion === "liquidacion" && <LiquidacionMes onVerPersona={ver} />}
       {seccion === "equipo" && <ListaEquipo accesos={accesos} onVer={ver} />}
+      {seccion === "comisiones" && <Comisiones onVer={ver} />}
       {seccion === "accesos" && <AccesosApp accesos={accesos} onVerMiembro={ver} />}
       {seccion === "tipos" && <TiposCuenta accesos={accesos} />}
       {p.persona && <FichaMiembro key={p.persona} miembroId={p.persona} accesos={accesos} onCerrar={() => cambiar({ persona: null })} />}
     </div>
+  );
+}
+
+/* El % de cada uno que vende, agenda o dirige, servicio por servicio. Lo
+   mismo que se ve en Finanzas → Detalle → Comisiones, pero acá se cambia. */
+function Comisiones({ onVer }: { onVer: (id: string) => void }) {
+  const e = useEstado();
+  return (
+    <Card>
+      <CardHead
+        titulo="Cómo comisiona cada uno"
+        sub="El % que cobra cada persona de lo que entra de sus ventas, neto de procesador. El general vale para todo; si un servicio comisiona distinto, se le pone su propio %. De acá salen la liquidación y lo que resta Finanzas."
+      />
+      <CuadroComisiones e={e} editable onVerPersona={onVer} />
+    </Card>
   );
 }

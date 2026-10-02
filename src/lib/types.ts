@@ -836,6 +836,10 @@ export interface MiembroEquipo {
   nombre: string;
   rol: RolEquipo;
   comisionRate: number;
+  /* El % de los servicios que comisionan distinto (servicio → fracción):
+     en esas ventas vale éste en vez de `comisionRate`. Como `comisionRate`,
+     se escribe solo desde lo que cobra la persona (lib/honorarios.ts). */
+  comisionServicios?: Record<ID, number>;
   activo: boolean;
   desde?: string;
   /* Yari: si figura como closer, no comisiona nadie */
@@ -1029,7 +1033,9 @@ export interface ConceptoPago {
   cada?: number;
   /* Cuando la base sale de las ventas: de cuáles. */
   alcance?: AlcanceVentas;
-  /* Sólo las ventas de estos servicios (Hackear AI). Vacío: todos. */
+  /* Sólo las ventas de estos servicios (Hackear AI). Vacío: todos. En la
+     comisión de las ventas que alguien cerró, agendó o dirige, la que
+     nombra servicios vale para ésos EN VEZ de la general, no además. */
   productoIds?: ID[];
   /* Sin las ventas que cerró alguien que no comisiona (Yari). */
   sinVentasSinComision?: boolean;
