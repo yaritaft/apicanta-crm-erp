@@ -2,10 +2,12 @@
 
 import React, { useEffect, useState } from "react";
 import { CalendarCheck, Star } from "lucide-react";
-import { Badge, Card, CardHead, Empty, Select, type VarianteBadge } from "@/components/ui/ui";
+import { Badge, Card, CardHead, Empty, Select } from "@/components/ui/ui";
+import { EstadoDeLlamada, PastillaEstado } from "@/components/estados/EstadoLlamada";
 import { useToast } from "@/components/ui/Toast";
 import { num } from "@/lib/format";
-import { acciones } from "@/lib/store";
+import { acciones, useEstado } from "@/lib/store";
+import { estadoVisible } from "@/lib/estados";
 import { useUsuarioActual } from "@/lib/usuario";
 import { claveDeFecha, type AgendaDelWebinar } from "@/lib/agendas-webinar";
 import { fechaUtm } from "@/lib/utm-estandar";
@@ -27,16 +29,12 @@ import { MarcaPitch } from "./MarcaPitch";
    Arriba, el pitch marcado a mano (MarcaPitch): anda con o sin YouTube.
    ================================================================== */
 
-const ESTADO: Record<string, { texto: string; variante: VarianteBadge }> = {
-  agendada: { texto: "Agendada", variante: "accent" },
-  hecha: { texto: "Hecha", variante: "success" },
-  "no-show": { texto: "No vino", variante: "danger" },
-  cancelada: { texto: "Cancelada", variante: "neutral" },
-};
-
 export function AgendasWebinar({ w, className }: { w: Webinar; className?: string }) {
   const r = useAgendasWebinar(w.id);
   const d = r.estado === "listo" ? r.datos : null;
+  /* El Estado de Llamada de cada agenda, el mismo del CRM y la Agenda. */
+  const app = useEstado();
+  const sesiones = React.useMemo(() => new Map(app.sesiones.map((s) => [s.id, s])), [app.sesiones]);
 
   /* Lo mismo que el cron va a escribir en la planilla, ya: así el embudo y
      las llamadas de la ficha no esperan su vuelta (sólo en memoria). */
@@ -74,7 +72,7 @@ export function AgendasWebinar({ w, className }: { w: Webinar; className?: strin
             /* Con scroll adentro: la lista no estira la ficha y los números de arriba no se mueven. */
             <div className="wb-filas lista-scroll">
               {d.agendas.map((a) => {
-                const e = ESTADO[a.estado] ?? ESTADO.agendada;
+                const s = sesiones.get(a.id);
                 return (
                   <div key={a.id} className="wb-fila" style={a.fuera ? { opacity: 0.55 } : undefined}>
                     <span className="wb-fila__texto">
@@ -87,7 +85,7 @@ export function AgendasWebinar({ w, className }: { w: Webinar; className?: strin
                             </span>
                           )}
                         </span>
-                        <Badge variante={e.variante}>{e.texto}</Badge>
+                        {s ? <EstadoDeLlamada ver={estadoVisible(app, s)} /> : <PastillaEstado texto={a.estado === "cancelada" ? "Cancelada" : "Agendada"} color="gris1" tenue />}
                       </span>
                       <span className="wb-agenda__badges">
                         {/* Por qué link vino (el embudo ya se sabe: es este webinar, y

@@ -9,14 +9,16 @@ import { COLUMNA, DIMENSIONES, porDimension, resumenDe, type ClaveColumna, type 
 import { textoFecha } from "./FiltroColumna";
 
 /* ==================================================================
-   Por qué no se cierra, con los mismos filtros que la tabla (Yari,
-   29/09: "tener toda la información del lead y por qué no se cerró de
-   forma fácilmente consumible, para después empezar a sacar
-   conclusiones").
+   El Informe del CRM: cuánto se cierra y por qué no, con los mismos
+   filtros que la tabla (Yari, 29/09: "tener toda la información del lead
+   y por qué no se cerró de forma fácilmente consumible, para después
+   empezar a sacar conclusiones").
 
    Arriba, cuánto se cierra de lo que se presentó; al lado, las
-   objeciones. Abajo, lo mismo abierto por lo que se elija: país, edad,
-   tecnología, plata, ad… Un clic en una fila filtra la tabla por eso.
+   objeciones. Abajo, lo mismo abierto por lo que se elija: el estado de
+   la llamada, país, edad, tecnología, plata, ad… Un clic en una fila
+   filtra la tabla por eso. Con cierre, sin cierre y no se presentó salen
+   del Estado de Llamada de cada una (lib/estados.ts).
    ================================================================== */
 
 export function ResumenCrm({ filas, onFiltrar }: { filas: FilaTabla[]; onFiltrar: (clave: ClaveColumna, valor: string) => void }) {
@@ -52,7 +54,7 @@ export function ResumenCrm({ filas, onFiltrar }: { filas: FilaTabla[]; onFiltrar
       <div className="crm-res__objeciones">
         <div className="t-label">Por qué no cerraron</div>
         {r.objeciones.length === 0 ? (
-          <p className="t-sm t-subtle">Todavía no hay llamadas sin cierre cargadas en el EOD con estos filtros.</p>
+          <p className="t-sm t-subtle">Todavía no hay llamadas sin cierre con estos filtros.</p>
         ) : (
           <div className="stack-2">
             {r.objeciones.map((o) => (

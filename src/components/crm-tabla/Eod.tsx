@@ -6,20 +6,21 @@ import { Asistente, Pregunta, type PasoAsistente } from "@/components/ui/Asisten
 import { Badge, Button, Input, Select, Textarea } from "@/components/ui/ui";
 import { useToast } from "@/components/ui/Toast";
 import { AsistenteVenta } from "@/components/ventas/AsistenteVenta";
+import { EstadoDeLlamada, EstadoEditable } from "@/components/estados/EstadoLlamada";
 import { acciones, useEstado } from "@/lib/store";
 import { useAcceso } from "@/lib/acceso";
 import { useUsuarioActual } from "@/lib/usuario";
 import { num } from "@/lib/format";
 import { diaDeNegocio } from "@/lib/dia-negocio";
-import { miembroDeCloser } from "@/lib/crm";
+import { miembroDeCloser, opcionesDe } from "@/lib/crm";
+import { esReagendar, estadoVisible, preguntaDe, type PreguntaEod } from "@/lib/estados";
 import { leadDeSesion } from "@/lib/etapas-auto";
 import { filasTabla, type FilaTabla } from "@/lib/crm-tabla";
 import {
-  atajosDeCierre, cambiosDelEod, closersConLlamadas, esDelCloser, estadoPorResultado, faltaEnRespuesta, llamadasDelDia, objecionesDe,
-  respuestaDe, TEXTO_ESTADO, TEXTO_RESULTADO, type RespuestaEod,
+  atajosDeCierre, cambiosDelEod, closersConLlamadas, esDelCloser, faltaEnRespuesta, llamadasDelDia, objecionSugerida, objecionesDe,
+  respuestaDe, type RespuestaEod,
 } from "@/lib/eod";
-import type { EstadoSesion, ResultadoLlamada, Sesion } from "@/lib/types";
-import { VARIANTE_RESULTADO } from "./resultado";
+import type { OpcionCrm, Sesion } from "@/lib/types";
 import { textoFecha } from "./FiltroColumna";
 import { GrabacionDeLlamada } from "./GrabacionDeLlamada";
 
@@ -27,10 +28,13 @@ import { GrabacionDeLlamada } from "./GrabacionDeLlamada";
    El cierre del día (EOD), como un Typeform: una pantalla por llamada.
 
    Arriba de cada una, lo que ya se sabe de la persona (de dónde vino, el
-   ad, el país, qué contestó): no se vuelve a cargar. Abajo, cómo terminó,
-   y si no cerró, por qué, si hizo la oferta y para cuándo estima
-   cerrarlo: cada cosa en su desplegable. Si compró, se carga la venta en
-   el asistente de siempre, con la persona y el closer ya elegidos.
+   ad, el país, qué contestó): no se vuelve a cargar. Abajo, sus dos
+   estados, los mismos del CRM, la Agenda y la ficha (lib/estados.ts):
+   vienen cargados si ya los tenía. Según el Estado de Llamada pide lo
+   que falta: de una compra, la venta (en el asistente de siempre, con la
+   persona y el closer ya elegidos); de una que quedó en seguimiento, por
+   qué no cerró, si hizo la oferta y para cuándo estima cerrarlo; de una
+   que se perdió, por qué. Cada cosa en su desplegable.
 
    Cada llamada se guarda al pasar a la siguiente: si se cierra a la
    mitad, lo cargado queda. Suma las llamadas de días anteriores que
@@ -47,12 +51,13 @@ const nombreDePila = (nombre: string) => {
   return n ? n.charAt(0).toLocaleUpperCase("es") + n.slice(1).toLocaleLowerCase("es") : nombre;
 };
 
-const OPCIONES_RESULTADO: { valor: ResultadoLlamada; nombre: string; sub: string }[] = [
-  { valor: "compro", nombre: "Compró", sub: "Se carga la venta y pasa a cliente" },
-  { valor: "no-compro", nombre: "No compró", sub: "Contás por qué, si hiciste la oferta y para cuándo lo ves" },
-  { valor: "no-vino", nombre: "No se presentó", sub: "Queda como que no vino" },
-  { valor: "reprogramo", nombre: "Se reprogramó", sub: "La agenda nueva entra sola de Calendly" },
-];
+/* Lo que sigue según el Estado de Llamada elegido. */
+const QUE_SIGUE: Record<PreguntaEod, string> = {
+  venta: "Es una compra: se carga la venta y pasa a cliente.",
+  seguimiento: "Quedó en seguimiento: contá por qué no cerró, si hiciste la oferta y para cuándo lo ves.",
+  perdida: "Se perdió: contá por qué y si hiciste la oferta.",
+  nada: "No hace falta cargar nada más.",
+};
 
 export function Eod({ onCerrar, soloSesionId }: { onCerrar: () => void; soloSesionId?: string }) {
   const e = useEstado();
@@ -72,6 +77,8 @@ export function Eod({ onCerrar, soloSesionId }: { onCerrar: () => void; soloSesi
 
   const filas = useMemo(() => new Map<string, FilaTabla>(filasTabla(e).map((f) => [f.id, f])), [e]);
   const ahora = Date.now();
+  const opciones = useMemo(() => opcionesDe(e.ajustes, "estadoLlamada"), [e.ajustes]);
+  const objeciones = useMemo(() => objecionesDe(e.ajustes), [e.ajustes]);
 
   /* Las llamadas del día que ya empezaron, y las pendientes de antes. */
   const { delDia, pendientes } = useMemo(() => {
@@ -104,28 +111,34 @@ export function Eod({ onCerrar, soloSesionId }: { onCerrar: () => void; soloSesi
   ];
   const actual = pasos[paso];
   const sesion = llamadas.find((s) => s.id === actual?.id);
-  const respuesta = (s: Sesion) => resp[s.id] ?? respuestaDe(ultimaDe(s.id) ?? s);
+  /* Lo que ya tiene la llamada. Si la app sabe que no vino o que canceló
+     (lo avisó Calendly), ese estado viene elegido: alcanza con seguir. */
+  const cargada = (s: Sesion): RespuestaEod | undefined => {
+    const u = ultimaDe(s.id) ?? s;
+    const ver = estadoVisible(e, u);
+    return respuestaDe(u) ?? (ver.auto && !ver.vacio && ver.opcion?.auto !== "segunda" ? { estadoLlamada: ver.texto } : undefined);
+  };
+  /* `resp` guarda sólo lo que se tocó acá, encima de lo que ya tiene la llamada. */
+  const respuesta = (s: Sesion): RespuestaEod | undefined => {
+    const c = cargada(s), tocado = resp[s.id];
+    return tocado ? { ...c, ...tocado } : c;
+  };
 
   function responder(s: Sesion, cambios: Partial<RespuestaEod>) {
-    setResp((p) => {
-      const previa = p[s.id] ?? respuestaDe(s);
-      const nueva = { ...(previa ?? {}), ...cambios } as RespuestaEod;
-      /* El resultado dice cómo quedó la llamada (hecha, no vino); después se puede cambiar a mano. */
-      if (cambios.resultado && cambios.estado === undefined) nueva.estado = estadoPorResultado(cambios.resultado, s.estado);
-      return { ...p, [s.id]: nueva };
-    });
+    setResp((p) => ({ ...p, [s.id]: { ...(p[s.id] ?? {}), ...cambios } }));
     setGuardadas((g) => { const n = new Set(g); n.delete(s.id); return n; });
   }
 
-  /* Guardar una llamada: sólo si la respuesta está completa y cambió. */
+  /* Guardar una llamada, si se le tocó algo. Los estados quedan aunque
+     falte el resto (por qué no cerró): son los mismos que se ven en el CRM
+     y la Agenda, y es mejor tenerlos que perderlos por cerrar a la mitad. */
   function guardar(id: string) {
-    const r = resp[id];
     const s = ultimaDe(id);
-    if (!r || !s || guardadas.has(id) || faltaEnRespuesta(r)) return false;
+    const r = s && resp[id] ? respuesta(s) : undefined;
+    if (!r || !s || guardadas.has(id)) return false;
+    if (!r.estadoLlamada && !r.estadoPreCall && !r.nota?.trim() && !r.grabacion?.trim() && !respuestaDe(s)) return false;
     acciones.editarLlamada(id, cambiosDelEod(r, s, e.ajustes, yo.nombre, new Date().toISOString()),
-      r.resultado
-        ? `Cierre del día${closer ? ` de ${closer}` : ""}: ${TEXTO_RESULTADO[r.resultado]}${r.objecion ? ` (${r.objecion})` : ""}.`
-        : `Cierre del día${closer ? ` de ${closer}` : ""}: la llamada quedó como ${TEXTO_ESTADO[r.estado ?? s.estado].toLowerCase()}.`);
+      `Cierre del día${closer ? ` de ${closer}` : ""}: ${r.estadoLlamada || (r.estadoPreCall ? `Estado Pre-Call ${r.estadoPreCall}` : "una nota, todavía sin estado")}${r.objecion ? ` (${r.objecion})` : ""}.`);
     setGuardadas((g) => new Set(g).add(id));
     return true;
   }
@@ -140,7 +153,7 @@ export function Eod({ onCerrar, soloSesionId }: { onCerrar: () => void; soloSesi
 
   function terminar() {
     for (const s of llamadas) guardar(s.id);
-    const cargadas = llamadas.filter((s) => resp[s.id] || respuestaDe(ultimaDe(s.id) ?? s)).length;
+    const cargadas = llamadas.filter((s) => !faltaEnRespuesta(respuesta(s), opciones)).length;
     toast(soloSesionId ? "Listo: quedó cargado cómo terminó la llamada." : `Día cerrado: ${num(cargadas)} de ${num(llamadas.length)} llamadas cargadas.`);
     onCerrar();
   }
@@ -159,7 +172,9 @@ export function Eod({ onCerrar, soloSesionId }: { onCerrar: () => void; soloSesi
         sesionId={vendiendo}
         onCerrar={() => setVendiendo(null)}
         onListo={(_id, nombre) => {
-          if (s) responder(s, { resultado: "compro" });
+          /* La venta ya dejó la llamada con su estado de compra (lo hace el
+             store): lo elegido acá deja de mandar. */
+          setResp((p) => { const r = { ...(p[vendiendo] ?? {}) }; delete r.estadoLlamada; return { ...p, [vendiendo]: r }; });
           setVendiendo(null);
           toast(`Venta de ${nombre} registrada: ya es cliente.`);
         }}
@@ -169,13 +184,14 @@ export function Eod({ onCerrar, soloSesionId }: { onCerrar: () => void; soloSesi
 
   const problema = actual?.id === "inicio"
     ? (!closer ? "Elegí de quién es el día" : llamadas.length === 0 ? "No hay llamadas para cargar" : null)
-    : sesion ? faltaEnRespuesta(respuesta(sesion)) : null;
+    : sesion ? faltaEnRespuesta(respuesta(sesion), opciones) : null;
 
   return (
     <Asistente
       etiqueta="Cerrar el día" pasos={pasos} actual={paso} onCambiarPaso={cambiarPaso}
       problema={problema} onCerrar={() => { if (sesion) guardar(sesion.id); onCerrar(); }}
       terminarTexto={soloSesionId ? "Guardar" : "Terminar el día"} onTerminar={terminar}
+      salirTexto="Cerrar: lo que cargaste queda guardado"
     >
       {actual?.id === "inicio" && (
         <Inicio
@@ -187,7 +203,7 @@ export function Eod({ onCerrar, soloSesionId }: { onCerrar: () => void; soloSesi
       {sesion && (
         <PasoLlamada
           key={sesion.id} s={ultimaDe(sesion.id) ?? sesion} f={filas.get(sesion.id)} hoy={hoy}
-          r={respuesta(sesion)} objeciones={objecionesDe(e.ajustes)}
+          r={respuesta(sesion)} objeciones={objeciones} opciones={opciones}
           onResponder={(c) => responder(sesion, c)}
           buscaEnFathom={esDueno || Boolean(yo.miembro && esDelCloser(sesion, yo.miembro.nombre, e.equipo))}
           onVender={() => setVendiendo(sesion.id)}
@@ -195,7 +211,7 @@ export function Eod({ onCerrar, soloSesionId }: { onCerrar: () => void; soloSesi
         />
       )}
       {actual?.id === "fin" && (
-        <Fin llamadas={llamadas.map((s) => ({ s, f: filas.get(s.id), r: respuesta(s) }))} />
+        <Fin llamadas={llamadas.map((s) => ({ s: ultimaDe(s.id) ?? s, f: filas.get(s.id), r: respuesta(s), falta: faltaEnRespuesta(respuesta(s), opciones) }))} />
       )}
     </Asistente>
   );
@@ -249,7 +265,8 @@ function Inicio({ closers, closer, fijo, onCloser, dia, hoy, onDia, delDia, pend
         <div className="crm-eod__cuenta">
           <span className="crm-eod__numero t-num">{num(delDia + (conPendientes ? pendientes : 0))}</span>
           <span>
-            {delDia === 1 ? "llamada" : "llamadas"} del {dia === hoy ? "día" : textoFecha(dia)} para cargar
+            {delDia + (conPendientes ? pendientes : 0) === 1 ? "llamada" : "llamadas"} para cargar
+            {pendientes > 0 && conPendientes ? `: ${num(delDia)} del ${dia === hoy ? "día" : textoFecha(dia)} y ${num(pendientes)} de antes` : ` del ${dia === hoy ? "día" : textoFecha(dia)}`}
             {pendientes > 0 && (
               <label className="crm-eod__pendientes">
                 <input type="checkbox" checked={conPendientes} onChange={(ev) => onConPendientes(ev.target.checked)} />
@@ -265,8 +282,10 @@ function Inicio({ closers, closer, fijo, onCloser, dia, hoy, onDia, delDia, pend
 
 /* ---------- Una llamada ---------- */
 
-function PasoLlamada({ s, f, hoy, r, objeciones, buscaEnFathom, onResponder, onVender, onSaltear }: {
+function PasoLlamada({ s, f, hoy, r, objeciones, opciones, buscaEnFathom, onResponder, onVender, onSaltear }: {
   s: Sesion; f?: FilaTabla; hoy: string; r?: RespuestaEod; objeciones: string[];
+  /* Las opciones del Estado de Llamada, las del Airtable. */
+  opciones: OpcionCrm[];
   /* Quien atendió la llamada o un dueño: puede buscar su grabación en Fathom. */
   buscaEnFathom: boolean;
   onResponder: (c: Partial<RespuestaEod>) => void; onVender: () => void; onSaltear: () => void;
@@ -278,21 +297,40 @@ function PasoLlamada({ s, f, hoy, r, objeciones, buscaEnFathom, onResponder, onV
   const atajos = atajosDeCierre(hoy).filter((a, i, xs) => xs.findIndex((b) => b.valor === a.valor) === i);
   const cajaCierre = useRef<HTMLDivElement>(null);
   /* «Otra fecha» deja el desplegable ahí hasta que se elige el día. */
-  const [otraFecha, setOtraFecha] = useState(() => typeof r?.cierreEstimado === "string" && !atajos.some((a) => a.valor === r.cierreEstimado));
+  const [otraFecha, setOtraFecha] = useState(() => Boolean(r?.cierreEstimado) && !atajos.some((a) => a.valor === r?.cierreEstimado));
   const cierre = r?.cierreEstimado;
-  const valorCierre = cierre === null ? "nunca" : otraFecha ? "otra" : cierre ?? "";
-  const elegido = OPCIONES_RESULTADO.find((o) => o.valor === r?.resultado);
+  const valorCierre = otraFecha ? "otra" : cierre ?? "";
+  const opcion = opciones.find((o) => o.nombre === r?.estadoLlamada);
+  const que = preguntaDe(opcion);
+  const porQue = que === "seguimiento" || que === "perdida";
+  /* Con cómo terminó elegido (o si pidió otra fecha), lo que sigue aparece a
+     la derecha. El Estado Pre-Call que ya traía (lo cargó el setter) no la
+     abre: falta saber cómo terminó. */
+  const abierto = Boolean(r?.estadoLlamada) || esReagendar(r?.estadoPreCall);
   const datos: [string, string][] = ([
     ["Vía", f?.via ?? ""], ["Ad", f?.ad ?? ""], ["País", f?.pais ?? ""], ["Edad", f?.edad ?? ""],
     ["Tecnologías", f?.tecnologias.join(", ") ?? ""], ["Inglés", f?.ingles ?? ""], ["Experiencia", f?.experiencia ?? ""],
     ["Gana por mes", f?.ingreso ?? ""], ["Puede invertir", f?.inversion ?? ""],
   ] as [string, string][]).filter(([, v]) => v);
 
+  /* Un estado de los que piden el porqué limpia lo que ya no corresponde y
+     propone la objeción que el mismo estado dice («NO Calificado»). */
+  const elegirEstado = (nombreEstado: string) => {
+    const nueva = opciones.find((o) => o.nombre === nombreEstado);
+    const sigue = preguntaDe(nueva);
+    onResponder({
+      estadoLlamada: nombreEstado || undefined,
+      ...(sigue === "seguimiento" || sigue === "perdida"
+        ? { objecion: r?.objecion ?? objecionSugerida(nueva, objeciones), ...(sigue === "perdida" ? { cierreEstimado: undefined } : {}) }
+        : { objecion: undefined, hizoOferta: undefined, cierreEstimado: undefined }),
+    });
+  };
+
   /* Al elegir cómo terminó, la persona y la pregunta se corren a la
      izquierda y lo que sigue (por qué, la oferta, el cierre, la nota)
      aparece a la derecha: todo en una pantalla, sin bajar. */
   return (
-    <div className={`crm-eod__paso${r ? " crm-eod__paso--abierto" : ""}`}>
+    <div className={`crm-eod__paso${abierto ? " crm-eod__paso--abierto" : ""}`}>
       <div className="crm-eod__izq stack-5">
       <div className="crm-eod__ficha">
         <div className="row-wrap" style={{ gap: 8, alignItems: "center" }}>
@@ -310,50 +348,41 @@ function PasoLlamada({ s, f, hoy, r, objeciones, buscaEnFathom, onResponder, onV
       </div>
 
       <Pregunta texto={`¿Cómo terminó la llamada con ${nombreDePila(nombre)}?`} />
+      {/* Los dos estados de la llamada, los mismos del CRM, la Agenda y la
+          ficha: vienen cargados y lo que se cambia acá cambia en todos lados. */}
       <div className="crm-eod__campos">
         <div className="crm-eod__campo">
-          <span className="t-label">Resultado</span>
-          <Select
-            aria-label="Cómo terminó la llamada" value={r?.resultado ?? ""} placeholder="Elegí cómo terminó" autoFocus={!r}
-            opciones={OPCIONES_RESULTADO.map((o) => ({ valor: o.valor, texto: o.nombre }))}
-            onChange={(ev) => {
-              const v = ev.target.value as ResultadoLlamada | "";
-              if (!v) return;
-              onResponder(v === "no-compro" ? { resultado: v } : { resultado: v, objecion: undefined, hizoOferta: undefined, cierreEstimado: undefined });
-            }}
-          />
-          {elegido && <span className="t-sm t-subtle">{elegido.sub}.</span>}
+          <span className="t-label">Estado de Llamada</span>
+          <EstadoEditable sesion={s} campo="estadoLlamada" valor={r?.estadoLlamada ?? ""} onElegir={elegirEstado} bloque grande />
+          <span className="t-sm t-subtle">{r?.estadoLlamada ? QUE_SIGUE[que] : "Elegí cómo terminó."}</span>
         </div>
-        {/* Cómo quedó la llamada: lo pone el resultado y se puede cambiar. */}
         <div className="crm-eod__campo">
-          <span className="t-label">Estado de la llamada</span>
-          <Select
-            aria-label="Estado de la llamada" value={r?.estado ?? s.estado}
-            opciones={(Object.keys(TEXTO_ESTADO) as EstadoSesion[]).map((k) => ({ valor: k, texto: TEXTO_ESTADO[k] }))}
-            onChange={(ev) => onResponder({ estado: ev.target.value as EstadoSesion })}
-          />
+          <span className="t-label">Estado Pre-Call</span>
+          <EstadoEditable sesion={s} campo="estadoPreCall" valor={r?.estadoPreCall ?? ""} onElegir={(v) => onResponder({ estadoPreCall: v || undefined })}
+            vacio="Sin cargar" bloque grande />
+          <span className="t-sm t-subtle">Si pidió otra fecha, «Reagendar»: la agenda nueva entra sola.</span>
         </div>
       </div>
 
       <button type="button" className="link t-sm" style={{ alignSelf: "flex-start" }} onClick={onSaltear}>Saltear esta llamada por ahora</button>
       </div>
 
-      <div className="crm-eod__der" aria-hidden={!r}>
+      <div className="crm-eod__der" aria-hidden={!abierto}>
       <div className="crm-eod__der-caja stack-4">
-      {r?.resultado === "compro" && (
+      {que === "venta" && (
         <div className="crm-eod__bloque">
           {f?.venta ? (
             <p className="crm-eod__ok"><Check size={16} /> La venta ya está cargada: {f.venta}. Ya es cliente.</p>
           ) : (
             <>
               <Button variante="primary" icono={<ShoppingBag size={16} />} onClick={onVender}>Cargar la venta</Button>
-              <p className="t-sm t-subtle">Se abre el asistente de venta con {nombreDePila(nombre)} y el closer ya elegidos. Al guardarla pasa a cliente y la llamada queda con cierre. Si la carga otra persona, seguí.</p>
+              <p className="t-sm t-subtle">Se abre el asistente de venta con {nombreDePila(nombre)} y el closer ya elegidos. Al guardarla pasa a cliente. Si la carga otra persona, seguí.</p>
             </>
           )}
         </div>
       )}
 
-      {r?.resultado === "no-compro" && (
+      {porQue && r && (
         <div className="crm-eod__bloque">
           <div className="crm-eod__campos">
             <div className="crm-eod__campo">
@@ -373,8 +402,9 @@ function PasoLlamada({ s, f, hoy, r, objeciones, buscaEnFathom, onResponder, onV
                 onChange={(ev) => onResponder({ hizoOferta: ev.target.value ? ev.target.value === "si" : undefined })}
               />
             </div>
-            {/* A lo ancho. Con «Otra fecha» el desplegable se acorta y, en el
-                lugar que deja, aparece el día para elegir. */}
+            {/* Sólo si sigue en pie. A lo ancho; con «Otra fecha» el desplegable
+                se acorta y, en el lugar que deja, aparece el día para elegir. */}
+            {que === "seguimiento" && (
             <div className="crm-eod__campo crm-eod__campo--ancho">
               <span className="t-label">¿Para cuándo estimás cerrarlo?</span>
               <div className={`crm-eod__cierre${otraFecha ? " crm-eod__cierre--fecha" : ""}`} ref={cajaCierre}>
@@ -383,15 +413,13 @@ function PasoLlamada({ s, f, hoy, r, objeciones, buscaEnFathom, onResponder, onV
                 aria-label="Para cuándo estimás cerrarlo" value={valorCierre} placeholder="Elegí cuándo"
                 opciones={[
                   ...atajos.map((a) => ({ valor: a.valor, texto: `${a.texto} (${textoFecha(a.valor)})` })),
-                  { valor: "nunca", texto: "No se va a cerrar" },
                   { valor: "otra", texto: "Otra fecha…" },
                 ]}
                 onChange={(ev) => {
                   const v = ev.target.value;
                   setOtraFecha(v === "otra");
                   /* «Otra fecha» conserva la que ya había, para corregirla. */
-                  if (v === "otra") onResponder({ cierreEstimado: typeof cierre === "string" ? cierre : undefined });
-                  else onResponder({ cierreEstimado: v === "nunca" ? null : v || undefined });
+                  onResponder({ cierreEstimado: v === "otra" ? cierre : v || undefined });
                   /* El día, a mano en cuanto aparece. */
                   if (v === "otra") window.setTimeout(() => cajaCierre.current?.querySelector<HTMLElement>(".crm-eod__cierre-dia input, .crm-eod__cierre-dia .fecha")?.focus(), 240);
                 }}
@@ -405,16 +433,17 @@ function PasoLlamada({ s, f, hoy, r, objeciones, buscaEnFathom, onResponder, onV
               </div>
               </div>
             </div>
+            )}
           </div>
         </div>
       )}
 
-      {r && (
+      {abierto && r && (
         <div className="stack-3">
           <div className="stack-2">
             <span className="t-label">Nota <span className="t-subtle">(opcional)</span></span>
             <Textarea rows={2} value={r.nota ?? ""} onChange={(ev) => onResponder({ nota: ev.target.value })}
-              placeholder={r.resultado === "no-compro" ? "Qué dijo, qué le falta, cuándo lo volvés a llamar…" : "Algo para acordarse"} />
+              placeholder={porQue ? "Qué dijo, qué le falta, cuándo lo volvés a llamar…" : "Algo para acordarse"} />
           </div>
           <GrabacionDeLlamada s={s} valor={r.grabacion ?? s.grabacion ?? ""} buscar={buscaEnFathom} onCambiar={(link) => onResponder({ grabacion: link })} />
         </div>
@@ -427,25 +456,24 @@ function PasoLlamada({ s, f, hoy, r, objeciones, buscaEnFathom, onResponder, onV
 
 /* ---------- Listo ---------- */
 
-function Fin({ llamadas }: { llamadas: { s: Sesion; f?: FilaTabla; r?: RespuestaEod }[] }) {
-  const cargadas = llamadas.filter((x) => x.r).length;
+function Fin({ llamadas }: { llamadas: { s: Sesion; f?: FilaTabla; r?: RespuestaEod; falta: string | null }[] }) {
+  const e = useEstado();
+  const cargadas = llamadas.filter((x) => !x.falta).length;
   return (
     <div className="stack-4">
       <Pregunta texto={cargadas === llamadas.length ? "¡Listo! Día cerrado" : `Cargaste ${num(cargadas)} de ${num(llamadas.length)}`}
-        sub={cargadas === llamadas.length ? "Todo queda en el CRM y en la ficha de cada persona." : "Las que salteaste siguen como «Sin cargar»: las podés cargar después."} />
+        sub={cargadas === llamadas.length ? "Todo queda en el CRM, la Agenda y la ficha de cada persona." : "A las otras les falta algo: las podés completar después, desde acá o desde el CRM."} />
       <div className="crm-eod__resumen">
-        {llamadas.map(({ s, f, r }) => {
-          const texto = r?.resultado ? TEXTO_RESULTADO[r.resultado] : r?.estado === "cancelada" ? "Cancelada" : "Sin cargar";
-          return (
-            <div key={s.id} className="crm-eod__fila">
-              <span className="truncate t-strong">{f?.nombre || s.invitado}</span>
-              <span className="t-sm t-subtle t-num">{HORA.format(new Date(s.inicia))}</span>
-              <span className="spacer" />
-              {r?.objecion && <span className="t-sm t-subtle truncate">{r.objecion}</span>}
-              <Badge variante={VARIANTE_RESULTADO[texto] ?? "neutral"}>{texto}</Badge>
-            </div>
-          );
-        })}
+        {llamadas.map(({ s, f, r }) => (
+          <div key={s.id} className="crm-eod__fila">
+            <span className="truncate t-strong">{f?.nombre || s.invitado}</span>
+            <span className="t-sm t-subtle t-num">{HORA.format(new Date(s.inicia))}</span>
+            <span className="spacer" />
+            {r?.objecion && <span className="t-sm t-subtle truncate">{r.objecion}</span>}
+            {/* Como quedó: lo elegido acá o, si todavía no se guardó, lo que tiene. */}
+            <EstadoDeLlamada ver={estadoVisible(e, r?.estadoLlamada ? { ...s, estadoLlamada: r.estadoLlamada } : s)} />
+          </div>
+        ))}
       </div>
     </div>
   );

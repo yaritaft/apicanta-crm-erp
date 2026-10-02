@@ -30,9 +30,14 @@ export interface DefColumna {
 
 const clave = (tabla: string) => `apicanta:columnas:${tabla}`;
 
-export function useColumnas(tabla: string, todas: DefColumna[], porDefecto: string[]) {
+/* `deAntes`: columnas que cambiaron de clave. Quien tenía guardada (o trae
+   en un link) la de antes ve en su lugar la de ahora (una o varias), en vez
+   de perderla. Tiene que ser un objeto fijo (de módulo). */
+export function useColumnas(tabla: string, todas: DefColumna[], porDefecto: string[], deAntes?: Record<string, string[]>) {
   const fijas = useMemo(() => todas.filter((c) => c.fija).map((c) => c.clave), [todas]);
   const [orden, setOrden] = useState<string[]>(porDefecto);
+  /* Las que existen, con las de antes pasadas a las de ahora y sin repetir. */
+  const vigentes = useCallback((ks: string[]) => [...new Set(ks.flatMap((k) => deAntes?.[k] ?? [k]))].filter((k) => todas.some((c) => c.clave === k)), [todas, deAntes]);
 
   /* Se lee después del montado: leer localStorage en el primer render rompe
      la hidratación, porque el servidor no lo tiene. */
@@ -43,10 +48,10 @@ export function useColumnas(tabla: string, todas: DefColumna[], porDefecto: stri
       const leido = JSON.parse(guardado) as string[];
       /* Se filtra contra `todas` a propósito: si una versión vieja guardó una
          columna que ya no existe, ignorarla es mejor que romper la tabla. */
-      const validas = leido.filter((k) => todas.some((c) => c.clave === k));
+      const validas = vigentes(leido);
       if (validas.length) setOrden(validas);
     } catch { /* modo privado, o JSON de una versión anterior */ }
-  }, [tabla, todas]);
+  }, [tabla, vigentes]);
 
   /* Las columnas que trae un link copiado, si trae. */
   const params = useSearchParams();
@@ -54,9 +59,9 @@ export function useColumnas(tabla: string, todas: DefColumna[], porDefecto: stri
   const enURL = `cols-${tabla}`;
   const delLinkCrudo = params.get(enURL);
   const delLink = useMemo(() => {
-    const ks = deLista(delLinkCrudo)?.filter((k) => todas.some((c) => c.clave === k)) ?? [];
+    const ks = vigentes(deLista(delLinkCrudo) ?? []);
     return ks.length ? ks : null;
-  }, [delLinkCrudo, todas]);
+  }, [delLinkCrudo, vigentes]);
   const actual = delLink ?? orden;
 
   /* Tocar una columna la hace propia: se guarda y el link deja de mandar. */
@@ -95,7 +100,7 @@ export function useColumnas(tabla: string, todas: DefColumna[], porDefecto: stri
   return { visibles, alternar, mover, restaurar, esVisible: (k: string) => visibles.includes(k) };
 }
 
-export function ConfigColumnas({ todas, visibles, alternar, mover, restaurar, titulo = "Columnas", icono, conCuenta = true }: {
+export function ConfigColumnas({ todas, visibles, alternar, mover, restaurar, titulo = "Columnas", icono, conCuenta = true, compacto }: {
   todas: DefColumna[];
   visibles: string[];
   alternar: (k: string) => void;
@@ -105,6 +110,8 @@ export function ConfigColumnas({ todas, visibles, alternar, mover, restaurar, ti
   titulo?: string;
   icono?: React.ReactNode;
   conCuenta?: boolean;
+  /* En una barra apretada: el ícono y cuántas, sin la palabra. */
+  compacto?: boolean;
 }) {
   const [abierto, setAbierto] = useState(false);
   const [arrastrando, setArrastrando] = useState<string | null>(null);
@@ -137,9 +144,10 @@ export function ConfigColumnas({ todas, visibles, alternar, mover, restaurar, ti
 
   return (
     <div ref={raiz} style={{ position: "relative" }}>
-      <button type="button" className={`dp-pill${abierto ? " dp-pill--open" : ""}`} onClick={() => setAbierto((v) => !v)}>
+      <button type="button" className={`dp-pill${abierto ? " dp-pill--open" : ""}`} onClick={() => setAbierto((v) => !v)}
+        aria-label={compacto ? `${titulo}: ${visibles.length}` : undefined} title={compacto ? `${titulo}: elegí cuáles se ven y en qué orden` : undefined}>
         {icono ?? <Columns3 size={14} />}
-        {conCuenta ? `${titulo} · ${visibles.length}` : titulo}
+        {compacto ? visibles.length : conCuenta ? `${titulo} · ${visibles.length}` : titulo}
         <span className="dp-caret">▾</span>
       </button>
 

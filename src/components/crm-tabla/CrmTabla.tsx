@@ -2,73 +2,80 @@
 
 import React, { useCallback, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { ClipboardCheck, ExternalLink, Pencil, Search, Star, X } from "lucide-react";
-import { Badge, Button, Card, Chip, Empty, Input, Tabs } from "@/components/ui/ui";
+import { ArrowDown, ArrowUp, ClipboardCheck, ExternalLink, Pencil, Search, Star, X } from "lucide-react";
+import { Button, Card, Chip, Empty, Input, Tabs } from "@/components/ui/ui";
 import { DataTable, type Columna } from "@/components/ui/DataTable";
 import { DateRangePicker } from "@/components/ui/DateRangePicker";
 import { ConfigColumnas, useColumnas, type DefColumna } from "@/components/ui/ColumnasConfig";
 import { CopiarLink } from "@/components/ui/Filtros";
-import { PageHead } from "@/components/shell/PageHead";
+import { VistasGuardadas } from "@/components/ui/VistasGuardadas";
 import { useAbrirFicha } from "@/components/ficha/abrir";
 import { useToast } from "@/components/ui/Toast";
 import { AsistenteVenta } from "@/components/ventas/AsistenteVenta";
+import { PastillaEstado, useCambiarEstado } from "@/components/estados/EstadoLlamada";
 import { acciones, useEstado, type CambiosLlamada } from "@/lib/store";
 import { useAcceso } from "@/lib/acceso";
 import { puedeEditar } from "@/lib/permisos";
 import { useUsuarioActual } from "@/lib/usuario";
-import { closersConLlamadas, objecionesDe, TEXTO_RESULTADO } from "@/lib/eod";
-import { miembroDeCloser } from "@/lib/crm";
+import { closersConLlamadas, objecionesDe } from "@/lib/eod";
+import { miembroDeCloser, opcionesDe as opcionesDelCrm } from "@/lib/crm";
+import { COLOR_AVISO, POR_VENIR, SIN_CARGAR } from "@/lib/estados";
 import { leadDeSesion } from "@/lib/etapas-auto";
+import { aLista } from "@/lib/compartirLink";
+import { PARAM_VISTA } from "@/lib/vistas-guardadas";
 import type { ColorCrm, OpcionCrm } from "@/lib/types";
 import { num } from "@/lib/format";
 import { diaDeNegocio } from "@/lib/dia-negocio";
-import { useBusquedaURL, useEscribirURL, useParamsURL, useTablaURL } from "@/lib/useParamsURL";
+import { paginaDeURL, useBusquedaURL, useEscribirURL, useParamsURL } from "@/lib/useParamsURL";
 import { useRangoURL } from "@/lib/useRango";
 import {
-  COLUMNA, COLUMNAS, coincideBusqueda, EDITOR, escrituraDe, filasTabla, filtroAURL, filtrosDeURL, opcionesDeColumna,
-  OPCIONES_ESTADO, OPCIONES_RESULTADO, PAISES, pasaFiltros, POR_QUE_NO, VACIAS, valorEditable,
-  VISIBLES_POR_DEFECTO, type ClaveColumna, type FilaTabla, type FiltroColumna as Filtro,
+  CAMPO_DE_OPCIONES, COLUMNA, COLUMNAS, COLUMNAS_DE_ANTES, coincideBusqueda, EDITOR, escrituraDe, filasTabla, filtroAURL, filtrosDeURL,
+  hayFiltro, MAX_ORDENES, opcionesDeColumna, ORDEN_POR_DEFECTO, ordenarFilas, ordenesAURL, ordenesDeURL, PAISES, pasaFiltros, POR_QUE_NO,
+  textoDeFiltro, VACIAS, valorEditable, VISIBLES_POR_DEFECTO,
+  type ClaveColumna, type FilaTabla, type FiltroColumna as Filtro, type OrdenColumna,
 } from "@/lib/crm-tabla";
 import { tituloPerfil, type CampoPerfil } from "@/lib/perfil";
 import { CeldaEditable } from "./CeldaEditable";
 import { FiltroColumna, textoFecha } from "./FiltroColumna";
 import { ResumenCrm } from "./ResumenCrm";
 import { Eod } from "./Eod";
-import { VARIANTE_RESULTADO } from "./resultado";
 
 /* ==================================================================
    El CRM: una tabla, fácil como un Excel.
 
    Una fila por llamada, con todo lo que se sabe de la persona, que se
    llena sola (y con lo que el closer carga en su cierre del día, el EOD).
-   Cada columna se filtra con un clic en su título, y el período, la
-   búsqueda, los filtros y el orden van en el link: se copia y abre igual.
-   «Resumen» muestra, con los mismos filtros, cuánto se cierra y por qué
-   no.
 
-   Y se corrige ahí mismo (02/10): un clic en la celda la abre, Enter
-   guarda y el aviso trae «Deshacer». Lo que es de la llamada cambia esa
-   llamada; lo que es de la persona, todas sus llamadas. Lo que sale solo
-   (la fecha, la vía, el ad, si califica, la venta) no se edita y lo dice
-   al pasar el mouse. El nombre abre la ficha. Qué guarda cada celda está
-   en lib/crm-tabla (escrituraDe).
+   Todo lo de una columna está en su título: ordenar por ella (y por más
+   de una), tildar los valores que se quieren ver, o filtrar por un texto
+   o entre dos fechas. No hay un apartado de filtros donde buscar la
+   columna en una lista y armarle condiciones. El período, la búsqueda,
+   los filtros, el orden y las columnas van en el link, y se guardan como
+   una vista con nombre, sólo para uno o para todo el equipo
+   (components/ui/VistasGuardadas).
+
+   Los estados son los dos del Airtable, los mismos en toda la app
+   (lib/estados.ts). «Informe» muestra, con los mismos filtros, cuánto se
+   cierra y por qué no.
+
+   Y se corrige ahí mismo: un clic en la celda la abre, Enter guarda y el
+   aviso trae «Deshacer». Lo que es de la llamada cambia esa llamada; lo
+   que es de la persona, todas sus llamadas. Lo que sale solo (la fecha,
+   la vía, el ad, si califica, la venta) no se edita y lo dice al pasar
+   el mouse. El nombre abre la ficha. Qué guarda cada celda está en
+   lib/crm-tabla (escrituraDe).
    ================================================================== */
 
-const FECHAS = new Set<ClaveColumna>(["llamada", "agendo", "cierre"]);
 const DEFS: DefColumna[] = COLUMNAS.map((c) => ({ clave: c.clave, titulo: c.titulo, grupo: c.grupo, fija: c.clave === "nombre" }));
 const HORA = new Intl.DateTimeFormat("es-AR", { timeZone: "America/Argentina/Buenos_Aires", hour: "2-digit", minute: "2-digit", hour12: false });
 
 /* Lo que es de la persona (se guarda en su contacto) y lo que es de la llamada. */
 const DE_LA_PERSONA = new Set<ClaveColumna>(["nombre", "email", "telefono", "pais", "edad", "tecnologias", "ingles", "experiencia", "formacion", "ingreso", "inversion"]);
 /* Las que se eligen de una lista y se pueden dejar vacías. */
-const VACIABLES = new Set<ClaveColumna>(["resultado", "objecion", "oferta"]);
+const VACIABLES = new Set<ClaveColumna>(["estadoPreCall", "estadoLlamada", "preCall", "objecion", "oferta"]);
 const PERFIL: Partial<Record<ClaveColumna, CampoPerfil>> = {
   edad: "edad", tecnologias: "tecnologias", ingles: "ingles", experiencia: "experiencia", formacion: "formacion", ingreso: "ingreso", inversion: "inversion",
 };
-const COLOR_RESULTADO: Record<string, ColorCrm> = {
-  [TEXTO_RESULTADO.compro]: "verde2", [TEXTO_RESULTADO["no-compro"]]: "naranja1", [TEXTO_RESULTADO["no-vino"]]: "rojo1", [TEXTO_RESULTADO.reprogramo]: "azul1",
-};
-const COLOR_ESTADO: Record<string, ColorCrm> = { Agendada: "azul1", Hecha: "verde2", "No vino": "rojo1", Cancelada: "gris2" };
 const opciones = (xs: string[], color: (x: string) => ColorCrm = () => "gris1"): OpcionCrm[] => xs.map((nombre) => ({ nombre, color: color(nombre) }));
 
 export function CrmTabla() {
@@ -77,9 +84,10 @@ export function CrmTabla() {
   const escribir = useEscribirURL();
   const abrirFicha = useAbrirFicha();
   const [q, setQ] = useBusquedaURL("q", ["pag"]);
-  const [vista, setVista] = useParamsURL({ seccion: "tabla" });
+  const [vista, setVista] = useParamsURL({ seccion: "tabla", pag: "1" });
   const [eod, setEod] = useState(false);
   const toast = useToast();
+  const cambiarEstado = useCambiarEstado();
   /* La celda que se está corrigiendo, y la llamada a la que se le carga la venta. */
   const [editando, setEditando] = useState<{ id: string; clave: ClaveColumna } | null>(null);
   const [ventaPara, setVentaPara] = useState<string | null>(null);
@@ -106,36 +114,69 @@ export function CrmTabla() {
   );
   const textoParams = params.toString();
   const filtros = useMemo(() => filtrosDeURL(new URLSearchParams(textoParams)), [textoParams]);
-  const filas = useMemo(() => enPeriodo.filter((f) => pasaFiltros(f, filtros)), [enPeriodo, filtros]);
+  /* «Sin cargar»: las que ya pasaron y nadie cargó cómo terminaron (también
+     las que sólo tienen el estado que pone la app, como «2da Agenda»). */
+  const soloSinCargar = params.get("pendientes") === "1";
+  const base = useMemo(() => (soloSinCargar ? enPeriodo.filter((f) => f.sinCargar) : enPeriodo), [enPeriodo, soloSinCargar]);
+  const filtradas = useMemo(() => base.filter((f) => pasaFiltros(f, filtros)), [base, filtros]);
 
-  const cols = useColumnas("crm", DEFS, VISIBLES_POR_DEFECTO);
-  const tabla = useTablaURL("", { clave: "llamada", desc: true }, COLUMNAS.map((c) => c.clave));
+  /* Las opciones de los estados, las del Airtable: las mismas que en la grilla. */
+  const estados = useMemo(() => ({
+    estadoLlamada: opcionesDelCrm(e.ajustes, "estadoLlamada"),
+    estadoPreCall: opcionesDelCrm(e.ajustes, "estadoPreCall"),
+    preCall: opcionesDelCrm(e.ajustes, "preCall"),
+  }), [e.ajustes]);
+  /* Sus valores van en el orden del Airtable, no alfabético. */
+  const ordenValores = useMemo<Partial<Record<ClaveColumna, string[]>>>(() => ({
+    estadoLlamada: [...estados.estadoLlamada.map((o) => o.nombre), SIN_CARGAR, POR_VENIR],
+    estadoPreCall: estados.estadoPreCall.map((o) => o.nombre),
+    preCall: estados.preCall.map((o) => o.nombre),
+  }), [estados]);
+  const colorDe = useMemo<Partial<Record<ClaveColumna, Map<string, ColorCrm>>>>(() => ({
+    estadoLlamada: new Map<string, ColorCrm>([...Object.entries(COLOR_AVISO), ...estados.estadoLlamada.map((o) => [o.nombre, o.color] as const)]),
+    estadoPreCall: new Map(estados.estadoPreCall.map((o) => [o.nombre, o.color] as const)),
+    preCall: new Map(estados.preCall.map((o) => [o.nombre, o.color] as const)),
+  }), [estados]);
+
+  /* El orden: por una columna o por varias, desde el título de cada una. */
+  const ordenes = useMemo(() => ordenesDeURL(params.get("orden")), [params]);
+  const filas = useMemo(
+    /* A igual valor, la llamada más nueva primero. */
+    () => ordenarFilas(filtradas, ordenes.some((o) => o.clave === "llamada") ? ordenes : [...ordenes, ...ORDEN_POR_DEFECTO], ordenValores),
+    [filtradas, ordenes, ordenValores],
+  );
+  const ordenar = useCallback((os: OrdenColumna[]) => escribir({ orden: ordenesAURL(os), pag: null }), [escribir]);
+  const ordenDeSiempre = ordenesAURL(ordenes) === null;
+
+  const cols = useColumnas("crm", DEFS, VISIBLES_POR_DEFECTO, COLUMNAS_DE_ANTES);
 
   const cambiarFiltro = useCallback((clave: ClaveColumna, fc: Filtro | null) => {
     escribir({ ...filtroAURL(clave, fc), pag: null });
   }, [escribir]);
-  const filtradas = Object.keys(filtros) as ClaveColumna[];
-  const limpiar = () => escribir({ ...Object.assign({}, ...filtradas.map((k) => filtroAURL(k, null))), q: null, pag: null });
+  const conFiltro = (Object.keys(filtros) as ClaveColumna[]).filter((k) => hayFiltro(filtros[k]));
+  const hayAlgo = conFiltro.length > 0 || soloSinCargar || Boolean(q);
+  const limpiar = () => escribir({
+    ...Object.assign({}, ...(Object.keys(filtros) as ClaveColumna[]).map((k) => filtroAURL(k, null))),
+    pendientes: null, q: null, pag: null, [PARAM_VISTA]: null,
+  });
 
-  /* Si quien mira es un closer, sus llamadas a un clic. */
+  /* Si quien mira atiende llamadas y ve las de todos, las suyas a un clic
+     (el closer que ve sólo lo suyo ya las tiene filtradas por la base). */
   const yo = useUsuarioActual();
-  const miNombre = yo.miembro && closersConLlamadas(e).includes(yo.miembro.nombre) ? yo.miembro.nombre : "";
+  const miNombre = yo.miembro && !acceso?.soloLoSuyo && closersConLlamadas(e).includes(yo.miembro.nombre) ? yo.miembro.nombre : "";
   const soloMias = Boolean(miNombre) && filtros.closer?.modo === "solo" && filtros.closer.valores.length === 1 && filtros.closer.valores[0] === miNombre;
-
   const sinCargar = enPeriodo.filter((f) => f.sinCargar).length;
-  const soloSinCargar = filtros.resultado?.modo === "solo" && filtros.resultado.valores.length === 1 && filtros.resultado.valores[0] === "Sin cargar";
 
   /* ---------- Corregir en la celda ---------- */
   const opcionesDe = useMemo<Partial<Record<ClaveColumna, OpcionCrm[]>>>(() => {
     const closers = new Set([...closersConLlamadas(e), ...e.equipo.filter((m) => m.rol === "closer" && m.activo).map((m) => m.nombre)]);
     return {
       closer: opciones([...closers].sort((a, b) => a.localeCompare(b, "es"))),
-      estado: opciones(OPCIONES_ESTADO, (x) => COLOR_ESTADO[x] ?? "gris1"),
-      resultado: opciones(OPCIONES_RESULTADO, (x) => COLOR_RESULTADO[x] ?? "gris1"),
+      ...estados,
       objecion: opciones(objecionesDe(e.ajustes), () => "amarillo1"),
       oferta: [{ nombre: "Sí", color: "verde1" }, { nombre: "No", color: "gris1" }],
     };
-  }, [e]);
+  }, [e, estados]);
   /* Para escribir menos: los valores que ya existen en esa columna. */
   const sugerenciasDe = (clave: ClaveColumna): string[] | undefined => {
     if (clave === "pais") return PAISES;
@@ -144,13 +185,15 @@ export function CrmTabla() {
   };
 
   const guardarCelda = (f: FilaTabla, clave: ClaveColumna, valor: string) => {
+    /* Un estado: lo mismo que cambiarlo en la Agenda, la ficha o la grilla. */
+    const campo = CAMPO_DE_OPCIONES[clave];
+    if (campo) { cambiarEstado(f.sesion, campo, valor.trim(), { conVenta: Boolean(f.venta), alVender: () => setVentaPara(f.id) }); return; }
     const w = escrituraDe(f, clave, valor, { ajustes: e.ajustes, quien: yo.nombre, cuando: new Date().toISOString() });
     if (!w) return;
     const titulo = COLUMNA[clave].titulo;
     let deshacer: () => void;
     if (w.tipo === "llamada") {
-      /* Lo que tenía la llamada en cada campo que cambia, y la etapa de su
-         lead si el cambio lo movió: deshacer lo deja como estaba. */
+      /* Lo que tenía la llamada en cada campo que cambia: deshacer lo deja como estaba. */
       const antes = Object.fromEntries(Object.keys(w.cambios).map((k) => [k, (f.sesion as unknown as Record<string, unknown>)[k]])) as CambiosLlamada;
       const { etapas } = acciones.editarLlamadas([{ id: w.id, cambios: w.cambios, detalle: w.detalle }]);
       deshacer = () => { acciones.editarLlamadas([{ id: w.id, cambios: antes, detalle: `${f.nombre}: se deshizo el cambio de ${titulo}.` }], etapas); };
@@ -163,11 +206,6 @@ export function CrmTabla() {
       acciones.corregirPerfil(w.id, w.campo, w.valor, w.detalle);
       deshacer = () => { acciones.corregirPerfil(w.id, w.campo, antes, `${f.nombre}: se deshizo el cambio de ${titulo}.`); };
     }
-    /* Con cierre y sin la venta cargada: el botón para cargarla ahí mismo. */
-    if (clave === "resultado" && valor === TEXTO_RESULTADO.compro && !f.venta) {
-      toast(`${f.nombre || "La llamada"}: con cierre. ¿Cargás la venta?`, "info", { texto: "Cargar la venta", onClick: () => setVentaPara(f.id) });
-      return;
-    }
     const aQuienes = DE_LA_PERSONA.has(clave) && todas.filter((x) => x.personaId === f.personaId).length > 1 ? " (en todas sus llamadas)" : "";
     toast(`${titulo} de ${f.nombre || "la llamada"}: ${valor.trim() || "vacío"}${aQuienes}.`, "ok", { texto: "Deshacer", onClick: deshacer });
   };
@@ -175,21 +213,29 @@ export function CrmTabla() {
 
   const columnas: Columna<FilaTabla>[] = cols.visibles.map((k) => {
     const col = COLUMNA[k as ClaveColumna];
+    const puesto = ordenes.findIndex((o) => o.clave === col.clave);
+    const colores = colorDe[col.clave];
     return {
       clave: col.clave,
       titulo: col.titulo,
       ancho: col.ancho,
       tipo: col.clave === "nombre" ? "primary" as const : undefined,
-      orden: col.orden ?? ((f: FilaTabla) => col.valores(f)[0] ?? ""),
       encabezado: (
         <FiltroColumna
           titulo={col.titulo}
-          opciones={() => opcionesDeColumna(enPeriodo, filtros, col.clave)}
+          opciones={() => opcionesDeColumna(base, filtros, col.clave, ordenValores[col.clave])}
           filtro={filtros[col.clave]}
           onFiltro={(fc) => cambiarFiltro(col.clave, fc)}
-          orden={tabla.orden?.clave === col.clave ? (tabla.orden.desc ? "desc" : "asc") : undefined}
-          onOrdenar={(desc) => tabla.onOrden({ clave: col.clave, desc })}
-          fecha={FECHAS.has(col.clave)}
+          orden={puesto >= 0 ? { desc: ordenes[puesto].desc, puesto: puesto + 1, de: ordenes.length } : undefined}
+          onOrdenar={(desc) => ordenar([{ clave: col.clave, desc }])}
+          /* Como criterio siguiente; si ya ordena, le cambia el sentido. */
+          onSumarOrden={(desc) => ordenar(puesto >= 0
+            ? ordenes.map((o) => (o.clave === col.clave ? { ...o, desc } : o))
+            : [...ordenes.slice(0, MAX_ORDENES - 1), { clave: col.clave, desc }])}
+          onQuitarOrden={() => ordenar(ordenes.filter((o) => o.clave !== col.clave))}
+          ordenaPrimero={ordenes[0].clave !== col.clave ? COLUMNA[ordenes[0].clave].titulo : undefined}
+          fecha={col.fecha}
+          pinta={colores ? (v) => colores.get(v) : undefined}
         />
       ),
       celda: (f: FilaTabla) => {
@@ -201,6 +247,7 @@ export function CrmTabla() {
             onCerrar={() => setEditando((x) => (x?.id === f.id && x.clave === col.clave ? null : x))}
             onGuardar={(v) => guardarCelda(f, col.clave, v)} onFicha={() => verFicha(f)}
             opciones={opcionesDe[col.clave]} sugerencias={abierta ? sugerenciasDe(col.clave) : undefined}
+            color={colores}
           />
         );
       },
@@ -223,82 +270,90 @@ export function CrmTabla() {
     );
   }
 
+  const enInforme = vista.seccion === "resumen";
   return (
-    <div className="stack-5 crm-t">
-      <PageHead
-        titulo="CRM"
-        sub="Cada llamada con todo lo que se sabe de la persona. Filtrá desde el título de cada columna y corregí con un clic en la celda, como en Excel."
-        acciones={
-          <>
-            <DateRangePicker
-              value={rango} minDate={limites.min} maxDate={limites.max} futuro
-              onApply={(r) => setRango(r, { pag: null })}
-              footerNota="Por el día de la llamada · hora de Argentina"
-            />
-            <Button variante="primary" icono={<ClipboardCheck size={16} />} onClick={() => setEod(true)}>Cerrar el día</Button>
-          </>
-        }
-      />
-
+    <div className="crm-t">
       <Card className="crm-t__card">
+        {/* Todo en una barra: el título ya está arriba, en la barra de la app. */}
         <div className="crm-t__barra">
+          <VistasGuardadas pantalla="crm" todas="Todas las llamadas" extra={{ "cols-crm": aLista(cols.visibles.filter((k) => k !== "nombre")) }} />
           <div className="crm-t__buscar">
             <Input icono={<Search size={16} />} value={q} onChange={(ev) => setQ(ev.target.value)} placeholder="Buscar por nombre, mail o teléfono" aria-label="Buscar" />
           </div>
+          <DateRangePicker
+            value={rango} minDate={limites.min} maxDate={limites.max} futuro
+            onApply={(r) => setRango(r, { pag: null })}
+            footerNota="Por el día de la llamada · hora de Argentina"
+          />
           {miNombre && (
             <Chip activo={soloMias} onClick={() => cambiarFiltro("closer", soloMias ? null : { modo: "solo", valores: [miNombre] })}>
               Mis llamadas
             </Chip>
           )}
-          <Chip activo={soloSinCargar} count={sinCargar}
-            onClick={() => cambiarFiltro("resultado", soloSinCargar ? null : { modo: "solo", valores: ["Sin cargar"] })}>
+          <Chip activo={soloSinCargar} count={sinCargar} onClick={() => escribir({ pendientes: soloSinCargar ? null : "1", pag: null })}>
             Sin cargar
           </Chip>
-          <span className="spacer" />
-          <Tabs<"tabla" | "resumen">
-            valor={vista.seccion === "resumen" ? "resumen" : "tabla"}
-            onChange={(v) => setVista({ seccion: v === "tabla" ? null : v })}
-            opciones={[{ valor: "tabla", texto: "Tabla" }, { valor: "resumen", texto: "Por qué no se cierra" }]}
-          />
-          {vista.seccion !== "resumen" && (
-            <ConfigColumnas todas={DEFS} visibles={cols.visibles} alternar={cols.alternar} mover={cols.mover} restaurar={cols.restaurar} />
-          )}
-          <CopiarLink />
+          {/* A la derecha; si la pantalla es angosta, pasan juntas a otra fila. */}
+          <div className="crm-t__acciones">
+            <Tabs<"tabla" | "resumen">
+              valor={enInforme ? "resumen" : "tabla"}
+              onChange={(v) => setVista({ seccion: v === "tabla" ? null : v })}
+              opciones={[{ valor: "tabla", texto: "Tabla" }, { valor: "resumen", texto: "Informe" }]}
+            />
+            {!enInforme && (
+              <ConfigColumnas todas={DEFS} visibles={cols.visibles} alternar={cols.alternar} mover={cols.mover} restaurar={cols.restaurar} compacto />
+            )}
+            <CopiarLink />
+            <Button variante="primary" sm icono={<ClipboardCheck size={15} />} onClick={() => setEod(true)}>Cerrar el día</Button>
+          </div>
         </div>
 
-        {(filtradas.length > 0 || q) && (
-          <div className="crm-t__filtros">
-            {filtradas.map((k) => (
-              <span key={k} className="crm-t__pastilla">
-                <span className="t-subtle">{COLUMNA[k].titulo}{filtros[k]!.modo === "sin" ? " sin" : ""}:</span>
-                <span className="truncate">{filtros[k]!.valores.map((v) => (FECHAS.has(k) ? textoFecha(v) : v)).join(", ")}</span>
-                <button type="button" onClick={() => cambiarFiltro(k, null)} aria-label={`Quitar el filtro de ${COLUMNA[k].titulo}`}><X size={13} /></button>
+        <div className="crm-t__filtros">
+          <span className="t-sm t-subtle t-num crm-t__cuenta">
+            {num(filas.length)} {filas.length === 1 ? "llamada" : "llamadas"}
+            {filas.length !== enPeriodo.length ? ` de ${num(enPeriodo.length)} en el período` : " en el período"}
+          </span>
+          {soloSinCargar && (
+            <span className="crm-t__pastilla">
+              <span className="truncate">Sin cargar</span>
+              <button type="button" onClick={() => escribir({ pendientes: null, pag: null })} aria-label="Quitar «Sin cargar»"><X size={13} /></button>
+            </span>
+          )}
+          {conFiltro.map((k) => (
+            <span key={k} className="crm-t__pastilla">
+              <span className="t-subtle">{COLUMNA[k].titulo}:</span>
+              <span className="truncate">{textoDeFiltro(filtros[k]!, (v) => (COLUMNA[k].fecha ? textoFecha(v) : v))}</span>
+              <button type="button" onClick={() => cambiarFiltro(k, null)} aria-label={`Quitar el filtro de ${COLUMNA[k].titulo}`}><X size={13} /></button>
+            </span>
+          ))}
+          {!ordenDeSiempre && !enInforme && (
+            <span className="crm-t__pastilla">
+              <span className="t-subtle">Orden:</span>
+              <span className="truncate crm-t__orden">
+                {ordenes.map((o) => (
+                  <span key={o.clave}>{COLUMNA[o.clave].titulo}{o.desc ? <ArrowDown size={12} aria-label="de mayor a menor" /> : <ArrowUp size={12} aria-label="de menor a mayor" />}</span>
+                ))}
               </span>
-            ))}
-            <button type="button" className="link t-sm" onClick={limpiar}>Limpiar todo</button>
-          </div>
-        )}
+              <button type="button" onClick={() => ordenar(ORDEN_POR_DEFECTO)} aria-label="Volver al orden de siempre"><X size={13} /></button>
+            </span>
+          )}
+          {hayAlgo && <button type="button" className="link t-sm" onClick={limpiar}>Limpiar todo</button>}
+        </div>
 
-        <p className="t-sm t-subtle crm-t__cuenta">
-          {num(filas.length)} {filas.length === 1 ? "llamada" : "llamadas"}
-          {filas.length !== enPeriodo.length ? ` de ${num(enPeriodo.length)} en el período` : " en el período"}
-        </p>
-
-        {vista.seccion === "resumen" ? (
+        {enInforme ? (
           <ResumenCrm filas={filas} onFiltrar={(clave, valor) => { escribir({ ...filtroAURL(clave, { modo: "solo", valores: [valor] }), seccion: null, pag: null }); }} />
         ) : (
           <DataTable
             filas={filas}
             columnas={columnas}
-            orden={tabla.orden} onOrden={tabla.onOrden}
-            pagina={tabla.pagina} onPagina={tabla.onPagina}
+            pagina={paginaDeURL(vista.pag) - 1} onPagina={(p) => setVista({ pag: String(p + 1) })}
             porPagina={50}
             vacio={
               <Empty
                 icono={<Search size={22} />}
-                titulo={filtradas.length || q ? "Ninguna llamada coincide" : "No hay llamadas en este período"}
-                texto={filtradas.length || q ? "Probá sacando algún filtro." : "Elegí otro período arriba."}
-                accion={filtradas.length || q ? <Button variante="secondary" onClick={limpiar}>Limpiar filtros</Button> : undefined}
+                titulo={hayAlgo ? "Ninguna llamada coincide" : "No hay llamadas en este período"}
+                texto={hayAlgo ? "Probá sacando algún filtro." : "Elegí otro período en la barra."}
+                accion={hayAlgo ? <Button variante="secondary" onClick={limpiar}>Limpiar filtros</Button> : undefined}
               />
             }
           />
@@ -314,10 +369,12 @@ export function CrmTabla() {
 
 /* La celda con su edición. El nombre abre la ficha (lo de siempre) y se
    corrige con el lápiz; el resto de las que se editan, con un clic. */
-function CeldaCrm({ clave, f, puede, abierta, onAbrir, onCerrar, onGuardar, onFicha, opciones, sugerencias }: {
+function CeldaCrm({ clave, f, puede, abierta, onAbrir, onCerrar, onGuardar, onFicha, opciones, sugerencias, color }: {
   clave: ClaveColumna; f: FilaTabla; puede: boolean; abierta: boolean;
   onAbrir: () => void; onCerrar: () => void; onGuardar: (valor: string) => void; onFicha: () => void;
   opciones?: OpcionCrm[]; sugerencias?: string[];
+  /* El color de cada opción, en las columnas de estado. */
+  color?: Map<string, ColorCrm>;
 }) {
   const editor = EDITOR[clave];
   const titulo = COLUMNA[clave].titulo;
@@ -336,7 +393,7 @@ function CeldaCrm({ clave, f, puede, abierta, onAbrir, onCerrar, onGuardar, onFi
     );
   }
   if (!editor || !puede) {
-    return <span className="crm-t__fija" title={POR_QUE_NO[clave]}><Celda clave={clave} f={f} /></span>;
+    return <span className="crm-t__fija" title={POR_QUE_NO[clave]}><Celda clave={clave} f={f} color={color} /></span>;
   }
   const campo = PERFIL[clave];
   const corregida = Boolean(campo && f.corregido[campo]);
@@ -348,19 +405,27 @@ function CeldaCrm({ clave, f, puede, abierta, onAbrir, onCerrar, onGuardar, onFi
       className={corregida ? "crm-t__editable--corregida" : undefined}
       ayuda={corregida && campo ? `${tituloPerfil(campo)} corregido a mano. Vaciá la celda para volver a lo que contestó al agendar.` : undefined}
     >
-      <Celda clave={clave} f={f} />
+      <Celda clave={clave} f={f} color={color} />
     </CeldaEditable>
   );
 }
 
-function Celda({ clave, f }: { clave: ClaveColumna; f: FilaTabla }) {
+function Celda({ clave, f, color }: { clave: ClaveColumna; f: FilaTabla; color?: Map<string, ColorCrm> }) {
   const nada = <span className="t-subtle">—</span>;
   switch (clave) {
+    /* Los estados, con la pastilla de su opción: la misma en toda la app. */
+    case "estadoLlamada": {
+      /* El cargado, el que pone la app o el aviso de que falta. */
+      const v = f.estadoLlamada || f.aviso;
+      return v ? <PastillaEstado texto={v} color={color?.get(v) ?? "gris1"} tenue={f.estadoAuto || !f.estadoLlamada} /> : nada;
+    }
+    case "estadoPreCall": case "preCall": {
+      const v = f[clave];
+      return v ? <PastillaEstado texto={v} color={color?.get(v) ?? "gris1"} /> : nada;
+    }
     case "llamada": return <span className="t-num">{textoFecha(f.dia)} · {HORA.format(new Date(f.llamada))}</span>;
     case "agendo": return <span className="t-num">{textoFecha(diaDeNegocio(f.agendo))}</span>;
     case "cierre": return f.cierre ? <span className="t-num">{textoFecha(f.cierre)}</span> : nada;
-    case "estado": return <Badge variante={f.estado === "Hecha" ? "success" : f.estado === "No vino" ? "danger" : f.estado === "Agendada" ? "info" : "neutral"}>{f.estado}</Badge>;
-    case "resultado": return <Badge variante={VARIANTE_RESULTADO[f.resultado] ?? "neutral"}>{f.resultado}</Badge>;
     case "calificada": return f.calificada === "Sí" ? <span className="crm-t__si"><Star size={13} fill="currentColor" className="estrella-calificada" />Sí</span> : <span className="t-subtle">No</span>;
     case "grabacion": return f.grabacion
       ? <a className="link t-sm" href={f.grabacion} target="_blank" rel="noopener noreferrer" onClick={(ev) => ev.stopPropagation()}><ExternalLink size={13} /> Ver</a>

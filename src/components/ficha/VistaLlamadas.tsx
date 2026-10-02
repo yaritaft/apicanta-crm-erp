@@ -2,10 +2,10 @@
 
 import React, { useState } from "react";
 import { CalendarDays, ClipboardCheck, ExternalLink, Pencil } from "lucide-react";
-import { Badge, Button, Empty } from "@/components/ui/ui";
+import { Button, Empty } from "@/components/ui/ui";
 import { Eod } from "@/components/crm-tabla/Eod";
 import { textoFecha } from "@/components/crm-tabla/FiltroColumna";
-import { VARIANTE_RESULTADO } from "@/components/crm-tabla/resultado";
+import { EstadoEditable } from "@/components/estados/EstadoLlamada";
 import type { FilaTabla } from "@/lib/crm-tabla";
 import type { Persona } from "@/lib/persona";
 import type { Grabacion } from "@/lib/fathom";
@@ -13,10 +13,11 @@ import { GrabacionFathom, useGrabaciones } from "./GrabacionFathom";
 import { PerfilPersona } from "./PerfilPersona";
 
 /* ==================================================================
-   La ficha, vista Llamadas: cada llamada de esta persona con cómo
-   terminó: el resultado, la objeción, si hubo oferta, para cuándo se
-   estima el cierre, la grabación y las notas. La que ya pasó y nadie
-   cargó se carga desde acá (el mismo EOD, para esa llamada sola). Si
+   La ficha, vista Llamadas: cada llamada de esta persona con sus dos
+   estados (los mismos del CRM, la Agenda y el cierre del día: se cambian
+   acá con un clic y cambian en todos lados), la objeción, si hubo oferta,
+   para cuándo se estima el cierre, la grabación y las notas. La que ya
+   pasó y nadie cargó se carga desde acá (el mismo EOD, para esa sola). Si
    Fathom la grabó, abajo va lo suyo: el resumen, los accionables y la
    transcripción (GrabacionFathom).
 
@@ -51,7 +52,8 @@ export function VistaLlamadas({ p, filas }: { p: Persona; /* Sus llamadas, de la
 }
 
 function Llamada({ f, grabaciones, onCargar }: { f: FilaTabla; grabaciones: Grabacion[]; onCargar: () => void }) {
-  const cargable = f.sinCargar || f.sesion.resultado;
+  /* Con algo cargado se puede completar o corregir lo del cierre del día. */
+  const cargable = f.sinCargar || Boolean(f.sesion.estadoLlamada || f.sesion.estadoPreCall);
   const detalles: [string, React.ReactNode][] = ([
     ["Objeción", f.objecion],
     ["¿Hizo la oferta?", f.oferta],
@@ -68,7 +70,10 @@ function Llamada({ f, grabaciones, onCargar }: { f: FilaTabla; grabaciones: Grab
           <span className="t-sm t-subtle truncate">{[f.closer, f.via].filter(Boolean).join(" · ")}</span>
         </span>
         <span className="spacer" />
-        <Badge variante={VARIANTE_RESULTADO[f.resultado] ?? "neutral"}>{f.resultado}</Badge>
+        <span className="ficha-ll__estados">
+          <EstadoEditable sesion={f.sesion} campo="estadoPreCall" vacio="Pre-Call" />
+          <EstadoEditable sesion={f.sesion} campo="estadoLlamada" conVenta={Boolean(f.venta)} />
+        </span>
       </header>
       {detalles.length > 0 && (
         <dl className="ficha-ll__detalle">
@@ -80,7 +85,7 @@ function Llamada({ f, grabaciones, onCargar }: { f: FilaTabla; grabaciones: Grab
       {cargable && (
         <div>
           <Button sm variante={f.sinCargar ? "primary" : "ghost"} icono={f.sinCargar ? <ClipboardCheck size={14} /> : <Pencil size={14} />} onClick={onCargar}>
-            {f.sinCargar ? "Cargar cómo terminó" : "Cambiar el resultado"}
+            {f.sinCargar ? "Cargar cómo terminó" : "Completar o corregir"}
           </Button>
         </div>
       )}

@@ -4,6 +4,7 @@ import type { ComisionVenta, CuotaVencida } from "./finanzas";
 import { filasMeta } from "./metricas";
 import { evaluarAgenda } from "./calificacion";
 import { fecha, money, num, relativo } from "./format";
+import { CANCELADA, CON_CIERRE, estadoVisible, HECHA, NO_SE_PRESENTO, POR_VENIR, REPROGRAMO, SIN_CARGAR, SIN_CIERRE } from "./estados";
 
 /* ==================================================================
    Qué forma cada número del Dashboard: los registros que se pueden ir a
@@ -38,10 +39,16 @@ export interface PartesDetalle { resumen: { etiqueta: string; valor: string }[];
 
 const plata = (c: Contexto, n: number, decimales = 0) => money(n, c.e.ajustes.monedaBase, decimales);
 const HORA = new Intl.DateTimeFormat("es-AR", { timeZone: "America/Argentina/Buenos_Aires", hour: "2-digit", minute: "2-digit", hour12: false });
-const ESTADO_LLAMADA: Record<string, FilaDetalle["marca"]> = {
-  agendada: { texto: "Agendada", variante: "info" }, hecha: { texto: "Hecha", variante: "success" },
-  "no-show": { texto: "No vino", variante: "danger" }, cancelada: { texto: "Cancelada", variante: "neutral" },
+/* El Estado de Llamada de cada una, el mismo del CRM y la Agenda
+   (lib/estados.ts); el color, por cómo terminó. */
+const TONO: Record<string, NonNullable<FilaDetalle["marca"]>["variante"]> = {
+  [CON_CIERRE]: "success", [SIN_CIERRE]: "warning", [NO_SE_PRESENTO]: "danger", [CANCELADA]: "neutral",
+  [REPROGRAMO]: "neutral", [SIN_CARGAR]: "warning", [POR_VENIR]: "info",
 };
+function marcaDeLlamada(c: Contexto, s: Sesion): FilaDetalle["marca"] {
+  const ver = estadoVisible(c.e, s);
+  return { texto: ver.texto || ver.desenlace, variante: ver.texto === HECHA ? "success" : TONO[ver.desenlace] ?? "neutral" };
+}
 
 /* ---------- Llamadas ---------- */
 
@@ -57,7 +64,7 @@ export function deLlamadas(c: Contexto, sesiones: Sesion[], orden: "llamada" | "
         id: s.id, titulo: s.invitado || persona(s)?.nombre || "Sin nombre",
         detalle: [`${fecha(s.inicia)} · ${HORA.format(new Date(s.inicia))} hs`, s.anfitrion, orden === "agendo" ? `agendó ${relativo(s.creadoEn)}` : ""].filter(Boolean).join(" · "),
         ficha: { id: s.contactoId ?? s.leadId ?? s.id, vista: "llamadas" as const },
-        marca: ESTADO_LLAMADA[s.estado],
+        marca: marcaDeLlamada(c, s),
       })),
       vacio: "Ninguna llamada en este período.",
     }],

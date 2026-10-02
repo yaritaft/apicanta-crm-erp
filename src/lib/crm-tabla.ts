@@ -1,8 +1,8 @@
-import type { Ajustes, Contacto, EstadoApp, EstadoSesion, Lead, ResultadoLlamada, Sesion } from "./types";
+import type { Ajustes, CampoOpcionesCrm, Contacto, EstadoApp, Lead, Sesion } from "./types";
 import { filasCrm, opcionesDe, partir, sinTildes, type FilaCrm } from "./crm";
 import { diaDeNegocio } from "./dia-negocio";
 import { EVENTOS, leerUtm, NOMBRE_FUNNEL } from "./utm-estandar";
-import { cambiosDelEod, respuestaDe, TEXTO_RESULTADO } from "./eod";
+import { CANCELADA, CON_CIERRE, estadoDe, NO_SE_PRESENTO, POR_VENIR, SIN_CARGAR, SIN_CIERRE } from "./estados";
 import { conCorrecciones, corregidoDe, respuestaPerfil, type CampoPerfil, type Corregido } from "./perfil";
 import type { CambiosLlamada } from "./store";
 
@@ -19,6 +19,9 @@ import type { CambiosLlamada } from "./store";
 
    Y se corrige ahí mismo, en la celda, como en un Excel (02/10): ver
    «Editar», más abajo.
+
+   Los estados son los dos del Airtable, los mismos en toda la app
+   (lib/estados.ts): Estado Pre-Call y Estado de Llamada.
    ================================================================== */
 
 export interface FilaTabla {
@@ -30,7 +33,18 @@ export interface FilaTabla {
   llamada: string;       // ISO
   dia: string;           // aaaa-mm-dd, en Argentina
   closer: string;
-  estado: string;
+  /* Los dos estados de la llamada (lib/estados.ts). El de Llamada, el
+     cargado o el que pone la app sola; vacío si no hay ninguno. */
+  estadoPreCall: string;
+  estadoLlamada: string;
+  /* El Estado de Llamada lo puso la app (no vino, canceló, segunda agenda). */
+  estadoAuto: boolean;
+  /* Sin Estado de Llamada: «Sin cargar» si ya pasó, «Por venir» si no. */
+  aviso: string;
+  /* Lo que hizo el setter antes: 1° Mje Enviado, 1° Llamada… */
+  preCall: string;
+  /* Cómo terminó, para el Informe: Con cierre, Sin cierre, No se presentó…
+     Se deduce del Estado de Llamada; no se carga. */
   resultado: string;
   objecion: string;
   oferta: string;        // Sí · No · ""
@@ -63,7 +77,6 @@ export interface FilaTabla {
   corregido: Corregido;
 }
 
-const ESTADO: Record<EstadoSesion, string> = { agendada: "Agendada", hecha: "Hecha", "no-show": "No vino", cancelada: "Cancelada" };
 const SIN_CORREGIR: Corregido = {};
 
 /* ---------- El país, por el prefijo del teléfono ----------
@@ -137,7 +150,6 @@ export function filasTabla(
   const contactos = new Map(e.contactos.map((c) => [c.id, c]));
   const leads = new Map(e.leads.map((l) => [l.id, l]));
   const estados = opcionesDe(e.ajustes, "estadoLlamada");
-  const deEstado = new Map(estados.map((o) => [o.nombre, o]));
   return filasCrm(e).map((f) => {
     const s = f.sesion;
     const c = contactos.get(s.contactoId ?? "") ?? contactos.get(s.leadId ?? "");
@@ -145,22 +157,17 @@ export function filasTabla(
     const corregido = corregidoDe(c, l);
     const qa = conCorrecciones(s.respuestas, corregido);
     const { ad, campania } = adDe(s, c);
-    const paso = Date.parse(s.inicia) <= ahora;
-    /* Lo que cargó el closer manda; si no, lo que se sabe: la venta, que no
-       vino, el Estado de Llamada del CRM de antes. */
-    const op = deEstado.get(s.estadoLlamada ?? "");
-    const resultado = s.resultado ? TEXTO_RESULTADO[s.resultado]
-      : f.venta ? TEXTO_RESULTADO.compro
-        : s.estado === "cancelada" ? "Cancelada"
-          : s.estado === "no-show" || op?.llamada === "no-show" ? TEXTO_RESULTADO["no-vino"]
-            : op?.oportunidad && op.oportunidad !== "perdida" && op.oportunidad !== "devolucion" ? TEXTO_RESULTADO.compro
-              : op?.llamada === "hecha" || op?.oportunidad === "perdida" ? TEXTO_RESULTADO["no-compro"]
-                : paso ? "Sin cargar" : "Por venir";
+    /* El mismo estado que se ve en la grilla, la Agenda y la ficha. */
+    const ver = estadoDe(s, { opciones: estados, auto: f.estadoAuto ? f.estadoLlamada : "", venta: Boolean(f.venta), ahora });
     return {
       id: f.id, fila: f, sesion: s, personaId: f.personaId,
       nombre: f.nombre, llamada: s.inicia, dia: diaDeNegocio(s.inicia), closer: f.closer,
-      estado: ESTADO[s.estado] ?? s.estado,
-      resultado,
+      estadoPreCall: f.estadoPreCall,
+      estadoLlamada: ver.vacio ? "" : ver.texto,
+      estadoAuto: ver.auto && !ver.vacio,
+      aviso: ver.vacio ? ver.texto : "",
+      preCall: f.preCall,
+      resultado: ver.desenlace,
       objecion: s.objecion ?? "",
       oferta: s.hizoOferta === true ? "Sí" : s.hizoOferta === false ? "No" : "",
       cierre: s.cierreEstimado ?? "",
@@ -182,7 +189,7 @@ export function filasTabla(
       telefono: f.telefono,
       agendo: s.creadoEn,
       notas: f.notas,
-      sinCargar: resultado === "Sin cargar",
+      sinCargar: ver.sinCargar,
       corregido: corregido ?? SIN_CORREGIR,
     };
   });
@@ -191,7 +198,7 @@ export function filasTabla(
 /* ---------- Las columnas ---------- */
 
 export type ClaveColumna =
-  | "llamada" | "nombre" | "closer" | "estado" | "resultado" | "objecion" | "oferta" | "cierre"
+  | "llamada" | "nombre" | "closer" | "estadoPreCall" | "estadoLlamada" | "preCall" | "objecion" | "oferta" | "cierre"
   | "via" | "ad" | "angulo" | "campania" | "pais" | "edad" | "tecnologias" | "ingles" | "experiencia" | "formacion"
   | "ingreso" | "inversion" | "calificada" | "grabacion" | "venta" | "email" | "telefono" | "agendo" | "notas";
 
@@ -204,8 +211,11 @@ export interface ColumnaTabla {
   valores: (f: FilaTabla) => string[];
   /* Cómo se ordena; si falta, por el primer valor. */
   orden?: (f: FilaTabla) => string | number;
-  /* El orden de los valores en el filtro, si no es el alfabético. */
-  ordenValores?: string[];
+  /* El texto que mira «contiene», si no son los valores del filtro (las
+     notas se filtran por «Con notas», pero se busca en lo que dicen). */
+  texto?: (f: FilaTabla) => string;
+  /* Los valores son días (aaaa-mm-dd): se filtra desde y hasta. */
+  fecha?: boolean;
   ancho?: number;
 }
 
@@ -213,19 +223,18 @@ export const VACIAS = "(Vacías)";
 const uno = (x: string) => [x || VACIAS];
 const varios = (xs: string[]) => (xs.length ? xs : [VACIAS]);
 
-export const ORDEN_RESULTADO = ["Con cierre", "Sin cierre", "No se presentó", "Reprogramó", "Sin cargar", "Por venir", "Cancelada"];
-
 export const COLUMNAS: ColumnaTabla[] = [
-  { clave: "llamada", titulo: "Llamada", grupo: "Llamada", valores: (f) => [f.dia], orden: (f) => f.llamada, ancho: 150 },
+  { clave: "llamada", titulo: "Llamada", grupo: "Llamada", valores: (f) => [f.dia], orden: (f) => f.llamada, fecha: true, ancho: 150 },
   { clave: "nombre", titulo: "Persona", grupo: "Llamada", valores: (f) => uno(f.nombre), ancho: 220 },
   { clave: "closer", titulo: "Closer", grupo: "Llamada", valores: (f) => uno(f.closer), ancho: 150 },
-  { clave: "estado", titulo: "Estado", grupo: "Llamada", valores: (f) => [f.estado], ordenValores: ["Agendada", "Hecha", "No vino", "Cancelada"], ancho: 110 },
-  { clave: "resultado", titulo: "Resultado", grupo: "Resultado", valores: (f) => [f.resultado], ordenValores: ORDEN_RESULTADO,
-    orden: (f) => ORDEN_RESULTADO.indexOf(f.resultado), ancho: 140 },
+  { clave: "estadoPreCall", titulo: "Estado Pre-Call", grupo: "Llamada", valores: (f) => uno(f.estadoPreCall), ancho: 150 },
+  /* Sin estado se filtra por el aviso: «Sin cargar» o «Por venir». */
+  { clave: "estadoLlamada", titulo: "Estado de Llamada", grupo: "Llamada", valores: (f) => uno(f.estadoLlamada || f.aviso), ancho: 190 },
+  { clave: "preCall", titulo: "Pre-Call", grupo: "Llamada", valores: (f) => uno(f.preCall), ancho: 150 },
   { clave: "objecion", titulo: "Objeción", grupo: "Resultado", valores: (f) => uno(f.objecion), ancho: 170 },
   { clave: "oferta", titulo: "¿Oferta?", grupo: "Resultado", valores: (f) => uno(f.oferta), ancho: 100 },
-  { clave: "cierre", titulo: "Cierre estimado", grupo: "Resultado", valores: (f) => uno(f.cierre), ancho: 140 },
-  { clave: "venta", titulo: "Venta", grupo: "Resultado", valores: (f) => [f.venta ? "Con venta" : "Sin venta"], orden: (f) => f.venta, ancho: 190 },
+  { clave: "cierre", titulo: "Cierre estimado", grupo: "Resultado", valores: (f) => uno(f.cierre), fecha: true, ancho: 140 },
+  { clave: "venta", titulo: "Venta", grupo: "Resultado", valores: (f) => [f.venta ? "Con venta" : "Sin venta"], orden: (f) => f.venta, texto: (f) => f.venta, ancho: 190 },
   { clave: "via", titulo: "Vía", grupo: "Origen", valores: (f) => uno(f.via), ancho: 170 },
   { clave: "ad", titulo: "Ad", grupo: "Origen", valores: (f) => uno(f.ad), ancho: 200 },
   { clave: "angulo", titulo: "Ángulo", grupo: "Origen", valores: (f) => uno(f.angulo), ancho: 190 },
@@ -239,24 +248,34 @@ export const COLUMNAS: ColumnaTabla[] = [
   { clave: "ingreso", titulo: "Gana por mes", grupo: "Perfil", valores: (f) => uno(f.ingreso), ancho: 170 },
   { clave: "inversion", titulo: "Puede invertir", grupo: "Perfil", valores: (f) => uno(f.inversion), ancho: 240 },
   { clave: "calificada", titulo: "Calificada", grupo: "Perfil", valores: (f) => [f.calificada], ancho: 110 },
-  { clave: "grabacion", titulo: "Grabación", grupo: "Resultado", valores: (f) => [f.grabacion ? "Con grabación" : "Sin grabación"], ancho: 120 },
+  { clave: "grabacion", titulo: "Grabación", grupo: "Resultado", valores: (f) => [f.grabacion ? "Con grabación" : "Sin grabación"], texto: (f) => f.grabacion, ancho: 120 },
   { clave: "email", titulo: "Email", grupo: "Contacto", valores: (f) => uno(f.email), ancho: 220 },
   { clave: "telefono", titulo: "Teléfono", grupo: "Contacto", valores: (f) => uno(f.telefono), ancho: 160 },
-  { clave: "agendo", titulo: "Agendó el", grupo: "Llamada", valores: (f) => [diaDeNegocio(f.agendo)], orden: (f) => f.agendo, ancho: 150 },
-  { clave: "notas", titulo: "Notas", grupo: "Resultado", valores: (f) => [f.notas ? "Con notas" : "Sin notas"], ancho: 260 },
+  { clave: "agendo", titulo: "Agendó el", grupo: "Llamada", valores: (f) => [diaDeNegocio(f.agendo)], orden: (f) => f.agendo, fecha: true, ancho: 150 },
+  { clave: "notas", titulo: "Notas", grupo: "Resultado", valores: (f) => [f.notas ? "Con notas" : "Sin notas"], texto: (f) => f.notas, ancho: 260 },
 ];
 
 export const COLUMNA: Record<ClaveColumna, ColumnaTabla> = Object.fromEntries(COLUMNAS.map((c) => [c.clave, c])) as Record<ClaveColumna, ColumnaTabla>;
 
 export const VISIBLES_POR_DEFECTO: ClaveColumna[] = [
-  "llamada", "nombre", "closer", "resultado", "objecion", "oferta", "cierre", "via", "ad", "pais",
+  "llamada", "nombre", "closer", "estadoPreCall", "estadoLlamada", "objecion", "oferta", "cierre", "via", "ad", "pais",
   "tecnologias", "ingles", "ingreso", "inversion", "calificada", "grabacion", "venta",
 ];
 
+/* Las columnas de antes de que los estados fueran uno solo: quien tenía
+   elegida «Resultado» ve en su lugar los dos estados de ahora (el «Estado»
+   de antes, agendada / hecha / no vino, lo dice el Estado de Llamada). */
+export const COLUMNAS_DE_ANTES: Record<string, ClaveColumna[]> = { resultado: ["estadoPreCall", "estadoLlamada"], estado: ["estadoLlamada"] };
+
+/* Las columnas que guardan una opción del Airtable (Ajustes → crm.opciones). */
+export const CAMPO_DE_OPCIONES: Partial<Record<ClaveColumna, CampoOpcionesCrm>> = {
+  estadoPreCall: "estadoPreCall", estadoLlamada: "estadoLlamada", preCall: "preCall",
+};
+
 /* ---------- Editar ----------
    Como en un Excel: se corrige en la celda. Lo que es de la llamada (el
-   closer, el estado, el resultado, la objeción, la oferta, el cierre
-   estimado, la grabación y las notas) se guarda en la llamada. Lo que es
+   closer, sus dos estados, la objeción, la oferta, el cierre estimado, la
+   grabación y las notas) se guarda en la llamada. Lo que es
    de la persona (el nombre, el mail, el teléfono, el país y lo que
    contestó al agendar) se guarda en la persona y cambia en todas sus
    llamadas. Lo que sale solo no se edita: cuándo es la llamada y cuándo
@@ -267,7 +286,7 @@ export type EditorColumna = "texto" | "largo" | "fecha" | "opciones" | "sugerenc
 
 export const EDITOR: Partial<Record<ClaveColumna, EditorColumna>> = {
   nombre: "texto", email: "texto", telefono: "texto",
-  closer: "opciones", estado: "opciones", resultado: "opciones", objecion: "opciones", oferta: "opciones",
+  closer: "opciones", estadoPreCall: "opciones", estadoLlamada: "opciones", preCall: "opciones", objecion: "opciones", oferta: "opciones",
   cierre: "fecha", grabacion: "texto", notas: "largo",
   pais: "sugerencias", edad: "texto", ingles: "sugerencias", experiencia: "sugerencias", ingreso: "sugerencias", inversion: "sugerencias",
   tecnologias: "lista", formacion: "lista",
@@ -289,17 +308,12 @@ const PERFIL_DE: Partial<Record<ClaveColumna, CampoPerfil | "pais">> = {
   pais: "pais", edad: "edad", tecnologias: "tecnologias", ingles: "ingles", experiencia: "experiencia",
   formacion: "formacion", ingreso: "ingreso", inversion: "inversion",
 };
-const ESTADO_DE = Object.fromEntries(Object.entries(ESTADO).map(([k, v]) => [v, k])) as Record<string, EstadoSesion>;
-const RESULTADO_DE = Object.fromEntries(Object.entries(TEXTO_RESULTADO).map(([k, v]) => [v, k])) as Record<string, ResultadoLlamada>;
-
-export const OPCIONES_ESTADO = Object.values(ESTADO);
-export const OPCIONES_RESULTADO = Object.values(TEXTO_RESULTADO);
 
 /** Lo que hay en la celda, como texto para editar. */
 export function valorEditable(f: FilaTabla, clave: ClaveColumna): string {
   switch (clave) {
-    /* «Sin cargar», «Por venir» y «Cancelada» no son algo que se cargó. */
-    case "resultado": return f.sesion.resultado ? TEXTO_RESULTADO[f.sesion.resultado] : "";
+    /* El que alguien cargó: el automático y los avisos no son un valor. */
+    case "estadoLlamada": return f.sesion.estadoLlamada ?? "";
     case "tecnologias": return f.tecnologias.join(", ");
     case "formacion": return f.formacion.join(", ");
     case "grabacion": return f.grabacion;
@@ -342,25 +356,11 @@ export function escrituraDe(
   const llamada = (cambios: CambiosLlamada): Escritura => ({ tipo: "llamada", id: s.id, cambios, detalle });
   switch (clave) {
     case "closer": return limpio ? llamada({ anfitrion: limpio }) : null;
-    case "estado": return ESTADO_DE[limpio] ? llamada({ estado: ESTADO_DE[limpio] }) : null;
-    case "resultado": {
-      const r = RESULTADO_DE[limpio];
-      /* Vaciarlo deja la llamada sin cargar otra vez. */
-      if (!r) return limpio ? null : llamada({ resultado: undefined, objecion: undefined, hizoOferta: undefined, cierreEstimado: undefined, eodEn: undefined, eodPor: undefined });
-      const previa = respuestaDe(s);
-      return llamada(cambiosDelEod(
-        { resultado: r, objecion: s.objecion, hizoOferta: s.hizoOferta, cierreEstimado: previa?.resultado === "no-compro" ? previa.cierreEstimado : s.cierreEstimado },
-        s, ctx.ajustes, ctx.quien, ctx.cuando));
-    }
-    case "objecion": {
-      /* Una objeción dice que no cerró: si la llamada no tenía resultado
-         (ni venta), queda «Sin cierre», como en el cierre del día. */
-      if (!limpio || f.venta || s.resultado === "compro") return llamada({ objecion: limpio || undefined });
-      const previa = respuestaDe(s);
-      return llamada(cambiosDelEod(
-        { resultado: "no-compro", objecion: limpio, hizoOferta: s.hizoOferta, cierreEstimado: previa?.resultado === "no-compro" ? previa.cierreEstimado : s.cierreEstimado },
-        s, ctx.ajustes, ctx.quien, ctx.cuando));
-    }
+    /* Una opción del Airtable, o vacío. El Estado de Llamada además deja
+       la agenda como hecha, que no vino o cancelada (lo hace el store). */
+    case "estadoLlamada": case "estadoPreCall": case "preCall":
+      return !limpio || opcionesDe(ctx.ajustes, clave).some((o) => o.nombre === limpio) ? llamada({ [clave]: limpio }) : null;
+    case "objecion": return llamada({ objecion: limpio || undefined });
     case "oferta": return llamada({ hizoOferta: limpio === "Sí" ? true : limpio === "No" ? false : undefined });
     case "cierre": return llamada({ cierreEstimado: /^\d{4}-\d{2}-\d{2}$/.test(limpio) ? limpio : undefined });
     case "grabacion": return llamada({ grabacion: limpio });
@@ -414,40 +414,80 @@ export function valorParaGuardar(clave: ClaveColumna, valor: string): string {
 }
 
 /* ---------- Filtrar ----------
-   Como en Excel: en la lista de cada columna se destilda lo que no se
-   quiere ver ("sin") o, con un clic, se deja sólo un valor ("solo"). Van
-   en el link: ?solo-pais=Argentina|México, ?sin-resultado=Por venir. */
+   Como en Excel, en la misma columna: en su lista se destilda lo que no
+   se quiere ver ("sin") o, con un clic, se deja sólo un valor ("solo").
+   Y lo que en Excel son los «filtros de texto» y «de fecha»: que el texto
+   contenga (o no) algo, y un desde / hasta en las columnas de fecha. Todo
+   va en el link:
+     ?solo-pais=Argentina|México   ?sin-estadoLlamada=Por venir
+     ?con-notas=cuotas   ?nocon-ad=copia   ?desde-agendo=2026-09-01 */
 
-export interface FiltroColumna { modo: "solo" | "sin"; valores: string[] }
+export interface FiltroColumna {
+  modo: "solo" | "sin";
+  valores: string[];
+  contiene?: string;
+  noContiene?: string;
+  /* aaaa-mm-dd, en las columnas de fecha. */
+  desde?: string;
+  hasta?: string;
+}
 export type FiltrosTabla = Partial<Record<ClaveColumna, FiltroColumna>>;
 
-/** Si un valor se ve con el filtro de su columna. */
+/** Si el filtro de una columna recorta algo. */
+export const hayFiltro = (fc?: FiltroColumna | null): fc is FiltroColumna =>
+  Boolean(fc && (fc.valores.length || fc.contiene || fc.noContiene || fc.desde || fc.hasta));
+
+/** Si un valor se ve con la lista de su columna. */
 export const seVe = (valor: string, fc?: FiltroColumna) =>
   !fc || !fc.valores.length || (fc.modo === "solo" ? fc.valores.includes(valor) : !fc.valores.includes(valor));
 
+/** Lo que dice la celda, para «contiene». */
+export const textoDeColumna = (f: FilaTabla, col: ColumnaTabla) =>
+  col.texto ? col.texto(f) : col.valores(f).filter((v) => v !== VACIAS).join(", ");
+
+const ES_DIA = /^\d{4}-\d{2}-\d{2}$/;
+
 export function pasaFiltros(f: FilaTabla, filtros: FiltrosTabla, salvo?: ClaveColumna): boolean {
   for (const [k, fc] of Object.entries(filtros) as [ClaveColumna, FiltroColumna][]) {
-    if (k === salvo || !fc?.valores.length) continue;
+    if (k === salvo || !hayFiltro(fc)) continue;
     const col = COLUMNA[k];
     if (!col) continue;
+    const valores = col.valores(f);
     /* Una fila con varios valores (lenguajes) se ve si alguno se ve. */
-    if (!col.valores(f).some((v) => seVe(v, fc))) return false;
+    if (!valores.some((v) => seVe(v, fc))) return false;
+    if (fc.contiene || fc.noContiene) {
+      const t = sinTildes(textoDeColumna(f, col));
+      if (fc.contiene && !t.includes(sinTildes(fc.contiene))) return false;
+      if (fc.noContiene && t.includes(sinTildes(fc.noContiene))) return false;
+    }
+    if (fc.desde || fc.hasta) {
+      /* Sin fecha no entra en ningún período. */
+      const d = valores[0];
+      if (!ES_DIA.test(d) || (fc.desde && d < fc.desde) || (fc.hasta && d > fc.hasta)) return false;
+    }
   }
   return true;
 }
 
 const SEP = "|";
-export const PREFIJOS_FILTRO = ["solo-", "sin-"] as const;
+export const PREFIJOS_FILTRO = ["solo-", "sin-", "con-", "nocon-", "desde-", "hasta-"] as const;
 
 /** Los filtros de la URL. */
 export function filtrosDeURL(params: URLSearchParams): FiltrosTabla {
   const out: FiltrosTabla = {};
+  const de = (clave: ClaveColumna) => (out[clave] ??= { modo: "solo", valores: [] });
   for (const [k, v] of params.entries()) {
-    const m = /^(solo|sin)-(.+)$/.exec(k);
-    if (!m || !(m[2] in COLUMNA)) continue;
-    const valores = v.split(SEP).filter(Boolean);
-    if (valores.length) out[m[2] as ClaveColumna] = { modo: m[1] as "solo" | "sin", valores };
+    const m = /^(solo|sin|con|nocon|desde|hasta)-(.+)$/.exec(k);
+    if (!m || !(m[2] in COLUMNA) || !v) continue;
+    const clave = m[2] as ClaveColumna;
+    if (m[1] === "solo" || m[1] === "sin") {
+      const valores = v.split(SEP).filter(Boolean);
+      if (valores.length) Object.assign(de(clave), { modo: m[1], valores });
+    } else if (m[1] === "con") de(clave).contiene = v;
+    else if (m[1] === "nocon") de(clave).noContiene = v;
+    else if (ES_DIA.test(v) && COLUMNA[clave].fecha) de(clave)[m[1] as "desde" | "hasta"] = v;
   }
+  for (const k of Object.keys(out) as ClaveColumna[]) if (!hayFiltro(out[k])) delete out[k];
   return out;
 }
 
@@ -456,7 +496,23 @@ export function filtroAURL(clave: ClaveColumna, fc: FiltroColumna | null): Recor
   return {
     [`solo-${clave}`]: fc?.modo === "solo" && fc.valores.length ? fc.valores.join(SEP) : null,
     [`sin-${clave}`]: fc?.modo === "sin" && fc.valores.length ? fc.valores.join(SEP) : null,
+    [`con-${clave}`]: fc?.contiene?.trim() || null,
+    [`nocon-${clave}`]: fc?.noContiene?.trim() || null,
+    [`desde-${clave}`]: fc?.desde || null,
+    [`hasta-${clave}`]: fc?.hasta || null,
   };
+}
+
+/** Lo que recorta un filtro, en palabras, para su pastilla. */
+export function textoDeFiltro(fc: FiltroColumna, valor: (v: string) => string = (v) => v): string {
+  const partes: string[] = [];
+  if (fc.valores.length) partes.push(`${fc.modo === "sin" ? "sin " : ""}${fc.valores.map(valor).join(", ")}`);
+  if (fc.contiene) partes.push(`contiene «${fc.contiene}»`);
+  if (fc.noContiene) partes.push(`no contiene «${fc.noContiene}»`);
+  if (fc.desde && fc.hasta) partes.push(`del ${valor(fc.desde)} al ${valor(fc.hasta)}`);
+  else if (fc.desde) partes.push(`desde el ${valor(fc.desde)}`);
+  else if (fc.hasta) partes.push(`hasta el ${valor(fc.hasta)}`);
+  return partes.join(" · ");
 }
 
 export function coincideBusqueda(f: FilaTabla, q: string): boolean {
@@ -467,8 +523,9 @@ export function coincideBusqueda(f: FilaTabla, q: string): boolean {
 
 /** Los valores de una columna para su filtro, con cuántas filas tiene cada
  *  uno según los DEMÁS filtros (como en Excel: lo que ya está filtrado en
- *  otra columna no aparece). */
-export function opcionesDeColumna(filas: FilaTabla[], filtros: FiltrosTabla, clave: ClaveColumna): { valor: string; cuenta: number }[] {
+ *  otra columna no aparece). `orden`: el de los valores, si no es el
+ *  alfabético (las opciones de un estado van como en el Airtable). */
+export function opcionesDeColumna(filas: FilaTabla[], filtros: FiltrosTabla, clave: ClaveColumna, orden?: string[]): { valor: string; cuenta: number }[] {
   const col = COLUMNA[clave];
   const cuenta = new Map<string, number>();
   for (const f of filas) {
@@ -477,7 +534,6 @@ export function opcionesDeColumna(filas: FilaTabla[], filtros: FiltrosTabla, cla
   }
   /* Lo elegido sigue en la lista aunque no quede ninguna fila con eso. */
   for (const v of filtros[clave]?.valores ?? []) if (!cuenta.has(v)) cuenta.set(v, 0);
-  const orden = col.ordenValores;
   return [...cuenta.entries()]
     .map(([valor, n]) => ({ valor, cuenta: n }))
     .sort((a, b) => {
@@ -485,15 +541,83 @@ export function opcionesDeColumna(filas: FilaTabla[], filtros: FiltrosTabla, cla
       if (b.valor === VACIAS) return -1;
       if (orden) {
         const ia = orden.indexOf(a.valor), ib = orden.indexOf(b.valor);
-        if (ia !== ib) return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
+        if (ia !== ib) return (ia < 0 ? 999 : ia) - (ib < 0 ? 999 : ib);
       }
       /* Las fechas, de la más nueva a la más vieja. */
-      if (clave === "llamada" || clave === "agendo" || clave === "cierre") return b.valor.localeCompare(a.valor);
+      if (col.fecha) return b.valor.localeCompare(a.valor);
       return a.valor.localeCompare(b.valor, "es", { numeric: true });
     });
 }
 
-/* ---------- Por qué no se cierra ---------- */
+/* ---------- Ordenar ----------
+   Por una columna, desde su título. Y por más de una (el closer y, dentro
+   de cada uno, la fecha): «después por ésta» suma un criterio. En el link
+   van en orden, con un guión para "de mayor a menor":
+     ?orden=closer,-llamada */
+
+export interface OrdenColumna { clave: ClaveColumna; desc: boolean }
+
+export const ORDEN_POR_DEFECTO: OrdenColumna[] = [{ clave: "llamada", desc: true }];
+export const MAX_ORDENES = 3;
+
+export function ordenesDeURL(valor: string | null | undefined): OrdenColumna[] {
+  const out: OrdenColumna[] = [];
+  for (const x of (valor ?? "").split(",")) {
+    const desc = x.startsWith("-");
+    const clave = (desc ? x.slice(1) : x) as ClaveColumna;
+    if (clave in COLUMNA && !out.some((o) => o.clave === clave)) out.push({ clave, desc });
+  }
+  return out.length ? out.slice(0, MAX_ORDENES) : ORDEN_POR_DEFECTO;
+}
+
+const enTexto = (os: OrdenColumna[]) => os.map((o) => `${o.desc ? "-" : ""}${o.clave}`).join(",");
+
+/** null si es el orden de siempre: no se escribe en el link. */
+export function ordenesAURL(os: OrdenColumna[]): string | null {
+  const t = enTexto(os);
+  return !t || t === enTexto(ORDEN_POR_DEFECTO) ? null : t;
+}
+
+/** `ordenValores`: el orden propio de los valores de una columna (las
+    opciones de un estado, como en el Airtable). Lo vacío va siempre al
+    final, se ordene para donde se ordene. */
+export function ordenarFilas(
+  filas: FilaTabla[], ordenes: OrdenColumna[], ordenValores: Partial<Record<ClaveColumna, string[]>> = {},
+): FilaTabla[] {
+  const criterios = ordenes.map((o) => {
+    const col = COLUMNA[o.clave];
+    const lista = ordenValores[o.clave];
+    const valor = (f: FilaTabla): string | number => {
+      if (lista) {
+        const v = col.valores(f)[0];
+        const i = lista.indexOf(v);
+        return v === VACIAS ? "" : i >= 0 ? i : lista.length + (v === SIN_CARGAR ? 0 : 1);
+      }
+      const v = col.orden ? col.orden(f) : col.valores(f)[0];
+      return v === VACIAS ? "" : v;
+    };
+    return { valor, signo: o.desc ? -1 : 1 };
+  });
+  if (!criterios.length) return filas;
+  /* Los valores se calculan una vez por fila, no en cada comparación. */
+  const claves = new Map(filas.map((f) => [f, criterios.map((c) => c.valor(f))]));
+  return [...filas].sort((a, b) => {
+    const va = claves.get(a)!, vb = claves.get(b)!;
+    for (let i = 0; i < criterios.length; i++) {
+      const x = va[i], y = vb[i];
+      if (x === y) continue;
+      if (x === "") return 1;
+      if (y === "") return -1;
+      const cmp = typeof x === "number" && typeof y === "number" ? x - y : String(x).localeCompare(String(y), "es", { numeric: true });
+      if (cmp !== 0) return cmp * criterios[i].signo;
+    }
+    return 0;
+  });
+}
+
+/* ---------- El informe: cuánto se cierra y por qué no ----------
+   Con cierre, sin cierre y no se presentó salen del Estado de Llamada de
+   cada una (lib/estados.ts: desenlaceDe). */
 
 export interface NumerosResumen {
   llamadas: number;
@@ -509,20 +633,20 @@ export interface NumerosResumen {
   objeciones: { objecion: string; n: number }[];
 }
 
-const SE_PRESENTO = new Set([TEXTO_RESULTADO.compro, TEXTO_RESULTADO["no-compro"]]);
+const SE_PRESENTO = new Set<string>([CON_CIERRE, SIN_CIERRE]);
 
 export function resumenDe(filas: FilaTabla[]): NumerosResumen {
   const r: NumerosResumen = { llamadas: filas.length, pasaron: 0, presentaron: 0, cierres: 0, sinCierre: 0, noVino: 0, sinCargar: 0, pctCierre: null, objeciones: [] };
   const obj = new Map<string, number>();
   for (const f of filas) {
-    if (f.resultado !== "Cancelada" && f.resultado !== "Por venir") r.pasaron++;
+    if (f.resultado !== CANCELADA && f.resultado !== POR_VENIR) r.pasaron++;
     if (SE_PRESENTO.has(f.resultado)) r.presentaron++;
-    if (f.resultado === TEXTO_RESULTADO.compro) r.cierres++;
-    if (f.resultado === TEXTO_RESULTADO["no-compro"]) {
+    if (f.resultado === CON_CIERRE) r.cierres++;
+    if (f.resultado === SIN_CIERRE) {
       r.sinCierre++;
       obj.set(f.objecion || "Sin objeción cargada", (obj.get(f.objecion || "Sin objeción cargada") ?? 0) + 1);
     }
-    if (f.resultado === TEXTO_RESULTADO["no-vino"]) r.noVino++;
+    if (f.resultado === NO_SE_PRESENTO) r.noVino++;
     if (f.sinCargar) r.sinCargar++;
   }
   r.pctCierre = r.presentaron > 0 ? (r.cierres / r.presentaron) * 100 : null;
@@ -544,4 +668,4 @@ export function porDimension(filas: FilaTabla[], clave: ClaveColumna): FilaDimen
 }
 
 /* Las columnas que tienen sentido para abrir el análisis. */
-export const DIMENSIONES: ClaveColumna[] = ["objecion", "pais", "edad", "tecnologias", "ingreso", "inversion", "ingles", "experiencia", "angulo", "ad", "via", "closer", "calificada"];
+export const DIMENSIONES: ClaveColumna[] = ["objecion", "estadoLlamada", "estadoPreCall", "pais", "edad", "tecnologias", "ingreso", "inversion", "ingles", "experiencia", "angulo", "ad", "via", "closer", "calificada"];

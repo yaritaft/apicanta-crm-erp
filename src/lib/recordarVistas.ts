@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { NAV } from "@/components/shell/nav";
+import { DE_UN_USO } from "./vistas-guardadas";
 
 /* ==================================================================
    Cada pantalla vuelve como se dejó.
@@ -25,10 +26,6 @@ import { NAV } from "@/components/shell/nav";
 
 const CLAVE = "apicanta.vistas.v1";
 
-const DE_UN_USO = new Set([
-  "nuevo", "ver", "editar", "ficha", "vista", "venta", "registro", "persona", "anuncio", "compartida",
-  "meta", "code", "error", "error_code", "error_description",
-]);
 
 /* Un item del menú puede ser una vista de otra pantalla (/alumnos?seccion=
    pipeline): cada una se recuerda aparte, así «Alumnos» abre la lista y

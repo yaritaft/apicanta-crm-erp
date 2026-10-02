@@ -2,16 +2,17 @@
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, ArrowRight, CalendarDays, Check, ExternalLink, Link2, Pencil, Plus, Search, Star, Trash2, UserRound, X } from "lucide-react";
-import { PageHead } from "@/components/shell/PageHead";
 import { Ayuda, Badge, Button, Card, Empty, Field, IconButton, Input, Select, Textarea } from "@/components/ui/ui";
 import { ModalForm, Confirmar } from "@/components/ui/Modal";
 import { Drawer, Dato } from "@/components/ui/Drawer";
 import { DateRangePicker, diaDeNegocio } from "@/components/ui/DateRangePicker";
 import { CopiarLink, Filtro, opcionesDe, SIN, type OpcionFiltro } from "@/components/ui/Filtros";
 import { Origen } from "@/components/leads/Origen";
+import { EstadoDeLlamada, EstadoEditable } from "@/components/estados/EstadoLlamada";
 import { ETIQUETA_CANAL } from "@/lib/calendly";
 import { embudoDe } from "@/lib/agendas-webinar";
-import { entraEnTabla, tablasDe } from "@/lib/crm";
+import { estadoAutomatico, opcionesDe as opcionesDelCrm } from "@/lib/crm";
+import { esDeVenta, estadoVisible, HECHA, POR_VENIR, SIN_CARGAR } from "@/lib/estados";
 import { evaluarAgenda, textoEvaluacion } from "@/lib/calificacion";
 import { CamposExtra, DatosExtra } from "@/components/ui/CamposExtra";
 import { useToast } from "@/components/ui/Toast";
@@ -24,19 +25,18 @@ import { AGENDAR_A_MANO } from "@/lib/funciones";
 import { fechaHora, fechaLarga, hora, isoMinuto, num, relativo } from "@/lib/format";
 import type { CanalOrigen, EstadoSesion, Sesion } from "@/lib/types";
 
-const ETIQUETA: Record<EstadoSesion, { texto: string; variante: "accent" | "success" | "danger" | "neutral" }> = {
-  "agendada": { texto: "Agendada", variante: "accent" },
-  "hecha": { texto: "Hecha", variante: "success" },
-  "no-show": { texto: "No vino", variante: "danger" },
-  "cancelada": { texto: "Cancelada", variante: "neutral" },
-};
+/* Las sesiones que no son de venta (una 1 a 1, un testimonio) no llevan
+   los estados del Airtable: sólo se marca si se hicieron. Las de venta
+   llevan sus dos estados, los mismos del CRM y la ficha (lib/estados.ts). */
+const MARCA: Record<EstadoSesion, string> = { agendada: "agendada", hecha: "hecha", "no-show": "que no vino", cancelada: "cancelada" };
 
 const DOW = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"];
 
 /* La Agenda se arma desde la URL (ver lib/useParamsURL.ts), igual que
    Ventas: el período va en ?periodo — arranca en "Todo lo próximo", que es
    lo que antes era la pestaña Próximas — y el resto acá. Vacío es "todos".
-   - estado: agendada · hecha · no-show · cancelada
+   - estado: el Estado de Llamada tal cual se ve (Compra Full, Inasistió…,
+     o Sin cargar / Por venir si todavía no tiene)
    - tipo: el tipo de sesión tal cual, o "sin"
    - anfitrion: quien la atiende (el closer en Calendly), o "sin"
    - canal: webinar · vsl · setter · otro · sin (Calendly sin canal) · manual
@@ -64,8 +64,8 @@ const CANALES: OpcionFiltro[] = [
    que el equipo le corrigió a mano (lib/perfil.ts). */
 type PersonaDeAgenda = Parameters<typeof evaluarAgenda>[1];
 
-const valorDe: Record<Faceta, (s: Sesion, persona?: PersonaDeAgenda) => string> = {
-  estado: (s) => s.estado,
+/* El estado sale de lib/estados (necesita toda la app): ver `valor` más abajo. */
+const valorDe: Record<Exclude<Faceta, "estado">, (s: Sesion, persona?: PersonaDeAgenda) => string> = {
   tipo: (s) => s.tipo?.trim() || SIN,
   anfitrion: (s) => s.anfitrion?.trim() || SIN,
   canal: canalDe,
@@ -146,15 +146,34 @@ export default function Agenda() {
     return (s: Sesion): PersonaDeAgenda => contactos.get(s.contactoId ?? "") ?? leads.get(s.leadId ?? "");
   }, [e.contactos, e.leads]);
 
-  /* Cada desplegable ofrece lo que existe en las llamadas; el estado, los
-     cuatro de siempre. */
-  const opciones = useMemo<Record<Faceta, OpcionFiltro[]>>(() => ({
-    estado: (Object.keys(ETIQUETA) as EstadoSesion[]).map((k) => ({ valor: k, texto: ETIQUETA[k].texto })),
+  /* El estado de cada llamada, igual que en el CRM, la ficha y el cierre
+     del día (lib/estados.ts). */
+  const estadoDeSesion = useMemo(() => {
+    const m = new Map<string, ReturnType<typeof estadoVisible>>();
+    return (s: Sesion) => {
+      let v = m.get(s.id);
+      if (!v) { v = estadoVisible(e, s, ahora); m.set(s.id, v); }
+      return v;
+    };
+  }, [e, ahora]);
+  const valor = useMemo(
+    () => (k: Faceta, s: Sesion) => (k === "estado" ? estadoDeSesion(s).texto : valorDe[k](s, personaDe(s))),
+    [estadoDeSesion, personaDe],
+  );
+
+  /* Cada desplegable ofrece lo que existe en las llamadas. Los estados, en
+     el orden del Airtable y, al final, lo que todavía no tiene estado. */
+  const opciones = useMemo<Record<Faceta, OpcionFiltro[]>>(() => {
+    const orden = [...opcionesDelCrm(e.ajustes, "estadoLlamada").map((o) => o.nombre), HECHA, SIN_CARGAR, POR_VENIR];
+    const lugar = (t: string) => { const i = orden.indexOf(t); return i < 0 ? orden.length : i; };
+    return {
+    estado: [...new Set(e.sesiones.map((s) => estadoDeSesion(s).texto))].filter(Boolean).sort((a, b) => lugar(a) - lugar(b) || a.localeCompare(b, "es")).map((t) => ({ valor: t, texto: t })),
     tipo: opcionesDe(e.sesiones.map((s) => valorDe.tipo(s)), (t) => t, "Sin tipo"),
     anfitrion: opcionesDe(e.sesiones.map((s) => valorDe.anfitrion(s)), (a) => a, "Sin anfitrión"),
     canal: CANALES.filter((c) => e.sesiones.some((s) => canalDe(s) === c.valor)),
     calificada: CALIFICACION,
-  }), [e.sesiones]);
+    };
+  }, [e.sesiones, e.ajustes, estadoDeSesion]);
 
   /* Un filtro de la URL que ya no existe (un anfitrión que se fue, un link
      viejo) se ignora en vez de dejar la agenda vacía sin explicación. */
@@ -168,15 +187,15 @@ export default function Agenda() {
   const { visibles, cuentas } = useMemo(() => {
     const t = normal(busca.trim());
     const base = t ? enPeriodo.filter((s) => normal(`${s.invitado} ${s.email ?? ""}`).includes(t)) : enPeriodo;
-    const pasa = (s: Sesion, salvo?: Faceta) => FACETAS.every((k) => k === salvo || !f[k] || valorDe[k](s, personaDe(s)) === f[k]);
+    const pasa = (s: Sesion, salvo?: Faceta) => FACETAS.every((k) => k === salvo || !f[k] || valor(k, s) === f[k]);
     const cuentas = Object.fromEntries(FACETAS.map((k) => {
       const m = new Map<string, number>();
-      for (const s of base) if (pasa(s, k)) { const v = valorDe[k](s, personaDe(s)); m.set(v, (m.get(v) ?? 0) + 1); }
+      for (const s of base) if (pasa(s, k)) { const v = valor(k, s); m.set(v, (m.get(v) ?? 0) + 1); }
       return [k, m];
     })) as Record<Faceta, Map<string, number>>;
     const visibles = base.filter((s) => pasa(s)).sort((a, b) => (alReves ? -1 : 1) * (+new Date(a.inicia) - +new Date(b.inicia)));
     return { visibles, cuentas };
-  }, [enPeriodo, busca, f, alReves, personaDe]);
+  }, [enPeriodo, busca, f, alReves, valor]);
 
   const porDia = useMemo(() => {
     const m = new Map<string, Sesion[]>();
@@ -253,64 +272,60 @@ export default function Agenda() {
     setForm(null);
   }
 
+  /* Para las que no son de venta: sólo si se hizo, no vino o se canceló. */
   function cambiarEstado(s: Sesion, nuevo: EstadoSesion) {
-    acciones.actualizarParcial<Sesion>("sesiones", s.id, { estado: nuevo }, `${s.tipo} — ${s.invitado}`, `${s.invitado}: la sesión pasó a «${ETIQUETA[nuevo].texto}».`);
-    toast(`Marcada como ${ETIQUETA[nuevo].texto.toLowerCase()}.`);
+    acciones.actualizarParcial<Sesion>("sesiones", s.id, { estado: nuevo }, `${s.tipo} — ${s.invitado}`, `${s.invitado}: la sesión quedó como ${MARCA[nuevo]}.`);
+    toast(`Marcada como ${MARCA[nuevo]}.`);
   }
+
+  /* Cómo se llama cada marca: «no vino» y «canceló», con la palabra del Airtable. */
+  const estadosDeLlamada = opcionesDelCrm(e.ajustes, "estadoLlamada");
+  const nombreMarca: Record<EstadoSesion, string> = {
+    agendada: "Agendada", hecha: HECHA,
+    "no-show": estadoAutomatico({ estado: "no-show" }, estadosDeLlamada, false) || "No vino",
+    cancelada: estadoAutomatico({ estado: "cancelada" }, estadosDeLlamada, false) || "Cancelada",
+  };
 
   return (
     <div className="stack-5">
-      <PageHead
-        titulo="Agenda"
-        sub={AGENDAR_A_MANO
-          ? "Todas las llamadas, de Calendly o cargadas a mano. Marcá si la persona vino o no para que el número de asistencia sea real."
-          : "Las llamadas entran solas desde Calendly. Marcá si la persona vino o no para que el número de asistencia sea real."}
-        acciones={
-          <>
-            <DateRangePicker
-              value={rango} minDate={limites.min} maxDate={limites.max} futuro
-              onApply={(r) => setRango(r, { pag: null })}
-              footerNota="Por el día de la llamada · hora de Argentina"
-            />
-            {AGENDAR_A_MANO && <Button variante="primary" icono={<Plus size={16} />} onClick={() => setForm(VACIA(e.ajustes.tiposSesion[0] ?? "Sesión"))}>Agendar sesión</Button>}
-          </>
-        }
-      />
-
       <Card>
-        {/* Un desplegable de una sola opción no recorta nada: no se muestra. */}
-        <div className="toolbar" style={{ marginBottom: "var(--space-3)" }}>
-          <Filtro etiqueta="Filtrar por estado" todos="Todos los estados" valor={f.estado}
+        {/* Todo en una fila: el título ya está arriba, en la barra de la app.
+            Un desplegable de una sola opción no recorta nada: no se muestra. */}
+        <div className="agenda-barra">
+          <div className="buscador">
+            <Input
+              icono={<Search size={16} />} value={busca} onChange={(ev) => setBusca(ev.target.value)}
+              placeholder="Buscar por nombre o email" aria-label="Buscar llamadas por invitado o email"
+            />
+          </div>
+          <DateRangePicker
+            value={rango} minDate={limites.min} maxDate={limites.max} futuro
+            onApply={(r) => setRango(r, { pag: null })}
+            footerNota="Por el día de la llamada · hora de Argentina"
+          />
+          <Filtro etiqueta="Filtrar por estado de llamada" todos="Estado" valor={f.estado}
             opciones={conCuenta(opciones.estado, cuentas.estado)} onCambiar={(v) => filtrar("estado", v)} />
-          <Filtro etiqueta="Filtrar por calificación" todos="Calificadas y no" valor={f.calificada}
+          <Filtro etiqueta="Filtrar por calificación" todos="Califica" valor={f.calificada}
             opciones={conCuenta(opciones.calificada, cuentas.calificada)} onCambiar={(v) => filtrar("calificada", v)} />
           {opciones.tipo.length > 1 && (
-            <Filtro etiqueta="Filtrar por tipo de sesión" todos="Todos los tipos" valor={f.tipo}
+            <Filtro etiqueta="Filtrar por tipo de sesión" todos="Tipo" valor={f.tipo}
               opciones={conCuenta(opciones.tipo, cuentas.tipo)} onCambiar={(v) => filtrar("tipo", v)} />
           )}
           {opciones.anfitrion.length > 1 && (
-            <Filtro etiqueta="Filtrar por anfitrión" todos="Todos los anfitriones" valor={f.anfitrion}
+            <Filtro etiqueta="Filtrar por anfitrión" todos="Anfitrión" valor={f.anfitrion}
               opciones={conCuenta(opciones.anfitrion, cuentas.anfitrion)} onCambiar={(v) => filtrar("anfitrion", v)} />
           )}
           {opciones.canal.length > 1 && (
-            <Filtro etiqueta="Filtrar por canal" todos="Todos los canales" valor={f.canal}
+            <Filtro etiqueta="Filtrar por canal" todos="Canal" valor={f.canal}
               opciones={conCuenta(opciones.canal, cuentas.canal)} onCambiar={(v) => filtrar("canal", v)} />
           )}
-          <div className="buscador">
-            <Input
-              icono={<Search size={18} />} value={busca} onChange={(ev) => setBusca(ev.target.value)}
-              placeholder="Buscá por nombre o email…" aria-label="Buscar llamadas por invitado o email"
-            />
-          </div>
-        </div>
-        <div className="toolbar">
-          <span className="t-sm t-subtle t-num">
+          <span className="t-sm t-subtle t-num agenda-barra__cuenta"
+            title={visibles.length > 1 ? (alReves ? "De la última a la primera" : "De la primera a la última") : undefined}>
             {num(visibles.length)} {visibles.length === 1 ? "llamada" : "llamadas"}
-            {visibles.length > 1 && (alReves ? " · de la última a la primera" : " · de la primera a la última")}
           </span>
-          <span className="spacer" />
-          {hayFiltros && <Button sm variante="ghost" onClick={limpiarFiltros}>Limpiar filtros</Button>}
+          {hayFiltros && <IconButton etiqueta="Limpiar los filtros" onClick={limpiarFiltros}><X size={15} /></IconButton>}
           <CopiarLink />
+          {AGENDAR_A_MANO && <Button sm variante="primary" icono={<Plus size={15} />} onClick={() => setForm(VACIA(e.ajustes.tiposSesion[0] ?? "Sesión"))}>Agendar</Button>}
         </div>
 
         {visibles.length === 0 ? (
@@ -358,13 +373,25 @@ export default function Agenda() {
                         </span>
                         <span className="agenda-item__cola">
                           <BadgeEmbudo s={s} />
-                          {s.origen === "calendly" && <Badge variante="info"><Link2 size={13} />Calendly</Badge>}
-                          <Badge variante={ETIQUETA[s.estado].variante}>{ETIQUETA[s.estado].texto}</Badge>
-                          <span onClick={(ev) => ev.stopPropagation()} style={{ display: "flex", gap: 2 }}>
-                            {s.estado === "agendada" && (
+                          {/* Todas entran por Calendly: se avisa la que no. */}
+                          {s.origen === "manual" && <Badge variante="neutral">Cargada a mano</Badge>}
+                          {/* Los dos estados de la llamada de venta: se cambian acá con
+                              un clic y cambian en el CRM, la ficha y el cierre del día. */}
+                          <span onClick={(ev) => ev.stopPropagation()} onKeyDown={(ev) => ev.stopPropagation()} className="agenda-item__estados">
+                            {estadoDeSesion(s).deVenta ? (
                               <>
-                                <IconButton etiqueta="Marcar como hecha" onClick={() => cambiarEstado(s, "hecha")}><Check size={15} /></IconButton>
-                                <IconButton etiqueta="Marcar que no vino" onClick={() => cambiarEstado(s, "no-show")}><X size={15} /></IconButton>
+                                <EstadoEditable sesion={s} campo="estadoPreCall" vacio="Pre-Call" />
+                                <EstadoEditable sesion={s} campo="estadoLlamada" />
+                              </>
+                            ) : (
+                              <>
+                                <EstadoDeLlamada ver={estadoDeSesion(s)} />
+                                {s.estado === "agendada" && (
+                                  <>
+                                    <IconButton etiqueta="Marcar como hecha" onClick={() => cambiarEstado(s, "hecha")}><Check size={15} /></IconButton>
+                                    <IconButton etiqueta="Marcar que no vino" onClick={() => cambiarEstado(s, "no-show")}><X size={15} /></IconButton>
+                                  </>
+                                )}
                               </>
                             )}
                             <IconButton etiqueta="Editar" onClick={() => setForm({ ...s })}><Pencil size={15} /></IconButton>
@@ -436,10 +463,13 @@ export default function Agenda() {
             <Field label="Tipo">
               <Select value={form.tipo} onChange={(ev) => setForm({ ...form, tipo: ev.target.value, titulo: ev.target.value })} opciones={e.ajustes.tiposSesion} />
             </Field>
-            <Field label="Estado">
-              <Select value={form.estado} onChange={(ev) => setForm({ ...form, estado: ev.target.value as EstadoSesion })}
-                opciones={(Object.keys(ETIQUETA) as EstadoSesion[]).map((k) => ({ valor: k, texto: ETIQUETA[k].texto }))} />
-            </Field>
+            {/* Las de venta llevan sus dos estados, que se cambian desde la lista. */}
+            {!esDeVenta(e, form) && (
+              <Field label="Estado">
+                <Select value={form.estado} onChange={(ev) => setForm({ ...form, estado: ev.target.value as EstadoSesion })}
+                  opciones={(Object.keys(nombreMarca) as EstadoSesion[]).map((k) => ({ valor: k, texto: nombreMarca[k] }))} />
+              </Field>
+            )}
             <Field label="Lead asociado" span2 ayuda="Opcional. Si la sesión es con un lead, vinculalos para ver todo junto en su ficha.">
               <Select
                 value={form.leadId ?? ""} onChange={(ev) => setForm({ ...form, leadId: ev.target.value || undefined })}
@@ -476,12 +506,27 @@ export default function Agenda() {
           }
         >
           <div className="stack-5">
-            <div className="row-wrap">
-              <Badge variante={ETIQUETA[sesionVista.estado].variante}>{ETIQUETA[sesionVista.estado].texto}</Badge>
-              {sesionVista.origen === "calendly" && <Badge variante="info"><Link2 size={13} />Calendly</Badge>}
-            </div>
+            {estadoDeSesion(sesionVista).deVenta ? (
+              /* Los mismos dos estados del CRM y la ficha. */
+              <div className="agenda-estados">
+                <div>
+                  <div className="t-label">Estado Pre-Call</div>
+                  <EstadoEditable sesion={sesionVista} campo="estadoPreCall" vacio="Sin cargar" grande />
+                </div>
+                <div>
+                  <div className="t-label">Estado de Llamada</div>
+                  <EstadoEditable sesion={sesionVista} campo="estadoLlamada" grande />
+                </div>
+                {sesionVista.origen === "calendly" && <Badge variante="info"><Link2 size={13} />Calendly</Badge>}
+              </div>
+            ) : (
+              <div className="row-wrap">
+                <EstadoDeLlamada ver={estadoDeSesion(sesionVista)} grande />
+                {sesionVista.origen === "calendly" && <Badge variante="info"><Link2 size={13} />Calendly</Badge>}
+              </div>
+            )}
 
-            {sesionVista.estado === "agendada" && (
+            {!estadoDeSesion(sesionVista).deVenta && sesionVista.estado === "agendada" && (
               <div>
                 <div className="t-label" style={{ marginBottom: 10 }}>¿Cómo salió?</div>
                 <div className="row-wrap">
@@ -500,18 +545,8 @@ export default function Agenda() {
               {(sesionVista.canal || sesionVista.utm) && <Dato label="Embudo"><BadgeEmbudo s={sesionVista} /></Dato>}
               <Dato label="Calificación">{textoEvaluacion(evaluarAgenda(sesionVista, personaDe(sesionVista)))}</Dato>
               {sesionVista.anfitrion && <Dato label="La atiende">{sesionVista.anfitrion}</Dato>}
-              {/* Lo que el equipo cargó en el CRM sobre esta llamada, con el
-                  link a su registro (es la misma llamada). */}
-              {(() => {
-                const tabla = tablasDe(e.ajustes).find((t) => entraEnTabla(sesionVista, t));
-                if (!tabla) return null;
-                const cargado = [sesionVista.estadoLlamada, sesionVista.preCall].filter(Boolean).join(" · ");
-                return (
-                  <Dato label="En el CRM">
-                    <a className="link" href={`/crm?tabla=${tabla.id}&registro=${sesionVista.id}`}>{cargado || "Ver su registro"}</a>
-                  </Dato>
-                );
-              })()}
+              {sesionVista.preCall && <Dato label="Pre-Call">{sesionVista.preCall}</Dato>}
+              {sesionVista.objecion && <Dato label="Por qué no cerró">{sesionVista.objecion}</Dato>}
               {/* Calendly avisa la reprogramación como una cancelación de la vieja
                   más una agenda nueva que la referencia: las dos quedan
                   enlazadas, así se sigue la cadena en cualquier dirección. */}

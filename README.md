@@ -219,32 +219,84 @@ cuotas y cobros, que es lo que permite los vencimientos y la mora.
 ## El CRM: una tabla como un Excel, y el cierre del día
 
 Yari (29/09) quería salir de Airtable: "lo fácil le gana a todo". El **CRM** (`/crm`) es una tabla con **una fila
-por llamada** y todo lo que se sabe de la persona, sin cargar nada a mano: el resultado, la objeción, si hubo oferta
-y el cierre estimado; por qué vía y con qué ad llegó; país (del prefijo del teléfono), edad, tecnologías, inglés,
-cuánto gana y cuánto puede invertir; la grabación y la venta. **Cada columna se filtra con un clic en su título**,
-como en Excel: se tildan los valores, o «Sólo» deja uno. El período, la búsqueda, los filtros y el orden van en el
-link (`?solo-pais=Argentina|México&sin-resultado=Por venir`) y la pantalla vuelve como se dejó. «Por qué no se
-cierra» muestra, con los mismos filtros, cuánto se cierra de lo que se presentó, las objeciones y todo eso abierto
-por país, edad, tecnología, plata, ad, vía o closer (`lib/crm-tabla.ts`).
+por llamada** y todo lo que se sabe de la persona, sin cargar nada a mano: sus dos estados, la objeción, si hubo
+oferta y el cierre estimado; por qué vía y con qué ad llegó; país (del prefijo del teléfono), edad, tecnologías,
+inglés, cuánto gana y cuánto puede invertir; la grabación y la venta. No tiene título propio: el de la barra de la
+app alcanza, y todo lo demás (vistas, búsqueda, período, «Sin cargar», Tabla | Informe, columnas, copiar el link y
+Cerrar el día) va en una sola barra.
+
+**Todo lo de una columna está en su título**, como en Excel (02/10: el problema de Airtable y de la grilla era
+"meter un apartado de filtrado, seleccionar de una lista de 90 columnas la que estabas buscando y ponerle un montón
+de condiciones"). Un clic en el título abre su panel (`components/crm-tabla/FiltroColumna.tsx`):
+
+- **Ordenar** por ella; y si la tabla ya está ordenada por otra, sumarla como criterio siguiente («después de
+  Closer»). Hasta tres, y el título muestra el lugar de cada una.
+- **La lista de valores** con cuántas filas tiene cada uno: se destilda lo que no se quiere ver, o «Sólo» deja uno.
+  Los estados aparecen con su pastilla y en el orden del Airtable.
+- **Filtros de texto y de fecha**: se escribe en el buscador y se elige «las que contienen» o «las que no contienen»
+  (en Notas busca en lo que dice la nota); en las columnas de fecha, un desde y un hasta.
+
+El período, la búsqueda, los filtros, el orden y las columnas van en el link
+(`?solo-pais=Argentina|México&sin-estadoLlamada=Por venir&con-notas=cuotas&desde-agendo=2026-09-01&orden=closer,-llamada`)
+y la pantalla vuelve como se dejó (`lib/crm-tabla.ts`).
+
+**Vistas guardadas**, como en Notion (`components/ui/VistasGuardadas.tsx`, `lib/vistas-guardadas.ts`): lo que se está
+viendo se guarda con un nombre, **sólo para uno o para todo el equipo**, y se abre con un clic. Una vista es ese mismo
+link. El botón dice qué vista está abierta y marca si se cambió algo desde que se abrió: se guarda el cambio o se
+vuelve a como estaba. Las propias van con las preferencias del usuario (`preferencias`); las del equipo, en la tabla
+`vistas` (`supabase/vistas.sql`): las ve quien entra a la app y las guarda quien ve todo (no las cuentas «sólo lo
+suyo»). Sin esa tabla la app anda igual y sólo ofrece «Sólo para mí».
+
+«**Informe**» (antes «Por qué no se cierra») muestra, con los mismos filtros, cuánto se cierra de lo que se presentó,
+las objeciones y todo eso abierto por estado, país, edad, tecnología, plata, ad, vía o closer.
+
+### Los estados de una llamada: una sola fuente
+
+Había un estado distinto en cada pantalla (Agendada / Hecha / No vino en la Agenda, Con cierre / Sin cierre en el
+CRM, Compró / No compró en el cierre del día, los del Airtable en la grilla). Ahora (02/10) son **dos, los del
+Airtable**, iguales en el CRM, la grilla, la Agenda, la ficha, el cierre del día, el Dashboard y Webinars
+(`lib/estados.ts`, `components/estados/EstadoLlamada.tsx`):
+
+- **Estado Pre-Call**: Confirmado, Reagendar, Sin Respuesta.
+- **Estado de Llamada**: Compra Full, Compra Cuotas, Reserva, Seguimiento de Pago, Seguimiento Nutrición, Califica
+  Downsell, Compra Downsell, Llamada Interrumpida, Dejó de Contestar, Inasistió, Lead descartado, NO Calificado,
+  Devolución, 2da Agenda (auto), Canceló (auto).
+
+Las opciones se editan desde la grilla y quedan en Ajustes. Se cambian con un clic en su pastilla desde cualquiera
+de esas pantallas y se guardan en la llamada por el mismo camino (`store.editarLlamadas`), así que lo que se cambia
+en una aparece en todas. Lo demás **se deduce** del Estado de Llamada y no se carga:
+
+- cómo quedó la agenda (hecha, no vino, cancelada), que es lo que cuenta la asistencia del Dashboard. Vaciar el
+  estado la devuelve a agendada (lo que canceló Calendly sigue cancelado);
+- si cerró o no, para el Informe (con cierre, sin cierre, no se presentó);
+- la etapa de la oportunidad (`lib/etapas-auto.ts`).
+
+Sin estado cargado, la pastilla dice «Por venir» si todavía no fue y «Sin cargar» si ya pasó: no son estados, son el
+aviso. Las sesiones que no son de venta (una 1 a 1, un testimonio) no llevan estos estados: en la Agenda sólo se
+marca si se hicieron.
 
 El **cierre del día (EOD)** es lo único que carga el closer: al final del día pasa por sus llamadas de a una, como un
-Typeform (`components/crm-tabla/Eod.tsx`, `lib/eod.ts`, inspirado en Blue OS). Compró: se carga la venta en el
-asistente de siempre y pasa a cliente. No compró: por qué (la lista de objeciones), si hizo la oferta y para cuándo
-estima cerrarlo. No se presentó o se reprogramó. Suma las que quedaron sin cargar de las últimas dos semanas. Lo
-mismo se carga desde la ficha de la persona, que tiene la vista **Llamadas** con su perfil, de dónde vino y cada
-llamada. Antes de usarlo contra Supabase hay que correr `supabase/eod.sql` (seis columnas en `sesiones`).
+Typeform (`components/crm-tabla/Eod.tsx`, `lib/eod.ts`, inspirado en Blue OS). Elige el **Estado de Llamada**, que
+viene cargado si ya lo tenía (y el Estado Pre-Call, si hay que corregirlo), y según el estado se le pide lo que
+falta: de una compra, la venta, en el asistente de siempre; de una que quedó en seguimiento, por qué no cerró (la
+lista de objeciones), si hizo la oferta y para cuándo estima cerrarlo; de una que se perdió, por qué y si hizo la
+oferta; de una que no vino o se canceló, nada. Si pidió otra fecha alcanza con «Reagendar». Cada llamada se guarda al
+pasar a la siguiente, y cerrar a la mitad deja lo elegido. Suma las que quedaron sin cargar de las últimas dos
+semanas. Lo mismo se carga desde la ficha de la persona, que tiene la vista **Llamadas** con su perfil, de dónde vino
+y cada llamada con sus dos estados. Antes de usarlo contra Supabase hay que correr `supabase/eod.sql` (seis columnas
+en `sesiones`; `resultado` ya no se usa).
 
 **Se corrige en la celda** (02/10: "deberían ser editables y poder corregir ahí mismo, como un Excel"). Un clic
 abre la celda, Enter guarda y el aviso trae «Deshacer» (`CeldaEditable`, `escrituraDe` en `lib/crm-tabla.ts`). Lo que
-es de la llamada (closer, estado, resultado, objeción, oferta, cierre estimado, grabación, notas) cambia esa llamada,
-con los mismos efectos que el cierre del día. Lo que es de la persona (nombre, mail, teléfono, país y lo que contestó
+es de la llamada (closer, sus dos estados, objeción, oferta, cierre estimado, grabación, notas) cambia esa llamada.
+Lo que es de la persona (nombre, mail, teléfono, país y lo que contestó
 al agendar) queda en la persona y cambia en todas sus llamadas: lo que contestó no se pisa, la corrección va en
 `extra.corregido` de su contacto y se aplica encima de las respuestas (`lib/perfil.ts`), así la ven igual el CRM, la
 ficha, la estrella de calificada, la Agenda y el Dashboard; vaciar la celda vuelve a lo que contestó. Lo que sale solo
 (la fecha, la vía, el ad, si califica, la venta) no se edita y lo dice al pasar el mouse. El nombre abre la ficha.
 Cada tipo de cuenta corrige lo que edita, y la base lo traba igual.
 
-El cierre del día es todo desplegables, con el estado de la llamada ya cargado. Al elegir cómo terminó, la persona se
+El cierre del día es todo desplegables. Al elegir cómo terminó, la persona se
 corre a la izquierda y lo que sigue aparece a la derecha, sin bajar. El link de la grabación viene cargado si Fathom
 la ató; si no, se pega o se busca entre las grabaciones de Fathom del closer de esa llamada y se ata (`api/fathom`:
 buscar y atar; sólo quien la atendió o un dueño, porque entre las de un closer puede haber reuniones que no son de
@@ -252,6 +304,9 @@ ventas).
 
 La **ficha** tiene cada dato una sola vez: a la izquierda, cómo contactarla, su oportunidad y de dónde vino; en la
 vista Llamadas, quién es (`PerfilPersona`, se corrige con un clic) y cada llamada.
+
+La **Agenda** tampoco repite el título: la búsqueda, el período y los filtros van en una fila, y cada llamada de
+venta muestra sus dos estados, que se cambian ahí mismo.
 
 La planilla como la de Airtable que había antes sigue en `/crm/grilla`, fuera del menú.
 
@@ -287,9 +342,9 @@ pisa con el webhook de Calendly.
 
 **Todo conectado.** Cada fila del CRM *es* la llamada de la Agenda, y lo que se carga en un lado se ve en los demás:
 
-- **Agenda**: el Estado de Llamada marca la llamada como hecha o que no vino (y de ahí la asistencia del Dashboard y
-  de cada webinar); lo que se marca en la Agenda pone solo «Inasistió» o «Canceló (auto)». El detalle de la llamada en
-  la Agenda muestra lo cargado en el CRM, con el link a su registro.
+- **Agenda**: el Estado de Llamada marca la llamada como hecha, que no vino o cancelada (y de ahí la asistencia del
+  Dashboard y de cada webinar); lo que avisa Calendly pone solo «Inasistió» o «Canceló (auto)». La Agenda muestra y
+  cambia los mismos dos estados, en la lista y en el detalle de la llamada.
 - **Ventas**: al elegir un estado de compra («Compra Full», «Compra Cuotas», «Reserva», «Compra Downsell») aparece
   **Cargar la venta**: el asistente de Ventas con la persona y el closer ya elegidos, atado a esa llamada. Si la venta
   se carga por otro lado, la llamada de la que salió toma sola el estado de compra que corresponde (al contado, en
@@ -464,8 +519,7 @@ correr `supabase/honorarios.sql` (tablas, políticas, niveles de acceso y la col
   ven en la ficha de la persona, en Llamadas: el link, el resumen, los accionables y la transcripción con buscador. Las
   transcripciones no se cargan al abrir la app: se piden al abrir la ficha, y el closer ve sólo las de sus llamadas (RLS).
 - **El ángulo del ad** (`anguloDe` en `lib/crm-tabla.ts`): en Meta los ads se llaman como su video y se duplican
-  («MERCADO SATURADO.mp4 - Copia 2»); el ángulo es ese nombre sin copias ni formato. Es columna del CRM y corte en «Por
-  qué no se cierra».
+  («MERCADO SATURADO.mp4 - Copia 2»); el ángulo es ese nombre sin copias ni formato. Es columna del CRM y corte en el «Informe».
 - **Los números del Dashboard se abren** (02/10; `lib/kpis.ts`: `detalle`, `lib/kpis-detalle.ts`, `DetalleDeKpi`): un clic
   en una celda muestra los registros que la forman, con la misma lista que cuenta el número: las llamadas (agendadas,
   hechas, canceladas, no vinieron), las ventas, los pagos, los gastos, las cuotas vencidas, los alumnos y, para la

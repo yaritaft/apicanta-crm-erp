@@ -24,6 +24,7 @@ import { hayNube, nube, tablaFaltante, TABLAS, TABLAS_DE_DUENOS, TABLAS_OPCIONAL
 import { idAd, idAdset, idCampaign } from "./meta";
 import { entraEnTabla, esCompra, opcionesDe, tablasDe, ventaEsDeLlamada } from "./crm";
 import { etapaTrasEventos, eventosDeLlamada, leadDeSesion, type EventoEtapa } from "./etapas-auto";
+import { estadoDeAgenda } from "./estados";
 import { personaDe } from "./persona";
 import { extraConCorreccion, tituloPerfil, type CampoPerfil } from "./perfil";
 import { puedeEditar, TIPOS_POR_DEFECTO, type MiAcceso } from "./permisos";
@@ -723,9 +724,15 @@ function cargarLlamadas(t: Tanda, e: EstadoApp, lista: PedidoLlamada[], restaura
     for (const [k, v] of Object.entries(cambios)) {
       (limpio as Record<string, unknown>)[k] = typeof v === "string" && v.trim() === "" ? undefined : v;
     }
-    if (limpio.estadoLlamada && !("estado" in cambios)) {
-      const op = opciones.find((o) => o.nombre === limpio.estadoLlamada);
-      if (op?.llamada && s.estado !== op.llamada) limpio.estado = op.llamada;
+    /* El Estado de Llamada dice además cómo quedó la agenda: hecha, que no
+       vino o cancelada (lib/estados.ts). Y lo que cargaba el cierre del
+       día de antes deja de valer: ahora lo dice el estado. */
+    if ("estadoLlamada" in cambios) {
+      if (!("estado" in cambios)) {
+        const agenda = estadoDeAgenda(s, limpio.estadoLlamada, opciones);
+        if (agenda) limpio.estado = agenda;
+      }
+      if (s.resultado && !("resultado" in cambios)) limpio.resultado = undefined;
     }
     if ("estado" in cambios && !cambios.estado) delete limpio.estado;
     t.sesiones.set(id, { ...s, ...limpio });

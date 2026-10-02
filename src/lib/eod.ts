@@ -1,6 +1,7 @@
-import type { Ajustes, EstadoApp, EstadoSesion, OpcionCrm, ResultadoLlamada, Sesion } from "./types";
+import type { Ajustes, EstadoApp, OpcionCrm, Sesion } from "./types";
 import { miembroDeCloser, opcionesDe, sinTildes } from "./crm";
 import { diaDeNegocio } from "./dia-negocio";
+import { esReagendar, preguntaDe } from "./estados";
 
 /* ==================================================================
    El cierre del día del closer (EOD).
@@ -9,15 +10,19 @@ import { diaDeNegocio } from "./dia-negocio";
    Typeform, y con un par de clics deja cómo terminó cada una (Yari,
    29/09: "que los closers, de forma bien fácil y cargando la mínima
    cantidad de cosas posible, puedan reflejar si sucedió una venta y, si
-   no se cerró, qué pasó"). Como en Blue OS: el resultado, la objeción,
-   si hizo la oferta y para cuándo estima cerrarlo.
+   no se cerró, qué pasó").
 
-   - Compró: se carga la venta en el asistente de siempre. La venta pasa
-     al lead a cliente y marca la llamada (Estado de Llamada).
-   - No compró: por qué (la objeción), si hizo la oferta y para cuándo
-     estima cerrarlo, más una nota si quiere.
-   - No se presentó: queda como que no vino (también en la Agenda).
-   - Se reprogramó: la agenda nueva entra sola desde Calendly.
+   Lo que elige es el Estado de Llamada, el mismo del CRM, la grilla, la
+   Agenda y la ficha (lib/estados.ts): viene cargado si ya lo tenía y lo
+   que cambia acá cambia en todos lados. Según el estado, pide lo que
+   falta:
+   - una compra: se carga la venta en el asistente de siempre;
+   - quedó en seguimiento: por qué no cerró (la objeción), si hizo la
+     oferta y para cuándo estima cerrarlo;
+   - se perdió: por qué y si hizo la oferta;
+   - no vino o se canceló: nada más.
+   Si la persona pidió otra fecha, alcanza con el Estado Pre-Call
+   «Reagendar»: la agenda nueva entra sola desde Calendly.
 
    Lo demás (quién es, de dónde vino, qué contestó) ya lo sabe la app: no
    se vuelve a preguntar.
@@ -32,106 +37,69 @@ export function objecionesDe(a: Ajustes): string[] {
   return propias && propias.length > 0 ? propias : OBJECIONES_POR_DEFECTO;
 }
 
-export const TEXTO_RESULTADO: Record<ResultadoLlamada, string> = {
-  compro: "Con cierre",
-  "no-compro": "Sin cierre",
-  "no-vino": "No se presentó",
-  reprogramo: "Reprogramó",
-};
-
 export interface RespuestaEod {
-  /* Puede faltar si sólo se cambió el estado (una que se canceló por WhatsApp). */
-  resultado?: ResultadoLlamada;
-  /* El estado de la llamada: lo pone el resultado y se puede cambiar. */
-  estado?: EstadoSesion;
+  /* Los dos estados de la llamada, con el nombre de su opción. */
+  estadoLlamada?: string;
+  estadoPreCall?: string;
   objecion?: string;
   hizoOferta?: boolean;
-  /* aaaa-mm-dd, o null: "no se va a cerrar". */
-  cierreEstimado?: string | null;
+  /* aaaa-mm-dd. */
+  cierreEstimado?: string;
   nota?: string;
   grabacion?: string;
 }
 
-/** El estado en el que queda la llamada con ese resultado: compró o no
-    compró, se hizo; no se presentó, no vino; reprogramada, como estaba. */
-export function estadoPorResultado(r: ResultadoLlamada, actual: EstadoSesion): EstadoSesion {
-  if (r === "compro" || r === "no-compro") return "hecha";
-  if (r === "no-vino") return "no-show";
-  return actual;
-}
+const opcionDe = (opciones: OpcionCrm[], nombre?: string) => (nombre ? opciones.find((o) => o.nombre === nombre) : undefined);
 
-export const TEXTO_ESTADO: Record<EstadoSesion, string> = { agendada: "Agendada", hecha: "Hecha", "no-show": "No vino", cancelada: "Cancelada" };
-
-/* Lo que falta para dar por cargada una llamada. Una cancelada no tiene
-   resultado que cargar. */
-export function faltaEnRespuesta(r: RespuestaEod | undefined): string | null {
-  if (!r?.resultado) return r?.estado === "cancelada" ? null : "Elegí cómo terminó la llamada";
-  if (r.resultado !== "no-compro") return null;
+/* Lo que falta para dar por cargada una llamada. */
+export function faltaEnRespuesta(r: RespuestaEod | undefined, opciones: OpcionCrm[]): string | null {
+  if (!r?.estadoLlamada) return esReagendar(r?.estadoPreCall) ? null : "Elegí cómo terminó la llamada";
+  const que = preguntaDe(opcionDe(opciones, r.estadoLlamada));
+  if (que !== "seguimiento" && que !== "perdida") return null;
   if (!r.objecion) return "Elegí por qué no cerró";
   if (r.hizoOferta === undefined) return "Contá si hiciste la oferta";
-  if (r.cierreEstimado === undefined) return "Elegí para cuándo estimás cerrarlo";
+  if (que === "seguimiento" && !r.cierreEstimado) return "Elegí para cuándo estimás cerrarlo";
   return null;
 }
 
-/* La opción del Estado de Llamada que corresponde, por su nombre de
-   siempre o por lo que hace; si la cambiaron y no se encuentra, no se toca. */
-function opcion(opciones: OpcionCrm[], nombre: RegExp, cumple?: (o: OpcionCrm) => boolean): string | undefined {
-  return (opciones.find((o) => nombre.test(sinTildes(o.nombre))) ?? (cumple ? opciones.find(cumple) : undefined))?.nombre;
+/** La objeción que ya dice el estado: un «NO Calificado» no cerró porque no
+    califica. Se propone si está en la lista; se puede cambiar. */
+export function objecionSugerida(o: OpcionCrm | undefined, objeciones: string[]): string | undefined {
+  if (!o || !/no calific/.test(sinTildes(o.nombre))) return undefined;
+  return objeciones.find((x) => /no calific/.test(sinTildes(x)));
 }
 
-/** Lo que se guarda en la llamada con la respuesta del EOD. */
+/** Lo que se guarda en la llamada con la respuesta del EOD. Los estados
+    van sólo si cambiaron: el resto de la app los lee de la misma llamada. */
 export function cambiosDelEod(
-  r: RespuestaEod, s: Pick<Sesion, "notas" | "estadoLlamada">, a: Ajustes, quien: string, cuando: string,
+  r: RespuestaEod, s: Pick<Sesion, "notas" | "estadoLlamada" | "estadoPreCall">, a: Ajustes, quien: string, cuando: string,
 ): Partial<Sesion> {
-  /* Sólo el estado (una cancelada): no es un cierre del día. */
-  if (!r.resultado) {
-    const soloEstado: Partial<Sesion> = r.estado ? { estado: r.estado } : {};
-    const nota = r.nota?.trim();
-    if (nota && !(s.notas ?? "").includes(nota)) soloEstado.notas = s.notas?.trim() ? `${s.notas.trim()}\n${nota}` : nota;
-    if (r.grabacion?.trim()) soloEstado.grabacion = r.grabacion.trim();
-    return soloEstado;
-  }
-  const opciones = opcionesDe(a, "estadoLlamada");
-  const c: Partial<Sesion> = { resultado: r.resultado, eodEn: cuando, eodPor: quien };
-  if (r.resultado === "no-compro") {
+  const c: Partial<Sesion> = { eodEn: cuando, eodPor: quien };
+  if ((r.estadoLlamada ?? "") !== (s.estadoLlamada ?? "")) c.estadoLlamada = r.estadoLlamada ?? "";
+  if ((r.estadoPreCall ?? "") !== (s.estadoPreCall ?? "")) c.estadoPreCall = r.estadoPreCall ?? "";
+  const que = preguntaDe(opcionDe(opcionesDe(a, "estadoLlamada"), r.estadoLlamada));
+  if (que === "seguimiento" || que === "perdida") {
     c.objecion = r.objecion;
     c.hizoOferta = r.hizoOferta;
-    c.cierreEstimado = r.cierreEstimado ?? undefined;
-    const noCalifica = /no califica/.test(sinTildes(r.objecion ?? ""));
-    c.estadoLlamada = noCalifica
-      ? opcion(opciones, /no calificad/, (o) => o.oportunidad === "perdida" && o.llamada === "hecha")
-      : r.cierreEstimado === null
-        ? opcion(opciones, /descartad/, (o) => o.oportunidad === "perdida")
-        : opcion(opciones, /seguimiento nutric/, (o) => o.llamada === "hecha" && !o.oportunidad && !o.auto);
-    c.estado = "hecha";
+    c.cierreEstimado = que === "seguimiento" ? r.cierreEstimado : undefined;
   } else {
-    /* Si cambió de idea (antes había dicho que no compró), se limpia. */
+    /* Si cambió de idea (antes había quedado en seguimiento), se limpia. */
     c.objecion = undefined;
-    c.hizoOferta = r.resultado === "compro" ? true : undefined;
+    c.hizoOferta = que === "venta" ? true : undefined;
     c.cierreEstimado = undefined;
-  }
-  /* Compró: la llamada se hizo (el Estado de Llamada lo pone la venta). */
-  if (r.resultado === "compro") c.estado = "hecha";
-  if (r.resultado === "no-vino") {
-    c.estadoLlamada = opcion(opciones, /inasist/, (o) => o.auto === "no-show");
-    c.estado = "no-show";
   }
   const nota = r.nota?.trim();
   if (nota && !(s.notas ?? "").includes(nota)) c.notas = s.notas?.trim() ? `${s.notas.trim()}\n${nota}` : nota;
   if (r.grabacion?.trim()) c.grabacion = r.grabacion.trim();
-  /* El estado que eligió a mano le gana al que pone el resultado. */
-  if (r.estado) c.estado = r.estado;
   return c;
 }
 
-/** La respuesta que ya está cargada en una llamada, para volver a editarla. */
+/** Lo que ya tiene cargado una llamada, para seguir desde ahí. */
 export function respuestaDe(s: Sesion): RespuestaEod | undefined {
-  if (!s.resultado) return undefined;
+  if (!s.estadoLlamada && !s.estadoPreCall) return undefined;
   return {
-    resultado: s.resultado,
-    objecion: s.objecion,
-    hizoOferta: s.hizoOferta,
-    cierreEstimado: s.resultado === "no-compro" ? s.cierreEstimado ?? null : undefined,
+    estadoLlamada: s.estadoLlamada, estadoPreCall: s.estadoPreCall,
+    objecion: s.objecion, hizoOferta: s.hizoOferta, cierreEstimado: s.cierreEstimado,
   };
 }
 
@@ -149,13 +117,6 @@ export function esDelCloser(s: Pick<Sesion, "anfitrion">, closer: string, equipo
 export function llamadasDelDia(e: Pick<EstadoApp, "sesiones" | "equipo">, closer: string, dia: string): Sesion[] {
   return e.sesiones
     .filter((s) => s.estado !== "cancelada" && diaDeNegocio(s.inicia) === dia && esDelCloser(s, closer, e.equipo))
-    .sort((a, b) => a.inicia.localeCompare(b.inicia));
-}
-
-/** Las que ya pasaron y quedaron sin cargar, de días anteriores. */
-export function pendientesAntesDe(e: Pick<EstadoApp, "sesiones" | "equipo">, closer: string, dia: string, ventasDe: (s: Sesion) => boolean): Sesion[] {
-  return e.sesiones
-    .filter((s) => s.estado !== "cancelada" && !s.resultado && diaDeNegocio(s.inicia) < dia && esDelCloser(s, closer, e.equipo) && !ventasDe(s))
     .sort((a, b) => a.inicia.localeCompare(b.inicia));
 }
 

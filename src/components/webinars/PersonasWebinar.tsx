@@ -3,14 +3,16 @@
 import React, { useMemo } from "react";
 import { useAbrirFicha } from "@/components/ficha/abrir";
 import { Search, Users } from "lucide-react";
-import { Badge, Button, Card, CardHead, Empty, Input, Persona, Tag, type VarianteBadge } from "@/components/ui/ui";
+import { Badge, Button, Card, CardHead, Empty, Input, Persona, Tag } from "@/components/ui/ui";
+import { EstadoDeLlamada } from "@/components/estados/EstadoLlamada";
+import { estadoVisible } from "@/lib/estados";
 import { type Columna, DataTable } from "@/components/ui/DataTable";
 import { ConfigColumnas, type DefColumna, useColumnas } from "@/components/ui/ColumnasConfig";
 import { ETIQUETA_CANAL } from "@/lib/calendly";
 import { useEstado } from "@/lib/store";
 import { money, num } from "@/lib/format";
 import { personasDeWebinar, type PersonaDeWebinar } from "@/lib/webinar";
-import type { EstadoSesion, Webinar } from "@/lib/types";
+import type { Webinar } from "@/lib/types";
 import { useBusquedaURL, useTablaURL } from "@/lib/useParamsURL";
 import { diaCorto, diaYHora } from "./fechas";
 
@@ -19,13 +21,6 @@ import { diaCorto, diaYHora } from "./fechas";
    fue en la llamada y quién compró. Nadie se carga acá: entran solos
    con el registro, la agenda de Calendly y las ventas.
    ================================================================== */
-
-const LLAMADA: Record<EstadoSesion, { texto: string; variante: VarianteBadge }> = {
-  "agendada": { texto: "Agendada", variante: "accent" },
-  "hecha": { texto: "Hecha", variante: "success" },
-  "no-show": { texto: "No vino", variante: "danger" },
-  "cancelada": { texto: "Cancelada", variante: "neutral" },
-};
 
 const INGLES: Record<string, string> = {
   ninguno: "Ninguno", basico: "Básico", intermedio: "Intermedio",
@@ -45,7 +40,7 @@ const COLUMNAS: DefColumna[] = [
   { clave: "entro", titulo: "Entró", grupo: "Datos", ayuda: "Cuándo apareció: se registró, agendó o compró." },
   { clave: "etapa", titulo: "Etapa", grupo: "Proceso", ayuda: "La etapa de su oportunidad. Pre-lead: se registró pero todavía no agendó." },
   { clave: "llamada", titulo: "Llamada", grupo: "Proceso", ayuda: "La próxima agendada o, si no hay, la última." },
-  { clave: "estadoLlamada", titulo: "Estado de la llamada", grupo: "Proceso" },
+  { clave: "estadoLlamada", titulo: "Estado de Llamada", grupo: "Proceso" },
   { clave: "closer", titulo: "Closer", grupo: "Proceso", ayuda: "Quién atiende la llamada." },
   { clave: "llamadas", titulo: "Llamadas", grupo: "Proceso", ayuda: "Cuántas tuvo, contando reprogramadas y canceladas." },
   { clave: "venta", titulo: "Venta", grupo: "Plata", ayuda: "Lo facturado de sus ventas de este webinar." },
@@ -116,12 +111,9 @@ export function PersonasWebinar({ w }: { w: Webinar }) {
       celda: (p) => (p.llamada ? diaYHora(p.llamada.inicia) : "—"),
     },
     estadoLlamada: {
-      clave: "estadoLlamada", titulo: "Estado de la llamada", orden: (p) => p.llamada?.estado ?? "",
-      celda: (p) => {
-        if (!p.llamada) return <span className="t-subtle">Sin llamada</span>;
-        const et = LLAMADA[p.llamada.estado] ?? LLAMADA.agendada;
-        return <Badge variante={et.variante}>{et.texto}</Badge>;
-      },
+      /* El mismo Estado de Llamada del CRM, la Agenda y la ficha (lib/estados.ts). */
+      clave: "estadoLlamada", titulo: "Estado de Llamada", orden: (p) => (p.llamada ? estadoVisible(e, p.llamada).texto : ""),
+      celda: (p) => (p.llamada ? <EstadoDeLlamada ver={estadoVisible(e, p.llamada)} /> : <span className="t-subtle">Sin llamada</span>),
     },
     closer: { clave: "closer", titulo: "Closer", tipo: "secondary", orden: (p) => p.llamada?.anfitrion ?? "", celda: (p) => p.llamada?.anfitrion || "—" },
     llamadas: { clave: "llamadas", titulo: "Llamadas", tipo: "num", orden: (p) => p.llamadas.length, celda: (p) => num(p.llamadas.length) },

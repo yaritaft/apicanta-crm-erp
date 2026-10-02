@@ -53,7 +53,8 @@ export function HistorialPersona({ e, p }: { e: EstadoApp; p: Persona }) {
         fecha: s.creadoEn, icono: <PhoneCall size={15} />, titulo: `Agendó: ${s.tipo || s.titulo}`,
         detalle: `para el ${fechaHora(s.inicia)}${s.origen === "calendly" ? " · por Calendly" : ""}`,
       });
-      if (s.estado === "hecha") out.push({ fecha: s.inicia, icono: <CalendarCheck size={15} />, titulo: "Tuvo la llamada", detalle: s.anfitrion ? `con ${s.anfitrion}` : undefined, tono: "success" });
+      /* Con cómo terminó: su Estado de Llamada. */
+      if (s.estado === "hecha") out.push({ fecha: s.inicia, icono: <CalendarCheck size={15} />, titulo: "Tuvo la llamada", detalle: [s.anfitrion ? `con ${s.anfitrion}` : "", s.estadoLlamada ?? ""].filter(Boolean).join(" · ") || undefined, tono: "success" });
       if (s.estado === "no-show") out.push({ fecha: s.inicia, icono: <CalendarX size={15} />, titulo: "No vino a la llamada", tono: "danger" });
       if (s.estado === "cancelada") {
         out.push({

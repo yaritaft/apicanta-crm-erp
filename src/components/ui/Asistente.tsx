@@ -24,7 +24,7 @@ export interface PasoAsistente {
 
 export function Asistente({
   etiqueta, pasos, actual, onCambiarPaso, problema = null, problemaEsError = false,
-  onCerrar, terminarTexto, onTerminar, embebido = false, children,
+  onCerrar, terminarTexto, onTerminar, embebido = false, salirTexto = "Salir sin guardar", children,
 }: {
   /* Lo que lee un lector de pantalla: "Nuevo webinar" */
   etiqueta: string;
@@ -40,6 +40,9 @@ export function Asistente({
   onTerminar: () => void;
   /* Adentro de otra pantalla (la ficha) en vez de taparla entera. */
   embebido?: boolean;
+  /* Lo que dice la X: el cierre del día guarda cada llamada al pasar, así
+     que cerrar no pierde nada. */
+  salirTexto?: string;
   children: React.ReactNode;
 }) {
   const mainRef = useRef<HTMLDivElement>(null);
@@ -132,7 +135,7 @@ export function Asistente({
           ))}
         </span>
         <span className="spacer" />
-        <IconButton etiqueta="Salir sin guardar" onClick={onCerrar}><X size={18} /></IconButton>
+        <IconButton etiqueta={salirTexto} onClick={onCerrar}><X size={18} /></IconButton>
       </div>
 
       <div className="asistente__main" ref={mainRef}>

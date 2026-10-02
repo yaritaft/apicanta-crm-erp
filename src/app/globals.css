@@ -606,7 +606,7 @@ kbd {
 .timeline__meta { font-size: 13px; color: var(--ink-subtle); margin-top: 1px; }
 
 /* ---------- Agenda ---------- */
-.agenda-day { display: grid; grid-template-columns: 96px 1fr; gap: var(--space-4); padding: var(--space-4) 0; border-bottom: 1px solid var(--border); }
+.agenda-day { display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: var(--space-4); padding: var(--space-4) 0; border-bottom: 1px solid var(--border); }
 .agenda-day:last-child { border-bottom: 0; }
 .agenda-day__label { text-align: right; }
 .agenda-day__num { font-family: var(--font-display); font-size: 22px; font-weight: 600; color: var(--ink); line-height: 26px; }
@@ -615,8 +615,33 @@ kbd {
 .agenda-item { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface-100); cursor: pointer; transition: border-color 150ms ease-out, background-color 150ms ease-out; }
 .agenda-item:hover { border-color: var(--border-strong); background: var(--surface-200); }
 .agenda-item__hora { font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--ink); width: 44px; flex: none; }
-.agenda-item__quien { flex: 1; min-width: 0; }
-.agenda-item__cola { display: flex; align-items: center; gap: var(--space-3); flex: none; }
+.agenda-item__quien { flex: 1 1 180px; min-width: 0; }
+/* Si no entra (un embudo de nombre largo y los dos estados), baja a otro
+   renglón dentro de su fila en vez de empujarla fuera de la tarjeta. */
+.agenda-item__cola { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: var(--space-2) var(--space-3); flex: 0 1 auto; min-width: 0; }
+/* Los dos estados de la llamada, que se cambian con un clic. */
+.agenda-item__estados { display: flex; align-items: center; gap: var(--space-2); flex: none; }
+.agenda-estados { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--space-4); }
+.agenda-estados .t-label { margin-bottom: 6px; }
+/* Todo en una fila: la búsqueda, el período y los filtros, que arrancan
+   angostos y se reparten el lugar que sobra. Recién cuando ni así entran
+   (una pantalla chica) pasan a otra fila. */
+.agenda-barra { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: var(--space-4); }
+.agenda-barra > .buscador { flex: 2 1 130px; min-width: 130px; max-width: 280px; }
+.agenda-barra > .filtro { flex: 1 1 100px; width: auto; min-width: 100px; max-width: 170px; }
+/* Más apretados que en un formulario, para que se lea el nombre de cada uno. */
+.agenda-barra > .filtro .hk-input { padding: 0 9px; font-size: 13px; }
+.agenda-barra > .filtro .sel { padding-right: 18px; }
+.agenda-barra > .filtro .hk-input--select::after { right: 10px; width: 6px; height: 6px; }
+.agenda-barra .dp-pill { padding-inline: 10px; gap: 6px; }
+.agenda-barra__cuenta { flex: none; margin-left: auto; white-space: nowrap; }
+.agenda-barra .copiar-link__texto { display: none; }
+.agenda-barra .copiar-link { padding-inline: 10px; }
+@media (max-width: 760px) {
+  .agenda-barra > .buscador { flex-basis: 100%; max-width: none; }
+  .agenda-barra > .filtro { flex: 1 1 130px; max-width: none; }
+  .agenda-barra__cuenta { margin-left: 0; }
+}
 /* El paginador de las tablas (.hk-paginador), a todo el ancho de la tarjeta
    y apoyado en su borde de abajo: la Agenda no es una tabla, pero se pagina
    igual. */
@@ -2789,7 +2814,9 @@ span.kpis__etiqueta:hover { color: var(--ink); text-decoration: none; }
   /* En un celular ningún menú es más ancho que la pantalla (Ordenar y las
      opciones de una columna piden 440 y 520 px). */
   max-width: calc(100vw - 16px);
-  z-index: 90; overflow: auto; border-radius: 6px; padding: 8px;
+  /* Por encima de la ficha, el panel de la Agenda y el cierre del día: los
+     estados de una llamada se cambian también desde ahí. */
+  z-index: 140; overflow: auto; border-radius: 6px; padding: 8px;
   background: var(--crm-pop-fondo); color: var(--crm-tinta); box-shadow: var(--crm-pop-sombra);
   font-size: 13px; line-height: 18px;
 }
@@ -3018,20 +3045,33 @@ span.kpis__etiqueta:hover { color: var(--ink); text-decoration: none; }
 }
 
 /* ============================================================
-   CRM: la tabla que se filtra como un Excel, el resumen de por
-   qué no se cierra y el cierre del día (EOD). components/crm-tabla
+   CRM: la tabla que se filtra como un Excel, el Informe y el
+   cierre del día (EOD). components/crm-tabla
    ============================================================ */
 
-.crm-t__barra { display: flex; flex-wrap: wrap; gap: var(--space-3); align-items: center; margin-bottom: var(--space-3); }
-.crm-t__buscar { flex: 1 1 260px; max-width: 380px; }
-.crm-t__filtros { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; margin-bottom: var(--space-3); }
+/* Una sola barra: las vistas, la búsqueda, el período y las acciones. El
+   título ya está en la barra de la app. */
+.crm-t__barra { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: var(--space-3); }
+.crm-t__buscar { flex: 1 1 130px; min-width: 120px; max-width: 280px; }
+.crm-t__acciones { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 6px; margin-left: auto; }
+@media (max-width: 760px) {
+  .crm-t__buscar { flex-basis: 100%; max-width: none; order: -1; }
+  .crm-t__acciones { margin-left: 0; justify-content: flex-start; }
+}
+.crm-t__barra .dp-pill { padding-inline: 10px; gap: 6px; }
+.crm-t__barra .chip { white-space: nowrap; }
+.crm-t__barra .copiar-link__texto { display: none; }
+.crm-t__barra .copiar-link { padding-inline: 10px; }
+.crm-t__filtros { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; min-height: 30px; margin-bottom: var(--space-2); }
+.crm-t__orden { display: inline-flex; align-items: center; gap: 8px; }
+.crm-t__orden > span { display: inline-flex; align-items: center; gap: 2px; }
 .crm-t__pastilla {
   display: inline-flex; align-items: center; gap: 6px; max-width: 100%; padding: 4px 6px 4px 12px;
   border-radius: var(--radius-full); background: var(--brand-soft); border: 1px solid var(--brand-fill); font-size: 13px; color: var(--ink);
 }
 .crm-t__pastilla button { display: inline-flex; border: 0; background: none; color: var(--ink-muted); cursor: pointer; padding: 3px; border-radius: var(--radius-full); }
 .crm-t__pastilla button:hover { color: var(--ink); background: var(--surface-200); }
-.crm-t__cuenta { margin-bottom: var(--space-2); }
+.crm-t__cuenta { margin-right: var(--space-2); }
 .crm-t__persona { display: inline-flex; align-items: center; gap: 2px; max-width: 220px; }
 .crm-t__persona .estrella-calificada { margin-left: 4px; }
 .crm-t__si { display: inline-flex; align-items: center; gap: 4px; }
@@ -3094,9 +3134,12 @@ span.kpis__etiqueta:hover { color: var(--ink); text-decoration: none; }
 .xl-th__flecha { flex: none; opacity: .45; }
 .xl-th:hover .xl-th__flecha { opacity: 1; }
 .xl-th__filtro, .xl-th__orden { flex: none; color: var(--brand); }
+/* Ordenada por más de una columna: su lugar entre los criterios. */
+.xl-th__orden { display: inline-flex; align-items: center; }
+.xl-th__puesto { font-size: 10px; font-weight: 700; line-height: 1; }
 
 .xl-pop {
-  position: fixed; z-index: 1000; width: 300px; max-width: calc(100vw - 16px); display: flex; flex-direction: column;
+  position: fixed; z-index: 1000; width: 310px; max-width: calc(100vw - 16px); display: flex; flex-direction: column;
   background: var(--surface-100); border: 1px solid var(--border-strong); border-radius: var(--radius-lg); box-shadow: var(--shadow-md); overflow: hidden;
 }
 .xl-pop__orden { display: flex; flex-direction: column; padding: 6px; border-bottom: 1px solid var(--border); }
@@ -3129,8 +3172,99 @@ span.kpis__etiqueta:hover { color: var(--ink); text-decoration: none; }
 .xl-pop__fila:hover .xl-pop__solo, .xl-pop__solo:focus-visible { opacity: 1; }
 @media (hover: none) { .xl-pop__solo { opacity: 1; } }
 .xl-pop__pie { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-top: 1px solid var(--border); }
+/* Como criterio siguiente, cuando la tabla ya está ordenada por otra columna. */
+.xl-pop__despues { display: flex; align-items: center; gap: 4px; padding: 6px 4px 2px 10px; }
+.xl-pop__despues > .truncate { flex: 1; min-width: 0; }
+.xl-pop__mini {
+  display: inline-flex; align-items: center; gap: 3px; flex: none; padding: 4px 7px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: none; color: var(--ink-muted); font: inherit; font-size: 12px; cursor: pointer;
+}
+.xl-pop__mini:hover { color: var(--ink); background: var(--surface-200); }
+.xl-pop__mini[aria-pressed="true"] { color: var(--brand); border-color: var(--brand-fill); background: var(--brand-soft); font-weight: 600; }
+/* Los filtros de texto y de fecha de Excel, en la misma columna. */
+.xl-pop__fechas { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 8px 8px 0; }
+.xl-pop__fechas label { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.xl-pop__fechas input {
+  width: 100%; min-width: 0; height: 32px; padding: 0 8px; border: 1px solid var(--border-strong); border-radius: var(--radius-md);
+  background: var(--surface-100); color: var(--ink); font: inherit; font-size: 13px; color-scheme: light dark;
+}
+.xl-pop__fechas input:focus { outline: 0; border-color: var(--brand-fill); }
+.xl-pop__condiciones { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 8px 8px; }
+.xl-pop__condicion {
+  display: inline-flex; align-items: center; gap: 4px; max-width: 100%; padding: 3px 4px 3px 10px; border-radius: var(--radius-full);
+  background: var(--brand-soft); border: 1px solid var(--brand-fill); font-size: 12px; color: var(--ink);
+}
+.xl-pop__condicion button { display: inline-flex; border: 0; background: none; color: var(--ink-muted); cursor: pointer; padding: 2px; border-radius: 50%; }
+.xl-pop__condicion button:hover { color: var(--ink); background: var(--surface-200); }
+.xl-pop__texto-filtro { display: flex; flex-direction: column; padding-bottom: 4px; margin-bottom: 4px; border-bottom: 1px solid var(--border); }
+.xl-pop__texto-filtro .xl-pop__item { color: var(--brand); font-size: 13px; min-width: 0; }
+.xl-pop__texto .crm-chip { vertical-align: middle; }
 
-/* Por qué no se cierra */
+/* ---------- Los estados de una llamada (components/estados) ----------
+   La pastilla con el color de su opción, igual en toda la app. */
+.estado { display: inline-flex; min-width: 0; max-width: 100%; }
+/* Lo que puso la app sola, o el aviso de que falta cargarlo. */
+.estado--tenue .crm-chip { opacity: .78; box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--t) 22%, transparent); }
+.estado__vacio { display: inline-flex; align-items: center; height: 20px; padding: 0 9px; border-radius: 999px; border: 1px dashed var(--border-strong); color: var(--ink-subtle); font-size: 12px; white-space: nowrap; }
+.estado-fijo { display: inline-flex; min-width: 0; max-width: 100%; }
+.estado-boton {
+  display: inline-flex; align-items: center; min-width: 0; max-width: 100%; padding: 3px; margin: -3px; border: 0; border-radius: var(--radius-full);
+  background: none; font: inherit; cursor: pointer;
+}
+.estado-boton:hover, .estado-boton--abierto { background: var(--surface-300, var(--surface-200)); }
+.estado-boton:hover .estado__vacio { border-color: var(--brand-fill); color: var(--ink); }
+.estado-boton:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+/* Como un campo de formulario (el cierre del día). */
+.estado-boton--bloque {
+  display: flex; width: 100%; min-height: 44px; margin: 0; padding: 0 12px; border: 1px solid var(--border-strong); border-radius: var(--radius-md);
+  background: var(--surface-100); position: relative;
+}
+.estado-boton--bloque::after {
+  content: ""; position: absolute; right: 14px; top: 50%; width: 7px; height: 7px; margin-top: -6px;
+  border-right: 1.5px solid var(--ink-subtle); border-bottom: 1.5px solid var(--ink-subtle); transform: rotate(45deg);
+}
+.estado-boton--bloque:hover, .estado-boton--bloque.estado-boton--abierto { background: var(--surface-100); border-color: var(--brand-fill); }
+
+/* ---------- Vistas guardadas (components/ui/VistasGuardadas) ---------- */
+.vg-boton { max-width: 190px; }
+.vg-boton > .truncate { min-width: 0; }
+.vg-punto { width: 7px; height: 7px; flex: none; border-radius: 50%; background: var(--warning, #d98a00); }
+.vg-pop {
+  position: absolute; top: calc(100% + 6px); left: 0; z-index: 60; width: 320px; max-width: calc(100vw - 32px); max-height: min(560px, 76vh); overflow-y: auto;
+  display: flex; flex-direction: column; gap: 2px; padding: 6px;
+  background: var(--surface-100); border: 1px solid var(--border-strong); border-radius: var(--radius-lg); box-shadow: var(--shadow-lg);
+}
+.vg-seccion { display: flex; flex-direction: column; gap: 2px; padding-top: 6px; margin-top: 4px; border-top: 1px solid var(--border); }
+.vg-titulo { display: flex; align-items: center; gap: 6px; padding: 4px 8px; font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-subtle); }
+.vg-vacio { margin: 0; padding: 2px 8px 6px; font-size: 13px; color: var(--ink-subtle); }
+.vg-fila { display: flex; align-items: center; gap: 4px; border-radius: var(--radius-md); }
+.vg-fila:hover { background: var(--surface-200); }
+.vg-fila[data-activa] .vg-abrir { color: var(--brand); font-weight: 600; }
+.vg-abrir {
+  display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; padding: 7px 8px; border: 0; background: none; color: var(--ink);
+  font: inherit; font-size: 14px; text-align: left; cursor: pointer; border-radius: var(--radius-md);
+}
+.vg-abrir > .truncate { flex: 1; min-width: 0; }
+.vg-borrar { display: inline-flex; flex: none; padding: 6px; margin-right: 2px; border: 0; background: none; color: var(--ink-subtle); cursor: pointer; border-radius: var(--radius-sm); opacity: 0; }
+.vg-fila:hover .vg-borrar, .vg-borrar:focus-visible { opacity: 1; }
+.vg-borrar:hover { color: var(--danger); background: var(--surface-100); }
+@media (hover: none) { .vg-borrar { opacity: 1; } }
+.vg-confirmar { display: inline-flex; gap: 4px; flex: none; padding-right: 4px; }
+.vg-cambios { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; padding: 8px; border-radius: var(--radius-md); background: var(--brand-soft); }
+.vg-cambios__botones { display: flex; flex-wrap: wrap; gap: 6px; }
+.vg-nueva { display: flex; flex-direction: column; gap: 8px; padding: 6px 4px 4px; margin-top: 6px; border-top: 1px solid var(--border); }
+.vg-nueva .vg-titulo { padding-inline: 4px; }
+.vg-nombre {
+  height: 36px; padding: 0 10px; border: 1px solid var(--border-strong); border-radius: var(--radius-md); background: var(--surface-100);
+  color: var(--ink); font: inherit; font-size: 14px;
+}
+.vg-nombre:focus { outline: 0; border-color: var(--brand-fill); }
+.vg-para { display: flex; width: 100%; }
+.vg-para button { flex: 1 1 0; min-width: 0; display: inline-flex; align-items: center; justify-content: center; gap: 5px; padding-inline: 6px; font-size: 13px; white-space: nowrap; }
+.vg-para button:disabled { opacity: .5; cursor: not-allowed; }
+.vg-nueva > .hk-btn { align-self: flex-end; }
+
+/* El Informe: cuánto se cierra y por qué no */
 .crm-res__kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--space-3); }
 @media (max-width: 760px) { .crm-res__kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .crm-res__objeciones { display: flex; flex-direction: column; gap: var(--space-3); }
@@ -3219,6 +3353,8 @@ span.kpis__etiqueta:hover { color: var(--ink); text-decoration: none; }
 .ficha-ll__datos--perfil dd { white-space: normal; overflow: visible; overflow-wrap: anywhere; line-height: 20px; }
 .ficha-ll__llamada { display: flex; flex-direction: column; gap: var(--space-3); padding: var(--space-4); border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface-100); }
 .ficha-ll__cabeza { display: flex; align-items: center; gap: var(--space-3); min-width: 0; }
+/* Los dos estados de la llamada, a la derecha de su cabecera. */
+.ficha-ll__estados { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: var(--space-2); min-width: 0; }
 .ficha-ll__detalle { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: var(--space-2) var(--space-4); margin: 0; }
 
 /* Las cuotas por cobrar de un closer, en su ficha de Equipo (components/equipo/CuotasDelCloser) */
