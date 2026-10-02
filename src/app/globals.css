@@ -3260,7 +3260,8 @@ span.kpis__etiqueta:hover { color: var(--ink); text-decoration: none; }
 }
 .vg-nombre:focus { outline: 0; border-color: var(--brand-fill); }
 .vg-para { display: flex; width: 100%; }
-.vg-para button { flex: 1 1 0; min-width: 0; display: inline-flex; align-items: center; justify-content: center; gap: 5px; padding-inline: 6px; font-size: 13px; white-space: nowrap; }
+.vg-para button { flex: 1 1 auto; min-width: 0; display: inline-flex; align-items: center; justify-content: center; gap: 5px; padding-inline: 8px; font-size: 13px; white-space: nowrap; }
+.vg-para button svg { flex: none; }
 .vg-para button:disabled { opacity: .5; cursor: not-allowed; }
 .vg-nueva > .hk-btn { align-self: flex-end; }
 
