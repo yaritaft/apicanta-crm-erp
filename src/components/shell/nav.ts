@@ -24,7 +24,7 @@ export const NAV: GrupoNav[] = [
     titulo: "Ventas",
     items: [
       { href: "/leads", texto: "Leads", icono: Users, ayuda: "Toda la gente interesada" },
-      { href: "/crm", texto: "CRM", icono: Sheet, ayuda: "Cada llamada con todo lo de la persona, filtrable como un Excel, y el cierre del día" },
+      { href: "/crm", texto: "CRM", icono: Sheet, ayuda: "Cada llamada con todo lo de la persona: se filtra y se corrige como un Excel, y el cierre del día" },
       { href: "/agenda", texto: "Agenda", icono: CalendarDays, ayuda: "Las sesiones agendadas" },
       { href: "/ventas", texto: "Ventas", icono: HandCoins, ayuda: "Cada venta con sus cuotas y cobros" },
       { href: "/clientes", texto: "Clientes", icono: UserCheck, ayuda: "La gente que compró: qué compró, cuánto pagó y si está al día" },
