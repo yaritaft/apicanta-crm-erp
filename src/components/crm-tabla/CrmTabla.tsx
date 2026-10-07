@@ -15,7 +15,7 @@ import { AsistenteVenta } from "@/components/ventas/AsistenteVenta";
 import { PastillaEstado, useCambiarEstado } from "@/components/estados/EstadoLlamada";
 import { acciones, useEstado, type CambiosLlamada } from "@/lib/store";
 import { useAcceso } from "@/lib/acceso";
-import { puedeEditar } from "@/lib/permisos";
+import { nivelEn, puedeEditar, puedeLeer } from "@/lib/permisos";
 import { useUsuarioActual } from "@/lib/usuario";
 import { closersConLlamadas, objecionesDe } from "@/lib/eod";
 import { destinosDePase } from "@/lib/pasar-llamadas";
@@ -33,13 +33,14 @@ import { diaDeNegocio } from "@/lib/dia-negocio";
 import { paginaDeURL, useBusquedaURL, useEscribirURL, useParamsURL } from "@/lib/useParamsURL";
 import { useRangoURL } from "@/lib/useRango";
 import {
-  CAMPO_DE_OPCIONES, COLUMNA, COLUMNAS, COLUMNAS_DE_ANTES, coincideBusqueda, EDITOR, escrituraDe, filasTabla, filtroAURL, filtrosDeURL,
-  hayFiltro, MAX_ORDENES, opcionesDeColumna, ORDEN_POR_DEFECTO, ordenarFilas, ordenesAURL, ordenesDeURL, PAISES, pasaFiltros, POR_QUE_NO,
+  CAMPO_DE_OPCIONES, COLUMNA, COLUMNAS, COLUMNAS_DE_ANTES, COLUMNAS_DE_COBROS, COLOR_COBROS, coincideBusqueda, EDITOR, escrituraDe, filasTabla, filtroAURL, filtrosDeURL,
+  hayFiltro, MAX_ORDENES, opcionesDeColumna, ORDEN_COMPROBANTE, ORDEN_CONCILIADO, ORDEN_POR_DEFECTO, ordenarFilas, ordenesAURL, ordenesDeURL, PAISES, pasaFiltros, POR_QUE_NO,
   textoDeFiltro, VACIAS, valorEditable, VISIBLES_POR_DEFECTO,
   type ClaveColumna, type FilaTabla, type FiltroColumna as Filtro, type OrdenColumna,
 } from "@/lib/crm-tabla";
 import { tituloPerfil, type CampoPerfil } from "@/lib/perfil";
 import { CeldaEditable } from "./CeldaEditable";
+import { CeldaCobros } from "./CeldaCobros";
 import { FiltroColumna, textoFecha } from "./FiltroColumna";
 import { ResumenCrm } from "./ResumenCrm";
 import { Eod } from "./Eod";
@@ -71,6 +72,10 @@ import { Eod } from "./Eod";
    ================================================================== */
 
 const DEFS: DefColumna[] = COLUMNAS.map((c) => ({ clave: c.clave, titulo: c.titulo, grupo: c.grupo, fija: c.clave === "nombre" }));
+/* Quien no puede leer los cobros (un setter) no ve las dos columnas que salen de ellos:
+   sin los cobros dirían «sin venta» en todas las filas y confundirían. */
+const DEFS_SIN_COBROS = DEFS.filter((d) => !COLUMNAS_DE_COBROS.includes(d.clave as ClaveColumna));
+const esDeCobros = (k: string) => COLUMNAS_DE_COBROS.includes(k as ClaveColumna);
 const HORA = new Intl.DateTimeFormat("es-AR", { timeZone: "America/Argentina/Buenos_Aires", hour: "2-digit", minute: "2-digit", hour12: false });
 
 /* Lo que es de la persona (se guarda en su contacto) y lo que es de la llamada. */
@@ -104,6 +109,9 @@ export function CrmTabla({ misLlamadas = false }: { misLlamadas?: boolean } = {}
   /* Cada tipo de cuenta corrige lo que edita (y la base lo traba igual). */
   const { acceso } = useAcceso();
   const puedeLlamadas = puedeEditar(acceso, "sesiones");
+  const veCobros = puedeLeer(acceso, "pagos");
+  /* La pastilla abre la venta en la ficha: sólo si esta cuenta tiene esa solapa (ventas, clientes o finanzas). */
+  const abreVentas = nivelEn(acceso, "ventas") >= 1 || nivelEn(acceso, "clientes") >= 1 || nivelEn(acceso, "finanzas") >= 1;
   const puedePersonas = puedeEditar(acceso, "contactos");
   /* Cambiar el closer de una llamada es pasarla a otro: lo hace quien dirige las
      ventas (un dueño, el director). A un closer la base se lo rechaza, así que ni se le ofrece. */
@@ -126,7 +134,12 @@ export function CrmTabla({ misLlamadas = false }: { misLlamadas?: boolean } = {}
     [todas, rango.desde, rango.hasta, q],
   );
   const textoParams = params.toString();
-  const filtros = useMemo(() => filtrosDeURL(new URLSearchParams(textoParams)), [textoParams]);
+  const filtros = useMemo(() => {
+    const f = filtrosDeURL(new URLSearchParams(textoParams));
+    /* Un link o una vista con un filtro de las columnas de cobros, para quien no las tiene, no recorta nada. */
+    if (!veCobros) for (const k of COLUMNAS_DE_COBROS) delete f[k];
+    return f;
+  }, [textoParams, veCobros]);
   /* «Sin cargar»: las que ya pasaron y nadie cargó cómo terminaron (también
      las que sólo tienen el estado que pone la app, como «2da Agenda»). */
   const soloSinCargar = params.get("pendientes") === "1";
@@ -144,15 +157,24 @@ export function CrmTabla({ misLlamadas = false }: { misLlamadas?: boolean } = {}
     estadoLlamada: [...estados.estadoLlamada.map((o) => o.nombre), SIN_CARGAR, POR_VENIR],
     estadoPreCall: estados.estadoPreCall.map((o) => o.nombre),
     preCall: estados.preCall.map((o) => o.nombre),
+    comprobante: ORDEN_COMPROBANTE,
+    conciliado: ORDEN_CONCILIADO,
   }), [estados]);
   const colorDe = useMemo<Partial<Record<ClaveColumna, Map<string, ColorCrm>>>>(() => ({
     estadoLlamada: new Map<string, ColorCrm>([...Object.entries(COLOR_AVISO), ...estados.estadoLlamada.map((o) => [o.nombre, o.color] as const)]),
     estadoPreCall: new Map(estados.estadoPreCall.map((o) => [o.nombre, o.color] as const)),
     preCall: new Map(estados.preCall.map((o) => [o.nombre, o.color] as const)),
+    comprobante: new Map(Object.entries(COLOR_COBROS)),
+    conciliado: new Map(Object.entries(COLOR_COBROS)),
   }), [estados]);
 
   /* El orden: por una columna o por varias, desde el título de cada una. */
-  const ordenes = useMemo(() => ordenesDeURL(params.get("orden")), [params]);
+  const ordenes = useMemo(() => {
+    const o = ordenesDeURL(params.get("orden"));
+    if (veCobros) return o;
+    const sin = o.filter((x) => !COLUMNAS_DE_COBROS.includes(x.clave));
+    return sin.length ? sin : ORDEN_POR_DEFECTO;
+  }, [params, veCobros]);
   const filas = useMemo(
     /* A igual valor, la llamada más nueva primero. */
     () => ordenarFilas(filtradas, ordenes.some((o) => o.clave === "llamada") ? ordenes : [...ordenes, ...ORDEN_POR_DEFECTO], ordenValores),
@@ -161,7 +183,10 @@ export function CrmTabla({ misLlamadas = false }: { misLlamadas?: boolean } = {}
   const ordenar = useCallback((os: OrdenColumna[]) => escribir({ orden: ordenesAURL(os), pag: null }), [escribir]);
   const ordenDeSiempre = ordenesAURL(ordenes) === null;
 
+  /* Siempre con la lista completa: el acceso llega después del primer dibujo, y si el hook arrancara sin las
+     dos columnas, quien sí las ve no las tendría de entrada. Quien no puede leer los cobros no las ve. */
   const cols = useColumnas("crm", DEFS, VISIBLES_POR_DEFECTO, COLUMNAS_DE_ANTES);
+  const visibles = useMemo(() => (veCobros ? cols.visibles : cols.visibles.filter((k) => !esDeCobros(k))), [veCobros, cols.visibles]);
 
   const cambiarFiltro = useCallback((clave: ClaveColumna, fc: Filtro | null) => {
     escribir({ ...filtroAURL(clave, fc), pag: null });
@@ -229,8 +254,12 @@ export function CrmTabla({ misLlamadas = false }: { misLlamadas?: boolean } = {}
     toast(`${titulo} de ${f.nombre || "la llamada"}: ${valor.trim() || "vacío"}${aQuienes}.`, "ok", { texto: "Deshacer", onClick: deshacer });
   };
   const verFicha = (f: FilaTabla) => abrirFicha(f.sesion.contactoId ?? f.sesion.leadId ?? f.sesion.id, "llamadas");
+  /* Los cobros de la venta de la llamada, en la ficha de esa venta. */
+  const verCobros = (f: FilaTabla) => abrirFicha(
+    f.fila.venta?.id ?? f.sesion.contactoId ?? f.sesion.leadId ?? f.sesion.id, "ventas", f.fila.venta ? { venta: f.fila.venta.id } : undefined,
+  );
 
-  const columnas: Columna<FilaTabla>[] = cols.visibles.map((k) => {
+  const columnas: Columna<FilaTabla>[] = visibles.map((k) => {
     const col = COLUMNA[k as ClaveColumna];
     const puesto = ordenes.findIndex((o) => o.clave === col.clave);
     const colores = colorDe[col.clave];
@@ -265,7 +294,7 @@ export function CrmTabla({ misLlamadas = false }: { misLlamadas?: boolean } = {}
             puede={DE_LA_PERSONA.has(col.clave) ? puedePersonas : col.clave === "closer" ? puedePasar : puedeLlamadas}
             abierta={abierta} onAbrir={() => setEditando({ id: f.id, clave: col.clave })}
             onCerrar={() => setEditando((x) => (x?.id === f.id && x.clave === col.clave ? null : x))}
-            onGuardar={(v) => guardarCelda(f, col.clave, v)} onFicha={() => verFicha(f)}
+            onGuardar={(v) => guardarCelda(f, col.clave, v)} onFicha={() => verFicha(f)} onCobros={abreVentas ? () => verCobros(f) : undefined}
             opciones={opcionesDe[col.clave]} sugerencias={abierta ? sugerenciasDe(col.clave) : undefined}
             color={colores}
           />
@@ -322,7 +351,7 @@ export function CrmTabla({ misLlamadas = false }: { misLlamadas?: boolean } = {}
               opciones={[{ valor: "tabla", texto: "Tabla" }, { valor: "resumen", texto: "Informe" }]}
             />
             {!enInforme && (
-              <ConfigColumnas todas={DEFS} visibles={cols.visibles} alternar={cols.alternar} mover={cols.mover} restaurar={cols.restaurar} compacto />
+              <ConfigColumnas todas={veCobros ? DEFS : DEFS_SIN_COBROS} visibles={visibles} alternar={cols.alternar} mover={cols.mover} restaurar={cols.restaurar} compacto />
             )}
             <CopiarLink />
             {puedePasar && !enInforme && filas.some((f) => sePuedePasar(f.sesion)) && (
@@ -397,9 +426,9 @@ export function CrmTabla({ misLlamadas = false }: { misLlamadas?: boolean } = {}
 
 /* La celda con su edición. El nombre abre la ficha (lo de siempre) y se
    corrige con el lápiz; el resto de las que se editan, con un clic. */
-function CeldaCrm({ clave, f, puede, abierta, onAbrir, onCerrar, onGuardar, onFicha, opciones, sugerencias, color }: {
+function CeldaCrm({ clave, f, puede, abierta, onAbrir, onCerrar, onGuardar, onFicha, onCobros, opciones, sugerencias, color }: {
   clave: ClaveColumna; f: FilaTabla; puede: boolean; abierta: boolean;
-  onAbrir: () => void; onCerrar: () => void; onGuardar: (valor: string) => void; onFicha: () => void;
+  onAbrir: () => void; onCerrar: () => void; onGuardar: (valor: string) => void; onFicha: () => void; onCobros?: () => void;
   opciones?: OpcionCrm[]; sugerencias?: string[];
   /* El color de cada opción, en las columnas de estado. */
   color?: Map<string, ColorCrm>;
@@ -419,6 +448,10 @@ function CeldaCrm({ clave, f, puede, abierta, onAbrir, onCerrar, onGuardar, onFi
         )}
       </span>
     );
+  }
+  /* Los cobros de la venta: un clic abre la venta. El cartelito lo trae la celda, con el detalle. */
+  if (clave === "comprobante" || clave === "conciliado") {
+    return <span className="crm-t__fija"><CeldaCobros clave={clave} cobros={f.cobros} onAbrir={onCobros} /></span>;
   }
   if (!editor || !puede) {
     return <span className="crm-t__fija" title={POR_QUE_NO[clave]}><Celda clave={clave} f={f} color={color} /></span>;

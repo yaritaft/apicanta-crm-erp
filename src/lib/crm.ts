@@ -435,7 +435,7 @@ export function filasCrm(
     if (v.estado === "cancelada") continue;
     if (v.sesionId) {
       const ya = ventaDeSesion.get(v.sesionId);
-      if (!ya || v.fecha < ya.fecha) ventaDeSesion.set(v.sesionId, v);
+      if (!ya || antesQue(v, ya)) ventaDeSesion.set(v.sesionId, v);
       continue;
     }
     if (!v.contactoId) continue;
@@ -494,6 +494,14 @@ export function ventaEsDeLlamada(s: Pick<Sesion, "creadoEn" | "inicia">, fechaVe
   return v >= desde && v <= hasta;
 }
 
+/* Entre dos ventas de la misma llamada, la que vale como «la venta»: la que sigue en pie antes que
+   la reembolsada, y entre iguales la primera. Una reembolsada no tapa a la activa (sus cobros son los
+   que hay que mirar). */
+const antesQue = (a: Pick<Venta, "estado" | "fecha">, b: Pick<Venta, "estado" | "fecha">) => {
+  const ra = a.estado === "reembolsada" ? 1 : 0, rb = b.estado === "reembolsada" ? 1 : 0;
+  return ra !== rb ? ra < rb : a.fecha < b.fecha;
+};
+
 /* La venta que salió de una agenda: la que dice haber salido de ella
    (`sesionId`) o, si ninguna lo dice (las de antes), la primera de esa
    persona en su ventana. */
@@ -502,7 +510,7 @@ function ventaDeAgenda(
 ): VentaDeFila | undefined {
   const suyas = [...new Set([...(ventasDe.get(s.leadId ?? "") ?? []), ...(ventasDe.get(s.contactoId ?? "") ?? [])])];
   const v = ventaDeSesion.get(s.id)
-    ?? suyas.filter((x) => ventaEsDeLlamada(s, x.fecha)).sort((a, b) => a.fecha.localeCompare(b.fecha))[0];
+    ?? suyas.filter((x) => ventaEsDeLlamada(s, x.fecha)).sort((a, b) => (antesQue(a, b) ? -1 : antesQue(b, a) ? 1 : 0))[0];
   if (!v) return undefined;
   const producto = (v.productoId && productos.get(v.productoId)) || "Venta";
   return { id: v.id, texto: `${producto} · ${money(v.precioAcordado, v.moneda)}`, fecha: v.fecha };

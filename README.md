@@ -1138,3 +1138,24 @@ cobro en un mes con la liquidación cerrada; en el gasto ofrece pasarlo al mes a
 03/10), `devoluciones-cierre-dia.test.ts`, `reembolsos.test.ts`, `gasto-devengo.test.ts`. *Falta:* ensayar `devoluciones.sql`
 con RLS real, la forma de los reembolsos de Hotmart y Whop con claves, y un mensaje al director cuando una llamada queda en
 «Devolución» y nadie la carga.
+
+## CRM: columnas «Comprobante» y «Conciliado» (F1-03 y F1-04)
+
+La tabla del CRM (`/crm`, `src/components/crm-tabla`) suma, al final y a la vista, lo que dicen los **cobros de la venta de cada
+llamada** (la venta que sale de esa llamada, `FilaTabla.cobros`, `lib/crm-tabla.ts`). La cuenta es la misma de Ventas → Cobros
+(`cobrosPorVenta`, `lib/control-cobros.ts`, con `pasaControl` y `conciliacionDe`): lo que se ve en una pantalla es lo que se ve
+en la otra.
+
+- **Comprobante:** «Sí» (o «Todos · n») si cada cobro tiene su prueba (un archivo, el link de la planilla, o el pago de la
+  pasarela); «Falta» (o «Falta k de n») si a alguno le falta; «Sin cobros» si la venta todavía no tiene ninguno.
+- **Conciliado:** «Sí» si el cobro está atado al pago de la pasarela; «Sin conciliar» si la cuenta tiene pasarela y todavía no
+  se ató; «A mano» si la cuenta no tiene pasarela (la Financiera, efectivo). Con varios cobros dice cuántos.
+- Sin venta (o sin los cobros en el estado) la celda es «—». Un clic en la pastilla abre la ficha en la venta, donde está cada
+  cobro con su comprobante y su chequeo.
+- Se filtran y se ordenan como las demás desde el título, con un solo valor por venta (el peor caso, igual que la celda); en el
+  orden de las opciones quedan arriba las que hay que mirar (falta el comprobante, sin conciliar).
+- La venta de una llamada es la primera que sigue en pie: una reembolsada no tapa a una activa (`ventaDeAgenda`, `lib/crm.ts`).
+- Las ve quien puede leer los cobros (`puedeLeer(acceso, "pagos")`: el closer sobre lo suyo, el director, finanzas, los
+  dueños); un setter no las tiene en la lista de columnas. Quien ya tenía elegidas sus columnas las suma con «Columnas».
+
+*Pruebas:* `pruebas/crm-cobros.test.ts`.

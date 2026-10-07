@@ -299,6 +299,44 @@ export function controlPorVenta(e: Pick<EstadoApp, "pagos" | "cuotas">): Map<ID,
   return por;
 }
 
+/* ---------- Los cobros de una venta, para el CRM ---------- */
+
+/** Lo que se puede decir de los cobros de una venta de un vistazo: cuántos tienen su
+ *  prueba y cuántos están atados al pago de la pasarela. Es la cuenta de las columnas
+ *  «Comprobante» y «Conciliado» de la tabla del CRM, con las mismas reglas que la lista de
+ *  cobros (`pasaControl`): lo que se ve en una pantalla es lo que se ve en la otra. */
+export interface CobrosDeVenta {
+  total: number;
+  /** Con prueba: un archivo, el link de la planilla, o el pago de la pasarela. */
+  conPrueba: number;
+  /** Sin archivo ni link y sin pasarela: les falta el comprobante. */
+  sinComprobante: number;
+  conciliados: number;
+  sinConciliar: number;
+  /** La cuenta no tiene pasarela (la Financiera, efectivo): se prueba con el comprobante. */
+  aMano: number;
+}
+
+export function cobrosPorVenta(
+  e: Pick<EstadoApp, "pagos" | "cuotas" | "procesadores">,
+): Map<ID, CobrosDeVenta> {
+  const ventaDeCuota = new Map(e.cuotas.map((c) => [c.id, c.ventaId] as const));
+  const por = new Map<ID, CobrosDeVenta>();
+  for (const p of e.pagos) {
+    const v = ventaDeCuota.get(p.cuotaId);
+    if (!v) continue;
+    const x = por.get(v) ?? { total: 0, conPrueba: 0, sinComprobante: 0, conciliados: 0, sinConciliar: 0, aMano: 0 };
+    x.total++;
+    if (pasaControl(p, e.procesadores, "sin-comprobante")) x.sinComprobante++; else x.conPrueba++;
+    const c = conciliacionDe(e.procesadores, p);
+    if (c === "conciliado") x.conciliados++;
+    else if (c === "sin-conciliar") x.sinConciliar++;
+    else x.aMano++;
+    por.set(v, x);
+  }
+  return por;
+}
+
 /* ---------- Chequear, rechazar, quitar ---------- */
 
 const columnasDe = (c: CasilleroChequeo): Record<"veredicto" | "por" | "en" | "nota", ColumnaDeControl> =>
