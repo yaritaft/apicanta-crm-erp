@@ -1462,3 +1462,30 @@ y cada alumno entra con su **código**, un UUID al azar (no un número correlati
 - **Qué falta:** las preguntas del formulario son las del reporte que ya existe (horas, entrevistas, postulaciones, bloqueo): si el actual tiene otras, se ajusta `lib/reporte-enlace.ts` y la página.
   Telegram (avisar por ahí en vez de mail) no está.
 
+
+## Arreglos del estrés: base («sólo lo suyo», nombres, control cruzado, honorarios)
+
+*Qué pasaba:* un closer («sólo lo suyo») armaba su acceso con referencias que él mismo escribe, y las políticas sólo le pedían que la
+fila nueva lo nombrara a él: con el id de algo ajeno (una cuota heredada propia sobre la venta de otro, una venta o una llamada o un
+lead propio apuntando al lead o a la persona de otro) pasaba a ver la venta, sus cobros con comprobante, las devoluciones, el lead, la
+persona y su chat, y hasta podía cambiarle el closer a la venta. `nombre_corto()` tenía dos tablas de 48 y 49 caracteres: la «ñ» salía
+«u» y un closer con ñ no encontraba sus llamadas; dos closers con las mismas dos primeras palabras (Ana Laura…) eran la misma persona para
+la base. El control cruzado dejaba conservar el tilde de antes con cualquier `movimientoId` inventado. `honorarios.sql`, vuelto a correr
+después de `tipos-cuenta.sql`, pasaba a todos a «Todo menos honorarios». `ventas.sesionId` lo podía soltar el closer. Y el ensayo
+`pruebas/sql/control-cruzado.ensayo.mjs` ya no corría.
+
+*Qué hace ahora:* `supabase/solo-lo-suyo-seguro.sql` (nuevo, idempotente, sin tocar datos, sólo pide `tipos-cuenta.sql` antes) agrega
+cuatro triggers que sólo miran a quien ve «sólo lo suyo» y una referencia nueva o cambiada (cuotas.ventaId, ventas.contactoId,
+sesiones.leadId/contactoId, leads.contactoId: tienen que apuntar a algo que ya es suyo; la persona que creó él cuenta) y cuidan
+`ventas.sesionId` (una vez puesto vuelve a como estaba; al crear la venta, una llamada suya). Si no alcanza, 42501 como cualquier
+escritura que su tipo no puede hacer. Dueño, Equipo, director, administración y el servidor siguen igual. `nombre_corto()` queda con las
+tablas del mismo largo (en `tipos-cuenta.sql` y en el delta) y, entre dos closers con el mismo nombre corto, gana el del nombre entero
+igual al del anfitrión (`select * from public.equipo_nombres_que_chocan()` lista los que chocan; la app, `miembroDeCloser()` de
+`src/lib/crm.ts`, sigue eligiendo el primero). `control-cruzado.sql` ignora el `movimientoId` de quien no es director ni finanzas al
+crear el cobro y le deja el de antes al corregirlo. `honorarios.sql` sólo normaliza roles y pone el CHECK de dos niveles si todavía no
+existe `tipos_cuenta`. El ensayo vuelve a correr (columnas `moneda` y `montoArs`; las dos expectativas del monto editan ahora las notas).
+
+*Para publicarlo:* Supabase → SQL Editor: `supabase/solo-lo-suyo-seguro.sql` y `supabase/control-cruzado.sql` (en cualquier orden; los
+demás archivos sólo cambiaron de comentarios o de condiciones y no hace falta volver a correrlos). *Pruebas:*
+`pruebas/fix-sql-solo-lo-suyo.test.ts` (PGlite en memoria; con `SQL_DIR_PRUEBA=<carpeta con los .sql de antes>` fallan) y el ensayo
+`PGLITE_DIR=… node pruebas/sql/control-cruzado.ensayo.mjs`.
