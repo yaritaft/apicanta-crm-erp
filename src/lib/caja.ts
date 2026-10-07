@@ -12,6 +12,7 @@ import { enCamino } from "./traspasos";
 
      caja del arqueo anterior
      + lo cobrado
+     − lo que se devolvió a clientes
      − lo que se quedaron los procesadores
      − las comisiones de closers y del director
      − los gastos cargados (directos, operativos y los honorarios del CEO)
@@ -55,6 +56,9 @@ export interface MovimientoCaja {
      cuentas: no se contó en ninguna y es plata de la caja. */
   enCaminoAntes: number;
   cobrado: number;
+  /* Lo que se devolvió a clientes: salió de la caja (la comisión de la
+     pasarela no vuelve: sigue en «procesador»). */
+  devoluciones: number;
   procesador: number;
   comisiones: number;
   gastos: number;
@@ -82,11 +86,13 @@ export function cajaEsperada(
   const reparto = p.growth + p.socio;
   const enCaminoAntes = enCamino(e, desde.fecha, tipoCambio);
   const viajando = enCamino(e, hasta, tipoCambio);
-  const esperado = r2(desde.total + enCaminoAntes + p.cashCollected - p.feesProcesador - comisiones - gastos - reparto - retiros);
+  /* `cashCollected` ya viene sin lo devuelto: acá se parte en lo que entró y
+     lo que salió para que se vean las dos cosas. */
+  const esperado = r2(desde.total + enCaminoAntes + p.cobrado - p.devoluciones - p.feesProcesador - comisiones - gastos - reparto - retiros);
   return {
     desde: desde.fecha, hasta,
     inicial: desde.total, enCaminoAntes,
-    cobrado: r2(p.cashCollected), procesador: r2(p.feesProcesador), comisiones: r2(comisiones),
+    cobrado: r2(p.cobrado), devoluciones: r2(p.devoluciones), procesador: r2(p.feesProcesador), comisiones: r2(comisiones),
     gastos: r2(gastos), reparto: r2(reparto), retiros: r2(retiros),
     esperado, enCamino: viajando, enCuentas: r2(esperado - viajando),
   };

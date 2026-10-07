@@ -1,5 +1,6 @@
 import type { Arqueo, EstadoApp, Gasto, ID, Moneda, Traspaso } from "./types";
 import { aMonedaBase, categoriaDe, montoOriginal } from "./gastos";
+import { esDevolucionConfirmada } from "./devoluciones";
 
 /* ==================================================================
    Movimientos entre cuentas propias.
@@ -343,17 +344,19 @@ export interface SaldoEsperado {
   entro: number;
   /* Lo que recibió menos lo que mandó en pases. */
   pases: number;
-  /* Los retiros y los gastos que dicen que salieron de esta cuenta. */
+  /* Los retiros, las devoluciones y los gastos que dicen que salieron de esta cuenta. */
   salio: number;
   esperado?: number;
 }
 
 /** Lo que tendría que haber en cada cuenta, en su moneda: lo del arqueo
     anterior más lo que cobró, más o menos los pases, menos lo que se sabe
-    que salió de ahí (los retiros). Los gastos y los sueldos no dicen de
-    qué cuenta salieron: por eso el control fino sigue siendo por el total. */
+    que salió de ahí (los retiros y las devoluciones, que dicen por qué cuenta
+    salió la plata: la comisión de la pasarela no vuelve, ya está descontada
+    del cobro). Los gastos y los sueldos no dicen de qué cuenta salieron: por
+    eso el control fino sigue siendo por el total. */
 export function saldosEsperados(
-  e: Pick<EstadoApp, "procesadores" | "pagos" | "gastos" | "traspasos">,
+  e: Pick<EstadoApp, "procesadores" | "pagos" | "gastos" | "traspasos"> & Partial<Pick<EstadoApp, "devoluciones">>,
   previo: Pick<Arqueo, "fecha" | "saldos"> | undefined, hastaIso: string,
 ): Map<ID, SaldoEsperado> {
   const desde = previo ? Date.parse(previo.fecha) : -Infinity;
@@ -372,6 +375,18 @@ export function saldosEsperados(
       if (Number.isFinite(bruto)) s.entro += bruto - (tc > 0 ? p.feeMonto * tc : 0);
     } else {
       s.entro += p.monto - p.feeMonto;
+    }
+  }
+  /* Lo devuelto sale de la cuenta por la que se devolvió: el monto entero (en
+     pesos, los pesos que fueron). */
+  for (const d of e.devoluciones ?? []) {
+    const s = d.procesadorId && esDevolucionConfirmada(d) ? out.get(d.procesadorId) : undefined;
+    if (!s || !entre(d.fecha, desde, hasta)) continue;
+    if (s.moneda === "ARS") {
+      const ars = d.montoArs ?? (d.tipoCambio && d.tipoCambio > 0 ? d.monto * d.tipoCambio : NaN);
+      if (Number.isFinite(ars)) s.salio += ars;
+    } else {
+      s.salio += d.monto;
     }
   }
   for (const g of e.gastos) {

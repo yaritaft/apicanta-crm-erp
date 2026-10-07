@@ -227,6 +227,13 @@ function columnaFaltante(e: { code?: string; message?: string } | null): string 
 const cola: Op[] = [];
 let drenando = false;
 
+/* Las tablas opcionales que la base todavía no tiene (falta correr su SQL):
+   mientras tanto lo que se carga vive sólo en este navegador, y las pantallas
+   que guardan plata lo avisan (una devolución que no se guarda no puede
+   pasar de largo). */
+const sinCrear = new Set<string>();
+export const tablaSinCrear = (tabla: string): boolean => sinCrear.has(tabla);
+
 /* ¿Hay un cambio de esta fila que todavía no llegó a la base? Mientras lo
    haya, lo que avisa Realtime de ella es más viejo que lo que está en
    pantalla: no se aplica (llega otro aviso cuando se termine de escribir). */
@@ -332,6 +339,7 @@ async function drenar() {
         /* Tabla opcional sin crear: se descarta la operacion en vez de
            bloquear la cola. En memoria el dato ya esta. */
         if (TABLAS_OPCIONALES.has(op.tabla) && tablaFaltante(r.error)) {
+          sinCrear.add(op.tabla);
           cola.shift();
           continue;
         }
@@ -440,7 +448,7 @@ export async function cargarDeLaNube(): Promise<void> {
     for (const [i, r] of resto.entries()) {
       if (!r.error) continue;
       /* Una tabla opcional que todavia no se creo no rompe la sesion. */
-      if (TABLAS_OPCIONALES.has(TABLAS[i]) && tablaFaltante(r.error)) continue;
+      if (TABLAS_OPCIONALES.has(TABLAS[i]) && tablaFaltante(r.error)) { sinCrear.add(TABLAS[i]); continue; }
       throw errorDeTabla(TABLAS[i], r.error);
     }
     if (ajustesRes.error) throw errorDeTabla("ajustes", ajustesRes.error);
@@ -526,6 +534,8 @@ export async function cargarDeLaNube(): Promise<void> {
         .sort((a, b) => +new Date(a.fecha) - +new Date(b.fecha)),
       /* Opcional: sin supabase/traspasos.sql, ninguno. */
       traspasos: (porTabla.traspasos ?? []) as EstadoApp["traspasos"],
+      /* Opcional: sin supabase/devoluciones.sql, ninguna. */
+      devoluciones: (porTabla.devoluciones ?? []) as EstadoApp["devoluciones"],
       /* Vacías para quien no es dueño: RLS las esconde. */
       honorarios: (porTabla.honorarios ?? []) as EstadoApp["honorarios"],
       liquidaciones: (porTabla.liquidaciones ?? []) as EstadoApp["liquidaciones"],
@@ -573,7 +583,7 @@ function ordenDeSiembra(e: EstadoApp): [string, unknown[]][] {
     ["alumnos", e.alumnos], ["sesiones", e.sesiones], ["reportes", e.reportes],
     ["campanias", e.campanias], ["metas", e.metas], ["campos", e.campos],
     ["ventas", e.ventas], ["cuotas", e.cuotas], ["movimientos", e.movimientos],
-    ["pagos", e.pagos], ["gastos", e.gastos],
+    ["pagos", e.pagos], ["devoluciones", e.devoluciones ?? []], ["gastos", e.gastos],
     ["comentarios", e.comentarios ?? []],
     ["arqueos", e.arqueos ?? []],
     ["traspasos", e.traspasos ?? []],
@@ -623,7 +633,7 @@ async function vaciarNube() {
      es, no borran nada (RLS) y no dan error. */
   const orden = [
     "liquidaciones", "honorarios",
-    "actividad", "comentarios", "arqueos", "traspasos", "campos", "metas", "pagos", "movimientos", "cuotas", "ventas", "gastos",
+    "actividad", "comentarios", "arqueos", "traspasos", "campos", "metas", "devoluciones", "pagos", "movimientos", "cuotas", "ventas", "gastos",
     "campanias", "reportes", "sesiones", "alumnos", "leads", "contactos", "webinars",
     "etapas", "equipo", "embudos", "procesadores", "productos",
     "etapas_servicio",

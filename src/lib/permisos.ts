@@ -111,6 +111,9 @@ export const LEEN: Record<string, AreaId[]> = {
   movimientos: ["finanzas"],
   arqueos: ["finanzas"],
   traspasos: ["finanzas"],
+  /* Las devoluciones las ve quien ve las ventas (el closer, sólo las de sus
+     ventas): sin ellas, los números de cada área no darían igual. */
+  devoluciones: VENTAS,
   transacciones: ["finanzas"],
   ad_insights: ["marketing", "webinars", "finanzas"],
   campanias: ["marketing", "webinars"],
@@ -145,6 +148,10 @@ export const EDITAN: Record<string, AreaId[]> = {
   movimientos: ["finanzas"],
   arqueos: ["finanzas"],
   traspasos: ["finanzas"],
+  /* Las devoluciones se cargan con Finanzas editable o con Ventas editable
+     SIN «sólo lo suyo» (el director): el closer no las carga. Ver
+     puedeCargarDevolucion; la base lo dice igual (supabase/devoluciones.sql). */
+  devoluciones: ["finanzas", "ventas"],
   transacciones: ["finanzas"],
   ajustes: ["ajustes"],
   campos: ["ajustes"],
@@ -167,9 +174,29 @@ export function puedeLeer(a: MiAcceso | null | undefined, tabla: string): boolea
   return !areas || areas.some((x) => nivelEn(a, x) >= 1);
 }
 
+/** Quién carga, corrige y borra una devolución: el dueño, quien edita
+ *  Finanzas (el asistente de finanzas) y quien edita Ventas y no ve sólo lo
+ *  suyo (el director comercial). El closer sólo la ve (Yari y Angelo, 02/10:
+ *  «que no se pueda equivocar»). */
+export function puedeCargarDevolucion(a: MiAcceso | null | undefined): boolean {
+  if (!a) return false;
+  if (esDueno(a)) return true;
+  return nivelEn(a, "finanzas") === 2 || (nivelEn(a, "ventas") === 2 && !a.soloLoSuyo);
+}
+
+/** Quién puede cancelar una venta, darla de baja o reactivarla: lo mismo que
+ *  edita Ventas, menos quien ve sólo lo suyo (el closer no cancela ni marca
+ *  una venta como reembolsada). */
+export function puedeDarDeBaja(a: MiAcceso | null | undefined): boolean {
+  if (!a) return false;
+  if (esDueno(a)) return true;
+  return nivelEn(a, "ventas") === 2 && !a.soloLoSuyo;
+}
+
 export function puedeEditar(a: MiAcceso | null | undefined, tabla: string): boolean {
   if (!a) return false;
   if (esDueno(a) || LIBRES.has(tabla)) return true;
+  if (tabla === "devoluciones") return puedeCargarDevolucion(a);
   if (tabla === "alumnos" && nivelEn(a, "ventas") === 2) return true;
   return (EDITAN[tabla] ?? []).some((x) => nivelEn(a, x) === 2);
 }
@@ -258,6 +285,7 @@ const QUE_ES: Record<string, string> = {
   sesiones: "las llamadas", comentarios: "los comentarios", alumnos: "los alumnos", reportes: "los reportes",
   etapas_servicio: "las etapas del servicio", webinars: "los webinars", gastos: "los gastos",
   movimientos: "la conciliación", arqueos: "la caja", traspasos: "los movimientos entre cuentas",
+  devoluciones: "las devoluciones",
   transacciones: "las transacciones", ajustes: "los Ajustes",
   etapas: "las etapas", embudos: "las estrategias", productos: "los servicios", procesadores: "las cuentas recaudadoras",
   campos: "los campos", metas: "las metas", equipo: "el equipo", tipos_cuenta: "los tipos de cuenta",

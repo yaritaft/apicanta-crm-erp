@@ -115,7 +115,8 @@ function exportarPyL(e: EstadoApp, m: RangoMes, p: ReturnType<typeof calcularPyL
   const categorias = (grupo: Gasto["grupo"]): [string, number, number][] =>
     gastosPorCategoria(e, m, grupo).map((g) => [`   ${g.categoria}`, -g.monto, -g.monto]);
   const filas: [string, number, number][] = [
-    ["Ingresos", p.cashCollected, p.revenue],
+    ["Ingresos", p.cobrado, p.revenue],
+    ...(p.devoluciones ? [["Devoluciones", -p.devoluciones, -p.devoluciones] as [string, number, number]] : []),
     ["Comisiones closers", -p.comisionCloser, -p.comisionCloser],
     ["Comision director", -p.comisionDirector, -p.comisionDirector],
     ["Procesadores", -p.feesProcesador, -p.feesProcesador],

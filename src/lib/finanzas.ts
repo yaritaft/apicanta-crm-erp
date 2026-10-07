@@ -1,6 +1,14 @@
 import type { Cuota, EstadoApp, Gasto, MiembroEquipo, Pago, Venta } from "./types";
 import type { RangoMes } from "./metricas";
 import { esSoloReserva } from "./angelo";
+import { cobraDirector, cobraEnFecha, closerDeCuota, tasaDeComision } from "./comision";
+import { devolucionesDelMes, reversasDelMes, totalDevuelto, type Reversa } from "./devoluciones";
+
+/* Las reglas de cuándo y cuánto comisiona alguien viven en lib/comision.ts
+   (sin dependencias, para que las devoluciones las usen); acá se reexportan
+   para quien las importaba de Finanzas. */
+export { cobraDirector, cobraEnFecha, closerDeCuota, tasaDeComision };
+export { devolucionesDelMes, totalDevuelto };
 
 /* ==================================================================
    El P&L de Yari, calculado igual que en su planilla.
@@ -46,9 +54,17 @@ export function pagosDelMes(e: EstadoApp, m: RangoMes) {
   return e.pagos.filter((p) => enRango(p.fecha, m));
 }
 
-/** Lo cobrado: los pagos que entraron en el mes, sin importar cuándo se vendió. */
-export function cashCollected(e: EstadoApp, m: RangoMes): number {
+/** Lo que entró en el mes: la suma de sus pagos, sin importar cuándo se
+ *  vendió y sin restar lo que se devolvió. */
+export function cobrado(e: EstadoApp, m: RangoMes): number {
   return pagosDelMes(e, m).reduce((a, p) => a + p.monto, 0);
+}
+
+/** El Cash Collected (CC): lo que entró en el mes menos lo que se devolvió
+ *  en el mes. Una devolución resta en el mes en que se devuelve la plata,
+ *  no en el de la venta ni en el del cobro (lib/devoluciones.ts). */
+export function cashCollected(e: EstadoApp, m: RangoMes): number {
+  return cobrado(e, m) - totalDevuelto(e, m);
 }
 
 /** Lo que se quedaron Stripe, PayPal y compañía. */
@@ -106,26 +122,46 @@ export interface ComisionVenta {
   sinComision: boolean;
   /* El closer de la venta, si esta fila es de cuotas que heredó otro. */
   heredadaDe?: string;
+  /* Si esta fila es lo que se revierte por una devolución: sus montos van en
+     negativo (lo comisionado que se descuenta). */
+  devolucionId?: string;
 }
 
-/* Quien se fue cobra sólo lo que entró mientras estaba (hasta su fecha de
-   salida, si la tiene): las cuotas que entran después no le dejan nada.
-   Vale para el director y para los closers (MiembroEquipo.hasta); por eso
-   a los closers que se van se les pasan las cuotas a otro. */
-export const cobraEnFecha = (m: { hasta?: string } | undefined, fechaPago: string) =>
-  !m?.hasta || new Date(fechaPago).getTime() - 3 * 3600000 < new Date(`${m.hasta}T00:00:00Z`).getTime() + 86400000;
-export const cobraDirector = cobraEnFecha;
-
-/** El % con el que alguien comisiona una venta: el de ese servicio, si lo
- *  tiene cargado aparte, o el general. Lo usan Finanzas, la caja y la
- *  planilla; la liquidación llega a lo mismo desde lo que cobra la persona
- *  (lib/honorarios.ts). */
-export const tasaDeComision = (m: Pick<MiembroEquipo, "comisionRate" | "comisionServicios"> | undefined, productoId?: string): number =>
-  !m ? 0 : (productoId !== undefined ? m.comisionServicios?.[productoId] : undefined) ?? m.comisionRate ?? 0;
-
-/** Quién comisiona los cobros de una cuota: el que la heredó o, si nadie,
- *  el closer de la venta. */
-export const closerDeCuota = (v: { closerId?: string }, c?: { closerId?: string }) => c?.closerId || v.closerId;
+/* Lo que se revierte de una devolución, como filas de comisión en negativo
+   (una por closer, con la parte del director en la primera). Las mismas
+   cuentas de lib/devoluciones.ts que usa la liquidación. */
+function filasDeReversa(r: Reversa): ComisionVenta[] {
+  const closers = r.partes.filter((x) => x.rol === "closer");
+  const director = r.partes.find((x) => x.rol === "director");
+  const filas: ComisionVenta[] = [];
+  closers.forEach((c, i) => {
+    const conDirector = i === 0 && director;
+    const reversaDirector = conDirector ? director.reversa : 0;
+    if (c.reversa === 0 && reversaDirector === 0) return;
+    filas.push({
+      id: `dev:${r.devolucion.id}:${c.miembroId ?? "sin"}`,
+      ventaId: r.venta.id, productoId: r.venta.productoId,
+      cobradoEnMes: -(c.cobrado * r.parte), netoProcesador: -(c.neto * r.parte),
+      closerId: c.miembroId, closerNombre: c.nombre,
+      tasaCloser: c.tasa, comisionCloser: -c.reversa,
+      directorId: conDirector ? director.miembroId : r.venta.directorId,
+      tasaDirector: conDirector ? director.tasa : 0, comisionDirector: -reversaDirector,
+      sinComision: false, devolucionId: r.devolucion.id,
+      ...(c.heredadaDe ? { heredadaDe: c.heredadaDe } : {}),
+    });
+  });
+  /* Un director sin closer que revertir (la venta no tenía closer). */
+  if (closers.length === 0 && director && director.reversa !== 0) {
+    filas.push({
+      id: `dev:${r.devolucion.id}:dir`, ventaId: r.venta.id, productoId: r.venta.productoId,
+      cobradoEnMes: -(director.cobrado * r.parte), netoProcesador: -(director.neto * r.parte),
+      closerNombre: "Sin asignar", tasaCloser: 0, comisionCloser: 0,
+      directorId: director.miembroId, tasaDirector: director.tasa, comisionDirector: -director.reversa,
+      sinComision: false, devolucionId: r.devolucion.id,
+    });
+  }
+  return filas;
+}
 
 export function comisionesDelMes(e: EstadoApp, m: RangoMes): ComisionVenta[] {
   const out: ComisionVenta[] = [];
@@ -184,6 +220,9 @@ export function comisionesDelMes(e: EstadoApp, m: RangoMes): ComisionVenta[] {
       });
     }
   }
+  /* Lo que se devolvió en este período: se revierte lo comisionado, como
+     filas en negativo. Sin devoluciones, no hay nada que sumar. */
+  for (const r of reversasDelMes(e, m)) out.push(...filasDeReversa(r));
   return out;
 }
 
@@ -274,6 +313,10 @@ export function inversionPublicidad(e: EstadoApp, m: RangoMes): number {
 
 export interface PyL {
   revenue: number;
+  /* Lo que entró en el período (los pagos), lo que se devolvió y el Cash
+     Collected, que es lo primero menos lo segundo. */
+  cobrado: number;
+  devoluciones: number;
   cashCollected: number;
   tasaCobro: number;
   /* Costos directos */
@@ -306,7 +349,13 @@ export interface PyL {
 
 export function calcularPyL(e: EstadoApp, m: RangoMes): PyL {
   const rev = revenue(e, m);
-  const cc = cashCollected(e, m);
+  const entro = cobrado(e, m);
+  /* Una devolución resta en el mes en que se devuelve la plata, en las dos
+     columnas: la venta sigue contando en su mes (Revenue y ventas no
+     cambian), pero lo devuelto ya no es ganancia ni cash. La comisión de la
+     pasarela no se toca: los fees siguen siendo los de los cobros. */
+  const dev = totalDevuelto(e, m);
+  const cc = entro - dev;
   const fees = feesProcesador(e, m);
 
   const cs = comisionesDelMes(e, m);
@@ -316,7 +365,7 @@ export function calcularPyL(e: EstadoApp, m: RangoMes): PyL {
   const totalDirectos = closers + director + fees + otrosDirectos;
 
   const brutoCC = cc - totalDirectos;
-  const brutoRev = rev - totalDirectos;
+  const brutoRev = rev - dev - totalDirectos;
 
   const gastosOperativos = totalGastos(e, m, "operativo");
   const inversionAds = inversionPublicidad(e, m);
@@ -339,7 +388,7 @@ export function calcularPyL(e: EstadoApp, m: RangoMes): PyL {
   const baseReparto = Math.max(operativoCC, 0);
 
   return {
-    revenue: rev, cashCollected: cc, tasaCobro: rev > 0 ? (cc / rev) * 100 : 0,
+    revenue: rev, cobrado: entro, devoluciones: dev, cashCollected: cc, tasaCobro: rev > 0 ? (cc / rev) * 100 : 0,
     comisionCloser: closers, comisionDirector: director, feesProcesador: fees,
     otrosDirectos, totalDirectos,
     brutoCC, brutoRev,

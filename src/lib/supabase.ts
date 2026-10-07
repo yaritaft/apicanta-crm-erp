@@ -36,6 +36,8 @@ export const TABLAS = [
   "arqueos",
   /* Los movimientos entre cuentas propias (Finanzas → Caja) */
   "traspasos",
+  /* La plata que se devolvió a clientes (supabase/devoluciones.sql) */
+  "devoluciones",
   /* Jerarquia de Meta. `ad_insights` es la unica cuyo nombre no coincide con
      su coleccion (`adInsights`): Postgres va en snake_case y la app en
      camelCase, asi que store.ts la mapea a mano. */
@@ -75,6 +77,9 @@ export const TABLAS_OPCIONALES = new Set<string>([
   /* Los movimientos entre cuentas: hasta que corra supabase/traspasos.sql,
      quedan en este navegador y la sincronización no guarda los que detecta. */
   "traspasos",
+  /* Las devoluciones: hasta que corra supabase/devoluciones.sql no hay dónde
+     guardarlas (la app lo avisa al cargar una). */
+  "devoluciones",
   /* Las cuatro de Meta entran como opcionales hasta que el ALTER este corrido
      en todas las bases. Mientras tanto la app sigue con esas colecciones
      vacias en vez de caerse entera. */

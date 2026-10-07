@@ -5,6 +5,7 @@ import type {
 } from "./types";
 import type { RangoMes } from "./metricas";
 import { calcularPyL, closerDeCuota, cobraEnFecha, pagosDelMes, parteMarketing, tasaDeComision, ventasDelMes } from "./finanzas";
+import { esPeriodo, moverPeriodo, nombrePeriodo, periodoDe, rangoDePeriodo } from "./periodos";
 import { aMonedaBase, categoriaDe, normalizar } from "./gastos";
 import { fechaLarga, money, num, pct } from "./format";
 import {
@@ -78,35 +79,10 @@ export function categoriaPorDefecto(m: Pick<MiembroEquipo, "rol" | "puesto">): s
   return "Equipo / Salarios";
 }
 
-/* ---------- Períodos: un mes, "2026-09" ---------- */
+/* ---------- Períodos: un mes, "2026-09" ----------
+   Viven en lib/periodos.ts; se reexportan para quien los importaba de acá. */
 
-const MESES = [
-  "enero", "febrero", "marzo", "abril", "mayo", "junio",
-  "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre",
-];
-
-export const esPeriodo = (p: string | null | undefined): p is string => Boolean(p && /^\d{4}-(0[1-9]|1[0-2])$/.test(p));
-
-export function periodoDe(d: Date): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-}
-
-export function moverPeriodo(p: string, n: number): string {
-  const [a, m] = p.split("-").map(Number);
-  return periodoDe(new Date(a, m - 1 + n, 1));
-}
-
-export function nombrePeriodo(p: string): string {
-  const [a, m] = p.split("-").map(Number);
-  return `${MESES[m - 1]} ${a}`;
-}
-
-/* Del primero a las 00:00 al último a las 23:59:59, en la hora de acá:
-   el mismo borde que usa Finanzas para "Este mes". */
-export function rangoDePeriodo(p: string): RangoMes {
-  const [a, m] = p.split("-").map(Number);
-  return { clave: p, etiqueta: nombrePeriodo(p), desde: new Date(a, m - 1, 1), hasta: new Date(a, m, 0, 23, 59, 59) };
-}
+export { esPeriodo, moverPeriodo, nombrePeriodo, periodoDe, rangoDePeriodo };
 
 export const idLiquidacion = (periodo: string) => `liq_${periodo}`;
 export const idEsquema = (miembroId: ID) => `hon_${miembroId}`;

@@ -1,6 +1,6 @@
 import { fechaLarga, pct, tasaTexto } from "./format";
 import {
-  comisionesDelDirector, comisionesPorCloser, feesPorProcesador, gastosPorCategoriaDetalle,
+  comisionesDelDirector, comisionesPorCloser, devolucionesDelMes, feesPorProcesador, gastosPorCategoriaDetalle,
   ingresosPorCliente, type IngresoCliente, type PyL,
 } from "./finanzas";
 import type { RangoMes } from "./metricas";
@@ -82,7 +82,7 @@ export function armarEstadoResultados(
       .filter(Boolean).join(" · ");
 
   const ingresos: NodoPyL = {
-    id: "ingresos", titulo: "Ingresos", cc: p.cashCollected, rev: p.revenue,
+    id: "ingresos", titulo: "Ingresos", cc: p.cobrado, rev: p.revenue,
     vacio: "No entró ningún pago ni se cerró ninguna venta en este período.",
     hijos: ingresosPorCliente(e, mes).map((c) => ({
       id: `ingresos/${c.clave}`, titulo: c.nombre, sub: subCliente(c),
@@ -105,7 +105,30 @@ export function armarEstadoResultados(
         })),
       ],
     })),
-    notas: ["Lo cobrado son los pagos que entraron en el período; lo facturado, el precio de las ventas cerradas en el período."],
+    notas: [
+      "Lo cobrado son los pagos que entraron en el período; lo facturado, el precio de las ventas cerradas en el período."
+      + (p.devoluciones > 0 ? " Lo que se devolvió se resta en el renglón de abajo." : ""),
+    ],
+  };
+
+  /* ---------- Devoluciones: lo que se devolvió a clientes en el período ---------- */
+  const devs = devolucionesDelMes(e, mes).sort((a, b) => +new Date(b.fecha) - +new Date(a.fecha));
+  const devolucion = (id?: string) => (id ? (e.devoluciones ?? []).find((d) => d.id === id) : undefined);
+  const devoluciones: NodoPyL | null = devs.length === 0 ? null : {
+    id: "devoluciones", titulo: "Devoluciones", sub: "Plata devuelta a clientes",
+    cc: -p.devoluciones, rev: -p.devoluciones,
+    hijos: devs.map((d): NodoPyL => ({
+      id: `devoluciones/d:${d.id}`,
+      titulo: ventaDe(d.ventaId)?.contactoNombre ?? "Venta sin identificar",
+      sub: [
+        `devuelta el ${fechaLarga(d.fecha)}`, medio(d.procesadorId), producto(ventaDe(d.ventaId)?.productoId),
+        d.noDescontarAlCloser ? "sin descontar al closer" : "", d.referencia ? "la confirma la pasarela" : "",
+      ].filter(Boolean).join(" · "),
+      cc: -d.monto, rev: -d.monto, href: hrefVenta(d.ventaId),
+    })),
+    notas: [
+      "Resta en el mes en que se devolvió la plata, en las dos columnas. La venta sigue contando en su mes y la comisión de la pasarela no se devuelve.",
+    ],
   };
 
   /* ---------- Comisiones de closers: por persona y dentro por venta ---------- */
@@ -122,8 +145,10 @@ export function armarEstadoResultados(
       cc: -g.total, rev: -g.total,
       hijos: g.ventas.map((c): NodoPyL => ({
         id: `closers/${g.clave}/v:${c.id}`,
-        titulo: ventaDe(c.ventaId)?.contactoNombre ?? "Venta",
-        sub: c.sinComision
+        titulo: c.devolucionId ? `Devolución de ${ventaDe(c.ventaId)?.contactoNombre ?? "una venta"}` : ventaDe(c.ventaId)?.contactoNombre ?? "Venta",
+        sub: c.devolucionId
+          ? `Se revierte lo que se le comisionó (${tasaTexto(c.tasaCloser)} de ${M(-c.netoProcesador, 2)} neto de procesador, la parte devuelta el ${fechaLarga(devolucion(c.devolucionId)?.fecha)})${servicioDe(c.productoId)}`
+          : c.sinComision
           ? `${M(c.cobradoEnMes, 2)} cobrado · sin comisión`
           : `${tasaTexto(c.tasaCloser)} de ${M(c.netoProcesador, 2)} neto de procesador (${M(c.cobradoEnMes, 2)} cobrado)${servicioDe(c.productoId)}${c.heredadaDe ? ` · cuotas heredadas de ${c.heredadaDe}` : ""}`,
         cc: -c.comisionCloser, rev: -c.comisionCloser, href: hrefVenta(c.ventaId),
@@ -140,8 +165,10 @@ export function armarEstadoResultados(
       const d = e.equipo.find((x) => x.id === c.directorId);
       return {
         id: `director/v:${c.id}`,
-        titulo: ventaDe(c.ventaId)?.contactoNombre ?? "Venta",
-        sub: `${d?.nombre ?? "Director"} · ${tasaTexto(c.tasaDirector)} de ${M(c.netoProcesador, 2)} neto de procesador${servicioDe(c.productoId)}`,
+        titulo: c.devolucionId ? `Devolución de ${ventaDe(c.ventaId)?.contactoNombre ?? "una venta"}` : ventaDe(c.ventaId)?.contactoNombre ?? "Venta",
+        sub: c.devolucionId
+          ? `${d?.nombre ?? "Director"} · se revierte lo que se le comisionó (${tasaTexto(c.tasaDirector)} de lo cobrado neto de procesador, la parte devuelta el ${fechaLarga(devolucion(c.devolucionId)?.fecha)})${servicioDe(c.productoId)}`
+          : `${d?.nombre ?? "Director"} · ${tasaTexto(c.tasaDirector)} de ${M(c.netoProcesador, 2)} neto de procesador${servicioDe(c.productoId)}`,
         cc: -c.comisionDirector, rev: -c.comisionDirector, href: hrefVenta(c.ventaId),
       };
     }),
@@ -205,7 +232,8 @@ export function armarEstadoResultados(
   const bruta: NodoPyL = {
     id: "bruta", titulo: "Utilidad bruta", cc: p.brutoCC, rev: p.brutoRev, estilo: "resultado",
     hijos: [
-      { id: "bruta/ingresos", titulo: "Ingresos", cc: p.cashCollected, rev: p.revenue },
+      { id: "bruta/ingresos", titulo: "Ingresos", cc: p.cobrado, rev: p.revenue },
+      ...(devoluciones ? [{ id: "bruta/devoluciones", titulo: "Devoluciones", cc: -p.devoluciones, rev: -p.devoluciones }] : []),
       { id: "bruta/directos", titulo: "Costos directos", sub: "Closers, director, procesadores y otros", cc: -p.totalDirectos, rev: -p.totalDirectos },
     ],
     notas: [`Margen bruto: ${margen(p.brutoCC, p.cashCollected)} sobre lo cobrado · ${margen(p.brutoRev, p.revenue)} sobre lo facturado.`],
@@ -240,6 +268,7 @@ export function armarEstadoResultados(
 
   return [
     ingresos,
+    ...(devoluciones ? [devoluciones] : []),
     { bloque: "Costos directos", id: "b-directos" },
     closers, director, procesadores, otrosDirectos,
     bruta,
@@ -291,17 +320,22 @@ export function ayudaDeRenglon(id: string, p: PyL, M: FmtMonto): AyudaRenglon | 
   switch (id) {
     case "ingresos": return {
       ayuda: "Lo que entró a la cuenta y lo que se vendió en el período: son las dos columnas del estado de resultados.",
-      formula: "Sobre lo cobrado: suma de los pagos que entraron en el período, sin importar cuándo se hizo la venta.\nSobre lo facturado: suma del precio de las ventas cerradas en el período, sin las canceladas, se hayan cobrado o no.",
+      formula: "Sobre lo cobrado: suma de los pagos que entraron en el período, sin importar cuándo se hizo la venta.\nSobre lo facturado: suma del precio de las ventas cerradas en el período, sin las canceladas, se hayan cobrado o no.\nLo que se devolvió no se resta acá: va en su propio renglón, justo abajo.",
       ejemplo: "Si vendiste US$ 16.000 y de eso (más cuotas de meses anteriores) entraron US$ 10.000, Ingresos muestra US$ 10.000 cobrado y US$ 16.000 facturado.",
+    };
+    case "devoluciones": return {
+      ayuda: "La plata que se le devolvió a clientes en el período. Resta en el mes en que se devuelve la plata, no en el de la venta.",
+      formula: "Suma de las devoluciones con fecha del período. Resta en las dos columnas: de lo cobrado (así el Cash Collected queda sin lo devuelto) y de lo facturado.\nLa venta sigue contando en su mes, y la comisión de la pasarela no se devuelve: sigue en «Procesadores de pago».\nA los closers y al director se les revierte lo que se les había comisionado (menos si la devolución dice «no descontar al closer»): sale como una línea en negativo en sus comisiones.",
+      ejemplo: "Una venta de septiembre se devuelve el 3 de octubre: septiembre queda como estaba; octubre muestra la devolución restando del Cash Collected, y la comisión que se le había pagado al closer vuelve como una línea en negativo.",
     };
     case "closers": return {
       ayuda: "Lo que se les debe a los closers por lo que se cobró en el período.",
-      formula: "Por cada venta con cobros en el período: (lo cobrado − lo que se quedó el procesador) × % del closer en ese servicio.\nSi la cerró alguien que no comisiona (Yari), nadie comisiona.",
+      formula: "Por cada venta con cobros en el período: (lo cobrado − lo que se quedó el procesador) × % del closer en ese servicio.\nSi la cerró alguien que no comisiona (Yari), nadie comisiona.\nSi en el período se devolvió plata de una venta, se resta lo que se le había comisionado por lo devuelto (una línea en negativo), salvo que la devolución diga «no descontar al closer».",
       ejemplo: "Un closer cobró US$ 2.000 de un cliente y el procesador se quedó US$ 100: comisiona sobre US$ 1.900. Con un 10%, son US$ 190.",
     };
     case "director": return {
       ayuda: "Lo que se le debe al director por lo que se cobró en el período.",
-      formula: "Por cada venta con cobros en el período: (lo cobrado − lo que se quedó el procesador) × % del director en ese servicio.",
+      formula: "Por cada venta con cobros en el período: (lo cobrado − lo que se quedó el procesador) × % del director en ese servicio.\nUna devolución le resta lo que se le había comisionado por lo devuelto (una línea en negativo), salvo que diga «no descontar al closer».",
     };
     case "procesadores": return {
       ayuda: "Lo que se quedaron Stripe, Hotmart y compañía de los pagos del período.",
@@ -313,11 +347,19 @@ export function ayudaDeRenglon(id: string, p: PyL, M: FmtMonto): AyudaRenglon | 
     };
     case "bruta": return {
       ayuda: "Lo que queda de los ingresos después de los costos directos de vender.",
-      formula: "Ingresos − Comisiones de closers − Comisión del director − Procesadores de pago − Otros costos directos",
+      formula: "Ingresos − Devoluciones − Comisiones de closers − Comisión del director − Procesadores de pago − Otros costos directos",
       ejemplo: "Cobraste US$ 10.000 y los costos directos fueron US$ 2.000: la utilidad bruta es US$ 8.000.",
       secciones: [
-        { titulo: "Sobre lo cobrado", filas: [f("Cash Collected (CC)", p.cashCollected), ...costos(), f("Utilidad bruta", p.brutoCC, "=")] },
-        { titulo: "Sobre lo facturado", filas: [f("Revenue", p.revenue), ...costos(), f("Utilidad bruta", p.brutoRev, "=")] },
+        {
+          titulo: "Sobre lo cobrado",
+          filas: p.devoluciones
+            ? [f("Cobrado en el período", p.cobrado), f("Devoluciones", p.devoluciones, "−", "Cash Collected (CC) = cobrado − devoluciones"), ...costos(), f("Utilidad bruta", p.brutoCC, "=")]
+            : [f("Cash Collected (CC)", p.cashCollected), ...costos(), f("Utilidad bruta", p.brutoCC, "=")],
+        },
+        {
+          titulo: "Sobre lo facturado",
+          filas: [f("Revenue", p.revenue), ...(p.devoluciones ? [f("Devoluciones", p.devoluciones, "−")] : []), ...costos(), f("Utilidad bruta", p.brutoRev, "=")],
+        },
       ],
     };
     case "operativos": return {

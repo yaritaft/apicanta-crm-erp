@@ -829,6 +829,7 @@ export function construirSemilla(): EstadoApp {
     comentarios: [],
     arqueos: [],
     traspasos: [],
+    devoluciones: [],
     honorarios: [], liquidaciones: [],
   };
 }
@@ -1024,7 +1025,7 @@ export function estadoVacio(): EstadoApp {
     contactos: [], campanias: [], campaigns: [], adsets: [], ads: [], adInsights: [],
     metas: [], campos: [],
     productos: PRODUCTOS, procesadores: PROCESADORES, embudos: EMBUDOS, equipo: EQUIPO,
-    ventas: [], cuotas: [], pagos: [], gastos: [], movimientos: [], comentarios: [], arqueos: [], traspasos: [],
+    ventas: [], cuotas: [], pagos: [], gastos: [], movimientos: [], comentarios: [], arqueos: [], traspasos: [], devoluciones: [],
     honorarios: [], liquidaciones: [],
     actividad: [{
       id: "act_1", entidad: "config", entidadId: "reset", titulo: "Espacio vacío",

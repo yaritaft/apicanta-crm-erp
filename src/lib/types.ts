@@ -631,6 +631,8 @@ export interface EstadoApp {
   arqueos: Arqueo[];
   /* Los movimientos entre cuentas propias (lib/traspasos.ts). */
   traspasos: Traspaso[];
+  /* La plata que se devolvió a clientes (lib/devoluciones.ts). */
+  devoluciones: Devolucion[];
 }
 
 /* ==================================================================
@@ -974,6 +976,61 @@ export interface Pago {
   feeManual?: boolean;
 }
 
+/* ==================================================================
+   Devolución: plata que se le devolvió a un cliente.
+
+   Es una transacción aparte de la venta y de sus cobros (Yari y Juan Cruz,
+   02/10): la venta sigue contando en su mes, lo cobrado sigue en el mes en
+   que entró, y la devolución resta en el mes en que se devuelve la plata:
+   en el Cash Collected, en el estado de resultados y en la caja de la
+   cuenta de la que salió. La comisión de la pasarela no se toca (Stripe
+   se la queda aunque se devuelva). Al closer y al director se les revierte
+   exactamente lo que se les había comisionado, como una línea negativa de
+   la liquidación del mes de la devolución (lib/devoluciones.ts).
+   ================================================================== */
+
+/* "confirmada": cuenta en Finanzas. "propuesta": la informó una pasarela y
+   todavía nadie la confirmó (no cuenta). "ignorada": alguien dijo que no es
+   una devolución. */
+export type EstadoDevolucion = "confirmada" | "propuesta" | "ignorada";
+
+export interface Devolucion {
+  id: ID;
+  /* La venta que se devuelve. Sólo una propuesta de la pasarela puede no
+     saber todavía de qué venta es. */
+  ventaId?: ID;
+  /* Lo devuelto, en la moneda base (la de los cobros). */
+  monto: number;
+  moneda: Moneda;
+  /* El día que se devolvió la plata: ahí resta Finanzas. */
+  fecha: string;
+  /* Por qué cuenta salió la plata: el mismo medio con el que se pagó (tarjeta
+     con tarjeta, cripto con una transferencia cripto). */
+  procesadorId?: ID;
+  /* Si salió de una cuenta en pesos: lo que fue en ARS y a qué cambio. */
+  montoArs?: number;
+  tipoCambio?: number;
+  /* La prueba de que la plata salió. Obligatoria, salvo que la pasarela la
+     informe (`referencia`). */
+  comprobante?: Comprobante;
+  /* «No descontar al closer»: se devuelve por decisión de la empresa (el
+     perfil no encajaba) y el closer cobra igual. Por defecto se descuenta. */
+  noDescontarAlCloser: boolean;
+  estado: EstadoDevolucion;
+  motivo?: string;
+  notas?: string;
+  /* La llamada que quedó en «Devolución». */
+  sesionId?: ID;
+  /* Lo que informa la pasarela ("stripe:re_3Q…"): con esto está atada a lo que
+     vio la pasarela y la misma no entra dos veces. */
+  referencia?: string;
+  proveedor?: ProveedorPasarela;
+  conciliadaEn?: string;
+  cargadaPor?: string;
+  creadoEn: string;
+  extra: Record<string, unknown>;
+}
+
 /* "retiro": plata que el dueño saca de la caja (el retiro de fin de año).
    No es un gasto del negocio: no resta del profit, sí de la caja. */
 export type GrupoGasto = "directo" | "operativo" | "dueno" | "retiro";
@@ -985,7 +1042,13 @@ export interface Gasto {
   concepto: string;
   monto: number;
   moneda: Moneda;
+  /* El mes al que corresponde el gasto (el devengo): ahí cae en el estado de
+     resultados. Un gasto de septiembre que se paga el 2 de octubre va a
+     septiembre. */
   fecha: string;
+  /* El día que se pagó (la caja y el arqueo). Sin esto, es el mismo `fecha`:
+     así están todos los gastos que ya había. */
+  fechaPago?: string;
   webinarId?: ID;
   recurrente: boolean;
   proveedor?: string;
@@ -1173,11 +1236,16 @@ export interface DesgloseLinea {
 }
 
 export interface LineaLiquidada {
-  /* conceptoId, o `extra:<id>` */
+  /* conceptoId, `extra:<id>`, `devolucion:<id>:<rol>` o `arrastre:<mes>:<moneda>` */
   clave: string;
   conceptoId?: ID;
   extraId?: ID;
-  tipo: TipoConcepto | "extra";
+  /* La devolución que revierte esta comisión («Devolución de …», en rojo). */
+  devolucionId?: ID;
+  /* «devolucion»: lo que se le comisionó y se revierte. «arrastre»: lo que
+     queda debiendo (en el mes que lo genera pasa al siguiente; en el que
+     sigue se descuenta). */
+  tipo: TipoConcepto | "extra" | "devolucion" | "arrastre";
   nombre: string;
   /* Cómo se llegó al monto, dicho en castellano. */
   detalle: string;
@@ -1216,6 +1284,10 @@ export interface PersonaLiquidada {
   lineas: LineaLiquidada[];
   /* Lo que se le transfiere en cada moneda. */
   aPagar: Partial<Record<Moneda, number>>;
+  /* Lo que el mes dejó en negativo (una devolución que se descontó de más):
+     no se le paga nada y queda debiendo esto, que se descuenta del mes
+     siguiente. Sólo si hay. */
+  deuda?: Partial<Record<Moneda, number>>;
   /* Todo junto en la moneda base: el total, y cuánto es fijo y cuánto variable. */
   total: number;
   fijo: number;

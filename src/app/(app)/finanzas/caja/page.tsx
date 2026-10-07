@@ -95,12 +95,13 @@ export default function Caja() {
               contexto={`Último arqueo: ${M(ultimo.total)} el ${fechaLarga(ultimo.fecha)}${mov && mov.enCamino > 0 ? ` · ${M(mov.enCamino)} están en camino entre cuentas` : ""}`}
               info={{
                 ayuda: "Cuánta plata tendría que haber hoy entre todas las cuentas, partiendo de lo que se contó en el último arqueo. Si al contar no da, falta cargar un gasto, una venta o un cobro.",
-                formula: "Caja del último arqueo + lo que estaba en camino entre cuentas + Cash Collected (CC) − procesadores − comisiones − gastos − reparto (growth partner y socio) − retiros del dueño",
+                formula: "Caja del último arqueo + lo que estaba en camino entre cuentas + lo cobrado − las devoluciones − procesadores − comisiones − gastos − reparto (growth partner y socio) − retiros del dueño\nLo cobrado menos las devoluciones es el Cash Collected (CC) del período.",
                 periodo: `desde el arqueo del ${fechaLarga(ultimo.fecha)}`,
                 componentes: mov ? () => [
                   { concepto: "Caja del último arqueo", valor: M(mov.inicial, 2) },
                   { concepto: "Estaba en camino al contarlo", valor: M(mov.enCaminoAntes, 2), signo: "+" },
-                  { concepto: "Cash Collected (CC)", valor: M(mov.cobrado, 2), signo: "+" },
+                  { concepto: "Cobrado (lo que entró por las cuentas)", valor: M(mov.cobrado, 2), signo: "+" },
+                  ...(mov.devoluciones ? [{ concepto: "Devoluciones a clientes", valor: M(mov.devoluciones, 2), signo: "−" as const, nota: "la comisión de la pasarela no vuelve" }] : []),
                   { concepto: "Procesadores de pago", valor: M(mov.procesador, 2), signo: "−" },
                   { concepto: "Comisiones de closers y director", valor: M(mov.comisiones, 2), signo: "−" },
                   { concepto: "Gastos (directos, operativos y honorarios)", valor: M(mov.gastos, 2), signo: "−" },
@@ -239,6 +240,7 @@ function Movimiento({ mov, M }: { mov: MovimientoCaja; M: (n: number, d?: number
     ["Caja del último arqueo", mov.inicial],
     ...(mov.enCaminoAntes ? [["+ Estaba en camino al contar", mov.enCaminoAntes, "Había salido de una cuenta y no había llegado a la otra"] as [string, number, string]] : []),
     ["+ Cobrado", mov.cobrado, "Todo lo que entró por las cuentas"],
+    ...(mov.devoluciones ? [["− Devoluciones a clientes", -mov.devoluciones, "La plata devuelta; la comisión de la pasarela no vuelve"] as [string, number, string]] : []),
     ["− Procesadores", -mov.procesador],
     ["− Comisiones de closers y director", -mov.comisiones, "Se pagan a mes vencido"],
     ["− Gastos cargados", -mov.gastos, "Directos, operativos y honorarios del CEO"],
@@ -345,7 +347,7 @@ function NuevoArqueo({ e, onCerrar, onListo }: { e: EstadoApp; onCerrar: () => v
           <span role="cell" data-titulo="Último arqueo" className="t-num t-muted">{s?.anterior !== undefined ? money(s.anterior, moneda) : "—"}</span>
           <span role="cell" data-titulo="Cobró" className="t-num t-muted" title="Lo cobrado por esta cuenta desde el último arqueo, neto de su comisión">{s?.entro ? enSuMoneda(s.entro, true) : "—"}</span>
           <span role="cell" data-titulo="Pases" className="t-num t-muted" title="Lo que recibió de otras cuentas menos lo que les mandó">{s?.pases ? enSuMoneda(s.pases, true) : "—"}</span>
-          <span role="cell" data-titulo="Tendría que haber" className="t-num" title={s?.salio ? `Ya descuenta ${money(s.salio, moneda)} de retiros que salieron de esta cuenta` : undefined}>
+          <span role="cell" data-titulo="Tendría que haber" className="t-num" title={s?.salio ? `Ya descuenta ${money(s.salio, moneda)} de retiros y devoluciones que salieron de esta cuenta` : undefined}>
             {s?.esperado !== undefined ? money(s.esperado, moneda) : "—"}
           </span>
           <span
@@ -403,7 +405,7 @@ function NuevoArqueo({ e, onCerrar, onListo }: { e: EstadoApp; onCerrar: () => v
       {previo && (
         <p className="t-sm t-subtle arqueo-nota">
           «Tendría que haber» es lo del último arqueo más lo que cobró la cuenta, más o menos los movimientos entre cuentas
-          {hayPases ? "" : " (todavía no hay ninguno cargado desde entonces)"} y menos los retiros que dicen de qué cuenta salieron.
+          {hayPases ? "" : " (todavía no hay ninguno cargado desde entonces)"} y menos los retiros y las devoluciones, que dicen de qué cuenta salieron.
           No descuenta los gastos ni los sueldos, porque la app no sabe de qué cuenta se pagó cada uno: en la cuenta desde la que
           pagás va a faltar eso. El control que tiene que dar es el del total.
         </p>
