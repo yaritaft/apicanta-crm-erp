@@ -367,6 +367,8 @@ export interface PersonaDeWebinar {
   llamada?: Sesion;
   ventas: Venta[];
   facturado: number;
+  /* El Cash Collected de sus ventas: lo cobrado menos lo que se les devolvió, como en
+     metricasDeWebinar (y lo que suma el informe del webinar). */
   cobrado: number;
 }
 
@@ -468,6 +470,11 @@ export function personasDeWebinar(e: EstadoApp, webinarId: string): PersonaDeWeb
   const cuotasPorVenta = agrupar(e.cuotas, (c) => c.ventaId);
   const cobradoPorCuota = new Map<string, number>();
   for (const pg of e.pagos) cobradoPorCuota.set(pg.cuotaId, (cobradoPorCuota.get(pg.cuotaId) ?? 0) + pg.monto);
+  /* Lo devuelto de cada venta (sólo las confirmadas): resta de lo cobrado, igual que en metricasDeWebinar. */
+  const devueltoPorVenta = new Map<string, number>();
+  for (const d of devolucionesDe(e)) {
+    if (d.ventaId && esDevolucionConfirmada(d)) devueltoPorVenta.set(d.ventaId, (devueltoPorVenta.get(d.ventaId) ?? 0) + d.monto);
+  }
 
   const ahora = Date.now();
   for (const p of personas.values()) {
@@ -487,7 +494,7 @@ export function personasDeWebinar(e: EstadoApp, webinarId: string): PersonaDeWeb
     for (const v of p.ventas) {
       if (v.estado === "cancelada") continue;
       p.facturado += v.precioAcordado;
-      p.cobrado += (cuotasPorVenta.get(v.id) ?? []).reduce((a, c) => a + (cobradoPorCuota.get(c.id) ?? 0), 0);
+      p.cobrado += (cuotasPorVenta.get(v.id) ?? []).reduce((a, c) => a + (cobradoPorCuota.get(c.id) ?? 0), 0) - (devueltoPorVenta.get(v.id) ?? 0);
     }
   }
 

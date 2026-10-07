@@ -1,5 +1,6 @@
-import type { EstadoApp, Sesion, Webinar } from "./types";
+import type { Devolucion, EstadoApp, Sesion, Webinar } from "./types";
 import { claveDeFecha, resumirAgendas, type AgendaDelWebinar, type ViaLanzamiento } from "./agendas-webinar";
+import { devolucionesDe, esDevolucionConfirmada } from "./devoluciones";
 import { diaDeNegocio } from "./dia-negocio";
 import { diaDelWebinar, diaUtm, leerUtm } from "./utm-estandar";
 
@@ -16,6 +17,10 @@ import { diaDelWebinar, diaUtm, leerUtm } from "./utm-estandar";
    venta. La de quien no agendó por ningún link del lanzamiento (las de
    antes de que las agendas entraran solas, o las de alguien que llegó por
    otro lado) queda aparte, así la suma da las ventas del webinar.
+
+   Lo cobrado de cada venta es su Cash Collected, como en el resultado del
+   webinar (metricasDeWebinar): lo que entró menos lo que se le devolvió
+   (devoluciones confirmadas). Así la suma por vía da el cobrado del webinar.
 
    La ficha del webinar muestra la tabla de uno; el Dashboard suma la de
    los webinars de cada columna.
@@ -44,7 +49,10 @@ export interface NumerosVia {
   calificadas: number;
   ventas: number;
   facturado: number;
+  /* Cash Collected de esas ventas: lo cobrado menos lo devuelto. */
   cobrado: number;
+  /* Lo que se devolvió de esas ventas (ya restado de `cobrado`). */
+  devuelto: number;
 }
 
 export interface GrupoVia {
@@ -63,11 +71,47 @@ export interface RendimientoVias {
   hayAgendas: boolean;
 }
 
-export const cero = (): NumerosVia => ({ agendas: 0, canceladas: 0, calificadas: 0, ventas: 0, facturado: 0, cobrado: 0 });
+export const cero = (): NumerosVia => ({ agendas: 0, canceladas: 0, calificadas: 0, ventas: 0, facturado: 0, cobrado: 0, devuelto: 0 });
 
 function sumarA(a: NumerosVia, b: NumerosVia) {
   a.agendas += b.agendas; a.canceladas += b.canceladas; a.calificadas += b.calificadas;
-  a.ventas += b.ventas; a.facturado += b.facturado; a.cobrado += b.cobrado;
+  a.ventas += b.ventas; a.facturado += b.facturado; a.cobrado += b.cobrado; a.devuelto += b.devuelto;
+}
+
+/* ---------- La plata de cada venta ---------- */
+
+export interface PlataDeVenta {
+  /* Lo que entró de la venta menos lo que se devolvió: su Cash Collected. */
+  cobrado: number;
+  /* Lo que se devolvió (devoluciones confirmadas). */
+  devuelto: number;
+}
+
+/** Lo cobrado de cada venta, ya sin lo que se le devolvió, y lo devuelto aparte. Es la cuenta de
+ *  metricasDeWebinar (cobros de las cuotas de la venta menos sus devoluciones confirmadas, de
+ *  cualquier fecha) hecha venta por venta: sumando las de un webinar da su `cobrado`. Con `ids`,
+ *  sólo de esas ventas. Sin devoluciones, lo cobrado es exactamente la suma de sus cobros. */
+export function plataDeVentas(
+  e: Pick<EstadoApp, "cuotas" | "pagos"> & { devoluciones?: Devolucion[] }, ids?: ReadonlySet<string>,
+): Map<string, PlataDeVenta> {
+  const ventaDeCuota = new Map<string, string>();
+  for (const c of e.cuotas) if (!ids || ids.has(c.ventaId)) ventaDeCuota.set(c.id, c.ventaId);
+  const plata = new Map<string, PlataDeVenta>();
+  const de = (ventaId: string) => {
+    let x = plata.get(ventaId);
+    if (!x) { x = { cobrado: 0, devuelto: 0 }; plata.set(ventaId, x); }
+    return x;
+  };
+  for (const p of e.pagos) {
+    const v = ventaDeCuota.get(p.cuotaId);
+    if (v) de(v).cobrado += p.monto;
+  }
+  for (const d of devolucionesDe(e)) {
+    if (!d.ventaId || !esDevolucionConfirmada(d) || (ids && !ids.has(d.ventaId))) continue;
+    de(d.ventaId).devuelto += d.monto;
+  }
+  for (const x of plata.values()) if (x.devuelto !== 0) x.cobrado -= x.devuelto;
+  return plata;
 }
 
 /* ---------- Las agendas de cada webinar ---------- */
@@ -169,16 +213,11 @@ function deUnWebinar(e: EstadoApp, w: Webinar): RendimientoVias {
     if (a.contactoId) porPersona.set(a.contactoId, [...(porPersona.get(a.contactoId) ?? []), a]);
   }
 
-  /* Las ventas, como las cuenta el resultado del webinar (metricasDeWebinar). */
+  /* Las ventas, como las cuenta el resultado del webinar (metricasDeWebinar): lo cobrado de cada
+     una, sin lo que se le devolvió. */
   const ventas = e.ventas.filter((v) => v.webinarId === w.id && v.estado !== "cancelada");
   const ids = new Set(ventas.map((v) => v.id));
-  const ventaDeCuota = new Map<string, string>();
-  for (const c of e.cuotas) if (ids.has(c.ventaId)) ventaDeCuota.set(c.id, c.ventaId);
-  const cobradoPorVenta = new Map<string, number>();
-  for (const p of e.pagos) {
-    const v = ventaDeCuota.get(p.cuotaId);
-    if (v) cobradoPorVenta.set(v, (cobradoPorVenta.get(v) ?? 0) + p.monto);
-  }
+  const plata = plataDeVentas(e, ids);
   /* La venta apunta a la oportunidad (lead) o al contacto; las agendas, al contacto. */
   const contactoDeLead = new Map(e.leads.map((l) => [l.id, l.contactoId]));
   const sinAgenda = cero();
@@ -193,9 +232,11 @@ function deUnWebinar(e: EstadoApp, w: Webinar): RendimientoVias {
     const agenda = ultima(suyas.filter((a) => !a.cancelada)) ?? ultima(suyas);
     const vl = agenda ? viaYLink(agenda) : undefined;
     const n = vl ? de(vl.via, vl.link) : sinAgenda;
+    const dinero = plata.get(v.id);
     n.ventas++;
     n.facturado += v.precioAcordado;
-    n.cobrado += cobradoPorVenta.get(v.id) ?? 0;
+    n.cobrado += dinero?.cobrado ?? 0;
+    n.devuelto += dinero?.devuelto ?? 0;
   }
 
   const r = armar(numeros, sinAgenda, agendas.length > 0);
