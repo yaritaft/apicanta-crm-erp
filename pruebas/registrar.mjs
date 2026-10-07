@@ -13,6 +13,9 @@ const EXTENSIONES = [".ts", ".tsx", "/index.ts", "/index.tsx"];
 
 registerHooks({
   resolve(especificador, contexto, siguiente) {
+    /* Las rutas de /api importan «next/server» sin la extensión: el empaquetador
+       de Next lo entiende y el ESM de node no. */
+    if (especificador === "next/server") return siguiente("next/server.js", contexto);
     let ruta = null;
     if (especificador.startsWith("@/")) ruta = rutaDe(raiz, "src", especificador.slice(2));
     else if ((especificador.startsWith("./") || especificador.startsWith("../")) && contexto.parentURL?.startsWith("file:")) {
