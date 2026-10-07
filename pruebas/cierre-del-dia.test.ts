@@ -116,7 +116,10 @@ test("una llamada de venta pide cierre salvo que se haya cancelado, no haya veni
   const s = (c: Partial<Sesion>) => ({ estado: "hecha", inicia: dia(3, 15), ...c }) as Sesion;
   assert.equal(pideCierre(s({}), HOY), true);
   assert.equal(pideCierre(s({ estado: "cancelada" }), HOY), false);
-  assert.equal(pideCierre(s({ estado: "no-show" }), HOY), false);
+  assert.equal(pideCierre(s({ estado: "no-show" }), HOY), false, "lo avisó Calendly: se pone solo");
+  /* Si el closer la cargó (aunque sea «Dejó de Contestar», que también la deja como que no vino), cuenta: no se escapa de un strike marcándola tarde. */
+  assert.equal(pideCierre(s({ estado: "no-show", estadoLlamada: "Dejó de Contestar" }), HOY), true);
+  assert.equal(pideCierre(s({ estado: "cancelada", estadoLlamada: "Compra Full" }), HOY), false, "una cancelada no pide nada");
   assert.equal(pideCierre(s({ estadoPreCall: "Reagendar" }), HOY), false, "pidió otra fecha: la agenda nueva entra sola");
   assert.equal(pideCierre(s({ estadoPreCall: "Reagendar", estadoLlamada: "Seguimiento Nutrición" }), HOY), true, "si igual la cargó, cuenta");
   assert.equal(pideCierre(s({ resultado: "compro" }), HOY), false, "las del cierre de antes de que los estados fueran uno");
@@ -131,6 +134,9 @@ test("atrasoDe: cargada otro día es tarde; sin cargar con el día pasado, sin c
   assert.equal(atrasoDe({ estadoLlamada: "Compra Full" }, d, HOY), null, "cargada sin marca (de antes): no se puede juzgar");
   assert.equal(atrasoDe({}, d, HOY), "sin-cargar");
   assert.equal(atrasoDe({}, "2026-09-30", HOY), null, "hoy todavía no terminó");
+  /* Sin estado pero con la venta cargada (la cargó Administración, que no edita las llamadas): cuenta cuándo se cargó la venta. */
+  assert.equal(atrasoDe({}, d, HOY, dia(3, 23)), null, "la venta del mismo día");
+  assert.equal(atrasoDe({}, d, HOY, dia(5, 15)), "tarde", "la venta de dos días después");
 });
 
 /* ---------- Los strikes ---------- */
@@ -158,6 +164,36 @@ test("una llamada que pasó y no se cargó es un strike; las anteriores a la fec
   assert.deepEqual(m.dias, [{ dia: "2026-09-20", llamadas: 2, tarde: 0, sinCargar: 2 }]);
   assert.equal(queFalloEnElDia(m.dias[0]), "2 llamadas sin cargar");
   assert.equal(strikesDe(e, "Mariano Arias", "2026-10-01").total, 2, "pasado el 30, el día de hoy también quedó sin cargar");
+});
+
+test("marcar tarde una llamada como «Dejó de Contestar» no borra el strike: es un estado cargado otro día", () => {
+  const e = escenario({ cuentaDesde: "2026-09-01" }, (x) => ({
+    ...x, sesiones: [
+      ...x.sesiones,
+      /* La llamada del 20: el closer la marcó «Dejó de Contestar» (la agenda pasó a «no vino») recién el 21. */
+      llamada("cal_dc", "Mariano Arias", 20, { estado: "no-show", estadoLlamada: "Dejó de Contestar", estadoLlamadaEn: dia(21, 15) }),
+      /* La del 22 la marcó Calendly como que no vino y nadie cargó nada: no pide cierre. */
+      llamada("cal_cal", "Mariano Arias", 22, { estado: "no-show" }),
+    ],
+  }));
+  const m = strikesDe(e, "Mariano Arias", HOY);
+  assert.deepEqual(m.dias.map((d) => [d.dia, d.tarde, d.sinCargar]), [["2026-09-20", 1, 0], ["2026-09-03", 1, 0]]);
+});
+
+test("una llamada sin estado pero con su venta (la cargó alguien que no edita las llamadas) cuenta cuándo se cargó la venta, no «sin cargar»", () => {
+  const conVenta = (creadoEn: string) => escenario({ cuentaDesde: "2026-09-01" }, (x) => ({
+    ...x,
+    sesiones: [...x.sesiones, llamada("cal_adm", "Mariano Arias", 20)],
+    ventas: [...x.ventas, venta({ id: "v_adm", contactoNombre: "Cargada por Administración", precioAcordado: 900, fecha: dia(20), closerId: "mariano", sesionId: "cal_adm", creadoEn })],
+  }));
+  /* La venta se cargó el mismo día: el día se cerró a tiempo. */
+  assert.deepEqual(strikesDe(conVenta(dia(20, 22)), "Mariano Arias", HOY).dias.map((d) => d.dia), ["2026-09-03"]);
+  /* Dos días después: el 20 es un día con strike, cargado tarde. */
+  const tarde = strikesDe(conVenta(dia(22, 15)), "Mariano Arias", HOY);
+  assert.deepEqual(tarde.dias.map((d) => [d.dia, d.tarde, d.sinCargar]), [["2026-09-20", 1, 0], ["2026-09-03", 1, 0]]);
+  /* Y sin la venta, es una llamada sin cargar. */
+  const sinVenta = escenario({ cuentaDesde: "2026-09-01" }, (x) => ({ ...x, sesiones: [...x.sesiones, llamada("cal_adm", "Mariano Arias", 20)] }));
+  assert.deepEqual(strikesDe(sinVenta, "Mariano Arias", HOY).dias.map((d) => [d.dia, d.tarde, d.sinCargar]), [["2026-09-20", 0, 1], ["2026-09-03", 1, 0]]);
 });
 
 test("sin fecha de arranque todavía no se cuentan strikes, y cada closer cuenta los suyos", () => {

@@ -12,12 +12,15 @@ import { esReagendar } from "./estados";
    Finanzas, la liquidación y el resultado del webinar la lean de un solo
    lugar y no puedan decir cosas distintas.
 
-   - Una llamada de venta pide cierre si ya pasó su día y no se canceló, no
-     fue «no vino» ni pidió otra fecha (pideCierre).
+   - Una llamada de venta pide cierre si ya pasó su día y no se canceló; sin
+     estado cargado, tampoco si fue «no vino» (lo avisa Calendly) ni si pidió
+     otra fecha (pideCierre).
    - El día se cierra a tiempo si el Estado de Llamada de cada una de las
      llamadas del closer se cargó ese mismo día (la hora de Argentina).
      Cuenta la PRIMERA vez que se cargó, venga de donde venga (el cierre del
      día, la tabla del CRM, la Agenda, la ficha o una venta): `estadoLlamadaEn`.
+     Una llamada sin estado pero con su venta cargada (la cargó alguien que no
+     edita las llamadas) cuenta desde cuándo se cargó la venta.
    - Un **strike** es un día en que alguna llamada se cargó otro día o
      todavía no se cargó. Se cuentan desde la fecha de arranque que se elige
      en Ajustes → CRM, y se le muestran al closer en «Tu día» aunque el
@@ -65,21 +68,31 @@ export const hoyDeNegocio = (ahora: number = Date.now()) => diaDeNegocio(new Dat
 type DeLlamada = Pick<Sesion, "estado" | "estadoLlamada" | "estadoPreCall" | "resultado" | "inicia">;
 
 /** Si una llamada de venta tiene que quedar cargada ese día: ya empezó y no
- *  se canceló ni fue «no vino» (lo avisa Calendly y se pone solo) ni pidió
- *  otra fecha («Reagendar»). Las del cierre de antes de que los estados
- *  fueran uno solo (`resultado`) tampoco. */
+ *  se canceló. Sin estado cargado, tampoco pide cierre si fue «no vino» (lo
+ *  avisa Calendly y se pone solo) ni si pidió otra fecha («Reagendar»), ni las
+ *  del cierre de antes de que los estados fueran uno solo (`resultado`). Si el
+ *  closer la cargó (aunque sea «Dejó de Contestar», que también la deja como
+ *  que no vino), cuenta: lo que importa es cuándo la cargó. */
 export function pideCierre(s: DeLlamada, hoy: string): boolean {
-  if (s.estado === "cancelada" || s.estado === "no-show") return false;
-  if (!s.estadoLlamada && (esReagendar(s.estadoPreCall) || s.resultado)) return false;
+  if (s.estado === "cancelada") return false;
+  if (!s.estadoLlamada && (s.estado === "no-show" || esReagendar(s.estadoPreCall) || s.resultado)) return false;
   return diaDeNegocio(s.inicia) <= hoy;
 }
 
 /** Cómo quedó una llamada que pide cierre: se cargó otro día que el suyo
  *  («tarde»), todavía no se cargó y su día ya pasó («sin-cargar»), o está
  *  bien. Un estado cargado sin su marca de hora (los de antes de esto) no se
- *  puede juzgar: cuenta como a tiempo. */
-export function atrasoDe(s: Pick<Sesion, "estadoLlamada" | "estadoLlamadaEn">, diaDeLlamada: string, hoy: string): "tarde" | "sin-cargar" | null {
-  if (!s.estadoLlamada) return diaDeLlamada < hoy ? "sin-cargar" : null;
+ *  puede juzgar: cuenta como a tiempo.
+ *  Sin estado pero con la venta cargada (la cargó alguien que no edita las
+ *  llamadas, como Administración), la llamada figura como «Con cierre» en el
+ *  CRM: cuenta cuando se cargó la venta (`ventaEn`). */
+export function atrasoDe(
+  s: Pick<Sesion, "estadoLlamada" | "estadoLlamadaEn">, diaDeLlamada: string, hoy: string, ventaEn?: string,
+): "tarde" | "sin-cargar" | null {
+  if (!s.estadoLlamada) {
+    if (ventaEn) return diaDeNegocio(ventaEn) > diaDeLlamada ? "tarde" : null;
+    return diaDeLlamada < hoy ? "sin-cargar" : null;
+  }
   const cargada = s.estadoLlamadaEn ? diaDeNegocio(s.estadoLlamadaEn) : "";
   return cargada && cargada > diaDeLlamada ? "tarde" : null;
 }
@@ -109,7 +122,7 @@ export function queFalloEnElDia(d: Pick<DiaDeCierre, "tarde" | "sinCargar">): st
   return partes.join(" y ");
 }
 
-type Base = Pick<EstadoApp, "sesiones" | "equipo" | "ajustes">;
+type Base = Pick<EstadoApp, "sesiones" | "equipo" | "ajustes"> & Partial<Pick<EstadoApp, "ventas">>;
 
 interface Indice {
   /* Closer (su nombre en Equipo o, si no está, el del anfitrión) → día → cómo quedó. */
@@ -118,7 +131,7 @@ interface Indice {
   closerDe: (s: Pick<Sesion, "anfitrion">) => string;
 }
 
-const INDICES = new WeakMap<Sesion[], { equipo: unknown; crm: unknown; hoy: string; desde: string; indice: Indice }>();
+const INDICES = new WeakMap<Sesion[], { equipo: unknown; crm: unknown; ventas: unknown; hoy: string; desde: string; indice: Indice }>();
 
 /** El closer de una llamada, como lo nombra el cierre del día: el miembro de
  *  Equipo que es el anfitrión de Calendly o, si no está, el anfitrión. */
@@ -135,9 +148,16 @@ function claveDeCloser(equipo: EstadoApp["equipo"]): Indice["closerDe"] {
 
 function indiceDe(e: Base, hoy: string, desde: string): Indice {
   const guardado = INDICES.get(e.sesiones);
-  if (guardado && guardado.equipo === e.equipo && guardado.crm === e.ajustes.crm && guardado.hoy === hoy && guardado.desde === desde) return guardado.indice;
+  if (guardado && guardado.equipo === e.equipo && guardado.crm === e.ajustes.crm && guardado.ventas === e.ventas && guardado.hoy === hoy && guardado.desde === desde) return guardado.indice;
   const closerDe = claveDeCloser(e.equipo);
   const tablas = tablasDe(e.ajustes);
+  /* Cuándo se cargó la venta de cada llamada (la primera, si hay más de una). */
+  const ventaEn = new Map<string, string>();
+  for (const v of e.ventas ?? []) {
+    if (!v.sesionId || v.estado === "cancelada") continue;
+    const ya = ventaEn.get(v.sesionId);
+    if (!ya || v.creadoEn < ya) ventaEn.set(v.sesionId, v.creadoEn);
+  }
   const porCloser = new Map<string, Map<string, DiaDeCierre>>();
   for (const s of e.sesiones) {
     const d = diaDeNegocio(s.inicia);
@@ -150,12 +170,12 @@ function indiceDe(e: Base, hoy: string, desde: string): Indice {
     let x = dias.get(d);
     if (!x) { x = { dia: d, llamadas: 0, tarde: 0, sinCargar: 0 }; dias.set(d, x); }
     x.llamadas++;
-    const a = atrasoDe(s, d, hoy);
+    const a = atrasoDe(s, d, hoy, ventaEn.get(s.id));
     if (a === "tarde") x.tarde++;
     else if (a === "sin-cargar") x.sinCargar++;
   }
   const indice = { porCloser, closerDe };
-  INDICES.set(e.sesiones, { equipo: e.equipo, crm: e.ajustes.crm, hoy, desde, indice });
+  INDICES.set(e.sesiones, { equipo: e.equipo, crm: e.ajustes.crm, ventas: e.ventas, hoy, desde, indice });
   return indice;
 }
 
@@ -219,7 +239,7 @@ export const descuentaPorCierre = (sinCierre: ReadonlySet<ID>, v: Pick<Venta, "i
 
 /** Los días con strike de una venta (el de su llamada): para decir por qué
  *  no comisiona. undefined si no es de un día con strike. */
-export function diaSinCierreDe(e: Pick<EstadoApp, "sesiones" | "equipo" | "ajustes">, v: Pick<Venta, "sesionId">, hoy: string = hoyDeNegocio()): string | undefined {
+export function diaSinCierreDe(e: Base, v: Pick<Venta, "sesionId">, hoy: string = hoyDeNegocio()): string | undefined {
   const { cuentaDesde } = reglaDeCierre(e.ajustes);
   if (!cuentaDesde || !v.sesionId) return undefined;
   const s = e.sesiones.find((x) => x.id === v.sesionId);
