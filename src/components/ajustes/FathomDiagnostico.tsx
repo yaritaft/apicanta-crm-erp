@@ -98,7 +98,7 @@ function Resultado({ d, cuando }: { d: Diagnostico; cuando: string }) {
       <div className="wb-kpis" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", marginBottom: 0 }}>
         <Kpi etiqueta="Reuniones que ve la clave" valor={num(d.sinFiltrar)} sub="sin filtrar" />
         <Kpi etiqueta="Sólo al pedir por equipo" valor={num(d.soloPorEquipo)} sub={d.equipos.some((q) => q.deVentas) ? "Team Calls de ventas" : "no hay equipo de ventas"} />
-        <Kpi etiqueta="Atadas a una agenda" valor={num(d.atado.atadas)} sub={`${num(d.atado.nuevas)} nuevas, ${num(d.atado.yaExistian)} ya estaban`} />
+        <Kpi etiqueta="Atadas a una agenda" valor={num(d.atado.atadas)} sub={`${num(d.atado.nuevas)} ${d.atado.nuevas === 1 ? "nueva" : "nuevas"}, ${num(d.atado.yaExistian)} ya ${d.atado.yaExistian === 1 ? "estaba" : "estaban"}`} />
         <Kpi etiqueta="Sin agenda de Calendly" valor={num(d.atado.sinAgenda)} sub="con invitado de afuera" />
         <Kpi etiqueta="Personales o internas" valor={num(d.atado.personales)} sub="sin invitados de afuera" />
       </div>

@@ -287,8 +287,10 @@ export function diagnosticar(e: EntradaDiagnostico): Diagnostico {
 
 function veredictoDe(d: Diagnostico, e: EntradaDiagnostico, soloEnEquipos: Set<string>, porId: Map<string, ReunionDiag>): Veredicto {
   const pistas: string[] = [];
+  /* En hora de Argentina, como la ve el equipo (el servidor está en UTC). */
   const f = new Date(d.desde);
-  const desde = Number.isFinite(f.getTime()) ? `${f.getUTCDate()}/${f.getUTCMonth() + 1}` : "?";
+  const desde = Number.isFinite(f.getTime())
+    ? new Intl.DateTimeFormat("es-AR", { day: "numeric", month: "numeric", timeZone: "America/Argentina/Buenos_Aires" }).format(f) : "?";
   const conLlamadas = d.closers.filter((c) => c.llamadas > 0);
   const sinNada = conLlamadas.filter((c) => c.llamadas >= 2 && c.conGrabacion === 0 && c.grabadasPorEl === 0);
   const nombres = (cs: CloserDiag[]) => cs.map((c) => c.nombre).join(", ");
