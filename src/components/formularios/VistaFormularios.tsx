@@ -284,7 +284,7 @@ export function VistaFormularios() {
               }}
             />
             <StatCard
-              etiqueta="Unidos al grupo" valor={num(cuenta.unidos)} contexto={cuenta.total ? `${pct(cuenta.unidos / cuenta.total)} de los registrados` : undefined}
+              etiqueta="Unidos al grupo" valor={num(cuenta.unidos)} contexto={cuenta.total ? `${pct((cuenta.unidos / cuenta.total) * 100)} de los registrados` : undefined}
               info={{
                 ayuda: "Los registrados que el equipo marcó como unidos al grupo de WhatsApp.",
                 formula: "Registrados marcados «Unido» ÷ registrados",
