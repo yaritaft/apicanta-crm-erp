@@ -185,30 +185,35 @@ export default function Clientes() {
         />
       </div>
 
-      <div className="row-wrap">
-        <Chip activo={filtro === "activos"} onClick={() => setFiltro("activos")} count={cuenta("activos")}>Activos</Chip>
-        {(Object.keys(ESTADOS_CLIENTE) as EstadoCliente[]).map((k) => (
-          <Chip key={k} activo={filtro === k} onClick={() => setFiltro(k)} count={cuenta(k)}>{ESTADOS_CLIENTE[k].texto}</Chip>
-        ))}
-        <Chip activo={filtro === "todos"} onClick={() => setFiltro("todos")} count={vistos.length}>Todos</Chip>
-        <span className="spacer" />
-        {opciones.productos.length > 0 && (
-          <Filtro
-            etiqueta="Filtrar por producto" todos="Todos los productos" valor={productoId ?? ""}
-            opciones={opciones.productos} onCambiar={(v) => setVista({ producto: v || null, pag: null })}
-          />
-        )}
-        {opciones.closers.length > 0 && (
-          <Filtro
-            etiqueta="Filtrar por closer" todos="Todos los closers" valor={closerId ?? ""}
-            opciones={opciones.closers} onCambiar={(v) => setVista({ closer: v || null, pag: null })}
-          />
-        )}
-        <div style={{ width: 240 }}>
-          <Input icono={<Search size={15} />} value={q} onChange={(ev) => setQ(ev.target.value)} placeholder="Nombre o correo" aria-label="Buscar cliente" />
+      {/* Los filtros arriba y los botones de estado abajo, como en Ventas. */}
+      <div className="stack-3">
+        <div className="row-wrap">
+          {opciones.productos.length > 0 && (
+            <Filtro
+              etiqueta="Filtrar por producto" todos="Todos los productos" valor={productoId ?? ""}
+              opciones={opciones.productos} onCambiar={(v) => setVista({ producto: v || null, pag: null })}
+            />
+          )}
+          {opciones.closers.length > 0 && (
+            <Filtro
+              etiqueta="Filtrar por closer" todos="Todos los closers" valor={closerId ?? ""}
+              opciones={opciones.closers} onCambiar={(v) => setVista({ closer: v || null, pag: null })}
+            />
+          )}
+          <div style={{ width: 240 }}>
+            <Input icono={<Search size={15} />} value={q} onChange={(ev) => setQ(ev.target.value)} placeholder="Nombre o correo" aria-label="Buscar cliente" />
+          </div>
+          {hayFiltros && <Button sm variante="ghost" onClick={() => { setQ(""); setVista({ producto: null, closer: null, pag: null }, { q: null }); }}>Limpiar filtros</Button>}
         </div>
-        {hayFiltros && <Button sm variante="ghost" onClick={() => { setQ(""); setVista({ producto: null, closer: null, pag: null }, { q: null }); }}>Limpiar filtros</Button>}
-        <CopiarLink />
+        <div className="row-wrap">
+          <Chip activo={filtro === "activos"} onClick={() => setFiltro("activos")} count={cuenta("activos")}>Activos</Chip>
+          {(Object.keys(ESTADOS_CLIENTE) as EstadoCliente[]).map((k) => (
+            <Chip key={k} activo={filtro === k} onClick={() => setFiltro(k)} count={cuenta(k)}>{ESTADOS_CLIENTE[k].texto}</Chip>
+          ))}
+          <Chip activo={filtro === "todos"} onClick={() => setFiltro("todos")} count={vistos.length}>Todos</Chip>
+          <span className="spacer" />
+          <CopiarLink />
+        </div>
       </div>
 
       <Card style={{ padding: 0 }}>

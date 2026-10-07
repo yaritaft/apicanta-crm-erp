@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
-  CASILLEROS, COLUMNAS_DE_CONTROL, COLUMNAS_QUE_PONE_LA_BASE, cambiosDeChequeo, casilleroDe, chequeoDe, conChequeo,
+  CASILLEROS, COLUMNAS_DE_CONTROL, COLUMNAS_QUE_PONE_LA_BASE, cambiosDeChequeo, casilleroDe, chequeoDe, conChequeo, sinColumnasDelControl,
   conComprobanteNuevo, conciliacionDe, controlDeCobro, controlPorVenta, etiquetaDeControl, pasaControl, primerNombre,
   puedeCambiarComprobante, puedeUsarCasillero, quienEs, resumenDeControl, FILTROS_CONTROL,
 } from "@/lib/control-cobros";
@@ -231,4 +231,20 @@ test("el SQL del control cruzado tiene todas las columnas que la app guarda", ()
   /* Lo que el trigger protege de un closer. */
   assert.match(sql, /create trigger\s+control_cruzado_pagos/i);
   assert.match(sql, /solo_lo_suyo/);
+});
+
+test("el cobro entero va a la base sin las columnas del control: una copia vieja no pisa lo que otro chequeó", () => {
+  const p = pago({
+    chequeado: true, comprobanteLink: "https://x.example.com", cargadoPor: "dante@x.com",
+    chequeoDirector: "chequeado", chequeoDirectorPor: "santi@x.com", chequeoDirectorEn: "2026-10-06T12:00:00.000Z", chequeoDirectorNota: "ok",
+    chequeoFinanzas: "rechazado", chequeoFinanzasPor: "aldana@x.com", chequeoFinanzasEn: "2026-10-06T12:00:00.000Z", chequeoFinanzasNota: "no",
+  });
+  const fila = sinColumnasDelControl(p) as unknown as Record<string, unknown>;
+  for (const k of COLUMNAS_QUE_PONE_LA_BASE) assert.ok(!(k in fila), `${k} no viaja`);
+  /* Lo demás sí, incluido el sí/no de antes. */
+  assert.equal(fila.monto, 500);
+  assert.equal(fila.chequeado, true);
+  assert.equal(fila.comprobanteLink, "https://x.example.com");
+  /* No toca el cobro original. */
+  assert.equal(p.chequeoDirector, "chequeado");
 });

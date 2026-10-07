@@ -31,7 +31,7 @@ import { extraConCorreccion, tituloPerfil, type CampoPerfil } from "./perfil";
 import { puedeEditar, TIPOS_POR_DEFECTO, type MiAcceso } from "./permisos";
 import {
   cambiosDeChequeo, COLUMNAS_QUE_PONE_LA_BASE, conChequeo, conComprobanteNuevo, puedeCambiarComprobante, puedeUsarCasillero,
-  quienEs, ROL_DE_CASILLERO, type CasilleroChequeo, type VeredictoChequeo,
+  quienEs, ROL_DE_CASILLERO, sinColumnasDelControl, type CasilleroChequeo, type VeredictoChequeo,
 } from "./control-cobros";
 
 const CLAVE = "apicanta.erp.v1";
@@ -306,15 +306,8 @@ function resincronizarAlVaciarse() {
 }
 
 /* Las columnas del control de un cobro (quién lo cargó, quién lo chequeó) no
-   viajan en el upsert del cobro entero: lo que tiene esta pantalla puede ser
-   más viejo que lo que acaba de chequear otra persona, y lo pisaría con un
-   «pendiente». Las pone la base, y cada chequeo sale como un UPDATE aparte. */
-const sinColumnasDelControl = (fila: unknown): unknown => {
-  const copia = { ...(fila as Record<string, unknown>) };
-  for (const k of COLUMNAS_QUE_PONE_LA_BASE) delete copia[k];
-  return copia;
-};
-
+   viajan en el upsert del cobro entero (sinColumnasDelControl): las pone la
+   base, y cada chequeo sale como un UPDATE aparte. */
 function empujar(op: Op) {
   if (!nube) return;
   if (acceso && !puedeEditar(acceso, op.tabla)) { negada(op.tabla); return; }

@@ -50,6 +50,16 @@ export const COLUMNAS_QUE_PONE_LA_BASE: readonly string[] = [...COLUMNAS_DE_CONT
 
 type ColumnaDeControl = (typeof COLUMNAS_DE_CONTROL)[number];
 
+/** La fila de un cobro como va a la base en un upsert del cobro entero: sin lo que
+ *  pone la base (quién lo cargó y los chequeos). Lo que tiene una pantalla puede ser
+ *  más viejo que lo que acaba de chequear otra persona, y mandarlo lo pisaría con un
+ *  «pendiente»: los chequeos salen siempre como un UPDATE de sus columnas. */
+export function sinColumnasDelControl<T>(fila: T): T {
+  const copia = { ...(fila as Record<string, unknown>) };
+  for (const k of COLUMNAS_QUE_PONE_LA_BASE) delete copia[k];
+  return copia as T;
+}
+
 /** Quién usa la app y qué casillero le toca: el de finanzas si edita
  *  Finanzas (la asistente, los dueños); el del director si edita las ventas de
  *  todos y no sólo las suyas. El closer, el setter y marketing no llenan
