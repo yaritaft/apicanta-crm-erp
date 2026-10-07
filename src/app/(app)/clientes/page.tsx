@@ -143,7 +143,7 @@ export default function Clientes() {
       <div className="grid-stats">
         <StatCard
           hero etiqueta="Clientes activos" valor={num(activos.length)}
-          contexto={hayFiltros ? `${num(vistos.length)} con lo que filtraste` : `${num(vistos.length)} compraron alguna vez`}
+          contexto={hayFiltros ? `de ${num(vistos.length)} con lo que filtraste` : `${num(vistos.length)} compraron alguna vez`}
           info={{
             ayuda: `La gente que compró y no está dada de baja: la que está al día, la atrasada y la que ya pagó todo.${hayFiltros ? " Sigue el producto, el closer y la búsqueda que elegiste." : ""}`,
             formula: "Clientes con al menos una venta activa (sin las canceladas ni las reembolsadas)\nClientes activos = Al día + Atrasados + Pagaron todo",

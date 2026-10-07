@@ -6,7 +6,7 @@ import {
 } from "lucide-react";
 import { PageHead } from "@/components/shell/PageHead";
 import {
-  Ayuda, Badge, Bar, Button, Card, Chip, Empty, IconButton, Input, Tabs,
+  Ayuda, Bar, Button, Card, Chip, Empty, IconButton, Input, Tabs,
 } from "@/components/ui/ui";
 import { Columna, DataTable } from "@/components/ui/DataTable";
 import { DateRangePicker, diaDeNegocio } from "@/components/ui/DateRangePicker";

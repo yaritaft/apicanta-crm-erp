@@ -6,7 +6,6 @@ import { Badge, Button, Card, CardHead, Empty, IconButton, StatCard } from "@/co
 import { DataTable, type Columna } from "@/components/ui/DataTable";
 import { DateRangePicker } from "@/components/ui/DateRangePicker";
 import { Drawer } from "@/components/ui/Drawer";
-import { InfoMetrica } from "@/components/ui/InfoMetrica";
 import { useToast } from "@/components/ui/Toast";
 import { useAbrirFicha } from "@/components/ficha/abrir";
 import { ChequeoDeCobro } from "@/components/cobros/ControlCobro";
@@ -169,13 +168,13 @@ export function IngresosSemanales({ e }: { e: EstadoApp }) {
           sub="Lo que entró de verdad (Cash Collected), por cuenta y por servicio, según la fecha del cobro. Para supervisar cada semana sin esperar a fin de mes."
         />
         <div className="row-wrap ingresos-rango">
-          <IconButton etiqueta="El rango anterior" onClick={() => ir(-1)}><ChevronLeft size={16} /></IconButton>
+          <IconButton etiqueta={dias === 7 ? "La semana anterior" : `Los ${dias} días anteriores`} onClick={() => ir(-1)}><ChevronLeft size={16} /></IconButton>
           <DateRangePicker
             value={{ preset: "custom", desde, hasta }} minDate={primerDia} maxDate={hoy} etiqueta={etiqueta}
             onApply={(x) => setUrl(x.desde === actual.desde && x.hasta === actual.hasta ? { sdesde: null, shasta: null } : { sdesde: x.desde, shasta: x.hasta })}
             footerNota="Por la fecha del cobro · zona horaria de Argentina"
           />
-          <IconButton etiqueta="El rango siguiente" onClick={() => ir(1)} disabled={moverDias(desde, dias) > hoy}><ChevronRight size={16} /></IconButton>
+          <IconButton etiqueta={dias === 7 ? "La semana siguiente" : `Los ${dias} días siguientes`} onClick={() => ir(1)} disabled={moverDias(desde, dias) > hoy}><ChevronRight size={16} /></IconButton>
           {!esActual && (
             <Button sm variante="ghost" icono={<CalendarDays size={15} />} onClick={() => setUrl({ sdesde: null, shasta: null })}>Esta semana</Button>
           )}
