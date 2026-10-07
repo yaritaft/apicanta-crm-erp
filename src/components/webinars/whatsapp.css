@@ -20,7 +20,7 @@
 .wa-grupo__datos--aviso { color: var(--warning); }
 .wa-agregar { width: min(100%, 380px); }
 
-/* Los cuatro números */
+/* Los números de la tarjeta (tres) */
 .wa-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--space-3); }
 .wa-kpi {
   display: flex; flex-direction: column; gap: 2px; min-width: 0; padding: 12px 14px;
@@ -32,35 +32,13 @@
   font-family: var(--font-display); font-size: 24px; line-height: 30px; font-weight: 600; color: var(--ink); font-variant-numeric: tabular-nums;
 }
 .wa-kpi__nota { font-size: 12.5px; line-height: 18px; color: var(--ink-subtle); }
-.wa-kpi--ok { border-color: color-mix(in srgb, var(--success) 45%, var(--border)); background: color-mix(in srgb, var(--success) 7%, var(--surface-200)); }
-.wa-kpi--ok .wa-kpi__valor { color: var(--success); }
 .wa-kpis--tres { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-.wa-kpi--aviso { border-color: color-mix(in srgb, var(--warning) 45%, var(--border)); background: color-mix(in srgb, var(--warning) 7%, var(--surface-200)); }
-.wa-kpi--aviso .wa-kpi__valor { color: var(--warning); }
 
 /* La barra de arriba de la tabla: el buscador, los filtros y los botones de copiar */
 .wa-barra { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); }
 .wa-barra .hk-input { flex: 1 1 240px; max-width: 360px; min-width: 200px; }
 .wa-barra__filtros { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); }
 .wa-barra__copiar { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); margin-left: auto; }
-
-/* Las celdas de la tabla */
-.wa-nombre { display: inline-flex; max-width: 100%; padding: 0; border: 0; background: none; font: inherit; color: inherit; text-align: left; cursor: pointer; border-radius: var(--radius-sm); }
-.wa-nombre:hover .hk-person__name { color: var(--brand); text-decoration: underline; text-underline-offset: 3px; }
-.wa-nombre:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
-.wa-tel { display: inline-flex; align-items: center; gap: 2px; white-space: nowrap; }
-.wa-tel .t-num { margin-right: 6px; }
-.wa-tel .hk-btn { padding: 0; width: 30px; height: 30px; justify-content: center; }
-.wa-estado { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 6px; }
-.wa-contactado {
-  display: inline-flex; align-items: center; gap: 6px; max-width: 240px; padding: 3px 10px; min-height: 28px;
-  border: 1px solid var(--border-strong); border-radius: var(--radius-full); background: transparent;
-  font: inherit; font-size: 13px; line-height: 20px; color: var(--ink-muted); cursor: pointer; text-align: left;
-}
-.wa-contactado:hover { background: var(--surface-200); color: var(--ink); }
-.wa-contactado:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
-.wa-contactado[aria-pressed="true"] { border-color: var(--success); background: var(--success-soft); color: var(--success); font-weight: 600; }
-.wa-contactado__quien { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* ---------- Formularios: lo que dice el lector ---------- */
 .wa-formularios { display: flex; flex-direction: column; gap: var(--space-3); }
@@ -110,13 +88,12 @@
 .wa-qr__sin-permiso { display: flex; align-items: flex-start; gap: 6px; margin: 0; }
 .wa-qr__sin-permiso > svg { flex: none; margin-top: 3px; }
 .wa-rotulo { margin-left: 8px; vertical-align: middle; }
-.wa-estado-lector { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-3); }
 .wa-pasos { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 4px; font-size: 13px; line-height: 20px; color: var(--ink-muted); }
 .wa-pasos code, .wa-codigo { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; padding: 1px 6px; border-radius: var(--radius-sm); background: var(--surface-300); color: var(--ink); }
-.wa-sugerencia { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-top: 6px; font-size: 12.5px; line-height: 18px; color: var(--ink-subtle); }
+.wa-sugerencia { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-top: 6px; font-size: 12.5px; line-height: 18px; color: var(--ink-subtle); white-space: normal; /* las celdas de la tabla no cortan renglones: el aviso largo ensanchaba la tabla */ }
 .wa-grupo-fila { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .wa-grupo-fila__nombre { font-weight: 600; color: var(--ink); overflow-wrap: anywhere; }
-.wa-selector-webinar { min-width: 240px; max-width: 360px; }
+.wa-selector-webinar { min-width: 220px; max-width: 320px; }
 
 @media (max-width: 900px) {
   .wa-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
