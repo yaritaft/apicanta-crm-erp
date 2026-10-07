@@ -59,14 +59,6 @@ export interface MiembroWhatsapp {
   creadoEn?: string;
 }
 
-export interface MarcaContactado {
-  webinarId: string;
-  personaId: string;
-  /** Quién la marcó (su correo, o el nombre en la app local). */
-  por: string | null;
-  en: string;
-}
-
 /* ---------- Cada cuánto, y cuándo se avisa ---------- */
 
 /** El lector manda un latido cada tanto: acá van los minutos. */
@@ -524,7 +516,5 @@ export interface RespuestaWebinar {
   dentro: string[];
   /** Quién salió y cuándo (los que no están adentro de ninguno). */
   salieron: Record<string, string>;
-  /** Las marcas de «Contactado», por persona. */
-  contactados: Record<string, { por: string | null; en: string }>;
   generado: string;
 }

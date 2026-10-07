@@ -13,8 +13,6 @@
 --   3. `whatsapp_miembros`: quién está adentro de cada grupo (teléfono con el
 --      código de país, sin signos: «5491155551234»), cuándo lo vimos entrar y
 --      cuándo salir.
---   4. `whatsapp_contactados`: la marca «Contactado» de cada persona en cada
---      webinar, con quién la puso y cuándo.
 --
 -- Quién lee: quien ve los Webinars (nivel_area('webinars') >= 1). Quién
 -- escribe: sólo el servidor de la app, con la clave de servicio (que saltea
@@ -24,6 +22,11 @@
 --
 -- Sin estas tablas la app anda igual: Ajustes → WhatsApp dice que falta correr
 -- este archivo y el lector recibe un 503.
+--
+-- (La primera versión también creaba `whatsapp_contactados`. Ya no se usa: el
+-- «Contactado» y el «Unido» los lleva Formularios, en registros_webinar. Si
+-- quedó creada, está vacía y se puede borrar con
+-- `drop table if exists public.whatsapp_contactados;`.)
 --
 -- Idempotente: se puede correr de nuevo sin romper nada ni borrar datos.
 -- Necesita supabase/tipos-cuenta.sql corrido antes.
@@ -88,18 +91,6 @@ create table if not exists public.whatsapp_miembros (
   primary key ("grupoId", telefono)
 );
 
--- ---------- 4. «Contactado» ----------
-
-create table if not exists public.whatsapp_contactados (
-  "webinarId" text not null,
-  -- La persona del webinar (su id en la app: contacto, o lead si no tiene contacto).
-  "personaId" text not null,
-  -- Quién la marcó (su correo).
-  por         text,
-  en          timestamptz not null default now(),
-  primary key ("webinarId", "personaId")
-);
-
 -- Las claves foráneas van aparte y toleran que la tabla apuntada tenga otro
 -- tipo de id: la integridad es deseable, pero no al precio de que falle la
 -- migración entera. Si no se pueden poner, avisa.
@@ -111,13 +102,6 @@ begin
   exception
     when duplicate_object then null;
     when others then raise notice 'Sin FK de los grupos a webinars (%). La columna queda igual.', sqlerrm;
-  end;
-  begin
-    alter table public.whatsapp_contactados add constraint whatsapp_contactados_webinar_fk
-      foreign key ("webinarId") references public.webinars(id) on delete cascade;
-  exception
-    when duplicate_object then null;
-    when others then raise notice 'Sin FK de los contactados a webinars (%). La columna queda igual.', sqlerrm;
   end;
 end $$;
 
@@ -141,24 +125,17 @@ create policy ver_whatsapp_miembros on public.whatsapp_miembros
   for select to authenticated
   using ((select public.nivel_area('webinars')) >= 1);
 
-alter table public.whatsapp_contactados enable row level security;
-drop policy if exists ver_whatsapp_contactados on public.whatsapp_contactados;
-create policy ver_whatsapp_contactados on public.whatsapp_contactados
-  for select to authenticated
-  using ((select public.nivel_area('webinars')) >= 1);
-
 -- Sin políticas de escritura RLS ya las rechaza; esto lo deja dicho aparte, por
 -- si algún día alguien agrega una política de más.
 revoke insert, update, delete, truncate on public.whatsapp_lector, public.whatsapp_grupos,
-  public.whatsapp_miembros, public.whatsapp_contactados from anon, authenticated;
-revoke select on public.whatsapp_lector, public.whatsapp_grupos,
-  public.whatsapp_miembros, public.whatsapp_contactados from anon;
+  public.whatsapp_miembros from anon, authenticated;
+revoke select on public.whatsapp_lector, public.whatsapp_grupos, public.whatsapp_miembros from anon;
 
 -- ---------- diagnóstico ----------
 select
   (select count(*) from information_schema.tables where table_schema = 'public'
-     and table_name in ('whatsapp_lector', 'whatsapp_grupos', 'whatsapp_miembros', 'whatsapp_contactados')) as tablas_de_4,
+     and table_name in ('whatsapp_lector', 'whatsapp_grupos', 'whatsapp_miembros')) as tablas_de_3,
   (select count(*) from pg_class c join pg_namespace n on n.oid = c.relnamespace
-     where n.nspname = 'public' and c.relname like 'whatsapp\_%' and c.relkind = 'r' and c.relrowsecurity)    as con_rls_de_4,
-  (select count(*) from pg_policies where schemaname = 'public' and tablename like 'whatsapp\_%')            as politicas_de_4,
-  (select count(*) from pg_constraint where conname in ('whatsapp_grupos_webinar_fk', 'whatsapp_contactados_webinar_fk')) as fks_de_2;
+     where n.nspname = 'public' and c.relname in ('whatsapp_lector', 'whatsapp_grupos', 'whatsapp_miembros') and c.relkind = 'r' and c.relrowsecurity) as con_rls_de_3,
+  (select count(*) from pg_policies where schemaname = 'public' and tablename in ('whatsapp_lector', 'whatsapp_grupos', 'whatsapp_miembros')) as politicas_de_3,
+  (select count(*) from pg_constraint where conname = 'whatsapp_grupos_webinar_fk') as fks_de_1;

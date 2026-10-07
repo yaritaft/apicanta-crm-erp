@@ -9,7 +9,7 @@ import { nubeServidor } from "./servidor";
 import {
   aplicarAviso, aplicarFoto, contarDentro, MAX_BYTES_CUERPO,
   type CuerpoGrupo, type CuerpoLatido, type EventoGrupo, type GrupoWhatsapp, type LatidoLector,
-  type MarcaContactado, type MiembroWhatsapp, type RespuestaEstado, type RespuestaWebinar,
+  type MiembroWhatsapp, type RespuestaEstado, type RespuestaWebinar,
 } from "./whatsapp";
 
 /* ==================================================================
@@ -19,7 +19,7 @@ import {
    por /api/whatsapp/grupos y /api/whatsapp/latido, con un secreto
    (WHATSAPP_LECTOR_TOKEN). Escribe con la clave de servicio, que saltea
    RLS: las tablas sólo se escriben desde acá. La pantalla lee y cambia lo
-   suyo (atar un grupo a un webinar, marcar «contactado») por /api/whatsapp/
+   suyo (atar un grupo a un webinar) por /api/whatsapp/
    estado y /api/whatsapp/webinar, que antes preguntan por el tipo de cuenta.
 
    Dónde se guarda: en Supabase. Sin base (la app corriendo en la compu, sin
@@ -46,10 +46,6 @@ export interface RepoWhatsapp {
   leerMiembros(grupoId: string, telefonos?: readonly string[]): Promise<MiembroWhatsapp[]>;
   guardarMiembros(filas: readonly MiembroWhatsapp[]): Promise<void>;
   contarDentro(grupoId: string): Promise<number>;
-
-  leerMarcas(webinarId: string): Promise<MarcaContactado[]>;
-  guardarMarca(m: MarcaContactado): Promise<void>;
-  borrarMarca(webinarId: string, personaId: string): Promise<void>;
 }
 
 /** Faltan las tablas: hay que correr supabase/whatsapp-lector.sql. */
@@ -155,26 +151,13 @@ class RepoSupabase implements RepoWhatsapp {
     this.ok({ data: null, error: r.error });
     return r.count ?? 0;
   }
-
-  async leerMarcas(webinarId: string) {
-    const r = this.ok(await this.db.from("whatsapp_contactados").select("webinarId, personaId, por, en").eq("webinarId", webinarId));
-    return (r ?? []) as MarcaContactado[];
-  }
-
-  async guardarMarca(m: MarcaContactado) {
-    this.ok(await this.db.from("whatsapp_contactados").upsert(m, { onConflict: "webinarId,personaId", defaultToNull: false }));
-  }
-
-  async borrarMarca(webinarId: string, personaId: string) {
-    this.ok(await this.db.from("whatsapp_contactados").delete().eq("webinarId", webinarId).eq("personaId", personaId));
-  }
 }
 
 /* ---------- En memoria, y en un archivo para probar sin nube ---------- */
 
-interface Datos { latido: LatidoLector | null; grupos: GrupoWhatsapp[]; miembros: MiembroWhatsapp[]; marcas: MarcaContactado[] }
+interface Datos { latido: LatidoLector | null; grupos: GrupoWhatsapp[]; miembros: MiembroWhatsapp[] }
 
-const datosVacios = (): Datos => ({ latido: null, grupos: [], miembros: [], marcas: [] });
+const datosVacios = (): Datos => ({ latido: null, grupos: [], miembros: [] });
 
 export class RepoMemoria implements RepoWhatsapp {
   constructor(protected datos: Datos = datosVacios()) {}
@@ -245,18 +228,6 @@ export class RepoMemoria implements RepoWhatsapp {
   async contarDentro(grupoId: string) {
     return this.datos.miembros.filter((m) => m.grupoId === grupoId && m.dentro).length;
   }
-
-  async leerMarcas(webinarId: string) { return this.datos.marcas.filter((m) => m.webinarId === webinarId).map((m) => ({ ...m })); }
-
-  async guardarMarca(m: MarcaContactado) {
-    this.datos.marcas = [...this.datos.marcas.filter((x) => !(x.webinarId === m.webinarId && x.personaId === m.personaId)), { ...m }];
-    this.cambio();
-  }
-
-  async borrarMarca(webinarId: string, personaId: string) {
-    this.datos.marcas = this.datos.marcas.filter((x) => !(x.webinarId === webinarId && x.personaId === personaId));
-    this.cambio();
-  }
 }
 
 /** El mismo repositorio, guardado en un archivo (cada pedido lo lee de nuevo:
@@ -278,7 +249,7 @@ function leerArchivo(ruta: string): Datos {
     const j = JSON.parse(readFileSync(ruta, "utf8")) as Partial<Datos>;
     return {
       latido: j.latido ?? null, grupos: Array.isArray(j.grupos) ? j.grupos : [],
-      miembros: Array.isArray(j.miembros) ? j.miembros : [], marcas: Array.isArray(j.marcas) ? j.marcas : [],
+      miembros: Array.isArray(j.miembros) ? j.miembros : [],
     };
   } catch {
     return datosVacios();
@@ -436,7 +407,7 @@ export async function estadoParaPantalla(repo: RepoWhatsapp, modo: Modo): Promis
 
 /** Los grupos de un webinar y quién está adentro de alguno. */
 export async function datosDeWebinar(repo: RepoWhatsapp, modo: Modo, webinarId: string, ahora: Date = new Date()): Promise<RespuestaWebinar> {
-  const [lector, todos, marcas] = await Promise.all([repo.leerLatido(), repo.leerGrupos(), repo.leerMarcas(webinarId)]);
+  const [lector, todos] = await Promise.all([repo.leerLatido(), repo.leerGrupos()]);
   const grupos = todos.filter((g) => g.webinarId === webinarId);
   const dentro = new Set<string>();
   const salieron = new Map<string, string>();
@@ -451,26 +422,14 @@ export async function datosDeWebinar(repo: RepoWhatsapp, modo: Modo, webinarId: 
   return {
     configurado: Boolean(tokenDelLector()), tablas: true, modo, lector, grupos,
     dentro: [...dentro], salieron: Object.fromEntries(salieron),
-    contactados: Object.fromEntries(marcas.map((m) => [m.personaId, { por: m.por, en: m.en }])),
     generado: ahora.toISOString(),
   };
-}
-
-/** El correo de quien pide, para anotar quién marcó algo. Sólo para anotar: el
-    pedido ya pasó por la base con esa sesión (exigirArea). */
-export function correoDe(peticion: Request): string | null {
-  const jwt = peticion.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ?? "";
-  try {
-    const cuerpo = JSON.parse(Buffer.from(jwt.split(".")[1] ?? "", "base64url").toString("utf8")) as { email?: string };
-    return typeof cuerpo.email === "string" ? cuerpo.email.toLowerCase() : null;
-  } catch { return null; }
 }
 
 /** Los pedidos de la pantalla que cambian algo. */
 export type AccionWebinar =
   | { accion: "atar"; grupoId: string; webinarId: string }
-  | { accion: "soltar"; grupoId: string }
-  | { accion: "contactado"; webinarId: string; personaId: string; contactado: boolean; por?: string };
+  | { accion: "soltar"; grupoId: string };
 
 const IDENTIFICADOR = /^[\w.:@+-]{1,160}$/;
 
@@ -486,11 +445,5 @@ export function leerAccion(json: unknown): { ok: true; accion: AccionWebinar } |
     const grupoId = texto("grupoId");
     return grupoId ? { ok: true, accion: { accion: "soltar", grupoId } } : { ok: false, error: "Falta el grupo." };
   }
-  if (b.accion === "contactado") {
-    const webinarId = texto("webinarId"), personaId = texto("personaId");
-    if (!webinarId || !personaId || typeof b.contactado !== "boolean") return { ok: false, error: "Faltan el webinar, la persona y si está contactada." };
-    const por = typeof b.por === "string" ? b.por.replace(/[\u0000-\u001f\u007f]/g, " ").trim().slice(0, 80) : undefined;
-    return { ok: true, accion: { accion: "contactado", webinarId, personaId, contactado: b.contactado, por: por || undefined } };
-  }
-  return { ok: false, error: "No conozco esa acción: «atar», «soltar» o «contactado»." };
+  return { ok: false, error: "No conozco esa acción: «atar» o «soltar»." };
 }

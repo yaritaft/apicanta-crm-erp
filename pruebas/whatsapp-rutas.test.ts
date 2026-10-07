@@ -143,24 +143,9 @@ test("de punta a punta: latido, foto, avisos, atar al webinar y ver quién está
   });
 });
 
-test("«Contactado»: se marca con quién y cuándo, y se saca", async () => {
-  await conArchivo(async () => {
-    const marcar = (contactado: boolean) => postWebinar(pedido("/api/whatsapp/webinar", { accion: "contactado", webinarId: "web_8", personaId: "con_1", contactado, por: "Yari Taft" }));
-    const r = await leer(await marcar(true));
-    assert.equal(r.ok, true);
-    assert.equal(r.marca.por, "Yari Taft", "sin sesión (la app local) se anota lo que diga la pantalla");
-    assert.ok(r.marca.en);
-    const w = await leer(await getWebinar(new Request("http://localhost/api/whatsapp/webinar?id=web_8")));
-    assert.deepEqual(Object.keys(w.contactados), ["con_1"]);
-    assert.equal(w.contactados.con_1.por, "Yari Taft");
-    assert.equal((await leer(await marcar(false))).marca, null);
-    assert.deepEqual((await leer(await getWebinar(new Request("http://localhost/api/whatsapp/webinar?id=web_8")))).contactados, {});
-  });
-});
-
 test("lo que no se entiende de la pantalla se rechaza", async () => {
   await conArchivo(async () => {
-    for (const cuerpo of [{}, { accion: "borrar" }, { accion: "atar" }, { accion: "atar", grupoId: G }, { accion: "contactado", webinarId: "w", personaId: "p" }, "x"]) {
+    for (const cuerpo of [{}, { accion: "borrar" }, { accion: "contactado", webinarId: "w", personaId: "p" }, { accion: "atar" }, { accion: "atar", grupoId: G }, { accion: "soltar" }, "x"]) {
       assert.equal((await postWebinar(pedido("/api/whatsapp/webinar", cuerpo))).status, 400, JSON.stringify(cuerpo));
     }
     assert.equal((await getWebinar(new Request("http://localhost/api/whatsapp/webinar"))).status, 400);
