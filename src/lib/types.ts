@@ -1060,6 +1060,10 @@ export interface Comprobante {
 /* "Característica de pago" y "Ventas Nuevas vs Cuotas" de la planilla. */
 export type TipoVentaPago = "Venta Nueva" | "Cuota" | "Solo Reserva";
 
+/* El control cruzado de un cobro: quién lo mira y qué dice (lib/control-cobros.ts). */
+export type CasilleroChequeo = "director" | "finanzas";
+export type VeredictoChequeo = "chequeado" | "rechazado";
+
 /* Un cobro: una fila de la hoja "Ventas" de la planilla de Angelo. "Fecha
    del pago", "Cuenta recaudadora" (el procesador), "Monto abonado USD" y
    "Costo total de procesamiento" (feeMonto) son los campos de siempre. */
@@ -1097,7 +1101,27 @@ export interface Pago {
      compararlo. Antes era el blue venta solo. */
   tipoCambioBlue?: number;
   tipoCambioFuente?: string;
-  chequeado?: boolean;       // Pasado Financiera / Chequeado en plataforma
+  /* El sí/no de antes: «Pasado Financiera / Chequeado en plataforma» de la
+     planilla, y lo que tilda solo un cobro conciliado con la pasarela. Sigue
+     valiendo (lo marcado no se pierde) pero ya no lo pone el closer al cargar:
+     el control de ahora son los dos casilleros de abajo. Ver lib/control-cobros.ts. */
+  chequeado?: boolean;
+  /* Control cruzado (reunión del 02/10): el closer carga el cobro y después otra
+     persona mira el comprobante y confirma que coincide con lo cargado. Hay dos
+     casilleros separados, el del director comercial y el de finanzas, y con uno
+     alcanza para que el cobro no quede pendiente. Cada uno guarda quién lo hizo
+     (el correo de su sesión), cuándo y, si lo rechazó, por qué. Los completa la
+     base y el closer no los toca: supabase/control-cruzado.sql. */
+  chequeoDirector?: VeredictoChequeo;
+  chequeoDirectorPor?: string;
+  chequeoDirectorEn?: string;
+  chequeoDirectorNota?: string;
+  chequeoFinanzas?: VeredictoChequeo;
+  chequeoFinanzasPor?: string;
+  chequeoFinanzasEn?: string;
+  chequeoFinanzasNota?: string;
+  /* Quién cargó el cobro (el correo de su sesión: lo completa la base). */
+  cargadoPor?: string;
   /* El "Comprobante" de la planilla: un link o lo que se escribió. Los
      cobros nuevos suben el archivo (comprobante). */
   comprobanteLink?: string;

@@ -2,7 +2,7 @@
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { FileSpreadsheet, Info, Link2, Wallet } from "lucide-react";
-import { Ayuda, Badge, Button, Card, Chip, Empty, Field, Input, Select, Switch } from "@/components/ui/ui";
+import { Ayuda, Badge, Button, Card, Chip, Empty, Field, Select } from "@/components/ui/ui";
 import { InputMonto } from "@/components/ui/InputMonto";
 import { montoDe } from "@/lib/monto";
 import { DataTable, type Columna } from "@/components/ui/DataTable";
@@ -11,8 +11,12 @@ import { ModalForm } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toast";
 import { acciones } from "@/lib/store";
 import { useParamsURL, useTablaURL } from "@/lib/useParamsURL";
-import { fechaLarga, money } from "@/lib/format";
+import { fechaLarga, money, num } from "@/lib/format";
 import { pagosDelMes } from "@/lib/finanzas";
+import { ModalChequeo, useNombreDeQuien } from "@/components/cobros/ControlCobro";
+import { columnaCargo, columnaChequeo, columnaComprobante, columnaConciliado } from "@/components/cobros/columnasControl";
+import { controlDeCobro, filasDeCobros, type FilaCobro } from "@/lib/control-cobros";
+import { bajarExcel, excelCobros, filasExcelCobros } from "@/lib/excelCobros";
 import { hayNube } from "@/lib/supabase";
 import { TIPO_XLSX } from "@/lib/xlsxEscribir";
 import {
@@ -20,7 +24,7 @@ import {
   corteFinanciera, cuentaPorDefecto, cuentasConCorte, diaArgentina, excelCorte, resumenCorte,
 } from "@/lib/reporteFinanciera";
 import type { RangoMes } from "@/lib/metricas";
-import type { Cuota, EstadoApp, Pago, Venta } from "@/lib/types";
+import type { EstadoApp, Pago } from "@/lib/types";
 
 /* ==================================================================
    La comisión del procesador, cobro por cobro.
@@ -28,23 +32,20 @@ import type { Cuota, EstadoApp, Pago, Venta } from "@/lib/types";
    Si el cobro se concilió con la pasarela, la comisión es la real y no
    se toca. Si no (la Financiera, Trust, una transferencia), sale de la
    tasa de la cuenta recaudadora y acá se corrige a mano con lo que se
-   pagó de verdad: queda marcada y ya no la pisa la tasa. También se
-   tilda "Pasado Financiera / Chequeado en plataforma", como en la
-   planilla de Angelo.
+   pagó de verdad: queda marcada y ya no la pisa la tasa.
+
+   Al lado, el control de cada cobro (lib/control-cobros.ts): su
+   comprobante, si está conciliado, quién lo cargó y si lo chequearon
+   (el director o finanzas, desde la ventana que se abre con un clic).
    ================================================================== */
 
-type Filtro = "todos" | "sin-conciliar" | "sin-chequear" | "a-mano";
-const FILTROS: Filtro[] = ["todos", "sin-conciliar", "sin-chequear", "a-mano"];
+type Filtro = "todos" | "sin-conciliar" | "sin-chequear" | "rechazados" | "a-mano";
+const FILTROS: Filtro[] = ["todos", "sin-conciliar", "sin-chequear", "rechazados", "a-mano"];
 /* Lo que se mira va en el link: ?mostrar (sin-conciliar, a-mano,
-   sin-chequear) y ?orden. Salir de la pestaña los saca (finanzas/detalle). */
+   sin-chequear, rechazados) y ?orden. Salir de la pestaña los saca (finanzas/detalle). */
 export const PARAMS_PROCESADORES = ["mostrar", "orden", "pag"] as const;
 
-interface Fila {
-  id: string;
-  pago: Pago;
-  cuota?: Cuota;
-  venta?: Venta;
-}
+type Fila = FilaCobro;
 
 export function CobrosProcesador({ e, mes }: { e: EstadoApp; mes: RangoMes }) {
   const toast = useToast();
@@ -54,23 +55,41 @@ export function CobrosProcesador({ e, mes }: { e: EstadoApp; mes: RangoMes }) {
   const filtro: Filtro = FILTROS.includes(enURL.mostrar as Filtro) ? (enURL.mostrar as Filtro) : "todos";
   const setFiltro = (f: Filtro) => setEnURL({ mostrar: f });
   const [reporte, setReporte] = useState(false);
+  const [abierto, setAbierto] = useState<string | null>(null);
+  const [bajando, setBajando] = useState(false);
+  const nombreDe = useNombreDeQuien();
 
-  const todas: Fila[] = useMemo(() => {
-    const cuotaDe = new Map(e.cuotas.map((c) => [c.id, c] as const));
-    const ventaDe = new Map(e.ventas.map((v) => [v.id, v] as const));
-    return pagosDelMes(e, mes).map((pago) => {
-      const cuota = cuotaDe.get(pago.cuotaId);
-      return { id: pago.id, pago, cuota, venta: cuota ? ventaDe.get(cuota.ventaId) : undefined };
-    });
-  }, [e, mes]);
+  const todas: Fila[] = useMemo(() => filasDeCobros(e, pagosDelMes(e, mes)), [e, mes]);
 
   const cuenta = (f: Filtro) => todas.filter((x) => pasa(x.pago, f)).length;
   const filas = todas.filter((x) => pasa(x.pago, filtro));
   const total = filas.reduce((a, x) => a + x.pago.feeMonto, 0);
+  /* En centavos enteros: la suma de la fila de totales no arrastra restos de punto flotante. */
+  const totalMonto = filas.reduce((a, x) => a + Math.round(x.pago.monto * 100), 0) / 100;
+
+  async function descargar() {
+    if (filas.length === 0 || bajando) return;
+    setBajando(true);
+    try {
+      const dia = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+      const { nombre, datos, sinLink } = await excelCobros(filasExcelCobros(e, filas.map((f) => f.pago)), dia(mes.desde), dia(mes.hasta));
+      bajarExcel(nombre, datos);
+      toast(sinLink
+        ? `Se bajó el Excel. ${sinLink === 1 ? "Un comprobante no se pudo firmar: va" : `${sinLink} comprobantes no se pudieron firmar: van`} con el nombre del archivo.`
+        : `Se bajó el Excel con ${num(filas.length)} ${filas.length === 1 ? "cobro" : "cobros"}.`, sinLink ? "info" : "ok");
+    } catch (err) {
+      toast(err instanceof Error ? err.message : "No se pudo armar el Excel.", "err");
+    } finally {
+      setBajando(false);
+    }
+  }
 
   const columnas: Columna<Fila>[] = [
     { clave: "fecha", titulo: "Fecha del pago", tipo: "secondary", orden: (x) => x.pago.fecha, celda: (x) => fechaLarga(x.pago.fecha) },
-    { clave: "cliente", titulo: "Cliente", tipo: "primary", orden: (x) => x.venta?.contactoNombre ?? "", celda: (x) => x.venta?.contactoNombre ?? "Sin venta" },
+    {
+      clave: "cliente", titulo: "Cliente", tipo: "primary", orden: (x) => x.venta?.contactoNombre ?? "", celda: (x) => x.venta?.contactoNombre ?? "Sin venta",
+      pie: <strong>Total · {num(filas.length)} {filas.length === 1 ? "cobro" : "cobros"}</strong>,
+    },
     {
       clave: "caracteristica", titulo: "Característica", tipo: "secondary",
       orden: (x) => x.pago.caracteristica ?? "",
@@ -81,9 +100,25 @@ export function CobrosProcesador({ e, mes }: { e: EstadoApp; mes: RangoMes }) {
       orden: (x) => e.procesadores.find((p) => p.id === x.pago.procesadorId)?.nombre ?? "",
       celda: (x) => e.procesadores.find((p) => p.id === x.pago.procesadorId)?.nombre ?? "Sin cuenta",
     },
-    { clave: "monto", titulo: "Monto abonado USD", tipo: "num", orden: (x) => x.pago.monto, celda: (x) => M(x.pago.monto) },
+    {
+      clave: "monto", titulo: "Monto abonado USD", tipo: "num", orden: (x) => x.pago.monto, celda: (x) => M(x.pago.monto),
+      pie: <strong className="t-num">{M(totalMonto)}</strong>,
+      info: {
+        ayuda: "Lo que entró en cada cobro, en dólares. Abajo, la suma de los cobros de la vista (de todas las páginas): es el Cash Collected (CC) de lo que estás mirando.",
+        formula: "Cash Collected (CC) de la vista = suma de «Monto abonado USD» de los cobros que cumplen el período y el filtro",
+        componentes: () => [
+          { concepto: "Cobros en la vista", valor: num(filas.length) },
+          { concepto: "Cash Collected (CC) de la vista", valor: M(totalMonto), signo: "=" },
+        ],
+      },
+    },
     {
       clave: "fee", titulo: "Comisión del procesador", tipo: "num", orden: (x) => x.pago.feeMonto,
+      pie: <strong className="t-num">{M(total)}</strong>,
+      info: {
+        ayuda: "Lo que se quedó el procesador de cada cobro: la real si se concilió con la pasarela, o la de la cuenta (corregible a mano). Abajo, la suma de los cobros de la vista.",
+        formula: "Comisiones de la vista = suma de «Comisión del procesador» de los cobros que cumplen el período y el filtro",
+      },
       celda: (x) => x.pago.movimientoId ? (
         <span className="row" style={{ gap: 6, justifyContent: "flex-end" }}>
           <Badge variante="success"><Link2 size={12} />Real</Badge>
@@ -111,18 +146,10 @@ export function CobrosProcesador({ e, mes }: { e: EstadoApp; mes: RangoMes }) {
         </span>
       ),
     },
-    {
-      clave: "chequeado", titulo: "Chequeado", orden: (x) => (x.pago.chequeado ? 1 : 0),
-      celda: (x) => (
-        <span onClick={(ev) => ev.stopPropagation()}>
-          <Switch
-            checked={Boolean(x.pago.chequeado)}
-            etiqueta={`Pasado Financiera / Chequeado en plataforma: cobro de ${x.venta?.contactoNombre ?? "este cliente"}`}
-            onChange={(v) => { if (acciones.editarPago(x.pago.id, { chequeado: v })) toast(v ? "Marcado como chequeado." : "Ya no está chequeado."); }}
-          />
-        </span>
-      ),
-    },
+    columnaComprobante(),
+    columnaConciliado(e),
+    columnaCargo(nombreDe),
+    columnaChequeo(setAbierto),
   ];
 
   const tabla = useTablaURL("", { clave: "fecha", desc: true }, columnas.filter((c) => c.orden).map((c) => c.clave));
@@ -140,23 +167,29 @@ export function CobrosProcesador({ e, mes }: { e: EstadoApp; mes: RangoMes }) {
         <Chip activo={filtro === "sin-conciliar"} onClick={() => setFiltro("sin-conciliar")} count={cuenta("sin-conciliar")}>Sin conciliar</Chip>
         <Chip activo={filtro === "a-mano"} onClick={() => setFiltro("a-mano")} count={cuenta("a-mano")}>Con comisión a mano</Chip>
         <Chip activo={filtro === "sin-chequear"} onClick={() => setFiltro("sin-chequear")} count={cuenta("sin-chequear")}>Sin chequear</Chip>
+        <Chip activo={filtro === "rechazados"} onClick={() => setFiltro("rechazados")} count={cuenta("rechazados")}>Rechazados</Chip>
         <span className="spacer t-sm t-muted">
           Comisiones de lo que se ve: <strong className="t-num" style={{ color: "var(--ink)" }}>{M(total)}</strong>
         </span>
+        <Button variante="secondary" icono={<FileSpreadsheet size={16} />} disabled={filas.length === 0 || bajando} onClick={descargar}>
+          {bajando ? "Armando el Excel…" : "Descargar Excel"}
+        </Button>
         <Button variante="secondary" icono={<FileSpreadsheet size={16} />} onClick={() => setReporte(true)}>
           Reporte para la Financiera
         </Button>
       </div>
 
-      <Card style={{ padding: 0 }}>
+      <Card className="cobros-tabla" style={{ padding: 0 }}>
         <DataTable
           alto={520}
           filas={filas} columnas={columnas} orden={tabla.orden} onOrden={tabla.onOrden}
+          onFila={(x) => setAbierto(x.pago.id)} etiquetaFila={(x) => `Abrir el cobro de ${x.venta?.contactoNombre ?? "este cliente"}`}
           vacio={<Empty icono={<Wallet size={22} />} titulo={`Sin cobros en ${mes.etiqueta}`} texto="Cuando entre un cobro, su comisión aparece acá: la real si se concilió, o la de la cuenta para corregir." />}
         />
       </Card>
 
       {reporte && <ReporteFinanciera e={e} mes={mes} onCerrar={() => setReporte(false)} />}
+      {abierto && <ModalChequeo pagoId={abierto} onCerrar={() => setAbierto(null)} />}
     </div>
   );
 }
@@ -335,7 +368,8 @@ function ReporteFinanciera({ e, mes, onCerrar }: { e: EstadoApp; mes: RangoMes; 
 
 function pasa(p: Pago, f: Filtro): boolean {
   if (f === "sin-conciliar") return !p.movimientoId;
-  if (f === "sin-chequear") return !p.chequeado;
+  if (f === "sin-chequear") return controlDeCobro(p).estado === "pendiente";
+  if (f === "rechazados") return controlDeCobro(p).estado === "rechazado";
   if (f === "a-mano") return Boolean(p.feeManual);
   return true;
 }

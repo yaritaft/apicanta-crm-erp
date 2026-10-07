@@ -35,16 +35,30 @@ export interface PersonaBuscada {
 }
 
 /* Para achicar la lista de a quién se le carga el pago: los chips de closer
-   y de servicio. Angelo (06/10): «hay que poder filtrar por closer». */
+   y de servicio. Angelo (06/10): «hay que poder filtrar por closer». Es la
+   misma regla que usan Clientes y Finanzas → Cobros (02/10: «filtros por
+   producto y por closer»): lo que hace falta de una cuota es su closer y su
+   servicio (`LineaFiltrable`), y una persona es cualquier cosa que tenga
+   cuotas (`ConLineas`). */
 export const SIN_CLOSER = "sin-closer";
 export interface FiltroPersonas { closerId?: ID | typeof SIN_CLOSER; productoId?: ID }
 
-export function pasaFiltro(p: PersonaBuscada, f?: FiltroPersonas): boolean {
+/** Lo que tiene que saber cada cuota para filtrarse por closer y por servicio. */
+export interface LineaFiltrable { closerId?: ID; closer?: string; productoId?: ID; producto?: string }
+/** Alguien (o algo) con cuotas: una persona que debe, un cliente, una cuota vencida. */
+export interface ConLineas { cuotas: readonly LineaFiltrable[] }
+
+/** ¿Esta cuota cumple el filtro? Las dos condiciones sobre la MISMA cuota. */
+export function cuotaPasa(c: Pick<LineaFiltrable, "closerId" | "productoId">, f?: FiltroPersonas): boolean {
+  if (!f) return true;
+  return (!f.closerId || (f.closerId === SIN_CLOSER ? !c.closerId : c.closerId === f.closerId))
+    && (!f.productoId || c.productoId === f.productoId);
+}
+
+export function pasaFiltro(p: ConLineas, f?: FiltroPersonas): boolean {
   if (!f || (!f.closerId && !f.productoId)) return true;
   /* Las dos condiciones sobre la MISMA cuota: «Mentoría de Dante», no «algo de Dante y algo de Mentoría». */
-  return p.cuotas.some((c) =>
-    (!f.closerId || (f.closerId === SIN_CLOSER ? !c.closerId : c.closerId === f.closerId))
-    && (!f.productoId || c.productoId === f.productoId));
+  return p.cuotas.some((c) => cuotaPasa(c, f));
 }
 
 interface Indice {
@@ -140,7 +154,13 @@ export interface OpcionFiltro { id: string; nombre: string; personas: number }
  *  con cuánta gente queda si se lo elige. Sólo los que existen entre los que
  *  deben: un closer sin deudores no aparece. */
 export function opcionesDeFiltro(e: EstadoApp, filtro?: FiltroPersonas): { closers: OpcionFiltro[]; servicios: OpcionFiltro[] } {
-  const debe = indice(e).personas.filter((p) => p.cuotas.length > 0);
+  return opcionesSobre(indice(e).personas.filter((p) => p.cuotas.length > 0), filtro);
+}
+
+/** Lo mismo sobre cualquier lista de cosas con cuotas (los clientes, las cuotas
+ *  vencidas): los closers y los servicios que hay, cada uno con cuántos quedan
+ *  si se lo elige y con el otro filtro ya puesto. */
+export function opcionesSobre(debe: readonly ConLineas[], filtro?: FiltroPersonas): { closers: OpcionFiltro[]; servicios: OpcionFiltro[] } {
   const closers = new Map<string, OpcionFiltro>();
   const servicios = new Map<string, OpcionFiltro>();
   for (const p of debe) {

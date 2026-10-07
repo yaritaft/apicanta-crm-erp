@@ -1735,6 +1735,62 @@ button.cuadro-com__persona:hover { color: var(--brand); text-decoration: underli
 .reporte-fin__color { flex: none; width: 14px; height: 14px; margin-top: 3px; border-radius: 4px; border: 1px solid var(--border-strong); }
 .reporte-fin__lista { margin: var(--space-1) 0 0; padding-left: var(--space-4); list-style: disc; }
 
+/* Control cruzado de los cobros (components/cobros/ControlCobro.tsx): la pastilla del estado y la
+   ventana donde el director o finanzas ven el comprobante al lado de lo que cargó el closer. */
+/* Ingresos de la semana (components/finanzas/IngresosSemanales.tsx): una celda que se toca para ver sus cobros. */
+.ingresos-rango { margin: calc(var(--space-2) * -1) 0 var(--space-4); }
+@media (min-width: 1181px) { .ingresos-stats { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+.ingreso-celda { background: none; border: 0; padding: 4px 0; font: inherit; color: var(--ink); cursor: pointer; font-variant-numeric: tabular-nums; border-radius: var(--radius-sm); }
+.ingreso-celda:hover { color: var(--brand); text-decoration: underline; }
+.ingreso-celda:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+.ingreso-celda--fuerte { font-weight: 600; }
+.chequeo-pildora { border: 0; cursor: pointer; font: inherit; font-size: 13px; line-height: 20px; font-weight: 600; transition: filter 120ms ease-out; }
+.chequeo-pildora:hover { filter: brightness(1.15); }
+.chequeo-pildora:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+/* Las listas de cobros tienen muchas columnas: un poco menos de aire entre ellas. */
+.cobros-tabla .hk-table th, .cobros-tabla .hk-table td { padding-left: var(--space-3); padding-right: var(--space-3); }
+.chequeo { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: var(--space-5); align-items: start; }
+.chequeo__lado { display: flex; flex-direction: column; gap: var(--space-3); min-width: 0; }
+.chequeo__titulo { margin: 0; font-size: 12px; line-height: 16px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-subtle); }
+.chequeo__vista {
+  display: flex; align-items: center; justify-content: center; min-height: 260px; padding: var(--space-3);
+  border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface-200); overflow: hidden;
+}
+.chequeo__vista--vacia { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--space-2); text-align: center; color: var(--ink-muted); padding: var(--space-5); }
+.chequeo__vista--vacia strong { color: var(--ink); }
+.chequeo__imagen { display: block; max-width: 100%; max-height: min(52vh, 520px); object-fit: contain; border-radius: var(--radius-sm); }
+.chequeo__pdf { width: 100%; height: min(52vh, 520px); border: 0; background: var(--surface-100); }
+.chequeo__datos { gap: var(--space-2) var(--space-4); }
+.chequeo__datos dd { min-width: 0; }
+.chequeo__control, .chequeo__cuota {
+  display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface-200);
+}
+.chequeo__casillero { display: grid; grid-template-columns: minmax(120px, auto) auto minmax(0, 1fr); gap: 2px var(--space-3); align-items: center; padding: var(--space-2) 0; border-bottom: 1px dashed var(--border); }
+.chequeo__casillero:last-of-type { border-bottom: 0; }
+.chequeo__casillero-rol { font-weight: 600; color: var(--ink); font-size: 14px; }
+.chequeo__casillero-quien { min-width: 0; overflow-wrap: anywhere; }
+.chequeo__casillero-nota { grid-column: 1 / -1; color: var(--ink); overflow-wrap: anywhere; }
+.chequeo__casillero[data-estado="rechazado"] .chequeo__casillero-nota { color: var(--danger); }
+.chequeo__cuota-lista { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.chequeo__cuota-lista li { display: grid; grid-template-columns: 92px minmax(0, 1fr) auto 72px; gap: var(--space-2); align-items: center; padding: 4px 0; border-bottom: 1px dashed var(--border); }
+.chequeo__cuota-lista li:last-child { border-bottom: 0; }
+.chequeo__cuota-lista li[data-este] { background: var(--brand-soft); border-radius: var(--radius-sm); padding-inline: var(--space-2); margin-inline: calc(var(--space-2) * -1); }
+/* Los botones van en el pie de la ventana y se quedan a la vista aunque haya que bajar a ver el comprobante. */
+.modal__foot:has(.chequeo__pie) { position: sticky; bottom: 0; z-index: 2; align-items: stretch; }
+.chequeo__pie { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--space-3); }
+.chequeo__acciones { display: flex; flex-direction: column; gap: var(--space-3); }
+.chequeo__acciones--confirmar { padding: var(--space-4); border: 1px solid var(--brand); border-radius: var(--radius-md); background: var(--brand-soft); }
+.chequeo__aviso { display: flex; align-items: flex-start; gap: var(--space-2); margin: 0; padding: var(--space-2) var(--space-3); border-radius: var(--radius-sm); background: var(--warning-soft); color: var(--ink); font-size: 13px; line-height: 20px; }
+.chequeo__aviso svg { flex: none; margin-top: 3px; color: var(--warning); }
+@media (max-width: 720px) {
+  .chequeo { grid-template-columns: 1fr; }
+  .chequeo__casillero { grid-template-columns: 1fr auto; }
+  .chequeo__casillero-quien { grid-column: 1 / -1; }
+  .chequeo__cuota-lista li { grid-template-columns: 80px minmax(0, 1fr) auto; }
+  .chequeo__cuota-lista li > :last-child { grid-column: 1 / -1; }
+}
+
 /* ============================================================
    Webinars — la planilla, la ficha y el video
    ============================================================ */
