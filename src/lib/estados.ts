@@ -54,23 +54,66 @@ export const esReagendar = (estadoPreCall?: string | null) => /reagend|reprogram
 
 const agendaDe = (o?: OpcionCrm): EstadoSesion | undefined => o?.llamada ?? (o?.auto === "cancelada" ? "cancelada" : undefined);
 
+const AGENDAS: readonly EstadoSesion[] = ["agendada", "hecha", "no-show", "cancelada"];
+
+/** Cómo estaba la agenda antes de que el Estado de Llamada la moviera (o la
+    confirmara): la anota el store al cargar el estado, en `extra.agendaAntes`
+    (sin columna nueva, sin SQL), y vaciar el estado vuelve a eso. Una marca
+    que no es un estado de la agenda no cuenta. */
+export function agendaAntesDe(s: { extra?: Record<string, unknown> | null }): EstadoSesion | undefined {
+  const a = s.extra?.agendaAntes;
+  return AGENDAS.includes(a as EstadoSesion) ? (a as EstadoSesion) : undefined;
+}
+
 /** Cómo queda la agenda (hecha, no vino, cancelada) cuando el Estado de
     Llamada pasa a `nuevo`; undefined si no la mueve. Una opción de compra
     o de seguimiento la da por hecha; «Inasistió», por que no vino;
-    «Canceló», por cancelada. Vaciar el estado la devuelve a agendada si
-    era ese estado el que la había marcado (lo que canceló Calendly sigue
-    cancelado). */
+    «Canceló», por cancelada.
+
+    Vaciar el estado la devuelve a como estaba, si era ese estado el que la
+    había marcado: a lo que dice `extra.agendaAntes`, que sabe si Calendly la
+    había cancelado o dado por no-show, o si el equipo ya la había marcado
+    hecha a mano. Sin esa marca (los estados cargados antes de que existiera)
+    se supone que estaba agendada, salvo lo que canceló Calendly
+    (`canceladaEn`), que sigue cancelado. Si después alguien movió la agenda a
+    mano, no se toca. */
 export function estadoDeAgenda(
-  s: Pick<Sesion, "estado" | "estadoLlamada" | "canceladaEn">, nuevo: string | undefined | null, opciones: OpcionCrm[],
+  s: Pick<Sesion, "estado" | "estadoLlamada" | "canceladaEn"> & { extra?: Record<string, unknown> | null },
+  nuevo: string | undefined | null, opciones: OpcionCrm[],
 ): EstadoSesion | undefined {
   const de = (n?: string | null) => (n ? opciones.find((o) => o.nombre === n) : undefined);
   const quiere = agendaDe(de(nuevo));
   if (quiere) return quiere === s.estado ? undefined : quiere;
   if (!nuevo && s.estadoLlamada) {
     const antes = agendaDe(de(s.estadoLlamada));
-    if (antes && antes === s.estado && !(s.estado === "cancelada" && s.canceladaEn)) return "agendada";
+    if (antes && antes === s.estado) {
+      const vuelve = agendaAntesDe(s) ?? (s.canceladaEn ? "cancelada" : "agendada");
+      return vuelve === s.estado ? undefined : vuelve;
+    }
   }
   return undefined;
+}
+
+/** Qué hacer con la marca `extra.agendaAntes` cuando el Estado de Llamada
+    pasa a `nuevo`: la agenda de antes, para anotarla; `null`, para borrarla;
+    undefined, para dejarla como está. La marca es la agenda que no es de
+    ningún estado: la que había antes de cargar el primero.
+
+    - De vacío a cargado (cualquier estado, aunque no toque la agenda): se
+      anota la agenda tal como está. Así vaciar uno que no la movió no la toca.
+    - De un estado a otro: sigue valiendo, salvo que la agenda ya no diga lo
+      que decía el de antes. Entonces la movió otro —Calendly la dio por
+      no-show, el equipo la marcó hecha— y la de ahora es la que se anota.
+      Un estado cargado antes de la marca no se reconstruye: no se inventa.
+    - Vaciar el estado la borra. */
+export function marcaDeAgenda(
+  s: Pick<Sesion, "estado" | "estadoLlamada"> & { extra?: Record<string, unknown> | null },
+  nuevo: string | undefined | null, opciones: OpcionCrm[],
+): EstadoSesion | null | undefined {
+  if (!nuevo) return agendaAntesDe(s) ? null : undefined;
+  if (!s.estadoLlamada) return s.estado;
+  const dijo = agendaDe(opciones.find((o) => o.nombre === s.estadoLlamada));
+  return dijo && dijo !== s.estado ? s.estado : undefined;
 }
 
 /* ---------- Qué pregunta el cierre del día ---------- */

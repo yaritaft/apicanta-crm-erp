@@ -89,9 +89,12 @@ export function pideCierre(s: DeLlamada, hoy: string): boolean {
  *  llamadas, como Administración), la llamada figura como «Con cierre» en el
  *  CRM: cuenta cuando se cargó la venta (`ventaEn`). */
 export function atrasoDe(
-  s: Pick<Sesion, "estadoLlamada" | "estadoLlamadaEn">, diaDeLlamada: string, hoy: string, ventaEn?: string,
+  s: Pick<Sesion, "estadoLlamada" | "estadoLlamadaEn"> & Partial<Pick<Sesion, "estado">>, diaDeLlamada: string, hoy: string, ventaEn?: string,
 ): "tarde" | "sin-cargar" | null {
   if (s.estadoLlamadaEn) {
+    /* Una que Calendly dejó cancelada o como que no vino y ya no tiene estado no pide cierre (pideCierre): la marca de
+       una carga que se vació no la vuelve «tarde». */
+    if (!s.estadoLlamada && (s.estado === "cancelada" || s.estado === "no-show")) return null;
     const cargada = diaDeNegocio(s.estadoLlamadaEn);
     return cargada && cargada > diaDeLlamada ? "tarde" : null;
   }
