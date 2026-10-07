@@ -292,3 +292,56 @@ export function problemaDeDevolucion(
   if (!b.tieneComprobante && !b.tienePasarela) return MENSAJE_COMPROBANTE_DEVOLUCION;
   return null;
 }
+
+/* ---------- De qué venta es el pedido ----------
+   La devolución se pide desde la ficha de una venta (se sabe cuál), desde una
+   llamada que quedó en «Devolución» o desde una persona: ahí hay que elegir
+   entre sus ventas. */
+
+export interface PedidoDeVentas { ventaId?: ID; personaId?: ID; sesionId?: ID }
+
+const sinTildes = (s: string | undefined) =>
+  (s ?? "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/\s+/g, " ").trim();
+
+/** Las ventas de las que puede ser la devolución, de la más nueva a la más
+ *  vieja. Una llamada o una persona se reconocen por su contacto, su correo o
+ *  su nombre entero; no se adivina nada más. */
+export function ventasDelPedido(
+  e: Pick<EstadoApp, "ventas" | "sesiones" | "leads" | "contactos">, p: PedidoDeVentas,
+): Venta[] {
+  if (p.ventaId) {
+    const v = e.ventas.find((x) => x.id === p.ventaId);
+    return v ? [v] : [];
+  }
+  const sesion = p.sesionId ? e.sesiones.find((s) => s.id === p.sesionId) : undefined;
+  const ids = new Set<ID>([p.personaId, sesion?.leadId].filter((x): x is ID => Boolean(x)));
+  const emails = new Set<string>();
+  const nombres = new Set<string>();
+  if (sesion?.email) emails.add(sinTildes(sesion.email));
+  if (sesion?.invitado) nombres.add(sinTildes(sesion.invitado));
+  for (const id of [...ids]) {
+    const c = (e.contactos ?? []).find((x) => x.id === id) ?? (e.leads ?? []).find((x) => x.id === id);
+    if (!c) continue;
+    if ((c as { contactoId?: ID }).contactoId) ids.add((c as { contactoId?: ID }).contactoId as ID);
+    if (c.email) emails.add(sinTildes(c.email));
+    if (c.nombre) nombres.add(sinTildes(c.nombre));
+  }
+  if (ids.size === 0 && emails.size === 0 && nombres.size === 0) return [];
+  const delContacto = (v: Venta) => {
+    const c = v.contactoId ? (e.contactos ?? []).find((x) => x.id === v.contactoId) ?? (e.leads ?? []).find((x) => x.id === v.contactoId) : undefined;
+    return c?.email ? sinTildes(c.email) : "";
+  };
+  return e.ventas
+    .filter((v) => (v.contactoId && ids.has(v.contactoId)) || (delContacto(v) && emails.has(delContacto(v))) || nombres.has(sinTildes(v.contactoNombre)))
+    .sort((a, b) => Date.parse(b.fecha) - Date.parse(a.fecha));
+}
+
+/** La cuenta por la que probablemente salió la plata: la del último cobro de la
+ *  venta (la misma con la que se pagó). */
+export function procesadorDeLaVenta(e: Pick<EstadoApp, "pagos" | "cuotas" | "procesadores">, ventaId: ID): ID | undefined {
+  const cuotas = new Set(e.cuotas.filter((c) => c.ventaId === ventaId).map((c) => c.id));
+  const ultimo = e.pagos
+    .filter((p) => cuotas.has(p.cuotaId) && p.procesadorId && e.procesadores.some((x) => x.id === p.procesadorId))
+    .sort((a, b) => Date.parse(b.fecha) - Date.parse(a.fecha))[0];
+  return ultimo?.procesadorId;
+}

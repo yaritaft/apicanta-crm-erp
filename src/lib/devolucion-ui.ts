@@ -24,6 +24,8 @@ export interface PedidoDevolucion {
   sesionId?: ID;
   /* Una devolución que informó la pasarela y se confirma con este formulario. */
   propuestaId?: ID;
+  /* Una devolución ya cargada que se corrige. */
+  devolucionId?: ID;
 }
 
 let pedido: PedidoDevolucion | null = null;
