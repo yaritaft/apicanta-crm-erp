@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   aplicarAviso, aplicarFoto, contarDentro, duracionTexto, estadoDelLector, fechasEnTexto, listaParaCopiar,
-  resumirUnion, sugerirWebinar, unionDePersona, validarCuerpoGrupo, validarCuerpoLatido,
+  resumirUnion, sugerirWebinar, telefonoParaCopiar, unionDePersona, validarCuerpoGrupo, validarCuerpoLatido,
   type LatidoLector, type MiembroWhatsapp,
 } from "@/lib/whatsapp";
 import { construirSemilla } from "@/lib/seed";
@@ -298,6 +298,11 @@ test("sin saber el país, el link no se inventa: se usa lo que se escribió", ()
   assert.equal(unionDePersona("11 5555-1234", undefined, dentro).numero, "1155551234");
   assert.equal(unionDePersona("11 5555-1234", "Argentina", dentro).numero, "5491155551234");
   assert.equal(unionDePersona("+57 300 123 4567", undefined, dentro).numero, "573001234567");
+  /* Sólo el que trae el país se copia con el +. */
+  assert.equal(unionDePersona("11 5555-1234", undefined, dentro).completo, false);
+  assert.equal(unionDePersona("11 5555-1234", "Argentina", dentro).completo, true);
+  assert.equal(unionDePersona("+54 9 11 5555-1234", undefined, dentro).completo, true);
+  assert.equal(unionDePersona("5491155551234", undefined, dentro).completo, true, "con el código de país puesto a mano también");
 });
 
 test("N de M: las que no dejaron teléfono no cuentan en M", () => {
@@ -311,6 +316,10 @@ test("la lista para copiar: teléfonos con el +, o nombre y teléfono para una p
   assert.equal(listaParaCopiar(filas, false), "+5491155551234\n+573001234567");
   assert.equal(listaParaCopiar(filas, true), "Ana Pérez\t+5491155551234\nBeto\t+573001234567");
   assert.equal(listaParaCopiar([], false), "");
+  /* Un número escrito sin el país no se copia con un + inventado. */
+  assert.equal(listaParaCopiar([{ nombre: "Cris", numero: "1155551234", completo: false }], false), "1155551234");
+  assert.equal(listaParaCopiar([{ nombre: "Cris", numero: "1155551234", completo: false }], true), "Cris\t1155551234");
+  assert.equal(telefonoParaCopiar({ numero: "5491155551234", completo: true }), "+5491155551234");
 });
 
 test("con los datos de ejemplo: los leads de un webinar quedan unidos o no según el grupo", () => {

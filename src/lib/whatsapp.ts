@@ -442,6 +442,9 @@ export interface UnionDePersona {
   clave: string | null;
   /** Los dígitos para abrir un chat o copiar el número; vacío si no hay. */
   numero: string;
+  /** El número trae el código de país (se copia con el +). Si no, son los dígitos
+      tal cual se escribieron: no se inventa el país. */
+  completo: boolean;
   /** Si no está pero estuvo: cuándo salió. */
   salio?: string;
   /** Hay un teléfono escrito pero no se entiende como tal. */
@@ -460,13 +463,14 @@ export function unionDePersona(
   dentro: ReadonlySet<string>, salieron: ReadonlyMap<string, string> = new Map(),
 ): UnionDePersona {
   const escrito = (telefono ?? "").trim();
-  if (!escrito) return { estado: "sin-telefono", clave: null, numero: "" };
+  if (!escrito) return { estado: "sin-telefono", clave: null, numero: "", completo: false };
   const claves = clavesDeTelefono(escrito, pais);
-  if (claves.length === 0) return { estado: "sin-telefono", clave: null, numero: "", ilegible: true };
+  if (claves.length === 0) return { estado: "sin-telefono", clave: null, numero: "", completo: false, ilegible: true };
   const hallada = claves.find((c) => dentro.has(c));
-  if (hallada) return { estado: "unida", clave: hallada, numero: hallada };
+  if (hallada) return { estado: "unida", clave: hallada, numero: hallada, completo: true };
+  const numero = numeroParaWhatsapp(escrito, pais) || digitosDe(escrito);
   return {
-    estado: "no-unida", clave: claves[0], numero: numeroParaWhatsapp(escrito, pais) || digitosDe(escrito),
+    estado: "no-unida", clave: claves[0], numero, completo: claves.includes(numero),
     salio: claves.map((c) => salieron.get(c)).find(Boolean),
   };
 }
@@ -484,12 +488,15 @@ export function resumirUnion(estados: readonly EstadoUnion[]): ResumenDeUnion {
   return r;
 }
 
+/** El teléfono para pegar: con el + si trae el código de país; si no, tal cual se escribió. */
+export const telefonoParaCopiar = (f: { numero: string; completo?: boolean }) => (f.completo === false ? f.numero : `+${f.numero}`);
+
 /** La lista para pegar en otro lado: un teléfono por renglón (con el +), o
     «nombre ⇥ teléfono» para pegarla en una planilla. */
-export function listaParaCopiar(filas: readonly { nombre: string; numero: string }[], conNombres: boolean): string {
+export function listaParaCopiar(filas: readonly { nombre: string; numero: string; completo?: boolean }[], conNombres: boolean): string {
   return filas
     .filter((f) => f.numero)
-    .map((f) => (conNombres ? `${f.nombre.replace(/[\t\r\n]+/g, " ").trim()}\t+${f.numero}` : `+${f.numero}`))
+    .map((f) => (conNombres ? `${f.nombre.replace(/[\t\r\n]+/g, " ").trim()}\t${telefonoParaCopiar(f)}` : telefonoParaCopiar(f)))
     .join("\n");
 }
 
