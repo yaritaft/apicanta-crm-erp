@@ -69,6 +69,8 @@ export interface EntradaDiagnostico {
   yaGuardadas: string[];
   /** Lo que no se pudo leer, en castellano y sin la clave. */
   errores: string[];
+  /** Si Fathom no dejó leer ni las reuniones (clave rechazada, por ejemplo): por qué. */
+  fallo?: string;
 }
 
 /* ---------- lo que sale ---------- */
@@ -91,7 +93,7 @@ export interface CloserDiag {
 export interface PlataformaDiag { plataforma: Plataforma; nombre: string; llamadas: number; conGrabacion: number }
 export interface EquipoDiag { nombre: string; deVentas: boolean; reuniones: number | null; soloAhi: number | null; completo: boolean; error?: string }
 
-export type CausaDiag = "a" | "b" | "c" | "d" | "ok" | "sin-datos";
+export type CausaDiag = "a" | "b" | "c" | "d" | "ok" | "sin-datos" | "error";
 export interface Veredicto { causa: CausaDiag; titulo: string; explicacion: string; pasos: string[]; pistas: string[] }
 
 export interface Diagnostico {
@@ -306,6 +308,14 @@ function veredictoDe(d: Diagnostico, e: EntradaDiagnostico, soloEnEquipos: Set<s
   if (d.incompleto) pistas.push("Fathom devolvió tantas reuniones (o pidió esperar) que no se leyeron todas: las cuentas pueden estar por debajo de lo real.");
 
   const pasoManu = "Manu: que las llamadas de cada closer estén compartidas con el equipo de ventas en Fathom, y que la cuenta dueña de la clave (la de Yari) sea Admin con acceso a todo lo compartido. Además, confirmar cómo se llama exactamente el equipo (para FATHOM_EQUIPOS en Vercel, si no se llama «Sales» o «Ventas»).";
+
+  /* Fathom no contestó: no se puede decir nada de las causas. */
+  if (e.fallo) {
+    return {
+      causa: "error", titulo: "No se pudo leer lo que Fathom devuelve", explicacion: e.fallo,
+      pasos: ["Si dice que no aceptó la clave: crear una clave nueva en Fathom (Ajustes → API, desde la cuenta de Yari) y cambiar FATHOM_API_KEY en Vercel."], pistas,
+    };
+  }
 
   /* Sin llamadas de Calendly no hay con qué comparar. */
   if (conLlamadas.length === 0) {
