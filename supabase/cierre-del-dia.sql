@@ -55,7 +55,9 @@ create index if not exists ventas_sesion_idx on public.ventas ("sesionId") where
 
 -- ---------- La marca de la primera carga ----------
 create or replace function public.sesiones_marca_primera_carga() returns trigger
-language plpgsql as $$
+language plpgsql
+set search_path = public
+as $$
 begin
   -- Estado de Llamada
   if coalesce(new."estadoLlamada", '') = '' then

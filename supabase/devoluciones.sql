@@ -34,7 +34,7 @@
 --      carga con su comprobante; una venta no se «reembolsa» a mano.
 --      (Es un trigger y no una política para no tocar las de tipos-cuenta.sql:
 --      sólo mira el cambio de `estado`; editar el resto de la venta sigue
---      igual.)
+--      igual.) Tampoco puede borrar una venta (ventas_sin_baja_del_closer).
 --
 -- Sin esta tabla la app anda igual: las devoluciones que se carguen quedan
 -- sólo en el navegador de quien las carga y la app lo avisa al cargarlas.
@@ -172,6 +172,27 @@ create trigger ventas_cambio_de_baja
   before update of estado on public.ventas
   for each row execute function public.ventas_cambio_de_baja();
 
+-- Y tampoco borra una venta: la política vieja de tipos-cuenta.sql le deja borrar las suyas, y las cuotas
+-- se van en cascada (la venta desaparece de las comisiones de todos los meses). La app no tiene ningún botón
+-- para eso: es lo que haría quien escribe directo a la API. El servidor y quienes ven todo, sí pueden.
+create or replace function public.ventas_sin_baja_del_closer()
+returns trigger
+language plpgsql
+set search_path = public
+as $$
+begin
+  if (select public.solo_lo_suyo()) then
+    raise exception 'Tu tipo de cuenta no puede borrar una venta.' using errcode = '42501';
+  end if;
+  return old;
+end;
+$$;
+
+drop trigger if exists ventas_sin_baja_del_closer on public.ventas;
+create trigger ventas_sin_baja_del_closer
+  before delete on public.ventas
+  for each row execute function public.ventas_sin_baja_del_closer();
+
 -- ---------- diagnóstico ----------
 select
   (select count(*) from information_schema.tables
@@ -180,4 +201,4 @@ select
   (select count(*) from pg_policies
     where schemaname = 'public' and tablename = 'devoluciones')                       as politicas_de_4,
   (select count(*) from pg_trigger
-    where tgname = 'ventas_cambio_de_baja' and not tgisinternal)                      as freno_en_ventas_de_1;
+    where tgname in ('ventas_cambio_de_baja', 'ventas_sin_baja_del_closer') and not tgisinternal) as frenos_en_ventas_de_2;

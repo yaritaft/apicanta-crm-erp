@@ -10,6 +10,8 @@ import {
 import { inicioPara, navPara, TODOS_LOS_ITEMS } from "./nav";
 import { alarmaCobranza } from "@/lib/finanzas";
 import { cuantosFaltan } from "@/lib/gastos-recurrentes";
+import { llamadasEnDevolucionSinCargar } from "@/lib/devoluciones";
+import { propuestasPendientes } from "@/lib/reembolsos";
 import { resumenDePases } from "@/lib/traspasos";
 import {
   alNegarseEscritura, cargarDeLaNube, fijarAcceso, hayNube, reiniciarCarga, useEstado, useSync, useTema,
@@ -127,12 +129,21 @@ export function Shell({ children }: { children: React.ReactNode }) {
     [gastos, gastosRecurrentes],
   );
   const retirosSinComision = useMemo(() => resumenDePases(traspasos ?? []).faltaComision, [traspasos]);
+  /* Las devoluciones que esperan a alguien: llamadas que quedaron en «Devolución» sin la devolución cargada, y
+     reembolsos que informó una pasarela y nadie confirmó (Finanzas → Devoluciones). Sólo para quien ve Finanzas. */
+  const { sesiones: sesionesDev, devoluciones: devolucionesDev, ventas: ventasDev, ajustes: ajustesDev } = estado;
+  const devolucionesPorDecidir = useMemo(
+    () => (nivelDeRuta(acceso, "/finanzas") > 0 ? llamadasEnDevolucionSinCargar(estado).length + propuestasPendientes(estado).length : 0),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [acceso, sesionesDev, devolucionesDev, ventasDev, ajustesDev],
+  );
   const avisosFinanzas = [
     atrasados > 0 ? `${atrasados === 1 ? "Un cliente atrasado" : `${atrasados} clientes atrasados`} hace 7 días o más` : "",
     fijosPorAprobar > 0 ? `${fijosPorAprobar === 1 ? "Un gasto fijo" : `${fijosPorAprobar} gastos fijos`} por aprobar` : "",
+    devolucionesPorDecidir > 0 ? `${devolucionesPorDecidir === 1 ? "Una devolución" : `${devolucionesPorDecidir} devoluciones`} por cargar o confirmar` : "",
   ].filter(Boolean);
   const alertas: Record<string, { n: number; titulo: string }> = {
-    "/finanzas": { n: atrasados + fijosPorAprobar, titulo: avisosFinanzas.join(" · ") },
+    "/finanzas": { n: atrasados + fijosPorAprobar + devolucionesPorDecidir, titulo: avisosFinanzas.join(" · ") },
     "/finanzas/caja": {
       n: retirosSinComision,
       titulo: `${retirosSinComision === 1 ? "Un retiro de Hotmart" : `${retirosSinComision} retiros de Hotmart`} sin la comisión cargada`,
