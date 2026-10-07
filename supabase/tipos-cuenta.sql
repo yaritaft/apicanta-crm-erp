@@ -277,23 +277,34 @@ alter table public.contactos add column if not exists "creadoPor" text default l
 alter table public.leads add column if not exists "creadoPor" text default lower(coalesce(auth.jwt() ->> 'email', ''));
 alter table public.actividad add column if not exists "creadoPor" text default lower(coalesce(auth.jwt() ->> 'email', ''));
 
--- "Valentín Abadía" → "valentin abadia": sin tildes, en minúscula y con las
--- dos primeras palabras, como nombreCorto() de src/lib/crm.ts. Las dos cadenas del
--- translate() tienen que tener el MISMO largo (48 caracteres cada una): con una «u»
--- de más la «ñ» salía «u» y la «ç» «n» («Núñez» → «nuuez») y la base no emparejaba
--- a un closer que la app sí. Lo controla pruebas/fix-sql-menores.test.ts.
+-- "Valentín Abadía" → "valentin abadia": sin tildes, en minúscula y con los
+-- espacios juntados. Las dos cadenas del translate() tienen que tener el mismo
+-- largo (48 caracteres cada una): con una de más, la «ñ» salía «u» y la «ç»
+-- «n» («Núñez» → «nuuez») y la base no emparejaba a un closer que la app sí.
+-- Lo controlan pruebas/fix-sql-menores.test.ts y pruebas/fix-sql-solo-lo-suyo.test.ts.
+create or replace function public.nombre_completo(t text)
+returns text
+language sql immutable
+as $$
+  select trim(regexp_replace(lower(translate(coalesce(t, ''),
+    'ÁÀÂÄÃÉÈÊËÍÌÎÏÓÒÔÖÕÚÙÛÜÑÇáàâäãéèêëíìîïóòôöõúùûüñç',
+    'AAAAAEEEEIIIIOOOOOUUUUNCaaaaaeeeeiiiiooooouuuunc')), '\s+', ' ', 'g'));
+$$;
+
+-- Lo mismo con las dos primeras palabras, como nombreCorto() de src/lib/crm.ts.
 create or replace function public.nombre_corto(t text)
 returns text
 language sql immutable
 as $$
-  select array_to_string((regexp_split_to_array(trim(lower(translate(coalesce(t, ''),
-    'ÁÀÂÄÃÉÈÊËÍÌÎÏÓÒÔÖÕÚÙÛÜÑÇáàâäãéèêëíìîïóòôöõúùûüñç',
-    'AAAAAEEEEIIIIOOOOOUUUUNCaaaaaeeeeiiiiooooouuuunc'))), '\s+'))[1:2], ' ');
+  select array_to_string((regexp_split_to_array(public.nombre_completo(t), ' '))[1:2], ' ');
 $$;
 
 -- Quién de Equipo es un nombre (el anfitrión de Calendly, el responsable de
 -- un lead): el que tiene el mismo nombre corto o, si no hay, uno que
--- empieza igual. Como miembroDeCloser() de src/lib/crm.ts.
+-- empieza igual. Como miembroDeCloser() de src/lib/crm.ts. Si dos tienen el
+-- mismo nombre corto (Ana Laura Pérez y Ana Laura Gómez), gana el que tiene el
+-- nombre entero igual: sin eso el de menor id se quedaba con las llamadas de
+-- los dos. Para ver quiénes chocan: equipo_nombres_que_chocan().
 create or replace function public.miembro_de_nombre(n text)
 returns text
 language sql stable security definer
@@ -303,7 +314,7 @@ as $$
   select coalesce(
     (select e.id from public.equipo e, c
       where c.c <> '' and public.nombre_corto(e.nombre) = c.c
-      order by e.activo desc, e.id limit 1),
+      order by (public.nombre_completo(e.nombre) = public.nombre_completo(n)) desc, e.activo desc, e.id limit 1),
     (select e.id from public.equipo e, c
       where c.c <> '' and public.nombre_corto(e.nombre) <> ''
         and (c.c like public.nombre_corto(e.nombre) || ' %' or public.nombre_corto(e.nombre) like c.c || ' %')
@@ -331,12 +342,12 @@ language sql stable security definer
 set search_path = public
 as $$
   with yo as materialized (select public.mi_miembro_id() as id),
-       eq as materialized (select e.id, public.nombre_corto(e.nombre) as c, e.activo from public.equipo e),
-       n  as materialized (select distinct x as nombre, public.nombre_corto(x) as c
+       eq as materialized (select e.id, public.nombre_corto(e.nombre) as c, public.nombre_completo(e.nombre) as f, e.activo from public.equipo e),
+       n  as materialized (select distinct x as nombre, public.nombre_corto(x) as c, public.nombre_completo(x) as f
                            from unnest(nombres) as x where coalesce(x, '') <> ''),
        quien as (
          select n.nombre, coalesce(
-           (select eq.id from eq where n.c <> '' and eq.c = n.c order by eq.activo desc, eq.id limit 1),
+           (select eq.id from eq where n.c <> '' and eq.c = n.c order by (eq.f = n.f) desc, eq.activo desc, eq.id limit 1),
            (select eq.id from eq where n.c <> '' and eq.c <> ''
               and (n.c like eq.c || ' %' or eq.c like n.c || ' %')
             order by eq.activo desc, eq.id limit 1)) as miembro

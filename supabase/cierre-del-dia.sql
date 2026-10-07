@@ -26,6 +26,10 @@
 -- vieja) cargó el estado. Sólo mira UPDATE: restaurar un respaldo (INSERT) no inventa
 -- marcas, y el webhook de Calendly, que no toca los estados, no las mueve.
 --
+-- ventas."sesionId" lo cuida la base para quien ve «sólo lo suyo» (el closer): una
+-- vez puesto no se suelta ni se cambia, y al crear la venta tiene que ser una
+-- llamada suya (supabase/solo-lo-suyo-seguro.sql).
+--
 -- Sin estas columnas la app anda igual, como antes: descarta esos campos al guardar
 -- (store.ts los saca y reintenta). Lo único que no queda guardado es la marca, la
 -- salida de la puerta y el id de la llamada de la venta. El interruptor y la fecha de
