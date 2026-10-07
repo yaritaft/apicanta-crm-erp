@@ -17,7 +17,7 @@ export const NAV: GrupoNav[] = [
   {
     titulo: "Negocio",
     items: [
-      { href: "/panel", texto: "Dashboard & KPIs", icono: LayoutDashboard, ayuda: "Todas las métricas del negocio en una tabla" },
+      { href: "/panel", texto: "Dashboard & KPIs", icono: LayoutDashboard, ayuda: "Todas las métricas del negocio, en una tabla o en gráficos" },
     ],
   },
   {
