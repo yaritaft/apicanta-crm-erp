@@ -27,7 +27,8 @@ import { ordenAURL, ordenDeURL, paginaDeURL, useBusquedaURL, useParamsURL } from
 import { useAbrirFicha } from "@/components/ficha/abrir";
 import { fechaLarga, money, num } from "@/lib/format";
 import { saldoVenta } from "@/lib/finanzas";
-import { controlPorVenta } from "@/lib/control-cobros";
+import { casilleroDe, controlPorVenta } from "@/lib/control-cobros";
+import { useAcceso } from "@/lib/acceso";
 import type { EstadoVenta, Venta } from "@/lib/types";
 
 const ESTADO: Record<EstadoVenta, { texto: string; variante: "success" | "neutral" | "danger" }> = {
@@ -134,10 +135,16 @@ export default function Ventas() {
   const saldos = useMemo(() => new Map(e.ventas.map((v) => [v.id, saldoVenta(e, v.id)])), [e]);
   /* Cuántos cobros de cada venta faltan chequear (control cruzado). */
   const controles = useMemo(() => controlPorVenta(e), [e.pagos, e.cuotas]); // eslint-disable-line react-hooks/exhaustive-deps
-  const sinChequear = useMemo(
-    () => { let n = 0; for (const c of controles.values()) n += c.pendientes + c.rechazados; return n; },
-    [controles],
-  );
+  const { pendientes, rechazados } = useMemo(() => {
+    let p = 0, r = 0;
+    for (const c of controles.values()) { p += c.pendientes; r += c.rechazados; }
+    return { pendientes: p, rechazados: r };
+  }, [controles]);
+  /* Quien chequea ve cuántos le faltan; el closer, cuántos le rechazaron y tiene que arreglar. */
+  const { acceso } = useAcceso();
+  const avisoDeCobros = casilleroDe(acceso) !== null
+    ? (pendientes + rechazados > 0 ? ` · ${num(pendientes + rechazados)} por chequear` : "")
+    : (rechazados > 0 ? ` · ${num(rechazados)} ${rechazados === 1 ? "rechazado" : "rechazados"}` : "");
 
   /* Por qué cuentas entró la plata de cada venta: el cobro cuelga de una
      cuota, y la cuota de la venta. */
@@ -376,7 +383,7 @@ export default function Ventas() {
 
       <Tabs valor={seccion} onChange={cambiarSeccion} opciones={[
         { valor: "ventas", texto: "Ventas" },
-        { valor: "cobros", texto: `Cobros${sinChequear ? ` · ${num(sinChequear)} por chequear` : ""}` },
+        { valor: "cobros", texto: `Cobros${avisoDeCobros}` },
       ]} />
 
       {seccion === "cobros" ? (
