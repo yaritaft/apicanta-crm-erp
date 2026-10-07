@@ -1,0 +1,34 @@
+# systemd: dejar el lector andando y que arranque solo con el servidor.
+#
+#   sudo cp deploy/whatsapp-lector.service /etc/systemd/system/apicanta-whatsapp-lector.service
+#   (editá User, WorkingDirectory y ExecStart si tus rutas son otras: `which node` dice dónde está Node)
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now apicanta-whatsapp-lector
+#   journalctl -u apicanta-whatsapp-lector -f        (los registros)
+#
+# Los datos (APP_URL, el token…) los lee el propio servicio del archivo .env de WorkingDirectory.
+
+[Unit]
+Description=Lector de WhatsApp de Apicanta (solo lectura)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=lector
+WorkingDirectory=/opt/apicanta-whatsapp-lector
+ExecStart=/usr/bin/node src/index.js
+Environment=NODE_ENV=production
+Environment=TZ=America/Argentina/Buenos_Aires
+Restart=always
+RestartSec=10
+# Una sola copia: dos con la misma sesión de WhatsApp se pelean.
+# El servicio sólo hace conexiones hacia afuera; no abre ningún puerto.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ReadWritePaths=/opt/apicanta-whatsapp-lector
+
+[Install]
+WantedBy=multi-user.target
