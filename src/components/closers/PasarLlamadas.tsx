@@ -110,7 +110,9 @@ export function PasarLlamadas({ llamadas, lote = false, onCerrar }: {
               <span className="t-sm t-subtle">
                 {previa
                   ? `La pasó ${previa.por || "alguien"}${previa.calendly ? ` · en Calendly figura ${previa.calendly}` : ""}.`
-                  : actual.miembro || !actual.nombre ? "Es el anfitrión del evento en Calendly." : "En Calendly figura así, y no está en Equipo: nadie más que los dueños la ve."}
+                  : !actual.nombre ? "Calendly no le asignó anfitrión."
+                    : actual.miembro ? "Es el anfitrión del evento en Calendly."
+                      : "En Calendly figura así y no está en Equipo: nadie más que los dueños la ve."}
               </span>
             </span>
             <EstadoDeLlamada ver={estadoVisible(e, una)} />

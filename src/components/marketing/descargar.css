@@ -2,8 +2,12 @@
    El botón «Descargar» de cada video o imagen del anuncio. Va encima del
    medio, arriba a la derecha (el chip del lugar va a la izquierda y los
    controles del video, abajo): oscuro y translúcido para que se lea sobre
-   cualquier imagen.
+   cualquier imagen. En un medio angosto (un carrusel en una pantalla chica)
+   no entran el chip y el texto: queda sólo el ícono (el nombre sigue en su
+   aria-label y su tooltip) y el chip se acorta.
    ================================================================== */
+
+.mk-medio { container-type: inline-size; }
 
 .mk-medio__bajar {
   position: absolute; top: 8px; right: 8px; z-index: 2;
@@ -25,3 +29,14 @@
 }
 @keyframes mk-bajar-giro { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .mk-medio__bajar-giro { animation-duration: 2.4s; } }
+
+@container (max-width: 299px) {
+  .mk-medio__bajar { width: 30px; padding: 0; justify-content: center; }
+  .mk-medio__bajar-texto { display: none; }
+  .mk-medio__chip { max-width: calc(100% - 56px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+}
+/* «Descargar portada» es más largo: pide más lugar para mostrarse entero. */
+@container (max-width: 379px) {
+  .mk-medio__bajar--portada { width: 30px; padding: 0; justify-content: center; }
+  .mk-medio__bajar--portada .mk-medio__bajar-texto { display: none; }
+}

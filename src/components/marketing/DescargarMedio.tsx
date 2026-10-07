@@ -92,12 +92,12 @@ export function BotonDescargar({ metaId, nombre, medio, indice, total }: {
 
   return (
     <button
-      type="button" className="mk-medio__bajar" onClick={bajar} disabled={bajando} aria-busy={bajando}
+      type="button" className={`mk-medio__bajar${portada ? " mk-medio__bajar--portada" : ""}`} onClick={bajar} disabled={bajando} aria-busy={bajando}
       aria-label={`Descargar ${que} del anuncio ${nombre}${total > 1 ? ` (${indice + 1} de ${total})` : ""}`}
       title={portada ? "Meta no entregó el video de este anuncio: esto baja sólo su portada." : `Descargar ${que}`}
     >
       {bajando ? <span className="mk-medio__bajar-giro" aria-hidden /> : <Download size={14} aria-hidden />}
-      {bajando ? "Descargando…" : portada ? "Descargar portada" : "Descargar"}
+      <span className="mk-medio__bajar-texto">{bajando ? "Descargando…" : portada ? "Descargar portada" : "Descargar"}</span>
     </button>
   );
 }

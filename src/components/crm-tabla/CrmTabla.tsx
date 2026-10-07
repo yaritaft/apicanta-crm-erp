@@ -2,7 +2,7 @@
 
 import React, { useCallback, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { ArrowDown, ArrowUp, ClipboardCheck, ExternalLink, Pencil, Search, Star, X } from "lucide-react";
+import { ArrowDown, ArrowRightLeft, ArrowUp, ClipboardCheck, ExternalLink, Pencil, Search, Star, X } from "lucide-react";
 import { Button, Card, Chip, Empty, Input, Tabs } from "@/components/ui/ui";
 import { DataTable, type Columna } from "@/components/ui/DataTable";
 import { DateRangePicker } from "@/components/ui/DateRangePicker";
@@ -19,7 +19,8 @@ import { puedeEditar } from "@/lib/permisos";
 import { useUsuarioActual } from "@/lib/usuario";
 import { closersConLlamadas, objecionesDe } from "@/lib/eod";
 import { destinosDePase } from "@/lib/pasar-llamadas";
-import { usePasarLlamadas } from "@/components/closers/usePasarLlamadas";
+import { sePuedePasar, usePasarLlamadas } from "@/components/closers/usePasarLlamadas";
+import { PasarLlamadas } from "@/components/closers/PasarLlamadas";
 import { AvisoMisLlamadas } from "@/components/closers/MisLlamadas";
 import { miembroDeCloser, opcionesDe as opcionesDelCrm } from "@/lib/crm";
 import { COLOR_AVISO, POR_VENIR, SIN_CARGAR } from "@/lib/estados";
@@ -98,6 +99,8 @@ export function CrmTabla({ misLlamadas = false }: { misLlamadas?: boolean } = {}
   /* La celda que se está corrigiendo, y la llamada a la que se le carga la venta. */
   const [editando, setEditando] = useState<{ id: string; clave: ClaveColumna } | null>(null);
   const [ventaPara, setVentaPara] = useState<string | null>(null);
+  /* Pasar a otro closer las llamadas que se ven (con el closer y el período filtrados, las de uno). */
+  const [pasando, setPasando] = useState(false);
   /* Cada tipo de cuenta corrige lo que edita (y la base lo traba igual). */
   const { acceso } = useAcceso();
   const puedeLlamadas = puedeEditar(acceso, "sesiones");
@@ -322,6 +325,12 @@ export function CrmTabla({ misLlamadas = false }: { misLlamadas?: boolean } = {}
               <ConfigColumnas todas={DEFS} visibles={cols.visibles} alternar={cols.alternar} mover={cols.mover} restaurar={cols.restaurar} compacto />
             )}
             <CopiarLink />
+            {puedePasar && !enInforme && filas.some((f) => sePuedePasar(f.sesion)) && (
+              <Button sm variante="secondary" icono={<ArrowRightLeft size={15} />} onClick={() => setPasando(true)}
+                title="Pasar las llamadas que ves, o algunas, de un closer a otro">
+                Pasar llamadas
+              </Button>
+            )}
             {!misLlamadas && <Button variante="primary" sm icono={<ClipboardCheck size={15} />} onClick={() => setEod(true)}>Cerrar el día</Button>}
           </div>
         </div>
@@ -379,6 +388,7 @@ export function CrmTabla({ misLlamadas = false }: { misLlamadas?: boolean } = {}
       </Card>
 
       {eod && <Eod onCerrar={() => setEod(false)} />}
+      {pasando && <PasarLlamadas lote llamadas={filas.map((f) => f.sesion)} onCerrar={() => setPasando(false)} />}
     </div>
   );
 }
