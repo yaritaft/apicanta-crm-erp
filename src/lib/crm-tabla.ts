@@ -1,11 +1,12 @@
-import type { Ajustes, CampoOpcionesCrm, ColorCrm, Contacto, EstadoApp, Lead, Sesion, Venta } from "./types";
+import type { Ajustes, CampoOpcionesCrm, ColorCrm, Contacto, EstadoApp, ID, Lead, Pago, Sesion, Venta } from "./types";
 import { filasCrm, opcionesDe, partir, sinTildes, type FilaCrm } from "./crm";
 import { diaDeNegocio } from "./dia-negocio";
 import { EVENTOS, leerUtm, NOMBRE_FUNNEL } from "./utm-estandar";
 import { CANCELADA, CON_CIERRE, estadoDe, NO_SE_PRESENTO, POR_VENIR, SIN_CARGAR, SIN_CIERRE } from "./estados";
 import { conCorrecciones, corregidoDe, respuestaPerfil, type CampoPerfil, type Corregido } from "./perfil";
 import type { CambiosLlamada } from "./store";
-import { cobrosPorVenta, sumarCobros, type CobrosDeVenta } from "./control-cobros";
+import { COBROS_EN_CERO, cobrosPorVenta, quienEs, sumarCobros, type CobrosDeVenta } from "./control-cobros";
+import { devolucionesDeVenta } from "./devoluciones";
 
 /* ==================================================================
    El CRM como una tabla fácil, como un Excel (Yari, 29/09): "lo fácil le
@@ -71,6 +72,14 @@ export interface FilaTabla {
   /* Los cobros de esa venta, para las columnas «Comprobante» y «Conciliado»: null si la
      llamada no tiene venta (o si quien arma las filas no trae los cobros). */
   cobros: CobrosDeVenta | null;
+  /* Las ventas cuyos cobros se suman en esa fila (la mentoría y el upsell de la misma llamada) y lo que dicen: */
+  ventaIds: string[];
+  /* los productos, lo cobrado neto de devoluciones (null sin venta) y quién cargó los cobros (nombres). */
+  productos: string[];
+  cobrado: number | null;
+  /* Lo cobrado de cada venta, neto de devoluciones: sumar la tabla sin contar dos veces una venta que sale de dos llamadas. */
+  cobradoPorVenta: { id: string; cobrado: number }[];
+  cargo: string[];
   email: string;
   telefono: string;
   agendo: string;
@@ -82,7 +91,6 @@ export interface FilaTabla {
 }
 
 const SIN_CORREGIR: Corregido = {};
-const SIN_COBROS_CARGADOS: CobrosDeVenta = { total: 0, conPrueba: 0, sinComprobante: 0, conciliados: 0, sinConciliar: 0, aMano: 0 };
 
 /* ---------- El país, por el prefijo del teléfono ----------
    Los de Calendly llegan con el + y el código del país. Sin el +, no se
@@ -150,7 +158,7 @@ export function anguloDe(ad: string): string {
 
 export function filasTabla(
   e: Pick<EstadoApp, "sesiones" | "contactos" | "ajustes" | "webinars" | "ventas" | "productos" | "leads">
-    & Partial<Pick<EstadoApp, "pagos" | "cuotas" | "procesadores">>,
+    & Partial<Pick<EstadoApp, "pagos" | "cuotas" | "procesadores" | "equipo" | "devoluciones">>,
   ahora = Date.now(),
 ): FilaTabla[] {
   /* Sin los cobros (quien arma las filas sólo mira llamadas) las dos columnas quedan en blanco. */
@@ -163,13 +171,30 @@ export function filasTabla(
     const xs = ventasDeSesion.get(v.sesionId);
     if (xs) xs.push(v); else ventasDeSesion.set(v.sesionId, [v]);
   }
-  const cobrosDeLlamada = (s: Sesion, ventaId: string): CobrosDeVenta | null => {
-    if (!cobros) return null;
+  /* Las ventas de la llamada: las que dicen haber salido de ella (la reembolsada no cuenta si hay otra en pie) o, si
+     ninguna lo dice, la que eligió filasCrm. */
+  const ventasDeLaLlamada = (s: Sesion, ventaId: string): string[] => {
     const suyas = ventasDeSesion.get(s.id);
-    const ids = suyas?.some((v) => v.id === ventaId)
-      ? (suyas.some((v) => v.estado !== "reembolsada") ? suyas.filter((v) => v.estado !== "reembolsada") : suyas).map((v) => v.id)
-      : [ventaId];
-    return sumarCobros(ids.map((id) => cobros.get(id) ?? SIN_COBROS_CARGADOS));
+    if (!suyas?.some((v) => v.id === ventaId)) return [ventaId];
+    const vivas = suyas.filter((v) => v.estado !== "reembolsada");
+    return (vivas.length ? vivas : suyas).map((v) => v.id);
+  };
+  const productoDe = new Map((e.productos ?? []).map((p) => [p.id, p.nombre] as const));
+  const productoDeVenta = new Map((e.ventas ?? []).map((v) => [v.id, (v.productoId && productoDe.get(v.productoId)) || "Venta"] as const));
+  const equipo = e.equipo ?? [];
+  /* Lo que se sabe de los cobros de la venta de una llamada. Sin venta (o sin los cobros en el estado), nada. */
+  const datosDeCobros = (ventaId: string | undefined, s: Sesion): Pick<FilaTabla, "cobros" | "ventaIds" | "productos" | "cobrado" | "cobradoPorVenta" | "cargo"> => {
+    if (!ventaId) return { cobros: null, ventaIds: [], productos: [], cobrado: null, cobradoPorVenta: [], cargo: [] };
+    const ids = ventasDeLaLlamada(s, ventaId);
+    const productos = [...new Set(ids.map((id) => productoDeVenta.get(id) ?? "Venta"))];
+    if (!cobros) return { cobros: null, ventaIds: ids, productos, cobrado: null, cobradoPorVenta: [], cargo: [] };
+    const delasVentas = ids.map((id) => cobros.get(id) ?? COBROS_EN_CERO);
+    const suma = sumarCobros(delasVentas);
+    const cobradoPorVenta = ids.map((id, i) => ({
+      id, cobrado: Math.round((delasVentas[i].cobrado - devolucionesDeVenta(e, id).reduce((a, d) => a + d.monto, 0)) * 100) / 100,
+    }));
+    const cargo = [...new Set(suma.cargaron.map((c) => (c ? quienEs(equipo, c) : SIN_DATO)))];
+    return { cobros: suma, ventaIds: ids, productos, cobrado: Math.round(cobradoPorVenta.reduce((a, v) => a + v.cobrado * 100, 0)) / 100, cobradoPorVenta, cargo };
   };
   const contactos = new Map(e.contactos.map((c) => [c.id, c]));
   const leads = new Map(e.leads.map((l) => [l.id, l]));
@@ -210,7 +235,7 @@ export function filasTabla(
       grabacion: f.grabacion,
       venta: f.venta?.texto ?? "",
       /* Una venta sin ningún cobro cargado todavía tiene cero, no «no sé». */
-      cobros: f.venta ? cobrosDeLlamada(s, f.venta.id) : null,
+      ...datosDeCobros(f.venta?.id, s),
       email: f.email,
       telefono: f.telefono,
       agendo: s.creadoEn,
@@ -226,7 +251,7 @@ export function filasTabla(
 export type ClaveColumna =
   | "llamada" | "nombre" | "closer" | "estadoPreCall" | "estadoLlamada" | "preCall" | "objecion" | "oferta" | "cierre"
   | "via" | "ad" | "angulo" | "campania" | "pais" | "edad" | "tecnologias" | "ingles" | "experiencia" | "formacion"
-  | "ingreso" | "inversion" | "calificada" | "grabacion" | "venta" | "comprobante" | "conciliado" | "email" | "telefono" | "agendo" | "notas";
+  | "ingreso" | "inversion" | "calificada" | "grabacion" | "venta" | "producto" | "cobrado" | "comprobante" | "conciliado" | "cargo" | "chequeo" | "email" | "telefono" | "agendo" | "notas";
 
 export interface ColumnaTabla {
   clave: ClaveColumna;
@@ -242,6 +267,8 @@ export interface ColumnaTabla {
   texto?: (f: FilaTabla) => string;
   /* Los valores son días (aaaa-mm-dd): se filtra desde y hasta. */
   fecha?: boolean;
+  /* Se ordena por un número (lo cobrado), no por sus valores de filtro: «de menor a mayor». */
+  numerica?: boolean;
   ancho?: number;
 }
 
@@ -249,12 +276,29 @@ export const VACIAS = "(Vacías)";
 const uno = (x: string) => [x || VACIAS];
 const varios = (xs: string[]) => (xs.length ? xs : [VACIAS]);
 
+/** Lo cobrado (neto de devoluciones) por las ventas de estas llamadas: una venta que sale de dos llamadas cuenta una vez. */
+export function totalCobrado(filas: readonly Pick<FilaTabla, "cobradoPorVenta">[]): number {
+  const vistas = new Set<ID>();
+  let centavos = 0;
+  for (const f of filas) for (const v of f.cobradoPorVenta) if (!vistas.has(v.id)) { vistas.add(v.id); centavos += Math.round(v.cobrado * 100); }
+  return centavos / 100;
+}
+
+/** Los cobros de las ventas de estas llamadas, sin repetir una venta que sale de dos llamadas, para bajarlos a Excel. */
+export function pagosDeLlamadas(e: Pick<EstadoApp, "pagos" | "cuotas">, filas: readonly Pick<FilaTabla, "ventaIds">[]): Pago[] {
+  const ventas = new Set<ID>(filas.flatMap((f) => f.ventaIds));
+  if (!ventas.size) return [];
+  const cuotasDe = new Set(e.cuotas.filter((c) => ventas.has(c.ventaId)).map((c) => c.id));
+  return e.pagos.filter((p) => cuotasDe.has(p.cuotaId));
+}
+
 /* ---------- Comprobante y Conciliado ----------
    Lo que dicen los cobros de la venta de la llamada (la misma cuenta que la lista de
    Ventas → Cobros, lib/control-cobros.ts). Una venta puede tener varios cobros (las
    cuotas): «Falta» es que a alguno le falta el comprobante, y «Sin conciliar» que alguno
    es de una cuenta con pasarela y todavía no se ató a su pago. */
 export const SIN_VENTA = "Sin venta";
+export const SIN_DATO = "Sin dato";
 export const SIN_COBROS = "Sin cobros";
 export const COMPROBANTE_SI = "Con comprobante";
 export const COMPROBANTE_FALTA = "Falta comprobante";
@@ -276,6 +320,22 @@ export function valoresConciliado(c: CobrosDeVenta | null): string[] {
   return [c.sinConciliar > 0 ? CONCILIADO_NO : c.conciliados > 0 ? CONCILIADO_SI : CONCILIADO_A_MANO];
 }
 
+/* Chequeo (el control cruzado de los cobros de la venta): el peor caso, como las demás. */
+export const CHEQUEO_RECHAZADO = "Rechazado";
+export const CHEQUEO_PENDIENTE = "Sin chequear";
+export const CHEQUEO_SI = "Chequeado";
+export function valoresChequeo(c: CobrosDeVenta | null): string[] {
+  if (!c) return [SIN_VENTA];
+  if (c.total === 0) return [SIN_COBROS];
+  return [c.rechazados > 0 ? CHEQUEO_RECHAZADO : c.pendientes > 0 ? CHEQUEO_PENDIENTE : CHEQUEO_SI];
+}
+export const ORDEN_CHEQUEO: string[] = [CHEQUEO_RECHAZADO, CHEQUEO_PENDIENTE, CHEQUEO_SI, SIN_COBROS, SIN_VENTA];
+
+/* Cobrado: lo que entró de esa venta (neto de devoluciones), para filtrar por «con cobros» y sumar en el pie. */
+export const COBRADO_SI = "Con cobros";
+export const COBRADO_NO = "Sin cobrar";
+export const valoresCobrado = (f: Pick<FilaTabla, "cobrado">): string[] => [f.cobrado === null ? SIN_VENTA : f.cobrado > 0 ? COBRADO_SI : COBRADO_NO];
+
 /* Los valores en el orden en que se ofrecen y se ordenan, lo que hay que mirar primero (como los estados
    de llamada: el menú dice «en el orden de las opciones»), y el color de cada uno. */
 export const ORDEN_COMPROBANTE: string[] = [COMPROBANTE_FALTA, COMPROBANTE_SI, SIN_COBROS, SIN_VENTA];
@@ -283,10 +343,12 @@ export const ORDEN_CONCILIADO: string[] = [CONCILIADO_NO, CONCILIADO_SI, CONCILI
 export const COLOR_COBROS: Record<string, ColorCrm> = {
   [COMPROBANTE_FALTA]: "amarillo1", [COMPROBANTE_SI]: "verde1", [CONCILIADO_NO]: "amarillo1", [CONCILIADO_SI]: "verde1",
   [CONCILIADO_A_MANO]: "gris1", [SIN_COBROS]: "gris1", [SIN_VENTA]: "gris1",
+  [CHEQUEO_RECHAZADO]: "rojo1", [CHEQUEO_PENDIENTE]: "amarillo1", [CHEQUEO_SI]: "verde1", [COBRADO_SI]: "verde1", [COBRADO_NO]: "gris1",
 };
 
 /* Lo que falta primero: al ordenar, las que hay que mirar arriba. */
 const RANGO_COBROS: Record<string, number> = {
+  [CHEQUEO_RECHAZADO]: 0, [CHEQUEO_PENDIENTE]: 0, [CHEQUEO_SI]: 1,
   [COMPROBANTE_FALTA]: 0, [CONCILIADO_NO]: 0, [COMPROBANTE_SI]: 1, [CONCILIADO_SI]: 1, [CONCILIADO_A_MANO]: 2, [SIN_COBROS]: 3, [SIN_VENTA]: 4,
 };
 const rangoCobros = (valores: string[]) => Math.min(...valores.map((v) => RANGO_COBROS[v] ?? 5));
@@ -304,8 +366,13 @@ export const COLUMNAS: ColumnaTabla[] = [
   { clave: "cierre", titulo: "Cierre estimado", grupo: "Resultado", valores: (f) => uno(f.cierre), fecha: true, ancho: 140 },
   /* «La carga otra persona»: el closer avisó, en la puerta del cierre del día, que la venta de esta compra la carga otra persona. */
   { clave: "venta", titulo: "Venta", grupo: "Resultado", valores: (f) => [f.venta ? "Con venta" : f.sesion.ventaPorOtro ? "La carga otra persona" : "Sin venta"], orden: (f) => f.venta, texto: (f) => f.venta, ancho: 190 },
+  { clave: "producto", titulo: "Producto", grupo: "Resultado", valores: (f) => (f.productos.length ? f.productos : [SIN_VENTA]), orden: (f) => f.productos.join(", "), texto: (f) => f.productos.join(", "), ancho: 160 },
+  /* Lo cobrado de esa venta, neto de devoluciones (el Cash Collected de la llamada). Se filtra por «con cobros» y se suma al pie. */
+  { clave: "cobrado", titulo: "Cobrado (CC)", grupo: "Resultado", valores: (f) => valoresCobrado(f), orden: (f) => f.cobrado ?? -1, numerica: true, ancho: 140 },
   { clave: "comprobante", titulo: "Comprobante", grupo: "Resultado", valores: (f) => valoresComprobante(f.cobros), orden: (f) => rangoCobros(valoresComprobante(f.cobros)), ancho: 150 },
   { clave: "conciliado", titulo: "Conciliado", grupo: "Resultado", valores: (f) => valoresConciliado(f.cobros), orden: (f) => rangoCobros(valoresConciliado(f.cobros)), ancho: 150 },
+  { clave: "cargo", titulo: "Cargó", grupo: "Resultado", valores: (f) => (f.cobros === null ? [SIN_VENTA] : f.cobros.total === 0 ? [SIN_COBROS] : f.cargo), orden: (f) => f.cargo.join(", "), ancho: 150 },
+  { clave: "chequeo", titulo: "Chequeo", grupo: "Resultado", valores: (f) => valoresChequeo(f.cobros), orden: (f) => rangoCobros(valoresChequeo(f.cobros)), ancho: 150 },
   { clave: "via", titulo: "Vía", grupo: "Origen", valores: (f) => uno(f.via), ancho: 170 },
   { clave: "ad", titulo: "Ad", grupo: "Origen", valores: (f) => uno(f.ad), ancho: 200 },
   { clave: "angulo", titulo: "Ángulo", grupo: "Origen", valores: (f) => uno(f.angulo), ancho: 190 },
@@ -334,7 +401,7 @@ export const VISIBLES_POR_DEFECTO: ClaveColumna[] = [
 ];
 
 /* Las dos columnas que miran los cobros de la venta: sólo las ve quien puede leer los cobros. */
-export const COLUMNAS_DE_COBROS: ClaveColumna[] = ["comprobante", "conciliado"];
+export const COLUMNAS_DE_COBROS: ClaveColumna[] = ["cobrado", "comprobante", "conciliado", "cargo", "chequeo"];
 
 /* Las columnas de antes de que los estados fueran uno solo: quien tenía
    elegida «Resultado» ve en su lugar los dos estados de ahora (el «Estado»
@@ -378,6 +445,10 @@ export const POR_QUE_NO: Partial<Record<ClaveColumna, string>> = {
   venta: "La venta se carga en Ventas o en el cierre del día.",
   comprobante: "Sale de los cobros de la venta: el comprobante se sube en el cobro (Ventas → Cobros o la ficha de la venta).",
   conciliado: "Sale de los cobros de la venta: se concilia con el pago de la pasarela en Conciliación.",
+  producto: "Sale de la venta de la llamada.",
+  cobrado: "Lo que entró de la venta de la llamada, menos lo que se devolvió. Se carga en Ventas → Cobros.",
+  cargo: "Quién cargó los cobros de la venta, según la app. Los de la planilla y los de las pasarelas no tienen ese dato.",
+  chequeo: "Sale del control cruzado de los cobros: el director o finanzas lo confirman en la ficha de la venta.",
 };
 
 const PERFIL_DE: Partial<Record<ClaveColumna, CampoPerfil | "pais">> = {

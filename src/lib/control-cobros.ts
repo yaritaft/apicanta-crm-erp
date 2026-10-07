@@ -315,15 +315,34 @@ export interface CobrosDeVenta {
   sinConciliar: number;
   /** La cuenta no tiene pasarela (la Financiera, efectivo): se prueba con el comprobante. */
   aMano: number;
+  /** El control cruzado: cuántos cobros están por chequear, chequeados o rechazados (suman `total`). */
+  pendientes: number;
+  chequeados: number;
+  rechazados: number;
+  /** Lo cobrado, en dólares y sin devoluciones. */
+  cobrado: number;
+  /** Quién cargó cada cobro (correos distintos); "" es un cobro sin ese dato (la planilla, las pasarelas). */
+  cargaron: string[];
 }
+
+const redondear2 = (n: number) => Math.round(n * 100) / 100;
+export const COBROS_EN_CERO: CobrosDeVenta = Object.freeze({
+  total: 0, conPrueba: 0, sinComprobante: 0, conciliados: 0, sinConciliar: 0, aMano: 0,
+  pendientes: 0, chequeados: 0, rechazados: 0, cobrado: 0, cargaron: [] as string[],
+}) as CobrosDeVenta;
 
 /** Los cobros de varias ventas como si fueran una: la llamada de la que salieron dos (la mentoría y un upsell). */
 export function sumarCobros(xs: readonly CobrosDeVenta[]): CobrosDeVenta {
-  const r: CobrosDeVenta = { total: 0, conPrueba: 0, sinComprobante: 0, conciliados: 0, sinConciliar: 0, aMano: 0 };
+  const r: CobrosDeVenta = { ...COBROS_EN_CERO, cargaron: [] };
+  let centavos = 0;
   for (const x of xs) {
     r.total += x.total; r.conPrueba += x.conPrueba; r.sinComprobante += x.sinComprobante;
     r.conciliados += x.conciliados; r.sinConciliar += x.sinConciliar; r.aMano += x.aMano;
+    r.pendientes += x.pendientes; r.chequeados += x.chequeados; r.rechazados += x.rechazados;
+    centavos += Math.round(x.cobrado * 100);
+    for (const c of x.cargaron) if (!r.cargaron.includes(c)) r.cargaron.push(c);
   }
+  r.cobrado = centavos / 100;
   return r;
 }
 
@@ -332,18 +351,25 @@ export function cobrosPorVenta(
 ): Map<ID, CobrosDeVenta> {
   const ventaDeCuota = new Map(e.cuotas.map((c) => [c.id, c.ventaId] as const));
   const por = new Map<ID, CobrosDeVenta>();
+  const centavos = new Map<ID, number>();
   for (const p of e.pagos) {
     const v = ventaDeCuota.get(p.cuotaId);
     if (!v) continue;
-    const x = por.get(v) ?? { total: 0, conPrueba: 0, sinComprobante: 0, conciliados: 0, sinConciliar: 0, aMano: 0 };
+    const x = por.get(v) ?? { ...COBROS_EN_CERO, cargaron: [] };
     x.total++;
     if (pasaControl(p, e.procesadores, "sin-comprobante")) x.sinComprobante++; else x.conPrueba++;
     const c = conciliacionDe(e.procesadores, p);
     if (c === "conciliado") x.conciliados++;
     else if (c === "sin-conciliar") x.sinConciliar++;
     else x.aMano++;
+    const estado = controlDeCobro(p).estado;
+    if (estado === "pendiente") x.pendientes++; else if (estado === "chequeado") x.chequeados++; else x.rechazados++;
+    const quien = (p.cargadoPor ?? "").trim().toLowerCase();
+    if (!x.cargaron.includes(quien)) x.cargaron.push(quien);
+    centavos.set(v, (centavos.get(v) ?? 0) + Math.round(p.monto * 100));
     por.set(v, x);
   }
+  for (const [v, x] of por) x.cobrado = redondear2((centavos.get(v) ?? 0) / 100);
   return por;
 }
 

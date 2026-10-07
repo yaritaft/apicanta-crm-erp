@@ -26,7 +26,7 @@ function Abrir({ onAbrir, titulo, children }: { onAbrir?: () => void; titulo: st
 }
 
 export function CeldaCobros({ clave, cobros, onAbrir }: {
-  clave: "comprobante" | "conciliado"; cobros: CobrosDeVenta | null; onAbrir?: () => void;
+  clave: "comprobante" | "conciliado" | "chequeo"; cobros: CobrosDeVenta | null; onAbrir?: () => void;
 }) {
   /* Sin venta no hay cobros que mirar. */
   if (!cobros) return nada;
@@ -51,6 +51,29 @@ export function CeldaCobros({ clave, cobros, onAbrir }: {
         titulo={`${varios ? "Todos los cobros tienen" : "El cobro tiene"} su prueba${porPasarela ? ` (${porPasarela} con el pago de la pasarela)` : ""}: abrir la venta.`}
       >
         <Badge variante="success">{varios ? `Todos · ${n}` : "Sí"}</Badge>
+      </Abrir>
+    );
+  }
+
+  if (clave === "chequeo") {
+    /* El control cruzado: lo que dice la lista de ventas (ControlDeVenta), con el peor caso primero. */
+    if (cobros.rechazados > 0) {
+      return (
+        <Abrir onAbrir={onAbrir} titulo={`${cobros.rechazados} de ${n} ${cobros.rechazados === 1 ? "cobro rechazado" : "cobros rechazados"}: alguien dijo que el comprobante no sirve.`}>
+          <Badge variante="danger">{`${cobros.rechazados} ${cobros.rechazados === 1 ? "rechazado" : "rechazados"}${cobros.pendientes ? ` · ${cobros.pendientes} sin chequear` : ""}`}</Badge>
+        </Abrir>
+      );
+    }
+    if (cobros.pendientes > 0) {
+      return (
+        <Abrir onAbrir={onAbrir} titulo={`${cobros.pendientes} de ${n} ${varios ? "cobros" : "cobro"} sin chequear: el director o finanzas tienen que confirmar el comprobante.`}>
+          <Badge variante="warning">{varios ? `${cobros.pendientes} sin chequear` : "Sin chequear"}</Badge>
+        </Abrir>
+      );
+    }
+    return (
+      <Abrir onAbrir={onAbrir} titulo={`${varios ? "Todos los cobros chequeados" : "Cobro chequeado"} por el director o finanzas.`}>
+        <Badge variante="success">{varios ? "Todo chequeado" : "Chequeado"}</Badge>
       </Abrir>
     );
   }

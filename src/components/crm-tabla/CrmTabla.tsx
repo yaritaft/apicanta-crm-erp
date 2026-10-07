@@ -2,7 +2,7 @@
 
 import React, { useCallback, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { ArrowDown, ArrowRightLeft, ArrowUp, ClipboardCheck, ExternalLink, Pencil, Search, Star, X } from "lucide-react";
+import { ArrowDown, ArrowRightLeft, ArrowUp, ClipboardCheck, ExternalLink, FileSpreadsheet, Pencil, Search, Star, X } from "lucide-react";
 import { Button, Card, Chip, Empty, Input, Tabs } from "@/components/ui/ui";
 import { DataTable, type Columna } from "@/components/ui/DataTable";
 import { DateRangePicker } from "@/components/ui/DateRangePicker";
@@ -28,13 +28,14 @@ import { leadDeSesion } from "@/lib/etapas-auto";
 import { aLista } from "@/lib/compartirLink";
 import { PARAM_VISTA } from "@/lib/vistas-guardadas";
 import type { ColorCrm, OpcionCrm } from "@/lib/types";
-import { num } from "@/lib/format";
+import { money, num } from "@/lib/format";
 import { diaDeNegocio } from "@/lib/dia-negocio";
+import { bajarExcel, excelCobros, filasExcelCobros } from "@/lib/excelCobros";
 import { paginaDeURL, useBusquedaURL, useEscribirURL, useParamsURL } from "@/lib/useParamsURL";
 import { useRangoURL } from "@/lib/useRango";
 import {
   CAMPO_DE_OPCIONES, COLUMNA, COLUMNAS, COLUMNAS_DE_ANTES, COLUMNAS_DE_COBROS, COLOR_COBROS, coincideBusqueda, EDITOR, escrituraDe, filasTabla, filtroAURL, filtrosDeURL,
-  hayFiltro, MAX_ORDENES, opcionesDeColumna, ORDEN_COMPROBANTE, ORDEN_CONCILIADO, ORDEN_POR_DEFECTO, ordenarFilas, ordenesAURL, ordenesDeURL, PAISES, pasaFiltros, POR_QUE_NO,
+  hayFiltro, MAX_ORDENES, opcionesDeColumna, ORDEN_CHEQUEO, ORDEN_COMPROBANTE, ORDEN_CONCILIADO, ORDEN_POR_DEFECTO, ordenarFilas, pagosDeLlamadas, totalCobrado, ordenesAURL, ordenesDeURL, PAISES, pasaFiltros, POR_QUE_NO,
   textoDeFiltro, VACIAS, valorEditable, VISIBLES_POR_DEFECTO,
   type ClaveColumna, type FilaTabla, type FiltroColumna as Filtro, type OrdenColumna,
 } from "@/lib/crm-tabla";
@@ -106,6 +107,7 @@ export function CrmTabla({ misLlamadas = false }: { misLlamadas?: boolean } = {}
   const [ventaPara, setVentaPara] = useState<string | null>(null);
   /* Pasar a otro closer las llamadas que se ven (con el closer y el período filtrados, las de uno). */
   const [pasando, setPasando] = useState(false);
+  const [bajando, setBajando] = useState(false);
   /* Cada tipo de cuenta corrige lo que edita (y la base lo traba igual). */
   const { acceso } = useAcceso();
   const puedeLlamadas = puedeEditar(acceso, "sesiones");
@@ -159,6 +161,7 @@ export function CrmTabla({ misLlamadas = false }: { misLlamadas?: boolean } = {}
     preCall: estados.preCall.map((o) => o.nombre),
     comprobante: ORDEN_COMPROBANTE,
     conciliado: ORDEN_CONCILIADO,
+    chequeo: ORDEN_CHEQUEO,
   }), [estados]);
   const colorDe = useMemo<Partial<Record<ClaveColumna, Map<string, ColorCrm>>>>(() => ({
     estadoLlamada: new Map<string, ColorCrm>([...Object.entries(COLOR_AVISO), ...estados.estadoLlamada.map((o) => [o.nombre, o.color] as const)]),
@@ -166,6 +169,8 @@ export function CrmTabla({ misLlamadas = false }: { misLlamadas?: boolean } = {}
     preCall: new Map(estados.preCall.map((o) => [o.nombre, o.color] as const)),
     comprobante: new Map(Object.entries(COLOR_COBROS)),
     conciliado: new Map(Object.entries(COLOR_COBROS)),
+    chequeo: new Map(Object.entries(COLOR_COBROS)),
+    cobrado: new Map(Object.entries(COLOR_COBROS)),
   }), [estados]);
 
   /* El orden: por una columna o por varias, desde el título de cada una. */
@@ -259,6 +264,29 @@ export function CrmTabla({ misLlamadas = false }: { misLlamadas?: boolean } = {}
     f.fila.venta?.id ?? f.sesion.contactoId ?? f.sesion.leadId ?? f.sesion.id, "ventas", f.fila.venta ? { venta: f.fila.venta.id } : undefined,
   );
 
+  /* El pie: lo cobrado de las ventas de las llamadas que se ven, con la columna «Cobrado» a la vista. */
+  const conPie = visibles.includes("cobrado");
+  const totalCC = useMemo(() => (conPie ? totalCobrado(filas) : 0), [conPie, filas]);
+  const conVenta = useMemo(() => (conPie ? filas.filter((f) => f.cobrado !== null).length : 0), [conPie, filas]);
+
+  /* Los cobros de las ventas de las llamadas que se ven, en el Excel de siempre (el de Ventas → Cobros). */
+  const pagosExcel = useMemo(() => (veCobros ? pagosDeLlamadas(e, filas) : []), [veCobros, e, filas]);
+  async function descargarCobros() {
+    if (pagosExcel.length === 0 || bajando) return;
+    setBajando(true);
+    try {
+      const { nombre, datos, sinLink } = await excelCobros(filasExcelCobros(e, pagosExcel), rango.desde, rango.hasta);
+      bajarExcel(nombre, datos);
+      toast(sinLink
+        ? `Se bajó el Excel. ${sinLink === 1 ? "Un comprobante no se pudo firmar: va" : `${sinLink} comprobantes no se pudieron firmar: van`} con el nombre del archivo.`
+        : `Se bajó el Excel con ${num(pagosExcel.length)} ${pagosExcel.length === 1 ? "cobro" : "cobros"} de las llamadas que ves.`, sinLink ? "info" : "ok");
+    } catch (err) {
+      toast(err instanceof Error ? err.message : "No se pudo armar el Excel.", "err");
+    } finally {
+      setBajando(false);
+    }
+  }
+
   const columnas: Columna<FilaTabla>[] = visibles.map((k) => {
     const col = COLUMNA[k as ClaveColumna];
     const puesto = ordenes.findIndex((o) => o.clave === col.clave);
@@ -268,6 +296,10 @@ export function CrmTabla({ misLlamadas = false }: { misLlamadas?: boolean } = {}
       titulo: col.titulo,
       ancho: col.ancho,
       tipo: col.clave === "nombre" ? "primary" as const : undefined,
+      pie: !conPie ? undefined
+        : col.clave === "nombre" ? <span className="t-sm t-subtle">Total · {num(conVenta)} {conVenta === 1 ? "llamada con venta" : "llamadas con venta"}</span>
+        : col.clave === "cobrado" ? <strong className="t-num">{money(totalCC, "USD")}</strong>
+        : undefined,
       encabezado: (
         <FiltroColumna
           titulo={col.titulo}
@@ -282,7 +314,7 @@ export function CrmTabla({ misLlamadas = false }: { misLlamadas?: boolean } = {}
             : [...ordenes.slice(0, MAX_ORDENES - 1), { clave: col.clave, desc }])}
           onQuitarOrden={() => ordenar(ordenes.filter((o) => o.clave !== col.clave))}
           ordenaPrimero={ordenes[0].clave !== col.clave ? COLUMNA[ordenes[0].clave].titulo : undefined}
-          fecha={col.fecha}
+          fecha={col.fecha} numerica={col.numerica}
           pinta={colores ? (v) => colores.get(v) : undefined}
         />
       ),
@@ -354,6 +386,12 @@ export function CrmTabla({ misLlamadas = false }: { misLlamadas?: boolean } = {}
               <ConfigColumnas todas={veCobros ? DEFS : DEFS_SIN_COBROS} visibles={visibles} alternar={cols.alternar} mover={cols.mover} restaurar={cols.restaurar} compacto />
             )}
             <CopiarLink />
+            {veCobros && !enInforme && (
+              <Button sm variante="secondary" icono={<FileSpreadsheet size={15} />} disabled={pagosExcel.length === 0 || bajando} onClick={descargarCobros}
+                title="Los cobros de las ventas de las llamadas que ves, con su comprobante, conciliación y chequeo">
+                {bajando ? "Armando el Excel…" : "Excel de cobros"}
+              </Button>
+            )}
             {puedePasar && !enInforme && filas.some((f) => sePuedePasar(f.sesion)) && (
               <Button sm variante="secondary" icono={<ArrowRightLeft size={15} />} onClick={() => setPasando(true)}
                 title="Pasar las llamadas que ves, o algunas, de un closer a otro">
@@ -450,7 +488,7 @@ function CeldaCrm({ clave, f, puede, abierta, onAbrir, onCerrar, onGuardar, onFi
     );
   }
   /* Los cobros de la venta: un clic abre la venta. El cartelito lo trae la celda, con el detalle. */
-  if (clave === "comprobante" || clave === "conciliado") {
+  if (clave === "comprobante" || clave === "conciliado" || clave === "chequeo") {
     return <span className="crm-t__fija"><CeldaCobros clave={clave} cobros={f.cobros} onAbrir={onCobros} /></span>;
   }
   if (!editor || !puede) {
@@ -495,6 +533,11 @@ function Celda({ clave, f, color }: { clave: ClaveColumna; f: FilaTabla; color?:
       : f.sesion.ventaPorOtro
         ? <span className="crm-t__venta crm-t__venta--otra" title={`Avisó ${f.sesion.ventaPorOtro.por} (${textoFecha(diaDeNegocio(f.sesion.ventaPorOtro.en))}): la venta de esta compra la carga otra persona.`}>La carga otra persona</span>
         : nada;
+    case "producto": return f.productos.length ? <span className="truncate" title={f.productos.join(", ")}>{f.productos.join(", ")}</span> : nada;
+    case "cobrado": return f.cobrado === null ? nada : <span className="t-num" title="Lo que entró de la venta, menos lo que se devolvió.">{money(f.cobrado, "USD")}</span>;
+    case "cargo": return f.cobros === null ? nada
+      : f.cobros.total === 0 ? <span className="t-subtle" title="La venta todavía no tiene ningún cobro cargado.">Sin cobros</span>
+      : <span className="truncate" title={f.cargo.join(", ")}>{f.cargo.join(", ")}</span>;
     case "tecnologias": return f.tecnologias.length ? <span className="truncate" title={f.tecnologias.join(", ")}>{f.tecnologias.join(", ")}</span> : nada;
     case "formacion": return f.formacion.length ? <span className="truncate" title={f.formacion.join(", ")}>{f.formacion.join(", ")}</span> : nada;
     default: {

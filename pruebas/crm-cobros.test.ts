@@ -1,9 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { cobrosPorVenta, type CobrosDeVenta } from "@/lib/control-cobros";
+import { COBROS_EN_CERO, cobrosPorVenta, type CobrosDeVenta } from "@/lib/control-cobros";
 import {
   COLUMNA, COLUMNAS, COLUMNAS_DE_COBROS, COMPROBANTE_FALTA, COMPROBANTE_SI, CONCILIADO_A_MANO, CONCILIADO_NO, CONCILIADO_SI,
-  filasTabla, opcionesDeColumna, ORDEN_COMPROBANTE, ORDEN_CONCILIADO, ordenarFilas, SIN_COBROS, SIN_VENTA, valoresComprobante, valoresConciliado, VISIBLES_POR_DEFECTO, pasaFiltros,
+  filasTabla, opcionesDeColumna, ORDEN_COMPROBANTE, ORDEN_CONCILIADO, ordenarFilas, pagosDeLlamadas, SIN_COBROS, SIN_DATO,
+  CHEQUEO_PENDIENTE, CHEQUEO_RECHAZADO, CHEQUEO_SI, COBRADO_NO, COBRADO_SI, totalCobrado, valoresChequeo, valoresCobrado, SIN_VENTA, valoresComprobante, valoresConciliado, VISIBLES_POR_DEFECTO, pasaFiltros,
   type FilaTabla,
 } from "@/lib/crm-tabla";
 import { puedeLeer, TIPOS_POR_DEFECTO, type MiAcceso } from "@/lib/permisos";
@@ -32,6 +33,9 @@ const pago = (extra: Partial<Pago>): Pago => ({
 });
 const archivo = { ruta: "a/b.png", nombre: "b.png", tipo: "image/png", tamano: 10 } as unknown as Pago["comprobante"];
 
+/* Los cobros de una venta con todos los campos: lo que no se dice, en cero. */
+const cobros = (extra: Partial<CobrosDeVenta> = {}): CobrosDeVenta => ({ ...COBROS_EN_CERO, cargaron: [], ...extra });
+
 const acceso = (tipo: string): MiAcceso => {
   const t = TIPOS_POR_DEFECTO.find((x) => x.id === tipo)!;
   return { tipo: t.id, nombre: t.nombre, areas: t.areas, soloLoSuyo: t.soloLoSuyo };
@@ -49,14 +53,14 @@ test("cobrosPorVenta cuenta, por venta, los que tienen prueba y los que están a
     pago({ id: "e", cuotaId: "no-existe" }),
   ];
   const r = cobrosPorVenta({ pagos, cuotas, procesadores: PROCESADORES });
-  assert.deepEqual(r.get("v1"), { total: 3, conPrueba: 2, sinComprobante: 1, conciliados: 0, sinConciliar: 1, aMano: 2 });
-  assert.deepEqual(r.get("v2"), { total: 1, conPrueba: 1, sinComprobante: 0, conciliados: 1, sinConciliar: 0, aMano: 0 });
+  assert.deepEqual(r.get("v1"), cobros({ total: 3, conPrueba: 2, sinComprobante: 1, sinConciliar: 1, aMano: 2, pendientes: 3, cobrado: 1500, cargaron: [""] }));
+  assert.deepEqual(r.get("v2"), cobros({ total: 1, conPrueba: 1, conciliados: 1, pendientes: 1, cobrado: 500, cargaron: [""] }));
   assert.equal(r.has("v3"), false, "una venta sin cobros no aparece: quien la mira sabe que tiene cero");
   assert.equal(r.size, 2);
 });
 
 test("lo que dice cada columna: sin venta, sin cobros, lo que falta y lo que está", () => {
-  const c = (extra: Partial<CobrosDeVenta>): CobrosDeVenta => ({ total: 1, conPrueba: 1, sinComprobante: 0, conciliados: 0, sinConciliar: 0, aMano: 1, ...extra });
+  const c = (extra: Partial<CobrosDeVenta>): CobrosDeVenta => cobros({ total: 1, conPrueba: 1, aMano: 1, pendientes: 1, ...extra });
   assert.deepEqual(valoresComprobante(null), [SIN_VENTA]);
   assert.deepEqual(valoresConciliado(null), [SIN_VENTA]);
   assert.deepEqual(valoresComprobante(c({ total: 0, conPrueba: 0, aMano: 0 })), [SIN_COBROS]);
@@ -112,13 +116,13 @@ test("cada llamada con venta trae los cobros de esa venta, y la que no tiene ven
   const conVenta = filas.filter((f) => f.fila.venta);
   assert.ok(conVenta.some((f) => f.sesion.id === sesionId), "la llamada a la que se le ató la venta la trae");
   const suya = conVenta.find((f) => f.sesion.id === sesionId)!;
-  assert.deepEqual(suya.cobros, { total: 2, conPrueba: 1, sinComprobante: 1, conciliados: 0, sinConciliar: 0, aMano: 2 });
+  assert.deepEqual(suya.cobros, cobros({ total: 2, conPrueba: 1, sinComprobante: 1, aMano: 2, pendientes: 2, cobrado: 1000, cargaron: [""] }));
   assert.deepEqual(COLUMNA.comprobante.valores(suya), [COMPROBANTE_FALTA]);
   assert.deepEqual(COLUMNA.conciliado.valores(suya), [CONCILIADO_A_MANO]);
   for (const f of conVenta) {
     const esperado = directo.get(f.fila.venta!.id);
     assert.ok(f.cobros, "una llamada con venta siempre trae su cuenta (cero si no tiene cobros)");
-    assert.deepEqual(f.cobros, esperado ?? { total: 0, conPrueba: 0, sinComprobante: 0, conciliados: 0, sinConciliar: 0, aMano: 0 });
+    assert.deepEqual(f.cobros, esperado ?? cobros());
   }
   for (const f of filas.filter((x) => !x.fila.venta)) assert.equal(f.cobros, null);
   /* Cada llamada con venta cae en un solo valor de «Comprobante». */
@@ -138,9 +142,9 @@ test("se filtra y se ordena como cualquier columna: «Falta comprobante» y «Si
   const { filas, sesionId } = estadoConVentas();
   const base = filas.find((f) => f.sesion.id === sesionId)!;
   const con = (cobros: CobrosDeVenta | null): FilaTabla => ({ ...base, id: `x${Math.random()}`, cobros });
-  const falta = con({ total: 2, conPrueba: 1, sinComprobante: 1, conciliados: 0, sinConciliar: 1, aMano: 1 });
-  const ok = con({ total: 1, conPrueba: 1, sinComprobante: 0, conciliados: 1, sinConciliar: 0, aMano: 0 });
-  const sinCobros = con({ total: 0, conPrueba: 0, sinComprobante: 0, conciliados: 0, sinConciliar: 0, aMano: 0 });
+  const falta = con(cobros({ total: 2, conPrueba: 1, sinComprobante: 1, sinConciliar: 1, aMano: 1, pendientes: 2 }));
+  const ok = con(cobros({ total: 1, conPrueba: 1, conciliados: 1, chequeados: 1 }));
+  const sinCobros = con(cobros());
   const sinVenta = con(null);
   const todas = [sinVenta, sinCobros, ok, falta];
   const orden = ordenarFilas(todas, [{ clave: "comprobante", desc: false }], {});
@@ -164,8 +168,8 @@ test("el filtro del título ofrece los valores de cada columna con cuántas llam
   const base = filas.find((f) => f.sesion.id === sesionId)!;
   const con = (cobros: CobrosDeVenta | null, id: string): FilaTabla => ({ ...base, id, cobros });
   const todas = [
-    con({ total: 1, conPrueba: 0, sinComprobante: 1, conciliados: 0, sinConciliar: 1, aMano: 0 }, "a"),
-    con({ total: 2, conPrueba: 2, sinComprobante: 0, conciliados: 1, sinConciliar: 0, aMano: 1 }, "b"),
+    con(cobros({ total: 1, sinComprobante: 1, sinConciliar: 1, pendientes: 1 }), "a"),
+    con(cobros({ total: 2, conPrueba: 2, conciliados: 1, aMano: 1, chequeados: 2 }), "b"),
     con(null, "c"), con(null, "d"),
   ];
   const cuentas = (clave: "comprobante" | "conciliado") => Object.fromEntries(opcionesDeColumna(todas, {}, clave).map((o) => [o.valor, o.cuenta]));
@@ -210,11 +214,99 @@ test("una llamada de la que salieron dos ventas junta los cobros de las dos: lo 
   }).find((f) => f.sesion.id === s.id)!;
   /* La mentoría tiene su comprobante y el upsell no: la fila dice que falta. */
   const dos = fila([mentoria, upsell]);
-  assert.deepEqual(dos.cobros, { total: 2, conPrueba: 1, sinComprobante: 1, conciliados: 0, sinConciliar: 0, aMano: 2 });
+  assert.deepEqual(dos.cobros, cobros({ total: 2, conPrueba: 1, sinComprobante: 1, aMano: 2, pendientes: 2, cobrado: 1000, cargaron: [""] }));
   assert.deepEqual(COLUMNA.comprobante.valores(dos), [COMPROBANTE_FALTA]);
   /* Una reembolsada no suma si hay otra en pie, y sola es la que hay. */
   assert.equal(fila([reembolsada, mentoria]).cobros?.total, 1);
   assert.equal(fila([reembolsada]).cobros?.total, 1);
   /* Una sola venta, como antes. */
-  assert.deepEqual(fila([mentoria]).cobros, { total: 1, conPrueba: 1, sinComprobante: 0, conciliados: 0, sinConciliar: 0, aMano: 1 });
+  assert.deepEqual(fila([mentoria]).cobros, cobros({ total: 1, conPrueba: 1, aMano: 1, pendientes: 1, cobrado: 500, cargaron: [""] }));
+});
+
+/* ---------- Producto, Cobrado, Cargó y Chequeo ---------- */
+
+/* Una llamada con una venta (sin sesionId: la que sale de la persona) y los cobros que se le pasan. */
+function conCobros(pagosDe: (cuotaId: string) => Pago[], extra: Partial<EstadoApp> = {}) {
+  const semilla = construirSemilla();
+  const s = filasTabla(semilla)[0].sesion;
+  const venta = { ...semilla.ventas[0], id: "v_x", sesionId: s.id, contactoId: s.contactoId ?? s.leadId, estado: "activa" as const };
+  const cuota = { ...semilla.cuotas[0], id: "cu_x", ventaId: venta.id };
+  const e: EstadoApp = {
+    ...semilla,
+    ventas: [...semilla.ventas.filter((v) => v.sesionId !== s.id), venta],
+    cuotas: [...semilla.cuotas, cuota],
+    pagos: [...semilla.pagos, ...pagosDe(cuota.id)],
+    ...extra,
+  };
+  return { e, fila: filasTabla(e).find((f) => f.sesion.id === s.id)!, venta, s };
+}
+
+test("cobrosPorVenta suma también el control cruzado, lo cobrado y quién cargó cada cobro", () => {
+  const pagos = [
+    pago({ id: "a", cuotaId: "c1", monto: 100.1, cargadoPor: "Mari@x.com", chequeoDirector: "chequeado" }),
+    pago({ id: "b", cuotaId: "c1", monto: 200.2, cargadoPor: "mari@x.com", chequeoFinanzas: "rechazado" }),
+    pago({ id: "c", cuotaId: "c2", monto: 50, chequeado: true }),
+  ];
+  const v = cobrosPorVenta({ pagos, cuotas, procesadores: PROCESADORES }).get("v1")!;
+  assert.equal(v.total, 3);
+  assert.equal(v.chequeados, 2, "uno por casillero y el otro por el sí/no de antes");
+  assert.equal(v.rechazados, 1);
+  assert.equal(v.pendientes, 0);
+  assert.equal(v.cobrado, 350.3, "sin restos de punto flotante");
+  assert.deepEqual(v.cargaron, ["mari@x.com", ""], "el mismo correo con otra mayúscula es la misma persona; sin dato queda aparte");
+});
+
+test("Chequeo y Cobrado: el peor caso por venta, y el cobrado se filtra por «con cobros»", () => {
+  const c = (extra: Partial<CobrosDeVenta>) => cobros({ total: 2, ...extra });
+  assert.deepEqual(valoresChequeo(null), [SIN_VENTA]);
+  assert.deepEqual(valoresChequeo(cobros()), [SIN_COBROS]);
+  assert.deepEqual(valoresChequeo(c({ rechazados: 1, pendientes: 1 })), [CHEQUEO_RECHAZADO], "con uno rechazado, la venta está rechazada");
+  assert.deepEqual(valoresChequeo(c({ pendientes: 1, chequeados: 1 })), [CHEQUEO_PENDIENTE]);
+  assert.deepEqual(valoresChequeo(c({ chequeados: 2 })), [CHEQUEO_SI]);
+  assert.deepEqual(valoresCobrado({ cobrado: null }), [SIN_VENTA]);
+  assert.deepEqual(valoresCobrado({ cobrado: 0 }), [COBRADO_NO]);
+  assert.deepEqual(valoresCobrado({ cobrado: 0.01 }), [COBRADO_SI]);
+});
+
+test("la fila trae el producto, lo cobrado neto de devoluciones y quién cargó, con nombres", () => {
+  const equipo = [{ id: "m1", nombre: "Mariana Pérez", email: "mariana@apicanta.com" }] as unknown as EstadoApp["equipo"];
+  const dev = (monto: number, estado: "confirmada" | "propuesta") => ({
+    id: `d${monto}${estado}`, ventaId: "v_x", monto, moneda: "USD", fecha: "2026-10-06T15:00:00.000Z", estado, creadoEn: "2026-10-06T15:00:00.000Z",
+  }) as unknown as EstadoApp["devoluciones"][number];
+  const { fila } = conCobros(
+    (cu) => [
+      pago({ id: "g1", cuotaId: cu, monto: 1000, cargadoPor: "mariana@apicanta.com" }),
+      pago({ id: "g2", cuotaId: cu, monto: 500.5 }),
+    ],
+    { equipo, devoluciones: [dev(200, "confirmada"), dev(999, "propuesta")] },
+  );
+  assert.equal(fila.cobrado, 1300.5, "1.500,50 cobrados menos 200 devueltos; la propuesta de la pasarela todavía no resta");
+  assert.deepEqual(fila.cargo.sort(), ["Mariana Pérez", SIN_DATO].sort());
+  assert.equal(fila.productos.length, 1);
+  assert.deepEqual(fila.cobradoPorVenta, [{ id: "v_x", cobrado: 1300.5 }]);
+});
+
+test("la suma del pie cuenta una vez la venta que sale de dos llamadas, y el Excel baja cada cobro una sola vez", () => {
+  const { e, fila } = conCobros((cu) => [pago({ id: "h1", cuotaId: cu, monto: 700 })]);
+  const otra = { ...fila, id: "otra", ventaIds: [...fila.ventaIds] };
+  assert.equal(totalCobrado([fila, otra]), 700, "la misma venta en dos filas suma una vez");
+  assert.equal(totalCobrado([fila, { ...fila, id: "sin", cobrado: null, cobradoPorVenta: [] }]), 700);
+  assert.equal(totalCobrado([]), 0);
+  const pagos = pagosDeLlamadas(e, [fila, otra]);
+  assert.deepEqual(pagos.map((p) => p.id), ["h1"]);
+  assert.deepEqual(pagosDeLlamadas(e, []), []);
+});
+
+test("las columnas nuevas existen, no son de las de entrada y las de cobros se esconden a quien no los lee", () => {
+  for (const k of ["producto", "cobrado", "cargo", "chequeo"] as const) {
+    assert.ok(COLUMNAS.some((x) => x.clave === k), k);
+    assert.ok(!VISIBLES_POR_DEFECTO.includes(k), `${k} se suma desde «Columnas»`);
+  }
+  for (const k of ["cobrado", "cargo", "chequeo", "comprobante", "conciliado"] as const) assert.ok(COLUMNAS_DE_COBROS.includes(k), k);
+  assert.ok(!COLUMNAS_DE_COBROS.includes("producto" as never), "el producto sale de la venta, que ya se ve en la columna Venta");
+  assert.equal(COLUMNA.cobrado.titulo, "Cobrado (CC)");
+  /* Sin los cobros en el estado no se inventa nada. */
+  const { pagos: _p, cuotas: _c, procesadores: _pr, ...sinCobros } = construirSemilla();
+  void _p; void _c; void _pr;
+  for (const f of filasTabla(sinCobros)) assert.equal(f.cobrado, null);
 });

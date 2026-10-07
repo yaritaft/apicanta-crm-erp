@@ -1160,4 +1160,16 @@ en la otra.
 - Las ve quien puede leer los cobros (`puedeLeer(acceso, "pagos")`: el closer sobre lo suyo, el director, finanzas, los
   dueños); un setter no las tiene en la lista de columnas. Quien ya tenía elegidas sus columnas las suma con «Columnas».
 
+**Más columnas y el Excel (se suman desde «Columnas»; no vienen de entrada):**
+
+- **Producto** (de la venta de la llamada), **Cobrado (CC)** (lo que entró de esa venta menos lo devuelto; se ordena por monto y se
+  filtra por «con cobros»), **Cargó** (quién cargó los cobros, con el nombre del equipo; «Sin dato» para los de la planilla y las
+  pasarelas) y **Chequeo** (el control cruzado de los cobros de la venta: «Rechazado», «Sin chequear» o «Chequeado», el peor caso
+  primero). Cobrado, Cargó y Chequeo, como Comprobante y Conciliado, sólo las ve quien puede leer los cobros.
+- Con «Cobrado» a la vista la tabla suma al pie lo cobrado de las ventas de las llamadas que se ven, y **una venta que sale de dos
+  llamadas se cuenta una vez** (`totalCobrado`).
+- **«Excel de cobros»** (en la barra, para quien lee los cobros): baja, con el Excel de siempre de Ventas → Cobros
+  (`lib/excelCobros.ts`), los cobros de las ventas de las llamadas que se ven, con comprobante, conciliación y chequeo
+  (`pagosDeLlamadas`, `lib/crm-tabla.ts`).
+
 *Pruebas:* `pruebas/crm-cobros.test.ts`.

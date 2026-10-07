@@ -31,7 +31,7 @@ export interface OrdenDeColumna {
   de: number;
 }
 
-export function FiltroColumna({ titulo, opciones, filtro, onFiltro, orden, onOrdenar, onSumarOrden, onQuitarOrden, ordenaPrimero, fecha, pinta }: {
+export function FiltroColumna({ titulo, opciones, filtro, onFiltro, orden, onOrdenar, onSumarOrden, onQuitarOrden, ordenaPrimero, fecha, pinta, numerica }: {
   titulo: string;
   /* Se calculan al abrir: con miles de llamadas, no en cada render de la tabla. */
   opciones: () => { valor: string; cuenta: number }[];
@@ -50,6 +50,8 @@ export function FiltroColumna({ titulo, opciones, filtro, onFiltro, orden, onOrd
   fecha?: boolean;
   /* El color de cada valor, si son opciones con color (los estados). */
   pinta?: (valor: string) => ColorCrm | undefined;
+  /* La columna se ordena por un número (lo cobrado): «de menor a mayor», aunque sus valores tengan color. */
+  numerica?: boolean;
 }) {
   const [abierto, setAbierto] = useState(false);
   const cerrar = useCallback(() => setAbierto(false), []);
@@ -72,7 +74,7 @@ export function FiltroColumna({ titulo, opciones, filtro, onFiltro, orden, onOrd
       </button>
       {abierto && boton.current && (
         <Panel
-          ancla={boton.current} titulo={titulo} opciones={opciones} filtro={filtro} fecha={fecha} pinta={pinta}
+          ancla={boton.current} titulo={titulo} opciones={opciones} filtro={filtro} fecha={fecha} pinta={pinta} numerica={numerica}
           onFiltro={onFiltro} orden={orden} ordenaPrimero={ordenaPrimero}
           onOrdenar={(d) => { onOrdenar(d); setAbierto(false); }}
           onSumarOrden={onSumarOrden ? (d) => { onSumarOrden(d); setAbierto(false); } : undefined}
@@ -98,11 +100,11 @@ function con(f: Filtro | undefined, cambios: Partial<Filtro>): Filtro | null {
   return hayFiltro(nuevo) ? nuevo : null;
 }
 
-function Panel({ ancla, titulo, opciones: obtener, filtro, onFiltro, orden, onOrdenar, onSumarOrden, onQuitarOrden, ordenaPrimero, onCerrar, fecha, pinta }: {
+function Panel({ ancla, titulo, opciones: obtener, filtro, onFiltro, orden, onOrdenar, onSumarOrden, onQuitarOrden, ordenaPrimero, onCerrar, fecha, pinta, numerica }: {
   ancla: HTMLElement; titulo: string; opciones: () => { valor: string; cuenta: number }[]; filtro?: Filtro;
   onFiltro: (f: Filtro | null) => void; orden?: OrdenDeColumna; onOrdenar: (desc: boolean) => void;
   onSumarOrden?: (desc: boolean) => void; onQuitarOrden?: () => void; ordenaPrimero?: string;
-  onCerrar: () => void; fecha?: boolean; pinta?: (valor: string) => ColorCrm | undefined;
+  onCerrar: () => void; fecha?: boolean; pinta?: (valor: string) => ColorCrm | undefined; numerica?: boolean;
 }) {
   const opciones = useMemo(() => obtener(), [obtener]);
   const panel = useRef<HTMLDivElement>(null);
@@ -169,8 +171,8 @@ function Panel({ ancla, titulo, opciones: obtener, filtro, onFiltro, orden, onOr
 
   /* Cómo se llama cada sentido: las fechas, de vieja a nueva; las opciones
      con color (los estados), en su orden, que no es el alfabético. */
-  const sube = fecha ? "De la más vieja a la más nueva" : pinta ? "En el orden de las opciones" : "De la A a la Z";
-  const baja = fecha ? "De la más nueva a la más vieja" : pinta ? "En el orden inverso" : "De la Z a la A";
+  const sube = fecha ? "De la más vieja a la más nueva" : numerica ? "De menor a mayor" : pinta ? "En el orden de las opciones" : "De la A a la Z";
+  const baja = fecha ? "De la más nueva a la más vieja" : numerica ? "De mayor a menor" : pinta ? "En el orden inverso" : "De la Z a la A";
   const conValores = Boolean(filtro?.valores.length);
   const pie = nada ? "Tildá lo que querés ver"
     : !hayFiltro(filtro) ? "Sin filtro"
