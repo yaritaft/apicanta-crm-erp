@@ -10,6 +10,7 @@ import type {
 import type { EsquemaPago, EstadoTraspaso, EtapaServicio, ExtraLiquidacion, Gasto, GastoRecurrente, ID as IdMiembro, Liquidacion, MiembroEquipo, ResultadoLiquidacion, TipoCuenta, Traspaso } from "./types";
 import { conciliarPuntas, rutaDe, type Punta } from "./traspasos";
 import { gastoAprobado, plantillasDesdeGastos } from "./gastos-recurrentes";
+import { cobrosAnulados, NOTA_ANULADO } from "./mercury";
 import { conExtraEnMes, mismasTasas, nombrePeriodo, sinExtraEnLiquidacion, tasaParaFinanzas, tasasPorServicio } from "./honorarios";
 import {
   alumnoDeVenta, cuotaMensualDeVenta, etapaDelAlumno, etapaInicialDeServicio, etapasDeServicio,
@@ -2584,6 +2585,22 @@ export const acciones = {
     for (const p of pagosCambiados.values()) empujarUpdate("pagos", [p.id], { feeMonto: p.feeMonto, feeRate: p.feeRate });
     if (nuevo) empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
     return { nuevos: nuevos.length, repetidos: filas.length - nuevos.length, completados: parches.size };
+  },
+
+  /* Los cobros de Mercury que el banco anuló después de entrar a la bandeja
+     (fallaron, se cancelaron, se revirtieron): si siguen sin conciliar, se
+     descartan solos, con una nota. Los conciliados no se tocan. */
+  descartarAnuladosMercury(referencias: string[]): number {
+    const e = snapshot();
+    const ids = new Set(cobrosAnulados(e.movimientos, referencias));
+    if (ids.size === 0) return 0;
+    const cambios = new Map<ID, Pick<Movimiento, "estado" | "descripcion">>();
+    for (const m of e.movimientos) {
+      if (ids.has(m.id)) cambios.set(m.id, { estado: "ignorado", descripcion: [m.descripcion, NOTA_ANULADO].filter(Boolean).join(" · ") });
+    }
+    guardar({ ...e, movimientos: e.movimientos.map((m) => (cambios.has(m.id) ? { ...m, ...cambios.get(m.id) } : m)) });
+    for (const [id, c] of cambios) empujarUpdate("movimientos", [id], c);
+    return cambios.size;
   },
 
   /* Guarda lo que trajo el sync de Meta: la jerarquia entera mas los insights
