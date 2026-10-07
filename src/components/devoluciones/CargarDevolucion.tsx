@@ -175,7 +175,12 @@ function Formulario({ pedido }: { pedido: PedidoDevolucion }) {
 
         <Field
           label="Cuánto se devolvió"
-          ayuda={devolvible ? `Se cobró ${M(devolvible.cobrado)}${devolvible.devuelto ? `, ya se devolvió ${M(devolvible.devuelto)}` : ""}: se puede devolver hasta ${M(devolvible.queda)}.` : undefined}
+          ayuda={devolvible ? [
+            `Se cobró ${M(devolvible.cobrado)}${devolvible.devuelto ? `, ya se devolvió ${M(devolvible.devuelto)}` : ""}`,
+            /* Una devolución ya cargada con fecha posterior también cuenta: entre todas no pueden pasar de lo cobrado. */
+            devolvible.limitadaPor ? `, y hasta el ${fechaLarga(mediodia(devolvible.limitadaPor.dia))} hay ${M(devolvible.limitadaPor.devuelto)} devueltos de ${M(devolvible.limitadaPor.cobrado)} cobrados` : "",
+            `: se puede devolver hasta ${M(devolvible.queda)}.`,
+          ].join("") : undefined}
         >
           <InputMonto value={monto} onChange={(ev) => setMonto(ev.target.value)} placeholder="0" aria-label="Monto devuelto" autoFocus />
         </Field>

@@ -113,3 +113,276 @@ test("mismo día · el formulario guarda las 12:00 de Argentina del día elegido
     assert.equal(diaDeNegocio(mediodiaDeNegocio(dia)), dia, dia);
   }
 });
+
+/* ---------- 2 · el tope mira la línea de tiempo completa ---------- */
+
+/** El caso del estrés: una venta de US$ 3.000 cobrada el 01/10 y devuelta por completo el 10/10. */
+const cobradaYDevuelta = () => conCobros([[ar("2026-10-01", "10:00:00"), 3000]], [devolucion({ id: "a", monto: 3000, fecha: ar("2026-10-10") })]);
+
+test("tope · cargar una devolución con fecha ANTERIOR a otra ya cargada cuenta la de después (no se devuelve dos veces lo mismo)", () => {
+  const e = cobradaYDevuelta();
+  const mal = intentar(e, 3000, ar("2026-10-05"));
+  assert.match(mal!, /No se puede devolver más de lo cobrado/);
+  assert.match(mal!, /10\/10\/2026/, "dice con qué devolución choca");
+  assert.match(mal!, /quedan US\$ 0 para devolver/);
+  /* Una más chica tampoco entra: ya no queda nada. */
+  assert.notEqual(intentar(e, 0.05, ar("2026-10-05")), null);
+  /* Después de la otra, o el mismo día, ya se rechazaba. */
+  assert.notEqual(intentar(e, 3000, ar("2026-10-12")), null);
+  assert.notEqual(intentar(e, 3000, ar("2026-10-10")), null);
+});
+
+test("tope · lo que queda con una devolución de después es lo que sobra en el día que más aprieta", () => {
+  /* Cobros de 1.000 el 01/10 y el 03/10; ya está cargada la A de 1.500 del 04/10. */
+  const e = conCobros(
+    [[ar("2026-10-01"), 1000], [ar("2026-10-03"), 1000]],
+    [devolucion({ id: "a", monto: 1500, fecha: ar("2026-10-04") })],
+  );
+  /* El 02/10 se cobró 1.000, pero de ahí a la A de 1.500 sólo sobran 500 (2.000 cobrados al 04/10). */
+  const dev = devolvibleDeVenta(e, "v1", ar("2026-10-02"));
+  assert.deepEqual(dev, { cobrado: 1000, devuelto: 0, queda: 500, limitadaPor: { dia: "2026-10-04", cobrado: 2000, devuelto: 1500 } });
+  assert.equal(intentar(e, 500, ar("2026-10-02")), null, "justo lo que sobra");
+  assert.match(intentar(e, 600, ar("2026-10-02"))!, /hasta el 04\/10\/2026 ya hay devoluciones por US\$ 1\.500 y se cobró US\$ 2\.000; quedan US\$ 500 para devolver/);
+  /* Entre el 03/10 y el 04/10 sobra lo mismo; después de la A, lo que sobra es lo de siempre. */
+  assert.equal(devolvibleDeVenta(e, "v1", ar("2026-10-03")).queda, 500);
+  assert.deepEqual(devolvibleDeVenta(e, "v1", ar("2026-10-05")), { cobrado: 2000, devuelto: 1500, queda: 500 });
+});
+
+test("tope · la propuesta simple (restar todas las otras sin mirar la fecha) rechazaría un caso válido: acá se acepta", () => {
+  /* Cobros de 1.000 en t1 y en t3, devolución A de 1.500 en t4 y se carga B de 400 en t2. */
+  const e = conCobros(
+    [[ar("2026-10-01"), 1000], [ar("2026-10-03"), 1000]],
+    [devolucion({ id: "a", monto: 1500, fecha: ar("2026-10-04") })],
+  );
+  assert.equal(intentar(e, 400, ar("2026-10-02")), null, "400 el 02/10 y 1.500 el 04/10: 1.900 de 2.000 al final, 400 de 1.000 antes");
+});
+
+test("tope · corregir hacia arriba una devolución con fecha anterior también cuenta la de después", () => {
+  const e = conCobros(
+    [[ar("2026-10-01", "10:00:00"), 3000]],
+    [devolucion({ id: "a", monto: 1000, fecha: ar("2026-10-10") }), devolucion({ id: "b", monto: 1000, fecha: ar("2026-10-05") })],
+  );
+  assert.notEqual(intentar(e, 3000, ar("2026-10-05"), "b"), null, "quedaría devuelto 4.000 de 3.000");
+  assert.equal(intentar(e, 2000, ar("2026-10-05"), "b"), null, "con 2.000 el 05/10 y 1.000 el 10/10 da justo 3.000");
+  assert.notEqual(intentar(e, 2001, ar("2026-10-05"), "b"), null);
+  /* Pasarla de día también se mira: del 05/10 a después de la A no hay lugar para 2.500. */
+  assert.notEqual(intentar(e, 2500, ar("2026-10-12"), "b"), null);
+  assert.equal(intentar(e, 2000, ar("2026-10-12"), "b"), null);
+});
+
+test("tope · el caso realista: se confirma la de la pasarela (07/10) y después se carga a mano la misma con la fecha en que se hizo (05/10)", () => {
+  const e = conCobros(
+    [[ar("2026-10-01", "10:00:00"), 3000]],
+    [devolucion({ id: "dev_stripe_re_1", monto: 3000, fecha: ar("2026-10-07"), referencia: "stripe:re_1", proveedor: "stripe" })],
+  );
+  assert.match(intentar(e, 3000, ar("2026-10-05"))!, /No se puede devolver más de lo cobrado/);
+});
+
+test("tope · en cualquier orden de carga se aceptan las mismas devoluciones cuando la línea de tiempo es válida", () => {
+  /* Dos cobros de 1.500 (01/10 y 08/10) y dos devoluciones de 1.500 (05/10 y 10/10): las dos órdenes son legítimas. */
+  const cobros: [string, number][] = [[ar("2026-10-01"), 1500], [ar("2026-10-08"), 1500]];
+  const primera = devolucion({ id: "a", monto: 1500, fecha: ar("2026-10-05") });
+  const segunda = devolucion({ id: "b", monto: 1500, fecha: ar("2026-10-10") });
+  assert.equal(intentar(conCobros(cobros, [primera]), 1500, ar("2026-10-10")), null, "en orden");
+  assert.equal(intentar(conCobros(cobros, [segunda]), 1500, ar("2026-10-05")), null, "al revés");
+  /* Y una tercera no entra en ninguna fecha. */
+  const las2 = conCobros(cobros, [primera, segunda]);
+  for (const dia of ["2026-10-02", "2026-10-06", "2026-10-09", "2026-10-11"]) assert.notEqual(intentar(las2, 1, ar(dia)), null, dia);
+});
+
+test("tope · lo devuelto el mismo día suma entero sin importar el orden ni la hora", () => {
+  const e = conCobros([[ar("2026-10-02", "12:00:00"), 1000]], [devolucion({ id: "a", monto: 600, fecha: ar("2026-10-02", "15:00:00") })]);
+  assert.equal(intentar(e, 400, ar("2026-10-02", "09:00:00")), null, "antes de la hora de la otra");
+  assert.notEqual(intentar(e, 401, ar("2026-10-02", "09:00:00")), null);
+});
+
+test("tope · una propuesta de la pasarela o una ignorada no limitan a la que se carga", () => {
+  const e = conCobros([[ar("2026-10-01"), 3000]], [
+    devolucion({ id: "p", monto: 3000, fecha: ar("2026-10-10"), estado: "propuesta" }),
+    devolucion({ id: "i", monto: 3000, fecha: ar("2026-10-10"), estado: "ignorada" }),
+  ]);
+  assert.equal(intentar(e, 3000, ar("2026-10-05")), null);
+  assert.deepEqual(devolvibleDeVenta(e, "v1", ar("2026-10-05")), { cobrado: 3000, devuelto: 0, queda: 3000 });
+});
+
+test("tope · las devoluciones de otra venta no cuentan", () => {
+  const e = conCobros([[ar("2026-10-01"), 3000]], [devolucion({ id: "x", ventaId: "v2", monto: 3000, fecha: ar("2026-10-10") })]);
+  assert.equal(intentar(e, 3000, ar("2026-10-05")), null);
+});
+
+test("tope · corregir sin subir el monto ni cambiar el día se deja pasar aunque la venta ya tenga devoluciones de más (si no, no se podrían arreglar)", () => {
+  /* Antes del arreglo se cargaron las dos: 6.000 devueltos de una venta de 3.000. */
+  const e = conCobros(
+    [[ar("2026-10-01", "10:00:00"), 3000]],
+    [devolucion({ id: "a", monto: 3000, fecha: ar("2026-10-10") }), devolucion({ id: "b", monto: 3000, fecha: ar("2026-10-05") })],
+  );
+  assert.equal(intentar(e, 3000, ar("2026-10-05"), "b"), null, "la misma, por si sólo se le cambia el medio o el comprobante");
+  assert.equal(intentar(e, 3000, ar("2026-10-05", "18:00:00"), "b"), null, "a otra hora del mismo día");
+  assert.equal(intentar(e, 1000, ar("2026-10-05"), "b"), null, "bajarle el monto");
+  assert.equal(intentar(e, 3000, ar("2026-10-10"), "a"), null, "la de después, igual");
+  /* Subirla o cambiarle el día no: empeora. */
+  assert.notEqual(intentar(e, 3001, ar("2026-10-05"), "b"), null);
+  assert.notEqual(intentar(e, 3000, ar("2026-10-06"), "b"), null);
+  /* Y una nueva, tampoco: ya hay de más. */
+  assert.notEqual(intentar(e, 1, ar("2026-10-03")), null);
+  /* Se arreglan de a una: bajando la B a 1.000, la A a 2.000. */
+  const arreglada = conCobros([[ar("2026-10-01", "10:00:00"), 3000]], [devolucion({ id: "a", monto: 3000, fecha: ar("2026-10-10") }), devolucion({ id: "b", monto: 1000, fecha: ar("2026-10-05") })]);
+  assert.equal(intentar(arreglada, 2000, ar("2026-10-10"), "a"), null);
+});
+
+test("tope · una propuesta que se confirma (no está confirmada todavía) no se salta el tope por «corregir»", () => {
+  const e = conCobros([[ar("2026-10-01"), 1000]], [devolucion({ id: "p", monto: 5000, fecha: ar("2026-10-05"), estado: "propuesta" })]);
+  assert.notEqual(intentar(e, 5000, ar("2026-10-05"), "p"), null);
+});
+
+/* ---------- La línea de tiempo contra un oráculo hecho a mano ---------- */
+
+function azar(semilla: number) {
+  let a = semilla >>> 0;
+  const siguiente = () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+  return {
+    entre: (min: number, max: number) => min + Math.floor(siguiente() * (max - min + 1)),
+    elige: <T,>(xs: readonly T[]): T => xs[Math.floor(siguiente() * xs.length)],
+    si: (p = 0.5) => siguiente() < p,
+    baraja: <T,>(xs: readonly T[]): T[] => {
+      const ys = [...xs];
+      for (let i = ys.length - 1; i > 0; i--) { const j = Math.floor(siguiente() * (i + 1)); [ys[i], ys[j]] = [ys[j], ys[i]]; }
+      return ys;
+    },
+  };
+}
+
+/* Los 14 días de la ventana, uno por uno: el oráculo los recorre todos, sin atajos. */
+const DIAS = Array.from({ length: 14 }, (_, i) => `2026-10-${String(i + 1).padStart(2, "0")}`);
+interface Hecho { dia: string; hora: number; centavos: number; min?: number }
+const hechoAr = (h: Hecho) => ar(h.dia, `${String(h.hora).padStart(2, "0")}:${String(h.min ?? 30).padStart(2, "0")}:00`);
+const hasta = (xs: Hecho[], dia: string) => xs.filter((x) => x.dia <= dia).reduce((a, x) => a + x.centavos, 0);
+
+/** Lo más que se puede devolver el día `dia`: el que sobre en cada día de ahí en adelante, mirándolos todos. */
+function maximo(cobros: Hecho[], devs: Hecho[], dia: string): number {
+  let max = Infinity;
+  for (const d of DIAS) if (d >= dia) max = Math.min(max, hasta(cobros, d) - hasta(devs, d));
+  return Math.max(0, max);
+}
+
+const aEstado = (cobros: Hecho[], devs: Hecho[]) =>
+  conCobros(cobros.map((c) => [hechoAr(c), c.centavos / 100] as [string, number]), devs.map((d, i) => devolucion({ id: `d${i}`, monto: d.centavos / 100, fecha: hechoAr(d) })));
+
+test("tope · contra un oráculo que recorre todos los días: se acepta exactamente lo que deja la línea de tiempo válida (400 ventas al azar)", () => {
+  let aceptadas = 0, rechazadasPorDespues = 0, corregidas = 0;
+  for (let semilla = 1; semilla <= 400; semilla++) {
+    const r = azar(semilla);
+    const cobros: Hecho[] = Array.from({ length: r.entre(1, 4) }, () => ({ dia: r.elige(DIAS.slice(0, 9)), hora: r.entre(0, 23), centavos: r.entre(1000, 90000) }));
+    const devs: Hecho[] = [];
+    for (let i = 0; i < 9; i++) {
+      const dia = r.elige(DIAS);
+      const corrige = devs.length > 0 && r.si(0.25) ? r.entre(0, devs.length - 1) : -1;
+      const otras = devs.filter((_, k) => k !== corrige);
+      const max = maximo(cobros, otras, dia);
+      let centavos = r.elige([max, max + 2, max + 500, Math.max(1, max - 1), Math.max(1, Math.floor(max / 2)), 1, r.entre(1, 100000)]);
+      /* Cero no es una devolución, y un centavo de más entra por la tolerancia de redondeo (0,01): ese borde no se prueba con decimales de float. */
+      if (centavos < 1 || centavos === max + 1) centavos = max + 2;
+      const hecho: Hecho = { dia, hora: r.elige([12, 12, 0, 9, 23]), centavos };
+      const e = aEstado(cobros, devs);
+      const mal = intentar(e, centavos / 100, hechoAr(hecho), corrige >= 0 ? `d${corrige}` : undefined);
+      const debeEntrar = centavos <= max;
+      assert.equal(mal === null, debeEntrar, `semilla ${semilla} · paso ${i} · ${hecho.dia} ${centavos / 100} (máximo ${max / 100}): ${mal}`);
+      if (mal === null) {
+        aceptadas++;
+        if (corrige >= 0) { devs[corrige] = hecho; corregidas++; } else devs.push(hecho);
+      } else if (/hasta el/.test(mal)) rechazadasPorDespues++;
+      /* El invariante, día por día, con las que están. */
+      for (const d of DIAS) assert.ok(hasta(devs, d) <= hasta(cobros, d), `semilla ${semilla} · ${d}: devuelto ${hasta(devs, d)} > cobrado ${hasta(cobros, d)}`);
+    }
+  }
+  assert.ok(aceptadas > 1200 && rechazadasPorDespues > 100 && corregidas > 100, `cobertura: ${aceptadas} aceptadas, ${rechazadasPorDespues} rechazadas por una de después, ${corregidas} correcciones`);
+});
+
+test("tope · lo que queda por devolver coincide con el oráculo en cualquier día, con devoluciones antes y después", () => {
+  for (let semilla = 1; semilla <= 200; semilla++) {
+    const r = azar(semilla * 7);
+    const cobros: Hecho[] = Array.from({ length: r.entre(1, 4) }, () => ({ dia: r.elige(DIAS.slice(0, 9)), hora: r.entre(0, 23), centavos: r.entre(1000, 90000) }));
+    const devs: Hecho[] = [];
+    for (let i = 0; i < 6; i++) {
+      const dia = r.elige(DIAS);
+      const centavos = r.entre(1, Math.max(1, maximo(cobros, devs, dia)));
+      if (maximo(cobros, devs, dia) > 0) devs.push({ dia, hora: 12, centavos });
+    }
+    const e = aEstado(cobros, devs);
+    for (const dia of DIAS) {
+      const d = devolvibleDeVenta(e, "v1", ar(dia));
+      assert.equal(Math.round(d.queda * 100), maximo(cobros, devs, dia), `semilla ${semilla} · ${dia}`);
+      assert.equal(Math.round(d.cobrado * 100), hasta(cobros, dia), `semilla ${semilla} · ${dia} · cobrado`);
+      assert.equal(Math.round(d.devuelto * 100), hasta(devs, dia), `semilla ${semilla} · ${dia} · devuelto`);
+    }
+  }
+});
+
+test("tope · el orden en que se cargan no importa: un conjunto válido entra entero en cualquier orden", () => {
+  let conjuntos = 0;
+  for (let semilla = 1; semilla <= 300; semilla++) {
+    const r = azar(semilla * 13);
+    const cobros: Hecho[] = Array.from({ length: r.entre(1, 4) }, () => ({ dia: r.elige(DIAS.slice(0, 9)), hora: r.entre(0, 23), centavos: r.entre(1000, 90000) }));
+    const valido: Hecho[] = [];
+    for (let i = 0; i < 6; i++) {
+      const dia = r.elige(DIAS);
+      const max = maximo(cobros, valido, dia);
+      if (max > 0) valido.push({ dia, hora: 12, centavos: r.entre(1, max) });
+    }
+    if (valido.length < 2) continue;
+    conjuntos++;
+    for (let vuelta = 0; vuelta < 4; vuelta++) {
+      const cargadas: Hecho[] = [];
+      for (const h of r.baraja(valido)) {
+        const mal = intentar(aEstado(cobros, cargadas), h.centavos / 100, hechoAr(h));
+        assert.equal(mal, null, `semilla ${semilla} · vuelta ${vuelta} · ${h.dia} ${h.centavos / 100}: ${mal}`);
+        cargadas.push(h);
+      }
+    }
+  }
+  assert.ok(conjuntos > 150, `cobertura: ${conjuntos} conjuntos`);
+});
+
+/* ---------- Lo que ya andaba da exactamente lo mismo ---------- */
+
+/** La cuenta de antes (por instante, sin mirar las devoluciones de después). */
+function devolvibleDeAntes(e: EstadoApp, ventaId: string, hastaIso: string, ignorar?: string) {
+  const r2 = (n: number) => Math.round(n * 100) / 100;
+  const cuotas = new Set(e.cuotas.filter((c) => c.ventaId === ventaId).map((c) => c.id));
+  const t = Date.parse(hastaIso);
+  const cobrado = r2(e.pagos.filter((p) => cuotas.has(p.cuotaId) && Date.parse(p.fecha) <= t).reduce((a, p) => a + p.monto, 0));
+  const devuelto = r2(e.devoluciones.filter((d) => d.ventaId === ventaId && (d.estado ?? "confirmada") === "confirmada" && d.id !== ignorar && Date.parse(d.fecha) <= t).reduce((a, d) => a + d.monto, 0));
+  return { cobrado, devuelto, queda: Math.max(0, r2(cobrado - devuelto)) };
+}
+
+test("lo que ya andaba (devoluciones en orden, después de todos los cobros del día) da exactamente los mismos números que antes", () => {
+  let comparados = 0;
+  for (let semilla = 1; semilla <= 300; semilla++) {
+    const r = azar(semilla * 31);
+    /* Cobros de la mañana, así que a las 12:00 de su día (o después) ya entraron en las dos cuentas. */
+    const cobros: Hecho[] = Array.from({ length: r.entre(1, 4) }, () => ({ dia: r.elige(DIAS.slice(0, 6)), hora: r.entre(0, 11), centavos: r.entre(1000, 90000) }));
+    const ultimo = cobros.map((c) => c.dia).sort().at(-1)!;
+    let desde = DIAS.indexOf(ultimo);
+    const devs: Hecho[] = [];
+    for (let i = 0; i < 5; i++) {
+      desde = Math.min(DIAS.length - 1, desde + r.entre(0, 2));
+      const dia = DIAS[desde];
+      const devuelto = hasta(devs, dia), cobrado = hasta(cobros, dia);
+      if (cobrado - devuelto <= 0) break;
+      /* A las 12:00 de cada día, como el formulario. */
+      const hecho: Hecho = { dia, hora: 12, min: 0, centavos: r.entre(1, cobrado - devuelto) };
+      const e = aEstado(cobros, devs);
+      const mio = (e: EstadoApp, dia: string) => devolvibleDeVenta(e, "v1", ar(dia, "12:00:00"));
+      assert.deepEqual(mio(e, dia), devolvibleDeAntes(e, "v1", ar(dia, "12:00:00")), `semilla ${semilla} · ${dia}`);
+      devs.push(hecho);
+      comparados++;
+    }
+  }
+  assert.ok(comparados > 600, `cobertura: ${comparados}`);
+});

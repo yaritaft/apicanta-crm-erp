@@ -79,28 +79,57 @@ const diaDe = (iso: string): string | null => (Number.isNaN(Date.parse(iso)) ? n
  *  que cuenta «hasta ese día». */
 export const mediodiaDeNegocio = (dia: string): string => new Date(`${dia}T12:00:00-03:00`).toISOString();
 
+/* Un monto y el día de negocio en que pasó (las fechas que no se entienden no cuentan). */
+interface DelDia { dia: string; monto: number }
+
+const delDia = (xs: { fecha: string; monto: number }[]): DelDia[] =>
+  xs.flatMap((x) => { const dia = diaDe(x.fecha); return dia === null ? [] : [{ dia, monto: x.monto }]; });
+
+/* Lo que pasó hasta el final de ese día. */
+const hastaElDia = (xs: DelDia[], dia: string): number => r2(xs.reduce((a, x) => (x.dia <= dia ? a + x.monto : a), 0));
+
 export interface Devolvible {
   /* Todo lo cobrado de la venta hasta ese día. */
   cobrado: number;
-  /* Lo que ya se devolvió antes (sin la que se está corrigiendo). */
+  /* Lo que ya se devolvió hasta ese día (sin la que se está corrigiendo). */
   devuelto: number;
   /* Lo que se puede devolver todavía. */
   queda: number;
+  /* Si lo que queda lo achica una devolución ya cargada con fecha POSTERIOR (lo
+     que se devuelva ahora también cuenta para ella): el día en que más aprieta
+     y lo cobrado y devuelto hasta ese día, sin la nueva. */
+  limitadaPor?: { dia: string; cobrado: number; devuelto: number };
 }
 
-/** Cuánto se puede devolver de una venta a esa fecha: lo cobrado hasta
- *  el final de ese día menos lo que ya se devolvió. `ignorar` es la devolución
- *  que se está corrigiendo (no cuenta contra sí misma). */
+/** Cuánto se puede devolver de una venta a esa fecha. La regla es una sola,
+ *  mirada en TODAS las fechas: en cada día, lo devuelto acumulado no pasa de lo
+ *  cobrado acumulado hasta el final de ese día. Lo que queda es lo cobrado
+ *  hasta ese día menos lo devuelto hasta ese día, y además no puede dejar a
+ *  ninguna devolución ya cargada con fecha posterior por encima de lo cobrado
+ *  hasta la suya (una devolución de después no deja de contar porque la nueva
+ *  tenga fecha anterior). `ignorar` es la devolución que se está corrigiendo
+ *  (no cuenta contra sí misma). */
 export function devolvibleDeVenta(
   e: Pick<EstadoApp, "pagos" | "cuotas"> & ConDevoluciones, ventaId: ID, hastaIso: string, ignorar?: ID,
 ): Devolvible {
-  const cuotas = new Set(e.cuotas.filter((c) => c.ventaId === ventaId).map((c) => c.id));
   const dia = diaDe(hastaIso);
   if (dia === null) return { cobrado: 0, devuelto: 0, queda: 0 };
-  const hastaElDia = (fecha: string) => { const d = diaDe(fecha); return d !== null && d <= dia; };
-  const cobrado = r2(e.pagos.filter((p) => cuotas.has(p.cuotaId) && hastaElDia(p.fecha)).reduce((a, p) => a + p.monto, 0));
-  const devuelto = r2(devolucionesDeVenta(e, ventaId).filter((d) => d.id !== ignorar && hastaElDia(d.fecha)).reduce((a, d) => a + d.monto, 0));
-  return { cobrado, devuelto, queda: Math.max(0, r2(cobrado - devuelto)) };
+  const cuotas = new Set(e.cuotas.filter((c) => c.ventaId === ventaId).map((c) => c.id));
+  const cobros = delDia(e.pagos.filter((p) => cuotas.has(p.cuotaId)));
+  const devs = delDia(devolucionesDeVenta(e, ventaId).filter((d) => d.id !== ignorar));
+
+  const cobrado = hastaElDia(cobros, dia);
+  const devuelto = hastaElDia(devs, dia);
+  let queda = r2(cobrado - devuelto);
+  let limitadaPor: Devolvible["limitadaPor"];
+  /* Lo que se devuelva ahora suma a lo devuelto en cada día que viene: en cada uno
+     de esos días en que hay una devolución tiene que seguir sobrando lo cobrado
+     (entre devoluciones lo cobrado sólo crece, así que no hace falta mirar más días). */
+  for (const d of [...new Set(devs.filter((x) => x.dia > dia).map((x) => x.dia))].sort()) {
+    const c = hastaElDia(cobros, d), v = hastaElDia(devs, d);
+    if (r2(c - v) < queda) { queda = r2(c - v); limitadaPor = { dia: d, cobrado: c, devuelto: v }; }
+  }
+  return { cobrado, devuelto, queda: Math.max(0, queda), ...(limitadaPor ? { limitadaPor } : {}) };
 }
 
 /* ---------- Lo que se revierte de las comisiones ---------- */
@@ -305,6 +334,25 @@ export interface BorradorDevolucion {
   tienePasarela?: boolean;
 }
 
+const usd = (n: number) => `US$ ${n.toLocaleString("es-AR", { maximumFractionDigits: 2 })}`;
+/* «2026-10-10» → «10/10/2026». */
+const ddmmaaaa = (dia: string) => `${dia.slice(8, 10)}/${dia.slice(5, 7)}/${dia.slice(0, 4)}`;
+
+/** ¿Corregir esa devolución deja la línea de tiempo igual o mejor que estaba?
+ *  Sí si sigue siendo de la misma venta, del mismo día y no sube el monto (se
+ *  cambia la cuenta, el comprobante, las notas, o se baja lo devuelto): nada de
+ *  lo devuelto en ningún día aumenta. Se deja pasar aunque la venta ya tenga
+ *  devoluciones de más (cargadas antes de que se mirara la fecha de las otras):
+ *  si no, no habría cómo arreglarlas. */
+function noEmpeora(
+  e: ConDevoluciones, b: Pick<BorradorDevolucion, "ventaId" | "monto" | "fecha">, ignorar?: ID,
+): boolean {
+  const antes = ignorar ? devolucionesDe(e).find((d) => d.id === ignorar) : undefined;
+  if (!antes || !esDevolucionConfirmada(antes) || antes.ventaId !== b.ventaId) return false;
+  const dia = diaDe(b.fecha);
+  return dia !== null && dia === diaDe(antes.fecha) && r2(b.monto) <= r2(antes.monto);
+}
+
 /** Lo que está mal de una devolución, en el orden en que se lee la pantalla,
  *  o null si se puede guardar. */
 export function problemaDeDevolucion(
@@ -315,10 +363,12 @@ export function problemaDeDevolucion(
   if (Number.isNaN(Date.parse(b.fecha))) return "Elegí el día que se devolvió";
   if (!b.procesadorId) return "Elegí por qué medio salió la plata";
   const d = devolvibleDeVenta(e, b.ventaId, b.fecha, ignorar);
-  if (b.monto > d.queda + 0.01) {
-    return d.cobrado <= 0
-      ? "Esta venta no tiene cobros hasta ese día: no hay nada que devolver"
-      : `No se puede devolver más de lo cobrado: quedan US$ ${d.queda.toLocaleString("es-AR", { maximumFractionDigits: 2 })} para devolver`;
+  if (b.monto > d.queda + 0.01 && !noEmpeora(e, b, ignorar)) {
+    if (d.cobrado <= 0) return "Esta venta no tiene cobros hasta ese día: no hay nada que devolver";
+    const l = d.limitadaPor;
+    return l
+      ? `No se puede devolver más de lo cobrado: hasta el ${ddmmaaaa(l.dia)} ya hay devoluciones por ${usd(l.devuelto)} y se cobró ${usd(l.cobrado)}; quedan ${usd(d.queda)} para devolver`
+      : `No se puede devolver más de lo cobrado: quedan ${usd(d.queda)} para devolver`;
   }
   if (!b.tieneComprobante && !b.tienePasarela) return MENSAJE_COMPROBANTE_DEVOLUCION;
   return null;
