@@ -343,3 +343,13 @@ export function textoDeAtraso(atraso: number): string {
   if (atraso > 0) return atraso === 1 ? "Venció ayer" : `Vencido hace ${atraso} días`;
   return atraso === -1 ? "Mañana" : `En ${-atraso} días`;
 }
+
+const MESES_CORTOS = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
+
+/** «2026-10-07» como «7 oct» (con el año si no es el de hoy). Un día vacío, «—». */
+export function formatoDia(dia: string | null | undefined, hoy: string = hoyDelNegocio()): string {
+  if (!dia) return "—";
+  const [a, m, d] = dia.slice(0, 10).split("-").map(Number);
+  if (!a || !m || !d) return "—";
+  return `${d} ${MESES_CORTOS[m - 1]}${a === Number(hoy.slice(0, 4)) ? "" : ` ${a}`}`;
+}

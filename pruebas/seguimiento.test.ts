@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import {
   aContactarHoy, aplicarCadencia, aplicarContacto, aplicarCorreccion, aplicarDejoDeContestar, aplicarNoContesto,
   configSeguimiento, CONFIG_POR_DEFECTO, diasEntre, filasDeSeguimiento, filtrarSeguimiento, idSeguimiento,
-  proximoDe, resumenDeSeguimiento, seguimientoVacio, SIN_FILTROS, sumarDias, textoDeAtraso,
+  formatoDia, proximoDe, resumenDeSeguimiento, seguimientoVacio, SIN_FILTROS, sumarDias, textoDeAtraso,
 } from "@/lib/seguimiento";
 import type { EstadoApp, SeguimientoAlumno, Testimonio } from "@/lib/types";
 
@@ -205,4 +205,10 @@ test("el texto del atraso se lee en castellano", () => {
   assert.equal(textoDeAtraso(5), "Vencido hace 5 días");
   assert.equal(textoDeAtraso(-1), "Mañana");
   assert.equal(textoDeAtraso(-4), "En 4 días");
+});
+
+test("el día se lee corto, con el año sólo si no es el actual", () => {
+  assert.equal(formatoDia("2026-10-07", HOY), "7 oct");
+  assert.equal(formatoDia("2025-12-30", HOY), "30 dic 2025");
+  assert.equal(formatoDia(null, HOY), "—");
 });
