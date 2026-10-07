@@ -96,6 +96,10 @@ export function sinCodigoVencido(datos: RespuestaEstado | null, recibidoMs: numb
   return { ...datos, qr: null };
 }
 
+/** El estado con que contestó la app dice «no es para vos» (401 sin sesión, 403 sin permiso). Un 503 («no pudimos comprobar tu
+    permiso, probá de nuevo»), un 429, un 5xx o la red cortada son pasajeros: la pantalla conserva lo que tenía y vuelve a preguntar. */
+export const esSinAcceso = (estado: number) => estado === 401 || estado === 403;
+
 /** Cada cuánto vuelve a preguntar Ajustes → WhatsApp mientras está abierta: cada 3 o 4 segundos si no está conectado (el código
     cambia cada ~20) y cada 20 conectado. Tras un 401 o 403 (null) no vuelve a preguntar por su cuenta: no se insiste con algo
     que la app ya dijo que no. */
@@ -638,17 +642,27 @@ export function filtrarPorLector<T extends { id: string }>(registros: readonly T
 /** El teléfono para pegar: con el + si trae el código de país; si no, tal cual se escribió. */
 export const telefonoParaCopiar = (f: { numero: string; completo?: boolean }) => (f.completo === false ? f.numero : `+${f.numero}`);
 
+/** Lo más largo que se guarda de un nombre que viene de la página pública. */
+export const MAX_NOMBRE = 120;
+
+/** Un texto de la gente, listo para una celda: los controles (tabulador, saltos de renglón, también U+0085, U+2028 y
+    U+2029) pasan a espacio, y la comilla recta ", que una planilla toma por «empieza un texto entre comillas» (con ella
+    se vuelve a activar una fórmula o se juntan los renglones que siguen en una sola celda), pasa a la tipográfica ”.
+    Todas las expresiones son lineales (nada de `\s+$`, que en V8 es cuadrática). */
+const paraCelda = (texto: string) => texto.replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]+/g, " ").replace(/"/g, "\u201d");
+
 /** Una celda de texto para pegar en una planilla: si empieza con = + - @ (o tabulador o retorno de carro) la
     planilla la toma por una fórmula. Con IMPORTXML o WEBSERVICE alcanza para mandar lo demás pegado a un
     servidor ajeno. El apóstrofo la deja como texto. */
 export const celdaSegura = (texto: string) => (/^[=+\-@\t\r]/.test(texto) ? `'${texto}` : texto);
 
 /** El nombre que escribe cualquiera en la página pública, sin lo que lo haría fórmula en una planilla: se
-    sacan del principio los = + - @ (y los espacios y controles que los preceden). «Jean-Paul» y «María» quedan
-    igual: sólo importa el principio. */
+    sacan del principio los = + - @ (y los espacios y controles que los preceden), las comillas rectas pasan a ” y
+    se corta en MAX_NOMBRE caracteres. «Jean-Paul» y «María» quedan igual: sólo importa el principio. */
 export function nombreSinFormula(nombre: string | undefined): string | undefined {
   if (nombre === undefined) return undefined;
-  return nombre.replace(/[\u0000-\u001f\u007f]+/g, " ").replace(/^[\s=+\-@]+/, "").replace(/\s+$/, "") || undefined;
+  const limpio = paraCelda(nombre).replace(/^[\s=+\-@]+/, "").trimEnd().slice(0, MAX_NOMBRE).replace(/[\ud800-\udbff]$/, "").trimEnd();
+  return limpio || undefined;
 }
 
 /** La lista para pegar en otro lado: un teléfono por renglón (con el +), o
@@ -656,7 +670,7 @@ export function nombreSinFormula(nombre: string | undefined): string | undefined
 export function listaParaCopiar(filas: readonly { nombre: string; numero: string; completo?: boolean }[], conNombres: boolean): string {
   return filas
     .filter((f) => f.numero)
-    .map((f) => (conNombres ? `${celdaSegura(f.nombre.replace(/[\t\r\n]+/g, " ").trim())}\t${telefonoParaCopiar(f)}` : telefonoParaCopiar(f)))
+    .map((f) => (conNombres ? `${celdaSegura(paraCelda(f.nombre).trim())}\t${telefonoParaCopiar(f)}` : telefonoParaCopiar(f)))
     .join("\n");
 }
 
