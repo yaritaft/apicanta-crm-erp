@@ -1,0 +1,99 @@
+/* ==================================================================
+   WhatsApp de lectura: el grupo de un webinar (quién se unió) y el estado
+   del lector en Ajustes. Aparte de globals.css porque es de estas pantallas.
+   ================================================================== */
+
+/* ---------- La tarjeta del grupo, en la ficha del webinar ---------- */
+.wa-cabeza { display: flex; flex-direction: column; gap: var(--space-4); padding: var(--space-5) var(--space-5) var(--space-4); }
+.wa-cabeza .card-head { margin-bottom: 0; flex-wrap: wrap; }
+.wa-cabeza .card-head > div:first-child { flex: 1 1 320px; }
+
+.wa-grupos { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.wa-grupo {
+  display: inline-flex; align-items: center; gap: 8px; max-width: 100%; padding: 3px 4px 3px 12px;
+  border: 1px solid var(--border); border-radius: var(--radius-full); background: var(--surface-200);
+  font-size: 13px; line-height: 20px;
+}
+.wa-grupo > svg { flex: none; color: var(--success); }
+.wa-grupo__nombre { min-width: 0; max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; color: var(--ink); }
+.wa-grupo__datos { white-space: nowrap; color: var(--ink-subtle); padding-right: 8px; }
+.wa-grupo__datos--aviso { color: var(--warning); }
+.wa-agregar { width: min(100%, 380px); }
+
+/* Los cuatro números */
+.wa-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--space-3); }
+.wa-kpi {
+  display: flex; flex-direction: column; gap: 2px; min-width: 0; padding: 12px 14px;
+  background: var(--surface-200); border: 1px solid var(--border); border-radius: var(--radius-md);
+}
+.wa-kpi__etiqueta { display: flex; align-items: center; gap: 4px; font-size: 12px; line-height: 16px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-subtle); }
+.wa-kpi__valor {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-family: var(--font-display); font-size: 24px; line-height: 30px; font-weight: 600; color: var(--ink); font-variant-numeric: tabular-nums;
+}
+.wa-kpi__nota { font-size: 12.5px; line-height: 18px; color: var(--ink-subtle); }
+.wa-kpi--ok { border-color: color-mix(in srgb, var(--success) 45%, var(--border)); background: color-mix(in srgb, var(--success) 7%, var(--surface-200)); }
+.wa-kpi--ok .wa-kpi__valor { color: var(--success); }
+.wa-kpis--tres { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.wa-kpi--aviso { border-color: color-mix(in srgb, var(--warning) 45%, var(--border)); background: color-mix(in srgb, var(--warning) 7%, var(--surface-200)); }
+.wa-kpi--aviso .wa-kpi__valor { color: var(--warning); }
+
+/* La barra de arriba de la tabla: el buscador, los filtros y los botones de copiar */
+.wa-barra { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); }
+.wa-barra .hk-input { flex: 1 1 240px; max-width: 360px; min-width: 200px; }
+.wa-barra__filtros { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); }
+.wa-barra__copiar { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); margin-left: auto; }
+
+/* Las celdas de la tabla */
+.wa-nombre { display: inline-flex; max-width: 100%; padding: 0; border: 0; background: none; font: inherit; color: inherit; text-align: left; cursor: pointer; border-radius: var(--radius-sm); }
+.wa-nombre:hover .hk-person__name { color: var(--brand); text-decoration: underline; text-underline-offset: 3px; }
+.wa-nombre:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.wa-tel { display: inline-flex; align-items: center; gap: 2px; white-space: nowrap; }
+.wa-tel .t-num { margin-right: 6px; }
+.wa-tel .hk-btn { padding: 0; width: 30px; height: 30px; justify-content: center; }
+.wa-estado { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.wa-contactado {
+  display: inline-flex; align-items: center; gap: 6px; max-width: 240px; padding: 3px 10px; min-height: 28px;
+  border: 1px solid var(--border-strong); border-radius: var(--radius-full); background: transparent;
+  font: inherit; font-size: 13px; line-height: 20px; color: var(--ink-muted); cursor: pointer; text-align: left;
+}
+.wa-contactado:hover { background: var(--surface-200); color: var(--ink); }
+.wa-contactado:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.wa-contactado[aria-pressed="true"] { border-color: var(--success); background: var(--success-soft); color: var(--success); font-weight: 600; }
+.wa-contactado__quien { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ---------- Formularios: lo que dice el lector ---------- */
+.wa-formularios { display: flex; flex-direction: column; gap: var(--space-3); }
+.wa-formularios__titulo { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); font-weight: 600; color: var(--ink); }
+.wa-formularios__titulo > svg { color: var(--success); flex: none; }
+.wa-formularios__titulo .wa-formularios__grupos { font-weight: 400; color: var(--ink-subtle); font-size: 13px; line-height: 20px; }
+.wa-formularios__resumen { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px var(--space-4); }
+.wa-formularios__numero { font-family: var(--font-display); font-size: 26px; line-height: 32px; font-weight: 600; color: var(--success); font-variant-numeric: tabular-nums; }
+.wa-formularios__resto { font-size: 13.5px; line-height: 20px; color: var(--ink-muted); }
+.wa-formularios__resto strong { color: var(--ink); font-variant-numeric: tabular-nums; }
+.wa-lector-insignia { display: inline-flex; margin-left: 6px; vertical-align: middle; }
+
+/* ---------- Ajustes → WhatsApp ---------- */
+.wa-estado-lector { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-3); }
+.wa-pasos { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 4px; font-size: 13px; line-height: 20px; color: var(--ink-muted); }
+.wa-pasos code, .wa-codigo { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; padding: 1px 6px; border-radius: var(--radius-sm); background: var(--surface-300); color: var(--ink); }
+.wa-sugerencia { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-top: 6px; font-size: 12.5px; line-height: 18px; color: var(--ink-subtle); }
+.wa-grupo-fila { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.wa-grupo-fila__nombre { font-weight: 600; color: var(--ink); overflow-wrap: anywhere; }
+.wa-selector-webinar { min-width: 240px; max-width: 360px; }
+
+@media (max-width: 900px) {
+  .wa-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .wa-kpis--tres { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (max-width: 720px) {
+  .wa-cabeza { padding: var(--space-4); }
+  .wa-barra__copiar { margin-left: 0; }
+}
+@media (max-width: 640px) {
+  .wa-kpis--tres { grid-template-columns: 1fr; }
+}
+@media (max-width: 480px) {
+  .wa-kpis { grid-template-columns: 1fr; }
+  .wa-grupo__nombre { max-width: 200px; }
+}
