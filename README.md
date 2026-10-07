@@ -629,3 +629,13 @@ correr `supabase/honorarios.sql` (tablas, políticas, niveles de acceso y la col
   desglose y los extras con nota van dentro de `liquidaciones.resultado` y `liquidaciones.extras`. Las pruebas
   (`pruebas/liquidacion-desglose*.test.ts`) verifican que la cuenta de cada renglón cierra exacto con su monto, en
   casos a mano y en 200 escenarios al azar.
+- **Cargar gasto sin repreguntar y con proveedor** (`components/finanzas/AsistenteGasto.tsx`, `CampoProveedor.tsx`,
+  `lib/carga-gasto.ts`): al elegir «ya cargaste algo parecido» se va a un único paso **«Revisá y cargá»**, con
+  categoría, monto, proveedor y fecha editables en el lugar; en el camino normal, la categoría sugerida se ve como
+  una tarjeta («Va en: Equipo / Salarios · gasto operativo») con «Cambiar categoría», y cada bloque dice en qué
+  renglón del estado de resultados cae (una prueba compara esos nombres con los de `armarEstadoResultados`).
+  **El proveedor es obligatorio** («¿A quién le pagaste?»): se elige de la lista del equipo (nombre completo y puesto
+  o rol, los activos primero) y de los proveedores ya usados, o se escribe uno nuevo. Con Equipo / Salarios,
+  Honorarios del CEO, Setters, Edición de contenido o Filmmaker el equipo va primero; en el resto, los proveedores.
+  `Gasto.proveedor` sigue siendo texto; quién del equipo es se guarda en `gastos.extra.proveedorEquipoId`. Editar un
+  gasto abre la misma revisión, y uno viejo que venía sin proveedor (los de la planilla) pide uno para guardarse.
