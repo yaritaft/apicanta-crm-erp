@@ -1,6 +1,6 @@
 import type { EstadoApp, ID, Venta } from "./types";
 import type { RangoMes } from "./metricas";
-import { comisionesDelMes, pagosDelMes, ventasContablesDelMes, ventasDelMes } from "./finanzas";
+import { comisionesDelMes, devolucionesDelMes, pagosDelMes, ventasContablesDelMes, ventasDelMes } from "./finanzas";
 import { metricasDeWebinar } from "./webinar";
 import { slugUtm } from "./utm-estandar";
 
@@ -72,7 +72,10 @@ export interface ResultadoEmbudo {
   nombre: string;
   ventas: number;
   facturado: number;
+  /* Lo cobrado de las ventas del embudo, ya sin lo que se devolvió. */
   cobrado: number;
+  /* Lo que se devolvió en el período de ventas del embudo. */
+  devuelto: number;
   procesador: number;
   comisiones: number;
   inversion: number;
@@ -95,7 +98,7 @@ export function resultadoPorEmbudo(e: EstadoApp, m: RangoMes): ResultadoEmbudo[]
     if (!f) {
       f = {
         embudoId, nombre: e.embudos.find((b) => b.id === embudoId)?.nombre ?? "Sin estrategia",
-        ventas: 0, facturado: 0, cobrado: 0, procesador: 0, comisiones: 0, inversion: 0,
+        ventas: 0, facturado: 0, cobrado: 0, devuelto: 0, procesador: 0, comisiones: 0, inversion: 0,
         cac: null, roasCC: null, roasRev: null, profitCC: 0, profitRev: 0,
       };
       filas.set(clave, f);
@@ -116,6 +119,11 @@ export function resultadoPorEmbudo(e: EstadoApp, m: RangoMes): ResultadoEmbudo[]
     const f = fila(embudoDe(ventaPorId.get(ventaDeCuota.get(p.cuotaId) ?? "")));
     f.cobrado += p.monto; f.procesador += p.feeMonto;
   }
+  /* Lo que se devolvió en el período resta de lo cobrado del embudo de su venta. */
+  for (const d of devolucionesDelMes(e, m)) {
+    const f = fila(embudoDe(ventaPorId.get(d.ventaId ?? "")));
+    f.cobrado -= d.monto; f.devuelto += d.monto;
+  }
   for (const c of comisionesDelMes(e, m)) fila(embudoDe(ventaPorId.get(c.ventaId))).comisiones += c.comisionCloser + c.comisionDirector;
   for (const b of e.embudos) {
     const inv = inversionDelEmbudo(e, b.id, m);
@@ -127,12 +135,12 @@ export function resultadoPorEmbudo(e: EstadoApp, m: RangoMes): ResultadoEmbudo[]
     const costos = f.procesador + f.comisiones + f.inversion;
     return {
       ...f,
-      facturado: r2(f.facturado), cobrado: r2(f.cobrado), procesador: r2(f.procesador), comisiones: r2(f.comisiones),
+      facturado: r2(f.facturado), cobrado: r2(f.cobrado), devuelto: r2(f.devuelto), procesador: r2(f.procesador), comisiones: r2(f.comisiones),
       cac: f.inversion > 0 && f.ventas > 0 ? f.inversion / f.ventas : null,
       roasCC: f.inversion > 0 ? f.cobrado / f.inversion : null,
       roasRev: f.inversion > 0 ? f.facturado / f.inversion : null,
       profitCC: r2(f.cobrado - costos),
-      profitRev: r2(f.facturado - costos),
+      profitRev: r2(f.facturado - f.devuelto - costos),
     };
   }).sort((a, b) => b.cobrado - a.cobrado || b.facturado - a.facturado);
 }

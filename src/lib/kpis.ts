@@ -1,14 +1,14 @@
 import { evaluarAgenda } from "./calificacion";
-import type { Contacto, Cuota, EstadoApp, ID, Lead, Pago, Sesion, Venta, Webinar } from "./types";
+import type { Contacto, Cuota, EstadoApp, ID, Lead, Pago, Sesion, Venta, Webinar, Devolucion } from "./types";
 import {
-  calcularPyL, comisionesDelMes, cuotasPorCobrar, cuotasVencidas, gastosDelMes, gastosDePublicidad, pagosDelMes, type ComisionVenta, type PyL,
+  calcularPyL, comisionesDelMes, cuotasPorCobrar, cuotasVencidas, devolucionesDelMes, gastosDelMes, gastosDePublicidad, pagosDelMes, type ComisionVenta, type PyL,
 } from "./finanzas";
 import {
   filasMeta, leadsDelPipeline, leadsMes, leadsSinContactar, mrr, periodoAnterior, rangoDeFechas, tasaConversion, totalesMeta,
   valorPipeline, type MetricasMeta, type RangoMes,
 } from "./metricas";
 import {
-  deAlumnos, deAnuncios, deAtrasados, deComisiones, deFees, deGastos, deLeads, deLlamadas, deMovimientos, dePagos, dePersonas,
+  deAlumnos, deAnuncios, deAtrasados, deCashCollected, deComisiones, deDevoluciones, deFees, deGastos, deLeads, deLlamadas, deMovimientos, dePagos, dePersonas,
   dePublicidad, deVencidas, deVentas, deWebinars, type PartesDetalle,
 } from "./kpis-detalle";
 import { metricasDeWebinar, numerosDelWebinar, sumarMetricas, type MetricasWebinar } from "./webinar";
@@ -204,7 +204,23 @@ export class Contexto {
     });
   }
 
-  cobrado(): number { return this.memo("cobrado", () => this.pagos().reduce((a, p) => a + p.monto, 0)); }
+  /** Lo que entró en el corte: la suma de sus pagos, sin restar lo devuelto. */
+  entrado(): number { return this.memo("entrado", () => this.pagos().reduce((a, p) => a + p.monto, 0)); }
+
+  /** Las devoluciones que se hicieron en el corte, de las ventas del corte. */
+  devoluciones(): Devolucion[] {
+    return this.memo("devoluciones", () => {
+      const delMes = devolucionesDelMes(this.e, this.m);
+      if (this.general) return delMes;
+      return delMes.filter((d) => this.ventaEnCorte(d.ventaId ? this.ix.ventaPorId.get(d.ventaId) : undefined));
+    });
+  }
+  devuelto(): number { return this.memo("devuelto", () => this.devoluciones().reduce((a, d) => a + d.monto, 0)); }
+
+  /** El Cash Collected (CC) del corte: lo que entró menos lo que se devolvió
+   *  en el mismo corte (una devolución resta en el mes en que se devuelve la
+   *  plata, no en el de la venta). */
+  cobrado(): number { return this.memo("cobrado", () => this.entrado() - this.devuelto()); }
   facturado(): number { return this.memo("facturado", () => this.ventas().reduce((a, v) => a + v.precioAcordado, 0)); }
   fees(): number { return this.memo("fees", () => this.pagos().reduce((a, p) => a + p.feeMonto, 0)); }
 
@@ -619,7 +635,9 @@ export function catalogo(e: EstadoApp): DefKpi[] {
 
   add("cobranza", "Cobrado", [
     { id: "c_cc", etiqueta: "Cash Collected (CC)", formato: "moneda", mejor: "sube", href: "/finanzas", desglose: { tipo: "ingresos" },
-      ayuda: "Cash Collected (CC): la plata que entró en el período, de ventas de cualquier fecha.", valor: (c) => c.cobrado() },
+      ayuda: "Cash Collected (CC): la plata que entró en el período, de ventas de cualquier fecha, menos lo que se devolvió en el período.", valor: (c) => c.cobrado() },
+    { id: "c_devoluciones", etiqueta: "Devoluciones", formato: "moneda", mejor: "baja", ocultarEnCero: true, href: "/finanzas/detalle?seccion=devoluciones",
+      ayuda: "La plata que se le devolvió a clientes en el período. Resta en el mes en que se devuelve la plata, no en el de la venta.", valor: (c) => c.devuelto() },
     { id: "c_tasa", etiqueta: "Tasa de cobro", formato: "pct", mejor: "sube", href: "/finanzas",
       ayuda: "Cash Collected (CC) sobre Revenue: de todo lo que vendemos, cuánto entra.", valor: (c) => pctDe(c.cobrado(), c.facturado()) },
     { id: "c_reservas", etiqueta: "Cobrado en reservas", formato: "moneda", href: "/ventas",
@@ -737,7 +755,7 @@ export function catalogo(e: EstadoApp): DefKpi[] {
       valor: (c) => { const inv = c.inversionEmbudo(); if (inv === null) return null; const k = c.comisiones(); return c.cobrado() - c.fees() - k.closers - k.director - inv; } },
     { id: "e_profit_rev", etiqueta: "Profit on Revenue (embudo)", formato: "resultado", mejor: "sube", href: "/finanzas",
       ayuda: "La misma cuenta partiendo del Revenue (lo facturado).",
-      valor: (c) => { const inv = c.inversionEmbudo(); if (inv === null) return null; const k = c.comisiones(); return c.facturado() - c.fees() - k.closers - k.director - inv; } },
+      valor: (c) => { const inv = c.inversionEmbudo(); if (inv === null) return null; const k = c.comisiones(); return c.facturado() - c.devuelto() - c.fees() - k.closers - k.director - inv; } },
   ]);
 
   add("rentabilidad", "Profit del webinar", [
@@ -838,7 +856,8 @@ export function catalogo(e: EstadoApp): DefKpi[] {
     wv_clase0: deVia("clase0", undefined, (n) => n.ventas, "Ventas de la clase cero"),
     wv_qa: deVia("qa", undefined, (n) => n.ventas, "Ventas del Q&A"),
     /* Cobranza */
-    c_cc: (c) => dePagos(c, c.pagos()),
+    c_cc: (c) => deCashCollected(c),
+    c_devoluciones: (c) => deDevoluciones(c, c.devoluciones()),
     c_reservas: (c) => dePagos(c, c.pagos().filter((p) => c.ix.cuotaPorId.get(p.cuotaId)?.esReserva)),
     c_vencido: (c) => deVencidas(c, c.vencidas()),
     c_vencidas: (c) => deVencidas(c, c.vencidas()),

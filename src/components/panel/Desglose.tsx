@@ -10,7 +10,7 @@ import { useEstado } from "@/lib/store";
 import { Contexto, type Corte, type DefKpi } from "@/lib/kpis";
 import type { FilaDetalle } from "@/lib/kpis-detalle";
 import { fecha, money, num, pct, relativo } from "@/lib/format";
-import { comisionesDelMes, cuotasPorCobrar, gastosDelMes, pagosDelMes } from "@/lib/finanzas";
+import { comisionesDelMes, cuotasPorCobrar, devolucionesDelMes, gastosDelMes, pagosDelMes } from "@/lib/finanzas";
 import {
   alumnosActivos, inscriptosMes, leadsCerrados, leadsDelPipeline, leadsMes, type RangoMes,
 } from "@/lib/metricas";
@@ -74,26 +74,57 @@ function contenido(e: EstadoApp, que: QueDesglosar, mes: RangoMes): Contenido {
       };
     });
 
+  /* Lo que se devolvió en el mes: resta de lo cobrado (es lo que cuenta el número). */
+  const devueltas = () => devolucionesDelMes(e, mes)
+    .sort((a, b) => +new Date(b.fecha) - +new Date(a.fecha))
+    .map((d): Fila => {
+      const v = ventaDe(d.ventaId);
+      return {
+        id: d.id, titulo: v?.contactoNombre ?? "Venta sin identificar",
+        detalle: ["Devolución", fecha(d.fecha), procesador(d.procesadorId), d.noDescontarAlCloser ? "sin descontar al closer" : ""].filter(Boolean).join(" · "),
+        valor: M(-d.monto), ficha: v ? { id: v.id, venta: v.id } : undefined,
+      };
+    });
+
   switch (que.tipo) {
     case "ingresos": {
       const lista = pagos();
       const total = lista.reduce((a, x) => a + x.p.monto, 0);
+      const dev = devolucionesDelMes(e, mes);
+      const devuelto = dev.reduce((a, d) => a + d.monto, 0);
+      if (dev.length === 0) {
+        return {
+          titulo: "Ingresos del mes", sub: `${mes.etiqueta} · lo que se cobró`,
+          resumen: [{ etiqueta: "Cobrado", valor: M(total) }, { etiqueta: "Pagos", valor: num(lista.length) }],
+          secciones: [{ filas: lista.map((x) => x.fila), vacio: "No entró ningún pago este mes." }],
+        };
+      }
       return {
-        titulo: "Ingresos del mes", sub: `${mes.etiqueta} · lo que se cobró`,
-        resumen: [{ etiqueta: "Cobrado", valor: M(total) }, { etiqueta: "Pagos", valor: num(lista.length) }],
-        secciones: [{ filas: lista.map((x) => x.fila), vacio: "No entró ningún pago este mes." }],
+        titulo: "Ingresos del mes", sub: `${mes.etiqueta} · lo que se cobró menos lo que se devolvió`,
+        resumen: [
+          { etiqueta: "Cobrado", valor: M(total) }, { etiqueta: "Devuelto", valor: M(-devuelto) },
+          { etiqueta: "Cash Collected (CC)", valor: M(total - devuelto) }, { etiqueta: "Pagos", valor: num(lista.length) },
+        ],
+        secciones: [
+          { titulo: "Lo que entró", total: M(total), filas: lista.map((x) => x.fila), vacio: "No entró ningún pago este mes." },
+          { titulo: "Lo que se devolvió", total: M(-devuelto), filas: devueltas() },
+        ],
       };
     }
 
     case "resultado": {
       const lista = pagos();
-      const ingresos = lista.reduce((a, x) => a + x.p.monto, 0);
+      const dev = devolucionesDelMes(e, mes);
+      const devuelto = dev.reduce((a, d) => a + d.monto, 0);
+      /* Lo que entró menos lo devuelto: el Cash Collected. */
+      const ingresos = lista.reduce((a, x) => a + x.p.monto, 0) - devuelto;
 
       const comisiones: Fila[] = [];
       for (const c of comisionesDelMes(e, mes)) {
         const v = ventaDe(c.ventaId);
-        if (c.comisionCloser > 0) comisiones.push({ id: `${c.id}_closer`, titulo: `${c.closerNombre} · closer`, detalle: `Venta de ${v?.contactoNombre ?? "—"}`, valor: M(c.comisionCloser), ficha: { id: c.ventaId, venta: c.ventaId } });
-        if (c.comisionDirector > 0) comisiones.push({ id: `${c.id}_director`, titulo: `${e.equipo.find((x) => x.id === c.directorId)?.nombre ?? "Director"} · director`, detalle: `Venta de ${v?.contactoNombre ?? "—"}`, valor: M(c.comisionDirector), ficha: { id: c.ventaId, venta: c.ventaId } });
+        const detalleCom = c.devolucionId ? `Devolución de ${v?.contactoNombre ?? "—"}: se revierte lo comisionado` : `Venta de ${v?.contactoNombre ?? "—"}`;
+        if (c.comisionCloser !== 0) comisiones.push({ id: `${c.id}_closer`, titulo: `${c.closerNombre} · closer`, detalle: detalleCom, valor: M(c.comisionCloser), ficha: { id: c.ventaId, venta: c.ventaId } });
+        if (c.comisionDirector !== 0) comisiones.push({ id: `${c.id}_director`, titulo: `${e.equipo.find((x) => x.id === c.directorId)?.nombre ?? "Director"} · director`, detalle: detalleCom, valor: M(c.comisionDirector), ficha: { id: c.ventaId, venta: c.ventaId } });
       }
       const totalComisiones = comisionesDelMes(e, mes).reduce((a, c) => a + c.comisionCloser + c.comisionDirector, 0);
 
@@ -119,7 +150,8 @@ function contenido(e: EstadoApp, que: QueDesglosar, mes: RangoMes): Contenido {
           { etiqueta: "Margen", valor: ingresos > 0 ? pct(((ingresos - egresos) / ingresos) * 100) : "—" },
         ],
         secciones: [
-          { titulo: "Ingresos", total: M(ingresos), filas: lista.map((x) => x.fila), vacio: "No entró ningún pago." },
+          { titulo: "Ingresos", total: M(lista.reduce((a, x) => a + x.p.monto, 0)), filas: lista.map((x) => x.fila), vacio: "No entró ningún pago." },
+          ...(dev.length ? [{ titulo: "Devoluciones", total: M(-devuelto), filas: devueltas() }] : []),
           { titulo: "Comisiones", total: M(totalComisiones), filas: comisiones, vacio: "Sin comisiones este mes." },
           { titulo: "Fees de las pasarelas", total: M(totalFees), filas: fees, vacio: "Sin fees este mes." },
           { titulo: "Costos directos", total: M(directos.total), filas: directos.filas, vacio: "Sin costos directos." },

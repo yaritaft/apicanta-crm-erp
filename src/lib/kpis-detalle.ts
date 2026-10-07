@@ -1,5 +1,5 @@
 import type { Contexto } from "./kpis";
-import type { Alumno, Contacto, Gasto, ID, Lead, Movimiento, Pago, Sesion, Venta, Webinar } from "./types";
+import type { Alumno, Contacto, Devolucion, Gasto, ID, Lead, Movimiento, Pago, Sesion, Venta, Webinar } from "./types";
 import type { ComisionVenta, CuotaVencida } from "./finanzas";
 import { filasMeta } from "./metricas";
 import { evaluarAgenda } from "./calificacion";
@@ -116,6 +116,46 @@ export function dePagos(c: Contexto, pagos: Pago[]): PartesDetalle {
   };
 }
 
+/** Las devoluciones del período, una por una: cada una con su cliente, el
+ *  medio por el que salió la plata y a qué venta lleva. */
+export function deDevoluciones(c: Contexto, devoluciones: Devolucion[]): PartesDetalle {
+  const lista = [...devoluciones].sort((a, b) => b.fecha.localeCompare(a.fecha));
+  const filaDeDevolucion = (d: Devolucion): FilaDetalle => {
+    const v = d.ventaId ? c.ix.ventaPorId.get(d.ventaId) : undefined;
+    const procesador = c.e.procesadores.find((x) => x.id === d.procesadorId)?.nombre;
+    return {
+      id: d.id, titulo: v?.contactoNombre ?? "Venta sin identificar", valor: plata(c, -d.monto, Math.abs(d.monto) < 10 ? 2 : 0),
+      detalle: ["Devolución", fecha(d.fecha), procesador, d.noDescontarAlCloser ? "sin descontar al closer" : ""].filter(Boolean).join(" · "),
+      ficha: v ? { id: v.id, vista: "ventas" as const, venta: v.id } : undefined,
+      marca: { texto: "Devuelto", variante: "danger" as const },
+    };
+  };
+  return {
+    resumen: [{ etiqueta: "Devuelto", valor: plata(c, lista.reduce((a, d) => a + d.monto, 0)) }, { etiqueta: "Devoluciones", valor: num(lista.length) }],
+    secciones: [{ filas: lista.map(filaDeDevolucion), vacio: "No se devolvió plata en este período." }],
+  };
+}
+
+/** El Cash Collected: los pagos que entraron y, aparte, lo que se devolvió, que
+ *  resta. Las dos listas son las mismas que cuenta el número. */
+export function deCashCollected(c: Contexto): PartesDetalle {
+  const cobros = dePagos(c, c.pagos());
+  const devoluciones = c.devoluciones();
+  if (devoluciones.length === 0) return cobros;
+  const devueltas = deDevoluciones(c, devoluciones);
+  return {
+    resumen: [
+      { etiqueta: "Cobrado", valor: plata(c, c.entrado()) },
+      { etiqueta: "Devuelto", valor: plata(c, -c.devuelto()) },
+      { etiqueta: "Cash Collected (CC)", valor: plata(c, c.cobrado()) },
+    ],
+    secciones: [
+      { titulo: "Lo que entró", total: cobros.resumen[0].valor, filas: cobros.secciones[0].filas, vacio: "No entró ningún pago en este período." },
+      { titulo: "Lo que se devolvió", total: plata(c, -c.devuelto()), filas: devueltas.secciones[0].filas },
+    ],
+  };
+}
+
 /** Lo que se quedaron las pasarelas de cada pago. */
 export function deFees(c: Contexto, pagos: Pago[]): PartesDetalle {
   const lista = pagos.filter((p) => p.feeMonto > 0).sort((a, b) => b.feeMonto - a.feeMonto);
@@ -129,14 +169,19 @@ export function deFees(c: Contexto, pagos: Pago[]): PartesDetalle {
 export function deComisiones(c: Contexto, comisiones: ComisionVenta[], quien: "closer" | "director"): PartesDetalle {
   const monto = (x: ComisionVenta) => (quien === "closer" ? x.comisionCloser : x.comisionDirector);
   const nombre = (x: ComisionVenta) => (quien === "closer" ? x.closerNombre : c.e.equipo.find((m) => m.id === x.directorId)?.nombre ?? "Director");
-  const lista = comisiones.filter((x) => monto(x) > 0).sort((a, b) => monto(b) - monto(a));
+  /* Con las líneas en negativo de las devoluciones (lo que se revierte): el
+     total tiene que ser el del número. */
+  const lista = comisiones.filter((x) => monto(x) !== 0).sort((a, b) => monto(b) - monto(a));
   return {
     resumen: [{ etiqueta: "Comisiones", valor: plata(c, lista.reduce((a, x) => a + monto(x), 0)) }, { etiqueta: "Ventas", valor: num(lista.length) }],
     secciones: [{
       filas: lista.map((x) => ({
         id: `${x.id}_${quien}`, titulo: nombre(x), valor: plata(c, monto(x)),
-        detalle: `Venta de ${c.ix.ventaPorId.get(x.ventaId)?.contactoNombre ?? "—"} · cobrado ${plata(c, x.cobradoEnMes)}`,
+        detalle: x.devolucionId
+          ? `Devolución de ${c.ix.ventaPorId.get(x.ventaId)?.contactoNombre ?? "—"}: se revierte lo que se le comisionó`
+          : `Venta de ${c.ix.ventaPorId.get(x.ventaId)?.contactoNombre ?? "—"} · cobrado ${plata(c, x.cobradoEnMes)}`,
         ficha: { id: x.ventaId, vista: "ventas" as const, venta: x.ventaId },
+        ...(x.devolucionId ? { marca: { texto: "Devolución", variante: "danger" as const } } : {}),
       })),
       vacio: "Sin comisiones en este período.",
     }],

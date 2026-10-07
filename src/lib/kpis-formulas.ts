@@ -260,16 +260,22 @@ const EXPLICACIONES: Record<string, ExplicacionKpi> = {
 
   /* ===== Cobranza ===== */
   c_cc: {
-    formula: "Suma de los pagos que entraron con fecha del período, sin importar cuándo se hizo la venta",
-    ejemplo: "Si en septiembre entraron tres pagos de US$ 1.000, US$ 1.500 y US$ 500, el Cash Collected (CC) de septiembre es US$ 3.000, aunque uno sea la cuota de una venta de agosto.",
+    formula: "Suma de los pagos que entraron con fecha del período, sin importar cuándo se hizo la venta, menos las devoluciones que se hicieron en el período",
+    ejemplo: "Si en septiembre entraron tres pagos de US$ 1.000, US$ 1.500 y US$ 500, el Cash Collected (CC) de septiembre es US$ 3.000, aunque uno sea la cuota de una venta de agosto. Si en octubre entra un pago de US$ 1.000 y se devuelven US$ 1.500, el de octubre es −US$ 500: la devolución resta en el mes en que se devuelve la plata.",
     piezas: (c) => {
       const reserva = (p: Pago) => Boolean(c.ix.cuotaPorId.get(p.cuotaId)?.esReserva);
       const cuotas = c.pagos().filter((p) => !reserva(p)), reservas = c.pagos().filter(reserva);
+      const dev = c.devoluciones();
       return [
         dato("Cuotas cobradas", suma(cuotas.map((p) => p.monto)), "moneda", undefined, cuantas(cuotas.length, "pago", "pagos")),
         dato("Reservas cobradas", suma(reservas.map((p) => p.monto)), "moneda", "+", cuantas(reservas.length, "pago", "pagos")),
+        ...(dev.length ? [dato("Devoluciones", c.devuelto(), "moneda", "−" as const, cuantas(dev.length, "devolución", "devoluciones"))] : []),
       ];
     },
+  },
+  c_devoluciones: {
+    formula: "Suma de las devoluciones con fecha del período, de ventas de cualquier fecha. Resta en el mes en que se devuelve la plata: la venta sigue contando en su mes y la comisión de la pasarela no se devuelve",
+    ejemplo: "Una venta de septiembre se devuelve el 3 de octubre: septiembre queda como estaba y octubre muestra la devolución.",
   },
   c_tasa: {
     formula: "Cash Collected (CC) ÷ Revenue × 100",
@@ -301,15 +307,15 @@ const EXPLICACIONES: Record<string, ExplicacionKpi> = {
     formula: "Suma de la comisión de procesador de cada pago del período: el monto × la tasa de la cuenta recaudadora (o la comisión real, si el cobro se concilió)",
   },
   r_closers: {
-    formula: "Por cada venta con cobros en el período: (lo cobrado − lo que se quedó el procesador) × % del closer en ese servicio. Si la cerró alguien que no comisiona (Yari), nadie comisiona",
+    formula: "Por cada venta con cobros en el período: (lo cobrado − lo que se quedó el procesador) × % del closer en ese servicio. Si la cerró alguien que no comisiona (Yari), nadie comisiona. Si en el período se devolvió plata de una venta, se resta lo que se le había comisionado por lo devuelto (salvo que la devolución diga «no descontar al closer»)",
     ejemplo: "Un closer cobró US$ 2.000 de un cliente y el procesador se quedó US$ 100: comisiona sobre US$ 1.900. Con un 10%, son US$ 190.",
   },
   r_director: {
-    formula: "Por cada venta con cobros en el período: (lo cobrado − lo que se quedó el procesador) × % del director en ese servicio",
+    formula: "Por cada venta con cobros en el período: (lo cobrado − lo que se quedó el procesador) × % del director en ese servicio. Una devolución le resta lo que se le había comisionado por lo devuelto",
   },
   r_directos: { formula: "Gastos del período cargados como costos directos: setters, financieras, referidores" },
   r_bruto: {
-    formula: "Cash Collected (CC) − Comisión de closers − Comisión del director − Procesadores de pago − Otros costos directos",
+    formula: "Cash Collected (CC, ya sin lo devuelto) − Comisión de closers − Comisión del director − Procesadores de pago − Otros costos directos",
     ejemplo: "Cobraste US$ 10.000 y los costos directos fueron US$ 2.000: la utilidad bruta es US$ 8.000.",
     piezas: () => [ref("c_cc"), ...COSTOS_DIRECTOS],
   },
@@ -324,9 +330,9 @@ const EXPLICACIONES: Record<string, ExplicacionKpi> = {
     piezas: () => [ref("c_cc"), ...COSTOS_DIRECTOS, ref("r_opex", "−"), ref("r_ceo", "−")],
   },
   r_neto_rev: {
-    formula: "Revenue − costos directos (comisiones, procesadores y otros) − Gastos operativos − Honorarios del CEO",
+    formula: "Revenue − Devoluciones − costos directos (comisiones, procesadores y otros) − Gastos operativos − Honorarios del CEO",
     ejemplo: "Con los mismos costos, pero contando los US$ 16.000 que se vendieron en vez de los US$ 10.000 que entraron: 16.000 − 2.000 − 4.000 − 1.000 = US$ 9.000. Es lo que ganarías si todos pagaran todo; por eso es «en teoría».",
-    piezas: () => [ref("v_fact"), ...COSTOS_DIRECTOS, ref("r_opex", "−"), ref("r_ceo", "−")],
+    piezas: (c, v) => [ref("v_fact"), ...((v("c_devoluciones") ?? 0) !== 0 ? [ref("c_devoluciones", "−")] : []), ...COSTOS_DIRECTOS, ref("r_opex", "−"), ref("r_ceo", "−")],
   },
   r_margen: { formula: "Profit on Cash Collected (CC) ÷ Cash Collected (CC) × 100", piezas: () => [ref("r_neto_cc"), ref("c_cc", "÷")] },
   r_queda: { formula: "Profit on Cash Collected (CC) − Growth partner − Socio", piezas: () => [ref("r_neto_cc"), ref("r_growth", "−"), ref("r_socio", "−")] },
@@ -336,8 +342,8 @@ const EXPLICACIONES: Record<string, ExplicacionKpi> = {
     piezas: () => [ref("c_cc"), ref("r_fees", "−"), ref("r_closers", "−"), ref("r_director", "−"), ref("e_inv", "−")],
   },
   e_profit_rev: {
-    formula: "Revenue − Procesadores − Comisiones (closers y director) − Inversión del embudo. Sin los gastos fijos de la empresa",
-    piezas: () => [ref("v_fact"), ref("r_fees", "−"), ref("r_closers", "−"), ref("r_director", "−"), ref("e_inv", "−")],
+    formula: "Revenue − Devoluciones − Procesadores − Comisiones (closers y director) − Inversión del embudo. Sin los gastos fijos de la empresa",
+    piezas: (c, v) => [ref("v_fact"), ...((v("c_devoluciones") ?? 0) !== 0 ? [ref("c_devoluciones", "−")] : []), ref("r_fees", "−"), ref("r_closers", "−"), ref("r_director", "−"), ref("e_inv", "−")],
   },
   w_profit_cc: {
     formula: "Cobrado de las ventas del webinar − Inversión total − Comisiones − Procesadores − Otros gastos cargados a ese webinar",

@@ -2,6 +2,7 @@ import type {
   CanalOrigen, Contacto, Cuota, EstadoApp, Lead, NivelIngles, Sesion, Venta, Webinar,
 } from "./types";
 import { closerDeCuota, cobraDirector, cobraEnFecha, tasaDeComision } from "./finanzas";
+import { devolucionesDe, esDevolucionConfirmada, reversasDeComision } from "./devoluciones";
 
 /* ==================================================================
    Las métricas que Yari viene trackeando webinar a webinar desde 2023.
@@ -33,7 +34,11 @@ export interface MetricasWebinar {
   tasaCierre: number;           // ventas / llamadas calificadas
   /* Plata */
   facturado: number;
+  /* El Cash Collected de las ventas del webinar: lo que entró menos lo que se
+     devolvió de ellas. */
   cobrado: number;
+  /* Lo que se devolvió de las ventas del webinar (ya restado de `cobrado`). */
+  devoluciones: number;
   comisiones: number;
   /* Lo que se quedaron los procesadores de pago */
   procesador: number;
@@ -54,11 +59,11 @@ const pctDiv = (a: number, b: number) => (b > 0 ? (a / b) * 100 : 0);
    el promedio de cinco ROAS no es el ROAS de los cinco. */
 type Base = Pick<MetricasWebinar,
   | "inversionTotal" | "formularios" | "grupoWpp" | "asistentes" | "llamadas"
-  | "llamadasCalificadas" | "ventas" | "facturado" | "cobrado" | "comisiones" | "procesador" | "otrosGastos">;
+  | "llamadasCalificadas" | "ventas" | "facturado" | "cobrado" | "devoluciones" | "comisiones" | "procesador" | "otrosGastos">;
 
 const CLAVES_BASE: (keyof Base)[] = [
   "inversionTotal", "formularios", "grupoWpp", "asistentes", "llamadas",
-  "llamadasCalificadas", "ventas", "facturado", "cobrado", "comisiones", "procesador", "otrosGastos",
+  "llamadasCalificadas", "ventas", "facturado", "cobrado", "devoluciones", "comisiones", "procesador", "otrosGastos",
 ];
 
 function derivar(b: Base): MetricasWebinar {
@@ -82,7 +87,9 @@ function derivar(b: Base): MetricasWebinar {
 
     roasRev: div(b.facturado, b.inversionTotal),
     roasCC: div(b.cobrado, b.inversionTotal),
-    beneficioRev: b.facturado - descuentos,
+    /* Lo devuelto también resta de lo facturado: la venta sigue contando, pero
+       esa plata ya no es ganancia (como en el estado de resultados). */
+    beneficioRev: b.facturado - b.devoluciones - descuentos,
     beneficioCC: b.cobrado - descuentos,
   };
 }
@@ -196,8 +203,13 @@ export function metricasDeWebinar(e: EstadoApp, webinar: Webinar): MetricasWebin
   const cuotaDe = new Map<string, Cuota>();
   for (const c of e.cuotas) if (ventaPorId.has(c.ventaId)) cuotaDe.set(c.id, c);
   const pagos = e.pagos.filter((p) => cuotaDe.has(p.cuotaId));
-  const cobrado = pagos.reduce((a, p) => a + p.monto, 0);
   const fees = pagos.reduce((a, p) => a + p.feeMonto, 0);
+  /* Lo devuelto de estas ventas resta de lo cobrado, igual que en Finanzas
+     (la comisión de la pasarela sigue siendo la de los cobros). */
+  const devuelto = devolucionesDe(e)
+    .filter((d) => esDevolucionConfirmada(d) && d.ventaId && ventaPorId.has(d.ventaId))
+    .reduce((a, d) => a + d.monto, 0);
+  const cobrado = pagos.reduce((a, p) => a + p.monto, 0) - devuelto;
 
   /* Comisiones: closer + director sobre el neto de procesador de cada
      cobro, salvo que la venta la haya cerrado Yari. El closer es el de la
@@ -216,6 +228,13 @@ export function metricasDeWebinar(e: EstadoApp, webinar: Webinar): MetricasWebin
     if (cobraEnFecha(closer, p.fecha)) comisiones += neto * tasaDeComision(closer, v.productoId);
     if (cobraDirector(director, p.fecha)) comisiones += neto * tasaDeComision(director, v.productoId);
   }
+  /* Y lo que se les revierte por las devoluciones: lo mismo que Finanzas. */
+  if (devuelto > 0) {
+    for (const r of reversasDeComision(e)) {
+      if (r.sinDescuento || !ventaPorId.has(r.venta.id)) continue;
+      for (const x of r.partes) comisiones -= x.reversa;
+    }
+  }
 
   return derivar({
     inversionTotal,
@@ -227,6 +246,7 @@ export function metricasDeWebinar(e: EstadoApp, webinar: Webinar): MetricasWebin
     ventas: ventas.length,
     facturado,
     cobrado,
+    devoluciones: devuelto,
     comisiones,
     procesador: fees,
     otrosGastos: e.gastos.filter((g) => g.webinarId === webinar.id).reduce((a, g) => a + g.monto, 0),
