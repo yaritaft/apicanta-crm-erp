@@ -3,6 +3,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp } from "lucide-react";
 import { num } from "@/lib/format";
+import { InfoMetrica, type PropsInfoMetrica } from "./InfoMetrica";
 
 export interface Columna<T> {
   clave: string;
@@ -19,6 +20,9 @@ export interface Columna<T> {
   /* Un encabezado propio en vez del título (el menú de filtro del CRM, como
      en Excel): con esto el clic en el encabezado no ordena, lo maneja él. */
   encabezado?: React.ReactNode;
+  /* El ícono «cómo se calcula» junto al título (InfoMetrica): qué es la
+     columna y su cuenta. El clic del ícono no ordena. */
+  info?: Omit<PropsInfoMetrica, "titulo">;
 }
 
 type Orden = { clave: string; desc: boolean };
@@ -132,6 +136,7 @@ export function DataTable<T extends { id: string }>({
                 aria-sort={orden?.clave === c.clave ? (orden.desc ? "descending" : "ascending") : undefined}
               >
                 {c.encabezado ?? c.titulo}
+                {c.info && !c.encabezado && <InfoMetrica {...c.info} titulo={c.titulo} />}
                 {!c.encabezado && orden?.clave === c.clave && (
                   <span className="sort-ico">
                     {orden.desc ? <ArrowDown size={14} /> : <ArrowUp size={14} />}

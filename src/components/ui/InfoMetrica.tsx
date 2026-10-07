@@ -41,7 +41,7 @@ export interface PropsInfoMetrica {
   formula?: string;
   /* Con los números del período que se mira. Se piden recién al abrir. */
   componentes?: () => ComponenteMetrica[] | SeccionComponentes[] | null;
-  /* El período de esos números: «este mes», «del 01/09 al 30/09». */
+  /* El período de esos números: «este mes», «1 sep – 30 sep». Se muestra como «Período: …». */
   periodo?: string;
   ejemplo?: string;
   /* Dónde ver los registros que forman el número. */
@@ -51,7 +51,7 @@ export interface PropsInfoMetrica {
 
 export function InfoMetrica({ titulo, ayuda, formula, componentes, periodo, ejemplo, href, className }: PropsInfoMetrica) {
   const boton = useRef<HTMLButtonElement>(null);
-  const [tip, setTip] = useState<{ x: number; y: number } | null>(null);
+  const [tip, setTip] = useState<{ x: number; y: number; arriba: boolean } | null>(null);
   /* Los números se piden al abrir y quedan fijos mientras la ventana está
      abierta: no se recalculan en cada dibujo. */
   const [abierto, setAbierto] = useState<SeccionComponentes[] | null>(null);
@@ -59,9 +59,11 @@ export function InfoMetrica({ titulo, ayuda, formula, componentes, periodo, ejem
   const mostrar = () => {
     const r = boton.current?.getBoundingClientRect();
     if (!r) return;
-    /* Centrado debajo del ícono, sin salirse de la pantalla. */
-    const x = Math.min(Math.max(r.left + r.width / 2, 150), window.innerWidth - 150);
-    setTip({ x, y: r.bottom + 8 });
+    /* Centrado debajo del ícono, sin salirse de la pantalla (320 de ancho, 164 de cada lado con aire);
+       si abajo no entra, va arriba. */
+    const x = Math.min(Math.max(r.left + r.width / 2, 164), window.innerWidth - 164);
+    const arriba = r.bottom + 8 + 140 > window.innerHeight && r.top > 160;
+    setTip({ x, y: arriba ? window.innerHeight - r.top + 8 : r.bottom + 8, arriba });
   };
   const abrir = () => {
     const pedidos = componentes?.() ?? null;
@@ -82,14 +84,14 @@ export function InfoMetrica({ titulo, ayuda, formula, componentes, periodo, ejem
         <Info size={13} aria-hidden />
       </button>
       {tip && createPortal(
-        <div className="info-tip" role="tooltip" style={{ left: tip.x, top: tip.y }}>
+        <div className="info-tip" role="tooltip" style={tip.arriba ? { left: tip.x, bottom: tip.y } : { left: tip.x, top: tip.y }}>
           <span>{ayuda}</span>
           <span className="info-tip__pie">Clic para ver cómo se calcula</span>
         </div>,
         document.body,
       )}
       {abierto && (
-        <Modal abierto onCerrar={() => setAbierto(null)} titulo={titulo} sub={periodo ? `Con los números de ${periodo}` : "Cómo se calcula"}>
+        <Modal abierto onCerrar={() => setAbierto(null)} titulo={titulo} sub={periodo ? `Período: ${periodo}` : "Cómo se calcula"}>
           <div className="info-cuerpo">
             <p className="info-ayuda">{ayuda}</p>
             {formula && (
