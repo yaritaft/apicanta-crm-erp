@@ -224,4 +224,35 @@ export async function cambiarRegistro(id: string, cambios: Partial<RegistroForm>
   return { ok: true, escritos: 1 };
 }
 
+/** Cambia lo mismo en varios registros de una vez (por ejemplo «Unido» a los
+ *  que el lector de WhatsApp ve adentro del grupo): se ve al instante y se
+ *  guarda de a 100 con una sola escritura por tanda; si la base lo rechaza,
+ *  los que no llegaron vuelven a como estaban. */
+export async function cambiarRegistros(ids: string[], cambios: Partial<RegistroForm>): Promise<ResultadoEscritura> {
+  const antes = new Map<string, RegistroForm>();
+  for (const id of ids) {
+    const r = filas.get(id);
+    if (!r) continue;
+    antes.set(id, r);
+    filas.set(id, { ...r, ...cambios } as RegistroForm);
+  }
+  if (antes.size === 0) return { ok: true, escritos: 0 };
+  if (!nube) { escribirLocal(); resumen = resumirLocal(); poner("local"); return { ok: true, escritos: antes.size }; }
+  avisar();
+  const lista = [...antes.keys()];
+  let hechos = 0;
+  for (let i = 0; i < lista.length; i += 100) {
+    const lote = lista.slice(i, i + 100);
+    const r = await nube.from("registros_webinar").update(cambios as never).in("id", lote);
+    if (r.error) {
+      for (const id of lista.slice(i)) filas.set(id, antes.get(id)!);
+      avisar();
+      return { ok: false, escritos: hechos, error: r.error.code === "42501" ? "Tu tipo de cuenta puede mirar los formularios, pero no cambiarlos." : msg(r.error) };
+    }
+    hechos += lote.length;
+  }
+  void cargarResumen();
+  return { ok: true, escritos: hechos };
+}
+
 export { hayNube };

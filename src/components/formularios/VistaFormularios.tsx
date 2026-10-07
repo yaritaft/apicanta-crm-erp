@@ -22,9 +22,11 @@ import { digitosWhatsapp, normalizarTelefono, telefonoLegible } from "@/lib/tele
 import {
   contarRegistros, filtrarRegistros, isoDePais, UTMS_FORM, type FiltroMarca, type RegistroForm,
 } from "@/lib/registros-webinar";
-import { cambiarRegistro, cargarRegistros, cargarResumen, useRegistrosNube } from "@/lib/registros-nube";
+import { cambiarRegistro, cambiarRegistros, cargarRegistros, cargarResumen, useRegistrosNube } from "@/lib/registros-nube";
+import { AvisoLectorWhatsapp } from "@/components/webinars/AvisoLectorWhatsapp";
 import { ImportarFormularios } from "./ImportarFormularios";
 import { CruceFormularios } from "./CruceFormularios";
+import { BarraDelLector, FILTROS_LECTOR, useLectorDeFormularios, type FiltroLector } from "./LectorFormularios";
 
 /* ==================================================================
    Formularios: quién se anotó a cada webinar y qué pasó con cada uno.
@@ -72,7 +74,7 @@ export function VistaFormularios() {
   const { acceso } = useAcceso();
   const puedeEditar = nivelEn(acceso, "webinars") === 2;
   const datos = useRegistrosNube();
-  const [v, cambiar] = useParamsURL({ webinar: "", marca: "", seccion: "registros" });
+  const [v, cambiar] = useParamsURL({ webinar: "", marca: "", seccion: "registros", lector: "" });
   const [q, setQ] = useBusquedaURL("q", ["pag"]);
   const cols = useColumnas("formularios", COLUMNAS, POR_DEFECTO);
   const [importando, setImportando] = useState(false);
@@ -120,6 +122,11 @@ export function VistaFormularios() {
   );
   const cargandoEste = datos.estado === "cargando" && deEsteWebinar.length === 0;
 
+  /* Lo que dice el lector de WhatsApp (si el webinar tiene un grupo atado): quién está adentro. */
+  const lector = useLectorDeFormularios(sel === "todos" ? "" : sel, deEsteWebinar);
+  const filtroLector = (FILTROS_LECTOR as string[]).includes(v.lector) ? (v.lector as FiltroLector) : "";
+  const filasVisibles = useMemo(() => lector.filtrar(filas, filtroLector), [filas, filtroLector, lector.uniones, lector.hayGrupo]); // eslint-disable-line react-hooks/exhaustive-deps -- `filtrar` cambia en cada dibujo; lo que lo hace distinto es `uniones`
+
   async function marcar(r: RegistroForm, cambios: Partial<RegistroForm>, quitar: (keyof RegistroForm)[] = []) {
     const res = await cambiarRegistro(r.id, cambios, quitar);
     if (!res.ok) toast(res.error ?? "No se pudo guardar.", "err");
@@ -132,6 +139,16 @@ export function VistaFormularios() {
     r.contactado
       ? marcar(r, { contactado: false }, ["contactadoPor", "contactadoEn"])
       : marcar(r, { contactado: true, contactadoPor: quien, contactadoEn: new Date().toISOString() });
+
+  async function marcarUnidos(ids: string[]) {
+    const res = await cambiarRegistros(ids, { grupo: "unido", grupoPor: "Lector de WhatsApp", grupoEn: new Date().toISOString() });
+    if (res.ok) toast(`Listo: ${num(res.escritos)} ${res.escritos === 1 ? "quedó marcado" : "quedaron marcados"} como ${res.escritos === 1 ? "unido" : "unidos"}.`);
+    else toast(res.error ?? "No se pudo guardar.", "err");
+  }
+  async function copiarTexto(texto: string, aviso: string) {
+    try { await navigator.clipboard.writeText(texto); toast(aviso); }
+    catch { toast("No se pudo copiar. Probá de nuevo.", "err"); }
+  }
 
   async function copiar(r: RegistroForm) {
     const n = normalizarTelefono(r.telefono, isoDePais(r.pais));
@@ -189,6 +206,7 @@ export function VistaFormularios() {
             title={r.grupo === "no-unido" ? `No unido: lo marcó ${r.grupoPor ?? "alguien"}. Un clic y se desmarca.` : "Marcar como no unido al grupo"} onClick={() => void ponerGrupo(r, "no-unido")}>
             No unido
           </button>
+          {lector.insignia(r)}
         </span>
       ),
     },
@@ -245,6 +263,8 @@ export function VistaFormularios() {
       )}
       {datos.estado === "error" && <p className="t-sm" style={{ color: "var(--danger)" }}>{datos.error}</p>}
 
+      <AvisoLectorWhatsapp />
+
       <Tabs
         valor={v.seccion as "registros" | "cruce"} onChange={(s) => cambiar({ seccion: s })}
         opciones={[{ valor: "registros", texto: "Registros" }, { valor: "cruce", texto: "Cruce con la agenda" }]}
@@ -290,6 +310,12 @@ export function VistaFormularios() {
             />
           </div>
 
+          <BarraDelLector
+            lector={lector} registros={deEsteWebinar} visibles={filasVisibles}
+            filtro={filtroLector} onFiltro={(f) => cambiar({ lector: f || null }, { pag: null })}
+            puedeEditar={puedeEditar} onMarcarUnidos={marcarUnidos} onCopiar={copiarTexto}
+          />
+
           <Card style={{ padding: 0 }}>
             <div className="wb-personas__cabeza">
               <div className="toolbar" style={{ marginBottom: 0 }}>
@@ -310,7 +336,7 @@ export function VistaFormularios() {
               </div>
             </div>
             <DataTable
-              filas={filas} columnas={columnas} porPagina={50}
+              filas={filasVisibles} columnas={columnas} porPagina={50}
               orden={tabla.orden} onOrden={tabla.onOrden} pagina={tabla.pagina} onPagina={tabla.onPagina}
               onFila={(r) => setDetalle(r.id)} etiquetaFila={(r) => `Ver el detalle de ${r.nombre || r.email}`}
               vacio={
@@ -323,7 +349,7 @@ export function VistaFormularios() {
                   />
                 ) : (
                   <Empty icono={<Search size={22} />} titulo="Nadie coincide con los filtros" texto="Probá con otro estado o con otra búsqueda."
-                    accion={<Button onClick={() => { setQ(""); cambiar({ marca: null }); }}>Limpiar los filtros</Button>} />
+                    accion={<Button onClick={() => { setQ(""); cambiar({ marca: null, lector: null }); }}>Limpiar los filtros</Button>} />
                 )
               }
             />
