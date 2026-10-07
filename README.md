@@ -666,8 +666,10 @@ correr `supabase/honorarios.sql` (tablas, políticas, niveles de acceso y la col
   - **SQL:** `supabase/control-cruzado.sql` agrega 9 columnas a `pagos` (`cargadoPor`, `chequeoDirector/Por/En/Nota` y
     `chequeoFinanzas/Por/En/Nota`) y un trigger: el RLS no distingue columnas y el closer puede editar sus cobros, así que el trigger
     deja los casilleros sólo a quien corresponde, sella quién y cuándo con la sesión (nadie chequea a nombre de otro), reinicia el
-    control si se reemplaza el comprobante y no deja que el tilde de quien carga cuente. Lo ensayé en un Postgres de verdad con las
-    funciones reales de `tipos-cuenta.sql`. Sin el SQL la app anda igual: los chequeos quedan sólo en el navegador de quien los hace.
+    control si se reemplaza el comprobante y no deja que el tilde de quien carga cuente. Se ensaya en un Postgres de verdad, con las
+    políticas reales de `tipos-cuenta.sql` y como closer, director, administración, dueño y servidor
+    (`pruebas/sql/control-cruzado.ensayo.mjs`, a mano: necesita PGlite). Sin el SQL la app anda igual: los chequeos quedan sólo en el
+    navegador de quien los hace.
     Al final tiene, comentada, una línea para dar por chequeados «de antes» los cobros viejos si no se quiere arrancar con toda la
     historia pendiente. Los chequeos salen como un UPDATE de sus columnas y las columnas del control **nunca viajan** en el upsert del
     cobro entero (`sinColumnasDelControl`): una copia vieja de la pantalla no pisa lo que otro acaba de chequear.
