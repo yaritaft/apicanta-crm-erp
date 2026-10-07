@@ -8,6 +8,7 @@ import { useToast } from "@/components/ui/Toast";
 import { cabeceras } from "@/components/webinars/useYoutube";
 import { fecha, num, relativo } from "@/lib/format";
 import { hayNube } from "@/lib/store";
+import { FathomDiagnostico } from "./FathomDiagnostico";
 
 /* ==================================================================
    Fathom, en Ajustes → Integraciones: que cada llamada de venta tenga
@@ -20,7 +21,11 @@ import { hayNube } from "@/lib/store";
      descarta sin guardarse. El secreto del webhook lo guarda el servidor.
    - «Traer lo anterior» pide a Fathom las reuniones desde el día antes de
      la primera llamada de Calendly que hay en la app, de a una página,
-     hasta que no hay más. Si Fathom pide una pausa, espera y sigue.
+     hasta que no hay más: primero todo lo que la clave ve y después las
+     llamadas de cada equipo de ventas de Fathom (las «Team Calls»). Si
+     Fathom pide una pausa, espera y sigue.
+   - «Diagnosticar» (sólo dueños, FathomDiagnostico): por qué no llegan las
+     llamadas de los closers, con la clave del servidor.
    ================================================================== */
 
 interface Estado {
@@ -49,7 +54,7 @@ export function FathomIntegracion() {
   const toast = useToast();
   const [estado, setEstado] = useState<Estado | null>(null);
   const [trabajando, setTrabajando] = useState<string | null>(null);
-  const [avance, setAvance] = useState<{ atadas: number; descartadas: number } | null>(null);
+  const [avance, setAvance] = useState<{ atadas: number; nuevas: number; descartadas: number; equipo?: string | null } | null>(null);
   const [pausa, setPausa] = useState<number | null>(null);
   const [desconectar, setDesconectar] = useState(false);
   /* Si se cierra la pantalla en medio de «Traer lo anterior», se deja de pedir. */
@@ -77,10 +82,13 @@ export function FathomIntegracion() {
 
   async function importar() {
     setTrabajando("importar");
-    setAvance({ atadas: 0, descartadas: 0 });
-    let cursor: string | null = null, atadas = 0, descartadas = 0, pausas = 0, sinLlamadas = false;
+    setAvance({ atadas: 0, nuevas: 0, descartadas: 0 });
+    /* Las vueltas por equipo repiten lo que trajo la general: se cuenta por grabación, no por página. */
+    const atadas = new Set<string>(), vistas = new Set<string>();
+    let cursor: string | null = null, nuevas = 0, pausas = 0, sinLlamadas = false;
+    const cuenta = () => ({ atadas: atadas.size, nuevas, descartadas: vistas.size - atadas.size });
     try {
-      for (let i = 0; i < 500 && montado.current; i++) {
+      for (let i = 0; i < 1000 && montado.current; i++) {
         const j = await pedir("POST", { accion: "importar", cursor });
         if (j.sinLlamadas) { sinLlamadas = true; break; }
         if (typeof j.esperar === "number") {
@@ -90,17 +98,19 @@ export function FathomIntegracion() {
           setPausa(null);
           continue;
         }
-        atadas += Number(j.atadas ?? 0);
-        descartadas += Number(j.descartadas ?? 0);
-        setAvance({ atadas, descartadas });
+        for (const id of (j.idsAtadas as string[] | undefined) ?? []) { atadas.add(id); vistas.add(id); }
+        for (const id of (j.idsDescartadas as string[] | undefined) ?? []) vistas.add(id);
+        nuevas += Number(j.nuevas ?? 0);
+        setAvance({ ...cuenta(), equipo: (j.equipo as string | null | undefined) ?? null });
         cursor = (j.siguiente as string | null) ?? null;
         if (!cursor) break;
       }
       if (!montado.current) return;
+      const c = cuenta();
       toast(sinLlamadas
         ? "Todavía no hay llamadas de Calendly en la app: no hay con qué atar las grabaciones."
-        : `Listo: ${num(atadas)} ${atadas === 1 ? "grabación atada" : "grabaciones atadas"} a su llamada.${descartadas
-          ? ` ${num(descartadas)} ${descartadas === 1 ? "no tenía" : "no tenían"} llamada de Calendly y no se ${descartadas === 1 ? "guardó" : "guardaron"}.` : ""}`);
+        : `Listo: ${num(c.atadas)} ${c.atadas === 1 ? "grabación atada" : "grabaciones atadas"} a su llamada (${num(c.nuevas)} ${c.nuevas === 1 ? "nueva" : "nuevas"}).${c.descartadas
+          ? ` ${num(c.descartadas)} ${c.descartadas === 1 ? "no tenía" : "no tenían"} llamada de Calendly y no se ${c.descartadas === 1 ? "guardó" : "guardaron"}.` : ""}`);
     } catch (err) { if (montado.current) toast(err instanceof Error ? err.message : "No se pudo traer.", "err"); }
     if (!montado.current) return;
     setPausa(null);
@@ -167,12 +177,13 @@ export function FathomIntegracion() {
             {estado.desde
               ? `«Traer lo anterior» busca desde el ${fecha(estado.desde)}: antes no hay llamadas de Calendly en la app para atarlas.`
               : "«Traer lo anterior» busca desde la primera llamada de Calendly que haya en la app."}
+            {" "}Pide todo lo que ve la clave y también las llamadas de cada equipo de ventas de Fathom (el que se llame Sales, Ventas o Closers; si se llama distinto, se lo dice con FATHOM_EQUIPOS en Vercel).
           </p>
           {trabajando === "importar" && avance && (
             <p className="t-sm t-subtle" role="status">
               {pausa
                 ? `Fathom pidió una pausa: sigo en ${pausa} s… (van ${num(avance.atadas)} atadas)`
-                : `Trayendo… ${num(avance.atadas)} atadas a su llamada, ${num(avance.descartadas)} sin llamada (no se guardan).`}
+                : `Trayendo${avance.equipo ? ` (equipo ${avance.equipo})` : ""}… ${num(avance.atadas)} atadas a su llamada, ${num(avance.descartadas)} sin llamada (no se guardan).`}
             </p>
           )}
 
@@ -185,6 +196,7 @@ export function FathomIntegracion() {
               Hay {num(sinAtar)} {sinAtar === 1 ? "grabación guardada" : "grabaciones guardadas"} sin llamada, de antes de que se descartaran: no se muestran en ningún lado.
             </p>
           )}
+          <FathomDiagnostico deshabilitado={!estado.clave || Boolean(trabajando)} />
         </div>
       )}
       <Confirmar
