@@ -3341,6 +3341,7 @@ span.kpis__etiqueta:hover { color: var(--ink); text-decoration: none; }
 .crm-t__si { display: inline-flex; align-items: center; gap: 4px; }
 .crm-t__si .estrella-calificada { margin-left: 0; }
 .crm-t__venta { color: var(--success); font-weight: 600; }
+.crm-t__venta--otra { color: var(--warning); }
 .crm-t .hk-table td { max-width: 280px; }
 .crm-t .hk-table td > .truncate { display: block; }
 /* El anuncio mismo, arriba de su detalle (components/marketing/DetalleAnuncio):
@@ -3589,6 +3590,13 @@ span.kpis__etiqueta:hover { color: var(--ink); text-decoration: none; }
 .crm-eod__datos dd { margin: 2px 0 0; font-size: 14px; line-height: 20px; color: var(--ink); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow-wrap: anywhere; }
 .crm-eod__bloque { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-3); padding: var(--space-4); border-radius: var(--radius-lg); background: var(--surface-200); }
 .crm-eod__ok { display: flex; align-items: center; gap: 8px; margin: 0; color: var(--success); font-weight: 600; }
+/* La venta la carga otra persona: está avisado, no cargado. */
+.crm-eod__ok--aviso { color: var(--warning); }
+/* La puerta: las compras que todavía no tienen su venta. */
+.crm-eod__falta { display: flex; align-items: flex-start; gap: var(--space-3); padding: var(--space-4); border: 1px solid var(--warning); border-radius: var(--radius-lg); background: var(--warning-soft); color: var(--ink); }
+.crm-eod__falta > svg { flex: none; margin-top: 2px; color: var(--warning); }
+.crm-eod__falta > div { flex: 1 1 auto; min-width: 0; }
+.crm-eod__falta-fila { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-3); min-width: 0; }
 /* El paso de una llamada. Sin resultado, la persona y la pregunta van al
    centro; al elegirlo se corren a la izquierda y lo que sigue aparece a la
    derecha, sin bajar. El ancho de la derecha es fijo por dentro: el texto
@@ -3637,9 +3645,42 @@ span.kpis__etiqueta:hover { color: var(--ink); text-decoration: none; }
 .crm-eod__numero { font-size: 40px; font-weight: 700; line-height: 1; color: var(--brand); }
 .crm-eod__pendientes { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 14px; color: var(--ink-muted); cursor: pointer; }
 .crm-eod__pendientes input { accent-color: var(--brand-fill); }
+/* Los strikes del closer, en «Tu día». */
+.crm-eod__strikes { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-4); border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface-100); }
+.crm-eod__strikes--hay { border-color: var(--warning); background: var(--warning-soft); }
+.crm-eod__strikes-cabeza { display: flex; align-items: center; gap: var(--space-3); }
+.crm-eod__strikes-numero { font-size: 32px; font-weight: 700; line-height: 1; color: var(--ink); }
+.crm-eod__strikes p { margin: 0; }
+.crm-eod__strikes-lista { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; font-size: 14px; line-height: 20px; color: var(--ink-muted); }
+.crm-eod__strikes-regla { font-size: 13px; line-height: 20px; color: var(--ink-subtle); }
+.crm-eod__strikes-regla--descuenta { color: var(--warning); font-weight: 600; }
 .crm-eod__resumen { display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; }
 .crm-eod__fila { display: flex; align-items: center; gap: var(--space-3); min-width: 0; padding: 10px var(--space-4); border-bottom: 1px solid var(--border); }
 .crm-eod__fila:last-child { border-bottom: 0; }
+
+/* Ajustes → CRM → Estados de llamada (components/ajustes/EstadosDeLlamada) */
+.est-lista { display: flex; flex-direction: column; }
+.est-fila { display: grid; grid-template-columns: minmax(150px, 230px) minmax(0, 1fr) 110px 120px; align-items: center; gap: var(--space-3) var(--space-4); padding: var(--space-3) 0; border-bottom: 1px solid var(--border); }
+.est-fila:last-child { border-bottom: 0; }
+.est-fila--oculta .est-fila__nombre, .est-fila--oculta .est-fila__mueve { opacity: .55; }
+.est-fila__nombre { min-width: 0; }
+.est-fila__mueve { min-width: 0; font-size: 13px; line-height: 18px; color: var(--ink-muted); }
+.est-fila__mueve ul { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 2px; }
+.est-fila__usos { text-align: right; }
+.est-fila__vista { display: flex; align-items: center; justify-content: flex-end; gap: var(--space-2); cursor: pointer; }
+.est-fila__vista > span { display: inline-flex; align-items: center; gap: 4px; min-width: 70px; }
+@media (max-width: 900px) {
+  .est-fila { grid-template-columns: minmax(0, 1fr) auto; }
+  .est-fila__mueve { grid-column: 1 / -1; order: 3; }
+  .est-fila__usos { text-align: left; order: 2; }
+  .est-fila__vista { order: 1; }
+}
+.est-modal__lista { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; font-size: 14px; line-height: 20px; color: var(--ink); }
+.est-aviso { display: flex; align-items: flex-start; gap: var(--space-3); padding: var(--space-3) var(--space-4); border: 1px solid var(--warning); border-radius: var(--radius-md); background: var(--warning-soft); color: var(--ink); }
+.est-aviso > svg { flex: none; margin-top: 2px; color: var(--warning); }
+.est-aviso p { margin: 4px 0 0; font-size: 14px; line-height: 20px; }
+.est-aviso--rompe { border-color: var(--danger); background: var(--danger-soft); }
+.est-aviso--rompe > svg { color: var(--danger); }
 
 /* La ficha, vista Llamadas (components/ficha/VistaLlamadas) */
 .ficha-ll__bloque { display: flex; flex-direction: column; gap: var(--space-3); padding: var(--space-4); border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface-100); }

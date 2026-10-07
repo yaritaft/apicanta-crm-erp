@@ -9,7 +9,9 @@ import {
   Moon, Plug, Plus, Settings2, Sun, Trash2, Upload, X,
 } from "lucide-react";
 import { CatalogosVenta } from "@/components/ajustes/CatalogosVenta";
+import { CierreDelDiaAjustes } from "@/components/ajustes/CierreDelDiaAjustes";
 import { ConfigUtms } from "@/components/ajustes/ConfigUtms";
+import { EstadosDeLlamada } from "@/components/ajustes/EstadosDeLlamada";
 import { FormulariosMeta } from "@/components/ajustes/FormulariosMeta";
 import { YoutubeIntegracion } from "@/components/ajustes/YoutubeIntegracion";
 import { FathomIntegracion } from "@/components/ajustes/FathomIntegracion";
@@ -29,7 +31,7 @@ import type { Ajustes as TAjustes, CampoPersonalizado, EntidadNombre, Etapa, Tip
 import { objecionesDe } from "@/lib/eod";
 import { cabeceras } from "@/components/webinars/useYoutube";
 
-type Seccion = "negocio" | "ventas" | "utms" | "pipeline" | "listas" | "campos" | "integraciones" | "datos";
+type Seccion = "negocio" | "ventas" | "utms" | "pipeline" | "listas" | "crm" | "campos" | "integraciones" | "datos";
 
 const ENTIDADES: { valor: EntidadNombre; texto: string }[] = [
   { valor: "lead", texto: "Leads" },
@@ -55,7 +57,7 @@ const TIPOS: { valor: TipoCampo; texto: string }[] = [
 
 const VARIANTES: Etapa["variante"][] = ["info", "brand", "accent", "warning", "success", "danger", "neutral"];
 
-const SECCIONES: Seccion[] = ["negocio", "ventas", "utms", "pipeline", "listas", "campos", "integraciones", "datos"];
+const SECCIONES: Seccion[] = ["negocio", "ventas", "utms", "pipeline", "listas", "crm", "campos", "integraciones", "datos"];
 
 export default function Ajustes() {
   /* Se puede entrar directo a una sección por link: el pipeline de alumnos
@@ -87,6 +89,7 @@ export default function Ajustes() {
           { valor: "utms", texto: "UTMs" },
           { valor: "pipeline", texto: "Etapas" },
           { valor: "listas", texto: "Listas" },
+          { valor: "crm", texto: "CRM" },
           { valor: "campos", texto: "Campos propios" },
           { valor: "integraciones", texto: "Integraciones" },
           ...(esDueno ? [{ valor: "datos" as const, texto: "Datos" }] : []),
@@ -98,6 +101,7 @@ export default function Ajustes() {
       {verSeccion === "utms" && <ConfigUtms />}
       {verSeccion === "pipeline" && <EtapasDeLosPipelines />}
       {verSeccion === "listas" && <Listas />}
+      {verSeccion === "crm" && <CrmAjustes />}
       {verSeccion === "campos" && <Campos />}
       {verSeccion === "integraciones" && <Integraciones />}
       {verSeccion === "datos" && <Datos />}
@@ -368,6 +372,19 @@ function ListaEditable({ clave, titulo, sub, items: propios, onGuardar }: {
         <Button variante="secondary" type="submit" icono={<Plus size={16} />} disabled={!nuevo.trim()}>Agregar</Button>
       </form>
     </Card>
+  );
+}
+
+/* ---------------- CRM ---------------- */
+
+/* El cierre del día (strikes y el interruptor del descuento) y los estados de
+   llamada, que se pueden ocultar. */
+function CrmAjustes() {
+  return (
+    <div className="stack-5">
+      <CierreDelDiaAjustes />
+      <EstadosDeLlamada />
+    </div>
   );
 }
 
