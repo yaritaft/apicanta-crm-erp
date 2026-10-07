@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { cabeceras } from "@/components/webinars/useYoutube";
-import type { RespuestaEstado, RespuestaWebinar } from "./whatsapp";
+import { estadoDelLector, type RespuestaEstado, type RespuestaWebinar } from "./whatsapp";
 
 /* ==================================================================
    WhatsApp de lectura, del lado de la pantalla.
@@ -113,6 +113,64 @@ export function useLector(activo = true): VistaLector & { recargar: () => Promis
   return { ...(activo ? v : { ...INICIAL, cargando: false }), recargar: recargarLector };
 }
 const sinSuscribir = () => () => {};
+
+/* ---------- El lector en vivo, para vincular el número ---------- */
+
+const CADA_EN_VIVO_MS = 3_500;
+const CADA_CONECTADO_MS = 20_000;
+
+/** Para Ajustes → WhatsApp: cómo está el lector y, si quien mira puede verlo (es dueño o edita Ajustes) y el
+    lector lo está esperando, el código QR para vincular el número. Se vuelve a preguntar cada 3 o 4 segundos
+    mientras no está conectado (el código cambia cada ~20) y cada 20 conectado, y sólo mientras la pantalla está
+    abierta. El código es una credencial: no se guarda en ningún lado, vive en este estado. */
+export function useLectorEnVivo(activo = true) {
+  const [datos, setDatos] = useState<RespuestaEstado | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [sinAcceso, setSinAcceso] = useState(false);
+  const [cargando, setCargando] = useState(true);
+  const pidiendo = useRef(false);
+  const ultimo = useRef<RespuestaEstado | null>(null);
+  const sinAccesoRef = useRef(false);
+
+  const recargar = useCallback(async () => {
+    if (pidiendo.current) return;
+    pidiendo.current = true;
+    try {
+      const d = await pedir<RespuestaEstado>("/api/whatsapp/estado?qr=1");
+      ultimo.current = d;
+      setDatos(d);
+      setError(null);
+      sinAccesoRef.current = false;
+      setSinAcceso(false);
+    } catch (e) {
+      const err = e as ErrorWhatsapp;
+      setError(err.message);
+      sinAccesoRef.current = err.estado === 401 || err.estado === 403;
+      setSinAcceso(sinAccesoRef.current);
+    } finally {
+      pidiendo.current = false;
+      setCargando(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!activo) return;
+    let vivo = true;
+    let reloj: ReturnType<typeof setTimeout> | undefined;
+    const ciclo = async () => {
+      if (!document.hidden) await recargar();
+      if (!vivo) return;
+      const conectado = estadoDelLector(ultimo.current?.lector, Date.now()).tipo === "conectado";
+      reloj = setTimeout(() => void ciclo(), sinAccesoRef.current ? 60_000 : conectado ? CADA_CONECTADO_MS : CADA_EN_VIVO_MS);
+    };
+    const alVolver = () => { if (!document.hidden && !sinAccesoRef.current) void recargar(); };
+    document.addEventListener("visibilitychange", alVolver);
+    void ciclo();
+    return () => { vivo = false; clearTimeout(reloj); document.removeEventListener("visibilitychange", alVolver); };
+  }, [activo, recargar]);
+
+  return { datos, error, sinAcceso, cargando, recargar };
+}
 
 /** La hora de ahora, que se refresca sola: para que «hace 14 minutos» siga contando. */
 export function useAhora(cadaMs = 30_000): number {

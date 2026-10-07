@@ -3,7 +3,7 @@
 import React, { useMemo } from "react";
 import Link from "next/link";
 import { ArrowRight, MessageCircle, Users, X } from "lucide-react";
-import { Card, CardHead, Empty, IconButton, Select } from "@/components/ui/ui";
+import { Badge, Card, CardHead, Empty, IconButton, Select } from "@/components/ui/ui";
 import { InfoMetrica, type PropsInfoMetrica } from "@/components/ui/InfoMetrica";
 import { useToast } from "@/components/ui/Toast";
 import { useAcceso } from "@/lib/acceso";
@@ -11,7 +11,7 @@ import { num, relativo } from "@/lib/format";
 import { nivelEn } from "@/lib/permisos";
 import { diaArgentina } from "@/lib/reporteFinanciera";
 import { useEstado } from "@/lib/store";
-import { sugerirWebinar, type GrupoWhatsapp as Grupo } from "@/lib/whatsapp";
+import { ordenarGrupos, rotuloDeGrupo, sugerirWebinar, type GrupoWhatsapp as Grupo } from "@/lib/whatsapp";
 import { useAhora, useGrupoDeWebinar } from "@/lib/whatsapp-cliente";
 import type { Webinar } from "@/lib/types";
 import { EstadoLectorBadge, useEstadoDelLector } from "./EstadoLector";
@@ -50,7 +50,7 @@ export function GrupoWhatsapp({ w }: { w: Webinar }) {
   const ahora = useAhora();
 
   const datos = g.datos;
-  const grupos = datos?.grupos ?? [];
+  const grupos = useMemo(() => ordenarGrupos(datos?.grupos ?? []), [datos?.grupos]);
   const hayGrupo = grupos.length > 0;
   const enElGrupo = datos?.dentro.length ?? 0;
   const sinTelefonoVisible = grupos.reduce((a, x) => a + x.sinTelefono, 0);
@@ -120,6 +120,7 @@ export function GrupoWhatsapp({ w }: { w: Webinar }) {
               <span key={x.id} className="wa-grupo">
                 <MessageCircle size={14} aria-hidden />
                 <span className="wa-grupo__nombre" title={x.nombre}>{x.nombre || x.id}</span>
+                {rotuloDeGrupo(x.nombre) && <Badge variante="neutral">{rotuloDeGrupo(x.nombre)}</Badge>}
                 <span className="wa-grupo__datos t-num">{num(x.miembros)} adentro</span>
                 {x.sinTelefono > 0 && (
                   <span className="wa-grupo__datos wa-grupo__datos--aviso" title="WhatsApp muestra a estos participantes sin su teléfono: no se pueden comparar con la gente que se anotó.">
