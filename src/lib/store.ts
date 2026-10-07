@@ -29,6 +29,10 @@ import { estadoDeAgenda } from "./estados";
 import { personaDe } from "./persona";
 import { extraConCorreccion, tituloPerfil, type CampoPerfil } from "./perfil";
 import { puedeEditar, TIPOS_POR_DEFECTO, type MiAcceso } from "./permisos";
+import {
+  cambiosDeChequeo, COLUMNAS_QUE_PONE_LA_BASE, conChequeo, conComprobanteNuevo, puedeCambiarComprobante, puedeUsarCasillero,
+  quienEs, ROL_DE_CASILLERO, type CasilleroChequeo, type VeredictoChequeo,
+} from "./control-cobros";
 
 const CLAVE = "apicanta.erp.v1";
 
@@ -253,6 +257,22 @@ export function fijarAcceso(a: MiAcceso | null) { acceso = a; }
    propósito sí pasa por empujar(), que avisa si no se puede. */
 const puedo = (tabla: string) => !acceso || puedeEditar(acceso, tabla);
 
+/* ---------- quién es ----------
+   El correo de la sesión. El control de los cobros anota quién cargó y quién
+   chequeó cada uno: la base lo sella con la misma sesión (supabase/control-
+   cruzado.sql) y acá se pone igual, para que se vea al instante sin esperar a
+   volver a leer. Sin nube nadie inicia sesión: va el «Responsable» de Ajustes. */
+let correoDeSesion: string | null = null;
+if (nube && typeof window !== "undefined") {
+  void nube.auth.getSession().then(({ data }) => { correoDeSesion = data.session?.user?.email?.toLowerCase() ?? null; });
+  nube.auth.onAuthStateChange((_evento, sesion) => { correoDeSesion = sesion?.user?.email?.toLowerCase() ?? null; });
+}
+const quienSoy = (e: EstadoApp): string => correoDeSesion ?? (e.ajustes.responsable || "Apicanta");
+/* Cómo se lee en la actividad: el nombre que tiene en Equipo, no el correo. */
+const nombreDeQuien = (e: EstadoApp, por: string): string => quienEs(e.equipo, por) || por;
+/* Los cobros que se cargan en esta sesión llevan quién los cargó. */
+const cargadosAhora = (e: EstadoApp, pagos: Pago[]): Pago[] => pagos.map((p) => (p.cargadoPor ? p : { ...p, cargadoPor: quienSoy(e) }));
+
 const oyentesNegadas = new Set<(tabla: string, motivo?: string) => void>();
 export function alNegarseEscritura(f: (tabla: string, motivo?: string) => void): () => void {
   oyentesNegadas.add(f);
@@ -285,10 +305,20 @@ function resincronizarAlVaciarse() {
   }, 400);
 }
 
+/* Las columnas del control de un cobro (quién lo cargó, quién lo chequeó) no
+   viajan en el upsert del cobro entero: lo que tiene esta pantalla puede ser
+   más viejo que lo que acaba de chequear otra persona, y lo pisaría con un
+   «pendiente». Las pone la base, y cada chequeo sale como un UPDATE aparte. */
+const sinColumnasDelControl = (fila: unknown): unknown => {
+  const copia = { ...(fila as Record<string, unknown>) };
+  for (const k of COLUMNAS_QUE_PONE_LA_BASE) delete copia[k];
+  return copia;
+};
+
 function empujar(op: Op) {
   if (!nube) return;
   if (acceso && !puedeEditar(acceso, op.tabla)) { negada(op.tabla); return; }
-  cola.push(op);
+  cola.push(op.tipo === "upsert" && op.tabla === "pagos" ? { ...op, filas: op.filas.map(sinColumnasDelControl) } : op);
   void drenar();
 }
 
@@ -976,12 +1006,14 @@ function conDatosDePlanilla(nuevos: Pago[], cuotasVenta: Cuota[], pagosVentaAnte
 export interface DatosCobro {
   procesadorId?: ID; monto: number; fecha: string; referencia?: string;
   movimientoId?: ID; comprobante?: Comprobante;
-  tipoCambio?: number; montoArs?: number; pagador?: string; cuit?: string; chequeado?: boolean;
+  tipoCambio?: number; montoArs?: number; pagador?: string; cuit?: string;
   cvu?: string; tipoCambioBlue?: number; tipoCambioFuente?: string;
 }
 
 /* Los datos de la planilla que trae el cobro, sin los vacíos. El blue de
-   referencia va sólo con un tipo de cambio: es contra qué se compara. */
+   referencia va sólo con un tipo de cambio: es contra qué se compara. El
+   tilde de «chequeado» ya no lo pone quien carga: lo chequea otra persona
+   (lib/control-cobros.ts). */
 function extrasDeCobro(c: DatosCobro): Partial<Pago> {
   const conCambio = Boolean(c.tipoCambio && c.tipoCambio > 0);
   return {
@@ -992,7 +1024,6 @@ function extrasDeCobro(c: DatosCobro): Partial<Pago> {
     ...(c.pagador?.trim() ? { pagador: c.pagador.trim() } : {}),
     ...(c.cuit?.trim() ? { cuit: c.cuit.trim() } : {}),
     ...(c.cvu?.trim() ? { cvu: c.cvu.replace(/[\s.-]/g, "") } : {}),
-    ...(c.chequeado ? { chequeado: true } : {}),
   };
 }
 
@@ -1817,7 +1848,7 @@ export const acciones = {
         creadoEn: ahora(),
       });
     }
-    nuevosPagos = conDatosDePlanilla(nuevosPagos, datos.cuotas, [], true);
+    nuevosPagos = cargadosAhora(e, conDatosDePlanilla(nuevosPagos, datos.cuotas, [], true));
 
     /* Un pago de pasarela puede cubrir más de una cuota (la reserva y la
        primera, juntas) o quedar a medias: se da por conciliado recién
@@ -1960,7 +1991,7 @@ export const acciones = {
     {
       const cuotasVenta = e.cuotas.filter((c) => c.ventaId === venta.id);
       const idsCuotas = new Set(cuotasVenta.map((c) => c.id));
-      nuevosPagos = conDatosDePlanilla(nuevosPagos, cuotasVenta, e.pagos.filter((p) => idsCuotas.has(p.cuotaId)), false);
+      nuevosPagos = cargadosAhora(e, conDatosDePlanilla(nuevosPagos, cuotasVenta, e.pagos.filter((p) => idsCuotas.has(p.cuotaId)), false));
     }
 
     const pagos = [...nuevosPagos, ...e.pagos];
@@ -2061,6 +2092,7 @@ export const acciones = {
     /* Una cuota que el plan nuevo ya no tiene se borra, salvo que tenga un
        cobro cargado en la app (no en la planilla): ese no se pierde. */
     const pagosImportados = new Set(r.pagos.map((p) => p.id));
+    const pagoViejo = new Map(e.pagos.map((p) => [p.id, p] as const));
     const conCobroPropio = new Set(e.pagos.filter((p) => !pagosImportados.has(p.id)).map((p) => p.cuotaId));
     const sobran = new Set(r.cuotasQueSobran.filter((id) => !conCobroPropio.has(id)));
 
@@ -2083,7 +2115,13 @@ export const acciones = {
       leads: reemplazar(e.leads, r.leads),
       ventas: reemplazar(e.ventas, r.ventas),
       cuotas: reemplazar(e.cuotas.filter((c) => !sobran.has(c.id)), r.cuotas),
-      pagos: reemplazar(e.pagos, r.pagos),
+      /* Reimportar no borra lo que ya se chequeó en la app ni quién cargó el cobro. */
+      pagos: reemplazar(e.pagos, r.pagos.map((n) => {
+        const viejo = pagoViejo.get(n.id);
+        if (!viejo) return n;
+        const control = Object.fromEntries(COLUMNAS_QUE_PONE_LA_BASE.map((k) => [k, (viejo as unknown as Record<string, unknown>)[k]]));
+        return { ...n, ...control } as Pago;
+      })),
       actividad: lista,
     });
 
@@ -2106,10 +2144,11 @@ export const acciones = {
      La comisión del procesador de un cobro que no se concilió (la
      Financiera, Trust, una transferencia): se pone a mano y queda marcada,
      así no la pisa la tasa de la cuenta. La de un cobro conciliado no se
-     toca: es la real de la pasarela. También el tilde de "Pasado Financiera
-     / Chequeado en plataforma" y los datos de quien pagó. */
+     toca: es la real de la pasarela. También los datos de quien pagó. El
+     chequeo del cobro ya no es un tilde acá: lo hacen el director y finanzas
+     desde su ventana (chequearPago). */
   editarPago(id: ID, cambios: {
-    feeMonto?: number; chequeado?: boolean; pagador?: string; cuit?: string; tipoCambio?: number; cvu?: string;
+    feeMonto?: number; pagador?: string; cuit?: string; tipoCambio?: number; cvu?: string;
   }): boolean {
     const e = snapshot();
     const pago = e.pagos.find((p) => p.id === id);
@@ -2126,10 +2165,6 @@ export const acciones = {
         actualizado.feeManual = true;
         partes.push(`la comisión del procesador quedó en ${fee}`);
       }
-    }
-    if (cambios.chequeado !== undefined && cambios.chequeado !== Boolean(pago.chequeado)) {
-      actualizado.chequeado = cambios.chequeado;
-      partes.push(cambios.chequeado ? "quedó chequeado" : "dejó de estar chequeado");
     }
     if (cambios.pagador !== undefined && cambios.pagador.trim() !== (pago.pagador ?? "")) {
       actualizado.pagador = cambios.pagador.trim();
@@ -2160,6 +2195,71 @@ export const acciones = {
     guardar({ ...e, pagos: e.pagos.map((p) => (p.id === id ? actualizado : p)), actividad: lista });
     empujar({ tipo: "upsert", tabla: "pagos", filas: [actualizado] });
     empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
+    return true;
+  },
+
+  /* ---------- El control cruzado de un cobro (lib/control-cobros.ts) ----------
+     El director o finanzas miran el comprobante y dicen «chequeado» o lo
+     rechazan con el motivo; o quitan lo que habían dicho. Cada casillero es
+     de uno: el de finanzas lo llena quien edita Finanzas; el del director,
+     quien edita las ventas de todos. No cambia ningún número del cobro.
+
+     Va a la base como un UPDATE de las columnas de ese casillero y nada más: la
+     base sella quién y cuándo con la sesión (supabase/control-cruzado.sql), y
+     un cobro entero de esta pantalla, que puede ser más viejo, no pisa lo que
+     otro acaba de chequear. */
+  chequearPago(id: ID, datos: { casillero: CasilleroChequeo; veredicto: VeredictoChequeo | null; nota?: string }): boolean {
+    const e = snapshot();
+    const pago = e.pagos.find((p) => p.id === id);
+    if (!pago) return false;
+    if (acceso && !puedeUsarCasillero(acceso, datos.casillero)) return false;
+    /* Rechazar sin decir por qué no le sirve a quien tiene que arreglarlo. */
+    if (datos.veredicto === "rechazado" && !datos.nota?.trim()) return false;
+    const quien = { por: quienSoy(e), en: ahora(), nota: datos.nota };
+    const actualizado = conChequeo(pago, datos.casillero, datos.veredicto, quien);
+
+    const cuota = e.cuotas.find((c) => c.id === pago.cuotaId);
+    const venta = cuota ? e.ventas.find((v) => v.id === cuota.ventaId) : undefined;
+    const rol = ROL_DE_CASILLERO[datos.casillero].por;
+    const yo = nombreDeQuien(e, quien.por);
+    const de = venta ? ` de ${venta.contactoNombre}` : "";
+    const que = datos.veredicto === "chequeado" ? `lo chequeó ${rol}`
+      : datos.veredicto === "rechazado" ? `lo rechazó ${rol}: «${datos.nota?.trim()}»`
+        : `se sacó lo que había dicho ${rol}`;
+    const { nuevo } = registrar(
+      e, "transaccion", venta?.id ?? pago.id, venta?.contactoNombre ?? "Cobro", "actualizo",
+      `Cobro del ${pago.fecha.slice(0, 10)}${de}: ${que} (${yo}).`,
+    );
+    const act = { ...nuevo, actor: yo };
+    guardar({ ...e, pagos: e.pagos.map((p) => (p.id === id ? actualizado : p)), actividad: [act, ...e.actividad].slice(0, 400) });
+    empujarUpdate("pagos", [id], cambiosDeChequeo(datos.casillero, datos.veredicto, quien));
+    empujar({ tipo: "upsert", tabla: "actividad", filas: [act] });
+    return true;
+  },
+
+  /* Subir o cambiar el comprobante de un cobro ya cargado (hasta acá sólo se
+     subía al cargarlo): el closer arregla uno rechazado, la asistente adjunta
+     el que le llegó por otro lado. Si ya había otro archivo y se cambia, lo
+     que se chequeó contra el de antes vuelve a pendiente. El archivo de antes
+     queda guardado: es lo que se miró cuando se chequeó o se rechazó. */
+  cambiarComprobante(id: ID, comprobante: Comprobante): boolean {
+    const e = snapshot();
+    const pago = e.pagos.find((p) => p.id === id);
+    if (!pago) return false;
+    if (acceso && !puedeCambiarComprobante(acceso)) return false;
+    const { pago: actualizado, cambios, reinicia } = conComprobanteNuevo(pago, comprobante);
+    const cuota = e.cuotas.find((c) => c.id === pago.cuotaId);
+    const venta = cuota ? e.ventas.find((v) => v.id === cuota.ventaId) : undefined;
+    const yo = nombreDeQuien(e, quienSoy(e));
+    const { nuevo } = registrar(
+      e, "transaccion", venta?.id ?? pago.id, venta?.contactoNombre ?? "Cobro", "actualizo",
+      `Cobro del ${pago.fecha.slice(0, 10)}${venta ? ` de ${venta.contactoNombre}` : ""}: ${pago.comprobante ? "se cambió" : "se subió"} el comprobante (${comprobante.nombre})`
+      + `${reinicia ? "; los chequeos vuelven a quedar pendientes" : ""} (${yo}).`,
+    );
+    const act = { ...nuevo, actor: yo };
+    guardar({ ...e, pagos: e.pagos.map((p) => (p.id === id ? actualizado : p)), actividad: [act, ...e.actividad].slice(0, 400) });
+    empujarUpdate("pagos", [id], cambios);
+    empujar({ tipo: "upsert", tabla: "actividad", filas: [act] });
     return true;
   },
 
@@ -2241,11 +2341,11 @@ export const acciones = {
         const v = e.cuotas.find((c) => c.id === p.cuotaId)?.ventaId ?? "";
         porVenta.set(v, [...(porVenta.get(v) ?? []), p]);
       }
-      nuevosPagos = [...porVenta.entries()].flatMap(([v, ps]) => {
+      nuevosPagos = cargadosAhora(e, [...porVenta.entries()].flatMap(([v, ps]) => {
         const cuotasVenta = e.cuotas.filter((c) => c.ventaId === v);
         const ids = new Set(cuotasVenta.map((c) => c.id));
         return conDatosDePlanilla(ps, cuotasVenta, e.pagos.filter((p) => ids.has(p.cuotaId)), false);
-      });
+      }));
     }
 
     const pagos = [...nuevosPagos, ...e.pagos];

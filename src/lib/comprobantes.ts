@@ -82,22 +82,27 @@ export async function subirComprobante(archivo: File): Promise<Comprobante> {
   return { ...base, ruta };
 }
 
+/* Una dirección con la que se puede ver el archivo: la firmada de la nube
+   (vence a los 5 minutos) o, sin nube, el archivo que quedó en este navegador.
+   La usan «Ver el comprobante» y la vista previa del control de cobros. */
+export async function urlDeComprobante(c: Comprobante): Promise<string> {
+  if (c.ruta.startsWith("data:")) {
+    const blob = await (await fetch(c.ruta)).blob();
+    return URL.createObjectURL(blob);
+  }
+  if (!nube) throw new Error("Sin conexión a la nube no se puede abrir.");
+  const { data, error } = await nube.storage.from(BUCKET_COMPROBANTES).createSignedUrl(c.ruta, 300);
+  if (error || !data) throw new Error(error?.message ?? "No se pudo abrir el comprobante.");
+  return data.signedUrl;
+}
+
 /* Abre el comprobante en otra pestaña. La pestaña se abre en el mismo
    click (si se abre después de esperar la URL firmada, el navegador la
    bloquea como ventana emergente) y después se la manda al archivo. */
 export async function verComprobante(c: Comprobante): Promise<void> {
   const ventana = window.open("about:blank", "_blank");
   try {
-    let url: string;
-    if (c.ruta.startsWith("data:")) {
-      const blob = await (await fetch(c.ruta)).blob();
-      url = URL.createObjectURL(blob);
-    } else {
-      if (!nube) throw new Error("Sin conexión a la nube no se puede abrir.");
-      const { data, error } = await nube.storage.from(BUCKET_COMPROBANTES).createSignedUrl(c.ruta, 300);
-      if (error || !data) throw new Error(error?.message ?? "No se pudo abrir el comprobante.");
-      url = data.signedUrl;
-    }
+    const url = await urlDeComprobante(c);
     if (ventana) {
       ventana.opener = null;
       ventana.location.href = url;
