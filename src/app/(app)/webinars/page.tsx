@@ -17,6 +17,7 @@ import { guardarMetrica, guardarWebinar } from "@/components/webinars/guardar";
 import { diaCorto, diaYHora, hoyArgentina } from "@/components/webinars/fechas";
 import { AvisoEnVivo } from "@/components/webinars/AvisoEnVivo";
 import { AtarVentas } from "@/components/webinars/AtarVentas";
+import { BotonInformeFila } from "@/components/webinars/BotonInforme";
 import { useWebinarsAlDia } from "@/components/webinars/useVivo";
 import { EmbudoDosModos, grabacionDe } from "@/components/webinars/FichaNumeros";
 import { CLAVE_LISTA, ESTADO_WEBINAR, ESTADOS, tonoRoas } from "@/components/webinars/estado";
@@ -202,10 +203,13 @@ export default function Webinars() {
     titulo: {
       clave: "titulo", titulo: "Webinar", orden: (w) => (w.titulo ?? "").toLowerCase(),
       enlace: (w, nav) => (
-        <Link href={`/webinars/${w.id}`} className="planilla__enlace" title={`Abrir «${w.titulo}»`} {...nav}>
-          <span className="truncate">{w.titulo || "Sin título"}</span>
-          {w.youtubeUrl && <Youtube size={14} className="planilla__yt" aria-label="Tiene video" />}
-        </Link>
+        <span className="planilla__titulo">
+          <Link href={`/webinars/${w.id}`} className="planilla__enlace" title={`Abrir «${w.titulo}»`} {...nav}>
+            <span className="truncate">{w.titulo || "Sin título"}</span>
+            {w.youtubeUrl && <Youtube size={14} className="planilla__yt" aria-label="Tiene video" />}
+          </Link>
+          <BotonInformeFila w={w} />
+        </span>
       ),
     },
     fecha: { clave: "fecha", titulo: "Fecha", orden: (w) => +new Date(w.fecha), celda: (w) => <span className="t-subtle">{diaYHora(w.fecha)}</span> },

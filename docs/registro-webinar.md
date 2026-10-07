@@ -12,6 +12,14 @@ Queda como **pre-lead** (se registró, todavía no agendó) atado a su webinar, 
 contestado. Cuando después agenda en Calendly es la misma persona (el mismo mail). «Formularios» del
 webinar se cuenta solo, y si la Conversions API está configurada, a Meta le llega el evento **Lead**.
 
+Además, cada registro queda como una fila de la tabla `registros_webinar` (hay que correr
+`supabase/registros-webinar.sql` una vez): una por persona y por webinar, con **la fecha del webinar**, los UTMs,
+**el anuncio** (el id de Meta que viene en `utm_content`, o el anuncio con ese nombre), las respuestas y las tres
+marcas del equipo (unido al grupo de WhatsApp, no unido, contactado) que se miran y se cambian en la pantalla
+**Formularios**. Si la persona se anota dos veces al mismo webinar, es la misma fila (no se duplica ni se pierden las
+marcas). Mientras la tabla no exista, el registro se guarda como pre-lead igual que siempre. La respuesta suma
+`registroId`. El Excel y ActiveCampaign pueden seguir andando en paralelo: esto no los toca.
+
 ### Qué campos lee
 
 | Campo | Para qué |
@@ -76,3 +84,19 @@ Con esto Meta recibe, desde el servidor, a quien se registró (Lead), a quien ag
 El Lead sale al instante en cada registro. Las agendas y las ventas las manda el cron
 `/api/cron/meta-capi` cada media hora (las de las últimas 48 horas, una sola vez cada una: quedan en
 la tabla `capi_enviados`).
+
+### El registro calificado (reunión del 02/10)
+
+Además del Lead, si la persona califica (puede invertir 1000 USD o más, inglés conversacional o mejor y carrera,
+según lo que contestó en el formulario) sale el evento **`RegistroCalificado`**, con los UTMs, el país y el «sí / no»
+de cada criterio. Para que el formulario pueda calificar a alguien tiene que preguntar las tres cosas; los campos se
+reconocen por su nombre o su texto (`inversion`, `nivel_ingles`, `formacion`, o «¿Cuánto podés invertir en vos?»,
+«¿Cuál es tu nivel de inglés?», «¿Cuál es tu nivel de formación?»). Lo que escribió en crudo no se manda a Meta.
+
+Para optimizar los anuncios hacia esos registros: Events Manager → Conversiones personalizadas → crear una sobre el
+evento `RegistroCalificado`. Y en el píxel de la landing, disparar `Lead` (no `CompleteRegistration`) con el mismo
+`event_id` que se manda en el formulario, así Meta junta el del navegador con el del servidor y no cuenta dos veces.
+
+Si faltan las variables, **Ajustes → Integraciones → Conversions API de Meta** dice cuáles y para qué. Variables
+opcionales: `META_CAPI_URL` (la página de la landing, para los eventos que no pasaron en una página) y
+`META_CAPI_EVENTO_CALIFICADO` (cómo se llama el evento; por defecto `RegistroCalificado`).

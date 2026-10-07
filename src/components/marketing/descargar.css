@@ -1,0 +1,42 @@
+/* ==================================================================
+   El botón «Descargar» de cada video o imagen del anuncio. Va encima del
+   medio, arriba a la derecha (el chip del lugar va a la izquierda y los
+   controles del video, abajo): oscuro y translúcido para que se lea sobre
+   cualquier imagen. En un medio angosto (un carrusel en una pantalla chica)
+   no entran el chip y el texto: queda sólo el ícono (el nombre sigue en su
+   aria-label y su tooltip) y el chip se acorta.
+   ================================================================== */
+
+.mk-medio { container-type: inline-size; }
+
+.mk-medio__bajar {
+  position: absolute; top: 8px; right: 8px; z-index: 2;
+  display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 10px;
+  border: 1px solid rgba(255, 255, 255, .28); border-radius: var(--radius-full);
+  background: rgba(0, 0, 0, .66); color: #fff; font: inherit; font-size: 12px; line-height: 18px; font-weight: 600;
+  cursor: pointer; backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
+  transition: background-color 150ms ease-out, border-color 150ms ease-out;
+}
+.mk-medio__bajar:hover:not(:disabled) { background: rgba(0, 0, 0, .86); border-color: rgba(255, 255, 255, .5); }
+.mk-medio__bajar:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.mk-medio__bajar:disabled { cursor: progress; opacity: .85; }
+.mk-medio__bajar svg { flex: none; }
+
+.mk-medio__bajar-giro {
+  flex: none; width: 14px; height: 14px; border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, .35); border-top-color: #fff;
+  animation: mk-bajar-giro 700ms linear infinite;
+}
+@keyframes mk-bajar-giro { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .mk-medio__bajar-giro { animation-duration: 2.4s; } }
+
+@container (max-width: 299px) {
+  .mk-medio__bajar { width: 30px; padding: 0; justify-content: center; }
+  .mk-medio__bajar-texto { display: none; }
+  .mk-medio__chip { max-width: calc(100% - 56px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+}
+/* «Descargar portada» es más largo: pide más lugar para mostrarse entero. */
+@container (max-width: 379px) {
+  .mk-medio__bajar--portada { width: 30px; padding: 0; justify-content: center; }
+  .mk-medio__bajar--portada .mk-medio__bajar-texto { display: none; }
+}

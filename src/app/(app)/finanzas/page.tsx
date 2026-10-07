@@ -2,7 +2,7 @@
 
 import React, { useCallback, useMemo, useState } from "react";
 import Link from "next/link";
-import { ArrowRight, Download, Plus } from "lucide-react";
+import { ArrowRight, CalendarDays, Download, Plus } from "lucide-react";
 import { PageHead } from "@/components/shell/PageHead";
 import { Button } from "@/components/ui/ui";
 import { EstadoResultados } from "@/components/finanzas/EstadoResultados";
@@ -19,6 +19,7 @@ import { calcularPyL, cuotasVencidas, gastosPorCategoria } from "@/lib/finanzas"
 import type { EstadoApp, Gasto } from "@/lib/types";
 import { AlarmaCobranza } from "@/components/finanzas/AlarmaCobranza";
 import { PorEmbudo } from "@/components/finanzas/PorEmbudo";
+import { IngresosSemanales } from "@/components/finanzas/IngresosSemanales";
 
 export default function Finanzas() {
   const e = useEstado();
@@ -83,6 +84,9 @@ export default function Finanzas() {
               onApply={setRango} footerNota="Días calendario · zona horaria de Argentina"
             />
             <CopiarLink sm={false} />
+            <Button variante="secondary" icono={<CalendarDays size={16} />} onClick={() => document.getElementById("ingresos-semanales")?.scrollIntoView({ behavior: "smooth", block: "start" })}>
+              Ingresos de la semana
+            </Button>
             <Button variante="secondary" icono={<Download size={16} />} onClick={() => exportarPyL(e, mes, p)}>Exportar</Button>
             <Link href={`/finanzas/detalle?${qs}`}>
               <Button variante="secondary" icono={<ArrowRight size={16} />}>
@@ -102,6 +106,11 @@ export default function Finanzas() {
           onCargarGasto={() => setCargando(true)}
         />
         <PorEmbudo e={e} mes={mes} />
+      </div>
+
+      {/* La semana, por cuenta y por servicio: su propio rango, aparte del período de arriba. */}
+      <div id="ingresos-semanales" style={{ scrollMarginTop: "var(--space-6)" }}>
+        <IngresosSemanales e={e} />
       </div>
 
       {cargando && <AsistenteGasto onCerrar={() => setCargando(false)} onListo={alCargar} />}

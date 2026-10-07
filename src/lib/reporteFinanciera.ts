@@ -6,6 +6,7 @@ import {
 } from "./xlsxEscribir";
 import { nube } from "./supabase";
 import { BUCKET_COMPROBANTES } from "./comprobantes";
+import { controlDeCobro } from "./control-cobros";
 
 /* ==================================================================
    El corte para la Financiera.
@@ -22,9 +23,13 @@ import { BUCKET_COMPROBANTES } from "./comprobantes";
    su título y sus encabezados, sin filas y ocultos, como en la planilla.
 
    La Financiera encuentra la plata con el nombre y el CUIT de quien
-   transfirió: el CBU/CVU de origen ya no se pide (Angelo, 02/10). La
-   columna Banco queda como en la planilla, y sólo se llena con los cobros
-   viejos que ya traían un CBU.
+   transfirió: el CBU/CVU de origen ya no se pide (Angelo, 02/10), así que el
+   banco —que salía de él— tampoco va: quedan la fecha, el nombre, el CUIT, el
+   monto y el comprobante. Los cobros viejos que traían un CBU conservan su
+   banco en `FilaCorte.banco` y siguen pintados como «Banco Macro» si lo eran.
+   «Pago Verificado» sale del control cruzado de los cobros (lib/control-
+   cobros.ts): verdadero si el director o finanzas lo chequearon, o si ya
+   estaba marcado antes.
    ================================================================== */
 
 export type FormatoCorte = "ARS" | "USD";
@@ -103,7 +108,8 @@ export function cuentaPorDefecto(cuentas: Procesador[]): Procesador | undefined 
     ?? cuentas[0];
 }
 
-function comprobanteDe(p: Pago): FilaCorte["comprobante"] {
+/** La prueba del cobro como va en la celda del Excel. */
+export function comprobanteDe(p: Pago): FilaCorte["comprobante"] {
   const escrito = p.comprobanteLink?.trim() ?? "";
   const url = /https?:\/\/[^\s<>"']+/i.exec(escrito)?.[0];
   if (url) return { texto: escrito, url };
@@ -149,7 +155,7 @@ export function corteFinanciera(e: EstadoApp, procesadorId: ID, desde: string, h
         montoUsd: redondear(p.monto),
         banco: bancoDeCbu(cvu),
         comprobante,
-        verificado: Boolean(p.chequeado),
+        verificado: controlDeCobro(p).estado === "chequeado",
         unidad: (venta?.productoId && servicioDe.get(venta.productoId)) || "",
         closer: (venta?.closerId && personaDe.get(venta.closerId)) || "",
         faltan,
@@ -260,7 +266,6 @@ function columnasFinanciera(usd: boolean, links: Map<string, string>): ColumnaFi
     { titulo: "Cuit", ancho: 14.5, estilo: dato(), celda: (f) => ({ valor: f.cuit }) },
     { titulo: "Transferencia ARS", ancho: 18.88, estilo: dato({ formato: PESOS }), celda: (f) => ({ valor: f.montoArs }) },
     { titulo: "Transferencia USD", ancho: 18.88, estilo: dato({ formato: PESOS }), celda: (f) => ({ valor: f.montoUsd }) },
-    { titulo: "Banco", ancho: 23.88, estilo: dato(), celda: (f) => ({ valor: f.banco }) },
     {
       titulo: "Comprobante", ancho: 66.38, estilo: dato({ alineacion: { horizontal: "left", vertical: "center" } }),
       celda: (f) => {
@@ -360,7 +365,8 @@ export function hojaCorte(c: Corte, links: Map<string, string> = new Map()): Hoj
   cuentas.forEach((_, k) => { altos[9 + k] = 18.75; });
 
   const texto: string[] = [];
-  if (n) texto.push(`D10:E${9 + n}`);
+  /* El CUIT es texto aunque sean todos números. */
+  if (n) texto.push(`D10:D${9 + n}`);
   if (cuentas.length) texto.push(`${letraDeColumna(iniTabla + 2)}9:${letraDeColumna(iniTabla + 5)}${8 + cuentas.length}`);
 
   return {

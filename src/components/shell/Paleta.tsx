@@ -3,7 +3,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Search, CornerDownLeft } from "lucide-react";
-import { TODOS_LOS_ITEMS } from "./nav";
+import { navPara } from "./nav";
 import { useAcceso } from "@/lib/acceso";
 import { nivelDeRuta } from "@/lib/permisos";
 import { useEstado } from "@/lib/store";
@@ -37,8 +37,8 @@ export function Paleta({ abierto, onCerrar }: { abierto: boolean; onCerrar: () =
     /* Sólo lo que su tipo de cuenta ve, y sólo lo que lleva a una pantalla
        que ve (los datos ya llegan recortados por la base). */
     const ve = (ruta: string) => nivelDeRuta(acceso, ruta) > 0;
-    for (const i of TODOS_LOS_ITEMS) {
-      if (!ve(i.href)) continue;
+    /* «Ir a» lleva a lo que está en su menú (el del closer es el mínimo). */
+    for (const i of navPara(acceso).flatMap((g) => g.items)) {
       if (!term || normal(i.texto).includes(term) || normal(i.ayuda).includes(term)) {
         const Ico = i.icono;
         out.push({ id: `nav${i.href}`, grupo: "Ir a", texto: i.texto, sub: i.ayuda, icono: <Ico size={18} />, ir: i.href });

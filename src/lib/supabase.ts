@@ -38,6 +38,8 @@ export const TABLAS = [
   "traspasos",
   /* La plata que se devolvió a clientes (supabase/devoluciones.sql) */
   "devoluciones",
+  /* Los gastos que se repiten todos los meses (Finanzas → Gastos fijos) */
+  "gastos_recurrentes",
   /* Jerarquia de Meta. `ad_insights` es la unica cuyo nombre no coincide con
      su coleccion (`adInsights`): Postgres va en snake_case y la app en
      camelCase, asi que store.ts la mapea a mano. */
@@ -51,6 +53,9 @@ export const TABLAS = [
   /* Los tipos de cuenta (supabase/tipos-cuenta.sql): qué ve y edita cada uno.
      Tampoco se llama como su colección (`tiposCuenta`). */
   "tipos_cuenta",
+  /* Customer Success (supabase/customer-success.sql): el seguimiento de cada
+     alumno y sus testimonios. */
+  "seguimiento_alumnos", "testimonios",
 ] as const;
 
 export type Tabla = (typeof TABLAS)[number];
@@ -80,6 +85,9 @@ export const TABLAS_OPCIONALES = new Set<string>([
   /* Las devoluciones: hasta que corra supabase/devoluciones.sql no hay dónde
      guardarlas (la app lo avisa al cargar una). */
   "devoluciones",
+  /* Los gastos fijos: hasta que corra supabase/gastos-recurrentes.sql, quedan
+     en este navegador y el aviso del menú anda igual. */
+  "gastos_recurrentes",
   /* Las cuatro de Meta entran como opcionales hasta que el ALTER este corrido
      en todas las bases. Mientras tanto la app sigue con esas colecciones
      vacias en vez de caerse entera. */
@@ -92,6 +100,9 @@ export const TABLAS_OPCIONALES = new Set<string>([
   "honorarios", "liquidaciones",
   /* Nueva (supabase/tipos-cuenta.sql). Hasta que corra, los tipos de siempre. */
   "tipos_cuenta",
+  /* Nuevas (supabase/customer-success.sql). Hasta que corra, el seguimiento
+     y los testimonios quedan sólo en este navegador. */
+  "seguimiento_alumnos", "testimonios",
 ]);
 
 /* Las tablas que sólo leen y escriben los dueños. Para cualquier otro, la

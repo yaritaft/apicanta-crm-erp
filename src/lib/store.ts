@@ -7,8 +7,12 @@ import type {
   Arqueo, Campania, CampoPersonalizado, Comentario, Comprobante, Cuota, EntidadNombre, EstadoApp, Etapa, ID,
   Lead, Meta, Movimiento, OpcionCrm, OportunidadCrm, Pago, Reporte, Sesion, Venta, Webinar,
 } from "./types";
-import type { EsquemaPago, EstadoTraspaso, EtapaServicio, ExtraLiquidacion, Gasto, ID as IdMiembro, Liquidacion, MiembroEquipo, ResultadoLiquidacion, TipoCuenta, Traspaso } from "./types";
+import type { ConfigSeguimiento, SeguimientoAlumno, Testimonio } from "./types";
+import { configSeguimiento, seguimientoVacio } from "./seguimiento";
+import type { EsquemaPago, EstadoTraspaso, EtapaServicio, ExtraLiquidacion, Gasto, GastoRecurrente, ID as IdMiembro, Liquidacion, MiembroEquipo, ResultadoLiquidacion, TipoCuenta, Traspaso } from "./types";
 import { conciliarPuntas, rutaDe, type Punta } from "./traspasos";
+import { gastoAprobado, plantillasDesdeGastos } from "./gastos-recurrentes";
+import { cobrosAnulados, NOTA_ANULADO } from "./mercury";
 import { conExtraEnMes, mismasTasas, nombrePeriodo, sinExtraEnLiquidacion, tasaParaFinanzas, tasasPorServicio } from "./honorarios";
 import {
   alumnoDeVenta, cuotaMensualDeVenta, etapaDelAlumno, etapaInicialDeServicio, etapasDeServicio,
@@ -25,12 +29,16 @@ import { hayNube, nube, tablaFaltante, TABLAS, TABLAS_DE_DUENOS, TABLAS_OPCIONAL
 import { idAd, idAdset, idCampaign } from "./meta";
 import { entraEnTabla, esCompra, opcionesDe, tablasDe, ventaEsDeLlamada } from "./crm";
 import { etapaTrasEventos, eventosDeLlamada, leadDeSesion, type EventoEtapa } from "./etapas-auto";
-import { estadoDeAgenda } from "./estados";
+import { estadoDeAgenda, opcionDeCompraPara } from "./estados";
 import { personaDe } from "./persona";
 import { extraConCorreccion, tituloPerfil, type CampoPerfil } from "./perfil";
 import { puedeCargarDevolucion, puedeDarDeBaja, puedeEditar, TIPOS_POR_DEFECTO, type MiAcceso } from "./permisos";
 import { esDevolucionConfirmada } from "./devoluciones";
 import { atarPropuesta, conciliarReembolsos, type ReembolsoCrudo, type ResultadoReembolsos } from "./reembolsos";
+import {
+  cambiosDeChequeo, COLUMNAS_QUE_PONE_LA_BASE, conChequeo, conComprobanteNuevo, puedeCambiarComprobante, puedeUsarCasillero,
+  quienEs, ROL_DE_CASILLERO, sinColumnasDelControl, type CasilleroChequeo, type VeredictoChequeo,
+} from "./control-cobros";
 
 const CLAVE = "apicanta.erp.v1";
 
@@ -262,6 +270,22 @@ export function fijarAcceso(a: MiAcceso | null) { acceso = a; }
    propósito sí pasa por empujar(), que avisa si no se puede. */
 const puedo = (tabla: string) => !acceso || puedeEditar(acceso, tabla);
 
+/* ---------- quién es ----------
+   El correo de la sesión. El control de los cobros anota quién cargó y quién
+   chequeó cada uno: la base lo sella con la misma sesión (supabase/control-
+   cruzado.sql) y acá se pone igual, para que se vea al instante sin esperar a
+   volver a leer. Sin nube nadie inicia sesión: va el «Responsable» de Ajustes. */
+let correoDeSesion: string | null = null;
+if (nube && typeof window !== "undefined") {
+  void nube.auth.getSession().then(({ data }) => { correoDeSesion = data.session?.user?.email?.toLowerCase() ?? null; });
+  nube.auth.onAuthStateChange((_evento, sesion) => { correoDeSesion = sesion?.user?.email?.toLowerCase() ?? null; });
+}
+const quienSoy = (e: EstadoApp): string => correoDeSesion ?? (e.ajustes.responsable || "Apicanta");
+/* Cómo se lee en la actividad: el nombre que tiene en Equipo, no el correo. */
+const nombreDeQuien = (e: EstadoApp, por: string): string => quienEs(e.equipo, por) || por;
+/* Los cobros que se cargan en esta sesión llevan quién los cargó. */
+const cargadosAhora = (e: EstadoApp, pagos: Pago[]): Pago[] => pagos.map((p) => (p.cargadoPor ? p : { ...p, cargadoPor: quienSoy(e) }));
+
 const oyentesNegadas = new Set<(tabla: string, motivo?: string) => void>();
 export function alNegarseEscritura(f: (tabla: string, motivo?: string) => void): () => void {
   oyentesNegadas.add(f);
@@ -306,10 +330,13 @@ function resincronizarAlVaciarse() {
   }, 400);
 }
 
+/* Las columnas del control de un cobro (quién lo cargó, quién lo chequeó) no
+   viajan en el upsert del cobro entero (sinColumnasDelControl): las pone la
+   base, y cada chequeo sale como un UPDATE aparte. */
 function empujar(op: Op) {
   if (!nube) return;
   if (acceso && !puedeEditar(acceso, op.tabla)) { negada(op.tabla); return; }
-  cola.push(op);
+  cola.push(op.tipo === "upsert" && op.tabla === "pagos" ? { ...op, filas: op.filas.map(sinColumnasDelControl) } : op);
   void drenar();
 }
 
@@ -550,6 +577,11 @@ export async function cargarDeLaNube(): Promise<void> {
       traspasos: (porTabla.traspasos ?? []) as EstadoApp["traspasos"],
       /* Opcional: sin supabase/devoluciones.sql, ninguna. */
       devoluciones: (porTabla.devoluciones ?? []) as EstadoApp["devoluciones"],
+      /* Opcionales: sin supabase/customer-success.sql, ninguno. */
+      seguimientos: (porTabla.seguimiento_alumnos ?? []) as SeguimientoAlumno[],
+      testimonios: (porTabla.testimonios ?? []) as Testimonio[],
+      /* Opcional: sin supabase/gastos-recurrentes.sql, ninguno. */
+      gastosRecurrentes: (porTabla.gastos_recurrentes ?? []) as GastoRecurrente[],
       /* Vacías para quien no es dueño: RLS las esconde. */
       honorarios: (porTabla.honorarios ?? []) as EstadoApp["honorarios"],
       liquidaciones: (porTabla.liquidaciones ?? []) as EstadoApp["liquidaciones"],
@@ -601,6 +633,7 @@ function ordenDeSiembra(e: EstadoApp): [string, unknown[]][] {
     ["comentarios", e.comentarios ?? []],
     ["arqueos", e.arqueos ?? []],
     ["traspasos", e.traspasos ?? []],
+    ["gastos_recurrentes", e.gastosRecurrentes ?? []],
     ["actividad", e.actividad],
     /* Sin FK desde alumnos a propósito (ver alumnos-servicio.sql): puede ir
        al final sin romper el orden de nadie. */
@@ -647,7 +680,7 @@ async function vaciarNube() {
      es, no borran nada (RLS) y no dan error. */
   const orden = [
     "liquidaciones", "honorarios",
-    "actividad", "comentarios", "arqueos", "traspasos", "campos", "metas", "devoluciones", "pagos", "movimientos", "cuotas", "ventas", "gastos",
+    "actividad", "comentarios", "arqueos", "traspasos", "gastos_recurrentes", "campos", "metas", "devoluciones", "pagos", "movimientos", "cuotas", "ventas", "gastos",
     "campanias", "reportes", "sesiones", "alumnos", "leads", "contactos", "webinars",
     "etapas", "equipo", "embudos", "procesadores", "productos",
     "etapas_servicio",
@@ -685,10 +718,13 @@ function registrar(
 
 /* Lo que el CRM carga sobre una agenda. `estado` lo mandan deshacer
    (devuelve la llamada a como estaba) y la tabla del CRM, que corrige el
-   estado y el closer en la celda. */
+   estado y el closer en la celda. `extra` lo manda pasar una llamada a otro
+   closer (lib/pasar-llamadas.ts), que deja anotado ahí que se eligió a mano. */
 export type CambiosLlamada = Partial<Pick<Sesion, "preCall" | "estadoPreCall" | "estadoLlamada" | "notas" | "grabacion" | "estado"
-  | "resultado" | "objecion" | "hizoOferta" | "cierreEstimado" | "eodEn" | "eodPor" | "anfitrion">>;
+  | "resultado" | "objecion" | "hizoOferta" | "cierreEstimado" | "eodEn" | "eodPor" | "anfitrion" | "extra"
+  | "estadoLlamadaEn" | "estadoPreCallEn" | "ventaPorOtro">>;
 type PedidoLlamada = { id: ID; cambios: CambiosLlamada; detalle: string };
+const MARCAS_DE_ESTADO = [["estadoLlamada", "estadoLlamadaEn"], ["estadoPreCall", "estadoPreCallEn"]] as const;
 export type CambioEtapa = { antes: ID; despues: ID };
 
 /* ---------- Llamadas, y la etapa de sus leads ----------
@@ -763,6 +799,16 @@ function cargarLlamadas(t: Tanda, e: EstadoApp, lista: PedidoLlamada[], restaura
       if (s.resultado && !("resultado" in cambios)) limpio.resultado = undefined;
     }
     if ("estado" in cambios && !cambios.estado) delete limpio.estado;
+    /* La primera vez que se carga cada estado queda marcada, venga de donde
+       venga (el cierre del día, la tabla del CRM, la Agenda, la ficha o una
+       venta): con eso se cuentan los strikes (lib/cierre-del-dia.ts). Pasar de
+       vacío a cargado la pone; después no se corre ni se borra (cambiar el
+       estado, vaciarlo o borrar la opción no la tocan: hay historia). Si el
+       cambio ya trae la marca (deshacer la primera carga la saca), vale esa. */
+    for (const [campo, marca] of MARCAS_DE_ESTADO) {
+      if (!(campo in cambios) || marca in cambios) continue;
+      if (limpio[campo] && !s[campo] && !s[marca]) limpio[marca] = t.cuando;
+    }
     t.sesiones.set(id, { ...s, ...limpio });
     t.aLaNube.set(id, { ...t.aLaNube.get(id), ...Object.fromEntries(Object.entries(limpio).map(([k, v]) => [k, v ?? null])) });
     anotar(t, e, "sesion", id, `${s.tipo} — ${s.invitado}`, "actualizo", detalle);
@@ -817,7 +863,9 @@ function conTanda(e: EstadoApp, t: Tanda): EstadoApp {
    venta y dentro de su ventana (lib/crm.ts): una agenda posterior, o una de
    hace meses de alguien que vuelve a comprar, es otra historia. */
 function llamadaDeVenta(e: EstadoApp, venta: Venta, sesionId?: ID): Sesion | undefined {
-  if (sesionId) return e.sesiones.find((s) => s.id === sesionId);
+  /* La que la venta dice (se guarda al cargarla); sólo si no la dice, se infiere. */
+  const dicha = sesionId ?? venta.sesionId;
+  if (dicha) return e.sesiones.find((s) => s.id === dicha);
   const p = venta.contactoId ? personaDe(e, venta.contactoId) : null;
   if (!p) return undefined;
   const tablas = tablasDe(e.ajustes);
@@ -835,7 +883,7 @@ function opcionDeCompra(e: EstadoApp, venta: Venta, cuotas: Cuota[]): OpcionCrm 
   const tipo: OportunidadCrm = e.productos.find((p) => p.id === venta.productoId)?.tipo === "downsell" ? "downsell"
     : cuotas.some((c) => c.esReserva) ? "reserva"
     : regulares.length > 1 ? "compra-cuotas" : "compra-full";
-  return opciones.find((o) => o.oportunidad === tipo) ?? opciones.find((o) => esCompra(o));
+  return opcionDeCompraPara(opciones, tipo);
 }
 
 const fechaCorta = (iso?: string) => {
@@ -1000,7 +1048,7 @@ function conDatosDePlanilla(nuevos: Pago[], cuotasVenta: Cuota[], pagosVentaAnte
 export interface DatosCobro {
   procesadorId?: ID; monto: number; fecha: string; referencia?: string;
   movimientoId?: ID; comprobante?: Comprobante;
-  tipoCambio?: number; montoArs?: number; pagador?: string; cuit?: string; chequeado?: boolean;
+  tipoCambio?: number; montoArs?: number; pagador?: string; cuit?: string;
   cvu?: string; tipoCambioBlue?: number; tipoCambioFuente?: string;
 }
 
@@ -1031,7 +1079,9 @@ export interface DatosDevolucion {
 }
 
 /* Los datos de la planilla que trae el cobro, sin los vacíos. El blue de
-   referencia va sólo con un tipo de cambio: es contra qué se compara. */
+   referencia va sólo con un tipo de cambio: es contra qué se compara. El
+   tilde de «chequeado» ya no lo pone quien carga: lo chequea otra persona
+   (lib/control-cobros.ts). */
 function extrasDeCobro(c: DatosCobro): Partial<Pago> {
   const conCambio = Boolean(c.tipoCambio && c.tipoCambio > 0);
   return {
@@ -1042,7 +1092,6 @@ function extrasDeCobro(c: DatosCobro): Partial<Pago> {
     ...(c.pagador?.trim() ? { pagador: c.pagador.trim() } : {}),
     ...(c.cuit?.trim() ? { cuit: c.cuit.trim() } : {}),
     ...(c.cvu?.trim() ? { cvu: c.cvu.replace(/[\s.-]/g, "") } : {}),
-    ...(c.chequeado ? { chequeado: true } : {}),
   };
 }
 
@@ -1702,6 +1751,21 @@ export const acciones = {
     return true;
   },
 
+  /* ---------- Lo que la agenda hereda del formulario (lib/cruce-formularios.ts) ----------
+     Al unir un registro de la landing con una persona de la agenda, el contacto
+     toma lo que le faltaba (teléfono, país, anuncio) y los UTMs de la pauta.
+     `cambios` ya viene decidido por herenciaDeFormulario: acá sólo se guarda. */
+  heredarDeFormulario(contactoId: ID, cambios: Partial<Contacto>, detalle: string): boolean {
+    const e = snapshot();
+    const c = e.contactos.find((x) => x.id === contactoId);
+    if (!c || !puedo("contactos") || Object.keys(cambios).length === 0) return false;
+    const { lista, nuevo } = registrar(e, "contacto", c.id, c.nombre, "actualizo", detalle);
+    guardar({ ...e, contactos: e.contactos.map((x) => (x.id === c.id ? { ...x, ...cambios } : x)), actividad: lista });
+    empujar({ tipo: "update", tabla: "contactos", ids: [c.id], cambios: cambios as Record<string, unknown> });
+    empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
+    return true;
+  },
+
   /* ---------- Chat del equipo, en la ficha de cada persona ---------- */
 
   comentar(contactoId: ID, texto: string, autor: string, autorEmail?: string): void {
@@ -1744,6 +1808,75 @@ export const acciones = {
     const e = snapshot();
     guardar({ ...e, arqueos: (e.arqueos ?? []).filter((a) => a.id !== id) });
     empujar({ tipo: "delete", tabla: "arqueos", ids: [id] });
+  },
+
+  /* ---------- Customer Success (lib/seguimiento.ts) ----------
+     El seguimiento de cada alumno y sus testimonios. Quedan anotados en la
+     actividad del alumno: quién lo contactó y cuándo. */
+
+  /* Cambia el seguimiento de un alumno (lo crea si todavía no tenía) y anota qué
+     pasó. Devuelve cómo estaba, para ofrecer «Deshacer» (restaurarSeguimiento). */
+  guardarSeguimiento(
+    alumnoId: ID, cambio: (s: SeguimientoAlumno, quien: string) => SeguimientoAlumno,
+    detalle: (despues: SeguimientoAlumno) => string,
+  ): SeguimientoAlumno | null {
+    const e = snapshot();
+    const alumno = e.alumnos.find((a) => a.id === alumnoId);
+    if (!alumno) return null;
+    const antes = (e.seguimientos ?? []).find((s) => s.alumnoId === alumnoId)
+      ?? seguimientoVacio(alumnoId, configSeguimiento(e.ajustes.seguimiento));
+    const quien = e.equipo.find((m) => m.id === acceso?.miembroId)?.nombre ?? e.ajustes.responsable ?? "";
+    const despues = cambio(antes, quien);
+    const { lista, nuevo } = registrar(e, "alumno", alumnoId, alumno.nombre, "actualizo", detalle(despues));
+    guardar({ ...e, seguimientos: [...(e.seguimientos ?? []).filter((s) => s.alumnoId !== alumnoId), despues], actividad: lista });
+    empujar({ tipo: "upsert", tabla: "seguimiento_alumnos", filas: [despues] });
+    empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
+    return antes;
+  },
+
+  /* Vuelve el seguimiento de un alumno a como estaba (el «Deshacer» del aviso). */
+  restaurarSeguimiento(fila: SeguimientoAlumno, detalle: string): void {
+    const e = snapshot();
+    const alumno = e.alumnos.find((a) => a.id === fila.alumnoId);
+    if (!alumno) return;
+    const { lista, nuevo } = registrar(e, "alumno", alumno.id, alumno.nombre, "actualizo", detalle);
+    guardar({ ...e, seguimientos: [...(e.seguimientos ?? []).filter((s) => s.alumnoId !== fila.alumnoId), fila], actividad: lista });
+    empujar({ tipo: "upsert", tabla: "seguimiento_alumnos", filas: [fila] });
+    empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
+  },
+
+  /* Guarda un testimonio (nuevo o corregido) de un alumno. */
+  guardarTestimonio(t: Testimonio): void {
+    const e = snapshot();
+    const alumno = e.alumnos.find((a) => a.id === t.alumnoId);
+    const existe = (e.testimonios ?? []).some((x) => x.id === t.id);
+    const texto = { pedido: "se pidió", grabado: "se grabó", publicado: "se publicó" }[t.estado];
+    const { lista, nuevo } = registrar(e, "alumno", t.alumnoId, alumno?.nombre ?? "Alumno", existe ? "actualizo" : "creo",
+      `Testimonio: ${texto}${t.link ? ` (${t.link})` : ""}.`);
+    guardar({ ...e, testimonios: [t, ...(e.testimonios ?? []).filter((x) => x.id !== t.id)], actividad: lista });
+    empujar({ tipo: "upsert", tabla: "testimonios", filas: [t] });
+    empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
+  },
+
+  borrarTestimonio(id: ID): void {
+    const e = snapshot();
+    const t = (e.testimonios ?? []).find((x) => x.id === id);
+    if (!t) return;
+    const alumno = e.alumnos.find((a) => a.id === t.alumnoId);
+    const { lista, nuevo } = registrar(e, "alumno", t.alumnoId, alumno?.nombre ?? "Alumno", "elimino", "Se borró un testimonio.");
+    guardar({ ...e, testimonios: (e.testimonios ?? []).filter((x) => x.id !== id), actividad: lista });
+    empujar({ tipo: "delete", tabla: "testimonios", ids: [id] });
+    empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
+  },
+
+  /* Las cadencias y los reintentos del seguimiento (Ajustes.seguimiento). */
+  configurarSeguimiento(cfg: ConfigSeguimiento): void {
+    const e = snapshot();
+    const ajustes = { ...e.ajustes, seguimiento: configSeguimiento(cfg) };
+    const { lista, nuevo } = registrar(e, "config", "seguimiento", "Seguimiento de alumnos", "actualizo", "Se cambió la configuración del seguimiento de alumnos.");
+    guardar({ ...e, ajustes, actividad: lista });
+    empujar({ tipo: "upsert", tabla: "ajustes", filas: [filaAjustes(ajustes)] });
+    empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
   },
 
   /* ---------- Movimientos entre cuentas (lib/traspasos.ts) ----------
@@ -1845,6 +1978,107 @@ export const acciones = {
     return true;
   },
 
+
+  /* ---------- Gastos fijos (lib/gastos-recurrentes.ts) ----------
+     La plantilla de lo que se paga todos los meses. Nada se carga sin
+     aprobar: aprobar es lo único que crea el gasto. */
+
+  guardarGastoRecurrente(t: GastoRecurrente): void {
+    const e = snapshot();
+    const antes = (e.gastosRecurrentes ?? []).find((x) => x.id === t.id);
+    const { lista: act, nuevo } = registrar(
+      e, "transaccion", t.id, "Gasto fijo", antes ? "actualizo" : "creo",
+      `${antes ? "Se corrigió" : "Se creó"} el gasto fijo «${t.concepto}» (${Math.round(t.monto).toLocaleString("es-AR")} ${t.moneda}, el día ${t.diaDelMes}).`,
+    );
+    guardar({ ...e, gastosRecurrentes: [...(e.gastosRecurrentes ?? []).filter((x) => x.id !== t.id), t], actividad: act });
+    empujar({ tipo: "upsert", tabla: "gastos_recurrentes", filas: [t] });
+    empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
+  },
+
+  borrarGastoRecurrente(id: ID): void {
+    const e = snapshot();
+    const t = (e.gastosRecurrentes ?? []).find((x) => x.id === id);
+    if (!t) return;
+    const { lista: act, nuevo } = registrar(e, "transaccion", id, "Gasto fijo", "elimino", `Se borró el gasto fijo «${t.concepto}». Los gastos que ya se cargaron quedan.`);
+    guardar({ ...e, gastosRecurrentes: (e.gastosRecurrentes ?? []).filter((x) => x.id !== id), actividad: act });
+    empujar({ tipo: "delete", tabla: "gastos_recurrentes", ids: [id] });
+    empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
+  },
+
+  /* Aprobar lo propuesto de uno o de varios (con el monto que se dijo): carga
+     los gastos y deja el monto aprobado como el habitual para el mes que
+     viene. Los que ya estaban cargados ese mes no se repiten. */
+  aprobarGastosFijos(items: { id: ID; mes: string; monto: number }[]): Gasto[] {
+    const e = snapshot();
+    const ahoraIso = ahora();
+    const nuevos: Gasto[] = [];
+    const plantillas = new Map((e.gastosRecurrentes ?? []).map((t) => [t.id, t] as const));
+    const cambiadas = new Map<ID, GastoRecurrente>();
+    const yaHay = new Set(e.gastos.map((g) => g.id));
+    for (const it of items) {
+      const t = plantillas.get(it.id);
+      if (!t || !(it.monto > 0)) continue;
+      const g = gastoAprobado(t, it.mes, it.monto, ahoraIso, e.ajustes.responsable || undefined);
+      if (yaHay.has(g.id)) continue;
+      yaHay.add(g.id);
+      nuevos.push(g);
+      /* El monto del último mes aprobado pasa a ser el habitual. */
+      const nueva = { ...(cambiadas.get(t.id) ?? t), monto: g.monto };
+      cambiadas.set(t.id, nueva);
+    }
+    if (nuevos.length === 0) return [];
+    const { lista: act, nuevo } = registrar(
+      e, "transaccion", nuevos[0].id, "Gastos fijos", "creo",
+      nuevos.length === 1 ? `Se aprobó el gasto fijo «${nuevos[0].concepto}» (${Math.round(nuevos[0].monto).toLocaleString("es-AR")} ${nuevos[0].moneda}).`
+        : `Se aprobaron ${nuevos.length} gastos fijos: ${nuevos.map((g) => g.concepto).join(", ")}.`,
+    );
+    guardar({
+      ...e,
+      gastos: [...nuevos, ...e.gastos],
+      gastosRecurrentes: (e.gastosRecurrentes ?? []).map((t) => cambiadas.get(t.id) ?? t),
+      actividad: act,
+    });
+    empujarEnLotes("gastos", nuevos);
+    for (const t of cambiadas.values()) empujar({ tipo: "upsert", tabla: "gastos_recurrentes", filas: [t] });
+    empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
+    return nuevos;
+  },
+
+  /* «Este mes no»: el mes queda saltado y no vuelve a proponerse. */
+  saltearGastoFijo(id: ID, mes: string): void {
+    const e = snapshot();
+    const t = (e.gastosRecurrentes ?? []).find((x) => x.id === id);
+    if (!t || t.salteados.includes(mes)) return;
+    const nueva: GastoRecurrente = { ...t, salteados: [...t.salteados, mes].sort() };
+    const { lista: act, nuevo } = registrar(e, "transaccion", id, "Gasto fijo", "actualizo", `Se salteó «${t.concepto}» en ${mes}.`);
+    guardar({ ...e, gastosRecurrentes: (e.gastosRecurrentes ?? []).map((x) => (x.id === id ? nueva : x)), actividad: act });
+    empujar({ tipo: "upsert", tabla: "gastos_recurrentes", filas: [nueva] });
+    empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
+  },
+
+  /* Deshace un «saltear» (el mes vuelve a aparecer para aprobar). */
+  volverAProponerGastoFijo(id: ID, mes: string): void {
+    const e = snapshot();
+    const t = (e.gastosRecurrentes ?? []).find((x) => x.id === id);
+    if (!t || !t.salteados.includes(mes)) return;
+    const nueva: GastoRecurrente = { ...t, salteados: t.salteados.filter((m) => m !== mes) };
+    guardar({ ...e, gastosRecurrentes: (e.gastosRecurrentes ?? []).map((x) => (x.id === id ? nueva : x)) });
+    empujar({ tipo: "upsert", tabla: "gastos_recurrentes", filas: [nueva] });
+  },
+
+  /* Arma las plantillas con los gastos «Fijo» que ya se cargaron (uno por
+     concepto, con el monto y el día del último). Devuelve cuántas armó. */
+  armarGastosFijos(): number {
+    const e = snapshot();
+    const hechas = plantillasDesdeGastos(e, ahora(), () => nuevoId("rec"));
+    if (hechas.length === 0) return 0;
+    const { lista: act, nuevo } = registrar(e, "transaccion", hechas[0].id, "Gastos fijos", "creo", `Se armaron ${hechas.length} gastos fijos con los gastos «Fijo» ya cargados.`);
+    guardar({ ...e, gastosRecurrentes: [...(e.gastosRecurrentes ?? []), ...hechas], actividad: act });
+    empujarEnLotes("gastos_recurrentes", hechas);
+    empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
+    return hechas.length;
+  },
+
   /* ---------- Alta completa de una venta ----------
      El asistente junta la venta, su plan de cuotas y los cobros que ya
      entraron. Se escribe todo junto: media venta cargada (cuotas sin
@@ -1858,7 +2092,12 @@ export const acciones = {
     sesionId?: ID;
   }): ID {
     const e = snapshot();
-    const { venta } = datos;
+    /* La llamada de la que salió la venta: la del CRM desde la que se cargó
+       o, si no, la última de la persona. Queda guardada en la venta
+       (`sesionId`): la puerta del cierre del día, los strikes y el descuento
+       la necesitan, y inferirla cada vez daba falsos «sin venta». */
+    const llamada = llamadaDeVenta(e, datos.venta, datos.sesionId);
+    const venta: Venta = llamada && !datos.venta.sesionId ? { ...datos.venta, sesionId: llamada.id } : datos.venta;
 
     let nuevosPagos: Pago[] = [];
 
@@ -1888,7 +2127,7 @@ export const acciones = {
         creadoEn: ahora(),
       });
     }
-    nuevosPagos = conDatosDePlanilla(nuevosPagos, datos.cuotas, [], true);
+    nuevosPagos = cargadosAhora(e, conDatosDePlanilla(nuevosPagos, datos.cuotas, [], true));
 
     /* Un pago de pasarela puede cubrir más de una cuota (la reserva y la
        primera, juntas) o quedar a medias: se da por conciliado recién
@@ -1948,7 +2187,6 @@ export const acciones = {
        de compra que corresponde (si nadie le había puesto uno) y su lead
        pasa a la etapa ganada (lib/etapas-auto.ts). */
     const t = nuevaTanda();
-    const llamada = llamadaDeVenta(e, venta, datos.sesionId);
     if (llamada && !llamada.estadoLlamada && puedo("sesiones")) {
       const op = opcionDeCompra(e, venta, cuotas);
       if (op) {
@@ -2031,7 +2269,7 @@ export const acciones = {
     {
       const cuotasVenta = e.cuotas.filter((c) => c.ventaId === venta.id);
       const idsCuotas = new Set(cuotasVenta.map((c) => c.id));
-      nuevosPagos = conDatosDePlanilla(nuevosPagos, cuotasVenta, e.pagos.filter((p) => idsCuotas.has(p.cuotaId)), false);
+      nuevosPagos = cargadosAhora(e, conDatosDePlanilla(nuevosPagos, cuotasVenta, e.pagos.filter((p) => idsCuotas.has(p.cuotaId)), false));
     }
 
     const pagos = [...nuevosPagos, ...e.pagos];
@@ -2338,6 +2576,7 @@ export const acciones = {
     /* Una cuota que el plan nuevo ya no tiene se borra, salvo que tenga un
        cobro cargado en la app (no en la planilla): ese no se pierde. */
     const pagosImportados = new Set(r.pagos.map((p) => p.id));
+    const pagoViejo = new Map(e.pagos.map((p) => [p.id, p] as const));
     const conCobroPropio = new Set(e.pagos.filter((p) => !pagosImportados.has(p.id)).map((p) => p.cuotaId));
     const sobran = new Set(r.cuotasQueSobran.filter((id) => !conCobroPropio.has(id)));
 
@@ -2360,7 +2599,13 @@ export const acciones = {
       leads: reemplazar(e.leads, r.leads),
       ventas: reemplazar(e.ventas, r.ventas),
       cuotas: reemplazar(e.cuotas.filter((c) => !sobran.has(c.id)), r.cuotas),
-      pagos: reemplazar(e.pagos, r.pagos),
+      /* Reimportar no borra lo que ya se chequeó en la app ni quién cargó el cobro. */
+      pagos: reemplazar(e.pagos, r.pagos.map((n) => {
+        const viejo = pagoViejo.get(n.id);
+        if (!viejo) return n;
+        const control = Object.fromEntries(COLUMNAS_QUE_PONE_LA_BASE.map((k) => [k, (viejo as unknown as Record<string, unknown>)[k]]));
+        return { ...n, ...control } as Pago;
+      })),
       actividad: lista,
     });
 
@@ -2383,10 +2628,11 @@ export const acciones = {
      La comisión del procesador de un cobro que no se concilió (la
      Financiera, Trust, una transferencia): se pone a mano y queda marcada,
      así no la pisa la tasa de la cuenta. La de un cobro conciliado no se
-     toca: es la real de la pasarela. También el tilde de "Pasado Financiera
-     / Chequeado en plataforma" y los datos de quien pagó. */
+     toca: es la real de la pasarela. También los datos de quien pagó. El
+     chequeo del cobro ya no es un tilde acá: lo hacen el director y finanzas
+     desde su ventana (chequearPago). */
   editarPago(id: ID, cambios: {
-    feeMonto?: number; chequeado?: boolean; pagador?: string; cuit?: string; tipoCambio?: number; cvu?: string;
+    feeMonto?: number; pagador?: string; cuit?: string; tipoCambio?: number; cvu?: string;
   }): boolean {
     const e = snapshot();
     const pago = e.pagos.find((p) => p.id === id);
@@ -2403,10 +2649,6 @@ export const acciones = {
         actualizado.feeManual = true;
         partes.push(`la comisión del procesador quedó en ${fee}`);
       }
-    }
-    if (cambios.chequeado !== undefined && cambios.chequeado !== Boolean(pago.chequeado)) {
-      actualizado.chequeado = cambios.chequeado;
-      partes.push(cambios.chequeado ? "quedó chequeado" : "dejó de estar chequeado");
     }
     if (cambios.pagador !== undefined && cambios.pagador.trim() !== (pago.pagador ?? "")) {
       actualizado.pagador = cambios.pagador.trim();
@@ -2437,6 +2679,71 @@ export const acciones = {
     guardar({ ...e, pagos: e.pagos.map((p) => (p.id === id ? actualizado : p)), actividad: lista });
     empujar({ tipo: "upsert", tabla: "pagos", filas: [actualizado] });
     empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
+    return true;
+  },
+
+  /* ---------- El control cruzado de un cobro (lib/control-cobros.ts) ----------
+     El director o finanzas miran el comprobante y dicen «chequeado» o lo
+     rechazan con el motivo; o quitan lo que habían dicho. Cada casillero es
+     de uno: el de finanzas lo llena quien edita Finanzas; el del director,
+     quien edita las ventas de todos. No cambia ningún número del cobro.
+
+     Va a la base como un UPDATE de las columnas de ese casillero y nada más: la
+     base sella quién y cuándo con la sesión (supabase/control-cruzado.sql), y
+     un cobro entero de esta pantalla, que puede ser más viejo, no pisa lo que
+     otro acaba de chequear. */
+  chequearPago(id: ID, datos: { casillero: CasilleroChequeo; veredicto: VeredictoChequeo | null; nota?: string }): boolean {
+    const e = snapshot();
+    const pago = e.pagos.find((p) => p.id === id);
+    if (!pago) return false;
+    if (acceso && !puedeUsarCasillero(acceso, datos.casillero)) return false;
+    /* Rechazar sin decir por qué no le sirve a quien tiene que arreglarlo. */
+    if (datos.veredicto === "rechazado" && !datos.nota?.trim()) return false;
+    const quien = { por: quienSoy(e), en: ahora(), nota: datos.nota };
+    const actualizado = conChequeo(pago, datos.casillero, datos.veredicto, quien);
+
+    const cuota = e.cuotas.find((c) => c.id === pago.cuotaId);
+    const venta = cuota ? e.ventas.find((v) => v.id === cuota.ventaId) : undefined;
+    const rol = ROL_DE_CASILLERO[datos.casillero].por;
+    const yo = nombreDeQuien(e, quien.por);
+    const de = venta ? ` de ${venta.contactoNombre}` : "";
+    const que = datos.veredicto === "chequeado" ? `lo chequeó ${rol}`
+      : datos.veredicto === "rechazado" ? `lo rechazó ${rol}: «${datos.nota?.trim()}»`
+        : `se sacó lo que había dicho ${rol}`;
+    const { nuevo } = registrar(
+      e, "transaccion", venta?.id ?? pago.id, venta?.contactoNombre ?? "Cobro", "actualizo",
+      `Cobro del ${pago.fecha.slice(0, 10)}${de}: ${que} (${yo}).`,
+    );
+    const act = { ...nuevo, actor: yo };
+    guardar({ ...e, pagos: e.pagos.map((p) => (p.id === id ? actualizado : p)), actividad: [act, ...e.actividad].slice(0, 400) });
+    empujarUpdate("pagos", [id], cambiosDeChequeo(datos.casillero, datos.veredicto, quien));
+    empujar({ tipo: "upsert", tabla: "actividad", filas: [act] });
+    return true;
+  },
+
+  /* Subir o cambiar el comprobante de un cobro ya cargado (hasta acá sólo se
+     subía al cargarlo): el closer arregla uno rechazado, la asistente adjunta
+     el que le llegó por otro lado. Si ya había otro archivo y se cambia, lo
+     que se chequeó contra el de antes vuelve a pendiente. El archivo de antes
+     queda guardado: es lo que se miró cuando se chequeó o se rechazó. */
+  cambiarComprobante(id: ID, comprobante: Comprobante): boolean {
+    const e = snapshot();
+    const pago = e.pagos.find((p) => p.id === id);
+    if (!pago) return false;
+    if (acceso && !puedeCambiarComprobante(acceso)) return false;
+    const { pago: actualizado, cambios, reinicia } = conComprobanteNuevo(pago, comprobante);
+    const cuota = e.cuotas.find((c) => c.id === pago.cuotaId);
+    const venta = cuota ? e.ventas.find((v) => v.id === cuota.ventaId) : undefined;
+    const yo = nombreDeQuien(e, quienSoy(e));
+    const { nuevo } = registrar(
+      e, "transaccion", venta?.id ?? pago.id, venta?.contactoNombre ?? "Cobro", "actualizo",
+      `Cobro del ${pago.fecha.slice(0, 10)}${venta ? ` de ${venta.contactoNombre}` : ""}: ${pago.comprobante ? "se cambió" : "se subió"} el comprobante (${comprobante.nombre})`
+      + `${reinicia ? "; los chequeos vuelven a quedar pendientes" : ""} (${yo}).`,
+    );
+    const act = { ...nuevo, actor: yo };
+    guardar({ ...e, pagos: e.pagos.map((p) => (p.id === id ? actualizado : p)), actividad: [act, ...e.actividad].slice(0, 400) });
+    empujarUpdate("pagos", [id], cambios);
+    empujar({ tipo: "upsert", tabla: "actividad", filas: [act] });
     return true;
   },
 
@@ -2518,11 +2825,11 @@ export const acciones = {
         const v = e.cuotas.find((c) => c.id === p.cuotaId)?.ventaId ?? "";
         porVenta.set(v, [...(porVenta.get(v) ?? []), p]);
       }
-      nuevosPagos = [...porVenta.entries()].flatMap(([v, ps]) => {
+      nuevosPagos = cargadosAhora(e, [...porVenta.entries()].flatMap(([v, ps]) => {
         const cuotasVenta = e.cuotas.filter((c) => c.ventaId === v);
         const ids = new Set(cuotasVenta.map((c) => c.id));
         return conDatosDePlanilla(ps, cuotasVenta, e.pagos.filter((p) => ids.has(p.cuotaId)), false);
-      });
+      }));
     }
 
     const pagos = [...nuevosPagos, ...e.pagos];
@@ -2756,6 +3063,22 @@ export const acciones = {
     for (const p of pagosCambiados.values()) empujarUpdate("pagos", [p.id], { feeMonto: p.feeMonto, feeRate: p.feeRate });
     if (nuevo) empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
     return { nuevos: nuevos.length, repetidos: filas.length - nuevos.length, completados: parches.size };
+  },
+
+  /* Los cobros de Mercury que el banco anuló después de entrar a la bandeja
+     (fallaron, se cancelaron, se revirtieron): si siguen sin conciliar, se
+     descartan solos, con una nota. Los conciliados no se tocan. */
+  descartarAnuladosMercury(referencias: string[]): number {
+    const e = snapshot();
+    const ids = new Set(cobrosAnulados(e.movimientos, referencias));
+    if (ids.size === 0) return 0;
+    const cambios = new Map<ID, Pick<Movimiento, "estado" | "descripcion">>();
+    for (const m of e.movimientos) {
+      if (ids.has(m.id)) cambios.set(m.id, { estado: "ignorado", descripcion: [m.descripcion, NOTA_ANULADO].filter(Boolean).join(" · ") });
+    }
+    guardar({ ...e, movimientos: e.movimientos.map((m) => (cambios.has(m.id) ? { ...m, ...cambios.get(m.id) } : m)) });
+    for (const [id, c] of cambios) empujarUpdate("movimientos", [id], c);
+    return cambios.size;
   },
 
   /* Guarda lo que trajo el sync de Meta: la jerarquia entera mas los insights

@@ -19,8 +19,8 @@
 --      fecha, comprobante, «no descontar al closer», y lo que informa la
 --      pasarela para atarla a su reembolso) con sus políticas de RLS.
 --
---      Quién la VE: quien ve las ventas (Ventas, Finanzas, Webinars, Marketing
---      o Alumnos), porque sin ella los números de cada área no darían igual;
+--      Quién la VE: quien ve las ventas (Ventas, Finanzas, Webinars, Marketing,
+--      Alumnos o Clientes), porque sin ella los números de cada área no darían igual;
 --      el closer, sólo las de sus ventas.
 --      Quién la CARGA, corrige y borra: Finanzas editable (el asistente de
 --      finanzas) o Ventas editable SIN «sólo lo suyo» (el director comercial).
@@ -103,7 +103,8 @@ create index if not exists devoluciones_referencia_idx on public.devoluciones (r
 
 alter table public.devoluciones enable row level security;
 
--- Ver: quien ve las ventas (las mismas áreas que LEEN ventas, cuotas y pagos);
+-- Ver: quien ve las ventas (las mismas áreas que LEEN ventas, cuotas y pagos, con
+-- Clientes de Customer Success incluido);
 -- quien ve sólo lo suyo (el closer), las de sus ventas.
 drop policy if exists ver_devoluciones on public.devoluciones;
 create policy ver_devoluciones on public.devoluciones
@@ -113,7 +114,8 @@ create policy ver_devoluciones on public.devoluciones
       or (select public.nivel_area('finanzas')) >= 1
       or (select public.nivel_area('webinars')) >= 1
       or (select public.nivel_area('marketing')) >= 1
-      or (select public.nivel_area('alumnos')) >= 1)
+      or (select public.nivel_area('alumnos')) >= 1
+      or (select public.nivel_area('clientes')) >= 1)
     and ((select not public.solo_lo_suyo()) or "ventaId" = any((select public.mis_ventas())::text[]))
   );
 

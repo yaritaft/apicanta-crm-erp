@@ -113,7 +113,7 @@ const AUTO_TEXTO: Record<NonNullable<OpcionCrm["auto"]>, string> = {
   segunda: "Se pone sola cuando la persona ya había agendado antes.",
 };
 
-function EditarOpciones({ campo, titulo, ancla, onCerrar, ajustes, sesiones }: {
+export function EditarOpciones({ campo, titulo, ancla, onCerrar, ajustes, sesiones }: {
   campo: CampoOpcionesCrm; titulo: string; ancla: HTMLElement; onCerrar: () => void; ajustes: Ajustes; sesiones: Sesion[];
 }) {
   const toast = useToast();
@@ -197,7 +197,7 @@ function EditarOpciones({ campo, titulo, ancla, onCerrar, ajustes, sesiones }: {
               )}
               {o.auto && <span className="crm-opciones__auto" title={AUTO_TEXTO[o.auto]}><Zap size={11} fill="currentColor" strokeWidth={0} aria-label={AUTO_TEXTO[o.auto]} /></span>}
               <button type="button" className="crm-icono" aria-label={`Borrar ${o.nombre}`}
-                title={usos(o._antes) ? `La tienen ${usos(o._antes)} agendas: se vacían.` : "Borrar la opción"}
+                title={usos(o._antes) ? `La tienen ${usos(o._antes)} agendas: se vacían (y vuelven a quedar sin cargar). Mejor ocultarla en Ajustes → CRM.` : "Borrar la opción"}
                 onClick={() => setOps((xs) => xs.filter((x) => x._k !== o._k))}>
                 <Trash2 size={15} aria-hidden />
               </button>

@@ -10,6 +10,7 @@ import { fechaDePago } from "./gastos";
    para quien las importaba de Finanzas. */
 export { cobraDirector, cobraEnFecha, closerDeCuota, tasaDeComision };
 export { devolucionesDelMes, totalDevuelto };
+import { descuentaPorCierre, ventasSinCierre } from "./cierre-del-dia";
 
 /* ==================================================================
    El P&L de Yari, calculado igual que en su planilla.
@@ -116,7 +117,12 @@ export interface ComisionVenta {
   closerNombre: string;
   /* El % que se le aplicó al closer en esta venta (el de su servicio, o el general). */
   tasaCloser: number;
+  /* Lo que se le paga al closer: ya sin lo que se descuenta por el cierre del día. */
   comisionCloser: number;
+  /* Lo que se le habría pagado y no se paga porque la venta salió de una
+     llamada de un día sin cierre cargado ese mismo día (el interruptor de
+     Ajustes → CRM, lib/cierre-del-dia.ts). Sólo está si es más que cero. */
+  descuentoCierre?: number;
   directorId?: string;
   tasaDirector: number;
   comisionDirector: number;
@@ -179,6 +185,9 @@ export function comisionesDelMes(e: EstadoApp, m: RangoMes): ComisionVenta[] {
     if (xs) xs.push(p); else pagosPorVenta.set(v, [p]);
   }
   const miembro = new Map(e.equipo.map((x) => [x.id, x] as const));
+  /* Las ventas de un día sin cierre cargado ese mismo día: vacío mientras el
+     interruptor esté apagado, así no cambia nada. */
+  const sinCierre = ventasSinCierre(e);
 
   for (const v of e.ventas) {
     if (v.estado === "cancelada") continue;
@@ -203,6 +212,8 @@ export function comisionesDelMes(e: EstadoApp, m: RangoMes): ComisionVenta[] {
       const neto = (xs: typeof pagos) => xs.reduce((a, p) => a + (p.monto - p.feeMonto), 0);
       const tasaCloser = sinComision ? 0 : tasaDeComision(closer, v.productoId);
       const tasaDirector = sinComision ? 0 : tasaDeComision(director, v.productoId);
+      const comisionBruta = neto(pagos.filter((p) => cobraEnFecha(closer, p.fecha))) * tasaCloser;
+      const descuento = descuentaPorCierre(sinCierre, v, k) ? comisionBruta : 0;
       out.push({
         id: porCloser.size > 1 ? `${v.id}:${k || "sin"}` : v.id,
         ventaId: v.id,
@@ -212,7 +223,8 @@ export function comisionesDelMes(e: EstadoApp, m: RangoMes): ComisionVenta[] {
         closerId: k || undefined,
         closerNombre: closer?.nombre ?? "Sin asignar",
         tasaCloser,
-        comisionCloser: neto(pagos.filter((p) => cobraEnFecha(closer, p.fecha))) * tasaCloser,
+        comisionCloser: comisionBruta - descuento,
+        ...(descuento > 0 ? { descuentoCierre: descuento } : {}),
         directorId: v.directorId,
         tasaDirector,
         comisionDirector: neto(pagos.filter((p) => cobraDirector(director, p.fecha))) * tasaDirector,
@@ -436,6 +448,10 @@ export interface CuotaVencida {
   diasAtraso: number;
   pagado: number;
   saldo: number;
+  /* El servicio de la venta y quién comisiona esta cuota (el que la heredó o, si
+     nadie, el closer de la venta): para ver la mora por producto y por closer. */
+  productoId?: string;
+  closerId?: string;
 }
 
 export function cuotasVencidas(e: EstadoApp): CuotaVencida[] {
@@ -463,6 +479,7 @@ export function cuotasVencidas(e: EstadoApp): CuotaVencida[] {
       numero: c.numero, monto: c.monto, vence: c.vence,
       diasAtraso: Math.floor((hoy - vence) / 86400000),
       pagado, saldo,
+      productoId: venta.productoId, closerId: closerDeCuota(venta, c) || undefined,
     });
   }
   return out.sort((a, b) => b.diasAtraso - a.diasAtraso);

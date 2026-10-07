@@ -1,10 +1,11 @@
 import {
   LayoutDashboard, Users, Sheet, CalendarDays, Video, Megaphone,
   GraduationCap, ClipboardList, Wallet, Settings, HandCoins, ArrowDownUp, Banknote, Landmark, UserCheck,
+  ClipboardCheck, PhoneCall, ListChecks, FileInput,
 } from "lucide-react";
 import { SquareKanban } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import { nivelDeRuta, type MiAcceso } from "@/lib/permisos";
+import { esCuentaDeCloser, nivelDeRuta, type MiAcceso } from "@/lib/permisos";
 
 /* Quién ve cada item lo dice su ruta (lib/permisos: areaDeRuta): Equipo y
    honorarios, sólo los dueños; el resto, según el tipo de cuenta. */
@@ -17,7 +18,7 @@ export const NAV: GrupoNav[] = [
   {
     titulo: "Negocio",
     items: [
-      { href: "/panel", texto: "Dashboard & KPIs", icono: LayoutDashboard, ayuda: "Todas las métricas del negocio en una tabla" },
+      { href: "/panel", texto: "Dashboard & KPIs", icono: LayoutDashboard, ayuda: "Todas las métricas del negocio, en una tabla o en gráficos" },
     ],
   },
   {
@@ -34,6 +35,7 @@ export const NAV: GrupoNav[] = [
     titulo: "Crecimiento",
     items: [
       { href: "/webinars", texto: "Webinars", icono: Video, ayuda: "Registrados, asistencia y conversión" },
+      { href: "/formularios", texto: "Formularios", icono: FileInput, ayuda: "Quién se anotó a cada webinar: unidos al grupo, contactados y teléfono para escribirles" },
       { href: "/marketing", texto: "Marketing", icono: Megaphone, ayuda: "Campañas de Meta y costo por lead" },
     ],
   },
@@ -45,6 +47,10 @@ export const NAV: GrupoNav[] = [
          específico, así que acá se prende éste y no los dos. */
       { href: "/alumnos?seccion=pipeline", texto: "Pipeline de servicio", icono: SquareKanban, ayuda: "Arrastrá alumnos entre las etapas del servicio" },
       { href: "/reportes", texto: "Reportes", icono: ClipboardList, ayuda: "Dashboard y tabla de los reportes de alumnos" },
+      /* Customer Success (F2-09): la lista de a quién contactar hoy y el
+         seguimiento de todos. Son vistas de Alumnos. */
+      { href: "/alumnos?seccion=hoy", texto: "A contactar hoy", icono: PhoneCall, ayuda: "Los alumnos a los que les toca el contacto de seguimiento, lo más vencido arriba" },
+      { href: "/alumnos?seccion=seguimiento", texto: "Seguimiento", icono: ListChecks, ayuda: "Cada alumno con su cadencia, su CV y su LinkedIn" },
     ],
   },
   {
@@ -59,15 +65,36 @@ export const NAV: GrupoNav[] = [
   },
 ];
 
-export const TODOS_LOS_ITEMS = NAV.flatMap((g) => g.items);
+/* El menú del closer (una cuenta que ve sólo lo suyo): tres entradas y nada
+   más. «Mis llamadas» es el CRM de hoy, «Cerrar el día» es el cierre del día
+   y «Cargar venta» abre el asistente de venta. Leads, Agenda, Clientes y el
+   resto siguen abiertos por link, filtrados a lo suyo por la base: sólo se
+   esconden del menú. */
+export const NAV_CLOSER: GrupoNav[] = [
+  {
+    titulo: "Tu día",
+    items: [
+      { href: "/mis-llamadas", texto: "Mis llamadas", icono: PhoneCall, ayuda: "Tus llamadas de hoy: cargá cómo terminó cada una" },
+      { href: "/cerrar-el-dia", texto: "Cerrar el día", icono: ClipboardCheck, ayuda: "Pasá por tus llamadas y contá cómo terminó cada una" },
+      { href: "/cargar-venta", texto: "Cargar venta", icono: HandCoins, ayuda: "Cargá una venta nueva: pasa a cliente" },
+    ],
+  },
+];
 
-/* El menú de quien está usando la app: lo que su tipo de cuenta ve. */
+export const TODOS_LOS_ITEMS = [...NAV, ...NAV_CLOSER].flatMap((g) => g.items);
+
+/* El menú de quien está usando la app: lo que su tipo de cuenta ve; el
+   closer, el mínimo. */
 export function navPara(a: MiAcceso | null): GrupoNav[] {
-  return NAV.map((g) => ({ ...g, items: g.items.filter((i) => nivelDeRuta(a, i.href) > 0) })).filter((g) => g.items.length > 0);
+  return (esCuentaDeCloser(a) ? NAV_CLOSER : NAV)
+    .map((g) => ({ ...g, items: g.items.filter((i) => nivelDeRuta(a, i.href) > 0) })).filter((g) => g.items.length > 0);
 }
 
 /* A dónde va el inicio: el Dashboard, o la primera pantalla que ve (el
    closer, al CRM). */
 export function inicioPara(a: MiAcceso | null): string {
+  /* Customer Success (Alumnos y Clientes, sin Dashboard, CRM ni Ventas)
+     arranca en la lista de a quién contactar hoy, no en Clientes. */
+  if (nivelDeRuta(a, "/alumnos") > 0 && ["/panel", "/crm", "/leads", "/ventas"].every((r) => nivelDeRuta(a, r) === 0)) return "/alumnos?seccion=hoy";
   return navPara(a)[0]?.items[0]?.href ?? "/panel";
 }

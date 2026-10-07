@@ -201,8 +201,21 @@ export interface Sesion {
   objecion?: string;
   hizoOferta?: boolean;
   cierreEstimado?: string;   // aaaa-mm-dd
-  eodEn?: string;            // cuándo lo cargó
+  eodEn?: string;            // cuándo se guardó por última vez desde el cierre del día
   eodPor?: string;           // quién
+  /* La primera vez que se cargó cada estado, venga de donde venga (el cierre
+     del día, la tabla del CRM, la Agenda, la ficha o una venta): es la marca
+     confiable con la que se cuentan los strikes (lib/cierre-del-dia.ts). Se
+     escribe sola al pasar el estado de vacío a cargado y después no se corre
+     ni se borra: cambiar el estado, vaciarlo o borrar la opción no la tocan
+     (sólo deshacer la primera carga la saca). Sin la columna
+     (supabase/cierre-del-dia.sql) sólo dura lo que la pantalla esté abierta. */
+  estadoLlamadaEn?: string;
+  estadoPreCallEn?: string;
+  /* La puerta del cierre del día: si el estado es de compra, la venta tiene
+     que estar cargada para terminar el día; la única salida es avisar que la
+     carga otra persona, y eso queda anotado acá (quién lo dijo y cuándo). */
+  ventaPorOtro?: { por: string; en: string };
 }
 
 /* Cómo terminó una llamada según el cierre del día de antes: con cierre
@@ -286,6 +299,65 @@ export interface Reporte {
   entrevistas?: number;
   postulaciones?: number;
   bloqueo?: string;
+}
+
+/* ---------- Customer Success: seguimiento de alumnos y testimonios ----------
+   Lo que lleva el equipo de Customer Success (lib/seguimiento.ts): a quién
+   le toca el próximo contacto, si dejó de contestar y si ya se le corrigió
+   el CV y el LinkedIn. Una fila por alumno en `seguimiento_alumnos` y, en
+   `testimonios`, lo que se le pidió y se publicó. Van en tablas aparte (no
+   en `alumnos`) para que un cambio de etapa del pipeline, que guarda la fila
+   entera del alumno, no pise lo que cargó Customer Success. */
+
+export interface SeguimientoAlumno {
+  /* "seg_<alumnoId>": un solo seguimiento por alumno, con un id que sale del
+     alumno, así dos personas que lo abren a la vez escriben la misma fila. */
+  id: ID;
+  alumnoId: ID;
+  /* Cada cuántos días se lo contacta: 7, 15 o 20 (configurable en Ajustes). */
+  cadenciaDias: number;
+  /* Los días se guardan como «2026-10-07» (el día del negocio). */
+  ultimoContacto: string | null;
+  /* Cuándo toca el próximo. Sin dato, es el último contacto (o el ingreso)
+     más la cadencia. */
+  proximoContacto: string | null;
+  /* Cuántas veces seguidas no contestó desde el último contacto logrado. */
+  intentosSinRespuesta: number;
+  ultimoIntento: string | null;
+  dejoDeContestar: boolean;
+  cvCorregido: boolean;
+  cvCorregidoEn: string | null;
+  linkedinCorregido: boolean;
+  linkedinCorregidoEn: string | null;
+  notas: string;
+  actualizadoEn: string;
+  actualizadoPor: string;
+}
+
+export type EstadoTestimonio = "pedido" | "grabado" | "publicado";
+
+export interface Testimonio {
+  id: ID;
+  alumnoId: ID;
+  estado: EstadoTestimonio;
+  /* Dónde está: el video, el posteo, la carpeta. */
+  link: string;
+  /* El día en que se pidió, grabó o publicó (según el estado). */
+  fecha: string | null;
+  notas: string;
+  creadoEn: string;
+}
+
+/* Lo que se ajusta del seguimiento (Alumnos → Seguimiento → Ajustar). Sin
+   esto, los valores de siempre (lib/seguimiento.ts). */
+export interface ConfigSeguimiento {
+  /* Las cadencias que se pueden elegir por alumno, en días. */
+  cadencias: number[];
+  cadenciaPorDefecto: number;
+  /* Si no contestó, se vuelve a intentar a los tantos días. */
+  reintentoDias: number;
+  /* Con tantos intentos seguidos sin respuesta, se sugiere marcarlo como «dejó de contestar». */
+  intentosHastaDejar: number;
 }
 
 /* ---------- Marketing (Meta) ---------- */
@@ -412,6 +484,8 @@ export interface Ajustes {
   /* El CRM: las opciones de los campos que carga el equipo y qué agendas
      entran en cada tabla. Sin esto, los valores de siempre (lib/crm.ts). */
   crm?: ConfigCrm;
+  /* Customer Success: cadencias y reintentos del seguimiento de alumnos. */
+  seguimiento?: ConfigSeguimiento;
 }
 
 /* ---------- CRM (Booking Calls) ---------- */
@@ -435,6 +509,10 @@ export interface OpcionCrm {
      reserva o de downsell); "perdida" pasa el lead a Perdido, salvo que ya
      haya comprado; "devolucion", aunque haya comprado. */
   oportunidad?: OportunidadCrm;
+  /* Oculta: ya no se ofrece al cargar un estado, pero las llamadas que la
+     tienen la siguen mostrando y no se borra nada (hay historia). Se revisa
+     antes qué mueve (lib/estados.ts: revisarOcultar). */
+  oculta?: boolean;
 }
 
 export type OportunidadCrm = "compra-full" | "compra-cuotas" | "reserva" | "downsell" | "perdida" | "devolucion";
@@ -457,6 +535,21 @@ export interface ConfigCrm {
   tablas?: TablaCrm[];
   /* Las objeciones que elige el closer en el EOD (lib/eod.ts). */
   objeciones?: string[];
+  /* El cierre del día: desde cuándo se cuentan los strikes y el interruptor
+     que, prendido, descuenta la comisión (lib/cierre-del-dia.ts). */
+  cierreDelDia?: ConfigCierreDelDia;
+}
+
+export interface ConfigCierreDelDia {
+  /* Desde qué día de llamada (aaaa-mm-dd) se cuentan los strikes: la fecha
+     de arranque del CRM para los closers. Sin fecha, todavía no se cuentan. */
+  cuentaDesde?: string;
+  /* Apagado (de entrada): los strikes sólo se cuentan y se muestran. Prendido:
+     no se comisiona lo de un día cuyo cierre no se cargó el mismo día. */
+  descuenta?: boolean;
+  /* Desde qué día de llamada rige el descuento: el día en que se prendió, así
+     prender el interruptor no cambia lo que ya se liquidó. */
+  descuentaDesde?: string;
 }
 
 /* Una UTM armada para un lanzamiento o una campaña: los valores que tienen
@@ -574,7 +667,7 @@ export interface Comentario {
    closer). Tabla `tipos_cuenta`; las reglas, en lib/permisos.ts y en la
    base (supabase/tipos-cuenta.sql). */
 
-export type AreaId = "panel" | "leads" | "crm" | "ventas" | "webinars" | "marketing" | "alumnos" | "finanzas" | "ajustes";
+export type AreaId = "panel" | "leads" | "crm" | "ventas" | "clientes" | "webinars" | "marketing" | "alumnos" | "finanzas" | "ajustes";
 export type NivelArea = "ver" | "editar";
 export type AreasDeTipo = Partial<Record<AreaId, NivelArea>>;
 
@@ -633,6 +726,39 @@ export interface EstadoApp {
   traspasos: Traspaso[];
   /* La plata que se devolvió a clientes (lib/devoluciones.ts). */
   devoluciones: Devolucion[];
+  /* Customer Success (lib/seguimiento.ts). Opcionales: sin
+     supabase/customer-success.sql, ninguno. */
+  seguimientos?: SeguimientoAlumno[];
+  testimonios?: Testimonio[];
+  /* Los gastos que se repiten todos los meses (software, abonos): cada mes se
+     proponen con el monto del anterior y alguien los aprueba (lib/gastos-recurrentes.ts).
+     Opcional: sin supabase/gastos-recurrentes.sql, ninguno. */
+  gastosRecurrentes?: GastoRecurrente[];
+}
+
+/* Un gasto que se paga todos los meses: la plantilla de la que salen las
+   propuestas «Para aprobar». Nunca carga un gasto sola. */
+export interface GastoRecurrente {
+  id: ID;
+  concepto: string;
+  categoria: string;
+  grupo: GrupoGasto;
+  proveedor?: string;
+  /* Lo que se paga habitualmente, en la moneda base. */
+  monto: number;
+  moneda: Moneda;
+  /* Qué día del mes se paga (1 a 28). */
+  diaDelMes: number;
+  /* De qué cuenta recaudadora sale, si se sabe (procesadores). */
+  cuentaId?: ID;
+  webinarId?: ID;
+  notas?: string;
+  activo: boolean;
+  /* El primer mes ("2026-10") para el que se propone. */
+  desde: string;
+  /* Los meses que se decidió saltear ("2026-10"). */
+  salteados: string[];
+  creadoEn: string;
 }
 
 /* ==================================================================
@@ -897,6 +1023,12 @@ export interface Venta {
   referidorNombre?: string;
   referidorTelefono?: string;
   ingresoComunidad?: IngresoComunidad;
+  /* La llamada (sesión) de la que salió la venta: se guarda al cargarla, desde
+     el cierre del día, la tabla del CRM o Ventas. Antes se inferían por
+     persona y una ventana de -1/+60 días, y daba falsos «sin venta». Sin ella
+     (las ventas de antes), se sigue infiriendo para mostrarla, pero no entra en
+     el descuento por cierre del día. */
+  sesionId?: ID;
 }
 
 export type EstadoCuota = "pendiente" | "pagada" | "cancelada";
@@ -929,6 +1061,10 @@ export interface Comprobante {
 
 /* "Característica de pago" y "Ventas Nuevas vs Cuotas" de la planilla. */
 export type TipoVentaPago = "Venta Nueva" | "Cuota" | "Solo Reserva";
+
+/* El control cruzado de un cobro: quién lo mira y qué dice (lib/control-cobros.ts). */
+export type CasilleroChequeo = "director" | "finanzas";
+export type VeredictoChequeo = "chequeado" | "rechazado";
 
 /* Un cobro: una fila de la hoja "Ventas" de la planilla de Angelo. "Fecha
    del pago", "Cuenta recaudadora" (el procesador), "Monto abonado USD" y
@@ -967,7 +1103,27 @@ export interface Pago {
      compararlo. Antes era el blue venta solo. */
   tipoCambioBlue?: number;
   tipoCambioFuente?: string;
-  chequeado?: boolean;       // Pasado Financiera / Chequeado en plataforma
+  /* El sí/no de antes: «Pasado Financiera / Chequeado en plataforma» de la
+     planilla, y lo que tilda solo un cobro conciliado con la pasarela. Sigue
+     valiendo (lo marcado no se pierde) pero ya no lo pone el closer al cargar:
+     el control de ahora son los dos casilleros de abajo. Ver lib/control-cobros.ts. */
+  chequeado?: boolean;
+  /* Control cruzado (reunión del 02/10): el closer carga el cobro y después otra
+     persona mira el comprobante y confirma que coincide con lo cargado. Hay dos
+     casilleros separados, el del director comercial y el de finanzas, y con uno
+     alcanza para que el cobro no quede pendiente. Cada uno guarda quién lo hizo
+     (el correo de su sesión), cuándo y, si lo rechazó, por qué. Los completa la
+     base y el closer no los toca: supabase/control-cruzado.sql. */
+  chequeoDirector?: VeredictoChequeo;
+  chequeoDirectorPor?: string;
+  chequeoDirectorEn?: string;
+  chequeoDirectorNota?: string;
+  chequeoFinanzas?: VeredictoChequeo;
+  chequeoFinanzasPor?: string;
+  chequeoFinanzasEn?: string;
+  chequeoFinanzasNota?: string;
+  /* Quién cargó el cobro (el correo de su sesión: lo completa la base). */
+  cargadoPor?: string;
   /* El "Comprobante" de la planilla: un link o lo que se escribió. Los
      cobros nuevos suben el archivo (comprobante). */
   comprobanteLink?: string;
@@ -1244,8 +1400,8 @@ export interface LineaLiquidada {
   devolucionId?: ID;
   /* «devolucion»: lo que se le comisionó y se revierte. «arrastre»: lo que
      queda debiendo (en el mes que lo genera pasa al siguiente; en el que
-     sigue se descuenta). */
-  tipo: TipoConcepto | "extra" | "devolucion" | "arrastre";
+     sigue se descuenta). «descuento»: el descuento por cierre del día. */
+  tipo: TipoConcepto | "extra" | "descuento" | "devolucion" | "arrastre";
   nombre: string;
   /* Cómo se llegó al monto, dicho en castellano. */
   detalle: string;

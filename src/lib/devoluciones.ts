@@ -2,6 +2,7 @@ import type { Devolucion, EstadoApp, ID, Liquidacion, Pago, Venta } from "./type
 import type { RangoMes } from "./metricas";
 import { closerDeCuota, cobraDirector, cobraEnFecha, tasaDeComision } from "./comision";
 import { moverPeriodo, periodoDeFecha } from "./periodos";
+import { descuentaPorCierre, ventasSinCierre } from "./cierre-del-dia";
 
 /* ==================================================================
    Devoluciones: la plata que se le devuelve a un cliente.
@@ -127,7 +128,8 @@ export interface Reversa {
   partes: ParteReversa[];
 }
 
-type EstadoDeReversas = Pick<EstadoApp, "ventas" | "cuotas" | "pagos" | "equipo"> & ConDevoluciones;
+type EstadoDeReversas = Pick<EstadoApp, "ventas" | "cuotas" | "pagos" | "equipo"> & ConDevoluciones
+  & Partial<Pick<EstadoApp, "sesiones" | "ajustes">>;
 
 /** Lo que se revierte de las comisiones con cada devolución confirmada, de
  *  todas las fechas. Una venta cancelada no comisionó nada (Finanzas la
@@ -148,6 +150,12 @@ export function reversasDeComision(e: EstadoDeReversas): Reversa[] {
     const xs = pagosPorVenta.get(v);
     if (xs) xs.push(p); else pagosPorVenta.set(v, [p]);
   }
+  /* Las ventas de un día sin cierre cargado ese mismo día (el interruptor del
+     cierre del día): a su closer no se le pagó esa comisión, así que no hay
+     nada que revertirle. Vacío con el interruptor apagado. */
+  const sinCierre = e.sesiones && e.ajustes
+    ? ventasSinCierre(e as Pick<EstadoApp, "sesiones" | "ventas" | "equipo" | "ajustes">)
+    : new Set<ID>();
   const dePorVenta = new Map<ID, Devolucion[]>();
   for (const d of todas) dePorVenta.set(d.ventaId!, [...(dePorVenta.get(d.ventaId!) ?? []), d]);
 
@@ -200,7 +208,7 @@ export function reversasDeComision(e: EstadoDeReversas): Reversa[] {
         partes.push(parteDe(
           `c:${k}`, "closer", cobrosDelCloser.filter((p) => cobraEnFecha(closer, p.fecha)),
           closer ? { id: closer.id, nombre: closer.nombre } : undefined,
-          sinComision ? 0 : tasaDeComision(closer, venta.productoId),
+          sinComision || descuentaPorCierre(sinCierre, venta, k) ? 0 : tasaDeComision(closer, venta.productoId),
           k && k !== venta.closerId ? deLaVenta?.nombre ?? "otro closer" : undefined,
         ));
       }

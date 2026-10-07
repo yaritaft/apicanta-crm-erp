@@ -1,8 +1,8 @@
 "use client";
 
-import React, { useCallback, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ArrowLeftRight, Clock, Download, EyeOff, ListChecks } from "lucide-react";
+import { ArrowLeftRight, ChartColumn, Clock, Download, EyeOff, ListChecks, Table2 } from "lucide-react";
 import { Button, Card, Empty } from "@/components/ui/ui";
 import { DateRangePicker, diaDeNegocio, rangoStr, rangoSub } from "@/components/ui/DateRangePicker";
 import { CopiarLink } from "@/components/ui/Filtros";
@@ -10,6 +10,8 @@ import { Desglose, DetalleDeKpi, type QueDesglosar } from "@/components/panel/De
 import { DetalleAnuncio, type FormatoPlata } from "@/components/marketing/DetalleAnuncio";
 import { FiltroVista } from "@/components/panel/FiltroVista";
 import { FiltroSegmento } from "@/components/panel/FiltroSegmento";
+import { Graficos } from "@/components/panel/graficos/Graficos";
+import { Selector } from "@/components/panel/graficos/comun";
 import { useFilasKpi } from "@/components/panel/useFilasKpi";
 import { ConfigColumnas, type DefColumna } from "@/components/ui/ColumnasConfig";
 import { AccionesTopbar } from "@/components/shell/AccionesTopbar";
@@ -44,13 +46,23 @@ const COLUMNAS: { valor: Columnas; texto: string; ayuda: string }[] = [
    - columnas: dia · mes
    - comparar: 1 para ver la variación contra el paso anterior
    - embudo / webinar: el id; se usa uno u otro, nunca los dos
+   - modo: graficos para ver el Dashboard dibujado (components/panel/graficos);
+     sin ella, la tabla. Los gráficos respetan todo lo anterior y agregan sus
+     propias claves (dim, met y zona).
    Qué métricas se ven y en qué orden NO va: es de cada uno (useFilasKpi).
+
+   ?ver=graficos también se entiende y pasa solo a ?modo=graficos. «ver» no
+   sirve para guardar una vista: en el resto de la app abre una ficha, así que
+   lib/vistas-guardadas.ts lo cuenta como de un solo uso (no se recuerda como
+   «lo último que se vio») y useAbrirFicha lo borra de la URL al abrir una
+   persona: abrir una venta desde el detalle de un gráfico habría devuelto el
+   Dashboard a la tabla.
 
    Las columnas se llamaban ?vista, pero la ficha de una persona también
    escribe ?vista (ventas o servicio): abrir una desde el Desglose pasaba la
    tabla a "Por día", y al cerrarla se perdía "Por mes". Un link viejo con
    ?vista=meses se sigue entendiendo. */
-const VISTA_PANEL = { area: "todo", columnas: "dia", comparar: "", embudo: "", webinar: "" };
+const VISTA_PANEL = { area: "todo", columnas: "dia", comparar: "", embudo: "", webinar: "", modo: "tabla" };
 
 export default function DashboardKpis() {
   const e = useEstado();
@@ -77,6 +89,14 @@ export default function DashboardKpis() {
   const { acceso } = useAcceso();
   const secciones = useMemo(() => SECCIONES.filter((s) => veSeccion(acceso, s.id)), [acceso]);
   const area = (secciones.some((s) => s.id === vista.area) ? vista.area : "todo") as SeccionKpi | "todo";
+  /* Los gráficos salen de Ventas y Cobranza: sin ver ninguna de las dos, sólo la tabla. */
+  const puedeGraficos = veSeccion(acceso, "ventas") || veSeccion(acceso, "cobranza");
+  const ver: "tabla" | "graficos" = (vista.modo === "graficos" || params.get("ver") === "graficos") && puedeGraficos ? "graficos" : "tabla";
+  /* El link con ?ver=graficos pasa a ?modo=graficos (ver el comentario de arriba). */
+  const enAlias = params.get("ver") === "graficos";
+  useEffect(() => {
+    if (enAlias) setVista({ modo: "graficos" }, { ver: null });
+  }, [enAlias, setVista]);
 
   /* Un filtro que apunta a algo que ya no existe se ignora. */
   const webinarsFiltro = useMemo(() => webinarsParaFiltro(e), [e]);
@@ -87,6 +107,11 @@ export default function DashboardKpis() {
     if (em && e.embudos.some((x) => x.id === em)) return { embudoId: em };
     return {};
   }, [vista.webinar, vista.embudo, webinarsFiltro, e.embudos]);
+
+  /* Qué parte del negocio se está mirando, con su nombre (lo dicen los gráficos). */
+  const segmentoTexto = filtro.webinarId
+    ? webinarsFiltro.find((x) => x.id === filtro.webinarId)?.titulo ?? "Webinar"
+    : filtro.embudoId ? e.embudos.find((x) => x.id === filtro.embudoId)?.nombre ?? "Embudo" : "Todo el negocio";
 
   const [desglose, setDesglose] = useState<{ que: QueDesglosar; mes: RangoMes } | null>(null);
   /* El número que se abrió (los registros que lo forman) y, desde su lista,
@@ -195,24 +220,38 @@ export default function DashboardKpis() {
           los filtros suben a una línea propia y las pestañas quedan
           apoyadas sobre la raya. */}
       <div className="kpis-cabecera">
-        <div className="kpis-areas" role="tablist" aria-label="Área del negocio">
-          {areas.map((a, i) => (
-            <button
-              key={a.id} type="button" role="tab" className="kpis-area"
-              aria-selected={area === a.id} tabIndex={area === a.id ? 0 : -1}
-              onClick={() => elegirArea(a.id)}
-              onKeyDown={(ev) => {
-                const paso = ev.key === "ArrowRight" ? 1 : ev.key === "ArrowLeft" ? -1 : 0;
-                if (!paso) return;
-                ev.preventDefault();
-                const sig = areas[(i + paso + areas.length) % areas.length];
-                elegirArea(sig.id);
-                (ev.currentTarget.parentElement?.children[(i + paso + areas.length) % areas.length] as HTMLElement | undefined)?.focus();
-              }}
-            >
-              {a.titulo}
-            </button>
-          ))}
+        <div className="kpis-izq">
+          {/* Tabla (la de siempre) o Gráficos: lo mismo, dibujado. */}
+          {puedeGraficos && (
+            <Selector
+              modo="tabs" etiqueta="Cómo ver el Dashboard" valor={ver} onCambiar={(v) => setVista({ modo: v }, { ver: null })}
+              opciones={[
+                { id: "tabla", titulo: "Tabla", icono: <Table2 size={14} aria-hidden />, ayuda: "Todas las métricas en una tabla" },
+                { id: "graficos", titulo: "Gráficos", icono: <ChartColumn size={14} aria-hidden />, ayuda: "Lo mismo, dibujado: Revenue y cobro en el tiempo, mora, ticket, desgloses y mapa" },
+              ]}
+            />
+          )}
+          {ver === "tabla" && (
+            <div className="kpis-areas" role="tablist" aria-label="Área del negocio">
+              {areas.map((a, i) => (
+                <button
+                  key={a.id} type="button" role="tab" className="kpis-area"
+                  aria-selected={area === a.id} tabIndex={area === a.id ? 0 : -1}
+                  onClick={() => elegirArea(a.id)}
+                  onKeyDown={(ev) => {
+                    const paso = ev.key === "ArrowRight" ? 1 : ev.key === "ArrowLeft" ? -1 : 0;
+                    if (!paso) return;
+                    ev.preventDefault();
+                    const sig = areas[(i + paso + areas.length) % areas.length];
+                    elegirArea(sig.id);
+                    (ev.currentTarget.parentElement?.children[(i + paso + areas.length) % areas.length] as HTMLElement | undefined)?.focus();
+                  }}
+                >
+                  {a.titulo}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
         <div className="kpis-barra">
@@ -238,46 +277,58 @@ export default function DashboardKpis() {
 
       {/* Lo que se hace con la tabla entera va arriba, junto a Buscar. */}
       <AccionesTopbar>
-        <ConfigColumnas
-          titulo="Métricas" icono={<ListChecks size={14} />} conCuenta={false}
-          todas={opcionesFilas} visibles={filas.map((f) => f.def.id)}
-          alternar={config.alternar} mover={config.mover} restaurar={config.restaurar}
-        />
+        {ver === "tabla" && (
+          <ConfigColumnas
+            titulo="Métricas" icono={<ListChecks size={14} />} conCuenta={false}
+            todas={opcionesFilas} visibles={filas.map((f) => f.def.id)}
+            alternar={config.alternar} mover={config.mover} restaurar={config.restaurar}
+          />
+        )}
         <CopiarLink />
-        <Button sm variante="secondary" icono={<Download size={16} />} onClick={() => exportar(filas, cortes, comparar, rangoStr(rango))}>
-          Exportar
-        </Button>
+        {ver === "tabla" && (
+          <Button sm variante="secondary" icono={<Download size={16} />} onClick={() => exportar(filas, cortes, comparar, rangoStr(rango))}>
+            Exportar
+          </Button>
+        )}
       </AccionesTopbar>
 
-      <Card className="planilla-card kpis-card">
-        {filasTabla.length === 0 ? (
-          <Empty
-            icono={<Clock size={22} />}
-            titulo="Nada para mostrar en esta vista"
-            texto={filtro.embudoId || filtro.webinarId
-              ? "Con este filtro, esta área no tiene números: puede que no se puedan atribuir a un embudo o webinar todavía, o que los hayas apagado en «Métricas»."
-              : "Esta área no tiene métricas para mostrar: puede que las hayas apagado en «Métricas»."}
-          />
-        ) : (
-          <TablaKpis
-            filas={filasTabla} cortes={cortes} comparar={comparar} moneda={mon} porDia={columnas === "dia"}
-            conSecciones={area === "todo"} onAbrir={abrir} periodo={periodoDelLink}
-            onAlternar={alternarFila} ocultas={verOcultas ? config.ocultas : undefined} explicar={explicar}
-          />
-        )}
-        {cuantasOcultas > 0 && (
-          <div className="kpis-ocultas">
-            <EyeOff size={14} aria-hidden />
-            <span>
-              {cuantasOcultas === 1 ? "1 métrica oculta" : `${num(cuantasOcultas)} métricas ocultas`}
-              {area === "todo" ? "" : " en esta área"}
-            </span>
-            <button type="button" className="link" aria-pressed={verOcultas} onClick={() => setVerOcultas((v) => !v)}>
-              {verOcultas ? "Esconderlas" : "Mostrarlas"}
-            </button>
-          </div>
-        )}
-      </Card>
+      {ver === "graficos" && explicar ? (
+        <Graficos
+          cortes={cortes} comparar={comparar} moneda={mon} explicar={explicar}
+          verVentas={veSeccion(acceso, "ventas")} verCobranza={veSeccion(acceso, "cobranza")} segmento={segmentoTexto}
+          onAbrir={(def, corte) => setDetalle({ def, corte })}
+        />
+      ) : (
+        <Card className="planilla-card kpis-card">
+          {filasTabla.length === 0 ? (
+            <Empty
+              icono={<Clock size={22} />}
+              titulo="Nada para mostrar en esta vista"
+              texto={filtro.embudoId || filtro.webinarId
+                ? "Con este filtro, esta área no tiene números: puede que no se puedan atribuir a un embudo o webinar todavía, o que los hayas apagado en «Métricas»."
+                : "Esta área no tiene métricas para mostrar: puede que las hayas apagado en «Métricas»."}
+            />
+          ) : (
+            <TablaKpis
+              filas={filasTabla} cortes={cortes} comparar={comparar} moneda={mon} porDia={columnas === "dia"}
+              conSecciones={area === "todo"} onAbrir={abrir} periodo={periodoDelLink}
+              onAlternar={alternarFila} ocultas={verOcultas ? config.ocultas : undefined} explicar={explicar}
+            />
+          )}
+          {cuantasOcultas > 0 && (
+            <div className="kpis-ocultas">
+              <EyeOff size={14} aria-hidden />
+              <span>
+                {cuantasOcultas === 1 ? "1 métrica oculta" : `${num(cuantasOcultas)} métricas ocultas`}
+                {area === "todo" ? "" : " en esta área"}
+              </span>
+              <button type="button" className="link" aria-pressed={verOcultas} onClick={() => setVerOcultas((v) => !v)}>
+                {verOcultas ? "Esconderlas" : "Mostrarlas"}
+              </button>
+            </div>
+          )}
+        </Card>
+      )}
 
       {desglose && <Desglose que={desglose.que} mes={desglose.mes} onCerrar={() => setDesglose(null)} />}
       {detalle && !anuncio && (

@@ -23,9 +23,17 @@ export const feeDesconocido = (m: Pick<Movimiento, "fee" | "proveedor">): boolea
   m.fee === 0 && COBRAN_COMISION.has(m.proveedor);
 
 type DatosDeCobro = Pick<Movimiento,
-  "proveedor" | "monto" | "fee" | "neto" | "clienteNombre" | "clienteEmail" | "clienteTelefono" | "metodo" | "descripcion">;
+  "proveedor" | "monto" | "fee" | "neto" | "clienteNombre" | "clienteEmail" | "clienteTelefono" | "metodo" | "descripcion">
+  & Partial<Pick<Movimiento, "fecha" | "estado">>;
 export type ParcheDeCobro = Partial<Pick<Movimiento,
-  "fee" | "neto" | "clienteNombre" | "clienteEmail" | "clienteTelefono" | "metodo" | "descripcion">>;
+  "fee" | "neto" | "clienteNombre" | "clienteEmail" | "clienteTelefono" | "metodo" | "descripcion" | "fecha">>;
+
+/* Un minuto de diferencia no es otra fecha: es la misma, escrita distinto. */
+const otraFecha = (a?: string, b?: string): boolean => {
+  const x = a ? Date.parse(a) : NaN;
+  const y = b ? Date.parse(b) : NaN;
+  return Number.isFinite(x) && Number.isFinite(y) && Math.abs(x - y) > 60000;
+};
 
 const vacio = (s?: string | null): boolean => !s || !s.trim();
 const r2 = (n: number) => Math.round(n * 100) / 100;
@@ -45,6 +53,14 @@ export function parcheDeCobro(guardado: DatosDeCobro, traido: Partial<DatosDeCob
   if (vacio(guardado.metodo) && !vacio(traido.metodo)) p.metodo = traido.metodo!.trim();
   if ((vacio(guardado.descripcion) && !vacio(traido.descripcion)) || esLaCortada(guardado.descripcion, traido.descripcion)) {
     p.descripcion = traido.descripcion!.trim();
+  }
+  /* Mercury: un pending entra con su fecha de creación y, al asentarse
+     (24 a 48 h después), el banco le pone otra, a veces de otro mes. Lo que
+     Mercury trae ahora siempre está asentado (lib/mercury.ts): si el cobro
+     sigue sin conciliar, pasa a la fecha de asentado. Uno ya conciliado no
+     se toca: su pago tiene la fecha con la que se asignó. */
+  if (guardado.proveedor === "mercury" && guardado.estado === "pendiente" && otraFecha(guardado.fecha, traido.fecha)) {
+    p.fecha = traido.fecha;
   }
   /* La comisión real, sólo si el monto es el mismo cobro. */
   const fee = traido.fee ?? 0;

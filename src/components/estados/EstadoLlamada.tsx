@@ -53,7 +53,12 @@ export function useCambiarEstado() {
     const titulo = TITULO_ESTADO[campo];
     const nombre = s.invitado?.trim() || "la llamada";
     /* Deshacer la deja tal cual estaba: también cómo había quedado la agenda. */
-    const previo: CambiosLlamada = { [campo]: antes, ...(campo === "estadoLlamada" ? { estado: s.estado, resultado: s.resultado } : {}) };
+    /* Y la marca de cuándo se cargó por primera vez, para que deshacer no la corra. */
+    const marca = campo === "estadoLlamada" ? "estadoLlamadaEn" : campo === "estadoPreCall" ? "estadoPreCallEn" : null;
+    const previo: CambiosLlamada = {
+      [campo]: antes, ...(marca ? { [marca]: s[marca] } : {}),
+      ...(campo === "estadoLlamada" ? { estado: s.estado, resultado: s.resultado } : {}),
+    };
     const { etapas, movidos } = acciones.editarLlamadas([{
       id: s.id, cambios: { [campo]: valor },
       detalle: valor ? `${nombre}: ${titulo} → ${valor}.` : `${nombre}: se vació ${titulo}.`,

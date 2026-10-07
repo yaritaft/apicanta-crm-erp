@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, ArrowRight, CalendarDays, Check, ExternalLink, Link2, Pencil, Plus, Search, Star, Trash2, UserRound, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, ArrowRightLeft, CalendarDays, Check, ExternalLink, Link2, Pencil, Plus, Search, Star, Trash2, UserRound, X } from "lucide-react";
 import { Ayuda, Badge, Button, Card, Empty, Field, IconButton, Input, Select, Textarea } from "@/components/ui/ui";
 import { ModalForm, Confirmar } from "@/components/ui/Modal";
 import { Drawer, Dato } from "@/components/ui/Drawer";
@@ -9,11 +9,14 @@ import { DateRangePicker, diaDeNegocio } from "@/components/ui/DateRangePicker";
 import { CopiarLink, Filtro, opcionesDe, SIN, type OpcionFiltro } from "@/components/ui/Filtros";
 import { Origen } from "@/components/leads/Origen";
 import { EstadoDeLlamada, EstadoEditable } from "@/components/estados/EstadoLlamada";
+import { PasarLlamadas } from "@/components/closers/PasarLlamadas";
+import { sePuedePasar, usePuedePasarLlamadas } from "@/components/closers/usePasarLlamadas";
 import { ETIQUETA_CANAL } from "@/lib/calendly";
 import { embudoDe } from "@/lib/agendas-webinar";
 import { estadoAutomatico, opcionesDe as opcionesDelCrm } from "@/lib/crm";
 import { esDeVenta, estadoVisible, HECHA, POR_VENIR, SIN_CARGAR } from "@/lib/estados";
 import { evaluarAgenda, textoEvaluacion } from "@/lib/calificacion";
+import { pasadaDe } from "@/lib/pasada-closer";
 import { CamposExtra, DatosExtra } from "@/components/ui/CamposExtra";
 import { useToast } from "@/components/ui/Toast";
 import { acciones, useEstado } from "@/lib/store";
@@ -101,6 +104,9 @@ export default function Agenda() {
   const [form, setForm] = useState<(Omit<Sesion, "id"> & { id?: string }) | null>(null);
   const [ver, setVer] = useState<string | null>(null);
   const [borrar, setBorrar] = useState<Sesion | null>(null);
+  /* Pasar llamadas a otro closer: una (desde su detalle) o las que se ven (el lote). */
+  const [pasando, setPasando] = useState<{ llamadas: Sesion[]; lote: boolean } | null>(null);
+  const puedePasar = usePuedePasarLlamadas();
   const lista = useRef<HTMLDivElement>(null);
 
   const [vista, setVista] = useParamsURL(VISTA_AGENDA);
@@ -325,6 +331,13 @@ export default function Agenda() {
           </span>
           {hayFiltros && <IconButton etiqueta="Limpiar los filtros" onClick={limpiarFiltros}><X size={15} /></IconButton>}
           <CopiarLink />
+          {/* El director (o un dueño) le pasa las llamadas de un closer a otro. */}
+          {puedePasar && visibles.some(sePuedePasar) && (
+            <Button sm variante="secondary" icono={<ArrowRightLeft size={15} />} onClick={() => setPasando({ llamadas: visibles, lote: true })}
+              title="Pasar las llamadas que ves, o algunas, de un closer a otro">
+              Pasar llamadas
+            </Button>
+          )}
           {AGENDAR_A_MANO && <Button sm variante="primary" icono={<Plus size={15} />} onClick={() => setForm(VACIA(e.ajustes.tiposSesion[0] ?? "Sesión"))}>Agendar</Button>}
         </div>
 
@@ -500,6 +513,9 @@ export default function Agenda() {
                   Ver la ficha
                 </Button>
               )}
+              {puedePasar && sePuedePasar(sesionVista) && (
+                <Button variante="secondary" icono={<ArrowRightLeft size={16} />} onClick={() => setPasando({ llamadas: [sesionVista], lote: false })}>Pasar a otro closer</Button>
+              )}
               <Button variante="secondary" icono={<Pencil size={16} />} onClick={() => { setForm({ ...sesionVista }); setVer(null); }}>Editar</Button>
               <Button variante="danger" icono={<Trash2 size={16} />} onClick={() => { setBorrar(sesionVista); setVer(null); }}>Eliminar</Button>
             </>
@@ -544,7 +560,21 @@ export default function Agenda() {
               {sesionVista.canal && <Dato label="Agendó por">{ETIQUETA_CANAL[sesionVista.canal]}</Dato>}
               {(sesionVista.canal || sesionVista.utm) && <Dato label="Embudo"><BadgeEmbudo s={sesionVista} /></Dato>}
               <Dato label="Calificación">{textoEvaluacion(evaluarAgenda(sesionVista, personaDe(sesionVista)))}</Dato>
-              {sesionVista.anfitrion && <Dato label="La atiende">{sesionVista.anfitrion}</Dato>}
+              {sesionVista.anfitrion && (
+                <Dato label="La atiende">
+                  {sesionVista.anfitrion}
+                  {pasadaDe(sesionVista) && <> <Badge variante="info">Pasada a mano</Badge></>}
+                </Dato>
+              )}
+              {/* Lo que Calendly sigue diciendo, y quién la pasó: no la vuelve a pisar. */}
+              {(() => {
+                const p = pasadaDe(sesionVista);
+                return p ? (
+                  <Dato label="Pasada">
+                    {p.por || "Alguien"}{p.en ? ` · ${fechaHora(p.en)}` : ""}{p.calendly ? ` · en Calendly figura ${p.calendly}` : ""}
+                  </Dato>
+                ) : null;
+              })()}
               {sesionVista.preCall && <Dato label="Pre-Call">{sesionVista.preCall}</Dato>}
               {sesionVista.objecion && <Dato label="Por qué no cerró">{sesionVista.objecion}</Dato>}
               {/* Calendly avisa la reprogramación como una cancelación de la vieja
@@ -616,6 +646,8 @@ export default function Agenda() {
           </div>
         </Drawer>
       )}
+
+      {pasando && <PasarLlamadas llamadas={pasando.llamadas} lote={pasando.lote} onCerrar={() => setPasando(null)} />}
 
       <Confirmar
         abierto={borrar !== null} onCerrar={() => setBorrar(null)}

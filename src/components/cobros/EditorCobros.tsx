@@ -2,7 +2,7 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Link2, Plus, Trash2, Unlink } from "lucide-react";
-import { Button, IconButton, Input, Select, Switch } from "@/components/ui/ui";
+import { Button, IconButton, Input, Select } from "@/components/ui/ui";
 import { InputMonto } from "@/components/ui/InputMonto";
 import { AvisoMesCerrado } from "@/components/ui/AvisoMesCerrado";
 import { montoDe } from "@/lib/monto";
@@ -48,7 +48,6 @@ export interface CobroBorrador {
   pagador?: string;          // Nombre de quien transfirió
   cuit?: string;             // CUIT de quien transfirió
   cvu?: string;              // Ya no se pide (Angelo, 02/10): sólo pasan los datos viejos
-  chequeado?: boolean;       // Pasado Financiera / Chequeado en plataforma
   /* El tipo de cambio que propuso la app (el promedio del blue y el cripto) y
      de dónde salió: si el closer lo cambia, esto queda para compararlo. */
   tipoCambioBlue?: number;
@@ -60,7 +59,7 @@ export function datosDeCobro(p: CobroBorrador) {
   return {
     procesadorId: p.procesadorId || undefined, monto: p.monto, fecha: p.fecha,
     referencia: p.referencia, movimientoId: p.movimientoId, comprobante: p.comprobante,
-    tipoCambio: p.tipoCambio, montoArs: p.montoArs, pagador: p.pagador, cuit: p.cuit, chequeado: p.chequeado,
+    tipoCambio: p.tipoCambio, montoArs: p.montoArs, pagador: p.pagador, cuit: p.cuit,
     cvu: p.cvu, tipoCambioBlue: p.tipoCambioBlue, tipoCambioFuente: p.tipoCambioFuente,
   };
 }
@@ -327,13 +326,6 @@ export function EditorCobros({ e, cobros, onCambio, objetivo, cliente, usadoFuer
                     />
                   )}
                 </div>
-                <label className="row" style={{ gap: 8 }}>
-                  <Switch
-                    checked={Boolean(p.chequeado)} etiqueta="Pasado Financiera / Chequeado en plataforma"
-                    onChange={(v) => editar(p.id, { chequeado: v })}
-                  />
-                  <span className="t-sm t-muted">Pasado Financiera / Chequeado en plataforma</span>
-                </label>
                 <Input value={p.referencia} placeholder="Referencia del pago (opcional)" aria-label="Referencia del pago"
                   onChange={(ev) => editar(p.id, { referencia: ev.target.value })} />
               </>

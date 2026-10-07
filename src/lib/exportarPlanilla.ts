@@ -1,6 +1,7 @@
 import type { EstadoApp, Pago, Venta } from "./types";
 import { COLUMNAS_VENTAS, planDePago, tipoDePago } from "./angelo";
 import { comisionReferidorDePago, comisionSetterDePago } from "./finanzas";
+import { controlDeCobro } from "./control-cobros";
 
 /* ==================================================================
    La hoja Ventas de la planilla de Angelo, armada desde la app.
@@ -14,7 +15,9 @@ import { comisionReferidorDePago, comisionSetterDePago } from "./finanzas";
    las sacaba del bruto).
 
    Sirve para seguir usando los reportes de la planilla, o para volver
-   a pegarla en Google Sheets.
+   a pegarla en Google Sheets. «Pasado Financiera / Chequeado en plataforma»
+   sale del control cruzado de los cobros: verdadero si el director o finanzas
+   lo chequearon, o si ya estaba marcado.
    ================================================================== */
 
 const MESES = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
@@ -75,7 +78,7 @@ export function filasParaPlanilla(e: EstadoApp): string[][] {
           fecha(cuando), mes(cuando), quien.nombre, quien.email, quien.pais, quien.telefono, closer,
           "FALSE", comunes.servicio, v.proyecto ?? "", comunes.estrategia, comunes.tipo, comunes.plan,
           caracteristica, tipoVenta, e.procesadores.find((x) => x.id === p?.procesadorId)?.nombre ?? "",
-          numero(k === 0 ? v.precioAcordado : 0), numero(monto), p?.chequeado ? "TRUE" : "FALSE",
+          numero(k === 0 ? v.precioAcordado : 0), numero(monto), p && controlDeCobro(p).estado === "chequeado" ? "TRUE" : "FALSE",
           numero(p?.montoArs), numero(p?.tipoCambio), p?.pagador ?? "", p?.cuit ?? "",
           numero(p?.feeMonto ?? 0), "", numero(p?.feeMonto ?? 0),
           p?.comprobanteLink ?? p?.comprobante?.nombre ?? "", k === 0 ? v.notas ?? "" : "",

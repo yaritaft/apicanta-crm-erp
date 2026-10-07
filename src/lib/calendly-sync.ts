@@ -18,7 +18,9 @@
    marcó como hecha, que Calendly la vuelva a mandar no la devuelve a
    "agendada". Calendly sólo decide si se canceló o si fue no-show. Tampoco
    se pisan el nombre y el mail corregidos, ni lo que otras pantallas
-   guardaron en `extra`.
+   guardaron en `extra`, ni el closer que alguien eligió a mano: una llamada
+   que se pasó a otro closer sigue con él aunque el invitado cancele, no
+   vaya o reprograme (lib/pasada-closer.ts).
    ================================================================== */
 
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -30,6 +32,7 @@ import {
 import { claveEmail, completar } from "./contactos";
 import { nubeServidor } from "./servidor";
 import { etapaPorEvento } from "./etapas-auto";
+import { anfitrionTrasCalendly } from "./pasada-closer";
 import type { Contacto, Etapa, Lead, Sesion } from "./types";
 
 /* "Sesión agendada" en las etapas de la base. */
@@ -191,22 +194,28 @@ export async function ingresarInvitado(
 
   /* ---------- 3. La llamada ---------- */
   const sesionId = idSesionCalendly(inv.uri);
-  const ya = await db.from("sesiones").select("estado,titulo,tipo,notas,invitado,email,extra").eq("id", sesionId).limit(1);
+  const ya = await db.from("sesiones").select("estado,titulo,tipo,notas,invitado,email,extra,anfitrion").eq("id", sesionId).limit(1);
   if (ya.error) throw new Error(`sesiones: ${ya.error.message}`);
-  const antes = ya.data?.[0] as Pick<Sesion, "estado" | "titulo" | "tipo" | "notas" | "invitado" | "email" | "extra"> | undefined;
+  const antes = ya.data?.[0] as Pick<Sesion, "estado" | "titulo" | "tipo" | "notas" | "invitado" | "email" | "extra" | "anfitrion"> | undefined;
 
   /* Una reprogramación sigue la historia de la agenda de antes: lo que el
      closer y el setter ya habían cargado (las notas y el Pre-Call) pasa a
      la nueva, que es la que muestra el CRM (la vieja queda cancelada y no se
      ve). El Estado Pre-Call no: «Reagendar» ya se resolvió al reprogramar y
      «Confirmado» era para el horario viejo; la nueva se confirma de nuevo.
+     Y el closer que alguien eligió a mano para la vieja: sigue con él.
      Con `*`: si la base todavía no tiene las columnas del CRM, no falla. */
   let deAntes: Pick<Sesion, "notas" | "preCall"> = {};
+  let closerDeAntes: Pick<Sesion, "anfitrion" | "extra"> | undefined = antes;
   if (!antes && inv.old_invitee) {
     const vieja = await db.from("sesiones").select("*").eq("id", idSesionCalendly(inv.old_invitee)).limit(1);
     const v = vieja.data?.[0] as Partial<Sesion> | undefined;
     deAntes = { notas: v?.notas || undefined, preCall: v?.preCall || undefined };
+    closerDeAntes = v ? { anfitrion: v.anfitrion, extra: v.extra ?? {} } : undefined;
   }
+  /* Calendly dice quién es el anfitrión, salvo en una llamada que se pasó a
+     otro closer a mano: ahí manda lo elegido (lib/pasada-closer.ts). */
+  const closer = anfitrionTrasCalendly(anfitrion, closerDeAntes);
 
   const estado = estadoDe(inv) ?? antes?.estado ?? "agendada";
   const minutos = Math.max(1, Math.round((+new Date(ev.end_time) - +new Date(ev.start_time)) / 60000));
@@ -227,8 +236,8 @@ export async function ingresarInvitado(
     estado, enlace: enlaceDe(ev), origen: "calendly",
     /* Lo que otras pantallas guardan en extra (la atribución a un webinar
        corregida a mano) no se borra al volver a traerla. */
-    creadoEn: inv.created_at, extra: antes?.extra ?? {},
-    canal, utm, respuestas: qa.length ? qa : undefined, anfitrion,
+    creadoEn: inv.created_at, extra: { ...(antes?.extra ?? {}), ...(closer.pasada ? { pasada: closer.pasada } : {}) },
+    canal, utm, respuestas: qa.length ? qa : undefined, anfitrion: closer.anfitrion,
     calendlyEventoUri: ev.uri, calendlyInvitadoUri: inv.uri,
     reprogramadaDe: inv.old_invitee ? idSesionCalendly(inv.old_invitee) : undefined,
     canceladaEn: inv.status === "canceled" ? (inv.cancellation?.created_at || inv.updated_at) : undefined,

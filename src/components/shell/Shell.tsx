@@ -7,14 +7,18 @@ import {
   AlertCircle, Check, Cloud, Eye, HardDrive, Lock, LogOut, Menu, Moon, PanelLeft, PanelLeftClose,
   RefreshCw, Search, Sun, X,
 } from "lucide-react";
-import { inicioPara, navPara } from "./nav";
+import { inicioPara, navPara, TODOS_LOS_ITEMS } from "./nav";
 import { alarmaCobranza } from "@/lib/finanzas";
+import { cuantosFaltan } from "@/lib/gastos-recurrentes";
+import { resumenDePases } from "@/lib/traspasos";
 import {
   alNegarseEscritura, cargarDeLaNube, fijarAcceso, hayNube, reiniciarCarga, useEstado, useSync, useTema,
 } from "@/lib/store";
 import { useSalir, useSesion } from "@/lib/auth";
 import { elegirVerComo, useAcceso, useVerComo } from "@/lib/acceso";
-import { areaDeRuta, nivelDeRuta, queEsTabla } from "@/lib/permisos";
+import { areaDeRuta, esCuentaDeCloser, nivelDeRuta, queEsTabla } from "@/lib/permisos";
+import { diaDeNegocio } from "@/lib/dia-negocio";
+import { aContactarHoy, filasDeSeguimiento, hoyDelNegocio } from "@/lib/seguimiento";
 import { useRecordarVistas } from "@/lib/recordarVistas";
 import { Avatar, Button, Card, Empty, IconButton } from "@/components/ui/ui";
 import { useToast } from "@/components/ui/Toast";
@@ -104,14 +108,51 @@ export function Shell({ children }: { children: React.ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [cuotas, pagos, ventas],
   );
+  /* Las llamadas de hoy, sin las canceladas: el número de «Mis llamadas» (el menú del
+     closer). Sólo se cuenta para quien tiene ese item, y sólo cuando cambian las llamadas:
+     un dueño tiene miles y el menú se dibuja a cada cambio. */
+  const soyCloser = esCuentaDeCloser(acceso);
+  const hoy = diaDeNegocio(new Date().toISOString());
+  const llamadasDeHoy = useMemo(
+    () => (soyCloser ? estado.sesiones.filter((s) => s.estado !== "cancelada" && diaDeNegocio(s.inicia) === hoy).length : 0),
+    [soyCloser, estado.sesiones, hoy],
+  );
+
+  /* Los gastos fijos que ya le tocaba pagar y nadie aprobó, y los retiros de
+     Hotmart a los que les falta cargar la comisión (lote E). Se cuentan sólo
+     cuando cambian los gastos, las plantillas o los movimientos entre cuentas. */
+  const { gastos, gastosRecurrentes, traspasos } = estado;
+  const fijosPorAprobar = useMemo(
+    () => cuantosFaltan({ gastos, gastosRecurrentes }, new Date().toISOString()),
+    [gastos, gastosRecurrentes],
+  );
+  const retirosSinComision = useMemo(() => resumenDePases(traspasos ?? []).faltaComision, [traspasos]);
+  const avisosFinanzas = [
+    atrasados > 0 ? `${atrasados === 1 ? "Un cliente atrasado" : `${atrasados} clientes atrasados`} hace 7 días o más` : "",
+    fijosPorAprobar > 0 ? `${fijosPorAprobar === 1 ? "Un gasto fijo" : `${fijosPorAprobar} gastos fijos`} por aprobar` : "",
+  ].filter(Boolean);
   const alertas: Record<string, { n: number; titulo: string }> = {
-    "/finanzas": { n: atrasados, titulo: `${atrasados === 1 ? "Un cliente atrasado" : `${atrasados} clientes atrasados`} hace 7 días o más` },
+    "/finanzas": { n: atrasados + fijosPorAprobar, titulo: avisosFinanzas.join(" · ") },
+    "/finanzas/caja": {
+      n: retirosSinComision,
+      titulo: `${retirosSinComision === 1 ? "Un retiro de Hotmart" : `${retirosSinComision} retiros de Hotmart`} sin la comisión cargada`,
+    },
   };
+
+  /* Customer Success: a cuántos alumnos les toca hoy el contacto (lib/seguimiento.ts). */
+  const { alumnos: alumnosCS, seguimientos: seguimientosCS, contactos: contactosCS, leads: leadsCS } = estado;
+  const aContactar = useMemo(
+    () => (nivelDeRuta(acceso, "/alumnos") > 0 ? aContactarHoy(filasDeSeguimiento(estado, hoyDelNegocio())).length : 0),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [acceso, alumnosCS, seguimientosCS, contactosCS, leadsCS, estado.ajustes.seguimiento],
+  );
 
   const contadores: Record<string, number> = {
     "/leads": estado.leads.length,
     "/alumnos": estado.alumnos.filter((a) => a.estado === "activo").length,
+    "/alumnos?seccion=hoy": aContactar,
     "/agenda": estado.sesiones.filter((s) => s.estado === "agendada" && new Date(s.inicia) >= new Date()).length,
+    "/mis-llamadas": llamadasDeHoy,
     "/webinars": estado.webinars.length,
   };
 
@@ -123,9 +164,10 @@ export function Shell({ children }: { children: React.ReactNode }) {
     if (ruta !== camino && !ruta.startsWith(camino + "/")) return false;
     return !query || [...new URLSearchParams(query)].every(([k, v]) => busqueda.get(k) === v);
   };
-  const item = nav.flatMap((g) => g.items)
-    .filter((i) => coincide(i.href))
-    .sort((a, b) => b.href.length - a.href.length)[0];
+  const masEspecifico = (items: typeof TODOS_LOS_ITEMS) => items.filter((i) => coincide(i.href)).sort((a, b) => b.href.length - a.href.length)[0];
+  const item = masEspecifico(nav.flatMap((g) => g.items));
+  /* Una pantalla que no está en su menú (el closer abre la Agenda por link) igual lleva su título. */
+  const encabezado = item ?? masEspecifico(TODOS_LOS_ITEMS);
 
   return (
     <div className="app-shell" data-colapsado={colapsado}>
@@ -215,8 +257,8 @@ export function Shell({ children }: { children: React.ReactNode }) {
             <Menu size={20} />
           </IconButton>
           <div className="app-topbar__title">
-            <span className="t-strong truncate" style={{ fontSize: 15 }}>{item?.texto ?? "Apicanta"}</span>
-            <span className="t-sm t-subtle truncate">{item?.ayuda ?? ""}</span>
+            <span className="t-strong truncate" style={{ fontSize: 15 }}>{encabezado?.texto ?? "Apicanta"}</span>
+            <span className="t-sm t-subtle truncate">{encabezado?.ayuda ?? ""}</span>
           </div>
           <div className="app-topbar__actions">
             {/* Lo que pone cada pantalla (ver AccionesTopbar). */}

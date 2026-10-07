@@ -266,7 +266,6 @@ export function RegistrarPago({ cuota, onCerrar, onGuardado, embebido = false }:
                     ) : null}
                     {p.pagador && <span>de {p.pagador}</span>}
                     {p.cuit && <span>CUIT {p.cuit}</span>}
-                    {p.chequeado && <span>chequeado</span>}
                   </div>
                 </div>
               );

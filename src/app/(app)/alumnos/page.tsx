@@ -16,6 +16,8 @@ import { AsistenteAlumno } from "@/components/alumnos/AsistenteAlumno";
 import { EditarAlumno } from "@/components/alumnos/Servicio";
 import { useAbrirFicha } from "@/components/ficha/abrir";
 import { PipelineServicio } from "@/components/alumnos/PipelineServicio";
+import { ContactarHoy, SeguimientoLista } from "@/components/alumnos/Seguimiento";
+import { Testimonios } from "@/components/alumnos/Testimonios";
 import { BadgeEtapa, ESTADO_ALUMNO, ESTADOS_ALUMNO } from "@/components/alumnos/comun";
 import { acciones, useEstado } from "@/lib/store";
 import { useAbrirDesdeURL } from "@/lib/useQuery";
@@ -26,12 +28,14 @@ import { rachasAHoy } from "@/lib/reportes";
 import { money, num } from "@/lib/format";
 import type { Alumno, EstadoAlumno } from "@/lib/types";
 
-type Vista = "lista" | "pipeline";
+type Vista = "lista" | "pipeline" | "seguimiento" | "hoy" | "testimonios";
+const VISTAS: Vista[] = ["lista", "pipeline", "seguimiento", "hoy", "testimonios"];
 
 /* Lo que se está mirando vive en la URL (lib/useParamsURL): el menú lateral
    entra directo al pipeline (/alumnos?seccion=pipeline), y el link se puede
    guardar o mandar y se ve tal cual.
-   - seccion: lista (por defecto) o pipeline. No va en ?vista, que es de la
+   - seccion: lista (por defecto), pipeline o, para Customer Success,
+     seguimiento, hoy (a quién contactar) y testimonios. No va en ?vista, que es de la
      ficha de una persona: abrir una desde el pipeline pasaba el fondo a la
      lista. Un link viejo con ?vista=pipeline se sigue entendiendo.
    - estado: activo, pausado, egresado o baja
@@ -54,7 +58,7 @@ export default function Alumnos() {
 
   const [enURL, setEnURL] = useParamsURL(VISTA_ALUMNOS);
   /* La ficha nunca escribe "pipeline" en ?vista: si está, es un link viejo. */
-  const vista: Vista = enURL.seccion === "pipeline" || enURL.vista === "pipeline" ? "pipeline" : "lista";
+  const vista: Vista = enURL.vista === "pipeline" ? "pipeline" : VISTAS.includes(enURL.seccion as Vista) ? (enURL.seccion as Vista) : "lista";
   const cambiarVista = (v: Vista) => setEnURL({ seccion: v }, enURL.vista === "pipeline" ? { vista: null } : {});
   useEffect(() => {
     if (enURL.vista === "pipeline") setEnURL({ seccion: "pipeline", vista: null });
@@ -203,6 +207,10 @@ export default function Alumnos() {
         opciones={[
           { valor: "lista", texto: `Lista · ${num(filtrados.length)}` },
           { valor: "pipeline", texto: "Pipeline" },
+          /* Customer Success (F2-09): el seguimiento de los alumnos. */
+          { valor: "hoy", texto: "A contactar hoy" },
+          { valor: "seguimiento", texto: "Seguimiento" },
+          { valor: "testimonios", texto: "Testimonios" },
         ]}
       />
 
@@ -226,6 +234,10 @@ export default function Alumnos() {
           />
         </Card>
       )}
+
+      {vista === "hoy" && <ContactarHoy />}
+      {vista === "seguimiento" && <SeguimientoLista />}
+      {vista === "testimonios" && <Testimonios />}
 
       {vista === "pipeline" && (
         <div className="stack-4">

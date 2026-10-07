@@ -10,6 +10,7 @@ import { fechaLarga, money } from "@/lib/format";
 import type { Cuota, EstadoApp, EstadoVenta, Venta } from "@/lib/types";
 import { planDePago, tipoDePago } from "@/lib/angelo";
 import { CabezaPlegable } from "./Plegable";
+import { ChequeoDeCobro } from "@/components/cobros/ControlCobro";
 
 /* ==================================================================
    Una venta dentro de la ficha: qué compró, cuánto lleva pagado y cada
@@ -137,11 +138,8 @@ export function TarjetaVenta({ e, venta, resaltada, abierta, onAlternar, onPagar
                         <span className="t-muted">{e.procesadores.find((x) => x.id === p.procesadorId)?.nombre ?? "Sin cuenta"}</span>
                         <span className="t-subtle">{fechaLarga(p.fecha)}</span>
                         {p.caracteristica && <Badge variante="neutral">{p.caracteristica}</Badge>}
-                        {p.chequeado && !p.movimientoId && (
-                          <span className="t-subtle" title="Pasado Financiera / Chequeado en plataforma" style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
-                            <Check size={12} />chequeado
-                          </span>
-                        )}
+                        {/* Control cruzado: el director o finanzas chequean el comprobante (un clic abre la ventana). */}
+                        <ChequeoDeCobro pago={p} />
                         {p.pagador && <span className="t-subtle" title="Nombre de quien transfirió">de {p.pagador}</span>}
                         {p.tipoCambio && (
                           <span

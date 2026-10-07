@@ -12,6 +12,8 @@ import { emailValido, generarClave, tipoSugerido, useTiposCuenta, type Acceso, t
 import { resumenDeTipo } from "@/lib/permisos";
 import type { RolEquipo, TipoCuenta } from "@/lib/types";
 import { fechaLarga } from "@/lib/format";
+import type { EstadoDeClosers as EstadoClosers } from "@/lib/cuenta-closer";
+import { EstadoDeClosers } from "@/components/closers/EstadoDeClosers";
 import { ClaveGenerada } from "./ClaveGenerada";
 
 /* ==================================================================
@@ -19,20 +21,25 @@ import { ClaveGenerada } from "./ClaveGenerada";
    mira la base (usuarios_permitidos): quien no está, entra al login y no
    ve nada. Qué ve cada tipo se arma en «Tipos de cuenta». También están
    los que no son del equipo que cobra (el correo de Apicanta, el de
-   pruebas).
+   pruebas). Arriba, closer por closer, si va a ver sus llamadas (su correo
+   en Equipo y su nombre en Calendly tienen que coincidir): si no, entra y
+   no ve nada.
    ================================================================== */
 
 type Accesos = ReturnType<typeof useAccesos>;
 
 interface Fila extends Acceso { id: string; miembro?: string }
 
-export function AccesosApp({ accesos, onVerMiembro }: { accesos: Accesos; onVerMiembro: (id: string) => void }) {
+export function AccesosApp({ accesos, closers, onVerMiembro }: {
+  accesos: Accesos; closers: EstadoClosers; onVerMiembro: (id: string) => void;
+}) {
   const e = useEstado();
   const toast = useToast();
   const yo = useUsuarioActual();
   const tipos = useTiposCuenta();
   const orden = useMemo(() => new Map(tipos.map((t, i) => [t.id, i] as const)), [tipos]);
-  const [nuevo, setNuevo] = useState(false);
+  /* «Dar acceso» abierto, con lo que ya se sabe de quien lo recibe. */
+  const [nuevo, setNuevo] = useState<{ email: string; nombre: string; rol: string } | null>(null);
   const [clave, setClave] = useState<{ nombre: string; email: string; clave: string } | null>(null);
   const [quitando, setQuitando] = useState<Acceso | null>(null);
   const [trabajando, setTrabajando] = useState<string | null>(null);
@@ -44,9 +51,12 @@ export function AccesosApp({ accesos, onVerMiembro }: { accesos: Accesos; onVerM
 
   if (!hayNube) {
     return (
-      <Card>
-        <Empty icono={<ShieldCheck size={22} />} titulo="Sin base, sin login" texto="La app corre en este navegador y no pide usuario: no hay accesos que dar." />
-      </Card>
+      <div className="stack-5">
+        <EstadoDeClosers resumen={closers} onVerMiembro={onVerMiembro} onDarAcceso={() => {}} />
+        <Card>
+          <Empty icono={<ShieldCheck size={22} />} titulo="Sin base, sin login" texto="La app corre en este navegador y no pide usuario: no hay accesos que dar." />
+        </Card>
+      </div>
     );
   }
 
@@ -97,61 +107,64 @@ export function AccesosApp({ accesos, onVerMiembro }: { accesos: Accesos; onVerM
   ];
 
   return (
-    <Card>
-      <CardHead
-        titulo="Accesos a la app"
-        sub="Quién entra y con qué tipo de cuenta. Qué ve y edita cada tipo se arma en «Tipos de cuenta»; lo controla la base, no sólo la pantalla."
-        acciones={<Button variante="primary" icono={<UserPlus size={16} />} onClick={() => setNuevo(true)}>Dar acceso</Button>}
-      />
-      {accesos.error && <p className="t-sm" style={{ color: "var(--danger)", marginBottom: 12 }}>{accesos.error}</p>}
-      {accesos.lista === null ? (
-        <div className="skeleton" style={{ height: 160 }} />
-      ) : (
-        <DataTable
-          filas={filas} columnas={columnas} alto={560}
-          vacio={<Empty icono={<ShieldCheck size={22} />} titulo="Nadie tiene acceso" texto="Dale acceso a alguien del equipo." />}
-          acciones={(f) => (
-            <>
-              <IconButton etiqueta={`Clave nueva para ${f.email}`} disabled={trabajando === f.email} onClick={() => void claveNueva({ email: f.email, nombre: f.nombre, rol: f.rol })}>
-                <KeyRound size={16} />
-              </IconButton>
-              {!soyYo(f.email) && (
-                <IconButton etiqueta={`Quitar el acceso de ${f.email}`} onClick={() => setQuitando(f)}><UserX size={16} /></IconButton>
-              )}
-            </>
-          )}
+    <div className="stack-5">
+      <EstadoDeClosers resumen={closers} onVerMiembro={onVerMiembro} onDarAcceso={setNuevo} />
+      <Card>
+        <CardHead
+          titulo="Accesos a la app"
+          sub="Quién entra y con qué tipo de cuenta. Qué ve y edita cada tipo se arma en «Tipos de cuenta»; lo controla la base, no sólo la pantalla."
+          acciones={<Button variante="primary" icono={<UserPlus size={16} />} onClick={() => setNuevo({ email: "", nombre: "", rol: "equipo" })}>Dar acceso</Button>}
         />
-      )}
+        {accesos.error && <p className="t-sm" style={{ color: "var(--danger)", marginBottom: 12 }}>{accesos.error}</p>}
+        {accesos.lista === null ? (
+          <div className="skeleton" style={{ height: 160 }} />
+        ) : (
+          <DataTable
+            filas={filas} columnas={columnas} alto={560}
+            vacio={<Empty icono={<ShieldCheck size={22} />} titulo="Nadie tiene acceso" texto="Dale acceso a alguien del equipo." />}
+            acciones={(f) => (
+              <>
+                <IconButton etiqueta={`Clave nueva para ${f.email}`} disabled={trabajando === f.email} onClick={() => void claveNueva({ email: f.email, nombre: f.nombre, rol: f.rol })}>
+                  <KeyRound size={16} />
+                </IconButton>
+                {!soyYo(f.email) && (
+                  <IconButton etiqueta={`Quitar el acceso de ${f.email}`} onClick={() => setQuitando(f)}><UserX size={16} /></IconButton>
+                )}
+              </>
+            )}
+          />
+        )}
 
-      {nuevo && (
-        <DarAcceso
-          tipos={tipos}
-          onCerrar={() => setNuevo(false)}
-          sugerencias={e.equipo.filter((m) => m.activo && m.email && !(accesos.lista ?? []).some((a) => a.email === m.email!.trim().toLowerCase()))}
-          onDar={async (a, conClave) => {
-            if (conClave) {
-              if (await claveNueva(a)) setNuevo(false);
-              return;
-            }
-            const error = await accesos.guardar(a);
-            if (error) { toast(error, "err"); return; }
-            setNuevo(false);
-            toast(`${a.nombre || a.email} ya puede entrar con «Prefiero un enlace por correo».`);
+        {nuevo && (
+          <DarAcceso
+            tipos={tipos} inicial={nuevo}
+            onCerrar={() => setNuevo(null)}
+            sugerencias={e.equipo.filter((m) => m.activo && m.email && !(accesos.lista ?? []).some((a) => a.email === m.email!.trim().toLowerCase()))}
+            onDar={async (a, conClave) => {
+              if (conClave) {
+                if (await claveNueva(a)) setNuevo(null);
+                return;
+              }
+              const error = await accesos.guardar(a);
+              if (error) { toast(error, "err"); return; }
+              setNuevo(null);
+              toast(`${a.nombre || a.email} ya puede entrar con «Prefiero un enlace por correo».`);
+            }}
+          />
+        )}
+        {clave && <ClaveGenerada {...clave} onCerrar={() => setClave(null)} />}
+        <Confirmar
+          abierto={Boolean(quitando)} onCerrar={() => setQuitando(null)} confirmarTexto="Quitar el acceso"
+          titulo={`Quitar el acceso de ${quitando?.nombre || quitando?.email || ""}`}
+          texto="Deja de ver los datos de la app apenas cargue de nuevo. Se le puede volver a dar cuando quieras."
+          onConfirmar={async () => {
+            if (!quitando) return;
+            const error = await accesos.quitar(quitando.email);
+            toast(error ?? "Acceso quitado.", error ? "err" : "ok");
           }}
         />
-      )}
-      {clave && <ClaveGenerada {...clave} onCerrar={() => setClave(null)} />}
-      <Confirmar
-        abierto={Boolean(quitando)} onCerrar={() => setQuitando(null)} confirmarTexto="Quitar el acceso"
-        titulo={`Quitar el acceso de ${quitando?.nombre || quitando?.email || ""}`}
-        texto="Deja de ver los datos de la app apenas cargue de nuevo. Se le puede volver a dar cuando quieras."
-        onConfirmar={async () => {
-          if (!quitando) return;
-          const error = await accesos.quitar(quitando.email);
-          toast(error ?? "Acceso quitado.", error ? "err" : "ok");
-        }}
-      />
-    </Card>
+      </Card>
+    </div>
   );
 }
 
@@ -161,15 +174,17 @@ function opcionesDeTipo(tipos: TipoCuenta[], actual?: string) {
   return actual && !tipos.some((t) => t.id === actual) ? [...xs, { valor: actual, texto: actual }] : xs;
 }
 
-function DarAcceso({ tipos, sugerencias, onCerrar, onDar }: {
+function DarAcceso({ tipos, inicial, sugerencias, onCerrar, onDar }: {
   tipos: TipoCuenta[];
+  /* Lo que ya se sabe de quien lo recibe (desde «¿van a ver sus llamadas?»). */
+  inicial: { email: string; nombre: string; rol: string };
   sugerencias: { id: string; nombre: string; email?: string; rol?: RolEquipo }[];
   onCerrar: () => void;
   onDar: (a: { email: string; nombre: string; rol: string }, conClave: boolean) => void;
 }) {
-  const [email, setEmail] = useState("");
-  const [nombre, setNombre] = useState("");
-  const [rol, setRol] = useState<string>("equipo");
+  const [email, setEmail] = useState(inicial.email);
+  const [nombre, setNombre] = useState(inicial.nombre);
+  const [rol, setRol] = useState<string>(inicial.rol);
   const tipo = tipos.find((t) => t.id === rol);
   const [conClave, setConClave] = useState(true);
   const correo = email.trim().toLowerCase();

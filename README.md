@@ -12,7 +12,7 @@ lo que se muestra se calcula solo.
 
 | Área | Qué podés hacer |
 |---|---|
-| **Dashboard & KPIs** | Todas las métricas del negocio en una tabla maestra, de la publicidad (TOFU) a la plata que queda: día por día o mes por mes con el total al final, comparando contra el período anterior y filtrando por embudo o por webinar |
+| **Dashboard & KPIs** | Todas las métricas del negocio en una tabla maestra, de la publicidad (TOFU) a la plata que queda: día por día o mes por mes con el total al final, comparando contra el período anterior y filtrando por embudo o por webinar. Con **Tabla \| Gráficos** se ven las mismas cifras dibujadas: Revenue vs Cash Collected, tasa de cobro y de mora, ticket promedio, desgloses por plan de pago, país, estrategia, servicio y proyecto, y un mapa |
 | **Metas** | Poner objetivos del mes y verlos avanzar solos con los datos reales |
 | **Leads** | Cargar, buscar, filtrar, importar por CSV, exportar, y convertir en alumno |
 | **CRM** | Las agendas de Calendly como en el Airtable de ventas (Booking Calls y Agendas Resells): cada agenda entra sola, en vivo, con lo que contestó en el formulario; el equipo carga el Pre-Call, cómo salió la llamada, las notas y la grabación en la celda misma. Vistas por closer y por día, del setter y de cada lanzamiento |
@@ -158,7 +158,8 @@ para que algo se rompa y nada que actualizar de urgencia.
 En Ventas, Agenda y Dashboard & KPIs todo lo que se elige —período, filtros, búsqueda, orden, página,
 columnas, comparar— queda en la URL. Un reporte armado se guarda en favoritos o se le pasa a otra persona
 con **Copiar link**, y se abre igual. Lo que está en su valor de siempre no se escribe, así los links quedan
-cortos. Los nombres de cada parámetro están en `src/lib/useParamsURL.ts` y en cada pantalla.
+cortos. Los nombres de cada parámetro están en `src/lib/useParamsURL.ts` y en cada pantalla. En el Dashboard,
+`?modo=graficos` abre los gráficos (y `?dim`, `?met` y `?zona` el desglose, la métrica y la zona del mapa).
 
 ## Cobros y conciliación
 
@@ -639,3 +640,445 @@ correr `supabase/honorarios.sql` (tablas, políticas, niveles de acceso y la col
   Honorarios del CEO, Setters, Edición de contenido o Filmmaker el equipo va primero; en el resto, los proveedores.
   `Gasto.proveedor` sigue siendo texto; quién del equipo es se guarda en `gastos.extra.proveedorEquipoId`. Editar un
   gasto abre la misma revisión, y uno viejo que venía sin proveedor (los de la planilla) pide uno para guardarse.
+
+## El Dashboard en gráficos (Angelo, 06/10)
+
+«En la parte que dice sólo tabla hay que crear gráficos de una… pero la tabla esa déjala, no la saques.» En
+Dashboard & KPIs, **Tabla | Gráficos** (`?modo=graficos`) cambia cómo se ven las mismas cifras. La tabla queda
+igual y sigue siendo lo primero; los gráficos respetan el período, el filtro de embudo o webinar, las columnas por
+día o por mes, «Comparar períodos» y las áreas que ve cada tipo de cuenta (Revenue y ventas salen de Ventas; CC,
+tasa de cobro y mora, de Cobranza).
+
+- **No hay fórmulas nuevas.** Cada total sale de los mismos métodos que las filas de la tabla (`facturado()`,
+  `cobrado()`, `ventasContables()`, `vencidas()`), y los desgloses sólo *reparten* esos totales entre categorías:
+  la suma de todas (el «Sin dato» incluido) da exactamente la celda de la tabla, con cada filtro. Lo prueba
+  `pruebas/kpis-graficos.test.ts`; la lógica pura está en `src/lib/kpis-graficos.ts`.
+- **Qué se dibuja**: Revenue vs Cash Collected por día o mes (líneas o barras; Revenue en amarillo y CC en verde,
+  siempre), tasa de cobro en el tiempo, tasa de mora (una foto de hoy: medidor y repartida por dimensión), ticket
+  promedio sobre Revenue y sobre CC, desgloses de unidades, Revenue y CC por plan de pago, país, estrategia,
+  servicio y proyecto (barras ordenadas; dona si son pocas) y el mapa, con cada país **pintado** (amarillo por Revenue o verde por CC, a elección; más intenso, más monto) y el nombre y el peso de los más pesados. Cada gráfico tiene
+  su ⓘ con la cuenta escrita y los números del período.
+- **Interactivos y accesibles**: tooltip al pasar el mouse o con el foco, flechas del teclado en los gráficos,
+  clic para fijar un punto (y abrir las ventas o los cobros de esa columna), ocultar una serie desde la leyenda,
+  elegir una categoría o un país y abrir sus ventas o cobros, en el mismo panel que la tabla. Cada serie tiene su forma (círculo y rombo) y el CC va rayado:
+  nada depende sólo del color. Los números van también en una tabla para lectores de pantalla.
+- **País**: `src/lib/paises.ts` entiende el texto libre («México», «Mexico», «MX», «EE.UU.», «Rep. Dominicana»…)
+  y lo lleva a su código ISO; lo escrito que no se reconoce va a «Sin identificar» (con lo que decía) y lo vacío, a
+  «Sin país»: la plata no se pierde. El país de una venta es el de su contacto, si no el de su lead y si no el de su
+  alumno.
+- **El mapa** (`src/lib/mapa-mundo.ts`) es Natural Earth 110m en SVG propio, sin librerías. Primero tenía burbujas; se cambió por países pintados («que pinte el país, no esos círculos»). Se genera con
+  `scripts/generar-mapa-mundo.mjs` desde el paquete `world-atlas` (bajado a una carpeta temporal fuera del repo; no
+  es una dependencia de la app).
+
+## Lo que pidieron el 02/10 (lote C: la cuenta del closer)
+
+**Sin SQL**: nada de esto toca la base. La marca de «pasada a mano» va en `sesiones.extra`, y el menú del closer es sólo
+del menú (lo que ve ya lo recorta la base, así que no hay RLS que cambiar).
+
+- **El closer, con tres entradas** (`esCuentaDeCloser` en `lib/permisos.ts`, `NAV_CLOSER` en `components/shell/nav.ts`):
+  una cuenta de «sólo lo suyo» ve en el menú **Mis llamadas**, **Cerrar el día** y **Cargar venta**, y arranca en la
+  primera. Cada una es una pantalla propia (`app/(app)/mis-llamadas`, `cerrar-el-dia`, `cargar-venta`). Leads, Agenda,
+  Clientes y lo demás **sólo se esconden del menú y de ⌘K**: siguen abiertos por link, filtrados a lo suyo por la base
+  (Yari, 1:07:25: «leads, CRM, agenda, ventas, clientes, todo filtrado por closer»), y la barra de arriba sigue
+  diciendo en qué pantalla está. Si un tipo no edita Ventas, «Cargar venta» no aparece solo.
+  - **Mis llamadas** es el CRM de hoy (`<CrmTabla misLlamadas />`) y arriba dice «Hoy tenés N llamadas», cuántas ya
+    pasaron y faltan cargar y cuántas quedaron de días anteriores, con «Cerrar el día» como la única acción naranja
+    (`components/closers/MisLlamadas.tsx`, `resumenDelDia` en `lib/cuenta-closer.ts`). Siempre abre en hoy (no recuerda
+    la última vista: `SIN_RECORDAR` en `lib/recordarVistas.ts`) y el número también está en el menú.
+  - **Si entra y no ve nada, lo dice** (`avisoDeCuenta`): «tu correo no está en Equipo» o «todavía no hay llamadas a tu
+    nombre: en Calendly tenés que figurar como …». Sólo cuando ya cargaron los datos y hay sesión.
+  - La celda **Closer** del CRM no se le ofrece al closer: la base le rechaza reasignar (la llamada deja de ser suya).
+- **Equipo → Accesos: ¿van a ver sus llamadas?** (`lib/cuenta-closer.ts: evaluarClosers`,
+  `components/closers/EstadoDeClosers.tsx`). Un closer ve lo suyo por su **correo en Equipo** y por su **nombre en
+  Calendly** (las dos primeras palabras, sin tildes: la misma `miembroDeCloser` del CRM, el cierre del día y la base).
+  Closer por closer se ve si tiene correo, acceso y llamadas en Calendly, y la solapa lleva el número de los que **no
+  van a ver nada**. Lo que se arregla con un clic: **poner su correo** (hay un acceso de closer con su nombre, o se
+  escribe), **darle acceso** (abre «Dar acceso» ya cargado) y **pasarle las llamadas** que Calendly trae con otro
+  nombre («V. Abadia» → «Valentin Abadia»; las que vengan se arreglan cambiando el nombre en Calendly, que lo hace
+  quien lo maneja). También muestra los accesos de closer cuyo correo no está en Equipo y los anfitriones sueltos.
+  Una prueba (`pruebas/cuenta-closer.test.ts`) lo verifica con los closers del ejemplo y con casos armados.
+- **Pasar llamadas de un closer a otro** (`lib/pasar-llamadas.ts`, `components/closers/PasarLlamadas.tsx`): «Pasar a
+  otro closer» en el detalle de la Agenda y en cada llamada de la ficha, **«Pasar llamadas»** en la Agenda y en la barra del
+  CRM para varias (las que se ven con sus filtros; se elige de quién son y cuáles, y de entrada, las que todavía no
+  pasaron) y la celda Closer del CRM, que ahora hace lo mismo. Sólo dueños y director (el closer no lo ve: la base se lo rechaza). Cada closer dice si le falta el correo y
+  no va a ver lo que se le pase. Queda en la actividad y el aviso trae «Deshacer».
+  - **Calendly no lo pisa**: la llamada lleva `extra.pasada` (quién la atiende, qué dice Calendly, quién la pasó y
+    cuándo; `lib/pasada-closer.ts`). Cuando el invitado reingresa —una cancelación o un no-show por el webhook, el
+    cron, o una **reprogramación** (agenda nueva que hereda la marca de la que reemplaza)— `ingresarInvitado`
+    (`lib/calendly-sync.ts`) deja el anfitrión elegido y sólo anota lo que dice Calendly. Pasarla de vuelta a quien
+    figura en Calendly saca la marca.
+  - **El nuevo la ve y el viejo deja de verla** porque la base decide por el anfitrión de la llamada. Queda escrito con
+    el nombre con el que Calendly ya trae a ese closer (el más usado), así «Mariano» y «Mariano Arias» no son dos
+    closers en los filtros. Si el responsable del lead era quien la atendía, **la oportunidad se va con la llamada**.
+  - **Quién comisiona la venta: el que atendió la llamada.** Una venta que se carga desde la llamada sale con el closer
+    de su anfitrión (ya era así), o sea el nuevo; una venta que ya estaba cargada se queda con quien la atendió, y el
+    diálogo lo avisa antes de pasar.
+- **Descargar el anuncio** (`app/api/meta/descargar`, `lib/meta-descarga.ts`, `components/marketing/DescargarMedio.tsx`):
+  cada video o imagen del detalle del anuncio lleva su botón **Descargar** (o «Descargar portada», si Meta sólo dio la
+  portada del video). Los links de Meta son de otro origen y vencen, así que el archivo pasa por el servidor: le
+  pide a Meta el anuncio de nuevo, baja el archivo de sus servidores (sólo de ellos, también al seguir redirecciones) y
+  se lo pasa al navegador sin cargarlo entero en memoria; lo ve quien ve Marketing, Webinars o Finanzas. Si Meta no lo
+  entrega (link vencido, token sin permiso, archivo enorme) sale un mensaje que dice qué pasó y qué hacer, no un archivo
+  roto. **Sin un anuncio real no se pudo confirmar con Meta**: está probado con un Meta de mentira
+  (`pruebas/meta-descarga*.test.ts`).
+
+## Fathom: que lleguen las llamadas de los closers (F2-04, reunión del 02/10)
+
+Yari ve sus llamadas y faltan las de los closers. Hay tres causas probables: **(a)** Fathom no se une a algunas
+reuniones de Zoom («tipo de reunión no soportado»: no hay grabación que traer; lo arregla Manu), **(b)** visibilidad
+(las llamadas de cada closer no están compartidas con el equipo de ventas, o la cuenta dueña de la clave no ve lo
+compartido) y **(c)** que la app no pidiera las «Team Calls» del equipo de ventas. La regla de Yari sigue igual: sólo se
+guardan las grabaciones atadas a una llamada de Calendly.
+
+- **«Traer lo anterior» pide también las llamadas de equipo** (`lib/fathom-equipos.ts`, `api/fathom` acción
+  `importar`): primero pasa por todo lo que la clave ve (como antes) y después, una vez por cada equipo de ventas de
+  Fathom, por `GET /meetings?teams[]=<equipo>` (las Team Calls). Los equipos salen de `GET /teams`: los que se llaman
+  «Sales», «Ventas», «Closers» o «Comercial»; si se llaman distinto, `FATHOM_EQUIPOS` en Vercel (opcional, separados por
+  coma) manda. Si Fathom no deja leer los equipos (un plan sin equipos) sigue sin ellos. El cursor que va y viene con la
+  pantalla es opaco y recuerda en qué equipo va; la pantalla cuenta por grabación (lo de un equipo repite lo que ya trajo
+  la pasada general) y dice cuántas son **nuevas**.
+- **El cierre del día («Buscar en Fathom») ya no se corta a las 4 páginas** (ahora 30) y, si por el mail del closer no
+  encuentra nada (grabó con otra cuenta de Fathom), mira entre las llamadas de los equipos de ventas y se queda con las
+  que grabó alguien que se llama como él (`grabadaPor`).
+- **«Diagnosticar»** (Ajustes → Fathom, sólo dueños; `api/fathom` acción `diagnosticar`, `diagnosticarFathom` en
+  `lib/fathom-servidor.ts`, lógica pura en `lib/fathom-diagnostico.ts`, pantalla `components/ajustes/FathomDiagnostico.tsx`):
+  corre en el servidor con la clave que ya está en Vercel y muestra, sin exponerla ni mostrar títulos ni contenido de
+  ninguna reunión: cuántas reuniones devuelve la API sin filtrar y por cada equipo de ventas (y cuántas aparecen **sólo**
+  al pedir por equipo), de qué equipos y quién grabó cada una, el tipo de reunión que informa Fathom (con gente de afuera
+  o sólo del equipo; la API no dice si es Zoom o Meet), cuántas están atadas a una agenda de Calendly (nuevas o ya
+  guardadas) y cuántas no (sin agenda con invitados de afuera, o personales/internas), cuántas llamadas de Calendly tiene
+  cada closer y cuántas con grabación, por plataforma (Zoom, Meet… según el enlace de Calendly) y si el closer figura en
+  el equipo de Fathom. Con eso arma un **veredicto en castellano**: (a) si las llamadas de Zoom no tienen grabación y las
+  de otras plataformas sí; (b) si los closers tienen llamadas y la clave no ve ninguna reunión suya; (c) si aparecen
+  grabaciones de closers sólo al pedir por equipo; y una cuarta, **(d) llegan pero no se atan** (el invitado entró con otro
+  mail), que se arregla atando a mano en el cierre del día. También avisa si el webhook quedó sin alcance de equipo
+  (`paraElEquipo` en falso: Desconectar y Conectar), si falta el mail de un closer en Equipo o si la clave no es aceptada.
+  Mira desde el día antes de la primera llamada de Calendly, hasta 45 días atrás; sólo lee, no guarda nada.
+- **Variables de entorno:** `FATHOM_API_KEY` (ya está), `FATHOM_EQUIPOS` (opcional, para el nombre del equipo de ventas
+  si no se llama Sales/Ventas/Closers). **SQL:** ninguno. Pruebas: `pruebas/fathom-diagnostico.test.ts` (respuestas simuladas
+  de la API de Fathom: cada veredicto, las cuentas, las pasadas por equipo).
+- **Lo que no está hecho:** guardar «sin atar» las llamadas del equipo de ventas que no se pudieron atar (la checklist lo
+  proponía; se mantuvo la regla de descartarlas hasta que lo decidan, y el diagnóstico cuenta cuántas serían). Y no se
+  tocó la configuración de Fathom con Zoom (es de Manu).
+
+## Customer Success: seguimiento de alumnos y testimonios (lote G, reunión del 02/10)
+
+Manu pidió llevar en la app lo que Customer Success tiene en planillas y en Airtable: «no sería una ficha por alumno
+sino una lista general, un checklist: cuáles faltan contactar, cuáles no contestaron, a quién hablar hoy». Vive
+dentro de **Alumnos**, en tres solapas nuevas (`?seccion=hoy|seguimiento|testimonios`) y con dos accesos directos en
+el menú («A contactar hoy», con la cuenta de hoy, y «Seguimiento»). Reportes y Pipeline de servicio **no se tocan**
+(D12): son del área Alumnos y siguen en el menú hasta hablarlo con Manu y Lili.
+
+- **A contactar hoy**: los alumnos activos a los que ya les toca el contacto, lo más vencido arriba (a igual atraso,
+  primero el que lleva más intentos sin respuesta). Dos gestos de un clic: **Lo contacté** (el último contacto pasa a
+  hoy y el próximo toca a su cadencia) y **No contestó** (cuenta un intento y se vuelve a probar a los 3 días). Cada
+  gesto avisa y ofrece **Deshacer**. Con 3 intentos seguidos sin respuesta aparece «Dejó de contestar» (se sugiere,
+  no se marca solo).
+- **Seguimiento**: la lista general con país, años de experiencia y tecnologías (salen del contacto: del formulario de
+  Calendly), cadencia **cada 7, 15 o 20 días** elegible por alumno, último y próximo contacto, «dejó de contestar»,
+  **CV corregido** y **LinkedIn corregido** (sí/no, con un switch) y el estado del testimonio. Filtros por situación
+  (vencidos, hoy, al día, dejaron de contestar), CV, LinkedIn, cadencia, país, testimonio y búsqueda; todo viaja en
+  el link con «Copiar link» (`?sit=&cv=&li=&cad=&pais=&tes=&sq=&orden-seg=&pag-seg=`, `lib/useParamsURL.ts`).
+- **Testimonios**: modelo nuevo por alumno (puede tener más de uno): estado **pedido / grabado / publicado**, link y
+  fecha. Se carga desde la solapa o con «Pedir» en la fila del seguimiento.
+- **La cuenta** (`src/lib/seguimiento.ts`, pura y con pruebas en `pruebas/seguimiento.test.ts`): el próximo contacto
+  es *último contacto (o el día de ingreso, si nunca se lo contactó) + cadencia*; hoy o antes es «a contactar»; los
+  pausados, egresados, dados de baja y los que «dejaron de contestar» no entran en la lista de hoy. Los días son del
+  día del negocio (Argentina), sin hora. Todo número lleva su ⓘ «cómo se calcula».
+- **Configurable** (Lili todavía no contó cómo lo lleva hoy): las cadencias que se pueden elegir, la de arranque
+  (15), los días de reintento (3) y los intentos hasta sugerir «dejó de contestar» (3) se ajustan en Alumnos →
+  Seguimiento → **Ajustar** (lo ven quienes editan Ajustes) y viven en `ajustes.seguimiento`. Cuando conteste, se
+  corrigen ahí o en `CONFIG_POR_DEFECTO`.
+- **Datos**: `seguimiento_alumnos` (una fila por alumno, id `seg_<alumnoId>`; en tabla aparte para que un cambio de
+  etapa del pipeline, que guarda la fila entera del alumno, no la pise) y `testimonios`. Cada gesto queda anotado en
+  la actividad del alumno con quién lo hizo.
+- **Tipo de cuenta «Customer Success»** (F2-06): ve **Alumnos** (edita) y **Clientes** (sólo mira), y nada más; entra
+  directo a «A contactar hoy». Se crea con un clic en Equipo → Tipos de cuenta → «Crear “Customer Success”» (o lo
+  siembra el SQL). **Clientes pasó a ser un permiso propio** (`AREAS`, `/clientes` → área `clientes`), pero
+  `nivelDeAreas()` hace que quien ya ve o edita Ventas siga viendo Clientes igual: ningún tipo existente cambia. El
+  de Manu (D13) es «Todo menos honorarios», que ya existe.
+- **SQL a correr**: `supabase/customer-success.sql` (idempotente; requiere `tipos-cuenta.sql`). Crea las dos
+  tablas con sus políticas, `ajustes.seguimiento`, ajusta `areas_que_leen()` y `areas_que_editan()` **sobre su
+  definición vigente** (no las pisa con una copia, así se puede correr antes o después de lo de otros lotes) y
+  siembra el tipo. Sin correrlo la app anda igual, y el seguimiento queda en el navegador de quien lo carga.
+  `pruebas/permisos-clientes.test.ts` comprueba que la app (`LEEN`/`EDITAN`) y la base digan lo mismo.
+- **Falta** (cuando llegue lo de Manu y Lili): importar lo que hoy tienen en Airtable (Booking calls, Results y
+  Testimonios), sumar las columnas que pidan que no estén acá, y decidir con Lili si usan Reportes y el Pipeline de
+  servicio (D12).
+
+## Lote E de la reunión del 02/10: pasarelas y gastos fijos
+
+Tres pedidos de la reunión (F1-06, F1-05 y F1-11). SQL a correr **antes o después** de publicar (la app anda igual
+sin él): `supabase/gastos-recurrentes.sql`. Hotmart y Mercury no necesitan SQL.
+
+**Hotmart: la comisión del retiro se carga a mano** (`src/lib/traspasos.ts`, `components/finanzas/PasesEntreCuentas.tsx`).
+Hotmart cobra por mandar la plata a Mercury (en el banco entran 1.000 cuando en Hotmart había 1.025). Cada llegada de
+Hotmart que detectó la sincronización queda en la Caja → «Movimientos entre cuentas» con el estado **«Falta la
+comisión»**, con filtro, contador y un aviso arriba de la lista (y un número rojo en «Caja» del menú), hasta que alguien
+aprieta **«Cargar la comisión»**, mira en Hotmart cuánto salió y lo escribe: la diferencia con lo que llegó queda
+como gasto «Comisión de retiro Hotmart» (categoría «Comisiones bancarias»). Si no cobró nada, se dice igual (salió =
+llegó) y no se vuelve a pedir. **Nada la carga solo ni la atribuye al faltante del arqueo** (decisión D9). El pase
+cargado resta de Hotmart lo que salió y suma a Mercury lo que llegó, así que el total baja exactamente la comisión
+(`pruebas/hotmart-retiro.test.ts`). Cargar «salió» marca la salida como confirmada a mano (`salidaRef: "a-mano"`),
+sin columna nueva. Stripe y Whop (no cobran el envío): si salió ≠ llegó, el pase queda en **«Salió ≠ llegó»** hasta
+corregir el monto o cargar la diferencia como gasto. Las cuentas que cobran / no cobran son `COBRAN_RETIRO` y
+`SIN_COSTO_DE_ENVIO` en `traspasos.ts`. *Sin hacer:* investigar si la API de Hotmart da los retiros o el detalle de
+cargos (no se pudo probar sin las claves), las ventas en pesos mexicanos (hoy todo lo que no es ARS se toma como USD)
+y el costo por factura de Stripe; espera lo que elabore Angelo.
+
+**Mercury: reglas de lo interno, pendientes y fechas** (`src/lib/mercury.ts`, usado por `pasarelas-api.ts`).
+Cada movimiento del banco es una sola cosa: *anulado* (failed, cancelled, reversed, blocked), *interno* (pago de la
+tarjeta de crédito, subcuentas, Treasury, entre cuentas del mismo Mercury: ni ingreso ni gasto ni pase), *pase*
+(Stripe, Hotmart… del otro lado), *en proceso* (pending), *cobro* o *gasto* (no se trae: F4-05). Un **pending no
+cuenta** hasta asentarse y entra con la fecha de asentado (`postedAt`); si ya había entrado cuando estaba pending y sigue
+sin conciliar, **pasa a la fecha de asentado** (`parcheDeCobro`, aunque cambie de mes); uno **anulado** que ya estaba
+en la bandeja sin conciliar se **descarta solo** con una nota (nunca se borra ni se toca uno conciliado). Las
+cuentas de tarjeta de crédito se saltean enteras. La lista de reglas es de Angelo: lo que falte se suma con la variable
+de entorno `MERCURY_REGLAS_INTERNAS` (textos separados por coma que, si aparecen en la contraparte o la descripción,
+hacen que sea interno), sin tocar el código. «Sincronizar» (Conciliación) avisa cuántos pending siguen esperando y
+cuántos cobros anulados se descartaron. Las pruebas están en `pruebas/mercury-reglas.test.ts`. *Supuestos sin
+confirmar con datos reales:* los nombres de `kind` de la tarjeta (se busca «credit card» en el tipo y en el texto) y el
+texto de «Mercury Credit autopay»; si un movimiento interno se cuela, se agrega a `MERCURY_REGLAS_INTERNAS`.
+
+**Gastos fijos con aprobación** (`src/lib/gastos-recurrentes.ts`, `components/finanzas/GastosFijos.tsx`, pestaña
+**Finanzas → detalle → «Gastos fijos»**, `?seccion=fijos`). «Fathom pagamos más o menos lo mismo: ¿este mes fue 140?»
+Cada gasto fijo es una **plantilla** (qué es, categoría, a quién, monto habitual, día del mes 1 a 28 y de qué cuenta
+sale; tabla `gastos_recurrentes`). Desde el día en que se paga, el mes aparece **«por aprobar»** con el monto del mes
+anterior (el último gasto con ese concepto, o lo habitual si no hay): **Aprobar** (carga el gasto como «Fijo», con id
+fijo por plantilla y mes, así que no se duplica), **corregir el monto** en el mismo casillero y aprobar (ese monto pasa a
+ser el del mes que viene) o **Este mes no** (saltea ese mes, con «Deshacer»). **Nada se carga sin aprobación.** Si
+alguien ya cargó a mano el gasto de ese mes (mismo concepto), no se vuelve a proponer; lo que quedó sin aprobar se sigue
+mostrando hasta dos meses atrás. «Armar con los que ya cargué» crea una plantilla por cada gasto «Fijo» de los últimos
+seis meses. El menú suma los gastos fijos por aprobar al número rojo de «Finanzas» (los que ya les tocaba pagar).
+Pruebas: `pruebas/gastos-recurrentes.test.ts` (propuesta con el mes anterior, aprobar suma exactamente ese monto, saltear,
+no duplicar con lo manual, armar desde los gastos). *Falta:* cargar las plantillas con la lista de software del Excel de
+Angelo (se arman con «Armar con los que ya cargué» apenas estén los gastos), y decir a qué mes corresponde cuando
+entre el gasto con dos fechas (lote B): las plantillas guardan `recurrenteMes` en el `extra` del gasto.
+
+## El informe del webinar y Meta «registro calificado» (reunión del 02/10, lote F, F3-05 y F3-07)
+
+### Informe del webinar: un Excel de tres hojas (F3-05)
+
+Agus arma a mano, una o dos semanas después de cada webinar, el cruce de agendas, anuncios y ventas. Yari: «generale
+un Excel con tres hojas… en lugar de descargar tres Excel, uno solo». Ahora hay un botón **«Descargar resumen»** en la
+ficha de cada webinar (arriba, junto al estado) y un ícono de descarga en la fila de la **planilla** (aparece al pasar
+por encima). Baja `Resumen webinar dd-mm-aaaa Título.xlsx` con:
+
+1. **Personas.** Arriba, el resumen del webinar con **cómo se calcula cada número** (plata, embudo y rendimiento por
+   vía de agenda: los mismos de la ficha, `metricasDeWebinar` y `rendimientoPorVia`). Abajo, una fila por persona
+   atada al webinar: registro (landing o formulario de Meta, con fecha), anuncio y campaña, lo que contestó (puede
+   invertir, inglés, formación), si califica, si agendó, closer, estado de la llamada, si compró, facturado y cobrado.
+2. **Agendas.** Una fila por agenda del lanzamiento (el webinar, su clase cero y su Q&A): vía y link, vivo o después,
+   closer, estados, objeción, ¿oferta?, venta (con facturado y cobrado), anuncio, ángulo, campaña, UTMs y notas.
+3. **Anuncios.** Por nombre de anuncio: lo que gastó Meta en las campañas «[WEBINAR dd/mm]» del webinar (gasto,
+   impresiones, clicks, leads, costo por lead) cruzado con lo nuestro (registros, agendas, calificadas, ventas,
+   facturado, cobrado, costo por agenda y por venta, ROAS on CC y las objeciones más frecuentes). El nombre de Meta
+   («ANGULO UNO.mp4») y el de la UTM («angulo-uno») se unen por su versión normalizada. Lo que no vino de un anuncio
+   va a «(Sin anuncio identificado)».
+
+- **Estructura fácil de ajustar** (Agus todavía no pasó el ejemplo de su informe): cada hoja es una lista de columnas
+  (`COLUMNAS_PERSONAS`, `COLUMNAS_AGENDAS`, `COLUMNAS_ANUNCIOS` en `src/lib/informe-webinar.ts`: título, ancho,
+  formato y de dónde sale el valor). Agregar o sacar una columna es tocar una línea; el dibujo (`src/lib/xlsxTabla.ts`)
+  no cambia. Los bloques del resumen están en `informeDelWebinar`.
+- **Qué se tocó de lo existente**: `src/lib/webinar.ts` expone la regla de las campañas del webinar
+  (`repartirInsights`, `insightsDelWebinar`) y la planilla sigue sacando de ahí sus números (mismo resultado, probado).
+  El acceso a los registros de la landing y de Meta está en una sola función (`registroDe`): si pasan a una tabla
+  propia (F3-01), sólo cambia ésa.
+- Archivos: `src/lib/informe-webinar.ts`, `src/lib/xlsxTabla.ts`, `src/components/webinars/BotonInforme.tsx`,
+  `pruebas/informe-webinar.test.ts`. No hay SQL ni variables nuevas.
+
+### Meta: el evento «registro calificado» (F3-07)
+
+Cuando alguien se registra desde la landing (`/api/webinar/registro`), a Meta le llegan desde el servidor **dos eventos**
+en el mismo pedido: **Lead** (se registró) y **RegistroCalificado** (se registró y califica), con IP, user agent,
+cookies `_fbp`/`_fbc`, UTMs, país y el resultado de cada criterio. Califica con las mismas tres reglas que la agenda
+calificada (`lib/calificacion.ts`): puede invertir 1000 USD o más, inglés conversacional o mejor y carrera, leídas de
+las respuestas del registro (se reconocen por el texto de la pregunta o por el nombre del campo: `inversion`,
+`nivel_ingles`, `formacion`…). **Sin las tres respuestas no califica y el evento no sale** (sin dato no alcanza).
+Lo que escribió en crudo **no** viaja a Meta: «cuánto puede invertir» es dato financiero; se manda el «sí / no» de
+cada criterio.
+
+- **Datos hasheados como pide Meta** (`src/lib/capi-datos.ts`): mail, teléfono, nombre, apellido, país y el id propio
+  salen con SHA-256 de lo **normalizado** (mail en minúsculas; teléfono sólo dígitos con código de país, agregándolo
+  según el país si vino nacional; nombre y apellido en minúsculas sin tildes; país ISO en minúsculas). IP, user agent
+  y cookies, sin hashear.
+- **Sin duplicar**: cada evento lleva un `event_id` estable (`reg_…` el Lead —o el id del píxel de la landing si lo
+  manda en `event_id`— y `rcal_…` el calificado, ambos derivados del mail y el webinar). Además queda constancia en
+  `capi_enviados` y no se manda dos veces (`enviarEventosUnaVez`), aunque pasen más de las 48 horas en que Meta junta
+  repetidos. Sin esa tabla manda igual y confía en el `event_id`. En modo prueba (`META_CAPI_TEST`) no deja constancia.
+- **Sin las variables no rompe nada**: no manda y ya. **Ajustes → Integraciones → «Conversions API de Meta»** dice si
+  está lista, **qué falta cargar en Vercel y para qué**, si está en modo prueba, desde qué dominios se aceptan los
+  registros y cuántos eventos se mandaron de cada tipo. Nunca muestra una clave (`/api/meta/capi`, sólo lee si
+  están). La lógica de «qué falta» es `src/lib/capi-estado.ts`.
+- Archivos: `src/lib/capi-datos.ts`, `capi-registro.ts`, `capi-estado.ts`, `meta-capi.ts`,
+  `src/app/api/meta/capi/route.ts`, `src/components/ajustes/ConversionsApi.tsx`, `pruebas/capi-meta.test.ts`. En
+  `app/api/webinar/registro` sólo cambió el bloque que arma y manda los eventos (una llamada).
+- **SQL a correr**: ninguno nuevo. Usa `supabase/capi-enviados.sql`, que ya existe: si en producción no se corrió,
+  correrlo (Ajustes avisa «falta correr…»).
+- **Variables de entorno (Vercel → Production)**: `META_PIXEL_ID` y `META_CAPI_TOKEN` (obligatorias; el token se
+  genera en Events Manager → el píxel → Configuración → Generar token de acceso; sin él se usa `META_SYSTEM_TOKEN`,
+  que puede no tener el permiso); `REGISTRO_ORIGENES` (recomendada: los dominios de la landing, separados por coma);
+  opcionales: `META_CAPI_TEST` (código de «Probar eventos»; sacarlo al terminar), `META_CAPI_URL` (la página de la
+  landing, para los eventos que no pasaron en una página, como las agendas) y `META_CAPI_EVENTO_CALIFICADO` (el nombre
+  del evento en Meta; por defecto `RegistroCalificado`).
+- **Para optimizar en Meta** hay que crear la conversión personalizada sobre el evento `RegistroCalificado` y
+  avisarle a Agus. El píxel de la landing, para no contar doble el Lead, tiene que disparar `Lead` con el mismo
+  `event_id` que manda el formulario (y no `CompleteRegistration`, que es otro nombre y no se junta con el del servidor).
+
+## Los registros de la landing: tabla propia, Formularios y cruce con la agenda (lote F, primera parte)
+
+De la reunión del 02/10 (F3-01, F3-02, F3-03 y F3-06) y la decisión D15: los formularios del webinar dejan de vivir en
+el Google Sheet (una hoja por webinar) y dentro de `contactos.extra`, y pasan a **una tabla propia**.
+
+- **SQL a correr una vez: `supabase/registros-webinar.sql`** (idempotente). Crea `registros_webinar` (una fila por
+  persona y por webinar: fecha del webinar, mail, teléfono y teléfono normalizado, país, UTMs, id del anuncio,
+  respuestas, `fbp`/`fbc`/IP/user agent para Meta, las tres marcas del equipo y el cruce con la agenda), sus
+  políticas (la ve quien ve Webinars, la cambia quien edita Webinars, nunca el closer que sólo ve lo suyo) y la vista
+  `registros_webinar_resumen` (una fila por webinar) que arma el selector. **Hasta que se corra, todo sigue andando
+  como antes**: la landing guarda el pre-lead en `contactos` y la pantalla avisa que falta crear la tabla.
+- **F3-01 · La landing** (`api/webinar/registro/route.ts`): sigue haciendo exactamente lo de antes (pre-lead en
+  `contactos`, «Formularios» del webinar, evento Lead a Meta, misma respuesta) y además guarda la fila en
+  `registros_webinar`: **fecha del webinar** (la del webinar al que quedó atado), UTMs y **el anuncio** (el id de
+  Meta de `utm_content`, o el anuncio de ese nombre). Si se anota dos veces al mismo webinar, es la misma fila: se
+  completan los huecos y no se pisan las marcas del equipo. Si la tabla falla o no existe, no tumba el registro. Se
+  agregó `registroId` a la respuesta. El id de una fila (`idRegistro`, `lib/registros-webinar.ts`) es un hash del mail
+  y la fecha del webinar, igual en el servidor y en el navegador: lo que entra por la landing y lo que entra por el
+  Excel se reconocen entre sí.
+- **F3-03 · Pantalla Formularios** (`/formularios`, grupo Crecimiento; `components/formularios/VistaFormularios.tsx`):
+  la hoja del Excel con las tres marcas, **Unido / No unido / Contactado** (un clic, con quién y cuándo, y se
+  desmarcan con otro clic; el campo se pinta verde o ámbar con el dato adentro), el teléfono con **copiar** y **abrir
+  WhatsApp** (`lib/telefonos.ts`: el 9 de los celulares argentinos, sin 0 ni 15), filtros por webinar y por estado,
+  búsqueda (también en las respuestas) y columnas configurables. **Todo va en el link** (`?webinar`, `?marca`, `?q`,
+  `?orden`, `?pag`, `?seccion`, columnas). Cuatro tarjetas con su ⓘ («Cómo se calcula»): registrados, unidos, no
+  unidos y sin revisar. Al abrir una fila se ve todo (respuestas, UTMs, anuncio, origen del dato) y se deja una nota.
+  A diferencia del resto de las tablas, **ésta no se baja entera al abrir la app**: se pide de a un webinar
+  (`lib/registros-nube.ts`), porque con la base histórica pueden ser decenas de miles de filas. Sin la nube (la demo)
+  vive en el navegador.
+- **F3-02 · Importar del Excel** (botón «Importar del Excel», `ImportarFormularios.tsx`): se sube el .xlsx entero de
+  Google Sheets (o una hoja en .csv). Cada hoja es un webinar: la **fecha sale del nombre de la hoja** (acepta
+  «Webinar 23/09», «23-09-2026», «14 de octubre», «20261014») y se puede corregir; el **mapeo de columnas** se
+  adivina por los encabezados (fecha, nombre, mail, país, código, teléfono, UTMs, id del anuncio, unido, no unido,
+  contactado…) y se edita a mano; lo que no se mapea va a las respuestas. **Resumen antes de confirmar**, por hoja:
+  filas del Excel, nuevos, ya estaban, sin mail, repetidos y cuántos quedan en la app. No duplica (mail + fecha),
+  completa huecos sin pisar las marcas del equipo, no borra nada y **no manda nada a Meta**. Las tres marcas que ya
+  vengan en el Excel se traen. Reimportar el mismo archivo da «nuevos: 0».
+- **F3-06 · Cruce formulario ↔ agenda** (pestaña «Cruce con la agenda»; `lib/cruce-formularios.ts`, `lib/telefonos.ts`):
+  cascada **mail → teléfono → nombre**. Firmes: mismo mail; mismo teléfono (con o sin +54, 9, 0 y 15, en cualquier
+  formato); o los últimos 8 dígitos del teléfono más el mismo nombre. Dudosas: sólo los últimos 8 dígitos (sin código
+  de área puede ser de otra zona) o sólo el nombre (dos o más palabras en común). Las firmes se unen con un clic
+  («Unir las N»); las dudosas se muestran lado a lado con **Unir** y **No es** (lo descartado no se vuelve a
+  proponer). Al unir, el registro queda atado a la persona de la agenda (`contactoId`, `cruce`) y ésta **toma lo que
+  le faltaba** del formulario: teléfono, país, anuncio, webinar y los UTMs de la pauta (si los de la agenda no son de
+  pauta quedan guardados en `contactos.extra.utmAgenda`), así sus ventas se atribuyen al anuncio. Acción nueva del
+  store: `acciones.heredarDeFormulario`.
+- **Pruebas**: `pruebas/telefonos.test.ts`, `pruebas/registros-webinar.test.ts` y `pruebas/cruce-formularios.test.ts`
+  (ocho formas del mismo celular, fechas de las hojas, mapeo de columnas, resumen de la importación y que reimportar
+  no duplica, filtros, y la cascada del cruce con homónimos y descartes).
+- **Todavía no está** (ver el informe del lote): la base de ~25.000 contactos de los grupos de WhatsApp (el importador
+  de «sólo contactos» y la decisión de dónde viven), fusionar dos contactos con mails distintos, cruzar al ingresar
+  desde Calendly y Meta, unificar el conteo de «Formularios», y el respaldo descargable antes de importar.
+
+## Lo que pidieron el 02/10 (lote C: el cierre del día)
+
+- **Strikes e interruptor del descuento** (F2-02; `lib/cierre-del-dia.ts`, Ajustes → CRM → «Cierre del día»). Una llamada
+  de venta pide cierre si ya empezó y no se canceló; sin estado cargado tampoco si Calendly la dejó como que no vino ni si
+  pidió otra fecha («Reagendar»). **Un strike es un día en que alguna llamada de un closer se cargó otro día que el suyo o
+  sigue sin cargar** (hora de Argentina). Se cuentan desde la fecha de arranque que se elige en Ajustes (la del CRM para los
+  closers: sin fecha todavía no cuentan) y se le muestran al closer en «Tu día», con el ícono de «cómo se calcula» y los días,
+  **aunque el interruptor esté apagado**.
+  - El interruptor arranca **apagado**. Apagado no cambia ningún número en ningún lado: `pruebas/cierre-del-dia.test.ts` compara
+    Finanzas, la liquidación y el resultado del webinar con y sin la configuración. Prendido, **no se comisiona lo de un día
+    cuyo cierre no se cargó el mismo día**: la comisión de closer de las ventas que salieron de las llamadas de ese día no se paga.
+    La del director, el setter y el referidor no se toca, ni lo que cobra quien heredó las cuotas de ese closer. Rige para las
+    llamadas desde el día en que se prendió (se puede cambiar): lo que ya se liquidó no se mueve. Antes de prenderlo, Ajustes dice
+    cuánto habría cambiado este mes.
+  - Los tres lugares que repiten la comisión por cobro leen la misma regla (`ventasSinCierre` y `descuentaPorCierre`, como
+    `cobraEnFecha` en `lib/finanzas.ts`): `comisionesDelMes` (Finanzas, el Dashboard y la caja; cada fila trae `descuentoCierre` y
+    Finanzas → Comisiones lo marca), `metricasDeWebinar` y la liquidación. En la liquidación la comisión del closer sale **entera**
+    y un renglón aparte, **«Descuento por cierre del día»** (negativo, `tipo: "descuento"`), resta lo que no se paga, con su
+    «Ver cómo se calculó»: la cuenta, los cobros de esos días y qué días fueron. La suma da lo mismo que Finanzas (200 escenarios
+    al azar lo comprueban) y, como la comisión de un closer, ya está en Finanzas: al cerrar no se carga de nuevo. No lleva
+    renglón la comisión corregida a mano ni la medida a mano.
+  - Sólo entran las ventas que **saben de qué llamada salieron** (`ventas.sesionId`): las de antes no se pueden probar y no entran.
+  - Si la llamada no tiene estado pero sí su venta (la cargó Administración, que no edita las llamadas), cuenta desde cuándo se
+    cargó la venta.
+- **La venta atada a su llamada** (`ventas."sesionId"`): al registrar una venta se guarda de qué llamada salió: la que dice el cierre
+  del día o la tabla del CRM o, si no, la última de esa persona dentro de la ventana de siempre (-1/+60 días), una sola vez. La fila
+  del CRM ata la venta a su llamada por ese id; sin él (las de antes) sigue la ventana, que puede dar falsos «sin venta».
+- **La primera vez que se cargó cada estado** (`sesiones."estadoLlamadaEn"` y `"estadoPreCallEn"`): `store.editarLlamadas` la escribe
+  al pasar el estado de vacío a cargado, venga de donde venga (el cierre del día, la tabla, la Agenda, la ficha o una venta).
+  No se corre ni se borra: cambiar el estado, vaciarlo o borrar la opción no la tocan; sólo la saca deshacer la primera carga. Un
+  trigger de la base hace lo mismo y la completa con la hora del servidor si una pestaña con la app vieja no la manda. Los estados
+  cargados antes de esto no tienen marca: no se pueden juzgar y cuentan como a tiempo.
+- **La puerta** (`lib/eod.ts`, `Eod.tsx`): si el estado es de compra, no se pasa a la siguiente llamada ni se termina el día sin la
+  venta cargada. La única salida es **«La carga otra persona»**, que queda anotada (`sesiones."ventaPorOtro"`: quién lo avisó y
+  cuándo) y se ve en la columna Venta del CRM (también se puede filtrar). En la pantalla final, las compras sin venta se listan con
+  «Cargar la venta» y la salida. La ficha, que carga una sola llamada, no la pide. «Idealmente también conciliada» no se hizo:
+  es del control cruzado.
+- **Menos estados de llamada** (F2-05; `lib/estados.ts`, Ajustes → CRM → «Estados de llamada»): cada lista (Estado de Llamada,
+  Estado Pre-Call y Pre-Call) con lo que mueve cada estado (la Agenda, la etapa del lead, lo que pregunta el cierre del día), cuántas
+  llamadas lo tienen y un interruptor «a la vista / oculto». Todos arrancan a la vista: Santi marca cuáles usa y el resto se oculta.
+  Un estado oculto no se ofrece al cargar (`ofrecidas`), pero no se borra: las llamadas que ya lo tienen lo siguen mostrando con
+  su color y lo que pone la app sola sigue andando. Ocultar pide confirmar con lo que cambia (`revisarOcultar`) y no deja ocultar lo
+  último que el cierre del día necesita: el último estado de compra, el último de seguimiento y «Reagendar». El editor de nombres,
+  colores y orden de la grilla se abre desde ahí. Lo escriben quienes editan Ajustes: el Director comercial no, así que Santi
+  marca y lo oculta un dueño (o se le da el área Ajustes).
+- **Antes de usarlo contra Supabase** hay que correr `supabase/cierre-del-dia.sql` (idempotente: `ventas."sesionId"`, las dos marcas
+  y `ventaPorOtro` en `sesiones`, y el trigger de la marca). El interruptor, la fecha de arranque y los estados ocultos viven en
+  `ajustes.crm` (jsonb), sin SQL. Sin las columnas la app anda igual y sólo no guarda ese dato.
+- **Pruebas**: `cierre-del-dia.test.ts` (la regla, apagado = igual, prendido = los tres lugares dicen lo mismo, 200 escenarios al
+  azar), `primera-carga.test.ts` (con el store: marcas y `sesionId`), `estados-ocultos.test.ts` y `puerta-eod.test.ts`.
+
+## Lo que pidieron el 02/10 (lote D: control cruzado y cobranza)
+
+- **Control cruzado de los cobros** (`lib/control-cobros.ts`, `components/cobros/ControlCobro.tsx`): el closer carga el
+  cobro y otra persona confirma que el comprobante coincide con lo cargado. Hay **dos casilleros separados**, el del director
+  comercial y el de finanzas; con uno alcanza para que el cobro no quede pendiente. Cada casillero guarda quién lo hizo (el
+  correo de su sesión), cuándo y, si rechazó el comprobante, el motivo. Un cobro está *Sin chequear*, *Chequeado* o *Rechazado*
+  (un rechazo manda hasta que se arregla: otro comprobante, o quien rechazó lo da por bueno). Lo que ya estaba marcado con el sí/no
+  de antes (`pagos.chequeado`: la planilla de Angelo y los cobros conciliados con la pasarela) sigue chequeado —«de antes», sin quién
+  ni cuándo—; un cobro que no lo estaba queda pendiente, sin tocar sus números. Chequear o rechazar **no cambia ningún número**
+  (una prueba compara el Cash Collected antes y después). El tilde del closer al cargar ya no cuenta.
+  - **No es un tilde en la fila:** un clic en la pastilla del estado abre una ventana con el comprobante a un lado y, al otro, lo que
+    cargó el closer (cliente, mail, monto, medio, cuota y **todos los cobros de esa cuota**, por si pagó en partes). «Chequeado» se
+    confirma de nuevo y «Rechazar» pide el motivo. Quien chequea queda anotado como responsable, también en la Actividad con su
+    nombre de Equipo. Si el cobro lo cargó la misma persona que lo chequea, la ventana lo avisa (no lo frena).
+  - **Dónde se chequea:** el director comercial no ve Finanzas, así que chequea desde **Ventas → Cobros** (solapa nueva, con los filtros,
+    el período y la búsqueda de Ventas): cada cobro con su Comprobante, si está Conciliado, quién lo Cargó y el Chequeo, y los botones
+    *Sin chequear / Rechazados / Chequeados / Sin comprobante / Sin conciliar* (quien controla arranca en «Sin chequear»). También desde la
+    ficha de la venta, y la lista de Ventas suma la columna «Control de cobros». Finanzas → Detalle → Procesadores tiene las mismas
+    columnas. El casillero lo da el tipo de cuenta: el de finanzas lo llena quien edita Finanzas; el del director, quien edita Ventas
+    sin ser «sólo lo suyo». El closer no llena ninguno, pero ve el estado y puede subir otro comprobante.
+  - **Comprobante después de cargar el cobro:** desde la misma ventana se sube o se cambia (el closer arregla uno rechazado). Cambiar un
+    archivo que ya estaba vuelve los chequeos a pendiente —se miraron contra el anterior, que queda guardado—; agregar el primero no.
+    «Conciliado» es que el cobro está atado al pago de la pasarela; una cuenta sin pasarela (la Financiera, efectivo) dice «A mano».
+  - **SQL:** `supabase/control-cruzado.sql` agrega 9 columnas a `pagos` (`cargadoPor`, `chequeoDirector/Por/En/Nota` y
+    `chequeoFinanzas/Por/En/Nota`) y un trigger: el RLS no distingue columnas y el closer puede editar sus cobros, así que el trigger
+    deja los casilleros sólo a quien corresponde, sella quién y cuándo con la sesión (nadie chequea a nombre de otro), reinicia el
+    control si se reemplaza el comprobante y no deja que el tilde de quien carga cuente. Se ensaya en un Postgres de verdad, con las
+    políticas reales de `tipos-cuenta.sql` y como closer, director, administración, dueño y servidor
+    (`pruebas/sql/control-cruzado.ensayo.mjs`, a mano: necesita PGlite). Sin el SQL la app anda igual: los chequeos quedan sólo en el
+    navegador de quien los hace.
+    Al final tiene, comentada, una línea para dar por chequeados «de antes» los cobros viejos si no se quiere arrancar con toda la
+    historia pendiente. Los chequeos salen como un UPDATE de sus columnas y las columnas del control **nunca viajan** en el upsert del
+    cobro entero (`sinColumnasDelControl`): una copia vieja de la pantalla no pisa lo que otro acaba de chequear.
+- **Excel de los cobros** (`lib/excelCobros.ts`): «Descargar Excel» en Ventas → Cobros, Finanzas → Procesadores y en los ingresos de la
+  semana baja los cobros que se ven, con los filtros puestos: fecha, nombre de quien transfiere, CUIT, monto (USD y ARS), comprobante
+  (link firmado por 30 días), conciliado, quién chequeó y cuándo, quién cargó; y los totales al pie. El «Reporte para la Financiera»
+  (`lib/reporteFinanciera.ts`) sigue con su formato, sin la columna Banco (salía del CBU, que ya no se pide) y con «Pago Verificado»
+  tomado del control. La planilla exportada también.
+- **Ingresos de la semana** (`lib/ingresos-semanales.ts`, `components/finanzas/IngresosSemanales.tsx`, abajo en Finanzas): el Cash
+  Collected del rango partido en **cuenta × servicio**, por fecha de cobro, con el rango semanal elegible (flechas que mueven de a su largo
+  y calendario; de lunes a domingo por defecto; `?sdesde&shasta`). Los totales de las filas, de las columnas y el general cierran al
+  centavo con el Cash Collected del mismo rango (se suma en centavos enteros; hay una prueba con los datos de ejemplo, semana por semana).
+  Cada número abre los cobros que lo forman, con su estado de chequeo.
+- **Clientes y Cobros, por producto y por closer** (`lib/buscar-cliente.ts`, `lib/clientes.ts`, `lib/mora-filtros.ts`): Clientes suma el
+  filtro por closer y sus tarjetas de arriba —«Les falta pagar» incluida— siguen el producto, el closer y la búsqueda: son la deuda de
+  *esas cuotas* (la de Mentoría, lo que le falta cobrar a Mariano), no la de todo lo que compró cada cliente; los botones de estado recortan
+  sólo la tabla. Finanzas → Cobros filtra las cuotas vencidas por servicio y por closer, y el aviso de arriba, los días de atraso y la
+  fila de totales siguen lo que se ve. Todos usan la misma regla que «Cargar el pago de una cuota»: closer y servicio sobre la **misma**
+  cuota (`cuotaPasa`, `opcionesSobre`), y el closer es quien comisiona la cuota (el que la heredó, si hubo). Van en el link (`?closer`,
+  `?producto`, `?servicio`). Una prueba verifica que las partes suman el todo, con los datos de ejemplo.
+- **Filas de totales**: Ventas (valor total y cobrado), Clientes, Finanzas → Cobros y → Procesadores. La del CRM no está.
+- **Pruebas**: `pruebas/control-cobros.test.ts`, `store-control.test.ts`, `excel-cobros.test.ts`, `ingresos-semanales.test.ts` y
+  `filtros-cobranza.test.ts`.

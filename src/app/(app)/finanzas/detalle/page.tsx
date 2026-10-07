@@ -16,31 +16,41 @@ import { useToast } from "@/components/ui/Toast";
 import { ListaGastos, PARAMS_GASTOS } from "@/components/finanzas/ListaGastos";
 import { FichaGasto } from "@/components/finanzas/FichaGasto";
 import { AsistenteGasto } from "@/components/finanzas/AsistenteGasto";
+import { GastosFijos } from "@/components/finanzas/GastosFijos";
+import { cuantosFaltan } from "@/lib/gastos-recurrentes";
 import { acciones, useEstado } from "@/lib/store";
-import { fechaLarga, money, tasaTexto } from "@/lib/format";
+import { fechaLarga, money, num, tasaTexto } from "@/lib/format";
 import { rangoDeFechas } from "@/lib/metricas";
 import { DateRangePicker, rangoSub } from "@/components/ui/DateRangePicker";
 import { useRangoURL } from "@/lib/useRango";
-import { CopiarLink } from "@/components/ui/Filtros";
+import { CopiarLink, Filtro } from "@/components/ui/Filtros";
+import { InfoMetrica } from "@/components/ui/InfoMetrica";
 import { useParamsURL, useTablaURL } from "@/lib/useParamsURL";
+import { filtrarVencidas, opcionesDeMora, totalDeMora } from "@/lib/mora-filtros";
 import { calcularPyL, comisionesDelMes, comisionesSetterYReferidor, cuotasVencidas, UMBRALES_ATRASO } from "@/lib/finanzas";
+import { SIN_CLOSER } from "@/lib/buscar-cliente";
 import { useAbrirFicha } from "@/components/ficha/abrir";
 import { CobrosProcesador, PARAMS_PROCESADORES } from "@/components/finanzas/CobrosProcesador";
 import { CuadroComisiones } from "@/components/finanzas/CuadroComisiones";
 import { useNivelAcceso } from "@/lib/acceso";
+import { reglaDeCierre } from "@/lib/cierre-del-dia";
 import type { Cuota, Gasto } from "@/lib/types";
 
-type Vista = "cobros" | "procesadores" | "gastos" | "comisiones";
-const VISTAS: Vista[] = ["cobros", "procesadores", "gastos", "comisiones"];
+type Vista = "cobros" | "procesadores" | "gastos" | "fijos" | "comisiones";
+const VISTAS: Vista[] = ["cobros", "procesadores", "gastos", "fijos", "comisiones"];
 
 /* Lo que se está mirando vive en la URL (lib/useParamsURL), con el período
    aparte en ?periodo:
-   - seccion: cobros (por defecto), procesadores, gastos o comisiones
-   - atraso: en Cobros, sólo las cuotas con al menos esos días (7, 15 o 20)
+   - seccion: cobros (por defecto), procesadores, gastos, fijos (los gastos fijos
+     por aprobar) o comisiones
+   - atraso: en Cobros, sólo las cuotas con al menos esos días (7, 10, 12, 15 o 20)
+   - servicio, closer: en Cobros, sólo las cuotas de ese servicio (su id) y de ese
+     closer (su id, o «sin-closer»): el aviso de arriba y los días de atraso siguen
+     lo que se ve
    La pestaña no va en ?vista, que es de la ficha de una persona: abrir una
    desde una cuota vencida la pisaba. Un link viejo con ?vista=gastos se
    sigue entendiendo. */
-const VISTA_DETALLE = { seccion: "cobros", atraso: "" };
+const VISTA_DETALLE = { seccion: "cobros", atraso: "", servicio: "", closer: "" };
 
 export default function FinanzasDetalle() {
   const e = useEstado();
@@ -52,12 +62,14 @@ export default function FinanzasDetalle() {
      así el link no arrastra un filtro que no se ve. */
   const setVista = (v: Vista) => {
     if (v === vista) return;
-    const deLaPestana = new Set<string>([...PARAMS_GASTOS, ...PARAMS_PROCESADORES, "atraso"]);
+    const deLaPestana = new Set<string>([...PARAMS_GASTOS, ...PARAMS_PROCESADORES, "atraso", "servicio", "closer"]);
     setEnURL({ seccion: v }, Object.fromEntries([...deLaPestana].map((k) => [k, null])));
   };
   /* El asistente abierto: con un gasto edita, con null carga uno nuevo. */
   const [asistente, setAsistente] = useState<{ gasto: Gasto | null } | null>(null);
   const [verId, setVerId] = useState<string | null>(null);
+  /* Los gastos fijos que ya le tocaba pagar y nadie aprobó (lib/gastos-recurrentes). */
+  const fijosPorAprobar = useMemo(() => cuantosFaltan(e, new Date().toISOString()), [e.gastos, e.gastosRecurrentes]); // eslint-disable-line react-hooks/exhaustive-deps
   const [borrar, setBorrar] = useState<Gasto | null>(null);
 
   /* El rango vive en la URL: navegar entre el resumen y el detalle lo
@@ -107,11 +119,26 @@ export default function FinanzasDetalle() {
   /* ?atraso=7 (lo manda la alarma): sólo las cuotas con al menos esos días. */
   const atraso = Number(enURL.atraso) || 0;
   const setAtraso = (n: number) => setEnURL({ atraso: n ? String(n) : null });
-  const vencidasVista = atraso ? vencidas.filter((c) => c.diasAtraso >= atraso) : vencidas;
+  /* El servicio y el closer: un filtro que apunta a algo que ya no existe se ignora. */
+  const servicioId = e.productos.some((p) => p.id === enURL.servicio) ? enURL.servicio : undefined;
+  const closerId = enURL.closer === SIN_CLOSER || e.equipo.some((m) => m.id === enURL.closer) ? enURL.closer : undefined;
+  const nombreServicio = (id?: string) => (id ? e.productos.find((p) => p.id === id)?.nombre : undefined);
+  const nombreCloser = (id?: string) => (id ? e.equipo.find((m) => m.id === id)?.nombre : undefined);
+  /* Lo que se ve: las del atraso elegido, del servicio y del closer elegidos. El aviso, los días y la tabla salen de esta lista. */
+  const vencidasVista = useMemo(() => filtrarVencidas(vencidas, { atraso, productoId: servicioId, closerId }), [vencidas, atraso, servicioId, closerId]);
+  const enAlcance = useMemo(() => filtrarVencidas(vencidas, { productoId: servicioId, closerId }), [vencidas, servicioId, closerId]);
+  const opcionesMora = useMemo(
+    () => opcionesDeMora(vencidas, { servicio: nombreServicio, closer: nombreCloser }, { atraso, productoId: servicioId, closerId }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [vencidas, e.productos, e.equipo, atraso, servicioId, closerId],
+  );
+  const hayFiltroMora = Boolean(atraso || servicioId || closerId);
+  const moraVista = totalDeMora(vencidasVista);
+  const moraTotal = totalDeMora(vencidas);
   const abrirFicha = useAbrirFicha();
   const comisiones = useMemo(() => comisionesDelMes(e, mes), [e, mes]);
   /* El orden de cada tabla va en el link (?orden): una pestaña a la vez. */
-  const tablaCobros = useTablaURL("", { clave: "dias", desc: true }, ["contacto", "cuota", "vence", "dias", "saldo"]);
+  const tablaCobros = useTablaURL("", { clave: "dias", desc: true }, ["contacto", "servicio", "cuota", "vence", "dias", "closer", "saldo"]);
   const tablaComisiones = useTablaURL("", { clave: "cobrado", desc: true }, ["closer", "servicio", "cobrado", "neto", "tasa", "comiCloser", "comiDir"]);
   const { esDueno } = useNivelAcceso();
   const setRef = useMemo(() => comisionesSetterYReferidor(e, mes), [e, mes]);
@@ -140,28 +167,69 @@ export default function FinanzasDetalle() {
         { valor: "cobros", texto: `Cobros${vencidas.length ? ` · ${vencidas.length}` : ""}` },
         { valor: "procesadores", texto: "Procesadores" },
         { valor: "gastos", texto: "Gastos" },
+        { valor: "fijos", texto: `Gastos fijos${fijosPorAprobar ? ` · ${fijosPorAprobar}` : ""}` },
         { valor: "comisiones", texto: "Comisiones" },
       ]} />
 
-      {/* ---------------- P&L ---------------- */}
+      {/* ---------------- Cobros: las cuotas vencidas ---------------- */}
       {vista === "cobros" && (
         <div className="stack-4">
           {vencidas.length > 0 && (
-            <Ayuda titulo={vencidas.length === 1 ? "Hay 1 cuota vencida sin cobrar" : `Hay ${vencidas.length} cuotas vencidas sin cobrar`} icono={<AlertTriangle size={18} />}>
-              {vencidas.length === 1 ? "Es de" : "Suman"} <strong>{M(vencidas.reduce((a, c) => a + c.saldo, 0))}</strong>.{" "}
-              {vencidas.length === 1 ? "Lleva" : "La más vieja lleva"}{" "}
-              <strong>{vencidas[0].diasAtraso} {vencidas[0].diasAtraso === 1 ? "día" : "días"}</strong> y es de {vencidas[0].contacto}.
-              Marcá el pago cuando entre y desaparece de esta lista.
+            <Ayuda
+              titulo={moraVista.cuotas === 0 ? "Ninguna cuota vencida con estos filtros"
+                : moraVista.cuotas === 1 ? "Hay 1 cuota vencida sin cobrar" : `Hay ${num(moraVista.cuotas)} cuotas vencidas sin cobrar`}
+              icono={<AlertTriangle size={18} />}
+            >
+              {moraVista.cuotas === 0 ? (
+                <>
+                  En total hay {num(moraTotal.cuotas)} {moraTotal.cuotas === 1 ? "cuota vencida" : "cuotas vencidas"} por <strong>{M(moraTotal.saldo)}</strong>.
+                  Sacá algún filtro para verlas.
+                </>
+              ) : (
+                <>
+                  {moraVista.cuotas === 1 ? "Es de" : "Suman"} <strong>{M(moraVista.saldo)}</strong>
+                  <InfoMetrica
+                    titulo="Lo que suman las cuotas vencidas"
+                    ayuda="Lo que falta cobrar de las cuotas vencidas de la tabla: las del atraso, el servicio y el closer que elegiste. Sin filtros, son todas."
+                    formula={"Suma de lo que falta de cada cuota vencida (monto − lo ya pagado)\nSólo las de ventas activas, con el vencimiento ya pasado y sin cobrar"}
+                    componentes={() => [
+                      { concepto: "Cuotas vencidas en la tabla", valor: num(moraVista.cuotas), nota: `${num(moraVista.clientes)} ${moraVista.clientes === 1 ? "cliente" : "clientes"}` },
+                      { concepto: "Lo que falta cobrar", valor: M(moraVista.saldo, 2), signo: "=" },
+                      ...(hayFiltroMora ? [{ concepto: "En total, sin filtros", valor: M(moraTotal.saldo, 2), nota: `${num(moraTotal.cuotas)} cuotas` }] : []),
+                    ]}
+                  />.{" "}
+                  {moraVista.cuotas === 1 ? "Lleva" : "La más vieja lleva"}{" "}
+                  <strong>{vencidasVista[0].diasAtraso} {vencidasVista[0].diasAtraso === 1 ? "día" : "días"}</strong> y es de {vencidasVista[0].contacto}.{" "}
+                  {hayFiltroMora && <>Es lo que estás viendo: en total hay {num(moraTotal.cuotas)} {moraTotal.cuotas === 1 ? "cuota vencida" : "cuotas vencidas"} por {M(moraTotal.saldo)}. </>}
+                  Marcá el pago cuando entre y desaparece de esta lista.
+                </>
+              )}
             </Ayuda>
           )}
 
           <div className="row-wrap">
-            <Chip activo={atraso === 0} onClick={() => setAtraso(0)} count={vencidas.length}>Todas las vencidas</Chip>
+            <Chip activo={atraso === 0} onClick={() => setAtraso(0)} count={enAlcance.length}>Todas las vencidas</Chip>
             {UMBRALES_ATRASO.map((d) => (
-              <Chip key={d} activo={atraso === d} onClick={() => setAtraso(d)} count={vencidas.filter((c) => c.diasAtraso >= d).length}>
+              <Chip key={d} activo={atraso === d} onClick={() => setAtraso(d)} count={enAlcance.filter((c) => c.diasAtraso >= d).length}>
                 {d} días o más
               </Chip>
             ))}
+            <span className="spacer" />
+            {opcionesMora.servicios.length > 0 && (
+              <Filtro
+                etiqueta="Filtrar por servicio" todos="Todos los servicios" valor={servicioId ?? ""}
+                opciones={opcionesMora.servicios.map((o) => ({ valor: o.id, texto: o.nombre, cuenta: o.personas }))}
+                onCambiar={(v) => setEnURL({ servicio: v || null })}
+              />
+            )}
+            {opcionesMora.closers.length > 0 && (
+              <Filtro
+                etiqueta="Filtrar por closer" todos="Todos los closers" valor={closerId ?? ""}
+                opciones={opcionesMora.closers.map((o) => ({ valor: o.id, texto: o.nombre, cuenta: o.personas }))}
+                onCambiar={(v) => setEnURL({ closer: v || null })}
+              />
+            )}
+            {hayFiltroMora && <Button sm variante="ghost" onClick={() => setEnURL({ atraso: null, servicio: null, closer: null })}>Limpiar filtros</Button>}
           </div>
 
           <Card style={{ padding: 0 }}>
@@ -172,7 +240,11 @@ export default function FinanzasDetalle() {
               etiquetaFila={(c) => `Abrir la ficha de ${c.contacto}`}
               orden={tablaCobros.orden} onOrden={tablaCobros.onOrden}
               columnas={[
-                { clave: "contacto", titulo: "Cliente", tipo: "primary", orden: (c) => c.contacto, celda: (c) => c.contacto },
+                {
+                  clave: "contacto", titulo: "Cliente", tipo: "primary", orden: (c) => c.contacto, celda: (c) => c.contacto,
+                  pie: <strong>Total · {num(moraVista.cuotas)} {moraVista.cuotas === 1 ? "cuota" : "cuotas"}</strong>,
+                },
+                { clave: "servicio", titulo: "Servicio", tipo: "secondary", orden: (c) => nombreServicio(c.productoId) ?? "", celda: (c) => nombreServicio(c.productoId) ?? "—" },
                 { clave: "cuota", titulo: "Cuota", tipo: "secondary", orden: (c) => c.numero, celda: (c) => c.numero === 0 ? "Reserva" : `Cuota ${c.numero}` },
                 { clave: "vence", titulo: "Vencía", tipo: "secondary", orden: (c) => c.vence, celda: (c) => fechaLarga(c.vence) },
                 {
@@ -183,7 +255,15 @@ export default function FinanzasDetalle() {
                     </Badge>
                   ),
                 },
-                { clave: "saldo", titulo: "Saldo", tipo: "num", orden: (c) => c.saldo, celda: (c) => M(c.saldo) },
+                { clave: "closer", titulo: "Closer", tipo: "secondary", orden: (c) => nombreCloser(c.closerId) ?? "~", celda: (c) => nombreCloser(c.closerId) ?? <span className="t-subtle">Sin closer</span> },
+                {
+                  clave: "saldo", titulo: "Saldo", tipo: "num", orden: (c) => c.saldo, celda: (c) => M(c.saldo, 2),
+                  pie: <strong className="t-num">{M(moraVista.saldo, 2)}</strong>,
+                  info: {
+                    ayuda: "Lo que falta cobrar de cada cuota vencida (su monto menos lo ya pagado). Abajo, la suma de las cuotas de la tabla: es la misma cifra del aviso de arriba.",
+                    formula: "Saldo = monto de la cuota − lo ya pagado\nTotal = suma del saldo de las cuotas de la tabla (el atraso, el servicio y el closer elegidos)",
+                  },
+                },
               ]}
               acciones={(c) => (
                 <IconButton etiqueta="Marcar como cobrada" onClick={() => {
@@ -191,7 +271,7 @@ export default function FinanzasDetalle() {
                   toast("Cuota marcada como cobrada.");
                 }}><Check size={15} /></IconButton>
               )}
-              vacio={<Empty icono={<Check size={22} />} titulo="Nadie atrasado" texto="Todas las cuotas exigibles están cobradas. Si aparece una vencida, la vas a ver acá con los días de atraso." />}
+              vacio={<Empty icono={<Check size={22} />} titulo={hayFiltroMora && vencidas.length > 0 ? "Ninguna con estos filtros" : "Nadie atrasado"} texto={hayFiltroMora && vencidas.length > 0 ? "Probá con otro atraso, servicio o closer." : "Todas las cuotas exigibles están cobradas. Si aparece una vencida, la vas a ver acá con los días de atraso."} />}
             />
           </Card>
         </div>
@@ -210,6 +290,9 @@ export default function FinanzasDetalle() {
           onBorrar={(g) => setBorrar(g)}
         />
       )}
+
+      {/* ---------------- Gastos fijos: la propuesta de cada mes, para aprobar ---------------- */}
+      {vista === "fijos" && <GastosFijos e={e} />}
 
       {/* ---------------- Comisiones ---------------- */}
       {vista === "comisiones" && (
@@ -230,6 +313,10 @@ export default function FinanzasDetalle() {
             la misma base. Si la venta figura a nombre de <strong>Yari</strong>, no comisiona nadie. Desde
             el día en que alguien dejó el equipo no cobra más, y si sus cuotas pasaron a otro closer (en
             Equipo, en su ficha), lo que se cobre de ellas es del que las heredó.
+            {reglaDeCierre(e.ajustes).descuenta && (
+              <> Con el descuento por cierre del día prendido (Ajustes → CRM), la comisión del closer de las ventas que salieron de un día en
+              que no cargó el cierre ese mismo día no se paga: figura en cero y dice cuánto se descontó.</>
+            )}
           </Ayuda>
 
           <Card style={{ padding: 0 }}>
@@ -255,7 +342,17 @@ export default function FinanzasDetalle() {
                   clave: "tasa", titulo: "% closer", tipo: "num", orden: (c) => c.tasaCloser,
                   celda: (c) => c.sinComision || !c.closerId ? "—" : <span title="El % del closer en este servicio">{tasaTexto(c.tasaCloser)}</span>,
                 },
-                { clave: "comiCloser", titulo: "Closer", tipo: "num", orden: (c) => c.comisionCloser, celda: (c) => c.sinComision ? <span className="t-subtle">Sin comisión</span> : M(c.comisionCloser, 2) },
+                {
+                  clave: "comiCloser", titulo: "Closer", tipo: "num", orden: (c) => c.comisionCloser,
+                  celda: (c) => c.sinComision ? <span className="t-subtle">Sin comisión</span>
+                    : c.descuentoCierre
+                      ? (
+                        <span title="Esta venta salió de una llamada de un día en que no se cargó el cierre ese mismo día: la comisión no se paga (Ajustes → CRM).">
+                          {M(c.comisionCloser, 2)} <Badge variante="warning">−{M(c.descuentoCierre, 2)} por cierre del día</Badge>
+                        </span>
+                      )
+                      : M(c.comisionCloser, 2),
+                },
                 { clave: "comiDir", titulo: "Director", tipo: "num", orden: (c) => c.comisionDirector, celda: (c) => c.sinComision ? "—" : M(c.comisionDirector, 2) },
               ]}
               vacio={<Empty icono={<Wallet size={22} />} titulo={`Sin cobros en ${mes.etiqueta}`} texto="Cuando entre un pago, la comisión de quien cerró esa venta aparece acá calculada." />}

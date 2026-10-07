@@ -234,7 +234,8 @@ export const COLUMNAS: ColumnaTabla[] = [
   { clave: "objecion", titulo: "Objeción", grupo: "Resultado", valores: (f) => uno(f.objecion), ancho: 170 },
   { clave: "oferta", titulo: "¿Oferta?", grupo: "Resultado", valores: (f) => uno(f.oferta), ancho: 100 },
   { clave: "cierre", titulo: "Cierre estimado", grupo: "Resultado", valores: (f) => uno(f.cierre), fecha: true, ancho: 140 },
-  { clave: "venta", titulo: "Venta", grupo: "Resultado", valores: (f) => [f.venta ? "Con venta" : "Sin venta"], orden: (f) => f.venta, texto: (f) => f.venta, ancho: 190 },
+  /* «La carga otra persona»: el closer avisó, en la puerta del cierre del día, que la venta de esta compra la carga otra persona. */
+  { clave: "venta", titulo: "Venta", grupo: "Resultado", valores: (f) => [f.venta ? "Con venta" : f.sesion.ventaPorOtro ? "La carga otra persona" : "Sin venta"], orden: (f) => f.venta, texto: (f) => f.venta, ancho: 190 },
   { clave: "via", titulo: "Vía", grupo: "Origen", valores: (f) => uno(f.via), ancho: 170 },
   { clave: "ad", titulo: "Ad", grupo: "Origen", valores: (f) => uno(f.ad), ancho: 200 },
   { clave: "angulo", titulo: "Ángulo", grupo: "Origen", valores: (f) => uno(f.angulo), ancho: 190 },
@@ -325,6 +326,8 @@ export function valorEditable(f: FilaTabla, clave: ClaveColumna): string {
 /* Lo que hay que escribir para dejar una celda con un valor. */
 export type Escritura =
   | { tipo: "llamada"; id: string; cambios: CambiosLlamada; detalle: string }
+  /* El closer no es un dato más de la llamada: cambiarlo es pasarla a otro (lib/pasar-llamadas.ts). */
+  | { tipo: "closer"; id: string; closer: string; detalle: string }
   | { tipo: "persona"; id: string; cambios: { nombre?: string; email?: string; telefono?: string }; detalle: string }
   | { tipo: "perfil"; id: string; campo: CampoPerfil | "pais"; valor: string; detalle: string };
 
@@ -355,7 +358,7 @@ export function escrituraDe(
 
   const llamada = (cambios: CambiosLlamada): Escritura => ({ tipo: "llamada", id: s.id, cambios, detalle });
   switch (clave) {
-    case "closer": return limpio ? llamada({ anfitrion: limpio }) : null;
+    case "closer": return limpio ? { tipo: "closer", id: s.id, closer: limpio, detalle } : null;
     /* Una opción del Airtable, o vacío. El Estado de Llamada además deja
        la agenda como hecha, que no vino o cancelada (lo hace el store). */
     case "estadoLlamada": case "estadoPreCall": case "preCall":

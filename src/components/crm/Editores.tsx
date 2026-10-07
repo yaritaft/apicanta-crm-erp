@@ -3,6 +3,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Check } from "lucide-react";
 import { sinTildes } from "@/lib/crm";
+import { ofrecidas } from "@/lib/estados";
 import type { OpcionCrm } from "@/lib/types";
 import { Chip, Flotante } from "./piezas";
 
@@ -26,10 +27,13 @@ export function SelectorOpciones({
   cubrir?: boolean;
 }) {
   const [q, setQ] = useState(inicial);
-  const lista = opciones.filter((o) => sinTildes(o.nombre).includes(sinTildes(q.trim())));
+  /* Un estado oculto no se ofrece (Ajustes → CRM), salvo el que la celda ya
+     tiene: se sigue viendo y sigue elegido. */
+  const visibles = ofrecidas(opciones, valor);
+  const lista = visibles.filter((o) => sinTildes(o.nombre).includes(sinTildes(q.trim())));
   /* Abierta escribiendo, la resaltada es la primera que coincide; si no, la
      que ya tenía la celda. */
-  const [i, setI] = useState(() => (inicial ? 0 : Math.max(0, opciones.findIndex((o) => o.nombre === valor))));
+  const [i, setI] = useState(() => (inicial ? 0 : Math.max(0, visibles.findIndex((o) => o.nombre === valor))));
   const listaRef = useRef<HTMLDivElement>(null);
   const k = Math.min(i, Math.max(0, lista.length - 1));
 

@@ -1,5 +1,10 @@
-import { createHash } from "node:crypto";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { tokenDeSistema } from "./meta";
+import { datosDeLaPersona } from "./capi-datos";
+import type { EventoCapi } from "./capi-registro";
+
+export type { EventoCapi } from "./capi-registro";
+export type { PersonaCapi } from "./capi-datos";
 
 /* ==================================================================
    Meta Conversions API (action item de la reunión del 18/09).
@@ -16,90 +21,55 @@ import { tokenDeSistema } from "./meta";
    de la venta): si el píxel de la landing manda el mismo, Meta los junta
    y no cuenta dos veces.
 
-   Variables:
-     META_PIXEL_ID      el píxel (dataset) al que van los eventos
-     META_CAPI_TOKEN    el token de la Conversions API del píxel (Events
-                        Manager → Configuración). Si falta, se usa
-                        META_SYSTEM_TOKEN.
-     META_CAPI_TEST     opcional: el código de prueba de Events Manager,
-                        para ver los eventos en "Probar eventos" sin que
-                        cuenten.
+   Desde la reunión del 02/10 (F3-07) también sale el RegistroCalificado:
+   quien se registra al webinar y califica (lib/capi-registro.ts). Los
+   datos de la persona se normalizan y hashean en lib/capi-datos.ts.
+
+   Variables (todas explicadas en lib/capi-estado.ts, y a la vista en
+   Ajustes → Integraciones): META_PIXEL_ID, META_CAPI_TOKEN (si falta, se
+   usa META_SYSTEM_TOKEN), y opcionales META_CAPI_TEST, META_CAPI_URL y
+   META_CAPI_EVENTO_CALIFICADO.
    Sin píxel o sin token no se manda nada y nada se rompe.
    ================================================================== */
 
 const VERSION = "v21.0";
 
-export const capiConfigurada = () => Boolean(process.env.META_PIXEL_ID?.trim() && tokenCapi());
 const tokenCapi = () => process.env.META_CAPI_TOKEN?.trim() || tokenDeSistema();
-
-export type EventoMeta = "Lead" | "Schedule" | "Purchase" | "CompleteRegistration";
-
-export interface PersonaCapi {
-  email?: string;
-  telefono?: string;
-  nombre?: string;
-  pais?: string;       // ISO de dos letras, si se sabe
-  externalId?: string; // el id del contacto en Apicanta
-  ip?: string;
-  userAgent?: string;
-  fbp?: string;        // cookie _fbp de la landing
-  fbc?: string;        // cookie _fbc (o armada con el fbclid)
-}
-
-export interface EventoCapi {
-  nombre: EventoMeta;
-  id: string;          // event_id: para no contarlo dos veces
-  cuando: string;      // ISO
-  url?: string;        // la página donde pasó
-  persona: PersonaCapi;
-  valor?: number;
-  moneda?: string;
-  /* website: pasó en la landing; system_generated: lo cargó el equipo (una venta). */
-  origen?: "website" | "system_generated";
-}
-
-const sha = (s: string) => createHash("sha256").update(s).digest("hex");
-const normal = (s?: string) => (s ?? "").trim().toLowerCase();
-
-/* Meta pide el teléfono con código de país y sin símbolos. */
-const soloDigitos = (s?: string) => (s ?? "").replace(/\D+/g, "");
-
-function datosDe(p: PersonaCapi): Record<string, unknown> {
-  const [nombre, ...resto] = normal(p.nombre).normalize("NFD").replace(/[̀-ͯ]/g, "").split(/\s+/).filter(Boolean);
-  const d: Record<string, unknown> = {};
-  if (normal(p.email)) d.em = [sha(normal(p.email))];
-  if (soloDigitos(p.telefono).length >= 8) d.ph = [sha(soloDigitos(p.telefono))];
-  if (nombre) d.fn = [sha(nombre)];
-  if (resto.length) d.ln = [sha(resto[resto.length - 1])];
-  if (p.pais && /^[a-z]{2}$/i.test(p.pais.trim())) d.country = [sha(normal(p.pais))];
-  if (p.externalId) d.external_id = [sha(p.externalId)];
-  if (p.ip) d.client_ip_address = p.ip;
-  if (p.userAgent) d.client_user_agent = p.userAgent;
-  if (p.fbp) d.fbp = p.fbp;
-  if (p.fbc) d.fbc = p.fbc;
-  return d;
-}
+export const capiConfigurada = () => Boolean(process.env.META_PIXEL_ID?.trim() && tokenCapi());
 
 /** Arma el fbc con el fbclid de la URL, si la landing no mandó la cookie. */
 export function fbcDeFbclid(fbclid?: string | null, cuando = Date.now()): string | undefined {
   return fbclid ? `fb.1.${cuando}.${fbclid}` : undefined;
 }
 
+/** El evento como lo pide la API (puro: se prueba sin red). */
+export function eventoParaMeta(ev: EventoCapi, urlPorDefecto = process.env.META_CAPI_URL?.trim()): Record<string, unknown> | null {
+  const user = datosDeLaPersona(ev.persona);
+  if (Object.keys(user).length === 0) return null;
+  const custom: Record<string, unknown> = { ...(ev.datos ?? {}) };
+  if (ev.valor !== undefined) {
+    custom.value = Math.round(ev.valor * 100) / 100;
+    custom.currency = ev.moneda ?? "USD";
+  }
+  const origen = ev.origen ?? "website";
+  /* Meta pide la página para los eventos de la web. */
+  const url = ev.url || (origen === "website" ? urlPorDefecto : undefined);
+  return {
+    event_name: ev.nombre,
+    event_time: Math.floor(new Date(ev.cuando).getTime() / 1000),
+    event_id: ev.id,
+    action_source: origen,
+    ...(url ? { event_source_url: url } : {}),
+    user_data: user,
+    ...(Object.keys(custom).length ? { custom_data: custom } : {}),
+  };
+}
+
 export async function enviarEventosMeta(eventos: EventoCapi[]): Promise<{ enviados: number; error?: string }> {
   const pixel = process.env.META_PIXEL_ID?.trim();
   const token = tokenCapi();
   if (!pixel || !token || eventos.length === 0) return { enviados: 0 };
-  const data = eventos
-    .filter((ev) => Object.keys(datosDe(ev.persona)).length > 0)
-    .map((ev) => ({
-      event_name: ev.nombre,
-      event_time: Math.floor(new Date(ev.cuando).getTime() / 1000),
-      event_id: ev.id,
-      action_source: ev.origen ?? "website",
-      ...(ev.url ? { event_source_url: ev.url } : {}),
-      user_data: datosDe(ev.persona),
-      ...(ev.valor !== undefined ? { custom_data: { value: Math.round(ev.valor * 100) / 100, currency: ev.moneda ?? "USD" } } : {}),
-    }));
+  const data = eventos.map((ev) => eventoParaMeta(ev)).filter((x): x is Record<string, unknown> => x !== null);
   if (data.length === 0) return { enviados: 0 };
   const cuerpo: Record<string, unknown> = { data };
   if (process.env.META_CAPI_TEST?.trim()) cuerpo.test_event_code = process.env.META_CAPI_TEST.trim();
@@ -113,4 +83,31 @@ export async function enviarEventosMeta(eventos: EventoCapi[]): Promise<{ enviad
   } catch (e) {
     return { enviados: 0, error: e instanceof Error ? e.message : "No se pudo hablar con Meta." };
   }
+}
+
+/** Manda los eventos que todavía no se mandaron y deja constancia en
+ *  `capi_enviados`, así el mismo evento no se cuenta dos veces aunque pase
+ *  más de lo que Meta tarda en juntar los repetidos (48 horas). Con el modo
+ *  prueba (META_CAPI_TEST) no deja constancia: no cuentan. Sin la tabla
+ *  (supabase/capi-enviados.sql) manda igual y confía en el event_id. */
+export async function enviarEventosUnaVez(
+  db: SupabaseClient | null, eventos: EventoCapi[],
+): Promise<{ enviados: number; omitidos: number; error?: string }> {
+  if (!capiConfigurada() || eventos.length === 0) return { enviados: 0, omitidos: 0 };
+  let nuevos = eventos;
+  if (db) {
+    const ya = await db.from("capi_enviados").select("id").in("id", eventos.map((x) => x.id));
+    if (!ya.error) {
+      const hechos = new Set(((ya.data ?? []) as { id: string }[]).map((x) => x.id));
+      nuevos = eventos.filter((x) => !hechos.has(x.id));
+    }
+  }
+  if (nuevos.length === 0) return { enviados: 0, omitidos: eventos.length };
+  const r = await enviarEventosMeta(nuevos);
+  if (r.error) return { enviados: 0, omitidos: eventos.length - nuevos.length, error: r.error };
+  if (db && !process.env.META_CAPI_TEST?.trim()) {
+    const w = await db.from("capi_enviados").upsert(nuevos.map((x) => ({ id: x.id, evento: x.nombre })));
+    if (w.error) console.error("[meta-capi] capi_enviados:", w.error.message);
+  }
+  return { enviados: r.enviados, omitidos: eventos.length - nuevos.length };
 }

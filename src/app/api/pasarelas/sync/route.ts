@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { nivelDelPedido } from "@/lib/permisos-servidor";
-import { guardarMovimientos, guardarPuntas, guardarReembolsos, hayServidor, referenciasCompletas } from "@/lib/servidor";
+import { descartarAnuladosMercury, guardarMovimientos, guardarPuntas, guardarReembolsos, hayServidor, referenciasCompletas } from "@/lib/servidor";
+import { resumenVacio } from "@/lib/mercury";
 import { hayClaves, listar, procesadorDe, PROVEEDORES, retirosDeStripe, type MovimientoApi } from "@/lib/pasarelas-api";
 import type { ReembolsoCrudo } from "@/lib/reembolsos";
 import type { Punta } from "@/lib/traspasos";
@@ -94,6 +95,8 @@ export async function GET(peticion: Request) {
   const movimientos: MovimientoApi[] = [];
   const puntas: Punta[] = [];
   const reembolsos: ReembolsoCrudo[] = [];
+  /* Lo que Mercury trae y no es un cobro: pending, internos y anulados (lib/mercury.ts). */
+  const mercury = resumenVacio();
   const conectadas: ProveedorPasarela[] = [];
   const errores: { proveedor: string; mensaje: string }[] = [];
 
@@ -110,7 +113,7 @@ export async function GET(peticion: Request) {
     if (!soloPases || proveedor !== "stripe") {
       try {
         const cobros = await listar(proveedor, desde, hasta, {
-          avisos, puntas, reembolsos: soloPases ? undefined : reembolsos,
+          avisos, puntas, mercury, reembolsos: soloPases ? undefined : reembolsos,
           necesitaDetalle: proveedor === "whop" && completosWhop ? (m) => !completosWhop.has(m.referencia) : undefined,
         });
         if (!soloPases) movimientos.push(...cobros);
@@ -142,6 +145,15 @@ export async function GET(peticion: Request) {
     })));
     guardados = r.guardados;
     completados = r.completados;
+    if (r.error) errores.push({ proveedor: "supabase", mensaje: r.error });
+  }
+
+  /* Lo que Mercury anuló y ya había entrado a la bandeja sin conciliar: se
+     descarta solo. Sin guardar, lo hace la pantalla con `mercury.anulados`. */
+  let anuladosDescartados = 0;
+  if (quiereGuardar && hayServidor && !soloPases && mercury.anulados.length > 0) {
+    const r = await descartarAnuladosMercury(mercury.anulados);
+    anuladosDescartados = r.descartados;
     if (r.error) errores.push({ proveedor: "supabase", mensaje: r.error });
   }
 
@@ -177,6 +189,8 @@ export async function GET(peticion: Request) {
     pasesGuardados,
     reembolsos,
     reembolsosGuardados,
+    mercury,
+    anuladosDescartados,
     desde: desde.toISOString(),
     movimientos,
     puntas,

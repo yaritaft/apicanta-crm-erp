@@ -34,6 +34,18 @@ export const DIAS_EN_CAMINO = 7;
 const AVISAN_LLEGADAS = new Set<ID>(["proc_mercury"]);
 /* La llegada confirmada por una persona, no por la cuenta. */
 export const LLEGADA_A_MANO = "a-mano";
+/* Lo mismo con la salida: alguien miró en la cuenta cuánto salió de verdad
+   (la comisión del retiro de Hotmart, que ninguna API nos dice). */
+export const SALIDA_A_MANO = "a-mano";
+
+/* Las cuentas que se quedan una comisión por mandar la plata al banco
+   (Hotmart: en Mercury entran 1.000 cuando en Hotmart había 1.025). Cada
+   llegada suya queda con «falta la comisión del retiro» hasta que alguien
+   carga cuánto salió: nada la adivina ni la atribuye sola al faltante del
+   arqueo (lote E, D9). */
+export const COBRAN_RETIRO: ReadonlySet<ID> = new Set<ID>(["proc_hotmart"]);
+/* Las que no cobran por el envío: si salió ≠ llegó, hay algo para revisar. */
+export const SIN_COSTO_DE_ENVIO: ReadonlySet<ID> = new Set<ID>(["proc_stripe", "proc_whop"]);
 
 const DIA = 86400000;
 const r2 = (n: number) => Math.round(n * 100) / 100;
@@ -198,7 +210,9 @@ export function conciliarPuntas(existentes: Traspaso[], puntas: Punta[], ahora: 
 
 /* ---------- Cómo está cada pase ---------- */
 
-export type Situacion = "conciliado" | "en-camino" | "no-llego" | "detectado" | "a-mano" | "por-confirmar" | "ignorado";
+export type Situacion =
+  | "conciliado" | "en-camino" | "no-llego" | "detectado" | "a-mano" | "por-confirmar" | "ignorado"
+  | "falta-comision" | "diferencia";
 
 export const TEXTO_SITUACION: Record<Situacion, string> = {
   "conciliado": "Conciliado",
@@ -208,6 +222,8 @@ export const TEXTO_SITUACION: Record<Situacion, string> = {
   "a-mano": "A mano",
   "por-confirmar": "Por confirmar",
   "ignorado": "No es un pase",
+  "falta-comision": "Falta la comisión",
+  "diferencia": "Salió ≠ llegó",
 };
 
 export const AYUDA_SITUACION: Record<Situacion, string> = {
@@ -218,6 +234,8 @@ export const AYUDA_SITUACION: Record<Situacion, string> = {
   "a-mano": "Lo cargó alguien: ninguna cuenta conectada lo vio.",
   "por-confirmar": "Parece un pase entre cuentas propias, pero no es seguro: confirmalo o descartalo.",
   "ignorado": "Alguien dijo que no es un pase entre cuentas.",
+  "falta-comision": "La plata llegó, pero falta cargar cuánto salió de la cuenta de origen: ahí está lo que cobró por el retiro. Cargala a mano para que no quede una sospecha en el arqueo.",
+  "diferencia": "Esta cuenta no cobra por mandar la plata al banco y salió un monto distinto del que llegó: revisalo (corregí el monto o cargá la diferencia como gasto).",
 };
 
 /** La sincronización lo vio salir y falta verlo llegar a una cuenta que
@@ -225,13 +243,44 @@ export const AYUDA_SITUACION: Record<Situacion, string> = {
 export const esperaLlegada = (t: Pick<Traspaso, "salidaRef" | "llegadaRef" | "destinoId">) =>
   Boolean(t.salidaRef) && !t.llegadaRef && (!t.destinoId || AVISAN_LLEGADAS.has(t.destinoId));
 
-export function situacionDe(t: Pick<Traspaso, "estado" | "salidaRef" | "llegadaRef" | "fecha" | "destinoId">, ahora = Date.now()): Situacion {
+type DatosDeSituacion = Pick<Traspaso, "estado" | "salidaRef" | "llegadaRef" | "fecha" | "destinoId">
+  & Partial<Pick<Traspaso, "origenId" | "origen" | "montoSale" | "montoLlega" | "monedaSale" | "monedaLlega" | "gastoId">>;
+
+/** La llegada de una cuenta que cobra por el retiro (Hotmart → Mercury) a la
+    que todavía nadie le cargó cuánto salió: ni a mano (`salidaRef`), ni con
+    una diferencia ya cargada como costo. Lo cargado a mano por una persona
+    no entra: ya dijo los dos montos. */
+export function faltaComisionDelRetiro(t: DatosDeSituacion): boolean {
+  if (t.estado !== "confirmado" || !t.origenId || !COBRAN_RETIRO.has(t.origenId)) return false;
+  if (t.origen !== "api" || t.salidaRef || t.gastoId) return false;
+  if (t.monedaSale && t.monedaLlega && t.monedaSale !== t.monedaLlega) return false;
+  return !(r2((t.montoSale ?? 0) - (t.montoLlega ?? 0)) > 0);
+}
+
+/** Una cuenta que no cobra por el envío (Stripe, Whop) y donde lo que salió
+    no es lo que llegó, sin que nadie lo haya cargado como gasto. */
+export function diferenciaEnEnvio(t: DatosDeSituacion): boolean {
+  if (!t.origenId || !SIN_COSTO_DE_ENVIO.has(t.origenId)) return false;
+  if (!t.salidaRef || !t.llegadaRef || t.gastoId) return false;
+  if (t.monedaSale && t.monedaLlega && t.monedaSale !== t.monedaLlega) return false;
+  return Math.abs(r2((t.montoSale ?? 0) - (t.montoLlega ?? 0))) >= 0.01;
+}
+
+export function situacionDe(t: DatosDeSituacion, ahora = Date.now()): Situacion {
   if (t.estado === "ignorado") return "ignorado";
   if (t.estado === "propuesto") return "por-confirmar";
+  if (faltaComisionDelRetiro(t)) return "falta-comision";
+  if (diferenciaEnEnvio(t)) return "diferencia";
   if (t.salidaRef && t.llegadaRef) return "conciliado";
   if (esperaLlegada(t)) return ahora - Date.parse(t.fecha) > DIAS_EN_CAMINO * DIA ? "no-llego" : "en-camino";
   if (t.salidaRef || t.llegadaRef) return "detectado";
   return "a-mano";
+}
+
+/** El retiro con lo que salió de verdad de la cuenta de origen: la salida
+    queda confirmada a mano y la diferencia con lo que llegó es la comisión. */
+export function conComisionDelRetiro(t: Traspaso, salio: number): Traspaso {
+  return { ...t, montoSale: r2(salio), salidaRef: SALIDA_A_MANO };
 }
 
 /* ---------- Lo que cuesta ---------- */
@@ -266,13 +315,19 @@ export function gastoDelCosto(e: EstadoApp, t: Traspaso, tipoCambio = 0): Gasto 
   const enBase = t.monedaSale === base;
   const monto = r2(aMonedaBase(costo, t.monedaSale, base, tipoCambio));
   if (!(monto > 0)) return null;
+  const retiro = t.origenId !== undefined && COBRAN_RETIRO.has(t.origenId);
   return {
     id: `gas_${t.id}`.slice(0, 120),
     categoria: CATEGORIA_COSTO,
     grupo: categoriaDe(e, CATEGORIA_COSTO)?.grupo ?? "operativo",
-    concepto: `Costo de pasar plata de ${nombreDe(e, t.origenId)} a ${nombreDe(e, t.destinoId)}`,
+    concepto: retiro
+      ? `Comisión de retiro ${nombreDe(e, t.origenId)}`
+      : `Costo de pasar plata de ${nombreDe(e, t.origenId)} a ${nombreDe(e, t.destinoId)}`,
     monto, moneda: base, fecha: t.fecha, recurrente: false,
-    notas: "Lo cargó el movimiento entre cuentas (Caja). Si se borra el movimiento, se borra solo.",
+    proveedor: retiro ? nombreDe(e, t.origenId) : undefined,
+    notas: retiro
+      ? `Lo que cobró ${nombreDe(e, t.origenId)} por mandar la plata a ${nombreDe(e, t.destinoId)}, cargado a mano desde la Caja. Si se borra el movimiento, se borra solo.`
+      : "Lo cargó el movimiento entre cuentas (Caja). Si se borra el movimiento, se borra solo.",
     creadoEn: t.creadoEn,
     /* Sin cuenta: lo que se perdió ya está en la diferencia del pase. */
     extra: { traspasoId: t.id, ...(enBase ? {} : { montoOriginal: costo, monedaOriginal: t.monedaSale, tipoCambio }) },
@@ -407,15 +462,17 @@ export function saldosEsperados(
 
 /* ---------- De un vistazo ---------- */
 
-export interface ResumenPases { porConfirmar: number; noLlegaron: number; enCamino: number }
+export interface ResumenPases { porConfirmar: number; noLlegaron: number; enCamino: number; faltaComision: number; diferencias: number }
 
 export function resumenDePases(traspasos: Traspaso[], ahora = Date.now()): ResumenPases {
-  const r: ResumenPases = { porConfirmar: 0, noLlegaron: 0, enCamino: 0 };
+  const r: ResumenPases = { porConfirmar: 0, noLlegaron: 0, enCamino: 0, faltaComision: 0, diferencias: 0 };
   for (const t of traspasos) {
     const s = situacionDe(t, ahora);
     if (s === "por-confirmar") r.porConfirmar++;
     else if (s === "no-llego") r.noLlegaron++;
     else if (s === "en-camino") r.enCamino++;
+    else if (s === "falta-comision") r.faltaComision++;
+    else if (s === "diferencia") r.diferencias++;
   }
   return r;
 }

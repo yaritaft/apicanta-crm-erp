@@ -6,7 +6,7 @@ import {
 } from "lucide-react";
 import { PageHead } from "@/components/shell/PageHead";
 import {
-  Ayuda, Bar, Button, Card, Chip, Empty, IconButton, Input,
+  Ayuda, Bar, Button, Card, Chip, Empty, IconButton, Input, Tabs,
 } from "@/components/ui/ui";
 import { Columna, DataTable } from "@/components/ui/DataTable";
 import { DateRangePicker, diaDeNegocio } from "@/components/ui/DateRangePicker";
@@ -14,6 +14,8 @@ import { CopiarLink, Filtro, opcionesDe, SIN, type OpcionFiltro } from "@/compon
 import { Confirmar } from "@/components/ui/Modal";
 import { AsistenteVenta } from "@/components/ventas/AsistenteVenta";
 import { CargarCuota } from "@/components/cobros/CargarCuota";
+import { ListaCobros, PARAMS_COBROS, PARAMS_TABLA_COBROS } from "@/components/cobros/ListaCobros";
+import { ControlDeVenta } from "@/components/cobros/columnasControl";
 import { ImportarPlanilla } from "@/components/ventas/ImportarPlanilla";
 import { aCSV, filasParaPlanilla } from "@/lib/exportarPlanilla";
 import { desdeVenta, FormularioVenta, type BorradorVenta } from "@/components/ventas/FormularioVenta";
@@ -23,8 +25,10 @@ import { useAbrirDesdeURL } from "@/lib/useQuery";
 import { useRangoURL } from "@/lib/useRango";
 import { ordenAURL, ordenDeURL, paginaDeURL, useBusquedaURL, useParamsURL } from "@/lib/useParamsURL";
 import { useAbrirFicha } from "@/components/ficha/abrir";
-import { fechaLarga, money } from "@/lib/format";
+import { fechaLarga, money, num } from "@/lib/format";
 import { saldoVenta } from "@/lib/finanzas";
+import { casilleroDe, controlPorVenta } from "@/lib/control-cobros";
+import { useAcceso } from "@/lib/acceso";
 import type { EstadoVenta, Venta } from "@/lib/types";
 
 const ESTADO: Record<EstadoVenta, { texto: string; variante: "success" | "neutral" | "danger" }> = {
@@ -43,13 +47,16 @@ const ESTADOS = Object.keys(ESTADO) as EstadoVenta[];
    - proyecto: el proyecto tal cual se escribió, o "sin"
    - cuenta: el id de la cuenta recaudadora de alguno de sus cobros
    - orden: la columna, con "-" adelante si va de mayor a menor
-   - pag: la página, desde 1 */
+   - pag: la página, desde 1
+   - seccion: ventas (por defecto) o cobros: cada cobro con su comprobante y su
+     control cruzado (components/cobros/ListaCobros.tsx). Los filtros, el
+     período y la búsqueda valen para las dos. */
 const VISTA_VENTAS = {
   estado: "", vendedor: "", servicio: "", estrategia: "", proyecto: "", cuenta: "",
-  orden: "-fecha", pag: "1",
+  orden: "-fecha", pag: "1", seccion: "ventas",
 };
 const ORDEN_INICIAL = { clave: "fecha", desc: true };
-const COLUMNAS_QUE_ORDENAN = ["contacto", "producto", "proyecto", "estrategia", "closer", "fecha", "precio", "saldo"];
+const COLUMNAS_QUE_ORDENAN = ["contacto", "producto", "proyecto", "estrategia", "closer", "fecha", "precio", "saldo", "control"];
 const POR_PAGINA = 50;
 
 type Faceta = "estado" | "vendedor" | "servicio" | "estrategia" | "proyecto" | "cuenta";
@@ -81,6 +88,15 @@ export default function Ventas() {
 
   const [vista, setVista] = useParamsURL(VISTA_VENTAS);
   const [busca, setBusca] = useBusquedaURL("q", ["pag"]);
+  const seccion: "ventas" | "cobros" = vista.seccion === "cobros" ? "cobros" : "ventas";
+  /* El estado, el orden y la página de una sección no son de la otra: al cambiar se sacan. */
+  const cambiarSeccion = (s: "ventas" | "cobros") => {
+    if (s === seccion) return;
+    setVista(
+      { seccion: s === "ventas" ? null : s, orden: null, pag: null, estado: null },
+      Object.fromEntries([...PARAMS_COBROS, ...PARAMS_TABLA_COBROS].map((k) => [k, null])),
+    );
+  };
 
   /* La hoja Ventas de la planilla de Angelo, con sus 36 columnas. */
   function exportarPlanilla() {
@@ -107,16 +123,28 @@ export default function Ventas() {
      de la primera venta a la última (o a hoy) y se recalcula contra los
      datos, así una venta nueva nunca queda afuera de un link guardado. */
   const limites = useMemo(() => {
-    const dias = e.ventas.map((v) => diaDeNegocio(v.fecha)).filter(Boolean).sort();
+    const dias = [...e.ventas.map((v) => diaDeNegocio(v.fecha)), ...e.pagos.map((p) => diaDeNegocio(p.fecha))].filter(Boolean).sort();
     const hoy = diaDeNegocio(new Date().toISOString());
     const ultimo = dias[dias.length - 1];
     return { min: dias[0] ?? null, max: ultimo && ultimo > hoy ? ultimo : hoy };
-  }, [e.ventas]);
+  }, [e.ventas, e.pagos]);
   const [rango, setRango] = useRangoURL("max", { limites });
 
   /* Una pasada por venta: el chip "Con saldo", su filtro y la columna Cobrado
      leen de acá, en vez de recorrer cuotas y cobros en cada celda. */
   const saldos = useMemo(() => new Map(e.ventas.map((v) => [v.id, saldoVenta(e, v.id)])), [e]);
+  /* Cuántos cobros de cada venta faltan chequear (control cruzado). */
+  const controles = useMemo(() => controlPorVenta(e), [e.pagos, e.cuotas]); // eslint-disable-line react-hooks/exhaustive-deps
+  const { pendientes, rechazados } = useMemo(() => {
+    let p = 0, r = 0;
+    for (const c of controles.values()) { p += c.pendientes; r += c.rechazados; }
+    return { pendientes: p, rechazados: r };
+  }, [controles]);
+  /* Quien chequea ve cuántos le faltan; el closer, cuántos le rechazaron y tiene que arreglar. */
+  const { acceso } = useAcceso();
+  const avisoDeCobros = casilleroDe(acceso) !== null
+    ? (pendientes + rechazados > 0 ? ` · ${num(pendientes + rechazados)} por chequear` : "")
+    : (rechazados > 0 ? ` · ${num(rechazados)} ${rechazados === 1 ? "rechazado" : "rechazados"}` : "");
 
   /* Por qué cuentas entró la plata de cada venta: el cobro cuelga de una
      cuota, y la cuota de la venta. */
@@ -207,11 +235,23 @@ export default function Ventas() {
     };
   }, [e.ventas, rango, busca, f, saldos, cuentasDeVenta]);
 
+  /* Lo que suman las ventas que se ven, en centavos enteros: la fila de totales de la tabla. */
+  const totales = useMemo(() => {
+    let precio = 0, cobrado = 0, cuotas = 0;
+    for (const v of filas) {
+      const s = saldos.get(v.id);
+      precio += Math.round(v.precioAcordado * 100);
+      cobrado += Math.round((s?.cobrado ?? 0) * 100);
+      cuotas += Math.round((s?.total ?? 0) * 100);
+    }
+    return { precio: precio / 100, cobrado: cobrado / 100, cuotas: cuotas / 100 };
+  }, [filas, saldos]);
+
   const conCuenta = (xs: OpcionFiltro[], m: Map<string, number>) => xs.map((o) => ({ ...o, cuenta: m.get(o.valor) ?? 0 }));
 
   /* Cambiar un filtro vuelve a la primera página: quedarse en la 7 de un
      resultado que ahora tiene 2 muestra una tabla vacía. */
-  const filtrar = (faceta: Faceta, valor: string) => setVista({ [faceta]: valor || null, pag: null });
+  const filtrar = (faceta: Faceta, valor: string) => setVista({ [faceta]: valor || null, pag: null }, { "pag-cobros": null });
 
   /* Limpia lo que recorta la lista. El período y el orden quedan: se eligen
      aparte, arriba y en la tabla, y se ven siempre. */
@@ -227,7 +267,10 @@ export default function Ventas() {
   const nombreDe = (xs: { id: string; nombre: string }[], id?: string) => (id ? xs.find((x) => x.id === id)?.nombre : undefined);
 
   const columnas: Columna<Venta>[] = [
-    { clave: "contacto", titulo: "Nombre Completo", tipo: "primary", orden: (v) => v.contactoNombre, celda: (v) => v.contactoNombre },
+    {
+      clave: "contacto", titulo: "Nombre Completo", tipo: "primary", orden: (v) => v.contactoNombre, celda: (v) => v.contactoNombre,
+      pie: <strong>Total · {num(filas.length)} {filas.length === 1 ? "venta" : "ventas"}</strong>,
+    },
     /* Se ordena por el nombre que se ve, no por el id: ordenar por id dejaba
        los servicios agrupados en un orden que nadie entendía. */
     { clave: "producto", titulo: "Servicio adquirido", tipo: "secondary", orden: (v) => nombreDe(e.productos, v.productoId) ?? "", celda: (v) => nombreDe(e.productos, v.productoId) ?? "—" },
@@ -235,9 +278,30 @@ export default function Ventas() {
     { clave: "estrategia", titulo: "Estrategia", tipo: "secondary", orden: (v) => nombreDe(e.embudos, v.embudoId) ?? "", celda: (v) => nombreDe(e.embudos, v.embudoId) ?? "—" },
     { clave: "closer", titulo: "Vendedor", tipo: "secondary", orden: (v) => nombreDe(e.equipo, v.closerId) ?? "", celda: (v) => nombreDe(e.equipo, v.closerId) ?? "—" },
     { clave: "fecha", titulo: "Fecha", tipo: "secondary", orden: (v) => v.fecha, celda: (v) => fechaLarga(v.fecha) },
-    { clave: "precio", titulo: "Valor total", tipo: "num", orden: (v) => v.precioAcordado, celda: (v) => M(v.precioAcordado) },
+    {
+      clave: "precio", titulo: "Valor total", tipo: "num", orden: (v) => v.precioAcordado, celda: (v) => M(v.precioAcordado),
+      pie: <strong className="t-num">{M(totales.precio)}</strong>,
+      info: {
+        ayuda: "Lo que vale cada venta (el precio acordado). Abajo, la suma de las ventas que ves, de todas las páginas: si estás viendo canceladas o reembolsadas, también suman.",
+        formula: "Total = suma del «Valor total» de las ventas de la vista",
+        componentes: () => [
+          { concepto: "Ventas en la vista", valor: num(filas.length) },
+          { concepto: "Suma de su valor total", valor: M(totales.precio), signo: "=" },
+        ],
+      },
+    },
     {
       clave: "saldo", titulo: "Cobrado", orden: (v) => { const s = saldos.get(v.id); return s && s.total > 0 ? s.cobrado / s.total : 0; },
+      pie: <span className="t-num"><strong>{M(totales.cobrado)}</strong> <span className="t-sm t-subtle">de {M(totales.cuotas)}</span></span>,
+      info: {
+        ayuda: "Cuánto de lo que suman las cuotas de la venta ya entró, hasta hoy. Abajo, lo cobrado hasta hoy de todas las ventas que ves (no solo de este período).",
+        formula: "% cobrado = lo cobrado de la venta ÷ lo que suman sus cuotas (sin las canceladas)\nTotal = suma de lo cobrado de las ventas de la vista",
+        componentes: () => [
+          { concepto: "Cobrado hasta hoy", valor: M(totales.cobrado) },
+          { concepto: "Lo que suman sus cuotas", valor: M(totales.cuotas), signo: "÷" },
+          { concepto: "Cobrado", valor: totales.cuotas > 0 ? `${Math.round((totales.cobrado / totales.cuotas) * 100)}%` : "—", signo: "=" },
+        ],
+      },
       celda: (v) => {
         const s = saldos.get(v.id);
         const p = s && s.total > 0 ? (s.cobrado / s.total) * 100 : 0;
@@ -249,9 +313,53 @@ export default function Ventas() {
         );
       },
     },
+    {
+      clave: "control", titulo: "Control de cobros",
+      info: {
+        ayuda: "Cuántos cobros de la venta faltan chequear. Después de que el closer los carga, el director comercial o finanzas miran el comprobante y confirman que coincide con lo cargado. El detalle, cobro por cobro, está en la solapa Cobros.",
+      },
+      orden: (v) => { const c = controles.get(v.id); return c ? c.rechazados * 100000 + c.pendientes : -1; },
+      celda: (v) => <ControlDeVenta control={controles.get(v.id)} />,
+    },
   ];
 
   const orden = ordenDeURL(vista.orden, COLUMNAS_QUE_ORDENAN, ORDEN_INICIAL);
+
+  /* Los filtros de arriba valen para las dos secciones. Las cuentas de cada opción
+     son de ventas: en Cobros no se muestran. Un desplegable de una sola opción no
+     recorta nada: no se muestra. La cuenta es otra cosa — "cobró por acá" deja
+     afuera las ventas sin cobros —, así que con una ya sirve. */
+  const contar = seccion === "ventas" ? conCuenta : (xs: OpcionFiltro[]) => xs;
+  const barraDeFiltros = (
+      <div className="toolbar" style={{ marginBottom: "var(--space-3)" }}>
+        {opciones.vendedor.length > 1 && (
+          <Filtro etiqueta="Filtrar por vendedor" todos="Todos los vendedores" valor={f.vendedor}
+            opciones={contar(opciones.vendedor, cuentas.vendedor)} onCambiar={(v) => filtrar("vendedor", v)} />
+        )}
+        {opciones.servicio.length > 1 && (
+          <Filtro etiqueta="Filtrar por servicio" todos="Todos los servicios" valor={f.servicio}
+            opciones={contar(opciones.servicio, cuentas.servicio)} onCambiar={(v) => filtrar("servicio", v)} />
+        )}
+        {opciones.estrategia.length > 1 && (
+          <Filtro etiqueta="Filtrar por estrategia" todos="Todas las estrategias" valor={f.estrategia}
+            opciones={contar(opciones.estrategia, cuentas.estrategia)} onCambiar={(v) => filtrar("estrategia", v)} />
+        )}
+        {opciones.proyecto.length > 1 && (
+          <Filtro etiqueta="Filtrar por proyecto" todos="Todos los proyectos" valor={f.proyecto}
+            opciones={contar(opciones.proyecto, cuentas.proyecto)} onCambiar={(v) => filtrar("proyecto", v)} />
+        )}
+        {opciones.cuenta.length > 0 && (
+          <Filtro etiqueta="Filtrar por cuenta recaudadora" todos="Todas las cuentas" valor={f.cuenta}
+            opciones={contar(opciones.cuenta, cuentas.cuenta)} onCambiar={(v) => filtrar("cuenta", v)} />
+        )}
+        <div className="buscador">
+          <Input
+            icono={<Search size={18} />} value={busca} onChange={(ev) => setBusca(ev.target.value)}
+            placeholder="Buscá por nombre…" aria-label="Buscar ventas por nombre"
+          />
+        </div>
+      </div>
+  );
 
   return (
     <div className="stack-5">
@@ -263,7 +371,7 @@ export default function Ventas() {
             <DateRangePicker
               value={rango} minDate={limites.min} maxDate={limites.max}
               onApply={(r) => setRango(r, { pag: null })}
-              footerNota="Por la fecha de la venta · zona horaria de Argentina"
+              footerNota={`Por la fecha ${seccion === "cobros" ? "del cobro" : "de la venta"} · zona horaria de Argentina`}
             />
             <Button variante="secondary" icono={<Upload size={16} />} onClick={() => setImportando(true)}>Importar planilla</Button>
             <Button variante="secondary" icono={<Download size={16} />} onClick={exportarPlanilla}>Exportar planilla</Button>
@@ -273,39 +381,22 @@ export default function Ventas() {
         }
       />
 
+      <Tabs valor={seccion} onChange={cambiarSeccion} opciones={[
+        { valor: "ventas", texto: "Ventas" },
+        { valor: "cobros", texto: `Cobros${avisoDeCobros}` },
+      ]} />
+
+      {seccion === "cobros" ? (
+        <ListaCobros
+          e={e} desde={rango.desde} hasta={rango.hasta} busca={busca}
+          filtros={{ vendedor: f.vendedor, servicio: f.servicio, estrategia: f.estrategia, proyecto: f.proyecto, cuenta: f.cuenta }}
+          hayFiltros={FACETAS.some((k) => k !== "estado" && f[k]) || busca.trim() !== ""}
+          onLimpiar={limpiarFiltros} cabecera={barraDeFiltros}
+        />
+      ) : (
       <Card style={{ padding: 0, overflow: "hidden" }}>
         <div style={{ padding: "var(--space-4) var(--space-4) 0" }}>
-          {/* Un desplegable de una sola opción no recorta nada: no se muestra.
-              La cuenta es otra cosa — "cobró por acá" deja afuera las ventas
-              sin cobros —, así que con una ya sirve. */}
-          <div className="toolbar" style={{ marginBottom: "var(--space-3)" }}>
-            {opciones.vendedor.length > 1 && (
-              <Filtro etiqueta="Filtrar por vendedor" todos="Todos los vendedores" valor={f.vendedor}
-                opciones={conCuenta(opciones.vendedor, cuentas.vendedor)} onCambiar={(v) => filtrar("vendedor", v)} />
-            )}
-            {opciones.servicio.length > 1 && (
-              <Filtro etiqueta="Filtrar por servicio" todos="Todos los servicios" valor={f.servicio}
-                opciones={conCuenta(opciones.servicio, cuentas.servicio)} onCambiar={(v) => filtrar("servicio", v)} />
-            )}
-            {opciones.estrategia.length > 1 && (
-              <Filtro etiqueta="Filtrar por estrategia" todos="Todas las estrategias" valor={f.estrategia}
-                opciones={conCuenta(opciones.estrategia, cuentas.estrategia)} onCambiar={(v) => filtrar("estrategia", v)} />
-            )}
-            {opciones.proyecto.length > 1 && (
-              <Filtro etiqueta="Filtrar por proyecto" todos="Todos los proyectos" valor={f.proyecto}
-                opciones={conCuenta(opciones.proyecto, cuentas.proyecto)} onCambiar={(v) => filtrar("proyecto", v)} />
-            )}
-            {opciones.cuenta.length > 0 && (
-              <Filtro etiqueta="Filtrar por cuenta recaudadora" todos="Todas las cuentas" valor={f.cuenta}
-                opciones={conCuenta(opciones.cuenta, cuentas.cuenta)} onCambiar={(v) => filtrar("cuenta", v)} />
-            )}
-            <div className="buscador">
-              <Input
-                icono={<Search size={18} />} value={busca} onChange={(ev) => setBusca(ev.target.value)}
-                placeholder="Buscá por nombre…" aria-label="Buscar ventas por nombre"
-              />
-            </div>
-          </div>
+          {barraDeFiltros}
           <div className="toolbar">
             <Chip activo={!f.estado} onClick={() => filtrar("estado", "")} count={cuentas.estado.todas}>Todas</Chip>
             <Chip activo={f.estado === "saldo"} onClick={() => filtrar("estado", "saldo")} count={cuentas.estado.saldo}>Con saldo</Chip>
@@ -340,14 +431,17 @@ export default function Ventas() {
           )}
         />
       </Card>
+      )}
 
-      <Ayuda titulo="Cómo se arma una venta" icono={<Info size={18} />}>
-        El asistente va de a una pregunta: cliente, producto, precio, quién cerró, de dónde vino
-        y cómo se paga. El plan de cuotas se arma solo y se puede tocar cuota por cuota. Si una
-        cuota se cobró mitad por Stripe y mitad por USDT, van dos cobros sobre la misma
-        cuota; y si la plata ya entró a una pasarela, el cobro se concilia ahí mismo y el fee que
-        queda registrado es el real.
-      </Ayuda>
+      {seccion === "ventas" && (
+        <Ayuda titulo="Cómo se arma una venta" icono={<Info size={18} />}>
+          El asistente va de a una pregunta: cliente, producto, precio, quién cerró, de dónde vino
+          y cómo se paga. El plan de cuotas se arma solo y se puede tocar cuota por cuota. Si una
+          cuota se cobró mitad por Stripe y mitad por USDT, van dos cobros sobre la misma
+          cuota; y si la plata ya entró a una pasarela, el cobro se concilia ahí mismo y el fee que
+          queda registrado es el real.
+        </Ayuda>
+      )}
 
       {importando && (
         <ImportarPlanilla onCerrar={() => setImportando(false)} onListo={(m) => { setImportando(false); toast(m); }} />

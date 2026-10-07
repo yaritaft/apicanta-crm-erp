@@ -3,6 +3,7 @@ import type { Devolucion, Movimiento, Pago, Procesador, Traspaso, Venta } from "
 import { feeDelPago, parcheDeCobro } from "./completar-cobros";
 import { conciliarPuntas, type Punta } from "./traspasos";
 import { conciliarReembolsos, referenciaDeReembolso, type ReembolsoCrudo } from "./reembolsos";
+import { NOTA_ANULADO } from "./mercury";
 
 /* ==================================================================
    Cliente de Supabase del lado del servidor.
@@ -73,7 +74,7 @@ async function completarGuardados(db: SupabaseClient, filas: MovimientoNuevo[]):
     for (let i = 0; i < lista.length; i += 50) {
       const refs = lista.slice(i, i + 50).map((f) => f.referencia);
       const q = await db.from("movimientos")
-        .select("id, proveedor, referencia, monto, fee, neto, clienteNombre, clienteEmail, clienteTelefono, metodo, descripcion")
+        .select("id, proveedor, referencia, monto, fee, neto, clienteNombre, clienteEmail, clienteTelefono, metodo, descripcion, fecha, estado")
         .eq("proveedor", proveedor).in("referencia", refs);
       if (q.error) return { completados, error: q.error.message };
       for (const g of (q.data ?? []) as (Movimiento & { id: string })[]) {
@@ -93,6 +94,30 @@ async function completarGuardados(db: SupabaseClient, filas: MovimientoNuevo[]):
     }
   }
   return { completados };
+}
+
+/** Los cobros de Mercury que el banco anuló (fallaron, se cancelaron, se
+ *  revirtieron) y siguen sin conciliar en la bandeja: se descartan solos, con
+ *  una nota (no se borran). Los ya conciliados no se tocan (lib/mercury.ts). */
+export async function descartarAnuladosMercury(referencias: string[]): Promise<{ descartados: number; error?: string }> {
+  const refs = [...new Set(referencias.filter(Boolean))];
+  if (refs.length === 0) return { descartados: 0 };
+  const db = nubeServidor();
+  if (!db) return { descartados: 0 };
+  let descartados = 0;
+  for (let i = 0; i < refs.length; i += 50) {
+    const q = await db.from("movimientos").select("id, descripcion")
+      .eq("proveedor", "mercury").eq("estado", "pendiente").in("referencia", refs.slice(i, i + 50));
+    if (q.error) return { descartados, error: q.error.message };
+    for (const m of (q.data ?? []) as { id: string; descripcion?: string | null }[]) {
+      const u = await db.from("movimientos").update({
+        estado: "ignorado", descripcion: [m.descripcion, NOTA_ANULADO].filter(Boolean).join(" · "),
+      }).eq("id", m.id);
+      if (u.error) return { descartados, error: u.error.message };
+      descartados++;
+    }
+  }
+  return { descartados };
 }
 
 /** Los cobros de una pasarela que ya tienen todo en la base: no hace falta

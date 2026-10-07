@@ -23,7 +23,10 @@ export const AREAS: { id: AreaId; nombre: string; pantallas: string }[] = [
   { id: "panel", nombre: "Dashboard", pantallas: "Dashboard & KPIs: sólo las partes de las áreas que ve" },
   { id: "leads", nombre: "Leads", pantallas: "Leads" },
   { id: "crm", nombre: "CRM y Agenda", pantallas: "CRM, cierre del día y Agenda" },
-  { id: "ventas", nombre: "Ventas y Clientes", pantallas: "Ventas, Clientes, cuotas y cobros" },
+  { id: "ventas", nombre: "Ventas", pantallas: "Ventas, cuotas y cobros. Quien ve Ventas ve también Clientes" },
+  /* Clientes se puede dar solo (Customer Success: F2-06). Quien ya ve o edita
+     Ventas lo sigue viendo igual: ver nivelDeAreas(). */
+  { id: "clientes", nombre: "Clientes", pantallas: "Clientes: lo que compró cada uno, cuánto pagó y si está al día" },
   { id: "webinars", nombre: "Webinars", pantallas: "Webinars" },
   { id: "marketing", nombre: "Marketing", pantallas: "Marketing (Meta)" },
   { id: "alumnos", nombre: "Alumnos", pantallas: "Alumnos, Pipeline de servicio y Reportes" },
@@ -32,6 +35,16 @@ export const AREAS: { id: AreaId; nombre: string; pantallas: string }[] = [
 ];
 
 const TODO: AreasDeTipo = Object.fromEntries(AREAS.map((a) => [a.id, "editar"])) as AreasDeTipo;
+
+/* Customer Success (Lili y las chicas): los alumnos —seguimiento, CV y
+   LinkedIn, testimonios— y los clientes, y sólo eso. Lo siembra
+   supabase/customer-success.sql y se puede crear con un clic en Equipo →
+   Tipos de cuenta (F2-06). */
+export const CUSTOMER_SUCCESS: TipoCuenta = {
+  id: "customer_success", nombre: "Customer Success", orden: 7, soloLoSuyo: false,
+  descripcion: "Alumnos (seguimiento, CV y LinkedIn, testimonios) y Clientes. Sólo eso.",
+  areas: { alumnos: "editar", clientes: "ver" },
+};
 
 /* Los mismos que siembra supabase/tipos-cuenta.sql. */
 export const TIPOS_POR_DEFECTO: TipoCuenta[] = [
@@ -62,6 +75,7 @@ export const TIPOS_POR_DEFECTO: TipoCuenta[] = [
     descripcion: "Webinars y Marketing; ve los leads. En el Dashboard, adquisición y el webinar.",
     areas: { panel: "ver", leads: "ver", webinars: "editar", marketing: "editar" },
   },
+  CUSTOMER_SUCCESS,
 ];
 
 /* ---------- quién está usando la app ---------- */
@@ -79,12 +93,26 @@ export const ACCESO_DUENO: MiAcceso = { tipo: "dueno", nombre: "Dueño", areas: 
 
 export const esDueno = (a: MiAcceso | null | undefined) => a?.tipo === "dueno";
 
+/** Una cuenta que ve sólo lo suyo (el closer): su menú es el mínimo, «Mis
+ *  llamadas», «Cerrar el día» y «Cargar venta» (components/shell/nav.ts). Lo
+ *  demás sigue abierto por link: lo que ve ya lo recorta la base, así que no
+ *  hay nada de otros que esconder (Yari, 02/10: «tan simple que no se pueda
+ *  equivocar»). */
+export const esCuentaDeCloser = (a: MiAcceso | null | undefined) => Boolean(a?.soloLoSuyo) && !esDueno(a);
+/** El nivel de un área según lo que dice un tipo: 0 no la ve, 1 la ve, 2 la edita.
+    Clientes cuelga de Ventas desde siempre: lo que da Ventas, lo da también
+    Clientes (un tipo de antes no pierde la pantalla), y Clientes se puede dar
+    solo, más alto o más bajo, para Customer Success. */
+export function nivelDeAreas(areas: AreasDeTipo | undefined, area: AreaId): 0 | 1 | 2 {
+  const de = (x: AreaId) => (areas?.[x] === "editar" ? 2 : areas?.[x] === "ver" ? 1 : 0);
+  return area === "clientes" ? (Math.max(de("clientes"), de("ventas")) as 0 | 1 | 2) : de(area);
+}
+
 /** 0: no la ve · 1: la ve · 2: la edita. */
 export function nivelEn(a: MiAcceso | null | undefined, area: AreaId): 0 | 1 | 2 {
   if (!a) return 0;
   if (esDueno(a)) return 2;
-  const n = a.areas?.[area];
-  return n === "editar" ? 2 : n === "ver" ? 1 : 0;
+  return nivelDeAreas(a.areas, area);
 }
 
 /* ---------- qué tablas lee y edita cada área ----------
@@ -93,20 +121,23 @@ export function nivelEn(a: MiAcceso | null | undefined, area: AreaId): 0 | 1 | 2
    que no está en EDITAN, sólo un dueño (equipo, tipos_cuenta, accesos,
    honorarios, liquidaciones). */
 
-const PERSONAS: AreaId[] = ["leads", "crm", "ventas", "webinars", "alumnos", "finanzas", "marketing"];
-const VENTAS: AreaId[] = ["ventas", "finanzas", "webinars", "marketing", "alumnos"];
+const PERSONAS: AreaId[] = ["leads", "crm", "ventas", "clientes", "webinars", "alumnos", "finanzas", "marketing"];
+const VENTAS: AreaId[] = ["ventas", "clientes", "finanzas", "webinars", "marketing", "alumnos"];
 const YOUTUBE: AreaId[] = ["webinars", "marketing"];
 
 export const LEEN: Record<string, AreaId[]> = {
   leads: PERSONAS,
   contactos: PERSONAS,
-  comentarios: ["leads", "crm", "ventas", "alumnos", "finanzas"],
+  comentarios: ["leads", "crm", "ventas", "clientes", "alumnos", "finanzas"],
   sesiones: ["crm", "leads", "webinars", "marketing", "ventas"],
   ventas: VENTAS,
   cuotas: VENTAS,
   pagos: VENTAS,
   alumnos: ["alumnos"],
   reportes: ["alumnos"],
+  /* Customer Success (supabase/customer-success.sql). */
+  seguimiento_alumnos: ["alumnos"],
+  testimonios: ["alumnos"],
   gastos: ["finanzas"],
   movimientos: ["finanzas"],
   arqueos: ["finanzas"],
@@ -114,6 +145,7 @@ export const LEEN: Record<string, AreaId[]> = {
   /* Las devoluciones las ve quien ve las ventas (el closer, sólo las de sus
      ventas): sin ellas, los números de cada área no darían igual. */
   devoluciones: VENTAS,
+  gastos_recurrentes: ["finanzas"],
   transacciones: ["finanzas"],
   ad_insights: ["marketing", "webinars", "finanzas"],
   campanias: ["marketing", "webinars"],
@@ -129,8 +161,8 @@ export const LEEN: Record<string, AreaId[]> = {
 
 export const EDITAN: Record<string, AreaId[]> = {
   leads: ["leads", "crm", "ventas"],
-  contactos: ["leads", "crm", "ventas"],
-  comentarios: ["leads", "crm", "ventas", "alumnos", "finanzas"],
+  contactos: ["leads", "crm", "ventas", "clientes"],
+  comentarios: ["leads", "crm", "ventas", "clientes", "alumnos", "finanzas"],
   sesiones: ["crm", "leads"],
   ventas: ["ventas", "finanzas"],
   cuotas: ["ventas", "finanzas"],
@@ -138,6 +170,8 @@ export const EDITAN: Record<string, AreaId[]> = {
   alumnos: ["alumnos"],
   reportes: ["alumnos"],
   etapas_servicio: ["alumnos"],
+  seguimiento_alumnos: ["alumnos"],
+  testimonios: ["alumnos"],
   webinars: ["webinars"],
   campaigns: ["marketing"],
   adsets: ["marketing"],
@@ -152,6 +186,7 @@ export const EDITAN: Record<string, AreaId[]> = {
      SIN «sólo lo suyo» (el director): el closer no las carga. Ver
      puedeCargarDevolucion; la base lo dice igual (supabase/devoluciones.sql). */
   devoluciones: ["finanzas", "ventas"],
+  gastos_recurrentes: ["finanzas"],
   transacciones: ["finanzas"],
   ajustes: ["ajustes"],
   campos: ["ajustes"],
@@ -209,11 +244,16 @@ const RUTAS: [string, AreaId | "equipo"][] = [
   ["/panel", "panel"],
   ["/leads", "leads"],
   ["/crm", "crm"],
+  /* La cuenta del closer: sus llamadas, el cierre del día y cargar una venta. */
+  ["/mis-llamadas", "crm"],
+  ["/cerrar-el-dia", "crm"],
+  ["/cargar-venta", "ventas"],
   ["/agenda", "crm"],
   ["/pipeline", "crm"],
   ["/ventas", "ventas"],
-  ["/clientes", "ventas"],
+  ["/clientes", "clientes"],
   ["/webinars", "webinars"],
+  ["/formularios", "webinars"],
   ["/marketing", "marketing"],
   ["/alumnos", "alumnos"],
   ["/reportes", "alumnos"],
@@ -269,8 +309,8 @@ export function tipoLimpio(t: TipoCuenta): TipoCuenta {
 /** Lo que ve un tipo, en una línea: «Edita CRM y Agenda, Ventas y Clientes; ve Webinars». */
 export function resumenDeTipo(t: Pick<TipoCuenta, "id" | "areas" | "soloLoSuyo">): string {
   if (t.id === "dueno") return "Todo, incluidos Equipo y honorarios.";
-  const edita = AREAS.filter((a) => t.areas[a.id] === "editar").map((a) => a.nombre);
-  const ve = AREAS.filter((a) => t.areas[a.id] === "ver").map((a) => a.nombre);
+  const edita = AREAS.filter((a) => nivelDeAreas(t.areas, a.id) === 2).map((a) => a.nombre);
+  const ve = AREAS.filter((a) => nivelDeAreas(t.areas, a.id) === 1).map((a) => a.nombre);
   /* «CRM y Agenda, Ventas y Clientes»: si algún nombre ya lleva «y», con comas. */
   const lista = (xs: string[]) => (xs.length <= 1 ? xs.join("")
     : xs.some((x) => x.includes(" y ")) ? xs.join(", ") : `${xs.slice(0, -1).join(", ")} y ${xs[xs.length - 1]}`);
@@ -283,8 +323,8 @@ export function resumenDeTipo(t: Pick<TipoCuenta, "id" | "areas" | "soloLoSuyo">
 const QUE_ES: Record<string, string> = {
   ventas: "las ventas", cuotas: "las cuotas", pagos: "los cobros", leads: "los leads", contactos: "las personas",
   sesiones: "las llamadas", comentarios: "los comentarios", alumnos: "los alumnos", reportes: "los reportes",
-  etapas_servicio: "las etapas del servicio", webinars: "los webinars", gastos: "los gastos",
-  movimientos: "la conciliación", arqueos: "la caja", traspasos: "los movimientos entre cuentas",
+  etapas_servicio: "las etapas del servicio", seguimiento_alumnos: "el seguimiento de alumnos", testimonios: "los testimonios", webinars: "los webinars", gastos: "los gastos",
+  movimientos: "la conciliación", arqueos: "la caja", traspasos: "los movimientos entre cuentas", gastos_recurrentes: "los gastos fijos",
   devoluciones: "las devoluciones",
   transacciones: "las transacciones", ajustes: "los Ajustes",
   etapas: "las etapas", embudos: "las estrategias", productos: "los servicios", procesadores: "las cuentas recaudadoras",

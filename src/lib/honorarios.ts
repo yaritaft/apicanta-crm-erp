@@ -10,10 +10,11 @@ import { aMonedaBase, categoriaDe, normalizar } from "./gastos";
 import { fechaLarga, money, num, pct, tasaTexto } from "./format";
 import {
   conCorreccion, desgloseBono, desgloseDeudaQueEntra, desgloseDeudaQueSale, desgloseFijo, desgloseMedido, desglosePieza,
-  desgloseReversa, listaDeCobros, listaDeVentas,
+  desgloseReversa, listaDeCobros, listaDeVentas, paso,
   type CobroContado, type Fuente, type PartesProfit,
 } from "./desglose";
 import { devolucionesDelMes, liquidadaEn, mesDeLiquidacion, reversasDeComision, type ParteReversa, type Reversa } from "./devoluciones";
+import { descuentaPorCierre, descuentoDesde, diaSinCierreDe, reglaDeCierre, ventasSinCierre } from "./cierre-del-dia";
 
 /* ==================================================================
    Honorarios: lo que cobra cada uno y la liquidación de cada mes.
@@ -396,6 +397,9 @@ interface Contexto {
   closerDeCuota: Map<ID, ID | undefined>;
   equipo: Map<ID, MiembroEquipo>;
   ventas: Map<ID, Venta>;
+  /* Las ventas de un día sin cierre cargado ese mismo día: vacío con el
+     interruptor apagado (lib/cierre-del-dia.ts). */
+  sinCierre: ReadonlySet<ID>;
 }
 
 function armarContexto(e: EstadoApp, rango: RangoMes, tc: number): Contexto {
@@ -408,7 +412,10 @@ function armarContexto(e: EstadoApp, rango: RangoMes, tc: number): Contexto {
     ventaDeCuota.set(c.id, v);
     closerDe.set(c.id, closerDeCuota(v, c));
   }
-  return { e, rango, base: e.ajustes.monedaBase, tc, ventaDeCuota, closerDeCuota: closerDe, equipo: new Map(e.equipo.map((m) => [m.id, m] as const)), ventas };
+  return {
+    e, rango, base: e.ajustes.monedaBase, tc, ventaDeCuota, closerDeCuota: closerDe,
+    equipo: new Map(e.equipo.map((m) => [m.id, m] as const)), ventas, sinCierre: ventasSinCierre(e),
+  };
 }
 
 /* Todo lo cobrado de la empresa, sin filtro: tiene que dar lo mismo que el
@@ -682,6 +689,85 @@ function linea(
   };
 }
 
+/* ---------- El descuento por el cierre del día ----------
+   Con el interruptor de Ajustes → CRM prendido, la comisión de closer de las
+   ventas que salieron de una llamada de un día sin cierre cargado ese mismo
+   día no se paga (lib/cierre-del-dia.ts). Finanzas ya la calcula sin esas
+   ventas (comisionesDelMes), así que acá la comisión sale entera, con todo lo
+   que entró, y un renglón aparte, negativo, resta lo que no se paga: se ve
+   cuánto fue y por qué, y la suma da lo mismo que Finanzas. Con el interruptor
+   apagado no existe: ningún número cambia. */
+
+export const esComisionDeCloser = (c: ConceptoPago): boolean =>
+  c.tipo === "porcentaje" && (c.base === "cash" || c.base === "cash-neto") && c.alcance === "closer";
+
+/* "7/10", "9/10". */
+const diaCorto = (d: string) => `${Number(d.slice(8, 10))}/${Number(d.slice(5, 7))}`;
+
+function lineaDeDescuento(
+  cx: Contexto, m: MiembroEquipo, c: ConceptoPago, comision: LineaLiquidada, entrada: EntradaLiquidacion | undefined, hermanos?: ConceptoPago[],
+): LineaLiquidada | null {
+  /* Corregida a mano la comisión, o lo medido cargado a mano: la cuenta no es de la app. */
+  if (cx.sinCierre.size === 0 || !esComisionDeCloser(c) || comision.corregido || entrada?.cantidad !== undefined) return null;
+  const hasta = m.hasta && (!c.hasta || m.hasta < c.hasta) ? m.hasta : c.hasta;
+  const vig = vigenciaEnMes({ desde: c.desde, hasta }, cx.rango);
+  if (!vig) return null;
+  const b = c.base === "cash" ? "cash" : "cash-neto";
+  let valor = 0, bruto = 0;
+  const cobros: CobroContado[] = [];
+  const dias = new Set<string>();
+  for (const p of pagosDelMes(cx.e, vig.rango)) {
+    const venta = cx.ventaDeCuota.get(p.cuotaId);
+    if (!venta || !descuentaPorCierre(cx.sinCierre, venta, cx.closerDeCuota.get(p.cuotaId))) continue;
+    if (!cuenta(cx, c, m, venta, p, hermanos)) continue;
+    valor += b === "cash" ? p.monto : p.monto - p.feeMonto;
+    bruto += p.monto;
+    cobros.push({ pago: p, venta });
+    const d = diaSinCierreDe(cx.e, venta);
+    if (d) dias.add(d);
+  }
+  valor = r2(valor); bruto = r2(bruto);
+  const tasa = c.tasa ?? 0;
+  const noSePaga = r2(valor * tasa);
+  const monto = -noSePaga;
+  if (cobros.length === 0 || Math.abs(monto) < 0.005) return null;
+
+  const B = cx.base;
+  const cuantos = cant(cobros.length, "cobro", "cobros");
+  const pasos = [
+    ...(b === "cash-neto"
+      ? [
+        paso("base", "Cobrado en los días sin cierre", bruto, "plata", { moneda: B, nota: cuantos }),
+        paso("menos", "Lo que se quedaron los procesadores de pago", r2(bruto - valor), "plata", { moneda: B }),
+        paso("igual", "Cash collected post pasarelas de esos días", valor, "plata", { moneda: B }),
+      ]
+      : [paso("base", "Cash collected de los días sin cierre", valor, "plata", { moneda: B, nota: cuantos })]),
+    paso("por", "Porcentaje de su comisión", tasa, "tasa"),
+    paso("igual", "Comisión que no se paga", noSePaga, "plata", { moneda: c.moneda }),
+    paso("por", "Se resta: es un descuento", -1, "cantidad"),
+    paso("igual", "Descuento por cierre del día", monto, "plata", { moneda: c.moneda }),
+  ];
+  const lista = listaDeCobros(cobros, nombresDeLista(cx), B);
+  const desde = descuentoDesde(reglaDeCierre(cx.e.ajustes));
+  const diasTexto = [...dias].sort().map(diaCorto).join(", ");
+  return {
+    clave: `cierre:${c.id}`, tipo: "descuento", nombre: "Descuento por cierre del día",
+    detalle: `${pct(tasa * 100, decimalesTasa(tasa))} de ${plata(valor, B)} cobrados en días sin cierre cargado ese mismo día (${cuantos})`,
+    moneda: c.moneda, monto, montoBase: r2(aMonedaBase(monto, c.moneda, B, cx.tc)),
+    variable: true, enFinanzas: comision.enFinanzas,
+    desglose: {
+      regla: `${pct(tasa * 100, decimalesTasa(tasa))} ${PORCENTAJE_DE[b]} de las ventas que salieron de un día en que no se cargó el cierre ese mismo día`,
+      moneda: c.moneda, pasos,
+      ...(lista ? { lista: { ...lista, titulo: "Los cobros de esos días" } } : {}),
+      avisos: [
+        `Con el interruptor de Ajustes → CRM prendido, no se comisiona lo de un día cuyo cierre no se cargó el mismo día${desde ? `. Rige para las llamadas desde el ${fechaLarga(`${desde}T12:00:00`)}` : ""}.`,
+        ...(diasTexto ? [`Días sin cierre: ${diasTexto}.`] : []),
+        "La comisión de arriba está entera; Finanzas ya la calcula sin estas ventas, así que acá se resta y da lo mismo.",
+      ],
+    },
+  };
+}
+
 /* "Lo cargó Juan Cruz el 7 oct 2026 desde la liquidación de septiembre 2026". */
 function cargadoTexto(x: ExtraLiquidacion, periodo: string): string | undefined {
   if (!x.creadoEn && !x.creadoPor?.trim()) return undefined;
@@ -915,7 +1001,11 @@ export function calcularLiquidacion(e: EstadoApp, periodo: string, liq?: Liquida
         fila.lineas.push(null);
         continue;
       }
-      fila.lineas.push(linea(cx, m, c, entradas[claveEntrada(m.id, c.id)], undefined, conceptos));
+      const l = linea(cx, m, c, entradas[claveEntrada(m.id, c.id)], undefined, conceptos);
+      fila.lineas.push(l);
+      /* Con el interruptor del cierre del día prendido, el renglón que resta lo que no se paga. */
+      const descuento = l ? lineaDeDescuento(cx, m, c, l, entradas[claveEntrada(m.id, c.id)], conceptos) : null;
+      if (descuento) fila.lineas.push(descuento);
     }
     fila.lineas.push(...lineasDeReversa(cx, m, reversas, entradas));
     for (const x of extras) if (x.miembroId === m.id) fila.lineas.push(lineaExtra(cx, x));
