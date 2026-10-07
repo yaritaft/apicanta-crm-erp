@@ -10,7 +10,7 @@ import { devolucionesDeVenta } from "@/lib/devoluciones";
 import { rangoDePeriodo } from "@/lib/periodos";
 import { ACCESO_DUENO, puedeCargarDevolucion, puedeDarDeBaja, type MiAcceso } from "@/lib/permisos";
 import { estadoVacio } from "@/lib/seed";
-import type { Alumno, EstadoApp, Lead, Sesion } from "@/lib/types";
+import type { Alumno, EstadoApp, Lead, Sesion, Venta } from "@/lib/types";
 import { estadoDeYari, iso, OCTUBRE, SEPTIEMBRE } from "./estado-devolucion";
 
 /* ==================================================================
@@ -82,8 +82,8 @@ test("el closer no puede cargar una devolución ni cancelar o reembolsar su vent
   const dejarDeEscuchar = alNegarseEscritura((tabla, motivo) => negadas.push([tabla, motivo]));
   try {
     assert.equal(acciones.registrarDevolucion({ ventaId: "v1", monto: 1500, fecha: iso(OCTUBRE, 3) }), null);
-    acciones.actualizar("ventas", "v1", { estado: "cancelada" }, "Belén Godoy");
-    acciones.actualizar("ventas", "v1", { estado: "reembolsada" }, "Belén Godoy");
+    acciones.actualizar<Venta>("ventas", "v1", { estado: "cancelada" }, "Belén Godoy");
+    acciones.actualizar<Venta>("ventas", "v1", { estado: "reembolsada" }, "Belén Godoy");
     assert.deepEqual(negadas.map(([t]) => t), ["devoluciones", "ventas", "ventas"]);
     assert.match(negadas[1][1]!, /no puede cancelar, devolver ni reactivar una venta/);
     const e = hoy();
@@ -91,7 +91,7 @@ test("el closer no puede cargar una devolución ni cancelar o reembolsar su vent
     assert.equal(e.ventas[0].estado, "activa");
     assert.equal(e.cuotas.find((c) => c.id === "c1c")!.estado, "pendiente");
     /* Pero sí edita su venta mientras siga activa. */
-    acciones.actualizar("ventas", "v1", { notas: "Pidió factura" }, "Belén Godoy");
+    acciones.actualizar<Venta>("ventas", "v1", { notas: "Pidió factura" }, "Belén Godoy");
     assert.equal(hoy().ventas[0].notas, "Pidió factura");
     assert.equal(negadas.length, 3);
   } finally {
