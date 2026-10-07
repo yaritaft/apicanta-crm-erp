@@ -79,9 +79,12 @@ test("la base (tipos-cuenta.sql + customer-success.sql) dice lo mismo que LEEN y
   const base = readFileSync(new URL("../supabase/tipos-cuenta.sql", import.meta.url), "utf8");
   const leen = parchar(cuerpo(base, "areas_que_leen"), ["leads", "contactos", "comentarios", "ventas", "cuotas", "pagos"]);
   const editan = parchar(cuerpo(base, "areas_que_editan"), ["contactos", "comentarios"]);
+  /* Las tablas cuya política usa nivel_area('finanzas') directo, sin pasar por estas dos funciones
+     (supabase/gastos-recurrentes.sql): la app las lista en LEEN y EDITAN pero la base no. */
+  const PROPIAS = new Set(["gastos_recurrentes"]);
   for (const [tabla, areas] of Object.entries(LEEN)) {
-    if (areas.length === 0) continue;
+    if (areas.length === 0 || PROPIAS.has(tabla)) continue;
     assert.deepEqual([...(leen[tabla] ?? [])].sort(), [...areas].sort(), `lee ${tabla}`);
   }
-  for (const [tabla, areas] of Object.entries(EDITAN)) assert.deepEqual([...(editan[tabla] ?? [])].sort(), [...areas].sort(), `edita ${tabla}`);
+  for (const [tabla, areas] of Object.entries(EDITAN)) if (!PROPIAS.has(tabla)) assert.deepEqual([...(editan[tabla] ?? [])].sort(), [...areas].sort(), `edita ${tabla}`);
 });
