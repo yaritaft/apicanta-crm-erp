@@ -378,3 +378,35 @@ test("con una sola área a la vista, las piezas de la serie no muestran la otra"
   assert.deepEqual(piezasDeSerie(m, { revenue: false, cc: true }).map((p) => p.concepto), ["Cash Collected (CC)"]);
   assert.equal(piezasDeSerie(m, { revenue: true, cc: true }).length, 3);
 });
+
+test("con reembolsadas, canceladas y ventas que son sólo una reserva, la suma sigue dando la tabla", () => {
+  /* La tabla cuenta en el Revenue las reembolsadas y las que son sólo reserva, y deja afuera las canceladas;
+     las que son sólo reserva no son una «venta» (Ventas). Los gráficos hacen lo mismo, ni más ni menos. */
+  const activas = e.ventas.filter((v) => v.estado === "activa");
+  const reembolsadas = new Set(activas.slice(0, 4).map((v) => v.id));
+  const canceladas = new Set(activas.slice(4, 8).map((v) => v.id));
+  const soloReserva = new Set(activas.slice(8, 12).map((v) => v.id));
+  const raro = conCambios((x) => ({
+    ventas: x.ventas.map((v) => (reembolsadas.has(v.id) ? { ...v, estado: "reembolsada" as const } : canceladas.has(v.id) ? { ...v, estado: "cancelada" as const } : v)),
+    cuotas: x.cuotas.map((q) => (soloReserva.has(q.ventaId) ? { ...q, esReserva: true } : q)),
+  }));
+  const corte = total("2000-01-01", "2999-12-31");
+  const c = new Contexto(raro, corte);
+  const base = new Contexto(e, corte);
+  assert.ok(c.facturado() < base.facturado(), "las canceladas salen del Revenue");
+  assert.ok(c.ventasContables().length < base.ventasContables().length, "las que son sólo reserva no son una venta");
+  for (const dim of DIMENSIONES) {
+    const d = desglosePor(c, dim.id);
+    assert.equal(d.categorias.reduce((a, q) => a + q.unidades, 0), fila("v_n", c), `Unidades (${dim.id})`);
+    casi(d.categorias.reduce((a, q) => a + q.revenue, 0), fila("v_fact", c), `Revenue (${dim.id})`);
+    casi(d.categorias.reduce((a, q) => a + q.cc, 0), fila("c_cc", c), `CC (${dim.id})`);
+    casi(d.categorias.reduce((a, q) => a + q.saldoVencido, 0), fila("c_vencido", c), `Vencido (${dim.id})`);
+  }
+  /* Las reembolsadas siguen en el Revenue, igual que en la tabla. */
+  const plan = desglosePor(c, "plan");
+  const reembolsadasRevenue = raro.ventas.filter((v) => reembolsadas.has(v.id)).reduce((a, v) => a + v.precioAcordado, 0);
+  assert.ok(plan.total.revenue >= reembolsadasRevenue);
+  /* Y la plata de las que son sólo reserva cae en «Sin cuotas», sin unidades. */
+  const sin = plan.categorias.find((q) => q.clave === "0");
+  assert.ok(sin && sin.revenue > 0, "falta la categoría de lo que es sólo reserva");
+});

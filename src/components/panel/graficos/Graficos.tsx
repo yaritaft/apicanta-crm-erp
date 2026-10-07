@@ -167,6 +167,12 @@ export function Graficos({ cortes, comparar, moneda, explicar, verVentas, verCob
           etiqueta={`${tituloRC}, por ${unidadTiempo}`} puntos={puntos} series={seriesRC} modo={modo} alto={290}
           formato={plata} formatoEje={eje} sinDatos={ve.revenue && ve.cc ? "Sin ventas ni cobros en este período." : ve.revenue ? "Sin ventas en este período." : "Sin cobros en este período."}
           extra={extra([...(ve.revenue ? [{ id: "v_fact", nombre: "Revenue", de: (m: Medidas) => m.revenue }] : []), ...(ve.cc ? [{ id: "c_cc", nombre: "CC", de: (m: Medidas) => m.cc }] : [])])}
+          accionesFijas={(i) => (
+            <div className="gr-tip__acciones">
+              {ve.revenue && <button type="button" className="link t-sm" onClick={() => onAbrir(def("v_fact"), serie[i].corte)}>Ver las ventas</button>}
+              {ve.cc && <button type="button" className="link t-sm" onClick={() => onAbrir(def("c_cc"), serie[i].corte)}>Ver los cobros</button>}
+            </div>
+          )}
         />
       </section>
 

@@ -50,7 +50,7 @@ function escala(max: number, partes = 4): { top: number; ticks: number[] } {
 const acotar = (v: number, a: number, b: number) => Math.min(Math.max(v, a), b);
 
 export function GraficoTiempo({
-  etiqueta, puntos, series, modo, formato, formatoEje, alto = 260, referencia, minimoMax = 0, techo, area, extra, sinDatos,
+  etiqueta, puntos, series, modo, formato, formatoEje, alto = 260, referencia, minimoMax = 0, techo, area, extra, sinDatos, accionesFijas,
 }: {
   /* Qué es, para quien no lo ve: «Revenue y Cash Collected por día». */
   etiqueta: string;
@@ -74,6 +74,8 @@ export function GraficoTiempo({
   extra?: (i: number) => React.ReactNode;
   /* Qué decir cuando no hay nada para dibujar. */
   sinDatos?: string;
+  /* Con un punto fijado, qué se puede hacer con él (abrir las ventas o los cobros de esa columna). */
+  accionesFijas?: (i: number) => React.ReactNode;
 }) {
   const [caja, W] = useAncho();
   const svg = useRef<SVGSVGElement>(null);
@@ -267,7 +269,10 @@ export function GraficoTiempo({
         </svg>
 
         {activo !== null && (
-          <div className="gr-tip" aria-hidden style={{ top: P.t + 6, ...(aLaDerecha ? { left: acotar(gx + 14, 4, tope) } : { right: acotar(W - gx + 14, 4, tope) }) }}>
+          <div
+            className={`gr-tip${fijo && accionesFijas ? " gr-tip--fijo" : ""}`} aria-hidden={!(fijo && accionesFijas)}
+            style={{ top: P.t + 6, ...(aLaDerecha ? { left: acotar(gx + 14, 4, tope) } : { right: acotar(W - gx + 14, 4, tope) }) }}
+          >
             <strong className="gr-tip__titulo">{puntos[activo].titulo}</strong>
             {visibles.map((s) => (
               <div key={s.id} className="gr-tip__fila">
@@ -277,7 +282,8 @@ export function GraficoTiempo({
               </div>
             ))}
             {extra?.(activo)}
-            {fijo && <span className="gr-tip__pie">Fijado · tocá de nuevo o apretá Escape</span>}
+            {fijo && accionesFijas?.(activo)}
+            {fijo && <span className="gr-tip__pie">Fijado · tocá el gráfico de nuevo o apretá Escape</span>}
           </div>
         )}
       </div>

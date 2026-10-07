@@ -617,8 +617,8 @@ tasa de cobro y mora, de Cobranza).
   servicio y proyecto (barras ordenadas; dona si son pocas) y el mapa con el peso de cada país. Cada gráfico tiene
   su ⓘ con la cuenta escrita y los números del período.
 - **Interactivos y accesibles**: tooltip al pasar el mouse o con el foco, flechas del teclado en los gráficos,
-  clic para fijar un punto, ocultar una serie desde la leyenda, elegir una categoría o un país y abrir sus ventas o
-  cobros en el mismo panel que la tabla. Cada serie tiene su forma (círculo y rombo) y el CC va rayado: no se
+  clic para fijar un punto (y abrir las ventas o los cobros de esa columna), ocultar una serie desde la leyenda,
+  elegir una categoría o un país y abrir sus ventas o cobros, en el mismo panel que la tabla. Cada serie tiene su forma (círculo y rombo) y el CC va rayado: no se
   depende sólo del color. Los números van también en una tabla para lectores de pantalla.
 - **País**: `src/lib/paises.ts` entiende el texto libre («México», «Mexico», «MX», «EE.UU.», «Rep. Dominicana»…)
   y lo lleva a su código ISO; lo escrito que no se reconoce va a «Sin identificar» (con lo que decía) y lo vacío, a
