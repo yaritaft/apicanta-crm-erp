@@ -76,3 +76,19 @@ Con esto Meta recibe, desde el servidor, a quien se registró (Lead), a quien ag
 El Lead sale al instante en cada registro. Las agendas y las ventas las manda el cron
 `/api/cron/meta-capi` cada media hora (las de las últimas 48 horas, una sola vez cada una: quedan en
 la tabla `capi_enviados`).
+
+### El registro calificado (reunión del 02/10)
+
+Además del Lead, si la persona califica (puede invertir 1000 USD o más, inglés conversacional o mejor y carrera,
+según lo que contestó en el formulario) sale el evento **`RegistroCalificado`**, con los UTMs, el país y el «sí / no»
+de cada criterio. Para que el formulario pueda calificar a alguien tiene que preguntar las tres cosas; los campos se
+reconocen por su nombre o su texto (`inversion`, `nivel_ingles`, `formacion`, o «¿Cuánto podés invertir en vos?»,
+«¿Cuál es tu nivel de inglés?», «¿Cuál es tu nivel de formación?»). Lo que escribió en crudo no se manda a Meta.
+
+Para optimizar los anuncios hacia esos registros: Events Manager → Conversiones personalizadas → crear una sobre el
+evento `RegistroCalificado`. Y en el píxel de la landing, disparar `Lead` (no `CompleteRegistration`) con el mismo
+`event_id` que se manda en el formulario, así Meta junta el del navegador con el del servidor y no cuenta dos veces.
+
+Si faltan las variables, **Ajustes → Integraciones → Conversions API de Meta** dice cuáles y para qué. Variables
+opcionales: `META_CAPI_URL` (la página de la landing, para los eventos que no pasaron en una página) y
+`META_CAPI_EVENTO_CALIFICADO` (cómo se llama el evento; por defecto `RegistroCalificado`).

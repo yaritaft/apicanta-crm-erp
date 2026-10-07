@@ -4,7 +4,8 @@ import { nubeServidor } from "@/lib/servidor";
 import { claveEmail, completar } from "@/lib/contactos";
 import { webinarDeUtm } from "@/lib/calendly";
 import { diaArgentina } from "@/lib/reporteFinanciera";
-import { enviarEventosMeta, fbcDeFbclid } from "@/lib/meta-capi";
+import { enviarEventosUnaVez, fbcDeFbclid } from "@/lib/meta-capi";
+import { eventosDeRegistro } from "@/lib/capi-registro";
 import type { Contacto } from "@/lib/types";
 
 /* ==================================================================
@@ -21,7 +22,8 @@ import type { Contacto } from "@/lib/types";
      UTMs, la página y lo que haya contestado. Con eso se sabe de qué
      anuncio vino (utm_content) antes de que agende.
    - "Formularios" del webinar, contado solo (sin pisar lo cargado a mano).
-   - El evento Lead a Meta por la Conversions API, si está configurada.
+   - Los eventos a Meta por la Conversions API, si está configurada: Lead y, si
+     califica, RegistroCalificado (lib/capi-registro.ts).
 
    El webinar: el que diga el campo `webinar` (su id o su fecha), el de
    los UTMs del estándar (webinar_aaaammdd) o, si no, el próximo vivo.
@@ -201,16 +203,16 @@ export async function POST(req: Request) {
       }
     }
 
-    /* ---------- El evento Lead a Meta ---------- */
-    const capi = await enviarEventosMeta([{
-      nombre: "Lead", id: d.event_id?.trim() || d.evento_id?.trim() || registroId, cuando,
-      url: registro.pagina,
+    /* ---------- Los eventos a Meta: Lead y, si califica, RegistroCalificado (lib/capi-registro.ts) ---------- */
+    const capi = await enviarEventosUnaVez(db, eventosDeRegistro({
+      registroId, idLead: d.event_id?.trim() || d.evento_id?.trim(), cuando, pagina: registro.pagina,
+      webinarId, utm: registro.utm, respuestas,
       persona: {
-        email, telefono, nombre, externalId: contacto.id, ip: ip || undefined,
+        email, telefono, nombre, pais, externalId: contacto.id, ip: ip || undefined,
         userAgent: req.headers.get("user-agent") ?? undefined,
         fbp: d._fbp ?? d.fbp, fbc: d._fbc ?? d.fbc ?? fbcDeFbclid(d.fbclid),
       },
-    }]);
+    }));
     if (capi.error) console.error("[webinar/registro] Conversions API:", capi.error);
 
     return responder({ ok: true, contactoId: contacto.id, webinarId: webinarId ?? null, nuevo: !previo });

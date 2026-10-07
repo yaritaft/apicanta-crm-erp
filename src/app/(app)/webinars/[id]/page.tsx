@@ -15,6 +15,7 @@ import { TarjetaCambios, TarjetaNotas } from "@/components/webinars/FichaNotas";
 import { PersonasWebinar } from "@/components/webinars/PersonasWebinar";
 import { AgendasWebinar } from "@/components/webinars/AgendasWebinar";
 import { TarjetaVias } from "@/components/webinars/ViasWebinar";
+import { BotonInforme } from "@/components/webinars/BotonInforme";
 import { useWebinarsAlDia } from "@/components/webinars/useVivo";
 import {
   BannerVivo, ChatDelVivo, FilaVideo, SoloEnVivo, TarjetaVivo, VivoProvider,
@@ -121,6 +122,7 @@ export default function WebinarFicha() {
               opciones={ESTADOS.map((k) => ({ valor: k, texto: ESTADO_WEBINAR[k].texto }))}
             />
           </div>
+          <BotonInforme w={w} />
           <CopiarLink sm={false} />
           <Button variante="ghost" icono={<Trash2 size={16} />} onClick={() => setBorrar(true)}>Eliminar</Button>
         </div>

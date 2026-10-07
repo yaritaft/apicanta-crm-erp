@@ -854,3 +854,73 @@ Pruebas: `pruebas/gastos-recurrentes.test.ts` (propuesta con el mes anterior, ap
 no duplicar con lo manual, armar desde los gastos). *Falta:* cargar las plantillas con la lista de software del Excel de
 Angelo (se arman con «Armar con los que ya cargué» apenas estén los gastos), y decir a qué mes corresponde cuando
 entre el gasto con dos fechas (lote B): las plantillas guardan `recurrenteMes` en el `extra` del gasto.
+
+## El informe del webinar y Meta «registro calificado» (reunión del 02/10, lote F, F3-05 y F3-07)
+
+### Informe del webinar: un Excel de tres hojas (F3-05)
+
+Agus arma a mano, una o dos semanas después de cada webinar, el cruce de agendas, anuncios y ventas. Yari: «generale
+un Excel con tres hojas… en lugar de descargar tres Excel, uno solo». Ahora hay un botón **«Descargar resumen»** en la
+ficha de cada webinar (arriba, junto al estado) y un ícono de descarga en la fila de la **planilla** (aparece al pasar
+por encima). Baja `Resumen webinar dd-mm-aaaa Título.xlsx` con:
+
+1. **Personas.** Arriba, el resumen del webinar con **cómo se calcula cada número** (plata, embudo y rendimiento por
+   vía de agenda: los mismos de la ficha, `metricasDeWebinar` y `rendimientoPorVia`). Abajo, una fila por persona
+   atada al webinar: registro (landing o formulario de Meta, con fecha), anuncio y campaña, lo que contestó (puede
+   invertir, inglés, formación), si califica, si agendó, closer, estado de la llamada, si compró, facturado y cobrado.
+2. **Agendas.** Una fila por agenda del lanzamiento (el webinar, su clase cero y su Q&A): vía y link, vivo o después,
+   closer, estados, objeción, ¿oferta?, venta (con facturado y cobrado), anuncio, ángulo, campaña, UTMs y notas.
+3. **Anuncios.** Por nombre de anuncio: lo que gastó Meta en las campañas «[WEBINAR dd/mm]» del webinar (gasto,
+   impresiones, clicks, leads, costo por lead) cruzado con lo nuestro (registros, agendas, calificadas, ventas,
+   facturado, cobrado, costo por agenda y por venta, ROAS on CC y las objeciones más frecuentes). El nombre de Meta
+   («ANGULO UNO.mp4») y el de la UTM («angulo-uno») se unen por su versión normalizada. Lo que no vino de un anuncio
+   va a «(Sin anuncio identificado)».
+
+- **Estructura fácil de ajustar** (Agus todavía no pasó el ejemplo de su informe): cada hoja es una lista de columnas
+  (`COLUMNAS_PERSONAS`, `COLUMNAS_AGENDAS`, `COLUMNAS_ANUNCIOS` en `src/lib/informe-webinar.ts`: título, ancho,
+  formato y de dónde sale el valor). Agregar o sacar una columna es tocar una línea; el dibujo (`src/lib/xlsxTabla.ts`)
+  no cambia. Los bloques del resumen están en `informeDelWebinar`.
+- **Qué se tocó de lo existente**: `src/lib/webinar.ts` expone la regla de las campañas del webinar
+  (`repartirInsights`, `insightsDelWebinar`) y la planilla sigue sacando de ahí sus números (mismo resultado, probado).
+  El acceso a los registros de la landing y de Meta está en una sola función (`registroDe`): si pasan a una tabla
+  propia (F3-01), sólo cambia ésa.
+- Archivos: `src/lib/informe-webinar.ts`, `src/lib/xlsxTabla.ts`, `src/components/webinars/BotonInforme.tsx`,
+  `pruebas/informe-webinar.test.ts`. No hay SQL ni variables nuevas.
+
+### Meta: el evento «registro calificado» (F3-07)
+
+Cuando alguien se registra desde la landing (`/api/webinar/registro`), a Meta le llegan desde el servidor **dos eventos**
+en el mismo pedido: **Lead** (se registró) y **RegistroCalificado** (se registró y califica), con IP, user agent,
+cookies `_fbp`/`_fbc`, UTMs, país y el resultado de cada criterio. Califica con las mismas tres reglas que la agenda
+calificada (`lib/calificacion.ts`): puede invertir 1000 USD o más, inglés conversacional o mejor y carrera, leídas de
+las respuestas del registro (se reconocen por el texto de la pregunta o por el nombre del campo: `inversion`,
+`nivel_ingles`, `formacion`…). **Sin las tres respuestas no califica y el evento no sale** (sin dato no alcanza).
+Lo que escribió en crudo **no** viaja a Meta: «cuánto puede invertir» es dato financiero; se manda el «sí / no» de
+cada criterio.
+
+- **Datos hasheados como pide Meta** (`src/lib/capi-datos.ts`): mail, teléfono, nombre, apellido, país y el id propio
+  salen con SHA-256 de lo **normalizado** (mail en minúsculas; teléfono sólo dígitos con código de país, agregándolo
+  según el país si vino nacional; nombre y apellido en minúsculas sin tildes; país ISO en minúsculas). IP, user agent
+  y cookies, sin hashear.
+- **Sin duplicar**: cada evento lleva un `event_id` estable (`reg_…` el Lead —o el id del píxel de la landing si lo
+  manda en `event_id`— y `rcal_…` el calificado, ambos derivados del mail y el webinar). Además queda constancia en
+  `capi_enviados` y no se manda dos veces (`enviarEventosUnaVez`), aunque pasen más de las 48 horas en que Meta junta
+  repetidos. Sin esa tabla manda igual y confía en el `event_id`. En modo prueba (`META_CAPI_TEST`) no deja constancia.
+- **Sin las variables no rompe nada**: no manda y ya. **Ajustes → Integraciones → «Conversions API de Meta»** dice si
+  está lista, **qué falta cargar en Vercel y para qué**, si está en modo prueba, desde qué dominios se aceptan los
+  registros y cuántos eventos se mandaron de cada tipo. Nunca muestra una clave (`/api/meta/capi`, sólo lee si
+  están). La lógica de «qué falta» es `src/lib/capi-estado.ts`.
+- Archivos: `src/lib/capi-datos.ts`, `capi-registro.ts`, `capi-estado.ts`, `meta-capi.ts`,
+  `src/app/api/meta/capi/route.ts`, `src/components/ajustes/ConversionsApi.tsx`, `pruebas/capi-meta.test.ts`. En
+  `app/api/webinar/registro` sólo cambió el bloque que arma y manda los eventos (una llamada).
+- **SQL a correr**: ninguno nuevo. Usa `supabase/capi-enviados.sql`, que ya existe: si en producción no se corrió,
+  correrlo (Ajustes avisa «falta correr…»).
+- **Variables de entorno (Vercel → Production)**: `META_PIXEL_ID` y `META_CAPI_TOKEN` (obligatorias; el token se
+  genera en Events Manager → el píxel → Configuración → Generar token de acceso; sin él se usa `META_SYSTEM_TOKEN`,
+  que puede no tener el permiso); `REGISTRO_ORIGENES` (recomendada: los dominios de la landing, separados por coma);
+  opcionales: `META_CAPI_TEST` (código de «Probar eventos»; sacarlo al terminar), `META_CAPI_URL` (la página de la
+  landing, para los eventos que no pasaron en una página, como las agendas) y `META_CAPI_EVENTO_CALIFICADO` (el nombre
+  del evento en Meta; por defecto `RegistroCalificado`).
+- **Para optimizar en Meta** hay que crear la conversión personalizada sobre el evento `RegistroCalificado` y
+  avisarle a Agus. El píxel de la landing, para no contar doble el Lead, tiene que disparar `Lead` con el mismo
+  `event_id` que manda el formulario (y no `CompleteRegistration`, que es otro nombre y no se junta con el del servidor).
