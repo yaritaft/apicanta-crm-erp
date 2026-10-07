@@ -150,7 +150,7 @@ export function armarEstadoResultados(
           ? `Se revierte lo que se le comisionó (${tasaTexto(c.tasaCloser)} de ${M(-c.netoProcesador, 2)} neto de procesador, la parte devuelta el ${fechaLarga(devolucion(c.devolucionId)?.fecha)})${servicioDe(c.productoId)}`
           : c.sinComision
           ? `${M(c.cobradoEnMes, 2)} cobrado · sin comisión`
-          : `${tasaTexto(c.tasaCloser)} de ${M(c.netoProcesador, 2)} neto de procesador (${M(c.cobradoEnMes, 2)} cobrado)${servicioDe(c.productoId)}${c.heredadaDe ? ` · cuotas heredadas de ${c.heredadaDe}` : ""}`,
+          : `${tasaTexto(c.tasaCloser)} de ${M(c.netoProcesador, 2)} neto de procesador (${M(c.cobradoEnMes, 2)} cobrado)${servicioDe(c.productoId)}${c.heredadaDe ? ` · cuotas heredadas de ${c.heredadaDe}` : ""}${c.descuentoCierre ? ` · no se paga: día sin cierre cargado ese mismo día (−${M(c.descuentoCierre, 2)})` : ""}`,
         cc: -c.comisionCloser, rev: -c.comisionCloser, href: hrefVenta(c.ventaId),
       })),
     })),

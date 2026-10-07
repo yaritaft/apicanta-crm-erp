@@ -29,7 +29,7 @@ import { hayNube, nube, tablaFaltante, TABLAS, TABLAS_DE_DUENOS, TABLAS_OPCIONAL
 import { idAd, idAdset, idCampaign } from "./meta";
 import { entraEnTabla, esCompra, opcionesDe, tablasDe, ventaEsDeLlamada } from "./crm";
 import { etapaTrasEventos, eventosDeLlamada, leadDeSesion, type EventoEtapa } from "./etapas-auto";
-import { estadoDeAgenda, opcionDeCompraPara } from "./estados";
+import { estadoDeAgenda, marcaDeAgenda, opcionDeCompraPara } from "./estados";
 import { personaDe } from "./persona";
 import { extraConCorreccion, tituloPerfil, type CampoPerfil } from "./perfil";
 import { puedeCargarDevolucion, puedeDarDeBaja, puedeEditar, TIPOS_POR_DEFECTO, type MiAcceso } from "./permisos";
@@ -798,6 +798,14 @@ function cargarLlamadas(t: Tanda, e: EstadoApp, lista: PedidoLlamada[], restaura
         if (agenda) limpio.estado = agenda;
       }
       if (s.resultado && !("resultado" in cambios)) limpio.resultado = undefined;
+      /* Y cómo estaba la agenda antes: al vaciar el estado vuelve ahí y no a
+         «agendada» (puede haberla cancelado Calendly, dado por no-show o
+         marcado hecha el equipo). Se anota en `extra`, sin columna nueva. */
+      const agendaAntes = marcaDeAgenda(s, limpio.estadoLlamada, opciones);
+      if (agendaAntes !== undefined) {
+        const { agendaAntes: _vieja, ...resto } = ("extra" in cambios ? limpio.extra : s.extra) ?? {};
+        limpio.extra = agendaAntes === null ? resto : { ...resto, agendaAntes };
+      }
     }
     if ("estado" in cambios && !cambios.estado) delete limpio.estado;
     /* La primera vez que se carga cada estado queda marcada, venga de donde

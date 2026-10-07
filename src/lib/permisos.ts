@@ -94,10 +94,11 @@ export const ACCESO_DUENO: MiAcceso = { tipo: "dueno", nombre: "Dueño", areas: 
 export const esDueno = (a: MiAcceso | null | undefined) => a?.tipo === "dueno";
 
 /** Una cuenta que ve sólo lo suyo (el closer): su menú es el mínimo, «Mis
- *  llamadas», «Cerrar el día» y «Cargar venta» (components/shell/nav.ts). Lo
- *  demás sigue abierto por link: lo que ve ya lo recorta la base, así que no
- *  hay nada de otros que esconder (Yari, 02/10: «tan simple que no se pueda
- *  equivocar»). */
+ *  llamadas», «Cerrar el día» y «Cargar venta», cada una si su tipo la puede
+ *  usar (components/shell/nav.ts). Un tipo de «sólo lo suyo» sin CRM ni Ventas
+ *  no se queda sin menú: usa el de siempre. Lo demás sigue abierto por link:
+ *  lo que ve ya lo recorta la base, así que no hay nada de otros que esconder
+ *  (Yari, 02/10: «tan simple que no se pueda equivocar»). */
 export const esCuentaDeCloser = (a: MiAcceso | null | undefined) => Boolean(a?.soloLoSuyo) && !esDueno(a);
 /** El nivel de un área según lo que dice un tipo: 0 no la ve, 1 la ve, 2 la edita.
     Clientes cuelga de Ventas desde siempre: lo que da Ventas, lo da también

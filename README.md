@@ -268,7 +268,8 @@ de esas pantallas y se guardan en la llamada por el mismo camino (`store.editarL
 en una aparece en todas. Lo demás **se deduce** del Estado de Llamada y no se carga:
 
 - cómo quedó la agenda (hecha, no vino, cancelada), que es lo que cuenta la asistencia del Dashboard. Vaciar el
-  estado la devuelve a agendada (lo que canceló Calendly sigue cancelado);
+  estado la devuelve a como estaba antes de cargarlo (agendada; o cancelada, no vino u hecha si ya la había dejado así
+  Calendly o el equipo: ver «Arreglos del estrés: closer»);
 - si cerró o no, para el Informe (con cierre, sin cierre, no se presentó);
 - la etapa de la oportunidad (`lib/etapas-auto.ts`).
 
@@ -1327,3 +1328,18 @@ Tres agujeros de las devoluciones que encontró el estrés de «la plata», arre
 
 *Pruebas:* `pruebas/fix-devoluciones.test.ts` (incluye la línea de tiempo contra un oráculo que recorre todos los días y la
 carga en cualquier orden). A los tests `BUG:` de estos tres casos en `pruebas-estres/plata` se les saca el `todo`.
+
+## Arreglos del estrés: closer
+
+Lo que encontró el frente del closer (`pruebas-estres/closer/`) y ya está arreglado, con sus pruebas en `pruebas/fix-closer.test.ts`. **Sin SQL.**
+
+- **Vaciar el Estado de Llamada devolvía la agenda a «agendada»** aunque la hubiera dejado así otro: una llamada que Calendly canceló o dio por no-show, o que el equipo marcó hecha,
+  reaparecía agendada, pasaba a pedir cierre y quedaba «tarde» (un strike que no se ganó). Ahora el store anota en `sesiones.extra.agendaAntes` cómo estaba la agenda al cargar el
+  primer estado (`marcaDeAgenda`, `lib/estados.ts`) y vaciarlo vuelve a eso, salvo que alguien la haya movido a mano después. Los estados cargados antes de la marca siguen como
+  siempre (agendada), salvo lo que canceló Calendly (`canceladaEn`), que vuelve a cancelada.
+- **Menú del closer**: «Cargar venta» y «Cerrar el día» sólo aparecen si su tipo edita Ventas y el CRM (la base rechazaba lo que se cargaba con sólo ver). Un tipo de «sólo lo suyo»
+  sin CRM ni Ventas (Customer Success con la casilla marcada) ya no se queda con el menú vacío: usa el de siempre, y su inicio es una pantalla de ese menú.
+- **Nota del cierre del día**: se perdía si estaba dentro de otro texto de las notas («cuotas» en «Quiere pagar en cuotas»); ahora se compara renglón por renglón.
+- **Quién es el anfitrión**: con varias personas que encajan, la app tomaba la primera y la base la activa de menor id; y un espacio al principio del nombre lo desparejaba.
+  `miembroDeCloser` elige como la base y `nombreCorto` recorta.
+- **Estado de Resultados**: la fila de una comisión descontada por el cierre del día mostraba un 0 sin decir por qué; ahora dice «no se paga: día sin cierre cargado ese mismo día (−X)». El total no cambió.
