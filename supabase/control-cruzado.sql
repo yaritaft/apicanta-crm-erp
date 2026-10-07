@@ -52,6 +52,11 @@ do $$ begin
   if to_regprocedure('public.nivel_area(text)') is null or to_regprocedure('public.solo_lo_suyo()') is null then
     raise exception 'Primero hay que correr tipos-cuenta.sql: faltan nivel_area() y solo_lo_suyo().';
   end if;
+  if (select count(*) from information_schema.columns
+       where table_schema = 'public' and table_name = 'pagos'
+         and column_name in ('comprobante', 'comprobanteLink', 'chequeado', 'movimientoId', 'monto', 'moneda', 'fecha', 'montoArs')) < 8 then
+    raise exception 'A pagos le faltan columnas (comprobante, comprobanteLink, chequeado, movimientoId, monto, moneda, fecha o montoArs): hay que correr antes comprobantes.sql, modelo-angelo.sql y sql/conciliacion.sql.';
+  end if;
 end $$;
 
 -- ---------- las columnas ----------
@@ -131,10 +136,16 @@ begin
   -- UPDATE
   new."cargadoPor" := old."cargadoPor";
 
-  -- Otro archivo en lugar del que había (o el link de la planilla cambiado):
-  -- lo chequeado era contra el de antes.
+  -- Otro archivo en lugar del que había (o el link de la planilla cambiado), o
+  -- el monto, la moneda, el día o el monto en pesos cambiados: lo chequeado era
+  -- contra lo de antes. Sin esto, quien carga el cobro podía subirle el monto
+  -- después de que el director lo chequeara.
   reemplazo := (old.comprobante is not null and new.comprobante is distinct from old.comprobante)
-            or (old."comprobanteLink" is not null and new."comprobanteLink" is distinct from old."comprobanteLink");
+            or (old."comprobanteLink" is not null and new."comprobanteLink" is distinct from old."comprobanteLink")
+            or new.monto is distinct from old.monto
+            or new.moneda is distinct from old.moneda
+            or new.fecha is distinct from old.fecha
+            or new."montoArs" is distinct from old."montoArs";
 
   if reemplazo then
     new."chequeoDirector" := null; new."chequeoDirectorPor" := null;

@@ -626,7 +626,8 @@ function ordenDeSiembra(e: EstadoApp): [string, unknown[]][] {
     /* contactos entre webinars y leads: apunta a webinars, y leads le apunta a
        el. Con la FK en la base, otro orden rechaza la siembra entera. */
     ["etapas", e.etapas], ["webinars", e.webinars], ["contactos", e.contactos], ["leads", e.leads],
-    ["alumnos", e.alumnos], ["sesiones", e.sesiones], ["reportes", e.reportes],
+    ["alumnos", e.alumnos], ["seguimiento_alumnos", e.seguimientos ?? []], ["testimonios", e.testimonios ?? []],
+    ["sesiones", e.sesiones], ["reportes", e.reportes],
     ["campanias", e.campanias], ["metas", e.metas], ["campos", e.campos],
     ["ventas", e.ventas], ["cuotas", e.cuotas], ["movimientos", e.movimientos],
     ["pagos", e.pagos], ["devoluciones", e.devoluciones ?? []], ["gastos", e.gastos],
@@ -681,7 +682,7 @@ async function vaciarNube() {
   const orden = [
     "liquidaciones", "honorarios",
     "actividad", "comentarios", "arqueos", "traspasos", "gastos_recurrentes", "campos", "metas", "devoluciones", "pagos", "movimientos", "cuotas", "ventas", "gastos",
-    "campanias", "reportes", "sesiones", "alumnos", "leads", "contactos", "webinars",
+    "campanias", "reportes", "sesiones", "seguimiento_alumnos", "testimonios", "alumnos", "leads", "contactos", "webinars",
     "etapas", "equipo", "embudos", "procesadores", "productos",
     "etapas_servicio",
   ];

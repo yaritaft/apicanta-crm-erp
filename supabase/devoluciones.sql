@@ -153,6 +153,7 @@ create policy borrar_devoluciones on public.devoluciones
 create or replace function public.ventas_cambio_de_baja()
 returns trigger
 language plpgsql
+set search_path = public
 as $$
 begin
   if new.estado is distinct from old.estado

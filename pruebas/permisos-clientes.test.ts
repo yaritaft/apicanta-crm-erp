@@ -61,15 +61,18 @@ test("el menú de los demás no cambia: el Dashboard sigue siendo el inicio", ()
   assert.ok(AREAS.some((a) => a.id === "clientes"));
 });
 
-/* La base y la app tienen que decir lo mismo: lo que lee y edita cada área. Se aplica el mismo
-   parche que supabase/customer-success.sql sobre lo que dejó tipos-cuenta.sql y se compara. */
+/* La base y la app tienen que decir lo mismo: lo que lee y edita cada área. tipos-cuenta.sql ya trae lo
+   de Clientes y Customer Success; si faltara, se aplica el mismo parche que supabase/customer-success.sql. */
 function cuerpo(sql: string, funcion: string): string {
   const i = sql.indexOf(`create or replace function public.${funcion}`);
   return sql.slice(i, sql.indexOf("$$;", i));
 }
 function parchar(def: string, tablasClientes: string[]): Record<string, string[]> {
-  let t = def.replace(new RegExp(`(when '(${tablasClientes.join("|")})'\\s+then array\\[)`, "g"), "$1'clientes',");
-  t = t.replace(/select case tabla/, "select case tabla\n when 'seguimiento_alumnos' then array['alumnos']\n when 'testimonios' then array['alumnos']");
+  /* Igual que el SQL: si tipos-cuenta.sql ya trae las líneas (es la fuente única), el parche no las repite. */
+  let t = def.includes("'clientes'") ? def : def.replace(new RegExp(`(when '(${tablasClientes.join("|")})'\\s+then array\\[)`, "g"), "$1'clientes',");
+  if (!def.includes("'seguimiento_alumnos'")) {
+    t = t.replace(/select case tabla/, "select case tabla\n when 'seguimiento_alumnos' then array['alumnos']\n when 'testimonios' then array['alumnos']");
+  }
   const m: Record<string, string[]> = {};
   for (const x of t.matchAll(/when '([a-z_]+)'\s+then array\[([^\]]*)\]/g)) m[x[1]] = [...x[2].matchAll(/'([a-z_*]+)'/g)].map((y) => y[1]);
   return m;
