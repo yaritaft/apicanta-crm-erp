@@ -505,7 +505,7 @@ function FilaPersona({
                 <AlertTriangle size={14} />
                 <span>
                   <b>Queda debiendo {aPagarTexto(persona.deuda)}.</b> Este mes las devoluciones descontaron más de lo que cobraba: no se le paga nada y
-                  la deuda pasa a la liquidación del mes que sigue, donde entra como «Deuda de meses anteriores» y se descuenta de lo que cobre.
+                  la deuda pasa a la liquidación del mes que sigue, donde entra como una línea «Deuda de …» y se descuenta de lo que cobre.
                 </span>
               </div>
             </div>
