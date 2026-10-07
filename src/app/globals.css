@@ -1697,6 +1697,24 @@ button.cuadro-com__persona:hover { color: var(--brand); text-decoration: underli
 .mes-cerrado__texto { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-2); min-width: 0; }
 .mes-cerrado__titulo { font-weight: 600; color: var(--ink); }
 
+/* Cargar una devolución: las opciones con interruptor y lo que pasa al cargarla. */
+.devol-opciones { display: flex; flex-direction: column; gap: var(--space-2); }
+.devol-opcion {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--space-4);
+  padding: var(--space-3) var(--space-4); border: 1px solid var(--border); border-radius: var(--radius-md);
+}
+.devol-opcion > div { min-width: 0; }
+.devol-efecto {
+  display: flex; align-items: flex-start; gap: var(--space-3); padding: var(--space-3) var(--space-4);
+  border: 1px solid color-mix(in srgb, var(--info) 40%, var(--border)); border-radius: var(--radius-md);
+  background: var(--info-soft); color: var(--ink); font-size: 13px; line-height: 20px;
+}
+.devol-efecto > svg { flex: none; margin-top: 2px; color: var(--info); }
+.devol-efecto__lista { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; overflow-wrap: anywhere; }
+/* Las devoluciones de una venta, en su ficha. */
+.devol-fila { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 10px; padding: 6px 0; font-size: 13px; }
+.devol-fila + .devol-fila { border-top: 1px solid var(--border); }
+
 /* A quién se le pagó: un campo con lista (el equipo, los proveedores que ya se
    usaron) y la opción de escribir uno nuevo (components/finanzas/CampoProveedor.tsx).
    Un casillero vacío que falta se pinta de error y lleva el pedido adentro. */

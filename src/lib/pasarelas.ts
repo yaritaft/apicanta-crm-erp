@@ -230,7 +230,7 @@ export interface ResultadoImportacion {
      propone como devolución para atarla a la que se cargó (lib/reembolsos.ts). */
   reembolsos: ReembolsoCrudo[];
   /* Filas que se saltearon y por qué: se muestran antes de importar */
-  descartadas: { fila: number; motivo: string }[];
+  descartadas: { fila: number; motivo: string; reembolso?: boolean }[];
 }
 
 /** Traduce un CSV de cualquier pasarela al formato de Apicanta. */
@@ -241,7 +241,7 @@ export function importarCSV(
   feeRatePorDefecto = 0,
 ): ResultadoImportacion {
   const filas = leerCSV(texto);
-  const descartadas: { fila: number; motivo: string }[] = [];
+  const descartadas: { fila: number; motivo: string; reembolso?: boolean }[] = [];
   if (filas.length < 2) return { movimientos: [], reembolsos: [], descartadas: [{ fila: 0, motivo: "El archivo no tiene filas." }] };
 
   const mapa = mapaDeColumnas(filas[0]);
@@ -280,7 +280,7 @@ export function importarCSV(
     /* Un renglón en negativo es un reembolso suelto (PayPal): la plata que salió. */
     if (monto < 0) {
       reembolso(f, i, Math.abs(monto), estadoCrudo || undefined);
-      descartadas.push({ fila: i + 1, motivo: "Es un reembolso: no entra como cobro, se propone como devolución." });
+      descartadas.push({ fila: i + 1, motivo: "Es un reembolso: no entra como cobro, se propone como devolución.", reembolso: true });
       continue;
     }
     if (monto <= 0) { descartadas.push({ fila: i + 1, motivo: "Sin monto positivo (fila de resumen)." }); continue; }
@@ -289,7 +289,7 @@ export function importarCSV(
       /* El cargo devuelto (Stripe lo marca «Refunded» en el mismo renglón): lo
          devuelto es el monto devuelto o, sin él, todo. No entra como cobro. */
       reembolso(f, i, devuelto > 0.005 ? devuelto : monto, /charge.?back|contracargo/i.test(estadoCrudo) ? "Contracargo" : undefined);
-      descartadas.push({ fila: i + 1, motivo: `Estado "${estadoCrudo}": no entra como cobro, se propone como devolución.` });
+      descartadas.push({ fila: i + 1, motivo: `Estado "${estadoCrudo}": no entra como cobro, se propone como devolución.`, reembolso: true });
       continue;
     }
     if (estadoCrudo && RECHAZADOS.test(estadoCrudo)) {
