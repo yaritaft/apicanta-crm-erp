@@ -1250,3 +1250,23 @@ Finanzas sí comisiona.
 solo mes y en un solo día, en cualquier huso horario. Es una sola cuenta, `finDelDia` en `src/lib/periodos.ts`, que usan todos los que arman un rango (y el
 corte «hasta el final del día de la venta» de las vías del webinar, `src/lib/vias-webinar.ts`). Todo lo que no cae en esa última fracción de segundo da
 exactamente lo mismo que antes. *Pruebas:* `pruebas/fix-rangos.test.ts`.
+
+## Arreglos del estrés: importador de CSV de pasarelas
+
+*Qué pasaba:* el CSV de una pasarela (o lo pegado desde Excel) entraba con otros montos y otras fechas que los del archivo, sin avisar. `leerCSV` cortaba la celda en la
+coma aunque el separador fuera «;» o el tabulador: «1.234,56» (Excel en español, Hotmart, Mercado Pago) entraba como 1,234. `aNumero` leía «15.000» como 15 y «1.500.000»
+como 0. Y `aFecha` le preguntaba primero al navegador: «10/09/2026» entraba como el 9 de octubre, «2026-10-01» como el 30/09 a las 21 de Argentina (el cobro del día 1
+caía en el mes anterior) y «Created date (UTC)» sin zona, con 3 horas corridas.
+
+*Qué hace ahora* (`src/lib/pasarelas.ts`):
+
+- **Separador:** el que más aparece en la cabecera fuera de comillas (tabulador, «;» o coma); los otros dos son texto de la celda. También vale para lo pegado desde una hoja y
+  para la planilla de Angelo y los formularios, que usan `leerCSV`. El BOM del principio no ensucia el primer encabezado.
+- **Montos:** la misma regla que `leerMonto`: «1.234,56» y «1,234.56» son 1234,56, un punto con tres cifras detrás o varios puntos es de miles («15.000», «1.500.000») y una coma
+  sola es decimal. Negativo con menos adelante o atrás o entre paréntesis. «0.500» es medio y en Binance y Trust el punto es siempre decimal. Lo ilegible da 0 y se ve entre las descartadas.
+- **Fechas:** `aaaa-mm-dd` y `dd/mm/aaaa`, el día antes que el mes (salvo un archivo que trae una fecha con el mes pasado de 12 y ninguna con el día pasado de 12: viene mes/día,
+  como Mercury o PayPal en inglés). Sin hora, el mediodía de Argentina; con hora y sin zona, la de Argentina o la de UTC si el encabezado dice «(UTC)»; con «Z» o «-03:00», la que trae.
+- **Lo que ya andaba da lo mismo** (Stripe con coma, punto decimal y fechas ISO con zona). Cambia sólo lo que estaba mal. Una fila sin referencia arma la suya con la fecha y el monto
+  ya bien leídos: un archivo sin ids importado antes con los valores viejos entraría de nuevo (los de Stripe, Mercado Pago, Hotmart y PayPal traen id).
+
+*Pruebas:* `pruebas/fix-csv-pasarelas.test.ts`.
