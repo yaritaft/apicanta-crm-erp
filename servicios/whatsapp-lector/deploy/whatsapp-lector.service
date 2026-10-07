@@ -20,14 +20,28 @@ WorkingDirectory=/opt/apicanta-whatsapp-lector
 ExecStart=/usr/bin/node src/index.js
 Environment=NODE_ENV=production
 Environment=TZ=America/Argentina/Buenos_Aires
+# Todo lo que cree el servicio (la sesión de WhatsApp, sobre todo) queda sólo para su usuario.
+UMask=0077
 Restart=always
 RestartSec=10
+# Si se cae una y otra vez, la espera crece (de 10 segundos a 5 minutos) en vez de volver a entrar a WhatsApp cada 10
+# segundos para siempre. Necesita systemd 254 o más; en uno anterior se ignora y queda RestartSec.
+RestartSteps=5
+RestartMaxDelaySec=300
+# Al apagarlo, el servicio vacía los avisos y manda el último latido (el código le pone un tope de ~20 segundos). Si
+# systemd lo mata antes, podría dejar a medio escribir las llaves de la sesión.
+TimeoutStopSec=30
 # Una sola copia: dos con la misma sesión de WhatsApp se pelean.
 # El servicio sólo hace conexiones hacia afuera; no abre ningún puerto.
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=full
 ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
 ReadWritePaths=/opt/apicanta-whatsapp-lector
 
 [Install]

@@ -1,10 +1,10 @@
 {
-  "_comentario": "Lo que «vería» el lector, con teléfonos inventados. Se manda con: npm run simulado (o node src/index.js --simulado ejemplos/simulado.json). Los participantes se escriben como los da Baileys: un texto, o un objeto con el LID y el teléfono. El grupo VIP no coincide con GRUPOS_REGEX=taller online y se saltea.",
+  "_comentario": "Lo que «vería» el lector, con teléfonos inventados. Se manda con: npm run simulado (o node src/index.js --simulado ejemplos/simulado.json) y ESCRIBE de verdad en la app a la que apunte APP_URL: probalo contra una app en tu compu (el servidor se niega salvo con --en-produccion). El nombre del grupo es de mentira a propósito (fecha pasada) para que no se confunda con un webinar real. Los participantes se escriben como los da Baileys: un texto, o un objeto con el LID y el teléfono. El grupo VIP no coincide con GRUPOS_REGEX=taller online y se saltea.",
   "pasos": [
     { "tipo": "latido", "conectado": true, "grupos": 1 },
     {
       "tipo": "foto",
-      "grupo": { "id": "120363000000000001@g.us", "nombre": "Taller Online 08/10/26 #1" },
+      "grupo": { "id": "120363000000000001@g.us", "nombre": "PRUEBA - Taller Online 01/01/20 #1" },
       "participantes": [
         "5491155550001@s.whatsapp.net",
         "5491155550002:7@s.whatsapp.net",
@@ -26,17 +26,17 @@
     { "tipo": "esperar", "ms": 300 },
     {
       "tipo": "entro",
-      "grupo": { "id": "120363000000000001@g.us", "nombre": "Taller Online 08/10/26 #1" },
+      "grupo": { "id": "120363000000000001@g.us", "nombre": "PRUEBA - Taller Online 01/01/20 #1" },
       "participantes": [ "5491155550011@s.whatsapp.net", "5491155550012:3@s.whatsapp.net" ]
     },
     {
       "tipo": "salio",
-      "grupo": { "id": "120363000000000001@g.us", "nombre": "Taller Online 08/10/26 #1" },
+      "grupo": { "id": "120363000000000001@g.us", "nombre": "PRUEBA - Taller Online 01/01/20 #1" },
       "participantes": [ "5491155550008@s.whatsapp.net" ]
     },
     {
       "tipo": "entro",
-      "grupo": { "id": "120363000000000001@g.us", "nombre": "Taller Online 08/10/26 #1" },
+      "grupo": { "id": "120363000000000001@g.us", "nombre": "PRUEBA - Taller Online 01/01/20 #1" },
       "participantes": [ { "id": "100000000000013@lid" } ]
     },
     { "tipo": "latido", "conectado": true, "grupos": 1 }

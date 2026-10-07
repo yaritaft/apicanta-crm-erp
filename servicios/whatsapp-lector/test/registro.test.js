@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { crearLogger } from '../src/registro.js';
+import { crearLogger, crearSalidaSinNumeros } from '../src/registro.js';
 
 test('una línea por cosa, con la hora de Argentina y el nivel, y los números largos tapados', () => {
   const salida = { log: [], warn: [], error: [] };
@@ -25,4 +25,15 @@ test('el nivel silent no dice nada; el debug dice todo', () => {
   const todo = crearLogger('debug', { salida: consola });
   todo.debug('a'); todo.info('b');
   assert.equal(lineas.length, 2);
+});
+
+test('lo que escribe Baileys pasa por un filtro que tapa los números largos (teléfonos e ids), pero no la hora ni los números cortos', () => {
+  const escrito = [];
+  const salida = crearSalidaSinNumeros({ write: (x) => escrito.push(x) });
+  salida.write('{"level":40,"time":"2026-10-07T18:20:07.123Z","msg":"fallo con 5491155550001@s.whatsapp.net y 120363000000000001@g.us código 428"}\n');
+  assert.equal(escrito.length, 1);
+  assert.ok(!/\d{7,}/.test(escrito[0]), escrito[0]);
+  assert.match(escrito[0], /"time":"2026-10-07T18:20:07\.123Z"/);
+  assert.match(escrito[0], /…@s\.whatsapp\.net/);
+  assert.match(escrito[0], /código 428/);
 });

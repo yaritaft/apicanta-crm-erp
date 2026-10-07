@@ -26,6 +26,11 @@ sesión, el lector empieza otra vinculación solo y vuelve a mostrar el código 
 - **El número tiene que ser miembro de cada grupo** que se quiere vigilar (se lo agrega como a cualquier persona). El
   lector sólo ve los grupos en los que está.
 - Los miembros del grupo van a ver ese número entre los participantes. Conviene ponerle un nombre claro («Hackear IT»).
+- **Cerrá quién puede agregar el número a grupos.** El lector decide qué grupos mira por su **nombre**, y el nombre lo
+  pone quien crea el grupo: si cualquiera puede agregar el número a un grupo propio llamado «Taller Online 08/10/26
+  #9», sus miembros aparecerían en Ajustes → WhatsApp. En el teléfono del número dedicado: **WhatsApp → Ajustes →
+  Privacidad → Grupos → «Mis contactos»** (quien lo agregue tiene que estar en sus contactos, o el número se une con el
+  enlace de invitación del grupo). De todos modos, atar un grupo a un webinar siempre lo decide una persona.
 - **Algunos participantes no muestran su teléfono.** WhatsApp está pasando a identificar a la gente por un id interno
   (LID) y, según la privacidad de cada uno y la versión de la librería, el teléfono puede no estar. A esos el lector
   los **cuenta aparte**: informa el total pero **no los manda** (no hay con qué compararlos). Mientras un grupo tenga
@@ -49,8 +54,8 @@ sesión, el lector empieza otra vinculación solo y vuelve a mostrar el código 
    |---|---|---|
    | `conectado` | Mirando los grupos | **Conectado** |
    | `esperando_qr` | Hay que vincular el número. Lleva el código QR | **Esperando que lo escaneen**, con el código |
-   | `reconectando` | Arrancando, o se cortó la conexión y vuelve sola (espera creciente: 2 s, 4 s, 8 s… hasta 5 min) | **Reconectando** |
-   | `cerrado` | WhatsApp cerró la sesión y no pudo empezar otra, o hay otra copia usando la misma sesión | **Sesión cerrada** |
+   | `reconectando` | Arrancando, o se cortó la conexión y vuelve sola (espera creciente: 2 s, 4 s, 8 s… hasta 5 min; sólo vuelve a empezar de cero si la conexión anterior aguantó un minuto) | **Reconectando** |
+   | `cerrado` | WhatsApp cerró la sesión y no pudo empezar otra, WhatsApp rechazó el número (403: puede estar bloqueado, no se insiste) o hay otra copia usando la misma sesión | **Sesión cerrada** |
 
    Si pasan 15 minutos sin latido, o el número lleva 15 minutos sin conectarse, la app muestra un aviso en Webinars y
    en el Dashboard.
@@ -61,7 +66,10 @@ sesión, el lector empieza otra vinculación solo y vuelve a mostrar el código 
    código siempre está vivo cuando alguien abre la pantalla, aunque el lector lleve horas o días esperando.
 6. **Si WhatsApp cierra la sesión** (se desvinculó el dispositivo desde el teléfono), el lector mueve la carpeta `auth`
    a `auth.vieja` y empieza una vinculación nueva: queda `esperando_qr`. Si se vuelve a cerrar apenas empezada, no la
-   mueve otra vez (esperaría tirar una vinculación a medias) y reintenta con espera creciente.
+   mueve otra vez (esperaría tirar una vinculación a medias) y reintenta con espera creciente. También empieza una
+   vinculación nueva si WhatsApp cierra la conexión tres veces seguidas por una sesión rota (códigos 500 u 411).
+7. **La hora de cada foto** es la de cuando se le pidió la lista a WhatsApp, no la de cuando se manda (entre una cosa
+   y la otra pasan segundos): así la app ordena bien a quien entra o sale justo en el medio.
 
 Habla con la app por dos rutas, con un secreto compartido en `Authorization: Bearer …`:
 
@@ -83,14 +91,45 @@ Habla con la app por dos rutas, con un secreto compartido en `Authorization: Bea
    Después de agregar la variable en Vercel hay que **volver a publicar** para que la tome. Guardá el secreto en un
    lugar seguro: lo vas a necesitar en el paso 4. **No lo escribas en el repo ni en un chat.**
 
-### 1. Entrar al servidor y crear un usuario
+### 1. Entrar al servidor, cerrarlo y crear el usuario del servicio
 
-Con los accesos que da Hostinger (SSH desde la terminal):
+Con los accesos que da Hostinger (SSH desde la terminal), como root:
 
 ```bash
 ssh root@<IP_DEL_VPS>
-adduser lector            # le pone una clave; el resto de las preguntas se pueden dejar vacías
 ```
+
+**Entrá con una llave SSH, no con contraseña**: una contraseña expuesta a internet se puede adivinar, y este servidor
+guarda la sesión de WhatsApp y el secreto. Desde tu compu: `ssh-copy-id root@<IP_DEL_VPS>` (te pide la contraseña esa
+única vez) y probá que `ssh root@<IP_DEL_VPS>` entra sin pedirla. Recién entonces, **sin cerrar la sesión que ya
+tenés abierta** (por si algo sale mal), en el servidor:
+
+```bash
+printf 'PasswordAuthentication no\nPermitRootLogin prohibit-password\n' > /etc/ssh/sshd_config.d/00-solo-llaves.conf
+sshd -t && (systemctl reload ssh || systemctl reload sshd)
+sshd -T | grep -E '^(passwordauthentication|permitrootlogin) '     # tiene que decir «no» y «prohibit-password»
+```
+
+(El archivo se llama `00-…` para que gane sobre los que trae la imagen del proveedor, como `50-cloud-init.conf`, que suele
+dejar las contraseñas habilitadas.) Antes de cerrar la terminal, abrí **otra** y comprobá que entrás con la llave.
+
+Después el firewall: sólo SSH hacia adentro (el lector no abre ningún puerto, sólo hace conexiones hacia afuera).
+
+```bash
+apt-get update && apt-get install -y ufw
+ufw default deny incoming
+ufw default allow outgoing
+ufw allow 22/tcp
+ufw --force enable
+```
+
+Y el usuario que corre el servicio: **sin contraseña y sin shell**, con el que nadie puede entrar por SSH.
+
+```bash
+useradd --create-home --shell /usr/sbin/nologin lector
+```
+
+(Opcional: `apt-get install -y fail2ban` frena a quien insista con contraseñas en el puerto 22.)
 
 ### 2. Instalar Node.js
 
@@ -99,7 +138,7 @@ El lector necesita **Node 20 como mínimo**. Node 20 ya no recibe actualizacione
 
 ```bash
 apt-get update
-apt-get install -y ca-certificates curl gnupg git build-essential
+apt-get install -y ca-certificates curl gnupg
 mkdir -p /etc/apt/keyrings
 curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg
 NODE_MAJOR=22      # o 20
@@ -109,44 +148,59 @@ apt-get install -y nodejs
 node -v            # tiene que decir v20 o más
 ```
 
-(`git` y `build-essential` por si alguna dependencia de Baileys se baja de GitHub o necesita compilarse.)
+(No hace falta `git` ni compilar nada: con `7.0.0-rc14` todas las dependencias bajan de npm, fijadas en `package-lock.json`.)
 
-### 3. Copiar la carpeta al servidor
+### 3. Copiar la carpeta al servidor e instalar
 
-Desde tu compu, parado en la carpeta del repo de Apicanta:
-
-```bash
-rsync -av --exclude node_modules --exclude auth --exclude 'auth.*' --exclude .env \
-  servicios/whatsapp-lector/ lector@<IP_DEL_VPS>:/home/lector/whatsapp-lector/
-```
-
-(o con `scp -r servicios/whatsapp-lector lector@<IP_DEL_VPS>:/home/lector/`). Después, en el servidor, como el usuario
-`lector`:
+Desde tu compu, parado en la carpeta del repo de Apicanta. Copia sólo lo que está en git, así que nunca viaja un `.env`,
+una sesión (`auth/`) ni un `node_modules`:
 
 ```bash
-su - lector
-cd whatsapp-lector
-npm install
+git archive --format=tar HEAD servicios/whatsapp-lector | ssh root@<IP_DEL_VPS> \
+  'install -d -o lector -g lector -m 755 /opt/apicanta-whatsapp-lector &&
+   tar -x --strip-components=2 -C /opt/apicanta-whatsapp-lector &&
+   chown -R lector:lector /opt/apicanta-whatsapp-lector'
 ```
 
-> **Versión de Baileys.** El `package.json` trae `7.0.0-rc14`, la versión actual de la librería. Si en BlueHackers ya
-> andás con otra que te funciona, usá esa (`npm install @whiskeysockets/baileys@<versión>`); la rama estable anterior
-> es la `6.7.24`. El lector entiende las dos formas en que Baileys entrega los participantes de un grupo (textos en la
-> 6.7; objetos con `id`, `lid` y `phoneNumber` en la 7).
+Después, en el servidor, como root (el usuario `lector` no entra por SSH: los comandos se corren con `runuser`):
+
+```bash
+cd /opt/apicanta-whatsapp-lector
+runuser -u lector -- npm ci --omit=dev --ignore-scripts
+```
+
+`npm ci` instala **exactamente** lo que dice `package-lock.json`; con `npm install`, cada instalación resolvería de nuevo
+las versiones de todas las dependencias, justo en la máquina que guarda la sesión y el secreto. `--ignore-scripts` no
+corre scripts de instalación: los únicos que hay (un chequeo de la versión de Node de Baileys y un ayudante de
+`protobufjs`) no hacen falta.
+
+> **Versión de Baileys.** El `package.json` trae `7.0.0-rc14` fija y el `package-lock.json` fija el resto. **No uses una
+> anterior a `6.7.22` ni a `7.0.0-rc12`:** las versiones previas tienen una vulnerabilidad de suplantación de mensajes y
+> npm las marca como deprecadas (ojo si copiás la que anda en otro proyecto). Además, la `6.7.x` baja `libsignal` de
+> GitHub sin versión fija (hace falta `git` y no es reproducible). Para cambiar de versión:
+> `runuser -u lector -- npm install --save-exact @whiskeysockets/baileys@<versión>`, probá, y subí al repo el
+> `package.json` y el `package-lock.json` nuevos. El lector entiende las dos formas en que Baileys entrega los
+> participantes de un grupo (textos en la 6.7; objetos con `id`, `lid` y `phoneNumber` en la 7).
 
 ### 4. Completar el `.env`
 
 ```bash
-cp .env.example .env
-chmod 600 .env
+cd /opt/apicanta-whatsapp-lector
+install -m 600 -o lector -g lector .env.example .env
 nano .env
 ```
 
-Completá `APP_URL` (la dirección de Apicanta, sin barra al final), `WHATSAPP_LECTOR_TOKEN` (el mismo valor que en
-Vercel) y `GRUPOS_REGEX` (en producción `taller online`: se prueba contra el **nombre** del grupo, sin distinguir
-mayúsculas; vacío mira todos los grupos del número).
+Completá `APP_URL` (la dirección de Apicanta con `https://`, sin barra al final; `http://` sólo se acepta para
+localhost), `WHATSAPP_LECTOR_TOKEN` (el mismo valor que en Vercel) y `GRUPOS_REGEX` (**obligatoria**; en producción
+`taller online`: se prueba contra el **nombre** del grupo, sin distinguir mayúsculas; para mirar todos los grupos del
+número hay que pedirlo a propósito con `.*`). Sin `GRUPOS_REGEX` el lector no arranca: guardaría los teléfonos de todos
+los grupos del número (clientes, familia…).
 
-### 5. Probar sin WhatsApp
+### 5. Probar sin WhatsApp (en tu compu, no en el servidor)
+
+La simulación **escribe de verdad** en la app a la que apunte `APP_URL`. Por eso se prueba contra una app que corre en tu
+compu (`APP_URL=http://localhost:3011` y un `WHATSAPP_LECTOR_TOKEN` de prueba, el mismo en la app y acá), y el comando
+**se niega** a simular contra cualquier otra dirección salvo que agregues `--en-produccion`:
 
 ```bash
 npm run simulado        # un grupo con 10 participantes, uno que entra, uno que sale…
@@ -155,14 +209,13 @@ npm run simulado:qr     # ensaya la vinculación: el código aparece, cambia y s
 
 Si el primero termina con `Simulación terminada: 5 enviados, 0 fallidos, 2 salteados` (con
 `GRUPOS_REGEX=taller online`; el grupo VIP del ejemplo no coincide y se saltea), la app, el token y las tablas están
-bien. En Apicanta → **Ajustes → WhatsApp** tiene que aparecer el grupo «Taller Online 08/10/26 #1». Con el segundo, si
-tenés esa pantalla abierta, se ve el código de prueba aparecer, cambiar y desaparecer al conectarse (sin la librería
-`qrcode` instalada es un dibujo que dice «QR DE PRUEBA»: no se escanea). Si algo falla, el mensaje dice qué (ver «Cuando
-algo anda mal»).
+bien. En Apicanta → **Ajustes → WhatsApp** tiene que aparecer el grupo «PRUEBA - Taller Online 01/01/20 #1» (de mentira
+a propósito, con fecha pasada, para que no se confunda con un webinar real). Con el segundo, si tenés esa pantalla
+abierta, se ve el código de prueba aparecer, cambiar y desaparecer al conectarse (sin la librería `qrcode` instalada es
+un dibujo que dice «QR DE PRUEBA»: no se escanea). Si algo falla, el mensaje dice qué (ver «Cuando algo anda mal»).
 
-> **Ojo, es de verdad:** la simulación escribe en la app a la que apunte `APP_URL` (con el `.env` del servidor, en
-> producción). El grupo de ejemplo «Taller Online 08/10/26 #1» queda guardado con teléfonos inventados y se puede
-> confundir con un webinar real de esa fecha. Si lo corriste en producción, borralo con
+> **En el servidor no la corras:** el `.env` de ahí apunta a la app de verdad. Si alguna vez usás `--en-produccion`,
+> queda guardado un grupo con teléfonos inventados en las pantallas del equipo; borralo con
 > `delete from public.whatsapp_grupos where id = '120363000000000001@g.us';` (los miembros se van en cascada). Para
 > comprobar la conexión sin dejar nada inventado, prendé el servicio y mirá Ajustes → WhatsApp: el estado aparece solo.
 > Las pruebas (`npm test`) nunca le hablan a la app real: corren desde una carpeta vacía, sin tu `.env`.
@@ -172,29 +225,28 @@ algo anda mal»).
 Como root:
 
 ```bash
-mkdir -p /opt/apicanta-whatsapp-lector
-cp -a /home/lector/whatsapp-lector/. /opt/apicanta-whatsapp-lector/
-chown -R lector:lector /opt/apicanta-whatsapp-lector
 cp /opt/apicanta-whatsapp-lector/deploy/whatsapp-lector.service /etc/systemd/system/apicanta-whatsapp-lector.service
 systemctl daemon-reload
 systemctl enable --now apicanta-whatsapp-lector
 systemctl status apicanta-whatsapp-lector
 ```
 
-Arranca con el servidor, y si se cae lo levanta de nuevo a los 10 segundos. Si Node no está en `/usr/bin/node`
-(`which node` lo dice), cambiá `ExecStart` en el archivo del servicio.
+Arranca con el servidor y, si se cae, lo levanta de nuevo a los 10 segundos (y si se cae una y otra vez, esperando cada
+vez más, hasta 5 minutos: no vuelve a entrar a WhatsApp a ritmo de segundos). La unidad lo corre como `lector`, con
+`UMask=0077` (la sesión de WhatsApp queda sólo para ese usuario) y aislado del resto del servidor. Si Node no está en
+`/usr/bin/node` (`which node` lo dice), cambiá `ExecStart` en el archivo del servicio.
 
 <details>
-<summary>¿Preferís pm2?</summary>
+<summary>¿Preferís pm2? (lo probado es systemd)</summary>
 
 ```bash
 npm install -g pm2          # como root
-su - lector
-cd whatsapp-lector
-pm2 start deploy/ecosystem.config.cjs
-pm2 save
-pm2 startup                 # imprime un comando con sudo: copialo y pegalo, como root
+cd /opt/apicanta-whatsapp-lector
+runuser -u lector -- pm2 start deploy/ecosystem.config.cjs
+runuser -u lector -- pm2 save
+pm2 startup systemd -u lector --hp /home/lector     # imprime un comando: copialo y pegalo, como root
 ```
+Con pm2 no rige el `UMask=0077` de la unidad: el servicio igual crea `auth` con modo 700 y arranca con `umask 077`.
 
 Los registros: `pm2 logs apicanta-whatsapp-lector`. Reiniciar: `pm2 restart apicanta-whatsapp-lector`.
 </details>
@@ -222,8 +274,8 @@ Los registros: `pm2 logs apicanta-whatsapp-lector`. Reiniciar: `pm2 restart apic
 | Reiniciarlo | `systemctl restart apicanta-whatsapp-lector` | `pm2 restart apicanta-whatsapp-lector` |
 | Pararlo | `systemctl stop apicanta-whatsapp-lector` | `pm2 stop apicanta-whatsapp-lector` |
 
-**Actualizar el servicio:** copiá la carpeta de nuevo (`rsync`, como en el paso 3: **sin tocar `auth/` ni `.env`**),
-corré `npm install` (esta versión suma la librería `qrcode`) y reiniciá.
+**Actualizar el servicio:** repetí el `git archive … | ssh …` del paso 3 (no toca `auth/` ni `.env`: no están en git),
+corré `runuser -u lector -- npm ci --omit=dev --ignore-scripts` y reiniciá (`systemctl restart apicanta-whatsapp-lector`).
 
 **Qué se ve en los registros** (una línea por cosa, con la hora de Argentina; nunca teléfonos ni el código QR):
 
@@ -233,6 +285,9 @@ corré `npm install` (esta versión suma la librería `qrcode`) y reiniciá.
 07/10 15:02:14 INFO  «Taller Online 08/10/26 #1»: 812 con teléfono y 3 sin teléfono visible (se cuentan, no se mandan).
 07/10 15:05:40 INFO  «Taller Online 08/10/26 #1»: entraron 4.
 ```
+
+(Los números largos se tapan solos, también en lo que escribe Baileys. Con `LOG_LEVEL=debug` o `trace` Baileys cuenta mucho
+de más: no lo dejes prendido.)
 
 ## Si WhatsApp cierra la sesión
 
@@ -269,10 +324,16 @@ Si el código sale cortado, agrandá la ventana de la terminal.
 | `La app avisa: Falta correr supabase/whatsapp-lector-qr.sql` | El lector anda, pero el código QR no tiene dónde guardarse. Correr ese archivo. |
 | `No se pudo conectar con la app` | `APP_URL` mal escrita, o el servidor no sale a internet. Probá `curl -I <APP_URL>`. |
 | `La hora del lector difiere N minutos` | El reloj del servidor está mal: `timedatectl set-ntp true`. |
-| `Ningún grupo… coincide con GRUPOS_REGEX` | El número no está en esos grupos, o la expresión no calza con los nombres. Vaciala para ver todos. |
+| `Ningún grupo… coincide con GRUPOS_REGEX` | El número no está en esos grupos, o la expresión no calza con los nombres. Probá `.*` un rato para ver todos (y volvé a poner la tuya). |
 | `Otra copia del lector está usando esta misma sesión` | Hay dos lectores con la misma carpeta `auth/` (por ejemplo, uno de pruebas en tu compu). Dejá uno solo. |
 | `No pude apartar la sesión vieja` | El usuario del servicio no puede renombrar `auth`. Revisá los permisos de la carpeta (`chown -R lector:lector`). |
-| `Faltan las dependencias` | Falta `npm install` en la carpeta (esta versión suma `qrcode`). |
+| `Faltan las dependencias` | Falta `runuser -u lector -- npm ci --omit=dev --ignore-scripts` en la carpeta. |
+| `El lector no puede arrancar: Falta GRUPOS_REGEX` | Completá `GRUPOS_REGEX` en el `.env` (obligatoria; `.*` para mirar todos a propósito). |
+| `APP_URL tiene que empezar con https://` | La dirección de la app tiene que ser `https://` (`http://` sólo para localhost). |
+| `El modo simulado escribe grupos y teléfonos inventados…` | Es el freno de `--simulado`: probalo contra una app en tu compu, o agregá `--en-produccion` sabiendo que escribe de verdad. |
+| `WhatsApp rechazó la conexión (código 403)` | El número puede estar bloqueado. Mirá el teléfono y WhatsApp. El lector no insiste (seguir golpeando lo empeora); cuando lo resuelvas, `systemctl restart apicanta-whatsapp-lector`. |
+| `WhatsApp cerró la conexión 3 veces seguidas porque la sesión guardada no sirve` | Pasa con una sesión rota: el lector aparta `auth` en `auth.vieja` y pide escanear de nuevo en Ajustes → WhatsApp. |
+| `la app no aplicó la foto (…)` o `…el aviso (…)` | Informativo: la app ya tenía algo más nuevo de ese grupo; no se reintenta. |
 | En la app: «Sin señal hace N minutos» | El servicio no está corriendo o el servidor no tiene internet. `systemctl status`. |
 | En la app: «Reconectando» que no termina | WhatsApp no lo deja conectar. Mirá los registros; si dura, puede pedir vincular de nuevo. |
 | En la app: «Sesión cerrada» | WhatsApp cerró la sesión y no se pudo empezar otra (mirá los registros), o hay otra copia usando el número. |
@@ -281,20 +342,26 @@ Si el código sale cortado, agrandá la ventana de la terminal.
 
 | Variable | Qué es | Por defecto |
 |---|---|---|
-| `APP_URL` | La dirección de Apicanta, sin barra al final. **Obligatoria.** | — |
+| `APP_URL` | La dirección de Apicanta, sin barra al final. **Obligatoria.** `https://` (`http://` sólo para localhost). | — |
 | `WHATSAPP_LECTOR_TOKEN` | El secreto compartido con la app (el mismo que en Vercel). **Obligatoria.** | — |
-| `GRUPOS_REGEX` | Qué grupos mirar, por el nombre (sin distinguir mayúsculas). Vacía: todos. | todos |
+| `GRUPOS_REGEX` | Qué grupos mirar, por el nombre (sin distinguir mayúsculas). **Obligatoria**; `.*` para todos, a propósito. Sin repeticiones dentro de repeticiones, como `(.*a)+`. | — |
 | `AUTH_DIR` | Dónde se guarda la sesión de WhatsApp. | `./auth` |
 | `LATIDO_CADA_SEG` | Cada cuánto avisa que sigue vivo (10 a 600). | `120` |
 | `FOTO_CADA_HORAS` | Cada cuánto manda la lista completa de cada grupo (0: nunca). | `6` |
-| `LOG_LEVEL` | `trace`, `debug`, `info`, `warn` o `error` (con `debug` también habla Baileys). | `info` |
+| `LOG_LEVEL` | `trace`, `debug`, `info`, `warn` o `error`. Baileys habla desde `warn`; con `debug`/`trace` cuenta mucho de más (sus números largos se tapan igual). | `info` |
 | `QR_EN_TERMINAL` | `1`: dibuja el código en la terminal además de mandarlo a la app (igual que `--qr-terminal`). | — |
 
 ## Seguridad
 
 - **La carpeta `auth/` es la sesión de WhatsApp del número**: quien la copie puede leer sus chats. No se sube al repo
-  (el repo de Apicanta es público; `.gitignore` la excluye), no se comparte y se cuida con permisos:
-  `chmod 700 auth` y `chmod 600 .env`. Lo mismo `auth.vieja`.
+  (el repo de Apicanta es público; `.gitignore` la excluye), no se comparte y se cuida con permisos. El servicio la crea
+  con modo `700` (y arranca con `umask 077`, más el `UMask=0077` de la unidad), también la nueva después de apartar una
+  sesión cerrada; el `.env` va con `chmod 600`. Conviene mirar de vez en cuando que siga así: `ls -ld auth auth.vieja`.
+- **El servidor** entra sólo con llave SSH (sin contraseñas), con firewall (sólo el puerto 22) y con un usuario de servicio
+  sin contraseña ni shell (paso 1). Si copiaste el `.env` a otro lado para instalar, borralo: el secreto tiene que estar
+  en un solo lugar del servidor.
+- **Las dependencias** vienen de `package-lock.json` (`npm ci`), con versiones y hashes fijos: una instalación nueva no
+  trae nada que no se haya mirado. Para actualizar algo, se cambia el lock en el repo.
 - **El código QR también lo es** (ver arriba): sólo lo ve un dueño, vive menos de un minuto en la app, no se lee desde el
   navegador con la base y se borra al conectarse. No le saques captura ni lo mandes por chat.
 - El servicio **no abre ningún puerto**: sólo hace conexiones hacia afuera (a WhatsApp y a la app).
@@ -313,17 +380,17 @@ mismos cuerpos y el mismo cliente que el lector de verdad, y respeta `GRUPOS_REG
   { "tipo": "estado", "estado": "esperando_qr", "qr": "texto que da WhatsApp" },
   { "tipo": "esperar", "ms": 9000 },
   { "tipo": "estado", "estado": "conectado", "grupos": 1 },
-  { "tipo": "foto",  "grupo": { "id": "120363000000000001@g.us", "nombre": "Taller Online 08/10/26 #1" },
+  { "tipo": "foto",  "grupo": { "id": "120363000000000001@g.us", "nombre": "PRUEBA - Taller Online 01/01/20 #1" },
     "participantes": [ "5491155550001@s.whatsapp.net", { "id": "1000@lid", "phoneNumber": "5491155550003@s.whatsapp.net" }, { "id": "2000@lid" } ] },
-  { "tipo": "entro", "grupo": { "id": "120363000000000001@g.us", "nombre": "Taller Online 08/10/26 #1" }, "participantes": [ "5491155550011@s.whatsapp.net" ] },
-  { "tipo": "salio", "grupo": { "id": "120363000000000001@g.us", "nombre": "Taller Online 08/10/26 #1" }, "participantes": [ "5491155550001@s.whatsapp.net" ], "haceMin": 2 }
+  { "tipo": "entro", "grupo": { "id": "120363000000000001@g.us", "nombre": "PRUEBA - Taller Online 01/01/20 #1" }, "participantes": [ "5491155550011@s.whatsapp.net" ] },
+  { "tipo": "salio", "grupo": { "id": "120363000000000001@g.us", "nombre": "PRUEBA - Taller Online 01/01/20 #1" }, "participantes": [ "5491155550001@s.whatsapp.net" ], "haceMin": 2 }
 ] }
 ```
 
 Los participantes se escriben como los entrega Baileys (un texto, o un objeto con el LID y el teléfono). Un paso puede
 llevar `haceMin` para que «haya pasado hace tantos minutos». `latido` y `estado` son lo mismo. Para probar contra la app
 en tu compu: `APP_URL=http://localhost:3010` y un `WHATSAPP_LECTOR_TOKEN` de prueba (el mismo en la app y acá) en tu
-entorno, nunca en el repo.
+entorno, nunca en el repo. Contra una app que no es de tu compu, el comando se niega salvo con `--en-produccion`.
 
 Las pruebas del servicio (no necesitan WhatsApp ni internet): `npm test`. Cubren los participantes (con y sin teléfono,
 las dos versiones de Baileys), los cuerpos, los reintentos, el filtro de grupos, el envoltorio de sólo lectura y el
