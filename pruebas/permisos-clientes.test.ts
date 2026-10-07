@@ -83,8 +83,8 @@ test("la base (tipos-cuenta.sql + customer-success.sql) dice lo mismo que LEEN y
   const leen = parchar(cuerpo(base, "areas_que_leen"), ["leads", "contactos", "comentarios", "ventas", "cuotas", "pagos"]);
   const editan = parchar(cuerpo(base, "areas_que_editan"), ["contactos", "comentarios"]);
   /* Las tablas cuya política usa nivel_area('finanzas') directo, sin pasar por estas dos funciones
-     (supabase/gastos-recurrentes.sql y supabase/devoluciones.sql): la app las lista en LEEN y EDITAN pero la base no. */
-  const PROPIAS = new Set(["gastos_recurrentes", "devoluciones"]);
+     (supabase/gastos-recurrentes.sql y supabase/devoluciones.sql; las whatsapp_* tienen políticas propias en supabase/whatsapp-lector*.sql): la app las lista en LEEN y EDITAN pero la base no. */
+  const PROPIAS = new Set(["gastos_recurrentes", "devoluciones", "whatsapp_lector", "whatsapp_grupos", "whatsapp_miembros", "whatsapp_qr"]);
   for (const [tabla, areas] of Object.entries(LEEN)) {
     if (areas.length === 0 || PROPIAS.has(tabla)) continue;
     assert.deepEqual([...(leen[tabla] ?? [])].sort(), [...areas].sort(), `lee ${tabla}`);

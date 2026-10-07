@@ -523,8 +523,10 @@ export async function responderEstado(peticion: Request, deps: DepsDeEstado = DE
   let soloElCodigo = false;
   const noVe = await deps.exigirArea(peticion, ["webinars"], 1, { sinSoloLoSuyo: true });
   if (noVe) {
-    if (!pideQr || noVe.status === 401) return noVe;
-    if (await deps.exigirArea(peticion, ["ajustes"], 2, paraElCodigo)) return noVe;
+    /* 503: no se pudo comprobar el permiso; se contesta eso (las pantallas vuelven a preguntar), nunca un 403 que las calle. */
+    if (!pideQr || noVe.status === 401 || noVe.status === 503) return noVe;
+    const sinAjustes = await deps.exigirArea(peticion, ["ajustes"], 2, paraElCodigo);
+    if (sinAjustes) return sinAjustes.status === 503 ? sinAjustes : noVe;
     soloElCodigo = true;
   }
 
@@ -533,7 +535,9 @@ export async function responderEstado(peticion: Request, deps: DepsDeEstado = DE
     const r = await estadoParaPantalla(donde.repo, donde.modo);
     if (soloElCodigo) { r.grupos = []; r.sinGrupos = true; }
     if (pideQr && r.lector?.estado === "esperando_qr") {
-      const puede = soloElCodigo || (await deps.exigirArea(peticion, ["ajustes"], 2, paraElCodigo)) === null;
+      const sinAjustes = soloElCodigo ? null : await deps.exigirArea(peticion, ["ajustes"], 2, paraElCodigo);
+      if (sinAjustes?.status === 503) return sinAjustes;
+      const puede = sinAjustes === null;
       r.puedeVerQr = puede;
       r.qr = null;
       if (puede) {

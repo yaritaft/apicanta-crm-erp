@@ -153,6 +153,13 @@ export const LEEN: Record<string, AreaId[]> = {
   yt_chat: YOUTUBE,
   yt_estado: YOUTUBE,
   yt_muestras: YOUTUBE,
+  /* El lector de WhatsApp (supabase/whatsapp-lector.sql y whatsapp-lector-permisos.sql): lo ve quien ve los
+     Webinars y no está limitado a lo suyo (traen los teléfonos de todos); el código QR no lo lee nadie desde acá,
+     lo entrega el servidor. Las políticas son propias, no pasan por areas_que_leen(). */
+  whatsapp_lector: ["webinars"],
+  whatsapp_grupos: ["webinars"],
+  whatsapp_miembros: ["webinars"],
+  whatsapp_qr: [],
   /* Sólo los dueños. */
   honorarios: [],
   liquidaciones: [],
@@ -188,6 +195,11 @@ export const EDITAN: Record<string, AreaId[]> = {
   devoluciones: ["finanzas", "ventas"],
   gastos_recurrentes: ["finanzas"],
   transacciones: ["finanzas"],
+  /* Las tablas del lector las escribe sólo el servidor, con la clave de servicio: nadie desde la app. */
+  whatsapp_lector: [],
+  whatsapp_grupos: [],
+  whatsapp_miembros: [],
+  whatsapp_qr: [],
   ajustes: ["ajustes"],
   campos: ["ajustes"],
   etapas: ["ajustes"],
@@ -202,9 +214,16 @@ export const EDITAN: Record<string, AreaId[]> = {
    (la base lo deja con Ventas editable, aunque no vea Alumnos). */
 const LIBRES = new Set(["actividad", "preferencias"]);
 
+/* Lo del lector de WhatsApp: el servidor lo escribe (nadie desde la app), el código QR tampoco lo lee nadie
+   (ni un dueño: lo entrega el servidor), y los teléfonos de los grupos no los ve quien está limitado a lo suyo. */
+const SOLO_EL_SERVIDOR = new Set(["whatsapp_lector", "whatsapp_grupos", "whatsapp_miembros", "whatsapp_qr"]);
+const SIN_SOLO_LO_SUYO = new Set(["whatsapp_lector", "whatsapp_grupos", "whatsapp_miembros"]);
+
 export function puedeLeer(a: MiAcceso | null | undefined, tabla: string): boolean {
   if (!a) return false;
+  if (tabla === "whatsapp_qr") return false;
   if (esDueno(a)) return true;
+  if (a.soloLoSuyo && SIN_SOLO_LO_SUYO.has(tabla)) return false;
   const areas = LEEN[tabla];
   return !areas || areas.some((x) => nivelEn(a, x) >= 1);
 }
@@ -230,6 +249,7 @@ export function puedeDarDeBaja(a: MiAcceso | null | undefined): boolean {
 
 export function puedeEditar(a: MiAcceso | null | undefined, tabla: string): boolean {
   if (!a) return false;
+  if (SOLO_EL_SERVIDOR.has(tabla)) return false;
   if (esDueno(a) || LIBRES.has(tabla)) return true;
   if (tabla === "devoluciones") return puedeCargarDevolucion(a);
   if (tabla === "alumnos" && nivelEn(a, "ventas") === 2) return true;

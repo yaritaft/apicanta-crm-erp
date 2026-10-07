@@ -26,13 +26,14 @@ export const dynamic = "force-dynamic";
 const SIN_CACHE = { headers: { "Cache-Control": "no-store" } };
 
 export async function GET(peticion: Request) {
-  /* Quien ve sólo lo suyo no: esto sale de tablas que se leen con la clave de servicio (sin RLS) y trae los teléfonos de todos. */
-  const noPuede = await exigirArea(peticion, ["webinars"], 1, { sinSoloLoSuyo: true });
+  const donde = repositorio();
+  /* Quien ve sólo lo suyo no: esto sale de tablas que se leen con la clave de servicio (sin RLS) y trae los teléfonos de todos.
+     Y en la nube nunca «la app local, sin login»: si la clave de servicio está pero falta el equipo, no se lee nada. */
+  const noPuede = await exigirArea(peticion, ["webinars"], 1, { sinSoloLoSuyo: true, cerrado: donde?.modo === "nube" });
   if (noPuede) return noPuede;
   const id = new URL(peticion.url).searchParams.get("id")?.trim() ?? "";
   if (!/^[\w.:@+-]{1,160}$/.test(id)) return NextResponse.json({ error: "Falta el webinar (?id=…)." }, { status: 400 });
 
-  const donde = repositorio();
   if (!donde) return NextResponse.json({ error: SIN_BASE }, { status: 503 });
   try {
     return NextResponse.json(await datosDeWebinar(donde.repo, donde.modo, id), SIN_CACHE);
@@ -49,7 +50,8 @@ export async function GET(peticion: Request) {
 
 export async function POST(peticion: Request) {
   /* El permiso antes de leer el cuerpo: sin sesión no se le carga nada a la memoria. */
-  const noPuede = await exigirArea(peticion, ["webinars"], 2);
+  const donde = repositorio();
+  const noPuede = await exigirArea(peticion, ["webinars"], 2, { cerrado: donde?.modo === "nube" });
   if (noPuede) return noPuede;
 
   const leido = await leerJson(peticion, 10_000);
@@ -57,7 +59,6 @@ export async function POST(peticion: Request) {
   const a = leerAccion(leido.json);
   if (!a.ok) return NextResponse.json({ error: a.error }, { status: 400 });
 
-  const donde = repositorio();
   if (!donde) return NextResponse.json({ error: SIN_BASE }, { status: 503 });
   try {
     const x = a.accion;

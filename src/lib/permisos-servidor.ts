@@ -20,7 +20,10 @@ import type { AreaId } from "./types";
 export const faltaLaFuncion = (e: { code?: string; message?: string }) =>
   e.code === "PGRST202" || e.code === "42883" || /could not find the function/i.test(e.message ?? "");
 
-interface DelPedido { nivel: number; soloLoSuyo: boolean }
+/** `noSePudo`: la base no contestó bien (JWT vencido, 429, 5xx, red cortada). No es «sin permiso»: es «no sé», y se
+    contesta 503 para que las pantallas vuelvan a preguntar en vez de darse por vencidas. Ante la duda no se deja pasar. */
+interface DelPedido { nivel: number; soloLoSuyo: boolean; noSePudo?: boolean }
+const NO_SE_PUDO: DelPedido = { nivel: 0, soloLoSuyo: false, noSePudo: true };
 
 /* El nivel más alto en esas áreas y, si se pide, si la cuenta ve sólo lo suyo. Una sola sesión de
    base y las mismas funciones que usan las políticas. */
@@ -33,28 +36,31 @@ async function consultar(peticion: Request, areas: AreaId[], pideSoloLoSuyo: boo
     auth: { persistSession: false },
     global: { headers: { Authorization: `Bearer ${jwt}` } },
   });
-  const entra = await db.rpc("puede_entrar");
+  let entra: Awaited<ReturnType<typeof db.rpc>>;
+  try { entra = await db.rpc("puede_entrar"); } catch { return NO_SE_PUDO; }
+  /* Un 429, un 5xx o la red cortada (estado 0) no dicen que no sea del equipo: no se pudo comprobar. */
+  if (entra.error && (entra.status === 0 || entra.status === 408 || entra.status === 429 || entra.status >= 500)) return NO_SE_PUDO;
   if (entra.error || entra.data !== true) return null;
   let mayor = 0;
   for (const area of areas) {
     let r: Awaited<ReturnType<typeof db.rpc>>;
-    try { r = await db.rpc("nivel_area", { area }); } catch { return { nivel: 0, soloLoSuyo: false }; }
+    try { r = await db.rpc("nivel_area", { area }); } catch { return NO_SE_PUDO; }
     if (r.error) {
       /* Una base sin supabase/tipos-cuenta.sql: el que entra, entra a todo. */
       if (faltaLaFuncion(r.error)) return { nivel: 2, soloLoSuyo: false };
-      /* Cualquier otro error no es «sin tipos de cuenta»: sin permiso. */
-      return { nivel: 0, soloLoSuyo: false };
+      /* Cualquier otro error no es «sin tipos de cuenta»: no se deja pasar, pero tampoco es un «no» firme. */
+      return NO_SE_PUDO;
     }
     mayor = Math.max(mayor, Number(r.data) || 0);
     if (mayor === 2) break;
   }
   let soloLoSuyo = false;
   if (pideSoloLoSuyo) {
-    let r: Awaited<ReturnType<typeof db.rpc>> | null = null;
-    try { r = await db.rpc("solo_lo_suyo"); } catch { /* sin respuesta: se toma como que sí */ }
-    /* Sin la función no hay tipos de cuenta y nadie ve «sólo lo suyo». Con cualquier otro error, la duda se
-       resuelve por lo más cerrado. */
-    soloLoSuyo = r ? (r.error ? !faltaLaFuncion(r.error) : r.data !== false) : true;
+    let r: Awaited<ReturnType<typeof db.rpc>>;
+    try { r = await db.rpc("solo_lo_suyo"); } catch { return NO_SE_PUDO; }
+    /* Sin la función no hay tipos de cuenta y nadie ve «sólo lo suyo». Con cualquier otro error no se sabe: no pasa. */
+    if (r.error && !faltaLaFuncion(r.error)) return NO_SE_PUDO;
+    soloLoSuyo = r.error ? false : r.data !== false;
   }
   return { nivel: mayor, soloLoSuyo };
 }
@@ -85,13 +91,14 @@ export interface OpcionesDeArea {
   cerrado?: boolean;
 }
 
-/** null si puede; si no, la respuesta que corresponde (401 o 403). */
+/** null si puede; si no, la respuesta que corresponde: 401 (sin sesión), 403 (sin permiso) o 503 (no se pudo comprobar). */
 export async function exigirArea(peticion: Request, areas: AreaId[], minimo: 1 | 2, opciones: OpcionesDeArea = {}): Promise<NextResponse | null> {
   if (!hayEquipoConfigurado()) {
     return opciones.cerrado ? NextResponse.json({ error: "Hace falta iniciar sesión." }, { status: 401 }) : null;
   }
   const p = await consultar(peticion, areas, Boolean(opciones.sinSoloLoSuyo));
   if (p === null) return NextResponse.json({ error: "Hace falta iniciar sesión." }, { status: 401 });
+  if (p.noSePudo) return NextResponse.json({ error: "No pudimos comprobar tu permiso, probá de nuevo." }, { status: 503, headers: { "Cache-Control": "no-store" } });
   if (p.nivel < minimo) {
     return NextResponse.json(
       { error: minimo === 2 ? "Tu tipo de cuenta no puede cambiar esto." : "Tu tipo de cuenta no ve esto." },

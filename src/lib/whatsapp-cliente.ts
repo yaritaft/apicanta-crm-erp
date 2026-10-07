@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { cabeceras } from "@/components/webinars/useYoutube";
-import { estadoDelLector, proximaPregunta, QR_VIGENTE_SEG, sinCodigoVencido, type RespuestaEstado, type RespuestaWebinar } from "./whatsapp";
+import { esSinAcceso, estadoDelLector, proximaPregunta, QR_VIGENTE_SEG, sinCodigoVencido, type RespuestaEstado, type RespuestaWebinar } from "./whatsapp";
 
 /* ==================================================================
    WhatsApp de lectura, del lado de la pantalla.
@@ -72,7 +72,7 @@ export function recargarLector(): Promise<void> {
       poner({ cargando: false, datos, error: null, sinAcceso: false });
     } catch (e) {
       const err = e as ErrorWhatsapp;
-      poner({ cargando: false, datos: vista.datos, error: err.message, sinAcceso: err.estado === 401 || err.estado === 403 });
+      poner({ cargando: false, datos: vista.datos, error: err.message, sinAcceso: esSinAcceso(err.estado) });
     } finally {
       enCurso = null;
     }
@@ -150,7 +150,7 @@ export function useLectorEnVivo(activo = true) {
     } catch (e) {
       const err = e as ErrorWhatsapp;
       setError(err.message);
-      sinAccesoRef.current = err.estado === 401 || err.estado === 403;
+      sinAccesoRef.current = esSinAcceso(err.estado);
       setSinAcceso(sinAccesoRef.current);
       /* Sin acceso (la sesión venció o le sacaron el permiso) no queda nada de lo último que se vio, código incluido. */
       if (sinAccesoRef.current) {
@@ -240,7 +240,7 @@ export function useGrupoDeWebinar(webinarId: string | null) {
       if (vigente.current !== webinarId) return;
       const err = e as ErrorWhatsapp;
       setError(err.message);
-      setSinAcceso(err.estado === 401 || err.estado === 403);
+      setSinAcceso(esSinAcceso(err.estado));
     } finally {
       if (vigente.current === webinarId) setCargando(false);
     }
