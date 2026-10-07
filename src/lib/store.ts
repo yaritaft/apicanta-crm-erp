@@ -7,9 +7,9 @@ import type {
   Arqueo, Campania, CampoPersonalizado, Comentario, Comprobante, Cuota, EntidadNombre, EstadoApp, Etapa, ID,
   Lead, Meta, Movimiento, OpcionCrm, OportunidadCrm, Pago, Reporte, Sesion, Venta, Webinar,
 } from "./types";
-import type { EsquemaPago, EstadoTraspaso, EtapaServicio, Gasto, ID as IdMiembro, Liquidacion, MiembroEquipo, ResultadoLiquidacion, TipoCuenta, Traspaso } from "./types";
+import type { EsquemaPago, EstadoTraspaso, EtapaServicio, ExtraLiquidacion, Gasto, ID as IdMiembro, Liquidacion, MiembroEquipo, ResultadoLiquidacion, TipoCuenta, Traspaso } from "./types";
 import { conciliarPuntas, rutaDe, type Punta } from "./traspasos";
-import { mismasTasas, nombrePeriodo, tasaParaFinanzas, tasasPorServicio } from "./honorarios";
+import { conExtraEnMes, mismasTasas, nombrePeriodo, sinExtraEnLiquidacion, tasaParaFinanzas, tasasPorServicio } from "./honorarios";
 import {
   alumnoDeVenta, cuotaMensualDeVenta, etapaDelAlumno, etapaInicialDeServicio, etapasDeServicio,
   personaDeVenta, planDeVenta,
@@ -2666,6 +2666,31 @@ export const acciones = {
       liquidaciones: existe ? e.liquidaciones.map((x) => (x.id === liq.id ? actualizada : x)) : [...e.liquidaciones, actualizada],
     });
     empujar({ tipo: "upsert", tabla: "liquidaciones", filas: [actualizada] });
+  },
+
+  /* Suma o descuenta un monto en la liquidación de un mes, también en uno que
+     viene («el mes que viene hay que descontárselo»). Si ese mes todavía no
+     tiene liquidación se crea con lo único que tiene: el monto. Lee el estado
+     de este momento y no el de la pantalla, así lo que se anota desde otro
+     mes no pisa ni se pierde con lo que se carga mirando éste. Devuelve false
+     si ese mes ya está cerrado: lo cerrado no cambia. */
+  agregarExtraLiquidacion(periodo: string, extra: ExtraLiquidacion): boolean {
+    const e = snapshot();
+    const r = conExtraEnMes(e.liquidaciones, periodo, extra, ahora());
+    if (!r) return false;
+    guardar({ ...e, liquidaciones: r.liquidaciones });
+    empujar({ tipo: "upsert", tabla: "liquidaciones", filas: [r.liquidacion] });
+    return true;
+  },
+
+  /* Saca un monto anotado de una liquidación abierta. */
+  quitarExtraLiquidacion(liquidacionId: ID, extraId: ID): boolean {
+    const e = snapshot();
+    const r = sinExtraEnLiquidacion(e.liquidaciones, liquidacionId, extraId, ahora());
+    if (!r) return false;
+    guardar({ ...e, liquidaciones: r.liquidaciones });
+    empujar({ tipo: "upsert", tabla: "liquidaciones", filas: [r.liquidacion] });
+    return true;
   },
 
   /* Cerrar: se guarda la foto de lo que se paga y los sueldos entran a

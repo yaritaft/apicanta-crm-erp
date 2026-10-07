@@ -12,12 +12,13 @@ import { emailValido, generarClave, tipoSugerido, useTiposCuenta, type useAcceso
 import { resumenDeTipo } from "@/lib/permisos";
 import { categoriasDisponibles, infoGrupo } from "@/lib/gastos";
 import {
-  TIPOS_CONCEPTO, categoriaPorDefecto, describirConcepto, idEsquema, nombrePeriodo, plata,
+  TIPOS_CONCEPTO, categoriaPorDefecto, describirConcepto, idEsquema,
 } from "@/lib/honorarios";
 import type { ConceptoPago, EsquemaPago, MiembroEquipo, RolEquipo } from "@/lib/types";
 import { AsistenteConcepto } from "./AsistenteConcepto";
 import { ClaveGenerada } from "./ClaveGenerada";
 import { CuotasDelCloser } from "./CuotasDelCloser";
+import { HistorialLiquidado } from "./HistorialLiquidado";
 
 /* ==================================================================
    La ficha de alguien del equipo: quién es, qué cobra y con qué entra a
@@ -75,13 +76,6 @@ export function FichaMiembro({ miembroId, accesos, onCerrar }: {
     acciones.guardarMiembro({ ...m, ...cambios });
     if (aviso) toast(aviso);
   };
-
-  const historial = e.liquidaciones
-    .filter((l) => l.estado === "cerrada" && l.resultado)
-    .map((l) => ({ l, p: l.resultado!.personas.find((x) => x.miembroId === m.id) }))
-    .filter((x): x is { l: typeof x.l; p: NonNullable<typeof x.p> } => Boolean(x.p))
-    .sort((a, b) => b.l.periodo.localeCompare(a.l.periodo))
-    .slice(0, 6);
 
   return (
     <Drawer abierto onCerrar={onCerrar} titulo={m.nombre} sub={[m.puesto, textoRol(m.rol), m.activo ? "" : "ya no está"].filter(Boolean).join(" · ")}>
@@ -203,23 +197,8 @@ export function FichaMiembro({ miembroId, accesos, onCerrar }: {
           <AccesoMiembro m={m} accesos={accesos} yoEmail={yo.email} />
         </section>
 
-        {/* ---------- Lo que se le liquidó ---------- */}
-        {historial.length > 0 && (
-          <section className="stack-3">
-            <h3 className="t-label">Lo que se le liquidó</h3>
-            <dl className="dl dl--compacta">
-              {historial.map(({ l, p }) => (
-                <React.Fragment key={l.id}>
-                  <dt className="t-num">{nombrePeriodo(l.periodo)}</dt>
-                  <dd className="t-num">
-                    {plata(p.total, e.ajustes.monedaBase)}
-                    <span className="t-subtle"> · {l.pagos[m.id] ? "pagado" : "por pagar"}</span>
-                  </dd>
-                </React.Fragment>
-              ))}
-            </dl>
-          </section>
-        )}
+        {/* ---------- Lo que se le liquidó, mes por mes, con su «Ver cómo se calculó» ---------- */}
+        <HistorialLiquidado miembroId={m.id} />
       </div>
 
       {editando && (

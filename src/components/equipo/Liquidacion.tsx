@@ -2,11 +2,11 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import {
-  AlertTriangle, Check, ChevronLeft, ChevronRight, ChevronsDownUp, ChevronsUpDown, Copy, Download,
+  AlertTriangle, Calculator, Check, ChevronLeft, ChevronRight, ChevronsDownUp, ChevronsUpDown, Copy, Download,
   Lock, LockOpen, Plus, RefreshCw, Trash2, UserRound,
 } from "lucide-react";
 import {
-  Ayuda, Badge, Button, Card, Chip, Empty, IconButton, Input, StatCard, Switch,
+  Ayuda, Badge, Button, Card, Chip, Empty, IconButton, Input, Select, StatCard, Switch,
 } from "@/components/ui/ui";
 import { InputMonto } from "@/components/ui/InputMonto";
 import { Modal } from "@/components/ui/Modal";
@@ -18,12 +18,13 @@ import { fechaLarga, money, num } from "@/lib/format";
 import { escribirMonto, infoGrupo, categoriaDe, leerMonto } from "@/lib/gastos";
 import { pedirBlue } from "@/lib/dolar";
 import {
-  calcularLiquidacion, claveEntrada, diferenciasDesdeElCierre, esPeriodo, faltantes, gastosDeLiquidacion,
-  idLiquidacion, infoBase, liquidacionCsv, moverPeriodo, nombrePeriodo, periodoDe, plata, textoParaEnviar,
+  calcularLiquidacion, claveEntrada, diferenciasDesdeElCierre, esPeriodo, extrasPorVenir, faltantes, gastosDeLiquidacion,
+  infoBase, liquidacionCsv, liquidacionVacia, mesesParaExtra, moverPeriodo, nombrePeriodo, periodoDe, plata, textoParaEnviar,
 } from "@/lib/honorarios";
 import type {
-  EntradaLiquidacion, EstadoApp, LineaLiquidada, Liquidacion, Moneda, PersonaLiquidada, ResultadoLiquidacion,
+  EntradaLiquidacion, EstadoApp, ExtraLiquidacion, LineaLiquidada, Liquidacion, Moneda, PersonaLiquidada, ResultadoLiquidacion,
 } from "@/lib/types";
+import { DesgloseRenglon } from "./DesgloseRenglon";
 
 /* ==================================================================
    La liquidación del mes.
@@ -39,13 +40,6 @@ import type {
    ================================================================== */
 
 const hoyPeriodo = () => periodoDe(new Date());
-
-function vacia(periodo: string): Liquidacion {
-  return {
-    id: idLiquidacion(periodo), periodo, estado: "abierta", entradas: {}, extras: [],
-    pagos: {}, gastoIds: [], creadoEn: new Date().toISOString(),
-  };
-}
 
 /* "US$ 2.700 + $ 50.000": lo que se transfiere, por moneda. */
 function aPagarTexto(a: Partial<Record<Moneda, number>>): string {
@@ -74,7 +68,7 @@ export function LiquidacionMes({ onVerPersona }: { onVerPersona: (miembroId: str
   const periodo = esPeriodo(p.mes) ? p.mes : hoyPeriodo();
 
   const guardada = e.liquidaciones.find((x) => x.periodo === periodo);
-  const liq = useMemo(() => guardada ?? vacia(periodo), [guardada, periodo]);
+  const liq = useMemo(() => guardada ?? liquidacionVacia(periodo), [guardada, periodo]);
   const cerrada = liq.estado === "cerrada" && Boolean(liq.resultado);
 
   /* Abierta, con los datos de hoy; cerrada, con su foto. */
@@ -83,11 +77,26 @@ export function LiquidacionMes({ onVerPersona }: { onVerPersona: (miembroId: str
   const falta = useMemo(() => faltantes(r), [r]);
   const cambios = useMemo(() => (cerrada ? diferenciasDesdeElCierre(e, liq) : []), [cerrada, e, liq]);
 
+  /* Las notas para quien paga: los montos a mano que traen una. */
+  const notas = useMemo(
+    () => r.personas.flatMap((persona) => persona.lineas.filter((l) => l.nota).map((linea) => ({ persona, linea }))),
+    [r],
+  );
+  /* Lo que se anotó para los meses que vienen, por persona. */
+  const porVenir = useMemo(() => {
+    const m = new Map<string, ReturnType<typeof extrasPorVenir>>();
+    for (const x of extrasPorVenir(e.liquidaciones, periodo)) m.set(x.extra.miembroId, [...(m.get(x.extra.miembroId) ?? []), x]);
+    return m;
+  }, [e.liquidaciones, periodo]);
+  /* En qué meses se puede anotar un monto: el que se mira y los que vienen, sin los cerrados. */
+  const mesesParaMonto = useMemo(() => mesesParaExtra(e.liquidaciones, periodo, hoyPeriodo()), [e.liquidaciones, periodo]);
+  const [verDesglose, setVerDesglose] = useState<{ miembroId: string; clave: string } | null>(null);
+
   const [abiertos, setAbiertos] = useState<Set<string>>(new Set());
-  /* Al cambiar de mes se abren las personas a las que les falta cargar algo:
-     es lo primero que hay que hacer. */
+  /* Al cambiar de mes se abren las personas a las que les falta cargar algo
+     o que traen una nota para quien paga: es lo primero que hay que ver. */
   useEffect(() => {
-    setAbiertos(new Set(falta.lineas.map((x) => x.persona.miembroId)));
+    setAbiertos(new Set([...falta.lineas.map((x) => x.persona.miembroId), ...notas.map((x) => x.persona.miembroId)]));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [periodo]);
   const alternar = (id: string) => setAbiertos((s) => {
@@ -108,6 +117,28 @@ export function LiquidacionMes({ onVerPersona }: { onVerPersona: (miembroId: str
     const nueva = cambio === null ? null : limpiar({ ...entradas[k], ...cambio });
     if (nueva) entradas[k] = nueva; else delete entradas[k];
     guardar({ entradas });
+  };
+
+  /* Un monto a mano para este mes o para uno que viene: se anota en la
+     liquidación de ese mes (se crea si todavía no existe). */
+  const agregarExtra = (persona: PersonaLiquidada, x: { concepto: string; monto: number; moneda: Moneda; nota: string; periodo: string }): boolean => {
+    const extra: ExtraLiquidacion = {
+      id: nuevoId("ext"), miembroId: persona.miembroId, concepto: x.concepto, monto: x.monto, moneda: x.moneda,
+      ...(x.nota ? { nota: x.nota } : {}),
+      creadoEn: new Date().toISOString(), creadoPor: yo.nombre,
+      ...(x.periodo !== periodo ? { desdePeriodo: periodo } : {}),
+    };
+    if (!acciones.agregarExtraLiquidacion(x.periodo, extra)) {
+      toast(`La liquidación de ${nombrePeriodo(x.periodo)} ya está cerrada: reabrila para sumarle un monto.`, "err");
+      return false;
+    }
+    if (x.periodo !== periodo) {
+      toast(`Anotado para la liquidación de ${nombrePeriodo(x.periodo)}: ${x.monto < 0 ? "descuento" : "monto"} de ${plata(Math.abs(x.monto), x.moneda)} a ${persona.nombre.split(" ")[0]}.`);
+    }
+    return true;
+  };
+  const quitarExtra = (liquidacionId: string, extraId: string) => {
+    if (!acciones.quitarExtraLiquidacion(liquidacionId, extraId)) toast("No se pudo sacar: esa liquidación ya se cerró.", "err");
   };
 
   const pagados = r.personas.filter((x) => liq.pagos[x.miembroId]).length;
@@ -181,6 +212,22 @@ export function LiquidacionMes({ onVerPersona }: { onVerPersona: (miembroId: str
         </Ayuda>
       )}
 
+      {notas.length > 0 && (
+        <div className="liq-notas" role="note">
+          <AlertTriangle size={18} aria-hidden />
+          <div>
+            <div className="liq-notas__titulo">{notas.length === 1 ? "Hay una nota para quien paga" : `Hay ${notas.length} notas para quien paga`}</div>
+            <ul className="liq-notas__lista">
+              {notas.map(({ persona, linea }) => (
+                <li key={`${persona.miembroId}:${linea.clave}`}>
+                  <b>{persona.nombre}</b> · {linea.nombre} ({plata(linea.monto, linea.moneda)}): {linea.nota}
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      )}
+
       {!cerrada && hayPesos && (
         <TipoCambio valor={liq.tipoCambio ?? e.ajustes.tipoCambio} onCambiar={(tipoCambio) => guardar({ tipoCambio })} />
       )}
@@ -217,7 +264,9 @@ export function LiquidacionMes({ onVerPersona }: { onVerPersona: (miembroId: str
                 key={persona.miembroId} persona={persona} liq={liq} cerrada={cerrada}
                 abierta={abiertos.has(persona.miembroId)} onAlternar={() => alternar(persona.miembroId)}
                 onEntrada={(conceptoId, cambio) => guardarEntrada(persona.miembroId, conceptoId, cambio)}
-                onExtras={(extras) => guardar({ extras })}
+                meses={mesesParaMonto} porVenir={porVenir.get(persona.miembroId)}
+                onAgregarExtra={(x) => agregarExtra(persona, x)} onQuitarExtra={quitarExtra}
+                onVerDesglose={(clave) => setVerDesglose({ miembroId: persona.miembroId, clave })}
                 onPagado={(v) => acciones.marcarPagado(liq, persona.miembroId, v, yo.nombre)}
                 onVerPersona={() => onVerPersona(persona.miembroId)}
                 onCopiar={async () => {
@@ -240,6 +289,13 @@ export function LiquidacionMes({ onVerPersona }: { onVerPersona: (miembroId: str
         y sin nombres, porque Finanzas la ve todo el equipo. El profit de {nombrePeriodo(periodo)} con esta liquidación
         adentro da {plata(r.profit, base)}: sale de lo que hay cargado en Finanzas, así que un gasto que falte cargar lo infla.
       </Ayuda>
+
+      {verDesglose && (
+        <DesgloseRenglon
+          miembroId={verDesglose.miembroId} clave={verDesglose.clave} periodo={periodo}
+          onCerrar={() => setVerDesglose(null)}
+        />
+      )}
 
       {cerrando && (
         <ModalCerrar
@@ -341,15 +397,22 @@ function CampoNumero({ valor, onCambiar, etiqueta, placeholder, autoFocus }: {
 /* ---------- Una persona ---------- */
 
 function FilaPersona({
-  persona, liq, cerrada, abierta, onAlternar, onEntrada, onExtras, onPagado, onVerPersona, onCopiar,
+  persona, liq, cerrada, abierta, onAlternar, onEntrada, meses, porVenir, onAgregarExtra, onQuitarExtra, onVerDesglose,
+  onPagado, onVerPersona, onCopiar,
 }: {
   persona: PersonaLiquidada; liq: Liquidacion; cerrada: boolean;
   abierta: boolean; onAlternar: () => void;
   onEntrada: (conceptoId: string, cambio: Partial<EntradaLiquidacion> | null) => void;
-  onExtras: (extras: Liquidacion["extras"]) => void;
+  /* Los meses en los que se puede anotar un monto, y lo ya anotado para los que vienen. */
+  meses: string[];
+  porVenir?: ReturnType<typeof extrasPorVenir>;
+  onAgregarExtra: (x: { concepto: string; monto: number; moneda: Moneda; nota: string; periodo: string }) => boolean;
+  onQuitarExtra: (liquidacionId: string, extraId: string) => void;
+  onVerDesglose: (clave: string) => void;
   onPagado: (v: boolean) => void; onVerPersona: () => void; onCopiar: () => void;
 }) {
   const faltan = persona.lineas.filter((l) => l.falta).length;
+  const conNota = persona.lineas.some((l) => l.nota);
   const pago = liq.pagos[persona.miembroId];
   const [agregando, setAgregando] = useState(false);
 
@@ -366,6 +429,7 @@ function FilaPersona({
           </button>
           <span className="liq__marcas">
             {persona.inactivo && <Badge variante="neutral">Ya no está</Badge>}
+            {conNota && <Badge variante="warning" icono={<AlertTriangle size={12} />}>Con nota</Badge>}
             {persona.pendiente
               ? <Badge variante="warning">A definir</Badge>
               : persona.sinCargar && !persona.inactivo && <Badge variante="neutral">Sin cargar</Badge>}
@@ -402,18 +466,38 @@ function FilaPersona({
             <Linea
               key={l.clave} l={l} cerrada={cerrada} entrada={l.conceptoId ? liq.entradas[claveEntrada(persona.miembroId, l.conceptoId)] : undefined}
               onEntrada={(cambio) => l.conceptoId && onEntrada(l.conceptoId, cambio)}
-              onBorrarExtra={() => onExtras(liq.extras.filter((x) => `extra:${x.id}` !== l.clave))}
+              onBorrarExtra={() => l.extraId && onQuitarExtra(liq.id, l.extraId)}
+              onVerDesglose={() => onVerDesglose(l.clave)}
             />
           ))}
+          {porVenir && porVenir.length > 0 && (
+            <div role="row" className="liq__fila liq__fila--nota">
+              <div role="cell" className="liq__nota liq__porvenir">
+                <span className="liq__porvenir-titulo">Anotado para los meses que vienen</span>
+                <ul className="liq__porvenir-lista">
+                  {porVenir.map(({ liquidacionId, periodo: mes, extra: x }) => (
+                    <li key={x.id}>
+                      <span>
+                        <b>{nombrePeriodo(mes)}</b> · {x.concepto}: {plata(x.monto, x.moneda)}
+                        {x.nota ? <span className="liq__sub"> Nota: {x.nota}</span> : null}
+                      </span>
+                      <IconButton etiqueta={`Sacar lo anotado para ${nombrePeriodo(mes)}`} onClick={() => onQuitarExtra(liquidacionId, x.id)}><Trash2 size={14} /></IconButton>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          )}
           {agregando && (
             <NuevoExtra
+              periodo={liq.periodo} meses={meses}
               onCancelar={() => setAgregando(false)}
-              onAgregar={(x) => { onExtras([...liq.extras, { ...x, id: nuevoId("ext"), miembroId: persona.miembroId }]); setAgregando(false); }}
+              onAgregar={(x) => { if (onAgregarExtra(x)) setAgregando(false); }}
             />
           )}
           <div role="row" className="liq__fila liq__fila--acciones">
             <div role="cell" className="liq__acciones">
-              {!cerrada && !agregando && (
+              {!agregando && meses.length > 0 && (
                 <Button sm variante="ghost" icono={<Plus size={15} />} onClick={() => setAgregando(true)}>Sumar o descontar un monto</Button>
               )}
               <Button sm variante="ghost" icono={<Copy size={15} />} onClick={onCopiar}>Copiar para mandarle</Button>
@@ -434,10 +518,11 @@ function FilaPersona({
 
 /* ---------- Un renglón ---------- */
 
-function Linea({ l, cerrada, entrada, onEntrada, onBorrarExtra }: {
+function Linea({ l, cerrada, entrada, onEntrada, onBorrarExtra, onVerDesglose }: {
   l: LineaLiquidada; cerrada: boolean; entrada?: EntradaLiquidacion;
   onEntrada: (cambio: Partial<EntradaLiquidacion> | null) => void;
   onBorrarExtra: () => void;
+  onVerDesglose: () => void;
 }) {
   const [corrigiendo, setCorrigiendo] = useState(false);
   const base = infoBase(l.base);
@@ -457,9 +542,16 @@ function Linea({ l, cerrada, entrada, onEntrada, onBorrarExtra }: {
               {l.corregido && <span className="tag liq__tag">Corregido</span>}
             </span>
             <span className="liq__sub">{l.detalle}</span>
+            {l.nota && (
+              <span className="liq__notapago" role="note">
+                <AlertTriangle size={14} aria-hidden />
+                <span><b>Nota para quien paga:</b> {l.nota}</span>
+              </span>
+            )}
+            {l.cargado && <span className="liq__sub">{l.cargado}</span>}
           </span>
-          {!cerrada && (
-            <span className="liq__carga" onClick={(ev) => ev.stopPropagation()}>
+          <span className="liq__carga" onClick={(ev) => ev.stopPropagation()}>
+            {!cerrada && (<>
               {l.tipo === "bono" && (
                 <label className="row" style={{ gap: 8 }}>
                   <Switch checked={entrada?.cumplido !== false} onChange={(v) => onEntrada({ cumplido: v ? undefined : false })} etiqueta={`${l.nombre}: lo ganó`} />
@@ -483,8 +575,14 @@ function Linea({ l, cerrada, entrada, onEntrada, onBorrarExtra }: {
               ) : (
                 <button type="button" className="link t-sm" onClick={() => setCorrigiendo((v) => !v)}>{corrigiendo ? "Cancelar" : "Corregir"}</button>
               )}
-            </span>
-          )}
+            </>)}
+            {/* Siempre al final, pegado al monto: así queda en la misma columna en todos los renglones. */}
+            {l.tipo !== "extra" && (
+              <button type="button" className="link t-sm liq__ver" onClick={onVerDesglose}>
+                <Calculator size={14} aria-hidden /> Ver cómo se calculó
+              </button>
+            )}
+          </span>
         </div>
         <div role="cell" className="liq__monto">{plata(l.monto, l.moneda)}</div>
       </div>
@@ -519,22 +617,35 @@ function Corregir({ l, onGuardar }: { l: LineaLiquidada; onGuardar: (monto: numb
   );
 }
 
-function NuevoExtra({ onCancelar, onAgregar }: {
+/* «Qué mes»: el que se está mirando y los que vienen. Se puede anotar un
+   descuento para el mes que viene, con una nota para quien paga. */
+function etiquetaMes(mes: string, mirando: string): string {
+  const hoy = periodoDe(new Date());
+  const marca = mes === mirando ? " · el que mirás" : mes === hoy ? " · este mes" : mes === moverPeriodo(hoy, 1) ? " · el que viene" : "";
+  return `${nombrePeriodo(mes)}${marca}`;
+}
+
+function NuevoExtra({ periodo, meses, onCancelar, onAgregar }: {
+  periodo: string; meses: string[];
   onCancelar: () => void;
-  onAgregar: (x: { concepto: string; monto: number; moneda: Moneda }) => void;
+  onAgregar: (x: { concepto: string; monto: number; moneda: Moneda; nota: string; periodo: string }) => void;
 }) {
   const [concepto, setConcepto] = useState("");
   const [monto, setMonto] = useState("");
   const [moneda, setMoneda] = useState<Moneda>("USD");
   const [resta, setResta] = useState(false);
+  const [nota, setNota] = useState("");
+  /* Por defecto el mes que se está mirando; si ya está cerrado, el primero que sigue abierto. */
+  const [destino, setDestino] = useState(meses.includes(periodo) ? periodo : meses[0]);
   const n = leerMonto(monto);
-  const listo = concepto.trim().length >= 2 && n > 0;
+  const listo = concepto.trim().length >= 2 && n > 0 && Boolean(destino);
+  const paraOtroMes = destino !== periodo;
   return (
     <div role="row" className="liq__fila liq__fila--form">
       <div role="cell" className="liq__form">
         <div className="hk-field" style={{ flex: "2 1 220px" }}>
           <label className="hk-label">Qué es</label>
-          <Input value={concepto} onChange={(ev) => setConcepto(ev.target.value)} placeholder="Adelanto, reintegro de viáticos, diferencia de agosto" autoFocus aria-label="Qué es" />
+          <Input value={concepto} onChange={(ev) => setConcepto(ev.target.value)} placeholder="Adelanto, reintegro de viáticos, cobro en su cuenta personal" autoFocus aria-label="Qué es" />
         </div>
         <div className="hk-field" style={{ flex: "1 1 120px" }}>
           <label className="hk-label">Monto</label>
@@ -546,9 +657,34 @@ function NuevoExtra({ onCancelar, onAgregar }: {
           <Chip activo={!resta} onClick={() => setResta(false)}>Suma</Chip>
           <Chip activo={resta} onClick={() => setResta(true)}>Descuenta</Chip>
         </div>
+        <div className="hk-field" style={{ flex: "1 1 260px" }}>
+          <label className="hk-label">En qué liquidación</label>
+          <Select
+            value={destino} aria-label="En qué liquidación"
+            opciones={meses.map((m) => ({ valor: m, texto: etiquetaMes(m, periodo) }))}
+            onChange={(ev) => setDestino(ev.target.value)}
+          />
+        </div>
+        <div className="hk-field" style={{ flex: "2 1 100%" }}>
+          <label className="hk-label">Nota para quien paga (opcional)</label>
+          <Input
+            value={nota} onChange={(ev) => setNota(ev.target.value)} aria-label="Nota para quien paga"
+            placeholder="Cobró US$ 500 en su cuenta personal: descontárselos de este pago"
+          />
+          <span className="hk-help">
+            {paraOtroMes
+              ? `Queda anotado para la liquidación de ${nombrePeriodo(destino)}: se ve en la persona, en «Copiar para mandarle» y al cerrar.`
+              : "Se ve en la persona, en «Copiar para mandarle» y al cerrar."}
+          </span>
+        </div>
         <div className="row" style={{ alignSelf: "flex-end" }}>
           <Button sm variante="ghost" onClick={onCancelar}>Cancelar</Button>
-          <Button sm variante="secondary" disabled={!listo} onClick={() => onAgregar({ concepto: concepto.trim(), monto: resta ? -n : n, moneda })}>Agregar</Button>
+          <Button
+            sm variante="secondary" disabled={!listo}
+            onClick={() => onAgregar({ concepto: concepto.trim(), monto: resta ? -n : n, moneda, nota: nota.trim(), periodo: destino })}
+          >
+            {paraOtroMes ? `Anotar para ${nombrePeriodo(destino)}` : "Agregar"}
+          </Button>
         </div>
       </div>
     </div>
@@ -564,6 +700,8 @@ function ModalCerrar({ e, liq, r, onCerrar, onConfirmar }: {
   const falta = faltantes(r);
   const gastos = gastosDeLiquidacion(e, liq, r);
   const bonos = r.personas.flatMap((p) => p.lineas.filter((l) => l.tipo === "bono" && l.monto > 0).map(() => p.nombre.split(" ")[0]));
+  /* Lo que tiene que saber quien ejecuta los pagos. */
+  const notas = r.personas.flatMap((p) => p.lineas.filter((l) => l.nota).map((l) => ({ p, l })));
   const enFinanzas = r.personas.reduce((a, p) => a + p.lineas.filter((l) => l.enFinanzas).reduce((x, l) => x + l.montoBase, 0), 0);
 
   return (
@@ -601,6 +739,19 @@ function ModalCerrar({ e, liq, r, onCerrar, onConfirmar }: {
           <Ayuda titulo="Con algo a definir" icono={<AlertTriangle size={18} />}>
             {falta.pendientes.map((p) => `${p.nombre}: ${p.pendiente ?? "no tiene nada cargado"}`).join(" · ")}. Lo que no está cargado no se liquida.
           </Ayuda>
+        )}
+        {notas.length > 0 && (
+          <div className="liq-notas" role="note">
+            <AlertTriangle size={18} aria-hidden />
+            <div>
+              <div className="liq-notas__titulo">{notas.length === 1 ? "Una nota para quien paga" : `${notas.length} notas para quien paga`}</div>
+              <ul className="liq-notas__lista">
+                {notas.map(({ p, l }) => (
+                  <li key={`${p.miembroId}:${l.clave}`}><b>{p.nombre}</b> · {l.nombre} ({plata(l.monto, l.moneda)}): {l.nota}</li>
+                ))}
+              </ul>
+            </div>
+          </div>
         )}
 
         <dl className="dl">
