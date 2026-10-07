@@ -1237,3 +1237,32 @@ Pruebas de propiedades con datos aleatorios (generador con semilla, la semilla s
 closer). No corren con `npm test` (son más lentas) ni las mira `tsc` (están fuera del `tsconfig`, se transpilan al correrlas): se corren antes de
 publicar algo grande. Las que dicen `BUG:` y llevan `{ todo: true }` son defectos conocidos todavía sin arreglar; cuando se arreglan se les saca
 el `todo`. Los frentes de la base usan PGlite (Postgres en memoria): `PGLITE_DIR=/ruta/a/node_modules/@electric-sql/pglite`.
+
+## Arreglos del estrés: devoluciones
+
+Tres agujeros de las devoluciones que encontró el estrés de «la plata», arreglados en `src/lib/devoluciones.ts`,
+`components/devoluciones/CargarDevolucion.tsx` y `saldosEsperados` (`lib/traspasos.ts`):
+
+- **El tope sólo miraba hacia atrás.** Cargar (o corregir hacia arriba) una devolución con fecha *anterior* a otra ya
+  cargada dejaba devolver más de lo cobrado: la nueva descontaba sólo lo devuelto hasta su fecha y la de después no
+  contaba (Finanzas restaba todo del Cash Collected, la reversa de comisión sí se acotaba y quedaban descuadradas).
+  Ahora la regla se mira en todas las fechas: **en cada día, lo devuelto acumulado no pasa de lo cobrado acumulado
+  hasta el final de ese día**. Lo que queda por devolver es lo que sobra en el día más justo desde la fecha de la
+  nueva (`devolvibleDeVenta`, con `limitadaPor` para decir con qué devolución choca) y el mensaje lo explica. No es
+  «restar todas las otras sin mirar la fecha», que rechazaría casos válidos (cobros de 1.000 en t1 y t3, devolución
+  de 1.500 en t4 y otra de 400 en t2). Corregir una devolución sin subir el monto ni cambiarle el día (el medio, el
+  comprobante, bajar lo devuelto) se deja pasar siempre, para poder arreglar las que quedaron de más antes de esto.
+- **«Hasta ese día» era hasta las 12:00.** El formulario guarda la fecha a mediodía y el tope y la reversa de comisión
+  comparaban instantes: un cobro de las 16:00 del mismo día no contaba (se rechazaba la devolución, o no se revertía su
+  comisión) y la ficha de la venta y el formulario daban distinto «queda». Ahora se compara por **día de negocio de
+  Argentina** (`diaDeNegocio`) en el tope y en `reversasDeComision`, y el formulario guarda las 12:00 de Argentina del día
+  elegido (`mediodiaDeNegocio`) desde cualquier zona horaria.
+- **Devolver por una cuenta en pesos no restaba de esa cuenta.** El formulario no guardaba `montoArs` ni `tipoCambio` y
+  `saldosEsperados` ignoraba la devolución: el arqueo de la Financiera quedaba con una diferencia igual a lo devuelto.
+  Ahora, por una cuenta en pesos el formulario muestra **«Pesos que salieron de la cuenta»**: arranca en monto × el cambio
+  del último cobro de esa venta por esa cuenta (o el de Ajustes), se puede escribir (el cambio es el que resulta) y no deja
+  guardar sin los pesos. Por una cuenta en dólares es el de siempre. `saldosEsperados` cae al mismo cambio en las ya
+  cargadas sin esos campos; las que los traían dan lo mismo que antes.
+
+*Pruebas:* `pruebas/fix-devoluciones.test.ts` (incluye la línea de tiempo contra un oráculo que recorre todos los días y la
+carga en cualquier orden). A los tests `BUG:` de estos tres casos en `pruebas-estres/plata` se les saca el `todo`.
