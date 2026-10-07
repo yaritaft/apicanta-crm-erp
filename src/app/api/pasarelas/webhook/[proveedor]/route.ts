@@ -1,7 +1,11 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
-import { guardarMovimientos, hayServidor } from "@/lib/servidor";
-import { dinero, moneda, procesadorDe, traerUno, PROVEEDORES, type MovimientoApi } from "@/lib/pasarelas-api";
+import { guardarMovimientos, guardarReembolsos, hayServidor } from "@/lib/servidor";
+import {
+  dinero, moneda, procesadorDe, reembolsoDeHotmart, reembolsoDeStripe, reembolsoDeWhop, reembolsosDeHotmart,
+  reembolsosDeStripePorId, traerUno, PROVEEDORES, type MovimientoApi,
+} from "@/lib/pasarelas-api";
+import type { ReembolsoCrudo } from "@/lib/reembolsos";
 import type { ProveedorPasarela } from "@/lib/types";
 
 /* ==================================================================
@@ -18,6 +22,12 @@ import type { ProveedorPasarela } from "@/lib/types";
       pega en cada pasarela).
    2. La firma propia de la pasarela, cuando la tenemos configurada:
       la de Stripe y el hottok de Hotmart.
+
+   Los avisos de reembolso (Stripe «refund.created» o «charge.refunded»,
+   Hotmart «PURCHASE_REFUNDED», Whop) NO son cobros: nunca entran como
+   movimiento. Se guardan como devolución propuesta, o atadas a la que ya
+   cargó alguien (lib/reembolsos.ts), y no restan plata hasta que Finanzas
+   las confirma.
 
    Siempre se responde 200 salvo que el aviso no esté autorizado: un
    500 hace que la pasarela reintente el mismo evento durante días.
@@ -56,6 +66,63 @@ function firmaStripeValida(cuerpo: string, cabecera: string | null, secreto: str
   return iguales(esperado, partes.v1);
 }
 
+/* ---------- Del aviso a un reembolso ---------- */
+
+/* El nombre del evento, donde lo pone cada pasarela. */
+const tipoDelAviso = (proveedor: ProveedorPasarela, cuerpo: Payload): string =>
+  (proveedor === "hotmart" ? texto(cuerpo.event) : undefined) ?? texto(cuerpo.type) ?? texto(cuerpo.action) ?? texto(cuerpo.event) ?? "";
+
+const ES_REEMBOLSO = /refund|charge.?back|reembols|contracargo/i;
+
+/** Lo que devolvió la pasarela, según el aviso. Los montos se le vuelven a
+ *  preguntar por API cuando se puede; el cuerpo es sólo el pitido. */
+async function reembolsosDelAviso(proveedor: ProveedorPasarela, cuerpo: Payload, tipo: string): Promise<ReembolsoCrudo[]> {
+  switch (proveedor) {
+    case "stripe": {
+      const obj = leer(cuerpo, "data", "object") as Payload | undefined;
+      const id = texto(obj?.id);
+      if (!obj || !id) return [];
+      /* El aviso trae el reembolso (re_…) o el cargo devuelto (ch_…): se pide el
+         de verdad. Si no se puede, se usa lo que vino. */
+      const confirmados = await reembolsosDeStripePorId(id).catch(() => []);
+      if (confirmados.length) return confirmados;
+      const delAviso = id.startsWith("re_") ? reembolsoDeStripe(obj) : null;
+      return delAviso ? [delAviso] : [];
+    }
+    case "hotmart": {
+      const compra = leer(cuerpo, "data", "purchase") as Payload | undefined;
+      const transaccion = texto(compra?.transaction);
+      if (!compra || !transaccion) return [];
+      const contracargo = /charge.?back/i.test(tipo);
+      const hasta = new Date();
+      const confirmados = await reembolsosDeHotmart(new Date(hasta.getTime() - 365 * 86400000), hasta).catch(() => []);
+      const confirmado = confirmados.find((r) => r.referenciasCobro?.includes(transaccion));
+      if (confirmado) return [confirmado];
+      const delAviso = reembolsoDeHotmart({
+        purchase: { transaction: transaccion, price: { value: numero(leer(compra, "price", "value")), currency_code: texto(leer(compra, "price", "currency_value")) }, approved_date: numero(compra.approved_date) || numero(compra.order_date) },
+        buyer: { name: texto(leer(cuerpo, "data", "buyer", "name")), email: texto(leer(cuerpo, "data", "buyer", "email")) },
+      } as never, contracargo);
+      return delAviso ? [delAviso] : [];
+    }
+    case "whop": {
+      /* Sin forma verificada del aviso de Whop: se lee lo que suele traer y, si no
+         alcanza, no se inventa nada. */
+      const d = (leer(cuerpo, "data") ?? cuerpo) as Payload;
+      const pagoId = texto(d.payment_id) ?? texto(leer(d, "payment", "id")) ?? texto(d.id);
+      if (!pagoId) return [];
+      const r = reembolsoDeWhop({
+        ...d, id: pagoId,
+        refunded_amount: d.refunded_amount ?? d.amount ?? leer(d, "payment", "final_amount"),
+        currency: d.currency ?? leer(d, "payment", "currency"),
+        user: d.user ?? leer(d, "payment", "user"),
+      });
+      return r ? [r] : [];
+    }
+    default:
+      return [];
+  }
+}
+
 /* ---------- Del aviso a un movimiento ---------- */
 
 function delPayload(proveedor: ProveedorPasarela, cuerpo: Payload): { id?: string; movimiento?: MovimientoApi } {
@@ -64,6 +131,9 @@ function delPayload(proveedor: ProveedorPasarela, cuerpo: Payload): { id?: strin
       const obj = leer(cuerpo, "data", "object") as Payload | undefined;
       const id = texto(obj?.id);
       if (!obj || !id) return {};
+      /* Un reembolso (re_…), una disputa (dp_…) o cualquier otro objeto de Stripe
+         no es un cobro: sólo el cargo, el intento de pago o la sesión lo son. */
+      if (!/^(ch|py|pi|cs)_/.test(id)) return {};
       /* La sesión del checkout (cs_…) no es un cobro: es el mismo pago que
          llega también como cargo. Sólo sirve para ir a buscar su cargo; si
          no se puede, el cargo entra por su propio aviso y por la sync. */
@@ -180,6 +250,16 @@ export async function POST(peticion: Request, ctx: { params: Promise<{ proveedor
 
   let cuerpo: Payload = {};
   try { cuerpo = JSON.parse(cuerpoTexto) as Payload; } catch { /* algunos mandan form-urlencoded */ }
+
+  /* Un aviso de reembolso nunca es un cobro: se guarda aparte, como devolución. */
+  const tipo = tipoDelAviso(proveedor, cuerpo);
+  if (ES_REEMBOLSO.test(tipo)) {
+    const reembolsos = await reembolsosDelAviso(proveedor, cuerpo, tipo);
+    if (reembolsos.length === 0) return NextResponse.json({ ok: true, ignorado: "El aviso no trae un reembolso que se pueda leer." });
+    if (!hayServidor) return NextResponse.json({ ok: true, guardados: 0, aviso: "Falta SUPABASE_SERVICE_ROLE_KEY." });
+    const g = await guardarReembolsos(reembolsos);
+    return NextResponse.json({ ok: true, reembolsos: g.nuevas + g.atadas, propuestas: g.nuevas, atadas: g.atadas, sinTabla: g.sinTabla, error: g.error });
+  }
 
   const { id, movimiento: delAviso } = delPayload(proveedor, cuerpo);
   if (!id) return NextResponse.json({ ok: true, ignorado: "El aviso no trae un cobro." });

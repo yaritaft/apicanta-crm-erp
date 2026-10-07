@@ -30,6 +30,7 @@ import { personaDe } from "./persona";
 import { extraConCorreccion, tituloPerfil, type CampoPerfil } from "./perfil";
 import { puedeCargarDevolucion, puedeDarDeBaja, puedeEditar, TIPOS_POR_DEFECTO, type MiAcceso } from "./permisos";
 import { esDevolucionConfirmada } from "./devoluciones";
+import { atarPropuesta, conciliarReembolsos, type ReembolsoCrudo, type ResultadoReembolsos } from "./reembolsos";
 
 const CLAVE = "apicanta.erp.v1";
 
@@ -2258,6 +2259,70 @@ export const acciones = {
     empujar({ tipo: "delete", tabla: "devoluciones", ids: [id] });
     empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
     return true;
+  },
+
+  /* ---------- Reembolsos de las pasarelas (lib/reembolsos.ts) ----------
+     Lo que Stripe, Hotmart o Whop dicen que devolvieron: si calza con UNA
+     devolución cargada a mano se le ata (queda con la referencia de la
+     pasarela); si no, entra como propuesta, que no cuenta en Finanzas hasta
+     que alguien la confirma. Nunca resta plata solo. Lo hace quien carga
+     devoluciones; para el resto no hace nada (los cobros se importan igual). */
+
+  importarReembolsos(crudos: ReembolsoCrudo[]): ResultadoReembolsos | null {
+    const e = snapshot();
+    if (acceso && !puedeCargarDevolucion(acceso)) return null;
+    const r = conciliarReembolsos(e, crudos, ahora());
+    if (!r.atadas.length && !r.nuevas.length) return r;
+    const cambios = new Map(r.atadas.map((a) => [a.devolucionId, a.cambios] as const));
+    const devoluciones = [
+      ...r.nuevas,
+      ...(e.devoluciones ?? []).map((d) => (cambios.has(d.id) ? { ...d, ...cambios.get(d.id) } as Devolucion : d)),
+    ];
+    const partes = [
+      r.atadas.length ? `${r.atadas.length === 1 ? "se ató 1" : `se ataron ${r.atadas.length}`} a una devolución ya cargada` : "",
+      r.nuevas.length ? `${r.nuevas.length === 1 ? "queda 1 propuesta" : `quedan ${r.nuevas.length} propuestas`} para confirmar` : "",
+    ].filter(Boolean).join(" y ");
+    const { lista, nuevo } = registrar(
+      e, "transaccion", "reembolsos", "Reembolsos de las pasarelas", "creo",
+      `Las pasarelas informaron ${crudos.length === 1 ? "1 reembolso" : `${crudos.length} reembolsos`}: ${partes}.`,
+    );
+    guardar({ ...e, devoluciones, actividad: lista });
+    if (r.nuevas.length) empujar({ tipo: "upsert", tabla: "devoluciones", filas: r.nuevas });
+    for (const a of r.atadas) empujarUpdate("devoluciones", [a.devolucionId], a.cambios as Record<string, unknown>);
+    empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
+    return r;
+  },
+
+  /* Atar propuestas de la pasarela a las devoluciones cargadas a mano a las
+     que corresponden: la cargada toma la referencia de la pasarela y la
+     propuesta se va. Devuelve cuántas se ataron. */
+  atarReembolsos(pares: { propuestaId: ID; devolucionId: ID }[]): number {
+    const e = snapshot();
+    if (acceso && !puedeCargarDevolucion(acceso)) {
+      negada("devoluciones", "Tu tipo de cuenta no decide sobre las devoluciones: las atan Finanzas o el director comercial.");
+      return 0;
+    }
+    let devoluciones = e.devoluciones ?? [];
+    const quitar: ID[] = [];
+    const cambios: { id: ID; cambios: Partial<Devolucion> }[] = [];
+    for (const par of pares) {
+      const r = atarPropuesta({ devoluciones }, par.propuestaId, par.devolucionId, ahora());
+      if (!r) continue;
+      devoluciones = devoluciones.filter((d) => d.id !== r.quitarPropuesta)
+        .map((d) => (d.id === r.devolucionId ? { ...d, ...r.cambios } as Devolucion : d));
+      quitar.push(r.quitarPropuesta);
+      cambios.push({ id: r.devolucionId, cambios: r.cambios });
+    }
+    if (cambios.length === 0) return 0;
+    const { lista, nuevo } = registrar(
+      e, "transaccion", "reembolsos", "Reembolsos de las pasarelas", "actualizo",
+      `${cambios.length === 1 ? "Se ató 1 reembolso" : `Se ataron ${cambios.length} reembolsos`} de la pasarela a una devolución ya cargada.`,
+    );
+    guardar({ ...e, devoluciones, actividad: lista });
+    for (const c of cambios) empujarUpdate("devoluciones", [c.id], c.cambios as Record<string, unknown>);
+    empujar({ tipo: "delete", tabla: "devoluciones", ids: quitar });
+    empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
+    return cambios.length;
   },
 
   /* ---------- Importar la hoja Ventas de la planilla de Angelo ----------

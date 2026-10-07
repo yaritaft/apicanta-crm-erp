@@ -1,7 +1,8 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import type { Movimiento, Traspaso } from "./types";
+import type { Devolucion, Movimiento, Pago, Procesador, Traspaso, Venta } from "./types";
 import { feeDelPago, parcheDeCobro } from "./completar-cobros";
 import { conciliarPuntas, type Punta } from "./traspasos";
+import { conciliarReembolsos, referenciaDeReembolso, type ReembolsoCrudo } from "./reembolsos";
 
 /* ==================================================================
    Cliente de Supabase del lado del servidor.
@@ -152,4 +153,91 @@ export async function guardarPuntas(puntas: Punta[]): Promise<{ nuevos: number; 
     if (u.error) return { nuevos, conciliados: 0, error: u.error.message };
   }
   return { nuevos, conciliados: r.conciliados };
+}
+
+/* ---------- Reembolsos de las pasarelas ---------- */
+
+/** Guarda lo que las pasarelas dicen que devolvieron: lo ata a la devolución
+ *  que ya cargó alguien (si es una sola que calza) o lo deja como PROPUESTA
+ *  —no cuenta en Finanzas hasta que alguien la confirme— con las mismas reglas
+ *  que usa la pantalla (lib/reembolsos.ts: conciliarReembolsos). Sin la tabla
+ *  `devoluciones` (falta correr supabase/devoluciones.sql) no guarda nada y lo
+ *  dice, sin tumbar al resto. El id de cada propuesta sale de su referencia:
+ *  guardar dos veces el mismo aviso no duplica nada. */
+export async function guardarReembolsos(
+  crudos: ReembolsoCrudo[],
+): Promise<{ nuevas: number; atadas: number; yaEstaban: number; sinTabla?: boolean; error?: string }> {
+  const vacio = { nuevas: 0, atadas: 0, yaEstaban: 0 };
+  if (crudos.length === 0) return vacio;
+  const db = nubeServidor();
+  if (!db) return { ...vacio, error: "Falta SUPABASE_SERVICE_ROLE_KEY: no se pueden guardar los reembolsos." };
+
+  const ahora = new Date().toISOString();
+  const refs = [...new Set(crudos.map(referenciaDeReembolso))];
+  const cobros = [...new Set(crudos.flatMap((c) => c.referenciasCobro ?? []))];
+  const fechas = crudos.map((c) => Date.parse(c.fecha)).filter(Number.isFinite);
+  const margen = 15 * 86400000;
+  const desde = new Date((fechas.length ? Math.min(...fechas) : Date.now()) - margen).toISOString();
+  const hasta = new Date((fechas.length ? Math.max(...fechas) : Date.now()) + margen).toISOString();
+
+  /* Las devoluciones de esos días y las que ya tienen alguna de estas referencias. */
+  const devoluciones = new Map<string, Devolucion>();
+  const delDia = await db.from("devoluciones").select("*").gte("fecha", desde).lte("fecha", hasta);
+  if (delDia.error) return faltaLaTabla(delDia.error) ? { ...vacio, sinTabla: true } : { ...vacio, error: delDia.error.message };
+  for (const d of (delDia.data ?? []) as Devolucion[]) devoluciones.set(d.id, d);
+  for (let i = 0; i < refs.length; i += 80) {
+    const q = await db.from("devoluciones").select("*").in("referencia", refs.slice(i, i + 80));
+    if (q.error) return { ...vacio, error: q.error.message };
+    for (const d of (q.data ?? []) as Devolucion[]) devoluciones.set(d.id, d);
+  }
+
+  /* El cobro que se devuelve: su pago (o su cobro de la pasarela ya conciliado)
+     y de ahí la cuota y la venta. Lo que no se encuentre, no se adivina. */
+  const movimientos: Movimiento[] = [];
+  const pagos: Pago[] = [];
+  for (let i = 0; i < cobros.length; i += 80) {
+    const lote = cobros.slice(i, i + 80);
+    const m = await db.from("movimientos").select("*").in("referencia", lote);
+    if (m.error) return { ...vacio, error: m.error.message };
+    movimientos.push(...((m.data ?? []) as Movimiento[]));
+    const p = await db.from("pagos").select("*").in("referencia", lote);
+    if (p.error) return { ...vacio, error: p.error.message };
+    pagos.push(...((p.data ?? []) as Pago[]));
+  }
+  const cuotaIds = [...new Set([...pagos.map((p) => p.cuotaId), ...movimientos.map((m) => m.cuotaId).filter(Boolean) as string[]])];
+  const cuotas: { id: string; ventaId: string }[] = [];
+  for (let i = 0; i < cuotaIds.length; i += 80) {
+    const q = await db.from("cuotas").select("id, ventaId").in("id", cuotaIds.slice(i, i + 80));
+    if (q.error) return { ...vacio, error: q.error.message };
+    cuotas.push(...((q.data ?? []) as { id: string; ventaId: string }[]));
+  }
+  const ventaIds = [...new Set([
+    ...cuotas.map((c) => c.ventaId), ...movimientos.map((m) => m.ventaId).filter(Boolean) as string[],
+    ...[...devoluciones.values()].map((d) => d.ventaId).filter(Boolean) as string[],
+  ])];
+  const ventas: Venta[] = [];
+  for (let i = 0; i < ventaIds.length; i += 80) {
+    const q = await db.from("ventas").select("*").in("id", ventaIds.slice(i, i + 80));
+    if (q.error) return { ...vacio, error: q.error.message };
+    ventas.push(...((q.data ?? []) as Venta[]));
+  }
+  const pr = await db.from("procesadores").select("id, nombre, proveedor, moneda");
+  const procesadores = (pr.error ? [] : (pr.data ?? [])) as Procesador[];
+
+  const r = conciliarReembolsos({
+    ventas, cuotas: cuotas as never, pagos, movimientos, procesadores,
+    devoluciones: [...devoluciones.values()], contactos: [], leads: [],
+  }, crudos, ahora);
+
+  let nuevas = 0;
+  if (r.nuevas.length) {
+    const ins = await db.from("devoluciones").upsert(r.nuevas, { onConflict: "id", ignoreDuplicates: true, defaultToNull: false }).select("id");
+    if (ins.error) return { ...vacio, yaEstaban: r.yaEstaban, error: ins.error.message };
+    nuevas = (ins.data ?? []).length;
+  }
+  for (const a of r.atadas) {
+    const u = await db.from("devoluciones").update(a.cambios).eq("id", a.devolucionId);
+    if (u.error) return { nuevas, atadas: 0, yaEstaban: r.yaEstaban, error: u.error.message };
+  }
+  return { nuevas, atadas: r.atadas.length, yaEstaban: r.yaEstaban };
 }

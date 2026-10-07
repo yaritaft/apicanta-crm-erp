@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { nivelDelPedido } from "@/lib/permisos-servidor";
-import { guardarMovimientos, guardarPuntas, hayServidor, referenciasCompletas } from "@/lib/servidor";
+import { guardarMovimientos, guardarPuntas, guardarReembolsos, hayServidor, referenciasCompletas } from "@/lib/servidor";
 import { hayClaves, listar, procesadorDe, PROVEEDORES, retirosDeStripe, type MovimientoApi } from "@/lib/pasarelas-api";
+import type { ReembolsoCrudo } from "@/lib/reembolsos";
 import type { Punta } from "@/lib/traspasos";
 import type { ProveedorPasarela } from "@/lib/types";
 
@@ -22,6 +23,12 @@ import type { ProveedorPasarela } from "@/lib/types";
    retiro de Stripe). Son las puntas de los movimientos entre cuentas de la
    Caja (lib/traspasos.ts): viajan en la respuesta y, al guardar, se atan
    entre sí y con los que ya estaban cargados.
+
+   También junta lo que las pasarelas dicen que DEVOLVIERON a un cliente
+   (Stripe, Hotmart, Whop): no son cobros, son las devoluciones que informa la
+   pasarela (lib/reembolsos.ts). Viajan en la respuesta y, al guardar, se atan
+   a la devolución que alguien ya cargó o quedan como propuesta para confirmar
+   (nunca restan plata solas).
 
    Con ?solo=pases se pregunta sólo eso: a las cuentas que ven pasar plata
    entre cuentas (Mercury, los retiros de Stripe), sin traer los cobros.
@@ -86,6 +93,7 @@ export async function GET(peticion: Request) {
 
   const movimientos: MovimientoApi[] = [];
   const puntas: Punta[] = [];
+  const reembolsos: ReembolsoCrudo[] = [];
   const conectadas: ProveedorPasarela[] = [];
   const errores: { proveedor: string; mensaje: string }[] = [];
 
@@ -102,7 +110,7 @@ export async function GET(peticion: Request) {
     if (!soloPases || proveedor !== "stripe") {
       try {
         const cobros = await listar(proveedor, desde, hasta, {
-          avisos, puntas,
+          avisos, puntas, reembolsos: soloPases ? undefined : reembolsos,
           necesitaDetalle: proveedor === "whop" && completosWhop ? (m) => !completosWhop.has(m.referencia) : undefined,
         });
         if (!soloPases) movimientos.push(...cobros);
@@ -137,6 +145,16 @@ export async function GET(peticion: Request) {
     if (r.error) errores.push({ proveedor: "supabase", mensaje: r.error });
   }
 
+  /* Lo que devolvieron las pasarelas: se guarda con el mismo permiso. Sin la
+     tabla de devoluciones todavía, no es un error: queda sólo en la respuesta
+     y lo guarda la pantalla. */
+  let reembolsosGuardados = false;
+  if (quiereGuardar && hayServidor && !soloPases && reembolsos.length) {
+    const r = await guardarReembolsos(reembolsos);
+    reembolsosGuardados = !r.error && !r.sinTabla;
+    if (r.error) errores.push({ proveedor: "supabase", mensaje: r.error });
+  }
+
   /* Los movimientos entre cuentas: se guardan con el mismo permiso. Sin su
      tabla todavía, no es un error: quedan sólo en la respuesta. */
   let pases = { nuevos: 0, conciliados: 0 };
@@ -157,6 +175,8 @@ export async function GET(peticion: Request) {
     completados,
     pases,
     pasesGuardados,
+    reembolsos,
+    reembolsosGuardados,
     desde: desde.toISOString(),
     movimientos,
     puntas,

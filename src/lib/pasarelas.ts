@@ -1,4 +1,5 @@
 import type { Moneda, Movimiento, ProveedorPasarela } from "./types";
+import type { ReembolsoCrudo } from "./reembolsos";
 
 /* ==================================================================
    Pasarelas de cobro.
@@ -158,6 +159,10 @@ const ALIAS: Record<string, string[]> = {
     "concepto", "descripción", "plan", "subject",
   ],
   estado: ["status", "estado", "payment_status", "transaction_status"],
+  /* Lo devuelto del cobro (el export de Stripe lo trae en el mismo renglón del
+     cargo) y, si el renglón es un reembolso suelto, el cobro que devuelve. */
+  montoDevuelto: ["amount refunded", "refunded amount", "amount_refunded", "monto devuelto", "monto reembolsado", "importe reembolsado"],
+  referenciaCobro: ["reference txn id", "original transaction id", "parent transaction id", "paymentintent id", "payment_intent id", "payment intent id"],
 };
 
 const limpiarCabecera = (s: string) => s.toLowerCase().replace(/^﻿/, "").trim();
@@ -212,11 +217,18 @@ function aFecha(crudo: string): string {
 }
 
 const RECHAZADOS = /fail|refund|reembols|cancel|charge.?back|denied|rechaz|expired|pending|dispute/i;
+/* Lo que no es un cobro pero SÍ es plata devuelta: se propone como devolución
+   (lib/reembolsos.ts) en vez de perderse. Una disputa abierta todavía no es
+   plata que salió. */
+const REEMBOLSADO = /refund|reembols|devuelt|devoluci|charge.?back|contracargo/i;
 
 export type MovimientoCrudo = Omit<Movimiento, "id" | "estado" | "creadoEn" | "origen">;
 
 export interface ResultadoImportacion {
   movimientos: MovimientoCrudo[];
+  /* La plata que el archivo dice que se devolvió: no entra como cobro, se
+     propone como devolución para atarla a la que se cargó (lib/reembolsos.ts). */
+  reembolsos: ReembolsoCrudo[];
   /* Filas que se saltearon y por qué: se muestran antes de importar */
   descartadas: { fila: number; motivo: string }[];
 }
@@ -230,7 +242,7 @@ export function importarCSV(
 ): ResultadoImportacion {
   const filas = leerCSV(texto);
   const descartadas: { fila: number; motivo: string }[] = [];
-  if (filas.length < 2) return { movimientos: [], descartadas: [{ fila: 0, motivo: "El archivo no tiene filas." }] };
+  if (filas.length < 2) return { movimientos: [], reembolsos: [], descartadas: [{ fila: 0, motivo: "El archivo no tiene filas." }] };
 
   const mapa = mapaDeColumnas(filas[0]);
   const dato = (f: string[], campo: string) => {
@@ -239,17 +251,54 @@ export function importarCSV(
   };
 
   const movimientos: MovimientoCrudo[] = [];
+  const reembolsos: ReembolsoCrudo[] = [];
+
+  /* Un reembolso del archivo: el id es el del cobro (el archivo no trae uno
+     propio) y la fecha, la de ese renglón, que no dice cuándo se devolvió. */
+  const reembolso = (f: string[], i: number, monto: number, motivo?: string) => {
+    const cobro = dato(f, "referencia");
+    const refs = [cobro, dato(f, "referenciaCobro")].filter(Boolean);
+    const moneda = (dato(f, "moneda") || "USD").toUpperCase().includes("ARS") ? "ARS" : "USD";
+    reembolsos.push({
+      proveedor, procesadorId,
+      referencia: cobro ? `reembolso:${cobro}` : `reembolso:${proveedor}-${aFecha(dato(f, "fecha")).slice(0, 10)}-${monto}-${i}`,
+      referenciasCobro: refs.length ? refs : undefined,
+      monto: Math.round(monto * 100) / 100, moneda: moneda as Moneda,
+      fecha: aFecha(dato(f, "fecha")), fechaDelCobro: true,
+      clienteNombre: dato(f, "clienteNombre") || undefined,
+      clienteEmail: dato(f, "clienteEmail")?.toLowerCase() || undefined,
+      motivo,
+    });
+  };
 
   for (let i = 1; i < filas.length; i++) {
     const f = filas[i];
     const monto = aNumero(dato(f, "monto"));
-    if (monto <= 0) { descartadas.push({ fila: i + 1, motivo: "Sin monto positivo (reembolso o fila de resumen)." }); continue; }
-
     const estadoCrudo = dato(f, "estado");
+    const devuelto = Math.abs(aNumero(dato(f, "montoDevuelto")));
+
+    /* Un renglón en negativo es un reembolso suelto (PayPal): la plata que salió. */
+    if (monto < 0) {
+      reembolso(f, i, Math.abs(monto), estadoCrudo || undefined);
+      descartadas.push({ fila: i + 1, motivo: "Es un reembolso: no entra como cobro, se propone como devolución." });
+      continue;
+    }
+    if (monto <= 0) { descartadas.push({ fila: i + 1, motivo: "Sin monto positivo (fila de resumen)." }); continue; }
+
+    if (estadoCrudo && REEMBOLSADO.test(estadoCrudo)) {
+      /* El cargo devuelto (Stripe lo marca «Refunded» en el mismo renglón): lo
+         devuelto es el monto devuelto o, sin él, todo. No entra como cobro. */
+      reembolso(f, i, devuelto > 0.005 ? devuelto : monto, /charge.?back|contracargo/i.test(estadoCrudo) ? "Contracargo" : undefined);
+      descartadas.push({ fila: i + 1, motivo: `Estado "${estadoCrudo}": no entra como cobro, se propone como devolución.` });
+      continue;
+    }
     if (estadoCrudo && RECHAZADOS.test(estadoCrudo)) {
       descartadas.push({ fila: i + 1, motivo: `Estado "${estadoCrudo}".` });
       continue;
     }
+    /* Devuelto en parte: el cobro entra entero (así entró la plata) y lo que se
+       devolvió se propone aparte. */
+    if (devuelto > 0.005) reembolso(f, i, Math.min(devuelto, monto));
 
     /* El fee viene negativo en PayPal y positivo en Stripe. */
     const feeCrudo = Math.abs(aNumero(dato(f, "fee")));
@@ -276,5 +325,5 @@ export function importarCSV(
     });
   }
 
-  return { movimientos, descartadas };
+  return { movimientos, reembolsos, descartadas };
 }

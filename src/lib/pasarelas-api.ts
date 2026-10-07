@@ -1,6 +1,7 @@
 import { createHmac } from "node:crypto";
 import type { Moneda, ProveedorPasarela } from "./types";
 import { cuentaDeContraparte, type Punta } from "./traspasos";
+import type { ReembolsoCrudo } from "./reembolsos";
 
 /* ==================================================================
    Los adaptadores de cada pasarela, del lado del servidor.
@@ -49,6 +50,10 @@ export interface OpcionesListar {
      una pasarela en el banco): no es un cobro, es la punta de un pase
      (lib/traspasos.ts). */
   puntas?: Punta[];
+  /* Dónde anotar la plata que la pasarela dice que devolvió a un cliente: no
+     es un cobro, se propone como devolución (lib/reembolsos.ts). Si no se
+     pasa, no se piden. */
+  reembolsos?: ReembolsoCrudo[];
 }
 
 export const dinero = (n: number) => Math.round(n * 100) / 100;
@@ -265,11 +270,12 @@ function metodoHotmart(tipo?: string, cuotas?: number): string | undefined {
   return cuotas && cuotas > 1 ? `${base} en ${cuotas} cuotas` : base;
 }
 
-export async function hotmart(desde: Date, hasta: Date): Promise<MovimientoApi[]> {
+/* El token de Hotmart (client credentials); null si no hay claves. */
+async function tokenHotmart(): Promise<string | null> {
   const id = process.env.HOTMART_CLIENT_ID;
   const secreto = process.env.HOTMART_CLIENT_SECRET;
   const basic = process.env.HOTMART_BASIC;
-  if (!id || !secreto || !basic) return [];
+  if (!id || !secreto || !basic) return null;
 
   const auth = await fetch(
     `https://api-sec-vlc.hotmart.com/security/oauth/token?grant_type=client_credentials&client_id=${id}&client_secret=${secreto}`,
@@ -281,7 +287,12 @@ export async function hotmart(desde: Date, hasta: Date): Promise<MovimientoApi[]
   );
   const tok = await json(auth);
   if (!auth.ok) throw rechazo("Hotmart (login)", auth, tok);
-  const token = tok.access_token as string;
+  return tok.access_token as string;
+}
+
+export async function hotmart(desde: Date, hasta: Date): Promise<MovimientoApi[]> {
+  const token = await tokenHotmart();
+  if (!token) return [];
 
   /* Sin filtro de estado, Hotmart devuelve sólo APPROVED y COMPLETE, que
      es justo la plata que entró. Filtrar por APPROVED dejaba afuera las
@@ -487,6 +498,169 @@ export async function mercadopago(desde: Date): Promise<MovimientoApi[]> {
 }
 
 
+/* ---------- Reembolsos ----------
+   La plata que cada pasarela dice que le devolvió a un cliente. No son cobros:
+   se proponen como devoluciones y se atan a las que se cargaron a mano
+   (lib/reembolsos.ts). Cada una devuelve lo mismo, `ReembolsoCrudo`.
+
+   Stripe tiene un listado propio de reembolsos (verificado con su API). Hotmart
+   y Whop no: Hotmart informa la compra con su estado (REFUNDED, CHARGEBACK) y
+   no dice cuándo se devolvió; Whop se pide por el estado del pago. Esas dos
+   forman parte de lo que hay que mirar con una clave real antes de confiar. */
+
+const MOTIVO_STRIPE: Record<string, string> = {
+  requested_by_customer: "Lo pidió el cliente", duplicate: "Cobro duplicado", fraudulent: "Cobro fraudulento",
+};
+
+/** Un reembolso de Stripe («re_…»). Con el cargo expandido trae quién pagó. */
+export function reembolsoDeStripe(r: Obj): ReembolsoCrudo | null {
+  /* Uno que falló o se canceló no devolvió nada. */
+  const estado = txt(r.status);
+  if (estado && estado !== "succeeded" && estado !== "pending") return null;
+  const id = txt(r.id);
+  const monto = dinero(Number(r.amount ?? 0) / 100);
+  if (!id || !(monto > 0)) return null;
+  const cargo = (r.charge && typeof r.charge === "object" ? r.charge : undefined) as Obj | undefined;
+  const intento = r.payment_intent ?? cargo?.payment_intent;
+  const refs = [
+    txt(cargo?.id) ?? txt(r.charge),
+    txt(intento) ?? (intento && typeof intento === "object" ? txt((intento as Obj).id) : undefined),
+  ].filter((x): x is string => Boolean(x));
+  const quien = cargo ? pagadorStripe(cargo) : {};
+  const motivo = txt(r.reason);
+  return {
+    proveedor: "stripe", referencia: id, referenciasCobro: refs.length ? refs : undefined,
+    monto, moneda: moneda(r.currency as string),
+    fecha: new Date(Number(r.created ?? 0) * 1000 || Date.now()).toISOString(),
+    clienteNombre: quien.nombre, clienteEmail: quien.email,
+    motivo: motivo ? MOTIVO_STRIPE[motivo] ?? motivo : undefined,
+    procesadorId: procesadorDe("stripe"),
+  };
+}
+
+export async function reembolsosDeStripe(desde: Date): Promise<ReembolsoCrudo[]> {
+  const clave = process.env.STRIPE_SECRET_KEY;
+  if (!clave) return [];
+  const salida: ReembolsoCrudo[] = [];
+  let despuesDe: string | undefined;
+  for (let pagina = 0; pagina < 5; pagina++) {
+    const q = new URLSearchParams({ limit: "100", "created[gte]": String(Math.floor(desde.getTime() / 1000)) });
+    q.append("expand[]", "data.charge");
+    if (despuesDe) q.set("starting_after", despuesDe);
+    const r = await fetch(`https://api.stripe.com/v1/refunds?${q}`, {
+      headers: { Authorization: `Bearer ${clave}` }, cache: "no-store",
+    });
+    const data = await json(r);
+    if (!r.ok) throw rechazo("Stripe (reembolsos)", r, data);
+    const filas = (data.data ?? []) as Obj[];
+    for (const f of filas) { const x = reembolsoDeStripe(f); if (x) salida.push(x); }
+    if (!data.has_more || filas.length === 0) break;
+    despuesDe = String(filas[filas.length - 1].id);
+  }
+  return salida;
+}
+
+/** Los reembolsos de un cobro de Stripe (el aviso `charge.refunded` trae el
+ *  cargo, no el reembolso) o uno puntual por su id: se le pregunta a Stripe,
+ *  no se le cree al cuerpo del aviso. */
+export async function reembolsosDeStripePorId(id: string): Promise<ReembolsoCrudo[]> {
+  const clave = process.env.STRIPE_SECRET_KEY;
+  if (!clave) return [];
+  const ruta = id.startsWith("re_")
+    ? `refunds/${encodeURIComponent(id)}?expand[]=charge`
+    : id.startsWith("pi_")
+      ? `refunds?payment_intent=${encodeURIComponent(id)}&limit=100&expand[]=data.charge`
+      : `refunds?charge=${encodeURIComponent(id)}&limit=100&expand[]=data.charge`;
+  const r = await fetch(`https://api.stripe.com/v1/${ruta}`, { headers: { Authorization: `Bearer ${clave}` }, cache: "no-store" });
+  const data = await json(r);
+  if (!r.ok) throw rechazo("Stripe (reembolso)", r, data);
+  const filas = (Array.isArray(data.data) ? data.data : [data]) as Obj[];
+  return filas.map(reembolsoDeStripe).filter((x): x is ReembolsoCrudo => x !== null);
+}
+
+/** Una compra de Hotmart reembolsada o con contracargo. Hotmart no dice
+ *  cuándo se devolvió: la fecha es la de la compra, y se marca. */
+export function reembolsoDeHotmart(it: Record<string, never>, contracargo = false): ReembolsoCrudo | null {
+  const compra = (it.purchase ?? {}) as Record<string, never>;
+  const precio = (compra.price ?? {}) as { value?: number; currency_code?: string };
+  const transaccion = String(compra.transaction ?? "");
+  const monto = dinero(Number(precio.value ?? 0));
+  if (!transaccion || !(monto > 0)) return null;
+  const comprador = (it.buyer ?? {}) as { name?: string; email?: string };
+  return {
+    proveedor: "hotmart", referencia: `reembolso:${transaccion}`, referenciasCobro: [transaccion],
+    monto, moneda: moneda(precio.currency_code),
+    fecha: new Date(Number(compra.approved_date ?? compra.order_date ?? Date.now())).toISOString(),
+    fechaDelCobro: true,
+    clienteNombre: comprador.name ?? undefined, clienteEmail: comprador.email?.toLowerCase(),
+    motivo: contracargo ? "Contracargo" : undefined,
+    procesadorId: procesadorDe("hotmart"),
+  };
+}
+
+export async function reembolsosDeHotmart(desde: Date, hasta: Date): Promise<ReembolsoCrudo[]> {
+  const token = await tokenHotmart();
+  if (!token) return [];
+  const rango = { start_date: String(desde.getTime()), end_date: String(hasta.getTime()) };
+  const salida: ReembolsoCrudo[] = [];
+  /* Sin filtro Hotmart sólo trae lo aprobado: lo devuelto se pide por su estado. */
+  for (const estado of ["REFUNDED", "CHARGEBACK"]) {
+    const items = await paginasHotmart("sales/history", { ...rango, transaction_status: estado }, token);
+    for (const it of items) { const x = reembolsoDeHotmart(it, estado === "CHARGEBACK"); if (x) salida.push(x); }
+  }
+  return salida;
+}
+
+/** Un pago de Whop reembolsado. Whop informa el pago con su estado; el monto
+ *  devuelto y el día salen de `refunded_amount` y `refunded_at` si los trae. */
+export function reembolsoDeWhop(p: Obj): ReembolsoCrudo | null {
+  const id = txt(p.id);
+  const monto = dinero(num(p.refunded_amount) ?? Number(p.final_amount ?? p.subtotal ?? 0));
+  if (!id || !(monto > 0)) return null;
+  const usuario = (p.user && typeof p.user === "object" ? p.user : {}) as Obj;
+  const cuando = num(p.refunded_at) ?? num(p.updated_at) ?? num(p.paid_at) ?? num(p.created_at);
+  return {
+    proveedor: "whop", referencia: `reembolso:${id}`, referenciasCobro: [id],
+    monto, moneda: moneda(p.currency as string),
+    fecha: new Date((cuando ?? 0) * 1000 || Date.now()).toISOString(),
+    fechaDelCobro: num(p.refunded_at) === undefined,
+    clienteNombre: txt(usuario.name) ?? txt(usuario.username), clienteEmail: txt(usuario.email)?.toLowerCase(),
+    procesadorId: procesadorDe("whop"),
+  };
+}
+
+export async function reembolsosDeWhop(desde: Date): Promise<ReembolsoCrudo[]> {
+  const clave = process.env.WHOP_API_KEY;
+  if (!clave) return [];
+  const salida: ReembolsoCrudo[] = [];
+  for (let pagina = 1; pagina <= 5; pagina++) {
+    const r = await fetch(`https://api.whop.com/api/v5/company/payments?per=50&status=refunded&page=${pagina}`, {
+      headers: { Authorization: `Bearer ${clave}` }, cache: "no-store",
+    });
+    const data = await json(r);
+    if (!r.ok) throw rechazo("Whop (reembolsos)", r, data);
+    const estas = (data.data ?? []) as Obj[];
+    let hayNuevos = false;
+    for (const p of estas) {
+      const x = reembolsoDeWhop(p);
+      if (x && Date.parse(x.fecha) >= desde.getTime() - 30 * 86400000) { salida.push(x); hayNuevos = true; }
+    }
+    const paginas = num((data.pagination as Obj | undefined)?.total_pages) ?? 1;
+    if (estas.length === 0 || pagina >= paginas || !hayNuevos) break;
+  }
+  return salida;
+}
+
+/** Lo que devolvió cada pasarela en la ventana. */
+export async function reembolsosDe(p: ProveedorPasarela, desde: Date, hasta: Date): Promise<ReembolsoCrudo[]> {
+  switch (p) {
+    case "stripe": return reembolsosDeStripe(desde);
+    case "hotmart": return reembolsosDeHotmart(desde, hasta);
+    case "whop": return reembolsosDeWhop(desde);
+    default: return [];
+  }
+}
+
 /* ---------- Está configurada esta pasarela ---------- */
 
 export function hayClaves(p: ProveedorPasarela): boolean {
@@ -512,7 +686,21 @@ export const PROVEEDORES: ProveedorPasarela[] = [
    entra sabiendo con qué medio de pago se va a registrar. */
 export const procesadorDe = (p: ProveedorPasarela): string => `proc_${p}`;
 
-export function listar(p: ProveedorPasarela, desde: Date, hasta: Date, opciones: OpcionesListar = {}): Promise<MovimientoApi[]> {
+export async function listar(p: ProveedorPasarela, desde: Date, hasta: Date, opciones: OpcionesListar = {}): Promise<MovimientoApi[]> {
+  const cobros = await listarCobros(p, desde, hasta, opciones);
+  /* Lo devuelto va aparte y sin frenar nada: si la pasarela no deja verlo (la
+     clave no tiene el permiso), los cobros entran igual y el aviso lo dice. */
+  if (opciones.reembolsos) {
+    try {
+      opciones.reembolsos.push(...await reembolsosDe(p, desde, hasta));
+    } catch (err) {
+      opciones.avisos?.push(`No se pudieron ver los reembolsos: ${err instanceof Error ? err.message : "error desconocido"}`);
+    }
+  }
+  return cobros;
+}
+
+function listarCobros(p: ProveedorPasarela, desde: Date, hasta: Date, opciones: OpcionesListar): Promise<MovimientoApi[]> {
   switch (p) {
     case "stripe": return stripe(desde);
     case "hotmart": return hotmart(desde, hasta);
