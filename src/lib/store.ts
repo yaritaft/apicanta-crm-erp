@@ -25,7 +25,7 @@ import { hayNube, nube, tablaFaltante, TABLAS, TABLAS_DE_DUENOS, TABLAS_OPCIONAL
 import { idAd, idAdset, idCampaign } from "./meta";
 import { entraEnTabla, esCompra, opcionesDe, tablasDe, ventaEsDeLlamada } from "./crm";
 import { etapaTrasEventos, eventosDeLlamada, leadDeSesion, type EventoEtapa } from "./etapas-auto";
-import { estadoDeAgenda } from "./estados";
+import { estadoDeAgenda, opcionDeCompraPara } from "./estados";
 import { personaDe } from "./persona";
 import { extraConCorreccion, tituloPerfil, type CampoPerfil } from "./perfil";
 import { puedeEditar, TIPOS_POR_DEFECTO, type MiAcceso } from "./permisos";
@@ -663,8 +663,10 @@ function registrar(
    (devuelve la llamada a como estaba) y la tabla del CRM, que corrige el
    estado y el closer en la celda. */
 export type CambiosLlamada = Partial<Pick<Sesion, "preCall" | "estadoPreCall" | "estadoLlamada" | "notas" | "grabacion" | "estado"
-  | "resultado" | "objecion" | "hizoOferta" | "cierreEstimado" | "eodEn" | "eodPor" | "anfitrion">>;
+  | "resultado" | "objecion" | "hizoOferta" | "cierreEstimado" | "eodEn" | "eodPor" | "anfitrion"
+  | "estadoLlamadaEn" | "estadoPreCallEn" | "ventaPorOtro">>;
 type PedidoLlamada = { id: ID; cambios: CambiosLlamada; detalle: string };
+const MARCAS_DE_ESTADO = [["estadoLlamada", "estadoLlamadaEn"], ["estadoPreCall", "estadoPreCallEn"]] as const;
 export type CambioEtapa = { antes: ID; despues: ID };
 
 /* ---------- Llamadas, y la etapa de sus leads ----------
@@ -739,6 +741,16 @@ function cargarLlamadas(t: Tanda, e: EstadoApp, lista: PedidoLlamada[], restaura
       if (s.resultado && !("resultado" in cambios)) limpio.resultado = undefined;
     }
     if ("estado" in cambios && !cambios.estado) delete limpio.estado;
+    /* La primera vez que se carga cada estado queda marcada, venga de donde
+       venga (el cierre del día, la tabla del CRM, la Agenda, la ficha o una
+       venta): con eso se cuentan los strikes (lib/cierre-del-dia.ts). Pasar de
+       vacío a cargado la pone; vaciarlo la saca; cambiarlo por otro no la toca.
+       Si el cambio ya trae la marca (deshacer), vale esa. */
+    for (const [campo, marca] of MARCAS_DE_ESTADO) {
+      if (!(campo in cambios) || marca in cambios) continue;
+      if (!limpio[campo]) { if (s[marca]) limpio[marca] = undefined; }
+      else if (!s[campo]) limpio[marca] = t.cuando;
+    }
     t.sesiones.set(id, { ...s, ...limpio });
     t.aLaNube.set(id, { ...t.aLaNube.get(id), ...Object.fromEntries(Object.entries(limpio).map(([k, v]) => [k, v ?? null])) });
     anotar(t, e, "sesion", id, `${s.tipo} — ${s.invitado}`, "actualizo", detalle);
@@ -793,7 +805,9 @@ function conTanda(e: EstadoApp, t: Tanda): EstadoApp {
    venta y dentro de su ventana (lib/crm.ts): una agenda posterior, o una de
    hace meses de alguien que vuelve a comprar, es otra historia. */
 function llamadaDeVenta(e: EstadoApp, venta: Venta, sesionId?: ID): Sesion | undefined {
-  if (sesionId) return e.sesiones.find((s) => s.id === sesionId);
+  /* La que la venta dice (se guarda al cargarla); sólo si no la dice, se infiere. */
+  const dicha = sesionId ?? venta.sesionId;
+  if (dicha) return e.sesiones.find((s) => s.id === dicha);
   const p = venta.contactoId ? personaDe(e, venta.contactoId) : null;
   if (!p) return undefined;
   const tablas = tablasDe(e.ajustes);
@@ -811,7 +825,7 @@ function opcionDeCompra(e: EstadoApp, venta: Venta, cuotas: Cuota[]): OpcionCrm 
   const tipo: OportunidadCrm = e.productos.find((p) => p.id === venta.productoId)?.tipo === "downsell" ? "downsell"
     : cuotas.some((c) => c.esReserva) ? "reserva"
     : regulares.length > 1 ? "compra-cuotas" : "compra-full";
-  return opciones.find((o) => o.oportunidad === tipo) ?? opciones.find((o) => esCompra(o));
+  return opcionDeCompraPara(opciones, tipo);
 }
 
 const fechaCorta = (iso?: string) => {
@@ -1787,7 +1801,12 @@ export const acciones = {
     sesionId?: ID;
   }): ID {
     const e = snapshot();
-    const { venta } = datos;
+    /* La llamada de la que salió la venta: la del CRM desde la que se cargó
+       o, si no, la última de la persona. Queda guardada en la venta
+       (`sesionId`): la puerta del cierre del día, los strikes y el descuento
+       la necesitan, y inferirla cada vez daba falsos «sin venta». */
+    const llamada = llamadaDeVenta(e, datos.venta, datos.sesionId);
+    const venta: Venta = llamada && !datos.venta.sesionId ? { ...datos.venta, sesionId: llamada.id } : datos.venta;
 
     let nuevosPagos: Pago[] = [];
 
@@ -1877,7 +1896,6 @@ export const acciones = {
        de compra que corresponde (si nadie le había puesto uno) y su lead
        pasa a la etapa ganada (lib/etapas-auto.ts). */
     const t = nuevaTanda();
-    const llamada = llamadaDeVenta(e, venta, datos.sesionId);
     if (llamada && !llamada.estadoLlamada && puedo("sesiones")) {
       const op = opcionDeCompra(e, venta, cuotas);
       if (op) {

@@ -1,4 +1,4 @@
-import type { ColorCrm, EstadoApp, EstadoSesion, OpcionCrm, ResultadoLlamada, Sesion, TablaCrm } from "./types";
+import type { Ajustes, CampoOpcionesCrm, ColorCrm, EstadoApp, EstadoSesion, OpcionCrm, OportunidadCrm, ResultadoLlamada, Sesion, TablaCrm } from "./types";
 import { entraEnTabla, esCompra, estadoAutomatico, filasCrm, opcionesDe, sinTildes, tablasDe, type FilaCrm } from "./crm";
 
 /* ==================================================================
@@ -192,4 +192,119 @@ export function estadoVisible(e: EstadoParaLlamadas, s: Sesion, ahora = Date.now
     deVenta: Boolean(fila) || c.tablas.some((t) => entraEnTabla(s, t)),
     venta: Boolean(fila?.venta),
   });
+}
+
+/* ==================================================================
+   Ocultar un estado (F2-05: «hay una banda», Santi marca cuáles usa).
+
+   Un estado oculto no se ofrece al cargar (SelectorOpciones lo saca de la
+   lista), pero no se borra: las llamadas que ya lo tienen lo siguen
+   mostrando con su color, y lo que pone la app sola (los «auto» y el estado
+   de compra de una venta) sigue andando. Antes de ocultar uno se revisa qué
+   mueve: la Agenda, la etapa del lead y lo que pregunta el cierre del día.
+   ================================================================== */
+
+/** Las opciones que se ofrecen al cargar: las que no están ocultas, y la que
+ *  la llamada ya tiene aunque lo esté (se sigue viendo y sigue elegida). */
+export const ofrecidas = (opciones: OpcionCrm[], actual?: string): OpcionCrm[] =>
+  opciones.filter((o) => !o.oculta || o.nombre === actual);
+
+/** El estado de compra que corresponde a una venta: el de su tipo (al
+ *  contado, en cuotas, con reserva, downsell) o, si no hay, el primero de
+ *  compra. Prefiere los que no están ocultos. */
+export function opcionDeCompraPara(opciones: OpcionCrm[], tipo: OportunidadCrm): OpcionCrm | undefined {
+  const visibles = opciones.filter((o) => !o.oculta);
+  return visibles.find((o) => o.oportunidad === tipo) ?? visibles.find((o) => esCompra(o))
+    ?? opciones.find((o) => o.oportunidad === tipo) ?? opciones.find((o) => esCompra(o));
+}
+
+const DE_COMPRA: Partial<Record<OportunidadCrm, string>> = {
+  "compra-full": "al contado", "compra-cuotas": "en cuotas", reserva: "con reserva", downsell: "de downsell",
+};
+
+const DE_OPORTUNIDAD: Partial<Record<OportunidadCrm, string>> = {
+  perdida: "de oportunidad perdida", devolucion: "de devolución",
+};
+
+/** Lo que mueve un estado, en castellano: la Agenda, la etapa del lead y lo
+ *  que pregunta el cierre del día. */
+export function queMueve(o: OpcionCrm, campo: CampoOpcionesCrm): string[] {
+  const out: string[] = [];
+  if (campo === "estadoPreCall") {
+    if (esReagendar(o.nombre)) out.push("En el cierre del día vale como «pidió otra fecha»: la agenda nueva entra sola");
+    return out;
+  }
+  if (campo !== "estadoLlamada") return out;
+  if (o.llamada === "hecha") out.push("Marca la llamada como hecha en la Agenda");
+  if (o.llamada === "no-show") out.push("Marca que no vino en la Agenda");
+  if (o.auto === "cancelada") out.push("Se pone sola si la llamada se canceló y no volvió a agendar (la marca cancelada)");
+  if (o.auto === "no-show") out.push("Se pone sola cuando la llamada queda como que no vino");
+  if (o.auto === "segunda") out.push("Se pone sola si la persona ya había agendado antes");
+  switch (o.oportunidad) {
+    case "compra-full": case "compra-cuotas": case "reserva": case "downsell":
+      out.push(`Es una compra ${DE_COMPRA[o.oportunidad]}: el cierre del día pide cargar la venta y, con la venta, el lead pasa a Inscripto`);
+      break;
+    case "perdida": out.push("Pasa el lead a Perdido (salvo que ya haya comprado)"); break;
+    case "devolucion": out.push("Pasa el lead a Perdido aunque haya comprado"); break;
+  }
+  const que = preguntaDe(o);
+  if (que === "seguimiento") out.push("El cierre del día pregunta por qué no cerró, si hizo la oferta y para cuándo lo estima");
+  if (que === "perdida") out.push("El cierre del día pregunta por qué se perdió y si hizo la oferta");
+  return out;
+}
+
+export interface RevisionOcultar {
+  /* Lo que mueve hoy el estado (queMueve). */
+  mueve: string[];
+  /* Por qué no se puede ocultar: ocultarlo dejaría al cierre del día sin
+     algo que necesita. null: se puede. */
+  bloquea: string | null;
+  /* Lo que cambia si se oculta, para confirmar. */
+  avisos: string[];
+  /* Cuántas llamadas lo tienen hoy. */
+  usos: number;
+}
+
+/** Qué pasa si se oculta un estado: qué mueve, si rompe algo y qué cambia.
+ *  `usos`: cuántas llamadas lo tienen cargado. */
+export function revisarOcultar(a: Pick<Ajustes, "crm">, campo: CampoOpcionesCrm, nombre: string, usos = 0): RevisionOcultar {
+  const lista = opcionesDe(a, campo);
+  const o = lista.find((x) => x.nombre === nombre);
+  if (!o) return { mueve: [], bloquea: null, avisos: [], usos };
+  const otras = lista.filter((x) => x.nombre !== nombre && !x.oculta);
+  const queda = (f: (x: OpcionCrm) => boolean) => otras.some(f);
+  const avisos: string[] = [];
+  let bloquea: string | null = null;
+
+  if (campo === "estadoLlamada") {
+    if (esCompra(o)) {
+      if (!queda((x) => esCompra(x))) {
+        bloquea = "Es el último estado de compra que queda a la vista: sin uno, el cierre del día no puede ofrecer «Cargar la venta». Dejá visible por lo menos uno.";
+      } else if (o.oportunidad && DE_COMPRA[o.oportunidad] && !queda((x) => x.oportunidad === o.oportunidad)) {
+        const en = opcionDeCompraPara(lista.map((x) => (x.nombre === nombre ? { ...x, oculta: true } : x)), o.oportunidad);
+        avisos.push(`Las ventas ${DE_COMPRA[o.oportunidad]} van a dejar la llamada como «${en?.nombre ?? "—"}»: ya no hay un estado de compra propio para ellas.`);
+      }
+    }
+    if (preguntaDe(o) === "seguimiento" && !queda((x) => preguntaDe(x) === "seguimiento")) {
+      bloquea = "Es el último estado de seguimiento que queda a la vista: sin uno, el cierre del día no tiene cómo dejar una llamada en seguimiento (por qué no cerró, la oferta y para cuándo).";
+    }
+    for (const op of ["perdida", "devolucion"] as const) {
+      if (o.oportunidad === op && !queda((x) => x.oportunidad === op)) {
+        avisos.push(`Ya no habría ningún estado ${DE_OPORTUNIDAD[op]}: nadie podría marcar así una llamada y pasar el lead a Perdido.`);
+      }
+    }
+    for (const llamada of ["hecha", "no-show"] as const) {
+      if (o.llamada === llamada && !queda((x) => x.llamada === llamada)) {
+        avisos.push(llamada === "hecha"
+          ? "Ya no habría ningún estado que marque la llamada como hecha en la Agenda."
+          : "Ya no habría ningún estado que marque a mano que no vino: sólo quedaría el que pone solo Calendly.");
+      }
+    }
+    if (o.auto) avisos.push("Se sigue poniendo sola cuando corresponde; lo que cambia es que nadie podrá elegirla a mano.");
+  }
+  if (campo === "estadoPreCall" && esReagendar(o.nombre) && !queda((x) => esReagendar(x.nombre))) {
+    bloquea = "El cierre del día usa «Reagendar» para las llamadas en las que la persona pidió otra fecha: sin ese estado no hay cómo dejarlas. Dejalo a la vista.";
+  }
+  if (usos > 0) avisos.push(`${usos === 1 ? "Una llamada lo tiene" : `${usos} llamadas lo tienen`} cargado: siguen mostrándolo igual, con su color.`);
+  return { mueve: queMueve(o, campo), bloquea, avisos, usos };
 }
