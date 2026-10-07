@@ -24,6 +24,11 @@ import { esReagendar, preguntaDe } from "./estados";
    Si la persona pidió otra fecha, alcanza con el Estado Pre-Call
    «Reagendar»: la agenda nueva entra sola desde Calendly.
 
+   La puerta (Yari, 02/10: «para cargar el EOD tenés que cargar la venta»):
+   si el estado es de compra, no se termina el día sin la venta cargada. La
+   única salida es avisar que la carga otra persona, y eso queda anotado en
+   la llamada (`ventaPorOtro`: quién lo dijo y cuándo).
+
    Lo demás (quién es, de dónde vino, qué contestó) ya lo sabe la app: no
    se vuelve a preguntar.
    ================================================================== */
@@ -47,14 +52,19 @@ export interface RespuestaEod {
   cierreEstimado?: string;
   nota?: string;
   grabacion?: string;
+  /* La salida de la puerta: la venta de esta compra la carga otra persona. */
+  ventaPorOtro?: boolean;
 }
 
 const opcionDe = (opciones: OpcionCrm[], nombre?: string) => (nombre ? opciones.find((o) => o.nombre === nombre) : undefined);
 
-/* Lo que falta para dar por cargada una llamada. */
-export function faltaEnRespuesta(r: RespuestaEod | undefined, opciones: OpcionCrm[]): string | null {
+/* Lo que falta para dar por cargada una llamada. Con `puerta`, una compra
+   también pide la venta cargada (`tieneVenta`) o avisar que la carga otra
+   persona. */
+export function faltaEnRespuesta(r: RespuestaEod | undefined, opciones: OpcionCrm[], puerta?: { tieneVenta: boolean }): string | null {
   if (!r?.estadoLlamada) return esReagendar(r?.estadoPreCall) ? null : "Elegí cómo terminó la llamada";
   const que = preguntaDe(opcionDe(opciones, r.estadoLlamada));
+  if (que === "venta") return puerta && !puerta.tieneVenta && !r.ventaPorOtro ? "Cargá la venta o avisá que la carga otra persona" : null;
   if (que !== "seguimiento" && que !== "perdida") return null;
   if (!r.objecion) return "Elegí por qué no cerró";
   if (r.hizoOferta === undefined) return "Contá si hiciste la oferta";
@@ -72,7 +82,7 @@ export function objecionSugerida(o: OpcionCrm | undefined, objeciones: string[])
 /** Lo que se guarda en la llamada con la respuesta del EOD. Los estados
     van sólo si cambiaron: el resto de la app los lee de la misma llamada. */
 export function cambiosDelEod(
-  r: RespuestaEod, s: Pick<Sesion, "notas" | "estadoLlamada" | "estadoPreCall">, a: Ajustes, quien: string, cuando: string,
+  r: RespuestaEod, s: Pick<Sesion, "notas" | "estadoLlamada" | "estadoPreCall" | "ventaPorOtro">, a: Ajustes, quien: string, cuando: string,
 ): Partial<Sesion> {
   const c: Partial<Sesion> = { eodEn: cuando, eodPor: quien };
   if ((r.estadoLlamada ?? "") !== (s.estadoLlamada ?? "")) c.estadoLlamada = r.estadoLlamada ?? "";
@@ -88,6 +98,10 @@ export function cambiosDelEod(
     c.hizoOferta = que === "venta" ? true : undefined;
     c.cierreEstimado = undefined;
   }
+  /* La salida de la puerta queda anotada (quién y cuándo) y no se pisa al
+     volver a guardar; si la llamada ya no es una compra, se saca. */
+  if (que === "venta" && r.ventaPorOtro && !s.ventaPorOtro) c.ventaPorOtro = { por: quien, en: cuando };
+  else if (s.ventaPorOtro && (que !== "venta" || r.ventaPorOtro === false)) c.ventaPorOtro = undefined;
   const nota = r.nota?.trim();
   if (nota && !(s.notas ?? "").includes(nota)) c.notas = s.notas?.trim() ? `${s.notas.trim()}\n${nota}` : nota;
   if (r.grabacion?.trim()) c.grabacion = r.grabacion.trim();
@@ -100,6 +114,7 @@ export function respuestaDe(s: Sesion): RespuestaEod | undefined {
   return {
     estadoLlamada: s.estadoLlamada, estadoPreCall: s.estadoPreCall,
     objecion: s.objecion, hizoOferta: s.hizoOferta, cierreEstimado: s.cierreEstimado,
+    ventaPorOtro: s.ventaPorOtro ? true : undefined,
   };
 }
 

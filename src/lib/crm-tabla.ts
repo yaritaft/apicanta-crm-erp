@@ -234,7 +234,8 @@ export const COLUMNAS: ColumnaTabla[] = [
   { clave: "objecion", titulo: "Objeción", grupo: "Resultado", valores: (f) => uno(f.objecion), ancho: 170 },
   { clave: "oferta", titulo: "¿Oferta?", grupo: "Resultado", valores: (f) => uno(f.oferta), ancho: 100 },
   { clave: "cierre", titulo: "Cierre estimado", grupo: "Resultado", valores: (f) => uno(f.cierre), fecha: true, ancho: 140 },
-  { clave: "venta", titulo: "Venta", grupo: "Resultado", valores: (f) => [f.venta ? "Con venta" : "Sin venta"], orden: (f) => f.venta, texto: (f) => f.venta, ancho: 190 },
+  /* «La carga otra persona»: el closer avisó, en la puerta del cierre del día, que la venta de esta compra la carga otra persona. */
+  { clave: "venta", titulo: "Venta", grupo: "Resultado", valores: (f) => [f.venta ? "Con venta" : f.sesion.ventaPorOtro ? "La carga otra persona" : "Sin venta"], orden: (f) => f.venta, texto: (f) => f.venta, ancho: 190 },
   { clave: "via", titulo: "Vía", grupo: "Origen", valores: (f) => uno(f.via), ancho: 170 },
   { clave: "ad", titulo: "Ad", grupo: "Origen", valores: (f) => uno(f.ad), ancho: 200 },
   { clave: "angulo", titulo: "Ángulo", grupo: "Origen", valores: (f) => uno(f.angulo), ancho: 190 },
