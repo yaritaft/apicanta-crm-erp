@@ -1217,7 +1217,7 @@ dibuja con `<img>` (nunca como HTML). No se escribe en ningún registro.
    tabla del código). Si alguna vez se corrió una versión anterior con `whatsapp_contactados`, esa tabla ya no se usa y se puede borrar.
 2. Vercel: `WHATSAPP_LECTOR_TOKEN` (`openssl rand -hex 32`; el mismo valor va en el `.env` del servicio) y volver a publicar.
    Necesita `SUPABASE_SERVICE_ROLE_KEY`, que ya está por los webhooks.
-3. En el VPS: copiar la carpeta del servicio, `npm install` y dejarlo con systemd (la guía lo explica). El número se vincula
+3. En el VPS: copiar la carpeta del servicio, `npm ci --omit=dev --ignore-scripts` y dejarlo con systemd (la guía lo explica). El número se vincula
    desde Ajustes → WhatsApp, sin terminal.
 
 **Probarlo sin WhatsApp ni Supabase** (la app local, sin variables de nube): las rutas guardan en un archivo
