@@ -1,5 +1,5 @@
 import type {
-  AlcanceVentas, BaseMedicion, ConceptoPago, EntradaLiquidacion, EsquemaPago, EstadoApp, ExtraLiquidacion,
+  AlcanceVentas, BaseMedicion, ConceptoPago, DesgloseLinea, EntradaLiquidacion, EsquemaPago, EstadoApp, ExtraLiquidacion,
   Gasto, ID, LineaLiquidada, Liquidacion, MiembroEquipo, Moneda, Pago, PersonaLiquidada,
   ResultadoLiquidacion, TipoConcepto, Venta,
 } from "./types";
@@ -7,6 +7,10 @@ import type { RangoMes } from "./metricas";
 import { calcularPyL, closerDeCuota, cobraEnFecha, pagosDelMes, parteMarketing, tasaDeComision, ventasDelMes } from "./finanzas";
 import { aMonedaBase, categoriaDe, normalizar } from "./gastos";
 import { fechaLarga, money, num, pct } from "./format";
+import {
+  conCorreccion, desgloseBono, desgloseFijo, desgloseMedido, desglosePieza, listaDeCobros, listaDeVentas,
+  type CobroContado, type Fuente, type PartesProfit,
+} from "./desglose";
 
 /* ==================================================================
    Honorarios: lo que cobra cada uno y la liquidación de cada mes.
@@ -465,7 +469,9 @@ const enRango = (iso: string | undefined, r: RangoMes) => {
   return t >= r.desde.getTime() && t <= r.hasta.getTime();
 };
 
-interface Medido { valor: number; cuantos: string }
+/* `n`, `bruto`, `cobros` y `ventas` son para el desglose: cuántos entraron en
+   la cuenta, cuáles, y lo cobrado antes de restar el procesador. */
+interface Medido { valor: number; cuantos: string; n?: number; bruto?: number; cobros?: CobroContado[]; ventas?: Venta[] }
 
 /* Lo que se mide en los días del concepto. null: no se mide solo (el profit
    se calcula aparte y lo manual se carga). */
@@ -473,22 +479,28 @@ function medir(cx: Contexto, c: ConceptoPago, m: MiembroEquipo, r: RangoMes, her
   const b = c.base ?? "manual";
   switch (b) {
     case "cash": case "cash-neto": {
-      let valor = 0, n = 0;
+      let valor = 0, bruto = 0, n = 0;
+      const cobros: CobroContado[] = [];
       for (const p of pagosDelMes(cx.e, r)) {
-        if (!cuenta(cx, c, m, cx.ventaDeCuota.get(p.cuotaId), p, hermanos)) continue;
+        const venta = cx.ventaDeCuota.get(p.cuotaId);
+        if (!cuenta(cx, c, m, venta, p, hermanos)) continue;
         valor += b === "cash" ? p.monto : p.monto - p.feeMonto;
+        bruto += p.monto;
+        cobros.push({ pago: p, venta });
         n++;
       }
-      return { valor: r2(valor), cuantos: cant(n, "cobro", "cobros") };
+      return { valor: r2(valor), cuantos: cant(n, "cobro", "cobros"), n, bruto: r2(bruto), cobros };
     }
     case "facturado": case "ventas": {
       let valor = 0, n = 0;
+      const ventas: Venta[] = [];
       for (const v of ventasDelMes(cx.e, r)) {
         if (!cuenta(cx, c, m, v)) continue;
         valor += b === "facturado" ? v.precioAcordado : 1;
+        ventas.push(v);
         n++;
       }
-      return { valor: r2(valor), cuantos: cant(n, "venta", "ventas") };
+      return { valor: r2(valor), cuantos: cant(n, "venta", "ventas"), n, ventas };
     }
     case "llamadas": case "llamadas-hechas": {
       /* Agendadas: las que se reservaron en el mes (cuando entró la reserva),
@@ -501,7 +513,7 @@ function medir(cx: Contexto, c: ConceptoPago, m: MiembroEquipo, r: RangoMes, her
         if (utm && (s.utm?.utm_source ?? "").trim().toLowerCase() !== utm) continue;
         n++;
       }
-      return { valor: n, cuantos: "según la Agenda" };
+      return { valor: n, cuantos: "según la Agenda", n };
     }
     default:
       return null;
@@ -524,7 +536,14 @@ function medidoTexto(b: BaseMedicion, valor: number, base: Moneda, unidad?: stri
 
 /* ---------- Un renglón ---------- */
 
-interface Profit { profit: number; parte: number }
+/* El profit del mes y las partes con las que se armó (para el desglose). */
+interface Profit { profit: number; parte: number; partes?: PartesProfit }
+
+/* Los nombres que lleva la lista de cobros y de ventas del desglose. */
+const nombresDeLista = (cx: Contexto) => ({
+  servicio: (id?: ID) => (id ? cx.e.productos.find((p) => p.id === id)?.nombre : undefined),
+  procesador: (id?: ID) => (id ? cx.e.procesadores.find((p) => p.id === id)?.nombre : undefined),
+});
 
 function linea(
   cx: Contexto, m: MiembroEquipo, c: ConceptoPago, entrada: EntradaLiquidacion | undefined, prof?: Profit,
@@ -541,12 +560,19 @@ function linea(
   let detalle = "";
   let medido: number | undefined;
   let falta: string | undefined;
+  /* Cómo se llegó al monto: se arma con los mismos números de la cuenta. */
+  let desglose: DesgloseLinea | undefined;
+  const regla = describirConcepto(c, cx.e, hermanos);
 
   switch (c.tipo) {
     case "fijo": {
       const lleno = c.monto ?? 0;
       monto = parcial ? (lleno * vig.dias) / vig.diasMes : lleno;
       detalle = parcial ? `${M(lleno)} por mes, prorrateado: ${vig.dias} de ${vig.diasMes} días` : `${M(lleno)} por mes`;
+      desglose = desgloseFijo({
+        regla, moneda: c.moneda, mensual: lleno, monto: r2(monto),
+        ...(parcial ? { prorrateo: { dias: vig.dias, diasMes: vig.diasMes, desde: vig.rango.desde.getDate(), hasta: vig.rango.hasta.getDate(), mes: nombrePeriodo(cx.rango.clave) } } : {}),
+      });
       break;
     }
     case "bono": {
@@ -555,6 +581,7 @@ function linea(
       detalle = gano
         ? `Lo ganó${c.condicion?.trim() ? ` · ${c.condicion.trim()}` : ""}`
         : `No lo ganó este mes (era ${M(c.monto ?? 0)})`;
+      desglose = desgloseBono({ regla, moneda: c.moneda, previsto: c.monto ?? 0, gano, condicion: c.condicion, monto: r2(monto) });
       break;
     }
     case "unidad": {
@@ -569,6 +596,7 @@ function linea(
         monto = n * tarifa;
         detalle = `${num(n, Number.isInteger(n) ? 0 : 2)} × ${M(tarifa)} (${unidad})`;
       }
+      desglose = desglosePieza({ regla, moneda: c.moneda, tarifa, unidad, cantidad: n, monto: r2(monto) });
       break;
     }
     case "porcentaje": case "tramo": {
@@ -576,9 +604,12 @@ function linea(
       const plataBase = infoBase(b).plata;
       let valor = 0;
       let origen = "";
+      /* De dónde salió lo medido, para el desglose. */
+      let fuente: Fuente = { tipo: "falta" };
       if (entrada?.cantidad !== undefined) {
         valor = entrada.cantidad;
         origen = "cargado a mano";
+        fuente = { tipo: "mano" };
       } else if (b === "profit") {
         const p = prof ?? { profit: 0, parte: 1 };
         const parte = c.sinExcluidasMarketing ? p.parte : 1;
@@ -588,25 +619,41 @@ function linea(
           : parte < 1
             ? `el ${pct(parte * 100, 0)} de ${plata(p.profit, cx.base)}: lo demás es de ventas excluidas de marketing`
             : "el resultado operativo del mes";
+        fuente = { tipo: "profit", profit: p.profit, parte, partes: p.partes };
       } else {
         const x = medir(cx, c, m, vig.rango, hermanos);
-        if (x) { valor = x.valor; origen = x.cuantos; } else { falta = "Cargá la cantidad"; origen = "falta cargarla"; }
+        if (x) {
+          valor = x.valor; origen = x.cuantos;
+          fuente = {
+            tipo: "medido", bruto: x.bruto, cuantos: x.n ?? 0,
+            lista: x.cobros ? listaDeCobros(x.cobros, nombresDeLista(cx), cx.base) : x.ventas ? listaDeVentas(x.ventas, nombresDeLista(cx), cx.base) : undefined,
+          };
+        } else { falta = "Cargá la cantidad"; origen = "falta cargarla"; }
       }
       if (parcial && b !== "manual" && b !== "profit" && entrada?.cantidad === undefined) {
         origen = `${origen}, del ${vig.rango.desde.getDate()} al ${vig.rango.hasta.getDate()}`;
       }
       medido = valor;
       const lo = medidoTexto(b, valor, cx.base, c.unidad);
+      let veces = 0;
       if (c.tipo === "porcentaje") {
         monto = valor * (c.tasa ?? 0);
         detalle = `${pct((c.tasa ?? 0) * 100, decimalesTasa(c.tasa))} de ${lo} (${origen})`;
       } else {
         const cada = c.cada ?? 0;
-        const veces = cada > 0 ? Math.floor(valor / cada + 1e-9) : 0;
+        veces = cada > 0 ? Math.floor(valor / cada + 1e-9) : 0;
         monto = veces * (c.monto ?? 0);
         const tramo = plataBase ? plata(cada, cx.base) : num(cada, Number.isInteger(cada) ? 0 : 2);
         detalle = `${veces} ${veces === 1 ? "tramo" : "tramos"} de ${tramo}: ${lo} (${origen})`;
       }
+      desglose = desgloseMedido({
+        regla, tipo: c.tipo, base: b, plataBase, monedaBase: cx.base, moneda: c.moneda, fuente, valor,
+        tasa: c.tasa, cada: c.cada, veces, montoPorTramo: c.monto, monto: r2(monto),
+        unidad: c.unidad?.trim() || undefined, utm: c.utmSource,
+        ...(parcial && b !== "manual" && b !== "profit" && entrada?.cantidad === undefined
+          ? { vigencia: { desde: vig.rango.desde.getDate(), hasta: vig.rango.hasta.getDate(), mes: nombrePeriodo(cx.rango.clave) } }
+          : {}),
+      });
       break;
     }
   }
@@ -614,6 +661,7 @@ function linea(
   let corregido = false;
   if (entrada?.monto !== undefined && Number.isFinite(entrada.monto)) {
     detalle = `Corregido a mano: la cuenta daba ${M(r2(monto))}${entrada.nota?.trim() ? ` · ${entrada.nota.trim()}` : ""}`;
+    if (desglose) desglose = conCorreccion(desglose, r2(monto), entrada.nota);
     monto = entrada.monto;
     corregido = true;
     falta = undefined;
@@ -625,16 +673,30 @@ function linea(
     variable: c.tipo !== "fijo", medido, enFinanzas: calculaFinanzas(m, c), falta, corregido,
     ...(c.tipo === "porcentaje" || c.tipo === "tramo" ? { base: c.base ?? "manual" } : {}),
     ...(c.tipo === "unidad" || c.base === "manual" ? { unidad: c.unidad?.trim() || undefined } : {}),
+    ...(desglose ? { desglose } : {}),
   };
+}
+
+/* "Lo cargó Juan Cruz el 7 oct 2026 desde la liquidación de septiembre 2026". */
+function cargadoTexto(x: ExtraLiquidacion, periodo: string): string | undefined {
+  if (!x.creadoEn && !x.creadoPor?.trim()) return undefined;
+  const quien = x.creadoPor?.trim() ? ` ${x.creadoPor.trim()}` : "";
+  const cuando = x.creadoEn ? ` el ${fechaLarga(x.creadoEn)}` : "";
+  const desde = x.desdePeriodo && x.desdePeriodo !== periodo && esPeriodo(x.desdePeriodo)
+    ? ` desde la liquidación de ${nombrePeriodo(x.desdePeriodo)}` : "";
+  return `Lo cargó${quien}${cuando}${desde}.`;
 }
 
 function lineaExtra(cx: Contexto, x: ExtraLiquidacion): LineaLiquidada {
   const monto = r2(x.monto);
+  const nota = x.nota?.trim();
+  const cargado = cargadoTexto(x, cx.rango.clave);
   return {
     clave: `extra:${x.id}`, extraId: x.id, tipo: "extra", nombre: x.concepto.trim() || "Monto a mano",
     detalle: monto < 0 ? "Descuento cargado a mano" : "Cargado a mano",
     moneda: x.moneda, monto, montoBase: r2(aMonedaBase(monto, x.moneda, cx.base, cx.tc)),
     variable: true, enFinanzas: false,
+    ...(nota ? { nota } : {}), ...(cargado ? { cargado } : {}),
   };
 }
 
@@ -705,19 +767,29 @@ export function calcularLiquidacion(e: EstadoApp, periodo: string, liq?: Liquida
   const filas: Fila[] = [];
   const delProfit: { fila: Fila; i: number; c: ConceptoPago }[] = [];
 
-  for (const m of miembrosALiquidar(e, periodo.slice(0, 7) + "-01")) {
+  /* Quien tiene un monto a mano cargado para este mes sale igual, aunque ya
+     no esté entre los que se liquidan: un descuento no puede perderse en
+     silencio. De ésos, sólo sale lo cargado a mano. */
+  const aLiquidar = miembrosALiquidar(e, periodo.slice(0, 7) + "-01");
+  const yaSalen = new Set(aLiquidar.map((m) => m.id));
+  const soloMontos = new Set(e.equipo.filter((m) => !yaSalen.has(m.id) && extras.some((x) => x.miembroId === m.id)).map((m) => m.id));
+  const miembros = soloMontos.size
+    ? [...aLiquidar, ...e.equipo.filter((m) => soloMontos.has(m.id))].sort((a, b) => a.nombre.localeCompare(b.nombre, "es"))
+    : aLiquidar;
+
+  for (const m of miembros) {
     const esq = esquemaDe.get(m.id);
     const sinCargar = !esq || esq.conceptos.length === 0;
     const pendiente = esq?.pendiente?.trim() || undefined;
     /* Sin nada cargado, lo que le calcula Finanzas: su comisión con la tasa de siempre. */
-    const conceptos = sinCargar && tasaImplicita(m) > 0 ? comisionDeFinanzas(m) : esq?.conceptos ?? [];
+    const conceptos = soloMontos.has(m.id) ? [] : sinCargar && tasaImplicita(m) > 0 ? comisionDeFinanzas(m) : esq?.conceptos ?? [];
     const fila: Fila = {
       m, lineas: [],
       persona: {
         miembroId: m.id, nombre: m.nombre, puesto: m.puesto?.trim() || undefined,
         categoriaGasto: esq?.categoriaGasto?.trim() || categoriaPorDefecto(m),
         lineas: [], aPagar: {}, total: 0, fijo: 0, variable: 0, pendiente,
-        ...(sinCargar ? { sinCargar } : {}), ...(!m.activo ? { inactivo: true } : {}),
+        ...(sinCargar && !soloMontos.has(m.id) ? { sinCargar } : {}), ...(!m.activo ? { inactivo: true } : {}),
       },
     };
     for (const c of conceptos) {
@@ -744,7 +816,13 @@ export function calcularLiquidacion(e: EstadoApp, periodo: string, liq?: Liquida
     for (const l of f.lineas) if (l && !l.enFinanzas) aCargar += l.montoBase;
   }
   const profit = r2(pyl.operativoCC - aCargar);
-  const prof: Profit = { profit, parte: parteMarketing(e, rango) };
+  const prof: Profit = {
+    profit, parte: parteMarketing(e, rango),
+    partes: {
+      cash: r2(pyl.cashCollected), procesadores: r2(pyl.feesProcesador), comisiones: r2(pyl.comisionCloser + pyl.comisionDirector),
+      otrosDirectos: r2(pyl.otrosDirectos), gastosOperativos: r2(pyl.gastosOperativos), sueldos: r2(aCargar),
+    },
+  };
   for (const x of delProfit) {
     x.fila.lineas[x.i] = linea(cx, x.fila.m, x.c, entradas[claveEntrada(x.fila.m.id, x.c.id)], prof);
   }
@@ -752,7 +830,10 @@ export function calcularLiquidacion(e: EstadoApp, periodo: string, liq?: Liquida
   const personas = filas.map(({ persona, lineas }) => {
     const ls = lineas.filter((l): l is LineaLiquidada => l !== null)
       .map((l) => (l.conceptoId?.split(":")[0] === ID_COMISION_DE_FINANZAS && !l.corregido
-        ? { ...l, detalle: `${l.detalle} · con la tasa que usa Finanzas: no tiene cargado lo que cobra` }
+        ? {
+          ...l, detalle: `${l.detalle} · con la tasa que usa Finanzas: no tiene cargado lo que cobra`,
+          ...(l.desglose ? { desglose: { ...l.desglose, avisos: [...(l.desglose.avisos ?? []), "No tiene cargado lo que cobra: esta comisión sale con la tasa que usa Finanzas."] } } : {}),
+        }
         : l));
     const aPagar: Partial<Record<Moneda, number>> = {};
     for (const l of ls) aPagar[l.moneda] = r2((aPagar[l.moneda] ?? 0) + l.monto);
@@ -859,7 +940,7 @@ export function liquidacionCsv(r: ResultadoLiquidacion, periodo: string): string
   ];
   for (const p of r.personas) {
     for (const l of p.lineas) {
-      filas.push([q(p.nombre), q(p.puesto ?? ""), q(l.nombre), q(l.detalle), l.moneda, n(l.monto), n(l.montoBase), l.enFinanzas ? "Sí" : "No"].join(","));
+      filas.push([q(p.nombre), q(p.puesto ?? ""), q(l.nombre), q(l.nota ? `${l.detalle} · Nota: ${l.nota}` : l.detalle), l.moneda, n(l.monto), n(l.montoBase), l.enFinanzas ? "Sí" : "No"].join(","));
     }
     filas.push([q(p.nombre), q(p.puesto ?? ""), q("Total"), q(""), "USD", n(p.total), n(p.total), ""].join(","));
   }
@@ -869,8 +950,97 @@ export function liquidacionCsv(r: ResultadoLiquidacion, periodo: string): string
 
 /** Lo que se le manda a cada uno: su liquidación en texto, lista para pegar. */
 export function textoParaEnviar(p: PersonaLiquidada, periodo: string): string {
-  const lineas = p.lineas.map((l) => `• ${l.nombre}: ${plata(l.monto, l.moneda)}${l.detalle ? ` — ${l.detalle}` : ""}`);
+  /* La nota de un monto a mano va debajo de su renglón: quien ejecuta el pago la lee ahí. */
+  const lineas = p.lineas.flatMap((l) => [
+    `• ${l.nombre}: ${plata(l.monto, l.moneda)}${l.detalle ? ` — ${l.detalle}` : ""}`,
+    ...(l.nota ? [`   Nota: ${l.nota}`] : []),
+  ]);
   const total = (Object.entries(p.aPagar) as [Moneda, number][])
     .filter(([, x]) => Math.abs(x) >= 0.005).map(([m, x]) => plata(x, m)).join(" + ");
   return [`Hola ${p.nombre.split(" ")[0]}, tu liquidación de ${nombrePeriodo(periodo)}:`, ...lineas, `Total: ${total || plata(0, "USD")}`].join("\n");
+}
+
+/* ---------- Ver un renglón, mes a mes ---------- */
+
+/** El renglón de una persona en una liquidación (con su desglose, si lo tiene). */
+export function renglonDe(r: ResultadoLiquidacion | null | undefined, miembroId: ID, clave: string):
+  { persona: PersonaLiquidada; linea: LineaLiquidada } | undefined {
+  const persona = r?.personas.find((p) => p.miembroId === miembroId);
+  const linea = persona?.lineas.find((l) => l.clave === clave);
+  return persona && linea ? { persona, linea } : undefined;
+}
+
+/** Los meses cerrados en los que esta persona tuvo este renglón, del más
+ *  viejo al más nuevo: para mirar cómo se calculó mes a mes. */
+export function mesesDelRenglon(liquidaciones: Liquidacion[], miembroId: ID, clave: string): string[] {
+  return liquidaciones
+    .filter((l) => l.estado === "cerrada" && renglonDe(l.resultado, miembroId, clave))
+    .map((l) => l.periodo)
+    .sort();
+}
+
+/* ---------- Montos a mano, también para los meses que vienen ----------
+   «Un closer cobró algo en su cuenta personal y el mes que viene hay que
+   descontárselo» (Angelo, 06/10): el monto se anota con su nota para quien
+   paga en la liquidación del mes al que corresponde, aunque todavía no haya
+   llegado. Si ese mes todavía no tiene liquidación, se crea con lo único que
+   tiene: el monto. Es la misma que arma sola la pantalla mientras no existe
+   (liquidacionVacia), así que al motor no le cambia nada. */
+
+/** Una liquidación sin nada cargado. */
+export function liquidacionVacia(periodo: string, ahora = new Date().toISOString()): Liquidacion {
+  return {
+    id: idLiquidacion(periodo), periodo, estado: "abierta", entradas: {}, extras: [],
+    pagos: {}, gastoIds: [], creadoEn: ahora,
+  };
+}
+
+/** La lista de liquidaciones con el monto sumado en la del mes `periodo` (se
+ *  crea si no existe), o null si ese mes ya está cerrado: lo cerrado no
+ *  cambia. Con el mismo id dos veces, el monto queda una sola vez. */
+export function conExtraEnMes(
+  liquidaciones: Liquidacion[], periodo: string, extra: ExtraLiquidacion, ahora = new Date().toISOString(),
+): { liquidaciones: Liquidacion[]; liquidacion: Liquidacion } | null {
+  const actual = liquidaciones.find((l) => l.periodo === periodo);
+  if (actual?.estado === "cerrada") return null;
+  const base = actual ?? liquidacionVacia(periodo, ahora);
+  const extras = base.extras.some((x) => x.id === extra.id)
+    ? base.extras.map((x) => (x.id === extra.id ? extra : x))
+    : [...base.extras, extra];
+  const liquidacion: Liquidacion = { ...base, extras, actualizadoEn: ahora };
+  return {
+    liquidacion,
+    liquidaciones: actual ? liquidaciones.map((l) => (l.id === actual.id ? liquidacion : l)) : [...liquidaciones, liquidacion],
+  };
+}
+
+/** La lista sin ese monto, o null si no está o la liquidación ya se cerró. */
+export function sinExtraEnLiquidacion(
+  liquidaciones: Liquidacion[], liquidacionId: ID, extraId: ID, ahora = new Date().toISOString(),
+): { liquidaciones: Liquidacion[]; liquidacion: Liquidacion } | null {
+  const actual = liquidaciones.find((l) => l.id === liquidacionId);
+  if (!actual || actual.estado === "cerrada" || !actual.extras.some((x) => x.id === extraId)) return null;
+  const liquidacion: Liquidacion = { ...actual, extras: actual.extras.filter((x) => x.id !== extraId), actualizadoEn: ahora };
+  return { liquidacion, liquidaciones: liquidaciones.map((l) => (l.id === actual.id ? liquidacion : l)) };
+}
+
+/** Lo anotado para los meses que vienen (liquidaciones abiertas, después de
+ *  `despuesDe`), del más cercano al más lejano. */
+export function extrasPorVenir(liquidaciones: Liquidacion[], despuesDe: string):
+  { liquidacionId: ID; periodo: string; extra: ExtraLiquidacion }[] {
+  return liquidaciones
+    .filter((l) => l.estado !== "cerrada" && l.periodo > despuesDe && l.extras.length > 0)
+    .sort((a, b) => a.periodo.localeCompare(b.periodo))
+    .flatMap((l) => l.extras.map((extra) => ({ liquidacionId: l.id, periodo: l.periodo, extra })));
+}
+
+/** Los meses en los que se puede anotar un monto mirando `mirando`: ése y los
+ *  que vienen (hasta medio año), más el mes de hoy y los dos siguientes, sin
+ *  los cerrados. */
+export function mesesParaExtra(liquidaciones: Liquidacion[], mirando: string, hoy: string): string[] {
+  const cerrados = new Set(liquidaciones.filter((l) => l.estado === "cerrada").map((l) => l.periodo));
+  const candidatos = new Set<string>();
+  for (let i = 0; i <= 6; i++) candidatos.add(moverPeriodo(mirando, i));
+  for (let i = 0; i <= 2; i++) candidatos.add(moverPeriodo(hoy, i));
+  return [...candidatos].filter((p) => p >= mirando && !cerrados.has(p)).sort();
 }

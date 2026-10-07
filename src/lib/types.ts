@@ -1089,13 +1089,87 @@ export interface EntradaLiquidacion {
 }
 
 /* Un monto que no sale de ningún concepto: un adelanto, un reintegro,
-   una diferencia del mes anterior. Negativo, descuenta. */
+   una diferencia del mes anterior. Negativo, descuenta.
+
+   Vive en la liquidación del mes al que corresponde (`liquidaciones.extras`,
+   jsonb): se puede cargar mirando otro mes, y queda ahí esperando a que se
+   abra esa liquidación. */
 export interface ExtraLiquidacion {
   id: ID;
   miembroId: ID;
   concepto: string;
   monto: number;
   moneda: Moneda;
+  /* Una nota para quien ejecuta el pago: "cobró US$ 500 en su cuenta
+     personal: descontárselos". Sale en la persona, en «Copiar para
+     mandarle» y en el resumen al cerrar. */
+  nota?: string;
+  /* Cuándo y quién lo cargó. */
+  creadoEn?: string;
+  creadoPor?: string;
+  /* Si se cargó mirando la liquidación de otro mes: cuál ("2026-09"). */
+  desdePeriodo?: string;
+}
+
+/* ---------- Cómo se llegó al monto de un renglón ----------
+   Al calcular cada renglón, el motor (lib/honorarios.ts) deja escrita la
+   cuenta con los números del mes. Al cerrar la liquidación queda en la foto
+   (`resultado`), así un mes cerrado muestra lo que se calculó entonces y no
+   lo que daría hoy. */
+
+/* Un paso de la cuenta, de arriba hacia abajo: "base" arranca, "mas" y
+   "menos" suman y restan, "por" multiplica, "tramos" divide en tramos
+   completos y "igual" es un subtotal que lo anterior tiene que dar. */
+export interface PasoDesglose {
+  op: "base" | "mas" | "menos" | "por" | "tramos" | "igual";
+  texto: string;
+  valor: number;
+  /* Cómo se escribe el valor: plata (en `moneda`), una cantidad, un % (el
+     valor es la fracción: 0.05) o una fracción de `de` (15 días de 30). */
+  formato: "plata" | "cantidad" | "tasa" | "fraccion";
+  moneda?: Moneda;
+  de?: number;
+  /* Una aclaración corta. */
+  nota?: string;
+}
+
+/* Un cobro o una venta de los que entraron en lo medido. */
+export interface ItemDesglose {
+  fecha: string;
+  cliente: string;
+  servicio?: string;
+  /* Cobros: la cuenta por la que entró (Stripe, Hotmart…). */
+  procesador?: string;
+  /* Lo cobrado, o el precio de la venta. */
+  monto: number;
+  /* Cobros: lo que se quedó el procesador y lo que quedó neto. */
+  fee?: number;
+  neto?: number;
+}
+
+/* La lista corta: los más grandes, y cuántos faltan ver y cuánto suman. */
+export interface ListaDesglose {
+  tipo: "cobros" | "ventas";
+  titulo: string;
+  /* La moneda de los montos de la lista: la del negocio. */
+  moneda: Moneda;
+  /* Cuántos entraron en total (los de `items` más los de `resto`). */
+  total: number;
+  items: ItemDesglose[];
+  resto?: { cantidad: number; monto: number; fee?: number; neto?: number };
+}
+
+export interface DesgloseLinea {
+  /* La regla, dicha en castellano: "5% del cash collected post pasarelas de las ventas que dirige". */
+  regla: string;
+  /* La cuenta, paso a paso: el último "igual" es el monto del renglón. */
+  pasos: PasoDesglose[];
+  moneda: Moneda;
+  lista?: ListaDesglose;
+  /* Lo que conviene saber: se cargó a mano, se prorrateó, no hay profit. */
+  avisos?: string[];
+  /* Si se corrigió a mano: lo que daba la cuenta. El monto del renglón es el corregido. */
+  correccion?: { cuentaDaba: number; nota?: string };
 }
 
 export interface LineaLiquidada {
@@ -1125,6 +1199,13 @@ export interface LineaLiquidada {
   /* Lo que falta cargar para que el renglón esté completo. */
   falta?: string;
   corregido?: boolean;
+  /* Cómo se llegó al monto, con los números del mes. Las liquidaciones que
+     se cerraron antes de que se guardara no lo tienen. */
+  desglose?: DesgloseLinea;
+  /* Sólo en los montos a mano: la nota para quien paga, y quién lo cargó
+     y cuándo. */
+  nota?: string;
+  cargado?: string;
 }
 
 export interface PersonaLiquidada {

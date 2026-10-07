@@ -2476,6 +2476,104 @@ span.kpis__etiqueta:hover { color: var(--ink); text-decoration: none; }
 .liq-cierre__total { display: flex; flex-direction: column; gap: 2px; }
 .liq-cierre__monto { font-family: var(--font-display); font-size: 32px; line-height: 40px; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--ink); }
 
+/* La nota de un monto a mano, para quien ejecuta el pago: pintada de ámbar,
+   con el dato adentro, en el renglón mismo y arriba de la lista. */
+.liq__notapago {
+  display: flex; align-items: flex-start; gap: 8px; margin-top: 4px; padding: 6px 10px;
+  border: 1px solid var(--warning); border-radius: var(--radius-sm);
+  background: var(--warning-soft); color: var(--ink); font-size: 13px; line-height: 18px; overflow-wrap: anywhere;
+}
+.liq__notapago > svg { flex: none; margin-top: 2px; color: var(--warning); }
+.liq__notapago b { font-weight: 600; }
+.liq-notas {
+  display: flex; align-items: flex-start; gap: var(--space-3); padding: var(--space-4);
+  border: 1px solid var(--warning); border-radius: var(--radius-lg); background: var(--warning-soft);
+}
+.liq-notas > svg { flex: none; margin-top: 2px; color: var(--warning); }
+.liq-notas__titulo { font-weight: 600; color: var(--ink); margin-bottom: 2px; }
+.liq-notas__lista { list-style: none; margin: 0; padding: 0; font-size: 13px; line-height: 20px; color: var(--ink); overflow-wrap: anywhere; }
+.liq__ver { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+.liq__ver svg { margin-right: 0; }
+
+/* Lo anotado para los meses que vienen, en la persona. */
+.liq__porvenir { display: flex; flex-direction: column; gap: var(--space-1); }
+.liq__porvenir-titulo { font-size: 11px; line-height: 16px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-subtle); }
+.liq__porvenir-lista { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-1); }
+.liq__porvenir-lista li {
+  display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-2);
+  padding: 2px 4px 2px 10px; border: 1px dashed var(--border-strong); border-radius: var(--radius-sm);
+  font-size: 13px; line-height: 20px; color: var(--ink-muted); overflow-wrap: anywhere;
+}
+.liq__porvenir-lista .liq__sub { display: block; }
+
+/* «Cómo se calculó»: la regla, la cuenta de arriba hacia abajo y lo que entró. */
+.desglose { display: flex; flex-direction: column; gap: var(--space-4); }
+.desglose__mes { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
+.desglose__mes-nombre { min-width: 132px; text-align: center; font-family: var(--font-display); font-size: 16px; line-height: 24px; font-weight: 600; color: var(--ink); }
+.desglose__regla {
+  margin: 0; padding: var(--space-3) var(--space-4); border-radius: var(--radius-md);
+  background: var(--brand-soft); border: 1px solid var(--brand-fill);
+  font-family: var(--font-display); font-size: 17px; line-height: 24px; font-weight: 600; color: var(--ink);
+}
+.desglose__tabla { border: 1px solid var(--border); border-radius: var(--radius-md); overflow-x: auto; background: var(--surface-100); }
+.desglose__avisos { list-style: disc; margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: var(--space-1); font-size: 13px; line-height: 20px; color: var(--ink-muted); }
+.desglose__avisos li { display: list-item; }
+.desglose__accion { display: block; margin-top: var(--space-2); }
+
+.liq-cuenta { width: 100%; border-collapse: collapse; font-size: 14px; line-height: 20px; }
+.liq-cuenta td { padding: 8px var(--space-3); border-bottom: 1px solid var(--border); vertical-align: top; }
+.liq-cuenta tr:last-child td { border-bottom: 0; }
+.liq-cuenta__op { width: 36px; text-align: center; color: var(--ink-subtle); font-size: 16px; font-weight: 600; }
+.liq-cuenta__texto { color: var(--ink-muted); overflow-wrap: anywhere; }
+.liq-cuenta__nota { display: block; font-size: 12px; line-height: 16px; font-weight: 400; color: var(--ink-subtle); }
+.liq-cuenta tr[data-op="igual"] .liq-cuenta__nota { font-weight: 400; color: var(--ink-subtle); }
+.liq-cuenta__valor { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; font-weight: 500; color: var(--ink); }
+.liq-cuenta tr[data-op="igual"] td { background: var(--surface-200); }
+.liq-cuenta tr[data-op="igual"] .liq-cuenta__texto, .liq-cuenta tr[data-op="igual"] .liq-cuenta__valor { color: var(--ink); font-weight: 600; }
+.liq-cuenta tr[data-final] td { background: var(--brand-soft); }
+.liq-cuenta tr[data-final] .liq-cuenta__valor { font-family: var(--font-display); font-size: 17px; color: var(--brand); }
+
+.liq-lista { width: 100%; border-collapse: collapse; font-size: 13px; line-height: 18px; }
+.liq-lista th {
+  padding: 6px var(--space-3); text-align: left; white-space: nowrap; background: var(--surface-200); border-bottom: 1px solid var(--border);
+  font-size: 11px; line-height: 14px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-subtle);
+}
+.liq-lista td { padding: 6px var(--space-3); border-bottom: 1px solid var(--border); vertical-align: top; color: var(--ink-muted); }
+.liq-lista tbody tr:last-child td { border-bottom: 0; }
+.liq-lista__fecha { white-space: nowrap; color: var(--ink-subtle); font-variant-numeric: tabular-nums; }
+.liq-lista__quien > span { display: block; }
+.liq-lista__quien > span:first-child { color: var(--ink); }
+.liq-lista__sub { font-size: 12px; color: var(--ink-subtle); }
+.liq-lista .liq-lista__num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.liq-lista__num--chico { color: var(--ink-subtle); }
+.liq-lista__resto td { background: var(--surface-000); color: var(--ink-subtle); }
+/* «Mes a mes»: el mes que se está viendo, marcado; los otros se tocan para ir a ese mes. */
+.liq-mesames th[scope="row"] { padding: 6px var(--space-3); text-align: left; white-space: nowrap; font-size: 13px; font-weight: 600; text-transform: none; letter-spacing: 0; color: var(--ink); background: none; border-bottom: 1px solid var(--border); }
+.liq-mesames tbody tr:last-child th { border-bottom: 0; }
+.liq-mesames tr[data-actual] > * { background: var(--brand-soft); }
+.liq-mesames .link { font-weight: 600; }
+
+/* Lo que se le liquidó a alguien, mes por mes (en su ficha). */
+.hist-liq { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-2); }
+.hist-liq__mes { border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface-100); }
+.hist-liq__cabecera {
+  display: flex; align-items: center; gap: var(--space-2); width: 100%; padding: var(--space-3);
+  background: none; border: 0; border-radius: var(--radius-md); font: inherit; color: inherit; text-align: left; cursor: pointer;
+}
+.hist-liq__cabecera:hover { background: var(--surface-200); }
+.hist-liq__cabecera:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.hist-liq__chevron { flex: none; color: var(--ink-subtle); transition: transform 160ms ease-out, color 160ms ease-out; }
+.hist-liq__cabecera[aria-expanded="true"] .hist-liq__chevron { transform: rotate(90deg); color: var(--brand); }
+.hist-liq__nombre { flex: 1; min-width: 0; font-weight: 600; color: var(--ink); }
+.hist-liq__total { font-variant-numeric: tabular-nums; font-weight: 600; color: var(--ink); white-space: nowrap; }
+.hist-liq__lineas { list-style: none; margin: 0; padding: 0 var(--space-3) var(--space-3); display: flex; flex-direction: column; }
+.hist-liq__linea { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-3); padding: var(--space-2) 0; border-top: 1px solid var(--border); }
+.hist-liq__textos { display: flex; flex-direction: column; min-width: 0; gap: 2px; }
+.hist-liq__titulo { font-size: 14px; line-height: 20px; font-weight: 500; color: var(--ink); overflow-wrap: anywhere; }
+.hist-liq__detalle { font-size: 12px; line-height: 16px; color: var(--ink-subtle); overflow-wrap: anywhere; }
+.hist-liq__monto { font-size: 13px; line-height: 20px; font-variant-numeric: tabular-nums; color: var(--ink-muted); white-space: nowrap; text-align: right; }
+.hist-liq__aparte { padding: var(--space-3); border: 1px dashed var(--border-strong); border-radius: var(--radius-md); }
+
 /* Lo que cobra cada uno, en su ficha y en el resumen del asistente. */
 .con-frase {
   padding: var(--space-4); border-radius: var(--radius-lg); background: var(--brand-soft); border: 1px solid var(--brand-fill);
@@ -2509,6 +2607,10 @@ span.kpis__etiqueta:hover { color: var(--ink); text-decoration: none; }
 }
 
 @media (max-width: 720px) {
+  .desglose__regla { font-size: 15px; line-height: 22px; }
+  .liq-cuenta td { padding: 6px var(--space-2); }
+  .liq-cuenta__op { width: 24px; }
+  .liq-lista th, .liq-lista td { padding: 6px var(--space-2); }
   .liq-mes__nombre { font-size: 18px; line-height: 24px; }
   .liq { --liq-col: 112px; --liq-sangria: 12px; }
   .liq__fila { padding: 0 var(--space-4); column-gap: var(--space-2); }
