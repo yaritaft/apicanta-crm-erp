@@ -136,13 +136,16 @@ test('«haceMin» adelanta el pasado: sirve para ensayar avisos viejos', async (
 
 /* ---------- Por HTTP de verdad, con index.js ---------- */
 
+/* Se corre desde una carpeta vacía: el comando lee el «.env» de donde lo ejecutan, y en el servidor ya hay uno de
+   verdad (con el secreto): sin esto, «sin configuración» le habría hablado a la app real. */
 function correr(args, env) {
   return new Promise((listo) => {
-    const hijo = spawn(process.execPath, ['src/index.js', ...args], { cwd: carpeta, env: { PATH: process.env.PATH, ...env } });
+    const vacia = mkdtempSync(join(tmpdir(), 'lector-cwd-'));
+    const hijo = spawn(process.execPath, [join(carpeta, 'src', 'index.js'), ...args], { cwd: vacia, env: { PATH: process.env.PATH, ...env } });
     let salida = '';
     hijo.stdout.on('data', (d) => { salida += d; });
     hijo.stderr.on('data', (d) => { salida += d; });
-    hijo.on('close', (codigo) => listo({ codigo, salida }));
+    hijo.on('close', (codigo) => { rmSync(vacia, { recursive: true, force: true }); listo({ codigo, salida }); });
   });
 }
 
@@ -162,13 +165,13 @@ test('node src/index.js --simulado, contra un servidor de verdad: manda con el t
   await new Promise((listo) => servidor.listen(0, '127.0.0.1', listo));
   const { port } = servidor.address();
   try {
-    const r = await correr(['--simulado', 'ejemplos/simulado.json'], {
+    const r = await correr(['--simulado', ejemplo], {
       APP_URL: `http://127.0.0.1:${port}`, WHATSAPP_LECTOR_TOKEN: 'token-de-prueba', GRUPOS_REGEX: 'taller online',
     });
     assert.equal(r.codigo, 0, r.salida);
     assert.match(r.salida, /Modo simulado/);
     assert.match(r.salida, /Simulación terminada: 5 enviados, 0 fallidos, 2 salteados/);
-    assert.ok(!/\d{9,}/.test(r.salida), 'la salida no lleva teléfonos');
+    assert.ok(!/\d{9,}/.test(r.salida.replaceAll(ejemplo, '«ejemplo»')), 'la salida no lleva teléfonos');
     assert.deepEqual(pedidos.map((p) => p.url), [
       '/api/whatsapp/latido', '/api/whatsapp/grupos', '/api/whatsapp/grupos', '/api/whatsapp/grupos', '/api/whatsapp/latido',
     ]);
@@ -176,7 +179,7 @@ test('node src/index.js --simulado, contra un servidor de verdad: manda con el t
     assert.equal(pedidos.filter((p) => p.url === '/api/whatsapp/latido').length, 2);
 
     /* Con otro token, la app dice que no y el comando termina con error. */
-    const mal = await correr(['--simulado', 'ejemplos/simulado.json'], {
+    const mal = await correr(['--simulado', ejemplo], {
       APP_URL: `http://127.0.0.1:${port}`, WHATSAPP_LECTOR_TOKEN: 'token-equivocado', GRUPOS_REGEX: 'taller online',
     });
     assert.equal(mal.codigo, 1);

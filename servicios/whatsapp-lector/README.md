@@ -160,6 +160,13 @@ tenés esa pantalla abierta, se ve el código de prueba aparecer, cambiar y desa
 `qrcode` instalada es un dibujo que dice «QR DE PRUEBA»: no se escanea). Si algo falla, el mensaje dice qué (ver «Cuando
 algo anda mal»).
 
+> **Ojo, es de verdad:** la simulación escribe en la app a la que apunte `APP_URL` (con el `.env` del servidor, en
+> producción). El grupo de ejemplo «Taller Online 08/10/26 #1» queda guardado con teléfonos inventados y se puede
+> confundir con un webinar real de esa fecha. Si lo corriste en producción, borralo con
+> `delete from public.whatsapp_grupos where id = '120363000000000001@g.us';` (los miembros se van en cascada). Para
+> comprobar la conexión sin dejar nada inventado, prendé el servicio y mirá Ajustes → WhatsApp: el estado aparece solo.
+> Las pruebas (`npm test`) nunca le hablan a la app real: corren desde una carpeta vacía, sin tu `.env`.
+
 ### 6. Dejarlo andando siempre (systemd)
 
 Como root:
