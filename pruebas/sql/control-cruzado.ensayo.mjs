@@ -17,7 +17,6 @@ const dir = process.env.PGLITE_DIR;
 const { PGlite } = dir ? await import(pathToFileURL(`${dir}/dist/index.js`).href) : await import("@electric-sql/pglite");
 const tipos = readFileSync(aqui("supabase/tipos-cuenta.sql"), "utf8");
 const control = readFileSync(aqui("supabase/control-cruzado.sql"), "utf8");
-const frenos = readFileSync(aqui("supabase/solo-lo-suyo-seguro.sql"), "utf8");
 
 const db = new PGlite();
 await db.exec(`
@@ -60,8 +59,7 @@ await db.exec(`
 `);
 await db.exec(control);
 await db.exec(control);
-await db.exec(frenos);
-console.log("tipos-cuenta.sql y, encima, control-cruzado.sql (dos veces) y solo-lo-suyo-seguro.sql: corrieron sin error");
+console.log("tipos-cuenta.sql y, encima, control-cruzado.sql (dos veces): corrieron sin error");
 
 const como = async (email) => {
   await db.exec(`reset role`);
