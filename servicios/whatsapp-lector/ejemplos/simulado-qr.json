@@ -12,7 +12,7 @@
     { "tipo": "estado", "estado": "conectado", "grupos": 1 },
     {
       "tipo": "foto",
-      "grupo": { "id": "120363000000000001@g.us", "nombre": "Taller Online 08/10/26 #1" },
+      "grupo": { "id": "120363000000000001@g.us", "nombre": "PRUEBA - Taller Online 01/01/20 #1" },
       "participantes": [ "5491155550001@s.whatsapp.net", "5491155550002@s.whatsapp.net", { "id": "100000000000003@lid" } ]
     }
   ]

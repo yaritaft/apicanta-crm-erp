@@ -15,6 +15,13 @@ const hora = (fecha) => {
   return `${dos(d.getUTCDate())}/${dos(d.getUTCMonth() + 1)} ${dos(d.getUTCHours())}:${dos(d.getUTCMinutes())}:${dos(d.getUTCSeconds())}`;
 };
 
+/** Una salida (para pino, el registro de Baileys) que tapa los números largos de cada línea antes de escribirla:
+    Baileys habla con ids de WhatsApp, y esos llevan teléfonos. Con la hora en texto (isoTime), que no tiene números
+    largos, para que el filtro no la rompa. */
+export function crearSalidaSinNumeros(salida = process.stdout) {
+  return { write: (linea) => { salida.write(String(linea).replace(/\d{7,}/g, '…')); } };
+}
+
 export function crearLogger(nivel = 'info', { salida = console, ahora = () => new Date() } = {}) {
   const minimo = nivel === 'silent' ? ORDEN.length : Math.max(0, ORDEN.indexOf(nivel));
   const emitir = (n) => (texto) => {

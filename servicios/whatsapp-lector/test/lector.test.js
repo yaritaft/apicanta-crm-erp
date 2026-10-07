@@ -36,6 +36,8 @@ function reloj(inicio = '2026-10-07T18:00:00.000Z') {
       await vaciar();
     },
     activos: () => timers.size,
+    /** Pasa el tiempo sin disparar temporizadores: lo que tarda una pausa o un pedido a la red mientras el código espera. */
+    saltar(ms) { t += ms; },
   };
 }
 
@@ -64,9 +66,17 @@ function baileysFalso() {
   const out = {
     default: hacerSocket, sockets,
     guardadas: [],
-    useMultiFileAuthState: async (dir) => ({ state: { dir }, saveCreds: async () => { out.guardadas.push(`${dir}#${sockets.length}`); } }),
+    /** Lo que fue pasando con la sesión, en orden (para probar que la carpeta se prepara antes de usarla). */
+    orden: [],
+    useMultiFileAuthState: async (dir) => {
+      out.orden.push('baileys:sesion');
+      return { state: { dir }, saveCreds: async () => { out.guardadas.push(`${dir}#${sockets.length}`); } };
+    },
     fetchLatestBaileysVersion: async () => ({ version: [2, 3000, 1] }),
-    DisconnectReason: { loggedOut: 401, restartRequired: 515, connectionReplaced: 440, connectionClosed: 428, connectionLost: 408, timedOut: 408 },
+    DisconnectReason: {
+      loggedOut: 401, restartRequired: 515, connectionReplaced: 440, connectionClosed: 428, connectionLost: 408, timedOut: 408,
+      forbidden: 403, badSession: 500, multideviceMismatch: 411,
+    },
   };
   return out;
 }
@@ -74,9 +84,14 @@ function baileysFalso() {
 function clienteFalso() {
   const c = {
     grupos: [], latidos: [], opciones: [], falla: false, fallaLatido: false,
+    /** Lo que contesta la app a una foto o un aviso (por ejemplo { ignorada: '…' }). */
+    respuesta: {},
+    /** Se llama con cada cosa que sale hacia la app: sirve para que pase el tiempo mientras «tarda» el pedido. */
+    alEnviar: null,
     async enviarGrupo(cuerpo) {
       c.grupos.push(structuredClone(cuerpo));
-      return c.falla ? { ok: false, status: 503, error: 'caída', reintentable: true } : { ok: true, status: 200, respuesta: {} };
+      c.alEnviar?.(cuerpo);
+      return c.falla ? { ok: false, status: 503, error: 'caída', reintentable: true } : { ok: true, status: 200, respuesta: c.respuesta };
     },
     async enviarLatido(cuerpo, opciones) {
       c.latidos.push(structuredClone(cuerpo));
@@ -93,7 +108,7 @@ const G3 = '120363000000000003@g.us';
 const P = (n) => `54911555500${String(n).padStart(2, '0')}`;
 const jid = (n) => `${P(n)}@s.whatsapp.net`;
 
-function armar({ config = {}, grupos } = {}) {
+function armar({ config = {}, grupos, pausaAvanza = false } = {}) {
   const r = reloj();
   const b = baileysFalso();
   const cliente = clienteFalso();
@@ -102,6 +117,7 @@ function armar({ config = {}, grupos } = {}) {
   const log = { info: f('info'), warn: f('warn'), error: f('error'), debug: f('debug') };
   const qrs = [];      // lo que se dibujó en la terminal (sólo con --qr-terminal)
   const movidas = [];  // las veces que se apartó la sesión
+  const preparadas = [];  // las veces que se preparó la carpeta de la sesión
   const cfg = {
     authDir: './auth-de-prueba', gruposRegex: /webinar|taller/i, gruposRegexTexto: 'webinar|taller',
     latidoCadaMs: 120_000, fotoCadaMs: 6 * 3_600_000, qrEnTerminal: false, ...config,
@@ -122,9 +138,12 @@ function armar({ config = {}, grupos } = {}) {
       terminal: { generate: (codigo, opciones) => qrs.push([codigo, opciones]) },
     },
     moverSesion: async (dir) => { if (fallos.mover) throw new Error('permiso denegado'); movidas.push(dir); },
-    ahora: r.ahora, temporizadores: r.temporizadores, pausar: async () => {}, azar: () => 0.5,
+    prepararSesion: async (dir) => { preparadas.push(dir); b.orden.push('preparar'); },
+    ahora: r.ahora, temporizadores: r.temporizadores, azar: () => 0.5,
+    /* Por defecto las pausas no cuestan tiempo; con `pausaAvanza`, pasa el reloj (sin disparar temporizadores). */
+    pausar: async (ms) => { if (pausaAvanza) r.saltar(ms); },
   });
-  return { r, b, cliente, lineas, qrs, movidas, fallos, lector, cfg };
+  return { r, b, cliente, lineas, qrs, movidas, preparadas, fallos, lector, cfg };
 }
 
 const imagenDe = (texto) => `data:image/svg+xml;base64,${Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg"><desc>${texto}</desc></svg>`).toString('base64')}`;
@@ -164,7 +183,7 @@ test('el socket se arma de sólo lectura: sin aparecer en línea, sin historial,
   const c = socket(a).config;
   assert.equal(c.markOnlineOnConnect, false);
   assert.equal(c.syncFullHistory, false);
-  assert.equal(c.shouldSyncHistoryMessage(), false);
+  assert.equal(c.shouldSyncHistoryMessage, undefined, 'el historial se deja como lo pide Baileys por defecto: apagarlo todo le saca los mapeos de LID a teléfono');
   assert.equal(c.printQRInTerminal, false);
   assert.equal(c.generateHighQualityLinkPreview, false);
   assert.deepEqual(c.auth, { dir: './auth-de-prueba' });
@@ -393,7 +412,7 @@ test('con FOTO_CADA_HORAS=0 no hay control periódico', async () => {
   assert.equal(a.cliente.grupos.length, fotos);
 });
 
-test('se corta la conexión: lo avisa enseguida y reintenta con espera creciente, que se reinicia al volver', async () => {
+test('se corta la conexión: lo avisa enseguida y reintenta con espera creciente, que se reinicia cuando la conexión aguantó', async () => {
   const a = armar();
   await abrir(a);
   const s1 = socket(a);
@@ -414,10 +433,11 @@ test('se corta la conexión: lo avisa enseguida y reintenta con espera creciente
   await a.r.avanzar(1);
   assert.equal(a.b.sockets.length, 3);
 
-  /* Vuelve: la espera arranca de nuevo. */
+  /* Vuelve y aguanta más de un minuto: la espera arranca de nuevo. */
   socket(a).ev.emit('connection.update', { connection: 'open' });
   await vaciar();
   assert.equal(a.lector.estado().conectado, true);
+  await a.r.avanzar(61_000);
   socket(a).ev.emit('connection.update', cierre(428));
   await vaciar();
   await a.r.avanzar(2000);
@@ -619,4 +639,266 @@ test('en los registros no hay teléfonos ni ids de WhatsApp, pase lo que pase', 
   await a.r.avanzar(5 * 60_000);
   assert.ok(a.lineas.length > 5);
   for (const [, m] of a.lineas) assert.ok(!/\d{7,}/.test(m), `un registro lleva un número largo: ${m}`);
+});
+
+/* ---------- Lo que salió de la revisión de seguridad del servicio (07/10) ---------- */
+
+/* Cuánto tarda en abrirse el próximo socket (de a medio segundo) desde que se programó la reconexión. */
+async function cuantoTardaElProximoSocket(a, antes, { paso = 500, tope = 400_000 } = {}) {
+  await a.r.avanzar(0);
+  let ms = 0;
+  while (a.b.sockets.length === antes && ms < tope) { await a.r.avanzar(paso); ms += paso; }
+  return ms;
+}
+
+test('la foto de cada grupo lleva la hora en que se pidió la lista, no la de cuando se manda: quien entra en el medio no se pierde ni queda al revés', async () => {
+  const grupos = {
+    [G1]: { id: G1, subject: 'Taller 1', participants: [{ id: jid(1) }] },
+    [G2]: { id: G2, subject: 'Taller 2', participants: [{ id: jid(2) }] },
+    [G3]: { id: G3, subject: 'Taller 3', participants: [{ id: jid(3) }] },
+  };
+  const a = armar({ grupos, pausaAvanza: true });
+  await a.lector.iniciar();
+  await vaciar();
+  const s = socket(a);
+  let pedida = null;
+  const original = s.groupFetchAllParticipating;
+  s.groupFetchAllParticipating = async () => { pedida = a.r.ahora().toISOString(); return original.call(s); };
+  /* Cada pedido a la app «tarda» 1,5 s (y cada pausa entre grupos, 0,4 s), como pasa en la realidad; y justo después de
+     mandar el primero, entra alguien al tercer grupo. */
+  let entro = false;
+  a.cliente.alEnviar = () => {
+    a.r.saltar(1500);
+    if (!entro) { entro = true; s.ev.emit('group-participants.update', { id: G3, action: 'add', participants: [{ id: jid(33) }] }); }
+  };
+  await emitir(a, 'connection.update', { connection: 'open' });
+  await a.r.avanzar(3000);
+
+  const fotos = a.cliente.grupos.filter((x) => x.evento === 'foto');
+  assert.equal(fotos.length, 3);
+  assert.ok(pedida);
+  assert.deepEqual(fotos.map((f) => f.en), [pedida, pedida, pedida], 'las tres, con la hora de cuando se pidió la lista');
+  const aviso = a.cliente.grupos.find((x) => x.evento === 'entro');
+  assert.ok(aviso, 'el que entró en el medio se avisa');
+  assert.ok(aviso.en > fotos[2].en, 'y su hora es posterior a la de la foto de su grupo (que no lo trae): la app lo aplica en vez de descartarlo');
+});
+
+test('un grupo que se mira entero porque no lo conocíamos también se fecha con la hora del pedido', async () => {
+  const a = armar({ pausaAvanza: true });
+  await abrir(a);
+  const s = socket(a);
+  s.grupos[G3] = { id: G3, subject: 'Taller 24/09', participants: [{ id: jid(50) }] };
+  let pedida = null;
+  const original = s.groupMetadata;
+  s.groupMetadata = async (id) => { pedida = a.r.ahora().toISOString(); a.r.saltar(3000); return original.call(s, id); };
+  const antes = a.cliente.grupos.length;
+  await emitir(a, 'group-participants.update', { id: G3, action: 'add', participants: [{ id: jid(51) }] });
+  const foto = a.cliente.grupos.slice(antes).find((x) => x.evento === 'foto');
+  assert.equal(foto.en, pedida, 'la hora de antes de pedirlo, no la de cuando WhatsApp contestó');
+});
+
+test('una conexión que abre y se cae a los pocos segundos, una y otra vez, no reintenta a ritmo de segundos: la espera sigue creciendo', async () => {
+  const a = armar();
+  await abrir(a);
+  const esperas = [];
+  for (let vuelta = 1; vuelta <= 4; vuelta++) {
+    await a.r.avanzar(5000);                                   // aguanta 5 segundos…
+    const antes = a.b.sockets.length;
+    await emitir(a, 'connection.update', cierre(428));         // …y se cae
+    esperas.push(await cuantoTardaElProximoSocket(a, antes));
+    await emitir(a, 'connection.update', { connection: 'open' });   // el nuevo abre otra vez
+  }
+  assert.deepEqual(esperas, [2000, 4000, 8000, 16000]);
+  assert.ok(a.lineas.filter(([, m]) => /Vuelvo a intentar/.test(m)).length >= 4);
+
+  /* Cuando por fin aguanta más de un minuto, la próxima caída vuelve a empezar desde dos segundos. */
+  await a.r.avanzar(61_000);
+  const antes = a.b.sockets.length;
+  await emitir(a, 'connection.update', cierre(428));
+  assert.equal(await cuantoTardaElProximoSocket(a, antes), 2000);
+});
+
+test('lo mismo si WhatsApp da un código y la conexión se corta al instante, una y otra vez', async () => {
+  const a = armar();
+  await a.lector.iniciar();
+  await vaciar();
+  const esperas = [];
+  for (let vuelta = 1; vuelta <= 4; vuelta++) {
+    await emitir(a, 'connection.update', { qr: `CODIGO-${vuelta}` });
+    const antes = a.b.sockets.length;
+    await emitir(a, 'connection.update', cierre(408));
+    esperas.push(await cuantoTardaElProximoSocket(a, antes));
+  }
+  assert.deepEqual(esperas, [2000, 4000, 8000, 16000], 'no se queda en dos segundos');
+});
+
+test('«reiniciar» (515) una y otra vez: las primeras veces reconecta casi enseguida y después lo trata como una falla, con espera creciente', async () => {
+  const a = armar();
+  await a.lector.iniciar();
+  await vaciar();
+  const esperas = [];
+  for (let i = 0; i < 5; i++) {
+    const antes = a.b.sockets.length;
+    await emitir(a, 'connection.update', cierre(515));
+    esperas.push(await cuantoTardaElProximoSocket(a, antes));
+  }
+  assert.deepEqual(esperas, [0, 1000, 3000, 2000, 4000]);
+  assert.ok(a.lineas.some(([n, m]) => n === 'warn' && /sigue pidiendo reiniciar/.test(m)));
+  assert.equal(a.lineas.filter(([n, m]) => n === 'warn' && /Se cortó la conexión/.test(m)).length, 2, 'los reinicios normales no son avisos');
+});
+
+test('un 515 después de que la conexión aguantó es un reinicio normal otra vez (la cuenta empieza de nuevo)', async () => {
+  const a = armar();
+  await abrir(a);
+  for (let i = 0; i < 3; i++) {
+    const antes = a.b.sockets.length;
+    await emitir(a, 'connection.update', cierre(515));
+    await cuantoTardaElProximoSocket(a, antes);
+  }
+  await emitir(a, 'connection.update', { connection: 'open' });
+  await a.r.avanzar(61_000);
+  const antes = a.b.sockets.length;
+  await emitir(a, 'connection.update', cierre(515));
+  assert.equal(await cuantoTardaElProximoSocket(a, antes), 0);
+});
+
+test('la versión de WhatsApp Web se pide una vez y se reutiliza, no en cada reconexión', async () => {
+  const a = armar();
+  let pedidos = 0;
+  a.b.fetchLatestBaileysVersion = async () => { pedidos++; return { version: [2, 3000, 7] }; };
+  await abrir(a);
+  for (let i = 0; i < 3; i++) {
+    await emitir(a, 'connection.update', cierre(408));
+    await a.r.avanzar(300_000);
+  }
+  assert.equal(a.b.sockets.length, 4);
+  assert.equal(pedidos, 1, 'cuatro conexiones, una sola consulta');
+  assert.deepEqual(socket(a).config.version, [2, 3000, 7]);
+  /* Pasadas las seis horas se vuelve a pedir; y sin red queda la última que se supo. */
+  await a.r.avanzar(7 * 3_600_000);
+  a.b.fetchLatestBaileysVersion = async () => { pedidos++; throw new Error('sin red'); };
+  await emitir(a, 'connection.update', cierre(408));
+  await a.r.avanzar(300_000);
+  assert.equal(pedidos, 2);
+  assert.deepEqual(socket(a).config.version, [2, 3000, 7]);
+});
+
+test('un grupo que ya no existe para el número deja de consultarse en cada latido', async () => {
+  const a = armar();
+  a.cliente.falla = true;
+  await abrir(a);
+  assert.deepEqual(a.lector.estado().sucios, [G1]);
+
+  /* La app vuelve, pero el grupo ya no está (el número salió, lo sacaron o lo borraron). */
+  a.cliente.falla = false;
+  delete socket(a).grupos[G1];
+  const consultas = () => socket(a).llamadas.filter((x) => x === `meta:${G1}`).length;
+  await a.r.avanzar(2 * 60_000);
+  assert.equal(consultas(), 1, 'una sola consulta: WhatsApp dice que no está');
+  assert.deepEqual(a.lector.estado().sucios, []);
+  assert.deepEqual(a.lector.estado().grupos, [], 'y ya no figura entre los que vigila');
+  await a.r.avanzar(60 * 60_000);
+  assert.equal(consultas(), 1, 'no vuelve a preguntar por él');
+});
+
+test('lo mismo si le cambiaron el nombre y ya no coincide con GRUPOS_REGEX', async () => {
+  const a = armar();
+  a.cliente.falla = true;
+  await abrir(a);
+  a.cliente.falla = false;
+  socket(a).grupos[G1].subject = 'Familia';
+  await a.r.avanzar(2 * 60_000);
+  assert.deepEqual(a.lector.estado().sucios, []);
+  const consultas = socket(a).llamadas.filter((x) => x === `meta:${G1}`).length;
+  await a.r.avanzar(60 * 60_000);
+  assert.equal(socket(a).llamadas.filter((x) => x === `meta:${G1}`).length, consultas);
+});
+
+test('y si en el control de las seis horas el grupo sucio ya no figura en la lista, también se suelta (sin preguntar)', async () => {
+  const a = armar();
+  a.cliente.falla = true;
+  await abrir(a);
+  assert.deepEqual(a.lector.estado().sucios, [G1]);
+  delete socket(a).grupos[G1];
+  await a.lector.tomarFotos('prueba');
+  assert.deepEqual(a.lector.estado().sucios, []);
+  assert.equal(socket(a).llamadas.includes(`meta:${G1}`), false);
+});
+
+test('403: WhatsApp rechaza el número; no se sigue insistiendo y queda «cerrado» con un aviso claro', async () => {
+  const a = armar();
+  await abrir(a);
+  await emitir(a, 'connection.update', cierre(403));
+  await a.r.avanzar(60 * 60_000);
+  assert.equal(a.b.sockets.length, 1, 'no abre más conexiones');
+  assert.equal(a.lector.estado().conexion, 'cerrado');
+  assert.equal(a.cliente.latidos.at(-1).estado, 'cerrado');
+  assert.equal(a.movidas.length, 0, 'y no toca la sesión');
+  assert.ok(a.lineas.some(([n, m]) => n === 'error' && /403/.test(m) && /bloqueado/.test(m)));
+});
+
+test('sesión rota (500 o 411) tres veces seguidas: se empieza una vinculación nueva; si entre medio la conexión aguantó, la cuenta vuelve a cero', async () => {
+  const a = armar();
+  await abrir(a);
+  for (const codigo of [500, 411]) {
+    await emitir(a, 'connection.update', cierre(codigo));
+    await a.r.avanzar(300_000);
+  }
+  assert.equal(a.movidas.length, 0, 'con dos todavía no');
+  /* Esta vez la conexión aguanta un rato: ya no son «seguidas». */
+  await emitir(a, 'connection.update', { connection: 'open' });
+  await a.r.avanzar(61_000);
+  await emitir(a, 'connection.update', cierre(500));
+  await a.r.avanzar(300_000);
+  assert.equal(a.movidas.length, 0);
+
+  /* Dos más sin aguantar, y la tercera seguida. */
+  await emitir(a, 'connection.update', cierre(411));
+  await a.r.avanzar(300_000);
+  await emitir(a, 'connection.update', cierre(500));
+  assert.deepEqual(a.movidas, ['./auth-de-prueba'], 'aparta la sesión que no sirve');
+  assert.ok(a.lineas.some(([n, m]) => n === 'warn' && /3 veces seguidas/.test(m)));
+  await a.r.avanzar(0);
+  await emitir(a, 'connection.update', { qr: 'CODIGO-NUEVO' }, socket(a));
+  assert.equal(a.lector.estado().conexion, 'esperando_qr', 'y queda esperando que lo escaneen');
+});
+
+test('al apagarlo con la app sin contestar, no espera más de unos segundos y cierra el socket', async () => {
+  const a = armar();
+  await abrir(a);
+  a.cliente.enviarGrupo = () => new Promise(() => {});
+  a.cliente.enviarLatido = () => new Promise(() => {});
+  await emitir(a, 'group-participants.update', { id: G1, action: 'add', participants: [{ id: jid(11) }] });
+  let termino = false;
+  void a.lector.detener().then(() => { termino = true; });
+  await vaciar();
+  assert.equal(termino, false, 'espera un poco a ver si la app contesta');
+  await a.r.avanzar(9000);
+  assert.equal(termino, false);
+  await a.r.avanzar(11_000);
+  assert.equal(termino, true, 'pero no para siempre (systemd mata a los 30 segundos)');
+  assert.equal(socket(a).terminado, true);
+  assert.equal(a.r.activos(), 0, 'sin temporizadores sueltos');
+});
+
+test('la carpeta de la sesión se prepara antes de usarla en cada conexión, también después de apartar la vieja', async () => {
+  const a = armar();
+  await abrir(a);
+  assert.deepEqual(a.b.orden.slice(0, 2), ['preparar', 'baileys:sesion'], 'primero la carpeta, después Baileys');
+  await emitir(a, 'connection.update', cierre(401));
+  await a.r.avanzar(0);
+  assert.deepEqual(a.preparadas, ['./auth-de-prueba', './auth-de-prueba']);
+  assert.deepEqual(a.b.orden.slice(-2), ['preparar', 'baileys:sesion']);
+});
+
+test('si la app no aplica una foto o un aviso porque ya tenía algo más nuevo, el lector lo cuenta en los registros (no lo da por hecho) y no lo reintenta', async () => {
+  const a = armar();
+  a.cliente.respuesta = { ignorada: 'Eso ya está en la última foto del grupo.' };
+  await abrir(a);
+  assert.ok(a.lineas.some(([n, m]) => n === 'info' && /la app no aplicó la foto/.test(m)));
+  assert.deepEqual(a.lector.estado().sucios, [], 'no es una falla');
+  await emitir(a, 'group-participants.update', { id: G1, action: 'add', participants: [{ id: jid(11) }] });
+  await a.r.avanzar(2500);
+  assert.ok(a.lineas.some(([n, m]) => n === 'info' && /la app no aplicó el aviso/.test(m)));
+  assert.deepEqual(a.lector.estado().sucios, []);
 });

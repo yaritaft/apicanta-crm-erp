@@ -55,7 +55,7 @@ test('el flujo del código QR: esperando_qr con dos códigos, reconectando y con
   ]);
   assert.deepEqual(cliente.opciones.map((o) => Boolean(o)), [false, true, true, false, false], 'los pasos con código no se reintentan');
   assert.equal(cliente.latidos.at(-1).grupos, 1);
-  assert.equal(cliente.grupos[0].grupo.nombre, 'Taller Online 08/10/26 #1');
+  assert.equal(cliente.grupos[0].grupo.nombre, 'PRUEBA - Taller Online 01/01/20 #1');
   for (const [, m] of lineas) assert.ok(!m.includes('PRUEBA-UNO'), 'el texto del código no se escribe en los registros');
 });
 
@@ -102,7 +102,7 @@ test('simula el ejemplo con los mismos cuerpos que el lector de verdad, y respet
 
   const [foto, entro, salio] = cliente.grupos;
   assert.equal(foto.evento, 'foto');
-  assert.deepEqual(foto.grupo, { id: '120363000000000001@g.us', nombre: 'Taller Online 08/10/26 #1' });
+  assert.deepEqual(foto.grupo, { id: '120363000000000001@g.us', nombre: 'PRUEBA - Taller Online 01/01/20 #1' });
   assert.deepEqual(foto.participantes, [
     '5491155550001', '5491155550002', '5491155550003', '5491155550004', '5215512340005', '573001230006', '34612000007', '5491155550008',
   ]);
@@ -193,4 +193,21 @@ test('sin configuración, el comando dice qué falta y no arranca', async () => 
   assert.match(r.salida, /APP_URL/);
   assert.match(r.salida, /WHATSAPP_LECTOR_TOKEN/);
   assert.match(r.salida, /\.env\.example/);
+});
+
+test('--simulado se niega a escribir en una app que no es la de tu compu (el .env del servidor apunta a la de verdad), salvo con --en-produccion', async () => {
+  const r = await correr(['--simulado', ejemplo], {
+    APP_URL: 'https://apicanta.example.com', WHATSAPP_LECTOR_TOKEN: 'x', GRUPOS_REGEX: 'taller online',
+  });
+  assert.equal(r.codigo, 2);
+  assert.match(r.salida, /apicanta\.example\.com/);
+  assert.match(r.salida, /--en-produccion/);
+  assert.ok(!/Modo simulado/.test(r.salida), 'ni siquiera empieza a mandar');
+});
+
+test('sin GRUPOS_REGEX el lector no arranca (miraría todos los grupos del número) y dice cómo pedirlo a propósito', async () => {
+  const r = await correr(['--simulado', ejemplo], { APP_URL: 'http://127.0.0.1:9', WHATSAPP_LECTOR_TOKEN: 'x' });
+  assert.equal(r.codigo, 2);
+  assert.match(r.salida, /Falta GRUPOS_REGEX/);
+  assert.match(r.salida, /GRUPOS_REGEX=\.\*/);
 });

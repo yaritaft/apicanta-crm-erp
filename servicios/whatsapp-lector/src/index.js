@@ -1,7 +1,7 @@
-import { cargarEnvDeArchivo, leerConfig } from './config.js';
+import { cargarEnvDeArchivo, esHostLocal, leerConfig } from './config.js';
 import { crearCliente } from './enviar.js';
 import { cargarGeneradorQr, imagenDeMentira } from './qr.js';
-import { crearLogger } from './registro.js';
+import { crearLogger, crearSalidaSinNumeros } from './registro.js';
 import { simular } from './simulado.js';
 
 /* ==================================================================
@@ -12,7 +12,9 @@ import { simular } from './simulado.js';
                                              Ajustes → WhatsApp
      node src/index.js --qr-terminal         lo mismo, y además dibuja el código QR en la terminal (depurar)
      node src/index.js --simulado [archivo]  sin WhatsApp: manda lo que diga el archivo
-                                             (por defecto ejemplos/simulado.json)
+                                             (por defecto ejemplos/simulado.json). ESCRIBE de verdad en la app
+                                             a la que apunte APP_URL: sólo contra una app en tu compu, o con
+                                             --en-produccion si es a propósito
 
    Sólo lectura: ver README.md.
    ================================================================== */
@@ -20,6 +22,8 @@ import { simular } from './simulado.js';
 const tapar = (e) => String(e?.message ?? e).replace(/\d{7,}/g, '…').slice(0, 300);
 
 async function principal() {
+  /* Todo lo que cree el lector (la sesión de WhatsApp, sobre todo) queda sólo para su usuario. */
+  process.umask(0o077);
   const args = process.argv.slice(2);
   if (args.includes('--qr-terminal')) process.env.QR_EN_TERMINAL = '1';
   const i = args.indexOf('--simulado');
@@ -38,6 +42,15 @@ async function principal() {
   const { config } = leida;
   const log = crearLogger(config.logLevel);
   const cliente = crearCliente({ appUrl: config.appUrl, token: config.token, log });
+
+  if (simulado && !args.includes('--en-produccion') && !esHostLocal(new URL(config.appUrl).hostname)) {
+    /* Con el .env del servidor (el único que hay ahí) la simulación iría a la app de verdad y dejaría grupos y
+       teléfonos inventados en las pantallas del equipo. */
+    console.error(`El modo simulado escribe grupos y teléfonos inventados en la app a la que apunta APP_URL (${new URL(config.appUrl).host}), que no es tu compu.`);
+    console.error('Probalo contra una app en tu compu (APP_URL=http://localhost:3011) o, si de verdad querés escribir en esa app, agregá --en-produccion.');
+    process.exitCode = 2;
+    return;
+  }
 
   if (simulado) {
     log.info(`Modo simulado: sin WhatsApp. Mando «${archivoSimulado}» a ${config.appUrl}.`);
@@ -75,8 +88,13 @@ async function principal() {
   const verboso = ['trace', 'debug'].includes(config.logLevel);
   const lector = crearLector({
     config, baileys, qr: { imagen: imagenQr, terminal: terminalQr }, log, cliente,
-    /* Baileys habla mucho: sólo se oye si se pide LOG_LEVEL=debug o trace. */
-    loggerBaileys: pino({ level: verboso ? config.logLevel : 'silent' }),
+    /* Baileys habla con ids de WhatsApp (teléfonos): todo lo que escribe pasa por el filtro que tapa los números largos.
+       Sólo avisos y errores (una falla de descifrado o un límite de WhatsApp se ven); todo, con LOG_LEVEL=debug o
+       trace (y ahí hay más datos de más: no lo dejes prendido). */
+    loggerBaileys: pino(
+      { level: verboso ? config.logLevel : 'warn', timestamp: pino.stdTimeFunctions.isoTime },
+      crearSalidaSinNumeros(),
+    ),
   });
 
   let cerrando = false;
@@ -95,7 +113,7 @@ async function principal() {
     process.exit(1);
   });
 
-  log.info(`Lector de WhatsApp (sólo lectura) → ${config.appUrl}. Grupos: ${config.gruposRegexTexto || 'todos'}.`);
+  log.info(`Lector de WhatsApp (sólo lectura) → ${config.appUrl}. Grupos: ${config.gruposRegexTexto}.`);
   await lector.iniciar();
 }
 
