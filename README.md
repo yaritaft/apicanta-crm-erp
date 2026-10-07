@@ -1229,3 +1229,11 @@ aparece el grupo de ejemplo en Ajustes → WhatsApp.
 `telefonos-wpp.test.ts`, y las del servicio (`cd servicios/whatsapp-lector && npm test`, con un WhatsApp de mentira). *Falta:* la
 conexión de verdad con WhatsApp (las formas de los datos de Baileys están tomadas de sus tipos), el SQL con RLS real y la
 instalación en Hostinger.
+
+## Pruebas de estrés (`pruebas-estres/`, `npm run test:estres`)
+
+Pruebas de propiedades con datos aleatorios (generador con semilla, la semilla sale en el mensaje si algo falla) y casos de borde, escritas el
+07/10 por seis frentes (la plata, la tabla del CRM, los triggers y políticas de la base, el almacén local, la entrada de datos de afuera y el
+closer). No corren con `npm test` (son más lentas) ni las mira `tsc` (están fuera del `tsconfig`, se transpilan al correrlas): se corren antes de
+publicar algo grande. Las que dicen `BUG:` y llevan `{ todo: true }` son defectos conocidos todavía sin arreglar; cuando se arreglan se les saca
+el `todo`. Los frentes de la base usan PGlite (Postgres en memoria): `PGLITE_DIR=/ruta/a/node_modules/@electric-sql/pglite`.

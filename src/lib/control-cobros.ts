@@ -366,7 +366,8 @@ export function cobrosPorVenta(
     if (estado === "pendiente") x.pendientes++; else if (estado === "chequeado") x.chequeados++; else x.rechazados++;
     const quien = (p.cargadoPor ?? "").trim().toLowerCase();
     if (!x.cargaron.includes(quien)) x.cargaron.push(quien);
-    centavos.set(v, (centavos.get(v) ?? 0) + Math.round(p.monto * 100));
+    /* Un monto que no es un número (un dato roto) no suma: mejor un cobro de más en la lista que un «NaN» en el total. */
+    centavos.set(v, (centavos.get(v) ?? 0) + Math.round((Number.isFinite(p.monto) ? p.monto : 0) * 100));
     por.set(v, x);
   }
   for (const [v, x] of por) x.cobrado = redondear2((centavos.get(v) ?? 0) / 100);

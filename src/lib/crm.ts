@@ -475,7 +475,7 @@ export function filasCrm(
     const previa = FILAS.get(s);
     if (previa && previa.c === c && previa.l === l && previa.segunda === segunda && previa.tabla === tabla
       && previa.ajustes === e.ajustes && previa.webinars === e.webinars
-      && previa.fila.venta?.id === venta?.id && previa.fila.venta?.texto === venta?.texto) return previa.fila;
+      && previa.fila.venta?.id === venta?.id && previa.fila.venta?.texto === venta?.texto && previa.fila.venta?.fecha === venta?.fecha) return previa.fila;
     const fila: FilaCrm = { ...armarFila(s, tabla, c, l, estados, segunda, e.webinars), ...(venta ? { venta } : {}) };
     FILAS.set(s, { c, l, segunda, tabla, ajustes: e.ajustes, webinars: e.webinars, fila });
     return fila;

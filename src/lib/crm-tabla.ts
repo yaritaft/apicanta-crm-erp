@@ -86,6 +86,8 @@ export interface FilaTabla {
   notas: string;
   /* Ya pasó, no se canceló y nadie cargó cómo terminó. */
   sinCargar: boolean;
+  /* La llamada ya empezó (a la hora de armar las filas): una futura con «Reagendar» no cuenta entre las que pasaron. */
+  pasada: boolean;
   /* Lo que el equipo le corrigió a mano a la persona (lib/perfil.ts). */
   corregido: Corregido;
 }
@@ -146,7 +148,7 @@ export function adDe(s: Pick<Sesion, "utm">, c?: Pick<Contacto, "utm"> | null): 
     SATURADO.mp4 - Copia 2»): todas las copias son el mismo ángulo. */
 export function anguloDe(ad: string): string {
   let s = ad.trim();
-  for (let i = 0; i < 4; i++) {
+  for (let i = 0; i < 30; i++) {
     const antes = s;
     s = s.replace(/\s*-\s*copia(\s*\d+)?\s*$/i, "").replace(/\s*\.(mp4|mov|m4v|webm|jpe?g|png|gif|m)\s*$/i, "").trim();
     if (s === antes) break;
@@ -241,6 +243,7 @@ export function filasTabla(
       agendo: s.creadoEn,
       notas: f.notas,
       sinCargar: ver.sinCargar,
+      pasada: Date.parse(s.inicia) <= ahora,
       corregido: corregido ?? SIN_CORREGIR,
     };
   });
@@ -394,6 +397,10 @@ export const COLUMNAS: ColumnaTabla[] = [
 ];
 
 export const COLUMNA: Record<ClaveColumna, ColumnaTabla> = Object.fromEntries(COLUMNAS.map((c) => [c.clave, c])) as Record<ClaveColumna, ColumnaTabla>;
+
+/** ¿Es una columna de la tabla? Sólo las propias: `in` también dice que sí a «constructor», «toString» o
+ *  «__proto__» (las hereda de Object.prototype), y esas claves llegan por la URL. */
+export const esColumna = (k: string): k is ClaveColumna => Object.prototype.hasOwnProperty.call(COLUMNA, k);
 
 export const VISIBLES_POR_DEFECTO: ClaveColumna[] = [
   "llamada", "nombre", "closer", "estadoPreCall", "estadoLlamada", "objecion", "oferta", "cierre", "via", "ad", "pais",
@@ -619,6 +626,23 @@ export function pasaFiltros(f: FilaTabla, filtros: FiltrosTabla, salvo?: ClaveCo
 }
 
 const SEP = "|";
+
+/* Los valores de un filtro van en un solo parámetro, separados por «|». Un valor que lleva «|» (los nombres de los
+   anuncios de Meta, «Prospecting | LAL 1% | USA») o «\» se escapa con «\»: sin eso, al elegirlo en el menú el link
+   volvía con el valor partido en pedazos que no coinciden con nada. Los links de antes, sin escapes, se leen igual. */
+export const unirValores = (valores: readonly string[]): string => valores.map((v) => v.replace(/\\/g, "\\\\").replace(/\|/g, "\\|")).join(SEP);
+export function partirValores(texto: string): string[] {
+  const out: string[] = [];
+  let actual = "";
+  for (let i = 0; i < texto.length; i++) {
+    const c = texto[i];
+    if (c === "\\" && (texto[i + 1] === "|" || texto[i + 1] === "\\")) { actual += texto[++i]; continue; }
+    if (c === SEP) { out.push(actual); actual = ""; continue; }
+    actual += c;
+  }
+  out.push(actual);
+  return out.filter(Boolean);
+}
 export const PREFIJOS_FILTRO = ["solo-", "sin-", "con-", "nocon-", "desde-", "hasta-"] as const;
 
 /** Los filtros de la URL. */
@@ -627,10 +651,10 @@ export function filtrosDeURL(params: URLSearchParams): FiltrosTabla {
   const de = (clave: ClaveColumna) => (out[clave] ??= { modo: "solo", valores: [] });
   for (const [k, v] of params.entries()) {
     const m = /^(solo|sin|con|nocon|desde|hasta)-(.+)$/.exec(k);
-    if (!m || !(m[2] in COLUMNA) || !v) continue;
+    if (!m || !esColumna(m[2]) || !v) continue;
     const clave = m[2] as ClaveColumna;
     if (m[1] === "solo" || m[1] === "sin") {
-      const valores = v.split(SEP).filter(Boolean);
+      const valores = partirValores(v);
       if (valores.length) Object.assign(de(clave), { modo: m[1], valores });
     } else if (m[1] === "con") de(clave).contiene = v;
     else if (m[1] === "nocon") de(clave).noContiene = v;
@@ -643,8 +667,8 @@ export function filtrosDeURL(params: URLSearchParams): FiltrosTabla {
 /** Lo que hay que escribir en la URL para dejar una columna con este filtro. */
 export function filtroAURL(clave: ClaveColumna, fc: FiltroColumna | null): Record<string, string | null> {
   return {
-    [`solo-${clave}`]: fc?.modo === "solo" && fc.valores.length ? fc.valores.join(SEP) : null,
-    [`sin-${clave}`]: fc?.modo === "sin" && fc.valores.length ? fc.valores.join(SEP) : null,
+    [`solo-${clave}`]: fc?.modo === "solo" && fc.valores.length ? unirValores(fc.valores) : null,
+    [`sin-${clave}`]: fc?.modo === "sin" && fc.valores.length ? unirValores(fc.valores) : null,
     [`con-${clave}`]: fc?.contiene?.trim() || null,
     [`nocon-${clave}`]: fc?.noContiene?.trim() || null,
     [`desde-${clave}`]: fc?.desde || null,
@@ -714,7 +738,7 @@ export function ordenesDeURL(valor: string | null | undefined): OrdenColumna[] {
   for (const x of (valor ?? "").split(",")) {
     const desc = x.startsWith("-");
     const clave = (desc ? x.slice(1) : x) as ClaveColumna;
-    if (clave in COLUMNA && !out.some((o) => o.clave === clave)) out.push({ clave, desc });
+    if (esColumna(clave) && !out.some((o) => o.clave === clave)) out.push({ clave, desc });
   }
   return out.length ? out.slice(0, MAX_ORDENES) : ORDEN_POR_DEFECTO;
 }
@@ -783,12 +807,14 @@ export interface NumerosResumen {
 }
 
 const SE_PRESENTO = new Set<string>([CON_CIERRE, SIN_CIERRE]);
+const CON_DESENLACE = new Set<string>([CON_CIERRE, SIN_CIERRE, NO_SE_PRESENTO]);
 
 export function resumenDe(filas: FilaTabla[]): NumerosResumen {
   const r: NumerosResumen = { llamadas: filas.length, pasaron: 0, presentaron: 0, cierres: 0, sinCierre: 0, noVino: 0, sinCargar: 0, pctCierre: null, objeciones: [] };
   const obj = new Map<string, number>();
   for (const f of filas) {
-    if (f.resultado !== CANCELADA && f.resultado !== POR_VENIR) r.pasaron++;
+    /* Pasó si ya empezó o si ya tiene un desenlace cargado (una futura con «Reagendar» no pasó). */
+    if ((f.pasada || CON_DESENLACE.has(f.resultado)) && f.resultado !== CANCELADA && f.resultado !== POR_VENIR) r.pasaron++;
     if (SE_PRESENTO.has(f.resultado)) r.presentaron++;
     if (f.resultado === CON_CIERRE) r.cierres++;
     if (f.resultado === SIN_CIERRE) {
@@ -810,7 +836,12 @@ export interface FilaDimension extends NumerosResumen { valor: string }
 export function porDimension(filas: FilaTabla[], clave: ClaveColumna): FilaDimension[] {
   const col = COLUMNA[clave];
   const grupos = new Map<string, FilaTabla[]>();
-  for (const f of filas) for (const v of new Set(col.valores(f))) grupos.set(v, [...(grupos.get(v) ?? []), f]);
+  for (const f of filas) {
+    for (const v of new Set(col.valores(f))) {
+      const grupo = grupos.get(v);
+      if (grupo) grupo.push(f); else grupos.set(v, [f]);
+    }
+  }
   return [...grupos.entries()]
     .map(([valor, fs]) => ({ valor, ...resumenDe(fs) }))
     .sort((a, b) => (a.valor === VACIAS ? 1 : b.valor === VACIAS ? -1 : b.presentaron - a.presentaron || b.llamadas - a.llamadas));
