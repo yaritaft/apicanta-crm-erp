@@ -14,6 +14,7 @@ import { num, pct, relativo } from "@/lib/format";
 import { claveEstado, filasMeta, gastoDiario, personasDelAnuncio, type PersonaDelAnuncio } from "@/lib/metricas";
 import type { Ad } from "@/lib/types";
 import { estadoDeAnuncio } from "./estados";
+import { BotonDescargar } from "./DescargarMedio";
 
 /* ==================================================================
    El detalle de un anuncio, en una ventana en el medio de la pantalla: a
@@ -177,7 +178,11 @@ export function DetalleAnuncio({ ad, rango, M, onCerrar, onIr }: {
    distinto material para el Feed y para Historias y Reels) y se muestra
    directo, cada uno con su forma. Si del creativo no sale ningún archivo,
    queda la vista previa que arma Meta, en su marco. Sin conexión con Meta,
-   o si el anuncio ya no existe, se dice y el resto del detalle sigue. */
+   o si el anuncio ya no existe, se dice y el resto del detalle sigue.
+
+   Cada video o imagen lleva su botón «Descargar» (DescargarMedio): el
+   archivo pasa por el servidor, porque el link de Meta es de otro origen y
+   vence. */
 
 type Marco = { src: string; alto: number; aviso?: string };
 type Vista =
@@ -248,7 +253,7 @@ function VistaPreviaAnuncio({ ad }: { ad: Ad }) {
 
   return (
     <div className="stack-3">
-      <MaterialDelAnuncio material={vista.material} nombre={ad.nombre} />
+      <MaterialDelAnuncio material={vista.material} nombre={ad.nombre} metaId={metaId} />
       {hayNube && metaId && (
         marco === null ? <div><button type="button" className="link t-sm" onClick={() => void verElMarco()}>Ver como lo muestra Meta</button></div>
           : marco === "cargando" ? <div className="mk-previa" style={{ height: 420 }}><div className="skeleton" style={{ width: "100%", height: "100%" }} aria-label="Cargando la vista de Meta" /></div>
@@ -273,17 +278,20 @@ function MarcoDeMeta({ marco, nombre }: { marco: Marco; nombre: string }) {
 
 /* El video o la imagen, sin nada alrededor. Uno solo va centrado; varios
    (un carrusel, o uno por lugar), en fila para pasar de costado. */
-function MaterialDelAnuncio({ material, nombre }: { material: CreativoVisto; nombre: string }) {
+function MaterialDelAnuncio({ material, nombre, metaId }: { material: CreativoVisto; nombre: string; metaId: string }) {
   const { medios, texto, titulo, boton } = material;
   const [todo, setTodo] = useState(false);
   const largo = (texto?.length ?? 0) > 180 || (texto?.split("\n").length ?? 0) > 3;
   return (
     <div className="stack-3">
       {medios.length === 1
-        ? <Medio m={medios[0]} nombre={nombre} />
+        ? <Medio m={medios[0]} nombre={nombre} descarga={{ metaId, indice: 0, total: 1 }} />
         : (
           <div className="mk-medios" role="list" aria-label="El material del anuncio">
-            {medios.map((m, i) => <Medio key={`${m.src}-${i}`} m={m} nombre={nombre} chip={m.etiqueta ?? `${i + 1} de ${medios.length}`} enFila />)}
+            {medios.map((m, i) => (
+              <Medio key={`${m.src}-${i}`} m={m} nombre={nombre} chip={m.etiqueta ?? `${i + 1} de ${medios.length}`} enFila
+                descarga={{ metaId, indice: i, total: medios.length }} />
+            ))}
           </div>
         )}
       {(titulo || texto || boton) && (
@@ -300,7 +308,11 @@ function MaterialDelAnuncio({ material, nombre }: { material: CreativoVisto; nom
   );
 }
 
-function Medio({ m, nombre, chip, enFila }: { m: MedioAnuncio; nombre: string; chip?: string; enFila?: boolean }) {
+function Medio({ m, nombre, chip, enFila, descarga }: {
+  m: MedioAnuncio; nombre: string; chip?: string; enFila?: boolean;
+  /* Qué lugar ocupa en el anuncio, para pedirlo al servidor. Sin esto no hay botón. */
+  descarga?: { metaId: string; indice: number; total: number };
+}) {
   /* La forma sale del tamaño que mandó Meta; si no vino, del archivo al cargar. */
   const [tam, setTam] = useState(m.ancho && m.alto ? { w: m.ancho, h: m.alto } : null);
   const medir = (w: number, h: number) => { if (w > 0 && h > 0 && (!tam || tam.w !== w || tam.h !== h)) setTam({ w, h }); };
@@ -320,6 +332,7 @@ function Medio({ m, nombre, chip, enFila }: { m: MedioAnuncio; nombre: string; c
         // eslint-disable-next-line @next/next/no-img-element
         <img src={m.src} alt={dice} loading="lazy" onLoad={(ev) => medir(ev.currentTarget.naturalWidth, ev.currentTarget.naturalHeight)} />
       )}
+      {descarga && <BotonDescargar medio={m} nombre={nombre} {...descarga} />}
       {(chip || m.sinArchivo) && (
         <figcaption className="mk-medio__chip">{[chip, m.sinArchivo ? "Portada del video" : ""].filter(Boolean).join(" · ")}</figcaption>
       )}
