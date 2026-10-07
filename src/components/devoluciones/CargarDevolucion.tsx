@@ -14,11 +14,14 @@ import { useAcceso } from "@/lib/acceso";
 import { puedeDarDeBaja } from "@/lib/permisos";
 import { cerrarDevolucion, usePedidoDevolucion, type PedidoDevolucion } from "@/lib/devolucion-ui";
 import {
-  devolvibleDeVenta, problemaDeDevolucion, procesadorDeLaVenta, reversasDeComision, ventasDelPedido,
+  cambioParaDevolver, devolvibleDeVenta, mediodiaDeNegocio, pesosDeLaDevolucion, problemaDeDevolucion, procesadorDeLaVenta,
+  reversasDeComision, ventasDelPedido,
 } from "@/lib/devoluciones";
 import { escribirMonto, leerMonto } from "@/lib/gastos";
-import { fechaLarga, isoDia, money } from "@/lib/format";
+import { diaDeNegocio } from "@/lib/dia-negocio";
+import { fechaLarga, money } from "@/lib/format";
 import { nombrePeriodo, periodoDeFecha } from "@/lib/periodos";
+import { esCuentaEnPesos } from "@/lib/reporteFinanciera";
 import type { Comprobante, Devolucion } from "@/lib/types";
 
 /* ==================================================================
@@ -29,7 +32,8 @@ import type { Comprobante, Devolucion } from "@/lib/types";
    un reembolso que informó una pasarela— con una sola llamada
    (lib/devolucion-ui). Pide lo que hace falta para que las cuentas den:
 
-     · cuánto, el día y por qué medio salió la plata;
+     · cuánto, el día y por qué medio salió la plata (si es una cuenta en pesos,
+       cuántos pesos fueron: es lo que el arqueo de esa cuenta tiene que descontar);
      · el comprobante, obligatorio (salvo que la pasarela ya lo informe);
      · si no se le descuenta al closer (por defecto sí).
 
@@ -44,8 +48,12 @@ export function CargarDevolucion() {
   return <Formulario key={JSON.stringify(pedido)} pedido={pedido} />;
 }
 
-const mediodia = (dia: string) => new Date(`${dia}T12:00:00`).toISOString();
-const hoyDia = () => isoDia(new Date().toISOString());
+/* El día que se elige es un día de Argentina: se guarda a las 12:00 de allá y se
+   lee con el día de negocio, no con el reloj del navegador. */
+const mediodia = mediodiaDeNegocio;
+/* El día de negocio de una fecha; vacío si no se entiende. */
+const diaDe = (iso?: string) => { const d = diaDeNegocio(iso); return /^\d{4}-\d{2}-\d{2}$/.test(d) ? d : ""; };
+const hoyDia = () => diaDe(new Date().toISOString());
 
 function Formulario({ pedido }: { pedido: PedidoDevolucion }) {
   const e = useEstado();
@@ -73,7 +81,7 @@ function Formulario({ pedido }: { pedido: PedidoDevolucion }) {
     return (base?.ventaId ?? conCobro?.id ?? ventas[0]?.id) ?? "";
   });
   const venta = ventas.find((v) => v.id === ventaId);
-  const [dia, setDia] = useState(() => isoDia(base?.fecha ?? new Date().toISOString()) || hoyDia());
+  const [dia, setDia] = useState(() => diaDe(base?.fecha ?? new Date().toISOString()) || hoyDia());
   const fechaIso = mediodia(dia);
   const devolvible = venta ? devolvibleDeVenta(e, venta.id, fechaIso, previa?.id) : null;
 
@@ -86,6 +94,9 @@ function Formulario({ pedido }: { pedido: PedidoDevolucion }) {
   const [marcarLlamada, setMarcarLlamada] = useState(!previa);
   const [motivo, setMotivo] = useState(base?.motivo ?? "");
   const [notas, setNotas] = useState(base?.notas ?? "");
+  /* Los pesos que escribió quien carga; null = todavía no los tocó (se calculan solos). Los que ya tenía la
+     devolución se muestran tal cual; sin ellos (en la base vienen como null) se calculan. */
+  const [pesosTxt, setPesosTxt] = useState<string | null>(() => (typeof base?.montoArs === "number" ? escribirMonto(base.montoArs) : null));
 
   /* Al cambiar de venta (o cuando se sabe cuál es) se propone todo lo que queda
      por devolver y la cuenta con la que se pagó. Lo que ya escribió quien carga no se pisa. */
@@ -98,8 +109,23 @@ function Formulario({ pedido }: { pedido: PedidoDevolucion }) {
 
   const montoNum = leerMonto(monto) || 0;
   const esTotal = Boolean(devolvible) && montoNum > 0 && Math.abs(montoNum - (devolvible?.queda ?? 0)) < 0.01;
+
+  /* Si la plata sale de una cuenta en pesos hay que saber cuántos pesos fueron. Arrancan en monto ×
+     el cambio con el que se cobró esa venta por esa cuenta (o el de Ajustes) y se pueden escribir:
+     entonces el cambio es el que resulta. Por una cuenta en dólares no se guarda nada, como siempre. */
+  const cuentaElegida = e.procesadores.find((p) => p.id === medio);
+  const enPesos = Boolean(cuentaElegida && esCuentaEnPesos(cuentaElegida));
+  const propuestoPor = enPesos ? cambioParaDevolver(e, venta?.id, medio) : undefined;
+  const cambioPropio = base?.tipoCambio && base.tipoCambio > 0 ? base.tipoCambio : undefined;
+  const cambioInicial = cambioPropio ?? propuestoPor?.tipoCambio;
+  const escritos = pesosTxt === null ? undefined : leerMonto(pesosTxt);
+  const pesos = enPesos ? pesosDeLaDevolucion(montoNum, cambioInicial, escritos) : {};
+
   const problema = problemaDeDevolucion(
-    e, { ventaId: venta?.id, monto: montoNum, fecha: fechaIso, procesadorId: medio || undefined, tieneComprobante: Boolean(comprobante), tienePasarela: Boolean(base?.referencia) },
+    e, {
+      ventaId: venta?.id, monto: montoNum, fecha: fechaIso, procesadorId: medio || undefined, tieneComprobante: Boolean(comprobante),
+      tienePasarela: Boolean(base?.referencia), sinPesos: enPesos && !pesos.montoArs,
+    },
     previa?.id,
   );
   const falta = subiendo ? "Esperá que termine de subir el comprobante" : problema;
@@ -116,7 +142,7 @@ function Formulario({ pedido }: { pedido: PedidoDevolucion }) {
   }, [e, venta, montoNum, fechaIso, medio, noDescontar, previa?.id, propuesta?.id]);
   const mes = nombrePeriodo(periodoDeFecha(fechaIso) || periodoDeFecha(new Date().toISOString()));
   const mesVenta = venta ? nombrePeriodo(periodoDeFecha(venta.fecha)) : "";
-  const cuenta = e.procesadores.find((p) => p.id === medio)?.nombre;
+  const cuenta = cuentaElegida?.nombre;
   const revierte = efecto && !efecto.sinDescuento ? efecto.partes.filter((p) => p.reversa > 0) : [];
   const totalRevierte = revierte.reduce((a, p) => a + p.reversa, 0);
 
@@ -125,6 +151,8 @@ function Formulario({ pedido }: { pedido: PedidoDevolucion }) {
     const comun = {
       monto: montoNum, fecha: fechaIso, procesadorId: medio || undefined, comprobante,
       noDescontarAlCloser: noDescontar, motivo: motivo.trim() || undefined, notas: notas.trim() || undefined,
+      /* Por una cuenta en pesos, los pesos que salieron y a qué cambio; por una en dólares, nada (al corregir, se borran). */
+      montoArs: pesos.montoArs, tipoCambio: pesos.tipoCambio,
     };
     if (previa) {
       if (acciones.editarDevolucion(previa.id, comun)) toast("Devolución corregida.");
@@ -144,6 +172,12 @@ function Formulario({ pedido }: { pedido: PedidoDevolucion }) {
     cerrarDevolucion();
   }
 
+  const ayudaPesos = escritos !== undefined
+    ? (pesos.tipoCambio ? `Escribiste los pesos: el tipo de cambio quedó en ${money(pesos.tipoCambio, "ARS", 2)} por dólar.` : "Escribí cuántos pesos salieron de la cuenta.")
+    : cambioInicial
+      ? `A ${money(cambioInicial, "ARS", 2)} por dólar (${cambioPropio ? "el que tenía cargado" : propuestoPor?.fuente === "cobro" ? "el del último cobro de esta venta por esta cuenta" : "el de Ajustes"}). Si salieron otros pesos, escribilos.`
+      : "No hay un tipo de cambio de referencia: escribí cuántos pesos salieron.";
+
   const titulo = previa ? "Corregir la devolución" : propuesta ? "Confirmar la devolución" : "Cargar una devolución";
   return (
     <ModalForm
@@ -158,7 +192,7 @@ function Formulario({ pedido }: { pedido: PedidoDevolucion }) {
         <div className="span-2">
           <Field label="Venta que se devuelve" error={ventas.length === 0 ? "No encontramos la venta de esta persona: buscala en Ventas." : undefined}>
             <Select
-              value={ventaId} onChange={(ev) => setVentaId(ev.target.value)} disabled={Boolean(previa) || ventas.length <= 1}
+              value={ventaId} onChange={(ev) => { setVentaId(ev.target.value); setPesosTxt(null); }} disabled={Boolean(previa) || ventas.length <= 1}
               placeholder="Elegí la venta"
               opciones={ventas.map((v) => ({
                 valor: v.id,
@@ -170,9 +204,14 @@ function Formulario({ pedido }: { pedido: PedidoDevolucion }) {
 
         <Field
           label="Cuánto se devolvió"
-          ayuda={devolvible ? `Se cobró ${M(devolvible.cobrado)}${devolvible.devuelto ? `, ya se devolvió ${M(devolvible.devuelto)}` : ""}: se puede devolver hasta ${M(devolvible.queda)}.` : undefined}
+          ayuda={devolvible ? [
+            `Se cobró ${M(devolvible.cobrado)}${devolvible.devuelto ? `, ya se devolvió ${M(devolvible.devuelto)}` : ""}`,
+            /* Una devolución ya cargada con fecha posterior también cuenta: entre todas no pueden pasar de lo cobrado. */
+            devolvible.limitadaPor ? `, y hasta el ${fechaLarga(mediodia(devolvible.limitadaPor.dia))} hay ${M(devolvible.limitadaPor.devuelto)} devueltos de ${M(devolvible.limitadaPor.cobrado)} cobrados` : "",
+            `: se puede devolver hasta ${M(devolvible.queda)}.`,
+          ].join("") : undefined}
         >
-          <InputMonto value={monto} onChange={(ev) => setMonto(ev.target.value)} placeholder="0" aria-label="Monto devuelto" autoFocus />
+          <InputMonto value={monto} onChange={(ev) => { setMonto(ev.target.value); setPesosTxt(null); }} placeholder="0" aria-label="Monto devuelto" autoFocus />
         </Field>
 
         <Field label="El día que se devolvió">
@@ -186,11 +225,22 @@ function Formulario({ pedido }: { pedido: PedidoDevolucion }) {
         <div className="span-2">
           <Field label="Medio por el que salió la plata" ayuda="El mismo con el que pagó: tarjeta con tarjeta, cripto con una transferencia cripto.">
             <Select
-              value={medio} onChange={(ev) => setMedio(ev.target.value)} placeholder="Elegí la cuenta"
+              value={medio} onChange={(ev) => { setMedio(ev.target.value); setPesosTxt(null); }} placeholder="Elegí la cuenta"
               opciones={e.procesadores.filter((p) => p.activo || p.id === medio).map((p) => ({ valor: p.id, texto: p.nombre }))}
             />
           </Field>
         </div>
+
+        {enPesos && (
+          <div className="span-2">
+            <Field label="Pesos que salieron de la cuenta" ayuda={ayudaPesos}>
+              <InputMonto
+                value={pesosTxt ?? (pesos.montoArs ?? "")} onChange={(ev) => setPesosTxt(ev.target.value)} placeholder="0"
+                aria-label="Pesos que salieron" icono={<span className="t-subtle">$</span>}
+              />
+            </Field>
+          </div>
+        )}
 
         <div className="span-2 hk-field">
           <span className="hk-label">Comprobante {base?.referencia ? "(opcional: la pasarela ya la informó)" : ""}</span>
@@ -239,7 +289,7 @@ function Formulario({ pedido }: { pedido: PedidoDevolucion }) {
               <div className="t-strong">Qué pasa al cargarla</div>
               <ul className="devol-efecto__lista">
                 <li>
-                  Resta <b className="t-num">{M(montoNum)}</b> en Finanzas de <b>{mes}</b>: Cash Collected, estado de resultados y {cuenta ? `la caja de ${cuenta}` : "la caja"}.
+                  Resta <b className="t-num">{M(montoNum)}</b> en Finanzas de <b>{mes}</b>: Cash Collected, estado de resultados y {cuenta ? `la caja de ${cuenta}` : "la caja"}{pesos.montoArs ? ` (salen ${money(pesos.montoArs, "ARS", 0)} de esa cuenta)` : ""}.
                   La venta sigue contando en {mesVenta}. La comisión de la pasarela no vuelve.
                 </li>
                 <li>
