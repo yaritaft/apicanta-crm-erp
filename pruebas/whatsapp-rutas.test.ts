@@ -330,12 +330,22 @@ test("el código QR sólo lo ve quien edita Ajustes: con permiso sale, sin permi
   assert.equal(cuerpo.lector.estado, "esperando_qr", "el estado sí");
   assert.ok(!JSON.stringify(cuerpo).includes(QR1.slice(30, 60)), "el código no viaja");
 
-  /* Sin ver los Webinars ni el estado: lo que diga la sesión (401 / 403). */
-  const nada = dependencias({ webinars: false, ajustes: true, repo: dueno.repo });
+  /* Edita Ajustes pero no ve los Webinars: una sola regla para el código, es de quien edita Ajustes. Recibe el estado del lector y el
+     código, sin los grupos. */
+  const soloAjustes = dependencias({ webinars: false, ajustes: true, repo: dueno.repo });
+  const rAjustes = await leer(await responderEstado(pedirEstado("?qr=1"), soloAjustes.deps));
+  assert.deepEqual([rAjustes.puedeVerQr, rAjustes.qr, rAjustes.sinGrupos, rAjustes.grupos], [true, QR1, true, []]);
+  assert.deepEqual(soloAjustes.llamadas, ["webinars:1", "ajustes:2"]);
+
+  /* Sin ver los Webinars ni editar Ajustes: lo que diga la sesión (401 / 403), y nada del código. */
+  const nada = dependencias({ webinars: false, ajustes: false, repo: dueno.repo });
   const rechazo = await responderEstado(pedirEstado("?qr=1"), nada.deps);
   assert.equal(rechazo.status, 403);
   assert.ok(!JSON.stringify(await leer(rechazo)).includes("base64"));
-  assert.deepEqual(nada.llamadas, ["webinars:1"], "ni se pregunta por Ajustes");
+  /* Y sin pedir el código, quien no ve los Webinars no recibe ni el estado, aunque edite Ajustes. */
+  const sinPedir = dependencias({ webinars: false, ajustes: true, repo: dueno.repo });
+  assert.equal((await responderEstado(pedirEstado(), sinPedir.deps)).status, 403);
+  assert.deepEqual(sinPedir.llamadas, ["webinars:1"]);
 });
 
 test("sin pedir el código (?qr=1) o sin que el lector lo espere, no se pregunta por Ajustes ni se lee el código", async () => {

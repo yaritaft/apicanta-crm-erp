@@ -16,7 +16,7 @@ import {
      varios grupos de un mismo webinar).
    - «soltar» { grupoId }: el grupo deja de ser de su webinar.
 
-   Ver: quien ve los Webinars. Atar y soltar grupos: quien los edita. (Las
+   Ver: quien ve los Webinars y no está limitado a lo suyo. Atar y soltar grupos: quien los edita. (Las
    marcas «Contactado» y «Unido» las lleva Formularios, en registros_webinar.)
    ================================================================== */
 
@@ -26,7 +26,8 @@ export const dynamic = "force-dynamic";
 const SIN_CACHE = { headers: { "Cache-Control": "no-store" } };
 
 export async function GET(peticion: Request) {
-  const noPuede = await exigirArea(peticion, ["webinars"], 1);
+  /* Quien ve sólo lo suyo no: esto sale de tablas que se leen con la clave de servicio (sin RLS) y trae los teléfonos de todos. */
+  const noPuede = await exigirArea(peticion, ["webinars"], 1, { sinSoloLoSuyo: true });
   if (noPuede) return noPuede;
   const id = new URL(peticion.url).searchParams.get("id")?.trim() ?? "";
   if (!/^[\w.:@+-]{1,160}$/.test(id)) return NextResponse.json({ error: "Falta el webinar (?id=…)." }, { status: 400 });
@@ -47,13 +48,14 @@ export async function GET(peticion: Request) {
 }
 
 export async function POST(peticion: Request) {
+  /* El permiso antes de leer el cuerpo: sin sesión no se le carga nada a la memoria. */
+  const noPuede = await exigirArea(peticion, ["webinars"], 2);
+  if (noPuede) return noPuede;
+
   const leido = await leerJson(peticion, 10_000);
   if (!leido.ok) return NextResponse.json({ error: leido.error }, { status: leido.status });
   const a = leerAccion(leido.json);
   if (!a.ok) return NextResponse.json({ error: a.error }, { status: 400 });
-
-  const noPuede = await exigirArea(peticion, ["webinars"], 2);
-  if (noPuede) return noPuede;
 
   const donde = repositorio();
   if (!donde) return NextResponse.json({ error: SIN_BASE }, { status: 503 });

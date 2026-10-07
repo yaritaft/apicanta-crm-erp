@@ -203,7 +203,9 @@ test("avisos: entró, salió, volvió; el que nunca vimos no se saca", () => {
   const adentro = [m(A), m(B)];
   const s = aplicarAviso(adentro, "salio", [A, C], hace(1), G);
   assert.deepEqual(s.actualizar.map((x) => [x.telefono, x.dentro, x.salio]), [[A, false, hace(1)]]);
-  assert.equal(s.crear.length, 0, "C nunca estuvo en la base: no hay nada que sacar");
+  /* C nunca estuvo en la base: no hay a quién sacar, pero el «salió» deja su fila (afuera) para que un «entró» más viejo no lo dé por adentro. */
+  assert.deepEqual(s.crear.map((x) => [x.telefono, x.dentro, x.salio]), [[C, false, hace(1)]]);
+  assert.equal(s.salieron, 1, "y no cuenta como alguien que salió: sólo salió A");
 
   const afuera = [m(A, { dentro: false, salio: hace(30) })];
   const v = aplicarAviso(afuera, "entro", [A], hace(1), G);
@@ -215,7 +217,8 @@ test("avisos fuera de orden: el más nuevo gana", () => {
   const salido = [m(A, { dentro: false, entro: hace(10), salio: hace(1) })];
   const tarde = aplicarAviso(salido, "entro", [A], hace(3), G);
   assert.equal(tarde.volvieron, 0);
-  assert.equal(tarde.actualizar.length, 0);
+  /* No cambia el estado (sigue afuera), pero deja su hora: `entro` sube a la más nueva que se supo. */
+  assert.deepEqual(tarde.actualizar.map((x) => [x.dentro, x.entro, x.salio]), [[false, hace(3), hace(1)]]);
   /* Y un «salió» viejo no saca a quien entró después. */
   const entro = [m(A, { entro: hace(1) })];
   const viejo = aplicarAviso(entro, "salio", [A], hace(5), G);
