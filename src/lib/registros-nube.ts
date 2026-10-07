@@ -158,7 +158,16 @@ export async function cargarRegistros(clave: string, forzar = false): Promise<vo
 /** Los registros que ya están para esas fechas (para el importador: saber a
  *  quién no duplicar y qué marcas del equipo conservar). */
 export async function existentesDeFechas(fechas: (string | undefined)[]): Promise<Map<string, RegistroForm>> {
-  for (const f of new Set(fechas.map((x) => x ?? "sin"))) await cargarRegistros(f);
+  for (const f of new Set(fechas.map((x) => x ?? "sin"))) {
+    await cargarRegistros(f);
+    /* Sin saber lo que ya hay no se importa: se tomaría por nuevo a alguien
+       que ya estaba y se le pisarían las marcas del equipo. */
+    if (nube && !cargados.has("todos") && !cargados.has(f)) {
+      throw new Error(estado === "sin-tabla"
+        ? "Falta crear la tabla de registros: corré supabase/registros-webinar.sql."
+        : `No se pudo leer lo que ya hay del webinar ${f}. ${error}`.trim());
+    }
+  }
   return new Map([...filas.entries()]);
 }
 
