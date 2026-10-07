@@ -87,19 +87,7 @@ test("2 · la variación del hero compara el neto de esta semana con el neto de 
   console.log("  [2] variación en la tarjeta:", cambio?.toFixed(1), "%  · en el Dashboard: 0 %");
 });
 
-<<<<<<< /var/folders/cq/hm2l0vb90w7fvjldhyk2j9q00000gn/T/tmpq_iqy1dd/refutar-cc-bruto-vs-neto.test.ts
-<<<<<<< /var/folders/cq/hm2l0vb90w7fvjldhyk2j9q00000gn/T/tmpq_iqy1dd/refutar-cc-bruto-vs-neto.test.ts
-<<<<<<< /var/folders/cq/hm2l0vb90w7fvjldhyk2j9q00000gn/T/tmpq_iqy1dd/refutar-cc-bruto-vs-neto.test.ts
-test("3 · el rendimiento por vía suma 1.000 de cobrado; el resultado del webinar (misma ficha) dice 700", () => {
-=======
 test("3 · el rendimiento por vía suma lo mismo de cobrado que el resultado del webinar (misma ficha)", () => {
->>>>>>> erp-lot-ccneto/pruebas-estres/plata/refutar-cc-bruto-vs-neto.test.ts
-=======
-test("3 · el rendimiento por vía suma 1.000 de cobrado; el resultado del webinar (misma ficha) dice 700", () => {
->>>>>>> erp-lot-csv/pruebas-estres/plata/refutar-cc-bruto-vs-neto.test.ts
-=======
-test("3 · el rendimiento por vía suma 1.000 de cobrado; el resultado del webinar (misma ficha) dice 700", () => {
->>>>>>> erp-lot-rangos/pruebas-estres/plata/refutar-cc-bruto-vs-neto.test.ts
   const { e, w } = mundoSimple();
   /* Una sola venta con devolución: v1 (v0 es otra del mismo webinar, también con la suya). Se mira el webinar entero. */
   const m = metricasDeWebinar(e, w as never);

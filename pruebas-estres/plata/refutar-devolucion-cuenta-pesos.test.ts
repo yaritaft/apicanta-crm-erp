@@ -14,21 +14,9 @@ import type { Devolucion, EstadoApp } from "@/lib/types";
 /* Intento de refutar «una devolución cargada desde el formulario por una cuenta en pesos nunca resta de esa cuenta».
    Va por las acciones reales del store (las mismas que usa la pantalla) y con el catálogo real de cuentas (seed):
    cobro por la Financiera en pesos con el tipo de cambio y los pesos que pide el formulario de cobros, y la
-<<<<<<< /var/folders/cq/hm2l0vb90w7fvjldhyk2j9q00000gn/T/tmpv9e84vkg/refutar-devolucion-cuenta-pesos.test.ts
-<<<<<<< /var/folders/cq/hm2l0vb90w7fvjldhyk2j9q00000gn/T/tmpv9e84vkg/refutar-devolucion-cuenta-pesos.test.ts
-<<<<<<< /var/folders/cq/hm2l0vb90w7fvjldhyk2j9q00000gn/T/tmpv9e84vkg/refutar-devolucion-cuenta-pesos.test.ts
    devolución con los argumentos que arma CargarDevolucion.guardar().
    ARREGLADO (lote dev): el formulario pide los pesos por una cuenta en pesos (los propone con el cambio del cobro) y
    los guarda; las afirmaciones que decían «BUG» están invertidas. */
-=======
-   devolución con EXACTAMENTE los argumentos que arma CargarDevolucion.guardar(). */
->>>>>>> erp-lot-ccneto/pruebas-estres/plata/refutar-devolucion-cuenta-pesos.test.ts
-=======
-   devolución con EXACTAMENTE los argumentos que arma CargarDevolucion.guardar(). */
->>>>>>> erp-lot-csv/pruebas-estres/plata/refutar-devolucion-cuenta-pesos.test.ts
-=======
-   devolución con EXACTAMENTE los argumentos que arma CargarDevolucion.guardar(). */
->>>>>>> erp-lot-rangos/pruebas-estres/plata/refutar-devolucion-cuenta-pesos.test.ts
 
 const art = (d: number, h = 12) => new Date(Date.UTC(2026, 9, d, h + 3)).toISOString();
 const hoy = () => JSON.parse(acciones.exportar()) as EstadoApp;
@@ -97,22 +85,11 @@ test("la caja total resta los 400 y la cuenta en pesos también: «tendría que 
   assert.equal(total.cobrado, 1000);
   const fin = saldosEsperados(e, previo, hasta).get("proc_financiera_ars")!;
   assert.equal(fin.entro, 1_500_000, "lo que entró (la semilla le pone 0% a la Financiera)");
-<<<<<<< /var/folders/cq/hm2l0vb90w7fvjldhyk2j9q00000gn/T/tmpv9e84vkg/refutar-devolucion-cuenta-pesos.test.ts
   assert.equal(fin.salio, 600_000, "la devolución de US$ 400 (600.000 pesos a 1.500) sale de la cuenta");
   assert.equal(fin.esperado, 900_000);
   /* Y una cargada antes del arreglo, sin los pesos, cae al cambio del cobro. */
   const sinPesos = { ...hoy(), devoluciones: hoy().devoluciones.map((d) => ({ ...d, montoArs: undefined, tipoCambio: undefined })) } as EstadoApp;
   assert.equal(saldosEsperados(sinPesos, previo, hasta).get("proc_financiera_ars")!.salio, 600_000, "las de antes también");
-=======
-  assert.equal(fin.salio, 0, "BUG: la devolución de US$ 400 (600.000 pesos a 1.500) no sale de la cuenta");
-  assert.equal(fin.esperado, 1_500_000, "BUG: tendría que decir 900.000");
-<<<<<<< /var/folders/cq/hm2l0vb90w7fvjldhyk2j9q00000gn/T/tmpv9e84vkg/refutar-devolucion-cuenta-pesos.test.ts
-<<<<<<< /var/folders/cq/hm2l0vb90w7fvjldhyk2j9q00000gn/T/tmpv9e84vkg/refutar-devolucion-cuenta-pesos.test.ts
->>>>>>> erp-lot-ccneto/pruebas-estres/plata/refutar-devolucion-cuenta-pesos.test.ts
-=======
->>>>>>> erp-lot-csv/pruebas-estres/plata/refutar-devolucion-cuenta-pesos.test.ts
-=======
->>>>>>> erp-lot-rangos/pruebas-estres/plata/refutar-devolucion-cuenta-pesos.test.ts
   /* El mismo día, la misma plata por una cuenta en dólares sí resta: el hueco es sólo de las cuentas en pesos. */
   armar();
   const dolares = comoLoGuardaElFormulario(400, "proc_stripe");
