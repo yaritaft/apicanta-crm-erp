@@ -616,3 +616,16 @@ correr `supabase/honorarios.sql` (tablas, políticas, niveles de acceso y la col
 - **Conciliación explicada** (`components/finanzas/ComoFuncionaConciliacion.tsx`): la plata pasa de pendiente a
   conciliada en tres pasos, con un glosario de cada etiqueta, tres tarjetas con lo que hay en cada estado y
   explicaciones al pasar el mouse. «Calce seguro» pasó a «Coincide exacto».
+- **Liquidación: «Ver cómo se calculó» y descuentos con nota** (`lib/desglose.ts`, `lib/honorarios.ts`,
+  `components/equipo/DesgloseRenglon.tsx` y `HistorialLiquidado.tsx`): cada renglón (fijo, bono, comisión, tramo,
+  pieza) abre la regla en castellano y la cuenta paso a paso, con la lista de los cobros que la forman (los diez
+  más grandes y «y N más»). El desglose se arma dentro de `linea()` con las mismas variables con las que se calcula
+  el monto, así que no puede dar distinto; al cerrar queda guardado en `liquidaciones.resultado` (jsonb) y un mes
+  cerrado muestra lo guardado. Los cerrados antes del cambio dicen que se cerraron sin desglose y se pueden ver
+  recalculados con los datos de hoy, marcados como tales. La ventana tiene flechas entre meses y una tabla «Mes a
+  mes»; la ficha de la persona lista todos sus meses cerrados. «Sumar o descontar un monto» elige en qué liquidación
+  va (la que se mira o las que vienen) y lleva una **nota para quien paga**: se ve en el renglón, en un aviso arriba
+  de la lista, en «Copiar para mandarle», en el CSV y al cerrar, y se puede sacar desde la ficha. Sin migración: el
+  desglose y los extras con nota van dentro de `liquidaciones.resultado` y `liquidaciones.extras`. Las pruebas
+  (`pruebas/liquidacion-desglose*.test.ts`) verifican que la cuenta de cada renglón cierra exacto con su monto, en
+  casos a mano y en 200 escenarios al azar.
