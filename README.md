@@ -1155,6 +1155,8 @@ en la otra.
 - Se filtran y se ordenan como las demás desde el título, con un solo valor por venta (el peor caso, igual que la celda); en el
   orden de las opciones quedan arriba las que hay que mirar (falta el comprobante, sin conciliar).
 - La venta de una llamada es la primera que sigue en pie: una reembolsada no tapa a una activa (`ventaDeAgenda`, `lib/crm.ts`).
+  Si de la misma llamada salieron dos ventas (la mentoría y un upsell, las dos con su `sesionId`), las columnas suman los cobros de
+  las dos: a una no se le tapa lo que falta con lo que tiene la otra.
 - Las ve quien puede leer los cobros (`puedeLeer(acceso, "pagos")`: el closer sobre lo suyo, el director, finanzas, los
   dueños); un setter no las tiene en la lista de columnas. Quien ya tenía elegidas sus columnas las suma con «Columnas».
 

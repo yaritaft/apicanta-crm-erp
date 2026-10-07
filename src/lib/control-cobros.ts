@@ -317,6 +317,16 @@ export interface CobrosDeVenta {
   aMano: number;
 }
 
+/** Los cobros de varias ventas como si fueran una: la llamada de la que salieron dos (la mentoría y un upsell). */
+export function sumarCobros(xs: readonly CobrosDeVenta[]): CobrosDeVenta {
+  const r: CobrosDeVenta = { total: 0, conPrueba: 0, sinComprobante: 0, conciliados: 0, sinConciliar: 0, aMano: 0 };
+  for (const x of xs) {
+    r.total += x.total; r.conPrueba += x.conPrueba; r.sinComprobante += x.sinComprobante;
+    r.conciliados += x.conciliados; r.sinConciliar += x.sinConciliar; r.aMano += x.aMano;
+  }
+  return r;
+}
+
 export function cobrosPorVenta(
   e: Pick<EstadoApp, "pagos" | "cuotas" | "procesadores">,
 ): Map<ID, CobrosDeVenta> {

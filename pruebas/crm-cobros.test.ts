@@ -190,3 +190,31 @@ test("si la llamada tiene dos ventas, la reembolsada no tapa a la que sigue en p
   const otra = { ...activa, id: "v_otra", fecha: "2026-10-04T15:00:00.000Z" };
   assert.equal(fila([otra, activa]).fila.venta?.id, "v_activa");
 });
+
+test("una llamada de la que salieron dos ventas junta los cobros de las dos: lo que falta en una no lo tapa la otra", () => {
+  const semilla = construirSemilla();
+  const s = filasTabla(semilla)[0].sesion;
+  const base = { ...semilla.ventas[0], sesionId: s.id, contactoId: s.contactoId ?? s.leadId, estado: "activa" as const };
+  const mentoria = { ...base, id: "v_ment", fecha: "2026-10-01T15:00:00.000Z" };
+  const upsell = { ...base, id: "v_ups", fecha: "2026-10-02T15:00:00.000Z" };
+  const reembolsada = { ...base, id: "v_reem", estado: "reembolsada" as const, fecha: "2026-09-30T15:00:00.000Z" };
+  const cuota = (id: string, ventaId: string) => ({ ...semilla.cuotas[0], id, ventaId });
+  const cuotas = [cuota("cu_m", "v_ment"), cuota("cu_u", "v_ups"), cuota("cu_r", "v_reem")];
+  const pagos = [
+    pago({ id: "pg_m", cuotaId: "cu_m", procesadorId: undefined, comprobante: archivo }),
+    pago({ id: "pg_u", cuotaId: "cu_u", procesadorId: undefined }),
+    pago({ id: "pg_r", cuotaId: "cu_r", procesadorId: undefined }),
+  ];
+  const fila = (ventas: EstadoApp["ventas"]) => filasTabla({
+    ...semilla, ventas: [...semilla.ventas.filter((v) => v.sesionId !== s.id), ...ventas], cuotas: [...semilla.cuotas, ...cuotas], pagos: [...semilla.pagos, ...pagos],
+  }).find((f) => f.sesion.id === s.id)!;
+  /* La mentoría tiene su comprobante y el upsell no: la fila dice que falta. */
+  const dos = fila([mentoria, upsell]);
+  assert.deepEqual(dos.cobros, { total: 2, conPrueba: 1, sinComprobante: 1, conciliados: 0, sinConciliar: 0, aMano: 2 });
+  assert.deepEqual(COLUMNA.comprobante.valores(dos), [COMPROBANTE_FALTA]);
+  /* Una reembolsada no suma si hay otra en pie, y sola es la que hay. */
+  assert.equal(fila([reembolsada, mentoria]).cobros?.total, 1);
+  assert.equal(fila([reembolsada]).cobros?.total, 1);
+  /* Una sola venta, como antes. */
+  assert.deepEqual(fila([mentoria]).cobros, { total: 1, conPrueba: 1, sinComprobante: 0, conciliados: 0, sinConciliar: 0, aMano: 1 });
+});

@@ -1,11 +1,11 @@
-import type { Ajustes, CampoOpcionesCrm, ColorCrm, Contacto, EstadoApp, Lead, Sesion } from "./types";
+import type { Ajustes, CampoOpcionesCrm, ColorCrm, Contacto, EstadoApp, Lead, Sesion, Venta } from "./types";
 import { filasCrm, opcionesDe, partir, sinTildes, type FilaCrm } from "./crm";
 import { diaDeNegocio } from "./dia-negocio";
 import { EVENTOS, leerUtm, NOMBRE_FUNNEL } from "./utm-estandar";
 import { CANCELADA, CON_CIERRE, estadoDe, NO_SE_PRESENTO, POR_VENIR, SIN_CARGAR, SIN_CIERRE } from "./estados";
 import { conCorrecciones, corregidoDe, respuestaPerfil, type CampoPerfil, type Corregido } from "./perfil";
 import type { CambiosLlamada } from "./store";
-import { cobrosPorVenta, type CobrosDeVenta } from "./control-cobros";
+import { cobrosPorVenta, sumarCobros, type CobrosDeVenta } from "./control-cobros";
 
 /* ==================================================================
    El CRM como una tabla fácil, como un Excel (Yari, 29/09): "lo fácil le
@@ -155,6 +155,22 @@ export function filasTabla(
 ): FilaTabla[] {
   /* Sin los cobros (quien arma las filas sólo mira llamadas) las dos columnas quedan en blanco. */
   const cobros = e.pagos && e.cuotas && e.procesadores ? cobrosPorVenta({ pagos: e.pagos, cuotas: e.cuotas, procesadores: e.procesadores }) : null;
+  /* Las ventas que dicen haber salido de cada llamada (la mentoría y el upsell de la misma llamada): sus cobros
+     van juntos, así a una no se le tapa lo que falta con lo que tiene la otra. Una reembolsada no cuenta si hay otra en pie. */
+  const ventasDeSesion = new Map<string, Venta[]>();
+  for (const v of e.ventas ?? []) {
+    if (!v.sesionId || v.estado === "cancelada") continue;
+    const xs = ventasDeSesion.get(v.sesionId);
+    if (xs) xs.push(v); else ventasDeSesion.set(v.sesionId, [v]);
+  }
+  const cobrosDeLlamada = (s: Sesion, ventaId: string): CobrosDeVenta | null => {
+    if (!cobros) return null;
+    const suyas = ventasDeSesion.get(s.id);
+    const ids = suyas?.some((v) => v.id === ventaId)
+      ? (suyas.some((v) => v.estado !== "reembolsada") ? suyas.filter((v) => v.estado !== "reembolsada") : suyas).map((v) => v.id)
+      : [ventaId];
+    return sumarCobros(ids.map((id) => cobros.get(id) ?? SIN_COBROS_CARGADOS));
+  };
   const contactos = new Map(e.contactos.map((c) => [c.id, c]));
   const leads = new Map(e.leads.map((l) => [l.id, l]));
   const estados = opcionesDe(e.ajustes, "estadoLlamada");
@@ -194,7 +210,7 @@ export function filasTabla(
       grabacion: f.grabacion,
       venta: f.venta?.texto ?? "",
       /* Una venta sin ningún cobro cargado todavía tiene cero, no «no sé». */
-      cobros: f.venta && cobros ? cobros.get(f.venta.id) ?? SIN_COBROS_CARGADOS : null,
+      cobros: f.venta ? cobrosDeLlamada(s, f.venta.id) : null,
       email: f.email,
       telefono: f.telefono,
       agendo: s.creadoEn,
