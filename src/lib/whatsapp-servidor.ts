@@ -5,10 +5,11 @@ import { dirname, join } from "node:path";
 import { NextResponse } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { hayEquipoConfigurado } from "./equipo-servidor";
+import { exigirArea } from "./permisos-servidor";
 import { nubeServidor } from "./servidor";
 import {
-  aplicarAviso, aplicarFoto, contarDentro, MAX_BYTES_CUERPO,
-  type CuerpoGrupo, type CuerpoLatido, type EventoGrupo, type GrupoWhatsapp, type LatidoLector,
+  aplicarAviso, aplicarFoto, contarDentro, MAX_BYTES_CUERPO, QR_VIGENTE_SEG,
+  type CuerpoGrupo, type CuerpoLatido, type EstadoConexion, type EventoGrupo, type GrupoWhatsapp, type LatidoLector,
   type MiembroWhatsapp, type RespuestaEstado, type RespuestaWebinar,
 } from "./whatsapp";
 
@@ -34,7 +35,13 @@ import {
 
 export interface RepoWhatsapp {
   leerLatido(): Promise<LatidoLector | null>;
-  guardarLatido(l: { ultimoLatido: string; enLector: string | null; conectado: boolean; grupos: number }): Promise<void>;
+  guardarLatido(l: { ultimoLatido: string; enLector: string | null; conectado: boolean; grupos: number; estado: EstadoConexion }): Promise<void>;
+
+  /** El código QR para vincular el número, como imagen. Es una credencial: sólo se lee desde el servidor, y la pantalla
+      se lo da únicamente a quien edita Ajustes. */
+  guardarQr(q: { qr: string; en: string }): Promise<void>;
+  leerQr(): Promise<{ qr: string; en: string } | null>;
+  borrarQr(): Promise<void>;
 
   leerGrupos(): Promise<GrupoWhatsapp[]>;
   leerGrupo(id: string): Promise<GrupoWhatsapp | null>;
@@ -53,6 +60,11 @@ export class ErrorSinTablas extends Error {
   constructor() { super("Faltan las tablas de WhatsApp: hay que correr supabase/whatsapp-lector.sql en la base."); }
 }
 
+/** Falta la tabla del código QR: hay que correr supabase/whatsapp-lector-qr.sql. El resto anda igual. */
+export class ErrorSinTablaQr extends Error {
+  constructor() { super("Falta la tabla del código QR: hay que correr supabase/whatsapp-lector-qr.sql en la base."); }
+}
+
 /** Un número de teléfono (o de lo que sea) largo no tiene por qué ir a un registro. */
 export const sinNumeros = (texto: string) => texto.replace(/\d{7,}/g, "…").slice(0, 300);
 
@@ -60,8 +72,12 @@ class ErrorDeBase extends Error {
   constructor(public codigo: string | undefined, mensaje: string) { super(sinNumeros(mensaje)); }
 }
 
+/* Una columna que todavía no existe (falta correr un SQL) no es una tabla que falta. */
+const faltaLaColumna = (e: { code?: string; message?: string }) =>
+  e.code === "PGRST204" || e.code === "42703" || /column .* does not exist|find the '.*' column/i.test(e.message ?? "");
+
 const faltaLaTabla = (e: { code?: string; message?: string }) =>
-  e.code === "PGRST205" || e.code === "42P01" || /schema cache|does not exist/i.test(e.message ?? "");
+  !faltaLaColumna(e) && (e.code === "PGRST205" || e.code === "42P01" || /schema cache|does not exist/i.test(e.message ?? ""));
 
 /* ---------- Supabase ---------- */
 
@@ -77,16 +93,43 @@ class RepoSupabase implements RepoWhatsapp {
   }
 
   async leerLatido() {
-    const r = this.ok(await this.db.from("whatsapp_lector").select("ultimoLatido, enLector, conectado, grupos, ultimaConexion, desde").eq("id", 1).maybeSingle());
-    return (r as LatidoLector | null) ?? null;
+    const columnas = "ultimoLatido, enLector, conectado, grupos, ultimaConexion, desde";
+    /* `estado` es de supabase/whatsapp-lector-qr.sql: sin esa columna se deduce de «conectado». */
+    let r = await this.db.from("whatsapp_lector").select(`${columnas}, estado`).eq("id", 1).maybeSingle();
+    if (r.error && faltaLaColumna(r.error)) r = await this.db.from("whatsapp_lector").select(columnas).eq("id", 1).maybeSingle();
+    return (this.ok(r) as LatidoLector | null) ?? null;
   }
 
-  async guardarLatido(l: { ultimoLatido: string; enLector: string | null; conectado: boolean; grupos: number }) {
+  async guardarLatido(l: { ultimoLatido: string; enLector: string | null; conectado: boolean; grupos: number; estado: EstadoConexion }) {
     /* `desde` no se manda: queda el del primer latido. La última conexión sólo
        se mueve cuando dice estar conectado. */
     const fila: Record<string, unknown> = { id: 1, ...l };
     if (l.conectado) fila.ultimaConexion = l.ultimoLatido;
-    this.ok(await this.db.from("whatsapp_lector").upsert(fila, { onConflict: "id", defaultToNull: false }));
+    let r = await this.db.from("whatsapp_lector").upsert(fila, { onConflict: "id", defaultToNull: false });
+    if (r.error && faltaLaColumna(r.error)) {
+      const { estado: _fuera, ...sinEstado } = fila;
+      void _fuera;
+      r = await this.db.from("whatsapp_lector").upsert(sinEstado, { onConflict: "id", defaultToNull: false });
+    }
+    this.ok(r);
+  }
+
+  async guardarQr(q: { qr: string; en: string }) {
+    const r = await this.db.from("whatsapp_qr").upsert({ id: 1, ...q }, { onConflict: "id", defaultToNull: false });
+    if (r.error && faltaLaTabla(r.error)) throw new ErrorSinTablaQr();
+    this.ok(r);
+  }
+
+  async leerQr() {
+    const r = await this.db.from("whatsapp_qr").select("qr, en").eq("id", 1).maybeSingle();
+    if (r.error && faltaLaTabla(r.error)) throw new ErrorSinTablaQr();
+    return (this.ok(r) as { qr: string; en: string } | null) ?? null;
+  }
+
+  async borrarQr() {
+    const r = await this.db.from("whatsapp_qr").delete().eq("id", 1);
+    if (r.error && faltaLaTabla(r.error)) throw new ErrorSinTablaQr();
+    this.ok(r);
   }
 
   async leerGrupos() {
@@ -155,9 +198,9 @@ class RepoSupabase implements RepoWhatsapp {
 
 /* ---------- En memoria, y en un archivo para probar sin nube ---------- */
 
-interface Datos { latido: LatidoLector | null; grupos: GrupoWhatsapp[]; miembros: MiembroWhatsapp[] }
+interface Datos { latido: LatidoLector | null; grupos: GrupoWhatsapp[]; miembros: MiembroWhatsapp[]; qr: { qr: string; en: string } | null }
 
-const datosVacios = (): Datos => ({ latido: null, grupos: [], miembros: [] });
+const datosVacios = (): Datos => ({ latido: null, grupos: [], miembros: [], qr: null });
 
 export class RepoMemoria implements RepoWhatsapp {
   constructor(protected datos: Datos = datosVacios()) {}
@@ -167,7 +210,7 @@ export class RepoMemoria implements RepoWhatsapp {
 
   async leerLatido() { return this.datos.latido ? { ...this.datos.latido } : null; }
 
-  async guardarLatido(l: { ultimoLatido: string; enLector: string | null; conectado: boolean; grupos: number }) {
+  async guardarLatido(l: { ultimoLatido: string; enLector: string | null; conectado: boolean; grupos: number; estado: EstadoConexion }) {
     const antes = this.datos.latido;
     this.datos.latido = {
       ...l,
@@ -176,6 +219,10 @@ export class RepoMemoria implements RepoWhatsapp {
     };
     this.cambio();
   }
+
+  async guardarQr(q: { qr: string; en: string }) { this.datos.qr = { ...q }; this.cambio(); }
+  async leerQr() { return this.datos.qr ? { ...this.datos.qr } : null; }
+  async borrarQr() { if (this.datos.qr) { this.datos.qr = null; this.cambio(); } }
 
   async leerGrupos() {
     return this.datos.grupos.map((g) => ({ ...g })).sort((a, b) => (b.ultimaFoto ?? "").localeCompare(a.ultimaFoto ?? ""));
@@ -250,6 +297,7 @@ function leerArchivo(ruta: string): Datos {
     return {
       latido: j.latido ?? null, grupos: Array.isArray(j.grupos) ? j.grupos : [],
       miembros: Array.isArray(j.miembros) ? j.miembros : [],
+      qr: j.qr && typeof j.qr.qr === "string" && typeof j.qr.en === "string" ? j.qr : null,
     };
   } catch {
     return datosVacios();
@@ -387,13 +435,22 @@ export async function recibirGrupo(repo: RepoWhatsapp, c: CuerpoGrupo): Promise<
   return { ...base, nuevos: cambios.nuevos, volvieron: cambios.volvieron, salieron: cambios.salieron, miembros };
 }
 
-/** El latido: el servidor le pone SU hora, no la del lector. */
+/** El latido: el servidor le pone SU hora, no la del lector. Con un código QR esperando se
+    guarda (aparte, en una tabla que sólo lee el servidor); en cualquier otro estado, el código
+    viejo se borra: ya no sirve y es una credencial. Sin la tabla del QR el latido entra igual. */
 export async function recibirLatido(repo: RepoWhatsapp, c: CuerpoLatido, ahora: Date = new Date()): Promise<{ ok: true; aviso?: string }> {
-  await repo.guardarLatido({ ultimoLatido: ahora.toISOString(), enLector: c.en, conectado: c.conectado, grupos: c.grupos });
-  return {
-    ok: true,
-    aviso: c.relojDesfasadoMin ? `La hora del lector difiere ${Math.abs(c.relojDesfasadoMin)} minutos de la de la app: revisá el reloj del servidor.` : undefined,
-  };
+  await repo.guardarLatido({ ultimoLatido: ahora.toISOString(), enLector: c.en, conectado: c.conectado, grupos: c.grupos, estado: c.estado });
+  const avisos: string[] = [];
+  if (c.relojDesfasadoMin) avisos.push(`La hora del lector difiere ${Math.abs(c.relojDesfasadoMin)} minutos de la de la app: revisá el reloj del servidor.`);
+  try {
+    if (c.estado !== "esperando_qr") await repo.borrarQr();
+    else if (c.qr) await repo.guardarQr({ qr: c.qr, en: ahora.toISOString() });
+  } catch (e) {
+    if (!(e instanceof ErrorSinTablaQr)) throw e;
+    /* Sin la tabla, un QR que llega no tiene dónde quedar: se avisa, una vez por pedido con código. */
+    if (c.qr) avisos.push("Falta correr supabase/whatsapp-lector-qr.sql: el código QR no se puede mostrar en la app.");
+  }
+  return { ok: true, aviso: avisos.length ? avisos.join(" ") : undefined };
 }
 
 /* ---------- Lo que lee la pantalla ---------- */
@@ -403,6 +460,50 @@ type Modo = "nube" | "prueba-local";
 export async function estadoParaPantalla(repo: RepoWhatsapp, modo: Modo): Promise<RespuestaEstado> {
   const [lector, grupos] = await Promise.all([repo.leerLatido(), repo.leerGrupos()]);
   return { configurado: Boolean(tokenDelLector()), tablas: true, modo, lector, grupos };
+}
+
+export interface DepsDeEstado {
+  exigirArea: (peticion: Request, areas: Parameters<typeof exigirArea>[1], minimo: 1 | 2) => Promise<NextResponse | null>;
+  repositorio: typeof repositorio;
+  ahora: () => Date;
+}
+const DEPS: DepsDeEstado = { exigirArea, repositorio, ahora: () => new Date() };
+
+/** GET /api/whatsapp/estado. Lo ve quien ve los Webinars. El código QR para vincular el número es
+    una credencial (quien lo escanea lee ese WhatsApp): va SÓLO si lo pide (?qr=1), el lector está
+    esperándolo, tiene menos de un minuto y quien pide es dueño o edita Ajustes. Se pregunta con la
+    sesión de quien pide, como en las demás rutas; nunca se lee desde el navegador con RLS. */
+export async function responderEstado(peticion: Request, deps: DepsDeEstado = DEPS): Promise<NextResponse> {
+  const SIN_CACHE = { headers: { "Cache-Control": "no-store" } };
+  const noPuede = await deps.exigirArea(peticion, ["webinars"], 1);
+  if (noPuede) return noPuede;
+
+  const donde = deps.repositorio();
+  if (!donde) return NextResponse.json({ error: SIN_BASE }, { status: 503 });
+  try {
+    const r = await estadoParaPantalla(donde.repo, donde.modo);
+    const pideQr = new URL(peticion.url).searchParams.get("qr") === "1";
+    if (pideQr && r.lector?.estado === "esperando_qr") {
+      const puede = (await deps.exigirArea(peticion, ["ajustes"], 2)) === null;
+      r.puedeVerQr = puede;
+      r.qr = null;
+      if (puede) {
+        try {
+          const q = await donde.repo.leerQr();
+          if (q && deps.ahora().getTime() - Date.parse(q.en) < QR_VIGENTE_SEG * 1000) r.qr = q.qr;
+        } catch (e) {
+          if (!(e instanceof ErrorSinTablaQr)) throw e;
+          r.qrSinTabla = true;
+        }
+      }
+    }
+    return NextResponse.json(r, SIN_CACHE);
+  } catch (e) {
+    if (e instanceof ErrorSinTablas) {
+      return NextResponse.json({ configurado: Boolean(tokenDelLector()), tablas: false, modo: donde.modo, lector: null, grupos: [] }, SIN_CACHE);
+    }
+    return respuestaDeError(e, "whatsapp/estado");
+  }
 }
 
 /** Los grupos de un webinar y quién está adentro de alguno. */
