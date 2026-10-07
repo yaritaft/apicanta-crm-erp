@@ -41,12 +41,15 @@ export function crearCliente({
     }
   }
 
-  async function enviar(ruta, cuerpo) {
+  /* `sinReintentos`: lo que se renueva solo (el código QR cambia cada ~20 segundos) no se reintenta: un
+     reintento tardío pisaría a uno más nuevo. */
+  async function enviar(ruta, cuerpo, { sinReintentos = false } = {}) {
     let r = null;
-    for (let i = 1; i <= intentos; i++) {
+    const veces = sinReintentos ? 1 : intentos;
+    for (let i = 1; i <= veces; i++) {
       r = await intentar(ruta, cuerpo);
       if (r.ok || !r.reintentable) break;
-      if (i < intentos) await esperar(esperaCreciente(i, { baseMs: 1000, topeMs: 15_000, azar }));
+      if (i < veces) await esperar(esperaCreciente(i, { baseMs: 1000, topeMs: 15_000, azar }));
     }
     if (!r.ok) {
       if (r.status === 401) log?.error(`La app rechazó el token (401): WHATSAPP_LECTOR_TOKEN no es el mismo que en la app. ${r.error}`);
@@ -61,6 +64,6 @@ export function crearCliente({
     /** POST /api/whatsapp/grupos: la foto de un grupo o un aviso de entró / salió. */
     enviarGrupo: (cuerpo) => enviar('/api/whatsapp/grupos', cuerpo),
     /** POST /api/whatsapp/latido */
-    enviarLatido: (cuerpo) => enviar('/api/whatsapp/latido', cuerpo),
+    enviarLatido: (cuerpo, opciones) => enviar('/api/whatsapp/latido', cuerpo, opciones),
   };
 }

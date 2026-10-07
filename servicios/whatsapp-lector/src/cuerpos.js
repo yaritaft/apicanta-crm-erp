@@ -37,7 +37,19 @@ export function eventoDeAccion(accion) {
   return null;
 }
 
-/** El latido: «sigo vivo», y si está conectado a WhatsApp. */
-export function cuerpoLatido({ conectado, grupos }, { ahora = new Date() } = {}) {
-  return { en: iso(ahora), conectado: Boolean(conectado), grupos: Math.max(0, Math.trunc(Number(grupos) || 0)) };
+export const ESTADOS = ['conectado', 'esperando_qr', 'reconectando', 'cerrado'];
+
+/** El latido: «sigo vivo», cómo estoy con WhatsApp y, si espero que me vinculen, el código QR
+    (una imagen, data URL). `estado`: conectado, esperando_qr, reconectando o cerrado. El código sólo
+    va con «esperando_qr». Lleva una credencial: nunca a un registro. */
+export function cuerpoLatido({ estado = 'reconectando', grupos, qr } = {}, { ahora = new Date() } = {}) {
+  const e = ESTADOS.includes(estado) ? estado : 'reconectando';
+  const cuerpo = {
+    en: iso(ahora),
+    conectado: e === 'conectado',
+    estado: e,
+    grupos: Math.max(0, Math.trunc(Number(grupos) || 0)),
+  };
+  if (e === 'esperando_qr' && typeof qr === 'string' && qr) cuerpo.qr = qr;
+  return cuerpo;
 }

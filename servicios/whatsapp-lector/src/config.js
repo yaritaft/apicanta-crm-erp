@@ -10,6 +10,8 @@ import { existsSync, readFileSync } from 'node:fs';
    - LATIDO_CADA_SEG         cada cuánto avisa que sigue vivo (120)
    - FOTO_CADA_HORAS         cada cuánto manda la lista completa de cada grupo (6; 0: nunca)
    - LOG_LEVEL               trace, debug, info, warn o error (info)
+   - QR_EN_TERMINAL          1: además de mandarlo a la app, muestra el código QR en la
+                             terminal (para depurar; es lo mismo que --qr-terminal)
    ================================================================== */
 
 /** Un «.env» simple: CLAVE=valor por renglón, con # para comentarios y comillas
@@ -92,6 +94,7 @@ export function leerConfig(env = process.env) {
       latidoCadaMs: latido.valor * 1000,
       fotoCadaMs: foto.valor * 3_600_000,
       logLevel: nivel,
+      qrEnTerminal: /^(1|true|si|sí|yes)$/i.test(String(env.QR_EN_TERMINAL ?? '').trim()),
     },
   };
 }

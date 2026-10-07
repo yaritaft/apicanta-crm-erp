@@ -17,6 +17,12 @@ test('con lo obligatorio, los valores por defecto', () => {
   assert.equal(r.config.latidoCadaMs, 120_000);
   assert.equal(r.config.fotoCadaMs, 6 * 3_600_000);
   assert.equal(r.config.logLevel, 'info');
+  assert.equal(r.config.qrEnTerminal, false, 'el código QR no se dibuja en la terminal salvo que se pida');
+});
+
+test('el código QR en la terminal sólo con la bandera (QR_EN_TERMINAL=1, que pone --qr-terminal)', () => {
+  for (const v of ['1', 'true', 'TRUE', 'si', 'sí', 'yes']) assert.equal(leerConfig({ ...base, QR_EN_TERMINAL: v }).config.qrEnTerminal, true, v);
+  for (const v of ['', '0', 'no', 'false', 'nunca']) assert.equal(leerConfig({ ...base, QR_EN_TERMINAL: v }).config.qrEnTerminal, false, v);
 });
 
 test('falta lo obligatorio: dice qué', () => {

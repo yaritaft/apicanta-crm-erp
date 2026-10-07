@@ -61,23 +61,26 @@ function baileysFalso() {
     sockets.push(sock);
     return sock;
   };
-  return {
+  const out = {
     default: hacerSocket, sockets,
-    useMultiFileAuthState: async (dir) => ({ state: { dir }, saveCreds: async () => {} }),
+    guardadas: [],
+    useMultiFileAuthState: async (dir) => ({ state: { dir }, saveCreds: async () => { out.guardadas.push(`${dir}#${sockets.length}`); } }),
     fetchLatestBaileysVersion: async () => ({ version: [2, 3000, 1] }),
     DisconnectReason: { loggedOut: 401, restartRequired: 515, connectionReplaced: 440, connectionClosed: 428, connectionLost: 408, timedOut: 408 },
   };
+  return out;
 }
 
 function clienteFalso() {
   const c = {
-    grupos: [], latidos: [], falla: false, fallaLatido: false,
+    grupos: [], latidos: [], opciones: [], falla: false, fallaLatido: false,
     async enviarGrupo(cuerpo) {
       c.grupos.push(structuredClone(cuerpo));
       return c.falla ? { ok: false, status: 503, error: 'caída', reintentable: true } : { ok: true, status: 200, respuesta: {} };
     },
-    async enviarLatido(cuerpo) {
+    async enviarLatido(cuerpo, opciones) {
       c.latidos.push(structuredClone(cuerpo));
+      c.opciones.push(opciones);
       return c.fallaLatido ? { ok: false, status: 503, error: 'caída', reintentable: true } : { ok: true, status: 200, respuesta: {} };
     },
   };
@@ -97,10 +100,11 @@ function armar({ config = {}, grupos } = {}) {
   const lineas = [];
   const f = (nivel) => (m) => lineas.push([nivel, String(m)]);
   const log = { info: f('info'), warn: f('warn'), error: f('error'), debug: f('debug') };
-  const qrs = [];
+  const qrs = [];      // lo que se dibujó en la terminal (sólo con --qr-terminal)
+  const movidas = [];  // las veces que se apartó la sesión
   const cfg = {
     authDir: './auth-de-prueba', gruposRegex: /webinar|taller/i, gruposRegexTexto: 'webinar|taller',
-    latidoCadaMs: 120_000, fotoCadaMs: 6 * 3_600_000, ...config,
+    latidoCadaMs: 120_000, fotoCadaMs: 6 * 3_600_000, qrEnTerminal: false, ...config,
   };
   const datos = grupos ?? {
     [G1]: { id: G1, subject: 'Webinar 08/10 - Grupo 1', participants: [{ id: jid(1) }, { id: '100000000000002@lid', phoneNumber: jid(2) }, { id: '100000000000003@lid' }] },
@@ -109,12 +113,22 @@ function armar({ config = {}, grupos } = {}) {
   /* Los grupos de WhatsApp se cargan en cuanto nace el primer socket (y los comparten los que vengan después). */
   const original = b.default;
   b.default = (c) => { const s = original(c); if (b.sockets.length === 1) s.grupos = datos; return s; };
+  const fallos = { imagen: false, mover: false };
   const lector = crearLector({
-    config: cfg, baileys: b, qr: { generate: (codigo, opciones) => qrs.push([codigo, opciones]) }, log, cliente, loggerBaileys: { silencio: true },
+    config: cfg, baileys: b, log, cliente, loggerBaileys: { silencio: true },
+    qr: {
+      /* La imagen lleva el texto adentro (en base64): así las pruebas saben qué código es cuál. */
+      imagen: async (texto) => { if (fallos.imagen) throw new Error('sin librería'); return imagenDe(texto); },
+      terminal: { generate: (codigo, opciones) => qrs.push([codigo, opciones]) },
+    },
+    moverSesion: async (dir) => { if (fallos.mover) throw new Error('permiso denegado'); movidas.push(dir); },
     ahora: r.ahora, temporizadores: r.temporizadores, pausar: async () => {}, azar: () => 0.5,
   });
-  return { r, b, cliente, lineas, qrs, lector, cfg };
+  return { r, b, cliente, lineas, qrs, movidas, fallos, lector, cfg };
 }
+
+const imagenDe = (texto) => `data:image/svg+xml;base64,${Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg"><desc>${texto}</desc></svg>`).toString('base64')}`;
+const textoDe = (dataUrl) => /<desc>(.*)<\/desc>/.exec(Buffer.from(dataUrl.split(',')[1], 'base64').toString('utf8'))?.[1];
 
 const socket = (a) => a.b.sockets.at(-1);
 /* Un evento de WhatsApp: se emite y se deja terminar lo que dispara, antes de adelantar el reloj. */
@@ -131,7 +145,7 @@ test('al conectarse manda el latido y la foto de los grupos que coinciden, y nad
   const a = armar();
   await abrir(a);
 
-  assert.deepEqual(a.cliente.latidos.map((l) => [l.conectado, l.grupos]), [[false, 0], [true, 0]], 'primero vivo y sin conexión; después conectado');
+  assert.deepEqual(a.cliente.latidos.map((l) => [l.estado, l.conectado, l.grupos]), [['reconectando', false, 0], ['conectado', true, 0]], 'primero vivo y sin conexión; después conectado');
   assert.equal(a.cliente.grupos.length, 1, 'sólo el grupo de Webinar: «Familia» no coincide con GRUPOS_REGEX');
   const foto = a.cliente.grupos[0];
   assert.equal(foto.evento, 'foto');
@@ -161,16 +175,101 @@ test('el socket se arma de sólo lectura: sin aparecer en línea, sin historial,
   await a.lector.detener();
 });
 
-test('la primera vez muestra el QR para escanear', async () => {
+test('la primera vez no hay terminal: el código QR se manda a la app como imagen, apenas WhatsApp da uno nuevo', async () => {
   const a = armar();
   await a.lector.iniciar();
   await vaciar();
-  socket(a).ev.emit('connection.update', { qr: 'CODIGO-QR-1' });
-  socket(a).ev.emit('connection.update', { qr: 'CODIGO-QR-2' });
+  await emitir(a, 'connection.update', { qr: 'CODIGO-QR-1' });
+  assert.deepEqual(a.qrs, [], 'no se dibuja en la terminal');
+  let l = a.cliente.latidos.at(-1);
+  assert.deepEqual([l.estado, l.conectado], ['esperando_qr', false]);
+  assert.match(l.qr, /^data:image\/svg\+xml;base64,/);
+  assert.equal(textoDe(l.qr), 'CODIGO-QR-1');
+  assert.deepEqual(a.cliente.opciones.at(-1), { sinReintentos: true }, 'un código no se reintenta: el próximo lo reemplaza');
+  assert.deepEqual([a.lector.estado().conexion, a.lector.estado().hayQr], ['esperando_qr', true]);
+
+  /* WhatsApp da otro cada ~20 segundos: sale enseguida, sin esperar al latido de los 2 minutos. */
+  const antes = a.cliente.latidos.length;
+  await a.r.avanzar(20_000);
+  await emitir(a, 'connection.update', { qr: 'CODIGO-QR-2' });
+  assert.equal(a.cliente.latidos.length, antes + 1);
+  l = a.cliente.latidos.at(-1);
+  assert.equal(textoDe(l.qr), 'CODIGO-QR-2');
+  assert.ok(a.lineas.some(([, m]) => /Ajustes → WhatsApp/.test(m)), 'dice dónde está el código');
+});
+
+test('esperando_qr → conectado: el código se borra de la app apenas se escanea', async () => {
+  const a = armar();
+  await a.lector.iniciar();
   await vaciar();
-  assert.deepEqual(a.qrs, [['CODIGO-QR-1', { small: true }], ['CODIGO-QR-2', { small: true }]]);
-  assert.ok(a.lineas.some(([, m]) => /Dispositivos vinculados/.test(m)));
-  assert.equal(a.cliente.latidos.at(-1).conectado, false);
+  await emitir(a, 'connection.update', { qr: 'CODIGO-QR-1' });
+  /* Se escanea: WhatsApp pide reiniciar la conexión (515) y vuelve conectado. */
+  await emitir(a, 'connection.update', cierre(515));
+  await a.r.avanzar(0);
+  assert.equal(a.b.sockets.length, 2, 'reconecta enseguida');
+  await emitir(a, 'connection.update', { connection: 'open' }, socket(a));
+  const estados = a.cliente.latidos.map((x) => x.estado);
+  assert.deepEqual(estados.slice(0, 4), ['reconectando', 'esperando_qr', 'reconectando', 'conectado']);
+  const ultimo = a.cliente.latidos.at(-1);
+  assert.equal(ultimo.estado, 'conectado');
+  assert.equal('qr' in ultimo, false, 'conectado no lleva código');
+  assert.equal(a.lector.estado().hayQr, false);
+  assert.equal(a.lector.estado().conectado, true);
+  /* Los latidos de después tampoco lo traen. */
+  await a.r.avanzar(5 * 60_000);
+  assert.ok(a.cliente.latidos.every((x, i) => i === 0 || x.estado !== 'conectado' || !('qr' in x)));
+});
+
+test('el latido de los 2 minutos lleva el código sólo si todavía sirve (menos de 45 segundos)', async () => {
+  const a = armar();
+  await a.lector.iniciar();
+  await vaciar();
+  await emitir(a, 'connection.update', { qr: 'CODIGO-QR-1' });
+  await a.r.avanzar(30_000);
+  const antes = a.cliente.latidos.length;
+  await a.r.avanzar(120_000);
+  const periodicos = a.cliente.latidos.slice(antes);
+  assert.ok(periodicos.length >= 1);
+  assert.equal(periodicos[0].estado, 'esperando_qr');
+  assert.equal('qr' in periodicos[0], false, 'a los 2 minutos el código ya venció: no se manda uno vencido');
+});
+
+test('el código QR no se escribe en ningún registro', async () => {
+  const a = armar();
+  await a.lector.iniciar();
+  await vaciar();
+  await emitir(a, 'connection.update', { qr: 'SECRETO-DEL-QR-1' });
+  await emitir(a, 'connection.update', { qr: 'SECRETO-DEL-QR-2' });
+  await emitir(a, 'connection.update', cierre(515));
+  await a.r.avanzar(1000);
+  assert.ok(a.lineas.length > 0);
+  const imagen = a.cliente.latidos.find((x) => x.qr).qr;
+  for (const [, m] of a.lineas) {
+    assert.ok(!m.includes('SECRETO-DEL-QR'), `un registro lleva el código: ${m}`);
+    assert.ok(!m.includes(imagen.slice(30, 80)), 'ni la imagen');
+  }
+});
+
+test('con --qr-terminal también se dibuja en la terminal (para depurar)', async () => {
+  const a = armar({ config: { qrEnTerminal: true } });
+  await a.lector.iniciar();
+  await vaciar();
+  await emitir(a, 'connection.update', { qr: 'CODIGO-QR-1' });
+  assert.deepEqual(a.qrs, [['CODIGO-QR-1', { small: true }]]);
+  assert.equal(textoDe(a.cliente.latidos.at(-1).qr), 'CODIGO-QR-1', 'y se manda a la app igual');
+});
+
+test('si no se puede armar la imagen del código, lo dice y sigue sin romper nada', async () => {
+  const a = armar();
+  await a.lector.iniciar();
+  await vaciar();
+  a.fallos.imagen = true;
+  await emitir(a, 'connection.update', { qr: 'CODIGO-QR-1' });
+  assert.ok(a.lineas.some(([n, m]) => n === 'error' && /imagen del código QR/.test(m)));
+  assert.equal(a.lector.estado().conexion, 'reconectando', 'sin imagen no se dice que espera el escaneo');
+  a.fallos.imagen = false;
+  await emitir(a, 'connection.update', { qr: 'CODIGO-QR-2' });
+  assert.equal(a.lector.estado().conexion, 'esperando_qr');
 });
 
 test('quién entra y quién sale se avisa en lotes: tres entradas seguidas son un solo pedido', async () => {
@@ -340,18 +439,60 @@ test('«reiniciar» (515), que pasa después de escanear el QR, reconecta ensegu
   assert.equal(a.b.sockets.length, 2);
 });
 
-test('si se cierra la sesión (401) no insiste: avisa con el latido y espera el QR', async () => {
+test('si WhatsApp cierra la sesión (401): aparta «auth» en «auth.vieja» y empieza una vinculación nueva, sin terminal', async () => {
   const a = armar();
   await abrir(a);
-  socket(a).ev.emit('connection.update', cierre(401));
+  const viejo = socket(a);
+  await emitir(a, 'connection.update', cierre(401), viejo);
+  assert.deepEqual(a.movidas, ['./auth-de-prueba'], 'la sesión cerrada se aparta');
+  assert.equal(a.cliente.latidos.some((x) => x.estado === 'cerrado'), true, 'la app se entera de que se cerró');
+  await a.r.avanzar(0);
+  assert.equal(a.b.sockets.length, 2, 'y arranca otra conexión enseguida, ya sin llaves');
+  /* La conexión nueva no tiene sesión: WhatsApp da un código y queda esperando que lo escaneen. */
+  await emitir(a, 'connection.update', { qr: 'CODIGO-NUEVO-1' }, socket(a));
+  const ultimo = a.cliente.latidos.at(-1);
+  assert.deepEqual([ultimo.estado, textoDe(ultimo.qr)], ['esperando_qr', 'CODIGO-NUEVO-1']);
+  assert.ok(a.lineas.some(([n, m]) => n === 'warn' && /auth\.vieja/.test(m)));
+  /* Lo que el socket viejo diga después no pisa la carpeta nueva con llaves cerradas. */
+  const guardadas = a.b.guardadas.length;
+  viejo.ev.emit('creds.update', {});
   await vaciar();
-  assert.equal(a.lector.estado().sesionCerrada, true);
+  assert.equal(a.b.guardadas.length, guardadas);
+  socket(a).ev.emit('creds.update', {});
+  await vaciar();
+  assert.equal(a.b.guardadas.length, guardadas + 1, 'el vigente sí guarda');
+});
+
+test('si la sesión nueva se cierra de nuevo enseguida, no se aparta otra vez (se perdería una vinculación a medias)', async () => {
+  const a = armar();
+  await abrir(a);
+  await emitir(a, 'connection.update', cierre(401));
+  await a.r.avanzar(0);
+  await emitir(a, 'connection.update', cierre(401), socket(a));
+  assert.equal(a.movidas.length, 1, 'una sola vez');
+  assert.ok(a.lineas.some(([n, m]) => n === 'error' && /recién empezada/.test(m)));
+  assert.equal(a.lector.estado().conexion, 'reconectando');
+  await a.r.avanzar(5000);
+  assert.ok(a.b.sockets.length >= 3, 'reintenta con espera creciente');
+  /* Pasado un rato, una sesión que se cierra de verdad vuelve a apartarse. */
+  await a.r.avanzar(120_000);
+  await emitir(a, 'connection.update', { connection: 'open' }, socket(a));
+  await emitir(a, 'connection.update', cierre(401), socket(a));
+  assert.equal(a.movidas.length, 2);
+});
+
+test('si no se puede apartar la sesión vieja, queda «cerrado» y lo dice (no inventa nada)', async () => {
+  const a = armar();
+  await abrir(a);
+  a.fallos.mover = true;
+  await emitir(a, 'connection.update', cierre(401));
+  await a.r.avanzar(60_000);
+  assert.equal(a.b.sockets.length, 1);
+  assert.equal(a.lector.estado().conexion, 'cerrado');
+  assert.equal(a.cliente.latidos.at(-1).estado, 'cerrado');
+  assert.ok(a.lineas.some(([n, m]) => n === 'error' && /No pude apartar la sesión vieja/.test(m)));
   await a.r.avanzar(30 * 60_000);
-  assert.equal(a.b.sockets.length, 1, 'no reintenta');
-  const latidos = a.cliente.latidos.filter((l) => l.conectado === false);
-  assert.ok(latidos.length >= 10, 'sigue avisando que está vivo pero sin WhatsApp');
-  assert.ok(a.lineas.some(([n, m]) => n === 'error' && /escanear el QR de nuevo/.test(m)));
-  assert.ok(a.lineas.some(([n, m]) => n === 'warn' && /Sigo sin sesión/.test(m)), 'y se acuerda de avisar en los registros');
+  assert.ok(a.lineas.some(([n, m]) => n === 'warn' && /sigue cerrada/.test(m)), 'y se acuerda de avisar en los registros');
 });
 
 test('si otra copia usa la misma sesión (440) tampoco insiste', async () => {
@@ -361,6 +502,8 @@ test('si otra copia usa la misma sesión (440) tampoco insiste', async () => {
   await vaciar();
   await a.r.avanzar(10 * 60_000);
   assert.equal(a.b.sockets.length, 1);
+  assert.equal(a.cliente.latidos.at(-1).estado, 'cerrado');
+  assert.equal(a.movidas.length, 0, 'no se toca la sesión: es buena, la usa otro');
   assert.ok(a.lineas.some(([n, m]) => n === 'error' && /otra copia/.test(m)));
 });
 

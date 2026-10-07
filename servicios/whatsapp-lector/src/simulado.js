@@ -16,11 +16,17 @@ import { aprenderLids } from './participantes.js';
    El archivo:
      { "pasos": [
          { "tipo": "latido", "conectado": true, "grupos": 1 },
+         { "tipo": "estado", "estado": "esperando_qr", "qr": "texto que da WhatsApp" },
+         { "tipo": "estado", "estado": "conectado", "grupos": 1 },
          { "tipo": "foto",  "grupo": { "id": "…@g.us", "nombre": "…" }, "participantes": [ … ] },
          { "tipo": "entro", "grupo": { … }, "participantes": [ … ] },
          { "tipo": "salio", "grupo": { … }, "participantes": [ … ] },
          { "tipo": "esperar", "ms": 1000 }
      ] }
+   «latido» y «estado» son lo mismo: cómo está el lector con WhatsApp (conectado, esperando_qr,
+   reconectando o cerrado; o "conectado": true / false). Con "esperando_qr" puede llevar "qr": el
+   texto que da WhatsApp para vincular, que se dibuja como imagen igual que lo hace el lector de
+   verdad, y se manda a la app para escanearlo desde Ajustes → WhatsApp.
    Cada paso puede llevar "haceMin": que pasó hace tantos minutos.
    Los participantes se escriben como los da Baileys: un texto
    («5491155551234@s.whatsapp.net», «123@lid»), o un objeto
@@ -46,7 +52,7 @@ function resumenDe(r) {
   return partes.join(', ') || 'ok';
 }
 
-export async function simular({ archivo, cliente, log, regex = null, ahora = () => new Date(), pausar = dormir }) {
+export async function simular({ archivo, cliente, log, regex = null, ahora = () => new Date(), pausar = dormir, generarQr = null }) {
   const pasos = leerPasos(archivo);
   const mapaLid = new Map();
   const total = { enviados: 0, fallidos: 0, salteados: 0 };
@@ -58,8 +64,15 @@ export async function simular({ archivo, cliente, log, regex = null, ahora = () 
     if (paso.tipo === 'esperar') { await pausar(Math.max(0, Number(paso.ms) || 0)); continue; }
 
     let respuesta;
-    if (paso.tipo === 'latido') {
-      respuesta = await cliente.enviarLatido(cuerpoLatido({ conectado: paso.conectado ?? true, grupos: paso.grupos ?? 0 }, { ahora: cuando }));
+    if (paso.tipo === 'latido' || paso.tipo === 'estado') {
+      const estado = paso.estado ?? (paso.conectado === false ? 'reconectando' : 'conectado');
+      let qr;
+      if (paso.qr !== undefined) {
+        if (estado !== 'esperando_qr') log.warn(`${etiqueta}: el código QR sólo va con el estado «esperando_qr»; se ignora.`);
+        else if (!generarQr) { log.error(`${etiqueta}: este paso lleva un código QR y no hay con qué dibujarlo.`); total.fallidos++; continue; }
+        else qr = await generarQr(String(paso.qr));
+      }
+      respuesta = await cliente.enviarLatido(cuerpoLatido({ estado, grupos: paso.grupos ?? 0, qr }, { ahora: cuando }), qr ? { sinReintentos: true } : undefined);
     } else if (paso.tipo === 'foto' || paso.tipo === 'entro' || paso.tipo === 'salio') {
       if (!paso.grupo?.id) { log.error(`${etiqueta}: falta «grupo.id».`); total.fallidos++; continue; }
       if (!esGrupoDeInteres(paso.grupo.nombre, regex)) { log.info(`${etiqueta}: no coincide con GRUPOS_REGEX, se saltea.`); total.salteados++; continue; }
@@ -73,7 +86,7 @@ export async function simular({ archivo, cliente, log, regex = null, ahora = () 
         log.info(`${etiqueta}: ${cuerpo.participantes.length} con teléfono, ${cuerpo.sinTelefono} sin teléfono visible (de ${cuerpo.total}).`);
       }
     } else {
-      log.error(`${etiqueta}: no conozco ese tipo de paso («latido», «foto», «entro», «salio» o «esperar»).`);
+      log.error(`${etiqueta}: no conozco ese tipo de paso («latido», «estado», «foto», «entro», «salio» o «esperar»).`);
       total.fallidos++;
       continue;
     }

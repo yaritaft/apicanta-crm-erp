@@ -47,6 +47,18 @@ test('un 5xx o una caída de la red se reintenta, y al final se rinde sin tirar 
   assert.deepEqual([r2.ok, r2.status, r2.error], [false, 0, 'No se pudo conectar con la app.']);
 });
 
+test('lo que se renueva solo (el latido con el código QR) no se reintenta: uno tardío pisaría al nuevo', async () => {
+  let n = 0;
+  const fetch = async () => { n++; return respuesta(503, { error: 'caída' }); };
+  const c = crearCliente({ appUrl: 'https://a.com', token: 't', log: registro().log, fetch, esperar: sinEspera });
+  const r = await c.enviarLatido({ estado: 'esperando_qr' }, { sinReintentos: true });
+  assert.deepEqual([n, r.ok, r.status], [1, false, 503]);
+  /* Sin la opción, sí. */
+  n = 0;
+  await c.enviarLatido({ estado: 'conectado' });
+  assert.equal(n, 3);
+});
+
 test('se recupera si el segundo intento anda', async () => {
   let n = 0;
   const fetch = async () => (++n < 2 ? respuesta(502, 'Bad Gateway') : respuesta(200, { ok: true }));
