@@ -7,8 +7,9 @@ import type {
   Arqueo, Campania, CampoPersonalizado, Comentario, Comprobante, Cuota, EntidadNombre, EstadoApp, Etapa, ID,
   Lead, Meta, Movimiento, OpcionCrm, OportunidadCrm, Pago, Reporte, Sesion, Venta, Webinar,
 } from "./types";
-import type { EsquemaPago, EstadoTraspaso, EtapaServicio, ExtraLiquidacion, Gasto, ID as IdMiembro, Liquidacion, MiembroEquipo, ResultadoLiquidacion, TipoCuenta, Traspaso } from "./types";
+import type { EsquemaPago, EstadoTraspaso, EtapaServicio, ExtraLiquidacion, Gasto, GastoRecurrente, ID as IdMiembro, Liquidacion, MiembroEquipo, ResultadoLiquidacion, TipoCuenta, Traspaso } from "./types";
 import { conciliarPuntas, rutaDe, type Punta } from "./traspasos";
+import { gastoAprobado, plantillasDesdeGastos } from "./gastos-recurrentes";
 import { conExtraEnMes, mismasTasas, nombrePeriodo, sinExtraEnLiquidacion, tasaParaFinanzas, tasasPorServicio } from "./honorarios";
 import {
   alumnoDeVenta, cuotaMensualDeVenta, etapaDelAlumno, etapaInicialDeServicio, etapasDeServicio,
@@ -526,6 +527,8 @@ export async function cargarDeLaNube(): Promise<void> {
         .sort((a, b) => +new Date(a.fecha) - +new Date(b.fecha)),
       /* Opcional: sin supabase/traspasos.sql, ninguno. */
       traspasos: (porTabla.traspasos ?? []) as EstadoApp["traspasos"],
+      /* Opcional: sin supabase/gastos-recurrentes.sql, ninguno. */
+      gastosRecurrentes: (porTabla.gastos_recurrentes ?? []) as GastoRecurrente[],
       /* Vacías para quien no es dueño: RLS las esconde. */
       honorarios: (porTabla.honorarios ?? []) as EstadoApp["honorarios"],
       liquidaciones: (porTabla.liquidaciones ?? []) as EstadoApp["liquidaciones"],
@@ -577,6 +580,7 @@ function ordenDeSiembra(e: EstadoApp): [string, unknown[]][] {
     ["comentarios", e.comentarios ?? []],
     ["arqueos", e.arqueos ?? []],
     ["traspasos", e.traspasos ?? []],
+    ["gastos_recurrentes", e.gastosRecurrentes ?? []],
     ["actividad", e.actividad],
     /* Sin FK desde alumnos a propósito (ver alumnos-servicio.sql): puede ir
        al final sin romper el orden de nadie. */
@@ -623,7 +627,7 @@ async function vaciarNube() {
      es, no borran nada (RLS) y no dan error. */
   const orden = [
     "liquidaciones", "honorarios",
-    "actividad", "comentarios", "arqueos", "traspasos", "campos", "metas", "pagos", "movimientos", "cuotas", "ventas", "gastos",
+    "actividad", "comentarios", "arqueos", "traspasos", "gastos_recurrentes", "campos", "metas", "pagos", "movimientos", "cuotas", "ventas", "gastos",
     "campanias", "reportes", "sesiones", "alumnos", "leads", "contactos", "webinars",
     "etapas", "equipo", "embudos", "procesadores", "productos",
     "etapas_servicio",
@@ -1772,6 +1776,107 @@ export const acciones = {
     if (r.error || pendiente()) return false;
     guardar({ ...snapshot(), traspasos: (r.data ?? []) as Traspaso[] });
     return true;
+  },
+
+
+  /* ---------- Gastos fijos (lib/gastos-recurrentes.ts) ----------
+     La plantilla de lo que se paga todos los meses. Nada se carga sin
+     aprobar: aprobar es lo único que crea el gasto. */
+
+  guardarGastoRecurrente(t: GastoRecurrente): void {
+    const e = snapshot();
+    const antes = (e.gastosRecurrentes ?? []).find((x) => x.id === t.id);
+    const { lista: act, nuevo } = registrar(
+      e, "transaccion", t.id, "Gasto fijo", antes ? "actualizo" : "creo",
+      `${antes ? "Se corrigió" : "Se creó"} el gasto fijo «${t.concepto}» (${Math.round(t.monto).toLocaleString("es-AR")} ${t.moneda}, el día ${t.diaDelMes}).`,
+    );
+    guardar({ ...e, gastosRecurrentes: [...(e.gastosRecurrentes ?? []).filter((x) => x.id !== t.id), t], actividad: act });
+    empujar({ tipo: "upsert", tabla: "gastos_recurrentes", filas: [t] });
+    empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
+  },
+
+  borrarGastoRecurrente(id: ID): void {
+    const e = snapshot();
+    const t = (e.gastosRecurrentes ?? []).find((x) => x.id === id);
+    if (!t) return;
+    const { lista: act, nuevo } = registrar(e, "transaccion", id, "Gasto fijo", "elimino", `Se borró el gasto fijo «${t.concepto}». Los gastos que ya se cargaron quedan.`);
+    guardar({ ...e, gastosRecurrentes: (e.gastosRecurrentes ?? []).filter((x) => x.id !== id), actividad: act });
+    empujar({ tipo: "delete", tabla: "gastos_recurrentes", ids: [id] });
+    empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
+  },
+
+  /* Aprobar lo propuesto de uno o de varios (con el monto que se dijo): carga
+     los gastos y deja el monto aprobado como el habitual para el mes que
+     viene. Los que ya estaban cargados ese mes no se repiten. */
+  aprobarGastosFijos(items: { id: ID; mes: string; monto: number }[]): Gasto[] {
+    const e = snapshot();
+    const ahoraIso = ahora();
+    const nuevos: Gasto[] = [];
+    const plantillas = new Map((e.gastosRecurrentes ?? []).map((t) => [t.id, t] as const));
+    const cambiadas = new Map<ID, GastoRecurrente>();
+    const yaHay = new Set(e.gastos.map((g) => g.id));
+    for (const it of items) {
+      const t = plantillas.get(it.id);
+      if (!t || !(it.monto > 0)) continue;
+      const g = gastoAprobado(t, it.mes, it.monto, ahoraIso, e.ajustes.responsable || undefined);
+      if (yaHay.has(g.id)) continue;
+      yaHay.add(g.id);
+      nuevos.push(g);
+      /* El monto del último mes aprobado pasa a ser el habitual. */
+      const nueva = { ...(cambiadas.get(t.id) ?? t), monto: g.monto };
+      cambiadas.set(t.id, nueva);
+    }
+    if (nuevos.length === 0) return [];
+    const { lista: act, nuevo } = registrar(
+      e, "transaccion", nuevos[0].id, "Gastos fijos", "creo",
+      nuevos.length === 1 ? `Se aprobó el gasto fijo «${nuevos[0].concepto}» (${Math.round(nuevos[0].monto).toLocaleString("es-AR")} ${nuevos[0].moneda}).`
+        : `Se aprobaron ${nuevos.length} gastos fijos: ${nuevos.map((g) => g.concepto).join(", ")}.`,
+    );
+    guardar({
+      ...e,
+      gastos: [...nuevos, ...e.gastos],
+      gastosRecurrentes: (e.gastosRecurrentes ?? []).map((t) => cambiadas.get(t.id) ?? t),
+      actividad: act,
+    });
+    empujarEnLotes("gastos", nuevos);
+    for (const t of cambiadas.values()) empujar({ tipo: "upsert", tabla: "gastos_recurrentes", filas: [t] });
+    empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
+    return nuevos;
+  },
+
+  /* «Este mes no»: el mes queda saltado y no vuelve a proponerse. */
+  saltearGastoFijo(id: ID, mes: string): void {
+    const e = snapshot();
+    const t = (e.gastosRecurrentes ?? []).find((x) => x.id === id);
+    if (!t || t.salteados.includes(mes)) return;
+    const nueva: GastoRecurrente = { ...t, salteados: [...t.salteados, mes].sort() };
+    const { lista: act, nuevo } = registrar(e, "transaccion", id, "Gasto fijo", "actualizo", `Se salteó «${t.concepto}» en ${mes}.`);
+    guardar({ ...e, gastosRecurrentes: (e.gastosRecurrentes ?? []).map((x) => (x.id === id ? nueva : x)), actividad: act });
+    empujar({ tipo: "upsert", tabla: "gastos_recurrentes", filas: [nueva] });
+    empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
+  },
+
+  /* Deshace un «saltear» (el mes vuelve a aparecer para aprobar). */
+  volverAProponerGastoFijo(id: ID, mes: string): void {
+    const e = snapshot();
+    const t = (e.gastosRecurrentes ?? []).find((x) => x.id === id);
+    if (!t || !t.salteados.includes(mes)) return;
+    const nueva: GastoRecurrente = { ...t, salteados: t.salteados.filter((m) => m !== mes) };
+    guardar({ ...e, gastosRecurrentes: (e.gastosRecurrentes ?? []).map((x) => (x.id === id ? nueva : x)) });
+    empujar({ tipo: "upsert", tabla: "gastos_recurrentes", filas: [nueva] });
+  },
+
+  /* Arma las plantillas con los gastos «Fijo» que ya se cargaron (uno por
+     concepto, con el monto y el día del último). Devuelve cuántas armó. */
+  armarGastosFijos(): number {
+    const e = snapshot();
+    const hechas = plantillasDesdeGastos(e, ahora(), () => nuevoId("rec"));
+    if (hechas.length === 0) return 0;
+    const { lista: act, nuevo } = registrar(e, "transaccion", hechas[0].id, "Gastos fijos", "creo", `Se armaron ${hechas.length} gastos fijos con los gastos «Fijo» ya cargados.`);
+    guardar({ ...e, gastosRecurrentes: [...(e.gastosRecurrentes ?? []), ...hechas], actividad: act });
+    empujarEnLotes("gastos_recurrentes", hechas);
+    empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
+    return hechas.length;
   },
 
   /* ---------- Alta completa de una venta ----------

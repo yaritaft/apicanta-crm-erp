@@ -9,6 +9,8 @@ import {
 } from "lucide-react";
 import { inicioPara, navPara } from "./nav";
 import { alarmaCobranza } from "@/lib/finanzas";
+import { cuantosFaltan } from "@/lib/gastos-recurrentes";
+import { resumenDePases } from "@/lib/traspasos";
 import {
   alNegarseEscritura, cargarDeLaNube, fijarAcceso, hayNube, reiniciarCarga, useEstado, useSync, useTema,
 } from "@/lib/store";
@@ -104,8 +106,25 @@ export function Shell({ children }: { children: React.ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [cuotas, pagos, ventas],
   );
+  /* Los gastos fijos que ya le tocaba pagar y nadie aprobó, y los retiros de
+     Hotmart a los que les falta cargar la comisión (lote E). Se cuentan sólo
+     cuando cambian los gastos, las plantillas o los movimientos entre cuentas. */
+  const { gastos, gastosRecurrentes, traspasos } = estado;
+  const fijosPorAprobar = useMemo(
+    () => cuantosFaltan({ gastos, gastosRecurrentes }, new Date().toISOString()),
+    [gastos, gastosRecurrentes],
+  );
+  const retirosSinComision = useMemo(() => resumenDePases(traspasos ?? []).faltaComision, [traspasos]);
+  const avisosFinanzas = [
+    atrasados > 0 ? `${atrasados === 1 ? "Un cliente atrasado" : `${atrasados} clientes atrasados`} hace 7 días o más` : "",
+    fijosPorAprobar > 0 ? `${fijosPorAprobar === 1 ? "Un gasto fijo" : `${fijosPorAprobar} gastos fijos`} por aprobar` : "",
+  ].filter(Boolean);
   const alertas: Record<string, { n: number; titulo: string }> = {
-    "/finanzas": { n: atrasados, titulo: `${atrasados === 1 ? "Un cliente atrasado" : `${atrasados} clientes atrasados`} hace 7 días o más` },
+    "/finanzas": { n: atrasados + fijosPorAprobar, titulo: avisosFinanzas.join(" · ") },
+    "/finanzas/caja": {
+      n: retirosSinComision,
+      titulo: `${retirosSinComision === 1 ? "Un retiro de Hotmart" : `${retirosSinComision} retiros de Hotmart`} sin la comisión cargada`,
+    },
   };
 
   const contadores: Record<string, number> = {

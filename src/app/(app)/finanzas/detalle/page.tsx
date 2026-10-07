@@ -16,6 +16,8 @@ import { useToast } from "@/components/ui/Toast";
 import { ListaGastos, PARAMS_GASTOS } from "@/components/finanzas/ListaGastos";
 import { FichaGasto } from "@/components/finanzas/FichaGasto";
 import { AsistenteGasto } from "@/components/finanzas/AsistenteGasto";
+import { GastosFijos } from "@/components/finanzas/GastosFijos";
+import { cuantosFaltan } from "@/lib/gastos-recurrentes";
 import { acciones, useEstado } from "@/lib/store";
 import { fechaLarga, money, tasaTexto } from "@/lib/format";
 import { rangoDeFechas } from "@/lib/metricas";
@@ -30,12 +32,13 @@ import { CuadroComisiones } from "@/components/finanzas/CuadroComisiones";
 import { useNivelAcceso } from "@/lib/acceso";
 import type { Cuota, Gasto } from "@/lib/types";
 
-type Vista = "cobros" | "procesadores" | "gastos" | "comisiones";
-const VISTAS: Vista[] = ["cobros", "procesadores", "gastos", "comisiones"];
+type Vista = "cobros" | "procesadores" | "gastos" | "fijos" | "comisiones";
+const VISTAS: Vista[] = ["cobros", "procesadores", "gastos", "fijos", "comisiones"];
 
 /* Lo que se está mirando vive en la URL (lib/useParamsURL), con el período
    aparte en ?periodo:
-   - seccion: cobros (por defecto), procesadores, gastos o comisiones
+   - seccion: cobros (por defecto), procesadores, gastos, fijos (los gastos fijos
+     por aprobar) o comisiones
    - atraso: en Cobros, sólo las cuotas con al menos esos días (7, 15 o 20)
    La pestaña no va en ?vista, que es de la ficha de una persona: abrir una
    desde una cuota vencida la pisaba. Un link viejo con ?vista=gastos se
@@ -58,6 +61,8 @@ export default function FinanzasDetalle() {
   /* El asistente abierto: con un gasto edita, con null carga uno nuevo. */
   const [asistente, setAsistente] = useState<{ gasto: Gasto | null } | null>(null);
   const [verId, setVerId] = useState<string | null>(null);
+  /* Los gastos fijos que ya le tocaba pagar y nadie aprobó (lib/gastos-recurrentes). */
+  const fijosPorAprobar = useMemo(() => cuantosFaltan(e, new Date().toISOString()), [e.gastos, e.gastosRecurrentes]); // eslint-disable-line react-hooks/exhaustive-deps
   const [borrar, setBorrar] = useState<Gasto | null>(null);
 
   /* El rango vive en la URL: navegar entre el resumen y el detalle lo
@@ -140,6 +145,7 @@ export default function FinanzasDetalle() {
         { valor: "cobros", texto: `Cobros${vencidas.length ? ` · ${vencidas.length}` : ""}` },
         { valor: "procesadores", texto: "Procesadores" },
         { valor: "gastos", texto: "Gastos" },
+        { valor: "fijos", texto: `Gastos fijos${fijosPorAprobar ? ` · ${fijosPorAprobar}` : ""}` },
         { valor: "comisiones", texto: "Comisiones" },
       ]} />
 
@@ -210,6 +216,9 @@ export default function FinanzasDetalle() {
           onBorrar={(g) => setBorrar(g)}
         />
       )}
+
+      {/* ---------------- Gastos fijos: la propuesta de cada mes, para aprobar ---------------- */}
+      {vista === "fijos" && <GastosFijos e={e} />}
 
       {/* ---------------- Comisiones ---------------- */}
       {vista === "comisiones" && (
