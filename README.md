@@ -668,9 +668,9 @@ del menú (lo que ve ya lo recorta la base, así que no hay RLS que cambiar).
   quien lo maneja). También muestra los accesos de closer cuyo correo no está en Equipo y los anfitriones sueltos.
   Una prueba (`pruebas/cuenta-closer.test.ts`) lo verifica con los closers del ejemplo y con casos armados.
 - **Pasar llamadas de un closer a otro** (`lib/pasar-llamadas.ts`, `components/closers/PasarLlamadas.tsx`): «Pasar a
-  otro closer» en el detalle de la Agenda y en cada llamada de la ficha, **«Pasar llamadas»** en la Agenda para varias
-  (se elige de quién son y cuáles; de entrada, las que todavía no pasaron) y la celda Closer del CRM, que ahora hace lo
-  mismo. Sólo dueños y director (el closer no lo ve: la base se lo rechaza). Cada closer dice si le falta el correo y
+  otro closer» en el detalle de la Agenda y en cada llamada de la ficha, **«Pasar llamadas»** en la Agenda y en la barra del
+  CRM para varias (las que se ven con sus filtros; se elige de quién son y cuáles, y de entrada, las que todavía no
+  pasaron) y la celda Closer del CRM, que ahora hace lo mismo. Sólo dueños y director (el closer no lo ve: la base se lo rechaza). Cada closer dice si le falta el correo y
   no va a ver lo que se le pase. Queda en la actividad y el aviso trae «Deshacer».
   - **Calendly no lo pisa**: la llamada lleva `extra.pasada` (quién la atiende, qué dice Calendly, quién la pasó y
     cuándo; `lib/pasada-closer.ts`). Cuando el invitado reingresa —una cancelación o un no-show por el webhook, el
