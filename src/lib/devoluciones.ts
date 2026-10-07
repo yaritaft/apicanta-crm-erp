@@ -4,6 +4,7 @@ import { closerDeCuota, cobraDirector, cobraEnFecha, tasaDeComision } from "./co
 import { moverPeriodo, periodoDeFecha } from "./periodos";
 import { descuentaPorCierre, ventasSinCierre } from "./cierre-del-dia";
 import { opcionesDe } from "./crm";
+import { diaDeNegocio } from "./dia-negocio";
 
 /* ==================================================================
    Devoluciones: la plata que se le devuelve a un cliente.
@@ -63,6 +64,21 @@ const masVieja = (a: Devolucion, b: Devolucion) =>
 
 /* ---------- Cuánto se puede devolver ---------- */
 
+/* El día de negocio (Argentina) de un instante, «aaaa-mm-dd», que ordena como
+   texto; null si la fecha no se entiende (una fecha rota no cuenta ni como
+   cobro ni como devolución, como antes).
+
+   «Hasta ese día» es hasta el FINAL de ese día, no hasta el instante: el
+   formulario guarda la devolución a las 12:00 y un cobro de las 16:00 del mismo
+   día es de ese día. Por eso se compara por día y no por instante. */
+const diaDe = (iso: string): string | null => (Number.isNaN(Date.parse(iso)) ? null : diaDeNegocio(iso));
+
+/** El instante con que se guarda una devolución fechada un día de Argentina:
+ *  las 12:00 de allá (−03:00 fijo, sin horario de verano desde 2009), no las
+ *  12:00 de donde esté el navegador. Así el día que se ve en el calendario es el
+ *  que cuenta «hasta ese día». */
+export const mediodiaDeNegocio = (dia: string): string => new Date(`${dia}T12:00:00-03:00`).toISOString();
+
 export interface Devolvible {
   /* Todo lo cobrado de la venta hasta ese día. */
   cobrado: number;
@@ -73,15 +89,17 @@ export interface Devolvible {
 }
 
 /** Cuánto se puede devolver de una venta a esa fecha: lo cobrado hasta
- *  entonces menos lo que ya se devolvió. `ignorar` es la devolución que se
- *  está corrigiendo (no cuenta contra sí misma). */
+ *  el final de ese día menos lo que ya se devolvió. `ignorar` es la devolución
+ *  que se está corrigiendo (no cuenta contra sí misma). */
 export function devolvibleDeVenta(
   e: Pick<EstadoApp, "pagos" | "cuotas"> & ConDevoluciones, ventaId: ID, hastaIso: string, ignorar?: ID,
 ): Devolvible {
   const cuotas = new Set(e.cuotas.filter((c) => c.ventaId === ventaId).map((c) => c.id));
-  const t = Date.parse(hastaIso);
-  const cobrado = r2(e.pagos.filter((p) => cuotas.has(p.cuotaId) && Date.parse(p.fecha) <= t).reduce((a, p) => a + p.monto, 0));
-  const devuelto = r2(devolucionesDeVenta(e, ventaId).filter((d) => d.id !== ignorar && Date.parse(d.fecha) <= t).reduce((a, d) => a + d.monto, 0));
+  const dia = diaDe(hastaIso);
+  if (dia === null) return { cobrado: 0, devuelto: 0, queda: 0 };
+  const hastaElDia = (fecha: string) => { const d = diaDe(fecha); return d !== null && d <= dia; };
+  const cobrado = r2(e.pagos.filter((p) => cuotas.has(p.cuotaId) && hastaElDia(p.fecha)).reduce((a, p) => a + p.monto, 0));
+  const devuelto = r2(devolucionesDeVenta(e, ventaId).filter((d) => d.id !== ignorar && hastaElDia(d.fecha)).reduce((a, d) => a + d.monto, 0));
   return { cobrado, devuelto, queda: Math.max(0, r2(cobrado - devuelto)) };
 }
 
@@ -165,6 +183,8 @@ export function reversasDeComision(e: EstadoDeReversas): Reversa[] {
     const venta = ventaPorId.get(ventaId);
     if (!venta || venta.estado === "cancelada") continue;
     const pagos = pagosPorVenta.get(ventaId) ?? [];
+    /* El día de cada cobro, una vez por venta (no por devolución). */
+    const diasDePago = pagos.map((p) => diaDe(p.fecha));
     const deLaVenta = venta.closerId ? miembro.get(venta.closerId) : undefined;
     const sinComision = Boolean(deLaVenta?.sinComision);
     const director = venta.directorId ? miembro.get(venta.directorId) : undefined;
@@ -172,8 +192,10 @@ export function reversasDeComision(e: EstadoDeReversas): Reversa[] {
     let yaDevuelto = 0;
 
     for (const d of devs.sort(masVieja)) {
-      const t = Date.parse(d.fecha);
-      const hasta = pagos.filter((p) => Date.parse(p.fecha) <= t);
+      /* Los cobros hasta el final del día de la devolución (un cobro de las 16:00
+         del mismo día cuenta aunque la devolución esté guardada a las 12:00). */
+      const dia = diaDe(d.fecha);
+      const hasta = pagos.filter((_, i) => { const x = diasDePago[i]; return dia !== null && x !== null && x <= dia; });
       const cobradoVenta = r2(hasta.reduce((a, p) => a + p.monto, 0));
       const quedaba = Math.max(0, r2(cobradoVenta - yaDevuelto));
       const devuelto = Math.min(r2(d.monto), quedaba);

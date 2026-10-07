@@ -14,10 +14,11 @@ import { useAcceso } from "@/lib/acceso";
 import { puedeDarDeBaja } from "@/lib/permisos";
 import { cerrarDevolucion, usePedidoDevolucion, type PedidoDevolucion } from "@/lib/devolucion-ui";
 import {
-  devolvibleDeVenta, problemaDeDevolucion, procesadorDeLaVenta, reversasDeComision, ventasDelPedido,
+  devolvibleDeVenta, mediodiaDeNegocio, problemaDeDevolucion, procesadorDeLaVenta, reversasDeComision, ventasDelPedido,
 } from "@/lib/devoluciones";
 import { escribirMonto, leerMonto } from "@/lib/gastos";
-import { fechaLarga, isoDia, money } from "@/lib/format";
+import { diaDeNegocio } from "@/lib/dia-negocio";
+import { fechaLarga, money } from "@/lib/format";
 import { nombrePeriodo, periodoDeFecha } from "@/lib/periodos";
 import type { Comprobante, Devolucion } from "@/lib/types";
 
@@ -44,8 +45,12 @@ export function CargarDevolucion() {
   return <Formulario key={JSON.stringify(pedido)} pedido={pedido} />;
 }
 
-const mediodia = (dia: string) => new Date(`${dia}T12:00:00`).toISOString();
-const hoyDia = () => isoDia(new Date().toISOString());
+/* El día que se elige es un día de Argentina: se guarda a las 12:00 de allá y se
+   lee con el día de negocio, no con el reloj del navegador. */
+const mediodia = mediodiaDeNegocio;
+/* El día de negocio de una fecha; vacío si no se entiende. */
+const diaDe = (iso?: string) => { const d = diaDeNegocio(iso); return /^\d{4}-\d{2}-\d{2}$/.test(d) ? d : ""; };
+const hoyDia = () => diaDe(new Date().toISOString());
 
 function Formulario({ pedido }: { pedido: PedidoDevolucion }) {
   const e = useEstado();
@@ -73,7 +78,7 @@ function Formulario({ pedido }: { pedido: PedidoDevolucion }) {
     return (base?.ventaId ?? conCobro?.id ?? ventas[0]?.id) ?? "";
   });
   const venta = ventas.find((v) => v.id === ventaId);
-  const [dia, setDia] = useState(() => isoDia(base?.fecha ?? new Date().toISOString()) || hoyDia());
+  const [dia, setDia] = useState(() => diaDe(base?.fecha ?? new Date().toISOString()) || hoyDia());
   const fechaIso = mediodia(dia);
   const devolvible = venta ? devolvibleDeVenta(e, venta.id, fechaIso, previa?.id) : null;
 
