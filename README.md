@@ -656,7 +656,7 @@ tasa de cobro y mora, de Cobranza).
 - **Qué se dibuja**: Revenue vs Cash Collected por día o mes (líneas o barras; Revenue en amarillo y CC en verde,
   siempre), tasa de cobro en el tiempo, tasa de mora (una foto de hoy: medidor y repartida por dimensión), ticket
   promedio sobre Revenue y sobre CC, desgloses de unidades, Revenue y CC por plan de pago, país, estrategia,
-  servicio y proyecto (barras ordenadas; dona si son pocas) y el mapa con el peso de cada país. Cada gráfico tiene
+  servicio y proyecto (barras ordenadas; dona si son pocas) y el mapa, con cada país **pintado** (amarillo por Revenue o verde por CC, a elección; más intenso, más monto) y el nombre y el peso de los más pesados. Cada gráfico tiene
   su ⓘ con la cuenta escrita y los números del período.
 - **Interactivos y accesibles**: tooltip al pasar el mouse o con el foco, flechas del teclado en los gráficos,
   clic para fijar un punto (y abrir las ventas o los cobros de esa columna), ocultar una serie desde la leyenda,
@@ -666,6 +666,6 @@ tasa de cobro y mora, de Cobranza).
   y lo lleva a su código ISO; lo escrito que no se reconoce va a «Sin identificar» (con lo que decía) y lo vacío, a
   «Sin país»: la plata no se pierde. El país de una venta es el de su contacto, si no el de su lead y si no el de su
   alumno.
-- **El mapa** (`src/lib/mapa-mundo.ts`) es Natural Earth 110m en SVG propio, sin librerías. Se genera con
+- **El mapa** (`src/lib/mapa-mundo.ts`) es Natural Earth 110m en SVG propio, sin librerías. Primero tenía burbujas; se cambió por países pintados («que pinte el país, no esos círculos»). Se genera con
   `scripts/generar-mapa-mundo.mjs` desde el paquete `world-atlas` (bajado a una carpeta temporal fuera del repo; no
   es una dependencia de la app).

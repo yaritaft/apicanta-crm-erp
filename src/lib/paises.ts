@@ -11,7 +11,7 @@
      queda a la vista qué decía, para corregirlo;
    - lo que no tiene nada va a «sin» (Sin país).
 
-   Cada país trae el centroide (latitud y longitud) donde se dibuja su burbuja
+   Cada país trae el centroide (latitud y longitud) donde se escribe su nombre en el mapa y se ancla su tooltip
    en el mapa del Dashboard.
    ================================================================== */
 

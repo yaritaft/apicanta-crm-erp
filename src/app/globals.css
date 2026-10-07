@@ -3984,19 +3984,21 @@ span.kpis__etiqueta:hover { color: var(--ink); text-decoration: none; }
 .gr-mapa__lienzo { display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; }
 .gr-mapa__svg { position: relative; margin: 0 auto; max-width: 100%; overflow: hidden; border-radius: var(--radius-md); background: var(--surface-000); }
 .gr-mapa__svg svg { display: block; }
-.gr-forma-pais { fill: var(--surface-300); stroke: var(--surface-000); stroke-width: .6; }
+.gr-forma-pais { fill: var(--surface-300); stroke: var(--surface-000); stroke-width: .6; outline: none; }
 .gr-forma-pais:hover { fill: color-mix(in srgb, var(--surface-300) 78%, var(--ink-subtle)); }
-/* Los países con ventas, un poco más claros; el elegido, con el borde amarillo. */
-.gr-forma-pais--con { fill: color-mix(in srgb, var(--surface-300) 62%, var(--ink-subtle)); cursor: pointer; }
-.gr-forma-pais--con:hover { fill: color-mix(in srgb, var(--surface-300) 48%, var(--ink-subtle)); }
-.gr-forma-pais--sel { stroke: var(--estrella); stroke-width: 1.6px; }
-.gr-burbuja { cursor: pointer; outline: none; }
-.gr-burbuja__toque { fill: transparent; }
-.gr-burbuja:focus-visible .gr-burbuja__toque { stroke: var(--focus); stroke-width: 2px; vector-effect: non-scaling-stroke; }
-.gr-burbuja__rev { fill-opacity: .8; }
-.gr-burbuja__cc { fill-opacity: .95; }
-.gr-burbuja--activa .gr-burbuja__rev { fill-opacity: 1; }
-.gr-burbuja__sel { stroke: var(--ink); stroke-width: 2px; stroke-dasharray: 4 3; }
+/* Un país con ventas o cobros se PINTA (el color y su intensidad van en el estilo del trazo, según Revenue o CC);
+   al pasar el mouse o con el foco se le marca el borde, el elegido lleva el borde grueso. */
+.gr-forma-pais--con { cursor: pointer; }
+.gr-forma-pais--con:hover { stroke: var(--ink); stroke-width: 1.4px; }
+.gr-forma-pais--con:focus-visible { stroke: var(--focus); stroke-width: 2.4px; }
+.gr-forma-pais--sel, .gr-forma-pais--sel:hover { stroke: var(--ink); stroke-width: 2.2px; }
+/* El nombre y el peso de los más pesados, sobre el color, con un contorno del fondo para que se lea. */
+.gr-rotulo { fill: var(--ink); font-family: var(--font-sans); font-weight: 700; paint-order: stroke; stroke: var(--surface-000); stroke-linejoin: round; pointer-events: none; }
+.gr-rotulo__peso { font-weight: 500; }
+/* La escala de color: de menos a más. */
+.gr-rampa__fila { display: inline-flex; align-items: center; gap: 8px; }
+.gr-rampa { display: inline-block; width: 120px; height: 10px; border-radius: var(--radius-full); border: 1px solid var(--border); background: linear-gradient(90deg, color-mix(in srgb, var(--gr-color) 28%, transparent), var(--gr-color)); }
+.gr-rampa__sin { display: inline-block; width: 14px; height: 10px; border-radius: 3px; background: var(--surface-300); vertical-align: middle; }
 .gr-mapa__sin { margin: 0; font-size: 13px; line-height: 20px; color: var(--ink-muted); }
 .gr-mapa__detalle { display: flex; flex-direction: column; gap: var(--space-2); min-height: 44px; }
 .gr-mapa__detalle-cabeza { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); font-size: 15px; color: var(--ink); }

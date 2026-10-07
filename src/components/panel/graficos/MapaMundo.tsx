@@ -15,18 +15,25 @@ import type { Moneda } from "@/lib/types";
 import { BORDE_CC, BORDE_REVENUE, CabezaGrafico, COLOR_CC, COLOR_REVENUE, Forma, InfoGrafico, Selector } from "./comun";
 import { DetalleCategoria } from "./PanelDesglose";
 
-/* El mapa: dónde están los clientes. Los países en gris y, en cada uno, una
-   burbuja amarilla con su Revenue y, adentro, una verde con su Cash Collected
-   (CC); las dos con la misma escala, así lo verde se ve como la parte de lo
-   amarillo que ya entró. A un costado, la lista ordenada con el peso de cada
-   país sobre el total. SVG propio: la geometría es Natural Earth 110m
-   (lib/mapa-mundo.ts) y las burbujas se ubican con la misma proyección. */
+/* El mapa: dónde están los clientes. Cada país se PINTA: en amarillo según su
+   Revenue o en verde según su Cash Collected (CC), a elección, y cuanto más
+   intenso el color, más monto. Los países sin ventas quedan en gris. Arriba de
+   los más pesados va su nombre y su peso sobre el total, y a un costado, la
+   lista ordenada con los números de cada uno. SVG propio: la geometría es
+   Natural Earth 110m (lib/mapa-mundo.ts). (Antes eran burbujas; Juan Cruz:
+   «que pinte el país, no esos círculos grandes que quedan feos».) */
 
 const TOPE = 6;
 
-/* El radio de la burbuja más grande, en píxeles: más chico con el mundo entero
-   (hay mucho país en poco lugar) y más grande al acercarse. */
-const RADIO_MAX: Record<ZonaMapa, number> = { mundo: 17, americas: 22, latam: 28, europa: 24 };
+/* Cuántos países llevan su nombre y su peso escritos arriba: pocos con el mundo
+   entero (hay mucho país en poco lugar) y más al acercarse. */
+const ROTULOS: Record<ZonaMapa, number> = { mundo: 5, americas: 7, latam: 9, europa: 7 };
+
+/* La intensidad de un país: de 28% (el que menos tiene, que se vea) a 100% (el que más).
+   Con la raíz cuadrada: un país que pesa 4 veces menos se ve la mitad de intenso, no la cuarta parte. */
+const intensidad = (v: number, max: number) => 0.28 + 0.72 * Math.sqrt(Math.max(0, v) / max);
+
+const corto = (nombre: string) => (nombre.length > 15 ? `${nombre.slice(0, 13)}…` : nombre);
 
 /* Lo que se ve de cada zona: el recuadro del plano que ocupa, en las unidades del mapa. */
 function cajaDeZona(id: ZonaMapa): { x: number; y: number; w: number; h: number } {
@@ -61,24 +68,36 @@ export function MapaMundo({ ctx, moneda, ve, periodo, zona, onZona, onAbrir }: {
   const porIso = useMemo(() => new Map(enMapa.map((x) => [x.iso, x])), [enMapa]);
   const conPlata = (x: Categoria) => (hayRevenue && x.revenue > 0) || (hayCC && x.cc > 0);
 
-  /* Revenue y CC con la misma escala: el área de la burbuja es el monto. */
-  const referencia = Math.max(1e-9, ...enMapa.map((x) => Math.max(hayRevenue ? x.revenue : 0, hayCC ? x.cc : 0)));
+  /* Se pinta por la métrica elegida; el país que más tiene es el más intenso. */
+  const colorMetrica = metrica === "revenue" ? COLOR_REVENUE : COLOR_CC;
+  const nombreMetrica = metrica === "revenue" ? "Revenue" : "Cash Collected (CC)";
+  const maximo = Math.max(1e-9, ...enMapa.map((x) => valorDe(x, metrica)));
   const vb = useMemo(() => cajaDeZona(zona), [zona]);
   const altoMax = W < 520 ? 380 : 470;
   const escala = Math.min(W / vb.w, altoMax / vb.h);
   const anchoPx = Math.round(vb.w * escala), altoPx = Math.round(vb.h * escala);
-  const rMax = RADIO_MAX[zona] * (W < 520 ? 0.85 : 1);
-  const radio = (v: number) => (v > 0 ? Math.max(Math.sqrt(v / referencia) * rMax, 3) / escala : 0);
   const aPx = (px: number, py: number) => ({ x: (px - vb.x) * escala, y: (py - vb.y) * escala });
 
-  const burbujas = useMemo(
+  /* Los que llevan su nombre escrito: los más pesados de lo que se ve. */
+  const rotulos = useMemo(
     () => enMapa
-      .filter((x) => (hayRevenue && x.revenue > 0) || (hayCC && x.cc > 0))
+      .filter((x) => valorDe(x, metrica) > 0)
       .map((x) => { const [px, py] = proyectar(x.lat, x.lon); return { x, px, py }; })
-      .filter((b) => b.px >= vb.x - 5 && b.px <= vb.x + vb.w + 5 && b.py >= vb.y - 5 && b.py <= vb.y + vb.h + 5)
-      /* Las grandes atrás: las chicas no quedan tapadas. */
-      .sort((a, b) => Math.max(b.x.revenue, b.x.cc) - Math.max(a.x.revenue, a.x.cc)),
-    [enMapa, hayRevenue, hayCC, vb],
+      .filter((b) => b.px >= vb.x && b.px <= vb.x + vb.w && b.py >= vb.y && b.py <= vb.y + vb.h)
+      .sort((a, b) => valorDe(b.x, metrica) - valorDe(a.x, metrica))
+      /* De los más pesados a los menos: el que se pisaría con uno ya puesto se saltea
+         (sus números siguen en el tooltip y en la lista). */
+      .reduce<{ x: (typeof enMapa)[number]; px: number; py: number }[]>((puestos, b) => {
+        if (puestos.length >= ROTULOS[zona]) return puestos;
+        const ancho = Math.max(corto(b.x.nombre).length, 5) * 6.4 + 6, alto = 28;
+        const [cx, cy] = [(b.px - vb.x) * escala, (b.py - vb.y) * escala];
+        const pisa = puestos.some((o) => {
+          const oAncho = Math.max(corto(o.x.nombre).length, 5) * 6.4 + 6;
+          return Math.abs(cx - (o.px - vb.x) * escala) < (ancho + oAncho) / 2 && Math.abs(cy - (o.py - vb.y) * escala) < alto;
+        });
+        return pisa ? puestos : [...puestos, b];
+      }, []),
+    [enMapa, metrica, vb, zona, escala],
   );
 
   /* La lista: los del mapa por la métrica elegida y, al final, lo que no se pudo ubicar. */
@@ -118,7 +137,7 @@ export function MapaMundo({ ctx, moneda, ve, periodo, zona, onZona, onAbrir }: {
     const r = lienzo.current?.getBoundingClientRect();
     if (r) setTip({ clave, x: ev.clientX - r.left, y: ev.clientY - r.top });
   };
-  const sobreBurbuja = (clave: string, px: number, py: number) => setTip({ clave, ...aPx(px, py) });
+  const sobrePunto = (clave: string, px: number, py: number) => setTip({ clave, ...aPx(px, py) });
 
   const fila = (x: Categoria, n?: number) => {
     const abierta = sel === x.clave;
@@ -159,72 +178,75 @@ export function MapaMundo({ ctx, moneda, ve, periodo, zona, onZona, onAbrir }: {
             ]}
           />
         )}
-        sub={`${periodo} · el tamaño de la burbuja es el monto`}
-        acciones={<Selector etiqueta="Zona del mapa" valor={zona} onCambiar={onZona} opciones={ZONAS_MAPA.map((z) => ({ id: z.id, titulo: z.titulo }))} />}
+        sub={`${periodo} · pintado por ${nombreMetrica}: cuanto más intenso, más monto`}
+        acciones={(
+          <>
+            {hayRevenue && hayCC && (
+              <Selector
+                etiqueta="Pintar el mapa por" valor={metrica} onCambiar={setOrden}
+                opciones={[{ id: "revenue", titulo: "Revenue" }, { id: "cc", titulo: "CC", ayuda: "Cash Collected (CC)" }]}
+              />
+            )}
+            <Selector etiqueta="Zona del mapa" valor={zona} onCambiar={onZona} opciones={ZONAS_MAPA.map((z) => ({ id: z.id, titulo: z.titulo }))} />
+          </>
+        )}
       />
 
       <div className="gr-mapa">
         <div className="gr-mapa__lienzo" ref={caja}>
           <div className="gr-leyenda gr-leyenda--mapa" aria-hidden>
-            {hayRevenue && <span className="gr-leyenda__item"><Forma forma="circulo" color={COLOR_REVENUE} borde={BORDE_REVENUE} /> Revenue</span>}
-            {hayCC && <span className="gr-leyenda__item"><Forma forma="rombo" color={COLOR_CC} borde={BORDE_CC} /> Cash Collected (CC)</span>}
+            <span className="gr-leyenda__item">{nombreMetrica} por país</span>
+            <span className="gr-leyenda__item gr-rampa__fila">
+              <span className="t-sm t-subtle">Menos</span>
+              <span className="gr-rampa" style={{ ["--gr-color" as string]: colorMetrica }} />
+              <span className="t-sm t-subtle">Más · {money(maximo, moneda, 0)}</span>
+            </span>
+            <span className="gr-leyenda__item"><span className="gr-rampa__sin" /> <span className="t-sm t-subtle">Sin ventas</span></span>
           </div>
 
           <div className="gr-mapa__svg" ref={lienzo} style={{ width: anchoPx, height: altoPx }}>
             <svg
               width={anchoPx} height={altoPx} viewBox={`${vb.x.toFixed(1)} ${vb.y.toFixed(1)} ${vb.w.toFixed(1)} ${vb.h.toFixed(1)}`}
-              role="group" aria-label="Mapa del mundo con una burbuja por país. Los mismos números están en la lista."
+              role="group" aria-label={`Mapa del mundo con cada país pintado según su ${nombreMetrica}. Los mismos números están en la lista.`}
               onPointerLeave={() => setTip(null)}
             >
               <g>
                 {Object.entries(MAPA_PAISES).map(([iso, trazo]) => {
                   const x = porIso.get(iso);
-                  const hay = Boolean(x && conPlata(x));
+                  const v = x ? valorDe(x, metrica) : 0;
+                  const pintado = Boolean(x && conPlata(x));
+                  const centro = x ? proyectar(x.lat, x.lon) : null;
+                  const descripcion = x ? [
+                    hayRevenue ? `Revenue ${money(x.revenue, moneda, 0)}, ${pct(pesoDe(x.revenue, totalRev) ?? 0, 1)} del total` : "",
+                    hayCC ? `Cash Collected ${money(x.cc, moneda, 0)}, ${pct(pesoDe(x.cc, totalCC) ?? 0, 1)} del total` : "",
+                  ].filter(Boolean).join("; ") : "";
                   return (
                     <path
                       key={iso} d={trazo} vectorEffect="non-scaling-stroke"
-                      className={`gr-forma-pais${hay ? " gr-forma-pais--con" : ""}${sel === iso ? " gr-forma-pais--sel" : ""}`}
-                      onPointerMove={(ev) => sobre(iso, ev)} onClick={() => { if (hay) alternar(iso); else setSel(null); }}
+                      className={`gr-forma-pais${pintado ? " gr-forma-pais--con" : ""}${sel === iso ? " gr-forma-pais--sel" : ""}`}
+                      style={pintado ? { fill: colorMetrica, fillOpacity: intensidad(v, maximo) } : undefined}
+                      {...(pintado && x && centro ? {
+                        tabIndex: 0, role: "button", "aria-pressed": sel === iso, "aria-label": `${x.nombre}: ${descripcion}`,
+                        onFocus: () => sobrePunto(iso, centro[0], centro[1]), onBlur: () => setTip(null),
+                        onKeyDown: (ev: React.KeyboardEvent) => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); alternar(iso); } },
+                      } : {})}
+                      onPointerMove={(ev) => sobre(iso, ev)} onClick={() => { if (pintado) alternar(iso); else setSel(null); }}
                     />
                   );
                 })}
               </g>
 
-              {burbujas.map(({ x, px, py }) => {
-                const rRev = hayRevenue ? radio(x.revenue) : 0, rCC = hayCC ? radio(x.cc) : 0;
-                /* El Revenue es un círculo y el CC un rombo, del mismo área que un círculo de ese radio:
-                   la misma forma que en la leyenda y en los gráficos, para no depender del color.
-                   El círculo va atrás y el rombo adelante: siempre se ven los dos, sea cual sea más grande. */
-                const grande = Math.max(rRev, rCC * 1.2533);
-                const redondas = [
-                  { k: "rev", r: rRev, color: COLOR_REVENUE, borde: BORDE_REVENUE },
-                  { k: "cc", r: rCC, color: COLOR_CC, borde: BORDE_CC },
-                ].filter((c) => c.r > 0);
-                const descripcion = [
-                  hayRevenue ? `Revenue ${money(x.revenue, moneda, 0)}, ${pct(pesoDe(x.revenue, totalRev) ?? 0, 1)} del total` : "",
-                  hayCC ? `Cash Collected ${money(x.cc, moneda, 0)}, ${pct(pesoDe(x.cc, totalCC) ?? 0, 1)} del total` : "",
-                ].filter(Boolean).join("; ");
-                return (
-                  <g
-                    key={x.iso} className={`gr-burbuja${sel === x.iso || tip?.clave === x.iso ? " gr-burbuja--activa" : ""}`}
-                    tabIndex={0} role="button" aria-pressed={sel === x.iso} aria-label={`${x.nombre}: ${descripcion}`}
-                    onPointerMove={(ev) => sobre(x.iso, ev)} onFocus={() => sobreBurbuja(x.iso, px, py)} onBlur={() => setTip(null)}
-                    onClick={() => alternar(x.iso)}
-                    onKeyDown={(ev) => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); alternar(x.iso); } }}
-                  >
-                    <circle cx={px} cy={py} r={Math.max(grande, 11 / escala)} className="gr-burbuja__toque" />
-                    {redondas.map((c) => (c.k === "cc" ? (
-                      <rect
-                        key={c.k} x={px - c.r * 0.8862} y={py - c.r * 0.8862} width={c.r * 1.7725} height={c.r * 1.7725} transform={`rotate(45 ${px} ${py})`}
-                        fill={c.color} stroke={c.borde} strokeWidth="1" vectorEffect="non-scaling-stroke" className="gr-burbuja__cc"
-                      />
-                    ) : (
-                      <circle key={c.k} cx={px} cy={py} r={c.r} fill={c.color} stroke={c.borde} strokeWidth="1" vectorEffect="non-scaling-stroke" className="gr-burbuja__rev" />
-                    )))}
-                    {sel === x.iso && <circle cx={px} cy={py} r={grande + 4 / escala} fill="none" className="gr-burbuja__sel" vectorEffect="non-scaling-stroke" />}
-                  </g>
-                );
-              })}
+              {/* El nombre y el peso de los más pesados, sobre el color. */}
+              {W >= 480 && (
+                <g aria-hidden pointerEvents="none">
+                  {rotulos.map(({ x, px, py }) => (
+                    <text key={x.iso} className="gr-rotulo" textAnchor="middle" style={{ fontSize: 11 / escala, strokeWidth: 3 / escala }}>
+                      <tspan x={px} y={py}>{corto(x.nombre)}</tspan>
+                      <tspan x={px} y={py + 12.5 / escala} className="gr-rotulo__peso">{pct(pesoDe(valorDe(x, metrica), metrica === "revenue" ? totalRev : totalCC) ?? 0, 1)}</tspan>
+                    </text>
+                  ))}
+                </g>
+              )}
             </svg>
 
             {tip && (
@@ -289,13 +311,7 @@ export function MapaMundo({ ctx, moneda, ve, periodo, zona, onZona, onAbrir }: {
 
         <div className="gr-mapa__lista">
           <div className="gr-mapa__orden">
-            <span className="t-label">Peso de cada país</span>
-            {hayRevenue && hayCC && (
-              <Selector
-                chico etiqueta="Ordenar la lista por" valor={metrica} onCambiar={setOrden}
-                opciones={[{ id: "revenue", titulo: "Revenue" }, { id: "cc", titulo: "CC", ayuda: "Cash Collected (CC)" }]}
-              />
-            )}
+            <span className="t-label">Peso de cada país · {metrica === "revenue" ? "por Revenue" : "por CC"}</span>
           </div>
 
           <ol className="gr-paises-lista">

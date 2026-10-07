@@ -5,7 +5,7 @@
    Proyección Equal Earth, recortada entre 84°N y 58°S, a 1000 × 437.
    Para regenerarlo: ver el encabezado del script.
 
-   `proyectar(lat, lon)` es la misma proyección: ubica las burbujas del mapa
+   `proyectar(lat, lon)` es la misma proyección: ubica el nombre y el tooltip de cada país en el mapa
    en el mismo plano que los países. */
 
 export const MAPA_ANCHO = 1000;

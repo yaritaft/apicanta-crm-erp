@@ -432,7 +432,7 @@ export const TEXTOS: Record<"revenueCC" | "soloRevenue" | "soloCC" | "tasaCobro"
   },
   mapa: {
     titulo: "Mapa de países",
-    ayuda: "Dónde están los clientes. Cada país suma el Revenue de las ventas de su gente (amarillo) y el Cash Collected (CC) de los pagos de esas ventas (verde). El peso es la parte de cada país sobre el total de la tabla. Lo que no tiene país cargado va a «Sin país»; lo que está escrito pero no se reconoce, a «Sin identificar».",
+    ayuda: "Dónde están los clientes. Cada país se pinta según el Revenue de las ventas de su gente (amarillo) o el Cash Collected (CC) de los pagos de esas ventas (verde), a elección: cuanto más intenso el color, más monto. El peso es la parte de cada país sobre el total de la tabla. Lo que no tiene país cargado va a «Sin país»; lo que está escrito pero no se reconoce, a «Sin identificar».",
     formula: "Peso de un país = Revenue (o CC) del país ÷ Revenue (o CC) total × 100\nPaís de una venta = el de su contacto (o lead, o alumno), normalizado: «México», «Mexico» y «MX» son el mismo",
   },
 };
