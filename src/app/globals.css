@@ -4077,6 +4077,8 @@ span.kpis__etiqueta:hover { color: var(--ink); text-decoration: none; }
 .cs-resumen__tarjeta[role="button"]:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 .cs-recorte { display: inline-block; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; }
 .cs-quieto { display: inline-flex; align-items: center; }
+/* Los gestos del día («Lo contacté», «No contestó») se ven siempre, no sólo al pasar el mouse: en el teléfono no hay mouse. */
+.cs-tabla .row-actions { opacity: 1; }
 @media (max-width: 900px) {
   .cs-resumen { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }

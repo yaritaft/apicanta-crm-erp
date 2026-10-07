@@ -196,7 +196,7 @@ export function ContactarHoy() {
         </div>
       </Card>
 
-      <Card style={{ padding: 0, overflow: "hidden" }}>
+      <Card className="cs-tabla" style={{ padding: 0, overflow: "hidden" }}>
         <DataTable
           filas={lista} columnas={columnas} alto={640} porPagina={50}
           orden={tabla.orden} onOrden={tabla.onOrden} pagina={tabla.pagina} onPagina={tabla.onPagina}
@@ -367,7 +367,7 @@ export function SeguimientoLista() {
         <ResumenCuenta etiqueta="LinkedIn sin corregir" valor={resumen.sinLinkedin} ayuda="Alumnos activos a los que todavía no se les marcó el LinkedIn como corregido." formula="Activos con «LinkedIn corregido» en No" onClick={() => setV({ li: "no", sit: null })} />
       </div>
 
-      <Card style={{ padding: 0, overflow: "hidden" }}>
+      <Card className="cs-tabla" style={{ padding: 0, overflow: "hidden" }}>
         <div style={{ padding: "var(--space-4) var(--space-4) 0" }} className="stack-3">
           <div className="toolbar">
             <Input
