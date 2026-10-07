@@ -96,7 +96,9 @@ export function IngresosSemanales({ e }: { e: EstadoApp }) {
   const cuentaTop = cuentasDeCobros.find((c) => c.id !== SIN_CUENTA) ?? cuentasDeCobros[0];
   const servicioTop = r.servicios.find((s) => s.id !== SIN_SERVICIO && s.cobrado.cobros > 0) ?? r.servicios.find((s) => s.cobrado.cobros > 0);
   const hayDevoluciones = r.devuelto.devoluciones > 0;
-  const cambio = anterior.cc > 0 ? ((r.total.monto - anterior.cc) / anterior.cc) * 100 : null;
+  /* Neto contra neto, en centavos enteros: dos semanas iguales dan 0 %, sin restos de punto flotante. */
+  const ccAnterior = Math.round(anterior.cc * 100);
+  const cambio = ccAnterior > 0 ? ((r.total.centavos - ccAnterior) / ccAnterior) * 100 : null;
 
   /* Una celda de la tabla: su monto, que al tocarlo abre los cobros (y las devoluciones) que lo forman. */
   const boton = (celda: CeldaIngreso | undefined, sel: Seleccion, fuerte = false) =>
