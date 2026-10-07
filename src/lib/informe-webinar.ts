@@ -1,7 +1,7 @@
 import type { Contacto, EstadoApp, Webinar } from "./types";
 import { insightsDelWebinar, metricasDeWebinar, numerosDelWebinar, personasDeWebinar, type PersonaDeWebinar } from "./webinar";
 import type { AgendaDelWebinar } from "./agendas-webinar";
-import { agendasDelLanzamiento, NOMBRE_LINK, NOMBRE_VIA, rendimientoPorVia } from "./vias-webinar";
+import { agendasDelLanzamiento, NOMBRE_LINK, NOMBRE_VIA, plataDeVentas, rendimientoPorVia } from "./vias-webinar";
 import { adDe, anguloDe, filasTabla, type FilaTabla } from "./crm-tabla";
 import { evaluarRegistro } from "./capi-registro";
 import { respuestaPerfil, type Respuesta } from "./perfil";
@@ -214,16 +214,14 @@ export interface InformeWebinar {
 const dma = (dia: string) => dia.split("-").reverse().join("-");
 const sinCaracteresDeArchivo = (s: string) => s.replace(/[\\/:*?"<>|]+/g, " ").replace(/\s+/g, " ").trim();
 
-/** Cuánto se facturó y cobró de cada venta (las canceladas no cuentan). */
+/** Cuánto se facturó y cobró de cada venta (las canceladas no cuentan). Lo cobrado es el Cash
+ *  Collected de la venta —lo que entró menos lo que se le devolvió, sólo devoluciones confirmadas—,
+ *  como en el resumen de arriba (metricasDeWebinar) y en el rendimiento por vía: así lo que suman
+ *  las hojas es lo que dice el resumen. */
 function plataPorVenta(e: EstadoApp): Map<string, { facturado: number; cobrado: number }> {
-  const ventaDeCuota = new Map(e.cuotas.map((c) => [c.id, c.ventaId] as const));
-  const cobrado = new Map<string, number>();
-  for (const p of e.pagos) {
-    const v = ventaDeCuota.get(p.cuotaId);
-    if (v) cobrado.set(v, (cobrado.get(v) ?? 0) + p.monto);
-  }
+  const plata = plataDeVentas(e);
   return new Map(e.ventas.filter((v) => v.estado !== "cancelada")
-    .map((v) => [v.id, { facturado: v.precioAcordado, cobrado: cobrado.get(v.id) ?? 0 }] as const));
+    .map((v) => [v.id, { facturado: v.precioAcordado, cobrado: plata.get(v.id)?.cobrado ?? 0 }] as const));
 }
 
 export function informeDelWebinar(e: EstadoApp, webinar: Webinar): InformeWebinar {
@@ -338,7 +336,8 @@ export function informeDelWebinar(e: EstadoApp, webinar: Webinar): InformeWebina
         { etiqueta: "   DM Ads", valor: w.inversionDmAds, formato: "moneda", nota: "Lo cargado a mano; si está en cero, las campañas «DM …» de Meta de los días previos." },
         { etiqueta: "   WhatsApp API", valor: w.costoWhatsappApi, formato: "moneda", nota: "Lo cargado a mano." },
         { etiqueta: "Facturado (Revenue)", valor: m.facturado, formato: "moneda", nota: "Suma del precio acordado de las ventas del webinar (sin las canceladas)." },
-        { etiqueta: "Cobrado (Cash Collected)", valor: m.cobrado, formato: "moneda", nota: "Suma de los cobros que ya entraron de esas ventas." },
+        { etiqueta: "Cobrado (Cash Collected)", valor: m.cobrado, formato: "moneda", nota: "Suma de los cobros que ya entraron de esas ventas, menos lo que se devolvió de ellas." },
+        ...(m.devoluciones > 0 ? [{ etiqueta: "   Devuelto", valor: m.devoluciones, formato: "moneda" as const, nota: "Lo devuelto de esas ventas (devoluciones confirmadas): ya está restado del Cobrado." }] : []),
         { etiqueta: "ROAS on Revenue", valor: redondear(m.roasRev), formato: "decimal", nota: "Facturado ÷ Inversión total." },
         { etiqueta: "ROAS on CC", valor: redondear(m.roasCC), formato: "decimal", nota: "Cobrado ÷ Inversión total." },
         { etiqueta: "Profit on Cash Collected (CC)", valor: redondear(m.beneficioCC), formato: "moneda", nota: "Cobrado − inversión − comisiones − costo de procesadores − gastos cargados al webinar." },
@@ -366,9 +365,9 @@ export function informeDelWebinar(e: EstadoApp, webinar: Webinar): InformeWebina
         ...vias.grupos.flatMap((g) => g.filas.map((f) => ({
           etiqueta: `${NOMBRE_VIA[g.via]} · ${NOMBRE_LINK[g.via][f.link]}`,
           valor: f.n.agendas, formato: "entero" as const,
-          nota: `agendas; ${f.n.calificadas} calificadas, ${f.n.canceladas} canceladas, ${f.n.ventas} ventas (facturado ${f.n.facturado}, cobrado ${f.n.cobrado}).`,
+          nota: `agendas; ${f.n.calificadas} calificadas, ${f.n.canceladas} canceladas, ${f.n.ventas} ventas (facturado ${redondear(f.n.facturado)}, cobrado ${redondear(f.n.cobrado)}${f.n.devuelto ? `, tras devolver ${redondear(f.n.devuelto)}` : ""}).`,
         }))),
-        { etiqueta: "Ventas de gente que no agendó por un link del lanzamiento", valor: vias.sinAgenda.ventas, formato: "entero", nota: `facturado ${vias.sinAgenda.facturado}, cobrado ${vias.sinAgenda.cobrado}.` },
+        { etiqueta: "Ventas de gente que no agendó por un link del lanzamiento", valor: vias.sinAgenda.ventas, formato: "entero", nota: `facturado ${redondear(vias.sinAgenda.facturado)}, cobrado ${redondear(vias.sinAgenda.cobrado)}${vias.sinAgenda.devuelto ? `, tras devolver ${redondear(vias.sinAgenda.devuelto)}` : ""}.` },
       ],
     },
   ];

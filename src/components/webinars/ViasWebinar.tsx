@@ -87,7 +87,8 @@ export function TarjetaVias({ w, className }: { w: Webinar; className?: string }
           </div>
           <p className="t-sm t-subtle">
             Una venta es de la vía por la que agendó esa persona: su última agenda de este webinar, su clase cero o su Q&A
-            hasta el día de la venta. Cierre: ventas sobre agendas.
+            hasta el día de la venta. Cierre: ventas sobre agendas. Cobrado es el Cash Collected de esas ventas: lo cobrado menos lo
+            que se devolvió, como en el resultado del webinar.
             {r.sinAgenda.ventas > 0 ? " «Sin agenda de este lanzamiento» son ventas del webinar de gente que no agendó por esos links." : ""}
           </p>
         </div>
