@@ -12,7 +12,7 @@ lo que se muestra se calcula solo.
 
 | Área | Qué podés hacer |
 |---|---|
-| **Dashboard & KPIs** | Todas las métricas del negocio en una tabla maestra, de la publicidad (TOFU) a la plata que queda: día por día o mes por mes con el total al final, comparando contra el período anterior y filtrando por embudo o por webinar |
+| **Dashboard & KPIs** | Todas las métricas del negocio en una tabla maestra, de la publicidad (TOFU) a la plata que queda: día por día o mes por mes con el total al final, comparando contra el período anterior y filtrando por embudo o por webinar. Con **Tabla \| Gráficos** se ven las mismas cifras dibujadas: Revenue vs Cash Collected, tasa de cobro y de mora, ticket promedio, desgloses por plan de pago, país, estrategia, servicio y proyecto, y un mapa |
 | **Metas** | Poner objetivos del mes y verlos avanzar solos con los datos reales |
 | **Leads** | Cargar, buscar, filtrar, importar por CSV, exportar, y convertir en alumno |
 | **CRM** | Las agendas de Calendly como en el Airtable de ventas (Booking Calls y Agendas Resells): cada agenda entra sola, en vivo, con lo que contestó en el formulario; el equipo carga el Pre-Call, cómo salió la llamada, las notas y la grabación en la celda misma. Vistas por closer y por día, del setter y de cada lanzamiento |
@@ -158,7 +158,8 @@ para que algo se rompa y nada que actualizar de urgencia.
 En Ventas, Agenda y Dashboard & KPIs todo lo que se elige —período, filtros, búsqueda, orden, página,
 columnas, comparar— queda en la URL. Un reporte armado se guarda en favoritos o se le pasa a otra persona
 con **Copiar link**, y se abre igual. Lo que está en su valor de siempre no se escribe, así los links quedan
-cortos. Los nombres de cada parámetro están en `src/lib/useParamsURL.ts` y en cada pantalla.
+cortos. Los nombres de cada parámetro están en `src/lib/useParamsURL.ts` y en cada pantalla. En el Dashboard,
+`?modo=graficos` abre los gráficos (y `?dim`, `?met` y `?zona` el desglose, la métrica y la zona del mapa).
 
 ## Cobros y conciliación
 
@@ -639,3 +640,32 @@ correr `supabase/honorarios.sql` (tablas, políticas, niveles de acceso y la col
   Honorarios del CEO, Setters, Edición de contenido o Filmmaker el equipo va primero; en el resto, los proveedores.
   `Gasto.proveedor` sigue siendo texto; quién del equipo es se guarda en `gastos.extra.proveedorEquipoId`. Editar un
   gasto abre la misma revisión, y uno viejo que venía sin proveedor (los de la planilla) pide uno para guardarse.
+
+## El Dashboard en gráficos (Angelo, 06/10)
+
+«En la parte que dice sólo tabla hay que crear gráficos de una… pero la tabla esa déjala, no la saques.» En
+Dashboard & KPIs, **Tabla | Gráficos** (`?modo=graficos`) cambia cómo se ven las mismas cifras. La tabla queda
+igual y sigue siendo lo primero; los gráficos respetan el período, el filtro de embudo o webinar, las columnas por
+día o por mes, «Comparar períodos» y las áreas que ve cada tipo de cuenta (Revenue y ventas salen de Ventas; CC,
+tasa de cobro y mora, de Cobranza).
+
+- **No hay fórmulas nuevas.** Cada total sale de los mismos métodos que las filas de la tabla (`facturado()`,
+  `cobrado()`, `ventasContables()`, `vencidas()`), y los desgloses sólo *reparten* esos totales entre categorías:
+  la suma de todas (el «Sin dato» incluido) da exactamente la celda de la tabla, con cada filtro. Lo prueba
+  `pruebas/kpis-graficos.test.ts`; la lógica pura está en `src/lib/kpis-graficos.ts`.
+- **Qué se dibuja**: Revenue vs Cash Collected por día o mes (líneas o barras; Revenue en amarillo y CC en verde,
+  siempre), tasa de cobro en el tiempo, tasa de mora (una foto de hoy: medidor y repartida por dimensión), ticket
+  promedio sobre Revenue y sobre CC, desgloses de unidades, Revenue y CC por plan de pago, país, estrategia,
+  servicio y proyecto (barras ordenadas; dona si son pocas) y el mapa con el peso de cada país. Cada gráfico tiene
+  su ⓘ con la cuenta escrita y los números del período.
+- **Interactivos y accesibles**: tooltip al pasar el mouse o con el foco, flechas del teclado en los gráficos,
+  clic para fijar un punto (y abrir las ventas o los cobros de esa columna), ocultar una serie desde la leyenda,
+  elegir una categoría o un país y abrir sus ventas o cobros, en el mismo panel que la tabla. Cada serie tiene su forma (círculo y rombo) y el CC va rayado:
+  nada depende sólo del color. Los números van también en una tabla para lectores de pantalla.
+- **País**: `src/lib/paises.ts` entiende el texto libre («México», «Mexico», «MX», «EE.UU.», «Rep. Dominicana»…)
+  y lo lleva a su código ISO; lo escrito que no se reconoce va a «Sin identificar» (con lo que decía) y lo vacío, a
+  «Sin país»: la plata no se pierde. El país de una venta es el de su contacto, si no el de su lead y si no el de su
+  alumno.
+- **El mapa** (`src/lib/mapa-mundo.ts`) es Natural Earth 110m en SVG propio, sin librerías. Se genera con
+  `scripts/generar-mapa-mundo.mjs` desde el paquete `world-atlas` (bajado a una carpeta temporal fuera del repo; no
+  es una dependencia de la app).
