@@ -1237,3 +1237,16 @@ Pruebas de propiedades con datos aleatorios (generador con semilla, la semilla s
 closer). No corren con `npm test` (son más lentas) ni las mira `tsc` (están fuera del `tsconfig`, se transpilan al correrlas): se corren antes de
 publicar algo grande. Las que dicen `BUG:` y llevan `{ todo: true }` son defectos conocidos todavía sin arreglar; cuando se arreglan se les saca
 el `todo`. Los frentes de la base usan PGlite (Postgres en memoria): `PGLITE_DIR=/ruta/a/node_modules/@electric-sql/pglite`.
+
+## Arreglos del estrés: rangos
+
+**Qué pasaba.** Los rangos de la app terminaban en las 23:59:59,000: el mes de Finanzas (`rangoDePeriodo`), cada día del Dashboard (`rangoDeFechas`), los
+tres meses cerrados del runway de la Caja, `ultimosMeses` y la vigencia de un concepto de la liquidación (`vigenciaEnMes`). Un cobro, una devolución o un
+gasto con milisegundos entre 23:59:59,001 y 23:59:59,999 del último día no caía en ningún mes ni en ningún día (lo que se carga en la pantalla se fecha con
+`new Date().toISOString()`, con milisegundos): se perdía sin error ni aviso. Y la liquidación de un closer que se fue perdía el cobro de su último día, que
+Finanzas sí comisiona.
+
+**Qué hace ahora.** Todos terminan en el último milisegundo del día (23:59:59,999) y el siguiente empieza un milisegundo después: cada instante cae en un
+solo mes y en un solo día, en cualquier huso horario. Es una sola cuenta, `finDelDia` en `src/lib/periodos.ts`, que usan todos los que arman un rango (y el
+corte «hasta el final del día de la venta» de las vías del webinar, `src/lib/vias-webinar.ts`). Todo lo que no cae en esa última fracción de segundo da
+exactamente lo mismo que antes. *Pruebas:* `pruebas/fix-rangos.test.ts`.

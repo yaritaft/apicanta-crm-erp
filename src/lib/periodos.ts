@@ -37,9 +37,24 @@ export function nombrePeriodo(p: string): string {
   return `${MESES[m - 1]} ${a}`;
 }
 
-/* Del primero a las 00:00 al último a las 23:59:59, en la hora de acá:
-   el mismo borde que usa Finanzas para "Este mes". */
+/** El último instante del día de `d`, en la hora de acá (23:59:59,999): el
+ *  borde derecho de todos los rangos de la app, que se comparan con `<=`.
+ *
+ *  Tiene que ser el último MILISEGUNDO y no el último segundo. Con 23:59:59,000
+ *  un cobro, una devolución o un gasto fechado a las 23:59:59,500 (lo que se
+ *  carga en la pantalla se fecha con `new Date().toISOString()`, con
+ *  milisegundos) quedaba afuera de todos los meses y de todos los días, sin
+ *  error ni aviso. Un `Date` no tiene nada entre ese instante y las 00:00 del
+ *  día siguiente: cada instante cae en un solo día. */
+export function finDelDia(d: Date): Date {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999);
+}
+
+/* Del primero a las 00:00:00,000 al último a las 23:59:59,999, en la hora de
+   acá: el mismo borde que usa Finanzas para "Este mes". Un mes empieza justo
+   un milisegundo después de que termina el anterior: ningún instante queda
+   afuera ni en dos meses. */
 export function rangoDePeriodo(p: string): RangoMes {
   const [a, m] = p.split("-").map(Number);
-  return { clave: p, etiqueta: nombrePeriodo(p), desde: new Date(a, m - 1, 1), hasta: new Date(a, m, 0, 23, 59, 59) };
+  return { clave: p, etiqueta: nombrePeriodo(p), desde: new Date(a, m - 1, 1), hasta: finDelDia(new Date(a, m, 0)) };
 }

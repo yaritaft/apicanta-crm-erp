@@ -2,6 +2,7 @@ import type { Arqueo, EstadoApp, Procesador } from "./types";
 import type { RangoMes } from "./metricas";
 import { calcularPyL, gastosPagadosEn } from "./finanzas";
 import { enCamino } from "./traspasos";
+import { finDelDia } from "./periodos";
 
 /* ==================================================================
    La caja: cuánta plata hay de verdad y si las cuentas dan.
@@ -126,7 +127,7 @@ export function runway(e: EstadoApp, caja: number, hoy = new Date()): Runway {
   const cerrados: RangoMes[] = [];
   for (let i = 3; i >= 1; i--) {
     const desde = new Date(hoy.getFullYear(), hoy.getMonth() - i, 1);
-    const hasta = new Date(hoy.getFullYear(), hoy.getMonth() - i + 1, 0, 23, 59, 59);
+    const hasta = finDelDia(new Date(hoy.getFullYear(), hoy.getMonth() - i + 1, 0));
     cerrados.push({ clave: `${desde.getFullYear()}-${desde.getMonth() + 1}`, etiqueta: MESES[desde.getMonth()], desde, hasta });
   }
   const costos = cerrados.map((m) => {
