@@ -288,6 +288,65 @@ export interface Reporte {
   bloqueo?: string;
 }
 
+/* ---------- Customer Success: seguimiento de alumnos y testimonios ----------
+   Lo que lleva el equipo de Customer Success (lib/seguimiento.ts): a quién
+   le toca el próximo contacto, si dejó de contestar y si ya se le corrigió
+   el CV y el LinkedIn. Una fila por alumno en `seguimiento_alumnos` y, en
+   `testimonios`, lo que se le pidió y se publicó. Van en tablas aparte (no
+   en `alumnos`) para que un cambio de etapa del pipeline, que guarda la fila
+   entera del alumno, no pise lo que cargó Customer Success. */
+
+export interface SeguimientoAlumno {
+  /* "seg_<alumnoId>": un solo seguimiento por alumno, con un id que sale del
+     alumno, así dos personas que lo abren a la vez escriben la misma fila. */
+  id: ID;
+  alumnoId: ID;
+  /* Cada cuántos días se lo contacta: 7, 15 o 20 (configurable en Ajustes). */
+  cadenciaDias: number;
+  /* Los días se guardan como «2026-10-07» (el día del negocio). */
+  ultimoContacto: string | null;
+  /* Cuándo toca el próximo. Sin dato, es el último contacto (o el ingreso)
+     más la cadencia. */
+  proximoContacto: string | null;
+  /* Cuántas veces seguidas no contestó desde el último contacto logrado. */
+  intentosSinRespuesta: number;
+  ultimoIntento: string | null;
+  dejoDeContestar: boolean;
+  cvCorregido: boolean;
+  cvCorregidoEn: string | null;
+  linkedinCorregido: boolean;
+  linkedinCorregidoEn: string | null;
+  notas: string;
+  actualizadoEn: string;
+  actualizadoPor: string;
+}
+
+export type EstadoTestimonio = "pedido" | "grabado" | "publicado";
+
+export interface Testimonio {
+  id: ID;
+  alumnoId: ID;
+  estado: EstadoTestimonio;
+  /* Dónde está: el video, el posteo, la carpeta. */
+  link: string;
+  /* El día en que se pidió, grabó o publicó (según el estado). */
+  fecha: string | null;
+  notas: string;
+  creadoEn: string;
+}
+
+/* Lo que se ajusta del seguimiento (Alumnos → Seguimiento → Ajustar). Sin
+   esto, los valores de siempre (lib/seguimiento.ts). */
+export interface ConfigSeguimiento {
+  /* Las cadencias que se pueden elegir por alumno, en días. */
+  cadencias: number[];
+  cadenciaPorDefecto: number;
+  /* Si no contestó, se vuelve a intentar a los tantos días. */
+  reintentoDias: number;
+  /* Con tantos intentos seguidos sin respuesta, se sugiere marcarlo como «dejó de contestar». */
+  intentosHastaDejar: number;
+}
+
 /* ---------- Marketing (Meta) ---------- */
 
 export type EstadoCampania = "activa" | "pausada" | "finalizada";
@@ -412,6 +471,8 @@ export interface Ajustes {
   /* El CRM: las opciones de los campos que carga el equipo y qué agendas
      entran en cada tabla. Sin esto, los valores de siempre (lib/crm.ts). */
   crm?: ConfigCrm;
+  /* Customer Success: cadencias y reintentos del seguimiento de alumnos. */
+  seguimiento?: ConfigSeguimiento;
 }
 
 /* ---------- CRM (Booking Calls) ---------- */
@@ -574,7 +635,7 @@ export interface Comentario {
    closer). Tabla `tipos_cuenta`; las reglas, en lib/permisos.ts y en la
    base (supabase/tipos-cuenta.sql). */
 
-export type AreaId = "panel" | "leads" | "crm" | "ventas" | "webinars" | "marketing" | "alumnos" | "finanzas" | "ajustes";
+export type AreaId = "panel" | "leads" | "crm" | "ventas" | "clientes" | "webinars" | "marketing" | "alumnos" | "finanzas" | "ajustes";
 export type NivelArea = "ver" | "editar";
 export type AreasDeTipo = Partial<Record<AreaId, NivelArea>>;
 
@@ -631,6 +692,10 @@ export interface EstadoApp {
   arqueos: Arqueo[];
   /* Los movimientos entre cuentas propias (lib/traspasos.ts). */
   traspasos: Traspaso[];
+  /* Customer Success (lib/seguimiento.ts). Opcionales: sin
+     supabase/customer-success.sql, ninguno. */
+  seguimientos?: SeguimientoAlumno[];
+  testimonios?: Testimonio[];
 }
 
 /* ==================================================================
