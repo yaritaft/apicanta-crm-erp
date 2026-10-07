@@ -72,7 +72,7 @@ export function registroDe(c: Contacto | undefined, webinarId: string): Registro
 const redondear = (n: number) => Math.round(n * 100) / 100;
 const dividir = (a: number, b: number) => (b > 0 ? redondear(a / b) : undefined);
 const claveAd = (nombre: string) => slugUtm(nombre.replace(/\.(mp4|mov|m4v|webm|jpe?g|png|gif)\b/i, ""));
-const SIN_ANUNCIO = "(Sin anuncio identificado)";
+export const SIN_ANUNCIO = "(Sin anuncio identificado)";
 
 const textoCriterio = (c?: boolean) => (c === undefined ? "Sin datos" : c ? "Sí" : "No");
 

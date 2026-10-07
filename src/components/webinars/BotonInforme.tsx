@@ -5,7 +5,7 @@ import { Download } from "lucide-react";
 import { Button } from "@/components/ui/ui";
 import { useToast } from "@/components/ui/Toast";
 import { useEstado } from "@/lib/store";
-import { excelDelInforme } from "@/lib/informe-webinar";
+import { excelDelInforme, SIN_ANUNCIO } from "@/lib/informe-webinar";
 import { TIPO_XLSX } from "@/lib/xlsxEscribir";
 import type { Webinar } from "@/lib/types";
 
@@ -32,7 +32,7 @@ export function useDescargarInforme(w: Webinar) {
       a.download = nombre;
       a.click();
       window.setTimeout(() => URL.revokeObjectURL(url), 1000);
-      const p = informe.personas.filas.length, ag = informe.agendas.filas.length, an = informe.anuncios.filas.length;
+      const p = informe.personas.filas.length, ag = informe.agendas.filas.length, an = informe.anuncios.filas.filter((f) => f.anuncio !== SIN_ANUNCIO).length;
       toast(`Se bajó el resumen de «${w.titulo}»: ${p} ${p === 1 ? "persona" : "personas"}, ${ag} ${ag === 1 ? "agenda" : "agendas"} y ${an} ${an === 1 ? "anuncio" : "anuncios"}.`);
     } catch (err) {
       toast(err instanceof Error ? err.message : "No se pudo armar el Excel.", "err");
