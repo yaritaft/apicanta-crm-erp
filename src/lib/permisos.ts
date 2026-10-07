@@ -226,6 +226,7 @@ const RUTAS: [string, AreaId | "equipo"][] = [
   ["/ventas", "ventas"],
   ["/clientes", "clientes"],
   ["/webinars", "webinars"],
+  ["/formularios", "webinars"],
   ["/marketing", "marketing"],
   ["/alumnos", "alumnos"],
   ["/reportes", "alumnos"],

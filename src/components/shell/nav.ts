@@ -1,7 +1,7 @@
 import {
   LayoutDashboard, Users, Sheet, CalendarDays, Video, Megaphone,
   GraduationCap, ClipboardList, Wallet, Settings, HandCoins, ArrowDownUp, Banknote, Landmark, UserCheck,
-  ClipboardCheck, PhoneCall, ListChecks,
+  ClipboardCheck, PhoneCall, ListChecks, FileInput,
 } from "lucide-react";
 import { SquareKanban } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
@@ -35,6 +35,7 @@ export const NAV: GrupoNav[] = [
     titulo: "Crecimiento",
     items: [
       { href: "/webinars", texto: "Webinars", icono: Video, ayuda: "Registrados, asistencia y conversión" },
+      { href: "/formularios", texto: "Formularios", icono: FileInput, ayuda: "Quién se anotó a cada webinar: unidos al grupo, contactados y teléfono para escribirles" },
       { href: "/marketing", texto: "Marketing", icono: Megaphone, ayuda: "Campañas de Meta y costo por lead" },
     ],
   },

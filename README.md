@@ -924,3 +924,56 @@ cada criterio.
 - **Para optimizar en Meta** hay que crear la conversión personalizada sobre el evento `RegistroCalificado` y
   avisarle a Agus. El píxel de la landing, para no contar doble el Lead, tiene que disparar `Lead` con el mismo
   `event_id` que manda el formulario (y no `CompleteRegistration`, que es otro nombre y no se junta con el del servidor).
+
+## Los registros de la landing: tabla propia, Formularios y cruce con la agenda (lote F, primera parte)
+
+De la reunión del 02/10 (F3-01, F3-02, F3-03 y F3-06) y la decisión D15: los formularios del webinar dejan de vivir en
+el Google Sheet (una hoja por webinar) y dentro de `contactos.extra`, y pasan a **una tabla propia**.
+
+- **SQL a correr una vez: `supabase/registros-webinar.sql`** (idempotente). Crea `registros_webinar` (una fila por
+  persona y por webinar: fecha del webinar, mail, teléfono y teléfono normalizado, país, UTMs, id del anuncio,
+  respuestas, `fbp`/`fbc`/IP/user agent para Meta, las tres marcas del equipo y el cruce con la agenda), sus
+  políticas (la ve quien ve Webinars, la cambia quien edita Webinars, nunca el closer que sólo ve lo suyo) y la vista
+  `registros_webinar_resumen` (una fila por webinar) que arma el selector. **Hasta que se corra, todo sigue andando
+  como antes**: la landing guarda el pre-lead en `contactos` y la pantalla avisa que falta crear la tabla.
+- **F3-01 · La landing** (`api/webinar/registro/route.ts`): sigue haciendo exactamente lo de antes (pre-lead en
+  `contactos`, «Formularios» del webinar, evento Lead a Meta, misma respuesta) y además guarda la fila en
+  `registros_webinar`: **fecha del webinar** (la del webinar al que quedó atado), UTMs y **el anuncio** (el id de
+  Meta de `utm_content`, o el anuncio de ese nombre). Si se anota dos veces al mismo webinar, es la misma fila: se
+  completan los huecos y no se pisan las marcas del equipo. Si la tabla falla o no existe, no tumba el registro. Se
+  agregó `registroId` a la respuesta. El id de una fila (`idRegistro`, `lib/registros-webinar.ts`) es un hash del mail
+  y la fecha del webinar, igual en el servidor y en el navegador: lo que entra por la landing y lo que entra por el
+  Excel se reconocen entre sí.
+- **F3-03 · Pantalla Formularios** (`/formularios`, grupo Crecimiento; `components/formularios/VistaFormularios.tsx`):
+  la hoja del Excel con las tres marcas, **Unido / No unido / Contactado** (un clic, con quién y cuándo, y se
+  desmarcan con otro clic; el campo se pinta verde o ámbar con el dato adentro), el teléfono con **copiar** y **abrir
+  WhatsApp** (`lib/telefonos.ts`: el 9 de los celulares argentinos, sin 0 ni 15), filtros por webinar y por estado,
+  búsqueda (también en las respuestas) y columnas configurables. **Todo va en el link** (`?webinar`, `?marca`, `?q`,
+  `?orden`, `?pag`, `?seccion`, columnas). Cuatro tarjetas con su ⓘ («Cómo se calcula»): registrados, unidos, no
+  unidos y sin revisar. Al abrir una fila se ve todo (respuestas, UTMs, anuncio, origen del dato) y se deja una nota.
+  A diferencia del resto de las tablas, **ésta no se baja entera al abrir la app**: se pide de a un webinar
+  (`lib/registros-nube.ts`), porque con la base histórica pueden ser decenas de miles de filas. Sin la nube (la demo)
+  vive en el navegador.
+- **F3-02 · Importar del Excel** (botón «Importar del Excel», `ImportarFormularios.tsx`): se sube el .xlsx entero de
+  Google Sheets (o una hoja en .csv). Cada hoja es un webinar: la **fecha sale del nombre de la hoja** (acepta
+  «Webinar 23/09», «23-09-2026», «14 de octubre», «20261014») y se puede corregir; el **mapeo de columnas** se
+  adivina por los encabezados (fecha, nombre, mail, país, código, teléfono, UTMs, id del anuncio, unido, no unido,
+  contactado…) y se edita a mano; lo que no se mapea va a las respuestas. **Resumen antes de confirmar**, por hoja:
+  filas del Excel, nuevos, ya estaban, sin mail, repetidos y cuántos quedan en la app. No duplica (mail + fecha),
+  completa huecos sin pisar las marcas del equipo, no borra nada y **no manda nada a Meta**. Las tres marcas que ya
+  vengan en el Excel se traen. Reimportar el mismo archivo da «nuevos: 0».
+- **F3-06 · Cruce formulario ↔ agenda** (pestaña «Cruce con la agenda»; `lib/cruce-formularios.ts`, `lib/telefonos.ts`):
+  cascada **mail → teléfono → nombre**. Firmes: mismo mail; mismo teléfono (con o sin +54, 9, 0 y 15, en cualquier
+  formato); o los últimos 8 dígitos del teléfono más el mismo nombre. Dudosas: sólo los últimos 8 dígitos (sin código
+  de área puede ser de otra zona) o sólo el nombre (dos o más palabras en común). Las firmes se unen con un clic
+  («Unir las N»); las dudosas se muestran lado a lado con **Unir** y **No es** (lo descartado no se vuelve a
+  proponer). Al unir, el registro queda atado a la persona de la agenda (`contactoId`, `cruce`) y ésta **toma lo que
+  le faltaba** del formulario: teléfono, país, anuncio, webinar y los UTMs de la pauta (si los de la agenda no son de
+  pauta quedan guardados en `contactos.extra.utmAgenda`), así sus ventas se atribuyen al anuncio. Acción nueva del
+  store: `acciones.heredarDeFormulario`.
+- **Pruebas**: `pruebas/telefonos.test.ts`, `pruebas/registros-webinar.test.ts` y `pruebas/cruce-formularios.test.ts`
+  (ocho formas del mismo celular, fechas de las hojas, mapeo de columnas, resumen de la importación y que reimportar
+  no duplica, filtros, y la cascada del cruce con homónimos y descartes).
+- **Todavía no está** (ver el informe del lote): la base de ~25.000 contactos de los grupos de WhatsApp (el importador
+  de «sólo contactos» y la decisión de dónde viven), fusionar dos contactos con mails distintos, cruzar al ingresar
+  desde Calendly y Meta, unificar el conteo de «Formularios», y el respaldo descargable antes de importar.

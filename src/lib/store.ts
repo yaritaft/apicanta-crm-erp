@@ -1642,6 +1642,21 @@ export const acciones = {
     return true;
   },
 
+  /* ---------- Lo que la agenda hereda del formulario (lib/cruce-formularios.ts) ----------
+     Al unir un registro de la landing con una persona de la agenda, el contacto
+     toma lo que le faltaba (teléfono, país, anuncio) y los UTMs de la pauta.
+     `cambios` ya viene decidido por herenciaDeFormulario: acá sólo se guarda. */
+  heredarDeFormulario(contactoId: ID, cambios: Partial<Contacto>, detalle: string): boolean {
+    const e = snapshot();
+    const c = e.contactos.find((x) => x.id === contactoId);
+    if (!c || !puedo("contactos") || Object.keys(cambios).length === 0) return false;
+    const { lista, nuevo } = registrar(e, "contacto", c.id, c.nombre, "actualizo", detalle);
+    guardar({ ...e, contactos: e.contactos.map((x) => (x.id === c.id ? { ...x, ...cambios } : x)), actividad: lista });
+    empujar({ tipo: "update", tabla: "contactos", ids: [c.id], cambios: cambios as Record<string, unknown> });
+    empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
+    return true;
+  },
+
   /* ---------- Chat del equipo, en la ficha de cada persona ---------- */
 
   comentar(contactoId: ID, texto: string, autor: string, autorEmail?: string): void {
