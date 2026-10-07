@@ -193,16 +193,58 @@ export function LiquidacionMes({ onVerPersona }: { onVerPersona: (miembroId: str
 
       <div className="grid-stats">
         {/* Redondeados: con centavos no entran en la tarjeta. Los centavos están en cada persona. */}
-        <StatCard hero etiqueta="A pagar" valor={money(r.total, base)} contexto={pagaPesos ? aPagarTexto(r.aPagar) : `${r.personas.length} personas`} />
-        <StatCard etiqueta="Fijo" valor={money(r.fijo, base)} contexto="Sueldos y abonos" />
-        <StatCard etiqueta="Variable" valor={money(r.variable, base)} contexto="Comisiones, bonos y piezas" />
+        <StatCard
+          hero etiqueta="A pagar" valor={money(r.total, base)} contexto={pagaPesos ? aPagarTexto(r.aPagar) : `${r.personas.length} personas`}
+          info={{
+            ayuda: "Todo lo que hay que pagarle al equipo por este mes: lo fijo más lo variable de todas las personas, en la moneda base.",
+            formula: "Fijo + Variable, sumados de todas las personas",
+            periodo: nombrePeriodo(periodo),
+            componentes: () => [
+              { concepto: "Fijo", valor: money(r.fijo, base, 2) },
+              { concepto: "Variable", valor: money(r.variable, base, 2), signo: "+" },
+              { concepto: "A pagar", valor: money(r.total, base, 2), signo: "=" },
+            ],
+          }}
+        />
+        <StatCard
+          etiqueta="Fijo" valor={money(r.fijo, base)} contexto="Sueldos y abonos"
+          info={{
+            ayuda: "Lo que no depende de las ventas: sueldos y abonos.",
+            formula: "Suma de los renglones fijos de cada persona. Tocá una persona y «Ver cómo se calculó» para ver cada uno.",
+            periodo: nombrePeriodo(periodo),
+          }}
+        />
+        <StatCard
+          etiqueta="Variable" valor={money(r.variable, base)} contexto="Comisiones, bonos y piezas"
+          info={{
+            ayuda: "Lo que depende de las ventas, del profit o de lo que se produjo: comisiones, bonos y piezas.",
+            formula: "Suma de los renglones variables de cada persona. Tocá una persona y «Ver cómo se calculó» para ver la cuenta de cada uno.",
+            periodo: nombrePeriodo(periodo),
+          }}
+        />
         {cerrada
-          ? <StatCard etiqueta="Pagados" valor={`${pagados} de ${r.personas.length}`} contexto={pagados === r.personas.length ? "No queda nadie" : "Marcalos al transferir"} />
-          : <StatCard
+          ? (
+            <StatCard
+              etiqueta="Pagados" valor={`${pagados} de ${r.personas.length}`} contexto={pagados === r.personas.length ? "No queda nadie" : "Marcalos al transferir"}
+              info={{
+                ayuda: "Cuántas personas ya cobraron esta liquidación: se marcan al hacer la transferencia.",
+                formula: "Personas marcadas como pagadas ÷ Personas con liquidación este mes",
+                periodo: nombrePeriodo(periodo),
+              }}
+            />
+          )
+          : (
+            <StatCard
               etiqueta="Falta cargar" valor={String(falta.lineas.length)}
               direccion={falta.lineas.length ? "accent" : "neutral"}
               contexto={falta.lineas.length ? "Piezas y cantidades del mes" : "Está todo"}
-            />}
+              info={{
+                ayuda: "Renglones que dependen de una cantidad del mes que todavía no se cargó (piezas, llamadas, cantidades). Hasta que se carguen, valen cero.",
+                formula: "Cantidad de renglones marcados «Falta cargar» en esta liquidación",
+                periodo: nombrePeriodo(periodo),
+              }}
+            />
+          )}
       </div>
 
       {cambios.length > 0 && (
