@@ -30,9 +30,9 @@ function eventoCon(valor: string): EventoValor {
 
 /* ---------- Panel flotante ---------- */
 
-interface Posicion { top: number; left: number; width: number; arriba: boolean; maxAlto: number }
+export interface Posicion { top: number; left: number; width: number; arriba: boolean; maxAlto: number }
 
-function usePosicion(ancla: React.RefObject<HTMLElement | null>, abierto: boolean, alto: number, anchoMin: number) {
+export function usePosicion(ancla: React.RefObject<HTMLElement | null>, abierto: boolean, alto: number, anchoMin: number) {
   const [pos, setPos] = useState<Posicion | null>(null);
   const calcular = useCallback(() => {
     const el = ancla.current;
@@ -65,7 +65,7 @@ function usePosicion(ancla: React.RefObject<HTMLElement | null>, abierto: boolea
 }
 
 /* Cierra al tocar afuera del ancla y del panel. */
-function useClicAfuera(abierto: boolean, refs: React.RefObject<HTMLElement | null>[], cerrar: () => void) {
+export function useClicAfuera(abierto: boolean, refs: React.RefObject<HTMLElement | null>[], cerrar: () => void) {
   useEffect(() => {
     if (!abierto) return;
     const onDown = (ev: MouseEvent | TouchEvent) => {
@@ -82,7 +82,7 @@ function useClicAfuera(abierto: boolean, refs: React.RefObject<HTMLElement | nul
   }, [abierto, refs, cerrar]);
 }
 
-function Panel({ pos, children, panelRef, ancho, className = "" }: {
+export function Panel({ pos, children, panelRef, ancho, className = "" }: {
   pos: Posicion; children: React.ReactNode; panelRef: React.RefObject<HTMLDivElement | null>;
   ancho?: number; className?: string;
 }) {

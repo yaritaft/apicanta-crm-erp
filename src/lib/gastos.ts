@@ -6,13 +6,41 @@ import { CATEGORIAS_GASTO, type CategoriaGasto } from "./seed";
    que se pagó, y cómo se guarda un gasto pagado en otra moneda.
    ================================================================== */
 
-/* Los tres bloques del estado de resultados en los que puede caer un
-   gasto, en el orden en que se leen. */
-export const GRUPOS_GASTO: { grupo: GrupoGasto; titulo: string; corto: string; ayuda: string }[] = [
-  { grupo: "directo",   titulo: "Costos directos",      corto: "Directo",   ayuda: "Restan antes de la utilidad bruta: lo que cuesta cada venta." },
-  { grupo: "operativo", titulo: "Gastos operativos",    corto: "Operativo", ayuda: "Lo que cuesta tener el negocio andando." },
-  { grupo: "dueno",     titulo: "Honorarios del dueño", corto: "Dueño",     ayuda: "Lo que se lleva el dueño, después del resultado operativo." },
-  { grupo: "retiro",    titulo: "Retiros del dueño",    corto: "Retiro",    ayuda: "Plata que sale de la caja pero no es un gasto: el retiro de beneficios. No resta del profit." },
+export interface GrupoInfo {
+  grupo: GrupoGasto;
+  titulo: string;
+  corto: string;
+  /* Cómo se dice de un gasto de este grupo: «Va en: Contador · gasto operativo». */
+  tipo: string;
+  ayuda: string;
+  /* Una línea que dice en qué renglón del estado de resultados cae: es la
+     que se lee al elegir categoría, para que no queden dudas de a dónde va. */
+  renglon: string;
+}
+
+/* Los bloques del estado de resultados en los que puede caer un gasto, en
+   el orden en que se leen. */
+export const GRUPOS_GASTO: GrupoInfo[] = [
+  {
+    grupo: "directo", titulo: "Costos directos", corto: "Directo", tipo: "costo directo",
+    ayuda: "Restan antes de la utilidad bruta: lo que cuesta cada venta.",
+    renglon: "Cae en «Otros costos directos», antes de la utilidad bruta: lo que cuesta cada venta.",
+  },
+  {
+    grupo: "operativo", titulo: "Gastos operativos", corto: "Operativo", tipo: "gasto operativo",
+    ayuda: "Lo que cuesta tener el negocio andando.",
+    renglon: "Cae en «Gastos operativos», antes del resultado operativo: lo que cuesta tener el negocio andando.",
+  },
+  {
+    grupo: "dueno", titulo: "Honorarios del dueño", corto: "Dueño", tipo: "honorarios del dueño",
+    ayuda: "Lo que se lleva el dueño, después del resultado operativo.",
+    renglon: "Cae en «Honorarios del CEO», después del resultado operativo: lo que se lleva el dueño.",
+  },
+  {
+    grupo: "retiro", titulo: "Retiros del dueño", corto: "Retiro", tipo: "retiro del dueño",
+    ayuda: "Plata que sale de la caja pero no es un gasto: el retiro de beneficios. No resta del profit.",
+    renglon: "No cae en el estado de resultados: sale de la caja pero no resta del profit.",
+  },
 ];
 
 export function infoGrupo(g: GrupoGasto) {

@@ -1652,9 +1652,69 @@ button.cuadro-com__persona:hover { color: var(--brand); text-decoration: underli
 }
 
 /* Asistente de gasto y ficha */
-.gasto-grupo { display: flex; align-items: baseline; flex-wrap: wrap; gap: 2px var(--space-2); }
+.gasto-grupo { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; }
 .gasto-equivale { font-family: var(--font-display); font-size: 22px; line-height: 40px; font-weight: 600; color: var(--ink); }
 .gasto-cambiar { margin-left: var(--space-2); }
+/* La categoría ya elegida es una tarjeta (con su bloque y el renglón del estado
+   de resultados en el que cae), no la grilla entera: se confirma de un vistazo. */
+.gasto-cat {
+  display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap;
+  padding: var(--space-3) var(--space-4); border: 1px solid var(--brand-fill);
+  border-radius: var(--radius-lg); background: var(--brand-soft);
+}
+.gasto-cat__tilde {
+  flex: none; display: grid; place-items: center; width: 28px; height: 28px;
+  border-radius: var(--radius-full); background: var(--brand-fill); color: var(--on-brand);
+}
+.gasto-cat__datos { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1 1 240px; }
+.gasto-cat__nombre { font-size: 17px; line-height: 24px; color: var(--ink); overflow-wrap: anywhere; }
+.gasto-cat__nombre strong { font-weight: 600; }
+/* Las categorías, abiertas adentro de la revisión: con el aire de un paso entero. */
+.gasto-selector { display: flex; flex-direction: column; gap: var(--space-4); margin-top: var(--space-2); }
+/* El signo de la moneda adentro del campo de monto, y los chips que hacen de control. */
+.gasto-signo { flex: none; color: var(--ink-subtle); font-size: 14px; font-weight: 600; }
+.gasto-chips { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; min-height: 36px; }
+.gasto-chips > .t-sm { margin-left: var(--space-1); }
+/* Lo opcional va aparte, con una línea arriba, para que no parezca que falta. */
+.gasto-opcional { margin-top: var(--space-2); padding-top: var(--space-3); border-top: 1px solid var(--border); }
+
+/* A quién se le pagó: un campo con lista (el equipo, los proveedores que ya se
+   usaron) y la opción de escribir uno nuevo (components/finanzas/CampoProveedor.tsx).
+   Un casillero vacío que falta se pinta de error y lleva el pedido adentro. */
+.prov { position: relative; min-width: 0; }
+.prov__campo { padding-right: 6px; }
+.prov__campo input { text-overflow: ellipsis; }
+.prov__campo.hk-input--error { background: var(--danger-soft); }
+.prov__campo.hk-input--error input::placeholder { color: var(--danger); opacity: 1; }
+.prov__flecha {
+  flex: none; display: grid; place-items: center; width: 34px; height: 34px;
+  border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--ink-subtle); cursor: pointer;
+}
+.prov__flecha:hover { background: var(--surface-300); color: var(--ink); }
+.prov__lista { overflow-y: auto; min-height: 0; padding: 4px; outline: 0; }
+.prov__panel .prov__lista { max-height: 340px; }
+.prov__lista--en-linea {
+  margin-top: var(--space-2); max-height: min(44vh, 380px); border: 1px solid var(--border);
+  border-radius: var(--radius-md); background: var(--surface-100);
+}
+.prov__grupo {
+  padding: 8px 10px 4px; font-size: 11px; line-height: 14px; font-weight: 700;
+  letter-spacing: .08em; text-transform: uppercase; color: var(--ink-subtle);
+}
+.prov__op {
+  display: flex; align-items: center; gap: var(--space-2); min-height: 46px; padding: 6px 10px;
+  border-radius: var(--radius-sm); cursor: pointer;
+}
+.prov__op--activa { background: var(--surface-300); }
+.prov__op[aria-selected="true"] .prov__nombre { color: var(--brand); }
+.prov__texto { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.prov__nombre { font-size: 15px; line-height: 20px; font-weight: 600; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.prov__detalle { font-size: 12.5px; line-height: 16px; color: var(--ink-subtle); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.prov__op--inactivo .prov__nombre { color: var(--ink-muted); font-weight: 500; }
+.prov__op--nuevo { margin-top: 4px; border-top: 1px solid var(--border); border-radius: 0 0 var(--radius-sm) var(--radius-sm); }
+.prov__op--nuevo .prov__nombre { color: var(--brand); }
+.prov__tilde { flex: none; color: var(--brand); }
+.prov__vacio { padding: 10px; font-size: 13px; color: var(--ink-subtle); }
 .ficha-gasto__monto {
   display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-3);
   font-family: var(--font-display); font-size: 32px; line-height: 36px; font-weight: 600;
