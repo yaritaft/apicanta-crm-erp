@@ -631,6 +631,35 @@ export interface EstadoApp {
   arqueos: Arqueo[];
   /* Los movimientos entre cuentas propias (lib/traspasos.ts). */
   traspasos: Traspaso[];
+  /* Los gastos que se repiten todos los meses (software, abonos): cada mes se
+     proponen con el monto del anterior y alguien los aprueba (lib/gastos-recurrentes.ts).
+     Opcional: sin supabase/gastos-recurrentes.sql, ninguno. */
+  gastosRecurrentes?: GastoRecurrente[];
+}
+
+/* Un gasto que se paga todos los meses: la plantilla de la que salen las
+   propuestas «Para aprobar». Nunca carga un gasto sola. */
+export interface GastoRecurrente {
+  id: ID;
+  concepto: string;
+  categoria: string;
+  grupo: GrupoGasto;
+  proveedor?: string;
+  /* Lo que se paga habitualmente, en la moneda base. */
+  monto: number;
+  moneda: Moneda;
+  /* Qué día del mes se paga (1 a 28). */
+  diaDelMes: number;
+  /* De qué cuenta recaudadora sale, si se sabe (procesadores). */
+  cuentaId?: ID;
+  webinarId?: ID;
+  notas?: string;
+  activo: boolean;
+  /* El primer mes ("2026-10") para el que se propone. */
+  desde: string;
+  /* Los meses que se decidió saltear ("2026-10"). */
+  salteados: string[];
+  creadoEn: string;
 }
 
 /* ==================================================================
