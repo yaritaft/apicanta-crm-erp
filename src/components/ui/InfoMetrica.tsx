@@ -76,6 +76,8 @@ export function InfoMetrica({ titulo, ayuda, formula, componentes, periodo, ejem
         aria-label={`Cómo se calcula «${titulo}»`} aria-haspopup="dialog"
         onMouseEnter={mostrar} onMouseLeave={() => setTip(null)} onFocus={mostrar} onBlur={() => setTip(null)}
         onClick={(ev) => { ev.preventDefault(); ev.stopPropagation(); setTip(null); abrir(); }}
+        /* Dentro de una tarjeta que se puede abrir, Enter y Espacio son del ícono, no de la tarjeta. */
+        onKeyDown={(ev) => { if (ev.key === "Enter" || ev.key === " ") ev.stopPropagation(); }}
       >
         <Info size={13} aria-hidden />
       </button>

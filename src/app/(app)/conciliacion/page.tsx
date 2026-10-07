@@ -6,7 +6,7 @@ import {
 } from "lucide-react";
 import { PageHead } from "@/components/shell/PageHead";
 import {
-  Ayuda, Badge, Button, Card, Chip, Empty, Field, Input, Select, Textarea,
+  Ayuda, Badge, Button, Card, Chip, Empty, Field, Input, Select, StatCard, Textarea,
 } from "@/components/ui/ui";
 import { ModalForm } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toast";
@@ -23,6 +23,7 @@ import { COBRAN_COMISION, feeDesconocido } from "@/lib/completar-cobros";
 import { CopiarLink } from "@/components/ui/Filtros";
 import { useBusquedaURL, useParamsURL } from "@/lib/useParamsURL";
 import { useAbrirFicha } from "@/components/ficha/abrir";
+import { ComoFuncionaConciliacion } from "@/components/finanzas/ComoFuncionaConciliacion";
 import { importarCSV, PASARELAS, nombrePasarela } from "@/lib/pasarelas";
 import type { EstadoMovimiento2, Movimiento, ProveedorPasarela } from "@/lib/types";
 
@@ -64,6 +65,16 @@ export default function Conciliacion() {
   /* Recorre todos los cobros pendientes contra todas las cuotas: se calcula
      cuando cambian los datos, no a cada clic (abrir un cobro, filtrar). */
   const resumen = useMemo(() => resumenConciliacion(e), [e]);
+
+  /* Cuánta plata y cuántos cobros hay en cada estado: el resumen de arriba. */
+  const porEstado = useMemo(() => {
+    const r: Record<EstadoMovimiento2, { n: number; monto: number }> = {
+      pendiente: { n: 0, monto: 0 }, conciliado: { n: 0, monto: 0 }, ignorado: { n: 0, monto: 0 },
+    };
+    for (const m of e.movimientos) { r[m.estado].n += 1; r[m.estado].monto += m.monto; }
+    return r;
+  }, [e.movimientos]);
+  const cobros = (n: number) => `${n} ${n === 1 ? "cobro" : "cobros"}`;
 
   /* Buscar por quién pagó (nombre, correo, teléfono), cómo, la referencia o
      el monto: con cientos de cobros de Whop y Stripe, la lista sola no alcanza. */
@@ -153,7 +164,7 @@ export default function Conciliacion() {
     <div className="stack-5">
       <PageHead
         titulo="Conciliación"
-        sub="Los cobros que entraron a Stripe, Hotmart, Whop, dLocal, Mercado Pago, Mercury, Binance o Trust, y a qué cuota corresponde cada uno."
+        sub="La plata que entró a una pasarela (Stripe, Hotmart, Whop, dLocal, Mercado Pago, Mercury, Binance, Trust) y todavía hay que asignar a su cuota para que cuente como cobrada."
         acciones={
           <>
             <Button variante="secondary" icono={<Upload size={16} />} onClick={() => setImportar(true)}>Importar</Button>
@@ -163,6 +174,39 @@ export default function Conciliacion() {
           </>
         }
       />
+
+      <ComoFuncionaConciliacion />
+
+      <div className="grid-3">
+        <StatCard
+          etiqueta="Sin conciliar" valor={M(porEstado.pendiente.monto)} direccion={porEstado.pendiente.n > 0 ? "down" : "neutral"}
+          contexto={`${cobros(porEstado.pendiente.n)} · todavía no cuentan como cobrado`}
+          onClick={() => setFiltro("pendiente")}
+          info={{
+            ayuda: "Plata que entró a una pasarela y todavía no se asignó a ninguna cuota. Se ve acá, pero no cuenta como Cash Collected ni genera comisión.",
+            formula: "Suma del monto bruto de los cobros en estado Pendiente",
+            href: "/conciliacion?estado=pendiente",
+          }}
+        />
+        <StatCard
+          etiqueta="Conciliados" valor={M(porEstado.conciliado.monto)}
+          contexto={`${cobros(porEstado.conciliado.n)} · ya cuentan como cobrado`}
+          onClick={() => setFiltro("conciliado")}
+          info={{
+            ayuda: "Cobros que ya se asignaron a su cuota. Son pagos: cuentan como Cash Collected, con la comisión real de la pasarela.",
+            formula: "Suma del monto bruto de los cobros en estado Conciliado",
+          }}
+        />
+        <StatCard
+          etiqueta="Ignorados" valor={M(porEstado.ignorado.monto)}
+          contexto={`${cobros(porEstado.ignorado.n)} · no cuentan`}
+          onClick={() => setFiltro("ignorado")}
+          info={{
+            ayuda: "Cobros que se marcaron como que no corresponden a ninguna venta (un reembolso, un pago de otra cosa). No cuentan como cobrado.",
+            formula: "Suma del monto bruto de los cobros en estado Ignorado",
+          }}
+        />
+      </div>
 
       {filtro === "pendiente" && resumen.vinculables > 0 && (
         <div className="help-card">
@@ -187,10 +231,10 @@ export default function Conciliacion() {
           <Sparkles size={18} />
           <div style={{ flex: 1, minWidth: 0 }}>
             <div className="help-card__title">
-              {resumen.automaticos} {resumen.automaticos === 1 ? "cobro calza" : "cobros calzan"} exacto con una cuota
+              {resumen.automaticos} {resumen.automaticos === 1 ? "cobro coincide" : "cobros coinciden"} exacto con una cuota
             </div>
             <div className="help-card__text">
-              Mismo monto, mismo cliente y una sola candidata. Podés imputarlos de una y revisar después.
+              Mismo monto, mismo cliente y una sola candidata. Podés conciliarlos de una y revisar después.
             </div>
           </div>
           <Button variante="primary" icono={<Check size={16} />} onClick={conciliarTodosLosSeguros}>
@@ -202,9 +246,13 @@ export default function Conciliacion() {
       <Card style={{ padding: 0, overflow: "hidden" }}>
         <div style={{ padding: "var(--space-4)" }}>
           <div className="toolbar" style={{ marginBottom: 0 }}>
-            {([["pendiente", "Pendientes"], ["conciliado", "Conciliados"], ["ignorado", "Ignorados"]] as const).map(([k, t]) => (
-              <Chip key={k} activo={filtro === k} onClick={() => setFiltro(k)}
-                count={e.movimientos.filter((m) => m.estado === k).length}>{t}</Chip>
+            {([
+              ["pendiente", "Pendientes", "Entraron a una pasarela y todavía no se asignaron a una cuota. No cuentan como Cash Collected."],
+              ["conciliado", "Conciliados", "Ya asignados a su cuota: cuentan como Cash Collected."],
+              ["ignorado", "Ignorados", "Marcados como que no corresponden a ninguna venta. No cuentan."],
+            ] as const).map(([k, t, ayuda]) => (
+              <Chip key={k} activo={filtro === k} onClick={() => setFiltro(k)} title={ayuda}
+                count={porEstado[k].n}>{t}</Chip>
             ))}
             <span className="spacer" />
             <CopiarLink />
@@ -258,7 +306,7 @@ export default function Conciliacion() {
 
       <Ayuda titulo="Por qué la plata no entra sola al P&L" icono={<Info size={18} />}>
         Un cobro de pasarela no es un pago hasta que se sabe de qué cuota es. Mientras está sin conciliar
-        se ve acá, pero no cuenta como cash collected ni genera comisión: si contara, el mismo peso podría
+        se ve acá, pero no cuenta como Cash Collected (CC) ni genera comisión: si contara, el mismo peso podría
         quedar contado dos veces cuando alguien cargue el pago a mano. Al conciliar, el fee que se guarda
         es el que cobró la pasarela de verdad, no el estimado del procesador.
       </Ayuda>
@@ -337,8 +385,12 @@ function FilaMovimiento({ mov, M, abierto, onAbrir, onNuevaVenta }: {
           </span>
         </span>
         <span className="spacer" />
-        {mov.estado === "pendiente" && automatica && <Badge variante="success"><Sparkles size={13} />Calce seguro</Badge>}
-        {mov.estado === "pendiente" && yaCargados.length > 0 && <Badge variante="accent"><Link2 size={13} />Ya cargado</Badge>}
+        {mov.estado === "pendiente" && automatica && (
+          <span title="El monto es el de una cuota de esa persona y no hay otra candidata: se puede conciliar de una."><Badge variante="success"><Sparkles size={13} />Coincide exacto</Badge></span>
+        )}
+        {mov.estado === "pendiente" && yaCargados.length > 0 && (
+          <span title="Alguien ya cargó este pago a mano o vino de la planilla: hay que atarlo a ese pago, no asignarlo de nuevo."><Badge variante="accent"><Link2 size={13} />Ya cargado</Badge></span>
+        )}
         {mov.estado === "conciliado" && (
           <Badge variante="neutral"><Check size={13} />{destino}</Badge>
         )}

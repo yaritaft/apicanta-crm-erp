@@ -3,6 +3,7 @@
 import React from "react";
 import { iniciales } from "@/lib/format";
 import { CampoFecha, Desplegable } from "./Campos";
+import { InfoMetrica, type PropsInfoMetrica } from "./InfoMetrica";
 
 /* ---------------- Button ---------------- */
 
@@ -83,10 +84,13 @@ export function CardHead({ titulo, sub, acciones }: { titulo: string; sub?: stri
 
 /* ---------------- StatCard ---------------- */
 
-export function StatCard({ etiqueta, valor, delta, direccion = "neutral", contexto, hero, ayuda, onClick }: {
+export function StatCard({ etiqueta, valor, delta, direccion = "neutral", contexto, hero, ayuda, onClick, info }: {
   etiqueta: string; valor: string; delta?: string;
   direccion?: "up" | "down" | "accent" | "neutral";
   contexto?: string; hero?: boolean; ayuda?: string;
+  /* El ícono de información junto al nombre: qué es y cómo se calcula (InfoMetrica).
+     Reemplaza al `ayuda` de pasar el mouse por toda la tarjeta. */
+  info?: Omit<PropsInfoMetrica, "titulo"> & { titulo?: string };
   /* Con onClick la tarjeta abre lo que forma el número: un número que no se
      puede abrir es un número en el que hay que confiar a ciegas. */
   onClick?: () => void;
@@ -100,8 +104,11 @@ export function StatCard({ etiqueta, valor, delta, direccion = "neutral", contex
       }
     : {};
   return (
-    <div className={`hk-card hk-stat${hero ? " hk-stat--hero" : ""}${onClick ? " hk-stat--link" : ""}`} title={ayuda} {...clic}>
-      <span className="hk-stat__label">{etiqueta}</span>
+    <div className={`hk-card hk-stat${hero ? " hk-stat--hero" : ""}${onClick ? " hk-stat--link" : ""}`} title={info ? undefined : ayuda} {...clic}>
+      <span className="hk-stat__label">
+        {etiqueta}
+        {info && <InfoMetrica {...info} titulo={info.titulo ?? etiqueta} />}
+      </span>
       <span className="hk-stat__value">{valor}</span>
       <span className="hk-stat__meta">
         {delta && <span className={`hk-stat__delta${direccion !== "neutral" ? ` hk-stat__delta--${direccion}` : ""}`}>{delta}</span>}
@@ -180,11 +187,11 @@ export function Switch({ checked, onChange, etiqueta }: { checked: boolean; onCh
 
 /* ---------------- Chip filtro ---------------- */
 
-export function Chip({ activo, onClick, children, count }: {
-  activo: boolean; onClick: () => void; children: React.ReactNode; count?: number;
+export function Chip({ activo, onClick, children, count, title }: {
+  activo: boolean; onClick: () => void; children: React.ReactNode; count?: number; title?: string;
 }) {
   return (
-    <button type="button" className="chip" aria-pressed={activo} onClick={onClick}>
+    <button type="button" className="chip" aria-pressed={activo} onClick={onClick} title={title}>
       {children}
       {count !== undefined && <span className="chip__count">{count}</span>}
     </button>
