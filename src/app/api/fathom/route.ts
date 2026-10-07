@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { nubeServidor } from "@/lib/servidor";
 import { baseDelPedido, exigirArea } from "@/lib/permisos-servidor";
 import { hayEquipoConfigurado } from "@/lib/equipo-servidor";
-import { equipoDeLaPasada, escribirPasada, leerPasada, seguir } from "@/lib/fathom-equipos";
+import { equipoDeLaPasada, escribirPasada, grabadaPor, leerPasada, seguir } from "@/lib/fathom-equipos";
 import { candidatasPara, desdeParaImportar, leerReunion, ventanaDeBusqueda } from "@/lib/fathom";
 import { miembroDeCloser } from "@/lib/crm";
 import {
@@ -139,6 +139,17 @@ export async function POST(peticion: Request) {
       let items: unknown[];
       try {
         items = await reunionesDe(correo, ventana.desde, ventana.hasta, b.accion === "atar");
+        /* Si por su mail no hay nada (grabó con otra cuenta de Fathom), se mira entre las
+           llamadas de los equipos de ventas y se queda con las que grabó alguien que se llama como él. */
+        if (items.length === 0 && closer) {
+          const vistas = new Set<string>();
+          for (const equipo of await equiposDeVentasDeFathom()) {
+            for (const x of await reunionesDe(null, ventana.desde, ventana.hasta, b.accion === "atar", equipo)) {
+              const id = leerReunion(x)?.recordingId;
+              if (id && !vistas.has(id) && grabadaPor(x, correo, closer.nombre)) { vistas.add(id); items.push(x); }
+            }
+          }
+        }
       } catch (err) {
         if (err instanceof EsperarAFathom) return NextResponse.json({ ok: true, esperar: err.segundos });
         throw err;

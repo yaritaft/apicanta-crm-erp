@@ -669,3 +669,42 @@ tasa de cobro y mora, de Cobranza).
 - **El mapa** (`src/lib/mapa-mundo.ts`) es Natural Earth 110m en SVG propio, sin librerías. Primero tenía burbujas; se cambió por países pintados («que pinte el país, no esos círculos»). Se genera con
   `scripts/generar-mapa-mundo.mjs` desde el paquete `world-atlas` (bajado a una carpeta temporal fuera del repo; no
   es una dependencia de la app).
+
+## Fathom: que lleguen las llamadas de los closers (F2-04, reunión del 02/10)
+
+Yari ve sus llamadas y faltan las de los closers. Hay tres causas probables: **(a)** Fathom no se une a algunas
+reuniones de Zoom («tipo de reunión no soportado»: no hay grabación que traer; lo arregla Manu), **(b)** visibilidad
+(las llamadas de cada closer no están compartidas con el equipo de ventas, o la cuenta dueña de la clave no ve lo
+compartido) y **(c)** que la app no pidiera las «Team Calls» del equipo de ventas. La regla de Yari sigue igual: sólo se
+guardan las grabaciones atadas a una llamada de Calendly.
+
+- **«Traer lo anterior» pide también las llamadas de equipo** (`lib/fathom-equipos.ts`, `api/fathom` acción
+  `importar`): primero pasa por todo lo que la clave ve (como antes) y después, una vez por cada equipo de ventas de
+  Fathom, por `GET /meetings?teams[]=<equipo>` (las Team Calls). Los equipos salen de `GET /teams`: los que se llaman
+  «Sales», «Ventas», «Closers» o «Comercial»; si se llaman distinto, `FATHOM_EQUIPOS` en Vercel (opcional, separados por
+  coma) manda. Si Fathom no deja leer los equipos (un plan sin equipos) sigue sin ellos. El cursor que va y viene con la
+  pantalla es opaco y recuerda en qué equipo va; la pantalla cuenta por grabación (lo de un equipo repite lo que ya trajo
+  la pasada general) y dice cuántas son **nuevas**.
+- **El cierre del día («Buscar en Fathom») ya no se corta a las 4 páginas** (ahora 30) y, si por el mail del closer no
+  encuentra nada (grabó con otra cuenta de Fathom), mira entre las llamadas de los equipos de ventas y se queda con las
+  que grabó alguien que se llama como él (`grabadaPor`).
+- **«Diagnosticar»** (Ajustes → Fathom, sólo dueños; `api/fathom` acción `diagnosticar`, `diagnosticarFathom` en
+  `lib/fathom-servidor.ts`, lógica pura en `lib/fathom-diagnostico.ts`, pantalla `components/ajustes/FathomDiagnostico.tsx`):
+  corre en el servidor con la clave que ya está en Vercel y muestra, sin exponerla ni mostrar títulos ni contenido de
+  ninguna reunión: cuántas reuniones devuelve la API sin filtrar y por cada equipo de ventas (y cuántas aparecen **sólo**
+  al pedir por equipo), de qué equipos y quién grabó cada una, el tipo de reunión que informa Fathom (con gente de afuera
+  o sólo del equipo; la API no dice si es Zoom o Meet), cuántas están atadas a una agenda de Calendly (nuevas o ya
+  guardadas) y cuántas no (sin agenda con invitados de afuera, o personales/internas), cuántas llamadas de Calendly tiene
+  cada closer y cuántas con grabación, por plataforma (Zoom, Meet… según el enlace de Calendly) y si el closer figura en
+  el equipo de Fathom. Con eso arma un **veredicto en castellano**: (a) si las llamadas de Zoom no tienen grabación y las
+  de otras plataformas sí; (b) si los closers tienen llamadas y la clave no ve ninguna reunión suya; (c) si aparecen
+  grabaciones de closers sólo al pedir por equipo; y una cuarta, **(d) llegan pero no se atan** (el invitado entró con otro
+  mail), que se arregla atando a mano en el cierre del día. También avisa si el webhook quedó sin alcance de equipo
+  (`paraElEquipo` en falso: Desconectar y Conectar), si falta el mail de un closer en Equipo o si la clave no es aceptada.
+  Mira desde el día antes de la primera llamada de Calendly, hasta 45 días atrás; sólo lee, no guarda nada.
+- **Variables de entorno:** `FATHOM_API_KEY` (ya está), `FATHOM_EQUIPOS` (opcional, para el nombre del equipo de ventas
+  si no se llama Sales/Ventas/Closers). **SQL:** ninguno. Pruebas: `pruebas/fathom-diagnostico.test.ts` (respuestas simuladas
+  de la API de Fathom: cada veredicto, las cuentas, las pasadas por equipo).
+- **Lo que no está hecho:** guardar «sin atar» las llamadas del equipo de ventas que no se pudieron atar (la checklist lo
+  proponía; se mantuvo la regla de descartarlas hasta que lo decidan, y el diagnóstico cuenta cuántas serían). Y no se
+  tocó la configuración de Fathom con Zoom (es de Manu).

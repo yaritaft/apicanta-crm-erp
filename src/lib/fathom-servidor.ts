@@ -128,12 +128,13 @@ export interface PaginaReuniones { items: unknown[]; siguiente: string | null }
     Sin el contenido alcanza para elegir; con él (una sola, la elegida) es
     un pedido pesado. Es un día y medio de un closer, pero ya no se corta a
     las 4 páginas (F2-04): se sigue hasta 30 por si Fathom las da de a pocas. */
-export async function reunionesDe(grabadoPor: string, desde: string, hasta: string, conContenido = false): Promise<unknown[]> {
+export async function reunionesDe(grabadoPor: string | null, desde: string, hasta: string, conContenido = false, equipo?: string | null): Promise<unknown[]> {
   const items: unknown[] = [];
   let cursor: string | null = null;
   for (let i = 0; i < 30; i++) {
     const q = new URLSearchParams({ created_after: desde, created_before: hasta });
-    q.append("recorded_by[]", grabadoPor);
+    if (grabadoPor) q.append("recorded_by[]", grabadoPor);
+    if (equipo) q.append("teams[]", equipo);
     if (conContenido) { q.set("include_summary", "true"); q.set("include_transcript", "true"); q.set("include_action_items", "true"); }
     if (cursor) q.set("cursor", cursor);
     const r = await fathom(`/meetings?${q}`);

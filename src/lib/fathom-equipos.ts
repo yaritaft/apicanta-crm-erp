@@ -14,6 +14,8 @@
    ella).
    ================================================================== */
 
+import { miembroDeCloser } from "./crm";
+
 const sinTildes = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().trim();
 
 /** Los nombres de los equipos de un GET /teams (items con `name`). */
@@ -81,4 +83,17 @@ export function seguir(p: Pasada, siguienteDeFathom: string | null, deVentas: ()
   }
   const e = p.e ?? [];
   return Promise.resolve(p.i + 1 < e.length ? { e, i: p.i + 1, c: null } : null);
+}
+
+/** Si una reunión de Fathom la grabó ese closer: por su mail de Equipo o,
+    si grabó con otra cuenta, por su nombre. Para el cierre del día, cuando
+    buscar por el mail no encuentra nada y se mira entre las del equipo de
+    ventas (sólo las de él: las de los demás no se listan). */
+export function grabadaPor(item: unknown, correo: string, nombreDelCloser: string): boolean {
+  const o = item && typeof item === "object" ? (item as Record<string, unknown>) : {};
+  const m = (o.meeting && typeof o.meeting === "object" ? o.meeting : o) as Record<string, unknown>;
+  const quien = (m.recorded_by && typeof m.recorded_by === "object" ? m.recorded_by : {}) as { email?: unknown; name?: unknown };
+  const email = typeof quien.email === "string" ? quien.email.trim().toLowerCase() : "";
+  if (email && correo && email === correo.trim().toLowerCase()) return true;
+  return typeof quien.name === "string" && Boolean(quien.name.trim()) && Boolean(miembroDeCloser(quien.name, [{ nombre: nombreDelCloser }]));
 }

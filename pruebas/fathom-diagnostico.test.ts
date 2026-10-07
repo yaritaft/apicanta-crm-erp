@@ -5,7 +5,7 @@ import {
   type EntradaDiagnostico, type LlamadaDiag, type MiembroDiag,
 } from "@/lib/fathom-diagnostico";
 import {
-  equipoDeLaPasada, equiposDeVentas, escribirPasada, esEquipoDeVentas, leerEquipos, leerPasada, PRIMERA_PASADA, seguir,
+  equipoDeLaPasada, equiposDeVentas, escribirPasada, esEquipoDeVentas, grabadaPor, leerEquipos, leerPasada, PRIMERA_PASADA, seguir,
 } from "@/lib/fathom-equipos";
 
 /* El diagnóstico de Fathom (F2-04) con respuestas simuladas de su API:
@@ -289,4 +289,13 @@ test("un cursor roto empieza de cero en vez de romper", () => {
   for (const c of [null, undefined, "", "no-es-base64-json!", Buffer.from("{}").toString("base64url"), Buffer.from(JSON.stringify({ i: 5, e: ["x"] })).toString("base64url")]) {
     assert.deepEqual(leerPasada(c), PRIMERA_PASADA);
   }
+});
+
+test("en el cierre del día, una reunión del equipo es del closer por su mail o, si grabó con otra cuenta, por su nombre", () => {
+  const de = (name: string, email: string) => ({ recording_id: 1, recorded_by: { name, email } });
+  assert.ok(grabadaPor(de("Dante Barbieri", "dante@apicanta.com"), "Dante@Apicanta.com", "Dante Barbieri"));
+  assert.ok(grabadaPor(de("Dante B.", "dante.personal@gmail.com"), "dante@apicanta.com", "Dante Barbieri") === false);
+  assert.ok(grabadaPor(de("Dante Barbieri", "dante.personal@gmail.com"), "dante@apicanta.com", "Dante"));
+  assert.ok(!grabadaPor(de("Valentín Abadía", "valentin@apicanta.com"), "dante@apicanta.com", "Dante Barbieri"));
+  assert.ok(!grabadaPor({ recording_id: 2 }, "dante@apicanta.com", "Dante Barbieri"));
 });
