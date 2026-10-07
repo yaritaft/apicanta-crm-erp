@@ -12,7 +12,7 @@ import { useAcceso } from "@/lib/acceso";
 import { puedeEditar } from "@/lib/permisos";
 import { comisionesDelMes } from "@/lib/finanzas";
 import { periodoDe, rangoDePeriodo } from "@/lib/honorarios";
-import { descuentoDesde, hoyDeNegocio, reglaDeCierre } from "@/lib/cierre-del-dia";
+import { hoyDeNegocio, reglaDeCierre } from "@/lib/cierre-del-dia";
 import { money, num } from "@/lib/format";
 import type { ConfigCierreDelDia } from "@/lib/types";
 
@@ -34,7 +34,6 @@ export function CierreDelDiaAjustes() {
   const { acceso } = useAcceso();
   const puede = puedeEditar(acceso, "ajustes");
   const regla = reglaDeCierre(e.ajustes);
-  const rige = descuentoDesde(regla);
   const hoy = hoyDeNegocio();
   const [prendiendo, setPrendiendo] = useState(false);
 
@@ -107,11 +106,16 @@ export function CierreDelDiaAjustes() {
               />
               <span className="t-strong">Descontar la comisión de los días sin cierre</span>
             </div>
-            <p className="t-sm t-muted">
-              Apagado (como está al principio), los strikes se cuentan y se le muestran al closer, pero no cambia ningún número: ni Finanzas, ni la liquidación,
-              ni el resultado de cada webinar. Prendido, no se comisiona lo de un día cuyo cierre no se cargó el mismo día: la comisión del closer de las ventas
-              que salieron de las llamadas de ese día no se paga. La del director, el setter y el referidor no se toca.
-            </p>
+            <ul className="t-sm t-muted" style={{ margin: 0, paddingLeft: 18, display: "flex", flexDirection: "column", gap: 4 }}>
+              <li>
+                <strong>Apagado</strong> (como empieza): los strikes se cuentan y se le muestran al closer, pero no cambia ningún número: ni Finanzas,
+                ni la liquidación, ni el resultado de cada webinar.
+              </li>
+              <li>
+                <strong>Prendido</strong>: no se comisiona lo de un día cuyo cierre no se cargó el mismo día. La comisión del closer de las ventas que
+                salieron de las llamadas de ese día no se paga; la del director, el setter y el referidor no se toca.
+              </li>
+            </ul>
             {regla.descuenta && (
               <div className="row-wrap" style={{ gap: 8 }}>
                 <Field label="Rige para las llamadas desde" ayuda="Prender el descuento no cambia lo que ya se liquidó: rige desde el día en que se prendió. Si lo corrés a antes, cambian las comisiones de esos días.">
@@ -146,9 +150,6 @@ export function CierreDelDiaAjustes() {
                 periodo={efecto.mes}
               />
             </p>
-          )}
-          {rige && (
-            <p className="t-sm t-subtle">Rige para las llamadas desde el {textoFecha(rige)}.</p>
           )}
           {!puede && <p className="t-sm t-subtle">Sólo lo cambian quienes editan Ajustes.</p>}
         </div>

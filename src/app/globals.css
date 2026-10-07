@@ -3660,7 +3660,7 @@ span.kpis__etiqueta:hover { color: var(--ink); text-decoration: none; }
 
 /* Ajustes → CRM → Estados de llamada (components/ajustes/EstadosDeLlamada) */
 .est-lista { display: flex; flex-direction: column; }
-.est-fila { display: grid; grid-template-columns: minmax(150px, 230px) minmax(0, 1fr) 110px 120px; align-items: center; gap: var(--space-3) var(--space-4); padding: var(--space-3) 0; border-bottom: 1px solid var(--border); }
+.est-fila { display: grid; grid-template-columns: minmax(150px, 230px) minmax(0, 1fr) 100px 150px; align-items: center; gap: var(--space-3) var(--space-4); padding: var(--space-3) 0; border-bottom: 1px solid var(--border); }
 .est-fila:last-child { border-bottom: 0; }
 .est-fila--oculta .est-fila__nombre, .est-fila--oculta .est-fila__mueve { opacity: .55; }
 .est-fila__nombre { min-width: 0; }
@@ -3668,7 +3668,7 @@ span.kpis__etiqueta:hover { color: var(--ink); text-decoration: none; }
 .est-fila__mueve ul { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 2px; }
 .est-fila__usos { text-align: right; }
 .est-fila__vista { display: flex; align-items: center; justify-content: flex-end; gap: var(--space-2); cursor: pointer; }
-.est-fila__vista > span { display: inline-flex; align-items: center; gap: 4px; min-width: 70px; }
+.est-fila__vista > span { display: inline-flex; align-items: center; gap: 4px; min-width: 84px; white-space: nowrap; }
 @media (max-width: 900px) {
   .est-fila { grid-template-columns: minmax(0, 1fr) auto; }
   .est-fila__mueve { grid-column: 1 / -1; order: 3; }
