@@ -628,7 +628,10 @@ const COLOR_FUNNEL: Record<string, ColorCrm> = {
 const COLORES_CLOSER = ["amarillo", "azul", "rojo", "verde", "violeta", "naranja", "cian", "rosa", "turquesa"] as const;
 type ColorCloser = (typeof COLORES_CLOSER)[number];
 
-const nombreCorto = (n: string) => sinTildes(n).split(/\s+/).slice(0, 2).join(" ");
+/* Las dos primeras palabras, sin tildes ni mayúsculas. Se recorta antes de
+   partir, como la base (nombre_corto en supabase/tipos-cuenta.sql): un espacio
+   al principio no puede correr las palabras. */
+const nombreCorto = (n: string) => sinTildes(n).trim().split(/\s+/).slice(0, 2).join(" ");
 
 /* Cada closer y cuándo agendaron con él por primera vez, del más viejo al
    más nuevo (a igual fecha, por nombre). */
@@ -645,14 +648,34 @@ function porLlegada(filas: FilaCrm[]): { closer: string; n: number }[] {
     .map(([closer, d]) => ({ closer, n: d.n }));
 }
 
+type PosibleMiembro = Pick<MiembroEquipo, "nombre"> & Partial<Pick<MiembroEquipo, "id" | "activo">>;
+
+/* De dos que encajan con el mismo anfitrión, el que elige la base (order by
+   activo desc, id en miembro_de_nombre y son_mios, supabase/tipos-cuenta.sql):
+   el activo y, a igual, el de menor id. Sin id o sin activo (quien llama con
+   sólo el nombre), queda el que ya estaba. */
+function elegidoPorLaBase<M extends PosibleMiembro>(actual: M | undefined, otro: M): M {
+  if (!actual) return otro;
+  const activo = (m: M) => m.activo !== false;
+  if (activo(actual) !== activo(otro)) return activo(otro) ? otro : actual;
+  return (otro.id ?? "") < (actual.id ?? "") ? otro : actual;
+}
+
 /* El miembro del equipo que es el anfitrión de Calendly ("Dante Barbieri"
    en Calendly puede ser "Dante" en Equipo): el mismo nombre o uno que
-   empieza como el otro. */
-export function miembroDeCloser<M extends Pick<MiembroEquipo, "nombre">>(closer: string, equipo: M[]): M | undefined {
+   empieza como el otro. Con más de uno, el mismo que elige la base: si no, el
+   CRM, el cierre del día y los strikes pondrían la llamada en una cuenta y la
+   base se la mostraría a otra. */
+export function miembroDeCloser<M extends PosibleMiembro>(closer: string, equipo: M[]): M | undefined {
   const c = nombreCorto(closer);
   if (!c) return undefined;
-  return equipo.find((m) => nombreCorto(m.nombre) === c)
-    ?? equipo.find((m) => { const n = nombreCorto(m.nombre); return Boolean(n) && (c.startsWith(`${n} `) || n.startsWith(`${c} `)); });
+  let igual: M | undefined, empieza: M | undefined;
+  for (const m of equipo) {
+    const n = nombreCorto(m.nombre);
+    if (n === c) igual = elegidoPorLaBase(igual, m);
+    else if (n && (c.startsWith(`${n} `) || n.startsWith(`${c} `))) empieza = elegidoPorLaBase(empieza, m);
+  }
+  return igual ?? empieza;
 }
 
 export function closersConSeccion(filas: FilaCrm[], equipo: Pick<MiembroEquipo, "nombre">[]): string[] {
