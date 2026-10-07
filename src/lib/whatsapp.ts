@@ -1,3 +1,4 @@
+import { esCuentaDeCloser, nivelEn, type MiAcceso } from "./permisos";
 import { claveInternacional, clavesDeTelefono, digitosDe, numeroParaWhatsapp } from "./telefonos-wpp";
 
 /* ==================================================================
@@ -86,6 +87,33 @@ export const MAX_PARTICIPANTES_AVISO = 5_000;
 export const MAX_BYTES_QR = 80_000;
 /** Un código QR dura unos segundos (WhatsApp cambia el código cada ~20): pasado esto no se muestra más. */
 export const QR_VIGENTE_SEG = 60;
+
+/** La respuesta de la pantalla sin el código si ya venció: pasado `QR_VIGENTE_SEG` desde la última respuesta buena, el
+    código se saca aunque no llegue nada nuevo (la red se cortó, la app contestó 500). Lo mismo que mide el servidor, pero
+    en la pantalla: no tiene que quedar a la vista un código que WhatsApp ya dio por muerto. */
+export function sinCodigoVencido(datos: RespuestaEstado | null, recibidoMs: number, ahoraMs: number): RespuestaEstado | null {
+  if (!datos?.qr || ahoraMs - recibidoMs < QR_VIGENTE_SEG * 1000) return datos;
+  return { ...datos, qr: null };
+}
+
+/** El estado con que contestó la app dice «no es para vos» (401 sin sesión, 403 sin permiso). Un 503 («no pudimos comprobar tu
+    permiso, probá de nuevo»), un 429, un 5xx o la red cortada son pasajeros: la pantalla conserva lo que tenía y vuelve a preguntar. */
+export const esSinAcceso = (estado: number) => estado === 401 || estado === 403;
+
+/** Cada cuánto vuelve a preguntar Ajustes → WhatsApp mientras está abierta: cada 3 o 4 segundos si no está conectado (el código
+    cambia cada ~20) y cada 20 conectado. Tras un 401 o 403 (null) no vuelve a preguntar por su cuenta: no se insiste con algo
+    que la app ya dijo que no. */
+export function proximaPregunta(sinAcceso: boolean, conectado: boolean): number | null {
+  if (sinAcceso) return null;
+  return conectado ? 20_000 : 3_500;
+}
+
+/** Quién ve el estado del lector con sus grupos: ve los Webinars y no está limitado a lo suyo (la ruta lo
+    rechaza con 403 a quien ve sólo lo suyo). */
+export const puedeVerWhatsapp = (a: MiAcceso | null | undefined) => nivelEn(a, "webinars") >= 1 && !esCuentaDeCloser(a);
+
+/** Quién puede vincular el número (escanear el código): edita Ajustes. Es a quien mandan los avisos. */
+export const puedeVincularWhatsapp = (a: MiAcceso | null | undefined) => nivelEn(a, "ajustes") >= 2;
 
 const MIN = 60_000;
 const aIso = (ms: number) => new Date(ms).toISOString();
@@ -279,21 +307,31 @@ export function aplicarFoto(
 }
 
 /** Un aviso de que alguien entró o salió. Si entra alguien que nunca vimos, se
-    anota; si sale alguien que nunca vimos, no hay nada que sacar. */
+    anota; si sale alguien que nunca vimos, se anota también (afuera), así un «entró»
+    más viejo que llega después no lo da por adentro. Un aviso que no cambia nada igual
+    deja su hora (sube `entro` o `salio`, nunca las baja): los avisos pueden llegar
+    desordenados, y el que llega tarde no tiene que ganarle al más nuevo. */
 export function aplicarAviso(
   existentes: readonly MiembroWhatsapp[], evento: "entro" | "salio", telefonos: readonly string[], en: string, grupoId: string,
 ): CambiosDeMiembros {
   const t = Date.parse(en);
   const mapa = new Map(existentes.map((m) => [m.telefono, m] as const));
   const r: CambiosDeMiembros = { crear: [], actualizar: [], nuevos: 0, volvieron: 0, salieron: 0 };
+  /* ¿Esta hora es más nueva que la que ya tenía anotada? */
+  const masNueva = (anotada: string | null) => !anotada || !(Date.parse(anotada) >= t);
   for (const tel of new Set(telefonos)) {
     const m = mapa.get(tel);
     if (evento === "entro") {
       if (!m) { r.crear.push({ grupoId, telefono: tel, dentro: true, entro: en, salio: null, creadoEn: en }); r.nuevos++; }
       else if (!m.dentro && ultimoCambio(m) <= t) { r.actualizar.push({ ...m, dentro: true, entro: en }); r.volvieron++; }
-    } else if (m && m.dentro && ultimoCambio(m) <= t) {
+      else if (masNueva(m.entro)) r.actualizar.push({ ...m, entro: en });
+    } else if (!m) {
+      r.crear.push({ grupoId, telefono: tel, dentro: false, entro: null, salio: en, creadoEn: en });
+    } else if (m.dentro && ultimoCambio(m) <= t) {
       r.actualizar.push({ ...m, dentro: false, salio: en });
       r.salieron++;
+    } else if (masNueva(m.salio)) {
+      r.actualizar.push({ ...m, salio: en });
     }
   }
   return r;
@@ -604,12 +642,35 @@ export function filtrarPorLector<T extends { id: string }>(registros: readonly T
 /** El teléfono para pegar: con el + si trae el código de país; si no, tal cual se escribió. */
 export const telefonoParaCopiar = (f: { numero: string; completo?: boolean }) => (f.completo === false ? f.numero : `+${f.numero}`);
 
+/** Lo más largo que se guarda de un nombre que viene de la página pública. */
+export const MAX_NOMBRE = 120;
+
+/** Un texto de la gente, listo para una celda: los controles (tabulador, saltos de renglón, también U+0085, U+2028 y
+    U+2029) pasan a espacio, y la comilla recta ", que una planilla toma por «empieza un texto entre comillas» (con ella
+    se vuelve a activar una fórmula o se juntan los renglones que siguen en una sola celda), pasa a la tipográfica ”.
+    Todas las expresiones son lineales (nada de `\s+$`, que en V8 es cuadrática). */
+const paraCelda = (texto: string) => texto.replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]+/g, " ").replace(/"/g, "\u201d");
+
+/** Una celda de texto para pegar en una planilla: si empieza con = + - @ (o tabulador o retorno de carro) la
+    planilla la toma por una fórmula. Con IMPORTXML o WEBSERVICE alcanza para mandar lo demás pegado a un
+    servidor ajeno. El apóstrofo la deja como texto. */
+export const celdaSegura = (texto: string) => (/^[=+\-@\t\r]/.test(texto) ? `'${texto}` : texto);
+
+/** El nombre que escribe cualquiera en la página pública, sin lo que lo haría fórmula en una planilla: se
+    sacan del principio los = + - @ (y los espacios y controles que los preceden), las comillas rectas pasan a ” y
+    se corta en MAX_NOMBRE caracteres. «Jean-Paul» y «María» quedan igual: sólo importa el principio. */
+export function nombreSinFormula(nombre: string | undefined): string | undefined {
+  if (nombre === undefined) return undefined;
+  const limpio = paraCelda(nombre).replace(/^[\s=+\-@]+/, "").trimEnd().slice(0, MAX_NOMBRE).replace(/[\ud800-\udbff]$/, "").trimEnd();
+  return limpio || undefined;
+}
+
 /** La lista para pegar en otro lado: un teléfono por renglón (con el +), o
     «nombre ⇥ teléfono» para pegarla en una planilla. */
 export function listaParaCopiar(filas: readonly { nombre: string; numero: string; completo?: boolean }[], conNombres: boolean): string {
   return filas
     .filter((f) => f.numero)
-    .map((f) => (conNombres ? `${f.nombre.replace(/[\t\r\n]+/g, " ").trim()}\t${telefonoParaCopiar(f)}` : telefonoParaCopiar(f)))
+    .map((f) => (conNombres ? `${celdaSegura(paraCelda(f.nombre).trim())}\t${telefonoParaCopiar(f)}` : telefonoParaCopiar(f)))
     .join("\n");
 }
 
@@ -630,6 +691,9 @@ export interface RespuestaEstado {
   qr?: string | null;
   /** Falta correr supabase/whatsapp-lector-qr.sql: no hay dónde guardar el código. */
   qrSinTabla?: boolean;
+  /** Quien pidió sólo edita Ajustes (vincula el número) y no ve los Webinars: viene el estado del lector y el código,
+      sin los grupos. */
+  sinGrupos?: boolean;
 }
 
 export interface RespuestaWebinar {

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { cabeceras } from "@/components/webinars/useYoutube";
-import { estadoDelLector, type RespuestaEstado, type RespuestaWebinar } from "./whatsapp";
+import { esSinAcceso, estadoDelLector, proximaPregunta, QR_VIGENTE_SEG, sinCodigoVencido, type RespuestaEstado, type RespuestaWebinar } from "./whatsapp";
 
 /* ==================================================================
    WhatsApp de lectura, del lado de la pantalla.
@@ -72,7 +72,7 @@ export function recargarLector(): Promise<void> {
       poner({ cargando: false, datos, error: null, sinAcceso: false });
     } catch (e) {
       const err = e as ErrorWhatsapp;
-      poner({ cargando: false, datos: vista.datos, error: err.message, sinAcceso: err.estado === 401 || err.estado === 403 });
+      poner({ cargando: false, datos: vista.datos, error: err.message, sinAcceso: esSinAcceso(err.estado) });
     } finally {
       enCurso = null;
     }
@@ -116,13 +116,11 @@ const sinSuscribir = () => () => {};
 
 /* ---------- El lector en vivo, para vincular el número ---------- */
 
-const CADA_EN_VIVO_MS = 3_500;
-const CADA_CONECTADO_MS = 20_000;
-
 /** Para Ajustes → WhatsApp: cómo está el lector y, si quien mira puede verlo (es dueño o edita Ajustes) y el
     lector lo está esperando, el código QR para vincular el número. Se vuelve a preguntar cada 3 o 4 segundos
     mientras no está conectado (el código cambia cada ~20) y cada 20 conectado, y sólo mientras la pantalla está
-    abierta. El código es una credencial: no se guarda en ningún lado, vive en este estado. */
+    abierta; tras un 401 o 403 deja de insistir (un botón vuelve a preguntar). El código es una credencial: no se
+    guarda en ningún lado, vive en este estado, y vence acá también: sin una respuesta buena en un minuto se saca. */
 export function useLectorEnVivo(activo = true) {
   const [datos, setDatos] = useState<RespuestaEstado | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -131,6 +129,9 @@ export function useLectorEnVivo(activo = true) {
   const pidiendo = useRef(false);
   const ultimo = useRef<RespuestaEstado | null>(null);
   const sinAccesoRef = useRef(false);
+  const recibidoEn = useRef(0);
+  const venceElCodigo = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const reprogramar = useRef<() => void>(() => {});
 
   const recargar = useCallback(async () => {
     if (pidiendo.current) return;
@@ -138,38 +139,61 @@ export function useLectorEnVivo(activo = true) {
     try {
       const d = await pedir<RespuestaEstado>("/api/whatsapp/estado?qr=1");
       ultimo.current = d;
+      recibidoEn.current = Date.now();
       setDatos(d);
       setError(null);
       sinAccesoRef.current = false;
       setSinAcceso(false);
+      /* Si no llega otra respuesta buena en un minuto, el código se saca solo (un poco después, para no quedar antes de la hora). */
+      clearTimeout(venceElCodigo.current);
+      if (d.qr) venceElCodigo.current = setTimeout(() => setDatos((x) => sinCodigoVencido(x, recibidoEn.current, Date.now())), QR_VIGENTE_SEG * 1000 + 100);
     } catch (e) {
       const err = e as ErrorWhatsapp;
       setError(err.message);
-      sinAccesoRef.current = err.estado === 401 || err.estado === 403;
+      sinAccesoRef.current = esSinAcceso(err.estado);
       setSinAcceso(sinAccesoRef.current);
+      /* Sin acceso (la sesión venció o le sacaron el permiso) no queda nada de lo último que se vio, código incluido. */
+      if (sinAccesoRef.current) {
+        clearTimeout(venceElCodigo.current);
+        ultimo.current = null;
+        setDatos(null);
+      }
     } finally {
       pidiendo.current = false;
       setCargando(false);
     }
   }, []);
 
+  /** Volver a preguntar a mano; si estaba quieto por un 401 o 403, vuelve a mirar solo si ahora anda. */
+  const recargarYSeguir = useCallback(async () => {
+    await recargar();
+    reprogramar.current();
+  }, [recargar]);
+
   useEffect(() => {
     if (!activo) return;
     let vivo = true;
     let reloj: ReturnType<typeof setTimeout> | undefined;
+    const programar = () => {
+      clearTimeout(reloj);
+      /* Sin acceso no se insiste: ni cada minuto ni cada 3,5 segundos. */
+      const conectado = estadoDelLector(ultimo.current?.lector, Date.now()).tipo === "conectado";
+      const espera = proximaPregunta(sinAccesoRef.current, conectado);
+      if (!vivo || espera === null) return;
+      reloj = setTimeout(() => void ciclo(), espera);
+    };
     const ciclo = async () => {
       if (!document.hidden) await recargar();
-      if (!vivo) return;
-      const conectado = estadoDelLector(ultimo.current?.lector, Date.now()).tipo === "conectado";
-      reloj = setTimeout(() => void ciclo(), sinAccesoRef.current ? 60_000 : conectado ? CADA_CONECTADO_MS : CADA_EN_VIVO_MS);
+      programar();
     };
+    reprogramar.current = programar;
     const alVolver = () => { if (!document.hidden && !sinAccesoRef.current) void recargar(); };
     document.addEventListener("visibilitychange", alVolver);
     void ciclo();
-    return () => { vivo = false; clearTimeout(reloj); document.removeEventListener("visibilitychange", alVolver); };
+    return () => { vivo = false; clearTimeout(reloj); clearTimeout(venceElCodigo.current); reprogramar.current = () => {}; document.removeEventListener("visibilitychange", alVolver); };
   }, [activo, recargar]);
 
-  return { datos, error, sinAcceso, cargando, recargar };
+  return { datos, error, sinAcceso, cargando, recargar: recargarYSeguir };
 }
 
 /** La hora de ahora, que se refresca sola: para que «hace 14 minutos» siga contando. */
@@ -216,7 +240,7 @@ export function useGrupoDeWebinar(webinarId: string | null) {
       if (vigente.current !== webinarId) return;
       const err = e as ErrorWhatsapp;
       setError(err.message);
-      setSinAcceso(err.estado === 401 || err.estado === 403);
+      setSinAcceso(esSinAcceso(err.estado));
     } finally {
       if (vigente.current === webinarId) setCargando(false);
     }

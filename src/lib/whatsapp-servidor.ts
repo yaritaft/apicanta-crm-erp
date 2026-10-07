@@ -5,7 +5,7 @@ import { dirname, join } from "node:path";
 import { NextResponse } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { hayEquipoConfigurado } from "./equipo-servidor";
-import { exigirArea } from "./permisos-servidor";
+import { baseDelPedido, exigirArea, faltaLaFuncion } from "./permisos-servidor";
 import { nubeServidor } from "./servidor";
 import {
   aplicarAviso, aplicarFoto, contarDentro, MAX_BYTES_CUERPO, QR_VIGENTE_SEG,
@@ -84,7 +84,7 @@ const faltaLaTabla = (e: { code?: string; message?: string }) =>
 const COLUMNAS_GRUPO = "id, nombre, webinarId, miembros, sinTelefono, ultimaFoto, creadoEn";
 const PAGINA = 1000;
 
-class RepoSupabase implements RepoWhatsapp {
+export class RepoSupabase implements RepoWhatsapp {
   constructor(private db: SupabaseClient) {}
 
   private ok<T>(r: { data: T | null; error: { code?: string; message?: string } | null }): T | null {
@@ -164,19 +164,16 @@ class RepoSupabase implements RepoWhatsapp {
   async leerMiembros(grupoId: string, telefonos?: readonly string[]) {
     const salida: MiembroWhatsapp[] = [];
     const columnas = "grupoId, telefono, dentro, entro, salio";
-    if (telefonos) {
-      for (let i = 0; i < telefonos.length; i += 100) {
-        const r = this.ok(await this.db.from("whatsapp_miembros").select(columnas).eq("grupoId", grupoId).in("telefono", telefonos.slice(i, i + 100)));
-        salida.push(...((r ?? []) as MiembroWhatsapp[]));
-      }
-      return salida;
-    }
+    /* Siempre el grupo entero, por páginas, y los teléfonos que se buscan se filtran acá. Con `.in('telefono', …)`
+       supabase-js manda un GET con los teléfonos en la dirección, y la dirección queda en los registros de la API de
+       Supabase, fuera del control de la app. Un grupo de 1.024 son dos páginas. */
+    const quiero = telefonos ? new Set(telefonos) : null;
     /* PostgREST corta en 1000 sin avisar: se pide por páginas hasta que una venga incompleta. */
     for (let desde = 0; ; desde += PAGINA) {
       const r = this.ok(await this.db.from("whatsapp_miembros").select(columnas).eq("grupoId", grupoId)
         .order("telefono", { ascending: true }).range(desde, desde + PAGINA - 1));
       const filas = (r ?? []) as MiembroWhatsapp[];
-      salida.push(...filas);
+      salida.push(...(quiero ? filas.filter((m) => quiero.has(m.telefono)) : filas));
       if (filas.length < PAGINA) return salida;
     }
   }
@@ -352,15 +349,36 @@ export function autorizarLector(peticion: Request): NextResponse | null {
   return null;
 }
 
+/** El cuerpo como texto, cortando apenas pasa de `max` bytes: se lee el flujo trozo a trozo y se suma, sin
+    depender de Content-Length (un pedido en partes no lo trae y `text()` lo cargaría entero en memoria). null = se pasó. */
+async function leerTextoConTope(peticion: Request, max: number): Promise<string | null> {
+  if (!peticion.body) return "";
+  const lector = peticion.body.getReader();
+  const decodificador = new TextDecoder();
+  let texto = "";
+  let total = 0;
+  for (;;) {
+    const { done, value } = await lector.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > max) {
+      await lector.cancel().catch(() => undefined);
+      return null;
+    }
+    texto += decodificador.decode(value, { stream: true });
+  }
+  return texto + decodificador.decode();
+}
+
 /** El cuerpo como JSON, con tope de tamaño. */
 export async function leerJson(peticion: Request, max: number = MAX_BYTES_CUERPO):
   Promise<{ ok: true; json: unknown } | { ok: false; status: number; error: string }> {
   const declarado = Number(peticion.headers.get("content-length"));
   const demasiado = { ok: false as const, status: 413, error: `El pedido es demasiado grande (el máximo es ${Math.round(max / 1000)} KB).` };
   if (Number.isFinite(declarado) && declarado > max) return demasiado;
-  let texto: string;
-  try { texto = await peticion.text(); } catch { return { ok: false, status: 400, error: "No pude leer el cuerpo del pedido." }; }
-  if (texto.length > max) return demasiado;
+  let texto: string | null;
+  try { texto = await leerTextoConTope(peticion, max); } catch { return { ok: false, status: 400, error: "No pude leer el cuerpo del pedido." }; }
+  if (texto === null) return demasiado;
   try { return { ok: true, json: JSON.parse(texto) }; } catch { return { ok: false, status: 400, error: "El cuerpo no es un JSON válido." }; }
 }
 
@@ -463,34 +481,73 @@ export async function estadoParaPantalla(repo: RepoWhatsapp, modo: Modo): Promis
 }
 
 export interface DepsDeEstado {
-  exigirArea: (peticion: Request, areas: Parameters<typeof exigirArea>[1], minimo: 1 | 2) => Promise<NextResponse | null>;
+  exigirArea: (peticion: Request, areas: Parameters<typeof exigirArea>[1], minimo: 1 | 2, opciones?: Parameters<typeof exigirArea>[3]) => Promise<NextResponse | null>;
   repositorio: typeof repositorio;
   ahora: () => Date;
+  /** El código vigente, preguntado a la base con la sesión de quien pide (la base decide, en una sola llamada):
+      un texto, null si no hay (o hubo cualquier error: sin código) y undefined si la base todavía no tiene la función
+      (falta correr supabase/whatsapp-lector-permisos.sql). Sin esto se lee el código con la clave de servicio, después
+      de comprobar el permiso. */
+  qrVigente?: (peticion: Request) => Promise<string | null | undefined>;
 }
-const DEPS: DepsDeEstado = { exigirArea, repositorio, ahora: () => new Date() };
 
-/** GET /api/whatsapp/estado. Lo ve quien ve los Webinars. El código QR para vincular el número es
-    una credencial (quien lo escanea lee ese WhatsApp): va SÓLO si lo pide (?qr=1), el lector está
-    esperándolo, tiene menos de un minuto y quien pide es dueño o edita Ajustes. Se pregunta con la
-    sesión de quien pide, como en las demás rutas; nunca se lee desde el navegador con RLS. */
+/** Le pregunta el código a `whatsapp_qr_vigente()` con la sesión de quien pide. Esa función devuelve el código sólo si
+    quien llama edita Ajustes y el código tiene menos de un minuto; cualquier error significa «sin código». */
+export async function qrVigenteDelPedido(peticion: Request): Promise<string | null | undefined> {
+  const db = baseDelPedido(peticion);
+  if (!db) return null;
+  try {
+    const r = await db.rpc("whatsapp_qr_vigente");
+    if (r.error) return faltaLaFuncion(r.error) ? undefined : null;
+    return typeof r.data === "string" && r.data ? r.data : null;
+  } catch {
+    return null;
+  }
+}
+
+const DEPS: DepsDeEstado = { exigirArea, repositorio, ahora: () => new Date(), qrVigente: qrVigenteDelPedido };
+
+/** GET /api/whatsapp/estado. Lo ve quien ve los Webinars y no está limitado a lo suyo (la ruta lee con la clave de servicio,
+    que saltea RLS, y los grupos no se recortan por persona). El código QR para vincular el número es una credencial (quien
+    lo escanea lee ese WhatsApp): va SÓLO si lo pide (?qr=1), el lector está esperándolo, tiene menos de un minuto y quien
+    pide edita Ajustes —no hace falta que además vea los Webinars: sin verlos recibe el estado del lector y el código, sin los
+    grupos—. Se pregunta con la sesión de quien pide, como en las demás rutas, y ante cualquier error la respuesta es «sin
+    código»; nunca se lee desde el navegador con RLS. */
 export async function responderEstado(peticion: Request, deps: DepsDeEstado = DEPS): Promise<NextResponse> {
   const SIN_CACHE = { headers: { "Cache-Control": "no-store" } };
-  const noPuede = await deps.exigirArea(peticion, ["webinars"], 1);
-  if (noPuede) return noPuede;
-
+  const pideQr = new URL(peticion.url).searchParams.get("qr") === "1";
   const donde = deps.repositorio();
+  /* En la nube el código no se da si falta configurar el equipo: «la app local, sin login» es solo del modo de prueba. */
+  const paraElCodigo = { cerrado: donde?.modo === "nube" };
+
+  let soloElCodigo = false;
+  const noVe = await deps.exigirArea(peticion, ["webinars"], 1, { sinSoloLoSuyo: true });
+  if (noVe) {
+    /* 503: no se pudo comprobar el permiso; se contesta eso (las pantallas vuelven a preguntar), nunca un 403 que las calle. */
+    if (!pideQr || noVe.status === 401 || noVe.status === 503) return noVe;
+    const sinAjustes = await deps.exigirArea(peticion, ["ajustes"], 2, paraElCodigo);
+    if (sinAjustes) return sinAjustes.status === 503 ? sinAjustes : noVe;
+    soloElCodigo = true;
+  }
+
   if (!donde) return NextResponse.json({ error: SIN_BASE }, { status: 503 });
   try {
     const r = await estadoParaPantalla(donde.repo, donde.modo);
-    const pideQr = new URL(peticion.url).searchParams.get("qr") === "1";
+    if (soloElCodigo) { r.grupos = []; r.sinGrupos = true; }
     if (pideQr && r.lector?.estado === "esperando_qr") {
-      const puede = (await deps.exigirArea(peticion, ["ajustes"], 2)) === null;
+      const sinAjustes = soloElCodigo ? null : await deps.exigirArea(peticion, ["ajustes"], 2, paraElCodigo);
+      if (sinAjustes?.status === 503) return sinAjustes;
+      const puede = sinAjustes === null;
       r.puedeVerQr = puede;
       r.qr = null;
       if (puede) {
         try {
-          const q = await donde.repo.leerQr();
-          if (q && deps.ahora().getTime() - Date.parse(q.en) < QR_VIGENTE_SEG * 1000) r.qr = q.qr;
+          const desdeLaBase = donde.modo === "nube" && deps.qrVigente ? await deps.qrVigente(peticion) : undefined;
+          if (desdeLaBase !== undefined) r.qr = desdeLaBase;
+          else {
+            const q = await donde.repo.leerQr();
+            if (q && deps.ahora().getTime() - Date.parse(q.en) < QR_VIGENTE_SEG * 1000) r.qr = q.qr;
+          }
         } catch (e) {
           if (!(e instanceof ErrorSinTablaQr)) throw e;
           r.qrSinTabla = true;

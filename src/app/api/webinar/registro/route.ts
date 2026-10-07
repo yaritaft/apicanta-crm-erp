@@ -6,6 +6,7 @@ import { webinarDeUtm } from "@/lib/calendly";
 import { diaArgentina } from "@/lib/reporteFinanciera";
 import { enviarEventosUnaVez, fbcDeFbclid } from "@/lib/meta-capi";
 import { eventosDeRegistro } from "@/lib/capi-registro";
+import { nombreSinFormula } from "@/lib/whatsapp";
 import { adIdDeUtm, filaParaBase, fusionarRegistro, idRegistro, nuevoRegistro, type RegistroForm } from "@/lib/registros-webinar";
 import type { Contacto } from "@/lib/types";
 
@@ -134,7 +135,8 @@ export async function POST(req: Request) {
   if (!db) return NextResponse.json({ ok: false, error: "Falta configurar la base (SUPABASE_SERVICE_ROLE_KEY)." }, { status: 503, headers: h });
 
   const cuando = new Date().toISOString();
-  const nombre = primero(d, CAMPOS_NOMBRE);
+  /* El nombre lo escribe cualquiera en la landing y después se copia a planillas (Formularios → «Con nombres»): sin = + - @ al principio. */
+  const nombre = nombreSinFormula(primero(d, CAMPOS_NOMBRE));
   const telefono = primero(d, CAMPOS_TELEFONO);
   const pais = primero(d, CAMPOS_PAIS);
   const utm = Object.fromEntries(["utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_term"]
