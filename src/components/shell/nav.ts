@@ -1,10 +1,11 @@
 import {
   LayoutDashboard, Users, Sheet, CalendarDays, Video, Megaphone,
   GraduationCap, ClipboardList, Wallet, Settings, HandCoins, ArrowDownUp, Banknote, Landmark, UserCheck,
+  ClipboardCheck, PhoneCall,
 } from "lucide-react";
 import { SquareKanban } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import { nivelDeRuta, type MiAcceso } from "@/lib/permisos";
+import { esCuentaDeCloser, nivelDeRuta, type MiAcceso } from "@/lib/permisos";
 
 /* Quién ve cada item lo dice su ruta (lib/permisos: areaDeRuta): Equipo y
    honorarios, sólo los dueños; el resto, según el tipo de cuenta. */
@@ -59,11 +60,29 @@ export const NAV: GrupoNav[] = [
   },
 ];
 
-export const TODOS_LOS_ITEMS = NAV.flatMap((g) => g.items);
+/* El menú del closer (una cuenta que ve sólo lo suyo): tres entradas y nada
+   más. «Mis llamadas» es el CRM de hoy, «Cerrar el día» es el cierre del día
+   y «Cargar venta» abre el asistente de venta. Leads, Agenda, Clientes y el
+   resto siguen abiertos por link, filtrados a lo suyo por la base: sólo se
+   esconden del menú. */
+export const NAV_CLOSER: GrupoNav[] = [
+  {
+    titulo: "Tu día",
+    items: [
+      { href: "/mis-llamadas", texto: "Mis llamadas", icono: PhoneCall, ayuda: "Tus llamadas de hoy: cargá cómo terminó cada una" },
+      { href: "/cerrar-el-dia", texto: "Cerrar el día", icono: ClipboardCheck, ayuda: "Pasá por tus llamadas y contá cómo terminó cada una" },
+      { href: "/cargar-venta", texto: "Cargar venta", icono: HandCoins, ayuda: "Cargá una venta nueva: pasa a cliente" },
+    ],
+  },
+];
 
-/* El menú de quien está usando la app: lo que su tipo de cuenta ve. */
+export const TODOS_LOS_ITEMS = [...NAV, ...NAV_CLOSER].flatMap((g) => g.items);
+
+/* El menú de quien está usando la app: lo que su tipo de cuenta ve; el
+   closer, el mínimo. */
 export function navPara(a: MiAcceso | null): GrupoNav[] {
-  return NAV.map((g) => ({ ...g, items: g.items.filter((i) => nivelDeRuta(a, i.href) > 0) })).filter((g) => g.items.length > 0);
+  return (esCuentaDeCloser(a) ? NAV_CLOSER : NAV)
+    .map((g) => ({ ...g, items: g.items.filter((i) => nivelDeRuta(a, i.href) > 0) })).filter((g) => g.items.length > 0);
 }
 
 /* A dónde va el inicio: el Dashboard, o la primera pantalla que ve (el

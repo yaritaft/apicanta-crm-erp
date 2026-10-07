@@ -2,7 +2,7 @@
 
 import React, { useCallback, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { ArrowDown, ArrowUp, ClipboardCheck, ExternalLink, Pencil, Search, Star, X } from "lucide-react";
+import { ArrowDown, ArrowRightLeft, ArrowUp, ClipboardCheck, ExternalLink, Pencil, Search, Star, X } from "lucide-react";
 import { Button, Card, Chip, Empty, Input, Tabs } from "@/components/ui/ui";
 import { DataTable, type Columna } from "@/components/ui/DataTable";
 import { DateRangePicker } from "@/components/ui/DateRangePicker";
@@ -18,6 +18,10 @@ import { useAcceso } from "@/lib/acceso";
 import { puedeEditar } from "@/lib/permisos";
 import { useUsuarioActual } from "@/lib/usuario";
 import { closersConLlamadas, objecionesDe } from "@/lib/eod";
+import { destinosDePase } from "@/lib/pasar-llamadas";
+import { sePuedePasar, usePasarLlamadas } from "@/components/closers/usePasarLlamadas";
+import { PasarLlamadas } from "@/components/closers/PasarLlamadas";
+import { AvisoMisLlamadas } from "@/components/closers/MisLlamadas";
 import { miembroDeCloser, opcionesDe as opcionesDelCrm } from "@/lib/crm";
 import { COLOR_AVISO, POR_VENIR, SIN_CARGAR } from "@/lib/estados";
 import { leadDeSesion } from "@/lib/etapas-auto";
@@ -78,7 +82,10 @@ const PERFIL: Partial<Record<ClaveColumna, CampoPerfil>> = {
 };
 const opciones = (xs: string[], color: (x: string) => ColorCrm = () => "gris1"): OpcionCrm[] => xs.map((nombre) => ({ nombre, color: color(nombre) }));
 
-export function CrmTabla() {
+/* `misLlamadas`: «Mis llamadas», la cuenta del closer. Es esta misma tabla, de
+   hoy, con arriba cuántas llamadas hay hoy y cuántas faltan cargar; «Cerrar
+   el día» va en ese aviso (entrada propia) y no en la barra. */
+export function CrmTabla({ misLlamadas = false }: { misLlamadas?: boolean } = {}) {
   const e = useEstado();
   const params = useSearchParams();
   const escribir = useEscribirURL();
@@ -88,22 +95,28 @@ export function CrmTabla() {
   const [eod, setEod] = useState(false);
   const toast = useToast();
   const cambiarEstado = useCambiarEstado();
+  const pasarLlamadas = usePasarLlamadas();
   /* La celda que se está corrigiendo, y la llamada a la que se le carga la venta. */
   const [editando, setEditando] = useState<{ id: string; clave: ClaveColumna } | null>(null);
   const [ventaPara, setVentaPara] = useState<string | null>(null);
+  /* Pasar a otro closer las llamadas que se ven (con el closer y el período filtrados, las de uno). */
+  const [pasando, setPasando] = useState(false);
   /* Cada tipo de cuenta corrige lo que edita (y la base lo traba igual). */
   const { acceso } = useAcceso();
   const puedeLlamadas = puedeEditar(acceso, "sesiones");
   const puedePersonas = puedeEditar(acceso, "contactos");
+  /* Cambiar el closer de una llamada es pasarla a otro: lo hace quien dirige las
+     ventas (un dueño, el director). A un closer la base se lo rechaza, así que ni se le ofrece. */
+  const puedePasar = puedeLlamadas && !acceso?.soloLoSuyo;
 
-  /* El período, por el día de la llamada. De entrada, este mes. */
+  /* El período, por el día de la llamada. De entrada, este mes (hoy, en «Mis llamadas»). */
   const hoy = diaDeNegocio(new Date().toISOString());
   const limites = useMemo(() => {
     const dias = e.sesiones.map((s) => diaDeNegocio(s.inicia)).filter(Boolean).sort();
     const ultimo = dias[dias.length - 1];
     return { min: dias[0] ?? null, max: ultimo && ultimo > hoy ? ultimo : hoy };
   }, [e.sesiones, hoy]);
-  const [rango, setRango] = useRangoURL("mes", { futuro: true, limites });
+  const [rango, setRango] = useRangoURL(misLlamadas ? "hoy" : "mes", { futuro: true, limites });
 
   /* `ahora` al minuto: la fila que pasa de "Por venir" a "Sin cargar". */
   const ahora = Math.floor(Date.now() / 60000) * 60000;
@@ -169,9 +182,8 @@ export function CrmTabla() {
 
   /* ---------- Corregir en la celda ---------- */
   const opcionesDe = useMemo<Partial<Record<ClaveColumna, OpcionCrm[]>>>(() => {
-    const closers = new Set([...closersConLlamadas(e), ...e.equipo.filter((m) => m.rol === "closer" && m.activo).map((m) => m.nombre)]);
     return {
-      closer: opciones([...closers].sort((a, b) => a.localeCompare(b, "es"))),
+      closer: opciones(destinosDePase(e).map((d) => d.miembro.nombre)),
       ...estados,
       objecion: opciones(objecionesDe(e.ajustes), () => "amarillo1"),
       oferta: [{ nombre: "Sí", color: "verde1" }, { nombre: "No", color: "gris1" }],
@@ -190,6 +202,13 @@ export function CrmTabla() {
     if (campo) { cambiarEstado(f.sesion, campo, valor.trim(), { conVenta: Boolean(f.venta), alVender: () => setVentaPara(f.id) }); return; }
     const w = escrituraDe(f, clave, valor, { ajustes: e.ajustes, quien: yo.nombre, cuando: new Date().toISOString() });
     if (!w) return;
+    /* El closer: se pasa la llamada (queda con quien la atiende y Calendly no la vuelve a pisar). */
+    if (w.tipo === "closer") {
+      const destino = destinosDePase(e).find((d) => d.miembro.nombre === w.closer);
+      if (!destino) toast(`${w.closer} no está entre los closers del equipo: cargalo en Equipo para poder pasarle llamadas.`, "err");
+      else if (pasarLlamadas([f.sesion], destino) === 0) toast(`${destino.miembro.nombre} ya atiende esta llamada.`, "info");
+      return;
+    }
     const titulo = COLUMNA[clave].titulo;
     let deshacer: () => void;
     if (w.tipo === "llamada") {
@@ -242,7 +261,8 @@ export function CrmTabla() {
         const abierta = editando?.id === f.id && editando.clave === col.clave;
         return (
           <CeldaCrm
-            clave={col.clave} f={f} puede={DE_LA_PERSONA.has(col.clave) ? puedePersonas : puedeLlamadas}
+            clave={col.clave} f={f}
+            puede={DE_LA_PERSONA.has(col.clave) ? puedePersonas : col.clave === "closer" ? puedePasar : puedeLlamadas}
             abierta={abierta} onAbrir={() => setEditando({ id: f.id, clave: col.clave })}
             onCerrar={() => setEditando((x) => (x?.id === f.id && x.clave === col.clave ? null : x))}
             onGuardar={(v) => guardarCelda(f, col.clave, v)} onFicha={() => verFicha(f)}
@@ -273,6 +293,7 @@ export function CrmTabla() {
   const enInforme = vista.seccion === "resumen";
   return (
     <div className="crm-t">
+      {misLlamadas && <AvisoMisLlamadas filas={todas} hoy={hoy} />}
       <Card className="crm-t__card">
         {/* Todo en una barra: el título ya está arriba, en la barra de la app. */}
         <div className="crm-t__barra">
@@ -285,7 +306,7 @@ export function CrmTabla() {
             onApply={(r) => setRango(r, { pag: null })}
             footerNota="Por el día de la llamada · hora de Argentina"
           />
-          {miNombre && (
+          {miNombre && !misLlamadas && (
             <Chip activo={soloMias} onClick={() => cambiarFiltro("closer", soloMias ? null : { modo: "solo", valores: [miNombre] })}>
               Mis llamadas
             </Chip>
@@ -304,7 +325,13 @@ export function CrmTabla() {
               <ConfigColumnas todas={DEFS} visibles={cols.visibles} alternar={cols.alternar} mover={cols.mover} restaurar={cols.restaurar} compacto />
             )}
             <CopiarLink />
-            <Button variante="primary" sm icono={<ClipboardCheck size={15} />} onClick={() => setEod(true)}>Cerrar el día</Button>
+            {puedePasar && !enInforme && filas.some((f) => sePuedePasar(f.sesion)) && (
+              <Button sm variante="secondary" icono={<ArrowRightLeft size={15} />} onClick={() => setPasando(true)}
+                title="Pasar las llamadas que ves, o algunas, de un closer a otro">
+                Pasar llamadas
+              </Button>
+            )}
+            {!misLlamadas && <Button variante="primary" sm icono={<ClipboardCheck size={15} />} onClick={() => setEod(true)}>Cerrar el día</Button>}
           </div>
         </div>
 
@@ -361,6 +388,7 @@ export function CrmTabla() {
       </Card>
 
       {eod && <Eod onCerrar={() => setEod(false)} />}
+      {pasando && <PasarLlamadas lote llamadas={filas.map((f) => f.sesion)} onCerrar={() => setPasando(false)} />}
     </div>
   );
 }

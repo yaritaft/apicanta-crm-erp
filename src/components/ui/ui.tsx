@@ -201,7 +201,7 @@ export function Chip({ activo, onClick, children, count, title }: {
 /* ---------------- Tabs ---------------- */
 
 export function Tabs<T extends string>({ valor, onChange, opciones }: {
-  valor: T; onChange: (v: T) => void; opciones: readonly { valor: T; texto: string }[];
+  valor: T; onChange: (v: T) => void; opciones: readonly { valor: T; texto: React.ReactNode }[];
 }) {
   return (
     <div className="tabs" role="tablist">
