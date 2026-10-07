@@ -33,9 +33,13 @@ function unaLlamada(): Sesion {
 
 const hace = (iso: string | undefined) => Date.now() - Date.parse(iso ?? "");
 
-test("al cargar un estado desde cualquier camino queda la marca de la primera vez; cambiarlo no la corre y vaciarlo la saca", () => {
+test("al cargar un estado desde cualquier camino queda la marca de la primera vez; ni cambiarlo ni vaciarlo la corren", () => {
   const { id } = unaLlamada();
-  /* Se vacía: ya no está cargada, y tampoco su marca. */
+  /* Una llamada de antes: cargada y sin marca. Cambiarle el estado no inventa una (no se sabe cuándo se cargó). */
+  assert.equal(sesionDe(id).estadoLlamadaEn, undefined);
+  acciones.editarLlamada(id, { estadoLlamada: "Seguimiento de Pago" }, "Cambiar una de antes");
+  assert.equal(sesionDe(id).estadoLlamadaEn, undefined);
+  /* Se vacía y se vuelve a cargar: ahí sí es la primera vez que se la ve cargada con marca. */
   acciones.editarLlamada(id, { estadoLlamada: "" }, "Vaciar");
   assert.equal(sesionDe(id).estadoLlamada, undefined);
   assert.equal(sesionDe(id).estadoLlamadaEn, undefined);
@@ -54,19 +58,30 @@ test("al cargar un estado desde cualquier camino queda la marca de la primera ve
   acciones.editarLlamada(id, { estadoLlamada: "Compra Full", notas: "una nota" }, "Otra vez");
   assert.equal(sesionDe(id).estadoLlamadaEn, primera);
 
-  /* Vaciarlo la borra: la llamada vuelve a estar sin cargar. */
+  /* Vaciarlo no la borra: la llamada ya se había cargado ese día (hay historia). Y volver a cargarlo tampoco la corre. */
   acciones.editarLlamada(id, { estadoLlamada: "" }, "Vaciar");
-  assert.equal(sesionDe(id).estadoLlamadaEn, undefined);
+  assert.equal(sesionDe(id).estadoLlamada, undefined);
+  assert.equal(sesionDe(id).estadoLlamadaEn, primera);
+  acciones.editarLlamada(id, { estadoLlamada: "Seguimiento de Pago" }, "Cargar otro");
+  assert.equal(sesionDe(id).estadoLlamadaEn, primera);
 });
 
-test("deshacer devuelve el estado y su marca como estaban (el que lo cargó tarde no la corre a hoy)", () => {
+test("deshacer la primera carga saca la marca; deshacer un vaciado la deja como estaba", () => {
   const { id } = unaLlamada();
-  acciones.editarLlamada(id, { estadoLlamada: "Seguimiento Nutrición", estadoLlamadaEn: "2026-09-03T15:00:00.000Z" }, "Con una marca vieja");
-  assert.equal(sesionDe(id).estadoLlamadaEn, "2026-09-03T15:00:00.000Z", "si el cambio trae la marca, vale esa");
-  /* Se vacía y se deshace con la marca de antes: queda como estaba. */
   acciones.editarLlamada(id, { estadoLlamada: "" }, "Vaciar");
-  assert.equal(sesionDe(id).estadoLlamadaEn, undefined);
-  acciones.editarLlamada(id, { estadoLlamada: "Seguimiento Nutrición", estadoLlamadaEn: "2026-09-03T15:00:00.000Z" }, "Deshacer");
+  /* La primera carga, y su deshacer (el cambio de vuelta trae el estado de antes, vacío, y la marca de antes, ninguna). */
+  acciones.editarLlamada(id, { estadoLlamada: "Seguimiento Nutrición" }, "Cargar");
+  assert.ok(sesionDe(id).estadoLlamadaEn);
+  acciones.editarLlamada(id, { estadoLlamada: "", estadoLlamadaEn: undefined }, "Deshacer");
+  assert.equal(sesionDe(id).estadoLlamada, undefined);
+  assert.equal(sesionDe(id).estadoLlamadaEn, undefined, "sin marca: no quedó cargada ese día");
+
+  /* Un cambio que ya trae la marca (otra pantalla, un deshacer de un vaciado) la deja tal cual. */
+  acciones.editarLlamada(id, { estadoLlamada: "Seguimiento Nutrición", estadoLlamadaEn: "2026-09-03T15:00:00.000Z" }, "Con una marca vieja");
+  assert.equal(sesionDe(id).estadoLlamadaEn, "2026-09-03T15:00:00.000Z");
+  acciones.editarLlamada(id, { estadoLlamada: "" }, "Vaciar");
+  assert.equal(sesionDe(id).estadoLlamadaEn, "2026-09-03T15:00:00.000Z", "vaciar no la corre");
+  acciones.editarLlamada(id, { estadoLlamada: "Seguimiento Nutrición", estadoLlamadaEn: "2026-09-03T15:00:00.000Z" }, "Deshacer el vaciado");
   assert.equal(sesionDe(id).estadoLlamadaEn, "2026-09-03T15:00:00.000Z");
 });
 

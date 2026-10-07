@@ -206,9 +206,10 @@ export interface Sesion {
   /* La primera vez que se cargó cada estado, venga de donde venga (el cierre
      del día, la tabla del CRM, la Agenda, la ficha o una venta): es la marca
      confiable con la que se cuentan los strikes (lib/cierre-del-dia.ts). Se
-     escribe sola al pasar el estado de vacío a cargado y se borra si se vacía;
-     no se pisa al cambiarlo por otro. Sin la columna (supabase/cierre-del-dia.sql)
-     sólo dura lo que la pantalla esté abierta. */
+     escribe sola al pasar el estado de vacío a cargado y después no se corre
+     ni se borra: cambiar el estado, vaciarlo o borrar la opción no la tocan
+     (sólo deshacer la primera carga la saca). Sin la columna
+     (supabase/cierre-del-dia.sql) sólo dura lo que la pantalla esté abierta. */
   estadoLlamadaEn?: string;
   estadoPreCallEn?: string;
   /* La puerta del cierre del día: si el estado es de compra, la venta tiene

@@ -134,6 +134,9 @@ test("atrasoDe: cargada otro día es tarde; sin cargar con el día pasado, sin c
   assert.equal(atrasoDe({ estadoLlamada: "Compra Full" }, d, HOY), null, "cargada sin marca (de antes): no se puede juzgar");
   assert.equal(atrasoDe({}, d, HOY), "sin-cargar");
   assert.equal(atrasoDe({}, "2026-09-30", HOY), null, "hoy todavía no terminó");
+  /* La marca manda: aunque el estado se haya vaciado o la opción se haya borrado, la llamada ya se cargó ese día (o tarde). */
+  assert.equal(atrasoDe({ estadoLlamadaEn: dia(3, 20) }, d, HOY), null, "vaciada después: ya se había cargado a tiempo");
+  assert.equal(atrasoDe({ estadoLlamadaEn: dia(5, 20) }, d, HOY), "tarde", "vaciada después: se había cargado tarde");
   /* Sin estado pero con la venta cargada (la cargó Administración, que no edita las llamadas): cuenta cuándo se cargó la venta. */
   assert.equal(atrasoDe({}, d, HOY, dia(3, 23)), null, "la venta del mismo día");
   assert.equal(atrasoDe({}, d, HOY, dia(5, 15)), "tarde", "la venta de dos días después");

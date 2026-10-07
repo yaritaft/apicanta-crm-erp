@@ -81,20 +81,25 @@ export function pideCierre(s: DeLlamada, hoy: string): boolean {
 
 /** Cómo quedó una llamada que pide cierre: se cargó otro día que el suyo
  *  («tarde»), todavía no se cargó y su día ya pasó («sin-cargar»), o está
- *  bien. Un estado cargado sin su marca de hora (los de antes de esto) no se
- *  puede juzgar: cuenta como a tiempo.
+ *  bien. Manda la marca de la primera vez que se cargó: aunque después se
+ *  cambie el estado, se vacíe o se borre la opción, la llamada ya se cargó
+ *  ese día (o tarde). Un estado cargado sin marca (los de antes de esto) no
+ *  se puede juzgar: cuenta como a tiempo.
  *  Sin estado pero con la venta cargada (la cargó alguien que no edita las
  *  llamadas, como Administración), la llamada figura como «Con cierre» en el
  *  CRM: cuenta cuando se cargó la venta (`ventaEn`). */
 export function atrasoDe(
   s: Pick<Sesion, "estadoLlamada" | "estadoLlamadaEn">, diaDeLlamada: string, hoy: string, ventaEn?: string,
 ): "tarde" | "sin-cargar" | null {
+  if (s.estadoLlamadaEn) {
+    const cargada = diaDeNegocio(s.estadoLlamadaEn);
+    return cargada && cargada > diaDeLlamada ? "tarde" : null;
+  }
   if (!s.estadoLlamada) {
     if (ventaEn) return diaDeNegocio(ventaEn) > diaDeLlamada ? "tarde" : null;
     return diaDeLlamada < hoy ? "sin-cargar" : null;
   }
-  const cargada = s.estadoLlamadaEn ? diaDeNegocio(s.estadoLlamadaEn) : "";
-  return cargada && cargada > diaDeLlamada ? "tarde" : null;
+  return null;
 }
 
 /* ---------- Los días de cada closer ---------- */

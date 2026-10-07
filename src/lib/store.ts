@@ -744,12 +744,12 @@ function cargarLlamadas(t: Tanda, e: EstadoApp, lista: PedidoLlamada[], restaura
     /* La primera vez que se carga cada estado queda marcada, venga de donde
        venga (el cierre del día, la tabla del CRM, la Agenda, la ficha o una
        venta): con eso se cuentan los strikes (lib/cierre-del-dia.ts). Pasar de
-       vacío a cargado la pone; vaciarlo la saca; cambiarlo por otro no la toca.
-       Si el cambio ya trae la marca (deshacer), vale esa. */
+       vacío a cargado la pone; después no se corre ni se borra (cambiar el
+       estado, vaciarlo o borrar la opción no la tocan: hay historia). Si el
+       cambio ya trae la marca (deshacer la primera carga la saca), vale esa. */
     for (const [campo, marca] of MARCAS_DE_ESTADO) {
       if (!(campo in cambios) || marca in cambios) continue;
-      if (!limpio[campo]) { if (s[marca]) limpio[marca] = undefined; }
-      else if (!s[campo]) limpio[marca] = t.cuando;
+      if (limpio[campo] && !s[campo] && !s[marca]) limpio[marca] = t.cuando;
     }
     t.sesiones.set(id, { ...s, ...limpio });
     t.aLaNube.set(id, { ...t.aLaNube.get(id), ...Object.fromEntries(Object.entries(limpio).map(([k, v]) => [k, v ?? null])) });

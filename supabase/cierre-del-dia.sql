@@ -19,10 +19,12 @@
 --
 -- La marca de la primera carga la pone la app, pero esta base también la cuida
 -- (trigger): pasar el estado de vacío a cargado la escribe con la hora del servidor si
--- no vino, cambiarlo por otro no la toca, y vaciarlo la borra. Así no depende de qué
--- pantalla (ni de qué versión de la app abierta en una pestaña vieja) cargó el estado.
--- Sólo mira UPDATE: restaurar un respaldo (INSERT) no inventa marcas, y el webhook de
--- Calendly, que no toca los estados, no las mueve.
+-- no vino; después no se corre ni se borra (cambiar el estado, vaciarlo o borrar la
+-- opción del CRM no la tocan: hay historia). Sólo la saca un cambio que la manda en
+-- NULL a la vez que vacía el estado, que es lo que hace «Deshacer» la primera carga.
+-- Así no depende de qué pantalla (ni de qué versión de la app abierta en una pestaña
+-- vieja) cargó el estado. Sólo mira UPDATE: restaurar un respaldo (INSERT) no inventa
+-- marcas, y el webhook de Calendly, que no toca los estados, no las mueve.
 --
 -- Sin estas columnas la app anda igual, como antes: descarta esos campos al guardar
 -- (store.ts los saca y reintenta). Lo único que no queda guardado es la marca, la
@@ -57,17 +59,17 @@ language plpgsql as $$
 begin
   -- Estado de Llamada
   if coalesce(new."estadoLlamada", '') = '' then
-    new."estadoLlamadaEn" := null;                                    -- vaciado: vuelve a estar sin cargar
+    null;  -- vaciado: la marca queda como la dejó el cambio (la de antes; null sólo si deshacen la primera carga)
   elsif coalesce(old."estadoLlamada", '') = '' then
-    new."estadoLlamadaEn" := coalesce(new."estadoLlamadaEn", now());  -- de vacío a cargado: la primera vez
+    new."estadoLlamadaEn" := coalesce(old."estadoLlamadaEn", new."estadoLlamadaEn", now());  -- de vacío a cargado: la primera vez
   else
     new."estadoLlamadaEn" := coalesce(old."estadoLlamadaEn", new."estadoLlamadaEn");  -- cambiado por otro: no se pisa
   end if;
   -- Estado Pre-Call
   if coalesce(new."estadoPreCall", '') = '' then
-    new."estadoPreCallEn" := null;
+    null;
   elsif coalesce(old."estadoPreCall", '') = '' then
-    new."estadoPreCallEn" := coalesce(new."estadoPreCallEn", now());
+    new."estadoPreCallEn" := coalesce(old."estadoPreCallEn", new."estadoPreCallEn", now());
   else
     new."estadoPreCallEn" := coalesce(old."estadoPreCallEn", new."estadoPreCallEn");
   end if;
