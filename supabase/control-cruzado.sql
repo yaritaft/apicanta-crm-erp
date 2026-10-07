@@ -42,7 +42,8 @@
 --
 -- Idempotente: se puede correr de nuevo sin romper nada. Para deshacerlo:
 --   drop trigger if exists control_cruzado_pagos on public.pagos;
--- (las columnas pueden quedar: la app deja de usarlas.)
+-- (las columnas pueden quedar; sin el trigger, quien edita los cobros vuelve a
+-- poder tocar los chequeos.) Se ensaya con pruebas/sql/control-cruzado.ensayo.mjs.
 
 do $$ begin
   if to_regclass('public.pagos') is null then
