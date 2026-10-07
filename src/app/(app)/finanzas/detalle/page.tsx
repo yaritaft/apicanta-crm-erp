@@ -28,6 +28,7 @@ import { useAbrirFicha } from "@/components/ficha/abrir";
 import { CobrosProcesador, PARAMS_PROCESADORES } from "@/components/finanzas/CobrosProcesador";
 import { CuadroComisiones } from "@/components/finanzas/CuadroComisiones";
 import { useNivelAcceso } from "@/lib/acceso";
+import { reglaDeCierre } from "@/lib/cierre-del-dia";
 import type { Cuota, Gasto } from "@/lib/types";
 
 type Vista = "cobros" | "procesadores" | "gastos" | "comisiones";
@@ -230,6 +231,10 @@ export default function FinanzasDetalle() {
             la misma base. Si la venta figura a nombre de <strong>Yari</strong>, no comisiona nadie. Desde
             el día en que alguien dejó el equipo no cobra más, y si sus cuotas pasaron a otro closer (en
             Equipo, en su ficha), lo que se cobre de ellas es del que las heredó.
+            {reglaDeCierre(e.ajustes).descuenta && (
+              <> Con el descuento por cierre del día prendido (Ajustes → CRM), la comisión del closer de las ventas que salieron de un día en
+              que no cargó el cierre ese mismo día no se paga: figura en cero y dice cuánto se descontó.</>
+            )}
           </Ayuda>
 
           <Card style={{ padding: 0 }}>
@@ -255,7 +260,17 @@ export default function FinanzasDetalle() {
                   clave: "tasa", titulo: "% closer", tipo: "num", orden: (c) => c.tasaCloser,
                   celda: (c) => c.sinComision || !c.closerId ? "—" : <span title="El % del closer en este servicio">{tasaTexto(c.tasaCloser)}</span>,
                 },
-                { clave: "comiCloser", titulo: "Closer", tipo: "num", orden: (c) => c.comisionCloser, celda: (c) => c.sinComision ? <span className="t-subtle">Sin comisión</span> : M(c.comisionCloser, 2) },
+                {
+                  clave: "comiCloser", titulo: "Closer", tipo: "num", orden: (c) => c.comisionCloser,
+                  celda: (c) => c.sinComision ? <span className="t-subtle">Sin comisión</span>
+                    : c.descuentoCierre
+                      ? (
+                        <span title="Esta venta salió de una llamada de un día en que no se cargó el cierre ese mismo día: la comisión no se paga (Ajustes → CRM).">
+                          {M(c.comisionCloser, 2)} <Badge variante="warning">−{M(c.descuentoCierre, 2)} por cierre del día</Badge>
+                        </span>
+                      )
+                      : M(c.comisionCloser, 2),
+                },
                 { clave: "comiDir", titulo: "Director", tipo: "num", orden: (c) => c.comisionDirector, celda: (c) => c.sinComision ? "—" : M(c.comisionDirector, 2) },
               ]}
               vacio={<Empty icono={<Wallet size={22} />} titulo={`Sin cobros en ${mes.etiqueta}`} texto="Cuando entre un pago, la comisión de quien cerró esa venta aparece acá calculada." />}

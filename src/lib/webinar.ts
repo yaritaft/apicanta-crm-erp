@@ -2,6 +2,7 @@ import type {
   CanalOrigen, Contacto, Cuota, EstadoApp, Lead, NivelIngles, Sesion, Venta, Webinar,
 } from "./types";
 import { closerDeCuota, cobraDirector, cobraEnFecha, tasaDeComision } from "./finanzas";
+import { descuentaPorCierre, ventasSinCierre } from "./cierre-del-dia";
 
 /* ==================================================================
    Las métricas que Yari viene trackeando webinar a webinar desde 2023.
@@ -202,8 +203,11 @@ export function metricasDeWebinar(e: EstadoApp, webinar: Webinar): MetricasWebin
   /* Comisiones: closer + director sobre el neto de procesador de cada
      cobro, salvo que la venta la haya cerrado Yari. El closer es el de la
      cuota (el que la heredó, si el suyo se fue), y nadie cobra lo que entró
-     después de irse (cobraEnFecha): lo mismo que Finanzas. */
+     después de irse (cobraEnFecha): lo mismo que Finanzas. Y con el interruptor
+     del cierre del día prendido, la del closer de una venta que salió de un
+     día sin cierre cargado ese mismo día tampoco (descuentaPorCierre). */
   const miembro = new Map(e.equipo.map((x) => [x.id, x] as const));
+  const sinCierre = ventasSinCierre(e);
   let comisiones = 0;
   for (const p of pagos) {
     const c = cuotaDe.get(p.cuotaId) as Cuota;
@@ -213,7 +217,7 @@ export function metricasDeWebinar(e: EstadoApp, webinar: Webinar): MetricasWebin
     const closerId = closerDeCuota(v, c);
     const closer = closerId ? miembro.get(closerId) : undefined;
     const director = v.directorId ? miembro.get(v.directorId) : undefined;
-    if (cobraEnFecha(closer, p.fecha)) comisiones += neto * tasaDeComision(closer, v.productoId);
+    if (cobraEnFecha(closer, p.fecha) && !descuentaPorCierre(sinCierre, v, closerId)) comisiones += neto * tasaDeComision(closer, v.productoId);
     if (cobraDirector(director, p.fecha)) comisiones += neto * tasaDeComision(director, v.productoId);
   }
 
