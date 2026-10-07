@@ -273,6 +273,8 @@ export function crearLector({
   /** WhatsApp da un código nuevo (cada ~20 segundos mientras espera): se convierte en imagen y se manda
       a la app enseguida. Sólo con --qr-terminal también se dibuja en la terminal. */
   async function alLlegarQr(codigo) {
+    /* Que WhatsApp dé un código prueba que la conexión anda: si después se corta, la espera arranca de nuevo. */
+    estado.intento = 0;
     if (config.qrEnTerminal && qr.terminal) qr.terminal.generate(codigo, { small: true });
     let imagen;
     try { imagen = await qr.imagen(codigo); }
@@ -330,17 +332,27 @@ export function crearLector({
         log.error('WhatsApp cerró esta conexión porque otra copia del lector está usando la misma sesión. Dejá una sola corriendo.');
         return;
       }
+      const reinicio = codigoDeCierre !== undefined && codigoDeCierre === motivos.restartRequired;
+      if (!reinicio && estado.conexion === 'esperando_qr' && estado.intento === 0) {
+        /* Nadie escaneó los ~6 códigos que da WhatsApp (unos 3 minutos) y cierra la conexión. No es una falla (llegaron
+           códigos, así que la conexión andaba): se pide otra tanda enseguida y se sigue «esperando_qr», sin pasar por
+           «reconectando», para que quien abra Ajustes horas después encuentre siempre un código vivo. */
+        log.debug('Se vencieron los códigos QR sin que los escanearan. Pido otros.');
+        estado.qr = null;
+        programarReconexion(false, true);
+        return;
+      }
       log.warn(`Se cortó la conexión con WhatsApp${codigoDeCierre ? ` (código ${codigoDeCierre})` : ''}.`);
       cambiarConexion('reconectando');
-      programarReconexion(codigoDeCierre !== undefined && codigoDeCierre === motivos.restartRequired);
+      programarReconexion(reinicio);
     }
   }
 
-  function programarReconexion(enseguida = false) {
+  function programarReconexion(enseguida = false, callado = false) {
     if (estado.detenido || relojReconexion) return;
     estado.intento = enseguida ? 0 : estado.intento + 1;
     const espera = enseguida ? 0 : esperaCreciente(estado.intento, { azar });
-    if (!enseguida) log.info(`Vuelvo a intentar en ${Math.round(espera / 1000)} s (intento ${estado.intento}).`);
+    if (!enseguida && !callado) log.info(`Vuelvo a intentar en ${Math.round(espera / 1000)} s (intento ${estado.intento}).`);
     relojReconexion = t.setTimeout(() => {
       relojReconexion = null;
       conectar().catch((e) => { log.error(`No pude abrir la conexión: ${mensaje(e)}`); programarReconexion(); });

@@ -439,6 +439,48 @@ test('«reiniciar» (515), que pasa después de escanear el QR, reconecta ensegu
   assert.equal(a.b.sockets.length, 2);
 });
 
+test('si nadie escanea y WhatsApp cierra al vencer los códigos, pide otros enseguida y sigue «esperando_qr», sin parpadear ni esperar cada vez más', async () => {
+  const a = armar();
+  await a.lector.iniciar();
+  await vaciar();
+  for (let vuelta = 1; vuelta <= 4; vuelta++) {
+    await emitir(a, 'connection.update', { qr: `CODIGO-VUELTA-${vuelta}` });
+    assert.equal(a.lector.estado().conexion, 'esperando_qr');
+    /* Pasan los ~3 minutos y WhatsApp cierra la conexión (408, «se terminaron los códigos»). */
+    await a.r.avanzar(170_000);
+    const antes = a.b.sockets.length;
+    await emitir(a, 'connection.update', cierre(408));
+    assert.equal(a.lector.estado().conexion, 'esperando_qr', 'no pasa por «reconectando»: la pantalla no parpadea');
+    await a.r.avanzar(1999);
+    assert.equal(a.b.sockets.length, antes, 'la espera no crece');
+    await a.r.avanzar(1);
+    assert.equal(a.b.sockets.length, antes + 1, `vuelta ${vuelta}: abre una conexión nueva a los 2 segundos`);
+  }
+  await emitir(a, 'connection.update', { qr: 'CODIGO-FINAL' });
+  const ultimo = a.cliente.latidos.at(-1);
+  assert.deepEqual([ultimo.estado, textoDe(ultimo.qr)], ['esperando_qr', 'CODIGO-FINAL'], 'y el código nuevo sale enseguida');
+  assert.equal(a.cliente.latidos.filter((x) => x.estado === 'reconectando').length, 1, 'sólo el del arranque');
+  assert.ok(a.lineas.every(([n]) => n !== 'warn' && n !== 'error'), 'ni avisos ni errores: es lo esperable');
+});
+
+test('en cambio, si la conexión se corta sin que WhatsApp haya dado un código (por ejemplo, sin red), sí es una falla: «reconectando» y espera creciente', async () => {
+  const a = armar();
+  await a.lector.iniciar();
+  await vaciar();
+  await emitir(a, 'connection.update', { qr: 'CODIGO-1' });
+  await emitir(a, 'connection.update', cierre(408));
+  await a.r.avanzar(2000);
+  assert.equal(a.b.sockets.length, 2);
+  /* La conexión nueva se cae antes de dar un código. */
+  await emitir(a, 'connection.update', cierre(408));
+  assert.equal(a.lector.estado().conexion, 'reconectando', 'ahora sí');
+  assert.equal(a.cliente.latidos.at(-1).estado, 'reconectando');
+  await a.r.avanzar(3999);
+  assert.equal(a.b.sockets.length, 2, 'esta vez espera 4 segundos');
+  await a.r.avanzar(1);
+  assert.equal(a.b.sockets.length, 3);
+});
+
 test('si WhatsApp cierra la sesión (401): aparta «auth» en «auth.vieja» y empieza una vinculación nueva, sin terminal', async () => {
   const a = armar();
   await abrir(a);
