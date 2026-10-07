@@ -38,6 +38,10 @@ for (const item of NAV.flatMap((g) => g.items)) {
   DEL_MENU.set(ruta, [...new Set([...(DEL_MENU.get(ruta) ?? []), ...claves])]);
 }
 
+/* La cuenta del closer abre siempre en lo de hoy: «Mis llamadas» dice cuántas
+   llamadas hay hoy, y no tiene que volver a lo último que se miró. */
+const SIN_RECORDAR = new Set(["/mis-llamadas", "/cerrar-el-dia", "/cargar-venta"]);
+
 const claveDe = (ruta: string, q: URLSearchParams) =>
   [ruta, ...(DEL_MENU.get(ruta) ?? []).map((k) => `${k}=${q.get(k) ?? ""}`)].join("|");
 
@@ -98,6 +102,7 @@ export function useRecordarVistas(): (href: string) => string {
       }
     }
 
+    if (SIN_RECORDAR.has(ruta)) { anterior.current = ruta; setVistas(leer()); return; }
     const q = new URLSearchParams(params.toString());
     const propios = new URLSearchParams();
     for (const [k, v] of q) if (!DE_UN_USO.has(k)) propios.append(k, v);

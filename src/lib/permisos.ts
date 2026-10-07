@@ -79,6 +79,13 @@ export const ACCESO_DUENO: MiAcceso = { tipo: "dueno", nombre: "Dueño", areas: 
 
 export const esDueno = (a: MiAcceso | null | undefined) => a?.tipo === "dueno";
 
+/** Una cuenta que ve sólo lo suyo (el closer): su menú es el mínimo, «Mis
+ *  llamadas», «Cerrar el día» y «Cargar venta» (components/shell/nav.ts). Lo
+ *  demás sigue abierto por link: lo que ve ya lo recorta la base, así que no
+ *  hay nada de otros que esconder (Yari, 02/10: «tan simple que no se pueda
+ *  equivocar»). */
+export const esCuentaDeCloser = (a: MiAcceso | null | undefined) => Boolean(a?.soloLoSuyo) && !esDueno(a);
+
 /** 0: no la ve · 1: la ve · 2: la edita. */
 export function nivelEn(a: MiAcceso | null | undefined, area: AreaId): 0 | 1 | 2 {
   if (!a) return 0;
@@ -182,6 +189,10 @@ const RUTAS: [string, AreaId | "equipo"][] = [
   ["/panel", "panel"],
   ["/leads", "leads"],
   ["/crm", "crm"],
+  /* La cuenta del closer: sus llamadas, el cierre del día y cargar una venta. */
+  ["/mis-llamadas", "crm"],
+  ["/cerrar-el-dia", "crm"],
+  ["/cargar-venta", "ventas"],
   ["/agenda", "crm"],
   ["/pipeline", "crm"],
   ["/ventas", "ventas"],

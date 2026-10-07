@@ -50,3 +50,72 @@
   .pasar__fila-cuando { min-width: 0; }
   .pasar__fila-quien { flex-basis: 100%; order: 3; padding-left: 28px; }
 }
+
+/* ---------- Equipo → Accesos: ¿cada closer va a ver sus llamadas? ---------- */
+
+.closers-resumen {
+  display: flex; align-items: center; gap: var(--space-2); margin: 0 0 var(--space-4); padding: 10px var(--space-3);
+  border-radius: var(--radius-md); border: 1px solid var(--border); font-size: 14px; line-height: 20px;
+}
+.closers-resumen svg { flex: none; }
+.closers-resumen--ok { background: var(--success-soft); border-color: color-mix(in srgb, var(--success) 40%, var(--border)); }
+.closers-resumen--ok svg { color: var(--success); }
+.closers-resumen--mal { background: var(--warning-soft); border-color: color-mix(in srgb, var(--warning) 50%, var(--border)); }
+.closers-resumen--mal svg { color: var(--warning); }
+
+.closers-lista { display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; }
+.closers-fila {
+  display: grid; grid-template-columns: minmax(220px, 0.9fr) minmax(0, 2fr); align-items: center;
+  gap: var(--space-3) var(--space-5); padding: var(--space-4); border-bottom: 1px solid var(--border);
+}
+.closers-fila:last-child { border-bottom: 0; }
+.closers-fila__quien { display: flex; align-items: center; gap: var(--space-3); min-width: 0; flex-wrap: wrap; }
+.closers-fila__checks { display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-4); min-width: 0; }
+.closers-check { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; line-height: 18px; color: var(--ink-muted); min-width: 0; overflow-wrap: anywhere; }
+.closers-check svg { flex: none; }
+.closers-check--ok svg { color: var(--success); }
+.closers-check--mal { color: var(--ink); }
+.closers-check--mal svg { color: var(--warning); }
+.closers-check--nd { color: var(--ink-subtle); }
+.closers-fila__arreglo { grid-column: 1 / -1; display: flex; flex-direction: column; gap: var(--space-3); }
+.closers-arreglo {
+  display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md); background: var(--surface-200); border: 1px solid var(--border);
+}
+.closers-arreglo p { margin: 0; font-size: 13px; line-height: 20px; color: var(--ink-muted); }
+.closers-arreglo p strong { color: var(--ink); font-weight: 600; }
+.closers-arreglo__acciones { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.closers-correo { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.closers-correo .hk-input { min-width: 260px; }
+.closers-nota { margin: var(--space-3) 0 0; }
+
+/* Un número en una solapa: algo para mirar ahí. */
+.tab-aviso {
+  display: inline-flex; align-items: center; justify-content: center; min-width: 18px; height: 18px; margin-left: 6px; padding: 0 5px;
+  border-radius: var(--radius-full); background: var(--warning); color: var(--surface-000); font-size: 11px; font-weight: 700; line-height: 1;
+}
+
+@media (max-width: 760px) {
+  .closers-fila { grid-template-columns: minmax(0, 1fr); gap: var(--space-3); }
+  .closers-correo .hk-input { min-width: 0; flex: 1 1 200px; }
+}
+
+/* ---------- Mis llamadas ---------- */
+
+.mis-ll {
+  display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-3) var(--space-4);
+  margin-bottom: var(--space-4); padding: var(--space-4) var(--space-5);
+  border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface-100);
+}
+.mis-ll__ico { flex: none; color: var(--brand); }
+.mis-ll__texto { display: flex; flex-direction: column; gap: 2px; flex: 1 1 260px; min-width: 0; }
+.mis-ll__titulo { font-size: 18px; line-height: 26px; font-weight: 700; color: var(--ink); }
+.mis-ll__sub { font-size: 14px; line-height: 20px; color: var(--ink-muted); }
+.mis-ll__accion { flex: none; display: inline-flex; }
+.mis-ll--atencion { border-color: color-mix(in srgb, var(--warning) 50%, var(--border)); background: var(--warning-soft); }
+.mis-ll--atencion .mis-ll__ico { color: var(--warning); }
+
+@media (max-width: 560px) {
+  .mis-ll { padding: var(--space-3) var(--space-4); }
+  .mis-ll__accion, .mis-ll__accion .hk-btn { width: 100%; justify-content: center; }
+}

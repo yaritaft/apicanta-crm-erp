@@ -20,6 +20,7 @@ import { useUsuarioActual } from "@/lib/usuario";
 import { closersConLlamadas, objecionesDe } from "@/lib/eod";
 import { destinosDePase } from "@/lib/pasar-llamadas";
 import { usePasarLlamadas } from "@/components/closers/usePasarLlamadas";
+import { AvisoMisLlamadas } from "@/components/closers/MisLlamadas";
 import { miembroDeCloser, opcionesDe as opcionesDelCrm } from "@/lib/crm";
 import { COLOR_AVISO, POR_VENIR, SIN_CARGAR } from "@/lib/estados";
 import { leadDeSesion } from "@/lib/etapas-auto";
@@ -80,7 +81,10 @@ const PERFIL: Partial<Record<ClaveColumna, CampoPerfil>> = {
 };
 const opciones = (xs: string[], color: (x: string) => ColorCrm = () => "gris1"): OpcionCrm[] => xs.map((nombre) => ({ nombre, color: color(nombre) }));
 
-export function CrmTabla() {
+/* `misLlamadas`: «Mis llamadas», la cuenta del closer. Es esta misma tabla, de
+   hoy, con arriba cuántas llamadas hay hoy y cuántas faltan cargar; «Cerrar
+   el día» va en ese aviso (entrada propia) y no en la barra. */
+export function CrmTabla({ misLlamadas = false }: { misLlamadas?: boolean } = {}) {
   const e = useEstado();
   const params = useSearchParams();
   const escribir = useEscribirURL();
@@ -102,14 +106,14 @@ export function CrmTabla() {
      ventas (un dueño, el director). A un closer la base se lo rechaza, así que ni se le ofrece. */
   const puedePasar = puedeLlamadas && !acceso?.soloLoSuyo;
 
-  /* El período, por el día de la llamada. De entrada, este mes. */
+  /* El período, por el día de la llamada. De entrada, este mes (hoy, en «Mis llamadas»). */
   const hoy = diaDeNegocio(new Date().toISOString());
   const limites = useMemo(() => {
     const dias = e.sesiones.map((s) => diaDeNegocio(s.inicia)).filter(Boolean).sort();
     const ultimo = dias[dias.length - 1];
     return { min: dias[0] ?? null, max: ultimo && ultimo > hoy ? ultimo : hoy };
   }, [e.sesiones, hoy]);
-  const [rango, setRango] = useRangoURL("mes", { futuro: true, limites });
+  const [rango, setRango] = useRangoURL(misLlamadas ? "hoy" : "mes", { futuro: true, limites });
 
   /* `ahora` al minuto: la fila que pasa de "Por venir" a "Sin cargar". */
   const ahora = Math.floor(Date.now() / 60000) * 60000;
@@ -286,6 +290,7 @@ export function CrmTabla() {
   const enInforme = vista.seccion === "resumen";
   return (
     <div className="crm-t">
+      {misLlamadas && <AvisoMisLlamadas filas={todas} hoy={hoy} />}
       <Card className="crm-t__card">
         {/* Todo en una barra: el título ya está arriba, en la barra de la app. */}
         <div className="crm-t__barra">
@@ -298,7 +303,7 @@ export function CrmTabla() {
             onApply={(r) => setRango(r, { pag: null })}
             footerNota="Por el día de la llamada · hora de Argentina"
           />
-          {miNombre && (
+          {miNombre && !misLlamadas && (
             <Chip activo={soloMias} onClick={() => cambiarFiltro("closer", soloMias ? null : { modo: "solo", valores: [miNombre] })}>
               Mis llamadas
             </Chip>
@@ -317,7 +322,7 @@ export function CrmTabla() {
               <ConfigColumnas todas={DEFS} visibles={cols.visibles} alternar={cols.alternar} mover={cols.mover} restaurar={cols.restaurar} compacto />
             )}
             <CopiarLink />
-            <Button variante="primary" sm icono={<ClipboardCheck size={15} />} onClick={() => setEod(true)}>Cerrar el día</Button>
+            {!misLlamadas && <Button variante="primary" sm icono={<ClipboardCheck size={15} />} onClick={() => setEod(true)}>Cerrar el día</Button>}
           </div>
         </div>
 

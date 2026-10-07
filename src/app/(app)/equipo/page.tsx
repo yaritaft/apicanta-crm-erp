@@ -10,6 +10,7 @@ import { ListaEquipo } from "@/components/equipo/ListaEquipo";
 import { FichaMiembro } from "@/components/equipo/FichaMiembro";
 import { AccesosApp } from "@/components/equipo/Accesos";
 import { TiposCuenta } from "@/components/equipo/TiposCuenta";
+import { useEstadoDeClosers } from "@/components/closers/EstadoDeClosers";
 import { useAccesos, useNivelAcceso } from "@/lib/acceso";
 import { useEstado, useSelector, useSync } from "@/lib/store";
 import { useParamsURL } from "@/lib/useParamsURL";
@@ -40,6 +41,8 @@ export default function EquipoYHonorarios() {
   const [p, cambiar] = useParamsURL({ seccion: "liquidacion", persona: "" });
   const seccion = (SECCIONES as string[]).includes(p.seccion) ? (p.seccion as Seccion) : "liquidacion";
   const accesos = useAccesos(acceso.esDueno);
+  /* Si cada closer va a ver sus llamadas (su correo en Equipo y su nombre en Calendly): se avisa en la solapa. */
+  const closers = useEstadoDeClosers(accesos.lista);
   const sync = useSync();
   const hayEsquemas = useSelector((e) => e.honorarios.length > 0);
 
@@ -99,14 +102,19 @@ export default function EquipoYHonorarios() {
           { valor: "liquidacion", texto: "Liquidación del mes" },
           { valor: "equipo", texto: "Equipo y lo que cobra" },
           { valor: "comisiones", texto: "Comisiones" },
-          { valor: "accesos", texto: "Accesos a la app" },
+          {
+            valor: "accesos",
+            texto: closers.sinVer > 0
+              ? <>Accesos a la app<span className="tab-aviso" title={`${closers.sinVer === 1 ? "Un closer no va" : `${closers.sinVer} closers no van`} a ver nada`}>{closers.sinVer}</span></>
+              : "Accesos a la app",
+          },
           { valor: "tipos", texto: "Tipos de cuenta" },
         ]}
       />
       {seccion === "liquidacion" && <LiquidacionMes onVerPersona={ver} />}
       {seccion === "equipo" && <ListaEquipo accesos={accesos} onVer={ver} />}
       {seccion === "comisiones" && <Comisiones onVer={ver} />}
-      {seccion === "accesos" && <AccesosApp accesos={accesos} onVerMiembro={ver} />}
+      {seccion === "accesos" && <AccesosApp accesos={accesos} closers={closers} onVerMiembro={ver} />}
       {seccion === "tipos" && <TiposCuenta accesos={accesos} />}
       {p.persona && <FichaMiembro key={p.persona} miembroId={p.persona} accesos={accesos} onCerrar={() => cambiar({ persona: null })} />}
     </div>

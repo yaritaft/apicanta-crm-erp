@@ -7,14 +7,15 @@ import {
   AlertCircle, Check, Cloud, Eye, HardDrive, Lock, LogOut, Menu, Moon, PanelLeft, PanelLeftClose,
   RefreshCw, Search, Sun, X,
 } from "lucide-react";
-import { inicioPara, navPara } from "./nav";
+import { inicioPara, navPara, TODOS_LOS_ITEMS } from "./nav";
 import { alarmaCobranza } from "@/lib/finanzas";
 import {
   alNegarseEscritura, cargarDeLaNube, fijarAcceso, hayNube, reiniciarCarga, useEstado, useSync, useTema,
 } from "@/lib/store";
 import { useSalir, useSesion } from "@/lib/auth";
 import { elegirVerComo, useAcceso, useVerComo } from "@/lib/acceso";
-import { areaDeRuta, nivelDeRuta, queEsTabla } from "@/lib/permisos";
+import { areaDeRuta, esCuentaDeCloser, nivelDeRuta, queEsTabla } from "@/lib/permisos";
+import { diaDeNegocio } from "@/lib/dia-negocio";
 import { useRecordarVistas } from "@/lib/recordarVistas";
 import { Avatar, Button, Card, Empty, IconButton } from "@/components/ui/ui";
 import { useToast } from "@/components/ui/Toast";
@@ -104,6 +105,15 @@ export function Shell({ children }: { children: React.ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [cuotas, pagos, ventas],
   );
+  /* Las llamadas de hoy, sin las canceladas: el número de «Mis llamadas» (el menú del
+     closer). Sólo se cuenta para quien tiene ese item, y sólo cuando cambian las llamadas:
+     un dueño tiene miles y el menú se dibuja a cada cambio. */
+  const soyCloser = esCuentaDeCloser(acceso);
+  const hoy = diaDeNegocio(new Date().toISOString());
+  const llamadasDeHoy = useMemo(
+    () => (soyCloser ? estado.sesiones.filter((s) => s.estado !== "cancelada" && diaDeNegocio(s.inicia) === hoy).length : 0),
+    [soyCloser, estado.sesiones, hoy],
+  );
   const alertas: Record<string, { n: number; titulo: string }> = {
     "/finanzas": { n: atrasados, titulo: `${atrasados === 1 ? "Un cliente atrasado" : `${atrasados} clientes atrasados`} hace 7 días o más` },
   };
@@ -112,6 +122,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
     "/leads": estado.leads.length,
     "/alumnos": estado.alumnos.filter((a) => a.estado === "activo").length,
     "/agenda": estado.sesiones.filter((s) => s.estado === "agendada" && new Date(s.inicia) >= new Date()).length,
+    "/mis-llamadas": llamadasDeHoy,
     "/webinars": estado.webinars.length,
   };
 
@@ -123,9 +134,10 @@ export function Shell({ children }: { children: React.ReactNode }) {
     if (ruta !== camino && !ruta.startsWith(camino + "/")) return false;
     return !query || [...new URLSearchParams(query)].every(([k, v]) => busqueda.get(k) === v);
   };
-  const item = nav.flatMap((g) => g.items)
-    .filter((i) => coincide(i.href))
-    .sort((a, b) => b.href.length - a.href.length)[0];
+  const masEspecifico = (items: typeof TODOS_LOS_ITEMS) => items.filter((i) => coincide(i.href)).sort((a, b) => b.href.length - a.href.length)[0];
+  const item = masEspecifico(nav.flatMap((g) => g.items));
+  /* Una pantalla que no está en su menú (el closer abre la Agenda por link) igual lleva su título. */
+  const encabezado = item ?? masEspecifico(TODOS_LOS_ITEMS);
 
   return (
     <div className="app-shell" data-colapsado={colapsado}>
@@ -215,8 +227,8 @@ export function Shell({ children }: { children: React.ReactNode }) {
             <Menu size={20} />
           </IconButton>
           <div className="app-topbar__title">
-            <span className="t-strong truncate" style={{ fontSize: 15 }}>{item?.texto ?? "Apicanta"}</span>
-            <span className="t-sm t-subtle truncate">{item?.ayuda ?? ""}</span>
+            <span className="t-strong truncate" style={{ fontSize: 15 }}>{encabezado?.texto ?? "Apicanta"}</span>
+            <span className="t-sm t-subtle truncate">{encabezado?.ayuda ?? ""}</span>
           </div>
           <div className="app-topbar__actions">
             {/* Lo que pone cada pantalla (ver AccionesTopbar). */}
