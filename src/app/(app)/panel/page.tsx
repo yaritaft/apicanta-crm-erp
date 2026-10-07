@@ -15,7 +15,7 @@ import { ConfigColumnas, type DefColumna } from "@/components/ui/ColumnasConfig"
 import { AccionesTopbar } from "@/components/shell/AccionesTopbar";
 import { useToast } from "@/components/ui/Toast";
 import { AlarmaCobranza } from "@/components/finanzas/AlarmaCobranza";
-import { TablaKpis, variacionKpi, type FilaKpi } from "@/components/panel/TablaKpis";
+import { TablaKpis, variacionKpi, type ExplicarKpis, type FilaKpi } from "@/components/panel/TablaKpis";
 import { useEstado } from "@/lib/store";
 import { useAcceso } from "@/lib/acceso";
 import { veSeccion } from "@/lib/permisos";
@@ -115,6 +115,9 @@ export default function DashboardKpis() {
     return comparar ? conPrevios(filtradas) : filtradas;
   }, [rango, columnas, filtro, comparar]);
 
+  /* El catálogo entero, armado una vez por estado. */
+  const catalogoTodo = useMemo(() => catalogo(e), [e]);
+
   /* Cada celda, calculada una vez. Una fila sin ningún dato no se muestra:
      filtrando un webinar, el P&L o el gasto de Meta no existen (no tienen
      webinar), y una fila de guiones no dice nada. */
@@ -122,7 +125,7 @@ export default function DashboardKpis() {
     const ctx = cortes.map((c) => new Contexto(e, c));
     const ctxPrevio = cortes.map((c) => (c.previo ? new Contexto(e, c.previo) : null));
     const tiene = (v: number | null, def: DefKpi) => v !== null && (!def.ocultarEnCero || v !== 0);
-    return catalogo(e)
+    return catalogoTodo
       .filter((def) => secciones.some((s) => s.id === def.seccion))
       .map((def) => ({
         def,
@@ -130,7 +133,19 @@ export default function DashboardKpis() {
         previos: ctxPrevio.map((c) => (c ? valorEn(def, c) : null)),
       }))
       .filter((f) => f.valores.some((v) => tiene(v, f.def)));
-  }, [e, cortes, secciones]);
+  }, [e, catalogoTodo, cortes, secciones]);
+
+  /* «Cómo se calcula» de cada fila, con los números del Total (todo lo que se
+     está mirando): las piezas de cada cuenta son filas de esta misma tabla. */
+  const explicar: ExplicarKpis | undefined = useMemo(() => {
+    const total = cortes.find((c) => c.total) ?? cortes[cortes.length - 1];
+    if (!total) return undefined;
+    return {
+      ctx: new Contexto(e, total),
+      porId: new Map(catalogoTodo.map((d) => [d.id, d])),
+      periodo: rangoStr({ preset: "custom", desde: total.desde, hasta: total.hasta }),
+    };
+  }, [e, catalogoTodo, cortes]);
 
   /* Qué métricas se ven y en qué orden: lo elige cada uno (useFilasKpi). */
   const defs = useMemo(() => todas.map((f) => f.def), [todas]);
@@ -247,7 +262,7 @@ export default function DashboardKpis() {
           <TablaKpis
             filas={filasTabla} cortes={cortes} comparar={comparar} moneda={mon} porDia={columnas === "dia"}
             conSecciones={area === "todo"} onAbrir={abrir} periodo={periodoDelLink}
-            onAlternar={alternarFila} ocultas={verOcultas ? config.ocultas : undefined}
+            onAlternar={alternarFila} ocultas={verOcultas ? config.ocultas : undefined} explicar={explicar}
           />
         )}
         {cuantasOcultas > 0 && (

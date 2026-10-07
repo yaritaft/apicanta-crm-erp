@@ -363,6 +363,14 @@ const w = (c: Contexto, f: (m: MetricasWebinar) => number | null): number | null
   return m ? f(m) : null;
 };
 
+/** Las cuotas que ya vencieron, pagadas o no, de ventas activas del corte:
+ *  la base de la tasa de mora. Está aparte para que «cómo se calcula» cuente
+ *  las mismas que la fila. */
+export function cuotasExigibles(c: Contexto) {
+  return c.e.cuotas.filter((x) => x.vence && new Date(x.vence).getTime() < Date.now() && x.estado !== "cancelada"
+    && c.ix.ventaPorId.get(x.ventaId)?.estado === "activa" && c.ventaEnCorte(c.ix.ventaPorId.get(x.ventaId)));
+}
+
 export function catalogo(e: EstadoApp): DefKpi[] {
   const lista: DefKpi[] = [];
   const add = (seccion: SeccionKpi, grupo: string, defs: Omit<DefKpi, "seccion" | "grupo">[]) => {
@@ -546,10 +554,10 @@ export function catalogo(e: EstadoApp): DefKpi[] {
     { id: "v_2", etiqueta: "En 2 cuotas", formato: "cantidad", href: "/ventas", ayuda: "Sin contar la reserva.", valor: (c) => enCuotas(c, 2) },
     { id: "v_3", etiqueta: "En 3 cuotas", formato: "cantidad", href: "/ventas", ayuda: "Sin contar la reserva.", valor: (c) => enCuotas(c, 3) },
     { id: "v_4", etiqueta: "En 4 cuotas o más", formato: "cantidad", href: "/ventas", ayuda: "Sin contar la reserva.", valor: (c) => enCuotas(c, 4, true) },
-    { id: "v_fact", etiqueta: "Facturado", formato: "moneda", mejor: "sube", href: "/ventas",
-      ayuda: "Revenue: el precio acordado de las ventas del período.", valor: (c) => c.facturado() },
+    { id: "v_fact", etiqueta: "Revenue (facturado)", formato: "moneda", mejor: "sube", href: "/ventas",
+      ayuda: "Revenue: el precio acordado de las ventas del período, se haya cobrado o no.", valor: (c) => c.facturado() },
     { id: "v_ticket", etiqueta: "Ticket promedio", formato: "moneda", mejor: "sube", href: "/ventas",
-      ayuda: "Facturado sobre ventas.", valor: (c) => div(c.facturado(), c.ventasContables().length) },
+      ayuda: "Revenue (lo facturado) sobre la cantidad de ventas.", valor: (c) => div(c.facturado(), c.ventasContables().length) },
     { id: "v_1_pct", etiqueta: "Pagaron todo de una", formato: "pct", mejor: "sube", href: "/ventas",
       ayuda: "Ventas en un solo pago sobre todas las ventas del período: cuánta gente paga el programa entero de entrada.",
       valor: (c) => pctDe(enCuotas(c, 1), c.ventasContables().length) },
@@ -593,16 +601,16 @@ export function catalogo(e: EstadoApp): DefKpi[] {
       } },
     { id: "w_cac", etiqueta: "CAC del webinar", formato: "moneda", mejor: "baja", href: "/webinars",
       ayuda: "Inversión del webinar sobre sus ventas.", valor: (c) => w(c, (m) => (m.ventas > 0 ? m.cpa : null)) },
-    { id: "roas_cc", etiqueta: "ROAS sobre lo cobrado", formato: "x", mejor: "sube", href: "/finanzas",
-      ayuda: "Cash collected sobre inversión en publicidad (con un embudo elegido, la de ese embudo).",
+    { id: "roas_cc", etiqueta: "ROAS on CC", formato: "x", mejor: "sube", href: "/finanzas",
+      ayuda: "Cash Collected (CC) sobre inversión en publicidad: por cada dólar invertido, cuántos entraron (con un embudo elegido, la inversión de ese embudo).",
       valor: (c) => { const inv = c.inversionEmbudo(); return inv !== null ? (inv > 0 ? c.cobrado() / inv : null) : g(c, () => c.py()!.roasCC || null); } },
-    { id: "roas_rev", etiqueta: "ROAS sobre lo facturado", formato: "x", mejor: "sube", href: "/finanzas",
-      ayuda: "Facturado sobre inversión en publicidad: como si todos pagaran todas las cuotas.",
+    { id: "roas_rev", etiqueta: "ROAS on Revenue", formato: "x", mejor: "sube", href: "/finanzas",
+      ayuda: "Revenue (lo facturado) sobre inversión en publicidad: por cada dólar invertido, cuántos se vendieron, como si todos pagaran todas las cuotas.",
       valor: (c) => { const inv = c.inversionEmbudo(); return inv !== null ? (inv > 0 ? c.facturado() / inv : null) : g(c, () => c.py()!.roasRev || null); } },
-    { id: "w_roas_cc", etiqueta: "ROAS del webinar (cobrado)", formato: "x", mejor: "sube", href: "/webinars",
-      ayuda: "Lo cobrado de las ventas del webinar sobre su inversión.", valor: (c) => w(c, (m) => m.roasCC) },
-    { id: "w_roas_rev", etiqueta: "ROAS del webinar (facturado)", formato: "x", mejor: "sube", href: "/webinars",
-      ayuda: "Lo facturado por el webinar sobre su inversión.", valor: (c) => w(c, (m) => m.roasRev) },
+    { id: "w_roas_cc", etiqueta: "ROAS on CC (webinar)", formato: "x", mejor: "sube", href: "/webinars",
+      ayuda: "ROAS on CC del webinar: lo cobrado de sus ventas sobre su inversión total.", valor: (c) => w(c, (m) => m.roasCC) },
+    { id: "w_roas_rev", etiqueta: "ROAS on Revenue (webinar)", formato: "x", mejor: "sube", href: "/webinars",
+      ayuda: "ROAS on Revenue del webinar: lo facturado por sus ventas sobre su inversión total.", valor: (c) => w(c, (m) => m.roasRev) },
   ]);
 
   /* ================= Post-venta: Cobranza ================= */
@@ -610,10 +618,10 @@ export function catalogo(e: EstadoApp): DefKpi[] {
   const clientesAtrasados = (c: Contexto, dias: number) => new Set(c.vencidas().filter((x) => x.diasAtraso >= dias).map((x) => x.ventaId)).size;
 
   add("cobranza", "Cobrado", [
-    { id: "c_cc", etiqueta: "Cash collected", formato: "moneda", mejor: "sube", href: "/finanzas", desglose: { tipo: "ingresos" },
-      ayuda: "La plata que entró en el período, de ventas de cualquier fecha.", valor: (c) => c.cobrado() },
+    { id: "c_cc", etiqueta: "Cash Collected (CC)", formato: "moneda", mejor: "sube", href: "/finanzas", desglose: { tipo: "ingresos" },
+      ayuda: "Cash Collected (CC): la plata que entró en el período, de ventas de cualquier fecha.", valor: (c) => c.cobrado() },
     { id: "c_tasa", etiqueta: "Tasa de cobro", formato: "pct", mejor: "sube", href: "/finanzas",
-      ayuda: "Cash collected sobre facturado: de todo lo que vendemos, cuánto entra.", valor: (c) => pctDe(c.cobrado(), c.facturado()) },
+      ayuda: "Cash Collected (CC) sobre Revenue: de todo lo que vendemos, cuánto entra.", valor: (c) => pctDe(c.cobrado(), c.facturado()) },
     { id: "c_reservas", etiqueta: "Cobrado en reservas", formato: "moneda", href: "/ventas",
       ayuda: "Lo que entró como reserva o seña.",
       valor: (c) => c.pagos().filter((p) => c.ix.cuotaPorId.get(p.cuotaId)?.esReserva).reduce((a, p) => a + p.monto, 0) },
@@ -630,8 +638,7 @@ export function catalogo(e: EstadoApp): DefKpi[] {
     { id: "c_mora", etiqueta: "Tasa de mora", formato: "pct", mejor: "baja", foto: true, href: "/finanzas/detalle",
       ayuda: "Cuotas vencidas sin pagar sobre todas las que ya vencieron. El que se atrasa pero sigue: no es una cancelación.",
       valor: (c) => {
-        const exigibles = c.e.cuotas.filter((x) => x.vence && new Date(x.vence).getTime() < Date.now() && x.estado !== "cancelada"
-          && c.ix.ventaPorId.get(x.ventaId)?.estado === "activa" && c.ventaEnCorte(c.ix.ventaPorId.get(x.ventaId)));
+        const exigibles = cuotasExigibles(c);
         return exigibles.length ? (c.vencidas().length / exigibles.length) * 100 : 0;
       } },
     { id: "c_7", etiqueta: "Clientes con 7 días o más de atraso", formato: "cantidad", mejor: "baja", foto: true, href: "/finanzas/detalle?atraso=7",
@@ -709,15 +716,15 @@ export function catalogo(e: EstadoApp): DefKpi[] {
       ayuda: "Su porcentaje del profit sin el CEO.", valor: (c) => g(c, () => c.py()!.socio) },
     { id: "r_ceo", etiqueta: "Honorarios del CEO", formato: "moneda", href: "/finanzas",
       ayuda: "Lo cargado como honorarios del dueño.", valor: (c) => g(c, () => c.py()!.honorariosCeo) },
-    { id: "r_neto_cc", etiqueta: "Profit on cash collected", formato: "resultado", mejor: "sube", href: "/finanzas", desglose: { tipo: "resultado" },
-      ayuda: "Lo que de verdad quedó (la rentabilidad neta sobre lo cobrado): profit sin el CEO menos honorarios del CEO, el del estado de resultados. El reparto no se resta.",
+    { id: "r_neto_cc", etiqueta: "Profit on Cash Collected (CC)", formato: "resultado", mejor: "sube", href: "/finanzas", desglose: { tipo: "resultado" },
+      ayuda: "Lo que de verdad quedó: la rentabilidad neta sobre lo cobrado, la misma del estado de resultados. Cash Collected (CC) menos costos directos, gastos operativos y honorarios del CEO. El reparto no se resta.",
       valor: (c) => g(c, () => c.py()!.netoCC) },
-    { id: "r_neto_rev", etiqueta: "Profit on revenue", formato: "resultado", mejor: "sube", href: "/finanzas",
-      ayuda: "Lo que en teoría ganaste por las ventas (la rentabilidad neta sobre lo facturado): la misma cuenta, sobre lo facturado.", valor: (c) => g(c, () => c.py()!.netoRev) },
+    { id: "r_neto_rev", etiqueta: "Profit on Revenue", formato: "resultado", mejor: "sube", href: "/finanzas",
+      ayuda: "Lo que en teoría ganaste por las ventas: la rentabilidad neta sobre lo facturado. La misma cuenta, partiendo del Revenue en vez de lo cobrado.", valor: (c) => g(c, () => c.py()!.netoRev) },
     { id: "r_margen", etiqueta: "Margen neto", formato: "pct", mejor: "sube", href: "/finanzas",
-      ayuda: "Profit on cash collected sobre lo cobrado.", valor: (c) => g(c, () => { const p = c.py()!; return pctDe(p.netoCC, p.cashCollected); }) },
+      ayuda: "Profit on Cash Collected (CC) sobre Cash Collected (CC).", valor: (c) => g(c, () => { const p = c.py()!; return pctDe(p.netoCC, p.cashCollected); }) },
     { id: "r_queda", etiqueta: "Queda para el negocio", formato: "resultado", mejor: "sube", href: "/finanzas",
-      ayuda: "Profit on cash collected menos growth partner y socio: lo que ganó el negocio después de pagarle a todo el mundo.",
+      ayuda: "Profit on Cash Collected (CC) menos growth partner y socio: lo que ganó el negocio después de pagarle a todo el mundo.",
       valor: (c) => g(c, () => { const p = c.py()!; return p.netoCC - p.growth - p.socio; }) },
   ]);
 
@@ -725,19 +732,19 @@ export function catalogo(e: EstadoApp): DefKpi[] {
     { id: "e_inv", etiqueta: "Inversión del embudo", formato: "moneda", href: "/finanzas",
       ayuda: "Con un embudo elegido: lo invertido en él (sus webinars, sus campañas de Meta y los gastos cargados con ese embudo).",
       valor: (c) => c.inversionEmbudo() },
-    { id: "e_profit_cc", etiqueta: "Profit del embudo (cobrado)", formato: "resultado", mejor: "sube", href: "/finanzas",
+    { id: "e_profit_cc", etiqueta: "Profit on CC (embudo)", formato: "resultado", mejor: "sube", href: "/finanzas",
       ayuda: "Con un embudo elegido: lo cobrado menos procesador, comisiones e inversión del embudo. Sin los gastos fijos de la empresa.",
       valor: (c) => { const inv = c.inversionEmbudo(); if (inv === null) return null; const k = c.comisiones(); return c.cobrado() - c.fees() - k.closers - k.director - inv; } },
-    { id: "e_profit_rev", etiqueta: "Profit del embudo (facturado)", formato: "resultado", mejor: "sube", href: "/finanzas",
-      ayuda: "La misma cuenta sobre lo facturado.",
+    { id: "e_profit_rev", etiqueta: "Profit on Revenue (embudo)", formato: "resultado", mejor: "sube", href: "/finanzas",
+      ayuda: "La misma cuenta partiendo del Revenue (lo facturado).",
       valor: (c) => { const inv = c.inversionEmbudo(); if (inv === null) return null; const k = c.comisiones(); return c.facturado() - c.fees() - k.closers - k.director - inv; } },
   ]);
 
   add("rentabilidad", "Profit del webinar", [
-    { id: "w_profit_cc", etiqueta: "Profit del webinar (cobrado)", formato: "resultado", mejor: "sube", href: "/webinars",
-      ayuda: "Lo cobrado menos pauta, DM Ads, WhatsApp API, comisiones y procesador.", valor: (c) => w(c, (m) => m.beneficioCC) },
-    { id: "w_profit_rev", etiqueta: "Profit del webinar (facturado)", formato: "resultado", mejor: "sube", href: "/webinars",
-      ayuda: "Lo facturado menos los mismos descuentos.", valor: (c) => w(c, (m) => m.beneficioRev) },
+    { id: "w_profit_cc", etiqueta: "Profit on CC (webinar)", formato: "resultado", mejor: "sube", href: "/webinars",
+      ayuda: "Lo cobrado por las ventas del webinar menos pauta, DM Ads, WhatsApp API, comisiones, procesador y los otros gastos cargados a ese webinar.", valor: (c) => w(c, (m) => m.beneficioCC) },
+    { id: "w_profit_rev", etiqueta: "Profit on Revenue (webinar)", formato: "resultado", mejor: "sube", href: "/webinars",
+      ayuda: "Lo facturado por las ventas del webinar menos los mismos descuentos.", valor: (c) => w(c, (m) => m.beneficioRev) },
   ]);
 
   /* ================= Servicio ================= */

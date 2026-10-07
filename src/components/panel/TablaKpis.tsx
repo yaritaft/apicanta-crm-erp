@@ -4,8 +4,10 @@ import React from "react";
 import Link from "next/link";
 import { ArrowDownRight, ArrowUpRight, Eye, EyeOff } from "lucide-react";
 import { tonoRoas } from "@/components/webinars/estado";
+import { InfoMetrica, type ComponenteMetrica } from "@/components/ui/InfoMetrica";
 import { money, num, pct } from "@/lib/format";
-import { SECCIONES, type Corte, type DefKpi, type FormatoKpi, type SeccionKpi } from "@/lib/kpis";
+import { SECCIONES, valorEn, type Contexto, type Corte, type DefKpi, type FormatoKpi, type SeccionKpi } from "@/lib/kpis";
+import { componentesDe, explicacionDe } from "@/lib/kpis-formulas";
 import type { Moneda } from "@/lib/types";
 
 /* ==================================================================
@@ -23,8 +25,18 @@ export interface FilaKpi {
   previos: (number | null)[];
 }
 
+/* Lo que hace falta para explicar cómo se calcula cada fila con los números
+   de un corte (el Total de lo que se está mirando). */
+export interface ExplicarKpis {
+  ctx: Contexto;
+  /* Todas las filas por id: las piezas de una cuenta son filas de la tabla. */
+  porId: Map<string, DefKpi>;
+  /* «1 sep – 30 sep»: de qué días son esos números. */
+  periodo: string;
+}
+
 export function TablaKpis({
-  filas, cortes, comparar, moneda, conSecciones, onAbrir, porDia, periodo, onAlternar, ocultas,
+  filas, cortes, comparar, moneda, conSecciones, onAbrir, porDia, periodo, onAlternar, ocultas, explicar,
 }: {
   filas: FilaKpi[];
   cortes: Corte[];
@@ -43,6 +55,8 @@ export function TablaKpis({
   onAlternar?: (def: DefKpi) => void;
   /* Mirando las ocultas: van atenuadas, con el ojo para devolverlas. */
   ocultas?: Set<string>;
+  /* El ícono «cómo se calcula» de cada fila. */
+  explicar?: ExplicarKpis;
 }) {
   const columnas = cortes.length + 1;
 
@@ -107,6 +121,7 @@ export function TablaKpis({
                           <th scope="row" className="planilla__fija">
                             <span className="kpis__rotulo">
                               <Etiqueta def={f.def} periodo={periodo} />
+                              {explicar && <InfoFila def={f.def} explicar={explicar} moneda={moneda} href={f.def.href ? conPeriodo(f.def.href, periodo, f.def.foto) : undefined} />}
                               {onAlternar && (
                                 <button
                                   type="button" className="kpis__ojo" onClick={() => onAlternar(f.def)}
@@ -184,6 +199,37 @@ function Etiqueta({ def, periodo }: { def: DefKpi; periodo?: string }) {
   return def.href
     ? <Link href={conPeriodo(def.href, periodo, def.foto)} className="planilla__enlace kpis__etiqueta" title={def.ayuda}>{texto}</Link>
     : <span className="planilla__enlace kpis__etiqueta" title={def.ayuda}>{texto}</span>;
+}
+
+/* El ícono de la fila: qué es, la cuenta y, abierto, los números del período.
+   Cada pieza de la cuenta sale de la misma tabla (lib/kpis-formulas), y el
+   resultado es el valor de la columna Total: lo que se ve acá es lo de la celda. */
+function InfoFila({ def, explicar, moneda, href }: { def: DefKpi; explicar: ExplicarKpis; moneda: Moneda; href?: string }) {
+  const ex = explicacionDe(def);
+  return (
+    <InfoMetrica
+      titulo={def.etiqueta} ayuda={def.ayuda} formula={ex?.formula} ejemplo={ex?.ejemplo}
+      periodo={explicar.periodo} href={href}
+      componentes={() => armarComponentes(def, explicar, moneda)}
+    />
+  );
+}
+
+/* Con centavos: sumar a mano lo que muestra el modal tiene que dar lo mismo,
+   y los costos y comisiones casi nunca son redondos. */
+function textoPieza(v: number | null, formato: FormatoKpi, moneda: Moneda): string {
+  if (v === null) return "—";
+  return formato === "moneda" || formato === "resultado" ? money(v, moneda, 2) : formatear(v, formato, moneda);
+}
+
+function armarComponentes(def: DefKpi, { ctx, porId }: ExplicarKpis, moneda: Moneda): ComponenteMetrica[] | null {
+  const piezas = componentesDe(def, ctx, porId);
+  if (!piezas) return null;
+  const total = valorEn(def, ctx);
+  return [
+    ...piezas.map((p): ComponenteMetrica => ({ concepto: p.concepto, valor: textoPieza(p.valor, p.formato, moneda), signo: p.signo, nota: p.nota })),
+    { concepto: def.etiqueta, valor: textoPieza(total, def.formato, moneda), signo: "=" },
+  ];
 }
 
 export function formatear(v: number, formato: FormatoKpi, moneda: Moneda): string {

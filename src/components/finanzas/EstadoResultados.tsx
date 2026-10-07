@@ -5,9 +5,10 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ChevronRight, ChevronsDownUp, ChevronsUpDown } from "lucide-react";
 import { Button, Card } from "@/components/ui/ui";
+import { InfoMetrica } from "@/components/ui/InfoMetrica";
 import { money } from "@/lib/format";
 import {
-  abribles, armarEstadoResultados, esBloque, TOPE, type FmtMonto, type NodoPyL,
+  abribles, armarEstadoResultados, ayudaDeRenglon, esBloque, TOPE, type FmtMonto, type NodoPyL,
 } from "@/lib/estadoResultados";
 import type { PyL } from "@/lib/finanzas";
 import type { RangoMes } from "@/lib/metricas";
@@ -128,6 +129,8 @@ export function EstadoResultados({ e, mes, p, hrefGasto, enfoque, onCargarGasto 
       if (n.href && !(ev.target as HTMLElement).closest("a")) router.push(n.href);
     };
 
+    /* El ícono de información: sólo los renglones de arriba. */
+    const info = nivel === 0 ? ayudaDeRenglon(n.id, p, M) : undefined;
     const hijos = n.hijos ?? [];
     const verTodos = completos.has(n.id) || hijos.length <= TOPE + 2;
     const visibles = verTodos ? hijos : hijos.slice(0, TOPE);
@@ -160,6 +163,12 @@ export function EstadoResultados({ e, mes, p, hrefGasto, enfoque, onCargarGasto 
                 <span className="pyl__hueco" aria-hidden />
                 {textos}
               </span>
+            )}
+            {info && (
+              <InfoMetrica
+                titulo={n.titulo} ayuda={info.ayuda} formula={info.formula} ejemplo={info.ejemplo}
+                periodo={mes.etiqueta} componentes={info.secciones ? () => info.secciones! : undefined}
+              />
             )}
           </div>
           {monto(n.cc, "Cobrado", "cc", n.estilo)}
@@ -231,8 +240,8 @@ export function EstadoResultados({ e, mes, p, hrefGasto, enfoque, onCargarGasto 
         <div role="rowgroup">
           <div role="row" className="pyl__cabecera">
             <span role="columnheader">Concepto</span>
-            <span role="columnheader">Sobre lo cobrado</span>
-            <span role="columnheader">Sobre lo facturado</span>
+            <span role="columnheader">Cobrado (CC)</span>
+            <span role="columnheader">Facturado (Revenue)</span>
           </div>
         </div>
         <div role="rowgroup">

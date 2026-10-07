@@ -227,13 +227,13 @@ export function armarEstadoResultados(
   };
 
   const neto: NodoPyL = {
-    id: "neto", titulo: "Profit neto", sub: "Rentabilidad neta", cc: p.netoCC, rev: p.netoRev, estilo: "neto",
+    id: "neto", titulo: "Profit neto", sub: "Rentabilidad neta: Profit on CC y Profit on Revenue", cc: p.netoCC, rev: p.netoRev, estilo: "neto",
     hijos: [
       { id: "neto/resultado", titulo: "Resultado operativo", cc: p.operativoCC, rev: p.operativoRev },
       { id: "neto/honorarios", titulo: "Honorarios del dueño", cc: -p.honorariosCeo, rev: -p.honorariosCeo },
     ],
     notas: [
-      `Profit on cash collected (lo que de verdad quedó): ${M(p.netoCC, 2)} · Profit on revenue (lo que en teoría ganaste por las ventas): ${M(p.netoRev, 2)}.`,
+      `Profit on Cash Collected (CC), lo que de verdad quedó: ${M(p.netoCC, 2)} · Profit on Revenue, lo que en teoría ganaste por las ventas: ${M(p.netoRev, 2)}.`,
       `Margen neto: ${margen(p.netoCC, p.cashCollected)} sobre lo cobrado · ${margen(p.netoRev, p.revenue)} sobre lo facturado.`,
     ],
   };
@@ -261,4 +261,90 @@ export function abribles(items: ItemPyL[]): string[] {
   };
   items.forEach((x) => { if (!esBloque(x)) recorrer(x); });
   return out;
+}
+
+/* ==================================================================
+   «Cómo se calcula» de cada renglón del estado de resultados.
+
+   Angelo (06/10): cada métrica con su ícono de información, para ver la
+   cuenta y no confiarse. Los números salen del mismo PyL que dibuja la
+   pantalla: no se recalcula nada.
+   ================================================================== */
+
+export interface FilaAyuda { concepto: string; valor: string; signo?: "+" | "−" | "="; nota?: string }
+export interface SeccionAyuda { titulo: string; filas: FilaAyuda[] }
+export interface AyudaRenglon {
+  ayuda: string;
+  formula: string;
+  ejemplo?: string;
+  /* Con los números del período, una sección por columna. */
+  secciones?: SeccionAyuda[];
+}
+
+export function ayudaDeRenglon(id: string, p: PyL, M: FmtMonto): AyudaRenglon | undefined {
+  const f = (concepto: string, n: number, signo?: FilaAyuda["signo"], nota?: string): FilaAyuda => ({ concepto, valor: M(n, 2), signo, nota });
+  const costos = (): FilaAyuda[] => [
+    f("Comisiones de closers", p.comisionCloser, "−"), f("Comisión del director", p.comisionDirector, "−"),
+    f("Procesadores de pago", p.feesProcesador, "−"), f("Otros costos directos", p.otrosDirectos, "−"),
+  ];
+
+  switch (id) {
+    case "ingresos": return {
+      ayuda: "Lo que entró a la cuenta y lo que se vendió en el período: son las dos columnas del estado de resultados.",
+      formula: "Sobre lo cobrado: suma de los pagos que entraron en el período, sin importar cuándo se hizo la venta.\nSobre lo facturado: suma del precio de las ventas cerradas en el período, sin las canceladas, se hayan cobrado o no.",
+      ejemplo: "Si vendiste US$ 16.000 y de eso (más cuotas de meses anteriores) entraron US$ 10.000, Ingresos muestra US$ 10.000 cobrado y US$ 16.000 facturado.",
+    };
+    case "closers": return {
+      ayuda: "Lo que se les debe a los closers por lo que se cobró en el período.",
+      formula: "Por cada venta con cobros en el período: (lo cobrado − lo que se quedó el procesador) × % del closer en ese servicio.\nSi la cerró alguien que no comisiona (Yari), nadie comisiona.",
+      ejemplo: "Un closer cobró US$ 2.000 de un cliente y el procesador se quedó US$ 100: comisiona sobre US$ 1.900. Con un 10%, son US$ 190.",
+    };
+    case "director": return {
+      ayuda: "Lo que se le debe al director por lo que se cobró en el período.",
+      formula: "Por cada venta con cobros en el período: (lo cobrado − lo que se quedó el procesador) × % del director en ese servicio.",
+    };
+    case "procesadores": return {
+      ayuda: "Lo que se quedaron Stripe, Hotmart y compañía de los pagos del período.",
+      formula: "Suma, de cada pago del período, de monto × la tasa de la cuenta recaudadora (o la comisión real, si el cobro se concilió con la pasarela).",
+    };
+    case "directos": return {
+      ayuda: "Costos de vender que no son comisiones ni procesadores: setters, financieras, referidores.",
+      formula: "Suma de los gastos del período cargados como costos directos.",
+    };
+    case "bruta": return {
+      ayuda: "Lo que queda de los ingresos después de los costos directos de vender.",
+      formula: "Ingresos − Comisiones de closers − Comisión del director − Procesadores de pago − Otros costos directos",
+      ejemplo: "Cobraste US$ 10.000 y los costos directos fueron US$ 2.000: la utilidad bruta es US$ 8.000.",
+      secciones: [
+        { titulo: "Sobre lo cobrado", filas: [f("Cash Collected (CC)", p.cashCollected), ...costos(), f("Utilidad bruta", p.brutoCC, "=")] },
+        { titulo: "Sobre lo facturado", filas: [f("Revenue", p.revenue), ...costos(), f("Utilidad bruta", p.brutoRev, "=")] },
+      ],
+    };
+    case "operativos": return {
+      ayuda: "Lo que cuesta tener el negocio andando, publicidad incluida.",
+      formula: "Suma de los gastos del período cargados como operativos: publicidad (Meta, Google y TikTok), sueldos fijos, herramientas.",
+    };
+    case "resultado": return {
+      ayuda: "Lo que deja el negocio antes de los honorarios del dueño. De acá sale el reparto del growth partner y del socio.",
+      formula: "Utilidad bruta − Gastos operativos",
+      secciones: [
+        { titulo: "Sobre lo cobrado", filas: [f("Utilidad bruta", p.brutoCC), f("Gastos operativos", p.gastosOperativos, "−"), f("Resultado operativo", p.operativoCC, "=")] },
+        { titulo: "Sobre lo facturado", filas: [f("Utilidad bruta", p.brutoRev), f("Gastos operativos", p.gastosOperativos, "−"), f("Resultado operativo", p.operativoRev, "=")] },
+      ],
+    };
+    case "honorarios": return {
+      ayuda: "Lo que se lleva el dueño por su trabajo.",
+      formula: "Suma de los gastos del período cargados como honorarios del dueño.",
+    };
+    case "neto": return {
+      ayuda: "Lo que de verdad queda. Sobre lo cobrado se llama Profit on Cash Collected (CC); sobre lo facturado, Profit on Revenue.",
+      formula: "Resultado operativo − Honorarios del dueño\n= Cash Collected (CC) o Revenue − costos directos − gastos operativos − honorarios",
+      ejemplo: "Entraron US$ 10.000 y se vendieron US$ 16.000; los costos directos son US$ 2.000, los gastos operativos US$ 4.000 y los honorarios US$ 1.000. Profit on CC = 3.000. Profit on Revenue = 9.000.",
+      secciones: [
+        { titulo: "Profit on Cash Collected (CC)", filas: [f("Resultado operativo (cobrado)", p.operativoCC), f("Honorarios del dueño", p.honorariosCeo, "−"), f("Profit on Cash Collected (CC)", p.netoCC, "=")] },
+        { titulo: "Profit on Revenue", filas: [f("Resultado operativo (facturado)", p.operativoRev), f("Honorarios del dueño", p.honorariosCeo, "−"), f("Profit on Revenue", p.netoRev, "=")] },
+      ],
+    };
+    default: return undefined;
+  }
 }
