@@ -1,10 +1,13 @@
 import { NextResponse } from "next/server";
 import { nubeServidor } from "@/lib/servidor";
 import { baseDelPedido, exigirArea } from "@/lib/permisos-servidor";
+import { hayEquipoConfigurado } from "@/lib/equipo-servidor";
+import { equipoDeLaPasada, escribirPasada, grabadaPor, leerPasada, seguir } from "@/lib/fathom-equipos";
 import { candidatasPara, desdeParaImportar, leerReunion, ventanaDeBusqueda } from "@/lib/fathom";
 import { miembroDeCloser } from "@/lib/crm";
 import {
-  atarGrabacion, borrarWebhook, crearWebhook, EsperarAFathom, guardarGrabacion, hayApiFathom, reunionesDe, reunionesDesde,
+  atarGrabacion, borrarWebhook, crearWebhook, diagnosticarFathom, equiposDeVentasDeFathom, EsperarAFathom, guardarGrabacion,
+  hayApiFathom, reunionesDe, reunionesDesde,
 } from "@/lib/fathom-servidor";
 
 /* ==================================================================
@@ -18,9 +21,15 @@ import {
      y guarda su secreto en `fathom_conexion` (no pasa por el navegador).
    - "importar": trae una página de reuniones (y `cursor` para la
      siguiente) desde el día antes de la primera llamada de Calendly; se
-     guardan sólo las que tienen su llamada, el resto se descarta. Si
-     Fathom pide esperar, contesta `esperar` (segundos) y la pantalla
-     vuelve a pedir la misma página después.
+     guardan sólo las que tienen su llamada, el resto se descarta. Pasa
+     primero por todo lo que la clave ve y después, una vez por cada equipo
+     de ventas de Fathom, por las llamadas de ese equipo (`teams[]`, las
+     «Team Calls»; lib/fathom-equipos): el cursor que vuelve es opaco y
+     recuerda en cuál va. Si Fathom pide esperar, contesta `esperar`
+     (segundos) y la pantalla vuelve a pedir la misma página después.
+   - "diagnosticar" (sólo dueños): le pregunta a Fathom qué reuniones ve la
+     clave, de qué equipos y de quién, y lo cruza con Calendly para decir
+     cuál de las causas parece ser (lib/fathom-diagnostico). Sólo lee.
    - "desconectar": borra el webhook de Fathom.
    Lo ve quien ve los Ajustes; lo cambia quien los edita.
 
@@ -82,11 +91,26 @@ async function primeraLlamada(db: NonNullable<ReturnType<typeof nubeServidor>>):
   return (r.data as { inicia?: string } | null)?.inicia ?? null;
 }
 
+/** null si quien pide es dueño (o la app corre local, sin login). El
+    diagnóstico muestra quién grabó cada reunión: es de los dueños. */
+async function exigirDueno(peticion: Request): Promise<NextResponse | null> {
+  if (!hayEquipoConfigurado()) return null;
+  const mia = baseDelPedido(peticion);
+  if (!mia) return NextResponse.json({ error: "Hace falta iniciar sesión." }, { status: 401 });
+  const yo = (await mia.rpc("mi_acceso")).data as { tipo?: string } | null;
+  if (yo?.tipo !== "dueno") return NextResponse.json({ error: "El diagnóstico de Fathom es de los dueños." }, { status: 403 });
+  return null;
+}
+
 export async function POST(peticion: Request) {
   const b = (await peticion.json().catch(() => ({}))) as { accion?: string; desde?: string; cursor?: string; sesionId?: string; recordingId?: string };
   const deUnaLlamada = b.accion === "buscar" || b.accion === "atar";
   const noPuede = await exigirArea(peticion, deUnaLlamada ? ["crm"] : ["ajustes"], 2);
   if (noPuede) return noPuede;
+  if (b.accion === "diagnosticar") {
+    const noEsDueno = await exigirDueno(peticion);
+    if (noEsDueno) return noEsDueno;
+  }
   const db = nubeServidor();
   if (!db) return NextResponse.json({ error: "Sin base configurada." }, { status: 503 });
   if (!hayApiFathom()) return NextResponse.json({ error: "Falta FATHOM_API_KEY en Vercel." }, { status: 503 });
@@ -115,6 +139,17 @@ export async function POST(peticion: Request) {
       let items: unknown[];
       try {
         items = await reunionesDe(correo, ventana.desde, ventana.hasta, b.accion === "atar");
+        /* Si por su mail no hay nada (grabó con otra cuenta de Fathom), se mira entre las
+           llamadas de los equipos de ventas y se queda con las que grabó alguien que se llama como él. */
+        if (items.length === 0 && closer) {
+          const vistas = new Set<string>();
+          for (const equipo of await equiposDeVentasDeFathom()) {
+            for (const x of await reunionesDe(null, ventana.desde, ventana.hasta, b.accion === "atar", equipo)) {
+              const id = leerReunion(x)?.recordingId;
+              if (id && !vistas.has(id) && grabadaPor(x, correo, closer.nombre)) { vistas.add(id); items.push(x); }
+            }
+          }
+        }
       } catch (err) {
         if (err instanceof EsperarAFathom) return NextResponse.json({ ok: true, esperar: err.segundos });
         throw err;
@@ -162,24 +197,37 @@ export async function POST(peticion: Request) {
       return NextResponse.json({ ok: true });
     }
 
+    if (b.accion === "diagnosticar") {
+      return NextResponse.json({ ok: true, diagnostico: await diagnosticarFathom(db), cuando: new Date().toISOString() });
+    }
+
     if (b.accion === "importar") {
       const desde = desdeParaImportar(b.desde, await primeraLlamada(db), Date.now());
-      if (!desde) return NextResponse.json({ ok: true, sinLlamadas: true, atadas: 0, descartadas: 0, siguiente: null });
+      if (!desde) return NextResponse.json({ ok: true, sinLlamadas: true, siguiente: null });
+      /* La pasada: primero todo lo que la clave ve; después, cada equipo de ventas de Fathom. */
+      const pasada = leerPasada(b.cursor);
+      const equipo = equipoDeLaPasada(pasada);
       let pagina;
       try {
-        pagina = await reunionesDesde(desde, b.cursor ?? null);
+        pagina = await reunionesDesde(desde, pasada.c, equipo);
       } catch (err) {
-        if (err instanceof EsperarAFathom) return NextResponse.json({ ok: true, esperar: err.segundos, atadas: 0, descartadas: 0 });
+        if (err instanceof EsperarAFathom) return NextResponse.json({ ok: true, esperar: err.segundos });
         throw err;
       }
-      let atadas = 0, descartadas = 0;
+      /* Las vueltas por equipo repiten lo que ya trajo la general: la pantalla
+         cuenta por recording_id (`idsAtadas`, `idsDescartadas`), no por página. */
+      const idsAtadas: string[] = [], idsDescartadas: string[] = [];
+      let nuevas = 0;
       for (const item of pagina.items) {
         const r = await guardarGrabacion(db, item);
         /* Sin recording_id no hay nada que guardar; un error de la base, sí se avisa. */
         if (!r.ok && !r.error?.includes("recording_id")) throw new Error(`No se pudo guardar una grabación: ${r.error}`);
-        if (r.guardada) atadas++; else descartadas++;
+        const id = leerReunion(item)?.recordingId;
+        if (!id) continue;
+        if (r.guardada) { idsAtadas.push(id); if (!r.yaEstaba) nuevas++; } else idsDescartadas.push(id);
       }
-      return NextResponse.json({ ok: true, atadas, descartadas, siguiente: pagina.siguiente, desde });
+      const sigue = await seguir(pasada, pagina.siguiente, equiposDeVentasDeFathom);
+      return NextResponse.json({ ok: true, idsAtadas, idsDescartadas, nuevas, siguiente: sigue ? escribirPasada(sigue) : null, desde, equipo });
     }
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : "No se pudo hablar con Fathom." }, { status: 502 });
