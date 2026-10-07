@@ -372,7 +372,7 @@ export function estadoDelLector(l: LatidoLector | null | undefined, ahora: numbe
   if (conexion === "esperando_qr") {
     return {
       tipo: "esperando-qr", minutos: min, alarma, tono, titulo: "Esperando que lo escaneen",
-      detalle: "Hay que vincular el número del lector: en Ajustes → WhatsApp está el código QR para escanear con el teléfono de ese número.",
+      detalle: "Hay que vincular el número del lector: se escanea un código QR con el teléfono de ese número, como al abrir WhatsApp Web.",
     };
   }
   if (conexion === "cerrado") {

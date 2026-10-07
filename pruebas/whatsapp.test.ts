@@ -267,7 +267,7 @@ test("los cuatro estados que cuenta el lector, con su título en la pantalla", (
   assert.deepEqual([de("conectado").tipo, de("conectado").titulo, de("conectado").tono], ["conectado", "Conectado", "success"]);
   const qr = de("esperando_qr", { ultimaConexion: hace(2) });
   assert.deepEqual([qr.tipo, qr.titulo, qr.alarma, qr.tono], ["esperando-qr", "Esperando que lo escaneen", false, "warning"]);
-  assert.match(qr.detalle, /Ajustes → WhatsApp/);
+  assert.match(qr.detalle, /código QR/);
   const rec = de("reconectando", { ultimaConexion: hace(5) });
   assert.deepEqual([rec.tipo, rec.titulo, rec.alarma], ["reconectando", "Reconectando", false]);
   const cerrado = de("cerrado", { ultimaConexion: hace(5) });
