@@ -2,10 +2,15 @@ import type { Ad, Contacto, EstadoApp, ID, Lead, Meta, MetricaClave } from "./ty
 import { inicioSemana, mesClave, nombreMes } from "./format";
 import { calcularPyL, cashCollected, porCobrarTotal } from "./finanzas";
 import { diaDeNegocio } from "./dia-negocio";
+import { finDelDia } from "./periodos";
 
 /* Todo lo que la app calcula vive acá: una sola fuente de verdad
    para los números del panel, finanzas, marketing y metas. */
 
+/* Un rango de instantes con los dos bordes adentro: de las 00:00:00,000 del
+   primer día al último milisegundo del último (23:59:59,999, ver finDelDia).
+   Se arma con rangoDePeriodo, rangoDeFechas o ultimosMeses; un `hasta` hecho a
+   mano a las 23:59:59 deja afuera la última fracción de segundo del día. */
 export interface RangoMes { clave: string; etiqueta: string; desde: Date; hasta: Date }
 
 export function ultimosMeses(n: number): RangoMes[] {
@@ -13,15 +18,18 @@ export function ultimosMeses(n: number): RangoMes[] {
   const out: RangoMes[] = [];
   for (let i = n - 1; i >= 0; i--) {
     const desde = new Date(hoy.getFullYear(), hoy.getMonth() - i, 1);
-    const hasta = new Date(hoy.getFullYear(), hoy.getMonth() - i + 1, 0, 23, 59, 59);
+    const hasta = finDelDia(new Date(hoy.getFullYear(), hoy.getMonth() - i + 1, 0));
     out.push({ clave: mesClave(desde), etiqueta: nombreMes(mesClave(desde)), desde, hasta });
   }
   return out;
 }
 
-/* Puente entre el DateRangePicker y todo el calculo, que ya trabajaba con
-   rangos aunque se llamaran "mes". El borde derecho va al final del dia: si
-   `hasta` quedara a las 00:00, un pago de esa misma tarde caeria afuera. */
+/* Puente entre el DateRangePicker y todo el cálculo, que ya trabajaba con
+   rangos aunque se llamaran "mes". El borde derecho va al final del día: si
+   `hasta` quedara a las 00:00, un pago de esa misma tarde caería afuera. Y es
+   el último milisegundo (23:59:59,999, ver finDelDia): con 23:59:59,000 un
+   cobro de las 23:59:59,500 no caía en ningún día del Dashboard, aunque sí
+   en el mes. */
 export function rangoDeFechas(desde: string, hasta: string, etiqueta: string): RangoMes {
   const [ay, am, ad] = desde.split("-").map(Number);
   const [by, bm, bd] = hasta.split("-").map(Number);
@@ -29,7 +37,7 @@ export function rangoDeFechas(desde: string, hasta: string, etiqueta: string): R
     clave: `${desde}_${hasta}`,
     etiqueta,
     desde: new Date(ay, am - 1, ad),
-    hasta: new Date(by, bm - 1, bd, 23, 59, 59),
+    hasta: finDelDia(new Date(by, bm - 1, bd)),
   };
 }
 

@@ -5,7 +5,7 @@ import type {
 } from "./types";
 import type { RangoMes } from "./metricas";
 import { calcularPyL, closerDeCuota, cobraEnFecha, pagosDelMes, parteMarketing, tasaDeComision, ventasDelMes } from "./finanzas";
-import { esPeriodo, moverPeriodo, nombrePeriodo, periodoDe, rangoDePeriodo } from "./periodos";
+import { esPeriodo, finDelDia, moverPeriodo, nombrePeriodo, periodoDe, rangoDePeriodo } from "./periodos";
 import { aMonedaBase, categoriaDe, normalizar } from "./gastos";
 import { fechaLarga, money, num, pct, tasaTexto } from "./format";
 import {
@@ -251,7 +251,7 @@ export function resumenEsquema(esq: EsquemaPago | undefined): string {
 const DIA = 86400000;
 const diaLocal = (s: string, fin = false) => {
   const [a, m, d] = s.slice(0, 10).split("-").map(Number);
-  return fin ? new Date(a, m - 1, d, 23, 59, 59) : new Date(a, m - 1, d);
+  return fin ? finDelDia(new Date(a, m - 1, d)) : new Date(a, m - 1, d);
 };
 const diasEntre = (a: Date, b: Date) =>
   Math.round((new Date(b.getFullYear(), b.getMonth(), b.getDate()).getTime()

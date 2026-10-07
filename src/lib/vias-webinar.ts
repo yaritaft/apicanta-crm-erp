@@ -185,7 +185,7 @@ function deUnWebinar(e: EstadoApp, w: Webinar): RendimientoVias {
   for (const v of ventas) {
     const persona = v.contactoId ? contactoDeLead.get(v.contactoId) ?? v.contactoId : undefined;
     /* Hasta el final del día de la venta, en Argentina. */
-    const tope = Date.parse(`${diaDeNegocio(v.fecha)}T23:59:59-03:00`);
+    const tope = Date.parse(`${diaDeNegocio(v.fecha)}T23:59:59.999-03:00`);
     const suyas = (persona ? porPersona.get(persona) ?? [] : []).filter((a) => Date.parse(a.agendadaEn) <= tope);
     /* La última que siguió en pie; si las canceló todas, la última. */
     const ultima = (xs: AgendaDelWebinar[]) =>
