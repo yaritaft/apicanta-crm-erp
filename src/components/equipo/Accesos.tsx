@@ -108,62 +108,62 @@ export function AccesosApp({ accesos, closers, onVerMiembro }: {
 
   return (
     <div className="stack-5">
-    <EstadoDeClosers resumen={closers} onVerMiembro={onVerMiembro} onDarAcceso={setNuevo} />
-    <Card>
-      <CardHead
-        titulo="Accesos a la app"
-        sub="Quién entra y con qué tipo de cuenta. Qué ve y edita cada tipo se arma en «Tipos de cuenta»; lo controla la base, no sólo la pantalla."
-        acciones={<Button variante="primary" icono={<UserPlus size={16} />} onClick={() => setNuevo({ email: "", nombre: "", rol: "equipo" })}>Dar acceso</Button>}
-      />
-      {accesos.error && <p className="t-sm" style={{ color: "var(--danger)", marginBottom: 12 }}>{accesos.error}</p>}
-      {accesos.lista === null ? (
-        <div className="skeleton" style={{ height: 160 }} />
-      ) : (
-        <DataTable
-          filas={filas} columnas={columnas} alto={560}
-          vacio={<Empty icono={<ShieldCheck size={22} />} titulo="Nadie tiene acceso" texto="Dale acceso a alguien del equipo." />}
-          acciones={(f) => (
-            <>
-              <IconButton etiqueta={`Clave nueva para ${f.email}`} disabled={trabajando === f.email} onClick={() => void claveNueva({ email: f.email, nombre: f.nombre, rol: f.rol })}>
-                <KeyRound size={16} />
-              </IconButton>
-              {!soyYo(f.email) && (
-                <IconButton etiqueta={`Quitar el acceso de ${f.email}`} onClick={() => setQuitando(f)}><UserX size={16} /></IconButton>
-              )}
-            </>
-          )}
+      <EstadoDeClosers resumen={closers} onVerMiembro={onVerMiembro} onDarAcceso={setNuevo} />
+      <Card>
+        <CardHead
+          titulo="Accesos a la app"
+          sub="Quién entra y con qué tipo de cuenta. Qué ve y edita cada tipo se arma en «Tipos de cuenta»; lo controla la base, no sólo la pantalla."
+          acciones={<Button variante="primary" icono={<UserPlus size={16} />} onClick={() => setNuevo({ email: "", nombre: "", rol: "equipo" })}>Dar acceso</Button>}
         />
-      )}
+        {accesos.error && <p className="t-sm" style={{ color: "var(--danger)", marginBottom: 12 }}>{accesos.error}</p>}
+        {accesos.lista === null ? (
+          <div className="skeleton" style={{ height: 160 }} />
+        ) : (
+          <DataTable
+            filas={filas} columnas={columnas} alto={560}
+            vacio={<Empty icono={<ShieldCheck size={22} />} titulo="Nadie tiene acceso" texto="Dale acceso a alguien del equipo." />}
+            acciones={(f) => (
+              <>
+                <IconButton etiqueta={`Clave nueva para ${f.email}`} disabled={trabajando === f.email} onClick={() => void claveNueva({ email: f.email, nombre: f.nombre, rol: f.rol })}>
+                  <KeyRound size={16} />
+                </IconButton>
+                {!soyYo(f.email) && (
+                  <IconButton etiqueta={`Quitar el acceso de ${f.email}`} onClick={() => setQuitando(f)}><UserX size={16} /></IconButton>
+                )}
+              </>
+            )}
+          />
+        )}
 
-      {nuevo && (
-        <DarAcceso
-          tipos={tipos} inicial={nuevo}
-          onCerrar={() => setNuevo(null)}
-          sugerencias={e.equipo.filter((m) => m.activo && m.email && !(accesos.lista ?? []).some((a) => a.email === m.email!.trim().toLowerCase()))}
-          onDar={async (a, conClave) => {
-            if (conClave) {
-              if (await claveNueva(a)) setNuevo(null);
-              return;
-            }
-            const error = await accesos.guardar(a);
-            if (error) { toast(error, "err"); return; }
-            setNuevo(null);
-            toast(`${a.nombre || a.email} ya puede entrar con «Prefiero un enlace por correo».`);
+        {nuevo && (
+          <DarAcceso
+            tipos={tipos} inicial={nuevo}
+            onCerrar={() => setNuevo(null)}
+            sugerencias={e.equipo.filter((m) => m.activo && m.email && !(accesos.lista ?? []).some((a) => a.email === m.email!.trim().toLowerCase()))}
+            onDar={async (a, conClave) => {
+              if (conClave) {
+                if (await claveNueva(a)) setNuevo(null);
+                return;
+              }
+              const error = await accesos.guardar(a);
+              if (error) { toast(error, "err"); return; }
+              setNuevo(null);
+              toast(`${a.nombre || a.email} ya puede entrar con «Prefiero un enlace por correo».`);
+            }}
+          />
+        )}
+        {clave && <ClaveGenerada {...clave} onCerrar={() => setClave(null)} />}
+        <Confirmar
+          abierto={Boolean(quitando)} onCerrar={() => setQuitando(null)} confirmarTexto="Quitar el acceso"
+          titulo={`Quitar el acceso de ${quitando?.nombre || quitando?.email || ""}`}
+          texto="Deja de ver los datos de la app apenas cargue de nuevo. Se le puede volver a dar cuando quieras."
+          onConfirmar={async () => {
+            if (!quitando) return;
+            const error = await accesos.quitar(quitando.email);
+            toast(error ?? "Acceso quitado.", error ? "err" : "ok");
           }}
         />
-      )}
-      {clave && <ClaveGenerada {...clave} onCerrar={() => setClave(null)} />}
-      <Confirmar
-        abierto={Boolean(quitando)} onCerrar={() => setQuitando(null)} confirmarTexto="Quitar el acceso"
-        titulo={`Quitar el acceso de ${quitando?.nombre || quitando?.email || ""}`}
-        texto="Deja de ver los datos de la app apenas cargue de nuevo. Se le puede volver a dar cuando quieras."
-        onConfirmar={async () => {
-          if (!quitando) return;
-          const error = await accesos.quitar(quitando.email);
-          toast(error ?? "Acceso quitado.", error ? "err" : "ok");
-        }}
-      />
-    </Card>
+      </Card>
     </div>
   );
 }
