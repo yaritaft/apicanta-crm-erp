@@ -639,3 +639,55 @@ correr `supabase/honorarios.sql` (tablas, políticas, niveles de acceso y la col
   Honorarios del CEO, Setters, Edición de contenido o Filmmaker el equipo va primero; en el resto, los proveedores.
   `Gasto.proveedor` sigue siendo texto; quién del equipo es se guarda en `gastos.extra.proveedorEquipoId`. Editar un
   gasto abre la misma revisión, y uno viejo que venía sin proveedor (los de la planilla) pide uno para guardarse.
+
+## Lo que pidieron el 02/10 (lote C: la cuenta del closer)
+
+**Sin SQL**: nada de esto toca la base. La marca de «pasada a mano» va en `sesiones.extra`, y el menú del closer es sólo
+del menú (lo que ve ya lo recorta la base, así que no hay RLS que cambiar).
+
+- **El closer, con tres entradas** (`esCuentaDeCloser` en `lib/permisos.ts`, `NAV_CLOSER` en `components/shell/nav.ts`):
+  una cuenta de «sólo lo suyo» ve en el menú **Mis llamadas**, **Cerrar el día** y **Cargar venta**, y arranca en la
+  primera. Cada una es una pantalla propia (`app/(app)/mis-llamadas`, `cerrar-el-dia`, `cargar-venta`). Leads, Agenda,
+  Clientes y lo demás **sólo se esconden del menú y de ⌘K**: siguen abiertos por link, filtrados a lo suyo por la base
+  (Yari, 1:07:25: «leads, CRM, agenda, ventas, clientes, todo filtrado por closer»), y la barra de arriba sigue
+  diciendo en qué pantalla está. Si un tipo no edita Ventas, «Cargar venta» no aparece solo.
+  - **Mis llamadas** es el CRM de hoy (`<CrmTabla misLlamadas />`) y arriba dice «Hoy tenés N llamadas», cuántas ya
+    pasaron y faltan cargar y cuántas quedaron de días anteriores, con «Cerrar el día» como la única acción naranja
+    (`components/closers/MisLlamadas.tsx`, `resumenDelDia` en `lib/cuenta-closer.ts`). Siempre abre en hoy (no recuerda
+    la última vista: `SIN_RECORDAR` en `lib/recordarVistas.ts`) y el número también está en el menú.
+  - **Si entra y no ve nada, lo dice** (`avisoDeCuenta`): «tu correo no está en Equipo» o «todavía no hay llamadas a tu
+    nombre: en Calendly tenés que figurar como …». Sólo cuando ya cargaron los datos y hay sesión.
+  - La celda **Closer** del CRM no se le ofrece al closer: la base le rechaza reasignar (la llamada deja de ser suya).
+- **Equipo → Accesos: ¿van a ver sus llamadas?** (`lib/cuenta-closer.ts: evaluarClosers`,
+  `components/closers/EstadoDeClosers.tsx`). Un closer ve lo suyo por su **correo en Equipo** y por su **nombre en
+  Calendly** (las dos primeras palabras, sin tildes: la misma `miembroDeCloser` del CRM, el cierre del día y la base).
+  Closer por closer se ve si tiene correo, acceso y llamadas en Calendly, y la solapa lleva el número de los que **no
+  van a ver nada**. Lo que se arregla con un clic: **poner su correo** (hay un acceso de closer con su nombre, o se
+  escribe), **darle acceso** (abre «Dar acceso» ya cargado) y **pasarle las llamadas** que Calendly trae con otro
+  nombre («V. Abadia» → «Valentin Abadia»; las que vengan se arreglan cambiando el nombre en Calendly, que lo hace
+  quien lo maneja). También muestra los accesos de closer cuyo correo no está en Equipo y los anfitriones sueltos.
+  Una prueba (`pruebas/cuenta-closer.test.ts`) lo verifica con los closers del ejemplo y con casos armados.
+- **Pasar llamadas de un closer a otro** (`lib/pasar-llamadas.ts`, `components/closers/PasarLlamadas.tsx`): «Pasar a
+  otro closer» en el detalle de la Agenda y en cada llamada de la ficha, **«Pasar llamadas»** en la Agenda para varias
+  (se elige de quién son y cuáles; de entrada, las que todavía no pasaron) y la celda Closer del CRM, que ahora hace lo
+  mismo. Sólo dueños y director (el closer no lo ve: la base se lo rechaza). Cada closer dice si le falta el correo y
+  no va a ver lo que se le pase. Queda en la actividad y el aviso trae «Deshacer».
+  - **Calendly no lo pisa**: la llamada lleva `extra.pasada` (quién la atiende, qué dice Calendly, quién la pasó y
+    cuándo; `lib/pasada-closer.ts`). Cuando el invitado reingresa —una cancelación o un no-show por el webhook, el
+    cron, o una **reprogramación** (agenda nueva que hereda la marca de la que reemplaza)— `ingresarInvitado`
+    (`lib/calendly-sync.ts`) deja el anfitrión elegido y sólo anota lo que dice Calendly. Pasarla de vuelta a quien
+    figura en Calendly saca la marca.
+  - **El nuevo la ve y el viejo deja de verla** porque la base decide por el anfitrión de la llamada. Queda escrito con
+    el nombre con el que Calendly ya trae a ese closer (el más usado), así «Mariano» y «Mariano Arias» no son dos
+    closers en los filtros. Si el responsable del lead era quien la atendía, **la oportunidad se va con la llamada**.
+  - **Quién comisiona la venta: el que atendió la llamada.** Una venta que se carga desde la llamada sale con el closer
+    de su anfitrión (ya era así), o sea el nuevo; una venta que ya estaba cargada se queda con quien la atendió, y el
+    diálogo lo avisa antes de pasar.
+- **Descargar el anuncio** (`app/api/meta/descargar`, `lib/meta-descarga.ts`, `components/marketing/DescargarMedio.tsx`):
+  cada video o imagen del detalle del anuncio lleva su botón **Descargar** (o «Descargar portada», si Meta sólo dio la
+  portada del video). Los links de Meta son de otro origen y vencen, así que el archivo pasa por el servidor: le
+  pide a Meta el anuncio de nuevo, baja el archivo de sus servidores (sólo de ellos, también al seguir redirecciones) y
+  se lo pasa al navegador sin cargarlo entero en memoria; lo ve quien ve Marketing, Webinars o Finanzas. Si Meta no lo
+  entrega (link vencido, token sin permiso, archivo enorme) sale un mensaje que dice qué pasó y qué hacer, no un archivo
+  roto. **Sin un anuncio real no se pudo confirmar con Meta**: está probado con un Meta de mentira
+  (`pruebas/meta-descarga*.test.ts`).
