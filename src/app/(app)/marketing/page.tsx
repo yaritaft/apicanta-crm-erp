@@ -87,7 +87,7 @@ const METRICAS: DefColumna[] = [
   { clave: "costoVenta", titulo: "Costo por venta", grupo: "Negocio" },
   { clave: "facturado", titulo: "Facturado", grupo: "Negocio" },
   { clave: "cobrado", titulo: "Cobrado", grupo: "Negocio" },
-  { clave: "roas", titulo: "ROAS", grupo: "Negocio", ayuda: "Lo cobrado de esas ventas sobre la inversión." },
+  { clave: "roas", titulo: "ROAS on CC", grupo: "Negocio", ayuda: "Cash Collected (CC) de esas ventas sobre la inversión." },
 
   { clave: "dias", titulo: "Días con datos", grupo: "Otras", ayuda: "Un costo bajísimo con un solo día de datos no es un costo bajo: es una muestra chica." },
 ];
@@ -505,23 +505,57 @@ export default function Marketing() {
         <StatCard
           hero etiqueta={`Inversión · ${rangoSub(rango)}`} valor={M(tot.inversion)}
           contexto={`en ${cuantos(filasVista.length, nivel ?? "campanias")}`}
+          info={{
+            titulo: "Inversión",
+            ayuda: "Lo que gastaste en Meta en los días del período, según el Administrador de anuncios.",
+            formula: "Gasto que informa Meta, sumado de todos los días del período y de las filas que se ven",
+            periodo: rangoSub(rango),
+          }}
         />
         <StatCard
           etiqueta="Costo por lead" valor={tot.leads > 0 ? M(tot.cpl, 2) : "—"}
           contexto={`${num(tot.leads)} según Meta · ${num(tot.personas)} ${tot.personas === 1 ? "persona" : "personas"} en la base`}
-          ayuda="Inversión dividida por los leads que contó Meta. Al lado, las personas que entraron por esos anuncios y tenemos cargadas."
+          info={{
+            ayuda: "Lo que costó cada lead que contó Meta. Al lado, las personas que entraron por esos anuncios y tenemos cargadas.",
+            formula: "Inversión ÷ Leads según Meta",
+            periodo: rangoSub(rango),
+            componentes: tot.leads > 0 ? () => [
+              { concepto: "Inversión", valor: M(tot.inversion, 2) },
+              { concepto: "Leads según Meta", valor: num(tot.leads), signo: "÷" },
+              { concepto: "Costo por lead", valor: M(tot.cpl, 2), signo: "=" },
+            ] : undefined,
+          }}
         />
         <StatCard
           etiqueta="Costo por venta" valor={tot.ventas > 0 ? M(tot.costoPorVenta) : "—"}
           contexto={`${num(tot.ventas)} ${tot.ventas === 1 ? "venta" : "ventas"} de esas personas`}
-          ayuda="Inversión dividida por las ventas de las personas que entraron por estos anuncios en el período, sin importar cuándo compraron."
+          info={{
+            ayuda: "Lo que costó cada venta de las personas que entraron por estos anuncios, sin importar cuándo compraron. Las canceladas no cuentan.",
+            formula: "Inversión ÷ Ventas de las personas que entraron por estos anuncios en el período",
+            periodo: rangoSub(rango),
+            componentes: tot.ventas > 0 ? () => [
+              { concepto: "Inversión", valor: M(tot.inversion, 2) },
+              { concepto: "Ventas de esas personas", valor: num(tot.ventas), signo: "÷" },
+              { concepto: "Costo por venta", valor: M(tot.costoPorVenta, 2), signo: "=" },
+            ] : undefined,
+          }}
         />
         <StatCard
-          etiqueta="ROAS" valor={tot.roas > 0 ? `${num(tot.roas, 2)}x` : "—"}
+          etiqueta="ROAS on CC" valor={tot.roas > 0 ? `${num(tot.roas, 2)}x` : "—"}
           delta={tot.roas >= 3 ? "Sano" : tot.roas > 0 ? "Justo" : undefined}
           direccion={direccionRoas}
           contexto={tot.cobrado > 0 ? `${M(tot.cobrado)} cobrados` : tot.ventas > 0 ? "nada cobrado todavía" : "cobrado sobre inversión"}
-          ayuda="Lo cobrado de esas ventas sobre la inversión. Sobre lo cobrado, no sobre lo facturado."
+          info={{
+            ayuda: "Por cada dólar invertido en estos anuncios, cuántos entraron. Cuenta lo cobrado, no lo facturado: una venta en cuotas que no se cobró todavía no devolvió nada.",
+            formula: "Cash Collected (CC) de las ventas de las personas que entraron por estos anuncios ÷ Inversión",
+            ejemplo: "Invertiste US$ 5.000 y esas personas pagaron US$ 12.500: ROAS on CC = 2,5x. Desde 3x se considera sano.",
+            periodo: rangoSub(rango),
+            componentes: () => [
+              { concepto: "Cash Collected (CC) de esas ventas", valor: M(tot.cobrado, 2) },
+              { concepto: "Inversión", valor: M(tot.inversion, 2), signo: "÷" },
+              { concepto: "ROAS on CC", valor: tot.roas > 0 ? `${num(tot.roas, 2)}x` : "—", signo: "=" },
+            ],
+          }}
         />
       </div>
 

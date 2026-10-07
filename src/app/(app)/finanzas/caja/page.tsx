@@ -93,22 +93,63 @@ export default function Caja() {
             <StatCard
               hero etiqueta="Caja esperada hoy" valor={M(caja ?? 0)}
               contexto={`Último arqueo: ${M(ultimo.total)} el ${fechaLarga(ultimo.fecha)}${mov && mov.enCamino > 0 ? ` · ${M(mov.enCamino)} están en camino entre cuentas` : ""}`}
+              info={{
+                ayuda: "Cuánta plata tendría que haber hoy entre todas las cuentas, partiendo de lo que se contó en el último arqueo. Si al contar no da, falta cargar un gasto, una venta o un cobro.",
+                formula: "Caja del último arqueo + lo que estaba en camino entre cuentas + Cash Collected (CC) − procesadores − comisiones − gastos − reparto (growth partner y socio) − retiros del dueño",
+                periodo: `desde el arqueo del ${fechaLarga(ultimo.fecha)}`,
+                componentes: mov ? () => [
+                  { concepto: "Caja del último arqueo", valor: M(mov.inicial, 2) },
+                  { concepto: "Estaba en camino al contarlo", valor: M(mov.enCaminoAntes, 2), signo: "+" },
+                  { concepto: "Cash Collected (CC)", valor: M(mov.cobrado, 2), signo: "+" },
+                  { concepto: "Procesadores de pago", valor: M(mov.procesador, 2), signo: "−" },
+                  { concepto: "Comisiones de closers y director", valor: M(mov.comisiones, 2), signo: "−" },
+                  { concepto: "Gastos (directos, operativos y honorarios)", valor: M(mov.gastos, 2), signo: "−" },
+                  { concepto: "Reparto: growth partner y socio", valor: M(mov.reparto, 2), signo: "−" },
+                  { concepto: "Retiros del dueño", valor: M(mov.retiros, 2), signo: "−" },
+                  { concepto: "Caja esperada", valor: M(mov.esperado, 2), signo: "=" },
+                ] : undefined,
+              }}
             />
             <StatCard
               etiqueta="Meses de vida" valor={vida.mesesDeVida === null ? "—" : num(vida.mesesDeVida, 1)}
               direccion={vida.mesesDeVida !== null && vida.mesesDeVida >= MESES_DE_COLCHON ? "up" : "down"}
               delta={`objetivo ${MESES_DE_COLCHON}`}
               contexto={`Un mes sin vender cuesta ${M(vida.gastoMensual)} (promedio de ${vida.meses})`}
+              info={{
+                ayuda: "Cuántos meses aguanta el negocio sin vender nada con la plata que hay. Yari apunta a tener seis.",
+                formula: "Caja esperada ÷ Lo que cuesta un mes sin vender\n(gastos operativos + honorarios del CEO, promedio de los últimos tres meses cerrados)",
+                ejemplo: "Con US$ 90.000 en caja y gastos de US$ 15.000 por mes: 90.000 ÷ 15.000 = 6 meses de vida.",
+                periodo: `promedio de ${vida.meses}`,
+                componentes: vida.mesesDeVida === null ? undefined : () => [
+                  { concepto: "Caja esperada", valor: M(caja ?? 0, 2) },
+                  { concepto: "Lo que cuesta un mes sin vender", valor: M(vida.gastoMensual, 2), signo: "÷" },
+                  { concepto: "Meses de vida", valor: num(vida.mesesDeVida!, 1), signo: "=" },
+                ],
+              }}
             />
             <StatCard
               etiqueta={vida.excedente >= 0 ? "Se puede retirar" : "Falta para 6 meses"}
               valor={M(Math.abs(vida.excedente))}
               direccion={vida.excedente >= 0 ? "up" : "down"}
               contexto={`El colchón de ${MESES_DE_COLCHON} meses es ${M(vida.colchon)}`}
+              info={{
+                ayuda: "Lo que sobra (o falta) de la caja para tener el colchón de seis meses. Lo que pasa de eso se puede retirar.",
+                formula: "Caja esperada − Colchón\nColchón = Lo que cuesta un mes sin vender × 6",
+                periodo: `promedio de ${vida.meses}`,
+                componentes: () => [
+                  { concepto: "Caja esperada", valor: M(caja ?? 0, 2) },
+                  { concepto: `Colchón de ${MESES_DE_COLCHON} meses`, valor: M(vida.colchon, 2), signo: "−", nota: `${M(vida.gastoMensual, 2)} × ${MESES_DE_COLCHON}` },
+                  { concepto: vida.excedente >= 0 ? "Se puede retirar" : "Falta para el colchón", valor: M(Math.abs(vida.excedente), 2), signo: "=" },
+                ],
+              }}
             />
             <StatCard
               etiqueta={`Retiros de ${anio}`} valor={M(retirosDelAnio)}
               contexto={retiros.length ? `${retiros.length} en total` : "Todavía ninguno"}
+              info={{
+                ayuda: "Plata que el dueño sacó de la caja este año. No es un gasto del negocio: no resta del profit, sí de la caja.",
+                formula: `Suma de los retiros del dueño con fecha de ${anio}`,
+              }}
             />
           </div>
 

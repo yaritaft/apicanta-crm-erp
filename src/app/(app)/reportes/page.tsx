@@ -316,22 +316,44 @@ export default function Reportes() {
             <StatCard
               hero etiqueta="Completados" valor={sinNada ? "—" : `${num(completados)}/${num(total)}`}
               contexto={`reportes · ${periodo}`}
-              ayuda="Reportes completados sobre los que se esperaban en el período."
+              info={{
+                ayuda: "Reportes semanales que los alumnos completaron, sobre los que se esperaban en el período.",
+                formula: "Reportes completados / Reportes esperados (de los alumnos activos, en las semanas que toca el período)",
+                periodo: periodo,
+              }}
             />
             <StatCard
               etiqueta="Tasa de respuesta" valor={sinNada ? "—" : pct(tasa, 0)}
               delta={sinNada ? undefined : tasa >= 70 ? "Bien" : "Baja"} direccion={tasa >= 70 ? "up" : "down"}
               contexto="de los reportes esperados"
+              info={{
+                ayuda: "Qué porcentaje de los reportes esperados se completó. Desde 70% se considera bien.",
+                formula: "Reportes completados ÷ Reportes esperados × 100",
+                periodo: periodo,
+                componentes: sinNada ? undefined : () => [
+                  { concepto: "Reportes completados", valor: num(completados) },
+                  { concepto: "Reportes esperados", valor: num(total), signo: "÷" },
+                  { concepto: "Tasa de respuesta", valor: pct(tasa, 1), signo: "=" },
+                ],
+              }}
             />
             <StatCard
               etiqueta="Sin contestar" valor={num(sinContestar)} contexto="pendientes o sin enviar"
-              ayuda="Reportes del período que figuran pendientes o sin enviar. En la tabla se filtran por estado."
+              info={{
+                ayuda: "Reportes del período que figuran pendientes o sin enviar. En la tabla se filtran por estado.",
+                formula: "Reportes pendientes + Reportes sin enviar",
+                periodo: periodo,
+              }}
             />
             <StatCard
               etiqueta="En riesgo" valor={num(enRiesgo.length)}
               delta={enRiesgo.length > 0 ? "Seguir" : undefined} direccion="accent"
               contexto="2+ semanas sin reportar"
-              ayuda="Alumnos activos que, al cierre del período, llevan dos semanas seguidas o más sin completar el reporte."
+              info={{
+                ayuda: "Alumnos activos que, al cierre del período, llevan dos semanas seguidas o más sin completar el reporte.",
+                formula: "Alumnos activos con 2 o más semanas seguidas sin completar su reporte, al cierre del período",
+                periodo: periodo,
+              }}
             />
           </div>
 

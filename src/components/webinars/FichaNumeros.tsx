@@ -2,6 +2,7 @@
 
 import React from "react";
 import { Card, CardHead, Tabs } from "@/components/ui/ui";
+import { InfoMetrica, type PropsInfoMetrica } from "@/components/ui/InfoMetrica";
 import { Dato } from "@/components/ui/Drawer";
 import { Funnel } from "@/components/charts/charts";
 import { useToast } from "@/components/ui/Toast";
@@ -74,10 +75,14 @@ function FilaMetrica({ w, campo, detalle, color }: {
   );
 }
 
-function Kpi({ etiqueta, valor, sub, color }: { etiqueta: string; valor: string; sub?: string; color?: string }) {
+function Kpi({ etiqueta, valor, sub, color, info }: {
+  etiqueta: string; valor: string; sub?: string; color?: string;
+  /* El ícono «cómo se calcula» junto al nombre. */
+  info?: Omit<PropsInfoMetrica, "titulo">;
+}) {
   return (
     <div className="wb-kpi">
-      <span className="t-label">{etiqueta}</span>
+      <span className="t-label">{etiqueta}{info && <InfoMetrica {...info} titulo={etiqueta} />}</span>
       <span className="wb-kpi__valor t-num" style={color ? { color } : undefined} title={valor}>{valor}</span>
       {sub && <span className="t-sm t-subtle t-num">{sub}</span>}
     </div>
@@ -99,14 +104,36 @@ export function TarjetaResultado({ m, className }: { m: MetricasWebinar; classNa
       />
       <div className="wb-kpis">
         <Kpi
-          etiqueta="ROAS cobrado" valor={m.roasCC > 0 ? `${num(m.roasCC, 2)}x` : "—"}
+          etiqueta="ROAS on CC" valor={m.roasCC > 0 ? `${num(m.roasCC, 2)}x` : "—"}
           color={m.roasCC > 0 ? tonoRoas(m.roasCC) : undefined}
-          sub={m.roasRev > 0 ? `${num(m.roasRev, 2)}x facturado` : "sobre la inversión total"}
+          sub={m.roasRev > 0 ? `${num(m.roasRev, 2)}x on Revenue` : "sobre la inversión total"}
+          info={{
+            ayuda: "Por cada dólar invertido en este webinar, cuántos entraron. Cuenta sólo la plata que ya se cobró.",
+            formula: "Cash Collected (CC) de las ventas del webinar ÷ Inversión total (pauta + DM Ads + WhatsApp API)",
+            ejemplo: "Invertiste US$ 5.000 y entraron US$ 12.500: ROAS on CC = 2,5x.",
+            componentes: () => [
+              { concepto: "Cash Collected (CC) de las ventas", valor: M(m.cobrado, 2) },
+              { concepto: "Inversión total", valor: M(m.inversionTotal, 2), signo: "÷" },
+              { concepto: "ROAS on CC", valor: m.roasCC > 0 ? `${num(m.roasCC, 2)}x` : "—", signo: "=" },
+            ],
+          }}
         />
         <Kpi
-          etiqueta="Profit cobrado" valor={M(m.beneficioCC)}
+          etiqueta="Profit on CC" valor={M(m.beneficioCC)}
           color={m.beneficioCC >= 0 ? "var(--success)" : "var(--danger)"}
-          sub={`${M(m.beneficioRev)} facturado`}
+          sub={`${M(m.beneficioRev)} on Revenue`}
+          info={{
+            ayuda: "Lo que dejó este webinar sobre lo que ya se cobró, después de lo que costó.",
+            formula: "Cash Collected (CC) − Inversión total − Comisiones − Procesadores − Otros gastos cargados a este webinar",
+            componentes: () => [
+              { concepto: "Cash Collected (CC) de las ventas", valor: M(m.cobrado, 2) },
+              { concepto: "Inversión total", valor: M(m.inversionTotal, 2), signo: "−" },
+              { concepto: "Comisiones", valor: M(m.comisiones, 2), signo: "−" },
+              { concepto: "Procesadores de pago", valor: M(m.procesador, 2), signo: "−" },
+              { concepto: "Otros gastos del webinar", valor: M(m.otrosGastos, 2), signo: "−" },
+              { concepto: "Profit on CC", valor: M(m.beneficioCC, 2), signo: "=" },
+            ],
+          }}
         />
         <Kpi etiqueta="CPA" valor={m.cpa > 0 ? M(m.cpa) : "—"} sub="lo que costó cada venta" />
         <Kpi
@@ -121,7 +148,7 @@ export function TarjetaResultado({ m, className }: { m: MetricasWebinar; classNa
           {M(m.cobrado)}
           {m.facturado > 0 && <span className="t-sm t-subtle"> · {pct(tasaCobro, 0)} de lo facturado</span>}
         </Dato>
-        <Dato label="ROAS facturado">
+        <Dato label="ROAS on Revenue">
           {m.roasRev > 0 ? <span style={{ color: tonoRoas(m.roasRev), fontWeight: 600 }}>{num(m.roasRev, 2)}x</span> : "—"}
         </Dato>
         <Dato label="Comisiones">{M(m.comisiones)}</Dato>
@@ -129,7 +156,7 @@ export function TarjetaResultado({ m, className }: { m: MetricasWebinar; classNa
         <Dato label="Inversión">{M(m.inversionTotal)}</Dato>
       </dl>
       <p className="t-sm t-subtle" style={{ marginTop: "var(--space-4)" }}>
-        Profit = la plata menos pauta, DM Ads, WhatsApp API, comisiones y procesador. Las ventas se suman solas
+        Profit = la plata menos pauta, DM Ads, WhatsApp API, comisiones, procesador y los otros gastos cargados a este webinar: Profit on CC parte de lo cobrado y Profit on Revenue, de lo facturado. Las ventas se suman solas
         cuando se cargan con este webinar como origen.
       </p>
     </Card>

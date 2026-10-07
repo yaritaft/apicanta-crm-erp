@@ -64,10 +64,10 @@ const CALCULADAS: {
   { clave: "cobrado", titulo: "Cobrado", grupo: "Plata", ayuda: "La plata que ya entró de esas ventas.", tipo: "plata" },
   { clave: "comisiones", titulo: "Comisiones", grupo: "Plata", ayuda: "Closer y director, sobre lo cobrado neto de procesador.", tipo: "plata" },
   { clave: "procesador", titulo: "Procesador", grupo: "Plata", ayuda: "Lo que se quedaron las pasarelas de pago.", tipo: "plata" },
-  { clave: "roasRev", titulo: "ROAS facturado", grupo: "Plata", ayuda: "Facturado sobre inversión total.", tipo: "roas" },
-  { clave: "roasCC", titulo: "ROAS cobrado", grupo: "Plata", ayuda: "Cobrado sobre inversión total.", tipo: "roas" },
-  { clave: "beneficioRev", titulo: "Profit facturado", grupo: "Plata", ayuda: "Facturado menos inversión, comisiones y procesador.", tipo: "profit" },
-  { clave: "beneficioCC", titulo: "Profit cobrado", grupo: "Plata", ayuda: "Cobrado menos inversión, comisiones y procesador.", tipo: "profit" },
+  { clave: "roasRev", titulo: "ROAS on Revenue", grupo: "Plata", ayuda: "Revenue (lo facturado) sobre la inversión total.", tipo: "roas" },
+  { clave: "roasCC", titulo: "ROAS on CC", grupo: "Plata", ayuda: "Cash Collected (CC, lo cobrado) sobre la inversión total.", tipo: "roas" },
+  { clave: "beneficioRev", titulo: "Profit on Revenue", grupo: "Plata", ayuda: "Revenue menos inversión, comisiones, procesador y los otros gastos cargados a este webinar.", tipo: "profit" },
+  { clave: "beneficioCC", titulo: "Profit on CC", grupo: "Plata", ayuda: "Cash Collected (CC) menos inversión, comisiones, procesador y los otros gastos cargados a este webinar.", tipo: "profit" },
 ];
 
 const COLUMNAS_FIJAS: DefColumna[] = [
@@ -324,33 +324,74 @@ export default function Webinars() {
 
       <div className="grid-stats">
         <StatCard
-          hero etiqueta="ROAS cobrado" valor={total.roasCC > 0 ? `${num(total.roasCC, 2)}x` : "—"}
-          delta={total.roasRev > 0 ? `${num(total.roasRev, 2)}x facturado` : undefined} direccion="accent"
+          hero etiqueta="ROAS on CC" valor={total.roasCC > 0 ? `${num(total.roasCC, 2)}x` : "—"}
+          delta={total.roasRev > 0 ? `${num(total.roasRev, 2)}x on Revenue` : undefined} direccion="accent"
           contexto={`${filtrados.length} ${filtrados.length === 1 ? "webinar" : "webinars"} · ${periodoTexto}`}
-          ayuda="Cash collected sobre la inversión total (pauta + DM Ads + WhatsApp API)."
+          info={{
+            ayuda: "Por cada dólar invertido en los webinars, cuántos entraron. Cuenta sólo la plata que ya se cobró de sus ventas.",
+            formula: "Cash Collected (CC) de las ventas de los webinars ÷ Inversión total (pauta + DM Ads + WhatsApp API)",
+            ejemplo: "Invertiste US$ 5.000 y de las ventas de esos webinars entraron US$ 12.500: ROAS on CC = 2,5x. El ROAS on Revenue usa lo facturado en vez de lo cobrado.",
+            periodo: periodoTexto,
+            componentes: () => [
+              { concepto: "Cash Collected (CC) de las ventas", valor: M(total.cobrado, 2) },
+              { concepto: "Inversión total", valor: M(total.inversionTotal, 2), signo: "÷" },
+              { concepto: "ROAS on CC", valor: total.roasCC > 0 ? `${num(total.roasCC, 2)}x` : "—", signo: "=" },
+              { concepto: "ROAS on Revenue (facturado ÷ inversión)", valor: total.roasRev > 0 ? `${num(total.roasRev, 2)}x` : "—", nota: `${M(total.facturado, 2)} ÷ ${M(total.inversionTotal, 2)}` },
+            ],
+          }}
         />
-        <StatCard etiqueta="Inversión total" valor={M(total.inversionTotal)} contexto="pauta, DM Ads y WhatsApp API" />
+        <StatCard
+          etiqueta="Inversión total" valor={M(total.inversionTotal)} contexto="pauta, DM Ads y WhatsApp API"
+          info={{
+            ayuda: "Todo lo que costó captar a la gente de estos webinars.",
+            formula: "Pauta de captación + DM Ads + WhatsApp API, de cada webinar que se ve, sumados",
+            periodo: periodoTexto,
+          }}
+        />
         <StatCard
           etiqueta="Formularios" valor={num(total.formularios)}
           contexto={total.formularios > 0 ? `${M(total.cplFormulario, 2)} cada uno` : "todavía sin cargar"}
+          info={{
+            ayuda: "Gente que completó el formulario de registro, y lo que costó cada una.",
+            formula: "Formularios completados de cada webinar, sumados.\nCosto por formulario = Inversión total ÷ Formularios completados",
+            periodo: periodoTexto,
+            componentes: total.formularios > 0 ? () => [
+              { concepto: "Inversión total", valor: M(total.inversionTotal, 2) },
+              { concepto: "Formularios completados", valor: num(total.formularios), signo: "÷" },
+              { concepto: "Costo por formulario", valor: M(total.cplFormulario, 2), signo: "=" },
+            ] : undefined,
+          }}
         />
         <StatCard
-          etiqueta="Profit cobrado" valor={M(total.beneficioCC)}
+          etiqueta="Profit on CC" valor={M(total.beneficioCC)}
           contexto={total.ventas > 0
             ? `${num(total.ventas)} ${total.ventas === 1 ? "venta" : "ventas"} · ${M(total.cpa)} de CPA`
             : "sin ventas todavía"}
-          ayuda="Lo cobrado menos pauta, DM Ads, WhatsApp API, comisiones y procesador."
+          info={{
+            ayuda: "Lo que dejaron los webinars sobre lo que ya se cobró, después de lo que costaron.",
+            formula: "Cash Collected (CC) − Inversión total − Comisiones − Procesadores − Otros gastos cargados a esos webinars",
+            ejemplo: "Entraron US$ 12.500; la inversión fue de US$ 5.000, las comisiones US$ 900 y el procesador US$ 400: Profit on CC = 12.500 − 5.000 − 900 − 400 = US$ 6.200.",
+            periodo: periodoTexto,
+            componentes: () => [
+              { concepto: "Cash Collected (CC) de las ventas", valor: M(total.cobrado, 2) },
+              { concepto: "Inversión total", valor: M(total.inversionTotal, 2), signo: "−" },
+              { concepto: "Comisiones", valor: M(total.comisiones, 2), signo: "−" },
+              { concepto: "Procesadores de pago", valor: M(total.procesador, 2), signo: "−" },
+              { concepto: "Otros gastos de los webinars", valor: M(total.otrosGastos, 2), signo: "−" },
+              { concepto: "Profit on CC", valor: M(total.beneficioCC, 2), signo: "=" },
+            ],
+          }}
         />
       </div>
 
       {serie.length > 1 && (
         <Card>
-          <CardHead titulo="Evolución del ROAS" sub="Webinar a webinar, en orden. La línea llena es lo cobrado; la punteada, lo facturado." />
+          <CardHead titulo="Evolución del ROAS" sub="Webinar a webinar, en orden. La línea llena es el ROAS on CC (lo cobrado); la punteada, el ROAS on Revenue (lo facturado)." />
           <AreaChart
             datos={serie.map(({ webinar, m: x }) => ({
               etiqueta: diaCorto(webinar.fecha).replace(/ \d{4}$/, ""), valor: x.roasCC, valor2: x.roasRev, completo: webinar.titulo,
             }))}
-            serie="ROAS cobrado" serie2="ROAS facturado" formato={(n) => `${num(n, 1)}x`} alto={220}
+            serie="ROAS on CC" serie2="ROAS on Revenue" formato={(n) => `${num(n, 1)}x`} alto={220}
           />
         </Card>
       )}
@@ -412,8 +453,8 @@ export default function Webinars() {
       </Card>
 
       <Ayuda titulo="Por qué hay dos ROAS" icono={<Info size={18} />}>
-        El <strong>facturado</strong> asume que todas las cuotas se van a pagar; el <strong>cobrado</strong> sólo
-        cuenta la plata que ya entró. Un webinar puede tener ROAS 5 facturado y 2 cobrado: vendió bien, pero
+        El <strong>ROAS on Revenue</strong> asume que todas las cuotas se van a pagar; el <strong>ROAS on CC</strong> sólo
+        cuenta la plata que ya entró. Un webinar puede tener ROAS on Revenue 5 y ROAS on CC 2: vendió bien, pero
         todavía falta cobrar. Los dos importan y por eso van siempre juntos.
       </Ayuda>
 

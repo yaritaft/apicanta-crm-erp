@@ -35,10 +35,10 @@ export function PorEmbudo({ e, mes }: { e: EstadoApp; mes: RangoMes }) {
     { clave: "cobrado", titulo: "Cobrado", tipo: "num", orden: (f) => f.cobrado, celda: (f) => M(f.cobrado), pie: M(suma("cobrado")) },
     { clave: "inversion", titulo: "Inversión", tipo: "num", orden: (f) => f.inversion, celda: (f) => (f.inversion ? M(f.inversion) : <span className="t-subtle">—</span>), pie: M(suma("inversion")) },
     { clave: "cac", titulo: "CAC", tipo: "num", orden: (f) => f.cac ?? -1, celda: (f) => (f.cac === null ? <span className="t-subtle">—</span> : M(f.cac)) },
-    { clave: "roasCC", titulo: "ROAS cobrado", tipo: "num", orden: (f) => f.roasCC ?? -1, celda: (f) => X(f.roasCC) },
-    { clave: "roasRev", titulo: "ROAS facturado", tipo: "num", orden: (f) => f.roasRev ?? -1, celda: (f) => X(f.roasRev) },
-    { clave: "profitCC", titulo: "Profit (cobrado)", tipo: "num", orden: (f) => f.profitCC, celda: (f) => signo(f.profitCC), pie: signo(suma("profitCC")) },
-    { clave: "profitRev", titulo: "Profit (facturado)", tipo: "num", orden: (f) => f.profitRev, celda: (f) => signo(f.profitRev), pie: signo(suma("profitRev")) },
+    { clave: "roasCC", titulo: "ROAS on CC", tipo: "num", orden: (f) => f.roasCC ?? -1, celda: (f) => X(f.roasCC) },
+    { clave: "roasRev", titulo: "ROAS on Revenue", tipo: "num", orden: (f) => f.roasRev ?? -1, celda: (f) => X(f.roasRev) },
+    { clave: "profitCC", titulo: "Profit on CC", tipo: "num", orden: (f) => f.profitCC, celda: (f) => signo(f.profitCC), pie: signo(suma("profitCC")) },
+    { clave: "profitRev", titulo: "Profit on Revenue", tipo: "num", orden: (f) => f.profitRev, celda: (f) => signo(f.profitRev), pie: signo(suma("profitRev")) },
   ];
 
   /* El orden va en el link como ?orden-embudos. */

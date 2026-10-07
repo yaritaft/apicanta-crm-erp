@@ -127,7 +127,7 @@ export function DetalleAnuncio({ ad, rango, M, onCerrar, onIr }: {
               <Dato label="Costo por venta">{f.ventas > 0 ? M(f.costoPorVenta) : "—"}</Dato>
               <Dato label="Facturado">{M(f.facturado)}</Dato>
               <Dato label="Cobrado">{M(f.cobrado)}</Dato>
-              <Dato label="ROAS">{f.inversion > 0 ? `${num(f.roas, 2)}x` : "—"}</Dato>
+              <Dato label="ROAS on CC">{f.inversion > 0 ? `${num(f.roas, 2)}x` : "—"}</Dato>
             </dl>
           </div>
 

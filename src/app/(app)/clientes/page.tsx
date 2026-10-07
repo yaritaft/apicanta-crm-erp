@@ -92,11 +92,42 @@ export default function Clientes() {
       />
 
       <div className="grid-stats">
-        <StatCard hero etiqueta="Clientes activos" valor={num(activos.length)} contexto={`${num(todos.length)} compraron alguna vez`} />
-        <StatCard etiqueta="Al día" valor={num(cuenta("al-dia"))} contexto="con cuotas por venir" />
-        <StatCard etiqueta="Atrasados" valor={num(cuenta("atrasado"))} direccion={cuenta("atrasado") > 0 ? "down" : "neutral"}
-          contexto="con una cuota vencida sin pagar" />
-        <StatCard etiqueta="Les falta pagar" valor={M(activos.reduce((a, c) => a + c.saldo, 0))} contexto="entre todos los activos" />
+        <StatCard
+          hero etiqueta="Clientes activos" valor={num(activos.length)} contexto={`${num(todos.length)} compraron alguna vez`}
+          info={{
+            ayuda: "La gente que compró y no está dada de baja: la que está al día, la atrasada y la que ya pagó todo.",
+            formula: "Clientes con al menos una venta activa (sin las canceladas ni las reembolsadas)\nClientes activos = Al día + Atrasados + Pagaron todo",
+            componentes: () => [
+              { concepto: "Al día", valor: num(cuenta("al-dia")) },
+              { concepto: "Atrasados", valor: num(cuenta("atrasado")), signo: "+" },
+              { concepto: "Pagaron todo", valor: num(cuenta("pago-todo")), signo: "+" },
+              { concepto: "Clientes activos", valor: num(activos.length), signo: "=" },
+            ],
+          }}
+        />
+        <StatCard
+          etiqueta="Al día" valor={num(cuenta("al-dia"))} contexto="con cuotas por venir"
+          info={{
+            ayuda: "Clientes activos sin ninguna cuota vencida, que todavía tienen cuotas por pagar.",
+            formula: "Clientes con una venta activa, sin cuotas vencidas sin pagar y con saldo por cobrar",
+          }}
+        />
+        <StatCard
+          etiqueta="Atrasados" valor={num(cuenta("atrasado"))} direccion={cuenta("atrasado") > 0 ? "down" : "neutral"}
+          contexto="con una cuota vencida sin pagar"
+          info={{
+            ayuda: "Clientes activos con al menos una cuota cuyo vencimiento ya pasó y no se pagó.",
+            formula: "Clientes con una venta activa y al menos una cuota pendiente vencida",
+            href: "/finanzas/detalle",
+          }}
+        />
+        <StatCard
+          etiqueta="Les falta pagar" valor={M(activos.reduce((a, c) => a + c.saldo, 0))} contexto="entre todos los activos"
+          info={{
+            ayuda: "Lo que todavía falta cobrarles a los clientes activos, hayan vencido las cuotas o no.",
+            formula: "Suma, por cada venta activa, de lo que falta de cada cuota (monto − lo ya pagado), sin las canceladas",
+          }}
+        />
       </div>
 
       <div className="row-wrap">
