@@ -1,13 +1,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { POST as postGrupos } from "@/app/api/whatsapp/grupos/route";
 import { POST as postLatido } from "@/app/api/whatsapp/latido/route";
 import { GET as getEstado } from "@/app/api/whatsapp/estado/route";
 import { GET as getWebinar, POST as postWebinar } from "@/app/api/whatsapp/webinar/route";
-import { RepoMemoria, tokenValido, leerAccion, recibirGrupo, sinNumeros } from "@/lib/whatsapp-servidor";
+import { NextResponse } from "next/server";
+import { ErrorSinTablaQr, RepoMemoria, tokenValido, leerAccion, recibirGrupo, recibirLatido, responderEstado, sinNumeros, type DepsDeEstado } from "@/lib/whatsapp-servidor";
 import { validarCuerpoGrupo } from "@/lib/whatsapp";
 
 /* Las rutas de /api del lector, de punta a punta con el archivo de prueba
@@ -143,24 +144,9 @@ test("de punta a punta: latido, foto, avisos, atar al webinar y ver quién está
   });
 });
 
-test("«Contactado»: se marca con quién y cuándo, y se saca", async () => {
-  await conArchivo(async () => {
-    const marcar = (contactado: boolean) => postWebinar(pedido("/api/whatsapp/webinar", { accion: "contactado", webinarId: "web_8", personaId: "con_1", contactado, por: "Yari Taft" }));
-    const r = await leer(await marcar(true));
-    assert.equal(r.ok, true);
-    assert.equal(r.marca.por, "Yari Taft", "sin sesión (la app local) se anota lo que diga la pantalla");
-    assert.ok(r.marca.en);
-    const w = await leer(await getWebinar(new Request("http://localhost/api/whatsapp/webinar?id=web_8")));
-    assert.deepEqual(Object.keys(w.contactados), ["con_1"]);
-    assert.equal(w.contactados.con_1.por, "Yari Taft");
-    assert.equal((await leer(await marcar(false))).marca, null);
-    assert.deepEqual((await leer(await getWebinar(new Request("http://localhost/api/whatsapp/webinar?id=web_8")))).contactados, {});
-  });
-});
-
 test("lo que no se entiende de la pantalla se rechaza", async () => {
   await conArchivo(async () => {
-    for (const cuerpo of [{}, { accion: "borrar" }, { accion: "atar" }, { accion: "atar", grupoId: G }, { accion: "contactado", webinarId: "w", personaId: "p" }, "x"]) {
+    for (const cuerpo of [{}, { accion: "borrar" }, { accion: "contactado", webinarId: "w", personaId: "p" }, { accion: "atar" }, { accion: "atar", grupoId: G }, { accion: "soltar" }, "x"]) {
       assert.equal((await postWebinar(pedido("/api/whatsapp/webinar", cuerpo))).status, 400, JSON.stringify(cuerpo));
     }
     assert.equal((await getWebinar(new Request("http://localhost/api/whatsapp/webinar"))).status, 400);
@@ -239,4 +225,158 @@ test("los avisos de un grupo que todavía no tiene foto lo crean, y la primera f
 
 test("los errores de la base no llevan teléfonos", () => {
   assert.equal(sinNumeros("Key (grupoId, telefono)=(120363025246125486@g.us, 5491155551234) already exists"), "Key (grupoId, telefono)=(…@g.us, …) already exists");
+});
+
+/* ---------- el código QR para vincular el número ---------- */
+
+/* Una imagen de mentira con la forma que manda el lector: un SVG en base64. */
+const QR1 = `data:image/svg+xml;base64,${Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2 2"><path d="M0 0h1v1H0z"/></svg>').toString("base64")}`;
+const QR2 = `data:image/svg+xml;base64,${Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2 2"><path d="M1 1h1v1H1z"/></svg>').toString("base64")}`;
+const latidoCon = (cuerpo: object) => postLatido(pedido("/api/whatsapp/latido", { en: new Date().toISOString(), grupos: 0, ...cuerpo }, delLector));
+const verEstado = async (query = "") => leer(await getEstado(new Request(`http://localhost/api/whatsapp/estado${query}`)));
+
+test("el código QR viaja en el latido, se guarda aparte, se renueva y se borra al conectarse", async () => {
+  await conArchivo(async () => {
+    assert.equal((await latidoCon({ estado: "esperando_qr", conectado: false, qr: QR1 })).status, 200);
+
+    /* Sin pedirlo, el código no sale en ninguna parte de la respuesta. */
+    const sinPedir = await verEstado();
+    assert.equal(sinPedir.lector.estado, "esperando_qr");
+    assert.equal(sinPedir.qr, undefined);
+    assert.ok(!JSON.stringify(sinPedir).includes(QR1.slice(30, 60)), "ni escondido en otro campo");
+
+    /* Pidiéndolo (en la app local quien mira es el dueño): el código, y que lo puede ver. */
+    const conQr = await verEstado("?qr=1");
+    assert.deepEqual([conQr.puedeVerQr, conQr.qr], [true, QR1]);
+
+    /* WhatsApp cambia el código cada ~20 segundos: el nuevo reemplaza al viejo. */
+    await latidoCon({ estado: "esperando_qr", conectado: false, qr: QR2 });
+    assert.equal((await verEstado("?qr=1")).qr, QR2);
+    /* Un latido sin código (el periódico) no lo pisa. */
+    await latidoCon({ estado: "esperando_qr", conectado: false });
+    assert.equal((await verEstado("?qr=1")).qr, QR2);
+
+    /* Se conecta: el código viejo se borra de la base (es una credencial) y deja de verse. */
+    assert.equal((await latidoCon({ estado: "conectado", conectado: true, grupos: 2 })).status, 200);
+    assert.equal(JSON.parse(readFileSync(process.env.WHATSAPP_ARCHIVO_LOCAL!, "utf8")).qr, null);
+    const conectado = await verEstado("?qr=1");
+    assert.equal(conectado.lector.estado, "conectado");
+    assert.deepEqual([conectado.qr, conectado.puedeVerQr], [undefined, undefined]);
+  });
+});
+
+test("un código de hace más de un minuto no se muestra", async () => {
+  await conArchivo(async () => {
+    await latidoCon({ estado: "esperando_qr", conectado: false, qr: QR1 });
+    const archivo = process.env.WHATSAPP_ARCHIVO_LOCAL!;
+    const datos = JSON.parse(readFileSync(archivo, "utf8"));
+    datos.qr.en = new Date(Date.now() - 75_000).toISOString();
+    writeFileSync(archivo, JSON.stringify(datos));
+    const r = await verEstado("?qr=1");
+    assert.deepEqual([r.puedeVerQr, r.qr], [true, null]);
+    datos.qr.en = new Date(Date.now() - 20_000).toISOString();
+    writeFileSync(archivo, JSON.stringify(datos));
+    assert.equal((await verEstado("?qr=1")).qr, QR1);
+  });
+});
+
+test("el latido con un código malo se rechaza, y uno enorme también", async () => {
+  await conArchivo(async () => {
+    const malo = await latidoCon({ estado: "esperando_qr", conectado: false, qr: "https://malo.example/qr.png" });
+    assert.equal(malo.status, 400);
+    assert.match((await leer(malo)).error, /data URL/);
+    assert.equal((await latidoCon({ estado: "conectado", conectado: true, qr: QR1 })).status, 400, "un código sólo va esperando");
+    assert.equal((await latidoCon({ estado: "dormido", conectado: false })).status, 400);
+    const enorme = await latidoCon({ estado: "esperando_qr", conectado: false, qr: `data:image/png;base64,${"A".repeat(90_000)}` });
+    assert.equal(enorme.status, 413, "pasa el tope del pedido");
+    /* Y nada de eso dejó un código guardado (ni siquiera se escribió el archivo). */
+    const archivo = process.env.WHATSAPP_ARCHIVO_LOCAL!;
+    assert.ok(!existsSync(archivo) || JSON.parse(readFileSync(archivo, "utf8")).qr == null);
+  });
+});
+
+/* Quién pide: la persona del equipo con el nivel que le toque, sin tocar Supabase. */
+function dependencias(opciones: { webinars: boolean; ajustes: boolean; ahora?: Date; repo?: RepoMemoria }) {
+  const llamadas: string[] = [];
+  const repo = opciones.repo ?? new RepoMemoria();
+  const deps: DepsDeEstado = {
+    exigirArea: async (_p, areas, minimo) => {
+      llamadas.push(`${areas.join("+")}:${minimo}`);
+      const permitido = areas[0] === "ajustes" ? opciones.ajustes : opciones.webinars;
+      return permitido ? null : NextResponse.json({ error: "Tu tipo de cuenta no ve esto." }, { status: 403 });
+    },
+    repositorio: () => ({ repo, modo: "nube" }),
+    ahora: () => opciones.ahora ?? new Date(),
+  };
+  return { deps, repo, llamadas };
+}
+const pedirEstado = (query = "") => new Request(`http://localhost/api/whatsapp/estado${query}`);
+
+test("el código QR sólo lo ve quien edita Ajustes: con permiso sale, sin permiso no", async () => {
+  const dueno = dependencias({ webinars: true, ajustes: true });
+  await recibirLatido(dueno.repo, { en: new Date().toISOString(), conectado: false, estado: "esperando_qr", grupos: 0, qr: QR1 });
+
+  /* Con permiso: el código, y se preguntó por Ajustes con edición. */
+  const conPermiso = await leer(await responderEstado(pedirEstado("?qr=1"), dueno.deps));
+  assert.deepEqual([conPermiso.puedeVerQr, conPermiso.qr], [true, QR1]);
+  assert.deepEqual(dueno.llamadas, ["webinars:1", "ajustes:2"]);
+
+  /* Ve los Webinars pero no edita Ajustes (marketing, el director…): ve el estado, no el código. */
+  const sinPermiso = dependencias({ webinars: true, ajustes: false, repo: dueno.repo });
+  const r = await responderEstado(pedirEstado("?qr=1"), sinPermiso.deps);
+  assert.equal(r.status, 200);
+  const cuerpo = await leer(r);
+  assert.deepEqual([cuerpo.puedeVerQr, cuerpo.qr], [false, null]);
+  assert.equal(cuerpo.lector.estado, "esperando_qr", "el estado sí");
+  assert.ok(!JSON.stringify(cuerpo).includes(QR1.slice(30, 60)), "el código no viaja");
+
+  /* Sin ver los Webinars ni el estado: lo que diga la sesión (401 / 403). */
+  const nada = dependencias({ webinars: false, ajustes: true, repo: dueno.repo });
+  const rechazo = await responderEstado(pedirEstado("?qr=1"), nada.deps);
+  assert.equal(rechazo.status, 403);
+  assert.ok(!JSON.stringify(await leer(rechazo)).includes("base64"));
+  assert.deepEqual(nada.llamadas, ["webinars:1"], "ni se pregunta por Ajustes");
+});
+
+test("sin pedir el código (?qr=1) o sin que el lector lo espere, no se pregunta por Ajustes ni se lee el código", async () => {
+  const a = dependencias({ webinars: true, ajustes: true });
+  await recibirLatido(a.repo, { en: new Date().toISOString(), conectado: false, estado: "esperando_qr", grupos: 0, qr: QR1 });
+  const sinPedir = await leer(await responderEstado(pedirEstado(), a.deps));
+  assert.deepEqual([sinPedir.qr, sinPedir.puedeVerQr], [undefined, undefined]);
+  assert.deepEqual(a.llamadas, ["webinars:1"]);
+
+  const b = dependencias({ webinars: true, ajustes: true });
+  await recibirLatido(b.repo, { en: new Date().toISOString(), conectado: true, estado: "conectado", grupos: 1 });
+  const conectado = await leer(await responderEstado(pedirEstado("?qr=1"), b.deps));
+  assert.deepEqual([conectado.qr, conectado.puedeVerQr], [undefined, undefined]);
+  assert.deepEqual(b.llamadas, ["webinars:1"], "conectado no hay código: se ahorra la pregunta");
+});
+
+test("el código vence al minuto, medido con la hora del servidor", async () => {
+  const hoy = new Date("2026-10-07T18:00:00.000Z");
+  const repo = new RepoMemoria();
+  await recibirLatido(repo, { en: hoy.toISOString(), conectado: false, estado: "esperando_qr", grupos: 0, qr: QR1 }, hoy);
+  const alos = (seg: number) => dependencias({ webinars: true, ajustes: true, repo, ahora: new Date(hoy.getTime() + seg * 1000) });
+  assert.equal((await leer(await responderEstado(pedirEstado("?qr=1"), alos(59).deps))).qr, QR1);
+  assert.equal((await leer(await responderEstado(pedirEstado("?qr=1"), alos(60).deps))).qr, null);
+  assert.equal((await leer(await responderEstado(pedirEstado("?qr=1"), alos(600).deps))).qr, null);
+});
+
+test("sin la tabla del código, el latido entra igual y la pantalla lo dice", async () => {
+  class SinTablaQr extends RepoMemoria {
+    async guardarQr(): Promise<void> { throw new ErrorSinTablaQr(); }
+    async leerQr(): Promise<never> { throw new ErrorSinTablaQr(); }
+    async borrarQr(): Promise<void> { throw new ErrorSinTablaQr(); }
+  }
+  const repo = new SinTablaQr();
+  const r = await recibirLatido(repo, { en: new Date().toISOString(), conectado: false, estado: "esperando_qr", grupos: 0, qr: QR1 });
+  assert.match(r.aviso ?? "", /whatsapp-lector-qr\.sql/);
+  assert.equal((await repo.leerLatido())?.estado, "esperando_qr", "el estado se guardó igual");
+  /* Un latido normal, sin código, no molesta con avisos. */
+  assert.equal((await recibirLatido(repo, { en: new Date().toISOString(), conectado: true, estado: "conectado", grupos: 1 })).aviso, undefined);
+
+  const d = dependencias({ webinars: true, ajustes: true, repo });
+  await repo.guardarLatido({ ultimoLatido: new Date().toISOString(), enLector: null, conectado: false, grupos: 0, estado: "esperando_qr" });
+  const cuerpo = await leer(await responderEstado(pedirEstado("?qr=1"), d.deps));
+  assert.deepEqual([cuerpo.qr, cuerpo.qrSinTabla, cuerpo.puedeVerQr], [null, true, true]);
 });

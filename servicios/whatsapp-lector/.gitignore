@@ -1,0 +1,8 @@
+# La sesión de WhatsApp (las llaves del número conectado) y los secretos: NUNCA al repo.
+auth/
+auth.*/
+.env
+.env.*
+!.env.example
+node_modules/
+*.log

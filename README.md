@@ -1173,3 +1173,59 @@ en la otra.
   (`pagosDeLlamadas`, `lib/crm-tabla.ts`).
 
 *Pruebas:* `pruebas/crm-cobros.test.ts`.
+
+## WhatsApp de lectura: quién se unió al grupo del webinar (lote H de la reunión del 02/10)
+
+Un número de WhatsApp dedicado, vinculado como dispositivo a un servicio chico en el VPS (`servicios/whatsapp-lector/`,
+**sólo lectura**: no manda, no marca como leído, no aparece «en línea»), lee los grupos de los talleres y le avisa a la app
+quién **entra y sale**. Así Formularios sabe solo quién se anotó **y se unió**, sin que nadie lo marque a mano. La guía para
+instalarlo (Ubuntu en Hostinger, systemd) está en `servicios/whatsapp-lector/README.md`; es una conexión **no oficial**
+(Baileys) y WhatsApp podría bloquear el número, ver ahí los límites.
+
+**Qué se ve** (`src/lib/whatsapp.ts` es la lógica, `whatsapp-servidor.ts` el servidor, `whatsapp-cliente.ts` el cliente):
+
+- **Ajustes → WhatsApp** (`?seccion=whatsapp`, `components/ajustes/WhatsappLector.tsx`): cómo está el lector (Conectado, Esperando
+  que lo escaneen, Reconectando, Sesión cerrada, Sin señal), **el código QR para vincular el número** (se escanea desde esta
+  pantalla; se renueva solo y desaparece con «Conectado: vigila N grupos»), los grupos que detectó y **a qué webinar
+  corresponde cada uno**: los grupos se llaman «Taller Online dd/mm/aa #N»; la sugerencia lee la fecha, ignora el `#N`
+  (varios grupos son del mismo webinar) y «Atar los sugeridos» los ata de una.
+- **Ficha del webinar**: la tarjeta «Grupo de WhatsApp» (`components/webinars/GrupoWhatsapp.tsx`): atar uno o varios grupos,
+  cuántos hay adentro, cuántos sin teléfono visible, y el paso a Formularios.
+- **Formularios**: cada registro dice si el lector lo ve **en el grupo** («Unida» / «No en el grupo»), el contador
+  «N de M se unieron», filtros, «Marcar como unidos a los que están adentro» (usa `registros_webinar`, el lote F) y copiar
+  los que faltan. **No hay un «contactado» propio**: ya lo lleva Formularios y dos listas serían dos verdades.
+- **Aviso** en Webinars, Dashboard y Formularios si el lector pasa 15 minutos sin latido o sin conexión.
+
+**Cómo conversan** (un secreto compartido, `Authorization: Bearer <WHATSAPP_LECTOR_TOKEN>`; sin él 401, y 503 si la app no
+tiene la variable): `POST /api/whatsapp/grupos` (la «foto» de un grupo o un aviso de `entro` / `salio`) y
+`POST /api/whatsapp/latido` (cada 2 minutos y en cada cambio: `estado` y, si espera el escaneo, el código). La pantalla
+lee `GET /api/whatsapp/estado` y `GET/POST /api/whatsapp/webinar` con la sesión de quien mira (ve los Webinars; atar
+pide editarlos). Los teléfonos se normalizan en `src/lib/telefonos-wpp.ts` (AR `549…`, MX `52…`, CO, ES…) y un participante
+que WhatsApp muestra sin teléfono (LID) se **cuenta pero no se compara**: mientras un grupo los tenga, una foto nunca
+marca a nadie como «salió».
+
+**El código QR es una credencial** (quien lo escanea lee ese WhatsApp): vive en `whatsapp_qr`, una tabla **sin políticas ni
+permisos** para el navegador; sólo el servidor la escribe (el latido) y la lee, `GET /api/whatsapp/estado?qr=1` lo da
+únicamente a quien edita Ajustes, si el lector está esperándolo y tiene menos de un minuto, y se borra al conectarse. Se
+dibuja con `<img>` (nunca como HTML). No se escribe en ningún registro.
+
+**Para publicarlo** (el SQL es idempotente y aditivo; sin él la app anda igual y lo avisa en la pantalla):
+
+1. Supabase → SQL Editor: `supabase/whatsapp-lector.sql` (tablas `whatsapp_lector`, `whatsapp_grupos`, `whatsapp_miembros`;
+   leen quienes ven Webinars, escribe sólo el servidor) y **después** `supabase/whatsapp-lector-qr.sql` (la columna `estado` y la
+   tabla del código). Si alguna vez se corrió una versión anterior con `whatsapp_contactados`, esa tabla ya no se usa y se puede borrar.
+2. Vercel: `WHATSAPP_LECTOR_TOKEN` (`openssl rand -hex 32`; el mismo valor va en el `.env` del servicio) y volver a publicar.
+   Necesita `SUPABASE_SERVICE_ROLE_KEY`, que ya está por los webhooks.
+3. En el VPS: copiar la carpeta del servicio, `npm install` y dejarlo con systemd (la guía lo explica). El número se vincula
+   desde Ajustes → WhatsApp, sin terminal.
+
+**Probarlo sin WhatsApp ni Supabase** (la app local, sin variables de nube): las rutas guardan en un archivo
+(`WHATSAPP_ARCHIVO_LOCAL`, o uno en la carpeta temporal; sólo fuera de producción y sin equipo configurado). Con
+`WHATSAPP_LECTOR_TOKEN=<TU_TOKEN> npm run dev:local` y, en otra terminal, `cd servicios/whatsapp-lector && APP_URL=http://localhost:3011
+WHATSAPP_LECTOR_TOKEN=<TU_TOKEN> npm run simulado` (o `npm run simulado:qr` para ver aparecer, cambiar y desaparecer el código)
+aparece el grupo de ejemplo en Ajustes → WhatsApp.
+
+*Pruebas:* `pruebas/whatsapp.test.ts`, `whatsapp-rutas.test.ts` (401/503/400/413, el recorrido con archivo, el código y sus permisos),
+`telefonos-wpp.test.ts`, y las del servicio (`cd servicios/whatsapp-lector && npm test`, con un WhatsApp de mentira). *Falta:* la
+conexión de verdad con WhatsApp (las formas de los datos de Baileys están tomadas de sus tipos), el SQL con RLS real y la
+instalación en Hostinger.

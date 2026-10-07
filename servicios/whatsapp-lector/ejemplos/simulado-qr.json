@@ -1,0 +1,19 @@
+{
+  "_comentario": "Ensaya la vinculación del número sin WhatsApp: el lector espera que lo escaneen (con dos códigos distintos, como pasa cada ~20 segundos), se reconecta y queda conectado con su grupo. Con la app abierta en Ajustes → WhatsApp se ve aparecer y cambiar el código, y desaparecer al conectarse. Se manda con: npm run simulado:qr. Los textos de «qr» son inventados: el dibujo de prueba no se puede escanear.",
+  "pasos": [
+    { "tipo": "estado", "estado": "reconectando" },
+    { "tipo": "esperar", "ms": 3000 },
+    { "tipo": "estado", "estado": "esperando_qr", "qr": "2@PRUEBA-UNO,ClaveDeEjemploUno,ClaveDeEjemploDos,1" },
+    { "tipo": "esperar", "ms": 9000 },
+    { "tipo": "estado", "estado": "esperando_qr", "qr": "2@PRUEBA-DOS,ClaveDeEjemploTres,ClaveDeEjemploCuatro,1" },
+    { "tipo": "esperar", "ms": 9000 },
+    { "tipo": "estado", "estado": "reconectando" },
+    { "tipo": "esperar", "ms": 3000 },
+    { "tipo": "estado", "estado": "conectado", "grupos": 1 },
+    {
+      "tipo": "foto",
+      "grupo": { "id": "120363000000000001@g.us", "nombre": "Taller Online 08/10/26 #1" },
+      "participantes": [ "5491155550001@s.whatsapp.net", "5491155550002@s.whatsapp.net", { "id": "100000000000003@lid" } ]
+    }
+  ]
+}

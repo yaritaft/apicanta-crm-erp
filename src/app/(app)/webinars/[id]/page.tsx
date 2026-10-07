@@ -13,6 +13,7 @@ import {
 } from "@/components/webinars/FichaNumeros";
 import { TarjetaCambios, TarjetaNotas } from "@/components/webinars/FichaNotas";
 import { PersonasWebinar } from "@/components/webinars/PersonasWebinar";
+import { GrupoWhatsapp } from "@/components/webinars/GrupoWhatsapp";
 import { AgendasWebinar } from "@/components/webinars/AgendasWebinar";
 import { TarjetaVias } from "@/components/webinars/ViasWebinar";
 import { BotonInforme } from "@/components/webinars/BotonInforme";
@@ -161,6 +162,8 @@ export default function WebinarFicha() {
       <TarjetaVias w={w} />
 
       {videoId && <ChatDelVivo w={w} videoId={videoId} lugar="abajo" />}
+
+      <GrupoWhatsapp w={w} />
 
       <PersonasWebinar w={w} />
 

@@ -1,0 +1,114 @@
+/* ==================================================================
+   WhatsApp de lectura: el grupo de un webinar (quién se unió) y el estado
+   del lector en Ajustes. Aparte de globals.css porque es de estas pantallas.
+   ================================================================== */
+
+/* ---------- La tarjeta del grupo, en la ficha del webinar ---------- */
+.wa-cabeza { display: flex; flex-direction: column; gap: var(--space-4); padding: var(--space-5) var(--space-5) var(--space-4); }
+.wa-cabeza .card-head { margin-bottom: 0; flex-wrap: wrap; }
+.wa-cabeza .card-head > div:first-child { flex: 1 1 320px; }
+
+.wa-grupos { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.wa-grupo {
+  display: inline-flex; align-items: center; gap: 8px; max-width: 100%; padding: 3px 4px 3px 12px;
+  border: 1px solid var(--border); border-radius: var(--radius-full); background: var(--surface-200);
+  font-size: 13px; line-height: 20px;
+}
+.wa-grupo > svg { flex: none; color: var(--success); }
+.wa-grupo__nombre { min-width: 0; max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; color: var(--ink); }
+.wa-grupo__datos { white-space: nowrap; color: var(--ink-subtle); padding-right: 8px; }
+.wa-grupo__datos--aviso { color: var(--warning); }
+.wa-agregar { width: min(100%, 380px); }
+
+/* Los números de la tarjeta (tres) */
+.wa-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--space-3); }
+.wa-kpi {
+  display: flex; flex-direction: column; gap: 2px; min-width: 0; padding: 12px 14px;
+  background: var(--surface-200); border: 1px solid var(--border); border-radius: var(--radius-md);
+}
+.wa-kpi__etiqueta { display: flex; align-items: center; gap: 4px; font-size: 12px; line-height: 16px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-subtle); }
+.wa-kpi__valor {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-family: var(--font-display); font-size: 24px; line-height: 30px; font-weight: 600; color: var(--ink); font-variant-numeric: tabular-nums;
+}
+.wa-kpi__nota { font-size: 12.5px; line-height: 18px; color: var(--ink-subtle); }
+.wa-kpis--tres { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+
+/* La barra de arriba de la tabla: el buscador, los filtros y los botones de copiar */
+.wa-barra { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); }
+.wa-barra .hk-input { flex: 1 1 240px; max-width: 360px; min-width: 200px; }
+.wa-barra__filtros { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); }
+.wa-barra__copiar { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); margin-left: auto; }
+
+/* ---------- Formularios: lo que dice el lector ---------- */
+.wa-formularios { display: flex; flex-direction: column; gap: var(--space-3); }
+.wa-formularios__titulo { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); font-weight: 600; color: var(--ink); }
+.wa-formularios__titulo > svg { color: var(--success); flex: none; }
+.wa-formularios__titulo .wa-formularios__grupos { font-weight: 400; color: var(--ink-subtle); font-size: 13px; line-height: 20px; }
+.wa-formularios__resumen { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px var(--space-4); }
+.wa-formularios__numero { font-family: var(--font-display); font-size: 26px; line-height: 32px; font-weight: 600; color: var(--success); font-variant-numeric: tabular-nums; }
+.wa-formularios__resto { font-size: 13.5px; line-height: 20px; color: var(--ink-muted); }
+.wa-formularios__resto strong { color: var(--ink); font-variant-numeric: tabular-nums; }
+.wa-lector-insignia { display: inline-flex; margin-left: 6px; vertical-align: middle; }
+
+/* ---------- Ajustes → WhatsApp ---------- */
+/* El estado de la conexión, grande. */
+.wa-estado-grande {
+  display: flex; align-items: center; gap: var(--space-4); padding: var(--space-4) var(--space-5);
+  border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface-200);
+}
+.wa-estado-grande__icono {
+  flex: none; display: grid; place-items: center; width: 46px; height: 46px; border-radius: var(--radius-full);
+  background: var(--surface-300); color: var(--ink-muted);
+}
+.wa-estado-grande__titulo { font-family: var(--font-display); font-size: 22px; line-height: 28px; font-weight: 600; color: var(--ink); }
+.wa-estado-grande__detalle { margin-top: 2px; font-size: 13.5px; line-height: 20px; color: var(--ink-muted); }
+.wa-estado-grande--success { border-color: color-mix(in srgb, var(--success) 45%, var(--border)); background: color-mix(in srgb, var(--success) 7%, var(--surface-200)); }
+.wa-estado-grande--success .wa-estado-grande__icono { background: var(--success-soft); color: var(--success); }
+.wa-estado-grande--warning { border-color: color-mix(in srgb, var(--warning) 45%, var(--border)); background: color-mix(in srgb, var(--warning) 7%, var(--surface-200)); }
+.wa-estado-grande--warning .wa-estado-grande__icono { background: var(--warning-soft); color: var(--warning); }
+.wa-estado-grande--danger { border-color: color-mix(in srgb, var(--danger) 50%, var(--border)); background: color-mix(in srgb, var(--danger) 8%, var(--surface-200)); }
+.wa-estado-grande--danger .wa-estado-grande__icono { background: var(--danger-soft); color: var(--danger); }
+.wa-conectado-aviso {
+  display: flex; align-items: center; gap: 8px; margin: 0; padding: 10px 14px;
+  border: 1px solid var(--success); border-radius: var(--radius-md); background: var(--success-soft); color: var(--success); font-weight: 600; font-size: 14px;
+}
+
+/* El código QR para vincular el número: siempre sobre blanco, aunque el tema sea oscuro (si no, el teléfono no lo lee). */
+.wa-qr {
+  display: grid; grid-template-columns: auto minmax(0, 1fr); gap: var(--space-5); align-items: start;
+  padding: var(--space-4); border: 1px dashed var(--border-strong); border-radius: var(--radius-lg);
+}
+.wa-qr__marco { display: grid; place-items: center; width: 264px; height: 264px; background: #fff; border-radius: var(--radius-md); overflow: hidden; }
+.wa-qr__imagen { display: block; width: 264px; height: 264px; }
+.wa-qr__espera { padding: var(--space-4); text-align: center; font-size: 14px; line-height: 20px; color: #555; }
+.wa-qr__titulo { display: flex; align-items: center; gap: 8px; margin: 0; font-family: var(--font-display); font-size: 18px; line-height: 24px; font-weight: 600; color: var(--ink); }
+.wa-qr__cuidado { display: flex; align-items: flex-start; gap: 6px; margin: 0; font-size: 13px; line-height: 20px; color: var(--warning); }
+.wa-qr__cuidado > svg { flex: none; margin-top: 3px; }
+.wa-qr__sin-permiso { display: flex; align-items: flex-start; gap: 6px; margin: 0; }
+.wa-qr__sin-permiso > svg { flex: none; margin-top: 3px; }
+.wa-rotulo { margin-left: 8px; vertical-align: middle; }
+.wa-pasos { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 4px; font-size: 13px; line-height: 20px; color: var(--ink-muted); }
+.wa-pasos code, .wa-codigo { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; padding: 1px 6px; border-radius: var(--radius-sm); background: var(--surface-300); color: var(--ink); }
+.wa-sugerencia { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-top: 6px; font-size: 12.5px; line-height: 18px; color: var(--ink-subtle); white-space: normal; /* las celdas de la tabla no cortan renglones: el aviso largo ensanchaba la tabla */ }
+.wa-grupo-fila { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.wa-grupo-fila__nombre { font-weight: 600; color: var(--ink); overflow-wrap: anywhere; }
+.wa-selector-webinar { min-width: 220px; max-width: 320px; }
+
+@media (max-width: 900px) {
+  .wa-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .wa-kpis--tres { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (max-width: 720px) {
+  .wa-cabeza { padding: var(--space-4); }
+  .wa-estado-grande { padding: var(--space-3) var(--space-4); }
+  .wa-qr { grid-template-columns: 1fr; justify-items: center; }
+  .wa-barra__copiar { margin-left: 0; }
+}
+@media (max-width: 640px) {
+  .wa-kpis--tres { grid-template-columns: 1fr; }
+}
+@media (max-width: 480px) {
+  .wa-kpis { grid-template-columns: 1fr; }
+  .wa-grupo__nombre { max-width: 200px; }
+}

@@ -19,6 +19,14 @@ import { claveInternacional, clavesDeTelefono, digitosDe, numeroParaWhatsapp } f
 
 /* ---------- Lo que se guarda ---------- */
 
+/** Cómo está el lector con WhatsApp:
+    - conectado: mirando los grupos;
+    - esperando_qr: hay que vincular el número, y espera que escaneen el código;
+    - reconectando: se cortó o está arrancando, y vuelve a conectarse solo;
+    - cerrado: WhatsApp cerró la sesión y no pudo empezar otra (hay que mirar el servidor). */
+export type EstadoConexion = "conectado" | "esperando_qr" | "reconectando" | "cerrado";
+export const ESTADOS_DE_CONEXION: readonly EstadoConexion[] = ["conectado", "esperando_qr", "reconectando", "cerrado"];
+
 export interface LatidoLector {
   /** Cuándo llegó el último latido, según el servidor de la app. */
   ultimoLatido: string;
@@ -26,6 +34,8 @@ export interface LatidoLector {
   enLector?: string | null;
   /** ¿Está conectado a WhatsApp? Puede estar vivo y desconectado (se cerró la sesión). */
   conectado: boolean;
+  /** Cómo está con WhatsApp. Un lector de antes no lo manda: se deduce de `conectado`. */
+  estado?: EstadoConexion | null;
   /** Cuántos grupos vigila. */
   grupos: number;
   /** La última vez que dijo estar conectado. */
@@ -59,14 +69,6 @@ export interface MiembroWhatsapp {
   creadoEn?: string;
 }
 
-export interface MarcaContactado {
-  webinarId: string;
-  personaId: string;
-  /** Quién la marcó (su correo, o el nombre en la app local). */
-  por: string | null;
-  en: string;
-}
-
 /* ---------- Cada cuánto, y cuándo se avisa ---------- */
 
 /** El lector manda un latido cada tanto: acá van los minutos. */
@@ -80,6 +82,10 @@ export const ALARMA_DESDE_MIN = 15;
 export const MAX_BYTES_CUERPO = 1_000_000;
 export const MAX_PARTICIPANTES_FOTO = 20_000;
 export const MAX_PARTICIPANTES_AVISO = 5_000;
+/** El código QR llega como imagen (data URL): un SVG o un PNG de pocos KB. */
+export const MAX_BYTES_QR = 80_000;
+/** Un código QR dura unos segundos (WhatsApp cambia el código cada ~20): pasado esto no se muestra más. */
+export const QR_VIGENTE_SEG = 60;
 
 const MIN = 60_000;
 const aIso = (ms: number) => new Date(ms).toISOString();
@@ -171,19 +177,46 @@ export function validarCuerpoGrupo(json: unknown, ahora: Date = new Date()): Val
   };
 }
 
-export interface CuerpoLatido { en: string; conectado: boolean; grupos: number; relojDesfasadoMin?: number }
+export interface CuerpoLatido {
+  en: string;
+  conectado: boolean;
+  grupos: number;
+  /** Cómo está con WhatsApp (siempre viene: si el lector no lo mandó, se deduce de `conectado`). */
+  estado: EstadoConexion;
+  /** El código QR para vincular, como imagen (data URL), sólo cuando el estado es «esperando_qr». */
+  qr?: string;
+  relojDesfasadoMin?: number;
+}
+
+const IMAGEN_QR = /^data:image\/(?:svg\+xml|png);base64,[A-Za-z0-9+/]+={0,2}$/;
 
 /** El cuerpo de POST /api/whatsapp/latido. */
 export function validarCuerpoLatido(json: unknown, ahora: Date = new Date()): Validacion<CuerpoLatido> {
-  if (!esObjeto(json)) return { ok: false, error: "El cuerpo tiene que ser un objeto JSON: { en, conectado, grupos }." };
-  if (typeof json.conectado !== "boolean") return { ok: false, error: "«conectado» tiene que ser true o false." };
+  if (!esObjeto(json)) return { ok: false, error: "El cuerpo tiene que ser un objeto JSON: { en, conectado, grupos, estado, qr }." };
+  if (json.conectado !== undefined && typeof json.conectado !== "boolean") return { ok: false, error: "«conectado» tiene que ser true o false." };
+  if (json.estado !== undefined && !ESTADOS_DE_CONEXION.includes(json.estado as EstadoConexion)) {
+    return { ok: false, error: "«estado» tiene que ser «conectado», «esperando_qr», «reconectando» o «cerrado»." };
+  }
+  if (json.conectado === undefined && json.estado === undefined) return { ok: false, error: "Falta «conectado» (true o false) o «estado»." };
+  const estado = (json.estado as EstadoConexion | undefined) ?? (json.conectado ? "conectado" : "reconectando");
+  const conectado = json.conectado === undefined ? estado === "conectado" : (json.conectado as boolean);
+  if (conectado !== (estado === "conectado")) return { ok: false, error: "«conectado» no coincide con «estado»." };
   if (json.grupos !== undefined && json.grupos !== null && !entero(json.grupos)) return { ok: false, error: "«grupos» tiene que ser un número entero, cero o más." };
+
+  let qr: string | undefined;
+  if (json.qr !== undefined && json.qr !== null) {
+    if (estado !== "esperando_qr") return { ok: false, error: "«qr» sólo va cuando el estado es «esperando_qr»." };
+    if (typeof json.qr !== "string" || json.qr.length > MAX_BYTES_QR) return { ok: false, error: `«qr» tiene que ser una imagen de hasta ${MAX_BYTES_QR / 1000} KB.` };
+    if (!IMAGEN_QR.test(json.qr)) return { ok: false, error: "«qr» tiene que ser una imagen en formato data URL (data:image/svg+xml;base64,… o data:image/png;base64,…)." };
+    qr = json.qr;
+  }
+
   const hora = horaDelAviso(json.en, ahora);
   if (!hora.ok) return hora;
   return {
     ok: true,
     valor: {
-      en: hora.valor.en, conectado: json.conectado, grupos: entero(json.grupos) ? (json.grupos as number) : 0,
+      en: hora.valor.en, conectado, estado, grupos: entero(json.grupos) ? (json.grupos as number) : 0, qr,
       relojDesfasadoMin: Math.abs(hora.valor.desfaseMin) > 10 ? hora.valor.desfaseMin : undefined,
     },
   };
@@ -277,7 +310,7 @@ export function contarDentro(existentes: readonly MiembroWhatsapp[], cambios: Ca
 
 /* ---------- ¿Está vivo el lector? ---------- */
 
-export type TipoEstadoLector = "nunca" | "conectado" | "desconectado" | "sin-senal" | "caido";
+export type TipoEstadoLector = "nunca" | "conectado" | "esperando-qr" | "reconectando" | "cerrado" | "sin-senal" | "caido";
 
 export interface EstadoLector {
   tipo: TipoEstadoLector;
@@ -305,7 +338,7 @@ export function estadoDelLector(l: LatidoLector | null | undefined, ahora: numbe
   if (!l) {
     return {
       tipo: "nunca", minutos: null, alarma: false, tono: "neutral", titulo: "Nunca se conectó",
-      detalle: "Todavía no llegó ningún latido del lector. Cuando lo prendas en el servidor y escanees el QR, aparece acá.",
+      detalle: "Todavía no llegó ningún latido del lector. Cuando lo prendas en el servidor, aparece acá el código QR para vincular el número.",
     };
   }
   const ultimo = Date.parse(l.ultimoLatido);
@@ -322,22 +355,37 @@ export function estadoDelLector(l: LatidoLector | null | undefined, ahora: numbe
       detalle: `Falta algún latido (llega uno cada ${LATIDO_CADA_MIN} minutos). Puede ser un corte corto: si sigue, salta el aviso.`,
     };
   }
-  if (l.conectado) {
+  /* Un lector de antes no manda «estado»: se deduce de «conectado». */
+  const conexion: EstadoConexion = l.estado ?? (l.conectado ? "conectado" : "reconectando");
+  if (conexion === "conectado") {
     return {
       tipo: "conectado", minutos: min, alarma: false, tono: "success", titulo: "Conectado",
       detalle: `Último latido ${min < 1 ? "recién" : `hace ${duracionTexto(min)}`}.`,
     };
   }
-  /* Vivo, pero sin WhatsApp: se cerró la sesión o se cayó la conexión. Si hace
-     poco que se cortó, puede volver solo. */
+  /* Vivo, pero sin WhatsApp: hay que vincular el número, se cortó la conexión o se cerró la
+     sesión. Si hace poco que pasó, puede arreglarse solo. */
   const referencia = Date.parse(l.ultimaConexion ?? "") || Date.parse(l.desde ?? "") || ultimo;
   const sinWhatsapp = Number.isFinite(referencia) ? Math.max(0, Math.floor((ahora - referencia) / MIN)) : 0;
   const alarma = sinWhatsapp > ALARMA_DESDE_MIN;
+  const tono = alarma ? "danger" : "warning";
+  if (conexion === "esperando_qr") {
+    return {
+      tipo: "esperando-qr", minutos: min, alarma, tono, titulo: "Esperando que lo escaneen",
+      detalle: "Hay que vincular el número del lector: se escanea un código QR con el teléfono de ese número, como al abrir WhatsApp Web.",
+    };
+  }
+  if (conexion === "cerrado") {
+    return {
+      tipo: "cerrado", minutos: min, alarma, tono, titulo: "Sesión cerrada",
+      detalle: "WhatsApp cerró la sesión del lector y no pudo empezar otra sola. Hay que revisar el servidor: puede haber otra copia del lector usando el mismo número.",
+    };
+  }
   return {
-    tipo: "desconectado", minutos: min, alarma, tono: alarma ? "danger" : "warning", titulo: "Sin conexión con WhatsApp",
+    tipo: "reconectando", minutos: min, alarma, tono, titulo: "Reconectando",
     detalle: l.ultimaConexion
-      ? `El servidor está prendido pero WhatsApp se cortó hace ${duracionTexto(sinWhatsapp)}. Si sigue, hay que escanear el QR de nuevo.`
-      : "El servidor está prendido pero todavía no se conectó a WhatsApp: falta escanear el QR.",
+      ? `El servidor está prendido pero WhatsApp se cortó hace ${duracionTexto(sinWhatsapp)}. Vuelve a conectarse solo; si no puede, pide escanear el código de nuevo.`
+      : "El servidor está prendido y todavía no se conectó a WhatsApp.",
   };
 }
 
@@ -379,7 +427,7 @@ export function fechasEnTexto(texto: string): FechaSuelta[] {
   sacar(/(^|[^\w.])(20\d{2})[-/.](\d{1,2})[-/.](\d{1,2})(?!\w)/g, (m) => poner(+m[4], +m[3], +m[2]));
   sacar(/(^|[^\w.])(20\d{2})(\d{2})(\d{2})(?!\w)/g, (m) => poner(+m[4], +m[3], +m[2]));
   /* dd/mm/aaaa, dd/mm/aa y dd/mm */
-  sacar(/(^|[^\w.])(\d{1,2})[-/.](\d{1,2})(?:[-/.](\d{4}|\d{2}))?(?!\w)/g, (m) => {
+  sacar(/(^|[^\w.])(\d{1,2})(?:\s*\/\s*|[-.])(\d{1,2})(?:(?:\s*\/\s*|[-.])(\d{4}|\d{2}))?(?!\w)/g, (m) => {
     poner(+m[2], +m[3], m[4] ? (m[4].length === 2 ? 2000 + +m[4] : +m[4]) : undefined);
   });
   /* 24 de septiembre (de 2026), 24 sep, y sept 24 */
@@ -389,6 +437,25 @@ export function fechasEnTexto(texto: string): FechaSuelta[] {
   });
   sacar(new RegExp(`(^|[^\\w.])(${meses})\\.?\\s+(\\d{1,2})(?!\\d)`, "g"), (m) => poner(+m[3], MESES[m[2]]));
   return salida;
+}
+
+/** El número de un grupo en su nombre: «Taller Online 08/10/26 #2» es el 2. Los
+    talleres tienen varios grupos (WhatsApp deja 1.024 por grupo): #1, #2, #3… y todos
+    son del mismo webinar. Sin «#N», null. */
+export function numeroDeGrupo(nombre: string | null | undefined): number | null {
+  const m = /#\s*(\d{1,3})(?!\d)/.exec(nombre ?? "");
+  return m ? Number(m[1]) : null;
+}
+
+/** «Grupo #2», o vacío si el nombre no trae el número. */
+export const rotuloDeGrupo = (nombre: string | null | undefined): string => {
+  const n = numeroDeGrupo(nombre);
+  return n === null ? "" : `Grupo #${n}`;
+};
+
+/** Los grupos ordenados por su número (#1, #2…) y, si no lo traen, por nombre. */
+export function ordenarGrupos<T extends { nombre: string }>(grupos: readonly T[]): T[] {
+  return [...grupos].sort((a, b) => (numeroDeGrupo(a.nombre) ?? 1e9) - (numeroDeGrupo(b.nombre) ?? 1e9) || a.nombre.localeCompare(b.nombre, "es"));
 }
 
 /** El día de un webinar, en hora de Argentina (UTC−3): [año, mes, día]. */
@@ -403,19 +470,16 @@ const clave = (s: string) => sinTildes(s).toLowerCase().replace(/[^a-z0-9]+/g, "
 
 /** El webinar al que parece corresponder un grupo, por lo que dice su nombre:
     el título entero, o el día y el mes (con el año, si lo trae; si no, el que
-    cae más cerca de ahora). Es una sugerencia: el equipo la confirma. */
+    cae más cerca de ahora). Los grupos se llaman «Taller Online 08/10/26 #1»: se
+    mira la fecha (dd/mm/aa o dd/mm/aaaa) y el «#N» no cuenta, así todos los grupos
+    de un mismo taller dan el mismo webinar. Es una sugerencia: el equipo la confirma. */
 export function sugerirWebinar(
   nombreGrupo: string, webinars: readonly WebinarMinimo[], ahora: number = Date.now(),
 ): { webinarId: string; motivo: string } | null {
   const nombre = clave(nombreGrupo);
   if (!nombre) return null;
 
-  const porTitulo = webinars.find((w) => {
-    const t = clave(w.titulo);
-    return t.length >= 12 && nombre.includes(t);
-  });
-  if (porTitulo) return { webinarId: porTitulo.id, motivo: "El nombre del grupo es el título del webinar." };
-
+  /* La fecha manda: es lo que distingue un taller de otro, aunque todos se llamen «Taller Online». */
   const candidatos: { w: WebinarMinimo; exacto: boolean; cerca: number; fecha: FechaSuelta }[] = [];
   for (const f of fechasEnTexto(nombreGrupo)) {
     for (const w of webinars) {
@@ -426,10 +490,19 @@ export function sugerirWebinar(
   }
   candidatos.sort((a, b) => Number(b.exacto) - Number(a.exacto) || a.cerca - b.cerca);
   const mejor = candidatos[0];
-  if (!mejor) return null;
-  const dd = String(mejor.fecha.dia).padStart(2, "0");
-  const mm = String(mejor.fecha.mes).padStart(2, "0");
-  return { webinarId: mejor.w.id, motivo: `El nombre del grupo dice ${dd}/${mm}, el día de este webinar.` };
+  if (mejor) {
+    const dd = String(mejor.fecha.dia).padStart(2, "0");
+    const mm = String(mejor.fecha.mes).padStart(2, "0");
+    return { webinarId: mejor.w.id, motivo: `El nombre del grupo dice ${dd}/${mm}, el día de este webinar.` };
+  }
+
+  /* Sin fecha, el título entero, si es de un solo webinar. */
+  const porTitulo = webinars.filter((w) => {
+    const t = clave(w.titulo);
+    return t.length >= 12 && nombre.includes(t);
+  });
+  if (porTitulo.length === 1) return { webinarId: porTitulo[0].id, motivo: "El nombre del grupo es el título del webinar." };
+  return null;
 }
 
 /* ---------- Quién de un webinar está en el grupo ---------- */
@@ -442,6 +515,9 @@ export interface UnionDePersona {
   clave: string | null;
   /** Los dígitos para abrir un chat o copiar el número; vacío si no hay. */
   numero: string;
+  /** El número trae el código de país (se copia con el +). Si no, son los dígitos
+      tal cual se escribieron: no se inventa el país. */
+  completo: boolean;
   /** Si no está pero estuvo: cuándo salió. */
   salio?: string;
   /** Hay un teléfono escrito pero no se entiende como tal. */
@@ -460,13 +536,14 @@ export function unionDePersona(
   dentro: ReadonlySet<string>, salieron: ReadonlyMap<string, string> = new Map(),
 ): UnionDePersona {
   const escrito = (telefono ?? "").trim();
-  if (!escrito) return { estado: "sin-telefono", clave: null, numero: "" };
+  if (!escrito) return { estado: "sin-telefono", clave: null, numero: "", completo: false };
   const claves = clavesDeTelefono(escrito, pais);
-  if (claves.length === 0) return { estado: "sin-telefono", clave: null, numero: "", ilegible: true };
+  if (claves.length === 0) return { estado: "sin-telefono", clave: null, numero: "", completo: false, ilegible: true };
   const hallada = claves.find((c) => dentro.has(c));
-  if (hallada) return { estado: "unida", clave: hallada, numero: hallada };
+  if (hallada) return { estado: "unida", clave: hallada, numero: hallada, completo: true };
+  const numero = numeroParaWhatsapp(escrito, pais) || digitosDe(escrito);
   return {
-    estado: "no-unida", clave: claves[0], numero: numeroParaWhatsapp(escrito, pais) || digitosDe(escrito),
+    estado: "no-unida", clave: claves[0], numero, completo: claves.includes(numero),
     salio: claves.map((c) => salieron.get(c)).find(Boolean),
   };
 }
@@ -484,12 +561,55 @@ export function resumirUnion(estados: readonly EstadoUnion[]): ResumenDeUnion {
   return r;
 }
 
+/* ---------- Los registros de Formularios contra el grupo ---------- */
+
+export interface RegistroParaCruzar { id: string; telefono?: string; pais?: string; grupo?: string }
+
+/** Lo que dice el lector de cada registro: está en el grupo, no está o no tiene teléfono. */
+export function unionesDeRegistros(
+  registros: readonly RegistroParaCruzar[], dentro: Iterable<string>, salieron: Readonly<Record<string, string>> = {},
+): Map<string, UnionDePersona> {
+  const adentro = new Set(dentro);
+  const afuera = new Map(Object.entries(salieron));
+  return new Map(registros.map((r) => [r.id, unionDePersona(r.telefono, r.pais, adentro, afuera)] as const));
+}
+
+export interface ResumenDeRegistros { total: number; conTelefono: number; dentro: number; fuera: number; sinTelefono: number; porMarcar: number }
+
+/** Los números de arriba de Formularios. `porMarcar` son los que el lector ve adentro y la hoja todavía no marca «Unido». */
+export function resumenDeRegistros(registros: readonly RegistroParaCruzar[], uniones: ReadonlyMap<string, UnionDePersona>): ResumenDeRegistros {
+  const x = { total: registros.length, conTelefono: 0, dentro: 0, fuera: 0, sinTelefono: 0, porMarcar: 0 };
+  for (const r of registros) {
+    const u = uniones.get(r.id);
+    if (!u) continue;
+    if (u.estado === "sin-telefono") { x.sinTelefono++; continue; }
+    x.conTelefono++;
+    if (u.estado === "unida") { x.dentro++; if (r.grupo !== "unido") x.porMarcar++; } else x.fuera++;
+  }
+  return x;
+}
+
+export type FiltroDeLector = "" | "dentro" | "fuera" | "sin-telefono";
+
+/** Los registros que cumplen un filtro por lo que dice el lector. Sin filtro, todos. */
+export function filtrarPorLector<T extends { id: string }>(registros: readonly T[], filtro: FiltroDeLector, uniones: ReadonlyMap<string, UnionDePersona>): T[] {
+  if (!filtro) return [...registros];
+  return registros.filter((r) => {
+    const u = uniones.get(r.id);
+    if (!u) return false;
+    return filtro === "dentro" ? u.estado === "unida" : filtro === "fuera" ? u.estado === "no-unida" : u.estado === "sin-telefono";
+  });
+}
+
+/** El teléfono para pegar: con el + si trae el código de país; si no, tal cual se escribió. */
+export const telefonoParaCopiar = (f: { numero: string; completo?: boolean }) => (f.completo === false ? f.numero : `+${f.numero}`);
+
 /** La lista para pegar en otro lado: un teléfono por renglón (con el +), o
     «nombre ⇥ teléfono» para pegarla en una planilla. */
-export function listaParaCopiar(filas: readonly { nombre: string; numero: string }[], conNombres: boolean): string {
+export function listaParaCopiar(filas: readonly { nombre: string; numero: string; completo?: boolean }[], conNombres: boolean): string {
   return filas
     .filter((f) => f.numero)
-    .map((f) => (conNombres ? `${f.nombre.replace(/[\t\r\n]+/g, " ").trim()}\t+${f.numero}` : `+${f.numero}`))
+    .map((f) => (conNombres ? `${f.nombre.replace(/[\t\r\n]+/g, " ").trim()}\t${telefonoParaCopiar(f)}` : telefonoParaCopiar(f)))
     .join("\n");
 }
 
@@ -504,6 +624,12 @@ export interface RespuestaEstado {
   modo: "nube" | "prueba-local";
   lector: LatidoLector | null;
   grupos: GrupoWhatsapp[];
+  /** Sólo si se pidió el código (?qr=1) y el lector lo está esperando: quien pide es dueño o edita Ajustes. */
+  puedeVerQr?: boolean;
+  /** El código QR vigente (menos de un minuto), como imagen. Una credencial: sólo para quien puede verlo. */
+  qr?: string | null;
+  /** Falta correr supabase/whatsapp-lector-qr.sql: no hay dónde guardar el código. */
+  qrSinTabla?: boolean;
 }
 
 export interface RespuestaWebinar {
@@ -517,7 +643,5 @@ export interface RespuestaWebinar {
   dentro: string[];
   /** Quién salió y cuándo (los que no están adentro de ninguno). */
   salieron: Record<string, string>;
-  /** Las marcas de «Contactado», por persona. */
-  contactados: Record<string, { por: string | null; en: string }>;
   generado: string;
 }

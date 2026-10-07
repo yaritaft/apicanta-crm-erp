@@ -1,0 +1,44 @@
+{
+  "_comentario": "Lo que «vería» el lector, con teléfonos inventados. Se manda con: npm run simulado (o node src/index.js --simulado ejemplos/simulado.json). Los participantes se escriben como los da Baileys: un texto, o un objeto con el LID y el teléfono. El grupo VIP no coincide con GRUPOS_REGEX=taller online y se saltea.",
+  "pasos": [
+    { "tipo": "latido", "conectado": true, "grupos": 1 },
+    {
+      "tipo": "foto",
+      "grupo": { "id": "120363000000000001@g.us", "nombre": "Taller Online 08/10/26 #1" },
+      "participantes": [
+        "5491155550001@s.whatsapp.net",
+        "5491155550002:7@s.whatsapp.net",
+        { "id": "100000000000003@lid", "phoneNumber": "5491155550003@s.whatsapp.net" },
+        { "id": "5491155550004@s.whatsapp.net", "lid": "100000000000004@lid" },
+        "5215512340005@s.whatsapp.net",
+        "573001230006@s.whatsapp.net",
+        "34612000007@s.whatsapp.net",
+        "5491155550008@s.whatsapp.net",
+        { "id": "100000000000009@lid" },
+        { "id": "100000000000010@lid" }
+      ]
+    },
+    {
+      "tipo": "foto",
+      "grupo": { "id": "120363000000000002@g.us", "nombre": "Hackear IT - Grupo VIP" },
+      "participantes": [ "5491155559999@s.whatsapp.net" ]
+    },
+    { "tipo": "esperar", "ms": 300 },
+    {
+      "tipo": "entro",
+      "grupo": { "id": "120363000000000001@g.us", "nombre": "Taller Online 08/10/26 #1" },
+      "participantes": [ "5491155550011@s.whatsapp.net", "5491155550012:3@s.whatsapp.net" ]
+    },
+    {
+      "tipo": "salio",
+      "grupo": { "id": "120363000000000001@g.us", "nombre": "Taller Online 08/10/26 #1" },
+      "participantes": [ "5491155550008@s.whatsapp.net" ]
+    },
+    {
+      "tipo": "entro",
+      "grupo": { "id": "120363000000000001@g.us", "nombre": "Taller Online 08/10/26 #1" },
+      "participantes": [ { "id": "100000000000013@lid" } ]
+    },
+    { "tipo": "latido", "conectado": true, "grupos": 1 }
+  ]
+}
