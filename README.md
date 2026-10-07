@@ -977,3 +977,54 @@ el Google Sheet (una hoja por webinar) y dentro de `contactos.extra`, y pasan a 
 - **Todavía no está** (ver el informe del lote): la base de ~25.000 contactos de los grupos de WhatsApp (el importador
   de «sólo contactos» y la decisión de dónde viven), fusionar dos contactos con mails distintos, cruzar al ingresar
   desde Calendly y Meta, unificar el conteo de «Formularios», y el respaldo descargable antes de importar.
+
+## Lo que pidieron el 02/10 (lote C: el cierre del día)
+
+- **Strikes e interruptor del descuento** (F2-02; `lib/cierre-del-dia.ts`, Ajustes → CRM → «Cierre del día»). Una llamada
+  de venta pide cierre si ya empezó y no se canceló; sin estado cargado tampoco si Calendly la dejó como que no vino ni si
+  pidió otra fecha («Reagendar»). **Un strike es un día en que alguna llamada de un closer se cargó otro día que el suyo o
+  sigue sin cargar** (hora de Argentina). Se cuentan desde la fecha de arranque que se elige en Ajustes (la del CRM para los
+  closers: sin fecha todavía no cuentan) y se le muestran al closer en «Tu día», con el ícono de «cómo se calcula» y los días,
+  **aunque el interruptor esté apagado**.
+  - El interruptor arranca **apagado**. Apagado no cambia ningún número en ningún lado: `pruebas/cierre-del-dia.test.ts` compara
+    Finanzas, la liquidación y el resultado del webinar con y sin la configuración. Prendido, **no se comisiona lo de un día
+    cuyo cierre no se cargó el mismo día**: la comisión de closer de las ventas que salieron de las llamadas de ese día no se paga.
+    La del director, el setter y el referidor no se toca, ni lo que cobra quien heredó las cuotas de ese closer. Rige para las
+    llamadas desde el día en que se prendió (se puede cambiar): lo que ya se liquidó no se mueve. Antes de prenderlo, Ajustes dice
+    cuánto habría cambiado este mes.
+  - Los tres lugares que repiten la comisión por cobro leen la misma regla (`ventasSinCierre` y `descuentaPorCierre`, como
+    `cobraEnFecha` en `lib/finanzas.ts`): `comisionesDelMes` (Finanzas, el Dashboard y la caja; cada fila trae `descuentoCierre` y
+    Finanzas → Comisiones lo marca), `metricasDeWebinar` y la liquidación. En la liquidación la comisión del closer sale **entera**
+    y un renglón aparte, **«Descuento por cierre del día»** (negativo, `tipo: "descuento"`), resta lo que no se paga, con su
+    «Ver cómo se calculó»: la cuenta, los cobros de esos días y qué días fueron. La suma da lo mismo que Finanzas (200 escenarios
+    al azar lo comprueban) y, como la comisión de un closer, ya está en Finanzas: al cerrar no se carga de nuevo. No lleva
+    renglón la comisión corregida a mano ni la medida a mano.
+  - Sólo entran las ventas que **saben de qué llamada salieron** (`ventas.sesionId`): las de antes no se pueden probar y no entran.
+  - Si la llamada no tiene estado pero sí su venta (la cargó Administración, que no edita las llamadas), cuenta desde cuándo se
+    cargó la venta.
+- **La venta atada a su llamada** (`ventas."sesionId"`): al registrar una venta se guarda de qué llamada salió: la que dice el cierre
+  del día o la tabla del CRM o, si no, la última de esa persona dentro de la ventana de siempre (-1/+60 días), una sola vez. La fila
+  del CRM ata la venta a su llamada por ese id; sin él (las de antes) sigue la ventana, que puede dar falsos «sin venta».
+- **La primera vez que se cargó cada estado** (`sesiones."estadoLlamadaEn"` y `"estadoPreCallEn"`): `store.editarLlamadas` la escribe
+  al pasar el estado de vacío a cargado, venga de donde venga (el cierre del día, la tabla, la Agenda, la ficha o una venta).
+  No se corre ni se borra: cambiar el estado, vaciarlo o borrar la opción no la tocan; sólo la saca deshacer la primera carga. Un
+  trigger de la base hace lo mismo y la completa con la hora del servidor si una pestaña con la app vieja no la manda. Los estados
+  cargados antes de esto no tienen marca: no se pueden juzgar y cuentan como a tiempo.
+- **La puerta** (`lib/eod.ts`, `Eod.tsx`): si el estado es de compra, no se pasa a la siguiente llamada ni se termina el día sin la
+  venta cargada. La única salida es **«La carga otra persona»**, que queda anotada (`sesiones."ventaPorOtro"`: quién lo avisó y
+  cuándo) y se ve en la columna Venta del CRM (también se puede filtrar). En la pantalla final, las compras sin venta se listan con
+  «Cargar la venta» y la salida. La ficha, que carga una sola llamada, no la pide. «Idealmente también conciliada» no se hizo:
+  es del control cruzado.
+- **Menos estados de llamada** (F2-05; `lib/estados.ts`, Ajustes → CRM → «Estados de llamada»): cada lista (Estado de Llamada,
+  Estado Pre-Call y Pre-Call) con lo que mueve cada estado (la Agenda, la etapa del lead, lo que pregunta el cierre del día), cuántas
+  llamadas lo tienen y un interruptor «a la vista / oculto». Todos arrancan a la vista: Santi marca cuáles usa y el resto se oculta.
+  Un estado oculto no se ofrece al cargar (`ofrecidas`), pero no se borra: las llamadas que ya lo tienen lo siguen mostrando con
+  su color y lo que pone la app sola sigue andando. Ocultar pide confirmar con lo que cambia (`revisarOcultar`) y no deja ocultar lo
+  último que el cierre del día necesita: el último estado de compra, el último de seguimiento y «Reagendar». El editor de nombres,
+  colores y orden de la grilla se abre desde ahí. Lo escriben quienes editan Ajustes: el Director comercial no, así que Santi
+  marca y lo oculta un dueño (o se le da el área Ajustes).
+- **Antes de usarlo contra Supabase** hay que correr `supabase/cierre-del-dia.sql` (idempotente: `ventas."sesionId"`, las dos marcas
+  y `ventaPorOtro` en `sesiones`, y el trigger de la marca). El interruptor, la fecha de arranque y los estados ocultos viven en
+  `ajustes.crm` (jsonb), sin SQL. Sin las columnas la app anda igual y sólo no guarda ese dato.
+- **Pruebas**: `cierre-del-dia.test.ts` (la regla, apagado = igual, prendido = los tres lugares dicen lo mismo, 200 escenarios al
+  azar), `primera-carga.test.ts` (con el store: marcas y `sesionId`), `estados-ocultos.test.ts` y `puerta-eod.test.ts`.

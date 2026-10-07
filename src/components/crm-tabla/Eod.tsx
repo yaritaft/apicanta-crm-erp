@@ -1,7 +1,7 @@
 "use client";
 
-import React, { useMemo, useRef, useState } from "react";
-import { Check, ShoppingBag, Star } from "lucide-react";
+import React, { useMemo, useRef, useState, type ComponentProps } from "react";
+import { AlertTriangle, Check, ShoppingBag, Star, UserRoundCheck } from "lucide-react";
 import { Asistente, Pregunta, type PasoAsistente } from "@/components/ui/Asistente";
 import { Badge, Button, Input, Select, Textarea } from "@/components/ui/ui";
 import { useToast } from "@/components/ui/Toast";
@@ -20,9 +20,11 @@ import {
   atajosDeCierre, cambiosDelEod, closersConLlamadas, esDelCloser, faltaEnRespuesta, llamadasDelDia, objecionSugerida, objecionesDe,
   respuestaDe, type RespuestaEod,
 } from "@/lib/eod";
+import { reglaDeCierre, strikesDe } from "@/lib/cierre-del-dia";
 import type { OpcionCrm, Sesion } from "@/lib/types";
 import { textoFecha } from "./FiltroColumna";
 import { GrabacionDeLlamada } from "./GrabacionDeLlamada";
+import { CuentaDeStrikes } from "./Strikes";
 
 /* ==================================================================
    El cierre del día (EOD), como un Typeform: una pantalla por llamada.
@@ -39,6 +41,12 @@ import { GrabacionDeLlamada } from "./GrabacionDeLlamada";
    Cada llamada se guarda al pasar a la siguiente: si se cierra a la
    mitad, lo cargado queda. Suma las llamadas de días anteriores que
    quedaron sin cargar (las de las últimas dos semanas).
+
+   «Tu día» muestra los strikes del closer (días en que alguna llamada no
+   quedó cargada el mismo día: lib/cierre-del-dia.ts), aunque el interruptor
+   del descuento esté apagado. Y la puerta: si el estado es de compra, no se
+   termina el día sin la venta cargada; la única salida es avisar que la
+   carga otra persona, y queda anotado en la llamada.
    ================================================================== */
 
 const HORA = new Intl.DateTimeFormat("es-AR", { timeZone: "America/Argentina/Buenos_Aires", hour: "2-digit", minute: "2-digit", hour12: false });
@@ -79,6 +87,11 @@ export function Eod({ onCerrar, soloSesionId }: { onCerrar: () => void; soloSesi
   const ahora = Date.now();
   const opciones = useMemo(() => opcionesDe(e.ajustes, "estadoLlamada"), [e.ajustes]);
   const objeciones = useMemo(() => objecionesDe(e.ajustes), [e.ajustes]);
+  /* Los strikes del closer y lo que dice el interruptor, para «Tu día». */
+  const strikes = useMemo(() => strikesDe(e, closer, hoy), [e, closer, hoy]);
+  const regla = useMemo(() => reglaDeCierre(e.ajustes), [e.ajustes]);
+  /* La puerta vale en el cierre del día; la ficha, que carga una sola llamada, no la pide. */
+  const conPuerta = !soloSesionId;
 
   /* Las llamadas del día que ya empezaron, y las pendientes de antes. */
   const { delDia, pendientes } = useMemo(() => {
@@ -129,6 +142,16 @@ export function Eod({ onCerrar, soloSesionId }: { onCerrar: () => void; soloSesi
     setGuardadas((g) => { const n = new Set(g); n.delete(s.id); return n; });
   }
 
+  /* Lo que falta de una llamada; con la puerta, una compra pide su venta. */
+  const falta = (s: Sesion) => faltaEnRespuesta(respuesta(s), opciones, conPuerta ? { tieneVenta: Boolean(filas.get(s.id)?.venta) } : undefined);
+  /* Las compras a las que todavía les falta la venta (y nadie avisó que la carga otra persona). */
+  const sinVenta = conPuerta
+    ? llamadas.filter((s) => {
+      const r = respuesta(s);
+      return preguntaDe(opciones.find((o) => o.nombre === r?.estadoLlamada)) === "venta" && !filas.get(s.id)?.venta && !r?.ventaPorOtro;
+    })
+    : [];
+
   /* Guardar una llamada, si se le tocó algo. Los estados quedan aunque
      falte el resto (por qué no cerró): son los mismos que se ven en el CRM
      y la Agenda, y es mejor tenerlos que perderlos por cerrar a la mitad. */
@@ -153,7 +176,7 @@ export function Eod({ onCerrar, soloSesionId }: { onCerrar: () => void; soloSesi
 
   function terminar() {
     for (const s of llamadas) guardar(s.id);
-    const cargadas = llamadas.filter((s) => !faltaEnRespuesta(respuesta(s), opciones)).length;
+    const cargadas = llamadas.filter((s) => !falta(s)).length;
     toast(soloSesionId ? "Listo: quedó cargado cómo terminó la llamada." : `Día cerrado: ${num(cargadas)} de ${num(llamadas.length)} llamadas cargadas.`);
     onCerrar();
   }
@@ -173,8 +196,9 @@ export function Eod({ onCerrar, soloSesionId }: { onCerrar: () => void; soloSesi
         onCerrar={() => setVendiendo(null)}
         onListo={(_id, nombre) => {
           /* La venta ya dejó la llamada con su estado de compra (lo hace el
-             store): lo elegido acá deja de mandar. */
-          setResp((p) => { const r = { ...(p[vendiendo] ?? {}) }; delete r.estadoLlamada; return { ...p, [vendiendo]: r }; });
+             store): lo elegido acá deja de mandar, y ya no hay a quién avisarle
+             que la carga otra persona. */
+          setResp((p) => { const r = { ...(p[vendiendo] ?? {}) }; delete r.estadoLlamada; delete r.ventaPorOtro; return { ...p, [vendiendo]: r }; });
           setVendiendo(null);
           toast(`Venta de ${nombre} registrada: ya es cliente.`);
         }}
@@ -182,9 +206,13 @@ export function Eod({ onCerrar, soloSesionId }: { onCerrar: () => void; soloSesi
     );
   }
 
+  const nombreDe = (s: Sesion) => nombreDePila(filas.get(s.id)?.nombre || s.invitado || "la llamada");
   const problema = actual?.id === "inicio"
     ? (!closer ? "Elegí de quién es el día" : llamadas.length === 0 ? "No hay llamadas para cargar" : null)
-    : sesion ? faltaEnRespuesta(respuesta(sesion), opciones) : null;
+    : sesion ? falta(sesion)
+    : actual?.id === "fin" && sinVenta.length > 0
+      ? `Falta la venta de ${sinVenta.map(nombreDe).join(", ")}`
+      : null;
 
   return (
     <Asistente
@@ -198,6 +226,7 @@ export function Eod({ onCerrar, soloSesionId }: { onCerrar: () => void; soloSesi
           closers={closers} closer={closer} fijo={Boolean(soyCloser)} onCloser={setCloser}
           dia={dia} hoy={hoy} onDia={setDia}
           delDia={delDia.length} pendientes={pendientes.length} conPendientes={conPendientes} onConPendientes={setConPendientes}
+          strikes={strikes} regla={regla}
         />
       )}
       {sesion && (
@@ -206,12 +235,18 @@ export function Eod({ onCerrar, soloSesionId }: { onCerrar: () => void; soloSesi
           r={respuesta(sesion)} objeciones={objeciones} opciones={opciones}
           onResponder={(c) => responder(sesion, c)}
           buscaEnFathom={esDueno || Boolean(yo.miembro && esDelCloser(sesion, yo.miembro.nombre, e.equipo))}
+          conPuerta={conPuerta} avisadaPor={ultimaDe(sesion.id)?.ventaPorOtro}
           onVender={() => setVendiendo(sesion.id)}
           onSaltear={() => setPaso(paso + 1)}
         />
       )}
       {actual?.id === "fin" && (
-        <Fin llamadas={llamadas.map((s) => ({ s: ultimaDe(s.id) ?? s, f: filas.get(s.id), r: respuesta(s), falta: faltaEnRespuesta(respuesta(s), opciones) }))} />
+        <Fin
+          llamadas={llamadas.map((s) => ({ s: ultimaDe(s.id) ?? s, f: filas.get(s.id), r: respuesta(s), falta: falta(s) }))}
+          sinVenta={sinVenta.map((s) => ({ id: s.id, nombre: nombreDe(s) }))}
+          onVender={(id) => setVendiendo(id)}
+          onPorOtro={(id) => { const s = ultimaDe(id); if (s) responder(s, { ventaPorOtro: true }); }}
+        />
       )}
     </Asistente>
   );
@@ -219,10 +254,11 @@ export function Eod({ onCerrar, soloSesionId }: { onCerrar: () => void; soloSesi
 
 /* ---------- Tu día ---------- */
 
-function Inicio({ closers, closer, fijo, onCloser, dia, hoy, onDia, delDia, pendientes, conPendientes, onConPendientes }: {
+function Inicio({ closers, closer, fijo, onCloser, dia, hoy, onDia, delDia, pendientes, conPendientes, onConPendientes, strikes, regla }: {
   closers: string[]; closer: string; fijo: boolean; onCloser: (c: string) => void;
   dia: string; hoy: string; onDia: (d: string) => void;
   delDia: number; pendientes: number; conPendientes: boolean; onConPendientes: (v: boolean) => void;
+  strikes: ComponentProps<typeof CuentaDeStrikes>["strikes"]; regla: ComponentProps<typeof CuentaDeStrikes>["regla"];
 }) {
   const ayer = new Date(Date.parse(`${hoy}T12:00:00Z`) - 86_400_000).toISOString().slice(0, 10);
   /* «Otro día» deja el desplegable ahí aunque se elija justo hoy o ayer. */
@@ -276,18 +312,23 @@ function Inicio({ closers, closer, fijo, onCloser, dia, hoy, onDia, delDia, pend
           </span>
         </div>
       )}
+      {closer && <CuentaDeStrikes strikes={strikes} regla={regla} />}
     </div>
   );
 }
 
 /* ---------- Una llamada ---------- */
 
-function PasoLlamada({ s, f, hoy, r, objeciones, opciones, buscaEnFathom, onResponder, onVender, onSaltear }: {
+function PasoLlamada({ s, f, hoy, r, objeciones, opciones, buscaEnFathom, conPuerta, avisadaPor, onResponder, onVender, onSaltear }: {
   s: Sesion; f?: FilaTabla; hoy: string; r?: RespuestaEod; objeciones: string[];
   /* Las opciones del Estado de Llamada, las del Airtable. */
   opciones: OpcionCrm[];
   /* Quien atendió la llamada o un dueño: puede buscar su grabación en Fathom. */
   buscaEnFathom: boolean;
+  /* La puerta: una compra pide su venta, o avisar que la carga otra persona. */
+  conPuerta: boolean;
+  /* Quién avisó que la carga otra persona, y cuándo (ya guardado en la llamada). */
+  avisadaPor?: Sesion["ventaPorOtro"];
   onResponder: (c: Partial<RespuestaEod>) => void; onVender: () => void; onSaltear: () => void;
 }) {
   const nombre = f?.nombre || s.invitado || "la persona";
@@ -373,10 +414,33 @@ function PasoLlamada({ s, f, hoy, r, objeciones, opciones, buscaEnFathom, onResp
         <div className="crm-eod__bloque">
           {f?.venta ? (
             <p className="crm-eod__ok"><Check size={16} /> La venta ya está cargada: {f.venta}. Ya es cliente.</p>
+          ) : conPuerta && r?.ventaPorOtro ? (
+            <>
+              <p className="crm-eod__ok crm-eod__ok--aviso">
+                <UserRoundCheck size={16} aria-hidden /> La venta la carga otra persona.
+              </p>
+              <p className="t-sm t-subtle">
+                Quedó anotado{avisadaPor ? ` (${avisadaPor.por}, ${textoFecha(diaDeNegocio(avisadaPor.en))} ${HORA.format(new Date(avisadaPor.en))} hs)` : ": al pasar a la siguiente se guarda quién lo avisó y cuándo"}.
+                Mientras no esté cargada, la llamada sigue figurando como compra sin venta en el CRM.
+              </p>
+              <div className="row-wrap" style={{ gap: 12 }}>
+                <Button variante="secondary" sm icono={<ShoppingBag size={15} />} onClick={() => { onResponder({ ventaPorOtro: false }); onVender(); }}>Mejor la cargo yo</Button>
+                <button type="button" className="link t-sm" onClick={() => onResponder({ ventaPorOtro: false })}>Deshacer el aviso</button>
+              </div>
+            </>
           ) : (
             <>
               <Button variante="primary" icono={<ShoppingBag size={16} />} onClick={onVender}>Cargar la venta</Button>
-              <p className="t-sm t-subtle">Se abre el asistente de venta con {nombreDePila(nombre)} y el closer ya elegidos. Al guardarla pasa a cliente. Si la carga otra persona, seguí.</p>
+              <p className="t-sm t-subtle">
+                Se abre el asistente de venta con {nombreDePila(nombre)} y el closer ya elegidos. Al guardarla pasa a cliente.
+                {conPuerta ? " Para pasar a la siguiente llamada tiene que estar cargada." : " Si la carga otra persona, seguí."}
+              </p>
+              {conPuerta && (
+                <>
+                  <button type="button" className="link t-sm" onClick={() => onResponder({ ventaPorOtro: true })}>La carga otra persona</button>
+                  <p className="t-sm t-subtle" style={{ marginTop: -4 }}>Es la única salida, y queda anotado quién lo avisó y cuándo.</p>
+                </>
+              )}
             </>
           )}
         </div>
@@ -456,13 +520,37 @@ function PasoLlamada({ s, f, hoy, r, objeciones, opciones, buscaEnFathom, onResp
 
 /* ---------- Listo ---------- */
 
-function Fin({ llamadas }: { llamadas: { s: Sesion; f?: FilaTabla; r?: RespuestaEod; falta: string | null }[] }) {
+function Fin({ llamadas, sinVenta, onVender, onPorOtro }: {
+  llamadas: { s: Sesion; f?: FilaTabla; r?: RespuestaEod; falta: string | null }[];
+  /* Las compras a las que falta la venta: la puerta no deja terminar el día así. */
+  sinVenta: { id: string; nombre: string }[];
+  onVender: (id: string) => void;
+  onPorOtro: (id: string) => void;
+}) {
   const e = useEstado();
   const cargadas = llamadas.filter((x) => !x.falta).length;
   return (
     <div className="stack-4">
-      <Pregunta texto={cargadas === llamadas.length ? "¡Listo! Día cerrado" : `Cargaste ${num(cargadas)} de ${num(llamadas.length)}`}
-        sub={cargadas === llamadas.length ? "Todo queda en el CRM, la Agenda y la ficha de cada persona." : "A las otras les falta algo: las podés completar después, desde acá o desde el CRM."} />
+      <Pregunta texto={sinVenta.length > 0 ? "Falta la venta para terminar el día" : cargadas === llamadas.length ? "¡Listo! Día cerrado" : `Cargaste ${num(cargadas)} de ${num(llamadas.length)}`}
+        sub={sinVenta.length > 0 ? "Si el estado es de compra, la venta tiene que estar cargada: así lo que se cerró queda en el sistema."
+          : cargadas === llamadas.length ? "Todo queda en el CRM, la Agenda y la ficha de cada persona." : "A las otras les falta algo: las podés completar después, desde acá o desde el CRM."} />
+      {sinVenta.length > 0 && (
+        <div className="crm-eod__falta" role="alert">
+          <AlertTriangle size={18} aria-hidden />
+          <div className="stack-3">
+            <strong>{sinVenta.length === 1 ? "Una compra sin su venta" : `${num(sinVenta.length)} compras sin su venta`}</strong>
+            {sinVenta.map((x) => (
+              <div key={x.id} className="crm-eod__falta-fila">
+                <span className="t-strong">{x.nombre}</span>
+                <span className="spacer" />
+                <Button variante="primary" sm icono={<ShoppingBag size={15} />} onClick={() => onVender(x.id)}>Cargar la venta</Button>
+                <button type="button" className="link t-sm" onClick={() => onPorOtro(x.id)}>La carga otra persona</button>
+              </div>
+            ))}
+            <span className="t-sm t-subtle">«La carga otra persona» es la única salida: queda anotado quién lo avisó y cuándo.</span>
+          </div>
+        </div>
+      )}
       <div className="crm-eod__resumen">
         {llamadas.map(({ s, f, r }) => (
           <div key={s.id} className="crm-eod__fila">

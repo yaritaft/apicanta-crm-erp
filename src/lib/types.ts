@@ -201,8 +201,21 @@ export interface Sesion {
   objecion?: string;
   hizoOferta?: boolean;
   cierreEstimado?: string;   // aaaa-mm-dd
-  eodEn?: string;            // cuándo lo cargó
+  eodEn?: string;            // cuándo se guardó por última vez desde el cierre del día
   eodPor?: string;           // quién
+  /* La primera vez que se cargó cada estado, venga de donde venga (el cierre
+     del día, la tabla del CRM, la Agenda, la ficha o una venta): es la marca
+     confiable con la que se cuentan los strikes (lib/cierre-del-dia.ts). Se
+     escribe sola al pasar el estado de vacío a cargado y después no se corre
+     ni se borra: cambiar el estado, vaciarlo o borrar la opción no la tocan
+     (sólo deshacer la primera carga la saca). Sin la columna
+     (supabase/cierre-del-dia.sql) sólo dura lo que la pantalla esté abierta. */
+  estadoLlamadaEn?: string;
+  estadoPreCallEn?: string;
+  /* La puerta del cierre del día: si el estado es de compra, la venta tiene
+     que estar cargada para terminar el día; la única salida es avisar que la
+     carga otra persona, y eso queda anotado acá (quién lo dijo y cuándo). */
+  ventaPorOtro?: { por: string; en: string };
 }
 
 /* Cómo terminó una llamada según el cierre del día de antes: con cierre
@@ -496,6 +509,10 @@ export interface OpcionCrm {
      reserva o de downsell); "perdida" pasa el lead a Perdido, salvo que ya
      haya comprado; "devolucion", aunque haya comprado. */
   oportunidad?: OportunidadCrm;
+  /* Oculta: ya no se ofrece al cargar un estado, pero las llamadas que la
+     tienen la siguen mostrando y no se borra nada (hay historia). Se revisa
+     antes qué mueve (lib/estados.ts: revisarOcultar). */
+  oculta?: boolean;
 }
 
 export type OportunidadCrm = "compra-full" | "compra-cuotas" | "reserva" | "downsell" | "perdida" | "devolucion";
@@ -518,6 +535,21 @@ export interface ConfigCrm {
   tablas?: TablaCrm[];
   /* Las objeciones que elige el closer en el EOD (lib/eod.ts). */
   objeciones?: string[];
+  /* El cierre del día: desde cuándo se cuentan los strikes y el interruptor
+     que, prendido, descuenta la comisión (lib/cierre-del-dia.ts). */
+  cierreDelDia?: ConfigCierreDelDia;
+}
+
+export interface ConfigCierreDelDia {
+  /* Desde qué día de llamada (aaaa-mm-dd) se cuentan los strikes: la fecha
+     de arranque del CRM para los closers. Sin fecha, todavía no se cuentan. */
+  cuentaDesde?: string;
+  /* Apagado (de entrada): los strikes sólo se cuentan y se muestran. Prendido:
+     no se comisiona lo de un día cuyo cierre no se cargó el mismo día. */
+  descuenta?: boolean;
+  /* Desde qué día de llamada rige el descuento: el día en que se prendió, así
+     prender el interruptor no cambia lo que ya se liquidó. */
+  descuentaDesde?: string;
 }
 
 /* Una UTM armada para un lanzamiento o una campaña: los valores que tienen
@@ -989,6 +1021,12 @@ export interface Venta {
   referidorNombre?: string;
   referidorTelefono?: string;
   ingresoComunidad?: IngresoComunidad;
+  /* La llamada (sesión) de la que salió la venta: se guarda al cargarla, desde
+     el cierre del día, la tabla del CRM o Ventas. Antes se inferían por
+     persona y una ventana de -1/+60 días, y daba falsos «sin venta». Sin ella
+     (las ventas de antes), se sigue infiriendo para mostrarla, pero no entra en
+     el descuento por cierre del día. */
+  sesionId?: ID;
 }
 
 export type EstadoCuota = "pendiente" | "pagada" | "cancelada";
@@ -1271,7 +1309,7 @@ export interface LineaLiquidada {
   clave: string;
   conceptoId?: ID;
   extraId?: ID;
-  tipo: TipoConcepto | "extra";
+  tipo: TipoConcepto | "extra" | "descuento";
   nombre: string;
   /* Cómo se llegó al monto, dicho en castellano. */
   detalle: string;

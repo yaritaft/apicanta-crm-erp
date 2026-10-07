@@ -612,7 +612,8 @@ function Linea({ l, cerrada, entrada, onEntrada, onBorrarExtra, onVerDesglose }:
               )}
               {l.tipo === "extra" ? (
                 <IconButton etiqueta="Sacar este monto" onClick={onBorrarExtra}><Trash2 size={15} /></IconButton>
-              ) : l.corregido ? (
+              ) : l.tipo === "descuento" ? null /* Lo calcula el interruptor del cierre del día (Ajustes → CRM): no se corrige acá. */
+              : l.corregido ? (
                 <button type="button" className="link t-sm" onClick={() => onEntrada({ monto: undefined, nota: undefined })}>Volver a la cuenta</button>
               ) : (
                 <button type="button" className="link t-sm" onClick={() => setCorrigiendo((v) => !v)}>{corrigiendo ? "Cancelar" : "Corregir"}</button>

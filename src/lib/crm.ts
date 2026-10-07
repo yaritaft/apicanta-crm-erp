@@ -88,7 +88,7 @@ export const OPCIONES_POR_DEFECTO: Record<CampoOpcionesCrm, OpcionCrm[]> = {
   ],
 };
 
-export function opcionesDe(a: Ajustes, campo: CampoOpcionesCrm): OpcionCrm[] {
+export function opcionesDe(a: Pick<Ajustes, "crm">, campo: CampoOpcionesCrm): OpcionCrm[] {
   const propias = a.crm?.opciones?.[campo];
   return propias && propias.length > 0 ? propias : OPCIONES_POR_DEFECTO[campo];
 }
@@ -428,8 +428,17 @@ export function filasCrm(
   /* Las ventas en pie de cada persona (la venta apunta a su lead, que en
      las agendas de Calendly tiene el mismo id que el contacto). */
   const ventasDe = new Map<string, Venta[]>();
+  /* Las ventas que dicen de qué llamada salieron (`sesionId`, se guarda al
+     cargarlas): ésas se atan a su llamada y a ninguna otra. */
+  const ventaDeSesion = new Map<string, Venta>();
   for (const v of e.ventas ?? []) {
-    if (!v.contactoId || v.estado === "cancelada") continue;
+    if (v.estado === "cancelada") continue;
+    if (v.sesionId) {
+      const ya = ventaDeSesion.get(v.sesionId);
+      if (!ya || v.fecha < ya.fecha) ventaDeSesion.set(v.sesionId, v);
+      continue;
+    }
+    if (!v.contactoId) continue;
     const xs = ventasDe.get(v.contactoId);
     if (xs) xs.push(v); else ventasDe.set(v.contactoId, [v]);
   }
@@ -462,7 +471,7 @@ export function filasCrm(
     const c = contactos.get(s.contactoId ?? "") ?? contactos.get(s.leadId ?? "");
     const l = leads.get(s.leadId ?? "");
     const segunda = segundas.has(s.id);
-    const venta = ventaDeAgenda(s, ventasDe, productos);
+    const venta = ventaDeAgenda(s, ventasDe, ventaDeSesion, productos);
     const previa = FILAS.get(s);
     if (previa && previa.c === c && previa.l === l && previa.segunda === segunda && previa.tabla === tabla
       && previa.ajustes === e.ajustes && previa.webinars === e.webinars
@@ -485,13 +494,15 @@ export function ventaEsDeLlamada(s: Pick<Sesion, "creadoEn" | "inicia">, fechaVe
   return v >= desde && v <= hasta;
 }
 
-/* La venta que salió de una agenda: la primera de esa persona en su ventana. */
-function ventaDeAgenda(s: Sesion, ventasDe: Map<string, Venta[]>, productos: Map<string, string>): VentaDeFila | undefined {
+/* La venta que salió de una agenda: la que dice haber salido de ella
+   (`sesionId`) o, si ninguna lo dice (las de antes), la primera de esa
+   persona en su ventana. */
+function ventaDeAgenda(
+  s: Sesion, ventasDe: Map<string, Venta[]>, ventaDeSesion: Map<string, Venta>, productos: Map<string, string>,
+): VentaDeFila | undefined {
   const suyas = [...new Set([...(ventasDe.get(s.leadId ?? "") ?? []), ...(ventasDe.get(s.contactoId ?? "") ?? [])])];
-  if (suyas.length === 0) return undefined;
-  const v = suyas
-    .filter((x) => ventaEsDeLlamada(s, x.fecha))
-    .sort((a, b) => a.fecha.localeCompare(b.fecha))[0];
+  const v = ventaDeSesion.get(s.id)
+    ?? suyas.filter((x) => ventaEsDeLlamada(s, x.fecha)).sort((a, b) => a.fecha.localeCompare(b.fecha))[0];
   if (!v) return undefined;
   const producto = (v.productoId && productos.get(v.productoId)) || "Venta";
   return { id: v.id, texto: `${producto} · ${money(v.precioAcordado, v.moneda)}`, fecha: v.fecha };

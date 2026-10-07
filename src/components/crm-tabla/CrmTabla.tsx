@@ -458,7 +458,10 @@ function Celda({ clave, f, color }: { clave: ClaveColumna; f: FilaTabla; color?:
     case "grabacion": return f.grabacion
       ? <a className="link t-sm" href={f.grabacion} target="_blank" rel="noopener noreferrer" onClick={(ev) => ev.stopPropagation()}><ExternalLink size={13} /> Ver</a>
       : nada;
-    case "venta": return f.venta ? <span className="crm-t__venta">{f.venta}</span> : nada;
+    case "venta": return f.venta ? <span className="crm-t__venta">{f.venta}</span>
+      : f.sesion.ventaPorOtro
+        ? <span className="crm-t__venta crm-t__venta--otra" title={`Avisó ${f.sesion.ventaPorOtro.por} (${textoFecha(diaDeNegocio(f.sesion.ventaPorOtro.en))}): la venta de esta compra la carga otra persona.`}>La carga otra persona</span>
+        : nada;
     case "tecnologias": return f.tecnologias.length ? <span className="truncate" title={f.tecnologias.join(", ")}>{f.tecnologias.join(", ")}</span> : nada;
     case "formacion": return f.formacion.length ? <span className="truncate" title={f.formacion.join(", ")}>{f.formacion.join(", ")}</span> : nada;
     default: {
