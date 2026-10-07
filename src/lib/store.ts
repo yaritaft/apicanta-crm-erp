@@ -3,7 +3,7 @@
 import { useCallback, useSyncExternalStore } from "react";
 import type {
   AccionActividad, Actividad, Ad, AdInsight, Adset, Ajustes, Alumno, Campaign,
-  Contacto,
+  Contacto, Devolucion, ProveedorPasarela,
   Arqueo, Campania, CampoPersonalizado, Comentario, Comprobante, Cuota, EntidadNombre, EstadoApp, Etapa, ID,
   Lead, Meta, Movimiento, OpcionCrm, OportunidadCrm, Pago, Reporte, Sesion, Venta, Webinar,
 } from "./types";
@@ -28,7 +28,8 @@ import { etapaTrasEventos, eventosDeLlamada, leadDeSesion, type EventoEtapa } fr
 import { estadoDeAgenda } from "./estados";
 import { personaDe } from "./persona";
 import { extraConCorreccion, tituloPerfil, type CampoPerfil } from "./perfil";
-import { puedeEditar, TIPOS_POR_DEFECTO, type MiAcceso } from "./permisos";
+import { puedeCargarDevolucion, puedeDarDeBaja, puedeEditar, TIPOS_POR_DEFECTO, type MiAcceso } from "./permisos";
+import { esDevolucionConfirmada } from "./devoluciones";
 
 const CLAVE = "apicanta.erp.v1";
 
@@ -264,6 +265,18 @@ const oyentesNegadas = new Set<(tabla: string, motivo?: string) => void>();
 export function alNegarseEscritura(f: (tabla: string, motivo?: string) => void): () => void {
   oyentesNegadas.add(f);
   return () => { oyentesNegadas.delete(f); };
+}
+
+/* Avisa que una llamada quedó en «Devolución» (en el CRM, el cierre del día,
+   la Agenda o la ficha): quien puede cargar la devolución ve el formulario, y
+   el que no (el closer) se entera de que la carga Finanzas. Se avisa desde el
+   store, así cualquier pantalla que cambie el estado lo dispara sin saber de
+   devoluciones. */
+export interface AvisoDevolucion { sesionId: ID }
+const oyentesDevolucion = new Set<(a: AvisoDevolucion) => void>();
+export function alElegirDevolucion(f: (a: AvisoDevolucion) => void): () => void {
+  oyentesDevolucion.add(f);
+  return () => { oyentesDevolucion.delete(f); };
 }
 
 let resincronizar: number | undefined;
@@ -990,6 +1003,32 @@ export interface DatosCobro {
   cvu?: string; tipoCambioBlue?: number; tipoCambioFuente?: string;
 }
 
+/* Lo que se carga de una devolución (lib/devoluciones.ts). */
+export interface DatosDevolucion {
+  ventaId?: ID;
+  monto: number;
+  fecha: string;
+  procesadorId?: ID;
+  montoArs?: number;
+  tipoCambio?: number;
+  comprobante?: Comprobante;
+  noDescontarAlCloser?: boolean;
+  motivo?: string;
+  notas?: string;
+  /* La llamada de la que salió la venta; si no, la última de la persona. */
+  sesionId?: ID;
+  /* Qué más pasa: dar de baja la venta (como reembolsada) y dejar la llamada en «Devolución». */
+  darDeBaja?: boolean;
+  marcarLlamada?: boolean;
+  /* Lo que informa la pasarela. */
+  referencia?: string;
+  proveedor?: ProveedorPasarela;
+  /* La propuesta de la pasarela que se confirma con estos datos. */
+  confirmaId?: ID;
+  por?: string;
+  extra?: Record<string, unknown>;
+}
+
 /* Los datos de la planilla que trae el cobro, sin los vacíos. El blue de
    referencia va sólo con un tipo de cambio: es contra qué se compara. */
 function extrasDeCobro(c: DatosCobro): Partial<Pago> {
@@ -1079,6 +1118,16 @@ export const acciones = {
 
   actualizar<T extends { id: ID }>(coleccion: Coleccion, id: ID, cambios: Partial<T>, etiqueta: string, detalle?: string) {
     const e = snapshot();
+    /* El closer no cancela, devuelve ni reactiva una venta (Yari, 02/10): la base
+       lo traba igual (supabase/devoluciones.sql); acá ni se intenta. */
+    if (coleccion === "ventas" && acceso && !puedeDarDeBaja(acceso)) {
+      const antesV = e.ventas.find((v) => v.id === id);
+      const nuevo = (cambios as Partial<Venta>).estado;
+      if (antesV && nuevo !== undefined && nuevo !== antesV.estado && (esBaja({ estado: nuevo }) || esBaja(antesV))) {
+        negada("ventas", "Tu tipo de cuenta no puede cancelar, devolver ni reactivar una venta: lo hace Finanzas o el director comercial.");
+        return;
+      }
+    }
     let lista = (e[coleccion] as unknown as T[]).map((x) => (x.id === id ? { ...x, ...cambios } : x));
     const { lista: act, nuevo } = registrar(e, ENTIDAD_DE[coleccion] ?? "config", id, etiqueta, "actualizo", detalle ?? `Se editó «${etiqueta}».`);
     /* Una venta que se da de baja (o vuelve) arrastra sus cuotas y su servicio. */
@@ -1207,6 +1256,17 @@ export const acciones = {
     if (t.sesiones.size === 0 && t.leads.size === 0) return { etapas: {}, movidos: [] };
     guardar(conTanda(e, t));
     empujarTanda(t);
+    /* Una llamada que pasó a «Devolución» (no al deshacer): hay una devolución que cargar. */
+    if (!restaurarEtapas && oyentesDevolucion.size > 0) {
+      const opciones = opcionesDe(e.ajustes, "estadoLlamada");
+      const porId = new Map(e.sesiones.map((x) => [x.id, x] as const));
+      for (const [id, despues] of t.sesiones) {
+        const op = despues.estadoLlamada ? opciones.find((o) => o.nombre === despues.estadoLlamada) : undefined;
+        if (op?.oportunidad === "devolucion" && porId.get(id)?.estadoLlamada !== despues.estadoLlamada) {
+          oyentesDevolucion.forEach((f) => f({ sesionId: id }));
+        }
+      }
+    }
     return {
       etapas: t.etapas,
       movidos: [...t.leads.values()].map((l) => ({ leadId: l.id, etapa: e.etapas.find((x) => x.id === l.etapaId)?.nombre ?? "" })),
@@ -2054,6 +2114,148 @@ export const acciones = {
     const cuotasEscritas = [...(nueva ? [nueva] : []), ...cambiadas.values()];
     if (cuotasEscritas.length) empujar({ tipo: "upsert", tabla: "cuotas", filas: cuotasEscritas });
     if (movimientosTocados.size) empujar({ tipo: "upsert", tabla: "movimientos", filas: [...movimientosTocados.values()] });
+    empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
+    return true;
+  },
+
+  /* ---------- Devoluciones (lib/devoluciones.ts) ----------
+     Una devolución es una transacción aparte: no cambia la venta ni sus cobros.
+     Resta en el mes en que se devuelve la plata y revierte lo comisionado.
+     Además, si se pide: la venta se da de baja (como reembolsada: sus cuotas
+     sin pagos se cancelan y su servicio pasa a baja) y la llamada de la que
+     salió queda en «Devolución» (su oportunidad pasa a Perdido). La carga
+     Finanzas o el director comercial; el closer sólo la ve. */
+
+  registrarDevolucion(datos: DatosDevolucion): ID | null {
+    const e = snapshot();
+    const venta = datos.ventaId ? e.ventas.find((v) => v.id === datos.ventaId) : undefined;
+    if (!venta) return null;
+    if (acceso && !puedeCargarDevolucion(acceso)) {
+      negada("devoluciones", "Tu tipo de cuenta no carga devoluciones: las cargan Finanzas o el director comercial.");
+      return null;
+    }
+    const monto = Math.round(datos.monto * 100) / 100;
+    if (!(monto > 0)) return null;
+    const cuando = ahora();
+    const previa = datos.confirmaId ? (e.devoluciones ?? []).find((x) => x.id === datos.confirmaId) : undefined;
+    const id = previa?.id ?? nuevoId("dev");
+
+    /* La venta se da de baja si se pidió y sigue activa. */
+    const baja = datos.darDeBaja && venta.estado === "activa" ? efectoDeBaja(e, venta, { ...venta, estado: "reembolsada" }) : null;
+
+    /* La llamada de la que salió la venta queda en «Devolución»: el CRM se entera. */
+    const t = nuevaTanda();
+    let llamada: Sesion | undefined;
+    if (datos.marcarLlamada) {
+      llamada = llamadaDeVenta(e, venta, datos.sesionId);
+      const op = opcionesDe(e.ajustes, "estadoLlamada").find((o) => o.oportunidad === "devolucion");
+      if (llamada && op && llamada.estadoLlamada !== op.nombre && puedo("sesiones")) {
+        cargarLlamadas(t, e, [{
+          id: llamada.id, cambios: { estadoLlamada: op.nombre },
+          detalle: `${llamada.invitado}: Estado de Llamada → ${op.nombre} (por la devolución).`,
+        }]);
+      }
+    }
+
+    const d: Devolucion = {
+      ...(previa ?? {}),
+      id, ventaId: venta.id, monto, moneda: venta.moneda, fecha: datos.fecha,
+      procesadorId: datos.procesadorId, montoArs: datos.montoArs, tipoCambio: datos.tipoCambio,
+      comprobante: datos.comprobante, noDescontarAlCloser: Boolean(datos.noDescontarAlCloser), estado: "confirmada",
+      motivo: datos.motivo?.trim() || undefined, notas: datos.notas?.trim() || undefined,
+      sesionId: llamada?.id ?? datos.sesionId ?? previa?.sesionId,
+      referencia: datos.referencia ?? previa?.referencia, proveedor: datos.proveedor ?? previa?.proveedor,
+      conciliadaEn: (datos.referencia ?? previa?.referencia) ? previa?.conciliadaEn ?? cuando : undefined,
+      cargadaPor: datos.por || e.ajustes.responsable || "Apicanta", creadoEn: previa?.creadoEn ?? cuando,
+      extra: { ...(previa?.extra ?? {}), ...(datos.extra ?? {}) },
+    };
+
+    const nombre = venta.contactoNombre;
+    const cuanto = `${Math.round(monto).toLocaleString("es-AR")} ${venta.moneda}`;
+    const { lista, nuevo } = registrar(
+      e, "transaccion", venta.id, nombre, previa ? "actualizo" : "creo",
+      `Se ${previa ? "confirmó" : "cargó"} una devolución de ${cuanto} de la venta de ${nombre} (el ${d.fecha.slice(0, 10)})`
+      + `${d.noDescontarAlCloser ? ", sin descontarle la comisión al closer" : ""}`
+      + `${baja ? "; la venta quedó reembolsada" : ""}.`,
+    );
+    const cuotasPorId = new Map((baja?.cuotas ?? []).map((c) => [c.id, c] as const));
+    const alumnosPorId = new Map((baja?.alumnos ?? []).map((a) => [a.id, a] as const));
+    guardar(conTanda({
+      ...e,
+      devoluciones: previa ? (e.devoluciones ?? []).map((x) => (x.id === id ? d : x)) : [d, ...(e.devoluciones ?? [])],
+      actividad: lista,
+      ...(baja ? {
+        ventas: e.ventas.map((v) => (v.id === venta.id ? baja.venta : v)),
+        cuotas: e.cuotas.map((c) => cuotasPorId.get(c.id) ?? c),
+        alumnos: e.alumnos.map((a) => alumnosPorId.get(a.id) ?? a),
+      } : {}),
+    }, t));
+    empujar({ tipo: "upsert", tabla: "devoluciones", filas: [d] });
+    if (baja) {
+      empujar({ tipo: "upsert", tabla: "ventas", filas: [baja.venta] });
+      if (baja.cuotas.length) empujarEnLotes("cuotas", baja.cuotas);
+      if (baja.alumnos.length) empujar({ tipo: "upsert", tabla: "alumnos", filas: baja.alumnos });
+    }
+    empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
+    empujarTanda(t);
+    return id;
+  },
+
+  /* Corregir una devolución ya cargada (el monto, el día, el medio, el
+     comprobante, la marca). Lo que se vacía viaja como null. */
+  editarDevolucion(id: ID, cambios: Partial<Omit<Devolucion, "id">>): boolean {
+    const e = snapshot();
+    const antes = (e.devoluciones ?? []).find((x) => x.id === id);
+    if (!antes) return false;
+    if (acceso && !puedeCargarDevolucion(acceso)) {
+      negada("devoluciones", "Tu tipo de cuenta no corrige devoluciones: las corrigen Finanzas o el director comercial.");
+      return false;
+    }
+    const nueva: Devolucion = { ...antes, ...cambios, id };
+    if (nueva.monto !== antes.monto) nueva.monto = Math.round(nueva.monto * 100) / 100;
+    const venta = nueva.ventaId ? e.ventas.find((v) => v.id === nueva.ventaId) : undefined;
+    const { lista, nuevo } = registrar(
+      e, "transaccion", venta?.id ?? id, venta?.contactoNombre ?? "Devolución", "actualizo",
+      `Se corrigió la devolución de ${Math.round(nueva.monto).toLocaleString("es-AR")} ${nueva.moneda}${venta ? ` de la venta de ${venta.contactoNombre}` : ""}.`,
+    );
+    guardar({ ...e, devoluciones: (e.devoluciones ?? []).map((x) => (x.id === id ? nueva : x)), actividad: lista });
+    empujar({ tipo: "upsert", tabla: "devoluciones", filas: [nueva] });
+    const vaciado = Object.keys(antes).filter((k) => (antes as unknown as Record<string, unknown>)[k] !== undefined && (nueva as unknown as Record<string, unknown>)[k] === undefined);
+    if (vaciado.length) empujarUpdate("devoluciones", [id], Object.fromEntries(vaciado.map((k) => [k, null])));
+    empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
+    return true;
+  },
+
+  /* «No es una devolución»: la que informó una pasarela y nadie reconoce. */
+  ignorarDevolucion(id: ID): boolean {
+    const e = snapshot();
+    const antes = (e.devoluciones ?? []).find((x) => x.id === id);
+    if (!antes || antes.estado === "ignorada") return false;
+    if (acceso && !puedeCargarDevolucion(acceso)) {
+      negada("devoluciones", "Tu tipo de cuenta no puede decidir sobre las devoluciones.");
+      return false;
+    }
+    const nueva: Devolucion = { ...antes, estado: "ignorada" };
+    guardar({ ...e, devoluciones: (e.devoluciones ?? []).map((x) => (x.id === id ? nueva : x)) });
+    empujarUpdate("devoluciones", [id], { estado: "ignorada" });
+    return true;
+  },
+
+  borrarDevolucion(id: ID): boolean {
+    const e = snapshot();
+    const antes = (e.devoluciones ?? []).find((x) => x.id === id);
+    if (!antes) return false;
+    if (acceso && !puedeCargarDevolucion(acceso)) {
+      negada("devoluciones", "Tu tipo de cuenta no borra devoluciones: las borran Finanzas o el director comercial.");
+      return false;
+    }
+    const venta = antes.ventaId ? e.ventas.find((v) => v.id === antes.ventaId) : undefined;
+    const { lista, nuevo } = registrar(
+      e, "transaccion", venta?.id ?? id, venta?.contactoNombre ?? "Devolución", "elimino",
+      `Se borró la devolución de ${Math.round(antes.monto).toLocaleString("es-AR")} ${antes.moneda}${venta ? ` de la venta de ${venta.contactoNombre}` : ""}: vuelve a contar lo cobrado y lo comisionado.`,
+    );
+    guardar({ ...e, devoluciones: (e.devoluciones ?? []).filter((x) => x.id !== id), actividad: lista });
+    empujar({ tipo: "delete", tabla: "devoluciones", ids: [id] });
     empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
     return true;
   },
