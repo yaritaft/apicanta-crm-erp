@@ -16,6 +16,7 @@ import { useSalir, useSesion } from "@/lib/auth";
 import { elegirVerComo, useAcceso, useVerComo } from "@/lib/acceso";
 import { areaDeRuta, esCuentaDeCloser, nivelDeRuta, queEsTabla } from "@/lib/permisos";
 import { diaDeNegocio } from "@/lib/dia-negocio";
+import { aContactarHoy, filasDeSeguimiento, hoyDelNegocio } from "@/lib/seguimiento";
 import { useRecordarVistas } from "@/lib/recordarVistas";
 import { Avatar, Button, Card, Empty, IconButton } from "@/components/ui/ui";
 import { useToast } from "@/components/ui/Toast";
@@ -118,9 +119,18 @@ export function Shell({ children }: { children: React.ReactNode }) {
     "/finanzas": { n: atrasados, titulo: `${atrasados === 1 ? "Un cliente atrasado" : `${atrasados} clientes atrasados`} hace 7 días o más` },
   };
 
+  /* Customer Success: a cuántos alumnos les toca hoy el contacto (lib/seguimiento.ts). */
+  const { alumnos: alumnosCS, seguimientos: seguimientosCS, contactos: contactosCS, leads: leadsCS } = estado;
+  const aContactar = useMemo(
+    () => (nivelDeRuta(acceso, "/alumnos") > 0 ? aContactarHoy(filasDeSeguimiento(estado, hoyDelNegocio())).length : 0),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [acceso, alumnosCS, seguimientosCS, contactosCS, leadsCS, estado.ajustes.seguimiento],
+  );
+
   const contadores: Record<string, number> = {
     "/leads": estado.leads.length,
     "/alumnos": estado.alumnos.filter((a) => a.estado === "activo").length,
+    "/alumnos?seccion=hoy": aContactar,
     "/agenda": estado.sesiones.filter((s) => s.estado === "agendada" && new Date(s.inicia) >= new Date()).length,
     "/mis-llamadas": llamadasDeHoy,
     "/webinars": estado.webinars.length,

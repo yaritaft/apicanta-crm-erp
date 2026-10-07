@@ -760,3 +760,48 @@ guardan las grabaciones atadas a una llamada de Calendly.
 - **Lo que no está hecho:** guardar «sin atar» las llamadas del equipo de ventas que no se pudieron atar (la checklist lo
   proponía; se mantuvo la regla de descartarlas hasta que lo decidan, y el diagnóstico cuenta cuántas serían). Y no se
   tocó la configuración de Fathom con Zoom (es de Manu).
+
+## Customer Success: seguimiento de alumnos y testimonios (lote G, reunión del 02/10)
+
+Manu pidió llevar en la app lo que Customer Success tiene en planillas y en Airtable: «no sería una ficha por alumno
+sino una lista general, un checklist: cuáles faltan contactar, cuáles no contestaron, a quién hablar hoy». Vive
+dentro de **Alumnos**, en tres solapas nuevas (`?seccion=hoy|seguimiento|testimonios`) y con dos accesos directos en
+el menú («A contactar hoy», con la cuenta de hoy, y «Seguimiento»). Reportes y Pipeline de servicio **no se tocan**
+(D12): son del área Alumnos y siguen en el menú hasta hablarlo con Manu y Lili.
+
+- **A contactar hoy**: los alumnos activos a los que ya les toca el contacto, lo más vencido arriba (a igual atraso,
+  primero el que lleva más intentos sin respuesta). Dos gestos de un clic: **Lo contacté** (el último contacto pasa a
+  hoy y el próximo toca a su cadencia) y **No contestó** (cuenta un intento y se vuelve a probar a los 3 días). Cada
+  gesto avisa y ofrece **Deshacer**. Con 3 intentos seguidos sin respuesta aparece «Dejó de contestar» (se sugiere,
+  no se marca solo).
+- **Seguimiento**: la lista general con país, años de experiencia y tecnologías (salen del contacto: del formulario de
+  Calendly), cadencia **cada 7, 15 o 20 días** elegible por alumno, último y próximo contacto, «dejó de contestar»,
+  **CV corregido** y **LinkedIn corregido** (sí/no, con un switch) y el estado del testimonio. Filtros por situación
+  (vencidos, hoy, al día, dejaron de contestar), CV, LinkedIn, cadencia, país, testimonio y búsqueda; todo viaja en
+  el link con «Copiar link» (`?sit=&cv=&li=&cad=&pais=&tes=&sq=&orden-seg=&pag-seg=`, `lib/useParamsURL.ts`).
+- **Testimonios**: modelo nuevo por alumno (puede tener más de uno): estado **pedido / grabado / publicado**, link y
+  fecha. Se carga desde la solapa o con «Pedir» en la fila del seguimiento.
+- **La cuenta** (`src/lib/seguimiento.ts`, pura y con pruebas en `pruebas/seguimiento.test.ts`): el próximo contacto
+  es *último contacto (o el día de ingreso, si nunca se lo contactó) + cadencia*; hoy o antes es «a contactar»; los
+  pausados, egresados, dados de baja y los que «dejaron de contestar» no entran en la lista de hoy. Los días son del
+  día del negocio (Argentina), sin hora. Todo número lleva su ⓘ «cómo se calcula».
+- **Configurable** (Lili todavía no contó cómo lo lleva hoy): las cadencias que se pueden elegir, la de arranque
+  (15), los días de reintento (3) y los intentos hasta sugerir «dejó de contestar» (3) se ajustan en Alumnos →
+  Seguimiento → **Ajustar** (lo ven quienes editan Ajustes) y viven en `ajustes.seguimiento`. Cuando conteste, se
+  corrigen ahí o en `CONFIG_POR_DEFECTO`.
+- **Datos**: `seguimiento_alumnos` (una fila por alumno, id `seg_<alumnoId>`; en tabla aparte para que un cambio de
+  etapa del pipeline, que guarda la fila entera del alumno, no la pise) y `testimonios`. Cada gesto queda anotado en
+  la actividad del alumno con quién lo hizo.
+- **Tipo de cuenta «Customer Success»** (F2-06): ve **Alumnos** (edita) y **Clientes** (sólo mira), y nada más; entra
+  directo a «A contactar hoy». Se crea con un clic en Equipo → Tipos de cuenta → «Crear “Customer Success”» (o lo
+  siembra el SQL). **Clientes pasó a ser un permiso propio** (`AREAS`, `/clientes` → área `clientes`), pero
+  `nivelDeAreas()` hace que quien ya ve o edita Ventas siga viendo Clientes igual: ningún tipo existente cambia. El
+  de Manu (D13) es «Todo menos honorarios», que ya existe.
+- **SQL a correr**: `supabase/customer-success.sql` (idempotente; requiere `tipos-cuenta.sql`). Crea las dos
+  tablas con sus políticas, `ajustes.seguimiento`, ajusta `areas_que_leen()` y `areas_que_editan()` **sobre su
+  definición vigente** (no las pisa con una copia, así se puede correr antes o después de lo de otros lotes) y
+  siembra el tipo. Sin correrlo la app anda igual, y el seguimiento queda en el navegador de quien lo carga.
+  `pruebas/permisos-clientes.test.ts` comprueba que la app (`LEEN`/`EDITAN`) y la base digan lo mismo.
+- **Falta** (cuando llegue lo de Manu y Lili): importar lo que hoy tienen en Airtable (Booking calls, Results y
+  Testimonios), sumar las columnas que pidan que no estén acá, y decidir con Lili si usan Reportes y el Pipeline de
+  servicio (D12).

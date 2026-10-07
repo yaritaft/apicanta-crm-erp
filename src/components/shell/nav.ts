@@ -1,7 +1,7 @@
 import {
   LayoutDashboard, Users, Sheet, CalendarDays, Video, Megaphone,
   GraduationCap, ClipboardList, Wallet, Settings, HandCoins, ArrowDownUp, Banknote, Landmark, UserCheck,
-  ClipboardCheck, PhoneCall,
+  ClipboardCheck, PhoneCall, ListChecks,
 } from "lucide-react";
 import { SquareKanban } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
@@ -46,6 +46,10 @@ export const NAV: GrupoNav[] = [
          específico, así que acá se prende éste y no los dos. */
       { href: "/alumnos?seccion=pipeline", texto: "Pipeline de servicio", icono: SquareKanban, ayuda: "Arrastrá alumnos entre las etapas del servicio" },
       { href: "/reportes", texto: "Reportes", icono: ClipboardList, ayuda: "Dashboard y tabla de los reportes de alumnos" },
+      /* Customer Success (F2-09): la lista de a quién contactar hoy y el
+         seguimiento de todos. Son vistas de Alumnos. */
+      { href: "/alumnos?seccion=hoy", texto: "A contactar hoy", icono: PhoneCall, ayuda: "Los alumnos a los que les toca el contacto de seguimiento, lo más vencido arriba" },
+      { href: "/alumnos?seccion=seguimiento", texto: "Seguimiento", icono: ListChecks, ayuda: "Cada alumno con su cadencia, su CV y su LinkedIn" },
     ],
   },
   {
@@ -88,5 +92,8 @@ export function navPara(a: MiAcceso | null): GrupoNav[] {
 /* A dónde va el inicio: el Dashboard, o la primera pantalla que ve (el
    closer, al CRM). */
 export function inicioPara(a: MiAcceso | null): string {
+  /* Customer Success (Alumnos y Clientes, sin Dashboard, CRM ni Ventas)
+     arranca en la lista de a quién contactar hoy, no en Clientes. */
+  if (nivelDeRuta(a, "/alumnos") > 0 && ["/panel", "/crm", "/leads", "/ventas"].every((r) => nivelDeRuta(a, r) === 0)) return "/alumnos?seccion=hoy";
   return navPara(a)[0]?.items[0]?.href ?? "/panel";
 }

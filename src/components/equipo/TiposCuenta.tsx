@@ -7,7 +7,7 @@ import { Confirmar, ModalForm } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toast";
 import { acciones, hayNube } from "@/lib/store";
 import { elegirVerComo, useTiposCuenta, useVerComo, type useAccesos } from "@/lib/acceso";
-import { AREAS, resumenDeTipo, tipoLimpio } from "@/lib/permisos";
+import { AREAS, CUSTOMER_SUCCESS, nivelDeAreas, resumenDeTipo, tipoLimpio } from "@/lib/permisos";
 import type { AreaId, NivelArea, TipoCuenta } from "@/lib/types";
 
 /* ==================================================================
@@ -49,6 +49,12 @@ export function TiposCuenta({ accesos }: { accesos: Accesos }) {
     const areas = { ...t.areas };
     if (nivel) areas[area] = nivel; else delete areas[area];
     const nombreArea = AREAS.find((a) => a.id === area)?.nombre ?? area;
+    /* Clientes acompaña a Ventas: no se le puede dar menos de lo que tiene Ventas. */
+    if (area === "clientes" && nivelDeAreas(areas, "clientes") > (nivel === "editar" ? 2 : nivel === "ver" ? 1 : 0)) {
+      toast(`${t.nombre} ve Clientes porque ve Ventas. Para sacárselo, cambiá Ventas.`, "err");
+      if (t.areas.clientes) acciones.guardarTipoCuenta(tipoLimpio({ ...t, areas }), `${t.nombre}: Clientes quedó como Ventas.`);
+      return;
+    }
     acciones.guardarTipoCuenta(tipoLimpio({ ...t, areas }), `${t.nombre}: ${nombreArea} pasó de «${textoNivel(t.areas[area])}» a «${textoNivel(nivel || undefined)}».`);
     toast(`${t.nombre}: ${nombreArea}, ${textoNivel(nivel || undefined)}. Se ve la próxima vez que entren.`);
   }
@@ -58,7 +64,24 @@ export function TiposCuenta({ accesos }: { accesos: Accesos }) {
       <CardHead
         titulo="Tipos de cuenta"
         sub="Qué ve y qué edita cada tipo, área por área. Lo controla la base: lo que no ve le llega vacío y lo que no edita no se guarda. Se aplica la próxima vez que esa persona entra."
-        acciones={<Button variante="primary" icono={<Plus size={16} />} onClick={() => setEditando("nuevo")}>Agregar un tipo</Button>}
+        acciones={(
+          <>
+            {/* Un clic para el tipo de Lili y las chicas (F2-06): ve Alumnos y Clientes, y sólo eso. */}
+            {!tipos.some((t) => t.id === CUSTOMER_SUCCESS.id) && (
+              <Button
+                variante="secondary" icono={<Plus size={16} />}
+                title="Ve Alumnos (seguimiento, CV y LinkedIn, testimonios) y Clientes, y nada más"
+                onClick={() => {
+                  acciones.guardarTipoCuenta({ ...CUSTOMER_SUCCESS, orden: Math.max(0, ...tipos.map((t) => t.orden)) + 1 }, `Se creó el tipo de cuenta «${CUSTOMER_SUCCESS.nombre}».`);
+                  toast(`Listo: «${CUSTOMER_SUCCESS.nombre}» ya se puede elegir al dar acceso.`);
+                }}
+              >
+                Crear «Customer Success»
+              </Button>
+            )}
+            <Button variante="primary" icono={<Plus size={16} />} onClick={() => setEditando("nuevo")}>Agregar un tipo</Button>
+          </>
+        )}
       />
 
       {!hayNube && (
@@ -101,7 +124,8 @@ export function TiposCuenta({ accesos }: { accesos: Accesos }) {
                     </span>
                   </th>
                   {AREAS.map((a) => {
-                    const nivel = fijo ? "editar" : t.areas[a.id] ?? "";
+                    /* Clientes sigue a Ventas: se muestra lo que de verdad puede. */
+                    const nivel = fijo ? "editar" : (["", "ver", "editar"] as const)[nivelDeAreas(t.areas, a.id)];
                     return (
                       <td key={a.id} className={`tipos-tabla__celda tipos-tabla__celda--${nivel || "no"}`}>
                         {fijo ? (
