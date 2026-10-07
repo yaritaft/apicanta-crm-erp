@@ -113,11 +113,11 @@ export function FichaPersona({ id, vista, ventaResaltada, onCerrar, onVista }: {
 
 /* ---------- Cabecera ---------- */
 
-/* Llamadas: CRM o Leads. Ventas: Ventas o Finanzas. Servicio: Alumnos. */
+/* Llamadas: CRM o Leads. Ventas: Ventas, Clientes o Finanzas. Servicio: Alumnos. */
 function vistasDe(a: MiAcceso | null): VistaFicha[] {
   const xs: VistaFicha[] = [];
   if (nivelEn(a, "crm") >= 1 || nivelEn(a, "leads") >= 1) xs.push("llamadas");
-  if (nivelEn(a, "ventas") >= 1 || nivelEn(a, "finanzas") >= 1) xs.push("ventas");
+  if (nivelEn(a, "ventas") >= 1 || nivelEn(a, "clientes") >= 1 || nivelEn(a, "finanzas") >= 1) xs.push("ventas");
   if (nivelEn(a, "alumnos") >= 1) xs.push("servicio");
   return xs;
 }

@@ -7,6 +7,8 @@ import type {
   Arqueo, Campania, CampoPersonalizado, Comentario, Comprobante, Cuota, EntidadNombre, EstadoApp, Etapa, ID,
   Lead, Meta, Movimiento, OpcionCrm, OportunidadCrm, Pago, Reporte, Sesion, Venta, Webinar,
 } from "./types";
+import type { ConfigSeguimiento, SeguimientoAlumno, Testimonio } from "./types";
+import { configSeguimiento, seguimientoVacio } from "./seguimiento";
 import type { EsquemaPago, EstadoTraspaso, EtapaServicio, ExtraLiquidacion, Gasto, ID as IdMiembro, Liquidacion, MiembroEquipo, ResultadoLiquidacion, TipoCuenta, Traspaso } from "./types";
 import { conciliarPuntas, rutaDe, type Punta } from "./traspasos";
 import { conExtraEnMes, mismasTasas, nombrePeriodo, sinExtraEnLiquidacion, tasaParaFinanzas, tasasPorServicio } from "./honorarios";
@@ -526,6 +528,9 @@ export async function cargarDeLaNube(): Promise<void> {
         .sort((a, b) => +new Date(a.fecha) - +new Date(b.fecha)),
       /* Opcional: sin supabase/traspasos.sql, ninguno. */
       traspasos: (porTabla.traspasos ?? []) as EstadoApp["traspasos"],
+      /* Opcionales: sin supabase/customer-success.sql, ninguno. */
+      seguimientos: (porTabla.seguimiento_alumnos ?? []) as SeguimientoAlumno[],
+      testimonios: (porTabla.testimonios ?? []) as Testimonio[],
       /* Vacías para quien no es dueño: RLS las esconde. */
       honorarios: (porTabla.honorarios ?? []) as EstadoApp["honorarios"],
       liquidaciones: (porTabla.liquidaciones ?? []) as EstadoApp["liquidaciones"],
@@ -1673,6 +1678,75 @@ export const acciones = {
     const e = snapshot();
     guardar({ ...e, arqueos: (e.arqueos ?? []).filter((a) => a.id !== id) });
     empujar({ tipo: "delete", tabla: "arqueos", ids: [id] });
+  },
+
+  /* ---------- Customer Success (lib/seguimiento.ts) ----------
+     El seguimiento de cada alumno y sus testimonios. Quedan anotados en la
+     actividad del alumno: quién lo contactó y cuándo. */
+
+  /* Cambia el seguimiento de un alumno (lo crea si todavía no tenía) y anota qué
+     pasó. Devuelve cómo estaba, para ofrecer «Deshacer» (restaurarSeguimiento). */
+  guardarSeguimiento(
+    alumnoId: ID, cambio: (s: SeguimientoAlumno, quien: string) => SeguimientoAlumno,
+    detalle: (despues: SeguimientoAlumno) => string,
+  ): SeguimientoAlumno | null {
+    const e = snapshot();
+    const alumno = e.alumnos.find((a) => a.id === alumnoId);
+    if (!alumno) return null;
+    const antes = (e.seguimientos ?? []).find((s) => s.alumnoId === alumnoId)
+      ?? seguimientoVacio(alumnoId, configSeguimiento(e.ajustes.seguimiento));
+    const quien = e.equipo.find((m) => m.id === acceso?.miembroId)?.nombre ?? e.ajustes.responsable ?? "";
+    const despues = cambio(antes, quien);
+    const { lista, nuevo } = registrar(e, "alumno", alumnoId, alumno.nombre, "actualizo", detalle(despues));
+    guardar({ ...e, seguimientos: [...(e.seguimientos ?? []).filter((s) => s.alumnoId !== alumnoId), despues], actividad: lista });
+    empujar({ tipo: "upsert", tabla: "seguimiento_alumnos", filas: [despues] });
+    empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
+    return antes;
+  },
+
+  /* Vuelve el seguimiento de un alumno a como estaba (el «Deshacer» del aviso). */
+  restaurarSeguimiento(fila: SeguimientoAlumno, detalle: string): void {
+    const e = snapshot();
+    const alumno = e.alumnos.find((a) => a.id === fila.alumnoId);
+    if (!alumno) return;
+    const { lista, nuevo } = registrar(e, "alumno", alumno.id, alumno.nombre, "actualizo", detalle);
+    guardar({ ...e, seguimientos: [...(e.seguimientos ?? []).filter((s) => s.alumnoId !== fila.alumnoId), fila], actividad: lista });
+    empujar({ tipo: "upsert", tabla: "seguimiento_alumnos", filas: [fila] });
+    empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
+  },
+
+  /* Guarda un testimonio (nuevo o corregido) de un alumno. */
+  guardarTestimonio(t: Testimonio): void {
+    const e = snapshot();
+    const alumno = e.alumnos.find((a) => a.id === t.alumnoId);
+    const existe = (e.testimonios ?? []).some((x) => x.id === t.id);
+    const texto = { pedido: "se pidió", grabado: "se grabó", publicado: "se publicó" }[t.estado];
+    const { lista, nuevo } = registrar(e, "alumno", t.alumnoId, alumno?.nombre ?? "Alumno", existe ? "actualizo" : "creo",
+      `Testimonio: ${texto}${t.link ? ` (${t.link})` : ""}.`);
+    guardar({ ...e, testimonios: [t, ...(e.testimonios ?? []).filter((x) => x.id !== t.id)], actividad: lista });
+    empujar({ tipo: "upsert", tabla: "testimonios", filas: [t] });
+    empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
+  },
+
+  borrarTestimonio(id: ID): void {
+    const e = snapshot();
+    const t = (e.testimonios ?? []).find((x) => x.id === id);
+    if (!t) return;
+    const alumno = e.alumnos.find((a) => a.id === t.alumnoId);
+    const { lista, nuevo } = registrar(e, "alumno", t.alumnoId, alumno?.nombre ?? "Alumno", "elimino", "Se borró un testimonio.");
+    guardar({ ...e, testimonios: (e.testimonios ?? []).filter((x) => x.id !== id), actividad: lista });
+    empujar({ tipo: "delete", tabla: "testimonios", ids: [id] });
+    empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
+  },
+
+  /* Las cadencias y los reintentos del seguimiento (Ajustes.seguimiento). */
+  configurarSeguimiento(cfg: ConfigSeguimiento): void {
+    const e = snapshot();
+    const ajustes = { ...e.ajustes, seguimiento: configSeguimiento(cfg) };
+    const { lista, nuevo } = registrar(e, "config", "seguimiento", "Seguimiento de alumnos", "actualizo", "Se cambió la configuración del seguimiento de alumnos.");
+    guardar({ ...e, ajustes, actividad: lista });
+    empujar({ tipo: "upsert", tabla: "ajustes", filas: [filaAjustes(ajustes)] });
+    empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
   },
 
   /* ---------- Movimientos entre cuentas (lib/traspasos.ts) ----------
