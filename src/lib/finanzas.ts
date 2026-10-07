@@ -3,6 +3,7 @@ import type { RangoMes } from "./metricas";
 import { esSoloReserva } from "./angelo";
 import { cobraDirector, cobraEnFecha, closerDeCuota, tasaDeComision } from "./comision";
 import { devolucionesDelMes, reversasDelMes, totalDevuelto, type Reversa } from "./devoluciones";
+import { fechaDePago } from "./gastos";
 
 /* Las reglas de cuándo y cuánto comisiona alguien viven en lib/comision.ts
    (sin dependencias, para que las devoluciones las usen); acá se reexportan
@@ -287,6 +288,15 @@ export function comisionesSetterYReferidor(e: EstadoApp, m: RangoMes) {
 
 export function gastosDelMes(e: EstadoApp, m: RangoMes, grupo?: Gasto["grupo"]): Gasto[] {
   return e.gastos.filter((g) => enRango(g.fecha, m) && (!grupo || g.grupo === grupo));
+}
+
+/** Los gastos que se PAGARON en el período: los que la caja y el arqueo
+ *  cuentan. Cada uno entra el día que se pagó (`fechaPago`), no el mes al que
+ *  corresponde: un gasto de septiembre pagado el 2 de octubre resta del
+ *  estado de resultados de septiembre (gastosDelMes) y de la caja de octubre.
+ *  Sin fecha de pago es el mismo día, y las dos listas coinciden. */
+export function gastosPagadosEn(e: Pick<EstadoApp, "gastos">, m: RangoMes, grupo?: Gasto["grupo"]): Gasto[] {
+  return e.gastos.filter((g) => enRango(fechaDePago(g), m) && (!grupo || g.grupo === grupo));
 }
 
 export function totalGastos(e: EstadoApp, m: RangoMes, grupo?: Gasto["grupo"]): number {

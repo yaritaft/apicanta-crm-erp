@@ -1,5 +1,5 @@
 import type { Arqueo, EstadoApp, Gasto, ID, Moneda, Traspaso } from "./types";
-import { aMonedaBase, categoriaDe, montoOriginal } from "./gastos";
+import { aMonedaBase, categoriaDe, fechaDePago, montoOriginal } from "./gastos";
 import { esDevolucionConfirmada } from "./devoluciones";
 
 /* ==================================================================
@@ -393,7 +393,7 @@ export function saldosEsperados(
     const cuenta = typeof g.extra?.cuentaId === "string" ? g.extra.cuentaId : "";
     const s = cuenta ? out.get(cuenta) : undefined;
     /* El costo de un pase no sale aparte: ya está en su diferencia. */
-    if (!s || g.extra?.traspasoId || !entre(g.fecha, desde, hasta)) continue;
+    if (!s || g.extra?.traspasoId || !entre(fechaDePago(g), desde, hasta)) continue;
     const original = montoOriginal(g);
     if (s.moneda === "ARS") { if (original?.moneda === "ARS") s.salio += original.monto; }
     else s.salio += g.monto;

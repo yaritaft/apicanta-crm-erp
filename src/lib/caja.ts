@@ -1,6 +1,6 @@
 import type { Arqueo, EstadoApp, Procesador } from "./types";
 import type { RangoMes } from "./metricas";
-import { calcularPyL, gastosDelMes } from "./finanzas";
+import { calcularPyL, gastosPagadosEn } from "./finanzas";
 import { enCamino } from "./traspasos";
 
 /* ==================================================================
@@ -15,7 +15,10 @@ import { enCamino } from "./traspasos";
      − lo que se devolvió a clientes
      − lo que se quedaron los procesadores
      − las comisiones de closers y del director
-     − los gastos cargados (directos, operativos y los honorarios del CEO)
+     − los gastos que se pagaron (directos, operativos y los honorarios del
+       CEO), el día que se pagaron: un gasto de septiembre pagado el 2 de
+       octubre resta en el estado de resultados de septiembre y en la caja
+       de octubre (Gasto.fechaPago; sin ella, es el mismo día)
      − el growth partner y el socio (su parte del profit)
      − los retiros del dueño
      = la caja esperada
@@ -80,8 +83,13 @@ export function cajaEsperada(
 ): MovimientoCaja {
   const m = rangoEntre(desde.fecha, hasta);
   const p = calcularPyL(e, m);
-  const retiros = gastosDelMes(e, m, "retiro").reduce((a, g) => a + g.monto, 0);
-  const gastos = p.otrosDirectos + p.gastosOperativos + p.honorariosCeo;
+  /* La plata que salió: cada gasto cuenta el día que se pagó, no el mes al
+     que corresponde (ese es del estado de resultados). Con las dos fechas
+     iguales da lo mismo que `p.otrosDirectos + p.gastosOperativos +
+     p.honorariosCeo`. */
+  const pagados = gastosPagadosEn(e, m);
+  const retiros = pagados.filter((g) => g.grupo === "retiro").reduce((a, g) => a + g.monto, 0);
+  const gastos = pagados.filter((g) => g.grupo !== "retiro").reduce((a, g) => a + g.monto, 0);
   const comisiones = p.comisionCloser + p.comisionDirector;
   const reparto = p.growth + p.socio;
   const enCaminoAntes = enCamino(e, desde.fecha, tipoCambio);

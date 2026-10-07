@@ -1,6 +1,9 @@
 import type { Ajustes, EstadoApp, Gasto, GrupoGasto, ID, MiembroEquipo, Moneda, RolEquipo } from "./types";
-import { aMonedaBase, escribirMonto, leerMonto, montoOriginal, normalizar } from "./gastos";
+import { aMonedaBase, escribirMonto, leerMonto, montoOriginal, normalizar, tieneOtraFechaDePago } from "./gastos";
 import { embudoDeGasto } from "./embudos";
+import { fechaLarga, isoDia } from "./format";
+import { moverPeriodo, nombrePeriodo, periodoDe, periodoDeFecha } from "./periodos";
+import { primerDiaDe } from "./mes-cerrado";
 
 /* ==================================================================
    Cargar un gasto: lo que decide el asistente, sin React, para poder
@@ -71,7 +74,12 @@ export interface BorradorGasto {
   monto: string;
   moneda: Moneda;
   tipoCambio: string;
+  /* La fecha del gasto: decide el mes al que corresponde (el devengo), donde
+     resta en el estado de resultados. */
   fecha: string;
+  /* El día que se pagó, si no es el mismo (la caja y el arqueo lo cuentan
+     ahí). Vacío: se pagó el mismo día que `fecha`, que es lo de siempre. */
+  fechaPago: string;
   recurrente: boolean;
   /* El nombre tal como se escribe: una persona del equipo o un proveedor. */
   proveedor: string;
@@ -101,7 +109,7 @@ export function borradorInicial(
   if (!gasto) {
     return {
       concepto: "", categoria: "", grupo: "operativo", categoriaElegida: false, nueva: false,
-      monto: "", moneda: base, tipoCambio: tc, fecha: mediodia(hoy), recurrente: false,
+      monto: "", moneda: base, tipoCambio: tc, fecha: mediodia(hoy), fechaPago: "", recurrente: false,
       proveedor: "", webinarId: "", embudoId: "", notas: "",
     };
   }
@@ -112,7 +120,8 @@ export function borradorInicial(
     monto: escribirMonto(orig ? orig.monto : gasto.monto),
     moneda: orig ? orig.moneda : (gasto.moneda ?? base),
     tipoCambio: orig ? escribirMonto(orig.tipoCambio) : tc,
-    fecha: gasto.fecha, recurrente: Boolean(gasto.recurrente),
+    fecha: gasto.fecha, fechaPago: tieneOtraFechaDePago(gasto) ? (gasto.fechaPago as string) : "",
+    recurrente: Boolean(gasto.recurrente),
     proveedor: gasto.proveedor ?? "", webinarId: gasto.webinarId ?? "", embudoId: embudoDeGasto(gasto) ?? "", notas: gasto.notas ?? "",
   };
 }
@@ -133,7 +142,7 @@ export function cambiosAlRepetir(g: Gasto, tipoCambioDeHoy: string): Partial<Bor
 
 /* ---------- Lo que falta para poder cargarlo ---------- */
 
-export type CampoGasto = "concepto" | "categoria" | "proveedor" | "monto" | "tipoCambio" | "fecha";
+export type CampoGasto = "concepto" | "categoria" | "proveedor" | "monto" | "tipoCambio" | "fecha" | "fechaPago";
 export type ProblemasGasto = Partial<Record<CampoGasto, string>>;
 
 /* Una sola letra no es un nombre: seguro es un error de tipeo. */
@@ -144,7 +153,7 @@ export const MENSAJE_PROVEEDOR = "Elegí o escribí a quién le pagaste";
 /** Todo lo que falta o está mal, campo por campo. Sirve para pintar cada
  *  casillero y para decidir si se puede cargar. */
 export function problemasDelGasto(
-  b: Pick<BorradorGasto, "concepto" | "categoria" | "proveedor" | "monto" | "moneda" | "tipoCambio" | "fecha">,
+  b: Pick<BorradorGasto, "concepto" | "categoria" | "proveedor" | "monto" | "moneda" | "tipoCambio" | "fecha"> & Partial<Pick<BorradorGasto, "fechaPago">>,
   base: Moneda,
 ): ProblemasGasto {
   const p: ProblemasGasto = {};
@@ -154,6 +163,7 @@ export function problemasDelGasto(
   if (!(leerMonto(b.monto) > 0)) p.monto = "Escribí cuánto fue";
   if (b.moneda !== base && !(leerMonto(b.tipoCambio) > 0)) p.tipoCambio = "Escribí el tipo de cambio";
   if (Number.isNaN(new Date(b.fecha).getTime())) p.fecha = "Elegí la fecha";
+  if (b.fechaPago && Number.isNaN(new Date(b.fechaPago).getTime())) p.fechaPago = "Elegí el día que se pagó";
   return p;
 }
 
@@ -168,9 +178,66 @@ export function problemaDelPaso(
     case "categoria": return p.categoria ?? null;
     case "proveedor": return p.proveedor ?? null;
     case "monto": return p.monto ?? p.tipoCambio ?? null;
-    case "fecha": return p.fecha ?? null;
-    default: return p.concepto ?? p.categoria ?? p.monto ?? p.tipoCambio ?? p.fecha ?? p.proveedor ?? null;
+    case "fecha": return p.fecha ?? p.fechaPago ?? null;
+    default: return p.concepto ?? p.categoria ?? p.monto ?? p.tipoCambio ?? p.fecha ?? p.fechaPago ?? p.proveedor ?? null;
   }
+}
+
+/* ---------- Las dos fechas ----------
+   «Mes al que corresponde» decide en qué mes resta del estado de resultados;
+   «Día que se pagó», cuándo sale de la caja y del arqueo (Yari y Juan Cruz,
+   02/10: un gasto de septiembre que se paga el 2 de octubre). Casi siempre
+   son lo mismo, y el asistente pregunta una sola fecha: sólo si el gasto es
+   de otro mes o se pagó otro día, se abren las dos. */
+
+/** Abrir las dos fechas: el día que se pagó queda como estaba la fecha, y
+ *  desde ahí se puede cambiar el mes sin mover la plata. */
+export function conOtraFechaDePago(b: Pick<BorradorGasto, "fecha">): Pick<BorradorGasto, "fechaPago"> {
+  return { fechaPago: b.fecha };
+}
+
+/** Volver a una sola fecha: vale la del día que se pagó, que es lo que de
+ *  verdad pasó con la plata. */
+export function sinOtraFechaDePago(b: Pick<BorradorGasto, "fecha" | "fechaPago">): Pick<BorradorGasto, "fecha" | "fechaPago"> {
+  return { fecha: b.fechaPago || b.fecha, fechaPago: "" };
+}
+
+/** El mes al que corresponde el gasto, elegido de la lista ("2026-09"). Si el
+ *  gasto ya cae en ese mes no se mueve; si no, va al primero del mes (como los
+ *  gastos fijos de la planilla): el día que se pagó no se toca. */
+export function alElegirMes(b: Pick<BorradorGasto, "fecha">, periodo: string): Pick<BorradorGasto, "fecha"> {
+  return { fecha: periodoDeFecha(b.fecha) === periodo ? b.fecha : primerDiaDe(periodo) };
+}
+
+/** Pasar el gasto a otro mes (el que sigue abierto, cuando el suyo ya está
+ *  cerrado) sin cambiar cuándo se pagó. Si todavía tenía una sola fecha, el
+ *  día que se pagó se queda como estaba: lo que se corre es el mes al que
+ *  corresponde, no la plata. */
+export function pasarAlMes(
+  b: Pick<BorradorGasto, "fecha" | "fechaPago">, nuevaFecha: string,
+): Pick<BorradorGasto, "fecha" | "fechaPago"> {
+  return { fecha: nuevaFecha, fechaPago: b.fechaPago || b.fecha };
+}
+
+/** Los meses entre los que se elige a cuál corresponde un gasto: el último
+ *  año y los dos que vienen (un anticipo), y el de la fecha actual si queda
+ *  afuera. Del más nuevo al más viejo. */
+export function mesesParaElegir(fechaDelGasto: string, hoy: Date = new Date()): { valor: string; texto: string }[] {
+  const actual = periodoDe(hoy);
+  const periodos = new Set<string>();
+  for (let n = 2; n >= -12; n--) periodos.add(moverPeriodo(actual, n));
+  const propio = periodoDeFecha(fechaDelGasto);
+  if (propio) periodos.add(propio);
+  return [...periodos].sort().reverse().map((valor) => ({ valor, texto: nombrePeriodo(valor) }));
+}
+
+/** Una línea que dice qué hace cada fecha, para leerla antes de cargar. Un
+ *  retiro del dueño no resta del estado de resultados: sólo sale de la caja. */
+export function resumenDeFechas(b: Pick<BorradorGasto, "fecha" | "fechaPago" | "grupo">): string {
+  const sale = `sale de la caja el ${fechaLarga(b.fechaPago || b.fecha)}`;
+  if (b.grupo === "retiro") return `No resta del estado de resultados: ${sale}.`;
+  const mes = nombrePeriodo(periodoDeFecha(b.fecha) || periodoDe(new Date()));
+  return `Resta del estado de resultados de ${mes} y ${sale}.`;
 }
 
 /* ---------- A quién se le pagó ---------- */
@@ -399,6 +466,10 @@ export function datosDelGasto(
     monto: convertido,
     moneda: c.base,
     fecha: b.fecha,
+    /* Sólo se guarda si se pagó otro día: sin ella es el mismo (así están los
+       gastos de siempre, y no se agrega un dato que no dice nada). Al editar,
+       volver a una sola fecha la borra. */
+    fechaPago: b.fechaPago && isoDia(b.fechaPago) !== isoDia(b.fecha) ? b.fechaPago : vaciar(previo?.fechaPago),
     recurrente: b.recurrente,
     webinarId: b.webinarId || vaciar(previo?.webinarId),
     proveedor: prov.nombre || vaciar(previo?.proveedor),

@@ -1,5 +1,7 @@
 import type { EstadoApp, Gasto, GrupoGasto, Moneda } from "./types";
 import { CATEGORIAS_GASTO, type CategoriaGasto } from "./seed";
+import { periodoDeFecha } from "./periodos";
+import { isoDia } from "./format";
 
 /* ==================================================================
    Gastos: los tres bloques del P&L, qué categoría le corresponde a lo
@@ -125,6 +127,37 @@ export function gastosParecidos(texto: string, e: EstadoApp, max = 5): Gasto[] {
     if (out.length >= max) break;
   }
   return out;
+}
+
+/* ---------- Dos fechas: a qué mes corresponde y cuándo se pagó ----------
+   Yari y Juan Cruz (02/10): un gasto de septiembre que se paga el 2 de octubre
+   tiene que restar en septiembre —ahí lo generó el negocio— pero la plata sale
+   de la caja en octubre. Por eso un gasto tiene dos fechas:
+
+     fecha      el mes al que corresponde (el devengo): el estado de resultados
+                lo cuenta ahí. Es la de siempre.
+     fechaPago  el día que se pagó: la caja y el arqueo lo cuentan ahí.
+
+   Sin `fechaPago` es la misma `fecha`: así están todos los gastos que ya había,
+   y no cambia ninguna cuenta de lo ya cargado. */
+
+type ConFechas = Pick<Gasto, "fecha" | "fechaPago">;
+
+/** El día que se pagó el gasto: la caja lo cuenta ahí. */
+export function fechaDePago(g: ConFechas): string {
+  return g.fechaPago || g.fecha;
+}
+
+/** ¿Se pagó otro día que el que dice «a qué mes corresponde»? Sólo entonces
+ *  vale la pena mostrar las dos fechas. */
+export function tieneOtraFechaDePago(g: ConFechas): boolean {
+  return Boolean(g.fechaPago) && isoDia(g.fechaPago) !== isoDia(g.fecha);
+}
+
+/** ¿Se pagó en un mes distinto del que le corresponde? Es el caso de Yari: el
+ *  estado de resultados y la caja lo ven en meses distintos. */
+export function pagadoEnOtroMes(g: ConFechas): boolean {
+  return tieneOtraFechaDePago(g) && periodoDeFecha(g.fechaPago) !== periodoDeFecha(g.fecha);
 }
 
 /* ---------- Moneda ----------
