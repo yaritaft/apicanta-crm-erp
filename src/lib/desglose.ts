@@ -1,7 +1,7 @@
 import type {
   BaseMedicion, DesgloseLinea, ID, ItemDesglose, ListaDesglose, Moneda, Pago, PasoDesglose, Venta,
 } from "./types";
-import { money, num, pct } from "./format";
+import { fechaLarga, money, num, pct } from "./format";
 
 /* ==================================================================
    El desglose de un renglón de la liquidación: la cuenta con la que se
@@ -30,6 +30,7 @@ const C = (n: number) => num(n, Number.isInteger(n) ? 0 : 2);
 const mayus = (s: string) => (s ? s[0].toUpperCase() + s.slice(1) : s);
 
 const cobros = (n: number) => `${C(n)} ${n === 1 ? "cobro" : "cobros"}`;
+const devoluciones = (n: number) => `${C(n)} ${n === 1 ? "devolución" : "devoluciones"}`;
 const ventasTxt = (n: number) => `${C(n)} ${n === 1 ? "venta" : "ventas"}`;
 
 /* Un paso, con sólo los campos que dicen algo (el JSON de la foto del mes
@@ -218,8 +219,10 @@ export function listaDeVentas(ventas: Venta[], nombres: Pick<NombresDeLista, "se
    operativo de Finanzas, sin lo que ya cargó esta liquidación, menos lo que
    esta liquidación va a cargar. Todo en la moneda base. */
 export interface PartesProfit {
-  /* Lo cobrado en el mes (cash collected). */
+  /* Lo que entró en el mes (los cobros), antes de lo devuelto. */
   cash: number;
+  /* Lo que se devolvió a clientes en el mes: resta del cash collected. */
+  devoluciones?: number;
   procesadores: number;
   /* Las comisiones de closers y del director: Finanzas las calcula de las ventas. */
   comisiones: number;
@@ -235,7 +238,13 @@ export type Fuente =
   /* Nada que medir y nada cargado: el renglón queda en cero. */
   | { tipo: "falta" }
   | { tipo: "profit"; profit: number; parte: number; partes?: PartesProfit }
-  | { tipo: "medido"; bruto?: number; cuantos: number; lista?: ListaDesglose };
+  | {
+    tipo: "medido"; bruto?: number; cuantos: number; lista?: ListaDesglose;
+    /* Lo devuelto en el mes que resta de lo medido, y cuántas devoluciones son. */
+    devoluciones?: number; nDev?: number;
+    /* Lo que da la cuenta antes de no pasar de cero (con más devoluciones que cobros). */
+    crudo?: number;
+  };
 
 export interface ArgsMedido {
   regla: string;
@@ -280,7 +289,9 @@ function pasosDeProfit(f: Extract<Fuente, { tipo: "profit" }>, valor: number, B:
   const avisos: string[] = [];
   const p = f.partes;
   if (p) {
+    const dev = p.devoluciones ?? 0;
     pasos.push(plataPaso("base", "Cobrado en el mes (cash collected)", p.cash, B));
+    if (dev > 0) pasos.push(plataPaso("menos", "Devoluciones del mes", dev, B, "La plata que se devolvió a clientes"));
     pasos.push(plataPaso("menos", "Lo que se quedaron los procesadores de pago", p.procesadores, B));
     pasos.push(plataPaso("menos", "Comisiones de closers y del director", p.comisiones, B, "Finanzas las calcula de las ventas"));
     pasos.push(plataPaso("menos", "Otros costos directos", p.otrosDirectos, B));
@@ -288,7 +299,7 @@ function pasosDeProfit(f: Extract<Fuente, { tipo: "profit" }>, valor: number, B:
     pasos.push(plataPaso("menos", "Sueldos y honorarios de esta liquidación", p.sueldos, B, "Los que entran a Finanzas al cerrar"));
     /* Cada parte va a centavos y el profit se redondea una sola vez: si por
        eso difieren un centavo, se dice. */
-    const suma = r2(p.cash - p.procesadores - p.comisiones - p.otrosDirectos - p.gastosOperativos - p.sueldos);
+    const suma = r2(p.cash - dev - p.procesadores - p.comisiones - p.otrosDirectos - p.gastosOperativos - p.sueldos);
     const ajuste = r2(f.profit - suma);
     if (Math.abs(ajuste) >= 0.005) pasos.push(plataPaso(ajuste > 0 ? "mas" : "menos", "Ajuste de centavos por redondeo", Math.abs(ajuste), B));
     pasos.push(plataPaso("igual", "Profit del mes", f.profit, B));
@@ -317,16 +328,35 @@ function pasosDeProfit(f: Extract<Fuente, { tipo: "profit" }>, valor: number, B:
 function pasosDeLoMedido(a: ArgsMedido, f: Extract<Fuente, { tipo: "medido" }>): PasoDesglose[] {
   const B = a.monedaBase;
   const utm = a.utm?.trim() ? ` con utm_source ${a.utm.trim()}` : "";
+  const dev = f.devoluciones ?? 0;
+  /* Con devoluciones, lo medido es lo que entró menos lo que se devolvió; si
+     se devolvió más de lo que entró, no hay base (no se paga sobre un mes en
+     negativo). Sin devoluciones, las cuentas son las de siempre. */
+  const devolucionesYPiso = (crudo: number): PasoDesglose[] => (crudo < -0.004
+    ? [paso("por", "Con más devoluciones que cobros no hay base para pagar", 0, "cantidad"), plataPaso("igual", "Lo que se mide", a.valor, B)]
+    : []);
   switch (a.base) {
     case "cash-neto": {
       const bruto = f.bruto ?? a.valor;
+      const crudo = f.crudo ?? a.valor;
       return [
         plataPaso("base", "Cobrado en el mes", bruto, B, cobros(f.cuantos)),
-        plataPaso("menos", "Lo que se quedaron los procesadores de pago", r2(bruto - a.valor), B),
-        plataPaso("igual", "Cash collected post pasarelas", a.valor, B),
+        ...(dev > 0 ? [plataPaso("menos", "Devoluciones del mes", dev, B, devoluciones(f.nDev ?? 0))] : []),
+        plataPaso("menos", "Lo que se quedaron los procesadores de pago", r2(bruto - dev - crudo), B),
+        plataPaso("igual", "Cash collected post pasarelas", crudo, B),
+        ...devolucionesYPiso(crudo),
       ];
     }
-    case "cash": return [plataPaso("base", "Cash collected del mes", a.valor, B, cobros(f.cuantos))];
+    case "cash": {
+      if (dev <= 0) return [plataPaso("base", "Cash collected del mes", a.valor, B, cobros(f.cuantos))];
+      const crudo = f.crudo ?? a.valor;
+      return [
+        plataPaso("base", "Cobrado en el mes", f.bruto ?? a.valor, B, cobros(f.cuantos)),
+        plataPaso("menos", "Devoluciones del mes", dev, B, devoluciones(f.nDev ?? 0)),
+        plataPaso("igual", "Cash collected del mes", crudo, B),
+        ...devolucionesYPiso(crudo),
+      ];
+    }
     case "facturado": return [plataPaso("base", "Facturado: el valor de las ventas cerradas en el mes", a.valor, B, ventasTxt(f.cuantos))];
     case "ventas": return [paso("base", "Ventas cerradas en el mes", a.valor, "cantidad")];
     case "llamadas": return [paso("base", `Llamadas agendadas en el mes${utm}`, a.valor, "cantidad", { nota: "Según la Agenda, sin las canceladas" })];
@@ -355,6 +385,7 @@ export function desgloseMedido(a: ArgsMedido): DesgloseLinea {
     avisos.push(...r.avisos);
   } else {
     pasos = pasosDeLoMedido(a, f);
+    if ((f.devoluciones ?? 0) > 0) avisos.push("Lo que se devolvió a clientes en el mes resta de lo que se mide, igual que en el Cash Collected de Finanzas (la comisión de la pasarela no se devuelve).");
     if (a.vigencia) avisos.push(`Se mide del ${a.vigencia.desde} al ${a.vigencia.hasta} de ${a.vigencia.mes}: la regla vale sólo esos días.`);
   }
 
@@ -378,6 +409,93 @@ export function desgloseMedido(a: ArgsMedido): DesgloseLinea {
     regla: a.regla, moneda: a.moneda, pasos,
     ...(f.tipo === "medido" && f.lista ? { lista: f.lista } : {}),
     ...(avisos.length ? { avisos } : {}),
+  };
+}
+
+/* ---------- Devoluciones: lo que se revierte y la deuda que queda ---------- */
+
+export interface ArgsReversa {
+  regla: string;
+  /* La moneda del negocio, en la que se mide la plata. */
+  moneda: Moneda;
+  tasa: number;
+  /* Lo cobrado de esa venta hasta el día de la devolución (lo que le comisionó
+     a esta persona), lo que se quedaron los procesadores y lo que quedó. */
+  cobrado: number;
+  fees: number;
+  neto: number;
+  /* Cuántos cobros son. */
+  cuantos: number;
+  /* Lo que se le calculó por esos cobros, lo que ya se le había revertido con
+     devoluciones anteriores y lo que quedaba por revertir. */
+  comision: number;
+  yaRevertido: number;
+  quedaba: number;
+  /* Qué parte de lo cobrado se devolvió: «devuelto» de «deCuanto». */
+  devuelto: number;
+  deCuanto: number;
+  /* Lo que se revierte, a centavos (positivo). */
+  reversa: number;
+  /* Los cobros que formaron lo comisionado. */
+  lista?: ListaDesglose;
+  fecha: string;
+  heredadaDe?: string;
+}
+
+/** La cuenta de una línea «Devolución de …»: lo que se le comisionó por lo
+ *  cobrado de esa venta, y la parte que se devolvió. El renglón es lo que se
+ *  descuenta, en negativo. Se arma con los mismos números con los que
+ *  Finanzas revierte la comisión (lib/devoluciones.ts). */
+export function desgloseReversa(a: ArgsReversa): DesgloseLinea {
+  const B = a.moneda;
+  const pasos: PasoDesglose[] = [
+    plataPaso("base", "Cobrado de esta venta hasta la devolución", a.cobrado, B, cobros(a.cuantos)),
+    plataPaso("menos", "Lo que se quedaron los procesadores de pago", a.fees, B),
+    plataPaso("igual", "Cash collected post pasarelas de esta venta", a.neto, B),
+    paso("por", "Porcentaje de la comisión", a.tasa, "tasa"),
+    plataPaso("igual", "Comisión que se le calculó por esos cobros", a.comision, B),
+  ];
+  if (a.yaRevertido > 0) {
+    pasos.push(plataPaso("menos", "Ya revertido con devoluciones anteriores de esta venta", a.yaRevertido, B));
+    pasos.push(plataPaso("igual", "Comisión que quedaba por revertir", a.quedaba, B));
+  }
+  pasos.push(paso("por", "Parte de lo cobrado que se devolvió", a.devuelto, "fraccion", { de: a.deCuanto, nota: `${M(a.devuelto, B)} de ${M(a.deCuanto, B)}` }));
+  pasos.push(plataPaso("igual", "Comisión que se revierte", a.reversa, B));
+  pasos.push(paso("por", "Se descuenta de esta liquidación", -1, "cantidad"));
+  pasos.push(plataPaso("igual", "Monto del mes", -a.reversa, B));
+
+  const avisos = [
+    "Se revierte lo que se le comisionó (sobre lo cobrado menos lo que se quedó el procesador), no el porcentaje de lo devuelto: eso daría un poco más.",
+    ...(a.devuelto < a.deCuanto - 0.004 ? [`Se devolvió una parte (${M(a.devuelto, B)} de ${M(a.deCuanto, B)}): se revierte esa parte de lo comisionado.`] : []),
+    ...(a.heredadaDe ? [`Son cuotas de una venta de ${a.heredadaDe} que le pasaron: comisionaron para esta persona.`] : []),
+    `La devolución se hizo el ${fechaLarga(a.fecha)}. La comisión que se quedó la pasarela no se devuelve: sigue en Finanzas.`,
+  ];
+  return { regla: a.regla, moneda: B, pasos, ...(a.lista ? { lista: a.lista } : {}), avisos };
+}
+
+/** Lo que quedó debiendo de la liquidación anterior, que se descuenta de ésta. */
+export function desgloseDeudaQueEntra(a: { regla: string; moneda: Moneda; deuda: number; mesAnterior: string }): DesgloseLinea {
+  return {
+    regla: a.regla, moneda: a.moneda,
+    pasos: [
+      plataPaso("base", `Lo que quedó debiendo de ${a.mesAnterior}`, a.deuda, a.moneda),
+      paso("por", "Se descuenta de este mes", -1, "cantidad"),
+      plataPaso("igual", "Monto del mes", -a.deuda, a.moneda),
+    ],
+    avisos: [`Quedó debiendo porque las devoluciones que se le descontaron en ${a.mesAnterior} fueron más que lo que cobraba ese mes. Si no corresponde, se puede corregir el monto a mano.`],
+  };
+}
+
+/** El mes da en negativo: no se le paga nada y lo que queda debiendo pasa al mes siguiente. */
+export function desgloseDeudaQueSale(a: { regla: string; moneda: Moneda; suma: number; deuda: number; mesSiguiente: string }): DesgloseLinea {
+  return {
+    regla: a.regla, moneda: a.moneda,
+    pasos: [
+      plataPaso("base", "Lo que da la suma de sus renglones de este mes", a.suma, a.moneda, "Da en negativo"),
+      paso("por", "Pasa al mes siguiente", -1, "cantidad"),
+      plataPaso("igual", "Queda debiendo", a.deuda, a.moneda),
+    ],
+    avisos: [`No se le paga nada este mes. Lo que queda debiendo se descuenta de la liquidación de ${a.mesSiguiente}, cuando se abra: ahí va a aparecer como un renglón en negativo.`],
   };
 }
 

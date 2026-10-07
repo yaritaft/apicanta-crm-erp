@@ -235,8 +235,12 @@ export function reversasDelMes(e: EstadoDeReversas, m: RangoMes): Reversa[] {
  *  la primera liquidación abierta que sigue (la deuda que se descuenta «el
  *  mes que viene»). Si alguna liquidación cerrada ya la incluyó en su foto,
  *  es ésa. */
-export function mesDeLiquidacion(d: Pick<Devolucion, "id" | "fecha">, liquidaciones: Pick<Liquidacion, "periodo" | "estado" | "resultado">[]): string {
-  const enFoto = liquidadaEn(liquidaciones).get(d.id);
+export function mesDeLiquidacion(
+  d: Pick<Devolucion, "id" | "fecha">, liquidaciones: Pick<Liquidacion, "periodo" | "estado" | "resultado">[],
+  /* Si se piden muchas, `liquidadaEn` se arma una vez y se pasa. */
+  liquidadas: Map<ID, string> = liquidadaEn(liquidaciones),
+): string {
+  const enFoto = liquidadas.get(d.id);
   if (enFoto) return enFoto;
   const cerrados = new Set(liquidaciones.filter((l) => l.estado === "cerrada").map((l) => l.periodo));
   let p = periodoDeFecha(d.fecha);

@@ -1,5 +1,5 @@
 import type {
-  AlcanceVentas, BaseMedicion, ConceptoPago, DesgloseLinea, EntradaLiquidacion, EsquemaPago, EstadoApp, ExtraLiquidacion,
+  AlcanceVentas, BaseMedicion, ConceptoPago, Devolucion, DesgloseLinea, EntradaLiquidacion, EsquemaPago, EstadoApp, ExtraLiquidacion,
   Gasto, ID, LineaLiquidada, Liquidacion, MiembroEquipo, Moneda, Pago, PersonaLiquidada,
   ResultadoLiquidacion, TipoConcepto, Venta,
 } from "./types";
@@ -7,11 +7,13 @@ import type { RangoMes } from "./metricas";
 import { calcularPyL, closerDeCuota, cobraEnFecha, pagosDelMes, parteMarketing, tasaDeComision, ventasDelMes } from "./finanzas";
 import { esPeriodo, moverPeriodo, nombrePeriodo, periodoDe, rangoDePeriodo } from "./periodos";
 import { aMonedaBase, categoriaDe, normalizar } from "./gastos";
-import { fechaLarga, money, num, pct } from "./format";
+import { fechaLarga, money, num, pct, tasaTexto } from "./format";
 import {
-  conCorreccion, desgloseBono, desgloseFijo, desgloseMedido, desglosePieza, listaDeCobros, listaDeVentas,
+  conCorreccion, desgloseBono, desgloseDeudaQueEntra, desgloseDeudaQueSale, desgloseFijo, desgloseMedido, desglosePieza,
+  desgloseReversa, listaDeCobros, listaDeVentas,
   type CobroContado, type Fuente, type PartesProfit,
 } from "./desglose";
+import { devolucionesDelMes, liquidadaEn, mesDeLiquidacion, reversasDeComision, type ParteReversa, type Reversa } from "./devoluciones";
 
 /* ==================================================================
    Honorarios: lo que cobra cada uno y la liquidación de cada mes.
@@ -393,6 +395,7 @@ interface Contexto {
   /* El closer de cada cuota: el que la heredó o el de la venta. */
   closerDeCuota: Map<ID, ID | undefined>;
   equipo: Map<ID, MiembroEquipo>;
+  ventas: Map<ID, Venta>;
 }
 
 function armarContexto(e: EstadoApp, rango: RangoMes, tc: number): Contexto {
@@ -405,7 +408,7 @@ function armarContexto(e: EstadoApp, rango: RangoMes, tc: number): Contexto {
     ventaDeCuota.set(c.id, v);
     closerDe.set(c.id, closerDeCuota(v, c));
   }
-  return { e, rango, base: e.ajustes.monedaBase, tc, ventaDeCuota, closerDeCuota: closerDe, equipo: new Map(e.equipo.map((m) => [m.id, m] as const)) };
+  return { e, rango, base: e.ajustes.monedaBase, tc, ventaDeCuota, closerDeCuota: closerDe, equipo: new Map(e.equipo.map((m) => [m.id, m] as const)), ventas };
 }
 
 /* Todo lo cobrado de la empresa, sin filtro: tiene que dar lo mismo que el
@@ -447,7 +450,12 @@ const enRango = (iso: string | undefined, r: RangoMes) => {
 
 /* `n`, `bruto`, `cobros` y `ventas` son para el desglose: cuántos entraron en
    la cuenta, cuáles, y lo cobrado antes de restar el procesador. */
-interface Medido { valor: number; cuantos: string; n?: number; bruto?: number; cobros?: CobroContado[]; ventas?: Venta[] }
+interface Medido {
+  valor: number; cuantos: string; n?: number; bruto?: number; cobros?: CobroContado[]; ventas?: Venta[];
+  /* Lo devuelto en esos días que resta de lo medido, cuántas devoluciones son y
+     lo que daba la cuenta antes de no bajar de cero. */
+  devoluciones?: number; nDev?: number; crudo?: number;
+}
 
 /* Lo que se mide en los días del concepto. null: no se mide solo (el profit
    se calcula aparte y lo manual se carga). */
@@ -465,7 +473,27 @@ function medir(cx: Contexto, c: ConceptoPago, m: MiembroEquipo, r: RangoMes, her
         cobros.push({ pago: p, venta });
         n++;
       }
-      return { valor: r2(valor), cuantos: cant(n, "cobro", "cobros"), n, bruto: r2(bruto), cobros };
+      /* Lo que se devolvió en esos días resta, igual que en el Cash Collected
+         de Finanzas (la comisión de la pasarela no se devuelve: los fees
+         siguen siendo los de los cobros). Las comisiones de ventas
+         (closer, setter, director) no netean su base: se revierte lo que se
+         les comisionó con su propia línea (lineasDeReversa). */
+      let dev = 0, nDev = 0;
+      if (!esComisionDeVentas(c)) {
+        for (const d of devolucionesDelMes(cx.e, r)) {
+          const venta = d.ventaId ? cx.ventas.get(d.ventaId) : undefined;
+          /* «No descontar al closer»: quien cobra por sus ventas sigue cobrando igual. */
+          if (d.noDescontarAlCloser && (c.alcance ?? "todas") !== "todas") continue;
+          if (!cuenta(cx, c, m, venta, undefined, hermanos)) continue;
+          dev += d.monto; nDev++;
+        }
+      }
+      if (dev <= 0) return { valor: r2(valor), cuantos: cant(n, "cobro", "cobros"), n, bruto: r2(bruto), cobros };
+      const crudo = r2(valor - dev);
+      return {
+        valor: Math.max(0, crudo), cuantos: `${cant(n, "cobro", "cobros")} y ${cant(nDev, "devolución", "devoluciones")}`,
+        n, bruto: r2(bruto), cobros, devoluciones: r2(dev), nDev, crudo,
+      };
     }
     case "facturado": case "ventas": {
       let valor = 0, n = 0;
@@ -603,6 +631,7 @@ function linea(
           fuente = {
             tipo: "medido", bruto: x.bruto, cuantos: x.n ?? 0,
             lista: x.cobros ? listaDeCobros(x.cobros, nombresDeLista(cx), cx.base) : x.ventas ? listaDeVentas(x.ventas, nombresDeLista(cx), cx.base) : undefined,
+            ...(x.devoluciones ? { devoluciones: x.devoluciones, nDev: x.nDev ?? 0, crudo: x.crudo } : {}),
           };
         } else { falta = "Cargá la cantidad"; origen = "falta cargarla"; }
       }
@@ -673,6 +702,97 @@ function lineaExtra(cx: Contexto, x: ExtraLiquidacion): LineaLiquidada {
     moneda: x.moneda, monto, montoBase: r2(aMonedaBase(monto, x.moneda, cx.base, cx.tc)),
     variable: true, enFinanzas: false,
     ...(nota ? { nota } : {}), ...(cargado ? { cargado } : {}),
+  };
+}
+
+/* ---------- Devoluciones: lo que se revierte y lo que queda debiendo ----------
+   Al closer y al director se les revierte EXACTAMENTE lo que se les comisionó
+   por lo cobrado de la venta que se devolvió, como una línea negativa de este
+   mes (lib/devoluciones.ts: son las mismas cuentas con las que Finanzas
+   resta la comisión, así que «Ya está en Finanzas» es cierto). Si el mes da
+   en negativo, no se le paga nada y lo que queda debiendo es otro renglón:
+   «Pasa al mes siguiente» acá y «Deuda de …» en la liquidación que sigue. Una
+   liquidación cerrada no se reescribe: lo que llega después entra en la
+   primera abierta. */
+
+const conceptoDeReversa = (r: Reversa, p: ParteReversa) => `devolucion:${r.devolucion.id}:${p.rol}`;
+
+function lineaDeReversa(cx: Contexto, r: Reversa, parte: ParteReversa, entrada: EntradaLiquidacion | undefined): LineaLiquidada {
+  const cliente = r.venta.contactoNombre?.trim() || "una venta";
+  const clave = conceptoDeReversa(r, parte);
+  const comoQue = parte.rol === "director" ? "de las ventas que dirige" : "de las ventas que cerró";
+  const regla = `Se le revierte lo que se le comisionó (${tasaTexto(parte.tasa)} del cash collected post pasarelas ${comoQue}) por lo cobrado de la venta de ${cliente}, en la parte que se devolvió el ${fechaLarga(r.devolucion.fecha)}`;
+  let desglose: DesgloseLinea | undefined = desgloseReversa({
+    regla, moneda: cx.base, tasa: parte.tasa, cobrado: parte.cobrado, fees: parte.fees, neto: parte.neto, cuantos: parte.cobros.length,
+    comision: parte.comision, yaRevertido: parte.yaRevertido, quedaba: parte.quedaba, devuelto: r.devuelto, deCuanto: r.quedaba,
+    reversa: parte.reversa, fecha: r.devolucion.fecha, heredadaDe: parte.heredadaDe,
+    lista: listaDeCobros(parte.cobros.map((pago) => ({ pago, venta: cx.ventaDeCuota.get(pago.cuotaId) })), nombresDeLista(cx), cx.base),
+  });
+  let monto = -parte.reversa;
+  let detalle = `Se le había comisionado ${plata(parte.comision, cx.base)} por esos cobros: se devolvieron ${plata(r.devuelto, cx.base)} de ${plata(r.quedaba, cx.base)}${r.parte < 1 ? ` (el ${pct(r.parte * 100, 0)})` : ""}`;
+  let corregido = false;
+  if (entrada?.monto !== undefined && Number.isFinite(entrada.monto)) {
+    detalle = `Corregido a mano: la cuenta daba ${plata(r2(monto), cx.base)}${entrada.nota?.trim() ? ` · ${entrada.nota.trim()}` : ""}`;
+    desglose = conCorreccion(desglose, r2(monto), entrada.nota);
+    monto = entrada.monto;
+    corregido = true;
+  }
+  monto = r2(monto);
+  return {
+    clave, conceptoId: clave, devolucionId: r.devolucion.id, tipo: "devolucion",
+    nombre: `Devolución de ${cliente}`, detalle, moneda: cx.base, monto, montoBase: monto,
+    variable: true, enFinanzas: true, corregido, desglose,
+  };
+}
+
+/** Las líneas «Devolución de …» de esta persona: una por cada devolución
+ *  de este mes que le revierte comisión (como closer o como director). */
+function lineasDeReversa(cx: Contexto, m: MiembroEquipo, reversas: Reversa[], entradas: Record<string, EntradaLiquidacion>): LineaLiquidada[] {
+  const out: LineaLiquidada[] = [];
+  for (const r of reversas) {
+    for (const parte of r.partes) {
+      if (parte.miembroId !== m.id || parte.reversa < 0.005) continue;
+      out.push(lineaDeReversa(cx, r, parte, entradas[claveEntrada(m.id, conceptoDeReversa(r, parte))]));
+    }
+  }
+  return out;
+}
+
+const idDeuda = (periodo: string, mon: Moneda, sentido: "entra" | "sale") => `arrastre-${sentido}:${periodo}:${mon}`;
+
+/** Lo que quedó debiendo de la liquidación anterior (cerrada): se descuenta de ésta. */
+function lineaDeDeudaQueEntra(cx: Contexto, m: MiembroEquipo, mesAnterior: string, mon: Moneda, deuda: number, entrada: EntradaLiquidacion | undefined): LineaLiquidada {
+  const clave = idDeuda(mesAnterior, mon, "entra");
+  const nombreMes = nombrePeriodo(mesAnterior);
+  const regla = `Lo que ${m.nombre.split(" ")[0]} quedó debiendo de la liquidación de ${nombreMes} (las devoluciones que se le descontaron fueron más que lo que cobraba) se descuenta de ${nombrePeriodo(cx.rango.clave)}`;
+  let desglose: DesgloseLinea | undefined = desgloseDeudaQueEntra({ regla, moneda: mon, deuda, mesAnterior: nombreMes });
+  let monto = -deuda;
+  let detalle = `Lo que quedó debiendo de ${nombreMes}: se descuenta de este mes`;
+  let corregido = false;
+  if (entrada?.monto !== undefined && Number.isFinite(entrada.monto)) {
+    detalle = `Corregido a mano: la cuenta daba ${plata(r2(monto), mon)}${entrada.nota?.trim() ? ` · ${entrada.nota.trim()}` : ""}`;
+    desglose = conCorreccion(desglose, r2(monto), entrada.nota);
+    monto = entrada.monto;
+    corregido = true;
+  }
+  monto = r2(monto);
+  return {
+    clave, conceptoId: clave, tipo: "arrastre", nombre: `Deuda de ${nombreMes}`, detalle, moneda: mon,
+    monto, montoBase: r2(aMonedaBase(monto, mon, cx.base, cx.tc)), variable: true, enFinanzas: true, corregido, desglose,
+  };
+}
+
+/** El mes da en negativo: no se le paga nada y lo que queda debiendo pasa al mes siguiente. */
+function lineaDeDeudaQueSale(cx: Contexto, nombre: string, mon: Moneda, suma: number): LineaLiquidada {
+  const periodo = cx.rango.clave;
+  const siguiente = nombrePeriodo(moverPeriodo(periodo, 1));
+  const deuda = r2(-suma);
+  const regla = `Este mes la suma de los renglones de ${nombre.split(" ")[0]} da en negativo (las devoluciones que se le descuentan son más que lo que cobra): no se le paga nada y lo que queda debiendo pasa a la liquidación de ${siguiente}`;
+  return {
+    clave: idDeuda(periodo, mon, "sale"), tipo: "arrastre", nombre: `Pasa a ${siguiente}`,
+    detalle: `Queda debiendo ${plata(deuda, mon)}: se descuenta de la liquidación de ${siguiente}`, moneda: mon,
+    monto: deuda, montoBase: r2(aMonedaBase(deuda, mon, cx.base, cx.tc)), variable: true, enFinanzas: true,
+    desglose: desgloseDeudaQueSale({ regla, moneda: mon, suma, deuda, mesSiguiente: siguiente }),
   };
 }
 
@@ -749,8 +869,29 @@ export function calcularLiquidacion(e: EstadoApp, periodo: string, liq?: Liquida
   const aLiquidar = miembrosALiquidar(e, periodo.slice(0, 7) + "-01");
   const yaSalen = new Set(aLiquidar.map((m) => m.id));
   const soloMontos = new Set(e.equipo.filter((m) => !yaSalen.has(m.id) && extras.some((x) => x.miembroId === m.id)).map((m) => m.id));
-  const miembros = soloMontos.size
-    ? [...aLiquidar, ...e.equipo.filter((m) => soloMontos.has(m.id))].sort((a, b) => a.nombre.localeCompare(b.nombre, "es"))
+
+  /* Las devoluciones que se le descuentan a alguien este mes: las de la fecha
+     de este mes y las que llegaron tarde (con su mes ya cerrado), que entran
+     en la primera liquidación abierta. Y lo que alguien quedó debiendo de la
+     liquidación anterior, si ya está cerrada. Quien tiene algo de eso sale
+     igual aunque ya no esté entre los que se liquidan: una deuda no puede
+     perderse en silencio. */
+  const liquidadas = liquidadaEn(e.liquidaciones);
+  const reversas = reversasDeComision(e).filter((r) => !r.sinDescuento && mesDeLiquidacion(r.devolucion, e.liquidaciones, liquidadas) === periodo);
+  const conReversa = new Set(reversas.flatMap((r) => r.partes.filter((x) => x.reversa >= 0.005 && x.miembroId).map((x) => x.miembroId as ID)));
+  const mesAnterior = moverPeriodo(periodo, -1);
+  const fotoAnterior = e.liquidaciones.find((l) => l.periodo === mesAnterior && l.estado === "cerrada" && l.resultado);
+  const deudasDeAntes = new Map<ID, [Moneda, number][]>();
+  for (const p of fotoAnterior?.resultado?.personas ?? []) {
+    const d = (Object.entries(p.deuda ?? {}) as [Moneda, number][]).filter(([, n]) => n >= 0.005);
+    if (d.length) deudasDeAntes.set(p.miembroId, d);
+  }
+  const soloDevolucion = new Set(e.equipo
+    .filter((m) => !yaSalen.has(m.id) && !soloMontos.has(m.id) && (conReversa.has(m.id) || deudasDeAntes.has(m.id))).map((m) => m.id));
+  /* De éstos sólo salen sus montos a mano, sus devoluciones y su deuda. */
+  const soloLoSuyo = new Set([...soloMontos, ...soloDevolucion]);
+  const miembros = soloLoSuyo.size
+    ? [...aLiquidar, ...e.equipo.filter((m) => soloLoSuyo.has(m.id))].sort((a, b) => a.nombre.localeCompare(b.nombre, "es"))
     : aLiquidar;
 
   for (const m of miembros) {
@@ -758,14 +899,14 @@ export function calcularLiquidacion(e: EstadoApp, periodo: string, liq?: Liquida
     const sinCargar = !esq || esq.conceptos.length === 0;
     const pendiente = esq?.pendiente?.trim() || undefined;
     /* Sin nada cargado, lo que le calcula Finanzas: su comisión con la tasa de siempre. */
-    const conceptos = soloMontos.has(m.id) ? [] : sinCargar && tasaImplicita(m) > 0 ? comisionDeFinanzas(m) : esq?.conceptos ?? [];
+    const conceptos = soloLoSuyo.has(m.id) ? [] : sinCargar && tasaImplicita(m) > 0 ? comisionDeFinanzas(m) : esq?.conceptos ?? [];
     const fila: Fila = {
       m, lineas: [],
       persona: {
         miembroId: m.id, nombre: m.nombre, puesto: m.puesto?.trim() || undefined,
         categoriaGasto: esq?.categoriaGasto?.trim() || categoriaPorDefecto(m),
         lineas: [], aPagar: {}, total: 0, fijo: 0, variable: 0, pendiente,
-        ...(sinCargar && !soloMontos.has(m.id) ? { sinCargar } : {}), ...(!m.activo ? { inactivo: true } : {}),
+        ...(sinCargar && !soloLoSuyo.has(m.id) ? { sinCargar } : {}), ...(!m.activo ? { inactivo: true } : {}),
       },
     };
     for (const c of conceptos) {
@@ -776,7 +917,11 @@ export function calcularLiquidacion(e: EstadoApp, periodo: string, liq?: Liquida
       }
       fila.lineas.push(linea(cx, m, c, entradas[claveEntrada(m.id, c.id)], undefined, conceptos));
     }
+    fila.lineas.push(...lineasDeReversa(cx, m, reversas, entradas));
     for (const x of extras) if (x.miembroId === m.id) fila.lineas.push(lineaExtra(cx, x));
+    for (const [mon, deuda] of deudasDeAntes.get(m.id) ?? []) {
+      fila.lineas.push(lineaDeDeudaQueEntra(cx, m, mesAnterior, mon, deuda, entradas[claveEntrada(m.id, idDeuda(mesAnterior, mon, "entra"))]));
+    }
     filas.push(fila);
   }
 
@@ -795,7 +940,8 @@ export function calcularLiquidacion(e: EstadoApp, periodo: string, liq?: Liquida
   const prof: Profit = {
     profit, parte: parteMarketing(e, rango),
     partes: {
-      cash: r2(pyl.cashCollected), procesadores: r2(pyl.feesProcesador), comisiones: r2(pyl.comisionCloser + pyl.comisionDirector),
+      cash: r2(pyl.cobrado), ...(pyl.devoluciones > 0 ? { devoluciones: r2(pyl.devoluciones) } : {}),
+      procesadores: r2(pyl.feesProcesador), comisiones: r2(pyl.comisionCloser + pyl.comisionDirector),
       otrosDirectos: r2(pyl.otrosDirectos), gastosOperativos: r2(pyl.gastosOperativos), sueldos: r2(aCargar),
     },
   };
@@ -811,12 +957,26 @@ export function calcularLiquidacion(e: EstadoApp, periodo: string, liq?: Liquida
           ...(l.desglose ? { desglose: { ...l.desglose, avisos: [...(l.desglose.avisos ?? []), "No tiene cargado lo que cobra: esta comisión sale con la tasa que usa Finanzas."] } } : {}),
         }
         : l));
+    /* Si el mes da en negativo por las devoluciones (las que se le descuentan
+       son más que lo que cobra), no se le paga nada: lo que queda debiendo es
+       otro renglón que pasa a la liquidación que sigue. Un descuento a mano
+       solo (sin devoluciones) sigue como siempre: queda en negativo. */
+    const sumas: Partial<Record<Moneda, number>> = {};
+    for (const l of ls) sumas[l.moneda] = r2((sumas[l.moneda] ?? 0) + l.monto);
+    const deuda: Partial<Record<Moneda, number>> = {};
+    if (ls.some((l) => l.tipo === "devolucion" || l.tipo === "arrastre")) {
+      for (const [mon, suma] of Object.entries(sumas) as [Moneda, number][]) {
+        if (suma >= -0.005) continue;
+        ls.push(lineaDeDeudaQueSale(cx, persona.nombre, mon, suma));
+        deuda[mon] = r2(-suma);
+      }
+    }
     const aPagar: Partial<Record<Moneda, number>> = {};
     for (const l of ls) aPagar[l.moneda] = r2((aPagar[l.moneda] ?? 0) + l.monto);
     const fijo = r2(ls.filter((l) => !l.variable).reduce((a, l) => a + l.montoBase, 0));
     const variable = r2(ls.filter((l) => l.variable).reduce((a, l) => a + l.montoBase, 0));
-    return { ...persona, lineas: ls, aPagar, fijo, variable, total: r2(fijo + variable) };
-  }).filter((p) => !p.inactivo || Math.abs(p.total) >= 0.005 || p.lineas.some((l) => l.corregido));
+    return { ...persona, lineas: ls, aPagar, fijo, variable, total: r2(fijo + variable), ...(Object.keys(deuda).length ? { deuda } : {}) };
+  }).filter((p) => !p.inactivo || Math.abs(p.total) >= 0.005 || p.lineas.some((l) => l.corregido) || Boolean(p.deuda));
 
   const aPagar: Partial<Record<Moneda, number>> = {};
   for (const p of personas) {
