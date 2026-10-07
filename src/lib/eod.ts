@@ -79,6 +79,16 @@ export function objecionSugerida(o: OpcionCrm | undefined, objeciones: string[])
   return objeciones.find((x) => /no calific/.test(sinTildes(x)));
 }
 
+/* Si la nota ya está entre las notas de la llamada. Se compara renglón por
+   renglón (sin los espacios de los costados), no por texto: «cuotas» no está
+   en «Quiere pagar en cuotas de seis meses», pero la misma nota guardada dos
+   veces sí. Una nota de varios renglones tiene que estar entera y seguida. */
+function yaEstaLaNota(notas: string | undefined, nota: string): boolean {
+  const renglones = (t: string) => t.split(/\r?\n/).map((x) => x.trim());
+  const hay = renglones(notas ?? ""), busca = renglones(nota);
+  return hay.some((_, i) => busca.every((r, k) => hay[i + k] === r));
+}
+
 /** Lo que se guarda en la llamada con la respuesta del EOD. Los estados
     van sólo si cambiaron: el resto de la app los lee de la misma llamada. */
 export function cambiosDelEod(
@@ -103,7 +113,7 @@ export function cambiosDelEod(
   if (que === "venta" && r.ventaPorOtro && !s.ventaPorOtro) c.ventaPorOtro = { por: quien, en: cuando };
   else if (s.ventaPorOtro && (que !== "venta" || r.ventaPorOtro === false)) c.ventaPorOtro = undefined;
   const nota = r.nota?.trim();
-  if (nota && !(s.notas ?? "").includes(nota)) c.notas = s.notas?.trim() ? `${s.notas.trim()}\n${nota}` : nota;
+  if (nota && !yaEstaLaNota(s.notas, nota)) c.notas = s.notas?.trim() ? `${s.notas.trim()}\n${nota}` : nota;
   if (r.grabacion?.trim()) c.grabacion = r.grabacion.trim();
   return c;
 }
