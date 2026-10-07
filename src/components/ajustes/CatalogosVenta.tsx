@@ -3,6 +3,9 @@
 import React, { useState } from "react";
 import { Landmark, Link2, Plus, Trash2, X } from "lucide-react";
 import { Badge, Button, Card, CardHead, Field, IconButton, Input, Select, Switch } from "@/components/ui/ui";
+import { InputMonto } from "@/components/ui/InputMonto";
+import { montoDe } from "@/lib/monto";
+import { enOtros } from "@/lib/caja";
 import { Modal, ModalForm } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toast";
 import { acciones, nuevoId, useEstado } from "@/lib/store";
@@ -80,9 +83,9 @@ function Servicios() {
               id={`cat-${p.id}`} aria-label="Nombre del servicio" defaultValue={p.nombre}
               onBlur={(ev) => { const v = ev.target.value.trim(); if (v && v !== p.nombre) cambiar(p, { nombre: v }, "Nombre guardado."); }}
             />
-            <Input
-              aria-label={`Precio de lista de ${p.nombre}`} type="number" min={0} defaultValue={p.precioLista}
-              onBlur={(ev) => { const v = Number(ev.target.value); if (Number.isFinite(v) && v >= 0 && v !== p.precioLista) cambiar(p, { precioLista: v }, "Precio guardado."); }}
+            <InputMonto
+              aria-label={`Precio de lista de ${p.nombre}`} defaultValue={p.precioLista}
+              onBlur={(ev) => { const v = montoDe(ev.target.value); if (Number.isFinite(v) && v >= 0 && v !== p.precioLista) cambiar(p, { precioLista: v }, "Precio guardado."); }}
             />
             <Select aria-label={`Tipo de ${p.nombre}`} value={p.tipo} opciones={TIPOS}
               onChange={(ev) => cambiar(p, { tipo: ev.target.value as Producto["tipo"] }, "Tipo guardado.")} />
@@ -179,10 +182,19 @@ function Cuentas() {
               >
                 {n ? `${n} ${n === 1 ? "cuenta" : "cuentas"}` : "Agregar"}
               </Button>
-              <label className="row" style={{ gap: 8 }}>
-                <Switch checked={p.activo} etiqueta={`${p.nombre} activa`} onChange={(v) => cambiar(p, { activo: v })} />
-                <span className="t-sm t-muted">Activa</span>
-              </label>
+              <div className="catalogo-switches">
+                <label className="row" style={{ gap: 8 }}>
+                  <Switch checked={p.activo} etiqueta={`${p.nombre} activa`} onChange={(v) => cambiar(p, { activo: v })} />
+                  <span className="t-sm t-muted">Activa</span>
+                </label>
+                <label className="row" style={{ gap: 8 }} title="Va al final del arqueo de la Caja, plegada, con las cuentas que no se usan seguido">
+                  <Switch
+                    checked={enOtros(p)} etiqueta={`${p.nombre} va en «Otros» del arqueo`}
+                    onChange={(v) => cambiar(p, { cajaOtros: v }, v ? `${p.nombre} va en «Otros» del arqueo.` : `${p.nombre} va con las cuentas de siempre en el arqueo.`)}
+                  />
+                  <span className="t-sm t-muted">Otros</span>
+                </label>
+              </div>
             </div>
           );
         })}

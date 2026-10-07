@@ -1,9 +1,10 @@
 "use client";
 
 import React, { useMemo, useState } from "react";
-import { ArrowRightLeft, Check, HandCoins, Info, Landmark, Plus, Trash2 } from "lucide-react";
+import { ArrowRightLeft, Check, ChevronRight, HandCoins, Info, Landmark, Plus, Trash2 } from "lucide-react";
 import { PageHead } from "@/components/shell/PageHead";
 import { Ayuda, Badge, Button, Card, CardHead, Empty, Field, IconButton, Input, Select, StatCard, Textarea } from "@/components/ui/ui";
+import { InputMonto } from "@/components/ui/InputMonto";
 import { DataTable } from "@/components/ui/DataTable";
 import { Confirmar, Modal, ModalForm } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toast";
@@ -11,10 +12,10 @@ import { acciones, nuevoId, useEstado } from "@/lib/store";
 import { fechaLarga, money, num } from "@/lib/format";
 import { aMonedaBase, escribirMonto, leerMonto } from "@/lib/gastos";
 import {
-  MESES_DE_COLCHON, cajaEsperada, runway, ultimoArqueo, type MovimientoCaja,
+  MESES_DE_COLCHON, cajaEsperada, enOtros, runway, ultimoArqueo, type MovimientoCaja,
 } from "@/lib/caja";
 import { saldosEsperados } from "@/lib/traspasos";
-import type { Arqueo, EstadoApp, Gasto, Moneda, SaldoCuenta, Traspaso } from "@/lib/types";
+import type { Arqueo, EstadoApp, Gasto, Moneda, Procesador, SaldoCuenta, Traspaso } from "@/lib/types";
 import { CopiarLink } from "@/components/ui/Filtros";
 import { FormTraspaso, PasesEntreCuentas } from "@/components/finanzas/PasesEntreCuentas";
 import { useTablaURL } from "@/lib/useParamsURL";
@@ -249,6 +250,11 @@ function NuevoArqueo({ e, onCerrar, onListo }: { e: EstadoApp; onCerrar: () => v
   });
   const tipoCambio = leerMonto(tc);
   const hayPases = cuentas.some((p) => porCuenta.get(p.id)?.pases);
+  /* Lo que se usa todo el tiempo arriba; lo demás, en «Otros» (plegado salvo que ya tenga un saldo escrito). */
+  const [verOtros, setVerOtros] = useState(false);
+  const principales = cuentas.filter((p) => !enOtros(p));
+  const otros = cuentas.filter(enOtros);
+  const otrosAbiertos = verOtros || otros.some((p) => textos[p.id]?.trim());
 
   const saldos: SaldoCuenta[] = cuentas.flatMap((p) => {
     const t = textos[p.id];
@@ -276,6 +282,47 @@ function NuevoArqueo({ e, onCerrar, onListo }: { e: EstadoApp; onCerrar: () => v
     onListo(a);
   }
 
+  /* Una cuenta del arqueo. */
+  const fila = (p: Procesador) => {
+      const s = porCuenta.get(p.id);
+      const moneda = p.moneda ?? "USD";
+      const enSuMoneda = (n: number, signo = false) => `${signo && n > 0 ? "+ " : n < 0 ? "− " : ""}${money(Math.abs(n), moneda)}`;
+      const contado = textos[p.id]?.trim() ? leerMonto(textos[p.id]) : NaN;
+      const dif = s?.esperado !== undefined && Number.isFinite(contado) ? Math.round((contado - s.esperado) * 100) / 100 : null;
+      /* Lo contado contra lo que tendría que haber: el casillero se pinta
+         (verde si da, ámbar si no) y adentro va el tilde o la diferencia. */
+      const da = dif !== null && Math.abs(dif) < 1;
+      /* En pesos la diferencia puede ser de millones: adentro va corta (−1,25 M) y entera al pasar el mouse. */
+      const cuanto = dif === null ? 0 : Math.abs(dif);
+      const marca = dif === null || da ? ""
+        : `${dif > 0 ? "+" : "−"}${cuanto >= 1e6 ? `${(cuanto / 1e6).toLocaleString("es-AR", { maximumFractionDigits: 2 })} M` : num(cuanto)}`;
+      const dice = dif === null ? undefined : da ? "Da con lo que tendría que haber en esta cuenta"
+        : `${dif > 0 ? "Sobran" : "Faltan"} ${money(Math.abs(dif), moneda)} contra lo que tendría que haber en esta cuenta`;
+      return (
+        <div className="arqueo-fila" role="row" key={p.id}>
+          <span role="cell" className="t-strong">{p.nombre}{moneda === "ARS" && <span className="t-sm t-subtle"> · en pesos</span>}</span>
+          <span role="cell" data-titulo="Último arqueo" className="t-num t-muted">{s?.anterior !== undefined ? money(s.anterior, moneda) : "—"}</span>
+          <span role="cell" data-titulo="Cobró" className="t-num t-muted" title="Lo cobrado por esta cuenta desde el último arqueo, neto de su comisión">{s?.entro ? enSuMoneda(s.entro, true) : "—"}</span>
+          <span role="cell" data-titulo="Pases" className="t-num t-muted" title="Lo que recibió de otras cuentas menos lo que les mandó">{s?.pases ? enSuMoneda(s.pases, true) : "—"}</span>
+          <span role="cell" data-titulo="Tendría que haber" className="t-num" title={s?.salio ? `Ya descuenta ${money(s.salio, moneda)} de retiros que salieron de esta cuenta` : undefined}>
+            {s?.esperado !== undefined ? money(s.esperado, moneda) : "—"}
+          </span>
+          <span
+            role="cell" className="arqueo-hay" title={dice} data-estado={dif === null ? undefined : da ? "da" : "difiere"}
+            style={marca ? { "--marca": `${Math.round(marca.length * 6.5)}px` } as React.CSSProperties : undefined}
+          >
+            <InputMonto
+              aria-label={`Saldo de ${p.nombre}`} placeholder={moneda === "ARS" ? "$ 0" : "US$ 0"}
+              value={textos[p.id] ?? ""} onChange={(ev) => setTextos({ ...textos, [p.id]: ev.target.value })}
+            />
+            {dif !== null && (da
+              ? <Check size={16} className="arqueo-hay__marca" aria-label={dice} />
+              : <span className="arqueo-hay__marca" aria-label={dice}>{marca}</span>)}
+          </span>
+        </div>
+      );
+  };
+
   return (
     <ModalForm
       abierto ancho onCerrar={onCerrar} onGuardar={guardar} guardarTexto="Guardar el arqueo"
@@ -287,7 +334,7 @@ function NuevoArqueo({ e, onCerrar, onListo }: { e: EstadoApp; onCerrar: () => v
         <Field label="Día del arqueo"><Input type="date" value={dia} onChange={(ev) => setDia(ev.target.value || diaAr(hoyIso()))} /></Field>
         {hayPesos && (
           <Field label="Tipo de cambio (pesos por dólar)" ayuda="Para pasar a dólares las cuentas en pesos." error={faltaTc ? "Poné el tipo de cambio." : undefined}>
-            <Input value={tc} onChange={(ev) => setTc(ev.target.value)} inputMode="decimal" />
+            <InputMonto decimales={4} value={tc} onChange={(ev) => setTc(ev.target.value)} />
           </Field>
         )}
       </div>
@@ -300,45 +347,17 @@ function NuevoArqueo({ e, onCerrar, onListo }: { e: EstadoApp; onCerrar: () => v
           <span role="columnheader">Tendría que haber</span>
           <span role="columnheader">Hay de verdad</span>
         </div>
-        {cuentas.map((p) => {
-          const s = porCuenta.get(p.id);
-          const moneda = p.moneda ?? "USD";
-          const enSuMoneda = (n: number, signo = false) => `${signo && n > 0 ? "+ " : n < 0 ? "− " : ""}${money(Math.abs(n), moneda)}`;
-          const contado = textos[p.id]?.trim() ? leerMonto(textos[p.id]) : NaN;
-          const dif = s?.esperado !== undefined && Number.isFinite(contado) ? Math.round((contado - s.esperado) * 100) / 100 : null;
-          /* Lo contado contra lo que tendría que haber: el casillero se pinta
-             (verde si da, ámbar si no) y adentro va el tilde o la diferencia. */
-          const da = dif !== null && Math.abs(dif) < 1;
-          /* En pesos la diferencia puede ser de millones: adentro va corta (−1,25 M) y entera al pasar el mouse. */
-          const cuanto = dif === null ? 0 : Math.abs(dif);
-          const marca = dif === null || da ? ""
-            : `${dif > 0 ? "+" : "−"}${cuanto >= 1e6 ? `${(cuanto / 1e6).toLocaleString("es-AR", { maximumFractionDigits: 2 })} M` : num(cuanto)}`;
-          const dice = dif === null ? undefined : da ? "Da con lo que tendría que haber en esta cuenta"
-            : `${dif > 0 ? "Sobran" : "Faltan"} ${money(Math.abs(dif), moneda)} contra lo que tendría que haber en esta cuenta`;
-          return (
-            <div className="arqueo-fila" role="row" key={p.id}>
-              <span role="cell" className="t-strong">{p.nombre}{moneda === "ARS" && <span className="t-sm t-subtle"> · en pesos</span>}</span>
-              <span role="cell" data-titulo="Último arqueo" className="t-num t-muted">{s?.anterior !== undefined ? money(s.anterior, moneda) : "—"}</span>
-              <span role="cell" data-titulo="Cobró" className="t-num t-muted" title="Lo cobrado por esta cuenta desde el último arqueo, neto de su comisión">{s?.entro ? enSuMoneda(s.entro, true) : "—"}</span>
-              <span role="cell" data-titulo="Pases" className="t-num t-muted" title="Lo que recibió de otras cuentas menos lo que les mandó">{s?.pases ? enSuMoneda(s.pases, true) : "—"}</span>
-              <span role="cell" data-titulo="Tendría que haber" className="t-num" title={s?.salio ? `Ya descuenta ${money(s.salio, moneda)} de retiros que salieron de esta cuenta` : undefined}>
-                {s?.esperado !== undefined ? money(s.esperado, moneda) : "—"}
-              </span>
-              <span
-                role="cell" className="arqueo-hay" title={dice} data-estado={dif === null ? undefined : da ? "da" : "difiere"}
-                style={marca ? { "--marca": `${Math.round(marca.length * 6.5)}px` } as React.CSSProperties : undefined}
-              >
-                <Input
-                  aria-label={`Saldo de ${p.nombre}`} inputMode="decimal" placeholder={moneda === "ARS" ? "$ 0" : "US$ 0"}
-                  value={textos[p.id] ?? ""} onChange={(ev) => setTextos({ ...textos, [p.id]: ev.target.value })}
-                />
-                {dif !== null && (da
-                  ? <Check size={16} className="arqueo-hay__marca" aria-label={dice} />
-                  : <span className="arqueo-hay__marca" aria-label={dice}>{marca}</span>)}
-              </span>
-            </div>
-          );
-        })}
+        {principales.map(fila)}
+        {otros.length > 0 && (
+          <>
+            <button type="button" className="arqueo-otros" aria-expanded={otrosAbiertos} onClick={() => setVerOtros(!otrosAbiertos)}>
+              <ChevronRight size={14} aria-hidden />
+              <span>Otros ({otros.length})</span>
+              <span className="t-sm t-subtle">cuentas que no se usan seguido</span>
+            </button>
+            {otrosAbiertos && otros.map(fila)}
+          </>
+        )}
       </div>
       {previo && (
         <p className="t-sm t-subtle arqueo-nota">
@@ -411,7 +430,7 @@ function NuevoRetiro({ e, onCerrar, onListo }: { e: EstadoApp; onCerrar: () => v
       titulo="Retiro del dueño" sub="Plata que sacás de la caja del negocio. No es un gasto: no resta del profit, sí de la caja."
     >
       <div className="form-grid">
-        <Field label="Monto (US$)"><Input autoFocus inputMode="decimal" value={monto} onChange={(ev) => setMonto(ev.target.value)} placeholder="30.000" /></Field>
+        <Field label="Monto (US$)"><InputMonto autoFocus value={monto} onChange={(ev) => setMonto(ev.target.value)} placeholder="30.000" /></Field>
         <Field label="Día"><Input type="date" value={dia} onChange={(ev) => setDia(ev.target.value || diaAr(hoyIso()))} /></Field>
         <Field label="De qué cuenta salió">
           <Select value={cuenta} placeholder="Sin especificar" onChange={(ev) => setCuenta(ev.target.value)}

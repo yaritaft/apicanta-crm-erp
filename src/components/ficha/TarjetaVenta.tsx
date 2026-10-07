@@ -146,10 +146,10 @@ export function TarjetaVenta({ e, venta, resaltada, abierta, onAlternar, onPagar
                         {p.tipoCambio && (
                           <span
                             className="t-subtle t-num"
-                            title={p.tipoCambioBlue ? `Blue venta ${p.tipoCambioFuente ?? ""}: ${money(p.tipoCambioBlue, "ARS", 2)}` : "Tipo de cambio ARS"}
+                            title={p.tipoCambioBlue ? `Propuesto: ${money(p.tipoCambioBlue, "ARS", 2)}${p.tipoCambioFuente ? ` (${p.tipoCambioFuente})` : ""}` : "Tipo de cambio ARS"}
                           >
                             cambio {money(p.tipoCambio, "ARS", 2)}
-                            {p.tipoCambioBlue && p.tipoCambioBlue !== p.tipoCambio ? ` · a mano (blue ${money(p.tipoCambioBlue, "ARS", 2)})` : ""}
+                            {p.tipoCambioBlue && p.tipoCambioBlue !== p.tipoCambio ? ` · a mano (propuesto ${money(p.tipoCambioBlue, "ARS", 2)})` : ""}
                           </span>
                         )}
                         {p.cvu && <span className="t-subtle t-num" title="CBU/CVU desde el que transfirió">CBU/CVU …{p.cvu.slice(-6)}</span>}

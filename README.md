@@ -405,11 +405,16 @@ Una agenda sin UTMs queda con `source=direct` y `medium=none`: llegó sola, sin 
 
 - **Registrar un pago** es un paso a paso (cuánto y por dónde, la prueba, los datos de la transferencia,
   qué hacer si pagó menos, resumen). Desde la ficha va embebido en la columna de la venta.
-- En las cuentas en pesos el tipo de cambio arranca con el **blue venta**: el de DolarHoy si el pago es
-  de hoy, el cierre de ese día (ArgentinaDatos) si es de otro (`/api/dolar`). El closer lo puede cambiar;
-  el cobro guarda los dos, con la fuente y la hora.
-- Si pagó a la Financiera, el **CBU/CVU** desde el que transfirió es obligatorio y se valida con sus
-  dígitos verificadores. Va al reporte para la Financiera, con el nombre, el CUIT y el comprobante.
+- En las cuentas en pesos el tipo de cambio arranca con el **promedio entre el dólar blue (venta) y el cripto
+  (venta)**, como lo hace Angelo (02/10: «uso el medio»): de DolarHoy / DolarApi si el pago es de hoy, el cierre
+  de ese día (ArgentinaDatos) si es de otro (`/api/dolar`, `lib/cambio.ts`). Si no se puede traer el cripto,
+  va el blue solo. El closer lo puede cambiar; el cobro guarda el que propuso la app, con de dónde salió.
+- **Los pesos son un campo**: arrancan en monto × tipo de cambio y se pueden escribir (el cliente transfirió otro
+  número); entonces el tipo de cambio es el que resulta y la base en dólares no cambia. Debajo se ve lo que se
+  queda la cuenta (la Financiera, 6%).
+- A la Financiera (y a cualquier cuenta en pesos) se le pide el **nombre y el CUIT** de quien transfirió, los
+  dos obligatorios. **El CBU/CVU de origen ya no se pide** (Angelo, 02/10: «con nombre y CUIT se rastrea»): sale
+  del formulario y del reporte; los cobros viejos conservan el que traían.
 - Antes de usarlo contra Supabase hay que correr `supabase/utms-y-financiera.sql` (agrega columnas y
   marca en pesos las cuentas en ARS).
 
@@ -575,3 +580,20 @@ correr `supabase/honorarios.sql` (tablas, políticas, niveles de acceso y la col
   pide cada vez que se abre y no se guarda. Sólo links de Meta llegan a la página. El mismo detalle se abre desde
   Marketing y desde el Dashboard. Sin nube, se puede probar guardando la respuesta en `localStorage`
   (`apicanta.previa-de-prueba`).
+
+## Lo que pidieron el 02/10 (lote A)
+
+- **Plata con puntos de miles** (`components/ui/InputMonto.tsx`, `lib/monto.ts`): en todos los campos de plata
+  (arqueo, movimientos entre cuentas, ventas, cobros, gastos, honorarios, ajustes) los puntos aparecen solos al
+  escribir («1.234.567,50»). La coma es el decimal (el punto del teclado numérico también) y se puede pegar un número
+  de cualquier lado. Lo que trae `ev.target.value` es el texto con sus puntos; se lee con `leerMonto` (o `montoDe`,
+  que da 0 si está vacío). Un input numérico del navegador no los separa y lee «145.000» como 145.
+- **Arqueo con «Otros»** (`enOtros` en `lib/caja.ts`): las cuentas que no se usan seguido (Mercado Pago, Galicia,
+  Efectivo USD, Binance) quedan plegadas al final. Cada cuenta lo dice en Ajustes → Ventas → Cuentas recaudadoras
+  («Otros»); sin decirlo, valen esos nombres. Para que lo que se cambie a mano quede guardado hay que correr
+  `supabase/procesadores-otros.sql` (una columna).
+- **Profit con el nombre de Yari**: en el Dashboard, «Profit on cash collected» y «Profit on revenue» (antes
+  «Profit neto (cobrado)» y «(facturado)»); en el estado de resultados, «Profit neto», con «Rentabilidad neta» debajo.
+- **El CRM usa todo el ancho** de la pantalla.
+- **Pruebas** (`npm test`): `pruebas/*.test.ts`, con el corredor de node (`pruebas/registrar.mjs` pasa los `.ts` por
+  TypeScript y resuelve `@/`). Van en el repo, no en una carpeta temporal.

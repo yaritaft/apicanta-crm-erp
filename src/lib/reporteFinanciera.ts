@@ -1,5 +1,5 @@
 import type { EstadoApp, ID, Pago, Procesador } from "./types";
-import { CODIGO_MACRO, bancoDeCbu, limpiarCbu, validarCbu } from "./cbu";
+import { CODIGO_MACRO, bancoDeCbu, limpiarCbu } from "./cbu";
 import {
   escribirXlsx, letraDeColumna, refCelda, serialDeDia,
   type Borde, type Celda, type ColumnaHoja, type EstiloCelda, type HojaXlsx,
@@ -21,9 +21,10 @@ import { BUCKET_COMPROBANTES } from "./comprobantes";
    en el bloque de la Financiera; Mastermind y Expansión 3.0 quedan con
    su título y sus encabezados, sin filas y ocultos, como en la planilla.
 
-   Lo único nuevo es la columna CVU: el CBU/CVU desde el que transfirió
-   el cliente, que es con lo que la Financiera encuentra la plata. El
-   banco sale de sus tres primeros números.
+   La Financiera encuentra la plata con el nombre y el CUIT de quien
+   transfirió: el CBU/CVU de origen ya no se pide (Angelo, 02/10). La
+   columna Banco queda como en la planilla, y sólo se llena con los cobros
+   viejos que ya traían un CBU.
    ================================================================== */
 
 export type FormatoCorte = "ARS" | "USD";
@@ -43,7 +44,6 @@ export interface FilaCorte {
   /** Quién transfirió; si no se cargó, el cliente de la venta. */
   nombre: string;
   cuit: string;
-  cvu: string;
   montoArs?: number;
   montoUsd: number;
   banco: string;
@@ -134,13 +134,10 @@ export function corteFinanciera(e: EstadoApp, procesadorId: ID, desde: string, h
       const cuota = cuotaDe.get(p.cuotaId);
       const venta = cuota ? ventaDe.get(cuota.ventaId) : undefined;
       const cvu = p.cvu?.trim() ?? "";
-      const cvuValido = validarCbu(cvu);
       const comprobante = comprobanteDe(p);
       const faltan: string[] = [];
       if (!p.pagador?.trim()) faltan.push("el nombre de quien transfirió");
       if (!p.cuit?.trim()) faltan.push("el CUIT");
-      if (!cvu) faltan.push("el CBU/CVU");
-      else if (!cvuValido) faltan.push("un CBU/CVU válido");
       if (!comprobante.url && !p.comprobante) faltan.push("el comprobante");
       const ars = p.montoArs ? p.montoArs : p.tipoCambio ? p.monto * p.tipoCambio : undefined;
       return {
@@ -148,7 +145,6 @@ export function corteFinanciera(e: EstadoApp, procesadorId: ID, desde: string, h
         dia,
         nombre: p.pagador?.trim() || venta?.contactoNombre || "",
         cuit: p.cuit?.trim() ?? "",
-        cvu: cvuValido ? limpiarCbu(cvu) : cvu,
         montoArs: ars === undefined ? undefined : redondear(ars),
         montoUsd: redondear(p.monto),
         banco: bancoDeCbu(cvu),
@@ -262,7 +258,6 @@ function columnasFinanciera(usd: boolean, links: Map<string, string>): ColumnaFi
     { titulo: "Fecha", ancho: 14.25, estilo: dato({ formato: "d/M/yyyy" }), celda: (f) => ({ valor: serialDeDia(f.dia) }) },
     { titulo: "Nombre de quien transfiere", ancho: 34.63, estilo: dato(), celda: (f) => ({ valor: f.nombre }) },
     { titulo: "Cuit", ancho: 14.5, estilo: dato(), celda: (f) => ({ valor: f.cuit }) },
-    { titulo: "CVU", ancho: 26.38, estilo: dato({ formato: "@" }), celda: (f) => ({ valor: f.cvu }) },
     { titulo: "Transferencia ARS", ancho: 18.88, estilo: dato({ formato: PESOS }), celda: (f) => ({ valor: f.montoArs }) },
     { titulo: "Transferencia USD", ancho: 18.88, estilo: dato({ formato: PESOS }), celda: (f) => ({ valor: f.montoUsd }) },
     { titulo: "Banco", ancho: 23.88, estilo: dato(), celda: (f) => ({ valor: f.banco }) },

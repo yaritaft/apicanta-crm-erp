@@ -18,6 +18,8 @@ import {
   Ayuda, Badge, Button, Card, CardHead, Empty, Field, IconButton, Input,
   Select, Switch, Tabs, Tag,
 } from "@/components/ui/ui";
+import { InputMonto } from "@/components/ui/InputMonto";
+import { montoDe } from "@/lib/monto";
 import { ModalForm, Confirmar } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toast";
 import { acciones, useEstado, useTema } from "@/lib/store";
@@ -139,7 +141,7 @@ function Negocio({ tema, setTema }: { tema: "dark" | "light"; setTema: (t: "dark
             <Select value={v("monedaBase")} onChange={(ev) => { acciones.ajustes({ monedaBase: ev.target.value as "USD" | "ARS" }); toast("Moneda actualizada."); }} opciones={["USD", "ARS"]} />
           </Field>
           <Field label="Tipo de cambio" ayuda="Cuántos pesos vale un dólar.">
-            <Input type="number" min={1} value={v("tipoCambio")} onChange={(ev) => setBorrador({ ...borrador, tipoCambio: Number(ev.target.value) })} onBlur={() => aplicar("tipoCambio")} />
+            <InputMonto decimales={4} value={v("tipoCambio")} onChange={(ev) => setBorrador({ ...borrador, tipoCambio: montoDe(ev.target.value) })} onBlur={() => aplicar("tipoCambio")} />
           </Field>
         </div>
       </Card>

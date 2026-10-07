@@ -3,6 +3,7 @@
 import React, { useMemo, useState } from "react";
 import { ArrowRight, ArrowRightLeft, Check, Pencil, RefreshCw, RotateCcw, Trash2, X } from "lucide-react";
 import { Badge, Button, Card, CardHead, Chip, Field, IconButton, Input, Select, Textarea, type VarianteBadge } from "@/components/ui/ui";
+import { InputMonto } from "@/components/ui/InputMonto";
 import { DataTable } from "@/components/ui/DataTable";
 import { Confirmar, ModalForm } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toast";
@@ -287,11 +288,11 @@ export function FormTraspaso({ e, traspaso, onCerrar, onListo }: {
           <Select value={destinoId} placeholder="Elegí la cuenta" aria-label="A qué cuenta llegó" onChange={(ev) => setDestinoId(ev.target.value)} opciones={cuentas} />
         </Field>
         <Field label={`Salió (${monedaSale === "USD" ? "US$" : "$"})`}>
-          <Input inputMode="decimal" value={sale} placeholder="5.000" aria-label="Cuánto salió" autoFocus={!t0}
+          <InputMonto value={sale} placeholder="5.000" aria-label="Cuánto salió" autoFocus={!t0}
             onChange={(ev) => setSale(ev.target.value)} />
         </Field>
         <Field label={`Llegó (${monedaLlega === "USD" ? "US$" : "$"})`} ayuda={mismaMoneda ? "Si llegó menos, la diferencia es lo que costó." : "En la moneda de la cuenta a la que llegó."}>
-          <Input inputMode="decimal" value={llegaTocado || !mismaMoneda ? llega : sale} placeholder={mismaMoneda ? "Lo mismo" : "0"} aria-label="Cuánto llegó"
+          <InputMonto value={llegaTocado || !mismaMoneda ? llega : sale} placeholder={mismaMoneda ? "Lo mismo" : "0"} aria-label="Cuánto llegó"
             onChange={(ev) => { setLlega(ev.target.value); setLlegaTocado(true); }} />
         </Field>
         <Field label="Día">
@@ -299,7 +300,7 @@ export function FormTraspaso({ e, traspaso, onCerrar, onListo }: {
         </Field>
         {costo > 0 && enPesos && conGasto && (
           <Field label="Tipo de cambio (pesos por dólar)" ayuda="Para pasar el costo a dólares." error={faltaTc ? "Poné el tipo de cambio." : undefined}>
-            <Input value={tc} onChange={(ev) => setTc(ev.target.value)} inputMode="decimal" />
+            <InputMonto decimales={4} value={tc} onChange={(ev) => setTc(ev.target.value)} />
           </Field>
         )}
       </div>

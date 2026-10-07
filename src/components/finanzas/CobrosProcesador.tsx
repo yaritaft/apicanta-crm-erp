@@ -3,6 +3,8 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { FileSpreadsheet, Info, Link2, Wallet } from "lucide-react";
 import { Ayuda, Badge, Button, Card, Chip, Empty, Field, Input, Select, Switch } from "@/components/ui/ui";
+import { InputMonto } from "@/components/ui/InputMonto";
+import { montoDe } from "@/lib/monto";
 import { DataTable, type Columna } from "@/components/ui/DataTable";
 import { DateRangePicker, rangoDePreset, type RangoFechas } from "@/components/ui/DateRangePicker";
 import { ModalForm } from "@/components/ui/Modal";
@@ -93,13 +95,13 @@ export function CobrosProcesador({ e, mes }: { e: EstadoApp; mes: RangoMes }) {
             ? <Badge variante="brand">A mano</Badge>
             : <Badge variante="neutral">Tasa de la cuenta</Badge>}
           <span style={{ width: 112 }}>
-            <Input
+            <InputMonto
               key={`${x.pago.id}-${x.pago.feeMonto}`}
-              type="number" min={0} step="0.01" defaultValue={x.pago.feeMonto}
+              defaultValue={x.pago.feeMonto}
               aria-label={`Comisión del procesador del cobro de ${x.venta?.contactoNombre ?? "este cliente"}`}
               onClick={(ev) => ev.stopPropagation()}
               onBlur={(ev) => {
-                const v = Number(ev.target.value);
+                const v = montoDe(ev.target.value);
                 if (!Number.isFinite(v) || v < 0) { toast("Poné un monto válido.", "err"); return; }
                 if (v === x.pago.feeMonto && x.pago.feeManual) return;
                 if (acciones.editarPago(x.pago.id, { feeMonto: v })) toast("Comisión guardada.");

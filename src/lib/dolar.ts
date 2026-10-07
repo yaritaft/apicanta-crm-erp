@@ -2,28 +2,17 @@
 
 import { useEffect, useState } from "react";
 import { nube } from "./supabase";
+import type { CotizacionBlue } from "./cambio";
 
 /* ==================================================================
-   El dólar blue (venta) para los cobros en pesos: el de DolarHoy si el
-   cobro es de hoy, el cierre de ese día si es de otro (ver
-   app/api/dolar). Es lo que propone la app; el closer lo puede cambiar
-   y el cobro guarda las dos cosas.
+   El dólar para los cobros en pesos: el blue (venta) y el cripto (venta) de
+   DolarHoy / DolarApi si el cobro es de hoy, el cierre de ese día si es de
+   otro (ver app/api/dolar), y el promedio de los dos, que es lo que propone
+   la app (lib/cambio). El closer lo puede cambiar y el cobro guarda las dos
+   cosas.
    ================================================================== */
 
-export interface CotizacionBlue {
-  venta: number;
-  compra?: number;
-  /* El día de la cotización, YYYY-MM-DD (Argentina). */
-  fecha: string;
-  fuente: "DolarHoy" | "DolarApi" | "ArgentinaDatos";
-  /* Cómo lo dice la fuente: "23/09/26 09:20 PM", "cierre del 22/09/2026". */
-  actualizado?: string;
-}
-
-/* "DolarHoy · 23/09/26 09:20 PM": lo que queda guardado en el cobro. */
-export function fuenteDe(c: CotizacionBlue): string {
-  return c.actualizado ? `${c.fuente} · ${c.actualizado}` : c.fuente;
-}
+export { fuenteDe, promedioDolar, type CotizacionBlue } from "./cambio";
 
 const pedidos = new Map<string, Promise<CotizacionBlue>>();
 

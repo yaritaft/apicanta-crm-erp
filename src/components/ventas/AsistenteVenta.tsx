@@ -5,6 +5,8 @@ import {
   ArrowLeft, Check, CornerDownLeft, Link2, Paperclip, Search, Sparkles, UserPlus, X,
 } from "lucide-react";
 import { Avatar, Badge, Button, Chip, Field, IconButton, Input, Select, Switch, Textarea } from "@/components/ui/ui";
+import { InputMonto } from "@/components/ui/InputMonto";
+import { montoDe } from "@/lib/monto";
 import {
   agregarMedio, cobroNuevo, datosDeCobro, EditorCobros, problemaDeCobros, problemaDePasarelas, type CobroBorrador,
 } from "@/components/cobros/EditorCobros";
@@ -671,10 +673,10 @@ function PasoPrecio({ b, set, e, M }: {
       <Pregunta texto="¿Cuál es el valor total de la venta?" sub={lista > 0 ? `El precio de lista de ${producto?.nombre} es ${M(lista)}.` : undefined} />
       <div className="monto-grande">
         <span className="monto-grande__signo">US$</span>
-        <input
-          type="number" min={0} step="1" inputMode="decimal"
+        <InputMonto
+          crudo
           value={b.precioAcordado || ""}
-          onChange={(ev) => set({ precioAcordado: Number(ev.target.value), precioTocado: true })}
+          onChange={(ev) => set({ precioAcordado: montoDe(ev.target.value), precioTocado: true })}
           aria-label="Valor total de la venta"
         />
       </div>
@@ -808,8 +810,8 @@ function PasoPlan({ b, setB, M, diferencia }: {
       <div className="form-grid">
         <div className="hk-field">
           <label className="hk-label">Reserva</label>
-          <Input type="number" min={0} value={b.reserva || ""} placeholder="0"
-            onChange={(ev) => setB((x) => ({ ...x, reserva: Number(ev.target.value), planTocado: false }))} />
+          <InputMonto value={b.reserva || ""} placeholder="0"
+            onChange={(ev) => setB((x) => ({ ...x, reserva: montoDe(ev.target.value), planTocado: false }))} />
           <span className="hk-help">Lo que dejó de seña el día que cerró.</span>
         </div>
         {/* Con un solo pago no hay nada que espaciar. */}
@@ -840,8 +842,8 @@ function PasoPlan({ b, setB, M, diferencia }: {
               {c.esReserva ? "Reserva" : `Cuota ${c.numero}`}
               {c.esReserva && <Badge variante="info">seña</Badge>}
             </span>
-            <Input type="number" min={0} step="0.01" value={c.monto}
-              onChange={(ev) => editarCuota(c.id, { monto: Number(ev.target.value) })} aria-label="Monto" />
+            <InputMonto value={c.monto}
+              onChange={(ev) => editarCuota(c.id, { monto: montoDe(ev.target.value) })} aria-label="Monto" />
             <Input type="date" value={isoDia(c.vence)}
               onChange={(ev) => editarCuota(c.id, { vence: new Date(ev.target.value + "T12:00:00").toISOString() })}
               aria-label="Vencimiento" />

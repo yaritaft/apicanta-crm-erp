@@ -4,6 +4,8 @@ import React, { useMemo } from "react";
 import Link from "next/link";
 import { ArrowRight, Link2 } from "lucide-react";
 import { Badge, Field, Input, Select, Textarea } from "@/components/ui/ui";
+import { InputMonto } from "@/components/ui/InputMonto";
+import { montoDe } from "@/lib/monto";
 import { ModalForm } from "@/components/ui/Modal";
 import { CamposExtra } from "@/components/ui/CamposExtra";
 import { useToast } from "@/components/ui/Toast";
@@ -122,7 +124,7 @@ export function EditarAlumno({ form, setForm, onGuardar }: {
             onChange={(ev) => setForm({ ...form, ventaId: ev.target.value || undefined })}
             opciones={ventas.map((v) => ({ valor: v.id, texto: textoVenta(e.productos, v) }))} />
         </Field>
-        <Field label="Cuota mensual" ayuda="0 si pagó todo junto."><Input type="number" min={0} value={form.cuotaMensual} onChange={(ev) => setForm({ ...form, cuotaMensual: Number(ev.target.value) })} /></Field>
+        <Field label="Cuota mensual" ayuda="0 si pagó todo junto."><InputMonto value={form.cuotaMensual} onChange={(ev) => setForm({ ...form, cuotaMensual: montoDe(ev.target.value) })} /></Field>
         <Field label="Fecha de inicio">
           <Input type="date" value={isoDia(form.inicio)}
             /* Mediodía: la medianoche UTC en Argentina es el día anterior. */

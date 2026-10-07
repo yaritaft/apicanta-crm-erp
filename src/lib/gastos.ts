@@ -123,34 +123,6 @@ export function montoOriginal(g: Pick<Gasto, "extra">): MontoOriginal | null {
   return { monto, moneda, tipoCambio };
 }
 
-/* Un monto como lo escribe alguien de acá: "145.000", "1.500,50", "1500,5"
-   o "1500.5". Un input numérico del navegador lee "145.000" como 145, y en
-   pesos eso es un error de mil veces. Con un solo punto y tres cifras
-   detrás, el punto es de miles; si no, es la coma decimal de otro teclado. */
-export function leerMonto(texto: string): number {
-  const t = texto.trim().replace(/\s|US\$|\$/gi, "");
-  if (!t) return NaN;
-  const coma = t.lastIndexOf(",");
-  const punto = t.lastIndexOf(".");
-  let limpio: string;
-  if (coma >= 0 && punto >= 0) {
-    /* Los dos: el que va último es el decimal. */
-    limpio = coma > punto ? t.replace(/\./g, "").replace(",", ".") : t.replace(/,/g, "");
-  } else if (coma >= 0) {
-    limpio = (t.match(/,/g) ?? []).length > 1 ? t.replace(/,/g, "") : t.replace(",", ".");
-  } else if (punto >= 0) {
-    const partes = t.split(".");
-    const miles = partes.length > 2 || (partes[0].length > 0 && partes[1].length === 3);
-    limpio = miles ? t.replace(/\./g, "") : t;
-  } else {
-    limpio = t;
-  }
-  const n = Number(limpio);
-  return Number.isFinite(n) ? n : NaN;
-}
-
-/* El camino inverso, para precargar un monto al editar: coma decimal y sin
-   separador de miles, así leerMonto lo vuelve a leer igual. */
-export function escribirMonto(n: number): string {
-  return Number.isFinite(n) ? n.toLocaleString("es-AR", { maximumFractionDigits: 4, useGrouping: false }) : "";
-}
+/* leerMonto y escribirMonto viven en monto.ts (junto con lo que se ve en el campo
+   mientras se escribe) y se reexportan acá para no tocar a quien ya los importa. */
+export { leerMonto, escribirMonto } from "./monto";

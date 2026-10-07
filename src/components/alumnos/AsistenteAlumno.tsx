@@ -4,6 +4,8 @@ import React, { useCallback, useMemo, useRef, useState } from "react";
 import { Info, Link2, Search } from "lucide-react";
 import { Asistente, Opcion, Pregunta } from "@/components/ui/Asistente";
 import { Badge, Chip, Field, Input, Textarea } from "@/components/ui/ui";
+import { InputMonto } from "@/components/ui/InputMonto";
+import { montoDe } from "@/lib/monto";
 import { CamposExtra } from "@/components/ui/CamposExtra";
 import { acciones, useEstado } from "@/lib/store";
 import {
@@ -386,10 +388,10 @@ function PasoCuota({ b, set, e, venta }: { b: Borrador; set: (c: Partial<Borrado
       <Pregunta texto="¿Cuánto paga por mes?" sub={sub} />
       <div className="monto-grande">
         <span className="monto-grande__signo">{b.moneda === "USD" ? "US$" : "$"}</span>
-        <input
-          type="number" min={0} step="1" inputMode="decimal" placeholder="0"
+        <InputMonto
+          crudo placeholder="0"
           value={b.cuotaMensual || ""}
-          onChange={(ev) => set({ cuotaMensual: ev.target.value === "" ? 0 : Number(ev.target.value) })}
+          onChange={(ev) => set({ cuotaMensual: montoDe(ev.target.value) })}
           aria-label="Cuota mensual"
         />
       </div>

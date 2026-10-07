@@ -4,6 +4,7 @@ import React, { useCallback, useMemo, useState } from "react";
 import { Search } from "lucide-react";
 import { Asistente, Opcion, Pregunta } from "@/components/ui/Asistente";
 import { Chip, Input, Select, Textarea } from "@/components/ui/ui";
+import { InputMonto } from "@/components/ui/InputMonto";
 import { acciones, useEstado } from "@/lib/store";
 import { fechaLarga, isoDia, money, num } from "@/lib/format";
 import {
@@ -384,9 +385,8 @@ function PasoMonto({ b, set, base, convertido, M }: {
       />
       <div className="monto-grande">
         <span className="monto-grande__signo">{b.moneda === "USD" ? "US$" : "$"}</span>
-        <input
-          type="text" inputMode="decimal" autoComplete="off"
-          value={b.monto} onChange={(ev) => set({ monto: ev.target.value })}
+        <InputMonto
+          crudo value={b.monto} onChange={(ev) => set({ monto: ev.target.value })}
           aria-label="Monto" placeholder="0"
         />
       </div>
@@ -398,8 +398,8 @@ function PasoMonto({ b, set, base, convertido, M }: {
         <div className="form-grid">
           <div className="hk-field">
             <label className="hk-label" htmlFor="gasto-tc">Tipo de cambio</label>
-            <Input
-              id="gasto-tc" type="text" inputMode="decimal" autoComplete="off"
+            <InputMonto
+              id="gasto-tc" decimales={4}
               value={b.tipoCambio} onChange={(ev) => set({ tipoCambio: ev.target.value })}
             />
             <span className="hk-help">Pesos por dólar. Arranca en el de Ajustes.</span>

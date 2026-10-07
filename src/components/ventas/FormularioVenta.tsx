@@ -2,6 +2,8 @@
 
 import React, { useState } from "react";
 import { Field, Input, Select, Switch, Textarea } from "@/components/ui/ui";
+import { InputMonto } from "@/components/ui/InputMonto";
+import { montoDe } from "@/lib/monto";
 import { ModalForm } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toast";
 import { acciones, nuevoId, useEstado } from "@/lib/store";
@@ -150,7 +152,7 @@ export function FormularioVenta({ borrador, onCerrar, onGuardado }: {
             opciones={e.productos.filter((p) => p.activo).map((p) => ({ valor: p.id, texto: p.nombre }))} />
         </Field>
         <Field label="Valor total de la venta" ayuda="Lo que realmente acordó el vendedor.">
-          <Input type="number" min={0} value={f.precioAcordado} onChange={(ev) => setF({ ...f, precioAcordado: Number(ev.target.value) })} />
+          <InputMonto value={f.precioAcordado} onChange={(ev) => setF({ ...f, precioAcordado: montoDe(ev.target.value) })} />
         </Field>
 
         <Field label="Vendedor" ayuda={sinComision ? "Con Yari como vendedor no comisiona nadie." : undefined}>
@@ -199,7 +201,7 @@ export function FormularioVenta({ borrador, onCerrar, onGuardado }: {
         {!f.id && (
           <>
             <Field label="Reserva" ayuda="Lo que dejó de seña. 0 si pagó todo en cuotas.">
-              <Input type="number" min={0} value={f.reserva} onChange={(ev) => setF({ ...f, reserva: Number(ev.target.value) })} />
+              <InputMonto value={f.reserva} onChange={(ev) => setF({ ...f, reserva: montoDe(ev.target.value) })} />
             </Field>
             <Field label="Plan de pago (cuotas)" ayuda={f.planCuotas > 0 ? `${f.planCuotas} × ${money(porCuota, mon, 2)}` : undefined}>
               <Input type="number" min={1} max={12} value={f.planCuotas} onChange={(ev) => setF({ ...f, planCuotas: Math.max(1, Number(ev.target.value)) })} />

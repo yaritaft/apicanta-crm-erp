@@ -227,12 +227,15 @@ export function armarEstadoResultados(
   };
 
   const neto: NodoPyL = {
-    id: "neto", titulo: "Rentabilidad neta", cc: p.netoCC, rev: p.netoRev, estilo: "neto",
+    id: "neto", titulo: "Profit neto", sub: "Rentabilidad neta", cc: p.netoCC, rev: p.netoRev, estilo: "neto",
     hijos: [
       { id: "neto/resultado", titulo: "Resultado operativo", cc: p.operativoCC, rev: p.operativoRev },
       { id: "neto/honorarios", titulo: "Honorarios del dueño", cc: -p.honorariosCeo, rev: -p.honorariosCeo },
     ],
-    notas: [`Margen neto: ${margen(p.netoCC, p.cashCollected)} sobre lo cobrado · ${margen(p.netoRev, p.revenue)} sobre lo facturado.`],
+    notas: [
+      `Profit on cash collected (lo que de verdad quedó): ${M(p.netoCC, 2)} · Profit on revenue (lo que en teoría ganaste por las ventas): ${M(p.netoRev, 2)}.`,
+      `Margen neto: ${margen(p.netoCC, p.cashCollected)} sobre lo cobrado · ${margen(p.netoRev, p.revenue)} sobre lo facturado.`,
+    ],
   };
 
   return [

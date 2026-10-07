@@ -3,6 +3,7 @@
 import React, { useCallback, useMemo, useState } from "react";
 import { Asistente, Opcion, Pregunta } from "@/components/ui/Asistente";
 import { Chip, Input, Switch, Textarea } from "@/components/ui/ui";
+import { InputMonto } from "@/components/ui/InputMonto";
 import { nuevoId, useEstado } from "@/lib/store";
 import { escribirMonto, leerMonto } from "@/lib/gastos";
 import {
@@ -253,8 +254,8 @@ function CampoMonto({ b, set, etiqueta }: { b: Borrador; set: Poner; etiqueta: s
     <>
       <div className="monto-grande">
         <span className="monto-grande__signo">{b.moneda === "USD" ? "US$" : "$"}</span>
-        <input
-          type="text" inputMode="decimal" autoComplete="off" value={b.monto}
+        <InputMonto
+          crudo value={b.monto}
           onChange={(ev) => set({ monto: ev.target.value })} aria-label={etiqueta} placeholder="0"
         />
       </div>
@@ -483,8 +484,8 @@ function PasoTramo({ b, set, base }: { b: Borrador; set: Poner; base: Moneda }) 
         <label className="hk-label" htmlFor="con-cada">Cada cuánto ({unidad})</label>
         <div className="monto-grande">
           {info.plata && <span className="monto-grande__signo">{unidad}</span>}
-          <input
-            id="con-cada" type="text" inputMode="decimal" autoComplete="off" value={b.cada}
+          <InputMonto
+            crudo id="con-cada" value={b.cada}
             onChange={(ev) => set({ cada: ev.target.value })} placeholder={info.plata ? "100.000" : "15"}
           />
         </div>
@@ -494,8 +495,8 @@ function PasoTramo({ b, set, base }: { b: Borrador; set: Poner; base: Moneda }) 
         {info.plata ? (
           <div className="monto-grande">
             <span className="monto-grande__signo">{base === "USD" ? "US$" : "$"}</span>
-            <input
-              type="text" inputMode="decimal" autoComplete="off" value={b.monto}
+            <InputMonto
+              crudo value={b.monto}
               onChange={(ev) => set({ monto: ev.target.value })} aria-label="Monto por tramo" placeholder="0"
             />
           </div>

@@ -741,6 +741,9 @@ export interface Procesador {
   /* Las cuentas a las que transfiere el cliente (las de la Financiera):
      salen en la tabla de la derecha del reporte para la Financiera. */
   cuentasBancarias?: CuentaBancaria[];
+  /* Si va en «Otros», al final del arqueo de la Caja: las cuentas que no se
+     usan seguido. Sin decirlo, lo deciden los nombres (lib/caja: enOtros). */
+  cajaOtros?: boolean;
 }
 
 export interface CuentaBancaria {
@@ -952,12 +955,14 @@ export interface Pago {
   montoArs?: number;
   pagador?: string;          // Nombre de quien transfirió
   cuit?: string;             // Cuit (Si pagó a financiera)
-  /* El CBU/CVU desde el que transfirió el cliente. Obligatorio si pagó a
-     la Financiera: con esto ella encuentra la transferencia. */
+  /* El CBU/CVU desde el que transfirió el cliente. Ya no se pide (Angelo,
+     02/10: la Financiera encuentra la transferencia con el nombre y el CUIT);
+     sólo lo tienen los cobros cargados antes. */
   cvu?: string;
-  /* Lo que decía el blue venta cuando se cargó el cobro, y de dónde salió
-     ("DolarHoy 23/09/26 21:20"). Si el closer cambió el tipo de cambio,
-     acá queda el original para compararlo. */
+  /* El tipo de cambio que propuso la app cuando se cargó el cobro (el promedio
+     del blue venta y el cripto venta) y de dónde salió ("Promedio blue … y
+     cripto … · DolarHoy …"). Si el closer lo cambió, acá queda el original para
+     compararlo. Antes era el blue venta solo. */
   tipoCambioBlue?: number;
   tipoCambioFuente?: string;
   chequeado?: boolean;       // Pasado Financiera / Chequeado en plataforma

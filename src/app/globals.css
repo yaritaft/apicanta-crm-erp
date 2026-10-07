@@ -282,6 +282,8 @@ a { color: inherit; text-decoration: none; }
 .app-shell { display: grid; grid-template-columns: 260px 1fr; min-height: 100dvh; }
 .app-main { min-width: 0; display: flex; flex-direction: column; background: var(--surface-000); }
 .app-content { flex: 1; padding: var(--space-6); max-width: 1320px; width: 100%; margin: 0 auto; }
+/* El CRM en tabla usa todo el ancho: no se desperdician los costados. */
+.app-content:has(.crm-t) { max-width: none; margin: 0; }
 
 .app-topbar {
   position: sticky; top: 0; z-index: 30;
@@ -594,6 +596,10 @@ kbd {
 .arqueo-fila { display: grid; grid-template-columns: minmax(130px, 1.5fr) repeat(4, minmax(0, 1fr)) minmax(160px, 1.6fr); gap: var(--space-3); align-items: center; padding: 6px var(--space-3); border-top: 1px solid var(--border); font-size: 14px; }
 .arqueo-fila:first-child { border-top: 0; }
 .arqueo-fila > span:nth-child(n+2):nth-child(-n+5) { text-align: right; }
+.arqueo-otros { display: flex; align-items: center; gap: var(--space-2); width: 100%; padding: var(--space-2) var(--space-3); border: 0; border-top: 1px solid var(--border); background: none; color: var(--ink-muted); font: inherit; font-size: 13px; line-height: 18px; text-align: left; cursor: pointer; }
+.arqueo-otros:hover { color: var(--ink); background: var(--surface-200); }
+.arqueo-otros svg { flex: none; transition: transform 150ms ease-out; }
+.arqueo-otros[aria-expanded="true"] svg { transform: rotate(90deg); }
 .arqueo-fila--cabeza { background: var(--surface-200); font-size: 11px; line-height: 14px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--ink-subtle); padding-block: var(--space-2); }
 /* Lo contado contra lo que tendría que haber en esa cuenta: el casillero se
    pinta (verde si da, ámbar si no) y adentro va el tilde o la diferencia. */
@@ -2072,7 +2078,7 @@ a.wb-canal:hover { background: var(--surface-200); border-color: var(--border-st
    abajo, lo que dice la app de lo que se escribió. */
 .cambio-campo { display: flex; flex-direction: column; gap: 4px; }
 .cambio-campo .hk-input { height: 36px; font-size: 14px; }
-.cambio-campo__fila { display: grid; grid-template-columns: minmax(0, 200px) auto; gap: var(--space-3); align-items: center; }
+.cambio-campo__fila { display: grid; grid-template-columns: minmax(0, 170px) minmax(0, 230px); gap: var(--space-3); align-items: center; }
 
 /* ---------- Ajustes → Ventas: servicios, cuentas y estrategias ---------- */
 /* Ajustes → UTMs: cada regla en dos renglones, lo que tiene que traer el
@@ -2116,7 +2122,8 @@ a.wb-canal:hover { background: var(--surface-200); border-color: var(--border-st
 .catalogo-fila[data-inactivo] { opacity: .6; }
 .catalogo-fila--servicio { grid-template-columns: minmax(180px, 1.6fr) 140px minmax(140px, 1fr) auto; }
 /* Anchos fijos en lo que no es texto: la cabecera es otra grilla y tiene que caer igual. */
-.catalogo-fila--cuenta { grid-template-columns: minmax(140px, 1.2fr) 96px 88px minmax(150px, 1.6fr) 128px 84px; }
+.catalogo-fila--cuenta { grid-template-columns: minmax(140px, 1.2fr) 96px 88px minmax(150px, 1.6fr) 128px 92px; }
+.catalogo-switches { display: flex; flex-direction: column; gap: 6px; }
 .catalogo-fila--cuenta > .hk-btn { justify-self: start; }
 .catalogo-fila--cuenta .hk-badge { white-space: normal; height: auto; min-height: 24px; }
 .catalogo-fila--estrategia { grid-template-columns: minmax(180px, 1.6fr) auto auto; }

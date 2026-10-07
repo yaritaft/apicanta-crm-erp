@@ -1,4 +1,4 @@
-import type { Arqueo, EstadoApp } from "./types";
+import type { Arqueo, EstadoApp, Procesador } from "./types";
 import type { RangoMes } from "./metricas";
 import { calcularPyL, gastosDelMes } from "./finanzas";
 import { enCamino } from "./traspasos";
@@ -138,3 +138,12 @@ export function ultimoArqueo(e: EstadoApp, antesDe?: string): Arqueo | undefined
     .filter((a) => new Date(a.fecha).getTime() < tope)
     .sort((a, b) => +new Date(b.fecha) - +new Date(a.fecha))[0];
 }
+
+/* Las cuentas que no se usan seguido van en «Otros», al final del arqueo: a
+   mano lo que se usa todo el tiempo y lo demás un clic más abajo (Yari, 02/10:
+   Mercado Pago, Galicia, Efectivo USD y Binance «van a molestar todo el
+   tiempo»). Cada cuenta lo dice con `cajaOtros` (Ajustes → Ventas → Cuentas
+   recaudadoras); si no dice nada, valen estos nombres. */
+export const CUENTAS_SIN_USO = /mercado\s*pago|galicia|efectivo|binance/i;
+export const enOtros = (p: Pick<Procesador, "nombre" | "cajaOtros">): boolean =>
+  p.cajaOtros ?? CUENTAS_SIN_USO.test(p.nombre);

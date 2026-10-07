@@ -8,6 +8,7 @@ import {
 import {
   Ayuda, Badge, Button, Card, Chip, Empty, IconButton, Input, StatCard, Switch,
 } from "@/components/ui/ui";
+import { InputMonto } from "@/components/ui/InputMonto";
 import { Modal } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toast";
 import { acciones, nuevoId, useEstado } from "@/lib/store";
@@ -327,8 +328,8 @@ function CampoNumero({ valor, onCambiar, etiqueta, placeholder, autoFocus }: {
     if (n !== valor) onCambiar(n);
   };
   return (
-    <Input
-      type="text" inputMode="decimal" autoComplete="off" aria-label={etiqueta} placeholder={placeholder}
+    <InputMonto
+      aria-label={etiqueta} placeholder={placeholder}
       value={texto} autoFocus={autoFocus}
       onChange={(ev) => setTexto(ev.target.value)} onBlur={aplicar}
       onKeyDown={(ev) => { if (ev.key === "Enter") (ev.target as HTMLInputElement).blur(); }}
@@ -506,7 +507,7 @@ function Corregir({ l, onGuardar }: { l: LineaLiquidada; onGuardar: (monto: numb
       <div role="cell" className="liq__form">
         <div className="hk-field">
           <label className="hk-label">Monto a pagar ({l.moneda === "USD" ? "US$" : "$"})</label>
-          <Input type="text" inputMode="decimal" value={monto} onChange={(ev) => setMonto(ev.target.value)} autoFocus aria-label="Monto a pagar" />
+          <InputMonto negativos value={monto} onChange={(ev) => setMonto(ev.target.value)} autoFocus aria-label="Monto a pagar" />
         </div>
         <div className="hk-field" style={{ flex: "2 1 240px" }}>
           <label className="hk-label">Por qué (opcional)</label>
@@ -537,7 +538,7 @@ function NuevoExtra({ onCancelar, onAgregar }: {
         </div>
         <div className="hk-field" style={{ flex: "1 1 120px" }}>
           <label className="hk-label">Monto</label>
-          <Input type="text" inputMode="decimal" value={monto} onChange={(ev) => setMonto(ev.target.value)} aria-label="Monto" placeholder="0" />
+          <InputMonto value={monto} onChange={(ev) => setMonto(ev.target.value)} aria-label="Monto" placeholder="0" />
         </div>
         <div className="row-wrap" style={{ alignSelf: "flex-end", paddingBottom: 6 }}>
           <Chip activo={moneda === "USD"} onClick={() => setMoneda("USD")}>US$</Chip>

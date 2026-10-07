@@ -4,6 +4,8 @@ import React, { useEffect, useMemo, useState } from "react";
 import { UserRound } from "lucide-react";
 import { Asistente, Pregunta } from "@/components/ui/Asistente";
 import { Field, Input, Select, Textarea } from "@/components/ui/ui";
+import { InputMonto } from "@/components/ui/InputMonto";
+import { montoDe } from "@/lib/monto";
 import { CamposExtra } from "@/components/ui/CamposExtra";
 import { useAbrirFicha } from "@/components/ficha/abrir";
 import { useEstado } from "@/lib/store";
@@ -134,7 +136,7 @@ export function AsistenteLead({ inicial, onCerrar, onGuardar }: {
               />
             </Field>
             <Field label="Valor" ayuda="Cuánto vale si cierra.">
-              <Input type="number" min={0} value={f.monto} onChange={(ev) => set({ monto: Number(ev.target.value) })} />
+              <InputMonto value={f.monto} onChange={(ev) => set({ monto: montoDe(ev.target.value) })} />
             </Field>
             <Field label="Moneda">
               <Select value={f.moneda} onChange={(ev) => set({ moneda: ev.target.value as Moneda })} opciones={["USD", "ARS"]} />

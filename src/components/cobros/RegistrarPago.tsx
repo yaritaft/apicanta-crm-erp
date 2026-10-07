@@ -8,7 +8,6 @@ import {
   agregarMedio, datosDeCobro, EditorCobros, esFinanciera, enPesos, problemaDeCuenta, problemaDeDatos,
   problemaDePasarelas, problemaDePrueba, type CobroBorrador,
 } from "@/components/cobros/EditorCobros";
-import { bancoDeCbu } from "@/lib/cbu";
 import { acciones, useEstado } from "@/lib/store";
 import { fechaLarga, money } from "@/lib/format";
 import type { Cuota } from "@/lib/types";
@@ -19,7 +18,7 @@ import type { Cuota } from "@/lib/types";
    Paso a paso, como el asistente de venta: cuánto y por qué cuenta
    entró, cómo se prueba (conciliado con la pasarela o con el
    comprobante), los datos de la transferencia (el tipo de cambio si fue
-   en pesos; el CBU/CVU, nombre y CUIT si fue a la Financiera), qué
+   en pesos; nombre y CUIT si fue a la Financiera), qué
    hacer si pagó menos y el resumen. Desde la ficha va embebido en la
    columna de la venta; en cualquier otro lado, a pantalla completa.
 
@@ -187,7 +186,7 @@ export function RegistrarPago({ cuota, onCerrar, onGuardado, embebido = false }:
           <Pregunta
             texto="Los datos de la transferencia"
             sub={aFinanciera
-              ? "Van al reporte para la Financiera: sin el CBU/CVU desde el que transfirió, no la encuentra."
+              ? "Van al reporte para la Financiera: con el nombre y el CUIT de quien transfirió la encuentra."
               : "Quién mandó la plata y, si fue en pesos, a qué cambio."}
           />
           {editor(["datos"])}
@@ -261,11 +260,10 @@ export function RegistrarPago({ cuota, onCerrar, onGuardado, embebido = false }:
                       : p.comprobante && <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}><Paperclip size={12} />{p.comprobante.nombre}</span>}
                     {enPesos(proc) && p.tipoCambio ? (
                       <span>
-                        cambio {money(p.tipoCambio, "ARS", 2)} · {money(p.monto * p.tipoCambio, "ARS", 2)}
-                        {aMano ? ` (a mano; el blue era ${money(p.tipoCambioBlue!, "ARS", 2)})` : " (blue venta)"}
+                        cambio {money(p.tipoCambio, "ARS", 2)} · {money(p.montoArs ?? p.monto * p.tipoCambio, "ARS", 2)}
+                        {aMano ? ` (a mano; el promedio era ${money(p.tipoCambioBlue!, "ARS", 2)})` : " (promedio blue y cripto)"}
                       </span>
                     ) : null}
-                    {p.cvu && <span>CBU/CVU {p.cvu}{bancoDeCbu(p.cvu) ? ` · ${bancoDeCbu(p.cvu)}` : ""}</span>}
                     {p.pagador && <span>de {p.pagador}</span>}
                     {p.cuit && <span>CUIT {p.cuit}</span>}
                     {p.chequeado && <span>chequeado</span>}

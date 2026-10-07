@@ -127,7 +127,7 @@ function exportarPyL(e: EstadoApp, m: RangoMes, p: ReturnType<typeof calcularPyL
     ["Resultado operativo", p.operativoCC, p.operativoRev],
     ["Honorarios del CEO", -p.honorariosCeo, -p.honorariosCeo],
     ...categorias("dueno"),
-    ["Rentabilidad neta", p.netoCC, p.netoRev],
+    ["Profit neto (rentabilidad neta)", p.netoCC, p.netoRev],
   ];
   const csv = [
     `Estado de resultados,${m.etiqueta}`,

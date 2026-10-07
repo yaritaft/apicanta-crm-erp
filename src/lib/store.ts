@@ -976,7 +976,7 @@ function conDatosDePlanilla(nuevos: Pago[], cuotasVenta: Cuota[], pagosVentaAnte
 export interface DatosCobro {
   procesadorId?: ID; monto: number; fecha: string; referencia?: string;
   movimientoId?: ID; comprobante?: Comprobante;
-  tipoCambio?: number; pagador?: string; cuit?: string; chequeado?: boolean;
+  tipoCambio?: number; montoArs?: number; pagador?: string; cuit?: string; chequeado?: boolean;
   cvu?: string; tipoCambioBlue?: number; tipoCambioFuente?: string;
 }
 
@@ -986,6 +986,7 @@ function extrasDeCobro(c: DatosCobro): Partial<Pago> {
   const conCambio = Boolean(c.tipoCambio && c.tipoCambio > 0);
   return {
     ...(conCambio ? { tipoCambio: c.tipoCambio } : {}),
+    ...(conCambio && c.montoArs && c.montoArs > 0 ? { montoArs: c.montoArs } : {}),
     ...(conCambio && c.tipoCambioBlue && c.tipoCambioBlue > 0
       ? { tipoCambioBlue: c.tipoCambioBlue, tipoCambioFuente: c.tipoCambioFuente } : {}),
     ...(c.pagador?.trim() ? { pagador: c.pagador.trim() } : {}),
