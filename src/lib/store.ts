@@ -661,9 +661,10 @@ function registrar(
 
 /* Lo que el CRM carga sobre una agenda. `estado` lo mandan deshacer
    (devuelve la llamada a como estaba) y la tabla del CRM, que corrige el
-   estado y el closer en la celda. */
+   estado y el closer en la celda. `extra` lo manda pasar una llamada a otro
+   closer (lib/pasar-llamadas.ts), que deja anotado ahí que se eligió a mano. */
 export type CambiosLlamada = Partial<Pick<Sesion, "preCall" | "estadoPreCall" | "estadoLlamada" | "notas" | "grabacion" | "estado"
-  | "resultado" | "objecion" | "hizoOferta" | "cierreEstimado" | "eodEn" | "eodPor" | "anfitrion">>;
+  | "resultado" | "objecion" | "hizoOferta" | "cierreEstimado" | "eodEn" | "eodPor" | "anfitrion" | "extra">>;
 type PedidoLlamada = { id: ID; cambios: CambiosLlamada; detalle: string };
 export type CambioEtapa = { antes: ID; despues: ID };
 
