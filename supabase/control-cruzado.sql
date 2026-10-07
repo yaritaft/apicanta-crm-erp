@@ -31,7 +31,12 @@
 --   3. Reemplazar el comprobante por otro archivo deja los chequeos en
 --      pendiente: se chequeó contra el de antes. Agregar el primero no.
 --   4. El sí/no de antes ya no lo marca quien carga (el tilde del closer no
---      cuenta); un cobro atado a la pasarela sí lo conserva.
+--      cuenta); un cobro atado a la pasarela sí lo conserva. Y atar o desatar
+--      un cobro a un movimiento ("movimientoId") es de quien concilia (el
+--      director y finanzas): a quien no, la base le ignora el dato al crear el
+--      cobro y le deja el de antes al corregirlo. Sin esto un closer, que no ve
+--      los movimientos, escribía uno inventado y el cobro quedaba «chequeado ·
+--      pasarela» sin que la plata existiera.
 --   5. "cargadoPor" lo sella la base al crear el cobro y no cambia.
 -- Sin sesión de una persona (la clave de servicio del servidor, el editor de
 -- SQL) el trigger deja pasar todo tal cual.
@@ -126,8 +131,11 @@ begin
     end if;
 
     -- El tilde de quien carga no cuenta como chequeo; el cobro atado a la
-    -- pasarela sí viene chequeado (la plata está en la pasarela).
-    if new."movimientoId" is null and not (puede_dir or puede_fin) then
+    -- pasarela sí viene chequeado (la plata está en la pasarela). Quien carga
+    -- no ata el cobro a un movimiento (no los ve ni puede saber si existe):
+    -- eso lo hace la conciliación, con el director o finanzas.
+    if not (puede_dir or puede_fin) then
+      new."movimientoId" := null;
       new.chequeado := null;
     end if;
     return new;
@@ -135,6 +143,12 @@ begin
 
   -- UPDATE
   new."cargadoPor" := old."cargadoPor";
+
+  -- Atar o desatar el cobro a un movimiento lo hace quien concilia; a los
+  -- demás les queda el de antes (no da error, igual que los casilleros).
+  if not (puede_dir or puede_fin) then
+    new."movimientoId" := old."movimientoId";
+  end if;
 
   -- Otro archivo en lugar del que había (o el link de la planilla cambiado), o
   -- el monto, la moneda, el día o el monto en pesos cambiados: lo chequeado era

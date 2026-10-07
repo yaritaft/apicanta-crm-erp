@@ -17,6 +17,7 @@ const dir = process.env.PGLITE_DIR;
 const { PGlite } = dir ? await import(pathToFileURL(`${dir}/dist/index.js`).href) : await import("@electric-sql/pglite");
 const tipos = readFileSync(aqui("supabase/tipos-cuenta.sql"), "utf8");
 const control = readFileSync(aqui("supabase/control-cruzado.sql"), "utf8");
+const frenos = readFileSync(aqui("supabase/solo-lo-suyo-seguro.sql"), "utf8");
 
 const db = new PGlite();
 await db.exec(`
@@ -25,10 +26,11 @@ await db.exec(`
   create role authenticated;
   create table public.usuarios_permitidos (email text primary key, nombre text, rol text not null default 'equipo', "creadoEn" timestamptz default now());
   create table public.equipo (id text primary key, nombre text, email text, activo boolean default true);
-  create table public.ventas (id text primary key, "closerId" text, "setterId" text, "contactoId" text);
+  create table public.ventas (id text primary key, "closerId" text, "setterId" text, "contactoId" text, "sesionId" text);
   create table public.cuotas (id text primary key, "ventaId" text, "closerId" text);
   create table public.pagos (
-    id text primary key, "cuotaId" text, monto numeric not null default 0, fecha text, comprobante jsonb, "comprobanteLink" text, "movimientoId" text, chequeado boolean
+    id text primary key, "cuotaId" text, monto numeric not null default 0, moneda text default 'USD', fecha text, "montoArs" numeric,
+    comprobante jsonb, "comprobanteLink" text, "movimientoId" text, chequeado boolean, notas text
   );
   create table public.sesiones (id text primary key, anfitrion text, "leadId" text, "contactoId" text);
   create table public.leads (id text primary key, responsable text, "contactoId" text);
@@ -58,7 +60,8 @@ await db.exec(`
 `);
 await db.exec(control);
 await db.exec(control);
-console.log("tipos-cuenta.sql y, encima, control-cruzado.sql (dos veces): corrieron sin error");
+await db.exec(frenos);
+console.log("tipos-cuenta.sql y, encima, control-cruzado.sql (dos veces) y solo-lo-suyo-seguro.sql: corrieron sin error");
 
 const como = async (email) => {
   await db.exec(`reset role`);
@@ -89,15 +92,26 @@ await db.exec(`insert into public.pagos (id, "cuotaId", monto, chequeado, "chequ
 p = await fila("p3");
 es(p.cargadoPor === "dante@x.com" && p.chequeado === null && p.chequeoDirector === null, "carga un cobro nuevo: queda a su nombre y pendiente, aunque mande el tilde");
 await como("dante@x.com");
-await db.exec(`insert into public.pagos (id, "cuotaId", monto, chequeado, "movimientoId") values ('p4', 'c1', 60, true, 'mov1')`);
-es((await fila("p4")).chequeado === true, "un cobro atado a la pasarela conserva su marca");
+await db.exec(`insert into public.pagos (id, "cuotaId", monto, chequeado, "movimientoId") values ('p4', 'c1', 60, true, 'mov-inventado')`);
+p = await fila("p4");
+es(p.chequeado === null && p.movimientoId === null, "con un movimiento inventado no queda «atado a la pasarela» ni chequeado: el closer no ata cobros");
+await como(null);
+await db.exec(`insert into public.pagos (id, "cuotaId", monto, chequeado, "movimientoId") values ('p6', 'c1', 60, true, 'mov1')`);
+await como("dante@x.com");
+await db.exec(`update public.pagos set "movimientoId" = null, notas = 'lo desato' where id = 'p6'`);
+p = await fila("p6");
+es(p.chequeado === true && p.movimientoId === "mov1" && p.notas === "lo desato", "un cobro atado a la pasarela por la conciliación conserva su marca y su atadura: el closer no lo desata");
+await como("dante@x.com");
+await db.exec(`update public.pagos set "movimientoId" = 'mov-inventado', monto = 5000 where id = 'p6'`);
+p = await fila("p6");
+es(p.movimientoId === "mov1", "ni lo cambia a otro movimiento");
 await como("dante@x.com");
 await db.exec(`update public.pagos set comprobante = '{"ruta":"nuevo"}' where id = 'p3'`);
 es((await fila("p3")).comprobante?.ruta === "nuevo", "puede subir el comprobante de su cobro");
 
 console.log("el director comercial:");
 await como("santi@x.com");
-es((await db.query(`select count(*)::int n from public.pagos`)).rows[0].n === 4, "ve los cobros de todos los closers");
+es((await db.query(`select count(*)::int n from public.pagos`)).rows[0].n === 5, "ve los cobros de todos los closers");
 await db.exec(`update public.pagos set "chequeoDirector" = 'chequeado', "chequeoDirectorPor" = 'otro@falso.com', "chequeoDirectorEn" = '2000-01-01' where id = 'p2'`);
 p = await fila("p2");
 es(p.chequeoDirector === "chequeado" && p.chequeoDirectorPor === "santi@x.com" && new Date(p.chequeoDirectorEn).getFullYear() >= 2026, "chequea el de otro closer, con su nombre y su hora (no se pueden falsificar)");
@@ -112,9 +126,15 @@ p = await fila("p2");
 es(p.chequeoFinanzas === "rechazado" && p.chequeoFinanzasPor === "aldana@x.com" && p.chequeoFinanzasNota === "no se lee", "rechaza con motivo, a su nombre");
 es(p.chequeoDirector === "chequeado" && p.chequeoDirectorPor === "santi@x.com", "lo que dijo el director sigue");
 await como("aldana@x.com");
+await db.exec(`update public.pagos set notas = 'una nota' where id = 'p2'`);
+p = await fila("p2");
+es(p.notas === "una nota" && p.chequeoDirectorPor === "santi@x.com" && p.chequeoDirector === "chequeado", "editar otra cosa del cobro (las notas) no toca quién ni cuándo");
+await como("aldana@x.com");
 await db.exec(`update public.pagos set monto = 201 where id = 'p2'`);
 p = await fila("p2");
-es(p.monto == 201 && p.chequeoDirectorPor === "santi@x.com", "editar otra cosa del cobro no toca quién ni cuándo");
+es(p.monto == 201 && p.chequeoDirector === null && p.chequeoFinanzas === null, "cambiar el monto del cobro reinicia los dos chequeos (se chequeó contra el de antes)");
+await como("aldana@x.com");
+await db.exec(`update public.pagos set "chequeoFinanzas" = 'rechazado', "chequeoFinanzasNota" = 'otro monto' where id = 'p2'`);
 await como("aldana@x.com");
 await db.exec(`update public.pagos set "chequeoFinanzas" = null where id = 'p2'`);
 p = await fila("p2");
@@ -126,8 +146,13 @@ await db.exec(`update public.pagos set comprobante = '{"ruta":"a"}', monto = 102
 await como("santi@x.com");
 await db.exec(`update public.pagos set "chequeoDirector" = 'chequeado' where id = 'p1'`);
 await como("dante@x.com");
-await db.exec(`update public.pagos set comprobante = '{"ruta":"a"}', monto = 103 where id = 'p1'`);
-es((await fila("p1")).chequeoDirector === "chequeado", "el mismo archivo no reinicia el chequeo");
+await db.exec(`update public.pagos set comprobante = '{"ruta":"a"}', notas = 'mismo archivo' where id = 'p1'`);
+es((await fila("p1")).chequeoDirector === "chequeado", "el mismo archivo (y otra nota) no reinicia el chequeo");
+await como("dante@x.com");
+await db.exec(`update public.pagos set monto = 103 where id = 'p1'`);
+es((await fila("p1")).chequeoDirector === null, "cambiar el monto sí lo reinicia");
+await como("santi@x.com");
+await db.exec(`update public.pagos set "chequeoDirector" = 'chequeado' where id = 'p1'`);
 await como("dante@x.com");
 await db.exec(`update public.pagos set comprobante = '{"ruta":"otro"}' where id = 'p1'`);
 p = await fila("p1");

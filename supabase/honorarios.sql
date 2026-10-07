@@ -34,7 +34,18 @@ end $$;
 
 -- 'admin' era el único nivel: todos veían todo. Pasa a llamarse 'equipo',
 -- que es lo que ven (todo menos Equipo y honorarios).
-update public.usuarios_permitidos set rol = 'equipo' where rol is null or rol not in ('dueno', 'equipo');
+--
+-- Esto es de cuando había dos niveles. Desde tipos-cuenta.sql el rol es el id
+-- de un tipo de cuenta (closer, director, setter, administración…), así que si
+-- esa tabla ya existe no se toca a nadie ni se vuelve a poner el CHECK de
+-- 'dueno' o 'equipo': volver a correr este archivo no tiene que pasar a «Todo
+-- menos honorarios» a los closers (que verían y editarían Finanzas) ni impedir
+-- dar de alta otros tipos.
+do $$ begin
+  if to_regclass('public.tipos_cuenta') is null then
+    update public.usuarios_permitidos set rol = 'equipo' where rol is null or rol not in ('dueno', 'equipo');
+  end if;
+end $$;
 
 -- Los dueños: Yari y Juan Cruz.
 update public.usuarios_permitidos set rol = 'dueno'
@@ -42,8 +53,12 @@ update public.usuarios_permitidos set rol = 'dueno'
 
 alter table public.usuarios_permitidos alter column rol set default 'equipo';
 alter table public.usuarios_permitidos drop constraint if exists usuarios_permitidos_rol_ck;
-alter table public.usuarios_permitidos add constraint usuarios_permitidos_rol_ck
-  check (rol in ('dueno', 'equipo'));
+do $$ begin
+  if to_regclass('public.tipos_cuenta') is null then
+    alter table public.usuarios_permitidos add constraint usuarios_permitidos_rol_ck
+      check (rol in ('dueno', 'equipo'));
+  end if;
+end $$;
 
 -- El nivel de quien pregunta, o null si no está en la lista. SECURITY
 -- DEFINER como puede_entrar(): lee la lista sin depender de sus políticas.

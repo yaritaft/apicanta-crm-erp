@@ -278,14 +278,17 @@ alter table public.leads add column if not exists "creadoPor" text default lower
 alter table public.actividad add column if not exists "creadoPor" text default lower(coalesce(auth.jwt() ->> 'email', ''));
 
 -- "Valentín Abadía" → "valentin abadia": sin tildes, en minúscula y con las
--- dos primeras palabras, como nombreCorto() de src/lib/crm.ts.
+-- dos primeras palabras, como nombreCorto() de src/lib/crm.ts. Las dos cadenas del
+-- translate() tienen que tener el MISMO largo (48 caracteres cada una): con una «u»
+-- de más la «ñ» salía «u» y la «ç» «n» («Núñez» → «nuuez») y la base no emparejaba
+-- a un closer que la app sí. Lo controla pruebas/fix-sql-menores.test.ts.
 create or replace function public.nombre_corto(t text)
 returns text
 language sql immutable
 as $$
   select array_to_string((regexp_split_to_array(trim(lower(translate(coalesce(t, ''),
     'ÁÀÂÄÃÉÈÊËÍÌÎÏÓÒÔÖÕÚÙÛÜÑÇáàâäãéèêëíìîïóòôöõúùûüñç',
-    'AAAAAEEEEIIIIOOOOOUUUUNCaaaaaeeeeiiiiooooouuuuunc'))), '\s+'))[1:2], ' ');
+    'AAAAAEEEEIIIIOOOOOUUUUNCaaaaaeeeeiiiiooooouuuunc'))), '\s+'))[1:2], ' ');
 $$;
 
 -- Quién de Equipo es un nombre (el anfitrión de Calendly, el responsable de
