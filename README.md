@@ -639,3 +639,55 @@ correr `supabase/honorarios.sql` (tablas, políticas, niveles de acceso y la col
   Honorarios del CEO, Setters, Edición de contenido o Filmmaker el equipo va primero; en el resto, los proveedores.
   `Gasto.proveedor` sigue siendo texto; quién del equipo es se guarda en `gastos.extra.proveedorEquipoId`. Editar un
   gasto abre la misma revisión, y uno viejo que venía sin proveedor (los de la planilla) pide uno para guardarse.
+
+## Lo que pidieron el 02/10 (lote D: control cruzado y cobranza)
+
+- **Control cruzado de los cobros** (`lib/control-cobros.ts`, `components/cobros/ControlCobro.tsx`): el closer carga el
+  cobro y otra persona confirma que el comprobante coincide con lo cargado. Hay **dos casilleros separados**, el del director
+  comercial y el de finanzas; con uno alcanza para que el cobro no quede pendiente. Cada casillero guarda quién lo hizo (el
+  correo de su sesión), cuándo y, si rechazó el comprobante, el motivo. Un cobro está *Sin chequear*, *Chequeado* o *Rechazado*
+  (un rechazo manda hasta que se arregla: otro comprobante, o quien rechazó lo da por bueno). Lo que ya estaba marcado con el sí/no
+  de antes (`pagos.chequeado`: la planilla de Angelo y los cobros conciliados con la pasarela) sigue chequeado —«de antes», sin quién
+  ni cuándo—; un cobro que no lo estaba queda pendiente, sin tocar sus números. Chequear o rechazar **no cambia ningún número**
+  (una prueba compara el Cash Collected antes y después). El tilde del closer al cargar ya no cuenta.
+  - **No es un tilde en la fila:** un clic en la pastilla del estado abre una ventana con el comprobante a un lado y, al otro, lo que
+    cargó el closer (cliente, mail, monto, medio, cuota y **todos los cobros de esa cuota**, por si pagó en partes). «Chequeado» se
+    confirma de nuevo y «Rechazar» pide el motivo. Quien chequea queda anotado como responsable, también en la Actividad con su
+    nombre de Equipo. Si el cobro lo cargó la misma persona que lo chequea, la ventana lo avisa (no lo frena).
+  - **Dónde se chequea:** el director comercial no ve Finanzas, así que chequea desde **Ventas → Cobros** (solapa nueva, con los filtros,
+    el período y la búsqueda de Ventas): cada cobro con su Comprobante, si está Conciliado, quién lo Cargó y el Chequeo, y los botones
+    *Sin chequear / Rechazados / Chequeados / Sin comprobante / Sin conciliar* (quien controla arranca en «Sin chequear»). También desde la
+    ficha de la venta, y la lista de Ventas suma la columna «Control de cobros». Finanzas → Detalle → Procesadores tiene las mismas
+    columnas. El casillero lo da el tipo de cuenta: el de finanzas lo llena quien edita Finanzas; el del director, quien edita Ventas
+    sin ser «sólo lo suyo». El closer no llena ninguno, pero ve el estado y puede subir otro comprobante.
+  - **Comprobante después de cargar el cobro:** desde la misma ventana se sube o se cambia (el closer arregla uno rechazado). Cambiar un
+    archivo que ya estaba vuelve los chequeos a pendiente —se miraron contra el anterior, que queda guardado—; agregar el primero no.
+    «Conciliado» es que el cobro está atado al pago de la pasarela; una cuenta sin pasarela (la Financiera, efectivo) dice «A mano».
+  - **SQL:** `supabase/control-cruzado.sql` agrega 9 columnas a `pagos` (`cargadoPor`, `chequeoDirector/Por/En/Nota` y
+    `chequeoFinanzas/Por/En/Nota`) y un trigger: el RLS no distingue columnas y el closer puede editar sus cobros, así que el trigger
+    deja los casilleros sólo a quien corresponde, sella quién y cuándo con la sesión (nadie chequea a nombre de otro), reinicia el
+    control si se reemplaza el comprobante y no deja que el tilde de quien carga cuente. Lo ensayé en un Postgres de verdad con las
+    funciones reales de `tipos-cuenta.sql`. Sin el SQL la app anda igual: los chequeos quedan sólo en el navegador de quien los hace.
+    Al final tiene, comentada, una línea para dar por chequeados «de antes» los cobros viejos si no se quiere arrancar con toda la
+    historia pendiente. Los chequeos salen como un UPDATE de sus columnas y las columnas del control **nunca viajan** en el upsert del
+    cobro entero (`sinColumnasDelControl`): una copia vieja de la pantalla no pisa lo que otro acaba de chequear.
+- **Excel de los cobros** (`lib/excelCobros.ts`): «Descargar Excel» en Ventas → Cobros, Finanzas → Procesadores y en los ingresos de la
+  semana baja los cobros que se ven, con los filtros puestos: fecha, nombre de quien transfiere, CUIT, monto (USD y ARS), comprobante
+  (link firmado por 30 días), conciliado, quién chequeó y cuándo, quién cargó; y los totales al pie. El «Reporte para la Financiera»
+  (`lib/reporteFinanciera.ts`) sigue con su formato, sin la columna Banco (salía del CBU, que ya no se pide) y con «Pago Verificado»
+  tomado del control. La planilla exportada también.
+- **Ingresos de la semana** (`lib/ingresos-semanales.ts`, `components/finanzas/IngresosSemanales.tsx`, abajo en Finanzas): el Cash
+  Collected del rango partido en **cuenta × servicio**, por fecha de cobro, con el rango semanal elegible (flechas que mueven de a su largo
+  y calendario; de lunes a domingo por defecto; `?sdesde&shasta`). Los totales de las filas, de las columnas y el general cierran al
+  centavo con el Cash Collected del mismo rango (se suma en centavos enteros; hay una prueba con los datos de ejemplo, semana por semana).
+  Cada número abre los cobros que lo forman, con su estado de chequeo.
+- **Clientes y Cobros, por producto y por closer** (`lib/buscar-cliente.ts`, `lib/clientes.ts`, `lib/mora-filtros.ts`): Clientes suma el
+  filtro por closer y sus tarjetas de arriba —«Les falta pagar» incluida— siguen el producto, el closer y la búsqueda: son la deuda de
+  *esas cuotas* (la de Mentoría, lo que le falta cobrar a Mariano), no la de todo lo que compró cada cliente; los botones de estado recortan
+  sólo la tabla. Finanzas → Cobros filtra las cuotas vencidas por servicio y por closer, y el aviso de arriba, los días de atraso y la
+  fila de totales siguen lo que se ve. Todos usan la misma regla que «Cargar el pago de una cuota»: closer y servicio sobre la **misma**
+  cuota (`cuotaPasa`, `opcionesSobre`), y el closer es quien comisiona la cuota (el que la heredó, si hubo). Van en el link (`?closer`,
+  `?producto`, `?servicio`). Una prueba verifica que las partes suman el todo, con los datos de ejemplo.
+- **Filas de totales**: Ventas (valor total y cobrado), Clientes, Finanzas → Cobros y → Procesadores. La del CRM no está.
+- **Pruebas**: `pruebas/control-cobros.test.ts`, `store-control.test.ts`, `excel-cobros.test.ts`, `ingresos-semanales.test.ts` y
+  `filtros-cobranza.test.ts`.
