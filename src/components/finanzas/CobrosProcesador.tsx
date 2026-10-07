@@ -104,11 +104,11 @@ export function CobrosProcesador({ e, mes }: { e: EstadoApp; mes: RangoMes }) {
       clave: "monto", titulo: "Monto abonado USD", tipo: "num", orden: (x) => x.pago.monto, celda: (x) => M(x.pago.monto),
       pie: <strong className="t-num">{M(totalMonto)}</strong>,
       info: {
-        ayuda: "Lo que entró en cada cobro, en dólares. Abajo, la suma de los cobros de la vista (de todas las páginas): es el Cash Collected (CC) de lo que estás mirando.",
-        formula: "Cash Collected (CC) de la vista = suma de «Monto abonado USD» de los cobros que cumplen el período y el filtro",
+        ayuda: "Lo que entró en cada cobro, en dólares. Abajo, la suma de los cobros de la vista (de todas las páginas). No resta las devoluciones: el Cash Collected (CC) del Dashboard y de Finanzas es lo cobrado menos lo devuelto en el período.",
+        formula: "Cobrado de la vista = suma de «Monto abonado USD» de los cobros que cumplen el período y el filtro\nCash Collected (CC) del período = cobrado − devoluciones del período",
         componentes: () => [
           { concepto: "Cobros en la vista", valor: num(filas.length) },
-          { concepto: "Cash Collected (CC) de la vista", valor: M(totalMonto), signo: "=" },
+          { concepto: "Cobrado de la vista (antes de las devoluciones)", valor: M(totalMonto), signo: "=" },
         ],
       },
     },
