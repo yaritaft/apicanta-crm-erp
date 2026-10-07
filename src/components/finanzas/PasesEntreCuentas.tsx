@@ -1,8 +1,8 @@
 "use client";
 
 import React, { useMemo, useState } from "react";
-import { ArrowRight, ArrowRightLeft, Check, Pencil, RefreshCw, RotateCcw, Trash2, X } from "lucide-react";
-import { Badge, Button, Card, CardHead, Chip, Field, IconButton, Input, Select, Textarea, type VarianteBadge } from "@/components/ui/ui";
+import { AlertTriangle, ArrowRight, ArrowRightLeft, Check, Pencil, RefreshCw, RotateCcw, Trash2, X } from "lucide-react";
+import { Ayuda, Badge, Button, Card, CardHead, Chip, Field, IconButton, Input, Select, Textarea, type VarianteBadge } from "@/components/ui/ui";
 import { InputMonto } from "@/components/ui/InputMonto";
 import { DataTable } from "@/components/ui/DataTable";
 import { Confirmar, ModalForm } from "@/components/ui/Modal";
@@ -13,8 +13,8 @@ import { fecha, fechaLarga, money, num } from "@/lib/format";
 import { escribirMonto, leerMonto } from "@/lib/gastos";
 import { useParamsURL, useTablaURL } from "@/lib/useParamsURL";
 import {
-  AYUDA_SITUACION, cambioDe, CATEGORIA_COSTO, costoDe, esperaLlegada, gastoDelCosto, LLEGADA_A_MANO, parecidos, resumenDePases, rutaDe, situacionDe,
-  TEXTO_SITUACION, type Punta, type Situacion,
+  AYUDA_SITUACION, cambioDe, CATEGORIA_COSTO, conComisionDelRetiro, costoDe, esperaLlegada, faltaComisionDelRetiro, gastoDelCosto,
+  LLEGADA_A_MANO, parecidos, resumenDePases, rutaDe, SALIDA_A_MANO, situacionDe, TEXTO_SITUACION, type Punta, type Situacion,
 } from "@/lib/traspasos";
 import type { EstadoApp, Moneda, Traspaso } from "@/lib/types";
 
@@ -31,13 +31,13 @@ import type { EstadoApp, Moneda, Traspaso } from "@/lib/types";
 
 const TONO: Record<Situacion, VarianteBadge> = {
   "conciliado": "success", "en-camino": "accent", "no-llego": "danger", "detectado": "info",
-  "a-mano": "neutral", "por-confirmar": "warning", "ignorado": "neutral",
+  "a-mano": "neutral", "por-confirmar": "warning", "ignorado": "neutral", "falta-comision": "warning", "diferencia": "warning",
 };
 
 /* Quién dijo que no, en los avisos de «Buscar en las cuentas». */
 const NOMBRE_DE: Record<string, string> = { mercury: "Mercury", stripe: "Stripe", supabase: "La base" };
 
-type Filtro = "" | "por-confirmar" | "no-llego" | "en-camino" | "ignorado";
+type Filtro = "" | "por-confirmar" | "no-llego" | "en-camino" | "ignorado" | "falta-comision" | "diferencia";
 const diaAr = (iso: string) => new Date(new Date(iso).getTime() - 3 * 3600000).toISOString().slice(0, 10);
 const monedaDe = (e: EstadoApp, id?: string): Moneda => e.procesadores.find((p) => p.id === id)?.moneda ?? "USD";
 const plata = (n: number, m: Moneda) => money(n, m, Math.abs(n - Math.round(n)) < 0.005 ? 0 : 2);
@@ -51,10 +51,12 @@ export function PasesEntreCuentas({ e, onNuevo, onEditar }: {
 }) {
   const toast = useToast();
   const [v, setV] = useParamsURL({ pases: "" });
-  const filtro = (["por-confirmar", "no-llego", "en-camino", "ignorado"].includes(v.pases) ? v.pases : "") as Filtro;
+  const filtro = (["por-confirmar", "no-llego", "en-camino", "ignorado", "falta-comision", "diferencia"].includes(v.pases) ? v.pases : "") as Filtro;
   const tabla = useTablaURL("pases", { clave: "fecha", desc: true }, ["fecha", "ruta", "sale", "llega", "costo", "estado"]);
   const [buscando, setBuscando] = useState(false);
   const [borrar, setBorrar] = useState<Traspaso | null>(null);
+  /* El retiro de Hotmart al que se le carga cuánto salió. */
+  const [comision, setComision] = useState<Traspaso | null>(null);
 
   const ahora = Math.floor(Date.now() / 60000) * 60000;
   const todos = useMemo(() => (e.traspasos ?? []).map((t) => ({ ...t, situacion: situacionDe(t, ahora) })), [e.traspasos, ahora]);
@@ -111,12 +113,29 @@ export function PasesEntreCuentas({ e, onNuevo, onEditar }: {
         />
         <div className="row-wrap pases__filtros">
           <Chip activo={filtro === ""} onClick={() => setV({ pases: null })}>Todos</Chip>
+          {resumen.faltaComision > 0 && (
+            <Chip activo={filtro === "falta-comision"} count={resumen.faltaComision} title="Retiros de Hotmart sin la comisión cargada"
+              onClick={() => setV({ pases: filtro === "falta-comision" ? null : "falta-comision" })}>Falta la comisión</Chip>
+          )}
+          {resumen.diferencias > 0 && (
+            <Chip activo={filtro === "diferencia"} count={resumen.diferencias} title="Stripe o Whop: salió un monto y llegó otro"
+              onClick={() => setV({ pases: filtro === "diferencia" ? null : "diferencia" })}>Salió ≠ llegó</Chip>
+          )}
           <Chip activo={filtro === "por-confirmar"} count={resumen.porConfirmar} onClick={() => setV({ pases: filtro === "por-confirmar" ? null : "por-confirmar" })}>Por confirmar</Chip>
           <Chip activo={filtro === "no-llego"} count={resumen.noLlegaron} onClick={() => setV({ pases: filtro === "no-llego" ? null : "no-llego" })}>Salieron y no llegaron</Chip>
           <Chip activo={filtro === "en-camino"} count={resumen.enCamino} onClick={() => setV({ pases: filtro === "en-camino" ? null : "en-camino" })}>En camino</Chip>
           {descartados > 0 && <Chip activo={filtro === "ignorado"} count={descartados} onClick={() => setV({ pases: filtro === "ignorado" ? null : "ignorado" })}>Descartados</Chip>}
         </div>
       </div>
+      {resumen.faltaComision > 0 && filtro !== "falta-comision" && (
+        <div style={{ padding: "var(--space-3) var(--space-4) 0" }}>
+          <Ayuda titulo={resumen.faltaComision === 1 ? "Falta cargar la comisión de un retiro de Hotmart" : `Faltan cargar las comisiones de ${num(resumen.faltaComision)} retiros de Hotmart`} icono={<AlertTriangle size={18} />}>
+            Hotmart cobra por mandar la plata a Mercury: en el banco entra menos de lo que salió. Para que el arqueo no sospeche de eso,
+            mirá en Hotmart cuánto salió de cada retiro y cargalo.{" "}
+            <button type="button" className="link" onClick={() => setV({ pases: "falta-comision" })}>Ver los que faltan</button>
+          </Ayuda>
+        </div>
+      )}
       <DataTable
         filas={filas}
         orden={tabla.orden} onOrden={tabla.onOrden} pagina={tabla.pagina} onPagina={tabla.onPagina} porPagina={15}
@@ -153,6 +172,7 @@ export function PasesEntreCuentas({ e, onNuevo, onEditar }: {
               const costo = costoDe(t);
               const cambio = cambioDe(t);
               if (cambio) return <span className="t-subtle" title="Entre pesos y dólares no es un costo: es el cambio.">a $ {num(cambio)}</span>;
+              if (t.situacion === "falta-comision") return <span className="t-subtle" title="Todavía no se cargó cuánto salió de Hotmart.">Falta cargarla</span>;
               if (!(costo > 0)) return <span className="t-subtle">—</span>;
               return <span title={t.gastoId ? `Cargado como gasto en ${CATEGORIA_COSTO}` : "No se cargó como gasto"}>{plata(costo, t.monedaSale)}{!t.gastoId && <span className="t-sm t-subtle"> · sin cargar</span>}</span>;
             },
@@ -170,6 +190,11 @@ export function PasesEntreCuentas({ e, onNuevo, onEditar }: {
                 onClick={() => { acciones.marcarTraspaso(t.id, "confirmado"); toast("Confirmado: cuenta como movimiento entre cuentas."); }}>Sí</Button>
               <Button sm variante="ghost" icono={<X size={14} />} title="No es un movimiento entre cuentas: no se cuenta" aria-label="No es un movimiento entre cuentas"
                 onClick={() => { acciones.marcarTraspaso(t.id, "ignorado"); toast("Descartado: no cuenta como movimiento entre cuentas.", "ok", { texto: "Deshacer", onClick: () => acciones.marcarTraspaso(t.id, "propuesto") }); }}>No</Button>
+            </span>
+          ) : t.situacion === "falta-comision" ? (
+            <span className="pases__decidir">
+              <Button sm variante="secondary" icono={<Pencil size={14} />} title="Cargá cuánto salió de Hotmart: la diferencia con lo que llegó es la comisión del retiro"
+                onClick={() => setComision((e.traspasos ?? []).find((x) => x.id === t.id) ?? null)}>Cargar la comisión</Button>
             </span>
           ) : t.situacion === "ignorado" ? (
             <IconButton etiqueta="Volver a contarlo" onClick={() => { acciones.marcarTraspaso(t.id, "confirmado"); toast("Vuelve a contar como movimiento entre cuentas."); }}><RotateCcw size={15} /></IconButton>
@@ -195,7 +220,60 @@ export function PasesEntreCuentas({ e, onNuevo, onEditar }: {
         texto={borrar ? `Se borra el de ${rutaDe(e, borrar)} del ${fechaLarga(borrar.fecha)}${borrar.gastoId ? ", con el gasto de lo que costó" : ""}.${borrar.origen === "api" ? " Lo detectó la sincronización: si lo que querés es que no cuente, descartalo en vez de borrarlo, porque al buscar de nuevo vuelve a aparecer." : ""}` : ""}
         onConfirmar={() => { if (borrar) { acciones.borrarTraspaso(borrar.id); toast("Movimiento borrado."); } }}
       />
+      {comision && (
+        <ComisionDelRetiro e={e} traspaso={comision} onCerrar={() => setComision(null)} onListo={(m) => { setComision(null); toast(m); }} />
+      )}
     </Card>
+  );
+}
+
+/* ---------- Cargar la comisión de un retiro (Hotmart → Mercury) ----------
+   La plata llegó; falta decir cuánto salió de Hotmart. La diferencia es lo
+   que cobró por el retiro y queda como gasto «Comisión de retiro Hotmart».
+   Nada se carga solo: si no cobró nada, se dice igual (salió = llegó). */
+
+export function ComisionDelRetiro({ e, traspaso, onCerrar, onListo }: {
+  e: EstadoApp;
+  traspaso: Traspaso;
+  onCerrar: () => void;
+  onListo: (mensaje: string) => void;
+}) {
+  const [salio, setSalio] = useState(enTexto(traspaso.montoSale));
+  const origen = e.procesadores.find((p) => p.id === traspaso.origenId)?.nombre ?? "la cuenta";
+  const destino = e.procesadores.find((p) => p.id === traspaso.destinoId)?.nombre ?? "el banco";
+  const monto = leerMonto(salio);
+  const sale = Number.isFinite(monto) ? monto : 0;
+  const nuevo = conComisionDelRetiro(traspaso, sale);
+  const comision = costoDe(nuevo);
+  const problema = !(sale > 0) ? "Poné cuánto salió" : sale < traspaso.montoLlega ? "Salió menos de lo que llegó: revisá el monto" : null;
+  const gasto = comision > 0 ? gastoDelCosto(e, nuevo, 0) : null;
+
+  function guardar() {
+    if (problema) return;
+    acciones.guardarTraspaso(nuevo, gasto);
+    onListo(gasto
+      ? `Comisión de ${origen} cargada: ${plata(comision, nuevo.monedaSale)} quedaron como gasto.`
+      : `Listo: de ${origen} salió lo mismo que llegó, no hubo comisión.`);
+  }
+
+  return (
+    <ModalForm abierto onCerrar={onCerrar} onGuardar={guardar} puedeGuardar={!problema} guardarTexto="Cargar la comisión"
+      titulo={`Comisión del retiro de ${origen}`}
+      sub={`El ${fechaLarga(traspaso.fecha)} llegaron ${plata(traspaso.montoLlega, traspaso.monedaLlega)} a ${destino}. Mirá en ${origen} cuánto salió de verdad.`}>
+      <div className="form-grid">
+        <Field label={`Salió de ${origen} (${traspaso.monedaSale === "USD" ? "US$" : "$"})`} ayuda={`Lo que decía ${origen} antes de mandarlo.`}>
+          <InputMonto value={salio} placeholder="1.025" aria-label={`Cuánto salió de ${origen}`} autoFocus onChange={(ev) => setSalio(ev.target.value)} />
+        </Field>
+        <Field label="Llegó">
+          <Input value={plata(traspaso.montoLlega, traspaso.monedaLlega)} readOnly aria-label="Cuánto llegó" />
+        </Field>
+      </div>
+      <p className="t-sm pases__nota" role="status">
+        {problema ? problema
+          : comision > 0 ? <><strong>La comisión del retiro fue {plata(comision, nuevo.monedaSale)}.</strong> Queda como gasto en «{CATEGORIA_COSTO}» («Comisión de retiro {origen}»).</>
+            : <><strong>No hubo comisión:</strong> salió lo mismo que llegó. Queda anotado para que no se vuelva a pedir.</>}
+      </p>
+    </ModalForm>
   );
 }
 
@@ -244,6 +322,8 @@ export function FormTraspaso({ e, traspaso, onCerrar, onListo }: {
     notas: notas.trim() || undefined,
     ...(faltaLlegar || aMano ? { llegadaRef: faltaLlegar && yaLlego ? LLEGADA_A_MANO : undefined } : {}),
   };
+  /* Si era un retiro sin comisión y se corrigió cuánto salió, ya se miró. */
+  if (t0 && faltaComisionDelRetiro(t0) && borrador.montoSale !== t0.montoSale) borrador.salidaRef = SALIDA_A_MANO;
   const costo = costoDe(borrador);
   const cambio = cambioDe(borrador);
   const tipoCambio = leerMonto(tc);

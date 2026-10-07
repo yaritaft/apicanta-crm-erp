@@ -1,6 +1,7 @@
 import { createHmac } from "node:crypto";
 import type { Moneda, ProveedorPasarela } from "./types";
 import { cuentaDeContraparte, type Punta } from "./traspasos";
+import { clasificarMercury, reglasExtraDeEntorno, type ResumenMercury } from "./mercury";
 
 /* ==================================================================
    Los adaptadores de cada pasarela, del lado del servidor.
@@ -49,6 +50,8 @@ export interface OpcionesListar {
      una pasarela en el banco): no es un cobro, es la punta de un pase
      (lib/traspasos.ts). */
   puntas?: Punta[];
+  /* Mercury: lo que se dejó afuera y por qué (pending, internos, anulados). */
+  mercury?: ResumenMercury;
 }
 
 export const dinero = (n: number) => Math.round(n * 100) / 100;
@@ -720,12 +723,12 @@ function metodoMercury(kind: string): string | undefined {
    desde una pasarela es la LLEGADA; lo que sale hacia una, la SALIDA (ésa
    se propone: también podría ser un pago). Entre cuentas del mismo Mercury
    no hay pase: para la app es una sola cuenta. Sólo lo ya acreditado. */
-export function puntaDeMercury(t: Record<string, unknown>): Punta | null {
+export function puntaDeMercury(t: Record<string, unknown>, extras: readonly string[] = []): Punta | null {
   const monto = dinero(Number(t.amount ?? 0));
   if (!monto || !t.id) return null;
-  if (String(t.kind ?? "") === "internalTransfer") return null;
-  const estado = String(t.status ?? "").toLowerCase();
-  if (estado === "failed" || estado === "cancelled" || estado === "pending") return null;
+  /* Sólo lo que las reglas (lib/mercury.ts) dicen que es un pase: no lo anulado,
+     ni lo interno (tarjeta, subcuentas), ni lo que sigue pending. */
+  if (clasificarMercury(t, extras).tipo !== "pase") return null;
   const contraparte = String(t.counterpartyName ?? t.counterpartyNickname ?? "").trim();
   const otra = cuentaDeContraparte(contraparte);
   if (!otra) return null;
@@ -766,9 +769,13 @@ export async function mercury(desde: Date, opciones: OpcionesListar = {}): Promi
 
   const lista = (cuentas.accounts ?? []) as { id?: string; kind?: string }[];
   const salida: MovimientoApi[] = [];
+  const extras = reglasExtraDeEntorno(process.env.MERCURY_REGLAS_INTERNAS);
 
   for (const cuenta of lista) {
     if (!cuenta.id) continue;
+    /* Una tarjeta de crédito no es una cuenta que cobra: todo lo suyo es el
+       pago de la tarjeta o un gasto (que hoy no se trae). */
+    if (/credit/i.test(String(cuenta.kind ?? ""))) continue;
     const q = new URLSearchParams({ limit: "500", start: desde.toISOString().slice(0, 10) });
     const rt = await fetch(`https://api.mercury.com/api/v1/account/${cuenta.id}/transactions?${q}`, {
       headers: cabeceras, cache: "no-store",
@@ -777,16 +784,20 @@ export async function mercury(desde: Date, opciones: OpcionesListar = {}): Promi
     if (!rt.ok) throw rechazo(`Mercury (movimientos de ${cuenta.id})`, rt, data);
 
     for (const t of (data.transactions ?? []) as Record<string, never>[]) {
-      const punta = opciones.puntas ? puntaDeMercury(t) : null;
+      /* Qué es, según las reglas de lib/mercury.ts. */
+      const c = clasificarMercury(t, extras);
+      if (c.tipo === "anulado") { opciones.mercury?.anulados.push(String(t.id ?? "")); continue; }
+      if (c.tipo === "interno") { if (opciones.mercury) opciones.mercury.internos++; continue; }
+      /* Un pending no cuenta hasta asentarse: entonces entra con su fecha de
+         asentado (postedAt), que puede ser otro día (y otro mes) que la de creación. */
+      if (c.tipo === "en-proceso") { if (opciones.mercury) opciones.mercury.enProceso++; continue; }
+      const punta = opciones.puntas ? puntaDeMercury(t, extras) : null;
       if (punta && new Date(punta.fecha) >= desde) opciones.puntas!.push(punta);
       const monto = dinero(Number(t.amount ?? 0));
       /* Negativo es plata que sale: no es un cobro. */
       if (monto <= 0) continue;
-      /* Entre cuentas propias de Mercury tampoco. */
-      if (String(t.kind ?? "") === "internalTransfer") continue;
       const contraparte = String(t.counterpartyName ?? t.counterpartyNickname ?? "");
       if (NO_ES_CLIENTE.test(contraparte)) continue;
-      if (String(t.status ?? "").toLowerCase() === "failed") continue;
       const fecha = String(t.postedAt ?? t.createdAt ?? "");
       if (fecha && new Date(fecha) < desde) continue;
 

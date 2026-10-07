@@ -132,6 +132,7 @@ export default function Conciliacion() {
         movimientos?: Parameters<typeof acciones.importarMovimientos>[0];
         conectadas?: ProveedorPasarela[];
         errores?: { proveedor: string; mensaje: string }[];
+        mercury?: { enProceso: number; internos: number; anulados: string[] };
         error?: string;
       };
       if (!r.ok) throw new Error(data.error ?? "No se pudo sincronizar.");
@@ -147,9 +148,15 @@ export default function Conciliacion() {
         ...m, procesadorId: e.procesadores.find((p) => p.proveedor === m.proveedor)?.id,
       }));
       const { nuevos, repetidos, completados } = acciones.importarMovimientos(conMedio, "api");
-      const completos = completados > 0
-        ? ` Se completaron ${completados === 1 ? "los datos de un cobro" : `los datos de ${completados} cobros`} que ya estaban.`
-        : "";
+      /* Mercury: lo que el banco anuló y ya estaba en la bandeja se descarta; lo
+         pending y lo interno (tarjeta, subcuentas) se deja afuera y se avisa. */
+      const anulados = acciones.descartarAnuladosMercury(data.mercury?.anulados ?? []);
+      const enProceso = data.mercury?.enProceso ?? 0;
+      const completos = [
+        completados > 0 ? ` Se completaron ${completados === 1 ? "los datos de un cobro" : `los datos de ${completados} cobros`} que ya estaban.` : "",
+        anulados > 0 ? ` ${anulados === 1 ? "Un cobro de Mercury que el banco anuló se descartó" : `${anulados} cobros de Mercury que el banco anuló se descartaron`}.` : "",
+        enProceso > 0 ? ` ${enProceso === 1 ? "Un movimiento de Mercury sigue" : `${enProceso} movimientos de Mercury siguen`} pending: entra${enProceso === 1 ? "" : "n"} cuando se asiente${enProceso === 1 ? "" : "n"}.` : "",
+      ].join("");
       toast(nuevos === 0
         ? `Sin cobros nuevos (${repetidos} ya estaban).${completos}`
         : `Entraron ${nuevos} cobros de ${data.conectadas.map(nombrePasarela).join(", ")}.${completos}`);

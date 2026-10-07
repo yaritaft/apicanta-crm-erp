@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { nivelDelPedido } from "@/lib/permisos-servidor";
-import { guardarMovimientos, guardarPuntas, hayServidor, referenciasCompletas } from "@/lib/servidor";
+import { descartarAnuladosMercury, guardarMovimientos, guardarPuntas, hayServidor, referenciasCompletas } from "@/lib/servidor";
+import { resumenVacio } from "@/lib/mercury";
 import { hayClaves, listar, procesadorDe, PROVEEDORES, retirosDeStripe, type MovimientoApi } from "@/lib/pasarelas-api";
 import type { Punta } from "@/lib/traspasos";
 import type { ProveedorPasarela } from "@/lib/types";
@@ -86,6 +87,8 @@ export async function GET(peticion: Request) {
 
   const movimientos: MovimientoApi[] = [];
   const puntas: Punta[] = [];
+  /* Lo que Mercury trae y no es un cobro: pending, internos y anulados (lib/mercury.ts). */
+  const mercury = resumenVacio();
   const conectadas: ProveedorPasarela[] = [];
   const errores: { proveedor: string; mensaje: string }[] = [];
 
@@ -102,7 +105,7 @@ export async function GET(peticion: Request) {
     if (!soloPases || proveedor !== "stripe") {
       try {
         const cobros = await listar(proveedor, desde, hasta, {
-          avisos, puntas,
+          avisos, puntas, mercury,
           necesitaDetalle: proveedor === "whop" && completosWhop ? (m) => !completosWhop.has(m.referencia) : undefined,
         });
         if (!soloPases) movimientos.push(...cobros);
@@ -137,6 +140,15 @@ export async function GET(peticion: Request) {
     if (r.error) errores.push({ proveedor: "supabase", mensaje: r.error });
   }
 
+  /* Lo que Mercury anuló y ya había entrado a la bandeja sin conciliar: se
+     descarta solo. Sin guardar, lo hace la pantalla con `mercury.anulados`. */
+  let anuladosDescartados = 0;
+  if (quiereGuardar && hayServidor && !soloPases && mercury.anulados.length > 0) {
+    const r = await descartarAnuladosMercury(mercury.anulados);
+    anuladosDescartados = r.descartados;
+    if (r.error) errores.push({ proveedor: "supabase", mensaje: r.error });
+  }
+
   /* Los movimientos entre cuentas: se guardan con el mismo permiso. Sin su
      tabla todavía, no es un error: quedan sólo en la respuesta. */
   let pases = { nuevos: 0, conciliados: 0 };
@@ -157,6 +169,8 @@ export async function GET(peticion: Request) {
     completados,
     pases,
     pasesGuardados,
+    mercury,
+    anuladosDescartados,
     desde: desde.toISOString(),
     movimientos,
     puntas,

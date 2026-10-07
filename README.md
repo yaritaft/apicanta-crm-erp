@@ -805,3 +805,52 @@ el menú («A contactar hoy», con la cuenta de hoy, y «Seguimiento»). Reporte
 - **Falta** (cuando llegue lo de Manu y Lili): importar lo que hoy tienen en Airtable (Booking calls, Results y
   Testimonios), sumar las columnas que pidan que no estén acá, y decidir con Lili si usan Reportes y el Pipeline de
   servicio (D12).
+
+## Lote E de la reunión del 02/10: pasarelas y gastos fijos
+
+Tres pedidos de la reunión (F1-06, F1-05 y F1-11). SQL a correr **antes o después** de publicar (la app anda igual
+sin él): `supabase/gastos-recurrentes.sql`. Hotmart y Mercury no necesitan SQL.
+
+**Hotmart: la comisión del retiro se carga a mano** (`src/lib/traspasos.ts`, `components/finanzas/PasesEntreCuentas.tsx`).
+Hotmart cobra por mandar la plata a Mercury (en el banco entran 1.000 cuando en Hotmart había 1.025). Cada llegada de
+Hotmart que detectó la sincronización queda en la Caja → «Movimientos entre cuentas» con el estado **«Falta la
+comisión»**, con filtro, contador y un aviso arriba de la lista (y un número rojo en «Caja» del menú), hasta que alguien
+aprieta **«Cargar la comisión»**, mira en Hotmart cuánto salió y lo escribe: la diferencia con lo que llegó queda
+como gasto «Comisión de retiro Hotmart» (categoría «Comisiones bancarias»). Si no cobró nada, se dice igual (salió =
+llegó) y no se vuelve a pedir. **Nada la carga solo ni la atribuye al faltante del arqueo** (decisión D9). El pase
+cargado resta de Hotmart lo que salió y suma a Mercury lo que llegó, así que el total baja exactamente la comisión
+(`pruebas/hotmart-retiro.test.ts`). Cargar «salió» marca la salida como confirmada a mano (`salidaRef: "a-mano"`),
+sin columna nueva. Stripe y Whop (no cobran el envío): si salió ≠ llegó, el pase queda en **«Salió ≠ llegó»** hasta
+corregir el monto o cargar la diferencia como gasto. Las cuentas que cobran / no cobran son `COBRAN_RETIRO` y
+`SIN_COSTO_DE_ENVIO` en `traspasos.ts`. *Sin hacer:* investigar si la API de Hotmart da los retiros o el detalle de
+cargos (no se pudo probar sin las claves), las ventas en pesos mexicanos (hoy todo lo que no es ARS se toma como USD)
+y el costo por factura de Stripe; espera lo que elabore Angelo.
+
+**Mercury: reglas de lo interno, pendientes y fechas** (`src/lib/mercury.ts`, usado por `pasarelas-api.ts`).
+Cada movimiento del banco es una sola cosa: *anulado* (failed, cancelled, reversed, blocked), *interno* (pago de la
+tarjeta de crédito, subcuentas, Treasury, entre cuentas del mismo Mercury: ni ingreso ni gasto ni pase), *pase*
+(Stripe, Hotmart… del otro lado), *en proceso* (pending), *cobro* o *gasto* (no se trae: F4-05). Un **pending no
+cuenta** hasta asentarse y entra con la fecha de asentado (`postedAt`); si ya había entrado cuando estaba pending y sigue
+sin conciliar, **pasa a la fecha de asentado** (`parcheDeCobro`, aunque cambie de mes); uno **anulado** que ya estaba
+en la bandeja sin conciliar se **descarta solo** con una nota (nunca se borra ni se toca uno conciliado). Las
+cuentas de tarjeta de crédito se saltean enteras. La lista de reglas es de Angelo: lo que falte se suma con la variable
+de entorno `MERCURY_REGLAS_INTERNAS` (textos separados por coma que, si aparecen en la contraparte o la descripción,
+hacen que sea interno), sin tocar el código. «Sincronizar» (Conciliación) avisa cuántos pending siguen esperando y
+cuántos cobros anulados se descartaron. Las pruebas están en `pruebas/mercury-reglas.test.ts`. *Supuestos sin
+confirmar con datos reales:* los nombres de `kind` de la tarjeta (se busca «credit card» en el tipo y en el texto) y el
+texto de «Mercury Credit autopay»; si un movimiento interno se cuela, se agrega a `MERCURY_REGLAS_INTERNAS`.
+
+**Gastos fijos con aprobación** (`src/lib/gastos-recurrentes.ts`, `components/finanzas/GastosFijos.tsx`, pestaña
+**Finanzas → detalle → «Gastos fijos»**, `?seccion=fijos`). «Fathom pagamos más o menos lo mismo: ¿este mes fue 140?»
+Cada gasto fijo es una **plantilla** (qué es, categoría, a quién, monto habitual, día del mes 1 a 28 y de qué cuenta
+sale; tabla `gastos_recurrentes`). Desde el día en que se paga, el mes aparece **«por aprobar»** con el monto del mes
+anterior (el último gasto con ese concepto, o lo habitual si no hay): **Aprobar** (carga el gasto como «Fijo», con id
+fijo por plantilla y mes, así que no se duplica), **corregir el monto** en el mismo casillero y aprobar (ese monto pasa a
+ser el del mes que viene) o **Este mes no** (saltea ese mes, con «Deshacer»). **Nada se carga sin aprobación.** Si
+alguien ya cargó a mano el gasto de ese mes (mismo concepto), no se vuelve a proponer; lo que quedó sin aprobar se sigue
+mostrando hasta dos meses atrás. «Armar con los que ya cargué» crea una plantilla por cada gasto «Fijo» de los últimos
+seis meses. El menú suma los gastos fijos por aprobar al número rojo de «Finanzas» (los que ya les tocaba pagar).
+Pruebas: `pruebas/gastos-recurrentes.test.ts` (propuesta con el mes anterior, aprobar suma exactamente ese monto, saltear,
+no duplicar con lo manual, armar desde los gastos). *Falta:* cargar las plantillas con la lista de software del Excel de
+Angelo (se arman con «Armar con los que ya cargué» apenas estén los gastos), y decir a qué mes corresponde cuando
+entre el gasto con dos fechas (lote B): las plantillas guardan `recurrenteMes` en el `extra` del gasto.
