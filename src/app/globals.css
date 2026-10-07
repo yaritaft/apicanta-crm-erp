@@ -4065,3 +4065,17 @@ span.kpis__etiqueta:hover { color: var(--ink); text-decoration: none; }
   .gr-tarjeta .hk-stat__value { font-size: 22px; line-height: 28px; }
   .gr-cabeza__titulo { font-size: 16px; line-height: 24px; }
 }
+
+/* Descargar el resumen de un webinar (Excel de tres hojas) desde su fila de la planilla (F3-05). */
+.planilla__titulo { display: flex; align-items: center; min-width: 0; }
+.planilla__titulo > .planilla__enlace { flex: 1; min-width: 0; }
+.planilla__bajar {
+  flex: none; display: inline-flex; align-items: center; justify-content: center;
+  width: 28px; height: 28px; margin-right: var(--space-2); border: 0; border-radius: var(--radius-sm);
+  background: none; color: var(--ink-subtle); cursor: pointer; opacity: 0;
+}
+.planilla tbody tr:hover .planilla__bajar, .planilla__bajar:focus-visible { opacity: 1; }
+.planilla__bajar:hover { background: var(--surface-300); color: var(--ink); }
+.planilla__bajar:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
+.planilla__bajar:disabled { opacity: .5; cursor: progress; }
+@media (hover: none) { .planilla__bajar { opacity: 1; } }

@@ -1,5 +1,5 @@
 import type {
-  CanalOrigen, Contacto, Cuota, EstadoApp, Lead, NivelIngles, Sesion, Venta, Webinar,
+  AdInsight, CanalOrigen, Contacto, Cuota, EstadoApp, Lead, NivelIngles, Sesion, Venta, Webinar,
 } from "./types";
 import { closerDeCuota, cobraDirector, cobraEnFecha, tasaDeComision } from "./finanzas";
 
@@ -112,25 +112,19 @@ const diasEntre = (a: string, b: string) => (new Date(`${b}T12:00:00Z`).getTime(
    planilla lo pide para cada fila a cada celda que se carga. */
 const META_WEBINAR = new WeakMap<object, WeakMap<object, Map<string, MetaDelWebinar>>>();
 
-function metaPorWebinar(e: EstadoApp): Map<string, MetaDelWebinar> {
-  const insights = e.adInsights ?? [];
-  let porWebinars = META_WEBINAR.get(insights);
-  if (!porWebinars) { porWebinars = new WeakMap(); META_WEBINAR.set(insights, porWebinars); }
-  const guardado = porWebinars.get(e.webinars);
-  if (guardado) return guardado;
-  const out = new Map<string, MetaDelWebinar>();
-  porWebinars.set(e.webinars, out);
-  if (!insights.length || !e.webinars.length) return out;
+/** Qué día y qué webinar le toca a cada día de gasto de Meta, y de qué tipo
+ *  es: pauta de captación (las campañas «[WEBINAR dd/mm]») o DM Ads (las
+ *  «DM …»). Es LA regla de las campañas del webinar: la usan los números de
+ *  la planilla y el informe del webinar (lib/informe-webinar.ts). */
+export interface InsightDeWebinar { insight: AdInsight; webinarId: string; tipo: "pauta" | "dm" }
 
+export function repartirInsights(e: EstadoApp): InsightDeWebinar[] {
+  const insights = e.adInsights ?? [];
+  const out: InsightDeWebinar[] = [];
+  if (!insights.length || !e.webinars.length) return out;
   const campania = new Map((e.campaigns ?? []).map((c) => [c.id, c.nombre] as const));
   const campaniaDeAd = new Map((e.ads ?? []).map((a) => [a.id, campania.get(a.campaignId) ?? ""] as const));
   const webinars = [...e.webinars].map((w) => ({ w, dia: diaAr(w.fecha) })).sort((a, b) => a.dia.localeCompare(b.dia));
-  const de = (id: string) => {
-    let m = out.get(id);
-    if (!m) { m = { pauta: 0, formularios: 0, dmAds: 0 }; out.set(id, m); }
-    return m;
-  };
-
   for (const i of insights) {
     const nombre = campaniaDeAd.get(i.adId) ?? "";
     const m = RE_CAMPANIA_WEBINAR.exec(nombre);
@@ -139,13 +133,38 @@ function metaPorWebinar(e: EstadoApp): Map<string, MetaDelWebinar> {
       const dd = Number(m[1]), mm = Number(m[2]);
       const w = webinars.find(({ dia }) => Number(dia.slice(8, 10)) === dd && Number(dia.slice(5, 7)) === mm
         && diasEntre(i.dia, dia) >= -10 && diasEntre(i.dia, dia) <= 45);
-      if (w) { const x = de(w.w.id); x.pauta += i.inversion; x.formularios += i.leads; }
+      if (w) out.push({ insight: i, webinarId: w.w.id, tipo: "pauta" });
       continue;
     }
     if (RE_CAMPANIA_DM.test(nombre)) {
       const w = webinars.find(({ dia }) => dia >= i.dia && diasEntre(i.dia, dia) <= 21);
-      if (w) de(w.w.id).dmAds += i.inversion;
+      if (w) out.push({ insight: i, webinarId: w.w.id, tipo: "dm" });
     }
+  }
+  return out;
+}
+
+/** Los días de gasto de Meta de las campañas de un webinar. */
+export const insightsDelWebinar = (e: EstadoApp, w: Webinar): InsightDeWebinar[] =>
+  repartirInsights(e).filter((x) => x.webinarId === w.id);
+
+function metaPorWebinar(e: EstadoApp): Map<string, MetaDelWebinar> {
+  const insights = e.adInsights ?? [];
+  let porWebinars = META_WEBINAR.get(insights);
+  if (!porWebinars) { porWebinars = new WeakMap(); META_WEBINAR.set(insights, porWebinars); }
+  const guardado = porWebinars.get(e.webinars);
+  if (guardado) return guardado;
+  const out = new Map<string, MetaDelWebinar>();
+  porWebinars.set(e.webinars, out);
+  const de = (id: string) => {
+    let m = out.get(id);
+    if (!m) { m = { pauta: 0, formularios: 0, dmAds: 0 }; out.set(id, m); }
+    return m;
+  };
+  for (const { insight: i, webinarId, tipo } of repartirInsights(e)) {
+    const x = de(webinarId);
+    if (tipo === "pauta") { x.pauta += i.inversion; x.formularios += i.leads; }
+    else x.dmAds += i.inversion;
   }
   for (const m of out.values()) {
     m.pauta = Math.round(m.pauta * 100) / 100;
