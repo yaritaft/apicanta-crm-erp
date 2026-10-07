@@ -5,6 +5,7 @@ import { claveEmail, completar } from "@/lib/contactos";
 import { webinarDeUtm } from "@/lib/calendly";
 import { diaArgentina } from "@/lib/reporteFinanciera";
 import { enviarEventosMeta, fbcDeFbclid } from "@/lib/meta-capi";
+import { adIdDeUtm, filaParaBase, fusionarRegistro, idRegistro, nuevoRegistro, type RegistroForm } from "@/lib/registros-webinar";
 import type { Contacto } from "@/lib/types";
 
 /* ==================================================================
@@ -20,6 +21,10 @@ import type { Contacto } from "@/lib/types";
    - Su registro en extra.registrosWebinar (uno por webinar), con los
      UTMs, la página y lo que haya contestado. Con eso se sabe de qué
      anuncio vino (utm_content) antes de que agende.
+   - Su fila en la tabla propia `registros_webinar` (supabase/registros-webinar.sql):
+     la fecha del webinar, los UTMs, el anuncio, las respuestas y las marcas
+     del equipo (unido / no unido / contactado) de la pantalla Formularios.
+     Si la tabla todavía no existe, se sigue como siempre sin ella.
    - "Formularios" del webinar, contado solo (sin pisar lo cargado a mano).
    - El evento Lead a Meta por la Conversions API, si está configurada.
 
@@ -183,6 +188,42 @@ export async function POST(req: Request) {
     const rc = await db.from("contactos").upsert(limpio(contacto), { defaultToNull: false });
     if (rc.error) throw new Error(rc.error.message);
 
+    /* ---------- La fila en la tabla de registros ----------
+       Va aparte y no tumba el registro: si la tabla no existe todavía (o falla),
+       la persona igual quedó como pre-lead y se sigue como antes. */
+    let registroFilaId: string | undefined;
+    try {
+      const fecha = webinarId ? diaArgentina(webinars.find((x) => x.id === webinarId)?.fecha ?? "") || undefined : undefined;
+      /* El anuncio: el id de Meta que viene en utm_content, o el anuncio con ese nombre. */
+      let adId = adIdDeUtm(utm);
+      const contenido = utm.utm_content?.trim();
+      if (!adId && contenido && contenido.length < 200) {
+        const a = await db.from("ads").select("id,metaId,nombre").eq("nombre", contenido).limit(1);
+        if (!a.error && a.data?.[0]) adId = (a.data[0] as { id: string }).id;
+      }
+      const id = idRegistro(email, fecha);
+      const nuevo = nuevoRegistro({
+        id, email, webinarId, fechaWebinar: fecha, nombre, telefono, pais,
+        utm: Object.keys(utm).length ? utm : undefined, adId, pagina: registro.pagina, respuestas,
+        fbp: d._fbp ?? d.fbp, fbc: d._fbc ?? d.fbc ?? fbcDeFbclid(d.fbclid),
+        ip: ip || undefined, userAgent: req.headers.get("user-agent")?.slice(0, 300) || undefined,
+        eventoId: d.event_id?.trim() || d.evento_id?.trim() || registroId,
+        origen: "landing", registradoEn: cuando,
+      }, cuando);
+      /* Si ya se había anotado a este webinar, se completa lo que faltaba y las
+         marcas del equipo (unido, contactado) no se tocan. */
+      const antes = await db.from("registros_webinar").select("*").eq("id", id).maybeSingle();
+      if (antes.error && !/registros_webinar|schema cache|does not exist/i.test(antes.error.message)) throw new Error(antes.error.message);
+      if (!antes.error) {
+        const fila = antes.data ? fusionarRegistro(antes.data as RegistroForm, nuevo) : nuevo;
+        const rr = await db.from("registros_webinar").upsert(filaParaBase(fila), { defaultToNull: false });
+        if (rr.error) throw new Error(rr.error.message);
+        registroFilaId = id;
+      }
+    } catch (e) {
+      console.error("[webinar/registro] tabla registros_webinar:", e instanceof Error ? e.message : e);
+    }
+
     /* ---------- "Formularios" del webinar, contado solo ---------- */
     if (webinarId && nuevoEnEsteWebinar) {
       const [a, b] = await Promise.all([
@@ -213,7 +254,7 @@ export async function POST(req: Request) {
     }]);
     if (capi.error) console.error("[webinar/registro] Conversions API:", capi.error);
 
-    return responder({ ok: true, contactoId: contacto.id, webinarId: webinarId ?? null, nuevo: !previo });
+    return responder({ ok: true, contactoId: contacto.id, webinarId: webinarId ?? null, nuevo: !previo, registroId: registroFilaId ?? null });
   } catch (e) {
     console.error("[webinar/registro]", e instanceof Error ? e.message : e);
     return NextResponse.json({ ok: false, error: "No se pudo guardar el registro." }, { status: 500, headers: h });
