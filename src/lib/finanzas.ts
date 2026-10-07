@@ -377,6 +377,10 @@ export interface CuotaVencida {
   diasAtraso: number;
   pagado: number;
   saldo: number;
+  /* El servicio de la venta y quién comisiona esta cuota (el que la heredó o, si
+     nadie, el closer de la venta): para ver la mora por producto y por closer. */
+  productoId?: string;
+  closerId?: string;
 }
 
 export function cuotasVencidas(e: EstadoApp): CuotaVencida[] {
@@ -404,6 +408,7 @@ export function cuotasVencidas(e: EstadoApp): CuotaVencida[] {
       numero: c.numero, monto: c.monto, vence: c.vence,
       diasAtraso: Math.floor((hoy - vence) / 86400000),
       pagado, saldo,
+      productoId: venta.productoId, closerId: closerDeCuota(venta, c) || undefined,
     });
   }
   return out.sort((a, b) => b.diasAtraso - a.diasAtraso);
