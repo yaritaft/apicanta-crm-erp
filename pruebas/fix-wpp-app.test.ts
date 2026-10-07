@@ -169,7 +169,9 @@ test("sin equipo configurado, en la nube el código no sale; en la prueba local 
       await recibirLatido(repo, { en: new Date().toISOString(), conectado: false, estado: "esperando_qr", grupos: 0, qr: QR });
       const r = await responderEstado(new Request("http://localhost/api/whatsapp/estado?qr=1"), { exigirArea, repositorio: () => ({ repo, modo }), ahora: () => new Date() });
       const cuerpo = (await r.json()) as Record<string, any>;
-      assert.equal(cuerpo.qr, modo === "nube" ? null : QR, modo);
+      /* En la nube, sin equipo configurado la puerta entera falla cerrada (401, ni estado ni código); en la prueba local sigue abierta. */
+      if (modo === "nube") { assert.equal(r.status, 401, modo); assert.ok(!cuerpo.qr, modo); }
+      else assert.equal(cuerpo.qr, QR, modo);
     }
   } finally {
     if (previo[0] !== undefined) process.env.NEXT_PUBLIC_SUPABASE_URL = previo[0];
@@ -694,4 +696,18 @@ test("GET y POST /api/whatsapp/webinar fallan cerrados en la nube aunque falte c
   const r = spawnSync(process.execPath, ["--import", "./pruebas/registrar.mjs", "--input-type=module", "-e", guion], { cwd: raiz, env, encoding: "utf8", timeout: 60_000 });
   assert.equal(r.status, 0, r.stderr);
   assert.deepEqual(JSON.parse(r.stdout.trim().split("\n").pop()!), [401, 401], "sin sesión no se lee ni se escribe nada");
+});
+
+test("el email de la landing pública tiene tope de largo y su expresión no se cuelga con miles de puntos", async () => {
+  /* La validación del email corre antes de tocar la base y con la ruta pública: un email gigante con muchos puntos tardaba segundos. */
+  const { POST } = await import("@/app/api/webinar/registro/route");
+  const pedido = (email: string) =>
+    new Request("http://localhost/api/webinar/registro", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email }) });
+  const t0 = performance.now();
+  const r = await POST(pedido("a@" + ".".repeat(20_000) + " x"));
+  const ms = performance.now() - t0;
+  assert.equal(r.status, 400);
+  assert.ok(ms < 500, `tardó ${Math.round(ms)} ms: la regex vuelve a ser cuadrática`);
+  const largo = await POST(pedido("a".repeat(250) + "@mail.com"));
+  assert.equal(largo.status, 400, "más de 254 caracteres no es un email");
 });

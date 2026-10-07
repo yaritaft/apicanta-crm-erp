@@ -521,7 +521,7 @@ export async function responderEstado(peticion: Request, deps: DepsDeEstado = DE
   const paraElCodigo = { cerrado: donde?.modo === "nube" };
 
   let soloElCodigo = false;
-  const noVe = await deps.exigirArea(peticion, ["webinars"], 1, { sinSoloLoSuyo: true });
+  const noVe = await deps.exigirArea(peticion, ["webinars"], 1, { sinSoloLoSuyo: true, ...paraElCodigo });
   if (noVe) {
     /* 503: no se pudo comprobar el permiso; se contesta eso (las pantallas vuelven a preguntar), nunca un 403 que las calle. */
     if (!pideQr || noVe.status === 401 || noVe.status === 503) return noVe;

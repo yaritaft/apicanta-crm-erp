@@ -128,7 +128,9 @@ export async function POST(req: Request) {
   if ((d.sitio ?? d.website ?? "").trim()) return responder({ ok: true });
 
   const email = claveEmail(d.email ?? d.correo);
-  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) {
+  /* Un email real no pasa de 254 caracteres; sin este tope, la expresión de abajo con miles de puntos tarda segundos (la
+     ruta es pública y corre antes de tocar la base). */
+  if (!email || email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) {
     return NextResponse.json({ ok: false, error: "Falta un email válido." }, { status: 400, headers: h });
   }
   const db = nubeServidor();
