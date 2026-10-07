@@ -1237,3 +1237,31 @@ Pruebas de propiedades con datos aleatorios (generador con semilla, la semilla s
 closer). No corren con `npm test` (son más lentas) ni las mira `tsc` (están fuera del `tsconfig`, se transpilan al correrlas): se corren antes de
 publicar algo grande. Las que dicen `BUG:` y llevan `{ todo: true }` son defectos conocidos todavía sin arreglar; cuando se arreglan se les saca
 el `todo`. Los frentes de la base usan PGlite (Postgres en memoria): `PGLITE_DIR=/ruta/a/node_modules/@electric-sql/pglite`.
+
+## Arreglos del estrés: Cash Collected neto de devoluciones
+
+**Qué pasaba.** Tres pantallas llamaban «Cash Collected» o «cobrado» a la suma **bruta** de los cobros y no descontaban las devoluciones,
+así que no coincidían con el Dashboard, el estado de resultados ni el resultado del webinar (`metricasDeWebinar`) apenas había una:
+**Ingresos de la semana** (el número grande y el total de la tabla; la variación comparaba ese bruto contra el neto de la semana
+anterior), el **rendimiento por vía** de un webinar y el **informe del webinar** (hojas Agendas, Anuncios y Personas, y el ROAS on CC de
+cada anuncio, que no era el del resumen de la misma planilla). Una venta de US$ 1.000 cobrada el 06/10 con una devolución de US$ 300 el
+08/10 daba 700 en Finanzas y 1.000 en esas pantallas.
+
+**Qué hace ahora.**
+
+- **Ingresos de la semana** (`lib/ingresos-semanales.ts`, `components/finanzas/IngresosSemanales.tsx`): lo devuelto en el rango (sólo las
+  confirmadas, por el día que salió la plata) va en una fila aparte, **«Devoluciones»**, al final de la tabla, en negativo y en la columna
+  del servicio de la venta devuelta. Las cuentas siguen mostrando lo que entró por cada una; el total de cada servicio y el total general
+  son netos, y el general es `cashCollected(rango)`: filas, columnas y total siguen cerrando al centavo. Las celdas de «Devoluciones» abren
+  las devoluciones y los totales de columna y general abren los cobros y las devoluciones que los forman. La variación compara neto con
+  neto. «La cuenta» y «el servicio que más entró» miran lo cobrado y su parte es «de lo cobrado». El Excel sigue siendo de los cobros.
+  Sin devoluciones en el rango no hay fila y todos los números son los de antes.
+- **Vías del webinar** (`lib/vias-webinar.ts`) e **informe** (`lib/informe-webinar.ts`): lo cobrado de cada venta resta sus devoluciones
+  confirmadas, como `metricasDeWebinar` (`plataDeVentas`), así que la suma por vía es el cobrado del resultado del webinar y las hojas
+  suman lo que dice el resumen. Cada vía dice cuánto se devolvió y el resumen del informe suma una fila «Devuelto» sólo si hubo. La
+  columna «Cobrado» de las personas del webinar (`personasDeWebinar`) también es neta: la pestaña Personas y la hoja del informe dicen lo mismo.
+- **Finanzas → Procesadores**: la suma de la lista ya no se llama «Cash Collected (CC) de la vista» sino «Cobrado de la vista (antes de
+  las devoluciones)»: es una lista filtrada de cobros, no el CC del período.
+
+*Pruebas:* `pruebas/fix-cc-neto.test.ts` (el caso del hallazgo, mundos al azar con devoluciones confirmadas, propuestas, ignoradas y
+huérfanas, y «sin devoluciones, igual que antes»).
