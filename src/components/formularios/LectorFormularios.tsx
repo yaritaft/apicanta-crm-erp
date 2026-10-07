@@ -12,7 +12,9 @@ import { nivelEn } from "@/lib/permisos";
 import type { RegistroForm } from "@/lib/registros-webinar";
 import { diaArgentina } from "@/lib/reporteFinanciera";
 import { useEstado } from "@/lib/store";
-import { listaParaCopiar, unionDePersona, type UnionDePersona } from "@/lib/whatsapp";
+import {
+  filtrarPorLector, listaParaCopiar, resumenDeRegistros, unionesDeRegistros, type FiltroDeLector, type ResumenDeRegistros, type UnionDePersona,
+} from "@/lib/whatsapp";
 import { useGrupoDeWebinar } from "@/lib/whatsapp-cliente";
 import "@/components/webinars/whatsapp.css";
 
@@ -33,7 +35,7 @@ import "@/components/webinars/whatsapp.css";
    No cambia ninguna marca por su cuenta: el equipo manda.
    ================================================================== */
 
-export type FiltroLector = "" | "dentro" | "fuera" | "sin-telefono";
+export type FiltroLector = FiltroDeLector;
 export const FILTROS_LECTOR: FiltroLector[] = ["", "dentro", "fuera", "sin-telefono"];
 
 export interface LectorDeFormularios {
@@ -50,7 +52,7 @@ export interface LectorDeFormularios {
   filtrar: (rs: RegistroForm[], filtro: FiltroLector) => RegistroForm[];
   /** La insignia de una fila, para la celda del grupo. */
   insignia: (r: RegistroForm) => React.ReactNode;
-  resumen: { total: number; conTelefono: number; dentro: number; fuera: number; sinTelefono: number; porMarcar: number };
+  resumen: ResumenDeRegistros;
   webinar?: { id: string; titulo: string; fecha: string };
   estado: ReturnType<typeof useEstadoDelLector>;
   grupo: ReturnType<typeof useGrupoDeWebinar>;
@@ -70,37 +72,13 @@ export function useLectorDeFormularios(dia: string, registros: readonly Registro
   const datos = grupo.datos;
   const hayGrupo = Boolean(ve && webinar && datos && datos.tablas && datos.grupos.length > 0);
 
-  const uniones = useMemo(() => {
-    const m = new Map<string, UnionDePersona>();
-    if (!hayGrupo || !datos) return m;
-    const dentro = new Set(datos.dentro);
-    const salieron = new Map(Object.entries(datos.salieron));
-    for (const r of registros) m.set(r.id, unionDePersona(r.telefono, r.pais, dentro, salieron));
-    return m;
-  }, [hayGrupo, datos, registros]);
-
-  const resumen = useMemo(() => {
-    const x = { total: registros.length, conTelefono: 0, dentro: 0, fuera: 0, sinTelefono: 0, porMarcar: 0 };
-    for (const r of registros) {
-      const u = uniones.get(r.id);
-      if (!u) continue;
-      if (u.estado === "sin-telefono") { x.sinTelefono++; continue; }
-      x.conTelefono++;
-      if (u.estado === "unida") { x.dentro++; if (r.grupo !== "unido") x.porMarcar++; } else x.fuera++;
-    }
-    return x;
-  }, [registros, uniones]);
-
+  const uniones = useMemo(
+    () => (hayGrupo && datos ? unionesDeRegistros(registros, datos.dentro, datos.salieron) : new Map<string, UnionDePersona>()),
+    [hayGrupo, datos, registros],
+  );
+  const resumen = useMemo(() => resumenDeRegistros(registros, uniones), [registros, uniones]);
   const union = (r: RegistroForm) => uniones.get(r.id);
-
-  const filtrar = (rs: RegistroForm[], filtro: FiltroLector) => {
-    if (!hayGrupo || !filtro) return rs;
-    return rs.filter((r) => {
-      const u = uniones.get(r.id);
-      if (!u) return false;
-      return filtro === "dentro" ? u.estado === "unida" : filtro === "fuera" ? u.estado === "no-unida" : u.estado === "sin-telefono";
-    });
-  };
+  const filtrar = (rs: RegistroForm[], filtro: FiltroLector) => (hayGrupo ? filtrarPorLector(rs, filtro, uniones) : rs);
 
   const insignia = (r: RegistroForm): React.ReactNode => {
     const u = uniones.get(r.id);

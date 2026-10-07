@@ -480,6 +480,46 @@ export function resumirUnion(estados: readonly EstadoUnion[]): ResumenDeUnion {
   return r;
 }
 
+/* ---------- Los registros de Formularios contra el grupo ---------- */
+
+export interface RegistroParaCruzar { id: string; telefono?: string; pais?: string; grupo?: string }
+
+/** Lo que dice el lector de cada registro: está en el grupo, no está o no tiene teléfono. */
+export function unionesDeRegistros(
+  registros: readonly RegistroParaCruzar[], dentro: Iterable<string>, salieron: Readonly<Record<string, string>> = {},
+): Map<string, UnionDePersona> {
+  const adentro = new Set(dentro);
+  const afuera = new Map(Object.entries(salieron));
+  return new Map(registros.map((r) => [r.id, unionDePersona(r.telefono, r.pais, adentro, afuera)] as const));
+}
+
+export interface ResumenDeRegistros { total: number; conTelefono: number; dentro: number; fuera: number; sinTelefono: number; porMarcar: number }
+
+/** Los números de arriba de Formularios. `porMarcar` son los que el lector ve adentro y la hoja todavía no marca «Unido». */
+export function resumenDeRegistros(registros: readonly RegistroParaCruzar[], uniones: ReadonlyMap<string, UnionDePersona>): ResumenDeRegistros {
+  const x = { total: registros.length, conTelefono: 0, dentro: 0, fuera: 0, sinTelefono: 0, porMarcar: 0 };
+  for (const r of registros) {
+    const u = uniones.get(r.id);
+    if (!u) continue;
+    if (u.estado === "sin-telefono") { x.sinTelefono++; continue; }
+    x.conTelefono++;
+    if (u.estado === "unida") { x.dentro++; if (r.grupo !== "unido") x.porMarcar++; } else x.fuera++;
+  }
+  return x;
+}
+
+export type FiltroDeLector = "" | "dentro" | "fuera" | "sin-telefono";
+
+/** Los registros que cumplen un filtro por lo que dice el lector. Sin filtro, todos. */
+export function filtrarPorLector<T extends { id: string }>(registros: readonly T[], filtro: FiltroDeLector, uniones: ReadonlyMap<string, UnionDePersona>): T[] {
+  if (!filtro) return [...registros];
+  return registros.filter((r) => {
+    const u = uniones.get(r.id);
+    if (!u) return false;
+    return filtro === "dentro" ? u.estado === "unida" : filtro === "fuera" ? u.estado === "no-unida" : u.estado === "sin-telefono";
+  });
+}
+
 /** El teléfono para pegar: con el + si trae el código de país; si no, tal cual se escribió. */
 export const telefonoParaCopiar = (f: { numero: string; completo?: boolean }) => (f.completo === false ? f.numero : `+${f.numero}`);
 

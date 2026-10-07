@@ -1,8 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-  aplicarAviso, aplicarFoto, contarDentro, duracionTexto, estadoDelLector, fechasEnTexto, listaParaCopiar,
-  resumirUnion, sugerirWebinar, telefonoParaCopiar, unionDePersona, validarCuerpoGrupo, validarCuerpoLatido,
+  aplicarAviso, aplicarFoto, contarDentro, duracionTexto, estadoDelLector, fechasEnTexto, filtrarPorLector, listaParaCopiar,
+  resumenDeRegistros, resumirUnion, sugerirWebinar, telefonoParaCopiar, unionDePersona, unionesDeRegistros, validarCuerpoGrupo, validarCuerpoLatido,
   type LatidoLector, type MiembroWhatsapp,
 } from "@/lib/whatsapp";
 import { construirSemilla } from "@/lib/seed";
@@ -339,4 +339,46 @@ test("con los datos de ejemplo: los leads de un webinar quedan unidos o no segú
   assert.equal(r.conTelefono, conTel.length);
   assert.equal(r.noUnidas, conTel.length - mitad.length);
   assert.equal(r.sinTelefono, personas.length - conTel.length);
+});
+
+/* ---------- Formularios contra el grupo ---------- */
+
+const registros = [
+  { id: "r1", telefono: "+54 9 11 5555-0001", pais: "Argentina" },                       // en el grupo, ya marcado
+  { id: "r2", telefono: "011 15 5555-0002", pais: "Argentina", grupo: "unido" },          // en el grupo con otra escritura
+  { id: "r3", telefono: "11 5555-0003", pais: "AR" },                                     // en el grupo, sin marcar
+  { id: "r4", telefono: "+57 300 123 0004", pais: "Colombia" },                            // no está
+  { id: "r5", telefono: "+54 9 11 5555-0005", pais: "Argentina", grupo: "unido" },        // marcado a mano, pero no está
+  { id: "r6", telefono: "" },                                                              // sin teléfono
+  { id: "r7", telefono: "no tengo" },                                                      // algo que no es un teléfono
+];
+const adentro = ["5491155550001", "5491155550002", "5491155550003"];
+
+test("cada registro de Formularios queda en el grupo, afuera o sin teléfono", () => {
+  const u = unionesDeRegistros(registros, adentro, { "5491155550005": "2026-10-05T12:00:00.000Z" });
+  assert.deepEqual([...u.entries()].map(([id, x]) => [id, x.estado]), [
+    ["r1", "unida"], ["r2", "unida"], ["r3", "unida"], ["r4", "no-unida"], ["r5", "no-unida"], ["r6", "sin-telefono"], ["r7", "sin-telefono"],
+  ]);
+  assert.equal(u.get("r5")!.salio, "2026-10-05T12:00:00.000Z", "dice cuándo salió el que estuvo");
+  assert.equal(u.get("r7")!.ilegible, true);
+});
+
+test("los números de arriba de Formularios: dentro, fuera, sin teléfono y cuántos faltan marcar", () => {
+  const u = unionesDeRegistros(registros, adentro);
+  const r = resumenDeRegistros(registros, u);
+  assert.deepEqual(r, { total: 7, conTelefono: 5, dentro: 3, fuera: 2, sinTelefono: 2, porMarcar: 2 });
+  /* «Marcar como unidos» toca sólo a los que el lector ve adentro y la hoja no tiene como «unido». */
+  assert.equal(r.dentro - registros.filter((x) => x.grupo === "unido" && u.get(x.id)!.estado === "unida").length, r.porMarcar);
+  assert.deepEqual(resumenDeRegistros([], new Map()), { total: 0, conTelefono: 0, dentro: 0, fuera: 0, sinTelefono: 0, porMarcar: 0 });
+});
+
+test("el filtro por lo que dice el lector", () => {
+  const u = unionesDeRegistros(registros, adentro);
+  const ids = (f: "" | "dentro" | "fuera" | "sin-telefono") => filtrarPorLector(registros, f, u).map((x) => x.id);
+  assert.deepEqual(ids(""), ["r1", "r2", "r3", "r4", "r5", "r6", "r7"]);
+  assert.deepEqual(ids("dentro"), ["r1", "r2", "r3"]);
+  assert.deepEqual(ids("fuera"), ["r4", "r5"]);
+  assert.deepEqual(ids("sin-telefono"), ["r6", "r7"]);
+  /* Un registro que no se cruzó (llegó después) no está en ninguno de los filtros. */
+  assert.deepEqual(filtrarPorLector([{ id: "nuevo" }], "dentro", u), []);
 });
