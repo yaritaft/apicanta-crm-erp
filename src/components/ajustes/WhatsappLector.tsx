@@ -174,7 +174,10 @@ export function WhatsappLector() {
         {l.cargando && !datos ? (
           <div className="skeleton" style={{ height: 96 }} />
         ) : l.sinAcceso ? (
-          <p className="t-sm t-muted">Tu tipo de cuenta no ve los Webinars, y los grupos de WhatsApp son de esa parte. Pedile a un dueño que te dé acceso.</p>
+          <p className="t-sm t-muted">
+            Tu tipo de cuenta no ve el estado de WhatsApp: lo ven quienes ven los Webinars sin estar limitados a lo suyo (y el código para vincular el número, quien edita Ajustes).
+            Pedile a un dueño que te dé acceso.
+          </p>
         ) : !datos ? (
           <p className="t-sm" style={{ color: "var(--danger)" }} role="alert">
             No pude preguntarle a la app: {l.error}{" "}
@@ -192,6 +195,14 @@ export function WhatsappLector() {
             )}
             {datos.modo === "prueba-local" && (
               <p className="t-sm t-muted">Estás probando sin base: lo que manda el lector se guarda en un archivo de esta compu, no en Supabase.</p>
+            )}
+
+            {/* Si la última pregunta falló pero hay datos de antes, se dice: lo que se ve puede estar viejo (y el código, vencido, ya no está). */}
+            {l.error && (
+              <p className="t-sm" style={{ color: "var(--danger)" }} role="alert">
+                No pude actualizar desde la app: {l.error} Lo que ves puede estar desactualizado.{" "}
+                <button type="button" className="link" onClick={() => void actualizar()}>Reintentar</button>
+              </p>
             )}
 
             {/* El estado, grande: lo primero que hay que saber. */}
@@ -281,7 +292,11 @@ export function WhatsappLector() {
         )}
       </Card>
 
-      {datos && datos.tablas && (
+      {datos && datos.tablas && datos.sinGrupos && (
+        <p className="t-sm t-muted">Tu tipo de cuenta no ve los Webinars: acá se ve el estado del lector y el código para vincularlo, pero no los grupos.</p>
+      )}
+
+      {datos && datos.tablas && !datos.sinGrupos && (
         <Card style={{ padding: 0 }}>
           <div className="wa-cabeza">
             <CardHead

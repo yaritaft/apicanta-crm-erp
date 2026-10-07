@@ -11,7 +11,7 @@ import { num, relativo } from "@/lib/format";
 import { nivelEn } from "@/lib/permisos";
 import { diaArgentina } from "@/lib/reporteFinanciera";
 import { useEstado } from "@/lib/store";
-import { ordenarGrupos, rotuloDeGrupo, sugerirWebinar, type GrupoWhatsapp as Grupo } from "@/lib/whatsapp";
+import { ordenarGrupos, puedeVerWhatsapp, puedeVincularWhatsapp, rotuloDeGrupo, sugerirWebinar, type GrupoWhatsapp as Grupo } from "@/lib/whatsapp";
 import { useAhora, useGrupoDeWebinar } from "@/lib/whatsapp-cliente";
 import type { Webinar } from "@/lib/types";
 import { EstadoLectorBadge, useEstadoDelLector } from "./EstadoLector";
@@ -45,8 +45,12 @@ export function GrupoWhatsapp({ w }: { w: Webinar }) {
   const toast = useToast();
   const { acceso } = useAcceso();
   const puedeAtar = nivelEn(acceso, "webinars") >= 2;
-  const lector = useEstadoDelLector();
-  const g = useGrupoDeWebinar(w.id);
+  /* Ajustes → WhatsApp (donde se vincula el número) es de quien edita Ajustes: a los demás se les dice que le avisen a un dueño. */
+  const puedeVincular = puedeVincularWhatsapp(acceso);
+  /* Quien ve sólo lo suyo no recibe esto (la ruta lo rechaza): ni se pregunta. */
+  const ve = puedeVerWhatsapp(acceso);
+  const lector = useEstadoDelLector(ve);
+  const g = useGrupoDeWebinar(ve ? w.id : null);
   const ahora = useAhora();
 
   const datos = g.datos;
@@ -79,7 +83,7 @@ export function GrupoWhatsapp({ w }: { w: Webinar }) {
   }, [detectados, grupos, e.webinars, w.id, ahora]);
   const tituloDe = (id: string | null) => (id ? e.webinars.find((x) => x.id === id)?.titulo ?? "otro webinar" : "");
 
-  if (g.sinAcceso) return null;
+  if (!ve || g.sinAcceso) return null;
 
   if (datos && !datos.tablas) {
     return (
@@ -96,7 +100,8 @@ export function GrupoWhatsapp({ w }: { w: Webinar }) {
   const sub = !datos ? "Mirando el grupo…"
     : hayGrupo
       ? `El lector lo mira solo${ultimaFoto ? `: la última lista que mandó es ${relativo(ultimaFoto)}` : ""}.`
-      : "Elegí el grupo de este webinar y la app sabe quién se unió.";
+      : puedeAtar ? "Elegí el grupo de este webinar y la app sabe quién se unió."
+        : "Todavía no tiene un grupo atado: lo ata quien edita los Webinars.";
 
   return (
     <Card style={{ padding: 0 }}>
@@ -149,12 +154,14 @@ export function GrupoWhatsapp({ w }: { w: Webinar }) {
           </div>
         )}
 
-        {datos && !hayGrupo && candidatos.length === 0 && (
+        {datos && !hayGrupo && (candidatos.length === 0 || !puedeAtar) && (
           <p className="t-sm t-muted">
-            {lector.hayLector
-              ? "El lector todavía no detectó ningún grupo. Cuando el número del lector esté en el grupo de este webinar, aparece solo."
-              : <>El lector de WhatsApp todavía no se conectó. Cuando esté andando, detecta los grupos solo y acá elegís el de este webinar.{" "}
-                <Link href="/ajustes?seccion=whatsapp" className="link">Ver cómo se conecta</Link></>}
+            {!lector.hayLector
+              ? <>El lector de WhatsApp todavía no se conectó. Cuando esté andando, detecta los grupos solo y acá {puedeAtar ? "elegís" : "se elige"} el de este webinar.{" "}
+                {puedeVincular ? <Link href="/ajustes?seccion=whatsapp" className="link">Ver cómo se conecta</Link> : "Avisale a un dueño."}</>
+              : !puedeAtar
+                ? "Este webinar todavía no tiene un grupo de WhatsApp atado. Lo ata quien edita los Webinars: avisale a un dueño."
+                : "El lector todavía no detectó ningún grupo. Cuando el número del lector esté en el grupo de este webinar, aparece solo."}
           </p>
         )}
 

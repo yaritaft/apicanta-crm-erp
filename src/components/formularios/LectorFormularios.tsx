@@ -8,12 +8,11 @@ import { InfoMetrica } from "@/components/ui/InfoMetrica";
 import { EstadoLectorBadge, useEstadoDelLector } from "@/components/webinars/EstadoLector";
 import { useAcceso } from "@/lib/acceso";
 import { fecha, num, pct } from "@/lib/format";
-import { nivelEn } from "@/lib/permisos";
 import type { RegistroForm } from "@/lib/registros-webinar";
 import { diaArgentina } from "@/lib/reporteFinanciera";
 import { useEstado } from "@/lib/store";
 import {
-  filtrarPorLector, listaParaCopiar, resumenDeRegistros, unionesDeRegistros, type FiltroDeLector, type ResumenDeRegistros, type UnionDePersona,
+  filtrarPorLector, listaParaCopiar, puedeVerWhatsapp, resumenDeRegistros, unionesDeRegistros, type FiltroDeLector, type ResumenDeRegistros, type UnionDePersona,
 } from "@/lib/whatsapp";
 import { useGrupoDeWebinar } from "@/lib/whatsapp-cliente";
 import "@/components/webinars/whatsapp.css";
@@ -62,7 +61,7 @@ export interface LectorDeFormularios {
 export function useLectorDeFormularios(dia: string, registros: readonly RegistroForm[]): LectorDeFormularios {
   const e = useEstado();
   const { acceso } = useAcceso();
-  const ve = nivelEn(acceso, "webinars") >= 1;
+  const ve = puedeVerWhatsapp(acceso);
   const webinar = useMemo(
     () => (dia && dia !== "todos" && dia !== "sin" ? e.webinars.find((w) => diaArgentina(w.fecha) === dia) : undefined),
     [e.webinars, dia],
@@ -141,7 +140,9 @@ export function BarraDelLector({ lector, registros, visibles, filtro, onFiltro, 
         </div>
         <p className="t-sm t-muted">
           Este webinar todavía no tiene un grupo de WhatsApp atado. Cuando lo tenga, acá se ve quién de los que se anotaron está en el grupo, sin marcarlo a mano.{" "}
-          {webinar && <Link href={`/webinars/${encodeURIComponent(webinar.id)}`} className="link">Atarlo en la ficha del webinar</Link>}
+          {webinar && (puedeEditar
+            ? <Link href={`/webinars/${encodeURIComponent(webinar.id)}`} className="link">Atarlo en la ficha del webinar</Link>
+            : "Lo ata quien edita los Webinars: avisale a un dueño.")}
         </p>
       </Card>
     );
