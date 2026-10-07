@@ -1,5 +1,6 @@
 import type { Cuota, EstadoApp, ID, Venta } from "./types";
 import { normalizar } from "./conciliacion";
+import { closerDeCuota } from "./finanzas";
 
 /* ==================================================================
    Buscar a quien compró o a quien paga una cuota.
@@ -15,6 +16,10 @@ export interface CuotaPendiente {
   cuota: Cuota;
   venta: Venta;
   producto?: string;
+  productoId?: ID;
+  /* Quién comisiona esta cuota: el que la heredó o, si nadie, el closer de la venta. */
+  closerId?: ID;
+  closer?: string;
   saldo: number;
   /* Días desde que venció; negativo si todavía no venció. */
   diasAtraso: number;
@@ -29,9 +34,22 @@ export interface PersonaBuscada {
   cuotas: CuotaPendiente[];
 }
 
+/* Para achicar la lista de a quién se le carga el pago: los chips de closer
+   y de servicio. Angelo (06/10): «hay que poder filtrar por closer». */
+export const SIN_CLOSER = "sin-closer";
+export interface FiltroPersonas { closerId?: ID | typeof SIN_CLOSER; productoId?: ID }
+
+export function pasaFiltro(p: PersonaBuscada, f?: FiltroPersonas): boolean {
+  if (!f || (!f.closerId && !f.productoId)) return true;
+  /* Las dos condiciones sobre la MISMA cuota: «Mentoría de Dante», no «algo de Dante y algo de Mentoría». */
+  return p.cuotas.some((c) =>
+    (!f.closerId || (f.closerId === SIN_CLOSER ? !c.closerId : c.closerId === f.closerId))
+    && (!f.productoId || c.productoId === f.productoId));
+}
+
 interface Indice {
   leads: EstadoApp["leads"]; ventas: EstadoApp["ventas"]; cuotas: EstadoApp["cuotas"];
-  pagos: EstadoApp["pagos"]; productos: EstadoApp["productos"];
+  pagos: EstadoApp["pagos"]; productos: EstadoApp["productos"]; equipo: EstadoApp["equipo"];
   personas: PersonaBuscada[];
   porId: Map<ID, PersonaBuscada>;
   texto: Map<ID, string>;
@@ -44,10 +62,11 @@ const r2 = (n: number) => Math.round(n * 100) / 100;
 
 function indice(e: EstadoApp): Indice {
   if (IX && IX.leads === e.leads && IX.ventas === e.ventas && IX.cuotas === e.cuotas
-    && IX.pagos === e.pagos && IX.productos === e.productos) return IX;
+    && IX.pagos === e.pagos && IX.productos === e.productos && IX.equipo === e.equipo) return IX;
   const pagado = new Map<ID, number>();
   for (const p of e.pagos) pagado.set(p.cuotaId, (pagado.get(p.cuotaId) ?? 0) + p.monto);
   const producto = new Map(e.productos.map((p) => [p.id, p.nombre] as const));
+  const equipo = new Map(e.equipo.map((m) => [m.id, m.nombre] as const));
   const ventasDe = new Map<ID, Venta[]>();
   for (const v of e.ventas) if (v.contactoId) ventasDe.set(v.contactoId, [...(ventasDe.get(v.contactoId) ?? []), v]);
   const cuotasDe = new Map<ID, Cuota[]>();
@@ -64,14 +83,19 @@ function indice(e: EstadoApp): Indice {
         const saldo = r2(c.monto - (pagado.get(c.id) ?? 0));
         if (saldo <= 0.01) continue;
         const vence = c.vence ? new Date(c.vence).getTime() : hoy;
-        cuotas.push({ cuota: c, venta: v, producto: v.productoId ? producto.get(v.productoId) : undefined, saldo, diasAtraso: Math.floor((hoy - vence) / DIA) });
+        const closerId = closerDeCuota(v, c) || undefined;
+        cuotas.push({
+          cuota: c, venta: v, producto: v.productoId ? producto.get(v.productoId) : undefined, productoId: v.productoId,
+          closerId, closer: closerId ? equipo.get(closerId) : undefined,
+          saldo, diasAtraso: Math.floor((hoy - vence) / DIA),
+        });
       }
     }
     cuotas.sort((a, b) => b.diasAtraso - a.diasAtraso);
     return { id: l.id, nombre: l.nombre, email: l.email || undefined, telefono: l.telefono || undefined, compras: ventas.length, cuotas };
   });
   IX = {
-    leads: e.leads, ventas: e.ventas, cuotas: e.cuotas, pagos: e.pagos, productos: e.productos,
+    leads: e.leads, ventas: e.ventas, cuotas: e.cuotas, pagos: e.pagos, productos: e.productos, equipo: e.equipo,
     personas,
     porId: new Map(personas.map((p) => [p.id, p] as const)),
     texto: new Map(personas.map((p) => [p.id, normalizar(`${p.nombre} ${p.email ?? ""}`)] as const)),
@@ -81,24 +105,63 @@ function indice(e: EstadoApp): Indice {
 }
 
 /** Por nombre, correo o teléfono. Primero los que ya compraron. */
-export function buscarPersonas(e: EstadoApp, consulta: string, limite = 6, soloConCuotas = false): PersonaBuscada[] {
+export function buscarPersonas(e: EstadoApp, consulta: string, limite = 6, soloConCuotas = false, filtro?: FiltroPersonas): PersonaBuscada[] {
+  return coincidencias(e, consulta, soloConCuotas, filtro).slice(0, limite);
+}
+
+/** Todas las que coinciden, sin recortar: para saber cuántas quedaron afuera. */
+export function coincidencias(e: EstadoApp, consulta: string, soloConCuotas = false, filtro?: FiltroPersonas): PersonaBuscada[] {
   const ix = indice(e);
   const q = normalizar(consulta);
   const digitos = consulta.replace(/\D/g, "");
   const base = soloConCuotas ? ix.personas.filter((p) => p.cuotas.length > 0) : ix.personas;
   if (q.length < 2 && digitos.length < 4) return [];
   return base
+    .filter((p) => pasaFiltro(p, filtro))
     .filter((p) => (q.length >= 2 && ix.texto.get(p.id)!.includes(q)) || (digitos.length >= 4 && ix.digitos.get(p.id)!.includes(digitos)))
-    .sort((a, b) => b.cuotas.length - a.cuotas.length || b.compras - a.compras || a.nombre.localeCompare(b.nombre))
-    .slice(0, limite);
+    .sort((a, b) => b.cuotas.length - a.cuotas.length || b.compras - a.compras || a.nombre.localeCompare(b.nombre));
 }
 
 /** Los que deben alguna cuota, del más atrasado al que menos. */
-export function conCuotasPendientes(e: EstadoApp, limite = 8): PersonaBuscada[] {
+export function conCuotasPendientes(e: EstadoApp, limite = 8, filtro?: FiltroPersonas): PersonaBuscada[] {
+  return todosLosQueDeben(e, filtro).slice(0, limite);
+}
+
+/** Todos los que deben alguna cuota, sin recortar. */
+export function todosLosQueDeben(e: EstadoApp, filtro?: FiltroPersonas): PersonaBuscada[] {
   return indice(e).personas
-    .filter((p) => p.cuotas.length > 0)
-    .sort((a, b) => (b.cuotas[0]?.diasAtraso ?? 0) - (a.cuotas[0]?.diasAtraso ?? 0))
-    .slice(0, limite);
+    .filter((p) => p.cuotas.length > 0 && pasaFiltro(p, filtro))
+    .sort((a, b) => (b.cuotas[0]?.diasAtraso ?? 0) - (a.cuotas[0]?.diasAtraso ?? 0));
+}
+
+export interface OpcionFiltro { id: string; nombre: string; personas: number }
+
+/** Los chips: los closers y los servicios de las cuotas que se deben, cada uno
+ *  con cuánta gente queda si se lo elige. Sólo los que existen entre los que
+ *  deben: un closer sin deudores no aparece. */
+export function opcionesDeFiltro(e: EstadoApp, filtro?: FiltroPersonas): { closers: OpcionFiltro[]; servicios: OpcionFiltro[] } {
+  const debe = indice(e).personas.filter((p) => p.cuotas.length > 0);
+  const closers = new Map<string, OpcionFiltro>();
+  const servicios = new Map<string, OpcionFiltro>();
+  for (const p of debe) {
+    /* Cada persona cuenta una vez por closer y una por servicio, con el otro
+       filtro ya puesto: así el número del chip es lo que se va a ver. */
+    const aporta = (f: FiltroPersonas) => pasaFiltro(p, f);
+    for (const c of p.cuotas) {
+      const k = c.closerId ?? SIN_CLOSER;
+      if (!closers.has(k)) closers.set(k, { id: k, nombre: c.closer ?? (c.closerId ? "Closer sin nombre" : "Sin closer"), personas: 0 });
+      if (c.productoId && !servicios.has(c.productoId)) servicios.set(c.productoId, { id: c.productoId, nombre: c.producto ?? "Sin servicio", personas: 0 });
+    }
+    for (const o of closers.values()) if (aporta({ productoId: filtro?.productoId, closerId: o.id })) o.personas += 1;
+    for (const o of servicios.values()) if (aporta({ closerId: filtro?.closerId, productoId: o.id })) o.personas += 1;
+  }
+  const orden = (a: OpcionFiltro, b: OpcionFiltro) => (a.id === SIN_CLOSER ? 1 : b.id === SIN_CLOSER ? -1 : b.personas - a.personas || a.nombre.localeCompare(b.nombre));
+  /* Una opción que con el otro filtro puesto deja a cero no se ofrece (salvo la que ya está elegida). */
+  const hay = (activo?: string) => (o: OpcionFiltro) => o.personas > 0 || o.id === activo;
+  return {
+    closers: [...closers.values()].filter(hay(filtro?.closerId)).sort(orden),
+    servicios: [...servicios.values()].filter(hay(filtro?.productoId)).sort(orden),
+  };
 }
 
 export const personaPorId = (e: EstadoApp, id?: ID): PersonaBuscada | undefined => (id ? indice(e).porId.get(id) : undefined);

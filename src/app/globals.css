@@ -3600,3 +3600,8 @@ span.kpis__etiqueta:hover { color: var(--ink); text-decoration: none; }
 .info-fila--total :is(dt, dd) { color: var(--ink); font-weight: 700; }
 .info-signo { flex: none; width: 14px; text-align: center; font-weight: 700; color: var(--brand); }
 .info-ejemplo { margin: 0; font-size: 14px; line-height: 21px; color: var(--ink-muted); }
+
+/* Los chips de closer y de servicio de «Cargar el pago de una cuota». */
+.cargar-filtros { padding: var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface-000); }
+.cargar-filtros .row-wrap { align-items: center; }
+.cargar-filtros__rotulo { min-width: 60px; }
