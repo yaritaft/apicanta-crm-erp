@@ -499,6 +499,17 @@ function FilaPersona({
               </div>
             </div>
           )}
+          {persona.deuda && Object.values(persona.deuda).some((x) => (x ?? 0) > 0.005) && (
+            <div role="row" className="liq__fila liq__fila--nota">
+              <div role="cell" className="liq__nota liq__nota--aviso">
+                <AlertTriangle size={14} />
+                <span>
+                  <b>Queda debiendo {aPagarTexto(persona.deuda)}.</b> Este mes las devoluciones descontaron más de lo que cobraba: no se le paga nada y
+                  la deuda pasa a la liquidación del mes que sigue, donde entra como «Deuda de meses anteriores» y se descuenta de lo que cobre.
+                </span>
+              </div>
+            </div>
+          )}
           {persona.lineas.length === 0 && !persona.pendiente && !persona.sinCargar && (
             <div role="row" className="liq__fila liq__fila--nota">
               <div role="cell" className="liq__nota">Nada que pagarle este mes. <button type="button" className="link" onClick={onVerPersona}>Ver lo que cobra</button></div>
@@ -575,7 +586,7 @@ function Linea({ l, cerrada, entrada, onEntrada, onBorrarExtra, onVerDesglose }:
 
   return (
     <>
-      <div role="row" className="liq__fila liq__fila--linea" data-falta={l.falta ? true : undefined}>
+      <div role="row" className="liq__fila liq__fila--linea" data-falta={l.falta ? true : undefined} data-tipo={l.tipo}>
         <div role="rowheader" className="liq__concepto liq__concepto--linea">
           <span className="liq__textos">
             <span className="liq__titulo">
@@ -613,6 +624,7 @@ function Linea({ l, cerrada, entrada, onEntrada, onBorrarExtra, onVerDesglose }:
               {l.tipo === "extra" ? (
                 <IconButton etiqueta="Sacar este monto" onClick={onBorrarExtra}><Trash2 size={15} /></IconButton>
               ) : l.tipo === "descuento" ? null /* Lo calcula el interruptor del cierre del día (Ajustes → CRM): no se corrige acá. */
+              : l.tipo === "devolucion" || l.tipo === "arrastre" ? null /* Lo calcula la devolución cargada (Finanzas → Devoluciones): se corrige allá. */
               : l.corregido ? (
                 <button type="button" className="link t-sm" onClick={() => onEntrada({ monto: undefined, nota: undefined })}>Volver a la cuenta</button>
               ) : (

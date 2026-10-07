@@ -1714,6 +1714,11 @@ button.cuadro-com__persona:hover { color: var(--brand); text-decoration: underli
 /* Las devoluciones de una venta, en su ficha. */
 .devol-fila { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 10px; padding: 6px 0; font-size: 13px; }
 .devol-fila + .devol-fila { border-top: 1px solid var(--border); }
+/* En la liquidación: lo que revierte una devolución y la deuda que pasa al mes que sigue van en rojo. */
+.liq__fila--linea[data-tipo="devolucion"] .liq__monto,
+.liq__fila--linea[data-tipo="arrastre"] .liq__monto { color: var(--danger); }
+.liq__fila--linea[data-tipo="devolucion"] .liq__titulo,
+.liq__fila--linea[data-tipo="arrastre"] .liq__titulo { color: var(--danger); }
 
 /* A quién se le pagó: un campo con lista (el equipo, los proveedores que ya se
    usaron) y la opción de escribir uno nuevo (components/finanzas/CampoProveedor.tsx).
