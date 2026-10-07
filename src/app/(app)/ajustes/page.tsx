@@ -11,6 +11,7 @@ import {
 import { CatalogosVenta } from "@/components/ajustes/CatalogosVenta";
 import { ConfigUtms } from "@/components/ajustes/ConfigUtms";
 import { FormulariosMeta } from "@/components/ajustes/FormulariosMeta";
+import { ConversionsApi } from "@/components/ajustes/ConversionsApi";
 import { YoutubeIntegracion } from "@/components/ajustes/YoutubeIntegracion";
 import { FathomIntegracion } from "@/components/ajustes/FathomIntegracion";
 import { PageHead } from "@/components/shell/PageHead";
@@ -495,6 +496,7 @@ function Integraciones() {
 
       <EstadoMeta />
       <FormulariosMeta />
+      <ConversionsApi />
       <EstadoCalendly />
       <FathomIntegracion />
       <YoutubeIntegracion />
