@@ -320,9 +320,74 @@ export function liquidadaEn(liquidaciones: Pick<Liquidacion, "periodo" | "estado
   return out;
 }
 
+/* ---------- Devolver por una cuenta en pesos ----------
+   Si la plata sale de una cuenta en pesos (la Financiera), la caja de esa cuenta
+   baja en PESOS: sin cuántos fueron, el control cuenta por cuenta (saldosEsperados)
+   queda con una diferencia igual a lo devuelto para siempre. Por eso la devolución
+   guarda los pesos (`montoArs`) y el cambio (`tipoCambio`), y la cuenta cae a un
+   cambio razonable cuando falta, en las que se cargaron sin ellos. */
+
+export interface CambioPropuesto {
+  /* Pesos por dólar. */
+  tipoCambio: number;
+  /* De dónde sale: el último cobro de esa venta por esa cuenta, o el de Ajustes. */
+  fuente: "cobro" | "ajustes";
+}
+
+/** El tipo de cambio con el que se propone una devolución por una cuenta en
+ *  pesos: el del último cobro de esa venta por esa cuenta (o, si ese cobro sólo
+ *  trae los pesos, los pesos ÷ los dólares) y, si no hay, el de Ajustes. Sin
+ *  ninguno de los dos, nada: se piden los pesos. */
+export function cambioParaDevolver(
+  e: Pick<EstadoApp, "pagos"> & Partial<Pick<EstadoApp, "cuotas" | "ajustes">>, ventaId: ID | undefined, procesadorId: ID | undefined,
+): CambioPropuesto | undefined {
+  if (ventaId && procesadorId) {
+    const cuotas = new Set((e.cuotas ?? []).filter((c) => c.ventaId === ventaId).map((c) => c.id));
+    const ultimosPrimero = e.pagos
+      .filter((p) => cuotas.has(p.cuotaId) && p.procesadorId === procesadorId)
+      .sort((a, b) => Date.parse(b.fecha) - Date.parse(a.fecha));
+    for (const p of ultimosPrimero) {
+      const tipoCambio = p.tipoCambio && p.tipoCambio > 0 ? p.tipoCambio
+        : p.montoArs && p.montoArs > 0 && p.monto > 0 ? Math.round((p.montoArs / p.monto) * 1e4) / 1e4 : 0;
+      if (tipoCambio > 0) return { tipoCambio, fuente: "cobro" };
+    }
+  }
+  const deAjustes = e.ajustes?.tipoCambio;
+  return deAjustes !== undefined && deAjustes > 0 ? { tipoCambio: deAjustes, fuente: "ajustes" } : undefined;
+}
+
+/** Los pesos de una devolución por una cuenta en pesos y el cambio que
+ *  resulta. Si se escribieron los pesos (aunque sea mal), mandan ellos y el
+ *  cambio es el que sale de dividirlos por lo devuelto; si no, monto × cambio.
+ *  Vacío si no hay con qué. */
+export function pesosDeLaDevolucion(
+  monto: number, cambio?: number, escritos?: number,
+): { montoArs?: number; tipoCambio?: number } {
+  if (!(monto > 0)) return {};
+  if (escritos !== undefined) {
+    return escritos > 0 ? { montoArs: r2(escritos), tipoCambio: Math.round((escritos / monto) * 1e4) / 1e4 } : {};
+  }
+  return cambio !== undefined && cambio > 0 ? { montoArs: r2(monto * cambio), tipoCambio: cambio } : {};
+}
+
+/** Los pesos que salieron de una cuenta por una devolución: los que trae, o
+ *  monto × su tipo de cambio; y si no trae ninguno (las cargadas antes de pedir
+ *  los pesos), a razón del cambio con el que se cobró esa venta por esa cuenta o
+ *  el de Ajustes. NaN si no hay de dónde sacarlo. */
+export function pesosQueSalieron(
+  e: Pick<EstadoApp, "pagos"> & Partial<Pick<EstadoApp, "cuotas" | "ajustes">>,
+  d: Pick<Devolucion, "ventaId" | "procesadorId" | "monto" | "montoArs" | "tipoCambio">,
+): number {
+  const propios = d.montoArs ?? (d.tipoCambio && d.tipoCambio > 0 ? d.monto * d.tipoCambio : NaN);
+  if (Number.isFinite(propios)) return propios;
+  const cambio = cambioParaDevolver(e, d.ventaId, d.procesadorId);
+  return cambio ? d.monto * cambio.tipoCambio : NaN;
+}
+
 /* ---------- Lo que falta para poder cargarla ---------- */
 
 export const MENSAJE_COMPROBANTE_DEVOLUCION = "Falta el comprobante de la devolución";
+export const MENSAJE_PESOS_DEVOLUCION = "Escribí cuántos pesos salieron de la cuenta";
 
 export interface BorradorDevolucion {
   ventaId?: ID;
@@ -332,6 +397,8 @@ export interface BorradorDevolucion {
   tieneComprobante: boolean;
   /* Si la pasarela la informó, su registro es la prueba. */
   tienePasarela?: boolean;
+  /* Sale de una cuenta en pesos y todavía no se sabe cuántos pesos fueron. */
+  sinPesos?: boolean;
 }
 
 const usd = (n: number) => `US$ ${n.toLocaleString("es-AR", { maximumFractionDigits: 2 })}`;
@@ -370,6 +437,7 @@ export function problemaDeDevolucion(
       ? `No se puede devolver más de lo cobrado: hasta el ${ddmmaaaa(l.dia)} ya hay devoluciones por ${usd(l.devuelto)} y se cobró ${usd(l.cobrado)}; quedan ${usd(d.queda)} para devolver`
       : `No se puede devolver más de lo cobrado: quedan ${usd(d.queda)} para devolver`;
   }
+  if (b.sinPesos) return MENSAJE_PESOS_DEVOLUCION;
   if (!b.tieneComprobante && !b.tienePasarela) return MENSAJE_COMPROBANTE_DEVOLUCION;
   return null;
 }

@@ -1,6 +1,6 @@
 import type { Arqueo, EstadoApp, Gasto, ID, Moneda, Traspaso } from "./types";
 import { aMonedaBase, categoriaDe, fechaDePago, montoOriginal } from "./gastos";
-import { esDevolucionConfirmada } from "./devoluciones";
+import { esDevolucionConfirmada, pesosQueSalieron } from "./devoluciones";
 
 /* ==================================================================
    Movimientos entre cuentas propias.
@@ -411,7 +411,7 @@ export interface SaldoEsperado {
     del cobro). Los gastos y los sueldos no dicen de qué cuenta salieron: por
     eso el control fino sigue siendo por el total. */
 export function saldosEsperados(
-  e: Pick<EstadoApp, "procesadores" | "pagos" | "gastos" | "traspasos"> & Partial<Pick<EstadoApp, "devoluciones">>,
+  e: Pick<EstadoApp, "procesadores" | "pagos" | "gastos" | "traspasos"> & Partial<Pick<EstadoApp, "devoluciones" | "cuotas" | "ajustes">>,
   previo: Pick<Arqueo, "fecha" | "saldos"> | undefined, hastaIso: string,
 ): Map<ID, SaldoEsperado> {
   const desde = previo ? Date.parse(previo.fecha) : -Infinity;
@@ -433,12 +433,13 @@ export function saldosEsperados(
     }
   }
   /* Lo devuelto sale de la cuenta por la que se devolvió: el monto entero (en
-     pesos, los pesos que fueron). */
+     pesos, los pesos que fueron; si la devolución no los trae, a razón del cambio
+     con el que se cobró esa venta por esa cuenta o el de Ajustes). */
   for (const d of e.devoluciones ?? []) {
     const s = d.procesadorId && esDevolucionConfirmada(d) ? out.get(d.procesadorId) : undefined;
     if (!s || !entre(d.fecha, desde, hasta)) continue;
     if (s.moneda === "ARS") {
-      const ars = d.montoArs ?? (d.tipoCambio && d.tipoCambio > 0 ? d.monto * d.tipoCambio : NaN);
+      const ars = pesosQueSalieron(e, d);
       if (Number.isFinite(ars)) s.salio += ars;
     } else {
       s.salio += d.monto;

@@ -1,7 +1,15 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { devolvibleDeVenta, mediodiaDeNegocio, problemaDeDevolucion, reversasDeComision } from "@/lib/devoluciones";
+import { readFileSync } from "node:fs";
+import {
+  cambioParaDevolver, devolvibleDeVenta, MENSAJE_COMPROBANTE_DEVOLUCION, MENSAJE_PESOS_DEVOLUCION, mediodiaDeNegocio, pesosDeLaDevolucion,
+  pesosQueSalieron, problemaDeDevolucion, reversasDeComision,
+} from "@/lib/devoluciones";
 import { diaDeNegocio } from "@/lib/dia-negocio";
+import { saldosEsperados } from "@/lib/traspasos";
+import { acciones, fijarAcceso } from "@/lib/store";
+import { ACCESO_DUENO } from "@/lib/permisos";
+import { estadoVacio } from "@/lib/seed";
 import type { Devolucion, EstadoApp } from "@/lib/types";
 import { devolucion, miembro, pago } from "./estado-devolucion";
 
@@ -385,4 +393,166 @@ test("lo que ya andaba (devoluciones en orden, después de todos los cobros del 
     }
   }
   assert.ok(comparados > 600, `cobertura: ${comparados}`);
+});
+
+/* ---------- 3 · devolver por una cuenta en pesos ---------- */
+
+/** El caso del estrés: un cobro de US$ 1.000 por la Financiera (en pesos) a 1.500, con sus 1.500.000 pesos. */
+const cobroEnPesos = (id: string, cuotaId: string, monto: number, tipoCambio: number | undefined, fecha: string, extra: Record<string, unknown> = {}) =>
+  ({ ...pago(id, cuotaId, monto, 0, fecha, "proc_fin"), ...(tipoCambio ? { tipoCambio, montoArs: Math.round(monto * tipoCambio) } : {}), ...extra });
+
+const cuentas = [
+  { id: "proc_fin", nombre: "Financiera ARS", moneda: "ARS", feeRate: 0, activo: true, automatico: false },
+  { id: "proc_stripe", nombre: "Stripe", moneda: "USD", feeRate: 0.029, activo: true, automatico: false },
+];
+
+function conPesos(pagos: unknown[], devoluciones: Devolucion[], ajustes: Record<string, unknown> = { monedaBase: "USD", tipoCambio: 1450 }): EstadoApp {
+  return {
+    cuotas: [{ id: "q1", ventaId: "v1", numero: 1, monto: 1000, estado: "pagada", esReserva: false }, { id: "q2", ventaId: "v1", numero: 2, monto: 1000, estado: "pagada", esReserva: false }],
+    pagos, devoluciones, gastos: [], traspasos: [], procesadores: cuentas, ajustes,
+  } as unknown as EstadoApp;
+}
+const previo = { fecha: ar("2026-09-01"), saldos: [{ procesadorId: "proc_fin", monto: 0, moneda: "ARS", montoBase: 0 }, { procesadorId: "proc_stripe", monto: 0, moneda: "USD", montoBase: 0 }] } as unknown as Parameters<typeof saldosEsperados>[1];
+const fin = (e: EstadoApp) => saldosEsperados(e, previo, ar("2026-09-30", "23:00:00")).get("proc_fin")!;
+
+test("pesos · una devolución sin montoArs ni tipoCambio por una cuenta en pesos sale de esa cuenta, al cambio del cobro", () => {
+  const e = conPesos([cobroEnPesos("p1", "q1", 1000, 1500, ar("2026-09-12", "10:00:00"))], [devolucion({ id: "d1", monto: 400, fecha: ar("2026-09-20"), procesadorId: "proc_fin" })]);
+  const s = fin(e);
+  assert.equal(s.entro, 1_500_000);
+  assert.equal(s.salio, 600_000, "400 × 1.500; antes quedaba en 0 y el arqueo de la cuenta tenía una diferencia permanente");
+  assert.equal(s.esperado, 900_000);
+});
+
+test("pesos · lo que trae la devolución manda sobre cualquier cambio de afuera (montoArs, y si no, monto × tipoCambio)", () => {
+  const cobro = cobroEnPesos("p1", "q1", 1000, 1500, ar("2026-09-12", "10:00:00"));
+  const sale = (extra: Partial<Devolucion>) => fin(conPesos([cobro], [devolucion({ id: "d1", monto: 400, fecha: ar("2026-09-20"), procesadorId: "proc_fin", ...extra })])).salio;
+  assert.equal(sale({ montoArs: 610_000, tipoCambio: 1525 }), 610_000);
+  assert.equal(sale({ tipoCambio: 1400 }), 560_000);
+  assert.equal(sale({ montoArs: 610_000 }), 610_000);
+});
+
+test("pesos · sin un cobro de esa venta por esa cuenta, cae al tipo de cambio de Ajustes", () => {
+  /* Se cobró por Stripe (dólares) y se devolvió por la Financiera. */
+  const e = conPesos([pago("p1", "q1", 1000, 0, ar("2026-09-12", "10:00:00"))], [devolucion({ id: "d1", monto: 100, fecha: ar("2026-09-20"), procesadorId: "proc_fin" })]);
+  assert.equal(fin(e).salio, 145_000, "100 × 1.450 (Ajustes)");
+  /* Y sin Ajustes ni cobro no hay de dónde: no se inventa nada (como antes). */
+  assert.equal(fin(conPesos([pago("p1", "q1", 1000, 0, ar("2026-09-12"))], [devolucion({ id: "d1", monto: 100, fecha: ar("2026-09-20"), procesadorId: "proc_fin" })], { monedaBase: "USD", tipoCambio: 0 })).salio, 0);
+});
+
+test("pesos · una cuenta en dólares, una propuesta y una devolución fuera del rango no cambian", () => {
+  const cobro = cobroEnPesos("p1", "q1", 1000, 1500, ar("2026-09-12", "10:00:00"));
+  const e = conPesos([cobro, pago("p2", "q2", 500, 0, ar("2026-09-13", "10:00:00"))], [
+    devolucion({ id: "usd", monto: 200, fecha: ar("2026-09-20"), procesadorId: "proc_stripe" }),
+    devolucion({ id: "prop", monto: 100, fecha: ar("2026-09-21"), procesadorId: "proc_fin", estado: "propuesta" }),
+    devolucion({ id: "ign", monto: 100, fecha: ar("2026-09-21"), procesadorId: "proc_fin", estado: "ignorada" }),
+    devolucion({ id: "despues", monto: 100, fecha: ar("2026-10-02"), procesadorId: "proc_fin" }),
+  ]);
+  const todas = saldosEsperados(e, previo, ar("2026-09-30", "23:00:00"));
+  assert.equal(todas.get("proc_stripe")!.salio, 200, "en dólares, el monto entero");
+  assert.equal(todas.get("proc_fin")!.salio, 0);
+});
+
+test("pesos · el cambio que se propone: el del último cobro de esa venta por esa cuenta, y si no hay, el de Ajustes", () => {
+  const e = conPesos([
+    cobroEnPesos("p1", "q1", 1000, 1400, ar("2026-09-01", "10:00:00")),
+    cobroEnPesos("p2", "q2", 1000, 1500, ar("2026-09-12", "10:00:00")),
+    cobroEnPesos("pOtra", "qX", 1000, 9999, ar("2026-09-15", "10:00:00")),
+    { ...cobroEnPesos("pStripe", "q1", 1000, 7777, ar("2026-09-20", "10:00:00")), procesadorId: "proc_stripe" },
+  ], []);
+  assert.deepEqual(cambioParaDevolver(e, "v1", "proc_fin"), { tipoCambio: 1500, fuente: "cobro" }, "el último, no el primero ni el de otra venta ni el de otra cuenta");
+  assert.deepEqual(cambioParaDevolver(e, "v1", "proc_stripe"), { tipoCambio: 7777, fuente: "cobro" });
+  assert.deepEqual(cambioParaDevolver(e, "v1", "proc_otra"), { tipoCambio: 1450, fuente: "ajustes" });
+  assert.deepEqual(cambioParaDevolver(e, undefined, "proc_fin"), { tipoCambio: 1450, fuente: "ajustes" });
+  assert.equal(cambioParaDevolver({ ...e, ajustes: { monedaBase: "USD", tipoCambio: 0 } } as unknown as EstadoApp, "v1", "proc_otra"), undefined);
+  /* Un cobro que sólo trae los pesos da el cambio que resulta. */
+  const soloPesos = conPesos([{ ...pago("p1", "q1", 800, 0, ar("2026-09-12"), "proc_fin"), montoArs: 1_240_000 }], []);
+  assert.deepEqual(cambioParaDevolver(soloPesos, "v1", "proc_fin"), { tipoCambio: 1550, fuente: "cobro" });
+  /* Sin tocar lo que se mira. */
+  const congelado = JSON.parse(JSON.stringify(e)) as EstadoApp;
+  const antes = JSON.stringify(congelado);
+  cambioParaDevolver(congelado, "v1", "proc_fin");
+  assert.equal(JSON.stringify(congelado), antes);
+});
+
+test("pesos · los pesos de la devolución: monto × cambio, o los que escribió quien carga (y entonces el cambio es el que resulta)", () => {
+  assert.deepEqual(pesosDeLaDevolucion(400, 1500), { montoArs: 600_000, tipoCambio: 1500 });
+  assert.deepEqual(pesosDeLaDevolucion(400, 1500, 612_000), { montoArs: 612_000, tipoCambio: 1530 });
+  assert.deepEqual(pesosDeLaDevolucion(333.33, 1500), { montoArs: 499_995, tipoCambio: 1500 });
+  assert.deepEqual(pesosDeLaDevolucion(3, undefined, 4_000), { montoArs: 4_000, tipoCambio: 1333.3333 });
+  /* Escribió algo que no es plata, o lo vació: faltan los pesos, no se usa el cambio por la espalda. */
+  assert.deepEqual(pesosDeLaDevolucion(400, 1500, Number.NaN), {});
+  assert.deepEqual(pesosDeLaDevolucion(400, 1500, 0), {});
+  /* Sin monto o sin cambio ni pesos, no hay con qué. */
+  assert.deepEqual(pesosDeLaDevolucion(0, 1500), {});
+  assert.deepEqual(pesosDeLaDevolucion(400), {});
+});
+
+test("pesos · los pesos que salieron de una devolución, con todos los caminos", () => {
+  const e = conPesos([cobroEnPesos("p1", "q1", 1000, 1500, ar("2026-09-12"))], []);
+  const d = (extra: Partial<Devolucion>) => pesosQueSalieron(e, devolucion({ id: "d", monto: 400, fecha: ar("2026-09-20"), procesadorId: "proc_fin", ...extra }));
+  assert.equal(d({ montoArs: 1 }), 1);
+  assert.equal(d({ tipoCambio: 1000 }), 400_000);
+  assert.equal(d({}), 600_000);
+  assert.equal(d({ ventaId: "v9" }), 400 * 1450, "de otra venta: Ajustes");
+  assert.ok(Number.isNaN(pesosQueSalieron({ pagos: [] }, devolucion({ id: "d", monto: 400, fecha: ar("2026-09-20"), procesadorId: "proc_fin" }))), "sin nada de dónde sacarlo");
+});
+
+test("pesos · el formulario no deja guardar sin los pesos, después del tope y antes del comprobante", () => {
+  const e = conCobros([[ar("2026-10-01"), 1000]]);
+  const b = { ventaId: "v1", monto: 400, fecha: ar("2026-10-05"), procesadorId: "proc_fin", tieneComprobante: false, sinPesos: true };
+  assert.equal(problemaDeDevolucion(e, b), MENSAJE_PESOS_DEVOLUCION);
+  assert.equal(problemaDeDevolucion(e, { ...b, sinPesos: false }), MENSAJE_COMPROBANTE_DEVOLUCION);
+  assert.equal(problemaDeDevolucion(e, { ...b, sinPesos: false, tieneComprobante: true }), null);
+  assert.match(problemaDeDevolucion(e, { ...b, monto: 2000 })!, /No se puede devolver más de lo cobrado/, "primero lo de más arriba en la pantalla");
+  /* Una cuenta en dólares no manda sinPesos y anda como siempre. */
+  assert.equal(problemaDeDevolucion(e, { ventaId: "v1", monto: 400, fecha: ar("2026-10-05"), procesadorId: "proc_stripe", tieneComprobante: true }), null);
+});
+
+test("pesos · de punta a punta con el store: lo que guarda el formulario resta de la Financiera, y si se pasa a dólares se borran los pesos", () => {
+  const e = {
+    ...estadoVacio(),
+    equipo: [{ id: "c1", nombre: "Closer", rol: "closer", comisionRate: 0.1, activo: true, sinComision: false }],
+    ventas: [{ id: "v1", contactoNombre: "Belén", precioAcordado: 1000, fecha: ar("2026-09-10"), moneda: "USD", closerId: "c1", excluidoMarketing: false, estado: "activa", creadoEn: ar("2026-09-10"), extra: {} }],
+    cuotas: [{ id: "q1", ventaId: "v1", numero: 1, monto: 1000, estado: "pendiente", esReserva: false }],
+    actividad: [], gastos: [],
+  } as unknown as EstadoApp;
+  assert.equal(acciones.importar(JSON.stringify(e)), true);
+  fijarAcceso(ACCESO_DUENO);
+  assert.equal(acciones.registrarPago({
+    cuotaId: "q1", reajuste: "pendiente",
+    cobros: [{ procesadorId: "proc_financiera_ars", monto: 1000, fecha: ar("2026-09-12", "10:00:00"), tipoCambio: 1500, montoArs: 1_500_000, pagador: "Belén", cuit: "27-12345678-4" }],
+  }), true);
+  const hoy = () => JSON.parse(acciones.exportar()) as EstadoApp;
+
+  /* Lo que arma el formulario: el cambio propuesto del cobro y los pesos que salen de ahí. */
+  const propuesto = cambioParaDevolver(hoy(), "v1", "proc_financiera_ars");
+  const pesos = pesosDeLaDevolucion(400, propuesto?.tipoCambio);
+  assert.deepEqual(pesos, { montoArs: 600_000, tipoCambio: 1500 });
+  const id = acciones.registrarDevolucion({ ventaId: "v1", monto: 400, fecha: ar("2026-09-20"), procesadorId: "proc_financiera_ars", noDescontarAlCloser: false, ...pesos });
+  assert.ok(id);
+  const guardada = hoy().devoluciones.find((x) => x.id === id)!;
+  assert.equal(guardada.montoArs, 600_000);
+  assert.equal(guardada.tipoCambio, 1500);
+  const previoFin = { fecha: ar("2026-09-01"), saldos: [{ procesadorId: "proc_financiera_ars", monto: 0, moneda: "ARS", montoBase: 0 }] } as unknown as Parameters<typeof saldosEsperados>[1];
+  const s = saldosEsperados(hoy(), previoFin, ar("2026-09-30", "23:00:00")).get("proc_financiera_ars")!;
+  assert.equal(s.salio, 600_000);
+  assert.equal(s.esperado, s.entro - 600_000);
+
+  /* Corregirla para que salga por una cuenta en dólares: los pesos ya no valen y se borran. */
+  assert.equal(acciones.editarDevolucion(id!, { procesadorId: "proc_stripe", montoArs: undefined, tipoCambio: undefined }), true);
+  const corregida = hoy().devoluciones.find((x) => x.id === id)!;
+  assert.equal(corregida.procesadorId, "proc_stripe");
+  assert.equal(corregida.montoArs, undefined);
+  assert.equal(corregida.tipoCambio, undefined);
+  assert.equal(saldosEsperados(hoy(), previoFin, ar("2026-09-30", "23:00:00")).get("proc_financiera_ars")!.salio, 0);
+});
+
+test("pesos · el formulario pide los pesos sólo por una cuenta en pesos y los guarda al cargar y al corregir", () => {
+  const fuente = readFileSync(new URL("../src/components/devoluciones/CargarDevolucion.tsx", import.meta.url), "utf8");
+  assert.match(fuente, /esCuentaEnPesos\(cuentaElegida\)/, "decide por la moneda de la cuenta, como el formulario de cobros");
+  assert.match(fuente, /\{enPesos && \(/, "el campo de pesos sale sólo en una cuenta en pesos");
+  assert.match(fuente, /sinPesos: enPesos && !pesos\.montoArs/, "no deja guardar sin los pesos");
+  assert.match(fuente, /montoArs: pesos\.montoArs, tipoCambio: pesos\.tipoCambio/, "los pesos y el cambio van en lo que se guarda");
+  assert.match(fuente, /acciones\.editarDevolucion\(previa\.id, comun\)[\s\S]*acciones\.registrarDevolucion\(\{[^}]*\.\.\.comun/, "tanto al corregir como al cargar");
+  assert.match(fuente, /la caja de \$\{cuenta\}/, "sigue diciendo de qué caja resta");
 });
