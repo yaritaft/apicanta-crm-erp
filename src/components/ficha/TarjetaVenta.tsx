@@ -11,6 +11,9 @@ import type { Cuota, EstadoApp, EstadoVenta, Venta } from "@/lib/types";
 import { planDePago, tipoDePago } from "@/lib/angelo";
 import { CabezaPlegable } from "./Plegable";
 import { ChequeoDeCobro } from "@/components/cobros/ControlCobro";
+import { DevolucionesDeVenta } from "@/components/devoluciones/DevolucionesDeVenta";
+import { useAcceso } from "@/lib/acceso";
+import { puedeDarDeBaja } from "@/lib/permisos";
 
 /* ==================================================================
    Una venta dentro de la ficha: qué compró, cuánto lleva pagado y cada
@@ -37,6 +40,9 @@ export function TarjetaVenta({ e, venta, resaltada, abierta, onAlternar, onPagar
   onEstado: (estado: EstadoVenta) => void;
 }) {
   const toast = useToast();
+  /* El closer no cancela ni marca reembolsada su venta (D6): una devolución se carga con su comprobante. */
+  const { acceso } = useAcceso();
+  const puedeBaja = puedeDarDeBaja(acceso);
   const M = (n: number, d = 0) => money(n, venta.moneda, d);
   const saldo = saldoVenta(e, venta.id);
   const producto = e.productos.find((x) => x.id === venta.productoId)?.nombre ?? "Venta";
@@ -184,8 +190,10 @@ export function TarjetaVenta({ e, venta, resaltada, abierta, onAlternar, onPagar
 
           {venta.notas && <p className="t-sm t-muted" style={{ whiteSpace: "pre-wrap" }}>{venta.notas}</p>}
 
+          <DevolucionesDeVenta e={e} venta={venta} />
+
           <div className="row" style={{ justifyContent: "flex-end", gap: 8 }}>
-            {activa ? (
+            {!puedeBaja ? null : activa ? (
               <>
                 <Button sm variante="ghost" onClick={() => onEstado("reembolsada")}>Marcar reembolsada</Button>
                 <Button sm variante="ghost" onClick={() => onEstado("cancelada")}>Cancelar venta</Button>

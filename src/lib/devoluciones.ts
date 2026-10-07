@@ -1,8 +1,9 @@
-import type { Devolucion, EstadoApp, ID, Liquidacion, Pago, Venta } from "./types";
+import type { Devolucion, EstadoApp, ID, Liquidacion, Pago, Sesion, Venta } from "./types";
 import type { RangoMes } from "./metricas";
 import { closerDeCuota, cobraDirector, cobraEnFecha, tasaDeComision } from "./comision";
 import { moverPeriodo, periodoDeFecha } from "./periodos";
 import { descuentaPorCierre, ventasSinCierre } from "./cierre-del-dia";
+import { opcionesDe } from "./crm";
 
 /* ==================================================================
    Devoluciones: la plata que se le devuelve a un cliente.
@@ -306,7 +307,7 @@ export function problemaDeDevolucion(
    llamada que quedó en «Devolución» o desde una persona: ahí hay que elegir
    entre sus ventas. */
 
-export interface PedidoDeVentas { ventaId?: ID; personaId?: ID; sesionId?: ID }
+export interface PedidoDeVentas { ventaId?: ID; personaId?: ID; sesionId?: ID; email?: string; nombre?: string }
 
 const sinTildes = (s: string | undefined) =>
   (s ?? "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/\s+/g, " ").trim();
@@ -327,6 +328,8 @@ export function ventasDelPedido(
   const nombres = new Set<string>();
   if (sesion?.email) emails.add(sinTildes(sesion.email));
   if (sesion?.invitado) nombres.add(sinTildes(sesion.invitado));
+  if (p.email) emails.add(sinTildes(p.email));
+  if (p.nombre) nombres.add(sinTildes(p.nombre));
   for (const id of [...ids]) {
     const c = (e.contactos ?? []).find((x) => x.id === id) ?? (e.leads ?? []).find((x) => x.id === id);
     if (!c) continue;
@@ -352,4 +355,34 @@ export function procesadorDeLaVenta(e: Pick<EstadoApp, "pagos" | "cuotas" | "pro
     .filter((p) => cuotas.has(p.cuotaId) && p.procesadorId && e.procesadores.some((x) => x.id === p.procesadorId))
     .sort((a, b) => Date.parse(b.fecha) - Date.parse(a.fecha))[0];
   return ultimo?.procesadorId;
+}
+
+/* ---------- Llamadas en «Devolución» sin devolución cargada ----------
+   Una llamada que el closer dejó en «Devolución» avisa que hay plata que sale,
+   pero Finanzas no lo ve hasta que alguien carga la devolución. Esta lista es lo
+   que queda por cargar: la llamada con las ventas de esa persona. */
+
+export interface LlamadaEnDevolucion {
+  sesion: Sesion;
+  ventas: Venta[];
+}
+
+export function llamadasEnDevolucionSinCargar(
+  e: Pick<EstadoApp, "sesiones" | "ventas" | "leads" | "contactos" | "ajustes" | "pagos" | "cuotas"> & ConDevoluciones,
+): LlamadaEnDevolucion[] {
+  const nombres = new Set(opcionesDe(e.ajustes, "estadoLlamada").filter((o) => o.oportunidad === "devolucion").map((o) => o.nombre));
+  if (nombres.size === 0) return [];
+  const conDevolucion = new Set(
+    (e.devoluciones ?? []).filter((d) => d.estado !== "ignorada" && d.ventaId).map((d) => d.ventaId as ID),
+  );
+  const out: LlamadaEnDevolucion[] = [];
+  for (const s of e.sesiones) {
+    if (!s.estadoLlamada || !nombres.has(s.estadoLlamada)) continue;
+    const ventas = ventasDelPedido(e, { sesionId: s.id });
+    /* Con una venta de esa persona que ya tiene su devolución, está cargada; sin
+       ventas con cobros, no hay plata que devolver (todavía no se cargó la venta). */
+    if (ventas.some((v) => conDevolucion.has(v.id))) continue;
+    out.push({ sesion: s, ventas });
+  }
+  return out.sort((a, b) => Date.parse(b.sesion.inicia) - Date.parse(a.sesion.inicia));
 }

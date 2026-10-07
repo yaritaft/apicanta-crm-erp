@@ -17,6 +17,9 @@ import { ListaGastos, PARAMS_GASTOS } from "@/components/finanzas/ListaGastos";
 import { FichaGasto } from "@/components/finanzas/FichaGasto";
 import { AsistenteGasto } from "@/components/finanzas/AsistenteGasto";
 import { GastosFijos } from "@/components/finanzas/GastosFijos";
+import { ListaDevoluciones } from "@/components/finanzas/ListaDevoluciones";
+import { llamadasEnDevolucionSinCargar } from "@/lib/devoluciones";
+import { propuestasPendientes } from "@/lib/reembolsos";
 import { cuantosFaltan } from "@/lib/gastos-recurrentes";
 import { acciones, useEstado } from "@/lib/store";
 import { fechaLarga, money, num, tasaTexto } from "@/lib/format";
@@ -36,8 +39,8 @@ import { useNivelAcceso } from "@/lib/acceso";
 import { reglaDeCierre } from "@/lib/cierre-del-dia";
 import type { Cuota, Gasto } from "@/lib/types";
 
-type Vista = "cobros" | "procesadores" | "gastos" | "fijos" | "comisiones";
-const VISTAS: Vista[] = ["cobros", "procesadores", "gastos", "fijos", "comisiones"];
+type Vista = "cobros" | "procesadores" | "gastos" | "fijos" | "comisiones" | "devoluciones";
+const VISTAS: Vista[] = ["cobros", "procesadores", "gastos", "fijos", "comisiones", "devoluciones"];
 
 /* Lo que se está mirando vive en la URL (lib/useParamsURL), con el período
    aparte en ?periodo:
@@ -71,6 +74,11 @@ export default function FinanzasDetalle() {
   /* Los gastos fijos que ya le tocaba pagar y nadie aprobó (lib/gastos-recurrentes). */
   const fijosPorAprobar = useMemo(() => cuantosFaltan(e, new Date().toISOString()), [e.gastos, e.gastosRecurrentes]); // eslint-disable-line react-hooks/exhaustive-deps
   const [borrar, setBorrar] = useState<Gasto | null>(null);
+  /* Devoluciones que esperan a alguien: llamadas en «Devolución» sin cargar y reembolsos de pasarelas sin confirmar. */
+  const porDecidir = useMemo(
+    () => llamadasEnDevolucionSinCargar(e).length + propuestasPendientes(e).length,
+    [e.sesiones, e.devoluciones, e.ventas, e.ajustes], // eslint-disable-line react-hooks/exhaustive-deps
+  );
 
   /* El rango vive en la URL: navegar entre el resumen y el detalle lo
      conserva, y se puede mandar un link a un periodo concreto. Arranca en
@@ -169,6 +177,7 @@ export default function FinanzasDetalle() {
         { valor: "gastos", texto: "Gastos" },
         { valor: "fijos", texto: `Gastos fijos${fijosPorAprobar ? ` · ${fijosPorAprobar}` : ""}` },
         { valor: "comisiones", texto: "Comisiones" },
+        { valor: "devoluciones", texto: `Devoluciones${porDecidir ? ` · ${porDecidir}` : ""}` },
       ]} />
 
       {/* ---------------- Cobros: las cuotas vencidas ---------------- */}
@@ -293,6 +302,9 @@ export default function FinanzasDetalle() {
 
       {/* ---------------- Gastos fijos: la propuesta de cada mes, para aprobar ---------------- */}
       {vista === "fijos" && <GastosFijos e={e} />}
+
+      {/* ---------------- Devoluciones ---------------- */}
+      {vista === "devoluciones" && <ListaDevoluciones e={e} mes={mes} />}
 
       {/* ---------------- Comisiones ---------------- */}
       {vista === "comisiones" && (

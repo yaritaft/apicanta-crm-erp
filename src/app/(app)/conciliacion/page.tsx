@@ -25,6 +25,8 @@ import { useBusquedaURL, useParamsURL } from "@/lib/useParamsURL";
 import { useAbrirFicha } from "@/components/ficha/abrir";
 import { ComoFuncionaConciliacion } from "@/components/finanzas/ComoFuncionaConciliacion";
 import { importarCSV, PASARELAS, nombrePasarela } from "@/lib/pasarelas";
+import { ReembolsosPasarelas } from "@/components/devoluciones/ReembolsosPasarelas";
+import type { ReembolsoCrudo } from "@/lib/reembolsos";
 import type { EstadoMovimiento2, Movimiento, ProveedorPasarela } from "@/lib/types";
 
 /* ==================================================================
@@ -133,6 +135,9 @@ export default function Conciliacion() {
         conectadas?: ProveedorPasarela[];
         errores?: { proveedor: string; mensaje: string }[];
         mercury?: { enProceso: number; internos: number; anulados: string[] };
+        /* Lo que las pasarelas dicen que devolvieron: se ata a la devolución cargada o queda para confirmar. */
+        reembolsos?: ReembolsoCrudo[];
+        reembolsosGuardados?: boolean;
         error?: string;
       };
       if (!r.ok) throw new Error(data.error ?? "No se pudo sincronizar.");
@@ -152,7 +157,11 @@ export default function Conciliacion() {
          pending y lo interno (tarjeta, subcuentas) se deja afuera y se avisa. */
       const anulados = acciones.descartarAnuladosMercury(data.mercury?.anulados ?? []);
       const enProceso = data.mercury?.enProceso ?? 0;
+      const reem = data.reembolsos?.length && !data.reembolsosGuardados ? acciones.importarReembolsos(data.reembolsos) : null;
       const completos = [
+        reem && (reem.atadas.length || reem.nuevas.length)
+          ? ` Reembolsos: ${reem.atadas.length ? `${reem.atadas.length} atados a una devolución ya cargada` : ""}${reem.atadas.length && reem.nuevas.length ? " y " : ""}${reem.nuevas.length ? `${reem.nuevas.length} para confirmar` : ""} (Finanzas → Devoluciones).`
+          : "",
         completados > 0 ? ` Se completaron ${completados === 1 ? "los datos de un cobro" : `los datos de ${completados} cobros`} que ya estaban.` : "",
         anulados > 0 ? ` ${anulados === 1 ? "Un cobro de Mercury que el banco anuló se descartó" : `${anulados} cobros de Mercury que el banco anuló se descartaron`}.` : "",
         enProceso > 0 ? ` ${enProceso === 1 ? "Un movimiento de Mercury sigue" : `${enProceso} movimientos de Mercury siguen`} pending: entra${enProceso === 1 ? "" : "n"} cuando se asiente${enProceso === 1 ? "" : "n"}.` : "",
@@ -183,6 +192,9 @@ export default function Conciliacion() {
       />
 
       <ComoFuncionaConciliacion />
+
+      {/* Lo que las pasarelas dicen que devolvieron: se ata a la devolución cargada o se confirma. */}
+      <ReembolsosPasarelas e={e} />
 
       <div className="grid-3">
         <StatCard
@@ -605,13 +617,17 @@ function ModalImportar({ onCerrar }: { onCerrar: () => void }) {
       titulo="Importar cobros"
       sub="Pegá el CSV que exporta la pasarela. Los cobros repetidos se descartan solos por su referencia."
       guardarTexto={previo ? `Importar ${previo.movimientos.length}` : "Importar"}
-      puedeGuardar={Boolean(previo && previo.movimientos.length > 0)}
+      puedeGuardar={Boolean(previo && (previo.movimientos.length > 0 || previo.reembolsos.length > 0))}
       onGuardar={() => {
         if (!previo) return;
         const { nuevos, repetidos } = acciones.importarMovimientos(previo.movimientos, "csv");
+        const reem = previo.reembolsos.length ? acciones.importarReembolsos(previo.reembolsos) : null;
+        const conReembolsos = reem && (reem.atadas.length || reem.nuevas.length)
+          ? ` Reembolsos del archivo: ${reem.atadas.length ? `${reem.atadas.length} atados a una devolución ya cargada` : ""}${reem.atadas.length && reem.nuevas.length ? " y " : ""}${reem.nuevas.length ? `${reem.nuevas.length} para confirmar` : ""}.`
+          : "";
         toast(nuevos === 0
-          ? `Ya estaban los ${repetidos} cobros del archivo.`
-          : `Entraron ${nuevos} cobros${repetidos > 0 ? ` (${repetidos} ya estaban)` : ""}.`);
+          ? `${previo.movimientos.length ? `Ya estaban los ${repetidos} cobros del archivo.` : "El archivo no traía cobros nuevos."}${conReembolsos}`
+          : `Entraron ${nuevos} cobros${repetidos > 0 ? ` (${repetidos} ya estaban)` : ""}.${conReembolsos}`);
         onCerrar();
       }}
     >
@@ -646,11 +662,18 @@ function ModalImportar({ onCerrar }: { onCerrar: () => void }) {
           {previo.movimientos.length > 5 && (
             <span className="t-sm t-subtle">y {previo.movimientos.length - 5} más.</span>
           )}
-          {previo.descartadas.length > 0 && (
+          {previo.reembolsos.length > 0 && (
+            <span className="t-sm">
+              {previo.reembolsos.length === 1 ? "Hay 1 reembolso" : `Hay ${previo.reembolsos.length} reembolsos`} por{" "}
+              <b className="t-num">{money(previo.reembolsos.reduce((a, r) => a + r.monto, 0), mon, 2)}</b>:
+              no entran como cobro; se atan a la devolución que ya cargó Finanzas o quedan para confirmar en Finanzas → Devoluciones.
+            </span>
+          )}
+          {previo.descartadas.filter((d) => !d.reembolso).length > 0 && (
             <span className="t-sm" style={{ color: "var(--warning)" }}>
-              {previo.descartadas.length === 1
-                ? `Se saltea 1 fila: ${previo.descartadas[0].motivo}`
-                : `Se saltean ${previo.descartadas.length} filas. La primera: ${previo.descartadas[0].motivo}`}
+              {previo.descartadas.filter((d) => !d.reembolso).length === 1
+                ? `Se saltea 1 fila: ${previo.descartadas.filter((d) => !d.reembolso)[0].motivo}`
+                : `Se saltean ${previo.descartadas.filter((d) => !d.reembolso).length} filas. La primera: ${previo.descartadas.filter((d) => !d.reembolso)[0].motivo}`}
             </span>
           )}
         </div>

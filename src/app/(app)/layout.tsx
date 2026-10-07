@@ -3,6 +3,7 @@ import { Shell } from "@/components/shell/Shell";
 import { SoloCliente } from "@/components/shell/SoloCliente";
 import { Puerta } from "@/components/shell/Puerta";
 import { FichaGlobal } from "@/components/ficha/FichaGlobal";
+import { DevolucionGlobal } from "@/components/devoluciones/DevolucionGlobal";
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -12,6 +13,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           <Suspense fallback={<Cargando />}>{children}</Suspense>
           {/* La ficha de una persona se abre por URL desde cualquier pantalla. */}
           <Suspense fallback={null}><FichaGlobal /></Suspense>
+          {/* «Cargar una devolución»: se abre desde la ficha, una llamada en «Devolución» o Finanzas. */}
+          <DevolucionGlobal />
         </Shell>
       </Puerta>
     </SoloCliente>

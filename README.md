@@ -1082,3 +1082,59 @@ el Google Sheet (una hoja por webinar) y dentro de `contactos.extra`, y pasan a 
 - **Filas de totales**: Ventas (valor total y cobrado), Clientes, Finanzas → Cobros y → Procesadores. La del CRM no está.
 - **Pruebas**: `pruebas/control-cobros.test.ts`, `store-control.test.ts`, `excel-cobros.test.ts`, `ingresos-semanales.test.ts` y
   `filtros-cobranza.test.ts`.
+
+## Devoluciones de punta a punta y mes cerrado (lote B de la reunión del 02/10: F1-01 y F1-16)
+
+«Si me meto al CRM y pongo devolución, ¿se refleja en finanzas?» Hoy sí. SQL a correr **antes o después** de publicar
+(la app anda igual sin ellos y lo avisa): `supabase/devoluciones.sql` (tabla `devoluciones` + sus políticas + un freno
+en `ventas`; **toca permisos: hacerle un ensayo de RLS con ROLLBACK antes de correrlo**, hace falta haber corrido
+`tipos-cuenta.sql`) y `supabase/gastos-devengo.sql` (una columna, `gastos.fechaPago`). Las dos son idempotentes.
+
+**Qué hace una devolución** (`src/lib/devoluciones.ts`, la misma cuenta para todos los lugares). Es una transacción
+aparte: la venta sigue contando en su mes y lo cobrado en el mes en que entró; la devolución **resta en el mes en que se
+devuelve la plata** (Cash Collected, estado de resultados, Dashboard, webinars, embudos y la caja de la cuenta de la que
+salió). La comisión de la pasarela no vuelve (Stripe se la queda). Al closer y al director se les **revierte exactamente lo
+que se les comisionó** por lo cobrado de esa venta (no el % sobre lo devuelto, que daría un poco más), en la parte que se
+devolvió, como una línea negativa del mes de la devolución. Con «no descontar al closer» (D7: uno solo por devolución,
+por defecto se descuenta) no se revierte nada. Si el cierre del día le dejó sin comisión esa venta, tampoco se le revierte
+lo que no se le pagó. El setter no se revierte.
+
+**Quién y cómo** (D6): la cargan Finanzas (asistente) o el director comercial, con **comprobante obligatorio** (salvo que
+la pasarela la informe); el closer sólo ve las de sus ventas y no ve «Marcar reembolsada» ni «Cancelar venta» (también
+lo frena la base). Se carga desde la **ficha de la venta** («Cargar una devolución») o cuando una llamada pasa a
+**«Devolución»** en el CRM, el cierre del día, la Agenda o la ficha (se abre el formulario con esa persona; al cargarla,
+la llamada queda en «Devolución» si no lo estaba): una cosa dispara la otra y no depende del cierre del día. El formulario
+(`components/devoluciones/CargarDevolucion.tsx`) no deja devolver más de lo cobrado sin devolver y muestra antes de guardar
+lo que resta en Finanzas y lo que se les revierte a cada uno, con su «cómo se calcula». **Finanzas → detalle →
+Devoluciones** (`?seccion=devoluciones`) lista las del período, la comisión revertida, las **llamadas en «Devolución» sin
+cargar** (Finanzas no las ve hasta que alguien las carga) y los reembolsos de las pasarelas por confirmar.
+
+**Liquidación** (`src/lib/honorarios.ts`, `desglose.ts`, `components/equipo/Liquidacion.tsx`): la línea roja «Devolución de …»
+y, si el mes queda en negativo, la **deuda que pasa al mes siguiente** («Deuda de …», se descuenta ahí) son renglones del
+motor con su «Ver cómo se calculó»; la cuenta cierra al centavo con Finanzas (`pruebas/devoluciones-liquidacion.test.ts`,
+`liquidacion-desglose*.test.ts`). **Mes cerrado** (D5): se avisa y no se bloquea; una liquidación cerrada **nunca se
+reescribe**: una devolución con fecha de un mes cerrado resta en Finanzas ese mes, pero lo que se le descuenta a la persona
+entra en la primera liquidación abierta.
+
+**Reembolsos de las pasarelas** (`src/lib/reembolsos.ts`): Stripe (`/v1/refunds`), Hotmart (REFUNDED y CHARGEBACK) y Whop
+informan la plata devuelta. Antes se descartaba ("sin monto positivo"); ahora, o se **ata a la devolución cargada** (una sola
+que calza: misma venta o persona, mismo monto, en esos días, por una cuenta de esa pasarela) o entra como **propuesta**
+que **no cuenta** hasta confirmarla, atarla o decir «no es una devolución». Con dudas no ata nada. Entra por «Sincronizar»,
+por el CSV (los renglones devueltos o en negativo) y por el webhook (`refund.created`, `charge.refunded`, `PURCHASE_REFUNDED`:
+**un aviso de reembolso nunca entra como cobro**); el cron los guarda con las mismas reglas. La tarjeta está en
+Conciliación y en Finanzas → Devoluciones. *Sin confirmar con una clave real:* la forma de Hotmart (no dice cuándo se
+devolvió: se usa la fecha de la compra y se marca) y la de Whop (`status=refunded`, `refunded_amount`, `refunded_at`).
+
+**Gasto con dos fechas** (F1-16, `src/lib/gastos.ts`, `carga-gasto.ts`, `components/finanzas/CampoFechasGasto.tsx`).
+Un gasto de septiembre que se paga el 2 de octubre resta en el estado de resultados de **septiembre** y sale de la caja de
+**octubre**. `fecha` es el mes al que corresponde (estado de resultados, como siempre); `fechaPago`, el día que se pagó (caja,
+arqueo y lo que tendría que haber en cada cuenta). Sin `fechaPago` es la misma fecha: **los gastos ya cargados no cambian
+ninguna cuenta**. En el asistente hay una sola fecha; «Es de otro mes o se pagó otro día» abre «Mes al que corresponde» y
+«Día que se pagó». Sin `gastos-devengo.sql` el gasto se guarda con una sola fecha. El **aviso de mes cerrado**
+(`lib/mes-cerrado.ts`, `components/ui/AvisoMesCerrado.tsx`) sale al cargar o corregir un gasto, una devolución o la fecha de un
+cobro en un mes con la liquidación cerrada; en el gasto ofrece pasarlo al mes abierto sin mover la plata.
+
+*Pruebas:* `devoluciones*.test.ts` (incluida la de punta a punta de Yari: venta del 28/09, septiembre cerrado, devolución del
+03/10), `devoluciones-cierre-dia.test.ts`, `reembolsos.test.ts`, `gasto-devengo.test.ts`. *Falta:* ensayar `devoluciones.sql`
+con RLS real, la forma de los reembolsos de Hotmart y Whop con claves, y un mensaje al director cuando una llamada queda en
+«Devolución» y nadie la carga.
