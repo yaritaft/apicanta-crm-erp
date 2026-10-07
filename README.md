@@ -597,3 +597,22 @@ correr `supabase/honorarios.sql` (tablas, políticas, niveles de acceso y la col
 - **El CRM usa todo el ancho** de la pantalla.
 - **Pruebas** (`npm test`): `pruebas/*.test.ts`, con el corredor de node (`pruebas/registrar.mjs` pasa los `.ts` por
   TypeScript y resuelve `@/`). Van en el repo, no en una carpeta temporal.
+
+## Lo que pidió Angelo el 06/10
+
+- **«Cómo se calcula» en cada métrica** (`components/ui/InfoMetrica.tsx`): un ícono (i) junto al nombre. Al pasar el
+  mouse dice qué es en una frase; con un clic abre la cuenta escrita, **los números del período que se está mirando**
+  y un ejemplo. En el Dashboard sale de `lib/kpis-formulas.ts`: cada fila tiene su fórmula y las piezas de la cuenta
+  son **otras filas de la misma tabla** (por id), evaluadas con el mismo `Contexto` que la celda, así que lo del modal
+  no puede dar distinto que el número. El resultado de la última línea es el valor de la columna Total. Si agregás una
+  métrica a `catalogo()` sin su explicación, `npm test` falla (`pruebas/kpis-formulas.test.ts`). Fuera del Dashboard
+  se usa con la prop `info` de `StatCard` y de las columnas de `DataTable`, y en el estado de resultados
+  (`ayudaDeRenglon` en `lib/estadoResultados.ts`).
+- **Los nombres de Angelo**: «Cash Collected (CC)», «Revenue (facturado)», «ROAS on CC», «ROAS on Revenue»,
+  «Profit on Cash Collected (CC)» y «Profit on Revenue» (y «… on CC / on Revenue» en las filas del webinar y del embudo).
+- **Cargar el pago de una cuota con filtros** (`lib/buscar-cliente.ts`): chips de closer y de servicio arriba de la
+  lista, con cuánta gente deja cada uno; el closer y el servicio se piden sobre la misma cuota («Downsell de Dante»).
+  Cada persona dice qué compró y quién lo cerró.
+- **Conciliación explicada** (`components/finanzas/ComoFuncionaConciliacion.tsx`): la plata pasa de pendiente a
+  conciliada en tres pasos, con un glosario de cada etiqueta, tres tarjetas con lo que hay en cada estado y
+  explicaciones al pasar el mouse. «Calce seguro» pasó a «Coincide exacto».
