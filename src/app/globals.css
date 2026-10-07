@@ -1678,6 +1678,24 @@ button.cuadro-com__persona:hover { color: var(--brand); text-decoration: underli
 .gasto-chips > .t-sm { margin-left: var(--space-1); }
 /* Lo opcional va aparte, con una línea arriba, para que no parezca que falta. */
 .gasto-opcional { margin-top: var(--space-2); padding-top: var(--space-3); border-top: 1px solid var(--border); }
+/* Las dos fechas de un gasto: el mes al que corresponde (estado de resultados) y
+   el día que se pagó (caja). Una sola fecha casi siempre; se abren si hace falta. */
+.gasto-fechas { display: flex; flex-direction: column; gap: var(--space-3); min-width: 0; }
+.gasto-fechas__otra { align-self: flex-start; display: inline-flex; align-items: center; gap: 6px; padding: 0; background: none; border: 0; cursor: pointer; text-align: left; }
+.gasto-fechas__dos { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3); }
+.gasto-fechas__resumen { grid-column: 1 / -1; margin: 0; }
+.gasto-fechas__resumen .link { background: none; border: 0; padding: 0; cursor: pointer; }
+@media (max-width: 560px) { .gasto-fechas__dos { grid-template-columns: minmax(0, 1fr); } }
+
+/* «La liquidación de septiembre ya está cerrada»: se avisa, no se bloquea (D5). */
+.mes-cerrado {
+  display: flex; align-items: flex-start; gap: var(--space-3); padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--warning); border-radius: var(--radius-md); background: var(--warning-soft);
+  color: var(--ink); font-size: 13px; line-height: 20px; overflow-wrap: anywhere;
+}
+.mes-cerrado > svg { flex: none; margin-top: 2px; color: var(--warning); }
+.mes-cerrado__texto { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-2); min-width: 0; }
+.mes-cerrado__titulo { font-weight: 600; color: var(--ink); }
 
 /* A quién se le pagó: un campo con lista (el equipo, los proveedores que ya se
    usaron) y la opción de escribir uno nuevo (components/finanzas/CampoProveedor.tsx).

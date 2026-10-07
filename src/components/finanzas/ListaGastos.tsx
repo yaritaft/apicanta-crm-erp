@@ -7,7 +7,7 @@ import { type Columna, DataTable } from "@/components/ui/DataTable";
 import { ConfigColumnas, type DefColumna, useColumnas } from "@/components/ui/ColumnasConfig";
 import { fechaHora, fechaLarga, money, num } from "@/lib/format";
 import { gastosDelMes } from "@/lib/finanzas";
-import { GRUPOS_GASTO, infoGrupo, montoOriginal, normalizar } from "@/lib/gastos";
+import { GRUPOS_GASTO, fechaDePago, infoGrupo, montoOriginal, normalizar, pagadoEnOtroMes } from "@/lib/gastos";
 import type { RangoMes } from "@/lib/metricas";
 import type { EstadoApp, Gasto, GrupoGasto } from "@/lib/types";
 import { ordenAURL, ordenDeURL, paginaDeURL, useBusquedaURL, useParamsURL } from "@/lib/useParamsURL";
@@ -25,7 +25,8 @@ const COLUMNAS: DefColumna[] = [
   { clave: "categoria", titulo: "Categoría", grupo: "Clasificación" },
   { clave: "grupo", titulo: "Bloque", grupo: "Clasificación", ayuda: "En qué parte del estado de resultados cae." },
   { clave: "tipo", titulo: "Fijo o variable", grupo: "Clasificación" },
-  { clave: "fecha", titulo: "Fecha", grupo: "Cuándo" },
+  { clave: "fecha", titulo: "Fecha", grupo: "Cuándo", ayuda: "El mes al que corresponde el gasto: ahí resta del estado de resultados." },
+  { clave: "pago", titulo: "Se pagó", grupo: "Cuándo", ayuda: "El día que se pagó: cuándo sale de la caja y del arqueo. Si no se cargó otro, es la fecha del gasto." },
   { clave: "cargado", titulo: "Cargado", grupo: "Cuándo", ayuda: "Cuándo se cargó en el sistema." },
   { clave: "monto", titulo: "Monto", grupo: "Plata" },
   { clave: "original", titulo: "Pagado en", grupo: "Plata", ayuda: "Si se pagó en otra moneda: cuánto y a qué tipo de cambio." },
@@ -113,7 +114,14 @@ export function ListaGastos({ e, mes, onNuevo, onVer, onEditar, onBorrar }: {
       celda: (g) => <Badge variante={VARIANTE_GRUPO[g.grupo] ?? "neutral"}>{infoGrupo(g.grupo).corto}</Badge>,
     },
     tipo: { clave: "tipo", titulo: "Fijo o variable", tipo: "secondary", orden: (g) => (g.recurrente ? 0 : 1), celda: (g) => (g.recurrente ? "Fijo" : "Variable") },
-    fecha: { clave: "fecha", titulo: "Fecha", tipo: "secondary", orden: (g) => g.fecha, celda: (g) => fechaLarga(g.fecha) },
+    fecha: {
+      clave: "fecha", titulo: "Fecha", tipo: "secondary", orden: (g) => g.fecha,
+      /* Un gasto de un mes que se pagó en otro lo dice acá mismo, sin abrir la ficha. */
+      celda: (g) => (pagadoEnOtroMes(g)
+        ? <span title={`Corresponde a este mes; se pagó el ${fechaLarga(fechaDePago(g))}`}>{fechaLarga(g.fecha)} <span className="t-subtle t-sm">· pagado el {fechaLarga(fechaDePago(g))}</span></span>
+        : fechaLarga(g.fecha)),
+    },
+    pago: { clave: "pago", titulo: "Se pagó", tipo: "secondary", orden: (g) => fechaDePago(g), celda: (g) => fechaLarga(fechaDePago(g)) },
     cargado: { clave: "cargado", titulo: "Cargado", tipo: "secondary", orden: (g) => g.creadoEn ?? "", celda: (g) => fechaHora(g.creadoEn) },
     monto: { clave: "monto", titulo: "Monto", tipo: "num", orden: (g) => g.monto, celda: (g) => M(g.monto) },
     original: {

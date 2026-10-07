@@ -6,18 +6,19 @@ import { Asistente, Opcion, Pregunta } from "@/components/ui/Asistente";
 import { Button, Chip, Input, Select, Textarea } from "@/components/ui/ui";
 import { InputMonto } from "@/components/ui/InputMonto";
 import { acciones, useEstado } from "@/lib/store";
-import { fechaLarga, isoDia, money } from "@/lib/format";
+import { fechaLarga, money } from "@/lib/format";
 import {
   GRUPOS_GASTO, aMonedaBase, categoriasDisponibles, gastosParecidos, infoGrupo, leerMonto, normalizar, sugerirCategoria,
 } from "@/lib/gastos";
 import {
-  borradorInicial, cambiosAlRepetir, datosDelGasto, esCategoriaDeEquipo, esProveedorValido, mediodia, modoDeCarga,
+  borradorInicial, cambiosAlRepetir, datosDelGasto, esCategoriaDeEquipo, esProveedorValido, modoDeCarga,
   mostrarGrilla, opcionesProveedor, pasosDeCarga, problemaDelPaso, problemasDelGasto, tipoCambioDeAjustes,
   type BorradorGasto, type ModoCarga, type OpcionProveedor, type PasoId,
 } from "@/lib/carga-gasto";
 import type { CategoriaGasto } from "@/lib/seed";
 import type { EstadoApp, Gasto, Moneda } from "@/lib/types";
 import { CampoProveedor } from "./CampoProveedor";
+import { CampoFechasGasto } from "./CampoFechasGasto";
 
 /* ==================================================================
    Cargar un gasto, una pregunta por pantalla.
@@ -41,9 +42,6 @@ import { CampoProveedor } from "./CampoProveedor";
    ================================================================== */
 
 const redondear = (n: number) => Math.round(n * 100) / 100;
-
-/* Lo que devuelve el calendario («2026-10-07») queda al mediodía, como el resto de las fechas. */
-const fechaDelCalendario = (dia: string) => new Date(`${dia}T12:00:00`).toISOString();
 
 export function AsistenteGasto({ gasto, onCerrar, onListo }: {
   /* Con un gasto, se edita; sin, se carga uno nuevo. */
@@ -423,29 +421,16 @@ function PasoMonto({ b, set, base, convertido, M }: {
 
 /* ---------- 5. Fecha y si se repite ---------- */
 
-function atajosDeFecha() {
-  const hoy = new Date();
-  return [
-    { texto: "Hoy", fecha: mediodia(hoy) },
-    { texto: "Ayer", fecha: mediodia(new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate() - 1)) },
-    { texto: "El 1 de este mes", fecha: mediodia(new Date(hoy.getFullYear(), hoy.getMonth(), 1)) },
-  ];
-}
-
 function PasoFecha({ b, set }: { b: BorradorGasto; set: Poner }) {
-  const atajos = atajosDeFecha();
   return (
     <>
-      <Pregunta texto="¿Cuándo lo pagaste?" sub="La fecha decide en qué período del estado de resultados cae." />
-      <Input
-        type="date" value={isoDia(b.fecha)} aria-label="Fecha del gasto"
-        onChange={(ev) => { if (ev.target.value) set({ fecha: fechaDelCalendario(ev.target.value) }); }}
+      <Pregunta
+        texto="¿Cuándo lo pagaste?"
+        sub={b.fechaPago
+          ? "Un mes decide dónde resta del estado de resultados; el día que se pagó, cuándo sale de la caja."
+          : "Decide en qué mes resta del estado de resultados y cuándo sale de la caja. Casi siempre es el mismo día."}
       />
-      <div className="row-wrap">
-        {atajos.map((a) => (
-          <Chip key={a.texto} activo={isoDia(b.fecha) === isoDia(a.fecha)} onClick={() => set({ fecha: a.fecha })}>{a.texto}</Chip>
-        ))}
-      </div>
+      <CampoFechasGasto b={b} set={set} id="paso" />
       <div className="stack-2">
         <span className="t-label">¿Se repite?</span>
         <div className="opciones">
@@ -475,7 +460,6 @@ function PasoRevisar({ b, set, e, M, base, convertido, modo, opciones }: {
   const embudos = useMemo(() => e.embudos.filter((x) => x.activo || x.id === b.embudoId).sort((a, c) => a.orden - c.orden), [e.embudos, b.embudoId]);
   const problemas = problemasDelGasto(b, base);
   const otra = b.moneda !== base;
-  const atajos = atajosDeFecha();
   const origen = modo === "repetir" ? e.gastos.find((x) => x.id === b.copiadoDe) : undefined;
 
   /* Al repetir un gasto lo que casi siempre falta es el proveedor (los de la
@@ -542,17 +526,8 @@ function PasoRevisar({ b, set, e, M, base, convertido, modo, opciones }: {
           </div>
         </div>
 
-        <div className="hk-field">
-          <label className="hk-label" htmlFor="gasto-fecha">Fecha</label>
-          <Input
-            id="gasto-fecha" type="date" value={isoDia(b.fecha)} aria-label="Fecha del gasto"
-            onChange={(ev) => { if (ev.target.value) set({ fecha: fechaDelCalendario(ev.target.value) }); }}
-          />
-          <div className="row-wrap">
-            {atajos.map((a) => (
-              <Chip key={a.texto} activo={isoDia(b.fecha) === isoDia(a.fecha)} onClick={() => set({ fecha: a.fecha })}>{a.texto}</Chip>
-            ))}
-          </div>
+        <div className={b.fechaPago ? "span-2" : undefined}>
+          <CampoFechasGasto b={b} set={set} problemas={problemas} id="gasto" />
         </div>
 
         {otra && (

@@ -6,7 +6,8 @@ import { Pencil, Trash2 } from "lucide-react";
 import { Badge, Button } from "@/components/ui/ui";
 import { Drawer, Dato } from "@/components/ui/Drawer";
 import { fechaHora, fechaLarga, money, num } from "@/lib/format";
-import { infoGrupo, montoOriginal } from "@/lib/gastos";
+import { fechaDePago, infoGrupo, montoOriginal, tieneOtraFechaDePago } from "@/lib/gastos";
+import { nombrePeriodo, periodoDeFecha } from "@/lib/periodos";
 import type { EstadoApp, Gasto } from "@/lib/types";
 import { VARIANTE_GRUPO } from "./ListaGastos";
 
@@ -21,13 +22,15 @@ export function FichaGasto({ gasto, e, onCerrar, onEditar, onBorrar }: {
 }) {
   const grupo = infoGrupo(gasto.grupo);
   const original = montoOriginal(gasto);
+  const dosFechas = tieneOtraFechaDePago(gasto);
+  const mesQueCorresponde = nombrePeriodo(periodoDeFecha(gasto.fecha) || periodoDeFecha(new Date().toISOString()));
   const webinar = gasto.webinarId ? e.webinars.find((w) => w.id === gasto.webinarId) : undefined;
 
   return (
     <Drawer
       abierto onCerrar={onCerrar}
       titulo={gasto.concepto || gasto.categoria}
-      sub={`${gasto.categoria} · ${fechaLarga(gasto.fecha)}`}
+      sub={`${gasto.categoria} · ${dosFechas ? `corresponde a ${mesQueCorresponde}` : fechaLarga(gasto.fecha)}`}
       pie={
         <>
           <Button variante="secondary" icono={<Pencil size={16} />} onClick={onEditar}>Editar</Button>
@@ -49,7 +52,14 @@ export function FichaGasto({ gasto, e, onCerrar, onEditar, onBorrar }: {
 
       <dl className="dl">
         <Dato label="Categoría">{gasto.categoria}</Dato>
-        <Dato label="Fecha">{fechaLarga(gasto.fecha)}</Dato>
+        {dosFechas ? (
+          <>
+            <Dato label="Corresponde a">{mesQueCorresponde} · resta del estado de resultados ahí</Dato>
+            <Dato label="Se pagó">{fechaLarga(fechaDePago(gasto))} · sale de la caja ese día</Dato>
+          </>
+        ) : (
+          <Dato label="Fecha">{fechaLarga(gasto.fecha)}</Dato>
+        )}
         <Dato label="Tipo">{gasto.recurrente ? "Fijo: se paga todos los meses" : "Variable"}</Dato>
         {original && (
           <Dato label="Pagado en">

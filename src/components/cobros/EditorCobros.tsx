@@ -4,6 +4,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Link2, Plus, Trash2, Unlink } from "lucide-react";
 import { Button, IconButton, Input, Select, Switch } from "@/components/ui/ui";
 import { InputMonto } from "@/components/ui/InputMonto";
+import { AvisoMesCerrado } from "@/components/ui/AvisoMesCerrado";
 import { montoDe } from "@/lib/monto";
 import { CampoComprobante } from "@/components/cobros/CampoComprobante";
 import { disponibleDe, SelectorMovimiento, type PagoDisponible } from "@/components/cobros/SelectorMovimiento";
@@ -252,6 +253,9 @@ export function EditorCobros({ e, cobros, onCambio, objetivo, cliente, usadoFuer
                 </IconButton>
               </div>
             )}
+
+            {/* Un cobro con fecha de un mes ya liquidado: se avisa, no se bloquea. */}
+            {ver("cuenta") && <AvisoMesCerrado fecha={p.fecha} que="cobro" />}
 
             {ver("prueba") && (
               <div className="cobro-prueba">

@@ -10,7 +10,7 @@ import { Confirmar, Modal, ModalForm } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toast";
 import { acciones, nuevoId, useEstado } from "@/lib/store";
 import { fechaLarga, money, num } from "@/lib/format";
-import { aMonedaBase, escribirMonto, leerMonto } from "@/lib/gastos";
+import { aMonedaBase, escribirMonto, fechaDePago, leerMonto } from "@/lib/gastos";
 import {
   MESES_DE_COLCHON, cajaEsperada, enOtros, runway, ultimoArqueo, type MovimientoCaja,
 } from "@/lib/caja";
@@ -58,11 +58,11 @@ export default function Caja() {
   const vida = useMemo(() => runway(e, caja ?? 0), [e, caja]);
   const arqueos = useMemo(() => [...(e.arqueos ?? [])].sort((a, b) => +new Date(b.fecha) - +new Date(a.fecha)), [e.arqueos]);
   const retiros = useMemo(
-    () => e.gastos.filter((g) => g.grupo === "retiro").sort((a, b) => +new Date(b.fecha) - +new Date(a.fecha)),
+    () => e.gastos.filter((g) => g.grupo === "retiro").sort((a, b) => +new Date(fechaDePago(b)) - +new Date(fechaDePago(a))),
     [e.gastos],
   );
   const anio = new Date().getFullYear();
-  const retirosDelAnio = retiros.filter((g) => new Date(g.fecha).getFullYear() === anio).reduce((a, g) => a + g.monto, 0);
+  const retirosDelAnio = retiros.filter((g) => new Date(fechaDePago(g)).getFullYear() === anio).reduce((a, g) => a + g.monto, 0);
 
   return (
     <div className="stack-5">
@@ -95,7 +95,7 @@ export default function Caja() {
               contexto={`Último arqueo: ${M(ultimo.total)} el ${fechaLarga(ultimo.fecha)}${mov && mov.enCamino > 0 ? ` · ${M(mov.enCamino)} están en camino entre cuentas` : ""}`}
               info={{
                 ayuda: "Cuánta plata tendría que haber hoy entre todas las cuentas, partiendo de lo que se contó en el último arqueo. Si al contar no da, falta cargar un gasto, una venta o un cobro.",
-                formula: "Caja del último arqueo + lo que estaba en camino entre cuentas + lo cobrado − las devoluciones − procesadores − comisiones − gastos − reparto (growth partner y socio) − retiros del dueño\nLo cobrado menos las devoluciones es el Cash Collected (CC) del período.",
+                formula: "Caja del último arqueo + lo que estaba en camino entre cuentas + lo cobrado − las devoluciones − procesadores − comisiones − gastos pagados − reparto (growth partner y socio) − retiros del dueño\nLo cobrado menos las devoluciones es el Cash Collected (CC) del período.\nUn gasto cuenta el día que se pagó, no el mes al que corresponde (ese es del estado de resultados).",
                 periodo: `desde el arqueo del ${fechaLarga(ultimo.fecha)}`,
                 componentes: mov ? () => [
                   { concepto: "Caja del último arqueo", valor: M(mov.inicial, 2) },
@@ -104,7 +104,7 @@ export default function Caja() {
                   ...(mov.devoluciones ? [{ concepto: "Devoluciones a clientes", valor: M(mov.devoluciones, 2), signo: "−" as const, nota: "la comisión de la pasarela no vuelve" }] : []),
                   { concepto: "Procesadores de pago", valor: M(mov.procesador, 2), signo: "−" },
                   { concepto: "Comisiones de closers y director", valor: M(mov.comisiones, 2), signo: "−" },
-                  { concepto: "Gastos (directos, operativos y honorarios)", valor: M(mov.gastos, 2), signo: "−" },
+                  { concepto: "Gastos pagados (directos, operativos y honorarios)", valor: M(mov.gastos, 2), signo: "−", nota: "cuentan el día que se pagaron" },
                   { concepto: "Reparto: growth partner y socio", valor: M(mov.reparto, 2), signo: "−" },
                   { concepto: "Retiros del dueño", valor: M(mov.retiros, 2), signo: "−" },
                   { concepto: "Caja esperada", valor: M(mov.esperado, 2), signo: "=" },
@@ -149,7 +149,7 @@ export default function Caja() {
               contexto={retiros.length ? `${retiros.length} en total` : "Todavía ninguno"}
               info={{
                 ayuda: "Plata que el dueño sacó de la caja este año. No es un gasto del negocio: no resta del profit, sí de la caja.",
-                formula: `Suma de los retiros del dueño con fecha de ${anio}`,
+                formula: `Suma de los retiros del dueño pagados en ${anio}`,
               }}
             />
           </div>
@@ -189,7 +189,7 @@ export default function Caja() {
           filas={retiros}
           orden={tablaRetiros.orden} onOrden={tablaRetiros.onOrden}
           columnas={[
-            { clave: "fecha", titulo: "Fecha", tipo: "primary", orden: (g) => g.fecha, celda: (g) => fechaLarga(g.fecha) },
+            { clave: "fecha", titulo: "Fecha", tipo: "primary", orden: (g) => fechaDePago(g), celda: (g) => fechaLarga(fechaDePago(g)) },
             { clave: "concepto", titulo: "Concepto", tipo: "secondary", orden: (g) => g.concepto, celda: (g) => g.concepto },
             { clave: "monto", titulo: "Monto", tipo: "num", orden: (g) => g.monto, celda: (g) => M(g.monto, 2) },
           ]}
@@ -199,7 +199,8 @@ export default function Caja() {
 
       <Ayuda titulo="Cómo se calcula" icono={<Info size={18} />}>
         La caja esperada parte del último arqueo y le suma lo cobrado, menos procesadores, comisiones de closers y
-        director, los gastos cargados, el growth partner y el socio, y los retiros. Las comisiones se pagan a mes
+        director, los gastos pagados (cada uno el día que se pagó, aunque corresponda a otro mes del estado de resultados),
+        el growth partner y el socio, y los retiros. Las comisiones se pagan a mes
         vencido: al principio de mes la diferencia puede ser eso. Los meses de vida son la caja sobre lo que cuesta un
         mes sin vender (gastos operativos y honorarios del CEO: sueldos, ads, software). Un movimiento entre cuentas
         no cambia el total: sólo lo que tendría que haber en cada cuenta, y lo que costó el pase, que va como gasto.
@@ -243,7 +244,7 @@ function Movimiento({ mov, M }: { mov: MovimientoCaja; M: (n: number, d?: number
     ...(mov.devoluciones ? [["− Devoluciones a clientes", -mov.devoluciones, "La plata devuelta; la comisión de la pasarela no vuelve"] as [string, number, string]] : []),
     ["− Procesadores", -mov.procesador],
     ["− Comisiones de closers y director", -mov.comisiones, "Se pagan a mes vencido"],
-    ["− Gastos cargados", -mov.gastos, "Directos, operativos y honorarios del CEO"],
+    ["− Gastos pagados", -mov.gastos, "Directos, operativos y honorarios del CEO, el día que se pagaron"],
     ["− Growth partner y socio", -mov.reparto],
     ["− Retiros del dueño", -mov.retiros],
   ];
