@@ -94,8 +94,9 @@ function Formulario({ pedido }: { pedido: PedidoDevolucion }) {
   const [marcarLlamada, setMarcarLlamada] = useState(!previa);
   const [motivo, setMotivo] = useState(base?.motivo ?? "");
   const [notas, setNotas] = useState(base?.notas ?? "");
-  /* Los pesos que escribió quien carga; null = todavía no los tocó (se calculan solos). */
-  const [pesosTxt, setPesosTxt] = useState<string | null>(() => (base?.montoArs !== undefined ? escribirMonto(base.montoArs) : null));
+  /* Los pesos que escribió quien carga; null = todavía no los tocó (se calculan solos). Los que ya tenía la
+     devolución se muestran tal cual; sin ellos (en la base vienen como null) se calculan. */
+  const [pesosTxt, setPesosTxt] = useState<string | null>(() => (typeof base?.montoArs === "number" ? escribirMonto(base.montoArs) : null));
 
   /* Al cambiar de venta (o cuando se sabe cuál es) se propone todo lo que queda
      por devolver y la cuenta con la que se pagó. Lo que ya escribió quien carga no se pisa. */

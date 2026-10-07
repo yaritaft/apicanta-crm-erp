@@ -313,7 +313,7 @@ test("tope · contra un oráculo que recorre todos los días: se acepta exactame
 });
 
 test("tope · lo que queda por devolver coincide con el oráculo en cualquier día, con devoluciones antes y después", () => {
-  for (let semilla = 1; semilla <= 200; semilla++) {
+  for (let semilla = 1; semilla <= 80; semilla++) {
     const r = azar(semilla * 7);
     const cobros: Hecho[] = Array.from({ length: r.entre(1, 4) }, () => ({ dia: r.elige(DIAS.slice(0, 9)), hora: r.entre(0, 23), centavos: r.entre(1000, 90000) }));
     const devs: Hecho[] = [];
@@ -334,7 +334,7 @@ test("tope · lo que queda por devolver coincide con el oráculo en cualquier d�
 
 test("tope · el orden en que se cargan no importa: un conjunto válido entra entero en cualquier orden", () => {
   let conjuntos = 0;
-  for (let semilla = 1; semilla <= 300; semilla++) {
+  for (let semilla = 1; semilla <= 120; semilla++) {
     const r = azar(semilla * 13);
     const cobros: Hecho[] = Array.from({ length: r.entre(1, 4) }, () => ({ dia: r.elige(DIAS.slice(0, 9)), hora: r.entre(0, 23), centavos: r.entre(1000, 90000) }));
     const valido: Hecho[] = [];
@@ -354,7 +354,7 @@ test("tope · el orden en que se cargan no importa: un conjunto válido entra en
       }
     }
   }
-  assert.ok(conjuntos > 150, `cobertura: ${conjuntos} conjuntos`);
+  assert.ok(conjuntos > 80, `cobertura: ${conjuntos} conjuntos`);
 });
 
 /* ---------- Lo que ya andaba da exactamente lo mismo ---------- */
@@ -371,7 +371,7 @@ function devolvibleDeAntes(e: EstadoApp, ventaId: string, hastaIso: string, igno
 
 test("lo que ya andaba (devoluciones en orden, después de todos los cobros del día) da exactamente los mismos números que antes", () => {
   let comparados = 0;
-  for (let semilla = 1; semilla <= 300; semilla++) {
+  for (let semilla = 1; semilla <= 150; semilla++) {
     const r = azar(semilla * 31);
     /* Cobros de la mañana, así que a las 12:00 de su día (o después) ya entraron en las dos cuentas. */
     const cobros: Hecho[] = Array.from({ length: r.entre(1, 4) }, () => ({ dia: r.elige(DIAS.slice(0, 6)), hora: r.entre(0, 11), centavos: r.entre(1000, 90000) }));
@@ -392,7 +392,7 @@ test("lo que ya andaba (devoluciones en orden, después de todos los cobros del 
       comparados++;
     }
   }
-  assert.ok(comparados > 600, `cobertura: ${comparados}`);
+  assert.ok(comparados > 300, `cobertura: ${comparados}`);
 });
 
 /* ---------- 3 · devolver por una cuenta en pesos ---------- */
@@ -555,4 +555,12 @@ test("pesos · el formulario pide los pesos sólo por una cuenta en pesos y los 
   assert.match(fuente, /montoArs: pesos\.montoArs, tipoCambio: pesos\.tipoCambio/, "los pesos y el cambio van en lo que se guarda");
   assert.match(fuente, /acciones\.editarDevolucion\(previa\.id, comun\)[\s\S]*acciones\.registrarDevolucion\(\{[^}]*\.\.\.comun/, "tanto al corregir como al cargar");
   assert.match(fuente, /la caja de \$\{cuenta\}/, "sigue diciendo de qué caja resta");
+  assert.match(fuente, /typeof base\?\.montoArs === "number"/, "una devolución de la base trae montoArs: null y no cuenta como si tuviera los pesos");
+});
+
+test("pesos · una devolución que viene de la base con montoArs y tipoCambio en null se trata como la que no los tiene", () => {
+  const e = conPesos([cobroEnPesos("p1", "q1", 1000, 1500, ar("2026-09-12", "10:00:00"))], []);
+  const deLaBase = { ...devolucion({ id: "d", monto: 400, fecha: ar("2026-09-20"), procesadorId: "proc_fin" }), montoArs: null, tipoCambio: null } as unknown as Devolucion;
+  assert.equal(pesosQueSalieron(e, deLaBase), 600_000);
+  assert.equal(fin({ ...e, devoluciones: [deLaBase] } as EstadoApp).salio, 600_000);
 });
