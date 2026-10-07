@@ -1,7 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-  anfitrionesPorMiembro, avisosDePase, closerDeLlamada, destinosDePase, planDePase, responsableTrasPase,
+  agruparPorCloser, anfitrionesPorMiembro, avisosDePase, closerDeLlamada, destinosDePase, planDePase, responsableTrasPase,
+  todaviaNoPaso,
 } from "@/lib/pasar-llamadas";
 import { anfitrionTrasCalendly, pasadaDe } from "@/lib/pasada-closer";
 import { esDelCloser } from "@/lib/eod";
@@ -108,6 +109,11 @@ test("una llamada de un anfitrión que no está en Equipo se le puede pasar a qu
   assert.equal(plan.cambios.anfitrion, "Valentin Abadia");
   assert.equal(plan.detalle, "Persona d1: pasó de V. Abadia a Valentin Abadia, por Santiago Burghiani.");
   assert.equal(pasadaDe({ extra: plan.cambios.extra })!.calendly, "V. Abadia");
+
+  /* Una llamada sin closer: se le asigna uno. */
+  const sinCloser = planDePase(llamada("z1", undefined), valentin, ctx)!;
+  assert.equal(sinCloser.detalle, "Persona z1: se la asignó a Valentin Abadia, por Santiago Burghiani (no tenía closer).");
+  assert.equal(sinCloser.de, "");
 });
 
 test("la oportunidad se va con la llamada sólo si era de quien la atendía", () => {
@@ -200,4 +206,22 @@ test("se avisa de las ventas ya cargadas, las llamadas ya hechas y las que ya es
   assert.deepEqual(avisos.conVenta, [{ id: "v1", persona: "Persona v1", closer: "Dante Barbieri" }]);
   assert.equal(avisos.hechas, 1);
   assert.equal(avisos.yaPasadas, 1);
+});
+
+test("las llamadas se agrupan por quien las atiende, con el nombre de Equipo, la que más tiene primero", () => {
+  const grupos = agruparPorCloser([...SESIONES, llamada("z1", undefined)], EQUIPO);
+  assert.deepEqual(grupos.map((g) => [g.nombre, g.llamadas.length]), [
+    ["Mariano", 4], ["Dante Barbieri", 2], ["V. Abadia", 2], ["Sin closer", 1], ["Yari Taft", 1],
+  ]);
+  /* «Mariano Arias» y «Mariano» son la misma persona: un solo grupo. */
+  assert.equal(grupos[0].miembro?.id, "mariano");
+  /* Un anfitrión que no es de nadie queda con su nombre escrito, sin miembro. */
+  assert.equal(grupos.find((g) => g.nombre === "V. Abadia")!.miembro, undefined);
+});
+
+test("las que todavía no pasaron: la que está empezando cuenta", () => {
+  const ahora = Date.parse("2026-10-09T15:30:00.000Z");
+  assert.equal(todaviaNoPaso({ inicia: "2026-10-09T15:00:00.000Z" }, ahora), true, "arrancó hace media hora");
+  assert.equal(todaviaNoPaso({ inicia: "2026-10-09T14:00:00.000Z" }, ahora), false, "terminó hace rato");
+  assert.equal(todaviaNoPaso({ inicia: "2026-10-10T15:00:00.000Z" }, ahora), true);
 });

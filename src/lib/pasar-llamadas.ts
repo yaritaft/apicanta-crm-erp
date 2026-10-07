@@ -82,6 +82,33 @@ export function closerDeLlamada(s: Pick<Sesion, "anfitrion">, equipo: MiembroEqu
   return { nombre: m?.nombre ?? a, miembro: m };
 }
 
+/* ---------- Elegir de quién y cuáles ---------- */
+
+export interface GrupoDeCloser<S> {
+  /** El id de la persona del equipo o, si el anfitrión no es de nadie, su nombre escrito. */
+  clave: string;
+  nombre: string;
+  miembro?: MiembroEquipo;
+  llamadas: S[];
+}
+
+/** Las llamadas agrupadas por quién las atiende, la que más tiene primero.
+ *  Lo que no tiene anfitrión queda en «Sin closer». */
+export function agruparPorCloser<S extends Pick<Sesion, "anfitrion">>(llamadas: S[], equipo: MiembroEquipo[]): GrupoDeCloser<S>[] {
+  const grupos = new Map<string, GrupoDeCloser<S>>();
+  for (const s of llamadas) {
+    const { nombre, miembro } = closerDeLlamada(s, equipo);
+    const clave = miembro?.id ?? (nombre ? `a:${sinTildes(nombre)}` : "sin-closer");
+    const g = grupos.get(clave);
+    if (g) g.llamadas.push(s);
+    else grupos.set(clave, { clave, nombre: nombre || "Sin closer", ...(miembro ? { miembro } : {}), llamadas: [s] });
+  }
+  return [...grupos.values()].sort((a, b) => b.llamadas.length - a.llamadas.length || a.nombre.localeCompare(b.nombre, "es"));
+}
+
+/** Las que todavía no pasaron (la que está empezando cuenta: una hora de margen). */
+export const todaviaNoPaso = (s: Pick<Sesion, "inicia">, ahora: number) => Date.parse(s.inicia) >= ahora - 3_600_000;
+
 /* ---------- Qué cambia en una llamada ---------- */
 
 export interface PlanDePase {
@@ -119,15 +146,18 @@ export function planDePase(
   const nueva: PasadaDeCloser = { a: destino.anfitrion, calendly, por: ctx.por, en: ctx.cuando };
   const extra = vuelveACalendly ? sinMarca : { ...sinMarca, pasada: nueva };
 
-  const de = quien?.nombre ?? (actual || "nadie");
+  const de = quien?.nombre ?? actual;
   const persona = s.invitado?.trim() || "la llamada";
+  const por = ctx.por ? `, por ${ctx.por}` : "";
   return {
     id: s.id,
     cambios: { anfitrion: vuelveACalendly ? calendly : destino.anfitrion, extra },
     antes: { anfitrion: s.anfitrion, extra: (s.extra ?? {}) as Record<string, unknown> },
     detalle: vuelveACalendly
       ? `${persona}: vuelve con ${destino.miembro.nombre}, que es quien figura en Calendly (la había pasado a ${previa?.a ?? de}).`
-      : `${persona}: pasó de ${de} a ${destino.miembro.nombre}${ctx.por ? `, por ${ctx.por}` : ""}.`,
+      : de
+        ? `${persona}: pasó de ${de} a ${destino.miembro.nombre}${por}.`
+        : `${persona}: se la asignó a ${destino.miembro.nombre}${por} (no tenía closer).`,
     de: actual,
     vuelveACalendly,
   };

@@ -325,6 +325,8 @@ export function valorEditable(f: FilaTabla, clave: ClaveColumna): string {
 /* Lo que hay que escribir para dejar una celda con un valor. */
 export type Escritura =
   | { tipo: "llamada"; id: string; cambios: CambiosLlamada; detalle: string }
+  /* El closer no es un dato más de la llamada: cambiarlo es pasarla a otro (lib/pasar-llamadas.ts). */
+  | { tipo: "closer"; id: string; closer: string; detalle: string }
   | { tipo: "persona"; id: string; cambios: { nombre?: string; email?: string; telefono?: string }; detalle: string }
   | { tipo: "perfil"; id: string; campo: CampoPerfil | "pais"; valor: string; detalle: string };
 
@@ -355,7 +357,7 @@ export function escrituraDe(
 
   const llamada = (cambios: CambiosLlamada): Escritura => ({ tipo: "llamada", id: s.id, cambios, detalle });
   switch (clave) {
-    case "closer": return limpio ? llamada({ anfitrion: limpio }) : null;
+    case "closer": return limpio ? { tipo: "closer", id: s.id, closer: limpio, detalle } : null;
     /* Una opción del Airtable, o vacío. El Estado de Llamada además deja
        la agenda como hecha, que no vino o cancelada (lo hace el store). */
     case "estadoLlamada": case "estadoPreCall": case "preCall":

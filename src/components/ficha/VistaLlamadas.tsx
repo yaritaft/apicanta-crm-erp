@@ -1,12 +1,16 @@
 "use client";
 
 import React, { useState } from "react";
-import { CalendarDays, ClipboardCheck, ExternalLink, Pencil } from "lucide-react";
+import { ArrowRightLeft, CalendarDays, ClipboardCheck, ExternalLink, Pencil } from "lucide-react";
 import { Button, Empty } from "@/components/ui/ui";
 import { Eod } from "@/components/crm-tabla/Eod";
 import { textoFecha } from "@/components/crm-tabla/FiltroColumna";
 import { EstadoEditable } from "@/components/estados/EstadoLlamada";
+import { PasarLlamadas } from "@/components/closers/PasarLlamadas";
+import { sePuedePasar, usePuedePasarLlamadas } from "@/components/closers/usePasarLlamadas";
 import type { FilaTabla } from "@/lib/crm-tabla";
+import { pasadaDe } from "@/lib/pasada-closer";
+import type { Sesion } from "@/lib/types";
 import type { Persona } from "@/lib/persona";
 import type { Grabacion } from "@/lib/fathom";
 import { GrabacionFathom, useGrabaciones } from "./GrabacionFathom";
@@ -19,7 +23,8 @@ import { PerfilPersona } from "./PerfilPersona";
    para cuándo se estima el cierre, la grabación y las notas. La que ya
    pasó y nadie cargó se carga desde acá (el mismo EOD, para esa sola). Si
    Fathom la grabó, abajo va lo suyo: el resumen, los accionables y la
-   transcripción (GrabacionFathom).
+   transcripción (GrabacionFathom). Quien dirige las ventas (no el closer)
+   puede pasarla a otro closer desde acá (components/closers/PasarLlamadas).
 
    Arriba, quién es (PerfilPersona): cada dato una sola vez en la ficha.
    De dónde vino está a la izquierda (FichaPersona, Lateral).
@@ -29,6 +34,8 @@ const HORA = new Intl.DateTimeFormat("es-AR", { timeZone: "America/Argentina/Bue
 
 export function VistaLlamadas({ p, filas }: { p: Persona; /* Sus llamadas, de la más nueva a la más vieja. */ filas: FilaTabla[] }) {
   const [cargar, setCargar] = useState<string | null>(null);
+  const [pasando, setPasando] = useState<Sesion | null>(null);
+  const puedePasar = usePuedePasarLlamadas();
   const { porSesion } = useGrabaciones(filas.map((f) => f.id));
 
   if (p.sesiones.length === 0) {
@@ -45,20 +52,31 @@ export function VistaLlamadas({ p, filas }: { p: Persona; /* Sus llamadas, de la
     <div className="stack-4 ficha-ll">
       <PerfilPersona p={p} filas={filas} />
       <span className="t-label">Llamadas ({filas.length})</span>
-      {filas.map((f) => <Llamada key={f.id} f={f} grabaciones={porSesion.get(f.id) ?? []} onCargar={() => setCargar(f.id)} />)}
+      {filas.map((f) => (
+        <Llamada key={f.id} f={f} grabaciones={porSesion.get(f.id) ?? []} onCargar={() => setCargar(f.id)}
+          onPasar={puedePasar && sePuedePasar(f.sesion) ? () => setPasando(f.sesion) : undefined} />
+      ))}
       {cargar && <Eod soloSesionId={cargar} onCerrar={() => setCargar(null)} />}
+      {pasando && <PasarLlamadas llamadas={[pasando]} onCerrar={() => setPasando(null)} />}
     </div>
   );
 }
 
-function Llamada({ f, grabaciones, onCargar }: { f: FilaTabla; grabaciones: Grabacion[]; onCargar: () => void }) {
+function Llamada({ f, grabaciones, onCargar, onPasar }: {
+  f: FilaTabla; grabaciones: Grabacion[]; onCargar: () => void;
+  /* Sólo para quien dirige las ventas: pasarla a otro closer. */
+  onPasar?: () => void;
+}) {
   /* Con algo cargado se puede completar o corregir lo del cierre del día. */
   const cargable = f.sinCargar || Boolean(f.sesion.estadoLlamada || f.sesion.estadoPreCall);
+  const pasada = pasadaDe(f.sesion);
   const detalles: [string, React.ReactNode][] = ([
     ["Objeción", f.objecion],
     ["¿Hizo la oferta?", f.oferta],
     ["Cierre estimado", f.cierre ? textoFecha(f.cierre) : ""],
     ["Venta", f.venta ? <span className="crm-t__venta">{f.venta}</span> : ""],
+    /* Se eligió a mano: Calendly no la vuelve a pisar. */
+    ["Pasada a mano", pasada ? [pasada.por || "Alguien", pasada.calendly ? `en Calendly figura ${pasada.calendly}` : ""].filter(Boolean).join(" · ") : ""],
     /* Con Fathom, el link va en su bloque de abajo. */
     ["Grabación", f.grabacion && grabaciones.length === 0 ? <a className="link" href={f.grabacion} target="_blank" rel="noopener noreferrer"><ExternalLink size={13} /> Verla</a> : ""],
   ] as [string, React.ReactNode][]).filter(([, v]) => v);
@@ -82,11 +100,14 @@ function Llamada({ f, grabaciones, onCargar }: { f: FilaTabla; grabaciones: Grab
       )}
       {f.notas && <p className="t-sm t-muted" style={{ whiteSpace: "pre-wrap", margin: 0 }}>{f.notas}</p>}
       {grabaciones.map((g) => <GrabacionFathom key={g.id} g={g} />)}
-      {cargable && (
-        <div>
-          <Button sm variante={f.sinCargar ? "primary" : "ghost"} icono={f.sinCargar ? <ClipboardCheck size={14} /> : <Pencil size={14} />} onClick={onCargar}>
-            {f.sinCargar ? "Cargar cómo terminó" : "Completar o corregir"}
-          </Button>
+      {(cargable || onPasar) && (
+        <div className="row-wrap">
+          {cargable && (
+            <Button sm variante={f.sinCargar ? "primary" : "ghost"} icono={f.sinCargar ? <ClipboardCheck size={14} /> : <Pencil size={14} />} onClick={onCargar}>
+              {f.sinCargar ? "Cargar cómo terminó" : "Completar o corregir"}
+            </Button>
+          )}
+          {onPasar && <Button sm variante="ghost" icono={<ArrowRightLeft size={14} />} onClick={onPasar}>Pasar a otro closer</Button>}
         </div>
       )}
     </article>

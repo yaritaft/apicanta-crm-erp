@@ -18,6 +18,8 @@ import { useAcceso } from "@/lib/acceso";
 import { puedeEditar } from "@/lib/permisos";
 import { useUsuarioActual } from "@/lib/usuario";
 import { closersConLlamadas, objecionesDe } from "@/lib/eod";
+import { destinosDePase } from "@/lib/pasar-llamadas";
+import { usePasarLlamadas } from "@/components/closers/usePasarLlamadas";
 import { miembroDeCloser, opcionesDe as opcionesDelCrm } from "@/lib/crm";
 import { COLOR_AVISO, POR_VENIR, SIN_CARGAR } from "@/lib/estados";
 import { leadDeSesion } from "@/lib/etapas-auto";
@@ -88,6 +90,7 @@ export function CrmTabla() {
   const [eod, setEod] = useState(false);
   const toast = useToast();
   const cambiarEstado = useCambiarEstado();
+  const pasarLlamadas = usePasarLlamadas();
   /* La celda que se está corrigiendo, y la llamada a la que se le carga la venta. */
   const [editando, setEditando] = useState<{ id: string; clave: ClaveColumna } | null>(null);
   const [ventaPara, setVentaPara] = useState<string | null>(null);
@@ -95,6 +98,9 @@ export function CrmTabla() {
   const { acceso } = useAcceso();
   const puedeLlamadas = puedeEditar(acceso, "sesiones");
   const puedePersonas = puedeEditar(acceso, "contactos");
+  /* Cambiar el closer de una llamada es pasarla a otro: lo hace quien dirige las
+     ventas (un dueño, el director). A un closer la base se lo rechaza, así que ni se le ofrece. */
+  const puedePasar = puedeLlamadas && !acceso?.soloLoSuyo;
 
   /* El período, por el día de la llamada. De entrada, este mes. */
   const hoy = diaDeNegocio(new Date().toISOString());
@@ -169,9 +175,8 @@ export function CrmTabla() {
 
   /* ---------- Corregir en la celda ---------- */
   const opcionesDe = useMemo<Partial<Record<ClaveColumna, OpcionCrm[]>>>(() => {
-    const closers = new Set([...closersConLlamadas(e), ...e.equipo.filter((m) => m.rol === "closer" && m.activo).map((m) => m.nombre)]);
     return {
-      closer: opciones([...closers].sort((a, b) => a.localeCompare(b, "es"))),
+      closer: opciones(destinosDePase(e).map((d) => d.miembro.nombre)),
       ...estados,
       objecion: opciones(objecionesDe(e.ajustes), () => "amarillo1"),
       oferta: [{ nombre: "Sí", color: "verde1" }, { nombre: "No", color: "gris1" }],
@@ -190,6 +195,13 @@ export function CrmTabla() {
     if (campo) { cambiarEstado(f.sesion, campo, valor.trim(), { conVenta: Boolean(f.venta), alVender: () => setVentaPara(f.id) }); return; }
     const w = escrituraDe(f, clave, valor, { ajustes: e.ajustes, quien: yo.nombre, cuando: new Date().toISOString() });
     if (!w) return;
+    /* El closer: se pasa la llamada (queda con quien la atiende y Calendly no la vuelve a pisar). */
+    if (w.tipo === "closer") {
+      const destino = destinosDePase(e).find((d) => d.miembro.nombre === w.closer);
+      if (!destino) toast(`${w.closer} no está entre los closers del equipo: cargalo en Equipo para poder pasarle llamadas.`, "err");
+      else if (pasarLlamadas([f.sesion], destino) === 0) toast(`${destino.miembro.nombre} ya atiende esta llamada.`, "info");
+      return;
+    }
     const titulo = COLUMNA[clave].titulo;
     let deshacer: () => void;
     if (w.tipo === "llamada") {
@@ -242,7 +254,8 @@ export function CrmTabla() {
         const abierta = editando?.id === f.id && editando.clave === col.clave;
         return (
           <CeldaCrm
-            clave={col.clave} f={f} puede={DE_LA_PERSONA.has(col.clave) ? puedePersonas : puedeLlamadas}
+            clave={col.clave} f={f}
+            puede={DE_LA_PERSONA.has(col.clave) ? puedePersonas : col.clave === "closer" ? puedePasar : puedeLlamadas}
             abierta={abierta} onAbrir={() => setEditando({ id: f.id, clave: col.clave })}
             onCerrar={() => setEditando((x) => (x?.id === f.id && x.clave === col.clave ? null : x))}
             onGuardar={(v) => guardarCelda(f, col.clave, v)} onFicha={() => verFicha(f)}

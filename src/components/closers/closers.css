@@ -1,0 +1,52 @@
+/* ==================================================================
+   La cuenta del closer y el pase de llamadas: «Mis llamadas», el estado
+   de cada closer en Equipo y «Pasar a otro closer». Aparte de globals.css
+   porque es de estas pantallas.
+   ================================================================== */
+
+/* ---------- Pasar a otro closer ---------- */
+
+.pasar { display: flex; flex-direction: column; gap: var(--space-4); min-width: 0; }
+.pasar__llamada {
+  display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2) var(--space-3);
+  padding: var(--space-3) var(--space-4); border-radius: var(--radius-lg); background: var(--surface-200);
+}
+.pasar__llamada-datos { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1 1 200px; }
+.pasar__bloque { display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; }
+.pasar__titulo { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-3); }
+.pasar__acciones { display: inline-flex; gap: var(--space-3); font-size: 13px; }
+.pasar__lista {
+  list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column;
+  border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden auto; max-height: 232px;
+}
+.pasar__fila {
+  display: flex; align-items: center; gap: var(--space-3); min-width: 0;
+  padding: 9px var(--space-3); border-bottom: 1px solid var(--border); cursor: pointer; font-size: 14px;
+}
+.pasar__fila:last-child { border-bottom: 0; }
+.pasar__fila:hover { background: var(--surface-200); }
+.pasar__fila input { flex: none; accent-color: var(--brand-fill); width: 16px; height: 16px; }
+.pasar__fila-cuando { flex: none; color: var(--ink-muted); min-width: 118px; }
+.pasar__fila-quien { flex: 1 1 auto; min-width: 0; color: var(--ink); font-weight: 500; }
+.pasar__fila-estado { flex: none; }
+.pasar__destinos .opcion { min-height: 52px; }
+.pasar__notas { display: flex; flex-direction: column; gap: var(--space-2); }
+.pasar__nota {
+  display: flex; align-items: flex-start; gap: var(--space-2); margin: 0; padding: 10px var(--space-3);
+  border: 1px solid color-mix(in srgb, var(--info) 40%, var(--border)); border-radius: var(--radius-md);
+  background: var(--info-soft); color: var(--ink); font-size: 13px; line-height: 20px;
+}
+.pasar__nota svg { flex: none; margin-top: 2px; color: var(--info); }
+.pasar__nota--atencion {
+  border-color: color-mix(in srgb, var(--warning) 50%, var(--border)); background: var(--warning-soft);
+}
+.pasar__nota--atencion svg { color: var(--warning); }
+
+/* Un cartelito en la llamada que se pasó a mano (Agenda, ficha). */
+.pasada-marca { display: inline-flex; align-items: center; gap: 4px; flex: none; }
+
+@media (max-width: 560px) {
+  .pasar__fila { flex-wrap: wrap; row-gap: 2px; }
+  .pasar__fila-cuando { min-width: 0; }
+  .pasar__fila-quien { flex-basis: 100%; order: 3; padding-left: 28px; }
+}
