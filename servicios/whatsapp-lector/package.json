@@ -1,0 +1,20 @@
+{
+  "name": "apicanta-whatsapp-lector",
+  "version": "1.0.0",
+  "description": "Lee los grupos de WhatsApp de los webinars (sólo lectura) y le avisa a Apicanta quién se unió.",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node src/index.js",
+    "simulado": "node src/index.js --simulado ejemplos/simulado.json",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "@whiskeysockets/baileys": "7.0.0-rc14",
+    "pino": "^9.6.0",
+    "qrcode-terminal": "^0.12.0"
+  }
+}
