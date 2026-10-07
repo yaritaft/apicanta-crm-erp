@@ -16,6 +16,7 @@ import { FormulariosMeta } from "@/components/ajustes/FormulariosMeta";
 import { ConversionsApi } from "@/components/ajustes/ConversionsApi";
 import { YoutubeIntegracion } from "@/components/ajustes/YoutubeIntegracion";
 import { FathomIntegracion } from "@/components/ajustes/FathomIntegracion";
+import { WhatsappLector } from "@/components/ajustes/WhatsappLector";
 import { PageHead } from "@/components/shell/PageHead";
 import {
   Ayuda, Badge, Button, Card, CardHead, Empty, Field, IconButton, Input,
@@ -32,7 +33,7 @@ import type { Ajustes as TAjustes, CampoPersonalizado, EntidadNombre, Etapa, Tip
 import { objecionesDe } from "@/lib/eod";
 import { cabeceras } from "@/components/webinars/useYoutube";
 
-type Seccion = "negocio" | "ventas" | "utms" | "pipeline" | "listas" | "crm" | "campos" | "integraciones" | "datos";
+type Seccion = "negocio" | "ventas" | "utms" | "pipeline" | "listas" | "crm" | "campos" | "integraciones" | "whatsapp" | "datos";
 
 const ENTIDADES: { valor: EntidadNombre; texto: string }[] = [
   { valor: "lead", texto: "Leads" },
@@ -58,7 +59,7 @@ const TIPOS: { valor: TipoCampo; texto: string }[] = [
 
 const VARIANTES: Etapa["variante"][] = ["info", "brand", "accent", "warning", "success", "danger", "neutral"];
 
-const SECCIONES: Seccion[] = ["negocio", "ventas", "utms", "pipeline", "listas", "crm", "campos", "integraciones", "datos"];
+const SECCIONES: Seccion[] = ["negocio", "ventas", "utms", "pipeline", "listas", "crm", "campos", "integraciones", "whatsapp", "datos"];
 
 export default function Ajustes() {
   /* Se puede entrar directo a una sección por link: el pipeline de alumnos
@@ -93,6 +94,7 @@ export default function Ajustes() {
           { valor: "crm", texto: "CRM" },
           { valor: "campos", texto: "Campos propios" },
           { valor: "integraciones", texto: "Integraciones" },
+          { valor: "whatsapp", texto: "WhatsApp" },
           ...(esDueno ? [{ valor: "datos" as const, texto: "Datos" }] : []),
         ]}
       />
@@ -105,6 +107,7 @@ export default function Ajustes() {
       {verSeccion === "crm" && <CrmAjustes />}
       {verSeccion === "campos" && <Campos />}
       {verSeccion === "integraciones" && <Integraciones />}
+      {verSeccion === "whatsapp" && <WhatsappLector />}
       {verSeccion === "datos" && <Datos />}
 
       {verSeccion === "negocio" && (
