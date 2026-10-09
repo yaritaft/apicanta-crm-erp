@@ -1382,6 +1382,23 @@ export interface ConceptoPago {
   /* Sin las ventas marcadas "Excluida de marketing". En el profit se
      descuenta la parte de esas ventas, como el reparto de Finanzas. */
   sinExcluidasMarketing?: boolean;
+  /* profit: sacarlo sobre lo suyo y no sobre el profit de toda la empresa (como
+     lo calculan las hojas de comisión). Ingresos = lo cobrado de las
+     ventas que le tocan (los servicios elegidos), en los días en que vale la
+     regla; costos = los costos del mes de la empresa por la parte de días en
+     que vale; y menos la comisión de quienes diga `descuentaComisionDe`.
+     Apagado por defecto: el profit de siempre. */
+  profitPropio?: boolean;
+  /* Sólo cuentan las ventas cerradas desde la fecha de inicio (`desde`): las
+     cuotas que se cobran después de ventas anteriores no: quien empezó en agosto
+     no cuenta lo que entra en septiembre de ventas de antes de agosto.
+     Sin `desde`, no hace nada. */
+  soloVentasDesdeInicio?: boolean;
+  /* profitPropio: ids de miembros del equipo cuya comisión sobre el profit se
+     resta del profit antes de sacar el porcentaje (por ejemplo, al socio se le
+     descuenta la del director de tráfico). Se mira un solo nivel: la de ellos
+     no puede depender de otra. */
+  descuentaComisionDe?: ID[];
   /* llamadas: sólo las que llegaron con este utm_source ("Resell"). */
   utmSource?: string;
   /* unidad: cómo se llama la pieza, en singular ("reel complejo"). */

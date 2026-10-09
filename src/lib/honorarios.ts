@@ -151,6 +151,11 @@ function filtros(c: ConceptoPago, e: Catalogos, hermanos?: ConceptoPago[]): stri
   }
   if (c.sinVentasSinComision && (c.alcance ?? "todas") === "todas") out.push(`sin las que cerró ${quienesNoComisionan(e)}`);
   if (c.sinExcluidasMarketing) out.push("sin las excluidas de marketing");
+  if (c.soloVentasDesdeInicio && c.desde) out.push("sólo ventas cerradas desde el inicio");
+  if (c.profitPropio && c.descuentaComisionDe?.length) {
+    const nombres = c.descuentaComisionDe.map((id) => e.equipo.find((m) => m.id === id)?.nombre).filter(Boolean);
+    if (nombres.length) out.push(`sin la comisión de ${nombres.join(" y ")}`);
+  }
   return out;
 }
 
@@ -168,7 +173,7 @@ function queSeMide(c: ConceptoPago, e: Catalogos, cada?: number, hermanos?: Conc
         const nombre = { "cash": "cash collected", "cash-neto": "cash collected post pasarelas", "facturado": "facturación", "profit": "profit" }[b];
         return conFiltros(`${plata(n, e.ajustes.monedaBase)} de ${nombre}${b === "profit" ? " del mes" : ` ${DE_LAS_VENTAS[alcance]}`}`);
       }
-      return conFiltros(`${PORCENTAJE_DE[b]}${b === "profit" ? " del mes" : ` ${DE_LAS_VENTAS[alcance]}`}`);
+      return conFiltros(`${PORCENTAJE_DE[b]}${b === "profit" ? (c.profitPropio ? " propio" : " del mes") : ` ${DE_LAS_VENTAS[alcance]}`}`);
     }
     case "ventas":
       return conFiltros(cada !== undefined ? porCada(n, VENTAS_DE[alcance]) : `de las ${VENTAS_DE[alcance][1]}`);
@@ -317,6 +322,10 @@ export function serviciosConComisionPropia(conceptos: ConceptoPago[], c: Concept
 
 export function calculaFinanzas(m: Pick<MiembroEquipo, "rol">, c: ConceptoPago): boolean {
   if (c.tipo !== "porcentaje") return false;
+  /* Finanzas no sabe sacar el profit de lo suyo ni la regla de cuotas por fecha de venta: con
+     alguna de las dos, el renglón es un costo de la liquidación (entra a Finanzas al cerrarla) y
+     su tasa para Finanzas queda en 0, así no se cuenta dos veces. */
+  if (c.profitPropio || (c.soloVentasDesdeInicio && c.desde)) return false;
   if (c.base === "profit") return m.rol === "growth" || m.rol === "socio";
   if (c.base !== "cash-neto") return false;
   if (c.alcance === "closer") return m.rol === "closer" || m.rol === "ceo";
@@ -421,7 +430,8 @@ function armarContexto(e: EstadoApp, rango: RangoMes, tc: number): Contexto {
 /* Todo lo cobrado de la empresa, sin filtro: tiene que dar lo mismo que el
    Cash collected de Finanzas, así que cuenta todos los pagos. */
 const esTotal = (c: ConceptoPago) =>
-  (c.alcance ?? "todas") === "todas" && !c.productoIds?.length && !c.sinVentasSinComision && !c.sinExcluidasMarketing;
+  (c.alcance ?? "todas") === "todas" && !c.productoIds?.length && !c.sinVentasSinComision && !c.sinExcluidasMarketing
+  && !(c.soloVentasDesdeInicio && c.desde);
 
 /* Si una venta cuenta para este concepto. Con cualquier filtro, las ventas
    canceladas no cuentan (como en las comisiones de Finanzas), y en las del
@@ -433,6 +443,9 @@ const esTotal = (c: ConceptoPago) =>
 function cuenta(cx: Contexto, c: ConceptoPago, m: MiembroEquipo, v: Venta | undefined, p?: Pago, hermanos?: ConceptoPago[]): boolean {
   if (esTotal(c)) return true;
   if (!v || v.estado === "cancelada") return false;
+  /* La regla de cuotas: sólo las ventas cerradas desde el inicio de la regla; lo que se
+     cobra hoy de una venta anterior no cuenta, aunque entre dentro de los días de la regla. */
+  if (c.soloVentasDesdeInicio && c.desde && diaDe(v.fecha) < c.desde.slice(0, 10)) return false;
   /* Un % general y otro por servicio: el cobro entra en uno solo. */
   if (hermanos && esComisionDeVentas(c)) {
     const propia = comisionDelServicio(hermanos, c, v.productoId, p ? diaDe(p.fecha) : undefined);
@@ -548,7 +561,11 @@ function medidoTexto(b: BaseMedicion, valor: number, base: Moneda, unidad?: stri
 /* ---------- Un renglón ---------- */
 
 /* El profit del mes y las partes con las que se armó (para el desglose). */
-interface Profit { profit: number; parte: number; partes?: PartesProfit }
+/* `costos`: todo lo que le resta el mes a lo cobrado (devoluciones, procesadores, comisiones, costos directos,
+   gastos operativos y los sueldos de esta liquidación): lo cobrado menos el profit. Es la base del profit propio. */
+interface Profit { profit: number; parte: number; partes?: PartesProfit; costos?: number }
+/* Lo que se resta de un profit propio antes del porcentaje: la comisión de otro, con su nombre. */
+type DescuentoProfit = { nombre: string; monto: number };
 
 /* Los nombres que lleva la lista de cobros y de ventas del desglose. */
 const nombresDeLista = (cx: Contexto) => ({
@@ -560,6 +577,8 @@ function linea(
   cx: Contexto, m: MiembroEquipo, c: ConceptoPago, entrada: EntradaLiquidacion | undefined, prof?: Profit,
   /* Todo lo que cobra la persona: para que un cobro no entre en dos comisiones. */
   hermanos?: ConceptoPago[],
+  /* profitPropio: las comisiones de otros que se restan antes del porcentaje. */
+  descuentos: DescuentoProfit[] = [],
 ): LineaLiquidada | null {
   /* Quien se fue cobra hasta su fecha de salida: el fijo, prorrateado. */
   const hasta = m.hasta && (!c.hasta || m.hasta < c.hasta) ? m.hasta : c.hasta;
@@ -621,6 +640,25 @@ function linea(
         valor = entrada.cantidad;
         origen = "cargado a mano";
         fuente = { tipo: "mano" };
+      } else if (b === "profit" && c.profitPropio && prof?.costos !== undefined) {
+        /* El profit de lo suyo (como lo calculan las hojas de comisión): lo cobrado de sus ventas en los
+           días de la regla, menos la parte de los costos del mes que le toca, menos la comisión de
+           quienes se nombran. El cobrado va bruto: lo devuelto ya está en los costos. */
+        const x = medir(cx, { ...c, base: "cash" }, m, vig.rango);
+        const ingresos = r2(x?.bruto ?? 0);
+        /* A cuatro decimales (66,67%): la parte que se ve es la parte con la que se hace la cuenta. */
+        const imputado = Math.round((vig.dias / vig.diasMes) * 1e4) / 1e4;
+        const costosImputados = r2(prof.costos * imputado);
+        const crudo = r2(ingresos - costosImputados - descuentos.reduce((a, d) => a + d.monto, 0));
+        valor = Math.max(crudo, 0);
+        origen = crudo < -0.004 ? "lo de sus ventas no cubre los costos que se le imputan" : "lo de sus ventas menos la parte de los costos del mes";
+        fuente = {
+          tipo: "profit-propio", ingresos, cuantos: x?.n ?? 0,
+          ...(x?.cobros ? { lista: listaDeCobros(x.cobros, nombresDeLista(cx), cx.base) } : {}),
+          costos: r2(prof.costos), imputado, costosImputados, descuentos, crudo,
+          ...(parcial ? { dias: { dias: vig.dias, diasMes: vig.diasMes } } : {}),
+          ...(c.soloVentasDesdeInicio && c.desde ? { soloVentasDesde: c.desde.slice(0, 10) } : {}),
+        };
       } else if (b === "profit") {
         const p = prof ?? { profit: 0, parte: 1 };
         const parte = c.sinExcluidasMarketing ? p.parte : 1;
@@ -1029,14 +1067,31 @@ export function calcularLiquidacion(e: EstadoApp, periodo: string, liq?: Liquida
   const profit = r2(pyl.operativoCC - aCargar);
   const prof: Profit = {
     profit, parte: parteMarketing(e, rango),
+    /* Lo cobrado menos el profit: todo lo que le resta el mes (devoluciones incluidas). */
+    costos: r2(pyl.cobrado - profit),
     partes: {
       cash: r2(pyl.cobrado), ...(pyl.devoluciones > 0 ? { devoluciones: r2(pyl.devoluciones) } : {}),
       procesadores: r2(pyl.feesProcesador), comisiones: r2(pyl.comisionCloser + pyl.comisionDirector),
       otrosDirectos: r2(pyl.otrosDirectos), gastosOperativos: r2(pyl.gastosOperativos), sueldos: r2(aCargar),
     },
   };
+  const calcular = (x: (typeof delProfit)[number], descuentos: DescuentoProfit[] = []) => {
+    x.fila.lineas[x.i] = linea(cx, x.fila.m, x.c, entradas[claveEntrada(x.fila.m.id, x.c.id)], prof, undefined, descuentos);
+  };
+  /* Primero los que no descuentan nada; después los que restan la comisión de otro (al socio se
+     le descuenta la del director de tráfico antes de su %), que para entonces ya está calculada. Un solo
+     nivel: si la comisión de la que se descuenta depende de otra, todavía no existe y no resta. */
+  for (const x of delProfit) if (!x.c.descuentaComisionDe?.length) calcular(x);
   for (const x of delProfit) {
-    x.fila.lineas[x.i] = linea(cx, x.fila.m, x.c, entradas[claveEntrada(x.fila.m.id, x.c.id)], prof);
+    if (!x.c.descuentaComisionDe?.length) continue;
+    const descuentos: DescuentoProfit[] = [];
+    for (const id of x.c.descuentaComisionDe) {
+      const otra = filas.find((f) => f.m.id === id);
+      if (!otra) continue;
+      const monto = r2(otra.lineas.reduce((a, l) => a + (l && l.base === "profit" ? l.montoBase : 0), 0));
+      if (monto > 0) descuentos.push({ nombre: otra.m.nombre, monto });
+    }
+    calcular(x, descuentos);
   }
 
   const personas = filas.map(({ persona, lineas }) => {

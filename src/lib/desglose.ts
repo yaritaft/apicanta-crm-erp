@@ -238,6 +238,22 @@ export type Fuente =
   /* Nada que medir y nada cargado: el renglón queda en cero. */
   | { tipo: "falta" }
   | { tipo: "profit"; profit: number; parte: number; partes?: PartesProfit }
+  /* El profit de lo suyo (ConceptoPago.profitPropio): sus ingresos menos la parte de los costos de la empresa. */
+  | {
+    tipo: "profit-propio";
+    /* Lo cobrado de las ventas que le tocan, bruto (las devoluciones ya van en los costos), y de cuántos cobros sale. */
+    ingresos: number; cuantos: number; lista?: ListaDesglose;
+    /* Los costos del mes de toda la empresa, la parte que se le imputa (0 a 1) y lo que da. */
+    costos: number; imputado: number; costosImputados: number;
+    /* Lo que se resta antes de sacar el porcentaje: la comisión de otros. */
+    descuentos: { nombre: string; monto: number }[];
+    /* Lo que dio la cuenta antes de no bajar de cero. */
+    crudo: number;
+    /* Los días que vale la regla del mes (para decir de dónde sale la parte imputada). */
+    dias?: { dias: number; diasMes: number };
+    /* La regla de cuotas: desde qué día cuentan las ventas, si se pidió. */
+    soloVentasDesde?: string;
+  }
   | {
     tipo: "medido"; bruto?: number; cuantos: number; lista?: ListaDesglose;
     /* Lo devuelto en el mes que resta de lo medido, y cuántas devoluciones son. */
@@ -324,6 +340,31 @@ function pasosDeProfit(f: Extract<Fuente, { tipo: "profit" }>, valor: number, B:
   return { pasos, avisos };
 }
 
+/** El profit de lo suyo: lo cobrado de sus ventas, menos la parte de los costos del mes que le toca y
+ *  lo que se descuenta antes. Termina en el valor con el que se saca el porcentaje. */
+function pasosDeProfitPropio(f: Extract<Fuente, { tipo: "profit-propio" }>, valor: number, B: Moneda): { pasos: PasoDesglose[]; avisos: string[] } {
+  const pasos: PasoDesglose[] = [];
+  const avisos: string[] = [];
+  const parte = pct(f.imputado * 100, Number.isInteger(r2(f.imputado * 100)) ? 0 : 2);
+  pasos.push(plataPaso("base", "Cobrado de las ventas que le tocan", f.ingresos, B, cobros(f.cuantos)));
+  pasos.push(plataPaso("menos", "Costos del mes que se le imputan", f.costosImputados, B,
+    f.imputado < 1 ? `${M(f.costos, B)} de costos del mes × ${parte}` : `Todos los costos del mes: ${M(f.costos, B)}`));
+  for (const d of f.descuentos) pasos.push(plataPaso("menos", `Comisión de ${d.nombre}`, d.monto, B, "Se descuenta antes de sacar el porcentaje"));
+  if (f.crudo < -0.004) {
+    pasos.push(paso("por", "Con pérdida no hay profit para repartir", 0, "cantidad"));
+    avisos.push("Lo de su base no cubre los costos que se le imputan: no hay profit para repartir.");
+  }
+  pasos.push(plataPaso("igual", "Profit de lo suyo", valor, B));
+  avisos.push("Los costos son los de toda la empresa en el mes (lo cargado en Finanzas y los sueldos de esta liquidación, con lo devuelto a clientes adentro), no sólo los de sus ventas: un gasto que falte cargar infla el profit.");
+  if (f.dias && f.dias.dias < f.dias.diasMes) {
+    avisos.push(`La regla vale ${f.dias.dias} de ${f.dias.diasMes} días del mes: sólo cuenta lo cobrado esos días y se le imputa el ${parte} de los costos.`);
+  }
+  if (f.soloVentasDesde) {
+    avisos.push(`Sólo cuentan las ventas cerradas desde el ${fechaLarga(`${f.soloVentasDesde}T12:00:00`)}: las cuotas que se cobran de ventas anteriores no entran.`);
+  }
+  return { pasos, avisos };
+}
+
 /** Lo medido, de lo que entró a un número. Termina en el valor con el que se hizo la cuenta. */
 function pasosDeLoMedido(a: ArgsMedido, f: Extract<Fuente, { tipo: "medido" }>): PasoDesglose[] {
   const B = a.monedaBase;
@@ -383,6 +424,10 @@ export function desgloseMedido(a: ArgsMedido): DesgloseLinea {
     const r = pasosDeProfit(f, a.valor, B);
     pasos = r.pasos;
     avisos.push(...r.avisos);
+  } else if (f.tipo === "profit-propio") {
+    const r = pasosDeProfitPropio(f, a.valor, B);
+    pasos = r.pasos;
+    avisos.push(...r.avisos);
   } else {
     pasos = pasosDeLoMedido(a, f);
     if ((f.devoluciones ?? 0) > 0) avisos.push("Lo que se devolvió a clientes en el mes resta de lo que se mide, igual que en el Cash Collected de Finanzas (la comisión de la pasarela no se devuelve).");
@@ -407,7 +452,7 @@ export function desgloseMedido(a: ArgsMedido): DesgloseLinea {
 
   return {
     regla: a.regla, moneda: a.moneda, pasos,
-    ...(f.tipo === "medido" && f.lista ? { lista: f.lista } : {}),
+    ...((f.tipo === "medido" || f.tipo === "profit-propio") && f.lista ? { lista: f.lista } : {}),
     ...(avisos.length ? { avisos } : {}),
   };
 }

@@ -1423,3 +1423,21 @@ Lo que encontró el frente del closer (`pruebas-estres/closer/`) y ya está arre
 *Pruebas:* `pruebas/fix-wpp-app.test.ts` (el código con el `exigirArea` real y un fetch que falla de cuatro maneras, «sólo lo suyo», fórmulas, cuerpos en partes, orden de avisos, teléfonos fuera de la URL, permisos de las pantallas). *Sin hacer (es del servicio o necesita una transacción):* que el lector no funda eventos de signo contrario de una persona y serializar por grupo en la base (`pg_advisory_xact_lock`, `ultimaFoto` condicional) para dos fotos en vuelo.
 
 Estado de las carpetas de estrés al 07/10 (rama estres-final-0710): `plata`, `closer`, `crm`, `sql` y `pasarelas` corren en verde con sus defectos conocidos en `todo`; en `store` y `pasarelas` hay pruebas marcadas `todo` con la nota «escrita contra la versión anterior del lote de WhatsApp» que hay que actualizar al esquema nuevo (`whatsapp_qr`, columna `estado`, sin `whatsapp_contactados`, estados del lector con «esperando-qr»). En `sql`, los escalamientos de «sólo lo suyo» (`sql-escalamientos.test.ts`, V1–V6) siguen como `todo`: el lote que los arregla (`lote-fix-sql`, `supabase/solo-lo-suyo-seguro.sql`) no se integró porque el verificador encontró un atajo (mezclar los espacios de ids de leads y personas) y no hay closers en producción todavía.
+
+## Salud de la carga y comisiones con profit propio (reunión del 07/10)
+
+- **Alarma de la carga** (`lib/salud-carga.ts`, `components/finanzas/AlarmaCarga.tsx`, en el Panel para quien ve Cobranza). La carga puede frenarse sin que ninguna pantalla lo diga:
+  nadie carga ventas, o los cobros que entran solos por las pasarelas quedan sin asignar a una venta y no cuentan como cobrados. Avisa en **ámbar a los 3 días** sin una venta nueva
+  (`VENTA_ATENCION`) o con un cobro de pasarela esperando 3 días, y en **rojo a los 5 días** sin ventas (`VENTA_ALARMA`) o a la semana de espera de un cobro (`COBRO_ALARMA`). Sólo mira lo que la
+  app ya tiene (ventas no canceladas y movimientos «pendiente», en el día del negocio de Argentina, con los pesos pasados a la moneda base); sin ninguna venta cargada no avisa. Los botones llevan a
+  «Cargar una venta» y a Conciliación → pendientes. Pruebas: `pruebas/salud-carga.test.ts`.
+- **Profit propio, regla de cuotas y descuento de la comisión de otro** (`ConceptoPago.profitPropio`, `soloVentasDesdeInicio`, `descuentaComisionDe`; `lib/honorarios.ts`, `lib/desglose.ts`; se
+  configura en Equipo → lo que cobra cada uno → el paso «De qué»). **Apagado por defecto: ningún número de antes cambia.** Con `profitPropio` el `%` de un concepto sobre el profit se saca así:
+  *ingresos* = lo cobrado (bruto) de las ventas que le tocan (los servicios elegidos, en los días en que vale la regla) − *costos* = los costos del mes de toda la empresa (lo cobrado menos el profit,
+  con las devoluciones y los sueldos de la liquidación adentro) por la parte de días que vale la regla (a 4 decimales: 20 de 30 días = 66,67%) − la comisión de quienes diga `descuentaComisionDe`
+  (se calculan primero; un solo nivel). Con `soloVentasDesdeInicio` (y una fecha `desde`) sólo cuentan las ventas cerradas desde esa fecha: las cuotas que entran después de ventas anteriores no. Sirve también
+  para las comisiones de ventas (cash post pasarelas del closer o del director). Finanzas no sabe hacer ninguna de las dos cosas, así que un concepto con alguna **no es un renglón de Finanzas**
+  (`calculaFinanzas` da falso, su tasa para Finanzas queda en 0): su costo entra a Finanzas al cerrar la liquidación y el profit de la liquidación ya lo descuenta, así que no se cuenta dos veces.
+  El desglose de cada renglón muestra la cuenta paso a paso (cobrado de sus ventas, costos imputados, comisión descontada, profit de lo suyo, porcentaje) y su lista de cobros.
+  Pruebas: `pruebas/liquidacion-profit-propio.test.ts` (caso inventado con las cuentas rehechas aparte del motor).
+  *Para usarlo:* cambiar el concepto de la persona (nada se migra solo) y revisar el mes con su desglose. Mientras la base no tenga el mes completo cargado, las cifras no van a coincidir con las de las hojas.

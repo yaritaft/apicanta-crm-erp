@@ -56,6 +56,10 @@ interface Borrador {
   productoIds: string[];
   sinVentasSinComision: boolean;
   sinExcluidasMarketing: boolean;
+  /* Profit propio (ConceptoPago.profitPropio), la regla de cuotas y de quién se descuenta la comisión. */
+  profitPropio: boolean;
+  soloVentasDesdeInicio: boolean;
+  descuentaComisionDe: string[];
   utmSource: string;
   unidad: string;
   condicion: string;
@@ -74,6 +78,7 @@ function inicial(m: MiembroEquipo, c: ConceptoPago | null | undefined, base: Mon
       tipo: null, nombre: "", nombreTocado: false, monto: "", moneda: base, tasa: "",
       base: reparte ? "profit" : "cash-neto", cada: "", alcance: alcanceDeRol(m), productoIds: [],
       sinVentasSinComision: false, sinExcluidasMarketing: m.rol === "growth",
+      profitPropio: false, soloVentasDesdeInicio: false, descuentaComisionDe: [],
       utmSource: "", unidad: "", condicion: "", desde: "", hasta: "", notas: "",
     };
   }
@@ -84,6 +89,8 @@ function inicial(m: MiembroEquipo, c: ConceptoPago | null | undefined, base: Mon
     base: c.base, cada: c.cada !== undefined ? escribirMonto(c.cada) : "",
     alcance: c.alcance ?? "todas", productoIds: c.productoIds ?? [],
     sinVentasSinComision: Boolean(c.sinVentasSinComision), sinExcluidasMarketing: Boolean(c.sinExcluidasMarketing),
+    profitPropio: Boolean(c.profitPropio), soloVentasDesdeInicio: Boolean(c.soloVentasDesdeInicio),
+    descuentaComisionDe: c.descuentaComisionDe ?? [],
     utmSource: c.utmSource ?? "", unidad: c.unidad ?? "", condicion: c.condicion ?? "",
     desde: c.desde ?? "", hasta: c.hasta ?? "", notas: c.notas ?? "",
   };
@@ -129,6 +136,14 @@ function armar(b: Borrador, id: string, base: Moneda): ConceptoPago {
       if (c.alcance === "todas" && b.sinVentasSinComision) c.sinVentasSinComision = true;
     }
     if ((info.deVentas || b.base === "profit") && b.sinExcluidasMarketing) c.sinExcluidasMarketing = true;
+    /* El profit de lo suyo: sus servicios, y la comisión de otros que se resta antes del porcentaje. */
+    if (b.base === "profit" && b.profitPropio) {
+      c.profitPropio = true;
+      if (b.productoIds.length) c.productoIds = b.productoIds;
+      if (b.descuentaComisionDe.length) c.descuentaComisionDe = b.descuentaComisionDe;
+    }
+    /* La regla de cuotas necesita la fecha de inicio: sin ella no hace nada, y no se guarda. */
+    if (b.soloVentasDesdeInicio && b.desde && (info.deVentas || (b.base === "profit" && b.profitPropio))) c.soloVentasDesdeInicio = true;
     if ((b.base === "llamadas" || b.base === "llamadas-hechas") && b.utmSource.trim()) c.utmSource = b.utmSource.trim();
     if (b.base === "manual" && b.unidad.trim()) c.unidad = b.unidad.trim();
   }
@@ -162,6 +177,7 @@ function validar(paso: PasoId, b: Borrador): string | null {
       return leerMonto(b.monto) > 0 ? null : "Escribí cuánto se paga por tramo";
     case "resumen":
       if (b.desde && b.hasta && b.desde > b.hasta) return "La fecha de fin es anterior a la de inicio";
+      if (b.soloVentasDesdeInicio && !b.desde) return "Poné la fecha «Desde»: la regla de cuotas cuenta las ventas cerradas a partir de ahí";
       return null;
   }
 }
@@ -346,6 +362,14 @@ function PasoDeQue({ b, set, e, miembro }: { b: Borrador; set: Poner; e: EstadoA
   const yari = quienesNoComisionan(e);
 
   if (b.base === "profit") {
+    const productos = e.productos.filter((p) => p.activo || b.productoIds.includes(p.id));
+    const alternar = (id: string) =>
+      set({ productoIds: b.productoIds.includes(id) ? b.productoIds.filter((x) => x !== id) : [...b.productoIds, id] });
+    /* A quiénes se les puede restar la comisión: los que ya cobran un % del profit. */
+    const conProfit = e.equipo.filter((x) => x.id !== miembro.id
+      && e.honorarios.some((h) => h.miembroId === x.id && h.conceptos.some((c) => c.tipo === "porcentaje" && c.base === "profit")));
+    const alternarDe = (id: string) =>
+      set({ descuentaComisionDe: b.descuentaComisionDe.includes(id) ? b.descuentaComisionDe.filter((x) => x !== id) : [...b.descuentaComisionDe, id] });
     return (
       <>
         <Pregunta
@@ -358,6 +382,45 @@ function PasoDeQue({ b, set, e, miembro }: { b: Borrador; set: Poner; e: EstadoA
           <Opcion tecla="2" nombre="Sin las ventas excluidas de marketing"
             sub="Se descuenta la parte de las ventas marcadas «Excluida de marketing» (eventos, conocidos, las que cierra Yari), como el reparto del growth partner."
             activo={b.sinExcluidasMarketing} onClick={() => set({ sinExcluidasMarketing: true })} />
+        </div>
+        <div className="stack-2">
+          <label className="row" style={{ gap: 10 }}>
+            <Switch checked={b.profitPropio} onChange={(v) => set({ profitPropio: v })} etiqueta="Profit propio" />
+            <span className="t-sm">Sacarlo sobre lo suyo y no sobre el profit de toda la empresa</span>
+          </label>
+          {b.profitPropio && (
+            <>
+              <p className="t-sm t-subtle">
+                Se cuenta lo cobrado de sus ventas menos la parte de los costos del mes que le toca: todos si la regla vale el mes entero, o los
+                días que vale si empieza a mitad de mes (por ejemplo, 20 de 30 días son el 66,67% de los costos).
+              </p>
+              <div className="stack-2">
+                <span className="t-label">Sólo de estos servicios (opcional)</span>
+                <div className="row-wrap">
+                  {productos.map((p) => (
+                    <Chip key={p.id} activo={b.productoIds.includes(p.id)} onClick={() => alternar(p.id)}>{p.nombre}</Chip>
+                  ))}
+                </div>
+                <span className="t-sm t-subtle">Sin elegir ninguno, cuentan todos. Resell y Upsell (Hackear Biz) quedan afuera si no los elegís.</span>
+              </div>
+              <label className="row" style={{ gap: 10 }}>
+                <Switch checked={b.soloVentasDesdeInicio} onChange={(v) => set({ soloVentasDesdeInicio: v })} etiqueta="Sólo ventas cerradas desde el inicio" />
+                <span className="t-sm">Sólo las ventas cerradas desde la fecha de inicio (las cuotas de ventas anteriores no cuentan)</span>
+              </label>
+              {b.soloVentasDesdeInicio && <span className="t-sm t-subtle">La fecha de inicio se pone en «Desde», en el resumen.</span>}
+              {conProfit.length > 0 && (
+                <div className="stack-2">
+                  <span className="t-label">Restar antes la comisión de (opcional)</span>
+                  <div className="row-wrap">
+                    {conProfit.map((x) => (
+                      <Chip key={x.id} activo={b.descuentaComisionDe.includes(x.id)} onClick={() => alternarDe(x.id)}>{x.nombre}</Chip>
+                    ))}
+                  </div>
+                  <span className="t-sm t-subtle">Por ejemplo, al socio se le descuenta la comisión del director de tráfico antes de aplicar su porcentaje.</span>
+                </div>
+              )}
+            </>
+          )}
         </div>
       </>
     );
@@ -447,6 +510,11 @@ function PasoDeQue({ b, set, e, miembro }: { b: Borrador; set: Poner; e: EstadoA
           <Switch checked={b.sinExcluidasMarketing} onChange={(v) => set({ sinExcluidasMarketing: v })} etiqueta="Sin las excluidas de marketing" />
           <span className="t-sm">Sin las ventas marcadas «Excluida de marketing»</span>
         </label>
+        <label className="row" style={{ gap: 10 }}>
+          <Switch checked={b.soloVentasDesdeInicio} onChange={(v) => set({ soloVentasDesdeInicio: v })} etiqueta="Sólo ventas cerradas desde el inicio" />
+          <span className="t-sm">Sólo las ventas cerradas desde la fecha de inicio: las cuotas de ventas anteriores no cuentan</span>
+        </label>
+        {b.soloVentasDesdeInicio && <span className="t-sm t-subtle">La fecha de inicio se pone en «Desde», en el resumen. Esta regla no la calcula Finanzas: el costo entra a Finanzas al cerrar la liquidación.</span>}
       </div>
     </>
   );
@@ -567,7 +635,17 @@ function PasoResumen({ b, set, e, final, editando, pasos, irA, miembro }: {
 }
 
 function deQueTexto(b: Borrador, e: EstadoApp): string {
-  if (b.base === "profit") return b.sinExcluidasMarketing ? "Sin las ventas excluidas de marketing" : "Todo el profit";
+  if (b.base === "profit") {
+    const partes = [b.profitPropio ? "Profit propio" : b.sinExcluidasMarketing ? "Sin las ventas excluidas de marketing" : "Todo el profit"];
+    if (b.profitPropio) {
+      const prods = b.productoIds.map((id) => e.productos.find((p) => p.id === id)?.nombre).filter(Boolean);
+      if (prods.length) partes.push(`sólo ${prods.join(", ")}`);
+      if (b.soloVentasDesdeInicio) partes.push("ventas desde el inicio");
+      const otros = b.descuentaComisionDe.map((id) => e.equipo.find((m) => m.id === id)?.nombre).filter(Boolean);
+      if (otros.length) partes.push(`sin la comisión de ${otros.join(" y ")}`);
+    }
+    return partes.join(" · ");
+  }
   if (b.base === "llamadas" || b.base === "llamadas-hechas") return b.utmSource.trim() ? `Las de utm_source ${b.utmSource.trim()}` : "Todas";
   if (b.base === "manual") return b.unidad.trim() || "—";
   const partes = [ALCANCES.find((a) => a.alcance === b.alcance)?.nombre ?? "—"];
@@ -575,6 +653,7 @@ function deQueTexto(b: Borrador, e: EstadoApp): string {
   if (prods.length) partes.push(`sólo ${prods.join(", ")}`);
   if (b.alcance === "todas" && b.sinVentasSinComision) partes.push(`sin las de ${quienesNoComisionan(e)}`);
   if (b.sinExcluidasMarketing) partes.push("sin las excluidas de marketing");
+  if (b.soloVentasDesdeInicio) partes.push("ventas desde el inicio");
   return partes.join(" · ");
 }
 
