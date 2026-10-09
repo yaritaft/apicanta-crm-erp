@@ -1946,9 +1946,9 @@ export const acciones = {
     return cambiadas.length;
   },
 
-  /* El lote de la importación del Airtable (lib/importar-cs.ts): alumnos, su ficha, testimonios y resells, de una vez. */
+  /* El lote de la importación del Airtable y de Notion (lib/importar-cs.ts): alumnos, su ficha, testimonios, resells y revisiones de CV, de una vez. */
   importarClientesCs(lote: {
-    alumnos: Alumno[]; seguimientos: SeguimientoAlumno[]; testimonios: Testimonio[]; resells: Resell[]; reportes: Reporte[]; detalle: string;
+    alumnos: Alumno[]; seguimientos: SeguimientoAlumno[]; testimonios: Testimonio[]; resells: Resell[]; reportes: Reporte[]; revisionesCv?: RevisionCv[]; detalle: string;
   }): void {
     const e = snapshot();
     const reemplazar = <T extends { id: ID }>(actuales: readonly T[] | undefined, nuevas: readonly T[]) => {
@@ -1964,6 +1964,7 @@ export const acciones = {
       seguimientos: [...lote.seguimientos, ...(e.seguimientos ?? []).filter((s) => !porAlumno.has(s.alumnoId))],
       testimonios: reemplazar(e.testimonios, lote.testimonios),
       resells: reemplazar(e.resells, lote.resells),
+      revisionesCv: reemplazar(e.revisionesCv, lote.revisionesCv ?? []),
       reportes: reemplazar(e.reportes, lote.reportes),
       actividad: lista,
     });
@@ -1972,6 +1973,7 @@ export const acciones = {
     empujarEnLotes("seguimiento_alumnos", lote.seguimientos);
     empujarEnLotes("testimonios", lote.testimonios);
     empujarEnLotes("resells", lote.resells);
+    empujarEnLotes("revisiones_cv", lote.revisionesCv ?? []);
     empujarEnLotes("reportes", lote.reportes);
     empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
   },

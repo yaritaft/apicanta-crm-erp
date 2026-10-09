@@ -2,7 +2,7 @@
 
 import React, { useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { ExternalLink, Pencil, Plus, Trash2 } from "lucide-react";
+import { ExternalLink, FileDown, Pencil, Plus, Trash2 } from "lucide-react";
 import { Button, Chip, Field, IconButton, Input, Select, Textarea } from "@/components/ui/ui";
 import { Confirmar, ModalForm } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toast";
@@ -20,6 +20,7 @@ import {
   type ClaveRevisionCv, type ContadorCv, type FilaRevisionCv,
 } from "@/lib/revision-cv";
 import type { ColorCrm, OpcionCrm, RevisionCv } from "@/lib/types";
+import { ImportarCs } from "./ImportarCs";
 import { Pastilla, type TonoPastilla } from "./pastillas";
 import { NADA, Recorte, TablaCs } from "./TablaCs";
 
@@ -65,6 +66,7 @@ export function RevisionCvCs() {
   const [editando, setEditando] = useState<{ id: string; clave: ClaveRevisionCv } | null>(null);
   const [form, setForm] = useState<{ r?: RevisionCv } | null>(null);
   const [borrar, setBorrar] = useState<RevisionCv | null>(null);
+  const [importando, setImportando] = useState(false);
   const ordenValores = useMemo(() => ({ estado: listas.estadosCv }), [listas]);
 
   /* ---------- El contador: un clic filtra por ese estado (y otro clic saca el filtro) ---------- */
@@ -218,14 +220,25 @@ export function RevisionCvCs() {
           }
         } }}
         singular="revisión" plural="revisiones" placeholder="Buscar por nombre, teléfono o notas"
-        acciones={puede ? <Button sm variante="primary" icono={<Plus size={15} />} onClick={() => setForm({})}>Nuevo CV</Button> : undefined}
+        acciones={puede ? (
+          <>
+            <Button sm variante="secondary" icono={<FileDown size={15} />} onClick={() => setImportando(true)} title="Trae la tabla de Notion (un CSV o un Excel): se ve qué entra antes de escribir">Importar</Button>
+            <Button sm variante="primary" icono={<Plus size={15} />} onClick={() => setForm({})}>Nuevo CV</Button>
+          </>
+        ) : undefined}
         vacio={{
           titulo: "Todavía no hay CVs en revisión",
-          texto: "Cada CV que llega para corregir tiene su fila: en qué etapa va, si ya se mandó la corrección, el documento y el Loom de Yari.",
-          accion: puede ? <Button variante="brand" icono={<Plus size={16} />} onClick={() => setForm({})}>Cargar el primero</Button> : undefined,
+          texto: "Cada CV que llega para corregir tiene su fila: en qué etapa va, si ya se mandó la corrección, el documento y el Loom de Yari. Se puede traer la tabla de Notion con «Importar».",
+          accion: puede ? (
+            <>
+              <Button variante="brand" icono={<FileDown size={16} />} onClick={() => setImportando(true)}>Importar de Notion</Button>
+              <Button variante="secondary" icono={<Plus size={16} />} onClick={() => setForm({})}>Cargar el primero</Button>
+            </>
+          ) : undefined,
         }}
       />
       {form && <FormRevisionCv revision={form.r} onCerrar={() => setForm(null)} />}
+      {importando && <ImportarCs onCerrar={() => setImportando(false)} />}
       <Confirmar
         abierto={borrar !== null} onCerrar={() => setBorrar(null)}
         titulo="¿Borrar esta revisión?" texto={`Se borra la fila de ${borrar?.nombre || "este alumno"} de la revisión de CVs. El documento de corrección y el CV no se tocan.`}

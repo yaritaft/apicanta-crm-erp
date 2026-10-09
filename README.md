@@ -1570,6 +1570,22 @@ La pestaña vive en `/alumnos?seccion=cvs`, junto a Clientes, Testimonios y Rese
 - **Se corrige en la celda**: el estado (lista con buscador), las casillas con un clic, el día, los links (tienen que empezar con `http://` o `https://`), el teléfono, los mensajes y las notas; cada cambio avisa y se puede deshacer, y queda quién lo hizo.
   El formulario completo («Nuevo CV» y el lápiz del nombre) y borrar con confirmación. Quien no edita Alumnos la ve sin poder tocar nada.
 - **Los estados se ajustan** en Alumnos → Clientes → Ajustar («Estado de la revisión de CVs»), como las demás listas de Customer Success; lo ya cargado no se reescribe si se cambia un nombre.
-- Pruebas: `pruebas/revision-cv.test.ts` (filas, búsqueda, el contador y la lista ajustable). Falta el importador de su Notion (paso 3).
+- Pruebas: `pruebas/revision-cv.test.ts` (filas, búsqueda, el contador y la lista ajustable).
+
+### Revisión de CVs (paso 3: traer el Notion de Aldana)
+
+El botón «Importar» de la pestaña (y «Importar de Notion» cuando está vacía) abre el mismo importador del Airtable de Customer Success (`ImportarCs`), que ahora reconoce una cuarta tabla, «Revisión de CVs»,
+por sus encabezados (`CAMPOS_CVS` en `src/lib/importar-cs.ts`; acepta los nombres de columna de Notion: «CV Recibido», «1° Corrección», «Link de corrección», «Link de Loom», «Numero de telefono»…). Como con las otras tablas,
+**primero se ve el plan y recién después se escribe**: cuántas entran, cuáles ya estaban y cuáles se descartan, con un «Para mirar» que junta lo dudoso con sus filas.
+
+- **Identidad estable**: cada fila recibe un id derivado de nombre + fecha de inicio (si el nombre se repite el mismo día, de nombre + fecha + vez), así que **volver a subir el mismo archivo no duplica nada** («0 nuevas, N ya estaban»).
+  Si en la app ya hay una revisión con ese id, o con el mismo nombre y teléfono, o con el mismo nombre y día, se la reconoce en vez de crear otra.
+- **Dos modos** (los de siempre): «Dejar el de la app y completar sólo lo vacío» (por defecto: una casilla ya marcada o un link ya cargado no se pisa) o «Usar el del archivo».
+- **Lo que se corrige al leer, y se avisa**: el día de inicio se lee como «24 de abril de 2026», día/mes/año o aaaa-mm-dd (los errores de tipeo, como «12//2026», quedan sin fecha en vez de adivinarse); el estado se ajusta a la lista sin mirar mayúsculas
+  («OUTBOARDING» → «Outboarding»; uno que no está en la lista entra tal cual); las casillas leen Sí/No/Yes/No; un teléfono escrito en «Notas» (o como `tel:`) pasa a «Teléfono»; en los links sólo entran direcciones `http(s)`.
+- **Los links «Ver link»**: el export de Notion deja el texto «Ver link» (a veces con 🔗) en lugar de la dirección. Esos links **no se pueden recuperar del CSV**: quedan vacíos y el plan lo avisa con las filas; hay que pedir otro export o cargarlos a mano.
+- **No crea alumnos**: si el nombre o el teléfono corresponde a un único alumno de la app, la revisión se ata a él (`alumnoId`); si hay más de uno o ninguno, queda sin atar y vale igual. Una fila sin nombre se descarta con su número de fila.
+- Escribe en un solo lote (`importarClientesCs` con `revisionesCv`, también a la nube en lotes) y deja un renglón en el historial.
+- Pruebas: `pruebas/importar-cvs.test.ts` (detección de la tabla, fechas, teléfonos, links, casillas, estados, nombres repetidos, atar al alumno, los dos modos, que repetir el archivo no duplique y que no se cree ningún alumno).
 
 - Para instalarlo: Supabase → SQL Editor: `supabase/revision-cv.sql` (antes, ensayarlo contra la base real dentro de una transacción que se revierte). Para deshacerlo: `drop table public.revisiones_cv;`.

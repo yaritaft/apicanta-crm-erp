@@ -20,7 +20,7 @@ import {
 
    Se suben las tablas que Lili lleva en su Airtable (Download CSV de cada una)
    o un Excel con todas. Cada hoja se reconoce sola por sus encabezados
-   (Clientes, Testimonios, Agenda de resells, Reportes semanales) y la columna
+   (Clientes, Testimonios, Agenda de resells, Reportes semanales, Revisión de CVs) y la columna
    de cada dato se adivina; las dos cosas se pueden corregir. Antes de escribir
    se muestra qué va a entrar, qué ya estaba y qué se descarta, y por qué.
    Reimportar el mismo archivo no duplica. (lib/importar-cs.ts)
@@ -37,7 +37,7 @@ interface HojaAbierta {
   cabecera: number;
 }
 
-const TIPOS: TipoTablaCs[] = ["clientes", "testimonios", "resells", "reportes"];
+const TIPOS: TipoTablaCs[] = ["clientes", "testimonios", "resells", "reportes", "cvs"];
 
 function abrirHoja(id: number, nombre: string, filas: string[][]): HojaAbierta {
   const cabecera = filaDeEncabezados(filas);
@@ -98,9 +98,9 @@ export function ImportarCs({ onCerrar }: { onCerrar: () => void }) {
   const plan = useMemo(
     () => (tablas.length && faltas.length === 0 ? planificarImportacionCs(e, tablas, { modo, crearFaltantes, hoy, ahora: new Date().toISOString(), quien: "Importación" }) : null),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [e.alumnos, e.seguimientos, e.testimonios, e.resells, e.reportes, tablas, modo, crearFaltantes, hoy, faltas.length],
+    [e.alumnos, e.seguimientos, e.testimonios, e.resells, e.reportes, e.revisionesCv, tablas, modo, crearFaltantes, hoy, faltas.length],
   );
-  const escribe = plan ? plan.alumnos.length + plan.seguimientos.length + plan.testimonios.length + plan.resells.length + plan.reportes.length : 0;
+  const escribe = plan ? plan.alumnos.length + plan.seguimientos.length + plan.testimonios.length + plan.resells.length + plan.reportes.length + plan.revisionesCv.length : 0;
   /* Lo que se cuenta en pantalla son filas del archivo (una persona, un testimonio, una agenda), no registros de la base. */
   const filasQueEntran = plan ? TIPOS.reduce((n, t) => n + plan.porTabla[t].nuevas + plan.porTabla[t].actualizadas, 0) : 0;
 
@@ -109,10 +109,10 @@ export function ImportarCs({ onCerrar }: { onCerrar: () => void }) {
     const partes = TIPOS.filter((t) => plan.porTabla[t].filas > 0)
       .map((t) => `${NOMBRE_TABLA_CS[t]}: ${plan.porTabla[t].nuevas} nuevas, ${plan.porTabla[t].actualizadas} actualizadas`).join(" · ");
     acciones.importarClientesCs({
-      alumnos: plan.alumnos, seguimientos: plan.seguimientos, testimonios: plan.testimonios, resells: plan.resells, reportes: plan.reportes,
-      detalle: `Importación del Airtable de Customer Success (${partes}).`,
+      alumnos: plan.alumnos, seguimientos: plan.seguimientos, testimonios: plan.testimonios, resells: plan.resells, reportes: plan.reportes, revisionesCv: plan.revisionesCv,
+      detalle: `Importación de Customer Success (${partes}).`,
     });
-    toast(`Listo: se importó el Airtable (${num(filasQueEntran)} ${filasQueEntran === 1 ? "fila" : "filas"}).`);
+    toast(`Listo: se importó lo de Customer Success (${num(filasQueEntran)} ${filasQueEntran === 1 ? "fila" : "filas"}).`);
     onCerrar();
   }
 
@@ -122,7 +122,7 @@ export function ImportarCs({ onCerrar }: { onCerrar: () => void }) {
 
   return (
     <Modal abierto onCerrar={onCerrar} titulo="Importar el Airtable de Customer Success" ancho
-      sub="Clientes, Testimonios, Agenda de resells y Reportes semanales. Antes de escribir nada se ve qué va a entrar."
+      sub="Clientes, Testimonios, Agenda de resells, Reportes semanales y la Revisión de CVs. Antes de escribir nada se ve qué va a entrar."
       pie={(
         <>
           <Button variante="ghost" onClick={onCerrar}>Cancelar</Button>
@@ -142,7 +142,7 @@ export function ImportarCs({ onCerrar }: { onCerrar: () => void }) {
               onChange={(ev) => { if (ev.target.files?.length) void elegir(ev.target.files); ev.target.value = ""; }} />
           </label>
           <span className="t-sm t-subtle">
-            {leyendo ? "Leyendo…" : "En Airtable: abrí cada tabla → ⋯ → «Download CSV». Podés subir los CSV juntos, o un Excel con una hoja por tabla. Las fechas se leen como día/mes/año."}
+            {leyendo ? "Leyendo…" : "En Airtable: abrí cada tabla → ⋯ → «Download CSV». La Revisión de CVs se exporta de Notion como CSV. Podés subir los CSV juntos, o un Excel con una hoja por tabla. Las fechas se leen como día/mes/año."}
           </span>
         </div>
 
@@ -210,10 +210,13 @@ export function ImportarCs({ onCerrar }: { onCerrar: () => void }) {
               <input type="radio" name="modo" checked={modo === "pisar"} onChange={() => setModo("pisar")} />
               <span>Usar el del archivo <span className="t-subtle">(pisa lo que se corrigió en la app)</span></span>
             </label>
-            <label className="row" style={{ gap: 8, cursor: "pointer", marginTop: 6 }}>
-              <input type="checkbox" checked={crearFaltantes} onChange={(ev) => setCrearFaltantes(ev.target.checked)} />
-              <span>Si un testimonio, reporte o agenda nombra a un alumno que no está, crearlo como egresado en vez de descartarlo</span>
-            </label>
+            {/* La revisión de CVs nunca crea alumnos: la opción sólo importa si hay alguna de las otras tablas. */}
+            {tablas.some((t) => t.tipo !== "cvs") && (
+              <label className="row" style={{ gap: 8, cursor: "pointer", marginTop: 6 }}>
+                <input type="checkbox" checked={crearFaltantes} onChange={(ev) => setCrearFaltantes(ev.target.checked)} />
+                <span>Si un testimonio, reporte o agenda nombra a un alumno que no está, crearlo como egresado en vez de descartarlo</span>
+              </label>
+            )}
           </fieldset>
         )}
 
@@ -224,7 +227,7 @@ export function ImportarCs({ onCerrar }: { onCerrar: () => void }) {
               {TIPOS.filter((t) => plan.porTabla[t].filas > 0).map((t) => {
                 const r = plan.porTabla[t];
                 return (
-                  <span key={t}><strong>{NOMBRE_TABLA_CS[t]}</strong>: {num(r.nuevas)} nuevas · {num(r.actualizadas)} actualizadas · {num(r.iguales)} ya estaban{r.descartadas ? ` · ${num(r.descartadas)} descartadas` : ""}</span>
+                  <span key={t}><strong>{NOMBRE_TABLA_CS[t]}</strong>: {num(r.nuevas)} {r.nuevas === 1 ? "nueva" : "nuevas"} · {num(r.actualizadas)} {r.actualizadas === 1 ? "actualizada" : "actualizadas"} · {num(r.iguales)} {r.iguales === 1 ? "ya estaba" : "ya estaban"}{r.descartadas ? ` · ${num(r.descartadas)} ${r.descartadas === 1 ? "descartada" : "descartadas"}` : ""}</span>
                 );
               })}
               {plan.alumnosCreadosPorOtraTabla > 0 && <span>Alumnos creados porque otra tabla los nombra: {num(plan.alumnosCreadosPorOtraTabla)}</span>}

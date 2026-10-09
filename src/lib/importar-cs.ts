@@ -4,11 +4,12 @@ import { diaAInstante, diaDeNegocio } from "./dia-negocio";
 import { leerFecha } from "./registros-webinar";
 import { lunesDe, lunesDelDia } from "./reportes";
 import { sinTildes } from "./crm";
+import { leerDiaCv, leerLinkCv, leerTelefonoCv, revisionCvNormal } from "./revision-cv";
 import {
   aNumero, ENTRE, listasCs, programasDeTexto, resellNormal, seguimientoCompleto, sumarMeses, testimonioNormal, valorDeLista, CONTRATOS,
 } from "./clientes-cs";
 import { configSeguimiento } from "./seguimiento";
-import type { Alumno, EstadoApp, ID, Reporte, Resell, SeguimientoAlumno, Testimonio } from "./types";
+import type { Alumno, EstadoApp, ID, Reporte, Resell, RevisionCv, SeguimientoAlumno, Testimonio } from "./types";
 
 /* ==================================================================
    Importar el Airtable de Customer Success.
@@ -29,10 +30,10 @@ import type { Alumno, EstadoApp, ID, Reporte, Resell, SeguimientoAlumno, Testimo
    Todo acá es puro (sin React ni base) para poder probarlo.
    ================================================================== */
 
-export type TipoTablaCs = "clientes" | "testimonios" | "resells" | "reportes";
+export type TipoTablaCs = "clientes" | "testimonios" | "resells" | "reportes" | "cvs";
 
 export const NOMBRE_TABLA_CS: Record<TipoTablaCs, string> = {
-  clientes: "Clientes", testimonios: "Testimonios", resells: "Agenda de resells", reportes: "Reportes semanales",
+  clientes: "Clientes", testimonios: "Testimonios", resells: "Agenda de resells", reportes: "Reportes semanales", cvs: "Revisión de CVs",
 };
 
 export interface CampoCs { campo: string; titulo: string; alias: string[]; ayuda?: string }
@@ -116,8 +117,25 @@ export const CAMPOS_REPORTES: CampoCs[] = [
   c("bloqueo", "Bloqueo", ["bloqueo", "bloqueos", "comentarios", "notas"]),
 ];
 
+/* La base de Notion de Aldana, «REVISION DE CVS»: nombre, CV recibido, corrección 1 y 2, estado, fecha de inicio, link de corrección, Loom, notas (donde está el teléfono) y mensajes. */
+export const CAMPOS_CVS: CampoCs[] = [
+  c("nombre", "Nombre", ["nombre", "nombre y apellido", "nombre completo", "alumno"], "Obligatorio."),
+  c("cvRecibido", "CV recibido", ["cv recibido", "recibido"]),
+  c("correccion1", "Corrección 1 enviada", ["correccion 1 enviada", "correccion 1", "1 correccion", "primera correccion"]),
+  c("correccion2", "Corrección 2 enviada", ["correccion 2 enviada", "correccion 2", "2 correccion", "segunda correccion"]),
+  c("estado", "Estado", ["estado", "etapa"]),
+  c("inicio", "Fecha de inicio", ["fecha de inicio", "fecha inicio", "inicio"], "Acepta «24 de abril de 2026» y día/mes/año."),
+  c("linkCorreccion", "Documento de corrección", ["link correccion", "link de correccion", "documento de correccion", "doc de correccion", "link del documento"]),
+  c("linkLoom", "Loom de Yari", ["link loom", "link de loom", "loom de yari", "loom"]),
+  c("linkCv", "CV (Drive)", ["link cv", "link del cv", "link de cv", "cv drive", "curriculum drive"]),
+  c("linkLinkedin", "LinkedIn", ["link linkedin", "link de linkedin", "perfil de linkedin", "linkedin"]),
+  c("telefono", "Teléfono", ["numero de telefono", "telefono", "celular", "whatsapp", "phone"], "Si no hay columna, se busca en «Notas»: en su Notion está ahí."),
+  c("notas", "Notas", ["notas", "nota", "comentarios", "observaciones"]),
+  c("mensajes", "Mensajes", ["mensajes", "mensaje", "avisos"]),
+];
+
 export const CAMPOS_DE: Record<TipoTablaCs, CampoCs[]> = {
-  clientes: CAMPOS_CLIENTES, testimonios: CAMPOS_TESTIMONIOS, resells: CAMPOS_RESELLS, reportes: CAMPOS_REPORTES,
+  clientes: CAMPOS_CLIENTES, testimonios: CAMPOS_TESTIMONIOS, resells: CAMPOS_RESELLS, reportes: CAMPOS_REPORTES, cvs: CAMPOS_CVS,
 };
 
 /* ---------- Encabezados ---------- */
@@ -145,7 +163,7 @@ export function adivinarMapeoCs(campos: readonly CampoCs[], encabezados: readonl
 
 /** De qué tabla de Customer Success es una hoja, por sus encabezados (y por su nombre si empata). */
 export function detectarTipo(encabezados: readonly string[], nombre = ""): { tipo: TipoTablaCs | null; puntos: Record<TipoTablaCs, number> } {
-  const puntos = { clientes: 0, testimonios: 0, resells: 0, reportes: 0 } as Record<TipoTablaCs, number>;
+  const puntos = { clientes: 0, testimonios: 0, resells: 0, reportes: 0, cvs: 0 } as Record<TipoTablaCs, number>;
   for (const t of Object.keys(CAMPOS_DE) as TipoTablaCs[]) {
     puntos[t] = Object.values(adivinarMapeoCs(CAMPOS_DE[t], encabezados)).filter((v) => v !== undefined).length;
   }
@@ -155,6 +173,7 @@ export function detectarTipo(encabezados: readonly string[], nombre = ""): { tip
   if (/resell/.test(n)) puntos.resells += 2;
   if (/cliente|alumno/.test(n)) puntos.clientes += 2;
   if (/report|result/.test(n)) puntos.reportes += 2;
+  if (/\bcvs?\b|curricul|revision/.test(n)) puntos.cvs += 2;
   const orden = (Object.keys(puntos) as TipoTablaCs[]).sort((a, b) => puntos[b] - puntos[a]);
   const mejor = orden[0];
   return { tipo: puntos[mejor] >= 3 && puntos[mejor] > puntos[orden[1]] ? mejor : null, puntos };
@@ -267,6 +286,7 @@ export interface PlanImportCs {
   testimonios: Testimonio[];
   resells: Resell[];
   reportes: Reporte[];
+  revisionesCv: RevisionCv[];
   /* Cosas a mirar que no impiden importar (un N.º repetido, un alumno elegido por el nombre). */
   avisos: string[];
   descartadas: Descartada[];
@@ -286,8 +306,8 @@ export function planificarImportacionCs(e: EstadoApp, tablas: readonly TablaImpo
   const cfg = configSeguimiento(e.ajustes.seguimiento);
   const listas = listasCs(e.ajustes.seguimiento);
   const plan: PlanImportCs = {
-    porTabla: { clientes: vacio(), testimonios: vacio(), resells: vacio(), reportes: vacio() },
-    alumnos: [], seguimientos: [], testimonios: [], resells: [], reportes: [], avisos: [], descartadas: [], alumnosCreadosPorOtraTabla: 0,
+    porTabla: { clientes: vacio(), testimonios: vacio(), resells: vacio(), reportes: vacio(), cvs: vacio() },
+    alumnos: [], seguimientos: [], testimonios: [], resells: [], reportes: [], revisionesCv: [], avisos: [], descartadas: [], alumnosCreadosPorOtraTabla: 0,
   };
   const descartar = (tabla: TipoTablaCs, fila: number, motivo: string) => {
     plan.descartadas.push({ tabla, fila, motivo });
@@ -659,6 +679,124 @@ export function planificarImportacionCs(e: EstadoApp, tablas: readonly TablaImpo
     });
   }
 
+
+  /* ---------- Revisión de CVs (la base de Notion de Aldana) ---------- */
+  const revisionesActuales = (e.revisionesCv ?? []).map((r) => revisionCvNormal(r));
+  const revisionesUsadas = new Set<ID>();
+  const vecesEnElArchivo = new Map<string, number>();
+  for (const t of tablas.filter((x) => x.tipo === "cvs")) {
+    const filasTxt = (xs: number[]) => `${xs.length === 1 ? "fila" : "filas"} ${xs.length <= 6 ? xs.join(", ") : `${xs.slice(0, 6).join(", ")} y ${xs.length - 6} más`}`;
+    const cuantas = (n: number, uno: string, varios: string) => `${n} ${n === 1 ? uno : varios}`;
+    const tituloDe = (campo: string) => CAMPOS_CVS.find((x) => x.campo === campo)?.titulo ?? campo;
+    const fechasRaras: number[] = [];
+    const sinDireccion = new Map<string, number[]>();
+    const linksRotos = new Map<string, number[]>();
+    const casillasRaras: number[] = [];
+    const estadosFuera = new Map<string, number>();
+    const sinAtar: number[] = [];
+    const repetidos = new Map<string, number[]>();
+    let telefonoDeNotas = 0;
+    t.filas.forEach((fila, i) => {
+      const n = i + 2;
+      const v = (campo: string) => valorDe(fila, t.mapeo, campo);
+      if (fila.every((x) => !x.trim())) return;
+      plan.porTabla.cvs.filas++;
+      const nombre = v("nombre").replace(/\s+/g, " ");
+      if (!nombre) return descartar("cvs", n, "No tiene nombre.");
+      /* El día de inicio: sólo lo que se entiende del todo; lo dudoso entra sin fecha y se avisa. */
+      const fechaTxt = v("inicio");
+      const fecha = fechaTxt ? leerDiaCv(fechaTxt, op.hoy) : null;
+      if (fechaTxt && !fecha) fechasRaras.push(n);
+      /* El teléfono: en su Notion está escrito en la columna de notas; si ahí no hay más que un teléfono, pasa a su campo. */
+      let telefono = v("telefono") ? (leerTelefonoCv(v("telefono")) ?? v("telefono")) : "";
+      let notas = v("notas");
+      if (!telefono && notas) {
+        const tel = leerTelefonoCv(notas);
+        if (tel) { telefono = tel; notas = ""; telefonoDeNotas++; }
+      }
+      /* Los links: sólo direcciones. Lo que el export de Notion dejó como etiqueta («Ver link») o como error se avisa y queda vacío. */
+      const links: Record<"linkCv" | "linkLinkedin" | "linkCorreccion" | "linkLoom", string> = { linkCv: "", linkLinkedin: "", linkCorreccion: "", linkLoom: "" };
+      for (const campo of ["linkCorreccion", "linkLoom", "linkCv", "linkLinkedin"] as const) {
+        const r = leerLinkCv(v(campo));
+        links[campo] = r.link;
+        if (r.motivo === "sin-direccion") sinDireccion.set(campo, [...(sinDireccion.get(campo) ?? []), n]);
+        else if (r.motivo === "no-es-link") {
+          const k = `${tituloDe(campo)}: «${v(campo).slice(0, 30)}»`;
+          linksRotos.set(k, [...(linksRotos.get(k) ?? []), n]);
+        }
+      }
+      const estadoTxt = v("estado");
+      const estado = estadoTxt ? valorDeLista(estadoTxt, listas.estadosCv) : "";
+      if (estado && !listas.estadosCv.includes(estado)) estadosFuera.set(estado, (estadosFuera.get(estado) ?? 0) + 1);
+      const casilla = (campo: string): boolean => {
+        const x = v(campo);
+        if (!x) return false;
+        const b = leerSiNo(x);
+        if (b === null) { casillasRaras.push(n); return false; }
+        return b;
+      };
+      /* El mismo id cada vez que se importa la misma fila (por su nombre y su día), y distinto si el nombre se repite el mismo día. */
+      const base = `${sinAcentos(nombre)}|${fecha ?? ""}`;
+      const veces = (vecesEnElArchivo.get(base) ?? 0) + 1;
+      vecesEnElArchivo.set(base, veces);
+      const nombreK = sinAcentos(nombre);
+      repetidos.set(nombreK, [...(repetidos.get(nombreK) ?? []), n]);
+      const idImportado = `cv_imp_${hashCorto(veces > 1 ? `${base}|${veces}` : base)}`;
+      const telK = claveTelefono(telefono);
+      const libre = (r: RevisionCv) => !revisionesUsadas.has(r.id);
+      const existente = revisionesActuales.find((r) => r.id === idImportado && libre(r))
+        ?? (telK ? revisionesActuales.find((r) => libre(r) && sinAcentos(r.nombre) === nombreK && claveTelefono(r.telefono) === telK) : undefined)
+        ?? (fecha ? revisionesActuales.find((r) => libre(r) && sinAcentos(r.nombre) === nombreK && r.fechaInicio === fecha) : undefined);
+      const id = existente?.id ?? idImportado;
+      revisionesUsadas.add(id);
+      /* El alumno de la app, sólo si se sabe de quién es: por el teléfono o por el nombre si es uno solo. No se crea ninguno. */
+      const alumnoBuscado = buscarAlumno({ email: "", numero: null, telefono, nombre });
+      if (alumnoBuscado.ambiguo && !existente?.alumnoId) sinAtar.push(n);
+      const archivo = revisionCvNormal({
+        id, nombre, telefono, alumnoId: existente?.alumnoId ?? alumnoBuscado.id ?? null, estado,
+        cvRecibido: casilla("cvRecibido"), correccion1: casilla("correccion1"), correccion2: casilla("correccion2"), fechaInicio: fecha,
+        ...links, notas, mensajes: v("mensajes"), origen: existente?.origen ?? "importado",
+        creadoEn: existente?.creadoEn ?? op.ahora, actualizadoEn: op.ahora, actualizadoPor: op.quien,
+      });
+      let resultado = archivo;
+      if (existente) {
+        /* Por defecto sólo se completa lo que está vacío; con «el archivo manda», lo del archivo (si trae algo) gana. */
+        const pisar = op.modo === "pisar";
+        const texto = (viejo: string, nuevo: string) => (pisar || !viejo ? nuevo || viejo : viejo);
+        resultado = revisionCvNormal({
+          ...existente,
+          telefono: texto(existente.telefono, archivo.telefono), estado: texto(existente.estado, archivo.estado),
+          cvRecibido: pisar ? archivo.cvRecibido : existente.cvRecibido || archivo.cvRecibido,
+          correccion1: pisar ? archivo.correccion1 : existente.correccion1 || archivo.correccion1,
+          correccion2: pisar ? archivo.correccion2 : existente.correccion2 || archivo.correccion2,
+          fechaInicio: pisar || !existente.fechaInicio ? archivo.fechaInicio ?? existente.fechaInicio : existente.fechaInicio,
+          linkCv: texto(existente.linkCv, archivo.linkCv), linkLinkedin: texto(existente.linkLinkedin, archivo.linkLinkedin),
+          linkCorreccion: texto(existente.linkCorreccion, archivo.linkCorreccion), linkLoom: texto(existente.linkLoom, archivo.linkLoom),
+          notas: texto(existente.notas, archivo.notas), mensajes: texto(existente.mensajes, archivo.mensajes),
+          alumnoId: existente.alumnoId ?? archivo.alumnoId, actualizadoEn: op.ahora, actualizadoPor: op.quien,
+        });
+        const igual = JSON.stringify({ ...resultado, actualizadoEn: "", actualizadoPor: "" }) === JSON.stringify({ ...existente, actualizadoEn: "", actualizadoPor: "" });
+        if (igual) { plan.porTabla.cvs.iguales++; return; }
+        plan.porTabla.cvs.actualizadas++;
+      } else {
+        plan.porTabla.cvs.nuevas++;
+      }
+      plan.revisionesCv.push(resultado);
+    });
+    /* Lo que hay que mirar, junto y con las filas, para no llenar la pantalla de un renglón por cada una. */
+    if (fechasRaras.length) plan.avisos.push(`Revisión de CVs: ${fechasRaras.length === 1 ? "1 fecha de inicio no se entendió" : `${fechasRaras.length} fechas de inicio no se entendieron`} (${filasTxt(fechasRaras)}): ${fechasRaras.length === 1 ? "esa revisión entra" : "esas revisiones entran"} sin fecha.`);
+    for (const [campo, filas] of sinDireccion) {
+      plan.avisos.push(`Revisión de CVs: en ${cuantas(filas.length, "fila", "filas")} «${tituloDe(campo)}» viene como «Ver link» y no como la dirección (el export de Notion no la incluye): ${filas.length === 1 ? "quedó sin ese link" : "quedaron sin ese link"} (${filasTxt(filas)}). Hay que exportar de nuevo o cargarlo a mano.`);
+    }
+    for (const [que, filas] of linksRotos) plan.avisos.push(`Revisión de CVs: ${que} no es una dirección (${filasTxt(filas)}): quedó vacío.`);
+    if (casillasRaras.length) plan.avisos.push(`Revisión de CVs: en ${filasTxt(casillasRaras)} una casilla no se entendió (ni Sí ni No): quedó en No.`);
+    for (const [estado, veces] of estadosFuera) plan.avisos.push(`Revisión de CVs: «${estado}» no está en la lista de estados (${cuantas(veces, "fila", "filas")}): se importó tal cual; se puede sumar en Alumnos → Clientes → Ajustar.`);
+    if (sinAtar.length) plan.avisos.push(`Revisión de CVs: ${sinAtar.length === 1 ? "1 revisión no se ató" : `${sinAtar.length} revisiones no se ataron`} a un alumno porque hay más de uno con ese nombre o teléfono (${filasTxt(sinAtar)}).`);
+    const dobles = [...repetidos.values()].filter((xs) => xs.length > 1);
+    if (dobles.length) plan.avisos.push(`Revisión de CVs: ${dobles.length === 1 ? "1 nombre aparece" : `${dobles.length} nombres aparecen`} más de una vez (${filasTxt(dobles.flat())}): se importaron como revisiones distintas.`);
+    if (telefonoDeNotas) plan.avisos.push(`Revisión de CVs: ${telefonoDeNotas === 1 ? "el teléfono de 1 fila estaba escrito" : `el teléfono de ${telefonoDeNotas} filas estaba escrito`} en «Notas»: pasó a «Teléfono».`);
+  }
+
   /* Lo que se escribe: los alumnos y las fichas que se tocaron (y las de los que se crearon). */
   plan.alumnos = [...tocados].map((id) => alumnos.get(id)!).filter(Boolean);
   plan.seguimientos = [...tocadosSeg].map((id) => segs.get(id)!).filter(Boolean);
@@ -683,7 +821,7 @@ export function tablaDeHoja(nombre: string, filas: readonly (readonly string[])[
 
 /** Lo que falta para poder importar una tabla (el dato obligatorio sin columna). */
 export function faltaParaImportar(t: Pick<TablaImport, "tipo" | "mapeo">): string | null {
-  const exige: Record<TipoTablaCs, string[]> = { clientes: ["nombre"], testimonios: ["alumno"], resells: ["fechaHora"], reportes: ["semana"] };
+  const exige: Record<TipoTablaCs, string[]> = { clientes: ["nombre"], testimonios: ["alumno"], resells: ["fechaHora"], reportes: ["semana"], cvs: ["nombre"] };
   const falta = exige[t.tipo].filter((k) => t.mapeo[k] === undefined).map((k) => CAMPOS_DE[t.tipo].find((x) => x.campo === k)?.titulo ?? k);
   return falta.length ? `Elegí qué columna es ${falta.join(" y ")}.` : null;
 }

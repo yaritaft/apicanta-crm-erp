@@ -135,3 +135,61 @@ export function contadoresCv(filas: readonly FilaRevisionCv[], lista: readonly s
   return sinEstado.n > 0 ? [...pendientes, sinEstado] : pendientes;
 }
 
+
+/* ---------- Leer lo que viene de la base de Notion de Aldana ---------- */
+
+const MESES: Record<string, number> = {
+  enero: 1, febrero: 2, marzo: 3, abril: 4, mayo: 5, junio: 6, julio: 7, agosto: 8, septiembre: 9, setiembre: 9, octubre: 10, noviembre: 11, diciembre: 12,
+};
+
+const diaDeVerdad = (a: number, m: number, d: number): string | null => {
+  const f = new Date(Date.UTC(a, m - 1, d));
+  if (f.getUTCFullYear() !== a || f.getUTCMonth() !== m - 1 || f.getUTCDate() !== d) return null;
+  return `${a}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+};
+
+/** El día de inicio como lo escribe su Notion, «aaaa-mm-dd» o null si no se entiende del todo. Acepta «24 de abril de 2026», «24/4/2026» (el día va
+ *  primero: en su archivo hay fechas con el día mayor a 12 y ninguna con el mes mayor a 12) y «2026-04-24». Lo dudoso no se adivina: una barra de más
+ *  («24//2026»), un año de cinco dígitos o de otra época («0206») dan null, y la revisión entra sin fecha. `hoy` («aaaa-mm-dd») pone el techo del año. */
+export function leerDiaCv(texto: string, hoy: string): string | null {
+  const t = texto.trim();
+  if (!t) return null;
+  const tope = Number(hoy.slice(0, 4)) + 1;
+  const dentro = (a: number) => a >= 2015 && a <= tope;
+  let m = /^(\d{4})-(\d{1,2})-(\d{1,2})(?:[T\s].*)?$/.exec(t);
+  if (m) return dentro(+m[1]) ? diaDeVerdad(+m[1], +m[2], +m[3]) : null;
+  m = /^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})$/.exec(t);
+  if (m) return dentro(+m[3]) ? diaDeVerdad(+m[3], +m[2], +m[1]) : null;
+  m = /^(\d{1,2})\s+de\s+([a-záéíóú]+)\s+de\s+(\d{4})$/i.exec(t);
+  if (m) {
+    const mes = MESES[sinTildes(m[2]).toLowerCase()];
+    return mes && dentro(+m[3]) ? diaDeVerdad(+m[3], mes, +m[1]) : null;
+  }
+  return null;
+}
+
+/** Un teléfono escrito de cualquier forma («+57 300 5550100», «tel:+5491155550001», «54 9 11 5555-0002»), tal cual lo escribieron pero sin el «tel:»; null si
+ *  el texto no es un teléfono (tiene letras, o menos de 7 o más de 15 dígitos). En su Notion el teléfono está escrito en la columna de notas. */
+export function leerTelefonoCv(texto: string): string | null {
+  const t = texto.trim().replace(/^tel:/i, "").trim();
+  if (!t || !/^[+()\d\s.\-]+$/.test(t)) return null;
+  const digitos = t.replace(/\D/g, "").length;
+  return digitos >= 7 && digitos <= 15 ? t : null;
+}
+
+export type ResultadoLinkCv =
+  | { link: string; motivo?: undefined }
+  /* «vacio»: no había nada. «sin-direccion»: el export de Notion trajo la etiqueta («🔗 Ver link») en vez de la dirección. «no-es-link»: otra cosa
+     («#REF!», «no corresponde», «OUTBOARDING»). */
+  | { link: ""; motivo: "vacio" | "sin-direccion" | "no-es-link" };
+
+/** Un link de la revisión: sólo lo que es una dirección (http o https). También entiende «[texto](https://…)» de un export en Markdown. */
+export function leerLinkCv(texto: string): ResultadoLinkCv {
+  const t = texto.trim();
+  if (!t) return { link: "", motivo: "vacio" };
+  const md = /\[[^\]]*\]\((https?:\/\/[^)\s]+)\)/i.exec(t);
+  if (md) return { link: md[1] };
+  if (/^https?:\/\/\S+$/i.test(t)) return { link: t };
+  if (/ver\s*link|🔗/i.test(t)) return { link: "", motivo: "sin-direccion" };
+  return { link: "", motivo: "no-es-link" };
+}
