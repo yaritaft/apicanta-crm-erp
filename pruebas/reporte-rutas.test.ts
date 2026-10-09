@@ -33,8 +33,31 @@ test("público: faltan cifras, números fuera de rango y cuerpos que no son JSON
   assert.equal((await POST(post({ codigo: CODIGO, horas: 1 }))).status, 400);
   assert.equal((await POST(post({ ...bueno, horas: 500 }))).status, 400);
   assert.equal((await POST(post("esto no es json"))).status, 400);
-  const grande = await POST(post({ ...bueno, bloqueo: "x".repeat(20_000) }));
+  const grande = await POST(post({ ...bueno, bloqueo: "x".repeat(100_000) }));
   assert.equal(grande.status, 413);
+  /* Un formulario de Hackear Biz entero, con las respuestas largas al tope, entra. */
+  const largas = Object.fromEntries(["trabajo", "accion", "marca", "logro", "bloqueo", "objetivo", "ayuda"].map((k) => [k, "ñ".repeat(2000)]));
+  const entero = await POST(post({ codigo: CODIGO, formulario: "hackear-biz", respuestas: { ...BIZ, ...largas } }));
+  assert.equal(entero.status, 503, "pasa la lectura y recién ahí falta la base");
+});
+
+const BIZ = {
+  trabajo: "a", accion: "b", marca: "c", publicaciones: "Ninguna.", conversaciones: "0", ventas: "0", logro: "d", bloqueo: "e",
+  compromiso: 8, objetivo: "f", ayuda: "g", clase: "Sí",
+};
+
+test("público: el formulario de Hackear Biz revisa cada pregunta y dice cuál falló", async () => {
+  const falta = await POST(post({ codigo: CODIGO, formulario: "hackear-biz", respuestas: { ...BIZ, ventas: "" } }));
+  assert.equal(falta.status, 400);
+  assert.equal((await falta.json()).campo, "ventas");
+  const escala = await POST(post({ codigo: CODIGO, formulario: "hackear-biz", respuestas: { ...BIZ, compromiso: 11 } }));
+  assert.equal(escala.status, 400);
+  assert.equal((await escala.json()).campo, "compromiso");
+  const otro = await POST(post({ codigo: CODIGO, formulario: "hackear-xx", respuestas: BIZ }));
+  assert.equal(otro.status, 400);
+  assert.equal((await otro.json()).campo, "formulario");
+  const bien = await POST(post({ codigo: CODIGO, formulario: "hackear-biz", respuestas: BIZ }));
+  assert.equal(bien.status, 503, "todo bien, pero sin base configurada");
 });
 
 test("público: con todo bien pero sin base configurada contesta 503, sin decir nada de nadie", async () => {

@@ -29,12 +29,15 @@ export interface ItemReporte {
   entrevistas?: number;
   postulaciones?: number;
   bloqueo?: string;
+  /* Lo que contestó el alumno en el formulario de su programa. Sólo lo pone el formulario público
+     (lib/reporte-servidor.ts): el webhook no lo lee, así que desde afuera no se puede mandar. */
+  detalle?: { programa: string; formulario: string; respuestas: Record<string, string | number> };
 }
 
 const sinMarcas = (s: string) => s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]+/g, "");
 
 /* Los nombres con que puede llegar cada dato (un formulario, el Airtable, un script a mano). */
-const ALIAS: Record<keyof ItemReporte, string[]> = {
+const ALIAS: Record<Exclude<keyof ItemReporte, "detalle">, string[]> = {
   email: ["email", "mail", "correo", "correoelectronico"],
   alumno: ["alumno", "nombre", "nombrecompleto", "name", "nombreyapellido"],
   dia: ["semana", "semanadel", "fecha", "fechadelreporte", "week", "date", "createdtime", "timestamp", "marcatemporal"],
@@ -67,11 +70,11 @@ export function leerItems(json: unknown): { items: { posicion: number; item: Ite
     if (!crudo || typeof crudo !== "object" || Array.isArray(crudo)) { rechazados.push({ posicion, motivo: "No es un reporte." }); return; }
     const por = new Map<string, unknown>();
     for (const [k, v] of Object.entries(crudo as Record<string, unknown>)) por.set(sinMarcas(k), v);
-    const dato = (campo: keyof ItemReporte): unknown => {
+    const dato = (campo: keyof typeof ALIAS): unknown => {
       for (const a of ALIAS[campo]) if (por.has(a) && por.get(a) !== "" && por.get(a) !== null) return por.get(a);
       return undefined;
     };
-    const texto = (campo: keyof ItemReporte) => {
+    const texto = (campo: keyof typeof ALIAS) => {
       const x = dato(campo);
       return typeof x === "string" ? x.trim().slice(0, MAX_TEXTO) : typeof x === "number" ? String(x) : "";
     };
@@ -149,6 +152,7 @@ export function planificarReportes(
       ...(item.entrevistas !== undefined ? { entrevistas: item.entrevistas } : {}),
       ...(item.postulaciones !== undefined ? { postulaciones: item.postulaciones } : {}),
       ...(item.bloqueo ? { bloqueo: item.bloqueo } : {}),
+      ...(item.detalle ? { programa: item.detalle.programa, formulario: item.detalle.formulario, respuestas: item.detalle.respuestas } : {}),
     };
     porClave.set(clave, fila);
     if (!existente) yaTiene.set(clave, fila.id);

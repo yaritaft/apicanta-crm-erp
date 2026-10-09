@@ -4,6 +4,7 @@ import {
   armarMail, enlaceDeReporte, esCodigoValido, leerEnvio, limitador, mensajeParaAlumno, primerNombre,
 } from "@/lib/reporte-enlace";
 import { enviarPorResend, estadoEnResend, recibirDelAlumno } from "@/lib/reporte-servidor";
+import { FORMULARIO_BIZ, FORMULARIO_IT } from "@/lib/reporte-formularios";
 import type { BaseReportes } from "@/lib/reportes-servidor";
 import type { Reporte } from "@/lib/types";
 
@@ -45,33 +46,70 @@ test("el mail escapa lo que escribe cualquiera: el nombre no puede meter HTML", 
   assert.match(m.texto, /https:\/\/x\.test/);
 });
 
-test("lo que manda el formulario: las tres cifras son obligatorias y se redondean; el bloqueo es opcional", () => {
-  const ok = leerEnvio({ codigo: CODIGO, horas: "7,5", entrevistas: 2, postulaciones: "0", bloqueo: "  me trabé con Docker  " });
-  assert.deepEqual(ok, { ok: true, valor: { codigo: CODIGO, horas: 8, entrevistas: 2, postulaciones: 0, bloqueo: "me trabé con Docker" } });
-  const sin = leerEnvio({ codigo: CODIGO, horas: 0, entrevistas: 0, postulaciones: 0 });
-  assert.equal(sin.ok && "bloqueo" in sin.valor, false);
+/* Las once respuestas largas y las dos cortas de un alumno de Hackear Biz que contestó todo. */
+const BIZ = {
+  trabajo: "Armé mi oferta", accion: "Publiqué un caso", marca: "Subí 200 seguidores", publicaciones: "Entre 3 y 5.",
+  conversaciones: "8", ventas: "1 por 500", logro: "Cerré mi primera venta", bloqueo: "Me cuesta vender el precio",
+  compromiso: 9, objetivo: "Diez conversaciones", ayuda: "Revisar mi guion", clase: "Sí",
+};
+
+test("lo que manda el formulario de Hackear Biz: el código, el formulario y las doce respuestas", () => {
+  const ok = leerEnvio({ codigo: CODIGO, formulario: "hackear-biz", respuestas: { ...BIZ, trabajo: "  Armé mi oferta  ", compromiso: "9" } });
+  assert.ok(ok.ok);
+  if (!ok.ok) return;
+  assert.equal(ok.valor.codigo, CODIGO);
+  assert.equal(ok.valor.formulario.id, "hackear-biz");
+  assert.deepEqual(ok.valor.respuestas, BIZ);
 });
 
-test("los errores del formulario se dicen para el alumno y marcan el campo", () => {
-  const f = (o: Record<string, unknown>) => leerEnvio({ codigo: CODIGO, horas: 1, entrevistas: 1, postulaciones: 1, ...o });
-  const falta = f({ horas: "" });
+test("lo que no es una pregunta del formulario no se guarda", () => {
+  const r = leerEnvio({ codigo: CODIGO, formulario: "hackear-biz", respuestas: { ...BIZ, horas: 99, "__proto__": { x: 1 }, cualquiera: "<script>" } });
+  assert.ok(r.ok);
+  if (r.ok) assert.deepEqual(Object.keys(r.valor.respuestas).sort(), Object.keys(BIZ).sort());
+});
+
+test("cada error se dice para el alumno y marca la pregunta que falló", () => {
+  const f = (o: Record<string, unknown>) => leerEnvio({ codigo: CODIGO, formulario: "hackear-biz", respuestas: { ...BIZ, ...o } });
+  const falta = f({ logro: "   " });
   assert.equal(falta.ok, false);
-  if (!falta.ok) { assert.equal(falta.campo, "horas"); assert.match(falta.error, /horas de estudio/); }
-  const raro = f({ entrevistas: "muchas" });
-  if (!raro.ok) { assert.equal(raro.campo, "entrevistas"); assert.match(raro.error, /número/); } else assert.fail();
-  for (const [campo, valor] of [["horas", -1], ["horas", 169], ["postulaciones", 1001], ["entrevistas", Infinity]] as const) {
-    assert.equal(f({ [campo]: valor }).ok, false, `${campo}=${valor}`);
-  }
-  const sinCodigo = leerEnvio({ horas: 1, entrevistas: 1, postulaciones: 1 });
+  if (!falta.ok) { assert.equal(falta.campo, "logro"); assert.match(falta.error, /responder/); assert.match(falta.error, /Principal logro/); }
+  const opcionRara = f({ publicaciones: "Muchísimas" });
+  if (!opcionRara.ok) { assert.equal(opcionRara.campo, "publicaciones"); assert.match(opcionRara.error, /opciones/); } else assert.fail();
+  for (const mala of [0, 11, "diez", Infinity, -1]) assert.equal(f({ compromiso: mala }).ok, false, `compromiso=${mala}`);
+  assert.equal(f({ clase: "Tal vez" }).ok, false);
+  const sinCodigo = leerEnvio({ formulario: "hackear-biz", respuestas: BIZ });
   if (!sinCodigo.ok) assert.equal(sinCodigo.campo, "codigo"); else assert.fail();
+  const otroPrograma = leerEnvio({ codigo: CODIGO, formulario: "hackear-xx", respuestas: BIZ });
+  if (!otroPrograma.ok) assert.equal(otroPrograma.campo, "formulario"); else assert.fail();
+  assert.equal(leerEnvio({ codigo: CODIGO, formulario: "hackear-biz", respuestas: "hola" }).ok, false);
+  assert.equal(leerEnvio({ codigo: CODIGO, formulario: "hackear-biz", respuestas: [1] }).ok, false);
   assert.equal(leerEnvio("hola").ok, false);
   assert.equal(leerEnvio([1]).ok, false);
   assert.equal(leerEnvio(null).ok, false);
 });
 
-test("el bloqueo se corta en 2000 caracteres", () => {
-  const r = leerEnvio({ codigo: CODIGO, horas: 1, entrevistas: 1, postulaciones: 1, bloqueo: "x".repeat(5000) });
-  assert.equal(r.ok && r.valor.bloqueo?.length, 2000);
+test("las respuestas largas se cortan en 2000 caracteres y las cortas en 200", () => {
+  const r = leerEnvio({ codigo: CODIGO, formulario: "hackear-biz", respuestas: { ...BIZ, trabajo: "x".repeat(5000), conversaciones: "y".repeat(500) } });
+  assert.ok(r.ok);
+  if (r.ok) { assert.equal(String(r.valor.respuestas.trabajo).length, 2000); assert.equal(String(r.valor.respuestas.conversaciones).length, 200); }
+});
+
+test("una página abierta de antes, con las tres cifras sueltas, se entiende como Hackear IT", () => {
+  const ok = leerEnvio({ codigo: CODIGO, horas: "7,5", entrevistas: 2, postulaciones: "0", bloqueo: "  me trabé con Docker  " });
+  assert.ok(ok.ok);
+  if (ok.ok) {
+    assert.equal(ok.valor.formulario.id, "hackear-it");
+    assert.deepEqual(ok.valor.respuestas, { horas: 8, entrevistas: 2, postulaciones: 0, bloqueo: "me trabé con Docker" });
+  }
+  /* El bloqueo es opcional en Hackear IT. */
+  const sin = leerEnvio({ codigo: CODIGO, horas: 0, entrevistas: 0, postulaciones: 0 });
+  assert.ok(sin.ok);
+  if (sin.ok) assert.equal("bloqueo" in sin.valor.respuestas, false);
+  const falta = leerEnvio({ codigo: CODIGO, horas: "", entrevistas: 1, postulaciones: 1 });
+  if (!falta.ok) { assert.equal(falta.campo, "horas"); assert.match(falta.error, /responder/); } else assert.fail();
+  for (const [campo, valor] of [["horas", -1], ["horas", 169], ["postulaciones", 1001], ["entrevistas", Infinity]] as const) {
+    assert.equal(leerEnvio({ codigo: CODIGO, horas: 1, entrevistas: 1, postulaciones: 1, [campo]: valor }).ok, false, `${campo}=${valor}`);
+  }
 });
 
 test("el limitador frena a quien insiste y deja pasar a los demás y a quien espera", () => {
@@ -96,9 +134,12 @@ function baseDePrueba(existentes: { id: string; alumnoId: string; semanaDel: str
   return { base, guardados };
 }
 
+const IT = (o: Record<string, string | number> = {}) => ({ formulario: FORMULARIO_IT, respuestas: { horas: 10, entrevistas: 2, postulaciones: 5, bloqueo: "nada", ...o } });
+const ESTE_BIZ = { formulario: FORMULARIO_BIZ, respuestas: BIZ };
+
 test("el reporte se guarda para el alumno del código, aunque otro se llame igual", async () => {
   const { base, guardados } = baseDePrueba();
-  const r = await recibirDelAlumno(base, ALUMNO, { horas: 10, entrevistas: 2, postulaciones: 5, bloqueo: "nada" }, "2026-10-08", "2026-10-08T15:00:00.000Z");
+  const r = await recibirDelAlumno(base, ALUMNO, IT(), "2026-10-08", "2026-10-08T15:00:00.000Z");
   assert.ok(r.ok);
   assert.equal(guardados.length, 1);
   assert.equal(guardados[0].alumnoId, "alu_1");
@@ -109,12 +150,27 @@ test("el reporte se guarda para el alumno del código, aunque otro se llame igua
   assert.equal(r.ok && r.nuevos, 1);
 });
 
+test("el reporte de Hackear Biz guarda cada respuesta en la ficha: programa, formulario y respuestas", async () => {
+  const { base, guardados } = baseDePrueba();
+  const r = await recibirDelAlumno(base, ALUMNO, ESTE_BIZ, "2026-10-08", "2026-10-08T15:00:00.000Z");
+  assert.ok(r.ok);
+  assert.equal(guardados.length, 1);
+  const f = guardados[0];
+  assert.equal(f.programa, "Hackear Biz");
+  assert.equal(f.formulario, "hackear-biz");
+  assert.deepEqual(f.respuestas, BIZ);
+  /* El bloqueo sigue alimentando la columna de siempre; las cifras de Hackear IT no se inventan. */
+  assert.equal(f.bloqueo, "Me cuesta vender el precio");
+  assert.equal(f.horasEstudio, undefined);
+  assert.equal(f.estado, "completado");
+});
+
 test("mandarlo de nuevo la misma semana reemplaza el reporte, no lo duplica", async () => {
   const primero = baseDePrueba();
-  await recibirDelAlumno(primero.base, ALUMNO, { horas: 10, entrevistas: 2, postulaciones: 5 }, "2026-10-08", "2026-10-08T15:00:00.000Z");
+  await recibirDelAlumno(primero.base, ALUMNO, IT({ horas: 10 }), "2026-10-08", "2026-10-08T15:00:00.000Z");
   const id = primero.guardados[0].id;
   const segundo = baseDePrueba([{ id, alumnoId: "alu_1", semanaDel: primero.guardados[0].semanaDel }]);
-  const r = await recibirDelAlumno(segundo.base, ALUMNO, { horas: 12, entrevistas: 3, postulaciones: 6 }, "2026-10-09", "2026-10-09T15:00:00.000Z");
+  const r = await recibirDelAlumno(segundo.base, ALUMNO, IT({ horas: 12, entrevistas: 3, postulaciones: 6 }), "2026-10-09", "2026-10-09T15:00:00.000Z");
   assert.ok(r.ok);
   assert.equal(r.ok && r.actualizados, 1);
   assert.equal(segundo.guardados[0].id, id);

@@ -15,13 +15,15 @@
    insiste. La base y el envío están en lib/reporte-servidor.ts.
    ================================================================== */
 
+import { esIdFormulario, FORMULARIOS, validarRespuestas, type FormularioReporte, type Respuestas } from "./reporte-formularios";
+
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 /** Un código con forma de UUID. Se comprueba antes de preguntarle a la base, que si no devolvería un error de tipo. */
 export const esCodigoValido = (s: unknown): s is string => typeof s === "string" && UUID.test(s.trim());
 
-export const MAX_BYTES_ENVIO = 4_000;
-const MAX_BLOQUEO = 2000;
+/* Las once respuestas largas de Hackear Biz, de 2000 caracteres cada una, con acentos: entran de sobra. */
+export const MAX_BYTES_ENVIO = 60_000;
 
 /** La dirección de la app: APP_URL si está, y si no la de quien pide. */
 export function origenDeLaApp(req: Request): string {
@@ -56,7 +58,7 @@ const escaparHtml = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;"
 /** El aviso por mail: asunto, texto y HTML. El nombre lo escribe cualquiera: se escapa. */
 export function armarMail(a: { nombre?: string | null; enlace: string }): { asunto: string; texto: string; html: string } {
   const saludo = primerNombre(a.nombre);
-  const asunto = "Tu reporte semanal de Hackear IT";
+  const asunto = "Tu reporte semanal";
   const texto = [
     `Hola${saludo ? ` ${saludo}` : ""}!`,
     "",
@@ -75,39 +77,32 @@ export function armarMail(a: { nombre?: string | null; enlace: string }): { asun
 
 export interface EnvioDelAlumno {
   codigo: string;
-  horas: number;
-  entrevistas: number;
-  postulaciones: number;
-  bloqueo?: string;
+  /* El formulario que completó (el de su programa) y sus respuestas ya revisadas. */
+  formulario: FormularioReporte;
+  respuestas: Respuestas;
 }
 
-const numero = (x: unknown, max: number): number | null => {
-  if (x === undefined || x === null || String(x).trim() === "") return null;
-  const n = typeof x === "number" ? x : Number(String(x).trim().replace(",", "."));
-  /* Enteros en la base: 7,5 horas se redondea a 8. */
-  return Number.isFinite(n) && n >= 0 && n <= max ? Math.round(n) : NaN;
-};
-
-/** Lo que manda el formulario público: el código y las tres cifras de la semana. Un error por vez, dicho para el alumno. */
+/** Lo que manda el formulario público: el código, qué formulario es y sus respuestas. Un error por vez, dicho para el alumno
+ *  y con la pregunta que falló (`campo`). Una página abierta de antes de los formularios por programa manda las tres cifras
+ *  sueltas (horas, entrevistas, postulaciones): se entienden como el formulario de Hackear IT. */
 export function leerEnvio(json: unknown): { ok: true; valor: EnvioDelAlumno } | { ok: false; error: string; campo?: string } {
   if (!json || typeof json !== "object" || Array.isArray(json)) return { ok: false, error: "No se entendió lo que mandaste." };
   const d = json as Record<string, unknown>;
   const codigo = typeof d.codigo === "string" ? d.codigo.trim() : "";
   if (!esCodigoValido(codigo)) return { ok: false, error: "Ese código no es válido. Copialo de nuevo del mensaje que te mandamos.", campo: "codigo" };
-  const campos: [string, string, number, string][] = [
-    ["horas", "las horas de estudio", 168, "horas"],
-    ["entrevistas", "las entrevistas", 1000, "entrevistas"],
-    ["postulaciones", "las postulaciones", 1000, "postulaciones"],
-  ];
-  const valores: Record<string, number> = {};
-  for (const [clave, texto, max] of campos) {
-    const n = numero(d[clave], max);
-    if (n === null) return { ok: false, error: `Completá ${texto} (si no hubo, poné 0).`, campo: clave };
-    if (Number.isNaN(n)) return { ok: false, error: `Revisá ${texto}: tiene que ser un número entre 0 y ${max}.`, campo: clave };
-    valores[clave] = n;
+
+  const antiguo = d.respuestas === undefined && d.formulario === undefined;
+  const idFormulario = antiguo ? "hackear-it" : d.formulario;
+  if (!esIdFormulario(idFormulario)) return { ok: false, error: "No se entendió de qué programa es este reporte. Actualizá la página y probá de nuevo.", campo: "formulario" };
+  const formulario = FORMULARIOS[idFormulario];
+  const crudas = antiguo ? { horas: d.horas, entrevistas: d.entrevistas, postulaciones: d.postulaciones, bloqueo: d.bloqueo } : d.respuestas;
+
+  const v = validarRespuestas(formulario, crudas);
+  if (!v.ok) {
+    const p = formulario.preguntas.find((x) => x.id === v.campo);
+    return { ok: false, error: p ? `${v.error} (${p.etiqueta ?? p.titulo})` : v.error, campo: v.campo || undefined };
   }
-  const bloqueo = typeof d.bloqueo === "string" ? d.bloqueo.trim().slice(0, MAX_BLOQUEO) : "";
-  return { ok: true, valor: { codigo, horas: valores.horas, entrevistas: valores.entrevistas, postulaciones: valores.postulaciones, ...(bloqueo ? { bloqueo } : {}) } };
+  return { ok: true, valor: { codigo, formulario, respuestas: v.valor } };
 }
 
 /** Frena a quien insiste: `golpea(clave)` anota un intento y dice si ya pasó el máximo en la ventana. En memoria, por instancia. */

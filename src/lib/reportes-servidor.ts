@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
-  leerItems, planificarReportes, type AlumnoBasico, type PlanReportes, type ReporteExistente,
+  leerItems, planificarReportes, type AlumnoBasico, type ItemReporte, type PlanReportes, type ReporteExistente,
 } from "./reportes-webhook";
 import type { Reporte } from "./types";
 
@@ -66,17 +66,26 @@ export async function recibirReportes(
 ): Promise<ResultadoReportes | { ok: false; status: number; error: string }> {
   const leido = leerItems(json);
   if (leido.error) return { ok: false, status: 400, error: leido.error };
-  const recibidos = leido.items.length + leido.rechazados.length;
-  if (leido.items.length === 0) return { ok: true, recibidos, guardados: 0, nuevos: 0, actualizados: 0, rechazados: leido.rechazados };
+  return guardarItems(base, leido.items, leido.rechazados, hoy, ahora);
+}
+
+/** Guarda reportes ya leídos (los del webhook y los del formulario público): busca a sus alumnos y los reportes que ya
+ *  había, y escribe los de la semana de cada uno, reemplazando el que hubiera. */
+export async function guardarItems(
+  base: BaseReportes, items: readonly { posicion: number; item: ItemReporte }[], rechazadosAntes: { posicion: number; motivo: string }[],
+  hoy: string, ahora: string,
+): Promise<ResultadoReportes> {
+  const recibidos = items.length + rechazadosAntes.length;
+  if (items.length === 0) return { ok: true, recibidos, guardados: 0, nuevos: 0, actualizados: 0, rechazados: rechazadosAntes };
 
   const alumnos = await base.alumnos();
   /* Primero se ve a quiénes les toca, y después qué reportes tenían ya: así se reemplaza el de la semana en vez de duplicarlo. */
-  const primera = planificarReportes(leido.items, alumnos, [], hoy, ahora);
+  const primera = planificarReportes(items, alumnos, [], hoy, ahora);
   const existentes = primera.filas.length ? await base.reportesDe([...new Set(primera.filas.map((f) => f.alumnoId))]) : [];
-  const plan: PlanReportes = planificarReportes(leido.items, alumnos, existentes, hoy, ahora);
+  const plan: PlanReportes = planificarReportes(items, alumnos, existentes, hoy, ahora);
   if (plan.filas.length) await base.guardar(plan.filas);
   return {
     ok: true, recibidos, guardados: plan.filas.length, nuevos: plan.nuevos, actualizados: plan.actualizados,
-    rechazados: [...leido.rechazados, ...plan.rechazados].sort((a, b) => a.posicion - b.posicion),
+    rechazados: [...rechazadosAntes, ...plan.rechazados].sort((a, b) => a.posicion - b.posicion),
   };
 }

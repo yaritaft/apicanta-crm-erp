@@ -1,7 +1,8 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { recibirReportes, type BaseReportes, type ResultadoReportes } from "./reportes-servidor";
+import { guardarItems, type BaseReportes, type ResultadoReportes } from "./reportes-servidor";
 import type { AlumnoBasico } from "./reportes-webhook";
 import type { EnvioDelAlumno } from "./reporte-enlace";
+import { camposDelReporte, formularioDe, type FormularioReporte } from "./reporte-formularios";
 
 /* ==================================================================
    El reporte semanal con link único, del lado del SERVIDOR: usa la clave de
@@ -10,7 +11,7 @@ import type { EnvioDelAlumno } from "./reporte-enlace";
    - Los códigos viven en `reporte_codigos` (supabase/reporte-semanal.sql), una
      tabla sin políticas: ni siquiera quien inició sesión puede leerla; sólo
      las rutas de la app, que primero comprueban quién pide.
-   - El reporte se guarda con lo mismo que el webhook (recibirReportes): el de
+   - El reporte se guarda con lo mismo que el webhook (guardarItems): el de
      la misma semana se reemplaza, no se duplica.
    - Los avisos por mail salen por Resend, si están RESEND_API_KEY y
      RESEND_FROM (un remitente de un dominio verificado en Resend).
@@ -73,16 +74,36 @@ export async function alumnoDeCodigo(db: SupabaseClient, codigo: string): Promis
   return (a.data as AlumnoBasico | null) ?? null;
 }
 
+/** El formulario que le toca a un alumno: el de su programa en Customer Success; si todavía no lo tiene cargado, el del plan de
+ *  su venta. null si no se sabe (cursa los dos, o ninguno de los dos): el formulario público se lo pregunta. */
+export async function formularioDelAlumno(db: SupabaseClient, alumnoId: string): Promise<FormularioReporte | null> {
+  const textos: string[] = [];
+  const seg = await db.from("seguimiento_alumnos").select("programas").eq("alumnoId", alumnoId).maybeSingle();
+  /* Sin la tabla o sin fila: se sigue con el plan, no se corta el reporte. */
+  const programas = !seg.error ? (seg.data as { programas?: unknown } | null)?.programas : null;
+  if (Array.isArray(programas)) textos.push(...programas.filter((x): x is string => typeof x === "string"));
+  const delSeguimiento = formularioDe(textos);
+  if (delSeguimiento || textos.length) return delSeguimiento;
+  const a = await db.from("alumnos").select("plan").eq("id", alumnoId).maybeSingle();
+  const plan = !a.error ? (a.data as { plan?: unknown } | null)?.plan : null;
+  return typeof plan === "string" ? formularioDe([plan]) : null;
+}
+
 /** Guarda el reporte que completó el alumno con su código: el de esta semana, reemplazando el que ya hubiera. */
 export async function recibirDelAlumno(
   base: BaseReportes, alumno: AlumnoBasico, envio: Omit<EnvioDelAlumno, "codigo">, hoy: string, ahora: string,
 ): Promise<ResultadoReportes | { ok: false; status: number; error: string }> {
   /* Sólo este alumno: ninguna coincidencia de mail o de nombre con otro lo puede desviar. */
   const soloEste: BaseReportes = { ...base, alumnos: async () => [alumno] };
-  return recibirReportes(soloEste, {
-    email: alumno.email, alumno: alumno.nombre,
-    horas: envio.horas, entrevistas: envio.entrevistas, postulaciones: envio.postulaciones, ...(envio.bloqueo ? { bloqueo: envio.bloqueo } : {}),
-  }, hoy, ahora);
+  const c = camposDelReporte(envio.formulario, envio.respuestas);
+  return guardarItems(soloEste, [{
+    posicion: 1,
+    item: {
+      email: alumno.email, alumno: alumno.nombre,
+      horas: c.horas, entrevistas: c.entrevistas, postulaciones: c.postulaciones, ...(c.bloqueo ? { bloqueo: c.bloqueo } : {}),
+      detalle: { programa: c.programa, formulario: c.formulario, respuestas: c.respuestas },
+    },
+  }], [], hoy, ahora);
 }
 
 /* ---------- Resend ---------- */

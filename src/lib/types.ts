@@ -299,6 +299,12 @@ export interface Reporte {
   entrevistas?: number;
   postulaciones?: number;
   bloqueo?: string;
+  /* Lo que contestó el alumno en el formulario de su programa (lib/reporte-formularios.ts):
+     el programa, qué formulario era y cada respuesta por la clave de su pregunta. Los reportes
+     de antes (y los que llegan por el webhook) no lo traen. */
+  programa?: string;
+  formulario?: string;
+  respuestas?: Record<string, string | number>;
 }
 
 /* ---------- Customer Success: seguimiento de alumnos y testimonios ----------

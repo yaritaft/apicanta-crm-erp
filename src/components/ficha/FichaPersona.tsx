@@ -32,6 +32,7 @@ import { saldoVenta } from "@/lib/finanzas";
 import { fechaLarga, money, relativo } from "@/lib/format";
 import type { Alumno, Cuota, EstadoAlumno, EstadoApp, EstadoVenta, IngresoComunidad, Venta } from "@/lib/types";
 import { INGRESOS_COMUNIDAD } from "@/lib/angelo";
+import { RespuestasDelReporte } from "@/components/cs/ReportesDelCliente";
 
 /* ==================================================================
    La ficha de una persona. La misma, se abra desde donde se abra.
@@ -586,15 +587,18 @@ function VistaServicio({ e, p }: { e: EstadoApp; p: Persona }) {
                           {reportes.length === 0 ? (
                             <p className="t-sm t-subtle">Todavía no mandó ningún reporte.</p>
                           ) : reportes.slice(0, 5).map((r) => (
-                            <div key={r.id} className="row t-sm" style={{ gap: 8 }}>
-                              <span>Semana del {fechaLarga(r.semanaDel)}</span>
-                              {r.estado === "completado" && r.horasEstudio !== undefined && (
-                                <span className="t-subtle t-num">{r.horasEstudio} h · {r.postulaciones ?? 0} post.</span>
-                              )}
-                              <span className="spacer" />
-                              <Badge variante={r.estado === "completado" ? "success" : r.estado === "vencido" ? "danger" : r.estado === "pendiente" ? "accent" : "neutral"}>
-                                {r.estado === "completado" ? "Completado" : r.estado === "vencido" ? "Vencido" : r.estado === "pendiente" ? "Pendiente" : "No enviado"}
-                              </Badge>
+                            <div key={r.id}>
+                              <div className="row t-sm" style={{ gap: 8 }}>
+                                <span>Semana del {fechaLarga(r.semanaDel)}</span>
+                                {r.estado === "completado" && r.horasEstudio !== undefined && (
+                                  <span className="t-subtle t-num">{r.horasEstudio} h · {r.postulaciones ?? 0} post.</span>
+                                )}
+                                <span className="spacer" />
+                                <Badge variante={r.estado === "completado" ? "success" : r.estado === "vencido" ? "danger" : r.estado === "pendiente" ? "accent" : "neutral"}>
+                                  {r.estado === "completado" ? "Completado" : r.estado === "vencido" ? "Vencido" : r.estado === "pendiente" ? "Pendiente" : "No enviado"}
+                                </Badge>
+                              </div>
+                              <RespuestasDelReporte reporte={r} />
                             </div>
                           ))}
                         </div>

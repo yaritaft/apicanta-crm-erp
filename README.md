@@ -1459,8 +1459,25 @@ y cada alumno entra con su **código**, un UUID al azar (no un número correlati
   después. Sin ellas, el botón avisa que no está habilitado y no manda nada; el mensaje para WhatsApp anda igual. `APP_URL` (opcional) fija la dirección que se pone en los links; sin ella, la del pedido.
 - **SQL:** `supabase/reporte-semanal.sql` (corrido el 09/10): tabla `reporte_codigos` con clave foránea a `alumnos` (borrar un alumno borra su código), **sin políticas ni permisos para `anon` y `authenticated`**:
   sólo la leen las rutas, con la clave de servicio. Ensayo con rollback contra la base real. Idempotente.
-- **Qué falta:** las preguntas del formulario son las del reporte que ya existe (horas, entrevistas, postulaciones, bloqueo): si el actual tiene otras, se ajusta `lib/reporte-enlace.ts` y la página.
-  Telegram (avisar por ahí en vez de mail) no está.
+- **Qué falta:** Telegram (avisar por ahí en vez de mail) no está. El formulario de **Hackear IT** todavía no es el real (ver abajo).
+
+### Un formulario por programa, una pregunta por pantalla (pedido del 09/10)
+
+El Google Form de seguimiento semanal de Hackear Biz pasó a la app con el formato del cierre del día: **una pregunta por pantalla** (`Asistente`), Enter o el botón para seguir, las teclas 1–9 para elegir una opción, la escala del 1 al 10 en una fila
+de números. Lo que contesta el alumno se **guarda solo en la ficha de su cliente**.
+- **Las preguntas** viven en `lib/reporte-formularios.ts` (`FORMULARIO_BIZ`: las 12 del Google Form, todas obligatorias; `FORMULARIO_IT`: horas, entrevistas, postulaciones y bloqueo, **provisorio** hasta que llegue el segundo formulario).
+  Cada pregunta tiene una clave estable (`trabajo`, `compromiso`…): se puede cambiar el texto sin perder lo ya contestado. Sumar un programa es sumar un formulario ahí.
+- **A quién le toca cuál:** `formularioDelAlumno` mira sus programas en Customer Success (`seguimiento_alumnos.programas`) y, si no hay, el plan de su venta («Mentoría» es Hackear IT). Con uno solo entra directo; si cursa los dos
+  o ninguno de los dos (Principals…), la página le pregunta de qué programa es (o se le manda `/reporte?c=…&p=biz` / `&p=it`).
+- **La página** (`app/reporte/page.tsx`) valida cada pregunta antes de dejar seguir, guarda un borrador en el navegador (se pierde a los 3 días) para que un cierre sin querer no borre diez respuestas, no tiene botón de salir ni Esc,
+  y al final dice «¡Listo!». Un error del servidor lleva a la pregunta que falló. Ctrl/Cmd + Enter sigue en un texto largo (`Asistente` ganó `sinSalir` y ese atajo).
+- **El servidor** (`POST /api/reportes/enviar`): `{ codigo, formulario, respuestas }`. Cada respuesta se revisa contra su pregunta (`validarRespuestas`); lo que no es una pregunta del formulario se descarta; los textos se cortan a 2.000 (cortos, 200). El tope del
+  cuerpo subió a 60 KB. Una página abierta de antes, con las tres cifras sueltas, se sigue entendiendo como Hackear IT. Los reportes del webhook no pueden traer respuestas.
+- **Dónde se ve:** Alumnos → Clientes → ficha → «Reporte semanal» → «Lo que contestó en el formulario semanal» (una fila por semana con el compromiso del 1 al 10 y las respuestas desplegables, cada una con su pregunta), y en el listado de
+  reportes de la ficha de la persona. En Reportes → tabla hay dos columnas nuevas (apagadas por defecto): **Programa** y **Compromiso**. El bloqueo sigue alimentando la columna de siempre.
+- **SQL:** `supabase/reporte-formularios.sql` (corrido el 09/10, ensayado con rollback): `reportes.programa`, `reportes.formulario` y `reportes.respuestas` (jsonb), todas nulas en los reportes de antes. Correrlo ANTES de publicar la app.
+  Pruebas: `pruebas/reporte-formularios.test.ts`, `pruebas/reporte-enlace.test.ts` y `pruebas/reporte-rutas.test.ts`.
+- **Pendiente:** el formulario real de Hackear IT; el aviso por mail sigue diciendo «Tu reporte semanal» (sin el programa).
 
 ## Arreglos del estrés: base («sólo lo suyo» seguro)
 
@@ -1510,12 +1527,19 @@ ediciones que se hicieron entre el 23/09 y el 09/10 había 23 cobros y 16 ventas
   importados tienen que seguir con el mismo id (una hoja recortada o de otra fecha no saca nada y lo avisa: «archivo-parcial»). Los ids propios de la app (conciliación, cobros cargados a mano) no se tocan.
 - **No saca lo que tiene datos cargados en la app**: un cobro atado a una pasarela, con comprobante, con la comisión puesta a mano o con algún chequeo; ni una venta con una devolución, atada a una llamada,
   con cuotas pasadas a otro closer o con cobros de la app. Quedan en `protegidos` y se avisa («sobran-con-datos») para mirarlos a mano.
-- **Fusiona con la conciliación**: un cobro de la planilla que es el mismo (misma cuota, cuenta y monto, hasta 3 días de diferencia) que uno que ya conciliaron las pasarelas toma su movimiento, su comisión real
-  y su chequeo, el movimiento pasa a apuntar al cobro de la planilla y el otro se saca: la plata no se cuenta dos veces. Un cobro de pasarela que no está en la planilla se deja (puede ser real).
+- **Fusiona con la conciliación**: un cobro de la planilla que es el mismo (misma cuenta y monto, hasta 3 días de diferencia) que uno que ya conciliaron las pasarelas toma su movimiento, su comisión real
+  y su chequeo, el movimiento pasa a apuntar al cobro de la planilla y el otro se saca: la plata no se cuenta dos veces. «Es el mismo» quiere decir (1) que el de la pasarela cuelga de la misma cuota, o
+  (2) si la fila se corrigió y cambió de id, de venta y de cuota, que es de la **misma persona**; con dos candidatos de la misma persona vale el que venía de la planilla (`pag_ef_`) y el otro se deja.
+  Un cobro de pasarela que no está en la planilla se deja (puede ser real).
+- **Un cobro que conserva su id pero cuelga de otra venta** (se corrigió el plan o el total) no se saca: se muda a la cuota nueva con todo lo que tenga de la app, y la venta vieja se va sin frenar por él.
 - **Reimportar no pisa la comisión real**: un cobro de la planilla ya atado a una pasarela (o con la comisión a mano) conserva su movimiento, su comisión y su chequeo.
 - **Fechas imposibles**: una fecha con un año de tres dígitos («8/10/0206») ya no entra como «206-10-08»; la fila se descarta y se avisa con su número («fecha-invalida»).
 - La pantalla muestra, antes de confirmar, cuántas ventas, cuotas y cobros se sacan (y por cuánta plata), cuántos cobros se unen y cuántos se dejan. La cuenta de cómo queda el estado es una función pura
   (`estadoDespuesDeImportar`) que usa la acción del store y prueban las pruebas (`pruebas/importar-sincroniza.test.ts`); el archivo sigue sin importar nada en tiempo de ejecución (corre con Node suelto).
+- **Aplicado en producción el 09/10** con `scratchpad/plan-sync.mjs` (arma el plan contra la base real y genera `ensayo.sql` y `sincronizar.sql`; ensayo con rollback y verificación de totales antes de correr). Antes de tocar nada copia
+  lo que cambia a `respaldo.import_0910_{ventas,cuotas,pagos,movimientos}` (632 ventas, 81 cuotas, 103 cobros, 9 movimientos). Resultado: septiembre quedó igual al de la planilla de Angelo más cuatro cobros de Whop que la planilla no trae (uno
+  del 30/09 y tres que quedaron protegidos por tener datos de la pasarela); 9 fusiones; sin cobros sin cuota ni movimientos sueltos.
+  Quedaron para revisar a mano 6 cobros de Whop (4 de septiembre, 2 de octubre) y 2 ventas protegidas (una por una devolución cargada).
 - **Pendiente a propósito:** los contactos y leads de personas cuyo mail se corrigió en la planilla quedan (pueden tener llamadas o chat); la asignación del director sigue siendo sólo Mentoría y Upsell
   (`serviciosDirector`): el informe de Angelo le cuenta todo lo que vendieron sus closers, a confirmar con él.
 

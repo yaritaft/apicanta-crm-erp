@@ -4,6 +4,7 @@ import React, { useMemo, useState } from "react";
 import { Field, Input, Select, Switch, Textarea } from "@/components/ui/ui";
 import { ModalForm } from "@/components/ui/Modal";
 import { EnlaceDeReporte } from "./EnlaceDeReporte";
+import { ReportesDelCliente } from "./ReportesDelCliente";
 import { useToast } from "@/components/ui/Toast";
 import { acciones, useEstado } from "@/lib/store";
 import { PAISES } from "@/lib/crm-tabla";
@@ -256,6 +257,7 @@ export function FichaClienteCs({ fila, onCerrar }: { fila: FilaCliente; onCerrar
             </>
           )}
           <EnlaceDeReporte alumnoId={fila.alumno.id} email={b.email} />
+          <ReportesDelCliente alumnoId={fila.alumno.id} />
         </section>
 
         <section className="cs-ficha__seccion">

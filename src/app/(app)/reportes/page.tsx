@@ -46,6 +46,8 @@ const COLUMNAS: DefColumna[] = [
   { clave: "semana", titulo: "Semana del", grupo: "Reporte" },
   { clave: "estado", titulo: "Estado", grupo: "Reporte" },
   { clave: "completado", titulo: "Completado el", grupo: "Reporte" },
+  { clave: "programa", titulo: "Programa", grupo: "Reporte", ayuda: "El formulario que completó (Hackear Biz, Hackear IT…)." },
+  { clave: "compromiso", titulo: "Compromiso", grupo: "Actividad", ayuda: "Del 1 al 10, cómo dijo que estuvo esa semana (formulario de Hackear Biz)." },
   { clave: "horas", titulo: "Horas", grupo: "Actividad", ayuda: "Horas de estudio que reportó esa semana." },
   { clave: "postulaciones", titulo: "Postulaciones", grupo: "Actividad" },
   { clave: "entrevistas", titulo: "Entrevistas", grupo: "Actividad" },
@@ -216,6 +218,15 @@ export default function Reportes() {
       clave: "completado", titulo: "Completado el", tipo: "secondary",
       orden: (f) => (f.estado === "completado" ? f.reporte?.completadoEn ?? "" : ""),
       celda: (f) => (f.estado === "completado" && f.reporte?.completadoEn ? fechaLarga(f.reporte.completadoEn) : "—"),
+    },
+    programa: {
+      clave: "programa", titulo: "Programa", tipo: "secondary", orden: (f) => f.reporte?.programa ?? "",
+      celda: (f) => f.reporte?.programa || "—",
+    },
+    compromiso: {
+      clave: "compromiso", titulo: "Compromiso", tipo: "num",
+      orden: (f) => (typeof f.reporte?.respuestas?.compromiso === "number" ? f.reporte.respuestas.compromiso : -1),
+      celda: (f) => (typeof f.reporte?.respuestas?.compromiso === "number" ? `${f.reporte.respuestas.compromiso}/10` : "—"),
     },
     horas: {
       clave: "horas", titulo: "Horas", tipo: "num", orden: (f) => f.reporte?.horasEstudio ?? -1,

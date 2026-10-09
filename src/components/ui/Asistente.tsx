@@ -24,7 +24,7 @@ export interface PasoAsistente {
 
 export function Asistente({
   etiqueta, pasos, actual, onCambiarPaso, problema = null, problemaEsError = false,
-  onCerrar, terminarTexto, onTerminar, embebido = false, salirTexto = "Salir sin guardar", children,
+  onCerrar, terminarTexto, onTerminar, embebido = false, salirTexto = "Salir sin guardar", sinSalir = false, children,
 }: {
   /* Lo que lee un lector de pantalla: "Nuevo webinar" */
   etiqueta: string;
@@ -43,6 +43,8 @@ export function Asistente({
   /* Lo que dice la X: el cierre del día guarda cada llamada al pasar, así
      que cerrar no pierde nada. */
   salirTexto?: string;
+  /* Sin la X ni Esc: un formulario público no tiene a dónde salir (el reporte de los alumnos). */
+  sinSalir?: boolean;
   children: React.ReactNode;
 }) {
   const mainRef = useRef<HTMLDivElement>(null);
@@ -69,6 +71,7 @@ export function Asistente({
       /* Un modal abierto encima (elegir un pago, confirmar algo) maneja sus teclas. */
       if (document.querySelector(".modal-backdrop")) return;
       if (ev.key === "Escape") {
+        if (sinSalir) return;
         /* Un desplegable o un calendario abierto se cierra primero. */
         if (document.querySelector("[data-flotante-abierto]")) return;
         ev.preventDefault(); onCerrar(); return;
@@ -86,7 +89,8 @@ export function Asistente({
       }
 
       if (ev.key !== "Enter" || ev.shiftKey) return;
-      if (foco?.tagName === "TEXTAREA") return;
+      /* En un texto largo Enter escribe un renglón; Ctrl o Cmd + Enter sigue. */
+      if (foco?.tagName === "TEXTAREA" && !(ev.ctrlKey || ev.metaKey)) return;
       if (document.querySelector("[data-flotante-abierto]")) return;
       /* Sobre una opción ya elegida, Enter avanza en vez de volver a
          tocarla; sobre cualquier otro botón, hace lo de ese botón. */
@@ -96,7 +100,7 @@ export function Asistente({
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [avanzar, onCerrar]);
+  }, [avanzar, onCerrar, sinSalir]);
 
   useEffect(() => {
     if (embebido) return;
@@ -135,7 +139,7 @@ export function Asistente({
           ))}
         </span>
         <span className="spacer" />
-        <IconButton etiqueta={salirTexto} onClick={onCerrar}><X size={18} /></IconButton>
+        {!sinSalir && <IconButton etiqueta={salirTexto} onClick={onCerrar}><X size={18} /></IconButton>}
       </div>
 
       <div className="asistente__main" ref={mainRef}>

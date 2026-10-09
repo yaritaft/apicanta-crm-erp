@@ -3,15 +3,19 @@ import { nubeServidor } from "@/lib/servidor";
 import { leerJson } from "@/lib/whatsapp-servidor";
 import { baseSupabaseReportes } from "@/lib/reportes-servidor";
 import { hoyParaReportes } from "@/lib/reportes-webhook";
-import { alumnoDeCodigo, ErrorSinTablaCodigos, recibirDelAlumno } from "@/lib/reporte-servidor";
+import { alumnoDeCodigo, ErrorSinTablaCodigos, formularioDelAlumno, recibirDelAlumno } from "@/lib/reporte-servidor";
 import { esCodigoValido, leerEnvio, limitador, MAX_BYTES_ENVIO, primerNombre } from "@/lib/reporte-enlace";
 
 /* ==================================================================
    El formulario público del reporte semanal (/reporte).
 
      POST /api/reportes/enviar
-     { "codigo": "<uuid del alumno>", "horas": 10, "entrevistas": 2,
-       "postulaciones": 5, "bloqueo": "…" }
+     { "codigo": "<uuid del alumno>", "formulario": "hackear-biz",
+       "respuestas": { "trabajo": "…", "compromiso": 8, … } }
+
+   El formulario es el de su programa (lib/reporte-formularios.ts) y cada respuesta
+   se revisa contra su pregunta. Una página abierta de antes, que manda las tres
+   cifras sueltas (horas, entrevistas, postulaciones), se sigue entendiendo.
 
    Es público: lo llama el navegador del alumno, sin sesión. Lo que lo cuida:
    - el código es un UUID al azar (122 bits): no se adivina ni se recorre;
@@ -20,8 +24,9 @@ import { esCodigoValido, leerEnvio, limitador, MAX_BYTES_ENVIO, primerNombre } f
    - nada de lo que contesta dice si un código existe más que para quien lo tiene
      (un código malo y uno que no existe dan el mismo mensaje).
 
-   GET /api/reportes/enviar?c=<código> devuelve el primer nombre del alumno y si
-   ya completó esta semana, para saludarlo en el formulario.
+   GET /api/reportes/enviar?c=<código> devuelve el primer nombre del alumno y el
+   formulario que le toca por su programa (null si hay que preguntárselo), para
+   saludarlo y mostrarle sus preguntas.
    El reporte de la misma semana se reemplaza: completarlo dos veces no lo duplica.
    ================================================================== */
 
@@ -45,7 +50,8 @@ export async function GET(req: Request) {
   try {
     const alumno = await alumnoDeCodigo(db, c);
     if (!alumno) return NextResponse.json({ ok: false, error: CODIGO_MALO }, { status: 404, headers: SIN_CACHE });
-    return NextResponse.json({ ok: true, nombre: primerNombre(alumno.nombre) }, { headers: SIN_CACHE });
+    const formulario = await formularioDelAlumno(db, alumno.id);
+    return NextResponse.json({ ok: true, nombre: primerNombre(alumno.nombre), formulario: formulario?.id ?? null }, { headers: SIN_CACHE });
   } catch (e) {
     return errorInesperado(e);
   }
@@ -69,9 +75,8 @@ export async function POST(req: Request) {
   try {
     const alumno = await alumnoDeCodigo(db, v.valor.codigo);
     if (!alumno) return NextResponse.json({ ok: false, error: CODIGO_MALO, campo: "codigo" }, { status: 404, headers: SIN_CACHE });
-    const { codigo: _codigo, ...datos } = v.valor;
-    void _codigo;
-    const r = await recibirDelAlumno(baseSupabaseReportes(db), alumno, datos, hoyParaReportes(), new Date().toISOString());
+    const { formulario, respuestas } = v.valor;
+    const r = await recibirDelAlumno(baseSupabaseReportes(db), alumno, { formulario, respuestas }, hoyParaReportes(), new Date().toISOString());
     if (!r.ok) return NextResponse.json({ ok: false, error: r.error }, { status: r.status, headers: SIN_CACHE });
     if (r.guardados === 0) {
       /* Lo que no se pudo guardar se dice sin datos de nadie. */
