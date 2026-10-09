@@ -186,3 +186,17 @@ test("sincronizar apagado: no saca nada aunque sobre", () => {
   assert.equal(r.ventasQueSobran.length, 0);
   assert.equal(r.pagosQueSobran.length, 0);
 });
+
+test("reimportar un cobro ya atado a una pasarela no le pisa la comisión real ni el movimiento", () => {
+  const uno = importar(estadoVacio(), planilla());
+  const atado = uno.e.pagos.find((p) => p.monto === 1500)!;
+  const e = { ...uno.e, pagos: uno.e.pagos.map((p) => (p.id === atado.id ? { ...p, movimientoId: "mov_1", feeMonto: 52.5, feeRate: 0.035, chequeado: true, referencia: "pi_1" } : p)) };
+  const dos = importar(e, planilla());
+  const igual = dos.e.pagos.find((p) => p.id === atado.id)!;
+  assert.equal(igual.movimientoId, "mov_1");
+  assert.equal(igual.feeMonto, 52.5);
+  assert.equal(igual.chequeado, true);
+  /* Y uno que no está atado sí toma lo de la planilla. */
+  const libre = dos.e.pagos.find((p) => p.monto === 3000)!;
+  assert.equal(libre.movimientoId, undefined);
+});

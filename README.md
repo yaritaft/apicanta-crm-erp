@@ -1500,3 +1500,22 @@ cambiar los dos lados a la vez (o identificar al anfitrión de Calendly por su c
 de los demás). Antes, ensayarlo contra la base real con rollback. Para deshacer: `drop trigger if exists cuotas_guarda_del_closer on public.cuotas;`
 y lo mismo con `ventas_`, `sesiones_`, `leads_` y `contactos_guarda_del_closer` en su tabla. *Pruebas:*
 `pruebas/fix-sql-solo-lo-suyo.test.ts` y `pruebas-estres/sql/` (PGlite en memoria; `PGLITE_DIR=/ruta/a/node_modules/@electric-sql/pglite`; sin él se saltean).
+
+## Importar la planilla sincronizando (reunión del 07/10)
+
+Ventas → Importar planilla (`lib/angelo.ts`, `components/ventas/ImportarPlanilla.tsx`). El id de cada cobro se arma con el contenido de su fila (persona, fecha, monto, cuenta, característica y
+comprobante) y el de la venta con el de su fila de apertura: si alguien **corrige** uno de esos datos en la planilla, el cobro cambia de id y reimportar dejaba el viejo y sumaba el nuevo. Con las
+ediciones que se hicieron entre el 23/09 y el 09/10 había 23 cobros y 16 ventas duplicados (US$ 17.000 de más sólo en septiembre). Ahora el importador **sincroniza**:
+- **Saca lo que la planilla ya no trae** (ventas con sus cuotas y cobros, y cobros sueltos de ventas que siguen), **sólo si el archivo es «la misma planilla editada»**: al menos el 80% de los cobros ya
+  importados tienen que seguir con el mismo id (una hoja recortada o de otra fecha no saca nada y lo avisa: «archivo-parcial»). Los ids propios de la app (conciliación, cobros cargados a mano) no se tocan.
+- **No saca lo que tiene datos cargados en la app**: un cobro atado a una pasarela, con comprobante, con la comisión puesta a mano o con algún chequeo; ni una venta con una devolución, atada a una llamada,
+  con cuotas pasadas a otro closer o con cobros de la app. Quedan en `protegidos` y se avisa («sobran-con-datos») para mirarlos a mano.
+- **Fusiona con la conciliación**: un cobro de la planilla que es el mismo (misma cuota, cuenta y monto, hasta 3 días de diferencia) que uno que ya conciliaron las pasarelas toma su movimiento, su comisión real
+  y su chequeo, el movimiento pasa a apuntar al cobro de la planilla y el otro se saca: la plata no se cuenta dos veces. Un cobro de pasarela que no está en la planilla se deja (puede ser real).
+- **Reimportar no pisa la comisión real**: un cobro de la planilla ya atado a una pasarela (o con la comisión a mano) conserva su movimiento, su comisión y su chequeo.
+- **Fechas imposibles**: una fecha con un año de tres dígitos («8/10/0206») ya no entra como «206-10-08»; la fila se descarta y se avisa con su número («fecha-invalida»).
+- La pantalla muestra, antes de confirmar, cuántas ventas, cuotas y cobros se sacan (y por cuánta plata), cuántos cobros se unen y cuántos se dejan. La cuenta de cómo queda el estado es una función pura
+  (`estadoDespuesDeImportar`) que usa la acción del store y prueban las pruebas (`pruebas/importar-sincroniza.test.ts`); el archivo sigue sin importar nada en tiempo de ejecución (corre con Node suelto).
+- **Pendiente a propósito:** los contactos y leads de personas cuyo mail se corrigió en la planilla quedan (pueden tener llamadas o chat); la asignación del director sigue siendo sólo Mentoría y Upsell
+  (`serviciosDirector`): el informe de Angelo le cuenta todo lo que vendieron sus closers, a confirmar con él.
+

@@ -887,7 +887,11 @@ export function estadoDespuesDeImportar(e: EstadoApp, r: ResultadoImport) {
       pagos: reemplazar(e.pagos.filter((p) => !quitaPagos.has(p.id)), r.pagos.map((n) => {
         const viejo = pagoViejo.get(n.id);
         if (!viejo) return n;
-        const control = Object.fromEntries(COLUMNAS_DE_CONTROL_DEL_COBRO.map((k) => [k, (viejo as unknown as Record<string, unknown>)[k]]));
+        /* Lo que puso la base y, si el cobro ya lo ató una pasarela (o alguien le puso la comisión a mano), lo suyo:
+           la comisión real no se pisa con la estimada de la cuenta. */
+        const propias = viejo.movimientoId || viejo.feeManual
+          ? ["movimientoId", "feeMonto", "feeRate", "feeManual", "chequeado", "referencia"] : [];
+        const control = Object.fromEntries([...COLUMNAS_DE_CONTROL_DEL_COBRO, ...propias].map((k) => [k, (viejo as unknown as Record<string, unknown>)[k]]));
         return { ...n, ...control } as Pago;
       })),
     },
