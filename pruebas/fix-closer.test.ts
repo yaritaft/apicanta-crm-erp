@@ -338,7 +338,7 @@ test("los tipos de fábrica siguen con su menú de siempre", () => {
     director: ["/panel", "/leads", "/crm", "/agenda", "/ventas", "/clientes", "/webinars", "/formularios"],
     admin: ["/panel", "/ventas", "/clientes", "/finanzas", "/finanzas/caja", "/conciliacion"],
     marketing: ["/panel", "/leads", "/webinars", "/formularios", "/marketing"],
-    customer_success: ["/clientes", "/alumnos", "/alumnos?seccion=pipeline", "/reportes", "/alumnos?seccion=hoy", "/alumnos?seccion=seguimiento"],
+    customer_success: ["/clientes", "/alumnos", "/alumnos?seccion=pipeline", "/reportes", "/alumnos?seccion=hoy", "/alumnos?seccion=clientes"],
   };
   const inicios: Record<string, string> = { closer: "/mis-llamadas", setter: "/leads", director: "/panel", admin: "/panel", marketing: "/panel", customer_success: "/alumnos?seccion=hoy" };
   for (const [id, esperado] of Object.entries(menus)) {

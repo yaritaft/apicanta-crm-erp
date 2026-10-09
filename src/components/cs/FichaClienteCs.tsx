@@ -7,6 +7,7 @@ import { useToast } from "@/components/ui/Toast";
 import { acciones, useEstado } from "@/lib/store";
 import { PAISES } from "@/lib/crm-tabla";
 import { configSeguimiento, hoyDelNegocio } from "@/lib/seguimiento";
+import { diaAInstante } from "@/lib/dia-negocio";
 import {
   aNumero, CONTRATOS, DURACION_POR_PROGRAMA, ENTRE, listasCs, OPCIONES_ESTADO_ALUMNO, SESIONES_MENTOR, valorDeLista,
   type FilaCliente,
@@ -133,7 +134,7 @@ export function FichaClienteCs({ fila, onCerrar }: { fila: FilaCliente; onCerrar
     if (nombre !== antes.nombre) cambiosAlumno.nombre = nombre;
     if (b.email.trim() !== antes.email) cambiosAlumno.email = b.email.trim();
     if ((b.pais.trim() || undefined) !== ((antes.pais ?? "").trim() || undefined) && b.pais.trim() !== fila.pais) cambiosAlumno.pais = b.pais.trim() || undefined;
-    if (b.inicio && b.inicio !== fila.inicio) cambiosAlumno.inicio = b.inicio;
+    if (b.inicio && b.inicio !== fila.inicio) cambiosAlumno.inicio = diaAInstante(b.inicio);
     if (b.estadoAlumno !== antes.estado) cambiosAlumno.estado = b.estadoAlumno;
     if (Object.keys(cambiosAlumno).length) acciones.actualizar<Alumno>("alumnos", fila.id, cambiosAlumno, nombre, "Se actualizó el alumno desde la ficha de Customer Success.");
     const persona = {

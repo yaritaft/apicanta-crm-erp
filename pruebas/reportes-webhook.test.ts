@@ -19,10 +19,12 @@ const ALUMNOS: AlumnoBasico[] = [
 test("un reporte, una lista o {reportes: [...]} se leen igual, con los nombres de datos que traiga un formulario o el Airtable", () => {
   const uno = leerItems({ email: "ana@mail.com", semana: "2026-10-08", horas: 10, entrevistas: 2, postulaciones: "5", bloqueo: "Nada" });
   assert.deepEqual(uno.items, [{ posicion: 1, item: { email: "ana@mail.com", alumno: "", dia: "2026-10-08", horas: 10, entrevistas: 2, postulaciones: 5, bloqueo: "Nada" } }]);
+  /* Las horas son enteras en la base: 7,5 se redondea a 8. */
+  assert.equal(leerItems({ email: "a@b.com", horas: "7,5" }).items[0].item.horas, 8);
   assert.deepEqual(uno.rechazados, []);
   /* Los títulos de un Airtable, con mayúsculas, tildes y espacios. */
   const airtable = leerItems({ Mail: "ana@mail.com", "Created time": "2026-10-08T14:00:00.000Z", "Horas de estudio": "7,5", Postulaciones: 3, "Comentarios": "Me trabé en SQL", Alumno: "Ana López" });
-  assert.deepEqual(airtable.items[0].item, { email: "ana@mail.com", alumno: "Ana López", dia: "2026-10-08", horas: 7.5, entrevistas: undefined, postulaciones: 3, bloqueo: "Me trabé en SQL" });
+  assert.deepEqual(airtable.items[0].item, { email: "ana@mail.com", alumno: "Ana López", dia: "2026-10-08", horas: 8, entrevistas: undefined, postulaciones: 3, bloqueo: "Me trabé en SQL" });
   assert.equal(leerItems([{ email: "a@b.com" }, { email: "c@d.com" }]).items.length, 2);
   assert.equal(leerItems({ reportes: [{ email: "a@b.com" }] }).items.length, 1);
   /* Sin semana: no se inventa una; se toma la de hoy al planificar. */
@@ -68,18 +70,18 @@ const items = (...xs: Parameters<typeof leerItems>[0][]) => leerItems(xs).items;
 test("el reporte cae en el lunes de su semana, se busca al alumno por mail (sin importar mayúsculas) y se arma con lo que vino", () => {
   const p = planificarReportes(items({ email: "ana@mail.com", semana: "2026-10-08", horas: 10, entrevistas: 2, postulaciones: 5, bloqueo: "Nada" }), ALUMNOS, [], HOY, AHORA);
   assert.deepEqual(p.filas, [{
-    id: "rep_cs_a1_2026-10-05", alumnoId: "a1", semanaDel: "2026-10-05", estado: "completado", completadoEn: "2026-10-08T12:00:00.000Z",
+    id: "rep_cs_a1_2026-10-05", alumnoId: "a1", semanaDel: "2026-10-05T15:00:00.000Z", estado: "completado", completadoEn: "2026-10-08T15:00:00.000Z",
     horasEstudio: 10, entrevistas: 2, postulaciones: 5, bloqueo: "Nada",
   }]);
   assert.deepEqual([p.nuevos, p.actualizados, p.rechazados], [1, 0, []]);
   /* Un reporte de domingo es de la semana que termina ese día (el lunes anterior). */
-  assert.equal(planificarReportes(items({ email: "ana@mail.com", semana: "2026-10-11" }), ALUMNOS, [], HOY, AHORA).filas[0].semanaDel, "2026-10-05");
-  assert.equal(planificarReportes(items({ email: "ana@mail.com", semana: "2026-10-12" }), ALUMNOS, [], HOY, AHORA).filas[0].semanaDel, "2026-10-12");
+  assert.equal(planificarReportes(items({ email: "ana@mail.com", semana: "2026-10-11" }), ALUMNOS, [], HOY, AHORA).filas[0].semanaDel, "2026-10-05T15:00:00.000Z");
+  assert.equal(planificarReportes(items({ email: "ana@mail.com", semana: "2026-10-12" }), ALUMNOS, [], HOY, AHORA).filas[0].semanaDel, "2026-10-12T15:00:00.000Z");
 });
 
 test("sin semana es la de hoy, y sin los datos opcionales no se inventan", () => {
   const p = planificarReportes(items({ email: "beto@mail.com" }), ALUMNOS, [], HOY, AHORA);
-  assert.deepEqual(p.filas, [{ id: "rep_cs_a2_2026-10-05", alumnoId: "a2", semanaDel: "2026-10-05", estado: "completado", completadoEn: AHORA }]);
+  assert.deepEqual(p.filas, [{ id: "rep_cs_a2_2026-10-05", alumnoId: "a2", semanaDel: "2026-10-05T15:00:00.000Z", estado: "completado", completadoEn: AHORA }]);
 });
 
 test("el nombre sólo sirve si es de un solo alumno; el mail que no existe se rechaza", () => {
@@ -101,7 +103,7 @@ test("mandar de nuevo el reporte de la misma semana lo reemplaza, y el que ya ha
   const existentes: ReporteExistente[] = [{ id: "rep_viejo", alumnoId: "a1", semanaDel: "2026-10-06" }];
   const p = planificarReportes(items({ email: "ana@mail.com", semana: "2026-10-08", horas: 8 }, { email: "beto@mail.com", horas: 1 }, { email: "beto@mail.com", horas: 2 }), ALUMNOS, existentes, HOY, AHORA);
   const ana = p.filas.find((f) => f.alumnoId === "a1")!;
-  assert.deepEqual([ana.id, ana.semanaDel, ana.horasEstudio], ["rep_viejo", "2026-10-05", 8], "el de esa semana, cargado un martes, es el mismo");
+  assert.deepEqual([ana.id, ana.semanaDel, ana.horasEstudio], ["rep_viejo", "2026-10-05T15:00:00.000Z", 8], "el de esa semana, cargado un martes, es el mismo");
   assert.equal(p.filas.filter((f) => f.alumnoId === "a2").length, 1, "dos de Beto esa semana en un pedido: queda uno");
   assert.equal(p.filas.find((f) => f.alumnoId === "a2")!.horasEstudio, 2, "el último gana");
   assert.deepEqual([p.nuevos, p.actualizados], [1, 1]);

@@ -51,10 +51,10 @@ export const NAV: GrupoNav[] = [
          específico, así que acá se prende éste y no los dos. */
       { href: "/alumnos?seccion=pipeline", texto: "Pipeline de servicio", icono: SquareKanban, ayuda: "Arrastrá alumnos entre las etapas del servicio" },
       { href: "/reportes", texto: "Reportes", icono: ClipboardList, ayuda: "Dashboard y tabla de los reportes de alumnos" },
-      /* Customer Success (F2-09): la lista de a quién contactar hoy y el
-         seguimiento de todos. Son vistas de Alumnos. */
+      /* Customer Success (F2-09): la lista de a quién contactar hoy y la de Clientes del programa, con todo lo que lleva
+         Lili. Son vistas de Alumnos; el nombre es «del programa» para no confundirla con Clientes, la de lo que pagaron. */
       { href: "/alumnos?seccion=hoy", texto: "A contactar hoy", icono: PhoneCall, ayuda: "Los alumnos a los que les toca el contacto de seguimiento, lo más vencido arriba" },
-      { href: "/alumnos?seccion=seguimiento", texto: "Seguimiento", icono: ListChecks, ayuda: "Cada alumno con su cadencia, su CV y su LinkedIn" },
+      { href: "/alumnos?seccion=clientes", texto: "Clientes del programa", icono: ListChecks, ayuda: "Cada alumno con todo lo de Customer Success: seguimiento, CV y LinkedIn, accesos y contrato" },
     ],
   },
   {

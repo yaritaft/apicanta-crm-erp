@@ -1,5 +1,5 @@
 import { claveEmail } from "./contactos";
-import { diaDeNegocio } from "./dia-negocio";
+import { diaAInstante, diaDeNegocio } from "./dia-negocio";
 import { leerFecha } from "./registros-webinar";
 import { lunesDe, lunesDelDia } from "./reportes";
 import type { Reporte } from "./types";
@@ -47,7 +47,8 @@ const ALIAS: Record<keyof ItemReporte, string[]> = {
 const aNumeroNoNegativo = (x: unknown, max: number): number | undefined | "mal" => {
   if (x === undefined || x === null || x === "") return undefined;
   const n = typeof x === "number" ? x : Number(String(x).replace(",", "."));
-  return Number.isFinite(n) && n >= 0 && n <= max ? n : "mal";
+  /* Enteros en la base: 7,5 horas se redondea a 8. */
+  return Number.isFinite(n) && n >= 0 && n <= max ? Math.round(n) : "mal";
 };
 
 /** Lo que mandó la herramienta: un reporte, una lista de ellos o `{ reportes: [...] }`. */
@@ -142,8 +143,8 @@ export function planificarReportes(
     const clave = `${alumno.id}|${semana}`;
     const existente = yaTiene.get(clave);
     const fila: Reporte = {
-      id: existente ?? `rep_cs_${alumno.id}_${semana}`, alumnoId: alumno.id, semanaDel: semana, estado: "completado",
-      completadoEn: item.dia ? `${dia}T12:00:00.000Z` : ahora,
+      id: existente ?? `rep_cs_${alumno.id}_${semana}`, alumnoId: alumno.id, semanaDel: diaAInstante(semana), estado: "completado",
+      completadoEn: item.dia ? diaAInstante(dia) : ahora,
       ...(item.horas !== undefined ? { horasEstudio: item.horas } : {}),
       ...(item.entrevistas !== undefined ? { entrevistas: item.entrevistas } : {}),
       ...(item.postulaciones !== undefined ? { postulaciones: item.postulaciones } : {}),

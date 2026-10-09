@@ -1,5 +1,5 @@
 import { sinTildes } from "./crm";
-import { diaDeNegocio } from "./dia-negocio";
+import { diaAInstante, diaDeNegocio } from "./dia-negocio";
 import { rachasAHoy } from "./reportes";
 import { respuestaPerfil } from "./perfil";
 import {
@@ -533,7 +533,7 @@ export function escrituraCliente(f: FilaCliente, clave: ClaveCliente, valor: str
     case "inicio":
       if (!v) return { tipo: "no", motivo: "La fecha de inicio no se puede dejar vacía." };
       if (!esDia(v)) return { tipo: "no", motivo: "La fecha de inicio tiene que ser un día válido." };
-      return { tipo: "alumno", cambios: { inicio: v }, detalle: `Fecha de inicio: ${v}.` };
+      return { tipo: "alumno", cambios: { inicio: diaAInstante(v) }, detalle: `Fecha de inicio: ${v}.` };
     case "pais": return { tipo: "alumno", cambios: { pais: v || undefined }, detalle: `País: ${v || "vacío"}.` };
     case "estadoAlumno": {
       const o = OPCIONES_ESTADO_ALUMNO.find((x) => x.texto === v || x.valor === v);

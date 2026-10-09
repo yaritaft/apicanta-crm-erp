@@ -73,12 +73,22 @@ function parchar(def: string, tablasClientes: string[]): Record<string, string[]
   if (!def.includes("'seguimiento_alumnos'")) {
     t = t.replace(/select case tabla/, "select case tabla\n when 'seguimiento_alumnos' then array['alumnos']\n when 'testimonios' then array['alumnos']");
   }
+  /* Y el de supabase/customer-success-lili.sql: la agenda de resells, del área Alumnos (el test de abajo comprueba que ese archivo diga eso). */
+  if (!def.includes("'resells'")) t = t.replace(/select case tabla/, "select case tabla\n when 'resells' then array['alumnos']");
   const m: Record<string, string[]> = {};
   for (const x of t.matchAll(/when '([a-z_]+)'\s+then array\[([^\]]*)\]/g)) m[x[1]] = [...x[2].matchAll(/'([a-z_*]+)'/g)].map((y) => y[1]);
   return m;
 }
 
-test("la base (tipos-cuenta.sql + customer-success.sql) dice lo mismo que LEEN y EDITAN", () => {
+test("el SQL de Lili suma la agenda de resells al área Alumnos, para leer y para editar", () => {
+  const sql = readFileSync(new URL("../supabase/customer-success-lili.sql", import.meta.url), "utf8");
+  assert.equal(sql.split("when 'resells' then array['alumnos']").length - 1, 2, "una vez en areas_que_leen y otra en areas_que_editan");
+  assert.match(sql, /nuevo_l := regexp_replace\(nuevo_l[\s\S]*when 'resells'/);
+  assert.match(sql, /nuevo_e := regexp_replace\(nuevo_e[\s\S]*when 'resells'/);
+  for (const p of ["ver_resells", "crear_resells", "editar_resells", "borrar_resells"]) assert.match(sql, new RegExp(`create policy ${p} on public.resells`));
+});
+
+test("la base (tipos-cuenta.sql + customer-success.sql + customer-success-lili.sql) dice lo mismo que LEEN y EDITAN", () => {
   const base = readFileSync(new URL("../supabase/tipos-cuenta.sql", import.meta.url), "utf8");
   const leen = parchar(cuerpo(base, "areas_que_leen"), ["leads", "contactos", "comentarios", "ventas", "cuotas", "pagos"]);
   const editan = parchar(cuerpo(base, "areas_que_editan"), ["contactos", "comentarios"]);

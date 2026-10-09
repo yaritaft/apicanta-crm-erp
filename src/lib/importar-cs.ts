@@ -1,6 +1,6 @@
 import { claveEmail } from "./contactos";
 import { personaDeVenta, etapaInicialDeServicio, planDeVenta } from "./alumnos";
-import { diaDeNegocio } from "./dia-negocio";
+import { diaAInstante, diaDeNegocio } from "./dia-negocio";
 import { leerFecha } from "./registros-webinar";
 import { lunesDe, lunesDelDia } from "./reportes";
 import { sinTildes } from "./crm";
@@ -358,11 +358,12 @@ export function planificarImportacionCs(e: EstadoApp, tablas: readonly TablaImpo
   function crearAlumno(d: { nombre: string; email: string; telefono: string; pais: string; inicio: string; numero?: number | null }, estado: Alumno["estado"], clave: string): Alumno {
     const k = claveEmail(d.email);
     const lead = k ? e.leads.find((l) => claveEmail(l.email) === k) : undefined;
-    const contacto = k ? e.contactos.find((ct) => claveEmail(ct.email) === k) : undefined;
     const id = `alu_cs_${hashCorto(k || clave || sinAcentos(d.nombre))}`;
     const a: Alumno = {
       id, nombre: d.nombre, email: d.email, pais: d.pais || undefined, cohorte: "", plan: "", cuotaMensual: 0, moneda: "USD",
-      estado, inicio: d.inicio || op.hoy, progreso: 0, leadId: lead?.id ?? contacto?.id, notas: "", creadoEn: op.ahora, extra: {},
+      estado, inicio: diaAInstante(d.inicio || op.hoy), progreso: 0,
+      /* Sólo el id de un lead: `alumnos.leadId` tiene clave foránea a `leads`, y el id de un contacto sin lead la rompería. */
+      leadId: lead?.id, notas: "", creadoEn: op.ahora, extra: {},
       etapaServicioId: etapaInicialDeServicio(e),
     };
     guardarAlumno(a, true);
@@ -470,7 +471,7 @@ export function planificarImportacionCs(e: EstadoApp, tablas: readonly TablaImpo
         const venta = e.ventas.filter((vt) => vt.estado === "activa" && claveEmail(personaDeVenta(e, vt).email) === claveEmail(email) && claveEmail(email) !== "")
           .filter((vt) => !e.alumnos.some((x) => x.ventaId === vt.id))
           .sort((x, y) => +new Date(y.fecha) - +new Date(x.fecha))[0];
-        if (venta) alumnos.set(alumno.id, { ...alumno, ventaId: venta.id, plan: planDeVenta(e, venta), inicio: inicio || venta.fecha });
+        if (venta) alumnos.set(alumno.id, { ...alumno, ventaId: venta.id, plan: planDeVenta(e, venta), inicio: inicio ? diaAInstante(inicio) : venta.fecha });
         else if (programas[0]) alumnos.set(alumno.id, { ...alumno, plan: programas[0] });
         alumno = alumnos.get(alumno.id)!;
       } else if (op.modo === "pisar" || !alumno.pais || !alumno.email) {
@@ -478,7 +479,7 @@ export function planificarImportacionCs(e: EstadoApp, tablas: readonly TablaImpo
         const cambios: Partial<Alumno> = {};
         if (v("pais") && (op.modo === "pisar" || !alumno.pais)) cambios.pais = v("pais");
         if (email && (op.modo === "pisar" || !alumno.email)) cambios.email = email;
-        if (op.modo === "pisar" && inicio) cambios.inicio = inicio;
+        if (op.modo === "pisar" && inicio) cambios.inicio = diaAInstante(inicio);
         if (Object.keys(cambios).length) { alumno = { ...alumno, ...cambios }; guardarAlumno(alumno, false); }
       }
 
@@ -648,9 +649,10 @@ export function planificarImportacionCs(e: EstadoApp, tablas: readonly TablaImpo
       const clave = `${alumno.id}|${semana}`;
       if (reportesActuales.has(clave) || reportesNuevos.has(clave)) { plan.porTabla.reportes.iguales++; return; }
       reportesNuevos.add(clave);
-      const num = (campo: string) => { const x = aNumero(v(campo)); return x !== null && x >= 0 ? x : undefined; };
+      /* Las horas, las entrevistas y las postulaciones son enteros en la base: 7,5 horas se redondea a 8. */
+      const num = (campo: string) => { const x = aNumero(v(campo)); return x !== null && x >= 0 ? Math.round(x) : undefined; };
       plan.reportes.push({
-        id: `rep_cs_${alumno.id}_${semana}`, alumnoId: alumno.id, semanaDel: semana, estado: "completado", completadoEn: `${dia}T12:00:00.000Z`,
+        id: `rep_cs_${alumno.id}_${semana}`, alumnoId: alumno.id, semanaDel: diaAInstante(semana), estado: "completado", completadoEn: diaAInstante(dia),
         horasEstudio: num("horas"), entrevistas: num("entrevistas"), postulaciones: num("postulaciones"), bloqueo: v("bloqueo") || undefined,
       });
       plan.porTabla.reportes.nuevas++;

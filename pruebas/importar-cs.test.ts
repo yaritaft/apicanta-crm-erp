@@ -172,7 +172,7 @@ test("importar Clientes: la fila de una venta completa su ficha, la nueva crea s
   /* Beto: no estaba, nace egresado (su egreso es anterior a hoy), con sus dos programas. */
   const beto = p.alumnos.find((a) => a.nombre === "Beto Pérez")!;
   assert.match(beto.id, /^alu_cs_/);
-  assert.deepEqual([beto.estado, beto.plan, beto.pais, beto.inicio], ["graduado", "Hackear Biz", "Chile", "2025-03-01"]);
+  assert.deepEqual([beto.estado, beto.plan, beto.pais, beto.inicio], ["graduado", "Hackear Biz", "Chile", "2025-03-01T15:00:00.000Z"], "el inicio va como mediodía de Argentina: no cambia de día al volver de la base");
   const sb = p.seguimientos.find((s) => s.alumnoId === beto.id)!;
   assert.deepEqual([sb.numero, sb.programas, sb.duracionMeses, sb.fechaEgreso, sb.acceso, sb.followUp, sb.contratoFirmado, sb.estadoContrato, sb.closerNombre, sb.stack],
     [2, ["Hackear Biz", "Principals"], 6, "2025-09-01", "Sin acceso", "Avanzando", "Pendiente", "Enviado", "Dante", "Backend"]);
@@ -271,7 +271,7 @@ test("importar Testimonios: se busca al alumno por su teléfono o su nombre, las
 
   /* Zoe no estaba: se crea como egresada con lo que trae el testimonio. */
   const zoe = p.alumnos.find((a) => a.nombre === "Zoe Nueva")!;
-  assert.deepEqual([zoe.estado, zoe.pais, zoe.inicio], ["graduado", "Uruguay", "2026-02-01"]);
+  assert.deepEqual([zoe.estado, zoe.pais, zoe.inicio], ["graduado", "Uruguay", "2026-02-01T15:00:00.000Z"]);
   assert.equal(p.alumnosCreadosPorOtraTabla, 1);
   assert.equal(p.seguimientos.find((s) => s.alumnoId === zoe.id)!.edad, 22, "la edad del testimonio completa su ficha");
 });
@@ -377,7 +377,7 @@ test("importar Reportes: cada uno cae en el lunes de su semana, uno por alumno y
   /* El 08/10/2026 (jueves) y el 06/10 (martes) son de la semana del lunes 05/10; el 01/10 es de la del 28/09. */
   assert.deepEqual([c.filas, c.nuevas, c.iguales, c.descartadas], [5, 2, 1, 2]);
   assert.deepEqual(p.reportes.map((r) => [r.alumnoId, r.semanaDel, r.horasEstudio, r.entrevistas, r.postulaciones, r.bloqueo, r.estado]).sort(),
-    [["a1", "2026-09-28", 10, 2, 8, undefined, "completado"], ["a1", "2026-10-05", 12, 1, 5, "Nada", "completado"]].sort());
+    [["a1", "2026-09-28T15:00:00.000Z", 10, 2, 8, undefined, "completado"], ["a1", "2026-10-05T15:00:00.000Z", 12, 1, 5, "Nada", "completado"]].sort());
   assert.deepEqual(p.reportes.map((r) => r.id).sort(), ["rep_cs_a1_2026-09-28", "rep_cs_a1_2026-10-05"]);
   assert.equal(p.descartadas.length, 2);
   assert.match(p.descartadas.find((d) => d.fila === 5)!.motivo, /no está entre los alumnos/);
@@ -392,7 +392,7 @@ test("importar Reportes: cada uno cae en el lunes de su semana, uno por alumno y
 test("un reporte que ya estaba cargado (por la app) para esa semana no se vuelve a cargar", () => {
   const e = estado({ reportes: [{ id: "r_viejo", alumnoId: "a1", semanaDel: "2026-10-06", estado: "completado" }] as never });
   const p = planificarImportacionCs(e, [tabla("Results", CSV_REPORTES)], { ...OP, crearFaltantes: false });
-  assert.deepEqual(p.reportes.map((r) => r.semanaDel), ["2026-09-28"], "la semana del 05/10 ya tenía reporte (cargado un martes)");
+  assert.deepEqual(p.reportes.map((r) => r.semanaDel), ["2026-09-28T15:00:00.000Z"], "la semana del 05/10 ya tenía reporte (cargado un martes)");
 });
 
 /* ---------- Varias tablas juntas ---------- */

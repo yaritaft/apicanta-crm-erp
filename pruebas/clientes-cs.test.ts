@@ -386,7 +386,7 @@ test("corregir un día exige un día válido; el último contacto recalcula el p
   const u = escrituraCliente(f1(), "ultimoContacto", "2026-10-01", LISTAS);
   assert.deepEqual((u as { cambios: unknown }).cambios, { ultimoContacto: "2026-10-01", proximoContacto: null, intentosSinRespuesta: 0, ultimoIntento: null });
   assert.equal(escrituraCliente(f1(), "inicio", "", LISTAS).tipo, "no", "el inicio no se puede dejar vacío");
-  assert.deepEqual(escrituraCliente(f1(), "inicio", "2026-09-01", LISTAS), { tipo: "alumno", cambios: { inicio: "2026-09-01" }, detalle: "Fecha de inicio: 2026-09-01." });
+  assert.deepEqual(escrituraCliente(f1(), "inicio", "2026-09-01", LISTAS), { tipo: "alumno", cambios: { inicio: "2026-09-01T15:00:00.000Z" }, detalle: "Fecha de inicio: 2026-09-01." }, "mediodía de Argentina, como lo guarda el resto de la app");
 });
 
 test("lo de la persona se corrige en todos lados; el teléfono, donde está", () => {
