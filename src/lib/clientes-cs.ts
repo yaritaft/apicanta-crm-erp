@@ -540,8 +540,10 @@ export function escrituraCliente(f: FilaCliente, clave: ClaveCliente, valor: str
       return o ? { tipo: "alumno", cambios: { estado: o.valor }, detalle: `Estado del alumno: ${o.texto}.` } : { tipo: "no", motivo: "Elegí uno de los estados." };
     }
     case "numero": {
-      if (v && (!Number.isInteger(Number(v)) || Number(v) < 1)) return { tipo: "no", motivo: "El N.º de alumno tiene que ser un número entero desde 1." };
-      return seg({ numero: v ? Number(v) : null });
+      /* No se vacía: cada alumno tiene el suyo («Numerar» se lo da a los que todavía no tienen). */
+      if (!v) return { tipo: "no", motivo: "El N.º de alumno no se deja vacío: cada alumno tiene el suyo (el botón «Numerar» se lo da a los que no tienen)." };
+      if (!Number.isInteger(Number(v)) || Number(v) < 1) return { tipo: "no", motivo: "El N.º de alumno tiene que ser un número entero desde 1." };
+      return seg({ numero: Number(v) });
     }
     case "edad": return numero(ENTRE.edad, "edad", "Edad");
     case "duracion": return numero(ENTRE.duracion, "duracionMeses", "Duración (meses)");
@@ -744,14 +746,8 @@ export function coincideResell(f: FilaResell, q: string): boolean {
   return [f.resell.nombre, f.resell.email, f.resell.telefono, f.resell.closer, f.resell.notas].some((x) => sinTildes(x ?? "").includes(t));
 }
 
-/** Si una llamada de Calendly es de resell: el evento se llama «auditoría» o «resell», o llegó con el utm_source «Resell». */
-export function esLlamadaDeResell(s: { tipo?: string | null; titulo?: string | null; utm?: Record<string, string> | null }): boolean {
-  if (/(auditor|resell)/i.test(sinTildes(`${s.tipo ?? ""} ${s.titulo ?? ""}`))) return true;
-  const src = s.utm?.utm_source ?? s.utm?.source ?? "";
-  return /resell/i.test(sinTildes(src));
-}
-
-export const idResell = (sesionId: ID) => `rs_${sesionId}`;
+/* Cuáles llamadas de Calendly son de resell y cómo se llama su fila: viven en lib/resells.ts (lo usa también el servidor). */
+export { esLlamadaDeResell, idResell } from "./resells";
 
 /* ---------- Lo que se cuenta arriba de la tabla ---------- */
 

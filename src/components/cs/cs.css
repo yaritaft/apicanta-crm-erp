@@ -37,3 +37,11 @@
 .cs-importar__mapa th { font-weight: 600; color: var(--ink-muted); }
 .cs-importar__aviso { margin: 0; padding: 8px 12px; border-radius: var(--radius-md); background: color-mix(in srgb, var(--warning) 14%, transparent); font-size: 13px; }
 .cs-importar__resumen { display: flex; flex-wrap: wrap; gap: 8px 18px; font-size: 14px; }
+
+/* Clientes: el N.º de alumno y el nombre quedan fijos a la izquierda al correr las demás columnas (el N.º va primero, como en la planilla de Lili). */
+.cs-t--doble .hk-table th:first-child, .cs-t--doble .hk-table td:first-child { width: 96px; min-width: 96px; max-width: 96px; }
+.cs-t--doble .hk-table th:nth-child(2), .cs-t--doble .hk-table td:nth-child(2) {
+  position: sticky; left: 96px; z-index: 2; background: var(--surface-100); box-shadow: inset -1px 0 0 var(--border);
+}
+.cs-t--doble .hk-table th:nth-child(2) { z-index: 3; }
+.cs-t--doble .hk-table tbody tr:hover td:nth-child(2) { background: var(--surface-200); }

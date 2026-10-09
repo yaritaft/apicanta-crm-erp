@@ -33,6 +33,7 @@ import { claveEmail, completar } from "./contactos";
 import { nubeServidor } from "./servidor";
 import { etapaPorEvento } from "./etapas-auto";
 import { anfitrionTrasCalendly } from "./pasada-closer";
+import { esLlamadaDeResell, registrarResell } from "./resells";
 import type { Contacto, Etapa, Lead, Sesion } from "./types";
 
 /* "Sesión agendada" en las etapas de la base. */
@@ -48,6 +49,8 @@ export interface ResultadoIngreso {
   contactoNuevo: boolean;
   leadNuevo: boolean;
   estado: Sesion["estado"];
+  /* Era una llamada de resell: también quedó en la agenda de Customer Success. */
+  resell?: boolean;
 }
 
 /* Lo que se consulta una vez por corrida y no por cada agenda. */
@@ -262,7 +265,21 @@ export async function ingresarInvitado(
   const rs = await db.from("sesiones").upsert(limpio(sesion), { defaultToNull: false });
   if (rs.error) throw new Error(`sesiones: ${rs.error.message}`);
 
-  return { sesionId, contactoId: contacto.id, leadId, contactoNuevo: !previo, leadNuevo, estado };
+  /* ---------- 5. La agenda de resells ----------
+     Una llamada de «auditoría» o «resell» también va a la agenda de Customer Success (lib/resells.ts), que no lee las
+     llamadas de venta. Si la tabla todavía no existe o falla, la entrada de la agenda sigue: es un agregado, no la llamada. */
+  let resell = false;
+  if (esLlamadaDeResell({ tipo: sesion.tipo, titulo: sesion.titulo, utm })) {
+    const r = await registrarResell(db as never, {
+      sesionId, fechaHora: sesion.inicia, nombre: sesion.invitado, email: sesion.email ?? "", telefono: contacto.telefono ?? "",
+      closer: sesion.anfitrion ?? "", cancelada: inv.status === "canceled",
+      reprogramadaDe: !antes && inv.old_invitee ? idSesionCalendly(inv.old_invitee) : undefined, ahora,
+    });
+    resell = r.hecho;
+    if (!r.hecho) console.warn(`resells: no se guardó la agenda de ${sesionId}: ${r.motivo ?? "sin motivo"}`);
+  }
+
+  return { sesionId, contactoId: contacto.id, leadId, contactoNuevo: !previo, leadNuevo, estado, resell };
 }
 
 /**

@@ -1,8 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-  aplicarEscritura, coincideCliente, COLUMNAS_CLIENTES, esLlamadaDeResell, escrituraCliente, filasClientes, filasResells, filasTestimonios,
-  idResell, LISTAS_POR_DEFECTO, listasCs, MOTOR_CLIENTES, MOTOR_RESELLS, MOTOR_TESTIMONIOS, planDePagoDe, programasDeTexto, reporteDeCliente,
+  aplicarEscritura, coincideCliente, COLUMNAS_CLIENTES, escrituraCliente, filasClientes, filasResells, filasTestimonios,
+  LISTAS_POR_DEFECTO, listasCs, MOTOR_CLIENTES, MOTOR_RESELLS, MOTOR_TESTIMONIOS, planDePagoDe, programasDeTexto, reporteDeCliente,
   resellNormal, resumenClientes, seguimientoCompleto, siguienteNumero, sumarMeses, testimonioNormal, valorDeLista, valorEditableCliente,
   VISIBLES_CLIENTES, type ClaveCliente, type FilaCliente,
 } from "@/lib/clientes-cs";
@@ -375,6 +375,7 @@ test("corregir un número valida el rango y deja vacío si se vacía", () => {
   assert.deepEqual((escrituraCliente(f1(), "mentor", "", LISTAS) as { cambios: unknown }).cambios, { sesionesMentor: null });
   assert.equal(escrituraCliente(f1(), "mentor", "mucho", LISTAS).tipo, "no");
   assert.equal(escrituraCliente(f1(), "numero", "0", LISTAS).tipo, "no");
+  assert.equal(escrituraCliente(f1(), "numero", "", LISTAS).tipo, "no", "el N.º de alumno no se vacía");
   assert.deepEqual((escrituraCliente(f1(), "numero", "42", LISTAS) as { cambios: unknown }).cambios, { numero: 42 });
 });
 
@@ -472,16 +473,6 @@ test("los testimonios traen de la ficha del cliente la edad, el inicio, el telé
 });
 
 /* ---------- Agenda de resells ---------- */
-
-test("una llamada es de resell por el nombre del evento o por el utm_source", () => {
-  assert.equal(esLlamadaDeResell({ tipo: "Llamada de Auditoría" }), true);
-  assert.equal(esLlamadaDeResell({ tipo: "Resell Mentoría 1:1" }), true);
-  assert.equal(esLlamadaDeResell({ tipo: "Asesoramiento", utm: { utm_source: "Resell" } }), true);
-  assert.equal(esLlamadaDeResell({ tipo: "Asesoramiento", utm: { source: "resell-ig" } }), true);
-  assert.equal(esLlamadaDeResell({ tipo: "Asesoramiento", titulo: "Llamada con Ana", utm: { utm_source: "meta" } }), false);
-  assert.equal(esLlamadaDeResell({}), false);
-  assert.equal(idResell("ses_9"), "rs_ses_9");
-});
 
 test("la agenda de resells muestra «Agendada» o «Cancelada» hasta que Customer Success le pone estado", () => {
   const e = estado({

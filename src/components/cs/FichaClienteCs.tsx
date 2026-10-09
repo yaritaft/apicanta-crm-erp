@@ -89,7 +89,7 @@ export function FichaClienteCs({ fila, onCerrar }: { fila: FilaCliente; onCerrar
     const cadencia = Number(b.cadencia);
     const nombre = b.nombre.trim();
     const cambiosSeg: Partial<SeguimientoAlumno> = {
-      numero: numero.n, edad: edad.n, dni: b.dni.trim(), domicilio: b.domicilio.trim(),
+      ...(numero.n !== null ? { numero: numero.n } : {}), edad: edad.n, dni: b.dni.trim(), domicilio: b.domicilio.trim(),
       stack: valorDeLista(b.stack, listas.stacks), planDePago: b.planDePago.trim(), duracionMeses: duracion.n,
       fechaEgreso: b.egreso || null, sesionesMentor: mentor.n, garantia: valorDeLista(b.garantia, listas.garantias),
       acceso: valorDeLista(b.acceso, listas.accesos), followUp: valorDeLista(b.followUp, listas.followUps),

@@ -251,7 +251,7 @@ export function ClientesCs({ onNuevo }: { onNuevo: () => void }) {
     <>
       <TablaCs
         motor={MOTOR_CLIENTES} pantalla="clientes-cs" filas={filas} coincide={coincideCliente}
-        visiblesPorDefecto={VISIBLES_CLIENTES} ordenPorDefecto={ORDEN_CLIENTES} fija="nombre" ordenValores={ordenValores}
+        visiblesPorDefecto={VISIBLES_CLIENTES} ordenPorDefecto={ORDEN_CLIENTES} fija="nombre" fijaAntes="numero" ordenValores={ordenValores}
         celda={(col, f) => celda(col, f)} filaAcciones={filaAcciones}
         excel={{ nombre: "Clientes", hoy, valor: (col, f) => {
           const k = col.clave;
@@ -261,7 +261,6 @@ export function ClientesCs({ onNuevo }: { onNuevo: () => void }) {
           return MOTOR_CLIENTES.textoDeColumna(f, col);
         } }}
         atajos={atajos} singular="cliente" plural="clientes" placeholder="Buscar por nombre, mail, teléfono o DNI"
-        onFila={(f) => abrirFicha(f.id, "servicio")} etiquetaFila={(f) => `Ver la ficha de ${f.nombre}`}
         vacio={{
           titulo: "Todavía no hay clientes",
           texto: "Cada venta crea su alumno sola. También podés cargar uno a mano o traer toda la lista de tu Airtable.",

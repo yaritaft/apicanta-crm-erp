@@ -2,7 +2,7 @@ import { claveEmail } from "./contactos";
 import { personaDeVenta, etapaInicialDeServicio, planDeVenta } from "./alumnos";
 import { diaDeNegocio } from "./dia-negocio";
 import { leerFecha } from "./registros-webinar";
-import { lunesDe } from "./reportes";
+import { lunesDe, lunesDelDia } from "./reportes";
 import { sinTildes } from "./crm";
 import {
   aNumero, ENTRE, listasCs, programasDeTexto, resellNormal, seguimientoCompleto, sumarMeses, testimonioNormal, valorDeLista, CONTRATOS,
@@ -643,7 +643,8 @@ export function planificarImportacionCs(e: EstadoApp, tablas: readonly TablaImpo
         plan.alumnosCreadosPorOtraTabla++;
         alumno = crearAlumno({ nombre: v("alumno") || email, email, telefono: "", pais: "", inicio: "" }, "graduado", `reportes|${v("alumno")}|${email}`);
       }
-      const semana = lunesDe(dia);
+      /* Las semanas van de lunes a domingo: un reporte del domingo es de la semana que termina ese día. */
+      const semana = lunesDelDia(dia);
       const clave = `${alumno.id}|${semana}`;
       if (reportesActuales.has(clave) || reportesNuevos.has(clave)) { plan.porTabla.reportes.iguales++; return; }
       reportesNuevos.add(clave);

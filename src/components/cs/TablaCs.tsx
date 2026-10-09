@@ -42,6 +42,8 @@ export interface PropsTablaCs<F extends { id: string }, K extends string> {
   ordenPorDefecto: OrdenCs<K>[];
   /* La columna que identifica la fila: va siempre primera, fija a la izquierda. */
   fija: K;
+  /* Si además hay otra fija antes (el N.º de alumno, antes del nombre): las dos quedan a la izquierda al correr las columnas. */
+  fijaAntes?: K;
   /* El orden propio de los valores de una columna (las opciones de una lista, como se cargaron). */
   ordenValores?: Partial<Record<K, string[]>>;
   celda: (col: ColumnaCs<F, K>, f: F) => React.ReactNode;
@@ -65,7 +67,7 @@ export interface PropsTablaCs<F extends { id: string }, K extends string> {
 }
 
 export function TablaCs<F extends { id: string }, K extends string>(p: PropsTablaCs<F, K>) {
-  const { motor, pantalla, filas, coincide, ordenPorDefecto, fija, ordenValores, singular, plural } = p;
+  const { motor, pantalla, filas, coincide, ordenPorDefecto, fija, fijaAntes, ordenValores, singular, plural } = p;
   const params = useSearchParams();
   const escribir = useEscribirURL();
   const toast = useToast();
@@ -90,8 +92,8 @@ export function TablaCs<F extends { id: string }, K extends string>(p: PropsTabl
 
   /* Las columnas: las que se ven de entrada, y las que cada uno prendió o apagó. */
   const defs = useMemo<DefColumna[]>(
-    () => motor.columnas.map((c) => ({ clave: c.clave, titulo: c.titulo, grupo: c.grupo, ayuda: c.ayuda, fija: c.clave === fija })),
-    [motor, fija],
+    () => motor.columnas.map((c) => ({ clave: c.clave, titulo: c.titulo, grupo: c.grupo, ayuda: c.ayuda, fija: c.clave === fija || c.clave === fijaAntes })),
+    [motor, fija, fijaAntes],
   );
   const porDefecto = useMemo(() => [...p.visiblesPorDefecto] as string[], [p.visiblesPorDefecto]);
   const cols = useColumnas(pantalla, defs, porDefecto);
@@ -167,10 +169,10 @@ export function TablaCs<F extends { id: string }, K extends string>(p: PropsTabl
   });
 
   return (
-    <div className="crm-t cs-t">
+    <div className={`crm-t cs-t${fijaAntes ? " cs-t--doble" : ""}`}>
       <Card className="crm-t__card">
         <div className="crm-t__barra">
-          <VistasGuardadas pantalla={pantalla} todas={`Todos los ${plural}`} extra={{ [`cols-${pantalla}`]: aLista(cols.visibles.filter((k) => k !== fija)) }} />
+          <VistasGuardadas pantalla={pantalla} todas={`Todos los ${plural}`} extra={{ [`cols-${pantalla}`]: aLista(cols.visibles.filter((k) => k !== fija && k !== fijaAntes)) }} />
           <div className="crm-t__buscar">
             <Input icono={<Search size={16} />} value={q} onChange={(ev) => setQ(ev.target.value)} placeholder={p.placeholder ?? "Buscar"} aria-label="Buscar" />
           </div>

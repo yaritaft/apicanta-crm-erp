@@ -29,6 +29,8 @@ import { NADA, Recorte, TablaCs } from "./TablaCs";
    ================================================================== */
 
 const opciones = (xs: readonly string[], color: ColorCrm = "gris1"): OpcionCrm[] => xs.map((nombre) => ({ nombre, color }));
+/* Lo cobrado, con centavos sólo si los tiene: «US$ 1.200,50» o «US$ 1.200». */
+const montoCs = (n: number) => money(n, "USD", Math.abs(n % 1) > 0.004 ? 2 : 0);
 const HORA = new Intl.DateTimeFormat("es-AR", { timeZone: "America/Argentina/Buenos_Aires", hour: "2-digit", minute: "2-digit", hour12: false });
 
 /* Lo que agendó Calendly no se corrige acá: cambia si el alumno reprograma. */
@@ -66,7 +68,7 @@ export function ResellsCs() {
         if (!v) return guardar(r, { cashCollect: null }, titulo, "");
         const n = leerMontoCs(v);
         if (n === null || n < 0) { toast("El Cash Collect tiene que ser un monto (por ejemplo 1200 o 1.200,50).", "err"); return; }
-        return guardar(r, { cashCollect: n }, titulo, money(n, "USD"));
+        return guardar(r, { cashCollect: n }, titulo, montoCs(n));
       }
       case "caso": return guardar(r, { casoDeExito: v === "Sí" }, titulo, v === "Sí" ? "Sí" : "No");
       case "notas": return guardar(r, { notas: valor }, titulo, v ? "con texto" : "");
@@ -85,7 +87,7 @@ export function ResellsCs() {
     switch (clave) {
       case "fechaHora": return <span className="t-num">{formatoDia(f.dia, hoy)} · {HORA.format(new Date(r.fechaHora))}</span>;
       case "estado": return <Pastilla texto={f.estado} />;
-      case "cash": return r.cashCollect === null ? NADA : <span className="t-num">{money(r.cashCollect, "USD")}</span>;
+      case "cash": return r.cashCollect === null ? NADA : <span className="t-num">{montoCs(r.cashCollect)}</span>;
       case "caso": return <Pastilla texto={r.casoDeExito ? "Sí" : "No"} tono={r.casoDeExito ? "ok" : "neutra"} />;
       case "notas": return <Recorte texto={r.notas} />;
       case "nombre": return <Recorte texto={r.nombre} />;

@@ -1837,11 +1837,10 @@ export const acciones = {
     if (!alumno) return null;
     const cfg = configSeguimiento(e.ajustes.seguimiento);
     const existente = (e.seguimientos ?? []).find((s) => s.alumnoId === alumnoId);
-    /* Una fila de antes (o de una base sin el SQL nuevo) se completa con la ficha vacía; la que nace recibe su
-       N.º de alumno, el que sigue al más alto (lib/clientes-cs.ts). */
-    const antes = existente
-      ? seguimientoCompleto(existente, cfg)
-      : { ...seguimientoVacio(alumnoId, cfg), numero: siguienteNumero(e.seguimientos ?? []) };
+    /* Una fila de antes (o de una base sin el SQL nuevo) se completa con la ficha vacía; y a la que nace, o a la que todavía
+       no tenía, se le da su N.º de alumno: el que sigue al más alto (lib/clientes-cs.ts). */
+    const base = existente ? seguimientoCompleto(existente, cfg) : seguimientoVacio(alumnoId, cfg);
+    const antes = base.numero === null ? { ...base, numero: siguienteNumero(e.seguimientos ?? []) } : base;
     const quien = e.equipo.find((m) => m.id === acceso?.miembroId)?.nombre ?? e.ajustes.responsable ?? "";
     const despues = cambio(antes, quien);
     const { lista, nuevo } = registrar(e, "alumno", alumnoId, alumno.nombre, "actualizo", detalle(despues));
