@@ -448,6 +448,37 @@ export interface Resell {
   actualizadoPor: string;
 }
 
+/* La revisión del CV y del LinkedIn de un alumno (supabase/revision-cv.sql): lo que Aldana llevaba en su base de Notion «REVISION DE CVS».
+   El estado es la etapa del proceso (En proceso, Esperando cliente, Segunda ronda, Con Yari, Cerrado, Outboarding): sale de la lista
+   que ajusta Customer Success y cambiarle el nombre a una opción no reescribe lo ya cargado. */
+export interface RevisionCv {
+  /* «cv_<…>» si se cargó o se importó. */
+  id: ID;
+  nombre: string;
+  telefono: string;
+  /* El alumno de la app, si se pudo saber de quién es (en su Notion sólo había nombre y teléfono). */
+  alumnoId: ID | null;
+  /* Vacío: sin definir. */
+  estado: string;
+  cvRecibido: boolean;
+  correccion1: boolean;
+  correccion2: boolean;
+  /* «aaaa-mm-dd». */
+  fechaInicio: string | null;
+  /* El CV en la carpeta «Curriculums», el perfil de LinkedIn, el documento de corrección que se le manda al alumno y el Loom de Yari. */
+  linkCv: string;
+  linkLinkedin: string;
+  linkCorreccion: string;
+  linkLoom: string;
+  notas: string;
+  /* «msj 9/9», «pedido a lili»: lo que se le avisó al alumno o se le pidió a otro. */
+  mensajes: string;
+  origen: "manual" | "importado";
+  creadoEn: string;
+  actualizadoEn: string;
+  actualizadoPor: string;
+}
+
 /* Las listas de opciones de Customer Success: se ajustan en Alumnos → Clientes → Ajustar. Sin ajustar, las de Lili
    (lib/clientes-cs.ts, LISTAS_POR_DEFECTO). */
 export interface ListasCs {
@@ -852,6 +883,8 @@ export interface EstadoApp {
   testimonios?: Testimonio[];
   /* La agenda de resells de Customer Success (supabase/customer-success-lili.sql). */
   resells?: Resell[];
+  /* La revisión de CVs de Customer Success (supabase/revision-cv.sql). */
+  revisionesCv?: RevisionCv[];
   /* Los gastos que se repiten todos los meses (software, abonos): cada mes se
      proponen con el monto del anterior y alguien los aprueba (lib/gastos-recurrentes.ts).
      Opcional: sin supabase/gastos-recurrentes.sql, ninguno. */

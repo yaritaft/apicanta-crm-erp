@@ -78,7 +78,7 @@ export function lecturasSinGuarda(linea: string, opcionales: string[]): string[]
 }
 
 test("el buscador de lecturas sin guarda marca el uso de una colección opcional sin proteger y deja pasar lo demás", () => {
-  const cuantas = (l: string) => lecturasSinGuarda(l, ["gastosRecurrentes", "resells", "seguimientos", "testimonios"]).length;
+  const cuantas = (l: string) => lecturasSinGuarda(l, ["gastosRecurrentes", "resells", "revisionesCv", "seguimientos", "testimonios"]).length;
   for (const l of ["e.resells.map((r) => r.id)", "const n = e.testimonios.length;", "e.seguimientos[0]", "[...e.testimonios, x]", "foo(...e.gastosRecurrentes)", "(e.resells).filter(Boolean)"]) {
     assert.equal(cuantas(l), 1, `tenía que marcar: ${l}`);
   }
@@ -88,8 +88,8 @@ test("el buscador de lecturas sin guarda marca el uso de una colección opcional
   }
 });
 
-test("las colecciones opcionales (seguimientos, testimonios, resells, gastosRecurrentes) siempre se leen con ?? []", () => {
-  assert.deepEqual([...OPCIONALES].sort(), ["gastosRecurrentes", "resells", "seguimientos", "testimonios"], "cambió el conjunto de colecciones opcionales: revisá cada lugar que las lee");
+test("las colecciones opcionales (seguimientos, testimonios, resells, revisionesCv, gastosRecurrentes) siempre se leen con ?? []", () => {
+  assert.deepEqual([...OPCIONALES].sort(), ["gastosRecurrentes", "resells", "revisionesCv", "seguimientos", "testimonios"], "cambió el conjunto de colecciones opcionales: revisá cada lugar que las lee");
   const sinGuarda: string[] = [];
   const recorrer = (dir: string) => {
     for (const f of readdirSync(dir)) {

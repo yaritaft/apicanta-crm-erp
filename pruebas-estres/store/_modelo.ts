@@ -12,7 +12,7 @@ import ts from "typescript";
 import type { BaseFalsa, Fila } from "./_nube";
 
 export const CLAVE_DE_TABLA: Record<string, string> = {
-  seguimiento_alumnos: "seguimientos", gastos_recurrentes: "gastosRecurrentes", ad_insights: "adInsights",
+  seguimiento_alumnos: "seguimientos", gastos_recurrentes: "gastosRecurrentes", revisiones_cv: "revisionesCv", ad_insights: "adInsights",
   etapas_servicio: "etapasServicio", tipos_cuenta: "tiposCuenta",
 };
 export const claveDe = (tabla: string) => CLAVE_DE_TABLA[tabla] ?? tabla;
@@ -107,7 +107,7 @@ export const SELLADAS_POR_LA_BASE = COLUMNAS_QUE_PONE_LA_BASE;
 export const INTERFAZ_DE_TABLA: Record<string, string> = {
   pagos: "Pago", ventas: "Venta", cuotas: "Cuota", sesiones: "Sesion", gastos: "Gasto", procesadores: "Procesador",
   ajustes: "Ajustes", contactos: "Contacto", leads: "Lead", alumnos: "Alumno", movimientos: "Movimiento",
-  devoluciones: "Devolucion", gastos_recurrentes: "GastoRecurrente", seguimiento_alumnos: "SeguimientoAlumno",
+  devoluciones: "Devolucion", gastos_recurrentes: "GastoRecurrente", revisiones_cv: "RevisionCv", seguimiento_alumnos: "SeguimientoAlumno",
   testimonios: "Testimonio", equipo: "MiembroEquipo", webinars: "Webinar", tipos_cuenta: "TipoCuenta",
   etapas_servicio: "EtapaServicio", honorarios: "EsquemaPago", liquidaciones: "Liquidacion", traspasos: "Traspaso",
   arqueos: "Arqueo", comentarios: "Comentario", campaigns: "Campaign", adsets: "Adset", ads: "Ad", ad_insights: "AdInsight",

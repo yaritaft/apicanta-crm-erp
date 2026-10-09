@@ -24,7 +24,7 @@ const saltear = Pg ? false : "PGlite no está en el disco (ver pruebas/stress/pg
 
 let compartido: Promise<Banco> | null = null;
 const banco = (): Promise<Banco> => (compartido ??= montarBanco(Pg!, {
-  archivos: ["devoluciones.sql", "gastos-recurrentes.sql", "registros-webinar.sql", "customer-success.sql", "customer-success-lili.sql"], veces: 2,
+  archivos: ["devoluciones.sql", "gastos-recurrentes.sql", "registros-webinar.sql", "customer-success.sql", "customer-success-lili.sql", "revision-cv.sql"], veces: 2,
 }));
 after(async () => { if (compartido) await (await compartido).db.close(); });
 
@@ -43,7 +43,7 @@ const misVentas = (miembroId?: string): Set<string> => new Set(
 );
 
 async function sembrarBase(b: Banco): Promise<void> {
-  await b.servicio(`truncate public.devoluciones, public.gastos_recurrentes, public.registros_webinar, public.seguimiento_alumnos, public.testimonios, public.alumnos, public.cuotas, public.ventas`);
+  await b.servicio(`truncate public.devoluciones, public.gastos_recurrentes, public.registros_webinar, public.seguimiento_alumnos, public.testimonios, public.revisiones_cv, public.alumnos, public.cuotas, public.ventas`);
   ventas = [
     { id: "v1", closerId: "m_dante" }, { id: "v2", closerId: "m_otro" }, { id: "v3", closerId: "m_santi", setterId: "m_dante" },
     { id: "v4", closerId: "m_otro", hereda: "m_dante" },

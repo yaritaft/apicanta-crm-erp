@@ -26,7 +26,7 @@ const sql = (n: string) => readFileSync(resolve(RAIZ, n), "utf8");
 const esquema = leerEsquema();
 
 /* El orden en que se corren en producción (los que no hacen falta para estas tablas se omiten). */
-const ARCHIVOS = ["supabase/tipos-cuenta.sql", "supabase/customer-success.sql", "supabase/customer-success-lili.sql", "supabase/devoluciones.sql", "supabase/gastos-recurrentes.sql",
+const ARCHIVOS = ["supabase/tipos-cuenta.sql", "supabase/customer-success.sql", "supabase/customer-success-lili.sql", "supabase/revision-cv.sql", "supabase/devoluciones.sql", "supabase/gastos-recurrentes.sql",
   "supabase/registros-webinar.sql", "supabase/whatsapp-lector.sql", "supabase/gastos-devengo.sql", "supabase/procesadores-otros.sql", "supabase/cierre-del-dia.sql",
   "supabase/control-cruzado.sql"];
 
@@ -86,7 +86,7 @@ test("los SQL de las tablas nuevas corren dos veces sobre tipos-cuenta.sql y dej
   if (!db) return;
   {
     /* Esquema: columnas, tipos y obligatoriedad de cada tabla creada por un SQL nuevo. */
-    const tablas = ["devoluciones", "gastos_recurrentes", "seguimiento_alumnos", "testimonios", "resells", "registros_webinar", "whatsapp_lector", "whatsapp_grupos", "whatsapp_miembros", "whatsapp_contactados", "tipos_cuenta"];
+    const tablas = ["devoluciones", "gastos_recurrentes", "seguimiento_alumnos", "testimonios", "resells", "revisiones_cv", "registros_webinar", "whatsapp_lector", "whatsapp_grupos", "whatsapp_miembros", "whatsapp_contactados", "tipos_cuenta"];
     for (const tabla of tablas) {
       const real: Record<string, unknown>[] = (await db.query(`select column_name, data_type, is_nullable, column_default from information_schema.columns where table_schema = 'public' and table_name = $1 order by ordinal_position`, [tabla])).rows;
       const mio = esquema.tablas.get(tabla)!;

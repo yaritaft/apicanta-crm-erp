@@ -75,6 +75,8 @@ function parchar(def: string, tablasClientes: string[]): Record<string, string[]
   }
   /* Y el de supabase/customer-success-lili.sql: la agenda de resells, del área Alumnos (el test de abajo comprueba que ese archivo diga eso). */
   if (!def.includes("'resells'")) t = t.replace(/select case tabla/, "select case tabla\n when 'resells' then array['alumnos']");
+  /* Y el de supabase/revision-cv.sql: la revisión de CVs, también del área Alumnos. */
+  if (!def.includes("'revisiones_cv'")) t = t.replace(/select case tabla/, "select case tabla\n when 'revisiones_cv' then array['alumnos']");
   const m: Record<string, string[]> = {};
   for (const x of t.matchAll(/when '([a-z_]+)'\s+then array\[([^\]]*)\]/g)) m[x[1]] = [...x[2].matchAll(/'([a-z_*]+)'/g)].map((y) => y[1]);
   return m;
@@ -88,7 +90,17 @@ test("el SQL de Lili suma la agenda de resells al área Alumnos, para leer y par
   for (const p of ["ver_resells", "crear_resells", "editar_resells", "borrar_resells"]) assert.match(sql, new RegExp(`create policy ${p} on public.resells`));
 });
 
-test("la base (tipos-cuenta.sql + customer-success.sql + customer-success-lili.sql) dice lo mismo que LEEN y EDITAN", () => {
+test("el SQL de la revisión de CVs suma la tabla al área Alumnos, para leer y para editar, sobre la definición vigente (no con una copia)", () => {
+  const sql = readFileSync(new URL("../supabase/revision-cv.sql", import.meta.url), "utf8");
+  assert.equal(sql.split("when 'revisiones_cv' then array['alumnos']").length - 1, 2, "una vez en areas_que_leen y otra en areas_que_editan");
+  assert.match(sql, /nuevo_l := regexp_replace\(nuevo_l[\s\S]*when 'revisiones_cv'/);
+  assert.match(sql, /nuevo_e := regexp_replace\(nuevo_e[\s\S]*when 'revisiones_cv'/);
+  assert.match(sql, /pg_get_functiondef\('public\.areas_que_leen\(text\)'::regprocedure\)/, "parcha lo vigente");
+  for (const p of ["ver_revisiones_cv", "crear_revisiones_cv", "editar_revisiones_cv", "borrar_revisiones_cv"]) assert.match(sql, new RegExp(`create policy ${p} on public.revisiones_cv`));
+  assert.deepEqual([LEEN.revisiones_cv, EDITAN.revisiones_cv], [["alumnos"], ["alumnos"]], "la app dice lo mismo que la base");
+});
+
+test("la base (tipos-cuenta.sql + customer-success.sql + customer-success-lili.sql + revision-cv.sql) dice lo mismo que LEEN y EDITAN", () => {
   const base = readFileSync(new URL("../supabase/tipos-cuenta.sql", import.meta.url), "utf8");
   const leen = parchar(cuerpo(base, "areas_que_leen"), ["leads", "contactos", "comentarios", "ventas", "cuotas", "pagos"]);
   const editan = parchar(cuerpo(base, "areas_que_editan"), ["contactos", "comentarios"]);

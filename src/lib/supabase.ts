@@ -58,6 +58,8 @@ export const TABLAS = [
   "seguimiento_alumnos", "testimonios",
   /* La agenda de resells de Customer Success (supabase/customer-success-lili.sql). */
   "resells",
+  /* La revisión de CVs de Customer Success (supabase/revision-cv.sql). No se llama como su colección (`revisionesCv`). */
+  "revisiones_cv",
 ] as const;
 
 export type Tabla = (typeof TABLAS)[number];
@@ -107,6 +109,8 @@ export const TABLAS_OPCIONALES = new Set<string>([
   "seguimiento_alumnos", "testimonios",
   /* Nueva (supabase/customer-success-lili.sql): hasta que corra, la agenda de resells queda sólo en este navegador. */
   "resells",
+  /* Nueva (supabase/revision-cv.sql): hasta que corra, la revisión de CVs queda sólo en este navegador. */
+  "revisiones_cv",
 ]);
 
 /* Las tablas que sólo leen y escriben los dueños. Para cualquier otro, la

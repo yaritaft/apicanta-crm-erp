@@ -1543,3 +1543,21 @@ ediciones que se hicieron entre el 23/09 y el 09/10 había 23 cobros y 16 ventas
 - **Pendiente a propósito:** los contactos y leads de personas cuyo mail se corrigió en la planilla quedan (pueden tener llamadas o chat); la asignación del director sigue siendo sólo Mentoría y Upsell
   (`serviciosDirector`): el informe de Angelo le cuenta todo lo que vendieron sus closers, a confirmar con él.
 
+## Revisión de CVs de Customer Success (paso 1: la tabla y el almacén)
+
+Aldana corrige el CV y el LinkedIn de cada alumno y lo llevaba en una base de Notion («REVISION DE CVS»). Esto es esa base adentro de la app, para ver en
+números cuántos hay en cada estado. Este paso trae sólo los cimientos; la pestaña con el contador y el importador de su Notion son los pasos que siguen.
+
+- `supabase/revision-cv.sql` (nuevo, idempotente, sin tocar datos; pide `tipos-cuenta.sql` antes): la tabla `revisiones_cv` con una fila por revisión: nombre, teléfono,
+  alumno (opcional, con clave foránea que se desata si el alumno se borra), **estado**, las casillas «CV recibido», «Corrección 1» y «Corrección 2», el día de inicio (texto
+  «aaaa-mm-dd»), los links del CV, del LinkedIn, del documento de corrección y del Loom, notas y mensajes. Es del área Alumnos (Customer Success y los dueños): leer con `ve()`,
+  escribir con `edita()`. Las dos listas de áreas se **parchean sobre su definición vigente**, no con una copia: si alguna vez se vuelve a correr `tipos-cuenta.sql`, hay que volver
+  a correr este archivo, porque una tabla que `areas_que_leen()` no conoce se lee con `'*'` (cualquiera con sesión). Una prueba lo deja fijado.
+- `src/lib/revision-cv.ts`: el tipo se limpia con `revisionCvNormal()` (lo que no viene queda vacío, el día se guarda como texto) y los estados de fábrica (`ESTADOS_CV`: En proceso,
+  Esperando cliente, Segunda ronda, Con Yari, Cerrado, Outboarding), que Customer Success va a poder ajustar.
+- Almacén: la colección opcional `revisionesCv` se carga de la tabla `revisiones_cv`, se siembra después de `alumnos`, se vacía antes que ellos, y `guardarRevisionCv()` / `borrarRevisionCv()`
+  la escriben con la cola de siempre. Sin el SQL corrido, queda sólo en este navegador.
+- Pruebas: `pruebas/revision-cv.test.ts` (normalizador, almacén y permisos de la app) y `pruebas/revision-cv-sql.test.ts` (PGlite: columnas, RLS, permisos por tipo de cuenta
+  igual a `permisos.ts`, clave foránea, restricciones, que se pueda volver a correr y el aviso de arriba); las pruebas de estrés que enumeran tablas ya la incluyen.
+- Para instalarlo: Supabase → SQL Editor: `supabase/revision-cv.sql` (antes, ensayarlo contra la base real dentro de una transacción que se revierte). Para deshacerlo: `drop table public.revisiones_cv;`.
+

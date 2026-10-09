@@ -64,7 +64,7 @@ test("sembrar la demo en la nube y volver a cargarla es la identidad, tabla por 
   assert.deepEqual(diferenciasDeRecarga(estadoDe(S), await recargado()), []);
   /* Cada tabla sembrada tiene filas en la base (si no, el chequeo de arriba no probaría nada). */
   const vacias = SEMBRADAS.filter((t) => base.tabla(t).size === 0);
-  assert.deepEqual(vacias.sort(), ["arqueos", "campos", "comentarios", "devoluciones", "gastos_recurrentes", "honorarios", "liquidaciones", "resells", "seguimiento_alumnos", "testimonios", "traspasos"].sort(),
+  assert.deepEqual(vacias.sort(), ["arqueos", "campos", "comentarios", "devoluciones", "gastos_recurrentes", "honorarios", "liquidaciones", "resells", "revisiones_cv", "seguimiento_alumnos", "testimonios", "traspasos"].sort(),
     "la demo no tiene datos de estas tablas: se prueban con el estado al azar de abajo");
 });
 

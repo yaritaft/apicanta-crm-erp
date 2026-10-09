@@ -7,9 +7,10 @@ import type {
   Arqueo, Campania, CampoPersonalizado, Comentario, Comprobante, Cuota, EntidadNombre, EstadoApp, Etapa, ID,
   Lead, Meta, Movimiento, OpcionCrm, OportunidadCrm, Pago, Reporte, Sesion, Venta, Webinar,
 } from "./types";
-import type { ConfigSeguimiento, Resell, SeguimientoAlumno, Testimonio } from "./types";
+import type { ConfigSeguimiento, Resell, RevisionCv, SeguimientoAlumno, Testimonio } from "./types";
 import { configSeguimiento, seguimientoVacio } from "./seguimiento";
 import { resellNormal, seguimientoCompleto, siguienteNumero, testimonioNormal } from "./clientes-cs";
+import { revisionCvNormal } from "./revision-cv";
 import type { EsquemaPago, EstadoTraspaso, EtapaServicio, ExtraLiquidacion, Gasto, GastoRecurrente, ID as IdMiembro, Liquidacion, MiembroEquipo, ResultadoLiquidacion, TipoCuenta, Traspaso } from "./types";
 import { conciliarPuntas, rutaDe, type Punta } from "./traspasos";
 import { gastoAprobado, plantillasDesdeGastos } from "./gastos-recurrentes";
@@ -583,6 +584,8 @@ export async function cargarDeLaNube(): Promise<void> {
       testimonios: (porTabla.testimonios ?? []) as Testimonio[],
       /* Opcional: sin supabase/customer-success-lili.sql, ninguno. */
       resells: (porTabla.resells ?? []) as Resell[],
+      /* Opcional: sin supabase/revision-cv.sql, ninguna. */
+      revisionesCv: (porTabla.revisiones_cv ?? []) as RevisionCv[],
       /* Opcional: sin supabase/gastos-recurrentes.sql, ninguno. */
       gastosRecurrentes: (porTabla.gastos_recurrentes ?? []) as GastoRecurrente[],
       /* Vacías para quien no es dueño: RLS las esconde. */
@@ -629,7 +632,7 @@ function ordenDeSiembra(e: EstadoApp): [string, unknown[]][] {
     /* contactos entre webinars y leads: apunta a webinars, y leads le apunta a
        el. Con la FK en la base, otro orden rechaza la siembra entera. */
     ["etapas", e.etapas], ["webinars", e.webinars], ["contactos", e.contactos], ["leads", e.leads],
-    ["alumnos", e.alumnos], ["seguimiento_alumnos", e.seguimientos ?? []], ["testimonios", e.testimonios ?? []], ["resells", e.resells ?? []],
+    ["alumnos", e.alumnos], ["seguimiento_alumnos", e.seguimientos ?? []], ["testimonios", e.testimonios ?? []], ["resells", e.resells ?? []], ["revisiones_cv", e.revisionesCv ?? []],
     ["sesiones", e.sesiones], ["reportes", e.reportes],
     ["campanias", e.campanias], ["metas", e.metas], ["campos", e.campos],
     ["ventas", e.ventas], ["cuotas", e.cuotas], ["movimientos", e.movimientos],
@@ -685,7 +688,7 @@ async function vaciarNube() {
   const orden = [
     "liquidaciones", "honorarios",
     "actividad", "comentarios", "arqueos", "traspasos", "gastos_recurrentes", "campos", "metas", "devoluciones", "pagos", "movimientos", "cuotas", "ventas", "gastos",
-    "campanias", "reportes", "sesiones", "seguimiento_alumnos", "testimonios", "resells", "alumnos", "leads", "contactos", "webinars",
+    "campanias", "reportes", "sesiones", "seguimiento_alumnos", "testimonios", "resells", "revisiones_cv", "alumnos", "leads", "contactos", "webinars",
     "etapas", "equipo", "embudos", "procesadores", "productos",
     "etapas_servicio",
   ];
@@ -1901,6 +1904,22 @@ export const acciones = {
     if (!(e.resells ?? []).some((x) => x.id === id)) return;
     guardar({ ...e, resells: (e.resells ?? []).filter((x) => x.id !== id) });
     empujar({ tipo: "delete", tabla: "resells", ids: [id] });
+  },
+
+  /* La revisión de CVs (lib/revision-cv.ts): se carga, se corrige (estado, rondas, links, notas) y se borra. */
+  guardarRevisionCv(r0: RevisionCv): void {
+    const e = snapshot();
+    const quien = e.equipo.find((m) => m.id === acceso?.miembroId)?.nombre ?? e.ajustes.responsable ?? "";
+    const r = revisionCvNormal({ ...r0, actualizadoEn: ahora(), actualizadoPor: quien });
+    guardar({ ...e, revisionesCv: [r, ...(e.revisionesCv ?? []).filter((x) => x.id !== r.id)] });
+    empujar({ tipo: "upsert", tabla: "revisiones_cv", filas: [r] });
+  },
+
+  borrarRevisionCv(id: ID): void {
+    const e = snapshot();
+    if (!(e.revisionesCv ?? []).some((x) => x.id === id)) return;
+    guardar({ ...e, revisionesCv: (e.revisionesCv ?? []).filter((x) => x.id !== id) });
+    empujar({ tipo: "delete", tabla: "revisiones_cv", ids: [id] });
   },
 
   /* Le da su N.º de alumno a los que todavía no tienen (el más viejo, el más bajo). Devuelve a cuántos. */

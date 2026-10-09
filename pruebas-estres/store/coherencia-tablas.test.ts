@@ -27,7 +27,7 @@ const DEL_SERVIDOR = ["registros_webinar", "whatsapp_lector", "whatsapp_grupos",
 
 /* Qué colección del estado es cada tabla (lo que no coincide por nombre). */
 const CLAVE_DE_TABLA: Record<string, string> = {
-  seguimiento_alumnos: "seguimientos", gastos_recurrentes: "gastosRecurrentes", ad_insights: "adInsights",
+  seguimiento_alumnos: "seguimientos", gastos_recurrentes: "gastosRecurrentes", revisiones_cv: "revisionesCv", ad_insights: "adInsights",
   etapas_servicio: "etapasServicio", tipos_cuenta: "tiposCuenta",
 };
 

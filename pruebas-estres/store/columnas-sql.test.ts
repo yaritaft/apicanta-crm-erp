@@ -18,7 +18,7 @@ const esquema = leerEsquema();
 const INTERFAZ: Record<string, string> = {
   pagos: "Pago", ventas: "Venta", cuotas: "Cuota", sesiones: "Sesion", gastos: "Gasto", procesadores: "Procesador",
   ajustes: "Ajustes", contactos: "Contacto", leads: "Lead", alumnos: "Alumno", movimientos: "Movimiento",
-  devoluciones: "Devolucion", gastos_recurrentes: "GastoRecurrente", seguimiento_alumnos: "SeguimientoAlumno",
+  devoluciones: "Devolucion", gastos_recurrentes: "GastoRecurrente", revisiones_cv: "RevisionCv", seguimiento_alumnos: "SeguimientoAlumno",
   testimonios: "Testimonio", equipo: "MiembroEquipo", webinars: "Webinar", tipos_cuenta: "TipoCuenta",
   etapas_servicio: "EtapaServicio", honorarios: "EsquemaPago", liquidaciones: "Liquidacion", traspasos: "Traspaso",
   arqueos: "Arqueo", comentarios: "Comentario", campaigns: "Campaign", adsets: "Adset", ads: "Ad", ad_insights: "AdInsight",
