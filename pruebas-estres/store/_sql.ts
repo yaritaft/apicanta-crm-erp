@@ -128,7 +128,11 @@ export function leerEsquema(): EsquemaSql {
     return t;
   };
   for (const { nombre: archivo, texto } of archivosSql()) {
-    for (const s of sentencias(texto)) {
+    const procesar = (s: string): void => {
+      /* Un bloque do $$ … $$ (por ejemplo el que agrega columnas y pasa lo viejo sólo la primera vez, como customer-success-lili.sql en
+         testimonios): se mira lo de adentro igual que lo de afuera. Un «begin» pegado a la primera sentencia se saca. */
+      const bloque = /^do\s+(?:language\s+\w+\s+)?\$([A-Za-z_]*)\$([\s\S]*)\$\1\$$/i.exec(s);
+      if (bloque) { for (const interna of sentencias(bloque[2])) procesar(interna.replace(/^begin\s+/i, "")); return; }
       const crea = new RegExp(String.raw`^create\s+table\s+(?:if\s+not\s+exists\s+)?${NOMBRE}\s*\(([\s\S]*)\)\s*$`, "i").exec(s);
       if (crea) {
         const t = tabla(crea[1]);
@@ -140,7 +144,7 @@ export function leerEsquema(): EsquemaSql {
             if (c.referencia) fks.push({ hijo: t.nombre, columna: c.nombre, padre: c.referencia.tabla, alBorrar: c.referencia.alBorrar, archivo });
           }
         }
-        continue;
+        return;
       }
       const altera = new RegExp(String.raw`^alter\s+table\s+(?:if\s+exists\s+)?${NOMBRE}\s+([\s\S]*)$`, "i").exec(s);
       if (altera) {
@@ -157,7 +161,8 @@ export function leerEsquema(): EsquemaSql {
           }
         }
       }
-    }
+    };
+    for (const s of sentencias(texto)) procesar(s);
     /* Las claves foráneas que se agregan aparte, dentro de un bloque do $$ … $$. */
     const re = new RegExp(String.raw`alter\s+table\s+${NOMBRE}\s+add\s+constraint\s+\w+\s+foreign\s+key\s*\(\s*"?(\w+)"?\s*\)\s*references\s+(?:public\.)?"?(\w+)"?\s*\(\s*\w+\s*\)(?:\s+on\s+delete\s+(cascade|set\s+null|restrict))?`, "gi");
     let m: RegExpExecArray | null;

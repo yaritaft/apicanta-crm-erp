@@ -64,7 +64,7 @@ test("sembrar la demo en la nube y volver a cargarla es la identidad, tabla por 
   assert.deepEqual(diferenciasDeRecarga(estadoDe(S), await recargado()), []);
   /* Cada tabla sembrada tiene filas en la base (si no, el chequeo de arriba no probaría nada). */
   const vacias = SEMBRADAS.filter((t) => base.tabla(t).size === 0);
-  assert.deepEqual(vacias.sort(), ["arqueos", "campos", "comentarios", "devoluciones", "gastos_recurrentes", "honorarios", "liquidaciones", "seguimiento_alumnos", "testimonios", "traspasos"].sort(),
+  assert.deepEqual(vacias.sort(), ["arqueos", "campos", "comentarios", "devoluciones", "gastos_recurrentes", "honorarios", "liquidaciones", "resells", "seguimiento_alumnos", "testimonios", "traspasos"].sort(),
     "la demo no tiene datos de estas tablas: se prueban con el estado al azar de abajo");
 });
 
@@ -84,6 +84,12 @@ for (const semilla of [101, 202, 303, 404]) {
     assert.deepEqual(diferenciasDeRecarga(memoria, await recargado()), [], `semilla ${semilla}`);
   });
 }
+
+test("el estado al azar trae agendas de resells con las semillas de arriba (si no, la demo vacía de esa tabla no se probaría en ningún lado)", async () => {
+  const S = await conDemo(base);
+  const cuantas = [101, 202, 303, 404].map((semilla) => ((estadoAzar(semilla, estadoDe(S)).resells ?? []) as unknown[]).length);
+  assert.ok(cuantas.some((n) => n > 0), `ninguna de las cuatro semillas generó resells (${cuantas.join(", ")})`);
+});
 
 test("vaciar todo deja las tablas de catálogo y vacías las demás, y se puede volver a cargar", async () => {
   const S = await conDemo(base);

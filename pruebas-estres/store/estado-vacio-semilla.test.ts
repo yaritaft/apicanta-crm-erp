@@ -2,7 +2,7 @@
 
    Las pantallas leen `e.leads.map(…)`, `e.pagos.filter(…)`: si una lista fuera undefined en uno de los dos estados, la app se
    caería sólo con nube (mientras carga) o sólo sin ella. Se compara la forma (qué claves, qué es lista) contra EstadoApp de
-   types.ts, y se mira que las tres colecciones opcionales (seguimientos, testimonios, gastosRecurrentes) se lean siempre con `?? []`. */
+   types.ts, y se mira que las colecciones opcionales (seguimientos, testimonios, resells, gastosRecurrentes) se lean siempre con `?? []`. */
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync, statSync } from "node:fs";
@@ -55,23 +55,49 @@ test("los catálogos de la semilla y del vacío son los mismos objetos (están c
   assert.equal(estadoVacio().productos, construirSemilla().productos);
 });
 
-test("las colecciones opcionales (seguimientos, testimonios, gastosRecurrentes) siempre se leen con ?? []", () => {
-  assert.deepEqual([...OPCIONALES].sort(), ["gastosRecurrentes", "seguimientos", "testimonios"], "cambió el conjunto de colecciones opcionales: revisá cada lugar que las lee");
+/* Objetos que tienen una propiedad con el mismo nombre que una colección opcional del estado pero NO son el estado de la app: lo que arma el
+   importador de Customer Success (`plan`, `lote`), su contador de puntos y el resultado crudo de leer las tablas de la nube (`porTabla`). */
+const NO_ES_EL_ESTADO = new Set(["plan", "lote", "puntos", "porTabla"]);
+
+/** Las lecturas de una colección opcional del estado que la USAN sin guarda en esa línea: se le pide `.map`, `.length` o un índice, o se la esparce
+ *  (`[...e.x]` revienta con undefined). Con guarda (`?? []`, `?.`) no revienta, y tampoco si sólo se la pasa de largo —un argumento
+ *  (`reemplazar(e.x, …)`) o un elemento de la lista de dependencias de un hook—: ahí la función que la recibe tiene que aceptarla sin definir,
+ *  y eso lo exige el compilador, porque en EstadoApp están marcadas con «?». */
+export function lecturasSinGuarda(linea: string, opcionales: string[]): string[] {
+  const malas: string[] = [];
+  for (const m of linea.matchAll(new RegExp(String.raw`([A-Za-z_$][\w$]*)\.(${opcionales.join("|")})\b(.{0,6})`, "g"))) {
+    const [, objeto, coleccion, sigue] = m;
+    if (NO_ES_EL_ESTADO.has(objeto)) continue;
+    if (/^\s*(\?\?|\?\.)/.test(sigue)) continue;
+    const esparcida = /\.\.\.\s*\(?\s*$/.test(linea.slice(0, m.index ?? 0));
+    const pasadaDeLargo = /^\s*(\]|,|\))/.test(sigue) && !/^\s*\)\s*[.[]/.test(sigue);
+    if (pasadaDeLargo && !esparcida) continue;
+    malas.push(`${objeto}.${coleccion}`);
+  }
+  return malas;
+}
+
+test("el buscador de lecturas sin guarda marca el uso de una colección opcional sin proteger y deja pasar lo demás", () => {
+  const cuantas = (l: string) => lecturasSinGuarda(l, ["gastosRecurrentes", "resells", "seguimientos", "testimonios"]).length;
+  for (const l of ["e.resells.map((r) => r.id)", "const n = e.testimonios.length;", "e.seguimientos[0]", "[...e.testimonios, x]", "foo(...e.gastosRecurrentes)", "(e.resells).filter(Boolean)"]) {
+    assert.equal(cuantas(l), 1, `tenía que marcar: ${l}`);
+  }
+  for (const l of ["(e.resells ?? []).map(f)", "e.resells?.length", "reemplazar(e.testimonios, lote.testimonios)", "[e.alumnos, e.seguimientos, e.resells, e.reportes]",
+    "plan.resells.push(x)", "lote.seguimientos.map(f)", "puntos.resells += 2", "const x = porTabla.resells ?? [];", "useMemo(() => 1, [e.testimonios])"]) {
+    assert.equal(cuantas(l), 0, `no tenía que marcar: ${l}`);
+  }
+});
+
+test("las colecciones opcionales (seguimientos, testimonios, resells, gastosRecurrentes) siempre se leen con ?? []", () => {
+  assert.deepEqual([...OPCIONALES].sort(), ["gastosRecurrentes", "resells", "seguimientos", "testimonios"], "cambió el conjunto de colecciones opcionales: revisá cada lugar que las lee");
   const sinGuarda: string[] = [];
   const recorrer = (dir: string) => {
     for (const f of readdirSync(dir)) {
       const ruta = resolve(dir, f);
       if (statSync(ruta).isDirectory()) { recorrer(ruta); continue; }
       if (!/\.(ts|tsx)$/.test(f) || f === "types.ts") continue;
-      const lineas = readFileSync(ruta, "utf8").split("\n");
-      lineas.forEach((l, i) => {
-        for (const m of l.matchAll(new RegExp(String.raw`\.(${OPCIONALES.join("|")})\b(.{0,6})`, "g"))) {
-          const sigue = m[2];
-          /* con guarda (?? [], ?.) o como dependencia de un hook ([e.gastos, e.gastosRecurrentes]) */
-          if (/^\s*(\?\?|\?\.|\])/.test(sigue)) continue;
-          if (/porTabla\./.test(l.slice(0, (m.index ?? 0) + 1))) continue;
-          sinGuarda.push(`${ruta.replace(RAIZ, "")}:${i + 1}: ${l.trim().slice(0, 100)}`);
-        }
+      readFileSync(ruta, "utf8").split("\n").forEach((l, i) => {
+        for (const lectura of lecturasSinGuarda(l, OPCIONALES)) sinGuarda.push(`${ruta.replace(RAIZ, "")}:${i + 1}: ${lectura} · ${l.trim().slice(0, 100)}`);
       });
     }
   };

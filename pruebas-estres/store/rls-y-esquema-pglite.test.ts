@@ -26,7 +26,7 @@ const sql = (n: string) => readFileSync(resolve(RAIZ, n), "utf8");
 const esquema = leerEsquema();
 
 /* El orden en que se corren en producción (los que no hacen falta para estas tablas se omiten). */
-const ARCHIVOS = ["supabase/tipos-cuenta.sql", "supabase/customer-success.sql", "supabase/devoluciones.sql", "supabase/gastos-recurrentes.sql",
+const ARCHIVOS = ["supabase/tipos-cuenta.sql", "supabase/customer-success.sql", "supabase/customer-success-lili.sql", "supabase/devoluciones.sql", "supabase/gastos-recurrentes.sql",
   "supabase/registros-webinar.sql", "supabase/whatsapp-lector.sql", "supabase/gastos-devengo.sql", "supabase/procesadores-otros.sql", "supabase/cierre-del-dia.sql",
   "supabase/control-cruzado.sql"];
 
@@ -44,9 +44,10 @@ async function armar(): Promise<Db> {
     create table public.ventas (id text primary key, "closerId" text, "setterId" text, "contactoId" text, estado text default 'activa');
     create table public.cuotas (id text primary key, "ventaId" text, "closerId" text);
     create table public.pagos (id text primary key, "cuotaId" text, monto numeric not null default 0, moneda text default 'USD', fecha text, "montoArs" numeric, comprobante jsonb, "comprobanteLink" text, "movimientoId" text, chequeado boolean);
-    create table public.sesiones (id text primary key, anfitrion text, "leadId" text, "contactoId" text, "estadoLlamada" text, "estadoPreCall" text);
+    create table public.sesiones (id text primary key, anfitrion text, "leadId" text, "contactoId" text, "estadoLlamada" text, "estadoPreCall" text,
+      inicia timestamptz, invitado text, email text, estado text, tipo text, utm jsonb, "creadoEn" timestamptz default now());
     create table public.leads (id text primary key, responsable text, "contactoId" text);
-    create table public.contactos (id text primary key);
+    create table public.contactos (id text primary key, telefono text);
     create table public.comentarios (id text primary key, "contactoId" text);
     create table public.alumnos (id text primary key, "ventaId" text);
     create table public.gastos (id text primary key, "webinarId" text, fecha timestamptz default now());
@@ -85,7 +86,7 @@ test("los SQL de las tablas nuevas corren dos veces sobre tipos-cuenta.sql y dej
   if (!db) return;
   {
     /* Esquema: columnas, tipos y obligatoriedad de cada tabla creada por un SQL nuevo. */
-    const tablas = ["devoluciones", "gastos_recurrentes", "seguimiento_alumnos", "testimonios", "registros_webinar", "whatsapp_lector", "whatsapp_grupos", "whatsapp_miembros", "whatsapp_contactados", "tipos_cuenta"];
+    const tablas = ["devoluciones", "gastos_recurrentes", "seguimiento_alumnos", "testimonios", "resells", "registros_webinar", "whatsapp_lector", "whatsapp_grupos", "whatsapp_miembros", "whatsapp_contactados", "tipos_cuenta"];
     for (const tabla of tablas) {
       const real: Record<string, unknown>[] = (await db.query(`select column_name, data_type, is_nullable, column_default from information_schema.columns where table_schema = 'public' and table_name = $1 order by ordinal_position`, [tabla])).rows;
       const mio = esquema.tablas.get(tabla)!;
