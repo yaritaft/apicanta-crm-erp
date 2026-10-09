@@ -762,50 +762,109 @@ guardan las grabaciones atadas a una llamada de Calendly.
   proponía; se mantuvo la regla de descartarlas hasta que lo decidan, y el diagnóstico cuenta cuántas serían). Y no se
   tocó la configuración de Fathom con Zoom (es de Manu).
 
-## Customer Success: seguimiento de alumnos y testimonios (lote G, reunión del 02/10)
+## Customer Success: Clientes, Testimonios, Resells y reportes (lote G del 02/10 y lo que contó Lili el 09/10)
 
 Manu pidió llevar en la app lo que Customer Success tiene en planillas y en Airtable: «no sería una ficha por alumno
-sino una lista general, un checklist: cuáles faltan contactar, cuáles no contestaron, a quién hablar hoy». Vive
-dentro de **Alumnos**, en tres solapas nuevas (`?seccion=hoy|seguimiento|testimonios`) y con dos accesos directos en
-el menú («A contactar hoy», con la cuenta de hoy, y «Seguimiento»). Reportes y Pipeline de servicio **no se tocan**
-(D12): son del área Alumnos y siguen en el menú hasta hablarlo con Manu y Lili.
+sino una lista general, un checklist: cuáles faltan contactar, cuáles no contestaron, a quién hablar hoy». El 09/10
+Lili contó cómo lo lleva hoy (las columnas de su tabla de Clientes, su pestaña de Testimonios y su Agenda de resells)
+y se armó todo eso. Vive dentro de **Alumnos**, en solapas: **Lista · Pipeline · A contactar hoy · Clientes ·
+Testimonios · Resells** (`?seccion=hoy|clientes|testimonios|resells`; un link viejo con `?seccion=seguimiento` abre
+Clientes), con dos accesos directos en el menú («A contactar hoy», con la cuenta de hoy, y «Seguimiento»). Reportes y
+Pipeline de servicio **no se tocan** (D12): son del área Alumnos y siguen en el menú.
 
 - **A contactar hoy**: los alumnos activos a los que ya les toca el contacto, lo más vencido arriba (a igual atraso,
   primero el que lleva más intentos sin respuesta). Dos gestos de un clic: **Lo contacté** (el último contacto pasa a
   hoy y el próximo toca a su cadencia) y **No contestó** (cuenta un intento y se vuelve a probar a los 3 días). Cada
   gesto avisa y ofrece **Deshacer**. Con 3 intentos seguidos sin respuesta aparece «Dejó de contestar» (se sugiere,
-  no se marca solo).
-- **Seguimiento**: la lista general con país, años de experiencia y tecnologías (salen del contacto: del formulario de
-  Calendly), cadencia **cada 7, 15 o 20 días** elegible por alumno, último y próximo contacto, «dejó de contestar»,
-  **CV corregido** y **LinkedIn corregido** (sí/no, con un switch) y el estado del testimonio. Filtros por situación
-  (vencidos, hoy, al día, dejaron de contestar), CV, LinkedIn, cadencia, país, testimonio y búsqueda; todo viaja en
-  el link con «Copiar link» (`?sit=&cv=&li=&cad=&pais=&tes=&sq=&orden-seg=&pag-seg=`, `lib/useParamsURL.ts`).
-- **Testimonios**: modelo nuevo por alumno (puede tener más de uno): estado **pedido / grabado / publicado**, link y
-  fecha. Se carga desde la solapa o con «Pedir» en la fila del seguimiento.
+  no se marca solo). Los mismos tres gestos están como íconos al final de cada fila de Clientes.
+- **Clientes** (`components/cs/ClientesCs.tsx`, `lib/clientes-cs.ts`): una fila por alumno con **las 29 columnas de
+  Lili, en su orden** (N.º de alumno, Nombre y apellido, Fecha de inicio, Fecha de egreso, Edad, Stack, Teléfono, DNI,
+  Domicilio, Mail, Programa, Plan de pago, Duración, Sesión con el mentor, Comentarios, Contacto inicial, Contacto
+  semana, Acceso, Follow-up, Reporte semanal, Último contacto, Garantía, Acceso WhatsApp, Acceso Zoom, Acceso Wibo,
+  Contrato firmado, País, Closer, Estado del contrato) y, al final, **CV**, **LinkedIn** y su responsable. Más, en el
+  selector de columnas: semanas sin reportar, próximo contacto, cadencia, estado del alumno, etapa del servicio y
+  testimonio. Se filtra **como un Excel** (el motor de la tabla del CRM, `lib/tabla-cs.ts`): el título de cada
+  columna abre su filtro (tildar valores, «contiene», desde/hasta en las fechas) y su orden (por una o varias
+  columnas); la búsqueda, los filtros, el orden y las columnas van en el link (`?solo-cli_pais=…&orden-cli=…&cols-clientes-cs=…`)
+  y se guardan como **vistas** con nombre, propias o del equipo. Atajos: Activos, CV pendiente, LinkedIn pendiente y
+  Reporte atrasado. **Se corrige en la celda** (un clic, Enter guarda, el aviso trae «Deshacer») o en la ficha
+  completa (el lápiz junto al nombre); el botón **Excel** baja lo que se ve, con las columnas que se ven.
+  - **Lo que sale solo no se vuelve a cargar**: el nombre, el mail, el país y el inicio son del alumno; el teléfono,
+    de la persona; el **closer**, el **programa** (se sugiere por el servicio: «Mentoría» es Hackear IT) y el **plan
+    de pago** (de las cuotas de su venta: «3 cuotas + reserva») salen de la venta; el **egreso** es el inicio más la
+    duración (3 meses; Hackear Biz 6 y Principals 12, como contó Lili). Lo sugerido se ve en gris cursiva con un
+    asterisco y **sólo se guarda si se escribe**. Sin venta (un alumno importado), el closer se escribe a mano.
+  - **N.º de alumno**: correlativo; se le da al que nace y al que se toca sin tenerlo, y el botón **Numerar** se lo da
+    a todos los que faltan (del más viejo al más nuevo). No se vacía ni se repite.
+  - **Reporte semanal**: sale de los reportes del alumno (al día / atrasado / inactivo desde 3 semanas, y cuántas
+    semanas debe). Si todavía no tiene ninguno, no se inventan atrasos: se puede **marcar a mano** en la ficha
+    (completó, sigue activo, semanas sin completarlo), como pidió Lili. Los reportes, cuando llegan, mandan.
+  - **Listas** (stack, programa, acceso, follow-up, estado del contrato, garantía y las de testimonios y resells):
+    son las de Lili y se ajustan en **Ajustar** (una opción por renglón; viven en `ajustes.seguimiento.listas`).
+- **Testimonios** (`components/cs/TestimoniosCs.tsx`): las **16 columnas** de su pestaña (Alumno, Edad, Fecha de
+  inicio, Teléfono, Follow-up, Fecha de grabación, Con quién grabó, Resell, Estado del video, Link del video,
+  Tecnologías, Stack, Situación previa, Situación actual, Notas, País). La edad, el inicio, el teléfono, el stack y el
+  país **salen de la ficha del cliente**. Un alumno puede tener más de uno. Se filtra y se ordena por estado del video
+  como el resto. Los testimonios del primer modelo (pedido / grabado / publicado) se leen y el SQL los pasa a las
+  columnas nuevas la primera vez.
+- **Agenda de resells** (`components/cs/ResellsCs.tsx`, `lib/resells.ts`): las **9 columnas** de su pestaña (Fecha y
+  hora de agenda, Nombre completo, Mail, Teléfono, Closer, Estado, Cash Collect, Caso de éxito, Notas). **Conectada
+  a Calendly**: cuando el alumno agenda por el link del evento de «auditoría» o «resell» (o llega con `utm_source`
+  Resell), `lib/calendly-sync.ts` la guarda en `resells` (tabla propia: Customer Success no lee las llamadas de
+  venta). Si el alumno reprograma, la fila nueva **hereda** el estado, el cash collect y las notas de la anterior y
+  la anterior se borra; si cancela, la fila queda «Cancelada». Lo que trae Calendly (cuándo, quién, el contacto) no se
+  corrige a mano; el estado (renueva, no renueva…), el cash collect, el caso de éxito y las notas, sí. También se
+  cargan a mano. Si la tabla todavía no existe, la entrada de la agenda sigue igual (`registrarResell` nunca falla
+  hacia afuera). El botón «Actualizar» trae de la nube lo que se agendó después de abrir la app.
+- **Importar el Airtable** (`components/cs/ImportarCs.tsx`, `lib/importar-cs.ts`): botón **Importar** en Clientes.
+  Se suben los CSV de cada tabla de Airtable («Download CSV») o un Excel con una hoja por tabla; **cada hoja se
+  reconoce sola por sus encabezados** (Clientes, Testimonios, Agenda de resells y Reportes semanales), la columna de
+  cada dato se adivina (se corrige a mano) y antes de escribir se muestra qué entra, qué ya estaba y qué se
+  descarta con su motivo. A cada fila se le busca su alumno **por mail**; sin mail, por N.º o teléfono (si el nombre
+  coincide) y, si no, por un nombre que sea de uno solo (se avisa); dos con el mismo nombre no se adivinan. Un
+  testimonio, un reporte o una agenda de alguien que no está pueden crearlo como egresado. **Reimportar el mismo
+  archivo no duplica ni reescribe nada** (cada fila cae en el mismo id); por defecto sólo completa lo vacío y no pisa
+  lo que el equipo corrigió en la app (hay un modo «el archivo manda»). Las fechas se leen como día/mes/año.
+- **Reportes semanales** (`app/api/reportes/webhook`, `lib/reportes-webhook.ts`): se pueden **traer solos** de la
+  herramienta donde los alumnos los completan, o importar en bloque desde el Airtable (misma pantalla que arriba, tabla
+  «Reportes semanales»). El webhook se llama con el secreto `REPORTES_WEBHOOK_TOKEN` (Vercel, Producción, como
+  secreto; sin él contesta 503):
+  ```bash
+  curl -X POST https://apicanta-erp.vercel.app/api/reportes/webhook \
+    -H "Authorization: Bearer $REPORTES_WEBHOOK_TOKEN" -H "Content-Type: application/json" \
+    -d '{"email":"ana@mail.com","semana":"2026-10-08","horas":10,"entrevistas":2,"postulaciones":5,"bloqueo":"Me trabé en SQL"}'
+  ```
+  Acepta un reporte, una lista de hasta 200 o `{"reportes":[…]}`; los nombres de los datos se leen con margen
+  («Mail», «Horas de estudio», «Comentarios», «Created time»…). Sin «semana» toma la de hoy; las semanas van de lunes a
+  domingo. Se busca al alumno por mail (o por un nombre que sea de uno solo); **mandar de nuevo el de la misma semana
+  lo reemplaza**. Lo que no se pudo guardar vuelve en `rechazados` con su posición y el motivo. En el Airtable alcanza
+  con una automatización «Run script» que haga ese `fetch` cuando se crea una respuesta.
+- **CV y LinkedIn** (los lleva Aldana): estado de cada uno (pendiente / corregido, con su día) y **responsable**, en
+  Clientes, en la ficha y con sus atajos de arriba. Cuando Aldana cuente cómo lo lleva hoy se afina.
 - **La cuenta** (`src/lib/seguimiento.ts`, pura y con pruebas en `pruebas/seguimiento.test.ts`): el próximo contacto
-  es *último contacto (o el día de ingreso, si nunca se lo contactó) + cadencia*; hoy o antes es «a contactar»; los
-  pausados, egresados, dados de baja y los que «dejaron de contestar» no entran en la lista de hoy. Los días son del
-  día del negocio (Argentina), sin hora. Todo número lleva su ⓘ «cómo se calcula».
-- **Configurable** (Lili todavía no contó cómo lo lleva hoy): las cadencias que se pueden elegir, la de arranque
-  (15), los días de reintento (3) y los intentos hasta sugerir «dejó de contestar» (3) se ajustan en Alumnos →
-  Seguimiento → **Ajustar** (lo ven quienes editan Ajustes) y viven en `ajustes.seguimiento`. Cuando conteste, se
-  corrigen ahí o en `CONFIG_POR_DEFECTO`.
-- **Datos**: `seguimiento_alumnos` (una fila por alumno, id `seg_<alumnoId>`; en tabla aparte para que un cambio de
-  etapa del pipeline, que guarda la fila entera del alumno, no la pise) y `testimonios`. Cada gesto queda anotado en
-  la actividad del alumno con quién lo hizo.
-- **Tipo de cuenta «Customer Success»** (F2-06): ve **Alumnos** (edita) y **Clientes** (sólo mira), y nada más; entra
-  directo a «A contactar hoy». Se crea con un clic en Equipo → Tipos de cuenta → «Crear “Customer Success”» (o lo
-  siembra el SQL). **Clientes pasó a ser un permiso propio** (`AREAS`, `/clientes` → área `clientes`), pero
-  `nivelDeAreas()` hace que quien ya ve o edita Ventas siga viendo Clientes igual: ningún tipo existente cambia. El
-  de Manu (D13) es «Todo menos honorarios», que ya existe.
-- **SQL a correr**: `supabase/customer-success.sql` (idempotente; requiere `tipos-cuenta.sql`). Crea las dos
-  tablas con sus políticas, `ajustes.seguimiento`, ajusta `areas_que_leen()` y `areas_que_editan()` **sobre su
-  definición vigente** (no las pisa con una copia, así se puede correr antes o después de lo de otros lotes) y
-  siembra el tipo. Sin correrlo la app anda igual, y el seguimiento queda en el navegador de quien lo carga.
-  `pruebas/permisos-clientes.test.ts` comprueba que la app (`LEEN`/`EDITAN`) y la base digan lo mismo.
-- **Falta** (cuando llegue lo de Manu y Lili): importar lo que hoy tienen en Airtable (Booking calls, Results y
-  Testimonios), sumar las columnas que pidan que no estén acá, y decidir con Lili si usan Reportes y el Pipeline de
-  servicio (D12).
+  es *último contacto (o el día de ingreso, si nunca se lo contactó) + cadencia* (7, 15 o 20 días, elegible por
+  alumno); hoy o antes es «a contactar»; los pausados, egresados, dados de baja y los que «dejaron de contestar» no
+  entran en la lista de hoy. Los días son del día del negocio (Argentina), sin hora.
+- **Datos**: `seguimiento_alumnos` (una fila por alumno, id `seg_<alumnoId>`, ahora con 24 columnas más; en tabla
+  aparte para que un cambio de etapa del pipeline, que guarda la fila entera del alumno, no la pise), `testimonios`
+  y `resells`. Lo que se corrige queda anotado en la actividad del alumno con quién lo hizo.
+- **Tipo de cuenta «Customer Success»** (F2-06): ve **Alumnos** (edita; incluye Resells, Testimonios y la importación)
+  y **Clientes** (sólo mira), y nada más; entra directo a «A contactar hoy». Se crea con un clic en Equipo → Tipos de
+  cuenta → «Crear “Customer Success”» (o lo siembra el SQL). **El DNI y el domicilio los ve quien ve Alumnos**
+  (Customer Success y los dueños): un closer o marketing no.
+- **SQL a correr**, en este orden y los dos idempotentes: `supabase/customer-success.sql` (requiere `tipos-cuenta.sql`) y
+  `supabase/customer-success-lili.sql` (agrega las columnas del seguimiento y de los testimonios, la tabla `resells`
+  con sus políticas, pasa las llamadas de auditoría / resell que Calendly ya trajo y suma `resells` a
+  `areas_que_leen()` / `areas_que_editan()` sobre su definición vigente). Sin correrlos la app anda igual, y lo nuevo
+  queda en el navegador de quien lo carga. `pruebas/permisos-clientes.test.ts` comprueba que la app (`LEEN`/`EDITAN`)
+  y la base digan lo mismo.
+- **Pruebas**: `pruebas/clientes-cs.test.ts` (las columnas, los filtros, el orden, lo que se calcula y cómo se
+  corrige cada celda), `pruebas/importar-cs.test.ts` (leer montos, fechas y sí/no, reconocer las hojas de Lili,
+  importar, reimportar y no pisar), `pruebas/resells-calendly.test.ts`, `pruebas/reportes-webhook.test.ts` y
+  `pruebas/cs-store.test.ts` (las acciones del store).
+- **Falta**: cómo lleva Aldana el CV y el LinkedIn, el link de Calendly de resells (si el evento no se llama «auditoría»
+  ni «resell», hay que sumar su nombre a `esLlamadaDeResell`) y qué herramienta usan los alumnos para el reporte
+  semanal (para conectarla al webhook).
 
 ## Lote E de la reunión del 02/10: pasarelas y gastos fijos
 

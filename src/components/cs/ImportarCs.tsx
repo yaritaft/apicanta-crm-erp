@@ -101,6 +101,8 @@ export function ImportarCs({ onCerrar }: { onCerrar: () => void }) {
     [e.alumnos, e.seguimientos, e.testimonios, e.resells, e.reportes, tablas, modo, crearFaltantes, hoy, faltas.length],
   );
   const escribe = plan ? plan.alumnos.length + plan.seguimientos.length + plan.testimonios.length + plan.resells.length + plan.reportes.length : 0;
+  /* Lo que se cuenta en pantalla son filas del archivo (una persona, un testimonio, una agenda), no registros de la base. */
+  const filasQueEntran = plan ? TIPOS.reduce((n, t) => n + plan.porTabla[t].nuevas + plan.porTabla[t].actualizadas, 0) : 0;
 
   function importar() {
     if (!plan || escribe === 0) return;
@@ -110,7 +112,7 @@ export function ImportarCs({ onCerrar }: { onCerrar: () => void }) {
       alumnos: plan.alumnos, seguimientos: plan.seguimientos, testimonios: plan.testimonios, resells: plan.resells, reportes: plan.reportes,
       detalle: `Importación del Airtable de Customer Success (${partes}).`,
     });
-    toast(`Listo: se importó el Airtable (${num(escribe)} registros).`);
+    toast(`Listo: se importó el Airtable (${num(filasQueEntran)} ${filasQueEntran === 1 ? "fila" : "filas"}).`);
     onCerrar();
   }
 
@@ -126,7 +128,7 @@ export function ImportarCs({ onCerrar }: { onCerrar: () => void }) {
           <Button variante="ghost" onClick={onCerrar}>Cancelar</Button>
           <span className="spacer" />
           <Button variante="primary" disabled={!plan || escribe === 0 || !confirmado} onClick={importar}>
-            {plan && escribe > 0 ? `Importar ${num(escribe)} registros` : "Importar"}
+            {plan && escribe > 0 ? `Importar ${num(filasQueEntran)} ${filasQueEntran === 1 ? "fila" : "filas"}` : "Importar"}
           </Button>
         </>
       )}
