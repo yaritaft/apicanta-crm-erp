@@ -4288,3 +4288,20 @@ span.kpis__etiqueta:hover { color: var(--ink); text-decoration: none; }
 .crm-t__cobros { display: inline-flex; max-width: 100%; border: 0; background: none; padding: 0; font: inherit; cursor: pointer; border-radius: var(--radius-sm); }
 .crm-t__cobros:hover .hk-badge { text-decoration: underline; }
 .crm-t__cobros:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+
+/* El reporte semanal público (/reporte): una tarjeta centrada, sin el menú de la app. */
+.reporte-pub { min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--space-5); padding: var(--space-6) 16px; background: var(--surface-000); }
+.reporte-pub__marca { font-size: 26px; font-weight: 700; letter-spacing: -0.02em; color: var(--ink); }
+.reporte-pub__marca span { color: var(--accent); }
+.reporte-pub__tarjeta { width: 100%; max-width: 520px; background: var(--surface-100); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: var(--space-6); position: relative; }
+.reporte-pub__form { display: flex; flex-direction: column; gap: var(--space-4); }
+.reporte-pub__form h1, .reporte-pub__listo h1 { margin: 0; font-size: 24px; line-height: 30px; color: var(--ink); }
+.reporte-pub__sub { margin: 0; font-size: 15px; line-height: 22px; color: var(--ink-muted); }
+.reporte-pub__fila { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-3); }
+@media (max-width: 520px) { .reporte-pub__fila { grid-template-columns: 1fr; } }
+.reporte-pub__chico { font-size: 13px; color: var(--ink-subtle); font-weight: 400; }
+.reporte-pub__malo, .reporte-pub__error { color: var(--danger); font-size: 13px; line-height: 20px; margin: 0; }
+.reporte-pub__listo { display: flex; flex-direction: column; align-items: center; text-align: center; gap: var(--space-3); padding: var(--space-4) 0; }
+.reporte-pub__listo svg { color: var(--success); }
+.reporte-pub__listo p { margin: 0; color: var(--ink-muted); font-size: 15px; line-height: 22px; }
+.reporte-pub__pie { margin: 0; font-size: 12px; color: var(--ink-subtle); }

@@ -1441,3 +1441,24 @@ Estado de las carpetas de estrés al 07/10 (rama estres-final-0710): `plata`, `c
   El desglose de cada renglón muestra la cuenta paso a paso (cobrado de sus ventas, costos imputados, comisión descontada, profit de lo suyo, porcentaje) y su lista de cobros.
   Pruebas: `pruebas/liquidacion-profit-propio.test.ts` (caso inventado con las cuentas rehechas aparte del motor).
   *Para usarlo:* cambiar el concepto de la persona (nada se migra solo) y revisar el mes con su desglose. Mientras la base no tenga el mes completo cargado, las cifras no van a coincidir con las de las hojas.
+
+## Reporte semanal con link único (reunión del 07/10)
+
+Antes, a cada alumno le llegaba un mail con un link que vencía en una semana, y cada semana 3 o 4 decían «no me llegó». Ahora **el link es uno solo y siempre el mismo** (`/reporte`),
+y cada alumno entra con su **código**, un UUID al azar (no un número correlativo: con el 1 se probaría el 2). El código de cada alumno se crea cuando alguien lo pide; no hay que cargar nada.
+
+- **La página pública** (`src/app/reporte/page.tsx`, fuera del grupo `(app)`: no pide sesión). El link con el código (`/reporte?c=…`) ya viene lleno; con un código de buena forma saluda por el nombre
+  y avisa enseguida si no existe. Pide horas de estudio, entrevistas y postulaciones (las tres, 0 vale) y, opcional, qué lo trabó. Completarlo otra vez **reemplaza** el reporte de esa semana
+  (las semanas van de lunes a domingo): no se duplica. Guarda con lo mismo que el webhook (`recibirReportes`), pero sólo para el alumno del código.
+- **`POST /api/reportes/enviar`** (público; `GET ?c=` devuelve el primer nombre). Lo que lo cuida: el código (UUID, 122 bits), un límite de 20 pedidos por minuto por IP y de 8 cada 5 minutos por código,
+  un campo trampa para bots (`sitio`), un tope de 4 KB, y que un código malo y uno inexistente den el mismo 404. Sin la base configurada contesta 503. Pruebas: `pruebas/reporte-rutas.test.ts`.
+- **En la app** (Alumnos → Clientes → ficha → «Reporte semanal», para quien edita Alumnos): **«Copiar mensaje con su link»** (`POST /api/reportes/enlace`) deja en el portapapeles un texto para pegar en su
+  WhatsApp, con su link y su código; y **«Mandar aviso por mail»** (`POST /api/reportes/avisar`, hasta 50 por vez, también `accion: "estado"` para preguntarle a Resend si le llegó). El código es la llave del
+  reporte de ese alumno: las dos rutas piden sesión y permiso de edición en Alumnos, y rechazan a quien ve sólo lo suyo.
+- **Resend:** el aviso por mail necesita `RESEND_API_KEY` y `RESEND_FROM` (un remitente de un dominio verificado en Resend, p. ej. `Hackear IT <avisos@tudominio.com>`) en Vercel (Producción) y un deploy
+  después. Sin ellas, el botón avisa que no está habilitado y no manda nada; el mensaje para WhatsApp anda igual. `APP_URL` (opcional) fija la dirección que se pone en los links; sin ella, la del pedido.
+- **SQL:** `supabase/reporte-semanal.sql` (corrido el 09/10): tabla `reporte_codigos` con clave foránea a `alumnos` (borrar un alumno borra su código), **sin políticas ni permisos para `anon` y `authenticated`**:
+  sólo la leen las rutas, con la clave de servicio. Ensayo con rollback contra la base real. Idempotente.
+- **Qué falta:** las preguntas del formulario son las del reporte que ya existe (horas, entrevistas, postulaciones, bloqueo): si el actual tiene otras, se ajusta `lib/reporte-enlace.ts` y la página.
+  Telegram (avisar por ahí en vez de mail) no está.
+
