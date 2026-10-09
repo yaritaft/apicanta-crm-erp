@@ -105,3 +105,76 @@ test("la revisión de CVs es del área Alumnos: la ve y la edita quien ve y edit
   }
   assert.equal(puedeLeer(null, "revisiones_cv"), false, "sin sesión no se lee");
 });
+
+/* ---------- La tabla: filas, búsqueda y el contador por estado ---------- */
+
+import {
+  COLUMNAS_REVISIONES_CV, coincideRevisionCv, contadoresCv, ESTADOS_FINALES_CV, filasRevisionesCv, MOTOR_REVISIONES_CV, ORDEN_REVISIONES_CV,
+  SIN_ESTADO_CV, VISIBLES_REVISIONES_CV,
+} from "@/lib/revision-cv";
+import { LISTAS_POR_DEFECTO, listasCs } from "@/lib/clientes-cs";
+import { configSeguimiento, listasPropias } from "@/lib/seguimiento";
+import type { Alumno, RevisionCv } from "@/lib/types";
+
+const rev = (id: string, estado: string, resto: Partial<RevisionCv> = {}) => revisionCvNormal({ id, nombre: `Alumno ${id}`, estado, ...resto });
+const alumno = (id: string, nombre: string) => ({ id, nombre } as Alumno);
+
+test("las filas de la tabla traen el estado (o «Sin estado») y el alumno de la app si la revisión está atada a uno", () => {
+  const filas = filasRevisionesCv({
+    revisionesCv: [rev("a", "En proceso", { alumnoId: "al1" }), rev("b", ""), rev("c", "Cerrado", { alumnoId: "no_esta" })],
+    alumnos: [alumno("al1", "Ana de la App")],
+  });
+  assert.deepEqual(filas.map((f) => [f.id, f.estado, f.alumno?.nombre ?? null]), [["a", "En proceso", "Ana de la App"], ["b", SIN_ESTADO_CV, null], ["c", "Cerrado", null]]);
+  assert.deepEqual(filasRevisionesCv({ revisionesCv: undefined, alumnos: [] }), [], "sin la tabla creada, ninguna fila");
+});
+
+test("el contador cuenta lo pendiente de cada estado de la lista sin distinguir mayúsculas ni tildes, y no cuenta lo que ya terminó", () => {
+  const filas = filasRevisionesCv({
+    revisionesCv: [
+      rev("1", "En proceso"), rev("2", "esperando cliente"), rev("3", "Esperando cliente"), rev("4", "ESPERANDO CLIENTE"), rev("5", "Con yari"), rev("6", "Con Yari"),
+      rev("7", "Segunda ronda"), rev("8", "cerrado"), rev("9", "Cerrado"), rev("10", "outboarding"), rev("11", "Outboarding"),
+    ],
+    alumnos: [],
+  });
+  const c = contadoresCv(filas, LISTAS_POR_DEFECTO.estadosCv);
+  assert.deepEqual(c.map((x) => [x.estado, x.n]), [["En proceso", 1], ["Esperando cliente", 3], ["Segunda ronda", 1], ["Con Yari", 2]],
+    "Cerrado y Outboarding no se cuentan (ya terminó la corrección); «Segunda ronda» sí");
+  assert.deepEqual(ESTADOS_FINALES_CV, ["Cerrado", "Outboarding"]);
+  /* Para filtrar la tabla se necesitan los textos tal como están escritos en las filas. */
+  assert.deepEqual([...c[1].valores].sort(), ["ESPERANDO CLIENTE", "Esperando cliente", "esperando cliente"]);
+  assert.deepEqual([...c[3].valores].sort(), ["Con Yari", "Con yari"]);
+  /* El filtro de la tabla con esos valores deja exactamente las que se contaron. */
+  const motor = MOTOR_REVISIONES_CV;
+  assert.equal(filas.filter((f) => motor.pasaFiltros(f, { estado: { modo: "solo", valores: c[1].valores } })).length, 3);
+});
+
+test("el contador suma «Sin estado» sólo si hay, sigue la lista que ajustó Customer Success y no repite un estado escrito dos veces", () => {
+  const filas = filasRevisionesCv({ revisionesCv: [rev("1", ""), rev("2", "Revisando"), rev("3", "En proceso")], alumnos: [] });
+  assert.deepEqual(contadoresCv(filas, ["En proceso", "en proceso", "Revisando", "Cerrado"]).map((x) => [x.estado, x.n]),
+    [["En proceso", 1], ["Revisando", 1], [SIN_ESTADO_CV, 1]], "una lista propia; el repetido cuenta una vez; Cerrado queda afuera");
+  assert.deepEqual(contadoresCv(filasRevisionesCv({ revisionesCv: [rev("1", "En proceso")], alumnos: [] }), LISTAS_POR_DEFECTO.estadosCv).map((x) => x.estado),
+    ["En proceso", "Esperando cliente", "Segunda ronda", "Con Yari"], "sin filas sin estado, no aparece «Sin estado»; los que no tienen ninguna salen en 0");
+  assert.deepEqual(contadoresCv([], LISTAS_POR_DEFECTO.estadosCv).map((x) => x.n), [0, 0, 0, 0]);
+});
+
+test("los estados de las revisiones se ajustan desde Customer Success: la lista de fábrica son los seis de Notion y una propia la reemplaza", () => {
+  assert.deepEqual(listasCs(null).estadosCv, ["En proceso", "Esperando cliente", "Segunda ronda", "Con Yari", "Cerrado", "Outboarding"]);
+  assert.deepEqual(listasCs(configSeguimiento({ listas: { estadosCv: ["Nuevo", "Cerrado"] } })).estadosCv, ["Nuevo", "Cerrado"]);
+  assert.deepEqual(listasPropias({ estadosCv: ["  A ", "A", "", "B"] })?.estadosCv, ["A", "B"], "se limpia como las otras listas");
+  assert.deepEqual(listasCs(configSeguimiento({ listas: { stacks: ["X"] } })).estadosCv, LISTAS_POR_DEFECTO.estadosCv, "ajustar otra lista no toca ésta");
+});
+
+test("la tabla: las columnas visibles existen, las claves no se repiten, el orden de fábrica es por fecha de inicio y la búsqueda ignora tildes y mayúsculas", () => {
+  const claves = COLUMNAS_REVISIONES_CV.map((c) => c.clave);
+  assert.equal(new Set(claves).size, claves.length);
+  for (const v of VISIBLES_REVISIONES_CV) assert.ok(claves.includes(v), `la columna visible ${v} no existe`);
+  assert.deepEqual(ORDEN_REVISIONES_CV, [{ clave: "fechaInicio", desc: true }]);
+  /* Lo que ya tenía Notion está a la vista; el CV, el LinkedIn y el alumno atado se suman desde «Columnas». */
+  for (const oculta of ["linkCv", "linkLinkedin", "alumno"]) assert.equal(VISIBLES_REVISIONES_CV.includes(oculta as never), false, oculta);
+  const f = filasRevisionesCv({
+    revisionesCv: [rev("1", "En proceso", { nombre: "Valentín Núñez", telefono: "+54 9 11 5555-0000", notas: "No tiene experiencia real", linkCorreccion: "https://docs.google.com/document/d/abc" })],
+    alumnos: [],
+  })[0];
+  for (const q of ["valentin", "NUÑEZ", "5555", "experiencia", "docs.google", ""]) assert.equal(coincideRevisionCv(f, q), true, `«${q}»`);
+  assert.equal(coincideRevisionCv(f, "otra persona"), false);
+});

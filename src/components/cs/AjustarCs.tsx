@@ -24,6 +24,7 @@ const LISTAS: { clave: keyof ListasCs; titulo: string; ayuda: string }[] = [
   { clave: "quienGraba", titulo: "Con quién grabó", ayuda: "Yari, Mariano" },
   { clave: "resellsTestimonio", titulo: "Resell del testimonio", ayuda: "Cómo salió el pitch de renovación" },
   { clave: "estadosResell", titulo: "Estado de la agenda de resells", ayuda: "Agendada, renueva, no renueva…" },
+  { clave: "estadosCv", titulo: "Estado de la revisión de CVs", ayuda: "En proceso, esperando cliente, con Yari… (Cerrado y Outboarding no se cuentan como pendientes)" },
 ];
 
 export function AjustarCs({ onCerrar }: { onCerrar: () => void }) {

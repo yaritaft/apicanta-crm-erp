@@ -1559,5 +1559,17 @@ números cuántos hay en cada estado. Este paso trae sólo los cimientos; la pes
   la escriben con la cola de siempre. Sin el SQL corrido, queda sólo en este navegador.
 - Pruebas: `pruebas/revision-cv.test.ts` (normalizador, almacén y permisos de la app) y `pruebas/revision-cv-sql.test.ts` (PGlite: columnas, RLS, permisos por tipo de cuenta
   igual a `permisos.ts`, clave foránea, restricciones, que se pueda volver a correr y el aviso de arriba); las pruebas de estrés que enumeran tablas ya la incluyen.
-- Para instalarlo: Supabase → SQL Editor: `supabase/revision-cv.sql` (antes, ensayarlo contra la base real dentro de una transacción que se revierte). Para deshacerlo: `drop table public.revisiones_cv;`.
+### Revisión de CVs (paso 2: la pestaña «CVs» en Alumnos)
 
+La pestaña vive en `/alumnos?seccion=cvs`, junto a Clientes, Testimonios y Resells, y sigue su molde (`src/components/cs/RevisionCvCs.tsx` sobre `TablaCs`):
+
+- **Contador por estado** arriba de la tabla: «En proceso», «Esperando cliente», «Segunda ronda» y «Con Yari», más «Sin estado» si hay. **Cerrado y Outboarding no se cuentan** (la corrección ya terminó; Aldana pidió contar sólo lo que falta).
+  Se compara sin mayúsculas ni tildes, porque en su Notion los estados están escritos de varias maneras. Un clic filtra la tabla por ese estado (el filtro viaja en el link, `solo-cvr_estado=…`) y otro clic lo saca.
+- **Tabla** con filtros tipo Excel, orden, columnas a elección, búsqueda (nombre, teléfono, notas, links) y botón Excel. A la vista están las columnas de su Notion (nombre, estado, CV recibido, corrección 1 y 2, fecha de inicio, documento
+  de corrección, Loom de Yari, teléfono, mensajes y notas); el CV, el LinkedIn y el alumno atado se suman desde «Columnas».
+- **Se corrige en la celda**: el estado (lista con buscador), las casillas con un clic, el día, los links (tienen que empezar con `http://` o `https://`), el teléfono, los mensajes y las notas; cada cambio avisa y se puede deshacer, y queda quién lo hizo.
+  El formulario completo («Nuevo CV» y el lápiz del nombre) y borrar con confirmación. Quien no edita Alumnos la ve sin poder tocar nada.
+- **Los estados se ajustan** en Alumnos → Clientes → Ajustar («Estado de la revisión de CVs»), como las demás listas de Customer Success; lo ya cargado no se reescribe si se cambia un nombre.
+- Pruebas: `pruebas/revision-cv.test.ts` (filas, búsqueda, el contador y la lista ajustable). Falta el importador de su Notion (paso 3).
+
+- Para instalarlo: Supabase → SQL Editor: `supabase/revision-cv.sql` (antes, ensayarlo contra la base real dentro de una transacción que se revierte). Para deshacerlo: `drop table public.revisiones_cv;`.

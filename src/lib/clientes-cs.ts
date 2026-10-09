@@ -1,4 +1,5 @@
 import { sinTildes } from "./crm";
+import { ESTADOS_CV } from "./revision-cv";
 import { diaAInstante, diaDeNegocio } from "./dia-negocio";
 import { rachasAHoy } from "./reportes";
 import { respuestaPerfil } from "./perfil";
@@ -40,6 +41,7 @@ export const LISTAS_POR_DEFECTO: ListasCs = {
   quienGraba: ["Yari", "Mariano"],
   resellsTestimonio: ["Pendiente", "Renueva", "No renueva", "Lo piensa"],
   estadosResell: ["Agendada", "Renueva", "No renueva", "Lo piensa", "No se presentó", "Cancelada"],
+  estadosCv: [...ESTADOS_CV],
 };
 
 /* Las dos que no se ajustan: Firmado o Pendiente, y las sesiones con el mentor (0 a 3). */

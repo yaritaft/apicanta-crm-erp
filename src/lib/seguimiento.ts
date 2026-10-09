@@ -30,7 +30,7 @@ export const CONFIG_POR_DEFECTO: ConfigSeguimiento = {
 /* Las listas de opciones de Customer Success que se pueden ajustar (lib/clientes-cs.ts trae las de siempre). */
 export const CLAVES_DE_LISTAS: (keyof ListasCs)[] = [
   "stacks", "programas", "accesos", "followUps", "estadosContrato", "garantias",
-  "followUpsTestimonio", "estadosVideo", "quienGraba", "resellsTestimonio", "estadosResell",
+  "followUpsTestimonio", "estadosVideo", "quienGraba", "resellsTestimonio", "estadosResell", "estadosCv",
 ];
 
 /** Las listas que alguien ajustó, limpias: sin repetidos ni vacíos, de hasta 100 opciones de 60 caracteres. Una lista vacía no es un ajuste (vale la de siempre). */

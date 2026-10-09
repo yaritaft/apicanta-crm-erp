@@ -23,6 +23,11 @@
 /* Los atajos de arriba de la tabla (CV pendiente, vencidos…). */
 .cs-atajos { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 
+/* Un link de la revisión de CVs (el CV, el LinkedIn, el documento, el Loom): abre en otra pestaña. */
+.cs-link-cv { display: inline-flex; align-items: center; gap: 4px; color: var(--brand); }
+.cs-link-cv:hover { text-decoration: underline; text-underline-offset: 3px; }
+.cs-link-cv:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; border-radius: 2px; }
+
 /* El formulario de la ficha del cliente: secciones con título. */
 .cs-ficha { display: flex; flex-direction: column; gap: var(--space-5); }
 .cs-ficha__seccion { display: flex; flex-direction: column; gap: var(--space-3); }

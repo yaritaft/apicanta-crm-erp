@@ -495,6 +495,8 @@ export interface ListasCs {
   resellsTestimonio: string[];
   /* Agenda de resells. */
   estadosResell: string[];
+  /* Revisión de CVs: la etapa en que va cada una (lib/revision-cv.ts). */
+  estadosCv: string[];
 }
 
 /* Lo que se ajusta del seguimiento (Alumnos → Clientes → Ajustar). Sin
