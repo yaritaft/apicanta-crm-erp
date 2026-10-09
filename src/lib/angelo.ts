@@ -432,14 +432,32 @@ function sincronizarConLaBase(
   const idsPagosNuevos = new Set(nuevo.pagos.map((p) => p.id));
   const idsPagosViejos = new Set(e.pagos.map((p) => p.id));
 
-  /* --- Los cobros que ya conciliaron las pasarelas --- */
+  /* --- Los cobros que ya conciliaron las pasarelas ---
+     Un cobro nuevo de la planilla toma el lugar del viejo que ya tiene el movimiento de la pasarela cuando son el mismo
+     cobro: misma cuenta, mismo monto y la misma fecha (±3 días), y
+       1. el viejo lo cargó la conciliación sobre la misma cuota; o
+       2. (la fila se corrigió en la planilla y cambió de id, de venta y de cuota) es de la misma persona. Si hay más de uno
+          así, vale el que ya venía de la planilla: el otro es un cobro más de la pasarela y se deja para revisarlo.
+     Si no hay un único candidato no se fusiona nada: se deja todo y se avisa. */
   const usados = new Set<ID>();
+  const ventaDeCuotaViejas = new Map(e.cuotas.map((c) => [c.id, c.ventaId] as const));
+  const personaDeVentaViejas = new Map(e.ventas.map((v) => [v.id, v.contactoId] as const));
+  const ventaDeCuotaNuevas = new Map(nuevo.cuotas.map((c) => [c.id, c.ventaId] as const));
+  const personaDeVentaNuevas = new Map(nuevo.ventas.map((v) => [v.id, v.contactoId] as const));
+  const personaVieja = (q: Pago) => personaDeVentaViejas.get(ventaDeCuotaViejas.get(q.cuotaId) ?? "");
+  const personaNueva = (n: Pago) => personaDeVentaNuevas.get(ventaDeCuotaNuevas.get(n.cuotaId) ?? "");
   for (const n of nuevo.pagos) {
     if (idsPagosViejos.has(n.id)) continue;
     const tn = new Date(n.fecha).getTime();
-    const cand = e.pagos.filter((q) => !q.id.includes("pag_ef_") && q.movimientoId && !usados.has(q.id)
-      && q.cuotaId === n.cuotaId && q.procesadorId === n.procesadorId && Math.abs(q.monto - n.monto) <= 0.01
-      && Math.abs(new Date(q.fecha).getTime() - tn) <= 3 * DIA_MS);
+    const mismoCobro = (q: Pago) => !usados.has(q.id) && Boolean(q.movimientoId) && q.procesadorId === n.procesadorId
+      && Math.abs(q.monto - n.monto) <= 0.01 && Math.abs(new Date(q.fecha).getTime() - tn) <= 3 * DIA_MS;
+    let cand = e.pagos.filter((q) => !q.id.includes("pag_ef_") && q.cuotaId === n.cuotaId && mismoCobro(q));
+    if (cand.length !== 1) {
+      const persona = personaNueva(n);
+      const deLaMismaPersona = persona ? e.pagos.filter((q) => (!q.id.includes("pag_ef_") || !idsPagosNuevos.has(q.id)) && mismoCobro(q) && personaVieja(q) === persona) : [];
+      const deLaPlanilla = deLaMismaPersona.filter((q) => q.id.includes("pag_ef_"));
+      cand = deLaMismaPersona.length === 1 ? deLaMismaPersona : deLaPlanilla.length === 1 ? deLaPlanilla : [];
+    }
     if (cand.length !== 1) continue;
     const q = cand[0];
     usados.add(q.id);
@@ -480,7 +498,9 @@ function sincronizarConLaBase(
   for (const v of e.ventas) {
     if (!v.id.includes("ven_ef_") || idsVentasN.has(v.id)) continue;
     const cuotas = cuotasPorVenta.get(v.id) ?? [];
-    const pagos = cuotas.flatMap((c) => pagosPorCuota.get(c.id) ?? []);
+    /* Un cobro que la planilla sigue trayendo con el mismo id (sólo cambió la venta a la que cuelga) no se va: se muda a su cuota
+       nueva al importar, con todo lo que tenga de la app. Ni se saca ni frena que se saque la venta vieja. */
+    const pagos = cuotas.flatMap((c) => pagosPorCuota.get(c.id) ?? []).filter((p) => !idsPagosNuevos.has(p.id));
     const motivo = devueltas.has(v.id) ? "tiene una devolución cargada"
       : v.sesionId ? "está atada a una llamada"
       : cuotas.some((c) => c.closerId) ? "tiene cuotas pasadas a otro closer"

@@ -157,6 +157,94 @@ test("un cobro de pasarela que NO está en la planilla se deja (puede ser real)"
   assert.ok(dos.e.pagos.some((p) => p.id === "pag_solo"));
 });
 
+/* Caro pagó 1.500 por Stripe el 8/9 y la pasarela ya ató el movimiento a ese cobro de la planilla. Después Angelo corrige la
+   fila (cambia el plan y la característica): el cobro cambia de id, de cuota y de venta. */
+function conCobroAtadoYFilaCorregida() {
+  const uno = importar(estadoVacio(), planilla());
+  const original = uno.e.pagos.find((p) => p.monto === 1500)!;
+  const mov: Movimiento = {
+    id: "mov_stripe_2", proveedor: "stripe", referencia: "pi_456", monto: 1500, moneda: "USD", fee: 52.5, neto: 1447.5, fecha: dia(8),
+    estado: "conciliado", pagoId: original.id, cuotaId: original.cuotaId, origen: "api", creadoEn: dia(8),
+  } as Movimiento;
+  const atado = { ...original, movimientoId: mov.id, feeMonto: 52.5, feeRate: 0.035, referencia: "pi_456", chequeado: true };
+  const e: EstadoApp = { ...uno.e, pagos: uno.e.pagos.map((p) => (p.id === original.id ? atado : p)), movimientos: [mov] };
+  const corregida = planilla();
+  corregida[2] = fila(4, { email: "caro@ejemplo.test", nombre: "Caro Prueba", fecha: dia(8), montoUsd: 1500, valorTotal: 3000, plan: "2 pagos", caracteristica: "Cuota #1" });
+  return { e, original, mov, corregida };
+}
+
+test("un cobro atado a una pasarela cuya fila se corrigió en la planilla pasa al cobro nuevo de la misma persona: no queda doble", () => {
+  const { e, original, mov, corregida } = conCobroAtadoYFilaCorregida();
+  const dos = importar(e, corregida);
+  const nuevo = dos.e.pagos.find((p) => p.monto === 1500)!;
+  assert.notEqual(nuevo.id, original.id, "la corrección cambió el id del cobro");
+  assert.equal(dos.e.pagos.filter((p) => p.monto === 1500).length, 1, "un solo cobro de 1.500");
+  assert.equal(total(dos.e), 8700, "septiembre no se infla");
+  assert.equal(dos.r.fusiones.length, 1);
+  assert.equal(dos.r.fusiones[0].viejoId, original.id);
+  /* El nuevo hereda lo de la pasarela y el movimiento ahora apunta a él. */
+  assert.equal(nuevo.movimientoId, mov.id);
+  assert.equal(nuevo.feeMonto, 52.5);
+  assert.equal(nuevo.chequeado, true);
+  assert.equal(dos.e.movimientos[0].pagoId, nuevo.id);
+  /* La venta vieja se fue con su cuota: ningún cobro apunta a una cuota que ya no está. */
+  const cuotas = new Set(dos.e.cuotas.map((c) => c.id));
+  assert.ok(dos.e.pagos.every((p) => cuotas.has(p.cuotaId)));
+  assert.equal(dos.r.protegidos.length, 0);
+});
+
+test("si hay dos cobros de la pasarela iguales de la misma persona, el que venía de la planilla es el que se fusiona y el otro se deja", () => {
+  const { e, original, corregida } = conCobroAtadoYFilaCorregida();
+  const extra = { ...original, id: "pag_otro_de_la_pasarela", movimientoId: "mov_stripe_3", cuotaId: "cuo_otra", feeMonto: 52.5 };
+  const venta = e.cuotas.find((c) => c.id === original.cuotaId)!.ventaId;
+  const conOtro: EstadoApp = {
+    ...e,
+    cuotas: [...e.cuotas, { ...e.cuotas.find((c) => c.id === original.cuotaId)!, id: "cuo_otra", numero: 9 }],
+    pagos: [...e.pagos, extra],
+  };
+  void venta;
+  const dos = importar(conOtro, corregida);
+  assert.equal(dos.r.fusiones.length, 1);
+  assert.equal(dos.r.fusiones[0].viejoId, original.id);
+  assert.ok(dos.e.pagos.some((p) => p.id === "pag_otro_de_la_pasarela"), "el otro cobro de la pasarela queda para revisarlo");
+});
+
+test("mismo monto, cuenta y fecha pero de OTRA persona no se fusiona: se deja el cobro de la pasarela", () => {
+  const { e, original, corregida } = conCobroAtadoYFilaCorregida();
+  /* El cobro atado es ahora de Dani (otra venta): Caro y Dani cobraron lo mismo, pero no son el mismo cobro. */
+  const ventaDani = e.ventas.find((v) => v.contactoNombre.startsWith("Dani"))!;
+  const cuotaDani = e.cuotas.find((c) => c.ventaId === ventaDani.id)!;
+  const ajeno = { ...e.pagos.find((p) => p.id === original.id)!, cuotaId: cuotaDani.id };
+  const dos = importar({ ...e, pagos: e.pagos.map((p) => (p.id === original.id ? ajeno : p)) }, corregida);
+  assert.equal(dos.r.fusiones.length, 0);
+  assert.ok(dos.e.pagos.some((p) => p.id === original.id), "el cobro atado sigue");
+  assert.ok(dos.r.protegidos.some((p) => p.tipo === "pago" && p.id === original.id));
+});
+
+test("si la fila se corrige pero el cobro conserva su id, el cobro se muda a la venta nueva: no se saca ni se pierde lo que tiene de la app", () => {
+  const uno = importar(estadoVacio(), planilla());
+  const original = uno.e.pagos.find((p) => p.monto === 1500)!;
+  const ventaVieja = uno.e.cuotas.find((c) => c.id === original.cuotaId)!.ventaId;
+  /* Caro: mismo cobro (misma persona, fecha, monto, cuenta, característica y comprobante) pero la venta pasó a 2 pagos. */
+  const corregida = planilla();
+  corregida[2] = fila(4, { email: "caro@ejemplo.test", nombre: "Caro Prueba", fecha: dia(8), montoUsd: 1500, valorTotal: 3000, plan: "2 pagos" });
+  const probar = importarPlanilla(uno.e, corregida);
+  assert.ok(probar.pagos.some((p) => p.id === original.id), "el cobro conserva su id");
+  assert.ok(probar.ventas.every((v) => v.id !== ventaVieja), "la venta cambió de id: sin esto la prueba no prueba nada");
+  /* Con una pasarela atada, para que se note que no se pierde. */
+  const atado = { ...original, movimientoId: "mov_9", feeMonto: 52.5, feeRate: 0.035, chequeado: true, referencia: "pi_9" };
+  const e: EstadoApp = { ...uno.e, pagos: uno.e.pagos.map((p) => (p.id === original.id ? atado : p)) };
+  const dos = importar(e, corregida);
+  assert.equal(dos.r.pagosQueSobran.includes(original.id), false, "no figura entre los que se sacan");
+  const queda = dos.e.pagos.filter((p) => p.id === original.id);
+  assert.equal(queda.length, 1);
+  assert.equal(queda[0].movimientoId, "mov_9");
+  assert.equal(queda[0].feeMonto, 52.5);
+  assert.equal(total(dos.e), 8700);
+  /* Y apunta a una cuota que existe. */
+  assert.ok(dos.e.cuotas.some((c) => c.id === queda[0].cuotaId));
+});
+
 test("una fecha con un año imposible («8/10/0206») no entra: se avisa con su fila", () => {
   assert.equal(fechaPlanilla("8/10/0206"), null);
   assert.equal(fechaPlanilla("8/10/2026"), "2026-10-08T15:00:00.000Z");
