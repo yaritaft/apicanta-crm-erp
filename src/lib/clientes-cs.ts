@@ -69,7 +69,15 @@ export function valorDeLista(texto: string, lista: readonly string[]): string {
   if (!t) return "";
   const clave = (s: string) => sinTildes(s).replace(/[^a-z0-9]+/g, "");
   const k = clave(t);
-  return lista.find((x) => clave(x) === k) ?? t;
+  const exacta = lista.find((x) => clave(x) === k);
+  if (exacta) return exacta;
+  /* «Full Stack Developer» es «Full Stack»; «no quiere» es «No quiere grabar»: si una sola opción contiene al texto
+     (o está contenida en él) es esa; si son varias, no se adivina y queda el texto tal cual. */
+  if (k.length >= 4) {
+    const cerca = lista.filter((x) => clave(x).includes(k) || (clave(x).length >= 4 && k.includes(clave(x))));
+    if (cerca.length === 1) return cerca[0];
+  }
+  return t;
 }
 
 /* ---------- Números, días y textos que llegan de la base o de un archivo ---------- */

@@ -5,7 +5,7 @@ import { leerFecha } from "./registros-webinar";
 import { lunesDe } from "./reportes";
 import { sinTildes } from "./crm";
 import {
-  aNumero, ENTRE, listasCs, programasDeTexto, resellNormal, seguimientoCompleto, sumarMeses, valorDeLista, CONTRATOS,
+  aNumero, ENTRE, listasCs, programasDeTexto, resellNormal, seguimientoCompleto, sumarMeses, testimonioNormal, valorDeLista, CONTRATOS,
 } from "./clientes-cs";
 import { configSeguimiento } from "./seguimiento";
 import type { Alumno, EstadoApp, ID, Reporte, Resell, SeguimientoAlumno, Testimonio } from "./types";
@@ -168,6 +168,12 @@ export function filaDeEncabezados(filas: readonly (readonly string[])[]): number
 
 /* ---------- Valores ---------- */
 
+/** Dos objetos con lo mismo, sin importar el orden de las claves. */
+const mismoObjeto = (a: object, b: object): boolean => {
+  const orden = (o: object) => JSON.stringify(Object.entries(o).sort(([x], [y]) => x.localeCompare(y)));
+  return orden(a) === orden(b);
+};
+
 const hashCorto = (s: string): string => {
   let h = 5381;
   for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0;
@@ -324,13 +330,21 @@ export function planificarImportacionCs(e: EstadoApp, tablas: readonly TablaImpo
   };
   const guardarSeg = (s: SeguimientoAlumno) => { segs.set(s.alumnoId, s); tocadosSeg.add(s.alumnoId); };
 
-  /* ¿De qué alumno es esta fila? Por mail; si no, por N.º; si no, por teléfono; y sólo si nada de eso hay, por un nombre que sea de uno solo. */
-  function buscarAlumno(d: { email: string; numero: number | null; telefono: string; nombre: string }): { id?: ID; por?: string; ambiguo?: boolean } {
+  /* ¿De qué alumno es esta fila? Por mail; si no, por N.º o por teléfono (si la fila no trae mail o el nombre es el mismo); y sólo si
+     nada de eso hay, por un nombre que sea de uno solo. */
+  function buscarAlumno(d: { email: string; numero: number | null; telefono: string; nombre: string }): { id?: ID; por?: string; ambiguo?: boolean; mailDistinto?: boolean } {
     const k = claveEmail(d.email);
     if (k && porMail.has(k)) return { id: porMail.get(k), por: "mail" };
-    if (d.numero !== null && numeros.has(d.numero) && !k) return { id: numeros.get(d.numero), por: "N.º" };
+    const mismoNombre = (id: ID) => sinAcentos(alumnos.get(id)?.nombre ?? "") === sinAcentos(d.nombre);
+    if (d.numero !== null && numeros.has(d.numero)) {
+      const id = numeros.get(d.numero)!;
+      if (!k || mismoNombre(id)) return { id, por: "N.º", mailDistinto: Boolean(k) };
+    }
     const t = claveTelefono(d.telefono);
-    if (t && (porTelefono.get(t)?.length ?? 0) === 1) return { id: porTelefono.get(t)![0], por: "teléfono" };
+    if (t && (porTelefono.get(t)?.length ?? 0) === 1) {
+      const id = porTelefono.get(t)![0];
+      if (!k || mismoNombre(id)) return { id, por: "teléfono", mailDistinto: Boolean(k) };
+    }
     if (!k) {
       const n = sinAcentos(d.nombre);
       const ids = n ? porNombre.get(n) ?? [] : [];
@@ -378,7 +392,7 @@ export function planificarImportacionCs(e: EstadoApp, tablas: readonly TablaImpo
       const hallado = buscarAlumno({ email, numero, telefono, nombre });
       if (hallado.ambiguo) return descartar("clientes", n, `Hay más de un alumno que se llama «${nombre}» y la fila no trae mail: no se sabe cuál es.`);
       if (hallado.por === "nombre") plan.avisos.push(`Clientes, fila ${n}: «${nombre}» se tomó por su nombre (la fila no trae mail): revisalo.`);
-      if (hallado.por === "N.º") plan.avisos.push(`Clientes, fila ${n}: «${nombre}» se tomó por su N.º ${numero} (la fila no trae mail).`);
+      if (hallado.por === "N.º") plan.avisos.push(`Clientes, fila ${n}: «${nombre}» se tomó por su N.º ${numero}${hallado.mailDistinto ? ": el mail del archivo no es el que tiene en la app" : " (la fila no trae mail)"}.`);
 
       /* Lo que dice la fila. */
       const inicio = leerFecha(v("inicio")) ?? "";
@@ -488,7 +502,8 @@ export function planificarImportacionCs(e: EstadoApp, tablas: readonly TablaImpo
       if (resultado.numero === null) { resultado.numero = proximoNumero++; }
       if (resultado.numero >= proximoNumero) proximoNumero = resultado.numero + 1;
       const igual = !eraNuevo && JSON.stringify({ ...resultado, actualizadoEn: "", actualizadoPor: "" }) === JSON.stringify({ ...base, actualizadoEn: "", actualizadoPor: "" });
-      guardarSeg(resultado);
+      /* Sólo se escribe lo que cambió: reimportar el mismo archivo no toca nada. */
+      if (igual) segs.set(resultado.alumnoId, resultado); else guardarSeg(resultado);
       indexar(alumno, resultado);
       if (igual) plan.porTabla.clientes.iguales++;
       else if (eraNuevo) plan.porTabla.clientes.nuevas++;
@@ -536,10 +551,12 @@ export function planificarImportacionCs(e: EstadoApp, tablas: readonly TablaImpo
       const resultado = ya && op.modo === "completar"
         ? { ...nuevo, ...Object.fromEntries(Object.entries(ya).filter(([kk, vv]) => vv !== "" && vv !== null && vv !== undefined && kk !== "creadoEn" && kk !== "estado" && kk !== "fecha")), creadoEn: ya.creadoEn } as Testimonio
         : { ...nuevo, creadoEn: ya?.creadoEn ?? nuevo.creadoEn };
-      if (ya && JSON.stringify(resultado) === JSON.stringify(ya)) plan.porTabla.testimonios.iguales++;
-      else if (ya) plan.porTabla.testimonios.actualizadas++;
-      else plan.porTabla.testimonios.nuevas++;
-      plan.testimonios.push(resultado);
+      if (ya && mismoObjeto(resultado, testimonioNormal(ya))) {
+        plan.porTabla.testimonios.iguales++;
+      } else {
+        if (ya) plan.porTabla.testimonios.actualizadas++; else plan.porTabla.testimonios.nuevas++;
+        plan.testimonios.push(resultado);
+      }
       /* Lo que el testimonio sabe del alumno (edad, stack, teléfono) completa su ficha si está vacío. */
       const s = segDe(alumno.id);
       const completa: Partial<SeguimientoAlumno> = {};
