@@ -168,7 +168,7 @@ export function WhatsappLector() {
       <Card>
         <CardHead
           titulo="Lector de WhatsApp"
-          sub="Un número de WhatsApp dedicado, conectado en un servidor propio, que lee los grupos de los talleres para saber solo quién se unió. Nunca manda mensajes ni marca nada como leído."
+          sub="Un número de WhatsApp dedicado (no el principal del negocio: es una conexión no oficial de WhatsApp Web), conectado en un servidor propio, que lee los grupos de los talleres para saber solo quién se unió. Nunca manda mensajes ni marca nada como leído."
           acciones={<Button sm variante="ghost" icono={<RefreshCw size={14} />} cargando={actualizando} onClick={() => void actualizar()}>Actualizar</Button>}
         />
         {l.cargando && !datos ? (
@@ -270,24 +270,6 @@ export function WhatsappLector() {
                 <dt>Prendido desde</dt><dd>{relativo(lector.desde ?? lector.ultimoLatido)}</dd>
               </dl>
             )}
-
-            <details className="t-sm">
-              <summary className="link" style={{ display: "inline-flex", alignItems: "center", gap: 6 }}><Plug size={14} aria-hidden /> Cómo se conecta</summary>
-              <ol className="wa-pasos" style={{ marginTop: 8 }}>
-                <li>En Supabase, correr <code>supabase/whatsapp-lector.sql</code> y <code>supabase/whatsapp-lector-qr.sql</code>.</li>
-                <li>En Vercel, poner <code>WHATSAPP_LECTOR_TOKEN</code> (un secreto largo que se inventa) y volver a publicar.</li>
-                <li>
-                  En el servidor (Ubuntu, en Hostinger): copiar la carpeta <code>servicios/whatsapp-lector</code>, completar su <code>.env</code> con la dirección de
-                  esta app y el mismo token, y dejarla corriendo como servicio (systemd).
-                </li>
-                <li>Volver a esta pantalla: aparece el código QR. Escanearlo con el teléfono del número dedicado.</li>
-                <li>Agregar ese número a los grupos de los talleres, como a cualquier persona.</li>
-              </ol>
-              <p className="t-sm t-subtle" style={{ marginTop: 8 }}>
-                Es una conexión no oficial de WhatsApp Web: conviene un número dedicado, no el principal del negocio. La guía paso a paso está en{" "}
-                <code className="wa-codigo">servicios/whatsapp-lector/README.md</code>.
-              </p>
-            </details>
           </div>
         )}
       </Card>
