@@ -580,6 +580,9 @@ kbd {
 .alarma > svg { color: var(--danger); flex: none; }
 .alarma__titulo { font-weight: 600; color: var(--ink); }
 .alarma__texto { font-size: 13px; line-height: 20px; color: var(--ink-muted); }
+/* La de atención (la carga se atrasa pero todavía no está frenada): en ámbar. */
+.alarma--atencion { background: var(--warning-soft); border-color: var(--warning); }
+.alarma--atencion > svg { color: var(--warning); }
 .hk-nav__count--alerta { color: var(--danger); font-weight: 600; }
 /* Una celda de la planilla que salió sola (de Meta): el rayo, como las
    columnas automáticas del CRM, y el número un poco más apagado. */

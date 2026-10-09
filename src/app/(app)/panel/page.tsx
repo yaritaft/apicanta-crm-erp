@@ -17,6 +17,7 @@ import { ConfigColumnas, type DefColumna } from "@/components/ui/ColumnasConfig"
 import { AccionesTopbar } from "@/components/shell/AccionesTopbar";
 import { useToast } from "@/components/ui/Toast";
 import { AlarmaCobranza } from "@/components/finanzas/AlarmaCobranza";
+import { AlarmaCarga } from "@/components/finanzas/AlarmaCarga";
 import { AvisoLectorWhatsapp } from "@/components/webinars/AvisoLectorWhatsapp";
 import { TablaKpis, variacionKpi, type ExplicarKpis, type FilaKpi } from "@/components/panel/TablaKpis";
 import { useEstado } from "@/lib/store";
@@ -214,6 +215,7 @@ export default function DashboardKpis() {
 
   return (
     <div className="stack-4">
+      {veSeccion(acceso, "cobranza") && <AlarmaCarga e={e} />}
       {veSeccion(acceso, "cobranza") && <AlarmaCobranza e={e} />}
       <AvisoLectorWhatsapp />
 
