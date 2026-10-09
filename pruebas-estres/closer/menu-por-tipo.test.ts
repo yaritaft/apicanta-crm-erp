@@ -41,15 +41,17 @@ function tipoAlAzar(r: Azar, i: number): TipoCuenta {
 
 /* ---------- Los tipos de la app, a mano ---------- */
 
+/* «Clientes del programa» (antes «Seguimiento») es /alumnos?seccion=clientes; la pantalla de Alumnos todavía entiende ?seccion=seguimiento
+   como alias (alumnos/page.tsx), pero el menú ya no lo usa. */
 const MENU_ESPERADO: Record<string, { menu: string[]; inicio: string }> = {
   dueno: {
     menu: ["/panel", "/leads", "/crm", "/agenda", "/ventas", "/clientes", "/webinars", "/formularios", "/marketing", "/alumnos", "/alumnos?seccion=pipeline", "/reportes",
-      "/alumnos?seccion=hoy", "/alumnos?seccion=seguimiento", "/finanzas", "/finanzas/caja", "/conciliacion", "/equipo", "/ajustes"],
+      "/alumnos?seccion=hoy", "/alumnos?seccion=clientes", "/finanzas", "/finanzas/caja", "/conciliacion", "/equipo", "/ajustes"],
     inicio: "/panel",
   },
   equipo: {
     menu: ["/panel", "/leads", "/crm", "/agenda", "/ventas", "/clientes", "/webinars", "/formularios", "/marketing", "/alumnos", "/alumnos?seccion=pipeline", "/reportes",
-      "/alumnos?seccion=hoy", "/alumnos?seccion=seguimiento", "/finanzas", "/finanzas/caja", "/conciliacion", "/ajustes"],
+      "/alumnos?seccion=hoy", "/alumnos?seccion=clientes", "/finanzas", "/finanzas/caja", "/conciliacion", "/ajustes"],
     inicio: "/panel",
   },
   director: { menu: ["/panel", "/leads", "/crm", "/agenda", "/ventas", "/clientes", "/webinars", "/formularios"], inicio: "/panel" },
@@ -58,7 +60,7 @@ const MENU_ESPERADO: Record<string, { menu: string[]; inicio: string }> = {
   admin: { menu: ["/panel", "/ventas", "/clientes", "/finanzas", "/finanzas/caja", "/conciliacion"], inicio: "/panel" },
   marketing: { menu: ["/panel", "/leads", "/webinars", "/formularios", "/marketing"], inicio: "/panel" },
   customer_success: {
-    menu: ["/clientes", "/alumnos", "/alumnos?seccion=pipeline", "/reportes", "/alumnos?seccion=hoy", "/alumnos?seccion=seguimiento"],
+    menu: ["/clientes", "/alumnos", "/alumnos?seccion=pipeline", "/reportes", "/alumnos?seccion=hoy", "/alumnos?seccion=clientes"],
     inicio: "/alumnos?seccion=hoy",
   },
 };
@@ -185,12 +187,36 @@ test("3000 tipos al azar: quien edita una tabla también la lee (salvo los alumn
   });
 });
 
-test("3000 tipos al azar: leer una tabla es ver al menos una de las áreas que la leen, y nunca más", () => {
+/* Las tablas del lector de WhatsApp (supabase/whatsapp-lector.sql y whatsapp-lector-permisos.sql): traen los teléfonos de todos los que están
+   en los grupos de un webinar. */
+const TELEFONOS_DE_GRUPOS = new Set(["whatsapp_lector", "whatsapp_grupos", "whatsapp_miembros"]);
+
+test("el lector de WhatsApp: lo lee quien ve Webinars y no está limitado a lo suyo; el código QR no lo lee nadie, ni el dueño; y no lo escribe nadie desde la app", () => {
+  const conWebinars = (soloLoSuyo: boolean, nivel: "ver" | "editar" = "ver"): MiAcceso => ({ tipo: "x", nombre: "x", areas: { webinars: nivel }, soloLoSuyo });
+  const sinWebinars: MiAcceso = { tipo: "x", nombre: "x", areas: { leads: "editar", crm: "editar" }, soloLoSuyo: false };
+  for (const tabla of TELEFONOS_DE_GRUPOS) {
+    assert.equal(puedeLeer(ACCESO_DUENO, tabla), true, `el dueño lee ${tabla}`);
+    assert.equal(puedeLeer(conWebinars(false), tabla), true, `quien ve Webinars lee ${tabla}`);
+    assert.equal(puedeLeer(conWebinars(false, "editar"), tabla), true, `quien edita Webinars lee ${tabla}`);
+    assert.equal(puedeLeer(conWebinars(true), tabla), false, `quien ve Webinars pero sólo lo suyo NO lee ${tabla}`);
+    assert.equal(puedeLeer(sinWebinars, tabla), false, `quien no ve Webinars no lee ${tabla}`);
+    assert.equal(puedeLeer(null, tabla), false, `sin sesión no se lee ${tabla}`);
+  }
+  for (const quien of [ACCESO_DUENO, conWebinars(false, "editar"), conWebinars(true), sinWebinars]) {
+    assert.equal(puedeLeer(quien, "whatsapp_qr"), false, "el QR no lo lee nadie desde la app");
+    for (const tabla of [...TELEFONOS_DE_GRUPOS, "whatsapp_qr"]) assert.equal(puedeEditar(quien, tabla), false, `nadie escribe ${tabla} desde la app`);
+  }
+});
+
+test("3000 tipos al azar: leer una tabla es ver al menos una de las áreas que la leen, y nunca más (salvo el lector de WhatsApp)", () => {
   porSemillas(3000, 40_001, (r, s) => {
     const t = tipoAlAzar(r, s);
     const a = acceso(t);
     for (const [tabla, areas] of Object.entries(LEEN)) {
-      assert.equal(puedeLeer(a, tabla), areas.some((x) => nivelEn(a, x) >= 1), tabla);
+      /* Las tablas del lector de WhatsApp son la excepción, a propósito (ver el test de abajo): el código QR no lo lee nadie, y los
+         teléfonos de los grupos no los ve quien está limitado a lo suyo aunque vea Webinars. */
+      const esperado = tabla === "whatsapp_qr" ? false : t.soloLoSuyo && TELEFONOS_DE_GRUPOS.has(tabla) ? false : areas.some((x) => nivelEn(a, x) >= 1);
+      assert.equal(puedeLeer(a, tabla), esperado, tabla);
     }
     /* Lo que no está en LEEN lo lee cualquiera con una sesión; sin acceso, nada. */
     assert.equal(puedeLeer(null, "ventas"), false);
