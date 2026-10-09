@@ -2,7 +2,7 @@ import test, { after } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { crearAzar } from "./azar";
 
 /* ==================================================================
@@ -24,7 +24,7 @@ import { crearAzar } from "./azar";
    ================================================================== */
 
 const RAIZ = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
-const PGLITE = "file:///Users/mariaelazaro/Menlab/menlab-app/node_modules/@electric-sql/pglite/dist/index.js";
+const PGLITE = pathToFileURL(`${process.env.PGLITE_DIR ?? "/Users/mariaelazaro/Menlab/menlab-app/node_modules/@electric-sql/pglite"}/dist/index.js`).href;
 type Db = { exec(sql: string): Promise<unknown>; query<T = Record<string, unknown>>(sql: string, params?: unknown[]): Promise<{ rows: T[] }>; close(): Promise<void> };
 
 let compartida: Promise<Db | null> | undefined;

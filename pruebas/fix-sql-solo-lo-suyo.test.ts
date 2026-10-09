@@ -8,7 +8,7 @@
      2. el director, el dueño, Equipo, Administración y el servidor pueden todo lo que podían;
      3. ventas.sesionId no se suelta ni se cambia;
      4. un cobro no se ata a un movimiento inventado (control cruzado);
-     5. nombre_corto() tiene tablas del mismo largo, y dos closers con el mismo nombre corto no se pisan;
+     5. nombre_corto() saca la tilde de la ñ y la ç, y dos closers con el mismo nombre corto siguen siendo uno para la base, como para la app;
      6. honorarios.sql vuelto a correr después de tipos-cuenta.sql no cambia el tipo de nadie;
      7. el ensayo de RLS del control cruzado vuelve a correr.
    Con SQL_DIR_PRUEBA=<carpeta con los .sql de antes> fallan. */
@@ -232,34 +232,7 @@ test("control cruzado: un closer no ata ni desata un cobro a un movimiento; el d
 
 /* ---------- 6. los nombres ---------- */
 
-/** Los dos argumentos de translate(…) de cada función de un .sql. */
-function tablasDeTranslate(sql: string): { origen: string; destino: string }[] {
-  return [...sql.matchAll(/translate\(coalesce\(t, ''\),\s*'([^']+)',\s*'([^']+)'\)/g)].map((m) => ({ origen: m[1], destino: m[2] }));
-}
-/** El texto de una función de un .sql, sin los espacios de más. */
-function funcionDe(sql: string, nombre: string): string {
-  const m = new RegExp(`create or replace function public\\.${nombre}\\(.*?\\n\\$\\$;\\n`, "s").exec(sql);
-  assert.ok(m, `no está ${nombre} en el archivo`);
-  return m![0].replace(/\s+/g, " ").trim();
-}
-
-test("nombre_corto(): las dos cadenas del translate() tienen el mismo largo, en tipos-cuenta.sql y en el delta", () => {
-  for (const archivo of ["tipos-cuenta.sql", "solo-lo-suyo-seguro.sql"]) {
-    const texto = sqlDe(archivo);
-    const tablas = tablasDeTranslate(texto);
-    assert.ok(tablas.length >= 1, `${archivo}: no se encontró el translate()`);
-    for (const t of tablas) {
-      assert.equal([...t.origen].length, [...t.destino].length, `${archivo}: ${[...t.origen].length} contra ${[...t.destino].length} caracteres`);
-      /* Cada letra con tilde se traduce a su letra sin ella (la misma que saca NFD en la app). */
-      [...t.origen].forEach((c, i) => assert.equal([...t.destino][i], c.normalize("NFD").replace(/[̀-ͯ]/g, ""), `${archivo}: ${c}`));
-    }
-  }
-});
-
-test("las funciones de los nombres son idénticas en tipos-cuenta.sql y en solo-lo-suyo-seguro.sql (volver a correr uno no deshace al otro)", () => {
-  const a = sqlDe("tipos-cuenta.sql"), b = sqlDe("solo-lo-suyo-seguro.sql");
-  for (const f of ["nombre_completo", "nombre_corto", "miembro_de_nombre", "son_mios"]) assert.equal(funcionDe(b, f), funcionDe(a, f), f);
-});
+/* El largo de las dos cadenas del translate() de tipos-cuenta.sql y nombre-corto.sql lo controla pruebas/fix-sql-menores.test.ts. */
 
 test("nombre_corto() saca la tilde de la ñ y la ç, y sigue igual con lo demás", { skip: saltear }, async () => {
   const b = await banco();
@@ -282,7 +255,7 @@ test("un closer con ñ ve sus llamadas aunque Calendly escriba el anfitrión sin
   await b.ejecutar(`delete from public.equipo where id = 'm_agus'; delete from public.usuarios_permitidos where email = 'agus@x.com'; truncate public.sesiones`);
 });
 
-test("dos closers con el mismo nombre corto: cada uno ve sus llamadas; si el anfitrión no trae el nombre entero, el de antes; y se pueden listar los que chocan", { skip: saltear }, async () => {
+test("dos closers con el mismo nombre corto: la base elige uno solo, el mismo que la app (activo, menor id), y se pueden listar los que chocan", { skip: saltear }, async () => {
   const b = await banco();
   await b.ejecutar(`
     truncate public.sesiones;
@@ -291,9 +264,10 @@ test("dos closers con el mismo nombre corto: cada uno ve sus llamadas; si el anf
     insert into public.usuarios_permitidos (email, rol) values ('perez@x.com', 'closer'), ('gomez@x.com', 'closer');
     insert into public.sesiones (id, anfitrion) values ('sP', 'Ana Laura Perez'), ('sG', 'Ana Laura Gomez'), ('sS', 'Ana Laura');`);
   const ids = async (email: string) => { const r = await b.intentar<{ id: string }>(email, `select id from public.sesiones order by id`); return r.ok ? r.rows.map((x) => x.id) : r; };
-  /* «Ana Laura» a secas no dice cuál: se queda como antes (el de menor id entre los activos). */
-  assert.deepEqual(await ids("perez@x.com"), ["sP"]);
-  assert.deepEqual(await ids("gomez@x.com"), ["sG", "sS"]);
+  /* Para la base «Ana Laura» es una sola persona: el activo de menor id (m_gomez < m_perez), igual que miembroDeCloser() de la
+     app. Cambiarlo sólo de un lado haría que la pantalla y la base se contradigan: por eso sólo se avisa quiénes chocan. */
+  assert.deepEqual(await ids("gomez@x.com"), ["sG", "sP", "sS"]);
+  assert.deepEqual(await ids("perez@x.com"), []);
   const choques = await b.servicio<{ clave: string; ids: string[] }>(`select clave, ids from public.equipo_nombres_que_chocan()`);
   assert.deepEqual(choques.map((c) => [c.clave, [...c.ids].sort()]), [["ana laura", ["m_gomez", "m_perez"]]], "los inactivos no cuentan");
   await b.ejecutar(`delete from public.equipo where id in ('m_perez', 'm_gomez', 'm_baja'); delete from public.usuarios_permitidos where email in ('perez@x.com', 'gomez@x.com'); truncate public.sesiones`);
@@ -339,7 +313,7 @@ test("solo-lo-suyo-seguro.sql se puede correr de nuevo sin cambiar nada y antes 
     await db.exec(PERMISOS_DE_ENSAYO);
     for (const a of ["solo-lo-suyo-seguro.sql", "control-cruzado.sql", "solo-lo-suyo-seguro.sql", "devoluciones.sql", "tipos-cuenta.sql", "solo-lo-suyo-seguro.sql"]) await db.exec(sqlDe(a));
     const r = await db.query<{ n: number }>(`select count(*)::int n from pg_trigger where tgname like '%_guarda_del_closer' and not tgisinternal`);
-    assert.equal(r.rows[0].n, 4);
+    assert.equal(r.rows[0].n, 5);
   } finally { await db.close(); }
 });
 
@@ -350,4 +324,193 @@ test("el ensayo de RLS del control cruzado (pruebas/sql/control-cruzado.ensayo.m
   assert.equal(r.status, 0, `${r.stdout}\n${r.stderr}`);
   assert.match(r.stdout, /Todo bien/);
   assert.doesNotMatch(r.stdout, /FALLA/);
+});
+
+/* ---------- 9. segunda ronda: los espacios de ids de leads y personas no se mezclan ---------- */
+
+/* Cada cadena es un ataque entero: los pasos se corren en orden (alguno tiene que dar 42501) y al final Dante no ve nada de Otro.
+   Son los de la verificación independiente de la primera versión, que aceptaba una referencia si estaba en cualquiera de los dos
+   espacios: el closer se creaba una persona con el id del lead de otro (o un lead con el id de su persona) y esa fila, «suya» por
+   haberla creado él, dejaba pasar la referencia. */
+const CADENAS: { nombre: string; pasos: string[]; veria: [string, string][] }[] = [
+  { nombre: "una persona con el id del lead de otro y una venta nueva que lo nombra",
+    pasos: [`insert into public.contactos (id, nombre) values ('leadO', 'x')`, `insert into public.ventas (id, "closerId", "contactoId") values ('vx', 'm_dante', 'leadO')`],
+    veria: [["leads", "id = 'leadO'"], ["contactos", "id = 'ctO'"], ["comentarios", "id = 'cmO'"]] },
+  { nombre: "un lead con el id de la persona de otro y una llamada propia que la nombra",
+    pasos: [`insert into public.leads (id, nombre) values ('ctO', 'x')`, `update public.sesiones set "contactoId" = 'ctO' where id = 'sD'`],
+    veria: [["contactos", "id = 'ctO'"], ["comentarios", "id = 'cmO'"]] },
+  { nombre: "una persona con el id del lead de otro y una llamada propia que lo nombra",
+    pasos: [`insert into public.contactos (id, nombre) values ('leadO', 'x')`, `update public.sesiones set "leadId" = 'leadO' where id = 'sD'`],
+    veria: [["leads", "id = 'leadO'"], ["contactos", "id = 'ctO'"], ["comentarios", "id = 'cmO'"]] },
+  { nombre: "una persona con el id del lead de otro y una venta propia que se mueve a él",
+    pasos: [`insert into public.contactos (id, nombre) values ('leadO', 'x')`, `update public.ventas set "contactoId" = 'leadO' where id = 'vD'`],
+    veria: [["leads", "id = 'leadO'"], ["contactos", "id = 'ctO'"], ["comentarios", "id = 'cmO'"]] },
+  { nombre: "un lead con el id de la persona de otro y un lead propio que la nombra",
+    pasos: [`insert into public.leads (id, nombre) values ('ctO', 'x')`, `update public.leads set "contactoId" = 'ctO' where id = 'leadD'`],
+    veria: [["contactos", "id = 'ctO'"], ["comentarios", "id = 'cmO'"]] },
+];
+for (const c of CADENAS) {
+  test(`un closer no mezcla los espacios de ids para abrirse lo de otro: ${c.nombre}`, { skip: saltear }, async () => {
+    const b = await banco();
+    await sembrar(b);
+    const resultados = [];
+    for (const sql of c.pasos) resultados.push(await b.intentar("dante@x.com", sql));
+    assert.ok(resultados.some(rechazada), `alguno de los pasos tenía que dar 42501: ${JSON.stringify(resultados)}`);
+    for (const [tabla, donde] of c.veria) assert.equal(await cuantas(b, "dante@x.com", tabla, donde), 0, `no tendría que ver ${tabla} ${donde}`);
+  });
+}
+
+test("cada columna mira su espacio: una persona o un lead con el id de otro espacio se rechaza si no es suyo, y se acepta si es suyo", { skip: saltear }, async () => {
+  const b = await banco();
+  await sembrar(b);
+  /* Lo de otro: no. */
+  assert.ok(rechazada(await b.intentar("dante@x.com", `insert into public.contactos (id, nombre) values ('leadO', 'x')`)), "persona con el id del lead de otro");
+  assert.ok(rechazada(await b.intentar("dante@x.com", `insert into public.leads (id, nombre) values ('ctO', 'x')`)), "lead con el id de la persona de otro");
+  /* sesiones.leadId es un lead (no una persona suya) y sesiones.contactoId una persona (no un lead suyo). */
+  assert.ok(rechazada(await b.intentar("dante@x.com", `update public.sesiones set "leadId" = 'ctD' where id = 'sD'`)), "una persona suya donde va un lead");
+  assert.ok(rechazada(await b.intentar("dante@x.com", `update public.sesiones set "contactoId" = 'leadD' where id = 'sD'`)), "un lead suyo donde va una persona");
+  assert.ok(rechazada(await b.intentar("dante@x.com", `update public.leads set "contactoId" = 'leadD' where id = 'leadD'`)), "un lead suyo donde va la persona del lead");
+  /* Lo suyo: sí. */
+  for (const [que, sql] of [
+    ["una persona con el id de su propio lead", `insert into public.contactos (id, nombre) values ('leadD', 'x') on conflict (id) do nothing`],
+    ["una llamada con su lead y su persona", `update public.sesiones set "leadId" = 'leadD', "contactoId" = 'ctD' where id = 'sD'`],
+    ["una venta que apunta a su lead", `insert into public.ventas (id, "closerId", "contactoId") values ('vL', 'm_dante', 'leadD')`],
+    /* La app a veces guarda en ventas.contactoId una persona: vale si no hay un lead con ese id y la persona es suya. */
+    ["una venta que apunta a una persona suya que no es un lead", `insert into public.ventas (id, "closerId", "contactoId") values ('vP', 'm_dante', 'ctD')`],
+  ] as const) {
+    const r = await b.intentar("dante@x.com", sql);
+    assert.ok(r.ok, `${que}: ${r.ok ? "" : r.mensaje}`);
+  }
+  assert.ok(rechazada(await b.intentar("dante@x.com", `insert into public.ventas (id, "closerId", "contactoId") values ('vQ', 'm_dante', 'ctO')`)), "una venta que apunta a la persona de otro");
+  /* Los demás tipos de cuenta y el servidor siguen creando con cualquier id. */
+  for (const quien of ["yari@x.com", "equipo@x.com", "santi@x.com", null]) {
+    await sembrar(b);
+    for (const sql of [`insert into public.contactos (id, nombre) values ('leadO2', 'x')`, `insert into public.leads (id, nombre) values ('ctO2', 'x')`]) {
+      const r = await b.intentar(quien, sql);
+      assert.ok(r.ok, `${quien ?? "servicio"}: ${sql}\n${r.ok ? "" : r.mensaje}`);
+    }
+  }
+});
+
+/* ---------- 10. segunda ronda: nadie puede llamar a las funciones de ayuda ---------- */
+
+test("las funciones del delta no quedan ejecutables por anon ni por authenticated (no hay un oráculo de existencia) y los triggers siguen andando", { skip: saltear }, async () => {
+  const db = new Pg_!() as Pg;
+  try {
+    await db.exec(ESQUEMA_MINIMO);
+    /* Como en Supabase: las funciones nuevas nacen con permiso para anon y authenticated (y para PUBLIC, por defecto en Postgres). */
+    await db.exec(`create role anon; alter default privileges in schema public grant execute on functions to anon, authenticated;`);
+    await db.exec(sqlDe("tipos-cuenta.sql"));
+    /* Sólo los permisos de tablas (no el «grant execute on all functions» del arnés, que taparía lo que se prueba). */
+    await db.exec(`grant usage on schema public, auth to anon, authenticated;
+      grant select, insert, update, delete on all tables in schema public to authenticated;
+      grant execute on function auth.jwt() to anon, authenticated;`);
+    /* Las dos funciones de la primera versión (nunca llegaron a producción) tienen que desaparecer. */
+    await db.exec(`create function public.fila_ya_existe(tabla text, id text) returns boolean language sql as $$ select true $$;
+      create function public.referencia_a_gente_es_mia(id text) returns boolean language sql as $$ select true $$;`);
+    await db.exec(sqlDe("solo-lo-suyo-seguro.sql"));
+    await db.exec(sqlDe("solo-lo-suyo-seguro.sql"));
+    const b = armarBanco(db);
+
+    for (const f of ["fila_ya_existe(text,text)", "referencia_a_gente_es_mia(text)"]) {
+      assert.equal((await db.query<{ n: string | null }>(`select to_regprocedure('public.${f}')::text as n`)).rows[0].n, null, `${f} tenía que borrarse`);
+    }
+    const AYUDA = ["anfitrion_es_mio(text)", "es_mi_llamada(text)", "es_mi_venta(text)", "es_mi_lead(text)", "es_mi_persona(text)", "venta_apunta_a_lo_mio(text)",
+      "ventas_guarda_del_closer()", "cuotas_guarda_del_closer()", "sesiones_guarda_del_closer()", "leads_guarda_del_closer()", "contactos_guarda_del_closer()"];
+    for (const f of AYUDA) {
+      for (const rol of ["anon", "authenticated"]) {
+        const r = await db.query<{ p: boolean }>(`select has_function_privilege('${rol}', 'public.${f}', 'execute') as p`);
+        assert.equal(r.rows[0].p, false, `${rol} no tendría que poder ejecutar ${f}`);
+      }
+    }
+    /* El diagnóstico sí lo puede mirar quien tiene sesión, y anon no. */
+    assert.equal((await db.query<{ p: boolean }>(`select has_function_privilege('authenticated', 'public.equipo_nombres_que_chocan()', 'execute') as p`)).rows[0].p, true);
+    assert.equal((await db.query<{ p: boolean }>(`select has_function_privilege('anon', 'public.equipo_nombres_que_chocan()', 'execute') as p`)).rows[0].p, false);
+
+    /* De verdad: anon y una persona con sesión reciben «permiso denegado» (42501) al llamarlas a mano. */
+    for (const rol of ["anon", "authenticated"]) {
+      await db.exec(`set role ${rol}`);
+      try {
+        await assert.rejects(() => db.query(`select public.es_mi_lead('x')`), (e: { code?: string }) => e.code === "42501", `${rol}: es_mi_lead`);
+        await assert.rejects(() => db.query(`select public.es_mi_persona('x')`), (e: { code?: string }) => e.code === "42501", `${rol}: es_mi_persona`);
+      } finally { await db.exec(`reset role`); }
+    }
+
+    /* Y sin ningún permiso de ejecución para los demás, el closer sigue pudiendo lo suyo y sigue frenado en lo de otro. */
+    await b.ejecutar(`
+      insert into public.equipo (id, nombre, email) values ('m_dante', 'Dante Closer', 'dante@x.com'), ('m_otro', 'Otro Closer', 'otro@x.com');
+      insert into public.usuarios_permitidos (email, rol) values ('yari@x.com', 'dueno'), ('dante@x.com', 'closer'), ('otro@x.com', 'closer');
+      insert into public.contactos (id, nombre) values ('ctO', 'Cliente de Otro');
+      insert into public.leads (id, responsable, "contactoId", nombre) values ('leadO', 'Otro Closer', 'ctO', 'Cliente de Otro');`);
+    for (const sql of [`insert into public.contactos (id, nombre) values ('ctN', 'Nueva')`,
+      `insert into public.leads (id, "contactoId", nombre) values ('leadN', 'ctN', 'Nueva')`,
+      `insert into public.ventas (id, "closerId", "contactoId", monto) values ('vN', 'm_dante', 'leadN', 700)`,
+      `insert into public.cuotas (id, "ventaId") values ('cN', 'vN')`]) {
+      const r = await b.intentar("dante@x.com", sql);
+      assert.ok(r.ok, `${sql}\n${r.ok ? "" : r.mensaje}`);
+    }
+    assert.ok(rechazada(await b.intentar("dante@x.com", `insert into public.ventas (id, "closerId", "contactoId") values ('vx', 'm_dante', 'leadO')`)));
+    assert.ok(rechazada(await b.intentar("dante@x.com", `insert into public.contactos (id, nombre) values ('leadO', 'x')`)));
+  } finally { await db.close(); }
+});
+
+/* ---------- 11. segunda ronda: «¿es mío?» con un solo id dice lo mismo que la lista entera ---------- */
+
+test("es_mi_lead, es_mi_persona, es_mi_venta y es_mi_llamada dicen lo mismo que mis_leads(), mis_contactos(), mis_ventas() y mis_sesiones() con datos al azar", { skip: saltear }, async () => {
+  const b = await montarBanco(Pg_!, ["solo-lo-suyo-seguro.sql"]);
+  try {
+    let semilla = 20261009;
+    const azar = () => (semilla = (semilla * 1664525 + 1013904223) % 4294967296) / 4294967296;
+    const elige = <T>(xs: T[]): T => xs[Math.floor(azar() * xs.length)];
+    const lit = (v: string | null) => (v === null ? "null" : `'${v}'`);
+    const miembros = [["m_dante", "Dante Closer", "dante@x.com"], ["m_otro", "Otro Closer", "otro@x.com"], ["m_tercer", "Tercer Closer", "tercer@x.com"], ["m_ana", "Ana Laura Perez", "ana@x.com"]];
+    const correos = miembros.map((m) => m[2]);
+    /* Nombres como los escribe Calendly: iguales, en minúscula, de a una palabra, con algo de más, de alguien que no es del equipo, vacíos. */
+    const nombres: (string | null)[] = ["Dante Closer", "dante closer", "Dante", "Dante Closer Extra", "Otro Closer", "Otro", "Tercer Closer", "Ana Laura Perez", "Ana Laura", "Persona Ajena", "", null];
+    const N = { contactos: 60, leads: 80, sesiones: 110, ventas: 60, cuotas: 90 };
+    const ctIds = Array.from({ length: N.contactos }, (_, i) => `ct${i}`);
+    const leadIds = Array.from({ length: N.leads }, (_, i) => `l${i}`);
+    const ventaIds = Array.from({ length: N.ventas }, (_, i) => `v${i}`);
+    const sesionIds = Array.from({ length: N.sesiones }, (_, i) => `s${i}`);
+
+    const filas = (tabla: string, columnas: string, valores: (string | null)[][]) =>
+      `insert into public.${tabla} (${columnas}) values ${valores.map((v) => `(${v.map(lit).join(", ")})`).join(", ")};`;
+    await b.ejecutar([
+      filas("equipo", "id, nombre, email", miembros.map((m) => [...m])),
+      filas("contactos", "id, nombre, \"creadoPor\"", ctIds.map((id) => [id, "x", elige([...correos, "", null])])),
+      filas("leads", "id, responsable, \"contactoId\", nombre, \"creadoPor\"",
+        leadIds.map((id) => [id, elige(nombres), elige([...ctIds, null, "ct_fantasma"]), "x", elige([...correos, "", null])])),
+      filas("sesiones", "id, anfitrion, \"leadId\", \"contactoId\"",
+        sesionIds.map((id) => [id, elige(nombres), elige([...leadIds, null, "l_fantasma"]), elige([...ctIds, null, "ct_fantasma"])])),
+      /* ventas.contactoId es el lead, pero la app a veces guarda una persona: se mezclan a propósito. */
+      filas("ventas", "id, \"closerId\", \"setterId\", \"contactoId\"",
+        ventaIds.map((id) => [id, elige([...miembros.map((m) => m[0]), null]), elige([...miembros.map((m) => m[0]), null, null]), elige([...leadIds, ...ctIds, null])])),
+      filas("cuotas", "id, \"ventaId\", \"closerId\"",
+        Array.from({ length: N.cuotas }, (_, i) => [`c${i}`, elige([...ventaIds, "v_fantasma"]), elige([...miembros.map((m) => m[0]), null, null])])),
+    ].join("\n"));
+
+    const ESPACIOS = [
+      { que: "leads", puntual: "es_mi_lead", lista: "mis_leads", ids: [...leadIds, ...ctIds, "l_fantasma", "ct_fantasma"] },
+      { que: "personas", puntual: "es_mi_persona", lista: "mis_contactos", ids: [...ctIds, ...leadIds, "ct_fantasma", "l_fantasma"] },
+      { que: "ventas", puntual: "es_mi_venta", lista: "mis_ventas", ids: [...ventaIds, "v_fantasma"] },
+      { que: "llamadas", puntual: "es_mi_llamada", lista: "mis_sesiones", ids: [...sesionIds, "s_fantasma"] },
+    ];
+    const grandes: Record<string, number[]> = {};
+    for (const email of correos) {
+      /* Con el correo de esa persona pero con poder de ejecutar (las funciones puntuales no son para los clientes). */
+      await b.db.exec(`select set_config('request.jwt.claims', '${JSON.stringify({ email })}', false)`);
+      for (const e of ESPACIOS) {
+        const r = await b.db.query<{ i: string; p: boolean; s: boolean }>(
+          `select i, public.${e.puntual}(i) as p, i = any(public.${e.lista}()) as s from unnest(array[${e.ids.map((x) => `'${x}'`).join(",")}]::text[]) as i`);
+        const distintos = r.rows.filter((f) => f.p !== f.s).map((f) => f.i);
+        assert.deepEqual(distintos, [], `${email} · ${e.que}: ${e.puntual}() y ${e.lista}() no dicen lo mismo en ${distintos.join(", ")}`);
+        (grandes[e.que] ??= []).push(r.rows.filter((f) => f.s).length);
+      }
+    }
+    /* Que la prueba diga algo: para algún closer hay unos y otros, y no todos tienen lo mismo. */
+    for (const [que, cuantos] of Object.entries(grandes)) {
+      assert.ok(cuantos.some((n) => n > 0), `${que}: nadie tiene nada, la prueba no probó nada`);
+      assert.ok(new Set(cuantos).size > 1, `${que}: todos tienen lo mismo (${cuantos.join(", ")}), la prueba no distingue a nadie`);
+    }
+  } finally { await b.db.close(); }
 });

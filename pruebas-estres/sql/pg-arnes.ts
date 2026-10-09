@@ -91,9 +91,11 @@ export const ESQUEMA_MINIMO = `
     id text primary key, "cuotaId" text, monto numeric not null default 0, moneda text default 'USD', fecha text, "montoArs" numeric,
     comprobante jsonb, "comprobanteLink" text, "movimientoId" text, chequeado boolean, notas text
   );
-  create table public.sesiones (id text primary key, anfitrion text, "leadId" text, "contactoId" text, "estadoLlamada" text, "estadoPreCall" text, notas text);
+  create table public.sesiones (id text primary key, anfitrion text, "leadId" text, "contactoId" text, "estadoLlamada" text, "estadoPreCall" text, notas text,
+    /* Lo que lee customer-success-lili.sql al pasar las agendas de «Llamada de Auditoría» a resells. */
+    inicia timestamptz, invitado text, email text, estado text, tipo text, utm jsonb, "creadoEn" timestamptz default now());
   create table public.leads (id text primary key, responsable text, "contactoId" text, nombre text);
-  create table public.contactos (id text primary key, nombre text);
+  create table public.contactos (id text primary key, nombre text, telefono text);
   create table public.comentarios (id text primary key, "contactoId" text, texto text);
   create table public.alumnos (id text primary key, "ventaId" text, notas text);
   create table public.gastos (id text primary key, "webinarId" text);

@@ -1,8 +1,8 @@
 /* Escalamientos de privilegio de un closer («sólo lo suyo») sobre las ventas, las llamadas, los cobros y las devoluciones de otro,
-   con el RLS de verdad (Postgres en memoria, PGlite) de tipos-cuenta.sql + devoluciones.sql + cierre-del-dia.sql.
+   con el RLS de verdad (Postgres en memoria, PGlite) de tipos-cuenta.sql + devoluciones.sql + cierre-del-dia.sql + solo-lo-suyo-seguro.sql.
 
-   Primero lo que SÍ está bien cerrado (pruebas que pasan: regresión), después los agujeros que se encontraron (marcados «BUG:» y
-   con { todo: true }, para que no rompan la suite hasta que se arreglen; al arreglarlos, sacar el todo).
+   Primero lo que SÍ está bien cerrado (pruebas que pasan: regresión), después los agujeros que se encontraron (marcados «BUG:»),
+   ya cerrados por supabase/solo-lo-suyo-seguro.sql: quedan como pruebas comunes. Si alguien saca ese archivo, fallan.
 
    El patrón de los agujeros es el mismo: «lo suyo» de un closer se calcula con referencias que él mismo puede escribir (una cuota
    con su closerId, una venta con su closerId y el contactoId de otro, una llamada suya con el leadId de otro). Le alcanza con saber
@@ -17,7 +17,7 @@ const Pg = await cargarPglite();
 const saltear = Pg ? false : "PGlite no está en el disco (ver pruebas/stress/pg-arnes.ts)";
 
 let compartido: Promise<Banco> | null = null;
-const banco = (): Promise<Banco> => (compartido ??= montarBanco(Pg!, { archivos: ["devoluciones.sql", "cierre-del-dia.sql"], veces: 1 }));
+const banco = (): Promise<Banco> => (compartido ??= montarBanco(Pg!, { archivos: ["devoluciones.sql", "cierre-del-dia.sql", "solo-lo-suyo-seguro.sql"], veces: 1 }));
 after(async () => { if (compartido) await (await compartido).db.close(); });
 
 /** Dante y Otro son closers; la venta, el cobro, la devolución, el lead y la llamada de Otro son lo que Dante no tiene que ver. */
@@ -108,7 +108,7 @@ const VECTORES: { nombre: string; sql: string; veria: [string, string][] }[] = [
     veria: [["contactos", "id = 'ctO'"], ["comentarios", "id = 'cmO'"]] },
 ];
 for (const v of VECTORES) {
-  test(`BUG: un closer no debería abrirse lo de otro con ${v.nombre}`, { skip: saltear, todo: true }, async () => {
+  test(`BUG: un closer no debería abrirse lo de otro con ${v.nombre}`, { skip: saltear }, async () => {
     const b = await banco();
     await sembrar(b);
     await b.intentar("dante@x.com", v.sql);
@@ -116,7 +116,7 @@ for (const v of VECTORES) {
   });
 }
 
-test("BUG: un closer no debería poder cambiar el closer de la venta de otro (robarle la comisión) tras reclamarla con una cuota propia", { skip: saltear, todo: true }, async () => {
+test("BUG: un closer no debería poder cambiar el closer de la venta de otro (robarle la comisión) tras reclamarla con una cuota propia", { skip: saltear }, async () => {
   const b = await banco();
   await sembrar(b);
   await b.intentar("dante@x.com", `insert into public.cuotas (id, "ventaId", "closerId") values ('cx', 'vO', 'm_dante')`);
@@ -130,7 +130,7 @@ test("BUG: un closer no debería poder cambiar el closer de la venta de otro (ro
    (cargadoPor, los chequeos, las marcas y la baja sí están cuidados por triggers) y la app nunca lo cambia después de crearla:
    el closer dueño de la venta puede dejarlo en NULL o atarlo a otra llamada y la venta deja de contar para el descuento.
    Repro: como dante@x.com, update ventas set "sesionId" = null where id = 'vD'. */
-test("BUG: un closer no debería poder soltar su venta de la llamada de la que salió (ventas.sesionId) después de cargarla", { skip: saltear, todo: true }, async () => {
+test("BUG: un closer no debería poder soltar su venta de la llamada de la que salió (ventas.sesionId) después de cargarla", { skip: saltear }, async () => {
   const b = await banco();
   await sembrar(b);
   await b.intentar("dante@x.com", `update public.ventas set "sesionId" = null where id = 'vD'`);

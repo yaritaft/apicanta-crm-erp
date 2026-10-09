@@ -2,7 +2,7 @@ import test, { after } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { closerDeLlamada, destinosDePase, planDePase } from "@/lib/pasar-llamadas";
 import { miembroDeCloser } from "@/lib/crm";
 import type { MiembroEquipo, Sesion } from "@/lib/types";
@@ -20,7 +20,7 @@ import { crearAzar, enAR, llamada, miembro } from "./azar";
    ================================================================== */
 
 const RAIZ = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
-const PGLITE = "file:///Users/mariaelazaro/Menlab/menlab-app/node_modules/@electric-sql/pglite/dist/index.js";
+const PGLITE = pathToFileURL(`${process.env.PGLITE_DIR ?? "/Users/mariaelazaro/Menlab/menlab-app/node_modules/@electric-sql/pglite"}/dist/index.js`).href;
 
 type Db = { exec(sql: string): Promise<unknown>; query<T = Record<string, unknown>>(sql: string, params?: unknown[]): Promise<{ rows: T[] }>; close(): Promise<void> };
 
@@ -148,7 +148,7 @@ test("pasar llamadas contra la base real: el nuevo closer la ve y el viejo deja 
    lados escriban igual (los dos con «ñ») no se nota; pero si Equipo dice «Mariano Nunez» y Calendly «Mariano Nuñez» (o al
    revés), la app le pone la llamada a Mariano en el CRM, en el cierre del día y en los strikes y la base no se la muestra: entra
    y no ve nada, y «Equipo → Accesos» (evaluarClosers) dice que está todo bien. Núñez, Muñoz, Peña, Ibáñez, Castaño, Niño... */
-test("BUG: la base une «Nuñez» y «Nunez» como la app (la «ñ» minúscula no se corre en nombre_corto)", { todo: true }, async (t) => {
+test("BUG: la base une «Nuñez» y «Nunez» como la app (la «ñ» minúscula no se corre en nombre_corto)", async (t) => {
   const db = await base();
   if (!db) return t.skip("PGlite no está en el disco");
   await db.exec("delete from public.equipo; delete from public.sesiones");

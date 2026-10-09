@@ -24,7 +24,7 @@ const saltear = Pg ? false : "PGlite no está en el disco (ver pruebas/stress/pg
 
 let compartido: Promise<Banco> | null = null;
 const banco = (): Promise<Banco> => (compartido ??= montarBanco(Pg!, {
-  archivos: ["devoluciones.sql", "gastos-recurrentes.sql", "registros-webinar.sql", "customer-success.sql"], veces: 2,
+  archivos: ["devoluciones.sql", "gastos-recurrentes.sql", "registros-webinar.sql", "customer-success.sql", "customer-success-lili.sql"], veces: 2,
 }));
 after(async () => { if (compartido) await (await compartido).db.close(); });
 

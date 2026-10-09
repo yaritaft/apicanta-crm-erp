@@ -1462,30 +1462,41 @@ y cada alumno entra con su **código**, un UUID al azar (no un número correlati
 - **Qué falta:** las preguntas del formulario son las del reporte que ya existe (horas, entrevistas, postulaciones, bloqueo): si el actual tiene otras, se ajusta `lib/reporte-enlace.ts` y la página.
   Telegram (avisar por ahí en vez de mail) no está.
 
-
-## Arreglos del estrés: base («sólo lo suyo», nombres, control cruzado, honorarios)
+## Arreglos del estrés: base («sólo lo suyo» seguro)
 
 *Qué pasaba:* un closer («sólo lo suyo») armaba su acceso con referencias que él mismo escribe, y las políticas sólo le pedían que la
 fila nueva lo nombrara a él: con el id de algo ajeno (una cuota heredada propia sobre la venta de otro, una venta o una llamada o un
 lead propio apuntando al lead o a la persona de otro) pasaba a ver la venta, sus cobros con comprobante, las devoluciones, el lead, la
-persona y su chat, y hasta podía cambiarle el closer a la venta. `nombre_corto()` tenía dos tablas de 48 y 49 caracteres: la «ñ» salía
-«u» y un closer con ñ no encontraba sus llamadas; dos closers con las mismas dos primeras palabras (Ana Laura…) eran la misma persona para
-la base. El control cruzado dejaba conservar el tilde de antes con cualquier `movimientoId` inventado. `honorarios.sql`, vuelto a correr
-después de `tipos-cuenta.sql`, pasaba a todos a «Todo menos honorarios». `ventas.sesionId` lo podía soltar el closer. Y el ensayo
-`pruebas/sql/control-cruzado.ensayo.mjs` ya no corría.
+persona y su chat, y hasta podía cambiarle el closer a la venta (robarle la comisión). Y `ventas.sesionId` lo podía soltar el closer.
+Hoy no hay cuentas de closer, pero esto es lo que había que cerrar antes de crearlas.
 
 *Qué hace ahora:* `supabase/solo-lo-suyo-seguro.sql` (nuevo, idempotente, sin tocar datos, sólo pide `tipos-cuenta.sql` antes) agrega
-cuatro triggers que sólo miran a quien ve «sólo lo suyo» y una referencia nueva o cambiada (cuotas.ventaId, ventas.contactoId,
-sesiones.leadId/contactoId, leads.contactoId: tienen que apuntar a algo que ya es suyo; la persona que creó él cuenta) y cuidan
-`ventas.sesionId` (una vez puesto vuelve a como estaba; al crear la venta, una llamada suya). Si no alcanza, 42501 como cualquier
-escritura que su tipo no puede hacer. Dueño, Equipo, director, administración y el servidor siguen igual. `nombre_corto()` queda con las
-tablas del mismo largo (en `tipos-cuenta.sql` y en el delta) y, entre dos closers con el mismo nombre corto, gana el del nombre entero
-igual al del anfitrión (`select * from public.equipo_nombres_que_chocan()` lista los que chocan; la app, `miembroDeCloser()` de
-`src/lib/crm.ts`, sigue eligiendo el primero). `control-cruzado.sql` ignora el `movimientoId` de quien no es director ni finanzas al
-crear el cobro y le deja el de antes al corregirlo. `honorarios.sql` sólo normaliza roles y pone el CHECK de dos niveles si todavía no
-existe `tipos_cuenta`. El ensayo vuelve a correr (columnas `moneda` y `montoArs`; las dos expectativas del monto editan ahora las notas).
+cinco triggers que sólo miran a quien ve «sólo lo suyo» y una referencia nueva o cambiada. Cada columna se mira contra **su** espacio
+de ids: `cuotas.ventaId` contra las ventas suyas; `sesiones.leadId` contra los leads suyos; `sesiones.contactoId` y `leads.contactoId`
+contra las personas suyas; `ventas.contactoId` contra los leads suyos (la app a veces guarda ahí una persona: vale sólo si no hay un
+lead con ese id y la persona es suya). Lo que creó él cuenta como suyo (el contacto se escribe antes que el lead y el lead antes que
+la venta). Una persona nueva no puede llevar el id de un lead que no es suyo, ni un lead nuevo el de una persona que no es suya
+(la primera versión aceptaba un id si estaba en cualquiera de los dos espacios y así se saltaba el freno). Además `ventas.sesionId`
+no se suelta ni se cambia una vez puesto, y al crear la venta tiene que ser una llamada suya. Si no alcanza, 42501 como cualquier
+escritura que su tipo no puede hacer. Dueño, Equipo, director, administración y el servidor siguen igual.
 
-*Para publicarlo:* Supabase → SQL Editor: `supabase/solo-lo-suyo-seguro.sql` y `supabase/control-cruzado.sql` (en cualquier orden; los
-demás archivos sólo cambiaron de comentarios o de condiciones y no hace falta volver a correrlos). *Pruebas:*
-`pruebas/fix-sql-solo-lo-suyo.test.ts` (PGlite en memoria; con `SQL_DIR_PRUEBA=<carpeta con los .sql de antes>` fallan) y el ensayo
-`PGLITE_DIR=… node pruebas/sql/control-cruzado.ensayo.mjs`.
+*Cómo está hecho:* los triggers son `security definer` y las funciones de ayuda (`es_mi_lead`, `es_mi_persona`, `es_mi_venta`,
+`es_mi_llamada`, `anfitrion_es_mio`, `venta_apunta_a_lo_mio`) no quedan ejecutables por `anon`, `authenticated` ni `PUBLIC`: no hay un
+oráculo que diga si un id existe. «¿Es mío?» se contesta mirando un solo id y no armando de nuevo `mis_leads()`, `mis_contactos()`,
+`mis_ventas()` y `mis_sesiones()` por cada fila nueva; dicen exactamente lo mismo que esas listas (lo comprueba una prueba con datos
+al azar). Con 6.000 leads en PGlite, crear un lead pasó de ~260 ms a ~1 ms y una venta de ~345 ms a ~3 ms
+(`pruebas/sql/costo-solo-lo-suyo.ensayo.ts`). Leer los leads, que es la política de lectura y no cambia, sigue en ~270 ms.
+
+*Los nombres, a propósito sin cambiar:* dos closers cuyo nombre empieza con las mismas dos palabras (Ana Laura Pérez y Ana Laura
+Gómez) siguen siendo la misma persona para la base —el activo de menor id—, igual que para la app (`miembroDeCloser()` de
+`src/lib/crm.ts`). Desempatar por el nombre entero sólo de un lado haría que la pantalla y la base se contradigan; arreglarlo bien es
+cambiar los dos lados a la vez (o identificar al anfitrión de Calendly por su correo). Mientras tanto, para ver quiénes chocan:
+`select * from public.equipo_nombres_que_chocan();`. Esa prueba de estrés queda como limitación conocida (`todo`).
+
+*Ya en `main` por otro lote:* `nombre_corto()` con las dos cadenas del mismo largo (`tipos-cuenta.sql` y `nombre-corto.sql`),
+`control-cruzado.sql` (un closer no ata ni desata un cobro a un movimiento) y `honorarios.sql` que vuelto a correr no cambia los tipos de cuenta.
+
+*Para publicarlo:* Supabase → SQL Editor: `supabase/solo-lo-suyo-seguro.sql` (sólo ése; se puede correr más de una vez y antes o después
+de los demás). Antes, ensayarlo contra la base real con rollback. Para deshacer: `drop trigger if exists cuotas_guarda_del_closer on public.cuotas;`
+y lo mismo con `ventas_`, `sesiones_`, `leads_` y `contactos_guarda_del_closer` en su tabla. *Pruebas:*
+`pruebas/fix-sql-solo-lo-suyo.test.ts` y `pruebas-estres/sql/` (PGlite en memoria; `PGLITE_DIR=/ruta/a/node_modules/@electric-sql/pglite`; sin él se saltean).

@@ -146,7 +146,7 @@ test("el tipo «Customer Success» queda en el mismo lugar (orden 7, como CUSTOM
    deja de nuevo el CHECK usuarios_permitidos_rol_ck (sólo dueno o equipo), que impide dar de alta cualquier otro tipo hasta que se
    vuelva a correr tipos-cuenta.sql. Es lo mismo que correr «todos los SQL pendientes» de un lote: ningún aviso, y los closers pasan a ver
    y editar Finanzas. */
-test("BUG: volver a correr honorarios.sql después de tipos-cuenta.sql no debería cambiarle el tipo de cuenta a nadie", { skip: saltear, todo: true }, async () => {
+test("BUG: volver a correr honorarios.sql después de tipos-cuenta.sql no debería cambiarle el tipo de cuenta a nadie", { skip: saltear }, async () => {
   const db = await base();
   await db.exec("begin");
   try {

@@ -75,7 +75,7 @@ test("miembro_de_nombre() (base) y miembroDeCloser() (app) deciden lo mismo con 
    minúscula «ñ» sale como «u» y la «ç» como «n» («Núñez» → «nuuez», «Peña» → «peua»). La app (NFD) los trata bien. Un closer cuyo nombre en
    Equipo tiene ñ y cuyo anfitrión de Calendly está escrito de otra manera («Agustin Nunez» / «Agustín Núñez») no se encuentra: no ve
    ninguna de sus llamadas, ni sus leads, y la app sí se las atribuye. Repro: select public.nombre_corto('Núñez')  →  'nuuez'. */
-test("BUG: nombre_corto() tiene que sacarle la tilde a la ñ y a la ç igual que la app (NFD)", { skip: saltear, todo: true }, async () => {
+test("BUG: nombre_corto() tiene que sacarle la tilde a la ñ y a la ç igual que la app (NFD)", { skip: saltear }, async () => {
   const b = await banco();
   for (const [entrada, esperado] of [["Núñez", "nunez"], ["Peña", "pena"], ["Muñoz", "munoz"], ["Ñandú", "nandu"], ["garçon", "garcon"], ["Ibáñez Çelik", "ibanez celik"]] as const) {
     const [{ c }] = await b.servicio<{ c: string }>(`select public.nombre_corto(${lit(entrada)}) as c`);
@@ -83,7 +83,7 @@ test("BUG: nombre_corto() tiene que sacarle la tilde a la ñ y a la ç igual que
   }
 });
 
-test("BUG: un closer con ñ en su nombre ve sus llamadas aunque Calendly escriba el anfitrión sin tilde", { skip: saltear, todo: true }, async () => {
+test("BUG: un closer con ñ en su nombre ve sus llamadas aunque Calendly escriba el anfitrión sin tilde", { skip: saltear }, async () => {
   const b = await banco();
   await b.ejecutar(`
     truncate public.equipo, public.sesiones;
@@ -100,7 +100,13 @@ test("BUG: un closer con ñ en su nombre ve sus llamadas aunque Calendly escriba
    (`order by activo desc, id limit 1`): dos closers con el mismo primer nombre compuesto (Ana Laura Pérez y Ana Laura Gómez, Juan Pablo…)
    son «la misma persona» para la base. El de menor id ve las llamadas de los dos y el otro no ve ninguna, y la app (que elige el primero
    de la lista) decide otra cosa. Repro: equipo 'Ana Laura Perez' (m_perez) y 'Ana Laura Gomez' (m_gomez), llamadas con anfitrión
-   igual a cada nombre completo: m_gomez ve las dos, m_perez ninguna. */
+   igual a cada nombre completo: m_gomez ve las dos, m_perez ninguna.
+
+   LIMITACIÓN CONOCIDA, A PROPÓSITO: sigue como `todo`. La app (miembroDeCloser de src/lib/crm.ts) elige entre nombres iguales
+   por «activo, menor id» y la base hace lo mismo; desempatar por el nombre entero sólo de un lado haría que la pantalla y la base se
+   contradigan (la primera versión de solo-lo-suyo-seguro.sql lo hacía y el verificador lo marcó). Lo que hay es el diagnóstico
+   `select * from public.equipo_nombres_que_chocan()`; arreglarlo bien es cambiar los dos lados a la vez (o identificar al
+   anfitrión de Calendly por su correo). */
 test("BUG: dos closers cuyos nombres empiezan con las mismas dos palabras ven cada uno sólo sus llamadas", { skip: saltear, todo: true }, async () => {
   const b = await banco();
   await b.ejecutar(`
