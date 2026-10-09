@@ -44,10 +44,10 @@ export function ImportarPlanilla({ onCerrar, onListo }: { onCerrar: () => void; 
         if (!tabla) throw new Error(`El Excel no tiene una hoja «Ventas». Tiene: ${libro.nombres.slice(0, 8).join(", ")}…`);
         proximas = proximasFechasDesde(await libro.hoja("Estado_Clientes"));
       }
-      const { filas, faltan } = leerFilasVentas(tabla);
+      const { filas, faltan, descartadas } = leerFilasVentas(tabla);
       if (faltan.length) throw new Error(`A la hoja le faltan columnas: ${faltan.join(", ")}.`);
       if (filas.length === 0) throw new Error("La hoja no tiene cobros con fecha.");
-      setR(importarPlanilla(e, filas, { proximasFechas: proximas }));
+      setR(importarPlanilla(e, filas, { proximasFechas: proximas, descartadas }));
     } catch (err) {
       setError(err instanceof Error ? err.message : "No se pudo leer el archivo.");
     } finally {
@@ -58,7 +58,8 @@ export function ImportarPlanilla({ onCerrar, onListo }: { onCerrar: () => void; 
   function importar() {
     if (!r) return;
     acciones.importarPlanilla(r);
-    onListo(`Se importaron ${num(r.resumen.ventas)} ventas y ${num(r.resumen.cobros)} cobros de la planilla.`);
+    const saca = r.resumen.sacaCobros + r.resumen.sacaVentas;
+    onListo(`Se importaron ${num(r.resumen.ventas)} ventas y ${num(r.resumen.cobros)} cobros de la planilla.${saca ? ` Se sacaron ${num(r.resumen.sacaVentas)} ventas y ${num(r.resumen.sacaCobros)} cobros que ya no estaban en la planilla.` : ""}`);
   }
 
   const creados = r ? [
@@ -105,6 +106,26 @@ export function ImportarPlanilla({ onCerrar, onListo }: { onCerrar: () => void; 
             <dt>Por cobrar</dt><dd className="t-num">{M(r.resumen.porCobrar)} <span className="t-subtle">en {num(r.resumen.cuotasPendientes)} cuotas</span></dd>
           </dl>
 
+          {(r.resumen.sacaVentas > 0 || r.resumen.sacaCobros > 0 || r.resumen.fusionados > 0 || r.protegidos.length > 0) && (
+            <div className="stack-2">
+              <span className="t-label">Para que no se duplique: se sincroniza con la planilla</span>
+              <dl className="dl">
+                {(r.resumen.sacaVentas > 0 || r.resumen.sacaCobros > 0) && (
+                  <><dt>Se sacan</dt><dd className="t-num">{num(r.resumen.sacaVentas)} ventas · {num(r.resumen.sacaCuotas)} cuotas · {num(r.resumen.sacaCobros)} cobros ({M(r.resumen.sacaMonto)})
+                    <span className="t-subtle"> — estaban importados y la planilla ya no los trae con ese dato (se editó la fila o se borró).</span></dd></>
+                )}
+                {r.resumen.fusionados > 0 && (
+                  <><dt>Se unen</dt><dd className="t-num">{num(r.resumen.fusionados)} cobros
+                    <span className="t-subtle"> — ya los había conciliado una pasarela: el de la planilla toma su comisión real y el otro se saca.</span></dd></>
+                )}
+                {r.protegidos.length > 0 && (
+                  <><dt>Se dejan</dt><dd className="t-num">{num(r.protegidos.length)}
+                    <span className="t-subtle"> — sobran pero tienen datos cargados en la app: revisalos a mano.</span></dd></>
+                )}
+              </dl>
+            </div>
+          )}
+
           {creados.length > 0 && (
             <div className="stack-2">
               <span className="t-label">Nombres que la app no tenía: se agregan</span>
@@ -132,9 +153,10 @@ export function ImportarPlanilla({ onCerrar, onListo }: { onCerrar: () => void; 
           )}
 
           <Ayuda titulo="Se puede importar de nuevo" icono={<Info size={18} />}>
-            Si esta planilla ya se había importado, lo que estaba se actualiza y lo nuevo se suma: no se duplica
-            nada. Mientras se siga cargando en la planilla, la planilla manda; lo que se cargue en la app para esas
-            mismas ventas puede pisarse al reimportar.
+            Si esta planilla ya se había importado, lo que estaba se actualiza, lo nuevo se suma y lo que la planilla
+            ya no trae (porque se editó la fila o se borró) se saca: no se duplica nada. Para sacar, la hoja tiene que
+            estar completa (llegar hasta donde llegaba lo ya importado). Mientras se siga cargando en la planilla, la
+            planilla manda; lo que se cargue en la app para esas mismas ventas puede pisarse al reimportar.
           </Ayuda>
         </div>
       )}

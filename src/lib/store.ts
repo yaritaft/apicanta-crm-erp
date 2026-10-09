@@ -22,7 +22,7 @@ import {
 import { pagoDesdeMovimiento, tasaEstimada } from "./conciliacion";
 import { cobrosConOtraTasa, conTasa } from "./finanzas";
 import { ventasParaAtar, webinarNuevoDeProyecto, webinarsQueFaltan } from "./atar-webinars";
-import { caracteristicaDePago, montoArsDe, tipoVentaDePago, type ResultadoImport } from "./angelo";
+import { caracteristicaDePago, estadoDespuesDeImportar, montoArsDe, tipoVentaDePago, type ResultadoImport } from "./angelo";
 import { claveEmail, completar } from "./contactos";
 import { feeDelPago, feeDesconocido, parcheDeCobro, type ParcheDeCobro } from "./completar-cobros";
 import { construirSemilla, estadoVacio } from "./seed";
@@ -37,7 +37,7 @@ import { puedeCargarDevolucion, puedeDarDeBaja, puedeEditar, TIPOS_POR_DEFECTO, 
 import { esDevolucionConfirmada } from "./devoluciones";
 import { atarPropuesta, conciliarReembolsos, type ReembolsoCrudo, type ResultadoReembolsos } from "./reembolsos";
 import {
-  cambiosDeChequeo, COLUMNAS_QUE_PONE_LA_BASE, conChequeo, conComprobanteNuevo, puedeCambiarComprobante, puedeUsarCasillero,
+  cambiosDeChequeo, conChequeo, conComprobanteNuevo, puedeCambiarComprobante, puedeUsarCasillero,
   quienEs, ROL_DE_CASILLERO, sinColumnasDelControl, type CasilleroChequeo, type VeredictoChequeo,
 } from "./control-cobros";
 
@@ -2657,45 +2657,20 @@ export const acciones = {
      reimportar la planilla las veces que haga falta sin duplicar nada. */
   importarPlanilla(r: ResultadoImport): void {
     const e = snapshot();
-    const reemplazar = <T extends { id: ID }>(lista: T[], nuevos: T[]): T[] => {
-      const ids = new Set(nuevos.map((x) => x.id));
-      return [...nuevos, ...lista.filter((x) => !ids.has(x.id))];
-    };
-    /* Una cuota que el plan nuevo ya no tiene se borra, salvo que tenga un
-       cobro cargado en la app (no en la planilla): ese no se pierde. */
-    const pagosImportados = new Set(r.pagos.map((p) => p.id));
-    const pagoViejo = new Map(e.pagos.map((p) => [p.id, p] as const));
-    const conCobroPropio = new Set(e.pagos.filter((p) => !pagosImportados.has(p.id)).map((p) => p.cuotaId));
-    const sobran = new Set(r.cuotasQueSobran.filter((id) => !conCobroPropio.has(id)));
+    /* Cómo queda todo y qué hay que sacar: lib/angelo.ts (estadoDespuesDeImportar), la misma cuenta que prueban las pruebas. */
+    const x = estadoDespuesDeImportar(e, r);
 
     const ajustes = r.proyectos.length
       ? { ...e.ajustes, proyectos: [...(e.ajustes.proyectos ?? []), ...r.proyectos] }
       : e.ajustes;
+    const sacan = r.resumen.sacaVentas || r.resumen.sacaCobros
+      ? ` Se sacaron ${r.resumen.sacaVentas} ventas y ${r.resumen.sacaCobros} cobros que la planilla ya no trae.` : "";
     const { lista, nuevo } = registrar(
       e, "transaccion", "planilla-angelo", "Planilla de Angelo", "importo",
-      `Se importó la hoja Ventas: ${r.resumen.ventas} ventas y ${r.resumen.cobros} cobros de ${r.resumen.personas} personas (${r.resumen.filas} filas).`,
+      `Se importó la hoja Ventas: ${r.resumen.ventas} ventas y ${r.resumen.cobros} cobros de ${r.resumen.personas} personas (${r.resumen.filas} filas).${sacan}`,
     );
 
-    guardar({
-      ...e,
-      ajustes,
-      equipo: reemplazar(e.equipo, r.equipo),
-      productos: reemplazar(e.productos, r.productos),
-      procesadores: reemplazar(e.procesadores, r.procesadores),
-      embudos: reemplazar(e.embudos, r.embudos),
-      contactos: reemplazar(e.contactos, r.contactos),
-      leads: reemplazar(e.leads, r.leads),
-      ventas: reemplazar(e.ventas, r.ventas),
-      cuotas: reemplazar(e.cuotas.filter((c) => !sobran.has(c.id)), r.cuotas),
-      /* Reimportar no borra lo que ya se chequeó en la app ni quién cargó el cobro. */
-      pagos: reemplazar(e.pagos, r.pagos.map((n) => {
-        const viejo = pagoViejo.get(n.id);
-        if (!viejo) return n;
-        const control = Object.fromEntries(COLUMNAS_QUE_PONE_LA_BASE.map((k) => [k, (viejo as unknown as Record<string, unknown>)[k]]));
-        return { ...n, ...control } as Pago;
-      })),
-      actividad: lista,
-    });
+    guardar({ ...e, ...x.estado, ajustes, actividad: lista });
 
     /* En orden: primero lo que los demás nombran. */
     if (r.equipo.length) empujar({ tipo: "upsert", tabla: "equipo", filas: r.equipo });
@@ -2708,7 +2683,12 @@ export const acciones = {
     empujarEnLotes("ventas", r.ventas);
     empujarEnLotes("cuotas", r.cuotas);
     empujarEnLotes("pagos", r.pagos);
-    if (sobran.size) empujar({ tipo: "delete", tabla: "cuotas", ids: [...sobran] });
+    /* Los cobros de la pasarela pasan a apuntar al cobro de la planilla ANTES de sacar el viejo. */
+    if (x.movimientosFusionados.length) empujarEnLotes("movimientos", x.movimientosFusionados);
+    /* Sacar lo que sobra, en orden: primero los cobros, después las cuotas y al final las ventas. */
+    if (x.quitaPagos.length) empujar({ tipo: "delete", tabla: "pagos", ids: x.quitaPagos });
+    if (x.quitaCuotas.length) empujar({ tipo: "delete", tabla: "cuotas", ids: x.quitaCuotas });
+    if (x.quitaVentas.length) empujar({ tipo: "delete", tabla: "ventas", ids: x.quitaVentas });
     empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
   },
 

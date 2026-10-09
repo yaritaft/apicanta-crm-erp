@@ -1,5 +1,5 @@
 import type {
-  Contacto, Cuota, Embudo, EstadoApp, ID, IngresoComunidad, Lead, MiembroEquipo, Pago, Procesador,
+  Contacto, Cuota, Embudo, EstadoApp, ID, IngresoComunidad, Lead, MiembroEquipo, Movimiento, Pago, Procesador,
   Producto, TipoVentaPago, Venta, Webinar,
 } from "./types";
 
@@ -185,6 +185,9 @@ export function webinarDeProyecto(proyecto: string | undefined, webinars: Webina
    seguir cargando en la planilla mientras conviven las dos.
    ================================================================== */
 
+/* Una fila de la hoja que no se importó porque su fecha no se entiende. */
+export interface FilaDescartada { fila: number; texto: string; monto: number }
+
 export interface FilaVentas {
   /* El número de fila en la hoja, para los avisos. */
   fila: number;
@@ -262,6 +265,9 @@ export function fechaPlanilla(crudo: string): string | null {
   else if (dmy) { d = +dmy[1]; m = +dmy[2]; y = dmy[3].length === 2 ? 2000 + +dmy[3] : +dmy[3]; }
   else return null;
   if (!(m >= 1 && m <= 12 && d >= 1 && d <= 31)) return null;
+  /* Un año de tres dígitos («8/10/0206») es un error de tipeo: antes entraba como
+     «206-10-08» y dejaba un cobro con una fecha imposible. */
+  if (!(y >= 2015 && y <= 2100)) return null;
   return `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}T15:00:00.000Z`;
 }
 
@@ -269,21 +275,27 @@ const siNo = (s: string) => /^(true|verdadero|si|sí|x|1|yes)$/i.test((s ?? "").
 
 /** Las filas de la hoja a partir de la tabla (la primera fila son los
  *  encabezados). Las columnas se buscan por nombre: el orden no importa. */
-export function leerFilasVentas(tabla: string[][]): { filas: FilaVentas[]; faltan: string[] } {
-  if (tabla.length === 0) return { filas: [], faltan: [...COLUMNAS_VENTAS] };
+export function leerFilasVentas(tabla: string[][]): { filas: FilaVentas[]; faltan: string[]; descartadas: FilaDescartada[] } {
+  if (tabla.length === 0) return { filas: [], faltan: [...COLUMNAS_VENTAS], descartadas: [] };
   const cab = tabla[0].map((h) => normalizarTexto(h));
   const col = (nombre: string) => cab.indexOf(normalizarTexto(nombre));
   const imprescindibles = ["Fecha del pago", "Email", "Servicio adquirido", "Monto abonado USD", "Valor total de la venta"];
   const faltan = imprescindibles.filter((n) => col(n) < 0);
-  if (faltan.length) return { filas: [], faltan };
+  if (faltan.length) return { filas: [], faltan, descartadas: [] };
   const idx: Record<string, number> = {};
   for (const n of COLUMNAS_VENTAS) idx[n] = col(n);
   const v = (fila: string[], n: string) => (idx[n] >= 0 ? (fila[idx[n]] ?? "").trim() : "");
 
   const filas: FilaVentas[] = [];
+  const descartadas: FilaDescartada[] = [];
   tabla.slice(1).forEach((f, k) => {
-    const fecha = fechaPlanilla(v(f, "Fecha del pago"));
-    if (!fecha) return;
+    const textoFecha = v(f, "Fecha del pago");
+    const fecha = fechaPlanilla(textoFecha);
+    if (!fecha) {
+      /* Una fila vacía no se avisa; una con una fecha que no se entiende (o con un año imposible) sí: sin esto el cobro se perdía en silencio. */
+      if (textoFecha) descartadas.push({ fila: k + 2, texto: textoFecha.slice(0, 30), monto: numeroPlanilla(v(f, "Monto abonado USD")) });
+      return;
+    }
     const tc = numeroPlanilla(v(f, "Tipo de cambio ARS"));
     const ars = numeroPlanilla(v(f, "Monto abonado ARS"));
     filas.push({
@@ -306,7 +318,7 @@ export function leerFilasVentas(tabla: string[][]): { filas: FilaVentas[]; falta
       referidorTelefono: v(f, "Número de teléfono"), ingresoComunidad: v(f, "Ingreso a la comunidad"),
     });
   });
-  return { filas, faltan: [] };
+  return { filas, faltan: [], descartadas };
 }
 
 /** La "Próxima fecha estimada de pagos" de la hoja Estado_Clientes, por
@@ -350,6 +362,16 @@ export interface ResultadoImport {
   pagos: Pago[];
   /* Cuotas de ventas ya importadas que el plan nuevo ya no tiene. */
   cuotasQueSobran: ID[];
+  /* Lo que se importó antes y la planilla ya no tiene con ese id (se editó la fila y cambió el id,
+     o se borró): se saca, para que reimportar sincronice en vez de duplicar. Sólo si el archivo
+     llega hasta donde llegaba lo ya importado, y nunca lo que tenga datos cargados en la app. */
+  ventasQueSobran: ID[];
+  pagosQueSobran: ID[];
+  /* Los cobros de la planilla que son el mismo que uno que ya conciliaron las pasarelas: el cobro
+     de la planilla toma el cobro de la pasarela (su comisión real y su chequeo) y el otro se saca. */
+  fusiones: FusionDeCobros[];
+  /* Lo que sobraba pero se dejó porque tiene datos cargados en la app: para mirarlo a mano. */
+  protegidos: { tipo: "venta" | "pago"; id: ID; motivo: string }[];
   /* Lo que la planilla nombra y la app no tenía: se crea. */
   equipo: MiembroEquipo[];
   productos: Producto[];
@@ -360,10 +382,19 @@ export interface ResultadoImport {
   resumen: {
     filas: number; personas: number; personasNuevas: number; ventas: number; cobros: number;
     cuotasPendientes: number; cobrado: number; facturado: number; porCobrar: number;
+    /* Lo que se saca (sincronizar) y los cobros que se fusionaron con los de las pasarelas. */
+    sacaVentas: number; sacaCuotas: number; sacaCobros: number; sacaMonto: number; fusionados: number;
   };
 }
 
+/* El cobro viejo (creado al conciliar una pasarela) pasa a ser el de la planilla. */
+export interface FusionDeCobros { viejoId: ID; nuevoId: ID; movimientoId: ID }
+
 export interface OpcionesImport {
+  /* Las filas que `leerFilasVentas` no pudo leer por su fecha: se avisan. */
+  descartadas?: FilaDescartada[];
+  /* Sacar lo que la planilla ya no tiene (por defecto sí; sólo actúa si el archivo cubre todo lo ya importado). */
+  sincronizar?: boolean;
   /* "email|servicio" → próxima fecha estimada de pago (hoja Estado_Clientes). */
   proximasFechas?: Map<string, string>;
   /* Servicios sobre los que comisiona el director (hoja Config). */
@@ -373,6 +404,111 @@ export interface OpcionesImport {
 }
 
 type Grupo = { filas: FilaVentas[]; soloReserva: boolean };
+
+const diaDe = (iso: string) => String(iso).slice(0, 10);
+const DIA_MS = 86400000;
+/* Para sincronizar, al menos esta parte de los cobros ya importados tiene que seguir en el archivo con el mismo id. */
+const MINIMO_QUE_COINCIDE = 0.8;
+/* Las columnas de `pagos` que pone la base (quién cargó y los chequeos). Es la misma lista que
+   COLUMNAS_QUE_PONE_LA_BASE de lib/control-cobros.ts, repetida acá porque este archivo no importa
+   nada en tiempo de ejecución (corre con Node suelto); una prueba comprueba que no se desfasen. */
+export const COLUMNAS_DE_CONTROL_DEL_COBRO: readonly string[] = [
+  "chequeoDirector", "chequeoDirectorPor", "chequeoDirectorEn", "chequeoDirectorNota",
+  "chequeoFinanzas", "chequeoFinanzasPor", "chequeoFinanzasEn", "chequeoFinanzasNota", "cargadoPor",
+];
+
+/* Lo que ya estaba importado y el archivo nuevo no trae con el mismo id, y los cobros que ya habían
+   conciliado las pasarelas. Muta los cobros nuevos que se fusionan (toman el movimiento, la comisión real
+   y el chequeo del viejo). */
+function sincronizarConLaBase(
+  e: EstadoApp, nuevo: { ventas: Venta[]; cuotas: Cuota[]; pagos: Pago[]; filas: FilaVentas[] }, sincronizar: boolean,
+  avisar: (tipo: string, texto: string, fila?: number) => void,
+) {
+  const r2 = (n: number) => Math.round(n * 100) / 100;
+  const out = {
+    ventas: [] as ID[], cuotasDeVentas: [] as ID[], pagos: [] as ID[], monto: 0,
+    fusiones: [] as FusionDeCobros[], protegidos: [] as { tipo: "venta" | "pago"; id: ID; motivo: string }[],
+  };
+  const idsPagosNuevos = new Set(nuevo.pagos.map((p) => p.id));
+  const idsPagosViejos = new Set(e.pagos.map((p) => p.id));
+
+  /* --- Los cobros que ya conciliaron las pasarelas --- */
+  const usados = new Set<ID>();
+  for (const n of nuevo.pagos) {
+    if (idsPagosViejos.has(n.id)) continue;
+    const tn = new Date(n.fecha).getTime();
+    const cand = e.pagos.filter((q) => !q.id.includes("pag_ef_") && q.movimientoId && !usados.has(q.id)
+      && q.cuotaId === n.cuotaId && q.procesadorId === n.procesadorId && Math.abs(q.monto - n.monto) <= 0.01
+      && Math.abs(new Date(q.fecha).getTime() - tn) <= 3 * DIA_MS);
+    if (cand.length !== 1) continue;
+    const q = cand[0];
+    usados.add(q.id);
+    Object.assign(n, {
+      movimientoId: q.movimientoId, feeMonto: q.feeMonto, feeRate: q.feeRate, feeManual: q.feeManual, chequeado: true,
+      referencia: n.referencia || q.referencia,
+      ...Object.fromEntries(COLUMNAS_DE_CONTROL_DEL_COBRO.map((k) => [k, (q as unknown as Record<string, unknown>)[k]]).filter(([, v]) => v !== undefined && v !== null)),
+    });
+    out.fusiones.push({ viejoId: q.id, nuevoId: n.id, movimientoId: q.movimientoId! });
+    out.pagos.push(q.id);
+  }
+
+  if (!sincronizar) return out;
+
+  /* --- Sólo se saca algo si el archivo es «la misma planilla, editada»: con una hoja recortada o de otra fecha,
+         «lo que falta» no sería lo que se borró sino lo que no se subió. Se mide cuántos cobros ya importados
+         siguen apareciendo con el mismo id: una planilla con algunas filas corregidas conserva casi todos. --- */
+  const base = e.pagos.filter((p) => p.id.includes("pag_ef_"));
+  const fechasArchivo = nuevo.filas.map((f) => diaDe(f.fecha)).sort();
+  if (base.length === 0 || fechasArchivo.length === 0) return out;
+  const desde = fechasArchivo[0], hasta = fechasArchivo[fechasArchivo.length - 1];
+  const coinciden = base.filter((p) => idsPagosNuevos.has(p.id)).length;
+  if (coinciden / base.length < MINIMO_QUE_COINCIDE) {
+    avisar("archivo-parcial", `El archivo trae el ${Math.round((coinciden / base.length) * 100)}% de los cobros que ya estaban importados (llega del ${desde} al ${hasta}): parece una hoja recortada o de otra fecha, así que no se sacó nada. Para sincronizar, subí la hoja Ventas completa.`);
+    return out;
+  }
+
+  const idsVentasN = new Set(nuevo.ventas.map((v) => v.id));
+  const devueltas = new Set((e.devoluciones ?? []).map((d) => d.ventaId).filter((x): x is ID => Boolean(x)));
+  const tieneDatosDeLaApp = (p: Pago) => Boolean(p.movimientoId || p.comprobante || p.feeManual || p.chequeoDirector || p.chequeoFinanzas);
+  const cuotasPorVenta = new Map<ID, Cuota[]>();
+  for (const c of e.cuotas) cuotasPorVenta.set(c.ventaId, [...(cuotasPorVenta.get(c.ventaId) ?? []), c]);
+  const pagosPorCuota = new Map<ID, Pago[]>();
+  for (const p of e.pagos) pagosPorCuota.set(p.cuotaId, [...(pagosPorCuota.get(p.cuotaId) ?? []), p]);
+  const yaSacados = new Set(out.pagos);
+
+  /* Ventas importadas que la planilla ya no trae (con sus cuotas y cobros). */
+  for (const v of e.ventas) {
+    if (!v.id.includes("ven_ef_") || idsVentasN.has(v.id)) continue;
+    const cuotas = cuotasPorVenta.get(v.id) ?? [];
+    const pagos = cuotas.flatMap((c) => pagosPorCuota.get(c.id) ?? []);
+    const motivo = devueltas.has(v.id) ? "tiene una devolución cargada"
+      : v.sesionId ? "está atada a una llamada"
+      : cuotas.some((c) => c.closerId) ? "tiene cuotas pasadas a otro closer"
+      : pagos.some((p) => !p.id.includes("pag_ef_") && !yaSacados.has(p.id)) ? "tiene cobros cargados en la app"
+      : pagos.some((p) => tieneDatosDeLaApp(p) && !yaSacados.has(p.id)) ? "sus cobros ya tienen datos de la app (pasarela, comprobante o chequeo)"
+      : "";
+    if (motivo) { out.protegidos.push({ tipo: "venta", id: v.id, motivo }); continue; }
+    out.ventas.push(v.id);
+    out.cuotasDeVentas.push(...cuotas.map((c) => c.id));
+    for (const p of pagos) if (!yaSacados.has(p.id)) { out.pagos.push(p.id); out.monto = r2(out.monto + p.monto); yaSacados.add(p.id); }
+  }
+
+  /* Cobros importados que la planilla ya no trae con ese id, dentro de las ventas que siguen. */
+  const ventasQueSacan = new Set(out.ventas);
+  const cuotaDe = new Map(e.cuotas.map((c) => [c.id, c] as const));
+  for (const p of e.pagos) {
+    if (!p.id.includes("pag_ef_") || idsPagosNuevos.has(p.id) || yaSacados.has(p.id)) continue;
+    const c = cuotaDe.get(p.cuotaId);
+    if (c && ventasQueSacan.has(c.ventaId)) continue;
+    if (diaDe(p.fecha) < desde || diaDe(p.fecha) > hasta) continue;
+    if (tieneDatosDeLaApp(p)) { out.protegidos.push({ tipo: "pago", id: p.id, motivo: "ya tiene datos de la app (pasarela, comprobante o chequeo)" }); continue; }
+    out.pagos.push(p.id); out.monto = r2(out.monto + p.monto); yaSacados.add(p.id);
+  }
+  if (out.protegidos.length) {
+    avisar("sobran-con-datos", "Cobros o ventas que la planilla ya no trae pero tienen datos cargados en la app: se dejaron, revisalos a mano.");
+  }
+  return out;
+}
 
 export function importarPlanilla(e: EstadoApp, filasCrudas: FilaVentas[], opciones: OpcionesImport = {}): ResultadoImport {
   const r2 = (n: number) => Math.round(n * 100) / 100;
@@ -679,6 +815,13 @@ export function importarPlanilla(e: EstadoApp, filasCrudas: FilaVentas[], opcion
   const idsCuotas = new Set(cuotas.map((c) => c.id));
   const cuotasQueSobran = e.cuotas.filter((c) => idsVentas.has(c.ventaId) && !idsCuotas.has(c.id)).map((c) => c.id);
 
+  /* ---------- Sincronizar: lo que la planilla ya no tiene con ese id ---------- */
+  const sinc = sincronizarConLaBase(e, { ventas, cuotas, pagos, filas: filasCrudas }, opciones.sincronizar !== false, avisar);
+  for (const id of sinc.cuotasDeVentas) if (!cuotasQueSobran.includes(id)) cuotasQueSobran.push(id);
+  for (const d of opciones.descartadas ?? []) {
+    avisar("fecha-invalida", "Filas con una fecha que no se entiende (por ejemplo un año de tres dígitos): NO se importaron. Corregilas en la planilla y volvé a importar.", d.fila);
+  }
+
   /* Proyectos que la lista no tenía. */
   const lista = new Set(e.ajustes.proyectos ?? []);
   const proyectos = [...new Set(ventas.map((v) => v.proyecto).filter((x): x is string => Boolean(x) && !lista.has(x!)))];
@@ -688,6 +831,7 @@ export function importarPlanilla(e: EstadoApp, filasCrudas: FilaVentas[], opcion
     contactos: [...contactosNuevos.values()],
     leads: [...leadsNuevos.values()],
     ventas, cuotas, pagos, cuotasQueSobran,
+    ventasQueSobran: sinc.ventas, pagosQueSobran: sinc.pagos, fusiones: sinc.fusiones, protegidos: sinc.protegidos,
     equipo: creados.equipo, productos: creados.productos, procesadores: creados.procesadores, embudos: creados.embudos,
     proyectos,
     avisos: [...avisos.values()],
@@ -701,6 +845,53 @@ export function importarPlanilla(e: EstadoApp, filasCrudas: FilaVentas[], opcion
       cobrado: r2(pagos.reduce((a, p) => a + p.monto, 0)),
       facturado: r2(ventas.filter((v) => v.estado !== "cancelada").reduce((a, v) => a + v.precioAcordado, 0)),
       porCobrar: r2(cuotas.filter((c) => c.estado === "pendiente").reduce((a, c) => a + c.monto, 0)),
+      sacaVentas: sinc.ventas.length, sacaCuotas: sinc.cuotasDeVentas.length, sacaCobros: sinc.pagos.length, sacaMonto: sinc.monto, fusionados: sinc.fusiones.length,
     },
   };
 }
+
+/** Cómo queda el estado después de importar, y qué hay que sacar de la nube (en ese orden: cobros, cuotas, ventas).
+ *  Lo que ya estaba con el mismo id se reemplaza (menos lo que puso la base: quién cargó y los chequeos), lo nuevo se
+ *  suma, lo que la planilla ya no trae se saca, y los cobros de pasarela que se fusionaron pasan a apuntar al cobro de
+ *  la planilla. Pura: la usa la acción del store y las pruebas. */
+export function estadoDespuesDeImportar(e: EstadoApp, r: ResultadoImport) {
+  const reemplazar = <T extends { id: ID }>(lista: T[], nuevos: T[]): T[] => {
+    const ids = new Set(nuevos.map((x) => x.id));
+    return [...nuevos, ...lista.filter((x) => !ids.has(x.id))];
+  };
+  const pagosImportados = new Set(r.pagos.map((p) => p.id));
+  const pagoViejo = new Map(e.pagos.map((p) => [p.id, p] as const));
+  const quitaPagos = new Set(r.pagosQueSobran ?? []);
+  const quitaVentas = new Set(r.ventasQueSobran ?? []);
+  /* Una cuota que el plan nuevo ya no tiene se borra, salvo que tenga un cobro cargado en la app (no en la planilla):
+     ese no se pierde. Lo que se saca no cuenta como «cobro de la app». */
+  const conCobroPropio = new Set(e.pagos.filter((p) => !pagosImportados.has(p.id) && !quitaPagos.has(p.id)).map((p) => p.cuotaId));
+  const quitaCuotas = new Set(r.cuotasQueSobran.filter((id) => !conCobroPropio.has(id)));
+  const nuevoDeMovimiento = new Map((r.fusiones ?? []).map((f) => [f.movimientoId, f.nuevoId] as const));
+  const pagoNuevo = new Map(r.pagos.map((p) => [p.id, p] as const));
+  const cuotaDe = new Map(r.cuotas.map((c) => [c.id, c] as const));
+  const movimientosFusionados = e.movimientos.filter((m) => nuevoDeMovimiento.has(m.id)).map((m) => {
+    const p = pagoNuevo.get(nuevoDeMovimiento.get(m.id)!);
+    return { ...m, pagoId: p?.id, cuotaId: p?.cuotaId, ventaId: (p && cuotaDe.get(p.cuotaId)?.ventaId) ?? m.ventaId };
+  });
+  const porId = new Map(movimientosFusionados.map((m) => [m.id, m] as const));
+  return {
+    estado: {
+      equipo: reemplazar(e.equipo, r.equipo), productos: reemplazar(e.productos, r.productos),
+      procesadores: reemplazar(e.procesadores, r.procesadores), embudos: reemplazar(e.embudos, r.embudos),
+      contactos: reemplazar(e.contactos, r.contactos), leads: reemplazar(e.leads, r.leads),
+      ventas: reemplazar(e.ventas.filter((v) => !quitaVentas.has(v.id)), r.ventas),
+      cuotas: reemplazar(e.cuotas.filter((c) => !quitaCuotas.has(c.id)), r.cuotas),
+      movimientos: e.movimientos.map((m) => porId.get(m.id) ?? m),
+      /* Reimportar no borra lo que ya se chequeó en la app ni quién cargó el cobro. */
+      pagos: reemplazar(e.pagos.filter((p) => !quitaPagos.has(p.id)), r.pagos.map((n) => {
+        const viejo = pagoViejo.get(n.id);
+        if (!viejo) return n;
+        const control = Object.fromEntries(COLUMNAS_DE_CONTROL_DEL_COBRO.map((k) => [k, (viejo as unknown as Record<string, unknown>)[k]]));
+        return { ...n, ...control } as Pago;
+      })),
+    },
+    quitaPagos: [...quitaPagos], quitaCuotas: [...quitaCuotas], quitaVentas: [...quitaVentas], movimientosFusionados,
+  };
+}
+
