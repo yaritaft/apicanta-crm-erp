@@ -2,10 +2,10 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   aContactarHoy, aplicarCadencia, aplicarContacto, aplicarCorreccion, aplicarDejoDeContestar, aplicarNoContesto,
-  configSeguimiento, CONFIG_POR_DEFECTO, diasEntre, filasDeSeguimiento, filtrarSeguimiento, idSeguimiento,
-  formatoDia, proximoDe, resumenDeSeguimiento, seguimientoVacio, SIN_FILTROS, sumarDias, textoDeAtraso,
+  configSeguimiento, CONFIG_POR_DEFECTO, diasEntre, filasDeSeguimiento, idSeguimiento,
+  formatoDia, proximoDe, resumenDeSeguimiento, seguimientoVacio, sumarDias, textoDeAtraso,
 } from "@/lib/seguimiento";
-import type { EstadoApp, SeguimientoAlumno, Testimonio } from "@/lib/types";
+import type { EstadoApp, SeguimientoAlumno } from "@/lib/types";
 
 const HOY = "2026-10-07";
 const CFG = CONFIG_POR_DEFECTO;
@@ -170,21 +170,6 @@ test("el resumen cuenta sólo a los activos y los pendientes de CV y LinkedIn", 
   assert.equal(r.noContestan, 1);
   assert.equal(r.sinCv, 3);
   assert.equal(r.sinLinkedin, 4);
-});
-
-test("los filtros combinan: situación, CV, país, cadencia, testimonio y búsqueda sin tildes", () => {
-  const t: Testimonio = { id: "t1", alumnoId: "a3", estado: "grabado", link: "", fecha: "2026-10-01", notas: "", creadoEn: "2026-10-01T10:00:00.000Z" };
-  const filas = filasDeSeguimiento(estado({ testimonios: [t] }), HOY);
-  const nombres = (f: Partial<typeof SIN_FILTROS>) => filtrarSeguimiento(filas, { ...SIN_FILTROS, ...f }).map((x) => x.alumno.nombre);
-  assert.deepEqual(nombres({ situacion: "vencido" }), ["Ana", "Beto"]);
-  assert.deepEqual(nombres({ cv: "si" }), ["Cris"]);
-  assert.deepEqual(nombres({ cv: "no", situacion: "vencido" }), ["Ana", "Beto"]);
-  assert.deepEqual(nombres({ pais: "chile" }), ["Ana"]);
-  assert.deepEqual(nombres({ cadencia: 7 }), ["Cris"]);
-  assert.deepEqual(nombres({ testimonio: "grabado" }), ["Cris"]);
-  assert.deepEqual(nombres({ testimonio: "sin" }), ["Ana", "Beto", "Dani", "Eli"]);
-  assert.deepEqual(nombres({ q: "react" }), ["Ana"]);
-  assert.deepEqual(nombres({ q: "BETO" }), ["Beto"]);
 });
 
 test("sin contacto ni lead, el país y los datos salen del alumno o del mail", () => {

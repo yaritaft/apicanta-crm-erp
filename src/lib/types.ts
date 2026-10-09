@@ -329,26 +329,138 @@ export interface SeguimientoAlumno {
   cvCorregidoEn: string | null;
   linkedinCorregido: boolean;
   linkedinCorregidoEn: string | null;
+  /* Los «Comentarios» de la planilla de Lili: notas internas de seguimiento. */
   notas: string;
+  actualizadoEn: string;
+  actualizadoPor: string;
+
+  /* ---- La ficha del cliente, como la lleva Lili (respuesta del 09/10; lib/clientes-cs.ts) ----
+     Lo que ya sabe el alumno (nombre, mail, país, inicio, plan) o su venta (closer, programa) no se repite
+     acá: la tabla lo lee de donde está. Estos son los datos que sólo Customer Success lleva. Nunca vienen
+     `undefined`: un campo vaciado va como vacío o null, así llega a la base (que ignora lo que falta). */
+  /* El N.º de alumno: correlativo, para nombrarlo igual en todos lados. */
+  numero: number | null;
+  /* Si la persona no tiene contacto en la app (un alumno importado): su teléfono. */
+  telefono: string;
+  edad: number | null;
+  /* Frontend, Backend, Full Stack, Data Engineer o Mobile Developer (la lista se ajusta). */
+  stack: string;
+  dni: string;
+  domicilio: string;
+  /* Hackear IT, Hackear Biz, Principals o Principal Mastermind: puede estar en más de uno. */
+  programas: string[];
+  /* Cómo paga, lo acordado con el closer («Pago único», «3 cuotas»…). Sin dato, sale de las cuotas de su venta. */
+  planDePago: string;
+  /* Meses de programa: normalmente 3; Hackear Biz 6 y Principals 12. */
+  duracionMeses: number | null;
+  /* El día en que egresa. Sin dato, es el inicio más la duración. */
+  fechaEgreso: string | null;
+  /* 0, 1, 2 o 3 sesiones con el mentor, según lo acordado con el closer. */
+  sesionesMentor: number | null;
+  contactoInicial: string | null;
+  contactoSemana: string | null;
+  /* completos, downsell o sin acceso. */
+  acceso: string;
+  /* Dónde va: onboarding, módulo 0 a 12, módulo IA, Take Home Challenge, avanzando, no avanzando, no contesta… */
+  followUp: string;
+  garantia: string;
+  accesoWhatsapp: boolean;
+  accesoZoom: boolean;
+  accesoWibo: boolean;
+  /* Firmado o Pendiente (vacío: sin dato). */
+  contratoFirmado: string;
+  /* Enviado, falta firma, firmado y subido a Drive… */
+  estadoContrato: string;
+  /* Quién lo cerró, si el alumno no viene de una venta de la app (un alumno importado). */
+  closerNombre: string;
+  /* Quién corrige su CV y su LinkedIn (hoy, Aldana). */
+  responsableCv: string;
+  /* El reporte semanal marcado a mano, mientras los reportes no llegan solos: se usa sólo si el alumno no tiene reportes cargados. */
+  reporteManual: ReporteManual | null;
+}
+
+export interface ReporteManual {
+  /* ¿Completó el de esta semana? */
+  completo: boolean;
+  /* ¿Sigue activo, o dejó de reportar? */
+  activo: boolean;
+  /* Cuántas semanas lleva sin completarlo. */
+  semanasSin: number;
+  /* El día en que se marcó («2026-10-07»). */
+  en: string;
+}
+
+/* El testimonio de un alumno, con las columnas de la pestaña «Testimonios» de Lili. Los datos de la persona
+   (edad, inicio, teléfono, stack, país) se leen de su ficha de cliente: no se cargan de nuevo acá. */
+export interface Testimonio {
+  id: ID;
+  alumnoId: ID;
+  /* ¿Se agendó la llamada de grabación? agendada, no agendada, pendiente de agendar o no quiere grabar. */
+  followUp: string;
+  /* El día en que se grabó. */
+  fechaGrabacion: string | null;
+  /* Con quién grabó: Yari o Mariano. */
+  conQuien: string;
+  /* Cómo salió el pitch de renovación que se hace después de la llamada del testimonio. */
+  resell: string;
+  /* pendiente de subir, subido a Drive, no quiso grabar o subido a YouTube. */
+  estadoVideo: string;
+  /* Dónde está el video: Drive, YouTube. */
+  link: string;
+  tecnologias: string;
+  situacionPrevia: string;
+  situacionActual: string;
+  notas: string;
+  creadoEn: string;
+  /* Del primer modelo (pedido / grabado / publicado). Ya no se escriben: se leen para no perder lo que se cargó (lib/clientes-cs.ts, testimonioNormal). */
+  estado?: "pedido" | "grabado" | "publicado";
+  fecha?: string | null;
+}
+
+/* La agenda de resells de Customer Success: la llamada con el alumno para renovar (en Calendly, el evento de «auditoría»
+   o «resell»). Las que agenda Calendly entran solas (lib/calendly-sync.ts) y sus datos de contacto no se editan acá;
+   «Estado», «Cash Collect», «Caso de éxito» y «Notas» los carga Customer Success. */
+export interface Resell {
+  /* «rs_<id de la llamada>» si la trajo Calendly; propio si se cargó a mano o se importó. */
+  id: ID;
+  sesionId: ID | null;
+  fechaHora: string;
+  nombre: string;
+  email: string;
+  telefono: string;
+  closer: string;
+  /* Renueva, no renueva… Vacío: sin definir (se muestra «Agendada» o «Cancelada»). */
+  estado: string;
+  /* Lo cobrado de la renovación, en USD. */
+  cashCollect: number | null;
+  casoDeExito: boolean;
+  notas: string;
+  cancelada: boolean;
+  origen: "calendly" | "manual" | "importado";
+  creadoEn: string;
   actualizadoEn: string;
   actualizadoPor: string;
 }
 
-export type EstadoTestimonio = "pedido" | "grabado" | "publicado";
-
-export interface Testimonio {
-  id: ID;
-  alumnoId: ID;
-  estado: EstadoTestimonio;
-  /* Dónde está: el video, el posteo, la carpeta. */
-  link: string;
-  /* El día en que se pidió, grabó o publicó (según el estado). */
-  fecha: string | null;
-  notas: string;
-  creadoEn: string;
+/* Las listas de opciones de Customer Success: se ajustan en Alumnos → Clientes → Ajustar. Sin ajustar, las de Lili
+   (lib/clientes-cs.ts, LISTAS_POR_DEFECTO). */
+export interface ListasCs {
+  stacks: string[];
+  programas: string[];
+  accesos: string[];
+  followUps: string[];
+  estadosContrato: string[];
+  garantias: string[];
+  /* Testimonios. */
+  followUpsTestimonio: string[];
+  estadosVideo: string[];
+  quienGraba: string[];
+  resellsTestimonio: string[];
+  /* Agenda de resells. */
+  estadosResell: string[];
 }
 
-/* Lo que se ajusta del seguimiento (Alumnos → Seguimiento → Ajustar). Sin
+/* Lo que se ajusta del seguimiento (Alumnos → Clientes → Ajustar). Sin
    esto, los valores de siempre (lib/seguimiento.ts). */
 export interface ConfigSeguimiento {
   /* Las cadencias que se pueden elegir por alumno, en días. */
@@ -358,6 +470,8 @@ export interface ConfigSeguimiento {
   reintentoDias: number;
   /* Con tantos intentos seguidos sin respuesta, se sugiere marcarlo como «dejó de contestar». */
   intentosHastaDejar: number;
+  /* Las listas de opciones de las columnas de Customer Success (las que falten, las de siempre). */
+  listas?: Partial<ListasCs>;
 }
 
 /* ---------- Marketing (Meta) ---------- */
@@ -730,6 +844,8 @@ export interface EstadoApp {
      supabase/customer-success.sql, ninguno. */
   seguimientos?: SeguimientoAlumno[];
   testimonios?: Testimonio[];
+  /* La agenda de resells de Customer Success (supabase/customer-success-lili.sql). */
+  resells?: Resell[];
   /* Los gastos que se repiten todos los meses (software, abonos): cada mes se
      proponen con el monto del anterior y alguien los aprueba (lib/gastos-recurrentes.ts).
      Opcional: sin supabase/gastos-recurrentes.sql, ninguno. */

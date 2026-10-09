@@ -1,8 +1,6 @@
 import { claveEmail } from "./contactos";
 import { diaDeNegocio } from "./dia-negocio";
-import type {
-  Alumno, ConfigSeguimiento, Contacto, EstadoApp, EstadoTestimonio, ID, SeguimientoAlumno, Testimonio,
-} from "./types";
+import type { Alumno, ConfigSeguimiento, Contacto, EstadoApp, ID, ListasCs, SeguimientoAlumno } from "./types";
 
 /* ==================================================================
    Customer Success: el seguimiento de los alumnos (F2-09, reunión del 02/10).
@@ -14,9 +12,9 @@ import type {
    contacto, el próximo toca a los tantos días. Si no contestó, se vuelve a
    intentar a los pocos días, y después de varios intentos seguidos se
    sugiere marcarlo como «dejó de contestar». Todo eso se ajusta
-   (CONFIG_POR_DEFECTO o Ajustes.seguimiento): Lili todavía no contó cómo lo
-   lleva hoy en sus planillas y en Airtable, y los valores se corrigen cuando
-   conteste.
+   (CONFIG_POR_DEFECTO o Ajustes.seguimiento). Lo que Lili contó el 09/10 de
+   cómo lo lleva en su Airtable (las columnas de Clientes, el onboarding, la
+   semana y los ~20 días, y después una vez al mes) está en lib/clientes-cs.ts.
 
    Todo acá es puro (sin React ni base) para poder probarlo. Los días son
    «2026-10-07», del día del negocio (Argentina): no se mezclan con la hora.
@@ -29,6 +27,31 @@ export const CONFIG_POR_DEFECTO: ConfigSeguimiento = {
   intentosHastaDejar: 3,
 };
 
+/* Las listas de opciones de Customer Success que se pueden ajustar (lib/clientes-cs.ts trae las de siempre). */
+export const CLAVES_DE_LISTAS: (keyof ListasCs)[] = [
+  "stacks", "programas", "accesos", "followUps", "estadosContrato", "garantias",
+  "followUpsTestimonio", "estadosVideo", "quienGraba", "resellsTestimonio", "estadosResell",
+];
+
+/** Las listas que alguien ajustó, limpias: sin repetidos ni vacíos, de hasta 100 opciones de 60 caracteres. Una lista vacía no es un ajuste (vale la de siempre). */
+export function listasPropias(l: unknown): Partial<ListasCs> | undefined {
+  if (!l || typeof l !== "object") return undefined;
+  const out: Partial<ListasCs> = {};
+  for (const k of CLAVES_DE_LISTAS) {
+    const v = (l as Record<string, unknown>)[k];
+    if (!Array.isArray(v)) continue;
+    const vistos = new Set<string>();
+    const lista: string[] = [];
+    for (const x of v) {
+      const s = typeof x === "string" ? x.trim().slice(0, 60) : "";
+      if (s && !vistos.has(s.toLowerCase())) { vistos.add(s.toLowerCase()); lista.push(s); }
+      if (lista.length >= 100) break;
+    }
+    if (lista.length) out[k] = lista;
+  }
+  return Object.keys(out).length ? out : undefined;
+}
+
 /** La configuración que se usa: la de Ajustes, saneada, o la de siempre. */
 export function configSeguimiento(c?: Partial<ConfigSeguimiento> | null): ConfigSeguimiento {
   const cadencias = [...new Set((c?.cadencias ?? []).map((n) => Math.round(Number(n))).filter((n) => n >= 1 && n <= 365))]
@@ -39,12 +62,14 @@ export function configSeguimiento(c?: Partial<ConfigSeguimiento> | null): Config
     return Number.isFinite(x) && x >= min && x <= max ? x : defecto;
   };
   const porDefecto = entero(c?.cadenciaPorDefecto, 1, 365, CONFIG_POR_DEFECTO.cadenciaPorDefecto);
+  const listas = listasPropias(c?.listas);
   return {
     cadencias: lista,
     /* La cadencia de arranque tiene que ser una de las que se pueden elegir. */
     cadenciaPorDefecto: lista.includes(porDefecto) ? porDefecto : lista[0],
     reintentoDias: entero(c?.reintentoDias, 1, 60, CONFIG_POR_DEFECTO.reintentoDias),
     intentosHastaDejar: entero(c?.intentosHastaDejar, 1, 20, CONFIG_POR_DEFECTO.intentosHastaDejar),
+    ...(listas ? { listas } : {}),
   };
 }
 
@@ -80,6 +105,11 @@ export function seguimientoVacio(alumnoId: ID, cfg: ConfigSeguimiento, cuando = 
     intentosSinRespuesta: 0, ultimoIntento: null, dejoDeContestar: false,
     cvCorregido: false, cvCorregidoEn: null, linkedinCorregido: false, linkedinCorregidoEn: null,
     notas: "", actualizadoEn: cuando, actualizadoPor: "",
+    /* La ficha del cliente (lib/clientes-cs.ts): vacía hasta que Customer Success la cargue. */
+    numero: null, telefono: "", edad: null, stack: "", dni: "", domicilio: "", programas: [], planDePago: "",
+    duracionMeses: null, fechaEgreso: null, sesionesMentor: null, contactoInicial: null, contactoSemana: null,
+    acceso: "", followUp: "", garantia: "", accesoWhatsapp: false, accesoZoom: false, accesoWibo: false,
+    contratoFirmado: "", estadoContrato: "", closerNombre: "", responsableCv: "", reporteManual: null,
   };
 }
 
@@ -165,8 +195,6 @@ export interface FilaSeguimiento {
   dejoDeContestar: boolean;
   cvCorregido: boolean;
   linkedinCorregido: boolean;
-  /* El testimonio más reciente, si hay. */
-  testimonio: Testimonio | null;
 }
 
 export const seguimientoDelAlumno = (e: Pick<EstadoApp, "seguimientos">, alumnoId: ID) =>
@@ -175,7 +203,7 @@ export const seguimientoDelAlumno = (e: Pick<EstadoApp, "seguimientos">, alumnoI
 /* La persona detrás de cada alumno, por todos los caminos que hay (el lead, el
    contacto o, como último recurso, el mail), armada una sola vez para toda la
    lista: con cientos de alumnos y miles de leads, buscar uno por uno se nota. */
-function indiceDeContactos(e: EstadoApp) {
+export function indiceDeContactos(e: Pick<EstadoApp, "contactos" | "leads">) {
   const porId = new Map(e.contactos.map((c) => [c.id, c] as const));
   const lead = new Map(e.leads.map((l) => [l.id, l] as const));
   const porMail = new Map<string, Contacto>();
@@ -206,11 +234,6 @@ export function filasDeSeguimiento(e: EstadoApp, hoy: string): FilaSeguimiento[]
   const cfg = configSeguimiento(e.ajustes.seguimiento);
   const contactoDe = indiceDeContactos(e);
   const seg = new Map((e.seguimientos ?? []).map((s) => [s.alumnoId, s] as const));
-  const testimonio = new Map<ID, Testimonio>();
-  for (const t of e.testimonios ?? []) {
-    const antes = testimonio.get(t.alumnoId);
-    if (!antes || t.creadoEn > antes.creadoEn) testimonio.set(t.alumnoId, t);
-  }
   return e.alumnos.map((a): FilaSeguimiento => {
     const s = seg.get(a.id) ?? null;
     const base = s ?? seguimientoVacio(a.id, cfg);
@@ -232,7 +255,6 @@ export function filasDeSeguimiento(e: EstadoApp, hoy: string): FilaSeguimiento[]
       dejoDeContestar: base.dejoDeContestar,
       cvCorregido: base.cvCorregido,
       linkedinCorregido: base.linkedinCorregido,
-      testimonio: testimonio.get(a.id) ?? null,
     };
   });
 }
@@ -270,69 +292,6 @@ export function resumenDeSeguimiento(filas: FilaSeguimiento[]): ResumenSeguimien
     sinCv: cuenta((f) => !f.cvCorregido),
     sinLinkedin: cuenta((f) => !f.linkedinCorregido),
   };
-}
-
-/* ---------- filtros de la lista ---------- */
-
-export type SiNo = "" | "si" | "no";
-
-export interface FiltrosSeguimiento {
-  q: string;
-  situacion: SituacionSeguimiento | "";
-  cv: SiNo;
-  linkedin: SiNo;
-  /* 0 = todas. */
-  cadencia: number;
-  pais: string;
-  /* «sin» = nunca se le pidió. */
-  testimonio: EstadoTestimonio | "sin" | "";
-}
-
-export const SIN_FILTROS: FiltrosSeguimiento = { q: "", situacion: "", cv: "", linkedin: "", cadencia: 0, pais: "", testimonio: "" };
-
-const sinTildes = (s: string) => s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
-
-export function filtrarSeguimiento(filas: FilaSeguimiento[], f: FiltrosSeguimiento): FilaSeguimiento[] {
-  const t = sinTildes(f.q.trim());
-  const pais = sinTildes(f.pais.trim());
-  return filas.filter((x) => {
-    if (f.situacion && x.situacion !== f.situacion) return false;
-    if (f.cv && (f.cv === "si") !== x.cvCorregido) return false;
-    if (f.linkedin && (f.linkedin === "si") !== x.linkedinCorregido) return false;
-    if (f.cadencia && x.cadenciaDias !== f.cadencia) return false;
-    if (pais && sinTildes(x.pais) !== pais) return false;
-    if (f.testimonio && (f.testimonio === "sin" ? x.testimonio !== null : x.testimonio?.estado !== f.testimonio)) return false;
-    if (!t) return true;
-    return [x.alumno.nombre, x.alumno.email, x.pais, x.tecnologias, x.alumno.cohorte, x.alumno.plan]
-      .some((v) => v && sinTildes(v).includes(t));
-  });
-}
-
-/** Los países que aparecen en la lista, para el filtro. */
-export const paisesDeSeguimiento = (filas: FilaSeguimiento[]): string[] =>
-  [...new Set(filas.map((f) => f.pais).filter(Boolean))].sort((a, b) => a.localeCompare(b, "es"));
-
-/* ---------- testimonios ---------- */
-
-export const ESTADOS_TESTIMONIO: EstadoTestimonio[] = ["pedido", "grabado", "publicado"];
-
-export const TEXTO_TESTIMONIO: Record<EstadoTestimonio, string> = {
-  pedido: "Pedido", grabado: "Grabado", publicado: "Publicado",
-};
-
-/** Cuántos testimonios hay en cada estado. */
-export function cuentaDeTestimonios(ts: Testimonio[]): Record<EstadoTestimonio, number> {
-  const out: Record<EstadoTestimonio, number> = { pedido: 0, grabado: 0, publicado: 0 };
-  for (const t of ts) out[t.estado] += 1;
-  return out;
-}
-
-/** Los testimonios con el nombre del alumno, los más nuevos arriba. */
-export function testimoniosConAlumno(e: Pick<EstadoApp, "testimonios" | "alumnos">): { testimonio: Testimonio; alumno: Alumno | undefined }[] {
-  const alumnos = new Map(e.alumnos.map((a) => [a.id, a] as const));
-  return [...(e.testimonios ?? [])]
-    .sort((a, b) => (b.fecha ?? "").localeCompare(a.fecha ?? "") || b.creadoEn.localeCompare(a.creadoEn))
-    .map((t) => ({ testimonio: t, alumno: alumnos.get(t.alumnoId) }));
 }
 
 /* ---------- cómo se lee en pantalla ---------- */

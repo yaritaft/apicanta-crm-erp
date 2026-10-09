@@ -16,8 +16,10 @@ import { AsistenteAlumno } from "@/components/alumnos/AsistenteAlumno";
 import { EditarAlumno } from "@/components/alumnos/Servicio";
 import { useAbrirFicha } from "@/components/ficha/abrir";
 import { PipelineServicio } from "@/components/alumnos/PipelineServicio";
-import { ContactarHoy, SeguimientoLista } from "@/components/alumnos/Seguimiento";
-import { Testimonios } from "@/components/alumnos/Testimonios";
+import { ContactarHoy } from "@/components/alumnos/Seguimiento";
+import { ClientesCs } from "@/components/cs/ClientesCs";
+import { ResellsCs } from "@/components/cs/ResellsCs";
+import { TestimoniosCs } from "@/components/cs/TestimoniosCs";
 import { BadgeEtapa, ESTADO_ALUMNO, ESTADOS_ALUMNO } from "@/components/alumnos/comun";
 import { acciones, useEstado } from "@/lib/store";
 import { useAbrirDesdeURL } from "@/lib/useQuery";
@@ -28,16 +30,17 @@ import { rachasAHoy } from "@/lib/reportes";
 import { money, num } from "@/lib/format";
 import type { Alumno, EstadoAlumno } from "@/lib/types";
 
-type Vista = "lista" | "pipeline" | "seguimiento" | "hoy" | "testimonios";
-const VISTAS: Vista[] = ["lista", "pipeline", "seguimiento", "hoy", "testimonios"];
+type Vista = "lista" | "pipeline" | "clientes" | "hoy" | "testimonios" | "resells";
+const VISTAS: Vista[] = ["lista", "pipeline", "clientes", "hoy", "testimonios", "resells"];
 
 /* Lo que se está mirando vive en la URL (lib/useParamsURL): el menú lateral
    entra directo al pipeline (/alumnos?seccion=pipeline), y el link se puede
    guardar o mandar y se ve tal cual.
-   - seccion: lista (por defecto), pipeline o, para Customer Success,
-     seguimiento, hoy (a quién contactar) y testimonios. No va en ?vista, que es de la
-     ficha de una persona: abrir una desde el pipeline pasaba el fondo a la
-     lista. Un link viejo con ?vista=pipeline se sigue entendiendo.
+   - seccion: lista (por defecto), pipeline o, para Customer Success, clientes
+     (la lista con las columnas de Lili), hoy (a quién contactar), testimonios y
+     resells (la agenda). No va en ?vista, que es de la ficha de una persona:
+     abrir una desde el pipeline pasaba el fondo a la lista. Un link viejo con
+     ?vista=pipeline o ?seccion=seguimiento se sigue entendiendo.
    - estado: activo, pausado, egresado o baja
    - q: nombre, correo, cohorte, plan o país
    - orden: la columna, con "-" adelante si va de mayor a menor. Sin orden,
@@ -58,7 +61,8 @@ export default function Alumnos() {
 
   const [enURL, setEnURL] = useParamsURL(VISTA_ALUMNOS);
   /* La ficha nunca escribe "pipeline" en ?vista: si está, es un link viejo. */
-  const vista: Vista = enURL.vista === "pipeline" ? "pipeline" : VISTAS.includes(enURL.seccion as Vista) ? (enURL.seccion as Vista) : "lista";
+  const seccion = enURL.seccion === "seguimiento" ? "clientes" : enURL.seccion;
+  const vista: Vista = enURL.vista === "pipeline" ? "pipeline" : VISTAS.includes(seccion as Vista) ? (seccion as Vista) : "lista";
   const cambiarVista = (v: Vista) => setEnURL({ seccion: v }, enURL.vista === "pipeline" ? { vista: null } : {});
   useEffect(() => {
     if (enURL.vista === "pipeline") setEnURL({ seccion: "pipeline", vista: null });
@@ -207,10 +211,11 @@ export default function Alumnos() {
         opciones={[
           { valor: "lista", texto: `Lista · ${num(filtrados.length)}` },
           { valor: "pipeline", texto: "Pipeline" },
-          /* Customer Success (F2-09): el seguimiento de los alumnos. */
+          /* Customer Success (F2-09): el seguimiento de los alumnos, como lo lleva Lili. */
           { valor: "hoy", texto: "A contactar hoy" },
-          { valor: "seguimiento", texto: "Seguimiento" },
+          { valor: "clientes", texto: "Clientes" },
           { valor: "testimonios", texto: "Testimonios" },
+          { valor: "resells", texto: "Resells" },
         ]}
       />
 
@@ -236,8 +241,9 @@ export default function Alumnos() {
       )}
 
       {vista === "hoy" && <ContactarHoy />}
-      {vista === "seguimiento" && <SeguimientoLista />}
-      {vista === "testimonios" && <Testimonios />}
+      {vista === "clientes" && <ClientesCs onNuevo={() => setAsistente(true)} />}
+      {vista === "testimonios" && <TestimoniosCs />}
+      {vista === "resells" && <ResellsCs />}
 
       {vista === "pipeline" && (
         <div className="stack-4">

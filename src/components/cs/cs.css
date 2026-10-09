@@ -1,0 +1,39 @@
+/* Customer Success: las tablas de Clientes, Testimonios y Resells (components/cs). Se apoyan en las clases de la
+   tabla del CRM (.crm-t, .xl-th, .crm-t__editable…): acá sólo lo que es distinto. */
+
+/* Un valor sugerido (el programa que corresponde al servicio, el egreso calculado): se lee, pero todavía no es un dato cargado. */
+.cs-t .cs-sugerido { color: var(--ink-subtle); font-style: italic; }
+.cs-t .cs-sugerido::after { content: " *"; font-style: normal; }
+
+/* Las pastillas de las listas (stack, acceso, follow-up…). */
+.cs-pastilla {
+  display: inline-flex; align-items: center; max-width: 100%; height: 22px; padding: 0 8px; border-radius: var(--radius-full);
+  background: var(--surface-200); color: var(--ink); font-size: 12px; font-weight: 600; white-space: nowrap;
+}
+.cs-pastilla--ok { background: color-mix(in srgb, var(--success) 18%, transparent); color: var(--success); }
+.cs-pastilla--aviso { background: color-mix(in srgb, var(--warning) 18%, transparent); color: var(--warning); }
+.cs-pastilla--malo { background: color-mix(in srgb, var(--danger) 16%, transparent); color: var(--danger); }
+.cs-pastilla--info { background: color-mix(in srgb, var(--info) 16%, transparent); color: var(--info); }
+.cs-pastilla--neutra { background: var(--surface-200); color: var(--ink-muted); }
+
+/* Una celda que se prende y se apaga con un clic (accesos, CV, LinkedIn). */
+.cs-si-no { display: inline-flex; align-items: center; gap: 6px; border: 0; background: none; padding: 0; font: inherit; cursor: pointer; color: var(--ink); }
+.cs-si-no:disabled { cursor: default; }
+
+/* Los atajos de arriba de la tabla (CV pendiente, vencidos…). */
+.cs-atajos { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+
+/* El formulario de la ficha del cliente: secciones con título. */
+.cs-ficha { display: flex; flex-direction: column; gap: var(--space-5); }
+.cs-ficha__seccion { display: flex; flex-direction: column; gap: var(--space-3); }
+.cs-ficha__titulo { margin: 0; font-size: 13px; font-weight: 700; letter-spacing: .02em; color: var(--ink-muted); text-transform: uppercase; }
+.cs-programas { display: flex; flex-wrap: wrap; gap: 6px 14px; }
+.cs-programas label { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; cursor: pointer; }
+
+/* El importador. */
+.cs-importar { display: flex; flex-direction: column; gap: var(--space-4); }
+.cs-importar__mapa { width: 100%; border-collapse: collapse; font-size: 13px; }
+.cs-importar__mapa th, .cs-importar__mapa td { padding: 6px 8px; border-bottom: 1px solid var(--border); text-align: left; vertical-align: top; }
+.cs-importar__mapa th { font-weight: 600; color: var(--ink-muted); }
+.cs-importar__aviso { margin: 0; padding: 8px 12px; border-radius: var(--radius-md); background: color-mix(in srgb, var(--warning) 14%, transparent); font-size: 13px; }
+.cs-importar__resumen { display: flex; flex-wrap: wrap; gap: 8px 18px; font-size: 14px; }

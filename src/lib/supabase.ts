@@ -56,6 +56,8 @@ export const TABLAS = [
   /* Customer Success (supabase/customer-success.sql): el seguimiento de cada
      alumno y sus testimonios. */
   "seguimiento_alumnos", "testimonios",
+  /* La agenda de resells de Customer Success (supabase/customer-success-lili.sql). */
+  "resells",
 ] as const;
 
 export type Tabla = (typeof TABLAS)[number];
@@ -103,6 +105,8 @@ export const TABLAS_OPCIONALES = new Set<string>([
   /* Nuevas (supabase/customer-success.sql). Hasta que corra, el seguimiento
      y los testimonios quedan sólo en este navegador. */
   "seguimiento_alumnos", "testimonios",
+  /* Nueva (supabase/customer-success-lili.sql): hasta que corra, la agenda de resells queda sólo en este navegador. */
+  "resells",
 ]);
 
 /* Las tablas que sólo leen y escriben los dueños. Para cualquier otro, la

@@ -7,8 +7,9 @@ import type {
   Arqueo, Campania, CampoPersonalizado, Comentario, Comprobante, Cuota, EntidadNombre, EstadoApp, Etapa, ID,
   Lead, Meta, Movimiento, OpcionCrm, OportunidadCrm, Pago, Reporte, Sesion, Venta, Webinar,
 } from "./types";
-import type { ConfigSeguimiento, SeguimientoAlumno, Testimonio } from "./types";
+import type { ConfigSeguimiento, Resell, SeguimientoAlumno, Testimonio } from "./types";
 import { configSeguimiento, seguimientoVacio } from "./seguimiento";
+import { resellNormal, seguimientoCompleto, siguienteNumero, testimonioNormal } from "./clientes-cs";
 import type { EsquemaPago, EstadoTraspaso, EtapaServicio, ExtraLiquidacion, Gasto, GastoRecurrente, ID as IdMiembro, Liquidacion, MiembroEquipo, ResultadoLiquidacion, TipoCuenta, Traspaso } from "./types";
 import { conciliarPuntas, rutaDe, type Punta } from "./traspasos";
 import { gastoAprobado, plantillasDesdeGastos } from "./gastos-recurrentes";
@@ -580,6 +581,8 @@ export async function cargarDeLaNube(): Promise<void> {
       /* Opcionales: sin supabase/customer-success.sql, ninguno. */
       seguimientos: (porTabla.seguimiento_alumnos ?? []) as SeguimientoAlumno[],
       testimonios: (porTabla.testimonios ?? []) as Testimonio[],
+      /* Opcional: sin supabase/customer-success-lili.sql, ninguno. */
+      resells: (porTabla.resells ?? []) as Resell[],
       /* Opcional: sin supabase/gastos-recurrentes.sql, ninguno. */
       gastosRecurrentes: (porTabla.gastos_recurrentes ?? []) as GastoRecurrente[],
       /* Vacías para quien no es dueño: RLS las esconde. */
@@ -626,7 +629,7 @@ function ordenDeSiembra(e: EstadoApp): [string, unknown[]][] {
     /* contactos entre webinars y leads: apunta a webinars, y leads le apunta a
        el. Con la FK en la base, otro orden rechaza la siembra entera. */
     ["etapas", e.etapas], ["webinars", e.webinars], ["contactos", e.contactos], ["leads", e.leads],
-    ["alumnos", e.alumnos], ["seguimiento_alumnos", e.seguimientos ?? []], ["testimonios", e.testimonios ?? []],
+    ["alumnos", e.alumnos], ["seguimiento_alumnos", e.seguimientos ?? []], ["testimonios", e.testimonios ?? []], ["resells", e.resells ?? []],
     ["sesiones", e.sesiones], ["reportes", e.reportes],
     ["campanias", e.campanias], ["metas", e.metas], ["campos", e.campos],
     ["ventas", e.ventas], ["cuotas", e.cuotas], ["movimientos", e.movimientos],
@@ -682,7 +685,7 @@ async function vaciarNube() {
   const orden = [
     "liquidaciones", "honorarios",
     "actividad", "comentarios", "arqueos", "traspasos", "gastos_recurrentes", "campos", "metas", "devoluciones", "pagos", "movimientos", "cuotas", "ventas", "gastos",
-    "campanias", "reportes", "sesiones", "seguimiento_alumnos", "testimonios", "alumnos", "leads", "contactos", "webinars",
+    "campanias", "reportes", "sesiones", "seguimiento_alumnos", "testimonios", "resells", "alumnos", "leads", "contactos", "webinars",
     "etapas", "equipo", "embudos", "procesadores", "productos",
     "etapas_servicio",
   ];
@@ -1832,8 +1835,13 @@ export const acciones = {
     const e = snapshot();
     const alumno = e.alumnos.find((a) => a.id === alumnoId);
     if (!alumno) return null;
-    const antes = (e.seguimientos ?? []).find((s) => s.alumnoId === alumnoId)
-      ?? seguimientoVacio(alumnoId, configSeguimiento(e.ajustes.seguimiento));
+    const cfg = configSeguimiento(e.ajustes.seguimiento);
+    const existente = (e.seguimientos ?? []).find((s) => s.alumnoId === alumnoId);
+    /* Una fila de antes (o de una base sin el SQL nuevo) se completa con la ficha vacía; la que nace recibe su
+       N.º de alumno, el que sigue al más alto (lib/clientes-cs.ts). */
+    const antes = existente
+      ? seguimientoCompleto(existente, cfg)
+      : { ...seguimientoVacio(alumnoId, cfg), numero: siguienteNumero(e.seguimientos ?? []) };
     const quien = e.equipo.find((m) => m.id === acceso?.miembroId)?.nombre ?? e.ajustes.responsable ?? "";
     const despues = cambio(antes, quien);
     const { lista, nuevo } = registrar(e, "alumno", alumnoId, alumno.nombre, "actualizo", detalle(despues));
@@ -1855,13 +1863,14 @@ export const acciones = {
   },
 
   /* Guarda un testimonio (nuevo o corregido) de un alumno. */
-  guardarTestimonio(t: Testimonio): void {
+  guardarTestimonio(t0: Testimonio): void {
     const e = snapshot();
+    /* Sin `estado` ni `fecha` del primer modelo: ya no se escriben (testimonioNormal los pasa a las columnas nuevas). */
+    const t = testimonioNormal(t0);
     const alumno = e.alumnos.find((a) => a.id === t.alumnoId);
     const existe = (e.testimonios ?? []).some((x) => x.id === t.id);
-    const texto = { pedido: "se pidió", grabado: "se grabó", publicado: "se publicó" }[t.estado];
     const { lista, nuevo } = registrar(e, "alumno", t.alumnoId, alumno?.nombre ?? "Alumno", existe ? "actualizo" : "creo",
-      `Testimonio: ${texto}${t.link ? ` (${t.link})` : ""}.`);
+      `Testimonio: ${t.estadoVideo || t.followUp || "cargado"}${t.link ? ` (${t.link})` : ""}.`);
     guardar({ ...e, testimonios: [t, ...(e.testimonios ?? []).filter((x) => x.id !== t.id)], actividad: lista });
     empujar({ tipo: "upsert", tabla: "testimonios", filas: [t] });
     empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
@@ -1875,6 +1884,77 @@ export const acciones = {
     const { lista, nuevo } = registrar(e, "alumno", t.alumnoId, alumno?.nombre ?? "Alumno", "elimino", "Se borró un testimonio.");
     guardar({ ...e, testimonios: (e.testimonios ?? []).filter((x) => x.id !== id), actividad: lista });
     empujar({ tipo: "delete", tabla: "testimonios", ids: [id] });
+    empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
+  },
+
+  /* La agenda de resells (lib/clientes-cs.ts). Las llamadas que trae Calendly las escribe el servidor; acá se cargan
+     las de a mano, se completa lo que Customer Success lleva (estado, cash collect, caso de éxito, notas) y se corrige. */
+  guardarResell(r0: Resell): void {
+    const e = snapshot();
+    const quien = e.equipo.find((m) => m.id === acceso?.miembroId)?.nombre ?? e.ajustes.responsable ?? "";
+    const r = resellNormal({ ...r0, actualizadoEn: ahora(), actualizadoPor: quien });
+    guardar({ ...e, resells: [r, ...(e.resells ?? []).filter((x) => x.id !== r.id)] });
+    empujar({ tipo: "upsert", tabla: "resells", filas: [r] });
+  },
+
+  borrarResell(id: ID): void {
+    const e = snapshot();
+    if (!(e.resells ?? []).some((x) => x.id === id)) return;
+    guardar({ ...e, resells: (e.resells ?? []).filter((x) => x.id !== id) });
+    empujar({ tipo: "delete", tabla: "resells", ids: [id] });
+  },
+
+  /* Le da su N.º de alumno a los que todavía no tienen (el más viejo, el más bajo). Devuelve a cuántos. */
+  numerarAlumnos(): number {
+    const e = snapshot();
+    const cfg = configSeguimiento(e.ajustes.seguimiento);
+    const quien = e.equipo.find((m) => m.id === acceso?.miembroId)?.nombre ?? e.ajustes.responsable ?? "";
+    const segs = new Map((e.seguimientos ?? []).map((s) => [s.alumnoId, s] as const));
+    const sinNumero = e.alumnos
+      .filter((a) => (segs.get(a.id)?.numero ?? null) === null)
+      .sort((a, b) => +new Date(a.inicio) - +new Date(b.inicio) || a.creadoEn.localeCompare(b.creadoEn));
+    if (!sinNumero.length) return 0;
+    let n = siguienteNumero(e.seguimientos ?? []);
+    const cambiadas: SeguimientoAlumno[] = sinNumero.map((a) => {
+      const base = seguimientoCompleto(segs.get(a.id) ?? { alumnoId: a.id }, cfg);
+      return { ...base, numero: n++, actualizadoEn: ahora(), actualizadoPor: quien };
+    });
+    const ids = new Set(cambiadas.map((s) => s.alumnoId));
+    const { lista, nuevo } = registrar(e, "config", "seguimiento", "Seguimiento de alumnos", "actualizo",
+      `Se numeró a ${cambiadas.length} ${cambiadas.length === 1 ? "alumno" : "alumnos"}.`);
+    guardar({ ...e, seguimientos: [...(e.seguimientos ?? []).filter((s) => !ids.has(s.alumnoId)), ...cambiadas], actividad: lista });
+    empujarEnLotes("seguimiento_alumnos", cambiadas);
+    empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
+    return cambiadas.length;
+  },
+
+  /* El lote de la importación del Airtable (lib/importar-cs.ts): alumnos, su ficha, testimonios y resells, de una vez. */
+  importarClientesCs(lote: {
+    alumnos: Alumno[]; seguimientos: SeguimientoAlumno[]; testimonios: Testimonio[]; resells: Resell[]; reportes: Reporte[]; detalle: string;
+  }): void {
+    const e = snapshot();
+    const reemplazar = <T extends { id: ID }>(actuales: readonly T[] | undefined, nuevas: readonly T[]) => {
+      const ids = new Set(nuevas.map((x) => x.id));
+      return [...nuevas, ...(actuales ?? []).filter((x) => !ids.has(x.id))];
+    };
+    /* La ficha es una por alumno: la del alumno gana sobre la que ya había. */
+    const porAlumno = new Set(lote.seguimientos.map((s) => s.alumnoId));
+    const { lista, nuevo } = registrar(e, "config", "seguimiento", "Seguimiento de alumnos", "actualizo", lote.detalle);
+    guardar({
+      ...e,
+      alumnos: reemplazar(e.alumnos, lote.alumnos),
+      seguimientos: [...lote.seguimientos, ...(e.seguimientos ?? []).filter((s) => !porAlumno.has(s.alumnoId))],
+      testimonios: reemplazar(e.testimonios, lote.testimonios),
+      resells: reemplazar(e.resells, lote.resells),
+      reportes: reemplazar(e.reportes, lote.reportes),
+      actividad: lista,
+    });
+    /* Primero los alumnos (las demás los referencian), y al final lo que cuelga de ellos. */
+    empujarEnLotes("alumnos", lote.alumnos);
+    empujarEnLotes("seguimiento_alumnos", lote.seguimientos);
+    empujarEnLotes("testimonios", lote.testimonios);
+    empujarEnLotes("resells", lote.resells);
+    empujarEnLotes("reportes", lote.reportes);
     empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
   },
 

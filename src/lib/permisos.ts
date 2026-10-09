@@ -139,6 +139,7 @@ export const LEEN: Record<string, AreaId[]> = {
   /* Customer Success (supabase/customer-success.sql). */
   seguimiento_alumnos: ["alumnos"],
   testimonios: ["alumnos"],
+  resells: ["alumnos"],
   gastos: ["finanzas"],
   movimientos: ["finanzas"],
   arqueos: ["finanzas"],
@@ -180,6 +181,7 @@ export const EDITAN: Record<string, AreaId[]> = {
   etapas_servicio: ["alumnos"],
   seguimiento_alumnos: ["alumnos"],
   testimonios: ["alumnos"],
+  resells: ["alumnos"],
   webinars: ["webinars"],
   campaigns: ["marketing"],
   adsets: ["marketing"],
@@ -344,7 +346,7 @@ export function resumenDeTipo(t: Pick<TipoCuenta, "id" | "areas" | "soloLoSuyo">
 const QUE_ES: Record<string, string> = {
   ventas: "las ventas", cuotas: "las cuotas", pagos: "los cobros", leads: "los leads", contactos: "las personas",
   sesiones: "las llamadas", comentarios: "los comentarios", alumnos: "los alumnos", reportes: "los reportes",
-  etapas_servicio: "las etapas del servicio", seguimiento_alumnos: "el seguimiento de alumnos", testimonios: "los testimonios", webinars: "los webinars", gastos: "los gastos",
+  etapas_servicio: "las etapas del servicio", seguimiento_alumnos: "el seguimiento de alumnos", testimonios: "los testimonios", resells: "la agenda de resells", webinars: "los webinars", gastos: "los gastos",
   movimientos: "la conciliación", arqueos: "la caja", traspasos: "los movimientos entre cuentas", gastos_recurrentes: "los gastos fijos",
   devoluciones: "las devoluciones",
   transacciones: "las transacciones", ajustes: "los Ajustes",
