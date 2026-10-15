@@ -37,17 +37,16 @@ export function LlamadasDeHoy({ titulo, llamadas, hoyVacio }: { titulo: string; 
   return (
     <section className="mp-card mp-card--sin-relleno" aria-label={titulo}>
       <div className="mp-cabeza">
-        <span className="mp-cap">{titulo} · {llamadas.length}</span>
+        <h2>{titulo}</h2><span className="mp-cuenta">{llamadas.length}</span>
         <div className="mp-cabeza__der">
           <input className="mp-buscar" value={q} onChange={(ev) => setQ(ev.target.value)} placeholder="Buscar nombre…" aria-label="Buscar una llamada de hoy por nombre" />
           <Link href="/mis-llamadas" className="link t-sm">Ver todas</Link>
         </div>
       </div>
       {visibles.length === 0 ? (
-        <p className="mp-vacio" style={{ padding: "0 var(--space-5) var(--space-5)" }}>{llamadas.length === 0 ? hoyVacio : "Ninguna llamada coincide con la búsqueda."}</p>
+        <p className="mp-vacio mp-lista__vacio">{llamadas.length === 0 ? hoyVacio : "Ninguna llamada coincide con la búsqueda."}</p>
       ) : (
         <div className="mp-lista">
-          <div className="mp-lista__cab"><span>Hora</span><span>Lead</span><span>Vía</span><span>Estado</span></div>
           {visibles.map((f) => {
             const cancelada = f.resultado === CANCELADA;
             return (
@@ -70,8 +69,8 @@ export function LlamadasDeHoy({ titulo, llamadas, hoyVacio }: { titulo: string; 
 export function ParaVos({ titulo, avisos, total, puedeCerrarElDia }: { titulo: string; avisos: Aviso[]; total: number; puedeCerrarElDia: boolean }) {
   const abrirFicha = useAbrirFicha();
   return (
-    <section className="mp-card" aria-label={titulo}>
-      <span className="mp-cap">{titulo} · {total}</span>
+    <section className="mp-card mp-card--lista" aria-label={titulo}>
+      <div className="mp-cap-fila"><span className="mp-cap">{titulo}</span><span className="mp-cuenta">{total}</span></div>
       {avisos.length === 0 ? (
         <p className="mp-vacio" style={{ marginTop: 10 }}>Todo al día. Nada que atender por ahora.</p>
       ) : (
@@ -99,15 +98,15 @@ export function ParaVos({ titulo, avisos, total, puedeCerrarElDia }: { titulo: s
 export function CobrosCargados({ titulo, cobros, e, resumen }: { titulo: string; cobros: CobroCargado[]; e: EstadoApp; resumen: { total: number; chequeados: number; pendientes: number; rechazados: number } }) {
   const abrirFicha = useAbrirFicha();
   return (
-    <section className="mp-card" aria-label={titulo}>
-      <div className="mp-cap-fila">
-        <span className="mp-cap">{titulo}</span>
+    <section className="mp-card mp-card--sin-relleno" aria-label={titulo}>
+      <div className="mp-cabeza">
+        <h2>{titulo}</h2>
         <span className="mp-nota" style={{ marginLeft: "auto", marginTop: 0 }}>
           {resumen.total === 0 ? "Sin cobros en los últimos 45 días" : `${resumen.chequeados} de ${resumen.total} validados${resumen.rechazados ? ` · ${resumen.rechazados} rechazados` : ""}`}
         </span>
       </div>
       {cobros.length === 0 ? (
-        <p className="mp-vacio" style={{ marginTop: 10 }}>No hay cobros en los últimos 45 días.</p>
+        <p className="mp-vacio mp-lista__vacio">No hay cobros en los últimos 45 días.</p>
       ) : (
         <div className="mp-tabla-cobros">
           {cobros.slice(0, 15).map((c) => {
@@ -125,7 +124,7 @@ export function CobrosCargados({ titulo, cobros, e, resumen }: { titulo: string;
               </div>
             );
           })}
-          {cobros.length > 15 && <span className="t-sm t-subtle" style={{ paddingTop: 8 }}>y {cobros.length - 15} más…</span>}
+          {cobros.length > 15 && <span className="t-sm t-subtle" style={{ padding: "8px 12px 0" }}>y {cobros.length - 15} más…</span>}
         </div>
       )}
     </section>

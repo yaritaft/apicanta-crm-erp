@@ -52,21 +52,21 @@ export function AnilloMeta({ titulo, puedeEditar, mes, meta, cobrado, ventas, di
   };
 
   return (
-    <div className="mp-card">
+    <div className="mp-card mp-card--meta">
       <div className="mp-cap-fila">
         <span className="mp-cap">{titulo} · {nombrePeriodo(mes).split(" ")[0].toLowerCase()}</span>
         {puedeEditar && metaCash != null && !editando && <button type="button" className="link mp-meta__editar" onClick={abrir}>Editar</button>}
       </div>
 
-      {avisoSinAcceso && <p className="mp-vacio" style={{ marginTop: 12 }}>{avisoSinAcceso}</p>}
+      {avisoSinAcceso && <div className="mp-meta__vacio"><p className="mp-vacio">{avisoSinAcceso}</p></div>}
 
       {!avisoSinAcceso && metaCash == null && !editando && (
         puedeEditar ? (
-          <div style={{ marginTop: 12 }}>
+          <div className="mp-meta__vacio">
             <p className="mp-vacio">Todavía no cargaste tu meta de este mes. Ponela y el panel te muestra cuánto te falta y a qué ritmo tenés que ir.</p>
-            <Button sm variante="secondary" style={{ marginTop: 12 }} onClick={abrir}>Cargar mi meta</Button>
+            <Button variante="secondary" onClick={abrir}>Cargar mi meta</Button>
           </div>
-        ) : <p className="mp-vacio" style={{ marginTop: 12 }}>Todavía no cargó su meta de este mes.</p>
+        ) : <div className="mp-meta__vacio"><p className="mp-vacio">Todavía no cargó su meta de este mes.</p></div>
       )}
 
       {editando && puedeEditar && (
@@ -85,16 +85,14 @@ export function AnilloMeta({ titulo, puedeEditar, mes, meta, cobrado, ventas, di
 
       {metaCash != null && !editando && (
         <div className="mp-meta">
-          <svg className="mp-anillo" width={104} height={104} viewBox="0 0 104 104" role="img" aria-label={`${pct ?? 0}% de la meta`}>
+          <svg className="mp-anillo" width={148} height={148} viewBox="0 0 104 104" role="img" aria-label={`${pct ?? 0}% de la meta`}>
             <circle className="mp-anillo__pista" cx="52" cy="52" r={R} fill="none" strokeWidth="9" />
             <circle className="mp-anillo__valor" cx="52" cy="52" r={R} fill="none" strokeWidth="9" strokeLinecap="round" strokeDasharray={`${dash} ${C}`} transform="rotate(-90 52 52)" />
-            <text className="mp-anillo__pct" x="52" y="50" textAnchor="middle">{pct ?? 0}%</text>
-            <text className="mp-anillo__sub" x="52" y="64" textAnchor="middle">de la meta</text>
+            <text className="mp-anillo__pct" x="52" y="54" textAnchor="middle">{pct ?? 0}%</text>
+            <text className="mp-anillo__sub" x="52" y="67" textAnchor="middle">de la meta</text>
           </svg>
           <div className="mp-meta__texto">
-            <span style={{ fontSize: 17, fontWeight: 800, fontVariantNumeric: "tabular-nums" }}>
-              {money(cobrado, "USD", 0)} <span style={{ fontSize: 13, fontWeight: 400, color: "var(--ink-subtle)" }}>de {money(metaCash, "USD", 0)}</span>
-            </span>
+            <span className="mp-meta__cifra">{money(cobrado, "USD", 0)} <span>de {money(metaCash, "USD", 0)}</span></span>
             {falta > 0 && <span className="mp-nota" style={{ color: "var(--ink-muted)" }}>Te faltan {money(falta, "USD", 0)}</span>}
             {ritmo && <span className="mp-nota">Ritmo para llegar: {money(ritmo.porDia, "USD", 0)} por día ({ritmo.quedan} {ritmo.quedan === 1 ? "día" : "días"})</span>}
             {metaVentas != null && <span className="mp-nota">Ventas: {num(ventas)} de {num(metaVentas)}</span>}

@@ -20,7 +20,7 @@ export function TarjetaComisiones({ titulo, monto, notas, aparte, onAbrir }: {
   onAbrir: () => void;
 }) {
   return (
-    <div className="mp-card mp-card--ok mp-card--clic" {...clic(onAbrir)} aria-label={`${titulo}: ver el detalle`}>
+    <div className="mp-card mp-card--hero mp-card--clic" {...clic(onAbrir)} aria-label={`${titulo}: ver el detalle`}>
       <div className="mp-cap-fila">
         <span className="mp-cap">{titulo}</span>
         <ChevronRight size={16} className="mp-ir" aria-hidden />
@@ -40,7 +40,7 @@ export function TarjetaMesa({ titulo, mesa, onAbrir }: {
 }) {
   const vacio = mesa.mesProyectado === 0 && mesa.atrasado === 0 && mesa.futuro === 0 && mesa.sinFecha === 0;
   return (
-    <div className="mp-card mp-card--aviso">
+    <div className="mp-card">
       <span className="mp-cap">{titulo}</span>
       <div className="mp-mesa">
         <div className="mp-mesa__col mp-mesa__col--clic" {...clic(() => onAbrir("mes"))} aria-label="Lo que vence este mes: ver las cuotas">

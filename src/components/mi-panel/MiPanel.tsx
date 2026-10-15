@@ -119,22 +119,22 @@ export function MiPanel() {
         <BarraVerComo candidatos={candidatos} elegido={miembro} yoId={yo.miembro?.id} viendoOtro={viendoOtro} onElegir={(id) => cambiar({ persona: id })} />
       )}
 
-      <PageHead
-        titulo={viendoOtro ? `Panel de ${miembro.nombre}` : `${saludoDe(ahora)}, ${primerNombre}`}
-        sub={resumen}
-        acciones={
-          <div className="mp-acciones">
-            {!esSetter && !esDirector && sinCargar > 0 && <span className="mp-pildora">Cierre del día pendiente</span>}
-            <DateRangePicker
-              value={rangoSel} minDate={null} onApply={(r) => setRango(r)}
-              footerNota="Comisiones por fecha de cobro · el resto por fecha de la llamada"
-            />
-            {puedeCargarVenta && (
-              <Link href="/cargar-venta" className="hk-btn hk-btn--primary"><Plus size={16} aria-hidden />Cargar venta</Link>
-            )}
-          </div>
-        }
-      />
+      <header className="mp-cabecera">
+        <div className="mp-cabecera__texto">
+          <h1 className="mp-saludo">{viendoOtro ? `Panel de ${miembro.nombre}` : `${saludoDe(ahora)}, ${primerNombre}`}</h1>
+          <p className="mp-resumen">{resumen}</p>
+        </div>
+        <div className="mp-acciones">
+          {!esSetter && !esDirector && sinCargar > 0 && <span className="mp-pildora">Cierre del día pendiente</span>}
+          <DateRangePicker
+            value={rangoSel} minDate={null} onApply={(r) => setRango(r)}
+            footerNota="Comisiones por fecha de cobro · el resto por fecha de la llamada"
+          />
+          {puedeCargarVenta && (
+            <Link href="/cargar-venta" className="hk-btn hk-btn--primary"><Plus size={16} aria-hidden />Cargar venta</Link>
+          )}
+        </div>
+      </header>
 
       {esSetter ? (
         <PanelSetter datos={datos} rangoTxt={rangoTxt} ahora={ahora} />

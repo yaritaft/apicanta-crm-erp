@@ -2,7 +2,8 @@
 
 import React, { useMemo, useState } from "react";
 import Link from "next/link";
-import { Badge, StatCard } from "@/components/ui/ui";
+import { Badge } from "@/components/ui/ui";
+import { Tile } from "./Tile";
 import { useAbrirFicha } from "@/components/ficha/abrir";
 import { fechaHora, money, num } from "@/lib/format";
 import { sinTildes } from "@/lib/crm";
@@ -44,20 +45,21 @@ export function PanelSetter({ datos, rangoTxt, ahora }: { datos: Datos; rangoTxt
 
   return (
     <div className="mp">
-      <div className="grid-stats">
-        <StatCard hero etiqueta="Agendas a tu nombre" valor={num(validas.length)} contexto={`${rangoTxt} · las que entraron por tu link`} />
-        <StatCard etiqueta="Por venir" valor={num(porVenir)} contexto="Todavía no pasaron" />
-        <StatCard etiqueta="Se presentaron" valor={num(seSentaron)} contexto={`${pctTxt(pasaron > 0 ? Math.round((seSentaron / pasaron) * 1000) / 10 : null)} de las que pasaron${noShows ? ` · ${noShows} no vinieron` : ""}`} />
-        <StatCard etiqueta="Terminaron comprando" valor={num(compraron)} contexto={datos.ventasDeSetter ? `${num(datos.ventasDeSetter)} ventas con vos de setter` : "Ventas con vos de setter"} />
-      </div>
-      {datos.comisionSetter > 0 && (
-        <StatCard etiqueta={`Comisión de ${rangoTxt}`} valor={money(datos.comisionSetter, "USD", 2)} contexto="Sobre las ventas donde figurás como setter" />
-      )}
+      <section aria-labelledby="mp-set">
+        <div className="mp-seccion"><h2 id="mp-set">Cómo te va</h2><span>{rangoTxt}</span></div>
+        <div className="mp-tiles">
+          <Tile rot="Agendas a tu nombre" valor={num(validas.length)} sub="las que entraron por tu link" />
+          <Tile rot="Por venir" valor={num(porVenir)} sub="todavía no pasaron" />
+          <Tile rot="Se presentaron" valor={num(seSentaron)} sub={`${pctTxt(pasaron > 0 ? Math.round((seSentaron / pasaron) * 1000) / 10 : null)} de las que pasaron${noShows ? ` · ${noShows} no vinieron` : ""}`} />
+          <Tile rot="Terminaron comprando" valor={num(compraron)} sub={datos.ventasDeSetter ? `${num(datos.ventasDeSetter)} ventas con vos de setter` : "ventas con vos de setter"} />
+          {datos.comisionSetter > 0 && <Tile rot="Tu comisión" valor={money(datos.comisionSetter, "USD", 2)} sub="sobre las ventas donde figurás como setter" verde />}
+        </div>
+      </section>
       <section className="mp-card mp-card--sin-relleno" aria-label="Mis agendas">
         <div className="mp-cabeza">
           <div style={{ minWidth: 0 }}>
-            <span className="mp-cap">Mis agendas · {validas.length}</span>
-            <span className="mp-nota" style={{ marginTop: 2 }}>Si falta alguna, avisale al closer que la tomó para que te ponga como setter al cargar la venta.</span>
+            <h2 style={{ display: "inline" }}>Mis agendas</h2> <span className="mp-cuenta">{validas.length}</span>
+            <span className="mp-nota" style={{ marginTop: 4 }}>Si falta alguna, avisale al closer que la tomó para que te ponga como setter al cargar la venta.</span>
           </div>
           <div className="mp-cabeza__der">
             <input className="mp-buscar" value={q} onChange={(ev) => setQ(ev.target.value)} placeholder="Buscar nombre…" aria-label="Buscar una agenda por nombre" />
@@ -65,12 +67,11 @@ export function PanelSetter({ datos, rangoTxt, ahora }: { datos: Datos; rangoTxt
           </div>
         </div>
         {visibles.length === 0 ? (
-          <p className="mp-vacio" style={{ padding: "0 var(--space-5) var(--space-5)" }}>
+          <p className="mp-vacio mp-lista__vacio">
             {filas.length === 0 ? "Todavía no hay agendas a tu nombre en este rango. Entran solas cuando alguien agenda con tu link (utm_campaign=setter_tunombre)." : "Ninguna agenda coincide con la búsqueda."}
           </p>
         ) : (
           <div className="mp-lista">
-            <div className="mp-lista__cab" style={{ gridTemplateColumns: "128px minmax(0, 1fr) 190px 170px" }}><span>Cuándo</span><span>Lead</span><span>Closer</span><span>Estado</span></div>
             {visibles.slice(0, 60).map(({ a, r }) => {
               const id = a.sesion.contactoId ?? a.sesion.leadId;
               return (

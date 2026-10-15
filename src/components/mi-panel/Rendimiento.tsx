@@ -11,6 +11,7 @@ import type { ComisionVenta } from "@/lib/finanzas";
 import type { MiPanel as Datos } from "@/lib/mi-panel";
 import type { EstadoApp, Venta } from "@/lib/types";
 import { pctTxt } from "./util";
+import { Tile } from "./Tile";
 
 /* ==================================================================
    «Cómo te va» (de Blue OS: «Tu performance»): los números del rango, cada
@@ -44,27 +45,16 @@ export function Rendimiento({ datos, e, rangoTxt }: { datos: Datos; e: EstadoApp
   ];
 
   return (
-    <section className="mp-card" aria-labelledby="mp-rend">
-      <div className="mp-titulo">
+    <section aria-labelledby="mp-rend">
+      <div className="mp-seccion">
         <h2 id="mp-rend">Cómo te va</h2>
         <span>{rangoTxt}</span>
       </div>
       {r.agendas === 0 && r.ventas === 0 && r.cobrado === 0 ? (
-        <p className="mp-vacio">No hay actividad en este rango. Probá con uno más largo.</p>
+        <div className="mp-card"><p className="mp-vacio">No hay actividad en este rango. Probá con uno más largo.</p></div>
       ) : (
         <div className="mp-tiles">
-          {tiles.map((t) => {
-            const cuerpo = (
-              <>
-                <span className="mp-tile__rot">{t.rot}</span>
-                <span className={`mp-tile__valor${t.ok ? " mp-tile__valor--ok" : ""}`}>{t.valor}</span>
-                <span className="mp-tile__sub" title={t.sub}>{t.sub}</span>
-              </>
-            );
-            return t.abre
-              ? <button key={t.rot} type="button" className="mp-tile" aria-label={`${t.rot}: ver el detalle`} onClick={() => setAbierto({ cual: t.abre!, titulo: t.rot })}>{cuerpo}</button>
-              : <div key={t.rot} className="mp-tile">{cuerpo}</div>;
-          })}
+          {tiles.map((t) => <Tile key={t.rot} rot={t.rot} valor={t.valor} sub={t.sub} verde={t.ok} onAbrir={t.abre ? () => setAbierto({ cual: t.abre!, titulo: t.rot }) : undefined} />)}
         </div>
       )}
       {abierto && <Detalle cual={abierto.cual} titulo={abierto.titulo} datos={datos} e={e} rangoTxt={rangoTxt} onCerrar={() => setAbierto(null)} />}
