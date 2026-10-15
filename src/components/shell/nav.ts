@@ -23,6 +23,8 @@ export const NAV: GrupoNav[] = [
     titulo: "Negocio",
     items: [
       { href: "/panel", texto: "Dashboard & KPIs", icono: LayoutDashboard, ayuda: "Todas las métricas del negocio, en una tabla o en gráficos" },
+      /* Cada uno ve el suyo; un dueño elige de quién mirarlo, tal cual lo ve esa persona. */
+      { href: "/mi-panel", texto: "Mi panel", icono: UserRound, ayuda: "Tus comisiones, tus cuotas por cobrar y tus llamadas. Un dueño puede mirar el de cualquier closer o setter" },
     ],
   },
   {
@@ -31,8 +33,6 @@ export const NAV: GrupoNav[] = [
       { href: "/leads", texto: "Leads", icono: Users, ayuda: "Toda la gente interesada" },
       { href: "/crm", texto: "CRM", icono: Sheet, ayuda: "Cada llamada con todo lo de la persona: se filtra y se corrige como un Excel" },
       { href: "/agenda", texto: "Agenda", icono: CalendarDays, ayuda: "Las llamadas por día: entran solas desde Calendly" },
-      /* Cada uno ve el suyo; un dueño elige de quién mirarlo, tal cual lo ve esa persona. */
-      { href: "/mi-panel", texto: "Mi panel", icono: UserRound, ayuda: "Tus comisiones, tus cuotas por cobrar y tus llamadas. Un dueño puede mirar el de cualquier closer o setter" },
       { href: "/ventas", texto: "Ventas", icono: HandCoins, ayuda: "Cada venta con sus cuotas y cobros" },
       { href: "/clientes", texto: "Clientes", icono: UserCheck, ayuda: "La gente que compró: qué compró, cuánto pagó y si está al día" },
     ],
