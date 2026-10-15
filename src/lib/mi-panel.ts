@@ -1,6 +1,6 @@
 import type { Cuota, EstadoApp, MiembroEquipo, Pago, Sesion, Venta } from "./types";
 import { rangoDeFechas, type RangoMes } from "./metricas";
-import { comisionesDelMes, comisionSetterDePago, closerDeCuota, pagosDelMes, tasaDeComision, ventasDelMes, type ComisionVenta } from "./finanzas";
+import { comisionesDelMes, comisionSetterDePago, closerDeCuota, pagosDelMes, ventasDelMes, type ComisionVenta } from "./finanzas";
 import { cuotasPorCobrarDe, type CuotaPendiente } from "./cuotas-closer";
 import { filasTabla, type FilaTabla } from "./crm-tabla";
 import { esDelCloser } from "./eod";
@@ -76,21 +76,6 @@ export interface MesaDeCobro {
   incobrable: number;
 }
 
-/* ---------- Comisión sobre la mesa: lo que gana si se cobra lo que falta ---------- */
-
-export interface ComisionPorCobrar {
-  /* Lo estimado por tramo, con el % de cada servicio y el costo promedio del procesador. */
-  total: number;
-  mes: number;
-  atrasado: number;
-  futuro: number;
-  sinFecha: number;
-  /* Lo que falta cobrar en cada tramo (la plata de las cuotas, no la comisión). */
-  porCobrar: { mes: number; atrasado: number; futuro: number; sinFecha: number };
-  /* El costo promedio de procesador de sus cobros (0 a 1): se descuenta antes de aplicar el %. */
-  costoProcesador: number;
-}
-
 /* ---------- Cómo le va: los tiles ---------- */
 
 export interface Rendimiento {
@@ -136,7 +121,6 @@ export interface MiPanel {
   porCobrar: CuotaPendiente[];
   porCobrarTotal: number;
   mesa: MesaDeCobro;
-  comisionPorCobrar: ComisionPorCobrar;
   rendimiento: Rendimiento;
   /* ---- llamadas ---- */
   /* Todas las suyas del rango, con su estado. */
@@ -200,37 +184,6 @@ export function mesaDe(e: Pick<EstadoApp, "cuotas" | "ventas" | "pagos">, closer
   for (const k of ["mesPendiente", "mesProyectado", "mesCobrado", "atrasado", "enRiesgo", "futuro", "sinFecha", "incobrable"] as const) m[k] = r2(m[k]);
   m.mesPct = pct1(m.mesCobrado, m.mesProyectado);
   return m;
-}
-
-/** Lo que va a ganar un closer si se cobra todo lo que le falta: cada cuota pendiente, con el % de su servicio,
- *  menos el costo promedio de procesador que tuvieron sus cobros (la comisión se calcula sobre lo neto). Es una
- *  estimación: el costo real de un cobro futuro lo sabe recién la pasarela. No cuenta las incobrables ni lo que ya cobró. */
-export function comisionPorCobrarDe(
-  e: Pick<EstadoApp, "cuotas" | "ventas" | "pagos">, m: Pick<MiembroEquipo, "id" | "comisionRate" | "comisionServicios" | "sinComision">, hoy: string,
-): ComisionPorCobrar {
-  const porCobrar = cuotasPorCobrarDe(e, m.id);
-  /* El costo promedio de procesador de lo que ya cobró (sus cobros, por venta o por cuota heredada). */
-  const cuotas = new Map(e.cuotas.map((c) => [c.id, c] as const));
-  const ventas = new Map(e.ventas.map((v) => [v.id, v] as const));
-  let monto = 0, fee = 0;
-  for (const p of e.pagos) {
-    const c = cuotas.get(p.cuotaId);
-    const v = c ? ventas.get(c.ventaId) : undefined;
-    if (!c || !v || closerDeCuota(v, c) !== m.id) continue;
-    monto += p.monto; fee += p.feeMonto;
-  }
-  const costoProcesador = monto > 0 ? Math.min(0.2, Math.max(0, fee / monto)) : 0;
-  const mes = hoy.slice(0, 7);
-  const r: ComisionPorCobrar = { total: 0, mes: 0, atrasado: 0, futuro: 0, sinFecha: 0, porCobrar: { mes: 0, atrasado: 0, futuro: 0, sinFecha: 0 }, costoProcesador };
-  for (const x of porCobrar) {
-    const d = x.cuota.vence ? diaDeNegocio(x.cuota.vence) : "";
-    const tramo = !d ? "sinFecha" : d.slice(0, 7) === mes ? "mes" : d.slice(0, 7) < mes ? "atrasado" : "futuro";
-    r.porCobrar[tramo] += x.falta;
-    if (!m.sinComision) r[tramo] += x.falta * (1 - costoProcesador) * tasaDeComision(m, x.venta.productoId);
-  }
-  for (const k of ["mes", "atrasado", "futuro", "sinFecha"] as const) { r[k] = r2(r[k]); r.porCobrar[k] = r2(r.porCobrar[k]); }
-  r.total = r2(r.mes + r.atrasado + r.futuro + r.sinFecha);
-  return r;
 }
 
 /** Cómo le va a un closer en el rango: sus llamadas y sus ventas. */
@@ -334,7 +287,7 @@ export function miPanelDe(e: EstadoApp, m: MiembroEquipo, rango: RangoMes, ahora
   return {
     miembro: m, vista, rango,
     cobradoRango, comisionCloser, descuentoCierre, comisionDirector, comisionSetter: r2(comisionSetter), comisiones,
-    ventasDelRango, porCobrar, porCobrarTotal, mesa, comisionPorCobrar: comisionPorCobrarDe(e, m, hoy), rendimiento,
+    ventasDelRango, porCobrar, porCobrarTotal, mesa, rendimiento,
     llamadas, llamadasDeHoy, porVenirHoy, dia, strikes, avisos, totalAvisos,
     cobros, controlDeCobros,
     agendasDeSetter, ventasDeSetter,

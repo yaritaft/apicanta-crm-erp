@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { comisionPorCobrarDe, conPanel, mesaDe, miPanelDe, rendimientoDe, vistaDePanel } from "@/lib/mi-panel";
+import { conPanel, mesaDe, miPanelDe, rendimientoDe, vistaDePanel } from "@/lib/mi-panel";
 import type { FilaTabla } from "@/lib/crm-tabla";
 import { comisionesPorCloser } from "@/lib/finanzas";
 import { rangoDePeriodo } from "@/lib/periodos";
@@ -135,36 +135,6 @@ test("el rendimiento no cuenta las canceladas ni las reprogramadas, y una tasa s
   assert.equal(vacio.pctCierre, null);
   assert.equal(vacio.pctShowUp, null);
   assert.equal(vacio.ticket, null);
-});
-
-test("la comisión por cobrar es lo que falta de cada cuota, menos el costo promedio de procesador, por el % de su servicio", () => {
-  const e = estado();
-  const cuota = (id: string, numero: number, monto: number, vence: string | undefined) =>
-    ({ id, ventaId: "v1", numero, monto, vence, estado: "pendiente" as const, esReserva: false });
-  e.cuotas = [
-    ...e.cuotas,
-    cuota("p1", 3, 1000, "2026-10-20T12:00:00.000Z"),   // este mes
-    cuota("p2", 4, 700, "2026-07-10T12:00:00.000Z"),    // vencida
-    cuota("p3", 5, 2000, "2026-12-10T12:00:00.000Z"),   // más adelante
-    cuota("p4", 6, 300, undefined),                      // sin fecha
-    { ...cuota("p5", 7, 500, "2026-10-25T12:00:00.000Z"), estado: "cancelada" as const, notas: "Incobrable: se dio de baja" },
-  ];
-  const c = comisionPorCobrarDe(e, quien(e, "mariano"), "2026-10-15");
-  /* Sus cobros: 3.500 con 105 de procesador → 3% de costo. */
-  assert.equal(c.costoProcesador, 0.03);
-  assert.equal(c.porCobrar.mes, 1000);
-  assert.equal(c.porCobrar.atrasado, 700);
-  assert.equal(c.porCobrar.futuro, 2000);
-  assert.equal(c.porCobrar.sinFecha, 300);
-  assert.equal(c.mes, 145.5);       // 1.000 × 0,97 × 15%
-  assert.equal(c.atrasado, 101.85); // 700 × 0,97 × 15%
-  assert.equal(c.futuro, 291);      // 2.000 × 0,97 × 15%
-  assert.equal(c.sinFecha, 43.65);  // 300 × 0,97 × 15%
-  assert.equal(c.total, 582);
-  assert.equal(comisionPorCobrarDe(e, quien(e, "dante"), "2026-10-15").total, 0, "lo de otro closer no entra");
-  /* Quien no comisiona (Yari) no tiene comisión pendiente. */
-  e.cuotas.push(cuota("y1", 9, 400, "2026-10-20T12:00:00.000Z"));
-  assert.equal(comisionPorCobrarDe(e, { ...quien(e, "mariano"), sinComision: true }, "2026-10-15").total, 0);
 });
 
 test("Pendientes sólo trae lo urgente: el cierre del día, los cobros rechazados y las cuotas vencidas de los últimos 30 días", () => {

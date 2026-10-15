@@ -66,12 +66,11 @@
 
 /* ---------- arriba ---------- */
 
-.mp-arriba { display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr) minmax(0, 1fr); gap: 20px; align-items: stretch; }
+.mp-arriba { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 20px; align-items: stretch; }
 .mp-columna { display: flex; flex-direction: column; gap: 20px; min-width: 0; }
 .mp-columna > .mp-card { flex: 1 1 auto; }
 .mp-abajo { display: flex; flex-direction: column; gap: 20px; min-width: 0; }
-@media (max-width: 1240px) { .mp-arriba { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } .mp-arriba > :last-child { grid-column: 1 / -1; } }
-@media (max-width: 820px) { .mp-arriba { grid-template-columns: minmax(0, 1fr); } .mp-arriba > :last-child { grid-column: auto; } .mp-saludo { font-size: 30px; line-height: 36px; } }
+@media (max-width: 820px) { .mp-arriba { grid-template-columns: minmax(0, 1fr); } .mp-saludo { font-size: 30px; line-height: 36px; } }
 
 /* ---------- sobre la mesa ---------- */
 
@@ -85,20 +84,6 @@
 .mp-barra > span { display: block; height: 100%; border-radius: 3px; background: var(--success); transition: width 260ms ease-out; }
 .mp-pie { display: flex; flex-wrap: wrap; gap: 4px var(--space-5); margin-top: var(--space-4); padding-top: var(--space-4); border-top: 1px solid var(--mp-linea); font-size: 13px; color: var(--ink-subtle); }
 .mp-pie strong { color: var(--ink-muted); font-weight: 600; font-variant-numeric: tabular-nums; }
-
-/* ---------- comisión por cobrar ---------- */
-
-.mp-card--por-cobrar { display: flex; flex-direction: column; }
-.mp-desglose { display: flex; flex-direction: column; margin-top: var(--space-5); }
-.mp-desglose__fila { display: flex; align-items: center; gap: var(--space-3); width: 100%; padding: 14px 0; border: 0; border-top: 1px solid var(--mp-linea); background: none; font: inherit; color: inherit; text-align: left; }
-button.mp-desglose__fila { cursor: pointer; border-radius: var(--radius-md); transition: background 140ms ease-out; }
-button.mp-desglose__fila:hover { background: var(--mp-bloque-alto); }
-button.mp-desglose__fila:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
-.mp-desglose__rot { flex: 1; min-width: 0; display: flex; flex-direction: column; font-size: 15px; font-weight: 500; color: var(--ink); }
-.mp-desglose__sub { font-size: 12px; font-weight: 400; color: var(--ink-subtle); font-variant-numeric: tabular-nums; }
-.mp-desglose__monto { font-size: 17px; font-weight: 650; letter-spacing: -0.01em; font-variant-numeric: tabular-nums; color: var(--ink); }
-.mp-desglose__monto--roja { color: var(--danger); }
-.mp-desglose__fila .mp-ir { color: var(--ink-subtle); }
 
 /* ---------- cómo te va ---------- */
 

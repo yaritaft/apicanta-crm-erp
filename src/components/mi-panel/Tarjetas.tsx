@@ -3,7 +3,7 @@
 import React from "react";
 import { ChevronRight } from "lucide-react";
 import { money } from "@/lib/format";
-import type { ComisionPorCobrar, MesaDeCobro } from "@/lib/mi-panel";
+import type { MesaDeCobro } from "@/lib/mi-panel";
 import { clic, pctTxt } from "./util";
 import { Cifra } from "./Tile";
 
@@ -81,51 +81,6 @@ export function TarjetaMesa({ titulo, mesa, onAbrir }: {
         </div>
       )}
       {vacio && <p className="mp-vacio" style={{ marginTop: 8 }}>No tenés cuotas pendientes.</p>}
-    </div>
-  );
-}
-
-/* ---------- Comisión sobre la mesa ---------- */
-
-const FILAS: { clave: "mes" | "atrasado" | "futuro" | "sinFecha"; rot: string; abre?: "mes" | "atrasado" | "futuro" }[] = [
-  { clave: "mes", rot: "Vence este mes", abre: "mes" },
-  { clave: "atrasado", rot: "Vencido de antes", abre: "atrasado" },
-  { clave: "futuro", rot: "Más adelante", abre: "futuro" },
-  { clave: "sinFecha", rot: "Sin fecha" },
-];
-
-export function TarjetaComisionPorCobrar({ titulo, c, onAbrir }: {
-  titulo: string;
-  c: ComisionPorCobrar;
-  onAbrir: (cual: "mes" | "atrasado" | "futuro") => void;
-}) {
-  const filas = FILAS.filter((f) => c.porCobrar[f.clave] > 0);
-  return (
-    <div className="mp-card mp-card--por-cobrar">
-      <span className="mp-cap">{titulo}</span>
-      <span className="mp-cifra mp-cifra--verde"><Cifra texto={money(c.total, "USD", 0)} /></span>
-      <span className="mp-nota">Lo que ganás si se cobra todo lo que hay sobre la mesa.</span>
-      {filas.length === 0 ? (
-        <p className="mp-vacio" style={{ marginTop: 20 }}>No tenés cuotas por cobrar: no hay comisión pendiente.</p>
-      ) : (
-        <div className="mp-desglose">
-          {filas.map((f) => {
-            const cuerpo = (
-              <>
-                <span className="mp-desglose__rot">{f.rot}<span className="mp-desglose__sub">{money(c.porCobrar[f.clave], "USD", 0)} por cobrar</span></span>
-                <span className={`mp-desglose__monto${f.clave === "atrasado" ? " mp-desglose__monto--roja" : ""}`}>{money(c[f.clave], "USD", 0)}</span>
-                {f.abre && <ChevronRight size={16} className="mp-ir" aria-hidden />}
-              </>
-            );
-            return f.abre
-              ? <button key={f.clave} type="button" className="mp-desglose__fila" onClick={() => onAbrir(f.abre!)} aria-label={`${f.rot}: ver las cuotas`}>{cuerpo}</button>
-              : <div key={f.clave} className="mp-desglose__fila">{cuerpo}</div>;
-          })}
-        </div>
-      )}
-      <span className="mp-nota" style={{ marginTop: "auto", paddingTop: 16 }}>
-        Estimada con tu % de cada servicio{c.costoProcesador > 0 ? ` y el costo promedio del procesador (${(c.costoProcesador * 100).toFixed(1).replace(".", ",")}%)` : ""}. Lo que se cobre de verdad puede variar.
-      </span>
     </div>
   );
 }

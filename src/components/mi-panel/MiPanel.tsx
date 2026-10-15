@@ -20,7 +20,7 @@ import { DetalleComisiones, DetalleMesa, type TramoMesa } from "./Detalles";
 import { CobrosCargados, LlamadasDeHoy, ParaVos } from "./Listas";
 import { PanelSetter } from "./PanelSetter";
 import { Rendimiento } from "./Rendimiento";
-import { TarjetaComisionPorCobrar, TarjetaComisiones, TarjetaMesa } from "./Tarjetas";
+import { TarjetaComisiones, TarjetaMesa } from "./Tarjetas";
 import { plural, saludoDe } from "./util";
 import "./mi-panel.css";
 
@@ -29,7 +29,7 @@ import "./mi-panel.css";
 
      · barra «Ver el panel de…» (sólo dueños)
      · saludo, el resumen del día, el rango y «Cargar venta»
-     · plata (comisiones, sobre la mesa y la comisión que hay por cobrar)
+     · plata (comisiones y sobre la mesa)
      · cómo te va (agendas, show ups, ventas, tasas, cash)
      · llamadas de hoy y lo que pide acción
      · los cobros que cargaste y si ya los validaron
@@ -131,9 +131,6 @@ export function MiPanel() {
               />
               {!esDirector && <TarjetaMesa titulo="Sobre la mesa · por cobrar" mesa={datos.mesa} onAbrir={setTramo} />}
             </div>
-            {!esDirector && (
-              <TarjetaComisionPorCobrar titulo="Comisión por cobrar" c={datos.comisionPorCobrar} onAbrir={setTramo} />
-            )}
             {!esDirector && (
               <ParaVos titulo="Pendientes" avisos={datos.avisos} total={datos.totalAvisos} puedeCerrarElDia={!viendoOtro} />
             )}
