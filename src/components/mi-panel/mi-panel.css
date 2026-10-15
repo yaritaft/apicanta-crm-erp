@@ -86,21 +86,19 @@
 .mp-pie { display: flex; flex-wrap: wrap; gap: 4px var(--space-5); margin-top: var(--space-4); padding-top: var(--space-4); border-top: 1px solid var(--mp-linea); font-size: 13px; color: var(--ink-subtle); }
 .mp-pie strong { color: var(--ink-muted); font-weight: 600; font-variant-numeric: tabular-nums; }
 
-/* ---------- la meta ---------- */
+/* ---------- comisión por cobrar ---------- */
 
-.mp-card--meta { display: flex; flex-direction: column; }
-.mp-meta { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--space-4); padding-top: var(--space-3); text-align: center; }
-.mp-anillo__pista { stroke: var(--mp-bloque-alto); }
-.mp-anillo__valor { stroke: var(--brand); transition: stroke-dasharray 600ms ease-out; }
-.mp-anillo__pct { font-size: 28px; font-weight: 650; letter-spacing: -0.03em; fill: var(--ink); font-variant-numeric: tabular-nums; }
-.mp-anillo__sub { font-size: 9.5px; fill: var(--ink-subtle); }
-.mp-meta__texto { display: flex; flex-direction: column; align-items: center; gap: 2px; min-width: 0; }
-.mp-meta__cifra { font-size: 22px; line-height: 28px; font-weight: 650; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; color: var(--ink); }
-.mp-meta__cifra span { font-size: 14px; font-weight: 400; color: var(--ink-subtle); letter-spacing: 0; }
-.mp-meta__vacio { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--space-4); text-align: center; padding: var(--space-3) var(--space-3) 0; }
-.mp-meta__editar { margin-left: auto; font-size: 13px; }
-.mp-meta__form { display: flex; flex-direction: column; gap: var(--space-3); margin-top: var(--space-4); }
-.mp-meta__acciones { display: flex; gap: var(--space-2); }
+.mp-card--por-cobrar { display: flex; flex-direction: column; }
+.mp-desglose { display: flex; flex-direction: column; margin-top: var(--space-5); }
+.mp-desglose__fila { display: flex; align-items: center; gap: var(--space-3); width: 100%; padding: 14px 0; border: 0; border-top: 1px solid var(--mp-linea); background: none; font: inherit; color: inherit; text-align: left; }
+button.mp-desglose__fila { cursor: pointer; border-radius: var(--radius-md); transition: background 140ms ease-out; }
+button.mp-desglose__fila:hover { background: var(--mp-bloque-alto); }
+button.mp-desglose__fila:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.mp-desglose__rot { flex: 1; min-width: 0; display: flex; flex-direction: column; font-size: 15px; font-weight: 500; color: var(--ink); }
+.mp-desglose__sub { font-size: 12px; font-weight: 400; color: var(--ink-subtle); font-variant-numeric: tabular-nums; }
+.mp-desglose__monto { font-size: 17px; font-weight: 650; letter-spacing: -0.01em; font-variant-numeric: tabular-nums; color: var(--ink); }
+.mp-desglose__monto--roja { color: var(--danger); }
+.mp-desglose__fila .mp-ir { color: var(--ink-subtle); }
 
 /* ---------- cómo te va ---------- */
 

@@ -71,6 +71,7 @@ export function ParaVos({ titulo, avisos, total, puedeCerrarElDia }: { titulo: s
   return (
     <section className="mp-card mp-card--lista" aria-label={titulo}>
       <div className="mp-cap-fila"><span className="mp-cap">{titulo}</span><span className="mp-cuenta">{total}</span></div>
+      <span className="mp-nota" style={{ marginTop: 2 }}>Lo que hay que resolver para que tus cobros y tu comisión queden al día.</span>
       {avisos.length === 0 ? (
         <p className="mp-vacio" style={{ marginTop: 10 }}>Todo al día. Nada que atender por ahora.</p>
       ) : (

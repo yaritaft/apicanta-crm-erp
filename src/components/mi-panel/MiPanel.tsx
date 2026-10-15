@@ -11,18 +11,16 @@ import { useAcceso } from "@/lib/acceso";
 import { useUsuarioActual } from "@/lib/usuario";
 import { useParamsURL } from "@/lib/useParamsURL";
 import { useRangoURL } from "@/lib/useRango";
-import { usePreferencia } from "@/lib/preferencias";
 import { nivelDeRuta } from "@/lib/permisos";
 import { money } from "@/lib/format";
 import { conPanel, miPanelDe, rangoDelPanel } from "@/lib/mi-panel";
 import { Eye } from "lucide-react";
-import { AnilloMeta, type Meta } from "./AnilloMeta";
 import { BarraVerComo } from "./BarraVerComo";
 import { DetalleComisiones, DetalleMesa, type TramoMesa } from "./Detalles";
 import { CobrosCargados, LlamadasDeHoy, ParaVos } from "./Listas";
 import { PanelSetter } from "./PanelSetter";
 import { Rendimiento } from "./Rendimiento";
-import { TarjetaComisiones, TarjetaMesa } from "./Tarjetas";
+import { TarjetaComisionPorCobrar, TarjetaComisiones, TarjetaMesa } from "./Tarjetas";
 import { plural, saludoDe } from "./util";
 import "./mi-panel.css";
 
@@ -31,7 +29,7 @@ import "./mi-panel.css";
 
      · barra «Ver el panel de…» (sólo dueños)
      · saludo, el resumen del día, el rango y «Cargar venta»
-     · plata (comisiones y sobre la mesa) y la meta del mes
+     · plata (comisiones, sobre la mesa y la comisión que hay por cobrar)
      · cómo te va (agendas, show ups, ventas, tasas, cash)
      · llamadas de hoy y lo que pide acción
      · los cobros que cargaste y si ya los validaron
@@ -41,25 +39,12 @@ import "./mi-panel.css";
    director, que necesitan sus propias tablas.
    ================================================================== */
 
-const validarMetas = (x: unknown): Record<string, Meta> | null => {
-  if (!x || typeof x !== "object" || Array.isArray(x)) return null;
-  const out: Record<string, Meta> = {};
-  for (const [k, v] of Object.entries(x as Record<string, unknown>)) {
-    const m = v as Partial<Meta> | null;
-    if (!m || typeof m !== "object") continue;
-    const num = (n: unknown) => (typeof n === "number" && Number.isFinite(n) && n >= 0 ? n : null);
-    out[k] = { cash: num(m.cash), ventas: num(m.ventas) };
-  }
-  return out;
-};
-
 export function MiPanel() {
   const e = useEstado();
   const yo = useUsuarioActual();
   const { acceso, esDueno } = useAcceso();
   const [v, cambiar] = useParamsURL({ persona: "" });
   const [rangoSel, setRango] = useRangoURL("mes");
-  const metas = usePreferencia("mi-panel:metas", validarMetas);
 
   /* A quién se mira: la persona elegida (sólo un dueño elige) o uno mismo. */
   const candidatos = useMemo(() => e.equipo.filter(conPanel).sort((a, b) => a.nombre.localeCompare(b.nombre, "es")), [e.equipo]);
@@ -102,14 +87,6 @@ export function MiPanel() {
     : esDirector
       ? "Tu comisión sale de las ventas de todos los closers."
       : `Hoy: ${plural(datos.llamadasDeHoy.filter((f) => f.resultado !== "Cancelada").length, "llamada", "llamadas")} · ${datos.porVenirHoy} por venir`;
-
-  const mes = datos.mesActual;
-  const metaDelMes = metas.valor?.[mes.clave] ?? null;
-  const guardarMeta = (m: Meta | null) => {
-    const resto = { ...(metas.valor ?? {}) };
-    if (m) resto[mes.clave] = m; else delete resto[mes.clave];
-    if (Object.keys(resto).length === 0) metas.borrar(); else metas.guardar(resto);
-  };
 
   const totalComision = esDirector ? datos.comisionCloser + datos.comisionDirector : datos.comisionCloser;
 
@@ -155,22 +132,10 @@ export function MiPanel() {
               {!esDirector && <TarjetaMesa titulo="Sobre la mesa · por cobrar" mesa={datos.mesa} onAbrir={setTramo} />}
             </div>
             {!esDirector && (
-              <AnilloMeta
-                key={miembro.id}
-                titulo="Tu meta"
-                puedeEditar={!viendoOtro}
-                mes={mes.clave}
-                meta={viendoOtro ? null : metaDelMes}
-                cobrado={mes.cobrado}
-                ventas={mes.ventas}
-                diasDelMes={mes.dias}
-                diaDelMes={mes.diaDelMes}
-                avisoSinAcceso={viendoOtro ? "La meta la carga cada uno y se guarda en su usuario: no se ve desde otra cuenta." : undefined}
-                onGuardar={guardarMeta}
-              />
+              <TarjetaComisionPorCobrar titulo="Comisión por cobrar" c={datos.comisionPorCobrar} onAbrir={setTramo} />
             )}
             {!esDirector && (
-              <ParaVos titulo="Para vos" avisos={datos.avisos} total={datos.totalAvisos} puedeCerrarElDia={!viendoOtro} />
+              <ParaVos titulo="Pendientes" avisos={datos.avisos} total={datos.totalAvisos} puedeCerrarElDia={!viendoOtro} />
             )}
           </div>
 

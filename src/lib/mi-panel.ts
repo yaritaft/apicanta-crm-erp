@@ -1,6 +1,6 @@
 import type { Cuota, EstadoApp, MiembroEquipo, Pago, Sesion, Venta } from "./types";
 import { rangoDeFechas, type RangoMes } from "./metricas";
-import { comisionesDelMes, comisionSetterDePago, closerDeCuota, pagosDelMes, ventasDelMes, type ComisionVenta } from "./finanzas";
+import { comisionesDelMes, comisionSetterDePago, closerDeCuota, pagosDelMes, tasaDeComision, ventasDelMes, type ComisionVenta } from "./finanzas";
 import { cuotasPorCobrarDe, type CuotaPendiente } from "./cuotas-closer";
 import { filasTabla, type FilaTabla } from "./crm-tabla";
 import { esDelCloser } from "./eod";
@@ -76,6 +76,21 @@ export interface MesaDeCobro {
   incobrable: number;
 }
 
+/* ---------- Comisión sobre la mesa: lo que gana si se cobra lo que falta ---------- */
+
+export interface ComisionPorCobrar {
+  /* Lo estimado por tramo, con el % de cada servicio y el costo promedio del procesador. */
+  total: number;
+  mes: number;
+  atrasado: number;
+  futuro: number;
+  sinFecha: number;
+  /* Lo que falta cobrar en cada tramo (la plata de las cuotas, no la comisión). */
+  porCobrar: { mes: number; atrasado: number; futuro: number; sinFecha: number };
+  /* El costo promedio de procesador de sus cobros (0 a 1): se descuenta antes de aplicar el %. */
+  costoProcesador: number;
+}
+
 /* ---------- Cómo le va: los tiles ---------- */
 
 export interface Rendimiento {
@@ -121,9 +136,8 @@ export interface MiPanel {
   porCobrar: CuotaPendiente[];
   porCobrarTotal: number;
   mesa: MesaDeCobro;
+  comisionPorCobrar: ComisionPorCobrar;
   rendimiento: Rendimiento;
-  /* El mes de hoy completo (para la meta, que es mensual y no sigue el rango). */
-  mesActual: { cobrado: number; ventas: number; clave: string; dias: number; diaDelMes: number };
   /* ---- llamadas ---- */
   /* Todas las suyas del rango, con su estado. */
   llamadas: FilaTabla[];
@@ -188,6 +202,37 @@ export function mesaDe(e: Pick<EstadoApp, "cuotas" | "ventas" | "pagos">, closer
   return m;
 }
 
+/** Lo que va a ganar un closer si se cobra todo lo que le falta: cada cuota pendiente, con el % de su servicio,
+ *  menos el costo promedio de procesador que tuvieron sus cobros (la comisión se calcula sobre lo neto). Es una
+ *  estimación: el costo real de un cobro futuro lo sabe recién la pasarela. No cuenta las incobrables ni lo que ya cobró. */
+export function comisionPorCobrarDe(
+  e: Pick<EstadoApp, "cuotas" | "ventas" | "pagos">, m: Pick<MiembroEquipo, "id" | "comisionRate" | "comisionServicios" | "sinComision">, hoy: string,
+): ComisionPorCobrar {
+  const porCobrar = cuotasPorCobrarDe(e, m.id);
+  /* El costo promedio de procesador de lo que ya cobró (sus cobros, por venta o por cuota heredada). */
+  const cuotas = new Map(e.cuotas.map((c) => [c.id, c] as const));
+  const ventas = new Map(e.ventas.map((v) => [v.id, v] as const));
+  let monto = 0, fee = 0;
+  for (const p of e.pagos) {
+    const c = cuotas.get(p.cuotaId);
+    const v = c ? ventas.get(c.ventaId) : undefined;
+    if (!c || !v || closerDeCuota(v, c) !== m.id) continue;
+    monto += p.monto; fee += p.feeMonto;
+  }
+  const costoProcesador = monto > 0 ? Math.min(0.2, Math.max(0, fee / monto)) : 0;
+  const mes = hoy.slice(0, 7);
+  const r: ComisionPorCobrar = { total: 0, mes: 0, atrasado: 0, futuro: 0, sinFecha: 0, porCobrar: { mes: 0, atrasado: 0, futuro: 0, sinFecha: 0 }, costoProcesador };
+  for (const x of porCobrar) {
+    const d = x.cuota.vence ? diaDeNegocio(x.cuota.vence) : "";
+    const tramo = !d ? "sinFecha" : d.slice(0, 7) === mes ? "mes" : d.slice(0, 7) < mes ? "atrasado" : "futuro";
+    r.porCobrar[tramo] += x.falta;
+    if (!m.sinComision) r[tramo] += x.falta * (1 - costoProcesador) * tasaDeComision(m, x.venta.productoId);
+  }
+  for (const k of ["mes", "atrasado", "futuro", "sinFecha"] as const) { r[k] = r2(r[k]); r.porCobrar[k] = r2(r.porCobrar[k]); }
+  r.total = r2(r.mes + r.atrasado + r.futuro + r.sinFecha);
+  return r;
+}
+
 /** Cómo le va a un closer en el rango: sus llamadas y sus ventas. */
 export function rendimientoDe(filas: FilaTabla[], ventas: Venta[], cobrado: number): Rendimiento {
   const validas = filas.filter((f) => f.resultado !== CANCELADA && f.resultado !== REPROGRAMO);
@@ -236,14 +281,6 @@ export function miPanelDe(e: EstadoApp, m: MiembroEquipo, rango: RangoMes, ahora
   const porCobrarTotal = r2(porCobrar.reduce((a, x) => a + x.falta, 0));
   const mesa = mesaDe(e, m.id, hoy);
 
-  /* El mes de hoy completo, para la meta (que es mensual). */
-  const claveMes = hoy.slice(0, 7);
-  const [aa, mm] = claveMes.split("-").map(Number);
-  const diasDelMes = new Date(aa, mm, 0).getDate();
-  const mesDeHoy = rangoDeFechas(`${claveMes}-01`, `${claveMes}-${String(diasDelMes).padStart(2, "0")}`, claveMes);
-  const cobradoMesActual = r2(comisionesDelMes(e, mesDeHoy).filter((c) => c.closerId === m.id).reduce((a, c) => a + c.cobradoEnMes, 0));
-  const ventasMesActual = ventasDelMes(e, mesDeHoy).filter((v) => v.closerId === m.id && v.estado !== "cancelada").length;
-
   /* Sus llamadas. */
   const todas = filasTabla(e, ahora).filter((f) => esDelCloser(f.sesion, m.nombre, e.equipo));
   const llamadas = todas.filter((f) => f.dia >= desdeDia && f.dia <= hastaDia).sort((a, b) => a.llamada.localeCompare(b.llamada));
@@ -274,7 +311,7 @@ export function miPanelDe(e: EstadoApp, m: MiembroEquipo, rango: RangoMes, ahora
   };
 
   /* Lo que le pide acción. */
-  const { avisos, total: totalAvisos } = avisosDe(e, m, { dia, todas, porCobrar, cobros, hoy, ahora });
+  const { avisos, total: totalAvisos } = avisosDe(e, { dia, porCobrar, cobros, ahora });
 
   /* Las agendas que le cargaron como setter: las que entraron por su link (utm_campaign=setter_nombre). */
   const agendasDeSetter: AgendaDeSetter[] = [];
@@ -297,8 +334,7 @@ export function miPanelDe(e: EstadoApp, m: MiembroEquipo, rango: RangoMes, ahora
   return {
     miembro: m, vista, rango,
     cobradoRango, comisionCloser, descuentoCierre, comisionDirector, comisionSetter: r2(comisionSetter), comisiones,
-    ventasDelRango, porCobrar, porCobrarTotal, mesa, rendimiento,
-    mesActual: { cobrado: cobradoMesActual, ventas: ventasMesActual, clave: claveMes, dias: diasDelMes, diaDelMes: Number(hoy.slice(8, 10)) },
+    ventasDelRango, porCobrar, porCobrarTotal, mesa, comisionPorCobrar: comisionPorCobrarDe(e, m, hoy), rendimiento,
     llamadas, llamadasDeHoy, porVenirHoy, dia, strikes, avisos, totalAvisos,
     cobros, controlDeCobros,
     agendasDeSetter, ventasDeSetter,
@@ -309,10 +345,12 @@ export function miPanelDe(e: EstadoApp, m: MiembroEquipo, rango: RangoMes, ahora
 
 /** Cuántos avisos de cada tipo se listan; el resto se cuenta en el título. */
 const POR_TIPO = 2;
+/** Hasta cuántos días atrás se avisa de una cuota vencida. */
+const DIAS_VENCIDAS = 30;
 
 function avisosDe(
-  e: EstadoApp, m: MiembroEquipo,
-  c: { dia: ResumenDelDia; todas: FilaTabla[]; porCobrar: CuotaPendiente[]; cobros: CobroCargado[]; hoy: string; ahora: number },
+  e: Pick<EstadoApp, "productos">,
+  c: { dia: ResumenDelDia; porCobrar: CuotaPendiente[]; cobros: CobroCargado[]; ahora: number },
 ): { avisos: Aviso[]; total: number } {
   const avisos: Aviso[] = [];
   let total = 0;
@@ -329,14 +367,6 @@ function avisosDe(
     });
   }
 
-  /* Los que no vinieron, de los últimos tres días: ¿se reagendan? */
-  const hace3 = diaDeNegocio(new Date(Date.parse(`${c.hoy}T12:00:00Z`) - 3 * DIA).toISOString());
-  const noVinieron = c.todas.filter((f) => f.resultado === NO_SE_PRESENTO && f.dia >= hace3);
-  total += noVinieron.length;
-  for (const f of noVinieron.slice(0, POR_TIPO)) {
-    avisos.push({ clave: `ns|${f.id}`, tono: "danger", resaltado: f.nombre, texto: "no se presentó: ¿lo reagendás?", accion: { texto: "Ver", ir: "ficha", id: f.personaId } });
-  }
-
   /* Cobros que rechazó quien los miró: hay que arreglarlos. */
   const rechazados = c.cobros.filter((x) => x.control.estado === "rechazado");
   total += rechazados.length;
@@ -348,9 +378,13 @@ function avisosDe(
     });
   }
 
-  /* Cuotas vencidas. */
+  /* Cuotas que vencieron en los últimos 30 días: las que todavía se pueden ir a cobrar. Lo más viejo ya es mora
+     y se ve en «Sobre la mesa». */
   const ahora = c.ahora;
-  const vencidas = c.porCobrar.filter((x) => x.cuota.vence && new Date(x.cuota.vence).getTime() < ahora);
+  const vencidas = c.porCobrar.filter((x) => {
+    const t = x.cuota.vence ? new Date(x.cuota.vence).getTime() : NaN;
+    return t < ahora && t >= ahora - DIAS_VENCIDAS * DIA;
+  });
   total += vencidas.length;
   for (const x of vencidas.slice(0, POR_TIPO)) {
     avisos.push({
@@ -360,18 +394,5 @@ function avisosDe(
     });
   }
 
-  /* Ventas cargadas que no tienen ningún cobro. */
-  const conPago = new Set(e.cuotas.filter((q) => e.pagos.some((p) => p.cuotaId === q.id)).map((q) => q.ventaId));
-  const sinCobro = e.ventas.filter((v) => v.closerId === m.id && v.estado === "activa" && !conPago.has(v.id)
-    && (ahora - new Date(v.fecha).getTime()) > 7 * DIA);
-  total += sinCobro.length;
-  for (const v of sinCobro.slice(0, POR_TIPO)) {
-    const dias = Math.floor((ahora - new Date(v.fecha).getTime()) / DIA);
-    avisos.push({
-      clave: `sc|${v.id}`, tono: "warning", resaltado: v.contactoNombre,
-      texto: `la venta no tiene ningún cobro cargado, hace ${dias} ${dias === 1 ? "día" : "días"}.`,
-      accion: { texto: "Ver", ir: "ficha", id: v.id },
-    });
-  }
   return { avisos, total };
 }
