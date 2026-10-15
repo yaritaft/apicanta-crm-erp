@@ -163,7 +163,7 @@ export function FormularioVenta({ borrador, onCerrar, onGuardado }: {
         <Field label="Director">
           <Select value={sinComision ? "" : f.directorId} disabled={sinComision} placeholder={sinComision ? "No aplica" : "Sin asignar"}
             onChange={(ev) => setF({ ...f, directorId: ev.target.value })}
-            opciones={e.equipo.filter((x) => x.rol === "director").map((x) => ({ valor: x.id, texto: x.nombre }))} />
+            opciones={e.equipo.filter((x) => x.rol === "director" && (x.activo || x.id === f.directorId)).map((x) => ({ valor: x.id, texto: x.nombre }))} />
         </Field>
 
         <Field label="Estrategia utilizada">

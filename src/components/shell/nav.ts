@@ -1,7 +1,7 @@
 import {
   LayoutDashboard, Users, Sheet, CalendarDays, Video, Megaphone,
   GraduationCap, ClipboardList, Wallet, Settings, HandCoins, ArrowDownUp, Banknote, Landmark, UserCheck,
-  ClipboardCheck, PhoneCall, ListChecks, FileInput,
+  ClipboardCheck, PhoneCall, ListChecks, FileInput, UserRound,
 } from "lucide-react";
 import { SquareKanban } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
@@ -31,6 +31,8 @@ export const NAV: GrupoNav[] = [
       { href: "/leads", texto: "Leads", icono: Users, ayuda: "Toda la gente interesada" },
       { href: "/crm", texto: "CRM", icono: Sheet, ayuda: "Cada llamada con todo lo de la persona: se filtra y se corrige como un Excel" },
       { href: "/agenda", texto: "Agenda", icono: CalendarDays, ayuda: "Las llamadas por día: entran solas desde Calendly" },
+      /* Cada uno ve el suyo; un dueño elige de quién mirarlo, tal cual lo ve esa persona. */
+      { href: "/mi-panel", texto: "Mi panel", icono: UserRound, ayuda: "Tus comisiones, tus cuotas por cobrar y tus llamadas. Un dueño puede mirar el de cualquier closer o setter" },
       { href: "/ventas", texto: "Ventas", icono: HandCoins, ayuda: "Cada venta con sus cuotas y cobros" },
       { href: "/clientes", texto: "Clientes", icono: UserCheck, ayuda: "La gente que compró: qué compró, cuánto pagó y si está al día" },
     ],
@@ -80,6 +82,7 @@ export const NAV_CLOSER: GrupoNav[] = [
     titulo: "Tu día",
     items: [
       { href: "/mis-llamadas", texto: "Mis llamadas", icono: PhoneCall, ayuda: "Tus llamadas de hoy: cargá cómo terminó cada una" },
+      { href: "/mi-panel", texto: "Mi panel", icono: UserRound, ayuda: "Tus comisiones, tus cuotas por cobrar y tus próximas llamadas" },
       { href: "/cerrar-el-dia", texto: "Cerrar el día", icono: ClipboardCheck, ayuda: "Pasá por tus llamadas y contá cómo terminó cada una", edita: true },
       { href: "/cargar-venta", texto: "Cargar venta", icono: HandCoins, ayuda: "Cargá una venta nueva: pasa a cliente", edita: true },
     ],

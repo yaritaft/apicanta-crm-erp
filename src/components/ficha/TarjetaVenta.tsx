@@ -13,7 +13,9 @@ import { CabezaPlegable } from "./Plegable";
 import { ChequeoDeCobro } from "@/components/cobros/ControlCobro";
 import { DevolucionesDeVenta } from "@/components/devoluciones/DevolucionesDeVenta";
 import { useAcceso } from "@/lib/acceso";
-import { puedeDarDeBaja } from "@/lib/permisos";
+import { puedeDarDeBaja, puedeEditar } from "@/lib/permisos";
+import { esIncobrable } from "@/lib/cuota-incobrable";
+import { AccionesDeCuota } from "@/components/cobros/AccionesDeCuota";
 
 /* ==================================================================
    Una venta dentro de la ficha: qué compró, cuánto lleva pagado y cada
@@ -43,6 +45,7 @@ export function TarjetaVenta({ e, venta, resaltada, abierta, onAlternar, onPagar
   /* El closer no cancela ni marca reembolsada su venta (D6): una devolución se carga con su comprobante. */
   const { acceso } = useAcceso();
   const puedeBaja = puedeDarDeBaja(acceso);
+  const puedeCuotas = puedeEditar(acceso, "cuotas");
   const M = (n: number, d = 0) => money(n, venta.moneda, d);
   const saldo = saldoVenta(e, venta.id);
   const producto = e.productos.find((x) => x.id === venta.productoId)?.nombre ?? "Venta";
@@ -127,7 +130,7 @@ export function TarjetaVenta({ e, venta, resaltada, abierta, onAlternar, onPagar
                   )}
                   <span className="spacer t-num t-strong">{M(c.monto, 2)}</span>
                   {c.estado === "cancelada"
-                    ? <Badge variante="neutral">Cancelada</Badge>
+                    ? <Badge variante="neutral">{esIncobrable(c) ? "Incobrable" : "Cancelada"}</Badge>
                     : vencida
                       ? <Badge variante="danger"><AlertTriangle size={13} />Vencida</Badge>
                       : resta <= 0.01
@@ -180,10 +183,15 @@ export function TarjetaVenta({ e, venta, resaltada, abierta, onAlternar, onPagar
                   </div>
                 )}
                 {activa && c.estado !== "cancelada" && resta > 0.01 && (
-                  <Button sm variante="secondary" style={{ alignSelf: "flex-start", marginTop: 6 }} onClick={() => onPagar(c)}>
-                    Registrar pago de {M(resta, 2)}
-                  </Button>
+                  <div className="row" style={{ gap: 4, flexWrap: "wrap" }}>
+                    <Button sm variante="secondary" style={{ alignSelf: "flex-start", marginTop: 6 }} onClick={() => onPagar(c)}>
+                      Registrar pago de {M(resta, 2)}
+                    </Button>
+                    {puedeCuotas && <AccionesDeCuota cuota={c} />}
+                  </div>
                 )}
+                {/* Una incobrable dice por qué y se puede volver a cobrar. */}
+                {activa && puedeCuotas && esIncobrable(c) && <AccionesDeCuota cuota={c} />}
               </div>
             ))}
           </div>

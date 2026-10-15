@@ -36,6 +36,7 @@ import { personaDe } from "./persona";
 import { extraConCorreccion, tituloPerfil, type CampoPerfil } from "./perfil";
 import { puedeCargarDevolucion, puedeDarDeBaja, puedeEditar, TIPOS_POR_DEFECTO, type MiAcceso } from "./permisos";
 import { esDevolucionConfirmada } from "./devoluciones";
+import { esIncobrable, notasDeIncobrable, notasSinIncobrable } from "./cuota-incobrable";
 import { atarPropuesta, conciliarReembolsos, type ReembolsoCrudo, type ResultadoReembolsos } from "./reembolsos";
 import {
   cambiosDeChequeo, conChequeo, conComprobanteNuevo, puedeCambiarComprobante, puedeUsarCasillero,
@@ -1350,6 +1351,56 @@ export const acciones = {
     const { lista: act, nuevo } = registrar(e, "config", closerId ?? ids[0], "Cuotas de closer", "actualizo", detalle);
     guardar({ ...e, cuotas, actividad: act });
     empujarUpdate("cuotas", ids, { closerId });
+    empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
+  },
+
+  /* Cambiarle la fecha a una cuota (reunión del 15/10: «el cliente pide
+     arrastrarla al mes siguiente»). `vence` es aaaa-mm-dd. La nota deja dicho
+     de cuándo a cuándo y por qué, y queda en la actividad. */
+  reprogramarCuota(id: ID, vence: string, motivo: string) {
+    const e = snapshot();
+    const c = e.cuotas.find((x) => x.id === id);
+    if (!c || !/^\d{4}-\d{2}-\d{2}$/.test(vence)) return;
+    const venta = e.ventas.find((v) => v.id === c.ventaId);
+    const nombre = c.esReserva ? "la reserva" : `la cuota ${c.numero}`;
+    const de = c.vence ? c.vence.slice(0, 10) : "sin fecha";
+    const linea = `Fecha cambiada del ${de} al ${vence}${motivo.trim() ? `: ${motivo.trim()}` : ""}`;
+    const notas = c.notas ? `${c.notas} | ${linea}` : linea;
+    const nueva = new Date(`${vence}T12:00:00-03:00`).toISOString();
+    const cuotas = e.cuotas.map((x) => (x.id === id ? { ...x, vence: nueva, notas } : x));
+    const { lista: act, nuevo } = registrar(e, "transaccion", c.ventaId, venta?.contactoNombre ?? "Venta", "actualizo", `Se pasó ${nombre} del ${de} al ${vence}.${motivo.trim() ? ` Motivo: ${motivo.trim()}` : ""}`);
+    guardar({ ...e, cuotas, actividad: act });
+    empujar({ tipo: "update", tabla: "cuotas", ids: [id], cambios: { vence: nueva, notas } });
+    empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
+  },
+
+  /* Dar una cuota por incobrable (no se va a cobrar), con el motivo. Sale de lo
+     que falta cobrar como una cuota cancelada; `reactivarCuota` la devuelve. */
+  marcarIncobrable(id: ID, motivo: string) {
+    const e = snapshot();
+    const c = e.cuotas.find((x) => x.id === id);
+    if (!c || !motivo.trim()) return;
+    const venta = e.ventas.find((v) => v.id === c.ventaId);
+    const nombre = c.esReserva ? "la reserva" : `la cuota ${c.numero}`;
+    const notas = notasDeIncobrable(c, motivo);
+    const cuotas = e.cuotas.map((x) => (x.id === id ? { ...x, estado: "cancelada" as const, notas } : x));
+    const { lista: act, nuevo } = registrar(e, "transaccion", c.ventaId, venta?.contactoNombre ?? "Venta", "actualizo", `Se dio por incobrable ${nombre}. Motivo: ${motivo.trim()}`);
+    guardar({ ...e, cuotas, actividad: act });
+    empujar({ tipo: "update", tabla: "cuotas", ids: [id], cambios: { estado: "cancelada", notas } });
+    empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
+  },
+
+  reactivarCuota(id: ID) {
+    const e = snapshot();
+    const c = e.cuotas.find((x) => x.id === id);
+    if (!c || !esIncobrable(c)) return;
+    const venta = e.ventas.find((v) => v.id === c.ventaId);
+    const nombre = c.esReserva ? "la reserva" : `la cuota ${c.numero}`;
+    const notas = notasSinIncobrable(c);
+    const cuotas = e.cuotas.map((x) => (x.id === id ? { ...x, estado: "pendiente" as const, notas } : x));
+    const { lista: act, nuevo } = registrar(e, "transaccion", c.ventaId, venta?.contactoNombre ?? "Venta", "actualizo", `Se volvió a cobrar ${nombre}: ya no es incobrable.`);
+    guardar({ ...e, cuotas, actividad: act });
+    empujar({ tipo: "update", tabla: "cuotas", ids: [id], cambios: { estado: "pendiente", notas: notas ?? null } });
     empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
   },
 

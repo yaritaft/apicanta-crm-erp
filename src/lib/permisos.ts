@@ -271,6 +271,8 @@ const RUTAS: [string, AreaId | "equipo"][] = [
   ["/crm", "crm"],
   /* La cuenta del closer: sus llamadas, el cierre del día y cargar una venta. */
   ["/mis-llamadas", "crm"],
+  /* Mi panel: lo de cada uno. Lo ve quien ve las llamadas (closer, setter, director y los dueños). */
+  ["/mi-panel", "crm"],
   ["/cerrar-el-dia", "crm"],
   ["/cargar-venta", "ventas"],
   ["/agenda", "crm"],

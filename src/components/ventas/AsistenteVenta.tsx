@@ -12,8 +12,7 @@ import {
 } from "@/components/cobros/EditorCobros";
 import { disponibleDe } from "@/components/cobros/SelectorMovimiento";
 import { acciones, nuevoId, useEstado } from "@/lib/store";
-import { fechaLarga, isoDia, money, pct, tasaTexto } from "@/lib/format";
-import { tasaDeComision } from "@/lib/finanzas";
+import { fechaLarga, isoDia, money, pct } from "@/lib/format";
 import { medioDeMovimiento, normalizar, parecido, procesadorDeMovimiento } from "@/lib/conciliacion";
 import { buscarPersonas, nombreDeCuota, personaPorId, type PersonaBuscada } from "@/lib/buscar-cliente";
 import { claveEmail } from "@/lib/contactos";
@@ -404,7 +403,7 @@ function inicial(e: EstadoApp, mov?: Movimiento, cliente?: { contactoId: string;
     precioAcordado: mov?.monto ?? producto?.precioLista ?? 0,
     precioTocado: Boolean(mov),
     closerId: "",
-    directorId: e.equipo.find((x) => x.rol === "director")?.id ?? "",
+    directorId: e.equipo.find((x) => x.rol === "director" && x.activo)?.id ?? "",
     /* Sin estrategia de entrada: la pone la UTM al guardar. Antes arrancaba
        con la primera de la lista y, sin el paso de origen, todo habría
        quedado con la estrategia del webinar sin que nadie la eligiera. */
@@ -708,10 +707,9 @@ function PasoEquipo({ b, set, e, sinComision, yo }: {
      está cargando (sin email en Equipo y honorarios), se muestran todos. */
   const veCeo = !yo || yo.rol === "ceo" || b.closerId === e.equipo.find((x) => x.rol === "ceo")?.id;
   const closers = e.equipo.filter((x) => x.activo && (x.rol === "closer" || (x.rol === "ceo" && veCeo)));
-  const directores = e.equipo.filter((x) => x.rol === "director");
+  /* El director es siempre el que está activo (Santi): quien ya no está (Noelia) no se ofrece. */
+  const directores = e.equipo.filter((x) => x.rol === "director" && x.activo);
   const setters = e.equipo.filter((x) => x.activo && x.rol === "setter");
-  /* El % de cada uno en el servicio de esta venta: puede no ser el general. */
-  const comision = (x: MiembroEquipo) => (x.sinComision ? "no comisiona nadie" : `comisión ${tasaTexto(tasaDeComision(x, b.productoId || undefined))}`);
   return (
     <>
       <Pregunta texto="¿Quién es el vendedor?" sub="De acá salen las comisiones: el vendedor cobra sobre lo que entra, neto de procesador." />
@@ -720,7 +718,7 @@ function PasoEquipo({ b, set, e, sinComision, yo }: {
         <Select
           value={b.closerId} placeholder="Elegí el vendedor" aria-label="Vendedor"
           onChange={(ev) => set({ closerId: ev.target.value })}
-          opciones={closers.map((x) => ({ valor: x.id, texto: `${x.nombre} · ${comision(x)}` }))}
+          opciones={closers.map((x) => ({ valor: x.id, texto: x.nombre }))}
         />
       </div>
 
@@ -731,7 +729,7 @@ function PasoEquipo({ b, set, e, sinComision, yo }: {
             <Select
               value={b.directorId} aria-label="Director"
               onChange={(ev) => set({ directorId: ev.target.value })}
-              opciones={[{ valor: "", texto: "Sin director" }, ...directores.map((x) => ({ valor: x.id, texto: `${x.nombre} · ${comision(x)}` }))]}
+              opciones={[{ valor: "", texto: "Sin director" }, ...directores.map((x) => ({ valor: x.id, texto: x.nombre }))]}
             />
           </div>
         )}
@@ -740,7 +738,7 @@ function PasoEquipo({ b, set, e, sinComision, yo }: {
           <Select
             value={b.setterId} aria-label="Nombre del setter"
             onChange={(ev) => set({ setterId: ev.target.value })}
-            opciones={[{ valor: "", texto: "Sin setter" }, ...setters.map((x) => ({ valor: x.id, texto: `${x.nombre} · ${comision(x)}` }))]}
+            opciones={[{ valor: "", texto: "Sin setter" }, ...setters.map((x) => ({ valor: x.id, texto: x.nombre }))]}
           />
         </div>
         <div className="hk-field">

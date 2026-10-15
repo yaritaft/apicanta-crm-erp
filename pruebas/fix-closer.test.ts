@@ -278,12 +278,12 @@ const acceso = (areas: AreasDeTipo, soloLoSuyo: boolean): MiAcceso => ({ tipo: "
 const rutas = (a: MiAcceso) => navPara(a).flatMap((g) => g.items.map((i) => i.href));
 
 test("«Cargar venta» y «Cerrar el día» sólo están en el menú del closer si su tipo edita Ventas y el CRM; «Mis llamadas», con verlo alcanza", () => {
-  assert.deepEqual(rutas(acceso({ crm: "editar", ventas: "editar" }, true)), ["/mis-llamadas", "/cerrar-el-dia", "/cargar-venta"]);
-  assert.deepEqual(rutas(acceso({ crm: "editar", ventas: "ver" }, true)), ["/mis-llamadas", "/cerrar-el-dia"], "con Ventas sólo para mirar, la base rechazaría la venta");
-  assert.deepEqual(rutas(acceso({ crm: "ver", ventas: "editar" }, true)), ["/mis-llamadas", "/cargar-venta"], "con el CRM sólo para mirar, la base rechazaría el cierre");
-  assert.deepEqual(rutas(acceso({ crm: "ver", ventas: "ver" }, true)), ["/mis-llamadas"]);
-  assert.deepEqual(rutas(acceso({ crm: "ver" }, true)), ["/mis-llamadas"]);
-  assert.deepEqual(rutas(acceso({ crm: "editar" }, true)), ["/mis-llamadas", "/cerrar-el-dia"]);
+  assert.deepEqual(rutas(acceso({ crm: "editar", ventas: "editar" }, true)), ["/mis-llamadas", "/mi-panel", "/cerrar-el-dia", "/cargar-venta"]);
+  assert.deepEqual(rutas(acceso({ crm: "editar", ventas: "ver" }, true)), ["/mis-llamadas", "/mi-panel", "/cerrar-el-dia"], "con Ventas sólo para mirar, la base rechazaría la venta");
+  assert.deepEqual(rutas(acceso({ crm: "ver", ventas: "editar" }, true)), ["/mis-llamadas", "/mi-panel", "/cargar-venta"], "con el CRM sólo para mirar, la base rechazaría el cierre");
+  assert.deepEqual(rutas(acceso({ crm: "ver", ventas: "ver" }, true)), ["/mis-llamadas", "/mi-panel"]);
+  assert.deepEqual(rutas(acceso({ crm: "ver" }, true)), ["/mis-llamadas", "/mi-panel"]);
+  assert.deepEqual(rutas(acceso({ crm: "editar" }, true)), ["/mis-llamadas", "/mi-panel", "/cerrar-el-dia"]);
   assert.deepEqual(rutas(acceso({ ventas: "editar" }, true)), ["/cargar-venta"], "sin el CRM no hay «Mis llamadas», pero hay con qué cargar una venta");
   /* Las dos acciones son las únicas que piden editar. */
   assert.deepEqual(NAV_CLOSER.flatMap((g) => g.items).filter((i) => i.edita).map((i) => i.href), ["/cerrar-el-dia", "/cargar-venta"]);
@@ -333,9 +333,9 @@ test("el inicio de cualquier tipo que ve algo es una pantalla de su menú, con y
 
 test("los tipos de fábrica siguen con su menú de siempre", () => {
   const menus: Record<string, string[]> = {
-    closer: ["/mis-llamadas", "/cerrar-el-dia", "/cargar-venta"],
-    setter: ["/leads", "/crm", "/agenda"],
-    director: ["/panel", "/leads", "/crm", "/agenda", "/ventas", "/clientes", "/webinars", "/formularios"],
+    closer: ["/mis-llamadas", "/mi-panel", "/cerrar-el-dia", "/cargar-venta"],
+    setter: ["/leads", "/crm", "/agenda", "/mi-panel"],
+    director: ["/panel", "/leads", "/crm", "/agenda", "/mi-panel", "/ventas", "/clientes", "/webinars", "/formularios"],
     admin: ["/panel", "/ventas", "/clientes", "/finanzas", "/finanzas/caja", "/conciliacion"],
     marketing: ["/panel", "/leads", "/webinars", "/formularios", "/marketing"],
     customer_success: ["/clientes", "/alumnos", "/alumnos?seccion=pipeline", "/reportes", "/alumnos?seccion=hoy", "/alumnos?seccion=clientes"],
