@@ -24,7 +24,7 @@ export const NAV: GrupoNav[] = [
     items: [
       { href: "/panel", texto: "Dashboard & KPIs", icono: LayoutDashboard, ayuda: "Todas las métricas del negocio, en una tabla o en gráficos" },
       /* Cada uno ve el suyo; un dueño elige de quién mirarlo, tal cual lo ve esa persona. */
-      { href: "/mi-panel", texto: "Mi panel", icono: UserRound, ayuda: "Tus comisiones, tus cuotas por cobrar y tus llamadas. Un dueño puede mirar el de cualquier closer o setter" },
+      { href: "/mi-panel", texto: "Mi panel", icono: UserRound, ayuda: "Tus comisiones, lo que tenés por cobrar y cómo te va. Los dueños pueden mirar el de cualquiera" },
     ],
   },
   {

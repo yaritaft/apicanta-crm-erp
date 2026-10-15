@@ -1,0 +1,159 @@
+/* ==================================================================
+   Mi panel: las cards, los tiles y las listas. La estructura sale del Mi Panel
+   de Blue OS (plata y meta arriba, cómo te va, llamadas de hoy y lo que pide
+   acción); los colores y el ritmo, de los tokens de Apicanta: violeta de
+   ambiente, un solo naranja por pantalla (Cargar venta), tinta de leyenda en
+   mayúsculas sólo en los rótulos.
+   ================================================================== */
+
+.mp { display: flex; flex-direction: column; gap: var(--space-4); min-width: 0; }
+
+/* ---------- cards ---------- */
+
+.mp-card {
+  background: var(--surface-100); border: 1px solid var(--border); border-radius: var(--radius-xl);
+  padding: var(--space-4) var(--space-5); min-width: 0;
+}
+.mp-card--ok { background: color-mix(in srgb, var(--success) 9%, var(--surface-100)); border-color: color-mix(in srgb, var(--success) 26%, var(--border)); }
+.mp-card--aviso { background: color-mix(in srgb, var(--warning) 9%, var(--surface-100)); border-color: color-mix(in srgb, var(--warning) 26%, var(--border)); }
+.mp-card--clic { cursor: pointer; transition: background 150ms ease-out, border-color 150ms ease-out; }
+.mp-card--clic:hover { border-color: var(--border-strong); }
+.mp-card--clic:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.mp-card--sin-relleno { padding: 0; overflow: hidden; }
+
+.mp-cap {
+  display: block; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.12em; color: var(--ink-subtle);
+}
+.mp-card--ok .mp-cap { color: var(--success); }
+.mp-card--aviso .mp-cap { color: var(--warning); }
+.mp-cap-fila { display: flex; align-items: center; gap: var(--space-2); }
+.mp-cap-fila .mp-ir { margin-left: auto; color: var(--ink-subtle); }
+.mp-cifra { display: block; margin-top: 6px; font-size: 28px; line-height: 32px; font-weight: 800; font-variant-numeric: tabular-nums; color: var(--ink); }
+.mp-cifra--media { font-size: 22px; line-height: 26px; }
+.mp-cifra--roja { color: var(--danger); }
+.mp-nota { display: block; margin-top: 4px; font-size: 12px; line-height: 18px; color: var(--ink-subtle); font-variant-numeric: tabular-nums; }
+.mp-nota--aviso { color: var(--warning); }
+.mp-nota--ok { color: var(--success); }
+.mp-nota--roja { color: var(--danger); }
+.mp-vacio { margin: 0; font-size: 13px; line-height: 20px; color: var(--ink-subtle); }
+
+/* ---------- las dos filas de arriba ---------- */
+
+.mp-arriba { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr) minmax(0, 1fr); gap: var(--space-4); align-items: start; }
+.mp-columna { display: flex; flex-direction: column; gap: var(--space-3); min-width: 0; }
+.mp-abajo { display: flex; flex-direction: column; gap: var(--space-4); min-width: 0; }
+@media (max-width: 1180px) { .mp-arriba { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } .mp-arriba > :last-child { grid-column: 1 / -1; } }
+@media (max-width: 860px) { .mp-arriba { grid-template-columns: minmax(0, 1fr); } .mp-arriba > :last-child { grid-column: auto; } }
+
+/* ---------- sobre la mesa ---------- */
+
+.mp-mesa { display: flex; gap: var(--space-4); margin-top: var(--space-3); }
+.mp-mesa__col { flex: 1 1 0; min-width: 0; }
+.mp-mesa__col--clic { cursor: pointer; border-radius: var(--radius-md); }
+.mp-mesa__col--clic:focus-visible { outline: 2px solid var(--focus); outline-offset: 4px; }
+.mp-mesa__sep { width: 1px; background: var(--border); flex: none; }
+.mp-mesa__rot { display: block; font-size: 12px; color: var(--ink-subtle); margin-bottom: 2px; }
+.mp-barra { height: 4px; border-radius: 2px; margin-top: 8px; background: color-mix(in srgb, var(--ink-subtle) 25%, transparent); overflow: hidden; }
+.mp-barra > span { display: block; height: 100%; background: var(--success); transition: width 260ms ease-out; }
+.mp-pie { display: flex; flex-wrap: wrap; gap: 4px var(--space-4); margin-top: var(--space-3); padding-top: var(--space-3); border-top: 1px solid var(--border); font-size: 12px; color: var(--ink-subtle); }
+.mp-pie strong { color: var(--ink-muted); font-variant-numeric: tabular-nums; }
+
+/* ---------- la meta ---------- */
+
+.mp-meta { display: flex; align-items: center; gap: var(--space-5); flex-wrap: wrap; margin-top: var(--space-3); }
+.mp-anillo { flex: none; }
+.mp-anillo__pista { stroke: var(--border); }
+.mp-anillo__valor { stroke: var(--brand); transition: stroke-dasharray 600ms ease-out; }
+.mp-anillo__pct { font-size: 19px; font-weight: 800; fill: var(--ink); font-variant-numeric: tabular-nums; }
+.mp-anillo__sub { font-size: 8.5px; fill: var(--ink-subtle); }
+.mp-meta__texto { flex: 1 1 160px; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.mp-meta__editar { margin-left: auto; font-size: 12px; }
+.mp-meta__form { display: flex; flex-direction: column; gap: var(--space-3); margin-top: var(--space-3); }
+.mp-meta__acciones { display: flex; gap: var(--space-2); }
+
+/* ---------- cómo te va ---------- */
+
+.mp-titulo { display: flex; align-items: baseline; gap: var(--space-3); flex-wrap: wrap; margin-bottom: var(--space-3); }
+.mp-titulo h2 { margin: 0; font-size: 15px; line-height: 22px; font-weight: 700; color: var(--ink); }
+.mp-titulo span { font-size: 12px; color: var(--ink-subtle); }
+.mp-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(138px, 1fr)); gap: var(--space-3); }
+.mp-tile {
+  display: flex; flex-direction: column; gap: 3px; min-width: 0; text-align: left; font: inherit; color: inherit;
+  padding: var(--space-3) var(--space-4); border-radius: var(--radius-lg); background: var(--surface-200); border: 1px solid var(--border);
+}
+button.mp-tile { cursor: pointer; transition: border-color 150ms ease-out; }
+button.mp-tile:hover { border-color: var(--border-strong); }
+button.mp-tile:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.mp-tile__rot { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.1em; color: var(--ink-subtle); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mp-tile__valor { font-size: 22px; line-height: 26px; font-weight: 800; font-variant-numeric: tabular-nums; color: var(--ink); white-space: nowrap; }
+.mp-tile__valor--ok { color: var(--success); }
+.mp-tile__sub { font-size: 11px; color: var(--ink-subtle); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* ---------- listas ---------- */
+
+.mp-cabeza { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; padding: var(--space-4) var(--space-5) var(--space-3); }
+.mp-cabeza__der { margin-left: auto; display: flex; align-items: center; gap: var(--space-3); }
+.mp-buscar { font: inherit; font-size: 13px; width: 150px; padding: 6px 12px; border-radius: var(--radius-full); background: var(--surface-200); border: 1px solid var(--border); color: var(--ink); outline: none; }
+.mp-buscar:focus-visible { border-color: var(--brand); }
+.mp-lista { padding: 0 var(--space-3) var(--space-3); }
+.mp-lista__cab, .mp-lista__fila { display: grid; grid-template-columns: 56px minmax(0, 1fr) 150px 160px; gap: var(--space-3); align-items: center; padding: 8px var(--space-3); }
+.mp-lista__cab { padding-top: 4px; padding-bottom: 4px; }
+.mp-lista__cab span { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.1em; color: var(--ink-subtle); }
+.mp-lista__fila { border-top: 1px solid var(--border); border-radius: var(--radius-sm); font-size: 13px; }
+.mp-lista__fila--clic { cursor: pointer; }
+.mp-lista__fila--clic:hover { background: var(--surface-200); }
+.mp-lista__fila--tachada .mp-lista__nombre { text-decoration: line-through; color: var(--ink-subtle); }
+.mp-lista__hora { font-variant-numeric: tabular-nums; color: var(--ink-muted); }
+.mp-lista__nombre { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink); }
+.mp-lista__pie { padding: var(--space-3) var(--space-5) var(--space-4); font-size: 12px; color: var(--ink-subtle); }
+
+.mp-cobros { display: flex; flex-direction: column; }
+.mp-cobros__fila { display: flex; align-items: center; flex-wrap: wrap; gap: 4px var(--space-3); padding: 9px 0; border-top: 1px solid var(--border); font-size: 13px; min-width: 0; }
+/* La tabla de cobros: una grilla, así las filas no se cortan según cuánto mide el nombre. */
+.mp-tabla-cobros { display: flex; flex-direction: column; overflow-x: auto; margin-top: var(--space-2); }
+.mp-tabla-cobros__fila { display: grid; grid-template-columns: 52px minmax(130px, 1.4fr) minmax(110px, 1fr) minmax(86px, auto) 150px 100px; gap: var(--space-3); align-items: center; padding: 9px 0; border-top: 1px solid var(--border); font-size: 13px; min-width: 700px; }
+.mp-tabla-cobros__fila:first-child { border-top: 0; }
+.mp-tabla-cobros__der { text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; }
+.mp-cobros__fila:first-child { border-top: 0; }
+.mp-cobros__fecha { flex: none; min-width: 44px; color: var(--ink-subtle); font-variant-numeric: tabular-nums; }
+.mp-cobros__nombre { min-width: 0; font-weight: 500; }
+.mp-cobros__monto { margin-left: auto; font-variant-numeric: tabular-nums; font-weight: 600; }
+
+/* ---------- para vos ---------- */
+
+.mp-avisos { display: flex; flex-direction: column; margin-top: var(--space-2); }
+.mp-aviso { display: flex; align-items: flex-start; gap: var(--space-3); padding: 11px 0; border-top: 1px solid var(--border); }
+.mp-aviso__punto { flex: none; width: 7px; height: 7px; border-radius: 999px; margin-top: 7px; background: var(--warning); }
+.mp-aviso--danger .mp-aviso__punto { background: var(--danger); }
+.mp-aviso__texto { flex: 1; min-width: 0; font-size: 13px; line-height: 20px; color: var(--ink-muted); }
+.mp-aviso__texto b { color: var(--ink); font-weight: 600; }
+.mp-avisos__mas { padding-top: var(--space-3); border-top: 1px solid var(--border); font-size: 12px; color: var(--ink-subtle); }
+
+/* ---------- el detalle de comisiones ---------- */
+
+.mp-det { display: flex; flex-direction: column; min-width: 0; }
+.mp-det__cab, .mp-det__fila { display: grid; grid-template-columns: minmax(150px, 2fr) minmax(100px, 1.2fr) 96px 52px 104px 88px; gap: var(--space-3); align-items: center; padding: 9px 0; font-size: 13px; }
+.mp-det__cab { padding-top: 0; font-size: 11px; color: var(--ink-subtle); border-bottom: 1px solid var(--border); }
+.mp-det__fila { border-bottom: 1px solid var(--border); }
+.mp-det__fila:last-child { border-bottom: 0; }
+.mp-det__der { text-align: right; font-variant-numeric: tabular-nums; }
+.mp-det__scroll { overflow-x: auto; }
+.mp-det__scroll > div { min-width: 640px; }
+.mp-disputas { display: flex; flex-direction: column; gap: var(--space-1); margin-top: var(--space-4); padding-top: var(--space-3); border-top: 1px solid var(--border); }
+
+/* ---------- «ver el panel de…» ---------- */
+
+.mp-vercomo {
+  display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-3); padding: 11px var(--space-4);
+  border-radius: var(--radius-lg); border: 1px solid var(--border); background: var(--surface-100);
+}
+.mp-vercomo--otro { border-color: color-mix(in srgb, var(--warning) 40%, var(--border)); background: color-mix(in srgb, var(--warning) 9%, var(--surface-100)); }
+.mp-vercomo--otro .mp-cap { color: var(--warning); }
+.mp-vercomo__select { flex: 0 1 280px; min-width: 210px; }
+.mp-vercomo__texto { flex: 1 1 240px; min-width: 0; font-size: 13px; line-height: 20px; color: var(--ink-muted); }
+
+/* ---------- saludo ---------- */
+
+.mp-resumen { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2) var(--space-3); }
+.mp-pildora { font-size: 11px; font-weight: 600; padding: 2px 10px; border-radius: var(--radius-full); color: var(--warning); background: var(--warning-soft); }
+.mp-acciones { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-3); }

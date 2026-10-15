@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { conPanel, miPanelDe, vistaDePanel } from "@/lib/mi-panel";
+import { conPanel, mesaDe, miPanelDe, rendimientoDe, vistaDePanel } from "@/lib/mi-panel";
+import type { FilaTabla } from "@/lib/crm-tabla";
 import { comisionesPorCloser } from "@/lib/finanzas";
 import { rangoDePeriodo } from "@/lib/periodos";
 import { esIncobrable, motivoIncobrable, notasDeIncobrable, notasSinIncobrable } from "@/lib/cuota-incobrable";
@@ -29,7 +30,7 @@ test("la comisión del closer en su panel es la misma que suma Finanzas para él
   /* Mariano: v1 (2.910 netos al 15%) y v2 (485 netos al 15%). */
   const m = miPanelDe(e, quien(e, "mariano"), mes);
   assert.equal(m.comisionCloser, r2((1455 + 1455 + 485) * 0.15));
-  assert.equal(m.cobradoMes, 3500);
+  assert.equal(m.cobradoRango, 3500);
   assert.ok(m.comisiones.every((c) => c.closerId === "mariano"));
 });
 
@@ -47,7 +48,7 @@ test("el director ve su comisión y el setter la suya, sobre las ventas donde fi
 test("a cada uno le calcula lo suyo: lo de otro closer no entra en su panel", () => {
   const e = estado();
   const dante = miPanelDe(e, quien(e, "dante"), mes);
-  assert.equal(dante.cobradoMes, 2000);
+  assert.equal(dante.cobradoRango, 2000);
   assert.ok(dante.comisiones.every((c) => c.ventaId === "v4"));
   assert.ok(dante.cobros.every((c) => c.venta?.closerId === "dante"));
 });
@@ -66,7 +67,8 @@ test("las cuotas por cobrar de su panel son las que le quedan a ese closer", () 
   const m = miPanelDe(e, quien(e, "mariano"), mes);
   assert.equal(m.porCobrar.length, 1);
   assert.equal(m.porCobrarTotal, 700);
-  assert.equal(m.porCobrarVencido, 700);
+  assert.equal(m.mesa.atrasado, 700);
+  assert.equal(m.mesa.enRiesgo, 700, "vencida en 2020: pasa los 90 días");
   assert.equal(miPanelDe(e, quien(e, "dante"), mes).porCobrar.length, 0);
 });
 
@@ -81,4 +83,56 @@ test("una cuota incobrable es una cancelada con su motivo; volver a cobrarla dev
   assert.equal(esIncobrable({ estado: "cancelada", notas: undefined }), false);
   assert.equal(esIncobrable({ estado: "pendiente", notas: notas }), false);
   assert.equal(notasSinIncobrable({ notas: "Incobrable: sin plata" }), undefined);
+});
+
+test("la mesa de cobro separa lo del mes, lo vencido, lo de más de 90 días, lo futuro y lo incobrable", () => {
+  const e = estado();
+  const cuota = (id: string, numero: number, monto: number, vence: string | undefined, extra: Record<string, unknown> = {}) =>
+    ({ id, ventaId: "v1", numero, monto, vence, estado: "pendiente" as const, esReserva: false, ...extra });
+  e.cuotas = [
+    ...e.cuotas.filter((c) => c.ventaId !== "v1"),
+    cuota("m1", 1, 500, "2026-10-20T12:00:00.000Z"),                      // vence este mes
+    cuota("m2", 2, 300, "2026-10-03T12:00:00.000Z"),                      // este mes, y ya paga 100
+    cuota("a1", 3, 400, "2026-09-10T12:00:00.000Z"),                      // vencida, no llega a 90 días
+    cuota("a2", 4, 250, "2026-06-01T12:00:00.000Z"),                      // vencida hace más de 90 días
+    cuota("f1", 5, 600, "2026-12-15T12:00:00.000Z"),                      // futura
+    cuota("s1", 6, 150, undefined),                                       // sin fecha
+    cuota("i1", 7, 200, "2026-08-01T12:00:00.000Z", { estado: "cancelada", notas: "Incobrable: se dio de baja" }),
+    cuota("x1", 8, 999, "2026-10-25T12:00:00.000Z", { estado: "cancelada" }), // cancelada de verdad: no cuenta
+  ];
+  e.pagos = [...e.pagos, { id: "pp", cuotaId: "m2", monto: 100, feeMonto: 0, fecha: "2026-10-05T12:00:00.000Z", procesadorId: "proc_stripe", moneda: "USD", feeRate: 0, creadoEn: "2026-10-05T12:00:00.000Z" } as never];
+  const m = mesaDe(e, "mariano", "2026-10-15");
+  assert.equal(m.mesProyectado, 800);
+  assert.equal(m.mesCobrado, 100);
+  assert.equal(m.mesPendiente, 700);
+  assert.equal(m.mesPct, 12.5);
+  assert.equal(m.atrasado, 650);
+  assert.equal(m.enRiesgo, 250);
+  assert.equal(m.futuro, 600);
+  assert.equal(m.sinFecha, 150);
+  assert.equal(m.incobrable, 200);
+  assert.equal(mesaDe(e, "dante", "2026-10-15").mesProyectado, 0, "lo de otro closer no entra");
+});
+
+test("el rendimiento no cuenta las canceladas ni las reprogramadas, y una tasa sin base no es 0%", () => {
+  const fila = (resultado: string, extra: Partial<FilaTabla> = {}) => ({ resultado, pasada: true, oferta: "", ...extra }) as FilaTabla;
+  const filas = [
+    fila("Con cierre", { oferta: "Sí" }), fila("Sin cierre", { oferta: "Sí" }), fila("Sin cierre", { oferta: "No" }),
+    fila("No se presentó"), fila("Cancelada"), fila("Reprogramó"), fila("Por venir", { pasada: false }),
+  ];
+  const r = rendimientoDe(filas, [{ precioAcordado: 3000 }, { precioAcordado: 1000 }] as never, 2500);
+  assert.equal(r.agendas, 5);
+  assert.equal(r.pasaron, 4);
+  assert.equal(r.showUps, 3);
+  assert.equal(r.noShows, 1);
+  assert.equal(r.ofertas, 2);
+  assert.equal(r.pctCierre, 66.7);
+  assert.equal(r.pctShowUp, 75);
+  assert.equal(r.pctOferta, 66.7);
+  assert.equal(r.ticket, 2000);
+  assert.equal(r.cobrado, 2500);
+  const vacio = rendimientoDe([], [], 0);
+  assert.equal(vacio.pctCierre, null);
+  assert.equal(vacio.pctShowUp, null);
+  assert.equal(vacio.ticket, null);
 });
