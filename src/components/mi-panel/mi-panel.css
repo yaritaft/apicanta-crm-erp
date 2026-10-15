@@ -37,6 +37,9 @@
 }
 .mp-card--hero { display: flex; flex-direction: column; justify-content: space-between; }
 .mp-card--hero .mp-cifra { margin-top: auto; padding-top: var(--space-5); }
+.mp-card, .mp-tile { container-type: inline-size; }
+.mp-moneda { font-size: 0.5em; font-weight: 600; letter-spacing: 0; margin-right: 0.28em; color: var(--ink-subtle); vertical-align: 0.42em; }
+.mp-tile__valor--verde .mp-moneda, .mp-cifra--roja .mp-moneda { color: inherit; opacity: 0.7; }
 .mp-card--clic { cursor: pointer; transition: background 160ms ease-out, transform 160ms ease-out; }
 .mp-card--clic:hover { background: var(--mp-bloque-alto); }
 .mp-card--clic:active { transform: scale(0.995); }
@@ -47,8 +50,8 @@
 .mp-cap { display: block; font-size: 14px; line-height: 20px; font-weight: 600; color: var(--ink-muted); letter-spacing: 0; }
 .mp-cap-fila { display: flex; align-items: center; gap: var(--space-2); }
 .mp-cap-fila .mp-ir { margin-left: auto; color: var(--ink-subtle); }
-.mp-cifra { display: block; margin-top: 10px; font-size: 44px; line-height: 48px; font-weight: 650; letter-spacing: -0.035em; font-variant-numeric: tabular-nums; color: var(--ink); }
-.mp-cifra--media { margin-top: 4px; font-size: 30px; line-height: 34px; letter-spacing: -0.03em; white-space: nowrap; }
+.mp-cifra { display: block; margin-top: 10px; font-size: min(44px, calc(100cqw / 5.2)); line-height: 1.1; font-weight: 650; letter-spacing: -0.035em; font-variant-numeric: tabular-nums; color: var(--ink); }
+.mp-cifra--media { margin-top: 4px; font-size: min(30px, calc(100cqw / 5.4)); line-height: 1.15; letter-spacing: -0.03em; white-space: nowrap; }
 .mp-cifra--roja { color: var(--danger); }
 .mp-cifra--verde { color: var(--success); }
 .mp-nota { display: block; margin-top: 6px; font-size: 13px; line-height: 19px; color: var(--ink-subtle); font-variant-numeric: tabular-nums; }
@@ -101,7 +104,7 @@
 
 /* ---------- cómo te va ---------- */
 
-.mp-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(176px, 1fr)); gap: 16px; }
+.mp-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(184px, 1fr)); gap: 16px; }
 .mp-tile {
   display: flex; flex-direction: column; gap: 4px; min-width: 0; text-align: left; font: inherit; color: inherit;
   padding: 20px 22px; border: 0; border-radius: 22px; background: var(--mp-bloque); box-shadow: var(--mp-sombra);
@@ -111,9 +114,9 @@ button.mp-tile:hover { background: var(--mp-bloque-alto); }
 button.mp-tile:active { transform: scale(0.99); }
 button.mp-tile:focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }
 .mp-tile__rot { font-size: 13px; line-height: 18px; font-weight: 500; color: var(--ink-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.mp-tile__valor { margin-top: 6px; font-size: 32px; line-height: 36px; font-weight: 650; letter-spacing: -0.03em; font-variant-numeric: tabular-nums; color: var(--ink); white-space: nowrap; }
+.mp-tile__valor { margin-top: 6px; font-size: min(32px, calc(100cqw / 5.6)); line-height: 1.15; font-weight: 650; letter-spacing: -0.03em; font-variant-numeric: tabular-nums; color: var(--ink); white-space: nowrap; }
 .mp-tile__valor--verde { color: var(--success); }
-.mp-tile__valor--chico { font-size: 22px; line-height: 36px; color: var(--ink-subtle); font-weight: 600; }
+.mp-tile__valor--chico { font-size: 22px; line-height: 1.6; color: var(--ink-subtle); font-weight: 600; }
 .mp-tile__sub { font-size: 12px; line-height: 17px; color: var(--ink-subtle); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 /* ---------- listas ---------- */

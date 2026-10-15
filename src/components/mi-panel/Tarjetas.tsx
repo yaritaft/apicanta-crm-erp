@@ -5,6 +5,7 @@ import { ChevronRight } from "lucide-react";
 import { money } from "@/lib/format";
 import type { MesaDeCobro } from "@/lib/mi-panel";
 import { clic, pctTxt } from "./util";
+import { Cifra } from "./Tile";
 
 /* ==================================================================
    Las dos cards de plata de arriba (de Blue OS: «Comisiones» y «Sobre la
@@ -25,7 +26,7 @@ export function TarjetaComisiones({ titulo, monto, notas, aparte, onAbrir }: {
         <span className="mp-cap">{titulo}</span>
         <ChevronRight size={16} className="mp-ir" aria-hidden />
       </div>
-      <span className="mp-cifra">{money(monto, "USD", 2)}</span>
+      <span className="mp-cifra"><Cifra texto={money(monto, "USD", 2)} /></span>
       {notas.map((n) => <span key={n.texto} className={`mp-nota${n.tono ? ` mp-nota--${n.tono}` : ""}`}>{n.texto}</span>)}
       {aparte && <span className="mp-nota">{aparte}</span>}
     </div>
@@ -45,7 +46,7 @@ export function TarjetaMesa({ titulo, mesa, onAbrir }: {
       <div className="mp-mesa">
         <div className="mp-mesa__col mp-mesa__col--clic" {...clic(() => onAbrir("mes"))} aria-label="Lo que vence este mes: ver las cuotas">
           <span className="mp-mesa__rot">Vence este mes</span>
-          <span className="mp-cifra mp-cifra--media">{money(mesa.mesPendiente, "USD", 0)}</span>
+          <span className="mp-cifra mp-cifra--media"><Cifra texto={money(mesa.mesPendiente, "USD", 0)} /></span>
           {mesa.mesProyectado > 0 ? (
             <>
               <div className="mp-barra" aria-hidden><span style={{ width: `${Math.min(100, Math.max(0, mesa.mesPct ?? 0))}%` }} /></div>
@@ -58,7 +59,7 @@ export function TarjetaMesa({ titulo, mesa, onAbrir }: {
         <div className="mp-mesa__sep" aria-hidden />
         <div className="mp-mesa__col mp-mesa__col--clic" {...clic(() => onAbrir("atrasado"))} aria-label="Lo vencido de antes: ver las cuotas">
           <span className="mp-mesa__rot">Vencido de antes</span>
-          <span className={`mp-cifra mp-cifra--media${mesa.atrasado > 0 ? " mp-cifra--roja" : ""}`}>{money(mesa.atrasado, "USD", 0)}</span>
+          <span className={`mp-cifra mp-cifra--media${mesa.atrasado > 0 ? " mp-cifra--roja" : ""}`}><Cifra texto={money(mesa.atrasado, "USD", 0)} /></span>
           {mesa.enRiesgo > 0 ? (
             <span
               className="mp-nota mp-nota--roja" style={{ textDecoration: "underline", cursor: "pointer" }}
