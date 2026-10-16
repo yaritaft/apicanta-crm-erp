@@ -113,8 +113,9 @@ test("el último estado de compra, el último de seguimiento y «Reagendar» no 
   const seguimientos = ["Seguimiento de Pago", "Seguimiento Nutrición", "Califica Downsell", "Llamada Interrumpida"];
   assert.equal(seguimientos.every((n) => preguntaDe(OPCIONES_POR_DEFECTO.estadoLlamada.find((o) => o.nombre === n)) === "seguimiento"), true);
   assert.equal(revisarOcultar(ocultando("estadoLlamada", ...seguimientos.slice(0, 3)), "estadoLlamada", seguimientos[3]).bloquea?.includes("último estado de seguimiento"), true);
-  /* Reagendar. */
-  const r = revisarOcultar({ crm: undefined }, "estadoPreCall", "Reagendar");
+  /* Reagendar: con «Reagendó» (el otro que dice «pidió otra fecha») a la vista se puede ocultar; si no, es el último. */
+  assert.equal(revisarOcultar({ crm: undefined }, "estadoPreCall", "Reagendar").bloquea, null, "queda «Reagendó»");
+  const r = revisarOcultar(ocultando("estadoPreCall", "Reagendó"), "estadoPreCall", "Reagendar");
   assert.ok(r.bloquea?.includes("Reagendar"));
   assert.equal(revisarOcultar({ crm: undefined }, "estadoPreCall", "Sin Respuesta").bloquea, null);
   assert.equal(revisarOcultar({ crm: undefined }, "estadoPreCall", "Confirmado").bloquea, null);

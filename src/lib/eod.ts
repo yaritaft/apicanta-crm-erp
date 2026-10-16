@@ -33,8 +33,10 @@ import { esReagendar, preguntaDe } from "./estados";
    se vuelve a preguntar.
    ================================================================== */
 
+/* La «Razón de Pérdida» del Airtable de Booking Calls, tal cual (16/10). */
 export const OBJECIONES_POR_DEFECTO = [
-  "Plata", "Tiempo", "Lo tiene que consultar", "No ve el valor", "No califica", "Lo quiere pensar", "Otro",
+  "FUP resell", "FUP downsell", "FUP reagendar", "Logística", "ESPOSA / NO DECIDE EL", "SIN CONFIANZA", "MIEDO SIN EMPLEO",
+  "DINERO / ESCASEZ", "NO VIO EL VALOR", "NO RESPONDIÓ", "FANTASMA", "MAL PERFIL", "MALA SALUD", "❌Num inválido o sin rta", "Otro > Ver notas",
 ];
 
 export function objecionesDe(a: Ajustes): string[] {
@@ -73,10 +75,10 @@ export function faltaEnRespuesta(r: RespuestaEod | undefined, opciones: OpcionCr
 }
 
 /** La objeción que ya dice el estado: un «NO Calificado» no cerró porque no
-    califica. Se propone si está en la lista; se puede cambiar. */
+    califica (en el Airtable, «MAL PERFIL»). Se propone si está en la lista; se puede cambiar. */
 export function objecionSugerida(o: OpcionCrm | undefined, objeciones: string[]): string | undefined {
   if (!o || !/no calific/.test(sinTildes(o.nombre))) return undefined;
-  return objeciones.find((x) => /no calific/.test(sinTildes(x)));
+  return objeciones.find((x) => /no calific|mal perfil/.test(sinTildes(x)));
 }
 
 /* Si la nota ya está entre las notas de la llamada. Se compara renglón por

@@ -62,7 +62,7 @@ export const OPCIONES_POR_DEFECTO: Record<CampoOpcionesCrm, OpcionCrm[]> = {
     { nombre: "1° Llamada", color: "amarillo2" },
     { nombre: "2° Mje Enviado", color: "amarillo3" },
     { nombre: "2° Llamada", color: "naranja4" },
-    { nombre: "COMPLETAR", color: "gris4" },
+    { nombre: "⚠️COMPLETAR🚩", color: "gris4" },
   ],
   estadoLlamada: [
     { nombre: "Compra Full", color: "verde4", llamada: "hecha", oportunidad: "compra-full" },
@@ -73,8 +73,6 @@ export const OPCIONES_POR_DEFECTO: Record<CampoOpcionesCrm, OpcionCrm[]> = {
     { nombre: "Califica Downsell", color: "naranja2", llamada: "hecha" },
     { nombre: "Compra Downsell", color: "naranja4", llamada: "hecha", oportunidad: "downsell" },
     { nombre: "Llamada Interrumpida", color: "azul2", llamada: "hecha" },
-    /* Pidió otra fecha después de la hora de la llamada: la agenda nueva entra sola de Calendly. */
-    { nombre: "Reagendó", color: "amarillo2" },
     { nombre: "Dejó de Contestar", color: "rojo2", llamada: "no-show" },
     { nombre: "Inasistió", color: "rojo2", llamada: "no-show", auto: "no-show" },
     { nombre: "Lead descartado", color: "rojo3", oportunidad: "perdida" },
@@ -83,10 +81,16 @@ export const OPCIONES_POR_DEFECTO: Record<CampoOpcionesCrm, OpcionCrm[]> = {
     { nombre: "2da Agenda (auto)", color: "gris1", auto: "segunda" },
     { nombre: "Canceló (auto)", color: "gris2", auto: "cancelada" },
   ],
+  /* Los de «Estado Pre-Call» del Airtable de Booking Calls, tal cual (16/10). «Reagendó» es de ahí: la persona ya pidió otra fecha. */
   estadoPreCall: [
     { nombre: "Confirmado", color: "verde4" },
+    { nombre: "Reagendó", color: "verde2" },
     { nombre: "Reagendar", color: "amarillo3" },
-    { nombre: "Sin Respuesta", color: "rojo1" },
+    { nombre: "Sin Respuesta", color: "rojo2" },
+    { nombre: "Canceló", color: "naranja5" },
+    { nombre: "No Califica", color: "naranja5" },
+    { nombre: "Lead descartado", color: "naranja5" },
+    { nombre: "❌Núm inválido", color: "gris4" },
   ],
 };
 

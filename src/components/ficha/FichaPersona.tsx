@@ -30,7 +30,7 @@ import { filasDePersona, filasTabla, type FilaTabla } from "@/lib/crm-tabla";
 import { personaDe, type Persona } from "@/lib/persona";
 import { saldoVenta } from "@/lib/finanzas";
 import { fechaLarga, money, relativo } from "@/lib/format";
-import type { Alumno, Cuota, EstadoAlumno, EstadoApp, EstadoVenta, IngresoComunidad, Venta } from "@/lib/types";
+import type { Alumno, Cuota, EstadoAlumno, EstadoApp, EstadoVenta, IngresoComunidad, Pago, Venta } from "@/lib/types";
 import { INGRESOS_COMUNIDAD } from "@/lib/angelo";
 import { RespuestasDelReporte } from "@/components/cs/ReportesDelCliente";
 
@@ -260,6 +260,8 @@ function VistaVentas({ e, p, ventaResaltada }: { e: EstadoApp; p: Persona; venta
   const toast = useToast();
   const [solapa, setSolapa] = useState<SolapaVentas>("ventas");
   const [pagar, setPagar] = useState<Cuota | null>(null);
+  /* Un cobro ya cargado que se corrige con el mismo asistente. */
+  const [corregir, setCorregir] = useState<Pago | null>(null);
   const [editar, setEditar] = useState<BorradorVenta | null>(null);
   /* La venta que se da de baja o se reactiva, y a qué estado pasa. */
   const [baja, setBaja] = useState<{ venta: Venta; estado: EstadoVenta } | null>(null);
@@ -279,15 +281,20 @@ function VistaVentas({ e, p, ventaResaltada }: { e: EstadoApp; p: Persona; venta
      paso a paso, y al terminar (o salir) vuelve a la lista con esa venta
      a la vista. */
   function terminarPago(mensaje?: string) {
-    const ventaId = pagar?.ventaId;
+    const ventaId = pagar?.ventaId ?? e.cuotas.find((c) => c.id === corregir?.cuotaId)?.ventaId;
     if (mensaje) toast(mensaje);
     setPagar(null);
+    setCorregir(null);
     if (ventaId) {
       window.setTimeout(() => document.getElementById(`venta-${ventaId}`)?.scrollIntoView({ block: "nearest" }), 60);
     }
   }
   if (pagar) {
     return <RegistrarPago embebido cuota={pagar} onCerrar={() => terminarPago()} onGuardado={terminarPago} />;
+  }
+  const cuotaDelCobro = corregir ? e.cuotas.find((c) => c.id === corregir.cuotaId) : undefined;
+  if (corregir && cuotaDelCobro) {
+    return <RegistrarPago embebido cuota={cuotaDelCobro} pagoAEditar={corregir} onCerrar={() => terminarPago()} onGuardado={terminarPago} />;
   }
 
   return (
@@ -323,6 +330,7 @@ function VistaVentas({ e, p, ventaResaltada }: { e: EstadoApp; p: Persona; venta
                     abierta={plegado.abierta(v.id, porDefecto)}
                     onAlternar={() => plegado.alternar(v.id, porDefecto)}
                     onPagar={setPagar}
+                    onEditarPago={setCorregir}
                     onEditar={() => setEditar(desdeVenta(e, v))}
                     onEstado={(estado) => setBaja({ venta: v, estado })}
                   />

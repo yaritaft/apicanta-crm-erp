@@ -1,13 +1,14 @@
 "use client";
 
 import React from "react";
-import { AlertTriangle, Check, Link2, Paperclip, Pencil, Receipt } from "lucide-react";
+import { AlertTriangle, Check, Link2, Lock, Paperclip, Pencil, Receipt } from "lucide-react";
 import { Badge, Bar, Button, IconButton } from "@/components/ui/ui";
 import { useToast } from "@/components/ui/Toast";
 import { saldoVenta } from "@/lib/finanzas";
 import { verComprobante } from "@/lib/comprobantes";
 import { fechaLarga, money } from "@/lib/format";
-import type { Cuota, EstadoApp, EstadoVenta, Venta } from "@/lib/types";
+import type { Cuota, EstadoApp, EstadoVenta, Pago, Venta } from "@/lib/types";
+import { candadoDeCobro } from "@/lib/candado-cobro";
 import { planDePago, tipoDePago } from "@/lib/angelo";
 import { CabezaPlegable } from "./Plegable";
 import { ChequeoDeCobro } from "@/components/cobros/ControlCobro";
@@ -33,10 +34,12 @@ const ESTADO: Record<EstadoVenta, { texto: string; variante: "success" | "neutra
   reembolsada: { texto: "Reembolsada", variante: "danger" },
 };
 
-export function TarjetaVenta({ e, venta, resaltada, abierta, onAlternar, onPagar, onEditar, onEstado }: {
+export function TarjetaVenta({ e, venta, resaltada, abierta, onAlternar, onPagar, onEditar, onEstado, onEditarPago }: {
   e: EstadoApp; venta: Venta; resaltada?: boolean;
   abierta: boolean; onAlternar: () => void;
   onPagar: (cuota: Cuota) => void;
+  /* Corregir un cobro ya cargado (RegistrarPago con `pagoAEditar`). */
+  onEditarPago?: (pago: Pago) => void;
   onEditar: () => void;
   /* Darla de baja (cancelada o reembolsada) o reactivarla. */
   onEstado: (estado: EstadoVenta) => void;
@@ -46,6 +49,7 @@ export function TarjetaVenta({ e, venta, resaltada, abierta, onAlternar, onPagar
   const { acceso } = useAcceso();
   const puedeBaja = puedeDarDeBaja(acceso);
   const puedeCuotas = puedeEditar(acceso, "cuotas");
+  const puedeCobros = puedeEditar(acceso, "pagos");
   const M = (n: number, d = 0) => money(n, venta.moneda, d);
   const saldo = saldoVenta(e, venta.id);
   const producto = e.productos.find((x) => x.id === venta.productoId)?.nombre ?? "Venta";
@@ -178,6 +182,12 @@ export function TarjetaVenta({ e, venta, resaltada, abierta, onAlternar, onPagar
                           </button>
                         )}
                         <span className="spacer t-num">{M(p.monto, 2)}</span>
+                        {activa && puedeCobros && onEditarPago && (() => {
+                          const candado = candadoDeCobro(p, acceso);
+                          return candado.bloqueado
+                            ? <span className="t-subtle" title={`No se puede corregir: ${candado.motivo}`} style={{ display: "inline-flex" }}><Lock size={13} /></span>
+                            : <Button sm variante="ghost" icono={<Pencil size={13} />} onClick={() => onEditarPago(p)}>Corregir</Button>;
+                        })()}
                       </div>
                     ))}
                   </div>

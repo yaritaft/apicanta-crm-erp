@@ -36,7 +36,7 @@ export function disponibleDe(
   return Math.round((mov.monto - enBase - (usadoEnBorrador.get(mov.id) ?? 0)) * 100) / 100;
 }
 
-export function SelectorMovimiento({ abierto, onCerrar, proveedor, cliente, monto, usado, onElegir }: {
+export function SelectorMovimiento({ abierto, onCerrar, proveedor, cliente, monto, usado, onElegir, liberar }: {
   abierto: boolean;
   onCerrar: () => void;
   /* La pasarela del medio elegido. Sin proveedor, se ven todas. */
@@ -47,6 +47,9 @@ export function SelectorMovimiento({ abierto, onCerrar, proveedor, cliente, mont
   /* Lo ya usado en OTROS cobros del mismo formulario, por movimiento */
   usado: Map<ID, number>;
   onElegir: (p: PagoDisponible) => void;
+  /* Corrigiendo un cobro: el pago de la pasarela que tenía vuelve a ofrecerse
+     (aunque figure conciliado) y lo que ese cobro imputaba no cuenta. */
+  liberar?: { pagoId: ID; movimientoId?: ID };
 }) {
   const e = useEstado();
   const [q, setQ] = useState("");
@@ -57,8 +60,8 @@ export function SelectorMovimiento({ abierto, onCerrar, proveedor, cliente, mont
     const texto = q.trim().toLowerCase();
     const numero = Number(texto.replace(/\./g, "").replace(",", "."));
     return e.movimientos
-      .filter((m) => m.estado === "pendiente" && (todas || !proveedor || m.proveedor === proveedor))
-      .map((m) => ({ mov: m, disponible: disponibleDe(m, e.pagos, usado) }))
+      .filter((m) => (m.estado === "pendiente" || (liberar?.movimientoId && m.id === liberar.movimientoId)) && (todas || !proveedor || m.proveedor === proveedor))
+      .map((m) => ({ mov: m, disponible: disponibleDe(m, liberar ? e.pagos.filter((p) => p.id !== liberar.pagoId) : e.pagos, usado) }))
       .filter((x) => x.disponible > 0.009)
       .filter(({ mov }) => {
         if (!texto) return true;
@@ -77,7 +80,7 @@ export function SelectorMovimiento({ abierto, onCerrar, proveedor, cliente, mont
       .sort((a, b) => (Number(b.coincide) - Number(a.coincide))
         || (b.coincide ? b.puntaje - a.puntaje : 0)
         || +new Date(b.mov.fecha) - +new Date(a.mov.fecha));
-  }, [e.movimientos, e.pagos, usado, q, todas, proveedor, cliente?.nombre, cliente?.email, monto]);
+  }, [e.movimientos, e.pagos, usado, q, todas, proveedor, cliente?.nombre, cliente?.email, monto, liberar]);
 
   const nombre = proveedor ? nombrePasarela(proveedor) : "las pasarelas";
   const mon = e.ajustes.monedaBase;

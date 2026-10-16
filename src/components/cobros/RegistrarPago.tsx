@@ -1,16 +1,19 @@
 "use client";
 
-import React, { useCallback, useMemo, useState } from "react";
-import { ArrowRight, Link2, Paperclip } from "lucide-react";
-import { Select } from "@/components/ui/ui";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { ArrowRight, Link2, Paperclip, Trash2 } from "lucide-react";
+import { Button, Select } from "@/components/ui/ui";
 import { Asistente, Pregunta, type PasoAsistente } from "@/components/ui/Asistente";
 import {
   agregarMedio, datosDeCobro, EditorCobros, esFinanciera, enPesos, problemaDeCuenta, problemaDeDatos,
   problemaDePasarelas, problemaDePrueba, type CobroBorrador,
 } from "@/components/cobros/EditorCobros";
-import { acciones, useEstado } from "@/lib/store";
+import { acciones, nuevoId, useEstado } from "@/lib/store";
+import { useAcceso } from "@/lib/acceso";
+import { nube } from "@/lib/supabase";
+import { candadoDeCobro, corrigeSiempre } from "@/lib/candado-cobro";
 import { fechaLarga, money } from "@/lib/format";
-import type { Cuota } from "@/lib/types";
+import type { Cuota, Pago } from "@/lib/types";
 
 /* ==================================================================
    Registrar el pago de una cuota ya cargada.
@@ -21,6 +24,12 @@ import type { Cuota } from "@/lib/types";
    en pesos; nombre y CUIT si fue a la Financiera), qué
    hacer si pagó menos y el resumen. Desde la ficha va embebido en la
    columna de la venta; en cualquier otro lado, a pantalla completa.
+
+   Con `pagoAEditar` es el mismo asistente para CORREGIR un cobro ya cargado
+   (daily con los closers, 16/10): trae todo precargado, no agrega ni quita
+   cuentas, y guarda los cambios sobre ese cobro. También lo puede borrar.
+   El candado (lib/candado-cobro.ts) lo frena si Finanzas ya lo chequeó o el
+   mes está liquidado; lo mismo repite la base.
 
    Si se paga menos de lo que vale la cuota, las cuotas se reacomodan
    solas (lo elige quien carga, con la vista previa de cómo quedan): la
@@ -38,22 +47,46 @@ const REAJUSTES: { valor: Reajuste; texto: string }[] = [
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
 
-export function RegistrarPago({ cuota, onCerrar, onGuardado, embebido = false }: {
+/* El cobro tal como está, como borrador para volver a pasarlo por el asistente. */
+function borradorDe(p: Pago): CobroBorrador {
+  return {
+    id: nuevoId("cob"), procesadorId: p.procesadorId ?? "", monto: p.monto, fecha: p.fecha, referencia: p.referencia ?? "",
+    movimientoId: p.movimientoId, comprobante: p.comprobante, tipoCambio: p.tipoCambio, montoArs: p.montoArs,
+    pagador: p.pagador, cuit: p.cuit, cvu: p.cvu, tipoCambioBlue: p.tipoCambioBlue, tipoCambioFuente: p.tipoCambioFuente,
+  };
+}
+
+export function RegistrarPago({ cuota, onCerrar, onGuardado, embebido = false, pagoAEditar }: {
   cuota: Cuota; onCerrar: () => void; onGuardado: (mensaje: string) => void; embebido?: boolean;
+  /* Corregir este cobro en lugar de registrar uno nuevo. */
+  pagoAEditar?: Pago;
 }) {
   const e = useEstado();
+  const { acceso } = useAcceso();
+  const editando = pagoAEditar;
   const mon = e.ajustes.monedaBase;
   const M = (n: number) => money(n, mon, 2);
   const venta = e.ventas.find((v) => v.id === cuota.ventaId);
-  const pagado = e.pagos.filter((p) => p.cuotaId === cuota.id).reduce((a, p) => a + p.monto, 0);
+  const pagado = e.pagos.filter((p) => p.cuotaId === cuota.id && p.id !== editando?.id).reduce((a, p) => a + p.monto, 0);
   const resta = r2(cuota.monto - pagado);
   const contacto = venta?.contactoId
     ? e.contactos.find((c) => c.id === venta.contactoId) ?? e.leads.find((l) => l.id === venta.contactoId)
     : undefined;
 
   const [cobros, setCobros] = useState<CobroBorrador[]>(
-    () => agregarMedio([], resta, e.procesadores.find((p) => p.activo)?.id ?? ""),
+    () => (editando ? [borradorDe(editando)] : agregarMedio([], resta, e.procesadores.find((p) => p.activo)?.id ?? "")),
   );
+  const [borrando, setBorrando] = useState(false);
+  /* El mes cerrado sólo lo sabe quien ve las liquidaciones (los dueños); para
+     el resto lo contesta la base. */
+  const [mesCerrado, setMesCerrado] = useState(false);
+  useEffect(() => {
+    if (!editando || !nube || corrigeSiempre(acceso)) return;
+    let vivo = true;
+    void nube.rpc("mes_de_cobro_cerrado", { p_fecha: editando.fecha }).then((r) => { if (vivo && r.data === true) setMesCerrado(true); });
+    return () => { vivo = false; };
+  }, [editando, acceso]);
+  const candado = editando ? candadoDeCobro(editando, acceso, mesCerrado) : { bloqueado: false };
   const [reajuste, setReajuste] = useState<Reajuste>("repartir");
   const [idPaso, setIdPaso] = useState<IdPaso>("cobro");
   const [subiendo, setSubiendo] = useState<Set<string>>(() => new Set());
@@ -79,7 +112,7 @@ export function RegistrarPago({ cuota, onCerrar, onGuardado, embebido = false }:
     { id: "cobro", titulo: "Cuánto y por dónde" },
     { id: "prueba", titulo: "Prueba" },
     ...(cobros.some((p) => !p.movimientoId) ? [{ id: "datos" as const, titulo: "Transferencia" }] : []),
-    ...(saldo > 0.01 && cobrado > 0 ? [{ id: "saldo" as const, titulo: "Lo que falta" }] : []),
+    ...(saldo > 0.01 && cobrado > 0 && !editando ? [{ id: "saldo" as const, titulo: "Lo que falta" }] : []),
     { id: "resumen", titulo: "Resumen" },
   ];
   const actual = Math.max(0, pasos.findIndex((p) => p.id === idPaso));
@@ -111,9 +144,16 @@ export function RegistrarPago({ cuota, onCerrar, onGuardado, embebido = false }:
   const problemaCobro = cobrado > resta + 0.01
     ? `Se cobra ${M(cobrado)} y a ${nombreCuota} le faltan ${M(resta)}`
     : problemaDeCuenta(cobros, nombreCuota);
+  /* Corrigiendo, el cobro que se está cambiando no cuenta como «ya usado» del pago de la pasarela. */
+  const eSinElCobro = useMemo(
+    () => (editando ? { ...e, pagos: e.pagos.filter((p) => p.id !== editando.id) } : e),
+    [e, editando],
+  );
+  /* Un cobro viejo que nunca tuvo prueba (de la planilla) se puede corregir sin pedirle una: no queda peor que antes. */
+  const sinExigirPrueba = Boolean(editando && !editando.comprobante && !editando.movimientoId);
   const problemaPrueba = subiendo.size > 0
     ? "Esperá que termine de subir el comprobante"
-    : problemaDePrueba(e, cobros, nombreCuota) ?? problemaDePasarelas(e, cobros);
+    : (sinExigirPrueba ? null : problemaDePrueba(e, cobros, nombreCuota)) ?? problemaDePasarelas(eSinElCobro, cobros);
   const problemaDatos = problemaDeDatos(e, cobros, nombreCuota);
   const problemaTotal = problemaCobro ?? problemaPrueba ?? problemaDatos;
   const problema = paso === "cobro" ? problemaCobro
@@ -123,6 +163,11 @@ export function RegistrarPago({ cuota, onCerrar, onGuardado, embebido = false }:
 
   function guardar() {
     if (problemaTotal) return;
+    if (editando) {
+      if (!acciones.corregirPago(editando.id, { cobro: datosDeCobro(cobros[0]) })) return;
+      onGuardado(saldo > 0.01 ? `Cobro corregido. ${nombreCuota[0].toUpperCase()}${nombreCuota.slice(1)} queda con ${M(saldo)} por cobrar.` : "Cobro corregido.");
+      return;
+    }
     const ok = acciones.registrarPago({
       cuotaId: cuota.id,
       cobros: cobros.map(datosDeCobro),
@@ -136,6 +181,11 @@ export function RegistrarPago({ cuota, onCerrar, onGuardado, embebido = false }:
     );
   }
 
+  function borrar() {
+    if (!editando) return;
+    if (acciones.eliminarPago(editando.id)) onGuardado(`Se borró el cobro de ${M(editando.monto)}. ${nombreCuota[0].toUpperCase()}${nombreCuota.slice(1)} queda con ${M(resta + editando.monto)} por cobrar.`);
+  }
+
   const editor = (partes: ("cuenta" | "prueba" | "datos")[]) => (
     <div className="cobro-bloque">
       <div className="cobro-bloque__body" style={{ borderTop: 0 }}>
@@ -143,26 +193,59 @@ export function RegistrarPago({ cuota, onCerrar, onGuardado, embebido = false }:
           e={e} cobros={cobros} onCambio={setCobros} objetivo={resta} partes={partes}
           cliente={{ nombre: venta?.contactoNombre, email: contacto?.email }}
           onSubiendo={onSubiendo}
+          unico={Boolean(editando)}
+          liberar={editando ? { pagoId: editando.id, movimientoId: editando.movimientoId } : undefined}
         />
       </div>
     </div>
   );
 
+  if (editando && candado.bloqueado) {
+    return (
+      <Asistente
+        etiqueta={`Corregir un pago de ${venta?.contactoNombre ?? ""}`} embebido={embebido}
+        pasos={[{ id: "cobro", titulo: "Cobro" }]} actual={0} onCambiarPaso={() => undefined}
+        problema={candado.motivo ?? "Este cobro ya no se puede corregir."} problemaEsError
+        onCerrar={onCerrar} terminarTexto="Guardar cambios" onTerminar={onCerrar}
+      >
+        <Pregunta
+          texto="Este cobro ya no se puede corregir"
+          sub={`${candado.motivo ?? ""} Si hay que cambiarlo, pedíselo a Finanzas.`}
+        />
+      </Asistente>
+    );
+  }
+
   return (
     <Asistente
-      etiqueta={`Registrar un pago de ${venta?.contactoNombre ?? ""}`}
+      etiqueta={editando ? `Corregir un pago de ${venta?.contactoNombre ?? ""}` : `Registrar un pago de ${venta?.contactoNombre ?? ""}`}
       embebido={embebido}
       pasos={pasos} actual={actual} onCambiarPaso={(i) => setIdPaso(pasos[i].id)}
       problema={problema} problemaEsError
-      onCerrar={onCerrar} terminarTexto="Registrar pago" onTerminar={guardar}
+      onCerrar={onCerrar} terminarTexto={editando ? "Guardar cambios" : "Registrar pago"} onTerminar={guardar}
     >
       {paso === "cobro" && (
         <>
           <Pregunta
-            texto="¿Cuánto pagó y por dónde?"
-            sub={`${laCuota} de ${venta?.contactoNombre ?? "la venta"}${cuota.vence ? `, vence ${fechaLarga(cuota.vence)}` : ""}: faltan ${M(resta)}. Si pagó por dos cuentas, agregá la otra.`}
+            texto={editando ? "Corregí el pago" : "¿Cuánto pagó y por dónde?"}
+            sub={editando
+              ? `${laCuota} de ${venta?.contactoNombre ?? "la venta"}: está cargado así y se puede cambiar todo. Si lo que falta es otro pago, registralo aparte.`
+              : `${laCuota} de ${venta?.contactoNombre ?? "la venta"}${cuota.vence ? `, vence ${fechaLarga(cuota.vence)}` : ""}: faltan ${M(resta)}. Si pagó por dos cuentas, agregá la otra.`}
           />
           {editor(["cuenta"])}
+          {editando && (
+            <div className="row" style={{ gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+              {borrando ? (
+                <>
+                  <span className="t-sm">¿Borrar este cobro de {M(editando.monto)}? Lo que se había conciliado con la pasarela se libera.</span>
+                  <Button sm variante="danger" onClick={borrar}>Sí, borrarlo</Button>
+                  <Button sm variante="ghost" onClick={() => setBorrando(false)}>No</Button>
+                </>
+              ) : (
+                <Button sm variante="ghost" icono={<Trash2 size={14} />} onClick={() => setBorrando(true)}>Eliminar este pago</Button>
+              )}
+            </div>
+          )}
           <div className="row t-sm" style={{ gap: 6 }}>
             <span className="t-subtle">Se cobra</span>
             <span className="t-num t-strong">{M(cobrado)}</span>
@@ -234,7 +317,7 @@ export function RegistrarPago({ cuota, onCerrar, onGuardado, embebido = false }:
 
       {paso === "resumen" && (
         <>
-          <Pregunta texto="Así queda el pago" sub="Revisá y registralo. Después se puede corregir desde Finanzas." />
+          <Pregunta texto="Así queda el pago" sub={editando ? "Revisá los cambios y guardalos." : "Revisá y registralo. Después se puede corregir desde la ficha de la venta, mientras Finanzas no lo haya chequeado."} />
           <dl className="dl">
             <dt>Cliente</dt><dd>{venta?.contactoNombre ?? "—"}</dd>
             <dt>Cuota</dt><dd>{laCuota}{cuota.vence ? ` · vence ${fechaLarga(cuota.vence)}` : ""}</dd>

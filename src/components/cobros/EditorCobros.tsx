@@ -157,7 +157,7 @@ export function problemaDePasarelas(e: EstadoApp, cobros: CobroBorrador[]): stri
 export type ParteCobro = "cuenta" | "prueba" | "datos";
 const TODAS: ParteCobro[] = ["cuenta", "prueba", "datos"];
 
-export function EditorCobros({ e, cobros, onCambio, objetivo, cliente, usadoFuera, onSubiendo, partes = TODAS }: {
+export function EditorCobros({ e, cobros, onCambio, objetivo, cliente, usadoFuera, onSubiendo, partes = TODAS, unico, liberar }: {
   e: EstadoApp;
   cobros: CobroBorrador[];
   onCambio: (f: (cobros: CobroBorrador[]) => CobroBorrador[]) => void;
@@ -169,6 +169,10 @@ export function EditorCobros({ e, cobros, onCambio, objetivo, cliente, usadoFuer
   onSubiendo: (cobroId: string, subiendo: boolean) => void;
   /* Qué mostrar de cada cobro. Sin esto, todo junto. */
   partes?: ParteCobro[];
+  /* Corrigiendo UN cobro: no se agregan ni se quitan cuentas. */
+  unico?: boolean;
+  /* El cobro que se corrige: su pago de la pasarela vuelve a ofrecerse. */
+  liberar?: { pagoId: ID; movimientoId?: ID };
 }) {
   const procesadores = e.procesadores.filter((p) => p.activo);
   const mon = e.ajustes.monedaBase;
@@ -247,9 +251,11 @@ export function EditorCobros({ e, cobros, onCambio, objetivo, cliente, usadoFuer
                   onChange={(ev) => editar(p.id, { monto: montoDe(ev.target.value), montoArs: undefined })} />
                 <Input type="date" value={isoDia(p.fecha)} aria-label="Fecha del pago" title="Fecha del pago" disabled={Boolean(p.movimientoId)}
                   onChange={(ev) => { if (ev.target.value) editar(p.id, { fecha: new Date(ev.target.value + "T12:00:00").toISOString() }); }} />
-                <IconButton etiqueta="Quitar este cobro" onClick={() => quitar(p)}>
-                  <Trash2 size={15} />
-                </IconButton>
+                {!unico && (
+                  <IconButton etiqueta="Quitar este cobro" onClick={() => quitar(p)}>
+                    <Trash2 size={15} />
+                  </IconButton>
+                )}
               </div>
             )}
 
@@ -334,7 +340,7 @@ export function EditorCobros({ e, cobros, onCambio, objetivo, cliente, usadoFuer
         );
       })}
 
-      {ver("cuenta") && (
+      {ver("cuenta") && !unico && (
         <Button
           sm variante="ghost" icono={<Plus size={14} />} style={{ alignSelf: "flex-start" }}
           onClick={() => onCambio((xs) => agregarMedio(xs, objetivo, procesadores[0]?.id ?? ""))}
@@ -351,6 +357,7 @@ export function EditorCobros({ e, cobros, onCambio, objetivo, cliente, usadoFuer
           monto={elegido.monto}
           usado={usadoSin(elegido.id)}
           onElegir={elegirPago}
+          liberar={liberar}
         />
       )}
     </>

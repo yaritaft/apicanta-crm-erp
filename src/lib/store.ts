@@ -21,6 +21,7 @@ import {
   personaDeVenta, planDeVenta,
 } from "./alumnos";
 import { pagoDesdeMovimiento, tasaEstimada } from "./conciliacion";
+import { candadoDeCobro } from "./candado-cobro";
 import { cobrosConOtraTasa, conTasa } from "./finanzas";
 import { ventasParaAtar, webinarNuevoDeProyecto, webinarsQueFaltan } from "./atar-webinars";
 import { caracteristicaDePago, estadoDespuesDeImportar, montoArsDe, tipoVentaDePago, type ResultadoImport } from "./angelo";
@@ -370,7 +371,8 @@ async function drenar() {
            viene atrás, y se avisa. */
         if (r.error.code === "42501") {
           cola.shift();
-          negada(op.tabla);
+          /* Los candados de los cobros (supabase/cobros-de-closers.sql) dicen por qué: se muestra tal cual. */
+          negada(op.tabla, /^(Este cobro|Ese cobro|Un pago de la pasarela)/.test(r.error.message) ? r.error.message : undefined);
           continue;
         }
         /* Un borrado que la base frena porque otra cosa todavía lo usa (un
@@ -1109,6 +1111,50 @@ function extrasDeCobro(c: DatosCobro): Partial<Pago> {
     ...(c.cuit?.trim() ? { cuit: c.cuit.trim() } : {}),
     ...(c.cvu?.trim() ? { cvu: c.cvu.replace(/[\s.-]/g, "") } : {}),
   };
+}
+
+/* Cómo quedan los pagos de la pasarela que tocó un cobro (el que dejó de usar y
+   el que usa ahora): sin cobros atados vuelve a pendiente y sin dueño; con
+   cobros, se da por conciliado cuando lo imputado llega a su monto. `pagos` es
+   la lista ya con el cambio. */
+function movimientosDeCobros(e: EstadoApp, pagos: Pago[], ids: (ID | undefined)[], ventaId: ID): Map<ID, Movimiento> {
+  const tocados = new Map<ID, Movimiento>();
+  for (const mid of new Set(ids.filter(Boolean) as ID[])) {
+    const m = e.movimientos.find((x) => x.id === mid);
+    if (!m) continue;
+    const suyos = pagos.filter((p) => p.movimientoId === mid);
+    if (suyos.length === 0) {
+      tocados.set(mid, {
+        ...m, estado: "pendiente", vinculado: false,
+        pagoId: undefined, cuotaId: undefined, ventaId: undefined, conciliadoEn: undefined, conciliadoPor: undefined,
+      });
+      continue;
+    }
+    const saldado = suyos.reduce((a, p) => a + p.monto, 0) >= m.monto - 0.01;
+    const unaSola = suyos.length === 1;
+    tocados.set(mid, {
+      ...m,
+      estado: saldado ? "conciliado" : "pendiente",
+      pagoId: unaSola ? suyos[0].id : m.pagoId,
+      cuotaId: unaSola ? suyos[0].cuotaId : m.cuotaId,
+      ventaId,
+      conciliadoEn: saldado ? (m.conciliadoEn ?? ahora()) : undefined,
+      conciliadoPor: saldado ? (m.conciliadoPor ?? quienSoy(e)) : undefined,
+    });
+  }
+  return tocados;
+}
+
+/* A la base va sólo lo de la conciliación, con los nulos escritos: quien no es
+   de Finanzas no puede tocar otra columna del movimiento (lo frena un trigger). */
+function empujarMovimientos(tocados: Map<ID, Movimiento>) {
+  for (const m of tocados.values()) {
+    empujarUpdate("movimientos", [m.id], {
+      estado: m.estado, vinculado: m.vinculado ?? false,
+      pagoId: m.pagoId ?? null, cuotaId: m.cuotaId ?? null, ventaId: m.ventaId ?? null,
+      conciliadoEn: m.conciliadoEn ?? null, conciliadoPor: m.conciliadoPor ?? null,
+    });
+  }
 }
 
 /* ---------- La baja de una venta ----------
@@ -2514,6 +2560,134 @@ export const acciones = {
     if (cuotasEscritas.length) empujar({ tipo: "upsert", tabla: "cuotas", filas: cuotasEscritas });
     if (movimientosTocados.size) empujar({ tipo: "upsert", tabla: "movimientos", filas: [...movimientosTocados.values()] });
     empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
+    return true;
+  },
+
+  /* ---------- Corregir o borrar un cobro ya cargado ----------
+     Daily con los closers (16/10): un cobro cargado mal no tenía arreglo. Se
+     corrige con los datos de siempre del cobro (cuenta, monto, fecha, prueba,
+     datos de la transferencia), o se borra. Se mantiene el mismo id y quién lo
+     cargó; la cuota vuelve a pendiente si ya no queda cubierta; el pago de la
+     pasarela que ya no usa se libera y el nuevo se concilia. Cambiar el monto,
+     la fecha o la prueba deja sin efecto lo que ya se había chequeado.
+
+     El candado (lib/candado-cobro.ts) frena un cobro que Finanzas chequeó o de
+     un mes cerrado; la base lo repite. Va a la base como UPDATE con los nulos
+     escritos: un upsert no borra lo que ya no está. */
+  corregirPago(id: ID, datos: { cobro: DatosCobro }): boolean {
+    const e = snapshot();
+    const viejo = e.pagos.find((p) => p.id === id);
+    const cuota = viejo ? e.cuotas.find((c) => c.id === viejo.cuotaId) : undefined;
+    const venta = cuota ? e.ventas.find((v) => v.id === cuota.ventaId) : undefined;
+    if (!viejo || !cuota || !venta) return false;
+    const candado = candadoDeCobro(viejo, acceso);
+    if (candado.bloqueado) { negada("pagos", `Este cobro ya no se puede corregir: ${candado.motivo}`); return false; }
+    const cobro = datos.cobro;
+    if (!(cobro.monto > 0.001)) return false;
+    const r2 = (n: number) => Math.round(n * 100) / 100;
+
+    const mov = cobro.movimientoId ? e.movimientos.find((m) => m.id === cobro.movimientoId) : undefined;
+    let nuevo: Pago;
+    if (mov) {
+      nuevo = {
+        ...pagoDesdeMovimiento(mov, cuota.id, cobro.monto, tasaEstimada(e, mov)), id,
+        ...(cobro.comprobante ? { comprobante: cobro.comprobante } : {}),
+        ...extrasDeCobro(cobro), chequeado: true,
+      } as Pago;
+    } else {
+      const proc = e.procesadores.find((x) => x.id === cobro.procesadorId);
+      const feeRate = proc?.feeRate ?? 0;
+      nuevo = {
+        id, cuotaId: cuota.id, procesadorId: cobro.procesadorId,
+        monto: r2(cobro.monto), moneda: venta.moneda,
+        feeRate, feeMonto: r2(cobro.monto * feeRate),
+        fecha: cobro.fecha, referencia: cobro.referencia || undefined,
+        comprobante: cobro.comprobante, ...extrasDeCobro(cobro), creadoEn: viejo.creadoEn,
+      };
+    }
+    nuevo = { ...nuevo, creadoEn: viejo.creadoEn, cargadoPor: viejo.cargadoPor, caracteristica: viejo.caracteristica, tipoVenta: viejo.tipoVenta };
+    {
+      const cuotasVenta = e.cuotas.filter((c) => c.ventaId === venta.id);
+      const ids = new Set(cuotasVenta.map((c) => c.id));
+      nuevo = conDatosDePlanilla([nuevo], cuotasVenta, e.pagos.filter((p) => p.id !== id && ids.has(p.cuotaId)), false)[0];
+    }
+
+    /* Lo chequeado vale contra lo de antes: si cambió el monto, el día, la
+       moneda o el archivo, vuelve a pendiente. */
+    const sustancial = nuevo.monto !== viejo.monto || nuevo.moneda !== viejo.moneda
+      || new Date(nuevo.fecha).getTime() !== new Date(viejo.fecha).getTime()
+      || (nuevo.comprobante?.ruta ?? "") !== (viejo.comprobante?.ruta ?? "");
+    const CHEQUEOS = ["chequeoDirector", "chequeoDirectorPor", "chequeoDirectorEn", "chequeoDirectorNota",
+      "chequeoFinanzas", "chequeoFinanzasPor", "chequeoFinanzasEn", "chequeoFinanzasNota"] as const;
+    if (!sustancial) {
+      for (const k of CHEQUEOS) (nuevo as unknown as Record<string, unknown>)[k] = viejo[k];
+      if (!nuevo.movimientoId) nuevo.chequeado = viejo.chequeado;
+    }
+
+    const pagos = e.pagos.map((p) => (p.id === id ? nuevo : p));
+    const cubierto = r2(pagos.filter((p) => p.cuotaId === cuota.id).reduce((a, p) => a + p.monto, 0));
+    const estadoCuota = cubierto >= cuota.monto - 0.01 ? "pagada" : cuota.estado === "pagada" ? "pendiente" : cuota.estado;
+    const cuotaNueva: Cuota | undefined = estadoCuota !== cuota.estado ? { ...cuota, estado: estadoCuota } : undefined;
+
+    const movimientosTocados = movimientosDeCobros(e, pagos, [viejo.movimientoId, nuevo.movimientoId], venta.id);
+    const cambios: string[] = [];
+    if (viejo.monto !== nuevo.monto) cambios.push(`el monto de ${viejo.monto} a ${nuevo.monto}`);
+    if (new Date(viejo.fecha).getTime() !== new Date(nuevo.fecha).getTime()) cambios.push("la fecha");
+    if (viejo.procesadorId !== nuevo.procesadorId) cambios.push("la cuenta");
+    if (viejo.movimientoId !== nuevo.movimientoId) cambios.push(nuevo.movimientoId ? "el pago de la pasarela con el que se concilió" : "se soltó el pago de la pasarela");
+    if ((viejo.comprobante?.ruta ?? "") !== (nuevo.comprobante?.ruta ?? "")) cambios.push("el comprobante");
+    const nombreCuota = cuota.esReserva ? "la reserva" : `la cuota ${cuota.numero}`;
+    const { lista, nuevo: act } = registrar(
+      e, "transaccion", venta.id, venta.contactoNombre, "actualizo",
+      `Se corrigió un cobro de ${nombreCuota} de ${venta.contactoNombre}${cambios.length ? `: ${cambios.join(", ")}` : ""}.`,
+    );
+
+    guardar({
+      ...e, pagos, actividad: lista,
+      cuotas: cuotaNueva ? e.cuotas.map((c) => (c.id === cuota.id ? cuotaNueva : c)) : e.cuotas,
+      movimientos: e.movimientos.map((m) => movimientosTocados.get(m.id) ?? m),
+    });
+    const COLUMNAS = ["procesadorId", "movimientoId", "monto", "moneda", "feeRate", "feeMonto", "fecha", "referencia", "comprobante",
+      "tipoCambio", "montoArs", "pagador", "cuit", "cvu", "tipoCambioBlue", "tipoCambioFuente", "chequeado"] as const;
+    const aLaBase: Record<string, unknown> = {};
+    for (const k of COLUMNAS) aLaBase[k] = (nuevo as unknown as Record<string, unknown>)[k] ?? null;
+    if (sustancial) for (const k of CHEQUEOS) aLaBase[k] = null;
+    empujarUpdate("pagos", [id], aLaBase);
+    if (cuotaNueva) empujar({ tipo: "upsert", tabla: "cuotas", filas: [cuotaNueva] });
+    empujarMovimientos(movimientosTocados);
+    empujar({ tipo: "upsert", tabla: "actividad", filas: [act] });
+    return true;
+  },
+
+  eliminarPago(id: ID): boolean {
+    const e = snapshot();
+    const viejo = e.pagos.find((p) => p.id === id);
+    const cuota = viejo ? e.cuotas.find((c) => c.id === viejo.cuotaId) : undefined;
+    const venta = cuota ? e.ventas.find((v) => v.id === cuota.ventaId) : undefined;
+    if (!viejo || !cuota || !venta) return false;
+    const candado = candadoDeCobro(viejo, acceso);
+    if (candado.bloqueado) { negada("pagos", `Este cobro ya no se puede borrar: ${candado.motivo}`); return false; }
+    const r2 = (n: number) => Math.round(n * 100) / 100;
+
+    const pagos = e.pagos.filter((p) => p.id !== id);
+    const cubierto = r2(pagos.filter((p) => p.cuotaId === cuota.id).reduce((a, p) => a + p.monto, 0));
+    const cuotaNueva: Cuota | undefined = cuota.estado === "pagada" && cubierto < cuota.monto - 0.01 ? { ...cuota, estado: "pendiente" } : undefined;
+    const movimientosTocados = movimientosDeCobros(e, pagos, [viejo.movimientoId], venta.id);
+    const nombreCuota = cuota.esReserva ? "la reserva" : `la cuota ${cuota.numero}`;
+    const { lista, nuevo: act } = registrar(
+      e, "transaccion", venta.id, venta.contactoNombre, "actualizo",
+      `Se borró un cobro de ${viejo.monto} de ${nombreCuota} de ${venta.contactoNombre}.`,
+    );
+
+    guardar({
+      ...e, pagos, actividad: lista,
+      cuotas: cuotaNueva ? e.cuotas.map((c) => (c.id === cuota.id ? cuotaNueva : c)) : e.cuotas,
+      movimientos: e.movimientos.map((m) => movimientosTocados.get(m.id) ?? m),
+    });
+    empujar({ tipo: "delete", tabla: "pagos", ids: [id] });
+    if (cuotaNueva) empujar({ tipo: "upsert", tabla: "cuotas", filas: [cuotaNueva] });
+    empujarMovimientos(movimientosTocados);
+    empujar({ tipo: "upsert", tabla: "actividad", filas: [act] });
     return true;
   },
 

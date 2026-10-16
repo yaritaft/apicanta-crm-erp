@@ -235,11 +235,14 @@ test("las llamadas del día de un closer: sin canceladas, del día de Argentina,
 });
 
 test("objeciones: las del equipo si cargó alguna, sin vacías; y la sugerida por «NO Calificado» es una de la lista", () => {
-  assert.deepEqual(objecionesDe({ crm: undefined } as Ajustes), ["Plata", "Tiempo", "Lo tiene que consultar", "No ve el valor", "No califica", "Lo quiere pensar", "Otro"]);
+  assert.deepEqual(objecionesDe({ crm: undefined } as Ajustes), [
+    "FUP resell", "FUP downsell", "FUP reagendar", "Logística", "ESPOSA / NO DECIDE EL", "SIN CONFIANZA", "MIEDO SIN EMPLEO",
+    "DINERO / ESCASEZ", "NO VIO EL VALOR", "NO RESPONDIÓ", "FANTASMA", "MAL PERFIL", "MALA SALUD", "❌Num inválido o sin rta", "Otro > Ver notas",
+  ]);
   assert.deepEqual(objecionesDe({ crm: { objeciones: ["  ", ""] } } as Ajustes), objecionesDe({} as Ajustes));
   assert.deepEqual(objecionesDe({ crm: { objeciones: [" Plata ", "", "Tiempo"] } } as Ajustes), ["Plata", "Tiempo"]);
   const lista = objecionesDe({} as Ajustes);
-  assert.equal(objecionSugerida(opcionesDe({ crm: undefined } as Ajustes, "estadoLlamada").find((o) => o.nombre === "NO Calificado"), lista), "No califica");
+  assert.equal(objecionSugerida(opcionesDe({ crm: undefined } as Ajustes, "estadoLlamada").find((o) => o.nombre === "NO Calificado"), lista), "MAL PERFIL");
   assert.equal(objecionSugerida(opcionesDe({ crm: undefined } as Ajustes, "estadoLlamada").find((o) => o.nombre === "NO Calificado"), ["Plata"]), undefined);
   assert.equal(objecionSugerida(undefined, lista), undefined);
 });

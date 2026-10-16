@@ -83,6 +83,8 @@ export const NAV_CLOSER: GrupoNav[] = [
     items: [
       { href: "/mis-llamadas", texto: "Mis llamadas", icono: PhoneCall, ayuda: "Tus llamadas de hoy: cargá cómo terminó cada una" },
       { href: "/mi-panel", texto: "Mi panel", icono: UserRound, ayuda: "Tus comisiones, tus cuotas por cobrar y tus próximas llamadas" },
+      { href: "/crm", texto: "CRM", icono: Sheet, ayuda: "Todas tus llamadas, de cualquier día: se filtran y se corrigen como un Excel" },
+      { href: "/ventas", texto: "Ventas", icono: HandCoins, ayuda: "Tus ventas con sus cuotas y cobros: lo que falta cobrar, registrar un pago o corregirlo" },
       { href: "/cerrar-el-dia", texto: "Cerrar el día", icono: ClipboardCheck, ayuda: "Pasá por tus llamadas y contá cómo terminó cada una", edita: true },
       { href: "/cargar-venta", texto: "Cargar venta", icono: HandCoins, ayuda: "Cargá una venta nueva: pasa a cliente", edita: true },
     ],

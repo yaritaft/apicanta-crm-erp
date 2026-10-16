@@ -45,18 +45,18 @@ function tipoAlAzar(r: Azar, i: number): TipoCuenta {
    como alias (alumnos/page.tsx), pero el menú ya no lo usa. */
 const MENU_ESPERADO: Record<string, { menu: string[]; inicio: string }> = {
   dueno: {
-    menu: ["/panel", "/leads", "/crm", "/agenda", "/ventas", "/clientes", "/webinars", "/formularios", "/marketing", "/alumnos", "/alumnos?seccion=pipeline", "/reportes",
+    menu: ["/panel", "/mi-panel", "/leads", "/crm", "/agenda", "/ventas", "/clientes", "/webinars", "/formularios", "/marketing", "/alumnos", "/alumnos?seccion=pipeline", "/reportes",
       "/alumnos?seccion=hoy", "/alumnos?seccion=clientes", "/finanzas", "/finanzas/caja", "/conciliacion", "/equipo", "/ajustes"],
     inicio: "/panel",
   },
   equipo: {
-    menu: ["/panel", "/leads", "/crm", "/agenda", "/ventas", "/clientes", "/webinars", "/formularios", "/marketing", "/alumnos", "/alumnos?seccion=pipeline", "/reportes",
+    menu: ["/panel", "/mi-panel", "/leads", "/crm", "/agenda", "/ventas", "/clientes", "/webinars", "/formularios", "/marketing", "/alumnos", "/alumnos?seccion=pipeline", "/reportes",
       "/alumnos?seccion=hoy", "/alumnos?seccion=clientes", "/finanzas", "/finanzas/caja", "/conciliacion", "/ajustes"],
     inicio: "/panel",
   },
-  director: { menu: ["/panel", "/leads", "/crm", "/agenda", "/ventas", "/clientes", "/webinars", "/formularios"], inicio: "/panel" },
-  closer: { menu: ["/mis-llamadas", "/cerrar-el-dia", "/cargar-venta"], inicio: "/mis-llamadas" },
-  setter: { menu: ["/leads", "/crm", "/agenda"], inicio: "/leads" },
+  director: { menu: ["/panel", "/mi-panel", "/leads", "/crm", "/agenda", "/ventas", "/clientes", "/webinars", "/formularios"], inicio: "/panel" },
+  closer: { menu: ["/mis-llamadas", "/mi-panel", "/crm", "/ventas", "/cerrar-el-dia", "/cargar-venta"], inicio: "/mis-llamadas" },
+  setter: { menu: ["/mi-panel", "/leads", "/crm", "/agenda"], inicio: "/mi-panel" },
   admin: { menu: ["/panel", "/ventas", "/clientes", "/finanzas", "/finanzas/caja", "/conciliacion"], inicio: "/panel" },
   marketing: { menu: ["/panel", "/leads", "/webinars", "/formularios", "/marketing"], inicio: "/panel" },
   customer_success: {
@@ -182,6 +182,8 @@ test("3000 tipos al azar: quien edita una tabla también la lee (salvo los alumn
     for (const tabla of new Set([...Object.keys(EDITAN), "devoluciones"])) {
       if (!puedeEditar(a, tabla)) continue;
       if (tabla === "alumnos" && nivelEn(a, "ventas") === 2) continue;
+      /* Quien registra pagos concilia el cobro: marca conciliados los movimientos sin conciliar y no lee el resto (cobros-de-closers.sql). */
+      if (tabla === "movimientos" && nivelEn(a, "ventas") === 2) continue;
       assert.ok(puedeLeer(a, tabla), `${tabla}: edita pero no lee (${JSON.stringify(t.areas)} soloLoSuyo=${t.soloLoSuyo})`);
     }
   });

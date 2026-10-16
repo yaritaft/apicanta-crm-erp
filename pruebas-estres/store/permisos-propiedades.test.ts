@@ -50,6 +50,7 @@ test("quien edita una tabla puede leerla (salvo alumnos, que lo crea quien edita
     const t = tipoAzar(a, `t${i}`);
     for (const tabla of TABLAS) {
       if (tabla === "alumnos") continue;   // permisos.ts: «puedeEditar(alumnos)» también lo da Ventas editable
+      if (tabla === "movimientos") continue;   // permisos.ts: quien registra pagos (Ventas editable) concilia movimientos (cobros-de-closers.sql)
       if (puedeEditar(t, tabla) && !puedeLeer(t, tabla)) fallas.push(`${JSON.stringify(t.areas)} soloLoSuyo=${t.soloLoSuyo}: edita ${tabla} pero no la lee`);
     }
   }

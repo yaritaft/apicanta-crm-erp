@@ -140,7 +140,9 @@ test("revisarOcultar y queMueve no se caen con ningún estado ni campo, ni con u
     const r = revisarOcultar({ crm: undefined }, campo, "No existe", 2);
     assert.deepEqual(r, { mueve: [], bloquea: null, avisos: [], usos: 2 });
   }
-  assert.ok(revisarOcultar({ crm: undefined }, "estadoPreCall", "Reagendar").bloquea, "Reagendar es el único del Pre-Call que dice «pidió otra fecha»");
+  assert.equal(revisarOcultar({ crm: undefined }, "estadoPreCall", "Reagendar").bloquea, null, "«Reagendó» también dice «pidió otra fecha»");
+  const sinReagendo = { crm: { opciones: { estadoPreCall: opcionesDe({ crm: undefined }, "estadoPreCall").map((o) => (o.nombre === "Reagendó" ? { ...o, oculta: true } : o)) } } };
+  assert.ok(revisarOcultar(sinReagendo, "estadoPreCall", "Reagendar").bloquea, "con «Reagendó» oculto, Reagendar es el único que dice «pidió otra fecha»");
 });
 
 test("ofrecidas y opcionDeCompraPara: lo oculto no se ofrece (salvo lo que la llamada ya tiene) y la compra elegida es visible si hay alguna visible", () => {

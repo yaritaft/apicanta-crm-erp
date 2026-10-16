@@ -84,6 +84,8 @@ function presets(
          es hoy y nada mas. */
       { id: "proximo", label: "Todo lo próximo", rango: () => [hoy, maxDate ? (maxDate > hoy ? maxDate : hoy) : finMes(1)] },
       { id: "hoy", label: "Hoy", rango: () => [hoy, hoy] },
+      /* Lo que más se busca después de hoy: cargar lo de ayer. */
+      { id: "ayer", label: "Ayer", rango: () => [iso(addDias(T, -1)), iso(addDias(T, -1))] },
       { id: "manana", label: "Mañana", rango: () => [iso(addDias(T, 1)), iso(addDias(T, 1))] },
       { id: "semana", label: "Esta semana", rango: () => [iso(lunes), iso(addDias(lunes, 6))] },
       { id: "semana_prox", label: "La semana que viene", rango: () => [iso(addDias(lunes, 7)), iso(addDias(lunes, 13))] },
@@ -91,7 +93,6 @@ function presets(
       { id: "prox30", label: "Próximos 30 días", rango: () => [hoy, iso(addDias(T, 29))] },
       { id: "mes", label: "Este mes", rango: () => [iniMes(0), finMes(0)] },
       { id: "mes_prox", label: "El mes que viene", rango: () => [iniMes(1), finMes(1)] },
-      { id: "ayer", label: "Ayer", rango: () => [iso(addDias(T, -1)), iso(addDias(T, -1))] },
       { id: "semana_pasada", label: "La semana pasada", rango: () => [iso(addDias(lunes, -7)), iso(addDias(lunes, -1))] },
       { id: "mes_pasado", label: "El mes pasado", rango: () => [iniMes(-1), finMes(-1)] },
       { id: "u30", label: "Últimos 30 días", rango: () => ult(30) },
@@ -313,9 +314,13 @@ export function DateRangePicker({
     setVista(sI < eI ? sI : eI - 1);
   };
 
+  /* Un solo clic en el calendario y Actualizar = ese día solo. Antes había que
+     clickear el mismo día dos veces para ver «ayer»: con un clic el botón
+     quedaba apagado y parecía que el día no se dejaba elegir. */
+  const hasta = dHasta ?? dDesde;
   const aplicar = () => {
-    if (!dDesde || !dHasta) return;
-    onApply({ preset: dPreset, desde: dDesde, hasta: dHasta });
+    if (!dDesde || !hasta) return;
+    onApply({ preset: dPreset, desde: dDesde, hasta });
     setOpen(false);
   };
 
@@ -361,7 +366,7 @@ export function DateRangePicker({
               <div className="dp-resumen">
                 {completo
                   ? `${fmtCorta(dDesde!)} – ${fmtCorta(dHasta!)} · ${nDias} día${nDias > 1 ? "s" : ""}`
-                  : dDesde ? `${fmtCorta(dDesde)} — elegí la fecha de fin` : "Elegí la fecha de inicio"}
+                  : dDesde ? `${fmtCorta(dDesde)} — elegí la fecha de fin, o Actualizar para ver sólo ese día` : "Elegí la fecha de inicio"}
               </div>
             </div>
           </div>
@@ -371,7 +376,7 @@ export function DateRangePicker({
             <button
               type="button"
               className="hk-btn hk-btn--primary hk-btn--sm"
-              style={!completo ? { opacity: 0.4, pointerEvents: "none" } : undefined}
+              style={!dDesde ? { opacity: 0.4, pointerEvents: "none" } : undefined}
               onClick={aplicar}
             >
               Actualizar

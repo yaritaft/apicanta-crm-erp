@@ -258,6 +258,9 @@ export function puedeEditar(a: MiAcceso | null | undefined, tabla: string): bool
   if (esDueno(a) || LIBRES.has(tabla)) return true;
   if (tabla === "devoluciones") return puedeCargarDevolucion(a);
   if (tabla === "alumnos" && nivelEn(a, "ventas") === 2) return true;
+  /* Quien registra pagos concilia el cobro con el pago de la pasarela: la base le deja ver los
+     movimientos sin conciliar y marcarlos conciliados, y nada más (supabase/cobros-de-closers.sql). */
+  if (tabla === "movimientos" && nivelEn(a, "ventas") === 2) return true;
   return (EDITAN[tabla] ?? []).some((x) => nivelEn(a, x) === 2);
 }
 

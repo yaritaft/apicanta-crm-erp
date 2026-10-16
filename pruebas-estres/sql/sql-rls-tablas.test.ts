@@ -227,7 +227,8 @@ test("ve() y edita() de la base dicen lo mismo que puedeLeer() y puedeEditar() p
   /* Las tablas cuya regla no pasa por areas_que_leen()/areas_que_editan(): tienen su política propia (devoluciones, gastos_recurrentes,
      alumnos, registros_webinar) o son de cualquiera que entre (actividad y preferencias). */
   const PROPIAS_LEER = new Set(["devoluciones", "gastos_recurrentes", "whatsapp_lector", "whatsapp_grupos", "whatsapp_miembros", "whatsapp_qr"]);
-  const PROPIAS_EDITAR = new Set(["devoluciones", "gastos_recurrentes", "alumnos", "actividad", "preferencias", "whatsapp_lector", "whatsapp_grupos", "whatsapp_miembros", "whatsapp_qr"]);
+  /* «movimientos»: quien registra pagos (Ventas editable) los concilia con una política propia (cobros-de-closers.sql); edita() sigue siendo de Finanzas. */
+  const PROPIAS_EDITAR = new Set(["devoluciones", "gastos_recurrentes", "alumnos", "movimientos", "actividad", "preferencias", "whatsapp_lector", "whatsapp_grupos", "whatsapp_miembros", "whatsapp_qr"]);
   const gente: PersonaConAcceso[] = [...personasPorDefecto(), ...(await altaDeTiposAlAzar(b, az, 30, "tv"))];
   let comparadas = 0;
   for (const p of gente) {
