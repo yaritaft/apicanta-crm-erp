@@ -75,7 +75,12 @@ export function Eod({ onCerrar, soloSesionId }: { onCerrar: () => void; soloSesi
   const hoy = diaDeNegocio(new Date().toISOString());
   const closers = useMemo(() => closersConLlamadas(e), [e]);
   const soyCloser = yo.miembro && closers.includes(yo.miembro.nombre) ? yo.miembro.nombre : "";
-  const [closer, setCloser] = useState(soyCloser);
+  /* Quien es closer no elige: es el suyo. Se calcula en cada render y no se
+     guarda al montar, porque con la pantalla abierta directo (pestaña nueva)
+     el equipo y las llamadas todavía no llegaron y quedaba vacío para siempre:
+     «Cerrá tu día,» sin nombre y sin llamadas. */
+  const [elegido, setCloser] = useState("");
+  const closer = soyCloser || elegido;
   const [dia, setDia] = useState(hoy);
   const [conPendientes, setConPendientes] = useState(true);
   const [paso, setPaso] = useState(0);
