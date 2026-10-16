@@ -370,6 +370,12 @@ export interface ResultadoImport {
   /* Los cobros de la planilla que son el mismo que uno que ya conciliaron las pasarelas: el cobro
      de la planilla toma el cobro de la pasarela (su comisión real y su chequeo) y el otro se saca. */
   fusiones: FusionDeCobros[];
+  /* Ventas que el equipo cargó a mano en la app y que la planilla ya trae: la de la planilla queda y la de la app se
+     saca (ver fusionarVentasDeLaApp). */
+  fusionesDeVentas: FusionDeVentas[];
+  /* Pagos de pasarela que estaban conciliados con un cobro cargado a mano que se saca y no tiene gemelo en la planilla:
+     vuelven a «sin conciliar». */
+  movimientosLiberados: ID[];
   /* Lo que sobraba pero se dejó porque tiene datos cargados en la app: para mirarlo a mano. */
   protegidos: { tipo: "venta" | "pago"; id: ID; motivo: string }[];
   /* Lo que la planilla nombra y la app no tenía: se crea. */
@@ -383,9 +389,12 @@ export interface ResultadoImport {
     filas: number; personas: number; personasNuevas: number; ventas: number; cobros: number;
     cuotasPendientes: number; cobrado: number; facturado: number; porCobrar: number;
     /* Lo que se saca (sincronizar) y los cobros que se fusionaron con los de las pasarelas. */
-    sacaVentas: number; sacaCuotas: number; sacaCobros: number; sacaMonto: number; fusionados: number;
+    sacaVentas: number; sacaCuotas: number; sacaCobros: number; sacaMonto: number; fusionados: number; ventasFusionadas: number;
   };
 }
+
+/* La venta cargada a mano en la app (`viejaId`) es la misma que la de la planilla (`nuevaId`). */
+export interface FusionDeVentas { viejaId: ID; nuevaId: ID }
 
 /* El cobro viejo (creado al conciliar una pasarela) pasa a ser el de la planilla. */
 export interface FusionDeCobros { viejoId: ID; nuevoId: ID; movimientoId: ID }
@@ -428,9 +437,62 @@ function sincronizarConLaBase(
   const out = {
     ventas: [] as ID[], cuotasDeVentas: [] as ID[], pagos: [] as ID[], monto: 0,
     fusiones: [] as FusionDeCobros[], protegidos: [] as { tipo: "venta" | "pago"; id: ID; motivo: string }[],
+    fusionesDeVentas: [] as FusionDeVentas[], movimientosLiberados: [] as ID[],
   };
   const idsPagosNuevos = new Set(nuevo.pagos.map((p) => p.id));
   const idsPagosViejos = new Set(e.pagos.map((p) => p.id));
+
+  /* --- Las ventas que el equipo cargó a mano en la app y que la planilla ya trae ---
+     Un closer carga su venta en la app y el Centro de control la trae (con la fecha de verdad y el total): sin esto
+     quedaban las dos y el cobrado se duplicaba (octubre, +US$ 15.888). Es la misma venta cuando coinciden la persona
+     (la oportunidad o el nombre), el servicio, la fecha (±7 días) y lo cobrado (±1%). La de la planilla queda, con la
+     llamada de la que salió y la persona que ya tenía; la de la app se saca con sus cuotas y cobros. Si lo cobrado no
+     coincide no se toca nada: se deja y se avisa. */
+  const devueltasDeAntes = new Set((e.devoluciones ?? []).map((d) => d.ventaId).filter((x): x is ID => Boolean(x)));
+  const idsVentasViejas = new Set(e.ventas.map((v) => v.id));
+  const cuotasDe = (lista: Cuota[], ventaId: ID) => lista.filter((c) => c.ventaId === ventaId);
+  const cobrosDeVenta = (cuotas: Cuota[], pagos: Pago[], ventaId: ID) => {
+    const ids = new Set(cuotasDe(cuotas, ventaId).map((c) => c.id));
+    return pagos.filter((p) => ids.has(p.cuotaId));
+  };
+  const nombreDe = (v: Venta) => normalizarTexto(v.contactoNombre ?? "");
+  /* El mismo nombre aunque uno traiga más palabras («Ignacio Fernandez» y «Ignacio Fernandez Rocha»): todas las del más corto, y al menos dos. */
+  const mismoNombre = (x: string, y: string) => {
+    const a = new Set(x.split(" ").filter(Boolean)), b = new Set(y.split(" ").filter(Boolean));
+    const [corto, largo] = a.size <= b.size ? [a, b] : [b, a];
+    return corto.size >= 2 && [...corto].every((t) => largo.has(t));
+  };
+  const ventasDeLaApp = sincronizar
+    ? e.ventas.filter((v) => !v.id.includes("ven_ef_") && !v.id.startsWith("ven_1310_") && v.estado === "activa" && !devueltasDeAntes.has(v.id))
+    : [];
+  const fusionesDeVentas: FusionDeVentas[] = [];
+  const movimientosLiberados: ID[] = [];
+  const hechasFusionadas: ID[] = [];
+  const hUsadas = new Set<ID>();
+  for (const E of nuevo.ventas) {
+    const tE = new Date(E.fecha).getTime();
+    const hs = ventasDeLaApp.filter((H) => !hUsadas.has(H.id) && H.productoId === E.productoId
+      && Math.abs(new Date(H.fecha).getTime() - tE) <= 7 * DIA_MS
+      && (H.contactoId === E.contactoId || (nombreDe(H) !== "" && mismoNombre(nombreDe(H), nombreDe(E)))));
+    if (!hs.length) continue;
+    const sumaE = r2(cobrosDeVenta(nuevo.cuotas, nuevo.pagos, E.id).reduce((a, p) => a + p.monto, 0));
+    for (const H of hs) {
+      const sumaH = r2(cobrosDeVenta(e.cuotas, e.pagos, H.id).reduce((a, p) => a + p.monto, 0));
+      if (Math.abs(sumaH - sumaE) > Math.max(1, sumaE * 0.01)) {
+        out.protegidos.push({ tipo: "venta", id: H.id, motivo: "está cargada en la app y no suma lo mismo que la planilla" });
+        avisar("venta-de-la-app-distinta", "Ventas cargadas en la app que parecen las de la planilla pero cobraron otro total: se dejaron las dos, revisalas a mano.");
+        continue;
+      }
+      hUsadas.add(H.id);
+      fusionesDeVentas.push({ viejaId: H.id, nuevaId: E.id });
+      hechasFusionadas.push(H.id);
+      if (H.sesionId && !E.sesionId) E.sesionId = H.sesionId;
+      if (H.notas && !E.notas) E.notas = H.notas;
+      E.contactoId = H.contactoId;
+      out.ventas.push(H.id);
+      out.cuotasDeVentas.push(...cuotasDe(e.cuotas, H.id).map((c) => c.id));
+    }
+  }
 
   /* --- Los cobros que ya conciliaron las pasarelas ---
      Un cobro nuevo de la planilla toma el lugar del viejo que ya tiene el movimiento de la pasarela cuando son el mismo
@@ -446,8 +508,11 @@ function sincronizarConLaBase(
   const personaDeVentaNuevas = new Map(nuevo.ventas.map((v) => [v.id, v.contactoId] as const));
   const personaVieja = (q: Pago) => personaDeVentaViejas.get(ventaDeCuotaViejas.get(q.cuotaId) ?? "");
   const personaNueva = (n: Pago) => personaDeVentaNuevas.get(ventaDeCuotaNuevas.get(n.cuotaId) ?? "");
+  const pagoDeAntes = new Map(e.pagos.map((p) => [p.id, p] as const));
+  const nuevosFusionados = new Set<ID>();
   for (const n of nuevo.pagos) {
-    if (idsPagosViejos.has(n.id)) continue;
+    /* Un cobro que ya estaba importado y ya tiene su pago de la pasarela no se toca; uno que todavía no lo tiene puede tomar el de un cobro cargado a mano. */
+    if (idsPagosViejos.has(n.id) && pagoDeAntes.get(n.id)?.movimientoId) continue;
     const tn = new Date(n.fecha).getTime();
     const mismoCobro = (q: Pago) => !usados.has(q.id) && Boolean(q.movimientoId) && q.procesadorId === n.procesadorId
       && Math.abs(q.monto - n.monto) <= 0.01 && Math.abs(new Date(q.fecha).getTime() - tn) <= 3 * DIA_MS;
@@ -457,6 +522,15 @@ function sincronizarConLaBase(
       const deLaMismaPersona = persona ? e.pagos.filter((q) => (!q.id.includes("pag_ef_") || !idsPagosNuevos.has(q.id)) && mismoCobro(q) && personaVieja(q) === persona) : [];
       const deLaPlanilla = deLaMismaPersona.filter((q) => q.id.includes("pag_ef_"));
       cand = deLaMismaPersona.length === 1 ? deLaMismaPersona : deLaPlanilla.length === 1 ? deLaPlanilla : [];
+      /* Iguales de los dos lados (dos cobros de 3,66 el mismo día en cada uno): da lo mismo cuál es cuál, se emparejan en orden. */
+      if (cand.length === 0 && deLaMismaPersona.length > 1) {
+        const gemelos = nuevo.pagos.filter((m) => !idsPagosViejos.has(m.id) && m.procesadorId === n.procesadorId
+          && Math.abs(m.monto - n.monto) <= 0.01 && Math.abs(new Date(m.fecha).getTime() - tn) <= 3 * DIA_MS && personaNueva(m) === persona);
+        if (gemelos.length === deLaMismaPersona.length) {
+          const k = gemelos.findIndex((m) => m.id === n.id);
+          cand = [[...deLaMismaPersona].sort((x, y) => x.id.localeCompare(y.id))[k]].filter(Boolean);
+        }
+      }
     }
     if (cand.length !== 1) continue;
     const q = cand[0];
@@ -468,7 +542,52 @@ function sincronizarConLaBase(
     });
     out.fusiones.push({ viejoId: q.id, nuevoId: n.id, movimientoId: q.movimientoId! });
     out.pagos.push(q.id);
+    nuevosFusionados.add(n.id);
   }
+
+  /* --- Un cobro cargado a mano sobre una venta ya importada, y la planilla lo trae de nuevo ---
+     (Dante registra el pago de una cuota en la app y Angelo lo anota en el Centro de control): si la planilla tiene un cobro
+     que la base no tenía, de la misma persona, del mismo monto y de ±3 días, es el mismo. El de la planilla queda (con el pago
+     de la pasarela, si el otro lo tenía) y el cargado a mano se saca. */
+  if (sincronizar) {
+    const sueltos = e.pagos.filter((q) => !q.id.includes("pag_ef_") && !usados.has(q.id));
+    for (const n of nuevo.pagos) {
+      if (idsPagosViejos.has(n.id) || nuevosFusionados.has(n.id)) continue;
+      const tn = new Date(n.fecha).getTime();
+      const persona = personaNueva(n);
+      if (!persona) continue;
+      const cand = sueltos.filter((q) => !usados.has(q.id) && !out.pagos.includes(q.id) && Math.abs(q.monto - n.monto) <= 0.01
+        && Math.abs(new Date(q.fecha).getTime() - tn) <= 3 * DIA_MS && personaVieja(q) === persona
+        && (!q.movimientoId || q.procesadorId === n.procesadorId));
+      if (cand.length !== 1) continue;
+      const q = cand[0];
+      usados.add(q.id);
+      out.pagos.push(q.id);
+      out.monto = r2(out.monto + q.monto);
+      nuevosFusionados.add(n.id);
+      if (q.movimientoId) {
+        Object.assign(n, {
+          movimientoId: q.movimientoId, feeMonto: q.feeMonto, feeRate: q.feeRate, feeManual: q.feeManual, chequeado: true,
+          referencia: n.referencia || q.referencia,
+          ...Object.fromEntries(COLUMNAS_DE_CONTROL_DEL_COBRO.map((k) => [k, (q as unknown as Record<string, unknown>)[k]]).filter(([, v]) => v !== undefined && v !== null)),
+        });
+        out.fusiones.push({ viejoId: q.id, nuevoId: n.id, movimientoId: q.movimientoId });
+      }
+    }
+  }
+
+  /* Los cobros de las ventas de la app que se fusionan: los conciliados ya pasaron al de la planilla; el resto era el mismo
+     cobro cargado a mano y se saca. Un cobro conciliado sin gemelo en la planilla suelta su pago de la pasarela. */
+  for (const id of hechasFusionadas) {
+    for (const q of cobrosDeVenta(e.cuotas, e.pagos, id)) {
+      if (out.pagos.includes(q.id)) continue;
+      out.pagos.push(q.id);
+      out.monto = r2(out.monto + q.monto);
+      if (q.movimientoId) movimientosLiberados.push(q.movimientoId);
+    }
+  }
+  out.fusionesDeVentas = fusionesDeVentas;
+  out.movimientosLiberados = movimientosLiberados;
 
   if (!sincronizar) return out;
 
@@ -846,12 +965,18 @@ export function importarPlanilla(e: EstadoApp, filasCrudas: FilaVentas[], opcion
   const lista = new Set(e.ajustes.proyectos ?? []);
   const proyectos = [...new Set(ventas.map((v) => v.proyecto).filter((x): x is string => Boolean(x) && !lista.has(x!)))];
 
+  /* Una venta fusionada con la de la app queda con la persona que ya tenía: la que se iba a crear de nuevo sobra. */
+  const leadsConVenta = new Set(ventas.map((v) => v.contactoId));
+  for (const [k, l] of leadsNuevos) if (!leadsConVenta.has(l.id)) leadsNuevos.delete(k);
+  const contactosConLead = new Set([...leadsNuevos.values()].map((l) => l.contactoId));
+  for (const [k, c] of contactosNuevos) if (!contactosConLead.has(c.id)) contactosNuevos.delete(k);
+
   const personas = new Set(ventas.map((v) => v.contactoId));
   return {
     contactos: [...contactosNuevos.values()],
     leads: [...leadsNuevos.values()],
     ventas, cuotas, pagos, cuotasQueSobran,
-    ventasQueSobran: sinc.ventas, pagosQueSobran: sinc.pagos, fusiones: sinc.fusiones, protegidos: sinc.protegidos,
+    ventasQueSobran: sinc.ventas, pagosQueSobran: sinc.pagos, fusiones: sinc.fusiones, fusionesDeVentas: sinc.fusionesDeVentas, movimientosLiberados: sinc.movimientosLiberados, protegidos: sinc.protegidos,
     equipo: creados.equipo, productos: creados.productos, procesadores: creados.procesadores, embudos: creados.embudos,
     proyectos,
     avisos: [...avisos.values()],
@@ -865,7 +990,7 @@ export function importarPlanilla(e: EstadoApp, filasCrudas: FilaVentas[], opcion
       cobrado: r2(pagos.reduce((a, p) => a + p.monto, 0)),
       facturado: r2(ventas.filter((v) => v.estado !== "cancelada").reduce((a, v) => a + v.precioAcordado, 0)),
       porCobrar: r2(cuotas.filter((c) => c.estado === "pendiente").reduce((a, c) => a + c.monto, 0)),
-      sacaVentas: sinc.ventas.length, sacaCuotas: sinc.cuotasDeVentas.length, sacaCobros: sinc.pagos.length, sacaMonto: sinc.monto, fusionados: sinc.fusiones.length,
+      sacaVentas: sinc.ventas.length, sacaCuotas: sinc.cuotasDeVentas.length, sacaCobros: sinc.pagos.length, sacaMonto: sinc.monto, fusionados: sinc.fusiones.length, ventasFusionadas: sinc.fusionesDeVentas.length,
     },
   };
 }
@@ -894,7 +1019,35 @@ export function estadoDespuesDeImportar(e: EstadoApp, r: ResultadoImport) {
     const p = pagoNuevo.get(nuevoDeMovimiento.get(m.id)!);
     return { ...m, pagoId: p?.id, cuotaId: p?.cuotaId, ventaId: (p && cuotaDe.get(p.cuotaId)?.ventaId) ?? m.ventaId };
   });
-  const porId = new Map(movimientosFusionados.map((m) => [m.id, m] as const));
+  const porId = new Map<ID, Movimiento>(movimientosFusionados.map((m) => [m.id, m] as const));
+  /* Las ventas de la app que se fusionaron: lo que colgaba de ellas (el alumno, los pagos de la pasarela) pasa a la venta de la planilla. */
+  const ventaNueva = new Map((r.fusionesDeVentas ?? []).map((f) => [f.viejaId, f.nuevaId] as const));
+  const liberados = new Set(r.movimientosLiberados ?? []);
+  const alumnosReapuntados = (e.alumnos ?? []).filter((a) => a.ventaId && ventaNueva.has(a.ventaId))
+    .map((a) => ({ ...a, ventaId: ventaNueva.get(a.ventaId!) }));
+  const movimientosAjustados = e.movimientos.filter((m) => !porId.has(m.id) && (liberados.has(m.id) || (m.ventaId && ventaNueva.has(m.ventaId)))).map((m): Movimiento => (liberados.has(m.id)
+    ? { ...m, estado: "pendiente", vinculado: false, pagoId: undefined, cuotaId: undefined, ventaId: undefined, conciliadoEn: undefined, conciliadoPor: undefined }
+    : { ...m, ventaId: ventaNueva.get(m.ventaId!) }));
+  for (const m of movimientosAjustados) porId.set(m.id, m);
+  const alumnoPorId = new Map(alumnosReapuntados.map((a) => [a.id, a] as const));
+  /* Un cobro que cambia de venta (se editó su fila de la planilla) deja a su pago de pasarela apuntando a la venta de antes:
+     al final, todo pago conciliado queda con la cuota y la venta de su cobro de ahora. */
+  {
+    const ventasFinal = new Set([...e.ventas.filter((v) => !quitaVentas.has(v.id)), ...r.ventas].map((v) => v.id));
+    const cuotasFinal = new Map([...e.cuotas.filter((c) => !quitaCuotas.has(c.id)), ...r.cuotas].map((c) => [c.id, c] as const));
+    const pagosFinal = new Map([...e.pagos.filter((p) => !quitaPagos.has(p.id)), ...r.pagos].map((p) => [p.id, p] as const));
+    for (const m0 of e.movimientos) {
+      const m = porId.get(m0.id) ?? m0;
+      if (m.estado !== "conciliado" || !m.pagoId) continue;
+      const p = pagosFinal.get(m.pagoId);
+      const c = p ? cuotasFinal.get(p.cuotaId) : undefined;
+      if (!p || !c) continue;
+      if (ventasFinal.has(m.ventaId ?? "") && cuotasFinal.has(m.cuotaId ?? "")) continue;
+      const alineado: Movimiento = { ...m, cuotaId: c.id, ventaId: c.ventaId };
+      porId.set(m.id, alineado);
+      if (!movimientosAjustados.some((x) => x.id === m.id) && !movimientosFusionados.some((x) => x.id === m.id)) movimientosAjustados.push(alineado);
+    }
+  }
   return {
     estado: {
       equipo: reemplazar(e.equipo, r.equipo), productos: reemplazar(e.productos, r.productos),
@@ -903,6 +1056,7 @@ export function estadoDespuesDeImportar(e: EstadoApp, r: ResultadoImport) {
       ventas: reemplazar(e.ventas.filter((v) => !quitaVentas.has(v.id)), r.ventas),
       cuotas: reemplazar(e.cuotas.filter((c) => !quitaCuotas.has(c.id)), r.cuotas),
       movimientos: e.movimientos.map((m) => porId.get(m.id) ?? m),
+      alumnos: (e.alumnos ?? []).map((a) => alumnoPorId.get(a.id) ?? a),
       /* Reimportar no borra lo que ya se chequeó en la app ni quién cargó el cobro. */
       pagos: reemplazar(e.pagos.filter((p) => !quitaPagos.has(p.id)), r.pagos.map((n) => {
         const viejo = pagoViejo.get(n.id);
@@ -915,7 +1069,7 @@ export function estadoDespuesDeImportar(e: EstadoApp, r: ResultadoImport) {
         return { ...n, ...control } as Pago;
       })),
     },
-    quitaPagos: [...quitaPagos], quitaCuotas: [...quitaCuotas], quitaVentas: [...quitaVentas], movimientosFusionados,
+    quitaPagos: [...quitaPagos], quitaCuotas: [...quitaCuotas], quitaVentas: [...quitaVentas], movimientosFusionados, movimientosAjustados, alumnosReapuntados,
   };
 }
 

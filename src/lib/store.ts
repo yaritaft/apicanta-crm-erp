@@ -2909,8 +2909,9 @@ export const acciones = {
     const ajustes = r.proyectos.length
       ? { ...e.ajustes, proyectos: [...(e.ajustes.proyectos ?? []), ...r.proyectos] }
       : e.ajustes;
-    const sacan = r.resumen.sacaVentas || r.resumen.sacaCobros
-      ? ` Se sacaron ${r.resumen.sacaVentas} ventas y ${r.resumen.sacaCobros} cobros que la planilla ya no trae.` : "";
+    const sacan = (r.resumen.sacaVentas || r.resumen.sacaCobros
+      ? ` Se sacaron ${r.resumen.sacaVentas} ventas y ${r.resumen.sacaCobros} cobros que la planilla ya no trae.` : "")
+      + (r.resumen.ventasFusionadas ? ` ${r.resumen.ventasFusionadas} ventas cargadas a mano en la app eran las de la planilla y se fusionaron.` : "");
     const { lista, nuevo } = registrar(
       e, "transaccion", "planilla-angelo", "Planilla de Angelo", "importo",
       `Se importó la hoja Ventas: ${r.resumen.ventas} ventas y ${r.resumen.cobros} cobros de ${r.resumen.personas} personas (${r.resumen.filas} filas).${sacan}`,
@@ -2931,6 +2932,10 @@ export const acciones = {
     empujarEnLotes("pagos", r.pagos);
     /* Los cobros de la pasarela pasan a apuntar al cobro de la planilla ANTES de sacar el viejo. */
     if (x.movimientosFusionados.length) empujarEnLotes("movimientos", x.movimientosFusionados);
+    /* Las ventas cargadas a mano que la planilla ya trae: el alumno y los pagos de la pasarela pasan a la venta de la planilla
+       (o, sin cobro gemelo, el pago vuelve a «sin conciliar») ANTES de sacar la de la app. */
+    if (x.alumnosReapuntados.length) empujarEnLotes("alumnos", x.alumnosReapuntados);
+    if (x.movimientosAjustados.length) empujarMovimientos(new Map(x.movimientosAjustados.map((m) => [m.id, m])));
     /* Sacar lo que sobra, en orden: primero los cobros, después las cuotas y al final las ventas. */
     if (x.quitaPagos.length) empujar({ tipo: "delete", tabla: "pagos", ids: x.quitaPagos });
     if (x.quitaCuotas.length) empujar({ tipo: "delete", tabla: "cuotas", ids: x.quitaCuotas });
