@@ -73,6 +73,8 @@ export const OPCIONES_POR_DEFECTO: Record<CampoOpcionesCrm, OpcionCrm[]> = {
     { nombre: "Califica Downsell", color: "naranja2", llamada: "hecha" },
     { nombre: "Compra Downsell", color: "naranja4", llamada: "hecha", oportunidad: "downsell" },
     { nombre: "Llamada Interrumpida", color: "azul2", llamada: "hecha" },
+    /* Pidió otra fecha después de la hora de la llamada: la agenda nueva entra sola de Calendly. */
+    { nombre: "Reagendó", color: "amarillo2" },
     { nombre: "Dejó de Contestar", color: "rojo2", llamada: "no-show" },
     { nombre: "Inasistió", color: "rojo2", llamada: "no-show", auto: "no-show" },
     { nombre: "Lead descartado", color: "rojo3", oportunidad: "perdida" },

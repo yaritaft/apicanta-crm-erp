@@ -142,6 +142,7 @@ export function desenlaceDe(
 ): Desenlace {
   if (o.venta || esCompra(cargada)) return CON_CIERRE;
   if (s.estado === "cancelada") return CANCELADA;
+  if (cargada && esReagendar(cargada.nombre)) return REPROGRAMO;
   if (s.estado === "no-show" || cargada?.llamada === "no-show") return NO_SE_PRESENTO;
   if (cargada && (cargada.llamada === "hecha" || cargada.oportunidad === "perdida" || cargada.oportunidad === "devolucion")) return SIN_CIERRE;
   if (s.resultado) return DE_RESULTADO[s.resultado];

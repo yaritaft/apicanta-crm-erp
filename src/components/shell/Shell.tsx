@@ -17,6 +17,7 @@ import {
   alNegarseEscritura, cargarDeLaNube, fijarAcceso, hayNube, reiniciarCarga, useEstado, useSync, useTema,
 } from "@/lib/store";
 import { useSalir, useSesion } from "@/lib/auth";
+import { useUsuarioActual } from "@/lib/usuario";
 import { elegirVerComo, useAcceso, useVerComo } from "@/lib/acceso";
 import { areaDeRuta, esCuentaDeCloser, nivelDeRuta, queEsTabla } from "@/lib/permisos";
 import { diaDeNegocio } from "@/lib/dia-negocio";
@@ -35,6 +36,9 @@ export function Shell({ children }: { children: React.ReactNode }) {
   const [tema, setTema] = useTema();
   const sync = useSync();
   const sesion = useSesion();
+  /* Abajo a la izquierda va quien entró, no el responsable del negocio: Dante veía «Yari Taft». */
+  const yo = useUsuarioActual();
+  const nombreYo = yo.miembro?.nombre ?? (estado.ajustes.responsable || "Apicanta");
   const router = useRouter();
   const toast = useToast();
   /* Qué ve según su tipo de cuenta (lib/acceso, lib/permisos): el menú,
@@ -242,9 +246,9 @@ export function Shell({ children }: { children: React.ReactNode }) {
         <div className="hk-sidebar__footer">
           <EstadoDatos estado={sync.estado} error={sync.error} />
           <div className="row-3">
-            <Avatar nombre={estado.ajustes.responsable || "Apicanta"} />
+            <Avatar nombre={nombreYo} />
             <div style={{ minWidth: 0, flex: 1 }}>
-              <div className="t-strong truncate" style={{ fontSize: 14 }}>{estado.ajustes.responsable || "Apicanta"}</div>
+              <div className="t-strong truncate" style={{ fontSize: 14 }}>{nombreYo}</div>
               <div className="t-sm t-subtle truncate">{sesion.email ?? estado.ajustes.negocio}</div>
             </div>
             {!sesion.sinAuth && (
