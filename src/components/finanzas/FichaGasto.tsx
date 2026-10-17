@@ -7,6 +7,7 @@ import { Badge, Button } from "@/components/ui/ui";
 import { Drawer, Dato } from "@/components/ui/Drawer";
 import { fechaHora, fechaLarga, money, num } from "@/lib/format";
 import { fechaDePago, infoGrupo, montoOriginal, tieneOtraFechaDePago } from "@/lib/gastos";
+import { esIngreso } from "@/lib/carga-gasto";
 import { nombrePeriodo, periodoDeFecha } from "@/lib/periodos";
 import type { EstadoApp, Gasto } from "@/lib/types";
 import { VARIANTE_GRUPO } from "./ListaGastos";
@@ -21,6 +22,7 @@ export function FichaGasto({ gasto, e, onCerrar, onEditar, onBorrar }: {
   onBorrar: () => void;
 }) {
   const grupo = infoGrupo(gasto.grupo);
+  const ingreso = esIngreso(gasto);
   const original = montoOriginal(gasto);
   const dosFechas = tieneOtraFechaDePago(gasto);
   const mesQueCorresponde = nombrePeriodo(periodoDeFecha(gasto.fecha) || periodoDeFecha(new Date().toISOString()));
@@ -40,11 +42,14 @@ export function FichaGasto({ gasto, e, onCerrar, onEditar, onBorrar }: {
       }
     >
       <div className="ficha-gasto__monto">
-        <span className="t-num">{money(gasto.monto, e.ajustes.monedaBase, 2)}</span>
+        <span className="t-num" style={ingreso ? { color: "var(--success)" } : undefined}>{ingreso ? "+" : ""}{money(Math.abs(gasto.monto), e.ajustes.monedaBase, 2)}</span>
+        {ingreso && <Badge variante="success">Ingreso</Badge>}
         <Badge variante={VARIANTE_GRUPO[gasto.grupo] ?? "neutral"}>{grupo.titulo}</Badge>
       </div>
       <p className="t-sm t-subtle">
-        {gasto.grupo === "retiro"
+        {ingreso
+          ? <>Es plata que volvió: descuenta del gasto de «{gasto.categoria}» en el estado de resultados y entra a la caja. {grupo.ayuda}</>
+          : gasto.grupo === "retiro"
           ? <>No resta del estado de resultados: sale de la caja (Finanzas → Caja). {grupo.ayuda}</>
           : <>Resta en «{gasto.grupo === "directo" ? "Otros costos directos" : gasto.grupo === "dueno" ? "Honorarios del CEO" : "Gastos operativos"}»
             {" "}del estado de resultados, en las dos columnas. {grupo.ayuda}</>}

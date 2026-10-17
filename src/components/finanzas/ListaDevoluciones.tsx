@@ -30,6 +30,12 @@ import type { Devolucion, EstadoApp } from "@/lib/types";
    las pasarelas. Las cargan Finanzas o el director comercial.
    ================================================================== */
 
+/** Los días de «aaaa-mm-dd» que abarca el período (la clave del rango los trae escritos). */
+const rangoDeDias = (mes: RangoMes): { desde: string; hasta: string } => {
+  const [desde, hasta] = mes.clave.split("_");
+  return { desde, hasta };
+};
+
 export function ListaDevoluciones({ e, mes }: { e: EstadoApp; mes: RangoMes }) {
   const { acceso } = useAcceso();
   const toast = useToast();
@@ -46,7 +52,7 @@ export function ListaDevoluciones({ e, mes }: { e: EstadoApp; mes: RangoMes }) {
     [e, mes],
   );
   const sinCargar = useMemo(() => llamadasEnDevolucionSinCargar(e), [e]);
-  const porConfirmar = propuestasPendientes(e).length;
+  const porConfirmar = propuestasPendientes(e, rangoDeDias(mes)).length;
   const personaDe = (d: Devolucion) => e.ventas.find((v) => v.id === d.ventaId)?.contactoNombre ?? "Sin venta";
 
   return (
@@ -117,7 +123,8 @@ export function ListaDevoluciones({ e, mes }: { e: EstadoApp; mes: RangoMes }) {
         </Card>
       )}
 
-      <ReembolsosPasarelas e={e} />
+      {/* Los del período que se mira: lo de otros meses va en el cierre de su mes. */}
+      <ReembolsosPasarelas e={e} rango={rangoDeDias(mes)} />
 
       <Card style={{ padding: 0 }}>
         <div style={{ padding: "var(--space-4) var(--space-4) 0" }}>

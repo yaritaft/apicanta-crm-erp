@@ -11,8 +11,8 @@ import { ChevronDown, Info } from "lucide-react";
    arriba va lo que pasa con la plata, en tres pasos, y cada etiqueta que
    aparece en la lista tiene su significado a mano.
 
-   Abierta la primera vez; quien ya la leyó la cierra y queda cerrada
-   (en su navegador, sin tocar la base).
+   Cerrada de entrada (Aldana, 17/10: «mucho choclo»): se abre cuando se
+   necesita y queda como se la dejó (en su navegador, sin tocar la base).
    ================================================================== */
 
 const CLAVE = "apicanta-conciliacion-explicacion";
@@ -43,9 +43,9 @@ const GLOSARIO: { palabra: string; texto: string }[] = [
 ];
 
 export function ComoFuncionaConciliacion() {
-  const [abierto, setAbierto] = useState(true);
+  const [abierto, setAbierto] = useState(false);
   useEffect(() => {
-    try { if (window.localStorage.getItem(CLAVE) === "cerrada") setAbierto(false); } catch { /* sin almacenamiento: queda abierta */ }
+    try { if (window.localStorage.getItem(CLAVE) === "abierta") setAbierto(true); } catch { /* sin almacenamiento: queda cerrada */ }
   }, []);
   const alternar = () => setAbierto((v) => {
     try { window.localStorage.setItem(CLAVE, v ? "cerrada" : "abierta"); } catch { /* idem */ }

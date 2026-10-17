@@ -12,6 +12,7 @@ import { fechaLarga, money } from "@/lib/format";
 import { puedeCargarDevolucion } from "@/lib/permisos";
 import { nombrePasarela } from "@/lib/pasarelas";
 import { candidatasDe, propuestasAtables, propuestasPendientes, reembolsoDePropuesta } from "@/lib/reembolsos";
+import type { RangoDeDias } from "@/lib/dia-negocio";
 import type { EstadoApp } from "@/lib/types";
 
 /* ==================================================================
@@ -24,14 +25,14 @@ import type { EstadoApp } from "@/lib/types";
    (lib/reembolsos.ts). Con dudas no se ata nada solo.
    ================================================================== */
 
-export function ReembolsosPasarelas({ e }: { e: EstadoApp }) {
+export function ReembolsosPasarelas({ e, rango }: { e: EstadoApp; rango?: RangoDeDias | null }) {
   const { acceso } = useAcceso();
   const toast = useToast();
   const puede = puedeCargarDevolucion(acceso);
   const M = (n: number) => money(n, e.ajustes.monedaBase, 2);
-  const pendientes = propuestasPendientes(e);
+  const pendientes = propuestasPendientes(e, rango ?? undefined);
   if (pendientes.length === 0) return null;
-  const atables = propuestasAtables(e);
+  const atables = propuestasAtables(e, rango ?? undefined);
   const total = pendientes.reduce((a, d) => a + d.monto, 0);
 
   return (

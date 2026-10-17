@@ -3,6 +3,7 @@
 import React, { useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { useEstado } from "@/lib/store";
+import { LimiteDeError } from "@/components/ui/LimiteDeError";
 import { ListaCobros } from "@/components/cobros/ListaCobros";
 import { LiquidacionMes } from "@/components/equipo/Liquidacion";
 import { CajaVista } from "@/components/finanzas/vistas/CajaVista";
@@ -29,7 +30,16 @@ function periodoDe(cadencia: Cadencia, periodo: string, mesActual: string) {
   return { preset: "custom", desde: `${mes}-01`, hasta: `${mes}-${ultimoDia(mes)}` };
 }
 
-export function HerramientaDelPaso({ h, cadencia, periodo, ahora }: { h: Herramienta; cadencia: Cadencia; periodo: string; ahora: number }) {
+/** La pantalla de siempre adentro del paso. Si esa parte falla, se cae ella sola con su detalle: los demás pasos siguen andando. */
+export function HerramientaDelPaso(props: { h: Herramienta; cadencia: Cadencia; periodo: string; ahora: number }) {
+  return (
+    <LimiteDeError nombre="esta parte" reinicia={`${props.h.tipo}|${props.cadencia}|${props.periodo}`}>
+      <HerramientaInterna {...props} />
+    </LimiteDeError>
+  );
+}
+
+function HerramientaInterna({ h, cadencia, periodo, ahora }: { h: Herramienta; cadencia: Cadencia; periodo: string; ahora: number }) {
   const e = useEstado();
   const router = useRouter();
   const hoy = diaDeNegocio(new Date(ahora).toISOString());
@@ -37,9 +47,9 @@ export function HerramientaDelPaso({ h, cadencia, periodo, ahora }: { h: Herrami
 
   switch (h.tipo) {
     case "conciliacion":
-      return <ConciliacionVista embebido />;
+      return <ConciliacionVista embebido rangoFijo={rango} />;
     case "caja":
-      return <CajaVista embebido />;
+      return <CajaVista embebido rangoFijo={rango} />;
     case "mora":
       return <DetalleVista embebido seccion="cobros" rangoFijo={rango} />;
     case "gastos":

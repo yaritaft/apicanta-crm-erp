@@ -36,6 +36,16 @@ export function diaDeNegocio(fecha: string | undefined | null): string {
   }
 }
 
+/** Un rango de días «aaaa-mm-dd» (los dos incluidos), como lo usan Finanzas en pasos y las pantallas embebidas. */
+export interface RangoDeDias { desde: string; hasta: string }
+
+/** ¿La fecha cae en el rango, mirando el día de Argentina? Sin fecha, no. */
+export const enRangoDeDias = (fecha: string | undefined | null, r: RangoDeDias): boolean => {
+  if (!fecha) return false;
+  const d = diaDeNegocio(fecha);
+  return d >= r.desde && d <= r.hasta;
+};
+
 /** El mes del negocio («2026-10») de un instante: el del calendario de Argentina, no el de la computadora de quien mira. */
 export const mesDeNegocio = (ahora: number): string => diaDeNegocio(new Date(ahora).toISOString()).slice(0, 7);
 

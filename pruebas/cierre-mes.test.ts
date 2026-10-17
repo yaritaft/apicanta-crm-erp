@@ -41,15 +41,19 @@ test("las ventas del mes sin estrategia son un paso pendiente, y con todas atrib
   assert.equal(paso(e, "ventas-embudo", "2026-10").estado, "en-curso", "el mes sigue y pueden entrar ventas");
 });
 
-test("los cobros de pasarela sin atar cuentan los del mes y también los de meses anteriores que quedaron sin atar", () => {
+test("los cobros de pasarela sin atar son los del mes: lo de otros meses se resuelve en el cierre de su mes", () => {
   const e = vacio();
   const mov = (id: string, fecha: string, estado: Movimiento["estado"]): Movimiento => ({ id, proveedor: "stripe", referencia: id, monto: 500, moneda: "USD", fee: 15, neto: 485, fecha, estado, clienteNombre: id } as Movimiento);
   e.movimientos = [mov("m1", DIA(9, 10), "pendiente"), mov("m2", DIA(8, 20), "pendiente"), mov("m3", DIA(9, 12), "conciliado"), mov("m4", DIA(10, 2), "pendiente")];
   const p = paso(e, "movs-sin-atar");
   assert.equal(p.estado, "pendiente");
-  assert.equal(p.faltan, 2, "uno de septiembre y uno de agosto; el de octubre es de otro mes y el conciliado ya está");
-  assert.match(p.detalle, /1 de meses anteriores/);
-  assert.deepEqual(p.items.map((i) => i.clave), ["m1", "m2"]);
+  assert.equal(p.faltan, 1, "sólo el de septiembre: el de agosto es de agosto, el de octubre de octubre y el conciliado ya está");
+  assert.doesNotMatch(p.detalle, /anteriores/);
+  assert.deepEqual(p.items.map((i) => i.clave), ["m1"]);
+  assert.equal(p.items[0].destino && "href" in p.items[0].destino ? p.items[0].destino.href : "", "/conciliacion?mes=2026-09", "abre Conciliación en el mes del paso");
+  /* Cada mes ve lo suyo. */
+  assert.deepEqual(paso(e, "movs-sin-atar", "2026-08").items.map((i) => i.clave), ["m2"]);
+  assert.deepEqual(paso(e, "movs-sin-atar", "2026-10").items.map((i) => i.clave), ["m4"]);
 });
 
 test("las cuotas del mes están resueltas si se cobraron o se dieron por incobrables; las demás frenan el paso", () => {

@@ -1,5 +1,6 @@
 "use client";
 
+import { enRangoDeDias, type RangoDeDias } from "@/lib/dia-negocio";
 import React, { useMemo, useState } from "react";
 import { AlertTriangle, ArrowRight, ArrowRightLeft, Check, Pencil, RefreshCw, RotateCcw, Trash2, X } from "lucide-react";
 import { Ayuda, Badge, Button, Card, CardHead, Chip, Field, IconButton, Input, Select, Textarea, type VarianteBadge } from "@/components/ui/ui";
@@ -44,10 +45,12 @@ const plata = (n: number, m: Moneda) => money(n, m, Math.abs(n - Math.round(n)) 
 /* Un monto guardado, como se escribe en el formulario: 3.900 · 5.230,40. */
 const enTexto = (n: number) => n.toLocaleString("es-AR", { minimumFractionDigits: Number.isInteger(n) ? 0 : 2, maximumFractionDigits: 2 });
 
-export function PasesEntreCuentas({ e, onNuevo, onEditar }: {
+export function PasesEntreCuentas({ e, onNuevo, onEditar, rango }: {
   e: EstadoApp;
   onNuevo: () => void;
   onEditar: (t: Traspaso) => void;
+  /* Adentro de un paso del mes: sólo los movimientos de esos días (lo de otros meses va en el cierre de su mes). */
+  rango?: RangoDeDias | null;
 }) {
   const toast = useToast();
   const [v, setV] = useParamsURL({ pases: "" });
@@ -59,8 +62,12 @@ export function PasesEntreCuentas({ e, onNuevo, onEditar }: {
   const [comision, setComision] = useState<Traspaso | null>(null);
 
   const ahora = Math.floor(Date.now() / 60000) * 60000;
-  const todos = useMemo(() => (e.traspasos ?? []).map((t) => ({ ...t, situacion: situacionDe(t, ahora) })), [e.traspasos, ahora]);
-  const resumen = useMemo(() => resumenDePases(e.traspasos ?? [], ahora), [e.traspasos, ahora]);
+  const delPeriodo = useMemo(
+    () => (rango ? (e.traspasos ?? []).filter((t) => enRangoDeDias(t.fecha, rango)) : e.traspasos ?? []),
+    [e.traspasos, rango?.desde, rango?.hasta], // eslint-disable-line react-hooks/exhaustive-deps
+  );
+  const todos = useMemo(() => delPeriodo.map((t) => ({ ...t, situacion: situacionDe(t, ahora) })), [delPeriodo, ahora]);
+  const resumen = useMemo(() => resumenDePases(delPeriodo, ahora), [delPeriodo, ahora]);
   const descartados = todos.filter((t) => t.situacion === "ignorado").length;
   const filas = todos.filter((t) => (filtro ? t.situacion === filtro : t.situacion !== "ignorado"));
   /* El movimiento tal cual está guardado: la situación es sólo de esta lista. */

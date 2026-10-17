@@ -95,8 +95,9 @@ export function Camino({ pasos, cadencia, periodo, ahora, abierto, onAbrir, agru
                     </div>
                   )}
 
-                  {/* Con herramienta, el trabajo se hace en ella: la lista de lo que falta sería lo mismo dos veces. */}
-                  {p.items.length > 0 && !p.herramienta ? (
+                  {/* Con herramienta, el trabajo se hace en ella: la lista de lo que falta sería lo mismo dos veces (salvo en los pasos que
+                      piden verla: un gasto sin proveedor entre cincuenta no se encuentra a ojo). */}
+                  {p.items.length > 0 && (!p.herramienta || p.conLista) ? (
                     <div className="cm-caja">
                       <h4 className="cm-caja__tit">Lo que falta <span className="cm-cuenta">{p.faltan}</span></h4>
                       {p.items.slice(0, 12).map((it) => {

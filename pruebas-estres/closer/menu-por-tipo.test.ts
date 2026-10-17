@@ -46,18 +46,18 @@ function tipoAlAzar(r: Azar, i: number): TipoCuenta {
 const MENU_ESPERADO: Record<string, { menu: string[]; inicio: string }> = {
   dueno: {
     menu: ["/panel", "/mi-panel", "/leads", "/crm", "/agenda", "/ventas", "/clientes", "/webinars", "/formularios", "/marketing", "/alumnos", "/alumnos?seccion=pipeline", "/reportes",
-      "/alumnos?seccion=hoy", "/alumnos?seccion=clientes", "/finanzas", "/finanzas/end-of-day", "/finanzas/resultados", "/equipo", "/ajustes"],
+      "/alumnos?seccion=hoy", "/alumnos?seccion=clientes", "/finanzas", "/finanzas/end-of-day", "/finanzas/resultados", "/finanzas/transacciones", "/equipo", "/ajustes"],
     inicio: "/panel",
   },
   equipo: {
     menu: ["/panel", "/mi-panel", "/leads", "/crm", "/agenda", "/ventas", "/clientes", "/webinars", "/formularios", "/marketing", "/alumnos", "/alumnos?seccion=pipeline", "/reportes",
-      "/alumnos?seccion=hoy", "/alumnos?seccion=clientes", "/finanzas", "/finanzas/end-of-day", "/finanzas/resultados", "/ajustes"],
+      "/alumnos?seccion=hoy", "/alumnos?seccion=clientes", "/finanzas", "/finanzas/end-of-day", "/finanzas/resultados", "/finanzas/transacciones", "/ajustes"],
     inicio: "/panel",
   },
   director: { menu: ["/panel", "/mi-panel", "/leads", "/crm", "/agenda", "/ventas", "/clientes", "/webinars", "/formularios"], inicio: "/panel" },
   closer: { menu: ["/mis-llamadas", "/mi-panel", "/crm", "/ventas", "/cerrar-el-dia", "/cargar-venta"], inicio: "/mis-llamadas" },
   setter: { menu: ["/mi-panel", "/leads", "/crm", "/agenda"], inicio: "/mi-panel" },
-  admin: { menu: ["/panel", "/ventas", "/clientes", "/finanzas", "/finanzas/end-of-day", "/finanzas/resultados"], inicio: "/panel" },
+  admin: { menu: ["/panel", "/ventas", "/clientes", "/finanzas", "/finanzas/end-of-day", "/finanzas/resultados", "/finanzas/transacciones"], inicio: "/panel" },
   marketing: { menu: ["/panel", "/leads", "/webinars", "/formularios", "/marketing"], inicio: "/panel" },
   customer_success: {
     menu: ["/clientes", "/alumnos", "/alumnos?seccion=pipeline", "/reportes", "/alumnos?seccion=hoy", "/alumnos?seccion=clientes"],

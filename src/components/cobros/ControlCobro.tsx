@@ -17,6 +17,7 @@ import {
   quienEs, ROL_DE_CASILLERO, type CasilleroChequeo, type ChequeoDeCasillero,
 } from "@/lib/control-cobros";
 import { descartarComprobante, tamanioLegible, urlDeComprobante, verComprobante } from "@/lib/comprobantes";
+import { vistaPreviaDeLink } from "@/lib/comprobante-vista";
 import { fechaHora, fechaLarga, money } from "@/lib/format";
 import { nombrePasarela } from "@/lib/pasarelas";
 import type { Comprobante, EstadoApp, Pago } from "@/lib/types";
@@ -111,6 +112,27 @@ function VistaDelComprobante({ pago }: { pago: Pago }) {
   }
 
   if (prueba.tipo === "link") {
+    /* Un link de Drive (o una imagen o un PDF suelto) se ve acá mismo; el botón para abrirlo en otra pestaña queda igual. */
+    const previa = vistaPreviaDeLink(prueba.url);
+    if (previa.tipo !== "enlace") {
+      return (
+        <div className="stack-2">
+          <div className="chequeo__vista">
+            {previa.tipo === "imagen"
+              // eslint-disable-next-line @next/next/no-img-element
+              ? <img src={previa.src} alt="Comprobante" className="chequeo__imagen" referrerPolicy="no-referrer" />
+              : <iframe src={previa.src} title="Comprobante" className="chequeo__pdf" referrerPolicy="no-referrer" />}
+          </div>
+          <div className="row t-sm t-subtle" style={{ gap: 8, flexWrap: "wrap" }}>
+            <Link2 size={14} aria-hidden />
+            <span style={{ flex: "1 1 160px", minWidth: 0 }}>
+              {previa.tipo === "marco" && previa.origen === "drive" ? "Archivo de Drive: si no se ve, no tenés acceso con esta cuenta de Google." : "Link guardado con el cobro."}
+            </span>
+            <a className="link t-sm" href={prueba.url} target="_blank" rel="noreferrer"><ExternalLink size={12} /> Abrir en otra pestaña</a>
+          </div>
+        </div>
+      );
+    }
     return (
       <div className="chequeo__vista chequeo__vista--vacia">
         <Link2 size={26} aria-hidden />

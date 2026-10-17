@@ -87,6 +87,11 @@ export interface BorradorGasto {
   /* La estrategia (embudo) a la que se le carga: entra en su CAC y su profit. */
   embudoId: string;
   notas: string;
+  /* Plata que VOLVIÓ en vez de salir (el reembolso de un hotel, una devolución de un proveedor): se guarda con monto negativo, así
+     resta del gasto de su categoría y de su mes, y suma a la caja (Aldana, 17/10: «no había forma de registrar ese ingreso»). */
+  ingreso: boolean;
+  /* De qué cuenta salió (o a cuál volvió) la plata: el nombre, como en Transacciones. Vacío: no se sabe. */
+  cuenta: string;
   /* El gasto anterior del que se copió, para marcarlo en la lista. */
   copiadoDe?: string;
 }
@@ -110,21 +115,34 @@ export function borradorInicial(
     return {
       concepto: "", categoria: "", grupo: "operativo", categoriaElegida: false, nueva: false,
       monto: "", moneda: base, tipoCambio: tc, fecha: mediodia(hoy), fechaPago: "", recurrente: false,
-      proveedor: "", webinarId: "", embudoId: "", notas: "",
+      proveedor: "", webinarId: "", embudoId: "", notas: "", ingreso: false, cuenta: "",
     };
   }
   const orig = montoOriginal(gasto);
   return {
     concepto: gasto.concepto, categoria: gasto.categoria, grupo: gasto.grupo,
     categoriaElegida: true, nueva: false,
-    monto: escribirMonto(orig ? orig.monto : gasto.monto),
+    monto: escribirMonto(orig ? orig.monto : Math.abs(gasto.monto)),
     moneda: orig ? orig.moneda : (gasto.moneda ?? base),
     tipoCambio: orig ? escribirMonto(orig.tipoCambio) : tc,
     fecha: gasto.fecha, fechaPago: tieneOtraFechaDePago(gasto) ? (gasto.fechaPago as string) : "",
     recurrente: Boolean(gasto.recurrente),
     proveedor: gasto.proveedor ?? "", webinarId: gasto.webinarId ?? "", embudoId: embudoDeGasto(gasto) ?? "", notas: gasto.notas ?? "",
+    ingreso: esIngreso(gasto), cuenta: cuentaDelGasto(gasto),
   };
 }
+
+/** La cuenta por la que se movió la plata, si el gasto la dice (los importados de la planilla de Transacciones y los que la eligieron). */
+export const cuentaDelGasto = (g: { extra?: Record<string, unknown> }): string =>
+  (typeof g.extra?.cuenta === "string" ? g.extra.cuenta.trim() : "");
+
+/** Lo que se lee para sugerir la categoría. En un ingreso («Reembolso del hotel») la palabra reembolso o devolución cuenta lo que
+ *  pasó, no la categoría: «Reembolsos» es la plata que se le devolvió a un cliente y el hotel va con los viáticos. */
+export const textoParaCategoria = (concepto: string, ingreso: boolean): string =>
+  ingreso ? concepto.replace(/(reembols|devoluci|devuelt|refund)\p{L}*/giu, " ").replace(/\s+/g, " ").trim() : concepto;
+
+/** ¿Es plata que volvió (monto negativo) y no plata que salió? */
+export const esIngreso = (g: Pick<Gasto, "monto">): boolean => g.monto < 0;
 
 /** Lo que se copia al repetir un gasto de antes: lo que suele repetirse
  *  (categoría, monto, moneda, proveedor, si es fijo) y no lo que es de esa
@@ -134,9 +152,9 @@ export function cambiosAlRepetir(g: Gasto, tipoCambioDeHoy: string): Partial<Bor
   const orig = montoOriginal(g);
   return {
     concepto: g.concepto, categoria: g.categoria, grupo: g.grupo, categoriaElegida: true, nueva: false,
-    monto: escribirMonto(orig ? orig.monto : g.monto), moneda: orig ? orig.moneda : g.moneda,
+    monto: escribirMonto(orig ? orig.monto : Math.abs(g.monto)), moneda: orig ? orig.moneda : g.moneda,
     tipoCambio: tipoCambioDeHoy,
-    proveedor: g.proveedor ?? "", recurrente: Boolean(g.recurrente), copiadoDe: g.id,
+    proveedor: g.proveedor ?? "", recurrente: Boolean(g.recurrente), ingreso: esIngreso(g), cuenta: cuentaDelGasto(g), copiadoDe: g.id,
   };
 }
 
@@ -233,7 +251,12 @@ export function mesesParaElegir(fechaDelGasto: string, hoy: Date = new Date()): 
 
 /** Una línea que dice qué hace cada fecha, para leerla antes de cargar. Un
  *  retiro del dueño no resta del estado de resultados: sólo sale de la caja. */
-export function resumenDeFechas(b: Pick<BorradorGasto, "fecha" | "fechaPago" | "grupo">): string {
+export function resumenDeFechas(b: Pick<BorradorGasto, "fecha" | "fechaPago" | "grupo"> & Partial<Pick<BorradorGasto, "ingreso">>): string {
+  if (b.ingreso) {
+    const entra = `entra a la caja el ${fechaLarga(b.fechaPago || b.fecha)}`;
+    if (b.grupo === "retiro") return `No suma al estado de resultados: ${entra}.`;
+    return `Descuenta del gasto de ${nombrePeriodo(periodoDeFecha(b.fecha) || periodoDe(new Date()))} y ${entra}.`;
+  }
   const sale = `sale de la caja el ${fechaLarga(b.fechaPago || b.fecha)}`;
   if (b.grupo === "retiro") return `No resta del estado de resultados: ${sale}.`;
   const mes = nombrePeriodo(periodoDeFecha(b.fecha) || periodoDe(new Date()));
@@ -442,15 +465,19 @@ export function datosDelGasto(
   const previo = c.previo ?? undefined;
   const montoNum = leerMonto(b.monto) || 0;
   const tc = leerMonto(b.tipoCambio) || 0;
-  const convertido = redondear(aMonedaBase(montoNum, b.moneda, c.base, tc));
+  /* Lo que volvió se guarda en negativo: todo lo que suma gastos (estado de resultados, caja, liquidaciones) lo resta solo. */
+  const signo = b.ingreso ? -1 : 1;
+  const convertido = redondear(aMonedaBase(montoNum, b.moneda, c.base, tc)) * signo;
   const prov = resolverProveedor(b.proveedor, c.opciones);
 
   /* Lo que maneja este asistente se rearma de cero; el resto del `extra`
      (de dónde vino el gasto, qué liquidación lo cargó) se conserva. */
   const {
-    montoOriginal: _m, monedaOriginal: _o, tipoCambio: _t, embudoId: _e, proveedorEquipoId: _p, ...extraLimpio
+    montoOriginal: _m, monedaOriginal: _o, tipoCambio: _t, embudoId: _e, proveedorEquipoId: _p, ingreso: _i, cuenta: _c, ...extraLimpio
   } = previo?.extra ?? {};
   const propio: Record<string, unknown> = { ...extraLimpio };
+  if (b.ingreso) propio.ingreso = true;
+  if (b.cuenta.trim()) propio.cuenta = b.cuenta.trim();
   if (b.embudoId) propio.embudoId = b.embudoId;
   if (prov.equipoId) propio.proveedorEquipoId = prov.equipoId;
   if (b.moneda !== c.base) {
@@ -470,7 +497,8 @@ export function datosDelGasto(
        gastos de siempre, y no se agrega un dato que no dice nada). Al editar,
        volver a una sola fecha la borra. */
     fechaPago: b.fechaPago && isoDia(b.fechaPago) !== isoDia(b.fecha) ? b.fechaPago : vaciar(previo?.fechaPago),
-    recurrente: b.recurrente,
+    /* Un ingreso es de esa vez: no se repite todos los meses. */
+    recurrente: b.ingreso ? false : b.recurrente,
     webinarId: b.webinarId || vaciar(previo?.webinarId),
     proveedor: prov.nombre || vaciar(previo?.proveedor),
     notas: b.notas.trim() || vaciar(previo?.notas),

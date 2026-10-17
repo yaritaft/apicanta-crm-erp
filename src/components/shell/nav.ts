@@ -1,7 +1,7 @@
 import {
   LayoutDashboard, Users, Sheet, CalendarDays, Video, Megaphone,
   GraduationCap, ClipboardList, Wallet, Settings, HandCoins, ArrowDownUp, Banknote, Landmark, UserCheck,
-  ClipboardCheck, PhoneCall, ListChecks, FileInput, UserRound, CalendarCheck, TrendingUp,
+  ClipboardCheck, PhoneCall, ListChecks, FileInput, UserRound, CalendarCheck, TrendingUp, ArrowLeftRight,
 } from "lucide-react";
 import { SquareKanban } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
@@ -62,11 +62,13 @@ export const NAV: GrupoNav[] = [
   {
     titulo: "Administración",
     items: [
-      /* Finanzas en tres: los pasos del mes (conciliar, validar cobros, caja, gastos y liquidación adentro de cada paso), el
-         End of Day (el cierre del día, como el de los closers) y el P&L. Caja y Conciliación siguen andando por su link. */
+      /* Finanzas en cuatro: los pasos del mes (conciliar, validar cobros, caja, gastos y liquidación adentro de cada paso), el
+         End of Day (el cierre del día, como el de los closers), el P&L y Transacciones (todo lo que entró y salió, de todas las
+         cuentas). Caja y Conciliación siguen andando por su link. */
       { href: "/finanzas", texto: "Finanzas", icono: Wallet, ayuda: "Los pasos del mes: conciliar, validar cobros, caja, gastos y liquidación" },
       { href: "/finanzas/end-of-day", texto: "End of Day", icono: CalendarCheck, ayuda: "El cierre del día de Finanzas: contá tarea por tarea cómo te fue" },
       { href: "/finanzas/resultados", texto: "P&L", icono: TrendingUp, ayuda: "El estado de resultados: lo facturado y lo realmente cobrado, lado a lado" },
+      { href: "/finanzas/transacciones", texto: "Transacciones", icono: ArrowLeftRight, ayuda: "Todo lo que entró y salió, de todas las cuentas: cobros, gastos, devoluciones y pases" },
       { href: "/equipo", texto: "Equipo y honorarios", icono: Banknote, ayuda: "Quién es quién, con qué entra a la app y cuánto cobra" },
       { href: "/ajustes", texto: "Ajustes", icono: Settings, ayuda: "Etapas, categorías, campos e integraciones" },
     ],

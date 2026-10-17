@@ -22,7 +22,7 @@ import { useSalir, useSesion } from "@/lib/auth";
 import { useUsuarioActual } from "@/lib/usuario";
 import { elegirVerComo, useAcceso, useVerComo } from "@/lib/acceso";
 import { areaDeRuta, esCuentaDeCloser, nivelDeRuta, queEsTabla } from "@/lib/permisos";
-import { diaDeNegocio } from "@/lib/dia-negocio";
+import { diaDeNegocio, enRangoDeDias } from "@/lib/dia-negocio";
 import { aContactarHoy, filasDeSeguimiento, hoyDelNegocio } from "@/lib/seguimiento";
 import { useRecordarVistas } from "@/lib/recordarVistas";
 import { Avatar, Button, Card, Empty, IconButton } from "@/components/ui/ui";
@@ -134,14 +134,19 @@ export function Shell({ children }: { children: React.ReactNode }) {
     () => cuantosFaltan({ gastos, gastosRecurrentes }, new Date().toISOString()),
     [gastos, gastosRecurrentes],
   );
-  const retirosSinComision = useMemo(() => resumenDePases(traspasos ?? []).faltaComision, [traspasos]);
+  /* Sólo los del mes en curso: lo de meses anteriores se resuelve en el cierre de ese mes (Aldana, 17/10). */
+  const delMesEnCurso = useMemo(() => ({ desde: `${hoy.slice(0, 7)}-01`, hasta: hoy }), [hoy]);
+  const retirosSinComision = useMemo(
+    () => resumenDePases((traspasos ?? []).filter((t) => enRangoDeDias(t.fecha, delMesEnCurso))).faltaComision,
+    [traspasos, delMesEnCurso],
+  );
   /* Las devoluciones que esperan a alguien: llamadas que quedaron en «Devolución» sin la devolución cargada, y
      reembolsos que informó una pasarela y nadie confirmó (Finanzas → Devoluciones). Sólo para quien ve Finanzas. */
   const { sesiones: sesionesDev, devoluciones: devolucionesDev, ventas: ventasDev, ajustes: ajustesDev } = estado;
   const devolucionesPorDecidir = useMemo(
-    () => (nivelDeRuta(acceso, "/finanzas") > 0 ? llamadasEnDevolucionSinCargar(estado).length + propuestasPendientes(estado).length : 0),
+    () => (nivelDeRuta(acceso, "/finanzas") > 0 ? llamadasEnDevolucionSinCargar(estado).length + propuestasPendientes(estado, delMesEnCurso).length : 0),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [acceso, sesionesDev, devolucionesDev, ventasDev, ajustesDev],
+    [acceso, sesionesDev, devolucionesDev, ventasDev, ajustesDev, delMesEnCurso],
   );
   /* Los días laborables en que Finanzas no cerró su End of Day (los últimos 7, desde que se empezó a usar). */
   const { chequeos: chequeosFinanzas, cargando: cargandoChequeos } = useChequeos(nivelDeRuta(acceso, "/finanzas") > 0);

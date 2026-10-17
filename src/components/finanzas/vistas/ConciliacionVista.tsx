@@ -3,11 +3,11 @@
 import { PasosDeConciliacion } from "@/components/cierre/Avisos";
 import React, { useMemo, useState } from "react";
 import {
-  ArrowDownUp, Check, EyeOff, Info, Link2, Plus, RefreshCw, Search, Sparkles, Undo2, Upload,
+  ArrowDownUp, Check, EyeOff, Link2, Plus, RefreshCw, Search, Sparkles, Undo2, Upload,
 } from "lucide-react";
 import { CabeceraVista } from "@/components/finanzas/vistas/CabeceraVista";
 import {
-  Ayuda, Badge, Button, Card, Chip, Empty, Field, Input, Select, StatCard, Textarea,
+  Badge, Button, Card, Chip, Empty, Field, Input, Select, StatCard, Textarea,
 } from "@/components/ui/ui";
 import { ModalForm } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toast";
@@ -23,6 +23,8 @@ import {
 import { COBRAN_COMISION, feeDesconocido } from "@/lib/completar-cobros";
 import { CopiarLink } from "@/components/ui/Filtros";
 import { useBusquedaURL, useParamsURL } from "@/lib/useParamsURL";
+import { diaDeNegocio, enRangoDeDias, type RangoDeDias } from "@/lib/dia-negocio";
+import { nombrePeriodo } from "@/lib/periodos";
 import { useAbrirFicha } from "@/components/ficha/abrir";
 import { ComoFuncionaConciliacion } from "@/components/finanzas/ComoFuncionaConciliacion";
 import { importarCSV, PASARELAS, nombrePasarela } from "@/lib/pasarelas";
@@ -42,11 +44,16 @@ import type { EstadoMovimiento2, Movimiento, ProveedorPasarela } from "@/lib/typ
    con la bandeja ya filtrada.
    - estado: pendiente (por defecto), conciliado o ignorado
    - medio: la pasarela (stripe, whop, trust…)
+   - mes: aaaa-mm, o «todos»; vacío es el mes en curso (lo de otros meses se resuelve en su mes)
    - q: nombre, correo, teléfono, monto o referencia */
-const VISTA_CONCILIACION = { estado: "pendiente", medio: "todas" };
+const VISTA_CONCILIACION = { estado: "pendiente", medio: "todas", mes: "" };
 const ESTADOS_MOV: EstadoMovimiento2[] = ["pendiente", "conciliado", "ignorado"];
 
-export function ConciliacionVista({ embebido = false }: { embebido?: boolean }) {
+export function ConciliacionVista({ embebido = false, rangoFijo }: {
+  embebido?: boolean;
+  /* Adentro de un paso: sólo los cobros de esos días (el mes del paso). */
+  rangoFijo?: RangoDeDias;
+}) {
   const e = useEstado();
   const toast = useToast();
   const mon = e.ajustes.monedaBase;
@@ -65,18 +72,34 @@ export function ConciliacionVista({ embebido = false }: { embebido?: boolean }) 
   const [sincronizando, setSincronizando] = useState(false);
   const [busca, setBusca] = useBusquedaURL("q");
 
-  /* Recorre todos los cobros pendientes contra todas las cuotas: se calcula
+  /* El mes que se mira (Aldana, 17/10: «muchos de septiembre que no tienen nada que ver con octubre»): el del paso cuando se abre
+     adentro de uno; si no, el que se elige, que arranca en el mes en curso. Lo de otros meses se ve eligiéndolo. */
+  const mesActual = diaDeNegocio(new Date().toISOString()).slice(0, 7);
+  const mesElegido = rangoFijo ? "" : /^\d{4}-\d{2}$/.test(vista.mes) || vista.mes === "todos" ? vista.mes : mesActual;
+  const rango: RangoDeDias | null = rangoFijo ?? (mesElegido === "todos" ? null : { desde: `${mesElegido}-01`, hasta: `${mesElegido}-31` });
+  const delRango = useMemo(() => (rango ? e.movimientos.filter((m) => enRangoDeDias(m.fecha, rango)) : e.movimientos), [e.movimientos, rango?.desde, rango?.hasta]); // eslint-disable-line react-hooks/exhaustive-deps
+  const pendientesDelRango = useMemo(() => delRango.filter((m) => m.estado === "pendiente"), [delRango]);
+  /* Por mes: cuántos hay sin conciliar, para elegir adónde ir y para avisar cuánto queda afuera de la vista. */
+  const porMes = useMemo(() => {
+    const r = new Map<string, number>();
+    for (const m of e.movimientos) { const k = diaDeNegocio(m.fecha).slice(0, 7); r.set(k, (r.get(k) ?? 0) + (m.estado === "pendiente" ? 1 : 0)); }
+    r.set(mesActual, r.get(mesActual) ?? 0);
+    return [...r.entries()].sort((a, b) => b[0].localeCompare(a[0]));
+  }, [e.movimientos, mesActual]);
+  const pendientesAfuera = rango ? porMes.reduce((a, [, n]) => a + n, 0) - pendientesDelRango.length : 0;
+
+  /* Recorre los cobros pendientes del período contra todas las cuotas: se calcula
      cuando cambian los datos, no a cada clic (abrir un cobro, filtrar). */
-  const resumen = useMemo(() => resumenConciliacion(e), [e]);
+  const resumen = useMemo(() => resumenConciliacion(e, delRango), [e, delRango]);
 
   /* Cuánta plata y cuántos cobros hay en cada estado: el resumen de arriba. */
   const porEstado = useMemo(() => {
     const r: Record<EstadoMovimiento2, { n: number; monto: number }> = {
       pendiente: { n: 0, monto: 0 }, conciliado: { n: 0, monto: 0 }, ignorado: { n: 0, monto: 0 },
     };
-    for (const m of e.movimientos) { r[m.estado].n += 1; r[m.estado].monto += m.monto; }
+    for (const m of delRango) { r[m.estado].n += 1; r[m.estado].monto += m.monto; }
     return r;
-  }, [e.movimientos]);
+  }, [delRango]);
   const cobros = (n: number) => `${n} ${n === 1 ? "cobro" : "cobros"}`;
 
   /* Buscar por quién pagó (nombre, correo, teléfono), cómo, la referencia o
@@ -84,7 +107,7 @@ export function ConciliacionVista({ embebido = false }: { embebido?: boolean }) 
   const filas = useMemo(() => {
     const q = normalizar(busca);
     const monto = Number(busca.replace(/[^\d.,]/g, "").replace(/\.(?=\d{3}\b)/g, "").replace(",", "."));
-    return e.movimientos
+    return delRango
       .filter((m) => m.estado === filtro && (pasarela === "todas" || m.proveedor === pasarela))
       .filter((m) => {
         if (!q) return true;
@@ -93,28 +116,28 @@ export function ConciliacionVista({ embebido = false }: { embebido?: boolean }) 
         return normalizar([quien.nombre, quien.email, quien.telefono, m.metodo, m.referencia, m.descripcion].filter(Boolean).join(" ")).includes(q);
       })
       .sort((a, b) => +new Date(b.fecha) - +new Date(a.fecha));
-  }, [e, filtro, pasarela, busca]);
+  }, [e, delRango, filtro, pasarela, busca]);
 
   /* Los medios que tienen algo en la pestaña elegida, con cuántos: filtrar
      por uno que está vacío no sirve de nada. */
   const medios = useMemo(() => {
     const cuenta = new Map<ProveedorPasarela, { nombre: string; n: number }>();
-    for (const m of e.movimientos) {
+    for (const m of delRango) {
       if (m.estado !== filtro) continue;
       const ya = cuenta.get(m.proveedor);
       if (ya) ya.n++;
       else cuenta.set(m.proveedor, { nombre: medioDeMovimiento(e, m), n: 1 });
     }
     return [...cuenta.entries()].sort((a, b) => b[1].n - a[1].n);
-  }, [e, filtro]);
+  }, [e, delRango, filtro]);
 
   function atarLosYaCargados() {
-    const n = acciones.vincularConPagos(vinculosSeguros(e).map((v) => ({ movimientoId: v.movimiento.id, pagoId: v.pago.id })));
+    const n = acciones.vincularConPagos(vinculosSeguros(e, pendientesDelRango).map((v) => ({ movimientoId: v.movimiento.id, pagoId: v.pago.id })));
     toast(n === 0 ? "No había cobros para atar." : `${n === 1 ? "Se ató un cobro" : `Se ataron ${n} cobros`} a su pago: tienen la comisión real y no se sumó plata.`);
   }
 
   function conciliarTodosLosSeguros() {
-    const autos = propuestas(e).filter((p) => p.automatica);
+    const autos = propuestas(e, pendientesDelRango).filter((p) => p.automatica);
     let hechos = 0;
     for (const p of autos) {
       const s = p.sugerencias[0];
@@ -198,7 +221,7 @@ export function ConciliacionVista({ embebido = false }: { embebido?: boolean }) 
       {!embebido && <PasosDeConciliacion e={e} />}
 
       {/* Lo que las pasarelas dicen que devolvieron: se ata a la devolución cargada o se confirma. */}
-      <ReembolsosPasarelas e={e} />
+      <ReembolsosPasarelas e={e} rango={rango} />
 
       <div className="grid-3">
         <StatCard
@@ -280,6 +303,29 @@ export function ConciliacionVista({ embebido = false }: { embebido?: boolean }) 
             <span className="spacer" />
             <CopiarLink />
           </div>
+          {!rangoFijo && (
+            <div className="row-wrap" style={{ marginTop: "var(--space-3)" }} role="group" aria-label="Mes de los cobros">
+              <span className="t-label" style={{ marginRight: 4 }}>Mes</span>
+              <div style={{ minWidth: 220 }}>
+                <Select
+                  aria-label="Mes de los cobros" value={mesElegido}
+                  onChange={(ev) => setVista({ mes: ev.target.value === mesActual ? "" : ev.target.value })}
+                  opciones={[
+                    ...porMes.map(([k, n]) => ({ valor: k, texto: `${nombrePeriodo(k)}${n ? ` · ${n} sin conciliar` : ""}` })),
+                    { valor: "todos", texto: "Todos los meses" },
+                  ]}
+                />
+              </div>
+              {pendientesAfuera > 0 && (
+                <>
+                  <span className="t-sm t-subtle">
+                    {pendientesAfuera === 1 ? "Hay 1 cobro sin conciliar en otro mes." : `Hay ${pendientesAfuera} cobros sin conciliar en otros meses.`}
+                  </span>
+                  <Button sm variante="ghost" onClick={() => setVista({ mes: "todos" })}>Ver todos los meses</Button>
+                </>
+              )}
+            </div>
+          )}
           <div style={{ marginTop: "var(--space-3)", maxWidth: 520 }}>
             <Input
               icono={<Search size={15} />} value={busca} onChange={(ev) => setBusca(ev.target.value)}
@@ -326,13 +372,6 @@ export function ConciliacionVista({ embebido = false }: { embebido?: boolean }) 
           )}
         </div>
       </Card>
-
-      <Ayuda titulo="Por qué la plata no entra sola al P&L" icono={<Info size={18} />}>
-        Un cobro de pasarela no es un pago hasta que se sabe de qué cuota es. Mientras está sin conciliar
-        se ve acá, pero no cuenta como Cash Collected (CC) ni genera comisión: si contara, el mismo peso podría
-        quedar contado dos veces cuando alguien cargue el pago a mano. Al conciliar, el fee que se guarda
-        es el que cobró la pasarela de verdad, no el estimado del procesador.
-      </Ayuda>
 
       {importar && <ModalImportar onCerrar={() => setImportar(false)} />}
 

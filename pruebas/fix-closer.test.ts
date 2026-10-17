@@ -336,7 +336,7 @@ test("los tipos de fábrica siguen con su menú de siempre", () => {
     closer: ["/mis-llamadas", "/mi-panel", "/crm", "/ventas", "/cerrar-el-dia", "/cargar-venta"],
     setter: ["/mi-panel", "/leads", "/crm", "/agenda"],
     director: ["/panel", "/mi-panel", "/leads", "/crm", "/agenda", "/ventas", "/clientes", "/webinars", "/formularios"],
-    admin: ["/panel", "/ventas", "/clientes", "/finanzas", "/finanzas/end-of-day", "/finanzas/resultados"],
+    admin: ["/panel", "/ventas", "/clientes", "/finanzas", "/finanzas/end-of-day", "/finanzas/resultados", "/finanzas/transacciones"],
     marketing: ["/panel", "/leads", "/webinars", "/formularios", "/marketing"],
     customer_success: ["/clientes", "/alumnos", "/alumnos?seccion=pipeline", "/reportes", "/alumnos?seccion=hoy", "/alumnos?seccion=clientes"],
   };

@@ -37,7 +37,11 @@ import { useTablaURL } from "@/lib/useParamsURL";
 const hoyIso = () => new Date().toISOString();
 const diaAr = (iso: string) => new Date(new Date(iso).getTime() - 3 * 3600000).toISOString().slice(0, 10);
 
-export function CajaVista({ embebido = false }: { embebido?: boolean }) {
+export function CajaVista({ embebido = false, rangoFijo }: {
+  embebido?: boolean;
+  /* Adentro de un paso: los movimientos entre cuentas son sólo los de esos días. */
+  rangoFijo?: { desde: string; hasta: string };
+}) {
   const e = useEstado();
   const toast = useToast();
   const mon = e.ajustes.monedaBase;
@@ -158,7 +162,7 @@ export function CajaVista({ embebido = false }: { embebido?: boolean }) {
         </>
       )}
 
-      <PasesEntreCuentas e={e} onNuevo={() => setPase("nuevo")} onEditar={(t) => setPase(t)} />
+      <PasesEntreCuentas e={e} rango={rangoFijo} onNuevo={() => setPase("nuevo")} onEditar={(t) => setPase(t)} />
 
       <Card style={{ padding: 0 }}>
         <div style={{ padding: "var(--space-4) var(--space-4) 0" }}>

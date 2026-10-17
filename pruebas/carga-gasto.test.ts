@@ -337,7 +337,7 @@ test("al repetir se copia lo que suele repetirse y no lo que es de esa vez", () 
   const c = cambiosAlRepetir(g, "1.450");
   assert.deepEqual(c, {
     concepto: "Contador de agosto", categoria: "Contador", grupo: "operativo", categoriaElegida: true, nueva: false,
-    monto: "95", moneda: "USD", tipoCambio: "1.450", proveedor: "Estudio Ríos", recurrente: true, copiadoDe: "g_viejo",
+    monto: "95", moneda: "USD", tipoCambio: "1.450", proveedor: "Estudio Ríos", recurrente: true, ingreso: false, cuenta: "", copiadoDe: "g_viejo",
   });
   assert.ok(!("fecha" in c) && !("webinarId" in c) && !("notas" in c), "la fecha, el webinar y las notas son de esa vez");
   assert.equal(modoDeCarga({ editando: false, copiadoDe: c.copiadoDe }), "repetir");

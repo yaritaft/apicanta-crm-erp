@@ -8,6 +8,7 @@ import { ConfigColumnas, type DefColumna, useColumnas } from "@/components/ui/Co
 import { fechaHora, fechaLarga, money, num } from "@/lib/format";
 import { gastosDelMes } from "@/lib/finanzas";
 import { GRUPOS_GASTO, fechaDePago, infoGrupo, montoOriginal, normalizar, pagadoEnOtroMes } from "@/lib/gastos";
+import { esIngreso } from "@/lib/carga-gasto";
 import type { RangoMes } from "@/lib/metricas";
 import type { EstadoApp, Gasto, GrupoGasto } from "@/lib/types";
 import { ordenAURL, ordenDeURL, paginaDeURL, useBusquedaURL, useParamsURL } from "@/lib/useParamsURL";
@@ -106,7 +107,11 @@ export function ListaGastos({ e, mes, onNuevo, onVer, onEditar, onBorrar }: {
   const DEF: Record<string, Columna<Gasto>> = {
     concepto: {
       clave: "concepto", titulo: "Concepto", tipo: "primary", orden: (g) => g.concepto,
-      celda: (g) => <span className="truncate" style={{ display: "block", maxWidth: 300 }} title={g.concepto}>{g.concepto || g.categoria}</span>,
+      celda: (g) => (
+        <span className="truncate" style={{ display: "block", maxWidth: 300 }} title={g.concepto}>
+          {esIngreso(g) && <><Badge variante="success">Ingreso</Badge>{" "}</>}{g.concepto || g.categoria}
+        </span>
+      ),
     },
     categoria: { clave: "categoria", titulo: "Categoría", tipo: "secondary", orden: (g) => g.categoria, celda: (g) => g.categoria },
     grupo: {
@@ -123,7 +128,9 @@ export function ListaGastos({ e, mes, onNuevo, onVer, onEditar, onBorrar }: {
     },
     pago: { clave: "pago", titulo: "Se pagó", tipo: "secondary", orden: (g) => fechaDePago(g), celda: (g) => fechaLarga(fechaDePago(g)) },
     cargado: { clave: "cargado", titulo: "Cargado", tipo: "secondary", orden: (g) => g.creadoEn ?? "", celda: (g) => fechaHora(g.creadoEn) },
-    monto: { clave: "monto", titulo: "Monto", tipo: "num", orden: (g) => g.monto, celda: (g) => M(g.monto) },
+    monto: { clave: "monto", titulo: "Monto", tipo: "num", orden: (g) => g.monto, celda: (g) => (esIngreso(g)
+      ? <span style={{ color: "var(--success)" }} title="Plata que volvió: resta del gasto de su categoría">+{M(-g.monto)}</span>
+      : M(g.monto)) },
     original: {
       clave: "original", titulo: "Pagado en", tipo: "secondary",
       orden: (g) => montoOriginal(g)?.monto ?? 0,

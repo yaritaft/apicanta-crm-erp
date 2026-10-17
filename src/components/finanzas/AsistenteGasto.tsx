@@ -12,7 +12,7 @@ import {
 } from "@/lib/gastos";
 import {
   borradorInicial, cambiosAlRepetir, datosDelGasto, esCategoriaDeEquipo, esProveedorValido, modoDeCarga,
-  mostrarGrilla, opcionesProveedor, pasosDeCarga, problemaDelPaso, problemasDelGasto, tipoCambioDeAjustes,
+  mostrarGrilla, opcionesProveedor, pasosDeCarga, problemaDelPaso, problemasDelGasto, textoParaCategoria, tipoCambioDeAjustes,
   type BorradorGasto, type ModoCarga, type OpcionProveedor, type PasoId,
 } from "@/lib/carga-gasto";
 import type { CategoriaGasto } from "@/lib/seed";
@@ -21,7 +21,7 @@ import { CampoProveedor } from "./CampoProveedor";
 import { CampoFechasGasto } from "./CampoFechasGasto";
 
 /* ==================================================================
-   Cargar un gasto, una pregunta por pantalla.
+   Cargar un gasto (o un ingreso: plata que volvió), una pregunta por pantalla.
 
    Los ingresos entran solos con las ventas; los egresos se cargan acá.
    Un gasto nuevo se carga en seis pasos: qué, categoría, a quién, cuánto,
@@ -113,11 +113,11 @@ export function AsistenteGasto({ gasto, onCerrar, onListo }: {
 
   return (
     <Asistente
-      etiqueta={editando ? "Editar gasto" : "Cargar gasto"}
+      etiqueta={editando ? (b.ingreso ? "Editar ingreso" : "Editar gasto") : (b.ingreso ? "Cargar ingreso" : "Cargar gasto")}
       pasos={pasos} actual={actual} onCambiarPaso={irA}
       problema={problema} problemaEsError={paso.id === "revisar"}
       onCerrar={onCerrar}
-      terminarTexto={editando ? "Guardar cambios" : "Cargar gasto"}
+      terminarTexto={editando ? "Guardar cambios" : b.ingreso ? "Cargar ingreso" : "Cargar gasto"}
       onTerminar={guardar}
     >
       {paso.id === "concepto" && <PasoConcepto b={b} set={set} e={e} M={M} onRepetir={repetir} />}
@@ -136,6 +136,32 @@ export function AsistenteGasto({ gasto, onCerrar, onListo }: {
 type Poner = (c: Partial<BorradorGasto>) => void;
 type Fmt = (n: number, d?: number) => string;
 
+/* ---------- Salió o volvió plata ---------- */
+
+/* El mismo gasto puede ser plata que VOLVIÓ (el reembolso de un hotel, una devolución de un proveedor): se carga con su categoría
+   y resta del gasto de ese mes, en vez de sumar. Aldana, 17/10: «no tenía forma de registrar ese ingreso». */
+function TipoDeMovimiento({ b, set, e }: { b: BorradorGasto; set: Poner; e: EstadoApp }) {
+  /* Mientras nadie eligió la categoría a mano, sigue a lo escrito: y lo escrito se lee distinto si es un ingreso. */
+  const cambiar = (ingreso: boolean) => {
+    if (b.categoriaElegida) { set(ingreso ? { ingreso, recurrente: false } : { ingreso }); return; }
+    const s = sugerirCategoria(textoParaCategoria(b.concepto, ingreso), e);
+    set({ ingreso, ...(ingreso ? { recurrente: false } : {}), categoria: s?.categoria ?? "", grupo: s?.grupo ?? "operativo", nueva: false });
+  };
+  return (
+    <div className="stack-2">
+      <div className="row-wrap" role="group" aria-label="Salió o volvió plata">
+        <Chip activo={!b.ingreso} onClick={() => cambiar(false)}>Gasto · salió plata</Chip>
+        <Chip activo={b.ingreso} onClick={() => cambiar(true)}>Ingreso · volvió plata</Chip>
+      </div>
+      {b.ingreso && (
+        <span className="t-sm t-subtle">
+          Un reembolso o una devolución (por ejemplo, el hotel que te devolvieron). Elegí la misma categoría del gasto que se devolvió: resta de ese gasto en el mes y entra a la caja.
+        </span>
+      )}
+    </div>
+  );
+}
+
 /* ---------- 1. Qué pagaste ---------- */
 
 function PasoConcepto({ b, set, e, M, onRepetir }: {
@@ -147,17 +173,20 @@ function PasoConcepto({ b, set, e, M, onRepetir }: {
   const escribir = (concepto: string) => {
     if (b.categoriaElegida) { set({ concepto, copiadoDe: undefined }); return; }
     /* Mientras nadie la eligió a mano, la categoría sigue a lo que se escribe. */
-    const s = sugerirCategoria(concepto, e);
+    const s = sugerirCategoria(textoParaCategoria(concepto, b.ingreso), e);
     set({ concepto, copiadoDe: undefined, categoria: s?.categoria ?? "", grupo: s?.grupo ?? "operativo", nueva: false });
   };
 
   return (
     <>
       <Pregunta
-        texto="¿Qué pagaste?"
-        sub="Escribilo como lo buscarías después: «Contador de septiembre», «Pauta Meta del webinar»."
+        texto={b.ingreso ? "¿Qué te devolvieron?" : "¿Qué pagaste?"}
+        sub={b.ingreso
+          ? "Escribilo como lo buscarías después: «Reembolso del hotel de Miami», «Devolución de Notion»."
+          : "Escribilo como lo buscarías después: «Contador de septiembre», «Pauta Meta del webinar»."}
       />
-      <Input value={b.concepto} onChange={(ev) => escribir(ev.target.value)} placeholder="Contador de septiembre" autoFocus />
+      <Input value={b.concepto} onChange={(ev) => escribir(ev.target.value)} placeholder={b.ingreso ? "Reembolso del hotel" : "Contador de septiembre"} autoFocus />
+      <TipoDeMovimiento b={b} set={set} e={e} />
       {parecidos.length > 0 && (
         <div className="stack-2">
           <span className="t-label">{q.length >= 2 ? "Ya cargaste algo parecido" : "Tus gastos fijos"}</span>
@@ -383,10 +412,10 @@ function PasoMonto({ b, set, base, convertido, M }: {
   return (
     <>
       <Pregunta
-        texto="¿Cuánto fue?"
+        texto={b.ingreso ? "¿Cuánto volvió?" : "¿Cuánto fue?"}
         sub={otra
           ? "Lo pasamos a la moneda del estado de resultados con el tipo de cambio de ese día, como en la planilla."
-          : "El total que pagaste."}
+          : b.ingreso ? "El total que te devolvieron." : "El total que pagaste."}
       />
       <div className="monto-grande">
         <span className="monto-grande__signo">{b.moneda === "USD" ? "US$" : "$"}</span>
@@ -410,7 +439,7 @@ function PasoMonto({ b, set, base, convertido, M }: {
             <span className="hk-help">Pesos por dólar. Arranca en el de Ajustes.</span>
           </div>
           <div className="hk-field">
-            <span className="hk-label">Suma en el estado de resultados</span>
+            <span className="hk-label">{b.ingreso ? "Descuenta del estado de resultados" : "Suma en el estado de resultados"}</span>
             <span className="gasto-equivale t-num">{convertido > 0 ? M(convertido) : "—"}</span>
           </div>
         </div>
@@ -425,19 +454,21 @@ function PasoFecha({ b, set }: { b: BorradorGasto; set: Poner }) {
   return (
     <>
       <Pregunta
-        texto="¿Cuándo lo pagaste?"
+        texto={b.ingreso ? "¿Cuándo te lo devolvieron?" : "¿Cuándo lo pagaste?"}
         sub={b.fechaPago
           ? "Un mes decide dónde resta del estado de resultados; el día que se pagó, cuándo sale de la caja."
           : "Decide en qué mes resta del estado de resultados y cuándo sale de la caja. Casi siempre es el mismo día."}
       />
       <CampoFechasGasto b={b} set={set} id="paso" />
-      <div className="stack-2">
-        <span className="t-label">¿Se repite?</span>
-        <div className="opciones">
-          <Opcion tecla="1" nombre="Fijo" sub="Se paga todos los meses" activo={b.recurrente} onClick={() => set({ recurrente: true })} />
-          <Opcion tecla="2" nombre="Variable" sub="Esta vez sola, o cambia mes a mes" activo={!b.recurrente} onClick={() => set({ recurrente: false })} />
+      {!b.ingreso && (
+        <div className="stack-2">
+          <span className="t-label">¿Se repite?</span>
+          <div className="opciones">
+            <Opcion tecla="1" nombre="Fijo" sub="Se paga todos los meses" activo={b.recurrente} onClick={() => set({ recurrente: true })} />
+            <Opcion tecla="2" nombre="Variable" sub="Esta vez sola, o cambia mes a mes" activo={!b.recurrente} onClick={() => set({ recurrente: false })} />
+          </div>
         </div>
-      </div>
+      )}
     </>
   );
 }
@@ -458,6 +489,12 @@ function PasoRevisar({ b, set, e, M, base, convertido, modo, opciones }: {
     [e.webinars],
   );
   const embudos = useMemo(() => e.embudos.filter((x) => x.activo || x.id === b.embudoId).sort((a, c) => a.orden - c.orden), [e.embudos, b.embudoId]);
+  /* Las cuentas de la app; si el gasto trae otra (una de la planilla de Transacciones), también se ve. */
+  const cuentasParaElegir = useMemo(() => {
+    const nombres = e.procesadores.filter((p) => p.activo).map((p) => p.nombre);
+    if (b.cuenta && !nombres.includes(b.cuenta)) nombres.push(b.cuenta);
+    return nombres.map((n) => ({ valor: n, texto: n }));
+  }, [e.procesadores, b.cuenta]);
   const problemas = problemasDelGasto(b, base);
   const otra = b.moneda !== base;
   const origen = modo === "repetir" ? e.gastos.find((x) => x.id === b.copiadoDe) : undefined;
@@ -484,7 +521,7 @@ function PasoRevisar({ b, set, e, M, base, convertido, modo, opciones }: {
   return (
     <>
       <Pregunta
-        texto={modo === "editar" ? "Así está el gasto" : modo === "repetir" ? "Revisá y cargá" : "Así queda el gasto"}
+        texto={modo === "editar" ? (b.ingreso ? "Así está el ingreso" : "Así está el gasto") : modo === "repetir" ? "Revisá y cargá" : (b.ingreso ? "Así queda el ingreso" : "Así queda el gasto")}
         sub={modo === "editar"
           ? "Corregí lo que haga falta y guardá."
           : modo === "repetir"
@@ -494,11 +531,16 @@ function PasoRevisar({ b, set, e, M, base, convertido, modo, opciones }: {
 
       <div className="form-grid">
         <div className="hk-field span-2">
-          <label className="hk-label" htmlFor="gasto-concepto">Qué pagaste</label>
+          <label className="hk-label" htmlFor="gasto-concepto">{b.ingreso ? "Qué te devolvieron" : "Qué pagaste"}</label>
           <Input
             id="gasto-concepto" value={b.concepto} onChange={(ev) => set({ concepto: ev.target.value })}
             placeholder="Contador de septiembre" error={Boolean(problemas.concepto)}
           />
+        </div>
+
+        <div className="hk-field span-2">
+          <span className="hk-label">Tipo</span>
+          <TipoDeMovimiento b={b} set={set} e={e} />
         </div>
 
         <div className="hk-field span-2">
@@ -541,7 +583,7 @@ function PasoRevisar({ b, set, e, M, base, convertido, modo, opciones }: {
               <span className="hk-help">{modo === "editar" ? "Pesos por dólar: el que se usó al cargarlo." : "Pesos por dólar. Arranca en el de Ajustes."}</span>
             </div>
             <div className="hk-field">
-              <span className="hk-label">Suma en el estado de resultados</span>
+              <span className="hk-label">{b.ingreso ? "Descuenta del estado de resultados" : "Suma en el estado de resultados"}</span>
               <span className="gasto-equivale t-num">{convertido > 0 ? M(convertido) : "—"}</span>
             </div>
           </>
@@ -555,17 +597,28 @@ function PasoRevisar({ b, set, e, M, base, convertido, modo, opciones }: {
           />
         </div>
 
-        <div className="hk-field span-2">
-          <span className="hk-label">¿Se repite?</span>
-          <div className="gasto-chips">
-            <Chip activo={b.recurrente} onClick={() => set({ recurrente: true })}>Fijo</Chip>
-            <Chip activo={!b.recurrente} onClick={() => set({ recurrente: false })}>Variable</Chip>
-            <span className="t-sm t-subtle">{b.recurrente ? "Se paga todos los meses." : "Esta vez sola, o cambia mes a mes."}</span>
+        {!b.ingreso && (
+          <div className="hk-field span-2">
+            <span className="hk-label">¿Se repite?</span>
+            <div className="gasto-chips">
+              <Chip activo={b.recurrente} onClick={() => set({ recurrente: true })}>Fijo</Chip>
+              <Chip activo={!b.recurrente} onClick={() => set({ recurrente: false })}>Variable</Chip>
+              <span className="t-sm t-subtle">{b.recurrente ? "Se paga todos los meses." : "Esta vez sola, o cambia mes a mes."}</span>
+            </div>
           </div>
-        </div>
+        )}
 
         <span className="t-label span-2 gasto-opcional">Opcional</span>
 
+        <div className="hk-field">
+          <label className="hk-label" htmlFor="gasto-cuenta">Cuenta</label>
+          <Select
+            id="gasto-cuenta" value={b.cuenta} placeholder="Sin cuenta"
+            onChange={(ev) => set({ cuenta: ev.target.value })}
+            opciones={cuentasParaElegir}
+          />
+          <span className="hk-help">{b.ingreso ? "A qué cuenta volvió la plata." : "De qué cuenta salió la plata."} Aparece en Transacciones.</span>
+        </div>
         {webinars.length > 0 && (
           <div className="hk-field">
             <label className="hk-label" htmlFor="gasto-webinar">Webinar</label>
@@ -590,7 +643,7 @@ function PasoRevisar({ b, set, e, M, base, convertido, modo, opciones }: {
         )}
         <div className="hk-field span-2">
           <label className="hk-label" htmlFor="gasto-notas">Notas</label>
-          <Textarea id="gasto-notas" rows={2} value={b.notas} onChange={(ev) => set({ notas: ev.target.value })} placeholder="Lo que haya que recordar de este gasto" />
+          <Textarea id="gasto-notas" rows={2} value={b.notas} onChange={(ev) => set({ notas: ev.target.value })} placeholder={b.ingreso ? "Lo que haya que recordar de este ingreso: de qué gasto vuelve, quién lo devolvió" : "Lo que haya que recordar de este gasto"} />
         </div>
       </div>
     </>

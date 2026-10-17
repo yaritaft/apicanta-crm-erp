@@ -1,5 +1,6 @@
 import type { EstadoApp, Moneda, Pago } from "./types";
 import { diaDeNegocio } from "./dia-negocio";
+import { ultimoArqueo } from "./caja";
 import { nombrePeriodo, periodoDe } from "./periodos";
 import { resumenConciliacion, restoDeMovimiento } from "./conciliacion";
 import { controlDeCobro, pasaControl } from "./control-cobros";
@@ -95,6 +96,9 @@ export interface PasoCierre {
   herramienta?: Herramienta;
   /* Un paso que junta dos cosas (los cobros y los reembolsos, los gastos fijos y los gastos) abre las dos pantallas. */
   tambien?: Herramienta[];
+  /* Con su pantalla adentro, la lista de lo que falta sobraría (es la misma): este paso la muestra igual, porque en la pantalla
+     no se ve cuál es el que falta (un gasto sin proveedor entre cincuenta). */
+  conLista?: boolean;
   chequeo?: Chequeo;
 }
 
@@ -194,22 +198,23 @@ export function pasosDelTramo(e: EstadoApp, tramo: Tramo, { ahora = Date.now(), 
 
   /* ---------- Cobros y conciliación ---------- */
 
-  /* Lo que entró a una pasarela y nadie atató a una cuota: no cuenta como cobrado. Se miran también los de meses
-     anteriores que siguen sin atar: «que nada se pase». */
-  const sinAtar = e.movimientos.filter((m) => m.estado === "pendiente" && diaDeNegocio(m.fecha) <= hasta);
-  const sinAtarDelMes = sinAtar.filter((m) => dentro(m.fecha));
-  const antes = sinAtar.length - sinAtarDelMes.length;
-  const resumen = resumenConciliacion(e);
+  /* Lo que entró a una pasarela en el mes y nadie ató a una cuota: no cuenta como cobrado. Cada mes se resuelve en su mes (lo de septiembre
+     está en septiembre): mezclar todos los meses en el de octubre era no saber por dónde empezar. */
+  /* Conciliación abre en el mes del paso; un rango de días, en todos los meses. */
+  const hrefConciliacion = mes ? `/conciliacion?mes=${mes}` : "/conciliacion?mes=todos";
+  const delMesMov = e.movimientos.filter((m) => dentro(m.fecha));
+  const sinAtar = delMesMov.filter((m) => m.estado === "pendiente");
+  const resumen = resumenConciliacion({ ...e, movimientos: delMesMov });
   paso({
     id: "movs-sin-atar", area: "cobros", titulo: "Atar cada cobro de pasarela a su cuota",
     detalle: sinAtar.length
-      ? `${pl(sinAtar.length, "cobro entró", "cobros entraron")} a una pasarela y sigue sin atarse a una cuota${antes ? ` (${antes} de meses anteriores)` : ""}: no cuenta como cobrado ni genera comisión.${resumen.automaticos ? ` ${resumen.automaticos} se pueden atar solos.` : ""}`
-      : "Todo lo que entró a las pasarelas está atado a una cuota.",
+      ? `${pl(sinAtar.length, "cobro entró", "cobros entraron")} a una pasarela en ${nombre} y sigue sin atarse a una cuota: no cuenta como cobrado ni genera comisión.${resumen.automaticos ? ` ${resumen.automaticos} se pueden atar solos.` : ""}`
+      : `Todo lo que entró a las pasarelas en ${nombre} está atado a una cuota.`,
     pendientes: [...sinAtar].sort((a, b) => b.fecha.localeCompare(a.fecha)).map((m) => ({
       clave: m.id, titulo: m.clienteNombre || m.descripcion || m.referencia, sub: `${m.proveedor} · ${diaDeNegocio(m.fecha).slice(8, 10)}/${diaDeNegocio(m.fecha).slice(5, 7)}`,
-      monto: restoDeMovimiento(e, m), moneda: m.moneda, destino: { href: "/conciliacion" },
+      monto: restoDeMovimiento(e, m), moneda: m.moneda, destino: { href: hrefConciliacion },
     })),
-    ir: { href: "/conciliacion", texto: "Ir a Conciliación" },
+    ir: { href: hrefConciliacion, texto: "Ir a Conciliación" },
   });
 
   const aValidar = pagosDelMes.filter((p) => !p.movimientoId && controlDeCobro(p).estado === "pendiente");
@@ -243,12 +248,12 @@ export function pasosDelTramo(e: EstadoApp, tramo: Tramo, { ahora = Date.now(), 
     ir: { href: `/ventas?seccion=cobros&${qs}`, texto: "Ver los cobros" },
   });
 
-  const reembolsos = propuestasPendientes(e);
+  const reembolsos = propuestasPendientes(e, { desde, hasta });
   paso({
     id: "reembolsos", area: "cobros", titulo: "Devolver lo que las pasarelas ya devolvieron",
     detalle: reembolsos.length
-      ? `${pl(reembolsos.length, "reembolso aparece", "reembolsos aparecen")} en una pasarela sin una devolución cargada: hay que atarlo a la venta para que se descuente.`
-      : "Todos los reembolsos de las pasarelas tienen su devolución.",
+      ? `${pl(reembolsos.length, "reembolso aparece", "reembolsos aparecen")} en una pasarela en ${nombre} sin una devolución cargada: hay que atarlo a la venta para que se descuente.`
+      : `Todos los reembolsos de las pasarelas de ${nombre} tienen su devolución.`,
     pendientes: reembolsos.map((d) => ({ clave: d.id, titulo: d.motivo || "Reembolso de una pasarela", sub: d.fecha ? diaDeNegocio(d.fecha) : undefined, monto: d.monto, moneda: d.moneda, destino: { href: "/finanzas/detalle?seccion=devoluciones" } })),
     ir: { href: "/finanzas/detalle?seccion=devoluciones", texto: "Ver las devoluciones" },
   });
@@ -278,7 +283,8 @@ export function pasosDelTramo(e: EstadoApp, tramo: Tramo, { ahora = Date.now(), 
   /* ---------- Caja ---------- */
 
   const situaciones: Situacion[] = ["por-confirmar", "no-llego", "falta-comision", "diferencia"];
-  const pasesSueltos = (e.traspasos ?? []).map((t) => ({ t, s: situacionDe(t, ahora) })).filter((x) => situaciones.includes(x.s) && diaDeNegocio(x.t.fecha) <= hasta);
+  /* Sólo los del mes: un retiro de agosto sin comisión se resuelve en agosto, no en octubre. */
+  const pasesSueltos = (e.traspasos ?? []).map((t) => ({ t, s: situacionDe(t, ahora) })).filter((x) => situaciones.includes(x.s) && dentro(x.t.fecha));
   paso({
     id: "pases", area: "caja", titulo: "Movimientos entre cuentas al día",
     detalle: pasesSueltos.length
@@ -288,20 +294,28 @@ export function pasosDelTramo(e: EstadoApp, tramo: Tramo, { ahora = Date.now(), 
     ir: { href: "/finanzas/caja", texto: "Ir a la Caja" },
   });
 
-  /* El arqueo: se cuenta la caja de verdad al terminar el mes (en la última semana o en los primeros diez días del siguiente). */
+  /* El arqueo: la caja se cuenta CADA SEMANA (Aldana, 17/10: «sí hay que hacerlo semanalmente») y, al terminar el mes, una vez más con los
+     saldos de cierre (en la última semana o en los primeros diez días del siguiente). Un mes que ya terminó pide el de cierre; el que
+     está en curso, el de esta semana; uno que todavía no empezó, nada. */
   const arqueos = (e.arqueos ?? []).filter((a) => { const d = diaDeNegocio(a.fecha); return d >= sumarDias(hasta, -6) && d <= sumarDias(hasta, 10); })
     .sort((a, b) => b.fecha.localeCompare(a.fecha));
   const ultimo = arqueos[0];
   const conDiferencia = ultimo && Math.abs(ultimo.diferencia ?? 0) > 1;
+  const enCurso = !terminado && desde <= hoy;
+  const caja = enCurso ? estadoDeLaCaja(e, ahora) : null;
   paso({
-    id: "arqueo", area: "caja", titulo: "Arqueo de caja al cierre",
+    id: "arqueo", area: "caja", titulo: terminado ? "Arqueo de caja al cierre" : "Arqueo de caja",
     detalle: !terminado
-      ? `El ${unidad} sigue en curso: el arqueo se hace con los saldos reales cuando termine ${nombre}.`
+      ? (caja
+        ? `${caja.detalle} El arqueo de cierre se hace con los saldos reales cuando termine ${nombre}.`
+        : `El ${unidad} todavía no empezó: el arqueo se hace cuando haya movimientos.`)
       : !ultimo ? `Falta contar la caja de verdad: no hay un arqueo de los últimos días de ${nombre}.`
         : conDiferencia ? `El arqueo del ${diaDeNegocio(ultimo.fecha).slice(8, 10)}/${diaDeNegocio(ultimo.fecha).slice(5, 7)} tiene una diferencia de US$ ${Math.round(ultimo.diferencia ?? 0).toLocaleString("es-AR")} contra lo que la app esperaba: hay que explicarla.`
           : `Arqueo hecho el ${diaDeNegocio(ultimo.fecha).slice(8, 10)}/${diaDeNegocio(ultimo.fecha).slice(5, 7)}: la caja cuadra con lo que la app esperaba.`,
-    pendientes: !terminado ? [] : !ultimo || conDiferencia ? [{ clave: "arqueo", titulo: !ultimo ? "Sin arqueo al cierre" : "Arqueo con diferencia", monto: ultimo?.diferencia ?? undefined, moneda: "USD", destino: { href: "/finanzas/caja" } }] : [],
-    estado: !terminado ? "bloqueado" : undefined,
+    pendientes: caja ? (caja.alDia ? [] : [{ clave: "arqueo", titulo: caja.titulo, monto: caja.diferencia, moneda: "USD", destino: { href: "/finanzas/caja" } }])
+      : !terminado ? []
+        : !ultimo || conDiferencia ? [{ clave: "arqueo", titulo: !ultimo ? "Sin arqueo al cierre" : "Arqueo con diferencia", monto: ultimo?.diferencia ?? undefined, moneda: "USD", destino: { href: "/finanzas/caja" } }] : [],
+    estado: !terminado && !enCurso ? "bloqueado" : undefined,
     ir: { href: "/finanzas/caja", texto: "Ir a la Caja" },
   });
 
@@ -325,7 +339,7 @@ export function pasosDelTramo(e: EstadoApp, tramo: Tramo, { ahora = Date.now(), 
       ? `${pl(sinProveedor.length, "gasto de " + nombre + " no dice", "gastos de " + nombre + " no dicen")} a quién se le pagó: sin proveedor no se puede conciliar con el extracto.`
       : `Todos los gastos de ${nombre} tienen su proveedor.`,
     progreso: { hecho: gastosDelMes.length - sinProveedor.length, total: gastosDelMes.length },
-    pendientes: sinProveedor.map((g) => ({ clave: g.id, titulo: g.concepto, sub: g.categoria, monto: g.monto, moneda: g.moneda, destino: { href: `/finanzas/detalle?seccion=gastos&ver=${encodeURIComponent(g.id)}&${qs}` } })),
+    pendientes: sinProveedor.map((g) => ({ clave: g.id, titulo: g.concepto, sub: g.categoria, monto: g.monto, moneda: g.moneda, destino: { href: mes ? `/finanzas?mes=${mes}&paso=gastos&ver=${encodeURIComponent(g.id)}` : `/finanzas/detalle?seccion=gastos&ver=${encodeURIComponent(g.id)}&${qs}` } })),
     ir: { href: `/finanzas/detalle?seccion=gastos&${qs}`, texto: "Ver los gastos" },
   });
 
@@ -394,4 +408,18 @@ export function pasoCerrar({ nombre, previos, terminado, cerrada, hrefLiq, esDue
 export function avanceDelMes(pasos: PasoCierre[], esDueno: boolean): { listos: number; total: number } {
   const cuentan = pasos.filter((p) => esDueno || !p.soloDuenos);
   return { listos: cuentan.filter((p) => p.estado === "listo").length, total: cuentan.length };
+}
+
+
+/** Cómo está la caja respecto del arqueo de la semana: lo que ven el paso del mes y la tarea de todos los días. Un arqueo vale una semana;
+ *  uno viejo, o que no dio, hay que rehacerlo. */
+export function estadoDeLaCaja(e: Pick<EstadoApp, "arqueos">, ahora: number): { alDia: boolean; detalle: string; titulo: string; diferencia?: number } {
+  const ult = ultimoArqueo(e as EstadoApp);
+  const fecha = (iso: string) => { const d = diaDeNegocio(iso); return `${d.slice(8, 10)}/${d.slice(5, 7)}`; };
+  if (!ult) return { alDia: false, titulo: "Sin arqueo", detalle: "Todavía no hay ningún arqueo: contá lo que hay en cada cuenta para que la app pueda controlar la caja." };
+  const edad = Math.floor((ahora - new Date(ult.fecha).getTime()) / DIA);
+  const dif = Math.abs(ult.diferencia ?? 0);
+  if (edad > 7) return { alDia: false, titulo: "Arqueo atrasado", detalle: `El último arqueo es de hace ${edad} días: toca volver a contar lo que hay en cada cuenta (se hace cada semana).` };
+  if (dif > 1) return { alDia: false, titulo: "Arqueo con diferencia", diferencia: ult.diferencia ?? undefined, detalle: `El último arqueo (${fecha(ult.fecha)}) tiene una diferencia de US$ ${Math.round(dif).toLocaleString("es-AR")} contra lo que la app esperaba: hay que explicarla.` };
+  return { alDia: true, titulo: "Arqueo al día", detalle: `Arqueo de hace ${edad === 0 ? "hoy" : `${edad} ${edad === 1 ? "día" : "días"}`}: la caja cuadra con lo que la app esperaba.` };
 }

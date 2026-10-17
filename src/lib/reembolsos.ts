@@ -1,4 +1,5 @@
 import type { Devolucion, EstadoApp, ID, Moneda, Pago, ProveedorPasarela, Venta } from "./types";
+import { enRangoDeDias, type RangoDeDias } from "./dia-negocio";
 
 /* ==================================================================
    Los reembolsos que informa una pasarela, atados a las devoluciones.
@@ -266,19 +267,20 @@ export function atarPropuesta(
   };
 }
 
-/** Las propuestas que todavía esperan una decisión, de la más nueva a la más vieja. */
-export function propuestasPendientes(e: Pick<EstadoApp, "devoluciones">): Devolucion[] {
+/** Las propuestas que todavía esperan una decisión, de la más nueva a la más vieja. Con `rango`, sólo las de esos días: Finanzas en pasos
+ *  mira un mes por vez, y lo de septiembre se resuelve en septiembre, no en octubre. */
+export function propuestasPendientes(e: Pick<EstadoApp, "devoluciones">, rango?: RangoDeDias): Devolucion[] {
   return (e.devoluciones ?? [])
-    .filter((d) => d.estado === "propuesta")
+    .filter((d) => d.estado === "propuesta" && (!rango || enRangoDeDias(d.fecha, rango)))
     .sort((a, b) => Date.parse(b.fecha) - Date.parse(a.fecha));
 }
 
 /** Cuántas propuestas calzan con UNA sola devolución cargada: se pueden atar
  *  todas juntas con un clic. */
-export function propuestasAtables(e: Base): { propuestaId: ID; devolucionId: ID }[] {
+export function propuestasAtables(e: Base, rango?: RangoDeDias): { propuestaId: ID; devolucionId: ID }[] {
   const out: { propuestaId: ID; devolucionId: ID }[] = [];
   const usadas = new Set<ID>();
-  for (const p of propuestasPendientes(e)) {
+  for (const p of propuestasPendientes(e, rango)) {
     const r = reembolsoDePropuesta(p);
     if (!r) continue;
     const c = candidatasDe(e, r).filter((d) => !usadas.has(d.id));

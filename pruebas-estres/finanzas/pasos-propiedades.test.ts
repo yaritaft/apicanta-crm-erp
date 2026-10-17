@@ -150,9 +150,9 @@ test("F4 · los pasos que juntan varios cuentan cada renglón una vez y coincide
       else assert.ok(vc.faltan >= 40, cual);
       assert.equal(new Set(vc.items.map((i) => i.clave)).size, vc.items.length, `${cual}: renglones repetidos en ventas completas`);
 
-      /* Atar cobros y reembolsos: los cobros de pasarela sin atar (hasta fin de mes) más los reembolsos sin devolución. */
-      const sinAtar = e.movimientos.filter((x) => x.estado === "pendiente" && diaDeNegocio(x.fecha) <= hasta).length;
-      const esperado = sinAtar + propuestasPendientes(e).length;
+      /* Atar cobros y reembolsos: los cobros de pasarela sin atar y los reembolsos sin devolución, sólo los del mes (lo de otros meses va en su mes). */
+      const sinAtar = e.movimientos.filter((x) => x.estado === "pendiente" && dentro(x.fecha)).length;
+      const esperado = sinAtar + propuestasPendientes(e, { desde, hasta }).length;
       assert.equal(por.get("cobros-atar")!.faltan, esperado, `${cual}: atar cobros`);
 
       /* Validar cobros: pendientes de validar, rechazados y sin comprobante, sin repetir. */

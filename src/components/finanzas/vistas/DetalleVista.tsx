@@ -80,17 +80,18 @@ export function DetalleVista({ embebido = false, seccion: seccionFija, rangoFijo
   /* Los gastos fijos que ya le tocaba pagar y nadie aprobó (lib/gastos-recurrentes). */
   const fijosPorAprobar = useMemo(() => cuantosFaltan(e, new Date().toISOString()), [e.gastos, e.gastosRecurrentes]); // eslint-disable-line react-hooks/exhaustive-deps
   const [borrar, setBorrar] = useState<Gasto | null>(null);
-  /* Devoluciones que esperan a alguien: llamadas en «Devolución» sin cargar y reembolsos de pasarelas sin confirmar. */
-  const porDecidir = useMemo(
-    () => llamadasEnDevolucionSinCargar(e).length + propuestasPendientes(e).length,
-    [e.sesiones, e.devoluciones, e.ventas, e.ajustes], // eslint-disable-line react-hooks/exhaustive-deps
-  );
 
   /* El rango vive en la URL: navegar entre el resumen y el detalle lo
      conserva, y se puede mandar un link a un periodo concreto. Arranca en
      "Este mes", que es lo que pidio Yari: entrar y ver el mes en curso. */
   const [rangoURL, setRango] = useRangoURL("mes");
   const rango = rangoFijo ?? rangoURL;
+  /* Devoluciones que esperan a alguien: llamadas en «Devolución» sin cargar y reembolsos de pasarelas sin confirmar del período
+     (lo de otros meses va en el cierre de su mes). */
+  const porDecidir = useMemo(
+    () => llamadasEnDevolucionSinCargar(e).length + propuestasPendientes(e, { desde: rango.desde, hasta: rango.hasta }).length,
+    [e.sesiones, e.devoluciones, e.ventas, e.ajustes, rango.desde, rango.hasta], // eslint-disable-line react-hooks/exhaustive-deps
+  );
 
   /* "Maximo" tiene que decir la verdad por los dos lados: arranca en el primer
      dato que existe, y termina en la ultima cuota PROGRAMADA — si terminara
@@ -175,7 +176,7 @@ export function DetalleVista({ embebido = false, seccion: seccionFija, rangoFijo
             />
             <CopiarLink sm={false} />
             </>}
-            {(!embebido || vista === "gastos" || vista === "fijos") && <Button variante="primary" icono={<Plus size={16} />} onClick={() => { setVista("gastos"); setAsistente({ gasto: null }); }}>Cargar gasto</Button>}
+            {(!embebido || vista === "gastos" || vista === "fijos") && <Button variante="primary" icono={<Plus size={16} />} onClick={() => { setVista("gastos"); setAsistente({ gasto: null }); }}>Cargar gasto o ingreso</Button>}
           </>
         }
       />

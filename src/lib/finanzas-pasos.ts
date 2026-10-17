@@ -1,5 +1,5 @@
 import type { EstadoApp } from "./types";
-import { diaDeNegocio, mesDeNegocio } from "./dia-negocio";
+import { diaDeNegocio, enRangoDeDias, mesDeNegocio } from "./dia-negocio";
 import { nombrePeriodo } from "./periodos";
 import { restoDeMovimiento } from "./conciliacion";
 import { controlDeCobro } from "./control-cobros";
@@ -8,11 +8,10 @@ import { llamadasEnDevolucionSinCargar } from "./devoluciones";
 import { propuestasPendientes } from "./reembolsos";
 import { propuestas as gastosFijosPorAprobar } from "./gastos-recurrentes";
 import { mesesCerrados } from "./mes-cerrado";
-import { ultimoArqueo } from "./caja";
 import { situacionDe, TEXTO_SITUACION, type Situacion } from "./traspasos";
 import { rangoDeFechas } from "./metricas";
 import {
-  pasoCerrar, pasosDelMes, pasosDelTramo, tramoDeDias,
+  estadoDeLaCaja, pasoCerrar, pasosDelMes, pasosDelTramo, tramoDeDias,
   type AreaPaso, type Cadencia, type Chequeo, type EstadoPaso, type Herramienta, type ItemPaso, type PasoCierre, type TipoPaso,
 } from "./cierre-mes";
 
@@ -176,14 +175,23 @@ function pasosDelDia(e: EstadoApp, ahora: number): PasoCierre[] {
   const nombreDelPago = (id: string) => ventas.get(ventaDeCuota.get(id) ?? "")?.contactoNombre ?? "Cobro";
 
   /* 1. El banco y las pasarelas contra el CRM: lo que entró y nadie ató, y los movimientos entre cuentas sin decidir. */
-  const sinAtar = e.movimientos.filter((m) => m.estado === "pendiente" && diaDeNegocio(m.fecha) <= hoy);
+  /* Sólo lo del mes en curso: lo que quedó de meses anteriores se resuelve en el cierre de ese mes (Aldana, 17/10), y acá se avisa cuánto es. */
+  const mesActual = hoy.slice(0, 7);
+  const delMes = { desde: `${mesActual}-01`, hasta: hoy };
   const situaciones: Situacion[] = ["por-confirmar", "no-llego", "falta-comision", "diferencia"];
-  const pases = (e.traspasos ?? []).map((tr) => ({ tr, s: situacionDe(tr, ahora) })).filter((x) => situaciones.includes(x.s));
+  const todosSinAtar = e.movimientos.filter((m) => m.estado === "pendiente" && diaDeNegocio(m.fecha) <= hoy);
+  const sinAtar = todosSinAtar.filter((m) => enRangoDeDias(m.fecha, delMes));
+  const todosLosPases = (e.traspasos ?? []).map((tr) => ({ tr, s: situacionDe(tr, ahora) })).filter((x) => situaciones.includes(x.s));
+  const pases = todosLosPases.filter((x) => enRangoDeDias(x.tr.fecha, delMes));
+  /* «Anteriores» son los de antes de este mes: lo que tiene fecha de mañana no es de un mes que ya pasó. */
+  const esAnterior = (fecha: string) => diaDeNegocio(fecha) < delMes.desde;
+  const deMesesAnteriores = todosSinAtar.filter((m) => esAnterior(m.fecha)).length + todosLosPases.filter((x) => esAnterior(x.tr.fecha)).length;
+  const avisoAnteriores = deMesesAnteriores ? ` Además hay ${pl(deMesesAnteriores, "pendiente", "pendientes")} de meses anteriores: se resuelven en el cierre de cada mes.` : "";
   const banco = auto({
     id: "d-banco", area: "cobros", titulo: "Revisar los movimientos del banco y conciliar",
     detalle: sinAtar.length + pases.length
-      ? `${[sinAtar.length ? pl(sinAtar.length, "cobro entró", "cobros entraron") + " a una pasarela o al banco y sigue sin atarse a su cuota" : "", pases.length ? pl(pases.length, "movimiento entre cuentas espera", "movimientos entre cuentas esperan") + " una decisión" : ""].filter(Boolean).join(" · ")}.`
-      : "Todo lo que entró a Mercury y a las pasarelas está atado a su cuota, y no hay movimientos entre cuentas sin decidir.",
+      ? `${[sinAtar.length ? pl(sinAtar.length, "cobro entró", "cobros entraron") + " a una pasarela o al banco este mes y sigue sin atarse a su cuota" : "", pases.length ? pl(pases.length, "movimiento entre cuentas espera", "movimientos entre cuentas esperan") + " una decisión" : ""].filter(Boolean).join(" · ")}.${avisoAnteriores}`
+      : `Todo lo que entró a Mercury y a las pasarelas este mes está atado a su cuota, y no hay movimientos entre cuentas sin decidir.${avisoAnteriores}`,
     pendientes: [
       ...[...sinAtar].sort((a, b) => b.fecha.localeCompare(a.fecha)).map((m) => ({ clave: m.id, titulo: m.clienteNombre || m.descripcion || m.referencia, sub: `${m.proveedor} · ${fechaCorta(m.fecha)}`, monto: restoDeMovimiento(e, m), moneda: m.moneda })),
       ...pases.map(({ tr, s }) => ({ clave: tr.id, titulo: tr.contraparte || "Movimiento entre cuentas", sub: TEXTO_SITUACION[s], monto: tr.montoSale, moneda: tr.monedaSale })),
@@ -213,28 +221,25 @@ function pasosDelDia(e: EstadoApp, ahora: number): PasoCierre[] {
     herramienta: { tipo: "mora" },
   });
 
-  /* 7. La caja al día: un arqueo reciente y que cuadre. */
-  const ult = ultimoArqueo(e);
-  const edad = ult ? Math.floor((ahora - new Date(ult.fecha).getTime()) / DIA) : null;
-  const dif = Math.abs(ult?.diferencia ?? 0);
+  /* 7. La caja al día: un arqueo de la semana y que cuadre (se cuenta cada semana, no sólo a fin de mes). */
+  const estadoCaja = estadoDeLaCaja(e, ahora);
   const caja = auto({
     id: "d-caja", area: "caja", titulo: "Mantener la caja al día",
-    detalle: !ult ? "Todavía no hay ningún arqueo: contá lo que hay en cada cuenta para que la app pueda controlar la caja."
-      : edad! > 7 ? `El último arqueo es de hace ${edad} días: toca volver a contar lo que hay en cada cuenta.`
-        : dif > 1 ? `El último arqueo (${fechaCorta(ult.fecha)}) tiene una diferencia de US$ ${Math.round(dif).toLocaleString("es-AR")} contra lo que la app esperaba: hay que explicarla.`
-          : `Arqueo de hace ${edad === 0 ? "hoy" : `${edad} ${edad === 1 ? "día" : "días"}`}: la caja cuadra con lo que la app esperaba.`,
-    pendientes: !ult || edad! > 7 || dif > 1 ? [{ clave: "arqueo", titulo: !ult ? "Sin arqueo" : edad! > 7 ? "Arqueo atrasado" : "Arqueo con diferencia", monto: ult ? ult.diferencia ?? undefined : undefined, moneda: "USD" }] : [],
+    detalle: estadoCaja.detalle,
+    pendientes: estadoCaja.alDia ? [] : [{ clave: "arqueo", titulo: estadoCaja.titulo, monto: estadoCaja.diferencia, moneda: "USD" }],
     herramienta: { tipo: "caja" },
   });
 
   /* 9. Los reembolsos: los que las pasarelas ya devolvieron y los que Ventas marcó como devolución. */
-  const reembolsos = propuestasPendientes(e);
+  const reembolsos = propuestasPendientes(e, delMes);
+  /* Hasta el último día del mes anterior ("-00" queda justo antes del día 01 al comparar). */
+  const reembolsosAnteriores = propuestasPendientes(e, { desde: "0000-01-01", hasta: `${mesActual}-00` }).length;
   const enDevolucion = llamadasEnDevolucionSinCargar(e);
   const devoluciones = auto({
     id: "d-reembolsos", area: "cobros", titulo: "Seguimiento de reembolsos",
     detalle: reembolsos.length + enDevolucion.length
-      ? `${[reembolsos.length ? pl(reembolsos.length, "reembolso de una pasarela", "reembolsos de pasarelas") + " sin atar a su devolución" : "", enDevolucion.length ? pl(enDevolucion.length, "llamada marcada", "llamadas marcadas") + " como devolución sin cargar" : ""].filter(Boolean).join(" · ")}.`
-      : "No hay reembolsos esperando: todos tienen su devolución cargada.",
+      ? `${[reembolsos.length ? pl(reembolsos.length, "reembolso de una pasarela", "reembolsos de pasarelas") + " sin atar a su devolución" : "", enDevolucion.length ? pl(enDevolucion.length, "llamada marcada", "llamadas marcadas") + " como devolución sin cargar" : ""].filter(Boolean).join(" · ")}.${reembolsosAnteriores ? ` Hay otros ${reembolsosAnteriores} de meses anteriores, que van en el cierre de su mes.` : ""}`
+      : `No hay reembolsos de este mes esperando: todos tienen su devolución cargada.${reembolsosAnteriores ? ` Quedan ${reembolsosAnteriores} de meses anteriores, que van en el cierre de su mes.` : ""}`,
     pendientes: [
       ...reembolsos.map((d) => ({ clave: d.id, titulo: d.motivo || "Reembolso de una pasarela", sub: d.fecha ? fechaCorta(d.fecha) : undefined, monto: d.monto, moneda: d.moneda })),
       ...enDevolucion.map((x) => ({ clave: x.sesion.id, titulo: x.sesion.invitado, sub: "Marcada como devolución, sin cargar" })),
@@ -315,7 +320,7 @@ function pasosDelMesCompleto(e: EstadoApp, mes: string, { ahora, esDueno, cheque
 const URGENCIA: Record<EstadoPaso, number> = { pendiente: 3, "en-curso": 2, listo: 1, bloqueado: 0 };
 
 /** Varios pasos hermanos en uno: lo que falta de cada uno sin repetir, el estado del más urgente y las pantallas de todos. */
-function unir(hijos: PasoCierre[], p: { id: string; area: AreaPaso; titulo: string; ok: string; herramienta?: Herramienta; tambien?: Herramienta[]; progresoDe?: PasoCierre; nota?: string }): PasoCierre {
+function unir(hijos: PasoCierre[], p: { id: string; area: AreaPaso; titulo: string; ok: string; herramienta?: Herramienta; tambien?: Herramienta[]; progresoDe?: PasoCierre; nota?: string; conLista?: boolean }): PasoCierre {
   const items = new Map<string, ItemPaso>();
   let mostrados = 0;
   for (const h of hijos) for (const it of h.items) { mostrados++; if (!items.has(it.clave)) items.set(it.clave, it); }
@@ -330,7 +335,7 @@ function unir(hijos: PasoCierre[], p: { id: string; area: AreaPaso; titulo: stri
     id: p.id, area: p.area, titulo: p.titulo, detalle, estado: faltan > 0 ? "pendiente" : estado,
     items: [...items.values()].slice(0, TOPE), faltan, ir: referencia.ir,
     progreso: hecho ? { hecho: Math.max(0, hecho.total - faltan), total: hecho.total } : undefined,
-    herramienta: p.herramienta, tambien: p.tambien,
+    herramienta: p.herramienta, tambien: p.tambien, conLista: p.conLista,
   };
 }
 
@@ -370,6 +375,8 @@ function consolidar(e: EstadoApp, pasos: PasoCierre[], { nombre, conLlamadas, es
     herramienta: fijos && fijos.faltan > 0 ? { tipo: "fijos" } : { tipo: "gastos" },
     tambien: [fijos && fijos.faltan > 0 ? { tipo: "gastos" } : { tipo: "fijos" }], progresoDe: por.get("gastos-proveedor"),
     nota: fijoNoCargado ? "Ojo: todavía no hay ningún gasto fijo cargado, así que no hay nada para aprobar." : undefined,
+    /* Entre cincuenta gastos no se ve cuál es el que no dice a quién se le pagó: la lista de lo que falta va arriba, y cada renglón lo abre. */
+    conLista: true,
   }));
 
   /* Las llamadas sin cargar dejan de ser un paso del mes: es el cierre del día de los closers. Pero frenan las comisiones, y se avisa donde se liquida. */

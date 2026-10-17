@@ -323,9 +323,10 @@ export function propuestas(e: EstadoApp, movs?: Movimiento[]): Propuesta[] {
 
 /* ---------- Números de la bandeja ---------- */
 
-export function resumenConciliacion(e: EstadoApp) {
-  const pendientes = e.movimientos.filter((m) => m.estado === "pendiente");
-  const conciliados = e.movimientos.filter((m) => m.estado === "conciliado");
+export function resumenConciliacion(e: EstadoApp, movs?: Movimiento[]) {
+  const todos = movs ?? e.movimientos;
+  const pendientes = todos.filter((m) => m.estado === "pendiente");
+  const conciliados = todos.filter((m) => m.estado === "conciliado");
   /* Lo que falta imputar: de un pago usado a medias, sólo lo que queda. */
   const sinConciliar = pendientes.reduce((a, m) => a + restoDeMovimiento(e, m), 0);
   const autos = propuestas(e, pendientes).filter((p) => p.automatica);
