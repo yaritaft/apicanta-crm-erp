@@ -13,6 +13,8 @@ import { cuantosFaltan } from "@/lib/gastos-recurrentes";
 import { llamadasEnDevolucionSinCargar } from "@/lib/devoluciones";
 import { propuestasPendientes } from "@/lib/reembolsos";
 import { resumenDePases } from "@/lib/traspasos";
+import { useChequeos } from "@/lib/chequeos-finanzas";
+import { diasDelEod } from "@/lib/eod-finanzas";
 import {
   alNegarseEscritura, cargarDeLaNube, fijarAcceso, hayNube, reiniciarCarga, useEstado, useSync, useTema,
 } from "@/lib/store";
@@ -141,17 +143,22 @@ export function Shell({ children }: { children: React.ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [acceso, sesionesDev, devolucionesDev, ventasDev, ajustesDev],
   );
+  /* Los días laborables en que Finanzas no cerró su End of Day (los últimos 7, desde que se empezó a usar). */
+  const { chequeos: chequeosFinanzas } = useChequeos();
+  const diasSinCerrar = useMemo(
+    () => (nivelDeRuta(acceso, "/finanzas") > 0 ? diasDelEod(chequeosFinanzas, Date.now(), 7).filter((d) => d.estado === "sin-cerrar").length : 0),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [acceso, chequeosFinanzas, hoy],
+  );
   const avisosFinanzas = [
     atrasados > 0 ? `${atrasados === 1 ? "Un cliente atrasado" : `${atrasados} clientes atrasados`} hace 7 días o más` : "",
     fijosPorAprobar > 0 ? `${fijosPorAprobar === 1 ? "Un gasto fijo" : `${fijosPorAprobar} gastos fijos`} por aprobar` : "",
     devolucionesPorDecidir > 0 ? `${devolucionesPorDecidir === 1 ? "Una devolución" : `${devolucionesPorDecidir} devoluciones`} por cargar o confirmar` : "",
+    retirosSinComision > 0 ? `${retirosSinComision === 1 ? "Un retiro de Hotmart" : `${retirosSinComision} retiros de Hotmart`} sin la comisión cargada` : "",
   ].filter(Boolean);
   const alertas: Record<string, { n: number; titulo: string }> = {
-    "/finanzas": { n: atrasados + fijosPorAprobar + devolucionesPorDecidir, titulo: avisosFinanzas.join(" · ") },
-    "/finanzas/caja": {
-      n: retirosSinComision,
-      titulo: `${retirosSinComision === 1 ? "Un retiro de Hotmart" : `${retirosSinComision} retiros de Hotmart`} sin la comisión cargada`,
-    },
+    "/finanzas": { n: atrasados + fijosPorAprobar + devolucionesPorDecidir + retirosSinComision, titulo: avisosFinanzas.join(" · ") },
+    "/finanzas/end-of-day": { n: diasSinCerrar, titulo: `${diasSinCerrar === 1 ? "Un día laborable quedó" : `${diasSinCerrar} días laborables quedaron`} sin cerrar` },
   };
 
   /* Customer Success: a cuántos alumnos les toca hoy el contacto (lib/seguimiento.ts). */

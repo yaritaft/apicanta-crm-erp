@@ -1,0 +1,151 @@
+/* ==================================================================
+   Finanzas en pasos: el camino del día, de la semana o del mes, uno abajo
+   del otro como la Bandeja de Blue OS —un nodo por paso unidos por una línea,
+   el estado a la vista y un botón a la derecha— y cada paso se abre en el
+   lugar con lo que falta y la herramienta adentro. Mismo lenguaje que
+   Mi panel: lienzo oscuro, bloques levantados sin borde, el color sólo para
+   el estado. Un solo naranja por pantalla: el botón del paso siguiente.
+   ================================================================== */
+
+.cm, .cm-banda {
+  --cm-bloque: var(--surface-200);
+  --cm-bloque-alto: var(--surface-300);
+  --cm-linea: color-mix(in srgb, var(--ink) 9%, transparent);
+  --cm-sombra: none;
+}
+[data-theme="light"] .cm, [data-theme="light"] .cm-banda {
+  --cm-bloque: var(--surface-100);
+  --cm-bloque-alto: var(--surface-200);
+  --cm-linea: color-mix(in srgb, var(--ink) 8%, transparent);
+  --cm-sombra: 0 1px 2px #1a10300d, 0 8px 28px #1a10300f;
+}
+
+.cm { display: flex; flex-direction: column; gap: 22px; min-width: 0; padding-bottom: var(--space-6); }
+/* La barra de arriba: las pestañas y, a la derecha, el mes, las fechas y cuántos pasos van. */
+.cm-barra { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-3) var(--space-4); }
+.cm-barra__der { margin-left: auto; display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-3) var(--space-4); }
+.cm-mes { display: inline-flex; align-items: center; gap: var(--space-2); }
+.cm-mes__nombre { min-width: 132px; text-align: center; font-weight: 600; text-transform: capitalize; }
+.cm-conteo { font-size: 14px; color: var(--ink-subtle); font-variant-numeric: tabular-nums; }
+.cm-conteo b { color: var(--ink); font-weight: 650; }
+
+/* El estado de cada paso, en colores (lo usa la franja de Conciliación). */
+.cm-tramos { flex: 1 1 300px; min-width: 0; display: flex; gap: 4px; }
+.cm-tramo { flex: 1 1 0; height: 8px; border-radius: 4px; background: var(--cm-bloque-alto); min-width: 6px; padding: 0; border: 0; }
+.cm-tramo--listo { background: var(--success); }
+.cm-tramo--pendiente { background: var(--warning); }
+.cm-tramo--en-curso { background: color-mix(in srgb, var(--brand) 70%, var(--cm-bloque-alto)); }
+.cm-tramo--bloqueado { background: var(--cm-bloque-alto); opacity: 0.6; }
+
+/* ---------- el camino: uno abajo del otro ---------- */
+
+.cm-path { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.cm-banda-fila { margin: 22px 0 8px 52px; font-size: 13px; font-weight: 600; color: var(--ink-subtle); }
+.cm-banda-fila:first-child { margin-top: 0; }
+.cm-step { position: relative; display: grid; grid-template-columns: 38px minmax(0, 1fr) auto; column-gap: var(--space-3); align-items: start; padding: 0 0 14px; }
+/* La línea que une un nodo con el que sigue. */
+.cm-step::before { content: ""; position: absolute; left: 18px; top: 36px; bottom: -2px; width: 2px; border-radius: 1px; background: var(--cm-linea); }
+.cm-step:last-child::before { display: none; }
+.cm-step--listo::before { background: color-mix(in srgb, var(--success) 45%, var(--cm-linea)); }
+.cm-nodo { position: relative; z-index: 1; width: 34px; height: 34px; border-radius: 999px; display: inline-flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 700; font-variant-numeric: tabular-nums; margin-top: 12px; background: var(--cm-bloque-alto); color: var(--ink-muted); box-shadow: 0 0 0 4px var(--surface-000); }
+.cm-nodo--listo { background: var(--success); color: var(--surface-000); }
+.cm-nodo--pendiente { background: var(--warning-soft); color: var(--warning); }
+.cm-nodo--en-curso { background: var(--brand-soft); color: var(--brand); }
+.cm-nodo--bloqueado { opacity: 0.75; }
+.cm-step--sigue .cm-nodo { box-shadow: 0 0 0 4px var(--surface-000), 0 0 0 6px color-mix(in srgb, var(--accent) 55%, transparent); }
+
+.cm-step__tarjeta { grid-column: 2 / 4; display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: var(--space-4); align-items: center; border-radius: 20px; background: var(--cm-bloque); box-shadow: var(--cm-sombra); padding: 14px 18px; min-width: 0; transition: background 140ms ease-out; }
+.cm-step--abierto .cm-step__tarjeta { background: var(--cm-bloque); box-shadow: inset 0 0 0 1.5px var(--brand); }
+.cm-step__cab { text-align: left; font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; min-width: 0; border-radius: var(--radius-md); }
+.cm-step__cab:hover .cm-step__titulo { color: var(--brand); }
+.cm-step__cab:focus-visible { outline: 2px solid var(--focus); outline-offset: 4px; }
+.cm-step__titulo { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); margin: 0; font-size: 16px; line-height: 22px; font-weight: 600; color: var(--ink); }
+.cm-step__sigue { font-size: 11px; font-weight: 600; padding: 1px 8px; border-radius: 999px; background: var(--accent-soft); color: var(--accent-text); }
+.cm-step__tipo { font-size: 11px; font-weight: 500; padding: 1px 8px; border-radius: 999px; background: var(--cm-bloque-alto); color: var(--ink-subtle); }
+.cm-step__det { margin: 3px 0 0; font-size: 14px; line-height: 20px; color: var(--ink-muted); }
+.cm-step--listo .cm-step__det { color: var(--ink-subtle); }
+.cm-step__hecho { margin: 4px 0 0; font-size: 13px; color: var(--success); }
+.cm-pmini { display: flex; align-items: center; gap: var(--space-3); margin-top: 10px; }
+.cm-pbar { flex: 0 1 220px; height: 5px; border-radius: 3px; background: var(--cm-bloque-alto); overflow: hidden; }
+.cm-pbar > i { display: block; height: 100%; border-radius: 3px; background: var(--success); }
+.cm-pmini span { font-size: 12px; color: var(--ink-subtle); font-variant-numeric: tabular-nums; }
+.cm-step__acc { display: flex; align-items: center; gap: var(--space-2); flex: none; }
+@media (max-width: 640px) { .cm-step__tarjeta { grid-template-columns: minmax(0, 1fr); row-gap: var(--space-3); } }
+
+.cm-cuenta { display: inline-flex; align-items: center; justify-content: center; min-width: 26px; height: 24px; padding: 0 9px; border-radius: 999px; font-size: 13px; font-weight: 650; font-variant-numeric: tabular-nums; background: var(--warning-soft); color: var(--warning); }
+.cm-cuenta--listo { background: var(--success-soft); color: var(--success); }
+.cm-cuenta--neutra { background: var(--cm-bloque-alto); color: var(--ink-muted); }
+
+/* ---------- el paso abierto ---------- */
+
+.cm-abierto { grid-column: 2 / 4; margin-top: 10px; display: flex; flex-direction: column; gap: var(--space-4); min-width: 0; }
+.cm-caja { border-radius: 20px; background: var(--cm-bloque); box-shadow: var(--cm-sombra); padding: 20px 22px; min-width: 0; }
+.cm-caja__tit { display: flex; align-items: center; gap: var(--space-2); margin: 0 0 6px; font-size: 14px; font-weight: 600; color: var(--ink); }
+.cm-fila { display: flex; align-items: center; gap: var(--space-3); width: 100%; padding: 11px 8px; border: 0; border-top: 1px solid var(--cm-linea); border-radius: 0; background: none; font: inherit; color: inherit; text-align: left; min-width: 0; text-decoration: none; }
+.cm-fila:first-of-type { border-top: 0; }
+button.cm-fila, a.cm-fila { cursor: pointer; }
+button.cm-fila:hover, a.cm-fila:hover { background: var(--cm-bloque-alto); border-radius: var(--radius-md); }
+.cm-fila:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; border-radius: var(--radius-md); }
+.cm-fila__texto { flex: 1; min-width: 0; }
+.cm-fila__titulo { display: block; font-size: 14px; font-weight: 500; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cm-fila__sub { display: block; font-size: 12px; color: var(--ink-subtle); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cm-fila__monto { flex: none; font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--ink); }
+.cm-fila .cm-ir { flex: none; color: var(--ink-subtle); }
+.cm-mas { margin: 8px 0 0 8px; font-size: 13px; color: var(--ink-subtle); }
+.cm-vacio { display: flex; align-items: center; gap: var(--space-3); padding: 14px 18px; border-radius: 16px; background: var(--success-soft); color: var(--success); font-size: 14px; font-weight: 500; }
+.cm-tilde { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-3); }
+.cm-tilde__quien { flex: 1 1 200px; font-size: 14px; color: var(--ink-muted); }
+.cm-tilde__quien b { color: var(--ink); font-weight: 600; }
+.cm-herramienta { border-radius: 20px; background: var(--surface-000); padding: 18px; min-width: 0; overflow-x: auto; }
+.cm-herramienta__tit { display: flex; align-items: center; gap: var(--space-2); margin: 0 0 var(--space-3); font-size: 13px; font-weight: 600; color: var(--ink-subtle); }
+
+/* ---------- la franja de pasos en Conciliación ---------- */
+
+.cm-banda { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-3) var(--space-5); padding: 16px 22px; border-radius: 20px; background: var(--cm-bloque); box-shadow: var(--cm-sombra); }
+.cm-banda__texto { flex: 1 1 260px; min-width: 0; }
+.cm-banda__titulo { display: block; font-size: 15px; font-weight: 600; color: var(--ink); }
+.cm-banda__sub { display: block; margin-top: 2px; font-size: 13px; color: var(--ink-subtle); }
+.cm-pasos-mini { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; width: 100%; margin-top: var(--space-2); }
+.cm-mini { display: flex; align-items: center; gap: var(--space-3); padding: 12px 14px; border-radius: 16px; background: var(--cm-bloque-alto); text-decoration: none; color: inherit; min-width: 0; }
+.cm-mini:hover { outline: 1.5px solid var(--border-strong); }
+.cm-mini .cm-nodo { width: 26px; height: 26px; margin-top: 0; font-size: 12px; box-shadow: none; background: var(--cm-bloque); }
+.cm-mini .cm-nodo--listo { background: var(--success); }
+.cm-mini .cm-nodo--pendiente { background: var(--warning-soft); }
+.cm-mini__titulo { flex: 1; min-width: 0; font-size: 13px; font-weight: 600; line-height: 18px; color: var(--ink); }
+
+/* ---------- End of Day: el cierre del día de Finanzas ---------- */
+
+.cm-eod { display: flex; flex-direction: column; gap: var(--space-4); min-width: 0; }
+.cm-eod__hoy { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-4) var(--space-5); }
+.cm-eod__texto { flex: 1 1 320px; min-width: 0; }
+.cm-eod__titulo { margin: 0; font-size: 18px; line-height: 24px; font-weight: 650; color: var(--ink); }
+.cm-eod__sub { margin: 4px 0 0; font-size: 14px; line-height: 20px; color: var(--ink-muted); }
+.cm-eod__sub b { color: var(--ink); font-weight: 600; }
+
+/* Los últimos días: uno por renglón, el estado a la vista. */
+.cm-dias { list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-direction: column; }
+.cm-dia { display: grid; grid-template-columns: 76px 110px minmax(0, 1fr); align-items: center; gap: var(--space-3); width: 100%; padding: 12px 8px; border: 0; border-top: 1px solid var(--cm-linea); background: none; font: inherit; color: inherit; text-align: left; cursor: pointer; border-radius: 0; }
+.cm-dias > li:first-child .cm-dia { border-top: 0; }
+.cm-dia:hover { background: var(--cm-bloque-alto); border-radius: var(--radius-md); }
+.cm-dia:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; border-radius: var(--radius-md); }
+.cm-dia__fecha { font-size: 14px; color: var(--ink-muted); font-variant-numeric: tabular-nums; }
+.cm-dia__fecha b { color: var(--ink); font-weight: 600; text-transform: capitalize; }
+.cm-dia__estado { justify-self: start; font-size: 12px; font-weight: 600; padding: 2px 10px; border-radius: 999px; background: var(--cm-bloque-alto); color: var(--ink-subtle); }
+.cm-dia--cerrado .cm-dia__estado { background: var(--success-soft); color: var(--success); }
+.cm-dia--sin-cerrar .cm-dia__estado { background: var(--warning-soft); color: var(--warning); }
+.cm-dia--hoy .cm-dia__estado { background: var(--brand-soft); color: var(--brand); }
+.cm-dia__resumen { font-size: 13px; color: var(--ink-subtle); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 640px) { .cm-dia { grid-template-columns: 64px minmax(0, 1fr); } .cm-dia__resumen { grid-column: 1 / -1; } }
+
+/* Adentro del asistente. */
+.cm-eod__app { padding: 14px 18px; border-radius: 16px; background: var(--surface-200); }
+.cm-eod__app p { margin: 6px 0 0; font-size: 15px; line-height: 22px; color: var(--ink); }
+.cm-eod__antes { display: flex; align-items: flex-start; gap: var(--space-3); padding: 12px 16px; border-radius: 14px; background: var(--warning-soft); color: var(--warning); font-size: 14px; line-height: 20px; }
+.cm-eod__antes svg { flex: none; margin-top: 2px; }
+.cm-eod__totales { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-3); }
+.cm-eod__totales > div { display: flex; flex-direction: column; gap: 2px; padding: 16px 18px; border-radius: 16px; background: var(--surface-200); }
+.cm-eod__totales b { font-size: 32px; line-height: 1.1; font-weight: 700; color: var(--ink); }
+.cm-eod__totales span { font-size: 13px; color: var(--ink-subtle); }
+.cm-eod__lista { display: flex; flex-direction: column; gap: 6px; }
+.cm-eod__lista p { margin: 0; font-size: 14px; color: var(--ink-muted); }
+.cm-eod__lista b { color: var(--ink); font-weight: 600; }

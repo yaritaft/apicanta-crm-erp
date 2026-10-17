@@ -1,0 +1,687 @@
+"use client";
+
+import { PasosDeConciliacion } from "@/components/cierre/Avisos";
+import React, { useMemo, useState } from "react";
+import {
+  ArrowDownUp, Check, EyeOff, Info, Link2, Plus, RefreshCw, Search, Sparkles, Undo2, Upload,
+} from "lucide-react";
+import { CabeceraVista } from "@/components/finanzas/vistas/CabeceraVista";
+import {
+  Ayuda, Badge, Button, Card, Chip, Empty, Field, Input, Select, StatCard, Textarea,
+} from "@/components/ui/ui";
+import { ModalForm } from "@/components/ui/Modal";
+import { useToast } from "@/components/ui/Toast";
+import { AsistenteVenta } from "@/components/ventas/AsistenteVenta";
+import { acciones, useEstado } from "@/lib/store";
+import { nube } from "@/lib/supabase";
+import { fechaLarga, money, pct } from "@/lib/format";
+import {
+  billeteraDe, esAutomatica, medioDeMovimiento, normalizar, pagosYaCargados, propuestas, quienPago, restoDeMovimiento, resumenConciliacion, saldoDeCuota,
+  sugerenciasPara, tasaEstimada, vinculosSeguros,
+  type QuienPago, type Sugerencia,
+} from "@/lib/conciliacion";
+import { COBRAN_COMISION, feeDesconocido } from "@/lib/completar-cobros";
+import { CopiarLink } from "@/components/ui/Filtros";
+import { useBusquedaURL, useParamsURL } from "@/lib/useParamsURL";
+import { useAbrirFicha } from "@/components/ficha/abrir";
+import { ComoFuncionaConciliacion } from "@/components/finanzas/ComoFuncionaConciliacion";
+import { importarCSV, PASARELAS, nombrePasarela } from "@/lib/pasarelas";
+import { ReembolsosPasarelas } from "@/components/devoluciones/ReembolsosPasarelas";
+import type { ReembolsoCrudo } from "@/lib/reembolsos";
+import type { EstadoMovimiento2, Movimiento, ProveedorPasarela } from "@/lib/types";
+
+/* ==================================================================
+   Bandeja de conciliación.
+
+   Todo lo que cobró una pasarela entra acá sin dueño. Conciliar es
+   decirle a qué cuota pertenece: recién entonces se convierte en un
+   pago y mueve el cash collected. Apicanta propone, la persona firma.
+   ================================================================== */
+
+/* Lo que se está mirando vive en la URL: se puede guardar o mandar el link
+   con la bandeja ya filtrada.
+   - estado: pendiente (por defecto), conciliado o ignorado
+   - medio: la pasarela (stripe, whop, trust…)
+   - q: nombre, correo, teléfono, monto o referencia */
+const VISTA_CONCILIACION = { estado: "pendiente", medio: "todas" };
+const ESTADOS_MOV: EstadoMovimiento2[] = ["pendiente", "conciliado", "ignorado"];
+
+export function ConciliacionVista({ embebido = false }: { embebido?: boolean }) {
+  const e = useEstado();
+  const toast = useToast();
+  const mon = e.ajustes.monedaBase;
+  const M = (n: number, d = 0) => money(n, mon, d);
+
+  const [vista, setVista] = useParamsURL(VISTA_CONCILIACION);
+  const filtro: EstadoMovimiento2 = ESTADOS_MOV.includes(vista.estado as EstadoMovimiento2) ? (vista.estado as EstadoMovimiento2) : "pendiente";
+  /* Una pasarela que no existe (un link escrito a mano) es "todas": si no,
+     la bandeja quedaba vacía sin ningún chip prendido que lo explique. */
+  const pasarela: ProveedorPasarela | "todas" = PASARELAS.some((p) => p.id === vista.medio) ? (vista.medio as ProveedorPasarela) : "todas";
+  const setFiltro = (f: EstadoMovimiento2) => setVista({ estado: f });
+  const setPasarela = (p: ProveedorPasarela | "todas") => setVista({ medio: p });
+  const [abierto, setAbierto] = useState<string | null>(null);
+  const [importar, setImportar] = useState(false);
+  const [nuevaVenta, setNuevaVenta] = useState<Movimiento | null>(null);
+  const [sincronizando, setSincronizando] = useState(false);
+  const [busca, setBusca] = useBusquedaURL("q");
+
+  /* Recorre todos los cobros pendientes contra todas las cuotas: se calcula
+     cuando cambian los datos, no a cada clic (abrir un cobro, filtrar). */
+  const resumen = useMemo(() => resumenConciliacion(e), [e]);
+
+  /* Cuánta plata y cuántos cobros hay en cada estado: el resumen de arriba. */
+  const porEstado = useMemo(() => {
+    const r: Record<EstadoMovimiento2, { n: number; monto: number }> = {
+      pendiente: { n: 0, monto: 0 }, conciliado: { n: 0, monto: 0 }, ignorado: { n: 0, monto: 0 },
+    };
+    for (const m of e.movimientos) { r[m.estado].n += 1; r[m.estado].monto += m.monto; }
+    return r;
+  }, [e.movimientos]);
+  const cobros = (n: number) => `${n} ${n === 1 ? "cobro" : "cobros"}`;
+
+  /* Buscar por quién pagó (nombre, correo, teléfono), cómo, la referencia o
+     el monto: con cientos de cobros de Whop y Stripe, la lista sola no alcanza. */
+  const filas = useMemo(() => {
+    const q = normalizar(busca);
+    const monto = Number(busca.replace(/[^\d.,]/g, "").replace(/\.(?=\d{3}\b)/g, "").replace(",", "."));
+    return e.movimientos
+      .filter((m) => m.estado === filtro && (pasarela === "todas" || m.proveedor === pasarela))
+      .filter((m) => {
+        if (!q) return true;
+        if (Number.isFinite(monto) && monto > 0 && Math.abs(m.monto - monto) < 0.5) return true;
+        const quien = quienPago(e, m);
+        return normalizar([quien.nombre, quien.email, quien.telefono, m.metodo, m.referencia, m.descripcion].filter(Boolean).join(" ")).includes(q);
+      })
+      .sort((a, b) => +new Date(b.fecha) - +new Date(a.fecha));
+  }, [e, filtro, pasarela, busca]);
+
+  /* Los medios que tienen algo en la pestaña elegida, con cuántos: filtrar
+     por uno que está vacío no sirve de nada. */
+  const medios = useMemo(() => {
+    const cuenta = new Map<ProveedorPasarela, { nombre: string; n: number }>();
+    for (const m of e.movimientos) {
+      if (m.estado !== filtro) continue;
+      const ya = cuenta.get(m.proveedor);
+      if (ya) ya.n++;
+      else cuenta.set(m.proveedor, { nombre: medioDeMovimiento(e, m), n: 1 });
+    }
+    return [...cuenta.entries()].sort((a, b) => b[1].n - a[1].n);
+  }, [e, filtro]);
+
+  function atarLosYaCargados() {
+    const n = acciones.vincularConPagos(vinculosSeguros(e).map((v) => ({ movimientoId: v.movimiento.id, pagoId: v.pago.id })));
+    toast(n === 0 ? "No había cobros para atar." : `${n === 1 ? "Se ató un cobro" : `Se ataron ${n} cobros`} a su pago: tienen la comisión real y no se sumó plata.`);
+  }
+
+  function conciliarTodosLosSeguros() {
+    const autos = propuestas(e).filter((p) => p.automatica);
+    let hechos = 0;
+    for (const p of autos) {
+      const s = p.sugerencias[0];
+      if (acciones.conciliar(p.movimiento.id, [{ cuotaId: s.cuotaId, monto: restoDeMovimiento(e, p.movimiento) }])) hechos++;
+    }
+    toast(hechos === 0 ? "No había cobros con calce seguro." : `Se conciliaron ${hechos} cobros.`);
+  }
+
+  async function sincronizar() {
+    setSincronizando(true);
+    try {
+      /* La ruta devuelve datos de clientes: va con la sesión de quien pide. */
+      const sesion = nube ? (await nube.auth.getSession()).data.session : null;
+      const r = await fetch("/api/pasarelas/sync", {
+        headers: sesion ? { Authorization: `Bearer ${sesion.access_token}` } : {},
+      });
+      const data = (await r.json()) as {
+        movimientos?: Parameters<typeof acciones.importarMovimientos>[0];
+        conectadas?: ProveedorPasarela[];
+        errores?: { proveedor: string; mensaje: string }[];
+        mercury?: { enProceso: number; internos: number; anulados: string[] };
+        /* Lo que las pasarelas dicen que devolvieron: se ata a la devolución cargada o queda para confirmar. */
+        reembolsos?: ReembolsoCrudo[];
+        reembolsosGuardados?: boolean;
+        error?: string;
+      };
+      if (!r.ok) throw new Error(data.error ?? "No se pudo sincronizar.");
+      if (data.errores?.length) {
+        toast(`${nombrePasarela(data.errores[0].proveedor as ProveedorPasarela)}: ${data.errores[0].mensaje}`, "err");
+      }
+      if (!data.conectadas?.length) {
+        toast("Todavía no hay pasarelas conectadas: faltan las claves. Mientras tanto, importá el CSV.", "err");
+        return;
+      }
+      /* El procesador es cosa de Apicanta, no de la pasarela: se ata acá. */
+      const conMedio = (data.movimientos ?? []).map((m) => ({
+        ...m, procesadorId: e.procesadores.find((p) => p.proveedor === m.proveedor)?.id,
+      }));
+      const { nuevos, repetidos, completados } = acciones.importarMovimientos(conMedio, "api");
+      /* Mercury: lo que el banco anuló y ya estaba en la bandeja se descarta; lo
+         pending y lo interno (tarjeta, subcuentas) se deja afuera y se avisa. */
+      const anulados = acciones.descartarAnuladosMercury(data.mercury?.anulados ?? []);
+      const enProceso = data.mercury?.enProceso ?? 0;
+      const reem = data.reembolsos?.length && !data.reembolsosGuardados ? acciones.importarReembolsos(data.reembolsos) : null;
+      const completos = [
+        reem && (reem.atadas.length || reem.nuevas.length)
+          ? ` Reembolsos: ${reem.atadas.length ? `${reem.atadas.length} atados a una devolución ya cargada` : ""}${reem.atadas.length && reem.nuevas.length ? " y " : ""}${reem.nuevas.length ? `${reem.nuevas.length} para confirmar` : ""} (Finanzas → Devoluciones).`
+          : "",
+        completados > 0 ? ` Se completaron ${completados === 1 ? "los datos de un cobro" : `los datos de ${completados} cobros`} que ya estaban.` : "",
+        anulados > 0 ? ` ${anulados === 1 ? "Un cobro de Mercury que el banco anuló se descartó" : `${anulados} cobros de Mercury que el banco anuló se descartaron`}.` : "",
+        enProceso > 0 ? ` ${enProceso === 1 ? "Un movimiento de Mercury sigue" : `${enProceso} movimientos de Mercury siguen`} pending: entra${enProceso === 1 ? "" : "n"} cuando se asiente${enProceso === 1 ? "" : "n"}.` : "",
+      ].join("");
+      toast(nuevos === 0
+        ? `Sin cobros nuevos (${repetidos} ya estaban).${completos}`
+        : `Entraron ${nuevos} cobros de ${data.conectadas.map(nombrePasarela).join(", ")}.${completos}`);
+    } catch (err) {
+      toast(err instanceof Error ? err.message : "No se pudo sincronizar.", "err");
+    } finally {
+      setSincronizando(false);
+    }
+  }
+
+  return (
+    <div className="stack-5">
+      <CabeceraVista embebido={embebido}
+        titulo="Conciliación"
+        sub="La plata que entró a una pasarela (Stripe, Hotmart, Whop, dLocal, Mercado Pago, Mercury, Binance, Trust) y todavía hay que asignar a su cuota para que cuente como cobrada."
+        acciones={
+          <>
+            <Button variante="secondary" icono={<Upload size={16} />} onClick={() => setImportar(true)}>Importar</Button>
+            <Button variante="secondary" icono={<RefreshCw size={16} />} cargando={sincronizando} onClick={sincronizar}>
+              Sincronizar
+            </Button>
+          </>
+        }
+      />
+
+      <ComoFuncionaConciliacion />
+
+      {/* Los pasos del mes para que ningún cobro se pase (cierre del mes). */}
+      {!embebido && <PasosDeConciliacion e={e} />}
+
+      {/* Lo que las pasarelas dicen que devolvieron: se ata a la devolución cargada o se confirma. */}
+      <ReembolsosPasarelas e={e} />
+
+      <div className="grid-3">
+        <StatCard
+          etiqueta="Sin conciliar" valor={M(porEstado.pendiente.monto)} direccion={porEstado.pendiente.n > 0 ? "down" : "neutral"}
+          contexto={`${cobros(porEstado.pendiente.n)} · todavía no cuentan como cobrado`}
+          onClick={() => setFiltro("pendiente")}
+          info={{
+            ayuda: "Plata que entró a una pasarela y todavía no se asignó a ninguna cuota. Se ve acá, pero no cuenta como Cash Collected ni genera comisión.",
+            formula: "Suma del monto bruto de los cobros en estado Pendiente",
+            href: "/conciliacion?estado=pendiente",
+          }}
+        />
+        <StatCard
+          etiqueta="Conciliados" valor={M(porEstado.conciliado.monto)}
+          contexto={`${cobros(porEstado.conciliado.n)} · ya cuentan como cobrado`}
+          onClick={() => setFiltro("conciliado")}
+          info={{
+            ayuda: "Cobros que ya se asignaron a su cuota. Son pagos: cuentan como Cash Collected, con la comisión real de la pasarela.",
+            formula: "Suma del monto bruto de los cobros en estado Conciliado",
+          }}
+        />
+        <StatCard
+          etiqueta="Ignorados" valor={M(porEstado.ignorado.monto)}
+          contexto={`${cobros(porEstado.ignorado.n)} · no cuentan`}
+          onClick={() => setFiltro("ignorado")}
+          info={{
+            ayuda: "Cobros que se marcaron como que no corresponden a ninguna venta (un reembolso, un pago de otra cosa). No cuentan como cobrado.",
+            formula: "Suma del monto bruto de los cobros en estado Ignorado",
+          }}
+        />
+      </div>
+
+      {filtro === "pendiente" && resumen.vinculables > 0 && (
+        <div className="help-card">
+          <Link2 size={18} />
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div className="help-card__title">
+              {resumen.vinculables === 1 ? "Un cobro ya está cargado" : `${resumen.vinculables} cobros ya están cargados`} como pago
+            </div>
+            <div className="help-card__text">
+              Se cargaron a mano o vinieron de la planilla: misma cuenta, mismo monto y la misma semana. Imputarlos a una
+              cuota contaría la plata dos veces; atarlos al pago no suma nada y le pone la comisión real de la pasarela.
+            </div>
+          </div>
+          <Button variante="primary" icono={<Link2 size={16} />} onClick={atarLosYaCargados}>
+            Atar {resumen.vinculables}
+          </Button>
+        </div>
+      )}
+
+      {filtro === "pendiente" && resumen.automaticos > 0 && (
+        <div className="help-card">
+          <Sparkles size={18} />
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div className="help-card__title">
+              {resumen.automaticos} {resumen.automaticos === 1 ? "cobro coincide" : "cobros coinciden"} exacto con una cuota
+            </div>
+            <div className="help-card__text">
+              Mismo monto, mismo cliente y una sola candidata. Podés conciliarlos de una y revisar después.
+            </div>
+          </div>
+          <Button variante="primary" icono={<Check size={16} />} onClick={conciliarTodosLosSeguros}>
+            Conciliar {resumen.automaticos}
+          </Button>
+        </div>
+      )}
+
+      <Card style={{ padding: 0, overflow: "hidden" }}>
+        <div style={{ padding: "var(--space-4)" }}>
+          <div className="toolbar" style={{ marginBottom: 0 }}>
+            {([
+              ["pendiente", "Pendientes", "Entraron a una pasarela y todavía no se asignaron a una cuota. No cuentan como Cash Collected."],
+              ["conciliado", "Conciliados", "Ya asignados a su cuota: cuentan como Cash Collected."],
+              ["ignorado", "Ignorados", "Marcados como que no corresponden a ninguna venta. No cuentan."],
+            ] as const).map(([k, t, ayuda]) => (
+              <Chip key={k} activo={filtro === k} onClick={() => setFiltro(k)} title={ayuda}
+                count={porEstado[k].n}>{t}</Chip>
+            ))}
+            <span className="spacer" />
+            <CopiarLink />
+          </div>
+          <div style={{ marginTop: "var(--space-3)", maxWidth: 520 }}>
+            <Input
+              icono={<Search size={15} />} value={busca} onChange={(ev) => setBusca(ev.target.value)}
+              placeholder="Buscar por nombre, correo, teléfono, monto o referencia" aria-label="Buscar cobros"
+            />
+          </div>
+          {medios.length > 0 && (
+            <div className="row-wrap" style={{ marginTop: "var(--space-3)" }} role="group" aria-label="Filtrar por medio de pago">
+              <span className="t-label" style={{ marginRight: 4 }}>Medio de pago</span>
+              <Chip activo={pasarela === "todas"} onClick={() => setPasarela("todas")}
+                count={medios.reduce((a, [, x]) => a + x.n, 0)}>Todos</Chip>
+              {medios.map(([id, x]) => (
+                <Chip key={id} activo={pasarela === id} onClick={() => setPasarela(pasarela === id ? "todas" : id)} count={x.n}>
+                  {x.nombre}
+                </Chip>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Con scroll adentro: los conciliados se juntan de a cientos y la
+            bandeja no puede estirar la página para siempre. */}
+        <div className="lista-scroll" style={{ padding: "0 var(--space-4) var(--space-4)", display: "flex", flexDirection: "column", gap: "var(--space-2)" }}>
+          {filas.length === 0 ? (
+            <Empty
+              icono={<ArrowDownUp size={22} />}
+              titulo={busca.trim() ? "Ningún cobro coincide con la búsqueda" : filtro === "pendiente" ? "No queda nada sin conciliar" : "Nada por acá"}
+              texto={filtro === "pendiente"
+                ? "Cuando entre plata a una pasarela, el cobro aparece en esta bandeja hasta que se impute a una cuota."
+                : "Los cobros que vayas conciliando o ignorando quedan guardados en esta pestaña."}
+              accion={filtro === "pendiente"
+                ? <Button variante="brand" icono={<Upload size={16} />} onClick={() => setImportar(true)}>Importar cobros</Button>
+                : undefined}
+            />
+          ) : (
+            filas.map((m) => (
+              <FilaMovimiento
+                key={m.id} mov={m} M={M}
+                abierto={abierto === m.id}
+                onAbrir={() => setAbierto(abierto === m.id ? null : m.id)}
+                onNuevaVenta={() => setNuevaVenta(m)}
+              />
+            ))
+          )}
+        </div>
+      </Card>
+
+      <Ayuda titulo="Por qué la plata no entra sola al P&L" icono={<Info size={18} />}>
+        Un cobro de pasarela no es un pago hasta que se sabe de qué cuota es. Mientras está sin conciliar
+        se ve acá, pero no cuenta como Cash Collected (CC) ni genera comisión: si contara, el mismo peso podría
+        quedar contado dos veces cuando alguien cargue el pago a mano. Al conciliar, el fee que se guarda
+        es el que cobró la pasarela de verdad, no el estimado del procesador.
+      </Ayuda>
+
+      {importar && <ModalImportar onCerrar={() => setImportar(false)} />}
+
+      {nuevaVenta && (
+        <AsistenteVenta
+          desdeMovimiento={nuevaVenta}
+          onCerrar={() => setNuevaVenta(null)}
+          onListo={(_, nombre) => { setNuevaVenta(null); toast(`Venta de ${nombre} cargada con el cobro ya conciliado.`); }}
+        />
+      )}
+    </div>
+  );
+}
+
+/* ---------- Una fila de la bandeja ---------- */
+
+function FilaMovimiento({ mov, M, abierto, onAbrir, onNuevaVenta }: {
+  mov: Movimiento; M: (n: number, d?: number) => string;
+  abierto: boolean; onAbrir: () => void; onNuevaVenta: () => void;
+}) {
+  const e = useEstado();
+  const toast = useToast();
+  const [busqueda, setBusqueda] = useState("");
+
+  const sugerencias = useMemo(
+    () => (mov.estado === "pendiente" ? sugerenciasPara(e, mov) : []),
+    [e, mov],
+  );
+  const yaCargados = useMemo(() => pagosYaCargados(e, mov), [e, mov]);
+  const automatica = yaCargados.length === 0 && esAutomatica(sugerencias);
+
+  const manuales = useMemo(() => {
+    const q = busqueda.trim().toLowerCase();
+    if (q.length < 2) return [];
+    return e.cuotas
+      .filter((c) => c.estado === "pendiente")
+      .map((c) => ({ c, venta: e.ventas.find((v) => v.id === c.ventaId) }))
+      .filter((x) => x.venta && x.venta.estado === "activa" && x.venta.contactoNombre.toLowerCase().includes(q))
+      .slice(0, 6);
+  }, [e, busqueda]);
+
+  /* Si ya se imputó una parte (desde el alta de una venta), lo que queda. */
+  const resto = restoDeMovimiento(e, mov);
+
+  function conciliar(cuotaId: string, monto: number) {
+    if (acciones.conciliar(mov.id, [{ cuotaId, monto }])) toast("Cobro conciliado.");
+    else toast("No se pudo conciliar ese cobro.", "err");
+  }
+
+  /* En la fila el nombre ya está: el badge dice a qué cuota fue a parar. */
+  const cuota = mov.cuotaId ? e.cuotas.find((c) => c.id === mov.cuotaId) : undefined;
+  const destino = cuota ? (cuota.esReserva ? "Reserva" : `Cuota ${cuota.numero}`) : "Conciliado";
+
+  /* Quién pagó: lo que mandó la pasarela y, si no alcanza, lo que sabe Apicanta. */
+  const quien = useMemo(() => quienPago(e, mov), [e, mov]);
+  const abrirFicha = useAbrirFicha();
+  const billetera = billeteraDe(mov);
+  const nombre = quien.nombre ?? (billetera ? `Billetera ${billetera.slice(0, 6)}…${billetera.slice(-4)}` : "Sin nombre");
+  const contacto = [quien.email, quien.telefono].filter(Boolean).join(" · ");
+  const cobraComision = COBRAN_COMISION.has(mov.proveedor);
+  const sinFee = feeDesconocido(mov);
+
+  return (
+    <div className="mov" data-abierto={abierto}>
+      <button type="button" className="mov__head" onClick={onAbrir} aria-expanded={abierto}>
+        <span className="mov__medio" title="Medio de pago">{medioDeMovimiento(e, mov)}</span>
+        <span style={{ minWidth: 0 }}>
+          <span className="mov__cliente truncate" style={{ display: "block" }}>{nombre}</span>
+          <span className="mov__meta truncate" style={{ display: "block" }}>
+            {fechaLarga(mov.fecha)}
+            {mov.metodo && <span className="mov__metodo"> · {mov.metodo}</span>}
+            {contacto ? ` · ${contacto}` : ""}
+          </span>
+        </span>
+        <span className="spacer" />
+        {mov.estado === "pendiente" && automatica && (
+          <span title="El monto es el de una cuota de esa persona y no hay otra candidata: se puede conciliar de una."><Badge variante="success"><Sparkles size={13} />Coincide exacto</Badge></span>
+        )}
+        {mov.estado === "pendiente" && yaCargados.length > 0 && (
+          <span title="Alguien ya cargó este pago a mano o vino de la planilla: hay que atarlo a ese pago, no asignarlo de nuevo."><Badge variante="accent"><Link2 size={13} />Ya cargado</Badge></span>
+        )}
+        {mov.estado === "conciliado" && (
+          <Badge variante="neutral"><Check size={13} />{destino}</Badge>
+        )}
+        {mov.estado === "ignorado" && <Badge variante="neutral">Ignorado</Badge>}
+        <span className="mov__monto">
+          {M(mov.monto, 2)}
+          {cobraComision && (
+            <span className="mov__fee" data-pendiente={sinFee}>
+              {sinFee ? `comisión estimada ${pct(tasaEstimada(e, mov) * 100, 1)}` : `comisión ${pct((mov.fee / mov.monto) * 100, 1)}`}
+            </span>
+          )}
+          {mov.estado === "pendiente" && resto < mov.monto - 0.009 && (
+            <span className="t-sm t-subtle" style={{ display: "block", fontFamily: "var(--font-sans)", fontWeight: 400 }}>
+              quedan {M(resto, 2)}
+            </span>
+          )}
+        </span>
+      </button>
+
+      {abierto && (
+        <div className="mov__body">
+          <dl className="dl">
+            <dt>Entró por</dt><dd>{medioDeMovimiento(e, mov)}{mov.metodo ? ` · ${mov.metodo}` : ""}</dd>
+            <dt>Quién pagó</dt>
+            <dd>
+              {quien.nombre ?? (billetera ? "La billetera no dice de quién es: todavía no pagó nadie conocido desde ahí" : `${nombrePasarela(mov.proveedor)} no mandó el nombre`)}
+              {!mov.clienteNombre && quien.nombre && quien.fuente && <span className="t-subtle"> · {FUENTE[quien.fuente]}</span>}
+            </dd>
+            {quien.email && (
+              <><dt>Correo</dt><dd>{quien.email}{!mov.clienteEmail && <span className="t-subtle"> · de su ficha</span>}</dd></>
+            )}
+            {quien.telefono && (
+              <>
+                <dt>Teléfono</dt>
+                <dd>
+                  {quien.telefono}
+                  {!mov.clienteTelefono && <span className="t-subtle"> · de su ficha</span>}
+                  {quien.telefono.replace(/\D/g, "").length >= 8 && (
+                    <> · <a href={`https://wa.me/${quien.telefono.replace(/\D/g, "")}`} target="_blank" rel="noreferrer">WhatsApp</a></>
+                  )}
+                </dd>
+              </>
+            )}
+            {billetera && <><dt>Billetera</dt><dd className="t-num" style={{ wordBreak: "break-all" }}>{billetera}</dd></>}
+            <dt>Bruto</dt><dd className="t-num">{M(mov.monto, 2)}</dd>
+            <dt>Comisión</dt>
+            <dd className="t-num">
+              {sinFee
+                ? `${nombrePasarela(mov.proveedor)} no la mandó todavía. Al conciliar se usa la de la cuenta (${pct(tasaEstimada(e, mov) * 100, 1)}); si la manda después, se corrige sola.`
+                : <>{M(mov.fee, 2)} {mov.monto > 0 && <span className="t-subtle">({pct((mov.fee / mov.monto) * 100, 1)})</span>}</>}
+            </dd>
+            <dt>Neto</dt><dd className="t-num">{sinFee ? "Cuando llegue la comisión" : M(mov.neto, 2)}</dd>
+            <dt>Referencia</dt><dd className="t-sm" style={{ wordBreak: "break-all" }}>{mov.referencia}{mov.descripcion && !billetera ? ` · ${mov.descripcion}` : ""}</dd>
+          </dl>
+          {quien.fichaId && (
+            <div className="row-wrap">
+              <Button sm variante="ghost" onClick={() => abrirFicha(quien.fichaId!)}>Abrir la ficha de {nombre}</Button>
+            </div>
+          )}
+
+          {mov.estado === "pendiente" ? (
+            <>
+              {yaCargados.length > 0 && (
+                <>
+                  <div className="t-label">Ya está cargado como pago</div>
+                  {yaCargados.slice(0, 3).map((x) => (
+                    <div className="row-wrap" key={x.pago.id} style={{ gap: 8 }}>
+                      <span className="t-sm t-strong">{x.venta?.contactoNombre ?? x.pago.pagador ?? "Sin venta"}</span>
+                      <span className="t-sm t-subtle">
+                        {x.cuota ? (x.cuota.esReserva ? "Reserva" : `Cuota ${x.cuota.numero}`) : ""} · {fechaLarga(x.pago.fecha)} · {x.motivos.join(", ")}
+                      </span>
+                      <span className="spacer t-sm t-num">{M(x.pago.monto, 2)}</span>
+                      <Button sm variante="secondary" icono={<Link2 size={14} />}
+                        onClick={() => { if (acciones.vincularConPagos([{ movimientoId: mov.id, pagoId: x.pago.id }])) toast("Cobro atado a su pago."); }}>
+                        Es este pago
+                      </Button>
+                    </div>
+                  ))}
+                  <p className="t-sm t-muted">Si no es ninguno, imputalo a una cuota como siempre.</p>
+                </>
+              )}
+              <div className="t-label">A qué cuota corresponde</div>
+              {sugerencias.length === 0 && (
+                <p className="t-sm t-muted">
+                  Ninguna cuota pendiente se parece a este cobro. Puede ser de una venta que todavía no está cargada.
+                </p>
+              )}
+              {sugerencias.map((s, k) => (
+                <SugerenciaFila key={s.cuotaId} s={s} mov={mov} M={M} destacada={k === 0 && automatica}
+                  onConciliar={() => conciliar(s.cuotaId, Math.min(resto, s.saldo))} />
+              ))}
+
+              <div className="stack-2" style={{ marginTop: 4 }}>
+                <div className="t-label">Buscarla a mano</div>
+                <Input icono={<Search size={15} />} value={busqueda} placeholder="Nombre del cliente"
+                  onChange={(ev) => setBusqueda(ev.target.value)} />
+                {manuales.map(({ c, venta: v }) => (
+                  <div className="row" key={c.id} style={{ gap: 8 }}>
+                    <span className="t-sm t-strong">{v?.contactoNombre}</span>
+                    <span className="t-sm t-subtle">{c.esReserva ? "Reserva" : `Cuota ${c.numero}`}</span>
+                    <span className="spacer t-sm t-num">falta {M(saldoDeCuota(e, c), 2)}</span>
+                    <Button sm variante="secondary" onClick={() => conciliar(c.id, Math.min(resto, saldoDeCuota(e, c)))}>
+                      Imputar acá
+                    </Button>
+                  </div>
+                ))}
+              </div>
+
+              <div className="row-wrap" style={{ marginTop: 4 }}>
+                <Button sm variante="ghost" icono={<Plus size={14} />} onClick={onNuevaVenta}>
+                  Cargar la venta de este cobro
+                </Button>
+                <Button sm variante="ghost" icono={<EyeOff size={14} />}
+                  onClick={() => { acciones.marcarMovimiento(mov.id, "ignorado"); toast("Cobro ignorado."); }}>
+                  Ignorar
+                </Button>
+              </div>
+            </>
+          ) : mov.estado === "conciliado" ? (
+            <div className="row-wrap">
+              <span className="t-sm t-muted">
+                {mov.vinculado ? "Atado al pago que ya estaba cargado" : "Imputado"} {mov.conciliadoEn ? `el ${fechaLarga(mov.conciliadoEn)}` : ""}
+                {mov.conciliadoPor ? ` por ${mov.conciliadoPor}` : ""}.
+              </span>
+              <Button sm variante="ghost" icono={<Undo2 size={14} />} className="spacer"
+                onClick={() => { acciones.desconciliar(mov.id); toast("Se deshizo la conciliación."); }}>
+                Deshacer
+              </Button>
+            </div>
+          ) : (
+            <Button sm variante="secondary" onClick={() => { acciones.marcarMovimiento(mov.id, "pendiente"); toast("Vuelve a la bandeja."); }}>
+              Volver a pendientes
+            </Button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* De dónde salió lo que la pasarela no mandó. */
+const FUENTE: Record<NonNullable<QuienPago["fuente"]>, string> = {
+  venta: "de la venta conciliada",
+  correo: "del contacto con ese correo",
+  billetera: "ya pagó antes desde esta billetera",
+  nombre: "del contacto con ese nombre",
+};
+
+function SugerenciaFila({ s, mov, M, destacada, onConciliar }: {
+  s: Sugerencia; mov: Movimiento; M: (n: number, d?: number) => string;
+  destacada: boolean; onConciliar: () => void;
+}) {
+  const e = useEstado();
+  return (
+    <div className="sug" data-fuerte={destacada}>
+      <span className="sug__puntaje">
+        <span className="sug__puntaje-n">{s.puntaje}</span>
+        <span className="sug__puntaje-l">calce</span>
+      </span>
+      <span style={{ flex: 1, minWidth: 0 }}>
+        <span className="row" style={{ gap: 8 }}>
+          <span className="t-strong">{s.contacto}</span>
+          <span className="t-sm t-subtle">{s.etiqueta}{s.vence ? ` · vence ${fechaLarga(s.vence)}` : ""}</span>
+          <span className="spacer t-sm t-num">falta {M(s.saldo, 2)}</span>
+        </span>
+        <span className="sug__motivos">
+          {s.motivos.map((m) => <span className="motivo" key={m}><Check size={11} />{m}</span>)}
+          {s.reparos.map((m) => <span className="motivo motivo--reparo" key={m}>{m}</span>)}
+        </span>
+        {(s.dejaSaldo > 0.01 || s.sobra > 0.01) && (
+          <span className="t-sm t-subtle" style={{ display: "block", marginTop: 6 }}>
+            {s.dejaSaldo > 0.01
+              ? `Si lo imputás acá, la cuota queda con ${M(s.dejaSaldo, 2)} pendientes.`
+              : `Sobran ${M(s.sobra, 2)} de este cobro para imputar a otra cuota.`}
+          </span>
+        )}
+      </span>
+      <Button sm variante={destacada ? "brand" : "secondary"} onClick={onConciliar}>
+        Conciliar {M(Math.min(restoDeMovimiento(e, mov), s.saldo), 2)}
+      </Button>
+    </div>
+  );
+}
+
+/* ---------- Importar un CSV ---------- */
+
+function ModalImportar({ onCerrar }: { onCerrar: () => void }) {
+  const e = useEstado();
+  const toast = useToast();
+  const mon = e.ajustes.monedaBase;
+  const [proveedor, setProveedor] = useState<ProveedorPasarela>("stripe");
+  const [texto, setTexto] = useState("");
+
+  const ficha = PASARELAS.find((p) => p.id === proveedor);
+  const procesador = e.procesadores.find((p) => p.proveedor === proveedor);
+
+  const previo = useMemo(() => {
+    if (texto.trim().length < 10) return null;
+    return importarCSV(texto, proveedor, procesador?.id, procesador?.feeRate ?? 0);
+  }, [texto, proveedor, procesador]);
+
+  return (
+    <ModalForm
+      abierto onCerrar={onCerrar} ancho
+      titulo="Importar cobros"
+      sub="Pegá el CSV que exporta la pasarela. Los cobros repetidos se descartan solos por su referencia."
+      guardarTexto={previo ? `Importar ${previo.movimientos.length}` : "Importar"}
+      puedeGuardar={Boolean(previo && (previo.movimientos.length > 0 || previo.reembolsos.length > 0))}
+      onGuardar={() => {
+        if (!previo) return;
+        const { nuevos, repetidos } = acciones.importarMovimientos(previo.movimientos, "csv");
+        const reem = previo.reembolsos.length ? acciones.importarReembolsos(previo.reembolsos) : null;
+        const conReembolsos = reem && (reem.atadas.length || reem.nuevas.length)
+          ? ` Reembolsos del archivo: ${reem.atadas.length ? `${reem.atadas.length} atados a una devolución ya cargada` : ""}${reem.atadas.length && reem.nuevas.length ? " y " : ""}${reem.nuevas.length ? `${reem.nuevas.length} para confirmar` : ""}.`
+          : "";
+        toast(nuevos === 0
+          ? `${previo.movimientos.length ? `Ya estaban los ${repetidos} cobros del archivo.` : "El archivo no traía cobros nuevos."}${conReembolsos}`
+          : `Entraron ${nuevos} cobros${repetidos > 0 ? ` (${repetidos} ya estaban)` : ""}.${conReembolsos}`);
+        onCerrar();
+      }}
+    >
+      <div className="form-grid">
+        <Field label="Pasarela" span2 ayuda={ficha?.comoExportar}>
+          <Select value={proveedor} onChange={(ev) => setProveedor(ev.target.value as ProveedorPasarela)}
+            opciones={PASARELAS.map((p) => ({ valor: p.id, texto: p.nombre }))} />
+        </Field>
+        <Field label="Contenido del CSV" span2
+          ayuda={procesador ? `Se registran como ${procesador.nombre}.` : "No hay un procesador con esta pasarela: se van a cargar sin medio de pago."}>
+          <Textarea rows={8} value={texto} onChange={(ev) => setTexto(ev.target.value)}
+            placeholder={'id,Created date (UTC),Amount,Fee,Currency,Customer Email,Customer Name,Description\npi_3Q…,2026-09-12,2500,72.50,usd,ana@mail.com,Ana Ruiz,Mentoría'} />
+        </Field>
+      </div>
+
+      {previo && (
+        <div className="stack-2">
+          <div className="row">
+            <span className="t-label">Lo que se va a importar</span>
+            <span className="spacer t-sm t-num t-strong">
+              {money(previo.movimientos.reduce((a, m) => a + m.monto, 0), mon, 2)}
+            </span>
+          </div>
+          {previo.movimientos.slice(0, 5).map((m) => (
+            <div className="row t-sm" key={m.referencia} style={{ gap: 8 }}>
+              <span className="t-strong truncate">{m.clienteNombre ?? m.referencia}</span>
+              <span className="t-subtle">{fechaLarga(m.fecha)}</span>
+              <span className="spacer t-num">{money(m.monto, mon, 2)}</span>
+              <span className="t-subtle t-num">fee {money(m.fee, mon, 2)}</span>
+            </div>
+          ))}
+          {previo.movimientos.length > 5 && (
+            <span className="t-sm t-subtle">y {previo.movimientos.length - 5} más.</span>
+          )}
+          {previo.reembolsos.length > 0 && (
+            <span className="t-sm">
+              {previo.reembolsos.length === 1 ? "Hay 1 reembolso" : `Hay ${previo.reembolsos.length} reembolsos`} por{" "}
+              <b className="t-num">{money(previo.reembolsos.reduce((a, r) => a + r.monto, 0), mon, 2)}</b>:
+              no entran como cobro; se atan a la devolución que ya cargó Finanzas o quedan para confirmar en Finanzas → Devoluciones.
+            </span>
+          )}
+          {previo.descartadas.filter((d) => !d.reembolso).length > 0 && (
+            <span className="t-sm" style={{ color: "var(--warning)" }}>
+              {previo.descartadas.filter((d) => !d.reembolso).length === 1
+                ? `Se saltea 1 fila: ${previo.descartadas.filter((d) => !d.reembolso)[0].motivo}`
+                : `Se saltean ${previo.descartadas.filter((d) => !d.reembolso).length} filas. La primera: ${previo.descartadas.filter((d) => !d.reembolso)[0].motivo}`}
+            </span>
+          )}
+        </div>
+      )}
+    </ModalForm>
+  );
+}

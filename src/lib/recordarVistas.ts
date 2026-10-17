@@ -61,6 +61,15 @@ export function olvidarVistas() {
   try { localStorage.removeItem(CLAVE); } catch { /* modo privado */ }
 }
 
+/* Una pantalla se mudó (Finanzas → End of Day): lo último que se vio ahí ya no vale. */
+export function olvidarVistaDe(ruta: string) {
+  try {
+    const guardadas = leer();
+    for (const k of Object.keys(guardadas)) if (k === ruta || k.startsWith(`${ruta}|`)) delete guardadas[k];
+    escribir(guardadas);
+  } catch { /* modo privado */ }
+}
+
 /* El enlace por correo vuelve al inicio de la app, no al link que se estaba
    abriendo: se anota antes de mandarlo y, al entrar, se va ahí. Vale una
    hora; después ya no es "el link que estaba abriendo". */
