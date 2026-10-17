@@ -25,11 +25,13 @@ const TITULO_HERRAMIENTA: Partial<Record<Herramienta["tipo"], string>> = {
   gastos: "Gastos del período",
 };
 
-export function Camino({ pasos, cadencia, periodo, ahora, abierto, onAbrir, agrupar, esDueno, marcar, desmarcar }: {
+export function Camino({ pasos, cadencia, periodo, ahora, abierto, onAbrir, agrupar, esDueno, soloMirar = false, marcar, desmarcar }: {
   pasos: PasoCierre[]; cadencia: Cadencia; periodo: string; ahora: number;
   abierto: string | null; onAbrir: (id: string | null) => void;
   /* Con bandas por área (el mes) o en la lista corrida de Aldana (hoy y la semana). */
   agrupar: boolean; esDueno: boolean;
+  /* Una cuenta que sólo mira Finanzas ve los pasos pero no los tilda: la base no le dejaría guardarlo. */
+  soloMirar?: boolean;
   marcar: (paso: PasoCierre) => void; desmarcar: (paso: PasoCierre) => void;
 }) {
   const abrirFicha = useAbrirFicha();
@@ -42,7 +44,7 @@ export function Camino({ pasos, cadencia, periodo, ahora, abierto, onAbrir, agru
         const estaAbierto = abierto === p.id;
         const sinAcceso = p.soloDuenos && !esDueno;
         const manual = p.tipo === "manual";
-        const rapido = manual && p.estado === "pendiente";            // se tilda con un clic, sin abrirlo
+        const rapido = manual && p.estado === "pendiente" && !soloMirar;            // se tilda con un clic, sin abrirlo
         return (
           <React.Fragment key={p.id}>
             {nuevaArea && <li className="cm-banda-fila" aria-hidden>{AREAS_DEL_CIERRE.find((a) => a.id === p.area)?.nombre}</li>}
@@ -86,7 +88,7 @@ export function Camino({ pasos, cadencia, periodo, ahora, abierto, onAbrir, agru
                         <span className="cm-tilde__quien">
                           {p.chequeo ? <>Lo hizo <b>{p.chequeo.por ?? "alguien"}</b> el {fechaHora(p.chequeo.en)}.</> : manual ? "Todavía nadie lo hizo." : "Cuando lo hayas revisado, tildalo."}
                         </span>
-                        {p.chequeo
+                        {soloMirar ? null : p.chequeo
                           ? <Button sm variante="ghost" onClick={() => desmarcar(p)}>Deshacer</Button>
                           : <Button sm variante="secondary" icono={<Check size={15} />} onClick={() => marcar(p)}>{manual ? "Marcar como hecho" : "Ya lo revisé"}</Button>}
                       </div>

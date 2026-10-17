@@ -4,6 +4,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Search, CornerDownLeft } from "lucide-react";
 import { navPara } from "./nav";
+import { ArrowDownUp, Landmark, ListChecks } from "lucide-react";
 import { useAcceso } from "@/lib/acceso";
 import { nivelDeRuta } from "@/lib/permisos";
 import { useEstado } from "@/lib/store";
@@ -42,6 +43,18 @@ export function Paleta({ abierto, onCerrar }: { abierto: boolean; onCerrar: () =
       if (!term || normal(i.texto).includes(term) || normal(i.ayuda).includes(term)) {
         const Ico = i.icono;
         out.push({ id: `nav${i.href}`, grupo: "Ir a", texto: i.texto, sub: i.ayuda, icono: <Ico size={18} />, ir: i.href });
+      }
+    }
+
+    /* Caja, Conciliación y el detalle de Finanzas se sacaron del menú (se llega por los pasos de Finanzas): acá siguen a un atajo. */
+    if (ve("/finanzas")) {
+      const atajos = [
+        { ir: "/finanzas/caja", texto: "Caja", sub: "Arqueos, meses de vida y retiros", Ico: Landmark },
+        { ir: "/conciliacion", texto: "Conciliación", sub: "Cobros de las pasarelas y a qué cuota van", Ico: ArrowDownUp },
+        { ir: "/finanzas/detalle", texto: "Detalle de Finanzas", sub: "Cobros, gastos, gastos fijos y devoluciones", Ico: ListChecks },
+      ];
+      for (const x of atajos) {
+        if (!term || normal(x.texto).includes(term) || normal(x.sub).includes(term)) out.push({ id: `nav${x.ir}`, grupo: "Ir a", texto: x.texto, sub: x.sub, icono: <x.Ico size={18} />, ir: x.ir });
       }
     }
 

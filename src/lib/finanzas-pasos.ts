@@ -1,6 +1,6 @@
 import type { EstadoApp } from "./types";
-import { diaDeNegocio } from "./dia-negocio";
-import { nombrePeriodo, periodoDe } from "./periodos";
+import { diaDeNegocio, mesDeNegocio } from "./dia-negocio";
+import { nombrePeriodo } from "./periodos";
 import { restoDeMovimiento } from "./conciliacion";
 import { controlDeCobro } from "./control-cobros";
 import { cuotasVencidas, calcularPyL } from "./finanzas";
@@ -70,7 +70,7 @@ export function diasDeLaSemana(semana: string): { desde: string; hasta: string }
 /** El período vigente de cada cadencia: hoy, esta semana, este mes (un rango lo elige quien mira: «desde_hasta»). */
 export function periodoActual(cadencia: Cadencia, ahora = Date.now()): string {
   const hoy = diaDeNegocio(new Date(ahora).toISOString());
-  return cadencia === "dia" ? hoy : cadencia === "semana" ? semanaDe(hoy) : cadencia === "rango" ? `${hoy}_${hoy}` : periodoDe(new Date(`${hoy}T12:00:00`));
+  return cadencia === "dia" ? hoy : cadencia === "semana" ? semanaDe(hoy) : cadencia === "rango" ? `${hoy}_${hoy}` : hoy.slice(0, 7);
 }
 
 /** Un rango como «2026-10-01_2026-10-15», en sus dos días. */
@@ -203,7 +203,7 @@ function pasosDelDia(e: EstadoApp, ahora: number): PasoCierre[] {
     herramienta: { tipo: "cobros", mostrar: "sin-chequear" },
   });
 
-  const vencidas = cuotasVencidas(e).filter((c) => c.diasAtraso <= 7);
+  const vencidas = cuotasVencidas(e, ahora).filter((c) => c.diasAtraso <= 7);
   const cuotas = auto({
     id: "d-cuotas", area: "cobros", titulo: "Cuentas por cobrar: lo que venció esta semana",
     detalle: vencidas.length
@@ -269,7 +269,7 @@ function pasosDeLaSemana(e: EstadoApp, ahora: number): PasoCierre[] {
   });
 
   /* Control de cuentas por cobrar: hablar con los closers. Hay datos, y el paso es haberlos mirado. */
-  const mora = cuotasVencidas(e).filter((c) => c.diasAtraso >= 7);
+  const mora = cuotasVencidas(e, ahora).filter((c) => c.diasAtraso >= 7);
   const clientes = new Set(mora.map((c) => c.ventaId)).size;
   const total = mora.reduce((a, c) => a + c.saldo, 0);
   const cuentas = auto({
@@ -302,7 +302,7 @@ function pasosDelMesCompleto(e: EstadoApp, mes: string, { ahora, esDueno, cheque
 
   /* El pago del equipo es «asegurar que se pague en tiempo y forma». */
   const lista = [...calculados, profit, ...manuales];
-  const terminado = mes < periodoDe(new Date(ahora));
+  const terminado = mes < mesDeNegocio(ahora);
   const cerrada = mesesCerrados(e).has(mes);
   const tildado = (x: PasoCierre) => (x.tipo === "manual" || x.tipo === "revisable") && !!chequeos[claveChequeo("mes", mes, x.id)];
   const previos = lista.filter((x) => x.estado === "pendiente" && !tildado(x) && !(x.soloDuenos && !esDueno)).length;

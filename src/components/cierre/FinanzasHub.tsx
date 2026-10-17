@@ -4,14 +4,17 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/ui";
+import { useToast } from "@/components/ui/Toast";
 import { DateRangePicker } from "@/components/ui/DateRangePicker";
 import { useEstado } from "@/lib/store";
 import { useAcceso } from "@/lib/acceso";
+import { nivelDeRuta } from "@/lib/permisos";
 import { useParamsURL } from "@/lib/useParamsURL";
 import { useRangoURL } from "@/lib/useRango";
 import { useChequeos } from "@/lib/chequeos-finanzas";
 import { olvidarVistaDe } from "@/lib/recordarVistas";
-import { moverPeriodo, nombrePeriodo, periodoDe, esPeriodo } from "@/lib/periodos";
+import { moverPeriodo, nombrePeriodo, esPeriodo } from "@/lib/periodos";
+import { mesDeNegocio } from "@/lib/dia-negocio";
 import { avanceDeFinanzas, claveChequeo, pasosDeFinanzas } from "@/lib/finanzas-pasos";
 import type { Cadencia, PasoCierre } from "@/lib/cierre-mes";
 import { Camino } from "./Camino";
@@ -32,8 +35,10 @@ type Vista = "mes" | "rango";
 
 export function FinanzasHub() {
   const e = useEstado();
-  const { esDueno } = useAcceso();
-  const { chequeos, marcar, desmarcar } = useChequeos();
+  const { acceso, esDueno } = useAcceso();
+  const { chequeos, marcar, desmarcar, error, limpiarError } = useChequeos();
+  const toast = useToast();
+  useEffect(() => { if (error) { toast(error); limpiarError(); } }, [error, limpiarError, toast]);
   const [v, cambiar] = useParamsURL({ cad: "", mes: "", paso: "", mostrar: "", periodo: "", desde: "", hasta: "" });
   /* «De tal día a tal día»: el mismo selector de fechas que usa el resto de la app (y que se guarda en el link). */
   const [rangoSel, setRango] = useRangoURL("u30");
@@ -60,7 +65,7 @@ export function FinanzasHub() {
     } else if (sobra) cambiar({ cad: null });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [alEod, alPyL, sobra]);
-  const hoyMes = periodoDe(new Date(ahora));
+  const hoyMes = mesDeNegocio(ahora);
   const mes = esPeriodo(v.mes) ? v.mes : hoyMes;
   const periodo = cadencia === "rango" ? `${rangoSel.desde}_${rangoSel.hasta}` : mes;
 
@@ -99,7 +104,7 @@ export function FinanzasHub() {
         pasos={pasos} cadencia={cadencia} periodo={periodo} ahora={ahora}
         abierto={pasos.some((p) => p.id === v.paso) ? v.paso : null}
         onAbrir={(id) => abrir(id, pasos.find((p) => p.id === id))}
-        agrupar esDueno={esDueno}
+        agrupar esDueno={esDueno} soloMirar={nivelDeRuta(acceso, "/finanzas") < 2}
         marcar={marcarPaso} desmarcar={desmarcarPaso}
       />
     </div>

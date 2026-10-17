@@ -36,6 +36,9 @@ export function diaDeNegocio(fecha: string | undefined | null): string {
   }
 }
 
+/** El mes del negocio («2026-10») de un instante: el del calendario de Argentina, no el de la computadora de quien mira. */
+export const mesDeNegocio = (ahora: number): string => diaDeNegocio(new Date(ahora).toISOString()).slice(0, 7);
+
 /** Un día («2026-10-05») como el instante que guarda la base: el mediodía de Argentina. Un día suelto, como medianoche UTC,
     en Argentina es el día anterior apenas vuelve de la base (timestamptz): el mediodía no cambia de día en ningún huso cercano. */
 export const diaAInstante = (dia: string): string => `${dia.slice(0, 10)}T15:00:00.000Z`;

@@ -78,7 +78,7 @@ export function Asistente({
       }
       const foco = ev.target as HTMLElement | null;
       const escribiendo = foco?.tagName === "INPUT" || foco?.tagName === "TEXTAREA" || foco?.tagName === "SELECT"
-        || Boolean(foco?.classList.contains("sel") || foco?.classList.contains("fecha"));
+        || Boolean(foco?.classList?.contains("sel") || foco?.classList?.contains("fecha"));
 
       /* Los números eligen la opción que tienen al lado, como muestra el
          cartelito de cada tarjeta. Mientras se escribe, un 3 es un 3. */

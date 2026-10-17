@@ -144,11 +144,11 @@ export function Shell({ children }: { children: React.ReactNode }) {
     [acceso, sesionesDev, devolucionesDev, ventasDev, ajustesDev],
   );
   /* Los días laborables en que Finanzas no cerró su End of Day (los últimos 7, desde que se empezó a usar). */
-  const { chequeos: chequeosFinanzas } = useChequeos();
+  const { chequeos: chequeosFinanzas, cargando: cargandoChequeos } = useChequeos(nivelDeRuta(acceso, "/finanzas") > 0);
   const diasSinCerrar = useMemo(
-    () => (nivelDeRuta(acceso, "/finanzas") > 0 ? diasDelEod(chequeosFinanzas, Date.now(), 7).filter((d) => d.estado === "sin-cerrar").length : 0),
+    () => (!cargandoChequeos && nivelDeRuta(acceso, "/finanzas") > 0 ? diasDelEod(chequeosFinanzas, Date.now(), 7).filter((d) => d.estado === "sin-cerrar").length : 0),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [acceso, chequeosFinanzas, hoy],
+    [acceso, chequeosFinanzas, cargandoChequeos, hoy],
   );
   const avisosFinanzas = [
     atrasados > 0 ? `${atrasados === 1 ? "Un cliente atrasado" : `${atrasados} clientes atrasados`} hace 7 días o más` : "",

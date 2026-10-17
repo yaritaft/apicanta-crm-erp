@@ -454,8 +454,8 @@ export interface CuotaVencida {
   closerId?: string;
 }
 
-export function cuotasVencidas(e: EstadoApp): CuotaVencida[] {
-  const hoy = Date.now();
+export function cuotasVencidas(e: EstadoApp, ahora: number = Date.now()): CuotaVencida[] {
+  const hoy = ahora;
   const out: CuotaVencida[] = [];
   /* Con índices: el menú lateral la calcula a cada cambio para la alarma. */
   const ventaDe = new Map(e.ventas.map((v) => [v.id, v] as const));

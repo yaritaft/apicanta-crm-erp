@@ -1,3 +1,4 @@
+import { diaDeNegocio } from "@/lib/dia-negocio";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
@@ -52,7 +53,8 @@ function servirGraph() {
 const avisar = (ids: string[]) => ingresarAvisosMeta(ids.map((leadgen_id) => ({ leadgen_id, page_id: "P1", form_id: "F1" })));
 const contactos = () => nube.nube.filas("contactos");
 const leads = () => nube.nube.filas("leads");
-const dia = (iso: string) => iso.slice(0, 10).replaceAll("-", "");
+/* El día del webinar es el de Argentina (a las 22 de acá ya es mañana en UTC). */
+const dia = (iso: string) => diaDeNegocio(iso).replaceAll("-", "");
 
 function sembrar() {
   nube.nube.vaciar();

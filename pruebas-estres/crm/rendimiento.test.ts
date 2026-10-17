@@ -20,7 +20,18 @@ import { AHORA, Azar, mundoAzar } from "./gen";
    ================================================================== */
 
 const medir = <T,>(f: () => T): { r: T; ms: number } => { const a = performance.now(); const r = f(); return { r, ms: performance.now() - a }; };
-const mejorDe = (n: number, f: () => unknown) => Math.min(...Array.from({ length: n }, () => medir(f).ms));
+/* El mejor de tres, en tiempo de CPU y no de reloj: con otras pruebas corriendo a la vez (el corredor lanza los archivos en
+   paralelo) el reloj se infla sin que el código cambie; el tiempo de CPU casi no. */
+const cpuMs = () => { const u = process.cpuUsage(); return (u.user + u.system) / 1000; };
+const medirMejor = <T,>(f: () => T, veces = 3): { r: T; ms: number } => {
+  let mejor: { r: T; ms: number } | null = null;
+  for (let i = 0; i < veces; i++) {
+    const a = cpuMs(); const r = f(); const ms = cpuMs() - a;
+    if (!mejor || ms < mejor.ms) mejor = { r, ms };
+  }
+  return mejor!;
+};
+const mejorDe = (n: number, f: () => unknown) => medirMejor(f, n).ms;
 
 function mundoGrande(llamadas: number, ventas: number, pagos: number, semilla = 1) {
   const m = mundoAzar(new Azar(semilla), { sesiones: llamadas, contactos: Math.round(llamadas * 0.7), ventas, pagos });
@@ -112,13 +123,13 @@ test("filasCrm recuerda las filas que no cambiaron: cambiar una agenda rearma s�
 test("el tiempo crece como el tamaño, no como su cuadrado: 12.000 llamadas no cuestan más de ~8 veces lo que 3.000", (t: TestContext) => {
   const chico = mundoGrande(3000, 1800, 3500, 2);
   const grande = mundoGrande(12000, 7200, 14000, 2);
-  const a = medir(() => filasTabla(chico, AHORA)), b = medir(() => filasTabla(grande, AHORA));
-  const oa = medir(() => ordenarFilas(a.r, [{ clave: "closer", desc: false }, ...ORDEN_POR_DEFECTO], {}));
-  const ob = medir(() => ordenarFilas(b.r, [{ clave: "closer", desc: false }, ...ORDEN_POR_DEFECTO], {}));
-  const pa = medir(() => DIMENSIONES.map((d) => porDimension(a.r, d)));
-  const pb = medir(() => DIMENSIONES.map((d) => porDimension(b.r, d)));
-  const ma = medir(() => COLUMNAS.map((c) => opcionesDeColumna(a.r, MUCHOS_FILTROS, c.clave)));
-  const mb = medir(() => COLUMNAS.map((c) => opcionesDeColumna(b.r, MUCHOS_FILTROS, c.clave)));
+  const a = medirMejor(() => filasTabla(chico, AHORA)), b = medirMejor(() => filasTabla(grande, AHORA));
+  const oa = medirMejor(() => ordenarFilas(a.r, [{ clave: "closer", desc: false }, ...ORDEN_POR_DEFECTO], {}));
+  const ob = medirMejor(() => ordenarFilas(b.r, [{ clave: "closer", desc: false }, ...ORDEN_POR_DEFECTO], {}));
+  const pa = medirMejor(() => DIMENSIONES.map((d) => porDimension(a.r, d)));
+  const pb = medirMejor(() => DIMENSIONES.map((d) => porDimension(b.r, d)));
+  const ma = medirMejor(() => COLUMNAS.map((c) => opcionesDeColumna(a.r, MUCHOS_FILTROS, c.clave)));
+  const mb = medirMejor(() => COLUMNAS.map((c) => opcionesDeColumna(b.r, MUCHOS_FILTROS, c.clave)));
   t.diagnostic(
     `3.000 → 12.000 llamadas: filasTabla ${a.ms.toFixed(0)} → ${b.ms.toFixed(0)} ms (x${(b.ms / a.ms).toFixed(1)}); ordenar ${oa.ms.toFixed(0)} → ${ob.ms.toFixed(0)} ms (x${(ob.ms / oa.ms).toFixed(1)}); `
     + `dimensiones ${pa.ms.toFixed(0)} → ${pb.ms.toFixed(0)} ms (x${(pb.ms / pa.ms).toFixed(1)}); menús ${ma.ms.toFixed(0)} → ${mb.ms.toFixed(0)} ms (x${(mb.ms / ma.ms).toFixed(1)})`,

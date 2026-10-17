@@ -33,9 +33,11 @@ interface Props {
   esDueno: boolean;
   chequeos: Chequeos;
   marcar: (clave: string, nota?: string, estado?: string) => void;
+  /* Una cuenta que sólo mira Finanzas ve los cierres pero no los hace: la base no le dejaría guardarlos. */
+  soloMirar?: boolean;
 }
 
-export function EndOfDay({ ahora, esDueno, chequeos, marcar }: Props) {
+export function EndOfDay({ ahora, esDueno, chequeos, marcar, soloMirar = false }: Props) {
   const e = useEstado();
   const hoy = diaDeNegocio(new Date(ahora).toISOString());
   const [abierto, setAbierto] = useState<string | null>(null);
@@ -60,9 +62,13 @@ export function EndOfDay({ ahora, esDueno, chequeos, marcar }: Props) {
               : <>{fechaLarga(hoy)}. Son {num(cuantas)} {cuantas === 1 ? "tarea" : "tareas"}{pendientes.length ? `, ${num(pendientes.length)} de ellas ${pendientes.length === 1 ? "quedó" : "quedaron"} pendiente${pendientes.length === 1 ? "" : "s"} de antes` : ""}. Las contás de a una y el día queda cerrado.</>}
           </p>
         </div>
-        <Button variante={cerrado ? "secondary" : "primary"} icono={cerrado ? <Check size={16} /> : <CalendarCheck size={16} />} onClick={() => setAbierto(hoy)}>
-          {cerrado ? "Revisar el día" : "Cerrar el día"}
-        </Button>
+        {soloMirar ? (
+          <span className="cm-eod__sub">Tu cuenta sólo puede mirar Finanzas: el cierre lo hace quien la edita.</span>
+        ) : (
+          <Button variante={cerrado ? "secondary" : "primary"} icono={cerrado ? <Check size={16} /> : <CalendarCheck size={16} />} onClick={() => setAbierto(hoy)}>
+            {cerrado ? "Revisar el día" : "Cerrar el día"}
+          </Button>
+        )}
       </section>
 
       <section className="cm-caja" aria-label="Los últimos días">
@@ -70,10 +76,10 @@ export function EndOfDay({ ahora, esDueno, chequeos, marcar }: Props) {
         <ul className="cm-dias">
           {[...dias].reverse().map((d) => (
             <li key={d.dia}>
-              <button type="button" className={`cm-dia cm-dia--${d.estado}`} onClick={() => setAbierto(d.dia)} aria-label={`${fechaLarga(d.dia)}: ${ESTADO_DEL_DIA[d.estado].toLowerCase()}`}>
+              <button type="button" className={`cm-dia cm-dia--${d.estado}`} disabled={soloMirar} onClick={() => setAbierto(d.dia)} aria-label={`${fechaLarga(d.dia)}: ${ESTADO_DEL_DIA[d.estado].toLowerCase()}`}>
                 <span className="cm-dia__fecha"><b>{letraDelDia(d.dia)}</b> {d.dia.slice(8, 10)}</span>
                 <span className="cm-dia__estado">{ESTADO_DEL_DIA[d.estado]}</span>
-                <span className="cm-dia__resumen">{d.estado === "cerrado" ? resumenCorto(d) : d.estado === "sin-cerrar" ? "Tocá para cerrarlo" : ""}</span>
+                <span className="cm-dia__resumen">{d.estado === "cerrado" ? resumenCorto(d) : d.estado === "sin-cerrar" && !soloMirar ? "Tocá para cerrarlo" : ""}</span>
               </button>
             </li>
           ))}

@@ -1,3 +1,4 @@
+import { diaDeNegocio } from "@/lib/dia-negocio";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { capturandoConsola, propiedad } from "./azar";
@@ -96,7 +97,8 @@ test("lo que el equipo marcó (unido, contactado, notas) y lo que cargó a mano 
 
 test("el webinar: el que dice el campo (su id o su día), si no el próximo vivo; uno que no existe cae al próximo", async () => {
   sembrar();
-  const dia = (iso: string) => iso.slice(0, 10);
+  /* El día del webinar es el de Argentina: a las 22 de acá ya es mañana en UTC, y un corte con slice(0, 10) pedía otro día. */
+  const dia = (iso: string) => diaDeNegocio(iso);
   const wa = nube.nube.filas("webinars")[0], wb = nube.nube.filas("webinars")[1];
   assert.equal((await registrar({ email: "a1@mail.com", webinar: "web_b" })).json.webinarId, "web_b");
   assert.equal((await registrar({ email: "a2@mail.com", webinar: dia(wb.fecha as string) })).json.webinarId, "web_b");

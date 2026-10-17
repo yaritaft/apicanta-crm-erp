@@ -22,9 +22,9 @@
 
 .cm { display: flex; flex-direction: column; gap: 22px; min-width: 0; padding-bottom: var(--space-6); }
 /* La barra de arriba: las pestañas y, a la derecha, el mes, las fechas y cuántos pasos van. */
-.cm-barra { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-3) var(--space-4); }
+.cm-barra { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-3) var(--space-4); min-width: 0; }
 .cm-barra__der { margin-left: auto; display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-3) var(--space-4); }
-.cm-mes { display: inline-flex; align-items: center; gap: var(--space-2); }
+.cm-mes { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); max-width: 100%; min-width: 0; }
 .cm-mes__nombre { min-width: 132px; text-align: center; font-weight: 600; text-transform: capitalize; }
 .cm-conteo { font-size: 14px; color: var(--ink-subtle); font-variant-numeric: tabular-nums; }
 .cm-conteo b { color: var(--ink); font-weight: 650; }
@@ -61,14 +61,14 @@
 .cm-step__cab:focus-visible { outline: 2px solid var(--focus); outline-offset: 4px; }
 .cm-step__titulo { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); margin: 0; font-size: 16px; line-height: 22px; font-weight: 600; color: var(--ink); }
 .cm-step__sigue { font-size: 11px; font-weight: 600; padding: 1px 8px; border-radius: 999px; background: var(--accent-soft); color: var(--accent-text); }
-.cm-step__tipo { font-size: 11px; font-weight: 500; padding: 1px 8px; border-radius: 999px; background: var(--cm-bloque-alto); color: var(--ink-subtle); }
+.cm-step__tipo { font-size: 11px; font-weight: 500; padding: 1px 8px; border-radius: 999px; background: var(--cm-bloque-alto); color: var(--ink-muted); }
 .cm-step__det { margin: 3px 0 0; font-size: 14px; line-height: 20px; color: var(--ink-muted); }
 .cm-step--listo .cm-step__det { color: var(--ink-subtle); }
 .cm-step__hecho { margin: 4px 0 0; font-size: 13px; color: var(--success); }
 .cm-pmini { display: flex; align-items: center; gap: var(--space-3); margin-top: 10px; }
 .cm-pbar { flex: 0 1 220px; height: 5px; border-radius: 3px; background: var(--cm-bloque-alto); overflow: hidden; }
 .cm-pbar > i { display: block; height: 100%; border-radius: 3px; background: var(--success); }
-.cm-pmini span { font-size: 12px; color: var(--ink-subtle); font-variant-numeric: tabular-nums; }
+.cm-pmini span { font-size: 12px; color: var(--ink-muted); font-variant-numeric: tabular-nums; }
 .cm-step__acc { display: flex; align-items: center; gap: var(--space-2); flex: none; }
 @media (max-width: 640px) { .cm-step__tarjeta { grid-template-columns: minmax(0, 1fr); row-gap: var(--space-3); } }
 
@@ -130,11 +130,11 @@ button.cm-fila:hover, a.cm-fila:hover { background: var(--cm-bloque-alto); borde
 .cm-dia:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; border-radius: var(--radius-md); }
 .cm-dia__fecha { font-size: 14px; color: var(--ink-muted); font-variant-numeric: tabular-nums; }
 .cm-dia__fecha b { color: var(--ink); font-weight: 600; text-transform: capitalize; }
-.cm-dia__estado { justify-self: start; font-size: 12px; font-weight: 600; padding: 2px 10px; border-radius: 999px; background: var(--cm-bloque-alto); color: var(--ink-subtle); }
+.cm-dia__estado { justify-self: start; font-size: 12px; font-weight: 600; padding: 2px 10px; border-radius: 999px; background: var(--cm-bloque-alto); color: var(--ink-muted); }
 .cm-dia--cerrado .cm-dia__estado { background: var(--success-soft); color: var(--success); }
 .cm-dia--sin-cerrar .cm-dia__estado { background: var(--warning-soft); color: var(--warning); }
 .cm-dia--hoy .cm-dia__estado { background: var(--brand-soft); color: var(--brand); }
-.cm-dia__resumen { font-size: 13px; color: var(--ink-subtle); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cm-dia__resumen { font-size: 13px; color: var(--ink-muted); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 @media (max-width: 640px) { .cm-dia { grid-template-columns: 64px minmax(0, 1fr); } .cm-dia__resumen { grid-column: 1 / -1; } }
 
 /* Adentro del asistente. */
