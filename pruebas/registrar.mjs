@@ -44,3 +44,8 @@ registerHooks({
     return siguiente(url, contexto);
   },
 });
+
+/* Las pruebas corren en la hora de la empresa (Argentina), como el software: dan lo mismo en cualquier huso de la computadora
+   (probar con TZ=Asia/Tokyo, TZ=UTC… o con npm run test:horas). */
+const { instalarHoraArgentina } = await import("../src/lib/hora-argentina.ts");
+instalarHoraArgentina();

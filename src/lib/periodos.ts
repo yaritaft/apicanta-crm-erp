@@ -6,6 +6,10 @@ import type { RangoMes } from "./metricas";
    Lo usan la liquidación (honorarios.ts), las devoluciones y el aviso de
    «ese mes ya está cerrado». Viven acá, sin nada más adentro, para que
    cualquiera los importe sin arrastrar el motor de la liquidación.
+
+   «La hora de acá» es la de la empresa: Argentina (lib/hora-argentina.ts la instala
+   en todo el software), mire quien mire y desde donde mire. Por eso un mes empieza y
+   termina a la misma hora para todos.
    ================================================================== */
 
 const MESES = [

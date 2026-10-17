@@ -3,18 +3,12 @@
    mes o con otro huso (TZ=UTC, TZ=Asia/Tokyo…):
 
      FAKE_NOW=2026-10-31T23:30:00-03:00 TZ=UTC node --import ./pruebas/registrar.mjs --import ./pruebas/reloj-falso.mjs --test "pruebas/**\/*.test.ts"
-*/
+
+   Va DESPUÉS de registrar.mjs (que instala la hora de Argentina): alcanza con mover Date.now(), porque el Date de la hora de
+   Argentina arma `new Date()` con Date.now(). */
 const objetivo = process.env.FAKE_NOW ? Date.parse(process.env.FAKE_NOW) : NaN;
 if (Number.isFinite(objetivo)) {
-  const Real = Date;
-  const desfase = objetivo - Real.now();
-  const ahora = () => Real.now() + desfase;
-  class Falso extends Real {
-    constructor(...args) {
-      if (args.length === 0) super(ahora());
-      else super(...args);
-    }
-    static now() { return ahora(); }
-  }
-  globalThis.Date = Falso;
+  const real = Date.now.bind(Date);
+  const desfase = objetivo - real();
+  Date.now = () => real() + desfase;
 }

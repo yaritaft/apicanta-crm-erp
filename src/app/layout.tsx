@@ -1,6 +1,10 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
+import { instalarHoraArgentina } from "@/lib/hora-argentina";
 import { ToastProvider } from "@/components/ui/Toast";
+
+/* La hora de la empresa (Argentina) también para lo que se arma en el servidor al mostrar la página; el navegador la instala en instrumentation-client.ts. */
+instalarHoraArgentina();
 
 export const metadata: Metadata = {
   title: "Apicanta — ERP de Hackear IT",

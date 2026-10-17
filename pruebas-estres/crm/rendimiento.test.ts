@@ -148,8 +148,12 @@ test("BUG (eficiencia): porDimension copia la lista del grupo por cada fila: con
   for (const s of m.sesiones) { s.reprogramadaDe = undefined; s.anfitrion = "Dante"; }
   const filas = filasTabla(m, AHORA);
   assert.ok(filas.length > 10000);
-  const a = mejorDe(3, () => porDimension(filas.slice(0, 4000), "closer"));
-  const b = mejorDe(3, () => porDimension(filas.slice(0, 12000), "closer"));
+  /* Cada medición repite el trabajo veinte veces: con 4.000 filas una sola pasada dura décimas de milisegundo y el ruido de la máquina
+     decide el cociente. */
+  const veces = (f: () => unknown) => () => { for (let i = 0; i < 20; i++) f(); };
+  const a = mejorDe(3, veces(() => porDimension(filas.slice(0, 4000), "closer"))) / 20;
+  const b = mejorDe(3, veces(() => porDimension(filas.slice(0, 12000), "closer"))) / 20;
   t.diagnostic(`porDimension, un solo closer: 4.000 filas ${a.toFixed(1)} ms, 12.000 filas ${b.toFixed(0)} ms (x${(b / a).toFixed(1)}; lineal sería x3, cuadrático x9)`);
-  assert.ok(b / a < 4.5, `porDimension crece como el cuadrado: x${(b / a).toFixed(1)} al triplicar las filas`);
+  /* Lineal da x3 y cuadrático x9; con la máquina ocupada el cociente se mueve entre x2,7 y x5: el corte va en x6, entre los dos. */
+  assert.ok(b / a < 6, `porDimension crece como el cuadrado: x${(b / a).toFixed(1)} al triplicar las filas`);
 });

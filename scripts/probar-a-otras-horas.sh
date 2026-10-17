@@ -1,27 +1,26 @@
 #!/bin/bash
-# Corre toda la suite (normal + estrés) «a otras horas», con el reloj de las pruebas movido (pruebas/reloj-falso.mjs).
+# Corre toda la suite (normal + estrés) «a otras horas» y desde otros husos, con el reloj de las pruebas movido (pruebas/reloj-falso.mjs).
 #
-# Para qué: encontrar lo que sólo falla de noche (a las 22 de Argentina ya es mañana en UTC), a fin de mes o de año.
-# El negocio corre en hora de Argentina y la app toma el día y el mes de ahí: estos casos TIENEN que dar todo verde.
+# El software corre en la hora de la empresa (Argentina, UTC-3 todo el año; lib/hora-argentina.ts): el «hoy», los cortes de mes de
+# Finanzas y cada hora que se muestra son de allá, mire quien mire y desde donde mire. Por eso TODO tiene que dar verde en TODOS estos
+# casos: a las 22 de acá (ya es mañana en UTC), a fin de mes y de año, y con la computadora en Tokio, Auckland, Los Ángeles (con horario
+# de verano), la India (media hora corrida) o Terranova.
 #
-#   scripts/probar-a-otras-horas.sh            # los casos de Argentina
-#   scripts/probar-a-otras-horas.sh --otros    # además, otros husos horarios (sólo informa: ver abajo)
-#
-# Otros husos: los cortes de mes de Finanzas se hacen «en la hora de acá» (lib/periodos.ts), o sea la de la computadora de
-# quien mira. Desde otro huso (Tokio, Auckland) algunas pruebas de plata fallan a propósito: es un límite conocido, no un error nuevo.
+#   scripts/probar-a-otras-horas.sh
 cd "$(dirname "$0")/.." || exit 1
-ARG=(
+CASOS=(
   "2026-10-16T22:30:00-03:00|America/Argentina/Buenos_Aires"
   "2026-10-16T22:30:00-03:00|UTC"
   "2026-10-31T23:30:00-03:00|America/Argentina/Buenos_Aires"
-  "2026-10-31T23:30:00-03:00|UTC"
+  "2026-10-31T23:30:00-03:00|Asia/Tokyo"
+  "2026-10-31T23:30:00-03:00|Pacific/Auckland"
   "2026-10-17T00:20:00-03:00|America/Argentina/Buenos_Aires"
-  "2026-12-31T22:30:00-03:00|America/Argentina/Buenos_Aires"
+  "2026-12-31T22:30:00-03:00|America/Los_Angeles"
+  "2026-12-31T22:30:00-03:00|Pacific/Kiritimati"
+  "2026-10-19T09:00:00-03:00|Asia/Kolkata"
+  "2026-11-01T01:30:00-03:00|America/St_Johns"
+  "2026-11-01T03:30:00-03:00|America/New_York"
   "2026-10-18T14:00:00-03:00|Europe/Madrid"
-)
-OTROS=(
-  "2026-10-19T09:00:00-03:00|Asia/Tokyo"
-  "2026-03-01T01:00:00-03:00|Pacific/Auckland"
 )
 corre() {
   local ahora="${1%%|*}" tz="${1##*|}"
@@ -32,6 +31,5 @@ corre() {
   return $(( ${fallan:-1} > 0 ))
 }
 malos=0
-for e in "${ARG[@]}"; do corre "$e" || malos=$((malos + 1)); done
-if [ "$1" = "--otros" ]; then for e in "${OTROS[@]}"; do corre "$e" || true; done; fi
-[ "$malos" -eq 0 ] && echo "TODO VERDE en los casos de Argentina" || { echo "FALLARON $malos caso(s) de Argentina"; exit 1; }
+for e in "${CASOS[@]}"; do corre "$e" || malos=$((malos + 1)); done
+[ "$malos" -eq 0 ] && echo "TODO VERDE en los ${#CASOS[@]} casos" || { echo "FALLARON $malos de ${#CASOS[@]} casos"; exit 1; }
