@@ -350,7 +350,21 @@ export async function hotmart(desde: Date, hasta: Date): Promise<MovimientoApi[]
    con comisión 0. Eso está en el detalle de cada pago de la API nueva
    (v1), que se pide sólo para los cobros que todavía no lo tienen. */
 
-interface DetalleWhop { nombre?: string; email?: string; telefono?: string; metodo?: string; fee?: number; descripcion?: string }
+/* La lista de Whop (status=paid) trae también intentos que nunca cobraron: el pago
+   «open» con substatus failed (banco/CVC/fondos), blocked o incomplete, y el «void»
+   cancelado. Sólo el pago con status paid es plata (16/10/2026: 147 de 166 pendientes
+   eran intentos). Sin status ni substatus no se sabe: se deja pasar y lo decide el detalle. */
+const SUBESTADOS_NO_COBRADOS = new Set(["failed", "canceled", "blocked", "incomplete"]);
+export function cobradoEnWhop(p: Obj): boolean | undefined {
+  const estado = txt(p.status);
+  const sub = txt(p.substatus);
+  if (!estado && !sub) return undefined;
+  if (estado && estado !== "paid") return false;
+  if (sub && SUBESTADOS_NO_COBRADOS.has(sub)) return false;
+  return true;
+}
+
+interface DetalleWhop { nombre?: string; email?: string; telefono?: string; metodo?: string; fee?: number; descripcion?: string; cobrado?: boolean }
 
 function metodoWhop(p: Obj): string | undefined {
   const tipo = txt(p.payment_method_type) ?? txt((p.payment_method as Obj | undefined)?.payment_method_type);
@@ -384,6 +398,7 @@ async function detalleWhop(id: string, clave: string): Promise<DetalleWhop> {
     metodo: metodoWhop(p),
     fee: fee > 0 ? dinero(fee) : undefined,
     descripcion: txt(producto.title),
+    cobrado: cobradoEnWhop(p),
   };
 }
 
@@ -410,6 +425,7 @@ export async function whop(desde: Date, opciones: OpcionesListar = {}): Promise<
   const vistos = new Set<string>();
   const lista: MovimientoApi[] = filas
     .filter((p) => { const id = String(p.id ?? ""); if (vistos.has(id)) return false; vistos.add(id); return true; })
+    .filter((p) => cobradoEnWhop(p) !== false)
     .map((p) => {
       const monto = dinero(Number(p.final_amount ?? p.subtotal ?? 0));
       const fee = dinero((num(p.payment_processing_fee) ?? 0) + (num(p.whop_fee) ?? 0));
@@ -430,10 +446,12 @@ export async function whop(desde: Date, opciones: OpcionesListar = {}): Promise<
 
   const faltan = lista.filter((m) => (!m.clienteEmail || !m.metodo || m.fee === 0) && (opciones.necesitaDetalle?.(m) ?? true));
   let fallo: string | undefined;
+  const intentos = new Set<string>();
   await enTandas(faltan, 4, async (m) => {
     if (fallo) return;
     try {
       const d = await detalleWhop(m.referencia, clave);
+      if (d.cobrado === false) { intentos.add(m.referencia); return; }
       m.clienteNombre ??= d.nombre;
       m.clienteEmail ??= d.email;
       m.clienteTelefono ??= d.telefono;
@@ -447,7 +465,7 @@ export async function whop(desde: Date, opciones: OpcionesListar = {}): Promise<
     }
   });
   if (fallo) opciones.avisos?.push(`No se pudo ver quién pagó ni la comisión: ${fallo}`);
-  return lista;
+  return lista.filter((m) => !intentos.has(m.referencia));
 }
 
 /* ---------- Mercado Pago ---------- */
