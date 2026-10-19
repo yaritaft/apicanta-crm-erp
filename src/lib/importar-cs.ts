@@ -9,7 +9,7 @@ import {
   aNumero, ENTRE, listasCs, programasDeTexto, resellNormal, seguimientoCompleto, sumarMeses, testimonioNormal, valorDeLista, CONTRATOS,
 } from "./clientes-cs";
 import { configSeguimiento } from "./seguimiento";
-import type { Alumno, EstadoApp, ID, Reporte, Resell, RevisionCv, SeguimientoAlumno, Testimonio } from "./types";
+import type { Alumno, EstadoApp, ID, Lead, Reporte, Resell, RevisionCv, SeguimientoAlumno, Testimonio, Venta } from "./types";
 
 /* ==================================================================
    Importar el Airtable de Customer Success.
@@ -343,6 +343,37 @@ export function planificarImportacionCs(e: EstadoApp, tablas: readonly TablaImpo
   }
   let proximoNumero = Math.max(0, ...[...numeros.keys()]) + 1;
 
+  /* La persona de cada alumno en la app: sus leads se buscan por mail y, si el mail no está o no aparece, por teléfono (sólo si ese
+     teléfono es de una sola persona). De los leads salen sus ventas. */
+  const palabras = (n: string) => new Set(sinAcentos(n).split(" ").filter((x) => x.length > 2));
+  const leadsDe = (email: string, telefono: string, nombre: string): Lead[] => {
+    const k = claveEmail(email);
+    const porMailLeads = k ? e.leads.filter((l) => claveEmail(l.email) === k) : [];
+    if (porMailLeads.length) return porMailLeads;
+    const t = claveTelefono(telefono);
+    if (!t) return [];
+    /* Un teléfono lo pueden compartir dos personas (una familia, una pareja): además del teléfono tiene que coincidir una palabra del nombre. */
+    const mias = palabras(nombre);
+    const porTel = e.leads.filter((l) => claveTelefono(l.telefono ?? "") === t && [...palabras(l.nombre)].some((x) => mias.has(x)));
+    return new Set(porTel.map((l) => claveEmail(l.email) || l.id)).size === 1 ? porTel : [];
+  };
+  const emailDeVenta = new Map<ID, string>(e.ventas.map((vt) => [vt.id, claveEmail(personaDeVenta(e, vt).email)]));
+  /* La venta que le corresponde a una persona: activa, que no sea de otro alumno, por su mail o por su lead. Si compró más de una,
+     la del programa que cursa (IA → Upgrade AI, Downsell → Downsell, lo demás → Mentoría) y, a igualdad, la más reciente. */
+  const ventaPara = (email: string, telefono: string, nombre: string, programas: readonly string[]): Venta | undefined => {
+    const k = claveEmail(email);
+    const leadIds = new Set(leadsDe(email, telefono, nombre).map((l) => l.id));
+    const tomadas = new Set<ID>();
+    for (const x of alumnos.values()) if (x.ventaId) tomadas.add(x.ventaId);
+    const candidatas = e.ventas.filter((vt) => vt.estado === "activa" && !tomadas.has(vt.id)
+      && ((k !== "" && emailDeVenta.get(vt.id) === k) || (vt.contactoId !== undefined && leadIds.has(vt.contactoId))));
+    if (candidatas.length < 2) return candidatas[0];
+    const cursa = sinAcentos(programas.join(" "));
+    const quiere = /\bia\b|\bai\b/.test(cursa) ? /\bai\b|upgrade/ : /downsell/.test(cursa) ? /downsell/ : /mentoria/;
+    const puntos = (vt: Venta) => (quiere.test(sinAcentos(planDeVenta(e, vt))) ? 0 : 1);
+    return [...candidatas].sort((x, y) => puntos(x) - puntos(y) || +new Date(y.fecha) - +new Date(x.fecha))[0];
+  };
+
   const guardarAlumno = (a: Alumno, nuevo: boolean) => {
     alumnos.set(a.id, a);
     tocados.add(a.id);
@@ -377,7 +408,7 @@ export function planificarImportacionCs(e: EstadoApp, tablas: readonly TablaImpo
   /* El alumno que falta, creado con lo poco que se sabe (egresado: viene de un testimonio, un reporte o una agenda). */
   function crearAlumno(d: { nombre: string; email: string; telefono: string; pais: string; inicio: string; numero?: number | null }, estado: Alumno["estado"], clave: string): Alumno {
     const k = claveEmail(d.email);
-    const lead = k ? e.leads.find((l) => claveEmail(l.email) === k) : undefined;
+    const lead = leadsDe(d.email, d.telefono, d.nombre)[0];
     const id = `alu_cs_${hashCorto(k || clave || sinAcentos(d.nombre))}`;
     const a: Alumno = {
       id, nombre: d.nombre, email: d.email, pais: d.pais || undefined, cohorte: "", plan: "", cuotaMensual: 0, moneda: "USD",
@@ -488,9 +519,7 @@ export function planificarImportacionCs(e: EstadoApp, tablas: readonly TablaImpo
         const egreso = egresoTxt ?? (inicio && campos.duracionMeses ? sumarMeses(inicio, campos.duracionMeses) : null);
         alumno = crearAlumno({ nombre, email, telefono, pais: v("pais"), inicio, numero }, egreso && egreso < op.hoy ? "graduado" : "activo", `n${numero ?? ""}|${nombre}`);
         /* Un alumno nuevo del archivo con un servicio comprado: se le enlaza la venta (mismo mail), para el closer y el plan de pago. */
-        const venta = e.ventas.filter((vt) => vt.estado === "activa" && claveEmail(personaDeVenta(e, vt).email) === claveEmail(email) && claveEmail(email) !== "")
-          .filter((vt) => !e.alumnos.some((x) => x.ventaId === vt.id))
-          .sort((x, y) => +new Date(y.fecha) - +new Date(x.fecha))[0];
+        const venta = ventaPara(email, telefono, nombre, programas);
         if (venta) alumnos.set(alumno.id, { ...alumno, ventaId: venta.id, plan: planDeVenta(e, venta), inicio: inicio ? diaAInstante(inicio) : venta.fecha });
         else if (programas[0]) alumnos.set(alumno.id, { ...alumno, plan: programas[0] });
         alumno = alumnos.get(alumno.id)!;
@@ -543,7 +572,11 @@ export function planificarImportacionCs(e: EstadoApp, tablas: readonly TablaImpo
     if (!d.nombre) { descartar(tabla, n, "No dice de qué alumno es."); return null; }
     if (!op.crearFaltantes) { descartar(tabla, n, `«${d.nombre}» no está entre los alumnos (se puede pedir que se cree).`); return null; }
     plan.alumnosCreadosPorOtraTabla++;
-    return crearAlumno(d, "graduado", `${tabla}|${d.nombre}`);
+    const nuevo = crearAlumno(d, "graduado", `${tabla}|${d.nombre}`);
+    const venta = ventaPara(d.email, d.telefono, d.nombre, []);
+    if (!venta) return nuevo;
+    alumnos.set(nuevo.id, { ...nuevo, ventaId: venta.id, plan: planDeVenta(e, venta) });
+    return alumnos.get(nuevo.id)!;
   }
 
   /* ---------- Testimonios ---------- */

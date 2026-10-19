@@ -435,3 +435,28 @@ test("las casillas del Airtable: «checked» es sí y «unchecked» o vacío es 
   for (const si of ["checked", "Checked", "marcado", "verdadero"]) assert.equal(leerSiNo(si), true, si);
   for (const no of ["unchecked", "falso", ""]) assert.equal(leerSiNo(no), false, no);
 });
+
+test("importar Clientes concilia por teléfono con el lead y su venta, elige la del programa que cursa y no confunde a quien comparte teléfono", () => {
+  const base = estado();
+  const e = estado({
+    leads: [...base.leads, { id: "l2", nombre: "Carla Gómez", email: "carla@viejo.com", telefono: "+54 9 11 6000 2222", contactoId: "c2" }] as unknown as EstadoApp["leads"],
+    ventas: [
+      ...base.ventas,
+      { id: "v2", contactoId: "l2", contactoNombre: "Carla Gómez", productoId: "p1", estado: "activa", fecha: "2026-05-01T12:00:00.000Z", moneda: "USD" },
+      { id: "v3", contactoId: "l2", contactoNombre: "Carla Gómez", productoId: "p2", estado: "activa", fecha: "2026-03-01T12:00:00.000Z", moneda: "USD" },
+    ] as unknown as EstadoApp["ventas"],
+    productos: [{ id: "p1", nombre: "Mentoría" }, { id: "p2", nombre: "Upgrade AI" }] as unknown as EstadoApp["productos"],
+  });
+  const csv = ["Nombre y apellido,Mail,Teléfono,Programa,Stack,Edad",
+    "Carla Gómez,carla.nueva@mail.com,54 9 11 6000 2222,HACKEAR IA,Backend,30",
+    "Pedro Ruiz,pedro@mail.com,+54 9 11 6000 2222,Hackear IT,Frontend,28"].join("\n");
+  const p = planificarImportacionCs(e, [tabla("Clientes", csv)], OP);
+
+  const carla = p.alumnos.find((a) => a.nombre === "Carla Gómez")!;
+  assert.deepEqual([carla.leadId, carla.ventaId, carla.plan], ["l2", "v3", "Upgrade AI"], "su mail del Airtable no es el del lead: se la reconoce por teléfono y nombre; de sus dos ventas, la del programa (aunque sea la más vieja)");
+  const pedro = p.alumnos.find((a) => a.nombre === "Pedro Ruiz")!;
+  assert.deepEqual([pedro.leadId, pedro.ventaId], [undefined, undefined], "el mismo teléfono con otro nombre no es la misma persona");
+  /* Ninguna venta queda atada a dos alumnos. */
+  const ventas = [...e.alumnos, ...p.alumnos].map((a) => a.ventaId).filter(Boolean);
+  assert.equal(new Set(ventas).size, ventas.length);
+});
