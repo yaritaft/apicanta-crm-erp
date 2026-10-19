@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createHash } from "node:crypto";
+import { createHash, timingSafeEqual } from "node:crypto";
 import { nubeServidor } from "@/lib/servidor";
 import { claveEmail, completar } from "@/lib/contactos";
 import { webinarDeUtm } from "@/lib/calendly";
@@ -59,6 +59,19 @@ export async function OPTIONS(req: Request) {
   return new NextResponse(null, { status: 204, headers: cors(req.headers.get("origin")) });
 }
 
+/* Una llamada de un servidor de confianza (el Apps Script del Google Sheet de la landing) trae la clave REGISTRO_TOKEN en la
+   cabecera x-registro-token. Ese servidor manda los registros de TODAS las personas desde las mismas IP de Google: sin esto, en el
+   pico de un webinar el límite por IP de abajo los cortaría. Con la clave se saltea el límite y no se guarda la IP (sería la de
+   Google, no la de la persona). Sin la variable definida, o con una clave corta, nadie entra por acá. */
+function esServidorDeConfianza(req: Request): boolean {
+  const secreto = process.env.REGISTRO_TOKEN ?? "";
+  const dado = req.headers.get("x-registro-token") ?? "";
+  if (secreto.length < 16 || !dado) return false;
+  const a = Buffer.from(secreto);
+  const b = Buffer.from(dado);
+  return a.length === b.length && timingSafeEqual(a, b);
+}
+
 /* Hasta 10 registros por minuto por IP en cada instancia: frena a un bot
    sin molestar a una oficina que comparte la conexión. */
 const intentos = new Map<string, number[]>();
@@ -113,7 +126,7 @@ export async function POST(req: Request) {
   if (lista.length && origen && !lista.includes(origen)) {
     return NextResponse.json({ ok: false, error: "Origen no permitido." }, { status: 403, headers: h });
   }
-  const ip = (req.headers.get("x-forwarded-for") ?? "").split(",")[0].trim() || req.headers.get("x-real-ip") || "";
+  const ip = esServidorDeConfianza(req) ? "" : (req.headers.get("x-forwarded-for") ?? "").split(",")[0].trim() || req.headers.get("x-real-ip") || "";
   if (ip && demasiados(ip)) return NextResponse.json({ ok: false, error: "Demasiados intentos." }, { status: 429, headers: h });
 
   const d = await leerCuerpo(req);

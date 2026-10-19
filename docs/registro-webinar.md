@@ -69,6 +69,19 @@ fetch("https://apicanta-erp.vercel.app/api/webinar/registro", {
 
 Para aceptar sólo los registros de tus dominios, poné en Vercel `REGISTRO_ORIGENES=https://tu-landing.com`.
 
+### Desde un servidor de confianza (el Apps Script del Google Sheet de la landing)
+
+Si el registro llega desde un servidor y no desde el navegador de cada persona (el Apps Script que escribe el Sheet y
+reenvía a esta ruta), todos salen desde las mismas IP y el límite de 10 por minuto por IP los cortaría en el pico de un
+webinar. Para eso:
+
+1. En Vercel (Production) definí `REGISTRO_TOKEN` con una clave larga y al azar (16 caracteres o más) y volvé a publicar.
+2. El servidor manda esa misma clave en la cabecera `x-registro-token`. Con ella se saltea el límite por IP y **no se
+   guarda la IP** del registro (sería la de Google, no la de la persona).
+3. Sin la variable definida, con una clave corta o con una clave que no coincide, la cabecera no vale y rige el límite de siempre.
+
+La clave no va en el repo (es público): sólo en Vercel y en el Apps Script.
+
 ## 2. La Conversions API de Meta
 
 Con esto Meta recibe, desde el servidor, a quien se registró (Lead), a quien agendó una llamada
