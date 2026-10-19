@@ -11,6 +11,7 @@ import { CopiarLink } from "@/components/ui/Filtros";
 import { VistasGuardadas } from "@/components/ui/VistasGuardadas";
 import { useAbrirFicha } from "@/components/ficha/abrir";
 import { useToast } from "@/components/ui/Toast";
+import { Correo, Telefono } from "@/components/ui/Telefono";
 import { AsistenteVenta } from "@/components/ventas/AsistenteVenta";
 import { PastillaEstado, useCambiarEstado } from "@/components/estados/EstadoLlamada";
 import { acciones, useEstado, type CambiosLlamada } from "@/lib/store";
@@ -34,7 +35,7 @@ import { bajarExcel, excelCobros, filasExcelCobros } from "@/lib/excelCobros";
 import { paginaDeURL, useBusquedaURL, useEscribirURL, useParamsURL } from "@/lib/useParamsURL";
 import { useRangoURL } from "@/lib/useRango";
 import {
-  CAMPO_DE_OPCIONES, COLUMNA, COLUMNAS, COLUMNAS_DE_ANTES, COLUMNAS_DE_COBROS, COLOR_COBROS, coincideBusqueda, EDITOR, escrituraDe, filasTabla, filtroAURL, filtrosDeURL,
+  CAMPO_DE_OPCIONES, COLUMNA, COLUMNAS, COLUMNAS_DE_ANTES, COLUMNAS_DE_COBROS, COLUMNAS_SUMADAS, COLOR_COBROS, coincideBusqueda, EDITOR, escrituraDe, filasTabla, filtroAURL, filtrosDeURL,
   hayFiltro, MAX_ORDENES, opcionesDeColumna, ORDEN_CHEQUEO, ORDEN_COMPROBANTE, ORDEN_CONCILIADO, ORDEN_POR_DEFECTO, ordenarFilas, pagosDeLlamadas, totalCobrado, ordenesAURL, ordenesDeURL, PAISES, pasaFiltros, POR_QUE_NO,
   textoDeFiltro, VACIAS, valorEditable, VISIBLES_POR_DEFECTO,
   type ClaveColumna, type FilaTabla, type FiltroColumna as Filtro, type OrdenColumna,
@@ -190,7 +191,7 @@ export function CrmTabla({ misLlamadas = false }: { misLlamadas?: boolean } = {}
 
   /* Siempre con la lista completa: el acceso llega después del primer dibujo, y si el hook arrancara sin las
      dos columnas, quien sí las ve no las tendría de entrada. Quien no puede leer los cobros no las ve. */
-  const cols = useColumnas("crm", DEFS, VISIBLES_POR_DEFECTO, COLUMNAS_DE_ANTES);
+  const cols = useColumnas("crm", DEFS, VISIBLES_POR_DEFECTO, COLUMNAS_DE_ANTES, COLUMNAS_SUMADAS);
   const visibles = useMemo(() => (veCobros ? cols.visibles : cols.visibles.filter((k) => !esDeCobros(k))), [veCobros, cols.visibles]);
 
   const cambiarFiltro = useCallback((clave: ClaveColumna, fc: Filtro | null) => {
@@ -540,6 +541,9 @@ function Celda({ clave, f, color }: { clave: ClaveColumna; f: FilaTabla; color?:
       : <span className="truncate" title={f.cargo.join(", ")}>{f.cargo.join(", ")}</span>;
     case "tecnologias": return f.tecnologias.length ? <span className="truncate" title={f.tecnologias.join(", ")}>{f.tecnologias.join(", ")}</span> : nada;
     case "formacion": return f.formacion.length ? <span className="truncate" title={f.formacion.join(", ")}>{f.formacion.join(", ")}</span> : nada;
+    /* Tocar el teléfono o el mail lo copia; el teléfono además abre su chat de WhatsApp. */
+    case "telefono": return f.telefono ? <Telefono valor={f.telefono} pais={f.pais} compacto /> : nada;
+    case "email": return f.email ? <Correo valor={f.email} compacto /> : nada;
     default: {
       const v = (f as unknown as Record<string, string>)[clave] ?? "";
       return v ? <span className="truncate" title={v}>{v}</span> : nada;

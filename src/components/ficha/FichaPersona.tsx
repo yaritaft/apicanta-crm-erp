@@ -13,6 +13,8 @@ import { EditarAlumno, VentaDelAlumno } from "@/components/alumnos/Servicio";
 import { ESTADO_ALUMNO, ESTADOS_ALUMNO, cuandoEmpezo } from "@/components/alumnos/comun";
 import { alumnoDeVenta, etapaDelAlumno, etapasDeServicio } from "@/lib/alumnos";
 import { useToast } from "@/components/ui/Toast";
+import { copiarTexto } from "@/components/ui/Telefono";
+import { enlaceWhatsapp, numeroParaCopiar } from "@/lib/contacto-telefono";
 import { AsistenteVenta } from "@/components/ventas/AsistenteVenta";
 import { desdeVenta, FormularioVenta, type BorradorVenta } from "@/components/ventas/FormularioVenta";
 import { RegistrarPago } from "@/components/cobros/RegistrarPago";
@@ -164,13 +166,11 @@ function Lateral({ e, p, filas }: { e: EstadoApp; p: Persona; filas: FilaTabla[]
   const toast = useToast();
   const c = p.contacto;
   const lead = p.leads[0];
-  const whatsapp = p.telefono ? p.telefono.replace(/[^\d]/g, "") : "";
+  const whatsapp = enlaceWhatsapp(p.telefono, p.contacto?.pais || p.leads[0]?.pais);
 
   const copiar = (valor: string, que: string) => {
-    navigator.clipboard?.writeText(valor).then(
-      () => toast(`${que.charAt(0).toUpperCase() + que.slice(1)} copiado.`),
-      () => toast("No se pudo copiar.", "err"),
-    );
+    void copiarTexto(que === "el teléfono" ? numeroParaCopiar(valor, c?.pais || lead?.pais) : valor).then((ok) =>
+      toast(ok ? `${que.charAt(0).toUpperCase() + que.slice(1)} copiado.` : "No se pudo copiar.", ok ? "ok" : "err"));
   };
 
   /* De dónde vino: por qué vía agendó cada vez y con qué anuncio. */
@@ -189,7 +189,7 @@ function Lateral({ e, p, filas }: { e: EstadoApp; p: Persona; filas: FilaTabla[]
         <Fila onCopiar={copiar} icono={<Mail size={15} />} valor={p.email} vacio="Sin email" que="el email"
           accion={<a className="link t-sm" href={`mailto:${p.email}`}>Escribir</a>} />
         <Fila onCopiar={copiar} icono={<Phone size={15} />} valor={p.telefono} vacio="Sin teléfono" que="el teléfono"
-          accion={whatsapp ? <a className="link t-sm" href={`https://wa.me/${whatsapp}`} target="_blank" rel="noopener noreferrer"><MessageCircle size={13} /> WhatsApp</a> : undefined} />
+          accion={whatsapp ? <a className="link t-sm" href={whatsapp} target="_blank" rel="noopener noreferrer" title="Abrir el chat de WhatsApp" aria-label="Abrir el chat de WhatsApp"><MessageCircle size={15} /></a> : undefined} />
         {c?.instagram && <Fila onCopiar={copiar} icono={<span className="t-sm">@</span>} valor={c.instagram.replace(/^@/, "")} vacio="" que="el Instagram" />}
       </section>
 
@@ -243,7 +243,12 @@ function Fila({ icono, valor, vacio, que, accion, onCopiar }: {
   return (
     <div className="dato-fila">
       <span className="t-subtle" style={{ display: "inline-flex" }}>{icono}</span>
-      <span className={`truncate t-sm${valor ? "" : " t-subtle"}`} style={{ flex: 1, minWidth: 0 }}>{valor || vacio}</span>
+      {valor ? (
+        <button type="button" className="telefono__num t-sm" style={{ flex: 1, minWidth: 0, border: 0, background: "none", padding: 0, textAlign: "left", overflowWrap: "anywhere", cursor: "copy" }}
+          title={`Tocá para copiar ${que}`} onClick={() => onCopiar(valor, que)}>{valor}</button>
+      ) : (
+        <span className="truncate t-sm t-subtle" style={{ flex: 1, minWidth: 0 }}>{vacio}</span>
+      )}
       {valor && accion}
       {valor && (
         <IconButton etiqueta={`Copiar ${que}`} onClick={() => onCopiar(valor, que)}>

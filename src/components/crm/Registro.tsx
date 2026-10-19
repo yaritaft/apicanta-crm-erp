@@ -1,5 +1,6 @@
 "use client";
 
+import { enlaceWhatsapp } from "@/lib/contacto-telefono";
 import React, { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { ChevronDown, ChevronUp, ExternalLink, History, MessageSquare, ShoppingBag, Star, UserRound, X } from "lucide-react";
@@ -23,7 +24,6 @@ import { SelectorOpciones } from "./Editores";
    formulario de Calendly.
    ================================================================== */
 
-const digitos = (s: string) => s.replace(/[^\d]/g, "");
 
 export function Registro({ f, opciones, pintar, onGuardar, onCerrar, onFicha, onCargarVenta, anterior, siguiente, posicion }: {
   f: FilaCrm;
@@ -232,7 +232,7 @@ function ValorRegistro({ f, c, opciones, pintar, onGuardar }: {
     <div className="crm-registro__caja crm-registro__caja--quieta">
       {!texto ? <span className="crm-registro__vacio">—</span>
         : c.tipo === "email" ? <a className="crm-link" href={`mailto:${texto}`}>{texto}</a>
-        : c.tipo === "telefono" ? <a className="crm-link" href={`https://wa.me/${digitos(texto)}`} target="_blank" rel="noreferrer">{texto}</a>
+        : c.tipo === "telefono" ? (enlaceWhatsapp(texto) ? <a className="crm-link" href={enlaceWhatsapp(texto)!} target="_blank" rel="noreferrer">{texto}</a> : texto)
         : texto}
     </div>
   );

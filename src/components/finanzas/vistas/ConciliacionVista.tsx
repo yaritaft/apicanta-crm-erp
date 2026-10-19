@@ -1,5 +1,6 @@
 "use client";
 
+import { enlaceWhatsapp } from "@/lib/contacto-telefono";
 import { PasosDeConciliacion } from "@/components/cierre/Avisos";
 import React, { useMemo, useState } from "react";
 import {
@@ -510,8 +511,8 @@ function FilaMovimiento({ mov, M, abierto, onAbrir, onNuevaVenta }: {
                 <dd>
                   {quien.telefono}
                   {!mov.clienteTelefono && <span className="t-subtle"> · de su ficha</span>}
-                  {quien.telefono.replace(/\D/g, "").length >= 8 && (
-                    <> · <a href={`https://wa.me/${quien.telefono.replace(/\D/g, "")}`} target="_blank" rel="noreferrer">WhatsApp</a></>
+                  {enlaceWhatsapp(quien.telefono) && (
+                    <> · <a href={enlaceWhatsapp(quien.telefono)!} target="_blank" rel="noreferrer">WhatsApp</a></>
                   )}
                 </dd>
               </>

@@ -18,7 +18,8 @@ import { useUsuarioActual } from "@/lib/usuario";
 import { useBusquedaURL, useParamsURL, useTablaURL } from "@/lib/useParamsURL";
 import { num, pct } from "@/lib/format";
 import { diaArgentina } from "@/lib/reporteFinanciera";
-import { digitosWhatsapp, normalizarTelefono, telefonoLegible } from "@/lib/telefonos";
+import { normalizarTelefono, telefonoLegible } from "@/lib/telefonos";
+import { enlaceWhatsapp } from "@/lib/contacto-telefono";
 import {
   contarRegistros, filtrarRegistros, isoDePais, UTMS_FORM, type FiltroMarca, type RegistroForm,
 } from "@/lib/registros-webinar";
@@ -176,13 +177,13 @@ export function VistaFormularios() {
       clave: "telefono", titulo: "Teléfono", orden: (r) => r.telefonoNorm ?? r.telefono ?? "",
       celda: (r) => {
         if (!r.telefono) return <span className="t-subtle">—</span>;
-        const wa = digitosWhatsapp(r.telefono, isoDePais(r.pais));
+        const wa = enlaceWhatsapp(r.telefono, isoDePais(r.pais));
         return (
           <span className="fm-tel">
             <span className="t-num">{telefonoLegible(r.telefono, isoDePais(r.pais))}</span>
             <button type="button" className="fm-icono" title="Copiar el teléfono" aria-label={`Copiar el teléfono de ${r.nombre || r.email}`} onClick={alto(() => void copiar(r))}><Copy size={14} /></button>
             {wa && (
-              <a className="fm-icono fm-icono--wa" href={`https://wa.me/${wa}`} target="_blank" rel="noopener noreferrer" title="Abrir WhatsApp"
+              <a className="fm-icono fm-icono--wa" href={wa} target="_blank" rel="noopener noreferrer" title="Abrir WhatsApp"
                 aria-label={`Abrir WhatsApp con ${r.nombre || r.email}`} onClick={(ev) => ev.stopPropagation()}><MessageCircle size={14} /></a>
             )}
           </span>

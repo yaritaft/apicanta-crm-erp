@@ -32,8 +32,15 @@ const clave = (tabla: string) => `apicanta:columnas:${tabla}`;
 
 /* `deAntes`: columnas que cambiaron de clave. Quien tenía guardada (o trae
    en un link) la de antes ve en su lugar la de ahora (una o varias), en vez
-   de perderla. Tiene que ser un objeto fijo (de módulo). */
-export function useColumnas(tabla: string, todas: DefColumna[], porDefecto: string[], deAntes?: Record<string, string[]>) {
+   de perderla. Tiene que ser un objeto fijo (de módulo).
+
+   `sumadas`: columnas que se agregaron a la vista de entrada después. Quien ya
+   guardó su lista nunca las vería (la suya manda), así que se le suman una sola
+   vez, después de `despuesDe`; si las saca, no vuelven (queda anotado el `id`).
+   Quien no guardó nada ya las tiene por defecto. También de módulo. */
+export interface ColumnasSumadas { id: string; despuesDe: string; claves: string[] }
+
+export function useColumnas(tabla: string, todas: DefColumna[], porDefecto: string[], deAntes?: Record<string, string[]>, sumadas?: ColumnasSumadas[]) {
   const fijas = useMemo(() => todas.filter((c) => c.fija).map((c) => c.clave), [todas]);
   const [orden, setOrden] = useState<string[]>(porDefecto);
   /* Las que existen, con las de antes pasadas a las de ahora y sin repetir. */
@@ -44,14 +51,29 @@ export function useColumnas(tabla: string, todas: DefColumna[], porDefecto: stri
   useEffect(() => {
     try {
       const guardado = localStorage.getItem(clave(tabla));
-      if (!guardado) return;
-      const leido = JSON.parse(guardado) as string[];
+      const hechas: string[] = JSON.parse(localStorage.getItem(`${clave(tabla)}:sumadas`) ?? "[]");
+      const pendientes = (sumadas ?? []).filter((x) => !hechas.includes(x.id));
+      /* Sin lista guardada, ya está en la de entrada: se anota para que, el día que guarde la suya, no se le agreguen. */
+      if (!guardado) {
+        if (pendientes.length) localStorage.setItem(`${clave(tabla)}:sumadas`, JSON.stringify([...hechas, ...pendientes.map((x) => x.id)]));
+        return;
+      }
+      let leido = JSON.parse(guardado) as string[];
+      if (pendientes.length) {
+        for (const x of pendientes) {
+          const faltan = x.claves.filter((k) => !leido.includes(k));
+          const i = leido.indexOf(x.despuesDe);
+          leido = i === -1 ? [...leido, ...faltan] : [...leido.slice(0, i + 1), ...faltan, ...leido.slice(i + 1)];
+        }
+        localStorage.setItem(clave(tabla), JSON.stringify(leido));
+        localStorage.setItem(`${clave(tabla)}:sumadas`, JSON.stringify([...hechas, ...pendientes.map((x) => x.id)]));
+      }
       /* Se filtra contra `todas` a propósito: si una versión vieja guardó una
          columna que ya no existe, ignorarla es mejor que romper la tabla. */
       const validas = vigentes(leido);
       if (validas.length) setOrden(validas);
     } catch { /* modo privado, o JSON de una versión anterior */ }
-  }, [tabla, vigentes]);
+  }, [tabla, vigentes, sumadas]);
 
   /* Las columnas que trae un link copiado, si trae. */
   const params = useSearchParams();

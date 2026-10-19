@@ -4,6 +4,7 @@ import React, { useMemo, useRef, useState, type ComponentProps } from "react";
 import { AlertTriangle, Check, ShoppingBag, Star, UserRoundCheck } from "lucide-react";
 import { Asistente, Pregunta, type PasoAsistente } from "@/components/ui/Asistente";
 import { Badge, Button, Input, Select, Textarea } from "@/components/ui/ui";
+import { Correo, Telefono } from "@/components/ui/Telefono";
 import { useToast } from "@/components/ui/Toast";
 import { AsistenteVenta } from "@/components/ventas/AsistenteVenta";
 import { EstadoDeLlamada, EstadoEditable } from "@/components/estados/EstadoLlamada";
@@ -385,6 +386,11 @@ function PasoLlamada({ s, f, hoy, r, objeciones, opciones, buscaEnFathom, conPue
           <span className="t-sm t-subtle t-num">
             {dia === hoy ? "Hoy" : textoFecha(dia)} · {HORA.format(new Date(s.inicia))} hs{s.anfitrion ? ` · ${s.anfitrion}` : ""}
           </span>
+        </div>
+        {/* Para escribirle por WhatsApp o darle accesos sin ir a buscarlo: tocar el dato lo copia. */}
+        <div className="row-wrap" style={{ gap: 12, alignItems: "center" }}>
+          <Telefono valor={f?.telefono} pais={f?.pais} vacio="Sin teléfono" />
+          <Correo valor={f?.email} vacio="Sin mail" />
         </div>
         {datos.length > 0 && (
           <dl className="crm-eod__datos">

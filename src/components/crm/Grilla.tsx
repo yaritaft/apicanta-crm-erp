@@ -7,6 +7,7 @@ import {
   type CampoCrm, type ClaveCampo, type FilaCrm, type Pintor,
 } from "@/lib/crm";
 import type { CampoOpcionesCrm, OpcionCrm } from "@/lib/types";
+import { Telefono } from "@/components/ui/Telefono";
 import { Casilla, Chip, IconoCampo, MarcaAuto } from "./piezas";
 import { EditorTextoLargo, SelectorOpciones } from "./Editores";
 
@@ -78,7 +79,6 @@ interface Activa { id: string; col: number }
 interface Edicion extends Activa { inicial?: string }
 
 const editable = (c: CampoCrm) => c.origen === "equipo";
-const digitos = (s: string) => s.replace(/[^\d]/g, "");
 
 export function Grilla(p: PropsGrilla) {
   const {
@@ -391,10 +391,7 @@ export function Grilla(p: PropsGrilla) {
       case "email":
         return v ? <a className="crm-link" href={`mailto:${v}`} onMouseDown={(e) => e.stopPropagation()}>{String(v)}</a> : null;
       case "telefono":
-        return v ? (
-          <a className="crm-link crm-txt--num" href={`https://wa.me/${digitos(String(v))}`} target="_blank" rel="noreferrer"
-            title="Abrir el chat de WhatsApp" onMouseDown={(e) => e.stopPropagation()}>{String(v)}</a>
-        ) : null;
+        return v ? <Telefono valor={String(v)} compacto /> : null;
       case "formula":
         if (!v) return null;
         return c.etiqueta ? <Chip texto={String(v)} color={pintar(c.clave, String(v))} /> : <span className="crm-txt crm-txt--num">{String(v)}</span>;

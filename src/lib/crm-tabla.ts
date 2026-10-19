@@ -403,8 +403,15 @@ export const COLUMNA: Record<ClaveColumna, ColumnaTabla> = Object.fromEntries(CO
 export const esColumna = (k: string): k is ClaveColumna => Object.prototype.hasOwnProperty.call(COLUMNA, k);
 
 export const VISIBLES_POR_DEFECTO: ClaveColumna[] = [
-  "llamada", "nombre", "closer", "estadoPreCall", "estadoLlamada", "objecion", "oferta", "cierre", "via", "ad", "pais",
+  "llamada", "nombre", "telefono", "email", "closer", "estadoPreCall", "estadoLlamada", "objecion", "oferta", "cierre", "via", "ad", "pais",
   "tecnologias", "ingles", "ingreso", "inversion", "calificada", "grabacion", "venta", "comprobante", "conciliado",
+];
+
+/* Columnas que se sumaron después a la vista de entrada. Quien ya tenía guardadas las suyas las
+   recibe una sola vez (después de `despuesDe`) y, si la saca, no vuelve: lo pidió el equipo de
+   closers el 19/10 (el teléfono y el mail a mano, sin buscarlos en la ficha). */
+export const COLUMNAS_SUMADAS: { id: string; despuesDe: string; claves: ClaveColumna[] }[] = [
+  { id: "contacto-1910", despuesDe: "nombre", claves: ["telefono", "email"] },
 ];
 
 /* Las dos columnas que miran los cobros de la venta: sólo las ve quien puede leer los cobros. */

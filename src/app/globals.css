@@ -3695,6 +3695,22 @@ span.kpis__etiqueta:hover { color: var(--ink); text-decoration: none; }
 .crm-eod__datos div { min-width: 0; }
 .crm-eod__datos dt { font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-subtle); }
 .crm-eod__datos dd { margin: 2px 0 0; font-size: 14px; line-height: 20px; color: var(--ink); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow-wrap: anywhere; }
+/* El teléfono de una persona (components/ui/Telefono.tsx): tocarlo lo copia, el ícono abre WhatsApp. */
+.telefono { display: inline-flex; align-items: center; gap: var(--space-3); max-width: 100%; min-width: 0; }
+.telefono__num {
+  display: inline-flex; align-items: center; gap: 6px; min-width: 0; padding: 4px 10px; border: 1px solid var(--border); border-radius: var(--radius-md);
+  background: var(--surface-200); color: var(--ink); font: inherit; font-size: 14px; line-height: 20px; cursor: copy;
+  transition: border-color 120ms ease, background 120ms ease;
+}
+.telefono__num:hover { border-color: var(--brand); }
+.telefono__num:focus-visible, .telefono__wa:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+.telefono__num svg { flex: none; color: var(--ink-subtle); }
+.telefono__wa { display: inline-flex; align-items: center; gap: 4px; flex: none; color: var(--brand); font-size: 13px; font-weight: 600; text-decoration: none; white-space: nowrap; }
+.telefono__wa:hover { text-decoration: underline; }
+/* En una celda de tabla: sin caja, el número como texto y el chat al lado. */
+.telefono--compacto { gap: var(--space-2); }
+.telefono--compacto .telefono__num { padding: 0; border: 0; background: none; font-size: inherit; line-height: inherit; }
+.telefono--compacto .telefono__num:hover { color: var(--brand); text-decoration: underline; }
 .crm-eod__bloque { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-3); padding: var(--space-4); border-radius: var(--radius-lg); background: var(--surface-200); }
 .crm-eod__ok { display: flex; align-items: center; gap: 8px; margin: 0; color: var(--success); font-weight: 600; }
 /* La venta la carga otra persona: está avisado, no cargado. */
