@@ -38,7 +38,7 @@ import { extraConCorreccion, tituloPerfil, type CampoPerfil } from "./perfil";
 import { puedeCargarDevolucion, puedeDarDeBaja, puedeEditar, TIPOS_POR_DEFECTO, type MiAcceso } from "./permisos";
 import { esDevolucionConfirmada } from "./devoluciones";
 import { esIncobrable, notasDeIncobrable, notasSinIncobrable } from "./cuota-incobrable";
-import { atarPropuesta, conciliarReembolsos, type ReembolsoCrudo, type ResultadoReembolsos } from "./reembolsos";
+import { atarPropuesta, conciliarReembolsos, quienDelReembolso, type ReembolsoCrudo, type ResultadoReembolsos } from "./reembolsos";
 import {
   cambiosDeChequeo, conChequeo, conComprobanteNuevo, puedeCambiarComprobante, puedeUsarCasillero,
   quienEs, ROL_DE_CASILLERO, sinColumnasDelControl, type CasilleroChequeo, type VeredictoChequeo,
@@ -310,10 +310,8 @@ export function alElegirDevolucion(f: (a: AvisoDevolucion) => void): () => void 
 
 let resincronizar: number | undefined;
 /** De quién es un reembolso que informó una pasarela: la venta, el nombre que mandó la pasarela o «una persona sin identificar». */
-function nombreDeReembolso(e: Pick<EstadoApp, "ventas">, d: Pick<Devolucion, "ventaId" | "extra">): string {
-  const venta = d.ventaId ? e.ventas.find((v) => v.id === d.ventaId) : undefined;
-  const mandado = typeof d.extra?.clienteNombre === "string" ? d.extra.clienteNombre.trim() : "";
-  return venta?.contactoNombre || mandado || "una persona sin identificar";
+function nombreDeReembolso(e: Pick<EstadoApp, "ventas" | "movimientos">, d: Pick<Devolucion, "ventaId" | "proveedor" | "extra">): string {
+  return quienDelReembolso(e, d).nombre || "una persona sin identificar";
 }
 
 function negada(tabla: string, motivo?: string) {
@@ -2836,14 +2834,53 @@ export const acciones = {
       negada("devoluciones", "Tu tipo de cuenta no puede decidir sobre las devoluciones.");
       return false;
     }
-    const nueva: Devolucion = { ...antes, estado: "propuesta" };
+    /* Si se descartó junto con su cobro, el cobro vuelve a Conciliación (sólo si sigue como se lo dejó). */
+    const cobroId = typeof antes.extra?.cobroDescartado === "string" ? antes.extra.cobroDescartado : undefined;
+    const cobro = cobroId ? e.movimientos.find((m) => m.id === cobroId && m.estado === "ignorado") : undefined;
+    const { cobroDescartado: _c, ...extraSin } = (antes.extra ?? {}) as Record<string, unknown>;
+    void _c;
+    const nueva: Devolucion = { ...antes, estado: "propuesta", extra: extraSin };
     const quien = nombreDeReembolso(e, antes);
     const { lista, nuevo } = registrar(
       e, "transaccion", id, quien, "actualizo",
-      `Se deshizo «no es una devolución»: el reembolso de ${Math.round(antes.monto).toLocaleString("es-AR")} ${antes.moneda} de ${quien} vuelve a esperar su decisión.`,
+      `Se deshizo «no es una devolución»: el reembolso de ${Math.round(antes.monto).toLocaleString("es-AR")} ${antes.moneda} de ${quien} vuelve a esperar su decisión${cobro ? " y su cobro vuelve a Conciliación" : ""}.`,
     );
-    guardar({ ...e, devoluciones: (e.devoluciones ?? []).map((x) => (x.id === id ? nueva : x)), actividad: lista });
-    empujarUpdate("devoluciones", [id], { estado: "propuesta" });
+    const cobroVuelve: Movimiento | undefined = cobro ? { ...cobro, estado: "pendiente" } : undefined;
+    guardar({
+      ...e, devoluciones: (e.devoluciones ?? []).map((x) => (x.id === id ? nueva : x)), actividad: lista,
+      ...(cobroVuelve ? { movimientos: e.movimientos.map((m) => (m.id === cobroVuelve.id ? cobroVuelve : m)) } : {}),
+    });
+    empujar({ tipo: "upsert", tabla: "devoluciones", filas: [nueva] });
+    if (cobroVuelve) empujar({ tipo: "upsert", tabla: "movimientos", filas: [cobroVuelve] });
+    empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
+    return true;
+  },
+
+  /* «Descartar el reembolso y su cobro»: la pasarela devolvió un cobro que nunca se concilió (nunca contó como cobrado), así que devolverlo no
+     resta nada. Se descartan los dos juntos y «Deshacer» los trae a los dos de vuelta. Sin un cobro sin conciliar, sólo descarta el reembolso. */
+  descartarReembolsoConSuCobro(id: ID): boolean {
+    const e = snapshot();
+    const antes = (e.devoluciones ?? []).find((x) => x.id === id);
+    if (!antes || antes.estado !== "propuesta") return false;
+    if (acceso && !puedeCargarDevolucion(acceso)) {
+      negada("devoluciones", "Tu tipo de cuenta no puede decidir sobre las devoluciones.");
+      return false;
+    }
+    const { cobro, cobroSinContar } = quienDelReembolso(e, antes);
+    const descartaElCobro = Boolean(cobro && cobroSinContar && cobro.estado === "pendiente");
+    const nueva: Devolucion = { ...antes, estado: "ignorada", extra: { ...(antes.extra ?? {}), ...(descartaElCobro ? { cobroDescartado: cobro!.id } : {}) } };
+    const cobroIgnorado: Movimiento | undefined = descartaElCobro ? { ...cobro!, estado: "ignorado" } : undefined;
+    const quien = nombreDeReembolso(e, antes);
+    const { lista, nuevo } = registrar(
+      e, "transaccion", id, quien, "actualizo",
+      `Se descartó el reembolso de ${Math.round(antes.monto).toLocaleString("es-AR")} ${antes.moneda} de ${quien}${cobroIgnorado ? " junto con su cobro, que nunca se había conciliado" : ""}.`,
+    );
+    guardar({
+      ...e, devoluciones: (e.devoluciones ?? []).map((x) => (x.id === id ? nueva : x)), actividad: lista,
+      ...(cobroIgnorado ? { movimientos: e.movimientos.map((m) => (m.id === cobroIgnorado.id ? cobroIgnorado : m)) } : {}),
+    });
+    empujar({ tipo: "upsert", tabla: "devoluciones", filas: [nueva] });
+    if (cobroIgnorado) empujar({ tipo: "upsert", tabla: "movimientos", filas: [cobroIgnorado] });
     empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
     return true;
   },

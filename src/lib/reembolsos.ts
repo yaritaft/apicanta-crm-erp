@@ -1,4 +1,4 @@
-import type { Devolucion, EstadoApp, ID, Moneda, Pago, ProveedorPasarela, Venta } from "./types";
+import type { Devolucion, EstadoApp, ID, Moneda, Movimiento, Pago, ProveedorPasarela, Venta } from "./types";
 import { enRangoDeDias, type RangoDeDias } from "./dia-negocio";
 
 /* ==================================================================
@@ -273,6 +273,29 @@ export function propuestasPendientes(e: Pick<EstadoApp, "devoluciones">, rango?:
   return (e.devoluciones ?? [])
     .filter((d) => d.estado === "propuesta" && (!rango || enRangoDeDias(d.fecha, rango)))
     .sort((a, b) => Date.parse(b.fecha) - Date.parse(a.fecha));
+}
+
+/** El cobro de la pasarela al que corresponde un reembolso, aunque nadie lo haya conciliado: se busca por la referencia que informó la pasarela
+ *  (el `pay_…` de Whop, el `ch_…`/`pi_…` de Stripe). Aunque «el cobro no esté cargado como pago», casi siempre está en Conciliación con el nombre. */
+export function movimientoDelReembolso(e: Pick<EstadoApp, "movimientos">, d: Pick<Devolucion, "proveedor" | "extra">): Movimiento | undefined {
+  const refs = Array.isArray(d.extra?.referenciasCobro) ? (d.extra.referenciasCobro as unknown[]).filter((x): x is string => typeof x === "string" && x.length > 0) : [];
+  if (refs.length === 0) return undefined;
+  return (e.movimientos ?? []).find((m) => (!d.proveedor || m.proveedor === d.proveedor) && refs.includes(m.referencia));
+}
+
+/** De quién es un reembolso: la venta, lo que mandó la pasarela o, si no mandó nada, el nombre de su cobro original. `cobroSinContar` es el caso
+ *  típico de un «sin identificar»: el cobro que se devolvió nunca se concilió, o sea que nunca contó como cobrado, y devolverlo restaría de más. */
+export function quienDelReembolso(
+  e: Pick<EstadoApp, "ventas" | "movimientos">, d: Pick<Devolucion, "ventaId" | "proveedor" | "extra">,
+): { nombre: string | undefined; cobro?: Movimiento; cobroSinContar: boolean } {
+  const venta = d.ventaId ? (e.ventas ?? []).find((v) => v.id === d.ventaId) : undefined;
+  const cobro = movimientoDelReembolso(e, d);
+  const mandado = typeof d.extra?.clienteNombre === "string" ? d.extra.clienteNombre.trim() : "";
+  return {
+    nombre: venta?.contactoNombre || mandado || cobro?.clienteNombre?.trim() || undefined,
+    cobro,
+    cobroSinContar: Boolean(cobro && cobro.estado !== "conciliado" && !cobro.pagoId && !venta),
+  };
 }
 
 /** Las que alguien marcó como «no es una devolución»: quedan guardadas para poder deshacerlo (un clic de más no puede perder un reembolso). */

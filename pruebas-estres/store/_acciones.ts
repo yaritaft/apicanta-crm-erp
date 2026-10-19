@@ -395,7 +395,7 @@ export const CATALOGO: Accion[] = [
     nombre: "devoluciones", peso: 3,
     correr: (a, e, S) => {
       const ds = (e.devoluciones ?? []) as { id: string; estado: string }[];
-      const que = a.pick(["registrar", "editar", "ignorar", "deshacer-ignorar", "borrar", "reembolsos", "atar"]);
+      const que = a.pick(["registrar", "editar", "ignorar", "deshacer-ignorar", "descartar-con-cobro", "borrar", "reembolsos", "atar"]);
       const v = uno((e.ventas as { id: string; estado: string }[]).filter((x) => x.estado === "activa"), a) as { id: string };
       if (que === "registrar" || ds.length === 0) {
         if (v === (NO as unknown)) return NO;
@@ -410,6 +410,7 @@ export const CATALOGO: Accion[] = [
         S.acciones.editarDevolucion(d.id, a.pick([{ motivo: undefined, notas: libre(a) }, { monto: dinero(a) }, { procesadorId: undefined }, { noDescontarAlCloser: true }, { comprobante: undefined, motivo: libre(a) }]) as never);
       } else if (que === "ignorar") S.acciones.ignorarDevolucion(a.pick(ds).id);
       else if (que === "deshacer-ignorar") S.acciones.volverAProponerDevolucion(a.pick(ds).id);
+      else if (que === "descartar-con-cobro") S.acciones.descartarReembolsoConSuCobro(a.pick(ds).id);
       else if (que === "borrar") S.acciones.borrarDevolucion(a.pick(ds).id);
       else if (que === "reembolsos") {
         S.acciones.importarReembolsos([{ proveedor: "stripe", referencia: `re_${a.entero(1, 99999)}`, referenciasCobro: [`pi_${a.entero(1, 99999)}`], monto: dinero(a), moneda: "USD", fecha: dia(a, -5, 0), clienteNombre: persona(a), motivo: "requested_by_customer" }] as never);

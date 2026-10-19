@@ -11,7 +11,7 @@ import { abrirDevolucion } from "@/lib/devolucion-ui";
 import { fechaLarga, money } from "@/lib/format";
 import { puedeCargarDevolucion } from "@/lib/permisos";
 import { nombrePasarela } from "@/lib/pasarelas";
-import { candidatasDe, propuestasAtables, propuestasDescartadas, propuestasPendientes, reembolsoDePropuesta } from "@/lib/reembolsos";
+import { candidatasDe, propuestasAtables, propuestasDescartadas, propuestasPendientes, quienDelReembolso, reembolsoDePropuesta } from "@/lib/reembolsos";
 import type { RangoDeDias } from "@/lib/dia-negocio";
 import type { EstadoApp } from "@/lib/types";
 
@@ -61,7 +61,7 @@ export function ReembolsosPasarelas({ e, rango }: { e: EstadoApp; rango?: RangoD
           ayuda="Lo que las pasarelas informaron como devuelto y todavía no es una devolución de Finanzas. No cuenta en el Cash Collected, la caja ni las comisiones hasta que se confirme."
           formula="Suma de las devoluciones en estado «propuesta» (las que informó una pasarela y nadie confirmó)"
           componentes={() => [
-            ...pendientes.map((d) => ({ concepto: `${e.ventas.find((v) => v.id === d.ventaId)?.contactoNombre ?? (typeof d.extra?.clienteNombre === "string" ? d.extra.clienteNombre : "Sin identificar")} · ${fechaLarga(d.fecha)}`, valor: M(d.monto), signo: "+" as const })),
+            ...pendientes.map((d) => ({ concepto: `${quienDelReembolso(e, d).nombre ?? "Sin identificar"} · ${fechaLarga(d.fecha)}`, valor: M(d.monto), signo: "+" as const })),
             { concepto: "Sin confirmar", valor: M(total), signo: "=" as const },
           ]}
         />
@@ -71,7 +71,8 @@ export function ReembolsosPasarelas({ e, rango }: { e: EstadoApp; rango?: RangoD
           const venta = e.ventas.find((v) => v.id === d.ventaId);
           const crudo = reembolsoDePropuesta(d);
           const candidatas = crudo ? candidatasDe(e, crudo) : [];
-          const nombre = venta?.contactoNombre ?? (typeof d.extra?.clienteNombre === "string" ? d.extra.clienteNombre : "Sin identificar");
+          const { nombre: quien, cobro, cobroSinContar } = quienDelReembolso(e, d);
+          const nombre = quien ?? "Sin identificar";
           return (
             <div className="devol-fila" key={d.id}>
               <Undo2 size={13} className="t-subtle" aria-hidden />
@@ -81,7 +82,12 @@ export function ReembolsosPasarelas({ e, rango }: { e: EstadoApp; rango?: RangoD
                 {fechaLarga(d.fecha)}{d.extra?.fechaDelCobro === true ? " (del cobro)" : ""}
               </span>
               {d.motivo && <span className="t-subtle">{d.motivo}</span>}
-              {!venta && <span className="t-subtle">· no encontramos el cobro en la app</span>}
+              {!venta && !cobro && <span className="t-subtle">· no encontramos el cobro en la app</span>}
+              {!venta && cobro && (
+                <span className="t-subtle" title="El cobro que se devolvió, tal como figura en Conciliación.">
+                  · cobro original: {fechaLarga(cobro.fecha)} · {M(cobro.monto)}{cobroSinContar ? " · nunca se concilió: no contó como cobrado" : ""}
+                </span>
+              )}
               <span className="spacer" />
               <span className="t-num t-strong">{M(d.monto)}</span>
               {puede && (
@@ -94,6 +100,15 @@ export function ReembolsosPasarelas({ e, rango }: { e: EstadoApp; rango?: RangoD
                     </Button>
                   ))}
                   <Button sm variante="primary" onClick={() => abrirDevolucion({ propuestaId: d.id, ventaId: d.ventaId })}>Confirmar</Button>
+                  {cobroSinContar && cobro?.estado === "pendiente" && (
+                    <Button sm variante="secondary"
+                      title="El cobro que devolvió la pasarela nunca se concilió, o sea que nunca contó como cobrado: devolverlo no resta nada. Se descartan los dos y se puede deshacer."
+                      onClick={() => {
+                        if (acciones.descartarReembolsoConSuCobro(d.id)) toast(`Descartados el reembolso y su cobro: ${nombre}.`, "ok", { texto: "Deshacer", onClick: () => { if (acciones.volverAProponerDevolucion(d.id)) toast("Vuelven los dos."); } });
+                      }}>
+                      Descartar con su cobro
+                    </Button>
+                  )}
                   <Button sm variante="ghost" title="Descartarla: la pasarela la informó pero no es una devolución. Se puede deshacer más abajo."
                     onClick={() => {
                       if (acciones.ignorarDevolucion(d.id)) toast(`Marcada como «no es una devolución»: ${nombre}.`, "ok", { texto: "Deshacer", onClick: () => { if (acciones.volverAProponerDevolucion(d.id)) toast("Vuelve a la lista de reembolsos."); } });
@@ -110,14 +125,15 @@ export function ReembolsosPasarelas({ e, rango }: { e: EstadoApp; rango?: RangoD
         <div className="stack-2" style={{ marginTop: pendientes.length ? "var(--space-4)" : 0 }}>
           <span className="t-label">Marcados como «no es una devolución» · {descartadas.length}</span>
           {descartadas.map((d) => {
-            const venta = e.ventas.find((v) => v.id === d.ventaId);
-            const nombre = venta?.contactoNombre ?? (typeof d.extra?.clienteNombre === "string" ? d.extra.clienteNombre : "Sin identificar");
+            const nombre = quienDelReembolso(e, d).nombre ?? "Sin identificar";
+            const conSuCobro = typeof d.extra?.cobroDescartado === "string";
             return (
               <div className="devol-fila" key={d.id} style={{ opacity: 0.85 }}>
                 <Undo2 size={13} className="t-subtle" aria-hidden />
                 <Badge variante="neutral">{d.proveedor ? nombrePasarela(d.proveedor) : "Pasarela"}</Badge>
                 <span className="t-strong">{nombre}</span>
                 <span className="t-subtle">{fechaLarga(d.fecha)}</span>
+                {conSuCobro && <span className="t-subtle">· se descartó junto con su cobro</span>}
                 <span className="spacer" />
                 <span className="t-num t-strong">{M(d.monto)}</span>
                 {puede && (

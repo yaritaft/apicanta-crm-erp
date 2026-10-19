@@ -7,6 +7,7 @@ import {
 import { evaluarPasos, resultadoDelDesglose } from "@/lib/desglose";
 import { calcularPyL, cashCollected } from "@/lib/finanzas";
 import { devolucionesDeVenta } from "@/lib/devoluciones";
+import { quienDelReembolso } from "@/lib/reembolsos";
 import { rangoDePeriodo } from "@/lib/periodos";
 import { ACCESO_DUENO, puedeCargarDevolucion, puedeDarDeBaja, type MiAcceso } from "@/lib/permisos";
 import { estadoVacio } from "@/lib/seed";
@@ -245,5 +246,48 @@ test("«No es una devolución» se puede deshacer: el reembolso vuelve a la list
   /* Sólo se deshace lo descartado: no toca una confirmada ni una que ya espera. */
   assert.equal(acciones.volverAProponerDevolucion(id), false);
   assert.equal(acciones.volverAProponerDevolucion("no-existe"), false);
+  fijarAcceso(null);
+});
+
+test("un reembolso «sin identificar» se identifica por su cobro original, y si ese cobro nunca se concilió se descartan los dos juntos (y se deshace)", () => {
+  armar();
+  /* El cobro de Whop está en Conciliación con nombre pero sin conciliar; el reembolso llega sin nombre ni correo. */
+  const e = hoy();
+  const cobro = {
+    id: "mov_whop_pay_X1", proveedor: "whop", referencia: "pay_X1", monto: 1000, moneda: "USD", fee: 0, neto: 1000, fecha: iso(SEPTIEMBRE, 14),
+    estado: "pendiente", clienteNombre: "Nicolas Godoy", creadoEn: iso(SEPTIEMBRE, 14), origen: "api",
+  };
+  assert.equal(acciones.importar(JSON.stringify({ ...e, movimientos: [...e.movimientos, cobro] })), true);
+  const r = acciones.importarReembolsos([{ proveedor: "whop", referencia: "reembolso:pay_X1", referenciasCobro: ["pay_X1"], monto: 1000, moneda: "USD", fecha: iso(SEPTIEMBRE, 22) }]);
+  const id = r!.nuevas[0].id;
+  const d = () => hoy().devoluciones!.find((x) => x.id === id)!;
+  const m = () => hoy().movimientos.find((x) => x.id === "mov_whop_pay_X1")!;
+  assert.equal(d().extra?.clienteNombre, undefined, "la pasarela no mandó quién era");
+  assert.equal(quienDelReembolso(hoy(), d()).nombre, "Nicolas Godoy", "pero el cobro original sí lo sabe");
+  assert.equal(quienDelReembolso(hoy(), d()).cobroSinContar, true);
+
+  fijarAcceso(closer);
+  assert.equal(acciones.descartarReembolsoConSuCobro(id), false, "el closer no decide");
+  fijarAcceso(administracion);
+  assert.equal(acciones.descartarReembolsoConSuCobro(id), true);
+  assert.equal(d().estado, "ignorada");
+  assert.equal(m().estado, "ignorado", "el cobro que nunca contó se descarta con él");
+  assert.equal(d().extra?.cobroDescartado, "mov_whop_pay_X1");
+  assert.match(hoy().actividad[0].detalle ?? "", /junto con su cobro.*Nicolas Godoy|Nicolas Godoy.*junto con su cobro/);
+  assert.equal(calcularPyL(hoy(), rangoDePeriodo(SEPTIEMBRE)).devoluciones, 0, "no resta nada de Finanzas");
+
+  /* Deshacer trae a los dos de vuelta. */
+  assert.equal(acciones.volverAProponerDevolucion(id), true);
+  assert.equal(d().estado, "propuesta");
+  assert.equal(m().estado, "pendiente");
+  assert.equal(d().extra?.cobroDescartado, undefined);
+
+  /* Si el cobro ya estaba conciliado a una venta no se lo toca: sólo se descarta el reembolso. */
+  const conciliado = { ...cobro, estado: "conciliado", pagoId: "p1", ventaId: "v1" };
+  assert.equal(acciones.importar(JSON.stringify({ ...hoy(), movimientos: hoy().movimientos.map((x) => (x.id === cobro.id ? conciliado : x)) })), true);
+  assert.equal(quienDelReembolso(hoy(), d()).cobroSinContar, false);
+  assert.equal(acciones.descartarReembolsoConSuCobro(id), true);
+  assert.equal(m().estado, "conciliado");
+  assert.equal(d().extra?.cobroDescartado, undefined);
   fijarAcceso(null);
 });
