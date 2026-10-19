@@ -36,6 +36,9 @@ export async function GET(peticion: Request) {
   }
 
   const r = await analyticsDeVideo(id, desde);
+  if ("todavia" in r) {
+    return NextResponse.json({ conectado: true, canal: c.canalNombre, todavia: r.todavia } satisfies EstadoAnalytics);
+  }
   if ("error" in r) {
     return NextResponse.json({ conectado: true, canal: c.canalNombre, error: r.error } satisfies EstadoAnalytics);
   }

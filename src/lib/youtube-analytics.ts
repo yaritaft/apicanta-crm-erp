@@ -1,6 +1,6 @@
 import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import { nubeServidor } from "./servidor";
-import type { AnalyticsVideo, FilaReparto } from "./youtube";
+import { analyticsTodavia, type AnalyticsVideo, type FilaReparto } from "./youtube";
 
 /* ==================================================================
    YouTube Analytics, del lado del servidor.
@@ -141,7 +141,11 @@ export async function conexion(): Promise<Conexion | null> {
 
 type Filas = { cabeceras: string[]; filas: (string | number)[][] };
 
-async function reporte(acceso: string, params: Record<string, string>): Promise<Filas | { error: string }> {
+/* `esperable`: un reporte que puede fallar sin que sea un problema (el total de
+   concurrentes: Google a veces contesta 500, o el video no fue un vivo) se
+   anota como aviso, no como error, para que los registros de errores de Vercel
+   muestren sólo lo que hay que mirar. */
+async function reporte(acceso: string, params: Record<string, string>, esperable = false): Promise<Filas | { error: string }> {
   const q = new URLSearchParams({ ids: "channel==MINE", ...params });
   const r = await fetch(`${REPORTES}?${q}`, {
     headers: { Authorization: `Bearer ${acceso}` }, cache: "no-store", signal: AbortSignal.timeout(ESPERA_MS),
@@ -151,7 +155,7 @@ async function reporte(acceso: string, params: Record<string, string>): Promise<
     { columnHeaders?: { name: string }[]; rows?: (string | number)[][]; error?: { message?: string } } | null;
   if (!r.ok) {
     /* Al log va el motivo, no el token. */
-    console.error(`[youtube/analytics] ${params.metrics} ${params.dimensions ?? ""} → ${r.status} ${j?.error?.message ?? ""}`);
+    (esperable ? console.warn : console.error)(`[youtube/analytics] ${params.metrics} ${params.dimensions ?? ""} → ${r.status} ${j?.error?.message ?? ""}`);
     return { error: j?.error?.message ?? String(r.status) };
   }
   return { cabeceras: (j?.columnHeaders ?? []).map((c) => c.name), filas: j?.rows ?? [] };
@@ -173,17 +177,21 @@ function reparto(f: Filas | { error: string }, dim: string, met: string, met2?: 
   })).filter((x) => x.valor > 0);
 }
 
-export async function analyticsDeVideo(videoId: string, desde: string): Promise<AnalyticsVideo | { error: string }> {
+export async function analyticsDeVideo(videoId: string, desde: string): Promise<AnalyticsVideo | { error: string } | { todavia: string }> {
+  /* Un inicio posterior a hoy es un 412 seguro: ni se le pregunta a Google. */
+  const hasta = new Date().toISOString().slice(0, 10);
+  const todavia = analyticsTodavia(desde, hasta);
+  if (todavia) return { todavia };
+
   const c = await conexion();
   if (!c) return { error: "El canal no está conectado." };
   const acceso = await tokenDeAcceso(c.refreshToken);
   if (typeof acceso !== "string") return acceso;
 
-  const hasta = new Date().toISOString().slice(0, 10);
   const base = { startDate: desde, endDate: hasta, filters: `video==${videoId}` };
   const [resumen, concurrentes, porMinuto, retencion, vivo, fuentes, paises, demografia, dispositivos] = await Promise.all([
     reporte(acceso, { ...base, metrics: "views,estimatedMinutesWatched,averageViewDuration,averageViewPercentage,subscribersGained,subscribersLost,shares" }),
-    reporte(acceso, { ...base, metrics: "averageConcurrentViewers,peakConcurrentViewers" }),
+    reporte(acceso, { ...base, metrics: "averageConcurrentViewers,peakConcurrentViewers" }, true),
     reporte(acceso, { ...base, dimensions: "livestreamPosition", metrics: "averageConcurrentViewers,peakConcurrentViewers", sort: "livestreamPosition" }),
     reporte(acceso, { ...base, dimensions: "elapsedVideoTimeRatio", metrics: "audienceWatchRatio,relativeRetentionPerformance" }),
     reporte(acceso, { ...base, dimensions: "liveOrOnDemand", metrics: "views,estimatedMinutesWatched" }),

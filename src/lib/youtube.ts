@@ -281,4 +281,15 @@ export interface AnalyticsVideo {
 
 export type EstadoAnalytics =
   | { conectado: false; configurado: boolean; motivo?: string }
-  | { conectado: true; canal?: string; datos?: AnalyticsVideo; error?: string };
+  | { conectado: true; canal?: string; datos?: AnalyticsVideo; error?: string; todavia?: string };
+
+/* YouTube Analytics cuenta por día y contesta 412 («'start-date' must be
+   before or the same as the 'end-date'») si el inicio cae después del fin.
+   La ficha de un webinar pide «desde el día anterior al webinar»: con uno
+   programado a futuro ese día todavía no llegó y no hay nada que pedirle a
+   Google. Devuelve lo que se le dice a quien mira, o null si se puede pedir.
+   Las fechas son aaaa-mm-dd, así que comparan como texto. */
+export function analyticsTodavia(desde: string, hasta: string): string | null {
+  if (desde <= hasta) return null;
+  return "Todavía no hay números: YouTube Analytics cuenta por día y empieza a darlos cuando pasa el webinar (y tarda uno o dos días más).";
+}

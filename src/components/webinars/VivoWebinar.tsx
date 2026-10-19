@@ -692,6 +692,7 @@ function ContenidoAnalytics({ an, render }: {
   if (an.estado === "error") return <p className="t-sm t-muted">{an.error}</p>;
   const e: EstadoAnalytics = an.datos;
   if (!e.conectado) return <ConectarAnalytics configurado={e.configurado} />;
+  if (e.todavia) return <p className="t-sm t-muted">{e.todavia}</p>;
   if (e.error) {
     return (
       <div className="stack-2">

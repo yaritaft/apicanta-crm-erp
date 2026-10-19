@@ -71,7 +71,10 @@ export async function pedirApi<T>(
       ...(cuerpo?.error?.details ?? []).map((x) => x.reason),
     ].filter(Boolean).join(",");
     /* Al log va el motivo, nunca la URL: la URL lleva la clave. */
-    console.error(`[youtube] ${recurso} respondió ${r.status} (${motivos || "sin motivo"})`);
+    /* Que un video no exista (404) o tenga los comentarios cerrados o el chat terminado no es un
+       fallo nuestro ni de Google: se anota como aviso y los registros de errores quedan para lo que sí lo es. */
+    const esperado = r.status === 404 || /commentsdisabled|livechatended|livechatnotfound|livechatdisabled/i.test(motivos);
+    (esperado ? console.warn : console.error)(`[youtube] ${recurso} respondió ${r.status} (${motivos || "sin motivo"})`);
     /* 404 de Google (video, chat o comentarios que no existen) se deja pasar
        como 404: quien llama decide si es un error o "no hay". */
     return {

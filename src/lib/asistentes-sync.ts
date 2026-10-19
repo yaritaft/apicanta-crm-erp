@@ -69,7 +69,7 @@ export async function completarAsistentes(): Promise<{ actualizados: number; err
     if (pendiente) {
       const desde = new Date(+new Date(pendiente.w.fecha) - DIA).toISOString().slice(0, 10);
       const d = await analyticsDeVideo(pendiente.v, desde);
-      if (!("error" in d)) {
+      if ("traidoEn" in d) {
         await db.from("yt_analytics").upsert({ videoId: pendiente.v, datos: d, traidoEn: d.traidoEn });
         analytics.set(pendiente.v, { videoId: pendiente.v, datos: d, traidoEn: d.traidoEn });
       }
