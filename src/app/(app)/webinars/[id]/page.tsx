@@ -3,7 +3,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, CalendarClock, Pencil, Trash2, Video } from "lucide-react";
+import { ArrowLeft, CalendarClock, Link2, Pencil, Trash2, Video } from "lucide-react";
 import { Button, Card, Empty, Input, Select } from "@/components/ui/ui";
 import { Confirmar } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toast";
@@ -28,6 +28,7 @@ import {
   diaYHora, fechaCompleta, hoyArgentina, isoDesdeArgentina, partesArgentina,
 } from "@/components/webinars/fechas";
 import { acciones, useEstado, useSync } from "@/lib/store";
+import { useAcceso } from "@/lib/acceso";
 import { metricasDeWebinar } from "@/lib/webinar";
 import { videoDelWebinar } from "@/lib/youtube";
 import type { EstadoWebinar, Webinar } from "@/lib/types";
@@ -63,6 +64,7 @@ export default function WebinarFicha() {
     } catch { /* modo privado */ }
   }, []);
 
+  const { acceso } = useAcceso();
   const w = e.webinars.find((x) => x.id === id);
   /* Las llamadas, los asistentes y el estado que completa el cron, al día. */
   useWebinarsAlDia(w ? [w.id] : []);
@@ -123,6 +125,12 @@ export default function WebinarFicha() {
               opciones={ESTADOS.map((k) => ({ valor: k, texto: ESTADO_WEBINAR[k].texto }))}
             />
           </div>
+          {/* Los links para agendar de este webinar (en vivo, post webinar, charla y Q&A, clase cero), con su fecha ya puesta. */}
+          {acceso?.areas.ajustes && (
+            <Link href={`/ajustes?seccion=utms&webinar=${encodeURIComponent(w.id)}`}>
+              <Button variante="secondary" icono={<Link2 size={16} />}>Links de agenda</Button>
+            </Link>
+          )}
           <BotonInforme w={w} />
           <CopiarLink sm={false} />
           <Button variante="ghost" icono={<Trash2 size={16} />} onClick={() => setBorrar(true)}>Eliminar</Button>

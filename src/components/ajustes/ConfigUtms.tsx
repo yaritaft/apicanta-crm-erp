@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { Check, Copy, Link2, Plus, Trash2 } from "lucide-react";
 import { Badge, Button, Card, CardHead, Empty, IconButton, Input, Select } from "@/components/ui/ui";
 import { useToast } from "@/components/ui/Toast";
@@ -12,8 +13,9 @@ import {
   type CampoUtm, type OrigenUtm, type Utm,
 } from "@/lib/utms";
 import {
-  armarUtm, CASOS, EVENTOS, FUENTES, FUNNELS, linkConUtm, MEDIOS, MOMENTOS_EVENTO, problemasDeUtm, queryUtm, slugUtm,
-  type Funnel, type IdCaso, type Utm as UtmCruda, type ValoresCaso,
+  armarPaqueteWebinar, armarUtm, CASOS, diaUtm, EVENTOS, FUENTES, FUNNELS, linkConUtm, MEDIOS, MOMENTOS_EVENTO, problemasDeUtm, queryUtm, slugUtm,
+  textoDelPaquete,
+  type CasoUtm, type Funnel, type GrupoArmado, type IdCaso, type Utm as UtmCruda, type ValoresCaso,
 } from "@/lib/utm-estandar";
 import type { EstadoApp, ReglaUtm } from "@/lib/types";
 
@@ -63,14 +65,37 @@ export function ConfigUtms() {
 
 const CLAVE_DESTINO = "apicanta:utm:destino";
 
+/* El primer «caso» del selector no es del estándar: arma de una vez todos los
+   links de un webinar, que es lo que se pide al prepararlo. */
+const PAQUETE = "paquete-webinar";
+type Modo = IdCaso | typeof PAQUETE;
+const OTRA_FECHA = "__otra";
+const PIDE_PAQUETE: CasoUtm["pide"] = ["fecha", "fuenteEvento"];
+
 function CreadorUtm() {
   const e = useEstado();
   const toast = useToast();
-  const [caso, setCaso] = useState<IdCaso>("webinar");
+  const [caso, setCaso] = useState<Modo>(PAQUETE);
   const [v, setV] = useState<ValoresCaso>({ fuenteEvento: "email" });
   const [destino, setDestino] = useState("");
+  const [otraFecha, setOtraFecha] = useState(false);
   const [copiado, setCopiado] = useState<string | null>(null);
-  const c = CASOS.find((x) => x.id === caso)!;
+  const paquete = caso === PAQUETE;
+  const c = paquete ? undefined : CASOS.find((x) => x.id === caso)!;
+  const pide = c ? c.pide : PIDE_PAQUETE;
+
+  /* Se llega con el webinar ya elegido desde su ficha: /ajustes?seccion=utms&webinar=<id>.
+     Se aplica una sola vez, cuando el webinar está cargado, y después manda lo que se elija acá. */
+  const webinarPedido = useSearchParams().get("webinar");
+  const pedidoAplicado = useRef(false);
+  useEffect(() => {
+    if (!webinarPedido || pedidoAplicado.current) return;
+    const w = e.webinars.find((x) => x.id === webinarPedido);
+    if (!w) return;
+    pedidoAplicado.current = true;
+    setCaso(PAQUETE);
+    setV((x) => ({ ...x, fecha: w.fecha }));
+  }, [webinarPedido, e.webinars]);
 
   /* El link de destino (la landing o el Calendly) queda recordado en este navegador. */
   useEffect(() => {
@@ -83,29 +108,36 @@ function CreadorUtm() {
 
   const webinars = useMemo(() => [...e.webinars].sort((a, b) => +new Date(b.fecha) - +new Date(a.fecha)).slice(0, 12), [e.webinars]);
   const setters = e.equipo.filter((x) => x.rol === "setter" && x.activo);
+  /* Un webinar que todavía no se cargó en la app también tiene links: se escribe su fecha. */
+  const fechaPropia = otraFecha || Boolean(v.fecha && !webinars.some((w) => w.fecha === v.fecha));
+
+  /* Los links de todo el webinar, juntos. */
+  const armado: GrupoArmado[] = useMemo(() => (paquete ? armarPaqueteWebinar(destino, v) : []), [paquete, destino, v]);
 
   /* Las variantes que salen juntas: en un evento, vivo, replay y
      seguimiento; en la VSL orgánica, bio, historias y post; un setter, por
      DM y por comentario. */
   const variantes: { nombre: string; utm: UtmCruda }[] = useMemo(() => {
+    if (!c) return [];
     if (EVENTOS.includes(c.funnel) && c.id !== "meta-vsl") {
-      return MOMENTOS_EVENTO.map((m) => ({ nombre: m, utm: armarUtm(caso, { ...v, momento: m }) }));
+      return MOMENTOS_EVENTO.map((m) => ({ nombre: m, utm: armarUtm(c.id, { ...v, momento: m }) }));
     }
-    if (caso === "vsl-organica") return (["bio", "historia", "post"] as const).map((l) => ({ nombre: l, utm: armarUtm(caso, { ...v, lugarVsl: l }) }));
-    if (caso === "setter") return (["dm", "comentario"] as const).map((k) => ({ nombre: k, utm: armarUtm(caso, { ...v, canalSetter: k }) }));
-    return [{ nombre: "", utm: armarUtm(caso, v) }];
-  }, [c, caso, v]);
+    if (c.id === "vsl-organica") return (["bio", "historia", "post"] as const).map((l) => ({ nombre: l, utm: armarUtm(c.id, { ...v, lugarVsl: l }) }));
+    if (c.id === "setter") return (["dm", "comentario"] as const).map((k) => ({ nombre: k, utm: armarUtm(c.id, { ...v, canalSetter: k }) }));
+    return [{ nombre: "", utm: armarUtm(c.id, v) }];
+  }, [c, v]);
 
-  const falta = c.pide.includes("fecha") && !v.fecha ? (caso === "webinar" ? "Elegí la fecha del evento" : "Elegí de qué webinar es")
-    : c.pide.includes("setter") && !v.setter ? "Elegí el setter"
-      : c.pide.includes("referidor") && !v.referidor?.trim() ? "Escribí quién refirió"
+  const falta = pide.includes("fecha") && !v.fecha ? (caso === "webinar" || paquete ? "Elegí la fecha del webinar" : "Elegí de qué webinar es")
+    : pide.includes("setter") && !v.setter ? "Elegí el setter"
+      : pide.includes("referidor") && !v.referidor?.trim() ? "Escribí quién refirió"
         : null;
 
-  /* Cómo va a leer la app el link: con la primera variante alcanza. */
+  /* Cómo va a leer la app el link: con el primero alcanza (los de un webinar quedan todos en el mismo). */
   const lectura = useMemo(() => {
-    const u = normalizarUtm(variantes[0]?.utm as Record<string, string>);
-    return caso === "meta-vsl" ? null : origenDe(e, u, v.fecha ?? new Date().toISOString());
-  }, [e, variantes, caso, v.fecha]);
+    const utm = paquete ? armado[0]?.links[0]?.utm : variantes[0]?.utm;
+    if (!utm || caso === "meta-vsl") return null;
+    return origenDe(e, normalizarUtm(utm as Record<string, string>), v.fecha ?? new Date().toISOString());
+  }, [e, armado, variantes, caso, paquete, v.fecha]);
 
   async function copiar(texto: string, clave: string) {
     try {
@@ -117,18 +149,20 @@ function CreadorUtm() {
     }
   }
 
+  const etiquetaFecha = paquete || caso === "webinar" ? "Fecha del webinar" : "De qué webinar es";
+
   return (
     <Card>
       <CardHead
         titulo="Creador de UTMs"
-        sub="Cada vía de agenda tiene un solo link, armado con el estándar de UTMs: minúsculas, sin tildes ni espacios, _ entre campos y - entre palabras, fechas aaaammdd. Elegí el caso, completá lo que cambia y copiá el link."
+        sub="Cada vía de agenda tiene un solo link, armado con el estándar de UTMs: minúsculas, sin tildes ni espacios, _ entre campos y - entre palabras, fechas aaaammdd. Para un webinar, elegí «Todos los links del webinar»: pegás el Calendly una vez y salen todos juntos."
       />
       <div className="stack-3">
         <div className="form-grid">
           <div className="hk-field">
             <label className="hk-label">Caso</label>
-            <Select value={caso} aria-label="Caso" onChange={(ev) => { setCaso(ev.target.value as IdCaso); setCopiado(null); }}
-              opciones={CASOS.map((x) => ({ valor: x.id, texto: x.nombre }))} />
+            <Select value={caso} aria-label="Caso" onChange={(ev) => { setCaso(ev.target.value as Modo); setCopiado(null); }}
+              opciones={[{ valor: PAQUETE, texto: "Todos los links del webinar" }, ...CASOS.map((x) => ({ valor: x.id, texto: x.nombre }))]} />
           </div>
           {caso !== "meta-vsl" && (
             <div className="hk-field">
@@ -138,24 +172,36 @@ function CreadorUtm() {
           )}
         </div>
 
-        {c.pide.length > 0 && (
+        {pide.length > 0 && (
           <div className="form-grid">
-            {c.pide.includes("fecha") && (
+            {pide.includes("fecha") && (
               /* En la clase cero y el Q&A, la fecha es la del webinar del que
                  son parte: el link dice de qué webinar son. */
               <div className="hk-field">
-                <label className="hk-label">{caso === "webinar" ? "Fecha del evento" : "De qué webinar es"}</label>
+                <label className="hk-label">{etiquetaFecha}</label>
                 {webinars.length > 0 ? (
-                  <Select value={v.fecha ?? ""} placeholder="Elegí el webinar" aria-label="Webinar"
-                    onChange={(ev) => setV({ ...v, fecha: ev.target.value })}
-                    opciones={webinars.map((w) => ({ valor: w.fecha, texto: `${fechaLarga(w.fecha)} — ${w.titulo}` }))} />
+                  <div className="stack-2">
+                    <Select value={fechaPropia ? OTRA_FECHA : (v.fecha ?? "")} placeholder="Elegí el webinar" aria-label="Webinar"
+                      onChange={(ev) => {
+                        if (ev.target.value === OTRA_FECHA) { setOtraFecha(true); setV({ ...v, fecha: undefined }); }
+                        else { setOtraFecha(false); setV({ ...v, fecha: ev.target.value }); }
+                      }}
+                      opciones={[
+                        ...webinars.map((w) => ({ valor: w.fecha, texto: `${fechaLarga(w.fecha)} — ${w.titulo}` })),
+                        { valor: OTRA_FECHA, texto: "Otra fecha (todavía no está en la app)" },
+                      ]} />
+                    {fechaPropia && (
+                      <Input type="date" value={v.fecha ? diaUtm(v.fecha) : ""} aria-label="Fecha del webinar"
+                        onChange={(ev) => setV({ ...v, fecha: ev.target.value || undefined })} />
+                    )}
+                  </div>
                 ) : (
-                  <Input type="date" value={v.fecha?.slice(0, 10) ?? ""} aria-label={caso === "webinar" ? "Fecha del evento" : "Fecha del webinar"}
+                  <Input type="date" value={v.fecha ? diaUtm(v.fecha) : ""} aria-label={etiquetaFecha}
                     onChange={(ev) => setV({ ...v, fecha: ev.target.value || undefined })} />
                 )}
               </div>
             )}
-            {c.pide.includes("fuenteEvento") && (
+            {pide.includes("fuenteEvento") && (
               <div className="hk-field">
                 <label className="hk-label">Por dónde se manda</label>
                 <Select value={v.fuenteEvento ?? "email"} aria-label="Por dónde se manda"
@@ -163,13 +209,13 @@ function CreadorUtm() {
                   opciones={[{ valor: "email", texto: "Email" }, { valor: "whatsapp", texto: "WhatsApp" }]} />
               </div>
             )}
-            {c.pide.includes("video") && (
+            {pide.includes("video") && (
               <div className="hk-field">
                 <label className="hk-label">Video de YouTube</label>
                 <Input value={v.video ?? ""} onChange={(ev) => setV({ ...v, video: ev.target.value })} placeholder="como-conseguir-trabajo-remoto (vacío: desconocido)" aria-label="Video de YouTube" />
               </div>
             )}
-            {c.pide.includes("setter") && (
+            {pide.includes("setter") && (
               <div className="hk-field">
                 <label className="hk-label">Setter</label>
                 <Select value={v.setter ?? ""} placeholder={setters.length ? "Elegí el setter" : "No hay setters en Ajustes → Equipo"} aria-label="Setter"
@@ -177,7 +223,7 @@ function CreadorUtm() {
                   opciones={setters.map((x) => ({ valor: x.nombre.split(" ")[0], texto: x.nombre }))} />
               </div>
             )}
-            {c.pide.includes("referidor") && (
+            {pide.includes("referidor") && (
               <div className="hk-field">
                 <label className="hk-label">Quién refirió</label>
                 <Input value={v.referidor ?? ""} onChange={(ev) => setV({ ...v, referidor: ev.target.value })} placeholder="Nombre o código" aria-label="Quién refirió" />
@@ -186,10 +232,43 @@ function CreadorUtm() {
           </div>
         )}
 
-        <p className="t-sm t-subtle">{c.nota}</p>
+        <p className="t-sm t-subtle">
+          {c ? c.nota : "Salen del mismo Calendly y de la misma fecha: cambia la campaña (webinar, charla de Nahuel y Q&A, clase cero) y el momento (en vivo, grabación, seguimiento). Todos quedan del mismo webinar."}
+        </p>
 
         {falta ? (
           <p className="t-sm" style={{ color: "var(--warning)" }}>{falta}</p>
+        ) : paquete ? (
+          <div className="stack-3">
+            <div className="row-wrap" style={{ justifyContent: "space-between" }}>
+              <span className="t-sm t-subtle">{armado.length} lugares donde se agenda, {armado.reduce((n, g) => n + g.links.length, 0)} links: el de después del webinar lleva dos, uno para la grabación y otro para los mails y mensajes.</span>
+              <Button variante="primary" icono={copiado === "paquete" ? <Check size={16} /> : <Copy size={16} />}
+                onClick={() => copiar(textoDelPaquete(armado), "paquete")}>{copiado === "paquete" ? "Copiados" : "Copiar todos"}</Button>
+            </div>
+            {armado.map((g) => (
+              <div key={g.id} className="caja-suave stack-2">
+                <div>
+                  <span className="t-strong">{g.titulo}</span>
+                  <p className="t-sm t-subtle">{g.donde}</p>
+                </div>
+                {g.links.map((l) => {
+                  const problemas = problemasDeUtm(l.utm);
+                  return (
+                    <div key={l.clave} className="utm-link">
+                      {l.nombre && <span className="t-label">{l.nombre}</span>}
+                      <div className="utm-link__fila">
+                        <code className="utm-link__codigo">{l.link}</code>
+                        <Button sm variante="secondary" icono={copiado === l.clave ? <Check size={14} /> : <Copy size={14} />}
+                          onClick={() => copiar(l.link, l.clave)}>{copiado === l.clave ? "Copiado" : "Copiar"}</Button>
+                      </div>
+                      {problemas.length > 0 && <span className="t-sm" style={{ color: "var(--warning)" }}>{problemas.join(" · ")}</span>}
+                    </div>
+                  );
+                })}
+              </div>
+            ))}
+            {!destino.trim() && <p className="t-sm t-subtle">Sin link de destino salen sólo las partes de los UTMs: pegalas al final del link.</p>}
+          </div>
         ) : caso === "meta-vsl" ? (
           <div className="utm-link">
             <span className="t-label">Parámetros de URL, para pegar en el anuncio de Meta</span>
@@ -222,9 +301,12 @@ function CreadorUtm() {
 
         {caso !== "meta-vsl" && !falta && (
           <div className="caja-suave t-sm">
-            <span className="t-subtle">La app lo lee como: </span>
+            <span className="t-subtle">{paquete ? "La app los lee como: " : "La app lo lee como: "}</span>
             <span className="t-strong">{textoOrigen(e, lectura)}</span>
             {lectura && !lectura.embudoId && <span className="t-subtle"> — elegí la estrategia de este funnel en «El estándar», acá abajo.</span>}
+            {fechaPropia && lectura && !lectura.webinarId && (
+              <span className="t-subtle"> — todavía no hay un webinar con esa fecha en la app: el link funciona, pero creá el webinar antes de mandarlo para que las agendas que lleguen queden atadas a él.</span>
+            )}
           </div>
         )}
       </div>

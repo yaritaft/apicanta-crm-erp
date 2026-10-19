@@ -2261,6 +2261,11 @@ a.wb-canal:hover { background: var(--surface-200); border-color: var(--border-st
   flex: 1; min-width: 0; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius-md);
   background: var(--surface-000); font-size: 12.5px; line-height: 18px; overflow-wrap: anywhere; color: var(--ink);
 }
+/* En el celular el link ocupa todo el ancho y su botón va debajo: al lado quedaba una columna de seis letras por renglón. */
+@media (max-width: 560px) {
+  .utm-link__fila { flex-direction: column; align-items: stretch; }
+  .utm-link__fila > button { align-self: flex-end; }
+}
 /* El estándar: el patrón de utm_campaign y qué estrategia es. */
 .utm-estandar { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: var(--space-3); align-items: center; padding: var(--space-2) 0; border-bottom: 1px solid var(--border); }
 .utm-estandar:last-child { border-bottom: 0; }

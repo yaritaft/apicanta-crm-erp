@@ -127,6 +127,59 @@ export function armarUtm(caso: IdCaso, v: ValoresCaso = {}): Utm {
   }
 }
 
+/* ---------- Los links de un webinar, juntos ---------- */
+
+/* Lo que el equipo pide cuando prepara un webinar no es «un caso del
+   estándar» sino un link por cada lugar donde se agenda, con el nombre con
+   el que se piden. Salen todos del mismo Calendly y de la misma fecha: lo
+   que cambia entre uno y otro es la campaña y el momento. Acá están esos
+   nombres, para que el creador, el texto que se copia y las pruebas hablen
+   igual y no se desarmen entre sí. */
+export interface GrupoDelPaquete {
+  id: string;
+  titulo: string;
+  /* Dónde se pega, en las palabras de quien lo pega. */
+  donde: string;
+  caso: IdCaso;
+  variantes: { nombre: string; momento: MomentoEvento }[];
+}
+
+export const PAQUETE_WEBINAR: GrupoDelPaquete[] = [
+  { id: "webinar-vivo", titulo: "Webinar · agenda en vivo", caso: "webinar",
+    donde: "Para agendar mientras pasa el webinar.",
+    variantes: [{ nombre: "", momento: "vivo" }] },
+  { id: "webinar-post", titulo: "Webinar · agenda post webinar", caso: "webinar",
+    donde: "Para agendar después del webinar: uno va en la grabación y el otro en los mails y mensajes de seguimiento.",
+    variantes: [{ nombre: "En la grabación (replay)", momento: "replay" }, { nombre: "En mails y mensajes (seguimiento)", momento: "seguimiento" }] },
+  { id: "qa-vivo", titulo: "Charla Nahuel y Q&A · agendar en esta transmisión", caso: "qa",
+    donde: "Para agendar durante la charla de Nahuel y el Q&A en vivo.",
+    variantes: [{ nombre: "", momento: "vivo" }] },
+  { id: "clase0-vivo", titulo: "Clase cero · agendar en esta transmisión", caso: "clase0",
+    donde: "Para agendar durante la clase cero en vivo.",
+    variantes: [{ nombre: "", momento: "vivo" }] },
+];
+
+export interface LinkDelPaquete { clave: string; nombre: string; momento: MomentoEvento; utm: Utm; link: string }
+export interface GrupoArmado extends GrupoDelPaquete { links: LinkDelPaquete[] }
+
+/** Todos los links de un webinar a la vez: con el mismo destino, la misma fecha y el mismo «por dónde se manda». */
+export function armarPaqueteWebinar(destino: string, v: Pick<ValoresCaso, "fecha" | "fuenteEvento"> = {}): GrupoArmado[] {
+  return PAQUETE_WEBINAR.map((g) => ({
+    ...g,
+    links: g.variantes.map((x) => {
+      const utm = armarUtm(g.caso, { fecha: v.fecha, fuenteEvento: v.fuenteEvento, momento: x.momento });
+      return { clave: `${g.id}:${x.momento}`, nombre: x.nombre, momento: x.momento, utm, link: linkConUtm(destino, utm) };
+    }),
+  }));
+}
+
+/** Los links del paquete como texto para pegar en un chat o un documento: el título de cada uno y debajo su link. */
+export function textoDelPaquete(grupos: GrupoArmado[]): string {
+  return grupos
+    .map((g) => g.links.map((l) => `${g.titulo}${l.nombre ? ` — ${l.nombre}` : ""}\n${l.link}`).join("\n\n"))
+    .join("\n\n");
+}
+
 /** Los UTMs como van en el link, en el orden del estándar. */
 export function queryUtm(u: Utm): string {
   const orden = ["utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content"] as const;
