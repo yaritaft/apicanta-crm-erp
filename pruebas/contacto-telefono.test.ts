@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { enlaceWhatsapp, numeroParaCopiar } from "@/lib/contacto-telefono";
+import { enlaceWhatsapp, numeroParaCopiar, numeroParaMostrar } from "@/lib/contacto-telefono";
 import { COLUMNAS_SUMADAS, COLUMNA, VISIBLES_POR_DEFECTO } from "@/lib/crm-tabla";
 
 /* Dante y Mariano (closers, 19/10): el teléfono y el mail de cada lead tienen que estar a mano en el
@@ -37,6 +37,35 @@ test("lo que se copia se pega directo en WhatsApp: con el + y el código de paí
   assert.equal(numeroParaCopiar("11 5750-5283"), "11 5750-5283", "sin país se copia tal cual está cargado");
   assert.equal(numeroParaCopiar(""), "");
   assert.equal(numeroParaCopiar("+54 9 11 1111-1111 / +54 9 11 2222-2222"), "+54 9 11 1111-1111 / +54 9 11 2222-2222");
+});
+
+/* Mariano (19/10): «le falta sumarle el +». Hay teléfonos guardados con el código pero sin el «+», y con marcas invisibles. */
+test("el número se ve con su «+» aunque esté guardado sin él", () => {
+  assert.equal(numeroParaMostrar("+54 9 11 4359-8789", "Argentina"), "+54 9 11 4359-8789", "ya lo trae: tal cual");
+  assert.equal(numeroParaMostrar("54 9 11 3438-0201", "Argentina"), "+54 9 11 3438-0201");
+  assert.equal(numeroParaMostrar("5491164780489", "Argentina"), "+5491164780489");
+  assert.equal(numeroParaMostrar("57 300 4824340", "Colombia"), "+57 300 4824340");
+  assert.equal(numeroParaMostrar("598 96 064 698", "Uruguay"), "+598 96 064 698");
+  assert.equal(numeroParaMostrar("11 5750-5283", "Argentina"), "+54 9 11 5750 5283", "local: se completa con el país de la persona");
+});
+
+test("sin país y sin «+» no se inventa un código", () => {
+  assert.equal(numeroParaMostrar("11 5750-5283"), "11 5750-5283");
+  assert.equal(numeroParaMostrar(""), "");
+  assert.equal(numeroParaMostrar(null), "");
+});
+
+test("las marcas invisibles de dirección no llegan ni a la pantalla ni al portapapeles", () => {
+  const sucio = "\u202a57 301 5606277\u202c";
+  assert.equal(numeroParaMostrar(sucio, "Colombia"), "+57 301 5606277");
+  assert.equal(numeroParaCopiar(sucio, "Colombia"), "+573015606277");
+  assert.equal(numeroParaCopiar("\u202a11 2222-3333\u202c"), "11 2222-3333");
+});
+
+test("lo que se copia es siempre «+código número», listo para pegar en WhatsApp", () => {
+  for (const [crudo, pais] of [["54 9 11 3438-0201", "Argentina"], ["5491164780489", "Argentina"], ["+54 9 11 4359-8789", ""], ["57 3154928257", "Colombia"]] as const) {
+    assert.match(numeroParaCopiar(crudo, pais), /^\+\d{10,15}$/, crudo);
+  }
 });
 
 test("el teléfono y el mail se ven de entrada en la tabla, y quien ya tenía sus columnas los recibe una vez", () => {

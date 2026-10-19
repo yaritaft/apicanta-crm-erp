@@ -18,7 +18,7 @@ import { esReagendar, estadoVisible, preguntaDe, type PreguntaEod } from "@/lib/
 import { leadDeSesion } from "@/lib/etapas-auto";
 import { filasTabla, type FilaTabla } from "@/lib/crm-tabla";
 import {
-  atajosDeCierre, cambiosDelEod, closersConLlamadas, esDelCloser, faltaEnRespuesta, llamadasDelDia, objecionSugerida, objecionesDe,
+  atajosDeCierre, cambiosDelEod, closersConLlamadas, esDelCloser, faltaEnRespuesta, llamadasDelDia, llamadasParaCargar, objecionSugerida, objecionesDe,
   respuestaDe, type RespuestaEod,
 } from "@/lib/eod";
 import { reglaDeCierre, strikesDe } from "@/lib/cierre-del-dia";
@@ -84,6 +84,9 @@ export function Eod({ onCerrar, soloSesionId }: { onCerrar: () => void; soloSesi
   const closer = soyCloser || elegido;
   const [dia, setDia] = useState(hoy);
   const [conPendientes, setConPendientes] = useState(true);
+  /* Las llamadas del día que ya están cargadas no vuelven a pedirse (Dante, 19/10: «me aparecen de vuelta las que ya
+     hice»): sólo se suman si quien cierra quiere revisarlas. */
+  const [conCargadas, setConCargadas] = useState(false);
   const [paso, setPaso] = useState(0);
   const [resp, setResp] = useState<Record<string, RespuestaEod>>({});
   const [guardadas, setGuardadas] = useState<Set<string>>(() => new Set());
@@ -100,12 +103,16 @@ export function Eod({ onCerrar, soloSesionId }: { onCerrar: () => void; soloSesi
   const conPuerta = !soloSesionId;
 
   /* Las llamadas del día que ya empezaron, y las pendientes de antes. */
-  const { delDia, pendientes } = useMemo(() => {
-    if (soloSesionId) return { delDia: e.sesiones.filter((s) => s.id === soloSesionId), pendientes: [] as Sesion[] };
-    if (!closer) return { delDia: [] as Sesion[], pendientes: [] as Sesion[] };
+  const { delDia, pendientes, cargadasDelDia } = useMemo(() => {
+    if (soloSesionId) return { delDia: e.sesiones.filter((s) => s.id === soloSesionId), pendientes: [] as Sesion[], cargadasDelDia: 0 };
+    if (!closer) return { delDia: [] as Sesion[], pendientes: [] as Sesion[], cargadasDelDia: 0 };
     const desde = new Date(Date.parse(`${dia}T12:00:00Z`) - DIAS_PENDIENTES * 86_400_000).toISOString().slice(0, 10);
+    const empezadas = llamadasDelDia(e, closer, dia).filter((s) => Date.parse(s.inicia) <= ahora);
+    /* Cargada = ya tiene cómo terminó (lo cargó el closer o lo supo la app). */
+    const { paraCargar, cargadas } = llamadasParaCargar(empezadas, (id) => filas.get(id)?.sinCargar, conCargadas);
     return {
-      delDia: llamadasDelDia(e, closer, dia).filter((s) => Date.parse(s.inicia) <= ahora),
+      cargadasDelDia: cargadas,
+      delDia: paraCargar,
       pendientes: e.sesiones
         .filter((s) => {
           const f = filas.get(s.id);
@@ -115,7 +122,7 @@ export function Eod({ onCerrar, soloSesionId }: { onCerrar: () => void; soloSesi
         .sort((a, b) => a.inicia.localeCompare(b.inicia)),
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [e, closer, dia, filas, soloSesionId]);
+  }, [e, closer, dia, filas, soloSesionId, conCargadas]);
   /* La lista queda fija mientras se carga: una llamada que se carga no se
      va de la lista (dejaría de estar "sin cargar"). */
   const [fijas, setFijas] = useState<Sesion[] | null>(null);
@@ -214,7 +221,7 @@ export function Eod({ onCerrar, soloSesionId }: { onCerrar: () => void; soloSesi
 
   const nombreDe = (s: Sesion) => nombreDePila(filas.get(s.id)?.nombre || s.invitado || "la llamada");
   const problema = actual?.id === "inicio"
-    ? (!closer ? "Elegí de quién es el día" : llamadas.length === 0 ? "No hay llamadas para cargar" : null)
+    ? (!closer ? "Elegí de quién es el día" : llamadas.length === 0 ? (cargadasDelDia > 0 ? "Todo cargado: tildá «revisarlas» si querés repasarlas" : "No hay llamadas para cargar") : null)
     : sesion ? falta(sesion)
     : actual?.id === "fin" && sinVenta.length > 0
       ? `Falta la venta de ${sinVenta.map(nombreDe).join(", ")}`
@@ -232,6 +239,8 @@ export function Eod({ onCerrar, soloSesionId }: { onCerrar: () => void; soloSesi
           closers={closers} closer={closer} fijo={Boolean(soyCloser)} onCloser={setCloser}
           dia={dia} hoy={hoy} onDia={setDia}
           delDia={delDia.length} pendientes={pendientes.length} conPendientes={conPendientes} onConPendientes={setConPendientes}
+          cargadas={cargadasDelDia} conCargadas={conCargadas} onConCargadas={setConCargadas}
+          cuales={[...(conPendientes ? pendientes : []), ...delDia].map((s) => ({ id: s.id, nombre: filas.get(s.id)?.nombre || s.invitado || "Llamada", cuando: `${textoFecha(diaDeNegocio(s.inicia))} · ${HORA.format(new Date(s.inicia))} hs`, cargada: filas.get(s.id)?.sinCargar === false }))}
           strikes={strikes} regla={regla}
         />
       )}
@@ -260,10 +269,14 @@ export function Eod({ onCerrar, soloSesionId }: { onCerrar: () => void; soloSesi
 
 /* ---------- Tu día ---------- */
 
-function Inicio({ closers, closer, fijo, onCloser, dia, hoy, onDia, delDia, pendientes, conPendientes, onConPendientes, strikes, regla }: {
+function Inicio({ closers, closer, fijo, onCloser, dia, hoy, onDia, delDia, pendientes, conPendientes, onConPendientes, cargadas, conCargadas, onConCargadas, cuales, strikes, regla }: {
   closers: string[]; closer: string; fijo: boolean; onCloser: (c: string) => void;
   dia: string; hoy: string; onDia: (d: string) => void;
   delDia: number; pendientes: number; conPendientes: boolean; onConPendientes: (v: boolean) => void;
+  /* Las del día que ya tienen cómo terminó, y si se suman para revisarlas. */
+  cargadas: number; conCargadas: boolean; onConCargadas: (v: boolean) => void;
+  /* Cuáles son las que se van a pasar, para saberlo antes de empezar. */
+  cuales: { id: string; nombre: string; cuando: string; cargada: boolean }[];
   strikes: ComponentProps<typeof CuentaDeStrikes>["strikes"]; regla: ComponentProps<typeof CuentaDeStrikes>["regla"];
 }) {
   const ayer = new Date(Date.parse(`${hoy}T12:00:00Z`) - 86_400_000).toISOString().slice(0, 10);
@@ -316,6 +329,23 @@ function Inicio({ closers, closer, fijo, onCloser, dia, hoy, onDia, delDia, pend
               </label>
             )}
           </span>
+        </div>
+      )}
+      {closer && cargadas > 0 && (
+        <label className="crm-eod__pendientes">
+          <input type="checkbox" checked={conCargadas} onChange={(ev) => onConCargadas(ev.target.checked)} />
+          {conCargadas ? `Incluidas` : `Ya cargaste`} {num(cargadas)} {cargadas === 1 ? "llamada" : "llamadas"} del {dia === hoy ? "día" : textoFecha(dia)}{conCargadas ? "" : ": revisarlas también"}
+        </label>
+      )}
+      {closer && cuales.length > 0 && (
+        <div className="crm-eod__cuales" aria-label="Llamadas para cargar">
+          <span className="t-label">Las que vas a pasar</span>
+          <ul>
+            {cuales.slice(0, 12).map((c) => (
+              <li key={c.id}><span className="t-strong truncate">{c.nombre}</span><span className="t-sm t-subtle t-num">{c.cuando}</span>{c.cargada && <span className="t-sm t-subtle">· ya cargada</span>}</li>
+            ))}
+          </ul>
+          {cuales.length > 12 && <span className="t-sm t-subtle">y {num(cuales.length - 12)} más</span>}
         </div>
       )}
       {closer && <CuentaDeStrikes strikes={strikes} regla={regla} />}

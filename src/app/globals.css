@@ -3711,6 +3711,11 @@ span.kpis__etiqueta:hover { color: var(--ink); text-decoration: none; }
 .telefono--compacto { gap: var(--space-2); }
 .telefono--compacto .telefono__num { padding: 0; border: 0; background: none; font-size: inherit; line-height: inherit; }
 .telefono--compacto .telefono__num:hover { color: var(--brand); text-decoration: underline; }
+/* Las llamadas que se van a pasar, antes de empezar: así se sabe cuáles son. */
+.crm-eod__cuales { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-3) var(--space-4); border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface-100); max-width: 420px; }
+.crm-eod__cuales ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.crm-eod__cuales li { display: flex; align-items: baseline; gap: var(--space-3); min-width: 0; font-size: 14px; }
+.crm-eod__cuales li .truncate { flex: 1 1 auto; min-width: 0; }
 .crm-eod__bloque { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-3); padding: var(--space-4); border-radius: var(--radius-lg); background: var(--surface-200); }
 .crm-eod__ok { display: flex; align-items: center; gap: 8px; margin: 0; color: var(--success); font-weight: 600; }
 /* La venta la carga otra persona: está avisado, no cargado. */

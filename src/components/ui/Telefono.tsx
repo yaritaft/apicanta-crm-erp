@@ -1,9 +1,9 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
-import { Check, Copy, MessageCircle } from "lucide-react";
+import { Check, Copy } from "lucide-react";
 import { useToast } from "@/components/ui/Toast";
-import { enlaceWhatsapp, numeroParaCopiar } from "@/lib/contacto-telefono";
+import { numeroParaCopiar, numeroParaMostrar } from "@/lib/contacto-telefono";
 
 /* Copiar al portapapeles. `navigator.clipboard` no existe fuera de https (ni
    en algunos navegadores del celular): ahí se cae al textarea escondido. */
@@ -48,14 +48,15 @@ export function Correo({ valor, vacio, compacto }: { valor?: string | null; vaci
   );
 }
 
-/* El teléfono de una persona: tocar el número lo copia de una (con un aviso) y el ícono
-   de al lado abre su chat de WhatsApp. El mismo en el cierre del día, la tabla de llamadas,
-   la grilla y la ficha. `pais` es el de la persona y ayuda a completar el código si falta. */
+/* El teléfono de una persona, con su «+»: tocarlo (o el ícono) lo copia de una, con un aviso, listo para pegar en la
+   conversación de WhatsApp. No abre WhatsApp: el enlace a una pestaña nueva arrancaba WhatsApp Web de cero y no servía
+   (Mariano, 19/10). El mismo en el cierre del día, la tabla de llamadas y la grilla. `pais` es el de la persona y ayuda
+   a completar el código si falta. */
 export function Telefono({ valor, pais, vacio, compacto }: {
   valor?: string | null; pais?: string | null;
   /* Qué decir si no hay número (sin esto, no se muestra nada). */
   vacio?: string;
-  /* En una celda de tabla: más chico y sin ícono de copiar, el número ya lo dice con el cursor. */
+  /* En una celda de tabla: sin caja. */
   compacto?: boolean;
 }) {
   const toast = useToast();
@@ -63,16 +64,13 @@ export function Telefono({ valor, pais, vacio, compacto }: {
   const reloj = useRef<number | undefined>(undefined);
   useEffect(() => () => window.clearTimeout(reloj.current), []);
 
-  const texto = String(valor ?? "").trim();
+  const texto = numeroParaMostrar(valor, pais);
   if (!texto) return vacio ? <span className="t-sm t-subtle">{vacio}</span> : null;
-  const chat = enlaceWhatsapp(texto, pais);
-
-  /* La tabla y la grilla abren la celda al tocar: acá el toque es del número. */
-  const frenar = (ev: React.SyntheticEvent) => ev.stopPropagation();
 
   async function copiar(ev: React.MouseEvent) {
+    /* La tabla y la grilla abren la celda al tocar: acá el toque es del número. */
     ev.stopPropagation();
-    const ok = await copiarTexto(numeroParaCopiar(texto, pais));
+    const ok = await copiarTexto(numeroParaCopiar(valor, pais));
     if (!ok) { toast("No se pudo copiar el número.", "err"); return; }
     toast("Teléfono copiado.");
     setCopiado(true);
@@ -80,18 +78,13 @@ export function Telefono({ valor, pais, vacio, compacto }: {
     reloj.current = window.setTimeout(() => setCopiado(false), 1600);
   }
 
+  const frenar = (ev: React.SyntheticEvent) => ev.stopPropagation();
   return (
     <span className={`telefono${compacto ? " telefono--compacto" : ""}`} onMouseDown={frenar} onDoubleClick={frenar}>
       <button type="button" className="telefono__num t-num" onClick={copiar} title="Tocá para copiar el número" aria-label={`Copiar el teléfono ${texto}`}>
         <span className="truncate">{texto}</span>
-        {!compacto && (copiado ? <Check size={14} aria-hidden /> : <Copy size={14} aria-hidden />)}
+        {copiado ? <Check size={14} aria-hidden /> : <Copy size={14} aria-hidden />}
       </button>
-      {chat && (
-        <a className="telefono__wa" href={chat} target="_blank" rel="noopener noreferrer" onClick={frenar}
-          title="Abrir el chat de WhatsApp" aria-label={`Abrir el chat de WhatsApp con ${texto}`}>
-          <MessageCircle size={compacto ? 14 : 15} aria-hidden />{!compacto && "WhatsApp"}
-        </a>
-      )}
     </span>
   );
 }

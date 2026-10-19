@@ -147,6 +147,16 @@ export function llamadasDelDia(e: Pick<EstadoApp, "sesiones" | "equipo">, closer
     .sort((a, b) => a.inicia.localeCompare(b.inicia));
 }
 
+/** De las llamadas de un día, las que hay que pasar: las que todavía no tienen cómo terminó. Las ya cargadas no vuelven a
+    pedirse (Dante, 19/10: «me aparecen de vuelta las que ya hice»); con `conCargadas` se suman para revisarlas. Una llamada de
+    la que no se sabe (`undefined`) cuenta como pendiente: más vale mostrarla que perderla. */
+export function llamadasParaCargar<T extends { id: string }>(
+  llamadas: T[], sinCargar: (id: string) => boolean | undefined, conCargadas: boolean,
+): { paraCargar: T[]; cargadas: number } {
+  const yaCargada = (l: T) => sinCargar(l.id) === false;
+  return { paraCargar: conCargadas ? llamadas : llamadas.filter((l) => !yaCargada(l)), cargadas: llamadas.filter(yaCargada).length };
+}
+
 /** Los closers que tienen llamadas, para elegir de quién es el día. */
 export function closersConLlamadas(e: Pick<EstadoApp, "sesiones" | "equipo">): string[] {
   const nombres = new Set<string>();
