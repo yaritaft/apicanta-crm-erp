@@ -91,3 +91,14 @@ export function commitFrenteALaReferencia(dir, sha, ref) {
   try { git(dir, ["cat-file", "-e", `${sha}^{commit}`]); } catch { return "ausente"; }
   try { git(dir, ["merge-base", "--is-ancestor", sha, ref]); return "en-la-historia"; } catch { return "fuera-de-la-historia"; }
 }
+
+/** De esas rutas, las que `.gitignore` ignora (archivos que genera una herramienta y que git, por diseño, no guarda). */
+export function ignoradasPorGit(dir, rutas) {
+  if (rutas.length === 0) return new Set();
+  try {
+    const salida = git(dir, ["check-ignore", "-z", "--no-index", "--stdin"], { input: `${rutas.join("\0")}\0` });
+    return new Set(salida.split("\0").filter(Boolean));
+  } catch {
+    return new Set(); /* check-ignore sale con 1 cuando no ignora ninguna */
+  }
+}

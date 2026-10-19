@@ -6,7 +6,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { aplanarArbol, clasificar, relacionConLaReferencia, rutaIgnorada } from "../scripts/deploy/arbol.mjs";
-import { commitFrenteALaReferencia, estadoDeLaCopia, sha1DeObjetos, sha1DelRepo } from "../scripts/deploy/git.mjs";
+import { commitFrenteALaReferencia, estadoDeLaCopia, ignoradasPorGit, sha1DeObjetos, sha1DelRepo } from "../scripts/deploy/git.mjs";
 import { compararConProduccion, textoDelInforme } from "../scripts/deploy/informe.mjs";
 
 /* ==================================================================
@@ -200,6 +200,31 @@ test("un archivo que sólo está en producción se perdería; uno que sólo est�
     assert.equal(inf.ok, false);
     assert.deepEqual(inf.seperderia.map((x: { ruta: string }) => x.ruta), ["z-solo-produccion.txt"]);
     assert.deepEqual(inf.soloRepo, ["b.txt"]);
+  } finally { m.limpiar(); }
+});
+
+test("lo que .gitignore ignora y la CLI subió igual (next-env.d.ts, tsbuildinfo) no es trabajo que se pierda", () => {
+  const m = mundo();
+  try {
+    const inf = compararConProduccion({ dir: m.copia, ref: m.c3, produccion: enProduccion(m, m.c3, { "ignorado.log": "lo generó una herramienta local\n" }) });
+    assert.equal(inf.ok, true);
+    assert.equal(inf.identica, true);
+    assert.deepEqual(inf.generados, ["ignorado.log"]);
+    assert.match(textoDelInforme(inf, "origin/main").join("\n"), /\.gitignore ignora subieron igual.*ignorado\.log/);
+    /* Otro archivo de más, que git no ignora, sigue frenando. */
+    const peor = compararConProduccion({ dir: m.copia, ref: m.c3, produccion: enProduccion(m, m.c3, { "ignorado.log": "x\n", "trabajo.txt": "sin commitear\n" }) });
+    assert.equal(peor.ok, false);
+    assert.deepEqual(peor.seperderia.map((x: { ruta: string }) => x.ruta), ["trabajo.txt"]);
+  } finally { m.limpiar(); }
+});
+
+test("ignoradasPorGit: devuelve sólo las rutas que .gitignore ignora, y vacío si no hay ninguna", () => {
+  const m = mundo();
+  try {
+    /* Un patrón sin barra («ignorado.log») ignora ese nombre a cualquier profundidad. */
+    assert.deepEqual([...ignoradasPorGit(m.copia, ["ignorado.log", "a.txt", "src/ignorado.log", "src/otro.log"])].sort(), ["ignorado.log", "src/ignorado.log"]);
+    assert.deepEqual([...ignoradasPorGit(m.copia, ["a.txt", "b.txt"])], []);
+    assert.deepEqual([...ignoradasPorGit(m.copia, [])], []);
   } finally { m.limpiar(); }
 });
 

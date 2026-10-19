@@ -10,7 +10,7 @@
    ================================================================== */
 
 import { clasificar } from "./arbol.mjs";
-import { commitsPosteriores, corto, sha1DelRepo, versionEnLaHistoria, versionEnOtraRama } from "./git.mjs";
+import { commitsPosteriores, corto, ignoradasPorGit, sha1DelRepo, versionEnLaHistoria, versionEnOtraRama } from "./git.mjs";
 
 /**
  * @param {{dir: string, ref: string, produccion: Map<string,string>}} p
@@ -34,14 +34,19 @@ export function compararConProduccion({ dir, ref, produccion }) {
       ? { ruta, motivo: `es de ${corto(dir, enOtraRama.commit)}, que no está en ${ref} (ramas: ${enOtraRama.ramas.slice(0, 3).join(", ")})` }
       : { ruta, motivo: "no está en ningún commit: es trabajo sin commitear" });
   }
-  for (const ruta of soloProduccion) seperderia.push({ ruta, motivo: `producción lo tiene y ${ref} no` });
+  /* Lo que sólo está en producción pero `.gitignore` ignora (next-env.d.ts, tsconfig.tsbuildinfo… que genera un
+     `tsc` o un `next build` local y la CLI sube igual) no es trabajo que se pierda: git nunca lo guarda. */
+  const generados = ignoradasPorGit(dir, soloProduccion);
+  for (const ruta of soloProduccion) {
+    if (!generados.has(ruta)) seperderia.push({ ruta, motivo: `producción lo tiene y ${ref} no` });
+  }
 
   /* Los commits que producción no tiene, sin repetir, de los archivos que difieren. */
   const faltantes = new Map();
   for (const v of masViejos) for (const l of v.faltan) faltantes.set(l.split(" ")[0], l);
 
   return {
-    iguales: iguales.length, masViejos, seperderia, soloRepo,
+    iguales: iguales.length, masViejos, seperderia, soloRepo, generados: [...generados].sort(),
     commitsFaltantes: [...faltantes.values()],
     ok: seperderia.length === 0,
     identica: masViejos.length === 0 && seperderia.length === 0,
@@ -68,6 +73,7 @@ export function textoDelInforme(inf, ref) {
     salida.push(`  ✖ ${inf.seperderia.length} archivo(s) de producción NO están en ${ref} y se perderían al publicar:`);
     salida.push(...lista(inf.seperderia.map((x) => `${x.ruta}  — ${x.motivo}`), 20));
   }
+  if (inf.generados.length) salida.push(`  · ${inf.generados.length} archivo(s) que .gitignore ignora subieron igual (los genera una herramienta local, no se pierde nada): ${inf.generados.join(", ")}.`);
   if (inf.soloRepo.length) salida.push(`  · ${inf.soloRepo.length} archivo(s) de ${ref} que producción no tiene se agregarían${inf.soloRepo.length <= 6 ? `: ${inf.soloRepo.join(", ")}` : ""}.`);
   return salida;
 }

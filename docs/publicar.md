@@ -69,6 +69,7 @@ Códigos de salida: `0` bien · `1` hay que frenar · `2` no se pudo verificar (
 | `✔ producción es idéntica a origin/main` | no hay nada pendiente |
 | `⚠ N archivo(s) son más viejos` + lista de commits | producción está atrasada: publicar `origin/main` la pone al día |
 | `✖ … NO están en origin/main y se perderían` | hay trabajo publicado que no está en `main`: commitealo y pusheálo (o decidí soltarlo) **antes** |
+| `· N archivo(s) que .gitignore ignora subieron igual` | `next-env.d.ts`, `tsconfig.tsbuildinfo`… los genera un `tsc` o un `next build` local y la CLI los sube aunque estén en `.gitignore`. No se pierde nada: no frena |
 | `⚠ el commit publicado NO es parte de la historia de origin/main` | alguien publicó un commit que no se pusheó, o que se rebaseó después |
 | `✖ le faltan commits de origin/main` | tu copia está vieja: `git fetch` y partí de `origin/main` |
 
