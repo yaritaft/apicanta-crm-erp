@@ -213,6 +213,8 @@ export interface FilaVentas {
   pagador: string;
   cuit: string;
   comprobante: string;
+  /* El link escondido en la celda del comprobante (un archivo de Drive): la hoja muestra el nombre del archivo y el link va aparte. */
+  comprobanteUrl?: string;
   observaciones: string;
   setter: string;
   referidor: string;
@@ -271,6 +273,18 @@ export function fechaPlanilla(crudo: string): string | null {
   return `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}T15:00:00.000Z`;
 }
 
+/** El encabezado de la columna que agrega `hojas_a_json.py` con el link escondido de cada comprobante. */
+export const COLUMNA_LINK_COMPROBANTE = "Comprobante (link)";
+
+/** El comprobante como se guarda en el cobro: el nombre del archivo y, si la celda traía un link, el link al lado. Sin link, queda el texto. */
+export function comprobanteConLink(texto: string | undefined, url?: string): string | undefined {
+  const t = (texto ?? "").trim();
+  const u = (url ?? "").trim();
+  if (!u) return t || undefined;
+  if (!t) return u;
+  return t.includes(u) ? t : `${t} ${u}`;
+}
+
 const siNo = (s: string) => /^(true|verdadero|si|sí|x|1|yes)$/i.test((s ?? "").trim());
 
 /** Las filas de la hoja a partir de la tabla (la primera fila son los
@@ -285,6 +299,7 @@ export function leerFilasVentas(tabla: string[][]): { filas: FilaVentas[]; falta
   const idx: Record<string, number> = {};
   for (const n of COLUMNAS_VENTAS) idx[n] = col(n);
   const v = (fila: string[], n: string) => (idx[n] >= 0 ? (fila[idx[n]] ?? "").trim() : "");
+  const colLink = col(COLUMNA_LINK_COMPROBANTE);
 
   const filas: FilaVentas[] = [];
   const descartadas: FilaDescartada[] = [];
@@ -313,7 +328,8 @@ export function leerFilasVentas(tabla: string[][]): { filas: FilaVentas[]; falta
       montoArs: tc > 0 && ars > 0 ? ars : undefined,
       tipoCambio: tc > 0 ? tc : undefined,
       pagador: v(f, "Nombre de quien transfirió"), cuit: v(f, "Cuit (Si pagó a financiera)"),
-      comprobante: v(f, "Comprobante"), observaciones: v(f, "Observaciones / Plan de pagos"),
+      comprobante: v(f, "Comprobante"), comprobanteUrl: colLink >= 0 ? (f[colLink] ?? "").trim() || undefined : undefined,
+      observaciones: v(f, "Observaciones / Plan de pagos"),
       setter: v(f, "Nombre del setter"), referidor: v(f, "Nombre del referidor"),
       referidorTelefono: v(f, "Número de teléfono"), ingresoComunidad: v(f, "Ingreso a la comunidad"),
     });
@@ -913,7 +929,7 @@ export function importarPlanilla(e: EstadoApp, filasCrudas: FilaVentas[], opcion
           tipoVenta: (TIPOS_VENTA_PAGO as string[]).includes(f.tipoVenta) ? f.tipoVenta as TipoVentaPago : undefined,
           tipoCambio: f.tipoCambio, montoArs: f.montoArs ?? montoArsDe(f.montoUsd, f.tipoCambio),
           pagador: f.pagador || undefined, cuit: f.cuit || undefined, chequeado: f.chequeado || undefined,
-          comprobanteLink: f.comprobante || undefined,
+          comprobanteLink: comprobanteConLink(f.comprobante, f.comprobanteUrl),
         });
       }
     }

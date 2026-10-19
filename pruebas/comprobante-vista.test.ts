@@ -1,6 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { vistaPreviaDeLink } from "@/lib/comprobante-vista";
+import { comprobanteDeCobro } from "@/lib/control-cobros";
+import type { Pago } from "@/lib/types";
 
 const ID = "1AbCdEfGhIjKlMnOpQrStUvWxYz012345";
 
@@ -34,4 +36,16 @@ test("nunca embebe algo que no sea https", () => {
   assert.deepEqual(vistaPreviaDeLink("data:image/png;base64,AAAA"), { tipo: "enlace" });
   /* Un host que sólo se parece a Drive no cuenta. */
   assert.deepEqual(vistaPreviaDeLink(`https://drive.google.com.evil.com/file/d/${ID}/view`), { tipo: "enlace" });
+});
+
+test("un cobro con «nombre del archivo + link de Drive» (como quedaron los de octubre) se ve adentro con el link", () => {
+  const link = "https://drive.google.com/open?id=1GQ2G8cB1p62FL_CHidjKbzIZdnH-Ik4r";
+  const pago = { comprobanteLink: `Captura de pantalla 2026-10-08 a la(s) 2.18.29 p. m. - Mariano Arias.png ${link}` } as Pago;
+  const prueba = comprobanteDeCobro(pago);
+  assert.equal(prueba.tipo, "link");
+  assert.equal(prueba.tipo === "link" ? prueba.url : "", link);
+  assert.deepEqual(vistaPreviaDeLink(prueba.tipo === "link" ? prueba.url : ""), { tipo: "marco", origen: "drive", src: "https://drive.google.com/file/d/1GQ2G8cB1p62FL_CHidjKbzIZdnH-Ik4r/preview" });
+  /* Sin link, sigue siendo sólo el nombre: nada que abrir. */
+  const solo = comprobanteDeCobro({ comprobanteLink: "foto.png" } as Pago);
+  assert.equal(solo.tipo === "link" ? solo.url : "x", undefined);
 });

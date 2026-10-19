@@ -1,6 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { estadoDespuesDeImportar, importarPlanilla, type FilaVentas, type ResultadoImport } from "@/lib/angelo";
+import {
+  COLUMNA_LINK_COMPROBANTE, comprobanteConLink, estadoDespuesDeImportar, importarPlanilla, leerFilasVentas, type FilaVentas, type ResultadoImport,
+} from "@/lib/angelo";
 import { construirSemilla } from "@/lib/seed";
 import type { Alumno, Cuota, EstadoApp, Lead, Movimiento, Pago, Venta } from "@/lib/types";
 
@@ -204,4 +206,40 @@ test("un pago de pasarela conciliado que apunta a una venta que ya no existe que
   assert.equal(dos.x.movimientosAjustados.length, 1, "y se manda a la base");
   assert.equal(m.estado, "conciliado");
   assert.equal(m.pagoId, pago.id);
+});
+
+/* ---------- El link escondido del comprobante (17/10: los de octubre vinieron sin link) ---------- */
+
+
+test("el comprobante conserva el link escondido de la celda y el cobro sigue con el mismo id", () => {
+  const nombre = "WhatsApp Image 2026-10-10 at 4.18.39 PM - Valentín Abadía.jpeg";
+  const link = "https://drive.google.com/open?id=1AbCdEfGhIjKlMnOpQrStUv";
+  const sinLink = importar(estadoBase(), [fila(2, { comprobante: nombre })]).e.pagos;
+  const conLink = importar(estadoBase(), [fila(2, { comprobante: nombre, comprobanteUrl: link })]).e.pagos;
+  assert.equal(sinLink.length, 1);
+  assert.equal(conLink.length, 1);
+  assert.equal(conLink[0].id, sinLink[0].id, "el link no cambia el id: reimportar no duplica ni borra cobros");
+  assert.equal(sinLink[0].comprobanteLink, nombre);
+  assert.equal(conLink[0].comprobanteLink, `${nombre} ${link}`, "queda el nombre del archivo y, al lado, el link");
+});
+
+test("comprobanteConLink: sin link queda el texto; si el texto ya es el link no se repite; sin nada no hay comprobante", () => {
+  const url = "https://drive.google.com/open?id=abc";
+  assert.equal(comprobanteConLink("foto.png"), "foto.png");
+  assert.equal(comprobanteConLink("foto.png", url), `foto.png ${url}`);
+  assert.equal(comprobanteConLink(url, url), url);
+  assert.equal(comprobanteConLink("", url), url);
+  assert.equal(comprobanteConLink("  ", "  "), undefined);
+  assert.equal(comprobanteConLink(undefined), undefined);
+});
+
+test("la columna «Comprobante (link)» que agrega hojas_a_json.py se lee sin ser imprescindible", () => {
+  const cab = ["Fecha del pago", "Email", "Servicio adquirido", "Monto abonado USD", "Valor total de la venta", "Comprobante"];
+  const datos = ["2026-10-10", "a@ejemplo.test", "Mentoría", "500", "500", "foto.png"];
+  const sin = leerFilasVentas([cab, datos]);
+  assert.equal(sin.filas.length, 1);
+  assert.equal(sin.filas[0].comprobanteUrl, undefined, "una planilla de antes, sin la columna, anda igual");
+  const con = leerFilasVentas([[...cab, COLUMNA_LINK_COMPROBANTE], [...datos, "https://drive.google.com/open?id=zzz"]]);
+  assert.equal(con.filas[0].comprobante, "foto.png");
+  assert.equal(con.filas[0].comprobanteUrl, "https://drive.google.com/open?id=zzz");
 });
