@@ -507,6 +507,11 @@ export interface LlamadaEnDevolucion {
   ventas: Venta[];
 }
 
+const tieneCobros = (e: Pick<EstadoApp, "pagos" | "cuotas">, ventaId: ID): boolean => {
+  const cuotas = new Set(e.cuotas.filter((c) => c.ventaId === ventaId).map((c) => c.id));
+  return e.pagos.some((p) => cuotas.has(p.cuotaId));
+};
+
 export function llamadasEnDevolucionSinCargar(
   e: Pick<EstadoApp, "sesiones" | "ventas" | "leads" | "contactos" | "ajustes" | "pagos" | "cuotas"> & ConDevoluciones,
 ): LlamadaEnDevolucion[] {
@@ -522,6 +527,9 @@ export function llamadasEnDevolucionSinCargar(
     /* Con una venta de esa persona que ya tiene su devolución, está cargada; sin
        ventas con cobros, no hay plata que devolver (todavía no se cargó la venta). */
     if (ventas.some((v) => conDevolucion.has(v.id))) continue;
+    /* Una venta que ya figura reembolsada o cancelada y nunca tuvo un cobro cargado (la planilla la trae en cero: se cobró y se devolvió el mismo día):
+       no hay plata que devolver en los libros, y cargarla daría «esta venta no tiene cobros». No hay nada que cargar. */
+    if (ventas.length > 0 && ventas.every((v) => v.estado !== "activa" && !tieneCobros(e, v.id))) continue;
     out.push({ sesion: s, ventas });
   }
   return out.sort((a, b) => Date.parse(b.sesion.inicia) - Date.parse(a.sesion.inicia));

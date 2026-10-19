@@ -8,9 +8,10 @@ import { calcularPyL } from "@/lib/finanzas";
 import { cuentasDe, resumenDe, transaccionesDe } from "@/lib/transacciones";
 import { enRangoDeDias } from "@/lib/dia-negocio";
 import { rangoDePeriodo } from "@/lib/periodos";
+import { llamadasEnDevolucionSinCargar } from "@/lib/devoluciones";
 import { construirSemilla } from "@/lib/seed";
 import { sugerirCategoria } from "@/lib/gastos";
-import type { Arqueo, Devolucion, EstadoApp, Gasto, Movimiento, Traspaso } from "@/lib/types";
+import type { Arqueo, Devolucion, EstadoApp, Gasto, Movimiento, Sesion, Traspaso } from "@/lib/types";
 import { devolucion } from "./estado-devolucion";
 import { pago, venta } from "./estado-liquidacion";
 
@@ -256,4 +257,25 @@ test("los reembolsos marcados como «no es una devolución» quedan a la vista, 
   assert.deepEqual(propuestasPendientes(e).map((d) => d.id), ["d_pend"], "lo descartado no cuenta como pendiente");
   /* Y no frena ningún paso del mes. */
   assert.equal(pasosDelMes(e, "2026-09", { ahora: AHORA, esDueno: true }).find((p) => p.id === "reembolsos")!.faltan, 1);
+});
+
+test("una llamada en «Devolución» de una venta reembolsada que nunca tuvo cobros no queda pendiente para siempre (Hernan Zarazaga)", () => {
+  const llamada = (id: string, invitado: string): Sesion => ({
+    id, titulo: "Llamada", tipo: "Llamada de Asesoramiento", invitado, email: `${id}@ejemplo.test`, inicia: DIA(10, 8), duracionMin: 45, estado: "hecha",
+    origen: "calendly", creadoEn: DIA(10, 8), extra: {}, estadoLlamada: "Devolución",
+  } as unknown as Sesion);
+  const e = vacio();
+  e.sesiones = [llamada("s_reemb", "Hernan Zarazaga"), llamada("s_activa", "Ana Sin Cobro"), llamada("s_cobrada", "Beto Cobrado"), llamada("s_sinventa", "Persona Sin Venta")];
+  e.ventas = [
+    venta({ id: "v_reemb", contactoNombre: "Hernan Zarazaga", precioAcordado: 0, fecha: DIA(10, 8), estado: "reembolsada" }),
+    venta({ id: "v_activa", contactoNombre: "Ana Sin Cobro", precioAcordado: 3000, fecha: DIA(10, 8) }),
+    venta({ id: "v_cobrada", contactoNombre: "Beto Cobrado", precioAcordado: 3000, fecha: DIA(10, 8), estado: "reembolsada" }),
+  ];
+  e.cuotas = [{ id: "c1", ventaId: "v_cobrada", numero: 1, monto: 3000, vence: DIA(10, 8), estado: "pagada", esReserva: false }];
+  e.pagos = [pago("p1", "c1", 3000, 0, DIA(10, 8), "proc_stripe")];
+  const pendientes = llamadasEnDevolucionSinCargar(e).map((x) => x.sesion.id).sort();
+  assert.ok(!pendientes.includes("s_reemb"), "reembolsada y sin cobros: no hay nada que devolver ni que cargar");
+  assert.ok(pendientes.includes("s_activa"), "una venta activa sin cobros sigue avisando: puede faltar cargar el cobro");
+  assert.ok(pendientes.includes("s_cobrada"), "reembolsada pero con cobros y sin devolución cargada: sí hay que cargarla");
+  assert.ok(pendientes.includes("s_sinventa"), "sin venta cargada: sigue avisando");
 });
