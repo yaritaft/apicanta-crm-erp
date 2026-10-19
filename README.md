@@ -106,6 +106,13 @@ del negocio: va en `preferencias`, una fila por usuario, que cada uno lee y escr
 
 En **Ajustes → Datos** se puede bajar un respaldo en JSON y restaurarlo.
 
+## Publicar a producción
+
+Vercel **no está conectado a git**: un push no publica; `vercel deploy --prod` sube la carpeta tal cual está. Para no pisar lo que
+otra sesión ya publicó, se publica siempre una copia limpia de `origin/main` y se corre antes y después
+`node scripts/verificar-deploy.mjs antes|despues` (compara producción con `main` archivo por archivo). Paso a paso y cómo leer el
+informe: [`docs/publicar.md`](docs/publicar.md).
+
 ## Correr en local
 
 ```bash
