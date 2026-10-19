@@ -110,8 +110,9 @@ export const esCompra = (o?: Pick<OpcionCrm, "oportunidad">) =>
    vistas; sin elegir, la regla de siempre. */
 
 const REGLA_TABLA: Record<string, RegExp> = {
-  booking: /asesoramiento/i,
-  resells: /auditor|resell/i,
+  /* «Próximos pasos» es el evento con el que se habla con alumnos: es de resell aunque diga «asesoramiento». */
+  booking: /^(?!.*pr[oó]ximos pasos).*asesoramiento/i,
+  resells: /auditor|resell|pr[oó]ximos pasos/i,
 };
 
 export const TABLAS_POR_DEFECTO: TablaCrm[] = [

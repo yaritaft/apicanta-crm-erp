@@ -2,6 +2,7 @@ import type { Ajustes, EstadoApp, OpcionCrm, Sesion } from "./types";
 import { miembroDeCloser, opcionesDe, sinTildes } from "./crm";
 import { diaDeNegocio } from "./dia-negocio";
 import { esReagendar, preguntaDe } from "./estados";
+import { esLlamadaDeResell } from "./resells";
 
 /* ==================================================================
    El cierre del día del closer (EOD).
@@ -140,10 +141,10 @@ export function esDelCloser(s: Pick<Sesion, "anfitrion">, closer: string, equipo
   return miembroDeCloser(a, equipo)?.nombre === closer;
 }
 
-/** Las llamadas de un closer en un día (de Argentina), sin las canceladas. */
+/** Las llamadas de venta de un closer en un día (de Argentina), sin las canceladas ni las de resell (esas se cargan en su agenda). */
 export function llamadasDelDia(e: Pick<EstadoApp, "sesiones" | "equipo">, closer: string, dia: string): Sesion[] {
   return e.sesiones
-    .filter((s) => s.estado !== "cancelada" && diaDeNegocio(s.inicia) === dia && esDelCloser(s, closer, e.equipo))
+    .filter((s) => s.estado !== "cancelada" && diaDeNegocio(s.inicia) === dia && esDelCloser(s, closer, e.equipo) && !esLlamadaDeResell(s))
     .sort((a, b) => a.inicia.localeCompare(b.inicia));
 }
 

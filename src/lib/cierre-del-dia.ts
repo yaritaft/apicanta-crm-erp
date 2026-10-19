@@ -1,4 +1,5 @@
 import type { Ajustes, EstadoApp, ID, Sesion, Venta } from "./types";
+import { esLlamadaDeResell } from "./resells";
 import { entraEnTabla, miembroDeCloser, tablasDe } from "./crm";
 import { diaDeNegocio } from "./dia-negocio";
 import { esReagendar } from "./estados";
@@ -170,7 +171,7 @@ function indiceDe(e: Base, hoy: string, desde: string): Indice {
   for (const s of e.sesiones) {
     const d = diaDeNegocio(s.inicia);
     if (!d || d < desde || d > hoy) continue;
-    if (!pideCierre(s, hoy) || !tablas.some((t) => entraEnTabla(s, t))) continue;
+    if (!pideCierre(s, hoy) || !tablas.some((t) => entraEnTabla(s, t)) || esLlamadaDeResell(s)) continue;
     const closer = closerDe(s);
     if (!closer) continue;
     let dias = porCloser.get(closer);

@@ -4348,3 +4348,6 @@ span.kpis__etiqueta:hover { color: var(--ink); text-decoration: none; }
 .rep-resp__lista { margin: var(--space-2) 0 0; display: flex; flex-direction: column; gap: var(--space-3); }
 .rep-resp__item dt { font-size: 12px; line-height: 18px; color: var(--ink-subtle); }
 .rep-resp__item dd { margin: 2px 0 0; font-size: 14px; line-height: 21px; color: var(--ink); white-space: pre-wrap; overflow-wrap: anywhere; }
+
+/* El selector Ventas | Resell encima de la tabla de llamadas (components/crm-tabla/CrmConResells.tsx). */
+.crm-grupos { margin-bottom: var(--space-3); }

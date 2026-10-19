@@ -152,8 +152,13 @@ export function rangoMax(minDate: string | null, maxDate?: string | null): Rango
   return { preset: "max", desde, hasta };
 }
 
+/* Un solo día se lee con el nombre del día («vie 16 oct»): con «16 oct» hay que contar en el calendario qué día era
+   (Mariano, 19/10). Un rango queda con los números, que si no la barra se ensancha. */
+const DIAS_CORTOS = ["dom", "lun", "mar", "mié", "jue", "vie", "sáb"];
+const conDiaDeSemana = (s: string) => `${DIAS_CORTOS[deIso(s).getDay()]} ${fmtCorta(s)}`;
+
 export function rangoStr(r: RangoFechas): string {
-  return r.desde === r.hasta ? fmtCorta(r.desde) : `${fmtCorta(r.desde)} – ${fmtCorta(r.hasta)}`;
+  return r.desde === r.hasta ? conDiaDeSemana(r.desde) : `${fmtCorta(r.desde)} – ${fmtCorta(r.hasta)}`;
 }
 
 /* Para el sub de los StatCard: "últimos 30 días", o el rango si es a mano. */
@@ -366,7 +371,7 @@ export function DateRangePicker({
               <div className="dp-resumen">
                 {completo
                   ? `${fmtCorta(dDesde!)} – ${fmtCorta(dHasta!)} · ${nDias} día${nDias > 1 ? "s" : ""}`
-                  : dDesde ? `${fmtCorta(dDesde)} — elegí la fecha de fin, o Actualizar para ver sólo ese día` : "Elegí la fecha de inicio"}
+                  : dDesde ? `${conDiaDeSemana(dDesde)} — elegí la fecha de fin, o Actualizar para ver sólo ese día` : "Elegí la fecha de inicio"}
               </div>
             </div>
           </div>

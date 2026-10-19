@@ -16,6 +16,7 @@ import { diaDeNegocio } from "@/lib/dia-negocio";
 import { miembroDeCloser, opcionesDe } from "@/lib/crm";
 import { esReagendar, estadoVisible, preguntaDe, type PreguntaEod } from "@/lib/estados";
 import { leadDeSesion } from "@/lib/etapas-auto";
+import { esLlamadaDeResell } from "@/lib/resells";
 import { filasTabla, type FilaTabla } from "@/lib/crm-tabla";
 import {
   atajosDeCierre, cambiosDelEod, closersConLlamadas, esDelCloser, faltaEnRespuesta, llamadasDelDia, llamadasParaCargar, objecionSugerida, objecionesDe,
@@ -117,7 +118,7 @@ export function Eod({ onCerrar, soloSesionId }: { onCerrar: () => void; soloSesi
         .filter((s) => {
           const f = filas.get(s.id);
           const d = diaDeNegocio(s.inicia);
-          return f?.sinCargar && d < dia && d >= desde && esDelCloser(s, closer, e.equipo);
+          return f?.sinCargar && d < dia && d >= desde && esDelCloser(s, closer, e.equipo) && !esLlamadaDeResell(s);
         })
         .sort((a, b) => a.inicia.localeCompare(b.inicia)),
     };

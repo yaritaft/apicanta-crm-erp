@@ -14,7 +14,7 @@ import { Chip, Flotante } from "./piezas";
    ================================================================== */
 
 export function SelectorOpciones({
-  ancla, opciones, valor, onElegir, onCerrar, inicial = "", ancho, cubrir,
+  ancla, opciones, valor, onElegir, onCerrar, inicial = "", ancho, cubrir, multiple,
 }: {
   ancla: HTMLElement | null;
   opciones: OpcionCrm[];
@@ -25,15 +25,19 @@ export function SelectorOpciones({
   inicial?: string;
   ancho?: number;
   cubrir?: boolean;
+  /* Se pueden tener varias a la vez: `valor` trae las elegidas separadas por coma, cada clic suma o saca una y la lista
+     queda abierta (se cierra al hacer clic afuera). */
+  multiple?: boolean;
 }) {
   const [q, setQ] = useState(inicial);
+  const elegidas = multiple ? valor.split(",").map((x) => x.trim()).filter(Boolean) : [valor];
   /* Un estado oculto no se ofrece (Ajustes → CRM), salvo el que la celda ya
      tiene: se sigue viendo y sigue elegido. */
   const visibles = ofrecidas(opciones, valor);
   const lista = visibles.filter((o) => sinTildes(o.nombre).includes(sinTildes(q.trim())));
   /* Abierta escribiendo, la resaltada es la primera que coincide; si no, la
      que ya tenía la celda. */
-  const [i, setI] = useState(() => (inicial ? 0 : Math.max(0, visibles.findIndex((o) => o.nombre === valor))));
+  const [i, setI] = useState(() => (inicial ? 0 : Math.max(0, visibles.findIndex((o) => elegidas.includes(o.nombre)))));
   const listaRef = useRef<HTMLDivElement>(null);
   const k = Math.min(i, Math.max(0, lista.length - 1));
 
@@ -57,13 +61,13 @@ export function SelectorOpciones({
       <div className="crm-selector__lista" role="listbox" ref={listaRef}>
         {lista.map((o, n) => (
           <div
-            key={o.nombre} data-i={n} role="option" aria-selected={o.nombre === valor}
+            key={o.nombre} data-i={n} role="option" aria-selected={elegidas.includes(o.nombre)}
             className={`crm-selector__op${n === k ? " crm-selector__op--activa" : ""}`}
             onMouseEnter={() => setI(n)}
             onMouseDown={(ev) => { ev.preventDefault(); onElegir(o.nombre); }}
           >
             <Chip texto={o.nombre} color={o.color} />
-            {o.nombre === valor && <Check size={14} className="crm-selector__check" aria-hidden />}
+            {elegidas.includes(o.nombre) && <Check size={14} className="crm-selector__check" aria-hidden />}
           </div>
         ))}
         {lista.length === 0 && <div className="crm-selector__vacio">Ninguna opción coincide</div>}

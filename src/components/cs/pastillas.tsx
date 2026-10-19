@@ -7,9 +7,9 @@ import { sinTildes } from "@/lib/crm";
 export type TonoPastilla = "ok" | "aviso" | "malo" | "info" | "neutra";
 
 const MALO = /(no avanzando|no contesta|sin acceso|inactivo|\bbaja\b|no quiso|no renueva|no quiere|rechazad|cancelad)/;
-const AVISO = /(pendiente|falta|atrasad|pausad|downsell|no agendada|lo piensa|sin definir|no se present)/;
-const OK = /(corregido|firmado|al dia|completos|avanzando|subido a youtube|activo|renueva|publicad)/;
-const INFO = /(enviado|subido a drive|egresado|agendada|agendado|onboarding)/;
+const AVISO = /(pendiente|falta|atrasad|pausad|downsell|no agendada|lo piensa|sin definir|no se present|^seguimiento$|garantia extendida|outbording)/;
+const OK = /(corregido|firmado|al dia|completos|avanzando|subido a youtube|activo|renueva|publicad|upgrade|vigente)/;
+const INFO = /(enviado|subido a drive|egresado|agendada|agendado|onboarding|2da agenda)/;
 
 export function tonoDe(valor: string): TonoPastilla {
   const t = sinTildes(valor);

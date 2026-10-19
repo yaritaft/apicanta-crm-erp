@@ -6,7 +6,7 @@ import { lunesDe, lunesDelDia } from "./reportes";
 import { sinTildes } from "./crm";
 import { leerDiaCv, leerLinkCv, leerTelefonoCv, revisionCvNormal } from "./revision-cv";
 import {
-  aNumero, ENTRE, listasCs, programasDeTexto, resellNormal, seguimientoCompleto, sumarMeses, testimonioNormal, valorDeLista, CONTRATOS,
+  aNumero, ENTRE, estadosDeResell, listasCs, programasDeTexto, resellNormal, seguimientoCompleto, sumarMeses, testimonioNormal, valorDeLista, CONTRATOS,
 } from "./clientes-cs";
 import { configSeguimiento } from "./seguimiento";
 import type { Alumno, EstadoApp, ID, Lead, Reporte, Resell, RevisionCv, SeguimientoAlumno, Testimonio, Venta } from "./types";
@@ -647,7 +647,8 @@ export function planificarImportacionCs(e: EstadoApp, tablas: readonly TablaImpo
       const archivo = resellNormal({
         id, sesionId: existente?.sesionId ?? null, fechaHora: existente?.fechaHora ?? fechaHora,
         nombre: v("nombre"), email: mail, telefono: v("telefono"), closer: v("closer"),
-        estado: estadoTxt ? valorDeLista(estadoTxt, listas.estadosResell) : "",
+        /* El Estado del Airtable es de selección múltiple: «No quiere renovar,Outbording» son dos estados. */
+        estado: estadosDeResell(estadoTxt).map((x) => valorDeLista(x, listas.estadosResell)).join(", "),
         cashCollect: cash, casoDeExito: caso === true || (caso === null && Boolean(v("caso"))),
         notas: caso === null && v("caso") ? `${v("notas")}${v("notas") ? " · " : ""}Caso de éxito: ${v("caso")}`.trim() : v("notas"),
         cancelada: false, origen: existente?.origen ?? "importado",

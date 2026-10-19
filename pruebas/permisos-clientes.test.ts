@@ -75,6 +75,8 @@ function parchar(def: string, tablasClientes: string[]): Record<string, string[]
   }
   /* Y el de supabase/customer-success-lili.sql: la agenda de resells, del área Alumnos (el test de abajo comprueba que ese archivo diga eso). */
   if (!def.includes("'resells'")) t = t.replace(/select case tabla/, "select case tabla\n when 'resells' then array['alumnos']");
+  /* Y el de supabase/resells-closers.sql: los resells también los leen y editan los closers y el director (área Ventas). */
+  t = t.replace("when 'resells' then array['alumnos']", "when 'resells' then array['alumnos','ventas']");
   /* Y el de supabase/revision-cv.sql: la revisión de CVs, también del área Alumnos. */
   if (!def.includes("'revisiones_cv'")) t = t.replace(/select case tabla/, "select case tabla\n when 'revisiones_cv' then array['alumnos']");
   const m: Record<string, string[]> = {};
@@ -88,6 +90,21 @@ test("el SQL de Lili suma la agenda de resells al área Alumnos, para leer y par
   assert.match(sql, /nuevo_l := regexp_replace\(nuevo_l[\s\S]*when 'resells'/);
   assert.match(sql, /nuevo_e := regexp_replace\(nuevo_e[\s\S]*when 'resells'/);
   for (const p of ["ver_resells", "crear_resells", "editar_resells", "borrar_resells"]) assert.match(sql, new RegExp(`create policy ${p} on public.resells`));
+});
+
+test("el SQL de resells para closers abre la agenda al área Ventas, la recorta por closer y la app dice lo mismo", () => {
+  const sql = readFileSync(new URL("../supabase/resells-closers.sql", import.meta.url), "utf8");
+  assert.equal(sql.split("when 'resells' then array['alumnos','ventas']").length - 1, 2, "una vez en areas_que_leen y otra en areas_que_editan (el mismo replace aplicado a las dos)");
+  assert.match(sql, /pg_get_functiondef\('public\.areas_que_leen\(text\)'::regprocedure\)/, "parcha lo vigente");
+  for (const p of ["ver_resells", "crear_resells", "editar_resells", "borrar_resells"]) {
+    assert.match(sql, new RegExp(`create policy ${p} on public.resells`));
+    assert.ok(sql.includes(`drop policy if exists ${p} on public.resells`), `${p}: se puede volver a correr`);
+  }
+  assert.equal(sql.split("public.son_mios(array[closer])").length - 1, 5, "las cuatro políticas (la de editar mira dos veces) recortan por el closer de la fila");
+  assert.match(sql, /select not public\.solo_lo_suyo\(\)/, "quien no tiene «sólo lo suyo» no mira la fila");
+  assert.match(sql, /pr\[oó\]ximos pasos/, "relleno de las llamadas de «Próximos pasos»");
+  assert.match(sql, /on conflict \(id\) do nothing/, "no pisa lo que ya hay");
+  assert.deepEqual([LEEN.resells, EDITAN.resells], [["alumnos", "ventas"], ["alumnos", "ventas"]], "la app dice lo mismo que la base");
 });
 
 test("el SQL de la revisión de CVs suma la tabla al área Alumnos, para leer y para editar, sobre la definición vigente (no con una copia)", () => {

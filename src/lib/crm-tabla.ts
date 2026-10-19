@@ -404,7 +404,7 @@ export const esColumna = (k: string): k is ClaveColumna => Object.prototype.hasO
 
 export const VISIBLES_POR_DEFECTO: ClaveColumna[] = [
   "llamada", "nombre", "telefono", "email", "closer", "estadoPreCall", "estadoLlamada", "objecion", "oferta", "cierre", "via", "ad", "pais",
-  "tecnologias", "ingles", "ingreso", "inversion", "calificada", "grabacion", "venta", "comprobante", "conciliado",
+  "tecnologias", "ingles", "ingreso", "inversion", "calificada", "grabacion", "notas", "venta", "comprobante", "conciliado",
 ];
 
 /* Columnas que se sumaron después a la vista de entrada. Quien ya tenía guardadas las suyas las
@@ -412,6 +412,8 @@ export const VISIBLES_POR_DEFECTO: ClaveColumna[] = [
    closers el 19/10 (el teléfono y el mail a mano, sin buscarlos en la ficha). */
 export const COLUMNAS_SUMADAS: { id: string; despuesDe: string; claves: ClaveColumna[] }[] = [
   { id: "contacto-1910", despuesDe: "nombre", claves: ["telefono", "email"] },
+  /* Mariano (19/10): «un lugar para poner comentarios de la llamada». La columna ya existía pero había que sumarla. */
+  { id: "notas-1910", despuesDe: "cierre", claves: ["notas"] },
 ];
 
 /* Las dos columnas que miran los cobros de la venta: sólo las ve quien puede leer los cobros. */

@@ -31,6 +31,7 @@ import { PARAM_VISTA } from "@/lib/vistas-guardadas";
 import type { ColorCrm, OpcionCrm } from "@/lib/types";
 import { money, num } from "@/lib/format";
 import { diaDeNegocio } from "@/lib/dia-negocio";
+import { esLlamadaDeResell } from "@/lib/resells";
 import { bajarExcel, excelCobros, filasExcelCobros } from "@/lib/excelCobros";
 import { paginaDeURL, useBusquedaURL, useEscribirURL, useParamsURL } from "@/lib/useParamsURL";
 import { useRangoURL } from "@/lib/useRango";
@@ -131,7 +132,8 @@ export function CrmTabla({ misLlamadas = false }: { misLlamadas?: boolean } = {}
 
   /* `ahora` al minuto: la fila que pasa de "Por venir" a "Sin cargar". */
   const ahora = Math.floor(Date.now() / 60000) * 60000;
-  const todas = useMemo(() => filasTabla(e, ahora), [e, ahora]);
+  /* Las llamadas de resell tienen su propio grupo (CrmConResells): acá sólo las de venta. */
+  const todas = useMemo(() => filasTabla(e, ahora).filter((f) => !esLlamadaDeResell(f.sesion)), [e, ahora]);
   const enPeriodo = useMemo(
     () => todas.filter((f) => f.dia >= rango.desde && f.dia <= rango.hasta && coincideBusqueda(f, q)),
     [todas, rango.desde, rango.hasta, q],

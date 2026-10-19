@@ -11,9 +11,10 @@
 
 const sinTildes = (s: string) => s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
 
-/** Si una llamada de Calendly es de resell: el evento se llama «auditoría» o «resell», o llegó con el utm_source «Resell». */
+/** Si una llamada de Calendly es de resell: el evento se llama «auditoría», «resell» o «próximos pasos» (el que usan para
+    hablar con alumnos: 15 de los 73 resells del Airtable entraron por ahí, 19/10), o llegó con el utm_source «Resell». */
 export function esLlamadaDeResell(s: { tipo?: string | null; titulo?: string | null; utm?: Record<string, string> | null }): boolean {
-  if (/(auditor|resell)/.test(sinTildes(`${s.tipo ?? ""} ${s.titulo ?? ""}`))) return true;
+  if (/(auditor|resell|proximos pasos)/.test(sinTildes(`${s.tipo ?? ""} ${s.titulo ?? ""}`))) return true;
   const src = s.utm?.utm_source ?? s.utm?.source ?? "";
   return /resell/.test(sinTildes(src));
 }

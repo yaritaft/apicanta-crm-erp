@@ -26,7 +26,7 @@ const sql = (n: string) => readFileSync(resolve(RAIZ, n), "utf8");
 const esquema = leerEsquema();
 
 /* El orden en que se corren en producción (los que no hacen falta para estas tablas se omiten). */
-const ARCHIVOS = ["supabase/tipos-cuenta.sql", "supabase/customer-success.sql", "supabase/customer-success-lili.sql", "supabase/revision-cv.sql", "supabase/devoluciones.sql", "supabase/gastos-recurrentes.sql",
+const ARCHIVOS = ["supabase/tipos-cuenta.sql", "supabase/customer-success.sql", "supabase/customer-success-lili.sql", "supabase/resells-closers.sql", "supabase/revision-cv.sql", "supabase/devoluciones.sql", "supabase/gastos-recurrentes.sql",
   "supabase/registros-webinar.sql", "supabase/whatsapp-lector.sql", "supabase/gastos-devengo.sql", "supabase/procesadores-otros.sql", "supabase/cierre-del-dia.sql",
   "supabase/control-cruzado.sql"];
 

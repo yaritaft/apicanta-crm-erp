@@ -40,7 +40,8 @@ export const LISTAS_POR_DEFECTO: ListasCs = {
   estadosVideo: ["Pendiente de subir", "Subido a Drive", "No quiso grabar", "Subido a YouTube"],
   quienGraba: ["Yari", "Mariano"],
   resellsTestimonio: ["Pendiente", "Renueva", "No renueva", "Lo piensa"],
-  estadosResell: ["Agendada", "Renueva", "No renueva", "Lo piensa", "No se presentó", "Cancelada"],
+  /* Los de «Estado» de la tabla «Agendas Resells» del Airtable (export del 09/10): se eligen varios a la vez («No quiere renovar» + «Outbording»). */
+  estadosResell: ["2da Agenda", "Upgrade a Hackear IA", "No quiere renovar", "Outbording", "Seguimiento", "Garantía Extendida", "Alumno vigente"],
   estadosCv: [...ESTADOS_CV],
 };
 
@@ -708,6 +709,17 @@ export interface FilaResell {
   alumno?: Alumno;
 }
 
+/** Los estados de un resell: se eligen varios, y se guardan en un texto separado por comas. */
+export const estadosDeResell = (texto: string | null | undefined): string[] =>
+  [...new Set(String(texto ?? "").split(",").map((x) => x.trim()).filter(Boolean))];
+
+/** Suma o saca un estado de los de un resell (el texto que se guarda). `Vaciar` los deja en blanco. */
+export function alternarEstadoResell(texto: string | null | undefined, estado: string): string {
+  if (estado === "Vaciar") return "";
+  const hay = estadosDeResell(texto);
+  return (hay.includes(estado) ? hay.filter((x) => x !== estado) : [...hay, estado]).join(", ");
+}
+
 export function filasResells(e: Pick<EstadoApp, "resells" | "alumnos">): FilaResell[] {
   const porMail = new Map<string, Alumno>();
   for (const a of e.alumnos) {
@@ -732,7 +744,7 @@ export const COLUMNAS_RESELLS: ColumnaCs<FilaResell, ClaveResell>[] = [
   { clave: "email", titulo: "Mail", grupo: "Agenda", valores: (f) => uno(f.resell.email), ancho: 220 },
   { clave: "telefono", titulo: "Teléfono", grupo: "Agenda", valores: (f) => uno(f.resell.telefono), ancho: 150 },
   { clave: "closer", titulo: "Closer", grupo: "Agenda", valores: (f) => uno(f.resell.closer), ancho: 140 },
-  { clave: "estado", titulo: "Estado", grupo: "Resultado", valores: (f) => [f.estado], ancho: 140 },
+  { clave: "estado", titulo: "Estado", grupo: "Resultado", valores: (f) => estadosDeResell(f.estado), ancho: 220 },
   { clave: "cash", titulo: "Cash Collect", grupo: "Resultado", valores: (f) => numeroComoValor(f.resell.cashCollect), orden: (f) => f.resell.cashCollect ?? "", numerica: true, ancho: 120 },
   { clave: "caso", titulo: "Caso de éxito", grupo: "Resultado", valores: (f) => siNo(f.resell.casoDeExito), ancho: 110 },
   { clave: "notas", titulo: "Notas", grupo: "Resultado", valores: (f) => [conTexto(f.resell.notas, "Con notas", "Sin notas")], texto: (f) => f.resell.notas, ancho: 260 },

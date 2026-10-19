@@ -139,7 +139,8 @@ export const LEEN: Record<string, AreaId[]> = {
   /* Customer Success (supabase/customer-success.sql). */
   seguimiento_alumnos: ["alumnos"],
   testimonios: ["alumnos"],
-  resells: ["alumnos"],
+  /* Los closers también (por Ventas, que el setter no tiene: lleva el Cash Collect): sus resells viven en Mis llamadas (supabase/resells-closers.sql); «sólo lo suyo» los recorta. */
+  resells: ["alumnos", "ventas"],
   revisiones_cv: ["alumnos"],
   gastos: ["finanzas"],
   movimientos: ["finanzas"],
@@ -182,7 +183,7 @@ export const EDITAN: Record<string, AreaId[]> = {
   etapas_servicio: ["alumnos"],
   seguimiento_alumnos: ["alumnos"],
   testimonios: ["alumnos"],
-  resells: ["alumnos"],
+  resells: ["alumnos", "ventas"],
   revisiones_cv: ["alumnos"],
   webinars: ["webinars"],
   campaigns: ["marketing"],

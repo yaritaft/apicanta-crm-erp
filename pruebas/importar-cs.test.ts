@@ -312,9 +312,9 @@ test("lo que el equipo corrigió en un testimonio no se pisa al reimportar", () 
 const CSV_RESELLS = [
   COLS_RESELLS,
   /* Ya la trajo Calendly (Ana, ese día): se completa el estado, el cash y el caso. */
-  '07/10/2026 15:30,Ana López,ANA@mail.com,,,renueva,"US$ 1.200,50",Sí,"Renovó por 6 meses"',
+  '07/10/2026 15:30,Ana López,ANA@mail.com,,,upgrade a hackear ia,"US$ 1.200,50",Sí,"Renovó por 6 meses"',
   /* Nueva, con un caso de éxito que es un link y no un sí/no. */
-  '12/10/2026 11:00,Luis Soto,luis@mail.com,+54 9 11 2222 3333,Mariano,no renueva,,https://caso.example/luis,',
+  '12/10/2026 11:00,Luis Soto,luis@mail.com,+54 9 11 2222 3333,Mariano,"no quiere renovar,outbording",,https://caso.example/luis,',
   /* Sin fecha: no entra. */
   ',Nadie,nadie@mail.com,,,,,,',
   /* Fecha ilegible: no entra. */
@@ -332,12 +332,12 @@ test("importar la Agenda de resells: la que ya trajo Calendly se completa, las n
   assert.deepEqual(p.descartadas.map((d) => d.fila), [4, 5]);
 
   const ana = p.resells.find((r) => r.id === "rs_ses1")!;
-  assert.deepEqual([ana.estado, ana.cashCollect, ana.casoDeExito, ana.notas], ["Renueva", 1200.5, true, "Renovó por 6 meses"]);
+  assert.deepEqual([ana.estado, ana.cashCollect, ana.casoDeExito, ana.notas], ["Upgrade a Hackear IA", 1200.5, true, "Renovó por 6 meses"]);
   assert.deepEqual([ana.origen, ana.sesionId, ana.closer, ana.telefono, ana.fechaHora], ["calendly", "ses1", "Mariano", "+54 9 11 5555 1111", "2026-10-07T18:30:00.000Z"], "lo de Calendly manda");
 
   const luis = p.resells.find((r) => r.nombre === "Luis Soto")!;
   assert.match(luis.id, /^rs_imp_/);
-  assert.deepEqual([luis.origen, luis.estado, luis.fechaHora, luis.closer, luis.casoDeExito], ["importado", "No renueva", "2026-10-12T14:00:00.000Z", "Mariano", true]);
+  assert.deepEqual([luis.origen, luis.estado, luis.fechaHora, luis.closer, luis.casoDeExito], ["importado", "No quiere renovar, Outbording", "2026-10-12T14:00:00.000Z", "Mariano", true]);
   assert.match(luis.notas, /Caso de éxito: https:\/\/caso\.example\/luis/, "lo que no es sí o no queda en las notas");
 
   const e1 = aplicar(e, p);
@@ -347,14 +347,14 @@ test("importar la Agenda de resells: la que ya trajo Calendly se completa, las n
 });
 
 test("en la agenda, lo que Customer Success ya cargó no se pisa salvo que se pida", () => {
-  const ya = { id: "rs_ses1", sesionId: "ses1", fechaHora: "2026-10-07T18:30:00.000Z", nombre: "Ana López", email: "ana@mail.com", telefono: "", closer: "", estado: "No renueva", cashCollect: 300, casoDeExito: false, notas: "Lo pensó mejor", cancelada: false, origen: "calendly", creadoEn: "x", actualizadoEn: "x", actualizadoPor: "" };
+  const ya = { id: "rs_ses1", sesionId: "ses1", fechaHora: "2026-10-07T18:30:00.000Z", nombre: "Ana López", email: "ana@mail.com", telefono: "", closer: "", estado: "No quiere renovar", cashCollect: 300, casoDeExito: false, notas: "Lo pensó mejor", cancelada: false, origen: "calendly", creadoEn: "x", actualizadoEn: "x", actualizadoPor: "" };
   const e = estado({ resells: [ya] as never });
   const t = tabla("Agenda de resells", CSV_RESELLS);
   const completar = planificarImportacionCs(e, [t], OP).resells.find((r) => r.id === "rs_ses1")!;
-  assert.deepEqual([completar.estado, completar.cashCollect, completar.notas], ["No renueva", 300, "Lo pensó mejor"], "lo cargado se respeta");
+  assert.deepEqual([completar.estado, completar.cashCollect, completar.notas], ["No quiere renovar", 300, "Lo pensó mejor"], "lo cargado se respeta");
   assert.equal(completar.casoDeExito, true, "lo que estaba sin marcar se completa");
   const pisar = planificarImportacionCs(e, [t], { ...OP, modo: "pisar" }).resells.find((r) => r.id === "rs_ses1")!;
-  assert.deepEqual([pisar.estado, pisar.cashCollect, pisar.casoDeExito], ["Renueva", 1200.5, true]);
+  assert.deepEqual([pisar.estado, pisar.cashCollect, pisar.casoDeExito], ["Upgrade a Hackear IA", 1200.5, true]);
 });
 
 /* ---------- Reportes semanales ---------- */

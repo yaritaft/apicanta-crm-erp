@@ -865,6 +865,12 @@ Pipeline de servicio **no se tocan** (D12): son del área Alumnos y siguen en el
   `areas_que_leen()` / `areas_que_editan()` sobre su definición vigente). Sin correrlos la app anda igual, y lo nuevo
   queda en el navegador de quien lo carga. `pruebas/permisos-clientes.test.ts` comprueba que la app (`LEEN`/`EDITAN`)
   y la base digan lo mismo.
+- **Resells para los closers** (19/10): `supabase/resells-closers.sql` (idempotente) abre `resells` al área Ventas (el closer y el
+  director; el setter no, por el Cash Collect), recorta al closer a sus agendas (`son_mios(closer)`) y ata las llamadas de
+  «Próximos pasos» a su resell. En la app, «Mis llamadas» y el CRM tienen dos grupos, **Ventas** y **Resell** (`?grupo=resell`,
+  `components/crm-tabla/CrmConResells.tsx`): las llamadas de resell (`esLlamadaDeResell`: eventos «auditoría», «resell» o
+  «próximos pasos», o `utm_source=Resell`) salen de la tabla de ventas, del cierre del día y de los strikes, y se cargan en la agenda
+  de resells con los estados del Airtable (varios a la vez), Cash Collect, caso de éxito y notas.
 - **Pruebas**: `pruebas/clientes-cs.test.ts` (las columnas, los filtros, el orden, lo que se calcula y cómo se
   corrige cada celda), `pruebas/importar-cs.test.ts` (leer montos, fechas y sí/no, reconocer las hojas de Lili,
   importar, reimportar y no pisar), `pruebas/resells-calendly.test.ts`, `pruebas/reportes-webhook.test.ts` y

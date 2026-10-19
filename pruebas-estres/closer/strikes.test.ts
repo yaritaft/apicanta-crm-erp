@@ -83,7 +83,9 @@ function estadoAlAzar(r: Azar, ajustesCrm?: unknown): EstadoApp {
   } as unknown as EstadoApp;
 }
 
-const esDeVenta = (s: Sesion) => s.tipo === TIPO_VENTA || s.tipo === TIPO_RESELL;
+/* El cierre del día del closer pide cargar las llamadas de VENTA: las de resell tienen su agenda aparte (Mariano, 19/10) y no
+   cuentan para los strikes. */
+const esDeVenta = (s: Sesion) => s.tipo === TIPO_VENTA;
 const NOMBRES = ["Mariano Arias", "Dante Barbieri", "Yari Taft", "Externo Tercero", "Dante B."];
 
 test("el oráculo del día de negocio coincide con diaDeNegocio en los bordes de las 00:00 y las 23:59 de Argentina", () => {
@@ -217,7 +219,7 @@ test("el generador toca de todo: días con strike por tarde y por sin cargar, ve
     }
   });
   assert.ok(diasConStrike > 500 && diasLimpios > 500, `días con strike ${diasConStrike}, limpios ${diasLimpios}`);
-  assert.ok(tarde > 300 && sinCargar > 300, `tarde ${tarde}, sin cargar ${sinCargar}`);
+  assert.ok(tarde > 300 && sinCargar > 250, `tarde ${tarde}, sin cargar ${sinCargar}`);
   assert.ok(conVentaTarde > 50 && ventaPorOtro > 100, `venta tardía ${conVentaTarde}, aviso ${ventaPorOtro}`);
   assert.ok(bordeJusto > 5 && bordePasado > 5, `bordes ${bordeJusto}/${bordePasado}`);
 });

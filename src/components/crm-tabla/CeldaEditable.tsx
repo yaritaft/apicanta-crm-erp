@@ -21,7 +21,7 @@ import type { OpcionCrm } from "@/lib/types";
 export const VACIAR = "Vaciar";
 
 export function CeldaEditable({
-  editor, valor, titulo, abierta, onAbrir, onCerrar, onGuardar, opciones, sugerencias, vaciable, ayuda, className, children,
+  editor, valor, titulo, abierta, onAbrir, onCerrar, onGuardar, opciones, sugerencias, vaciable, ayuda, className, children, multiple,
 }: {
   editor: EditorColumna;
   /* Lo que hay, como texto para editar. */
@@ -35,6 +35,8 @@ export function CeldaEditable({
   sugerencias?: string[];
   /* Con opciones: si se puede dejar vacía. */
   vaciable?: boolean;
+  /* Con opciones: se eligen varias (el valor es un texto separado por comas, y la lista queda abierta mientras se eligen). */
+  multiple?: boolean;
   /* Lo que dice al pasar el mouse. */
   ayuda?: string;
   className?: string;
@@ -89,8 +91,12 @@ export function CeldaEditable({
       </div>
       {abierta && editor === "opciones" && lista && (
         <SelectorOpciones
-          ancla={ancla} opciones={lista} valor={valor} ancho={Math.max(220, ancla?.offsetWidth ?? 0)}
-          onElegir={(n) => { onGuardar(n === VACIAR ? "" : n); onCerrar(); }} onCerrar={onCerrar}
+          ancla={ancla} opciones={lista} valor={valor} ancho={Math.max(220, ancla?.offsetWidth ?? 0)} multiple={multiple}
+          onElegir={(n) => {
+            if (multiple) { onGuardar(n); if (n === VACIAR) onCerrar(); return; }
+            onGuardar(n === VACIAR ? "" : n); onCerrar();
+          }}
+          onCerrar={onCerrar}
         />
       )}
       {abierta && editor === "largo" && (

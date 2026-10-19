@@ -6,13 +6,17 @@ import { Button, Field, IconButton, Input, Select, Textarea } from "@/components
 import { Confirmar, ModalForm } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toast";
 import { CeldaEditable } from "@/components/crm-tabla/CeldaEditable";
+import { Telefono } from "@/components/ui/Telefono";
+import { paisDeTelefono } from "@/lib/crm-tabla";
 import { acciones, cargarDeLaNube, hayNube, nuevoId, reiniciarCarga, useEstado, useSync } from "@/lib/store";
 import { useAcceso } from "@/lib/acceso";
+import { useUsuarioActual } from "@/lib/usuario";
+import { esDelCloser } from "@/lib/eod";
 import { puedeEditar } from "@/lib/permisos";
 import { formatoDia, hoyDelNegocio } from "@/lib/seguimiento";
 import { diaDeNegocio } from "@/lib/dia-negocio";
 import {
-  coincideResell, filasResells, listasCs, MOTOR_RESELLS, ORDEN_RESELLS, resellNormal, VISIBLES_RESELLS, type ClaveResell, type FilaResell,
+  alternarEstadoResell, coincideResell, estadosDeResell, filasResells, listasCs, MOTOR_RESELLS, ORDEN_RESELLS, resellNormal, VISIBLES_RESELLS, type ClaveResell, type FilaResell,
 } from "@/lib/clientes-cs";
 import { leerMontoCs } from "@/lib/importar-cs";
 import { money } from "@/lib/format";
@@ -47,7 +51,12 @@ export function ResellsCs() {
   const puede = puedeEditar(acceso, "resells");
   const hoy = hoyDelNegocio();
   const listas = useMemo(() => listasCs(e.ajustes.seguimiento), [e.ajustes.seguimiento]);
-  const filas = useMemo(() => filasResells(e), [e]);
+  const yo = useUsuarioActual();
+  /* Un closer ve sólo sus agendas (la base ya lo recorta; acá también, para que sea igual sin nube). */
+  const filas = useMemo(() => {
+    const todas = filasResells(e);
+    return acceso?.soloLoSuyo && yo.miembro ? todas.filter((f) => esDelCloser({ anfitrion: f.resell.closer }, yo.miembro!.nombre, e.equipo)) : todas;
+  }, [e, acceso?.soloLoSuyo, yo.miembro]);
   const [editando, setEditando] = useState<{ id: string; clave: ClaveResell } | null>(null);
   const [form, setForm] = useState<{ r?: Resell } | null>(null);
   const [borrar, setBorrar] = useState<Resell | null>(null);
@@ -63,7 +72,8 @@ export function ResellsCs() {
     const v = valor.trim();
     const titulo = MOTOR_RESELLS.columna[clave].titulo;
     switch (clave) {
-      case "estado": return guardar(r, { estado: v }, titulo, v);
+      /* Se eligen varios: cada clic suma o saca uno. */
+      case "estado": { const nuevo = alternarEstadoResell(r.estado, v); return guardar(r, { estado: nuevo }, titulo, nuevo); }
       case "cash": {
         if (!v) return guardar(r, { cashCollect: null }, titulo, "");
         const n = leerMontoCs(v);
@@ -86,13 +96,13 @@ export function ResellsCs() {
     const r = f.resell;
     switch (clave) {
       case "fechaHora": return <span className="t-num">{formatoDia(f.dia, hoy)} · {HORA.format(new Date(r.fechaHora))}</span>;
-      case "estado": return <Pastilla texto={f.estado} />;
+      case "estado": return <span className="cs-pastillas">{estadosDeResell(f.estado).map((x) => <Pastilla key={x} texto={x} />)}</span>;
       case "cash": return r.cashCollect === null ? NADA : <span className="t-num">{montoCs(r.cashCollect)}</span>;
       case "caso": return <Pastilla texto={r.casoDeExito ? "Sí" : "No"} tono={r.casoDeExito ? "ok" : "neutra"} />;
       case "notas": return <Recorte texto={r.notas} />;
       case "nombre": return <Recorte texto={r.nombre} />;
       case "email": return <Recorte texto={r.email} />;
-      case "telefono": return <Recorte texto={r.telefono} />;
+      case "telefono": return r.telefono ? <Telefono valor={r.telefono} pais={paisDeTelefono(r.telefono)} compacto /> : NADA;
       case "closer": return <Recorte texto={r.closer} />;
       default: return NADA;
     }
@@ -144,7 +154,7 @@ export function ResellsCs() {
       <CeldaEditable
         editor={editor} valor={valorEditable(clave, f)} titulo={titulo} abierta={abierta}
         onAbrir={() => setEditando({ id: f.id, clave })} onCerrar={() => setEditando((x) => (x?.id === f.id && x.clave === clave ? null : x))}
-        onGuardar={(v) => guardarCelda(f, clave, v)} opciones={clave === "estado" ? opciones(listas.estadosResell) : undefined} vaciable
+        onGuardar={(v) => guardarCelda(f, clave, v)} opciones={clave === "estado" ? opciones(listas.estadosResell) : undefined} vaciable multiple={clave === "estado"}
       >
         {contenido(clave, f)}
       </CeldaEditable>
@@ -250,8 +260,15 @@ function FormResell({ resell, onCerrar }: { resell?: Resell; onCerrar: () => voi
           <Input value={b.closer} onChange={(ev) => set("closer", ev.target.value)} disabled={deCalendly} list="cs-resell-closers" />
           <datalist id="cs-resell-closers">{closers.map((c) => <option key={c} value={c} />)}</datalist>
         </Field>
-        <Field label="Estado" ayuda="Renueva, no renueva…">
-          <Select value={b.estado} aria-label="Estado" placeholder="Sin definir (agendada)" opciones={b.estado && !listas.estadosResell.includes(b.estado) ? [b.estado, ...listas.estadosResell] : listas.estadosResell} onChange={(ev) => set("estado", ev.target.value)} />
+        <Field label="Estado" ayuda="Se pueden elegir varios." span2>
+          <div className="row-wrap" style={{ gap: 12 }}>
+            {[...estadosDeResell(b.estado).filter((x) => !listas.estadosResell.includes(x)), ...listas.estadosResell].map((x) => (
+              <label key={x} className="row" style={{ gap: 6, cursor: "pointer" }}>
+                <input type="checkbox" checked={estadosDeResell(b.estado).includes(x)} onChange={() => set("estado", alternarEstadoResell(b.estado, x))} />
+                <span>{x}</span>
+              </label>
+            ))}
+          </div>
         </Field>
         <Field label="Cash Collect (USD)" error={cashOk ? undefined : "Un monto, por ejemplo 1200."}>
           <Input value={b.cash} onChange={(ev) => set("cash", ev.target.value)} placeholder="0" error={!cashOk} />

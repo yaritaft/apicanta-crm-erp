@@ -1,4 +1,5 @@
 import type { Cuota, EstadoApp, MiembroEquipo, Pago, Sesion, Venta } from "./types";
+import { esLlamadaDeResell } from "./resells";
 import { rangoDeFechas, type RangoMes } from "./metricas";
 import { comisionesDelMes, comisionSetterDePago, closerDeCuota, pagosDelMes, ventasDelMes, type ComisionVenta } from "./finanzas";
 import { cuotasPorCobrarDe, type CuotaPendiente } from "./cuotas-closer";
@@ -235,7 +236,7 @@ export function miPanelDe(e: EstadoApp, m: MiembroEquipo, rango: RangoMes, ahora
   const mesa = mesaDe(e, m.id, hoy);
 
   /* Sus llamadas. */
-  const todas = filasTabla(e, ahora).filter((f) => esDelCloser(f.sesion, m.nombre, e.equipo));
+  const todas = filasTabla(e, ahora).filter((f) => esDelCloser(f.sesion, m.nombre, e.equipo) && !esLlamadaDeResell(f.sesion));
   const llamadas = todas.filter((f) => f.dia >= desdeDia && f.dia <= hastaDia).sort((a, b) => a.llamada.localeCompare(b.llamada));
   const llamadasDeHoy = todas.filter((f) => f.dia === hoy).sort((a, b) => a.llamada.localeCompare(b.llamada));
   const porVenirHoy = llamadasDeHoy.filter((f) => f.resultado !== CANCELADA && new Date(f.llamada).getTime() > ahora).length;

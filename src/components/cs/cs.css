@@ -50,3 +50,4 @@
 }
 .cs-t--doble .hk-table th:nth-child(2) { z-index: 3; }
 .cs-t--doble .hk-table tbody tr:hover td:nth-child(2) { background: var(--surface-200); }
+.cs-pastillas { display: inline-flex; flex-wrap: wrap; gap: 4px; }
