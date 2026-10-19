@@ -410,3 +410,28 @@ test("las tres tablas juntas: el testimonio y la agenda encuentran a quien trajo
   const p2 = planificarImportacionCs(e1, [tabla("Clientes", CSV_CLIENTES), tabla("Testimonios", CSV_TESTIMONIOS), tabla("Agenda de resells", CSV_RESELLS)], OP);
   assert.equal(escribe(p2), 0, "la segunda vez no hay nada para escribir");
 });
+
+/* Los encabezados del Airtable real de Lili (Download CSV, 10/10): no son los que ella le dictó a la app, y sin reconocerlos
+   el mail del cliente no se leía (no se reconocía a quien ya estaba en la app) y las casillas de acceso se perdían. */
+const AIRTABLE_CLIENTES = ["Alumno", "Fecha de Ingreso", "Fecha de Finalización", "Edad", "Stack", "Teléfono", "DNI - IDMEX", "Domicilio", "Email Cliente", "Programa", "Plan de pago", "Duración", "Sesiones Mentor", "Comentarios", "Contacto Inicial", "Contacto 1 semana", "Accesos del Alumno", "Follow Up", "Reporte Semanal", "Último Contacto", "Garantía", "Acceso a Wpp", "Invitación Zoom", "Habilitar Wisboo", "Contrato Firmado", "País", "Closer", "Estado de Contrato"];
+const AIRTABLE_TESTIMONIOS = ["Alumno", "Edad", "Fecha de Inicio", "Teléfono", "Follow Up", "Fecha de Grabación", "Quién Grabó?", "RESELL", "Estado del Video", "🎥 Video de testimonio", "Tecnologías", "Stack", "Situción Previa", "Situación Actual", "Notas", "País"];
+
+test("los encabezados reales del Airtable se reconocen solos: todas las columnas de Clientes y de Testimonios", () => {
+  const c = tablaDeHoja("Clientes-Todos los Alumnos", [AIRTABLE_CLIENTES]);
+  assert.equal(c?.tipo, "clientes");
+  assert.equal(Object.keys(c!.mapeo).length, AIRTABLE_CLIENTES.length, "cada columna del Airtable tiene su dato");
+  for (const [campo, columna] of [["email", "Email Cliente"], ["inicio", "Fecha de Ingreso"], ["dni", "DNI - IDMEX"], ["wpp", "Acceso a Wpp"], ["zoom", "Invitación Zoom"], ["wibo", "Habilitar Wisboo"], ["estadoContrato", "Estado de Contrato"]] as const) {
+    assert.equal(AIRTABLE_CLIENTES[c!.mapeo[campo]!], columna, campo);
+  }
+  const t = tablaDeHoja("Testimonios-TESTIMONIOS", [AIRTABLE_TESTIMONIOS]);
+  assert.equal(t?.tipo, "testimonios");
+  assert.equal(Object.keys(t!.mapeo).length, AIRTABLE_TESTIMONIOS.length);
+  for (const [campo, columna] of [["conQuien", "Quién Grabó?"], ["link", "🎥 Video de testimonio"], ["situacionPrevia", "Situción Previa"]] as const) {
+    assert.equal(AIRTABLE_TESTIMONIOS[t!.mapeo[campo]!], columna, campo);
+  }
+});
+
+test("las casillas del Airtable: «checked» es sí y «unchecked» o vacío es no", () => {
+  for (const si of ["checked", "Checked", "marcado", "verdadero"]) assert.equal(leerSiNo(si), true, si);
+  for (const no of ["unchecked", "falso", ""]) assert.equal(leerSiNo(no), false, no);
+});

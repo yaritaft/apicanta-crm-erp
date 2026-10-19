@@ -43,14 +43,14 @@ const c = (campo: string, titulo: string, alias: string[], ayuda?: string): Camp
 export const CAMPOS_CLIENTES: CampoCs[] = [
   c("numero", "N.º de alumno", ["n de alumno", "numero de alumno", "nro de alumno", "nro alumno", "numero alumno", "id alumno", "n alumno", "numero"]),
   c("nombre", "Nombre y apellido", ["nombre y apellido", "nombre completo", "apellido y nombre", "alumno", "nombre", "name"], "Obligatorio."),
-  c("inicio", "Fecha de inicio", ["fecha de inicio", "fecha inicio", "inicio", "start date"]),
+  c("inicio", "Fecha de inicio", ["fecha de inicio", "fecha inicio", "fecha de ingreso", "inicio", "start date"]),
   c("egreso", "Fecha de egreso", ["fecha de egreso", "fecha egreso", "egreso", "fecha de fin", "fin"]),
   c("edad", "Edad", ["edad", "age"]),
   c("stack", "Stack", ["stack"]),
   c("telefono", "Teléfono", ["telefono", "celular", "whatsapp", "phone", "movil", "numero de telefono"]),
-  c("dni", "DNI", ["dni", "documento", "documento de identidad"]),
+  c("dni", "DNI", ["dni", "dni - idmex", "dni idmex", "documento", "documento de identidad"]),
   c("domicilio", "Domicilio", ["domicilio", "direccion", "address"]),
-  c("email", "Mail", ["mail", "email", "e-mail", "correo", "correo electronico"], "Con el mail se reconoce al alumno que ya está en la app."),
+  c("email", "Mail", ["mail", "email", "email cliente", "e-mail", "correo", "correo electronico"], "Con el mail se reconoce al alumno que ya está en la app."),
   c("programa", "Programa", ["programa", "programas", "servicio"]),
   c("plan", "Plan de pago", ["plan de pago", "plan pago", "forma de pago", "plan"]),
   c("duracion", "Duración", ["duracion", "duracion meses", "meses"]),
@@ -63,13 +63,13 @@ export const CAMPOS_CLIENTES: CampoCs[] = [
   c("reporte", "Reporte semanal", ["reporte semanal", "reporte", "reportes"]),
   c("ultimoContacto", "Último contacto", ["ultimo contacto", "ultima comunicacion", "ultimo contacto fecha"]),
   c("garantia", "Garantía", ["garantia"]),
-  c("wpp", "Acceso WhatsApp", ["acceso whatsapp", "acceso wpp", "grupo whatsapp", "whatsapp acceso"]),
-  c("zoom", "Acceso Zoom", ["acceso zoom", "zoom"]),
-  c("wibo", "Acceso Wibo", ["acceso wibo", "wibo"]),
+  c("wpp", "Acceso WhatsApp", ["acceso whatsapp", "acceso wpp", "acceso a wpp", "acceso a whatsapp", "grupo whatsapp", "whatsapp acceso"]),
+  c("zoom", "Acceso Zoom", ["acceso zoom", "invitacion zoom", "zoom"]),
+  c("wibo", "Acceso Wibo", ["acceso wibo", "habilitar wisboo", "habilitar wibo", "wisboo", "wibo"]),
   c("contrato", "Contrato firmado", ["contrato firmado", "contrato"]),
   c("pais", "País", ["pais", "country"]),
   c("closer", "Closer", ["closer", "vendedor", "cerrado por"]),
-  c("estadoContrato", "Estado del contrato", ["estado del contrato", "estado contrato"]),
+  c("estadoContrato", "Estado del contrato", ["estado del contrato", "estado de contrato", "estado contrato"]),
   c("cv", "CV", ["cv corregido", "estado del cv", "estado cv", "cv", "curriculum"]),
   c("linkedin", "LinkedIn", ["linkedin corregido", "estado de linkedin", "estado linkedin", "linkedin"]),
   c("responsableCv", "Responsable del CV y LinkedIn", ["responsable del cv y linkedin", "responsable cv", "responsable"]),
@@ -83,13 +83,13 @@ export const CAMPOS_TESTIMONIOS: CampoCs[] = [
   c("telefono", "Teléfono", ["telefono", "celular", "whatsapp"]),
   c("followUp", "Follow-up", ["follow up", "follow-up", "followup"]),
   c("fechaGrabacion", "Fecha de grabación", ["fecha de grabacion", "fecha grabacion", "grabacion", "fecha"]),
-  c("conQuien", "Con quién grabó", ["con quien grabo", "con quien", "grabo con", "entrevistador"]),
+  c("conQuien", "Con quién grabó", ["con quien grabo", "quien grabo?", "quien grabo", "con quien", "grabo con", "entrevistador"]),
   c("resell", "Resell", ["resell"]),
   c("estadoVideo", "Estado del video", ["estado del video", "estado video", "video", "estado"]),
-  c("link", "Link del video", ["link del video", "link video", "link", "url"]),
+  c("link", "Link del video", ["link del video", "link video", "video de testimonio", "link", "url"]),
   c("tecnologias", "Tecnologías", ["tecnologias", "tecnologia"]),
   c("stack", "Stack", ["stack"]),
-  c("situacionPrevia", "Situación previa", ["situacion previa", "antes"]),
+  c("situacionPrevia", "Situación previa", ["situacion previa", "situcion previa", "antes"]),
   c("situacionActual", "Situación actual", ["situacion actual", "ahora"]),
   c("notas", "Notas", ["notas", "comentarios", "observaciones"]),
   c("pais", "País", ["pais"]),
@@ -199,8 +199,8 @@ const hashCorto = (s: string): string => {
   return (h >>> 0).toString(36);
 };
 
-const SI_TEXTO = /^(si|s|yes|y|true|1|x|ok|tiene|con acceso|firmado|corregido|hecho|listo|completo|completado|activo)$/;
-const NO_TEXTO = /^(no|n|false|0|pendiente|sin acceso|falta|sin firmar|incompleto)$/;
+const SI_TEXTO = /^(si|s|yes|y|true|verdadero|checked|marcado|tildado|1|x|ok|tiene|con acceso|firmado|corregido|hecho|listo|completo|completado|activo)$/;
+const NO_TEXTO = /^(no|n|false|falso|unchecked|0|pendiente|sin acceso|falta|sin firmar|incompleto)$/;
 
 /** «Sí», «x», «Tiene»… como verdadero; vacío, «No», «Pendiente»… como falso. null si no se entiende. */
 export function leerSiNo(texto: string): boolean | null {
