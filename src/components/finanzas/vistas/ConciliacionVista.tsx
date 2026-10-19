@@ -4,7 +4,7 @@ import { enlaceWhatsapp } from "@/lib/contacto-telefono";
 import { PasosDeConciliacion } from "@/components/cierre/Avisos";
 import React, { useMemo, useState } from "react";
 import {
-  ArrowDownUp, Check, EyeOff, Link2, Plus, RefreshCw, Search, Sparkles, Undo2, Upload,
+  ArrowDownUp, ArrowRightLeft, Check, EyeOff, Link2, Plus, RefreshCw, Search, Sparkles, Undo2, Upload,
 } from "lucide-react";
 import { CabeceraVista } from "@/components/finanzas/vistas/CabeceraVista";
 import {
@@ -31,6 +31,8 @@ import { ComoFuncionaConciliacion } from "@/components/finanzas/ComoFuncionaConc
 import { importarCSV, PASARELAS, nombrePasarela } from "@/lib/pasarelas";
 import { ReembolsosPasarelas } from "@/components/devoluciones/ReembolsosPasarelas";
 import { MotivoDeDescarte } from "@/components/finanzas/MotivoDeDescarte";
+import { FormTraspaso } from "@/components/finanzas/PasesEntreCuentas";
+import { paseDelCobro, rutaDe } from "@/lib/traspasos";
 import { MOTIVOS_DE_COBRO, faltaElMotivo } from "@/lib/motivos";
 import type { ReembolsoCrudo } from "@/lib/reembolsos";
 import type { EstadoMovimiento2, Movimiento, ProveedorPasarela } from "@/lib/types";
@@ -412,6 +414,9 @@ function FilaMovimiento({ mov, M, abierto, onAbrir, onNuevaVenta }: {
   const [busqueda, setBusqueda] = useState("");
   /* Pidiendo el motivo: al dejarlo sin venta («nuevo») o al corregirlo («editar»). */
   const [motivando, setMotivando] = useState<"nuevo" | "editar" | null>(null);
+  /* «Es un movimiento entre cuentas»: el formulario del pase, desde este cobro (o para corregir el que ya se cargó). */
+  const [entreCuentas, setEntreCuentas] = useState<"nuevo" | "editar" | null>(null);
+  const pase = useMemo(() => paseDelCobro(e.traspasos, mov), [e.traspasos, mov]);
 
   const sugerencias = useMemo(
     () => (mov.estado === "pendiente" ? sugerenciasPara(e, mov) : []),
@@ -475,7 +480,7 @@ function FilaMovimiento({ mov, M, abierto, onAbrir, onNuevaVenta }: {
         )}
         {mov.estado === "ignorado" && (
           <span title={mov.motivo?.trim() || "Nadie escribió por qué se dejó sin venta."}>
-            <Badge variante={faltaElMotivo(mov) ? "warning" : "neutral"}>{faltaElMotivo(mov) ? "Sin venta · falta el motivo" : "Sin venta"}</Badge>
+            <Badge variante={faltaElMotivo(mov) ? "warning" : "neutral"}>{faltaElMotivo(mov) ? "Sin venta · falta el motivo" : pase ? "Sin venta · entre cuentas" : "Sin venta"}</Badge>
           </span>
         )}
         <span className="mov__monto">
@@ -590,6 +595,10 @@ function FilaMovimiento({ mov, M, abierto, onAbrir, onNuevaVenta }: {
                   title="No corresponde a ninguna venta: se deja sin venta diciendo por qué.">
                   No es una venta
                 </Button>
+                <Button sm variante="ghost" icono={<ArrowRightLeft size={14} />} onClick={() => setEntreCuentas("nuevo")}
+                  title="Es plata que pasó de otra cuenta tuya (o un cambio con alguien): se carga el movimiento y el cobro queda sin venta.">
+                  Es un movimiento entre cuentas
+                </Button>
               </div>
             </>
           ) : mov.estado === "conciliado" ? (
@@ -608,17 +617,42 @@ function FilaMovimiento({ mov, M, abierto, onAbrir, onNuevaVenta }: {
               <p className="t-sm" style={faltaElMotivo(mov) ? { color: "var(--warning)" } : undefined}>
                 <strong>Por qué no es una venta:</strong> {mov.motivo?.trim() || "nadie lo escribió todavía."}
               </p>
+              {pase && (
+                <p className="t-sm">
+                  <strong>Es un movimiento entre cuentas:</strong> {rutaDe(e, pase)}, {money(pase.montoLlega, pase.monedaLlega, 2)} el {fechaLarga(pase.fecha)}
+                  {pase.origenId ? "." : ". Falta averiguar de qué cuenta salió la otra mitad: corregí el movimiento cuando lo sepas."}
+                </p>
+              )}
               <div className="row-wrap">
                 <Button sm variante={faltaElMotivo(mov) ? "primary" : "ghost"} onClick={() => setMotivando("editar")}>
                   {faltaElMotivo(mov) ? "Agregar el motivo" : "Cambiar el motivo"}
                 </Button>
-                <Button sm variante="secondary" onClick={() => { if (acciones.marcarMovimiento(mov.id, "pendiente")) toast("Vuelve a la bandeja."); }}>
-                  Volver a pendientes
-                </Button>
+                {pase && (
+                  <Button sm variante={pase.origenId ? "ghost" : "primary"} icono={<ArrowRightLeft size={14} />} onClick={() => setEntreCuentas("editar")}>
+                    {pase.origenId ? "Corregir el movimiento" : "Decir de dónde salió"}
+                  </Button>
+                )}
+                {pase?.origen === "manual" ? (
+                  <Button sm variante="secondary" icono={<Undo2 size={14} />}
+                    title="Borra el movimiento entre cuentas que se cargó desde acá y el cobro vuelve a pendientes."
+                    onClick={() => { if (acciones.deshacerMovimientoDeCobro(mov.id)) toast("Se deshizo: el cobro vuelve a la bandeja y se borró el movimiento."); }}>
+                    Deshacer el movimiento
+                  </Button>
+                ) : (
+                  <Button sm variante="secondary" onClick={() => { if (acciones.marcarMovimiento(mov.id, "pendiente")) toast("Vuelve a la bandeja."); }}>
+                    Volver a pendientes
+                  </Button>
+                )}
               </div>
             </div>
           )}
         </div>
+      )}
+      {entreCuentas === "nuevo" && (
+        <FormTraspaso e={e} desdeCobro={mov} onCerrar={() => setEntreCuentas(null)} onListo={(m) => { setEntreCuentas(null); toast(m); }} />
+      )}
+      {entreCuentas === "editar" && pase && (
+        <FormTraspaso e={e} traspaso={pase} onCerrar={() => setEntreCuentas(null)} onListo={(m) => { setEntreCuentas(null); toast(m); }} />
       )}
       <MotivoDeDescarte
         abierto={motivando !== null} onCerrar={() => setMotivando(null)}

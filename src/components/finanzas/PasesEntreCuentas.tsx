@@ -15,9 +15,9 @@ import { escribirMonto, leerMonto } from "@/lib/gastos";
 import { useParamsURL, useTablaURL } from "@/lib/useParamsURL";
 import {
   AYUDA_SITUACION, cambioDe, CATEGORIA_COSTO, conComisionDelRetiro, costoDe, esperaLlegada, faltaComisionDelRetiro, gastoDelCosto,
-  LLEGADA_A_MANO, parecidos, resumenDePases, rutaDe, SALIDA_A_MANO, situacionDe, TEXTO_SITUACION, type Punta, type Situacion,
+  llegadaDeCobro, LLEGADA_A_MANO, parecidos, resumenDePases, rutaDe, SALIDA_A_MANO, situacionDe, TEXTO_SITUACION, type Punta, type Situacion,
 } from "@/lib/traspasos";
-import type { EstadoApp, Moneda, Traspaso } from "@/lib/types";
+import type { EstadoApp, Moneda, Movimiento, Traspaso } from "@/lib/types";
 
 /* ==================================================================
    Movimientos entre cuentas propias (lib/traspasos.ts), en la Caja.
@@ -40,6 +40,7 @@ const NOMBRE_DE: Record<string, string> = { mercury: "Mercury", stripe: "Stripe"
 
 type Filtro = "" | "por-confirmar" | "no-llego" | "en-camino" | "ignorado" | "falta-comision" | "diferencia";
 const diaAr = (iso: string) => new Date(new Date(iso).getTime() - 3 * 3600000).toISOString().slice(0, 10);
+const nombreCuenta = (e: EstadoApp, id?: string) => e.procesadores.find((p) => p.id === id)?.nombre ?? "otra cuenta";
 const monedaDe = (e: EstadoApp, id?: string): Moneda => e.procesadores.find((p) => p.id === id)?.moneda ?? "USD";
 const plata = (n: number, m: Moneda) => money(n, m, Math.abs(n - Math.round(n)) < 0.005 ? 0 : 2);
 /* Un monto guardado, como se escribe en el formulario: 3.900 · 5.230,40. */
@@ -286,21 +287,25 @@ export function ComisionDelRetiro({ e, traspaso, onCerrar, onListo }: {
 
 /* ---------- Registrar o corregir uno ---------- */
 
-export function FormTraspaso({ e, traspaso, onCerrar, onListo }: {
+export function FormTraspaso({ e, traspaso, desdeCobro, onCerrar, onListo }: {
   e: EstadoApp;
   /* El que se corrige; sin él, uno nuevo. */
   traspaso?: Traspaso | null;
+  /* Un cobro de Conciliación que en realidad es un movimiento entre cuentas: la cuenta y lo que llegó ya se saben
+     (son los del cobro); falta decir de dónde salió, o que todavía no se sabe. Al guardar, el cobro queda sin venta. */
+  desdeCobro?: Movimiento | null;
   onCerrar: () => void;
   onListo: (mensaje: string) => void;
 }) {
   const t0 = traspaso ?? null;
+  const cobro = !t0 ? desdeCobro ?? null : null;
   const [origenId, setOrigenId] = useState(t0?.origenId ?? "");
-  const [destinoId, setDestinoId] = useState(t0?.destinoId ?? "");
-  const [dia, setDia] = useState(diaAr(t0?.fecha ?? new Date().toISOString()));
-  const [sale, setSale] = useState(t0 ? enTexto(t0.montoSale) : "");
-  /* Lo que llegó sigue a lo que salió hasta que alguien lo cambia. */
-  const [llega, setLlega] = useState(t0 ? enTexto(t0.montoLlega) : "");
-  const [llegaTocado, setLlegaTocado] = useState(Boolean(t0));
+  const [destinoId, setDestinoId] = useState(t0?.destinoId ?? (cobro ? cobro.procesadorId ?? `proc_${cobro.proveedor}` : ""));
+  const [dia, setDia] = useState(diaAr(t0?.fecha ?? cobro?.fecha ?? new Date().toISOString()));
+  const [sale, setSale] = useState(t0 ? enTexto(t0.montoSale) : cobro ? enTexto(cobro.monto) : "");
+  /* Lo que llegó sigue a lo que salió hasta que alguien lo cambia (en un cobro, es el monto del cobro y no se toca). */
+  const [llega, setLlega] = useState(t0 ? enTexto(t0.montoLlega) : cobro ? enTexto(cobro.monto) : "");
+  const [llegaTocado, setLlegaTocado] = useState(Boolean(t0) || Boolean(cobro));
   const [tc, setTc] = useState(e.ajustes.tipoCambio > 0 ? escribirMonto(e.ajustes.tipoCambio) : "");
   const [conGasto, setConGasto] = useState(t0 ? Boolean(t0.gastoId) || costoDe(t0) === 0 : true);
   const [notas, setNotas] = useState(t0?.notas ?? "");
@@ -310,11 +315,13 @@ export function FormTraspaso({ e, traspaso, onCerrar, onListo }: {
   const [yaLlego, setYaLlego] = useState(aMano);
   const faltaLlegar = Boolean(t0) && esperaLlegada({ salidaRef: t0?.salidaRef, llegadaRef: aMano ? undefined : t0?.llegadaRef, destinoId: destinoId || undefined });
 
-  const monedaSale = monedaDe(e, origenId);
+  /* Sin saber de dónde salió (sólo para un cobro) no hay otra moneda ni otro monto: sale lo mismo que llegó. */
+  const sinOrigen = Boolean(cobro) && !origenId;
   const monedaLlega = monedaDe(e, destinoId);
+  const monedaSale = sinOrigen ? monedaLlega : monedaDe(e, origenId);
   const mismaMoneda = monedaSale === monedaLlega;
-  const montoSale = leerMonto(sale);
   const montoLlega = leerMonto(llegaTocado || !mismaMoneda ? llega : sale);
+  const montoSale = sinOrigen ? montoLlega : leerMonto(sale);
   /* El que se corrige conserva su hora; el de hoy, ahora (no al mediodía:
      quedaría en el futuro y la caja no lo contaría hasta entonces). */
   const fechaIso = t0 && diaAr(t0.fecha) === dia ? t0.fecha
@@ -327,6 +334,7 @@ export function FormTraspaso({ e, traspaso, onCerrar, onListo }: {
     montoLlega: Number.isFinite(montoLlega) ? montoLlega : 0, monedaLlega,
     estado: "confirmado",
     notas: notas.trim() || undefined,
+    ...(cobro ? { llegadaRef: llegadaDeCobro(cobro) } : {}),
     ...(faltaLlegar || aMano ? { llegadaRef: faltaLlegar && yaLlego ? LLEGADA_A_MANO : undefined } : {}),
   };
   /* Si era un retiro sin comisión y se corrigió cuánto salió, ya se miró. */
@@ -343,8 +351,8 @@ export function FormTraspaso({ e, traspaso, onCerrar, onListo }: {
     [e.traspasos, origenId, destinoId, borrador.montoSale, dia, t0?.id],
   );
 
-  const problema = !origenId || !destinoId ? "Elegí las dos cuentas"
-    : origenId === destinoId ? "Las dos cuentas son la misma"
+  const problema = (!origenId && !cobro) || !destinoId ? "Elegí las dos cuentas"
+    : origenId && origenId === destinoId ? "Las dos cuentas son la misma"
       : !(borrador.montoSale > 0) ? "Poné cuánto salió"
         : !(borrador.montoLlega > 0) ? "Poné cuánto llegó"
           : faltaTc ? "Poné el tipo de cambio para cargar el gasto" : null;
@@ -356,6 +364,13 @@ export function FormTraspaso({ e, traspaso, onCerrar, onListo }: {
 
   function guardar() {
     if (problema) return;
+    if (cobro) {
+      if (!acciones.asignarCobroComoMovimiento(cobro.id, borrador, gasto)) return;
+      onListo(origenId
+        ? `Listo: el cobro es plata que pasó de ${nombreCuenta(e, origenId)} a ${nombreCuenta(e, destinoId)}${gasto ? `; ${plata(costo, monedaSale)} quedaron como gasto` : ""}. Ya no cuenta como venta.`
+        : `Listo: el cobro quedó como un movimiento entre cuentas sin identificar de dónde salió. Cuando lo averigües, corregilo desde la Caja.`);
+      return;
+    }
     acciones.guardarTraspaso(borrador, gasto);
     onListo(`Movimiento de ${rutaDe(e, borrador)} ${t0 ? "corregido" : "registrado"}${gasto ? `: ${plata(costo, monedaSale)} quedaron como gasto` : ""}.`);
   }
@@ -363,24 +378,32 @@ export function FormTraspaso({ e, traspaso, onCerrar, onListo }: {
   return (
     <ModalForm
       abierto ancho onCerrar={onCerrar} onGuardar={guardar} puedeGuardar={!problema}
-      guardarTexto={t0 ? "Guardar los cambios" : "Registrar movimiento"}
-      titulo={t0 ? "Movimiento entre cuentas" : "Registrar un movimiento entre cuentas"}
-      sub="Plata que pasó de una cuenta tuya a otra. No es un ingreso ni un gasto."
+      guardarTexto={t0 ? "Guardar los cambios" : cobro ? "Dejarlo como movimiento entre cuentas" : "Registrar movimiento"}
+      titulo={t0 ? "Movimiento entre cuentas" : cobro ? "Este cobro es un movimiento entre cuentas" : "Registrar un movimiento entre cuentas"}
+      sub={cobro
+        ? `Entraron ${plata(cobro.monto, cobro.moneda)} a ${nombreCuenta(e, destinoId)} el ${fechaLarga(cobro.fecha)}, pero no son una venta: es plata que pasó de otra cuenta tuya. El cobro deja de estar pendiente y queda sin venta, con este motivo.`
+        : "Plata que pasó de una cuenta tuya a otra. No es un ingreso ni un gasto."}
     >
       <div className="form-grid">
-        <Field label="De qué cuenta salió">
-          <Select value={origenId} placeholder="Elegí la cuenta" aria-label="De qué cuenta salió" onChange={(ev) => setOrigenId(ev.target.value)} opciones={cuentas} />
+        <Field label="De qué cuenta salió" ayuda={cobro ? "Si todavía no sabés de dónde salió la otra mitad, dejalo así y averigualo después." : undefined}>
+          <Select value={origenId} placeholder={cobro ? "Todavía no sé de qué cuenta salió" : "Elegí la cuenta"} aria-label="De qué cuenta salió" onChange={(ev) => setOrigenId(ev.target.value)} opciones={cuentas} />
         </Field>
         <Field label="A qué cuenta llegó" error={origenId && origenId === destinoId ? "Es la misma cuenta." : undefined}>
-          <Select value={destinoId} placeholder="Elegí la cuenta" aria-label="A qué cuenta llegó" onChange={(ev) => setDestinoId(ev.target.value)} opciones={cuentas} />
+          {cobro
+            ? <Input value={nombreCuenta(e, destinoId)} readOnly aria-label="A qué cuenta llegó" />
+            : <Select value={destinoId} placeholder="Elegí la cuenta" aria-label="A qué cuenta llegó" onChange={(ev) => setDestinoId(ev.target.value)} opciones={cuentas} />}
         </Field>
-        <Field label={`Salió (${monedaSale === "USD" ? "US$" : "$"})`}>
-          <InputMonto value={sale} placeholder="5.000" aria-label="Cuánto salió" autoFocus={!t0}
-            onChange={(ev) => setSale(ev.target.value)} />
-        </Field>
-        <Field label={`Llegó (${monedaLlega === "USD" ? "US$" : "$"})`} ayuda={mismaMoneda ? "Si llegó menos, la diferencia es lo que costó." : "En la moneda de la cuenta a la que llegó."}>
-          <InputMonto value={llegaTocado || !mismaMoneda ? llega : sale} placeholder={mismaMoneda ? "Lo mismo" : "0"} aria-label="Cuánto llegó"
-            onChange={(ev) => { setLlega(ev.target.value); setLlegaTocado(true); }} />
+        {!sinOrigen && (
+          <Field label={`Salió (${monedaSale === "USD" ? "US$" : "$"})`}>
+            <InputMonto value={sale} placeholder="5.000" aria-label="Cuánto salió" autoFocus={!t0}
+              onChange={(ev) => setSale(ev.target.value)} />
+          </Field>
+        )}
+        <Field label={`Llegó (${monedaLlega === "USD" ? "US$" : "$"})`} ayuda={cobro ? "Es lo que entró: no se cambia." : mismaMoneda ? "Si llegó menos, la diferencia es lo que costó." : "En la moneda de la cuenta a la que llegó."}>
+          {cobro
+            ? <Input value={plata(cobro.monto, monedaLlega)} readOnly aria-label="Cuánto llegó" />
+            : <InputMonto value={llegaTocado || !mismaMoneda ? llega : sale} placeholder={mismaMoneda ? "Lo mismo" : "0"} aria-label="Cuánto llegó"
+              onChange={(ev) => { setLlega(ev.target.value); setLlegaTocado(true); }} />}
         </Field>
         <Field label="Día">
           <Input type="date" value={dia} onChange={(ev) => setDia(ev.target.value || diaAr(new Date().toISOString()))} />

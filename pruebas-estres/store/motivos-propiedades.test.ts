@@ -83,3 +83,57 @@ test("cobros y reembolsos: ningún estado de descarte queda sin motivo ni con un
   }
   assert.ok(descartes > 20 && deshacer > 20, `la prueba casi no descartó (${descartes}) ni deshizo (${deshacer}) con su cobro: no estresa nada`);
 });
+
+/* ---------- «Es un movimiento entre cuentas» (reunión con Aldana, 19/10) ---------- */
+
+test("cobros que son movimientos entre cuentas: un pase por cobro, el cobro siempre sin venta con motivo, y deshacer los suelta a los dos", async () => {
+  const S = await storeNuevo();
+  await S.acciones.vaciarTodo();
+  const a = azar(1911);
+  const base = JSON.parse(S.acciones.exportar()) as E;
+  const N = 16;
+  const movimientos = Array.from({ length: N }, (_, i) => ({
+    id: `mov_trust_${i}`, proveedor: "trust", referencia: `ref${i}`, monto: 50 + i, moneda: "USD", fee: 0, neto: 50 + i, procesadorId: "proc_trust",
+    fecha: `2026-10-${String(1 + (i % 25)).padStart(2, "0")}T15:00:00.000Z`, estado: i % 5 === 0 ? "conciliado" : "pendiente",
+    ...(i % 5 === 0 ? { pagoId: `pago_${i}`, ventaId: `ven_${i}` } : {}), clienteNombre: `Billetera ${i}`, creadoEn: "2026-10-01T15:00:00.000Z", origen: "api",
+  }));
+  assert.equal(S.acciones.importar(JSON.stringify({ ...base, movimientos })), true);
+  const cuentas = ["", "proc_mercury", "proc_stripe", "proc_hotmart"];
+  let hechos = 0, deshechos = 0;
+  for (let paso = 0; paso < 1200; paso++) {
+    const i = a.entero(0, N - 1);
+    const id = `mov_trust_${i}`;
+    const m0 = (JSON.parse(S.acciones.exportar()) as E).movimientos.find((m: E) => m.id === id);
+    switch (a.entero(0, 4)) {
+      case 0: case 1: {
+        const origenId = a.pick(cuentas);
+        const monto = 50 + i;
+        const ok = S.acciones.asignarCobroComoMovimiento(id, {
+          id: `tra_${i}_${paso}`, fecha: m0.fecha, ...(origenId ? { origenId } : {}), destinoId: "proc_trust", montoSale: monto, monedaSale: "USD", montoLlega: monto, monedaLlega: "USD",
+          estado: "confirmado", llegadaRef: `trust:ref${i}`, origen: "manual", creadoEn: m0.fecha,
+        } as never);
+        if (m0.estado === "conciliado") assert.equal(ok, false, `paso ${paso}: un cobro conciliado no se asigna`);
+        else if (ok) hechos++;
+        break;
+      }
+      case 2: if (S.acciones.deshacerMovimientoDeCobro(id)) deshechos++; break;
+      case 3: S.acciones.marcarMovimiento(id, "pendiente"); break;
+      default: S.acciones.marcarMovimiento(id, "ignorado", a.pick(MOTIVOS));
+    }
+    const e = JSON.parse(S.acciones.exportar()) as E;
+    const porRef = new Map<string, number>();
+    for (const t of (e.traspasos ?? []) as E[]) if (t.llegadaRef) porRef.set(t.llegadaRef, (porRef.get(t.llegadaRef) ?? 0) + 1);
+    for (const [ref, n] of porRef) assert.equal(n, 1, `paso ${paso}: ${ref} es la llegada de ${n} movimientos`);
+    for (const m of e.movimientos as E[]) {
+      const pase = ((e.traspasos ?? []) as E[]).find((t) => t.llegadaRef === `${m.proveedor}:${m.referencia}`);
+      if (pase) {
+        assert.equal(m.estado, "ignorado", `paso ${paso}: ${m.id} tiene su movimiento pero no está sin venta (${m.estado})`);
+        assert.ok(String(m.motivo ?? "").trim(), `paso ${paso}: ${m.id} sin motivo`);
+      }
+      if (m.estado === "conciliado") assert.ok(!pase, `paso ${paso}: ${m.id} conciliado con un movimiento`);
+      if (m.estado === "ignorado") assert.ok(String(m.motivo ?? "").trim(), `paso ${paso}: ${m.id} sin venta sin motivo`);
+      else assert.equal(m.motivo, undefined, `paso ${paso}: ${m.id} (${m.estado}) con un motivo viejo`);
+    }
+  }
+  assert.ok(hechos > 20 && deshechos > 10, `casi no asignó (${hechos}) ni deshizo (${deshechos}): no estresa nada`);
+});

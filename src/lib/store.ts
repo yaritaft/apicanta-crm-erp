@@ -12,7 +12,7 @@ import { configSeguimiento, seguimientoVacio } from "./seguimiento";
 import { resellNormal, seguimientoCompleto, siguienteNumero, testimonioNormal } from "./clientes-cs";
 import { revisionCvNormal } from "./revision-cv";
 import type { EsquemaPago, EstadoTraspaso, EtapaServicio, ExtraLiquidacion, Gasto, GastoRecurrente, ID as IdMiembro, Liquidacion, MiembroEquipo, ResultadoLiquidacion, TipoCuenta, Traspaso } from "./types";
-import { conciliarPuntas, rutaDe, type Punta } from "./traspasos";
+import { conciliarPuntas, llegadaDeCobro, motivoDelMovimiento, paseDelCobro, rutaDe, type Punta } from "./traspasos";
 import { gastoAprobado, plantillasDesdeGastos } from "./gastos-recurrentes";
 import { cobrosAnulados, NOTA_ANULADO } from "./mercury";
 import { MOTIVO_ANULADO } from "./motivos";
@@ -3406,6 +3406,8 @@ export const acciones = {
     if (!mov) return false;
     /* Sólo va y viene entre la bandeja y «sin venta»: un cobro conciliado tiene su pago, y se suelta desde su venta. */
     if (mov.estado === "conciliado" || estado === "conciliado") return false;
+    /* Un cobro que es la llegada de un movimiento entre cuentas cargado a mano no vuelve solo a la bandeja: se deshace el movimiento. */
+    if (estado === "pendiente" && paseDelCobro(e.traspasos, mov)?.origen === "manual") return false;
     const porQue = (motivo ?? "").trim();
     if (estado === "ignorado" && !porQue) return false;
     const actualizado: Movimiento = { ...mov, estado, motivo: estado === "ignorado" ? porQue : undefined };
@@ -3420,6 +3422,31 @@ export const acciones = {
     else empujarUpdate("movimientos", [mov.id], { estado, motivo: null });
     empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
     return true;
+  },
+
+  /* «Es un movimiento entre cuentas»: el cobro no es una venta, es plata que pasó de una cuenta propia (o de un cambio con
+     alguien) a la cuenta donde entró. Se guarda el pase —con el cobro como su llegada— y el cobro queda sin venta diciendo por qué.
+     Un cobro conciliado tiene su pago y no se toca; uno que ya es la llegada de un pase tampoco se carga dos veces. */
+  asignarCobroComoMovimiento(movimientoId: ID, traspaso: Traspaso, gasto: Gasto | null = null): boolean {
+    const e = snapshot();
+    const mov = e.movimientos.find((m) => m.id === movimientoId);
+    if (!mov || mov.estado === "conciliado") return false;
+    if (paseDelCobro(e.traspasos, mov)) return false;
+    if (!(traspaso.montoLlega > 0) || traspaso.llegadaRef !== llegadaDeCobro(mov)) return false;
+    const t: Traspaso = { ...traspaso, estado: "confirmado" };
+    acciones.guardarTraspaso(t, gasto);
+    return acciones.marcarMovimiento(movimientoId, "ignorado", motivoDelMovimiento(snapshot(), t));
+  },
+
+  /* Deshacer lo anterior: el cobro vuelve a pendientes y se borra el movimiento (con su gasto) que se cargó desde ahí. */
+  deshacerMovimientoDeCobro(movimientoId: ID): boolean {
+    const e = snapshot();
+    const mov = e.movimientos.find((m) => m.id === movimientoId);
+    if (!mov || mov.estado !== "ignorado") return false;
+    const t = paseDelCobro(e.traspasos, mov);
+    if (!t || t.origen !== "manual") return false;
+    acciones.borrarTraspaso(t.id);
+    return acciones.marcarMovimiento(movimientoId, "pendiente");
   },
 
   /* Escribir o corregir el motivo de un cobro que ya está sin venta. */

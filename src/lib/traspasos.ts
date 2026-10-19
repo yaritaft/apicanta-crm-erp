@@ -1,4 +1,4 @@
-import type { Arqueo, EstadoApp, Gasto, ID, Moneda, Traspaso } from "./types";
+import type { Arqueo, EstadoApp, Gasto, ID, Moneda, Movimiento, Traspaso } from "./types";
 import { aMonedaBase, categoriaDe, fechaDePago, montoOriginal } from "./gastos";
 import { esDevolucionConfirmada, pesosQueSalieron } from "./devoluciones";
 
@@ -300,6 +300,29 @@ export function cambioDe(t: Pick<Traspaso, "montoSale" | "monedaSale" | "montoLl
 }
 
 const nombreDe = (e: Pick<EstadoApp, "procesadores">, id?: ID) => e.procesadores.find((p) => p.id === id)?.nombre ?? "otra cuenta";
+
+/* ---------- Un cobro que en realidad es un movimiento entre cuentas ----------
+   Aldana (reunión del 19/10): dos entradas de USDT Trust (125 y 60,50) no eran ventas, eran un cambio de
+   Yari con un amigo. Se asignan como movimiento entre cuentas: queda el pase (de dónde salió la otra mitad,
+   o «todavía sin identificar») y el cobro queda sin venta diciendo por qué. El pase guarda el cobro como su
+   llegada (`llegadaRef`), así se encuentran sin una columna nueva. */
+
+/** La llegada de un cobro, como la guarda un pase: «trust:<referencia>». */
+export const llegadaDeCobro = (m: Pick<Movimiento, "proveedor" | "referencia">): string => `${m.proveedor}:${m.referencia}`;
+
+/** El movimiento entre cuentas que tiene a este cobro como su llegada (los descartados no cuentan). */
+export const paseDelCobro = (traspasos: readonly Traspaso[] | undefined, m: Pick<Movimiento, "proveedor" | "referencia">): Traspaso | undefined => {
+  const ref = llegadaDeCobro(m);
+  return (traspasos ?? []).find((t) => t.llegadaRef === ref && t.estado !== "ignorado");
+};
+
+/** Lo que queda escrito en el cobro sin venta cuando es un movimiento entre cuentas. */
+export function motivoDelMovimiento(e: Pick<EstadoApp, "procesadores">, t: Pick<Traspaso, "origenId" | "destinoId" | "notas">): string {
+  const donde = t.origenId
+    ? `salió de ${nombreDe(e, t.origenId)} y llegó a ${nombreDe(e, t.destinoId)}`
+    : `llegó a ${nombreDe(e, t.destinoId)} desde una cuenta que todavía no se identificó`;
+  return `Movimiento entre cuentas: ${donde}. No es una venta.${t.notas?.trim() ? ` ${t.notas.trim()}` : ""}`;
+}
 
 /** De qué cuenta a cuál: "Stripe → ACH-WIRE Mercury". */
 export function rutaDe(e: Pick<EstadoApp, "procesadores">, t: Pick<Traspaso, "origenId" | "destinoId">): string {
