@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { estadoDeLaCaja, pasosDelMes } from "@/lib/cierre-mes";
 import { pasosDeFinanzas } from "@/lib/finanzas-pasos";
-import { propuestasAtables, propuestasPendientes } from "@/lib/reembolsos";
+import { propuestasAtables, propuestasDescartadas, propuestasPendientes } from "@/lib/reembolsos";
 import { cuentaDelGasto, textoParaCategoria, datosDelGasto, borradorInicial, cambiosAlRepetir, esIngreso, problemasDelGasto, resumenDeFechas, opcionesProveedor } from "@/lib/carga-gasto";
 import { calcularPyL } from "@/lib/finanzas";
 import { cuentasDe, resumenDe, transaccionesDe } from "@/lib/transacciones";
@@ -239,4 +239,21 @@ test("un ingreso no sugiere «Reembolsos» (plata devuelta a clientes): el hotel
   assert.equal(sugerirCategoria(textoParaCategoria("Reembolso del hotel de Miami", true), e)?.categoria, "Viáticos equipo");
   assert.equal(textoParaCategoria("Devolución de Notion", true), "de Notion");
   assert.equal(textoParaCategoria("Reembolso del hotel", false), "Reembolso del hotel", "un gasto se lee tal cual");
+});
+
+test("los reembolsos marcados como «no es una devolución» quedan a la vista, por mes, para deshacerlo", () => {
+  const e = vacio();
+  e.devoluciones = [
+    devolucion({ id: "d_sep", monto: 843, fecha: DIA(9, 21), estado: "ignorada", ventaId: undefined, referencia: "stripe:re_1", proveedor: "stripe" }) as Devolucion,
+    devolucion({ id: "d_oct", monto: 100, fecha: DIA(10, 4), estado: "ignorada", ventaId: undefined, referencia: "whop:reembolso:pay_2", proveedor: "whop" }) as Devolucion,
+    devolucion({ id: "d_pend", monto: 50, fecha: DIA(9, 22), estado: "propuesta", ventaId: undefined, referencia: "stripe:re_3", proveedor: "stripe" }) as Devolucion,
+    devolucion({ id: "d_conf", monto: 70, fecha: DIA(9, 23), estado: "confirmada" }) as Devolucion,
+    /* Una ignorada que no vino de una pasarela (sin referencia) no es de esta lista. */
+    devolucion({ id: "d_sinref", monto: 10, fecha: DIA(9, 24), estado: "ignorada" }) as Devolucion,
+  ];
+  assert.deepEqual(propuestasDescartadas(e).map((d) => d.id), ["d_oct", "d_sep"], "lo más nuevo primero");
+  assert.deepEqual(propuestasDescartadas(e, { desde: "2026-09-01", hasta: "2026-09-30" }).map((d) => d.id), ["d_sep"]);
+  assert.deepEqual(propuestasPendientes(e).map((d) => d.id), ["d_pend"], "lo descartado no cuenta como pendiente");
+  /* Y no frena ningún paso del mes. */
+  assert.equal(pasosDelMes(e, "2026-09", { ahora: AHORA, esDueno: true }).find((p) => p.id === "reembolsos")!.faltan, 1);
 });

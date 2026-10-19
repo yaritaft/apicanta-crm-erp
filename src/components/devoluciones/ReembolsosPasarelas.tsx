@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { Link2, Undo2 } from "lucide-react";
+import { Link2, RotateCcw, Undo2 } from "lucide-react";
 import { Badge, Button, Card, CardHead } from "@/components/ui/ui";
 import { InfoMetrica } from "@/components/ui/InfoMetrica";
 import { useToast } from "@/components/ui/Toast";
@@ -11,7 +11,7 @@ import { abrirDevolucion } from "@/lib/devolucion-ui";
 import { fechaLarga, money } from "@/lib/format";
 import { puedeCargarDevolucion } from "@/lib/permisos";
 import { nombrePasarela } from "@/lib/pasarelas";
-import { candidatasDe, propuestasAtables, propuestasPendientes, reembolsoDePropuesta } from "@/lib/reembolsos";
+import { candidatasDe, propuestasAtables, propuestasDescartadas, propuestasPendientes, reembolsoDePropuesta } from "@/lib/reembolsos";
 import type { RangoDeDias } from "@/lib/dia-negocio";
 import type { EstadoApp } from "@/lib/types";
 
@@ -31,7 +31,9 @@ export function ReembolsosPasarelas({ e, rango }: { e: EstadoApp; rango?: RangoD
   const puede = puedeCargarDevolucion(acceso);
   const M = (n: number) => money(n, e.ajustes.monedaBase, 2);
   const pendientes = propuestasPendientes(e, rango ?? undefined);
-  if (pendientes.length === 0) return null;
+  /* Lo que alguien marcó como «no es una devolución» queda a la vista con su botón para deshacer: un clic de más no puede perder un reembolso. */
+  const descartadas = propuestasDescartadas(e, rango ?? undefined);
+  if (pendientes.length === 0 && descartadas.length === 0) return null;
   const atables = propuestasAtables(e, rango ?? undefined);
   const total = pendientes.reduce((a, d) => a + d.monto, 0);
 
@@ -39,7 +41,9 @@ export function ReembolsosPasarelas({ e, rango }: { e: EstadoApp; rango?: RangoD
     <Card>
       <CardHead
         titulo={`Reembolsos de las pasarelas · ${pendientes.length}`}
-        sub="La pasarela informó plata devuelta a clientes. No resta de Finanzas hasta que la confirmes con su comprobante, la ates a la devolución que ya cargaste o digas que no es una devolución."
+        sub={pendientes.length
+          ? "La pasarela informó plata devuelta a clientes. No resta de Finanzas hasta que la confirmes con su comprobante, la ates a la devolución que ya cargaste o digas que no es una devolución."
+          : "No hay reembolsos esperando una decisión. Abajo están los que marcaste como «no es una devolución»: si alguno fue un error, deshacelo."}
         acciones={puede && atables.length > 0 ? (
           <Button sm variante="primary" icono={<Link2 size={14} />} onClick={() => {
             const n = acciones.atarReembolsos(atables);
@@ -49,7 +53,7 @@ export function ReembolsosPasarelas({ e, rango }: { e: EstadoApp; rango?: RangoD
           </Button>
         ) : undefined}
       />
-      <div className="row t-sm" style={{ gap: 6, marginBottom: 8 }}>
+      {pendientes.length > 0 && <div className="row t-sm" style={{ gap: 6, marginBottom: 8 }}>
         <span className="t-subtle">Sin confirmar</span>
         <span className="t-num t-strong">{M(total)}</span>
         <InfoMetrica
@@ -61,7 +65,7 @@ export function ReembolsosPasarelas({ e, rango }: { e: EstadoApp; rango?: RangoD
             { concepto: "Sin confirmar", valor: M(total), signo: "=" as const },
           ]}
         />
-      </div>
+      </div>}
       <div className="stack-2">
         {pendientes.map((d) => {
           const venta = e.ventas.find((v) => v.id === d.ventaId);
@@ -90,13 +94,43 @@ export function ReembolsosPasarelas({ e, rango }: { e: EstadoApp; rango?: RangoD
                     </Button>
                   ))}
                   <Button sm variante="primary" onClick={() => abrirDevolucion({ propuestaId: d.id, ventaId: d.ventaId })}>Confirmar</Button>
-                  <Button sm variante="ghost" onClick={() => { if (acciones.ignorarDevolucion(d.id)) toast("Listo: no es una devolución."); }}>No es una devolución</Button>
+                  <Button sm variante="ghost" title="Descartarla: la pasarela la informó pero no es una devolución. Se puede deshacer más abajo."
+                    onClick={() => {
+                      if (acciones.ignorarDevolucion(d.id)) toast(`Marcada como «no es una devolución»: ${nombre}.`, "ok", { texto: "Deshacer", onClick: () => { if (acciones.volverAProponerDevolucion(d.id)) toast("Vuelve a la lista de reembolsos."); } });
+                    }}>
+                    No es una devolución
+                  </Button>
                 </>
               )}
             </div>
           );
         })}
       </div>
+      {descartadas.length > 0 && (
+        <div className="stack-2" style={{ marginTop: pendientes.length ? "var(--space-4)" : 0 }}>
+          <span className="t-label">Marcados como «no es una devolución» · {descartadas.length}</span>
+          {descartadas.map((d) => {
+            const venta = e.ventas.find((v) => v.id === d.ventaId);
+            const nombre = venta?.contactoNombre ?? (typeof d.extra?.clienteNombre === "string" ? d.extra.clienteNombre : "Sin identificar");
+            return (
+              <div className="devol-fila" key={d.id} style={{ opacity: 0.85 }}>
+                <Undo2 size={13} className="t-subtle" aria-hidden />
+                <Badge variante="neutral">{d.proveedor ? nombrePasarela(d.proveedor) : "Pasarela"}</Badge>
+                <span className="t-strong">{nombre}</span>
+                <span className="t-subtle">{fechaLarga(d.fecha)}</span>
+                <span className="spacer" />
+                <span className="t-num t-strong">{M(d.monto)}</span>
+                {puede && (
+                  <Button sm variante="secondary" icono={<RotateCcw size={13} />}
+                    onClick={() => { if (acciones.volverAProponerDevolucion(d.id)) toast(`Deshecho: el reembolso de ${nombre} vuelve a la lista.`); }}>
+                    Deshacer
+                  </Button>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
     </Card>
   );
 }

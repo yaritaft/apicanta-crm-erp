@@ -309,6 +309,13 @@ export function alElegirDevolucion(f: (a: AvisoDevolucion) => void): () => void 
 }
 
 let resincronizar: number | undefined;
+/** De quién es un reembolso que informó una pasarela: la venta, el nombre que mandó la pasarela o «una persona sin identificar». */
+function nombreDeReembolso(e: Pick<EstadoApp, "ventas">, d: Pick<Devolucion, "ventaId" | "extra">): string {
+  const venta = d.ventaId ? e.ventas.find((v) => v.id === d.ventaId) : undefined;
+  const mandado = typeof d.extra?.clienteNombre === "string" ? d.extra.clienteNombre.trim() : "";
+  return venta?.contactoNombre || mandado || "una persona sin identificar";
+}
+
 function negada(tabla: string, motivo?: string) {
   oyentesNegadas.forEach((f) => f(tabla, motivo));
   resincronizarAlVaciarse();
@@ -2809,8 +2816,35 @@ export const acciones = {
       return false;
     }
     const nueva: Devolucion = { ...antes, estado: "ignorada" };
-    guardar({ ...e, devoluciones: (e.devoluciones ?? []).map((x) => (x.id === id ? nueva : x)) });
+    const quien = nombreDeReembolso(e, antes);
+    const { lista, nuevo } = registrar(
+      e, "transaccion", id, quien, "actualizo",
+      `Se marcó como «no es una devolución» el reembolso de ${Math.round(antes.monto).toLocaleString("es-AR")} ${antes.moneda} de ${quien}.`,
+    );
+    guardar({ ...e, devoluciones: (e.devoluciones ?? []).map((x) => (x.id === id ? nueva : x)), actividad: lista });
     empujarUpdate("devoluciones", [id], { estado: "ignorada" });
+    empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
+    return true;
+  },
+
+  /* Deshacer «No es una devolución»: el reembolso vuelve a esperar su decisión. */
+  volverAProponerDevolucion(id: ID): boolean {
+    const e = snapshot();
+    const antes = (e.devoluciones ?? []).find((x) => x.id === id);
+    if (!antes || antes.estado !== "ignorada") return false;
+    if (acceso && !puedeCargarDevolucion(acceso)) {
+      negada("devoluciones", "Tu tipo de cuenta no puede decidir sobre las devoluciones.");
+      return false;
+    }
+    const nueva: Devolucion = { ...antes, estado: "propuesta" };
+    const quien = nombreDeReembolso(e, antes);
+    const { lista, nuevo } = registrar(
+      e, "transaccion", id, quien, "actualizo",
+      `Se deshizo «no es una devolución»: el reembolso de ${Math.round(antes.monto).toLocaleString("es-AR")} ${antes.moneda} de ${quien} vuelve a esperar su decisión.`,
+    );
+    guardar({ ...e, devoluciones: (e.devoluciones ?? []).map((x) => (x.id === id ? nueva : x)), actividad: lista });
+    empujarUpdate("devoluciones", [id], { estado: "propuesta" });
+    empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
     return true;
   },
 

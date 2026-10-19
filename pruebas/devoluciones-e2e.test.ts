@@ -211,3 +211,39 @@ test("el director la carga; sin venta o sin monto no hay nada que cargar; una pr
   assert.equal(calcularPyL(hoy(), oct).devoluciones, 0);
   fijarAcceso(null);
 });
+
+test("«No es una devolución» se puede deshacer: el reembolso vuelve a la lista, queda en la actividad y el closer no puede", () => {
+  armar();
+  const r = acciones.importarReembolsos([
+    { proveedor: "stripe", referencia: "re_katherine", referenciasCobro: ["pi_no_existe"], monto: 843, moneda: "USD", fecha: iso(SEPTIEMBRE, 21), clienteNombre: "Katherine Valcarcel", motivo: "requested_by_customer" },
+  ]);
+  assert.equal(r?.nuevas.length, 1, "entra como propuesta");
+  const id = r!.nuevas[0].id;
+  const propuesta = () => hoy().devoluciones!.find((d) => d.id === id)!;
+  assert.equal(propuesta().estado, "propuesta");
+  const antes = hoy().actividad.length;
+
+  /* Un clic de más: se descarta, deja de contar y queda anotado quién era. */
+  assert.equal(acciones.ignorarDevolucion(id), true);
+  assert.equal(propuesta().estado, "ignorada");
+  assert.equal(acciones.ignorarDevolucion(id), false, "ya estaba descartada");
+  assert.match(hoy().actividad[0].detalle ?? "", /no es una devolución.*843.*Katherine Valcarcel/);
+  assert.equal(hoy().actividad.length, antes + 1);
+
+  /* El closer no la puede deshacer; Finanzas sí. */
+  fijarAcceso(closer);
+  const negadas: string[] = [];
+  const dejar = alNegarseEscritura((t) => negadas.push(t));
+  assert.equal(acciones.volverAProponerDevolucion(id), false);
+  dejar();
+  assert.deepEqual(negadas, ["devoluciones"]);
+  assert.equal(propuesta().estado, "ignorada");
+  fijarAcceso(administracion);
+  assert.equal(acciones.volverAProponerDevolucion(id), true);
+  assert.equal(propuesta().estado, "propuesta", "vuelve a esperar su decisión");
+  assert.match(hoy().actividad[0].detalle ?? "", /Se deshizo «no es una devolución»/);
+  /* Sólo se deshace lo descartado: no toca una confirmada ni una que ya espera. */
+  assert.equal(acciones.volverAProponerDevolucion(id), false);
+  assert.equal(acciones.volverAProponerDevolucion("no-existe"), false);
+  fijarAcceso(null);
+});

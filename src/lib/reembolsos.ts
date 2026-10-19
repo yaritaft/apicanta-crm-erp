@@ -275,6 +275,13 @@ export function propuestasPendientes(e: Pick<EstadoApp, "devoluciones">, rango?:
     .sort((a, b) => Date.parse(b.fecha) - Date.parse(a.fecha));
 }
 
+/** Las que alguien marcó como «no es una devolución»: quedan guardadas para poder deshacerlo (un clic de más no puede perder un reembolso). */
+export function propuestasDescartadas(e: Pick<EstadoApp, "devoluciones">, rango?: RangoDeDias): Devolucion[] {
+  return (e.devoluciones ?? [])
+    .filter((d) => d.estado === "ignorada" && d.referencia && (!rango || enRangoDeDias(d.fecha, rango)))
+    .sort((a, b) => Date.parse(b.fecha) - Date.parse(a.fecha));
+}
+
 /** Cuántas propuestas calzan con UNA sola devolución cargada: se pueden atar
  *  todas juntas con un clic. */
 export function propuestasAtables(e: Base, rango?: RangoDeDias): { propuestaId: ID; devolucionId: ID }[] {
