@@ -3,6 +3,8 @@ import { diaDeNegocio, enRangoDeDias, type RangoDeDias } from "./dia-negocio";
 import { fechaDePago } from "./gastos";
 import { esDevolucionConfirmada } from "./devoluciones";
 import { medioDeMovimiento } from "./conciliacion";
+import { motivoDeDescarte } from "./motivos";
+import { quienDelReembolso } from "./reembolsos";
 
 /* ==================================================================
    Transacciones: todo lo que entró y salió, de todas las cuentas, en una
@@ -22,11 +24,15 @@ import { medioDeMovimiento } from "./conciliacion";
    - Egreso · devolución: la plata que se le devolvió a un cliente.
    - Entre cuentas: un pase de una cuenta propia a otra. No es ingreso ni
      egreso: se ve, pero no entra en los totales.
-   Lo ignorado en Conciliación no aparece: no corresponde a ninguna venta.
+   - Sin venta: un cobro que se dejó sin venta (se reembolsó, el intento falló,
+     está repetido…) con el motivo escrito. Ningún ingreso ni egreso de una
+     pasarela se esconde: lo que no es una venta se ve, con su porqué, y no suma.
+   - Sin devolución: un reembolso que informó la pasarela y se descartó, con su
+     motivo; y los que todavía esperan decisión («Por confirmar»). Tampoco suman.
    ================================================================== */
 
 export type TipoTransaccion = "ingreso" | "egreso" | "pase";
-export type OrigenTransaccion = "cobro" | "sin-conciliar" | "ingreso-cargado" | "gasto" | "devolucion" | "pase";
+export type OrigenTransaccion = "cobro" | "sin-conciliar" | "sin-venta" | "ingreso-cargado" | "gasto" | "devolucion" | "reembolso-propuesto" | "sin-devolucion" | "pase";
 
 export interface Transaccion {
   /* «origen:id», único en toda la lista. */
@@ -58,9 +64,12 @@ export interface Transaccion {
 export const ESTADO_DE_ORIGEN: Record<OrigenTransaccion, string> = {
   cobro: "Cobrado",
   "sin-conciliar": "Sin conciliar",
+  "sin-venta": "Sin venta",
   "ingreso-cargado": "Devuelto a la empresa",
   gasto: "Pagado",
   devolucion: "Devuelto al cliente",
+  "reembolso-propuesto": "Por confirmar",
+  "sin-devolucion": "Sin devolución",
   pase: "Entre cuentas",
 };
 
@@ -93,6 +102,26 @@ function delMovimiento(e: EstadoApp, m: Movimiento): Transaccion {
     detalle: [m.metodo, corta(m.referencia)].filter(Boolean).join(" · "), cuenta: medioDeMovimiento(e, m),
     monto: r2(m.monto), moneda: m.moneda, comision: m.fee ? r2(m.fee) : undefined,
     estado: ESTADO_DE_ORIGEN["sin-conciliar"], movimientoId: m.id,
+  };
+}
+
+/** Un cobro que se dejó sin venta: se ve, con su motivo, y no suma. */
+function delCobroSinVenta(e: EstadoApp, m: Movimiento): Transaccion {
+  return {
+    ...delMovimiento(e, m), id: `sin-venta:${m.id}`, origen: "sin-venta", estado: ESTADO_DE_ORIGEN["sin-venta"],
+    detalle: m.motivo?.trim() || "Falta escribir por qué no es una venta",
+  };
+}
+
+/** Un reembolso de una pasarela que todavía no es una devolución: por confirmar, o descartado con su motivo. No suma. */
+function delReembolsoDePasarela(e: EstadoApp, d: Devolucion, procs: Map<ID, string>): Transaccion {
+  const base = delaDevolucion(e, d, procs);
+  const descartado = d.estado === "ignorada";
+  return {
+    ...base, id: `reembolso:${d.id}`, origen: descartado ? "sin-devolucion" : "reembolso-propuesto",
+    estado: descartado ? ESTADO_DE_ORIGEN["sin-devolucion"] : ESTADO_DE_ORIGEN["reembolso-propuesto"],
+    detalle: descartado ? (motivoDeDescarte(d) ?? "Falta escribir por qué no es una devolución") : "La pasarela informó este reembolso: falta confirmarlo",
+    titulo: quienDelReembolso(e, d).nombre ?? base.titulo,
   };
 }
 
@@ -137,6 +166,11 @@ export interface ResumenTransacciones {
   neto: number;
   sinConciliar: number;
   sinConciliarN: number;
+  /* Los cobros que se dejaron sin venta (con su motivo): se ven aparte y no suman. */
+  sinVenta: number;
+  sinVentaN: number;
+  /* Cuántos de ellos no dicen por qué. */
+  sinMotivoN: number;
   pasesN: number;
   n: number;
 }
@@ -152,9 +186,17 @@ export function transaccionesDe(e: EstadoApp, rango?: RangoDeDias | null): Trans
 
   const filas: Transaccion[] = [];
   for (const p of e.pagos ?? []) if (dentro(p.fecha)) filas.push(delPago(e, p, cuotas, ventas, procs));
-  for (const m of e.movimientos ?? []) if (m.estado === "pendiente" && dentro(m.fecha)) filas.push(delMovimiento(e, m));
+  for (const m of e.movimientos ?? []) {
+    if (!dentro(m.fecha)) continue;
+    if (m.estado === "pendiente") filas.push(delMovimiento(e, m));
+    else if (m.estado === "ignorado") filas.push(delCobroSinVenta(e, m));
+  }
   for (const g of e.gastos ?? []) if (dentro(fechaDePago(g))) filas.push(delGasto(g));
-  for (const d of e.devoluciones ?? []) if (esDevolucionConfirmada(d) && dentro(d.fecha)) filas.push(delaDevolucion(e, d, procs));
+  for (const d of e.devoluciones ?? []) {
+    if (!dentro(d.fecha)) continue;
+    if (esDevolucionConfirmada(d)) filas.push(delaDevolucion(e, d, procs));
+    else if (d.referencia) filas.push(delReembolsoDePasarela(e, d, procs));
+  }
   for (const t of e.traspasos ?? []) if (dentro(t.fecha)) filas.push(delPase(t, procs));
 
   /* Lo más nuevo primero; en el mismo día, por la hora y por id para que el orden no cambie entre dibujos. */
@@ -164,14 +206,16 @@ export function transaccionesDe(e: EstadoApp, rango?: RangoDeDias | null): Trans
 
 /** Los totales de una lista: lo sin conciliar y los pases se cuentan aparte, no son ingreso ni egreso todavía. */
 export function resumenDe(filas: readonly Transaccion[]): ResumenTransacciones {
-  let ingresos = 0, egresos = 0, sinConciliar = 0, sinConciliarN = 0, pasesN = 0;
+  let ingresos = 0, egresos = 0, sinConciliar = 0, sinConciliarN = 0, pasesN = 0, sinVenta = 0, sinVentaN = 0, sinMotivoN = 0;
   for (const f of filas) {
     if (f.tipo === "pase") pasesN++;
     else if (f.origen === "sin-conciliar") { sinConciliar += f.monto; sinConciliarN++; }
+    else if (f.origen === "sin-venta") { sinVenta += f.monto; sinVentaN++; if (f.detalle.startsWith("Falta escribir")) sinMotivoN++; }
+    else if (f.origen === "reembolso-propuesto" || f.origen === "sin-devolucion") { /* se ven, con su motivo, y no suman */ }
     else if (f.tipo === "ingreso") ingresos += f.monto;
     else egresos += f.monto;
   }
-  return { ingresos: r2(ingresos), egresos: r2(egresos), neto: r2(ingresos - egresos), sinConciliar: r2(sinConciliar), sinConciliarN, pasesN, n: filas.length };
+  return { ingresos: r2(ingresos), egresos: r2(egresos), neto: r2(ingresos - egresos), sinConciliar: r2(sinConciliar), sinConciliarN, sinVenta: r2(sinVenta), sinVentaN, sinMotivoN, pasesN, n: filas.length };
 }
 
 /** Las cuentas que aparecen en la lista, para elegir una: con cuántas filas tiene cada una. */

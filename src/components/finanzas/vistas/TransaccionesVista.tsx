@@ -40,6 +40,7 @@ const TIPOS = [
   ["ingresos", "Ingresos"],
   ["egresos", "Egresos"],
   ["sin-conciliar", "Sin conciliar"],
+  ["sin-venta", "Sin venta"],
   ["pases", "Entre cuentas"],
 ] as const;
 type FiltroTipo = (typeof TIPOS)[number][0];
@@ -49,14 +50,16 @@ const pasaTipo = (f: Transaccion, t: FiltroTipo): boolean => {
   switch (t) {
     case "ingresos": return f.tipo === "ingreso" && f.origen !== "sin-conciliar";
     case "egresos": return f.tipo === "egreso";
-    case "sin-conciliar": return f.origen === "sin-conciliar";
+    case "sin-conciliar": return f.origen === "sin-conciliar" || f.origen === "reembolso-propuesto";
+    case "sin-venta": return f.origen === "sin-venta" || f.origen === "sin-devolucion";
     case "pases": return f.tipo === "pase";
     default: return true;
   }
 };
 
 const VARIANTE_ESTADO: Record<Transaccion["origen"], "success" | "warning" | "neutral" | "info"> = {
-  cobro: "success", "ingreso-cargado": "success", "sin-conciliar": "warning", gasto: "neutral", devolucion: "warning", pase: "info",
+  cobro: "success", "ingreso-cargado": "success", "sin-conciliar": "warning", "reembolso-propuesto": "warning",
+  "sin-venta": "neutral", "sin-devolucion": "neutral", gasto: "neutral", devolucion: "warning", pase: "info",
 };
 
 export function TransaccionesVista({ embebido = false }: { embebido?: boolean }) {
@@ -105,7 +108,8 @@ export function TransaccionesVista({ embebido = false }: { embebido?: boolean })
   const abrir = (f: Transaccion) => {
     if (f.gastoId) { setVerId(f.gastoId); return; }
     if (f.origen === "cobro" && f.ventaId) { abrirFicha(f.ventaId); return; }
-    if (f.origen === "sin-conciliar") { router.push(`/conciliacion?mes=${f.dia.slice(0, 7)}`); return; }
+    if (f.origen === "sin-conciliar" || f.origen === "reembolso-propuesto") { router.push(`/conciliacion?mes=${f.dia.slice(0, 7)}`); return; }
+    if (f.origen === "sin-venta" || f.origen === "sin-devolucion") { router.push(`/conciliacion?mes=${f.dia.slice(0, 7)}&estado=ignorado`); return; }
     if (f.origen === "devolucion") { router.push(`/finanzas/detalle?seccion=devoluciones&periodo=custom&desde=${f.dia}&hasta=${f.dia}`); return; }
     if (f.origen === "pase") router.push("/finanzas/caja");
   };
@@ -114,6 +118,7 @@ export function TransaccionesVista({ embebido = false }: { embebido?: boolean })
     const s = M(f.monto, 2, f.moneda);
     if (f.tipo === "pase") return <span className="t-subtle">{s}</span>;
     if (f.origen === "sin-conciliar") return <span style={{ color: "var(--warning)" }} title="Entró pero todavía no cuenta como cobrado">{s}</span>;
+    if (f.origen === "sin-venta" || f.origen === "sin-devolucion" || f.origen === "reembolso-propuesto") return <span className="t-subtle" title="Se ve con su motivo, pero no suma en los totales">{s}</span>;
     return f.tipo === "ingreso" ? <span style={{ color: "var(--success)" }}>+{s}</span> : <span>−{s}</span>;
   };
 
@@ -151,7 +156,7 @@ export function TransaccionesVista({ embebido = false }: { embebido?: boolean })
       <div className="grid-stats">
         <StatCard
           etiqueta="Ingresos" valor={M(resumen.ingresos, 0)} direccion="up"
-          contexto={`${nombreMes}${resumen.sinConciliarN ? ` · ${resumen.sinConciliarN} sin conciliar aparte` : ""}`}
+          contexto={`${nombreMes}${resumen.sinConciliarN ? ` · ${resumen.sinConciliarN} sin conciliar aparte` : ""}${resumen.sinVentaN ? ` · ${resumen.sinVentaN} sin venta aparte` : ""}`}
           onClick={() => setVista({ tipo: "ingresos" })}
           info={{
             ayuda: "Lo que entró: cobros imputados a una cuota y plata que volvió (un reembolso). Lo que entró a una pasarela y todavía no se ató a una cuota no se suma: está en «Sin conciliar».",

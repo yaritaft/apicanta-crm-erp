@@ -29,6 +29,8 @@ import { useAbrirFicha } from "@/components/ficha/abrir";
 import { ComoFuncionaConciliacion } from "@/components/finanzas/ComoFuncionaConciliacion";
 import { importarCSV, PASARELAS, nombrePasarela } from "@/lib/pasarelas";
 import { ReembolsosPasarelas } from "@/components/devoluciones/ReembolsosPasarelas";
+import { MotivoDeDescarte } from "@/components/finanzas/MotivoDeDescarte";
+import { MOTIVOS_DE_COBRO, faltaElMotivo } from "@/lib/motivos";
 import type { ReembolsoCrudo } from "@/lib/reembolsos";
 import type { EstadoMovimiento2, Movimiento, ProveedorPasarela } from "@/lib/types";
 
@@ -101,6 +103,8 @@ export function ConciliacionVista({ embebido = false, rangoFijo }: {
     return r;
   }, [delRango]);
   const cobros = (n: number) => `${n} ${n === 1 ? "cobro" : "cobros"}`;
+  /* Los que se dejaron sin venta y nadie dijo por qué: ningún cobro se deja de lado sin motivo. */
+  const sinMotivoN = useMemo(() => delRango.filter(faltaElMotivo).length, [delRango]);
 
   /* Buscar por quién pagó (nombre, correo, teléfono), cómo, la referencia o
      el monto: con cientos de cobros de Whop y Stripe, la lista sola no alcanza. */
@@ -244,15 +248,25 @@ export function ConciliacionVista({ embebido = false, rangoFijo }: {
           }}
         />
         <StatCard
-          etiqueta="Ignorados" valor={M(porEstado.ignorado.monto)}
-          contexto={`${cobros(porEstado.ignorado.n)} · no cuentan`}
+          etiqueta="Sin venta" valor={M(porEstado.ignorado.monto)}
+          contexto={`${cobros(porEstado.ignorado.n)} · no cuentan${sinMotivoN ? ` · ${sinMotivoN} sin motivo` : ""}`}
           onClick={() => setFiltro("ignorado")}
           info={{
-            ayuda: "Cobros que se marcaron como que no corresponden a ninguna venta (un reembolso, un pago de otra cosa). No cuentan como cobrado.",
-            formula: "Suma del monto bruto de los cobros en estado Ignorado",
+            ayuda: "Cobros que no corresponden a ninguna venta (se reembolsaron, el intento falló, están repetidos…). Cada uno dice por qué. No cuentan como cobrado.",
+            formula: "Suma del monto bruto de los cobros que se dejaron sin venta",
           }}
         />
       </div>
+
+      {filtro === "ignorado" && sinMotivoN > 0 && (
+        <div className="help-card">
+          <EyeOff size={18} />
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div className="help-card__title">{sinMotivoN === 1 ? "Un cobro sin venta no dice por qué" : `${sinMotivoN} cobros sin venta no dicen por qué`}</div>
+            <div className="help-card__text">Ningún cobro se deja de lado sin decir por qué. Abrí cada uno y agregá el motivo (se reembolsó, no se cobró, está repetido…).</div>
+          </div>
+        </div>
+      )}
 
       {filtro === "pendiente" && resumen.vinculables > 0 && (
         <div className="help-card">
@@ -295,7 +309,7 @@ export function ConciliacionVista({ embebido = false, rangoFijo }: {
             {([
               ["pendiente", "Pendientes", "Entraron a una pasarela y todavía no se asignaron a una cuota. No cuentan como Cash Collected."],
               ["conciliado", "Conciliados", "Ya asignados a su cuota: cuentan como Cash Collected."],
-              ["ignorado", "Ignorados", "Marcados como que no corresponden a ninguna venta. No cuentan."],
+              ["ignorado", "Sin venta", "No corresponden a ninguna venta (se reembolsaron, el intento falló, están repetidos…): cada uno dice por qué. No cuentan."],
             ] as const).map(([k, t, ayuda]) => (
               <Chip key={k} activo={filtro === k} onClick={() => setFiltro(k)} title={ayuda}
                 count={porEstado[k].n}>{t}</Chip>
@@ -395,6 +409,8 @@ function FilaMovimiento({ mov, M, abierto, onAbrir, onNuevaVenta }: {
   const e = useEstado();
   const toast = useToast();
   const [busqueda, setBusqueda] = useState("");
+  /* Pidiendo el motivo: al dejarlo sin venta («nuevo») o al corregirlo («editar»). */
+  const [motivando, setMotivando] = useState<"nuevo" | "editar" | null>(null);
 
   const sugerencias = useMemo(
     () => (mov.estado === "pendiente" ? sugerenciasPara(e, mov) : []),
@@ -456,7 +472,11 @@ function FilaMovimiento({ mov, M, abierto, onAbrir, onNuevaVenta }: {
         {mov.estado === "conciliado" && (
           <Badge variante="neutral"><Check size={13} />{destino}</Badge>
         )}
-        {mov.estado === "ignorado" && <Badge variante="neutral">Ignorado</Badge>}
+        {mov.estado === "ignorado" && (
+          <span title={mov.motivo?.trim() || "Nadie escribió por qué se dejó sin venta."}>
+            <Badge variante={faltaElMotivo(mov) ? "warning" : "neutral"}>{faltaElMotivo(mov) ? "Sin venta · falta el motivo" : "Sin venta"}</Badge>
+          </span>
+        )}
         <span className="mov__monto">
           {M(mov.monto, 2)}
           {cobraComision && (
@@ -565,9 +585,9 @@ function FilaMovimiento({ mov, M, abierto, onAbrir, onNuevaVenta }: {
                 <Button sm variante="ghost" icono={<Plus size={14} />} onClick={onNuevaVenta}>
                   Cargar la venta de este cobro
                 </Button>
-                <Button sm variante="ghost" icono={<EyeOff size={14} />}
-                  onClick={() => { acciones.marcarMovimiento(mov.id, "ignorado"); toast("Cobro ignorado."); }}>
-                  Ignorar
+                <Button sm variante="ghost" icono={<EyeOff size={14} />} onClick={() => setMotivando("nuevo")}
+                  title="No corresponde a ninguna venta: se deja sin venta diciendo por qué.">
+                  No es una venta
                 </Button>
               </div>
             </>
@@ -583,12 +603,34 @@ function FilaMovimiento({ mov, M, abierto, onAbrir, onNuevaVenta }: {
               </Button>
             </div>
           ) : (
-            <Button sm variante="secondary" onClick={() => { acciones.marcarMovimiento(mov.id, "pendiente"); toast("Vuelve a la bandeja."); }}>
-              Volver a pendientes
-            </Button>
+            <div className="stack-2">
+              <p className="t-sm" style={faltaElMotivo(mov) ? { color: "var(--warning)" } : undefined}>
+                <strong>Por qué no es una venta:</strong> {mov.motivo?.trim() || "nadie lo escribió todavía."}
+              </p>
+              <div className="row-wrap">
+                <Button sm variante={faltaElMotivo(mov) ? "primary" : "ghost"} onClick={() => setMotivando("editar")}>
+                  {faltaElMotivo(mov) ? "Agregar el motivo" : "Cambiar el motivo"}
+                </Button>
+                <Button sm variante="secondary" onClick={() => { if (acciones.marcarMovimiento(mov.id, "pendiente")) toast("Vuelve a la bandeja."); }}>
+                  Volver a pendientes
+                </Button>
+              </div>
+            </div>
           )}
         </div>
       )}
+      <MotivoDeDescarte
+        abierto={motivando !== null} onCerrar={() => setMotivando(null)}
+        titulo="¿Por qué no es una venta?" sub={`Cobro de ${nombre}. Queda escrito: ningún cobro se deja de lado sin decir por qué.`}
+        opciones={MOTIVOS_DE_COBRO} guardarTexto={motivando === "editar" ? "Guardar el motivo" : "Dejar sin venta"}
+        inicial={motivando === "editar" ? mov.motivo : undefined}
+        onGuardar={(motivo) => {
+          const como = motivando;
+          setMotivando(null);
+          if (como === "editar") { if (acciones.cambiarMotivoDeMovimiento(mov.id, motivo)) toast("Motivo guardado."); }
+          else if (acciones.marcarMovimiento(mov.id, "ignorado", motivo)) toast("Cobro sin venta: quedó escrito por qué.");
+        }}
+      />
     </div>
   );
 }

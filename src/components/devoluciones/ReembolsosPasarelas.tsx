@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useState } from "react";
 import { Link2, RotateCcw, Undo2 } from "lucide-react";
 import { Badge, Button, Card, CardHead } from "@/components/ui/ui";
 import { InfoMetrica } from "@/components/ui/InfoMetrica";
@@ -12,6 +12,8 @@ import { fechaLarga, money } from "@/lib/format";
 import { puedeCargarDevolucion } from "@/lib/permisos";
 import { nombrePasarela } from "@/lib/pasarelas";
 import { candidatasDe, propuestasAtables, propuestasDescartadas, propuestasPendientes, quienDelReembolso, reembolsoDePropuesta } from "@/lib/reembolsos";
+import { MotivoDeDescarte } from "@/components/finanzas/MotivoDeDescarte";
+import { MOTIVOS_DE_REEMBOLSO, motivoDeDescarte } from "@/lib/motivos";
 import type { RangoDeDias } from "@/lib/dia-negocio";
 import type { EstadoApp } from "@/lib/types";
 
@@ -30,6 +32,8 @@ export function ReembolsosPasarelas({ e, rango }: { e: EstadoApp; rango?: RangoD
   const toast = useToast();
   const puede = puedeCargarDevolucion(acceso);
   const M = (n: number) => money(n, e.ajustes.monedaBase, 2);
+  /* El reembolso que se está descartando: pide el motivo antes (ningún reembolso se deja de lado sin decir por qué). */
+  const [descartando, setDescartando] = useState<{ id: string; nombre: string } | null>(null);
   const pendientes = propuestasPendientes(e, rango ?? undefined);
   /* Lo que alguien marcó como «no es una devolución» queda a la vista con su botón para deshacer: un clic de más no puede perder un reembolso. */
   const descartadas = propuestasDescartadas(e, rango ?? undefined);
@@ -100,7 +104,7 @@ export function ReembolsosPasarelas({ e, rango }: { e: EstadoApp; rango?: RangoD
                     </Button>
                   ))}
                   <Button sm variante="primary" onClick={() => abrirDevolucion({ propuestaId: d.id, ventaId: d.ventaId })}>Confirmar</Button>
-                  {cobroSinContar && cobro?.estado === "pendiente" && (
+                  {cobroSinContar && cobro && (cobro.estado === "pendiente" || cobro.estado === "ignorado") && (
                     <Button sm variante="secondary"
                       title="El cobro que devolvió la pasarela nunca se concilió, o sea que nunca contó como cobrado: devolverlo no resta nada. Se descartan los dos y se puede deshacer."
                       onClick={() => {
@@ -109,10 +113,8 @@ export function ReembolsosPasarelas({ e, rango }: { e: EstadoApp; rango?: RangoD
                       Descartar con su cobro
                     </Button>
                   )}
-                  <Button sm variante="ghost" title="Descartarla: la pasarela la informó pero no es una devolución. Se puede deshacer más abajo."
-                    onClick={() => {
-                      if (acciones.ignorarDevolucion(d.id)) toast(`Marcada como «no es una devolución»: ${nombre}.`, "ok", { texto: "Deshacer", onClick: () => { if (acciones.volverAProponerDevolucion(d.id)) toast("Vuelve a la lista de reembolsos."); } });
-                    }}>
+                  <Button sm variante="ghost" title="Descartarla: la pasarela la informó pero no es una devolución. Pide el motivo y se puede deshacer más abajo."
+                    onClick={() => setDescartando({ id: d.id, nombre })}>
                     No es una devolución
                   </Button>
                 </>
@@ -134,6 +136,9 @@ export function ReembolsosPasarelas({ e, rango }: { e: EstadoApp; rango?: RangoD
                 <span className="t-strong">{nombre}</span>
                 <span className="t-subtle">{fechaLarga(d.fecha)}</span>
                 {conSuCobro && <span className="t-subtle">· se descartó junto con su cobro</span>}
+                <span className="t-subtle" style={{ flexBasis: "100%", order: 5 }} title="Por qué no es una devolución">
+                  {motivoDeDescarte(d) ?? "Falta el motivo."}
+                </span>
                 <span className="spacer" />
                 <span className="t-num t-strong">{M(d.monto)}</span>
                 {puede && (
@@ -147,6 +152,16 @@ export function ReembolsosPasarelas({ e, rango }: { e: EstadoApp; rango?: RangoD
           })}
         </div>
       )}
+      <MotivoDeDescarte
+        abierto={descartando !== null} onCerrar={() => setDescartando(null)}
+        titulo="¿Por qué no es una devolución?" sub={descartando ? `Reembolso de ${descartando.nombre}. Queda escrito: ningún reembolso se deja de lado sin decir por qué.` : undefined}
+        opciones={MOTIVOS_DE_REEMBOLSO} guardarTexto="Dejarla sin devolución"
+        onGuardar={(motivo) => {
+          const d = descartando;
+          setDescartando(null);
+          if (d && acciones.ignorarDevolucion(d.id, motivo)) toast(`Marcada como «no es una devolución»: ${d.nombre}.`, "ok", { texto: "Deshacer", onClick: () => { if (acciones.volverAProponerDevolucion(d.id)) toast("Vuelve a la lista de reembolsos."); } });
+        }}
+      />
     </Card>
   );
 }

@@ -4,6 +4,7 @@ import { feeDelPago, parcheDeCobro } from "./completar-cobros";
 import { conciliarPuntas, type Punta } from "./traspasos";
 import { conciliarReembolsos, referenciaDeReembolso, type ReembolsoCrudo } from "./reembolsos";
 import { NOTA_ANULADO } from "./mercury";
+import { MOTIVO_ANULADO } from "./motivos";
 
 /* ==================================================================
    Cliente de Supabase del lado del servidor.
@@ -111,7 +112,7 @@ export async function descartarAnuladosMercury(referencias: string[]): Promise<{
     if (q.error) return { descartados, error: q.error.message };
     for (const m of (q.data ?? []) as { id: string; descripcion?: string | null }[]) {
       const u = await db.from("movimientos").update({
-        estado: "ignorado", descripcion: [m.descripcion, NOTA_ANULADO].filter(Boolean).join(" · "),
+        estado: "ignorado", descripcion: [m.descripcion, NOTA_ANULADO].filter(Boolean).join(" · "), motivo: MOTIVO_ANULADO,
       }).eq("id", m.id);
       if (u.error) return { descartados, error: u.error.message };
       descartados++;

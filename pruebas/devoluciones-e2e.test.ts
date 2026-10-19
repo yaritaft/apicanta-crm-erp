@@ -208,7 +208,7 @@ test("el director la carga; sin venta o sin monto no hay nada que cargar; una pr
   assert.equal(acciones.registrarDevolucion({ ventaId: "v1", monto: 0, fecha: iso(OCTUBRE, 3) }), null);
   /* Una propuesta de la pasarela se ignora sin tocar los números. */
   fijarAcceso(ACCESO_DUENO);
-  assert.equal(acciones.ignorarDevolucion(id!), true);
+  assert.equal(acciones.ignorarDevolucion(id!, "Prueba: no es una devolución"), true);
   assert.equal(calcularPyL(hoy(), oct).devoluciones, 0);
   fijarAcceso(null);
 });
@@ -225,9 +225,11 @@ test("«No es una devolución» se puede deshacer: el reembolso vuelve a la list
   const antes = hoy().actividad.length;
 
   /* Un clic de más: se descarta, deja de contar y queda anotado quién era. */
-  assert.equal(acciones.ignorarDevolucion(id), true);
+  assert.equal(acciones.ignorarDevolucion(id, ""), false, "sin motivo no se descarta");
+  assert.equal(propuesta().estado, "propuesta");
+  assert.equal(acciones.ignorarDevolucion(id, "Un clic de más"), true);
   assert.equal(propuesta().estado, "ignorada");
-  assert.equal(acciones.ignorarDevolucion(id), false, "ya estaba descartada");
+  assert.equal(acciones.ignorarDevolucion(id, "Un clic de más"), false, "ya estaba descartada");
   assert.match(hoy().actividad[0].detalle ?? "", /no es una devolución.*843.*Katherine Valcarcel/);
   assert.equal(hoy().actividad.length, antes + 1);
 
@@ -273,6 +275,8 @@ test("un reembolso «sin identificar» se identifica por su cobro original, y si
   assert.equal(d().estado, "ignorada");
   assert.equal(m().estado, "ignorado", "el cobro que nunca contó se descarta con él");
   assert.equal(d().extra?.cobroDescartado, "mov_whop_pay_X1");
+  assert.match(m().motivo ?? "", /Se reembolsó el .*nunca se concilió.*no contó como cobrado/, "el cobro dice por qué quedó sin venta");
+  assert.match(String(d().extra?.motivoDescarte), /junto con su cobro/, "el reembolso también dice por qué");
   assert.match(hoy().actividad[0].detalle ?? "", /junto con su cobro.*Nicolas Godoy|Nicolas Godoy.*junto con su cobro/);
   assert.equal(calcularPyL(hoy(), rangoDePeriodo(SEPTIEMBRE)).devoluciones, 0, "no resta nada de Finanzas");
 
@@ -280,14 +284,57 @@ test("un reembolso «sin identificar» se identifica por su cobro original, y si
   assert.equal(acciones.volverAProponerDevolucion(id), true);
   assert.equal(d().estado, "propuesta");
   assert.equal(m().estado, "pendiente");
+  assert.equal(m().motivo, undefined, "al volver a la bandeja el cobro ya no lleva motivo");
   assert.equal(d().extra?.cobroDescartado, undefined);
+  assert.equal(d().extra?.motivoDescarte, undefined);
 
-  /* Si el cobro ya estaba conciliado a una venta no se lo toca: sólo se descarta el reembolso. */
+  /* Si el cobro ya estaba conciliado a una venta hay una venta a la que restarle: no se descarta nada, se decide con «Confirmar». */
   const conciliado = { ...cobro, estado: "conciliado", pagoId: "p1", ventaId: "v1" };
   assert.equal(acciones.importar(JSON.stringify({ ...hoy(), movimientos: hoy().movimientos.map((x) => (x.id === cobro.id ? conciliado : x)) })), true);
   assert.equal(quienDelReembolso(hoy(), d()).cobroSinContar, false);
-  assert.equal(acciones.descartarReembolsoConSuCobro(id), true);
+  assert.equal(acciones.descartarReembolsoConSuCobro(id), false);
+  assert.equal(d().estado, "propuesta");
   assert.equal(m().estado, "conciliado");
-  assert.equal(d().extra?.cobroDescartado, undefined);
   fijarAcceso(null);
+});
+
+test("ningún cobro ni reembolso se deja de lado sin motivo: sin él no se ignora, y el motivo se puede agregar, cambiar y borrar al volver a pendientes", () => {
+  armar();
+  const cobro = {
+    id: "mov_whop_pay_M1", proveedor: "whop", referencia: "pay_M1", monto: 300, moneda: "USD", fee: 0, neto: 300, fecha: iso(SEPTIEMBRE, 10),
+    estado: "pendiente", clienteNombre: "Ana Prueba", creadoEn: iso(SEPTIEMBRE, 10), origen: "api",
+  };
+  assert.equal(acciones.importar(JSON.stringify({ ...hoy(), movimientos: [...hoy().movimientos, cobro] })), true);
+  const m = () => hoy().movimientos.find((x) => x.id === "mov_whop_pay_M1")!;
+  /* Sin motivo (o en blanco) no pasa nada. */
+  assert.equal(acciones.marcarMovimiento("mov_whop_pay_M1", "ignorado"), false);
+  assert.equal(acciones.marcarMovimiento("mov_whop_pay_M1", "ignorado", "   "), false);
+  assert.equal(m().estado, "pendiente");
+  /* Con motivo, queda sin venta, con su porqué, y anotado en la actividad. */
+  assert.equal(acciones.marcarMovimiento("mov_whop_pay_M1", "ignorado", "No se cobró: el intento falló"), true);
+  assert.equal(m().estado, "ignorado");
+  assert.equal(m().motivo, "No se cobró: el intento falló");
+  assert.match(hoy().actividad[0].detalle ?? "", /sin venta.*Ana Prueba.*Motivo: No se cobró/);
+  /* Corregirlo: sólo si está sin venta y no vacío. */
+  assert.equal(acciones.cambiarMotivoDeMovimiento("mov_whop_pay_M1", ""), false);
+  assert.equal(acciones.cambiarMotivoDeMovimiento("mov_whop_pay_M1", "Repetido: ya figura en otro cobro"), true);
+  assert.equal(m().motivo, "Repetido: ya figura en otro cobro");
+  /* Al volver a pendientes el motivo se va. Un pendiente no se puede «corregir». */
+  assert.equal(acciones.marcarMovimiento("mov_whop_pay_M1", "pendiente"), true);
+  assert.equal(m().estado, "pendiente");
+  assert.equal(m().motivo, undefined);
+  assert.equal(acciones.cambiarMotivoDeMovimiento("mov_whop_pay_M1", "algo"), false);
+  /* Un cobro conciliado tiene su pago: no se deja sin venta ni se «devuelve a pendientes» desde acá. */
+  const conc = { ...cobro, id: "mov_whop_pay_M3", referencia: "pay_M3", estado: "conciliado", pagoId: "p9", ventaId: "v9" };
+  assert.equal(acciones.importar(JSON.stringify({ ...hoy(), movimientos: [...hoy().movimientos, conc] })), true);
+  assert.equal(acciones.marcarMovimiento("mov_whop_pay_M3", "ignorado", "Prueba"), false);
+  assert.equal(acciones.marcarMovimiento("mov_whop_pay_M3", "pendiente"), false);
+  assert.equal(hoy().movimientos.find((x) => x.id === "mov_whop_pay_M3")!.estado, "conciliado");
+  /* Un reembolso tampoco: sin motivo no se descarta. */
+  const r = acciones.importarReembolsos([{ proveedor: "whop", referencia: "reembolso:pay_M2", referenciasCobro: ["pay_M2"], monto: 50, moneda: "USD", fecha: iso(SEPTIEMBRE, 12) }]);
+  const idR = r!.nuevas[0].id;
+  assert.equal(acciones.ignorarDevolucion(idR, ""), false);
+  assert.equal(hoy().devoluciones!.find((x) => x.id === idR)!.estado, "propuesta");
+  assert.equal(acciones.ignorarDevolucion(idR, "No es una devolución a un cliente"), true);
+  assert.equal(hoy().devoluciones!.find((x) => x.id === idR)!.extra?.motivoDescarte, "No es una devolución a un cliente");
 });

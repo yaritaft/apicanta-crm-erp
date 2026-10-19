@@ -28,14 +28,14 @@ const PASOS: { titulo: string; texto: React.ReactNode }[] = [
   },
   {
     titulo: "Queda conciliado",
-    texto: <>Ahora sí cuenta como <strong>Cash Collected</strong>, con la comisión real de la pasarela. Si no corresponde a ninguna venta (un reembolso, un pago de otra cosa), lo <strong>ignorás</strong>.</>,
+    texto: <>Ahora sí cuenta como <strong>Cash Collected</strong>, con la comisión real de la pasarela. Si no corresponde a ninguna venta (se reembolsó, el intento falló, está repetido), lo dejás <strong>sin venta</strong> y escribís por qué: ningún cobro se deja de lado sin motivo.</>,
   },
 ];
 
 const GLOSARIO: { palabra: string; texto: string }[] = [
   { palabra: "Pendiente", texto: "Entró a una pasarela y todavía no se asignó a ninguna cuota. Se ve, pero no cuenta como Cash Collected ni genera comisiones." },
   { palabra: "Conciliado", texto: "Ya está asignado a su cuota: cuenta como Cash Collected y su comisión es la que cobró la pasarela de verdad." },
-  { palabra: "Ignorado", texto: "Se marcó como que no corresponde a ninguna venta. No cuenta, y queda guardado por si hay que revisarlo." },
+  { palabra: "Sin venta", texto: "No corresponde a ninguna venta (se reembolsó, el intento falló, está repetido…). Cada uno dice por qué, no cuenta como cobrado y queda guardado por si hay que revisarlo." },
   { palabra: "Coincide exacto", texto: "El monto es el de una cuota de esa misma persona y no hay otra candidata: se puede conciliar de una." },
   { palabra: "Ya cargado", texto: "Alguien ya cargó este pago a mano, o vino de la planilla. Asignarlo otra vez contaría la plata dos veces: «Atar» lo une al pago que ya existe y le pone la comisión real." },
   { palabra: "Comisión estimada", texto: "La pasarela todavía no mandó cuánto cobró de comisión: se usa el porcentaje de la cuenta y se corrige solo cuando llegue." },

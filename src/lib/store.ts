@@ -15,6 +15,7 @@ import type { EsquemaPago, EstadoTraspaso, EtapaServicio, ExtraLiquidacion, Gast
 import { conciliarPuntas, rutaDe, type Punta } from "./traspasos";
 import { gastoAprobado, plantillasDesdeGastos } from "./gastos-recurrentes";
 import { cobrosAnulados, NOTA_ANULADO } from "./mercury";
+import { MOTIVO_ANULADO } from "./motivos";
 import { conExtraEnMes, mismasTasas, nombrePeriodo, sinExtraEnLiquidacion, tasaParaFinanzas, tasasPorServicio } from "./honorarios";
 import {
   alumnoDeVenta, cuotaMensualDeVenta, etapaDelAlumno, etapaInicialDeServicio, etapasDeServicio,
@@ -2804,28 +2805,30 @@ export const acciones = {
     return true;
   },
 
-  /* «No es una devolución»: la que informó una pasarela y nadie reconoce. */
-  ignorarDevolucion(id: ID): boolean {
+  /* «No es una devolución»: la que informó una pasarela y nadie reconoce. Ningún reembolso se deja de lado sin decir por qué: sin motivo no hace nada. */
+  ignorarDevolucion(id: ID, motivo: string): boolean {
     const e = snapshot();
     const antes = (e.devoluciones ?? []).find((x) => x.id === id);
     if (!antes || antes.estado === "ignorada") return false;
+    const porQue = (motivo ?? "").trim();
+    if (!porQue) return false;
     if (acceso && !puedeCargarDevolucion(acceso)) {
       negada("devoluciones", "Tu tipo de cuenta no puede decidir sobre las devoluciones.");
       return false;
     }
-    const nueva: Devolucion = { ...antes, estado: "ignorada" };
+    const nueva: Devolucion = { ...antes, estado: "ignorada", extra: { ...(antes.extra ?? {}), motivoDescarte: porQue } };
     const quien = nombreDeReembolso(e, antes);
     const { lista, nuevo } = registrar(
       e, "transaccion", id, quien, "actualizo",
-      `Se marcó como «no es una devolución» el reembolso de ${Math.round(antes.monto).toLocaleString("es-AR")} ${antes.moneda} de ${quien}.`,
+      `Se marcó como «no es una devolución» el reembolso de ${Math.round(antes.monto).toLocaleString("es-AR")} ${antes.moneda} de ${quien}. Motivo: ${porQue}`,
     );
     guardar({ ...e, devoluciones: (e.devoluciones ?? []).map((x) => (x.id === id ? nueva : x)), actividad: lista });
-    empujarUpdate("devoluciones", [id], { estado: "ignorada" });
+    empujar({ tipo: "upsert", tabla: "devoluciones", filas: [nueva] });
     empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
     return true;
   },
 
-  /* Deshacer «No es una devolución»: el reembolso vuelve a esperar su decisión. */
+  /* Deshacer «No es una devolución»: el reembolso vuelve a esperar su decisión (y, si se descartó junto con su cobro, el cobro vuelve a la bandeja). */
   volverAProponerDevolucion(id: ID): boolean {
     const e = snapshot();
     const antes = (e.devoluciones ?? []).find((x) => x.id === id);
@@ -2837,27 +2840,29 @@ export const acciones = {
     /* Si se descartó junto con su cobro, el cobro vuelve a Conciliación (sólo si sigue como se lo dejó). */
     const cobroId = typeof antes.extra?.cobroDescartado === "string" ? antes.extra.cobroDescartado : undefined;
     const cobro = cobroId ? e.movimientos.find((m) => m.id === cobroId && m.estado === "ignorado") : undefined;
-    const { cobroDescartado: _c, ...extraSin } = (antes.extra ?? {}) as Record<string, unknown>;
-    void _c;
+    const { cobroDescartado: _c, motivoDescarte: _m, ...extraSin } = (antes.extra ?? {}) as Record<string, unknown>;
+    void _c; void _m;
     const nueva: Devolucion = { ...antes, estado: "propuesta", extra: extraSin };
     const quien = nombreDeReembolso(e, antes);
     const { lista, nuevo } = registrar(
       e, "transaccion", id, quien, "actualizo",
       `Se deshizo «no es una devolución»: el reembolso de ${Math.round(antes.monto).toLocaleString("es-AR")} ${antes.moneda} de ${quien} vuelve a esperar su decisión${cobro ? " y su cobro vuelve a Conciliación" : ""}.`,
     );
-    const cobroVuelve: Movimiento | undefined = cobro ? { ...cobro, estado: "pendiente" } : undefined;
+    const cobroVuelve: Movimiento | undefined = cobro ? { ...cobro, estado: "pendiente", motivo: undefined } : undefined;
     guardar({
       ...e, devoluciones: (e.devoluciones ?? []).map((x) => (x.id === id ? nueva : x)), actividad: lista,
       ...(cobroVuelve ? { movimientos: e.movimientos.map((m) => (m.id === cobroVuelve.id ? cobroVuelve : m)) } : {}),
     });
     empujar({ tipo: "upsert", tabla: "devoluciones", filas: [nueva] });
-    if (cobroVuelve) empujar({ tipo: "upsert", tabla: "movimientos", filas: [cobroVuelve] });
+    /* El motivo tiene que viajar como null para que la base lo borre (undefined no viaja). */
+    if (cobroVuelve) empujarUpdate("movimientos", [cobroVuelve.id], { estado: "pendiente", motivo: null });
     empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
     return true;
   },
 
   /* «Descartar el reembolso y su cobro»: la pasarela devolvió un cobro que nunca se concilió (nunca contó como cobrado), así que devolverlo no
-     resta nada. Se descartan los dos juntos y «Deshacer» los trae a los dos de vuelta. Sin un cobro sin conciliar, sólo descarta el reembolso. */
+     resta nada. Se descartan los dos juntos, cada uno con su motivo, y «Deshacer» los trae a los dos de vuelta. Sólo se puede cuando el cobro
+     está sin conciliar (pendiente, o ya sin venta): con el cobro conciliado hay una venta a la que restarle y se decide con «Confirmar». */
   descartarReembolsoConSuCobro(id: ID): boolean {
     const e = snapshot();
     const antes = (e.devoluciones ?? []).find((x) => x.id === id);
@@ -2867,9 +2872,16 @@ export const acciones = {
       return false;
     }
     const { cobro, cobroSinContar } = quienDelReembolso(e, antes);
-    const descartaElCobro = Boolean(cobro && cobroSinContar && cobro.estado === "pendiente");
-    const nueva: Devolucion = { ...antes, estado: "ignorada", extra: { ...(antes.extra ?? {}), ...(descartaElCobro ? { cobroDescartado: cobro!.id } : {}) } };
-    const cobroIgnorado: Movimiento | undefined = descartaElCobro ? { ...cobro!, estado: "ignorado" } : undefined;
+    if (!cobro || !cobroSinContar) return false;
+    const descartaElCobro = cobro.estado === "pendiente";
+    const dia = (iso: string) => new Date(iso).toLocaleDateString("es-AR");
+    const plata = (n: number, m: string) => `${m === "USD" ? "US$ " : `${m} `}${n.toLocaleString("es-AR", { maximumFractionDigits: 2 })}`;
+    const motivoCobro = `Se reembolsó el ${dia(antes.fecha)} (${antes.referencia ?? "reembolso de la pasarela"}, ${plata(antes.monto, antes.moneda)}): el cobro nunca se concilió, así que no contó como cobrado, y su reembolso se compensa con él.`;
+    const motivoReembolso = descartaElCobro
+      ? `Se descartó junto con su cobro del ${dia(cobro.fecha)} (${plata(cobro.monto, cobro.moneda)}), que nunca se concilió: nunca contó como cobrado y el reembolso se compensa con él.`
+      : `Su cobro del ${dia(cobro.fecha)} ya figura sin venta (${cobro.motivo?.trim() || "sin motivo escrito"}): el reembolso no resta nada.`;
+    const nueva: Devolucion = { ...antes, estado: "ignorada", extra: { ...(antes.extra ?? {}), motivoDescarte: motivoReembolso, ...(descartaElCobro ? { cobroDescartado: cobro.id } : {}) } };
+    const cobroIgnorado: Movimiento | undefined = descartaElCobro ? { ...cobro, estado: "ignorado", motivo: motivoCobro } : undefined;
     const quien = nombreDeReembolso(e, antes);
     const { lista, nuevo } = registrar(
       e, "transaccion", id, quien, "actualizo",
@@ -3387,13 +3399,42 @@ export const acciones = {
     return true;
   },
 
-  marcarMovimiento(movimientoId: ID, estado: Movimiento["estado"]) {
+  /* Dejar un cobro «Sin venta» (estado «ignorado») o volverlo a la bandeja. Ningún cobro se deja de lado sin decir por qué: sin motivo no hace nada. */
+  marcarMovimiento(movimientoId: ID, estado: Movimiento["estado"], motivo?: string): boolean {
     const e = snapshot();
     const mov = e.movimientos.find((m) => m.id === movimientoId);
-    if (!mov) return;
-    const actualizado: Movimiento = { ...mov, estado };
-    guardar({ ...e, movimientos: e.movimientos.map((m) => (m.id === mov.id ? actualizado : m)) });
+    if (!mov) return false;
+    /* Sólo va y viene entre la bandeja y «sin venta»: un cobro conciliado tiene su pago, y se suelta desde su venta. */
+    if (mov.estado === "conciliado" || estado === "conciliado") return false;
+    const porQue = (motivo ?? "").trim();
+    if (estado === "ignorado" && !porQue) return false;
+    const actualizado: Movimiento = { ...mov, estado, motivo: estado === "ignorado" ? porQue : undefined };
+    const quien = mov.clienteNombre || mov.referencia;
+    const { lista, nuevo } = registrar(
+      e, "transaccion", mov.id, quien, "actualizo",
+      estado === "ignorado" ? `Se dejó sin venta el cobro de ${quien} (${mov.referencia}). Motivo: ${porQue}` : `El cobro de ${quien} (${mov.referencia}) volvió a pendientes.`,
+    );
+    guardar({ ...e, movimientos: e.movimientos.map((m) => (m.id === mov.id ? actualizado : m)), actividad: lista });
+    if (estado === "ignorado") empujar({ tipo: "upsert", tabla: "movimientos", filas: [actualizado] });
+    /* El motivo tiene que viajar como null para que la base lo borre (undefined no viaja). */
+    else empujarUpdate("movimientos", [mov.id], { estado, motivo: null });
+    empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
+    return true;
+  },
+
+  /* Escribir o corregir el motivo de un cobro que ya está sin venta. */
+  cambiarMotivoDeMovimiento(movimientoId: ID, motivo: string): boolean {
+    const e = snapshot();
+    const mov = e.movimientos.find((m) => m.id === movimientoId);
+    const porQue = (motivo ?? "").trim();
+    if (!mov || mov.estado !== "ignorado" || !porQue) return false;
+    const actualizado: Movimiento = { ...mov, motivo: porQue };
+    const quien = mov.clienteNombre || mov.referencia;
+    const { lista, nuevo } = registrar(e, "transaccion", mov.id, quien, "actualizo", `Se anotó el motivo del cobro sin venta de ${quien} (${mov.referencia}): ${porQue}`);
+    guardar({ ...e, movimientos: e.movimientos.map((m) => (m.id === mov.id ? actualizado : m)), actividad: lista });
     empujar({ tipo: "upsert", tabla: "movimientos", filas: [actualizado] });
+    empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
+    return true;
   },
 
   /* Importar de un CSV o de la API: el mismo cobro traído dos veces tiene
@@ -3462,9 +3503,9 @@ export const acciones = {
     const e = snapshot();
     const ids = new Set(cobrosAnulados(e.movimientos, referencias));
     if (ids.size === 0) return 0;
-    const cambios = new Map<ID, Pick<Movimiento, "estado" | "descripcion">>();
+    const cambios = new Map<ID, Pick<Movimiento, "estado" | "descripcion" | "motivo">>();
     for (const m of e.movimientos) {
-      if (ids.has(m.id)) cambios.set(m.id, { estado: "ignorado", descripcion: [m.descripcion, NOTA_ANULADO].filter(Boolean).join(" · ") });
+      if (ids.has(m.id)) cambios.set(m.id, { estado: "ignorado", descripcion: [m.descripcion, NOTA_ANULADO].filter(Boolean).join(" · "), motivo: MOTIVO_ANULADO });
     }
     guardar({ ...e, movimientos: e.movimientos.map((m) => (cambios.has(m.id) ? { ...m, ...cambios.get(m.id) } : m)) });
     for (const [id, c] of cambios) empujarUpdate("movimientos", [id], c);

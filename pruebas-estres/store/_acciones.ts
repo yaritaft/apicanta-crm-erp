@@ -408,7 +408,7 @@ export const CATALOGO: Accion[] = [
       } else if (que === "editar") {
         const d = a.pick(ds);
         S.acciones.editarDevolucion(d.id, a.pick([{ motivo: undefined, notas: libre(a) }, { monto: dinero(a) }, { procesadorId: undefined }, { noDescontarAlCloser: true }, { comprobante: undefined, motivo: libre(a) }]) as never);
-      } else if (que === "ignorar") S.acciones.ignorarDevolucion(a.pick(ds).id);
+      } else if (que === "ignorar") S.acciones.ignorarDevolucion(a.pick(ds).id, "Prueba de estrés");
       else if (que === "deshacer-ignorar") S.acciones.volverAProponerDevolucion(a.pick(ds).id);
       else if (que === "descartar-con-cobro") S.acciones.descartarReembolsoConSuCobro(a.pick(ds).id);
       else if (que === "borrar") S.acciones.borrarDevolucion(a.pick(ds).id);
@@ -477,7 +477,9 @@ export const CATALOGO: Accion[] = [
     correr: (a, e, S) => {
       const m = uno(conId(e.movimientos), a) as { id: string };
       if (m === (NO as unknown)) return NO;
-      S.acciones.marcarMovimiento(m.id, a.pick(["pendiente", "ignorado"]) as never);
+      /* Sin motivo no se deja de lado: «ignorado» sin texto no hace nada. */
+      const estado = a.pick(["pendiente", "ignorado"]) as "pendiente" | "ignorado";
+      S.acciones.marcarMovimiento(m.id, estado, estado === "ignorado" && a.prob(0.85) ? "Prueba de estrés: no es una venta" : undefined);
     },
   },
   {

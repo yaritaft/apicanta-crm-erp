@@ -1086,6 +1086,9 @@ export interface Movimiento {
   metodo?: string;
   descripcion?: string;
   estado: EstadoMovimiento2;
+  /* Por qué no corresponde a una venta («Sin venta», estado «ignorado»): se reembolsó, nunca se cobró, está repetido…
+     Ningún cobro se deja de lado sin decir por qué (lib/motivos.ts). */
+  motivo?: string;
   /* Resultado de la conciliación */
   pagoId?: ID;
   cuotaId?: ID;

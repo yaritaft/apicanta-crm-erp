@@ -2,6 +2,7 @@ import { createHmac } from "node:crypto";
 import type { Moneda, ProveedorPasarela } from "./types";
 import { cuentaDeContraparte, type Punta } from "./traspasos";
 import type { ReembolsoCrudo } from "./reembolsos";
+import { MOTIVO_LIQUIDACION_PROBABLE } from "./motivos";
 import { clasificarMercury, reglasExtraDeEntorno, type ResumenMercury } from "./mercury";
 
 /* ==================================================================
@@ -27,6 +28,8 @@ export interface MovimientoApi {
   /* Casi siempre queda "pendiente" y lo define quien guarda. Se llena acá
      sólo cuando ya sabemos que ese cobro no hay que conciliarlo. */
   estado?: "pendiente" | "ignorado";
+  /* Si entra ignorado, por qué. */
+  motivo?: string;
   proveedor: ProveedorPasarela;
   referencia: string;
   monto: number;
@@ -1010,6 +1013,7 @@ export async function mercury(desde: Date, opciones: OpcionesListar = {}): Promi
       salida.push({
         proveedor: "mercury",
         estado: LIQUIDACION_PROBABLE.test(contraparte) ? "ignorado" : "pendiente",
+        ...(LIQUIDACION_PROBABLE.test(contraparte) ? { motivo: MOTIVO_LIQUIDACION_PROBABLE } : {}),
         referencia: String(t.id ?? ""),
         monto, fee: 0, neto: monto,
         moneda: "USD",

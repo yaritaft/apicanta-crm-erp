@@ -39,7 +39,7 @@ function mundoDeAldana(semilla: number): EstadoApp {
   const movimientos: Movimiento[] = Array.from({ length: r.entre(0, 40) }, (_, i) => ({
     id: `mov_${semilla}_${i}`, proveedor: r.elige(TIPOS_MOV), referencia: `ref${i}`, monto: r.plata(50, 3000), moneda: "USD", fee: 0, neto: 0,
     fecha: instante(r, { meses: MESES_MUNDO, bordes: 0.3 }), estado: r.elige(estados), clienteNombre: `Cliente ${i}`,
-  } as Movimiento));
+  } as Movimiento)).map((m) => (m.estado === "ignorado" && r.si(0.5) ? { ...m, motivo: "Se reembolsó: prueba" } : m));
   const traspasos: Traspaso[] = Array.from({ length: r.entre(0, 12) }, (_, i) => {
     const fecha = instante(r, { meses: MESES_MUNDO, bordes: 0.3 });
     const monto = r.plata(100, 4000);
@@ -52,12 +52,21 @@ function mundoDeAldana(semilla: number): EstadoApp {
     id: `dev_p_${semilla}_${i}`, monto: r.plata(30, 800), moneda: "USD", fecha: instante(r, { meses: MESES_MUNDO, bordes: 0.3 }), noDescontarAlCloser: false, estado: "propuesta",
     creadoEn: "2026-10-01T00:00:00.000Z", extra: {},
   } as Devolucion));
+  /* Reembolsos que informó una pasarela: por confirmar, o descartados (con su motivo o sin él). */
+  const deLaPasarela: Devolucion[] = Array.from({ length: r.entre(0, 6) }, (_, i) => {
+    const estado = r.elige(["propuesta", "ignorada", "ignorada"] as const);
+    return {
+      id: `dev_w_${semilla}_${i}`, monto: r.plata(30, 800), moneda: "USD", fecha: instante(r, { meses: MESES_MUNDO, bordes: 0.3 }), noDescontarAlCloser: false, estado,
+      referencia: `reembolso:pay_${semilla}_${i}`, creadoEn: "2026-10-01T00:00:00.000Z",
+      extra: estado === "ignorada" && r.si(0.5) ? { motivoDescarte: "El cobro nunca contó como cobrado" } : {},
+    } as Devolucion;
+  });
   /* Ingresos: gastos en negativo, de cualquier categoría. */
   const ingresos: Gasto[] = Array.from({ length: r.entre(0, 5) }, (_, i) => ({
     id: `ing_${semilla}_${i}`, categoria: "Honorarios del CEO", grupo: "dueno", concepto: `Reembolso ${i}`, monto: -r.plata(10, 500), moneda: "USD",
     fecha: instante(r, { meses: MESES_MUNDO, bordes: 0.3 }), recurrente: false, creadoEn: "2026-10-01T00:00:00.000Z", proveedor: "Hotel", extra: { ingreso: true },
   } as Gasto));
-  return { ...e, movimientos: [...e.movimientos, ...movimientos], traspasos: [...(e.traspasos ?? []), ...traspasos], devoluciones: [...(e.devoluciones ?? []), ...propuestas], gastos: [...e.gastos, ...ingresos] };
+  return { ...e, movimientos: [...e.movimientos, ...movimientos], traspasos: [...(e.traspasos ?? []), ...traspasos], devoluciones: [...(e.devoluciones ?? []), ...propuestas, ...deLaPasarela], gastos: [...e.gastos, ...ingresos] };
 }
 
 const mesesDe = (fechas: string[]) => [...new Set(fechas.map((f) => diaDeNegocio(f).slice(0, 7)))].sort();
@@ -84,8 +93,14 @@ test("A2 · Transacciones lista cada cosa una vez y los totales coinciden con un
     const { filas, resumen } = transaccionesDe(e);
     assert.equal(new Set(filas.map((f) => f.id)).size, filas.length, `${cual}: filas repetidas`);
     const esperadas = e.pagos.length + e.movimientos.filter((m) => m.estado === "pendiente").length + e.gastos.length
-      + (e.devoluciones ?? []).filter(esDevolucionConfirmada).length + (e.traspasos ?? []).length;
+      + e.movimientos.filter((m) => m.estado === "ignorado").length
+      + (e.devoluciones ?? []).filter((d) => esDevolucionConfirmada(d) || d.referencia).length + (e.traspasos ?? []).length;
     assert.equal(filas.length, esperadas, `${cual}: cantidad de filas`);
+    /* Lo sin venta y los reembolsos por confirmar o descartados se ven, y ninguno suma: ni a ingresos ni a egresos. */
+    const sinVenta = e.movimientos.filter((m) => m.estado === "ignorado");
+    assert.equal(resumen.sinVentaN, sinVenta.length, `${cual}: cobros sin venta`);
+    assert.ok(cerca(resumen.sinVenta, sinVenta.reduce((a, m) => a + m.monto, 0), filas.length * 0.006), `${cual}: monto sin venta`);
+    assert.equal(resumen.sinMotivoN, sinVenta.filter((m) => !m.motivo?.trim()).length, `${cual}: sin venta sin motivo`);
     assert.ok(filas.every((f) => f.monto >= 0 && Number.isFinite(f.monto)), `${cual}: monto negativo o roto`);
     assert.ok(filas.every((f) => !/undefined|NaN/.test(`${f.titulo} ${f.detalle} ${f.cuenta} ${f.estado}`)), `${cual}: texto roto`);
     assert.deepEqual(filas.map((f) => f.dia), [...filas.map((f) => f.dia)].sort().reverse(), `${cual}: orden`);

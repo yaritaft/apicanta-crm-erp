@@ -198,8 +198,12 @@ test("Transacciones junta cobros, gastos, ingresos, devoluciones, pases y lo sin
 
   const { filas, resumen } = transaccionesDe(e);
   assert.equal(new Set(filas.map((f) => f.id)).size, filas.length, "ninguna fila repetida");
-  assert.deepEqual(filas.map((f) => f.id).sort(), ["cobro:p1", "devolucion:d1", "gasto:g1", "gasto:g2", "gasto:g3", "pase:t1", "sin-conciliar:m_pend"]);
-  assert.ok(!filas.some((f) => f.id.includes("m_ok") || f.id.includes("m_ign")), "el conciliado es el pago y el ignorado no cuenta");
+  assert.deepEqual(filas.map((f) => f.id).sort(), ["cobro:p1", "devolucion:d1", "gasto:g1", "gasto:g2", "gasto:g3", "pase:t1", "sin-conciliar:m_pend", "sin-venta:m_ign"]);
+  assert.ok(!filas.some((f) => f.id.includes("m_ok")), "el conciliado es el pago: no se lista dos veces");
+  /* Lo que se dejó sin venta se VE (con su porqué, o con el aviso de que falta) y no suma: todo cobro de una pasarela tiene que estar justificado. */
+  const sinVenta = filas.find((f) => f.id === "sin-venta:m_ign")!;
+  assert.equal(sinVenta.origen, "sin-venta");
+  assert.match(sinVenta.detalle, /Falta escribir por qué no es una venta/);
   /* Un gasto cuenta el día que se pagó, no el mes al que corresponde. */
   assert.equal(filas.find((f) => f.id === "gasto:g3")!.dia, "2026-10-02");
   assert.equal(filas.find((f) => f.id === "gasto:g1")!.cuenta, "Mercury");
@@ -212,6 +216,9 @@ test("Transacciones junta cobros, gastos, ingresos, devoluciones, pases y lo sin
   assert.equal(resumen.neto, 1000 + 280 - 190);
   assert.equal(resumen.sinConciliar, 500);
   assert.equal(resumen.sinConciliarN, 1);
+  assert.equal(resumen.sinVentaN, 1);
+  assert.equal(resumen.sinVenta, 500);
+  assert.equal(resumen.sinMotivoN, 1, "uno sin venta no explica por qué");
   assert.equal(resumen.pasesN, 1);
   /* El orden: lo más nuevo primero. */
   assert.deepEqual(filas.map((f) => f.dia), [...filas.map((f) => f.dia)].sort().reverse());
