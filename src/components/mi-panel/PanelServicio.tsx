@@ -113,12 +113,23 @@ export function PanelServicio() {
           <Link href="/alumnos?seccion=cvs" className="link t-sm">Ver las revisiones</Link>
         </section>
 
-        {panel.desactualizados > 0 && (
-          <section className="mp-card" aria-label="Alumnos desactualizados">
-            <div className="mp-cap-fila"><span className="mp-cap">Alumnos que figuran activos y ya terminaron</span><span className="mp-cuenta">{panel.desactualizados}</span></div>
+        {panel.enOutboarding > 0 && (
+          <section className="mp-card" aria-label="Alumnos en outboarding o caso de éxito">
+            <div className="mp-cap-fila"><span className="mp-cap">Ya cerraron el programa (outboarding o caso de éxito)</span><span className="mp-cuenta">{panel.enOutboarding}</span></div>
             <span className="mp-nota">
-              Su contrato terminó hace más de {DIAS_DE_GRACIA} días y siguen como «activos», así que no entran a las listas de arriba. Conviene pasarlos a egresados o a baja
-              para que «A contactar hoy» y este panel muestren solo a quien está en servicio.
+              Su Follow Up dice «outboarding» o «caso de éxito», como en el Airtable, así que no entran a las listas de arriba. Su estado de alumno no se tocó:
+              se actualiza cuando Lili lo decida.
+            </span>
+            <Link href="/alumnos?seccion=clientes" className="link t-sm">Verlos en Clientes del programa</Link>
+          </section>
+        )}
+
+        {panel.desactualizados > 0 && (
+          <section className="mp-card" aria-label="Alumnos para revisar">
+            <div className="mp-cap-fila"><span className="mp-cap">Para revisar: figuran activos y su contrato ya terminó</span><span className="mp-cuenta">{panel.desactualizados}</span></div>
+            <span className="mp-nota">
+              Su contrato terminó hace más de {DIAS_DE_GRACIA} días, siguen como «activos» y su Follow Up no dice outboarding, así que no entran a las listas de arriba.
+              Lili puede actualizar su Follow Up, su fecha de egreso o su estado para que esta lista quede en cero.
             </span>
             <Link href="/alumnos?seccion=clientes" className="link t-sm">Revisarlos en Clientes del programa</Link>
           </section>

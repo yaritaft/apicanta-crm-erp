@@ -378,7 +378,7 @@ export function filasClientes(e: EstadoApp, hoy: string): FilaCliente[] {
       closer: closerVenta || seg.closerNombre, closerDeVenta: closerVenta !== "",
       reporte: reporteDeCliente(a, seg, conReportes.has(a.id), rachas.get(a.id)),
       ultimoContacto: seg.ultimoContacto, proximo, atraso,
-      situacion: situacionDe(a.estado, seg.dejoDeContestar, atraso), cadencia: seg.cadenciaDias, intentos: seg.intentosSinRespuesta,
+      situacion: situacionDe(a.estado, seg.dejoDeContestar, atraso, seg.followUp), cadencia: seg.cadenciaDias, intentos: seg.intentosSinRespuesta,
       cv: seg.cvCorregido, linkedin: seg.linkedinCorregido, responsableCv: seg.responsableCv,
       estadoAlumno: ESTADO_ALUMNO_TEXTO[a.estado] ?? a.estado,
       etapa: (a.etapaServicioId ? etapas.get(a.etapaServicioId) : undefined) ?? primeraEtapa,

@@ -1,6 +1,6 @@
 import type { EstadoApp, ID } from "./types";
 import { DURACION_POR_DEFECTO, estadosDeResell, filasClientes, filasResells, filasTestimonios, sumarMeses } from "./clientes-cs";
-import { diasEntre } from "./seguimiento";
+import { diasEntre, terminoElServicio } from "./seguimiento";
 
 /* ==================================================================
    «Mi panel» de Customer Success (reunión del 19/10 con Lili, Aldana y Yari).
@@ -76,7 +76,9 @@ export interface PanelDeServicio {
   hoy: string;
   /* Alumnos en servicio (activos y con el contrato vigente o recién terminado): la base de todo. */
   activos: number;
-  /* Figuran como activos pero su contrato terminó hace más de `DIAS_DE_GRACIA` días: no entran al panel; conviene pasarlos a egresados o a baja. */
+  /* Figuran como activos pero su Follow Up ya dice «outboarding» o «caso de éxito» (como en el Airtable de Lili): terminaron el programa y no entran al panel. */
+  enOutboarding: number;
+  /* Figuran como activos, no están en outboarding y su contrato terminó hace más de `DIAS_DE_GRACIA` días: no entran al panel; Lili los actualiza (Follow Up, egreso o estado). */
   desactualizados: number;
   secciones: SeccionServicio[];
   /* La revisión de CV y LinkedIn (Aldana): cuántas siguen en curso, por estado. */
@@ -104,7 +106,10 @@ const textoDias = (dias: number, pasado: string, hoy = "hoy", futuro = "en"): st
 
 export function panelDeServicio(e: EstadoApp, hoy: string, ahora: Date = new Date()): PanelDeServicio {
   const clientes = filasClientes(e, hoy);
-  const activosTodos = clientes.filter((c) => c.alumno.estado === "activo");
+  const figuranActivos = clientes.filter((c) => c.alumno.estado === "activo");
+  /* En la app siguen «activos» pero en el Follow Up de Lili ya cerraron: el estado se deja como está y lo actualiza ella. */
+  const enOutboarding = figuranActivos.filter((c) => terminoElServicio(c.followUp)).length;
+  const activosTodos = figuranActivos.filter((c) => !terminoElServicio(c.followUp));
   /* Los que figuran activos pero terminaron hace mucho (casi todos, histórico cargado del Airtable) no son trabajo de hoy. */
   const vencidoHaceMucho = (c: (typeof activosTodos)[number]) => {
     /* Sin fecha de fin ni duración se cuenta lo normal del programa (3 meses): así el que empezó hace un año y quedó «activo» por no tener el dato no llena el panel. */
@@ -223,7 +228,7 @@ export function panelDeServicio(e: EstadoApp, hoy: string, ahora: Date = new Dat
 
   const urgentes = secciones.reduce((n, s) => n + s.rojos, 0);
   return {
-    hoy, activos: activos.length, desactualizados, secciones, urgentes,
+    hoy, activos: activos.length, enOutboarding, desactualizados, secciones, urgentes,
     cvs: { enCurso: abiertos.length, porEstado: [...porEstado].map(([estado, n]) => ({ estado, n })).sort((a, b) => b.n - a.n), sinAlumno: cvs.filter((r) => !r.alumnoId).length },
   };
 }

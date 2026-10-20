@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import {
   DIAS_DE_GRACIA, ITEMS_POR_SECCION, panelDeServicio, resellResuelto, type PanelDeServicio, type SeccionServicio,
 } from "@/lib/panel-servicio";
-import { CONFIG_POR_DEFECTO, seguimientoVacio } from "@/lib/seguimiento";
+import { CONFIG_POR_DEFECTO, seguimientoVacio, situacionDe, terminoElServicio } from "@/lib/seguimiento";
 import { ACCESO_DUENO, areaDeRuta, TIPOS_POR_DEFECTO, type MiAcceso } from "@/lib/permisos";
 import { inicioPara, navPara } from "@/components/shell/nav";
 import type { EstadoApp, SeguimientoAlumno } from "@/lib/types";
@@ -20,7 +20,7 @@ const seg = (alumnoId: string, c: Partial<SeguimientoAlumno>): SeguimientoAlumno
 /* Siete alumnos para que cada lista tenga a alguien y otros queden afuera:
    nueva (entró hace 2 días), nueva5 (hace 5, sin contrato), vence (le quedan 5 días), termino (terminó hace 10),
    historico (activo desde hace 21 meses: no es de hoy), atrasada (el contacto venció hace 10 y dejó de reportar),
-   sinFirma (empezó hace 19 días sin contrato) y egresada (no cuenta). */
+   sinFirma (empezó hace 19 días sin contrato), egresada (no cuenta) y outb (figura activo pero su Follow Up ya dice OUTBOARDING). */
 function estado(extra: Partial<EstadoApp> = {}): EstadoApp {
   const firmado = { contratoFirmado: "Firmado", contactoInicial: "2026-09-01" };
   return {
@@ -34,6 +34,7 @@ function estado(extra: Partial<EstadoApp> = {}): EstadoApp {
       alumno("atrasada", "Atrasada", "2026-09-01"),
       alumno("sinfirma", "Sin Firma", "2026-10-01"),
       alumno("egresada", "Egresada", "2025-01-10", { estado: "graduado" }),
+      alumno("outb", "Outboarding", "2026-10-10"),
     ],
     leads: [], contactos: [], ventas: [], cuotas: [], productos: [], equipo: [], etapasServicio: [], reportes: [], sesiones: [],
     seguimientos: [
@@ -41,6 +42,7 @@ function estado(extra: Partial<EstadoApp> = {}): EstadoApp {
       seg("termino", { ...firmado, ultimoContacto: "2026-10-12", fechaEgreso: "2026-10-10" }),
       seg("atrasada", { ...firmado, ultimoContacto: "2026-09-25", reporteManual: { activo: false, completo: false, semanasSin: 4, en: "2026-10-12" } }),
       seg("sinfirma", { contactoInicial: "2026-10-02", ultimoContacto: "2026-10-15" }),
+      seg("outb", { followUp: "OUTBOARDING" }),
     ],
     testimonios: [
       { id: "t1", alumnoId: "vence", followUp: "Llamada agendada", fechaGrabacion: "2026-10-05", conQuien: "Yari", link: "", creadoEn: "2026-10-05T10:00:00.000Z" },
@@ -81,9 +83,11 @@ test("los activos son los que están en servicio; el que figura activo y termin�
   const p = panelDeServicio(estado(), HOY, AHORA);
   assert.equal(p.activos, 6, "nueva, nueva5, vence, termino, atrasada y sinfirma");
   assert.equal(p.desactualizados, 1, "historico: su contrato terminó hace casi dos años y sigue «activo»");
+  assert.equal(p.enOutboarding, 1, "outb: en el Follow Up de Lili ya cerró; el estado del alumno no se toca");
   const todos = p.secciones.flatMap((s) => nombres(s));
   assert.ok(!todos.includes("Historico"), "no llena las listas de hoy");
   assert.ok(!todos.includes("Egresada"));
+  assert.ok(!todos.includes("Outboarding"), "ni en Nuevos ni en ninguna otra lista");
   assert.equal(DIAS_DE_GRACIA, 45);
 });
 
@@ -171,6 +175,15 @@ test("lo urgente se cuenta sobre toda la lista, no sólo sobre los 8 que se ven"
   assert.equal(s.items.length, ITEMS_POR_SECCION);
   assert.equal(s.rojos, 12);
   assert.equal(p.urgentes, 12);
+});
+
+test("outboarding y caso de éxito, con o sin tildes y en mayúsculas o minúsculas, son «terminó el servicio»; lo demás no", () => {
+  for (const f of ["OUTBOARDING", "Outboarding", "outbording", "CASO DE EXITO", "Caso de Éxito", " caso de éxito "]) assert.ok(terminoElServicio(f), f);
+  for (const f of ["", "RESERVA", "Roadmap", "Avanzando", "Módulo 3", "MAS ENTREVISTAS", "No contesta", undefined, null]) assert.ok(!terminoElServicio(f), String(f));
+  /* En la lista de seguimiento ya no le toca el contacto, aunque el alumno siga «activo» y tenga el atraso vencido. */
+  assert.equal(situacionDe("activo", false, 30, "OUTBOARDING"), "fuera");
+  assert.equal(situacionDe("activo", false, 30, "Avanzando"), "vencido");
+  assert.equal(situacionDe("activo", false, 30), "vencido", "sin Follow Up, como siempre");
 });
 
 test("sin datos, el panel no se rompe: todo en cero", () => {

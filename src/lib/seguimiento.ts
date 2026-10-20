@@ -222,9 +222,16 @@ export function indiceDeContactos(e: Pick<EstadoApp, "contactos" | "leads">) {
   };
 }
 
+/** Lili ya lo pasó a «outboarding» o «caso de éxito» en el Follow Up (como en su Airtable): terminó el programa, aunque en la app
+ *  siga «activo». Se lo trata como fuera del servicio hasta que ella lo actualice: no se toca el estado del alumno. */
+export function terminoElServicio(followUp: string | null | undefined): boolean {
+  const f = (followUp ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+  return f.startsWith("outboarding") || f.startsWith("outbording") || f.startsWith("caso de exito");
+}
+
 /** La situación de un alumno según cuándo le toca el próximo contacto. */
-export function situacionDe(estado: Alumno["estado"], dejoDeContestar: boolean, atraso: number): SituacionSeguimiento {
-  if (estado !== "activo") return "fuera";
+export function situacionDe(estado: Alumno["estado"], dejoDeContestar: boolean, atraso: number, followUp?: string | null): SituacionSeguimiento {
+  if (estado !== "activo" || terminoElServicio(followUp)) return "fuera";
   if (dejoDeContestar) return "no-contesta";
   return atraso > 0 ? "vencido" : atraso === 0 ? "hoy" : "al-dia";
 }
@@ -249,7 +256,7 @@ export function filasDeSeguimiento(e: EstadoApp, hoy: string): FilaSeguimiento[]
       ultimoContacto: base.ultimoContacto,
       proximoContacto: proximo,
       atraso,
-      situacion: situacionDe(a.estado, base.dejoDeContestar, atraso),
+      situacion: situacionDe(a.estado, base.dejoDeContestar, atraso, base.followUp),
       intentosSinRespuesta: base.intentosSinRespuesta,
       sugerirDejoDeContestar: !base.dejoDeContestar && base.intentosSinRespuesta >= cfg.intentosHastaDejar,
       dejoDeContestar: base.dejoDeContestar,
