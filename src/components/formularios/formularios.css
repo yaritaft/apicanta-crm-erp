@@ -1,0 +1,39 @@
+/* Formularios como tabla: el pie con sus cálculos (como el «Calcular» de Notion). Clases con prefijo fm-. */
+
+/* El pie de la tabla: un botón por columna, discreto hasta que se le pasa el mouse. */
+.fm-pie {
+  display: inline-flex; align-items: baseline; gap: 6px; max-width: 100%; padding: 4px 8px; margin: -4px -8px;
+  border: 0; border-radius: var(--radius-sm); background: none; font: inherit; color: var(--ink); cursor: pointer;
+  white-space: nowrap; text-align: left;
+}
+.fm-pie:hover, .fm-pie[aria-expanded="true"] { background: var(--surface-300, var(--surface-100)); }
+.fm-pie:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+.fm-pie__etq { flex: none; font-size: 12px; font-weight: 500; color: var(--ink-subtle); }
+.fm-pie__valor { font-size: 14px; font-weight: 700; }
+.fm-pie__sub { font-size: 12px; font-weight: 500; color: var(--ink-subtle); }
+.fm-pie__flecha { align-self: center; flex: none; color: var(--ink-subtle); opacity: 0; }
+.fm-pie:hover .fm-pie__flecha, .fm-pie[aria-expanded="true"] .fm-pie__flecha, .fm-pie:focus-visible .fm-pie__flecha { opacity: 1; }
+.fm-pie[data-vacio] .fm-pie__etq { opacity: 0; }
+.fm-pie[data-vacio]:hover .fm-pie__etq, .fm-pie[data-vacio][aria-expanded="true"] .fm-pie__etq, .fm-pie[data-vacio]:focus-visible .fm-pie__etq { opacity: 1; }
+
+.fm-pie-menu {
+  position: fixed; z-index: 80; width: 230px; max-height: min(420px, 70vh); overflow-y: auto; padding: 6px;
+  background: var(--surface-100); border: 1px solid var(--border-strong); border-radius: var(--radius-md); box-shadow: var(--shadow-lg, 0 12px 32px rgba(0, 0, 0, .35));
+}
+.fm-pie-menu__titulo { padding: 6px 8px 4px; }
+.fm-pie-menu__sep { height: 1px; margin: 4px 0; background: var(--border); }
+.fm-pie-menu__item {
+  display: flex; align-items: center; gap: 8px; width: 100%; padding: 7px 8px; border: 0; border-radius: var(--radius-sm);
+  background: none; font: inherit; font-size: 14px; color: var(--ink); text-align: left; cursor: pointer;
+}
+.fm-pie-menu__item:hover, .fm-pie-menu__item:focus-visible { background: var(--brand-soft); outline: none; }
+.fm-pie-menu__item[data-activo] { font-weight: 600; }
+.fm-pie-menu__check { display: inline-flex; width: 16px; flex: none; color: var(--brand); }
+.fm-pie-menu__nota { margin: 4px 8px 6px; }
+
+/* La tabla scrollea adentro de su tarjeta: el encabezado arriba y el pie con los cálculos abajo quedan a la vista; el alto es lo
+   que queda de la pantalla. Con el paginador (de 50 en 50), el pie va pegado justo arriba de él. */
+.fm-t .hk-table-wrap--alto { max-height: max(380px, calc(100vh - 290px)) !important; }
+.fm-t .hk-paginador { position: sticky; bottom: 0; z-index: 3; background: var(--surface-100); }
+.fm-t .hk-table-wrap:has(.hk-paginador) .hk-table tfoot td { bottom: var(--fm-paginador, 49px); }
+.fm-lector-linea { display: inline-flex; align-items: center; gap: 6px; }

@@ -1,11 +1,13 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
-import { Check, Copy, FileSpreadsheet, MessageCircle, RefreshCw, Search, Users } from "lucide-react";
-import { PageHead } from "@/components/shell/PageHead";
-import { Ayuda, Badge, Button, Card, Chip, Empty, Input, StatCard, Tabs, Tag, Textarea } from "@/components/ui/ui";
+import Link from "next/link";
+import { useSearchParams } from "next/navigation";
+import { ArrowDown, ArrowUp, Check, Copy, FileSpreadsheet, MessageCircle, RefreshCw, Search, Users, X } from "lucide-react";
+import { Ayuda, Badge, Button, Card, Chip, Empty, Input, Tabs, Tag, Textarea } from "@/components/ui/ui";
 import { type Columna, DataTable } from "@/components/ui/DataTable";
 import { ConfigColumnas, type DefColumna, useColumnas } from "@/components/ui/ColumnasConfig";
+import { VistasGuardadas } from "@/components/ui/VistasGuardadas";
 import { CopiarLink, Filtro, type OpcionFiltro } from "@/components/ui/Filtros";
 import { Modal } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toast";
@@ -15,7 +17,12 @@ import { useAcceso } from "@/lib/acceso";
 import { nivelEn } from "@/lib/permisos";
 import { useEstado } from "@/lib/store";
 import { useUsuarioActual } from "@/lib/usuario";
-import { useBusquedaURL, useParamsURL, useTablaURL } from "@/lib/useParamsURL";
+import { paginaDeURL, useBusquedaURL, useEscribirURL, useParamsURL } from "@/lib/useParamsURL";
+import { aLista } from "@/lib/compartirLink";
+import { PARAM_VISTA } from "@/lib/vistas-guardadas";
+import { textoDeFiltro } from "@/lib/crm-tabla";
+import { filtroAURL, filtrosDeURL, opcionesDeColumna, ordenarFilas, ordenesAURL, ordenesDeURL, pasaFiltros, MAX_ORDENES } from "@/lib/tabla-filtros";
+import { calculosAURL, calculosDeURL, calculoValido, columnasDeFormularios, columnasPorClave, ORDEN_FORM_POR_DEFECTO } from "@/lib/formularios-tabla";
 import { num, pct } from "@/lib/format";
 import { diaArgentina } from "@/lib/reporteFinanciera";
 import { normalizarTelefono, telefonoLegible } from "@/lib/telefonos";
@@ -28,6 +35,9 @@ import { AvisoLectorWhatsapp } from "@/components/webinars/AvisoLectorWhatsapp";
 import { ImportarFormularios } from "./ImportarFormularios";
 import { CruceFormularios } from "./CruceFormularios";
 import { BarraDelLector, FILTROS_LECTOR, useLectorDeFormularios, type FiltroLector } from "./LectorFormularios";
+import { PieCalculo } from "./PieCalculo";
+import { FiltroColumna, textoFecha } from "@/components/crm-tabla/FiltroColumna";
+import "./formularios.css";
 
 /* ==================================================================
    Formularios: quién se anotó a cada webinar y qué pasó con cada uno.
@@ -75,7 +85,9 @@ export function VistaFormularios() {
   const { acceso } = useAcceso();
   const puedeEditar = nivelEn(acceso, "webinars") === 2;
   const datos = useRegistrosNube();
-  const [v, cambiar] = useParamsURL({ webinar: "", marca: "", seccion: "registros", lector: "" });
+  const [v, cambiar] = useParamsURL({ webinar: "", marca: "", seccion: "registros", lector: "", pag: "1" });
+  const params = useSearchParams();
+  const escribir = useEscribirURL();
   const [q, setQ] = useBusquedaURL("q", ["pag"]);
   const cols = useColumnas("formularios", COLUMNAS, POR_DEFECTO);
   const [importando, setImportando] = useState(false);
@@ -234,8 +246,51 @@ export function VistaFormularios() {
     agenda: { clave: "agenda", titulo: "Agenda", orden: (r) => (r.contactoId ? 1 : 0), celda: (r) => (r.contactoId ? <Badge variante="success">Con agenda</Badge> : <span className="t-subtle">—</span>) },
     origen: { clave: "origen", titulo: "Origen del dato", tipo: "secondary", orden: (r) => r.origen, celda: (r) => (r.origen === "landing" ? "Landing" : r.origenDetalle ? `Excel · ${r.origenDetalle}` : r.origen) },
   };
-  const columnas = cols.visibles.map((k) => DEF[k]).filter(Boolean);
-  const tabla = useTablaURL("", null, columnas.filter((c) => c.orden).map((c) => c.clave));
+  /* ---------- Las columnas, con sus filtros «como en Excel» y sus cálculos al pie ---------- */
+  const defsTabla = useMemo(() => columnasDeFormularios({ anuncioDe }), [e.ads]); // eslint-disable-line react-hooks/exhaustive-deps -- `anuncioDe` sólo mira los anuncios
+  const porClave = useMemo(() => columnasPorClave(defsTabla), [defsTabla]);
+  const textoParams = params.toString();
+  const filtros = useMemo(() => filtrosDeURL(porClave, new URLSearchParams(textoParams)), [porClave, textoParams]);
+  const ordenes = useMemo(() => ordenesDeURL(porClave, params.get("orden"), ORDEN_FORM_POR_DEFECTO), [porClave, params]);
+  const calculos = useMemo(() => calculosDeURL(defsTabla, params.get("calc")), [defsTabla, params]);
+  const filtradas = useMemo(() => filasVisibles.filter((r) => pasaFiltros(porClave, r, filtros)), [filasVisibles, porClave, filtros]);
+  const filasOrdenadas = useMemo(() => ordenarFilas(porClave, filtradas, ordenes), [porClave, filtradas, ordenes]);
+  const conFiltro = Object.keys(filtros);
+  const ordenDeSiempre = ordenesAURL(ordenes, ORDEN_FORM_POR_DEFECTO) === null;
+  const hayAlgo = conFiltro.length > 0 || Boolean(q) || Boolean(v.marca) || Boolean(filtroLector);
+
+  const cambiarFiltro = (clave: string, fc: Parameters<typeof filtroAURL>[1]) => escribir({ ...filtroAURL(clave, fc), pag: null });
+  const ordenar = (os: { clave: string; desc: boolean }[]) => escribir({ orden: ordenesAURL(os, ORDEN_FORM_POR_DEFECTO), pag: null });
+  const elegirCalculo = (clave: string, id: string) => escribir({ calc: calculosAURL(defsTabla, { ...calculos, [clave]: id }) });
+  const limpiar = () => escribir({
+    ...Object.assign({}, ...Object.keys(porClave).map((k) => filtroAURL(k, null))),
+    q: null, marca: null, lector: null, pag: null, [PARAM_VISTA]: null,
+  });
+
+  const columnas: Columna<RegistroForm>[] = cols.visibles.map((k) => {
+    const def = porClave[k];
+    const puesto = ordenes.findIndex((o) => o.clave === k);
+    return {
+      ...DEF[k], orden: undefined,
+      encabezado: (
+        <FiltroColumna
+          titulo={def.titulo}
+          opciones={() => opcionesDeColumna(porClave, filasVisibles, filtros, k)}
+          filtro={filtros[k]} onFiltro={(fc) => cambiarFiltro(k, fc)}
+          orden={puesto >= 0 ? { desc: ordenes[puesto].desc, puesto: puesto + 1, de: ordenes.length } : undefined}
+          onOrdenar={(desc) => ordenar([{ clave: k, desc }])}
+          /* Como criterio siguiente; si ya ordena, le cambia el sentido. */
+          onSumarOrden={(desc) => ordenar(puesto >= 0
+            ? ordenes.map((o) => (o.clave === k ? { ...o, desc } : o))
+            : [...ordenes.slice(0, MAX_ORDENES - 1), { clave: k, desc }])}
+          onQuitarOrden={() => ordenar(ordenes.filter((o) => o.clave !== k))}
+          ordenaPrimero={ordenes[0].clave !== k ? porClave[ordenes[0].clave]?.titulo : undefined}
+          fecha={def.fecha}
+        />
+      ),
+      pie: <PieCalculo col={def} filas={filasOrdenadas} calculo={calculoValido(def, calculos[k])} onCambiar={(id) => elegirCalculo(k, id)} />,
+    };
+  });
 
   const nombreDelWebinar = opciones.find((o) => o.clave === sel)?.texto ?? (sel === "todos" ? "todos los webinars" : "");
   const opcionesFiltro: OpcionFiltro[] = [
@@ -243,19 +298,11 @@ export function VistaFormularios() {
     { valor: "todos", texto: "Todos los webinars (puede tardar)" },
   ];
 
+  const enCruce = v.seccion === "cruce";
+  const sinGrupoAtado = lector.aplica && lector.hayLector && !lector.hayGrupo && !lector.grupo.sinAcceso && Boolean(lector.grupo.datos) && lector.webinar;
+
   return (
     <>
-      <PageHead
-        titulo="Formularios"
-        sub="Quién se anotó a cada webinar y qué pasó con cada uno: si entró al grupo de WhatsApp y a quién ya se le escribió."
-        acciones={
-          <>
-            {puedeEditar && <Button icono={<FileSpreadsheet size={16} />} onClick={() => setImportando(true)}>Importar del Excel</Button>}
-            <CopiarLink />
-          </>
-        }
-      />
-
       {datos.estado === "sin-tabla" && (
         <Ayuda titulo="Falta crear la tabla de registros" icono={<Users size={18} />}>
           Para guardar los formularios en la app hay que correr una vez <code>supabase/registros-webinar.sql</code> en Supabase.
@@ -266,98 +313,114 @@ export function VistaFormularios() {
 
       <AvisoLectorWhatsapp />
 
-      <Tabs
-        valor={v.seccion as "registros" | "cruce"} onChange={(s) => cambiar({ seccion: s })}
-        opciones={[{ valor: "registros", texto: "Registros" }, { valor: "cruce", texto: "Cruce con la agenda" }]}
-      />
+      {/* Con el grupo de WhatsApp atado, quién está adentro; sin grupo, nada ocupa lugar arriba de la tabla. */}
+      {!enCruce && lector.hayGrupo && (
+        <BarraDelLector
+          lector={lector} registros={deEsteWebinar} visibles={filasVisibles}
+          filtro={filtroLector} onFiltro={(f) => cambiar({ lector: f || null }, { pag: null })}
+          puedeEditar={puedeEditar} onMarcarUnidos={marcarUnidos} onCopiar={copiarTexto}
+        />
+      )}
 
-      {v.seccion === "cruce" ? (
-        <CruceFormularios webinar={sel === "todos" ? "" : sel} nombreDelWebinar={nombreDelWebinar} />
-      ) : (
-        <div className="stack-3">
-          <div className="grid-stats">
-            <StatCard
-              etiqueta="Registrados" valor={num(cuenta.total)} contexto={sel === "todos" ? "en todos los webinars" : "a este webinar"}
-              info={{
-                ayuda: "Las personas que completaron el formulario de este webinar: una por persona, aunque se haya anotado dos veces.",
-                formula: "Registros del webinar (uno por mail y por fecha del webinar)",
-                componentes: () => [{ concepto: "Registros", valor: num(cuenta.total) }, { concepto: "Con teléfono", valor: num(cuenta.conTelefono) }],
-              }}
-            />
-            <StatCard
-              etiqueta="Unidos al grupo" valor={num(cuenta.unidos)} contexto={cuenta.total ? `${pct((cuenta.unidos / cuenta.total) * 100)} de los registrados` : undefined}
-              info={{
-                ayuda: "Los registrados que el equipo marcó como unidos al grupo de WhatsApp.",
-                formula: "Registrados marcados «Unido» ÷ registrados",
-                componentes: () => [
-                  { concepto: "Unidos", valor: num(cuenta.unidos) }, { concepto: "No unidos", valor: num(cuenta.noUnidos), signo: "+" },
-                  { concepto: "Sin revisar", valor: num(cuenta.sinRevisar), signo: "+", nota: "nadie miró todavía" }, { concepto: "Registrados", valor: num(cuenta.total), signo: "=" },
-                ],
-              }}
-            />
-            <StatCard
-              etiqueta="No unidos" valor={num(cuenta.noUnidos)} contexto={`${num(cuenta.noUnidosContactados)} ya contactados`}
-              info={{
-                ayuda: "Los que se revisó y todavía no entraron al grupo. Los contactados son los que ya recibieron un mensaje para unirse.",
-                formula: "Registrados marcados «No unido»",
-              }}
-            />
-            <StatCard
-              etiqueta="Sin revisar" valor={num(cuenta.sinRevisar)} contexto="nadie marcó si entraron al grupo"
-              info={{
-                ayuda: "Los registrados que no están marcados ni como unidos ni como no unidos: lo que falta revisar contra el grupo.",
-                formula: "Registrados − unidos − no unidos",
-              }}
-            />
+      <div className="crm-t fm-t">
+        <Card className="crm-t__card">
+          {/* Todo en una barra, como el CRM: el título ya está arriba, en la barra de la app. */}
+          <div className="crm-t__barra">
+            <VistasGuardadas pantalla="formularios" todas="Todos los registros" extra={{ "cols-formularios": aLista(cols.visibles.filter((k) => k !== "nombre")) }} />
+            <Filtro etiqueta="Webinar" todos="Elegí un webinar" valor={sel} opciones={opcionesFiltro} onCambiar={(x) => cambiar({ webinar: x || ultimo, marca: null }, { pag: null })} />
+            {!enCruce && (
+              <>
+                <div className="crm-t__buscar">
+                  <Input icono={<Search size={16} />} value={q} onChange={(ev) => setQ(ev.target.value)} placeholder="Buscar por nombre, mail, teléfono, UTM o respuesta" aria-label="Buscar registros" />
+                </div>
+              </>
+            )}
+            <div className="crm-t__acciones">
+              <Tabs
+                valor={v.seccion as "registros" | "cruce"} onChange={(x) => cambiar({ seccion: x === "registros" ? null : x })}
+                opciones={[{ valor: "registros", texto: "Registros" }, { valor: "cruce", texto: "Cruce con la agenda" }]}
+              />
+              {!enCruce && <ConfigColumnas todas={COLUMNAS} visibles={cols.visibles} alternar={cols.alternar} mover={cols.mover} restaurar={cols.restaurar} compacto />}
+              <Button sm variante="ghost" icono={<RefreshCw size={15} />} aria-label="Actualizar" onClick={() => { void cargarResumen(); if (sel) void cargarRegistros(sel, true); }} title="Volver a leer la tabla: entran registros nuevos solos desde la landing" />
+              <CopiarLink />
+              {puedeEditar && <Button sm variante="secondary" icono={<FileSpreadsheet size={15} />} title="Traer las hojas del Excel de Yari" onClick={() => setImportando(true)}>Importar</Button>}
+            </div>
           </div>
 
-          <BarraDelLector
-            lector={lector} registros={deEsteWebinar} visibles={filasVisibles}
-            filtro={filtroLector} onFiltro={(f) => cambiar({ lector: f || null }, { pag: null })}
-            puedeEditar={puedeEditar} onMarcarUnidos={marcarUnidos} onCopiar={copiarTexto}
-          />
-
-          <Card style={{ padding: 0 }}>
-            <div className="wb-personas__cabeza">
-              <div className="toolbar" style={{ marginBottom: 0 }}>
-                <Filtro etiqueta="Webinar" todos="Elegí un webinar" valor={sel} opciones={opcionesFiltro} onCambiar={(x) => cambiar({ webinar: x || ultimo, marca: null }, { pag: null })} />
-                <Input icono={<Search size={18} />} value={q} onChange={(ev) => setQ(ev.target.value)} placeholder="Buscá por nombre, mail, teléfono, UTM o respuesta…" aria-label="Buscar registros" />
-                <span className="spacer" />
-                <Button sm variante="ghost" icono={<RefreshCw size={15} />} onClick={() => { void cargarResumen(); if (sel) void cargarRegistros(sel, true); }} title="Volver a leer la tabla: entran registros nuevos de la landing todo el tiempo">Actualizar</Button>
-                <ConfigColumnas todas={COLUMNAS} visibles={cols.visibles} alternar={cols.alternar} mover={cols.mover} restaurar={cols.restaurar} />
-              </div>
-              <div className="row-wrap" style={{ marginTop: "var(--space-3)" }}>
-                {MARCAS.map((m) => (
-                  <Chip key={m.valor || "todos"} activo={v.marca === m.valor} title={m.ayuda}
-                    onClick={() => cambiar({ marca: m.valor || null }, { pag: null })}
-                    count={m.valor === "" ? cuenta.total : m.valor === "unido" ? cuenta.unidos : m.valor === "no-unido" ? cuenta.noUnidos : m.valor === "sin-revisar" ? cuenta.sinRevisar : m.valor === "contactado" ? cuenta.contactados : cuenta.total - cuenta.contactados}>
+          {enCruce ? (
+            <CruceFormularios webinar={sel === "todos" ? "" : sel} nombreDelWebinar={nombreDelWebinar} />
+          ) : (
+            <>
+              <div className="crm-t__filtros">
+                {MARCAS.filter((m) => m.valor).map((m) => (
+                  <Chip key={m.valor} activo={v.marca === m.valor} title={m.ayuda}
+                    onClick={() => cambiar({ marca: v.marca === m.valor ? null : m.valor }, { pag: null })}
+                    count={m.valor === "unido" ? cuenta.unidos : m.valor === "no-unido" ? cuenta.noUnidos : m.valor === "sin-revisar" ? cuenta.sinRevisar : m.valor === "contactado" ? cuenta.contactados : cuenta.total - cuenta.contactados}>
                     {m.texto}
                   </Chip>
                 ))}
+                <span className="t-sm t-subtle t-num crm-t__cuenta">
+                  {num(filasOrdenadas.length)}
+                  {filasOrdenadas.length !== deEsteWebinar.length ? ` de ${num(deEsteWebinar.length)}` : ""}
+                  {" "}{deEsteWebinar.length === 1 ? "registro" : "registros"}
+                </span>
+                {filtroLector && (
+                  <span className="crm-t__pastilla">
+                    <span className="t-subtle">Lector:</span>
+                    <span className="truncate">{filtroLector === "dentro" ? "En el grupo" : filtroLector === "fuera" ? "No están" : "Sin teléfono"}</span>
+                    <button type="button" onClick={() => cambiar({ lector: null }, { pag: null })} aria-label="Quitar el filtro del lector"><X size={13} /></button>
+                  </span>
+                )}
+                {conFiltro.map((k) => (
+                  <span key={k} className="crm-t__pastilla">
+                    <span className="t-subtle">{porClave[k].titulo}:</span>
+                    <span className="truncate">{textoDeFiltro(filtros[k], (x) => (porClave[k].fecha ? textoFecha(x) : x))}</span>
+                    <button type="button" onClick={() => cambiarFiltro(k, null)} aria-label={`Quitar el filtro de ${porClave[k].titulo}`}><X size={13} /></button>
+                  </span>
+                ))}
+                {!ordenDeSiempre && (
+                  <span className="crm-t__pastilla">
+                    <span className="t-subtle">Orden:</span>
+                    <span className="truncate crm-t__orden">
+                      {ordenes.map((o) => (
+                        <span key={o.clave}>{porClave[o.clave]?.titulo}{o.desc ? <ArrowDown size={12} aria-label="de mayor a menor" /> : <ArrowUp size={12} aria-label="de menor a mayor" />}</span>
+                      ))}
+                    </span>
+                    <button type="button" onClick={() => ordenar(ORDEN_FORM_POR_DEFECTO)} aria-label="Volver al orden de siempre"><X size={13} /></button>
+                  </span>
+                )}
+                {hayAlgo && <button type="button" className="link t-sm" onClick={limpiar}>Limpiar todo</button>}
+                {sinGrupoAtado && (
+                  <span className="t-sm t-subtle fm-lector-linea">
+                    <MessageCircle size={14} aria-hidden /> Este webinar no tiene grupo de WhatsApp atado
+                    {puedeEditar && lector.webinar && <> · <Link href={`/webinars/${encodeURIComponent(lector.webinar.id)}`} className="link">Atarlo</Link></>}
+                  </span>
+                )}
               </div>
-            </div>
-            <DataTable
-              filas={filasVisibles} columnas={columnas} porPagina={50}
-              orden={tabla.orden} onOrden={tabla.onOrden} pagina={tabla.pagina} onPagina={tabla.onPagina}
-              onFila={(r) => setDetalle(r.id)} etiquetaFila={(r) => `Ver el detalle de ${r.nombre || r.email}`}
-              vacio={
-                cargandoEste ? <Empty icono={<RefreshCw size={22} />} titulo="Cargando los registros…" texto="Se leen de la base de a un webinar." />
-                : deEsteWebinar.length === 0 ? (
-                  <Empty
-                    icono={<Users size={22} />} titulo={datos.estado === "sin-tabla" ? "La tabla todavía no está creada" : "Todavía no hay registros de este webinar"}
-                    texto={datos.estado === "sin-tabla" ? "Corré supabase/registros-webinar.sql en Supabase." : "Entran solos desde la landing. Los de los webinars anteriores se traen con «Importar del Excel»."}
-                    accion={puedeEditar && datos.estado !== "sin-tabla" ? <Button onClick={() => setImportando(true)} icono={<FileSpreadsheet size={16} />}>Importar del Excel</Button> : undefined}
-                  />
-                ) : (
-                  <Empty icono={<Search size={22} />} titulo="Nadie coincide con los filtros" texto="Probá con otro estado o con otra búsqueda."
-                    accion={<Button onClick={() => { setQ(""); cambiar({ marca: null, lector: null }); }}>Limpiar los filtros</Button>} />
-                )
-              }
-            />
-          </Card>
-          {sel === "todos" && <p className="t-sm t-subtle">Estás viendo todos los webinars juntos: con muchos registros tarda en cargar. Para el trabajo de todos los días, elegí uno.</p>}
-        </div>
-      )}
+
+              <DataTable
+                filas={filasOrdenadas} columnas={columnas} porPagina={50}
+                alto={720} pagina={paginaDeURL(v.pag) - 1} onPagina={(p) => cambiar({ pag: String(p + 1) })}
+                onFila={(r) => setDetalle(r.id)} etiquetaFila={(r) => `Ver el detalle de ${r.nombre || r.email}`}
+                vacio={
+                  cargandoEste ? <Empty icono={<RefreshCw size={22} />} titulo="Cargando los registros…" texto="Se leen de la base de a un webinar." />
+                  : deEsteWebinar.length === 0 ? (
+                    <Empty
+                      icono={<Users size={22} />} titulo={datos.estado === "sin-tabla" ? "La tabla todavía no está creada" : "Todavía no hay registros de este webinar"}
+                      texto={datos.estado === "sin-tabla" ? "Corré supabase/registros-webinar.sql en Supabase." : "Entran solos desde la landing. Los de los webinars anteriores se traen con «Importar del Excel»."}
+                      accion={puedeEditar && datos.estado !== "sin-tabla" ? <Button onClick={() => setImportando(true)} icono={<FileSpreadsheet size={16} />}>Importar del Excel</Button> : undefined}
+                    />
+                  ) : (
+                    <Empty icono={<Search size={22} />} titulo="Nadie coincide con los filtros" texto="Probá sacando algún filtro."
+                      accion={<Button onClick={limpiar}>Limpiar todo</Button>} />
+                  )
+                }
+              />
+            </>
+          )}
+        </Card>
+        {sel === "todos" && !enCruce && <p className="t-sm t-subtle">Estás viendo todos los webinars juntos: con muchos registros tarda en cargar. Para el trabajo de todos los días, elegí uno.</p>}
+      </div>
 
       {importando && <ImportarFormularios onCerrar={() => setImportando(false)} onListo={(m) => { setImportando(false); toast(m); }} />}
       {detalle && (() => {
