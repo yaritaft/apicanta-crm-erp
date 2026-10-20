@@ -234,3 +234,46 @@ test("el CSV con un renglón en negativo (PayPal): es un reembolso, no una fila 
   assert.equal(r.reembolsos[0].monto, 40);
   assert.deepEqual(r.reembolsos[0].referenciasCobro, ["T2", "T1"].filter((x) => x === "T2" || x === "T1"));
 });
+
+/* Export de Whop del 20/10: los reembolsos quedan con estado «paid» y subestado «refunded» (o «partially_refunded»). Pedir
+   `status=refunded` no los traía: tres reembolsos (Benjamin Castillo, Santiago Torres, Martin Kishaba) no llegaban solos. */
+test("Whop: un pago reembolsado es el que tiene subestado «refunded» o «partially_refunded», un monto devuelto o estado «refunded»", async () => {
+  const { esReembolsoDeWhop } = await import("@/lib/pasarelas-api");
+  assert.equal(esReembolsoDeWhop({ id: "a", status: "paid", substatus: "refunded" }), true);
+  assert.equal(esReembolsoDeWhop({ id: "b", status: "paid", substatus: "partially_refunded", refunded_amount: 480 }), true);
+  assert.equal(esReembolsoDeWhop({ id: "c", status: "refunded" }), true);
+  assert.equal(esReembolsoDeWhop({ id: "d", status: "paid", refunded_amount: 40 }), true);
+  assert.equal(esReembolsoDeWhop({ id: "e", status: "paid", substatus: "succeeded" }), false, "un cobro común no es un reembolso");
+  assert.equal(esReembolsoDeWhop({ id: "f", status: "paid", refunded_amount: 0 }), false);
+  assert.equal(esReembolsoDeWhop({ id: "g", status: "open", substatus: "failed" }), false);
+});
+
+test("Whop: los reembolsos se traen de la lista de pagos cobrados y de la de reembolsados, sin repetir ninguno", async () => {
+  const { reembolsosDeWhop } = await import("@/lib/pasarelas-api");
+  const t = (iso: string) => Math.floor(Date.parse(iso) / 1000);
+  const cobrados = [
+    { id: "pay_normal", status: "paid", substatus: "succeeded", final_amount: 300, currency: "usd", paid_at: t("2026-10-15T15:00:00Z") },
+    { id: "pay_xib", status: "paid", substatus: "refunded", final_amount: 1000, refunded_amount: 1000, refunded_at: t("2026-10-08T18:52:51Z"), currency: "usd", paid_at: t("2026-10-02T22:42:04Z") },
+    { id: "pay_4q8", status: "paid", substatus: "refunded", final_amount: 500, refunded_amount: 500, refunded_at: t("2026-10-16T21:29:49Z"), currency: "usd", paid_at: t("2026-10-16T16:06:09Z") },
+  ];
+  const reembolsados = [{ id: "pay_xib", status: "refunded", final_amount: 1000, refunded_amount: 1000, refunded_at: t("2026-10-08T18:52:51Z"), currency: "usd" }];
+  const antes = process.env.WHOP_API_KEY;
+  const fetchOriginal = globalThis.fetch;
+  const pedidos: string[] = [];
+  process.env.WHOP_API_KEY = "clave-de-prueba";
+  globalThis.fetch = (async (url: unknown) => {
+    const u = String(url); pedidos.push(u);
+    const lista = u.includes("status=refunded") ? reembolsados : u.includes("status=paid") ? cobrados : [];
+    return new Response(JSON.stringify({ data: lista, pagination: { total_pages: 1 } }), { status: 200, headers: { "content-type": "application/json" } });
+  }) as typeof fetch;
+  try {
+    const r = await reembolsosDeWhop(new Date("2026-09-20T00:00:00Z"));
+    assert.deepEqual(r.map((x) => x.referencia).sort(), ["reembolso:pay_4q8", "reembolso:pay_xib"], "el normal no, y el que sale en las dos listas, una sola vez");
+    assert.deepEqual(r.find((x) => x.referencia === "reembolso:pay_4q8")?.referenciasCobro, ["pay_4q8"]);
+    assert.equal(r.find((x) => x.referencia === "reembolso:pay_4q8")?.monto, 500);
+    assert.ok(pedidos.some((u) => u.includes("status=paid")) && pedidos.some((u) => u.includes("status=refunded")));
+  } finally {
+    globalThis.fetch = fetchOriginal;
+    if (antes === undefined) delete process.env.WHOP_API_KEY; else process.env.WHOP_API_KEY = antes;
+  }
+});

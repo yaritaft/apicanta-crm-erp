@@ -484,7 +484,7 @@ function NuevoArqueo({ e, onCerrar, onListo, traerAlAbrir = false }: { e: Estado
             )}
           </span>
           <span role="cell" data-titulo="Último arqueo" className="t-num t-muted">{s?.anterior !== undefined ? money(s.anterior, moneda) : "—"}</span>
-          <span role="cell" data-titulo="Cobró" className="t-num t-muted" title="Lo cobrado por esta cuenta desde el último arqueo, neto de su comisión">{s?.entro ? enSuMoneda(s.entro, true) : "—"}</span>
+          <span role="cell" data-titulo="Cobró (neto)" className="t-num t-muted" title="Lo cobrado por esta cuenta desde el último arqueo, neto de su comisión">{s?.entro ? enSuMoneda(s.entro, true) : "—"}</span>
           <span role="cell" data-titulo="Pases" className="t-num t-muted" title="Lo que recibió de otras cuentas menos lo que les mandó">{s?.pases ? enSuMoneda(s.pases, true) : "—"}</span>
           <span role="cell" data-titulo="Salió" className="t-num t-muted" title="Lo que salió de esta cuenta desde el último arqueo: los gastos que dicen de qué cuenta se pagaron, los retiros y las devoluciones (lo que volvió, como un reembolso, suma)">
             {s?.salio ? enSuMoneda(-s.salio, true) : "—"}
@@ -539,7 +539,7 @@ function NuevoArqueo({ e, onCerrar, onListo, traerAlAbrir = false }: { e: Estado
         <div className="arqueo-fila arqueo-fila--cabeza" role="row">
           <span role="columnheader">Cuenta</span>
           <span role="columnheader">Último arqueo</span>
-          <span role="columnheader">Cobró</span>
+          <span role="columnheader" title="Lo cobrado por la cuenta, neto de la comisión de la pasarela: es lo que entra de verdad. Una planilla que cuenta el bruto da más.">Cobró (neto)</span>
           <span role="columnheader">Pases</span>
           <span role="columnheader">Salió</span>
           <span role="columnheader">Tendría que haber</span>
@@ -559,7 +559,7 @@ function NuevoArqueo({ e, onCerrar, onListo, traerAlAbrir = false }: { e: Estado
       </div>
       {previo && (
         <p className="t-sm t-subtle arqueo-nota">
-          «Tendría que haber» es lo del último arqueo más lo que cobró la cuenta, más o menos los movimientos entre cuentas
+          «Tendría que haber» es lo del último arqueo más lo que cobró la cuenta (neto de la comisión de la pasarela: una planilla que cuenta el bruto da más), más o menos los movimientos entre cuentas
           {hayPases ? "" : " (todavía no hay ninguno cargado desde entonces)"} y menos los retiros, las devoluciones y los gastos que dicen de qué cuenta
           salieron. Un gasto que no dice la cuenta (o los sueldos y las comisiones) no se descuenta de ninguna: en la cuenta desde la que
           se pagó va a sobrar eso. El control que tiene que dar es el del total.

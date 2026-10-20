@@ -655,26 +655,45 @@ export function reembolsoDeWhop(p: Obj): ReembolsoCrudo | null {
   };
 }
 
+/** Whop deja el pago reembolsado con estado «paid» y subestado «refunded» (o «partially_refunded»), no con estado «refunded»: por eso
+ *  pedir `status=refunded` no traía los reembolsos de verdad (el export de Whop del 20/10 lo mostró: tres reembolsos que la app no veía). */
+export function esReembolsoDeWhop(p: Obj): boolean {
+  const sub = txt(p.substatus);
+  return txt(p.status) === "refunded" || sub === "refunded" || sub === "partially_refunded" || (num(p.refunded_amount) ?? 0) > 0;
+}
+
 export async function reembolsosDeWhop(desde: Date): Promise<ReembolsoCrudo[]> {
   const clave = process.env.WHOP_API_KEY;
   if (!clave) return [];
-  const salida: ReembolsoCrudo[] = [];
-  for (let pagina = 1; pagina <= 5; pagina++) {
-    const r = await fetch(`https://api.whop.com/api/v5/company/payments?per=50&status=refunded&page=${pagina}`, {
-      headers: { Authorization: `Bearer ${clave}` }, cache: "no-store",
-    });
-    const data = await json(r);
-    if (!r.ok) throw rechazo("Whop (reembolsos)", r, data);
-    const estas = (data.data ?? []) as Obj[];
-    let hayNuevos = false;
-    for (const p of estas) {
-      const x = reembolsoDeWhop(p);
-      if (x && Date.parse(x.fecha) >= desde.getTime() - 30 * 86400000) { salida.push(x); hayNuevos = true; }
+  const porId = new Map<string, ReembolsoCrudo>();
+  /* Primero lo que Whop marca «refunded» y después la lista de pagos cobrados (donde viven los reembolsos con subestado): un
+     reembolso se devuelve una vez aunque salga en las dos. En la lista de cobrados la mayoría no es un reembolso, así que se
+     recorre por la fecha del cobro (hasta 90 días antes de la ventana: se puede devolver semanas después). */
+  for (const estado of ["refunded", "paid"] as const) {
+    for (let pagina = 1; pagina <= (estado === "paid" ? 10 : 5); pagina++) {
+      const r = await fetch(`https://api.whop.com/api/v5/company/payments?per=50&status=${estado}&page=${pagina}`, {
+        headers: { Authorization: `Bearer ${clave}` }, cache: "no-store",
+      });
+      const data = await json(r);
+      if (!r.ok) throw rechazo("Whop (reembolsos)", r, data);
+      const estas = (data.data ?? []) as Obj[];
+      let hayNuevos = false;
+      for (const p of estas) {
+        if (!esReembolsoDeWhop(p)) continue;
+        const x = reembolsoDeWhop(p);
+        if (x && Date.parse(x.fecha) >= desde.getTime() - 30 * 86400000) {
+          hayNuevos = true;
+          if (!porId.has(x.referencia)) porId.set(x.referencia, x);
+        }
+      }
+      const paginas = num((data.pagination as Obj | undefined)?.total_pages) ?? 1;
+      if (estas.length === 0 || pagina >= paginas) break;
+      if (estado === "refunded") { if (!hayNuevos) break; continue; }
+      const masVieja = Number(estas[estas.length - 1].paid_at ?? estas[estas.length - 1].created_at ?? 0) * 1000;
+      if (masVieja && masVieja < desde.getTime() - 90 * 86400000) break;
     }
-    const paginas = num((data.pagination as Obj | undefined)?.total_pages) ?? 1;
-    if (estas.length === 0 || pagina >= paginas || !hayNuevos) break;
   }
-  return salida;
+  return [...porId.values()];
 }
 
 /** Lo que devolvió cada pasarela en la ventana. */
