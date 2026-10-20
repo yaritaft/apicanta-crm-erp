@@ -110,3 +110,28 @@ export async function ejecutarCruceAutomatico(db: SupabaseClient, opciones: { li
   }
   return res;
 }
+
+/** La clave del cruce en `cron_estado` (supabase/cron-estado.sql). */
+export const CLAVE_CRUCE = "cruce-formularios";
+
+export interface EstadoDelCruce {
+  ejecutadoEn: string;
+  ok: boolean;
+  resultado: Partial<ResumenCruceNube> & { error?: string };
+  ultimaUnionEn?: string | null;
+}
+
+/** Deja asentado cuándo corrió el cruce y qué hizo. Nunca rompe al cruce: sin la tabla (todavía no se corrió el SQL) sólo lo anota en el log. */
+export async function guardarEstadoDelCruce(db: SupabaseClient, r: ResumenCruceNube | { error: string }): Promise<void> {
+  const ahora = new Date().toISOString();
+  const fallo = "error" in r;
+  const fila: Record<string, unknown> = { clave: CLAVE_CRUCE, ejecutadoEn: ahora, ok: !fallo && r.errores.length === 0, resultado: r };
+  /* Una corrida sin nada nuevo es lo normal: sólo cuando une algo cambia «la última vez que unió». */
+  if (!fallo && r.unidos > 0) fila.ultimaUnionEn = ahora;
+  try {
+    const x = await db.from("cron_estado").upsert(fila, { onConflict: "clave" });
+    if (x.error) console.error("[cron/cruce-formularios] no pude guardar el estado:", x.error.message);
+  } catch (e) {
+    console.error("[cron/cruce-formularios] no pude guardar el estado:", e instanceof Error ? e.message : e);
+  }
+}

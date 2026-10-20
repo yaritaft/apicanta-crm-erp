@@ -35,6 +35,7 @@ import { entraEnTabla, esCompra, opcionesDe, tablasDe, ventaEsDeLlamada } from "
 import { etapaTrasEventos, eventosDeLlamada, leadDeSesion, type EventoEtapa } from "./etapas-auto";
 import { estadoDeAgenda, marcaDeAgenda, opcionDeCompraPara } from "./estados";
 import { personaDe } from "./persona";
+import type { OtroCamino } from "./pendientes-conciliar";
 import { extraConCorreccion, tituloPerfil, type CampoPerfil } from "./perfil";
 import { puedeCargarDevolucion, puedeDarDeBaja, puedeEditar, TIPOS_POR_DEFECTO, type MiAcceso } from "./permisos";
 import { esDevolucionConfirmada } from "./devoluciones";
@@ -1909,6 +1910,23 @@ export const acciones = {
     const { lista, nuevo } = registrar(e, "contacto", c.id, c.nombre, "actualizo", detalle);
     guardar({ ...e, contactos: e.contactos.map((x) => (x.id === c.id ? { ...x, ...cambios } : x)), actividad: lista });
     empujar({ tipo: "update", tabla: "contactos", ids: [c.id], cambios: cambios as Record<string, unknown> });
+    empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
+    return true;
+  },
+
+  /* ---------- «Vino por otro camino» (lib/pendientes-conciliar.ts) ----------
+     Alguien que agendó o compró sin pasar por el formulario de la landing (Setter, un referido…) no tiene
+     formulario que unirle: se anota en su ficha cómo llegó y sale de «Pendientes de conciliar». Con `null`
+     se deshace. Va en `extra.conciliacion`: no hace falta una columna nueva. */
+  marcarOtroCamino(contactoId: ID, otro: OtroCamino | null, detalle: string): boolean {
+    const e = snapshot();
+    const c = e.contactos.find((x) => x.id === contactoId);
+    if (!c || !puedo("contactos")) return false;
+    const extra: Record<string, unknown> = { ...(c.extra ?? {}) };
+    if (otro) extra.conciliacion = otro; else delete extra.conciliacion;
+    const { lista, nuevo } = registrar(e, "contacto", c.id, c.nombre, "actualizo", detalle);
+    guardar({ ...e, contactos: e.contactos.map((x) => (x.id === c.id ? { ...x, extra } : x)), actividad: lista });
+    empujar({ tipo: "update", tabla: "contactos", ids: [c.id], cambios: { extra } });
     empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
     return true;
   },

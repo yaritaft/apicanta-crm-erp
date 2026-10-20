@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { nubeServidor } from "@/lib/servidor";
-import { ejecutarCruceAutomatico } from "@/lib/cruce-nube";
+import { ejecutarCruceAutomatico, guardarEstadoDelCruce } from "@/lib/cruce-nube";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
@@ -12,6 +12,9 @@ export const maxDuration = 120;
    que el formulario sabía: el anuncio y el webinar. Las coincidencias dudosas
    (un nombre parecido) las sigue viendo una persona en Formularios → Cruce.
    Ver lib/cruce-auto.ts.
+
+   Cada corrida deja asentado en `cron_estado` cuándo fue y qué hizo (supabase/cron-estado.sql):
+   es lo que muestra Conciliación en Marketing y Finanzas.
 
    Corre en :05 y :35 para no pisarse con los de Meta, Calendly y pasarelas. */
 
@@ -28,10 +31,12 @@ export async function GET(req: Request) {
   try {
     const r = await ejecutarCruceAutomatico(db);
     console.log("[cron/cruce-formularios]", JSON.stringify(r));
+    await guardarEstadoDelCruce(db, r);
     return NextResponse.json(r, { status: r.errores.length ? 207 : 200 });
   } catch (e) {
     const error = e instanceof Error ? e.message : "No se pudo hacer el cruce.";
     console.error("[cron/cruce-formularios] fallo entero:", error);
+    await guardarEstadoDelCruce(db, { error });
     return NextResponse.json({ error }, { status: 502 });
   }
 }

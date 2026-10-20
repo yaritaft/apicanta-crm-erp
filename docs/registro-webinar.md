@@ -129,3 +129,16 @@ Cada media hora (`/api/cron/cruce-formularios`, en :05 y :35) la app une sola lo
 Quedan sin cruzar, a propósito, los registros de quienes nunca agendaron ni compraron: son la inmensa mayoría y se quedan en Formularios.
 La lógica pura está en `lib/cruce-auto.ts` y la lectura y escritura en `lib/cruce-nube.ts`. Pruebas: `pruebas/cruce-auto.test.ts` y
 `pruebas-estres/pasarelas/cruce-formularios-cron.test.ts`.
+
+### Lo que el cruce no une: «Pendientes de conciliar»
+
+El cruce automático sólo une lo seguro (mismo mail o mismo teléfono). Quien agendó o compró y no quedó unido a ningún formulario aparece, **por mes**, en:
+
+- **Finanzas → el mes → «Conciliar el origen…»** (un paso de revisar, después de validar los cobros): Aldana tilda el paso cuando la lista queda vacía.
+- **Marketing → pestaña «Conciliación»** (`/marketing?nivel=conciliacion&mes=2026-10`): la misma lista, con el selector de mes.
+
+Cada persona se resuelve de tres maneras: **Unir** con un formulario que se le parece (mismo mail o teléfono, o un nombre parecido, que es dudoso), **Buscar a mano** el formulario (por mail, teléfono o nombre) o **Vino por otro camino** (Setter, referido, orgánico, formulario de Meta sin landing, VSL u otro). Esto último se guarda en `contactos.extra.conciliacion` (`{camino, nota, por, en}`), no necesita columna nueva y se puede **Deshacer** desde «Marcadas por otro camino». Quien agendó por Setter o VSL tiene un botón de un clic. «No es» descarta un formulario para esa persona (`registros_webinar.descartados`).
+
+Quien concilia no tiene por qué leer la tabla de formularios (la política es del área Webinars): la pantalla le pregunta a `/api/conciliacion`, que antes comprueba el tipo de cuenta (Finanzas, Marketing o Webinars; nunca «sólo lo suyo») y contesta sólo los formularios que se parecen a las personas del mes, sin IP, navegador ni cookies. Unir y descartar piden poder editar.
+
+**Estado del cruce automático.** Cada corrida del cron deja su constancia en `cron_estado` (`supabase/cron-estado.sql`: una fila por proceso, con RLS prendida y sin políticas; sólo el servidor la escribe): cuándo corrió, si hubo errores, cuántos registros unió y la última vez que unió algo. La pantalla lo muestra («Al día», «Atrasado» si pasaron más de 90 minutos, «Falló» con el error). Sin la tabla el cruce corre igual y la pantalla avisa que falta la constancia.

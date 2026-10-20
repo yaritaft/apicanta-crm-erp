@@ -10,6 +10,7 @@ import { CajaVista } from "@/components/finanzas/vistas/CajaVista";
 import { ConciliacionVista } from "@/components/finanzas/vistas/ConciliacionVista";
 import { DetalleVista } from "@/components/finanzas/vistas/DetalleVista";
 import { ResultadosVista } from "@/components/finanzas/vistas/ResultadosVista";
+import { PendientesDeConciliar } from "@/components/conciliacion/PendientesDeConciliar";
 import { diasDeLaSemana, diasDelRango, semanaDe } from "@/lib/finanzas-pasos";
 import { diaDeNegocio } from "@/lib/dia-negocio";
 import type { Cadencia, Herramienta } from "@/lib/cierre-mes";
@@ -60,6 +61,9 @@ function HerramientaInterna({ h, cadencia, periodo, ahora }: { h: Herramienta; c
       return <DetalleVista embebido seccion="devoluciones" rangoFijo={rango} />;
     case "resultados":
       return <ResultadosVista embebido rangoFijo={rango} />;
+    case "origen":
+      /* Es una lista de un mes: el del paso, o el en curso cuando el paso es de un día o una semana. */
+      return <PendientesDeConciliar mes={cadencia === "mes" ? periodo : hoy.slice(0, 7)} />;
     case "liquidacion":
       return <LiquidacionMes onVerPersona={(id) => router.push(`/equipo?seccion=equipo&persona=${id}`)} />;
     case "cobros": {

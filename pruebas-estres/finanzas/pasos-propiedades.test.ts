@@ -30,7 +30,7 @@ import type { Cuota, EstadoApp, Movimiento, Traspaso } from "@/lib/types";
 
 const SEMILLAS = 150;
 const IDS_MES = [
-  "ventas-completas", "cobros-atar", "cobros-validar", "cuotas-mes", "pases", "arqueo", "gastos",
+  "ventas-completas", "cobros-atar", "cobros-validar", "m-origen", "cuotas-mes", "pases", "arqueo", "gastos",
   "liq-revisar", "liq-pagar", "m-profit", "m-reporte", "m-kpis-ceo", "m-software", "m-manual-ventas", "cerrar",
 ];
 const SOLO_DUENOS = ["liq-revisar", "liq-pagar", "cerrar"];

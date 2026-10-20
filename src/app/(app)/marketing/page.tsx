@@ -19,6 +19,10 @@ import { ordenAURL, ordenDeURL, useBusquedaURL, useEscribirURL, useParamsURL } f
 import { useToast } from "@/components/ui/Toast";
 import { useEstado, useSync } from "@/lib/store";
 import { money, num, pct } from "@/lib/format";
+import { PantallaPendientes } from "@/components/conciliacion/PendientesDeConciliar";
+import { usePendientesDelMes } from "@/components/conciliacion/usePendientes";
+import { esPeriodo } from "@/lib/periodos";
+import { mesDeNegocio } from "@/lib/dia-negocio";
 import { filasMeta, primerDiaConDatos, totalesMeta, type FilaMeta, type MetricasMeta, type NivelMeta } from "@/lib/metricas";
 import { DetalleAnuncio, type FormatoPlata } from "@/components/marketing/DetalleAnuncio";
 import { ESTADOS, posicionEstado } from "@/components/marketing/estados";
@@ -33,8 +37,8 @@ import { ESTADOS, posicionEstado } from "@/components/marketing/estados";
    lead se llega a su anuncio. */
 
 type Nivel = "campanias" | "conjuntos" | "anuncios";
-type Vista = Nivel | "resumen";
-const VISTAS: readonly Vista[] = ["campanias", "conjuntos", "anuncios", "resumen"];
+type Vista = Nivel | "resumen" | "conciliacion";
+const VISTAS: readonly Vista[] = ["campanias", "conjuntos", "anuncios", "resumen", "conciliacion"];
 const esVista = (v: string | null): v is Vista => v !== null && (VISTAS as readonly string[]).includes(v);
 
 const NIVEL_META: Record<Nivel, NivelMeta> = { campanias: "campania", conjuntos: "conjunto", anuncios: "anuncio" };
@@ -230,7 +234,7 @@ function definirColumnas(
   return cols;
 }
 
-type CambiosURL = Partial<Record<"nivel" | "campania" | "conjunto" | "anuncio" | "ver", string | null>>;
+type CambiosURL = Partial<Record<"nivel" | "campania" | "conjunto" | "anuncio" | "ver" | "mes", string | null>>;
 
 /* Los filtros de las tablas también van en la URL (lib/useParamsURL), como
    el nivel, la campaña y el conjunto: el link se guarda o se manda y se ve
@@ -261,7 +265,11 @@ export default function Marketing() {
   const [vistaInicial] = useState<Vista>(() => (params.get("meta") ? "resumen" : "campanias"));
   const nivelURL = params.get("nivel");
   const vista: Vista = esVista(nivelURL) ? nivelURL : vistaInicial;
-  const nivel: Nivel | null = vista === "resumen" ? null : vista;
+  const nivel: Nivel | null = vista === "resumen" || vista === "conciliacion" ? null : vista;
+  /* La conciliación es de un mes (no del rango del resto de la pantalla): ?mes=aaaa-mm, y por defecto el mes en curso. */
+  const mesURL = params.get("mes");
+  const mesConciliacion = esPeriodo(mesURL) ? mesURL : mesDeNegocio(Date.now());
+  const conciliacion = usePendientesDelMes(mesConciliacion, vista === "conciliacion");
   const campaniaId = params.get("campania");
   const conjuntoId = params.get("conjunto");
   const anuncioId = params.get("anuncio");
@@ -489,18 +497,23 @@ export default function Marketing() {
     <div className="stack-5">
       <PageHead
         titulo="Marketing"
-        sub="Lo que invertís y qué te devuelve: por campaña, por conjunto y por anuncio."
+        sub={vista === "conciliacion"
+          ? "Quién agendó o compró y todavía no tiene su formulario atado: sin eso, la venta no se atribuye a ningún anuncio."
+          : "Lo que invertís y qué te devuelve: por campaña, por conjunto y por anuncio."}
         acciones={
           <>
-            <DateRangePicker
-              value={rango} minDate={primerDia} onApply={setRango}
-              footerNota="Días calendario · zona horaria de Argentina"
-            />
+            {vista !== "conciliacion" && (
+              <DateRangePicker
+                value={rango} minDate={primerDia} onApply={setRango}
+                footerNota="Días calendario · zona horaria de Argentina"
+              />
+            )}
             <CopiarLink sm={false} />
           </>
         }
       />
 
+      {vista !== "conciliacion" && (
       <div className="grid-stats">
         <StatCard
           hero etiqueta={`Inversión · ${rangoSub(rango)}`} valor={M(tot.inversion)}
@@ -558,6 +571,7 @@ export default function Marketing() {
           }}
         />
       </div>
+      )}
 
       <Tabs
         valor={vista}
@@ -567,8 +581,13 @@ export default function Marketing() {
           { valor: "conjuntos", texto: `Conjuntos · ${num(filtradas.conjuntos.length)}` },
           { valor: "anuncios", texto: `Anuncios · ${num(filtradas.anuncios.length)}` },
           { valor: "resumen", texto: "Resumen" },
+          { valor: "conciliacion", texto: conciliacion.carga === "listo" && vista === "conciliacion" ? `Conciliación · ${num(conciliacion.resumen.total)}` : "Conciliación" },
         ]}
       />
+
+      {vista === "conciliacion" && (
+        <PantallaPendientes datos={conciliacion} onMes={(m) => navegar({ mes: m === mesDeNegocio(Date.now()) ? null : m })} />
+      )}
 
       {nivel && (
         <div className="stack-3">

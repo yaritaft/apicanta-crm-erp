@@ -304,9 +304,17 @@ function pasosDelMesCompleto(e: EstadoApp, mes: string, { ahora, esDueno, cheque
       detalle: `El profit neto de ${nombre} va en US$ ${Math.round(p.netoCC).toLocaleString("es-AR")} sobre lo cobrado. Revisalo antes de pasárselo a Nahuel, Agustín y Yari.` },
   );
   const manuales = MANUALES.mes.map((x) => manual(x));
+  /* Cada venta y cada llamada del mes con el formulario que llenó la persona: sin eso la venta no se atribuye a ningún anuncio.
+     Va después de validar los cobros: primero se sabe qué se vendió y se cobró, y después de dónde vino. Es de revisar (la lista
+     vive en la pantalla, con su botón de unir): lo tilda quien la dejó vacía. */
+  const origen = manual({
+    id: "m-origen", area: "ventas", titulo: "Conciliar el origen: cada venta y cada llamada con su formulario", tipo: "revisable", herramienta: { tipo: "origen" },
+    detalle: `Las personas que agendaron o compraron en ${nombre} y no tienen su formulario atado. El cruce automático une lo seguro; el resto se une a mano, se busca el formulario o se marca que vino por otro camino (Setter, un referido…).`,
+  });
 
   /* El pago del equipo es «asegurar que se pague en tiempo y forma». */
-  const lista = [...calculados, profit, ...manuales];
+  const iCobros = calculados.findIndex((x) => x.id === "cobros-validar");
+  const lista = [...calculados.slice(0, iCobros + 1), origen, ...calculados.slice(iCobros + 1), profit, ...manuales];
   const terminado = mes < mesDeNegocio(ahora);
   const cerrada = mesesCerrados(e).has(mes);
   const tildado = (x: PasoCierre) => (x.tipo === "manual" || x.tipo === "revisable") && !!chequeos[claveChequeo("mes", mes, x.id)];

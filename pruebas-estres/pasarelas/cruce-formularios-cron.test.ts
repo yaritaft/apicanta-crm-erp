@@ -77,3 +77,29 @@ test("correrlo de nuevo no repite nada", async () => {
   assert.equal(j2.unidos, 0);
   assert.equal(j2.contactosCompletados, 0);
 });
+
+test("cada corrida deja su constancia en cron_estado; sin la tabla, el cruce corre igual", async () => {
+  const auth = `Bearer ${process.env.CRON_SECRET}`;
+  /* Sin la tabla (todavía no se corrió supabase/cron-estado.sql): el cruce no se cae. */
+  sembrar();
+  assert.equal((await llamar(auth)).status, 200);
+
+  nube.nube.declarar("cron_estado", [["clave"]]);
+  sembrar();
+  nube.nube.tablas.set("cron_estado", []);
+  const primera = await llamar(auth);
+  assert.equal(primera.status, 200);
+  const fila = () => nube.nube.filas("cron_estado").find((x) => x.clave === "cruce-formularios")!;
+  const f1 = fila();
+  assert.equal(f1.ok, true);
+  assert.equal((f1.resultado as { unidos: number }).unidos, 3);
+  assert.ok(f1.ultimaUnionEn, "unió algo: queda cuándo");
+
+  /* Una corrida sin nada nuevo se anota igual, pero «la última vez que unió algo» sigue siendo la de antes. */
+  const antes = f1.ultimaUnionEn;
+  await llamar(auth);
+  const f2 = fila();
+  assert.equal((f2.resultado as { unidos: number }).unidos, 0);
+  assert.equal(f2.ultimaUnionEn, antes);
+  assert.equal(nube.nube.filas("cron_estado").length, 1, "una sola fila por proceso");
+});

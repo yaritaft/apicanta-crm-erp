@@ -54,7 +54,9 @@ export type Herramienta =
   | { tipo: "fijos" }
   | { tipo: "devoluciones" }
   | { tipo: "liquidacion" }
-  | { tipo: "resultados" };
+  | { tipo: "resultados" }
+  /* Conciliación del origen: las personas del mes sin su formulario atado (components/conciliacion). */
+  | { tipo: "origen" };
 
 /** Quién tildó un paso y cuándo. */
 export interface Chequeo {

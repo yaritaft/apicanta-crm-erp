@@ -93,7 +93,7 @@ test("el mes: los pasos juntos, toda la lista de Aldana adentro, y cerrar espera
   const e = vacio();
   const lista = ids(e, "mes", "2026-09");
   assert.deepEqual(lista, [
-    "ventas-completas", "cobros-atar", "cobros-validar", "cuotas-mes", "pases", "arqueo", "gastos",
+    "ventas-completas", "cobros-atar", "cobros-validar", "m-origen", "cuotas-mes", "pases", "arqueo", "gastos",
     "liq-revisar", "liq-pagar", "m-profit", "m-reporte", "m-kpis-ceo", "m-software", "m-manual-ventas", "cerrar",
   ]);
   /* Lo que era el mismo trabajo en varias filas ya no está suelto. */

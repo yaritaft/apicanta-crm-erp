@@ -32,15 +32,24 @@ export interface DatosCruce {
   ventas: Pick<Venta, "id" | "contactoId" | "contactoNombre" | "fecha">[];
 }
 
+/** Quién es la persona de una venta: la venta apunta a un lead (o directo a un contacto) y el lead a su contacto. */
+export function personaDeVenta(
+  v: Pick<Venta, "id" | "contactoId">,
+  lead: ReadonlyMap<string, DatosCruce["leads"][number]>,
+  contacto: ReadonlyMap<string, Contacto>,
+) {
+  const l = v.contactoId ? lead.get(v.contactoId) : undefined;
+  const c = (v.contactoId ? contacto.get(v.contactoId) : undefined) ?? (l?.contactoId ? contacto.get(l.contactoId) : undefined);
+  return { l, c, id: c?.id ?? (l ? `lead:${l.id}` : `venta:${v.id}`) };
+}
+
 /** Las personas que agendaron más las que compraron, una por contacto. */
 export function personasDeAgendaYVentas(d: Omit<DatosCruce, "registros">): PersonaAgenda[] {
   const personas = new Map<string, PersonaAgenda>(personasDeAgenda(d.contactos, d.sesiones as Sesion[]).map((p) => [p.id, p]));
   const lead = new Map(d.leads.map((l) => [l.id, l]));
   const contacto = new Map(d.contactos.map((c) => [c.id, c]));
   for (const v of d.ventas) {
-    const l = v.contactoId ? lead.get(v.contactoId) : undefined;
-    const c = (v.contactoId ? contacto.get(v.contactoId) : undefined) ?? (l?.contactoId ? contacto.get(l.contactoId) : undefined);
-    const id = c?.id ?? (l ? `lead:${l.id}` : `venta:${v.id}`);
+    const { l, c, id } = personaDeVenta(v, lead, contacto);
     const emails = [...new Set([claveEmail(c?.email), claveEmail(l?.email)].filter((m): m is string => Boolean(m)))];
     const ya = personas.get(id);
     if (ya) { for (const m of emails) if (!ya.emails.includes(m)) ya.emails.push(m); continue; }

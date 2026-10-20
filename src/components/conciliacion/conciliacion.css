@@ -1,0 +1,60 @@
+/* Pendientes de conciliar (Marketing y Finanzas). Clases con prefijo pc-. */
+
+.pc-barra { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-3) var(--space-5); }
+.pc-mes { display: inline-flex; align-items: center; gap: var(--space-2); }
+.pc-mes__nombre { font-size: 18px; font-weight: 700; letter-spacing: -0.01em; color: var(--ink); min-width: 9.5em; text-align: center; }
+.pc-barra > .pc-mes__nombre { text-align: left; }
+.pc-cruce { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); min-width: 0; }
+
+.pc-cabeza { padding: var(--space-4) var(--space-4) var(--space-3); display: flex; flex-direction: column; gap: var(--space-3); }
+.pc-filtros { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.pc-filtros__sep { width: 1px; height: 20px; background: var(--border); margin: 0 var(--space-1); }
+.pc-filtros__busca { margin-left: auto; width: min(320px, 100%); }
+.pc-vacio { padding: var(--space-5) var(--space-4); }
+
+.pc-lista { display: flex; flex-direction: column; }
+.pc-fila {
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr) auto; gap: var(--space-3) var(--space-5);
+  align-items: start; padding: var(--space-4); border-top: 1px solid var(--border);
+}
+.pc-persona { display: flex; flex-direction: column; gap: 2px; min-width: 0; overflow-wrap: anywhere; }
+.pc-nombre {
+  align-self: flex-start; border: 0; background: none; padding: 0; font: inherit; font-weight: 600; color: var(--ink);
+  text-align: left; cursor: pointer; border-radius: var(--radius-sm);
+}
+.pc-nombre:hover { text-decoration: underline; }
+.pc-nombre:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.pc-eventos { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+
+.pc-propuestas { display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; }
+.pc-prop {
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 190px) auto; gap: var(--space-3); align-items: center;
+  padding: var(--space-2) var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface-000);
+}
+.pc-prop__datos { display: flex; flex-direction: column; gap: 1px; min-width: 0; overflow-wrap: anywhere; }
+.pc-prop__cual { display: flex; flex-direction: column; gap: 4px; align-items: flex-start; }
+.pc-prop__botones { display: flex; gap: var(--space-2); justify-content: flex-end; }
+.pc-acciones { display: flex; flex-direction: column; gap: var(--space-2); align-items: stretch; }
+
+.pc-extra {
+  grid-column: 1 / -1; display: flex; flex-direction: column; gap: var(--space-2);
+  padding: var(--space-3); border-radius: var(--radius-md); background: var(--surface-000); border: 1px dashed var(--border);
+}
+.pc-extra__fila { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.pc-extra__fila > :first-child:not(button) { flex: 1 1 260px; }
+.pc-extra__lista { display: flex; flex-direction: column; gap: var(--space-2); }
+
+.pc-marcados__cabeza {
+  display: flex; width: 100%; align-items: center; justify-content: space-between; gap: var(--space-3);
+  padding: var(--space-3) var(--space-4); border: 0; background: none; font: inherit; cursor: pointer; text-align: left;
+}
+.pc-marcados__cabeza:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
+.pc-marcado { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); padding: var(--space-3) var(--space-4); border-top: 1px solid var(--border); }
+
+@media (max-width: 1000px) {
+  .pc-fila { grid-template-columns: minmax(0, 1fr); }
+  .pc-acciones { flex-direction: row; flex-wrap: wrap; }
+  .pc-prop { grid-template-columns: minmax(0, 1fr); }
+  .pc-prop__botones { justify-content: flex-start; }
+  .pc-filtros__busca { margin-left: 0; width: 100%; }
+}
