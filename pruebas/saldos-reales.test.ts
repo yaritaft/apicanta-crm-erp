@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { controlarSaldos, quePasa, saldoDeBilleteraEn, type SaldoReal, type Transferencia } from "@/lib/saldos-reales";
+import { controlarSaldos, explicarConPendientes, quePasa, saldoDeBilleteraEn, type PendientesDeBanco, type SaldoReal, type Transferencia } from "@/lib/saldos-reales";
 import { cuentaDeGasto, gastosSinCuenta, saldosEsperados } from "@/lib/traspasos";
 import { ESPERAS_DE_TRON, saldoDeMercury, saldoDeStripe, saldoDeTrust, saldosReales } from "@/lib/pasarelas-api";
 import { GET as rutaDeSaldos } from "@/app/api/pasarelas/saldos/route";
@@ -193,6 +193,160 @@ test("saldosReales: lo que no está conectado, lo que falla y lo que sólo se sa
   /* Pedir sólo una; una desconocida se ignora. */
   const c = await conRespuestas({ TRUST_WALLET_ADDRESS: MI_BILLETERA }, rutas, () => saldosReales(["proc_trust", "proc_inventada"]));
   assert.deepEqual(c.r.saldos.map((s) => s.cuentaId), ["proc_trust"]); assert.deepEqual(c.r.errores, []);
+});
+
+/* ---------- Lo que el banco todavía no asentó (el caso del 20/10: Mercury daba +3.339 y nadie lo podía explicar desde la app) ---------- */
+
+/* Mercury arrancó el arqueo con 120.000; desde entonces se cargaron 5.547 de gastos pagados desde Mercury: los editores de YouTube (1.267, una
+   transferencia todavía pending), compras con la tarjeta (2.072, que bajan el saldo recién cuando se paga) y 2.208 que el banco ya debitó.
+   La app esperaba 114.453; el banco dice 117.792: la diferencia (3.339) es exactamente lo que está en camino. */
+const gastosDelBanco = () => [
+  gasto("editores", 1267, DIA(10, 20), { cuenta: "Mercury" }),
+  gasto("tarjeta", 2072, DIA(10, 19), { cuenta: "Mercury" }),
+  gasto("debitado", 2208, DIA(10, 15), { cuenta: "Mercury" }),
+];
+const eMercury = () => estado(gastosDelBanco(), [{ procesadorId: "proc_mercury", monto: 120000 }]);
+const AHORA = "2026-10-20T18:00:00.000Z";
+const enCamino = (extra: Partial<PendientesDeBanco> = {}): PendientesDeBanco => ({ salidas: 1267, nSalidas: 1, entradas: 0, nEntradas: 0, tarjeta: 2072, ...extra });
+
+test("Mercury: si la diferencia es justo lo que el banco todavía no asentó, el control dice «da, con US$ X por debitar» y no alarma", () => {
+  const e = eMercury();
+  /* Las dos cosas juntas: la salida pending (1.267) y la tarjeta (2.072). */
+  let c = controlarSaldos(e, [real("proc_mercury", 117792, { pendientes: enCamino() })], AHORA);
+  let f = c.filas[0];
+  assert.equal(f.esperado, 114453); assert.equal(f.diferencia, 3339);
+  assert.equal(f.lectura, "da-con-pendientes"); assert.equal(c.hayAlarma, false, "plata en camino no es una alarma");
+  assert.equal(f.explicadoPor!.porDebitar, 3339); assert.equal(f.explicadoPor!.salidas, 1267); assert.equal(f.explicadoPor!.tarjeta, 2072);
+  const frase = quePasa(f);
+  assert.match(frase, /^Da, con US\$\s*3\.339,00 todavía por debitar/);
+  assert.match(frase, /US\$\s*1\.267,00 de una salida que el banco todavía no asentó/);
+  assert.match(frase, /US\$\s*2\.072,00 de lo gastado con la tarjeta de crédito, que baja el saldo recién cuando se paga/);
+  assert.ok(!/falta cargar/.test(frase), "no manda a cargar nada");
+  assert.deepEqual(f.pendientes, enCamino(), "la fila lleva lo que el banco tiene en camino para mostrarlo");
+
+  /* Sólo la salida pending: la frase no repite el monto. */
+  c = controlarSaldos(e, [real("proc_mercury", 115720, { pendientes: enCamino({ tarjeta: undefined }) })], AHORA);
+  assert.equal(c.filas[0].lectura, "da-con-pendientes"); assert.equal(c.filas[0].diferencia, 1267);
+  assert.equal(quePasa(c.filas[0]), "Da, con US$ 1.267,00 todavía por debitar (una salida que el banco todavía no asentó).");
+  /* Dos salidas pending. */
+  c = controlarSaldos(e, [real("proc_mercury", 115720, { pendientes: enCamino({ tarjeta: undefined, nSalidas: 2 }) })], AHORA);
+  assert.match(quePasa(c.filas[0]), /\(2 salidas que el banco todavía no asentó\)/);
+  /* Sólo la tarjeta (el pending no estaba en la lista pero la deuda sí): explica por sí sola. */
+  c = controlarSaldos(e, [real("proc_mercury", 116525, { pendientes: enCamino({ salidas: 0, nSalidas: 0 }) })], AHORA);
+  assert.equal(c.filas[0].lectura, "da-con-pendientes"); assert.equal(c.filas[0].explicadoPor!.salidas, 0);
+  assert.match(quePasa(c.filas[0]), /^Da, con US\$\s*2\.072,00 todavía por debitar \(lo gastado con la tarjeta/);
+  /* Con un dólar de diferencia todavía da (TOLERANCIA_DE_SALDO), con más no. */
+  c = controlarSaldos(e, [real("proc_mercury", 117792.9, { pendientes: enCamino() })], AHORA);
+  assert.equal(c.filas[0].lectura, "da-con-pendientes");
+  c = controlarSaldos(e, [real("proc_mercury", 117794.5, { pendientes: enCamino() })], AHORA);
+  assert.equal(c.filas[0].lectura, "sobra", "dos dólares y medio de más no se explican con lo que hay en camino"); assert.equal(c.hayAlarma, true);
+  assert.equal(c.filas[0].explicadoPor, undefined);
+  assert.match(quePasa(c.filas[0]), /más de lo que la app esperaba: falta cargar un cobro/);
+  /* Si lo en camino no coincide con nada, sigue la alarma de siempre. */
+  c = controlarSaldos(e, [real("proc_mercury", 118500, { pendientes: enCamino() })], AHORA);
+  assert.equal(c.filas[0].lectura, "sobra"); assert.equal(c.hayAlarma, true);
+  /* Una cuenta que ya daba sigue dando, con o sin pendientes. */
+  c = controlarSaldos(e, [real("proc_mercury", 114453, { pendientes: enCamino() })], AHORA);
+  assert.equal(c.filas[0].lectura, "da"); assert.equal(c.filas[0].explicadoPor, undefined);
+  /* Sin lo que está en camino (no se pudo leer) pasa lo de antes. */
+  c = controlarSaldos(e, [real("proc_mercury", 117792)], AHORA);
+  assert.equal(c.filas[0].lectura, "sobra"); assert.equal(c.filas[0].pendientes, undefined);
+});
+
+test("Mercury: un cobro pending que la app ya contó explica que falte, y explicarConPendientes elige lo menos posible", () => {
+  const e = eMercury();
+  /* La app contó un cobro de 500 que el banco todavía no acreditó: faltan 500 en el banco y no es un gasto sin cargar. */
+  const c = controlarSaldos(e, [real("proc_mercury", 113953, { pendientes: { salidas: 0, nSalidas: 0, entradas: 500, nEntradas: 1 } })], AHORA);
+  assert.equal(c.filas[0].lectura, "da-con-pendientes"); assert.equal(c.filas[0].diferencia, -500); assert.equal(c.hayAlarma, false);
+  assert.equal(quePasa(c.filas[0]), "Da, con US$ 500,00 todavía por acreditarse (un cobro que el banco no asentó).");
+  /* Las dos direcciones juntas: sobran 1.267 − 500. */
+  const ambas = explicarConPendientes(767, { salidas: 1267, nSalidas: 1, entradas: 500, nEntradas: 2 });
+  assert.equal(ambas!.porDebitar, 1267); assert.equal(ambas!.porAcreditar, 500);
+  /* Si una sola cosa alcanza, no se mezclan las demás aunque también sumen (gana la más sencilla). */
+  const una = explicarConPendientes(100, { salidas: 100, nSalidas: 1, entradas: 0, nEntradas: 0, tarjeta: 100 });
+  assert.equal(una!.salidas, 100); assert.equal(una!.tarjeta, 0);
+  assert.equal(explicarConPendientes(10, undefined), null);
+  assert.equal(explicarConPendientes(10, { salidas: 0, nSalidas: 0, entradas: 0, nEntradas: 0 }), null, "nada en camino, nada que explicar");
+});
+
+/* Las cuentas y los movimientos de Mercury como los manda el banco. */
+const movimientoDeMercury = (id: string, amount: number, status: string, extra: Record<string, unknown> = {}) => ({
+  id, amount, status, kind: "externalTransfer", counterpartyName: "Editor de YouTube", createdAt: "2026-10-20T14:00:00Z", postedAt: null, ...extra,
+});
+const cuentasDeMercury = [
+  { id: "chk", kind: "checking", currentBalance: 100000, availableBalance: 98733 },
+  { id: "sav", kind: "savings", currentBalance: 17792, availableBalance: 17792 },
+  { id: "card", kind: "creditCard", currentBalance: -2072, availableBalance: 8000 },
+];
+const transaccionesDeMercury: Record<string, unknown[]> = {
+  chk: [
+    movimientoDeMercury("t1", -1267, "pending"),                                                   // los editores: sale, todavía no se debitó
+    movimientoDeMercury("t2", -500, "sent", { postedAt: "2026-10-19T10:00:00Z" }),               // ya debitado: no está en camino
+    movimientoDeMercury("t3", -90, "failed"),                                                      // anulado: no es plata
+    movimientoDeMercury("t4", -300, "cancelled"),
+    movimientoDeMercury("t5", -2072, "pending", { kind: "creditCardPayment", counterpartyName: "Mercury IO Cashback Credit Card" }), // pago de la tarjeta: interno
+    movimientoDeMercury("t6", 40, "pending", { counterpartyName: "Cliente Pérez" }),             // entra, todavía sin acreditar
+  ],
+  sav: [movimientoDeMercury("t7", -33, "pending", { kind: "internalTransfer", counterpartyName: "Mercury Checking" })],
+};
+const rutasDeMercury = (u: string) => {
+  if (/\/account\/(\w+)\/transactions/.test(u)) return { cuerpo: { transactions: transaccionesDeMercury[/\/account\/(\w+)\//.exec(u)![1]] ?? [] } };
+  return { cuerpo: { accounts: cuentasDeMercury } };
+};
+
+test("saldoDeMercury lee los movimientos pending de las cuentas de plata: suma salidas y entradas por separado, sin lo anulado ni lo interno", async () => {
+  const m = await conRespuestas({ MERCURY_API_TOKEN: "abc" }, rutasDeMercury, () => saldoDeMercury());
+  assert.equal(m.r!.saldo, 117792);
+  assert.deepEqual(m.r!.pendientes, { salidas: 1267, nSalidas: 1, entradas: 40, nEntradas: 1, tarjeta: 2072 });
+  assert.match(m.r!.nota ?? "", /US\$\s*1\.267,00 en salidas todavía no debitadas \(1 movimiento pending\)/);
+  assert.match(m.r!.nota ?? "", /US\$\s*40,00 en entradas todavía no acreditadas/);
+  assert.match(m.r!.nota ?? "", /tarjetas de crédito de Mercury marcan −?US\$\s*2\.072,00/);
+  assert.ok(!/disponibles/.test(m.r!.nota ?? ""), "lo disponible (98.733 + 17.792) ya lo dicen los pending: no se repite");
+  /* Pregunta por cada cuenta de plata, no por la tarjeta, y mira sólo los últimos días. */
+  const transacciones = m.pedidos.filter((u) => u.includes("/transactions"));
+  assert.equal(transacciones.length, 2); assert.ok(transacciones.every((u) => !u.includes("/card/")));
+  assert.match(transacciones[0], /limit=500/);
+  const desde = /start=(\d{4}-\d{2}-\d{2})/.exec(transacciones[0])![1];
+  const dias = (Date.now() - Date.parse(desde)) / 86400000;
+  assert.ok(dias >= 13 && dias <= 16, `mira unos 14 días para atrás (miró ${dias})`);
+
+  /* Sin nada en camino (ni tarjeta): no hay «pendientes» que mostrar. */
+  const limpia = await conRespuestas({ MERCURY_API_TOKEN: "abc" }, (u) => (u.includes("/transactions") ? { cuerpo: { transactions: [] } } : { cuerpo: { accounts: [{ id: "chk", kind: "checking", currentBalance: 500, availableBalance: 500 }] } }), () => saldoDeMercury());
+  assert.equal(limpia.r!.pendientes, undefined); assert.equal(limpia.r!.nota, undefined);
+  /* El token completo de Mercury sirve también para los movimientos. */
+  const encabezados: string[] = [];
+  await conRespuestas({ MERCURY_API_TOKEN: "abc" }, (u, init) => { encabezados.push((init?.headers as Record<string, string>).Authorization); return rutasDeMercury(u); }, () => saldoDeMercury());
+  assert.ok(encabezados.length >= 3 && encabezados.every((h) => h === "Bearer secret-token:abc"));
+});
+
+test("saldoDeMercury: si los movimientos fallan, el saldo se devuelve igual y la nota lo dice; la regla extra de MERCURY_REGLAS_INTERNAS también se respeta", async () => {
+  const caidos = await conRespuestas({ MERCURY_API_TOKEN: "abc" }, (u) => (u.includes("/transactions") ? { status: 500, cuerpo: { message: "caído" } } : { cuerpo: { accounts: cuentasDeMercury } }), () => saldoDeMercury());
+  assert.equal(caidos.r!.saldo, 117792);
+  assert.deepEqual(caidos.r!.pendientes, { salidas: 0, nSalidas: 0, entradas: 0, nEntradas: 0, tarjeta: 2072 }, "la deuda de la tarjeta viene con las cuentas: se sabe igual");
+  assert.match(caidos.r!.nota ?? "", /No se pudieron leer los movimientos pendientes de Mercury \(Mercury \(movimientos de chk\) respondió 500/);
+  /* Cuando no se sabe qué está en camino, el control no explica nada: sigue la alarma. */
+  const c = controlarSaldos(eMercury(), [caidos.r!], AHORA);
+  assert.equal(c.filas[0].lectura, "sobra"); assert.equal(c.hayAlarma, true);
+  /* Y si la diferencia es justo la tarjeta, se explica aunque los movimientos no se hayan podido leer. */
+  const soloTarjeta = controlarSaldos(eMercury(), [{ ...caidos.r!, saldo: 116525 }], AHORA);
+  assert.equal(soloTarjeta.filas[0].lectura, "da-con-pendientes"); assert.equal(soloTarjeta.filas[0].explicadoPor!.salidas, 0);
+
+  const antes = process.env.MERCURY_REGLAS_INTERNAS;
+  process.env.MERCURY_REGLAS_INTERNAS = "editor de youtube";
+  try {
+    const m = await conRespuestas({ MERCURY_API_TOKEN: "abc" }, rutasDeMercury, () => saldoDeMercury());
+    assert.equal(m.r!.pendientes!.salidas, 0, "con la regla de Angelo, el pago a ese tercero ya no cuenta como salida en camino");
+  } finally { if (antes === undefined) delete process.env.MERCURY_REGLAS_INTERNAS; else process.env.MERCURY_REGLAS_INTERNAS = antes; }
+});
+
+test("de punta a punta: lo que lee saldosReales() de Mercury llega al control y lo explica", async () => {
+  const e = eMercury();
+  const r = await conRespuestas({ MERCURY_API_TOKEN: "abc" }, rutasDeMercury, () => saldosReales(["proc_mercury"]));
+  assert.deepEqual(r.r.errores, []);
+  const c = controlarSaldos(e, r.r.saldos, AHORA);
+  assert.equal(c.filas[0].lectura, "da-con-pendientes", "el 20/10 esto era una alarma que nadie podía explicar");
+  assert.equal(c.hayAlarma, false);
+  assert.match(quePasa(c.filas[0]), /^Da, con US\$\s*3\.339,00 todavía por debitar/);
 });
 
 test("la ruta de saldos no contesta nada sin una sesión del equipo (ni con basura)", async () => {

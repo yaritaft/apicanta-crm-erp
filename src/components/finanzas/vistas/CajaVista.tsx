@@ -15,7 +15,7 @@ import {
   MESES_DE_COLCHON, cajaEsperada, enOtros, runway, ultimoArqueo, type MovimientoCaja,
 } from "@/lib/caja";
 import { saldosEsperados } from "@/lib/traspasos";
-import { controlarSaldos, quePasa, type ControlDeSaldos, type RespuestaDeSaldos } from "@/lib/saldos-reales";
+import { controlarSaldos, explicarConPendientes, quePasa, textoDeLoPendiente, type ControlDeSaldos, type ExplicadoPorPendientes, type PendientesDeBanco, type RespuestaDeSaldos } from "@/lib/saldos-reales";
 import { traerSaldosReales } from "@/lib/saldos-cliente";
 import { nube } from "@/lib/supabase";
 import type { Arqueo, EstadoApp, Gasto, Moneda, Procesador, SaldoCuenta, Traspaso } from "@/lib/types";
@@ -343,9 +343,16 @@ function ControlDeSaldosCard({ e, onArquear }: { e: EstadoApp; onArquear: () => 
                 <span role="cell" className="cs-num t-num" title={f.nota}>{money(f.real, f.moneda)}</span>
                 <span role="cell" className="cs-num t-num t-muted">{f.esperado !== undefined ? money(f.esperado, f.moneda) : "—"}</span>
                 <span role="cell" className="cs-num t-num cs-dif">
-                  {f.lectura === "da" ? <Check size={16} aria-label="Da" /> : f.diferencia !== undefined ? `${f.diferencia > 0 ? "+" : "−"}${money(Math.abs(f.diferencia), f.moneda)}` : "—"}
+                  {f.lectura === "da" ? <Check size={16} aria-label="Da" />
+                    : f.lectura === "da-con-pendientes" ? (
+                      <>
+                        <Check size={16} aria-label="Da, con plata que el banco todavía no asentó" />
+                        {f.diferencia !== undefined && <span className="t-sm cs-dif__camino">{f.diferencia > 0 ? "+" : "−"}{money(Math.abs(f.diferencia), f.moneda)} en camino</span>}
+                      </>
+                    ) : f.diferencia !== undefined ? `${f.diferencia > 0 ? "+" : "−"}${money(Math.abs(f.diferencia), f.moneda)}` : "—"}
                 </span>
-                <span role="cell" className="t-sm t-muted">{quePasa(f)}{f.nota ? ` ${f.nota}` : ""}</span>
+                {/* Si lo que está en camino ya explica la diferencia, la frase lo dice con sus montos: la nota (que repite lo mismo) queda en el globito del saldo. */}
+                <span role="cell" className="t-sm t-muted">{quePasa(f)}{f.nota && f.lectura !== "da-con-pendientes" ? ` ${f.nota}` : ""}</span>
               </div>
             ))}
           </div>
@@ -383,7 +390,7 @@ function NuevoArqueo({ e, onCerrar, onListo, traerAlAbrir = false }: { e: Estado
   const [textos, setTextos] = useState<Record<string, string>>({});
   const [notas, setNotas] = useState("");
   /* Los saldos que trajo la app solos (no los escribió nadie): cuenta → de dónde y a qué hora. */
-  const [automaticos, setAutomaticos] = useState<Record<string, { fuente: string; al: string; nota?: string }>>({});
+  const [automaticos, setAutomaticos] = useState<Record<string, { fuente: string; al: string; nota?: string; pendientes?: PendientesDeBanco }>>({});
   const [leyendo, setLeyendo] = useState(false);
   const [avisos, setAvisos] = useState<string[]>([]);
 
@@ -428,9 +435,17 @@ function NuevoArqueo({ e, onCerrar, onListo, traerAlAbrir = false }: { e: Estado
       const nombre = (id: string) => e.procesadores.find((p) => p.id === id)?.nombre ?? id;
       const hora = (iso: string) => new Date(iso).toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "America/Argentina/Buenos_Aires" });
       setTextos((t) => ({ ...t, ...Object.fromEntries(r.saldos.map((x) => [x.cuentaId, escribirMonto(x.saldo)])) }));
-      setAutomaticos((a) => ({ ...a, ...Object.fromEntries(r.saldos.map((x) => [x.cuentaId, { fuente: x.fuente, al: x.al, nota: x.nota }])) }));
+      setAutomaticos((a) => ({ ...a, ...Object.fromEntries(r.saldos.map((x) => [x.cuentaId, { fuente: x.fuente, al: x.al, nota: x.nota, pendientes: x.pendientes }])) }));
       const nuevos: string[] = [];
       if (r.saldos.length) nuevos.push(`Traje ${r.saldos.length === 1 ? "el saldo" : `${r.saldos.length} saldos`} de ${r.saldos.map((x) => nombre(x.cuentaId)).join(", ")}${esHoy ? ` (a las ${hora(r.saldos[0].al)})` : ` al cierre del ${fechaLarga(fecha)}`}. Revisalos: son lo que hay de verdad.`);
+      for (const x of r.saldos) {
+        if (!x.pendientes) continue;
+        const esperado = porCuenta.get(x.cuentaId)?.esperado;
+        const dif = esperado === undefined ? null : Math.round((x.saldo - esperado) * 100) / 100;
+        const explicado = dif === null || Math.abs(dif) < 1 ? null : explicarConPendientes(dif, x.pendientes);
+        if (explicado) nuevos.push(`${nombre(x.cuentaId)} da con lo que la app esperaba: tiene ${textoDeLoPendiente(explicado, x.moneda)}.`);
+        else if (x.pendientes.nSalidas) nuevos.push(`${nombre(x.cuentaId)} tiene ${money(x.pendientes.salidas, x.moneda, 2)} en salidas que el banco todavía no debitó: si sobra plata, puede ser por eso.`);
+      }
       if (r.soloHoy.length) nuevos.push(`${r.soloHoy.map(nombre).join(", ")} sólo se leen de hoy: este arqueo es de otro día, contalos vos.`);
       if (r.sinConexion.length) nuevos.push(`${r.sinConexion.map(nombre).join(", ")} no está${r.sinConexion.length === 1 ? "" : "n"} conectada${r.sinConexion.length === 1 ? "" : "s"}: contala${r.sinConexion.length === 1 ? "" : "s"} vos.`);
       for (const x of r.errores) nuevos.push(`${nombre(x.cuentaId)}: ${x.mensaje}`);
@@ -459,6 +474,21 @@ function NuevoArqueo({ e, onCerrar, onListo, traerAlAbrir = false }: { e: Estado
     onListo(a);
   }
 
+  /* Si el saldo se trajo solo y no da con lo esperado, ¿es justo lo que el banco todavía no asentó? Entonces no falta cargar nada. */
+  const enCaminoDe = (p: Procesador): ExplicadoPorPendientes | null => {
+    const a = automaticos[p.id];
+    const esperadoDeLaCuenta = porCuenta.get(p.id)?.esperado;
+    const contado = textos[p.id]?.trim() ? leerMonto(textos[p.id]) : NaN;
+    if (!a?.pendientes || esperadoDeLaCuenta === undefined || !Number.isFinite(contado)) return null;
+    const dif = Math.round((contado - esperadoDeLaCuenta) * 100) / 100;
+    return Math.abs(dif) < 1 ? null : explicarConPendientes(dif, a.pendientes);
+  };
+  /* Cuánto de la diferencia del total es plata en camino (sólo las cuentas en la moneda del total). */
+  const totalEnCamino = Math.round(cuentas.reduce((suma, p) => {
+    const x = (p.moneda ?? "USD") === base ? enCaminoDe(p) : null;
+    return x ? suma + x.porDebitar - x.porAcreditar : suma;
+  }, 0) * 100) / 100;
+
   /* Una cuenta del arqueo. */
   const fila = (p: Procesador) => {
       const s = porCuenta.get(p.id);
@@ -469,11 +499,13 @@ function NuevoArqueo({ e, onCerrar, onListo, traerAlAbrir = false }: { e: Estado
       /* Lo contado contra lo que tendría que haber: el casillero se pinta
          (verde si da, ámbar si no) y adentro va el tilde o la diferencia. */
       const da = dif !== null && Math.abs(dif) < 1;
+      const enCamino = dif !== null && !da ? enCaminoDe(p) : null;
       /* En pesos la diferencia puede ser de millones: adentro va corta (−1,25 M) y entera al pasar el mouse. */
       const cuanto = dif === null ? 0 : Math.abs(dif);
-      const marca = dif === null || da ? ""
+      const marca = dif === null || da || enCamino ? ""
         : `${dif > 0 ? "+" : "−"}${cuanto >= 1e6 ? `${(cuanto / 1e6).toLocaleString("es-AR", { maximumFractionDigits: 2 })} M` : num(cuanto)}`;
       const dice = dif === null ? undefined : da ? "Da con lo que tendría que haber en esta cuenta"
+        : enCamino ? `Da, con ${textoDeLoPendiente(enCamino, moneda)}`
         : `${dif > 0 ? "Sobran" : "Faltan"} ${money(Math.abs(dif), moneda)} contra lo que tendría que haber en esta cuenta`;
       return (
         <div className="arqueo-fila" role="row" key={p.id}>
@@ -493,7 +525,7 @@ function NuevoArqueo({ e, onCerrar, onListo, traerAlAbrir = false }: { e: Estado
             {s?.esperado !== undefined ? money(s.esperado, moneda) : "—"}
           </span>
           <span
-            role="cell" className="arqueo-hay" title={dice} data-estado={dif === null ? undefined : da ? "da" : "difiere"}
+            role="cell" className="arqueo-hay" title={dice} data-estado={dif === null ? undefined : da || enCamino ? "da" : "difiere"}
             style={marca ? { "--marca": `${Math.round(marca.length * 6.5)}px` } as React.CSSProperties : undefined}
           >
             <InputMonto
@@ -501,7 +533,7 @@ function NuevoArqueo({ e, onCerrar, onListo, traerAlAbrir = false }: { e: Estado
               value={textos[p.id] ?? ""}
               onChange={(ev) => { setTextos({ ...textos, [p.id]: ev.target.value }); if (automaticos[p.id]) setAutomaticos(({ [p.id]: _x, ...resto }) => resto); }}
             />
-            {dif !== null && (da
+            {dif !== null && (da || enCamino
               ? <Check size={16} className="arqueo-hay__marca" aria-label={dice} />
               : <span className="arqueo-hay__marca" aria-label={dice}>{marca}</span>)}
           </span>
@@ -573,6 +605,13 @@ function NuevoArqueo({ e, onCerrar, onListo, traerAlAbrir = false }: { e: Estado
             {saldos.length > 0 && <Diferencia d={Math.round((total - esperado) * 100) / 100} M={M} />}
           </>
         ) : <span className="t-subtle">Es el primer arqueo: queda como punto de partida.</span>}
+        {totalEnCamino !== 0 && (
+          <span className="t-sm t-subtle arqueo-resumen__nota">
+            {totalEnCamino > 0
+              ? `Lo contado incluye ${M(totalEnCamino, 2)} que el banco todavía no debitó (salidas que ya cargaste): son parte de la diferencia y no falta cargar nada.`
+              : `Lo contado no incluye ${M(-totalEnCamino, 2)} que el banco todavía no acreditó (cobros que ya cargaste): son parte de la diferencia y no falta cargar nada.`}
+          </span>
+        )}
         {mov && mov.enCamino > 0 && (
           <span className="t-sm t-subtle arqueo-resumen__nota">
             El esperado ya descuenta {M(mov.enCamino)} que están en camino entre cuentas: salieron de una y todavía no se vieron llegar a la otra.

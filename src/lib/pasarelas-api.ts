@@ -4,7 +4,7 @@ import { cuentaDeContraparte, type Punta } from "./traspasos";
 import type { ReembolsoCrudo } from "./reembolsos";
 import { MOTIVO_LIQUIDACION_PROBABLE } from "./motivos";
 import { clasificarMercury, reglasExtraDeEntorno, type ResumenMercury } from "./mercury";
-import { FUENTES_DE_SALDO, saldoDeBilleteraEn, type ErrorDeSaldo, type RespuestaDeSaldos, type SaldoReal, type Transferencia } from "./saldos-reales";
+import { FUENTES_DE_SALDO, saldoDeBilleteraEn, type ErrorDeSaldo, type PendientesDeBanco, type RespuestaDeSaldos, type SaldoReal, type Transferencia } from "./saldos-reales";
 import { money } from "./format";
 
 /* ==================================================================
@@ -1207,21 +1207,48 @@ export async function saldoDeTrust(al?: Date): Promise<SaldoReal | null> {
   return saldo;
 }
 
-/** Lo que hay hoy en las cuentas del banco (las de crédito no cuentan: no son plata). */
+/* Cuántos días para atrás se miran los movimientos para encontrar los que siguen pending (el banco los asienta en 24 a 48 horas). */
+const DIAS_PARA_PENDIENTES_DE_MERCURY = 14;
+
+/** Lo que el banco tiene en camino en sus cuentas de plata: las salidas que todavía no debitó y las entradas que todavía no acreditó.
+ *  No se confía en un filtro de la API: se piden los movimientos recientes (como en `mercury()`) y se quedan los pending según las reglas de
+ *  lib/mercury.ts, que dejan afuera lo anulado y lo interno (el pago de la tarjeta, las subcuentas). */
+async function pendientesDeMercury(cabeceras: Record<string, string>, cuentas: Obj[]): Promise<Omit<PendientesDeBanco, "tarjeta">> {
+  const extras = reglasExtraDeEntorno(process.env.MERCURY_REGLAS_INTERNAS);
+  const q = new URLSearchParams({ limit: "500", start: new Date(Date.now() - DIAS_PARA_PENDIENTES_DE_MERCURY * 86400000).toISOString().slice(0, 10) });
+  const resultado = { salidas: 0, nSalidas: 0, entradas: 0, nEntradas: 0 };
+  const respuestas = await Promise.all(cuentas.filter((c) => c.id && !/credit/i.test(String(c.kind ?? ""))).map(async (c) => {
+    const r = await fetch(`https://api.mercury.com/api/v1/account/${String(c.id)}/transactions?${q}`, { headers: cabeceras, cache: "no-store" });
+    const data = await json(r);
+    if (!r.ok) throw rechazo(`Mercury (movimientos de ${String(c.id)})`, r, data);
+    return (data.transactions ?? []) as Record<string, unknown>[];
+  }));
+  for (const t of respuestas.flat()) {
+    if (clasificarMercury(t, extras).tipo !== "en-proceso") continue;
+    const monto = Number(t.amount);
+    if (!Number.isFinite(monto) || monto === 0) continue;
+    if (monto < 0) { resultado.salidas += -monto; resultado.nSalidas++; } else { resultado.entradas += monto; resultado.nEntradas++; }
+  }
+  return { salidas: dinero(resultado.salidas), nSalidas: resultado.nSalidas, entradas: dinero(resultado.entradas), nEntradas: resultado.nEntradas };
+}
+
+/** Lo que hay hoy en las cuentas del banco (las de crédito no cuentan: no son plata), con lo que el banco todavía no asentó. */
 export async function saldoDeMercury(): Promise<SaldoReal | null> {
   const crudo = process.env.MERCURY_API_TOKEN?.trim();
   if (!crudo) return null;
   const clave = crudo.startsWith("secret-token:") ? crudo : `secret-token:${crudo}`;
-  const r = await fetch("https://api.mercury.com/api/v1/accounts", { headers: { Authorization: `Bearer ${clave}` }, cache: "no-store" });
+  const cabeceras = { Authorization: `Bearer ${clave}` };
+  const r = await fetch("https://api.mercury.com/api/v1/accounts", { headers: cabeceras, cache: "no-store" });
   const data = await json(r);
   if (!r.ok) throw rechazo("Mercury (cuentas)", r, data);
-  let actual = 0, disponible = 0;
+  const cuentas = (data.accounts ?? []) as Obj[];
+  let actual = 0, disponible = 0, deudaDeTarjeta = 0;
   const tarjetas: string[] = [];
-  for (const c of ((data.accounts ?? []) as Obj[])) {
+  for (const c of cuentas) {
     if (/credit/i.test(String(c.kind ?? ""))) {
       /* La tarjeta no es plata: no se suma, pero lo que debe explica por qué el banco puede tener más de lo esperado (un gasto con tarjeta no baja el saldo hasta que se paga). */
       const deuda = Number(c.currentBalance);
-      if (Number.isFinite(deuda) && deuda !== 0) tarjetas.push(money(dinero(deuda), "USD", 2));
+      if (Number.isFinite(deuda) && deuda !== 0) { tarjetas.push(money(dinero(deuda), "USD", 2)); deudaDeTarjeta += Math.abs(deuda); }
       continue;
     }
     const saldo = Number(c.currentBalance);
@@ -1229,14 +1256,33 @@ export async function saldoDeMercury(): Promise<SaldoReal | null> {
     actual += saldo;
     disponible += Number.isFinite(Number(c.availableBalance)) ? Number(c.availableBalance) : saldo;
   }
+  /* Lo pending: si no se puede leer, el saldo se devuelve igual (es lo principal) y la nota lo dice. */
+  let pendientes: PendientesDeBanco | undefined;
+  let sinPendientes = "";
+  try {
+    const p = await pendientesDeMercury(cabeceras, cuentas);
+    pendientes = { ...p, ...(deudaDeTarjeta >= 0.005 ? { tarjeta: dinero(deudaDeTarjeta) } : {}) };
+  } catch (err) {
+    /* La deuda de la tarjeta se sabe igual (viene con las cuentas): si la diferencia es justo eso, se explica sola. */
+    if (deudaDeTarjeta >= 0.005) pendientes = { salidas: 0, nSalidas: 0, entradas: 0, nEntradas: 0, tarjeta: dinero(deudaDeTarjeta) };
+    sinPendientes = `No se pudieron leer los movimientos pendientes de Mercury (${err instanceof Error ? err.message : String(err)}): si el saldo no da, puede ser plata que el banco todavía no asentó.`;
+  }
   const dif = dinero(actual - disponible);
   const notas = [
-    Math.abs(dif) >= 0.01 ? `Mercury marca ${money(dinero(disponible), "USD", 2)} disponibles: la diferencia son movimientos que todavía no se acreditaron.` : "",
+    pendientes && pendientes.nSalidas
+      ? `${money(pendientes.salidas, "USD", 2)} en salidas todavía no debitadas (${pendientes.nSalidas === 1 ? "1 movimiento" : `${pendientes.nSalidas} movimientos`} pending): el banco las descuenta cuando las asienta.` : "",
+    pendientes && pendientes.nEntradas
+      ? `${money(pendientes.entradas, "USD", 2)} en entradas todavía no acreditadas (${pendientes.nEntradas === 1 ? "1 movimiento" : `${pendientes.nEntradas} movimientos`} pending).` : "",
+    /* Lo disponible descuenta las salidas pending (las entradas no suben hasta acreditarse): si son esas, ya está dicho y no se repite. */
+    Math.abs(dif) >= 0.01 && !(pendientes && Math.abs(dif - pendientes.salidas) < 0.01)
+      ? `Mercury marca ${money(dinero(disponible), "USD", 2)} disponibles: la diferencia son movimientos que todavía no se acreditaron.` : "",
     tarjetas.length ? `Las tarjetas de crédito de Mercury marcan ${tarjetas.join(" y ")} (no se suman: lo gastado con tarjeta baja el saldo recién cuando se paga).` : "",
+    sinPendientes,
   ].filter(Boolean).join(" ");
   return {
     cuentaId: "proc_mercury", saldo: dinero(actual), moneda: "USD", al: new Date().toISOString(), fuente: FUENTES_DE_SALDO.proc_mercury,
     ...(notas ? { nota: notas } : {}),
+    ...(pendientes && (pendientes.nSalidas || pendientes.nEntradas || pendientes.tarjeta) ? { pendientes } : {}),
   };
 }
 

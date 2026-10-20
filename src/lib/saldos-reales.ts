@@ -28,6 +28,22 @@ export interface SaldoReal {
   fuente: string;
   /* Algo que aclarar: lo que está pendiente o en camino. */
   nota?: string;
+  /* Lo que el banco todavía no asentó (sólo Mercury): explica una diferencia con lo que la app esperaba. */
+  pendientes?: PendientesDeBanco;
+}
+
+/* El saldo real es lo que el banco ya asentó. La app, en cambio, descuenta un gasto el día que se carga: si el banco todavía no lo
+   debitó (una transferencia pending, un gasto con la tarjeta que baja el saldo recién cuando se paga), el saldo real queda por encima de
+   lo esperado sin que falte cargar nada. Acá viaja lo que el banco tiene en camino para poder decirlo. Montos en positivo. */
+export interface PendientesDeBanco {
+  /* Salidas de plata (monto negativo) que el banco todavía no debitó, y cuántos movimientos son. */
+  salidas: number;
+  nSalidas: number;
+  /* Entradas que todavía no acreditó. */
+  entradas: number;
+  nEntradas: number;
+  /* Lo que se debe de la tarjeta de crédito: lo gastado con ella baja el saldo del banco recién cuando se paga. */
+  tarjeta?: number;
 }
 
 export interface ErrorDeSaldo { cuentaId: ID; mensaje: string }
@@ -78,7 +94,8 @@ export function saldoDeBilleteraEn(actualMicro: number, despues: readonly Transf
 /* Menos que esto de diferencia es lo mismo (centavos, redondeos). */
 export const TOLERANCIA_DE_SALDO = 1;
 
-export type Lectura = "da" | "sobra" | "falta" | "sin-punto-de-partida";
+/* «da-con-pendientes»: no es igual a lo esperado, pero la diferencia es justo lo que el banco todavía no asentó: no falta cargar nada. */
+export type Lectura = "da" | "da-con-pendientes" | "sobra" | "falta" | "sin-punto-de-partida";
 
 export interface FilaDeControl {
   cuentaId: ID;
@@ -92,6 +109,10 @@ export interface FilaDeControl {
   al: string;
   fuente: string;
   nota?: string;
+  /* Lo que el banco tiene en camino (sea o no lo que explica la diferencia). */
+  pendientes?: PendientesDeBanco;
+  /* Sólo con «da-con-pendientes»: qué parte de lo que está en camino explica la diferencia. */
+  explicadoPor?: ExplicadoPorPendientes;
 }
 
 export interface ControlDeSaldos {
@@ -111,10 +132,15 @@ export function controlarSaldos(e: EstadoApp, reales: readonly SaldoReal[], ahor
     const p = e.procesadores.find((x) => x.id === r.cuentaId);
     const esperado = esperados.get(r.cuentaId)?.esperado;
     const dif = esperado === undefined ? undefined : Math.round((r.saldo - esperado) * 100) / 100;
-    const lectura: Lectura = dif === undefined ? "sin-punto-de-partida" : Math.abs(dif) < TOLERANCIA_DE_SALDO ? "da" : dif > 0 ? "sobra" : "falta";
+    let lectura: Lectura = dif === undefined ? "sin-punto-de-partida" : Math.abs(dif) < TOLERANCIA_DE_SALDO ? "da" : dif > 0 ? "sobra" : "falta";
+    /* Si no da pero la diferencia es lo que el banco todavía no asentó, no es una alarma: es plata en camino. */
+    const explicadoPor = (lectura === "sobra" || lectura === "falta") && dif !== undefined ? explicarConPendientes(dif, r.pendientes) : null;
+    if (explicadoPor) lectura = "da-con-pendientes";
     return {
       cuentaId: r.cuentaId, nombre: p?.nombre ?? r.cuentaId, moneda: r.moneda, real: r.saldo, esperado, diferencia: dif,
       lectura, al: r.al, fuente: r.fuente, nota: r.nota,
+      ...(r.pendientes ? { pendientes: r.pendientes } : {}),
+      ...(explicadoPor ? { explicadoPor } : {}),
     };
   });
   return {
@@ -125,9 +151,65 @@ export function controlarSaldos(e: EstadoApp, reales: readonly SaldoReal[], ahor
   };
 }
 
+/* ---------- ¿Lo que el banco tiene en camino explica la diferencia? ---------- */
+
+export interface ExplicadoPorPendientes {
+  /* Lo que el banco todavía no debitó (salidas pendientes y tarjeta) y lo que todavía no acreditó. */
+  porDebitar: number;
+  porAcreditar: number;
+  /* Cuánto de lo por debitar son salidas pendientes y cuánto la tarjeta; y cuántas salidas son. */
+  salidas: number;
+  nSalidas: number;
+  tarjeta: number;
+  entradas: number;
+  nEntradas: number;
+}
+
+/** Si `diferencia` (lo que hay menos lo que la app esperaba) es justo lo que el banco tiene en camino (±TOLERANCIA_DE_SALDO), qué parte de eso es.
+    Una salida pendiente o lo gastado con la tarjeta que todavía no se pagó hacen que sobre; una entrada pendiente (que la app ya contó), que falte.
+    Se prueba con lo menos posible (una sola cosa antes que dos) para no explicar de más. */
+export function explicarConPendientes(diferencia: number, p: PendientesDeBanco | undefined): ExplicadoPorPendientes | null {
+  if (!p) return null;
+  const partes = [
+    { clave: "salidas" as const, valor: p.salidas, signo: 1 },
+    { clave: "tarjeta" as const, valor: p.tarjeta ?? 0, signo: 1 },
+    { clave: "entradas" as const, valor: p.entradas, signo: -1 },
+  ].filter((x) => x.valor >= 0.005);
+  const combinaciones: (typeof partes)[] = [];
+  for (let mascara = 1; mascara < 1 << partes.length; mascara++) combinaciones.push(partes.filter((_, i) => mascara & (1 << i)));
+  combinaciones.sort((a, b) => a.length - b.length);
+  for (const c of combinaciones) {
+    if (Math.abs(diferencia - c.reduce((a, x) => a + x.signo * x.valor, 0)) >= TOLERANCIA_DE_SALDO) continue;
+    const de = (clave: "salidas" | "tarjeta" | "entradas") => c.find((x) => x.clave === clave)?.valor ?? 0;
+    const salidas = de("salidas"), tarjeta = de("tarjeta"), entradas = de("entradas");
+    return {
+      porDebitar: Math.round((salidas + tarjeta) * 100) / 100, porAcreditar: entradas, salidas, tarjeta, entradas,
+      nSalidas: salidas ? p.nSalidas : 0, nEntradas: entradas ? p.nEntradas : 0,
+    };
+  }
+  return null;
+}
+
+/** «US$ 3.339,00 todavía por debitar (US$ 1.267,00 de una salida que el banco no asentó y US$ 2.072,00 de la tarjeta…)», para decir por qué da. */
+export function textoDeLoPendiente(x: ExplicadoPorPendientes, moneda: Moneda = "USD"): string {
+  const M = (n: number) => money(n, moneda, 2);
+  const debitar: { monto: number; que: string }[] = [];
+  if (x.salidas) debitar.push({ monto: x.salidas, que: `${x.nSalidas === 1 ? "una salida" : x.nSalidas > 1 ? `${x.nSalidas} salidas` : "salidas"} que el banco todavía no asentó` });
+  if (x.tarjeta) debitar.push({ monto: x.tarjeta, que: "lo gastado con la tarjeta de crédito, que baja el saldo recién cuando se paga" });
+  const trozos: string[] = [];
+  if (debitar.length) {
+    /* Con una sola cosa no se repite el monto; con dos, cada una dice el suyo. */
+    const detalle = debitar.length === 1 ? debitar[0].que : debitar.map((d) => `${M(d.monto)} de ${d.que}`).join(" y ");
+    trozos.push(`${M(x.porDebitar)} todavía por debitar (${detalle})`);
+  }
+  if (x.porAcreditar) trozos.push(`${M(x.porAcreditar)} todavía por acreditarse (${x.nEntradas === 1 ? "un cobro" : x.nEntradas > 1 ? `${x.nEntradas} cobros` : "cobros"} que el banco no asentó)`);
+  return trozos.join(" y ");
+}
+
 /** Lo que significa una diferencia, en una frase para quien carga las cosas. */
-export function quePasa(f: Pick<FilaDeControl, "lectura" | "diferencia" | "moneda" | "nombre">): string {
+export function quePasa(f: Pick<FilaDeControl, "lectura" | "diferencia" | "moneda" | "nombre" | "explicadoPor">): string {
   if (f.lectura === "da") return "Da con lo que la app esperaba.";
+  if (f.lectura === "da-con-pendientes") return f.explicadoPor ? `Da, con ${textoDeLoPendiente(f.explicadoPor, f.moneda)}.` : "Da con lo que la app esperaba.";
   if (f.lectura === "sin-punto-de-partida") return "Todavía no hay un arqueo de esta cuenta: con uno, la app compara.";
   const cuanto = money(Math.abs(f.diferencia ?? 0), f.moneda);
   return f.lectura === "falta"
