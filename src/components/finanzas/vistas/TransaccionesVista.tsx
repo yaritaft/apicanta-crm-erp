@@ -2,7 +2,7 @@
 
 import React, { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeftRight, Plus, Search } from "lucide-react";
+import { ArrowLeftRight, ClipboardPaste, Plus, Search } from "lucide-react";
 import { CabeceraVista } from "@/components/finanzas/vistas/CabeceraVista";
 import { Badge, Button, Card, Chip, Empty, Input, Select, StatCard } from "@/components/ui/ui";
 import { type Columna, DataTable } from "@/components/ui/DataTable";
@@ -11,6 +11,7 @@ import { useToast } from "@/components/ui/Toast";
 import { CopiarLink } from "@/components/ui/Filtros";
 import { FichaGasto } from "@/components/finanzas/FichaGasto";
 import { AsistenteGasto } from "@/components/finanzas/AsistenteGasto";
+import { CargaDeGastosMasiva } from "@/components/finanzas/CargaDeGastosMasiva";
 import { useAbrirFicha } from "@/components/ficha/abrir";
 import { acciones, useEstado } from "@/lib/store";
 import { diaDeNegocio } from "@/lib/dia-negocio";
@@ -102,6 +103,7 @@ export function TransaccionesVista({ embebido = false }: { embebido?: boolean })
 
   const [verId, setVerId] = useState<string | null>(null);
   const [asistente, setAsistente] = useState<{ gasto: Gasto | null } | null>(null);
+  const [masiva, setMasiva] = useState(false);
   const [borrar, setBorrar] = useState<Gasto | null>(null);
   const gVista = verId ? e.gastos.find((g) => g.id === verId) ?? null : null;
 
@@ -150,7 +152,13 @@ export function TransaccionesVista({ embebido = false }: { embebido?: boolean })
       <CabeceraVista embebido={embebido}
         titulo="Transacciones"
         sub="Todo lo que entró y salió, de todas las cuentas, en un solo lugar: cobros, gastos, devoluciones, lo que volvió y los pases entre cuentas."
-        acciones={<Button variante="primary" icono={<Plus size={16} />} onClick={() => setAsistente({ gasto: null })}>Cargar gasto o ingreso</Button>}
+        acciones={(
+          <div className="row-wrap">
+            <Button variante="secondary" icono={<ClipboardPaste size={16} />} onClick={() => setMasiva(true)}
+              title="Pegá las filas de una planilla de Excel y cargá muchos gastos de una vez.">Cargar varios</Button>
+            <Button variante="primary" icono={<Plus size={16} />} onClick={() => setAsistente({ gasto: null })}>Cargar gasto o ingreso</Button>
+          </div>
+        )}
       />
 
       <div className="grid-stats">
@@ -260,6 +268,20 @@ export function TransaccionesVista({ embebido = false }: { embebido?: boolean })
             toast(fuera
               ? `${que} ${editado ? "guardado" : "cargado"}. Es de ${nombrePeriodo(mesDelGasto)}: no entra en el mes que estás mirando.`
               : editado ? `${que} actualizado.` : `${que} cargado: ${g.concepto}.`, fuera ? "info" : undefined);
+          }}
+        />
+      )}
+
+      {masiva && (
+        <CargaDeGastosMasiva
+          e={e} onCerrar={() => setMasiva(false)}
+          onListo={({ loteId, cargados }) => {
+            setMasiva(false);
+            toast(
+              `Se ${cargados === 1 ? "cargó 1 gasto" : `cargaron ${cargados} gastos`}. Si no eran, los sacás todos juntos.`,
+              "ok",
+              { texto: "Deshacer", onClick: () => { const n = acciones.deshacerCargaDeGastos(loteId); toast(n ? `Se deshizo la carga: ${n} ${n === 1 ? "gasto" : "gastos"} menos.` : "Esa carga ya no estaba."); } },
+            );
           }}
         />
       )}

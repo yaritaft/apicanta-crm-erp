@@ -5,9 +5,11 @@ import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 import { Button, IconButton } from "./ui";
 
-export function Modal({ abierto, onCerrar, titulo, sub, children, pie, ancho }: {
+export function Modal({ abierto, onCerrar, titulo, sub, children, pie, ancho, xl }: {
   abierto: boolean; onCerrar: () => void; titulo: string; sub?: string;
   children: React.ReactNode; pie?: React.ReactNode; ancho?: boolean;
+  /* Casi todo el ancho de la pantalla: para una grilla de muchas columnas. */
+  xl?: boolean;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const fondo = useRef<HTMLDivElement>(null);
@@ -46,7 +48,7 @@ export function Modal({ abierto, onCerrar, titulo, sub, children, pie, ancho }: 
      a pantalla completa) y ningún contenedor con transform lo encierra. */
   return createPortal(
     <div className="modal-backdrop" ref={fondo} onMouseDown={(e) => { if (e.target === e.currentTarget) onCerrar(); }}>
-      <div className={`modal${ancho ? " modal--wide" : ""}`} role="dialog" aria-modal="true" aria-label={titulo} ref={ref}>
+      <div className={`modal${ancho ? " modal--wide" : ""}${xl ? " modal--xl" : ""}`} role="dialog" aria-modal="true" aria-label={titulo} ref={ref}>
         <div className="modal__head">
           <div style={{ minWidth: 0, flex: 1 }}>
             <h3 className="modal__title">{titulo}</h3>
@@ -63,14 +65,14 @@ export function Modal({ abierto, onCerrar, titulo, sub, children, pie, ancho }: 
 }
 
 /* Formulario dentro de un modal: Enter guarda, Esc cierra. */
-export function ModalForm({ abierto, onCerrar, onGuardar, titulo, sub, children, guardarTexto = "Guardar", ancho, puedeGuardar = true }: {
+export function ModalForm({ abierto, onCerrar, onGuardar, titulo, sub, children, guardarTexto = "Guardar", ancho, xl, puedeGuardar = true }: {
   abierto: boolean; onCerrar: () => void; onGuardar: () => void;
   titulo: string; sub?: string; children: React.ReactNode;
-  guardarTexto?: string; ancho?: boolean; puedeGuardar?: boolean;
+  guardarTexto?: string; ancho?: boolean; xl?: boolean; puedeGuardar?: boolean;
 }) {
   const submit = useCallback((e: React.FormEvent) => { e.preventDefault(); if (puedeGuardar) onGuardar(); }, [onGuardar, puedeGuardar]);
   return (
-    <Modal abierto={abierto} onCerrar={onCerrar} titulo={titulo} sub={sub} ancho={ancho}>
+    <Modal abierto={abierto} onCerrar={onCerrar} titulo={titulo} sub={sub} ancho={ancho} xl={xl}>
       <form onSubmit={submit} style={{ display: "contents" }}>
         {children}
         <div className="modal__foot" style={{ margin: "calc(var(--space-5) * -1)", marginTop: 4 }}>

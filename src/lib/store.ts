@@ -1234,6 +1234,35 @@ export const acciones = {
     return nuevo.id;
   },
 
+  /* Cargar muchos gastos de una vez (pegados de una planilla, lib/gastos-masivos.ts): una sola anotación en la actividad y la
+     escritura en lotes. Todos llevan el mismo `extra.cargaMasiva`, así se puede deshacer la carga entera. */
+  cargarGastosEnLote(datos: Omit<Gasto, "id">[], loteId: ID = nuevoId("lote")): { loteId: ID; ids: ID[] } {
+    if (datos.length === 0) return { loteId, ids: [] };
+    const e = snapshot();
+    const nuevos: Gasto[] = datos.map((d) => ({ ...d, id: nuevoId("gas"), extra: { ...d.extra, cargaMasiva: d.extra?.cargaMasiva ?? loteId } }));
+    const total = nuevos.reduce((a, g) => a + g.monto, 0);
+    const { lista, nuevo } = registrar(
+      e, "transaccion", loteId, "Carga de gastos", "creo",
+      `Se cargaron ${nuevos.length} ${nuevos.length === 1 ? "gasto" : "gastos"} de una planilla, por ${Math.round(total).toLocaleString("es-AR")} ${e.ajustes.monedaBase}.`,
+    );
+    guardar({ ...e, gastos: [...nuevos, ...e.gastos], actividad: lista });
+    empujarEnLotes("gastos", nuevos);
+    empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
+    return { loteId, ids: nuevos.map((g) => g.id) };
+  },
+
+  /* Deshacer una carga masiva: se van todos los gastos de ese lote (los que se editaron después también). */
+  deshacerCargaDeGastos(loteId: ID): number {
+    const e = snapshot();
+    const ids = e.gastos.filter((g) => g.extra?.cargaMasiva === loteId).map((g) => g.id);
+    if (ids.length === 0) return 0;
+    const { lista, nuevo } = registrar(e, "transaccion", loteId, "Carga de gastos", "elimino", `Se deshizo la carga de ${ids.length} ${ids.length === 1 ? "gasto" : "gastos"} de una planilla.`);
+    guardar({ ...e, gastos: e.gastos.filter((g) => g.extra?.cargaMasiva !== loteId), actividad: lista });
+    for (let i = 0; i < ids.length; i += 100) empujar({ tipo: "delete", tabla: "gastos", ids: ids.slice(i, i + 100) });
+    empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
+    return ids.length;
+  },
+
   actualizar<T extends { id: ID }>(coleccion: Coleccion, id: ID, cambios: Partial<T>, etiqueta: string, detalle?: string) {
     const e = snapshot();
     /* El closer no cancela, devuelve ni reactiva una venta (Yari, 02/10): la base

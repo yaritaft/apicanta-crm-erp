@@ -4351,3 +4351,34 @@ span.kpis__etiqueta:hover { color: var(--ink); text-decoration: none; }
 
 /* El selector Ventas | Resell encima de la tabla de llamadas (components/crm-tabla/CrmConResells.tsx). */
 .crm-grupos { margin-bottom: var(--space-3); }
+
+/* ---- Cargar varios gastos pegando de una planilla (components/finanzas/CargaDeGastosMasiva.tsx) ---- */
+.modal--xl { max-width: min(1320px, 96vw); }
+.gm-raiz { display: flex; flex-direction: column; gap: var(--space-4); min-width: 0; }
+.gm-pegar { width: 100%; resize: vertical; background: var(--surface-000); color: var(--ink); border: 1px dashed var(--border-strong); border-radius: var(--radius-md); padding: var(--space-3); font: inherit; font-size: 14px; line-height: 20px; }
+.gm-pegar:focus { outline: 2px solid var(--focus); outline-offset: 2px; }
+.gm-check { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; color: var(--ink-muted); white-space: nowrap; }
+.gm-check .gm-celda:not(.gm-celda--corta) { min-width: 200px; border-color: var(--border); }
+.gm-check .gm-celda--corta { border-color: var(--border); }
+.gm-columnas { display: flex; gap: var(--space-2); overflow-x: auto; padding-bottom: 4px; }
+.gm-columna { display: flex; flex-direction: column; gap: 4px; min-width: 140px; max-width: 200px; flex: 1 0 140px; }
+.gm-columna__muestra { font-size: 12px; color: var(--ink-subtle); }
+.gm-tabla { max-height: 46vh; overflow: auto; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface-100); }
+.gm-tabla table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 14px; }
+.gm-tabla th { position: sticky; top: 0; z-index: 1; background: var(--surface-200); color: var(--ink-muted); font-size: 12px; font-weight: 600; text-align: left; padding: 8px 6px; white-space: nowrap; border-bottom: 1px solid var(--border); }
+.gm-tabla td { padding: 2px 3px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+.gm-tabla .gm-num { text-align: right; }
+.gm-celda { width: 100%; min-width: 0; background: transparent; color: var(--ink); border: 1px solid transparent; border-radius: 6px; padding: 6px 6px; font: inherit; font-size: 14px; }
+.gm-tabla .gm-celda:hover { border-color: var(--border); }
+.gm-celda:focus { outline: 2px solid var(--focus); outline-offset: -1px; background: var(--surface-000); border-color: transparent; }
+select.gm-celda { background: var(--surface-100); }
+.gm-celda--num { text-align: right; font-variant-numeric: tabular-nums; }
+.gm-celda--corta { width: 78px; }
+.gm-celda--media { width: 240px; }
+.gm-celda--mal { border-color: var(--danger); background: var(--danger-soft); }
+.gm-fila--fuera td { opacity: .5; }
+.gm-fila--mal td:first-child { box-shadow: inset 3px 0 0 var(--warning); }
+.gm-estado { white-space: nowrap; font-size: 13px; padding-left: 6px; }
+.gm-problema { color: var(--warning); }
+.gm-vacia { padding: var(--space-5); text-align: center; color: var(--ink-subtle); }
+
