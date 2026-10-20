@@ -1386,13 +1386,13 @@ button.cuadro-com__persona:hover { color: var(--brand); text-decoration: underli
    ============================================================ */
 .ficha-fondo {
   position: fixed; inset: 0; z-index: 110; display: flex; align-items: center; justify-content: center;
-  padding: 3vh 2vw; background: var(--overlay);
+  padding: 0; background: var(--overlay);
   backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); animation: fade 150ms ease-out;
 }
+/* Pantalla completa (20/10, pedido de Juan Cruz: «que sea pantalla completa para redistribuir mejor la info»). */
 .ficha {
-  width: min(1180px, 100%); height: min(920px, 100%); display: flex; flex-direction: column; overflow: hidden;
-  background: var(--surface-000); border: 1px solid var(--border-strong); border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-lg); animation: pop 200ms cubic-bezier(.2,.8,.3,1);
+  width: 100%; height: 100%; display: flex; flex-direction: column; overflow: hidden;
+  background: var(--surface-000); border: 0; border-radius: 0; animation: fade 160ms ease-out;
 }
 .ficha__head {
   display: flex; align-items: center; gap: var(--space-4); flex: none; flex-wrap: wrap;
@@ -1401,6 +1401,11 @@ button.cuadro-com__persona:hover { color: var(--brand); text-decoration: underli
 .ficha__nombre { font-family: var(--font-display); font-size: 22px; line-height: 28px; font-weight: 700; color: var(--ink); letter-spacing: -.01em; margin: 2px 0 0; }
 .ficha__acciones { display: flex; align-items: center; gap: var(--space-3); margin-left: auto; }
 .ficha__cuerpo { flex: 1; min-height: 0; display: grid; grid-template-columns: 320px minmax(0, 1fr); }
+.ficha__cuerpo--chat { grid-template-columns: 320px minmax(0, 1fr) 320px; }
+.ficha__chat { display: flex; flex-direction: column; gap: var(--space-3); min-height: 0; padding: var(--space-5) var(--space-4) var(--space-4); border-left: 1px solid var(--border); background: var(--surface-100); }
+.ficha__chat-tit { flex: none; font-size: 13px; font-weight: 600; color: var(--ink-muted); }
+.ficha__chat .chat { flex: 1; min-height: 0; }
+.ficha__chat .chat__lista { flex: 1; min-height: 0; overflow-y: auto; }
 .ficha__lado {
   overflow-y: auto; padding: var(--space-5); display: flex; flex-direction: column; gap: var(--space-5);
   border-right: 1px solid var(--border); background: var(--surface-100);

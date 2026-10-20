@@ -1,19 +1,14 @@
 "use client";
 
-import { ContratoCard } from "@/components/contratos/ContratoCard";
-import { AccesosAlumno } from "@/components/contratos/AccesosAlumno";
 import React, { useEffect, useMemo, useState } from "react";
 import {
   Copy, GraduationCap, Mail, MessageCircle, Pencil, Phone, Plus, ShoppingBag, X,
 } from "lucide-react";
 import {
-  Avatar, Badge, Bar, Button, Chip, Empty, IconButton, Select, Tabs,
+  Avatar, Badge, Button, Empty, IconButton, Select, Tabs,
 } from "@/components/ui/ui";
 import { Confirmar } from "@/components/ui/Modal";
 import { DatosExtra } from "@/components/ui/CamposExtra";
-import { EditarAlumno, VentaDelAlumno } from "@/components/alumnos/Servicio";
-import { ESTADO_ALUMNO, ESTADOS_ALUMNO, cuandoEmpezo } from "@/components/alumnos/comun";
-import { alumnoDeVenta, etapaDelAlumno, etapasDeServicio } from "@/lib/alumnos";
 import { useToast } from "@/components/ui/Toast";
 import { copiarTexto } from "@/components/ui/Telefono";
 import { enlaceWhatsapp, numeroParaCopiar } from "@/lib/contacto-telefono";
@@ -21,11 +16,12 @@ import { AsistenteVenta } from "@/components/ventas/AsistenteVenta";
 import { desdeVenta, FormularioVenta, type BorradorVenta } from "@/components/ventas/FormularioVenta";
 import { RegistrarPago } from "@/components/cobros/RegistrarPago";
 import { ChatEquipo } from "./ChatEquipo";
+import { VistaServicio } from "./HojaServicio";
 import { HistorialPersona } from "./HistorialPersona";
 import { UtmsPersona } from "./UtmsPersona";
 import { TarjetaVenta } from "./TarjetaVenta";
 import { VistaLlamadas } from "./VistaLlamadas";
-import { CabezaPlegable, usePlegado } from "./Plegable";
+import { usePlegado } from "./Plegable";
 import type { VistaFicha } from "./abrir";
 import { acciones, cuotasQueCancelaLaBaja, useEstado } from "@/lib/store";
 import { useAcceso } from "@/lib/acceso";
@@ -33,10 +29,8 @@ import { nivelEn, type MiAcceso } from "@/lib/permisos";
 import { filasDePersona, filasTabla, type FilaTabla } from "@/lib/crm-tabla";
 import { personaDe, type Persona } from "@/lib/persona";
 import { saldoVenta } from "@/lib/finanzas";
-import { fechaLarga, money, relativo } from "@/lib/format";
-import type { Alumno, Cuota, EstadoAlumno, EstadoApp, EstadoVenta, IngresoComunidad, Pago, Venta } from "@/lib/types";
-import { INGRESOS_COMUNIDAD } from "@/lib/angelo";
-import { RespuestasDelReporte } from "@/components/cs/ReportesDelCliente";
+import { fechaLarga, money } from "@/lib/format";
+import type { Alumno, Cuota, EstadoApp, EstadoVenta, Pago, Venta } from "@/lib/types";
 
 /* ==================================================================
    La ficha de una persona. La misma, se abra desde donde se abra.
@@ -49,12 +43,12 @@ import { RespuestasDelReporte } from "@/components/cs/ReportesDelCliente";
    cosas duplicadas»). El chat del equipo está en ventas y servicio: la
    conversación es sobre la persona, no sobre un área.
 
-   Es como la ficha de Blue OS: una ventana grande en escritorio y
-   pantalla completa en el celular.
+   Es como la ficha de Blue OS: ocupa la pantalla entera, con la persona a
+   la izquierda, lo de la vista en el medio y, en una pantalla ancha, el chat
+   del equipo siempre a la derecha (20/10).
    ================================================================== */
 
 type SolapaVentas = "ventas" | "chat" | "historial" | "utms";
-type SolapaServicio = "servicio" | "chat" | "historial";
 
 export function FichaPersona({ id, vista, ventaResaltada, onCerrar, onVista }: {
   id: string; vista: VistaFicha; ventaResaltada?: string | null;
@@ -70,6 +64,8 @@ export function FichaPersona({ id, vista, ventaResaltada, onCerrar, onVista }: {
   const { acceso } = useAcceso();
   const vistas = vistasDe(acceso);
   const vistaReal = vistas.includes(vista) ? vista : vistas[0] ?? vista;
+  /* En una pantalla ancha el chat va en su propia columna, siempre a la vista; en una angosta, como una solapa más. */
+  const conChat = useAnchoMinimo(1200);
 
   /* Esc cierra, salvo que haya algo abierto encima (un pago, un desplegable,
      el asistente de venta): eso se cierra primero. */
@@ -97,7 +93,7 @@ export function FichaPersona({ id, vista, ventaResaltada, onCerrar, onVista }: {
         ) : (
           <>
             <Cabecera e={e} p={p} vista={vistaReal} vistas={vistas} onVista={onVista} onCerrar={onCerrar} />
-            <div className="ficha__cuerpo">
+            <div className={`ficha__cuerpo${conChat ? " ficha__cuerpo--chat" : ""}`}>
               <Lateral e={e} p={p} filas={filas} />
               <div className="ficha__principal">
                 {vistas.length === 0
@@ -105,14 +101,30 @@ export function FichaPersona({ id, vista, ventaResaltada, onCerrar, onVista }: {
                   : vistaReal === "llamadas"
                     ? <VistaLlamadas p={p} filas={filas} />
                     : vistaReal === "ventas"
-                      ? <VistaVentas e={e} p={p} ventaResaltada={ventaResaltada} />
-                      : <VistaServicio e={e} p={p} />}
+                      ? <VistaVentas e={e} p={p} ventaResaltada={ventaResaltada} conChat={conChat} />
+                      : <VistaServicio e={e} p={p} conChat={conChat} />}
               </div>
+              {conChat && (
+                <aside className="ficha__chat" aria-label="Chat del equipo">
+                  <div className="ficha__chat-tit">Chat del equipo{p.comentarios.length > 0 && <span className="t-num t-subtle"> · {p.comentarios.length}</span>}</div>
+                  <ChatEquipo contactoId={p.clave} comentarios={p.comentarios} />
+                </aside>
+              )}
             </div>
           </>
         )}
       </div>
     </div>
+  );
+}
+
+/* true si la ventana mide al menos `px` de ancho (y se actualiza al cambiarla). */
+function useAnchoMinimo(px: number): boolean {
+  const consulta = `(min-width: ${px}px)`;
+  return React.useSyncExternalStore(
+    (avisar) => { const mq = window.matchMedia(consulta); mq.addEventListener("change", avisar); return () => mq.removeEventListener("change", avisar); },
+    () => window.matchMedia(consulta).matches,
+    () => true,
   );
 }
 
@@ -263,7 +275,7 @@ function Fila({ icono, valor, vacio, que, accion, onCopiar }: {
 
 /* ---------- Vista Ventas ---------- */
 
-function VistaVentas({ e, p, ventaResaltada }: { e: EstadoApp; p: Persona; ventaResaltada?: string | null }) {
+function VistaVentas({ e, p, ventaResaltada, conChat }: { e: EstadoApp; p: Persona; ventaResaltada?: string | null; conChat: boolean }) {
   const toast = useToast();
   const [solapa, setSolapa] = useState<SolapaVentas>("ventas");
   const [pagar, setPagar] = useState<Cuota | null>(null);
@@ -310,7 +322,7 @@ function VistaVentas({ e, p, ventaResaltada }: { e: EstadoApp; p: Persona; venta
         valor={solapa} onChange={setSolapa}
         opciones={[
           { valor: "ventas", texto: `Ventas (${p.ventas.length})` },
-          { valor: "chat", texto: `Chat (${p.comentarios.length})` },
+          ...(conChat ? [] : [{ valor: "chat" as SolapaVentas, texto: `Chat (${p.comentarios.length})` }]),
           { valor: "historial", texto: "Historial" },
           { valor: "utms", texto: "UTMs" },
         ]}
@@ -420,220 +432,5 @@ function ConfirmarBaja({ e, venta, estado, onCerrar }: {
         toast(aviso);
       }}
     />
-  );
-}
-
-/* ---------- Vista Servicio ---------- */
-
-function VistaServicio({ e, p }: { e: EstadoApp; p: Persona }) {
-  const toast = useToast();
-  const [solapa, setSolapa] = useState<SolapaServicio>("servicio");
-  const [editar, setEditar] = useState<Alumno | null>(null);
-  const etapas = useMemo(() => etapasDeServicio(e), [e]);
-  const plegado = usePlegado();
-
-  /* Un servicio por compra: cada venta con su alumno, y los alumnos que no
-     tienen venta (cargados a mano, de antes) también. */
-  const conVenta = p.ventas.map((v) => {
-    const enlazado = p.alumnos.find((a) => a.ventaId === v.id);
-    /* Un alumno de antes, sin venta enlazada, que por lead o email es de esta
-       compra: es el mismo servicio. Se muestra junto, con el botón para
-       dejarlo enlazado. */
-    const suelto = enlazado ? undefined : alumnoDeVenta(e, v);
-    const alumno = enlazado ?? (suelto && !suelto.ventaId && p.alumnos.includes(suelto) ? suelto : undefined);
-    return { venta: v as Venta | undefined, alumno, sinEnlazar: Boolean(alumno && !enlazado) };
-  });
-  const usados = new Set(conVenta.map((x) => x.alumno?.id).filter(Boolean));
-  const sueltos = p.alumnos.filter((a) => !usados.has(a.id));
-  const servicios = [...conVenta, ...sueltos.map((a) => ({ venta: undefined as Venta | undefined, alumno: a as Alumno | undefined, sinEnlazar: false }))];
-
-  function guardarEdicion() {
-    if (!editar) return;
-    const nombre = editar.nombre.trim();
-    if (!nombre) { toast("Poné al menos el nombre.", "err"); return; }
-    const { id, ...cambios } = editar;
-    const antes = e.alumnos.find((a) => a.id === id);
-    acciones.actualizar<Alumno>("alumnos", id, { ...cambios, nombre }, nombre);
-    /* El nombre y el mail son de la persona: se corrigen en todos lados. */
-    acciones.corregirPersona(antes?.leadId ?? id, {
-      nombre: nombre !== antes?.nombre ? nombre : undefined,
-      email: cambios.email !== antes?.email ? cambios.email : undefined,
-    });
-    toast("Servicio actualizado.");
-    setEditar(null);
-  }
-
-  return (
-    <>
-      <Tabs<SolapaServicio>
-        valor={solapa} onChange={setSolapa}
-        opciones={[
-          { valor: "servicio", texto: `Servicio (${servicios.length})` },
-          { valor: "chat", texto: `Chat (${p.comentarios.length})` },
-          { valor: "historial", texto: "Historial" },
-        ]}
-      />
-
-      {solapa === "servicio" && (
-        <div className="stack-4">
-          {servicios.length === 0 ? (
-            <Empty icono={<GraduationCap size={22} />} titulo="Todavía no tiene servicio"
-              texto="El servicio nace solo con cada compra. Cuando registres su venta, aparece acá." />
-          ) : servicios.map(({ venta, alumno, sinEnlazar }, i) => {
-            const producto = venta ? e.productos.find((x) => x.id === venta.productoId)?.nombre ?? "Venta" : alumno?.plan || "Servicio";
-            const reportes = alumno ? e.reportes.filter((r) => r.alumnoId === alumno.id)
-              .sort((a, b) => +new Date(b.semanaDel) - +new Date(a.semanaDel)) : [];
-            const etapa = alumno ? etapaDelAlumno(etapas, alumno) : undefined;
-            const clave = alumno?.id ?? venta?.id ?? String(i);
-            /* Abierto lo que está en curso; lo graduado o dado de baja, plegado. */
-            const porDefecto = servicios.length === 1 || !alumno || alumno.estado === "activo" || alumno.estado === "pausado";
-            const abierta = plegado.abierta(clave, porDefecto);
-            return (
-              <div className="venta-card" key={clave}>
-                <CabezaPlegable
-                  abierta={abierta} onAlternar={() => plegado.alternar(clave, porDefecto)} cuerpoId={`servicio-${clave}`}
-                  accion={alumno && <IconButton etiqueta="Editar el servicio" onClick={() => setEditar({ ...alumno })}><Pencil size={15} /></IconButton>}
-                >
-                  <span style={{ minWidth: 0, flex: 1 }}>
-                    <span className="row-wrap" style={{ gap: 8 }}>
-                      <span className="t-strong" style={{ fontSize: 16 }}>{producto}</span>
-                      {alumno && <Badge variante={ESTADO_ALUMNO[alumno.estado].variante}>{ESTADO_ALUMNO[alumno.estado].texto}</Badge>}
-                    </span>
-                    <span className="t-sm t-subtle" style={{ display: "block", marginTop: 2 }}>
-                      {venta ? `Compra del ${fechaLarga(venta.fecha)}` : "Sin venta enlazada"}
-                      {alumno?.cohorte ? ` · cohorte ${alumno.cohorte}` : ""}
-                      {!abierta && etapa ? ` · ${etapa.nombre}` : ""}
-                      {!abierta && alumno ? ` · progreso ${alumno.progreso}%` : ""}
-                    </span>
-                  </span>
-                </CabezaPlegable>
-
-                {abierta && (
-                  <div className="venta-card__cuerpo" id={`servicio-${clave}`}>
-                    {!alumno && venta ? (
-                      <div className="row-wrap">
-                        <span className="t-sm t-subtle">
-                          {venta.estado === "activa" ? "Esta compra todavía no tiene su servicio." : "La venta está cancelada: no tiene servicio."}
-                        </span>
-                        {venta.estado === "activa" && (
-                          <Button sm variante="primary" icono={<Plus size={14} />}
-                            onClick={() => { if (acciones.crearServicioDeVenta(venta.id)) toast(`Servicio de ${producto} creado.`); }}>
-                            Crear servicio
-                          </Button>
-                        )}
-                      </div>
-                    ) : alumno && (
-                      <>
-                        <div className="form-grid">
-                          <div className="hk-field">
-                            <span className="hk-label">Etapa del servicio</span>
-                            <Select aria-label="Etapa del servicio" value={etapa?.id ?? ""}
-                              onChange={(ev) => {
-                                const et = etapas.find((x) => x.id === ev.target.value);
-                                if (!et || et.id === etapa?.id) return;
-                                acciones.moverAlumno(alumno.id, et.id);
-                                toast(`${alumno.nombre} → ${et.nombre}`);
-                              }}
-                              opciones={etapas.map((et) => ({ valor: et.id, texto: et.nombre }))} />
-                          </div>
-                          <div className="hk-field">
-                            <span className="hk-label">Estado</span>
-                            <Select aria-label="Estado del servicio" value={alumno.estado}
-                              onChange={(ev) => acciones.actualizar<Alumno>("alumnos", alumno.id, { estado: ev.target.value as EstadoAlumno }, alumno.nombre)}
-                              opciones={ESTADOS_ALUMNO.map((k) => ({ valor: k, texto: ESTADO_ALUMNO[k].texto }))} />
-                          </div>
-                          {/* Si ya lo sumaron a la comunidad del programa. Es la columna
-                              "Ingreso a la comunidad" de la planilla: vive en la venta
-                              (sale en la exportación), pero se marca acá, cuando arranca. */}
-                          {venta && (
-                            <div className="hk-field">
-                              <span className="hk-label">Ingreso a la comunidad</span>
-                              <Select aria-label="Ingreso a la comunidad" value={venta.ingresoComunidad ?? ""} placeholder="Sin definir"
-                                onChange={(ev) => {
-                                  const v = ev.target.value as IngresoComunidad | "";
-                                  acciones.actualizar<Venta>("ventas", venta.id, { ingresoComunidad: v || undefined }, venta.contactoNombre,
-                                    `${venta.contactoNombre}: ingreso a la comunidad «${v || "sin definir"}».`);
-                                  toast("Ingreso a la comunidad guardado.");
-                                }}
-                                opciones={INGRESOS_COMUNIDAD} />
-                            </div>
-                          )}
-                        </div>
-
-                        <div>
-                          <div className="row t-sm" style={{ marginBottom: 6 }}>
-                            <span className="t-subtle">Progreso del programa</span>
-                            <span className="spacer t-num t-strong">{alumno.progreso}%</span>
-                          </div>
-                          <Bar valor={alumno.progreso} tono={alumno.progreso >= 80 ? "success" : "brand"} />
-                          <div className="row-wrap" style={{ marginTop: 10 }}>
-                            {[0, 25, 50, 75, 100].map((v) => (
-                              <Chip key={v} activo={alumno.progreso === v}
-                                onClick={() => acciones.actualizar<Alumno>("alumnos", alumno.id, { progreso: v }, alumno.nombre, `${alumno.nombre}: progreso al ${v}%.`)}>
-                                {v}%
-                              </Chip>
-                            ))}
-                          </div>
-                        </div>
-
-                        <dl className="dl dl--compacta">
-                          <dt>Plan</dt><dd>{alumno.plan || "—"}</dd>
-                          <dt>Empezó</dt><dd>{fechaLarga(alumno.inicio)} · {cuandoEmpezo(relativo(alumno.inicio))}</dd>
-                          <dt>Cuota</dt><dd className="t-num">{alumno.cuotaMensual > 0 ? `${money(alumno.cuotaMensual, alumno.moneda)} por mes` : "Sin cuota mensual"}</dd>
-                          <DatosExtra campos={e.campos} entidad="alumno" valores={alumno.extra} />
-                        </dl>
-
-                        {!venta && <VentaDelAlumno alumno={alumno} />}
-                        {venta && sinEnlazar && (
-                          <div className="row-wrap">
-                            <span className="t-sm t-subtle">Este servicio todavía no tiene la venta enlazada.</span>
-                            <Button sm variante="secondary" onClick={() => {
-                              acciones.actualizar<Alumno>("alumnos", alumno.id, { ventaId: venta.id }, alumno.nombre, `Se enlazó a ${alumno.nombre} la venta del ${fechaLarga(venta.fecha)}.`);
-                              toast("Venta enlazada.");
-                            }}>Enlazar la venta</Button>
-                          </div>
-                        )}
-
-                        <div className="stack-2">
-                          <div className="row">
-                            <span className="t-label">Reportes semanales ({reportes.length})</span>
-                            <a className="link t-sm spacer" href="/reportes?seccion=tabla" style={{ textAlign: "right" }}>Ver todos</a>
-                          </div>
-                          {reportes.length === 0 ? (
-                            <p className="t-sm t-subtle">Todavía no mandó ningún reporte.</p>
-                          ) : reportes.slice(0, 5).map((r) => (
-                            <div key={r.id}>
-                              <div className="row t-sm" style={{ gap: 8 }}>
-                                <span>Semana del {fechaLarga(r.semanaDel)}</span>
-                                {r.estado === "completado" && r.horasEstudio !== undefined && (
-                                  <span className="t-subtle t-num">{r.horasEstudio} h · {r.postulaciones ?? 0} post.</span>
-                                )}
-                                <span className="spacer" />
-                                <Badge variante={r.estado === "completado" ? "success" : r.estado === "vencido" ? "danger" : r.estado === "pendiente" ? "accent" : "neutral"}>
-                                  {r.estado === "completado" ? "Completado" : r.estado === "vencido" ? "Vencido" : r.estado === "pendiente" ? "Pendiente" : "No enviado"}
-                                </Badge>
-                              </div>
-                              <RespuestasDelReporte reporte={r} />
-                            </div>
-                          ))}
-                        </div>
-                        {alumno.notas && <p className="t-sm t-muted" style={{ whiteSpace: "pre-wrap" }}>{alumno.notas}</p>}
-
-                        {venta && venta.estado === "activa" && <ContratoCard venta={venta} alumnoId={alumno.id} />}
-                        <AccesosAlumno alumno={alumno} venta={venta} />
-                      </>
-                    )}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      )}
-      {solapa === "chat" && <ChatEquipo contactoId={p.clave} comentarios={p.comentarios} />}
-      {solapa === "historial" && <HistorialPersona e={e} p={p} />}
-
-      {editar && <EditarAlumno form={editar} setForm={setEditar} onGuardar={guardarEdicion} />}
-    </>
   );
 }

@@ -94,6 +94,73 @@ export interface PanelDeServicio {
   cvs: { enCurso: number; porEstado: { estado: string; n: number }[]; sinAlumno: number };
   /* Cuántas cosas están en rojo entre todas las listas, para el resumen de arriba. */
   urgentes: number;
+  /* Todos los alumnos, una fila cada uno, para la cartera (la tabla de abajo). */
+  cartera: FilaCartera[];
+  /* Los números del servicio (como «Tus números» de Blue OS). */
+  numeros: NumerosDeServicio;
+}
+
+/* ---------- La cartera: los alumnos por etapa del recorrido (como el pipeline de activación de Blue OS) ----------
+   La etapa sale del Follow Up que Lili lleva en su Airtable (OUTBOARDING, RESERVA, Roadmap, Módulo 1, MAS ENTREVISTAS…):
+   no se inventa otro estado, se agrupan los suyos. Un Follow Up que no se reconoce cae en «Cursando». */
+
+export type EtapaAlumnoId = "iniciando" | "cursando" | "busqueda" | "renovacion" | "riesgo" | "exito" | "outboarding" | "sin";
+
+export const ETAPAS_DEL_ALUMNO: { id: EtapaAlumnoId; label: string; ayuda: string; riesgo?: boolean }[] = [
+  { id: "iniciando", label: "Iniciando", ayuda: "Reserva, onboarding o demora para arrancar: la primera semana define si ejecuta." },
+  { id: "cursando", label: "Cursando", ayuda: "En el Roadmap o en algún módulo del programa." },
+  { id: "busqueda", label: "Búsqueda laboral", ayuda: "CV y LinkedIn, entrevistas o Take Home Challenge." },
+  { id: "renovacion", label: "Renovación", ayuda: "Con la llamada de resell agendada o subiendo de nivel." },
+  { id: "riesgo", label: "En riesgo", ayuda: "Pausó la mentoría, no contesta, pidió devolución o se traba.", riesgo: true },
+  { id: "exito", label: "Caso de éxito", ayuda: "Consiguió el trabajo o una mejora de sueldo." },
+  { id: "outboarding", label: "Outboarding", ayuda: "Cerrando el programa." },
+  { id: "sin", label: "Sin follow up", ayuda: "Todavía no tiene el Follow Up cargado." },
+];
+
+/** La etapa del recorrido según el Follow Up del Airtable de Lili. */
+export function etapaDelFollowUp(followUp: string | null | undefined): EtapaAlumnoId {
+  const f = sinTildes(followUp ?? "");
+  if (!f) return "sin";
+  if (f.startsWith("outboarding") || f.startsWith("outbording")) return "outboarding";
+  if (f.includes("caso de exito") || f.includes("ganancia mayor")) return "exito";
+  if (f.includes("resell") || f.includes("renovacion")) return "renovacion";
+  if (["no contesta", "no responde", "no avanzando", "pauso", "pausa", "devolucion", "limitaciones", "excusas"].some((x) => f.includes(x))) return "riesgo";
+  if (["edicion cv", "linkedin", "likendin", "entrevistas", "take home"].some((x) => f.includes(x))) return "busqueda";
+  if (["reserva", "onboarding", "demora"].some((x) => f.includes(x))) return "iniciando";
+  return "cursando";
+}
+
+export interface FilaCartera {
+  id: ID;
+  nombre: string;
+  programa: string;
+  followUp: string;
+  etapa: EtapaAlumnoId;
+  estadoAlumno: string;
+  /* Activo, no cerró (outboarding o caso de éxito) y su contrato no terminó hace más de `DIAS_DE_GRACIA` días. */
+  enServicio: boolean;
+  inicio: string;
+  egreso: string | null;
+  ultimoContacto: string | null;
+  /* Vacío si no le toca seguimiento (no está activo o ya cerró). */
+  proximo: string;
+  atraso: number;
+  reporte: string;
+  telefono: string;
+  email: string;
+  pais: string;
+}
+
+export interface NumerosDeServicio {
+  enServicio: number;
+  /* De los que están en servicio y tienen el dato del reporte (semanal o el del Airtable), cuántos siguen reportando (no están inactivos). */
+  reportando: { si: number; de: number };
+  /* De los que están en servicio, cuántos tuvieron un contacto en los últimos 30 días. */
+  contactados30: { si: number; de: number };
+  casosDeExito: number;
+  testimoniosConVideo: number;
+  /* Resells de este mes que renovaron (renueva o upgrade). */
+  renovacionesMes: number;
 }
 
 const tonoPorDias = (dias: number, rojoDesde: number): TonoServicio => (dias >= rojoDesde ? "rojo" : dias >= 0 ? "ambar" : "neutro");
@@ -241,8 +308,26 @@ export function panelDeServicio(e: EstadoApp, hoy: string, ahora: Date = new Dat
   for (const r of abiertos) porEstado.set(r.estado, (porEstado.get(r.estado) ?? 0) + 1);
 
   const urgentes = secciones.reduce((n, s) => n + s.rojos, 0);
+  /* ---------- La cartera y los números ---------- */
+  const enServicio = new Set(activos.map((c) => c.id));
+  const cartera = clientes.map((c): FilaCartera => ({
+    id: c.id, nombre: c.nombre, programa: c.programas.join(" · "), followUp: c.followUp, etapa: etapaDelFollowUp(c.followUp),
+    estadoAlumno: c.estadoAlumno, enServicio: enServicio.has(c.id), inicio: c.inicio, egreso: c.egreso, ultimoContacto: c.ultimoContacto,
+    proximo: c.situacion === "fuera" ? "" : c.proximo, atraso: c.atraso, reporte: c.reporte.estado, telefono: c.telefono, email: c.email, pais: c.pais,
+  }));
+  const conReporte = activos.filter((c) => c.reporte.estado !== "Sin datos");
+  const mes = hoy.slice(0, 7);
+  const numeros: NumerosDeServicio = {
+    enServicio: activos.length,
+    reportando: { si: conReporte.filter((c) => c.reporte.estado !== "Inactivo").length, de: conReporte.length },
+    contactados30: { si: activos.filter((c) => c.ultimoContacto && diasEntre(c.ultimoContacto, hoy) <= 30).length, de: activos.length },
+    casosDeExito: clientes.filter((c) => etapaDelFollowUp(c.followUp) === "exito").length,
+    testimoniosConVideo: (e.testimonios ?? []).filter((t) => String((t as { link?: string }).link ?? "").trim()).length,
+    renovacionesMes: resells.filter((f) => f.dia.startsWith(mes) && estadosDeResell(f.resell.estado).some((x) => /renueva|upgrade/.test(sinTildes(x)) && !/no renueva|no quiere/.test(sinTildes(x)))).length,
+  };
+
   return {
-    hoy, activos: activos.length, enOutboarding, desactualizados, secciones, urgentes,
+    hoy, activos: activos.length, enOutboarding, desactualizados, secciones, urgentes, cartera, numeros,
     cvs: { enCurso: abiertos.length, porEstado: [...porEstado].map(([estado, n]) => ({ estado, n })).sort((a, b) => b.n - a.n), sinAlumno: cvs.filter((r) => !r.alumnoId).length },
   };
 }

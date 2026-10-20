@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-  cuandoEs, DIAS_DE_GRACIA, panelDeServicio, resellResuelto, type PanelDeServicio, type SeccionServicio,
+  cuandoEs, DIAS_DE_GRACIA, etapaDelFollowUp, ETAPAS_DEL_ALUMNO, panelDeServicio, resellResuelto, type PanelDeServicio, type SeccionServicio,
 } from "@/lib/panel-servicio";
 import { CONFIG_POR_DEFECTO, seguimientoVacio, situacionDe, terminoElServicio } from "@/lib/seguimiento";
 import { ACCESO_DUENO, areaDeRuta, nivelDeRuta, TIPOS_POR_DEFECTO, type MiAcceso } from "@/lib/permisos";
@@ -259,4 +259,39 @@ test("quién tiene el panel de servicio: lo dice su puesto en Equipo (Customer S
   assert.equal(conPanel({ rol: "otro", puesto: "Customer Success Manager", activo: true }), true, "un dueño la puede elegir en «ver como»");
   assert.equal(conPanel({ rol: "otro", puesto: "Customer Success Manager", activo: false }), false);
   assert.equal(conPanel({ rol: "otro", puesto: "COO", activo: true }), false);
+});
+
+test("la etapa del recorrido sale del Follow Up del Airtable de Lili, sin inventar estados", () => {
+  const casos: [string, string][] = [
+    ["", "sin"], ["OUTBOARDING", "outboarding"], ["CASO DE EXITO", "exito"], ["(USD) GANANCIA MAYOR", "exito"],
+    ["AGENDA PARA RESELL", "renovacion"], ["RENOVACION - SUBIR NIVEL", "renovacion"],
+    ["PAUSO MENTORÍA", "riesgo"], ["Devolución", "riesgo"], ["No contesta", "riesgo"], ["LIMITACIONES", "riesgo"], ["EXCUSAS - LENTO", "riesgo"],
+    ["Edicion CV y Likendin", "busqueda"], ["MAS ENTREVISTAS", "busqueda"], ["Take Home Challenge", "busqueda"], ["POCAS ENTREVISTAS", "busqueda"],
+    ["RESERVA", "iniciando"], ["Demora inicio", "iniciando"], ["Onboarding", "iniciando"],
+    ["Roadmap", "cursando"], ["Módulo 1", "cursando"], ["Python", "cursando"], ["Avanzando", "cursando"], ["Algo nuevo", "cursando"],
+  ];
+  for (const [f, etapa] of casos) assert.equal(etapaDelFollowUp(f), etapa, f);
+  assert.equal(new Set(ETAPAS_DEL_ALUMNO.map((x) => x.id)).size, ETAPAS_DEL_ALUMNO.length);
+});
+
+test("la cartera trae a todos los alumnos y marca quién está en servicio", () => {
+  const p = panelDeServicio(estado(), HOY, AHORA);
+  assert.equal(p.cartera.length, 9, "los nueve alumnos del ejemplo, egresados y cerrados incluidos");
+  const en = p.cartera.filter((f) => f.enServicio).map((f) => f.id).sort();
+  assert.deepEqual(en, ["atrasada", "nueva", "nueva5", "sinfirma", "termino", "vence"]);
+  const outb = p.cartera.find((f) => f.id === "outb")!;
+  assert.equal(outb.etapa, "outboarding");
+  assert.equal(outb.proximo, "", "al que cerró no le toca seguimiento");
+  assert.equal(p.cartera.find((f) => f.id === "egresada")!.enServicio, false);
+});
+
+test("los números del servicio salen de los mismos datos", () => {
+  const p = panelDeServicio(estado(), HOY, AHORA);
+  assert.equal(p.numeros.enServicio, p.activos);
+  assert.deepEqual(p.numeros.reportando, { si: 0, de: 1 }, "Atrasada es la única con el dato del reporte, y está inactiva");
+  /* Contactos en los últimos 30 días: vence (15/10), termino (12/10), atrasada (25/09) y sinfirma (15/10). */
+  assert.deepEqual(p.numeros.contactados30, { si: 4, de: 6 });
+  assert.equal(p.numeros.casosDeExito, 0);
+  assert.equal(p.numeros.testimoniosConVideo, 0);
+  assert.equal(p.numeros.renovacionesMes, 1, "«Resuelta» renovó el 09/10, este mes; la cancelada y las abiertas no cuentan");
 });

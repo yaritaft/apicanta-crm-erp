@@ -1,0 +1,93 @@
+/* La vista Servicio de la ficha (HojaServicio): como la ficha del cliente de Blue OS. Una línea arriba con el servicio,
+   lo de hoy a un clic, solapas en una fila y los datos planos: rótulo a la izquierda, dato a la derecha. */
+
+.hs { display: flex; flex-direction: column; gap: var(--space-4); min-width: 0; }
+
+.hs-cabeza { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 16px; }
+.hs-cabeza__que { display: flex; flex-direction: column; min-width: 0; margin-right: auto; }
+.hs-producto { font-size: 18px; line-height: 24px; font-weight: 650; color: var(--ink); letter-spacing: -0.01em; }
+.hs-sub { font-size: 13px; color: var(--ink-subtle); }
+.hs-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.hs-chip {
+  display: inline-flex; align-items: center; padding: 4px 12px; border-radius: 999px; font-size: 12px; font-weight: 600; white-space: nowrap;
+  color: var(--ink-muted); background: var(--surface-200); border: 1px solid var(--border);
+}
+.hs-chip--rojo { color: var(--danger); background: color-mix(in srgb, var(--danger) 10%, transparent); border-color: color-mix(in srgb, var(--danger) 40%, transparent); }
+.hs-chip--ambar { color: var(--warning); background: color-mix(in srgb, var(--warning) 10%, transparent); border-color: color-mix(in srgb, var(--warning) 40%, transparent); }
+.hs-chip--ok { color: var(--success); background: color-mix(in srgb, var(--success) 10%, transparent); border-color: color-mix(in srgb, var(--success) 40%, transparent); }
+.hs-chip--riesgo { color: var(--warning); }
+.hs-chip--exito { color: var(--success); }
+.hs-chip--busqueda, .hs-chip--renovacion, .hs-chip--cursando, .hs-chip--iniciando { color: var(--brand); }
+
+.hs-hoy {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 10px 16px; padding: 12px 16px; border-radius: var(--radius-lg);
+  background: var(--surface-100); border: 1px solid var(--border);
+}
+.hs-hoy__txt { flex: 1 1 280px; min-width: 0; font-size: 14px; color: var(--ink-muted); }
+.hs-hoy__txt b { color: var(--ink); font-weight: 600; }
+.hs-hoy__acc { display: flex; gap: 8px; flex-wrap: wrap; }
+
+.hs-solapas { display: flex; gap: 4px; overflow-x: auto; padding-bottom: 2px; scrollbar-width: none; border-bottom: 1px solid var(--border); }
+.hs-solapas::-webkit-scrollbar { display: none; }
+.hs-solapa {
+  flex: none; display: inline-flex; align-items: center; gap: 6px; padding: 9px 12px; margin-bottom: -1px; border: 0; border-bottom: 2px solid transparent;
+  background: none; font: inherit; font-size: 13px; font-weight: 600; color: var(--ink-subtle); cursor: pointer; white-space: nowrap;
+}
+.hs-solapa:hover { color: var(--ink); }
+.hs-solapa[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--brand); }
+.hs-solapa:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; border-radius: 6px; }
+.hs-solapa__falta, .hs-solapa__n {
+  min-width: 18px; padding: 0 5px; border-radius: 999px; font-size: 11px; line-height: 17px; text-align: center; font-variant-numeric: tabular-nums;
+}
+.hs-solapa__falta { color: var(--warning); background: color-mix(in srgb, var(--warning) 14%, transparent); }
+.hs-solapa__n { color: var(--ink-subtle); background: var(--surface-200); }
+
+.hs-bloque { display: flex; flex-direction: column; gap: 8px; }
+.hs-bloque__tit { font-size: 12px; font-weight: 600; color: var(--ink-subtle); padding-left: 2px; }
+.hs-filas { border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; background: var(--surface-000); }
+.hs-fila {
+  display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 44px; padding: 4px 16px;
+  border-bottom: 1px solid var(--border); font-size: 14px;
+}
+.hs-fila:last-child { border-bottom: 0; }
+.hs-fila--falta { background: linear-gradient(90deg, transparent 40%, color-mix(in srgb, var(--warning) 8%, transparent)); }
+.hs-fila__rot { display: inline-flex; align-items: center; gap: 10px; flex: none; max-width: 45%; color: var(--ink-muted); }
+.hs-fila--falta .hs-fila__rot { color: var(--ink); font-weight: 500; }
+.hs-fila__ico { display: inline-flex; width: 16px; color: var(--ink-subtle); }
+.hs-falta {
+  padding: 1px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; color: var(--warning);
+  background: color-mix(in srgb, var(--warning) 14%, transparent);
+}
+.hs-fila__val { flex: 1; min-width: 0; display: flex; justify-content: flex-end; text-align: right; color: var(--ink); font-weight: 500; overflow-wrap: anywhere; }
+.hs-fila__val > * { max-width: 100%; }
+.hs-editable { margin: 0 -10px 0 0; padding: 4px 10px; justify-content: flex-end; min-height: 34px; }
+.hs-editable.crm-t__editable--abierta { justify-content: flex-start; min-width: 240px; }
+.hs-vacio { color: var(--warning); font-weight: 500; }
+.hs-guion { color: var(--ink-subtle); font-weight: 400; }
+.hs-select { min-width: 200px; }
+.hs-nada { margin: 0; padding: 14px 16px; font-size: 13px; color: var(--ink-subtle); }
+.hs-otros { display: flex; flex-direction: column; gap: 10px; padding: 12px 16px; }
+.hs-reporte { padding: 12px 16px; border-bottom: 1px solid var(--border); }
+.hs-reporte:last-child { border-bottom: 0; }
+
+.hs-progreso { display: inline-flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px; }
+.hs-progreso__paso {
+  padding: 4px 10px; border: 1px solid var(--border); border-radius: 999px; background: none; font: inherit; font-size: 12px; font-weight: 600;
+  color: var(--ink-muted); cursor: pointer; white-space: nowrap;
+}
+.hs-progreso__paso:hover:not(:disabled) { color: var(--ink); border-color: var(--border-strong); }
+.hs-progreso__paso[aria-pressed="true"] { color: var(--on-brand); background: var(--brand-fill); border-color: var(--brand-fill); }
+.hs-progreso__paso:disabled { cursor: default; }
+
+.hs-aviso {
+  display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; padding: 12px 16px; border-radius: var(--radius-lg);
+  font-size: 14px; color: var(--ink-muted); background: var(--surface-100); border: 1px solid var(--border);
+}
+
+@media (max-width: 640px) {
+  .hs-fila { flex-direction: column; align-items: stretch; gap: 2px; padding: 8px 12px; }
+  .hs-fila__rot { max-width: none; }
+  .hs-fila__val { justify-content: flex-start; text-align: left; }
+  .hs-editable { justify-content: flex-start; margin: 0 -10px; }
+  .hs-progreso { justify-content: flex-start; }
+}
