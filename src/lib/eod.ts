@@ -158,6 +158,25 @@ export function llamadasParaCargar<T extends { id: string }>(
   return { paraCargar: conCargadas ? llamadas : llamadas.filter((l) => !yaCargada(l)), cargadas: llamadas.filter(yaCargada).length };
 }
 
+/* Dónde está cada llamada del día en el cierre: para cargar, ya cargada (la cargó el closer o lo supo la app), cancelada en Calendly o
+   que todavía no empezó. */
+export type GrupoDeLlamada = "cargar" | "cargada" | "cancelada" | "despues";
+
+/** TODAS las llamadas de venta de un closer en un día, cada una con su grupo, en orden de hora. Dante (20/10): «tengo algunas en el CRM
+    que no me aparecen en el cerrar el día»: eran las ya cargadas, las canceladas por Calendly y las que todavía no empezaron, que el
+    cierre no pide cargar pero el CRM sí lista. Acá aparecen todas, así que lo que ve en el CRM lo ve también al cerrar el día. */
+export function repasoDelDia<T extends Pick<Sesion, "id" | "inicia" | "estado" | "anfitrion" | "tipo" | "titulo" | "utm">>(
+  e: { sesiones: T[]; equipo: EstadoApp["equipo"] }, closer: string, dia: string, ahora: number, sinCargar: (id: string) => boolean | undefined,
+): { s: T; grupo: GrupoDeLlamada }[] {
+  return e.sesiones
+    .filter((s) => diaDeNegocio(s.inicia) === dia && esDelCloser(s, closer, e.equipo) && !esLlamadaDeResell(s))
+    .sort((a, b) => a.inicia.localeCompare(b.inicia))
+    .map((s) => ({
+      s,
+      grupo: s.estado === "cancelada" ? "cancelada" : Date.parse(s.inicia) > ahora ? "despues" : sinCargar(s.id) === false ? "cargada" : "cargar",
+    }));
+}
+
 /** Los closers que tienen llamadas, para elegir de quién es el día. */
 export function closersConLlamadas(e: Pick<EstadoApp, "sesiones" | "equipo">): string[] {
   const nombres = new Set<string>();
