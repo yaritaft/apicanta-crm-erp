@@ -147,7 +147,7 @@ test("los GET públicos «¿estás listo?» no exponen nada: sólo ok y listo", 
 
 test("los crons: sólo el secreto exacto abre; «Bearer undefined» y variantes no", async () => {
   const crons = rutas.filter((r) => r.ruta.startsWith("/cron/"));
-  assert.equal(crons.length, 4);
+  assert.equal(crons.length, 5);
   const antes = process.env.CRON_SECRET;
   try {
     await capturandoConsola(async () => {
