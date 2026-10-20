@@ -1,5 +1,6 @@
 "use client";
 
+import { BadgeResell } from "@/components/ui/BadgeResell";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, ArrowRight, ArrowRightLeft, CalendarDays, Check, ExternalLink, Link2, Pencil, Plus, Search, Star, Trash2, UserRound, X } from "lucide-react";
 import { Ayuda, Badge, Button, Card, Empty, Field, IconButton, Input, Select, Textarea } from "@/components/ui/ui";
@@ -385,6 +386,7 @@ export default function Agenda() {
                           <span className="truncate t-sm t-subtle" style={{ display: "block" }}>{s.tipo} · {s.duracionMin} min</span>
                         </span>
                         <span className="agenda-item__cola">
+                          <BadgeResell s={s} />
                           <BadgeEmbudo s={s} />
                           {/* Todas entran por Calendly: se avisa la que no. */}
                           {s.origen === "manual" && <Badge variante="neutral">Cargada a mano</Badge>}

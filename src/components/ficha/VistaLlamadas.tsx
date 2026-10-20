@@ -1,5 +1,6 @@
 "use client";
 
+import { BadgeResell } from "@/components/ui/BadgeResell";
 import React, { useState } from "react";
 import { ArrowRightLeft, CalendarDays, ClipboardCheck, ExternalLink, Pencil } from "lucide-react";
 import { Button, Empty } from "@/components/ui/ui";
@@ -84,7 +85,10 @@ function Llamada({ f, grabaciones, onCargar, onPasar }: {
     <article className="ficha-ll__llamada">
       <header className="ficha-ll__cabeza">
         <span className="stack-1" style={{ minWidth: 0 }}>
-          <span className="t-strong t-num">{textoFecha(f.dia)} · {HORA.format(new Date(f.llamada))} hs</span>
+          <span className="t-strong t-num row-wrap" style={{ gap: 8, alignItems: "center" }}>
+            {textoFecha(f.dia)} · {HORA.format(new Date(f.llamada))} hs
+            <BadgeResell s={f.sesion} />
+          </span>
           <span className="t-sm t-subtle truncate">{[f.closer, f.via].filter(Boolean).join(" · ")}</span>
         </span>
         <span className="spacer" />
