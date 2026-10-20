@@ -511,6 +511,10 @@ export interface ConfigSeguimiento {
   intentosHastaDejar: number;
   /* Las listas de opciones de las columnas de Customer Success (las que falten, las de siempre). */
   listas?: Partial<ListasCs>;
+  /* «2026-10-20»: el seguimiento se cuenta desde este día. Un contacto (o el ingreso) anterior no hace que alguien figure vencido:
+     le toca a esta fecha más su cadencia. Sirve para arrancar de cero cuando se carga un histórico (el Airtable de Lili) sin las
+     fechas de contacto de verdad. Un contacto de este día en adelante cuenta como siempre. */
+  contarDesde?: string;
 }
 
 /* ---------- Marketing (Meta) ---------- */

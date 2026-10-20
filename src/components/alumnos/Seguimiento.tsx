@@ -66,8 +66,8 @@ export function useGestos() {
       () => (dejo ? "Se lo marcó como «dejó de contestar»." : "Se lo sacó de «dejó de contestar»."),
       () => (dejo ? `${f.alumno.nombre} sale de la lista de hoy: dejó de contestar.` : `${f.alumno.nombre} vuelve al seguimiento.`),
     ),
-    cadencia: (f: FilaDeGesto, dias: number) => hacer(
-      f, (s, q) => aplicarCadencia(s, dias, f.alumno, q),
+    cadencia: (f: FilaDeGesto, dias: number, cfg: ConfigSeguimiento) => hacer(
+      f, (s, q) => aplicarCadencia(s, dias, f.alumno, q, undefined, cfg.contarDesde),
       (s) => `Cadencia: cada ${dias} días. Próximo contacto: ${formatoDia(s.proximoContacto)}.`,
       (s) => `${f.alumno.nombre}: cada ${dias} días. Le toca el ${formatoDia(s.proximoContacto)}.`,
     ),

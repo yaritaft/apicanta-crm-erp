@@ -355,7 +355,7 @@ export function filasClientes(e: EstadoApp, hoy: string): FilaCliente[] {
     const edadSug = seg.edad === null ? edadDeTexto(respuestaPerfil(llamada?.respuestas, "edad")) : null;
 
     const closerVenta = venta?.closerId ? equipo.get(venta.closerId) ?? "" : "";
-    const proximo = proximoDe(seg, a);
+    const proximo = proximoDe(seg, a, cfg.contarDesde);
     const atraso = diasEntre(proximo, hoy);
     const testimonio = testimonioDe.get(a.id);
 

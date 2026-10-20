@@ -142,6 +142,17 @@ test("cambiar la cadencia recalcula el próximo desde el último contacto", () =
   const b = aplicarCadencia(seguimientoVacio("a1", CFG), 20, { inicio: "2026-08-28T12:00:00.000Z" });
   assert.equal(b.proximoContacto, "2026-09-17");
   assert.equal(proximoDe({ ultimoContacto: null, proximoContacto: null, cadenciaDias: 7 }, { inicio: "2026-08-28T12:00:00.000Z" }), "2026-09-04");
+  /* «Contar desde»: nadie figura vencido por algo anterior a ese día; lo posterior cuenta como siempre. */
+  const sinContacto = { ultimoContacto: null, proximoContacto: null, cadenciaDias: 15 };
+  assert.equal(proximoDe(sinContacto, { inicio: "2026-08-28T12:00:00.000Z" }, "2026-10-20"), "2026-11-04");
+  assert.equal(proximoDe(sinContacto, { inicio: "2026-10-25T12:00:00.000Z" }, "2026-10-20"), "2026-11-09");
+  assert.equal(proximoDe({ ...sinContacto, ultimoContacto: "2026-10-01" }, { inicio: "2026-08-28T12:00:00.000Z" }, "2026-10-20"), "2026-11-04", "un contacto de antes del arranque no cuenta");
+  assert.equal(proximoDe({ ...sinContacto, ultimoContacto: "2026-10-25" }, { inicio: "2026-08-28T12:00:00.000Z" }, "2026-10-20"), "2026-11-09", "uno posterior cuenta como siempre");
+  assert.equal(proximoDe({ ...sinContacto, ultimoContacto: "2026-10-01" }, { inicio: "2026-08-28T12:00:00.000Z" }), "2026-10-16", "sin fecha de arranque, como siempre");
+  assert.equal(proximoDe({ ...sinContacto, proximoContacto: "2026-10-22" }, { inicio: "2026-08-28T12:00:00.000Z" }, "2026-10-20"), "2026-10-22", "un próximo cargado a mano manda");
+  assert.equal(configSeguimiento({ contarDesde: "2026-10-20" }).contarDesde, "2026-10-20");
+  assert.equal(configSeguimiento({ contarDesde: "ayer" as never }).contarDesde, undefined, "una fecha mal escrita no vale");
+  assert.equal(configSeguimiento({}).contarDesde, undefined);
 });
 
 test("corregir el CV o el LinkedIn guarda el día; desmarcarlo lo borra", () => {

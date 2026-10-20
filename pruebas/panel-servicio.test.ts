@@ -186,6 +186,19 @@ test("outboarding y caso de éxito, con o sin tildes y en mayúsculas o minúscu
   assert.equal(situacionDe("activo", false, 30), "vencido", "sin Follow Up, como siempre");
 });
 
+test("«contar desde»: arranca de cero, nadie figura vencido por un contacto o un ingreso anterior a esa fecha", () => {
+  const sinContacto = [...estado().alumnos, alumno("viejo", "Viejo", "2026-07-01")];
+  const seguimientos = [...(estado().seguimientos ?? []), seg("viejo", { contratoFirmado: "Firmado", contactoInicial: "2026-07-02", duracionMeses: 12 })];
+  const base = { alumnos: sinContacto as never, seguimientos, testimonios: [], resells: [], revisionesCv: [] };
+  const antes = seccion(panelDeServicio(estado(base), HOY, AHORA), "contactar");
+  assert.ok(nombres(antes).includes("Viejo") && nombres(antes).includes("Atrasada"), "sin fecha de arranque les tocaba desde el 16/07 y desde el 10/10");
+  const conArranque = panelDeServicio(estado({ ...base, ajustes: { seguimiento: { contarDesde: HOY } } as never }), HOY, AHORA);
+  const despues = seccion(conArranque, "contactar");
+  assert.deepEqual(nombres(despues), [], "a todos les toca el 04/11: 15 días desde hoy");
+  /* El resto de las listas no cambia. */
+  assert.equal(conArranque.activos, panelDeServicio(estado(base), HOY, AHORA).activos);
+});
+
 test("sin datos, el panel no se rompe: todo en cero", () => {
   const p = panelDeServicio(estado({ alumnos: [], seguimientos: [], testimonios: [], resells: [], revisionesCv: [] }), HOY, AHORA);
   assert.equal(p.activos, 0);

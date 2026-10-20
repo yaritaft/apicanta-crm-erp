@@ -63,6 +63,7 @@ export function configSeguimiento(c?: Partial<ConfigSeguimiento> | null): Config
   };
   const porDefecto = entero(c?.cadenciaPorDefecto, 1, 365, CONFIG_POR_DEFECTO.cadenciaPorDefecto);
   const listas = listasPropias(c?.listas);
+  const contarDesde = typeof c?.contarDesde === "string" && /^\d{4}-\d{2}-\d{2}$/.test(c.contarDesde) ? c.contarDesde : undefined;
   return {
     cadencias: lista,
     /* La cadencia de arranque tiene que ser una de las que se pueden elegir. */
@@ -70,6 +71,7 @@ export function configSeguimiento(c?: Partial<ConfigSeguimiento> | null): Config
     reintentoDias: entero(c?.reintentoDias, 1, 60, CONFIG_POR_DEFECTO.reintentoDias),
     intentosHastaDejar: entero(c?.intentosHastaDejar, 1, 20, CONFIG_POR_DEFECTO.intentosHastaDejar),
     ...(listas ? { listas } : {}),
+    ...(contarDesde ? { contarDesde } : {}),
   };
 }
 
@@ -113,13 +115,15 @@ export function seguimientoVacio(alumnoId: ID, cfg: ConfigSeguimiento, cuando = 
   };
 }
 
-/** Desde cuándo se cuenta la cadencia: el último contacto o, si nunca lo hubo, cuando entró. */
-export const baseDeCadencia = (s: Pick<SeguimientoAlumno, "ultimoContacto">, alumno: Pick<Alumno, "inicio">): string =>
-  s.ultimoContacto ?? diaDeNegocio(alumno.inicio);
+/** Desde cuándo se cuenta la cadencia: el último contacto o, si nunca lo hubo, cuando entró; y nunca antes de `contarDesde` (ver `ConfigSeguimiento.contarDesde`). */
+export const baseDeCadencia = (s: Pick<SeguimientoAlumno, "ultimoContacto">, alumno: Pick<Alumno, "inicio">, contarDesde?: string): string => {
+  const base = s.ultimoContacto ?? diaDeNegocio(alumno.inicio);
+  return contarDesde && contarDesde > base ? contarDesde : base;
+};
 
 /** Cuándo toca el próximo contacto: el que se cargó o, si no hay, base + cadencia. */
-export function proximoDe(s: Pick<SeguimientoAlumno, "ultimoContacto" | "proximoContacto" | "cadenciaDias">, alumno: Pick<Alumno, "inicio">): string {
-  return s.proximoContacto ?? sumarDias(baseDeCadencia(s, alumno), s.cadenciaDias);
+export function proximoDe(s: Pick<SeguimientoAlumno, "ultimoContacto" | "proximoContacto" | "cadenciaDias">, alumno: Pick<Alumno, "inicio">, contarDesde?: string): string {
+  return s.proximoContacto ?? sumarDias(baseDeCadencia(s, alumno, contarDesde), s.cadenciaDias);
 }
 
 /** «Lo contacté»: queda como último contacto hoy y el próximo toca a la cadencia. Corta la racha de «no contestó». */
@@ -141,9 +145,9 @@ export function aplicarNoContesto(s: SeguimientoAlumno, hoy: string, cfg: Config
 }
 
 /** Cambiar la cadencia recalcula el próximo desde el último contacto (o el ingreso). */
-export function aplicarCadencia(s: SeguimientoAlumno, dias: number, alumno: Pick<Alumno, "inicio">, quien = "", cuando = new Date().toISOString()): SeguimientoAlumno {
+export function aplicarCadencia(s: SeguimientoAlumno, dias: number, alumno: Pick<Alumno, "inicio">, quien = "", cuando = new Date().toISOString(), contarDesde?: string): SeguimientoAlumno {
   const cambiada = { ...s, cadenciaDias: dias };
-  return { ...cambiada, proximoContacto: sumarDias(baseDeCadencia(cambiada, alumno), dias), actualizadoEn: cuando, actualizadoPor: quien };
+  return { ...cambiada, proximoContacto: sumarDias(baseDeCadencia(cambiada, alumno, contarDesde), dias), actualizadoEn: cuando, actualizadoPor: quien };
 }
 
 /** «Dejó de contestar»: sale de la lista del día. Al volver a marcarlo como contactado, vuelve. */
@@ -245,7 +249,7 @@ export function filasDeSeguimiento(e: EstadoApp, hoy: string): FilaSeguimiento[]
     const s = seg.get(a.id) ?? null;
     const base = s ?? seguimientoVacio(a.id, cfg);
     const contacto = contactoDe(a);
-    const proximo = proximoDe(base, a);
+    const proximo = proximoDe(base, a, cfg.contarDesde);
     const atraso = diasEntre(proximo, hoy);
     return {
       id: a.id, alumno: a, seguimiento: s, contacto,
