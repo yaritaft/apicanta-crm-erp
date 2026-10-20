@@ -2,137 +2,179 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { PageHead } from "@/components/shell/PageHead";
-import { Badge } from "@/components/ui/ui";
+import { Check } from "lucide-react";
+import { Button } from "@/components/ui/ui";
+import { Correo, Telefono } from "@/components/ui/Telefono";
 import { FichaClienteCs } from "@/components/cs/FichaClienteCs";
+import { useGestos } from "@/components/alumnos/Seguimiento";
 import { useEstado } from "@/lib/store";
-import { useUsuarioActual } from "@/lib/usuario";
+import { useAcceso } from "@/lib/acceso";
+import { useParamsURL } from "@/lib/useParamsURL";
+import { nivelDeRuta } from "@/lib/permisos";
 import { filasClientes } from "@/lib/clientes-cs";
+import { sinTildes } from "@/lib/crm";
 import { hoyDelNegocio } from "@/lib/seguimiento";
-import { DIAS_DE_GRACIA, panelDeServicio, type ItemServicio, type SeccionServicio, type TonoServicio } from "@/lib/panel-servicio";
-import { Tile } from "./Tile";
-import { clic, plural, saludoDe } from "./util";
+import { panelDeServicio, type ItemServicio } from "@/lib/panel-servicio";
+import type { MiembroEquipo } from "@/lib/types";
+import { plural, saludoDe } from "./util";
 import "./mi-panel.css";
 import "./panel-servicio.css";
 
 /* ==================================================================
-   «Mi panel» de Customer Success (reunión del 19/10 con Lili, Aldana y Yari).
+   El «Mi panel» de Customer Success (Lili), reunión del 19/10 y rehecho el 20/10.
 
-   Lo que hoy le toca hacer a quien lleva el servicio, en una pantalla y con la
-   regla de cada lista a la vista (lib/panel-servicio.ts):
-     · arriba, una tarjeta por tema, con cuántos hay: tocar una baja a su lista;
-     · abajo, cada lista con lo más urgente primero. Tocar un nombre abre su
-       ficha de Customer Success, para dejar anotado lo que se hizo sin salir de acá.
-   No guarda nada por su cuenta: lo que se hace se hace en la ficha.
+   Una sola pantalla, minimalista y con la data a mano:
+     · arriba, las listas como solapas con su cuenta;
+     · una lista a la vez, con su regla en una línea, un buscador y cada alumno en dos renglones:
+       quién es y cuándo, y lo que pasa con él con su teléfono y mail para copiar de un toque;
+     · «Lo contacté» ahí mismo en la lista de a quién contactar;
+     · abajo, lo que no es de hoy (CV de Aldana, los que ya cerraron y los que hay que revisar).
+   Tocar un alumno abre su ficha de Customer Success. Un dueño lo mira «como» Lili y es sólo para mirar.
+   Las reglas y las cuentas están en lib/panel-servicio.ts.
    ================================================================== */
 
-const variante = (t: TonoServicio) => (t === "rojo" ? "danger" : t === "ambar" ? "warning" : "neutral");
-const etiqueta = (t: TonoServicio) => (t === "rojo" ? "Urgente" : t === "ambar" ? "Pendiente" : "Para ver");
+const POR_PAGINA = 25;
 
-/* La línea chica de cada tarjeta de arriba: cuántos de esa lista están en rojo. */
-const subDe = (s: SeccionServicio): string =>
-  s.total === 0 ? "Nada pendiente" : s.rojos > 0 ? `${s.rojos} ${s.rojos === 1 ? "urgente" : "urgentes"}` : "Ninguno urgente";
-
-function Fila({ item, onAbrir }: { item: ItemServicio; onAbrir?: (id: string) => void }) {
+function Fila({ item, contactar, onAbrir, onContacte }: {
+  item: ItemServicio; contactar: boolean; onAbrir: (id: string) => void; onContacte: (id: string) => void;
+}) {
+  const id = item.alumnoId;
   const cuerpo = (
     <>
-      <span className="ps-fila__nombre">{item.nombre}</span>
-      <span className="ps-fila__detalle" title={item.detalle}>{item.detalle}</span>
-      <Badge variante={variante(item.tono)}>{etiqueta(item.tono)}</Badge>
+      <span className={`ps-punto ps-punto--${item.tono}`} aria-hidden />
+      <span className="ps-nombre">
+        <span className="ps-nombre__texto">{item.nombre}</span>
+        {item.programa && <span className="ps-nombre__sub">{item.programa}</span>}
+      </span>
+      <span className={`ps-cuando ps-cuando--${item.tono}`}>{item.cuando}</span>
+      <span className="ps-detalle" title={item.detalle}>{item.detalle}</span>
+      <span className="ps-acciones">
+        <Telefono valor={item.telefono} pais={item.pais} compacto />
+        <span className="ps-acciones__mail"><Correo valor={item.email} compacto /></span>
+        {contactar && id && (
+          <Button sm variante="ghost" icono={<Check size={14} />} onClick={(ev) => { ev.stopPropagation(); onContacte(id); }} title="Lo contacté hoy: el próximo toca según su cadencia">
+            Lo contacté
+          </Button>
+        )}
+      </span>
     </>
   );
-  return item.alumnoId && onAbrir
-    ? <div className="ps-fila ps-fila--clic" {...clic(() => onAbrir(item.alumnoId as string))} aria-label={`Abrir la ficha de ${item.nombre}`}>{cuerpo}</div>
-    : <div className="ps-fila">{cuerpo}</div>;
-}
-
-function Seccion({ s, onAbrir }: { s: SeccionServicio; onAbrir: (id: string) => void }) {
+  if (!id) return <div className="ps-fila">{cuerpo}</div>;
   return (
-    <section className="mp-card mp-card--sin-relleno" id={`ps-${s.id}`} aria-label={s.titulo}>
-      <div className="mp-cabeza">
-        <h2>{s.titulo}</h2><span className="mp-cuenta">{s.total}</span>
-        {s.verTodos && <div className="mp-cabeza__der"><Link href={s.verTodos.href} className="link t-sm">{s.verTodos.texto}</Link></div>}
-      </div>
-      <p className="ps-regla">{s.regla}</p>
-      {s.items.length === 0 ? (
-        <p className="mp-vacio mp-lista__vacio">Nada pendiente por acá.</p>
-      ) : (
-        <div className="mp-lista">
-          {s.items.map((i) => <Fila key={i.clave} item={i} onAbrir={onAbrir} />)}
-          {s.total > s.items.length && <div className="mp-lista__pie" style={{ padding: "10px 12px 0" }}>Y {s.total - s.items.length} más. Se muestran los más urgentes: el resto está en la lista completa.</div>}
-        </div>
-      )}
-    </section>
+    <div
+      className="ps-fila ps-fila--clic" role="button" tabIndex={0} aria-label={`Abrir la ficha de ${item.nombre}`}
+      onClick={() => onAbrir(id)}
+      onKeyDown={(ev) => { if (ev.target === ev.currentTarget && (ev.key === "Enter" || ev.key === " ")) { ev.preventDefault(); onAbrir(id); } }}
+    >
+      {cuerpo}
+    </div>
   );
 }
 
-export function PanelServicio() {
+export function PanelServicio({ miembro, viendoOtro }: { miembro: MiembroEquipo; viendoOtro: boolean }) {
   const e = useEstado();
-  const yo = useUsuarioActual();
+  const { acceso } = useAcceso();
+  const gestos = useGestos();
+  const [v, cambiar] = useParamsURL({ lista: "" });
   const [ahora, setAhora] = useState(() => Date.now());
   useEffect(() => { const t = window.setInterval(() => setAhora(Date.now()), 60000); return () => window.clearInterval(t); }, []);
 
   const hoy = hoyDelNegocio(new Date(ahora));
   const panel = useMemo(() => panelDeServicio(e, hoy, new Date(ahora)), [e, hoy, ahora]);
+
+  /* La lista que se mira: la del link o, sin elegir, la primera que tiene algo urgente (y si no, la primera con alguien). */
+  const lista = panel.secciones.find((s) => s.id === v.lista)
+    ?? panel.secciones.find((s) => s.rojos > 0) ?? panel.secciones.find((s) => s.total > 0) ?? panel.secciones[0];
+
+  const [q, setQ] = useState("");
+  const clave = `${lista.id}|${q}`;
+  const [pagina, setPagina] = useState({ clave: "", n: POR_PAGINA });
+  const mostrar = pagina.clave === clave ? pagina.n : POR_PAGINA;
+
+  const visibles = useMemo(() => {
+    const t = sinTildes(q.trim());
+    if (!t) return lista.items;
+    return lista.items.filter((i) => sinTildes([i.nombre, i.programa, i.detalle, i.telefono, i.email].filter(Boolean).join(" ")).includes(t));
+  }, [lista, q]);
+
   const [ficha, setFicha] = useState<string | null>(null);
   const fichaDe = useMemo(() => (ficha ? filasClientes(e, hoy).find((f) => f.id === ficha) : undefined), [ficha, e, hoy]);
 
-  const primerNombre = (yo.miembro?.nombre ?? yo.nombre).split(" ")[0];
-  const irA = (id: string) => document.getElementById(`ps-${id}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
+  const puedeEscribir = !viendoOtro && nivelDeRuta(acceso, "/alumnos") >= 2;
+  const contacte = (id: string) => {
+    const alumno = e.alumnos.find((a) => a.id === id);
+    if (alumno) gestos.contacte({ id, alumno });
+  };
+  const primerNombre = miembro.nombre.split(" ")[0];
+  const cvs = panel.cvs;
 
   return (
-    <div className="mp">
-      <PageHead titulo="Panel de servicio" sub="Lo que hoy le toca a Customer Success: a quién escribirle, a quién renovar y lo que falta de otros." />
+    <div className="ps">
       <header className="mp-cabecera">
         <div className="mp-cabecera__texto">
-          <h1 className="mp-saludo">{saludoDe(ahora)}, {primerNombre}</h1>
-          <p className="mp-resumen">
-            {plural(panel.activos, "alumno en servicio", "alumnos en servicio")}
-            {panel.urgentes > 0 ? ` · ${plural(panel.urgentes, "cosa urgente", "cosas urgentes")} en rojo` : " · nada urgente"}
-          </p>
+          <h1 className="mp-saludo">{viendoOtro ? `Panel de ${miembro.nombre}` : `${saludoDe(ahora)}, ${primerNombre}`}</h1>
+          <p className="mp-resumen">{plural(panel.activos, "alumno en servicio", "alumnos en servicio")}</p>
         </div>
       </header>
 
-      <div className="mp-tiles" style={{ marginTop: 20 }}>
+      <div className="ps-tabs" role="tablist" aria-label="Qué mirar">
         {panel.secciones.map((s) => (
-          <Tile key={s.id} rot={s.corto} valor={String(s.total)} sub={subDe(s)} verde={s.total === 0} onAbrir={() => irA(s.id)} />
+          <button
+            key={s.id} type="button" role="tab" id={`ps-tab-${s.id}`} aria-selected={s.id === lista.id} aria-controls="ps-lista"
+            className="ps-tab" onClick={() => { setQ(""); cambiar({ lista: s.id }); }}
+            title={s.rojos > 0 ? `${s.titulo}: ${s.total} (${s.rojos} urgentes)` : `${s.titulo}: ${s.total}`}
+          >
+            <span>{s.corto}</span>
+            <span className="ps-tab__n">{s.total}</span>
+          </button>
         ))}
       </div>
 
-      <div className="mp-abajo" style={{ marginTop: 20 }}>
-        {panel.secciones.map((s) => <Seccion key={s.id} s={s} onAbrir={setFicha} />)}
-
-        <section className="mp-card" aria-label="Revisión de CV y LinkedIn">
-          <div className="mp-cap-fila"><span className="mp-cap">CV y LinkedIn (Aldana)</span><span className="mp-cuenta">{panel.cvs.enCurso}</span></div>
-          <span className="mp-nota">Revisiones en curso, para saber en qué anda sin preguntarle.</span>
-          {panel.cvs.porEstado.length === 0 ? (
-            <p className="mp-vacio" style={{ marginTop: 10 }}>No hay revisiones en curso.</p>
-          ) : (
-            <p className="ps-cv">{panel.cvs.porEstado.map((x) => `${x.estado}: ${x.n}`).join(" · ")}</p>
+      <section className="mp-card mp-card--sin-relleno" id="ps-lista" role="tabpanel" aria-labelledby={`ps-tab-${lista.id}`}>
+        <div className="ps-barra">
+          <p className="ps-regla">{lista.regla}</p>
+          {lista.total > 6 && (
+            <input
+              className="mp-buscar" value={q} onChange={(ev) => setQ(ev.target.value)}
+              placeholder="Buscar nombre, mail o teléfono…" aria-label={`Buscar en ${lista.titulo}`}
+            />
           )}
-          <Link href="/alumnos?seccion=cvs" className="link t-sm">Ver las revisiones</Link>
-        </section>
+          {lista.verTodos && <Link href={lista.verTodos.href} className="link t-sm">{lista.verTodos.texto}</Link>}
+        </div>
 
-        {panel.enOutboarding > 0 && (
-          <section className="mp-card" aria-label="Alumnos en outboarding o caso de éxito">
-            <div className="mp-cap-fila"><span className="mp-cap">Ya cerraron el programa (outboarding o caso de éxito)</span><span className="mp-cuenta">{panel.enOutboarding}</span></div>
-            <span className="mp-nota">
-              Su Follow Up dice «outboarding» o «caso de éxito», como en el Airtable, así que no entran a las listas de arriba. Su estado de alumno no se tocó:
-              se actualiza cuando Lili lo decida.
-            </span>
-            <Link href="/alumnos?seccion=clientes" className="link t-sm">Verlos en Clientes del programa</Link>
-          </section>
+        {visibles.length === 0 ? (
+          <p className="mp-vacio mp-lista__vacio">{lista.total === 0 ? lista.vacio : "Nadie coincide con la búsqueda."}</p>
+        ) : (
+          <div className="ps-filas">
+            {visibles.slice(0, mostrar).map((i) => (
+              <Fila key={i.clave} item={i} contactar={puedeEscribir && lista.id === "contactar"} onAbrir={setFicha} onContacte={contacte} />
+            ))}
+          </div>
         )}
 
+        {visibles.length > POR_PAGINA && (
+          <div className="ps-mas">
+            <span>Mostrando {Math.min(mostrar, visibles.length)} de {visibles.length}</span>
+            {mostrar < visibles.length && (
+              <Button sm variante="ghost" onClick={() => setPagina({ clave, n: mostrar + POR_PAGINA })}>Ver {Math.min(POR_PAGINA, visibles.length - mostrar)} más</Button>
+            )}
+          </div>
+        )}
+      </section>
+
+      <div className="ps-pie">
+        <Link href="/alumnos?seccion=cvs" className="ps-dato" title={cvs.porEstado.map((x) => `${x.estado}: ${x.n}`).join(" · ") || "No hay revisiones en curso"}>
+          <b>{cvs.enCurso}</b> CV y LinkedIn en curso (Aldana)
+        </Link>
+        {panel.enOutboarding > 0 && (
+          <Link href="/alumnos?seccion=clientes" className="ps-dato" title="Su Follow Up dice outboarding o caso de éxito: no entran a las listas. Su estado de alumno no se tocó.">
+            <b>{panel.enOutboarding}</b> ya cerraron el programa
+          </Link>
+        )}
         {panel.desactualizados > 0 && (
-          <section className="mp-card" aria-label="Alumnos para revisar">
-            <div className="mp-cap-fila"><span className="mp-cap">Para revisar: figuran activos y su contrato ya terminó</span><span className="mp-cuenta">{panel.desactualizados}</span></div>
-            <span className="mp-nota">
-              Su contrato terminó hace más de {DIAS_DE_GRACIA} días, siguen como «activos» y su Follow Up no dice outboarding, así que no entran a las listas de arriba.
-              Lili puede actualizar su Follow Up, su fecha de egreso o su estado para que esta lista quede en cero.
-            </span>
-            <Link href="/alumnos?seccion=clientes" className="link t-sm">Revisarlos en Clientes del programa</Link>
-          </section>
+          <Link href="/alumnos?seccion=clientes" className="ps-dato" title="Figuran activos, su contrato terminó hace más de 45 días y su Follow Up no dice outboarding: no entran a las listas. Actualizá su Follow Up, su egreso o su estado.">
+            <b>{panel.desactualizados}</b> para revisar: contrato vencido y siguen activos
+          </Link>
         )}
       </div>
 

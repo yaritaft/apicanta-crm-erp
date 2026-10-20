@@ -13,11 +13,12 @@ import { useParamsURL } from "@/lib/useParamsURL";
 import { useRangoURL } from "@/lib/useRango";
 import { nivelDeRuta } from "@/lib/permisos";
 import { money } from "@/lib/format";
-import { conPanel, miPanelDe, rangoDelPanel } from "@/lib/mi-panel";
+import { conPanel, miPanelDe, rangoDelPanel, vistaDePanel } from "@/lib/mi-panel";
 import { Eye } from "lucide-react";
 import { BarraVerComo } from "./BarraVerComo";
 import { DetalleComisiones, DetalleMesa, type TramoMesa } from "./Detalles";
 import { CobrosCargados, LlamadasDeHoy, ParaVos } from "./Listas";
+import { PanelServicio } from "./PanelServicio";
 import { PanelSetter } from "./PanelSetter";
 import { Rendimiento } from "./Rendimiento";
 import { TarjetaComisiones, TarjetaMesa } from "./Tarjetas";
@@ -58,10 +59,23 @@ export function MiPanel() {
 
   const rangoTxt = rangoStr(rangoSel);
   const rango = useMemo(() => rangoDelPanel(rangoSel.desde, rangoSel.hasta, rangoTxt), [rangoSel.desde, rangoSel.hasta, rangoTxt]);
-  const datos = useMemo(() => (miembro ? miPanelDe(e, miembro, rango, ahora) : null), [e, miembro, rango, ahora]);
+  /* Quien lleva el servicio (Lili) tiene su propio panel, que no es el de las ventas: no se calcula el de las comisiones. */
+  const deServicio = Boolean(miembro && vistaDePanel(miembro) === "servicio");
+  const datos = useMemo(() => (miembro && !deServicio ? miPanelDe(e, miembro, rango, ahora) : null), [e, miembro, deServicio, rango, ahora]);
 
   const [verComisiones, setVerComisiones] = useState(false);
   const [tramo, setTramo] = useState<TramoMesa | null>(null);
+
+  if (miembro && deServicio) {
+    return (
+      <div className="mp">
+        {esDueno && candidatos.length > 0 && (
+          <BarraVerComo candidatos={candidatos} elegido={miembro} yoId={yo.miembro?.id} viendoOtro={viendoOtro} onElegir={(id) => cambiar({ persona: id })} />
+        )}
+        <PanelServicio miembro={miembro} viendoOtro={viendoOtro} />
+      </div>
+    );
+  }
 
   if (!miembro || !datos) {
     return (

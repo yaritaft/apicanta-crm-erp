@@ -267,6 +267,10 @@ export function puedeEditar(a: MiAcceso | null | undefined, tabla: string): bool
 
 /* ---------- las pantallas ---------- */
 
+/* Pantallas que, además de su área, ve quien ve otra: «Mi panel» es del CRM para los closers y de Alumnos para Customer Success
+   (adentro, cada uno ve el panel que le toca según su puesto en Equipo). */
+const RUTAS_TAMBIEN: Record<string, AreaId[]> = { "/mi-panel": ["alumnos"] };
+
 /* De qué área es cada pantalla, por el comienzo de la ruta. "equipo" es
    Equipo y honorarios: sólo los dueños, no se reparte. */
 const RUTAS: [string, AreaId | "equipo"][] = [
@@ -275,10 +279,8 @@ const RUTAS: [string, AreaId | "equipo"][] = [
   ["/crm", "crm"],
   /* La cuenta del closer: sus llamadas, el cierre del día y cargar una venta. */
   ["/mis-llamadas", "crm"],
-  /* El panel de Customer Success (Lili): lo ve quien ve Alumnos, no quien ve las llamadas. Va antes que «/mi-panel», que
-     es el de los closers: la primera coincidencia manda. */
-  ["/mi-panel/servicio", "alumnos"],
-  /* Mi panel: lo de cada uno. Lo ve quien ve las llamadas (closer, setter, director y los dueños). */
+  /* Mi panel: lo de cada uno. Lo ve quien ve las llamadas (closer, setter, director y los dueños) y, por RUTAS_TAMBIEN,
+     quien ve Alumnos (Customer Success: su panel es el del servicio). */
   ["/mi-panel", "crm"],
   ["/cerrar-el-dia", "crm"],
   ["/cargar-venta", "ventas"],
@@ -297,6 +299,12 @@ const RUTAS: [string, AreaId | "equipo"][] = [
   ["/ajustes", "ajustes"],
 ];
 
+/** Todas las áreas que dejan ver una pantalla: la suya y, si las tiene, las de `RUTAS_TAMBIEN`. */
+export function areasDeRuta(ruta: string): AreaId[] {
+  const area = areaDeRuta(ruta);
+  return [...(area && area !== "equipo" ? [area] : []), ...(RUTAS_TAMBIEN[ruta.split("?")[0]] ?? [])];
+}
+
 export function areaDeRuta(ruta: string): AreaId | "equipo" | null {
   const r = ruta.split("?")[0];
   return RUTAS.find(([p]) => r === p || r.startsWith(`${p}/`))?.[1] ?? null;
@@ -307,7 +315,9 @@ export function nivelDeRuta(a: MiAcceso | null | undefined, ruta: string): 0 | 1
   const area = areaDeRuta(ruta);
   if (area === null) return 2;
   if (area === "equipo") return esDueno(a) ? 2 : 0;
-  return nivelEn(a, area);
+  let nivel: 0 | 1 | 2 = 0;
+  for (const x of areasDeRuta(ruta)) nivel = Math.max(nivel, nivelEn(a, x)) as 0 | 1 | 2;
+  return nivel;
 }
 
 /* Las secciones del Dashboard y las áreas que necesita cada una: se ve la

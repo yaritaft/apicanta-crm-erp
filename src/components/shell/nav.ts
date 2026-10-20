@@ -1,11 +1,11 @@
 import {
   LayoutDashboard, Users, Sheet, CalendarDays, Video, Megaphone,
   GraduationCap, ClipboardList, Wallet, Settings, HandCoins, ArrowDownUp, Banknote, Landmark, UserCheck,
-  ClipboardCheck, PhoneCall, ListChecks, FileInput, UserRound, CalendarCheck, TrendingUp, ArrowLeftRight, HeartHandshake, GitMerge,
+  ClipboardCheck, PhoneCall, ListChecks, FileInput, UserRound, CalendarCheck, TrendingUp, ArrowLeftRight, GitMerge,
 } from "lucide-react";
 import { SquareKanban } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import { esCuentaDeCloser, nivelDeRuta, type MiAcceso } from "@/lib/permisos";
+import { esCuentaDeCloser, nivelDeRuta, nivelEn, type MiAcceso } from "@/lib/permisos";
 
 /* Quién ve cada item lo dice su ruta (lib/permisos: areaDeRuta): Equipo y
    honorarios, sólo los dueños; el resto, según el tipo de cuenta. */
@@ -24,7 +24,7 @@ export const NAV: GrupoNav[] = [
     items: [
       { href: "/panel", texto: "Dashboard & KPIs", icono: LayoutDashboard, ayuda: "Todas las métricas del negocio, en una tabla o en gráficos" },
       /* Cada uno ve el suyo; un dueño elige de quién mirarlo, tal cual lo ve esa persona. */
-      { href: "/mi-panel", texto: "Mi panel", icono: UserRound, ayuda: "Tus comisiones, lo que tenés por cobrar y cómo te va. Los dueños pueden mirar el de cualquiera" },
+      { href: "/mi-panel", texto: "Mi panel", icono: UserRound, ayuda: "Lo tuyo en una pantalla: comisiones y cobros si vendés, a quién escribirle y a quién renovar si llevás el servicio. Los dueños pueden mirar el de cualquiera" },
     ],
   },
   {
@@ -50,8 +50,6 @@ export const NAV: GrupoNav[] = [
   {
     titulo: "Programa",
     items: [
-      /* El «Mi panel» de Customer Success: a quién escribirle hoy, renovaciones, resells y testimonios, cada lista con su regla. */
-      { href: "/mi-panel/servicio", texto: "Panel de servicio", icono: HeartHandshake, ayuda: "Lo que hoy le toca a Customer Success: a quién escribirle, a quién renovar, resells y testimonios" },
       { href: "/alumnos", texto: "Alumnos", icono: GraduationCap, ayuda: "Quién está cursando y cómo va" },
       /* Es una vista de Alumnos, no otra pantalla: el Shell marca el item más
          específico, así que acá se prende éste y no los dos. */
@@ -115,7 +113,8 @@ function alAlcance(menu: GrupoNav[], a: MiAcceso | null): GrupoNav[] {
    cualquier tipo) se quedaría sin ninguna de las tres entradas y sin forma de
    moverse: ése usa el menú de siempre, con lo que ve. */
 export function navPara(a: MiAcceso | null): GrupoNav[] {
-  const delCloser = esCuentaDeCloser(a) ? alAlcance(NAV_CLOSER, a) : [];
+  /* El menú del closer es para quien tiene el CRM o Ventas: que Customer Success vea «Mi panel» (por Alumnos) no lo hace closer. */
+  const delCloser = esCuentaDeCloser(a) && (nivelEn(a, "crm") >= 1 || nivelEn(a, "ventas") >= 1) ? alAlcance(NAV_CLOSER, a) : [];
   return delCloser.length > 0 ? delCloser : alAlcance(NAV, a);
 }
 
@@ -124,7 +123,7 @@ export function navPara(a: MiAcceso | null): GrupoNav[] {
    cae en el Dashboard, que tampoco ve. */
 export function inicioPara(a: MiAcceso | null): string {
   /* Customer Success (Alumnos y Clientes, sin Dashboard, CRM ni Ventas)
-     arranca en su panel (lo que le toca hoy), no en Clientes. */
-  if (nivelDeRuta(a, "/alumnos") > 0 && ["/panel", "/crm", "/leads", "/ventas"].every((r) => nivelDeRuta(a, r) === 0)) return "/mi-panel/servicio";
+     arranca en Mi panel (lo que le toca hoy), no en Clientes. */
+  if (nivelDeRuta(a, "/alumnos") > 0 && ["/panel", "/crm", "/leads", "/ventas"].every((r) => nivelDeRuta(a, r) === 0)) return "/mi-panel";
   return navPara(a)[0]?.items[0]?.href ?? "/panel";
 }

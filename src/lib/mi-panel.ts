@@ -29,18 +29,23 @@ import { normalizarUtm, origenDe } from "./utms";
    control de cobros): este archivo ordena, no inventa otra fórmula.
    ================================================================== */
 
-export type VistaDePanel = "closer" | "setter" | "director" | "otro";
+export type VistaDePanel = "closer" | "setter" | "director" | "servicio" | "otro";
 
-/** Qué secciones le corresponden a alguien según su rol en el equipo. */
-export function vistaDePanel(m: Pick<MiembroEquipo, "rol">): VistaDePanel {
+/** Quien lleva el servicio (Customer Success, Lili): lo dice su puesto en Equipo, porque su rol —el de las ventas— es «otro». */
+export const esDeServicio = (m: Partial<Pick<MiembroEquipo, "puesto">>) => /customer success|servicio|csm/i.test(m.puesto ?? "");
+
+/** Qué secciones le corresponden a alguien según su rol en el equipo (y, para el servicio, su puesto). */
+export function vistaDePanel(m: Pick<MiembroEquipo, "rol"> & Partial<Pick<MiembroEquipo, "puesto">>): VistaDePanel {
   if (m.rol === "closer") return "closer";
   if (m.rol === "setter") return "setter";
   if (m.rol === "director") return "director";
+  if (esDeServicio(m)) return "servicio";
   return "otro";
 }
 
-/** Quién puede tener un panel: los que venden o comisionan. */
-export const conPanel = (m: Pick<MiembroEquipo, "rol" | "activo">) => m.activo && ["closer", "setter", "director"].includes(m.rol);
+/** Quién puede tener un panel: los que venden o comisionan y quien lleva el servicio. */
+export const conPanel = (m: Pick<MiembroEquipo, "rol" | "activo"> & Partial<Pick<MiembroEquipo, "puesto">>) =>
+  m.activo && (["closer", "setter", "director"].includes(m.rol) || esDeServicio(m));
 
 export interface CobroCargado {
   pago: Pago;

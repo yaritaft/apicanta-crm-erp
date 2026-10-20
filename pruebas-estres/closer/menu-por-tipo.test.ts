@@ -5,7 +5,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { NAV, NAV_CLOSER, TODOS_LOS_ITEMS, inicioPara, navPara, type ItemNav } from "@/components/shell/nav";
 import {
-  ACCESO_DUENO, AREAS, AREAS_DE_SECCION, EDITAN, LEEN, TIPOS_POR_DEFECTO, areaDeRuta, esCuentaDeCloser, nivelDeRuta, nivelEn, puedeCargarDevolucion,
+  ACCESO_DUENO, AREAS, AREAS_DE_SECCION, EDITAN, LEEN, TIPOS_POR_DEFECTO, areaDeRuta, areasDeRuta, esCuentaDeCloser, nivelDeRuta, nivelEn, puedeCargarDevolucion,
   puedeDarDeBaja, puedeEditar, puedeLeer, resumenDeTipo, tipoLimpio, veSeccion, type MiAcceso,
 } from "@/lib/permisos";
 import type { AreaId, AreasDeTipo, TipoCuenta } from "@/lib/types";
@@ -30,7 +30,7 @@ const IDS_AREA = AREAS.map((a) => a.id);
 const nivelMinimo = (i: ItemNav) => (i.edita ? 2 : 1);
 /* El menú que le toca (la regla de los arreglos del estrés): el del closer si es de «sólo lo suyo» y le queda alguna de sus
    entradas; si no (un «sólo lo suyo» sin CRM ni Ventas), el de siempre. */
-const menuQueLeToca = (a: MiAcceso) => (esCuentaDeCloser(a) && NAV_CLOSER.flatMap((g) => g.items).some((i) => nivelDeRuta(a, i.href) >= nivelMinimo(i)) ? NAV_CLOSER : NAV);
+const menuQueLeToca = (a: MiAcceso) => (esCuentaDeCloser(a) && (nivelEn(a, "crm") >= 1 || nivelEn(a, "ventas") >= 1) && NAV_CLOSER.flatMap((g) => g.items).some((i) => nivelDeRuta(a, i.href) >= nivelMinimo(i)) ? NAV_CLOSER : NAV);
 
 function tipoAlAzar(r: Azar, i: number): TipoCuenta {
   const areas: AreasDeTipo = {};
@@ -45,12 +45,12 @@ function tipoAlAzar(r: Azar, i: number): TipoCuenta {
    como alias (alumnos/page.tsx), pero el menú ya no lo usa. */
 const MENU_ESPERADO: Record<string, { menu: string[]; inicio: string }> = {
   dueno: {
-    menu: ["/panel", "/mi-panel", "/leads", "/crm", "/agenda", "/ventas", "/clientes", "/webinars", "/formularios", "/marketing", "/marketing?nivel=conciliacion", "/mi-panel/servicio", "/alumnos", "/alumnos?seccion=pipeline", "/reportes",
+    menu: ["/panel", "/mi-panel", "/leads", "/crm", "/agenda", "/ventas", "/clientes", "/webinars", "/formularios", "/marketing", "/marketing?nivel=conciliacion", "/alumnos", "/alumnos?seccion=pipeline", "/reportes",
       "/alumnos?seccion=hoy", "/alumnos?seccion=clientes", "/finanzas", "/finanzas/end-of-day", "/finanzas/resultados", "/finanzas/transacciones", "/equipo", "/ajustes"],
     inicio: "/panel",
   },
   equipo: {
-    menu: ["/panel", "/mi-panel", "/leads", "/crm", "/agenda", "/ventas", "/clientes", "/webinars", "/formularios", "/marketing", "/marketing?nivel=conciliacion", "/mi-panel/servicio", "/alumnos", "/alumnos?seccion=pipeline", "/reportes",
+    menu: ["/panel", "/mi-panel", "/leads", "/crm", "/agenda", "/ventas", "/clientes", "/webinars", "/formularios", "/marketing", "/marketing?nivel=conciliacion", "/alumnos", "/alumnos?seccion=pipeline", "/reportes",
       "/alumnos?seccion=hoy", "/alumnos?seccion=clientes", "/finanzas", "/finanzas/end-of-day", "/finanzas/resultados", "/finanzas/transacciones", "/ajustes"],
     inicio: "/panel",
   },
@@ -60,8 +60,8 @@ const MENU_ESPERADO: Record<string, { menu: string[]; inicio: string }> = {
   admin: { menu: ["/panel", "/ventas", "/clientes", "/finanzas", "/finanzas/end-of-day", "/finanzas/resultados", "/finanzas/transacciones"], inicio: "/panel" },
   marketing: { menu: ["/panel", "/leads", "/webinars", "/formularios", "/marketing", "/marketing?nivel=conciliacion"], inicio: "/panel" },
   customer_success: {
-    menu: ["/clientes", "/mi-panel/servicio", "/alumnos", "/alumnos?seccion=pipeline", "/reportes", "/alumnos?seccion=hoy", "/alumnos?seccion=clientes"],
-    inicio: "/mi-panel/servicio",
+    menu: ["/mi-panel", "/clientes", "/alumnos", "/alumnos?seccion=pipeline", "/reportes", "/alumnos?seccion=hoy", "/alumnos?seccion=clientes"],
+    inicio: "/mi-panel",
   },
 };
 
@@ -103,7 +103,7 @@ test("3000 tipos al azar: cada item del menú es una ruta que sus áreas ven, de
       const area = areaDeRuta(h);
       assert.ok(area !== null && area !== "equipo", `${h}: sin área (o sólo de dueños) en el menú de un tipo que no es dueño`);
       assert.ok(nivelDeRuta(a, h) >= 1, `${h}: no la ve`);
-      assert.ok(nivelEn(a, area as AreaId) >= 1);
+      assert.ok(areasDeRuta(h).some((x) => nivelEn(a, x) >= 1), `${h}: ninguna de sus áreas la deja ver`);
     }
     /* Y al revés: lo que su menú muestra es TODO lo que puede usar (en el menú que le toca): lo que ve y, si guarda algo, lo que edita. */
     for (const i of lista.flatMap((g) => g.items)) assert.equal(menu.includes(i.href), nivelDeRuta(a, i.href) >= nivelMinimo(i), `${i.href}`);
@@ -131,7 +131,7 @@ test("3000 tipos al azar: con un menú que no está vacío, el inicio es una rut
 
 /* BUG: un tipo de «sólo lo suyo» sin CRM ni Ventas (por ejemplo Customer Success con la casilla marcada) usa el menú
    mínimo del closer, que se queda vacío, y su inicio no está en el menú: cae en /panel (que no ve) o, si ve Alumnos, en
-   /mi-panel/servicio. «Ir a mi inicio» lo devuelve a una pantalla que dice «no es de tu tipo de cuenta» o lo deja sin
+   /mi-panel. «Ir a mi inicio» lo devuelve a una pantalla que dice «no es de tu tipo de cuenta» o lo deja sin
    forma de moverse. El README dice que una cuenta de sólo lo suyo ve tres entradas, pero no que pueda quedarse sin ninguna. */
 test("BUG: el inicio de un tipo de «sólo lo suyo» sin CRM ni Ventas es una ruta de su menú", () => {
   const casos: AreasDeTipo[] = [{ alumnos: "editar" }, { alumnos: "ver", clientes: "ver" }, { leads: "editar" }, { finanzas: "editar" }];

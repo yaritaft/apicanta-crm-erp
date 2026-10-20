@@ -2,6 +2,7 @@
 
 import React from "react";
 import { Select } from "@/components/ui/ui";
+import { vistaDePanel } from "@/lib/mi-panel";
 import type { MiembroEquipo } from "@/lib/types";
 
 /* ==================================================================
@@ -13,7 +14,7 @@ import type { MiembroEquipo } from "@/lib/types";
    deshabilitados.
    ================================================================== */
 
-const ROL: Record<string, string> = { closer: "closer", setter: "setter", director: "director" };
+const ROL: Record<string, string> = { closer: "closer", setter: "setter", director: "director", servicio: "servicio" };
 
 export function BarraVerComo({ candidatos, elegido, yoId, viendoOtro, onElegir }: {
   candidatos: MiembroEquipo[];
@@ -30,7 +31,7 @@ export function BarraVerComo({ candidatos, elegido, yoId, viendoOtro, onElegir }
           aria-label="Persona"
           value={elegido.id}
           onChange={(ev) => onElegir(ev.target.value === yoId ? null : ev.target.value)}
-          opciones={candidatos.map((x) => ({ valor: x.id, texto: `${x.nombre} · ${ROL[x.rol] ?? x.rol}` }))}
+          opciones={candidatos.map((x) => ({ valor: x.id, texto: `${x.nombre} · ${ROL[vistaDePanel(x)] ?? x.rol}` }))}
         />
       </div>
       <span className="mp-vercomo__texto">

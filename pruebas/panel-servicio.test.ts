@@ -1,10 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-  DIAS_DE_GRACIA, ITEMS_POR_SECCION, panelDeServicio, resellResuelto, type PanelDeServicio, type SeccionServicio,
+  cuandoEs, DIAS_DE_GRACIA, panelDeServicio, resellResuelto, type PanelDeServicio, type SeccionServicio,
 } from "@/lib/panel-servicio";
 import { CONFIG_POR_DEFECTO, seguimientoVacio, situacionDe, terminoElServicio } from "@/lib/seguimiento";
-import { ACCESO_DUENO, areaDeRuta, TIPOS_POR_DEFECTO, type MiAcceso } from "@/lib/permisos";
+import { ACCESO_DUENO, areaDeRuta, nivelDeRuta, TIPOS_POR_DEFECTO, type MiAcceso } from "@/lib/permisos";
+import { conPanel, vistaDePanel } from "@/lib/mi-panel";
 import { inicioPara, navPara } from "@/components/shell/nav";
 import type { EstadoApp, SeguimientoAlumno } from "@/lib/types";
 
@@ -96,7 +97,8 @@ test("A contactar hoy: sólo a quien se le venció el seguimiento, con los días
   assert.deepEqual(nombres(s), ["Atrasada"]);
   assert.equal(s.items[0].dias, 10);
   assert.equal(s.items[0].tono, "rojo", "una semana o más de atraso");
-  assert.match(s.items[0].detalle, /hace 10 días/);
+  assert.equal(s.items[0].cuando, "hace 10 d");
+  assert.match(s.items[0].detalle, /Último contacto el 25 sep/);
 });
 
 test("Nuevos: entraron hace menos de dos semanas sin el primer contacto; el que lleva 3 días o más está en rojo y va primero", () => {
@@ -109,8 +111,10 @@ test("Se les termina el contrato: lo ya vencido arriba y en rojo, después el qu
   const s = seccion(panelDeServicio(estado(), HOY, AHORA), "renovar");
   assert.deepEqual(nombres(s), ["Termino", "Vence"]);
   assert.deepEqual(s.items.map((i) => i.tono), ["rojo", "ambar"]);
-  assert.match(s.items[0].detalle, /Terminó hace 10 días/);
-  assert.match(s.items[1].detalle, /Termina en 5 días/);
+  assert.match(s.items[0].detalle, /Terminó el 10 oct/);
+  assert.equal(s.items[0].cuando, "hace 10 d");
+  assert.match(s.items[1].detalle, /Termina el 25 oct/);
+  assert.equal(s.items[1].cuando, "en 5 d");
 });
 
 test("Resells sin cierre: la llamada ya pasó y el closer no dijo en qué quedó; a la semana, en rojo", () => {
@@ -158,21 +162,21 @@ test("CV y LinkedIn: cuántas revisiones siguen en curso por estado, y las que n
   assert.equal(p.cvs.sinAlumno, 1);
 });
 
-test("cada lista muestra los 8 más urgentes y cuenta el resto", () => {
+test("cada lista trae a todos, lo más urgente arriba, para poder buscarlos y paginarlos en la pantalla", () => {
   const muchos = Array.from({ length: 12 }, (_, i) => alumno(`a${i}`, `Alumno ${String(i).padStart(2, "0")}`, "2026-10-19"));
   const s = seccion(panelDeServicio(estado({ alumnos: muchos as never, seguimientos: [], testimonios: [], resells: [], revisionesCv: [] }), HOY, AHORA), "nuevos");
   assert.equal(s.total, 12);
-  assert.equal(s.items.length, ITEMS_POR_SECCION);
+  assert.equal(s.items.length, 12, "no se recorta: la pantalla muestra de a 25");
   assert.equal(s.rojos, 0, "entraron ayer: están a tiempo");
 });
 
-test("lo urgente se cuenta sobre toda la lista, no sólo sobre los 8 que se ven", () => {
+test("lo urgente se cuenta sobre toda la lista", () => {
   const atrasadas = Array.from({ length: 12 }, (_, i) => alumno(`b${i}`, `Atrasada ${String(i).padStart(2, "0")}`, "2026-06-01"));
   const seguimientos = atrasadas.map((a) => seg(a.id, { contratoFirmado: "Firmado", contactoInicial: "2026-06-02", ultimoContacto: "2026-09-01", duracionMeses: 12 }));
   const p = panelDeServicio(estado({ alumnos: atrasadas as never, seguimientos, testimonios: [], resells: [], revisionesCv: [] }), HOY, AHORA);
   const s = seccion(p, "contactar");
   assert.equal(s.total, 12);
-  assert.equal(s.items.length, ITEMS_POR_SECCION);
+  assert.equal(s.items.length, 12);
   assert.equal(s.rojos, 12);
   assert.equal(p.urgentes, 12);
 });
@@ -206,18 +210,53 @@ test("sin datos, el panel no se rompe: todo en cero", () => {
   assert.ok(p.secciones.every((s) => s.total === 0 && s.items.length === 0));
 });
 
-test("el panel de servicio es una pantalla de Alumnos, no del CRM: lo ve Customer Success y no lo ve el closer", () => {
-  assert.equal(areaDeRuta("/mi-panel/servicio"), "alumnos");
-  assert.equal(areaDeRuta("/mi-panel"), "crm", "el Mi panel de los closers sigue siendo del CRM");
-  const de = (id: string): MiAcceso => {
-    const t = TIPOS_POR_DEFECTO.find((x) => x.id === id)!;
-    return { tipo: t.id, nombre: t.nombre, areas: t.areas, soloLoSuyo: t.soloLoSuyo };
-  };
-  const rutas = (a: MiAcceso) => navPara(a).flatMap((g) => g.items.map((i) => i.href));
-  assert.ok(rutas(de("customer_success")).includes("/mi-panel/servicio"));
-  assert.ok(!rutas(de("customer_success")).includes("/mi-panel"), "no tiene el de los closers");
-  assert.equal(inicioPara(de("customer_success")), "/mi-panel/servicio", "arranca en lo que le toca hoy");
-  for (const id of ["closer", "setter", "marketing"]) assert.ok(!rutas(de(id)).includes("/mi-panel/servicio"), id);
-  /* Un dueño ve los dos paneles. */
-  assert.ok(rutas(ACCESO_DUENO).includes("/mi-panel") && rutas(ACCESO_DUENO).includes("/mi-panel/servicio"));
+test("cada fila trae a quién escribirle: teléfono y mail para copiar, y el programa", () => {
+  const e = estado({
+    contactos: [{ id: "c1", nombre: "Atrasada", email: "atrasada@mail.com", telefono: "+54 9 11 5555 1111", pais: "Argentina" }] as never,
+    leads: [{ id: "l1", nombre: "Atrasada", email: "atrasada@mail.com", contactoId: "c1" }] as never,
+  });
+  e.alumnos = e.alumnos.map((a) => (a.id === "atrasada" ? { ...a, leadId: "l1" } : a));
+  const i = seccion(panelDeServicio(e, HOY, AHORA), "contactar").items[0];
+  assert.equal(i.nombre, "Atrasada");
+  assert.equal(i.telefono, "+54 9 11 5555 1111");
+  assert.equal(i.email, "atrasada@mail.com");
+});
+
+test("«cuándo»: hoy, hace N d o en N d, corto para la derecha de la fila", () => {
+  assert.equal(cuandoEs(0), "hoy");
+  assert.equal(cuandoEs(10), "hace 10 d");
+  assert.equal(cuandoEs(-5), "en 5 d");
+});
+
+test("cada lista dice qué mostrar cuando no hay nadie", () => {
+  const p = panelDeServicio(estado({ alumnos: [], seguimientos: [], testimonios: [], resells: [], revisionesCv: [] }), HOY, AHORA);
+  for (const s of p.secciones) assert.ok(s.vacio.length > 15, s.id);
+});
+
+const rutasDe = (a: MiAcceso) => navPara(a).flatMap((g) => g.items.map((i) => i.href));
+const acceso = (id: string): MiAcceso => {
+  const t = TIPOS_POR_DEFECTO.find((x) => x.id === id)!;
+  return { tipo: t.id, nombre: t.nombre, areas: t.areas, soloLoSuyo: t.soloLoSuyo };
+};
+
+test("el panel de Lili vive en «Mi panel»: Customer Success lo ve y arranca ahí, y los dueños lo miran «como» ella", () => {
+  assert.equal(areaDeRuta("/mi-panel"), "crm", "sigue siendo del CRM para los closers...");
+  assert.ok(nivelDeRuta(acceso("customer_success"), "/mi-panel") >= 1, "...y además lo ve quien ve Alumnos");
+  assert.ok(rutasDe(acceso("customer_success")).includes("/mi-panel"));
+  assert.equal(inicioPara(acceso("customer_success")), "/mi-panel", "arranca en lo que le toca hoy");
+  assert.ok(!rutasDe(acceso("customer_success")).includes("/mi-panel/servicio"), "ya no hay una pantalla aparte");
+  assert.ok(rutasDe(ACCESO_DUENO).includes("/mi-panel") && !rutasDe(ACCESO_DUENO).includes("/mi-panel/servicio"));
+  /* Quien no ve ni el CRM ni Alumnos no entra. */
+  assert.equal(nivelDeRuta(acceso("marketing"), "/mi-panel"), 0);
+  assert.equal(nivelDeRuta(acceso("admin"), "/mi-panel"), 0);
+});
+
+test("quién tiene el panel de servicio: lo dice su puesto en Equipo (Customer Success Manager), no su rol de ventas", () => {
+  assert.equal(vistaDePanel({ rol: "otro", puesto: "Customer Success Manager" }), "servicio");
+  assert.equal(vistaDePanel({ rol: "otro", puesto: "Content manager · Asistente de finanzas" }), "otro");
+  assert.equal(vistaDePanel({ rol: "closer", puesto: "Closer de ventas" }), "closer");
+  assert.equal(vistaDePanel({ rol: "otro" }), "otro");
+  assert.equal(conPanel({ rol: "otro", puesto: "Customer Success Manager", activo: true }), true, "un dueño la puede elegir en «ver como»");
+  assert.equal(conPanel({ rol: "otro", puesto: "Customer Success Manager", activo: false }), false);
+  assert.equal(conPanel({ rol: "otro", puesto: "COO", activo: true }), false);
 });

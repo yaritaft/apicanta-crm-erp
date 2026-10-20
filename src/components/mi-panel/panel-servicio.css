@@ -1,19 +1,69 @@
-/* Panel de servicio (Customer Success): reusa las capas y los bloques de Mi panel (mi-panel.css) y agrega sólo
-   lo propio: la regla de cada lista y la fila «nombre · detalle · estado». */
+/* Panel de servicio (Customer Success): minimalista. Reusa las capas y los bloques de Mi panel (mi-panel.css) y agrega sólo lo
+   propio: las solapas con su cuenta, la fila de dos renglones y el pie. El color queda para el dato (un punto, un «hace 10 d»). */
 
-.ps-regla { margin: 0; padding: 0 26px 10px; font-size: 13px; line-height: 19px; color: var(--ink-subtle); }
-.ps-fila { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 2fr) auto; gap: var(--space-3); align-items: center; padding: 13px 12px; border-top: 1px solid var(--mp-linea); font-size: 15px; }
+.ps { display: flex; flex-direction: column; gap: 20px; min-width: 0; padding-bottom: var(--space-6); }
+
+/* ---------- solapas ---------- */
+
+.ps-tabs { display: flex; gap: 8px; overflow-x: auto; padding: 2px; margin: 0 -2px; scrollbar-width: none; }
+.ps-tabs::-webkit-scrollbar { display: none; }
+.ps-tab {
+  flex: none; display: inline-flex; align-items: center; gap: 8px; padding: 9px 16px; border: 0; border-radius: 999px;
+  font: inherit; font-size: 14px; line-height: 20px; font-weight: 500; color: var(--ink-muted); cursor: pointer;
+  background: var(--mp-bloque); box-shadow: var(--mp-sombra); transition: background 140ms ease-out, color 140ms ease-out;
+}
+.ps-tab:hover { background: var(--mp-bloque-alto); color: var(--ink); }
+.ps-tab[aria-selected="true"] { background: var(--mp-bloque-alto); color: var(--ink); font-weight: 600; box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ink) 20%, transparent); }
+.ps-tab:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.ps-tab__n { font-variant-numeric: tabular-nums; font-size: 13px; color: var(--ink-subtle); }
+.ps-tab[aria-selected="true"] .ps-tab__n { color: var(--ink-muted); }
+
+/* ---------- la lista ---------- */
+
+.ps-barra { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 16px; padding: 18px 22px 10px; }
+.ps-regla { margin: 0; flex: 1 1 260px; font-size: 13px; line-height: 19px; color: var(--ink-subtle); }
+.ps-filas { padding: 0 8px 8px; }
+.ps-fila {
+  display: grid; grid-template-columns: 8px minmax(0, 1fr) auto; grid-template-areas: "punto nombre cuando" "punto detalle acciones";
+  column-gap: 14px; row-gap: 4px; align-items: center; padding: 13px 14px; border-top: 1px solid var(--mp-linea); border-radius: 0;
+}
 .ps-fila:first-child { border-top: 0; }
 .ps-fila--clic { cursor: pointer; border-radius: var(--radius-md); transition: background 140ms ease-out; }
 .ps-fila--clic:hover { background: var(--mp-bloque-alto); }
 .ps-fila--clic:hover + .ps-fila { border-top-color: transparent; }
 .ps-fila--clic:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
-.ps-fila__nombre { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink); font-weight: 500; }
-.ps-fila__detalle { min-width: 0; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; font-size: 14px; line-height: 20px; color: var(--ink-muted); }
-.ps-cv { margin: 10px 0 12px; font-size: 15px; line-height: 22px; color: var(--ink); font-variant-numeric: tabular-nums; }
 
+.ps-punto { grid-area: punto; align-self: start; margin-top: 8px; width: 8px; height: 8px; border-radius: 999px; background: var(--ink-subtle); opacity: 0.45; }
+.ps-punto--rojo { background: var(--danger); opacity: 1; }
+.ps-punto--ambar { background: var(--warning); opacity: 1; }
+
+.ps-nombre { grid-area: nombre; display: flex; align-items: baseline; gap: 10px; min-width: 0; }
+.ps-nombre__texto { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 15px; line-height: 22px; font-weight: 500; color: var(--ink); }
+.ps-nombre__sub { flex: none; font-size: 12px; color: var(--ink-subtle); white-space: nowrap; }
+.ps-cuando { grid-area: cuando; justify-self: end; font-size: 13px; line-height: 22px; font-variant-numeric: tabular-nums; white-space: nowrap; color: var(--ink-subtle); }
+.ps-cuando--rojo { color: var(--danger); font-weight: 600; }
+.ps-cuando--ambar { color: var(--warning); font-weight: 600; }
+.ps-detalle { grid-area: detalle; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; line-height: 20px; color: var(--ink-muted); }
+.ps-acciones { grid-area: acciones; justify-self: end; display: flex; align-items: center; gap: 4px 16px; min-width: 0; font-size: 13px; line-height: 20px; color: var(--ink-muted); }
+.ps-acciones .telefono, .ps-acciones__mail { min-width: 0; }
+.ps-acciones__mail { max-width: 220px; overflow: hidden; }
+
+.ps-mas { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 22px 16px; border-top: 1px solid var(--mp-linea); font-size: 13px; color: var(--ink-subtle); font-variant-numeric: tabular-nums; }
+
+/* ---------- el pie: lo que no es de hoy ---------- */
+
+.ps-pie { display: flex; flex-wrap: wrap; gap: 6px 24px; padding: 0 6px; font-size: 13px; line-height: 20px; }
+.ps-dato { color: var(--ink-subtle); text-decoration: none; }
+.ps-dato b { font-weight: 600; font-variant-numeric: tabular-nums; color: var(--ink-muted); margin-right: 2px; }
+.ps-dato:hover { color: var(--ink); }
+.ps-dato:hover b { color: var(--ink); }
+.ps-dato:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: 4px; }
+
+@media (max-width: 900px) { .ps-acciones__mail { display: none; } }
 @media (max-width: 640px) {
-  .ps-fila { grid-template-columns: minmax(0, 1fr) auto; }
-  .ps-fila__detalle { grid-column: 1 / -1; grid-row: 2; -webkit-line-clamp: 3; }
-  .ps-regla { padding: 0 18px 10px; }
+  .ps-fila { grid-template-areas: "punto nombre cuando" "punto detalle detalle" "punto acciones acciones"; padding: 13px 10px; }
+  .ps-detalle { white-space: normal; }
+  .ps-acciones { justify-self: start; }
+  .ps-barra { padding: 16px 16px 8px; }
+  .ps-mas { padding: 10px 16px 14px; }
 }
