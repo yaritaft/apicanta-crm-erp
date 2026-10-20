@@ -113,3 +113,19 @@ evento `RegistroCalificado`. Y en el píxel de la landing, disparar `Lead` (no `
 Si faltan las variables, **Ajustes → Integraciones → Conversions API de Meta** dice cuáles y para qué. Variables
 opcionales: `META_CAPI_URL` (la página de la landing, para los eventos que no pasaron en una página) y
 `META_CAPI_EVENTO_CALIFICADO` (cómo se llama el evento; por defecto `RegistroCalificado`).
+
+## El cruce automático con Calendly y ventas
+
+Cada media hora (`/api/cron/cruce-formularios`, en :05 y :35) la app une sola los registros del formulario con las personas que
+**agendaron en Calendly** o **compraron** (la venta apunta a un lead y el lead a su contacto):
+
+- se unen solo las coincidencias **seguras**: el mismo mail o el mismo teléfono (con o sin +54, 9, 0 y 15). Las **dudosas** (un nombre
+  parecido, un teléfono sin código de área) no se unen solas: las sigue viendo una persona en Formularios → Cruce con la agenda;
+- el contacto hereda del formulario sus huecos (teléfono, país, **anuncio** y **webinar**), empezando por el primer formulario que
+  llenó, para que sus ventas se atribuyan al anuncio que vio. El anuncio y el webinar se heredan solo si existen en la app (son
+  claves foráneas);
+- un registro ya unido (solo o a mano) no se toca, y correrlo de nuevo no repite nada.
+
+Quedan sin cruzar, a propósito, los registros de quienes nunca agendaron ni compraron: son la inmensa mayoría y se quedan en Formularios.
+La lógica pura está en `lib/cruce-auto.ts` y la lectura y escritura en `lib/cruce-nube.ts`. Pruebas: `pruebas/cruce-auto.test.ts` y
+`pruebas-estres/pasarelas/cruce-formularios-cron.test.ts`.
