@@ -293,8 +293,8 @@ test("«Cargar venta» y «Cerrar el día» sólo están en el menú del closer 
 
 test("un tipo de «sólo lo suyo» sin CRM ni Ventas no se queda sin menú: usa el de siempre y su inicio es una pantalla de ese menú", () => {
   const casos: [string, AreasDeTipo, string][] = [
-    ["Alumnos", { alumnos: "editar" }, "/alumnos?seccion=hoy"],
-    ["Alumnos y Clientes para ver", { alumnos: "ver", clientes: "ver" }, "/alumnos?seccion=hoy"],
+    ["Alumnos", { alumnos: "editar" }, "/mi-panel/servicio"],
+    ["Alumnos y Clientes para ver", { alumnos: "ver", clientes: "ver" }, "/mi-panel/servicio"],
     ["Leads", { leads: "editar" }, "/leads"],
     ["Finanzas", { finanzas: "editar" }, "/finanzas"],
     ["Marketing", { panel: "ver", webinars: "editar", marketing: "editar" }, "/panel"],
@@ -338,9 +338,9 @@ test("los tipos de fábrica siguen con su menú de siempre", () => {
     director: ["/panel", "/mi-panel", "/leads", "/crm", "/agenda", "/ventas", "/clientes", "/webinars", "/formularios"],
     admin: ["/panel", "/ventas", "/clientes", "/finanzas", "/finanzas/end-of-day", "/finanzas/resultados", "/finanzas/transacciones"],
     marketing: ["/panel", "/leads", "/webinars", "/formularios", "/marketing"],
-    customer_success: ["/clientes", "/alumnos", "/alumnos?seccion=pipeline", "/reportes", "/alumnos?seccion=hoy", "/alumnos?seccion=clientes"],
+    customer_success: ["/clientes", "/mi-panel/servicio", "/alumnos", "/alumnos?seccion=pipeline", "/reportes", "/alumnos?seccion=hoy", "/alumnos?seccion=clientes"],
   };
-  const inicios: Record<string, string> = { closer: "/mis-llamadas", setter: "/mi-panel", director: "/panel", admin: "/panel", marketing: "/panel", customer_success: "/alumnos?seccion=hoy" };
+  const inicios: Record<string, string> = { closer: "/mis-llamadas", setter: "/mi-panel", director: "/panel", admin: "/panel", marketing: "/panel", customer_success: "/mi-panel/servicio" };
   for (const [id, esperado] of Object.entries(menus)) {
     const t = TIPOS_POR_DEFECTO.find((x) => x.id === id)!;
     const a = acceso(t.areas, t.soloLoSuyo);

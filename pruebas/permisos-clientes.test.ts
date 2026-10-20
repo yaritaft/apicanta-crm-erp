@@ -45,7 +45,7 @@ test("«Customer Success» ve Alumnos y Clientes, y sólo eso", () => {
   for (const r of ["/panel", "/leads", "/crm", "/agenda", "/ventas", "/webinars", "/marketing", "/finanzas", "/finanzas/caja", "/conciliacion", "/equipo", "/ajustes"]) {
     assert.ok(!rutas.includes(r), `no tiene que ver ${r}`);
   }
-  assert.equal(inicioPara(a), "/alumnos?seccion=hoy");
+  assert.equal(inicioPara(a), "/mi-panel/servicio");
   /* Edita lo de Alumnos y no toca lo demás. */
   assert.ok(puedeEditar(a, "alumnos") && puedeEditar(a, "seguimiento_alumnos") && puedeEditar(a, "testimonios"));
   for (const t of ["ventas", "cuotas", "pagos", "gastos", "sesiones", "ajustes", "equipo", "honorarios"]) assert.ok(!puedeEditar(a, t), t);

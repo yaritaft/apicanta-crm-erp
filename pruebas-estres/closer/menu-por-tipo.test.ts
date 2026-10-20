@@ -45,12 +45,12 @@ function tipoAlAzar(r: Azar, i: number): TipoCuenta {
    como alias (alumnos/page.tsx), pero el menú ya no lo usa. */
 const MENU_ESPERADO: Record<string, { menu: string[]; inicio: string }> = {
   dueno: {
-    menu: ["/panel", "/mi-panel", "/leads", "/crm", "/agenda", "/ventas", "/clientes", "/webinars", "/formularios", "/marketing", "/alumnos", "/alumnos?seccion=pipeline", "/reportes",
+    menu: ["/panel", "/mi-panel", "/leads", "/crm", "/agenda", "/ventas", "/clientes", "/webinars", "/formularios", "/marketing", "/mi-panel/servicio", "/alumnos", "/alumnos?seccion=pipeline", "/reportes",
       "/alumnos?seccion=hoy", "/alumnos?seccion=clientes", "/finanzas", "/finanzas/end-of-day", "/finanzas/resultados", "/finanzas/transacciones", "/equipo", "/ajustes"],
     inicio: "/panel",
   },
   equipo: {
-    menu: ["/panel", "/mi-panel", "/leads", "/crm", "/agenda", "/ventas", "/clientes", "/webinars", "/formularios", "/marketing", "/alumnos", "/alumnos?seccion=pipeline", "/reportes",
+    menu: ["/panel", "/mi-panel", "/leads", "/crm", "/agenda", "/ventas", "/clientes", "/webinars", "/formularios", "/marketing", "/mi-panel/servicio", "/alumnos", "/alumnos?seccion=pipeline", "/reportes",
       "/alumnos?seccion=hoy", "/alumnos?seccion=clientes", "/finanzas", "/finanzas/end-of-day", "/finanzas/resultados", "/finanzas/transacciones", "/ajustes"],
     inicio: "/panel",
   },
@@ -60,8 +60,8 @@ const MENU_ESPERADO: Record<string, { menu: string[]; inicio: string }> = {
   admin: { menu: ["/panel", "/ventas", "/clientes", "/finanzas", "/finanzas/end-of-day", "/finanzas/resultados", "/finanzas/transacciones"], inicio: "/panel" },
   marketing: { menu: ["/panel", "/leads", "/webinars", "/formularios", "/marketing"], inicio: "/panel" },
   customer_success: {
-    menu: ["/clientes", "/alumnos", "/alumnos?seccion=pipeline", "/reportes", "/alumnos?seccion=hoy", "/alumnos?seccion=clientes"],
-    inicio: "/alumnos?seccion=hoy",
+    menu: ["/clientes", "/mi-panel/servicio", "/alumnos", "/alumnos?seccion=pipeline", "/reportes", "/alumnos?seccion=hoy", "/alumnos?seccion=clientes"],
+    inicio: "/mi-panel/servicio",
   },
 };
 
@@ -131,7 +131,7 @@ test("3000 tipos al azar: con un menú que no está vacío, el inicio es una rut
 
 /* BUG: un tipo de «sólo lo suyo» sin CRM ni Ventas (por ejemplo Customer Success con la casilla marcada) usa el menú
    mínimo del closer, que se queda vacío, y su inicio no está en el menú: cae en /panel (que no ve) o, si ve Alumnos, en
-   /alumnos?seccion=hoy. «Ir a mi inicio» lo devuelve a una pantalla que dice «no es de tu tipo de cuenta» o lo deja sin
+   /mi-panel/servicio. «Ir a mi inicio» lo devuelve a una pantalla que dice «no es de tu tipo de cuenta» o lo deja sin
    forma de moverse. El README dice que una cuenta de sólo lo suyo ve tres entradas, pero no que pueda quedarse sin ninguna. */
 test("BUG: el inicio de un tipo de «sólo lo suyo» sin CRM ni Ventas es una ruta de su menú", () => {
   const casos: AreasDeTipo[] = [{ alumnos: "editar" }, { alumnos: "ver", clientes: "ver" }, { leads: "editar" }, { finanzas: "editar" }];

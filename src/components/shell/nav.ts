@@ -1,7 +1,7 @@
 import {
   LayoutDashboard, Users, Sheet, CalendarDays, Video, Megaphone,
   GraduationCap, ClipboardList, Wallet, Settings, HandCoins, ArrowDownUp, Banknote, Landmark, UserCheck,
-  ClipboardCheck, PhoneCall, ListChecks, FileInput, UserRound, CalendarCheck, TrendingUp, ArrowLeftRight,
+  ClipboardCheck, PhoneCall, ListChecks, FileInput, UserRound, CalendarCheck, TrendingUp, ArrowLeftRight, HeartHandshake,
 } from "lucide-react";
 import { SquareKanban } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
@@ -48,6 +48,8 @@ export const NAV: GrupoNav[] = [
   {
     titulo: "Programa",
     items: [
+      /* El «Mi panel» de Customer Success: a quién escribirle hoy, renovaciones, resells y testimonios, cada lista con su regla. */
+      { href: "/mi-panel/servicio", texto: "Panel de servicio", icono: HeartHandshake, ayuda: "Lo que hoy le toca a Customer Success: a quién escribirle, a quién renovar, resells y testimonios" },
       { href: "/alumnos", texto: "Alumnos", icono: GraduationCap, ayuda: "Quién está cursando y cómo va" },
       /* Es una vista de Alumnos, no otra pantalla: el Shell marca el item más
          específico, así que acá se prende éste y no los dos. */
@@ -120,7 +122,7 @@ export function navPara(a: MiAcceso | null): GrupoNav[] {
    cae en el Dashboard, que tampoco ve. */
 export function inicioPara(a: MiAcceso | null): string {
   /* Customer Success (Alumnos y Clientes, sin Dashboard, CRM ni Ventas)
-     arranca en la lista de a quién contactar hoy, no en Clientes. */
-  if (nivelDeRuta(a, "/alumnos") > 0 && ["/panel", "/crm", "/leads", "/ventas"].every((r) => nivelDeRuta(a, r) === 0)) return "/alumnos?seccion=hoy";
+     arranca en su panel (lo que le toca hoy), no en Clientes. */
+  if (nivelDeRuta(a, "/alumnos") > 0 && ["/panel", "/crm", "/leads", "/ventas"].every((r) => nivelDeRuta(a, r) === 0)) return "/mi-panel/servicio";
   return navPara(a)[0]?.items[0]?.href ?? "/panel";
 }
