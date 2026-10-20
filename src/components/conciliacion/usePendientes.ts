@@ -33,6 +33,10 @@ export interface DatosDePendientes {
   resumen: ResumenPendientes;
   /** Los formularios sin unir que se parecen a alguien de la lista. */
   registros: RegistroForm[];
+  /** La lista ya se ve, pero todavía se están buscando los formularios que se parecen a cada persona. */
+  buscando: boolean;
+  /** Por qué no se pudieron buscar esos formularios (la lista sigue sirviendo para marcar «otro camino»). */
+  avisoBusqueda: string;
   cruce: EstadoDelCruceLeido | null;
   /** Vuelve a preguntarle todo al servidor (después de que el proceso automático unió algo, por ejemplo). */
   recargar: () => void;
@@ -59,7 +63,10 @@ export function usePendientesDelMes(mes: string, activo = true): DatosDePendient
   const [leido, setLeido] = useState<{ mes: string; unidos: Set<string> } | null>(null);
   /* Al cambiar de mes se espera lo suyo; si sólo cambian los datos de la app, se sigue mostrando lo que hay mientras se vuelve a preguntar. */
   const unidos = leido?.mes === mes ? leido.unidos : null;
-  const [registros, setRegistros] = useState<RegistroForm[]>([]);
+  const [leidos, setLeidos] = useState<{ mes: string; lista: RegistroForm[] }>({ mes: "", lista: [] });
+  const registros = leidos.mes === mes ? leidos.lista : [];
+  const [buscando, setBuscando] = useState(false);
+  const [avisoBusqueda, setAvisoBusqueda] = useState("");
   const [cruce, setCruce] = useState<EstadoDelCruceLeido | null>(null);
   const [error, setError] = useState("");
   const [vuelta, setVuelta] = useState(0);
@@ -75,11 +82,20 @@ export function usePendientesDelMes(mes: string, activo = true): DatosDePendient
       try {
         const [u, c] = await Promise.all([pedirUnidos(idsDelMes), pedirEstadoDelCruce().catch(() => null)]);
         if (mio !== pedido.current) return;
-        const r = await pedirCandidatos(pendientesDelMes(datos, mes, u));
-        if (mio !== pedido.current) return;
-        setRegistros(r);
+        /* La lista se ve en cuanto se sabe quién ya tiene formulario; los formularios parecidos (lo lento) llegan después. */
         setCruce(c);
         setLeido({ mes, unidos: u });
+        setAvisoBusqueda("");
+        setBuscando(true);
+        try {
+          const r = await pedirCandidatos(pendientesDelMes(datos, mes, u));
+          if (mio !== pedido.current) return;
+          setLeidos({ mes, lista: r });
+        } catch (x) {
+          if (mio !== pedido.current) return;
+          setAvisoBusqueda(x instanceof ErrorConciliacion ? x.message : "No pude buscar los formularios parecidos.");
+        }
+        setBuscando(false);
       } catch (x) {
         if (mio !== pedido.current) return;
         setError(x instanceof ErrorConciliacion ? x.message : "No pude consultar los formularios.");
@@ -96,10 +112,10 @@ export function usePendientesDelMes(mes: string, activo = true): DatosDePendient
   const recargar = useCallback(() => setVuelta((v) => v + 1), []);
   const uniDo = useCallback((contactoId: string, registroId: string) => {
     setLeido((l) => (l ? { ...l, unidos: new Set([...l.unidos, contactoId]) } : l));
-    setRegistros((rs) => rs.filter((r) => r.id !== registroId));
+    setLeidos((l) => ({ ...l, lista: l.lista.filter((r) => r.id !== registroId) }));
   }, []);
-  const quitarRegistro = useCallback((registroId: string) => setRegistros((rs) => rs.filter((r) => r.id !== registroId)), []);
+  const quitarRegistro = useCallback((registroId: string) => setLeidos((l) => ({ ...l, lista: l.lista.filter((r) => r.id !== registroId) })), []);
 
   const carga: EstadoCarga = sinNube ? "sin-nube" : sinPermiso ? "sin-permiso" : error ? "error" : unidos ? "listo" : "cargando";
-  return { mes, carga, error, puedeEditar: nivel >= 2, pendientes, marcados, resumen, registros, cruce, recargar, uniDo, quitarRegistro };
+  return { mes, carga, error, puedeEditar: nivel >= 2, pendientes, marcados, resumen, registros, buscando, avisoBusqueda, cruce, recargar, uniDo, quitarRegistro };
 }

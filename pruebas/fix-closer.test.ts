@@ -337,7 +337,7 @@ test("los tipos de fábrica siguen con su menú de siempre", () => {
     setter: ["/mi-panel", "/leads", "/crm", "/agenda"],
     director: ["/panel", "/mi-panel", "/leads", "/crm", "/agenda", "/ventas", "/clientes", "/webinars", "/formularios"],
     admin: ["/panel", "/ventas", "/clientes", "/finanzas", "/finanzas/end-of-day", "/finanzas/resultados", "/finanzas/transacciones"],
-    marketing: ["/panel", "/leads", "/webinars", "/formularios", "/marketing"],
+    marketing: ["/panel", "/leads", "/webinars", "/formularios", "/marketing", "/marketing?nivel=conciliacion"],
     customer_success: ["/clientes", "/mi-panel/servicio", "/alumnos", "/alumnos?seccion=pipeline", "/reportes", "/alumnos?seccion=hoy", "/alumnos?seccion=clientes"],
   };
   const inicios: Record<string, string> = { closer: "/mis-llamadas", setter: "/mi-panel", director: "/panel", admin: "/panel", marketing: "/panel", customer_success: "/mi-panel/servicio" };

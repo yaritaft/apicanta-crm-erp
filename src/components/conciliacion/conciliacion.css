@@ -58,3 +58,5 @@
   .pc-prop__botones { justify-content: flex-start; }
   .pc-filtros__busca { margin-left: 0; width: 100%; }
 }
+
+.pc-aviso { margin: 0; padding: var(--space-3) var(--space-4); border-top: 1px solid var(--border); background: var(--surface-000); color: var(--ink); }

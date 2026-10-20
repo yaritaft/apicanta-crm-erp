@@ -52,6 +52,7 @@ export function PendientesDeConciliar({ mes, onMes }: { mes: string; onMes?: (m:
 
 export function PantallaPendientes({ datos, onMes }: { datos: DatosDePendientes; onMes?: (m: string) => void }) {
   const { mes, carga, resumen, pendientes, marcados, puedeEditar } = datos;
+  const listo = carga === "listo";
   const [quien, setQuien] = useState<"todos" | "venta" | "agenda">("todos");
   const [canal, setCanal] = useState<string>("");
   const [buscaLista, setBuscaLista] = useState("");
@@ -132,13 +133,13 @@ export function PantallaPendientes({ datos, onMes }: { datos: DatosDePendientes;
           <Card style={{ padding: 0 }}>
             <div className="pc-cabeza">
               <CardHead
-                titulo={`Para conciliar (${num(visibles.length)}${visibles.length !== pendientes.length ? ` de ${num(pendientes.length)}` : ""})`}
+                titulo={listo ? `Para conciliar (${num(visibles.length)}${visibles.length !== pendientes.length ? ` de ${num(pendientes.length)}` : ""})` : "Para conciliar"}
                 sub="Unilos con su formulario o marcá que vinieron por otro camino."
               />
               <div className="pc-filtros">
-                <Chip activo={quien === "todos"} onClick={() => setQuien("todos")} count={pendientes.length}>Todos</Chip>
-                <Chip activo={quien === "venta"} onClick={() => setQuien("venta")} count={resumen.conVenta}>Con venta</Chip>
-                <Chip activo={quien === "agenda"} onClick={() => setQuien("agenda")} count={resumen.soloAgenda}>Sólo agenda</Chip>
+                <Chip activo={quien === "todos"} onClick={() => setQuien("todos")} count={listo ? pendientes.length : undefined}>Todos</Chip>
+                <Chip activo={quien === "venta"} onClick={() => setQuien("venta")} count={listo ? resumen.conVenta : undefined}>Con venta</Chip>
+                <Chip activo={quien === "agenda"} onClick={() => setQuien("agenda")} count={listo ? resumen.soloAgenda : undefined}>Sólo agenda</Chip>
                 <span className="pc-filtros__sep" aria-hidden />
                 {CANALES.filter((c) => porCanal(c) > 0).map((c) => (
                   <Chip key={c} activo={canal === c} onClick={() => setCanal(canal === c ? "" : c)} count={porCanal(c)} title={`Agendó por ${ETIQUETA_CANAL[c]}`}>{ETIQUETA_CANAL[c]}</Chip>
@@ -149,8 +150,14 @@ export function PantallaPendientes({ datos, onMes }: { datos: DatosDePendientes;
               </div>
             </div>
 
+            {datos.avisoBusqueda && (
+              <p className="pc-aviso t-sm" role="alert">
+                No pude buscar los formularios parecidos ({datos.avisoBusqueda}). Igual podés marcar a quien vino por otro camino.{" "}
+                <button type="button" className="pc-nombre" onClick={datos.recargar}>Reintentar</button>
+              </p>
+            )}
             {carga === "cargando" ? (
-              <p className="pc-vacio t-sm t-subtle">Buscando los formularios que se parecen…</p>
+              <p className="pc-vacio t-sm t-subtle">Mirando quién ya tiene su formulario…</p>
             ) : visibles.length === 0 ? (
               <Empty
                 icono={<CheckCircle2 size={22} />}
@@ -299,6 +306,8 @@ function FilaPendiente({ p, datos, descartes, onDescartar }: { p: Pendiente; dat
       <div className="pc-propuestas">
         {p.sinFicha ? (
           <p className="t-sm t-subtle">No tiene ficha de contacto: no hay a quién atar el formulario. Abrila para completarla.</p>
+        ) : propuestas.length === 0 && datos.buscando ? (
+          <p className="t-sm t-subtle">Buscando formularios parecidos…</p>
         ) : propuestas.length === 0 ? (
           <p className="t-sm t-subtle">Sin formularios parecidos{sugerido ? ` · agendó por ${ETIQUETA_CANAL[p.canal!]}` : ""}.</p>
         ) : (

@@ -18,6 +18,8 @@ const PAGINA = 1000;
 const EN_URL = 100;
 /** Cuántos formularios con nombre parecido se traen por persona: después la pantalla se queda con los que de verdad se llaman igual. */
 const POR_NOMBRE = 60;
+/** Cuántas búsquedas por nombre corren a la vez: son lentas (recorren la tabla) y una por una sumaban varios segundos. */
+const NOMBRES_A_LA_VEZ = 8;
 
 /** Lo que la pantalla necesita de cada formulario: sin IP, navegador, cookies ni respuestas. */
 export const COLUMNAS_LIGERAS = "id,email,nombre,telefono,telefonoNorm,pais,utm,adId,webinarId,fechaWebinar,registradoEn,descartados,contactoId,cruce,origen,origenDetalle";
@@ -68,15 +70,16 @@ export async function candidatos(db: SupabaseClient, p: PedidoCandidatos): Promi
   };
   await buscar("email", p.emails);
   await buscar("telefonoNorm", p.telefonos);
-  /* Por nombre: las dos palabras más largas (apellido y nombre) tienen que estar. */
-  for (const nombre of new Set(p.nombres)) {
+  /* Por nombre: las dos palabras más largas (apellido y nombre) tienen que estar. Son decenas de consultas: de a pocas a la vez. */
+  const porNombre = async (nombre: string) => {
     const ps = palabrasDeNombre(nombre).sort((a, b) => b.length - a.length).slice(0, 2);
-    if (ps.length < 2) continue;
+    if (ps.length < 2) return;
     const r = await db.from("registros_webinar").select(COLUMNAS_LIGERAS).is("contactoId", null)
       .ilike("nombre", patronDePalabra(ps[0])).ilike("nombre", patronDePalabra(ps[1])).order("registradoEn", { ascending: false }).limit(POR_NOMBRE);
     if (r.error) throw new Error(`registros_webinar: ${r.error.message}`);
     for (const f of (r.data ?? []) as FilaLigera[]) salida.set(f.id, f);
-  }
+  };
+  for (const lote of trozos([...new Set(p.nombres)], NOMBRES_A_LA_VEZ)) await Promise.all(lote.map(porNombre));
   return [...salida.values()];
 }
 
