@@ -1,7 +1,7 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
-import { ArrowRightLeft, Check, ChevronRight, HandCoins, Info, Landmark, Plus, Trash2 } from "lucide-react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { AlertTriangle, ArrowRightLeft, Check, ChevronRight, HandCoins, Info, Landmark, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { CabeceraVista } from "@/components/finanzas/vistas/CabeceraVista";
 import { Ayuda, Badge, Button, Card, CardHead, Empty, Field, IconButton, Input, Select, StatCard, Textarea } from "@/components/ui/ui";
 import { InputMonto } from "@/components/ui/InputMonto";
@@ -15,6 +15,9 @@ import {
   MESES_DE_COLCHON, cajaEsperada, enOtros, runway, ultimoArqueo, type MovimientoCaja,
 } from "@/lib/caja";
 import { saldosEsperados } from "@/lib/traspasos";
+import { controlarSaldos, quePasa, type ControlDeSaldos, type RespuestaDeSaldos } from "@/lib/saldos-reales";
+import { traerSaldosReales } from "@/lib/saldos-cliente";
+import { nube } from "@/lib/supabase";
 import type { Arqueo, EstadoApp, Gasto, Moneda, Procesador, SaldoCuenta, Traspaso } from "@/lib/types";
 import { CopiarLink } from "@/components/ui/Filtros";
 import { FormTraspaso, PasesEntreCuentas } from "@/components/finanzas/PasesEntreCuentas";
@@ -46,7 +49,8 @@ export function CajaVista({ embebido = false, rangoFijo }: {
   const toast = useToast();
   const mon = e.ajustes.monedaBase;
   const M = (n: number, d = 0) => money(n, mon, d);
-  const [arqueando, setArqueando] = useState(false);
+  /* «traer»: el arqueo se abre ya con los saldos reales leídos de las cuentas. */
+  const [arqueando, setArqueando] = useState<false | "vacio" | "traer">(false);
   const [retirando, setRetirando] = useState(false);
   /* El movimiento entre cuentas que se corrige, o uno nuevo. */
   const [pase, setPase] = useState<Traspaso | "nuevo" | null>(null);
@@ -78,7 +82,7 @@ export function CajaVista({ embebido = false, rangoFijo }: {
             <CopiarLink sm={false} />
             <Button variante="secondary" icono={<ArrowRightLeft size={16} />} onClick={() => setPase("nuevo")}>Movimiento entre cuentas</Button>
             <Button variante="secondary" icono={<HandCoins size={16} />} onClick={() => setRetirando(true)}>Registrar retiro</Button>
-            <Button variante="primary" icono={<Plus size={16} />} onClick={() => setArqueando(true)}>Hacer un arqueo</Button>
+            <Button variante="primary" icono={<Plus size={16} />} onClick={() => setArqueando("vacio")}>Hacer un arqueo</Button>
           </>
         }
       />
@@ -88,7 +92,7 @@ export function CajaVista({ embebido = false, rangoFijo }: {
           <Empty
             icono={<Landmark size={22} />} titulo="Todavía no hay ningún arqueo"
             texto="Contá cuánto hay hoy en cada cuenta (Stripe, Mercury, Trust, la Financiera, el efectivo) y cargalo. Ese es el punto de partida: desde ahí la app sabe cuánto tendría que haber y te avisa si no da."
-            accion={<Button variante="primary" icono={<Plus size={16} />} onClick={() => setArqueando(true)}>Hacer el primer arqueo</Button>}
+            accion={<Button variante="primary" icono={<Plus size={16} />} onClick={() => setArqueando("vacio")}>Hacer el primer arqueo</Button>}
           />
         </Card>
       ) : (
@@ -162,6 +166,8 @@ export function CajaVista({ embebido = false, rangoFijo }: {
         </>
       )}
 
+      <ControlDeSaldosCard e={e} onArquear={() => setArqueando("traer")} />
+
       <PasesEntreCuentas e={e} rango={rangoFijo} onNuevo={() => setPase("nuevo")} onEditar={(t) => setPase(t)} />
 
       <Card style={{ padding: 0 }}>
@@ -212,7 +218,7 @@ export function CajaVista({ embebido = false, rangoFijo }: {
         arqueo la descuenta de lo que tiene que dar al contar.
       </Ayuda>
 
-      {arqueando && <NuevoArqueo e={e} onCerrar={() => setArqueando(false)} onListo={(a) => {
+      {arqueando && <NuevoArqueo e={e} traerAlAbrir={arqueando === "traer"} onCerrar={() => setArqueando(false)} onListo={(a) => {
         setArqueando(false);
         toast(a.diferencia === null || a.diferencia === undefined ? "Arqueo guardado: es el punto de partida."
           : Math.abs(a.diferencia) < 1 ? "Arqueo guardado: las cuentas dan." : `Arqueo guardado: ${a.diferencia > 0 ? "sobran" : "faltan"} ${M(Math.abs(a.diferencia))}.`);
@@ -277,15 +283,109 @@ function Movimiento({ mov, M }: { mov: MovimientoCaja; M: (n: number, d?: number
   );
 }
 
+/* ---------- Control de saldos: lo que hay de verdad contra lo que la app esperaba ----------
+   Aldana (20/10): si el saldo real de una cuenta se puede leer solo, que la app lo compare con lo que esperaba y avise: si no da,
+   falta cargar algo (un gasto, un retiro, un cobro, un movimiento entre cuentas). Se lee al abrir la Caja y a pedido. */
+
+function ControlDeSaldosCard({ e, onArquear }: { e: EstadoApp; onArquear: () => void }) {
+  const [estado, setEstado] = useState<{ cargando: boolean; resp?: RespuestaDeSaldos; error?: string; cuando?: string }>({ cargando: Boolean(nube) });
+  const leer = useCallback(async () => {
+    setEstado((x) => ({ ...x, cargando: true, error: undefined }));
+    try {
+      const resp = await traerSaldosReales();
+      setEstado({ cargando: false, resp, cuando: new Date().toISOString() });
+    } catch (err) {
+      setEstado((x) => ({ ...x, cargando: false, error: err instanceof Error ? err.message : "No se pudieron leer los saldos." }));
+    }
+  }, []);
+  useEffect(() => { if (nube) void leer(); }, [leer]);
+  const control: ControlDeSaldos | null = useMemo(
+    () => (estado.resp && estado.cuando ? controlarSaldos(e, estado.resp.saldos, estado.cuando) : null),
+    [e, estado.resp, estado.cuando],
+  );
+  if (!nube) return null;
+
+  const nombre = (id: string) => e.procesadores.find((p) => p.id === id)?.nombre ?? id;
+  const resp = estado.resp;
+  const hora = estado.cuando ? new Date(estado.cuando).toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "America/Argentina/Buenos_Aires" }) : "";
+  const cuentasQueNoDan = control ? control.filas.filter((f) => f.lectura === "sobra" || f.lectura === "falta") : [];
+
+  return (
+    <Card style={{ padding: 0 }}>
+      <div style={{ padding: "var(--space-4) var(--space-4) 0" }}>
+        <CardHead
+          titulo="Control de saldos"
+          sub={`Lo que hay de verdad en las cuentas que se leen solas (USDT Trust, Mercury, Stripe), contra lo que la app esperaba.${hora ? ` Leído a las ${hora}.` : ""}`}
+          acciones={<Button sm variante="secondary" icono={<RefreshCw size={15} />} cargando={estado.cargando} onClick={() => void leer()}>Volver a mirar</Button>}
+        />
+      </div>
+      <div className="cs-cuerpo">
+        {control?.hayAlarma && (
+          <div className="cs-alarma" role="alert">
+            <AlertTriangle size={18} aria-hidden />
+            <div>
+              <strong>No da: falta cargar algo.</strong>{" "}
+              {cuentasQueNoDan.length === 1 ? "Una cuenta no coincide" : `${cuentasQueNoDan.length} cuentas no coinciden`} con lo que la app esperaba.
+              Si hay menos, falta cargar un gasto, un retiro o un movimiento entre cuentas; si hay más, un cobro o un movimiento.
+            </div>
+          </div>
+        )}
+        {estado.error && <p className="t-sm" style={{ color: "var(--danger)", margin: 0 }} role="status">{estado.error}</p>}
+        {control && control.filas.length > 0 && (
+          <div className="cs-tabla" role="table" aria-label="Saldo real de cada cuenta contra lo que la app esperaba">
+            <div className="cs-fila cs-fila--cabeza" role="row">
+              <span role="columnheader">Cuenta</span><span role="columnheader" className="cs-num">Hay de verdad</span>
+              <span role="columnheader" className="cs-num">La app esperaba</span><span role="columnheader" className="cs-num">Diferencia</span><span role="columnheader">Qué pasa</span>
+            </div>
+            {control.filas.map((f) => (
+              <div className="cs-fila" role="row" key={f.cuentaId} data-lectura={f.lectura}>
+                <span role="cell" className="t-strong">{f.nombre}<span className="t-sm t-subtle"> · {f.fuente}</span></span>
+                <span role="cell" className="cs-num t-num" title={f.nota}>{money(f.real, f.moneda)}</span>
+                <span role="cell" className="cs-num t-num t-muted">{f.esperado !== undefined ? money(f.esperado, f.moneda) : "—"}</span>
+                <span role="cell" className="cs-num t-num cs-dif">
+                  {f.lectura === "da" ? <Check size={16} aria-label="Da" /> : f.diferencia !== undefined ? `${f.diferencia > 0 ? "+" : "−"}${money(Math.abs(f.diferencia), f.moneda)}` : "—"}
+                </span>
+                <span role="cell" className="t-sm t-muted">{quePasa(f)}{f.nota ? ` ${f.nota}` : ""}</span>
+              </div>
+            ))}
+          </div>
+        )}
+        {control && control.filas.length === 0 && !estado.cargando && !estado.error && (
+          <p className="t-sm t-muted" style={{ margin: 0 }}>Ninguna cuenta se pudo leer ahora: contalas a mano en el arqueo.</p>
+        )}
+        {control && control.sinCuenta.n > 0 && (
+          <p className="t-sm t-muted" style={{ margin: 0 }}>
+            Desde el último arqueo hay <strong>{control.sinCuenta.n} {control.sinCuenta.n === 1 ? "gasto" : "gastos"} ({money(control.sinCuenta.total, "USD", 0)})</strong> que no dice
+            de qué cuenta salió: la app no lo puede descontar de ninguna, así que en la cuenta desde la que se pagó va a sobrar eso. Ponele la cuenta al cargarlo.
+          </p>
+        )}
+        {resp?.errores.map((x) => <p key={x.cuentaId} className="t-sm" style={{ color: "var(--warning)", margin: 0 }}>{nombre(x.cuentaId)}: {x.mensaje}</p>)}
+        {resp && resp.sinConexion.length > 0 && (
+          <p className="t-sm t-subtle" style={{ margin: 0 }}>Sin conectar (se cuentan a mano): {resp.sinConexion.map(nombre).join(", ")}. La Financiera, Galicia y el efectivo tampoco se pueden leer solos.</p>
+        )}
+        {control && control.filas.length > 0 && (
+          <div className="row-wrap">
+            <Button variante={control.hayAlarma ? "secondary" : "primary"} onClick={onArquear}>Hacer un arqueo con estos saldos</Button>
+          </div>
+        )}
+      </div>
+    </Card>
+  );
+}
+
 /* ---------- Un arqueo nuevo ---------- */
 
-function NuevoArqueo({ e, onCerrar, onListo }: { e: EstadoApp; onCerrar: () => void; onListo: (a: Arqueo) => void }) {
+function NuevoArqueo({ e, onCerrar, onListo, traerAlAbrir = false }: { e: EstadoApp; onCerrar: () => void; onListo: (a: Arqueo) => void; traerAlAbrir?: boolean }) {
   const base = e.ajustes.monedaBase;
   const M = (n: number, d = 0) => money(n, base, d);
   const [dia, setDia] = useState(diaAr(hoyIso()));
   const [tc, setTc] = useState(e.ajustes.tipoCambio > 0 ? escribirMonto(e.ajustes.tipoCambio) : "");
   const [textos, setTextos] = useState<Record<string, string>>({});
   const [notas, setNotas] = useState("");
+  /* Los saldos que trajo la app solos (no los escribió nadie): cuenta → de dónde y a qué hora. */
+  const [automaticos, setAutomaticos] = useState<Record<string, { fuente: string; al: string; nota?: string }>>({});
+  const [leyendo, setLeyendo] = useState(false);
+  const [avisos, setAvisos] = useState<string[]>([]);
 
   /* Si es hoy, ahora; si es otro día, a las 20 de ese día. */
   const fecha = dia === diaAr(hoyIso()) ? hoyIso() : new Date(`${dia}T23:00:00.000Z`).toISOString();
@@ -319,6 +419,35 @@ function NuevoArqueo({ e, onCerrar, onListo }: { e: EstadoApp; onCerrar: () => v
   const hayPesos = cuentas.some((p) => p.moneda === "ARS");
   const faltaTc = hayPesos && saldos.some((s) => s.moneda === "ARS") && !(tipoCambio > 0);
 
+  /* Lee de las cuentas conectadas lo que hay de verdad (a esa fecha, si es un día pasado) y lo pone en «Hay de verdad». */
+  async function traerSaldos() {
+    setLeyendo(true);
+    try {
+      const esHoy = dia === diaAr(hoyIso());
+      const r = await traerSaldosReales(esHoy ? undefined : fecha);
+      const nombre = (id: string) => e.procesadores.find((p) => p.id === id)?.nombre ?? id;
+      const hora = (iso: string) => new Date(iso).toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "America/Argentina/Buenos_Aires" });
+      setTextos((t) => ({ ...t, ...Object.fromEntries(r.saldos.map((x) => [x.cuentaId, escribirMonto(x.saldo)])) }));
+      setAutomaticos((a) => ({ ...a, ...Object.fromEntries(r.saldos.map((x) => [x.cuentaId, { fuente: x.fuente, al: x.al, nota: x.nota }])) }));
+      const nuevos: string[] = [];
+      if (r.saldos.length) nuevos.push(`Traje ${r.saldos.length === 1 ? "el saldo" : `${r.saldos.length} saldos`} de ${r.saldos.map((x) => nombre(x.cuentaId)).join(", ")}${esHoy ? ` (a las ${hora(r.saldos[0].al)})` : ` al cierre del ${fechaLarga(fecha)}`}. Revisalos: son lo que hay de verdad.`);
+      if (r.soloHoy.length) nuevos.push(`${r.soloHoy.map(nombre).join(", ")} sólo se leen de hoy: este arqueo es de otro día, contalos vos.`);
+      if (r.sinConexion.length) nuevos.push(`${r.sinConexion.map(nombre).join(", ")} no está${r.sinConexion.length === 1 ? "" : "n"} conectada${r.sinConexion.length === 1 ? "" : "s"}: contala${r.sinConexion.length === 1 ? "" : "s"} vos.`);
+      for (const x of r.errores) nuevos.push(`${nombre(x.cuentaId)}: ${x.mensaje}`);
+      nuevos.push("La Financiera, Galicia y el efectivo no se pueden leer solos: esos los contás vos.");
+      setAvisos(nuevos);
+    } catch (err) {
+      setAvisos([err instanceof Error ? err.message : "No se pudieron leer los saldos."]);
+    } finally {
+      setLeyendo(false);
+    }
+  }
+  const yaTrajo = useRef(false);
+  useEffect(() => {
+    if (traerAlAbrir && !yaTrajo.current) { yaTrajo.current = true; void traerSaldos(); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   function guardar() {
     const a: Arqueo = {
       id: nuevoId("arq"), fecha, saldos, total,
@@ -348,7 +477,12 @@ function NuevoArqueo({ e, onCerrar, onListo }: { e: EstadoApp; onCerrar: () => v
         : `${dif > 0 ? "Sobran" : "Faltan"} ${money(Math.abs(dif), moneda)} contra lo que tendría que haber en esta cuenta`;
       return (
         <div className="arqueo-fila" role="row" key={p.id}>
-          <span role="cell" className="t-strong">{p.nombre}{moneda === "ARS" && <span className="t-sm t-subtle"> · en pesos</span>}</span>
+          <span role="cell" className="t-strong">
+            {p.nombre}{moneda === "ARS" && <span className="t-sm t-subtle"> · en pesos</span>}
+            {automaticos[p.id] && (
+              <span className="t-sm arqueo-auto" title={`Leído de ${automaticos[p.id].fuente} a las ${new Date(automaticos[p.id].al).toLocaleString("es-AR", { timeZone: "America/Argentina/Buenos_Aires" })}.${automaticos[p.id].nota ? ` ${automaticos[p.id].nota}` : ""}`}> · automático</span>
+            )}
+          </span>
           <span role="cell" data-titulo="Último arqueo" className="t-num t-muted">{s?.anterior !== undefined ? money(s.anterior, moneda) : "—"}</span>
           <span role="cell" data-titulo="Cobró" className="t-num t-muted" title="Lo cobrado por esta cuenta desde el último arqueo, neto de su comisión">{s?.entro ? enSuMoneda(s.entro, true) : "—"}</span>
           <span role="cell" data-titulo="Pases" className="t-num t-muted" title="Lo que recibió de otras cuentas menos lo que les mandó">{s?.pases ? enSuMoneda(s.pases, true) : "—"}</span>
@@ -361,7 +495,8 @@ function NuevoArqueo({ e, onCerrar, onListo }: { e: EstadoApp; onCerrar: () => v
           >
             <InputMonto
               aria-label={`Saldo de ${p.nombre}`} placeholder={moneda === "ARS" ? "$ 0" : "US$ 0"}
-              value={textos[p.id] ?? ""} onChange={(ev) => setTextos({ ...textos, [p.id]: ev.target.value })}
+              value={textos[p.id] ?? ""}
+              onChange={(ev) => { setTextos({ ...textos, [p.id]: ev.target.value }); if (automaticos[p.id]) setAutomaticos(({ [p.id]: _x, ...resto }) => resto); }}
             />
             {dif !== null && (da
               ? <Check size={16} className="arqueo-hay__marca" aria-label={dice} />
@@ -386,6 +521,17 @@ function NuevoArqueo({ e, onCerrar, onListo }: { e: EstadoApp; onCerrar: () => v
           </Field>
         )}
       </div>
+      {nube && (
+        <div className="arqueo-traer">
+          <Button variante="secondary" icono={<RefreshCw size={15} />} cargando={leyendo} onClick={() => void traerSaldos()}
+            title="Lee solo el saldo real de las cuentas conectadas: USDT Trust (la red), Mercury y Stripe. Las demás las contás vos.">
+            Traer los saldos reales
+          </Button>
+          <div className="arqueo-traer__avisos" role="status">
+            {avisos.map((a, i) => <p key={i} className="t-sm t-muted">{a}</p>)}
+          </div>
+        </div>
+      )}
       <div className="arqueo-tabla" role="table" aria-label="Saldo de cada cuenta">
         <div className="arqueo-fila arqueo-fila--cabeza" role="row">
           <span role="columnheader">Cuenta</span>
@@ -410,9 +556,9 @@ function NuevoArqueo({ e, onCerrar, onListo }: { e: EstadoApp; onCerrar: () => v
       {previo && (
         <p className="t-sm t-subtle arqueo-nota">
           «Tendría que haber» es lo del último arqueo más lo que cobró la cuenta, más o menos los movimientos entre cuentas
-          {hayPases ? "" : " (todavía no hay ninguno cargado desde entonces)"} y menos los retiros y las devoluciones, que dicen de qué cuenta salieron.
-          No descuenta los gastos ni los sueldos, porque la app no sabe de qué cuenta se pagó cada uno: en la cuenta desde la que
-          pagás va a faltar eso. El control que tiene que dar es el del total.
+          {hayPases ? "" : " (todavía no hay ninguno cargado desde entonces)"} y menos los retiros, las devoluciones y los gastos que dicen de qué cuenta
+          salieron. Un gasto que no dice la cuenta (o los sueldos y las comisiones) no se descuenta de ninguna: en la cuenta desde la que
+          se pagó va a sobrar eso. El control que tiene que dar es el del total.
         </p>
       )}
       <div className="arqueo-resumen">

@@ -4382,3 +4382,19 @@ select.gm-celda { background: var(--surface-100); }
 .gm-problema { color: var(--warning); }
 .gm-vacia { padding: var(--space-5); text-align: center; color: var(--ink-subtle); }
 
+/* ---- Saldos reales: el botón del arqueo y el control de la Caja (components/finanzas/vistas/CajaVista.tsx) ---- */
+.arqueo-traer { display: flex; align-items: flex-start; gap: var(--space-3); flex-wrap: wrap; }
+.arqueo-traer__avisos { flex: 1 1 280px; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.arqueo-traer__avisos p { margin: 0; }
+.arqueo-auto { color: var(--success); font-weight: 500; }
+.cs-cuerpo { padding: var(--space-4); display: flex; flex-direction: column; gap: var(--space-3); }
+.cs-alarma { display: flex; gap: var(--space-3); align-items: flex-start; padding: var(--space-3) var(--space-4); border-radius: var(--radius-md); border: 1px solid var(--warning); background: var(--warning-soft); color: var(--ink); font-size: 14px; line-height: 21px; }
+.cs-alarma svg { color: var(--warning); flex: none; margin-top: 2px; }
+.cs-tabla { display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: var(--radius-md); overflow: hidden; }
+.cs-fila { display: grid; grid-template-columns: minmax(180px, 1.3fr) minmax(110px, .8fr) minmax(110px, .8fr) minmax(110px, .8fr) minmax(220px, 2.4fr); gap: var(--space-3); align-items: center; padding: 10px var(--space-3); border-top: 1px solid var(--border); }
+.cs-fila--cabeza { border-top: 0; background: var(--surface-200); color: var(--ink-muted); font-size: 12px; font-weight: 600; }
+.cs-num { text-align: right; }
+.cs-fila[data-lectura="da"] .cs-dif { color: var(--success); }
+.cs-fila[data-lectura="sobra"] .cs-dif, .cs-fila[data-lectura="falta"] .cs-dif { color: var(--warning); font-weight: 700; }
+@media (max-width: 760px) { .cs-fila { grid-template-columns: 1fr 1fr; } .cs-fila--cabeza { display: none; } .cs-num { text-align: left; } }
+

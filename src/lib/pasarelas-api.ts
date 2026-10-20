@@ -4,6 +4,8 @@ import { cuentaDeContraparte, type Punta } from "./traspasos";
 import type { ReembolsoCrudo } from "./reembolsos";
 import { MOTIVO_LIQUIDACION_PROBABLE } from "./motivos";
 import { clasificarMercury, reglasExtraDeEntorno, type ResumenMercury } from "./mercury";
+import { FUENTES_DE_SALDO, saldoDeBilleteraEn, type ErrorDeSaldo, type RespuestaDeSaldos, type SaldoReal, type Transferencia } from "./saldos-reales";
+import { money } from "./format";
 
 /* ==================================================================
    Los adaptadores de cada pasarela, del lado del servidor.
@@ -1113,3 +1115,147 @@ export async function trust(desde: Date): Promise<MovimientoApi[]> {
     })
     .filter((m) => m.monto > 0 && m.referencia !== "" && new Date(m.fecha) >= desde);
 }
+
+/* ---------- El saldo real de cada cuenta ----------
+   Sólo de las que se pueden leer solas: la red de USDT (pública, hasta de un día pasado), el banco (Mercury) y Stripe (lo que hay hoy).
+   La Financiera, Galicia y el efectivo se cuentan a mano. Ver lib/saldos-reales.ts para qué se hace con esto. */
+
+const TRONGRID = "https://api.trongrid.io";
+/* Tope de páginas de movimientos para llegar a un día pasado (200 por página). */
+const PAGINAS_DE_TRONGRID = 10;
+
+function cabecerasDeTron(): Record<string, string> {
+  return process.env.TRONGRID_API_KEY ? { "TRON-PRO-API-KEY": process.env.TRONGRID_API_KEY } : {};
+}
+
+/* Sin clave, TronGrid deja UNA consulta por segundo y, si se pasa, suspende 5 segundos (429). Con una clave gratuita (TRONGRID_API_KEY)
+   no hace falta esperar. Cada pedido reintenta con estas esperas (milisegundos); las pruebas las achican. */
+export const ESPERAS_DE_TRON: number[] = [1300, 5500];
+
+async function pedirATron(url: string, cabeceras: Record<string, string>): Promise<Response> {
+  for (let intento = 0; ; intento++) {
+    const r = await fetch(url, { headers: cabeceras, cache: "no-store" });
+    if (r.status !== 429 || intento >= ESPERAS_DE_TRON.length) return r;
+    await new Promise((ok) => setTimeout(ok, ESPERAS_DE_TRON[intento]));
+  }
+}
+
+/* El saldo de hoy se recuerda unos segundos: la tarjeta de la Caja y el botón del arqueo lo piden casi a la vez. */
+let enMemoria: { clave: string; hasta: number; saldo: SaldoReal } | null = null;
+const SEGUNDOS_EN_MEMORIA = 20;
+
+/** El saldo de USDT de la billetera, hoy o (con `al`) al cierre de un día pasado, que se reconstruye sacando lo que se movió desde entonces. */
+export async function saldoDeTrust(al?: Date): Promise<SaldoReal | null> {
+  const direccion = process.env.TRUST_WALLET_ADDRESS?.trim();
+  if (!direccion) return null;
+  const cabeceras = cabecerasDeTron();
+  const queAl = al && al.getTime() < Date.now() - 120_000 ? al.getTime() : null;
+  if (queAl === null && enMemoria && enMemoria.clave === direccion && enMemoria.hasta > Date.now()) return enMemoria.saldo;
+  const ra = await pedirATron(`${TRONGRID}/v1/accounts/${direccion}?only_confirmed=true`, cabeceras);
+  const da = await json(ra);
+  if (!ra.ok) throw rechazo("TronGrid (saldo)", ra, da);
+  const cuenta = ((da.data ?? []) as Obj[])[0];
+  let actualMicro = 0;
+  for (const t of ((cuenta?.trc20 ?? []) as Obj[])) if (t[USDT_TRC20] !== undefined) actualMicro = Number(t[USDT_TRC20]);
+  if (!Number.isFinite(actualMicro)) throw new Error("TronGrid no mandó un saldo que se pueda leer.");
+
+  const ahora = Date.now();
+  const alMs = al && al.getTime() < ahora - 120_000 ? al.getTime() : null;
+  const despues: Transferencia[] = [];
+  if (alMs !== null) {
+    let huella: string | undefined;
+    for (let pagina = 0; ; pagina++) {
+      if (pagina >= PAGINAS_DE_TRONGRID) throw new Error("Hay demasiados movimientos de la billetera después de esa fecha para reconstruir el saldo.");
+      const q = new URLSearchParams({
+        only_confirmed: "true", limit: "200", contract_address: USDT_TRC20, min_timestamp: String(alMs + 1), order_by: "block_timestamp,asc",
+      });
+      if (huella) q.set("fingerprint", huella);
+      const r = await pedirATron(`${TRONGRID}/v1/accounts/${direccion}/transactions/trc20?${q}`, cabeceras);
+      const d = await json(r);
+      if (!r.ok) throw rechazo("TronGrid (movimientos)", r, d);
+      for (const t of ((d.data ?? []) as Obj[])) {
+        despues.push({ de: String(t.from ?? ""), a: String(t.to ?? ""), micro: Number(t.value ?? 0), ts: Number(t.block_timestamp ?? 0) });
+      }
+      huella = ((d.meta ?? {}) as Obj).fingerprint as string | undefined;
+      if (!huella) break;
+    }
+  }
+  const saldo: SaldoReal = {
+    cuentaId: "proc_trust", saldo: saldoDeBilleteraEn(actualMicro, despues, direccion, alMs), moneda: "USD",
+    al: new Date(alMs ?? ahora).toISOString(), fuente: FUENTES_DE_SALDO.proc_trust,
+  };
+  if (alMs === null) enMemoria = { clave: direccion, hasta: ahora + SEGUNDOS_EN_MEMORIA * 1000, saldo };
+  return saldo;
+}
+
+/** Lo que hay hoy en las cuentas del banco (las de crédito no cuentan: no son plata). */
+export async function saldoDeMercury(): Promise<SaldoReal | null> {
+  const crudo = process.env.MERCURY_API_TOKEN?.trim();
+  if (!crudo) return null;
+  const clave = crudo.startsWith("secret-token:") ? crudo : `secret-token:${crudo}`;
+  const r = await fetch("https://api.mercury.com/api/v1/accounts", { headers: { Authorization: `Bearer ${clave}` }, cache: "no-store" });
+  const data = await json(r);
+  if (!r.ok) throw rechazo("Mercury (cuentas)", r, data);
+  let actual = 0, disponible = 0;
+  for (const c of ((data.accounts ?? []) as Obj[])) {
+    if (/credit/i.test(String(c.kind ?? ""))) continue;
+    const saldo = Number(c.currentBalance);
+    if (!Number.isFinite(saldo)) throw new Error(`Mercury no mandó el saldo de la cuenta ${String(c.name ?? c.id ?? "")}.`);
+    actual += saldo;
+    disponible += Number.isFinite(Number(c.availableBalance)) ? Number(c.availableBalance) : saldo;
+  }
+  const dif = dinero(actual - disponible);
+  return {
+    cuentaId: "proc_mercury", saldo: dinero(actual), moneda: "USD", al: new Date().toISOString(), fuente: FUENTES_DE_SALDO.proc_mercury,
+    ...(Math.abs(dif) >= 0.01 ? { nota: `Mercury marca ${money(dinero(disponible), "USD", 2)} disponibles: la diferencia son movimientos que todavía no se acreditaron.` } : {}),
+  };
+}
+
+/** Lo que hay hoy en Stripe: lo disponible más lo que está por pasar a estar disponible (todavía no se retiró al banco). */
+export async function saldoDeStripe(): Promise<SaldoReal | null> {
+  const clave = process.env.STRIPE_SECRET_KEY;
+  if (!clave) return null;
+  const r = await fetch("https://api.stripe.com/v1/balance", { headers: { Authorization: `Bearer ${clave}` }, cache: "no-store" });
+  const data = await json(r);
+  if (!r.ok) throw rechazo("Stripe (saldo)", r, data);
+  const suma = (lista: unknown, moneda: string) => ((lista ?? []) as Obj[])
+    .filter((x) => String(x.currency ?? "").toLowerCase() === moneda).reduce((a, x) => a + Number(x.amount ?? 0), 0);
+  const disponible = suma(data.available, "usd");
+  const pendiente = suma(data.pending, "usd");
+  const otras = new Set([...((data.available ?? []) as Obj[]), ...((data.pending ?? []) as Obj[])]
+    .map((x) => String(x.currency ?? "").toLowerCase()).filter((m) => m && m !== "usd"));
+  const notas = [
+    pendiente ? `${money(dinero(pendiente / 100), "USD", 2)} están pendientes de acreditarse en Stripe.` : "",
+    otras.size ? `Stripe también tiene saldo en ${[...otras].map((m) => m.toUpperCase()).join(", ")}: no se suma.` : "",
+  ].filter(Boolean).join(" ");
+  return {
+    cuentaId: "proc_stripe", saldo: dinero((disponible + pendiente) / 100), moneda: "USD", al: new Date().toISOString(), fuente: FUENTES_DE_SALDO.proc_stripe,
+    ...(notas ? { nota: notas } : {}),
+  };
+}
+
+const LECTORES: Record<string, (al?: Date) => Promise<SaldoReal | null>> = {
+  proc_trust: saldoDeTrust,
+  proc_mercury: () => saldoDeMercury(),
+  proc_stripe: () => saldoDeStripe(),
+};
+
+/** El saldo real de las cuentas pedidas (por defecto, todas las que se leen solas). Un error de una no tumba a las otras; las que no
+ *  están conectadas y las que no se pueden leer para un día pasado viajan aparte. */
+export async function saldosReales(cuentas: string[] = Object.keys(LECTORES), al?: Date): Promise<RespuestaDeSaldos> {
+  const salida: RespuestaDeSaldos = { saldos: [], errores: [], sinConexion: [], soloHoy: [] };
+  const pasado = Boolean(al) && (al as Date).getTime() < Date.now() - 600_000;
+  await Promise.all(cuentas.filter((c) => LECTORES[c]).map(async (cuentaId) => {
+    /* Sólo la red guarda la historia: el banco y Stripe dicen lo de ahora. */
+    if (pasado && cuentaId !== "proc_trust") { salida.soloHoy.push(cuentaId); return; }
+    try {
+      const s = await LECTORES[cuentaId](al);
+      if (s) salida.saldos.push(s); else salida.sinConexion.push(cuentaId);
+    } catch (err) {
+      const mensaje = err instanceof Error ? err.message : String(err);
+      salida.errores.push({ cuentaId, mensaje } satisfies ErrorDeSaldo);
+    }
+  }));
+  return salida;
+}
+

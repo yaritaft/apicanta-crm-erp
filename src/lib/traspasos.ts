@@ -1,5 +1,5 @@
 import type { Arqueo, EstadoApp, Gasto, ID, Moneda, Movimiento, Traspaso } from "./types";
-import { aMonedaBase, categoriaDe, fechaDePago, montoOriginal } from "./gastos";
+import { aMonedaBase, categoriaDe, fechaDePago, montoOriginal, normalizar } from "./gastos";
 import { esDevolucionConfirmada, pesosQueSalieron } from "./devoluciones";
 
 /* ==================================================================
@@ -383,6 +383,22 @@ const entre = (iso: string | undefined, desde: number, hasta: number) => {
    llegar no se cuenta: la plata está en el camino. */
 const llego = (t: Traspaso) => !esperaLlegada(t);
 
+/** De qué cuenta salió un gasto, si lo dice: el id exacto (`extra.cuentaId`) o el nombre que se escribió al cargarlo (`extra.cuenta`:
+ *  «Mercury», «Stripe», «Financiera ARS Juan»). Un nombre vale si es el de una sola cuenta, o una palabra del nombre de una sola
+ *  («Mercury» es de «ACH-WIRE Mercury»); si alcanza a dos («Financiera»), no se sabe cuál. Sin dato, undefined. */
+export function cuentaDeGasto(g: { extra?: Record<string, unknown> }, procesadores: readonly { id: ID; nombre: string }[]): ID | undefined {
+  const id = typeof g.extra?.cuentaId === "string" ? g.extra.cuentaId : "";
+  if (id) return id;
+  const dicho = normalizar(typeof g.extra?.cuenta === "string" ? g.extra.cuenta : "");
+  if (!dicho) return undefined;
+  const iguales = procesadores.filter((p) => normalizar(p.nombre) === dicho);
+  if (iguales.length === 1) return iguales[0].id;
+  if (iguales.length > 1) return undefined;
+  const palabras = (t: string) => normalizar(t).split(/[^a-z0-9]+/).filter(Boolean);
+  const contiene = procesadores.filter((p) => dicho.split(/[^a-z0-9]+/).filter(Boolean).every((w) => palabras(p.nombre).includes(w)));
+  return contiene.length === 1 ? contiene[0].id : undefined;
+}
+
 /** Lo que cada cuenta recibió menos lo que mandó en pases, en su moneda,
     entre dos momentos (sin incluir el primero). Sólo los confirmados. */
 export function pasesPorCuenta(e: Pick<EstadoApp, "traspasos">, desdeIso: string | null, hastaIso: string): Map<ID, number> {
@@ -429,10 +445,10 @@ export interface SaldoEsperado {
 
 /** Lo que tendría que haber en cada cuenta, en su moneda: lo del arqueo
     anterior más lo que cobró, más o menos los pases, menos lo que se sabe
-    que salió de ahí (los retiros y las devoluciones, que dicen por qué cuenta
-    salió la plata: la comisión de la pasarela no vuelve, ya está descontada
-    del cobro). Los gastos y los sueldos no dicen de qué cuenta salieron: por
-    eso el control fino sigue siendo por el total. */
+    que salió de ahí: los retiros, las devoluciones y los gastos que dicen de qué
+    cuenta se pagaron (la comisión de la pasarela no vuelve, ya está descontada
+    del cobro). Los gastos que no dicen la cuenta (los viejos, los sueldos) no
+    se pueden poner en ninguna: `gastosSinCuenta` los cuenta aparte. */
 export function saldosEsperados(
   e: Pick<EstadoApp, "procesadores" | "pagos" | "gastos" | "traspasos"> & Partial<Pick<EstadoApp, "devoluciones" | "cuotas" | "ajustes">>,
   previo: Pick<Arqueo, "fecha" | "saldos"> | undefined, hastaIso: string,
@@ -469,7 +485,7 @@ export function saldosEsperados(
     }
   }
   for (const g of e.gastos) {
-    const cuenta = typeof g.extra?.cuentaId === "string" ? g.extra.cuentaId : "";
+    const cuenta = cuentaDeGasto(g, e.procesadores) ?? "";
     const s = cuenta ? out.get(cuenta) : undefined;
     /* El costo de un pase no sale aparte: ya está en su diferencia. */
     if (!s || g.extra?.traspasoId || !entre(fechaDePago(g), desde, hasta)) continue;
@@ -499,4 +515,18 @@ export function resumenDePases(traspasos: Traspaso[], ahora = Date.now()): Resum
     else if (s === "diferencia") r.diferencias++;
   }
   return r;
+}
+
+/** Los gastos pagados en ese período que no dicen de qué cuenta salieron: la plata se fue de alguna cuenta y el control por cuenta no la ve. */
+export function gastosSinCuenta(
+  e: Pick<EstadoApp, "procesadores" | "gastos">, desdeIso: string | null, hastaIso: string,
+): { n: number; total: number } {
+  const desde = desdeIso ? Date.parse(desdeIso) : -Infinity;
+  const hasta = Date.parse(hastaIso);
+  let n = 0, total = 0;
+  for (const g of e.gastos) {
+    if (g.extra?.traspasoId || cuentaDeGasto(g, e.procesadores) || !entre(fechaDePago(g), desde, hasta)) continue;
+    n++; total += g.monto;
+  }
+  return { n, total: r2(total) };
 }
