@@ -259,7 +259,7 @@ export function CrmTabla({ misLlamadas = false }: { misLlamadas?: boolean } = {}
       deshacer = () => { acciones.corregirPerfil(w.id, w.campo, antes, `${f.nombre}: se deshizo el cambio de ${titulo}.`); };
     }
     const aQuienes = DE_LA_PERSONA.has(clave) && todas.filter((x) => x.personaId === f.personaId).length > 1 ? " (en todas sus llamadas)" : "";
-    toast(`${titulo} de ${f.nombre || "la llamada"}: ${valor.trim() || "vacío"}${aQuienes}.`, "ok", { texto: "Deshacer", onClick: deshacer });
+    toast(`${titulo} de ${f.nombre || "la llamada"}: ${(clave === "llamada" ? valor.trim().replace("T", " ") : valor.trim()) || "vacío"}${aQuienes}.`, "ok", { texto: "Deshacer", onClick: deshacer });
   };
   const verFicha = (f: FilaTabla) => abrirFicha(f.sesion.contactoId ?? f.sesion.leadId ?? f.sesion.id, "llamadas");
   /* Los cobros de la venta de la llamada, en la ficha de esa venta. */

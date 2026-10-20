@@ -439,19 +439,19 @@ export const CAMPO_DE_OPCIONES: Partial<Record<ClaveColumna, CampoOpcionesCrm>> 
    agendó (Calendly), por dónde llegó y con qué ad (el link), si califica
    (una cuenta) y la venta (se carga en Ventas). */
 
-export type EditorColumna = "texto" | "largo" | "fecha" | "opciones" | "sugerencias" | "lista";
+export type EditorColumna = "texto" | "largo" | "fecha" | "fechahora" | "opciones" | "sugerencias" | "lista";
 
 export const EDITOR: Partial<Record<ClaveColumna, EditorColumna>> = {
   nombre: "texto", email: "texto", telefono: "texto",
   closer: "opciones", estadoPreCall: "opciones", estadoLlamada: "opciones", preCall: "opciones", objecion: "opciones", oferta: "opciones",
-  cierre: "fecha", grabacion: "texto", notas: "largo",
+  /* La llamada se puede pasar a mano: si reagendaron por fuera de Calendly (Dante, 19/10: «reagendó para el lunes y quedó en el sábado»). */
+  llamada: "fechahora", cierre: "fecha", grabacion: "texto", notas: "largo",
   pais: "sugerencias", edad: "texto", ingles: "sugerencias", experiencia: "sugerencias", ingreso: "sugerencias", inversion: "sugerencias",
   tecnologias: "lista", formacion: "lista",
 };
 
 /* Por qué no se edita cada columna que sale sola. */
 export const POR_QUE_NO: Partial<Record<ClaveColumna, string>> = {
-  llamada: "El día y la hora los pone Calendly: se cambian reprogramando.",
   agendo: "Cuándo agendó, según Calendly.",
   via: "Sale del link con el que agendó.",
   ad: "Sale del link del anuncio con el que llegó.",
@@ -472,11 +472,32 @@ const PERFIL_DE: Partial<Record<ClaveColumna, CampoPerfil | "pais">> = {
   formacion: "formacion", ingreso: "ingreso", inversion: "inversion",
 };
 
+/* La hora de una llamada se escribe y se lee en hora de Argentina (sin horario de verano: -03:00). */
+const ZONA_NEGOCIO = "America/Argentina/Buenos_Aires";
+
+/** «2026-10-19T18:00»: la hora de Argentina de una llamada, para el campo de fecha y hora. */
+export function localDeLlamada(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(+d)) return "";
+  const partes = new Intl.DateTimeFormat("en-CA", { timeZone: ZONA_NEGOCIO, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false }).formatToParts(d);
+  const v = (t: string) => partes.find((x) => x.type === t)?.value ?? "";
+  return `${v("year")}-${v("month")}-${v("day")}T${v("hour") === "24" ? "00" : v("hour")}:${v("minute")}`;
+}
+
+/** Lo que escribió el campo de fecha y hora («2026-10-19T18:00», hora de Argentina) como instante; null si no es una fecha. */
+export function isoDeLocal(texto: string): string | null {
+  const m = /^(\d{4}-\d{2}-\d{2})T(\d{2}):(\d{2})$/.exec(texto.trim());
+  if (!m) return null;
+  const d = new Date(`${m[1]}T${m[2]}:${m[3]}:00-03:00`);
+  return Number.isNaN(+d) ? null : d.toISOString();
+}
+
 /** Lo que hay en la celda, como texto para editar. */
 export function valorEditable(f: FilaTabla, clave: ClaveColumna): string {
   switch (clave) {
     /* El que alguien cargó: el automático y los avisos no son un valor. */
     case "estadoLlamada": return f.sesion.estadoLlamada ?? "";
+    case "llamada": return localDeLlamada(f.llamada);
     case "tecnologias": return f.tecnologias.join(", ");
     case "formacion": return f.formacion.join(", ");
     case "grabacion": return f.grabacion;
@@ -521,6 +542,18 @@ export function escrituraDe(
   const llamada = (cambios: CambiosLlamada): Escritura => ({ tipo: "llamada", id: s.id, cambios, detalle });
   switch (clave) {
     case "closer": return limpio ? { tipo: "closer", id: s.id, closer: limpio, detalle } : null;
+    /* Pasar la llamada a otro día u hora. Calendly manda el día de cada agenda cada vez que la trae: lo cambiado a mano queda marcado
+       en `extra.inicioManual` (con el día y la hora que tenía) y el servidor lo respeta (lib/calendly-sync.ts). Volver al horario
+       de Calendly saca la marca. */
+    case "llamada": {
+      const iso = isoDeLocal(limpio);
+      if (!iso || iso === s.inicia) return null;
+      const original = (s.extra?.inicioManual as { antes?: string } | undefined)?.antes ?? s.inicia;
+      const { inicioManual: _marca, ...resto } = (s.extra ?? {}) as Record<string, unknown>;
+      const extra = iso === original ? resto : { ...resto, inicioManual: { antes: original, por: ctx.quien, en: ctx.cuando } };
+      return { tipo: "llamada", id: s.id, cambios: { inicia: iso, extra: extra as CambiosLlamada["extra"] },
+        detalle: `${quien}: la llamada se pasó del ${localDeLlamada(s.inicia).replace("T", " ")} al ${limpio.replace("T", " ")}.` };
+    }
     /* Una opción del Airtable, o vacío. El Estado de Llamada además deja
        la agenda como hecha, que no vino o cancelada (lo hace el store). */
     case "estadoLlamada": case "estadoPreCall": case "preCall":

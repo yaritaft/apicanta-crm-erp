@@ -197,9 +197,9 @@ export async function ingresarInvitado(
 
   /* ---------- 3. La llamada ---------- */
   const sesionId = idSesionCalendly(inv.uri);
-  const ya = await db.from("sesiones").select("estado,titulo,tipo,notas,invitado,email,extra,anfitrion").eq("id", sesionId).limit(1);
+  const ya = await db.from("sesiones").select("estado,titulo,tipo,notas,invitado,email,extra,anfitrion,inicia").eq("id", sesionId).limit(1);
   if (ya.error) throw new Error(`sesiones: ${ya.error.message}`);
-  const antes = ya.data?.[0] as Pick<Sesion, "estado" | "titulo" | "tipo" | "notas" | "invitado" | "email" | "extra" | "anfitrion"> | undefined;
+  const antes = ya.data?.[0] as Pick<Sesion, "estado" | "titulo" | "tipo" | "notas" | "invitado" | "email" | "extra" | "anfitrion" | "inicia"> | undefined;
 
   /* Una reprogramación sigue la historia de la agenda de antes: lo que el
      closer y el setter ya habían cargado (las notas y el Pre-Call) pasa a
@@ -235,7 +235,9 @@ export async function ingresarInvitado(
        pisa la corrección. */
     invitado: antes?.invitado || previo?.nombre || inv.name,
     email: antes?.email || inv.email,
-    inicia: ev.start_time, duracionMin: minutos,
+    /* Una llamada que el closer pasó a otro día u hora a mano (extra.inicioManual: reagendó por fuera de Calendly) conserva lo que
+       eligió: Calendly seguiría diciendo el horario de antes cada vez que se vuelve a traer. */
+    inicia: antes?.extra?.inicioManual && antes.inicia ? antes.inicia : ev.start_time, duracionMin: minutos,
     estado, enlace: enlaceDe(ev), origen: "calendly",
     /* Lo que otras pantallas guardan en extra (la atribución a un webinar
        corregida a mano) no se borra al volver a traerla. */

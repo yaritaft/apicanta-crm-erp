@@ -9,7 +9,7 @@ import type { OpcionCrm } from "@/lib/types";
    Una celda que se corrige en el lugar, como en un Excel: un clic la
    abre, Enter o salir de la celda guarda y Esc deja lo que estaba.
 
-   - texto, fecha, lista (varias, separadas por coma) y sugerencias (un
+   - texto, fecha, fecha y hora, lista (varias, separadas por coma) y sugerencias (un
      texto libre con los valores que ya existen para elegir): un campo
      adentro de la celda.
    - opciones: la lista con buscador del CRM de antes, debajo de la celda.
@@ -58,10 +58,10 @@ export function CeldaEditable({
     return (
       <div className={`crm-t__editable crm-t__editable--abierta${className ? ` ${className}` : ""}`}>
         <input
-          className="crm-t__input" autoFocus type={editor === "fecha" ? "date" : "text"} defaultValue={valor} aria-label={titulo}
+          className="crm-t__input" autoFocus type={editor === "fecha" ? "date" : editor === "fechahora" ? "datetime-local" : "text"} defaultValue={valor} aria-label={titulo}
           list={sugerencias?.length ? idLista : undefined}
           placeholder={editor === "lista" ? "Separadas por coma" : undefined}
-          onFocus={(ev) => { hecho.current = false; if (editor !== "fecha") ev.currentTarget.select(); }}
+          onFocus={(ev) => { hecho.current = false; if (editor !== "fecha" && editor !== "fechahora") ev.currentTarget.select(); }}
           onClick={(ev) => ev.stopPropagation()}
           onKeyDown={(ev) => {
             if (ev.key === "Enter") { ev.preventDefault(); terminar(ev.currentTarget.value); }

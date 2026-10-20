@@ -737,7 +737,7 @@ function registrar(
    estado y el closer en la celda. `extra` lo manda pasar una llamada a otro
    closer (lib/pasar-llamadas.ts), que deja anotado ahí que se eligió a mano. */
 export type CambiosLlamada = Partial<Pick<Sesion, "preCall" | "estadoPreCall" | "estadoLlamada" | "notas" | "grabacion" | "estado"
-  | "resultado" | "objecion" | "hizoOferta" | "cierreEstimado" | "eodEn" | "eodPor" | "anfitrion" | "extra"
+  | "resultado" | "objecion" | "hizoOferta" | "cierreEstimado" | "eodEn" | "eodPor" | "anfitrion" | "extra" | "inicia"
   | "estadoLlamadaEn" | "estadoPreCallEn" | "ventaPorOtro">>;
 type PedidoLlamada = { id: ID; cambios: CambiosLlamada; detalle: string };
 const MARCAS_DE_ESTADO = [["estadoLlamada", "estadoLlamadaEn"], ["estadoPreCall", "estadoPreCallEn"]] as const;
