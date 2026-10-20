@@ -53,7 +53,8 @@ export function AjustarCs({ onCerrar }: { onCerrar: () => void }) {
       const base = LISTAS_POR_DEFECTO[l.clave];
       if (items.join("\n") !== base.join("\n")) propias[l.clave] = items;
     }
-    acciones.configurarSeguimiento({ ...nueva, listas: propias });
+    /* `contarDesde` no se edita acá (lo pone Ajustes a mano): se lo conserva, si no, al guardar se perdería la fecha de arranque. */
+    acciones.configurarSeguimiento({ ...nueva, listas: propias, contarDesde: cfg.contarDesde });
     toast("Customer Success ajustado.");
     onCerrar();
   }

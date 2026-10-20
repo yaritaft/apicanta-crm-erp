@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import {
   aContactarHoy, aplicarCadencia, aplicarContacto, aplicarCorreccion, aplicarDejoDeContestar, aplicarNoContesto,
   configSeguimiento, CONFIG_POR_DEFECTO, diasEntre, filasDeSeguimiento, idSeguimiento,
@@ -207,4 +208,11 @@ test("el día se lee corto, con el año sólo si no es el actual", () => {
   assert.equal(formatoDia("2026-10-07", HOY), "7 oct");
   assert.equal(formatoDia("2025-12-30", HOY), "30 dic 2025");
   assert.equal(formatoDia(null, HOY), "—");
+});
+
+test("ajustar Customer Success desde la pantalla conserva la fecha de arranque («contar desde»)", () => {
+  /* El formulario sólo arma las cadencias y los reintentos: si no pasa `contarDesde` de la configuración actual, guardar la borra
+     y «A contactar hoy» vuelve a llenarse con todos los atrasados del histórico. */
+  const fuente = readFileSync(new URL("../src/components/cs/AjustarCs.tsx", import.meta.url), "utf8");
+  assert.match(fuente, /configurarSeguimiento\(\{[^}]*contarDesde: cfg\.contarDesde/);
 });
