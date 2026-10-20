@@ -4,7 +4,7 @@ import { enlaceWhatsapp } from "@/lib/contacto-telefono";
 import { PasosDeConciliacion } from "@/components/cierre/Avisos";
 import React, { useMemo, useState } from "react";
 import {
-  ArrowDownUp, ArrowRightLeft, Check, EyeOff, Link2, Plus, RefreshCw, Search, Sparkles, Undo2, Upload,
+  ArrowDownUp, ArrowRightLeft, BellRing, Check, EyeOff, Link2, Plus, RefreshCw, Search, Sparkles, Undo2, Upload,
 } from "lucide-react";
 import { CabeceraVista } from "@/components/finanzas/vistas/CabeceraVista";
 import {
@@ -31,6 +31,8 @@ import { ComoFuncionaConciliacion } from "@/components/finanzas/ComoFuncionaConc
 import { importarCSV, PASARELAS, nombrePasarela } from "@/lib/pasarelas";
 import { ReembolsosPasarelas } from "@/components/devoluciones/ReembolsosPasarelas";
 import { MotivoDeDescarte } from "@/components/finanzas/MotivoDeDescarte";
+import { PedirVentaACloser } from "@/components/finanzas/PedirVentaACloser";
+import { esperaDe, haceCuanto, nivelDePedido, pedidosPorCloser, tienePedidoAbierto } from "@/lib/pedidos-de-venta";
 import { FormTraspaso } from "@/components/finanzas/PasesEntreCuentas";
 import { paseDelCobro, rutaDe } from "@/lib/traspasos";
 import { MOTIVOS_DE_COBRO, faltaElMotivo } from "@/lib/motivos";
@@ -108,6 +110,9 @@ export function ConciliacionVista({ embebido = false, rangoFijo }: {
   const cobros = (n: number) => `${n} ${n === 1 ? "cobro" : "cobros"}`;
   /* Los que se dejaron sin venta y nadie dijo por qué: ningún cobro se deja de lado sin motivo. */
   const sinMotivoN = useMemo(() => delRango.filter(faltaElMotivo).length, [delRango]);
+  /* Lo que cada closer le debe a Finanzas: cobros a los que se les pidió la venta y siguen pendientes (de cualquier mes). */
+  const debenLosClosers = useMemo(() => pedidosPorCloser(e), [e.movimientos]); // eslint-disable-line react-hooks/exhaustive-deps
+  const pedidosN = debenLosClosers.reduce((a, x) => a + x.n, 0);
 
   /* Buscar por quién pagó (nombre, correo, teléfono), cómo, la referencia o
      el monto: con cientos de cobros de Whop y Stripe, la lista sola no alcanza. */
@@ -271,6 +276,25 @@ export function ConciliacionVista({ embebido = false, rangoFijo }: {
         </div>
       )}
 
+      {filtro === "pendiente" && debenLosClosers.length > 0 && (
+        <div className="help-card">
+          <BellRing size={18} style={debenLosClosers.some((x) => x.nivel === "urgente") ? { color: "var(--danger)" } : undefined} />
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div className="help-card__title">
+              {pedidosN === 1 ? "Un cobro espera que un closer cargue la venta" : `${pedidosN} cobros esperan que un closer cargue la venta`}
+            </div>
+            <div className="help-card__text">
+              {debenLosClosers.map((x, i) => (
+                <span key={x.closerId} style={x.nivel === "urgente" ? { color: "var(--danger)" } : x.nivel === "atrasado" ? { color: "var(--warning)" } : undefined}>
+                  {i > 0 ? " · " : ""}<strong>{e.equipo.find((m) => m.id === x.closerId)?.nombre ?? "Un closer"}</strong> {x.n} ({M(x.monto)}, {esperaDe(x)})
+                </span>
+              ))}
+              . Les aparece en Pendientes de su panel; la etiqueta se pone amarilla al día y roja a los dos días sin cargarse.
+            </div>
+          </div>
+        </div>
+      )}
+
       {filtro === "pendiente" && resumen.vinculables > 0 && (
         <div className="help-card">
           <Link2 size={18} />
@@ -416,7 +440,13 @@ function FilaMovimiento({ mov, M, abierto, onAbrir, onNuevaVenta }: {
   const [motivando, setMotivando] = useState<"nuevo" | "editar" | null>(null);
   /* «Es un movimiento entre cuentas»: el formulario del pase, desde este cobro (o para corregir el que ya se cargó). */
   const [entreCuentas, setEntreCuentas] = useState<"nuevo" | "editar" | null>(null);
+  /* «Pedir la venta a un closer»: la ventana para elegir de quién es. */
+  const [pidiendo, setPidiendo] = useState(false);
   const pase = useMemo(() => paseDelCobro(e.traspasos, mov), [e.traspasos, mov]);
+  const pedido = tienePedidoAbierto(mov) ? mov : undefined;
+  const pedidoHoras = pedido?.pedidoEn ? Math.max(0, (Date.now() - Date.parse(pedido.pedidoEn)) / 3_600_000) : 0;
+  const pedidoNivel = nivelDePedido(pedidoHoras);
+  const pedidoCloser = pedido ? e.equipo.find((m) => m.id === pedido.pedidoACloserId)?.nombre ?? "un closer" : "";
 
   const sugerencias = useMemo(
     () => (mov.estado === "pendiente" ? sugerenciasPara(e, mov) : []),
@@ -471,6 +501,13 @@ function FilaMovimiento({ mov, M, abierto, onAbrir, onNuevaVenta }: {
         <span className="spacer" />
         {mov.estado === "pendiente" && automatica && (
           <span title="El monto es el de una cuota de esa persona y no hay otra candidata: se puede conciliar de una."><Badge variante="success"><Sparkles size={13} />Coincide exacto</Badge></span>
+        )}
+        {pedido && (
+          <span title={`Se le pidió a ${pedidoCloser} que cargue la venta ${haceCuanto(pedidoHoras)}${pedido.pedidoPor ? `, por ${pedido.pedidoPor}` : ""}. Le aparece en Pendientes de su panel.`}>
+            <Badge variante={pedidoNivel === "urgente" ? "danger" : pedidoNivel === "atrasado" ? "warning" : "info"}>
+              <BellRing size={13} />Pedido a {pedidoCloser.split(" ")[0]} · {haceCuanto(pedidoHoras)}
+            </Badge>
+          </span>
         )}
         {mov.estado === "pendiente" && yaCargados.length > 0 && (
           <span title="Alguien ya cargó este pago a mano o vino de la planilla: hay que atarlo a ese pago, no asignarlo de nuevo."><Badge variante="accent"><Link2 size={13} />Ya cargado</Badge></span>
@@ -560,6 +597,11 @@ function FilaMovimiento({ mov, M, abierto, onAbrir, onNuevaVenta }: {
                   <p className="t-sm t-muted">Si no es ninguno, imputalo a una cuota como siempre.</p>
                 </>
               )}
+              {pedido && (
+                <p className="t-sm" style={{ color: pedidoNivel === "urgente" ? "var(--danger)" : pedidoNivel === "atrasado" ? "var(--warning)" : undefined }}>
+                  <strong>Le pediste la venta a {pedidoCloser}</strong> {haceCuanto(pedidoHoras)}{pedido.pedidoPor ? ` (${pedido.pedidoPor})` : ""}. Le aparece en Pendientes de su panel; cuando la cargue desde ahí, el cobro queda conciliado.
+                </p>
+              )}
               <div className="t-label">A qué cuota corresponde</div>
               {sugerencias.length === 0 && (
                 <p className="t-sm t-muted">
@@ -591,6 +633,15 @@ function FilaMovimiento({ mov, M, abierto, onAbrir, onNuevaVenta }: {
                 <Button sm variante="ghost" icono={<Plus size={14} />} onClick={onNuevaVenta}>
                   Cargar la venta de este cobro
                 </Button>
+                <Button sm variante={pedido ? "ghost" : "secondary"} icono={<BellRing size={14} />} onClick={() => setPidiendo(true)}
+                  title="Se la pedís al closer: le aparece en Pendientes de su panel, con el botón para cargarla, hasta que el cobro se concilie.">
+                  {pedido ? "Cambiar de closer" : "Pedir la venta a un closer"}
+                </Button>
+                {pedido && (
+                  <Button sm variante="ghost" onClick={() => { if (acciones.quitarPedidoDeVenta(mov.id)) toast("Se sacó el pedido."); }}>
+                    Sacar el pedido
+                  </Button>
+                )}
                 <Button sm variante="ghost" icono={<EyeOff size={14} />} onClick={() => setMotivando("nuevo")}
                   title="No corresponde a ninguna venta: se deja sin venta diciendo por qué.">
                   No es una venta
@@ -648,6 +699,7 @@ function FilaMovimiento({ mov, M, abierto, onAbrir, onNuevaVenta }: {
           )}
         </div>
       )}
+      <PedirVentaACloser abierto={pidiendo} mov={mov} onCerrar={() => setPidiendo(false)} onListo={(m) => { setPidiendo(false); toast(m); }} />
       {entreCuentas === "nuevo" && (
         <FormTraspaso e={e} desdeCobro={mov} onCerrar={() => setEntreCuentas(null)} onListo={(m) => { setEntreCuentas(null); toast(m); }} />
       )}

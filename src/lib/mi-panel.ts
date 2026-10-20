@@ -12,6 +12,8 @@ import { esIncobrable } from "./cuota-incobrable";
 import { CANCELADA, CON_CIERRE, NO_SE_PRESENTO, REPROGRAMO, SIN_CIERRE, HECHA } from "./estados";
 import { diaDeNegocio } from "./dia-negocio";
 import { normalizarUtm, origenDe } from "./utms";
+import { haceCuanto, pedidosDeCloser, type PedidoDeVenta } from "./pedidos-de-venta";
+import { medioDeMovimiento } from "./conciliacion";
 
 /* ==================================================================
    «Mi panel» (reunión del 15/10, armado sobre el Mi Panel de Blue OS): lo
@@ -108,7 +110,7 @@ export interface Aviso {
   texto: string;
   /* El nombre en negrita dentro del texto, para que se lea de un vistazo. */
   resaltado?: string;
-  accion?: { texto: string; ir: "cerrar-el-dia" | "ficha"; id?: string };
+  accion?: { texto: string; ir: "cerrar-el-dia" | "ficha" | "cargar-venta"; id?: string };
 }
 
 export interface MiPanel {
@@ -137,6 +139,8 @@ export interface MiPanel {
   dia: ResumenDelDia;
   strikes: StrikesDeCloser;
   avisos: Aviso[];
+  /* Los cobros de pasarela cuya venta Finanzas le pidió cargar (lib/pedidos-de-venta.ts): el más viejo primero. */
+  pedidos: PedidoDeVenta[];
   /* Cuántos avisos hay de verdad (la lista muestra los primeros de cada tipo). */
   totalAvisos: number;
   /* ---- los cobros que cargó ---- */
@@ -270,7 +274,8 @@ export function miPanelDe(e: EstadoApp, m: MiembroEquipo, rango: RangoMes, ahora
   };
 
   /* Lo que le pide acción. */
-  const { avisos, total: totalAvisos } = avisosDe(e, { dia, porCobrar, cobros, ahora });
+  const pedidos = pedidosDeCloser(e, m.id, ahora);
+  const { avisos, total: totalAvisos } = avisosDe(e, { dia, porCobrar, cobros, ahora, pedidos: avisosDePedidos(e, pedidos), totalPedidos: pedidos.length });
 
   /* Las agendas que le cargaron como setter: las que entraron por su link (utm_campaign=setter_nombre). */
   const agendasDeSetter: AgendaDeSetter[] = [];
@@ -294,7 +299,7 @@ export function miPanelDe(e: EstadoApp, m: MiembroEquipo, rango: RangoMes, ahora
     miembro: m, vista, rango,
     cobradoRango, comisionCloser, descuentoCierre, comisionDirector, comisionSetter: r2(comisionSetter), comisiones,
     ventasDelRango, porCobrar, porCobrarTotal, mesa, rendimiento,
-    llamadas, llamadasDeHoy, porVenirHoy, dia, strikes, avisos, totalAvisos,
+    llamadas, llamadasDeHoy, porVenirHoy, dia, strikes, avisos, pedidos, totalAvisos,
     cobros, controlDeCobros,
     agendasDeSetter, ventasDeSetter,
   };
@@ -307,13 +312,33 @@ const POR_TIPO = 2;
 /** Hasta cuántos días atrás se avisa de una cuota vencida. */
 const DIAS_VENCIDAS = 30;
 
+/** Cuántos pedidos de venta se listan: Finanzas los pide de a pocos y cada uno es plata sin dueño, así que se muestran todos los razonables. */
+const POR_PEDIDO = 6;
+
+/** Lo que Finanzas le pidió cargar: el cobro de una pasarela del que falta la venta. Amarillo al día, rojo a los dos días. */
+function avisosDePedidos(e: EstadoApp, pedidos: PedidoDeVenta[]): Aviso[] {
+  return pedidos.slice(0, POR_PEDIDO).map((p) => {
+    const m = p.movimiento;
+    const dia = diaDeNegocio(m.fecha);
+    return {
+      clave: `pv|${m.id}`, tono: p.nivel === "urgente" ? "danger" : "warning", resaltado: m.clienteNombre?.trim() || "Un cobro",
+      texto: `Finanzas te pide cargar la venta de su cobro de US$ ${Math.round(m.monto).toLocaleString("es-AR")} por ${medioDeMovimiento(e, m)} del ${dia.slice(8, 10)}/${dia.slice(5, 7)} (${haceCuanto(p.horas)}).`,
+      accion: { texto: "Cargar la venta", ir: "cargar-venta", id: m.id },
+    } satisfies Aviso;
+  });
+}
+
 function avisosDe(
   e: Pick<EstadoApp, "productos">,
-  c: { dia: ResumenDelDia; porCobrar: CuotaPendiente[]; cobros: CobroCargado[]; ahora: number },
+  c: { dia: ResumenDelDia; porCobrar: CuotaPendiente[]; cobros: CobroCargado[]; ahora: number; pedidos: Aviso[]; totalPedidos: number },
 ): { avisos: Aviso[]; total: number } {
   const avisos: Aviso[] = [];
   let total = 0;
   const productoDe = (id?: string) => e.productos.find((x) => x.id === id)?.nombre ?? "venta";
+
+  /* Lo que Finanzas le pidió: primero, porque es plata ya cobrada que no cuenta hasta que cargue la venta. */
+  total += c.totalPedidos;
+  avisos.push(...c.pedidos);
 
   /* El cierre del día. */
   const sinCargar = c.dia.sinCargarHoy + c.dia.sinCargarAntes;

@@ -3511,6 +3511,42 @@ export const acciones = {
     return true;
   },
 
+  /* «Pedir la venta a un closer» (lib/pedidos-de-venta.ts): un cobro sin venta del que Finanzas sabe de quién es. Le aparece al closer
+     en «Pendientes» hasta que el cobro se concilie o se deje sin venta. Pedírselo de nuevo al mismo closer no corre el reloj; a otro, sí. */
+  pedirVentaACloser(movimientoId: ID, closerId: ID, pidio?: string): boolean {
+    const e = snapshot();
+    const mov = e.movimientos.find((m) => m.id === movimientoId);
+    const closer = e.equipo.find((m) => m.id === closerId);
+    if (!mov || !closer || mov.estado !== "pendiente") return false;
+    if (mov.pedidoACloserId === closerId) return true;
+    const actualizado: Movimiento = { ...mov, pedidoACloserId: closerId, pedidoEn: new Date().toISOString(), pedidoPor: pidio?.trim() || undefined };
+    const quien = mov.clienteNombre || mov.referencia;
+    const { lista, nuevo } = registrar(
+      e, "transaccion", mov.id, quien, "actualizo",
+      `Se le pidió a ${closer.nombre} que cargue la venta del cobro de ${quien} (${mov.referencia}).`,
+    );
+    guardar({ ...e, movimientos: e.movimientos.map((m) => (m.id === mov.id ? actualizado : m)), actividad: lista });
+    /* Quien cambia de closer pisa los tres datos juntos; el que no viaja (pidioPor vacío) tiene que viajar como null para borrar el anterior. */
+    empujarUpdate("movimientos", [mov.id], { pedidoACloserId: closerId, pedidoEn: actualizado.pedidoEn, pedidoPor: actualizado.pedidoPor ?? null });
+    empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
+    return true;
+  },
+
+  /* Sacar el pedido: el closer ya no lo ve en sus pendientes. */
+  quitarPedidoDeVenta(movimientoId: ID): boolean {
+    const e = snapshot();
+    const mov = e.movimientos.find((m) => m.id === movimientoId);
+    if (!mov || !mov.pedidoACloserId) return false;
+    const antes = e.equipo.find((m) => m.id === mov.pedidoACloserId)?.nombre ?? "un closer";
+    const actualizado: Movimiento = { ...mov, pedidoACloserId: undefined, pedidoEn: undefined, pedidoPor: undefined };
+    const quien = mov.clienteNombre || mov.referencia;
+    const { lista, nuevo } = registrar(e, "transaccion", mov.id, quien, "actualizo", `Se sacó el pedido de venta a ${antes} del cobro de ${quien} (${mov.referencia}).`);
+    guardar({ ...e, movimientos: e.movimientos.map((m) => (m.id === mov.id ? actualizado : m)), actividad: lista });
+    empujarUpdate("movimientos", [mov.id], { pedidoACloserId: null, pedidoEn: null, pedidoPor: null });
+    empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
+    return true;
+  },
+
   /* Importar de un CSV o de la API: el mismo cobro traído dos veces tiene
      que seguir siendo uno solo, así que la referencia manda. */
   importarMovimientos(filas: Omit<Movimiento, "id" | "estado" | "creadoEn" | "origen">[], origen: string): { nuevos: number; repetidos: number; completados: number } {

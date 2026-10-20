@@ -5,13 +5,16 @@ import Link from "next/link";
 import { Link2 } from "lucide-react";
 import { Badge, Button } from "@/components/ui/ui";
 import { useAbrirFicha } from "@/components/ficha/abrir";
+import { useToast } from "@/components/ui/Toast";
+import { AsistenteVenta } from "@/components/ventas/AsistenteVenta";
+import { useEstado } from "@/lib/store";
 import { fecha, hora, money } from "@/lib/format";
 import { sinTildes } from "@/lib/crm";
 import { CANCELADA, CON_CIERRE, NO_SE_PRESENTO, POR_VENIR, SIN_CARGAR } from "@/lib/estados";
 import { etiquetaDeControl } from "@/lib/control-cobros";
 import type { FilaTabla } from "@/lib/crm-tabla";
 import type { Aviso, CobroCargado } from "@/lib/mi-panel";
-import type { EstadoApp } from "@/lib/types";
+import type { EstadoApp, Movimiento } from "@/lib/types";
 import { clic } from "./util";
 
 /* ==================================================================
@@ -68,6 +71,10 @@ export function LlamadasDeHoy({ titulo, llamadas, hoyVacio }: { titulo: string; 
 
 export function ParaVos({ titulo, avisos, total, puedeCerrarElDia }: { titulo: string; avisos: Aviso[]; total: number; puedeCerrarElDia: boolean }) {
   const abrirFicha = useAbrirFicha();
+  const e = useEstado();
+  const toast = useToast();
+  /* «Cargar la venta» de un cobro que Finanzas pidió: el mismo asistente de Conciliación, con el cobro ya puesto. */
+  const [cargando, setCargando] = useState<Movimiento | null>(null);
   return (
     <section className="mp-card mp-card--lista" aria-label={titulo}>
       <div className="mp-cap-fila"><span className="mp-cap">{titulo}</span><span className="mp-cuenta">{total}</span></div>
@@ -83,12 +90,21 @@ export function ParaVos({ titulo, avisos, total, puedeCerrarElDia }: { titulo: s
               {a.accion && (a.accion.ir === "ficha" || puedeCerrarElDia) && (
                 a.accion.ir === "cerrar-el-dia"
                   ? <Link href="/cerrar-el-dia" className="hk-btn hk-btn--secondary hk-btn--sm">{a.accion.texto}</Link>
-                  : <Button sm variante="secondary" onClick={() => abrirFicha(a.accion!.id!, "ventas", { venta: a.accion!.id! })}>{a.accion.texto}</Button>
+                  : a.accion.ir === "cargar-venta"
+                    ? <Button sm variante="primary" onClick={() => setCargando(e.movimientos.find((m) => m.id === a.accion!.id) ?? null)}>{a.accion.texto}</Button>
+                    : <Button sm variante="secondary" onClick={() => abrirFicha(a.accion!.id!, "ventas", { venta: a.accion!.id! })}>{a.accion.texto}</Button>
               )}
             </div>
           ))}
           {total > avisos.length && <div className="mp-avisos__mas">Y {total - avisos.length} más. Se muestran las primeras de cada tipo.</div>}
         </div>
+      )}
+      {cargando && (
+        <AsistenteVenta
+          desdeMovimiento={cargando}
+          onCerrar={() => setCargando(null)}
+          onListo={(_, nombre) => { setCargando(null); toast(`Venta de ${nombre} cargada con el cobro ya conciliado.`); }}
+        />
       )}
     </section>
   );

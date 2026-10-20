@@ -1093,6 +1093,11 @@ export interface Movimiento {
   /* Por qué no corresponde a una venta («Sin venta», estado «ignorado»): se reembolsó, nunca se cobró, está repetido…
      Ningún cobro se deja de lado sin decir por qué (lib/motivos.ts). */
   motivo?: string;
+  /* Finanzas le pidió a un closer que cargue la venta de este cobro (lib/pedidos-de-venta.ts): a quién, cuándo y quién lo pidió.
+     El pedido se cierra solo cuando el cobro deja de estar pendiente. */
+  pedidoACloserId?: ID;
+  pedidoEn?: string;
+  pedidoPor?: string;
   /* Resultado de la conciliación */
   pagoId?: ID;
   cuotaId?: ID;
