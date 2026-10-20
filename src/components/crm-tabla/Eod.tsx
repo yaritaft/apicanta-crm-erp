@@ -42,7 +42,7 @@ import { CuentaDeStrikes } from "./Strikes";
 
    Cada llamada se guarda al pasar a la siguiente: si se cierra a la
    mitad, lo cargado queda. Suma las llamadas de días anteriores que
-   quedaron sin cargar (las de las últimas dos semanas).
+   quedaron sin cargar (todas, no sólo las de las últimas dos semanas).
 
    «Tu día» muestra los strikes del closer (días en que alguna llamada no
    quedó cargada el mismo día: lib/cierre-del-dia.ts), aunque el interruptor
@@ -52,7 +52,6 @@ import { CuentaDeStrikes } from "./Strikes";
    ================================================================== */
 
 const HORA = new Intl.DateTimeFormat("es-AR", { timeZone: "America/Argentina/Buenos_Aires", hour: "2-digit", minute: "2-digit", hour12: false });
-const DIAS_PENDIENTES = 14;
 
 /* El nombre de pila, escrito como nombre: en Calendly cada uno lo carga
    como quiere («EDISON», «sebastian»). */
@@ -103,11 +102,11 @@ export function Eod({ onCerrar, soloSesionId }: { onCerrar: () => void; soloSesi
   /* La puerta vale en el cierre del día; la ficha, que carga una sola llamada, no la pide. */
   const conPuerta = !soloSesionId;
 
-  /* Las llamadas del día que ya empezaron, y las pendientes de antes. */
+  /* Las llamadas del día que ya empezaron, y TODAS las pendientes de antes, sin tope de días: con el de las últimas dos semanas, a Dante
+     (19/10) no le aparecían las 12 llamadas de venta de fines de septiembre y principios de octubre que seguían sin cargar. */
   const { delDia, pendientes, cargadasDelDia } = useMemo(() => {
     if (soloSesionId) return { delDia: e.sesiones.filter((s) => s.id === soloSesionId), pendientes: [] as Sesion[], cargadasDelDia: 0 };
     if (!closer) return { delDia: [] as Sesion[], pendientes: [] as Sesion[], cargadasDelDia: 0 };
-    const desde = new Date(Date.parse(`${dia}T12:00:00Z`) - DIAS_PENDIENTES * 86_400_000).toISOString().slice(0, 10);
     const empezadas = llamadasDelDia(e, closer, dia).filter((s) => Date.parse(s.inicia) <= ahora);
     /* Cargada = ya tiene cómo terminó (lo cargó el closer o lo supo la app). */
     const { paraCargar, cargadas } = llamadasParaCargar(empezadas, (id) => filas.get(id)?.sinCargar, conCargadas);
@@ -118,7 +117,7 @@ export function Eod({ onCerrar, soloSesionId }: { onCerrar: () => void; soloSesi
         .filter((s) => {
           const f = filas.get(s.id);
           const d = diaDeNegocio(s.inicia);
-          return f?.sinCargar && d < dia && d >= desde && esDelCloser(s, closer, e.equipo) && !esLlamadaDeResell(s);
+          return f?.sinCargar && d < dia && esDelCloser(s, closer, e.equipo) && !esLlamadaDeResell(s);
         })
         .sort((a, b) => a.inicia.localeCompare(b.inicia)),
     };

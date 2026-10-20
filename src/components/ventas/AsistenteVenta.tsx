@@ -1,5 +1,6 @@
 "use client";
 
+import { cuentasPorUso } from "@/lib/cuentas-por-uso";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeft, Check, CornerDownLeft, Link2, Paperclip, Search, Sparkles, UserPlus, X,
@@ -868,7 +869,7 @@ function PasoCobros({ b, setB, e, M, onSubiendo }: {
   e: EstadoApp; M: (n: number, d?: number) => string;
   onSubiendo: (cobroId: string, subiendo: boolean) => void;
 }) {
-  const procesadores = e.procesadores.filter((p) => p.activo);
+  const procesadores = useMemo(() => cuentasPorUso(e), [e.procesadores, e.pagos]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* Lo que usan de cada pago de pasarela los cobros de las OTRAS cuotas. */
   const usadoFuera = useCallback((cuotaId?: string) => {

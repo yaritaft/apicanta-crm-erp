@@ -1,5 +1,6 @@
 "use client";
 
+import { cuentasPorUso } from "@/lib/cuentas-por-uso";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Link2, Plus, Trash2, Unlink } from "lucide-react";
 import { Button, IconButton, Input, Select } from "@/components/ui/ui";
@@ -174,7 +175,8 @@ export function EditorCobros({ e, cobros, onCambio, objetivo, cliente, usadoFuer
   /* El cobro que se corrige: su pago de la pasarela vuelve a ofrecerse. */
   liberar?: { pagoId: ID; movimientoId?: ID };
 }) {
-  const procesadores = e.procesadores.filter((p) => p.activo);
+  /* Las más usadas primero (lib/cuentas-por-uso.ts). */
+  const procesadores = useMemo(() => cuentasPorUso(e), [e.procesadores, e.pagos]); // eslint-disable-line react-hooks/exhaustive-deps
   const mon = e.ajustes.monedaBase;
   const [eligiendo, setEligiendo] = useState<string | null>(null);
   const ver = (parte: ParteCobro) => partes.includes(parte);
