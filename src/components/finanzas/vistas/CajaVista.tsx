@@ -486,7 +486,10 @@ function NuevoArqueo({ e, onCerrar, onListo, traerAlAbrir = false }: { e: Estado
           <span role="cell" data-titulo="Último arqueo" className="t-num t-muted">{s?.anterior !== undefined ? money(s.anterior, moneda) : "—"}</span>
           <span role="cell" data-titulo="Cobró" className="t-num t-muted" title="Lo cobrado por esta cuenta desde el último arqueo, neto de su comisión">{s?.entro ? enSuMoneda(s.entro, true) : "—"}</span>
           <span role="cell" data-titulo="Pases" className="t-num t-muted" title="Lo que recibió de otras cuentas menos lo que les mandó">{s?.pases ? enSuMoneda(s.pases, true) : "—"}</span>
-          <span role="cell" data-titulo="Tendría que haber" className="t-num" title={s?.salio ? `Ya descuenta ${money(s.salio, moneda)} de retiros y devoluciones que salieron de esta cuenta` : undefined}>
+          <span role="cell" data-titulo="Salió" className="t-num t-muted" title="Lo que salió de esta cuenta desde el último arqueo: los gastos que dicen de qué cuenta se pagaron, los retiros y las devoluciones (lo que volvió, como un reembolso, suma)">
+            {s?.salio ? enSuMoneda(-s.salio, true) : "—"}
+          </span>
+          <span role="cell" data-titulo="Tendría que haber" className="t-num">
             {s?.esperado !== undefined ? money(s.esperado, moneda) : "—"}
           </span>
           <span
@@ -494,7 +497,7 @@ function NuevoArqueo({ e, onCerrar, onListo, traerAlAbrir = false }: { e: Estado
             style={marca ? { "--marca": `${Math.round(marca.length * 6.5)}px` } as React.CSSProperties : undefined}
           >
             <InputMonto
-              aria-label={`Saldo de ${p.nombre}`} placeholder={moneda === "ARS" ? "$ 0" : "US$ 0"}
+              aria-label={`Saldo de ${p.nombre}`} placeholder={moneda === "ARS" ? "$ 0" : "US$ 0"} negativos
               value={textos[p.id] ?? ""}
               onChange={(ev) => { setTextos({ ...textos, [p.id]: ev.target.value }); if (automaticos[p.id]) setAutomaticos(({ [p.id]: _x, ...resto }) => resto); }}
             />
@@ -538,6 +541,7 @@ function NuevoArqueo({ e, onCerrar, onListo, traerAlAbrir = false }: { e: Estado
           <span role="columnheader">Último arqueo</span>
           <span role="columnheader">Cobró</span>
           <span role="columnheader">Pases</span>
+          <span role="columnheader">Salió</span>
           <span role="columnheader">Tendría que haber</span>
           <span role="columnheader">Hay de verdad</span>
         </div>

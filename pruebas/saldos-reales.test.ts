@@ -166,6 +166,7 @@ test("Mercury suma las cuentas del banco sin las de crédito y avisa lo no acred
     ] } };
   }, () => saldoDeMercury());
   assert.equal(m.r!.saldo, 73369.03); assert.match(m.r!.nota ?? "", /US\$\s*73\.269,03 disponibles/);
+  assert.match(m.r!.nota ?? "", /tarjetas de crédito de Mercury marcan −?US\$\s*2\.500,00 \(no se suman/, "la tarjeta se avisa pero no se suma");
   await assert.rejects(conRespuestas({ MERCURY_API_TOKEN: "abc" }, () => ({ cuerpo: { accounts: [{ id: "a", kind: "checking" }] } }), () => saldoDeMercury()), /no mandó el saldo/);
   await assert.rejects(conRespuestas({ MERCURY_API_TOKEN: "abc" }, () => ({ status: 401, cuerpo: { message: "no autorizado" } }), () => saldoDeMercury()), /Mercury \(cuentas\) respondió 401/);
 

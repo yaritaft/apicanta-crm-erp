@@ -1197,17 +1197,27 @@ export async function saldoDeMercury(): Promise<SaldoReal | null> {
   const data = await json(r);
   if (!r.ok) throw rechazo("Mercury (cuentas)", r, data);
   let actual = 0, disponible = 0;
+  const tarjetas: string[] = [];
   for (const c of ((data.accounts ?? []) as Obj[])) {
-    if (/credit/i.test(String(c.kind ?? ""))) continue;
+    if (/credit/i.test(String(c.kind ?? ""))) {
+      /* La tarjeta no es plata: no se suma, pero lo que debe explica por qué el banco puede tener más de lo esperado (un gasto con tarjeta no baja el saldo hasta que se paga). */
+      const deuda = Number(c.currentBalance);
+      if (Number.isFinite(deuda) && deuda !== 0) tarjetas.push(money(dinero(deuda), "USD", 2));
+      continue;
+    }
     const saldo = Number(c.currentBalance);
     if (!Number.isFinite(saldo)) throw new Error(`Mercury no mandó el saldo de la cuenta ${String(c.name ?? c.id ?? "")}.`);
     actual += saldo;
     disponible += Number.isFinite(Number(c.availableBalance)) ? Number(c.availableBalance) : saldo;
   }
   const dif = dinero(actual - disponible);
+  const notas = [
+    Math.abs(dif) >= 0.01 ? `Mercury marca ${money(dinero(disponible), "USD", 2)} disponibles: la diferencia son movimientos que todavía no se acreditaron.` : "",
+    tarjetas.length ? `Las tarjetas de crédito de Mercury marcan ${tarjetas.join(" y ")} (no se suman: lo gastado con tarjeta baja el saldo recién cuando se paga).` : "",
+  ].filter(Boolean).join(" ");
   return {
     cuentaId: "proc_mercury", saldo: dinero(actual), moneda: "USD", al: new Date().toISOString(), fuente: FUENTES_DE_SALDO.proc_mercury,
-    ...(Math.abs(dif) >= 0.01 ? { nota: `Mercury marca ${money(dinero(disponible), "USD", 2)} disponibles: la diferencia son movimientos que todavía no se acreditaron.` } : {}),
+    ...(notas ? { nota: notas } : {}),
   };
 }
 
