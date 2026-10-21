@@ -405,9 +405,11 @@ test("/api/whatsapp/integrantes: los grupos con todos sus integrantes (quién es
   const { GET: getIntegrantes } = await import("@/app/api/whatsapp/integrantes/route");
   await conArchivo(async () => {
     /* El lector manda la foto del grupo (A, B, C adentro) y después sale B. */
-    const foto = { grupo: { id: G, nombre: "Taller Online 21/10/26 #1" }, evento: "foto", participantes: [A, B, C], en: "2026-10-21T01:00:00.000Z" };
+    /* Las horas, relativas a «ahora»: el lector descarta lo que dice ser del futuro, así que una fecha fija rompía la prueba corrida «a otras horas». */
+    const hace = (h: number) => new Date(Date.now() - h * 3_600_000).toISOString();
+    const foto = { grupo: { id: G, nombre: "Taller Online 21/10/26 #1" }, evento: "foto", participantes: [A, B, C], en: hace(2) };
     assert.equal((await postGrupos(pedido("/api/whatsapp/grupos", foto, delLector))).status, 200);
-    assert.equal((await postGrupos(pedido("/api/whatsapp/grupos", { grupo: { id: G, nombre: "Taller Online 21/10/26 #1" }, evento: "salio", participantes: [B], en: "2026-10-21T02:00:00.000Z" }, delLector))).status, 200);
+    assert.equal((await postGrupos(pedido("/api/whatsapp/grupos", { grupo: { id: G, nombre: "Taller Online 21/10/26 #1" }, evento: "salio", participantes: [B], en: hace(1) }, delLector))).status, 200);
 
     const r = await getIntegrantes(new Request("http://localhost/api/whatsapp/integrantes"));
     assert.equal(r.status, 200);
