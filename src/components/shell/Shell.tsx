@@ -20,7 +20,7 @@ import {
   alNegarseEscritura, cargarDeLaNube, fijarAcceso, hayNube, reiniciarCarga, tablaSinCrear, useEstado, useSync, useTema,
 } from "@/lib/store";
 import { claveDe } from "@/lib/chat-equipo";
-import { fotoDe, mapaDeFotos } from "@/lib/fotos-perfil";
+import { aplazarFoto, fotoAplazadaHoy, fotoDe, mapaDeFotos } from "@/lib/fotos-perfil";
 import { useSalir, useSesion } from "@/lib/auth";
 import { useUsuarioActual } from "@/lib/usuario";
 import { elegirVerComo, useAcceso, useVerComo } from "@/lib/acceso";
@@ -79,8 +79,18 @@ export function Shell({ children }: { children: React.ReactNode }) {
   const quienYo = claveDe(sesion.email, yo.nombre);
   const miFoto = useMemo(() => fotoDe(mapaDeFotos(estado.fotosPerfil, estado.equipo), sesion.email, yo.nombre), [estado.fotosPerfil, estado.equipo, sesion.email, yo.nombre]);
   const datosListos = sync.estado === "listo" || sync.estado === "local";
-  const faltaFoto = datosListos && Boolean(quienYo) && !miFoto && !tablaSinCrear("fotos_perfil");
+  /* «Cargarla después»: se lee ya montado (localStorage no existe en el servidor) y por persona; hasta leerlo no se muestra el cartel. */
+  const [aplazo, setAplazo] = useState<{ quien: string; aplazada: boolean } | null>(null);
+  useEffect(() => {
+    if (quienYo) setAplazo({ quien: quienYo, aplazada: fotoAplazadaHoy(quienYo, hoyDelNegocio()) });
+  }, [quienYo]);
+  const faltaFoto = datosListos && Boolean(quienYo) && !miFoto && !tablaSinCrear("fotos_perfil") && aplazo?.quien === quienYo && !aplazo.aplazada;
   const [cambiarFoto, setCambiarFoto] = useState(false);
+  function fotoDespues() {
+    aplazarFoto(quienYo, hoyDelNegocio());
+    setAplazo({ quien: quienYo, aplazada: true });
+    toast("Listo, te la pido de nuevo mañana. Cuando quieras, tocá tu foto abajo a la izquierda.");
+  }
 
   /* Menu colapsado. Se lee despues del montado a proposito: leer localStorage
      en el primer render rompe la hidratacion, porque el servidor no lo tiene. */
@@ -357,7 +367,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
 
       <Paleta abierto={paleta} onCerrar={() => setPaleta(false)} />
       {(faltaFoto || cambiarFoto) && (
-        <FotoDePerfil quien={quienYo} nombre={yo.nombre} obligatoria={faltaFoto} actual={miFoto} onCerrar={() => setCambiarFoto(false)} />
+        <FotoDePerfil quien={quienYo} nombre={yo.nombre} obligatoria={faltaFoto} actual={miFoto} onCerrar={() => setCambiarFoto(false)} onDespues={fotoDespues} />
       )}
       <Tour />
     </div>

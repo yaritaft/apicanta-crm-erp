@@ -10,22 +10,26 @@ import { acciones } from "@/lib/store";
 import "./foto-perfil.css";
 
 /* ==================================================================
-   La foto de perfil. Al entrar a la app sin foto aparece OBLIGATORIA
-   (pedido de Juan Cruz, 20/10): no se cierra ni con Esc ni tocando
-   afuera hasta que se elige una. Después se cambia tocando la foto de
-   abajo a la izquierda (ahí sí se puede cerrar).
+   La foto de perfil. Al entrar a la app sin foto aparece (pedido de
+   Juan Cruz, 20/10) y no se cierra tocando afuera: o se elige una o se
+   toca «Cargarla después» (o Esc), que deja seguir usando la app y la
+   vuelve a pedir al otro día (21/10: así no frena a nadie que no tiene la
+   foto a mano). Después se cambia tocando la foto de abajo a la izquierda
+   (ahí sí se cierra como cualquier ventana).
 
    La foto se recorta al cuadrado del medio y se achica en el navegador
    (lib/fotos-perfil.ts): se ve cómo queda antes de guardarla.
    ================================================================== */
 
-export function FotoDePerfil({ quien, nombre, obligatoria, actual, onCerrar }: {
+export function FotoDePerfil({ quien, nombre, obligatoria, actual, onCerrar, onDespues }: {
   /* Su mail (o, sin nube, su nombre): la fila de `fotos_perfil`. */
   quien: string;
   nombre: string;
   obligatoria: boolean;
   actual?: string;
   onCerrar: () => void;
+  /* Sólo en la obligatoria: «Cargarla después». */
+  onDespues?: () => void;
 }) {
   const toast = useToast();
   const elegir = useRef<HTMLInputElement>(null);
@@ -35,18 +39,19 @@ export function FotoDePerfil({ quien, nombre, obligatoria, actual, onCerrar }: {
   const [encima, setEncima] = useState(false);
   const primerNombre = nombre.split(" ")[0];
 
-  /* Esc cierra sólo si no es obligatoria; y nada de atrás (una ficha, un hilo) se entera. */
+  /* Esc cierra (o pospone, si es la obligatoria); y nada de atrás (una ficha, un hilo) se entera. */
   useEffect(() => {
     const onKey = (ev: KeyboardEvent) => {
       if (ev.key !== "Escape") return;
       ev.preventDefault(); ev.stopImmediatePropagation();
       if (!obligatoria) onCerrar();
+      else onDespues?.();
     };
     window.addEventListener("keydown", onKey, true);
     const antes = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     return () => { window.removeEventListener("keydown", onKey, true); document.body.style.overflow = antes; };
-  }, [obligatoria, onCerrar]);
+  }, [obligatoria, onCerrar, onDespues]);
 
   async function preparar(archivo: File | undefined) {
     if (!archivo) return;
@@ -85,7 +90,7 @@ export function FotoDePerfil({ quien, nombre, obligatoria, actual, onCerrar }: {
         <h2 id="fp-tit" className="fp-tit">{obligatoria ? `${primerNombre}, poné tu foto de perfil` : "Tu foto de perfil"}</h2>
         <p className="fp-texto">
           {obligatoria
-            ? "Antes de seguir: así el equipo te reconoce en el chat y en cada ficha. Una foto tuya, de frente y con buena luz."
+            ? "Así el equipo te reconoce en el chat y en cada ficha. Una foto tuya, de frente y con buena luz."
             : "Es la que ve el equipo en el chat y en cada ficha."}
         </p>
         {error && <p className="fp-error" role="alert">{error}</p>}
@@ -101,6 +106,7 @@ export function FotoDePerfil({ quien, nombre, obligatoria, actual, onCerrar }: {
               {actual ? "Elegir otra foto" : "Elegir foto"}
             </Button>
           )}
+          {obligatoria && onDespues && <Button variante="ghost" onClick={onDespues}>Cargarla después</Button>}
         </div>
         <p className="fp-ayuda">JPG o PNG. Se recorta en cuadrado, centrada. También podés arrastrarla al círculo.</p>
         <input ref={elegir} type="file" accept="image/*" hidden onChange={(ev) => { void preparar(ev.target.files?.[0]); ev.target.value = ""; }} />

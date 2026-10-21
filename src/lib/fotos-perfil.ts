@@ -16,6 +16,24 @@ export const LADO_FOTO = 192;
 /** Lo más que puede pesar la data URL (la base lo frena igual: supabase/fotos-perfil.sql). */
 export const TOPE_FOTO = 400_000;
 
+/* «Cargarla después» (21/10): el cartel obligatorio deja seguir usando la app y vuelve al otro día. Se acuerda en el navegador
+   (por persona, con el día en que se pospuso): sin nube ni tabla, y si el navegador no deja guardar, el cartel simplemente vuelve. */
+const claveAplazada = (quien: string) => `apicanta:foto-despues:${quien}`;
+function almacenLocal(): Pick<Storage, "getItem" | "setItem"> | null {
+  try { return globalThis.localStorage ?? null; } catch { return null; }
+}
+
+/** ¿Ya dijo «después» hoy? `hoy` es el día del negocio (aaaa-mm-dd). */
+export function fotoAplazadaHoy(quien: string, hoy: string, almacen: Pick<Storage, "getItem"> | null = almacenLocal()): boolean {
+  if (!quien || !almacen) return false;
+  try { return almacen.getItem(claveAplazada(quien)) === hoy; } catch { return false; }
+}
+
+export function aplazarFoto(quien: string, hoy: string, almacen: Pick<Storage, "setItem"> | null = almacenLocal()): void {
+  if (!quien || !almacen) return;
+  try { almacen.setItem(claveAplazada(quien), hoy); } catch { /* modo privado: el cartel vuelve en la próxima carga */ }
+}
+
 /** El mapa para buscar fotos: por clave (el mail o, sin nube, el nombre) y por nombre. */
 export interface Fotos { porClave: Map<string, string>; porNombre: Map<string, string> }
 
