@@ -91,6 +91,11 @@ export async function esperarBorrador(modo: ModoContrato, id: string, topeMs = 3
   return estado;
 }
 
+/** El detalle de una plantilla: sus roles, sus variables y sus campos (con su «merge field»). */
+export async function detallePlantilla(modo: ModoContrato, id: string): Promise<Record<string, unknown>> {
+  return json(await pd(modo, `/templates/${encodeURIComponent(id)}/details`), "leer la plantilla");
+}
+
 export async function detalleDocumento(modo: ModoContrato, id: string): Promise<Record<string, unknown>> {
   return json(await pd(modo, `/documents/${encodeURIComponent(id)}/details`), "pedir el detalle");
 }

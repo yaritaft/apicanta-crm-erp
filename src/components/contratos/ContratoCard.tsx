@@ -1,0 +1,269 @@
+"use client";
+
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { Ban, ChevronDown, ChevronRight, Copy, FileDown, FileSignature, Pencil, RefreshCw, Send } from "lucide-react";
+import { Badge, Button, Switch, type VarianteBadge } from "@/components/ui/ui";
+import { Confirmar, ModalForm } from "@/components/ui/Modal";
+import { useToast } from "@/components/ui/Toast";
+import { useEstado } from "@/lib/store";
+import { useAcceso } from "@/lib/acceso";
+import { fechaHora, relativo } from "@/lib/format";
+import {
+  accionesDe, estaPendiente, problemaDeDatos, ROTULO_ESTADO, ROTULO_EVENTO,
+  type Contrato, type DatosContrato, type EventoContrato,
+} from "@/lib/contratos";
+import { programasDe } from "@/lib/programas";
+import type { Venta } from "@/lib/types";
+import { abrirPdf, contratosPrendidos, datosDeVenta, leerContratos, pedirContrato } from "./cliente";
+import { DatosDelContrato } from "./DatosDelContrato";
+
+/* ==================================================================
+   El contrato de una venta (o de un servicio), como el ContratoCard de
+   Blue OS: el estado (enviado, lo abrió, firmado…), el historial con
+   fecha y quién, el link para copiar y mandarle por WhatsApp, y los
+   botones que corresponden a ese estado — nunca uno que PandaDoc va a
+   negar (un firmado no se anula ni se reenvía).
+   Se lee directo de la base y, mientras espera algo de PandaDoc, se
+   vuelve a leer sola cada 15 segundos.
+   ================================================================== */
+
+const VARIANTE: Record<string, VarianteBadge> = { neutral: "neutral", info: "info", warning: "warning", success: "success", danger: "danger" };
+const REFRESCO_MS = 15_000;
+
+interface Edicion { tipo: "crear" | "corregir"; contrato?: Contrato; datos: DatosContrato; programaId: string; prueba: boolean }
+
+export function ContratoCard({ venta, alumnoId, sesionId }: { venta?: Venta; alumnoId?: string; sesionId?: string }) {
+  const e = useEstado();
+  const toast = useToast();
+  const { esDueno } = useAcceso();
+  const config = e.ajustes.contratos;
+  const prendidos = contratosPrendidos(config, esDueno);
+  const programas = useMemo(() => programasDe(e.ajustes), [e.ajustes]);
+  const ventaId = venta?.id;
+
+  const [contratos, setContratos] = useState<Contrato[] | null>(null);
+  const [eventos, setEventos] = useState<EventoContrato[]>([]);
+  const [faltaTabla, setFaltaTabla] = useState(false);
+  const [trabajando, setTrabajando] = useState<string | null>(null);
+  const [edicion, setEdicion] = useState<Edicion | null>(null);
+  const [anular, setAnular] = useState<Contrato | null>(null);
+  const [historial, setHistorial] = useState<string | null>(null);
+
+  const leer = useCallback(async () => {
+    if (!ventaId && !alumnoId) return;
+    const r = await leerContratos({ ventaId, alumnoId });
+    setFaltaTabla(Boolean(r.faltaTabla));
+    setContratos(r.contratos);
+    setEventos(r.eventos);
+  }, [ventaId, alumnoId]);
+  useEffect(() => { if (prendidos) void leer(); }, [leer, prendidos]);
+
+  /* Mientras alguno espera algo de PandaDoc, se vuelve a leer solo. */
+  const hayPendiente = (contratos ?? []).some((c) => estaPendiente(c.estado));
+  useEffect(() => {
+    if (!hayPendiente) return;
+    const t = window.setInterval(() => { if (!document.hidden) void leer(); }, REFRESCO_MS);
+    return () => window.clearInterval(t);
+  }, [hayPendiente, leer]);
+
+  if (!prendidos || (!ventaId && !alumnoId)) return null;
+
+  const modoPrueba = (config?.estado ?? "apagado") === "prueba";
+
+  function abrirNuevo(base?: Contrato) {
+    if (!venta) { toast("El contrato se manda desde la venta.", "err"); return; }
+    const d = datosDeVenta(e, venta);
+    setEdicion({
+      tipo: "crear",
+      datos: base?.datos ? { ...d.datos, ...(base.datos as Partial<DatosContrato>), fecha: d.datos.fecha } : d.datos,
+      programaId: base?.programa ?? d.programa?.id ?? "",
+      prueba: modoPrueba,
+    });
+  }
+
+  async function hacer(c: Contrato, accion: string, extra: Record<string, unknown> = {}, ok?: string) {
+    setTrabajando(`${c.id}:${accion}`);
+    try {
+      await pedirContrato({ accion, id: c.id, ...extra });
+      if (ok) toast(ok);
+      await leer();
+    } catch (err) { toast(err instanceof Error ? err.message : "No se pudo.", "err"); await leer(); }
+    setTrabajando(null);
+  }
+
+  async function copiarEnlace(c: Contrato) {
+    let enlace = c.enlace;
+    const vencido = c.enlaceVence ? new Date(c.enlaceVence).getTime() < Date.now() + 60_000 : false;
+    if (!enlace || vencido) {
+      setTrabajando(`${c.id}:enlace`);
+      try { enlace = (await pedirContrato({ accion: "enlace", id: c.id })).enlace; await leer(); }
+      catch (err) { toast(err instanceof Error ? err.message : "No se pudo.", "err"); }
+      setTrabajando(null);
+    }
+    if (!enlace) return;
+    try { await navigator.clipboard.writeText(enlace); toast("Link para firmar copiado: mandáselo por WhatsApp."); }
+    catch { window.prompt("Copiá el link para firmar:", enlace); }
+  }
+
+  async function guardarEdicion() {
+    if (!edicion) return;
+    const modo = edicion.prueba ? "prueba" : "produccion";
+    const problema = !edicion.programaId ? "Elegí el programa." : problemaDeDatos(edicion.datos, edicion.contrato?.modo ?? modo);
+    if (problema) { toast(problema, "err"); return; }
+    setTrabajando("edicion");
+    try {
+      if (edicion.tipo === "corregir" && edicion.contrato) {
+        await pedirContrato({ accion: "corregir", id: edicion.contrato.id, datos: edicion.datos });
+        toast("Contrato corregido y mandado de nuevo.");
+      } else {
+        await pedirContrato({
+          accion: "crear", ventaId, sesionId, leadId: venta?.contactoId, alumnoId,
+          programa: edicion.programaId, datos: edicion.datos, prueba: edicion.prueba,
+        });
+        toast(`Contrato mandado a ${edicion.datos.email}.`);
+      }
+      setEdicion(null);
+    } catch (err) { toast(err instanceof Error ? err.message : "No se pudo.", "err"); }
+    setTrabajando(null);
+    await leer();
+  }
+
+  const lista = contratos ?? [];
+  return (
+    <div className="stack-2" style={{ borderTop: "1px solid var(--border)", paddingTop: 12, marginTop: 4 }}>
+      <div className="row-wrap" style={{ justifyContent: "space-between", gap: 8 }}>
+        <span className="t-label">Contrato</span>
+        {lista.length === 0 && contratos !== null && !faltaTabla && venta && (
+          <Button sm variante="secondary" icono={<FileSignature size={14} />} onClick={() => abrirNuevo()}>Mandar contrato</Button>
+        )}
+      </div>
+      {faltaTabla ? (
+        <p className="t-sm t-subtle">Falta correr supabase/contratos-y-accesos.sql en la base.</p>
+      ) : contratos === null ? (
+        <div className="skeleton" style={{ height: 36 }} />
+      ) : lista.length === 0 ? (
+        <p className="t-sm t-subtle">{venta ? "Todavía no se le mandó contrato desde la app." : "Sin contrato en la app."}</p>
+      ) : lista.map((c) => {
+        const r = ROTULO_ESTADO[c.estado];
+        const acciones = accionesDe(c);
+        const evs = eventos.filter((x) => x.contratoId === c.id);
+        const ocupado = (a: string) => trabajando === `${c.id}:${a}`;
+        const nombrePrograma = programas.find((p) => p.id === c.programa)?.nombre ?? c.plantillaNombre;
+        return (
+          <div key={c.id} className="stack-1">
+            <div className="row-wrap" style={{ gap: 8 }}>
+              <span className="t-strong">{nombrePrograma}</span>
+              <Badge variante={VARIANTE[r.tono]}>{r.texto}</Badge>
+              {c.modo === "prueba" && <Badge variante="neutral">Prueba</Badge>}
+              {c.origen === "pandadoc" && <span className="t-sm t-subtle">mandado desde PandaDoc</span>}
+            </div>
+            <span className="t-sm t-muted">
+              {[
+                c.destinatario.email && `a ${c.destinatario.email}`,
+                c.enviadoEn && `enviado ${relativo(c.enviadoEn)}`,
+                c.vistoEn && c.estado !== "firmado" && `lo abrió ${relativo(c.vistoEn)}`,
+                c.firmadoEn && `firmado el ${fechaHora(c.firmadoEn)}`,
+                c.anuladoEn && c.estado === "anulado" && `anulado ${relativo(c.anuladoEn)}`,
+              ].filter(Boolean).join(" · ")}
+            </span>
+            {c.error && c.estado === "error" && <span className="t-sm" style={{ color: "var(--danger)" }}>{c.error}</span>}
+            {c.estado === "firmado" && c.accesosEn && <span className="t-sm" style={{ color: "var(--success)" }}>Accesos disparados {relativo(c.accesosEn)}.</span>}
+
+            {acciones.length > 0 && (
+              <div className="row-wrap" style={{ gap: 6 }}>
+                {acciones.includes("copiar-enlace") && (
+                  <Button sm variante="secondary" icono={<Copy size={14} />} cargando={ocupado("enlace")} onClick={() => void copiarEnlace(c)}>Copiar link</Button>
+                )}
+                {acciones.includes("mandar") && (
+                  <Button sm variante="secondary" icono={<Send size={14} />} cargando={ocupado("mandar")} onClick={() => void hacer(c, "mandar", {}, "Contrato mandado.")}>Mandar</Button>
+                )}
+                {acciones.includes("reenviar") && (
+                  <Button sm variante="ghost" icono={<Send size={14} />} cargando={ocupado("reenviar")} onClick={() => void hacer(c, "reenviar", {}, "Se le volvió a mandar el mail para firmar.")}>Reenviar</Button>
+                )}
+                {acciones.includes("corregir") && (
+                  <Button sm variante="ghost" icono={<Pencil size={14} />}
+                    onClick={() => setEdicion({ tipo: "corregir", contrato: c, datos: { ...(datosDeVenta(e, venta ?? ({ id: "", contactoNombre: "", moneda: "USD" } as Venta)).datos), ...(c.datos as Partial<DatosContrato>) }, programaId: c.programa, prueba: c.modo === "prueba" })}>
+                    Corregir
+                  </Button>
+                )}
+                {acciones.includes("ver-pdf") && (
+                  <Button sm variante="secondary" icono={<FileDown size={14} />} cargando={ocupado("pdf")}
+                    onClick={async () => { setTrabajando(`${c.id}:pdf`); try { await abrirPdf(c.id); } catch (err) { toast(err instanceof Error ? err.message : "No se pudo.", "err"); } setTrabajando(null); }}>
+                    Ver PDF firmado
+                  </Button>
+                )}
+                {acciones.includes("mandar-otro") && venta && (
+                  <Button sm variante="secondary" icono={<FileSignature size={14} />} onClick={() => abrirNuevo(c)}>Mandar uno nuevo</Button>
+                )}
+                {acciones.includes("anular") && (
+                  <Button sm variante="ghost" icono={<Ban size={14} />} cargando={ocupado("anular")} onClick={() => setAnular(c)}>Anular</Button>
+                )}
+                {acciones.includes("sincronizar") && (
+                  <Button sm variante="ghost" icono={<RefreshCw size={14} />} cargando={ocupado("sincronizar")} onClick={() => void hacer(c, "sincronizar")}>Actualizar</Button>
+                )}
+              </div>
+            )}
+
+            {evs.length > 0 && (
+              <div>
+                <button type="button" className="t-sm t-subtle row-wrap" style={{ gap: 4, background: "none", border: 0, padding: 0, cursor: "pointer" }}
+                  aria-expanded={historial === c.id} onClick={() => setHistorial(historial === c.id ? null : c.id)}>
+                  {historial === c.id ? <ChevronDown size={14} /> : <ChevronRight size={14} />} Historial ({evs.length})
+                </button>
+                {historial === c.id && (
+                  <ul className="stack-1" style={{ listStyle: "none", margin: "6px 0 0", padding: "0 0 0 18px" }}>
+                    {[...evs].reverse().map((ev) => (
+                      <li key={ev.id} className="t-sm">
+                        <span>{ROTULO_EVENTO[ev.evento] ?? ev.evento}</span>
+                        <span className="t-subtle"> · {fechaHora(ev.cuando)}{ev.quien ? ` · ${ev.quien}` : ""}</span>
+                        {typeof ev.detalle?.error === "string" && <span style={{ color: "var(--danger)" }}> · {ev.detalle.error}</span>}
+                        {typeof ev.detalle?.motivo === "string" && ev.detalle.motivo && <span className="t-subtle"> · {ev.detalle.motivo}</span>}
+                        {ev.evento === "accesos" && typeof ev.detalle?.dados === "number" && (
+                          <span className="t-subtle"> · {String(ev.detalle.dados)} dados{Number(ev.detalle.fallaron) ? `, ${String(ev.detalle.fallaron)} con error` : ""}</span>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
+          </div>
+        );
+      })}
+
+      {edicion && (
+        <ModalForm
+          abierto onCerrar={() => setEdicion(null)} onGuardar={() => void guardarEdicion()} ancho
+          titulo={edicion.tipo === "corregir" ? "Corregir y mandar de nuevo" : "Mandar contrato"}
+          sub={edicion.tipo === "corregir"
+            ? "El contrato vuelve a borrador en PandaDoc, se cambian los datos y le llega de nuevo para firmar."
+            : "Se arma con la plantilla del programa y le llega por mail para firmar."}
+          guardarTexto={trabajando === "edicion" ? "Mandando…" : edicion.tipo === "corregir" ? "Corregir y mandar" : "Mandar contrato"}
+          puedeGuardar={trabajando !== "edicion"}
+        >
+          <DatosDelContrato
+            datos={edicion.datos} programas={programas} programaId={edicion.programaId}
+            bloquearPrograma={edicion.tipo === "corregir"}
+            onPrograma={(id) => setEdicion({ ...edicion, programaId: id })}
+            onCambio={(c) => setEdicion({ ...edicion, datos: { ...edicion.datos, ...c } })}
+          />
+          {edicion.tipo === "crear" && esDueno && !modoPrueba && (
+            <div className="row-wrap" style={{ gap: 8, marginTop: 12 }}>
+              <Switch checked={edicion.prueba} onChange={(v) => setEdicion({ ...edicion, prueba: v })} etiqueta="Mandar como prueba" />
+              <span className="t-sm t-muted">Mandar como prueba (sandbox: sólo a mails @apicanta.com, con marca de agua)</span>
+            </div>
+          )}
+          {(edicion.prueba || modoPrueba) && edicion.tipo === "crear" && (
+            <p className="t-sm t-subtle" style={{ marginTop: 8 }}>Es un contrato de prueba: sólo puede ir a un mail @apicanta.com.</p>
+          )}
+        </ModalForm>
+      )}
+      <Confirmar
+        abierto={anular !== null} onCerrar={() => setAnular(null)} confirmarTexto="Anular"
+        titulo="¿Anular el contrato?"
+        texto="Queda vencido en PandaDoc y el link deja de servir. Si hace falta, después se manda uno nuevo."
+        onConfirmar={() => { if (anular) void hacer(anular, "anular", { motivo: "Anulado desde Apicanta" }, "Contrato anulado."); }}
+      />
+    </div>
+  );
+}

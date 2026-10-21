@@ -19,7 +19,7 @@ import { contratoDeAfuera, contratoPorDocumento, contratoPorId, sincronizar } fr
      respuesta en 20 s. Si algo falla, la pasada de cada hora lo retoma.
    - Un documento que no salió de la app (Lili lo mandó a mano) se anota si
      es de la plantilla de un programa.
-   GET: si hay suscripciones (para ver que la ruta está viva).
+   GET: «¿estás listo?» (sólo ok y si hay una suscripción conectada).
    ================================================================== */
 
 export const runtime = "nodejs";
@@ -32,11 +32,11 @@ async function claves(db: NonNullable<ReturnType<typeof nubeServidor>>): Promise
     .filter((x) => x.clave).map((x) => ({ modo: x.modo, clave: x.clave! }));
 }
 
+/* «¿Estás listo?», como los demás webhooks: sólo ok y si hay alguna suscripción con su clave. */
 export async function GET() {
   const db = nubeServidor();
-  if (!db) return NextResponse.json({ ok: false, motivo: "sin base" }, { status: 503 });
-  const ks = await claves(db);
-  return NextResponse.json({ ok: true, ruta: "/api/pandadoc/webhook", suscripciones: ks.map((k) => k.modo) });
+  const listo = db ? (await claves(db).catch(() => [])).length > 0 : false;
+  return NextResponse.json({ ok: true, listo });
 }
 
 export async function POST(peticion: Request) {

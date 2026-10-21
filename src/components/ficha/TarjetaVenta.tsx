@@ -17,6 +17,7 @@ import { useAcceso } from "@/lib/acceso";
 import { puedeDarDeBaja, puedeEditar } from "@/lib/permisos";
 import { esIncobrable } from "@/lib/cuota-incobrable";
 import { AccionesDeCuota } from "@/components/cobros/AccionesDeCuota";
+import { ContratoCard } from "@/components/contratos/ContratoCard";
 
 /* ==================================================================
    Una venta dentro de la ficha: qué compró, cuánto lleva pagado y cada
@@ -209,6 +210,8 @@ export function TarjetaVenta({ e, venta, resaltada, abierta, onAlternar, onPagar
           {venta.notas && <p className="t-sm t-muted" style={{ whiteSpace: "pre-wrap" }}>{venta.notas}</p>}
 
           <DevolucionesDeVenta e={e} venta={venta} />
+
+          {activa && <ContratoCard venta={venta} sesionId={venta.sesionId} />}
 
           <div className="row" style={{ justifyContent: "flex-end", gap: 8 }}>
             {!puedeBaja ? null : activa ? (

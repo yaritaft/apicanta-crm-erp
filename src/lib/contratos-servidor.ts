@@ -4,7 +4,7 @@ import {
   type Contrato, type DatosContrato, type EstadoContrato, type EventoContrato, type ModoContrato,
 } from "./contratos";
 import {
-  aBorrador, actualizarDocumento, anularDocumento, crearDocumento, detalleDocumento, enlaceDeFirma, ErrorPandadoc,
+  aBorrador, actualizarDocumento, anularDocumento, crearDocumento, detalleDocumento, detallePlantilla, enlaceDeFirma, ErrorPandadoc,
   esperarBorrador, mandarDocumento, pdfDocumento, recordarDocumento,
 } from "./pandadoc-servidor";
 import { darAccesos, type ResultadoAccesos } from "./accesos-servidor";
@@ -79,8 +79,10 @@ export async function crearContrato(db: SupabaseClient, p: PedidoContrato): Prom
   await evento(db, id, "creado", p.quien, "app", { programa: p.programa.nombre, modo: p.modo });
 
   try {
+    /* Se lee la plantilla para mandar sólo las variables y los campos que tiene (si no se puede, van todas las variables). */
+    const plantilla = await detallePlantilla(p.modo, p.programa.plantillaId).catch(() => undefined);
     const doc = await crearDocumento(p.modo, cuerpoDocumento({
-      contratoId: id, ventaId: p.ventaId, modo: p.modo, plantillaId: p.programa.plantillaId, programa: p.programa.nombre, datos: p.datos,
+      contratoId: id, ventaId: p.ventaId, modo: p.modo, plantillaId: p.programa.plantillaId, programa: p.programa.nombre, datos: p.datos, plantilla,
     }));
     await guardar(db, id, { documentoId: doc.id });
     const estado = await esperarBorrador(p.modo, doc.id);
@@ -148,10 +150,14 @@ export async function corregir(db: SupabaseClient, c: Contrato, datos: DatosCont
   if (c.estado !== "borrador") await aBorrador(c.modo, c.documentoId);
   await esperarBorrador(c.modo, c.documentoId);
   const nombre = datos.nombre.trim();
+  /* El documento sabe qué variables y campos tiene: se corrigen ésos. */
+  const actual = await detalleDocumento(c.modo, c.documentoId).catch(() => undefined);
+  const cuerpo = cuerpoDocumento({ contratoId: c.id, ventaId: c.ventaId, modo: c.modo, plantillaId: c.plantillaId, programa, datos, plantilla: actual });
   await actualizarDocumento(c.modo, c.documentoId, {
     name: `${c.modo === "prueba" ? "[Prueba] " : ""}Contrato ${programa} - ${nombre}`,
     recipients: [{ email: datos.email.trim(), ...partirNombre(nombre), role: ROL_ALUMNO, ...(datos.telefono.trim() ? { phone: datos.telefono.trim() } : {}) }],
-    tokens: cuerpoDocumento({ contratoId: c.id, ventaId: c.ventaId, modo: c.modo, plantillaId: c.plantillaId, programa, datos }).tokens,
+    tokens: cuerpo.tokens,
+    ...(cuerpo.fields ? { fields: cuerpo.fields } : {}),
   });
   await esperarBorrador(c.modo, c.documentoId);
   await mandarDocumento(c.modo, c.documentoId, mensajeDelContrato(config, datos, programa));

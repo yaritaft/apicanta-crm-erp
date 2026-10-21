@@ -192,6 +192,28 @@ export function variablesDelContrato(d: Partial<DatosContrato>, programa: string
   ].map(([name, value]) => ({ name, value: value.trim() }));
 }
 
+/** Lo que la plantilla sabe recibir: las variables ([Cliente.Nombre]) y los campos con «merge field»
+    (Cliente.Nombre). Manu puede armar cada plantilla de cualquiera de las dos formas: se llena lo que haya. */
+export function relleno(variables: { name: string; value: string }[], plantilla: unknown, fecha?: string): {
+  tokens: { name: string; value: string }[]; fields: Record<string, { value: string }>;
+} {
+  const d = (plantilla && typeof plantilla === "object" ? plantilla : {}) as Record<string, unknown>;
+  const tokensDe = new Set((Array.isArray(d.tokens) ? d.tokens : []).map((t) => String((t as { name?: unknown })?.name ?? "")).filter(Boolean));
+  const campos = new Map<string, string>();
+  for (const f of Array.isArray(d.fields) ? d.fields : []) {
+    const o = (f ?? {}) as { merge_field?: unknown; type?: unknown };
+    if (typeof o.merge_field === "string" && o.merge_field) campos.set(o.merge_field, typeof o.type === "string" ? o.type : "text");
+  }
+  const fields: Record<string, { value: string }> = {};
+  for (const v of variables) {
+    const tipo = campos.get(v.name);
+    if (!tipo || !v.value) continue;
+    /* Un campo de fecha recibe el día en ISO; el formato lo pone la plantilla. */
+    fields[v.name] = { value: tipo === "date" ? (fecha && /^\d{4}-\d{2}-\d{2}$/.test(fecha) ? `${fecha}T12:00:00.000Z` : v.value) : v.value };
+  }
+  return { tokens: variables.filter((v) => tokensDe.has(v.name)), fields };
+}
+
 /** «María José Pérez» → nombre «María José», apellido «Pérez» (PandaDoc los pide por separado). */
 export function partirNombre(nombre: string): { first_name: string; last_name: string } {
   const partes = nombre.trim().split(/\s+/).filter(Boolean);
@@ -205,8 +227,12 @@ export const ROL_ALUMNO = "Client";
 export function cuerpoDocumento(a: {
   contratoId: string; ventaId?: string | null; modo: ModoContrato;
   plantillaId: string; programa: string; datos: Partial<DatosContrato>;
+  /* El detalle de la plantilla: con él se mandan sólo las variables y campos que tiene. Sin él, todas las variables. */
+  plantilla?: unknown;
 }): Record<string, unknown> {
   const nombre = (a.datos.nombre ?? "").trim();
+  const variables = variablesDelContrato(a.datos, a.programa);
+  const r = a.plantilla ? relleno(variables, a.plantilla, a.datos.fecha) : { tokens: variables, fields: {} };
   return {
     name: `${a.modo === "prueba" ? "[Prueba] " : ""}Contrato ${a.programa} - ${nombre}`.trim(),
     template_uuid: a.plantillaId,
@@ -214,7 +240,8 @@ export function cuerpoDocumento(a: {
       email: (a.datos.email ?? "").trim(), ...partirNombre(nombre), role: ROL_ALUMNO,
       ...(a.datos.telefono?.trim() ? { phone: a.datos.telefono.trim() } : {}),
     }],
-    tokens: variablesDelContrato(a.datos, a.programa),
+    tokens: r.tokens,
+    ...(Object.keys(r.fields).length ? { fields: r.fields } : {}),
     metadata: { apicanta_contrato: a.contratoId, apicanta_venta: a.ventaId ?? "", apicanta_modo: a.modo },
     tags: ["apicanta", a.modo === "prueba" ? "apicanta-prueba" : "apicanta-produccion"],
   };

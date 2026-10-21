@@ -72,6 +72,8 @@ for (const a of archivos) {
 const PUBLICAS = new Set([
   "GET /calendly/webhook", "GET /pasarelas/webhook/stripe", "OPTIONS /webinar/registro", "POST /webinar/registro",
   "GET /meta/callback", "GET /youtube/callback", "GET /meta/login",
+  /* El «¿estás listo?» del aviso de PandaDoc (los contratos, 20/10). */
+  "GET /pandadoc/webhook",
 ]);
 const clave = (r: Ruta) => `${r.metodo} ${r.ruta}`;
 
@@ -135,7 +137,7 @@ test("con sesión del equipo y cuerpos que no son lo esperado (lista, número, t
 }));
 
 test("los GET públicos «¿estás listo?» no exponen nada: sólo ok y listo", async () => {
-  for (const p of ["GET /calendly/webhook", "GET /pasarelas/webhook/stripe"]) {
+  for (const p of ["GET /calendly/webhook", "GET /pasarelas/webhook/stripe", "GET /pandadoc/webhook"]) {
     const r = rutas.find((x) => clave(x) === p)!;
     const res = await llamar(r);
     assert.equal(res.status, 200);
@@ -147,7 +149,8 @@ test("los GET públicos «¿estás listo?» no exponen nada: sólo ok y listo", 
 
 test("los crons: sólo el secreto exacto abre; «Bearer undefined» y variantes no", async () => {
   const crons = rutas.filter((r) => r.ruta.startsWith("/cron/"));
-  assert.equal(crons.length, 5);
+  /* Seis desde el 20/10: se sumó /cron/contratos (la pasada de cada hora por los contratos de PandaDoc). */
+  assert.equal(crons.length, 6);
   const antes = process.env.CRON_SECRET;
   try {
     await capturandoConsola(async () => {

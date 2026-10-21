@@ -7,6 +7,7 @@ import { cabeceras } from "@/components/webinars/useYoutube";
 import { hayNube } from "@/lib/store";
 import type { EstadoConexion } from "@/lib/accesos-alumnos";
 import type { PruebaPandadoc, PruebaTelegram, PruebaWisboo, PruebaZoom } from "@/lib/accesos-alumnos-servidor";
+import { ContratosAjustes } from "./ContratosAjustes";
 
 /* ==================================================================
    Accesos de alumnos, en Ajustes → Integraciones: cuál de las cuatro
@@ -48,8 +49,8 @@ export function AccesosAlumnosIntegracion() {
   return (
     <Card>
       <CardHead
-        titulo="Accesos de alumnos"
-        sub="Lo que hace falta para que el alumno entre solo a sus grupos, su curso y sus reuniones al firmar el contrato."
+        titulo="Contratos y accesos de alumnos"
+        sub="El contrato de PandaDoc sale desde la carga de la venta y, cuando el alumno firma, entra solo a sus grupos, sus cursos y sus reuniones."
         acciones={<Button sm variante="ghost" icono={<RefreshCw size={14} />} disabled={probando || !hayNube} cargando={probando} onClick={() => void probar()}>Probar de nuevo</Button>}
       />
       {!hayNube ? (
@@ -61,6 +62,7 @@ export function AccesosAlumnosIntegracion() {
       ) : (
         <ListaDeConexiones pruebas={pruebas} />
       )}
+      {hayNube && <ContratosAjustes pruebas={pruebas} />}
     </Card>
   );
 }

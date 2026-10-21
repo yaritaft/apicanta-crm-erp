@@ -1,5 +1,7 @@
 "use client";
 
+import { ContratoCard } from "@/components/contratos/ContratoCard";
+import { AccesosAlumno } from "@/components/contratos/AccesosAlumno";
 import React, { useEffect, useMemo, useState } from "react";
 import {
   Copy, GraduationCap, Mail, MessageCircle, Pencil, Phone, Plus, ShoppingBag, X,
@@ -616,6 +618,9 @@ function VistaServicio({ e, p }: { e: EstadoApp; p: Persona }) {
                           ))}
                         </div>
                         {alumno.notas && <p className="t-sm t-muted" style={{ whiteSpace: "pre-wrap" }}>{alumno.notas}</p>}
+
+                        {venta && venta.estado === "activa" && <ContratoCard venta={venta} alumnoId={alumno.id} />}
+                        <AccesosAlumno alumno={alumno} venta={venta} />
                       </>
                     )}
                   </div>

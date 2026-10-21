@@ -258,6 +258,17 @@ export function escrituraPendiente(tabla: string, id: ID): boolean {
     op.tipo === "upsert" ? (op.filas as { id?: ID }[]).some((f) => f.id === id) : op.ids.includes(id)));
 }
 
+/** Espera a que lo cargado llegue a la base (la cola vacía), hasta `topeMs`. true si llegó.
+    Para lo que el servidor tiene que leer enseguida (el contrato de una venta recién cargada). */
+export async function esperarGuardado(topeMs = 15_000): Promise<boolean> {
+  const hasta = Date.now() + topeMs;
+  while (Date.now() < hasta) {
+    if (cola.length === 0 && !drenando) return true;
+    await new Promise((listo) => setTimeout(listo, 250));
+  }
+  return cola.length === 0 && !drenando;
+}
+
 /* ---------- quién escribe ----------
    El Shell avisa quién está usando la app (lib/acceso.ts, fijarAcceso). Con
    eso la cola no manda lo que la base va a rechazar por su tipo de cuenta

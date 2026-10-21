@@ -164,3 +164,22 @@ test("accesos: id estable por alumno, plataforma y recurso; el mensaje con los l
   assert.match(m, /^¡Hola María! Bienvenido a Hackear AI\./);
   assert.match(m, /• Comunidad: https:\/\/t\.me\/\+abc/);
 });
+
+test("el relleno: variables que la plantilla tiene y campos con «merge field» (las dos formas de armarla)", async () => {
+  const { relleno } = await import("@/lib/contratos");
+  const vars = variablesDelContrato(DATOS, "Hackear AI");
+  const plantilla = {
+    tokens: [{ name: "Venta.Modalidad" }],
+    fields: [
+      { merge_field: "Cliente.Nombre", type: "text" }, { merge_field: "Contrato.Fecha", type: "date" },
+      { merge_field: null, type: "signature" }, { merge_field: "Otro.Campo", type: "text" },
+    ],
+  };
+  const r = relleno(vars, plantilla, DATOS.fecha);
+  assert.deepEqual(r.tokens, [{ name: "Venta.Modalidad", value: "Tres pagos de 1.000 USD" }]);
+  assert.deepEqual(r.fields, { "Cliente.Nombre": { value: "María José Pérez" }, "Contrato.Fecha": { value: "2026-10-20T12:00:00.000Z" } });
+  /* Sin el detalle de la plantilla van todas las variables (las que no existen, PandaDoc las ignora). */
+  const c = cuerpoDocumento({ contratoId: "c", modo: "produccion", plantillaId: "t", programa: "Hackear AI", datos: DATOS });
+  assert.equal((c.tokens as unknown[]).length, vars.length);
+  assert.equal("fields" in c, false);
+});

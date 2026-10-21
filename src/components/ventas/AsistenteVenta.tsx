@@ -22,6 +22,14 @@ import type { Cuota, EstadoApp, MiembroEquipo, Movimiento, Venta } from "@/lib/t
 import { PAISES, planDePago, webinarDeProyecto } from "@/lib/angelo";
 import { origenDeUtm, textoUtm } from "@/lib/utms";
 import { useUsuarioActual } from "@/lib/usuario";
+import { esperarGuardado } from "@/lib/store";
+import { useAcceso } from "@/lib/acceso";
+import { useToast } from "@/components/ui/Toast";
+import { modalidadDeCuotas, problemaDeDatos, ROTULO_ESTADO, type Contrato, type DatosContrato } from "@/lib/contratos";
+import { programaDeProducto, programasDe } from "@/lib/programas";
+import { contratosPrendidos, leerContratos, pedirContrato } from "@/components/contratos/cliente";
+import { DatosDelContrato } from "@/components/contratos/DatosDelContrato";
+import { diaDeNegocio } from "@/lib/dia-negocio";
 
 /* ==================================================================
    Asistente de venta.
@@ -51,7 +59,7 @@ interface LineaCuota {
   cobros: Cobro[];
 }
 
-type PasoId = "cliente" | "producto" | "precio" | "equipo" | "plan" | "cobros" | "resumen";
+type PasoId = "cliente" | "producto" | "precio" | "equipo" | "plan" | "cobros" | "contrato" | "resumen";
 
 /* Los nombres de la planilla de Angelo: quien cargaba ahí reconoce cada
    paso por su columna. */
@@ -64,6 +72,12 @@ const PASOS: { id: PasoId; titulo: string }[] = [
   { id: "cobros",   titulo: "Cobros" },
   { id: "resumen",  titulo: "Resumen" },
 ];
+
+/* El contrato de PandaDoc (pedido del 20/10, como en Blue OS): va antes del resumen y aparece sólo si los
+   contratos están prendidos para esta cuenta (Ajustes → Integraciones). */
+const PASO_CONTRATO: { id: PasoId; titulo: string } = { id: "contrato", titulo: "Contrato" };
+
+type DecisionContrato = "mandar" | "ya" | "despues" | "no-lleva";
 
 type Frecuencia = "mensual" | "quincenal" | "semanal";
 
@@ -99,6 +113,8 @@ interface Borrador {
   referidorTelefono: string;
   /* "¿Es referido?": recién con el sí se piden nombre y teléfono. */
   esReferido: boolean;
+  /* El contrato: qué se decidió, de qué programa y con qué datos (se arman al llegar al paso). */
+  contrato: { decision: DecisionContrato; programaId: string; datos: DatosContrato | null; prueba: boolean };
 }
 
 const redondear = (n: number) => Math.round(n * 100) / 100;
@@ -157,14 +173,22 @@ export function AsistenteVenta({ onCerrar, onListo, desdeMovimiento, cliente, cl
   const M = useCallback((n: number, d = 0) => money(n, mon, d), [mon]);
 
   const [i, setI] = useState(cliente ? 1 : 0);
+  const toast = useToast();
+  const { esDueno } = useAcceso();
+  const configContratos = e.ajustes.contratos;
+  const conContrato = contratosPrendidos(configContratos, esDueno);
+  const pasos = useMemo(() => (conContrato ? [...PASOS.slice(0, -1), PASO_CONTRATO, PASOS[PASOS.length - 1]] : PASOS), [conContrato]);
+
   /* Quien carga la venta, si es del equipo: queda elegido como closer. */
   const yo = useUsuarioActual();
   const preelegido = useRef(false);
   const [b, setB] = useState<Borrador>(() => ({ ...inicial(e, desdeMovimiento, cliente), ...(closerId ? { closerId } : {}) }));
   const set = useCallback((cambios: Partial<Borrador>) => setB((x) => ({ ...x, ...cambios })), []);
+  /* El contrato de prueba: con los contratos en «prueba», siempre; encendidos, si un dueño lo pide. */
+  const modoContrato: "produccion" | "prueba" = configContratos?.estado === "prueba" || (esDueno && b.contrato.prueba) ? "prueba" : "produccion";
   const mainRef = useRef<HTMLDivElement>(null);
 
-  const paso = PASOS[i];
+  const paso = pasos[i];
 
   useEffect(() => {
     const m = yo.miembro;
@@ -203,16 +227,16 @@ export function AsistenteVenta({ onCerrar, onListo, desdeMovimiento, cliente, cl
   }, []);
 
   const problema = useMemo(
-    () => validar(paso.id, b, diferenciaPlan, { e, subiendo: subiendo.size }),
-    [paso.id, b, diferenciaPlan, e, subiendo.size],
+    () => validar(paso.id, b, diferenciaPlan, { e, subiendo: subiendo.size, modoContrato }),
+    [paso.id, b, diferenciaPlan, e, subiendo.size, modoContrato],
   );
   const puedeAvanzar = problema === null;
 
   const avanzar = useCallback(() => {
     if (!puedeAvanzar) return;
-    setI((x) => Math.min(x + 1, PASOS.length - 1));
+    setI((x) => Math.min(x + 1, pasos.length - 1));
     mainRef.current?.scrollTo({ top: 0 });
-  }, [puedeAvanzar]);
+  }, [puedeAvanzar, pasos.length]);
 
   const volver = useCallback(() => {
     setI((x) => Math.max(0, x - 1));
@@ -280,6 +304,24 @@ export function AsistenteVenta({ onCerrar, onListo, desdeMovimiento, cliente, cl
 
     acciones.registrarVenta({ venta, cuotas, cobros, sesionId });
     onListo(ventaId, venta.contactoNombre);
+
+    /* El contrato sale después de que la venta llegó a la base (el servidor la lee con la sesión de quien
+       carga). La venta ya quedó: si el contrato falla, se avisa y se manda desde la ficha. */
+    const ct = b.contrato;
+    if (conContrato && ct.decision === "mandar" && ct.datos) {
+      const datos = ct.datos;
+      void (async () => {
+        await esperarGuardado();
+        try {
+          await pedirContrato({
+            accion: "crear", ventaId, sesionId, leadId: contactoId, programa: ct.programaId, datos, prueba: modoContrato === "prueba",
+          });
+          toast(`Contrato mandado a ${datos.email} para firmar.`);
+        } catch (err) {
+          toast(`La venta quedó registrada, pero el contrato no salió: ${err instanceof Error ? err.message : "no se pudo"}. Mandalo desde la ficha.`, "err");
+        }
+      })();
+    }
   }
 
   /* Teclado: Enter avanza, Esc sale. En un textarea Enter escribe. */
@@ -328,7 +370,7 @@ export function AsistenteVenta({ onCerrar, onListo, desdeMovimiento, cliente, cl
     return () => window.clearTimeout(t);
   }, [i]);
 
-  const progreso = ((i + (puedeAvanzar ? 1 : 0.35)) / PASOS.length) * 100;
+  const progreso = ((i + (puedeAvanzar ? 1 : 0.35)) / pasos.length) * 100;
 
   return (
     <div className="asistente" role="dialog" aria-modal="true" aria-label="Nueva venta">
@@ -337,9 +379,9 @@ export function AsistenteVenta({ onCerrar, onListo, desdeMovimiento, cliente, cl
       </div>
 
       <div className="asistente__head">
-        <span className="asistente__paso-n">{i + 1} / {PASOS.length}</span>
+        <span className="asistente__paso-n">{i + 1} / {pasos.length}</span>
         <span className="asistente__ruta">
-          {PASOS.map((p, k) => (
+          {pasos.map((p, k) => (
             <React.Fragment key={p.id}>
               {k > 0 && <span className="asistente__ruta-sep">·</span>}
               <span className="asistente__ruta-item" data-activo={k === i}>{p.titulo}</span>
@@ -358,6 +400,9 @@ export function AsistenteVenta({ onCerrar, onListo, desdeMovimiento, cliente, cl
           {paso.id === "equipo" && <PasoEquipo b={b} set={set} e={e} sinComision={sinComision} yo={yo.miembro} />}
           {paso.id === "plan" && <PasoPlan b={b} setB={setB} M={M} diferencia={diferenciaPlan} />}
           {paso.id === "cobros" && <PasoCobros b={b} setB={setB} e={e} M={M} onSubiendo={onSubiendo} />}
+          {paso.id === "contrato" && (
+            <PasoContrato b={b} setB={setB} e={e} esDueno={esDueno} modo={modoContrato} encendido={configContratos?.estado === "encendido"} />
+          )}
           {paso.id === "resumen" && (
             <PasoResumen b={b} set={set} e={e} M={M} sinComision={sinComision} totalCobrado={totalCobrado} />
           )}
@@ -424,6 +469,7 @@ function inicial(e: EstadoApp, mov?: Movimiento, cliente?: { contactoId: string;
     referidorNombre: "",
     referidorTelefono: "",
     esReferido: false,
+    contrato: { decision: "mandar", programaId: "", datos: null, prueba: false },
   };
   b.cuotas = armarPlan(b);
   /* Si el asistente se abrió desde un cobro suelto, ese cobro ya viene
@@ -439,7 +485,7 @@ function inicial(e: EstadoApp, mov?: Movimiento, cliente?: { contactoId: string;
 
 /* ---------- Validación por paso ---------- */
 
-function validar(paso: PasoId, b: Borrador, diferencia: number, ctx: { e: EstadoApp; subiendo: number }): string | null {
+function validar(paso: PasoId, b: Borrador, diferencia: number, ctx: { e: EstadoApp; subiendo: number; modoContrato: "produccion" | "prueba" }): string | null {
   switch (paso) {
     case "cliente":
       if (b.contactoId) return null;
@@ -447,6 +493,13 @@ function validar(paso: PasoId, b: Borrador, diferencia: number, ctx: { e: Estado
       return b.contactoNombre.trim().length >= 2 ? "Elegí al cliente de la lista o crealo como nuevo" : "Buscá al cliente";
     case "producto":
       return b.productoId ? null : "Elegí el servicio adquirido";
+    case "contrato": {
+      if (b.contrato.decision !== "mandar") return null;
+      if (!b.contrato.datos) return "Armando los datos del contrato…";
+      const programa = programasDe(ctx.e.ajustes).find((p) => p.id === b.contrato.programaId);
+      if (!programa?.plantillaId) return "Elegí el programa del contrato";
+      return problemaDeDatos(b.contrato.datos, ctx.modoContrato);
+    }
     case "precio":
       return b.precioAcordado > 0 ? null : "El valor total tiene que ser mayor a cero";
     case "equipo":
@@ -998,6 +1051,97 @@ function PasoCobros({ b, setB, e, M, onSubiendo }: {
         })}
       </div>
     </>
+  );
+}
+
+/* ---------- Paso: contrato ----------
+   Como «¿Se le manda el contrato?» de Blue OS: el closer decide si sale ahora y carga los datos que van a la
+   plantilla del programa (los del alumno, la modalidad, las sesiones 1 a 1 y los bonos). Si a esa persona ya se
+   le mandó un contrato desde la app, queda elegido «Ya se le mandó»: no se le manda otro sin querer. */
+
+function PasoContrato({ b, setB, e, esDueno, modo, encendido }: {
+  b: Borrador; setB: React.Dispatch<React.SetStateAction<Borrador>>; e: EstadoApp;
+  esDueno: boolean; modo: "produccion" | "prueba"; encendido: boolean;
+}) {
+  const programas = useMemo(() => programasDe(e.ajustes), [e.ajustes]);
+  const [previo, setPrevio] = useState<Contrato | null | undefined>(undefined);
+  const ct = b.contrato;
+  const setCt = useCallback((cambios: Partial<Borrador["contrato"]>) => setB((x) => ({ ...x, contrato: { ...x.contrato, ...cambios } })), [setB]);
+
+  /* Al llegar: los datos salen de la persona, su ficha de servicio (si ya es alumno) y el plan de cuotas. */
+  useEffect(() => {
+    if (ct.datos) return;
+    const lead = b.contactoId ? e.leads.find((l) => l.id === b.contactoId) : undefined;
+    const contacto = b.contactoId ? e.contactos.find((c) => c.id === b.contactoId) : undefined;
+    const alumno = b.contactoId ? e.alumnos.find((a) => a.leadId === b.contactoId) : undefined;
+    const seg = alumno ? (e.seguimientos ?? []).find((x) => x.alumnoId === alumno.id) : undefined;
+    const programa = programaDeProducto(programas, b.productoId);
+    const datos: DatosContrato = {
+      nombre: (contacto?.nombre || lead?.nombre || b.contactoNombre).trim(),
+      email: (b.contactoEmail || contacto?.email || lead?.email || "").trim(),
+      telefono: (b.contactoTelefono || (contacto as { telefono?: string } | undefined)?.telefono || lead?.telefono || seg?.telefono || "").trim(),
+      documento: seg?.dni ?? "",
+      domicilio: seg?.domicilio ?? "",
+      pais: (b.contactoPais || contacto?.pais || lead?.pais || "").trim(),
+      modalidad: modalidadDeCuotas(b.cuotas, e.ajustes.monedaBase || "USD"),
+      sesiones: seg?.sesionesMentor ?? null,
+      bonos: [],
+      fecha: diaDeNegocio(new Date().toISOString()),
+    };
+    setCt({ datos, programaId: programa?.id ?? "", decision: programa?.plantillaId ? ct.decision : "no-lleva" });
+  }, [ct.datos, ct.decision, b, e, programas, setCt]);
+
+  /* ¿Ya se le mandó uno desde la app? */
+  useEffect(() => {
+    let vivo = true;
+    if (!b.contactoId) { setPrevio(null); return; }
+    void leerContratos({ leadId: b.contactoId }).then((r) => {
+      if (!vivo) return;
+      const vigente = r.contratos.find((c) => c.estado !== "anulado" && c.estado !== "error" && c.estado !== "rechazado") ?? null;
+      setPrevio(vigente);
+      if (vigente) setCt({ decision: "ya" });
+    }).catch(() => { if (vivo) setPrevio(null); });
+    return () => { vivo = false; };
+  }, [b.contactoId, setCt]);
+
+  const programa = programas.find((p) => p.id === ct.programaId);
+  const opciones: { valor: DecisionContrato; nombre: string; sub: string }[] = [
+    { valor: "mandar", nombre: "Sí, mandalo al registrar la venta", sub: "Le llega por mail para firmar. Al firmar, se le dan los accesos del programa." },
+    { valor: "ya", nombre: "Ya se le mandó", sub: "No sale otro." },
+    { valor: "despues", nombre: "Todavía no", sub: "Lo mandás después desde la ficha de la venta." },
+    { valor: "no-lleva", nombre: "No lleva contrato", sub: "Un evento, una cena o algo que no tiene contrato." },
+  ];
+  return (
+    <div className="stack-4">
+      <Pregunta texto="¿Se le manda el contrato?" sub={programa?.plantillaNombre ? `Sale de la plantilla «${programa.plantillaNombre}» de PandaDoc.` : "Sale de la plantilla de PandaDoc del programa."} />
+      {previo && (
+        <p className="t-sm" style={{ color: "var(--warning)" }}>
+          A esta persona ya se le mandó un contrato de {programas.find((p) => p.id === previo.programa)?.nombre ?? previo.plantillaNombre}
+          {previo.enviadoEn ? ` el ${fechaLarga(previo.enviadoEn)}` : ""} ({ROTULO_ESTADO[previo.estado].texto.toLowerCase()}). Por eso quedó elegido «Ya se le mandó».
+        </p>
+      )}
+      <div className="stack-2">
+        {opciones.map((o, k) => (
+          <Opcion key={o.valor} tecla={String(k + 1)} nombre={o.nombre} sub={o.sub} activo={ct.decision === o.valor} onClick={() => setCt({ decision: o.valor })} />
+        ))}
+      </div>
+      {ct.decision === "mandar" && ct.datos && (
+        <div className="stack-3">
+          <DatosDelContrato
+            datos={ct.datos} programas={programas} programaId={ct.programaId}
+            onPrograma={(id) => setCt({ programaId: id })}
+            onCambio={(c) => setCt({ datos: { ...ct.datos!, ...c } })}
+          />
+          {esDueno && encendido && (
+            <div className="row-wrap" style={{ gap: 8 }}>
+              <Switch checked={ct.prueba} onChange={(v) => setCt({ prueba: v })} etiqueta="Mandar como prueba" />
+              <span className="t-sm t-muted">Mandar como prueba (sandbox: sólo a mails @apicanta.com, con marca de agua)</span>
+            </div>
+          )}
+          {modo === "prueba" && <p className="t-sm t-subtle">Es un contrato de prueba: sólo puede ir a un mail @apicanta.com.</p>}
+        </div>
+      )}
+    </div>
   );
 }
 
