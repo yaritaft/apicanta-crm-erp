@@ -307,10 +307,9 @@ export function VistaFormularios() {
   ];
 
   const enCruce = v.seccion === "cruce";
-  const sinGrupoAtado = lector.aplica && lector.hayLector && !lector.hayGrupo && !lector.grupo.sinAcceso && Boolean(lector.grupo.datos) && lector.webinar;
 
   return (
-    <>
+    <div className="stack-4 fm-pagina">
       {datos.estado === "sin-tabla" && (
         <Ayuda titulo="Falta crear la tabla de registros" icono={<Users size={18} />}>
           Para guardar los formularios en la app hay que correr una vez <code>supabase/registros-webinar.sql</code> en Supabase.
@@ -319,10 +318,11 @@ export function VistaFormularios() {
       )}
       {datos.estado === "error" && <p className="t-sm" style={{ color: "var(--danger)" }}>{datos.error}</p>}
 
-      <AvisoLectorWhatsapp />
+      {/* Con el grupo atado, el panel ya dice si WhatsApp está conectado; el aviso rojo de la app sólo sale cuando no hay panel. */}
+      {!lector.hayGrupo && <AvisoLectorWhatsapp />}
 
-      {/* Con el grupo de WhatsApp atado, quién está adentro; sin grupo, nada ocupa lugar arriba de la tabla. */}
-      {!enCruce && lector.hayGrupo && (
+      {/* Con el grupo de WhatsApp atado, quién entró y a quién escribirle; sin grupo, una línea con «Atarlo». */}
+      {!enCruce && (
         <BarraDelLector
           lector={lector} registros={deEsteWebinar} visibles={filasVisibles}
           filtro={filtroLector} onFiltro={(f) => cambiar({ lector: f || null }, { pag: null })}
@@ -352,7 +352,7 @@ export function VistaFormularios() {
               <Button sm variante="ghost" icono={<RefreshCw size={15} />} aria-label="Actualizar" onClick={() => { void cargarResumen(); if (sel) void cargarRegistros(sel, true); }} title="Volver a leer la tabla: entran registros nuevos solos desde la landing" />
               <CopiarLink />
               <Button sm variante="secondary" icono={<Download size={15} />} disabled={filasOrdenadas.length === 0} onClick={bajarParaManyChat}
-                title="Baja un CSV con los registros que se ven (con los filtros puestos): nombre, teléfono y mail, listos para importar en ManyChat">CSV para ManyChat</Button>
+                title="Baja un CSV con los registros que se ven (con los filtros puestos): nombre, teléfono y mail, listos para importar en ManyChat">{lector.hayGrupo ? "Descargar CSV" : "CSV para ManyChat"}</Button>
               {puedeEditar && <Button sm variante="secondary" icono={<FileSpreadsheet size={15} />} title="Traer las hojas del Excel de Yari" onClick={() => setImportando(true)}>Importar</Button>}
             </div>
           </div>
@@ -362,6 +362,7 @@ export function VistaFormularios() {
           ) : (
             <>
               <div className="crm-t__filtros">
+                <span className="t-label fm-etiqueta" title="Lo que el equipo marca a mano en las columnas «Grupo de WhatsApp» y «Contactado»">Marcado por el equipo</span>
                 {MARCAS.filter((m) => m.valor).map((m) => (
                   <Chip key={m.valor} activo={v.marca === m.valor} title={m.ayuda}
                     onClick={() => cambiar({ marca: v.marca === m.valor ? null : m.valor }, { pag: null })}
@@ -376,8 +377,8 @@ export function VistaFormularios() {
                 </span>
                 {filtroLector && (
                   <span className="crm-t__pastilla">
-                    <span className="t-subtle">Lector:</span>
-                    <span className="truncate">{filtroLector === "dentro" ? "En el grupo" : filtroLector === "fuera" ? "No están" : "Sin teléfono"}</span>
+                    <span className="t-subtle">WhatsApp:</span>
+                    <span className="truncate">{filtroLector === "dentro" ? "ya están en el grupo" : filtroLector === "fuera" ? "todavía no entraron" : "sin teléfono"}</span>
                     <button type="button" onClick={() => cambiar({ lector: null }, { pag: null })} aria-label="Quitar el filtro del lector"><X size={13} /></button>
                   </span>
                 )}
@@ -400,12 +401,6 @@ export function VistaFormularios() {
                   </span>
                 )}
                 {hayAlgo && <button type="button" className="link t-sm" onClick={limpiar}>Limpiar todo</button>}
-                {sinGrupoAtado && (
-                  <span className="t-sm t-subtle fm-lector-linea">
-                    <MessageCircle size={14} aria-hidden /> Este webinar no tiene grupo de WhatsApp atado
-                    {puedeEditar && lector.webinar && <> · <Link href={`/webinars/${encodeURIComponent(lector.webinar.id)}`} className="link">Atarlo</Link></>}
-                  </span>
-                )}
               </div>
 
               <DataTable
@@ -438,7 +433,7 @@ export function VistaFormularios() {
         return r ? <DetalleRegistro r={r} anuncio={anuncioDe(r)} puedeEditar={puedeEditar} onCerrar={() => setDetalle(null)}
           onAbrirPersona={r.contactoId ? () => { setDetalle(null); abrirFicha(r.contactoId!); } : undefined} /> : null;
       })()}
-    </>
+    </div>
   );
 }
 

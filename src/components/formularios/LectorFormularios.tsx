@@ -2,17 +2,20 @@
 
 import React, { useMemo } from "react";
 import Link from "next/link";
-import { Check, Copy, MessageCircle } from "lucide-react";
-import { Badge, Button, Card, Chip } from "@/components/ui/ui";
+import { Check, Copy, Download, MessageCircle } from "lucide-react";
+import { Badge, Button, Card } from "@/components/ui/ui";
+import { useToast } from "@/components/ui/Toast";
 import { InfoMetrica } from "@/components/ui/InfoMetrica";
-import { EstadoLectorBadge, useEstadoDelLector } from "@/components/webinars/EstadoLector";
+import { useEstadoDelLector } from "@/components/webinars/EstadoLector";
 import { useAcceso } from "@/lib/acceso";
 import { fecha, num, pct } from "@/lib/format";
+import { bajarCsv } from "@/lib/csv";
+import { csvParaManyChat } from "@/lib/grupos-whatsapp";
 import type { RegistroForm } from "@/lib/registros-webinar";
 import { diaArgentina } from "@/lib/reporteFinanciera";
 import { useEstado } from "@/lib/store";
 import {
-  filtrarPorLector, listaParaCopiar, puedeVerWhatsapp, resumenDeRegistros, unionesDeRegistros, type FiltroDeLector, type ResumenDeRegistros, type UnionDePersona,
+  duracionTexto, filtrarPorLector, listaParaCopiar, puedeVerWhatsapp, resumenDeRegistros, unionesDeRegistros, type FiltroDeLector, type ResumenDeRegistros, type UnionDePersona,
 } from "@/lib/whatsapp";
 import { useGrupoDeWebinar } from "@/lib/whatsapp-cliente";
 import "@/components/webinars/whatsapp.css";
@@ -109,7 +112,22 @@ export function useLectorDeFormularios(dia: string, registros: readonly Registro
   };
 }
 
-/* ---------- La barra de arriba de la tabla ---------- */
+/* ---------- El panel de WhatsApp, arriba de la tabla ---------- */
+
+/** El estado de la conexión en una frase que se entienda, y si hay que avisar que lo de abajo puede estar atrasado. */
+function textoDeConexion(e: ReturnType<typeof useEstadoDelLector>["estado"]): { pastilla: string; aviso: string | null } {
+  if (e.tipo === "conectado") return { pastilla: "Conectado", aviso: null };
+  if (e.tipo === "caido" || e.tipo === "sin-senal") {
+    const hace = e.minutos !== null ? duracionTexto(e.minutos) : "un rato";
+    return {
+      pastilla: `Sin conexión hace ${hace}`,
+      aviso: e.tipo === "caido"
+        ? `No llegan datos de WhatsApp desde hace ${hace}: lo que ves puede estar desactualizado. Se corrige solo cuando vuelva la conexión.`
+        : `Falta alguna actualización de WhatsApp (hace ${hace}). Puede ser un corte corto: si sigue, te avisamos.`,
+    };
+  }
+  return { pastilla: e.titulo, aviso: e.detalle };
+}
 
 export function BarraDelLector({ lector, registros, visibles, filtro, onFiltro, puedeEditar, onMarcarUnidos, onCopiar }: {
   lector: LectorDeFormularios;
@@ -123,105 +141,139 @@ export function BarraDelLector({ lector, registros, visibles, filtro, onFiltro, 
   onMarcarUnidos: (ids: string[]) => void | Promise<void>;
   onCopiar: (texto: string, aviso: string) => void;
 }) {
+  const toast = useToast();
   if (!lector.aplica || !lector.hayLector || lector.grupo.sinAcceso) return null;
 
-  const { resumen: r, estado, webinar } = lector;
+  const { resumen: r, webinar } = lector;
+  const estado = lector.estado.estado;
   const grupos = lector.grupo.datos?.grupos ?? [];
 
-  /* El webinar todavía no tiene su grupo: se dice dónde atarlo. */
+  /* El webinar todavía no tiene su grupo: se dice dónde atarlo, en una línea. */
   if (!lector.hayGrupo) {
     if (!lector.grupo.datos) return null;
     return (
-      <Card className="wa-formularios">
-        <div className="wa-formularios__titulo">
-          <MessageCircle size={16} aria-hidden />
-          <span>Lector de WhatsApp</span>
-          <EstadoLectorBadge estado={estado.estado} />
-        </div>
-        <p className="t-sm t-muted">
-          Este webinar todavía no tiene un grupo de WhatsApp atado. Cuando lo tenga, acá se ve quién de los que se anotaron está en el grupo, sin marcarlo a mano.{" "}
-          {webinar && (puedeEditar
-            ? <Link href={`/webinars/${encodeURIComponent(webinar.id)}`} className="link">Atarlo en la ficha del webinar</Link>
-            : "Lo ata quien edita los Webinars: avisale a un dueño.")}
-        </p>
-      </Card>
+      <p className="t-sm t-subtle wa-panel-linea">
+        <MessageCircle size={14} aria-hidden /> Este webinar todavía no tiene un grupo de WhatsApp atado.{" "}
+        {webinar && (puedeEditar
+          ? <Link href={`/webinars/${encodeURIComponent(webinar.id)}`} className="link">Atarlo en la ficha del webinar</Link>
+          : "Lo ata quien edita los Webinars: avisale a un dueño.")}
+      </p>
     );
   }
 
   const faltan = visibles.filter((x) => lector.union(x)?.estado === "no-unida" && lector.union(x)?.numero);
   const porMarcar = registros.filter((x) => lector.union(x)?.estado === "unida" && x.grupo !== "unido");
+  const marcadosAMano = registros.filter((x) => x.grupo === "unido").length;
   const nombreDe = (x: RegistroForm) => x.nombre || x.email;
   const filas = (xs: RegistroForm[]) => xs.map((x) => {
     const u = lector.union(x)!;
     return { nombre: nombreDe(x), numero: u.numero, completo: u.completo };
   });
+  const conexion = textoDeConexion(estado);
+  const alternar = (f: FiltroLector) => onFiltro(filtro === f ? "" : f);
+  const pctDentro = r.conTelefono > 0 ? (r.dentro / r.conTelefono) * 100 : 0;
+
+  function bajarParaManyChat() {
+    const { texto, sinTelefono } = csvParaManyChat(faltan);
+    bajarCsv(`manychat-no-entraron-${webinar?.fecha ? diaArgentina(webinar.fecha) : "webinar"}`, texto);
+    toast(`Se bajó el CSV con ${num(faltan.length)} ${faltan.length === 1 ? "contacto" : "contactos"} que todavía no entraron al grupo${sinTelefono ? ` (${num(sinTelefono)} sin teléfono que se entienda)` : ""}.`);
+  }
 
   return (
-    <Card className="wa-formularios">
-      <div className="wa-formularios__titulo">
-        <MessageCircle size={16} aria-hidden />
-        <span>Lector de WhatsApp</span>
-        <EstadoLectorBadge estado={estado.estado} />
-        <span className="wa-formularios__grupos">
-          {grupos.map((g) => `${g.nombre || "Grupo"} (${num(g.miembros)})`).join(" · ")}
-        </span>
-      </div>
-
-      <div className="wa-formularios__resumen">
-        <span className="wa-formularios__numero">
-          {num(r.dentro)} de {num(r.conTelefono)}
-          <InfoMetrica
-            titulo="Se unieron al grupo"
-            ayuda="De las personas que se anotaron y dejaron un teléfono, cuántas están hoy en el grupo de WhatsApp, según el lector."
-            formula={"Registros con teléfono que el lector ve en el grupo\n÷ Registros con teléfono"}
-            componentes={() => [
-              { concepto: "Registrados", valor: num(r.total) },
-              { concepto: "Sin teléfono", valor: num(r.sinTelefono), signo: "−", nota: "no se pueden revisar" },
-              { concepto: "Con teléfono", valor: num(r.conTelefono), signo: "=" },
-              { concepto: "Están en el grupo", valor: num(r.dentro) },
-              { concepto: "Se unieron", valor: r.conTelefono > 0 ? pct((r.dentro / r.conTelefono) * 100, 1) : "—", signo: "=" },
-            ]}
-            ejemplo="Los teléfonos se comparan sin importar cómo los escribió cada uno: «011 15 5555-1234» y «+54 9 11 5555-1234» son el mismo. Quien entró con otro número, o tiene el suyo oculto en WhatsApp, figura como que no está."
-          />
-        </span>
-        <span className="wa-formularios__resto">
-          se unieron{r.conTelefono > 0 ? ` (${pct((r.dentro / r.conTelefono) * 100, 0)})` : ""} · <strong>{num(r.fuera)}</strong> todavía no están
-          · <strong>{num(r.sinTelefono)}</strong> sin teléfono
-        </span>
-      </div>
-
-      <div className="wa-barra">
-        <div className="wa-barra__filtros" role="group" aria-label="Según el lector de WhatsApp">
-          <Chip activo={filtro === ""} onClick={() => onFiltro("")} count={r.total}>Todos</Chip>
-          <Chip activo={filtro === "dentro"} onClick={() => onFiltro(filtro === "dentro" ? "" : "dentro")} count={r.dentro} title="El lector los ve adentro del grupo">En el grupo</Chip>
-          <Chip activo={filtro === "fuera"} onClick={() => onFiltro(filtro === "fuera" ? "" : "fuera")} count={r.fuera} title="Dejaron un teléfono y el lector no los ve en el grupo">No están</Chip>
-          <Chip activo={filtro === "sin-telefono"} onClick={() => onFiltro(filtro === "sin-telefono" ? "" : "sin-telefono")} count={r.sinTelefono} title="No dejaron un teléfono, o dejaron algo que no se entiende como un número">Sin teléfono</Chip>
+    <Card className="wa-panel">
+      <div className="wa-panel__cabeza">
+        <div className="wa-panel__titulo">
+          <span className="wa-panel__icono" aria-hidden><MessageCircle size={18} /></span>
+          <div className="wa-panel__textos">
+            <h3 className="wa-panel__h">
+              Grupo de WhatsApp
+              <InfoMetrica
+                titulo="Quién entró al grupo"
+                ayuda="Un número de WhatsApp conectado a la app (el «lector») mira los grupos de este webinar y compara quién está adentro con los teléfonos de las personas que se anotaron. Sirve para ver quién ya entró y a quién todavía hay que escribirle. No marca nada por su cuenta: la columna «Grupo de WhatsApp» de la tabla la marca el equipo, y desde acá se pueden marcar de una vez los que ya entraron."
+                formula={"Anotados con teléfono que están en el grupo\n÷ Anotados con teléfono"}
+                componentes={() => [
+                  { concepto: "Se anotaron", valor: num(r.total) },
+                  { concepto: "Sin teléfono", valor: num(r.sinTelefono), signo: "−", nota: "no se pueden revisar" },
+                  { concepto: "Con teléfono", valor: num(r.conTelefono), signo: "=" },
+                  { concepto: "Ya están en el grupo", valor: num(r.dentro) },
+                  { concepto: "Porcentaje", valor: r.conTelefono > 0 ? pct(pctDentro, 1) : "—", signo: "=" },
+                ]}
+                ejemplo="Los teléfonos se comparan sin importar cómo los escribió cada uno: «011 15 5555-1234» y «+54 9 11 5555-1234» son el mismo. Quien entró con otro número, o lo tiene oculto, aparece como que todavía no entró."
+              />
+            </h3>
+            <p className="wa-panel__grupos">{grupos.map((g) => `${g.nombre || "Grupo"} (${num(g.miembros)})`).join(" · ")}</p>
+          </div>
         </div>
-        <div className="wa-barra__copiar">
-          {puedeEditar && (
+        <span className={`wa-panel__conexion wa-panel__conexion--${estado.tono}`}>
+          <span className="wa-panel__punto" aria-hidden />{conexion.pastilla}
+        </span>
+      </div>
+
+      {conexion.aviso && <p className="wa-panel__aviso" role="status">{conexion.aviso}</p>}
+
+      {/* Los números son los filtros: un clic en uno deja en la tabla sólo a esas personas, otro clic lo saca. */}
+      <div className="wa-panel__cifras" role="group" aria-label="Según WhatsApp">
+        <button type="button" className="wa-cifra wa-cifra--ok" aria-pressed={filtro === "dentro"} onClick={() => alternar("dentro")} title="Ver sólo a los que están en el grupo">
+          <span className="wa-cifra__num">{num(r.dentro)}</span>
+          <span className="wa-cifra__txt">ya están en el grupo</span>
+          <span className="wa-cifra__sub">{r.conTelefono > 0 ? `${pct(pctDentro, 0)} de los ${num(r.conTelefono)} que dejaron teléfono` : "nadie dejó teléfono"}</span>
+        </button>
+        <button type="button" className="wa-cifra wa-cifra--falta" aria-pressed={filtro === "fuera"} onClick={() => alternar("fuera")} title="Ver sólo a los que todavía no entraron">
+          <span className="wa-cifra__num">{num(r.fuera)}</span>
+          <span className="wa-cifra__txt">todavía no entraron</span>
+          <span className="wa-cifra__sub">a ellos hay que escribirles</span>
+        </button>
+        <button type="button" className="wa-cifra" aria-pressed={filtro === "sin-telefono"} onClick={() => alternar("sin-telefono")} title="Ver sólo a los que no dejaron un teléfono que se entienda">
+          <span className="wa-cifra__num">{num(r.sinTelefono)}</span>
+          <span className="wa-cifra__txt">sin teléfono</span>
+          <span className="wa-cifra__sub">no se puede saber si entraron</span>
+        </button>
+        <div className="wa-cifra wa-cifra--fija" title="La columna «Grupo de WhatsApp» de la tabla: la marca el equipo a mano.">
+          <span className="wa-cifra__num">{num(marcadosAMano)}</span>
+          <span className="wa-cifra__txt">marcados «Unido» a mano</span>
+          <span className="wa-cifra__sub">por el equipo, en la tabla</span>
+        </div>
+      </div>
+      <div className="wa-panel__progreso" role="img" aria-label={`${pct(pctDentro, 0)} ya están en el grupo`}><span style={{ width: `${Math.min(100, pctDentro)}%` }} /></div>
+
+      <div className="wa-panel__acciones">
+        <div className="wa-panel__grupo-acciones">
+          <span className="wa-panel__rotulo">Los {num(faltan.length)} que se ven y todavía no entraron</span>
+          <div className="wa-panel__botones">
+            <Button
+              sm variante="brand" icono={<Download size={14} />} disabled={faltan.length === 0} onClick={bajarParaManyChat}
+              title="Baja un CSV con nombre, teléfono y mail, listo para importar en ManyChat y mandarles una difusión desde ahí"
+            >
+              CSV para ManyChat
+            </Button>
+            <Button
+              sm variante="secondary" icono={<Copy size={14} />} disabled={faltan.length === 0}
+              onClick={() => onCopiar(listaParaCopiar(filas(faltan), false), `Copiaste ${num(faltan.length)} ${faltan.length === 1 ? "teléfono" : "teléfonos"}, uno por renglón.`)}
+              title="Los teléfonos, uno por renglón"
+            >
+              Copiar teléfonos
+            </Button>
+            <Button
+              sm variante="ghost" disabled={faltan.length === 0}
+              onClick={() => onCopiar(listaParaCopiar(filas(faltan), true), `Copiaste ${num(faltan.length)} con su nombre: pegalas en una planilla.`)}
+              title="Nombre y teléfono separados por tabulación, para pegar en una planilla"
+            >
+              Copiar con nombres
+            </Button>
+          </div>
+        </div>
+        {puedeEditar && (
+          <div className="wa-panel__grupo-acciones wa-panel__grupo-acciones--der">
+            <span className="wa-panel__rotulo">En la tabla</span>
             <Button
               sm variante="secondary" icono={<Check size={14} />} disabled={porMarcar.length === 0}
               onClick={() => void onMarcarUnidos(porMarcar.map((x) => x.id))}
-              title="Pone «Unido» en la hoja a los que el lector ve adentro del grupo y todavía no lo tenían"
+              title="Pone «Unido» en la columna «Grupo de WhatsApp» a los que WhatsApp ve adentro y todavía no lo tenían"
             >
-              Marcar {num(porMarcar.length)} como {porMarcar.length === 1 ? "unido" : "unidos"}
+              Marcar {num(porMarcar.length)} como «Unido»
             </Button>
-          )}
-          <Button
-            sm variante="secondary" icono={<Copy size={14} />} disabled={faltan.length === 0}
-            onClick={() => onCopiar(listaParaCopiar(filas(faltan), false), `Copiaste ${num(faltan.length)} ${faltan.length === 1 ? "teléfono" : "teléfonos"}, uno por renglón.`)}
-            title="Los teléfonos de los que se ven en la tabla y no están en el grupo, uno por renglón"
-          >
-            Copiar {num(faltan.length)} que no {faltan.length === 1 ? "está" : "están"}
-          </Button>
-          <Button
-            sm variante="ghost" disabled={faltan.length === 0}
-            onClick={() => onCopiar(listaParaCopiar(filas(faltan), true), `Copiaste ${num(faltan.length)} con su nombre: pegalas en una planilla.`)}
-            title="Nombre y teléfono separados por tabulación, para pegar en una planilla"
-          >
-            Con nombres
-          </Button>
-        </div>
+          </div>
+        )}
       </div>
     </Card>
   );

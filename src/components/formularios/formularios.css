@@ -46,3 +46,54 @@
 .gw-t .hk-table-wrap:has(.hk-paginador) .hk-table tfoot td { bottom: var(--fm-paginador, 49px); }
 .gw-celda { display: block; max-width: 300px; }
 .gw-nota { margin: 0; padding: var(--space-3) var(--space-4) var(--space-4); }
+
+/* Formularios: más aire entre el panel de WhatsApp, la barra y la tabla. */
+.fm-pagina > .crm-t { margin: 0; }
+.fm-t .crm-t__barra { gap: var(--space-3); margin-bottom: var(--space-4); }
+.fm-t .crm-t__buscar { flex: 1 1 260px; max-width: 360px; min-width: 220px; }
+.fm-t .crm-t__barra .filtro { min-width: 240px; }
+.fm-t .crm-t__filtros { gap: var(--space-2) var(--space-3); margin-bottom: var(--space-4); }
+.fm-etiqueta { align-self: center; margin-right: var(--space-1); white-space: nowrap; }
+
+/* El panel «Grupo de WhatsApp»: un título claro, los números que son filtros y las acciones agrupadas. */
+.wa-panel { display: flex; flex-direction: column; gap: var(--space-4); padding: var(--space-5); }
+.wa-panel__cabeza { display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: var(--space-3) var(--space-5); }
+.wa-panel__titulo { display: flex; align-items: flex-start; gap: var(--space-3); min-width: 0; }
+.wa-panel__icono { display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; flex: none; border-radius: var(--radius-md); background: var(--success-soft, var(--brand-soft)); color: var(--success); }
+.wa-panel__textos { min-width: 0; }
+.wa-panel__h { display: flex; align-items: center; gap: 6px; margin: 0; font-size: 17px; line-height: 24px; font-weight: 600; color: var(--ink); }
+.wa-panel__grupos { margin: 2px 0 0; font-size: 13px; line-height: 20px; color: var(--ink-subtle); overflow-wrap: anywhere; }
+.wa-panel__conexion { display: inline-flex; align-items: center; gap: 8px; padding: 4px 12px; border-radius: var(--radius-full); border: 1px solid var(--border); font-size: 13px; font-weight: 500; white-space: nowrap; color: var(--ink-muted); }
+.wa-panel__punto { width: 8px; height: 8px; border-radius: 50%; background: var(--ink-subtle); }
+.wa-panel__conexion--success { color: var(--success); border-color: var(--success); }
+.wa-panel__conexion--success .wa-panel__punto { background: var(--success); }
+.wa-panel__conexion--warning { color: var(--warning); border-color: var(--warning); }
+.wa-panel__conexion--warning .wa-panel__punto { background: var(--warning); }
+.wa-panel__conexion--danger { color: var(--danger); border-color: var(--danger); }
+.wa-panel__conexion--danger .wa-panel__punto { background: var(--danger); }
+.wa-panel__aviso { margin: 0; padding: var(--space-3) var(--space-4); border-radius: var(--radius-md); background: var(--warning-soft, var(--surface-200)); border: 1px solid var(--warning); color: var(--ink); font-size: 13.5px; line-height: 20px; }
+
+.wa-panel__cifras { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--space-3); }
+.wa-cifra {
+  display: flex; flex-direction: column; gap: 2px; align-items: flex-start; text-align: left; padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface-000); font: inherit; color: var(--ink); cursor: pointer;
+}
+button.wa-cifra:hover { border-color: var(--border-strong); background: var(--surface-200); }
+button.wa-cifra:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.wa-cifra[aria-pressed="true"] { border-color: var(--brand); background: var(--brand-soft); }
+.wa-cifra--fija { cursor: default; background: transparent; border-style: dashed; }
+.wa-cifra__num { font-family: var(--font-display); font-size: 28px; line-height: 34px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.wa-cifra--ok .wa-cifra__num { color: var(--success); }
+.wa-cifra--falta .wa-cifra__num { color: var(--accent); }
+.wa-cifra__txt { font-size: 14px; line-height: 20px; font-weight: 500; }
+.wa-cifra__sub { font-size: 12.5px; line-height: 18px; color: var(--ink-subtle); }
+.wa-panel__progreso { height: 6px; border-radius: var(--radius-full); background: var(--surface-300, var(--border)); overflow: hidden; }
+.wa-panel__progreso > span { display: block; height: 100%; border-radius: inherit; background: var(--success); }
+
+.wa-panel__acciones { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: var(--space-4) var(--space-6); padding-top: var(--space-4); border-top: 1px solid var(--border); }
+.wa-panel__grupo-acciones { display: flex; flex-direction: column; gap: var(--space-2); }
+.wa-panel__rotulo { font-size: 12.5px; line-height: 18px; color: var(--ink-subtle); }
+.wa-panel__botones { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.wa-panel-linea { display: flex; align-items: center; gap: 6px; margin: 0; }
+@media (max-width: 1000px) { .wa-panel__cifras { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 520px) { .wa-panel { padding: var(--space-4); } .wa-panel__cifras { grid-template-columns: 1fr; } }
