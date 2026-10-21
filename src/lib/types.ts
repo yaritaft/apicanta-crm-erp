@@ -834,8 +834,33 @@ export interface Comentario {
   contactoId: ID;
   autor: string;
   autorEmail?: string;
+  /* Puede venir vacío si el mensaje es sólo un archivo o una nota de voz. */
   texto: string;
   creadoEn: string;
+  /* Fotos, videos, notas de voz y archivos del mensaje (lib/adjuntos-chat.ts). Columna `adjuntos` (jsonb), supabase/chat-adjuntos.sql. */
+  adjuntos?: Adjunto[];
+  /* Si es una respuesta en el hilo de otro mensaje: el id de ese mensaje (como en Blue OS y Slack). Columna `respondeA`. */
+  respondeA?: ID;
+}
+
+/* Un archivo del chat del equipo. En la nube, `ruta` es su lugar en el bucket privado `chat-equipo` (se ve con una URL
+   firmada); sin nube (la app local), el archivo mismo como data URL. */
+export interface Adjunto {
+  id: ID;
+  tipo: "imagen" | "video" | "audio" | "archivo";
+  nombre: string;
+  mime: string;
+  bytes: number;
+  ruta: string;
+  /* Las notas de voz y los videos: cuánto duran, en segundos. */
+  duracion?: number;
+  /* La forma de la onda de una nota de voz (40 valores de 0 a 1), para dibujarla sin bajar el audio. */
+  picos?: number[];
+  /* Las fotos y los videos, para reservar el lugar antes de que carguen. */
+  ancho?: number;
+  alto?: number;
+  /* Si es una nota de voz grabada en el chat (y no un audio adjuntado). */
+  notaDeVoz?: boolean;
 }
 
 /* ---------- Tipos de cuenta ----------

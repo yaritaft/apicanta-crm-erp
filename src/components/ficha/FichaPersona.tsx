@@ -106,7 +106,6 @@ export function FichaPersona({ id, vista, ventaResaltada, onCerrar, onVista }: {
               </div>
               {conChat && (
                 <aside className="ficha__chat" aria-label="Chat del equipo">
-                  <div className="ficha__chat-tit">Chat del equipo{p.comentarios.length > 0 && <span className="t-num t-subtle"> · {p.comentarios.length}</span>}</div>
                   <ChatEquipo contactoId={p.clave} comentarios={p.comentarios} />
                 </aside>
               )}

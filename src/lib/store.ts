@@ -4,7 +4,7 @@ import { useCallback, useSyncExternalStore } from "react";
 import type {
   AccionActividad, Actividad, Ad, AdInsight, Adset, Ajustes, Alumno, Campaign,
   Contacto, Devolucion, ProveedorPasarela,
-  Arqueo, Campania, CampoPersonalizado, Comentario, Comprobante, Cuota, EntidadNombre, EstadoApp, Etapa, ID,
+  Adjunto, Arqueo, Campania, CampoPersonalizado, Comentario, Comprobante, Cuota, EntidadNombre, EstadoApp, Etapa, ID,
   Lead, Meta, Movimiento, OpcionCrm, OportunidadCrm, Pago, Reporte, Sesion, Venta, Webinar,
 } from "./types";
 import type { ConfigSeguimiento, Resell, RevisionCv, SeguimientoAlumno, Testimonio } from "./types";
@@ -1944,13 +1944,16 @@ export const acciones = {
 
   /* ---------- Chat del equipo, en la ficha de cada persona ---------- */
 
-  comentar(contactoId: ID, texto: string, autor: string, autorEmail?: string): void {
+  comentar(contactoId: ID, texto: string, autor: string, autorEmail?: string, adjuntos: Adjunto[] = [], respondeA?: ID): void {
     const limpio = texto.trim();
-    if (!limpio) return;
+    /* Un mensaje puede ser sólo una foto o una nota de voz: lo que no puede es estar vacío del todo. */
+    if (!limpio && adjuntos.length === 0) return;
     const e = snapshot();
     const c: Comentario = {
       id: nuevoId("com"), contactoId, autor, texto: limpio, creadoEn: ahora(),
       ...(autorEmail ? { autorEmail } : {}),
+      ...(adjuntos.length ? { adjuntos } : {}),
+      ...(respondeA ? { respondeA } : {}),
     };
     guardar({ ...e, comentarios: [...(e.comentarios ?? []), c] });
     empujar({ tipo: "upsert", tabla: "comentarios", filas: [c] });
