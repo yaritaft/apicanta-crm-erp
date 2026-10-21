@@ -3,7 +3,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
-  ArrowLeft, ArrowUp, Download, FileText, Loader2, Maximize2, MessageSquare, MessageSquareReply, Mic, Minimize2, Paperclip, Pause, Play, Smile, Trash2, X,
+  ArrowLeft, ArrowUp, Download, FileText, Loader2, MessageSquare, MessageSquareReply, Mic, Paperclip, Pause, Play, Smile, Trash2, X,
 } from "lucide-react";
 import { Avatar, Empty } from "@/components/ui/ui";
 import { useToast } from "@/components/ui/Toast";
@@ -30,8 +30,8 @@ import "./chat.css";
 
      · cada mensaje se responde EN HILO (como Blue OS y Slack): debajo del
        original queda «N respuestas» con las caras de quienes contestaron;
-       el hilo se abre al costado o, si no entra, encima de la conversación;
-     · el chat se agranda a casi toda la pantalla y vuelve con Esc.
+       el hilo se abre encima de la conversación o, si el chat se estiró con
+       el divisor de la ficha, al costado; Esc lo cierra.
 
    Lo que el equipo anota acá lo ve cualquiera que abra la ficha. Los
    archivos van a un bucket privado (lib/adjuntos-chat.ts).
@@ -675,7 +675,6 @@ export function ChatEquipo({ contactoId, comentarios, titulo = "Chat del equipo"
   const caja = useRef<Puerta | null>(null);
   const cajaHilo = useRef<Puerta | null>(null);
   const [soltando, setSoltando] = useState(false);
-  const [grande, setGrande] = useState(false);
   const [hilo, setHilo] = useState<string | null>(null);
 
   /* La conversación son los mensajes de arriba; las respuestas cuelgan de su original. Una respuesta cuyo original
@@ -699,27 +698,24 @@ export function ChatEquipo({ contactoId, comentarios, titulo = "Chat del equipo"
   /* Si borran el original, el hilo se cierra solo. */
   useEffect(() => { if (hilo && !original) setHilo(null); }, [hilo, original]);
 
-  /* Esc cierra primero el hilo y después lo agrandado. Va antes que el Esc de la ficha (que la cerraría entera). */
+  /* Esc cierra primero el hilo. Va antes que el Esc de la ficha (que la cerraría entera). */
   useEffect(() => {
-    if (!grande && !hilo) return;
+    if (!hilo) return;
     const onKey = (ev: KeyboardEvent) => {
       if (ev.key !== "Escape" || document.querySelector(".modal-backdrop")) return;
       ev.stopImmediatePropagation();
-      if (hilo) setHilo(null);
-      else setGrande(false);
+      setHilo(null);
     };
     document.addEventListener("keydown", onKey, true);
     return () => document.removeEventListener("keydown", onKey, true);
-  }, [grande, hilo]);
+  }, [hilo]);
 
   const esMio = (c: Comentario) => (yo.email ? c.autorEmail === yo.email : c.autor === yo.nombre);
 
   return (
     <>
-      {grande && <div className="chatx-fondo" onClick={() => setGrande(false)} aria-hidden />}
       <div
-        className={`chat${grande ? " chat--grande" : ""}${hilo ? " chat--con-hilo" : ""}${soltando ? " chat--soltando" : ""}`}
-        role={grande ? "dialog" : undefined} aria-label={grande ? titulo : undefined}
+        className={`chat${hilo ? " chat--con-hilo" : ""}${soltando ? " chat--soltando" : ""}`}
         onDragOver={(ev) => { if (Array.from(ev.dataTransfer.types).includes("Files")) { ev.preventDefault(); setSoltando(true); } }}
         onDragLeave={(ev) => { if (ev.currentTarget === ev.target) setSoltando(false); }}
         onDrop={(ev) => {
@@ -731,10 +727,6 @@ export function ChatEquipo({ contactoId, comentarios, titulo = "Chat del equipo"
       >
         <div className="chatx-cabeza">
           <span className="chatx-cabeza__tit">{titulo}{raices.length > 0 && <span className="t-subtle t-num"> · {comentarios.length}</span>}</span>
-          <button type="button" className="chatx-boton" onClick={() => setGrande((g) => !g)}
-            aria-label={grande ? "Achicar el chat" : "Agrandar el chat"} title={grande ? "Achicar (Esc)" : "Agrandar el chat"}>
-            {grande ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
-          </button>
         </div>
 
         <div className="chatx-cuerpo">
