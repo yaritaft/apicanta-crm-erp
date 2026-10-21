@@ -980,6 +980,23 @@ export interface EstadoApp {
      proponen con el monto del anterior y alguien los aprueba (lib/gastos-recurrentes.ts).
      Opcional: sin supabase/gastos-recurrentes.sql, ninguno. */
   gastosRecurrentes?: GastoRecurrente[];
+  /* Lo que el lector de WhatsApp ve de los grupos de cada webinar, ya sumado (vista `whatsapp_resumen_webinar`,
+     supabase/whatsapp-resumen-webinar.sql). Sólo se lee: lo trae la carga y se refresca solo; no es una tabla. */
+  gruposWpp?: GrupoWppResumen[];
+}
+
+/* Los grupos de WhatsApp de un webinar, sumados (todos sus grupos, cada persona una vez). */
+export interface GrupoWppResumen {
+  webinarId: ID;
+  grupos: number;
+  /* Los que pasaron por los grupos: los que están más los que salieron (con teléfono). */
+  entraron: number;
+  dentro: number;
+  salieron: number;
+  /* Integrantes que WhatsApp muestra sin teléfono (están adentro). */
+  sinTelefono: number;
+  /* La última vez que el lector miró alguno de los grupos. */
+  ultimaFoto?: string;
 }
 
 /* Un gasto que se paga todos los meses: la plantilla de la que salen las

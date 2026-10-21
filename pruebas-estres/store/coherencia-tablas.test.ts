@@ -122,8 +122,9 @@ test("cada tabla se carga en la colección que la siembra usa, y esa colección 
   for (const s of SIEMBRA) {
     assert.equal(cargaPorTabla.get(s.tabla), s.clave, `${s.tabla}: la siembra lee e.${s.clave} pero la carga escribe e.${cargaPorTabla.get(s.tabla)}`);
   }
-  /* Y al revés: toda colección de EstadoApp que sea una lista de filas viene de alguna tabla. */
-  const sinTabla = [...estado].filter((k) => !["version", "ajustes"].includes(k) && !CARGA.some((c) => c.clave === k));
+  /* Y al revés: toda colección de EstadoApp que sea una lista de filas viene de alguna tabla. La excepción es gruposWpp:
+     viene de una VISTA de sólo lectura (whatsapp_resumen_webinar) que se pide aparte (traerGruposWpp), no se escribe ni se siembra. */
+  const sinTabla = [...estado].filter((k) => !["version", "ajustes", "gruposWpp"].includes(k) && !CARGA.some((c) => c.clave === k));
   assert.deepEqual(sinTabla, [], `colecciones de EstadoApp que nunca se cargan de la base: ${sinTabla.join(", ")}`);
 });
 

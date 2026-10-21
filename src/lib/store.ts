@@ -7,7 +7,7 @@ import type {
   Adjunto, Arqueo, Campania, CampoPersonalizado, Comentario, Comprobante, Reaccion, Cuota, EntidadNombre, EstadoApp, Etapa, ID,
   Lead, Meta, Movimiento, OpcionCrm, OportunidadCrm, Pago, Reporte, Sesion, Venta, Webinar,
 } from "./types";
-import type { ChatLectura, ConfigSeguimiento, FotoPerfil, Resell, RevisionCv, SeguimientoAlumno, Testimonio } from "./types";
+import type { ChatLectura, ConfigSeguimiento, FotoPerfil, GrupoWppResumen, Resell, RevisionCv, SeguimientoAlumno, Testimonio } from "./types";
 import { lecturaAlLeer, recibidosAlLlegar } from "./chat-equipo";
 import { configSeguimiento, seguimientoVacio } from "./seguimiento";
 import { resellNormal, seguimientoCompleto, siguienteNumero, testimonioNormal } from "./clientes-cs";
@@ -499,6 +499,20 @@ async function traerTabla(db: NonNullable<typeof nube>, tabla: string) {
   }
 }
 
+/* Lo que el lector de WhatsApp suma por webinar (vista whatsapp_resumen_webinar, supabase/whatsapp-resumen-webinar.sql):
+   de ahí sale «Se unieron al grupo». No es una tabla de la app —no se escribe ni se respalda—, así que se pide aparte y
+   nunca corta la carga: sin la vista creada, sin permiso o sin red, la app sigue como estaba (undefined = no cambiar nada). */
+async function traerGruposWpp(db: NonNullable<typeof nube>): Promise<GrupoWppResumen[] | undefined> {
+  try {
+    const r = await db.from("whatsapp_resumen_webinar").select("*");
+    if (r.error) return undefined;
+    return ((r.data ?? []) as Record<string, unknown>[]).map((x) => ({
+      webinarId: String(x.webinarId), grupos: Number(x.grupos ?? 0), entraron: Number(x.entraron ?? 0), dentro: Number(x.dentro ?? 0),
+      salieron: Number(x.salieron ?? 0), sinTelefono: Number(x.sinTelefono ?? 0), ultimaFoto: (x.ultimaFoto as string | null) ?? undefined,
+    }));
+  } catch { return undefined; }
+}
+
 export async function cargarDeLaNube(): Promise<void> {
   if (!nube || yaCargo) return;
   const db = nube;
@@ -566,9 +580,11 @@ export async function cargarDeLaNube(): Promise<void> {
     const base = semilla;
     const { id: _id, ...ajustes } = ajustesRes.data as Ajustes & { id: number };
     void _id;
+    const gruposWpp = await traerGruposWpp(db);
 
     guardar({
       version: 1,
+      ...(gruposWpp ? { gruposWpp } : {}),
       ajustes: { ...base.ajustes, ...ajustes },
       etapas: porTabla.etapas as Etapa[],
       /* Opcional: sin el SQL corrido (o con la tabla vacía) el pipeline de
@@ -2313,6 +2329,17 @@ export const acciones = {
     if (r.nuevos.length) empujarEnLotes("traspasos", r.nuevos);
     for (const c of r.cambios) empujarUpdate("traspasos", [c.id], c.cambios as Record<string, unknown>);
     return { nuevos: r.nuevos.length, conciliados: r.conciliados };
+  },
+
+  /* «Se unieron al grupo» sale del lector de WhatsApp y cambia cada vez que alguien entra o sale de un grupo: se vuelve a
+     pedir cada tanto mientras la app está abierta (el Shell lo programa). Si no cambió nada, no repinta. */
+  async refrescarGruposWpp(): Promise<void> {
+    if (!nube) return;
+    const nuevos = await traerGruposWpp(nube);
+    if (!nuevos) return;
+    const e = snapshot();
+    if (JSON.stringify(e.gruposWpp ?? []) === JSON.stringify(nuevos)) return;
+    guardar({ ...e, gruposWpp: nuevos });
   },
 
   /* Vuelve a traer los movimientos entre cuentas de la base: el servidor

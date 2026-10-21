@@ -1,5 +1,5 @@
 import type {
-  AdInsight, CanalOrigen, Contacto, Cuota, EstadoApp, Lead, NivelIngles, Sesion, Venta, Webinar,
+  AdInsight, CanalOrigen, Contacto, Cuota, EstadoApp, GrupoWppResumen, Lead, NivelIngles, Sesion, Venta, Webinar,
 } from "./types";
 import { closerDeCuota, cobraDirector, cobraEnFecha, tasaDeComision } from "./finanzas";
 import { devolucionesDe, esDevolucionConfirmada, reversasDeComision } from "./devoluciones";
@@ -185,16 +185,50 @@ export function metaDelWebinar(e: EstadoApp, w: Webinar): MetaDelWebinar | undef
   return metaPorWebinar(e).get(w.id);
 }
 
-/** El webinar con lo que falta cargar tomado de Meta. */
+/* ==================================================================
+   Lo que el lector de WhatsApp sabe de cada webinar
+
+   El lector (servicios/whatsapp-lector) mira los grupos del webinar y cuenta
+   quién entró. «Se unieron al grupo» sale de ahí, en vivo, sin cargarlo a mano:
+   todos los que pasaron por los grupos atados al webinar (los que están más los
+   que salieron, cada persona una vez) y los que WhatsApp muestra sin teléfono.
+   Lo cargado a mano manda: el lector sólo llena lo que está en cero, igual que Meta.
+   ================================================================== */
+
+/** Los grupos de WhatsApp de un webinar, tal como los suma la vista (undefined si el lector no tiene ninguno atado). */
+export const gruposWppDelWebinar = (e: EstadoApp, w: Webinar): GrupoWppResumen | undefined =>
+  e.gruposWpp?.find((g) => g.webinarId === w.id);
+
+/** Cuántos se unieron: los que pasaron por los grupos y los que no se les ve el teléfono. */
+export const seUnieronAlGrupo = (g: GrupoWppResumen) => g.entraron + g.sinTelefono;
+
+/** El webinar con lo que falta cargar tomado de Meta y del lector de WhatsApp. */
 export function numerosDelWebinar(e: EstadoApp, w: Webinar): Webinar {
   const m = metaDelWebinar(e, w);
-  if (!m) return w;
+  const g = gruposWppDelWebinar(e, w);
+  if (!m && !g) return w;
   return {
     ...w,
-    inversion: w.inversion || m.pauta,
-    formularios: w.formularios || m.formularios,
-    inversionDmAds: w.inversionDmAds || m.dmAds,
+    ...(m ? {
+      inversion: w.inversion || m.pauta,
+      formularios: w.formularios || m.formularios,
+      inversionDmAds: w.inversionDmAds || m.dmAds,
+    } : {}),
+    ...(g ? { grupoWpp: w.grupoWpp || seUnieronAlGrupo(g) } : {}),
   };
+}
+
+/** Qué números del webinar salen del lector de WhatsApp (los que están en cero a mano). */
+export function camposDeWhatsapp(e: EstadoApp, w: Webinar): Set<CampoManual> {
+  const g = gruposWppDelWebinar(e, w);
+  return new Set<CampoManual>(!w.grupoWpp && g && seUnieronAlGrupo(g) > 0 ? ["grupoWpp"] : []);
+}
+
+/** De dónde sale un número que no se cargó a mano, para decirlo al lado de la celda (undefined: lo cargó alguien). */
+export function origenAutomatico(e: EstadoApp, w: Webinar, campo: CampoManual): string | undefined {
+  if (camposDeMeta(e, w).has(campo)) return "De sus campañas de Meta";
+  if (camposDeWhatsapp(e, w).has(campo)) return "De los grupos de WhatsApp: los que entraron, según el lector";
+  return undefined;
 }
 
 /** Qué números del webinar salen de Meta (los que están en cero a mano). */

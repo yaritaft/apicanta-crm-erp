@@ -8,7 +8,7 @@ import { Funnel } from "@/components/charts/charts";
 import { useToast } from "@/components/ui/Toast";
 import { useEstado } from "@/lib/store";
 import { money, num, pct } from "@/lib/format";
-import { CAMPO_MANUAL, camposDeMeta, numerosDelWebinar, type CampoManual, type MetricasWebinar } from "@/lib/webinar";
+import { CAMPO_MANUAL, numerosDelWebinar, origenAutomatico, type CampoManual, type MetricasWebinar } from "@/lib/webinar";
 import type { Webinar } from "@/lib/types";
 import { CeldaEditable, type Direccion } from "./CeldaEditable";
 import { guardarMetrica } from "./guardar";
@@ -47,8 +47,8 @@ function FilaMetrica({ w, campo, detalle, color }: {
   const e = useEstado();
   const def = CAMPO_MANUAL[campo];
   const formato = (n: number) => (def.moneda ? M(n) : num(n));
-  /* En cero a mano, la pauta, los formularios y los DM Ads salen de Meta. */
-  const deMeta = camposDeMeta(e, w).has(campo);
+  /* En cero a mano, la pauta, los formularios y los DM Ads salen de Meta, y el grupo del lector de WhatsApp. */
+  const origen = origenAutomatico(e, w, campo);
   return (
     <div className="wb-fila">
       <div className="wb-fila__texto">
@@ -64,7 +64,7 @@ function FilaMetrica({ w, campo, detalle, color }: {
         formato={formato}
         decimales={def.moneda ? 2 : 0}
         etiqueta={def.largo}
-        auto={deMeta ? "De sus campañas de Meta" : undefined}
+        auto={origen}
         ayuda={`${def.ayuda} Click o Enter para cambiarlo.`}
         celda={`m:${campo}`}
         onGuardar={(n) => guardarMetrica(w, campo, n, formato)}

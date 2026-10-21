@@ -17,7 +17,7 @@ import { resumenDePases } from "@/lib/traspasos";
 import { useChequeos } from "@/lib/chequeos-finanzas";
 import { diasDelEod } from "@/lib/eod-finanzas";
 import {
-  alNegarseEscritura, cargarDeLaNube, fijarAcceso, hayNube, reiniciarCarga, tablaSinCrear, useEstado, useSync, useTema,
+  acciones, alNegarseEscritura, cargarDeLaNube, fijarAcceso, hayNube, reiniciarCarga, tablaSinCrear, useEstado, useSync, useTema,
 } from "@/lib/store";
 import { claveDe } from "@/lib/chat-equipo";
 import { aplazarFoto, fotoAplazadaHoy, fotoDe, mapaDeFotos } from "@/lib/fotos-perfil";
@@ -86,6 +86,15 @@ export function Shell({ children }: { children: React.ReactNode }) {
   }, [quienYo]);
   const faltaFoto = datosListos && Boolean(quienYo) && !miFoto && !tablaSinCrear("fotos_perfil") && aplazo?.quien === quienYo && !aplazo.aplazada;
   const [cambiarFoto, setCambiarFoto] = useState(false);
+  /* «Se unieron al grupo» de cada webinar viene del lector de WhatsApp y cambia con cada entrada y salida: mientras la app
+     está abierta y a la vista se vuelve a pedir cada dos minutos (y al volver a la pestaña). */
+  useEffect(() => {
+    if (!datosListos) return;
+    const pedir = () => { if (document.visibilityState === "visible") void acciones.refrescarGruposWpp(); };
+    const cada = window.setInterval(pedir, 120_000);
+    document.addEventListener("visibilitychange", pedir);
+    return () => { window.clearInterval(cada); document.removeEventListener("visibilitychange", pedir); };
+  }, [datosListos]);
   function fotoDespues() {
     aplazarFoto(quienYo, hoyDelNegocio());
     setAplazo({ quien: quienYo, aplazada: true });

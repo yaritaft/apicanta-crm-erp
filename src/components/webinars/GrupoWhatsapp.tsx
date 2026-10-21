@@ -178,7 +178,7 @@ export function GrupoWhatsapp({ w }: { w: Webinar }) {
                     { concepto: "Teléfonos distintos adentro", valor: num(enElGrupo), signo: "=" as const, nota: "quien está en dos grupos cuenta una vez" },
                   ],
                   ejemplo: w.grupoWpp > 0
-                    ? `En la planilla de Webinars, «Grupo» dice ${num(w.grupoWpp)}: ese número se carga a mano y esto no lo cambia.`
+                    ? `En la planilla de Webinars, «Grupo» dice ${num(w.grupoWpp)}. Si es el que alguien cargó a mano, esto no lo cambia; si está en cero, la planilla usa a los que entraron a estos grupos.`
                     : undefined,
                 }}
               />

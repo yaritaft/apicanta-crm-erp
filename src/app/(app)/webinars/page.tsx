@@ -29,7 +29,7 @@ import { CopiarLink } from "@/components/ui/Filtros";
 import { useTablaURL } from "@/lib/useParamsURL";
 import { money, num, pct } from "@/lib/format";
 import {
-  CAMPOS_MANUALES, camposDeMeta, metricasDeWebinar, numerosDelWebinar, sumarMetricas, type MetricasWebinar,
+  CAMPOS_MANUALES, metricasDeWebinar, numerosDelWebinar, origenAutomatico, sumarMetricas, type MetricasWebinar,
 } from "@/lib/webinar";
 import type { CampoPersonalizado, EstadoWebinar, Webinar } from "@/lib/types";
 
@@ -224,8 +224,8 @@ export default function Webinars() {
     },
   };
 
-  /* La pauta, los formularios y los DM Ads que están en cero salen de las
-     campañas de Meta del webinar (lib/webinar.ts, numerosDelWebinar). */
+  /* La pauta, los formularios y los DM Ads que están en cero salen de las campañas de Meta del webinar, y el grupo
+     de los grupos de WhatsApp que lee el lector (lib/webinar.ts, numerosDelWebinar). */
   const efectivo = (w: Webinar) => numerosDelWebinar(e, w);
   for (const c of CAMPOS_MANUALES) {
     const formato = (n: number) => (c.moneda ? M(n) : num(n));
@@ -238,7 +238,7 @@ export default function Webinars() {
         formato,
         decimales: c.moneda ? 2 : 0,
         etiqueta: (w) => `${c.largo} de «${w.titulo}»`,
-        auto: (w) => (camposDeMeta(e, w).has(c.campo) ? "De sus campañas de Meta" : undefined),
+        auto: (w) => origenAutomatico(e, w, c.campo),
       },
       total: formato(filtrados.reduce((a, w) => a + efectivo(w)[c.campo], 0)),
     };
