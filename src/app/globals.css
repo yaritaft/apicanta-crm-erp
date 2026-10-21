@@ -1883,6 +1883,13 @@ button.cuadro-com__persona:hover { color: var(--brand); text-decoration: underli
   color: var(--ink-subtle); border-bottom: 1px solid var(--border-strong);
 }
 .planilla thead th.planilla__th--ed { color: var(--ink-muted); }
+/* El borde del título que se arrastra para ajustar el ancho de la columna. */
+.planilla__ancho { position: absolute; top: 0; right: 0; bottom: 0; width: 9px; cursor: col-resize; z-index: 5; touch-action: none; }
+.planilla__ancho::after { content: ""; position: absolute; top: 20%; bottom: 20%; right: 0; width: 1px; background: var(--border-strong); transition: background 120ms, width 120ms, left 120ms; }
+.planilla__ancho:hover::after { width: 3px; border-radius: 2px; background: var(--brand); }
+/* Para medir cada título en una sola línea (components/webinars/Planilla, medirColumnas). */
+.planilla--medir thead th { white-space: nowrap; min-width: 0; max-width: none; }
+.planilla--medir thead th.planilla__fija { max-width: none; }
 .planilla .planilla__num { text-align: right; }
 .planilla__orden {
   display: inline-flex; align-items: flex-end; gap: 4px;

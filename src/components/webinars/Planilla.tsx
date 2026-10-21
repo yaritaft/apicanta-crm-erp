@@ -1,8 +1,9 @@
 "use client";
 
-import React, { useLayoutEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ArrowDown, ArrowUp, Pencil } from "lucide-react";
 import { CeldaEditable, type Direccion } from "./CeldaEditable";
+import { anchoValido, claveDeAnchos, leerAnchos } from "@/lib/anchos-columnas";
 
 /* ==================================================================
    Planilla: una tabla que se usa como Excel.
@@ -14,7 +15,62 @@ import { CeldaEditable, type Direccion } from "./CeldaEditable";
      con Tab no obliga a recorrer cien celdas.
    - La primera columna queda fija al scrollear de costado, el encabezado
      arriba y los totales abajo, así nunca se pierde qué es cada número.
+   - El ancho de cada columna se ajusta arrastrando el borde de su título
+     (doble click: lo justo para que el título entre en una sola línea).
+     Se guarda en el navegador de quien lo ajusta (useAnchosPlanilla).
    ================================================================== */
+
+/* El ancho de las columnas: lo maneja quien usa la planilla (para poner los botones «Ajustar» y «Anchos originales» donde quiera). */
+export interface AnchosPlanilla {
+  anchos: Record<string, number>;
+  fijar: (columna: string, px: number) => void;
+  /** ¿Hay alguna columna ajustada a mano? */
+  hay: boolean;
+  /** Vuelve todas al ancho de siempre. */
+  restaurar: () => void;
+  /** Le da a cada columna lo justo para que su título entre en una sola línea. */
+  ajustarTodas: () => void;
+  /** Lo que se le pone a la caja de la planilla para poder medirla. */
+  cajaRef: React.RefObject<HTMLDivElement | null>;
+}
+
+/* El ancho natural de cada columna con el título en una sola línea: se mide sacando por un instante los anchos puestos a mano. */
+function medirColumnas(caja: HTMLElement): Record<string, number> {
+  const tabla = caja.querySelector("table");
+  if (!tabla) return {};
+  const ths = [...tabla.querySelectorAll<HTMLElement>("thead th[data-col]")];
+  const previos = ths.map((th) => th.getAttribute("style"));
+  for (const th of ths) { th.style.width = ""; th.style.minWidth = ""; th.style.maxWidth = ""; }
+  tabla.classList.add("planilla--medir");
+  const out: Record<string, number> = {};
+  /* Redondeado para arriba y con un respiro: medio píxel de menos y el título vuelve a partirse en dos líneas. */
+  for (const th of ths) out[th.dataset.col as string] = anchoValido(Math.ceil(th.getBoundingClientRect().width) + 3);
+  tabla.classList.remove("planilla--medir");
+  ths.forEach((th, i) => { if (previos[i] === null) th.removeAttribute("style"); else th.setAttribute("style", previos[i] as string); });
+  return out;
+}
+
+export function useAnchosPlanilla(planilla: string): AnchosPlanilla {
+  const [anchos, setAnchos] = useState<Record<string, number>>({});
+  const [leido, setLeido] = useState(false);
+  const cajaRef = useRef<HTMLDivElement | null>(null);
+  /* Se lee después del montado: localStorage no existe en el servidor y leerlo en el primer render rompe la hidratación. */
+  useEffect(() => {
+    try { setAnchos(leerAnchos(localStorage.getItem(claveDeAnchos(planilla)))); } catch { /* modo privado */ }
+    setLeido(true);
+  }, [planilla]);
+  useEffect(() => {
+    if (!leido) return;
+    try {
+      if (Object.keys(anchos).length) localStorage.setItem(claveDeAnchos(planilla), JSON.stringify(anchos));
+      else localStorage.removeItem(claveDeAnchos(planilla));
+    } catch { /* modo privado */ }
+  }, [anchos, leido, planilla]);
+  const fijar = useCallback((columna: string, px: number) => setAnchos((a) => ({ ...a, [columna]: anchoValido(px) })), []);
+  const restaurar = useCallback(() => setAnchos({}), []);
+  const ajustarTodas = useCallback(() => { if (cajaRef.current) setAnchos(medirColumnas(cajaRef.current)); }, []);
+  return { anchos, fijar, hay: Object.keys(anchos).length > 0, restaurar, ajustarTodas, cajaRef };
+}
 
 export interface NavCelda {
   tabIndex: number;
@@ -50,7 +106,7 @@ export interface ColumnaPlanilla<T> {
 type OrdenPlanilla = { clave: string; desc: boolean };
 
 export function Planilla<T extends { id: string }>({
-  filas, columnas, ordenInicial, orden: ordenDeAfuera, onOrden, vacio, etiqueta, totalEtiqueta, onError,
+  filas, columnas, ordenInicial, orden: ordenDeAfuera, onOrden, vacio, etiqueta, totalEtiqueta, onError, anchos: anc,
 }: {
   filas: T[];
   columnas: ColumnaPlanilla<T>[];
@@ -65,6 +121,8 @@ export function Planilla<T extends { id: string }>({
   /* Primera celda de la fila de totales. Sin esto no hay fila de totales. */
   totalEtiqueta?: React.ReactNode;
   onError?: (mensaje: string) => void;
+  /* El ancho de las columnas (useAnchosPlanilla). Sin esto las columnas no se ajustan. */
+  anchos?: AnchosPlanilla;
 }) {
   const [ordenPropio, setOrdenPropio] = useState<OrdenPlanilla | null>(ordenInicial ?? null);
   const orden = onOrden ? ordenDeAfuera ?? null : ordenPropio;
@@ -73,7 +131,8 @@ export function Planilla<T extends { id: string }>({
   const claveOrden = orden?.clave;
   const descOrden = orden?.desc ?? false;
   const [activa, setActiva] = useState<[number, number]>([0, 0]);
-  const cajaRef = useRef<HTMLDivElement>(null);
+  const cajaPropia = useRef<HTMLDivElement>(null);
+  const cajaRef = (anc?.cajaRef ?? cajaPropia) as React.RefObject<HTMLDivElement>;
   const tablaRef = useRef<HTMLTableElement>(null);
 
   /* El orden se calcula cuando cambia el conjunto de filas o el criterio,
@@ -179,6 +238,26 @@ export function Planilla<T extends { id: string }>({
     else setOrdenPropio(siguiente);
   }
 
+  /* Arrastrar el borde de un título cambia el ancho de su columna; doble click la deja justa para que el título entre en una línea. */
+  function empezarAncho(ev: React.PointerEvent<HTMLElement>, clave: string) {
+    if (!anc) return;
+    const th = ev.currentTarget.parentElement as HTMLElement;
+    const x0 = ev.clientX, w0 = th.getBoundingClientRect().width;
+    ev.preventDefault();
+    ev.stopPropagation();
+    ev.currentTarget.setPointerCapture(ev.pointerId);
+    const mover = (m: PointerEvent) => anc.fijar(clave, w0 + m.clientX - x0);
+    const soltar = () => { window.removeEventListener("pointermove", mover); window.removeEventListener("pointerup", soltar); window.removeEventListener("pointercancel", soltar); };
+    window.addEventListener("pointermove", mover);
+    window.addEventListener("pointerup", soltar);
+    window.addEventListener("pointercancel", soltar);
+  }
+  function ajustarUna(clave: string) {
+    if (!anc || !cajaRef.current) return;
+    const medidas = medirColumnas(cajaRef.current);
+    if (medidas[clave] !== undefined) anc.fijar(clave, medidas[clave]);
+  }
+
   if (filas.length === 0) return <>{vacio}</>;
 
   return (
@@ -200,15 +279,24 @@ export function Planilla<T extends { id: string }>({
                   {ordenada && (orden.desc ? <ArrowDown size={13} aria-hidden /> : <ArrowUp size={13} aria-hidden />)}
                 </>
               );
+              const ancho = anc?.anchos[c.clave];
               return (
                 <th
-                  key={c.clave} scope="col" className={clases || undefined}
+                  key={c.clave} scope="col" className={clases || undefined} data-col={c.clave}
+                  style={ancho ? { width: ancho, minWidth: ancho, maxWidth: ancho } : undefined}
                   aria-sort={ordenada ? (orden.desc ? "descending" : "ascending") : undefined}
                   title={c.ayuda ? `${c.ayuda}${c.editable ? " Se carga a mano." : ""}` : undefined}
                 >
                   {c.orden
                     ? <button type="button" className="planilla__orden" onClick={() => alternar(c)}>{texto}</button>
                     : <span className="planilla__orden planilla__orden--quieto">{texto}</span>}
+                  {anc && (
+                    <span
+                      className="planilla__ancho" role="separator" aria-orientation="vertical" aria-label={`Ancho de ${c.titulo}`}
+                      title="Arrastrá para ajustar el ancho · doble click: que el título entre en una línea"
+                      onPointerDown={(ev) => empezarAncho(ev, c.clave)} onDoubleClick={() => ajustarUna(c.clave)} onClick={(ev) => ev.stopPropagation()}
+                    />
+                  )}
                 </th>
               );
             })}

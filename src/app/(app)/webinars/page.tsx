@@ -3,14 +3,14 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Info, Pencil, Plus, Video, Youtube } from "lucide-react";
+import { Info, MoveHorizontal, Pencil, Plus, Video, Youtube } from "lucide-react";
 import { PageHead } from "@/components/shell/PageHead";
 import { Ayuda, Badge, Button, Card, CardHead, Chip, Empty, StatCard } from "@/components/ui/ui";
 import { ConfigColumnas, type DefColumna, useColumnas } from "@/components/ui/ColumnasConfig";
 import { DateRangePicker, diaDeNegocio, enRango, rangoMax, rangoSub } from "@/components/ui/DateRangePicker";
 import { AreaChart } from "@/components/charts/charts";
 import { useToast } from "@/components/ui/Toast";
-import { Planilla, type ColumnaPlanilla } from "@/components/webinars/Planilla";
+import { Planilla, useAnchosPlanilla, type ColumnaPlanilla } from "@/components/webinars/Planilla";
 import { FiltroWebinars } from "@/components/webinars/FiltroWebinars";
 import { AsistenteWebinar } from "@/components/webinars/AsistenteWebinar";
 import { guardarMetrica, guardarWebinar } from "@/components/webinars/guardar";
@@ -195,6 +195,8 @@ export default function Webinars() {
     [propios],
   );
   const cols = useColumnas("webinars", todas, POR_DEFECTO);
+  /* El ancho de cada columna lo ajusta quien mira (arrastrando el borde del título): sus títulos entran en una sola línea. */
+  const anchos = useAnchosPlanilla("webinars");
 
   const mostrar = (tipo: Tipo, n: number, decimales = 0): React.ReactNode => {
     if (tipo === "plata") return M(n, decimales);
@@ -434,15 +436,24 @@ export default function Webinars() {
               del webinar.
             </p>
           </div>
-          <ConfigColumnas
-            todas={todas} visibles={cols.visibles}
-            alternar={cols.alternar} mover={cols.mover} restaurar={cols.restaurar}
-          />
+          <div className="row" style={{ gap: "var(--space-2)", flexWrap: "wrap" }}>
+            <Button
+              variante="secondary" icono={<MoveHorizontal size={16} />} onClick={anchos.ajustarTodas}
+              title="Le da a cada columna lo justo para que su título entre en una sola línea. También se ajusta una sola arrastrando el borde de su título (doble click: la deja justa)."
+            >
+              Ajustar columnas
+            </Button>
+            {anchos.hay && <Button variante="ghost" onClick={anchos.restaurar}>Anchos originales</Button>}
+            <ConfigColumnas
+              todas={todas} visibles={cols.visibles}
+              alternar={cols.alternar} mover={cols.mover} restaurar={cols.restaurar}
+            />
+          </div>
         </div>
         <Planilla
           filas={filtrados}
           columnas={columnas}
-          etiqueta="Planilla de webinars"
+          etiqueta="Planilla de webinars" anchos={anchos}
           orden={tabla.orden} onOrden={tabla.onOrden}
           totalEtiqueta={<span>Total <span className="t-subtle t-num">· {filtrados.length}</span></span>}
           onError={(msg) => toast(msg, "err")}
