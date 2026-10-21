@@ -119,7 +119,11 @@ export function leerCuentaPandadoc(respuesta: unknown): { email: string; espacio
 
 /* ---------- Zoom ---------- */
 
-export interface ReunionZoom { id: string; tema: string; tipo: number | null }
+export interface ReunionZoom {
+  id: string; tema: string; tipo: number | null;
+  /* Si acepta inscriptos: sin registro activado (o recurrente sin horario fijo) Zoom no deja inscribir a nadie. */
+  inscripcion?: boolean | null;
+}
 
 /** Lee `GET /users/me/meetings`. El id va como texto: puede pasar los 10 dígitos. */
 export function leerReunionesZoom(respuesta: unknown): ReunionZoom[] {
@@ -128,4 +132,20 @@ export function leerReunionesZoom(respuesta: unknown): ReunionZoom[] {
     const id = typeof o.id === "number" || typeof o.id === "string" ? String(o.id) : "";
     return id ? [{ id, tema: texto(o.topic) || id, tipo: typeof o.type === "number" ? o.type : null }] : [];
   });
+}
+
+/** Lee `GET /meetings/{id}`: si la reunión acepta inscriptos. Zoom sólo inscribe en reuniones con registro
+    activado (approval_type 0 o 1; 2 es «sin registro»), y las recurrentes sin horario fijo (tipo 3) no lo tienen. */
+export function leerInscripcionZoom(respuesta: unknown): boolean | null {
+  const o = objeto(respuesta);
+  if (o.type === 3) return false;
+  const aprobacion = objeto(o.settings).approval_type;
+  return typeof aprobacion === "number" ? aprobacion === 0 || aprobacion === 1 : null;
+}
+
+/** El nombre de cada reunión para elegirla: con «sin inscripción» si no acepta inscriptos, y con el final del id
+    cuando hay dos con el mismo tema. */
+export function nombreDeReunion(m: ReunionZoom, todas: ReunionZoom[]): string {
+  const repetida = todas.filter((x) => x.tema === m.tema).length > 1;
+  return `${m.tema}${repetida ? ` · …${m.id.slice(-4)}` : ""}${m.inscripcion === false ? " (sin inscripción)" : ""}`;
 }

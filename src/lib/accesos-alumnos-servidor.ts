@@ -1,6 +1,6 @@
 import {
   cruzarProductosWisboo, leerBotTelegram, leerCuentaPandadoc, leerPlantillasPandadoc, leerProductosWisboo,
-  leerReunionesZoom, leerWebhookTelegram,
+  leerInscripcionZoom, leerReunionesZoom, leerWebhookTelegram,
   type EstadoConexion, type PlantillaPandadoc, type ProductoWisboo, type ReunionZoom, type WebhookTelegram,
 } from "./accesos-alumnos";
 import type { ModoContrato } from "./contratos";
@@ -145,6 +145,11 @@ export async function probarZoom(): Promise<PruebaZoom> {
       headers: { Authorization: `Bearer ${t.token}` },
     });
     if (r.status >= 400) return { estado: "error", error: `Zoom contestó ${r.status} al pedir las reuniones: revisá los permisos de la app.` };
-    return { estado: "ok", reuniones: leerReunionesZoom(r.json) };
+    /* El listado no dice si la reunión acepta inscriptos: se pregunta una por una (son pocas). */
+    const reuniones = await Promise.all(leerReunionesZoom(r.json).slice(0, 40).map(async (m) => {
+      const d = await pedirJson(`https://api.zoom.us/v2/meetings/${encodeURIComponent(m.id)}`, { headers: { Authorization: `Bearer ${t.token}` } }).catch(() => null);
+      return { ...m, inscripcion: d && d.status < 400 ? leerInscripcionZoom(d.json) : null };
+    }));
+    return { estado: "ok", reuniones };
   } catch (e) { return { estado: "error", error: fallo("Zoom", e) }; }
 }

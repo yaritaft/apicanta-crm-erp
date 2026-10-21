@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import { NextResponse } from "next/server";
 import { nubeServidor } from "@/lib/servidor";
 import { correoDelPedido, esDuenoDelPedido, exigirArea } from "@/lib/permisos-servidor";
-import { hayTelegram, telegram } from "@/lib/accesos-servidor";
+import { hayTelegram, revisarGruposDeTelegram, telegram } from "@/lib/accesos-servidor";
 import { leerWebhookTelegram, RUTA_WEBHOOK_TELEGRAM } from "@/lib/accesos-alumnos";
 
 /* ==================================================================
@@ -12,7 +12,8 @@ import { leerWebhookTelegram, RUTA_WEBHOOK_TELEGRAM } from "@/lib/accesos-alumno
    - "conectar": apunta los avisos del bot a /api/telegram/webhook con un secreto propio. Si el bot
      ya lo usa otra herramienta, sólo con { forzar: true } (esa deja de recibir).
    - "desconectar": deja de recibir avisos.
-   - "revisar": vuelve a preguntar, grupo por grupo, si el bot es admin y puede invitar y expulsar.
+   - "revisar": vuelve a preguntar, grupo por grupo, si el bot es admin y puede invitar y expulsar (y saca
+     los grupos que pasaron a supergrupo o de los que sacaron al bot).
    Conectar y desconectar es de los dueños.
    ================================================================== */
 
@@ -46,22 +47,8 @@ export async function POST(peticion: Request) {
   const b = (await peticion.json().catch(() => ({}))) as { accion?: string; forzar?: boolean };
 
   if (b.accion === "revisar") {
-    const me = await telegram("getMe");
-    const botId = (me.result as { id?: number } | undefined)?.id;
-    const grupos = ((await db.from("telegram_grupos").select('"chatId"')).data ?? []) as { chatId: string }[];
-    for (const g of grupos) {
-      const m = await telegram("getChatMember", { chat_id: g.chatId, user_id: botId });
-      const r = (m.result ?? {}) as { status?: string; can_invite_users?: boolean; can_restrict_members?: boolean };
-      const chat = await telegram("getChat", { chat_id: g.chatId });
-      const titulo = (chat.result as { title?: string } | undefined)?.title;
-      await db.from("telegram_grupos").update({
-        botEsAdmin: r.status === "administrator" || r.status === "creator",
-        puedeInvitar: r.status === "creator" || Boolean(r.can_invite_users),
-        puedeExpulsar: r.status === "creator" || Boolean(r.can_restrict_members),
-        ...(titulo ? { titulo } : {}), vistoEn: new Date().toISOString(),
-      }).eq("chatId", g.chatId);
-    }
-    return NextResponse.json({ ok: true, revisados: grupos.length });
+    /* La misma revisión que la pasada de cada hora: permisos, nombre, si sacaron al bot o si pasó a supergrupo. */
+    return NextResponse.json({ ok: true, revisados: await revisarGruposDeTelegram(db) });
   }
 
   if (!(await esDuenoDelPedido(peticion))) return NextResponse.json({ error: "Conectar el bot es de los dueños." }, { status: 403 });

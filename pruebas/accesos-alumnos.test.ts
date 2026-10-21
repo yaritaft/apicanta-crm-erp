@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   cruzarProductosWisboo, leerBotTelegram, leerCuentaPandadoc, leerPlantillasPandadoc, leerProductosWisboo,
-  leerReunionesZoom, leerWebhookTelegram, PRODUCTOS_WISBOO,
+  leerInscripcionZoom, leerReunionesZoom, leerWebhookTelegram, nombreDeReunion, PRODUCTOS_WISBOO,
 } from "@/lib/accesos-alumnos";
 import { clavePandadoc } from "@/lib/accesos-alumnos-servidor";
 import { cambiarGrupoEnProgramas } from "@/lib/programas";
@@ -109,4 +109,21 @@ test("Telegram: cuando un grupo pasa a supergrupo, el id nuevo reemplaza al viej
   /* Sin programas guardados (los de siempre) o sin ese grupo: no hay nada que guardar. */
   assert.equal(cambiarGrupoEnProgramas(null, "-1", "-2"), null);
   assert.equal(cambiarGrupoEnProgramas(programas, "-999", "-2"), null);
+});
+
+test("Zoom: si la reunión acepta inscriptos y cómo se llama para elegirla", () => {
+  assert.equal(leerInscripcionZoom({ type: 8, settings: { approval_type: 0 } }), true);
+  assert.equal(leerInscripcionZoom({ type: 2, settings: { approval_type: 1 } }), true);
+  assert.equal(leerInscripcionZoom({ type: 8, settings: { approval_type: 2 } }), false);
+  /* Recurrente sin horario fijo: Zoom no deja registro aunque diga otra cosa. */
+  assert.equal(leerInscripcionZoom({ type: 3, settings: { approval_type: 0 } }), false);
+  assert.equal(leerInscripcionZoom(null), null);
+  const todas = [
+    { id: "85046895266", tema: "Sesión de consultas IA", tipo: 8, inscripcion: true },
+    { id: "84967094264", tema: "Sesión de consultas IA", tipo: 3, inscripcion: false },
+    { id: "83219238566", tema: "Clases de marketing", tipo: 8, inscripcion: null },
+  ];
+  assert.equal(nombreDeReunion(todas[0], todas), "Sesión de consultas IA · …5266");
+  assert.equal(nombreDeReunion(todas[1], todas), "Sesión de consultas IA · …4264 (sin inscripción)");
+  assert.equal(nombreDeReunion(todas[2], todas), "Clases de marketing");
 });

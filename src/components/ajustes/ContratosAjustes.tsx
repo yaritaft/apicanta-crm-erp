@@ -10,7 +10,7 @@ import { acciones, useEstado } from "@/lib/store";
 import { useAcceso } from "@/lib/acceso";
 import { fecha, relativo } from "@/lib/format";
 import { PROGRAMAS_POR_DEFECTO, programasDe, type Programa } from "@/lib/programas";
-import { PRODUCTOS_WISBOO } from "@/lib/accesos-alumnos";
+import { nombreDeReunion, PRODUCTOS_WISBOO } from "@/lib/accesos-alumnos";
 import type { ConfigContratos } from "@/lib/types";
 import type { Pruebas } from "./AccesosAlumnosIntegracion";
 
@@ -298,7 +298,10 @@ function Programas({ pruebas }: { pruebas: Pruebas | null }) {
                   <Opciones titulo="Grupos de Telegram" valores={p.telegram} onAlternar={(v) => alternar(p.id, "telegram", v)}
                     opciones={grupos.map((g) => ({ id: g.chatId, nombre: g.titulo || g.chatId }))} vacio="Todavía no hay grupos vinculados (ver «Bot de Telegram»)." />
                   <Opciones titulo="Reuniones de Zoom" valores={p.zoom} onAlternar={(v) => alternar(p.id, "zoom", v)}
-                    opciones={reuniones.map((m) => ({ id: m.id, nombre: m.tema }))} vacio="Cuando se conecte Zoom aparecen sus reuniones." />
+                    opciones={reuniones.map((m) => ({ id: m.id, nombre: nombreDeReunion(m, reuniones) }))} vacio="Cuando se conecte Zoom aparecen sus reuniones." />
+                  {p.zoom.some((id) => reuniones.find((m) => m.id === id)?.inscripcion === false) && (
+                    <p className="t-sm" style={{ color: "var(--warning)" }}>Hay una reunión sin inscripción: en Zoom activale «Registro» (y que no sea recurrente sin horario fijo), si no, no se puede anotar a nadie.</p>
+                  )}
                   <Bonos bonos={p.bonos} onCambio={(bonos) => cambiar(p.id, { bonos })} />
                 </div>
               )}
