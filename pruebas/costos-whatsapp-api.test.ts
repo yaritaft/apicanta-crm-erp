@@ -163,12 +163,17 @@ test("sin costos de WhatsApp todo queda como estaba", () => {
 test("cuando Meta rechaza por permisos, el resultado dice qué permisos tiene el token y si la cuenta se puede leer", async () => {
   const pedir: PedirAMeta = async (ruta, p) => {
     if (ruta === "me/permissions") return { data: [{ permission: "ads_read", status: "granted" }, { permission: "business_management", status: "granted" }, { permission: "whatsapp_business_messaging", status: "declined" }] };
+    if (ruta.endsWith("/owned_whatsapp_business_accounts")) return { data: [{ id: "W1", name: "Apicanta" }, { id: "W2", name: "Apicanta Manychat" }] };
+    if (ruta.endsWith("/client_whatsapp_business_accounts")) return { data: [] };
     if (p.fields === "id,name") return { id: "W1", name: "Apicanta" };
     throw new ErrorMetaWhatsapp("(#200) You do not have permission to access this field.", 200);
   };
   const r = await sincronizarCostosWhatsapp(dbFalsa().db, pedir, ["W1"], "2026-10-01", "2026-10-10");
   assert.match(r[0].error ?? "", /whatsapp_business_management/);
-  assert.deepEqual(r[0].diagnostico, { permisos: ["ads_read", "business_management"], cuentaLeible: true, nombre: "Apicanta", faltaPermiso: true });
+  assert.deepEqual(r[0].diagnostico, {
+    permisos: ["ads_read", "business_management"], cuentaLeible: true, nombre: "Apicanta", faltaPermiso: true,
+    cuentasVisibles: [{ id: "W1", nombre: "Apicanta" }, { id: "W2", nombre: "Apicanta Manychat" }], cuentaEnLista: true,
+  });
 });
 
 test("el diagnóstico distingue «falta el permiso» de «la cuenta no está asignada» y no tira si no puede preguntar", async () => {
@@ -181,7 +186,11 @@ test("el diagnóstico distingue «falta el permiso» de «la cuenta no está asi
   assert.equal(d.cuentaLeible, false, "pero la cuenta no se lee: falta asignarla al usuario de sistema");
   assert.match(d.errorCuenta ?? "", /lack permission/);
   const nada = await diagnosticarWhatsapp(async () => { throw new Error("sin red"); }, "W1");
-  assert.deepEqual(nada, { permisos: null, cuentaLeible: false, errorCuenta: "sin red" });
+  assert.equal(nada.permisos, null);
+  assert.equal(nada.cuentaLeible, false);
+  assert.equal(nada.errorCuenta, "sin sin red".replace("sin sin", "sin"));
+  assert.match(nada.errorCuentasVisibles ?? "", /sin red/);
+  assert.equal(nada.cuentasVisibles, undefined);
 });
 
 test("un error que no es de permisos no dispara el diagnóstico", async () => {
@@ -189,4 +198,19 @@ test("un error que no es de permisos no dispara el diagnóstico", async () => {
   const r = await sincronizarCostosWhatsapp(dbFalsa().db, pedir, ["W1"], "2026-10-01", "2026-10-10");
   assert.ok(r[0].error);
   assert.equal(r[0].diagnostico, undefined);
+});
+
+test("si la cuenta pedida no está entre las que ve el token (el id puede ser otro), el diagnóstico lo dice y lista las que sí ve", async () => {
+  const pedir: PedirAMeta = async (ruta) => {
+    if (ruta === "me/permissions") return { data: [{ permission: "whatsapp_business_management", status: "granted" }] };
+    if (ruta.endsWith("/owned_whatsapp_business_accounts")) return { data: [{ id: "111", name: "Yari Taft" }, { id: "222", name: "Apicanta Manychat" }] };
+    if (ruta.endsWith("/client_whatsapp_business_accounts")) return { data: [{ id: "333", name: "De un socio" }] };
+    throw new ErrorMetaWhatsapp("(#100) Unsupported get request. Object with ID does not exist", 100);
+  };
+  const r = await sincronizarCostosWhatsapp(dbFalsa().db, pedir, ["517225948145267"], "2026-10-01", "2026-10-10");
+  assert.ok(r[0].error);
+  assert.equal(r[0].diagnostico?.faltaPermiso, false);
+  assert.equal(r[0].diagnostico?.cuentaLeible, false);
+  assert.equal(r[0].diagnostico?.cuentaEnLista, false);
+  assert.deepEqual(r[0].diagnostico?.cuentasVisibles?.map((x) => x.id), ["111", "222", "333"]);
 });

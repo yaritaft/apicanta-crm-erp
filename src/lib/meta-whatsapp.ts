@@ -19,6 +19,8 @@ import { GRAPH } from "./meta";
 
 /** La cuenta de WhatsApp Business que factura la API (la dio Juan Cruz desde el Business Manager). META_WABA_IDS pone otras, separadas por coma. */
 export const WABA_POR_DEFECTO = "517225948145267";
+/** El portfolio comercial (Yari Taft BM): para listar qué cuentas de WhatsApp ve el token cuando la que se pidió no se puede leer. */
+export const BUSINESS_POR_DEFECTO = "3322384087906994";
 
 export function cuentasDeWhatsapp(env: NodeJS.ProcessEnv = process.env): string[] {
   const crudo = env.META_WABA_IDS?.trim() || env.META_WABA_ID?.trim() || WABA_POR_DEFECTO;
@@ -169,6 +171,11 @@ export interface DiagnosticoWhatsapp {
   errorCuenta?: string;
   /** Si le falta justo el permiso que pide pricing_analytics. */
   faltaPermiso?: boolean;
+  /** Las cuentas de WhatsApp Business que el token ve en el portfolio (id y nombre): sirve para encontrar el id correcto de la cuenta. */
+  cuentasVisibles?: { id: string; nombre?: string }[];
+  errorCuentasVisibles?: string;
+  /** ¿La cuenta pedida está entre las que ve el token? */
+  cuentaEnLista?: boolean;
 }
 
 /** Por qué Meta rechaza: pregunta cuáles permisos tiene el token y si la cuenta se puede leer. Nunca tira. */
@@ -185,6 +192,16 @@ export async function diagnosticarWhatsapp(pedir: PedirAMeta, cuenta: string): P
     if (j?.name) d.nombre = j.name;
   } catch (e) { d.errorCuenta = e instanceof Error ? e.message : String(e); }
   if (permisos) d.faltaPermiso = !permisos.includes("whatsapp_business_management");
+  /* Qué cuentas de WhatsApp ve el token en el portfolio: propias y compartidas. */
+  const negocio = process.env.META_BUSINESS_ID?.trim() || BUSINESS_POR_DEFECTO;
+  const vistas = new Map<string, { id: string; nombre?: string }>();
+  for (const borde of ["owned_whatsapp_business_accounts", "client_whatsapp_business_accounts"]) {
+    try {
+      const j = (await pedir(`${negocio}/${borde}`, { fields: "id,name", limit: "100" })) as { data?: { id?: string; name?: string }[] } | null;
+      for (const x of j?.data ?? []) if (x.id) vistas.set(x.id, { id: x.id, ...(x.name ? { nombre: x.name } : {}) });
+    } catch (e) { d.errorCuentasVisibles = `${borde}: ${e instanceof Error ? e.message : String(e)}`.slice(0, 300); }
+  }
+  if (vistas.size) { d.cuentasVisibles = [...vistas.values()]; d.cuentaEnLista = vistas.has(cuenta); }
   return d;
 }
 
@@ -210,7 +227,7 @@ export async function sincronizarCostosWhatsapp(
       salida.push({ ...base, dias, total: Math.round(t.filas.reduce((a, f) => a + f.costo, 0) * 100) / 100, moneda: t.moneda,
         ...(t.monedaSupuesta ? { monedaSupuesta: true } : {}), descartados: t.descartados });
     } catch (e) {
-      const permisos = e instanceof ErrorMetaWhatsapp && (e.codigo === 10 || e.codigo === 200 || e.codigo === 190);
+      const permisos = e instanceof ErrorMetaWhatsapp && (e.codigo === 10 || e.codigo === 100 || e.codigo === 200 || e.codigo === 190);
       salida.push({ ...base, error: pistaDelError(e), ...(permisos ? { diagnostico: await diagnosticarWhatsapp(pedir, cuenta) } : {}) });
     }
   }
