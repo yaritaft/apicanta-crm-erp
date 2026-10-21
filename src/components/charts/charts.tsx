@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useId, useMemo, useRef, useState } from "react";
+import { conversionDelPaso, totalDelPaso } from "@/lib/embudo-pasos";
 
 /* Gráficos en SVG puro: sin dependencias, con tooltip y accesibles. */
 
@@ -216,19 +217,19 @@ export function BarChart({ datos, alto = 200, formato, color = C.brand }: {
 export function Funnel({ pasos, formato, onPaso }: {
   /* valor2: una segunda parte apilada en la misma barra, con color2 (por
      ejemplo, lo del vivo y lo de después). El paso vale valor + valor2. */
-  pasos: { etiqueta: string; valor: number; color?: string; valor2?: number; color2?: string }[];
+  pasos: { etiqueta: string; valor: number; color?: string; valor2?: number; color2?: string; sobre?: number }[];
   formato?: (n: number) => string;
   /* Con onPaso cada etapa se abre: quién está en ese escalón. */
   onPaso?: (i: number) => void;
 }) {
-  const total = (p: { valor: number; valor2?: number }) => p.valor + (p.valor2 ?? 0);
+  const total = totalDelPaso;
   const max = Math.max(...pasos.map(total), 1);
   const f = formato ?? ((n: number) => String(n));
   return (
     <div className="stack-3">
       {pasos.map((p, i) => {
-        const prev = i === 0 ? null : total(pasos[i - 1]);
-        const conv = prev && prev > 0 ? (total(p) / prev) * 100 : null;
+        /* El % es sobre el escalón anterior, salvo que el paso diga sobre cuál (`sobre`): las ventas se miden sobre las agendadas. */
+        const conv = conversionDelPaso(pasos, i);
         const clic = onPaso
           ? {
               role: "button", tabIndex: 0, className: "funnel-paso", "aria-label": `${p.etiqueta}: ver quiénes`,
@@ -247,7 +248,7 @@ export function Funnel({ pasos, formato, onPaso }: {
                 {p.valor2 !== undefined && p.valor2 > 0 && <span className="t-subtle"> · {f(p.valor)} + {f(p.valor2)}</span>}
               </span>
               {conv !== null && (
-                <span className="t-sm t-num" style={{ color: conv >= 40 ? "var(--success)" : conv >= 20 ? "var(--warning)" : "var(--ink-subtle)", minWidth: 52, textAlign: "right" }}>
+                <span className="t-sm t-num" title={p.sobre !== undefined ? `Sobre «${pasos[p.sobre].etiqueta}»` : undefined} style={{ color: conv >= 40 ? "var(--success)" : conv >= 20 ? "var(--warning)" : "var(--ink-subtle)", minWidth: 52, textAlign: "right" }}>
                   {conv.toFixed(0).replace(".", ",")}%
                 </span>
               )}

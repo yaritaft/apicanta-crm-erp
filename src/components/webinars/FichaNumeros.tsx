@@ -326,7 +326,9 @@ export function EmbudoDosModos({ d, titulo, sub, className, children }: {
             ? { etiqueta: "Llamadas agendadas", valor: d.llamadasVivo, color: COLOR_VIVO, valor2: d.llamadasPosterior, color2: COLOR_DESPUES }
             : { etiqueta: "Agendadas en el vivo", valor: d.llamadasVivo, color: COLOR_VIVO },
           { etiqueta: "Calificadas", valor: d.calificadas, color: "var(--brand-fill)" },
-          { etiqueta: "Ventas", valor: d.ventas, color: "var(--success)" },
+          /* Las ventas se miden sobre las agendadas (en vivo, o en vivo + después según el modo), no sobre las calificadas: la
+             calificación depende de qué contestó cada uno en el formulario y deja afuera a casi todos. */
+          { etiqueta: "Ventas", valor: d.ventas, color: "var(--success)", sobre: 3 },
         ]}
         formato={num}
       />
