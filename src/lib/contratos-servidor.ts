@@ -8,7 +8,7 @@ import {
   aBorrador, actualizarDocumento, anularDocumento, crearDocumento, detalleDocumento, detallePlantilla, enlaceDeFirma, ErrorPandadoc,
   esperarBorrador, mandarDocumento, pdfDocumento, recordarDocumento,
 } from "./pandadoc-servidor";
-import { darAccesos, type ResultadoAccesos } from "./accesos-servidor";
+import { cambiarFicha, darAccesos, type ResultadoAccesos } from "./accesos-servidor";
 import { programaPorId, programasDe, type Programa } from "./programas";
 import type { ConfigContratos } from "./types";
 
@@ -274,7 +274,8 @@ export async function alFirmar(db: SupabaseClient, c: Contrato): Promise<{ acces
   const alumnoId = await alumnoDelContrato(db, c);
   if (alumnoId && c.alumnoId !== alumnoId) await guardar(db, c.id, { alumnoId });
   if (alumnoId && c.modo === "produccion") {
-    await db.from("seguimiento_alumnos").update({ contratoFirmado: "Firmado", estadoContrato: "Firmado en PandaDoc" }).eq("alumnoId", alumnoId);
+    await cambiarFicha(db, alumnoId, { contratoFirmado: "Firmado", estadoContrato: "Firmado en PandaDoc" })
+      .catch((e) => console.error("[contratos] no se marcó la ficha", alumnoId, mensajeDe(e)));
     /* El servicio arranca cuando dice el contrato (puede ser una semana después del pago). */
     /* A las 12 de Argentina: «2026-10-26» a secas es la medianoche UTC, que en Argentina todavía es el 25. */
     const inicio = typeof c.datos.inicio === "string" && /^\d{4}-\d{2}-\d{2}$/.test(c.datos.inicio) ? `${c.datos.inicio}T15:00:00.000Z` : null;

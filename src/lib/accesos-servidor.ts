@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { partirNombre } from "./contratos";
 import { PRODUCTOS_WISBOO } from "./accesos-alumnos";
 import { cambiarGrupoEnProgramas, type Programa } from "./programas";
+import { idSeguimiento } from "./seguimiento";
 
 /* ==================================================================
    El onboarding y el outboarding del Loom de Yari, del lado del servidor.
@@ -395,12 +396,20 @@ export async function quitarAccesos(db: SupabaseClient, a: {
 /* ---------- La ficha de Customer Success ---------- */
 
 /** Lo que hizo la app queda también en las marcas de la ficha (las del Airtable de Lili): «Acceso» (Completos, Downsell o
-    Sin acceso) y las casillas de Wisboo y Zoom. Así nadie ve «Falta» en un alumno que ya tiene todo. Sin ficha, no hace nada. */
+    Sin acceso) y las casillas de Wisboo y Zoom. Así nadie ve «Falta» en un alumno que ya tiene todo. */
 export async function marcarEnLaFicha(db: SupabaseClient, alumnoId: string): Promise<void> {
-  try {
-    const m = marcasDeLaFicha(await accesosDe(db, alumnoId));
-    await db.from("seguimiento_alumnos").update(m).eq("alumnoId", alumnoId);
-  } catch (e) { console.error("[accesos] no se marcó la ficha", alumnoId, e instanceof Error ? e.message : String(e)); }
+  try { await cambiarFicha(db, alumnoId, marcasDeLaFicha(await accesosDe(db, alumnoId))); }
+  catch (e) { console.error("[accesos] no se marcó la ficha", alumnoId, e instanceof Error ? e.message : String(e)); }
+}
+
+/** Cambia la ficha de Customer Success del alumno y, si todavía no tenía (un alumno recién vendido), la crea con el mismo id
+    que le da la app (seg_<alumno>): el resto de la ficha nace vacío, con los valores por defecto de la tabla. */
+export async function cambiarFicha(db: SupabaseClient, alumnoId: string, cambios: Record<string, unknown>): Promise<void> {
+  const r = await db.from("seguimiento_alumnos").update(cambios).eq("alumnoId", alumnoId).select("id");
+  if (r.error) throw new Error(r.error.message);
+  if ((r.data ?? []).length > 0) return;
+  const n = await db.from("seguimiento_alumnos").insert({ id: idSeguimiento(alumnoId), alumnoId, ...cambios, actualizadoPor: "Apicanta" });
+  if (n.error && !/duplicate key/i.test(n.error.message)) throw new Error(n.error.message);
 }
 
 export function marcasDeLaFicha(accesos: Pick<Acceso, "plataforma" | "estado" | "programa">[]): { acceso: string; accesoWibo: boolean; accesoZoom: boolean } {
