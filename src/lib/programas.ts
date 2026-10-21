@@ -70,7 +70,8 @@ export const PROGRAMAS_POR_DEFECTO: Programa[] = [
   },
   {
     id: "downsell", nombre: "Downsell", productos: ["prod_downsell"],
-    plantillaId: "4Q4dHfgJ3kQRHZRA6ECap3", plantillaNombre: "Contrato de acceso al contenido grabado",
+    /* La «- XXXXX» es la que usa Lili y la que Manu dejó con las variables (21/10); la otra está vieja. */
+    plantillaId: "7uUS5z4i2f3FAPXwuNHkUC", plantillaNombre: "Contrato de acceso al contenido grabado - XXXXX",
     wisboo: [WISBOO.hackearIt, WISBOO.hackearAi], telegram: [], zoom: [], bonos: [], activo: true,
   },
 ];
