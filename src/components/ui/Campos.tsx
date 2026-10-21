@@ -130,8 +130,9 @@ export function Desplegable({
 }) {
   const lista = useMemo<OpcionSelect[]>(() => {
     const xs = opciones.map((o) => (typeof o === "string" ? { valor: o, texto: o } : o));
-    /* Como en el nativo, el placeholder es una opción más: la que vacía. */
-    return placeholder ? [{ valor: "", texto: placeholder }, ...xs] : xs;
+    /* Como en el nativo, el placeholder es una opción más: la que vacía. Si la lista ya trae su opción vacía
+       («Sin contrato»), no se agrega otra: salía dos veces. */
+    return placeholder && !xs.some((x) => x.valor === "") ? [{ valor: "", texto: placeholder }, ...xs] : xs;
   }, [opciones, placeholder]);
   const valor = value === undefined || value === null ? "" : String(value);
   const elegida = lista.find((o) => o.valor === valor);
