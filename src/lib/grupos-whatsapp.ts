@@ -13,6 +13,7 @@ import type { GrupoWhatsapp, MiembroWhatsapp } from "./whatsapp";
 
    Lo que dice el lector (servicios/whatsapp-lector) de cada grupo:
    - Integrantes: cuántos están adentro hoy (con teléfono).
+   - En WhatsApp: los de arriba más los que tienen el número oculto: es la cifra que cuenta WhatsApp en la información del grupo.
    - Entraron: todos los que pasaron por el grupo = los que están + los que salieron.
    - Salieron: los que estuvieron y ya no están.
    - Retención: los que siguen adentro sobre todos los que entraron.
@@ -33,6 +34,8 @@ export interface FilaGrupo {
   webinar: string;
   /** Adentro hoy, con teléfono. */
   dentro: number;
+  /** Adentro hoy, con teléfono y sin él (número oculto): lo que dice WhatsApp en la información del grupo. */
+  total: number;
   /** Los que pasaron por el grupo: los que están más los que salieron. */
   entraron: number;
   salieron: number;
@@ -65,7 +68,7 @@ export function filasDeGrupos(grupos: readonly GrupoWhatsapp[], miembros: readon
     const entraron = c.dentro + c.salieron;
     return {
       id: g.id, nombre: g.nombre || "Grupo sin nombre", webinarId: g.webinarId, webinar: textoDeWebinar(g.webinarId ? porWebinar.get(g.webinarId) : undefined),
-      dentro: c.dentro, entraron, salieron: c.salieron, retencion: entraron > 0 ? (c.dentro / entraron) * 100 : null,
+      dentro: c.dentro, total: c.dentro + g.sinTelefono, entraron, salieron: c.salieron, retencion: entraron > 0 ? (c.dentro / entraron) * 100 : null,
       sinTelefono: g.sinTelefono, ultimaFoto: g.ultimaFoto,
     };
   });
@@ -76,6 +79,7 @@ export const COLUMNAS_GRUPOS: ColumnasDe<FilaGrupo> = {
   nombre: { clave: "nombre", titulo: "Grupo", valores: (f) => [f.nombre], orden: (f) => f.nombre.toLowerCase() },
   webinar: { clave: "webinar", titulo: "Webinar", valores: (f) => [f.webinar], orden: (f) => (f.webinarId ? f.webinar.split(" · ")[0].split("/").reverse().join("-") : "") },
   dentro: { clave: "dentro", titulo: "Integrantes", numerica: true, valores: (f) => [String(f.dentro)], orden: (f) => f.dentro },
+  total: { clave: "total", titulo: "En WhatsApp", numerica: true, valores: (f) => [String(f.total)], orden: (f) => f.total },
   entraron: { clave: "entraron", titulo: "Entraron", numerica: true, valores: (f) => [String(f.entraron)], orden: (f) => f.entraron },
   salieron: { clave: "salieron", titulo: "Salieron", numerica: true, valores: (f) => [String(f.salieron)], orden: (f) => f.salieron },
   retencion: { clave: "retencion", titulo: "Retención", numerica: true, valores: (f) => [f.retencion === null ? VACIAS : pct(f.retencion, 0)], orden: (f) => f.retencion ?? "" },
@@ -87,16 +91,16 @@ export const ORDEN_GRUPOS_POR_DEFECTO = [{ clave: "webinar", desc: true }, { cla
 /** Los totales del pie de la tabla de grupos, sobre lo que se ve. */
 export function totalesDeGrupos(filas: readonly FilaGrupo[]) {
   const t = { grupos: filas.length, webinars: new Set(filas.filter((f) => f.webinarId).map((f) => f.webinarId)).size, sinWebinar: filas.filter((f) => !f.webinarId).length,
-    dentro: 0, entraron: 0, salieron: 0, sinTelefono: 0, retencion: null as number | null };
-  for (const f of filas) { t.dentro += f.dentro; t.entraron += f.entraron; t.salieron += f.salieron; t.sinTelefono += f.sinTelefono; }
+    dentro: 0, total: 0, entraron: 0, salieron: 0, sinTelefono: 0, retencion: null as number | null };
+  for (const f of filas) { t.dentro += f.dentro; t.total += f.total; t.entraron += f.entraron; t.salieron += f.salieron; t.sinTelefono += f.sinTelefono; }
   t.retencion = t.entraron > 0 ? (t.dentro / t.entraron) * 100 : null;
   return t;
 }
 
 export function csvDeGrupos(filas: readonly FilaGrupo[]): string {
   return csvDe(
-    ["Grupo", "Webinar", "Integrantes", "Entraron", "Salieron", "Retención %", "Sin teléfono", "Última lectura"],
-    filas.map((f) => [f.nombre, f.webinar, f.dentro, f.entraron, f.salieron, f.retencion === null ? "" : Math.round(f.retencion), f.sinTelefono, f.ultimaFoto ? diaDeNegocio(f.ultimaFoto) : ""]),
+    ["Grupo", "Webinar", "Integrantes", "En WhatsApp", "Entraron", "Salieron", "Retención %", "Sin teléfono", "Última lectura"],
+    filas.map((f) => [f.nombre, f.webinar, f.dentro, f.total, f.entraron, f.salieron, f.retencion === null ? "" : Math.round(f.retencion), f.sinTelefono, f.ultimaFoto ? diaDeNegocio(f.ultimaFoto) : ""]),
   );
 }
 

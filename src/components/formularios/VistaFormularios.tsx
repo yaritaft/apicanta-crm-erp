@@ -362,7 +362,7 @@ export function VistaFormularios() {
           ) : (
             <>
               <div className="crm-t__filtros">
-                <span className="t-label fm-etiqueta" title="Lo que el equipo marca a mano en las columnas «Grupo de WhatsApp» y «Contactado»">Marcado por el equipo</span>
+                <span className="t-label fm-etiqueta" title="Lo que el equipo marcó a mano en las columnas «Grupo de WhatsApp» y «Contactado» de la tabla. No es lo que ve WhatsApp: eso está arriba, en «Grupo de WhatsApp». Pueden no coincidir (por ejemplo, 150 «No unidos» a mano y 372 que no se ven en el grupo) hasta que se ponen al día con «Marcar como Unido».">Marcado a mano en la tabla</span>
                 {MARCAS.filter((m) => m.valor).map((m) => (
                   <Chip key={m.valor} activo={v.marca === m.valor} title={m.ayuda}
                     onClick={() => cambiar({ marca: v.marca === m.valor ? null : m.valor }, { pag: null })}

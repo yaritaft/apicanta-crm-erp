@@ -33,6 +33,7 @@ test("cada grupo: cuántos hay hoy, cuántos entraron (los de hoy más los que s
 test("los totales del pie: la retención es la de todos juntos, no el promedio de los porcentajes", () => {
   const t = totalesDeGrupos(filasDeGrupos(grupos, miembros, webinars));
   assert.deepEqual([t.grupos, t.webinars, t.sinWebinar, t.dentro, t.entraron, t.salieron, t.sinTelefono], [4, 1, 2, 4, 7, 3, 3]);
+  assert.equal(t.total, t.dentro + t.sinTelefono, "«En WhatsApp»: los que se ven con teléfono más los de número oculto");
   assert.equal(Math.round(t.retencion!), 57, "4 de 7");
   assert.equal(totalesDeGrupos([]).retencion, null);
 });
@@ -44,8 +45,8 @@ test("filtrar y ordenar los grupos como en Excel, y el CSV de lo que se ve", () 
   assert.deepEqual(ordenarFilas(COLUMNAS_GRUPOS, filas, [{ clave: "dentro", desc: true }]).map((x) => x.id).slice(0, 2), ["g1", "g2"]);
   assert.deepEqual(ordenarFilas(COLUMNAS_GRUPOS, filas, ORDEN_GRUPOS_POR_DEFECTO).map((x) => x.id), ["g1", "g2", "g4", "g3"], "los del webinar más nuevo primero y los sin webinar al final");
   const csv = csvDeGrupos(filas.slice(0, 1)).split("\r\n");
-  assert.equal(csv[0], '"Grupo","Webinar","Integrantes","Entraron","Salieron","Retención %","Sin teléfono","Última lectura"');
-  assert.equal(csv[1], '"Taller Online 21/10/26 #1","21/10/2026","3","4","1","75","3","2026-10-20"', "la fecha es la del día del negocio (Argentina)");
+  assert.equal(csv[0], '"Grupo","Webinar","Integrantes","En WhatsApp","Entraron","Salieron","Retención %","Sin teléfono","Última lectura"');
+  assert.equal(csv[1], '"Taller Online 21/10/26 #1","21/10/2026","3","6","4","1","75","3","2026-10-20"', "la fecha es la del día del negocio (Argentina)");
 });
 
 test("los integrantes: estado, a qué grupo y webinar pertenecen, y el nombre si el teléfono es de alguien que se anotó", () => {
@@ -87,4 +88,13 @@ test("el CSV protege las comillas y no deja que Excel ejecute una fórmula", () 
   assert.equal(t[1], '"dijo ""hola""","\'=SUMA(1;2)"');
   assert.equal(t[2], '"+5491155551111","-3"', "un teléfono con «+» o un número negativo no se tocan");
   assert.equal(t[3], '"","línea\ncon salto"');
+});
+
+test("«En WhatsApp» de cada grupo es lo que cuenta WhatsApp: los que se ven con teléfono más los de número oculto", () => {
+  const f = Object.fromEntries(filasDeGrupos(grupos, miembros, webinars).map((x) => [x.id, x]));
+  /* El #1 del 21/10 de producción: 766 con teléfono y 98 ocultos = 864, no 766. */
+  assert.equal(f.g1.total, f.g1.dentro + f.g1.sinTelefono);
+  assert.ok(f.g1.total > f.g1.dentro, "el grupo de prueba tiene integrantes ocultos");
+  const g = filasDeGrupos([{ id: "a", nombre: "Taller", webinarId: null, miembros: 766, sinTelefono: 98, ultimaFoto: null }], [], [])[0];
+  assert.equal(g.total, 98, "sin filas de miembros no hay teléfonos que contar: sólo se suman los ocultos");
 });

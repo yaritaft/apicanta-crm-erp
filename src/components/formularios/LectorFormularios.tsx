@@ -201,7 +201,17 @@ export function BarraDelLector({ lector, registros, visibles, filtro, onFiltro, 
                 ejemplo="Los teléfonos se comparan sin importar cómo los escribió cada uno: «011 15 5555-1234» y «+54 9 11 5555-1234» son el mismo. Quien entró con otro número, o lo tiene oculto, aparece como que todavía no entró."
               />
             </h3>
-            <p className="wa-panel__grupos">{grupos.map((g) => `${g.nombre || "Grupo"} (${num(g.miembros)})`).join(" · ")}</p>
+            {/* El total que cuenta WhatsApp: con teléfono y con el número oculto (la cifra de «Info. del grupo» en el teléfono). */}
+            <p className="wa-panel__grupos">
+              {grupos.map((g, i) => (
+                <React.Fragment key={g.id}>
+                  {i > 0 && " · "}
+                  <span title={`${num(g.miembros)} con teléfono + ${num(g.sinTelefono)} con el número oculto: ${num(g.miembros + g.sinTelefono)} en total, como cuenta WhatsApp`}>
+                    {g.nombre || "Grupo"} ({num(g.miembros + g.sinTelefono)})
+                  </span>
+                </React.Fragment>
+              ))}
+            </p>
           </div>
         </div>
         <span className={`wa-panel__conexion wa-panel__conexion--${estado.tono}`}>
@@ -221,17 +231,17 @@ export function BarraDelLector({ lector, registros, visibles, filtro, onFiltro, 
         <button type="button" className="wa-cifra wa-cifra--falta" aria-pressed={filtro === "fuera"} onClick={() => alternar("fuera")} title="Ver sólo a los que todavía no entraron">
           <span className="wa-cifra__num">{num(r.fuera)}</span>
           <span className="wa-cifra__txt">todavía no entraron</span>
-          <span className="wa-cifra__sub">a ellos hay que escribirles</span>
+          <span className="wa-cifra__sub">según WhatsApp · a ellos hay que escribirles</span>
         </button>
         <button type="button" className="wa-cifra" aria-pressed={filtro === "sin-telefono"} onClick={() => alternar("sin-telefono")} title="Ver sólo a los que no dejaron un teléfono que se entienda">
           <span className="wa-cifra__num">{num(r.sinTelefono)}</span>
           <span className="wa-cifra__txt">sin teléfono</span>
           <span className="wa-cifra__sub">no se puede saber si entraron</span>
         </button>
-        <div className="wa-cifra wa-cifra--fija" title="La columna «Grupo de WhatsApp» de la tabla: la marca el equipo a mano.">
+        <div className="wa-cifra wa-cifra--fija" title="La columna «Grupo de WhatsApp» de la tabla: la marca el equipo a mano. Puede no coincidir con lo que ve WhatsApp (los números de arriba); «Marcar como Unido» las pone al día.">
           <span className="wa-cifra__num">{num(marcadosAMano)}</span>
           <span className="wa-cifra__txt">marcados «Unido» a mano</span>
-          <span className="wa-cifra__sub">por el equipo, en la tabla</span>
+          <span className="wa-cifra__sub">por el equipo, en la tabla: no es lo que ve WhatsApp</span>
         </div>
       </div>
       <div className="wa-panel__progreso" role="img" aria-label={`${pct(pctDentro, 0)} ya están en el grupo`}><span style={{ width: `${Math.min(100, pctDentro)}%` }} /></div>

@@ -4,7 +4,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { Download, MessageCircle, RefreshCw, Search } from "lucide-react";
 import { Badge, Button, Card, Chip, Empty, Input, Tabs } from "@/components/ui/ui";
 import { DataTable, type Columna } from "@/components/ui/DataTable";
-import { ConfigColumnas, useColumnas, type DefColumna } from "@/components/ui/ColumnasConfig";
+import { ConfigColumnas, useColumnas, type ColumnasSumadas, type DefColumna } from "@/components/ui/ColumnasConfig";
 import { CopiarLink } from "@/components/ui/Filtros";
 import { EncabezadoExcel, PastillasExcel, useFiltrosExcel } from "@/components/ui/FiltrosExcel";
 import { VistasGuardadas } from "@/components/ui/VistasGuardadas";
@@ -43,6 +43,8 @@ type Seccion = "grupos" | "integrantes";
 const DEFS_GRUPOS: DefColumna[] = Object.values(COLUMNAS_GRUPOS).map((c) => ({ clave: c.clave, titulo: c.titulo, fija: c.clave === "nombre" }));
 const DEFS_INTEGRANTES: DefColumna[] = Object.values(COLUMNAS_INTEGRANTES).map((c) => ({ clave: c.clave, titulo: c.titulo, fija: c.clave === "telefono" }));
 const TODAS_GRUPOS = Object.keys(COLUMNAS_GRUPOS);
+/* «En WhatsApp» se sumó después: quien ya guardó sus columnas la recibe una vez, junto a «Integrantes» (si la saca, no vuelve). */
+const COLUMNAS_SUMADAS_GRUPOS: ColumnasSumadas[] = [{ id: "total-en-whatsapp", despuesDe: "dentro", claves: ["total"] }];
 const TODAS_INTEGRANTES = Object.keys(COLUMNAS_INTEGRANTES);
 
 /** Un total al pie de una columna: la etiqueta en chico y el número en grande, como el pie de Formularios. */
@@ -117,7 +119,7 @@ function TablaGrupos({ datos, cargando, onRecargar, tabs, pagina, onPagina }: Pr
   const toast = useToast();
   const escribir = useEscribirURL();
   const [q, setQ] = useBusquedaURL("q", ["pag"]);
-  const cols = useColumnas("grupos-wpp", DEFS_GRUPOS, TODAS_GRUPOS);
+  const cols = useColumnas("grupos-wpp", DEFS_GRUPOS, TODAS_GRUPOS, undefined, COLUMNAS_SUMADAS_GRUPOS);
   const webinars = useMemo(() => e.webinars.map((w) => ({ id: w.id, titulo: w.titulo, fecha: w.fecha })), [e.webinars]);
   const todas = useMemo(() => filasDeGrupos(datos.grupos, datos.miembros, webinars), [datos, webinars]);
   const buscadas = useMemo(() => {
@@ -137,6 +139,7 @@ function TablaGrupos({ datos, cargando, onRecargar, tabs, pagina, onPagina }: Pr
       pie: <Pie etiqueta="Webinars" valor={num(tot.webinars)} sub={tot.sinWebinar ? `${num(tot.sinWebinar)} grupos sin webinar` : undefined} />,
     },
     dentro: { celda: (f) => num(f.dentro), tipo: "num", pie: <Pie etiqueta="Hay" valor={num(tot.dentro)} /> },
+    total: { celda: (f) => <span title={`${num(f.dentro)} con teléfono + ${num(f.sinTelefono)} con el número oculto`}>{num(f.total)}</span>, tipo: "num", pie: <Pie etiqueta="En WhatsApp" valor={num(tot.total)} /> },
     entraron: { celda: (f) => num(f.entraron), tipo: "num", pie: <Pie etiqueta="Entraron" valor={num(tot.entraron)} /> },
     salieron: { celda: (f) => num(f.salieron), tipo: "num", pie: <Pie etiqueta="Salieron" valor={num(tot.salieron)} /> },
     retencion: {
@@ -189,7 +192,7 @@ function TablaGrupos({ datos, cargando, onRecargar, tabs, pagina, onPagina }: Pr
         vacio={<Empty icono={<Search size={22} />} titulo="Ningún grupo coincide" texto="Probá sacando algún filtro." accion={<Button onClick={() => { setQ(""); x.limpiarFiltros(); }}>Limpiar todo</Button>} />}
       />
       <p className="t-sm t-subtle gw-nota">
-        <strong>Integrantes</strong>: los que están hoy. <strong>Entraron</strong>: los que están más los que salieron. <strong>Retención</strong>: los que siguen adentro sobre los que entraron.
+        <strong>Integrantes</strong>: los que están hoy y se ve su teléfono. <strong>En WhatsApp</strong>: esos más los que tienen el número oculto, que es lo que cuenta WhatsApp en la información del grupo. <strong>Entraron</strong>: los que están más los que salieron. <strong>Retención</strong>: los que siguen adentro sobre los que entraron.
         Sólo cuenta desde que el lector mira cada grupo, y <strong>Sin teléfono</strong> son integrantes que WhatsApp muestra sin número: no se pueden listar.
       </p>
     </>
