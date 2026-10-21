@@ -24,6 +24,10 @@
     {
       "path": "/api/cron/cruce-formularios",
       "schedule": "5,35 * * * *"
+    },
+    {
+      "path": "/api/cron/contratos",
+      "schedule": "25 * * * *"
     }
   ]
 }

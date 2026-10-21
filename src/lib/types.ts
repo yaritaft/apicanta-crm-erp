@@ -2,6 +2,8 @@
    Todo lo que el negocio necesita seguir: leads, pipeline, agenda, webinars,
    alumnos, marketing, finanzas y metas. Cada entidad es editable y extensible. */
 
+import type { Programa } from "./programas";
+
 export type ID = string;
 
 export type Moneda = "USD" | "ARS";
@@ -643,6 +645,23 @@ export interface Ajustes {
   crm?: ConfigCrm;
   /* Customer Success: cadencias y reintentos del seguimiento de alumnos. */
   seguimiento?: ConfigSeguimiento;
+  /* Los programas (lib/programas.ts): qué productos de la venta son cada uno, su
+     plantilla de PandaDoc y los accesos que se dan al firmar. Sin nada, los de siempre. */
+  programas?: Programa[];
+  /* Los contratos de PandaDoc desde la venta (lib/contratos.ts). */
+  contratos?: ConfigContratos;
+}
+
+/* Cómo están los contratos desde la carga de la venta:
+   - apagado: no aparece el paso ni el botón (como hasta el 20/10).
+   - prueba: sólo los dueños los ven, y cada contrato sale con la clave sandbox de
+     PandaDoc (sólo a mails del dominio de la cuenta): para probar de punta a punta.
+   - encendido: todo el equipo, con la clave de producción. */
+export interface ConfigContratos {
+  estado: "apagado" | "prueba" | "encendido";
+  /* El asunto y el mensaje del mail de PandaDoc. {nombre} y {programa} se reemplazan. */
+  asunto?: string;
+  mensaje?: string;
 }
 
 /* ---------- CRM (Booking Calls) ---------- */

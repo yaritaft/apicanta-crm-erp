@@ -3,6 +3,8 @@ import {
   leerReunionesZoom, leerWebhookTelegram,
   type EstadoConexion, type PlantillaPandadoc, type ProductoWisboo, type ReunionZoom, type WebhookTelegram,
 } from "./accesos-alumnos";
+import type { ModoContrato } from "./contratos";
+import { clavePandadoc } from "./pandadoc-servidor";
 
 /* ==================================================================
    Accesos de alumnos del lado del servidor: las claves de Telegram,
@@ -92,15 +94,8 @@ export async function probarWisboo(): Promise<PruebaWisboo> {
 
 /* ---------- PandaDoc ---------- */
 
-export type ModoPandadoc = "produccion" | "prueba";
-
-/** La clave que corresponde a este entorno: producción sólo en la app publicada. */
-export function clavePandadoc(): { clave: string; modo: ModoPandadoc } | null {
-  if (process.env.VERCEL_ENV === "production") {
-    return process.env.PANDADOC_API_KEY ? { clave: process.env.PANDADOC_API_KEY, modo: "produccion" } : null;
-  }
-  return process.env.PANDADOC_SANDBOX_KEY ? { clave: process.env.PANDADOC_SANDBOX_KEY, modo: "prueba" } : null;
-}
+export type ModoPandadoc = ModoContrato;
+export { clavePandadoc };
 
 export interface PruebaPandadoc {
   estado: EstadoConexion; error?: string; modo?: ModoPandadoc;

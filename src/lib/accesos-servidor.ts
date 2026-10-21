@@ -1,0 +1,334 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
+import { partirNombre } from "./contratos";
+import { PRODUCTOS_WISBOO } from "./accesos-alumnos";
+import type { Programa } from "./programas";
+
+/* ==================================================================
+   El onboarding y el outboarding del Loom de Yari, del lado del servidor.
+
+   darAccesos: al firmar el contrato (o a mano, desde la ficha) se le da al
+   alumno lo de su programa:
+   - Wisboo: se lo busca por mail (o se lo crea) y se le «regala» cada
+     curso (el cobro va por otra pasarela). Un curso que ya tenía cuenta
+     como dado.
+   - Telegram: un bot no puede meter a nadie en un grupo por su número.
+     Se genera un link de invitación de UN SOLO USO por grupo, con el nombre
+     del alumno; cuando entra, el aviso del bot (api/telegram/webhook) anota
+     su usuario, y con eso el outboarding lo puede sacar.
+   - Zoom: se lo inscribe a cada reunión (hace falta el registro activado).
+     Queda listo para cuando se cargue la app de Zoom.
+   Cada acceso queda en `accesos_alumno` con lo que hace falta para sacarlo.
+   Es idempotente: correrlo dos veces no da nada dos veces.
+
+   quitarAccesos (outboarding, siempre a mano): todo o algo puntual. Wisboo
+   no deja borrar al alumno por API: se le quita el acceso a cada curso.
+   ================================================================== */
+
+const ESPERA_MS = 15_000;
+
+export interface Persona { nombre: string; email: string; telefono?: string }
+
+export type Plataforma = "wisboo" | "telegram" | "zoom";
+export type EstadoAcceso = "pendiente" | "dado" | "entro" | "fallo" | "quitado";
+
+export interface Acceso {
+  id: string; alumnoId: string; contratoId: string | null; programa: string;
+  plataforma: Plataforma; recurso: string; recursoNombre: string; estado: EstadoAcceso;
+  externo: Record<string, unknown>; error: string | null;
+  dadoEn: string | null; quitadoEn: string | null; origen: "automatico" | "manual"; quien: string;
+  creadoEn?: string; actualizadoEn?: string;
+}
+
+export const idDeAcceso = (alumnoId: string, plataforma: Plataforma, recurso: string) =>
+  `acc_${alumnoId}_${plataforma}_${recurso}`.replace(/[^\w-]/g, "_").slice(0, 180);
+
+async function pedir(url: string, init: RequestInit = {}): Promise<{ status: number; json: Record<string, unknown> | null }> {
+  const r = await fetch(url, { ...init, cache: "no-store", signal: AbortSignal.timeout(ESPERA_MS) });
+  const json = (await r.json().catch(() => null)) as Record<string, unknown> | null;
+  return { status: r.status, json };
+}
+
+/* Un error de red puede traer la dirección (la de Telegram lleva el token): hacia afuera, un texto propio. */
+function textoDeFallo(servicio: string, e: unknown): string {
+  if (e instanceof Error && (e.name === "TimeoutError" || e.name === "AbortError")) return `${servicio} no contestó a tiempo.`;
+  return e instanceof ErrorAcceso ? e.message : `No se pudo hablar con ${servicio}.`;
+}
+class ErrorAcceso extends Error {}
+
+/* ---------- Wisboo ---------- */
+
+export const hayWisboo = () => Boolean(process.env.WISBOO_API_KEY && process.env.WISBOO_STORE_ID);
+const wisbooBase = () => `https://api.wisboo.com/v1/stores/${encodeURIComponent(process.env.WISBOO_STORE_ID ?? "")}`;
+const wisbooCabeza = (extra: Record<string, string> = {}) => ({ Authorization: `Bearer ${process.env.WISBOO_API_KEY}`, "Content-Type": "application/json", ...extra });
+
+async function usuarioWisboo(p: Persona): Promise<string> {
+  const email = p.email.trim().toLowerCase();
+  const busca = await pedir(`${wisbooBase()}/users?email=${encodeURIComponent(email)}&size=5`, { headers: wisbooCabeza() });
+  if (busca.status === 401) throw new ErrorAcceso("Wisboo no acepta la clave.");
+  const ya = (Array.isArray(busca.json?.data) ? busca.json!.data : []) as { id?: string; email?: string }[];
+  const encontrado = ya.find((u) => (u.email ?? "").toLowerCase() === email);
+  if (encontrado?.id) return encontrado.id;
+  const { first_name, last_name } = partirNombre(p.nombre);
+  const crea = await pedir(`${wisbooBase()}/users`, {
+    method: "POST", headers: wisbooCabeza({ "X-Idempotency-Key": `apicanta-usuario-${email}` }),
+    body: JSON.stringify({ email, name: first_name || p.nombre, last_name: last_name || "-", ...(p.telefono ? { phone: p.telefono } : {}) }),
+  });
+  const id = typeof crea.json?.id === "string" ? crea.json.id : null;
+  if (!id) throw new ErrorAcceso(`Wisboo no creó el usuario (contestó ${crea.status}).`);
+  return id;
+}
+
+async function accesoWisbooExistente(usuarioId: string, productoId: string): Promise<string | null> {
+  const r = await pedir(`${wisbooBase()}/product_accesses?user_id[]=${encodeURIComponent(usuarioId)}&product_id[]=${encodeURIComponent(productoId)}&size=5`, { headers: wisbooCabeza() });
+  const fila = (Array.isArray(r.json?.data) ? r.json!.data : [])[0] as { id?: string } | undefined;
+  return fila?.id ?? null;
+}
+
+async function darCursoWisboo(usuarioId: string, productoId: string): Promise<{ accesoId: string | null; yaLoTenia: boolean }> {
+  const r = await pedir(`${wisbooBase()}/product_accesses`, {
+    method: "POST", headers: wisbooCabeza({ "X-Idempotency-Key": `apicanta-acceso-${usuarioId}-${productoId}` }),
+    body: JSON.stringify({ user_id: usuarioId, product_id: productoId }),
+  });
+  if (typeof r.json?.id === "string") return { accesoId: r.json.id, yaLoTenia: false };
+  /* 422 DUPLICATE_ERROR: ya lo tenía. Se busca su acceso para poder sacarlo después. */
+  if (r.status === 422) return { accesoId: await accesoWisbooExistente(usuarioId, productoId), yaLoTenia: true };
+  if (r.status === 404) throw new ErrorAcceso("Wisboo no encuentra ese curso.");
+  throw new ErrorAcceso(`Wisboo no dio el acceso (contestó ${r.status}).`);
+}
+
+export async function linkMagicoWisboo(usuarioId: string): Promise<{ link: string; vence: string | null } | null> {
+  if (!hayWisboo()) return null;
+  try {
+    const r = await pedir(`${wisbooBase()}/users/${encodeURIComponent(usuarioId)}/magic_links`, { method: "POST", headers: wisbooCabeza() });
+    return typeof r.json?.link === "string" ? { link: r.json.link, vence: typeof r.json.expires_at === "string" ? r.json.expires_at : null } : null;
+  } catch { return null; }
+}
+
+/* ---------- Telegram ---------- */
+
+export const hayTelegram = () => Boolean(process.env.TELEGRAM_BOT_TOKEN);
+
+export async function telegram(metodo: string, cuerpo: Record<string, unknown> = {}): Promise<{ ok: boolean; result?: unknown; description?: string }> {
+  const r = await fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/${metodo}`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(cuerpo),
+    cache: "no-store", signal: AbortSignal.timeout(ESPERA_MS),
+  });
+  const j = (await r.json().catch(() => ({ ok: false, description: `Telegram contestó ${r.status}` }))) as { ok: boolean; result?: unknown; description?: string };
+  return j;
+}
+
+/* Telegram pide un nombre de link de hasta 32 caracteres. */
+const nombreDeLink = (nombre: string) => nombre.trim().slice(0, 32) || "Alumno";
+
+/* ---------- Zoom ---------- */
+
+export const hayZoom = () => Boolean(process.env.ZOOM_ACCOUNT_ID && process.env.ZOOM_CLIENT_ID && process.env.ZOOM_CLIENT_SECRET);
+
+async function tokenZoom(): Promise<string> {
+  const basico = Buffer.from(`${process.env.ZOOM_CLIENT_ID}:${process.env.ZOOM_CLIENT_SECRET}`).toString("base64");
+  const r = await pedir(`https://zoom.us/oauth/token?grant_type=account_credentials&account_id=${encodeURIComponent(process.env.ZOOM_ACCOUNT_ID ?? "")}`, {
+    method: "POST", headers: { Authorization: `Basic ${basico}` },
+  });
+  const t = r.json?.access_token;
+  if (typeof t !== "string" || !t) throw new ErrorAcceso("Zoom no acepta las credenciales de la app.");
+  return t;
+}
+
+/* ---------- Dar ---------- */
+
+export interface ResultadoAccesos {
+  dados: number; fallaron: number; yaEstaban: number;
+  accesos: Acceso[];
+  /* Los links de Telegram y el de Wisboo, para mandarle al alumno. */
+  links: { plataforma: Plataforma; nombre: string; url: string }[];
+}
+
+/** Da los accesos del programa. `nombres` traduce ids a nombres legibles (grupos y reuniones). */
+export async function darAccesos(db: SupabaseClient, a: {
+  alumnoId: string; persona: Persona; programa: Programa; contratoId?: string | null;
+  origen: "automatico" | "manual"; quien: string;
+  /* Sólo algunos (un reintento puntual). Sin esto, todos los del programa. */
+  solo?: { plataforma: Plataforma; recurso: string }[];
+}): Promise<ResultadoAccesos> {
+  const ahora = new Date().toISOString();
+  const previos = await accesosDe(db, a.alumnoId);
+  const previo = (pl: Plataforma, rec: string) => previos.find((x) => x.plataforma === pl && x.recurso === rec);
+  const quiere = (pl: Plataforma, rec: string) => !a.solo || a.solo.some((s) => s.plataforma === pl && s.recurso === rec);
+  const salida: ResultadoAccesos = { dados: 0, fallaron: 0, yaEstaban: 0, accesos: [], links: [] };
+  const grupos = await nombresDeGrupos(db);
+
+  const anotar = async (x: Omit<Acceso, "id" | "alumnoId" | "contratoId" | "programa" | "origen" | "quien">) => {
+    const fila: Acceso = {
+      id: idDeAcceso(a.alumnoId, x.plataforma, x.recurso), alumnoId: a.alumnoId, contratoId: a.contratoId ?? null,
+      programa: a.programa.id, origen: a.origen, quien: a.quien, ...x,
+    };
+    await db.from("accesos_alumno").upsert({ ...fila, actualizadoEn: new Date().toISOString() }, { onConflict: "id" });
+    salida.accesos.push(fila);
+    if (x.estado === "fallo") salida.fallaron++;
+    else salida.dados++;
+  };
+
+  /* Wisboo: un usuario, un acceso por curso. */
+  const cursos = a.programa.wisboo.filter((p) => quiere("wisboo", p));
+  if (cursos.length) {
+    let usuarioId: string | null = null;
+    let errorUsuario: string | null = null;
+    if (!hayWisboo()) errorUsuario = "Falta la clave de Wisboo en Vercel.";
+    else {
+      try { usuarioId = await usuarioWisboo(a.persona); } catch (e) { errorUsuario = textoDeFallo("Wisboo", e); }
+    }
+    for (const producto of cursos) {
+      const nombre = PRODUCTOS_WISBOO.find((p) => p.id === producto)?.nombre ?? producto;
+      const ya = previo("wisboo", producto);
+      if (ya && (ya.estado === "dado" || ya.estado === "entro")) { salida.yaEstaban++; salida.accesos.push(ya); continue; }
+      if (!usuarioId) { await anotar({ plataforma: "wisboo", recurso: producto, recursoNombre: nombre, estado: "fallo", externo: {}, error: errorUsuario, dadoEn: null, quitadoEn: null }); continue; }
+      try {
+        const r = await darCursoWisboo(usuarioId, producto);
+        await anotar({
+          plataforma: "wisboo", recurso: producto, recursoNombre: nombre, estado: "dado",
+          externo: { usuarioId, accesoId: r.accesoId, yaLoTenia: r.yaLoTenia }, error: null, dadoEn: ahora, quitadoEn: null,
+        });
+      } catch (e) {
+        await anotar({ plataforma: "wisboo", recurso: producto, recursoNombre: nombre, estado: "fallo", externo: { usuarioId }, error: textoDeFallo("Wisboo", e), dadoEn: null, quitadoEn: null });
+      }
+    }
+    if (usuarioId) {
+      const magico = await linkMagicoWisboo(usuarioId);
+      if (magico) salida.links.push({ plataforma: "wisboo", nombre: "Wisboo (entrar a los cursos)", url: magico.link });
+    }
+  }
+
+  /* Telegram: un link de un solo uso por grupo. */
+  for (const chat of a.programa.telegram.filter((c) => quiere("telegram", c))) {
+    const nombre = grupos.get(chat) ?? chat;
+    const ya = previo("telegram", chat);
+    if (ya && (ya.estado === "dado" || ya.estado === "entro")) {
+      salida.yaEstaban++; salida.accesos.push(ya);
+      const link = typeof ya.externo.link === "string" ? ya.externo.link : null;
+      if (link && ya.estado === "dado") salida.links.push({ plataforma: "telegram", nombre, url: link });
+      continue;
+    }
+    if (!hayTelegram()) { await anotar({ plataforma: "telegram", recurso: chat, recursoNombre: nombre, estado: "fallo", externo: {}, error: "Falta el token del bot de Telegram en Vercel.", dadoEn: null, quitadoEn: null }); continue; }
+    try {
+      const r = await telegram("createChatInviteLink", {
+        chat_id: chat, name: nombreDeLink(a.persona.nombre), member_limit: 1,
+        expire_date: Math.floor(Date.now() / 1000) + 30 * 24 * 3600,
+      });
+      const link = (r.result as { invite_link?: string } | undefined)?.invite_link;
+      if (!r.ok || !link) throw new ErrorAcceso(`Telegram no dio el link: ${r.description ?? "sin motivo"}. ¿El bot es administrador del grupo con permiso para invitar?`);
+      await anotar({ plataforma: "telegram", recurso: chat, recursoNombre: nombre, estado: "dado", externo: { link }, error: null, dadoEn: ahora, quitadoEn: null });
+      salida.links.push({ plataforma: "telegram", nombre, url: link });
+    } catch (e) {
+      await anotar({ plataforma: "telegram", recurso: chat, recursoNombre: nombre, estado: "fallo", externo: {}, error: textoDeFallo("Telegram", e), dadoEn: null, quitadoEn: null });
+    }
+  }
+
+  /* Zoom: una inscripción por reunión. */
+  const reuniones = a.programa.zoom.filter((m) => quiere("zoom", m));
+  if (reuniones.length) {
+    let token: string | null = null;
+    let errorToken: string | null = hayZoom() ? null : "Falta conectar Zoom (la app Server-to-Server OAuth).";
+    if (!errorToken) { try { token = await tokenZoom(); } catch (e) { errorToken = textoDeFallo("Zoom", e); } }
+    const { first_name, last_name } = partirNombre(a.persona.nombre);
+    for (const reunion of reuniones) {
+      const ya = previo("zoom", reunion);
+      if (ya && (ya.estado === "dado" || ya.estado === "entro")) { salida.yaEstaban++; salida.accesos.push(ya); continue; }
+      if (!token) { await anotar({ plataforma: "zoom", recurso: reunion, recursoNombre: reunion, estado: "fallo", externo: {}, error: errorToken, dadoEn: null, quitadoEn: null }); continue; }
+      try {
+        const r = await pedir(`https://api.zoom.us/v2/meetings/${encodeURIComponent(reunion)}/registrants`, {
+          method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ email: a.persona.email.trim(), first_name: first_name || a.persona.nombre, last_name: last_name || "-", auto_approve: true }),
+        });
+        const registrante = r.json?.registrant_id;
+        if (typeof registrante !== "string") throw new ErrorAcceso(`Zoom no lo inscribió (contestó ${r.status}). ¿La reunión tiene el registro activado?`);
+        const tema = typeof r.json?.topic === "string" ? r.json.topic : reunion;
+        await anotar({ plataforma: "zoom", recurso: reunion, recursoNombre: tema, estado: "dado", externo: { registranteId: registrante, joinUrl: r.json?.join_url ?? null }, error: null, dadoEn: ahora, quitadoEn: null });
+      } catch (e) {
+        await anotar({ plataforma: "zoom", recurso: reunion, recursoNombre: reunion, estado: "fallo", externo: {}, error: textoDeFallo("Zoom", e), dadoEn: null, quitadoEn: null });
+      }
+    }
+  }
+  return salida;
+}
+
+/* ---------- Quitar ---------- */
+
+/** Saca los accesos pedidos (o todos los que tiene). Lo que no se pudo sacar queda como estaba, con el error. */
+export async function quitarAccesos(db: SupabaseClient, a: {
+  alumnoId: string; ids?: string[]; quien: string;
+}): Promise<{ quitados: number; fallaron: number; accesos: Acceso[] }> {
+  const todos = await accesosDe(db, a.alumnoId);
+  const elegidos = todos.filter((x) => (a.ids ? a.ids.includes(x.id) : true) && x.estado !== "quitado");
+  const salida = { quitados: 0, fallaron: 0, accesos: [] as Acceso[] };
+  let tokenZ: string | null = null;
+  for (const x of elegidos) {
+    let error: string | null = null;
+    try {
+      if (x.plataforma === "wisboo") {
+        const accesoId = typeof x.externo.accesoId === "string" ? x.externo.accesoId : null;
+        if (x.estado === "fallo" || !accesoId) { /* Nunca se dio: no hay nada que sacar en Wisboo. */ }
+        else {
+          if (!hayWisboo()) throw new ErrorAcceso("Falta la clave de Wisboo en Vercel.");
+          const r = await fetch(`${wisbooBase()}/product_accesses/${encodeURIComponent(accesoId)}`, {
+            method: "DELETE", headers: wisbooCabeza(), cache: "no-store", signal: AbortSignal.timeout(ESPERA_MS),
+          });
+          if (!r.ok && r.status !== 404) throw new ErrorAcceso(`Wisboo no quitó el acceso (contestó ${r.status}).`);
+        }
+      } else if (x.plataforma === "telegram") {
+        if (!hayTelegram()) throw new ErrorAcceso("Falta el token del bot de Telegram en Vercel.");
+        const link = typeof x.externo.link === "string" ? x.externo.link : null;
+        const usuario = typeof x.externo.telegramUserId === "number" || typeof x.externo.telegramUserId === "string" ? x.externo.telegramUserId : null;
+        if (link) await telegram("revokeChatInviteLink", { chat_id: x.recurso, invite_link: link });
+        if (usuario) {
+          /* Expulsar = banear y desbanear: sale del grupo y puede volver con otro link si algún día vuelve. */
+          const b = await telegram("banChatMember", { chat_id: x.recurso, user_id: usuario, revoke_messages: false });
+          if (!b.ok) throw new ErrorAcceso(`Telegram no lo sacó del grupo: ${b.description ?? "sin motivo"}.`);
+          await telegram("unbanChatMember", { chat_id: x.recurso, user_id: usuario, only_if_banned: true });
+        } else if (x.estado === "entro") {
+          throw new ErrorAcceso("No se sabe su usuario de Telegram: sacalo a mano del grupo.");
+        }
+      } else if (x.plataforma === "zoom") {
+        const registrante = typeof x.externo.registranteId === "string" ? x.externo.registranteId : null;
+        if (registrante) {
+          if (!hayZoom()) throw new ErrorAcceso("Falta conectar Zoom.");
+          tokenZ ??= await tokenZoom();
+          const r = await fetch(`https://api.zoom.us/v2/meetings/${encodeURIComponent(x.recurso)}/registrants/status`, {
+            method: "PUT", headers: { Authorization: `Bearer ${tokenZ}`, "Content-Type": "application/json" },
+            body: JSON.stringify({ action: "cancel", registrants: [{ id: registrante }] }), cache: "no-store", signal: AbortSignal.timeout(ESPERA_MS),
+          });
+          if (!r.ok) throw new ErrorAcceso(`Zoom no canceló la inscripción (contestó ${r.status}).`);
+        }
+      }
+    } catch (e) { error = textoDeFallo(x.plataforma === "wisboo" ? "Wisboo" : x.plataforma === "telegram" ? "Telegram" : "Zoom", e); }
+    const cambio = error
+      ? { error, actualizadoEn: new Date().toISOString() }
+      : { estado: "quitado" as const, quitadoEn: new Date().toISOString(), error: null, quien: a.quien, actualizadoEn: new Date().toISOString() };
+    await db.from("accesos_alumno").update(cambio).eq("id", x.id);
+    salida.accesos.push({ ...x, ...cambio } as Acceso);
+    if (error) salida.fallaron++; else salida.quitados++;
+  }
+  return salida;
+}
+
+/* ---------- Lectura ---------- */
+
+export async function accesosDe(db: SupabaseClient, alumnoId: string): Promise<Acceso[]> {
+  const r = await db.from("accesos_alumno").select("*").eq("alumnoId", alumnoId);
+  return (r.data ?? []) as Acceso[];
+}
+
+async function nombresDeGrupos(db: SupabaseClient): Promise<Map<string, string>> {
+  const r = await db.from("telegram_grupos").select('"chatId", titulo');
+  return new Map(((r.data ?? []) as { chatId: string; titulo: string }[]).map((g) => [g.chatId, g.titulo || g.chatId]));
+}
+
+/** El mensaje para mandarle al alumno con sus links (por WhatsApp, mientras no salga solo por mail). */
+export function mensajeDeBienvenida(nombre: string, programa: string, links: { plataforma: Plataforma; nombre: string; url: string }[]): string {
+  const pila = nombre.trim().split(/\s+/)[0] || "";
+  const lineas = links.map((l) => `• ${l.nombre}: ${l.url}`);
+  return [
+    `¡Hola${pila ? ` ${pila}` : ""}! Bienvenido a ${programa}.`,
+    lineas.length ? "Estos son tus accesos (cada link de Telegram es personal y se usa una sola vez):" : "",
+    ...lineas,
+  ].filter(Boolean).join("\n");
+}

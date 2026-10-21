@@ -1,0 +1,166 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { createHmac } from "node:crypto";
+import {
+  accionesDe, cuerpoDocumento, estadoDePandadoc, fechaContrato, firmoElAlumno, leerAvisos, mensajeDelContrato,
+  modalidadDeCuotas, partirNombre, problemaDeDatos, textoBonos, textoSesiones, variablesDelContrato, type DatosContrato,
+} from "@/lib/contratos";
+import { clavePandadoc, firmaPandadocValida } from "@/lib/pandadoc-servidor";
+import { programaDeProducto, programasDe, PROGRAMAS_POR_DEFECTO, WISBOO } from "@/lib/programas";
+import { idDeAcceso, mensajeDeBienvenida } from "@/lib/accesos-servidor";
+
+/* El contrato de PandaDoc desde la venta (pedido del 20/10, el circuito de Blue OS traído a PandaDoc). */
+
+const DATOS: DatosContrato = {
+  nombre: "María José Pérez", email: "maria@ejemplo.com", telefono: "+54 9 11 5555-5555", documento: "30111222",
+  domicilio: "Av. Siempre Viva 742, Córdoba", pais: "Argentina", modalidad: "Tres pagos de 1.000 USD", sesiones: 3,
+  bonos: ["Revisión de LinkedIn", "Simulacro extra"], fecha: "2026-10-20",
+};
+
+test("estados de PandaDoc → los nuestros", () => {
+  assert.equal(estadoDePandadoc("document.uploaded"), "creando");
+  assert.equal(estadoDePandadoc("document.draft"), "borrador");
+  assert.equal(estadoDePandadoc("document.sent"), "enviado");
+  assert.equal(estadoDePandadoc("document.viewed"), "visto");
+  assert.equal(estadoDePandadoc("document.completed"), "firmado");
+  assert.equal(estadoDePandadoc("document.declined"), "rechazado");
+  assert.equal(estadoDePandadoc("document.voided"), "anulado");
+  assert.equal(estadoDePandadoc("algo.raro"), null);
+});
+
+test("la modalidad sale del plan de cuotas", () => {
+  assert.equal(modalidadDeCuotas([{ monto: 2500 }]), "Un pago único de 2.500 USD");
+  assert.equal(modalidadDeCuotas([{ monto: 1000 }, { monto: 1000 }, { monto: 1000 }]), "Tres pagos de 1.000 USD");
+  assert.equal(modalidadDeCuotas([{ monto: 1400 }, { monto: 1400 }]), "Dos pagos de 1.400 USD");
+  assert.equal(modalidadDeCuotas([{ monto: 300, esReserva: true }, { monto: 1100 }, { monto: 1100 }]), "Una reserva de 300 USD y dos pagos de 1.100 USD");
+  assert.equal(modalidadDeCuotas([{ monto: 500 }, { monto: 1000 }, { monto: 1000 }]), "Pagos de 500 USD, 1.000 USD y 1.000 USD");
+  assert.equal(modalidadDeCuotas([{ monto: 0 }]), "");
+  assert.equal(modalidadDeCuotas([{ monto: 999.5 }]), "Un pago único de 999,50 USD");
+});
+
+test("sesiones, bonos y fecha en palabras", () => {
+  assert.equal(textoSesiones(0), "Sin sesiones 1 a 1 con el mentor");
+  assert.equal(textoSesiones(1), "1 sesión 1 a 1 con el mentor");
+  assert.equal(textoSesiones(3), "3 sesiones 1 a 1 con el mentor");
+  assert.equal(textoSesiones(null), "");
+  assert.equal(textoBonos([]), "Sin bonos adicionales");
+  assert.equal(textoBonos(["A", "B", "C"]), "A, B y C");
+  assert.equal(fechaContrato("2026-10-20"), "20/10/2026");
+});
+
+test("las variables de la plantilla, con los nombres que pone Manu", () => {
+  const v = Object.fromEntries(variablesDelContrato(DATOS, "Hackear AI").map((x) => [x.name, x.value]));
+  assert.equal(v["Cliente.Nombre"], "María José Pérez");
+  assert.equal(v["Cliente.Documento"], "30111222");
+  assert.equal(v["Cliente.Domicilio"], "Av. Siempre Viva 742, Córdoba");
+  assert.equal(v["Contrato.Fecha"], "20/10/2026");
+  assert.equal(v["Venta.Modalidad"], "Tres pagos de 1.000 USD");
+  assert.equal(v["Venta.Sesiones"], "3 sesiones 1 a 1 con el mentor");
+  assert.equal(v["Venta.Bonos"], "Revisión de LinkedIn y Simulacro extra");
+});
+
+test("el documento: firma sólo el alumno (Client) y lleva el id del contrato", () => {
+  const c = cuerpoDocumento({ contratoId: "ctr_1", ventaId: "ven_1", modo: "prueba", plantillaId: "tpl", programa: "Hackear AI", datos: DATOS });
+  const rec = c.recipients as Record<string, string>[];
+  assert.equal(rec.length, 1);
+  assert.equal(rec[0].role, "Client");
+  assert.equal(rec[0].first_name, "María José");
+  assert.equal(rec[0].last_name, "Pérez");
+  assert.equal((c.metadata as Record<string, string>).apicanta_contrato, "ctr_1");
+  assert.match(String(c.name), /^\[Prueba\] Contrato Hackear AI - María José Pérez$/);
+  assert.deepEqual(partirNombre("Cher"), { first_name: "Cher", last_name: "" });
+});
+
+test("el mensaje del mail reemplaza {nombre} y {programa}", () => {
+  const m = mensajeDelContrato({ estado: "encendido", asunto: "Contrato de {programa}", mensaje: "Hola {nombre}" }, DATOS, "Hackear AI");
+  assert.deepEqual(m, { subject: "Contrato de Hackear AI", message: "Hola María" });
+  assert.match(mensajeDelContrato(undefined, DATOS, "Hackear Biz").subject, /Hackear Biz/);
+});
+
+test("los botones según el estado (un firmado no se anula ni se reenvía)", () => {
+  assert.deepEqual(accionesDe({ estado: "firmado", documentoId: "d" }), ["ver-pdf"]);
+  assert.ok(accionesDe({ estado: "enviado", documentoId: "d" }).includes("reenviar"));
+  assert.ok(accionesDe({ estado: "visto", documentoId: "d" }).includes("anular"));
+  assert.deepEqual(accionesDe({ estado: "anulado", documentoId: "d" }), ["mandar-otro"]);
+  assert.deepEqual(accionesDe({ estado: "error", documentoId: null }), ["mandar-otro"]);
+  assert.deepEqual(accionesDe({ estado: "creando", documentoId: null }), []);
+});
+
+test("qué falta para mandarlo, y la prueba sólo a @apicanta.com", () => {
+  assert.equal(problemaDeDatos(DATOS, "produccion"), null);
+  assert.match(problemaDeDatos({ ...DATOS, email: "x" }, "produccion")!, /mail válido/);
+  assert.match(problemaDeDatos({ ...DATOS, documento: "" }, "produccion")!, /documento/);
+  assert.match(problemaDeDatos(DATOS, "prueba")!, /@apicanta\.com/);
+  assert.equal(problemaDeDatos({ ...DATOS, email: "test@apicanta.com" }, "prueba"), null);
+});
+
+test("el aviso de PandaDoc: lista de eventos, con su metadata", () => {
+  const a = leerAvisos([
+    { event: "document_state_changed", data: { id: "doc1", status: "document.completed", template: { id: "tpl" }, metadata: { apicanta_contrato: "ctr_1", n: 3 } } },
+    { event: "recipient_completed", data: { id: "doc2", status: "document.sent", action_by: { email: "maria@ejemplo.com" } } },
+    { event: "raro", data: {} },
+  ]);
+  assert.equal(a.length, 2);
+  assert.deepEqual(a[0].metadata, { apicanta_contrato: "ctr_1" });
+  assert.equal(a[0].plantillaId, "tpl");
+  assert.equal(a[1].quien, "maria@ejemplo.com");
+  assert.deepEqual(leerAvisos(null), []);
+});
+
+test("la firma del aviso: HMAC del cuerpo crudo, con cualquiera de las claves", () => {
+  const cuerpo = '[{"event":"document_state_changed","data":{"id":"x"}}]';
+  const firma = createHmac("sha256", "clave-prueba").update(cuerpo).digest("hex");
+  assert.ok(firmaPandadocValida(cuerpo, firma, ["otra", "clave-prueba"]));
+  assert.ok(!firmaPandadocValida(cuerpo + " ", firma, ["clave-prueba"]), "un espacio de más ya no vale");
+  assert.ok(!firmaPandadocValida(cuerpo, firma, ["otra"]));
+  assert.ok(!firmaPandadocValida(cuerpo, null, ["clave-prueba"]));
+  assert.ok(!firmaPandadocValida(cuerpo, "zz", ["clave-prueba"]));
+});
+
+test("¿firmó el alumno? (aunque falte otro firmante)", () => {
+  assert.ok(firmoElAlumno({ status: "document.completed" }));
+  assert.ok(firmoElAlumno({ status: "document.sent", recipients: [{ role: "Client", has_completed: true }, { role: "Sales Rep", has_completed: false }] }));
+  assert.ok(!firmoElAlumno({ status: "document.viewed", recipients: [{ role: "Client", has_completed: false }] }));
+});
+
+test("la clave de producción de PandaDoc nunca sale fuera de la app publicada", () => {
+  const antes = { e: process.env.VERCEL_ENV, p: process.env.PANDADOC_API_KEY, s: process.env.PANDADOC_SANDBOX_KEY };
+  try {
+    process.env.PANDADOC_API_KEY = "prod"; process.env.PANDADOC_SANDBOX_KEY = "sand";
+    delete process.env.VERCEL_ENV;
+    assert.equal(clavePandadoc("produccion"), null);
+    assert.deepEqual(clavePandadoc("prueba"), { clave: "sand", modo: "prueba" });
+    process.env.VERCEL_ENV = "production";
+    assert.deepEqual(clavePandadoc("produccion"), { clave: "prod", modo: "produccion" });
+    assert.deepEqual(clavePandadoc("prueba"), { clave: "sand", modo: "prueba" }, "en producción también se pueden hacer contratos de prueba");
+  } finally {
+    for (const [k, v] of [["VERCEL_ENV", antes.e], ["PANDADOC_API_KEY", antes.p], ["PANDADOC_SANDBOX_KEY", antes.s]] as const) {
+      if (v === undefined) delete process.env[k]; else process.env[k] = v;
+    }
+  }
+});
+
+test("los programas: Mentoría y el upgrade son Hackear AI, con Bonos; Downsell con IT y AI", () => {
+  const ps = programasDe(undefined);
+  assert.equal(ps, PROGRAMAS_POR_DEFECTO);
+  assert.equal(programaDeProducto(ps, "prod_mentoria")?.id, "hackear-ai");
+  assert.equal(programaDeProducto(ps, "prod_upgrade_ai")?.id, "hackear-ai");
+  assert.ok(programaDeProducto(ps, "prod_mentoria")!.wisboo.includes(WISBOO.bonos));
+  assert.deepEqual(programaDeProducto(ps, "prod_downsell")!.wisboo, [WISBOO.hackearIt, WISBOO.hackearAi]);
+  assert.equal(programaDeProducto(ps, "prod_cena"), null);
+  /* Principals y Principals Mastermind, misma plantilla. */
+  const pr = ps.find((p) => p.id === "principals")!, pm = ps.find((p) => p.id === "principals-mastermind")!;
+  assert.equal(pr.plantillaId, pm.plantillaId);
+  /* Lo guardado en Ajustes manda, y se lee sin confiar. */
+  const guardados = programasDe({ programas: [{ id: "x", nombre: "X", productos: ["p1", 3] } as never, { nombre: "sin id" } as never] });
+  assert.equal(guardados.length, 1);
+  assert.deepEqual(guardados[0].productos, ["p1"]);
+});
+
+test("accesos: id estable por alumno, plataforma y recurso; el mensaje con los links", () => {
+  assert.equal(idDeAcceso("alu_1", "telegram", "-1001234"), "acc_alu_1_telegram_-1001234");
+  assert.equal(idDeAcceso("alu_1", "wisboo", "PRO-1"), idDeAcceso("alu_1", "wisboo", "PRO-1"));
+  const m = mensajeDeBienvenida("María José Pérez", "Hackear AI", [{ plataforma: "telegram", nombre: "Comunidad", url: "https://t.me/+abc" }]);
+  assert.match(m, /^¡Hola María! Bienvenido a Hackear AI\./);
+  assert.match(m, /• Comunidad: https:\/\/t\.me\/\+abc/);
+});

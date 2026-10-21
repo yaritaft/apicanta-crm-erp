@@ -108,3 +108,21 @@ export async function exigirArea(peticion: Request, areas: AreaId[], minimo: 1 |
   if (p.soloLoSuyo) return NextResponse.json({ error: "Tu tipo de cuenta ve sólo lo suyo, y esto es de todo el equipo." }, { status: 403 });
   return null;
 }
+
+/** El mail de quien pide, para anotar quién hizo qué (el pedido ya pasó por la base con esa sesión). */
+export function correoDelPedido(peticion: Request): string {
+  const jwt = peticion.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ?? "";
+  try {
+    const cuerpo = JSON.parse(Buffer.from(jwt.split(".")[1] ?? "", "base64url").toString("utf8")) as { email?: string };
+    return cuerpo.email ?? "";
+  } catch { return ""; }
+}
+
+/** ¿Quien pide es dueño? Sin equipo configurado (la app local), sí. */
+export async function esDuenoDelPedido(peticion: Request): Promise<boolean> {
+  if (!hayEquipoConfigurado()) return true;
+  const mia = baseDelPedido(peticion);
+  if (!mia) return false;
+  const yo = (await mia.rpc("mi_acceso")).data as { tipo?: string } | null;
+  return yo?.tipo === "dueno";
+}
