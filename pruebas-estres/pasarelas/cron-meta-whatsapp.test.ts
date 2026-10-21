@@ -32,7 +32,7 @@ function meta(modo: Modo) {
     if (url.host !== "graph.facebook.com") return null;
     pedidos.push(`${url.pathname}?${[...url.searchParams.keys()].filter((k) => k !== "access_token").join("&")}`);
     if (url.pathname.endsWith("/me/adaccounts")) return { json: { data: [] } };
-    if (!url.pathname.includes("517225948145267")) return null;
+    if (!/4597681580548968|2216414815700142|1766082654409811|1644221300470641/.test(url.pathname)) return null;
     if (modo === "sin-red") throw new TypeError("fetch failed");
     if (modo === "sin-permiso") return { status: 400, json: { error: { message: "(#200) Requires whatsapp_business_management permission", code: 200 } } };
     if (url.searchParams.get("fields") === "currency") return { json: { currency: "USD", id: "517225948145267" } };
@@ -58,12 +58,13 @@ test("trae el costo de la cuenta de WhatsApp, lo guarda por día y categoría y 
   const res = await llamar();
   assert.equal(res.status, 200);
   const j = (await res.json()) as { whatsapp: { cuenta: string; dias: number; total: number; error?: string }[] };
-  assert.equal(j.whatsapp.length, 1);
-  assert.equal(j.whatsapp[0].cuenta, "517225948145267");
+  assert.equal(j.whatsapp.length, 4, "las cuatro cuentas de WhatsApp del portfolio");
+  assert.equal(j.whatsapp[0].cuenta, "4597681580548968");
   assert.equal(j.whatsapp[0].total, 17.3);
   assert.equal(j.whatsapp[0].error, undefined);
   const filas = fake.nube.filas("whatsapp_costos");
-  assert.deepEqual(filas.map((f) => [f.dia, f.categoria, f.costo, f.moneda]).sort(), [[hoy, "MARKETING", 16.4, "USD"], [hoy, "UTILITY", 0.9, "USD"]]);
+  assert.equal(filas.length, 8, "dos categorías por cada una de las cuatro cuentas");
+  assert.deepEqual(filas.filter((f) => f.cuenta === "4597681580548968").map((f) => [f.dia, f.categoria, f.costo, f.moneda]).sort(), [[hoy, "MARKETING", 16.4, "USD"], [hoy, "UTILITY", 0.9, "USD"]]);
   assert.ok(pedidos.some((p) => p.includes("fields")), "pidió con la expansión de campos");
   const estado = fake.nube.filas("cron_estado").find((x) => x.clave === "meta-whatsapp-costos")!;
   assert.equal(estado.ok, true);
@@ -74,7 +75,7 @@ test("correrlo otra vez no repite filas: se actualizan las mismas", async () => 
   meta("bien");
   await llamar();
   await llamar();
-  assert.equal(fake.nube.filas("whatsapp_costos").length, 2);
+  assert.equal(fake.nube.filas("whatsapp_costos").length, 8);
   assert.equal(fake.nube.filas("cron_estado").filter((x) => x.clave === "meta-whatsapp-costos").length, 1);
 });
 

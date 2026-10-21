@@ -17,8 +17,11 @@ import { GRAPH } from "./meta";
    no detalla la respuesta; lo que no se entiende se descarta y se cuenta en `descartados`.
    ================================================================== */
 
-/** La cuenta de WhatsApp Business que factura la API (la dio Juan Cruz desde el Business Manager). META_WABA_IDS pone otras, separadas por coma. */
-export const WABA_POR_DEFECTO = "517225948145267";
+/** Las cuentas de WhatsApp Business (WABA) del portfolio, sin la de prueba. OJO: el id que muestra el Business Manager en «Cuentas de mensajes»
+    (517225948145267 para «Apicanta Manychat») NO es el de la API: el de la WABA es el que sale en la dirección de «Cuentas de WhatsApp»
+    (selected_asset_id): Apicanta Manychat 4597681580548968, Apicanta 2216414815700142 y los dos Yari Taft 1766082654409811 y 1644221300470641.
+    META_WABA_IDS pone otras, separadas por coma. */
+export const WABA_POR_DEFECTO = "4597681580548968,2216414815700142,1766082654409811,1644221300470641";
 /** El portfolio comercial (Yari Taft BM): para listar qué cuentas de WhatsApp ve el token cuando la que se pidió no se puede leer. */
 export const BUSINESS_POR_DEFECTO = "3322384087906994";
 

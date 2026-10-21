@@ -14,7 +14,8 @@ const unix = (dia: string) => Date.parse(`${dia}T00:00:00Z`) / 1000;
 const respuesta = (puntos: Record<string, unknown>[]) => ({ pricing_analytics: { data: [{ data_points: puntos }] }, id: "517225948145267" });
 
 test("la cuenta de WhatsApp Business sale de la configuración y, sin nada, es la que dio el Business Manager", () => {
-  assert.deepEqual(cuentasDeWhatsapp({} as never), [WABA_POR_DEFECTO]);
+  assert.deepEqual(cuentasDeWhatsapp({} as never), ["4597681580548968", "2216414815700142", "1766082654409811", "1644221300470641"]);
+  assert.ok(WABA_POR_DEFECTO.includes("4597681580548968"));
   assert.deepEqual(cuentasDeWhatsapp({ META_WABA_ID: "111111111" } as never), ["111111111"]);
   assert.deepEqual(cuentasDeWhatsapp({ META_WABA_IDS: "111111111, 222222222 111111111" } as never), ["111111111", "222222222"]);
   assert.deepEqual(cuentasDeWhatsapp({ META_WABA_ID: "no-es-un-id" } as never), [], "un valor raro no se manda a Meta");

@@ -6,7 +6,7 @@ import { ventana } from "@/lib/meta-sync";
 import { nubeServidor } from "@/lib/servidor";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 120;
+export const maxDuration = 300;
 
 /* El costo de WhatsApp API, a pedido (21/10).
 
@@ -14,7 +14,7 @@ export const maxDuration = 120;
    cuenta de WhatsApp Business sin esperar a la próxima corrida, y para traer más historia. Devuelve, por cuenta, cuántos días leyó, cuánto sumó o
    el error de Meta con el diagnóstico (qué permisos tiene el token y qué cuentas ve).
 
-   POST { dias?: 1–120 (30), cuentas?: ["id", …], crudo?: true } — «cuentas» prueba otros ids en lugar de los configurados (META_WABA_IDS);
+   POST { dias?: 1–500 (30), cuentas?: ["id", …], crudo?: true } — «cuentas» prueba otros ids en lugar de los configurados (META_WABA_IDS);
    «crudo» devuelve además lo que contestó Meta tal cual (sin el token), para ver la forma de la respuesta.
    Sólo con el token de sistema (no el de la cookie): la facturación es del negocio. Lo puede pedir quien edita Marketing. */
 
@@ -27,7 +27,7 @@ export async function POST(req: Request) {
   if (!db) return NextResponse.json({ error: "Falta SUPABASE_SERVICE_ROLE_KEY en el servidor." }, { status: 503 });
 
   const cuerpo = (await req.json().catch(() => ({}))) as { dias?: unknown; cuentas?: unknown; crudo?: unknown };
-  const dias = Math.min(120, Math.max(1, Math.round(Number(cuerpo.dias) || 30)));
+  const dias = Math.min(500, Math.max(1, Math.round(Number(cuerpo.dias) || 30)));
   const pedidas = Array.isArray(cuerpo.cuentas) ? cuerpo.cuentas.map(String).filter((x) => /^\d{5,30}$/.test(x)).slice(0, 10) : [];
   const cuentas = pedidas.length ? pedidas : cuentasDeWhatsapp();
   const { desde, hasta } = ventana(dias);
