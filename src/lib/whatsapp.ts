@@ -709,3 +709,21 @@ export interface RespuestaWebinar {
   salieron: Record<string, string>;
   generado: string;
 }
+
+/** Un webinar al que todavía no se le ató ningún grupo, con los grupos sin atar cuyo nombre trae su fecha (los que el equipo
+    puede confirmar con un clic). */
+export interface WebinarSinGrupo<W extends WebinarMinimo = WebinarMinimo> { webinar: W; sugeridos: GrupoWhatsapp[] }
+
+/** Cuánto hacia atrás se le exige un grupo a un webinar: los de antes de que existiera el lector no lo tienen y no hay por qué avisar. */
+const DIAS_CON_AVISO = 45;
+
+/** Los webinars (próximos y de los últimos 45 días) sin ningún grupo de WhatsApp atado, el más próximo primero, cada uno con los
+    grupos sin atar que dicen su fecha. Con el aviso en Webinars y el paso «WhatsApp» al crear uno. */
+export function webinarsSinGrupo<W extends WebinarMinimo>(webinars: readonly W[], grupos: readonly GrupoWhatsapp[], ahora: number = Date.now()): WebinarSinGrupo<W>[] {
+  const atados = new Set(grupos.filter((g) => g.webinarId).map((g) => g.webinarId));
+  const libres = grupos.filter((g) => !g.webinarId);
+  return webinars
+    .filter((w) => !atados.has(w.id) && Date.parse(w.fecha) >= ahora - DIAS_CON_AVISO * 24 * 60 * MIN)
+    .map((w) => ({ webinar: w, sugeridos: ordenarGrupos(libres.filter((g) => sugerirWebinar(g.nombre, [w], ahora)?.webinarId === w.id)) }))
+    .sort((a, b) => a.webinar.fecha.localeCompare(b.webinar.fecha));
+}

@@ -1,14 +1,21 @@
 "use client";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Link2 } from "lucide-react";
+import { Link2, MessageCircle, Search } from "lucide-react";
 import { Asistente, Pregunta } from "@/components/ui/Asistente";
-import { Chip, Input, Select } from "@/components/ui/ui";
+import { Badge, Chip, Input, Select } from "@/components/ui/ui";
+import { useToast } from "@/components/ui/Toast";
 import { acciones } from "@/lib/store";
+import { useAcceso } from "@/lib/acceso";
+import { nivelEn } from "@/lib/permisos";
+import { num } from "@/lib/format";
+import { ordenarGrupos, puedeVerWhatsapp, sugerirWebinar } from "@/lib/whatsapp";
+import { atarGruposAlCrear, useLector } from "@/lib/whatsapp-cliente";
 import { idDeYoutube, miniaturaDe, type DatosYoutube } from "@/lib/youtube";
 import type { Webinar } from "@/lib/types";
 import { fechaCompleta, hoyArgentina, isoDesdeArgentina, partesArgentina, sumarDias } from "./fechas";
 import { datosDeYoutube } from "./useYoutube";
+import "./whatsapp.css";
 
 /* ==================================================================
    Nuevo webinar, una pregunta por pantalla.
@@ -18,6 +25,11 @@ import { datosDeYoutube } from "./useYoutube";
    quien carga sólo confirma. Sin link, se escriben a mano. Los números
    (inversión, formularios, llamadas) no se preguntan acá: se van
    cargando en la planilla y en la ficha a medida que pasan.
+
+   Si el lector de WhatsApp ya detectó grupos que no son de ningún webinar, un
+   último paso deja elegir el de éste (el que dice su fecha ya viene tildado) y
+   queda atado al crearlo. Si todavía no lo armaron, se sigue sin elegir: en
+   Webinars aparece un aviso con un clic para atarlo cuando el lector lo vea.
    ================================================================== */
 
 const PASOS = [
@@ -25,6 +37,7 @@ const PASOS = [
   { id: "titulo", titulo: "Título" },
   { id: "fecha", titulo: "Fecha y hora" },
 ];
+const PASO_WHATSAPP = { id: "whatsapp", titulo: "WhatsApp" };
 
 const HORAS = ["18:00", "19:00", "20:00", "21:00"];
 
@@ -43,11 +56,40 @@ export function AsistenteWebinar({ onCerrar, onCreado }: {
   const [hora, setHora] = useState("19:00");
   const [link, setLink] = useState("");
   const creado = useRef(false);
+  const toast = useToast();
+
+  /* Los grupos que el lector detectó y todavía no son de ningún webinar (sólo para quien ve y edita Webinars). */
+  const { acceso } = useAcceso();
+  const puedeAtar = puedeVerWhatsapp(acceso) && nivelEn(acceso, "webinars") >= 2;
+  const lector = useLector(puedeAtar);
+  const libres = useMemo(() => (lector.datos?.tablas ? (lector.datos.grupos ?? []).filter((g) => !g.webinarId) : []), [lector.datos]);
+  const hayPasoWhatsapp = puedeAtar && libres.length > 0;
+  const pasos = hayPasoWhatsapp ? [...PASOS, PASO_WHATSAPP] : PASOS;
+  const [elegidos, setElegidos] = useState<Set<string>>(new Set());
+  const [buscaGrupo, setBuscaGrupo] = useState("");
+  const grupoTocado = useRef(false);
   /* Lo que la persona tocó a mano no se pisa con lo que trae YouTube. */
   const tocado = useRef({ titulo: false, fecha: false });
 
   const idVideo = idDeYoutube(link);
   const fecha = isoDesdeArgentina(dia, hora);
+
+  /* El grupo que dice la fecha de este webinar viene tildado, hasta que la persona toca la lista. */
+  const sugeridos = useMemo(
+    () => (fecha ? libres.filter((g) => sugerirWebinar(g.nombre, [{ id: "nuevo", titulo, fecha }])?.webinarId === "nuevo") : []),
+    [libres, titulo, fecha],
+  );
+  const claveSugeridos = sugeridos.map((g) => g.id).join("|");
+  useEffect(() => {
+    if (!grupoTocado.current) setElegidos(new Set(claveSugeridos ? claveSugeridos.split("|") : []));
+  }, [claveSugeridos]);
+  const listaGrupos = useMemo(() => {
+    const es = new Set(sugeridos.map((g) => g.id));
+    const q = buscaGrupo.trim().toLowerCase();
+    const resto = ordenarGrupos(libres.filter((g) => !es.has(g.id)))
+      .sort((a, b) => String(b.creadoEn ?? "").localeCompare(String(a.creadoEn ?? "")));
+    return [...ordenarGrupos(sugeridos), ...resto].filter((g) => !q || g.nombre.toLowerCase().includes(q) || es.has(g.id)).slice(0, 60);
+  }, [libres, sugeridos, buscaGrupo]);
 
   /* Los datos del video: confirman que se pegó el que se quería y completan
      solos el título y, si YouTube la da, la fecha del vivo.
@@ -104,6 +146,15 @@ export function AsistenteWebinar({ onCerrar, onCreado }: {
       extra: {},
     };
     const id = acciones.crear<Webinar>("webinars", nuevo, nuevo.titulo);
+    /* Los grupos elegidos se atan cuando el webinar ya está en la base (en segundo plano: la ficha se abre ya). */
+    const grupos = hayPasoWhatsapp ? [...elegidos] : [];
+    if (grupos.length) {
+      void atarGruposAlCrear(grupos, id).then((faltan) => {
+        const hechos = grupos.length - faltan.length;
+        if (faltan.length === 0) toast(`${hechos === 1 ? "El grupo de WhatsApp quedó atado" : `Los ${hechos} grupos de WhatsApp quedaron atados`} a «${nuevo.titulo}».`);
+        else toast(`No pude atar ${faltan.length === 1 ? "un grupo" : `${faltan.length} grupos`} de WhatsApp: atalo en la ficha del webinar.`, "err");
+      });
+    }
     onCreado(id, nuevo.titulo);
   }
 
@@ -117,7 +168,7 @@ export function AsistenteWebinar({ onCerrar, onCreado }: {
   return (
     <Asistente
       etiqueta="Nuevo webinar"
-      pasos={PASOS}
+      pasos={pasos}
       actual={paso}
       onCambiarPaso={setPaso}
       problema={problema}
@@ -197,6 +248,34 @@ export function AsistenteWebinar({ onCerrar, onCreado }: {
             ))}
           </div>
           {fecha && <p className="t-body t-muted">{fechaCompleta(fecha)}</p>}
+        </>
+      )}
+
+      {paso === 3 && hayPasoWhatsapp && (
+        <>
+          <Pregunta
+            texto="¿Ya armaron el grupo de WhatsApp?"
+            sub="El lector detectó estos grupos que todavía no son de ningún webinar. Tildá los de éste (puede haber varios: WhatsApp deja 1.024 por grupo) y quedan atados al crearlo. Si todavía no está, seguí sin elegir: cuando el lector lo detecte, en Webinars aparece un aviso para atarlo con un clic."
+          />
+          <Input icono={<Search size={16} />} value={buscaGrupo} onChange={(ev) => setBuscaGrupo(ev.target.value)} placeholder="Buscar un grupo por su nombre" aria-label="Buscar un grupo" />
+          <div className="wb-grupos" role="group" aria-label="Grupos de WhatsApp sin webinar">
+            {listaGrupos.length === 0 && <p className="t-sm t-subtle" style={{ padding: "var(--space-3)" }}>Ningún grupo se llama así.</p>}
+            {listaGrupos.map((g) => (
+              <label key={g.id} className="wb-grupo">
+                <input
+                  type="checkbox" checked={elegidos.has(g.id)}
+                  onChange={() => { grupoTocado.current = true; setElegidos((x) => { const n = new Set(x); if (n.has(g.id)) n.delete(g.id); else n.add(g.id); return n; }); }}
+                />
+                <MessageCircle size={14} aria-hidden className="wb-grupo__ico" />
+                <span className="wb-grupo__nombre">{g.nombre || "Grupo sin nombre"}</span>
+                <span className="t-sm t-subtle t-num">{num(g.miembros)} personas</span>
+                {sugeridos.some((x) => x.id === g.id) && <Badge variante="success">Dice su fecha</Badge>}
+              </label>
+            ))}
+          </div>
+          <p className="t-sm t-subtle">
+            {elegidos.size === 0 ? "Ninguno elegido: el webinar se crea sin grupo." : `${elegidos.size === 1 ? "1 grupo elegido" : `${elegidos.size} grupos elegidos`}.`}
+          </p>
         </>
       )}
     </Asistente>

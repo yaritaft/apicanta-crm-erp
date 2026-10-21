@@ -112,3 +112,15 @@
   .wa-kpis { grid-template-columns: 1fr; }
   .wa-grupo__nombre { max-width: 200px; }
 }
+
+/* El paso «WhatsApp» del asistente de nuevo webinar: los grupos sin webinar, para tildar los de éste. */
+.wb-grupos { display: flex; flex-direction: column; max-height: 300px; overflow-y: auto; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface-000); }
+.wb-grupo { display: flex; align-items: center; gap: var(--space-2); padding: 9px var(--space-3); cursor: pointer; border-top: 1px solid var(--border); }
+.wb-grupo:first-child { border-top: 0; }
+.wb-grupo:hover { background: var(--brand-soft); }
+.wb-grupo__ico { color: var(--ink-subtle); flex: none; }
+.wb-grupo__nombre { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+
+/* El aviso de «este webinar no tiene grupo atado», con su botón al costado. */
+.wb-sin-grupo { align-items: center; flex-wrap: wrap; }
+.wb-sin-grupo__acciones { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; }

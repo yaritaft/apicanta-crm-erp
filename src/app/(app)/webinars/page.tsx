@@ -17,6 +17,7 @@ import { guardarMetrica, guardarWebinar } from "@/components/webinars/guardar";
 import { diaCorto, diaYHora, hoyArgentina } from "@/components/webinars/fechas";
 import { AvisoEnVivo } from "@/components/webinars/AvisoEnVivo";
 import { AvisoLectorWhatsapp } from "@/components/webinars/AvisoLectorWhatsapp";
+import { AvisoGruposSinAtar } from "@/components/webinars/AvisoGruposSinAtar";
 import { AtarVentas } from "@/components/webinars/AtarVentas";
 import { BotonInformeFila } from "@/components/webinars/BotonInforme";
 import { useWebinarsAlDia } from "@/components/webinars/useVivo";
@@ -311,6 +312,7 @@ export default function Webinars() {
       <AvisoEnVivo />
 
       <AvisoLectorWhatsapp />
+      <AvisoGruposSinAtar />
 
       <AtarVentas e={e} />
 

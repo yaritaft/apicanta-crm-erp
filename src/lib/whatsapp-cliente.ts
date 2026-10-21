@@ -275,3 +275,27 @@ export function useGrupoDeWebinar(webinarId: string | null) {
 
   return { datos, error, sinAcceso, cargando, recargar, atar, soltar };
 }
+
+/** Atar grupos a un webinar recién creado. El webinar se guarda en la base unos instantes después de crearse en la pantalla:
+    si todavía no está, la ruta contesta «no existe» (404) y se vuelve a probar con calma, unos 40 segundos como mucho. Devuelve
+    los grupos que NO se pudieron atar (vacío si salió todo bien). Los parámetros son para las pruebas. */
+export async function atarGruposAlCrear(
+  grupoIds: readonly string[], webinarId: string,
+  { atar = atarGrupoAWebinar, esperar = (ms: number) => new Promise<void>((r) => setTimeout(r, ms)), esperas = [1500, 3000, 6000, 10_000, 20_000] }:
+    { atar?: (grupoId: string, webinarId: string) => Promise<void>; esperar?: (ms: number) => Promise<void>; esperas?: readonly number[] } = {},
+): Promise<string[]> {
+  const faltan: string[] = [];
+  for (const id of grupoIds) {
+    let hecho = false;
+    for (let i = 0; i <= esperas.length && !hecho; i++) {
+      try { await atar(id, webinarId); hecho = true; }
+      catch (e) {
+        /* Sólo «el webinar todavía no existe» vale la pena reintentar; cualquier otra cosa (sin permiso, sin conexión) se cuenta como no atada. */
+        if (!(e instanceof ErrorWhatsapp && e.estado === 404 && /webinar/i.test(e.message)) || i === esperas.length) break;
+        await esperar(esperas[i]);
+      }
+    }
+    if (!hecho) faltan.push(id);
+  }
+  return faltan;
+}
