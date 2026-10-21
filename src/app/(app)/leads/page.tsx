@@ -276,7 +276,9 @@ export default function Leads() {
         const texto = l.notas?.trim() ?? "";
         const vista = texto ? <span className="truncate" title={texto}>{texto}</span> : <span className="t-subtle">{puedeEscribir ? "Agregar nota…" : "—"}</span>;
         if (!puedeEscribir) return vista;
+        /* Enter guarda la nota: sin frenarlo, la fila lo toma como «abrir la ficha» (el editor cuelga de la celda, y el evento sube). */
         return (
+          <span onKeyDown={(ev) => ev.stopPropagation()} style={{ display: "block", minWidth: 0 }}>
           <CeldaEditable
             editor="largo" valor={l.notas ?? ""} titulo="Notas" abierta={notaAbierta === l.id}
             onAbrir={() => setNotaAbierta(l.id)} onCerrar={() => setNotaAbierta((x) => (x === l.id ? null : x))}
@@ -284,6 +286,7 @@ export default function Leads() {
           >
             {vista}
           </CeldaEditable>
+          </span>
         );
       },
     },
