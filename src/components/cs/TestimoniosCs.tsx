@@ -110,7 +110,8 @@ export function TestimoniosCs() {
     if (clave === "alumno") {
       return (
         <span className="crm-t__persona">
-          <button type="button" className="crm-t__abrir truncate" disabled={!f.alumno} onClick={() => f.alumno && abrirFicha(f.alumno.id, "servicio")}>
+          <button type="button" className="crm-t__abrir truncate" disabled={!f.alumno} onClick={() => f.alumno && abrirFicha(f.alumno.id, "servicio", { hoja: "testimonio" })}
+            title={f.alumno ? `Abrir el testimonio en la ficha de ${f.nombre}` : "No está atado a un alumno de la app"}>
             {f.nombre || "Alumno borrado"}
           </button>
           {puede && (

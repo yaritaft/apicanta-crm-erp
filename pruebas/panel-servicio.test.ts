@@ -1,8 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import {
-  cuandoEs, DIAS_DE_GRACIA, etapaDelFollowUp, ETAPAS_DEL_ALUMNO, panelDeServicio, resellResuelto, type PanelDeServicio, type SeccionServicio,
+  coincideCartera, cuandoEs, DIAS_DE_GRACIA, etapaDelFollowUp, ETAPAS_DEL_ALUMNO, MOTOR_CARTERA, ORDEN_CARTERA, ORDEN_ETAPAS_CARTERA,
+  ORDEN_LISTA, panelDeServicio, renglonesCartera, resellResuelto, VISIBLES_CARTERA, VISIBLES_LISTA, type PanelDeServicio, type SeccionServicio,
 } from "@/lib/panel-servicio";
+import { SOLAPAS_SERVICIO } from "@/lib/solapas-servicio";
 import { CONFIG_POR_DEFECTO, seguimientoVacio, situacionDe, terminoElServicio } from "@/lib/seguimiento";
 import { ACCESO_DUENO, areaDeRuta, nivelDeRuta, TIPOS_POR_DEFECTO, type MiAcceso } from "@/lib/permisos";
 import { conPanel, vistaDePanel } from "@/lib/mi-panel";
@@ -294,4 +297,56 @@ test("los números del servicio salen de los mismos datos", () => {
   assert.equal(p.numeros.casosDeExito, 0);
   assert.equal(p.numeros.testimoniosConVideo, 0);
   assert.equal(p.numeros.renovacionesMes, 1, "«Resuelta» renovó el 09/10, este mes; la cancelada y las abiertas no cuentan");
+});
+
+/* ---------- La Cartera como tabla (TablaCs, 21/10) ---------- */
+
+test("la cartera como tabla: los alumnos de la base (de una etapa si se eligió) o los de la lista de «Para hoy», en su orden", () => {
+  const p = panelDeServicio(estado(), HOY, AHORA);
+  const enServicio = p.cartera.filter((f) => f.enServicio);
+  const todos = renglonesCartera(enServicio);
+  assert.deepEqual(todos.map((r) => r.id).sort(), enServicio.map((f) => f.id).sort(), "uno por alumno de la base");
+  assert.ok(todos.every((r) => r.alumnoId === r.id && r.fila && !r.item));
+
+  const etapa = enServicio[0].etapa;
+  assert.ok(renglonesCartera(enServicio, undefined, etapa).every((r) => r.fila?.etapa === etapa), "sólo los de la etapa elegida");
+
+  const nuevos = seccion(p, "nuevos");
+  const deLista = renglonesCartera(p.cartera, nuevos);
+  assert.deepEqual(deLista.map((r) => r.id), nuevos.items.map((i) => i.clave), "la lista trae a los suyos, en su orden");
+  assert.ok(deLista.every((r) => r.item && r.fila), "con lo que pasa y con los datos de su ficha");
+  assert.deepEqual(MOTOR_CARTERA.ordenarFilas(deLista, ORDEN_LISTA).map((r) => r.id), deLista.map((r) => r.id), "sin orden elegido, el de la lista");
+});
+
+test("la cartera como tabla: de entrada por etapa del recorrido y después por nombre; se busca por nombre, teléfono o lo que pasa", () => {
+  const p = panelDeServicio(estado(), HOY, AHORA);
+  const filas = renglonesCartera(p.cartera);
+  const ordenadas = MOTOR_CARTERA.ordenarFilas(filas, ORDEN_CARTERA, ORDEN_ETAPAS_CARTERA);
+  const puesto = (id: string | undefined) => ETAPAS_DEL_ALUMNO.findIndex((x) => x.id === id);
+  for (let i = 1; i < ordenadas.length; i++) {
+    const a = ordenadas[i - 1], b = ordenadas[i];
+    assert.ok(puesto(a.fila?.etapa) <= puesto(b.fila?.etapa), `${a.nombre} antes que ${b.nombre}: su etapa va antes`);
+  }
+  const uno = filas[0];
+  assert.ok(coincideCartera(uno, uno.nombre.toUpperCase()));
+  assert.ok(!coincideCartera(uno, "nadie se llama así"));
+  const conTarea = renglonesCartera(p.cartera, seccion(p, "contactar"))[0];
+  if (conTarea?.item) assert.ok(coincideCartera(conTarea, conTarea.item.detalle.slice(0, 8)), "busca también en «qué pasa»");
+  /* Las columnas de entrada existen en el motor (un nombre mal escrito dejaría una columna en blanco). */
+  for (const k of [...VISIBLES_CARTERA, ...VISIBLES_LISTA]) assert.ok(MOTOR_CARTERA.esColumna(k), k);
+});
+
+test("cada lista de «Para hoy» abre la ficha en una solapa que existe, y cada solapa de la vista Servicio se puede pedir por link", () => {
+  const panel = readFileSync("src/components/mi-panel/PanelServicio.tsx", "utf8");
+  const hojas = /HOJA_DE_LISTA[^=]*=\s*\{([^}]*)\}/.exec(panel)?.[1] ?? "";
+  const pedidas = [...hojas.matchAll(/"([a-z]+)"/g)].map((m) => m[1]);
+  assert.ok(pedidas.length >= 5, "el mapa de listas a solapas está");
+  for (const h of pedidas) assert.ok((SOLAPAS_SERVICIO as readonly string[]).includes(h), `la solapa «${h}» existe`);
+
+  const hoja = readFileSync("src/components/ficha/HojaServicio.tsx", "utf8");
+  const dibujadas = new Set([...hoja.matchAll(/solapa === "([a-z]+)"/g)].map((m) => m[1]));
+  assert.deepEqual([...dibujadas].sort(), [...SOLAPAS_SERVICIO].sort(), "las solapas que dibuja la ficha son las que acepta ?hoja");
+  for (const [archivo, solapa] of [["src/components/cs/RevisionCvCs.tsx", "cv"], ["src/components/cs/TestimoniosCs.tsx", "testimonio"], ["src/components/cs/ResellsCs.tsx", "testimonio"], ["src/components/alumnos/Seguimiento.tsx", "seguimiento"]]) {
+    assert.match(readFileSync(archivo, "utf8"), new RegExp(`abrirFicha\\([^)]*hoja: "${solapa}"`), `${archivo} abre la ficha en «${solapa}»`);
+  }
 });

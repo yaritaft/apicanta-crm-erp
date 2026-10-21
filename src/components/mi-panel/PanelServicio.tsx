@@ -3,20 +3,22 @@
 import React, { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
-  CalendarClock, Check, ChevronRight, FileSignature, FileWarning, PhoneCall, Repeat2, Search, UserPlus, Video, X,
+  CalendarClock, Check, ChevronRight, FileSignature, FileWarning, PhoneCall, Repeat2, UserPlus, Video, X,
 } from "lucide-react";
 import { Telefono } from "@/components/ui/Telefono";
-import { useAbrirFicha } from "@/components/ficha/abrir";
+import { NADA, Recorte, TablaCs } from "@/components/cs/TablaCs";
+import { useAbrirFicha, type SolapaServicio } from "@/components/ficha/abrir";
 import { useGestos } from "@/components/alumnos/Seguimiento";
 import { useEstado } from "@/lib/store";
 import { useAcceso } from "@/lib/acceso";
 import { useParamsURL } from "@/lib/useParamsURL";
 import { nivelDeRuta } from "@/lib/permisos";
-import { sinTildes } from "@/lib/crm";
 import { formatoDia, hoyDelNegocio } from "@/lib/seguimiento";
 import {
-  ETAPAS_DEL_ALUMNO, panelDeServicio, type EtapaAlumnoId, type FilaCartera, type ItemServicio, type SeccionServicio,
+  COLUMNAS_CARTERA, coincideCartera, ETAPAS_DEL_ALUMNO, MOTOR_CARTERA, ORDEN_CARTERA, ORDEN_ETAPAS_CARTERA, ORDEN_LISTA, panelDeServicio,
+  renglonesCartera, VISIBLES_CARTERA, VISIBLES_LISTA, type ClaveCartera, type EtapaAlumnoId, type RenglonCartera, type SeccionServicio,
 } from "@/lib/panel-servicio";
+import type { ColumnaCs } from "@/lib/tabla-cs";
 import type { MiembroEquipo } from "@/lib/types";
 import { plural, saludoDe } from "./util";
 import "./mi-panel.css";
@@ -29,14 +31,18 @@ import "./panel-servicio.css";
      · «Para hoy»: lo que hay que hacer hoy, una fila por tarea con su cuenta. Tocar una
        fila filtra la cartera de abajo a esos alumnos (y lleva hasta ahí).
      · «Tus números»: cuántos hay en servicio, cuántos se contactaron, casos de éxito…
-     · «Cartera»: todos los alumnos por etapa del recorrido (sale del Follow Up), como una
-       tabla de Airtable: se filtra por etapa, se busca, se ordena por cualquier columna.
-       Tocar un alumno abre su ficha en Servicio, donde se hace lo que haya que hacer.
+     · «Cartera»: todos los alumnos por etapa del recorrido (sale del Follow Up), en la misma
+       tabla que Clientes o Testimonios (TablaCs): cada título filtra como un Excel y ordena,
+       corre adentro de su tarjeta con el encabezado fijo y va de a 50 por hoja. Tocar un
+       alumno abre su ficha en Servicio, en la solapa que pide la lista elegida.
 
    Las reglas y las cuentas están en lib/panel-servicio.ts; acá no se calcula nada.
    ================================================================== */
 
-const POR_PAGINA = 50;
+/* La solapa de la ficha que abre cada lista de «Para hoy». */
+const HOJA_DE_LISTA: Partial<Record<SeccionServicio["id"], SolapaServicio>> = {
+  contactar: "seguimiento", nuevos: "seguimiento", resells: "testimonio", testimonios: "testimonio", reportes: "reportes", contratos: "contrato",
+};
 
 /* Cómo se ve cada tarea de «Para hoy»: su ícono, su color y lo que pide. */
 const TAREA: Record<SeccionServicio["id"], { icono: React.ReactNode; tono: string; pide: string }> = {
@@ -49,45 +55,12 @@ const TAREA: Record<SeccionServicio["id"], { icono: React.ReactNode; tono: strin
   contratos: { icono: <FileSignature size={16} />, tono: "var(--info)", pide: "falta la firma" },
 };
 
-type Columna = "nombre" | "programa" | "etapa" | "inicio" | "egreso" | "ultimoContacto" | "proximo" | "detalle" | "cuando";
-
-/* Una fila de la tabla: un alumno de la cartera o una tarea de «Para hoy» (con lo que pasa y cuándo). */
-interface Renglon {
-  clave: string;
-  alumnoId?: string;
-  nombre: string;
-  programa: string;
-  fila?: FilaCartera;
-  item?: ItemServicio;
-}
-
-const texto = (r: Renglon, c: Columna): string | number => {
-  const f = r.fila;
-  switch (c) {
-    case "nombre": return sinTildes(r.nombre);
-    case "programa": return sinTildes(r.programa);
-    case "etapa": return f ? ETAPAS_DEL_ALUMNO.findIndex((x) => x.id === f.etapa) * 1000 + (f.followUp ? 0 : 1) : 9999;
-    case "inicio": return f?.inicio || "";
-    case "egreso": return f?.egreso || "";
-    case "ultimoContacto": return f?.ultimoContacto || "";
-    case "proximo": return f?.proximo || "9999";
-    case "detalle": return sinTildes(r.item?.detalle ?? "");
-    case "cuando": return r.item?.dias ?? -1e9;
-  }
-};
-
-function Cabecera({ c, titulo, orden, onOrden, ancho }: {
-  c: Columna; titulo: string; orden: { col: Columna; desc: boolean } | null; onOrden: (c: Columna) => void; ancho?: number;
-}) {
-  const activa = orden?.col === c;
-  return (
-    <th style={ancho ? { width: ancho } : undefined} aria-sort={activa ? (orden?.desc ? "descending" : "ascending") : undefined}>
-      <button type="button" className="ps-th" onClick={() => onOrden(c)} title="Ordenar por esta columna">
-        {titulo}{activa && <span aria-hidden>{orden?.desc ? " ↓" : " ↑"}</span>}
-      </button>
-    </th>
-  );
-}
+/* Al cambiar de lista, la tabla arranca limpia: sin la búsqueda, los filtros, el orden ni la hoja de la otra. */
+const TABLA_LIMPIA: Record<string, null> = Object.assign(
+  { [MOTOR_CARTERA.paramBusqueda]: null, [MOTOR_CARTERA.paramOrden]: null, [MOTOR_CARTERA.paramPagina]: null },
+  ...COLUMNAS_CARTERA.map((c) => MOTOR_CARTERA.filtroAURL(c.clave, null)),
+);
+const PRIMERA_HOJA = { [MOTOR_CARTERA.paramPagina]: null };
 
 export function PanelServicio({ miembro, viendoOtro }: { miembro: MiembroEquipo; viendoOtro: boolean }) {
   const e = useEstado();
@@ -100,14 +73,9 @@ export function PanelServicio({ miembro, viendoOtro }: { miembro: MiembroEquipo;
 
   const hoy = hoyDelNegocio(new Date(ahora));
   const panel = useMemo(() => panelDeServicio(e, hoy, new Date(ahora)), [e, hoy, ahora]);
-  const porId = useMemo(() => new Map(panel.cartera.map((f) => [f.id, f] as const)), [panel]);
-
   const lista = panel.secciones.find((s) => s.id === v.lista);
   const etapa = ETAPAS_DEL_ALUMNO.find((x) => x.id === v.etapa)?.id;
   const todos = v.base === "todos";
-  const [q, setQ] = useState("");
-  const [orden, setOrden] = useState<{ col: Columna; desc: boolean } | null>(null);
-  const [mostrar, setMostrar] = useState({ clave: "", n: POR_PAGINA });
 
   /* La base de la cartera (en servicio o todos) y lo que cuenta la tira de etapas: sobre la misma base que la tabla. */
   const base = useMemo(() => (todos ? panel.cartera : panel.cartera.filter((f) => f.enServicio)), [panel, todos]);
@@ -116,36 +84,8 @@ export function PanelServicio({ miembro, viendoOtro }: { miembro: MiembroEquipo;
     for (const f of base) n[f.etapa] += 1;
     return n;
   }, [base]);
-
-  const renglones = useMemo((): Renglon[] => {
-    const t = sinTildes(q.trim());
-    const busca = (r: Renglon) => !t || sinTildes([r.nombre, r.programa, r.fila?.followUp, r.fila?.telefono, r.fila?.email, r.item?.detalle].filter(Boolean).join(" ")).includes(t);
-    let xs: Renglon[];
-    if (lista) {
-      xs = lista.items.map((i) => {
-        const fila = i.alumnoId ? porId.get(i.alumnoId) : undefined;
-        return { clave: i.clave, alumnoId: i.alumnoId, nombre: i.nombre, programa: fila?.programa || i.programa || "", fila, item: i };
-      });
-    } else {
-      xs = base.filter((f) => !etapa || f.etapa === etapa).map((f) => ({ clave: f.id, alumnoId: f.id, nombre: f.nombre, programa: f.programa, fila: f }));
-    }
-    xs = xs.filter(busca);
-    if (orden) {
-      const s = orden.desc ? -1 : 1;
-      xs = [...xs].sort((a, b) => {
-        const x = texto(a, orden.col), y = texto(b, orden.col);
-        return (x < y ? -1 : x > y ? 1 : 0) * s || a.nombre.localeCompare(b.nombre, "es");
-      });
-    } else if (!lista) {
-      /* Sin ordenar a mano, la cartera se lee de la mano de la tira de etapas. */
-      xs = [...xs].sort((a, b) => (texto(a, "etapa") as number) - (texto(b, "etapa") as number) || a.nombre.localeCompare(b.nombre, "es"));
-    }
-    return xs;
-  }, [lista, base, etapa, porId, q, orden]);
-
-  const claveVista = `${v.lista}|${v.etapa}|${v.base}|${q}|${orden?.col}${orden?.desc}`;
-  const n = mostrar.clave === claveVista ? mostrar.n : POR_PAGINA;
-  const ordenarPor = (c: Columna) => setOrden((o) => (o?.col === c ? (o.desc ? null : { col: c, desc: true }) : { col: c, desc: false }));
+  /* Una lista de «Para hoy» trae a los suyos (estén o no en servicio): sus datos se buscan en toda la cartera. */
+  const renglones = useMemo(() => renglonesCartera(lista ? panel.cartera : base, lista, etapa), [panel, base, lista, etapa]);
   const irACartera = () => window.setTimeout(() => document.getElementById("ps-cartera")?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
 
   const puedeEscribir = !viendoOtro && nivelDeRuta(acceso, "/alumnos") >= 2;
@@ -153,7 +93,65 @@ export function PanelServicio({ miembro, viendoOtro }: { miembro: MiembroEquipo;
     const alumno = e.alumnos.find((a) => a.id === id);
     if (alumno) gestos.contacte({ id, alumno });
   };
-  const abrir = (r: Renglon) => { if (r.alumnoId) abrirFicha(r.alumnoId, "servicio"); };
+  /* Desde una lista, la ficha abre en la parte que pide esa lista (el contacto en Seguimiento, el resell en Testimonio…). */
+  const abrir = (r: RenglonCartera) => {
+    if (!r.alumnoId) return;
+    const hoja = lista ? HOJA_DE_LISTA[lista.id] : undefined;
+    abrirFicha(r.alumnoId, "servicio", hoja ? { hoja } : undefined);
+  };
+
+  /* Cada celda, como se veía en la tabla de antes: el punto de color, el Follow Up teñido por etapa, lo vencido en rojo. */
+  const celda = (col: ColumnaCs<RenglonCartera, ClaveCartera>, r: RenglonCartera): React.ReactNode => {
+    const f = r.fila;
+    const dia = (x: string | null | undefined, rojo = false, sin: React.ReactNode = NADA) =>
+      x ? <span className={`t-num${rojo ? " ps-rojo" : ""}`}>{formatoDia(x, hoy)}</span> : sin;
+    switch (col.clave) {
+      case "nombre":
+        return (
+          <span className="ps-alumno">
+            <span className={`ps-punto ps-punto--${r.item ? r.item.tono : f?.etapa === "riesgo" ? "rojo" : "neutro"}`} aria-hidden />
+            <span className="truncate" title={r.nombre}>{r.nombre}</span>
+          </span>
+        );
+      case "programa": return <Recorte texto={r.programa} />;
+      case "detalle": return <Recorte texto={r.item?.detalle ?? ""} />;
+      case "cuando": return r.item?.cuando ? <span className={`t-num ps-cuando--${r.item.tono}`}>{r.item.cuando}</span> : NADA;
+      case "followUp": return f ? <span className={`ps-follow ps-follow--${f.etapa}`}>{f.followUp || "Sin follow up"}</span> : NADA;
+      case "etapa": return <Recorte texto={ETAPAS_DEL_ALUMNO.find((x) => x.id === f?.etapa)?.label ?? ""} />;
+      case "estado": return <Recorte texto={f?.estadoAlumno ?? ""} />;
+      case "inicio": return dia(f?.inicio);
+      case "egreso": return dia(f?.egreso, Boolean(f?.egreso && f.enServicio && f.egreso < hoy));
+      case "ultimoContacto": return dia(f?.ultimoContacto, false, <span className="t-subtle">Sin registro</span>);
+      case "proximo": return dia(f?.proximo, Boolean(f?.proximo && f.proximo < hoy));
+      case "reporte": return <Recorte texto={f?.reporte ?? ""} />;
+      case "email": return <Recorte texto={f?.email || r.item?.email || ""} />;
+      case "telefono":
+        return (
+          <span onClick={(ev) => ev.stopPropagation()}>
+            <Telefono valor={f?.telefono || r.item?.telefono} pais={f?.pais || r.item?.pais} compacto vacio="—" />
+          </span>
+        );
+    }
+  };
+  const valorExcel = (col: ColumnaCs<RenglonCartera, ClaveCartera>, r: RenglonCartera): string | number | null => {
+    const f = r.fila;
+    switch (col.clave) {
+      case "nombre": return r.nombre;
+      case "programa": return r.programa;
+      case "detalle": return r.item?.detalle ?? "";
+      case "cuando": return r.item?.cuando ?? "";
+      case "followUp": return f?.followUp ?? "";
+      case "etapa": return ETAPAS_DEL_ALUMNO.find((x) => x.id === f?.etapa)?.label ?? "";
+      case "estado": return f?.estadoAlumno ?? "";
+      case "inicio": return f?.inicio || null;
+      case "egreso": return f?.egreso || null;
+      case "ultimoContacto": return f?.ultimoContacto || null;
+      case "proximo": return f?.proximo || null;
+      case "reporte": return f?.reporte ?? "";
+      case "telefono": return f?.telefono || r.item?.telefono || "";
+      case "email": return f?.email || r.item?.email || "";
+    }
+  };
 
   const paraHoy = panel.secciones.filter((s) => s.total > 0);
   /* Lo que suman las listas de hoy (una persona puede estar en dos: es lo que hay que hacer, no cuántas personas). */
@@ -191,7 +189,7 @@ export function PanelServicio({ miembro, viendoOtro }: { miembro: MiembroEquipo;
                 return (
                   <button
                     key={s.id} type="button" className={`ps-tarea${activa ? " ps-tarea--on" : ""}`} aria-pressed={activa}
-                    onClick={() => { cambiar({ lista: activa ? null : s.id, etapa: null }); setQ(""); setOrden(null); if (!activa) irACartera(); }}
+                    onClick={() => { cambiar({ lista: activa ? null : s.id, etapa: null }, TABLA_LIMPIA); if (!activa) irACartera(); }}
                   >
                     <span className="ps-ico" style={{ "--tono": t.tono } as React.CSSProperties}>{t.icono}</span>
                     <span className="ps-tarea__txt">
@@ -255,7 +253,7 @@ export function PanelServicio({ miembro, viendoOtro }: { miembro: MiembroEquipo;
             return (
               <button
                 key={x.id} type="button" className={`ps-etapa${on ? " ps-etapa--on" : ""}${x.riesgo ? " ps-etapa--riesgo" : ""}`} aria-pressed={on} title={x.ayuda}
-                onClick={() => { cambiar({ etapa: on ? null : x.id, lista: null }); setOrden(null); }}
+                onClick={() => cambiar({ etapa: on ? null : x.id, lista: null }, lista ? TABLA_LIMPIA : PRIMERA_HOJA)}
               >
                 <span className={`ps-etapa__n${cuenta === 0 ? " ps-etapa__n--cero" : ""}`}>{cuenta}</span>
                 <span className="ps-etapa__rot">{x.label}</span>
@@ -264,162 +262,40 @@ export function PanelServicio({ miembro, viendoOtro }: { miembro: MiembroEquipo;
           })}
         </div>
 
-        <div className="ps-barra">
-          <div className="segmento" role="tablist" aria-label="Qué alumnos">
-            <button type="button" role="tab" aria-selected={!todos} onClick={() => cambiar({ base: null })}>En servicio <span className="ps-seg-n">{panel.activos}</span></button>
-            <button type="button" role="tab" aria-selected={todos} onClick={() => cambiar({ base: "todos" })}>Todos <span className="ps-seg-n">{panel.cartera.length}</span></button>
-          </div>
-          {(lista || etapa) && (
-            <span className="ps-filtro">
-              {lista ? lista.titulo : ETAPAS_DEL_ALUMNO.find((x) => x.id === etapa)?.label}
-              <button type="button" aria-label="Quitar el filtro" onClick={() => cambiar({ lista: null, etapa: null })}><X size={13} /></button>
-            </span>
-          )}
-          <label className="ps-buscar">
-            <Search size={15} aria-hidden />
-            <input value={q} onChange={(ev) => setQ(ev.target.value)} onKeyDown={(ev) => { if (ev.key === "Escape" && q) { ev.stopPropagation(); setQ(""); } }}
-              placeholder="Buscar alumno, mail o teléfono…" aria-label="Buscar en la cartera" />
-            {q && <button type="button" className="ps-buscar__x" onClick={() => setQ("")} aria-label="Borrar la búsqueda" title="Borrar la búsqueda (Esc)"><X size={14} /></button>}
-          </label>
-        </div>
         {lista && <p className="ps-regla">{lista.regla}</p>}
 
-        <div className="ps-tabla-caja">
-          <table className="ps-tabla">
-            <thead>
-              <tr>
-                <Cabecera c="nombre" titulo="Alumno" orden={orden} onOrden={ordenarPor} />
-                <Cabecera c="programa" titulo="Programa" orden={orden} onOrden={ordenarPor} ancho={120} />
-                {lista ? (
-                  <>
-                    <Cabecera c="detalle" titulo="Qué pasa" orden={orden} onOrden={ordenarPor} />
-                    <Cabecera c="cuando" titulo="Cuándo" orden={orden} onOrden={ordenarPor} ancho={110} />
-                  </>
-                ) : (
-                  <>
-                    <Cabecera c="etapa" titulo="Follow up" orden={orden} onOrden={ordenarPor} ancho={150} />
-                    <Cabecera c="inicio" titulo="Inicio" orden={orden} onOrden={ordenarPor} ancho={86} />
-                    <Cabecera c="egreso" titulo="Vence" orden={orden} onOrden={ordenarPor} ancho={100} />
-                    <Cabecera c="ultimoContacto" titulo="Último contacto" orden={orden} onOrden={ordenarPor} ancho={124} />
-                    <Cabecera c="proximo" titulo="Próximo" orden={orden} onOrden={ordenarPor} ancho={88} />
-                  </>
-                )}
-                <th style={{ width: 168 }}>Teléfono</th>
-                {lista?.id === "contactar" && puedeEscribir && <th style={{ width: 120 }} aria-label="Acción" />}
-              </tr>
-            </thead>
-            <tbody>
-              {renglones.slice(0, n).map((r) => {
-                const f = r.fila;
-                const vencido = f && f.proximo && f.proximo < hoy;
-                const vence = f?.egreso && f.enServicio && f.egreso < hoy;
-                return (
-                  <tr
-                    key={r.clave} className={r.alumnoId ? "ps-tr--clic" : undefined} tabIndex={r.alumnoId ? 0 : undefined}
-                    onClick={() => abrir(r)} onKeyDown={(ev) => { if (ev.target === ev.currentTarget && ev.key === "Enter") abrir(r); }}
-                    title={r.alumnoId ? `Abrir la ficha de ${r.nombre}` : "No es un alumno de la app"}
-                  >
-                    <td>
-                      <span className="ps-alumno">
-                        <span className={`ps-punto ps-punto--${r.item ? r.item.tono : f?.etapa === "riesgo" ? "rojo" : "neutro"}`} aria-hidden />
-                        <span className="ps-alumno__nombre ps-2renglones">{r.nombre}</span>
-                      </span>
-                    </td>
-                    <td className="ps-sutil">{r.programa || "—"}</td>
-                    {lista ? (
-                      <>
-                        <td className="ps-detalle-td" title={r.item?.detalle}><span className="ps-2renglones">{r.item?.detalle}</span></td>
-                        <td className={`ps-num ps-cuando--${r.item?.tono}`}>{r.item?.cuando}</td>
-                      </>
-                    ) : (
-                      <>
-                        <td><span className={`ps-follow ps-follow--${f?.etapa}`}>{f?.followUp || "Sin follow up"}</span></td>
-                        <td className="ps-num ps-sutil">{f?.inicio ? formatoDia(f.inicio, hoy) : "—"}</td>
-                        <td className={`ps-num${vence ? " ps-rojo" : " ps-sutil"}`}>{f?.egreso ? formatoDia(f.egreso, hoy) : "—"}</td>
-                        <td className="ps-num ps-sutil">{f?.ultimoContacto ? formatoDia(f.ultimoContacto, hoy) : "Sin registro"}</td>
-                        <td className={`ps-num${vencido ? " ps-rojo" : " ps-sutil"}`}>{f?.proximo ? formatoDia(f.proximo, hoy) : "—"}</td>
-                      </>
-                    )}
-                    <td onClick={(ev) => ev.stopPropagation()}><Telefono valor={f?.telefono || r.item?.telefono} pais={f?.pais || r.item?.pais} compacto vacio="—" /></td>
-                    {lista?.id === "contactar" && puedeEscribir && (
-                      <td onClick={(ev) => ev.stopPropagation()}>
-                        {r.alumnoId && (
-                          <button type="button" className="ps-accion" onClick={() => contacte(r.alumnoId as string)} title="Lo contacté hoy: el próximo toca según su cadencia">
-                            <Check size={14} aria-hidden />Lo contacté
-                          </button>
-                        )}
-                      </td>
-                    )}
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-
-          {/* En el celular la tabla no entra: cada alumno es una tarjeta con lo que importa (CSS decide cuál se ve). */}
-          <ul className="ps-tarjetas" aria-label="Alumnos">
-            {renglones.slice(0, n).map((r) => {
-              const f = r.fila;
-              const vencido = f && f.proximo && f.proximo < hoy;
-              return (
-                <li key={r.clave}>
-                  <div
-                    className={`ps-tarjeta${r.alumnoId ? " ps-tr--clic" : ""}`} role={r.alumnoId ? "button" : undefined} tabIndex={r.alumnoId ? 0 : undefined}
-                    onClick={() => abrir(r)} onKeyDown={(ev) => { if (ev.target === ev.currentTarget && ev.key === "Enter") abrir(r); }}
-                  >
-                    <span className="ps-tarjeta__cabeza">
-                      <span className={`ps-punto ps-punto--${r.item ? r.item.tono : f?.etapa === "riesgo" ? "rojo" : "neutro"}`} aria-hidden />
-                      <span className="ps-tarjeta__nombre">{r.nombre}</span>
-                      {r.alumnoId && <ChevronRight size={16} className="ps-tarea__ir" aria-hidden />}
-                    </span>
-                    <span className="ps-tarjeta__linea">
-                      <span className="ps-sutil">{r.programa || "Sin programa"}</span>
-                      {lista ? null : <span className={`ps-follow ps-follow--${f?.etapa}`}>{f?.followUp || "Sin follow up"}</span>}
-                    </span>
-                    {lista ? (
-                      <span className="ps-tarjeta__linea">
-                        <span className={`ps-num ps-cuando--${r.item?.tono}`}>{r.item?.cuando}</span>
-                        <span className="ps-sutil ps-2renglones">{r.item?.detalle}</span>
-                      </span>
-                    ) : (
-                      <span className="ps-tarjeta__linea ps-sutil">
-                        <span>Próximo <b className={vencido ? "ps-rojo" : undefined}>{f?.proximo ? formatoDia(f.proximo, hoy) : "—"}</b></span>
-                        <span>· Vence <b>{f?.egreso ? formatoDia(f.egreso, hoy) : "—"}</b></span>
-                      </span>
-                    )}
-                    <span className="ps-tarjeta__linea" onClick={(ev) => ev.stopPropagation()}>
-                      <Telefono valor={f?.telefono || r.item?.telefono} pais={f?.pais || r.item?.pais} compacto vacio="Sin teléfono" />
-                      {lista?.id === "contactar" && puedeEscribir && r.alumnoId && (
-                        <button type="button" className="ps-accion" onClick={() => contacte(r.alumnoId as string)}><Check size={14} aria-hidden />Lo contacté</button>
-                      )}
-                    </span>
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
-          {renglones.length === 0 && (
-            <div className="mp-vacio ps-tabla-vacia">
-              <p>{q ? <>Nadie {todos ? "" : "en servicio "}{lista || etapa ? "con este filtro " : ""}coincide con «{q.trim()}».</> : lista ? lista.vacio : "No hay alumnos en esta etapa."}</p>
-              {q && (
-                <div className="ps-vacio__acc">
-                  {(lista || etapa) && <button type="button" className="ps-accion" onClick={() => cambiar({ lista: null, etapa: null })}>Buscar sin el filtro</button>}
-                  {!todos && <button type="button" className="ps-accion" onClick={() => cambiar({ base: "todos" })}>Buscar en todos los alumnos</button>}
-                  <button type="button" className="ps-accion" onClick={() => setQ("")}>Borrar la búsqueda</button>
-                </div>
+        <TablaCs
+          key={lista ? "lista" : "cartera"}
+          motor={MOTOR_CARTERA} pantalla={lista ? "panel-servicio-lista" : "panel-servicio-cartera"} filas={renglones} coincide={coincideCartera}
+          visiblesPorDefecto={lista ? VISIBLES_LISTA : VISIBLES_CARTERA} ordenPorDefecto={lista ? ORDEN_LISTA : ORDEN_CARTERA}
+          fija="nombre" ordenValores={ORDEN_ETAPAS_CARTERA} celda={celda}
+          singular="alumno" plural="alumnos" placeholder="Buscar alumno, mail o teléfono"
+          atajos={(
+            <>
+              <div className="segmento" role="tablist" aria-label="Qué alumnos">
+                <button type="button" role="tab" aria-selected={!todos} onClick={() => cambiar({ base: null }, PRIMERA_HOJA)}>En servicio <span className="ps-seg-n">{panel.activos}</span></button>
+                <button type="button" role="tab" aria-selected={todos} onClick={() => cambiar({ base: "todos" }, PRIMERA_HOJA)}>Todos <span className="ps-seg-n">{panel.cartera.length}</span></button>
+              </div>
+              {(lista || etapa) && (
+                <span className="ps-filtro">
+                  {lista ? lista.titulo : ETAPAS_DEL_ALUMNO.find((x) => x.id === etapa)?.label}
+                  <button type="button" aria-label="Quitar el filtro" onClick={() => cambiar({ lista: null, etapa: null }, lista ? TABLA_LIMPIA : PRIMERA_HOJA)}><X size={13} /></button>
+                </span>
               )}
-            </div>
+            </>
           )}
-        </div>
-
-        <div className="ps-pie-tabla">
-          <span>{renglones.length > 0 ? `${Math.min(n, renglones.length)} de ${renglones.length} · tocá un alumno para abrir su ficha` : ""}</span>
-          {n < renglones.length && (
-            <button type="button" className="ps-accion" onClick={() => setMostrar({ clave: claveVista, n: n + POR_PAGINA })}>
-              Ver {Math.min(POR_PAGINA, renglones.length - n)} más
+          excel={{ nombre: lista ? lista.titulo : "Cartera", hoy, valor: valorExcel }}
+          vacio={lista
+            ? { titulo: "Nadie en esta lista", texto: lista.vacio }
+            : { titulo: etapa ? "Nadie en esta etapa" : "No hay alumnos", texto: todos ? "Probá con otra etapa." : "Probá con «Todos»: hay alumnos que ya no están en servicio.",
+              accion: !todos ? <button type="button" className="ps-accion" onClick={() => cambiar({ base: "todos" }, PRIMERA_HOJA)}>Ver todos</button> : undefined }}
+          onFila={abrir} etiquetaFila={(r) => (r.alumnoId ? `Abrir la ficha de ${r.nombre}` : `${r.nombre} no es un alumno de la app`)}
+          filaAcciones={lista?.id === "contactar" && puedeEscribir ? (r) => (r.alumnoId ? (
+            <button type="button" className="ps-accion" onClick={(ev) => { ev.stopPropagation(); contacte(r.alumnoId as string); }} title="Lo contacté hoy: el próximo toca según su cadencia">
+              <Check size={14} aria-hidden />Lo contacté
             </button>
-          )}
-        </div>
+          ) : null) : undefined}
+        />
       </section>
 
       <div className="ps-pie">

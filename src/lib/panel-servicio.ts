@@ -1,6 +1,7 @@
 import type { EstadoApp, ID } from "./types";
 import { DURACION_POR_DEFECTO, estadosDeResell, filasClientes, filasResells, filasTestimonios, sumarMeses } from "./clientes-cs";
 import { diasEntre, formatoDia, terminoElServicio } from "./seguimiento";
+import { crearMotor, uno, varios, type ColumnaCs, type OrdenCs } from "./tabla-cs";
 
 /* ==================================================================
    «Mi panel» de Customer Success (reunión del 19/10 con Lili, Aldana y Yari).
@@ -330,4 +331,70 @@ export function panelDeServicio(e: EstadoApp, hoy: string, ahora: Date = new Dat
     hoy, activos: activos.length, enOutboarding, desactualizados, secciones, urgentes, cartera, numeros,
     cvs: { enCurso: abiertos.length, porEstado: [...porEstado].map(([estado, n]) => ({ estado, n })).sort((a, b) => b.n - a.n), sinAlumno: cvs.filter((r) => !r.alumnoId).length },
   };
+}
+
+/* ---------- La Cartera como tabla ----------
+   Con el mismo armazón que Clientes, Testimonios, Resells y CVs (components/cs/TablaCs): cada título filtra como un Excel y
+   ordena, la tabla corre adentro de su tarjeta con el encabezado fijo y va de a 50 por hoja, las columnas se eligen y todo viaja
+   en el link (Juan Cruz, 21/10: «que tenga deslizante y hojas, igual que todas las otras tablas»). Un renglón es un alumno de la
+   cartera o, con una lista de «Para hoy» elegida, una tarea de esa lista (con qué pasa y cuándo). */
+export interface RenglonCartera {
+  id: string;
+  /* El alumno, para abrir su ficha. Un resell cuyo mail no es de un alumno no lo tiene. */
+  alumnoId?: ID;
+  nombre: string;
+  programa: string;
+  fila?: FilaCartera;
+  item?: ItemServicio;
+}
+
+export type ClaveCartera =
+  | "nombre" | "programa" | "detalle" | "cuando" | "followUp" | "etapa" | "estado" | "inicio" | "egreso" | "ultimoContacto" | "proximo"
+  | "reporte" | "telefono" | "email";
+
+const etapaDe = (r: RenglonCartera) => ETAPAS_DEL_ALUMNO.find((x) => x.id === r.fila?.etapa);
+
+export const COLUMNAS_CARTERA: ColumnaCs<RenglonCartera, ClaveCartera>[] = [
+  { clave: "nombre", titulo: "Alumno", grupo: "Alumno", valores: (r) => uno(r.nombre), orden: (r) => sinTildes(r.nombre), ancho: 240 },
+  { clave: "programa", titulo: "Programa", grupo: "Alumno", valores: (r) => varios(r.programa.split(" · ").filter(Boolean)), ancho: 150 },
+  { clave: "detalle", titulo: "Qué pasa", grupo: "Para hoy", ayuda: "Lo que lo trajo a la lista de «Para hoy»", valores: (r) => uno(r.item?.detalle), ancho: 340 },
+  { clave: "cuando", titulo: "Cuándo", grupo: "Para hoy", valores: (r) => uno(r.item?.cuando), orden: (r) => r.item?.dias ?? "", numerica: true, ancho: 110 },
+  { clave: "followUp", titulo: "Follow up", grupo: "Seguimiento", valores: (r) => uno(r.fila?.followUp),
+    orden: (r) => `${String(ETAPAS_DEL_ALUMNO.findIndex((x) => x.id === r.fila?.etapa)).padStart(2, "0")} ${sinTildes(r.fila?.followUp || "~")}`, ancho: 170 },
+  { clave: "etapa", titulo: "Etapa", grupo: "Seguimiento", ayuda: "La etapa del recorrido, según su Follow Up", valores: (r) => uno(etapaDe(r)?.label), ancho: 140 },
+  { clave: "estado", titulo: "Estado del alumno", grupo: "Seguimiento", valores: (r) => uno(r.fila?.estadoAlumno), ancho: 140 },
+  { clave: "inicio", titulo: "Inicio", grupo: "Fechas", valores: (r) => uno(r.fila?.inicio), fecha: true, ancho: 100 },
+  { clave: "egreso", titulo: "Vence", grupo: "Fechas", valores: (r) => uno(r.fila?.egreso), fecha: true, ancho: 104 },
+  { clave: "ultimoContacto", titulo: "Último contacto", grupo: "Fechas", valores: (r) => uno(r.fila?.ultimoContacto), fecha: true, ancho: 130 },
+  { clave: "proximo", titulo: "Próximo", grupo: "Fechas", ayuda: "Cuándo le toca el próximo contacto de seguimiento", valores: (r) => uno(r.fila?.proximo), fecha: true, ancho: 104 },
+  { clave: "reporte", titulo: "Reporte", grupo: "Seguimiento", valores: (r) => uno(r.fila?.reporte), ancho: 130 },
+  { clave: "telefono", titulo: "Teléfono", grupo: "Contacto", valores: (r) => uno(r.fila?.telefono || r.item?.telefono), ancho: 190 },
+  { clave: "email", titulo: "Mail", grupo: "Contacto", valores: (r) => uno(r.fila?.email || r.item?.email), ancho: 220 },
+];
+
+export const MOTOR_CARTERA = crearMotor(COLUMNAS_CARTERA, "car");
+export const VISIBLES_CARTERA: ClaveCartera[] = ["nombre", "programa", "followUp", "inicio", "egreso", "ultimoContacto", "proximo", "telefono"];
+export const VISIBLES_LISTA: ClaveCartera[] = ["nombre", "programa", "detalle", "cuando", "telefono"];
+/* Sin orden elegido: la cartera por etapa y nombre; una lista, en el suyo (lo más atrasado primero). */
+export const ORDEN_CARTERA: OrdenCs<ClaveCartera>[] = [{ clave: "followUp", desc: false }, { clave: "nombre", desc: false }];
+export const ORDEN_LISTA: OrdenCs<ClaveCartera>[] = [];
+export const ORDEN_ETAPAS_CARTERA = { etapa: ETAPAS_DEL_ALUMNO.map((x) => x.label) };
+
+export function coincideCartera(r: RenglonCartera, q: string): boolean {
+  const t = sinTildes(q.trim());
+  if (!t) return true;
+  return [r.nombre, r.programa, r.fila?.followUp, r.fila?.telefono, r.fila?.email, r.item?.detalle, r.item?.telefono, r.item?.email]
+    .some((x) => sinTildes(x ?? "").includes(t));
+}
+
+/** Los renglones de la cartera: los de la lista elegida o los alumnos de la base (en servicio o todos), de una etapa si se eligió. */
+export function renglonesCartera(cartera: readonly FilaCartera[], lista?: SeccionServicio, etapa?: EtapaAlumnoId): RenglonCartera[] {
+  if (lista) {
+    const porId = new Map(cartera.map((f) => [f.id, f] as const));
+    return lista.items.map((i) => {
+      const fila = i.alumnoId ? porId.get(i.alumnoId) : undefined;
+      return { id: i.clave, alumnoId: i.alumnoId, nombre: i.nombre, programa: fila?.programa || i.programa || "", fila, item: i };
+    });
+  }
+  return cartera.filter((f) => !etapa || f.etapa === etapa).map((f) => ({ id: f.id, alumnoId: f.id, nombre: f.nombre, programa: f.programa, fila: f }));
 }

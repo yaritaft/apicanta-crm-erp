@@ -7,6 +7,7 @@ import { Button, Chip, Field, IconButton, Input, Select, Textarea } from "@/comp
 import { Confirmar, ModalForm } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toast";
 import { CeldaEditable } from "@/components/crm-tabla/CeldaEditable";
+import { useAbrirFicha } from "@/components/ficha/abrir";
 import { acciones, nuevoId, useEstado } from "@/lib/store";
 import { useAcceso } from "@/lib/acceso";
 import { puedeEditar } from "@/lib/permisos";
@@ -58,6 +59,7 @@ export function RevisionCvCs() {
   const { acceso } = useAcceso();
   const params = useSearchParams();
   const escribir = useEscribirURL();
+  const abrirFicha = useAbrirFicha();
   const puede = puedeEditar(acceso, "revisiones_cv");
   const hoy = hoyDelNegocio();
   const listas = useMemo(() => listasCs(e.ajustes.seguimiento), [e.ajustes.seguimiento]);
@@ -168,7 +170,10 @@ export function RevisionCvCs() {
     if (clave === "nombre") {
       return (
         <span className="crm-t__persona">
-          <span className="crm-t__fija">{contenido(clave, f)}</span>
+          {/* El nombre abre la ficha del alumno en su solapa CV; sin alumno atado, queda como texto. El lápiz edita la revisión. */}
+          {f.alumno
+            ? <button type="button" className="crm-t__abrir truncate" onClick={() => abrirFicha(f.alumno!.id, "servicio", { hoja: "cv" })} title={`Abrir el CV en la ficha de ${f.alumno.nombre}`}>{r.nombre || f.alumno.nombre}</button>
+            : <span className="crm-t__fija" title="Todavía no está atada a un alumno de la app">{contenido(clave, f)}</span>}
           {puede && (
             <button type="button" className="crm-t__lapiz" onClick={() => setForm({ r })} aria-label={`Editar la revisión de ${r.nombre || "este alumno"}`} title="Editar la revisión"><Pencil size={12} /></button>
           )}

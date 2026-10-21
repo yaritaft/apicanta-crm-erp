@@ -17,6 +17,7 @@ import { contenidoCliente, useEdicionCliente } from "@/components/cs/edicionClie
 import { RespuestasDelReporte } from "@/components/cs/ReportesDelCliente";
 import { useToast } from "@/components/ui/Toast";
 import { ChatEquipo } from "./ChatEquipo";
+import { SOLAPAS_SERVICIO, useSolapaServicio, type SolapaServicio } from "./abrir";
 import { HistorialPersona } from "./HistorialPersona";
 import { acciones } from "@/lib/store";
 import { useAcceso } from "@/lib/acceso";
@@ -51,7 +52,7 @@ import "./hoja-servicio.css";
    Un servicio por compra: si compró más de una vez, se elige arriba cuál.
    ================================================================== */
 
-type Solapa = "programa" | "contrato" | "accesos" | "datos" | "seguimiento" | "testimonio" | "cv" | "reportes" | "historial" | "chat";
+type Solapa = SolapaServicio;
 
 /* Los datos que cuentan para «Faltan N»: los que Lili tiene que tener de cada alumno. */
 const CUENTAN: ClaveCliente[] = [
@@ -141,6 +142,9 @@ function useSolapasQueSeDeslizan(elegida: string) {
   return ref;
 }
 
+/* Con el chat en su columna (ficha ancha), no hay solapa «Chat». */
+const SIN_SOLAPA_CHAT = SOLAPAS_SERVICIO.filter((s) => s !== "chat");
+
 function HojaDeUnServicio({ e, p, f, venta, producto, conChat }: {
   e: EstadoApp; p: Persona; f: FilaCliente; venta?: Venta; producto: string; conChat: boolean;
 }) {
@@ -153,7 +157,7 @@ function HojaDeUnServicio({ e, p, f, venta, producto, conChat }: {
   const cfg = configSeguimiento(e.ajustes.seguimiento);
   const filas = useMemo(() => filasClientes(e, hoy), [e, hoy]);
   const { listas, opcionesDe, sugerenciasDe, guardar } = useEdicionCliente(filas, hoy);
-  const [solapa, setSolapa] = useState<Solapa>("programa");
+  const [solapa, setSolapa] = useSolapaServicio(conChat ? SIN_SOLAPA_CHAT : SOLAPAS_SERVICIO);
   const solapasRef = useSolapasQueSeDeslizan(solapa);
   const [editando, setEditando] = useState<ClaveCliente | "programa" | null>(null);
   const [editarAlumno, setEditarAlumno] = useState<Alumno | null>(null);

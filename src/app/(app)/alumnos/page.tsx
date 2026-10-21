@@ -5,7 +5,6 @@ import Link from "next/link";
 import {
   Check, Clock, GraduationCap, Pencil, Plus, Search, Settings2, Trash2,
 } from "lucide-react";
-import { PageHead } from "@/components/shell/PageHead";
 import {
   Badge, Bar, Button, Card, Chip, Empty, IconButton, Input, Persona, Tabs, Tag,
 } from "@/components/ui/ui";
@@ -194,19 +193,17 @@ export default function Alumnos() {
     />
   );
 
+  const botones = (antes?: React.ReactNode) => (
+    <span className="toolbar__fin">
+      {antes}
+      <CopiarLink />
+      <Button sm variante="primary" icono={<Plus size={15} />} onClick={() => setAsistente(true)}>Nuevo alumno</Button>
+    </span>
+  );
+
   return (
     <div className="stack-5">
-      <PageHead
-        titulo="Alumnos"
-        sub="Quién está cursando, en qué etapa del servicio está y si manda su reporte semanal."
-        acciones={
-          <>
-            <CopiarLink sm={false} />
-            <Button variante="primary" icono={<Plus size={16} />} onClick={() => setAsistente(true)}>Nuevo alumno</Button>
-          </>
-        }
-      />
-
+      {/* Sin título grande: «Alumnos» ya está en la barra de la app (como Formularios). Cada solapa trae sus botones en su barra. */}
       <Tabs
         valor={vista} onChange={cambiarVista}
         opciones={[
@@ -224,7 +221,7 @@ export default function Alumnos() {
       {vista === "lista" && (
         <Card style={{ padding: 0, overflow: "hidden" }}>
           <div style={{ padding: "var(--space-4) var(--space-4) 0" }}>
-            <div className="toolbar">{filtrosBarra}</div>
+            <div className="toolbar">{filtrosBarra}{botones()}</div>
           </div>
           <DataTable
             filas={filtrados} columnas={columnas} alto={620} porPagina={50}
@@ -252,10 +249,11 @@ export default function Alumnos() {
         <div className="stack-4">
           <div className="toolbar" style={{ marginBottom: 0 }}>
             {filtrosBarra}
-            <span className="spacer" />
-            <Link href="/ajustes?seccion=pipeline&pipeline=servicio" className="hk-btn hk-btn--ghost hk-btn--sm">
-              <Settings2 size={15} />Editar etapas
-            </Link>
+            {botones(
+              <Link href="/ajustes?seccion=pipeline&pipeline=servicio" className="hk-btn hk-btn--ghost hk-btn--sm">
+                <Settings2 size={15} />Editar etapas
+              </Link>,
+            )}
           </div>
           {filtrados.length === 0
             ? <Card>{vacio}</Card>

@@ -1,7 +1,10 @@
 "use client";
 
-import { useCallback } from "react";
-import { useRouter } from "next/navigation";
+import { useCallback, useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { esSolapaServicio, type SolapaServicio } from "@/lib/solapas-servicio";
+
+export { SOLAPAS_SERVICIO, type SolapaServicio } from "@/lib/solapas-servicio";
 
 /* ==================================================================
    La ficha de una persona vive en la URL: ?ficha=<id>&vista=ventas.
@@ -27,6 +30,7 @@ export function useAbrirFicha() {
     url.searchParams.set("ficha", id);
     url.searchParams.set("vista", vista);
     url.searchParams.delete("ver");
+    url.searchParams.delete("hoja");
     for (const [k, v] of Object.entries(extra ?? {})) url.searchParams.set(k, v);
     abiertaConPush = true;
     router.push(url.pathname + url.search, { scroll: false });
@@ -42,7 +46,7 @@ export function useCerrarFicha() {
       return;
     }
     const url = new URL(window.location.href);
-    for (const k of ["ficha", "vista", "venta"]) url.searchParams.delete(k);
+    for (const k of ["ficha", "vista", "venta", "hoja"]) url.searchParams.delete(k);
     router.replace(url.pathname + url.search, { scroll: false });
   }, [router]);
 }
@@ -52,6 +56,25 @@ export function useVistaFicha() {
   return useCallback((vista: VistaFicha) => {
     const url = new URL(window.location.href);
     url.searchParams.set("vista", vista);
+    url.searchParams.delete("hoja");
     router.replace(url.pathname + url.search, { scroll: false });
   }, [router]);
+}
+
+/** La solapa elegida de la vista Servicio, atada a ?hoja. `hay`: las que se muestran (el Chat no, si va en su columna). */
+export function useSolapaServicio(hay: readonly SolapaServicio[]): [SolapaServicio, (s: SolapaServicio) => void] {
+  const router = useRouter();
+  const deLaUrl = useSearchParams().get("hoja");
+  const pedida = esSolapaServicio(deLaUrl) && hay.includes(deLaUrl) ? deLaUrl : null;
+  const [solapa, setSolapa] = useState<SolapaServicio>(pedida ?? "programa");
+  /* Otro link (o el Atrás) cambia la solapa con la ficha abierta. */
+  useEffect(() => { if (pedida) setSolapa(pedida); }, [pedida]);
+  const elegir = useCallback((s: SolapaServicio) => {
+    setSolapa(s);
+    const url = new URL(window.location.href);
+    if (s === "programa") url.searchParams.delete("hoja");
+    else url.searchParams.set("hoja", s);
+    router.replace(url.pathname + url.search, { scroll: false });
+  }, [router]);
+  return [solapa, elegir];
 }

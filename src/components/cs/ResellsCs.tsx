@@ -6,6 +6,7 @@ import { Button, Field, IconButton, Input, Select, Textarea } from "@/components
 import { Confirmar, ModalForm } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toast";
 import { CeldaEditable } from "@/components/crm-tabla/CeldaEditable";
+import { useAbrirFicha } from "@/components/ficha/abrir";
 import { Telefono } from "@/components/ui/Telefono";
 import { paisDeTelefono } from "@/lib/crm-tabla";
 import { acciones, cargarDeLaNube, hayNube, nuevoId, reiniciarCarga, useEstado, useSync } from "@/lib/store";
@@ -53,6 +54,7 @@ export function ResellsCs() {
   const { acceso } = useAcceso();
   const { estado: sync } = useSync();
   const puede = puedeEditar(acceso, "resells");
+  const abrirFicha = useAbrirFicha();
   const hoy = hoyDelNegocio();
   const listas = useMemo(() => listasCs(e.ajustes.seguimiento), [e.ajustes.seguimiento]);
   const yo = useUsuarioActual();
@@ -160,6 +162,17 @@ export function ResellsCs() {
             <button type="button" className="crm-t__lapiz" onClick={() => setForm({ r })} aria-label="Editar la agenda" title="Editar la agenda"><Pencil size={12} /></button>
           )}
         </span>
+      );
+    }
+    if (clave === "nombre" && (f.alumno || r.sesionId)) {
+      /* El nombre abre su ficha: la del alumno en la solapa Testimonio (ahí están sus llamadas de resell) o, si no es alumno de la
+         app, la de su llamada. El nombre se corrige con el lápiz de la agenda. */
+      const nombre = r.nombre || f.alumno?.nombre || "Sin nombre";
+      return (
+        <button type="button" className="crm-t__abrir truncate" title={`Abrir la ficha de ${nombre}`}
+          onClick={() => (f.alumno ? abrirFicha(f.alumno.id, "servicio", { hoja: "testimonio" }) : abrirFicha(r.sesionId!, "llamadas"))}>
+          {nombre}
+        </button>
       );
     }
     const editor = EDITOR[clave];

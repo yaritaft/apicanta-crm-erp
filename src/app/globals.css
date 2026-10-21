@@ -3443,6 +3443,10 @@ span.kpis__etiqueta:hover { color: var(--ink); text-decoration: none; }
 .crm-t__barra .chip { white-space: nowrap; }
 .crm-t__barra .copiar-link__texto { display: none; }
 .crm-t__barra .copiar-link { padding-inline: 10px; }
+/* Los botones del final de una barra común (Alumnos → Lista y Pipeline): juntos a la derecha y el link sólo con su ícono, como en las tablas. */
+.toolbar__fin { display: inline-flex; align-items: center; gap: var(--space-2); margin-left: auto; }
+.toolbar__fin .copiar-link__texto { display: none; }
+.toolbar__fin .copiar-link { padding-inline: 10px; }
 .crm-t__filtros { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; min-height: 30px; margin-bottom: var(--space-2); }
 .crm-t__orden { display: inline-flex; align-items: center; gap: 8px; }
 .crm-t__orden > span { display: inline-flex; align-items: center; gap: 2px; }

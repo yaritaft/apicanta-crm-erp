@@ -70,7 +70,6 @@ button.ps-kpi:hover, a.ps-kpi:hover { box-shadow: inset 0 0 0 1px color-mix(in s
 .ps-etapa__n--cero { color: var(--ink-subtle) !important; opacity: 0.6; }
 .ps-etapa__rot { font-size: 12px; line-height: 16px; color: var(--ink-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
 
-.ps-barra { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 12px; padding: 14px 22px 10px; }
 .ps-seg-n { margin-left: 4px; font-variant-numeric: tabular-nums; opacity: 0.75; }
 .ps-filtro {
   display: inline-flex; align-items: center; gap: 6px; padding: 5px 6px 5px 12px; border-radius: 999px; font-size: 13px; font-weight: 600;
@@ -78,39 +77,17 @@ button.ps-kpi:hover, a.ps-kpi:hover { box-shadow: inset 0 0 0 1px color-mix(in s
 }
 .ps-filtro button { display: inline-flex; padding: 3px; border: 0; border-radius: 999px; background: none; color: inherit; cursor: pointer; }
 .ps-filtro button:hover { background: color-mix(in srgb, var(--ink) 12%, transparent); }
-.ps-buscar {
-  display: inline-flex; align-items: center; gap: 8px; margin-left: auto; padding: 7px 14px; border-radius: 999px; min-width: 240px;
-  color: var(--ink-subtle); background: var(--mp-bloque-alto);
-}
-.ps-buscar input { flex: 1; min-width: 0; border: 0; outline: none; background: none; color: var(--ink); font: inherit; font-size: 14px; }
-.ps-buscar__x { flex: none; display: grid; place-items: center; width: 22px; height: 22px; margin-right: -6px; padding: 0; border: 0; border-radius: 999px; background: none; color: var(--ink-subtle); cursor: pointer; }
-.ps-buscar__x:hover { color: var(--ink); background: color-mix(in srgb, var(--ink) 10%, transparent); }
-.ps-buscar:focus-within { outline: 2px solid var(--focus); }
 .ps-regla { margin: 0; padding: 0 22px 10px; font-size: 13px; line-height: 19px; color: var(--ink-subtle); }
 
-.ps-tabla-caja { overflow-x: auto; border-top: 1px solid var(--mp-linea); }
-.ps-tabla { width: 100%; min-width: 1000px; border-collapse: collapse; font-size: 14px; table-layout: fixed; }
-.ps-tabla th {
-  position: sticky; top: 0; padding: 0; text-align: left; font-weight: 500; font-size: 12px; color: var(--ink-subtle);
-  background: var(--mp-bloque); border-bottom: 1px solid var(--mp-linea);
-}
-.ps-tabla th:first-child .ps-th, .ps-tabla td:first-child { padding-left: 22px; }
-.ps-th { display: block; width: 100%; padding: 10px 12px; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; white-space: nowrap; }
-.ps-th:hover { color: var(--ink); }
-.ps-tabla td { padding: 11px 12px; border-bottom: 1px solid var(--mp-linea); color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: middle; }
-.ps-tabla tbody tr:last-child td { border-bottom: 0; }
-.ps-tr--clic { cursor: pointer; transition: background 120ms ease-out; }
-.ps-tr--clic:hover { background: var(--mp-bloque-alto); }
-.ps-tr--clic:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
+/* La tabla es la de Clientes y Testimonios (components/cs/TablaCs) pero adentro de esta tarjeta: sin su propio marco, con el aire
+   de la tarjeta, y la fila entera abre la ficha. */
+.ps-cartera .crm-t__card { padding: 12px 22px 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
+.ps-cartera .crm-t .hk-table tbody tr { cursor: pointer; }
+.ps-cartera .crm-t .segmento button { white-space: nowrap; }
 .ps-alumno { display: inline-flex; align-items: center; gap: 10px; min-width: 0; max-width: 100%; }
-.ps-alumno__nombre { min-width: 0; font-weight: 500; }
-/* Un nombre largo o el «qué pasa» van en dos renglones antes que cortarse a la mitad. */
-.ps-tabla td:has(.ps-2renglones) { white-space: normal; }
-.ps-2renglones { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; overflow-wrap: anywhere; line-height: 19px; }
 .ps-punto { flex: none; width: 8px; height: 8px; border-radius: 999px; background: color-mix(in srgb, var(--ink) 25%, transparent); }
 .ps-punto--rojo { background: var(--danger); }
 .ps-punto--ambar { background: var(--warning); }
-.ps-detalle-td { color: var(--ink-muted) !important; }
 .ps-cuando--rojo { color: var(--danger) !important; font-weight: 600; }
 .ps-cuando--ambar { color: var(--warning) !important; font-weight: 600; }
 .ps-cuando--neutro { color: var(--ink-muted) !important; }
@@ -120,25 +97,11 @@ button.ps-kpi:hover, a.ps-kpi:hover { box-shadow: inset 0 0 0 1px color-mix(in s
 .ps-follow--exito { color: var(--success); background: color-mix(in srgb, var(--success) 14%, transparent); }
 .ps-follow--busqueda, .ps-follow--renovacion { color: var(--brand); background: color-mix(in srgb, var(--brand) 14%, transparent); }
 .ps-follow--sin { font-style: italic; background: none; padding-left: 0; }
-.ps-tabla .telefono__num { font-size: 13px; color: var(--ink-muted); }
 .ps-accion {
   display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px; border: 0; border-radius: 999px; font: inherit; font-size: 13px; font-weight: 600;
   color: var(--ink); background: var(--mp-bloque-alto); cursor: pointer; white-space: nowrap;
 }
 .ps-accion:hover { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ink) 20%, transparent); }
-.ps-tabla-vacia { padding: 22px; }
-.ps-tabla-vacia p { margin: 0; }
-.ps-vacio__acc { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
-
-/* Las tarjetas del celular (en la compu se ve la tabla). */
-.ps-tarjetas { display: none; margin: 0; padding: 0; list-style: none; }
-.ps-tarjeta { display: flex; flex-direction: column; gap: 6px; padding: 14px 16px; border-bottom: 1px solid var(--mp-linea); font-size: 14px; }
-.ps-tarjeta:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
-.ps-tarjeta__cabeza { display: flex; align-items: center; gap: 10px; }
-.ps-tarjeta__nombre { flex: 1; min-width: 0; font-weight: 600; color: var(--ink); overflow-wrap: anywhere; }
-.ps-tarjeta__linea { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 10px; padding-left: 18px; font-size: 13px; line-height: 19px; }
-.ps-tarjeta__linea b { font-weight: 600; color: var(--ink); }
-.ps-pie-tabla { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 48px; padding: 8px 22px; border-top: 1px solid var(--mp-linea); font-size: 12px; color: var(--ink-subtle); }
 
 /* ---------- el pie: lo que no es de hoy ---------- */
 
@@ -156,11 +119,7 @@ button.ps-dato:hover, a.ps-dato:hover, button.ps-dato:hover b, a.ps-dato:hover b
   .ps-pipe { display: flex; overflow-x: auto; scroll-snap-type: x proximity; scrollbar-width: none; padding: 14px 16px 4px; }
   .ps-pipe::-webkit-scrollbar { display: none; }
   .ps-etapa { flex: 0 0 auto; min-width: 108px; scroll-snap-align: start; }
-  .ps-tabla { display: none; }
-  .ps-tabla-caja { overflow: visible; }
-  .ps-tarjetas { display: block; }
-  .ps-pie-tabla { padding-left: 16px; padding-right: 16px; }
-  .ps-cartera__head, .ps-barra { padding-left: 16px; padding-right: 16px; }
-  .ps-buscar { margin-left: 0; min-width: 0; width: 100%; }
+  .ps-cartera__head { padding-left: 16px; padding-right: 16px; }
+  .ps-cartera .crm-t__card { padding: 12px 16px 0; }
   .ps-regla { padding: 0 16px 10px; }
 }

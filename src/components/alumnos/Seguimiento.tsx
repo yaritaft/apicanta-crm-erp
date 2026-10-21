@@ -199,7 +199,7 @@ export function ContactarHoy() {
         <DataTable
           filas={lista} columnas={columnas} alto={640} porPagina={50}
           orden={tabla.orden} onOrden={tabla.onOrden} pagina={tabla.pagina} onPagina={tabla.onPagina}
-          onFila={(f) => abrirFicha(f.id, "servicio")} etiquetaFila={(f) => `Ver la ficha de ${f.alumno.nombre}`}
+          onFila={(f) => abrirFicha(f.id, "servicio", { hoja: "seguimiento" })} etiquetaFila={(f) => `Ver la ficha de ${f.alumno.nombre}`}
           acciones={puede ? (f) => (
             <span className="row" style={{ gap: 6 }}>
               <Button sm variante="primary" icono={<PhoneCall size={14} />} onClick={() => gestos.contacte(f)} title="Lo contacté hoy: el próximo toca según su cadencia">
