@@ -2391,6 +2391,26 @@ export const acciones = {
   },
 
 
+  /* Vuelve a traer de la base la ficha de un alumno (su fila y su seguimiento): el servidor acaba de cambiarla (dio o quitó
+     accesos, se firmó el contrato) y así se ve sin recargar. Antes espera a que no quede nada suyo por escribir. */
+  async traerFichaDe(alumnoId: ID): Promise<void> {
+    if (!nube) return;
+    const pendiente = () => cola.some((op) => op.tabla === "seguimiento_alumnos" || op.tabla === "alumnos");
+    for (let i = 0; i < 40 && pendiente(); i++) await new Promise((r) => setTimeout(r, 150));
+    if (pendiente()) return;
+    const [s, a] = await Promise.all([
+      nube.from("seguimiento_alumnos").select("*").eq("alumnoId", alumnoId),
+      nube.from("alumnos").select("*").eq("id", alumnoId).maybeSingle(),
+    ]);
+    if (s.error || a.error || pendiente()) return;
+    const e = snapshot();
+    guardar({
+      ...e,
+      seguimientos: [...(e.seguimientos ?? []).filter((x) => x.alumnoId !== alumnoId), ...((s.data ?? []) as SeguimientoAlumno[])],
+      alumnos: a.data ? e.alumnos.map((x) => (x.id === alumnoId ? (a.data as Alumno) : x)) : e.alumnos,
+    });
+  },
+
   /* ---------- Gastos fijos (lib/gastos-recurrentes.ts) ----------
      La plantilla de lo que se paga todos los meses. Nada se carga sin
      aprobar: aprobar es lo único que crea el gasto. */

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle, Ban, CalendarPlus, ChevronDown, ChevronRight, Copy, Eye, FileDown, FileSignature, KeyRound, Link2, Mail, PartyPopper, Pencil,
   PenLine, RefreshCw, Send,
@@ -8,7 +8,7 @@ import {
 import { Badge, Button, Switch, type VarianteBadge } from "@/components/ui/ui";
 import { Confirmar, ModalForm } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toast";
-import { useEstado } from "@/lib/store";
+import { acciones, useEstado } from "@/lib/store";
 import { useAcceso } from "@/lib/acceso";
 import { fechaHora, relativo } from "@/lib/format";
 import {
@@ -76,6 +76,18 @@ export function ContratoCard({ venta, alumnoId, sesionId, manual, forma = "tarje
   }, [ventaId, alumnoId]);
   /* Se lee siempre: el estado del contrato se ve aunque los contratos todavía estén apagados (sin botones). */
   useEffect(() => { void leer(); }, [leer]);
+
+  /* Al ver un contrato firmado, la ficha del alumno se trae de nuevo: el servidor le cargó el inicio, el programa, las
+     sesiones y los accesos (una vez por contrato). */
+  const fichasTraidas = useRef(new Set<string>());
+  useEffect(() => {
+    if (!alumnoId) return;
+    for (const c of contratos ?? []) {
+      if (c.estado !== "firmado" || fichasTraidas.current.has(c.id)) continue;
+      fichasTraidas.current.add(c.id);
+      void acciones.traerFichaDe(alumnoId);
+    }
+  }, [contratos, alumnoId]);
 
   /* Mientras alguno espera algo de PandaDoc, se vuelve a leer solo. */
   const hayPendiente = (contratos ?? []).some((c) => estaPendiente(c.estado));

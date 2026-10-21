@@ -5,7 +5,7 @@ import { Copy, GraduationCap, KeyRound, RotateCcw, Send, UserMinus, Video } from
 import { Badge, Button, Field, Select, type VarianteBadge } from "@/components/ui/ui";
 import { Confirmar, ModalForm } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toast";
-import { useEstado } from "@/lib/store";
+import { acciones, useEstado } from "@/lib/store";
 import { useAcceso } from "@/lib/acceso";
 import { nube } from "@/lib/supabase";
 import { cabeceras } from "@/components/webinars/useYoutube";
@@ -130,6 +130,8 @@ export function AccesosAlumno({ alumno, venta, manual, forma = "tarjeta" }: {
     } catch (err) { toast(err instanceof Error ? err.message : "No se pudo.", "err"); }
     setTrabajando(null);
     await leer();
+    /* El servidor también marcó la ficha (Acceso, Wisboo, Zoom): que se vea sin recargar. */
+    void acciones.traerFichaDe(alumno.id);
   }
 
   async function copiarMensaje() {
