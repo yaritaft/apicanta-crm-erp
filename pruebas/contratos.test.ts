@@ -239,6 +239,8 @@ test("la bienvenida: qué ve el alumno en cada momento (y nunca su mail ni su do
   assert.equal(armarBienvenida({ contrato: { ...contrato, accesosEn: null }, programa: "X", accesos: [], linkWisboo: null, accesosAutomaticos: true }).fase, "preparando");
   assert.equal(armarBienvenida({ contrato: { ...contrato, accesosEn: null }, programa: "X", accesos: [], linkWisboo: null, accesosAutomaticos: false }).fase, "sin-accesos", "apagados: no hay nada que esperar");
   assert.equal(armarBienvenida({ contrato, programa: "X", accesos: [], linkWisboo: null, accesosAutomaticos: true }).fase, "sin-accesos");
+  /* Después del outboarding (todo quitado) no se le promete nada: sus accesos ya no están activos. */
+  assert.equal(armarBienvenida({ contrato, programa: "X", accesos: accesos.map((x) => ({ ...x, estado: "quitado" as const })), linkWisboo: null, accesosAutomaticos: true }).fase, "terminado");
 });
 
 test("Contratos: quién los manda y cuándo se dan los accesos al firmar, según Ajustes", () => {

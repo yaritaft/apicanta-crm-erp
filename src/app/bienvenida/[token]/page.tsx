@@ -105,6 +105,11 @@ export default function PaginaBienvenida() {
             <p className="reporte-pub__sub">Firmaste el contrato de {b.programa}. Estamos preparando tus accesos: tarda unos segundos.</p>
             {cansado && <Chico>Está tardando más de lo normal: te escribimos por WhatsApp con tus accesos.</Chico>}
           </div>
+        ) : b.fase === "terminado" ? (
+          <div className="reporte-pub__form">
+            <h1>Tus accesos a {b.programa} ya no están activos</h1>
+            <p className="reporte-pub__sub">Si creés que es un error, escribinos por WhatsApp y lo vemos.</p>
+          </div>
         ) : b.fase === "sin-accesos" ? (
           <div className="reporte-pub__listo">
             <CheckCircle2 size={40} style={{ color: "var(--success)" }} aria-hidden />

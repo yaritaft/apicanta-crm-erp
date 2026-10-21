@@ -275,8 +275,9 @@ export interface AccesoParaBienvenida {
 
 export interface Bienvenida {
   /* firmar: todavía no se ve la firma · preparando: firmó y se están dando los accesos · listo · sin-accesos: firmó,
-     pero los accesos se los da el equipo (apagados, o el programa no tiene ninguno). */
-  fase: "firmar" | "preparando" | "listo" | "sin-accesos";
+     pero los accesos se los da el equipo (apagados, o el programa no tiene ninguno) · terminado: tuvo accesos y se los
+     quitaron todos (el outboarding). */
+  fase: "firmar" | "preparando" | "listo" | "sin-accesos" | "terminado";
   nombre: string;
   programa: string;
   telegram: { nombre: string; url: string | null; adentro: boolean }[];
@@ -298,6 +299,7 @@ export function armarBienvenida(a: {
   if (a.contrato.estado !== "firmado") return { ...base, fase: "firmar" };
   if (!a.contrato.accesosEn) return { ...base, fase: a.accesosAutomaticos ? "preparando" : "sin-accesos" };
   const vigentes = a.accesos.filter((x) => x.estado !== "quitado");
+  if (a.accesos.length > 0 && vigentes.length === 0) return { ...base, fase: "terminado" };
   const telegram = vigentes.filter((x) => x.plataforma === "telegram" && x.estado !== "fallo").map((x) => ({
     nombre: x.recursoNombre, adentro: x.estado === "entro",
     url: x.estado === "dado" && typeof x.externo.link === "string" ? x.externo.link : null,
@@ -317,7 +319,6 @@ export function armarBienvenida(a: {
 /** Un código de bienvenida bien formado (para no ir a la base con cualquier cosa). */
 export const esCodigoBienvenida = (x: unknown): x is string => typeof x === "string" && /^[A-Za-z0-9_-]{24,64}$/.test(x);
 
-/** El asunto y el mensaje del mail de PandaDoc, con {nombre} y {programa} reemplazados. */
 /** Lo que el contrato firmado deja en la ficha de Customer Success: firmado, las sesiones 1 a 1 que se le dieron y, si la
     ficha todavía no tenía programa, el del contrato. Lo que Lili ya cargó a mano en el programa no se pisa. */
 export function fichaAlFirmar(datos: Partial<DatosContrato>, programa: string, programasDeLaFicha: string[] | null | undefined): Record<string, unknown> {
@@ -336,6 +337,7 @@ export function accesosAlFirmar(estado: ConfigContratos["estado"] | undefined, m
 /** ¿Los contratos los manda sólo un dueño? En «prueba» y en «sólo dueños». */
 export const soloDuenos = (estado: ConfigContratos["estado"] | undefined): boolean => estado === "prueba" || estado === "duenos";
 
+/** El asunto y el mensaje del mail de PandaDoc, con {nombre} y {programa} reemplazados. */
 export function mensajeDelContrato(config: ConfigContratos | undefined, d: Partial<DatosContrato>, programa: string): { subject: string; message: string } {
   const pila = (d.nombre ?? "").trim().split(/\s+/)[0] ?? "";
   const poner = (t: string) => t.replace(/\{nombre\}/g, pila).replace(/\{programa\}/g, programa);
