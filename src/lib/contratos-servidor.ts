@@ -185,11 +185,17 @@ export async function nuevoEnlace(db: SupabaseClient, c: Contrato): Promise<stri
 /* ---------- Sincronizar con PandaDoc ---------- */
 
 /** Le pregunta a PandaDoc cómo está y lo anota. Nunca vuelve para atrás. Si quedó firmado, corre lo de la firma. */
-export async function sincronizar(db: SupabaseClient, c: Contrato, origen: EventoContrato["origen"]): Promise<Contrato> {
+export async function sincronizar(db: SupabaseClient, c: Contrato, origen: EventoContrato["origen"], delAviso?: Record<string, unknown>): Promise<Contrato> {
   if (!c.documentoId) return c;
   let det: Record<string, unknown>;
   try { det = await detalleDocumento(c.modo, c.documentoId); }
   catch (e) {
+    /* Sin la clave de ese modo en este entorno (o PandaDoc caído): vale lo que trajo el aviso, que llegó firmado. */
+    if (delAviso && e instanceof ErrorPandadoc && (e.status === 503 || e.status >= 500)) {
+      console.error("[contratos] no pude volver a preguntarle a PandaDoc; uso el aviso:", c.id, e.message);
+      det = delAviso;
+      return aplicarDetalle(db, c, det, origen);
+    }
     if (e instanceof ErrorPandadoc && e.status === 404) {
       if (c.estado !== "firmado" && c.estado !== "anulado") {
         await guardar(db, c.id, { estado: "anulado", anuladoEn: ahora(), sincronizadoEn: ahora() });
@@ -199,6 +205,10 @@ export async function sincronizar(db: SupabaseClient, c: Contrato, origen: Event
     }
     throw e;
   }
+  return aplicarDetalle(db, c, det, origen);
+}
+
+async function aplicarDetalle(db: SupabaseClient, c: Contrato, det: Record<string, unknown>, origen: EventoContrato["origen"]): Promise<Contrato> {
   let nuevo = estadoDePandadoc(typeof det.status === "string" ? det.status : "") ?? c.estado;
   if (firmoElAlumno(det)) nuevo = "firmado";
   const cambios: Partial<Contrato> = { sincronizadoEn: ahora() };

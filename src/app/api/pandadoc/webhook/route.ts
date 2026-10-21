@@ -66,7 +66,7 @@ export async function POST(peticion: Request) {
         if (!c) c = await contratoDeAfuera(db, a.documentoId, valida.modo);
         if (!c) continue;
         if (!c.documentoId) await db.from("contratos").update({ documentoId: a.documentoId }).eq("id", c.id);
-        await sincronizar(db, { ...c, documentoId: c.documentoId ?? a.documentoId }, "pandadoc");
+        await sincronizar(db, { ...c, documentoId: c.documentoId ?? a.documentoId }, "pandadoc", a.detalle);
       } catch (e) {
         console.error("[pandadoc] aviso", a.documentoId, a.evento, e instanceof Error ? e.message : String(e));
       }

@@ -104,6 +104,8 @@ test("el aviso de PandaDoc: lista de eventos, con su metadata", () => {
   assert.deepEqual(a[0].metadata, { apicanta_contrato: "ctr_1" });
   assert.equal(a[0].plantillaId, "tpl");
   assert.equal(a[1].quien, "maria@ejemplo.com");
+  /* El documento del aviso viaja entero: si no se le puede volver a preguntar a PandaDoc, vale ése. */
+  assert.equal(a[0].detalle.status, "document.completed");
   assert.deepEqual(leerAvisos(null), []);
 });
 

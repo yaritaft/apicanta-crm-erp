@@ -303,6 +303,8 @@ export interface AvisoPandadoc {
   metadata: Record<string, string>;
   /* En recipient_completed: quién completó. */
   quien: string | null;
+  /* El documento como vino en el aviso (es el mismo formato que su detalle): sirve si no se le puede volver a preguntar a PandaDoc. */
+  detalle: Record<string, unknown>;
 }
 
 /** El aviso llega como lista de eventos ({ event, data }). Lo que no se entiende, se descarta. */
@@ -323,6 +325,7 @@ export function leerAvisos(cuerpo: unknown): AvisoPandadoc[] {
       plantillaId: typeof plantilla.id === "string" ? plantilla.id : null,
       metadata: Object.fromEntries(Object.entries(meta).filter(([, v]) => typeof v === "string")) as Record<string, string>,
       quien: typeof accion.email === "string" ? accion.email : null,
+      detalle: data,
     }];
   });
 }
