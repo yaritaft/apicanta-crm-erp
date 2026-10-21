@@ -206,20 +206,41 @@ export const seUnieronAlGrupo = (g: GrupoWppResumen) => g.entraron + g.sinTelefo
 export const registrosDelWebinar = (e: EstadoApp, w: Webinar): number =>
   e.registrosPorWebinar?.find((r) => r.webinarId === w.id)?.registros ?? 0;
 
-/** El webinar con lo que falta cargar tomado de Meta, del lector de WhatsApp y de los registros de la landing. Lo cargado a mano manda;
-    los formularios salen de Meta y, en un webinar sin campañas de Meta (los de antes de conectarla), de los registros de la landing. */
+/** Los formularios de un webinar y de dónde salen. Lo cargado a mano manda. Si no hay nada, salen de Meta y, en un webinar sin campañas de Meta
+    (los de antes de conectarla), de los registros de la landing. Y el número que la app cuenta sola al registrarse alguien
+    (`extra.formulariosAuto`, que sólo ve a los que entraron por la ruta de registro) nunca se muestra por debajo de lo que dicen Meta o los
+    registros de la landing: en un webinar en curso decía 147 cuando ya había 1.309 registrados. */
+export function formulariosDelWebinar(e: EstadoApp, w: Webinar): { valor: number; origen: "mano" | "meta" | "landing" | "contado" } {
+  const m = metaDelWebinar(e, w);
+  const reg = registrosDelWebinar(e, w);
+  const contado = typeof w.extra?.formulariosAuto === "number" ? w.extra.formulariosAuto : undefined;
+  if (w.formularios && w.formularios !== contado) return { valor: w.formularios, origen: "mano" };
+  const de = [
+    { valor: w.formularios, origen: "contado" as const },
+    { valor: m?.formularios ?? 0, origen: "meta" as const },
+    { valor: reg, origen: "landing" as const },
+  ];
+  /* Sin nada contado, Meta antes que la landing; con un contado de la app, el mayor de los tres. */
+  const mejor = w.formularios
+    ? de.reduce((a, b) => (b.valor > a.valor ? b : a))
+    : (de[1].valor ? de[1] : de[2]);
+  return mejor;
+}
+
+/** El webinar con lo que falta cargar tomado de Meta, del lector de WhatsApp y de los registros de la landing. Lo cargado a mano manda. */
 export function numerosDelWebinar(e: EstadoApp, w: Webinar): Webinar {
   const m = metaDelWebinar(e, w);
   const g = gruposWppDelWebinar(e, w);
   const reg = registrosDelWebinar(e, w);
   if (!m && !g && !reg) return w;
+  const f = formulariosDelWebinar(e, w);
   return {
     ...w,
     ...(m ? {
       inversion: w.inversion || m.pauta,
       inversionDmAds: w.inversionDmAds || m.dmAds,
     } : {}),
-    ...(m || reg ? { formularios: w.formularios || m?.formularios || reg } : {}),
+    ...(m || reg ? { formularios: f.valor } : {}),
     ...(g ? { grupoWpp: w.grupoWpp || seUnieronAlGrupo(g) } : {}),
   };
 }
@@ -232,8 +253,13 @@ export function camposDeWhatsapp(e: EstadoApp, w: Webinar): Set<CampoManual> {
 
 /** De dónde sale un número que no se cargó a mano, para decirlo al lado de la celda (undefined: lo cargó alguien). */
 export function origenAutomatico(e: EstadoApp, w: Webinar, campo: CampoManual): string | undefined {
+  if (campo === "formularios") {
+    const f = formulariosDelWebinar(e, w);
+    if (f.origen === "meta" && f.valor > 0) return "De sus campañas de Meta";
+    if (f.origen === "landing" && f.valor > 0) return "De los registros de la landing (Formularios)";
+    return undefined;
+  }
   if (camposDeMeta(e, w).has(campo)) return "De sus campañas de Meta";
-  if (campo === "formularios" && !w.formularios && registrosDelWebinar(e, w) > 0) return "De los registros de la landing (Formularios)";
   if (camposDeWhatsapp(e, w).has(campo)) return "De los grupos de WhatsApp: los que entraron, según el lector";
   return undefined;
 }

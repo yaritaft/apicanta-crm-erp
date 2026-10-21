@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { construirSemilla } from "@/lib/seed";
 import { informeDelWebinar } from "@/lib/informe-webinar";
 import { acciones } from "@/lib/store";
-import { camposDeWhatsapp, gruposWppDelWebinar, metricasDeWebinar, numerosDelWebinar, origenAutomatico, registrosDelWebinar, seUnieronAlGrupo, sumarMetricas } from "@/lib/webinar";
+import { camposDeWhatsapp, formulariosDelWebinar, gruposWppDelWebinar, metricasDeWebinar, numerosDelWebinar, origenAutomatico, registrosDelWebinar, seUnieronAlGrupo, sumarMetricas } from "@/lib/webinar";
 import type { EstadoApp, GrupoWppResumen, Webinar } from "@/lib/types";
 
 /* «Se unieron al grupo» sale solo del lector de WhatsApp (21/10): antes era un número que había que cargar a mano y
@@ -111,4 +111,27 @@ test("con grupo y registros, la conversión formulario → grupo sale completa e
   const m = metricasDeWebinar(e2, w);
   assert.equal(m.grupoWpp, 800);
   assert.equal(m.asistenciaFormulario, 80);
+});
+
+test("el contador automático (extra.formulariosAuto) nunca queda por debajo de los registros de la landing: en un webinar en curso decía 147 con 1.309 registrados", () => {
+  const { e, w } = conRegistros(147, 1309);
+  const auto = { ...w, extra: { formulariosAuto: 147 } };
+  const e2 = { ...e, webinars: [auto] };
+  assert.deepEqual(formulariosDelWebinar(e2, auto), { valor: 1309, origen: "landing" });
+  assert.equal(numerosDelWebinar(e2, auto).formularios, 1309);
+  assert.equal(metricasDeWebinar(e2, auto).formularios, 1309);
+  assert.match(origenAutomatico(e2, auto, "formularios") ?? "", /landing/);
+});
+
+test("si el contador automático ya es el mayor, queda; y lo cargado a mano (distinto del contador) manda siempre", () => {
+  const { e, w } = conRegistros(1500, 1309);
+  const auto = { ...w, extra: { formulariosAuto: 1500 } };
+  assert.deepEqual(formulariosDelWebinar({ ...e, webinars: [auto] }, auto), { valor: 1500, origen: "contado" });
+  /* A mano: 147 sin contador, o distinto del contador (alguien lo corrigió). */
+  for (const extra of [{}, { formulariosAuto: 90 }]) {
+    const mano = { ...w, formularios: 147, extra };
+    const e3 = { ...e, webinars: [mano], registrosPorWebinar: [{ webinarId: "w1", registros: 1309 }] };
+    assert.deepEqual(formulariosDelWebinar(e3, mano), { valor: 147, origen: "mano" });
+    assert.equal(origenAutomatico(e3, mano, "formularios"), undefined);
+  }
 });
