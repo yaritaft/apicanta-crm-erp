@@ -71,6 +71,8 @@ export interface Contrato {
   creadoPor: string;
   actualizadoEn: string;
   sincronizadoEn: string | null;
+  /* El código de su página de bienvenida (/bienvenida/<código>): PandaDoc manda ahí al alumno apenas firma. */
+  bienvenida?: string | null;
 }
 
 export interface EventoContrato {
@@ -235,6 +237,8 @@ export function cuerpoDocumento(a: {
   plantillaId: string; programa: string; datos: Partial<DatosContrato>;
   /* El detalle de la plantilla: con él se mandan sólo las variables y campos que tiene. Sin él, todas las variables. */
   plantilla?: unknown;
+  /* Adonde va el alumno apenas firma (la página de bienvenida con sus accesos). */
+  despuesDeFirmar?: string | null;
 }): Record<string, unknown> {
   const nombre = (a.datos.nombre ?? "").trim();
   const variables = variablesDelContrato(a.datos, a.programa);
@@ -242,16 +246,76 @@ export function cuerpoDocumento(a: {
   return {
     name: `${a.modo === "prueba" ? "[Prueba] " : ""}Contrato ${a.programa} - ${nombre}`.trim(),
     template_uuid: a.plantillaId,
-    recipients: [{
-      email: (a.datos.email ?? "").trim(), ...partirNombre(nombre), role: ROL_ALUMNO,
-      ...(a.datos.telefono?.trim() ? { phone: a.datos.telefono.trim() } : {}),
-    }],
+    recipients: [destinatario(a.datos, a.despuesDeFirmar)],
     tokens: r.tokens,
     ...(Object.keys(r.fields).length ? { fields: r.fields } : {}),
     metadata: { apicanta_contrato: a.contratoId, apicanta_venta: a.ventaId ?? "", apicanta_modo: a.modo },
     tags: ["apicanta", a.modo === "prueba" ? "apicanta-prueba" : "apicanta-produccion"],
   };
 }
+
+/** El alumno como destinatario de PandaDoc: firma como «Client» y, si hay página de bienvenida, va ahí al terminar. */
+export function destinatario(d: Partial<DatosContrato>, despuesDeFirmar?: string | null): Record<string, unknown> {
+  const nombre = (d.nombre ?? "").trim();
+  return {
+    email: (d.email ?? "").trim(), ...partirNombre(nombre), role: ROL_ALUMNO,
+    ...(d.telefono?.trim() ? { phone: d.telefono.trim() } : {}),
+    ...(despuesDeFirmar ? { redirect: { url: despuesDeFirmar, is_enabled: true } } : {}),
+  };
+}
+
+/* ---------- La página de bienvenida ---------- */
+
+export interface AccesoParaBienvenida {
+  plataforma: "wisboo" | "telegram" | "zoom";
+  estado: "pendiente" | "dado" | "entro" | "fallo" | "quitado";
+  recursoNombre: string;
+  externo: Record<string, unknown>;
+}
+
+export interface Bienvenida {
+  /* firmar: todavía no se ve la firma · preparando: firmó y se están dando los accesos · listo · sin-accesos: firmó,
+     pero los accesos se los da el equipo (apagados, o el programa no tiene ninguno). */
+  fase: "firmar" | "preparando" | "listo" | "sin-accesos";
+  nombre: string;
+  programa: string;
+  telegram: { nombre: string; url: string | null; adentro: boolean }[];
+  wisboo: { url: string | null; cursos: string[] } | null;
+  zoom: { nombre: string; url: string | null }[];
+  /* Algo no salió solo: el equipo lo termina a mano (se le dice, sin el detalle técnico). */
+  faltaAlgo: boolean;
+}
+
+/** Lo que ve el alumno: sólo su nombre de pila, el programa y sus links (nunca su mail, documento ni nada más). */
+export function armarBienvenida(a: {
+  contrato: Pick<Contrato, "estado" | "accesosEn" | "destinatario">;
+  programa: string; accesos: AccesoParaBienvenida[]; linkWisboo: string | null;
+  /* ¿Al firmar se dan los accesos solos? (prendidos en Ajustes). Si no, no hay nada que esperar: se los da el equipo. */
+  accesosAutomaticos: boolean;
+}): Bienvenida {
+  const nombre = (a.contrato.destinatario.nombre ?? "").trim().split(/\s+/)[0] ?? "";
+  const base = { nombre, programa: a.programa, telegram: [], wisboo: null, zoom: [], faltaAlgo: false };
+  if (a.contrato.estado !== "firmado") return { ...base, fase: "firmar" };
+  if (!a.contrato.accesosEn) return { ...base, fase: a.accesosAutomaticos ? "preparando" : "sin-accesos" };
+  const vigentes = a.accesos.filter((x) => x.estado !== "quitado");
+  const telegram = vigentes.filter((x) => x.plataforma === "telegram" && x.estado !== "fallo").map((x) => ({
+    nombre: x.recursoNombre, adentro: x.estado === "entro",
+    url: x.estado === "dado" && typeof x.externo.link === "string" ? x.externo.link : null,
+  }));
+  const cursos = vigentes.filter((x) => x.plataforma === "wisboo" && x.estado !== "fallo").map((x) => x.recursoNombre);
+  const zoom = vigentes.filter((x) => x.plataforma === "zoom" && x.estado !== "fallo").map((x) => ({
+    nombre: x.recursoNombre, url: typeof x.externo.joinUrl === "string" ? x.externo.joinUrl : null,
+  }));
+  const faltaAlgo = vigentes.some((x) => x.estado === "fallo");
+  const hay = telegram.length + cursos.length + zoom.length > 0;
+  return {
+    ...base, fase: hay ? "listo" : "sin-accesos", telegram, zoom, faltaAlgo,
+    wisboo: cursos.length ? { url: a.linkWisboo, cursos } : null,
+  };
+}
+
+/** Un código de bienvenida bien formado (para no ir a la base con cualquier cosa). */
+export const esCodigoBienvenida = (x: unknown): x is string => typeof x === "string" && /^[A-Za-z0-9_-]{24,64}$/.test(x);
 
 /** El asunto y el mensaje del mail de PandaDoc, con {nombre} y {programa} reemplazados. */
 export function mensajeDelContrato(config: ConfigContratos | undefined, d: Partial<DatosContrato>, programa: string): { subject: string; message: string } {

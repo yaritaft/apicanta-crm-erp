@@ -87,6 +87,7 @@ export async function POST(peticion: Request) {
 
       const contrato = await crearContrato(db, {
         ventaId, sesionId, leadId, alumnoId, programa, datos, modo, quien, mandar: b.mandar !== false, config,
+        origen: new URL(peticion.url).origin,
       });
       return NextResponse.json({ contrato }, { status: contrato.estado === "error" ? 502 : 200 });
     }
@@ -106,7 +107,7 @@ export async function POST(peticion: Request) {
       const datos = datosLimpios(b.datos as Partial<DatosContrato>);
       const problema = problemaDeDatos(datos, c.modo);
       if (problema) return mal(problema);
-      await corregir(db, c, datos, quien, config);
+      await corregir(db, c, datos, quien, config, new URL(peticion.url).origin);
     } else if (accion === "enlace") {
       const enlace = await nuevoEnlace(db, c);
       if (!enlace) return mal("PandaDoc no dio el link: el contrato tiene que estar enviado.", 409);

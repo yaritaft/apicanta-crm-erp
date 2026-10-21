@@ -106,6 +106,10 @@ drop policy if exists ver_contrato_eventos on public.contrato_eventos;
 create policy ver_contrato_eventos on public.contrato_eventos for select to authenticated using (
   exists (select 1 from public.contratos c where c.id = "contratoId"));
 
+-- La página de bienvenida (/bienvenida/<código>): adonde PandaDoc manda al alumno apenas firma, con sus accesos.
+-- El código es al azar y largo: es lo único que abre esa página (pública, sin sesión).
+alter table public.contratos add column if not exists bienvenida text unique;
+
 -- ---------- 2. La conexión con PandaDoc y los avisos ya procesados ----------
 
 create table if not exists public.pandadoc_conexion (

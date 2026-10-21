@@ -74,6 +74,8 @@ const PUBLICAS = new Set([
   "GET /meta/callback", "GET /youtube/callback", "GET /meta/login",
   /* El «¿estás listo?» del aviso de PandaDoc (los contratos, 20/10). */
   "GET /pandadoc/webhook",
+  /* La página de bienvenida del alumno que acaba de firmar: la abre sólo su código (pruebas/contratos.test.ts). */
+  "GET /bienvenida/[token]",
 ]);
 const clave = (r: Ruta) => `${r.metodo} ${r.ruta}`;
 

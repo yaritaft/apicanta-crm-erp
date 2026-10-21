@@ -204,3 +204,39 @@ test("el aviso de producción se conecta solo una vez, y nunca si alguien lo des
   assert.equal(conectarAvisoSolo({ enProduccion: false, hayClave: true, hayFila: false }), false, "en local o en una versión de prueba, nunca");
   assert.equal(conectarAvisoSolo({ enProduccion: true, hayClave: false, hayFila: false }), false);
 });
+
+test("la bienvenida: PandaDoc manda al alumno a su página apenas firma", async () => {
+  const { destinatario, esCodigoBienvenida } = await import("@/lib/contratos");
+  const d = destinatario(DATOS, "https://apicanta-erp.vercel.app/bienvenida/abc");
+  assert.deepEqual(d.redirect, { url: "https://apicanta-erp.vercel.app/bienvenida/abc", is_enabled: true });
+  assert.equal("redirect" in destinatario(DATOS, null), false);
+  const c = cuerpoDocumento({ contratoId: "c", modo: "produccion", plantillaId: "t", programa: "Hackear AI", datos: DATOS, despuesDeFirmar: "https://x/bienvenida/y" });
+  assert.equal(((c.recipients as Record<string, unknown>[])[0].redirect as { url: string }).url, "https://x/bienvenida/y");
+  assert.ok(esCodigoBienvenida("A".repeat(32)));
+  assert.ok(!esCodigoBienvenida("corto"));
+  assert.ok(!esCodigoBienvenida("../../etc/passwd-aaaaaaaaaaaaaaaaaaaaa"));
+});
+
+test("la bienvenida: qué ve el alumno en cada momento (y nunca su mail ni su documento)", async () => {
+  const { armarBienvenida } = await import("@/lib/contratos");
+  const contrato = { estado: "firmado" as const, accesosEn: "2026-10-21T00:00:00Z", destinatario: { nombre: "María José Pérez", email: "maria@ejemplo.com" } };
+  const accesos = [
+    { plataforma: "telegram" as const, estado: "dado" as const, recursoNombre: "Comunidad Hackear AI", externo: { link: "https://t.me/+abc" } },
+    { plataforma: "telegram" as const, estado: "entro" as const, recursoNombre: "Avisos", externo: { link: "https://t.me/+def" } },
+    { plataforma: "wisboo" as const, estado: "dado" as const, recursoNombre: "Mentoría (Hackear AI)", externo: { usuarioId: "u1" } },
+    { plataforma: "wisboo" as const, estado: "fallo" as const, recursoNombre: "Bonos", externo: {} },
+    { plataforma: "zoom" as const, estado: "quitado" as const, recursoNombre: "Clase vieja", externo: {} },
+  ];
+  const b = armarBienvenida({ contrato, programa: "Hackear AI", accesos, linkWisboo: "https://wisboo/magic", accesosAutomaticos: true });
+  assert.equal(b.fase, "listo");
+  assert.equal(b.nombre, "María");
+  assert.deepEqual(b.telegram, [{ nombre: "Comunidad Hackear AI", adentro: false, url: "https://t.me/+abc" }, { nombre: "Avisos", adentro: true, url: null }]);
+  assert.deepEqual(b.wisboo, { url: "https://wisboo/magic", cursos: ["Mentoría (Hackear AI)"] });
+  assert.deepEqual(b.zoom, [], "lo quitado no se muestra");
+  assert.equal(b.faltaAlgo, true);
+  assert.ok(!JSON.stringify(b).includes("maria@ejemplo.com"));
+  assert.equal(armarBienvenida({ contrato: { ...contrato, estado: "enviado" }, programa: "X", accesos, linkWisboo: null, accesosAutomaticos: true }).fase, "firmar");
+  assert.equal(armarBienvenida({ contrato: { ...contrato, accesosEn: null }, programa: "X", accesos: [], linkWisboo: null, accesosAutomaticos: true }).fase, "preparando");
+  assert.equal(armarBienvenida({ contrato: { ...contrato, accesosEn: null }, programa: "X", accesos: [], linkWisboo: null, accesosAutomaticos: false }).fase, "sin-accesos", "apagados: no hay nada que esperar");
+  assert.equal(armarBienvenida({ contrato, programa: "X", accesos: [], linkWisboo: null, accesosAutomaticos: true }).fase, "sin-accesos");
+});

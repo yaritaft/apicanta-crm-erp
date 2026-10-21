@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { Ban, ChevronDown, ChevronRight, Copy, FileDown, FileSignature, Pencil, RefreshCw, Send } from "lucide-react";
+import { Ban, ChevronDown, ChevronRight, Copy, FileDown, FileSignature, PartyPopper, Pencil, RefreshCw, Send } from "lucide-react";
 import { Badge, Button, Switch, type VarianteBadge } from "@/components/ui/ui";
 import { Confirmar, ModalForm } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toast";
@@ -200,6 +200,13 @@ export function ContratoCard({ venta, alumnoId, sesionId, manual }: {
                     onClick={async () => { setTrabajando(`${c.id}:pdf`); try { await abrirPdf(c.id); } catch (err) { toast(err instanceof Error ? err.message : "No se pudo.", "err"); } setTrabajando(null); }}>
                     Ver PDF firmado
                   </Button>
+                )}
+                {c.bienvenida && (c.estado === "firmado" || c.estado === "enviado" || c.estado === "visto") && (
+                  <Button sm variante="ghost" icono={<PartyPopper size={14} />} onClick={async () => {
+                    const url = `${window.location.origin}/bienvenida/${c.bienvenida}`;
+                    try { await navigator.clipboard.writeText(url); toast("Link de su página de bienvenida copiado: ahí ve sus accesos."); }
+                    catch { window.prompt("Copiá el link de su página de bienvenida:", url); }
+                  }}>Copiar página de bienvenida</Button>
                 )}
                 {acciones.includes("mandar-otro") && venta?.estado === "activa" && (
                   <Button sm variante="secondary" icono={<FileSignature size={14} />} onClick={() => abrirNuevo(c)}>Mandar uno nuevo</Button>

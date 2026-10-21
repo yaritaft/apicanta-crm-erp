@@ -1,6 +1,7 @@
+import { randomBytes } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
-  cuerpoDocumento, estadoDePandadoc, firmoElAlumno, mensajeDelContrato, partirNombre, ROL_ALUMNO,
+  cuerpoDocumento, destinatario, estadoDePandadoc, firmoElAlumno, mensajeDelContrato, ROL_ALUMNO,
   type Contrato, type DatosContrato, type EstadoContrato, type EventoContrato, type ModoContrato,
 } from "./contratos";
 import {
@@ -51,6 +52,15 @@ export async function programasGuardados(db: SupabaseClient): Promise<{ programa
   return { programas: programasDe(fila), config: fila.contratos ?? { estado: "apagado" } };
 }
 
+/** La dirección de la app para la página de bienvenida: la de producción en la app publicada; si no, la del pedido. */
+export function baseDeLaApp(origen?: string | null): string | null {
+  const prod = process.env.VERCEL_ENV === "production" ? process.env.VERCEL_PROJECT_PRODUCTION_URL : undefined;
+  if (prod) return `https://${prod}`;
+  return origen && /^https:\/\//.test(origen) ? origen : null;
+}
+const paginaDeBienvenida = (base: string | null, codigo: string | null | undefined) =>
+  base && codigo ? `${base}/bienvenida/${codigo}` : null;
+
 const mensajeDe = (e: unknown) => e instanceof ErrorPandadoc ? e.message : e instanceof Error ? e.message : "No se pudo.";
 
 /* ---------- Crear y mandar ---------- */
@@ -61,17 +71,21 @@ export interface PedidoContrato {
   /* false: queda en borrador en PandaDoc (para mandarlo después). */
   mandar: boolean;
   config?: ConfigContratos;
+  /* La dirección de la app (para la página de bienvenida después de firmar). */
+  origen?: string | null;
 }
 
 export async function crearContrato(db: SupabaseClient, p: PedidoContrato): Promise<Contrato> {
   if (!p.programa.plantillaId) throw new Error(`El programa ${p.programa.nombre} no tiene plantilla de PandaDoc (Ajustes → Integraciones).`);
   const id = nuevoId("ctr");
+  /* El código de la página de bienvenida: al azar y largo (es lo único que la abre). */
+  const bienvenida = randomBytes(24).toString("base64url");
   const fila: Partial<Contrato> = {
     id, ventaId: p.ventaId ?? null, sesionId: p.sesionId ?? null, leadId: p.leadId ?? null, alumnoId: p.alumnoId ?? null,
     programa: p.programa.id, plantillaId: p.programa.plantillaId, plantillaNombre: p.programa.plantillaNombre,
     modo: p.modo, estado: "creando",
     destinatario: { nombre: p.datos.nombre.trim(), email: p.datos.email.trim().toLowerCase(), telefono: p.datos.telefono.trim() },
-    datos: p.datos, origen: "app", creadoPor: p.quien, creadoEn: ahora(), actualizadoEn: ahora(),
+    datos: p.datos, origen: "app", creadoPor: p.quien, creadoEn: ahora(), actualizadoEn: ahora(), bienvenida,
   };
   const ins = await db.from("contratos").insert(fila);
   if (ins.error) throw new Error(/contratos|PGRST205|42P01/.test(`${ins.error.code} ${ins.error.message}`)
@@ -83,6 +97,7 @@ export async function crearContrato(db: SupabaseClient, p: PedidoContrato): Prom
     const plantilla = await detallePlantilla(p.modo, p.programa.plantillaId).catch(() => undefined);
     const doc = await crearDocumento(p.modo, cuerpoDocumento({
       contratoId: id, ventaId: p.ventaId, modo: p.modo, plantillaId: p.programa.plantillaId, programa: p.programa.nombre, datos: p.datos, plantilla,
+      despuesDeFirmar: paginaDeBienvenida(baseDeLaApp(p.origen), bienvenida),
     }));
     await guardar(db, id, { documentoId: doc.id });
     const estado = await esperarBorrador(p.modo, doc.id);
@@ -143,7 +158,7 @@ export async function anular(db: SupabaseClient, c: Contrato, motivo: string, qu
 }
 
 /** Corregir: vuelve a borrador en PandaDoc, se cambian los datos y se manda de nuevo (las firmas se borran). */
-export async function corregir(db: SupabaseClient, c: Contrato, datos: DatosContrato, quien: string, config?: ConfigContratos): Promise<void> {
+export async function corregir(db: SupabaseClient, c: Contrato, datos: DatosContrato, quien: string, config?: ConfigContratos, origen?: string | null): Promise<void> {
   if (!c.documentoId) throw new Error("Este contrato no llegó a PandaDoc: mandá uno nuevo.");
   if (c.estado === "firmado") throw new Error("Un contrato firmado no se corrige: si hace falta otro, mandá uno nuevo.");
   const programa = nombrePrograma(c);
@@ -155,7 +170,7 @@ export async function corregir(db: SupabaseClient, c: Contrato, datos: DatosCont
   const cuerpo = cuerpoDocumento({ contratoId: c.id, ventaId: c.ventaId, modo: c.modo, plantillaId: c.plantillaId, programa, datos, plantilla: actual });
   await actualizarDocumento(c.modo, c.documentoId, {
     name: `${c.modo === "prueba" ? "[Prueba] " : ""}Contrato ${programa} - ${nombre}`,
-    recipients: [{ email: datos.email.trim(), ...partirNombre(nombre), role: ROL_ALUMNO, ...(datos.telefono.trim() ? { phone: datos.telefono.trim() } : {}) }],
+    recipients: [destinatario(datos, paginaDeBienvenida(baseDeLaApp(origen), c.bienvenida))],
     tokens: cuerpo.tokens,
     ...(cuerpo.fields ? { fields: cuerpo.fields } : {}),
   });
