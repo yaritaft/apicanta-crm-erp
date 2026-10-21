@@ -11,7 +11,7 @@ import {
   deAlumnos, deAnuncios, deAtrasados, deCashCollected, deComisiones, deDevoluciones, deFees, deGastos, deLeads, deLlamadas, deMovimientos, dePagos, dePersonas,
   dePublicidad, deVencidas, deVentas, deWebinars, type PartesDetalle,
 } from "./kpis-detalle";
-import { metricasDeWebinar, numerosDelWebinar, sumarMetricas, type MetricasWebinar } from "./webinar";
+import { metricasDeWebinar, numerosDelWebinar, sumarMetricas, sumarMetricasConPauta, type MetricasWebinar } from "./webinar";
 import { numerosDe, rendimientoPorVia, type LinkVia, type NumerosVia } from "./vias-webinar";
 import type { ViaLanzamiento } from "./agendas-webinar";
 import { inversionDelEmbudo } from "./embudos";
@@ -270,6 +270,15 @@ export class Contexto {
     });
   }
 
+  /** Lo mismo, de los webinars con pauta cargada: para ROAS, ROI, profit y CAC (lib/webinar.ts, sumarMetricasConPauta). */
+  webConPauta(): MetricasWebinar | null {
+    return this.memo("webConPauta", () => {
+      const ws = this.webinars();
+      if (ws.length === 0) return null;
+      return sumarMetricasConPauta(ws.map((w) => metricasDeWebinar(this.e, w)));
+    });
+  }
+
   /** Lo de Meta, como la fila de totales de Marketing. */
   meta(): MetricasMeta | null {
     return this.memo("meta", () => {
@@ -378,6 +387,12 @@ const w = (c: Contexto, f: (m: MetricasWebinar) => number | null): number | null
   const m = c.web();
   return m ? f(m) : null;
 };
+/* Lo que compara plata con lo que costó el webinar: sólo cuenta los webinars con pauta cargada. */
+const wp = (c: Contexto, f: (m: MetricasWebinar) => number | null): number | null => {
+  const m = c.webConPauta();
+  return m ? f(m) : null;
+};
+const SOLO_CON_PAUTA = " Cuenta sólo los webinars con pauta cargada: los de antes de conectar Meta no tienen cuánto costaron.";
 
 /** Las cuotas que ya vencieron, pagadas o no, de ventas activas del corte:
  *  la base de la tasa de mora. Está aparte para que «cómo se calcula» cuente
@@ -616,17 +631,27 @@ export function catalogo(e: EstadoApp): DefKpi[] {
         return g(c, () => { const p = c.py()!; return p.ventas > 0 ? p.cac : null; });
       } },
     { id: "w_cac", etiqueta: "CAC del webinar", formato: "moneda", mejor: "baja", href: "/webinars",
-      ayuda: "Inversión del webinar sobre sus ventas.", valor: (c) => w(c, (m) => (m.ventas > 0 ? m.cpa : null)) },
+      ayuda: `Inversión del webinar sobre sus ventas.${SOLO_CON_PAUTA}`, valor: (c) => wp(c, (m) => (m.ventas > 0 ? m.cpa : null)) },
     { id: "roas_cc", etiqueta: "ROAS on CC", formato: "x", mejor: "sube", href: "/finanzas",
       ayuda: "Cash Collected (CC) sobre inversión en publicidad: por cada dólar invertido, cuántos entraron (con un embudo elegido, la inversión de ese embudo).",
       valor: (c) => { const inv = c.inversionEmbudo(); return inv !== null ? (inv > 0 ? c.cobrado() / inv : null) : g(c, () => c.py()!.roasCC || null); } },
+    { id: "roi_cc", etiqueta: "ROI on CC", formato: "pct", mejor: "sube", href: "/finanzas",
+      ayuda: "Lo que ganó la publicidad sobre lo que costó: (Cash Collected − procesadores − comisiones − inversión) sobre la inversión. 100% = por cada dólar invertido, otro dólar de ganancia (con un embudo elegido, la inversión de ese embudo).",
+      valor: (c) => {
+        const inv = c.inversionEmbudo();
+        if (inv !== null) { if (inv <= 0) return null; const k = c.comisiones(); return ((c.cobrado() - c.fees() - k.closers - k.director - inv) / inv) * 100; }
+        return g(c, () => { const p = c.py()!; return p.inversionAds > 0 ? ((p.cashCollected - p.feesProcesador - p.comisionCloser - p.comisionDirector - p.inversionAds) / p.inversionAds) * 100 : null; });
+      } },
     { id: "roas_rev", etiqueta: "ROAS on Revenue", formato: "x", mejor: "sube", href: "/finanzas",
       ayuda: "Revenue (lo facturado) sobre inversión en publicidad: por cada dólar invertido, cuántos se vendieron, como si todos pagaran todas las cuotas.",
       valor: (c) => { const inv = c.inversionEmbudo(); return inv !== null ? (inv > 0 ? c.facturado() / inv : null) : g(c, () => c.py()!.roasRev || null); } },
     { id: "w_roas_cc", etiqueta: "ROAS on CC (webinar)", formato: "x", mejor: "sube", href: "/webinars",
-      ayuda: "ROAS on CC del webinar: lo cobrado de sus ventas sobre su inversión total.", valor: (c) => w(c, (m) => m.roasCC) },
+      ayuda: `ROAS on CC del webinar: lo cobrado de sus ventas sobre su inversión total.${SOLO_CON_PAUTA}`, valor: (c) => wp(c, (m) => m.roasCC) },
+    { id: "w_roi", etiqueta: "ROI on CC (webinar)", formato: "pct", mejor: "sube", href: "/webinars",
+      ayuda: `Lo que ganó el webinar sobre lo que costó: su Profit on CC sobre su inversión total. 100% = por cada dólar invertido, otro dólar de ganancia.${SOLO_CON_PAUTA}`,
+      valor: (c) => wp(c, (m) => (m.inversionTotal > 0 ? (m.beneficioCC / m.inversionTotal) * 100 : null)) },
     { id: "w_roas_rev", etiqueta: "ROAS on Revenue (webinar)", formato: "x", mejor: "sube", href: "/webinars",
-      ayuda: "ROAS on Revenue del webinar: lo facturado por sus ventas sobre su inversión total.", valor: (c) => w(c, (m) => m.roasRev) },
+      ayuda: `ROAS on Revenue del webinar: lo facturado por sus ventas sobre su inversión total.${SOLO_CON_PAUTA}`, valor: (c) => wp(c, (m) => m.roasRev) },
   ]);
 
   /* ================= Post-venta: Cobranza ================= */
@@ -760,9 +785,9 @@ export function catalogo(e: EstadoApp): DefKpi[] {
 
   add("rentabilidad", "Profit del webinar", [
     { id: "w_profit_cc", etiqueta: "Profit on CC (webinar)", formato: "resultado", mejor: "sube", href: "/webinars",
-      ayuda: "Lo cobrado por las ventas del webinar menos pauta, DM Ads, WhatsApp API, comisiones, procesador y los otros gastos cargados a ese webinar.", valor: (c) => w(c, (m) => m.beneficioCC) },
+      ayuda: `Lo cobrado por las ventas del webinar menos pauta, DM Ads, WhatsApp API, comisiones, procesador y los otros gastos cargados a ese webinar.${SOLO_CON_PAUTA}`, valor: (c) => wp(c, (m) => m.beneficioCC) },
     { id: "w_profit_rev", etiqueta: "Profit on Revenue (webinar)", formato: "resultado", mejor: "sube", href: "/webinars",
-      ayuda: "Lo facturado por las ventas del webinar menos los mismos descuentos.", valor: (c) => w(c, (m) => m.beneficioRev) },
+      ayuda: `Lo facturado por las ventas del webinar menos los mismos descuentos.${SOLO_CON_PAUTA}`, valor: (c) => wp(c, (m) => m.beneficioRev) },
   ]);
 
   /* ================= Servicio ================= */

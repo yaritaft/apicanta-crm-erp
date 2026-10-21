@@ -202,18 +202,24 @@ export const gruposWppDelWebinar = (e: EstadoApp, w: Webinar): GrupoWppResumen |
 /** Cuántos se unieron: los que pasaron por los grupos y los que no se les ve el teléfono. */
 export const seUnieronAlGrupo = (g: GrupoWppResumen) => g.entraron + g.sinTelefono;
 
-/** El webinar con lo que falta cargar tomado de Meta y del lector de WhatsApp. */
+/** Cuántos se registraron en la landing para ese webinar (0 si no se sabe). */
+export const registrosDelWebinar = (e: EstadoApp, w: Webinar): number =>
+  e.registrosPorWebinar?.find((r) => r.webinarId === w.id)?.registros ?? 0;
+
+/** El webinar con lo que falta cargar tomado de Meta, del lector de WhatsApp y de los registros de la landing. Lo cargado a mano manda;
+    los formularios salen de Meta y, en un webinar sin campañas de Meta (los de antes de conectarla), de los registros de la landing. */
 export function numerosDelWebinar(e: EstadoApp, w: Webinar): Webinar {
   const m = metaDelWebinar(e, w);
   const g = gruposWppDelWebinar(e, w);
-  if (!m && !g) return w;
+  const reg = registrosDelWebinar(e, w);
+  if (!m && !g && !reg) return w;
   return {
     ...w,
     ...(m ? {
       inversion: w.inversion || m.pauta,
-      formularios: w.formularios || m.formularios,
       inversionDmAds: w.inversionDmAds || m.dmAds,
     } : {}),
+    ...(m || reg ? { formularios: w.formularios || m?.formularios || reg } : {}),
     ...(g ? { grupoWpp: w.grupoWpp || seUnieronAlGrupo(g) } : {}),
   };
 }
@@ -227,6 +233,7 @@ export function camposDeWhatsapp(e: EstadoApp, w: Webinar): Set<CampoManual> {
 /** De dónde sale un número que no se cargó a mano, para decirlo al lado de la celda (undefined: lo cargó alguien). */
 export function origenAutomatico(e: EstadoApp, w: Webinar, campo: CampoManual): string | undefined {
   if (camposDeMeta(e, w).has(campo)) return "De sus campañas de Meta";
+  if (campo === "formularios" && !w.formularios && registrosDelWebinar(e, w) > 0) return "De los registros de la landing (Formularios)";
   if (camposDeWhatsapp(e, w).has(campo)) return "De los grupos de WhatsApp: los que entraron, según el lector";
   return undefined;
 }
@@ -315,6 +322,14 @@ export function sumarMetricas(ms: MetricasWebinar[]): MetricasWebinar {
   const base = Object.fromEntries(CLAVES_BASE.map((k) => [k, 0])) as Base;
   for (const m of ms) for (const k of CLAVES_BASE) base[k] += m[k];
   return derivar(base);
+}
+
+/** Los números de los webinars QUE TIENEN PAUTA cargada, sumados: sirve para lo que compara plata con lo que costó (ROAS, ROI, profit, CAC).
+    Un webinar sin pauta (los de antes de conectar Meta, que no tienen cuánto costaron) no tiene retorno que medir, y su plata sola inflaría el
+    de los demás. Null si ninguno tiene pauta. */
+export function sumarMetricasConPauta(ms: MetricasWebinar[]): MetricasWebinar | null {
+  const con = ms.filter((m) => m.inversionTotal > 0);
+  return con.length ? sumarMetricas(con) : null;
 }
 
 /** Todos los webinars ya pasados, del más viejo al más nuevo, con sus métricas. */

@@ -29,7 +29,7 @@ import { CopiarLink } from "@/components/ui/Filtros";
 import { useTablaURL } from "@/lib/useParamsURL";
 import { money, num, pct } from "@/lib/format";
 import {
-  CAMPOS_MANUALES, metricasDeWebinar, numerosDelWebinar, origenAutomatico, sumarMetricas, type MetricasWebinar,
+  CAMPOS_MANUALES, metricasDeWebinar, numerosDelWebinar, origenAutomatico, sumarMetricas, sumarMetricasConPauta, type MetricasWebinar,
 } from "@/lib/webinar";
 import type { CampoPersonalizado, EstadoWebinar, Webinar } from "@/lib/types";
 
@@ -171,6 +171,11 @@ export default function Webinars() {
     [e, filtrados],
   );
   const total = useMemo(() => sumarMetricas([...metricas.values()]), [metricas]);
+  /* ROAS, profit y CPA comparan plata con lo que costó: sólo cuentan los webinars con pauta cargada (los de antes de conectar Meta no tienen
+     cuánto costaron, y su plata sola inflaría el retorno de los demás). */
+  const conPauta = useMemo(() => [...metricas.values()].filter((m) => m.inversionTotal > 0).length, [metricas]);
+  const totalPauta = useMemo(() => sumarMetricasConPauta([...metricas.values()]), [metricas]);
+  const soloPauta = conPauta < filtrados.length ? ` · ${num(conPauta)} con pauta cargada` : "";
   const m = (w: Webinar) => metricas.get(w.id) ?? metricasDeWebinar(e, w);
 
   const serie = useMemo(
@@ -333,19 +338,19 @@ export default function Webinars() {
 
       <div className="grid-stats">
         <StatCard
-          hero etiqueta="ROAS on CC" valor={total.roasCC > 0 ? `${num(total.roasCC, 2)}x` : "—"}
-          delta={total.roasRev > 0 ? `${num(total.roasRev, 2)}x on Revenue` : undefined} direccion="accent"
-          contexto={`${filtrados.length} ${filtrados.length === 1 ? "webinar" : "webinars"} · ${periodoTexto}`}
+          hero etiqueta="ROAS on CC" valor={totalPauta && totalPauta.roasCC > 0 ? `${num(totalPauta.roasCC, 2)}x` : "—"}
+          delta={totalPauta && totalPauta.roasRev > 0 ? `${num(totalPauta.roasRev, 2)}x on Revenue` : undefined} direccion="accent"
+          contexto={`${filtrados.length} ${filtrados.length === 1 ? "webinar" : "webinars"}${soloPauta} · ${periodoTexto}`}
           info={{
-            ayuda: "Por cada dólar invertido en los webinars, cuántos entraron. Cuenta sólo la plata que ya se cobró de sus ventas.",
+            ayuda: "Por cada dólar invertido en los webinars, cuántos entraron. Cuenta sólo la plata que ya se cobró de sus ventas, y sólo los webinars con pauta cargada: los de antes de conectar Meta no tienen cuánto costaron.",
             formula: "Cash Collected (CC) de las ventas de los webinars ÷ Inversión total (pauta + DM Ads + WhatsApp API)",
             ejemplo: "Invertiste US$ 5.000 y de las ventas de esos webinars entraron US$ 12.500: ROAS on CC = 2,5x. El ROAS on Revenue usa lo facturado en vez de lo cobrado.",
             periodo: periodoTexto,
             componentes: () => [
-              { concepto: "Cash Collected (CC) de las ventas", valor: M(total.cobrado, 2) },
-              { concepto: "Inversión total", valor: M(total.inversionTotal, 2), signo: "÷" },
-              { concepto: "ROAS on CC", valor: total.roasCC > 0 ? `${num(total.roasCC, 2)}x` : "—", signo: "=" },
-              { concepto: "ROAS on Revenue (facturado ÷ inversión)", valor: total.roasRev > 0 ? `${num(total.roasRev, 2)}x` : "—", nota: `${M(total.facturado, 2)} ÷ ${M(total.inversionTotal, 2)}` },
+              { concepto: "Cash Collected (CC) de las ventas", valor: M(totalPauta?.cobrado ?? 0, 2) },
+              { concepto: "Inversión total", valor: M(totalPauta?.inversionTotal ?? 0, 2), signo: "÷" },
+              { concepto: "ROAS on CC", valor: totalPauta && totalPauta.roasCC > 0 ? `${num(totalPauta.roasCC, 2)}x` : "—", signo: "=" },
+              { concepto: "ROAS on Revenue (facturado ÷ inversión)", valor: totalPauta && totalPauta.roasRev > 0 ? `${num(totalPauta.roasRev, 2)}x` : "—", nota: `${M(totalPauta?.facturado ?? 0, 2)} ÷ ${M(totalPauta?.inversionTotal ?? 0, 2)}` },
             ],
           }}
         />
@@ -372,22 +377,22 @@ export default function Webinars() {
           }}
         />
         <StatCard
-          etiqueta="Profit on CC" valor={M(total.beneficioCC)}
-          contexto={total.ventas > 0
-            ? `${num(total.ventas)} ${total.ventas === 1 ? "venta" : "ventas"} · ${M(total.cpa)} de CPA`
+          etiqueta="Profit on CC" valor={totalPauta ? M(totalPauta.beneficioCC) : "—"}
+          contexto={totalPauta && totalPauta.ventas > 0
+            ? `${num(totalPauta.ventas)} ${totalPauta.ventas === 1 ? "venta" : "ventas"} · ${M(totalPauta.cpa)} de CPA`
             : "sin ventas todavía"}
           info={{
-            ayuda: "Lo que dejaron los webinars sobre lo que ya se cobró, después de lo que costaron.",
+            ayuda: "Lo que dejaron los webinars sobre lo que ya se cobró, después de lo que costaron. Cuenta sólo los webinars con pauta cargada.",
             formula: "Cash Collected (CC) − Inversión total − Comisiones − Procesadores − Otros gastos cargados a esos webinars",
             ejemplo: "Entraron US$ 12.500; la inversión fue de US$ 5.000, las comisiones US$ 900 y el procesador US$ 400: Profit on CC = 12.500 − 5.000 − 900 − 400 = US$ 6.200.",
             periodo: periodoTexto,
             componentes: () => [
-              { concepto: "Cash Collected (CC) de las ventas", valor: M(total.cobrado, 2) },
-              { concepto: "Inversión total", valor: M(total.inversionTotal, 2), signo: "−" },
-              { concepto: "Comisiones", valor: M(total.comisiones, 2), signo: "−" },
-              { concepto: "Procesadores de pago", valor: M(total.procesador, 2), signo: "−" },
-              { concepto: "Otros gastos de los webinars", valor: M(total.otrosGastos, 2), signo: "−" },
-              { concepto: "Profit on CC", valor: M(total.beneficioCC, 2), signo: "=" },
+              { concepto: "Cash Collected (CC) de las ventas", valor: M(totalPauta?.cobrado ?? 0, 2) },
+              { concepto: "Inversión total", valor: M(totalPauta?.inversionTotal ?? 0, 2), signo: "−" },
+              { concepto: "Comisiones", valor: M(totalPauta?.comisiones ?? 0, 2), signo: "−" },
+              { concepto: "Procesadores de pago", valor: M(totalPauta?.procesador ?? 0, 2), signo: "−" },
+              { concepto: "Otros gastos de los webinars", valor: M(totalPauta?.otrosGastos ?? 0, 2), signo: "−" },
+              { concepto: "Profit on CC", valor: M(totalPauta?.beneficioCC ?? 0, 2), signo: "=" },
             ],
           }}
         />

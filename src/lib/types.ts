@@ -985,6 +985,9 @@ export interface EstadoApp {
   /* Lo que el lector de WhatsApp ve de los grupos de cada webinar, ya sumado (vista `whatsapp_resumen_webinar`,
      supabase/whatsapp-resumen-webinar.sql). Sólo se lee: lo trae la carga y se refresca solo; no es una tabla. */
   gruposWpp?: GrupoWppResumen[];
+  /* Cuántos se registraron en la landing para cada webinar (vista `registros_webinar_resumen`, supabase/registros-webinar.sql): de ahí sale
+     «Formularios» de un webinar que no tiene pauta de Meta. Sólo se lee; lo traen quienes ven los Webinars. */
+  registrosPorWebinar?: { webinarId: ID; registros: number }[];
 }
 
 /* Los grupos de WhatsApp de un webinar, sumados (todos sus grupos, cada persona una vez). */

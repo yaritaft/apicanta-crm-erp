@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { construirSemilla } from "@/lib/seed";
 import { informeDelWebinar } from "@/lib/informe-webinar";
 import { acciones } from "@/lib/store";
-import { camposDeWhatsapp, gruposWppDelWebinar, metricasDeWebinar, numerosDelWebinar, origenAutomatico, seUnieronAlGrupo, sumarMetricas } from "@/lib/webinar";
+import { camposDeWhatsapp, gruposWppDelWebinar, metricasDeWebinar, numerosDelWebinar, origenAutomatico, registrosDelWebinar, seUnieronAlGrupo, sumarMetricas } from "@/lib/webinar";
 import type { EstadoApp, GrupoWppResumen, Webinar } from "@/lib/types";
 
 /* «Se unieron al grupo» sale solo del lector de WhatsApp (21/10): antes era un número que había que cargar a mano y
@@ -77,4 +77,38 @@ test("el informe del webinar muestra el grupo automático y explica de dónde sa
 
 test("refrescarGruposWpp sin nube (la demo local) no hace nada ni rompe", async () => {
   await assert.doesNotReject(acciones.refrescarGruposWpp());
+});
+
+/* ---------- «Formularios» de un webinar sin pauta de Meta: los registros de la landing ---------- */
+
+const conRegistros = (formularios: number, registros?: number, w2 = "w1"): { e: EstadoApp; w: Webinar } => {
+  const { e, w } = conGrupos(0, undefined);
+  const w1 = { ...w, formularios };
+  return { e: { ...e, webinars: [w1], registrosPorWebinar: registros === undefined ? undefined : [{ webinarId: w2, registros }] }, w: w1 };
+};
+
+test("un webinar sin formularios cargados ni Meta toma los registros de la landing", () => {
+  const { e, w } = conRegistros(0, 1278);
+  assert.equal(registrosDelWebinar(e, w), 1278);
+  assert.equal(numerosDelWebinar(e, w).formularios, 1278);
+  assert.equal(metricasDeWebinar(e, w).formularios, 1278);
+  assert.match(origenAutomatico(e, w, "formularios") ?? "", /landing/);
+});
+
+test("lo cargado a mano manda sobre los registros, y sin registros no cambia nada", () => {
+  const manual = conRegistros(138, 1306);
+  assert.equal(numerosDelWebinar(manual.e, manual.w).formularios, 138);
+  assert.equal(origenAutomatico(manual.e, manual.w, "formularios"), undefined);
+  const sin = conRegistros(0, undefined);
+  assert.equal(numerosDelWebinar(sin.e, sin.w).formularios, 0);
+  const deOtro = conRegistros(0, 500, "otro");
+  assert.equal(numerosDelWebinar(deOtro.e, deOtro.w).formularios, 0, "los registros de otro webinar no cuentan");
+});
+
+test("con grupo y registros, la conversión formulario → grupo sale completa en un webinar viejo", () => {
+  const { e, w } = conRegistros(0, 1000);
+  const e2 = { ...e, gruposWpp: [resumen("w1", { entraron: 700, sinTelefono: 100 })] };
+  const m = metricasDeWebinar(e2, w);
+  assert.equal(m.grupoWpp, 800);
+  assert.equal(m.asistenciaFormulario, 80);
 });

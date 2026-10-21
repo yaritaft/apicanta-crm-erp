@@ -513,6 +513,18 @@ async function traerGruposWpp(db: NonNullable<typeof nube>): Promise<GrupoWppRes
   } catch { return undefined; }
 }
 
+/* Cuántos se registraron en la landing para cada webinar (vista registros_webinar_resumen): el «Formularios» de los webinars sin pauta de Meta.
+   Lo lee sólo quien ve los Webinars (RLS): para el resto vuelve vacío y no cambia nada. Igual que los grupos, nunca corta la carga. */
+async function traerRegistrosPorWebinar(db: NonNullable<typeof nube>): Promise<{ webinarId: string; registros: number }[] | undefined> {
+  try {
+    const r = await db.from("registros_webinar_resumen").select("webinarId, registros");
+    if (r.error) return undefined;
+    return ((r.data ?? []) as Record<string, unknown>[])
+      .filter((x) => x.webinarId)
+      .map((x) => ({ webinarId: String(x.webinarId), registros: Number(x.registros ?? 0) }));
+  } catch { return undefined; }
+}
+
 export async function cargarDeLaNube(): Promise<void> {
   if (!nube || yaCargo) return;
   const db = nube;
@@ -580,11 +592,12 @@ export async function cargarDeLaNube(): Promise<void> {
     const base = semilla;
     const { id: _id, ...ajustes } = ajustesRes.data as Ajustes & { id: number };
     void _id;
-    const gruposWpp = await traerGruposWpp(db);
+    const [gruposWpp, registrosPorWebinar] = await Promise.all([traerGruposWpp(db), traerRegistrosPorWebinar(db)]);
 
     guardar({
       version: 1,
       ...(gruposWpp ? { gruposWpp } : {}),
+      ...(registrosPorWebinar?.length ? { registrosPorWebinar } : {}),
       ajustes: { ...base.ajustes, ...ajustes },
       etapas: porTabla.etapas as Etapa[],
       /* Opcional: sin el SQL corrido (o con la tabla vacía) el pipeline de
@@ -3373,17 +3386,18 @@ export const acciones = {
      Crea los webinars viejos que nombran los proyectos WEB- de la planilla y
      ata cada venta sin webinar al suyo. A la base va sólo el webinarId de
      cada venta (un UPDATE), así no pisa nada que se haya editado en otro lado. */
-  atarVentasAWebinars(): { webinars: number; ventas: number } {
+  atarVentasAWebinars(opciones: { crearWebinars?: boolean; automatico?: boolean } = {}): { webinars: number; ventas: number } {
     const e0 = snapshot();
     const cuando = ahora();
-    const nuevos = webinarsQueFaltan(e0).map((w) => webinarNuevoDeProyecto(w, nuevoId("web"), cuando));
+    /* Solas (automatico) sólo atan: crear un webinar de la planilla lo decide una persona con el botón. */
+    const nuevos = opciones.crearWebinars === false ? [] : webinarsQueFaltan(e0).map((w) => webinarNuevoDeProyecto(w, nuevoId("web"), cuando));
     const e = nuevos.length ? { ...e0, webinars: [...e0.webinars, ...nuevos] } : e0;
     const atar = ventasParaAtar(e);
     if (nuevos.length === 0 && atar.length === 0) return { webinars: 0, ventas: 0 };
     const porVenta = new Map(atar.map((a) => [a.venta.id, a.webinarId] as const));
     const { lista, nuevo } = registrar(
       e, "webinar", "atar-webinars", "Ventas de cada webinar", "actualizo",
-      `Se ataron ${atar.length} ventas a su webinar (${atar.filter((a) => a.motivo === "proyecto").length} por el proyecto, `
+      `${opciones.automatico ? "Solas, " : ""}se ataron ${atar.length} ventas a su webinar (${atar.filter((a) => a.motivo === "proyecto").length} por el proyecto, `
       + `${atar.filter((a) => a.motivo === "utm").length} por los UTMs y ${atar.filter((a) => a.motivo === "fecha").length} por la fecha)`
       + (nuevos.length ? ` y se ${nuevos.length === 1 ? "creó un webinar" : `crearon ${nuevos.length} webinars`} de la planilla.` : "."),
     );

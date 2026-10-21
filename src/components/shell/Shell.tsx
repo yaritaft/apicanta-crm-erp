@@ -24,7 +24,8 @@ import { aplazarFoto, fotoAplazadaHoy, fotoDe, mapaDeFotos } from "@/lib/fotos-p
 import { useSalir, useSesion } from "@/lib/auth";
 import { useUsuarioActual } from "@/lib/usuario";
 import { elegirVerComo, useAcceso, useVerComo } from "@/lib/acceso";
-import { areaDeRuta, esCuentaDeCloser, nivelDeRuta, queEsTabla } from "@/lib/permisos";
+import { areaDeRuta, esCuentaDeCloser, nivelDeRuta, nivelEn, queEsTabla } from "@/lib/permisos";
+import { ventasParaAtar } from "@/lib/atar-webinars";
 import { diaDeNegocio, enRangoDeDias } from "@/lib/dia-negocio";
 import { aContactarHoy, filasDeSeguimiento, hoyDelNegocio } from "@/lib/seguimiento";
 import { useRecordarVistas } from "@/lib/recordarVistas";
@@ -86,6 +87,18 @@ export function Shell({ children }: { children: React.ReactNode }) {
   }, [quienYo]);
   const faltaFoto = datosListos && Boolean(quienYo) && !miFoto && !tablaSinCrear("fotos_perfil") && aplazo?.quien === quienYo && !aplazo.aplazada;
   const [cambiarFoto, setCambiarFoto] = useState(false);
+  /* Las ventas del embudo de webinar se atan solas a su webinar (por los UTMs de quien compró o por la fecha del último vivo): sin
+     eso el embudo, el profit y el ROAS de cada webinar quedan en cero (lib/atar-webinars.ts). Sólo las atan quienes pueden
+     editar Ventas y sólo atan: crear un webinar de la planilla sigue siendo el botón de la pantalla de Webinars. */
+  const puedeAtarVentas = datosListos && nivelEn(acceso, "ventas") >= 2 && !esCuentaDeCloser(acceso);
+  const ventasSinWebinar = useMemo(
+    () => (puedeAtarVentas ? ventasParaAtar(estado).length : 0),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [puedeAtarVentas, estado.ventas, estado.webinars, estado.sesiones, estado.contactos, estado.embudos],
+  );
+  useEffect(() => {
+    if (ventasSinWebinar > 0) acciones.atarVentasAWebinars({ crearWebinars: false, automatico: true });
+  }, [ventasSinWebinar]);
   /* «Se unieron al grupo» de cada webinar viene del lector de WhatsApp y cambia con cada entrada y salida: mientras la app
      está abierta y a la vista se vuelve a pedir cada dos minutos (y al volver a la pestaña). */
   useEffect(() => {

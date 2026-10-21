@@ -237,12 +237,17 @@ const EXPLICACIONES: Record<string, ExplicacionKpi> = {
   },
   w_cac: {
     formula: "Inversión total del webinar ÷ Ventas del webinar",
-    piezas: (c) => [ref("w_inv"), dato("Ventas del webinar", c.web()?.ventas ?? null, "cantidad", "÷")],
+    piezas: (c) => [ref("w_inv"), dato("Ventas del webinar", c.webConPauta()?.ventas ?? null, "cantidad", "÷")],
   },
   roas_cc: {
     formula: "Cash Collected (CC) ÷ Inversión en publicidad",
     ejemplo: "Invertiste US$ 5.000 y entraron US$ 12.500: ROAS on CC = 2,5x. Cuenta sólo la plata que ya entró.",
     piezas: (c) => [ref("c_cc"), inversion(c, "÷")],
+  },
+  roi_cc: {
+    formula: "(Cash Collected − Procesadores − Comisiones − Inversión en publicidad) ÷ Inversión en publicidad",
+    ejemplo: "Invertiste US$ 5.000 y, descontados procesadores y comisiones, entraron US$ 12.500: ganaste US$ 7.500 y el ROI on CC es 150%. Cuenta sólo la plata que ya entró.",
+    piezas: (c) => [ref("c_cc"), ref("r_fees", "−"), ref("r_closers", "−"), ref("r_director", "−"), inversion(c, "−")],
   },
   roas_rev: {
     formula: "Revenue ÷ Inversión en publicidad",
@@ -251,11 +256,15 @@ const EXPLICACIONES: Record<string, ExplicacionKpi> = {
   },
   w_roas_cc: {
     formula: "Cobrado de las ventas del webinar ÷ Inversión total del webinar",
-    piezas: (c) => [dato("Cobrado de las ventas del webinar", c.web()?.cobrado ?? null, "moneda"), ref("w_inv", "÷")],
+    piezas: (c) => [dato("Cobrado de las ventas del webinar", c.webConPauta()?.cobrado ?? null, "moneda"), ref("w_inv", "÷")],
+  },
+  w_roi: {
+    formula: "Profit on CC del webinar ÷ Inversión total del webinar",
+    piezas: () => [ref("w_profit_cc"), ref("w_inv", "÷")],
   },
   w_roas_rev: {
     formula: "Facturado por las ventas del webinar ÷ Inversión total del webinar",
-    piezas: (c) => [dato("Facturado por las ventas del webinar", c.web()?.facturado ?? null, "moneda"), ref("w_inv", "÷")],
+    piezas: (c) => [dato("Facturado por las ventas del webinar", c.webConPauta()?.facturado ?? null, "moneda"), ref("w_inv", "÷")],
   },
 
   /* ===== Cobranza ===== */
@@ -348,7 +357,7 @@ const EXPLICACIONES: Record<string, ExplicacionKpi> = {
   w_profit_cc: {
     formula: "Cobrado de las ventas del webinar − Inversión total − Comisiones − Procesadores − Otros gastos cargados a ese webinar",
     piezas: (c) => {
-      const m = c.web();
+      const m = c.webConPauta();
       return [
         dato("Cobrado de las ventas del webinar", m?.cobrado ?? null, "moneda"),
         ref("w_inv", "−"),
@@ -361,7 +370,7 @@ const EXPLICACIONES: Record<string, ExplicacionKpi> = {
   w_profit_rev: {
     formula: "Facturado por las ventas del webinar − Inversión total − Comisiones − Procesadores − Otros gastos cargados a ese webinar",
     piezas: (c) => {
-      const m = c.web();
+      const m = c.webConPauta();
       return [
         dato("Facturado por las ventas del webinar", m?.facturado ?? null, "moneda"),
         ref("w_inv", "−"),
