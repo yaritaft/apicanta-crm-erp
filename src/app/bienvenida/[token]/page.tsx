@@ -19,22 +19,32 @@ import type { Bienvenida } from "@/lib/contratos";
 const CADA_MS = 4_000;
 const TOPE_VUELTAS = 60;
 
-/* Los botones de la app (hk-btn): naranja el primero, el resto secundarios. */
-const claseBoton = (primario: boolean) => `hk-btn hk-btn--lg ${primario ? "hk-btn--primary" : "hk-btn--secondary"}`;
-const anchoCompleto: React.CSSProperties = { width: "100%", textDecoration: "none", justifyContent: "center" };
+/* Los botones de la app (hk-btn), en chico para que entren al lado del nombre: naranja el primero, el resto secundarios. */
+const claseBoton = (primario: boolean) => `hk-btn ${primario ? "hk-btn--primary" : "hk-btn--secondary"} bienv-boton`;
 
-function Paso({ icono, titulo, children }: { icono: React.ReactNode; titulo: string; children: React.ReactNode }) {
+/* Los nombres de las reuniones vienen de Zoom con « - ZOOM» al final: acá ya se sabe que son de Zoom. */
+const sinZoom = (nombre: string) => nombre.replace(/\s*[-–]\s*zoom\s*$/i, "");
+
+function Seccion({ icono, titulo, children }: { icono: React.ReactNode; titulo: string; children: React.ReactNode }) {
   return (
-    <section style={{ display: "flex", flexDirection: "column", gap: 10, paddingTop: 16, borderTop: "1px solid var(--border)" }}>
-      <h2 style={{ margin: 0, fontSize: 17, display: "flex", alignItems: "center", gap: 8, color: "var(--ink)" }}>
-        <span aria-hidden style={{ color: "var(--brand, var(--accent))", display: "inline-flex" }}>{icono}</span>{titulo}
-      </h2>
+    <section className="bienv-seccion">
+      <h2><span aria-hidden className="bienv-seccion__icono">{icono}</span>{titulo}</h2>
       {children}
     </section>
   );
 }
 
-const Chico = ({ children }: { children: React.ReactNode }) => <p style={{ margin: 0, fontSize: 13, lineHeight: "20px", color: "var(--ink-subtle)" }}>{children}</p>;
+/* Un acceso: el nombre (que puede ocupar dos renglones) y a la derecha qué hacer. */
+function Fila({ nombre, detalle, children }: { nombre: string; detalle?: string; children: React.ReactNode }) {
+  return (
+    <div className="bienv-fila">
+      <span className="bienv-fila__texto">{nombre}{detalle && <small>{detalle}</small>}</span>
+      {children}
+    </div>
+  );
+}
+
+const Chico = ({ children }: { children: React.ReactNode }) => <p className="bienv-nota">{children}</p>;
 
 export default function PaginaBienvenida() {
   const { token } = useParams<{ token: string }>();
@@ -71,7 +81,7 @@ export default function PaginaBienvenida() {
   const primario = () => { if (primarioUsado) return false; primarioUsado = true; return true; };
 
   return (
-    <main className="reporte-pub">
+    <main className="reporte-pub reporte-pub--bienvenida">
       <div className="reporte-pub__marca">Apicanta<span>.</span></div>
       <div className="reporte-pub__tarjeta" aria-live="polite">
         {error ? (
@@ -103,38 +113,42 @@ export default function PaginaBienvenida() {
           </div>
         ) : (
           <div className="reporte-pub__form">
-            <h1>¡Bienvenido a {b.programa}{hola}!</h1>
-            <p className="reporte-pub__sub">Ya firmaste. Estos son tus accesos: entrá a cada uno desde acá.</p>
+            <h1>¡Ya sos parte de {b.programa}{hola}!</h1>
+            <p className="reporte-pub__sub">Firmaste tu contrato. Estos son tus accesos: entrá a cada uno desde acá.</p>
 
             {b.telegram.length > 0 && (
-              <Paso icono={<Send size={18} />} titulo="Tu comunidad en Telegram">
-                {b.telegram.map((g) => g.adentro ? (
-                  <p key={g.nombre} style={{ margin: 0, display: "flex", alignItems: "center", gap: 8, color: "var(--success)" }}>
-                    <CheckCircle2 size={18} aria-hidden /> Ya estás en {g.nombre}
-                  </p>
-                ) : g.url ? (
-                  <a key={g.nombre} href={g.url} target="_blank" rel="noopener noreferrer" className={claseBoton(primario())} style={anchoCompleto}>Entrar a {g.nombre}</a>
-                ) : null)}
-                <Chico>Cada link es personal y sirve una sola vez. Abrilo desde el celular con Telegram instalado.</Chico>
-              </Paso>
+              <Seccion icono={<Send size={15} />} titulo="Comunidad en Telegram">
+                {b.telegram.map((g) => (
+                  <Fila key={g.nombre} nombre={g.nombre}>
+                    {g.adentro
+                      ? <span className="bienv-ok"><CheckCircle2 size={16} aria-hidden /> Ya estás</span>
+                      : g.url ? <a href={g.url} target="_blank" rel="noopener noreferrer" className={claseBoton(primario())} aria-label={`Entrar a ${g.nombre}`}>Entrar</a> : null}
+                  </Fila>
+                ))}
+                <Chico>Cada link es personal y sirve una sola vez. Abrilo con Telegram instalado.</Chico>
+              </Seccion>
             )}
 
             {b.wisboo && (
-              <Paso icono={<GraduationCap size={18} />} titulo="Tus cursos">
-                <Chico>{b.wisboo.cursos.join(" · ")}</Chico>
-                {b.wisboo.url
-                  ? <a href={b.wisboo.url} target="_blank" rel="noopener noreferrer" className={claseBoton(primario())} style={anchoCompleto}>Entrar a mis cursos</a>
-                  : <Chico>Entrá a la plataforma de cursos con el mail con el que firmaste.</Chico>}
-              </Paso>
+              <Seccion icono={<GraduationCap size={15} />} titulo="Tus cursos">
+                <Fila nombre="Plataforma de cursos" detalle={b.wisboo.cursos.join(" · ")}>
+                  {b.wisboo.url && <a href={b.wisboo.url} target="_blank" rel="noopener noreferrer" className={claseBoton(primario())} aria-label="Entrar a mis cursos">Entrar</a>}
+                </Fila>
+                {!b.wisboo.url && <Chico>Entrá a la plataforma de cursos con el mail con el que firmaste.</Chico>}
+              </Seccion>
             )}
 
             {b.zoom.length > 0 && (
-              <Paso icono={<Video size={18} />} titulo="Tus clases en vivo">
-                {b.zoom.map((z) => z.url
-                  ? <a key={z.nombre} href={z.url} target="_blank" rel="noopener noreferrer" className={claseBoton(primario())} style={anchoCompleto}>Mi link a {z.nombre}</a>
-                  : <Chico key={z.nombre}>{z.nombre}: te llega un mail de Zoom con tu link.</Chico>)}
-                <Chico>Guardá este link: es el tuyo para entrar a todas las clases.</Chico>
-              </Paso>
+              <Seccion icono={<Video size={15} />} titulo="Clases en vivo por Zoom">
+                {b.zoom.map((z) => (
+                  <Fila key={z.nombre} nombre={sinZoom(z.nombre)}>
+                    {z.url
+                      ? <a href={z.url} target="_blank" rel="noopener noreferrer" className={claseBoton(primario())} aria-label={`Mi link a ${sinZoom(z.nombre)}`}>Mi link</a>
+                      : <span className="bienv-nota bienv-fila__aparte">Te llega por mail</span>}
+                  </Fila>
+                ))}
+                <Chico>Cada link es tuyo: guardalo, sirve para todas las clases de esa reunión.</Chico>
+              </Seccion>
             )}
 
             {b.faltaAlgo && <Chico>Alguno de tus accesos lo terminamos a mano: te escribimos por WhatsApp.</Chico>}

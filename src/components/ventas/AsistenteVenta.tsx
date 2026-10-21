@@ -184,7 +184,7 @@ export function AsistenteVenta({ onCerrar, onListo, desdeMovimiento, cliente, cl
   const preelegido = useRef(false);
   const [b, setB] = useState<Borrador>(() => ({ ...inicial(e, desdeMovimiento, cliente), ...(closerId ? { closerId } : {}) }));
   const set = useCallback((cambios: Partial<Borrador>) => setB((x) => ({ ...x, ...cambios })), []);
-  /* El contrato de prueba: con los contratos en «prueba», siempre; encendidos, si un dueño lo pide. */
+  /* El contrato de prueba: con los contratos en «prueba», siempre; encendidos o sólo dueños, si un dueño lo pide. */
   const modoContrato: "produccion" | "prueba" = configContratos?.estado === "prueba" || (esDueno && b.contrato.prueba) ? "prueba" : "produccion";
   const mainRef = useRef<HTMLDivElement>(null);
 
@@ -401,7 +401,7 @@ export function AsistenteVenta({ onCerrar, onListo, desdeMovimiento, cliente, cl
           {paso.id === "plan" && <PasoPlan b={b} setB={setB} M={M} diferencia={diferenciaPlan} />}
           {paso.id === "cobros" && <PasoCobros b={b} setB={setB} e={e} M={M} onSubiendo={onSubiendo} />}
           {paso.id === "contrato" && (
-            <PasoContrato b={b} setB={setB} e={e} esDueno={esDueno} modo={modoContrato} encendido={configContratos?.estado === "encendido"} />
+            <PasoContrato b={b} setB={setB} e={e} esDueno={esDueno} modo={modoContrato} encendido={configContratos?.estado === "encendido" || configContratos?.estado === "duenos"} />
           )}
           {paso.id === "resumen" && (
             <PasoResumen b={b} set={set} e={e} M={M} sinComision={sinComision} totalCobrado={totalCobrado} />

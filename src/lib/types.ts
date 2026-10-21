@@ -658,9 +658,11 @@ export interface Ajustes {
    - apagado: no aparece el paso ni el botón (como hasta el 20/10).
    - prueba: sólo los dueños los ven, y cada contrato sale con la clave sandbox de
      PandaDoc (sólo a mails del dominio de la cuenta): para probar de punta a punta.
+   - duenos: contratos de verdad (clave de producción, a cualquier mail, con accesos al
+     firmar) pero sólo los mandan los dueños: el piloto antes de dárselo al equipo.
    - encendido: todo el equipo, con la clave de producción. */
 export interface ConfigContratos {
-  estado: "apagado" | "prueba" | "encendido";
+  estado: "apagado" | "prueba" | "duenos" | "encendido";
   /* El asunto y el mensaje del mail de PandaDoc. {nombre} y {programa} se reemplazan. */
   asunto?: string;
   mensaje?: string;

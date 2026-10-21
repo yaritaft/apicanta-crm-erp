@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
 import {
-  accionesDe, cuerpoDocumento, estadoDePandadoc, fechaContrato, firmoElAlumno, leerAvisos, mensajeDelContrato,
+  accesosAlFirmar, soloDuenos, accionesDe, cuerpoDocumento, estadoDePandadoc, fechaContrato, firmoElAlumno, leerAvisos, mensajeDelContrato,
   modalidadDeCuotas, partirNombre, problemaDeDatos, textoBonos, textoSesiones, variablesDelContrato, type DatosContrato,
 } from "@/lib/contratos";
 import { clavePandadoc, firmaPandadocValida } from "@/lib/pandadoc-servidor";
@@ -239,4 +239,19 @@ test("la bienvenida: qué ve el alumno en cada momento (y nunca su mail ni su do
   assert.equal(armarBienvenida({ contrato: { ...contrato, accesosEn: null }, programa: "X", accesos: [], linkWisboo: null, accesosAutomaticos: true }).fase, "preparando");
   assert.equal(armarBienvenida({ contrato: { ...contrato, accesosEn: null }, programa: "X", accesos: [], linkWisboo: null, accesosAutomaticos: false }).fase, "sin-accesos", "apagados: no hay nada que esperar");
   assert.equal(armarBienvenida({ contrato, programa: "X", accesos: [], linkWisboo: null, accesosAutomaticos: true }).fase, "sin-accesos");
+});
+
+test("Contratos: quién los manda y cuándo se dan los accesos al firmar, según Ajustes", () => {
+  assert.equal(accesosAlFirmar("apagado", "produccion"), false);
+  assert.equal(accesosAlFirmar(undefined, "prueba"), false);
+  /* En prueba, sólo los contratos de prueba (sandbox). */
+  assert.equal(accesosAlFirmar("prueba", "prueba"), true);
+  assert.equal(accesosAlFirmar("prueba", "produccion"), false);
+  /* Sólo dueños: contratos de verdad con accesos, como encendido. */
+  assert.equal(accesosAlFirmar("duenos", "produccion"), true);
+  assert.equal(accesosAlFirmar("encendido", "produccion"), true);
+  assert.equal(soloDuenos("prueba"), true);
+  assert.equal(soloDuenos("duenos"), true);
+  assert.equal(soloDuenos("encendido"), false);
+  assert.equal(soloDuenos("apagado"), false);
 });

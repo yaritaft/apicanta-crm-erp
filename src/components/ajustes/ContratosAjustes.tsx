@@ -38,6 +38,7 @@ async function pedir(ruta: string, metodo: "GET" | "POST" = "GET", cuerpo?: obje
 const ESTADOS: { valor: ConfigContratos["estado"]; texto: string; sub: string }[] = [
   { valor: "apagado", texto: "Apagado", sub: "No aparece el paso del contrato ni los accesos: como hasta ahora." },
   { valor: "prueba", texto: "Prueba", sub: "Sólo los dueños lo ven, y cada contrato sale con la clave sandbox (sólo a mails @apicanta.com, con marca de agua). Los accesos se dan sólo con contratos de prueba." },
+  { valor: "duenos", texto: "Sólo dueños", sub: "Contratos de verdad: clave de producción, a cualquier mail, y al firmar se dan los accesos solos. Pero los mandan sólo los dueños: el piloto antes de dárselo al equipo." },
   { valor: "encendido", texto: "Encendido", sub: "Todo el equipo: el closer lo manda al cargar la venta, con la clave de producción, y al firmar se dan los accesos solos." },
 ];
 

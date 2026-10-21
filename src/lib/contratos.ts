@@ -318,6 +318,14 @@ export function armarBienvenida(a: {
 export const esCodigoBienvenida = (x: unknown): x is string => typeof x === "string" && /^[A-Za-z0-9_-]{24,64}$/.test(x);
 
 /** El asunto y el mensaje del mail de PandaDoc, con {nombre} y {programa} reemplazados. */
+/** ¿Al firmar se dan los accesos solos? Encendidos o sólo dueños, siempre; en «prueba», sólo los contratos de prueba. */
+export function accesosAlFirmar(estado: ConfigContratos["estado"] | undefined, modo: ModoContrato): boolean {
+  return estado === "encendido" || estado === "duenos" || (estado === "prueba" && modo === "prueba");
+}
+
+/** ¿Los contratos los manda sólo un dueño? En «prueba» y en «sólo dueños». */
+export const soloDuenos = (estado: ConfigContratos["estado"] | undefined): boolean => estado === "prueba" || estado === "duenos";
+
 export function mensajeDelContrato(config: ConfigContratos | undefined, d: Partial<DatosContrato>, programa: string): { subject: string; message: string } {
   const pila = (d.nombre ?? "").trim().split(/\s+/)[0] ?? "";
   const poner = (t: string) => t.replace(/\{nombre\}/g, pila).replace(/\{programa\}/g, programa);

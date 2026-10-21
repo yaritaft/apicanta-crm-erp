@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { nubeServidor } from "@/lib/servidor";
 import { baseDelPedido, correoDelPedido, esDuenoDelPedido, exigirArea } from "@/lib/permisos-servidor";
-import { problemaDeDatos, type DatosContrato, type ModoContrato } from "@/lib/contratos";
+import { problemaDeDatos, soloDuenos, type DatosContrato, type ModoContrato } from "@/lib/contratos";
 import {
   anular, contratoPorId, corregir, crearContrato, mandarBorrador, nuevoEnlace, programasGuardados, reenviar, sincronizar,
 } from "@/lib/contratos-servidor";
@@ -17,7 +17,8 @@ import { diaDeNegocio } from "@/lib/dia-negocio";
    Lo hace quien edita Ventas o Alumnos, y sólo sobre lo que ve: la venta, la persona o el contrato se leen
    antes con SU sesión (el closer, sólo lo suyo). Recién ahí se usa la clave de servicio.
    Los contratos se prenden en Ajustes: apagados no sale ninguno; en «prueba», sólo los dueños y con la
-   clave sandbox; encendidos, todo el equipo con la de producción (un dueño puede pedir uno de prueba).
+   clave sandbox; en «sólo dueños», los dueños con la de producción; encendidos, todo el equipo con la de
+   producción (un dueño puede pedir uno de prueba).
    ================================================================== */
 
 export const runtime = "nodejs";
@@ -67,7 +68,7 @@ export async function POST(peticion: Request) {
       const { programas, config } = await programasGuardados(db);
       const dueno = await esDuenoDelPedido(peticion);
       if (config.estado === "apagado") return mal("Los contratos desde la app todavía están apagados (Ajustes → Integraciones).", 403);
-      if (config.estado === "prueba" && !dueno) return mal("Los contratos están en prueba: por ahora los mandan sólo los dueños.", 403);
+      if (soloDuenos(config.estado) && !dueno) return mal("Por ahora los contratos los mandan sólo los dueños (Ajustes → Integraciones).", 403);
       const modo: ModoContrato = config.estado === "prueba" || (dueno && b.prueba === true) ? "prueba" : "produccion";
 
       const ventaId = typeof b.ventaId === "string" && b.ventaId ? b.ventaId : null;

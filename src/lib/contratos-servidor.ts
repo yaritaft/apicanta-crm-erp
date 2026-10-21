@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
-  cuerpoDocumento, destinatario, estadoDePandadoc, firmoElAlumno, mensajeDelContrato, ROL_ALUMNO,
+  accesosAlFirmar, cuerpoDocumento, destinatario, estadoDePandadoc, firmoElAlumno, mensajeDelContrato, ROL_ALUMNO,
   type Contrato, type DatosContrato, type EstadoContrato, type EventoContrato, type ModoContrato,
 } from "./contratos";
 import {
@@ -284,7 +284,7 @@ export async function alFirmar(db: SupabaseClient, c: Contrato): Promise<{ acces
   const { programas, config } = await programasGuardados(db);
   /* Los accesos solos se prenden con los contratos: con «prueba», sólo los de prueba; apagado, ninguno.
      No se marca nada: el día que se prendan, la próxima pasada los da. */
-  const prendidos = config.estado === "encendido" || (config.estado === "prueba" && c.modo === "prueba");
+  const prendidos = accesosAlFirmar(config.estado, c.modo);
   if (!prendidos) return { accesos: null };
   const programa = programaPorId(programas, c.programa);
   if (!alumnoId || !programa) {

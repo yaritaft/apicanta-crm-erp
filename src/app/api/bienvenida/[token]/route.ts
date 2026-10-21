@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { nubeServidor } from "@/lib/servidor";
-import { armarBienvenida, esCodigoBienvenida, type AccesoParaBienvenida, type Contrato } from "@/lib/contratos";
+import { accesosAlFirmar, armarBienvenida, esCodigoBienvenida, type AccesoParaBienvenida, type Contrato } from "@/lib/contratos";
 import { programasGuardados, sincronizar } from "@/lib/contratos-servidor";
 import { linkMagicoWisboo } from "@/lib/accesos-servidor";
 import { programaPorId } from "@/lib/programas";
@@ -37,7 +37,7 @@ export async function GET(_peticion: Request, ctx: { params: Promise<{ token?: s
   }
 
   const { programas, config } = await programasGuardados(db);
-  const accesosAutomaticos = config.estado === "encendido" || (config.estado === "prueba" && c.modo === "prueba");
+  const accesosAutomaticos = accesosAlFirmar(config.estado, c.modo);
   const programa = programaPorId(programas, c.programa)?.nombre ?? c.plantillaNombre;
   let accesos: AccesoParaBienvenida[] = [];
   let linkWisboo: string | null = null;

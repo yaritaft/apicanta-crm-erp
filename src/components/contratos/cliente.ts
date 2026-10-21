@@ -50,10 +50,10 @@ export async function abrirPdf(id: string): Promise<void> {
   window.open(j.url, "_blank", "noopener");
 }
 
-/** ¿Esta cuenta ve los contratos? Apagados, nadie; en prueba, los dueños; encendidos, todos. */
+/** ¿Esta cuenta ve los contratos? Apagados, nadie; en prueba o sólo dueños, los dueños; encendidos, todos. */
 export function contratosPrendidos(config: ConfigContratos | undefined, esDueno: boolean): boolean {
   const estado = config?.estado ?? "apagado";
-  return estado === "encendido" || (estado === "prueba" && esDueno);
+  return estado === "encendido" || ((estado === "prueba" || estado === "duenos") && esDueno);
 }
 
 /** Los datos para arrancar el contrato de una venta: la persona, su ficha de servicio y el plan de cuotas. */
