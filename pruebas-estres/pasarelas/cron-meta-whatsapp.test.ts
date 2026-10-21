@@ -109,3 +109,10 @@ test("sin la tabla whatsapp_costos creada, el error dice que falta el SQL y el c
   const j = (await res.json()) as { whatsapp: { error?: string }[] };
   assert.match(j.whatsapp[0].error ?? "", /whatsapp-costos\.sql/);
 });
+
+test("el pedido a mano (/api/meta/whatsapp) no se atiende sin sesión", async () => {
+  const { POST } = await import("@/app/api/meta/whatsapp/route");
+  const res = await POST(new Request("http://localhost/api/meta/whatsapp", { method: "POST", body: "{}" }));
+  assert.ok([401, 403, 503].includes(res.status), `status ${res.status}`);
+  assert.equal(fake.nube.filas("whatsapp_costos").length, 0);
+});

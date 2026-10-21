@@ -176,6 +176,11 @@ export interface DiagnosticoWhatsapp {
   errorCuentasVisibles?: string;
   /** ¿La cuenta pedida está entre las que ve el token? */
   cuentaEnLista?: boolean;
+  /** Quién es el token (me): el usuario de sistema. */
+  usuario?: { id?: string; nombre?: string };
+  /** Las cuentas de WhatsApp asignadas al usuario del token (me/assigned_whatsapp_business_accounts), si Meta deja preguntarlo. */
+  asignadas?: { id: string; nombre?: string }[];
+  errorAsignadas?: string;
 }
 
 /** Por qué Meta rechaza: pregunta cuáles permisos tiene el token y si la cuenta se puede leer. Nunca tira. */
@@ -202,6 +207,15 @@ export async function diagnosticarWhatsapp(pedir: PedirAMeta, cuenta: string): P
     } catch (e) { d.errorCuentasVisibles = `${borde}: ${e instanceof Error ? e.message : String(e)}`.slice(0, 300); }
   }
   if (vistas.size) { d.cuentasVisibles = [...vistas.values()]; d.cuentaEnLista = vistas.has(cuenta); }
+  try {
+    const yo = (await pedir("me", { fields: "id,name" })) as { id?: string; name?: string } | null;
+    if (yo) d.usuario = { ...(yo.id ? { id: yo.id } : {}), ...(yo.name ? { nombre: yo.name } : {}) };
+  } catch { /* se sigue */ }
+  try {
+    const j = (await pedir("me/assigned_whatsapp_business_accounts", { fields: "id,name", limit: "100" })) as { data?: { id?: string; name?: string }[] } | null;
+    const lista = (j?.data ?? []).filter((x) => x.id).map((x) => ({ id: x.id as string, ...(x.name ? { nombre: x.name } : {}) }));
+    if (lista.length) d.asignadas = lista;
+  } catch (e) { d.errorAsignadas = (e instanceof Error ? e.message : String(e)).slice(0, 300); }
   return d;
 }
 

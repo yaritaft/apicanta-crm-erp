@@ -165,6 +165,8 @@ test("cuando Meta rechaza por permisos, el resultado dice qué permisos tiene el
     if (ruta === "me/permissions") return { data: [{ permission: "ads_read", status: "granted" }, { permission: "business_management", status: "granted" }, { permission: "whatsapp_business_messaging", status: "declined" }] };
     if (ruta.endsWith("/owned_whatsapp_business_accounts")) return { data: [{ id: "W1", name: "Apicanta" }, { id: "W2", name: "Apicanta Manychat" }] };
     if (ruta.endsWith("/client_whatsapp_business_accounts")) return { data: [] };
+    if (ruta === "me") return { id: "615", name: "ApicantaSoftware" };
+    if (ruta === "me/assigned_whatsapp_business_accounts") return { data: [{ id: "W2", name: "Apicanta Manychat" }] };
     if (p.fields === "id,name") return { id: "W1", name: "Apicanta" };
     throw new ErrorMetaWhatsapp("(#200) You do not have permission to access this field.", 200);
   };
@@ -173,6 +175,7 @@ test("cuando Meta rechaza por permisos, el resultado dice qué permisos tiene el
   assert.deepEqual(r[0].diagnostico, {
     permisos: ["ads_read", "business_management"], cuentaLeible: true, nombre: "Apicanta", faltaPermiso: true,
     cuentasVisibles: [{ id: "W1", nombre: "Apicanta" }, { id: "W2", nombre: "Apicanta Manychat" }], cuentaEnLista: true,
+    usuario: { id: "615", nombre: "ApicantaSoftware" }, asignadas: [{ id: "W2", nombre: "Apicanta Manychat" }],
   });
 });
 
