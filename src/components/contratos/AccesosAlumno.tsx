@@ -185,9 +185,9 @@ export function AccesosAlumno({ alumno, venta, manual, forma = "tarjeta" }: {
         )}
         {accesos === null ? <div className="skeleton" style={{ height: 132, borderRadius: 12 }} /> : PLATAFORMAS.map(({ clave, nombre, icono }) => {
           const xs = lista.filter((x) => x.plataforma === clave);
-          const r = xs.length ? resumen(xs, clave) : { texto: "Sin acceso", variante: "neutral" as VarianteBadge };
+          /* Sin estado general de la plataforma (Juan Cruz, 21/10): cada fila ya dice a qué tiene acceso y a qué no. */
           return (
-            <BloqueServicio key={clave} titulo={nombre} extra={<Badge variante={r.variante}>{r.texto}</Badge>}>
+            <BloqueServicio key={clave} titulo={nombre}>
               {xs.length === 0
                 ? (manual?.[clave] ?? <p className="hs-nada">Todavía no se le dio nada desde la app.</p>)
                 : xs.map((x) => {
