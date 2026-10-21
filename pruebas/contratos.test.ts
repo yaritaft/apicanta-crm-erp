@@ -162,9 +162,14 @@ test("los programas: Mentoría y el upgrade son Hackear AI, con Bonos; Downsell 
 test("accesos: id estable por alumno, plataforma y recurso; el mensaje con los links", () => {
   assert.equal(idDeAcceso("alu_1", "telegram", "-1001234"), "acc_alu_1_telegram_-1001234");
   assert.equal(idDeAcceso("alu_1", "wisboo", "PRO-1"), idDeAcceso("alu_1", "wisboo", "PRO-1"));
-  const m = mensajeDeBienvenida("María José Pérez", "Hackear AI", [{ plataforma: "telegram", nombre: "Comunidad", url: "https://t.me/+abc" }]);
-  assert.match(m, /^¡Hola María! Bienvenido a Hackear AI\./);
+  const m = mensajeDeBienvenida("María José Pérez", "Hackear AI", [
+    { plataforma: "telegram", nombre: "Comunidad", url: "https://t.me/+abc" },
+    { plataforma: "zoom", nombre: "Consultas IA (Hackear AI) - ZOOM", url: "https://zoom.us/w/1" },
+  ]);
+  assert.match(m, /^¡Hola María! Ya sos parte de Hackear AI\./);
   assert.match(m, /• Comunidad: https:\/\/t\.me\/\+abc/);
+  /* Zoom no le manda mail: sus links van en el mensaje, sin el « - ZOOM» del nombre. */
+  assert.match(m, /Tus clases en vivo por Zoom[^\n]*\n• Consultas IA \(Hackear AI\): https:\/\/zoom\.us\/w\/1/);
 });
 
 test("el relleno: variables que la plantilla tiene y campos con «merge field» (las dos formas de armarla)", async () => {

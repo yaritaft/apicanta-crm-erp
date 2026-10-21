@@ -149,3 +149,26 @@ export function nombreDeReunion(m: ReunionZoom, todas: ReunionZoom[]): string {
   const repetida = todas.filter((x) => x.tema === m.tema).length > 1;
   return `${m.tema}${repetida ? ` · …${m.id.slice(-4)}` : ""}${m.inscripcion === false ? " (sin inscripción)" : ""}`;
 }
+
+/* ---------- El mensaje para WhatsApp ---------- */
+
+export interface LinkDeAcceso { plataforma: "wisboo" | "telegram" | "zoom"; nombre: string; url: string }
+
+/* Los nombres de las reuniones vienen de Zoom con « - ZOOM» al final. */
+export const sinZoom = (nombre: string) => nombre.replace(/\s*[-–]\s*zoom\s*$/i, "");
+
+/** El mensaje para mandarle al alumno con sus links (por WhatsApp; Zoom y Wisboo no le mandan mail):
+    los cursos, los grupos de Telegram y sus links personales de Zoom. */
+export function mensajeDeBienvenida(nombre: string, programa: string, links: LinkDeAcceso[]): string {
+  const pila = nombre.trim().split(/\s+/)[0] || "";
+  const de = (p: LinkDeAcceso["plataforma"]) => links.filter((l) => l.plataforma === p).map((l) => `• ${l.plataforma === "zoom" ? sinZoom(l.nombre) : l.nombre}: ${l.url}`);
+  const bloques = [
+    de("wisboo").length ? ["Tus cursos (la primera vez elegís tu contraseña):", ...de("wisboo")] : [],
+    de("telegram").length ? ["Tus grupos de Telegram (cada link es personal y se usa una sola vez):", ...de("telegram")] : [],
+    de("zoom").length ? ["Tus clases en vivo por Zoom (guardá estos links, son tuyos):", ...de("zoom")] : [],
+  ].filter((b) => b.length);
+  return [
+    `¡Hola${pila ? ` ${pila}` : ""}! Ya sos parte de ${programa}.`,
+    ...bloques.map((b) => b.join("\n")),
+  ].join("\n\n");
+}

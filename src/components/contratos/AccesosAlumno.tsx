@@ -14,6 +14,7 @@ import { programaDeProducto, programasDe } from "@/lib/programas";
 import type { Alumno, Venta } from "@/lib/types";
 import type { Acceso, EstadoAcceso, Plataforma } from "@/lib/accesos-servidor";
 import { contratosPrendidos } from "./cliente";
+import { mensajeDeBienvenida } from "@/lib/accesos-alumnos";
 import { AccionesServicio, BloqueServicio, FilaServicio } from "@/components/ficha/FilaServicio";
 
 /* ==================================================================
@@ -118,6 +119,7 @@ export function AccesosAlumno({ alumno, venta, manual, forma = "tarjeta" }: {
   const lista = accesos ?? [];
   const vigentes = lista.filter((x) => x.estado !== "quitado");
   const linksTelegram = lista.filter((x) => x.plataforma === "telegram" && x.estado === "dado" && typeof x.externo.link === "string");
+  const linksZoom = lista.filter((x) => x.plataforma === "zoom" && x.estado === "dado" && typeof x.externo.joinUrl === "string");
 
   async function correr(clave: string, cuerpo: Record<string, unknown>, ok: (j: Record<string, unknown>) => string) {
     setTrabajando(clave);
@@ -135,9 +137,11 @@ export function AccesosAlumno({ alumno, venta, manual, forma = "tarjeta" }: {
   }
 
   async function copiarMensaje() {
-    const pila = alumno.nombre.trim().split(/\s+/)[0] ?? "";
-    const texto = [`¡Hola ${pila}! Estos son tus accesos (cada link de Telegram es personal y se usa una sola vez):`,
-      ...linksTelegram.map((x) => `• ${x.recursoNombre}: ${String(x.externo.link)}`)].join("\n");
+    const programa = programas.find((p) => p.id === (linksTelegram[0] ?? linksZoom[0])?.programa)?.nombre ?? "tu programa";
+    const texto = mensajeDeBienvenida(alumno.nombre, programa, [
+      ...linksTelegram.map((x) => ({ plataforma: "telegram" as const, nombre: x.recursoNombre, url: String(x.externo.link) })),
+      ...linksZoom.map((x) => ({ plataforma: "zoom" as const, nombre: x.recursoNombre, url: String(x.externo.joinUrl) })),
+    ]);
     try { await navigator.clipboard.writeText(texto); toast("Mensaje con los links copiado."); }
     catch { window.prompt("Copiá el mensaje:", texto); }
   }
@@ -178,7 +182,7 @@ export function AccesosAlumno({ alumno, venta, manual, forma = "tarjeta" }: {
       <>
         {prendidos && (
           <AccionesServicio>
-            {linksTelegram.length > 0 && <Button sm variante="ghost" icono={<Copy size={14} />} onClick={() => void copiarMensaje()}>Copiar mensaje con links</Button>}
+            {linksTelegram.length + linksZoom.length > 0 && <Button sm variante="ghost" icono={<Copy size={14} />} onClick={() => void copiarMensaje()}>Copiar mensaje con links</Button>}
             {vigentes.length > 0 && (
               <Button sm variante="ghost" icono={<UserMinus size={14} />} onClick={() => setQuitar({ texto: "Se le saca el acceso a todos sus cursos de Wisboo, se lo saca de los grupos de Telegram y se cancela su inscripción a las reuniones de Zoom." })}>Quitar todo</Button>
             )}
@@ -220,7 +224,7 @@ export function AccesosAlumno({ alumno, venta, manual, forma = "tarjeta" }: {
         <span className="t-label">Accesos</span>
         {prendidos && (
           <div className="row-wrap" style={{ gap: 6 }}>
-            {linksTelegram.length > 0 && <Button sm variante="ghost" icono={<Copy size={14} />} onClick={() => void copiarMensaje()}>Copiar mensaje con links</Button>}
+            {linksTelegram.length + linksZoom.length > 0 && <Button sm variante="ghost" icono={<Copy size={14} />} onClick={() => void copiarMensaje()}>Copiar mensaje con links</Button>}
             <Button sm variante="secondary" icono={<KeyRound size={14} />} onClick={() => setDar(programaSugerido)}>Dar accesos</Button>
             {vigentes.length > 0 && (
               <Button sm variante="ghost" icono={<UserMinus size={14} />} onClick={() => setQuitar({ texto: "Se le saca el acceso a todos sus cursos de Wisboo, se lo saca de los grupos de Telegram y se cancela su inscripción a las reuniones de Zoom." })}>Quitar todo</Button>

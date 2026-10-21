@@ -313,7 +313,11 @@ export async function darAccesos(db: SupabaseClient, a: {
     const { first_name, last_name } = partirNombre(a.persona.nombre);
     for (const reunion of reuniones) {
       const ya = previo("zoom", reunion);
-      if (ya && (ya.estado === "dado" || ya.estado === "entro")) { salida.yaEstaban++; salida.accesos.push(ya); continue; }
+      if (ya && (ya.estado === "dado" || ya.estado === "entro")) {
+        salida.yaEstaban++; salida.accesos.push(ya);
+        if (typeof ya.externo.joinUrl === "string") salida.links.push({ plataforma: "zoom", nombre: ya.recursoNombre, url: ya.externo.joinUrl });
+        continue;
+      }
       if (!token) { await anotar({ plataforma: "zoom", recurso: reunion, recursoNombre: reunion, estado: "fallo", externo: {}, error: errorToken, dadoEn: null, quitadoEn: null }); continue; }
       try {
         const r = await pedir(`https://api.zoom.us/v2/meetings/${encodeURIComponent(reunion)}/registrants`, {
@@ -324,6 +328,7 @@ export async function darAccesos(db: SupabaseClient, a: {
         if (typeof registrante !== "string") throw new ErrorAcceso(`Zoom no lo inscribió (contestó ${r.status}). ¿La reunión tiene el registro activado?`);
         const tema = typeof r.json?.topic === "string" ? r.json.topic : reunion;
         await anotar({ plataforma: "zoom", recurso: reunion, recursoNombre: tema, estado: "dado", externo: { registranteId: registrante, joinUrl: r.json?.join_url ?? null }, error: null, dadoEn: ahora, quitadoEn: null });
+        if (typeof r.json?.join_url === "string") salida.links.push({ plataforma: "zoom", nombre: tema, url: r.json.join_url });
       } catch (e) {
         await anotar({ plataforma: "zoom", recurso: reunion, recursoNombre: reunion, estado: "fallo", externo: {}, error: textoDeFallo("Zoom", e), dadoEn: null, quitadoEn: null });
       }
@@ -433,13 +438,5 @@ async function nombresDeGrupos(db: SupabaseClient): Promise<Map<string, string>>
   return new Map(((r.data ?? []) as { chatId: string; titulo: string }[]).map((g) => [g.chatId, g.titulo || g.chatId]));
 }
 
-/** El mensaje para mandarle al alumno con sus links (por WhatsApp, mientras no salga solo por mail). */
-export function mensajeDeBienvenida(nombre: string, programa: string, links: { plataforma: Plataforma; nombre: string; url: string }[]): string {
-  const pila = nombre.trim().split(/\s+/)[0] || "";
-  const lineas = links.map((l) => `• ${l.nombre}: ${l.url}`);
-  return [
-    `¡Hola${pila ? ` ${pila}` : ""}! Bienvenido a ${programa}.`,
-    lineas.length ? "Estos son tus accesos (cada link de Telegram es personal y se usa una sola vez):" : "",
-    ...lineas,
-  ].filter(Boolean).join("\n");
-}
+/* El mensaje para WhatsApp vive en accesos-alumnos.ts (también lo arma la ficha). */
+export { mensajeDeBienvenida } from "./accesos-alumnos";
