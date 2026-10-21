@@ -151,7 +151,7 @@ export default function PaginaBienvenida() {
                   <Fila key={z.nombre} nombre={sinZoom(z.nombre)}>
                     {z.url
                       ? <a href={z.url} target="_blank" rel="noopener noreferrer" className={claseBoton(primario())} aria-label={`Mi link a ${sinZoom(z.nombre)}`}>Mi link</a>
-                      : <span className="bienv-nota bienv-fila__aparte">Te llega por mail</span>}
+                      : <span className="bienv-nota bienv-fila__aparte">Te lo mandamos por WhatsApp</span>}
                   </Fila>
                 ))}
                 <Chico>Cada link es tuyo: guardalo, sirve para todas las clases de esa reunión.</Chico>

@@ -213,28 +213,36 @@ export function buscarRegistrante(lista: unknown, email: string, id: string | nu
   return x && typeof x.id === "string" ? { id: x.id, email: String(x.email ?? ""), joinUrl: typeof x.join_url === "string" ? x.join_url : null } : null;
 }
 
-/** Busca su inscripción (aprobada, rechazada o pendiente) y, si no está aprobada, la vuelve a aprobar. null: no estaba. */
+/** Su inscripción en una lista de Zoom (approved, denied o pending), recorriendo las páginas. */
+async function buscarEnZoom(token: string, reunion: string, estado: string, email: string, id: string | null): Promise<Omit<RegistranteZoom, "estado"> | null> {
+  let pagina = "";
+  for (let vuelta = 0; vuelta < 20; vuelta++) {
+    const r = await pedir(`https://api.zoom.us/v2/meetings/${encodeURIComponent(reunion)}/registrants?status=${estado}&page_size=300${pagina ? `&next_page_token=${encodeURIComponent(pagina)}` : ""}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (r.status >= 400) return null;
+    const x = buscarRegistrante(r.json?.registrants, email, id);
+    if (x) return x;
+    pagina = typeof r.json?.next_page_token === "string" ? r.json.next_page_token : "";
+    if (!pagina) return null;
+  }
+  return null;
+}
+
+/** Busca su inscripción (aprobada, rechazada o pendiente) y, si no está aprobada, la vuelve a aprobar. Su link personal
+    sólo viene en la lista de aprobados: después de aprobarla se lo busca ahí. null: no estaba. */
 async function reactivarEnZoom(token: string, reunion: string, email: string, id: string | null): Promise<RegistranteZoom | null> {
-  const cabeza = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
   for (const estado of ["approved", "denied", "pending"]) {
-    let pagina = "";
-    for (let vuelta = 0; vuelta < 20; vuelta++) {
-      const r = await pedir(`https://api.zoom.us/v2/meetings/${encodeURIComponent(reunion)}/registrants?status=${estado}&page_size=300${pagina ? `&next_page_token=${encodeURIComponent(pagina)}` : ""}`, { headers: cabeza });
-      if (r.status >= 400) return null;
-      const x = buscarRegistrante(r.json?.registrants, email, id);
-      if (x) {
-        if (estado !== "approved") {
-          const ok = await fetch(`https://api.zoom.us/v2/meetings/${encodeURIComponent(reunion)}/registrants/status`, {
-            method: "PUT", headers: cabeza, body: JSON.stringify({ action: "approve", registrants: [{ id: x.id, email: x.email }] }),
-            cache: "no-store", signal: AbortSignal.timeout(ESPERA_MS),
-          });
-          if (!ok.ok) return null;
-        }
-        return { ...x, estado };
-      }
-      pagina = typeof r.json?.next_page_token === "string" ? r.json.next_page_token : "";
-      if (!pagina) break;
-    }
+    const x = await buscarEnZoom(token, reunion, estado, email, id);
+    if (!x) continue;
+    if (estado === "approved") return { ...x, estado };
+    const ok = await fetch(`https://api.zoom.us/v2/meetings/${encodeURIComponent(reunion)}/registrants/status`, {
+      method: "PUT", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "approve", registrants: [{ id: x.id, email: x.email }] }), cache: "no-store", signal: AbortSignal.timeout(ESPERA_MS),
+    });
+    if (!ok.ok) return null;
+    const aprobado = await buscarEnZoom(token, reunion, "approved", email, x.id).catch(() => null);
+    return { ...x, joinUrl: aprobado?.joinUrl ?? x.joinUrl, estado: "approved" };
   }
   return null;
 }
@@ -361,7 +369,16 @@ export async function darAccesos(db: SupabaseClient, a: {
       const ya = previo("zoom", reunion);
       if (ya && (ya.estado === "dado" || ya.estado === "entro")) {
         salida.yaEstaban++; salida.accesos.push(ya);
-        if (typeof ya.externo.joinUrl === "string") salida.links.push({ plataforma: "zoom", nombre: ya.recursoNombre, url: ya.externo.joinUrl });
+        let joinUrl = typeof ya.externo.joinUrl === "string" ? ya.externo.joinUrl : null;
+        /* Dado pero sin su link (se perdió en una reactivación): se lo busca en la lista de aprobados. */
+        if (!joinUrl && token) {
+          const x = await buscarEnZoom(token, reunion, "approved", a.persona.email, typeof ya.externo.registranteId === "string" ? ya.externo.registranteId : null).catch(() => null);
+          if (x?.joinUrl) {
+            joinUrl = x.joinUrl;
+            await db.from("accesos_alumno").update({ externo: { ...ya.externo, registranteId: x.id, joinUrl }, actualizadoEn: new Date().toISOString() }).eq("id", ya.id);
+          }
+        }
+        if (joinUrl) salida.links.push({ plataforma: "zoom", nombre: ya.recursoNombre, url: joinUrl });
         continue;
       }
       /* Si falla, la fila conserva el nombre de la reunión y la inscripción que ya tenía (para reactivarla después). */
@@ -373,8 +390,9 @@ export async function darAccesos(db: SupabaseClient, a: {
       if (ya) {
         const re = await reactivarEnZoom(token, reunion, a.persona.email, typeof externoPrevio.registranteId === "string" ? externoPrevio.registranteId : null).catch(() => null);
         if (re) {
-          await anotar({ plataforma: "zoom", recurso: reunion, recursoNombre: nombreReunion, estado: "dado", externo: { registranteId: re.id, joinUrl: re.joinUrl }, error: null, dadoEn: ahora, quitadoEn: null });
-          if (re.joinUrl) salida.links.push({ plataforma: "zoom", nombre: nombreReunion, url: re.joinUrl });
+          const joinUrl = re.joinUrl ?? (typeof externoPrevio.joinUrl === "string" ? externoPrevio.joinUrl : null);
+          await anotar({ plataforma: "zoom", recurso: reunion, recursoNombre: nombreReunion, estado: "dado", externo: { registranteId: re.id, joinUrl }, error: null, dadoEn: ahora, quitadoEn: null });
+          if (joinUrl) salida.links.push({ plataforma: "zoom", nombre: nombreReunion, url: joinUrl });
           continue;
         }
       }
