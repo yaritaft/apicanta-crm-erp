@@ -45,7 +45,10 @@ export async function POST(peticion: Request) {
     const previa = (await db.from("pandadoc_conexion").select('"suscripcionId"').eq("modo", modo).maybeSingle()).data as { suscripcionId?: string } | null;
     if (b.accion === "desconectar") {
       if (previa?.suscripcionId) await borrarSuscripcion(modo, previa.suscripcionId);
-      await db.from("pandadoc_conexion").delete().eq("modo", modo);
+      /* La fila queda, sin clave: así la pasada de cada hora sabe que se desconectó a mano y no lo reconecta sola. */
+      await db.from("pandadoc_conexion").upsert({
+        modo, suscripcionId: null, clave: null, conectadoEn: null, conectadoPor: correoDelPedido(peticion),
+      }, { onConflict: "modo" });
       return NextResponse.json({ ok: true });
     }
     if (b.accion !== "conectar") return NextResponse.json({ error: "No sé hacer eso." }, { status: 400 });

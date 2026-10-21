@@ -286,6 +286,12 @@ export function accionesDe(c: Pick<Contrato, "estado" | "documentoId">): AccionC
 /** ¿Este contrato todavía espera algo de PandaDoc? (la tarjeta se refresca sola mientras tanto). */
 export const estaPendiente = (estado: EstadoContrato) => estado === "creando" || estado === "enviado" || estado === "visto";
 
+/** ¿La pasada de cada hora tiene que conectar sola el aviso de producción? Sólo en la app publicada, con la clave,
+    y si NUNCA se conectó: una fila desconectada a mano (sin clave) no se vuelve a conectar sola. */
+export function conectarAvisoSolo(a: { enProduccion: boolean; hayClave: boolean; hayFila: boolean }): boolean {
+  return a.enProduccion && a.hayClave && !a.hayFila;
+}
+
 /** Lo que falta para poder mandarlo. null: se puede. */
 export function problemaDeDatos(d: Partial<DatosContrato>, modo: ModoContrato, dominioPrueba = "apicanta.com"): string | null {
   if (!d.nombre?.trim()) return "Falta el nombre completo del alumno.";

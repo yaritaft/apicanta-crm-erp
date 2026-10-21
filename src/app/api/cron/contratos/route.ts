@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { nubeServidor } from "@/lib/servidor";
 import { sincronizar } from "@/lib/contratos-servidor";
-import type { Contrato } from "@/lib/contratos";
+import { conectarAvisoSolo, type Contrato } from "@/lib/contratos";
+import { clavePandadoc, crearSuscripcion } from "@/lib/pandadoc-servidor";
 
 /* ==================================================================
    La red de seguridad del aviso de PandaDoc: cada hora se le pregunta el
@@ -23,6 +24,7 @@ export async function GET(req: Request) {
   }
   const db = nubeServidor();
   if (!db) return NextResponse.json({ error: "Sin base." }, { status: 503 });
+  const aviso = await asegurarAvisoDeProduccion(db);
   const desde = new Date(Date.now() - 90 * 24 * 3600 * 1000).toISOString();
   const r = await db.from("contratos").select("*")
     .gte("creadoEn", desde).not("documentoId", "is", null)
@@ -39,5 +41,30 @@ export async function GET(req: Request) {
       console.error("[cron contratos]", c.id, e instanceof Error ? e.message : String(e));
     }
   }
-  return NextResponse.json({ ok: true, revisados: r.data?.length ?? 0, cambiaron, fallaron });
+  return NextResponse.json({ ok: true, aviso, revisados: r.data?.length ?? 0, cambiaron, fallaron });
+}
+
+/* El aviso de PandaDoc de producción se conecta solo la primera vez (Juan Cruz, 20/10: «dejalo listo»): la clave
+   de producción vive sólo en la app publicada. Si alguien lo desconecta a mano queda la fila sin clave y no se
+   vuelve a conectar solo (se reconecta con el botón de Ajustes). */
+async function asegurarAvisoDeProduccion(db: NonNullable<ReturnType<typeof nubeServidor>>): Promise<string> {
+  try {
+    const fila = await db.from("pandadoc_conexion").select("modo").eq("modo", "produccion").maybeSingle();
+    if (fila.error) return `no se pudo leer: ${fila.error.message}`;
+    const dominio = process.env.VERCEL_PROJECT_PRODUCTION_URL;
+    if (!conectarAvisoSolo({ enProduccion: process.env.VERCEL_ENV === "production" && Boolean(dominio), hayClave: Boolean(clavePandadoc("produccion")), hayFila: Boolean(fila.data) })) {
+      return fila.data ? "ya estaba" : "no corresponde";
+    }
+    const url = `https://${dominio}/api/pandadoc/webhook`;
+    const s = await crearSuscripcion("produccion", url);
+    const up = await db.from("pandadoc_conexion").insert({
+      modo: "produccion", suscripcionId: s.id, clave: s.clave, url, conectadoEn: new Date().toISOString(), conectadoPor: "Automático (pasada de cada hora)",
+    });
+    if (up.error) return `se creó en PandaDoc pero no se guardó: ${up.error.message}`;
+    console.info("[cron contratos] aviso de producción conectado", url);
+    return "conectado";
+  } catch (e) {
+    console.error("[cron contratos] no se pudo conectar el aviso de producción", e instanceof Error ? e.message : String(e));
+    return "no se pudo";
+  }
 }

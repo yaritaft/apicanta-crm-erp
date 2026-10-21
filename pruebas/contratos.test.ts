@@ -196,3 +196,11 @@ test("la fecha de inicio del servicio: sin dato es la del contrato; si arranca d
   const r = relleno(conInicio, { fields: [{ merge_field: "Contrato.Inicio", type: "date" }] }, DATOS.fecha);
   assert.deepEqual(r.fields, { "Contrato.Inicio": { value: "2026-10-27T12:00:00.000Z" } });
 });
+
+test("el aviso de producción se conecta solo una vez, y nunca si alguien lo desconectó", async () => {
+  const { conectarAvisoSolo } = await import("@/lib/contratos");
+  assert.equal(conectarAvisoSolo({ enProduccion: true, hayClave: true, hayFila: false }), true);
+  assert.equal(conectarAvisoSolo({ enProduccion: true, hayClave: true, hayFila: true }), false, "ya conectado, o desconectado a mano");
+  assert.equal(conectarAvisoSolo({ enProduccion: false, hayClave: true, hayFila: false }), false, "en local o en una versión de prueba, nunca");
+  assert.equal(conectarAvisoSolo({ enProduccion: true, hayClave: false, hayFila: false }), false);
+});
