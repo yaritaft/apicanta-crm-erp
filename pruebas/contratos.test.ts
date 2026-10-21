@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
 import {
-  accesosAlFirmar, soloDuenos, accionesDe, cuerpoDocumento, estadoDePandadoc, fechaContrato, firmoElAlumno, leerAvisos, mensajeDelContrato,
+  accesosAlFirmar, fichaAlFirmar, soloDuenos, accionesDe, cuerpoDocumento, estadoDePandadoc, fechaContrato, firmoElAlumno, leerAvisos, mensajeDelContrato,
   modalidadDeCuotas, partirNombre, problemaDeDatos, textoBonos, textoSesiones, variablesDelContrato, type DatosContrato,
 } from "@/lib/contratos";
 import { clavePandadoc, firmaPandadocValida } from "@/lib/pandadoc-servidor";
@@ -254,4 +254,13 @@ test("Contratos: quién los manda y cuándo se dan los accesos al firmar, según
   assert.equal(soloDuenos("duenos"), true);
   assert.equal(soloDuenos("encendido"), false);
   assert.equal(soloDuenos("apagado"), false);
+});
+
+test("Contratos: lo que el contrato firmado deja en la ficha de Customer Success", () => {
+  assert.deepEqual(fichaAlFirmar({ sesiones: 2 }, "Hackear AI", []), {
+    contratoFirmado: "Firmado", estadoContrato: "Firmado en PandaDoc", sesionesMentor: 2, programas: ["Hackear AI"],
+  });
+  /* Sin sesiones 1 a 1 y con el programa ya cargado a mano: sólo se marca firmado. */
+  assert.deepEqual(fichaAlFirmar({ sesiones: 0 }, "Hackear AI", ["Hackear IT"]), { contratoFirmado: "Firmado", estadoContrato: "Firmado en PandaDoc" });
+  assert.deepEqual(fichaAlFirmar({}, "Downsell", null), { contratoFirmado: "Firmado", estadoContrato: "Firmado en PandaDoc", programas: ["Downsell"] });
 });

@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
-  accesosAlFirmar, cuerpoDocumento, destinatario, estadoDePandadoc, firmoElAlumno, mensajeDelContrato, ROL_ALUMNO,
+  accesosAlFirmar, cuerpoDocumento, destinatario, estadoDePandadoc, fichaAlFirmar, firmoElAlumno, mensajeDelContrato, ROL_ALUMNO,
   type Contrato, type DatosContrato, type EstadoContrato, type EventoContrato, type ModoContrato,
 } from "./contratos";
 import {
@@ -273,8 +273,11 @@ export async function alFirmar(db: SupabaseClient, c: Contrato): Promise<{ acces
 
   const alumnoId = await alumnoDelContrato(db, c);
   if (alumnoId && c.alumnoId !== alumnoId) await guardar(db, c.id, { alumnoId });
+  const { programas, config } = await programasGuardados(db);
   if (alumnoId && c.modo === "produccion") {
-    await cambiarFicha(db, alumnoId, { contratoFirmado: "Firmado", estadoContrato: "Firmado en PandaDoc" })
+    const ficha = await db.from("seguimiento_alumnos").select("programas").eq("alumnoId", alumnoId).maybeSingle();
+    const nombre = programaPorId(programas, c.programa)?.nombre ?? "";
+    await cambiarFicha(db, alumnoId, fichaAlFirmar(c.datos, nombre, (ficha.data?.programas as string[] | null) ?? null))
       .catch((e) => console.error("[contratos] no se marcó la ficha", alumnoId, mensajeDe(e)));
     /* El servicio arranca cuando dice el contrato (puede ser una semana después del pago). */
     /* A las 12 de Argentina: «2026-10-26» a secas es la medianoche UTC, que en Argentina todavía es el 25. */
@@ -283,7 +286,6 @@ export async function alFirmar(db: SupabaseClient, c: Contrato): Promise<{ acces
   }
 
   if (c.accesosEn) return { accesos: null };
-  const { programas, config } = await programasGuardados(db);
   /* Los accesos solos se prenden con los contratos: con «prueba», sólo los de prueba; apagado, ninguno.
      No se marca nada: el día que se prendan, la próxima pasada los da. */
   const prendidos = accesosAlFirmar(config.estado, c.modo);
