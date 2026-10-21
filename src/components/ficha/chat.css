@@ -1,16 +1,178 @@
-/* El chat del equipo de la ficha (ChatEquipo): la caja para escribir con clip y micrófono, la nota de voz que se graba y
-   los archivos de cada mensaje. Las burbujas de texto siguen en globals.css (.chat__*). */
+/* El chat del equipo de la ficha (ChatEquipo), con el aspecto del chat del equipo de Blue OS (ChatClickup.module.css):
+   mensajes planos sin globo, los seguidos pegados, la barra de acciones que flota arriba a la derecha al pasar el mouse,
+   las fichitas de reacción, el pie del hilo con su curva, la nota de voz estilo WhatsApp y la caja con clip y micrófono. */
 
 .chat { position: relative; }
-.chat--con-hilo { gap: 10px; }
 .chat--soltando .chat__lista { opacity: 0.35; }
 .chatx-soltar {
-  position: absolute; inset: 0 0 auto 0; bottom: 0; display: flex; align-items: center; justify-content: center; gap: 10px;
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; gap: 10px; z-index: 6;
   border: 2px dashed var(--brand); border-radius: var(--radius-lg); font-weight: 600; color: var(--ink);
   background: color-mix(in srgb, var(--brand) 8%, transparent); pointer-events: none;
 }
 
-/* ---------- la caja ---------- */
+/* ---------- cabeza, conversación e hilo ---------- */
+
+.chatx-cabeza { flex: none; display: flex; align-items: center; gap: 6px; min-height: 32px; }
+.chatx-cabeza__tit { flex: 1; min-width: 0; font-size: 13px; font-weight: 600; color: var(--ink-muted); }
+.chatx-cuerpo { flex: 1; min-height: 0; display: flex; }
+.chatx-conversacion, .chatx-hilo { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: 10px; }
+.chatx-lista { flex: 1; min-height: 0; overflow-y: auto; gap: 0 !important; padding: 18px 0 4px; margin: 0 -6px; }
+/* Donde el chat tiene su alto (la columna de la ficha, agrandado), la lista ocupa todo lo que queda: sin el tope de .lista-scroll. */
+.ficha__chat .chat__lista, .chat--grande .chat__lista { max-height: none; }
+/* Angosto (la columna de la ficha): el hilo va ENCIMA de la conversación, con «volver». */
+.chat--con-hilo:not(.chat--grande) .chatx-conversacion { display: none; }
+.chat:not(.chat--grande) .chatx-hilo__cerrar { display: none; }
+.chat--grande .chatx-hilo__volver { display: none; }
+.chatx-hilo__cabeza { flex: none; display: flex; align-items: center; gap: 6px; min-height: 32px; padding-bottom: 6px; border-bottom: 1px solid var(--border); }
+.chatx-hilo__separador { display: flex; align-items: center; gap: 10px; margin: 6px 6px 2px; font-size: 12px; color: var(--ink-subtle); }
+.chatx-hilo__separador::before, .chatx-hilo__separador::after { content: ""; flex: 1; height: 1px; background: var(--border); }
+
+/* ---------- un mensaje ---------- */
+
+.chatx-msj {
+  position: relative; display: grid; grid-template-columns: 32px minmax(0, 1fr); column-gap: 10px;
+  padding: 14px 8px 9px; border-radius: 10px; transition: background 120ms ease-out;
+}
+.chatx-msj--seguido { padding-top: 2px; padding-bottom: 3px; }
+.chatx-msj:has(+ .chatx-msj--seguido) { padding-bottom: 3px; }
+.chatx-msj:hover, .chatx-msj--menu { background: color-mix(in srgb, var(--ink) 4%, transparent); }
+.chatx-msj__foto { padding-top: 1px; }
+.chatx-msj__cuerpo { min-width: 0; position: relative; }
+.chatx-msj__cabeza { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.chatx-msj__autor { font-size: 14px; font-weight: 650; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.chatx-msj__hora { flex: none; font-size: 12px; color: var(--ink-subtle); font-variant-numeric: tabular-nums; }
+/* En un mensaje seguido la hora va a la izquierda, en el lugar de la foto, y se ve al pasar el mouse (como Slack). */
+.chatx-msj__hora--al-lado { position: absolute; left: -42px; top: 3px; width: 36px; text-align: center; font-size: 10.5px; opacity: 0; }
+.chatx-msj:hover .chatx-msj__hora--al-lado { opacity: 1; }
+.chatx-msj__texto { margin: 2px 0 0; font-size: 14px; line-height: 21px; color: var(--ink); white-space: pre-wrap; overflow-wrap: anywhere; }
+
+/* La barra de acciones: flota arriba a la derecha al pasar el mouse, entre este mensaje y el de arriba. */
+.chatx-barra-msj {
+  position: absolute; right: 10px; top: -15px; z-index: 5; display: flex; align-items: center; gap: 1px; height: 32px; padding: 0 4px;
+  border-radius: 11px; background: var(--surface-000); border: 1px solid var(--border-strong); box-shadow: 0 4px 14px rgba(0, 0, 0, 0.22);
+  opacity: 0; pointer-events: none; transition: opacity 120ms ease-out;
+}
+.chatx-lista > .chatx-msj:first-of-type > .chatx-barra-msj, .chatx-msj--seguido > .chatx-barra-msj { top: -6px; }
+.chatx-msj:hover > .chatx-barra-msj, .chatx-msj:focus-within > .chatx-barra-msj, .chatx-msj--menu > .chatx-barra-msj { opacity: 1; pointer-events: auto; }
+/* Con el dedo no hay «pasar el mouse»: la barra aparece debajo del mensaje que se toca, no fija en todos. */
+@media (hover: none) {
+  .chatx-barra-msj { position: static; grid-column: 2; justify-self: start; margin-top: 6px; display: none; }
+  .chatx-msj:focus-within > .chatx-barra-msj, .chatx-msj--menu > .chatx-barra-msj { display: flex; opacity: 1; pointer-events: auto; }
+  .chatx-msj:focus-within { background: color-mix(in srgb, var(--ink) 4%, transparent); }
+}
+.chatx-msj:focus { outline: none; }
+.chatx-barra-msj button {
+  position: relative; display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; padding: 0;
+  border: 0; border-radius: 8px; background: none; color: var(--ink-muted); cursor: pointer;
+}
+.chatx-barra-msj button:hover { color: var(--ink); background: var(--surface-200); }
+.chatx-barra-msj button:focus { outline: none; }
+.chatx-barra-msj button:focus-visible { outline: 2px solid var(--focus); outline-offset: 0; }
+.chatx-barra-msj__emoji { font-size: 17px; line-height: 1; }
+.chatx-barra-msj__div { width: 1px; height: 18px; margin: 0 4px; background: var(--border-strong); }
+/* El cartelito de cada botón, debajo (como Blue OS). */
+.chatx-barra-msj [data-tip]::after {
+  content: attr(data-tip); position: absolute; top: calc(100% + 8px); right: -4px; padding: 5px 9px; border-radius: 7px; white-space: nowrap;
+  font-size: 12px; font-weight: 500; color: var(--surface-000); background: var(--ink); opacity: 0; pointer-events: none; z-index: 20;
+  transform: translateY(-2px); transition: opacity 120ms ease-out, transform 120ms ease-out;
+}
+.chatx-barra-msj [data-tip]:hover::after { opacity: 1; transform: none; transition-delay: 250ms; }
+
+/* Las fichitas de reacción. */
+.chatx-reacciones { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+.chatx-reaccion {
+  display: inline-flex; align-items: center; gap: 4px; min-height: 26px; padding: 1px 8px; border-radius: 999px; cursor: pointer;
+  font: inherit; font-size: 13px; color: var(--ink-muted); background: var(--surface-200); border: 1px solid var(--border);
+  transition: border-color 120ms ease-out, background 120ms ease-out;
+}
+.chatx-reaccion:hover { border-color: var(--border-strong); }
+.chatx-reaccion:focus { outline: none; }
+.chatx-reaccion:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+.chatx-reaccion--mia { color: var(--ink); border-color: var(--brand); background: color-mix(in srgb, var(--brand) 16%, transparent); }
+.chatx-reaccion__n { font-weight: 600; font-variant-numeric: tabular-nums; font-size: 12px; }
+
+/* El pie del hilo debajo del original: la curva que lo cuelga del mensaje, las caras, cuántas y cuándo (como Slack y Blue OS). */
+.chatx-hilo-pie { position: relative; margin-top: 8px; }
+.chatx-hilo-pie__curva { position: absolute; left: -27px; top: -8px; width: 15px; height: 24px; border-left: 2px solid var(--border-strong); border-bottom: 2px solid var(--border-strong); border-radius: 0 0 0 14px; }
+.chatx-hilo-pie button {
+  display: inline-flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; padding: 3px 10px 3px 4px; border: 0; border-radius: 8px;
+  background: none; font: inherit; font-size: 12px; color: var(--ink); cursor: pointer; text-align: left;
+}
+.chatx-hilo-pie button:hover { background: var(--surface-200); }
+.chatx-hilo-pie button:focus { outline: none; }
+.chatx-hilo-pie button:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+.chatx-hilo-pie__caras { display: inline-flex; }
+.chatx-hilo-pie__caras > * + * { margin-left: -6px; }
+.chatx-hilo-pie__n { color: var(--brand); font-weight: 650; }
+.chatx-hilo-pie__cuando { color: var(--ink-subtle); }
+
+/* ---------- los archivos de un mensaje ---------- */
+
+.chatx-adjuntos { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; margin-top: 6px; max-width: 100%; }
+.chatx-galeria { display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; width: min(260px, 100%); }
+.chatx-galeria--varias { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.chatx-imagen {
+  display: flex; align-items: center; justify-content: center; overflow: hidden; border-radius: 10px; background: var(--surface-200);
+  color: var(--ink-subtle); max-height: 320px; border: 1px solid var(--border);
+}
+.chatx-galeria--varias .chatx-imagen { aspect-ratio: 1 / 1 !important; }
+.chatx-imagen img { width: 100%; height: 100%; object-fit: cover; display: block; transition: transform 160ms ease-out; }
+.chatx-imagen:hover img { transform: scale(1.02); }
+.chatx-video { width: min(280px, 100%); max-height: 320px; border-radius: 10px; background: #000; }
+.chatx-video--cargando { height: 150px; display: flex; align-items: center; justify-content: center; color: var(--ink-subtle); background: var(--surface-200); }
+
+/* La nota de voz, estilo WhatsApp / Blue OS: sin globo, el botón redondo, la onda, el tiempo, la velocidad y bajar. */
+.chatx-audio { display: flex; align-items: center; gap: 10px; width: min(300px, 100%); min-width: 0; padding: 2px 0; }
+.chatx-audio__play {
+  flex: none; display: grid; place-items: center; width: 36px; height: 36px; padding: 0; border: 0; border-radius: 999px;
+  color: var(--on-brand); background: var(--brand-fill); cursor: pointer; transition: transform 120ms ease-out;
+}
+.chatx-audio__play:hover:not(:disabled) { transform: scale(1.05); }
+.chatx-audio__play:focus { outline: none; }
+.chatx-audio__play:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.chatx-onda { flex: 1; min-width: 0; height: 30px; display: flex; align-items: center; gap: 2px; padding: 0; border: 0; background: none; cursor: pointer; }
+.chatx-onda:focus { outline: none; }
+.chatx-onda:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: 4px; }
+.chatx-onda__barra { flex: 1; min-width: 2px; min-height: 3px; border-radius: 999px; background: color-mix(in srgb, var(--ink) 28%, transparent); transition: background 140ms ease-out; }
+.chatx-onda__barra--hecha { background: var(--brand); }
+.chatx-audio__t { flex: none; min-width: 30px; text-align: right; font-size: 11px; font-variant-numeric: tabular-nums; color: var(--ink-subtle); }
+.chatx-audio__vel {
+  flex: none; padding: 1px 6px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface-200);
+  font: inherit; font-size: 10.5px; font-weight: 700; color: var(--ink-muted); cursor: pointer;
+}
+.chatx-audio__bajar { flex: none; display: grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 999px; background: none; color: var(--ink-subtle); cursor: pointer; }
+.chatx-audio__bajar:hover:not(:disabled) { color: var(--ink); background: var(--surface-200); }
+.chatx-audio__bajar:focus { outline: none; }
+
+.chatx-archivo {
+  display: flex; align-items: center; gap: 10px; width: min(280px, 100%); padding: 8px 12px 8px 8px; border-radius: 12px;
+  border: 1px solid var(--border); background: var(--surface-000); color: var(--ink); font: inherit; text-align: left; cursor: pointer;
+}
+.chatx-archivo:hover { border-color: var(--border-strong); background: var(--surface-200); }
+.chatx-archivo__ico { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; border-radius: 8px; color: var(--brand); background: var(--brand-soft); }
+.chatx-archivo__txt { flex: 1; min-width: 0; display: flex; flex-direction: column; font-size: 13px; }
+.chatx-archivo__txt small { font-size: 11px; color: var(--ink-subtle); }
+.chatx-archivo__baja { flex: none; color: var(--ink-subtle); }
+
+/* ---------- la tabla de emojis (flota sobre todo) ---------- */
+
+.chatx-emojis {
+  position: fixed; z-index: 300; display: flex; flex-direction: column; gap: 8px; padding: 10px; border-radius: 14px;
+  background: var(--surface-000); border: 1px solid var(--border-strong); box-shadow: var(--shadow-lg); animation: fade 120ms ease-out;
+}
+.chatx-emojis__buscar {
+  flex: none; width: 100%; padding: 7px 10px; border-radius: 9px; border: 1px solid var(--border); background: var(--surface-100);
+  color: var(--ink); font: inherit; font-size: 13px; outline: none;
+}
+.chatx-emojis__buscar:focus { border-color: var(--brand); }
+.chatx-emojis__zona { flex: 1; min-height: 0; overflow-y: auto; padding-right: 2px; }
+.chatx-emojis__grupo { margin: 4px 2px; font-size: 12px; font-weight: 600; color: var(--ink-muted); }
+.chatx-emojis__grilla { display: grid; grid-template-columns: repeat(auto-fill, minmax(34px, 1fr)); gap: 2px; margin-bottom: 8px; }
+.chatx-emojis__grilla button { height: 34px; padding: 0; border: 0; border-radius: 8px; background: none; font-size: 21px; line-height: 1; cursor: pointer; }
+.chatx-emojis__grilla button:hover, .chatx-emojis__grilla button:focus-visible { background: var(--surface-200); outline: none; }
+.chatx-emojis__nada { display: flex; align-items: center; justify-content: center; padding: 18px 4px; font-size: 13px; color: var(--ink-subtle); }
+
+/* ---------- la caja para escribir ---------- */
 
 .chatx-caja {
   flex: none; display: flex; flex-direction: column; gap: 6px; padding: 10px 10px 8px 14px; border-radius: 16px;
@@ -29,12 +191,14 @@
   background: none; color: var(--ink-muted); cursor: pointer; transition: background 120ms ease-out, color 120ms ease-out;
 }
 .chatx-boton:hover:not(:disabled) { color: var(--ink); background: var(--surface-200); }
+.chatx-boton:focus { outline: none; }
 .chatx-boton:focus-visible, .chatx-enviar:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 .chatx-boton:disabled { opacity: 0.4; cursor: default; }
 .chatx-enviar {
   flex: none; display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; border: 0; border-radius: 999px;
   color: var(--on-accent, #1a1030); background: var(--accent, #f59e5b); cursor: pointer; transition: transform 120ms ease-out, opacity 120ms ease-out;
 }
+.chatx-enviar:focus { outline: none; }
 .chatx-enviar:hover:not(:disabled) { transform: scale(1.05); }
 .chatx-enviar:disabled { opacity: 0.35; cursor: default; transform: none; }
 
@@ -64,96 +228,6 @@
 .chatx-vivo__t { flex: none; font-size: 13px; font-variant-numeric: tabular-nums; color: var(--ink); }
 @keyframes chatx-latido { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
 
-/* ---------- los archivos de un mensaje ---------- */
-
-.chatx-adjuntos { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; margin-top: 6px; max-width: 100%; }
-.chatx-galeria { display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; width: min(260px, 100%); }
-.chatx-galeria--varias { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-.chatx-imagen {
-  display: flex; align-items: center; justify-content: center; overflow: hidden; border-radius: 10px; background: var(--surface-200);
-  color: var(--ink-subtle); max-height: 320px;
-}
-.chatx-galeria--varias .chatx-imagen { aspect-ratio: 1 / 1 !important; }
-.chatx-imagen img { width: 100%; height: 100%; object-fit: cover; display: block; transition: transform 160ms ease-out; }
-.chatx-imagen:hover img { transform: scale(1.02); }
-.chatx-video { width: min(280px, 100%); max-height: 320px; border-radius: 10px; background: #000; }
-.chatx-video--cargando { height: 150px; display: flex; align-items: center; justify-content: center; color: var(--ink-subtle); background: var(--surface-200); }
-
-.chatx-audio {
-  display: flex; align-items: center; gap: 10px; width: min(260px, 100%); padding: 6px 12px 6px 6px; border-radius: 999px;
-  background: var(--brand-soft);
-}
-.chatx-audio__play {
-  flex: none; display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; border: 0; border-radius: 999px;
-  color: var(--on-brand); background: var(--brand-fill); cursor: pointer;
-}
-.chatx-audio__play:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
-.chatx-onda { flex: 1; min-width: 0; height: 26px; display: flex; align-items: center; gap: 2px; cursor: pointer; }
-.chatx-onda__barra { flex: 1; min-width: 2px; max-width: 4px; min-height: 3px; border-radius: 2px; background: color-mix(in srgb, var(--ink) 35%, transparent); }
-.chatx-onda__barra--hecha { background: var(--brand); }
-.chatx-audio__t { flex: none; font-size: 12px; font-variant-numeric: tabular-nums; color: var(--ink-muted); }
-
-.chatx-archivo {
-  display: flex; align-items: center; gap: 10px; width: min(260px, 100%); padding: 8px 12px 8px 8px; border-radius: 12px;
-  border: 1px solid var(--border); background: var(--surface-000); color: var(--ink); font: inherit; text-align: left; cursor: pointer;
-}
-.chatx-archivo:hover { border-color: var(--border-strong); background: var(--surface-200); }
-.chatx-archivo__ico { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; border-radius: 8px; color: var(--brand); background: var(--brand-soft); }
-.chatx-archivo__txt { flex: 1; min-width: 0; display: flex; flex-direction: column; font-size: 13px; }
-.chatx-archivo__txt small { font-size: 11px; color: var(--ink-subtle); }
-.chatx-archivo__baja { flex: none; color: var(--ink-subtle); }
-
-.chatx-gira { animation: chatx-giro 0.9s linear infinite; }
-@keyframes chatx-giro { to { transform: rotate(360deg); } }
-@media (prefers-reduced-motion: reduce) { .chatx-gira, .chatx-rec { animation: none; } }
-
-/* ---------- cabeza, conversación e hilo ---------- */
-
-.chatx-cabeza { flex: none; display: flex; align-items: center; gap: 6px; min-height: 32px; }
-.chatx-cabeza__tit { flex: 1; min-width: 0; font-size: 13px; font-weight: 600; color: var(--ink-muted); }
-.chatx-cuerpo { flex: 1; min-height: 0; display: flex; }
-.chatx-conversacion, .chatx-hilo { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: 10px; }
-.chatx-conversacion .chat__lista, .chatx-hilo .chat__lista { flex: 1; min-height: 0; overflow-y: auto; padding-right: 2px; }
-/* Donde el chat tiene su alto (la columna de la ficha, agrandado), la lista ocupa todo el alto que queda: sin el tope de .lista-scroll. */
-.ficha__chat .chat__lista, .chat--grande .chat__lista { max-height: none; }
-/* Angosto (la columna de la ficha): el hilo va ENCIMA de la conversación, con «volver». */
-.chat--con-hilo:not(.chat--grande) .chatx-conversacion { display: none; }
-.chat:not(.chat--grande) .chatx-hilo__cerrar { display: none; }
-.chat--grande .chatx-hilo__volver { display: none; }
-.chatx-hilo__cabeza { flex: none; display: flex; align-items: center; gap: 6px; min-height: 32px; padding-bottom: 6px; border-bottom: 1px solid var(--border); }
-.chatx-hilo__separador { display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--ink-subtle); }
-.chatx-hilo__separador::before, .chatx-hilo__separador::after { content: ""; flex: 1; height: 1px; background: var(--border); }
-
-/* Un mensaje: sus acciones aparecen al pasar el mouse (siempre, en pantallas táctiles). */
-.chatx-msj { position: relative; padding: 4px 6px; margin: -4px -6px; border-radius: 10px; }
-.chatx-msj:hover { background: color-mix(in srgb, var(--ink) 4%, transparent); }
-.chatx-acciones {
-  position: absolute; top: -10px; right: 6px; display: none; gap: 2px; padding: 2px; border-radius: 9px;
-  background: var(--surface-000); border: 1px solid var(--border-strong); box-shadow: var(--shadow-sm, 0 2px 8px rgba(0, 0, 0, .25));
-}
-.chatx-acciones:empty { display: none !important; }
-.chatx-msj:hover .chatx-acciones, .chatx-msj:focus-within .chatx-acciones { display: flex; }
-@media (hover: none) { .chatx-acciones { display: flex; position: static; float: right; margin-left: 6px; } }
-.chatx-acciones button {
-  display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 26px; border: 0; border-radius: 7px;
-  background: none; color: var(--ink-muted); cursor: pointer;
-}
-.chatx-acciones button:hover { color: var(--ink); background: var(--surface-200); }
-.chatx-acciones button:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
-
-/* El pie del hilo debajo del original: la línea que lo cuelga del mensaje, las caras, cuántas y cuándo. */
-.chatx-hilo-pie {
-  display: inline-flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; margin-top: 6px; padding: 3px 10px 3px 8px;
-  border: 0; border-left: 2px solid var(--border-strong); border-radius: 0 8px 8px 0; background: none; font: inherit; font-size: 12px;
-  color: var(--ink); cursor: pointer; text-align: left;
-}
-.chatx-hilo-pie:hover { background: var(--surface-200); }
-.chatx-hilo-pie:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
-.chatx-hilo-pie__caras { display: inline-flex; }
-.chatx-hilo-pie__caras > * + * { margin-left: -6px; }
-.chatx-hilo-pie__n { color: var(--brand); font-weight: 600; }
-.chatx-hilo-pie__cuando { color: var(--ink-subtle); }
-
 /* ---------- agrandado ---------- */
 
 .chatx-fondo { position: fixed; inset: 0; z-index: 140; background: var(--overlay); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); animation: fade 140ms ease-out; }
@@ -163,7 +237,6 @@
 }
 .chat--grande .chatx-cabeza__tit { font-size: 15px; color: var(--ink); }
 .chat--grande .chatx-hilo { flex: 0 0 min(460px, 42%); margin-left: 20px; padding-left: 20px; border-left: 1px solid var(--border); }
-.chat--grande .chatx-conversacion .chat__lista { padding: 4px 8px 0 4px; }
 .chat--grande .chatx-galeria { width: min(360px, 100%); }
 @media (max-width: 760px) {
   .chat--grande { inset: 0; border-radius: 0; }
@@ -171,3 +244,7 @@
   .chat--grande .chatx-hilo { flex: 1; margin-left: 0; padding-left: 0; border-left: 0; }
   .chat--grande .chatx-hilo__volver { display: inline-flex; }
 }
+
+.chatx-gira { animation: chatx-giro 0.9s linear infinite; }
+@keyframes chatx-giro { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .chatx-gira, .chatx-rec { animation: none; } }

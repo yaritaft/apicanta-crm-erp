@@ -1401,10 +1401,14 @@ button.cuadro-com__persona:hover { color: var(--brand); text-decoration: underli
 .ficha__nombre { font-family: var(--font-display); font-size: 22px; line-height: 28px; font-weight: 700; color: var(--ink); letter-spacing: -.01em; margin: 2px 0 0; }
 .ficha__acciones { display: flex; align-items: center; gap: var(--space-3); margin-left: auto; }
 .ficha__cuerpo { flex: 1; min-height: 0; display: grid; grid-template-columns: 320px minmax(0, 1fr); }
-.ficha__cuerpo--chat { grid-template-columns: 320px minmax(0, 1fr) 320px; }
-.ficha__chat { display: flex; flex-direction: column; gap: var(--space-3); min-height: 0; padding: var(--space-5) var(--space-4) var(--space-4); border-left: 1px solid var(--border); background: var(--surface-100); }
+.ficha__cuerpo--chat { grid-template-columns: 320px minmax(0, 1fr) var(--chat-w, 320px); }
+.ficha__chat { position: relative; display: flex; flex-direction: column; gap: var(--space-3); min-height: 0; padding: var(--space-5) var(--space-4) var(--space-4); border-left: 1px solid var(--border); background: var(--surface-100); }
 .ficha__chat-tit { flex: none; font-size: 13px; font-weight: 600; color: var(--ink-muted); }
 .ficha__chat .chat { flex: 1; min-height: 0; }
+/* El divisor que se arrastra (components/ui/Divisor): una franja sobre el borde, que se marca al pasar o al arrastrar. */
+.divisor { position: absolute; top: 0; bottom: 0; left: -5px; width: 10px; z-index: 3; cursor: col-resize; touch-action: none; outline: none; }
+.divisor::after { content: ""; position: absolute; top: 0; bottom: 0; left: 4px; width: 2px; border-radius: 2px; background: transparent; transition: background 140ms ease-out; }
+.divisor:hover::after, .divisor:focus-visible::after, .divisor[data-arrastrando]::after { background: var(--brand); }
 .ficha__chat .chat__lista { flex: 1; min-height: 0; overflow-y: auto; }
 .ficha__lado {
   overflow-y: auto; padding: var(--space-5); display: flex; flex-direction: column; gap: var(--space-5);

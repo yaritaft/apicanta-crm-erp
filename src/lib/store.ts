@@ -4,7 +4,7 @@ import { useCallback, useSyncExternalStore } from "react";
 import type {
   AccionActividad, Actividad, Ad, AdInsight, Adset, Ajustes, Alumno, Campaign,
   Contacto, Devolucion, ProveedorPasarela,
-  Adjunto, Arqueo, Campania, CampoPersonalizado, Comentario, Comprobante, Cuota, EntidadNombre, EstadoApp, Etapa, ID,
+  Adjunto, Arqueo, Campania, CampoPersonalizado, Comentario, Comprobante, Reaccion, Cuota, EntidadNombre, EstadoApp, Etapa, ID,
   Lead, Meta, Movimiento, OpcionCrm, OportunidadCrm, Pago, Reporte, Sesion, Venta, Webinar,
 } from "./types";
 import type { ConfigSeguimiento, Resell, RevisionCv, SeguimientoAlumno, Testimonio } from "./types";
@@ -1957,6 +1957,19 @@ export const acciones = {
     };
     guardar({ ...e, comentarios: [...(e.comentarios ?? []), c] });
     empujar({ tipo: "upsert", tabla: "comentarios", filas: [c] });
+  },
+
+  /** Pone o saca MI reacción con ese emoji en un mensaje del chat (como en Blue OS: tocar una fichita la suma o la saca). */
+  reaccionar(comentarioId: ID, emoji: string, quien: string, email?: string): void {
+    const e = snapshot();
+    const c = (e.comentarios ?? []).find((x) => x.id === comentarioId);
+    if (!c || !emoji) return;
+    const esMia = (r: Reaccion) => r.emoji === emoji && (email ? r.email === email : !r.email && r.quien === quien);
+    const antes = c.reacciones ?? [];
+    const reacciones = antes.some(esMia) ? antes.filter((r) => !esMia(r)) : [...antes, { emoji, quien, ...(email ? { email } : {}) }];
+    const nuevo: Comentario = { ...c, reacciones };
+    guardar({ ...e, comentarios: (e.comentarios ?? []).map((x) => (x.id === comentarioId ? nuevo : x)) });
+    empujar({ tipo: "upsert", tabla: "comentarios", filas: [nuevo] });
   },
 
   borrarComentario(id: ID): void {

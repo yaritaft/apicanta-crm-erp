@@ -17,6 +17,7 @@ import { desdeVenta, FormularioVenta, type BorradorVenta } from "@/components/ve
 import { RegistrarPago } from "@/components/cobros/RegistrarPago";
 import { ChatEquipo } from "./ChatEquipo";
 import { VistaServicio } from "./HojaServicio";
+import { Divisor, useAnchoPanel } from "@/components/ui/Divisor";
 import { HistorialPersona } from "./HistorialPersona";
 import { UtmsPersona } from "./UtmsPersona";
 import { TarjetaVenta } from "./TarjetaVenta";
@@ -66,6 +67,8 @@ export function FichaPersona({ id, vista, ventaResaltada, onCerrar, onVista }: {
   const vistaReal = vistas.includes(vista) ? vista : vistas[0] ?? vista;
   /* En una pantalla ancha el chat va en su propia columna, siempre a la vista; en una angosta, como una solapa más. */
   const conChat = useAnchoMinimo(1200);
+  /* La línea entre la ficha y el chat se arrastra (como en Blue OS); el ancho del chat queda guardado en este navegador. */
+  const anchoChat = useAnchoPanel({ variable: "--chat-w", clave: "apicanta:ficha:ancho-chat", min: 280, minResto: 320 + 420 });
 
   /* Esc cierra, salvo que haya algo abierto encima (un pago, un desplegable,
      el asistente de venta): eso se cierra primero. */
@@ -93,7 +96,7 @@ export function FichaPersona({ id, vista, ventaResaltada, onCerrar, onVista }: {
         ) : (
           <>
             <Cabecera e={e} p={p} vista={vistaReal} vistas={vistas} onVista={onVista} onCerrar={onCerrar} />
-            <div className={`ficha__cuerpo${conChat ? " ficha__cuerpo--chat" : ""}`}>
+            <div ref={anchoChat.contRef} className={`ficha__cuerpo${conChat ? " ficha__cuerpo--chat" : ""}`}>
               <Lateral e={e} p={p} filas={filas} />
               <div className="ficha__principal">
                 {vistas.length === 0
@@ -105,7 +108,8 @@ export function FichaPersona({ id, vista, ventaResaltada, onCerrar, onVista }: {
                       : <VistaServicio e={e} p={p} conChat={conChat} />}
               </div>
               {conChat && (
-                <aside className="ficha__chat" aria-label="Chat del equipo">
+                <aside ref={anchoChat.panelRef} className="ficha__chat" aria-label="Chat del equipo">
+                  <Divisor {...anchoChat} etiqueta="Cambiar el ancho del chat" />
                   <ChatEquipo contactoId={p.clave} comentarios={p.comentarios} />
                 </aside>
               )}

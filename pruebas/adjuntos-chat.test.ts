@@ -84,3 +84,25 @@ test("una respuesta en hilo guarda a qué mensaje responde; un mensaje de la con
   assert.equal(respuesta.respondeA, original.id);
   assert.equal(respuesta.texto, "Sí, ayer.");
 });
+
+test("reaccionar suma la reacción; tocar el mismo emoji otra vez la saca; cada uno tiene la suya", () => {
+  acciones.comentar("c_chat_6", "Le escribí por WhatsApp", "Lili", "lili@x.com");
+  const [m] = comentariosDe("c_chat_6");
+  const reaccionesDe = () => comentariosDe("c_chat_6")[0].reacciones ?? [];
+
+  acciones.reaccionar(m.id, "👍", "Yari", "yari@x.com");
+  acciones.reaccionar(m.id, "👍", "Lili", "lili@x.com");
+  acciones.reaccionar(m.id, "🎉", "Yari", "yari@x.com");
+  assert.deepEqual(reaccionesDe().map((r) => `${r.emoji} ${r.quien}`), ["👍 Yari", "👍 Lili", "🎉 Yari"]);
+
+  acciones.reaccionar(m.id, "👍", "Yari", "yari@x.com");
+  assert.deepEqual(reaccionesDe().map((r) => `${r.emoji} ${r.quien}`), ["👍 Lili", "🎉 Yari"], "la de Yari se saca; la de Lili queda");
+
+  acciones.reaccionar(m.id, "🎉", "Yari Taft", "yari@x.com");
+  assert.deepEqual(reaccionesDe().map((r) => r.emoji), ["👍"], "con mail, se reconoce por el mail aunque cambie el nombre");
+
+  acciones.reaccionar(m.id, "", "Yari", "yari@x.com");
+  acciones.reaccionar("no-existe", "👍", "Yari");
+  assert.equal(reaccionesDe().length, 1, "sin emoji o sin mensaje no pasa nada");
+  assert.equal(comentariosDe("c_chat_6")[0].texto, "Le escribí por WhatsApp", "reaccionar no toca el mensaje");
+});

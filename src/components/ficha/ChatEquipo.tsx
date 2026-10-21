@@ -1,8 +1,9 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
-  ArrowLeft, ArrowUp, Download, FileText, Loader2, Maximize2, MessageSquare, MessageSquareReply, Mic, Minimize2, Paperclip, Pause, Play, Trash2, X,
+  ArrowLeft, ArrowUp, Download, FileText, Loader2, Maximize2, MessageSquare, MessageSquareReply, Mic, Minimize2, Paperclip, Pause, Play, Smile, Trash2, X,
 } from "lucide-react";
 import { Avatar, Empty } from "@/components/ui/ui";
 import { useToast } from "@/components/ui/Toast";
@@ -66,56 +67,98 @@ function Video({ a }: { a: Adjunto }) {
     : <div className="chatx-video chatx-video--cargando"><Loader2 size={18} className="chatx-gira" aria-hidden /></div>;
 }
 
-/* Una nota de voz (o un audio adjuntado): play, la onda que se pinta a medida que avanza y el tiempo. */
+/* Una nota de voz (o un audio adjuntado), como la de Blue OS (components/chat/AudioMessage) y WhatsApp: el botón
+   redondo, la onda (un clic salta a ese punto), el tiempo que corre, la velocidad 1×/1,5×/2× mientras suena y bajarlo.
+   La onda usa los picos reales medidos al grabar; si no los hay, una onda estable sacada del nombre (no al azar:
+   parpadearía en cada render). */
+const BARRAS_AUDIO = 34;
+const VELOCIDADES = [1, 1.5, 2] as const;
+
+function ondaDe(a: Adjunto): number[] {
+  if (a.picos?.length) {
+    return Array.from({ length: BARRAS_AUDIO }, (_, i) => a.picos?.[Math.floor((i * (a.picos?.length ?? 1)) / BARRAS_AUDIO)] ?? 0.2);
+  }
+  let h = 0;
+  for (const ch of a.nombre + a.id) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return Array.from({ length: BARRAS_AUDIO }, (_, i) => {
+    h = (h * 1103515245 + 12345) >>> 0;
+    const centro = 1 - Math.abs(i - BARRAS_AUDIO / 2) / (BARRAS_AUDIO / 2);
+    return Math.max(0.12, Math.min(1, 0.25 + centro * 0.45 + ((h % 100) / 100) * 0.35));
+  });
+}
+
 function NotaDeVoz({ a }: { a: Adjunto }) {
+  const url = useUrl(a);
   const audio = useRef<HTMLAudioElement | null>(null);
+  const cuadro = useRef<number | null>(null);
   const [sonando, setSonando] = useState(false);
-  const [avance, setAvance] = useState(0);
-  const [duracion, setDuracion] = useState(a.duracion ?? 0);
-  const [cargando, setCargando] = useState(false);
-  const toast = useToast();
-  const picos = a.picos?.length ? a.picos : Array.from({ length: 32 }, (_, i) => 0.3 + 0.25 * Math.abs(Math.sin(i * 1.7)));
+  const [va, setVa] = useState(0);
+  const [dura, setDura] = useState(a.duracion ?? 0);
+  const [vel, setVel] = useState(0);
+  const onda = useMemo(() => ondaDe(a), [a]);
 
-  useEffect(() => () => { audio.current?.pause(); }, []);
+  /* El avance con requestAnimationFrame: más parejo que `timeupdate`, que llega 4 veces por segundo. */
+  useEffect(() => {
+    if (!sonando) return;
+    const paso = () => { if (audio.current) setVa(audio.current.currentTime); cuadro.current = requestAnimationFrame(paso); };
+    cuadro.current = requestAnimationFrame(paso);
+    return () => { if (cuadro.current) cancelAnimationFrame(cuadro.current); };
+  }, [sonando]);
 
-  async function alternar() {
-    if (!audio.current) {
-      setCargando(true);
-      try {
-        const el = new Audio(await urlDeAdjunto(a));
-        el.ontimeupdate = () => setAvance(el.duration ? el.currentTime / el.duration : 0);
-        el.onloadedmetadata = () => { if (Number.isFinite(el.duration)) setDuracion(el.duration); };
-        el.onended = () => { setSonando(false); setAvance(0); };
-        audio.current = el;
-      } catch (err) {
-        toast(err instanceof Error ? err.message : "No se pudo abrir el audio.", "err");
-        setCargando(false);
-        return;
-      }
-      setCargando(false);
-    }
+  const total = dura > 0 && Number.isFinite(dura) ? dura : (a.duracion ?? 0);
+  const avance = total > 0 ? Math.min(1, va / total) : 0;
+
+  const alternar = () => {
     const el = audio.current;
-    if (el.paused) { await el.play().catch(() => undefined); setSonando(true); } else { el.pause(); setSonando(false); }
-  }
-
-  function saltar(ev: React.MouseEvent<HTMLDivElement>) {
+    if (!el) return;
+    if (!el.paused) { el.pause(); return; }
+    /* play() devuelve una promesa: si el audio se va de pantalla mientras arranca, el navegador la rechaza (AbortError). No es un error. */
+    el.play().catch((err: unknown) => {
+      const n = err instanceof DOMException ? err.name : "";
+      if (n !== "AbortError" && n !== "NotAllowedError") throw err;
+    });
+  };
+  const saltar = (ev: React.MouseEvent<HTMLButtonElement>) => {
     const el = audio.current;
-    if (!el || !el.duration) return;
+    if (!el || !total || ev.detail === 0) return;
     const r = ev.currentTarget.getBoundingClientRect();
-    el.currentTime = ((ev.clientX - r.left) / r.width) * el.duration;
-  }
+    el.currentTime = Math.max(0, Math.min(total, ((ev.clientX - r.left) / r.width) * total));
+    setVa(el.currentTime);
+  };
+  const cambiarVelocidad = () => {
+    const sig = (vel + 1) % VELOCIDADES.length;
+    setVel(sig);
+    if (audio.current) audio.current.playbackRate = VELOCIDADES[sig];
+  };
+  const bajar = () => {
+    if (!url) return;
+    const link = document.createElement("a");
+    link.href = url; link.download = a.nombre; link.rel = "noopener";
+    document.body.appendChild(link); link.click(); link.remove();
+  };
 
   return (
     <div className="chatx-audio">
-      <button type="button" className="chatx-audio__play" onClick={alternar} aria-label={sonando ? "Pausar" : "Escuchar"}>
-        {cargando ? <Loader2 size={16} className="chatx-gira" /> : sonando ? <Pause size={16} /> : <Play size={16} />}
+      {url && (
+        <audio
+          ref={audio} src={url} preload="metadata"
+          onLoadedMetadata={(ev) => { const d = ev.currentTarget.duration; if (Number.isFinite(d) && d > 0) setDura(d); }}
+          onPlay={() => setSonando(true)} onPause={() => setSonando(false)} onEnded={() => { setSonando(false); setVa(0); }}
+        />
+      )}
+      <button type="button" className="chatx-audio__play" onClick={alternar} disabled={!url} aria-label={sonando ? "Pausar" : "Escuchar"}>
+        {!url ? <Loader2 size={15} className="chatx-gira" /> : sonando ? <Pause size={15} fill="currentColor" strokeWidth={0} /> : <Play size={15} fill="currentColor" strokeWidth={0} style={{ marginLeft: 2 }} />}
       </button>
-      <div className="chatx-onda" onClick={saltar} role="presentation">
-        {picos.map((p, i) => (
-          <span key={i} className={i / picos.length < avance ? "chatx-onda__barra chatx-onda__barra--hecha" : "chatx-onda__barra"} style={{ height: `${Math.round(p * 100)}%` }} />
+      <button type="button" className="chatx-onda" onClick={saltar} aria-label="Saltar a un punto del audio">
+        {onda.map((h, i) => (
+          <span key={i} className={i / BARRAS_AUDIO <= avance && (sonando || va > 0) ? "chatx-onda__barra chatx-onda__barra--hecha" : "chatx-onda__barra"} style={{ height: `${Math.round(h * 100)}%` }} />
         ))}
-      </div>
-      <span className="chatx-audio__t">{duracionLegible(sonando || avance ? duracion * avance : duracion) || (a.notaDeVoz ? "Nota" : "Audio")}</span>
+      </button>
+      <span className="chatx-audio__t">{total > 0 || va > 0 ? duracionLegible(sonando || va > 0 ? va : total) : ""}</span>
+      {(sonando || va > 0) && (
+        <button type="button" className="chatx-audio__vel" onClick={cambiarVelocidad} aria-label="Cambiar la velocidad">{String(VELOCIDADES[vel]).replace(".", ",")}×</button>
+      )}
+      <button type="button" className="chatx-audio__bajar" onClick={bajar} disabled={!url} aria-label="Descargar el audio" title="Descargar"><Download size={15} /></button>
     </div>
   );
 }
@@ -463,43 +506,164 @@ function Caja({ contactoId, puerta, respondeA, enfocar }: {
   );
 }
 
-/* ---------- Un mensaje ---------- */
+/* ---------- La tabla de emojis (como «Más reacciones» de Blue OS) ---------- */
 
-function Mensaje({ c, esMio, respuestas, enHilo, onAbrirHilo }: {
-  c: Comentario; esMio: boolean; respuestas: Comentario[]; enHilo: boolean; onAbrirHilo?: () => void;
+const REACCIONES_RAPIDAS = ["👍", "✅", "❤️"];
+const CLAVE_RECIENTES = "apicanta:emojis-recientes";
+function leerRecientes(): string[] {
+  try {
+    const v = JSON.parse(window.localStorage.getItem(CLAVE_RECIENTES) ?? "[]");
+    return Array.isArray(v) ? v.filter((x) => typeof x === "string").slice(0, 24) : [];
+  } catch { return []; }
+}
+function anotarReciente(e: string) {
+  try { window.localStorage.setItem(CLAVE_RECIENTES, JSON.stringify([e, ...leerRecientes().filter((x) => x !== e)].slice(0, 24))); } catch { /* sin almacenamiento */ }
+}
+
+type Grupos = { rot: string; lista: { e: string; palabras: string }[] }[];
+
+/* Flota sobre todo (portal), al lado del botón que la abrió. La tabla (80 KB) se carga recién al abrirla. */
+function ElegirEmoji({ ancla, onElegir, onCerrar }: { ancla: DOMRect; onElegir: (e: string) => void; onCerrar: () => void }) {
+  const [q, setQ] = useState("");
+  const [buscar, setBuscar] = useState<((q: string) => Grupos) | null>(null);
+  const [recientes] = useState(leerRecientes);
+  const caja = useRef<HTMLDivElement>(null);
+  useEffect(() => { let vivo = true; void import("@/lib/emojis").then((m) => { if (vivo) setBuscar(() => m.buscarEmojis); }); return () => { vivo = false; }; }, []);
+  useEffect(() => {
+    const fuera = (ev: PointerEvent) => { if (caja.current && !caja.current.contains(ev.target as Node)) onCerrar(); };
+    const esc = (ev: KeyboardEvent) => { if (ev.key === "Escape") { ev.stopImmediatePropagation(); onCerrar(); } };
+    document.addEventListener("pointerdown", fuera, true);
+    document.addEventListener("keydown", esc, true);
+    return () => { document.removeEventListener("pointerdown", fuera, true); document.removeEventListener("keydown", esc, true); };
+  }, [onCerrar]);
+  const grupos = useMemo((): Grupos => {
+    if (!buscar) return [];
+    const g = buscar(q);
+    return !q.trim() && recientes.length ? [{ rot: "Recientes", lista: recientes.map((e) => ({ e, palabras: "" })) }, ...g] : g;
+  }, [buscar, q, recientes]);
+  const elegir = (e: string) => { anotarReciente(e); onElegir(e); };
+  const ANCHO = 320, ALTO = 360;
+  const izquierda = Math.max(8, Math.min(window.innerWidth - ANCHO - 8, ancla.right - ANCHO));
+  const arriba = ancla.bottom + 6 + ALTO > window.innerHeight ? Math.max(8, ancla.top - ALTO - 6) : ancla.bottom + 6;
+  return createPortal(
+    <div ref={caja} className="chatx-emojis" role="dialog" aria-label="Reaccionar con un emoji" style={{ left: izquierda, top: arriba, width: ANCHO, height: ALTO }}>
+      <input
+        className="chatx-emojis__buscar" type="search" value={q} autoFocus placeholder="Buscar emoji…" aria-label="Buscar emoji"
+        onChange={(ev) => setQ(ev.target.value)}
+        onKeyDown={(ev) => { const p = grupos[0]?.lista[0]?.e; if (ev.key === "Enter" && p) { ev.preventDefault(); elegir(p); } }}
+      />
+      <div className="chatx-emojis__zona">
+        {!buscar ? <div className="chatx-emojis__nada"><Loader2 size={16} className="chatx-gira" /></div>
+          : grupos.length === 0 ? <div className="chatx-emojis__nada">No hay emojis con «{q.trim()}».</div>
+          : grupos.map((g) => (
+            <div key={g.rot} role="group" aria-label={g.rot}>
+              <div className="chatx-emojis__grupo">{g.rot}</div>
+              <div className="chatx-emojis__grilla">
+                {g.lista.map(({ e, palabras }) => (
+                  <button key={`${g.rot}-${e}`} type="button" onClick={() => elegir(e)} aria-label={palabras ? `${e} ${palabras.split(" ")[0]}` : e} title={palabras.split(" ").slice(0, 3).join(" ")}>{e}</button>
+                ))}
+              </div>
+            </div>
+          ))}
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
+/* ---------- Las fichitas de reacción debajo del mensaje ---------- */
+
+function Reacciones({ c, yoEmail, yoNombre, onReaccionar }: { c: Comentario; yoEmail?: string; yoNombre: string; onReaccionar: (e: string) => void }) {
+  const porEmoji = new Map<string, { quienes: string[]; mia: boolean }>();
+  for (const r of c.reacciones ?? []) {
+    const x = porEmoji.get(r.emoji) ?? { quienes: [], mia: false };
+    const esMia = yoEmail ? r.email === yoEmail : !r.email && r.quien === yoNombre;
+    x.quienes.push(esMia ? "vos" : r.quien);
+    if (esMia) x.mia = true;
+    porEmoji.set(r.emoji, x);
+  }
+  if (porEmoji.size === 0) return null;
+  const lista = (xs: string[]) => (xs.length <= 1 ? xs.join("") : `${xs.slice(0, -1).join(", ")} y ${xs.at(-1)}`);
+  return (
+    <div className="chatx-reacciones">
+      {[...porEmoji].map(([emoji, x]) => {
+        const nombres = [...x.quienes.filter((q) => q !== "vos"), ...x.quienes.filter((q) => q === "vos")];
+        const tip = `${lista(nombres)} ${nombres.length === 1 && nombres[0] === "vos" ? "reaccionaste" : nombres.length === 1 ? "reaccionó" : "reaccionaron"} con ${emoji}`;
+        return (
+          <button key={emoji} type="button" className={`chatx-reaccion${x.mia ? " chatx-reaccion--mia" : ""}`} onClick={() => onReaccionar(emoji)} title={tip}
+            aria-label={`${tip}. ${x.mia ? "Sacar tu reacción" : "Sumarte"}`}>
+            <span>{emoji}</span><span className="chatx-reaccion__n">{x.quienes.length}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/* ---------- Un mensaje (como la burbuja del chat del equipo de Blue OS) ---------- */
+
+function Mensaje({ c, esMio, respuestas, enHilo, seguido, onAbrirHilo }: {
+  c: Comentario; esMio: boolean; respuestas: Comentario[]; enHilo: boolean;
+  /* Seguido de otro de la misma persona (menos de 2 minutos): va pegado, sin foto ni nombre. */
+  seguido?: boolean;
+  onAbrirHilo?: () => void;
 }) {
+  const yo = useUsuarioActual();
+  const [emojis, setEmojis] = useState<DOMRect | null>(null);
   const quienes = [...new Map(respuestas.map((r) => [r.autor, r] as const)).values()].slice(-3);
   const ultima = respuestas.at(-1);
   /* Un mensaje con respuestas no se borra: dejaría el hilo sin su original. */
   const puedeBorrar = esMio && respuestas.length === 0;
+  const reaccionar = (emoji: string) => acciones.reaccionar(c.id, emoji, yo.nombre, yo.email ?? undefined);
   return (
-    <div className="chat__msj chatx-msj">
-      <Avatar nombre={c.autor} size={30} />
-      <div style={{ minWidth: 0, flex: 1 }}>
-        <div className="row" style={{ gap: 8 }}>
-          <span className="t-sm t-strong">{c.autor}</span>
-          <span className="t-sm t-subtle" title={fechaHora(c.creadoEn)}>{relativo(c.creadoEn)}</span>
-        </div>
-        {c.texto && <p className="chat__texto">{c.texto}</p>}
+    /* tabIndex -1: en el celular, tocar el mensaje le da el foco y así aparece su barra (no hay «pasar el mouse»). */
+    <article tabIndex={-1} className={`chatx-msj${seguido ? " chatx-msj--seguido" : ""}${emojis ? " chatx-msj--menu" : ""}`}>
+      <div className="chatx-msj__foto">{!seguido && <Avatar nombre={c.autor} size={32} />}</div>
+      <div className="chatx-msj__cuerpo">
+        {!seguido ? (
+          <div className="chatx-msj__cabeza">
+            <span className="chatx-msj__autor">{c.autor}</span>
+            <span className="chatx-msj__hora" title={fechaHora(c.creadoEn)}>{relativo(c.creadoEn)}</span>
+          </div>
+        ) : <span className="chatx-msj__hora chatx-msj__hora--al-lado" title={fechaHora(c.creadoEn)}>{fechaHora(c.creadoEn).slice(-5)}</span>}
+        {c.texto && <p className="chatx-msj__texto">{c.texto}</p>}
         {c.adjuntos?.length ? <Adjuntos lista={c.adjuntos} /> : null}
+        <Reacciones c={c} yoEmail={yo.email ?? undefined} yoNombre={yo.nombre} onReaccionar={reaccionar} />
         {!enHilo && respuestas.length > 0 && (
-          <button type="button" className="chatx-hilo-pie" onClick={onAbrirHilo} title="Ver el hilo">
-            <span className="chatx-hilo-pie__caras">{quienes.map((r) => <Avatar key={r.autor} nombre={r.autor} size={20} />)}</span>
-            <span className="chatx-hilo-pie__n">{respuestas.length} {respuestas.length === 1 ? "respuesta" : "respuestas"}</span>
-            {ultima && <span className="chatx-hilo-pie__cuando">Última {relativo(ultima.creadoEn)}</span>}
-          </button>
+          <div className="chatx-hilo-pie">
+            <span className="chatx-hilo-pie__curva" aria-hidden />
+            <button type="button" onClick={onAbrirHilo} title="Ver el hilo">
+              <span className="chatx-hilo-pie__caras">{quienes.map((r) => <Avatar key={r.autor} nombre={r.autor} size={22} />)}</span>
+              <span className="chatx-hilo-pie__n">{respuestas.length} {respuestas.length === 1 ? "respuesta" : "respuestas"}</span>
+              {ultima && <span className="chatx-hilo-pie__cuando">Última respuesta {relativo(ultima.creadoEn)}</span>}
+            </button>
+          </div>
         )}
       </div>
-      <div className="chatx-acciones" role="toolbar" aria-label="Acciones del mensaje">
+      <div className="chatx-barra-msj" role="toolbar" aria-label="Acciones del mensaje">
+        {REACCIONES_RAPIDAS.map((e) => (
+          <button key={e} type="button" className="chatx-barra-msj__emoji" onClick={() => reaccionar(e)} aria-label={`Reaccionar con ${e}`} data-tip={`Reaccionar con ${e}`}>{e}</button>
+        ))}
+        <button type="button" onClick={(ev) => { const r = ev.currentTarget.getBoundingClientRect(); setEmojis((x) => (x ? null : r)); }} aria-label="Más reacciones" data-tip="Más reacciones" aria-expanded={Boolean(emojis)}>
+          <Smile size={17} />
+        </button>
+        <span className="chatx-barra-msj__div" aria-hidden />
         {!enHilo && onAbrirHilo && (
-          <button type="button" onClick={onAbrirHilo} aria-label="Responder en hilo" title="Responder en hilo"><MessageSquareReply size={15} /></button>
+          <button type="button" onClick={onAbrirHilo} aria-label="Responder en hilo" data-tip="Responder en hilo"><MessageSquareReply size={17} /></button>
         )}
         {puedeBorrar && (
-          <button type="button" onClick={() => acciones.borrarComentario(c.id)} aria-label="Borrar mi mensaje" title="Borrar"><Trash2 size={14} /></button>
+          <button type="button" onClick={() => acciones.borrarComentario(c.id)} aria-label="Borrar mi mensaje" data-tip="Borrar"><Trash2 size={16} /></button>
         )}
       </div>
-    </div>
+      {emojis && <ElegirEmoji ancla={emojis} onElegir={(e) => { reaccionar(e); setEmojis(null); }} onCerrar={() => setEmojis(null)} />}
+    </article>
   );
+}
+
+/* Mensajes seguidos de la misma persona (menos de 2 minutos y sin hilo en el de arriba) van pegados, como en Blue OS. */
+const DOS_MINUTOS = 2 * 60 * 1000;
+function esSeguido(anterior: Comentario | undefined, c: Comentario, conHilo: boolean): boolean {
+  return Boolean(anterior && !conHilo && anterior.autor === c.autor && +new Date(c.creadoEn) - +new Date(anterior.creadoEn) < DOS_MINUTOS);
 }
 
 /* ---------- El chat ---------- */
@@ -576,15 +740,16 @@ export function ChatEquipo({ contactoId, comentarios, titulo = "Chat del equipo"
         <div className="chatx-cuerpo">
           <section className="chatx-conversacion" aria-label="Conversación">
             {/* Los mensajes scrollean adentro, como en cualquier chat: la caja para escribir queda abajo. */}
-            <div className="chat__lista lista-scroll" role="log" aria-label="Mensajes del equipo">
+            <div className="chat__lista lista-scroll chatx-lista" role="log" aria-label="Mensajes del equipo">
               {raices.length === 0 ? (
                 <Empty
                   icono={<MessageSquare size={22} />}
                   titulo="Todavía nadie escribió"
                   texto="Lo que el equipo anote acá lo ve cualquiera que abra esta ficha: cómo fue la llamada, qué pidió, por qué se atrasó. También se pueden mandar fotos, audios y archivos, y responder en hilo."
                 />
-              ) : raices.map((c) => (
-                <Mensaje key={c.id} c={c} esMio={esMio(c)} respuestas={respuestasDe.get(c.id) ?? []} enHilo={false} onAbrirHilo={() => setHilo(c.id)} />
+              ) : raices.map((c, i) => (
+                <Mensaje key={c.id} c={c} esMio={esMio(c)} respuestas={respuestasDe.get(c.id) ?? []} enHilo={false} onAbrirHilo={() => setHilo(c.id)}
+                  seguido={esSeguido(raices[i - 1], c, (respuestasDe.get(raices[i - 1]?.id ?? "")?.length ?? 0) > 0)} />
               ))}
               <div ref={fin} />
             </div>
@@ -598,10 +763,10 @@ export function ChatEquipo({ contactoId, comentarios, titulo = "Chat del equipo"
                 <span className="chatx-cabeza__tit">Hilo{delHilo.length > 0 && <span className="t-subtle t-num"> · {delHilo.length} {delHilo.length === 1 ? "respuesta" : "respuestas"}</span>}</span>
                 <button type="button" className="chatx-boton chatx-hilo__cerrar" onClick={() => setHilo(null)} aria-label="Cerrar el hilo" title="Cerrar"><X size={16} /></button>
               </div>
-              <div className="chat__lista lista-scroll chatx-hilo__lista" role="log" aria-label="Respuestas del hilo">
+              <div className="chat__lista lista-scroll chatx-lista chatx-hilo__lista" role="log" aria-label="Respuestas del hilo">
                 <Mensaje c={original} esMio={esMio(original)} respuestas={delHilo} enHilo />
                 <div className="chatx-hilo__separador"><span>{delHilo.length ? `${delHilo.length} ${delHilo.length === 1 ? "respuesta" : "respuestas"}` : "Todavía nadie respondió"}</span></div>
-                {delHilo.map((r) => <Mensaje key={r.id} c={r} esMio={esMio(r)} respuestas={[]} enHilo />)}
+                {delHilo.map((r, i) => <Mensaje key={r.id} c={r} esMio={esMio(r)} respuestas={[]} enHilo seguido={i > 0 && esSeguido(delHilo[i - 1], r, false)} />)}
                 <div ref={finHilo} />
               </div>
               <Caja key={original.id} contactoId={contactoId} puerta={cajaHilo} respondeA={original.id} enfocar />

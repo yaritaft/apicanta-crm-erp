@@ -841,6 +841,16 @@ export interface Comentario {
   adjuntos?: Adjunto[];
   /* Si es una respuesta en el hilo de otro mensaje: el id de ese mensaje (como en Blue OS y Slack). Columna `respondeA`. */
   respondeA?: ID;
+  /* Las reacciones con emoji: una por persona y emoji. Columna `reacciones` (jsonb). */
+  reacciones?: Reaccion[];
+}
+
+export interface Reaccion {
+  emoji: string;
+  /* El nombre de quien reaccionó, para el cartelito «Lili y Yari reaccionaron con 👍». */
+  quien: string;
+  /* Su mail, si lo hay: es lo que dice si la reacción es mía (dos personas pueden llamarse igual). */
+  email?: string;
 }
 
 /* Un archivo del chat del equipo. En la nube, `ruta` es su lugar en el bucket privado `chat-equipo` (se ve con una URL
