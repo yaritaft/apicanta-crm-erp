@@ -13,7 +13,9 @@ import { useUsuarioActual } from "@/lib/usuario";
 import {
   ADJUNTOS_POR_MENSAJE, descartarAdjunto, duracionLegible, normalizarPicos, problemaDeAdjunto, subirAdjunto, tamanioLegible, tipoDeArchivo, urlDeAdjunto,
 } from "@/lib/adjuntos-chat";
-import { claveDe, contextoDeEntrega, entregaCon, resumenDeMensaje, type DetalleEntrega } from "@/lib/chat-equipo";
+import {
+  candidatosDeMencion, claveDe, contextoDeEntrega, entregaCon, mencionEnCurso, partesConMenciones, ponerMencion, resumenDeMensaje, type DetalleEntrega,
+} from "@/lib/chat-equipo";
 import { fotoDe, mapaDeFotos } from "@/lib/fotos-perfil";
 import type { Adjunto, ChatLectura, Comentario } from "@/lib/types";
 import "./chat.css";
@@ -445,6 +447,21 @@ function Caja({ contactoId, puerta, respondeA, enfocar, cita, onSacarCita }: {
   const [mandandoNota, setMandandoNota] = useState(false);
   const area = useRef<HTMLTextAreaElement>(null);
   const elegir = useRef<HTMLInputElement>(null);
+  /* La mención que se está escribiendo («@li…») y cuál de las opciones está marcada. */
+  const nombres = useContext(NombresCtx);
+  const [mencion, setMencion] = useState<{ desde: number; busca: string; cursor: number; marcada: number } | null>(null);
+  const opcionesMencion = useMemo(() => (mencion ? candidatosDeMencion(nombres, mencion.busca) : []), [mencion, nombres]);
+  const mirarMencion = (el: HTMLTextAreaElement) => {
+    const m = mencionEnCurso(el.value, el.selectionStart ?? el.value.length);
+    setMencion(m ? { ...m, cursor: el.selectionStart ?? el.value.length, marcada: 0 } : null);
+  };
+  const elegirMencion = (nombre: string) => {
+    if (!mencion) return;
+    const r = ponerMencion(texto, mencion.desde, mencion.cursor, nombre);
+    setTexto(r.texto);
+    setMencion(null);
+    requestAnimationFrame(() => { const el = area.current; if (el) { el.focus(); el.setSelectionRange(r.cursor, r.cursor); } });
+  };
   const grabadora = useGrabadora((msg) => toast(msg, "err"));
 
   /* La caja crece con el texto, hasta 8 renglones. */
@@ -595,19 +612,44 @@ function Caja({ contactoId, puerta, respondeA, enfocar, cita, onSacarCita }: {
       <textarea
         ref={area} value={texto} rows={1} autoFocus={enfocar} aria-label={respondeA ? "Respuesta en el hilo" : "Mensaje para el equipo"}
         placeholder={respondeA ? "Responder en el hilo…" : `Escribí al equipo, ${yo.nombre.split(" ")[0]}…`}
-        onChange={(ev) => setTexto(ev.target.value)}
-        onKeyDown={(ev) => { if (ev.key === "Enter" && !ev.shiftKey && !ev.nativeEvent.isComposing) { ev.preventDefault(); mandar(); } }}
+        onChange={(ev) => { setTexto(ev.target.value); mirarMencion(ev.target); }}
+        onClick={(ev) => mirarMencion(ev.currentTarget)}
+        onBlur={() => window.setTimeout(() => setMencion(null), 150)}
+        onKeyDown={(ev) => {
+          /* Con el menú de @ abierto, las flechas eligen, Enter o Tab ponen el nombre y Esc lo cierra (sin cerrar la ficha). */
+          if (mencion && opcionesMencion.length) {
+            if (ev.key === "ArrowDown" || ev.key === "ArrowUp") {
+              ev.preventDefault();
+              const n = opcionesMencion.length;
+              setMencion({ ...mencion, marcada: (mencion.marcada + (ev.key === "ArrowDown" ? 1 : n - 1)) % n });
+              return;
+            }
+            if ((ev.key === "Enter" && !ev.shiftKey) || ev.key === "Tab") { ev.preventDefault(); elegirMencion(opcionesMencion[mencion.marcada] ?? opcionesMencion[0]); return; }
+            if (ev.key === "Escape") { ev.preventDefault(); ev.stopPropagation(); setMencion(null); return; }
+          }
+          if (ev.key === "Enter" && !ev.shiftKey && !ev.nativeEvent.isComposing) { ev.preventDefault(); mandar(); }
+        }}
         onPaste={(ev) => {
           const archivos = Array.from(ev.clipboardData.files);
           if (archivos.length) { ev.preventDefault(); agregar(archivos); }
         }}
       />
+      {mencion && opcionesMencion.length > 0 && (
+        <div className="chatx-menciones" role="listbox" aria-label="Mencionar a alguien del equipo">
+          {opcionesMencion.map((n, i) => (
+            <button key={n} type="button" role="option" aria-selected={i === mencion.marcada} className="chatx-menciones__op"
+              onMouseDown={(ev) => { ev.preventDefault(); elegirMencion(n); }}>
+              <Avatar nombre={n} size={22} /><span className="truncate">{n}</span>
+            </button>
+          ))}
+        </div>
+      )}
       <div className="chatx-barra">
         <button type="button" className="chatx-boton" onClick={() => elegir.current?.click()} aria-label="Adjuntar fotos, videos o archivos" title="Adjuntar (también podés pegar o soltar)"><Paperclip size={17} /></button>
         <button type="button" className="chatx-boton" onClick={grabadora.empezar} aria-label="Grabar una nota de voz"
           title={sumaAlMensaje ? "Grabar una nota de voz (se suma a este mensaje)" : "Grabar una nota de voz"}><Mic size={17} /></button>
         <input ref={elegir} type="file" multiple hidden onChange={(ev) => { agregar(Array.from(ev.target.files ?? [])); ev.target.value = ""; }} />
-        <span className="chatx-ayuda">Enter manda · Shift+Enter, otro renglón</span>
+        <span className="chatx-ayuda">Enter manda · Shift+Enter, otro renglón · @ para mencionar</span>
         <button type="button" className="chatx-enviar" onClick={mandar} disabled={!puedeMandar} aria-label="Mandar" title={subiendo ? "Esperá a que terminen de subir los archivos" : "Mandar"}>
           {subiendo ? <Loader2 size={17} className="chatx-gira" /> : <ArrowUp size={18} />}
         </button>
@@ -723,6 +765,16 @@ function soloEmojis(texto: string): boolean {
 }
 
 /* La foto de perfil de cada uno (lib/fotos-perfil.ts): la arma ChatEquipo una vez y la usan los mensajes, las caras de un hilo y quién leyó. */
+/* Los nombres del equipo, para mencionar con «@» y resaltar las menciones (reunión del 21/10). */
+const NombresCtx = createContext<string[]>([]);
+
+/** El texto de un mensaje con las menciones a gente del equipo resaltadas. */
+function TextoConMenciones({ texto }: { texto: string }) {
+  const nombres = useContext(NombresCtx);
+  const partes = useMemo(() => partesConMenciones(texto, nombres), [texto, nombres]);
+  return <>{partes.map((p, i) => (p.mencion ? <span key={i} className="chatx-mencion" title={p.mencion}>{p.texto}</span> : <React.Fragment key={i}>{p.texto}</React.Fragment>))}</>;
+}
+
 const FotosCtx = createContext<(email: string | null | undefined, nombre: string) => string | undefined>(() => undefined);
 
 /* ---------- La cita y los tildes ---------- */
@@ -852,7 +904,7 @@ function Mensaje({ c, esMio, respuestas, enHilo, seguido, onAbrirHilo, original,
         {original !== undefined && <Cita original={original} />}
         {/* Las fotos y los archivos arriba y el texto siempre al final, como en WhatsApp (pedido de Juan Cruz, 20/10). */}
         {c.adjuntos?.length ? <Adjuntos lista={c.adjuntos} /> : null}
-        {c.texto && <p className={`chatx-msj__texto${soloEmojis(c.texto) ? " chatx-msj__texto--emoji" : ""}`}>{c.texto}</p>}
+        {c.texto && <p className={`chatx-msj__texto${soloEmojis(c.texto) ? " chatx-msj__texto--emoji" : ""}`}><TextoConMenciones texto={c.texto} /></p>}
         {entrega && <Tildes d={entrega} />}
         <Reacciones c={c} yoEmail={yo.email ?? undefined} yoNombre={yo.nombre} onReaccionar={reaccionar} />
         {!enHilo && respuestas.length > 0 && (
@@ -903,6 +955,8 @@ export function ChatEquipo({ contactoId, comentarios: llegados, titulo = "Chat d
   const estado = useEstado();
   const fotos = useMemo(() => mapaDeFotos(estado.fotosPerfil, estado.equipo), [estado.fotosPerfil, estado.equipo]);
   const buscarFoto = useCallback((email: string | null | undefined, nombre: string) => fotoDe(fotos, email, nombre), [fotos]);
+  const nombresEquipo = useMemo(() => [...new Set(estado.equipo.filter((m) => m.activo !== false && m.nombre?.trim()).map((m) => m.nombre.trim()))]
+    .sort((a, b) => a.localeCompare(b, "es")), [estado.equipo]);
   /* Re-dibuja cuando la cola termina de mandar: así el reloj pasa a tilde. */
   const sync = useSync();
   const fin = useRef<HTMLDivElement>(null);
@@ -979,6 +1033,7 @@ export function ChatEquipo({ contactoId, comentarios: llegados, titulo = "Chat d
   };
 
   return (
+    <NombresCtx.Provider value={nombresEquipo}>
     <FotosCtx.Provider value={buscarFoto}>
       <div
         className={`chat${hilo ? " chat--con-hilo" : ""}${soltando ? " chat--soltando" : ""}`}
@@ -1039,5 +1094,6 @@ export function ChatEquipo({ contactoId, comentarios: llegados, titulo = "Chat d
         {soltando && <div className="chatx-soltar" aria-hidden><Paperclip size={20} />Soltá para adjuntar</div>}
       </div>
     </FotosCtx.Provider>
+    </NombresCtx.Provider>
   );
 }

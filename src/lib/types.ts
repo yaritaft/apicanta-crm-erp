@@ -317,6 +317,19 @@ export interface Reporte {
    en `alumnos`) para que un cambio de etapa del pipeline, que guarda la fila
    entera del alumno, no pise lo que cargó Customer Success. */
 
+/** Una sesión 1 a 1 que tomó un alumno, con quién, qué se habló y dónde quedó la grabación. */
+export interface SesionUnoAUno {
+  id: ID;
+  /* El día (aaaa-mm-dd). */
+  fecha: string;
+  /* «Yari» o «Lili» (o quien sea). */
+  con: string;
+  notas: string;
+  grabacion: string;
+  creadoEn: string;
+  creadoPor: string;
+}
+
 export interface SeguimientoAlumno {
   /* "seg_<alumnoId>": un solo seguimiento por alumno, con un id que sale del
      alumno, así dos personas que lo abren a la vez escriben la misma fila. */
@@ -365,6 +378,8 @@ export interface SeguimientoAlumno {
   fechaEgreso: string | null;
   /* 0, 1, 2 o 3 sesiones con el mentor, según lo acordado con el closer. */
   sesionesMentor: number | null;
+  /* Las sesiones 1 a 1 que tomó: las del contrato con Yari (los «bonos») y las de acompañamiento con Lili (reunión del 21/10). */
+  sesionesUnoAUno?: SesionUnoAUno[];
   contactoInicial: string | null;
   contactoSemana: string | null;
   /* completos, downsell o sin acceso. */

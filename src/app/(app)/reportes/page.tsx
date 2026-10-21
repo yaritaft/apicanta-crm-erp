@@ -3,7 +3,8 @@
 import React, { useMemo } from "react";
 import Link from "next/link";
 import { AlertTriangle, Check, ClipboardList, Clock, Download, Info, Search, X } from "lucide-react";
-import { PageHead } from "@/components/shell/PageHead";
+import { useAbrirFicha } from "@/components/ficha/abrir";
+import { EnlaceDeReporte } from "@/components/cs/EnlaceDeReporte";
 import { Ayuda, Badge, Bar, Button, Card, CardHead, Chip, Empty, Input, Persona, StatCard, Tabs, Tag } from "@/components/ui/ui";
 import { AreaChart, BarChart } from "@/components/charts/charts";
 import { Columna, DataTable } from "@/components/ui/DataTable";
@@ -22,7 +23,7 @@ import {
 import { fechaLarga, num, pct } from "@/lib/format";
 import type { EstadoReporte, Reporte } from "@/lib/types";
 
-type Vista = "dashboard" | "tabla";
+type Vista = "dashboard" | "tabla" | "alumnos";
 type Metrica = "horas" | "postulaciones" | "entrevistas";
 
 const ETIQUETA: Record<EstadoReporte, { texto: string; variante: "success" | "accent" | "danger" | "neutral" }> = {
@@ -84,7 +85,7 @@ export default function Reportes() {
 
   const [rango, setRango] = useRangoURL("mes");
   const [enURL, setEnURL] = useParamsURL(VISTA_REPORTES);
-  const vista: Vista = enURL.seccion === "tabla" || enURL.vista === "tabla" ? "tabla" : "dashboard";
+  const vista: Vista = enURL.seccion === "tabla" || enURL.vista === "tabla" ? "tabla" : enURL.seccion === "alumnos" ? "alumnos" : "dashboard";
   const cambiarVista = (v: Vista) => setEnURL({ seccion: v }, enURL.vista === "tabla" ? { vista: null } : {});
   const [busca, setBusca] = useBusquedaURL("q", ["pag"]);
   const filtro: "todos" | EstadoReporte = ESTADOS.includes(enURL.estado as EstadoReporte) ? (enURL.estado as EstadoReporte) : "todos";
@@ -184,6 +185,24 @@ export default function Reportes() {
          semana, quedan en orden alfabético. */
       .sort((a, b) => a.alumno.nombre.localeCompare(b.alumno.nombre, "es"));
   }, [filas, filtro, busca]);
+
+  /* «Por alumno» (reunión del 21/10): cada alumno que debe el formulario, cuándo mandó el último y su link para pasárselo. */
+  const abrirFicha = useAbrirFicha();
+  const porAlumno = useMemo(() => {
+    const t = normal(busca.trim());
+    const ultimo = new Map<string, string>();
+    for (const r of e.reportes) if (r.estado === "completado" && r.semanaDel > (ultimo.get(r.alumnoId) ?? "")) ultimo.set(r.alumnoId, r.semanaDel);
+    return e.alumnos
+      .filter((a) => (a.estado === "activo" || a.estado === "pausado") && (!t || normal(a.nombre).includes(t) || normal(a.email ?? "").includes(t)))
+      .map((a) => ({ id: a.id, alumno: a, ultimo: ultimo.get(a.id) ?? "" }))
+      .sort((x, y) => x.alumno.nombre.localeCompare(y.alumno.nombre, "es"));
+  }, [e.alumnos, e.reportes, busca]);
+  const columnasAlumnos: Columna<(typeof porAlumno)[number]>[] = [
+    { clave: "alumno", titulo: "Alumno", tipo: "primary", celda: (f) => <Persona nombre={f.alumno.nombre} sub={f.alumno.email || "Sin mail"} /> },
+    { clave: "plan", titulo: "Programa", celda: (f) => f.alumno.plan || "—" },
+    { clave: "ultimo", titulo: "Último formulario", celda: (f) => (f.ultimo ? `Semana del ${fechaLarga(f.ultimo)}` : <span className="t-subtle">Nunca</span>) },
+    { clave: "link", titulo: "Su link", celda: (f) => <EnlaceDeReporte compacto alumnoId={f.alumno.id} email={f.alumno.email ?? ""} /> },
+  ];
 
   function marcar(f: FilaReporte, estado: EstadoReporte) {
     if (f.estado === estado) return;
@@ -302,24 +321,23 @@ export default function Reportes() {
 
   return (
     <div className="stack-5">
-      <PageHead
-        titulo="Reportes"
-        sub="Cómo vienen los alumnos: quién reporta cada semana, cuánto estudia, a cuántos trabajos se postula y qué lo frena."
-        acciones={
-          <>
+      {/* Sin título grande: «Formularios de alumnos» ya está en la barra de la app (como Alumnos y Formularios). */}
+      <div className="toolbar" style={{ marginBottom: 0 }}>
+        <Tabs valor={vista} onChange={cambiarVista} opciones={[
+          { valor: "dashboard", texto: "Dashboard" },
+          { valor: "tabla", texto: `Tabla · ${num(total)}` },
+          { valor: "alumnos", texto: "Por alumno" },
+        ]} />
+        <span className="toolbar__fin">
+          {vista !== "alumnos" && (
             <DateRangePicker
               value={rango} minDate={primeraSemana} onApply={setRango}
               footerNota="Semanas que tocan el período · hora de Argentina"
             />
-            <CopiarLink sm={false} />
-          </>
-        }
-      />
-
-      <Tabs valor={vista} onChange={cambiarVista} opciones={[
-        { valor: "dashboard", texto: "Dashboard" },
-        { valor: "tabla", texto: `Tabla · ${num(total)}` },
-      ]} />
+          )}
+          <CopiarLink />
+        </span>
+      </div>
 
       {vista === "dashboard" && (
         <div className="stack-4">
@@ -498,6 +516,24 @@ export default function Reportes() {
                     : undefined}
                 />
               }
+            />
+          </Card>
+        </div>
+      )}
+
+      {vista === "alumnos" && (
+        <div className="stack-4">
+          <div className="rep-barra">
+            <div className="rep-barra__buscar">
+              <Input icono={<Search size={16} />} value={busca} onChange={(ev) => setBusca(ev.target.value)} placeholder="Buscar por alumno o mail" aria-label="Buscar por alumno" />
+            </div>
+            <span className="t-sm t-subtle">Cada alumno tiene un link de por vida: se le pasa una vez y lo completa todas las semanas.</span>
+          </div>
+          <Card style={{ padding: 0 }}>
+            <DataTable
+              filas={porAlumno} columnas={columnasAlumnos} alto={620} porPagina={50}
+              onFila={(f) => abrirFicha(f.alumno.id, "servicio", { hoja: "reportes" })} etiquetaFila={(f) => `Ver los formularios de ${f.alumno.nombre}`}
+              vacio={<Empty icono={<ClipboardList size={22} />} titulo={busca ? "Nadie coincide" : "No hay alumnos activos"} texto={busca ? "Probá con otro nombre o mail." : "Los alumnos activos o en pausa deben el formulario semanal."} />}
             />
           </Card>
         </div>

@@ -55,7 +55,8 @@ export const NAV: GrupoNav[] = [
       /* Es una vista de Alumnos, no otra pantalla: el Shell marca el item más
          específico, así que acá se prende éste y no los dos. */
       { href: "/alumnos?seccion=pipeline", texto: "Pipeline de servicio", icono: SquareKanban, ayuda: "Arrastrá alumnos entre las etapas del servicio" },
-      { href: "/reportes", texto: "Reportes", icono: ClipboardList, ayuda: "Dashboard y tabla de los reportes de alumnos" },
+      /* «Formularios» (reunión del 21/10), «de alumnos» para no confundirlo con Formularios de Crecimiento (los registros de la landing). */
+      { href: "/reportes", texto: "Formularios de alumnos", icono: ClipboardList, ayuda: "El formulario semanal de cada alumno: respuestas, quién lo completa y su link" },
       /* Customer Success (F2-09): la lista de a quién contactar hoy y la de Clientes del programa, con todo lo que lleva
          Lili. Son vistas de Alumnos; el nombre es «del programa» para no confundirla con Clientes, la de lo que pagaron. */
       { href: "/alumnos?seccion=hoy", texto: "A contactar hoy", icono: PhoneCall, ayuda: "Los alumnos a los que les toca el contacto de seguimiento, lo más vencido arriba" },

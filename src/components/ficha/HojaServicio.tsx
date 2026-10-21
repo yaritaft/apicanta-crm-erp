@@ -15,9 +15,12 @@ import { EditarAlumno, VentaDelAlumno } from "@/components/alumnos/Servicio";
 import { useGestos } from "@/components/alumnos/Seguimiento";
 import { contenidoCliente, useEdicionCliente } from "@/components/cs/edicionCliente";
 import { RespuestasDelReporte } from "@/components/cs/ReportesDelCliente";
+import { EnlaceDeReporte } from "@/components/cs/EnlaceDeReporte";
 import { useToast } from "@/components/ui/Toast";
 import { ChatEquipo } from "./ChatEquipo";
 import { BloqueServicio, FilaServicio } from "./FilaServicio";
+import { FormSesionUnoAUno } from "./FormSesionUnoAUno";
+import { resumenBonos } from "@/lib/bonos";
 import { FormTestimonioCs } from "@/components/cs/TestimoniosCs";
 import { FormResell } from "@/components/cs/ResellsCs";
 import { SOLAPAS_SERVICIO, useSolapaServicio, type SolapaServicio } from "./abrir";
@@ -37,7 +40,7 @@ import { INGRESOS_COMUNIDAD } from "@/lib/angelo";
 import { SI } from "@/lib/tabla-cs";
 import { fechaLarga, money } from "@/lib/format";
 import type { Persona } from "@/lib/persona";
-import type { Alumno, EstadoApp, IngresoComunidad, Resell, SeguimientoAlumno, Testimonio, Venta } from "@/lib/types";
+import type { Alumno, EstadoApp, IngresoComunidad, Resell, SeguimientoAlumno, SesionUnoAUno, Testimonio, Venta } from "@/lib/types";
 import "@/components/cs/cs.css";
 import "./hoja-servicio.css";
 
@@ -180,6 +183,7 @@ function HojaDeUnServicio({ e, p, f, venta, producto, conChat }: {
   /* Testimonio y resell se cargan y corrigen acá mismo, con los formularios de sus pantallas (Alumnos → Testimonios / Resells). */
   const [formTestimonio, setFormTestimonio] = useState<{ t?: Testimonio } | null>(null);
   const [formResell, setFormResell] = useState<Resell | null>(null);
+  const [formSesion, setFormSesion] = useState<{ s?: SesionUnoAUno; con?: string } | null>(null);
   const puedeTestimonio = puedeEditar(acceso, "testimonios");
   const puedeResell = puedeEditar(acceso, "resells");
   const alumno = f.alumno;
@@ -268,9 +272,12 @@ function HojaDeUnServicio({ e, p, f, venta, producto, conChat }: {
     { id: "accesos", texto: "Accesos" },
     { id: "datos", texto: "Datos" },
     { id: "seguimiento", texto: "Seguimiento" },
+    /* Bonos (reunión del 21/10): las sesiones 1 a 1 del contrato con Yari y las de Lili. */
+    { id: "bonos", texto: "Bonos", n: (f.seg.sesionesUnoAUno ?? []).length },
     { id: "testimonio", texto: "Testimonio", n: testimonios.length + resells.length },
     { id: "cv", texto: "CV" },
-    { id: "reportes", texto: "Reportes", n: reportes.length },
+    /* «Formularios» (reunión del 21/10): el formulario semanal del alumno, su link y todas sus respuestas. */
+    { id: "reportes", texto: "Formularios", n: reportes.length },
     { id: "historial", texto: "Historial" },
     ...(conChat ? [] : [{ id: "chat" as Solapa, texto: "Chat", n: p.comentarios.length }]),
   ];
@@ -475,6 +482,45 @@ function HojaDeUnServicio({ e, p, f, venta, producto, conChat }: {
         </>
       )}
 
+      {solapa === "bonos" && (() => {
+        const b = resumenBonos(f.seg, f.inicio, hoy);
+        const chip = b.incluidas === null ? { tono: "hs-chip--ambar", texto: "Sin cargar en el contrato" }
+          : b.incluidas === 0 ? { tono: "", texto: "El contrato no incluye" }
+          : b.vencidas ? { tono: "hs-chip--rojo", texto: `Vencieron ${b.quedan} sin tomar` }
+          : { tono: b.quedan ? "hs-chip--ok" : "", texto: b.quedan ? `Le ${b.quedan === 1 ? "queda" : "quedan"} ${b.quedan} de ${b.incluidas}` : `Tomó las ${b.incluidas}` };
+        const sesion = (s: SesionUnoAUno) => (
+          <FilaServicio key={s.id} icono={<CalendarCheck size={15} />} rotulo={formatoDia(s.fecha, hoy)} detalle={s.notas || undefined}>
+            {s.grabacion ? <a className="link t-sm" href={s.grabacion} target="_blank" rel="noopener noreferrer">Grabación</a> : <span className="hs-guion">Sin grabación</span>}
+            {puede && <Button sm variante="ghost" icono={<Pencil size={13} />} onClick={() => setFormSesion({ s })} aria-label={`Corregir la sesión del ${formatoDia(s.fecha, hoy)}`}>Editar</Button>}
+          </FilaServicio>
+        );
+        return (
+          <>
+            <BloqueServicio titulo="Sesiones 1 a 1 con Yari" extra={<span className={`hs-chip ${chip.tono}`}>{chip.texto}</span>}>
+              {dato("mentor", false)}
+              <FilaServicio icono={<CalendarClock size={15} />} rotulo="Se toman hasta" detalle="Dentro de los primeros 3 meses del programa; después se pierden">
+                {b.vencen ? <span className={`t-num${b.vencidas ? " hs-rojo" : ""}`}>{formatoDia(b.vencen, hoy)}</span> : <span className="hs-guion">Falta la fecha de inicio</span>}
+              </FilaServicio>
+              {b.conYari.map(sesion)}
+              {puede && (
+                <div className="hs-pie-bloque">
+                  <Button sm variante="secondary" icono={<Plus size={14} />} onClick={() => setFormSesion({ con: "Yari" })}>Anotar sesión con Yari</Button>
+                </div>
+              )}
+            </BloqueServicio>
+            <BloqueServicio titulo="Sesiones con Lili" extra={b.conOtros.length ? <span className="hs-chip">{b.conOtros.length} {b.conOtros.length === 1 ? "sesión" : "sesiones"}</span> : undefined}>
+              {b.conOtros.length === 0 && <p className="hs-nada">Todavía no tuvo. Se anotan cuando hace falta un acompañamiento especial.</p>}
+              {b.conOtros.map(sesion)}
+              {puede && (
+                <div className="hs-pie-bloque">
+                  <Button sm variante="secondary" icono={<Plus size={14} />} onClick={() => setFormSesion({ con: "Lili" })}>Anotar sesión con Lili</Button>
+                </div>
+              )}
+            </BloqueServicio>
+          </>
+        );
+      })()}
+
       {solapa === "testimonio" && (
         <>
           {testimonios.length === 0 && (
@@ -554,10 +600,17 @@ function HojaDeUnServicio({ e, p, f, venta, producto, conChat }: {
       )}
 
       {solapa === "reportes" && (
-        <Bloque titulo={`Reportes semanales (${reportes.length})`}>
+        <BloqueServicio titulo="Su link">
+          <div className="hs-enlace">
+            <EnlaceDeReporte alumnoId={alumno.id} email={alumno.email} />
+          </div>
+        </BloqueServicio>
+      )}
+      {solapa === "reportes" && (
+        <Bloque titulo={`Formularios semanales que mandó (${reportes.length})`}>
           {reportes.length === 0 ? (
-            <p className="hs-nada">Todavía no mandó ningún reporte.</p>
-          ) : reportes.slice(0, 10).map((r) => (
+            <p className="hs-nada">Todavía no mandó ningún formulario. Pasale su link: es el mismo todas las semanas.</p>
+          ) : reportes.map((r) => (
             <div key={r.id} className="hs-reporte">
               <div className="row t-sm" style={{ gap: 8 }}>
                 <span>Semana del {fechaLarga(r.semanaDel)}</span>
@@ -578,6 +631,7 @@ function HojaDeUnServicio({ e, p, f, venta, producto, conChat }: {
 
       {formTestimonio && <FormTestimonioCs testimonio={formTestimonio.t} alumnoId={alumno.id} onCerrar={() => setFormTestimonio(null)} />}
       {formResell && <FormResell resell={formResell} onCerrar={() => setFormResell(null)} />}
+      {formSesion && <FormSesionUnoAUno alumnoId={alumno.id} nombre={alumno.nombre} sesion={formSesion.s} con={formSesion.con} onCerrar={() => setFormSesion(null)} />}
       {editarAlumno && (
         <EditarAlumno form={editarAlumno} setForm={setEditarAlumno} onGuardar={() => {
           const { id, ...cambios } = editarAlumno;

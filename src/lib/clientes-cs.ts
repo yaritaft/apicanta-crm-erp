@@ -9,7 +9,7 @@ import {
 } from "./seguimiento";
 import { crearMotor, numeroComoValor, siNo, SI, NO, uno, varios, type ColumnaCs, type OrdenCs } from "./tabla-cs";
 import type {
-  Alumno, ConfigSeguimiento, Contacto, EstadoApp, ID, ListasCs, Resell, SeguimientoAlumno, Testimonio, Venta,
+  Alumno, ConfigSeguimiento, Contacto, EstadoApp, ID, ListasCs, Resell, SeguimientoAlumno, SesionUnoAUno, Testimonio, Venta,
 } from "./types";
 
 /* ==================================================================
@@ -92,6 +92,16 @@ export function aNumero(x: unknown): number | null {
 }
 const aDia = (x: unknown): string | null => (typeof x === "string" && /^\d{4}-\d{2}-\d{2}/.test(x) ? x.slice(0, 10) : null);
 const aBool = (x: unknown): boolean => x === true || x === "true" || x === "t" || x === 1;
+/* Las sesiones 1 a 1 como vinieron de la base (jsonb): sólo las que tienen día; lo demás, texto limpio. */
+function sesionesNormales(x: unknown): SesionUnoAUno[] {
+  if (!Array.isArray(x)) return [];
+  return x.filter((s): s is Record<string, unknown> => Boolean(s) && typeof s === "object" && typeof (s as { fecha?: unknown }).fecha === "string")
+    .map((s) => ({
+      id: String(s.id ?? ""), fecha: String(s.fecha).slice(0, 10), con: String(s.con ?? ""), notas: String(s.notas ?? ""),
+      grabacion: String(s.grabacion ?? ""), creadoEn: String(s.creadoEn ?? ""), creadoPor: String(s.creadoPor ?? ""),
+    }));
+}
+
 function aListaDeTextos(x: unknown): string[] {
   let v = x;
   if (typeof v === "string" && v.trim().startsWith("[")) { try { v = JSON.parse(v); } catch { v = []; } }
@@ -120,6 +130,7 @@ export function seguimientoCompleto(
     telefono: textoLimpio(m.telefono), stack: textoLimpio(m.stack), dni: textoLimpio(m.dni), domicilio: textoLimpio(m.domicilio),
     programas: aListaDeTextos(m.programas), planDePago: textoLimpio(m.planDePago),
     duracionMeses: aNumero(m.duracionMeses), fechaEgreso: aDia(m.fechaEgreso), sesionesMentor: aNumero(m.sesionesMentor),
+    sesionesUnoAUno: sesionesNormales(m.sesionesUnoAUno),
     contactoInicial: aDia(m.contactoInicial), contactoSemana: aDia(m.contactoSemana),
     acceso: textoLimpio(m.acceso), followUp: textoLimpio(m.followUp), garantia: textoLimpio(m.garantia),
     accesoWhatsapp: aBool(m.accesoWhatsapp), accesoZoom: aBool(m.accesoZoom), accesoWibo: aBool(m.accesoWibo),

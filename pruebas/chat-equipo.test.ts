@@ -1,6 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { claveDe, entregaDe, lecturaAlLeer, participantes, recibidosAlLlegar, resumenDeMensaje } from "@/lib/chat-equipo";
+import {
+  candidatosDeMencion, claveDe, entregaDe, lecturaAlLeer, mencionEnCurso, partesConMenciones, participantes, ponerMencion, recibidosAlLlegar,
+  resumenDeMensaje,
+} from "@/lib/chat-equipo";
 import { acciones } from "@/lib/store";
 import type { Adjunto, ChatLectura, Comentario, EstadoApp } from "@/lib/types";
 
@@ -116,4 +119,31 @@ test("lo que llega en vivo entra en orden, se suma a lo que estaba y saca lo bor
   assert.equal(ahora[1].reacciones?.length, 1);
   acciones.recibirComentarios([], ["com_vivo_viejo"]);
   assert.deepEqual(estado().comentarios.filter((c) => c.contactoId === "c_vivo_1").map((c) => c.id), [primero.id]);
+});
+
+/* ---------- Menciones (reunión del 21/10) ---------- */
+
+test("menciones: se detecta la que se está escribiendo y se cambia por el nombre completo", () => {
+  assert.deepEqual(mencionEnCurso("hola @li", 8), { desde: 5, busca: "li" });
+  assert.deepEqual(mencionEnCurso("@", 1), { desde: 0, busca: "" });
+  assert.equal(mencionEnCurso("mail@empresa.com", 16), null, "un mail no es una mención");
+  assert.equal(mencionEnCurso("hola @lili y", 12), null, "ya pasó el espacio");
+  const r = ponerMencion("hola @li ¿viste?", 5, 8, "Liliana Riveros");
+  assert.deepEqual(r, { texto: "hola @Liliana Riveros  ¿viste?", cursor: 22 });
+});
+
+test("menciones: se ofrecen los del equipo, primero los que empiezan con lo escrito (sin importar tildes)", () => {
+  const equipo = ["Aldana Ytzcovich", "Liliana Riveros", "Yari Taft", "Mariano Arias", "Valentín Abadía"];
+  assert.deepEqual(candidatosDeMencion(equipo, "li"), ["Liliana Riveros"]);
+  assert.deepEqual(candidatosDeMencion(equipo, "a").slice(0, 3), ["Aldana Ytzcovich", "Mariano Arias", "Valentín Abadía"]);
+  assert.deepEqual(candidatosDeMencion(equipo, "valen"), ["Valentín Abadía"]);
+  assert.equal(candidatosDeMencion(equipo, "").length, 5);
+});
+
+test("menciones: al mostrar el mensaje se marcan sólo los nombres del equipo, el más largo gana", () => {
+  const p = partesConMenciones("Hola @Liliana Riveros, ¿lo ves con @yari taft? Mandalo a juan@mail.com", ["Liliana Riveros", "Yari Taft", "Yari"]);
+  assert.deepEqual(p.filter((x) => x.mencion).map((x) => x.mencion), ["Liliana Riveros", "Yari Taft"]);
+  assert.equal(p.map((x) => x.texto).join(""), "Hola @Liliana Riveros, ¿lo ves con @yari taft? Mandalo a juan@mail.com", "no se pierde ni se cambia nada del texto");
+  assert.deepEqual(partesConMenciones("sin arroba", ["Yari"]), [{ texto: "sin arroba" }]);
+  assert.deepEqual(partesConMenciones("@Pedro no es del equipo", ["Yari"]), [{ texto: "@Pedro no es del equipo" }]);
 });

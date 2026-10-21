@@ -162,3 +162,51 @@ export function recibidosAlLlegar(comentarios: Comentario[], lecturas: ChatLectu
   }
   return cambios;
 }
+
+/* ---------- Las menciones (@Nombre) ----------
+   Reunión del 21/10: «que se puedan arrobar entre ustedes». Al escribir «@» se elige a alguien del equipo y queda
+   «@Nombre Apellido» en el texto; al mostrar el mensaje, esos nombres se resaltan. (Los avisos a quien mencionan van
+   con el sistema de notificaciones, que Juan Cruz habla con Yari.) */
+
+const sinTildesMencion = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+
+/** La mención que se está escribiendo justo antes del cursor («hola @li» → desde el «@», busca «li»), o null. */
+export function mencionEnCurso(texto: string, cursor: number): { desde: number; busca: string } | null {
+  const m = /(^|\s)@([\p{L}\p{N}._-]{0,30})$/u.exec(texto.slice(0, cursor));
+  return m ? { desde: cursor - m[2].length - 1, busca: m[2] } : null;
+}
+
+/** A quiénes ofrecer para una mención: los que empiezan con lo escrito primero, después los que lo contienen. */
+export function candidatosDeMencion(nombres: readonly string[], busca: string, max = 6): string[] {
+  const b = sinTildesMencion(busca.trim());
+  const unicos = [...new Set(nombres.map((n) => n.trim()).filter(Boolean))];
+  const empieza = unicos.filter((n) => sinTildesMencion(n).split(/\s+/).some((p) => p.startsWith(b)));
+  const contiene = unicos.filter((n) => !empieza.includes(n) && sinTildesMencion(n).includes(b));
+  return [...empieza, ...contiene].slice(0, max);
+}
+
+/** El texto con la mención en curso cambiada por «@Nombre » y dónde queda el cursor. */
+export function ponerMencion(texto: string, desde: number, cursor: number, nombre: string): { texto: string; cursor: number } {
+  const nuevo = `${texto.slice(0, desde)}@${nombre} ${texto.slice(cursor)}`;
+  return { texto: nuevo, cursor: desde + nombre.length + 2 };
+}
+
+/** El texto en partes, con las menciones de gente del equipo marcadas (el nombre más largo gana: «@Ana María» antes que «@Ana»). */
+export function partesConMenciones(texto: string, nombres: readonly string[]): { texto: string; mencion?: string }[] {
+  const lista = [...new Set(nombres.map((n) => n.trim()).filter(Boolean))].sort((a, b) => b.length - a.length);
+  if (!lista.length || !texto.includes("@")) return [{ texto }];
+  const escapar = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const re = new RegExp(`@(${lista.map(escapar).join("|")})(?![\\p{L}\\p{N}])`, "giu");
+  const out: { texto: string; mencion?: string }[] = [];
+  let ultimo = 0;
+  for (const m of texto.matchAll(re)) {
+    const i = m.index ?? 0;
+    if (i > 0 && !/\s|[(¿¡"']/.test(texto[i - 1])) continue;
+    if (i > ultimo) out.push({ texto: texto.slice(ultimo, i) });
+    const nombre = lista.find((n) => sinTildesMencion(n) === sinTildesMencion(m[1])) ?? m[1];
+    out.push({ texto: m[0], mencion: nombre });
+    ultimo = i + m[0].length;
+  }
+  if (ultimo < texto.length) out.push({ texto: texto.slice(ultimo) });
+  return out;
+}

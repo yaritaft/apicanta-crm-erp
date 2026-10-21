@@ -26,13 +26,15 @@ async function pedir(ruta: string, cuerpo: unknown): Promise<{ ok: boolean; stat
   return { ok: r.ok, status: r.status, json: (await r.json().catch(() => ({}))) as Record<string, unknown> };
 }
 
-export function EnlaceDeReporte({ alumnoId, email }: { alumnoId: string; email: string }) {
+/** `compacto`: un solo botón «Copiar link» (para una fila de tabla). */
+export function EnlaceDeReporte({ alumnoId, email, compacto = false }: { alumnoId: string; email: string; compacto?: boolean }) {
   const toast = useToast();
   const { acceso } = useAcceso();
   const [ocupado, setOcupado] = useState<"copiar" | "mail" | null>(null);
   const [aviso, setAviso] = useState<string | null>(null);
 
   if (!nube) {
+    if (compacto) return <span className="t-sm t-subtle">Sin nube</span>;
     return <p className="t-sm t-subtle" style={{ margin: 0 }}>El link de reporte con código necesita la nube: acá, en la demo, no se genera.</p>;
   }
   if (!puedeEditar(acceso, "alumnos")) return null;
@@ -62,6 +64,13 @@ export function EnlaceDeReporte({ alumnoId, email }: { alumnoId: string; email: 
       toast("No se pudo mandar el aviso. Probá de nuevo.", "err");
     } finally { setOcupado(null); }
   };
+
+  if (compacto) {
+    return (
+      <Button sm variante="ghost" icono={<Copy size={14} aria-hidden />} onClick={(ev) => { ev.stopPropagation(); void copiar(); }} cargando={ocupado === "copiar"}
+        title="Copia el mensaje con su link (el mismo de por vida) para pegarlo en su WhatsApp">Copiar link</Button>
+    );
+  }
 
   return (
     <div className="stack-2" style={{ marginTop: 8 }}>

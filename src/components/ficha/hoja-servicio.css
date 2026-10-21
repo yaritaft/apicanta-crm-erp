@@ -66,6 +66,14 @@
 .hs-fila__val > * { max-width: 100%; }
 .hs-editable { margin: 0 -10px 0 0; padding: 4px 10px; justify-content: flex-end; min-height: 34px; }
 .hs-editable.crm-t__editable--abierta { justify-content: flex-start; min-width: 240px; }
+/* El botón al pie de un bloque (anotar una sesión). */
+/* La fila de arriba ya trae su línea de abajo: el pie no suma otra. */
+.hs-pie-bloque { display: flex; justify-content: flex-end; padding: 10px 16px; }
+.hs-rojo { color: var(--danger); font-weight: 600; }
+
+/* El link del formulario semanal, adentro de su bloque. */
+.hs-enlace { padding: 6px 16px 14px; }
+
 /* Un texto largo (la situación previa, las notas del testimonio): abajo del rótulo, entero y alineado a la izquierda. */
 .hs-fila--texto { flex-wrap: wrap; row-gap: 6px; }
 .hs-fila--texto .hs-fila__rot { max-width: none; }
