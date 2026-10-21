@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { NAV } from "@/components/shell/nav";
 import { DE_UN_USO } from "./vistas-guardadas";
+import { diaGuardado, guardarDia, olvidarDia, PARAMS_DIA } from "./dia-recordado";
 
 /* ==================================================================
    Cada pantalla vuelve como se dejó.
@@ -40,7 +41,9 @@ for (const item of NAV.flatMap((g) => g.items)) {
 
 /* La cuenta del closer abre siempre en lo de hoy: «Mis llamadas» dice cuántas
    llamadas hay hoy, y no tiene que volver a lo último que se miró. */
-const SIN_RECORDAR = new Set(["/mis-llamadas", "/cerrar-el-dia", "/cargar-venta"]);
+const SIN_RECORDAR = new Set(["/cerrar-el-dia", "/cargar-venta"]);
+
+
 
 const claveDe = (ruta: string, q: URLSearchParams) =>
   [ruta, ...(DEL_MENU.get(ruta) ?? []).map((k) => `${k}=${q.get(k) ?? ""}`)].join("|");
@@ -59,6 +62,7 @@ function escribir(v: Record<string, string>) {
 /* Al salir: lo que vio este usuario no queda para el que entre después. */
 export function olvidarVistas() {
   try { localStorage.removeItem(CLAVE); } catch { /* modo privado */ }
+  olvidarDia();
 }
 
 /* Una pantalla se mudó (Finanzas → End of Day): lo último que se vio ahí ya no vale. */
@@ -111,6 +115,17 @@ export function useRecordarVistas(): (href: string) => string {
       }
     }
 
+    if (ruta === "/mis-llamadas") {
+      const entro = anterior.current !== ruta;
+      anterior.current = ruta;
+      if (PARAMS_DIA.some((k) => params.has(k))) guardarDia(params);
+      else if (entro) {
+        const dia = diaGuardado();
+        if (dia) { router.replace(`${ruta}?${dia}`, { scroll: false }); setVistas(leer()); return; }
+      } else olvidarDia();
+      setVistas(leer());
+      return;
+    }
     if (SIN_RECORDAR.has(ruta)) { anterior.current = ruta; setVistas(leer()); return; }
     const q = new URLSearchParams(params.toString());
     const propios = new URLSearchParams();

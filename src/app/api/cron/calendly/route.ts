@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { hayCalendly } from "@/lib/calendly";
 import { sincronizarCalendly } from "@/lib/calendly-sync";
+import { nubeServidor } from "@/lib/servidor";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -29,6 +30,15 @@ export async function GET(req: Request) {
   try {
     const r = await sincronizarCalendly({ atras: 2, adelante: 60, limite: 60 });
     console.log("[cron/calendly]", JSON.stringify(r));
+    /* Los resells repetidos (una llamada reprogramada deja dos agendas, un Excel importado puede repetir una) se unen solos. */
+    try {
+      const db = nubeServidor();
+      if (db) {
+        const u = await db.rpc("unir_resells_repetidos");
+        if (u.error) console.warn("[cron/calendly] resells repetidos:", u.error.message);
+        else if (Number(u.data) > 0) console.log("[cron/calendly] resells unidos:", u.data);
+      }
+    } catch (e) { console.warn("[cron/calendly] resells repetidos:", e instanceof Error ? e.message : e); }
     return NextResponse.json(r, { status: r.errores.length ? 207 : 200 });
   } catch (e) {
     const error = e instanceof Error ? e.message : "No se pudo sincronizar Calendly.";

@@ -78,18 +78,19 @@ export async function registrarResell(db: BaseDeResells, a: AgendaDeResell): Pro
       closer: a.closer, cancelada: false, origen: "calendly", actualizadoEn: a.ahora,
     };
 
-    /* Una reprogramación hereda lo cargado en la anterior (sólo la primera vez que entra la nueva). */
-    const viejoId = a.reprogramadaDe ? idResell(a.reprogramadaDe) : undefined;
-    if (viejoId && viejoId !== id) {
+    /* Una reprogramación hereda lo cargado en la anterior (sólo la primera vez que entra la nueva). La anterior se busca por su
+       LLAMADA y no por su id: una agenda importada del Airtable que se ató a su llamada tiene otro id («rs_imp_…») y, buscándola por
+       id, quedaba repetida (Mariano, 21/10: Marcos Aguilo, Nicolás González). */
+    if (a.reprogramadaDe && a.reprogramadaDe !== a.sesionId) {
       const ya = await t.select("id").eq("id", id).limit(1);
       if (!ya.error && (ya.data ?? []).length === 0) {
-        const v = await t.select(["id", ...DE_CUSTOMER_SUCCESS].join(",")).eq("id", viejoId).limit(1);
+        const v = await t.select(["id", ...DE_CUSTOMER_SUCCESS, "grabacion"].join(",")).eq("sesionId", a.reprogramadaDe).limit(1);
         const vieja = (v.data?.[0] ?? null) as Record<string, unknown> | null;
         if (!v.error && vieja) {
-          for (const k of DE_CUSTOMER_SUCCESS) if (vieja[k] !== undefined && vieja[k] !== null) fila[k] = vieja[k];
+          for (const k of [...DE_CUSTOMER_SUCCESS, "grabacion"]) if (vieja[k] !== undefined && vieja[k] !== null) fila[k] = vieja[k];
           const r = await t.upsert(fila, { defaultToNull: false });
           if (r.error) return { hecho: false, motivo: r.error.message };
-          await t.delete().eq("id", viejoId);
+          await t.delete().eq("id", String(vieja.id));
           return { hecho: true };
         }
       }

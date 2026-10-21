@@ -40,8 +40,8 @@ export const LISTAS_POR_DEFECTO: ListasCs = {
   estadosVideo: ["Pendiente de subir", "Subido a Drive", "No quiso grabar", "Subido a YouTube"],
   quienGraba: ["Yari", "Mariano"],
   resellsTestimonio: ["Pendiente", "Renueva", "No renueva", "Lo piensa"],
-  /* Los de «Estado» de la tabla «Agendas Resells» del Airtable (export del 09/10): se eligen varios a la vez («No quiere renovar» + «Outbording»). */
-  estadosResell: ["2da Agenda", "Upgrade a Hackear IA", "No quiere renovar", "Outbording", "Seguimiento", "Garantía Extendida", "Alumno vigente"],
+  /* Los de «Estado» de la tabla «Agendas Resells» del Airtable (export del 09/10) más «No responde» (Mariano, 21/10): se eligen varios a la vez («No quiere renovar» + «Outbording»). */
+  estadosResell: ["2da Agenda", "Upgrade a Hackear IA", "No quiere renovar", "Outbording", "Seguimiento", "Garantía Extendida", "Alumno vigente", "No responde"],
   estadosCv: [...ESTADOS_CV],
 };
 
@@ -156,7 +156,7 @@ export function resellNormal(r: Partial<Resell> & Pick<Resell, "id">): Resell {
     id: r.id, sesionId: r.sesionId ?? null, fechaHora: typeof r.fechaHora === "string" ? r.fechaHora : new Date().toISOString(),
     nombre: textoLimpio(r.nombre), email: textoLimpio(r.email), telefono: textoLimpio(r.telefono), closer: textoLimpio(r.closer),
     estado: textoLimpio(r.estado), cashCollect: aNumero(r.cashCollect), casoDeExito: aBool(r.casoDeExito),
-    notas: typeof r.notas === "string" ? r.notas : "", cancelada: aBool(r.cancelada),
+    notas: typeof r.notas === "string" ? r.notas : "", grabacion: textoLimpio(r.grabacion), cancelada: aBool(r.cancelada),
     origen: r.origen === "calendly" || r.origen === "importado" ? r.origen : "manual",
     creadoEn: r.creadoEn ?? new Date().toISOString(), actualizadoEn: r.actualizadoEn ?? new Date().toISOString(),
     actualizadoPor: textoLimpio(r.actualizadoPor),
@@ -708,6 +708,8 @@ export interface FilaResell {
   dia: string;
   /* «Agendada», «Cancelada» o lo que se cargó. */
   estado: string;
+  /* El link de la grabación de la llamada. */
+  grabacion: string;
   /* Si el mail es de un alumno de la app. */
   alumno?: Alumno;
 }
@@ -723,7 +725,9 @@ export function alternarEstadoResell(texto: string | null | undefined, estado: s
   return (hay.includes(estado) ? hay.filter((x) => x !== estado) : [...hay, estado]).join(", ");
 }
 
-export function filasResells(e: Pick<EstadoApp, "resells" | "alumnos">): FilaResell[] {
+export function filasResells(e: Pick<EstadoApp, "resells" | "alumnos"> & Partial<Pick<EstadoApp, "sesiones">>): FilaResell[] {
+  const grabacionDeSesion = new Map<string, string>();
+  for (const x of e.sesiones ?? []) if (x.grabacion) grabacionDeSesion.set(x.id, x.grabacion);
   const porMail = new Map<string, Alumno>();
   for (const a of e.alumnos) {
     const k = a.email.trim().toLowerCase();
@@ -734,12 +738,14 @@ export function filasResells(e: Pick<EstadoApp, "resells" | "alumnos">): FilaRes
     return {
       id: r.id, resell: r, dia: diaDeNegocio(r.fechaHora) || "",
       estado: r.estado || (r.cancelada ? "Cancelada" : "Agendada"),
+      /* La que cargaron a mano y, si no, la que trajo Fathom a la llamada. */
+      grabacion: r.grabacion || (r.sesionId ? grabacionDeSesion.get(r.sesionId) ?? "" : ""),
       alumno: r.email ? porMail.get(r.email.trim().toLowerCase()) : undefined,
     };
   });
 }
 
-export type ClaveResell = "fechaHora" | "nombre" | "email" | "telefono" | "closer" | "estado" | "cash" | "caso" | "notas";
+export type ClaveResell = "fechaHora" | "nombre" | "email" | "telefono" | "closer" | "estado" | "cash" | "caso" | "grabacion" | "notas";
 
 export const COLUMNAS_RESELLS: ColumnaCs<FilaResell, ClaveResell>[] = [
   { clave: "fechaHora", titulo: "Fecha y hora de agenda", grupo: "Agenda", valores: (f) => uno(f.dia), orden: (f) => f.resell.fechaHora, fecha: true, ancho: 170 },
@@ -750,7 +756,13 @@ export const COLUMNAS_RESELLS: ColumnaCs<FilaResell, ClaveResell>[] = [
   { clave: "estado", titulo: "Estado", grupo: "Resultado", valores: (f) => estadosDeResell(f.estado), ancho: 220 },
   { clave: "cash", titulo: "Cash Collect", grupo: "Resultado", valores: (f) => numeroComoValor(f.resell.cashCollect), orden: (f) => f.resell.cashCollect ?? "", numerica: true, ancho: 120 },
   { clave: "caso", titulo: "Caso de éxito", grupo: "Resultado", valores: (f) => siNo(f.resell.casoDeExito), ancho: 110 },
+  { clave: "grabacion", titulo: "Grabación", grupo: "Resultado", valores: (f) => [f.grabacion ? "Con grabación" : "Sin grabación"], texto: (f) => f.grabacion, ancho: 150 },
   { clave: "notas", titulo: "Notas", grupo: "Resultado", valores: (f) => [conTexto(f.resell.notas, "Con notas", "Sin notas")], texto: (f) => f.resell.notas, ancho: 260 },
+];
+
+/* Columnas que se sumaron después: quien ya guardó las suyas las recibe una sola vez (ColumnasConfig.useColumnas). */
+export const COLUMNAS_SUMADAS_RESELLS: { id: string; despuesDe: string; claves: string[] }[] = [
+  { id: "grabacion-2110", despuesDe: "caso", claves: ["grabacion"] },
 ];
 
 export const VISIBLES_RESELLS: ClaveResell[] = COLUMNAS_RESELLS.map((c) => c.clave);

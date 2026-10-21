@@ -1,5 +1,6 @@
 "use client";
 
+import { useAltoTabla } from "@/lib/useAltoTabla";
 import React, { useCallback, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { ArrowDown, ArrowRightLeft, ArrowUp, ClipboardCheck, ExternalLink, FileSpreadsheet, Pencil, Search, Star, X } from "lucide-react";
@@ -128,6 +129,7 @@ export function CrmTabla({ misLlamadas = false }: { misLlamadas?: boolean } = {}
     const ultimo = dias[dias.length - 1];
     return { min: dias[0] ?? null, max: ultimo && ultimo > hoy ? ultimo : hoy };
   }, [e.sesiones, hoy]);
+  const alto = useAltoTabla();
   const [rango, setRango] = useRangoURL(misLlamadas ? "hoy" : "mes", { futuro: true, limites });
 
   /* `ahora` al minuto: la fila que pasa de "Por venir" a "Sin cargar". */
@@ -442,7 +444,7 @@ export function CrmTabla({ misLlamadas = false }: { misLlamadas?: boolean } = {}
         ) : (
           <DataTable
             filas={filas}
-            columnas={columnas}
+            columnas={columnas} alto={alto}
             pagina={paginaDeURL(vista.pag) - 1} onPagina={(p) => setVista({ pag: String(p + 1) })}
             porPagina={50}
             vacio={

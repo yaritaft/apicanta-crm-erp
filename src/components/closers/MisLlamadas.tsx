@@ -9,6 +9,7 @@ import { useAcceso } from "@/lib/acceso";
 import { useUsuarioActual } from "@/lib/usuario";
 import { avisoDeCuenta, resumenDelDia } from "@/lib/cuenta-closer";
 import { esDelCloser } from "@/lib/eod";
+import { useEscribirURL } from "@/lib/useParamsURL";
 import type { FilaTabla } from "@/lib/crm-tabla";
 import "./closers.css";
 
@@ -32,6 +33,7 @@ export function AvisoMisLlamadas({ filas, hoy }: {
   const yo = useUsuarioActual();
   const { acceso } = useAcceso();
   const soloLoSuyo = Boolean(acceso?.soloLoSuyo);
+  const escribir = useEscribirURL();
 
   /* Un closer ve sólo lo suyo; quien ve todo y atiende llamadas, las que le tocan. */
   const mias = soloLoSuyo ? filas : yo.miembro ? filas.filter((f) => esDelCloser(f.sesion, yo.miembro!.nombre, e.equipo)) : filas;
@@ -75,6 +77,15 @@ export function AvisoMisLlamadas({ filas, hoy }: {
               dia.sinCargarHoy > 0 && `${pl(dia.sinCargarHoy, "ya pasó", "ya pasaron")} y falta cargar cómo ${dia.sinCargarHoy === 1 ? "terminó" : "terminaron"}`,
               dia.sinCargarAntes > 0 && `${pl(dia.sinCargarAntes, "llamada", "llamadas")} de días anteriores sin cargar`,
             ].filter(Boolean).join(" · ")}
+          {/* Mariano (21/10): «¿cómo descubro cuáles son las que faltan cargar?». Un clic: todas las fechas, sólo las sin cargar. */}
+          {pendientes > 0 && (
+            <>
+              {" · "}
+              <button type="button" className="link t-sm" onClick={() => escribir({ periodo: "max", desde: null, hasta: null, pendientes: "1", pag: null })}>
+                Ver cuáles son
+              </button>
+            </>
+          )}
         </span>
       </div>
       <Link href="/cerrar-el-dia" className="mis-ll__accion">

@@ -1,5 +1,6 @@
 "use client";
 
+import { useAltoTabla } from "@/lib/useAltoTabla";
 import React, { useCallback, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { ArrowDown, ArrowUp, FileSpreadsheet, Search, X } from "lucide-react";
@@ -39,6 +40,8 @@ export interface PropsTablaCs<F extends { id: string }, K extends string> {
   filas: F[];
   coincide: (f: F, q: string) => boolean;
   visiblesPorDefecto: readonly K[];
+  /* Columnas que se sumaron después a la vista de entrada (ColumnasSumadas): se le suman una vez a quien ya guardó las suyas. */
+  columnasSumadas?: { id: string; despuesDe: string; claves: string[] }[];
   ordenPorDefecto: OrdenCs<K>[];
   /* La columna que identifica la fila: va siempre primera, fija a la izquierda. */
   fija: K;
@@ -70,6 +73,7 @@ export function TablaCs<F extends { id: string }, K extends string>(p: PropsTabl
   const { motor, pantalla, filas, coincide, ordenPorDefecto, fija, fijaAntes, ordenValores, singular, plural } = p;
   const params = useSearchParams();
   const escribir = useEscribirURL();
+  const alto = useAltoTabla();
   const toast = useToast();
   const [q, setQ] = useBusquedaURL(motor.paramBusqueda, [motor.paramPagina]);
   const [bajando, setBajando] = useState(false);
@@ -96,7 +100,7 @@ export function TablaCs<F extends { id: string }, K extends string>(p: PropsTabl
     [motor, fija, fijaAntes],
   );
   const porDefecto = useMemo(() => [...p.visiblesPorDefecto] as string[], [p.visiblesPorDefecto]);
-  const cols = useColumnas(pantalla, defs, porDefecto);
+  const cols = useColumnas(pantalla, defs, porDefecto, undefined, p.columnasSumadas);
   const visibles = useMemo(() => cols.visibles.filter((k): k is K => motor.esColumna(k)), [cols.visibles, motor]);
 
   const cambiarFiltro = useCallback(
@@ -218,7 +222,7 @@ export function TablaCs<F extends { id: string }, K extends string>(p: PropsTabl
 
         <DataTable
           filas={ordenadas}
-          columnas={columnas}
+          columnas={columnas} alto={alto}
           onFila={p.onFila} etiquetaFila={p.etiquetaFila} acciones={p.filaAcciones}
           pagina={paginaDeURL(params.get(motor.paramPagina) ?? "1") - 1}
           onPagina={(pg) => escribir({ [motor.paramPagina]: pg ? String(pg + 1) : null })}

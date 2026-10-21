@@ -279,6 +279,14 @@ export async function ingresarInvitado(
     });
     resell = r.hecho;
     if (!r.hecho) console.warn(`resells: no se guardó la agenda de ${sesionId}: ${r.motivo ?? "sin motivo"}`);
+    /* Una llamada reprogramada o cancelada deja dos agendas de la misma persona: se unen en una (supabase/resells-grabacion-y-repetidos.sql).
+       Si la función todavía no está, o la base es la de las pruebas, no pasa nada: el cron la corre cada 30 minutos. */
+    if (r.hecho) {
+      try {
+        const rpc = (db as unknown as { rpc?: (nombre: string) => PromiseLike<unknown> }).rpc;
+        if (typeof rpc === "function") await rpc.call(db, "unir_resells_repetidos");
+      } catch { /* lo repasa el cron */ }
+    }
   }
 
   return { sesionId, contactoId: contacto.id, leadId, contactoNuevo: !previo, leadNuevo, estado, resell };

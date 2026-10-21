@@ -4413,3 +4413,9 @@ select.gm-celda { background: var(--surface-100); }
 .cs-fila[data-lectura="sobra"] .cs-dif, .cs-fila[data-lectura="falta"] .cs-dif { color: var(--warning); font-weight: 700; }
 @media (max-width: 760px) { .cs-fila { grid-template-columns: 1fr 1fr; } .cs-fila--cabeza { display: none; } .cs-num { text-align: left; } }
 
+
+/* Deslizar con dos dedos hacia un costado en una tabla ancha (Mac, trackpad) hace que el navegador vuelva a la página anterior: Mariano
+   (21/10) se salía del sitio al scrollear los leads y, al volver, se perdía el día. El gesto de «atrás» sólo se dispara cuando el scroll
+   horizontal llega al borde de la página: con esto, lo que sobra se queda adentro de la tabla. */
+html, body { overscroll-behavior-x: none; }
+.hk-table-wrap, [class*="crm-t"], .kpis-caja { overscroll-behavior-x: contain; }

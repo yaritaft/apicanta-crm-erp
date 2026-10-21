@@ -120,3 +120,18 @@ test("si la tabla no existe o la base falla, la entrada de la agenda sigue: no s
   const rota: BaseDeResells = { from: () => { throw new Error("sin conexión"); } };
   assert.deepEqual(await registrarResell(rota, AGENDA), { hecho: false, motivo: "sin conexión" });
 });
+
+/* Mariano (21/10): «hay muchos en resells repetidos: Marcos Aguilo, Nicolás González». La agenda vieja era una importada del Airtable (id
+   «rs_imp_…», atada a su llamada): buscándola por id no se encontraba y quedaban dos. */
+test("una reprogramación encuentra la agenda vieja por su LLAMADA, aunque sea una importada con otro id", async () => {
+  const { db, filas } = baseDeMentira();
+  filas.set("rs_imp_abc", {
+    id: "rs_imp_abc", sesionId: "ses_1", fechaHora: "2026-10-14T18:30:00.000Z", nombre: "Marcos Aguilo", email: "marcos@mail.com",
+    estado: "Seguimiento", cashCollect: 300, casoDeExito: true, notas: "Quiere pensarlo", grabacion: "https://fathom.video/x", cancelada: false, origen: "importado",
+  });
+  const nueva: AgendaDeResell = { ...AGENDA, sesionId: "ses_2", email: "marcos@mail.com", nombre: "Marcos Aguilo", fechaHora: "2026-10-15T19:00:00.000Z", reprogramadaDe: "ses_1" };
+  assert.equal((await registrarResell(db, nueva)).hecho, true);
+  assert.deepEqual([...filas.keys()], [idResell("ses_2")], "queda una sola fila, la de la llamada nueva");
+  const f = filas.get(idResell("ses_2"))!;
+  assert.deepEqual([f.estado, f.cashCollect, f.casoDeExito, f.notas, f.grabacion], ["Seguimiento", 300, true, "Quiere pensarlo", "https://fathom.video/x"], "hereda todo lo cargado, también la grabación");
+});

@@ -443,6 +443,8 @@ export interface Resell {
   cashCollect: number | null;
   casoDeExito: boolean;
   notas: string;
+  /* El link de la grabación de la llamada (Fathom); si está vacío y la llamada vino de Calendly, se muestra la de la llamada. */
+  grabacion?: string;
   cancelada: boolean;
   origen: "calendly" | "manual" | "importado";
   creadoEn: string;

@@ -48,7 +48,7 @@ export function CrmConResells({ misLlamadas }: { misLlamadas?: boolean }) {
     <>
       <div className="crm-grupos">
         <Tabs<Grupo>
-          valor={grupo} onChange={(g) => escribir({ grupo: g === "resell" ? "resell" : null })}
+          valor={grupo} onChange={(g) => escribir(g === "resell" ? { grupo: "resell", "por-cargar": porCargar > 0 ? "1" : null } : { grupo: null, "por-cargar": null })}
           opciones={[
             { valor: "ventas", texto: "Ventas" },
             { valor: "resell", texto: porCargar > 0 ? `Resell · ${porCargar} por cargar` : "Resell" },

@@ -27,7 +27,7 @@ test("la tabla del CRM las separa igual: «Próximos pasos» entra en Agendas Re
 });
 
 test("los estados de resell son los del Airtable y se eligen varios a la vez", () => {
-  assert.deepEqual(LISTAS_POR_DEFECTO.estadosResell, ["2da Agenda", "Upgrade a Hackear IA", "No quiere renovar", "Outbording", "Seguimiento", "Garantía Extendida", "Alumno vigente"]);
+  assert.deepEqual(LISTAS_POR_DEFECTO.estadosResell, ["2da Agenda", "Upgrade a Hackear IA", "No quiere renovar", "Outbording", "Seguimiento", "Garantía Extendida", "Alumno vigente", "No responde"]);
   assert.deepEqual(estadosDeResell("No quiere renovar,Outbording"), ["No quiere renovar", "Outbording"], "como los exporta el Airtable");
   assert.deepEqual(estadosDeResell(" a , ,b,a"), ["a", "b"]);
   assert.equal(alternarEstadoResell("", "Outbording"), "Outbording");

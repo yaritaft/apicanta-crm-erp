@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useMemo, useState } from "react";
-import { Pencil, Plus, RefreshCw, Trash2 } from "lucide-react";
+import { ExternalLink, Pencil, Plus, RefreshCw, ShoppingBag, Trash2 } from "lucide-react";
 import { Button, Field, IconButton, Input, Select, Textarea } from "@/components/ui/ui";
 import { Confirmar, ModalForm } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toast";
@@ -12,11 +12,15 @@ import { acciones, cargarDeLaNube, hayNube, nuevoId, reiniciarCarga, useEstado, 
 import { useAcceso } from "@/lib/acceso";
 import { useUsuarioActual } from "@/lib/usuario";
 import { esDelCloser } from "@/lib/eod";
+import { miembroDeCloser } from "@/lib/crm";
+import { AsistenteVenta } from "@/components/ventas/AsistenteVenta";
+import { useSearchParams } from "next/navigation";
+import { useEscribirURL } from "@/lib/useParamsURL";
 import { puedeEditar } from "@/lib/permisos";
 import { formatoDia, hoyDelNegocio } from "@/lib/seguimiento";
 import { diaDeNegocio } from "@/lib/dia-negocio";
 import {
-  alternarEstadoResell, coincideResell, estadosDeResell, filasResells, listasCs, MOTOR_RESELLS, ORDEN_RESELLS, resellNormal, VISIBLES_RESELLS, type ClaveResell, type FilaResell,
+  alternarEstadoResell, coincideResell, COLUMNAS_SUMADAS_RESELLS, estadosDeResell, filasResells, listasCs, MOTOR_RESELLS, ORDEN_RESELLS, resellNormal, VISIBLES_RESELLS, type ClaveResell, type FilaResell,
 } from "@/lib/clientes-cs";
 import { leerMontoCs } from "@/lib/importar-cs";
 import { money } from "@/lib/format";
@@ -40,7 +44,7 @@ const HORA = new Intl.DateTimeFormat("es-AR", { timeZone: "America/Argentina/Bue
 /* Lo que agendó Calendly no se corrige acá: cambia si el alumno reprograma. */
 const DE_CALENDLY: ClaveResell[] = ["fechaHora", "nombre", "email", "telefono", "closer"];
 const EDITOR: Partial<Record<ClaveResell, "texto" | "largo" | "opciones" | "si-no">> = {
-  nombre: "texto", email: "texto", telefono: "texto", closer: "texto", estado: "opciones", cash: "texto", caso: "si-no", notas: "largo",
+  nombre: "texto", email: "texto", telefono: "texto", closer: "texto", estado: "opciones", cash: "texto", caso: "si-no", grabacion: "texto", notas: "largo",
 };
 
 export function ResellsCs() {
@@ -52,11 +56,28 @@ export function ResellsCs() {
   const hoy = hoyDelNegocio();
   const listas = useMemo(() => listasCs(e.ajustes.seguimiento), [e.ajustes.seguimiento]);
   const yo = useUsuarioActual();
+  const params = useSearchParams();
+  const escribirURL = useEscribirURL();
+  const [vendiendo, setVendiendo] = useState<Resell | null>(null);
+  /* ?por-cargar=1: sólo las que ya pasaron y todavía no dicen cómo terminaron («Resell · 13 por cargar»). */
+  const soloPorCargar = params.get("por-cargar") === "1";
   /* Un closer ve sólo sus agendas (la base ya lo recorta; acá también, para que sea igual sin nube). */
-  const filas = useMemo(() => {
+  const suyas = useMemo(() => {
     const todas = filasResells(e);
     return acceso?.soloLoSuyo && yo.miembro ? todas.filter((f) => esDelCloser({ anfitrion: f.resell.closer }, yo.miembro!.nombre, e.equipo)) : todas;
   }, [e, acceso?.soloLoSuyo, yo.miembro]);
+  const porCargar = useMemo(() => suyas.filter((f) => !f.resell.estado && !f.resell.cancelada && Date.parse(f.resell.fechaHora) <= Date.now()), [suyas]);
+  const filas = soloPorCargar ? porCargar : suyas;
+  /* El país de la persona, para escribir su teléfono con el «+»: el de su ficha (por mail) o, si el número ya empieza con un código de
+     país (los del Airtable vienen «54 9 11…», «57 300…» sin el «+»), el de ese código. Un número corto no se adivina. */
+  const paisDe = (r: Resell) => {
+    const deFicha = r.email ? e.contactos.find((c) => c.email?.trim().toLowerCase() === r.email.trim().toLowerCase())?.pais : undefined;
+    if (deFicha) return deFicha;
+    const digitos = r.telefono.replace(/\D/g, "");
+    return digitos.length >= 11 ? paisDeTelefono(`+${digitos}`) : "";
+  };
+  /* La persona de la agenda en el CRM (por su mail), para cargarle la venta con su comprobante. */
+  const leadDe = (r: Resell) => (r.email ? e.leads.find((l) => l.email?.trim().toLowerCase() === r.email.trim().toLowerCase()) : undefined);
   const [editando, setEditando] = useState<{ id: string; clave: ClaveResell } | null>(null);
   const [form, setForm] = useState<{ r?: Resell } | null>(null);
   const [borrar, setBorrar] = useState<Resell | null>(null);
@@ -81,6 +102,7 @@ export function ResellsCs() {
         return guardar(r, { cashCollect: n }, titulo, montoCs(n));
       }
       case "caso": return guardar(r, { casoDeExito: v === "Sí" }, titulo, v === "Sí" ? "Sí" : "No");
+      case "grabacion": return guardar(r, { grabacion: v }, titulo, v ? "cargada" : "vacía");
       case "notas": return guardar(r, { notas: valor }, titulo, v ? "con texto" : "");
       case "nombre": return guardar(r, { nombre: v }, titulo, v);
       case "email":
@@ -99,10 +121,13 @@ export function ResellsCs() {
       case "estado": return <span className="cs-pastillas">{estadosDeResell(f.estado).map((x) => <Pastilla key={x} texto={x} />)}</span>;
       case "cash": return r.cashCollect === null ? NADA : <span className="t-num">{montoCs(r.cashCollect)}</span>;
       case "caso": return <Pastilla texto={r.casoDeExito ? "Sí" : "No"} tono={r.casoDeExito ? "ok" : "neutra"} />;
+      case "grabacion": return f.grabacion
+        ? <a className="link" href={f.grabacion} target="_blank" rel="noopener noreferrer" onClick={(ev) => ev.stopPropagation()}><ExternalLink size={13} /> Verla</a>
+        : NADA;
       case "notas": return <Recorte texto={r.notas} />;
       case "nombre": return <Recorte texto={r.nombre} />;
       case "email": return <Recorte texto={r.email} />;
-      case "telefono": return r.telefono ? <Telefono valor={r.telefono} pais={paisDeTelefono(r.telefono)} compacto /> : NADA;
+      case "telefono": return r.telefono ? <Telefono valor={r.telefono} pais={paisDe(r)} compacto /> : NADA;
       case "closer": return <Recorte texto={r.closer} />;
       default: return NADA;
     }
@@ -113,6 +138,7 @@ export function ResellsCs() {
       case "estado": return r.estado;
       case "cash": return r.cashCollect === null ? "" : String(r.cashCollect);
       case "caso": return r.casoDeExito ? "Sí" : "No";
+      case "grabacion": return f.grabacion;
       case "notas": return r.notas;
       case "nombre": return r.nombre;
       case "email": return r.email;
@@ -173,9 +199,15 @@ export function ResellsCs() {
         motor={MOTOR_RESELLS} pantalla="resells-cs" filas={filas} coincide={coincideResell}
         visiblesPorDefecto={VISIBLES_RESELLS} ordenPorDefecto={ORDEN_RESELLS} fija="fechaHora" ordenValores={ordenValores}
         celda={(col, f) => celda(col, f)}
-        filaAcciones={puede ? (f) => (f.resell.origen === "calendly"
-          ? undefined
-          : <IconButton etiqueta="Borrar" onClick={() => setBorrar(f.resell)}><Trash2 size={15} /></IconButton>) : undefined}
+        filaAcciones={puede ? (f) => (
+          <>
+            {leadDe(f.resell) && (
+              <IconButton etiqueta="Cargar la venta (con su comprobante)" onClick={() => setVendiendo(f.resell)}><ShoppingBag size={15} /></IconButton>
+            )}
+            {f.resell.origen !== "calendly" && <IconButton etiqueta="Borrar" onClick={() => setBorrar(f.resell)}><Trash2 size={15} /></IconButton>}
+          </>
+        ) : undefined}
+        columnasSumadas={COLUMNAS_SUMADAS_RESELLS}
         excel={{ nombre: "Agenda de resells", hoy, valor: (col, f) => {
           const r = f.resell;
           switch (col.clave) {
@@ -191,6 +223,13 @@ export function ResellsCs() {
           <>
             {hayNube && <Button sm variante="ghost" icono={<RefreshCw size={14} />} disabled={sync !== "listo"} onClick={() => void actualizar()}
               title="Trae de la nube lo que agendaron por Calendly desde que abriste la app">Actualizar</Button>}
+            {porCargar.length > 0 && (
+              <Button sm variante={soloPorCargar ? "primary" : "secondary"} aria-pressed={soloPorCargar}
+                title="Las que ya pasaron y todavía no dicen cómo terminaron"
+                onClick={() => escribirURL({ "por-cargar": soloPorCargar ? null : "1" })}>
+                Por cargar ({porCargar.length})
+              </Button>
+            )}
             {puede && <Button sm variante="primary" icono={<Plus size={15} />} onClick={() => setForm({})}>Nueva agenda</Button>}
           </>
         }
@@ -201,6 +240,18 @@ export function ResellsCs() {
         }}
       />
       {form && <FormResell resell={form.r} onCerrar={() => setForm(null)} />}
+      {vendiendo && (() => {
+        const lead = leadDe(vendiendo);
+        return lead ? (
+          <AsistenteVenta
+            cliente={{ contactoId: lead.id, nombre: vendiendo.nombre || lead.nombre, email: vendiendo.email }}
+            closerId={miembroDeCloser(vendiendo.closer, e.equipo)?.id}
+            sesionId={vendiendo.sesionId ?? undefined}
+            onCerrar={() => setVendiendo(null)}
+            onListo={(_id, nombre) => { setVendiendo(null); toast(`Venta de ${nombre} registrada.`); }}
+          />
+        ) : null;
+      })()}
       <Confirmar
         abierto={borrar !== null} onCerrar={() => setBorrar(null)}
         titulo="¿Borrar esta agenda?" texto="Se borra el registro de la agenda de resells. La llamada en Calendly no se toca."
@@ -223,7 +274,7 @@ function FormResell({ resell, onCerrar }: { resell?: Resell; onCerrar: () => voi
     hora: r0 ? HORA.format(inicial) : "12:00",
     nombre: r0?.nombre ?? "", email: r0?.email ?? "", telefono: r0?.telefono ?? "", closer: r0?.closer ?? "",
     estado: r0?.estado ?? "", cash: r0?.cashCollect === null || r0?.cashCollect === undefined ? "" : String(r0.cashCollect),
-    caso: r0?.casoDeExito ?? false, notas: r0?.notas ?? "",
+    caso: r0?.casoDeExito ?? false, notas: r0?.notas ?? "", grabacion: r0?.grabacion ?? "",
   });
   const set = <K extends keyof typeof b>(k: K, v: (typeof b)[K]) => setB((x) => ({ ...x, [k]: v }));
   const cash = b.cash.trim() ? leerMontoCs(b.cash) : null;
@@ -243,7 +294,7 @@ function FormResell({ resell, onCerrar }: { resell?: Resell; onCerrar: () => voi
           id: r0?.id ?? nuevoId("rs"), sesionId: r0?.sesionId ?? null, fechaHora,
           nombre: deCalendly ? r0!.nombre : b.nombre.trim(), email: deCalendly ? r0!.email : b.email.trim(),
           telefono: deCalendly ? r0!.telefono : b.telefono.trim(), closer: deCalendly ? r0!.closer : b.closer.trim(),
-          estado: b.estado, cashCollect: cash, casoDeExito: b.caso, notas: b.notas, cancelada: r0?.cancelada ?? false,
+          estado: b.estado, cashCollect: cash, casoDeExito: b.caso, notas: b.notas, grabacion: b.grabacion.trim(), cancelada: r0?.cancelada ?? false,
           origen: r0?.origen ?? "manual", creadoEn: r0?.creadoEn ?? new Date().toISOString(),
         } as Resell);
         toast(resell ? "Agenda actualizada." : "Agenda cargada.");
@@ -269,6 +320,9 @@ function FormResell({ resell, onCerrar }: { resell?: Resell; onCerrar: () => voi
               </label>
             ))}
           </div>
+        </Field>
+        <Field label="Grabación de la llamada" ayuda="El link (Fathom). Si la llamada vino de Calendly y Fathom la trajo, aparece sola." span2>
+          <Input value={b.grabacion} onChange={(ev) => set("grabacion", ev.target.value)} placeholder="https://fathom.video/…" />
         </Field>
         <Field label="Cash Collect (USD)" error={cashOk ? undefined : "Un monto, por ejemplo 1200."}>
           <Input value={b.cash} onChange={(ev) => set("cash", ev.target.value)} placeholder="0" error={!cashOk} />

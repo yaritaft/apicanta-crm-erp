@@ -16,6 +16,9 @@ import { ModalForm, Confirmar, Modal } from "@/components/ui/Modal";
 import { CamposExtra } from "@/components/ui/CamposExtra";
 import { useToast } from "@/components/ui/Toast";
 import { acciones, useEstado } from "@/lib/store";
+import { CeldaEditable } from "@/components/crm-tabla/CeldaEditable";
+import { useAcceso } from "@/lib/acceso";
+import { puedeEditar } from "@/lib/permisos";
 import { useAbrirDesdeURL } from "@/lib/useQuery";
 import { useAbrirFicha } from "@/components/ficha/abrir";
 import { AsistenteLead, ETIQUETA_INGLES, ORDEN_INGLES, type BorradorLead } from "@/components/leads/AsistenteLead";
@@ -53,8 +56,12 @@ const COLUMNAS_LEADS: DefColumna[] = [
   { clave: "llamadas", titulo: "Llamadas", grupo: "Actividad", ayuda: "Cuántas agendó, contando las canceladas" },
   { clave: "proxLlamada", titulo: "Próxima llamada", grupo: "Actividad" },
   { clave: "compras", titulo: "Compró", grupo: "Actividad", ayuda: "Lo facturado en sus ventas activas" },
+  { clave: "notas", titulo: "Notas", grupo: "Seguimiento", ayuda: "Un lugar para notas y comentarios del lead: un clic y se escribe" },
 ];
-const POR_DEFECTO_LEADS = ["nombre", "etapa", "fuente", "pais", "ingles", "exp", "monto", "act"];
+const POR_DEFECTO_LEADS = ["nombre", "etapa", "notas", "fuente", "pais", "ingles", "exp", "monto", "act"];
+/* Quien ya eligió sus columnas recibe «Notas» una vez, a la vista (después de la etapa), no escondida a la derecha (Mariano, 21/10:
+   «sería necesario una columna para dejar notas, comentarios»). */
+const COLUMNAS_SUMADAS_LEADS = [{ id: "notas-2110", despuesDe: "etapa", claves: ["notas"] }];
 
 /* Lo que se está mirando vive en la URL (lib/useParamsURL): se guarda en
    favoritos o se manda el link y se ve tal cual. El período va aparte, en
@@ -98,7 +105,10 @@ export default function Leads() {
   const [form, setForm] = useState<(Omit<Lead, "id"> & { id?: string }) | null>(null);
   const [borrar, setBorrar] = useState<Lead | null>(null);
   const [importar, setImportar] = useState(false);
-  const cols = useColumnas("leads", COLUMNAS_LEADS, POR_DEFECTO_LEADS);
+  const cols = useColumnas("leads", COLUMNAS_LEADS, POR_DEFECTO_LEADS, undefined, COLUMNAS_SUMADAS_LEADS);
+  const { acceso } = useAcceso();
+  const puedeEscribir = puedeEditar(acceso, "leads");
+  const [notaAbierta, setNotaAbierta] = useState<string | null>(null);
 
   const etapaInicial = useMemo(() => [...e.etapas].sort((a, b) => a.orden - b.orden)[0]?.id ?? "", [e.etapas]);
 
@@ -258,6 +268,23 @@ export default function Leads() {
       celda: (l) => {
         const prox = llamadasDe(l).filter((x) => x.estado === "agendada" && x.inicia >= ahoraIso).map((x) => x.inicia).sort()[0];
         return prox ? fechaHora(prox) : "—";
+      },
+    },
+    notas: {
+      clave: "notas", titulo: "Notas", tipo: "secondary", orden: (l) => l.notas ?? "",
+      celda: (l) => {
+        const texto = l.notas?.trim() ?? "";
+        const vista = texto ? <span className="truncate" title={texto}>{texto}</span> : <span className="t-subtle">{puedeEscribir ? "Agregar nota…" : "—"}</span>;
+        if (!puedeEscribir) return vista;
+        return (
+          <CeldaEditable
+            editor="largo" valor={l.notas ?? ""} titulo="Notas" abierta={notaAbierta === l.id}
+            onAbrir={() => setNotaAbierta(l.id)} onCerrar={() => setNotaAbierta((x) => (x === l.id ? null : x))}
+            onGuardar={(v) => { acciones.actualizar<Lead>("leads", l.id, { notas: v.trim() || undefined }, l.nombre); toast(`Nota de ${l.nombre} guardada.`); }}
+          >
+            {vista}
+          </CeldaEditable>
+        );
       },
     },
     compras: {
