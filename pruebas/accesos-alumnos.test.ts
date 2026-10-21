@@ -6,7 +6,7 @@ import {
 } from "@/lib/accesos-alumnos";
 import { clavePandadoc } from "@/lib/accesos-alumnos-servidor";
 import { cambiarGrupoEnProgramas } from "@/lib/programas";
-import { marcasDeLaFicha, motivoZoom } from "@/lib/accesos-servidor";
+import { buscarRegistrante, marcasDeLaFicha, motivoZoom } from "@/lib/accesos-servidor";
 
 /* La prueba de conexión de los accesos de alumnos (Ajustes → Integraciones)
    con respuestas como las devuelven Telegram, Wisboo, PandaDoc y Zoom. */
@@ -142,4 +142,15 @@ test("Zoom: por qué no inscribió a alguien, en castellano", () => {
   assert.match(motivoZoom(300, { code: 3043, message: "Meeting does not have registration enabled." }), /Registro/);
   assert.match(motivoZoom(404, null), /no encuentra la reunión/);
   assert.equal(motivoZoom(400, { message: "Invalid email" }), "Zoom no lo inscribió (contestó 400: Invalid email).");
+});
+
+test("Zoom: para volver a darle el acceso a alguien se busca su inscripción vieja (por id o por mail)", () => {
+  const lista = [
+    { id: "r1", email: "otra@ejemplo.com", join_url: "https://zoom.us/w/1?tk=a" },
+    { id: "r2", email: "CEO@TuMetamorfosis.com", join_url: "https://zoom.us/w/1?tk=b" },
+  ];
+  assert.deepEqual(buscarRegistrante(lista, "ceo@tumetamorfosis.com", null), { id: "r2", email: "CEO@TuMetamorfosis.com", joinUrl: "https://zoom.us/w/1?tk=b" });
+  assert.equal(buscarRegistrante(lista, "nadie@ejemplo.com", "r1")?.id, "r1");
+  assert.equal(buscarRegistrante(lista, "nadie@ejemplo.com", null), null);
+  assert.equal(buscarRegistrante(null, "x@y.com", null), null);
 });

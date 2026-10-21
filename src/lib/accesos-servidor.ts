@@ -203,6 +203,42 @@ const nombreDeLink = (nombre: string) => nombre.trim().slice(0, 32) || "Alumno";
 
 /* ---------- Zoom ---------- */
 
+type RegistranteZoom = { id: string; email: string; joinUrl: string | null; estado: string };
+
+/** La inscripción de una persona en la lista de Zoom: por su id si se sabe, si no por su mail. */
+export function buscarRegistrante(lista: unknown, email: string, id: string | null): Omit<RegistranteZoom, "estado"> | null {
+  const filas = Array.isArray(lista) ? (lista as Record<string, unknown>[]) : [];
+  const mail = email.trim().toLowerCase();
+  const x = filas.find((r) => (id && r.id === id) || (typeof r.email === "string" && r.email.trim().toLowerCase() === mail));
+  return x && typeof x.id === "string" ? { id: x.id, email: String(x.email ?? ""), joinUrl: typeof x.join_url === "string" ? x.join_url : null } : null;
+}
+
+/** Busca su inscripción (aprobada, rechazada o pendiente) y, si no está aprobada, la vuelve a aprobar. null: no estaba. */
+async function reactivarEnZoom(token: string, reunion: string, email: string, id: string | null): Promise<RegistranteZoom | null> {
+  const cabeza = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
+  for (const estado of ["approved", "denied", "pending"]) {
+    let pagina = "";
+    for (let vuelta = 0; vuelta < 20; vuelta++) {
+      const r = await pedir(`https://api.zoom.us/v2/meetings/${encodeURIComponent(reunion)}/registrants?status=${estado}&page_size=300${pagina ? `&next_page_token=${encodeURIComponent(pagina)}` : ""}`, { headers: cabeza });
+      if (r.status >= 400) return null;
+      const x = buscarRegistrante(r.json?.registrants, email, id);
+      if (x) {
+        if (estado !== "approved") {
+          const ok = await fetch(`https://api.zoom.us/v2/meetings/${encodeURIComponent(reunion)}/registrants/status`, {
+            method: "PUT", headers: cabeza, body: JSON.stringify({ action: "approve", registrants: [{ id: x.id, email: x.email }] }),
+            cache: "no-store", signal: AbortSignal.timeout(ESPERA_MS),
+          });
+          if (!ok.ok) return null;
+        }
+        return { ...x, estado };
+      }
+      pagina = typeof r.json?.next_page_token === "string" ? r.json.next_page_token : "";
+      if (!pagina) break;
+    }
+  }
+  return null;
+}
+
 /** Por qué Zoom no inscribió a alguien, en castellano. 429 es su límite diario: no deja inscribir (ni volver a inscribir)
     muchas veces por día a la misma persona en la misma reunión. */
 export function motivoZoom(status: number, json: Record<string, unknown> | null): string {
@@ -328,9 +364,20 @@ export async function darAccesos(db: SupabaseClient, a: {
         if (typeof ya.externo.joinUrl === "string") salida.links.push({ plataforma: "zoom", nombre: ya.recursoNombre, url: ya.externo.joinUrl });
         continue;
       }
-      /* Si falla, la fila conserva el nombre de la reunión que ya tenía (si no, queda el número). */
+      /* Si falla, la fila conserva el nombre de la reunión y la inscripción que ya tenía (para reactivarla después). */
       const nombreReunion = ya?.recursoNombre || reunion;
-      if (!token) { await anotar({ plataforma: "zoom", recurso: reunion, recursoNombre: nombreReunion, estado: "fallo", externo: {}, error: errorToken, dadoEn: null, quitadoEn: null }); continue; }
+      const externoPrevio = ya?.externo ?? {};
+      if (!token) { await anotar({ plataforma: "zoom", recurso: reunion, recursoNombre: nombreReunion, estado: "fallo", externo: externoPrevio, error: errorToken, dadoEn: null, quitadoEn: null }); continue; }
+      /* Ya estuvo inscripto (se le quitó, o falló): se reactiva su inscripción en vez de crear otra. Zoom deja crear sólo
+         3 por día para la misma persona en la misma reunión, y reactivar no cuenta. */
+      if (ya) {
+        const re = await reactivarEnZoom(token, reunion, a.persona.email, typeof externoPrevio.registranteId === "string" ? externoPrevio.registranteId : null).catch(() => null);
+        if (re) {
+          await anotar({ plataforma: "zoom", recurso: reunion, recursoNombre: nombreReunion, estado: "dado", externo: { registranteId: re.id, joinUrl: re.joinUrl }, error: null, dadoEn: ahora, quitadoEn: null });
+          if (re.joinUrl) salida.links.push({ plataforma: "zoom", nombre: nombreReunion, url: re.joinUrl });
+          continue;
+        }
+      }
       try {
         const r = await pedir(`https://api.zoom.us/v2/meetings/${encodeURIComponent(reunion)}/registrants`, {
           method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
@@ -342,7 +389,7 @@ export async function darAccesos(db: SupabaseClient, a: {
         await anotar({ plataforma: "zoom", recurso: reunion, recursoNombre: tema, estado: "dado", externo: { registranteId: registrante, joinUrl: r.json?.join_url ?? null }, error: null, dadoEn: ahora, quitadoEn: null });
         if (typeof r.json?.join_url === "string") salida.links.push({ plataforma: "zoom", nombre: tema, url: r.json.join_url });
       } catch (e) {
-        await anotar({ plataforma: "zoom", recurso: reunion, recursoNombre: nombreReunion, estado: "fallo", externo: {}, error: textoDeFallo("Zoom", e), dadoEn: null, quitadoEn: null });
+        await anotar({ plataforma: "zoom", recurso: reunion, recursoNombre: nombreReunion, estado: "fallo", externo: externoPrevio, error: textoDeFallo("Zoom", e), dadoEn: null, quitadoEn: null });
       }
     }
   }
