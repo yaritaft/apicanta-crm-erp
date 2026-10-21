@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { construirSemilla } from "@/lib/seed";
 import {
-  cuentasDeWhatsapp, ErrorMetaWhatsapp, leerCostos, pistaDelError, sincronizarCostosWhatsapp, tramos, traerCostosWhatsapp, WABA_POR_DEFECTO, type PedirAMeta,
+  cuentasDeWhatsapp, diagnosticarWhatsapp, ErrorMetaWhatsapp, leerCostos, pistaDelError, sincronizarCostosWhatsapp, tramos, traerCostosWhatsapp, WABA_POR_DEFECTO, type PedirAMeta,
 } from "@/lib/meta-whatsapp";
 import { costoWhatsappDelWebinar, metricasDeWebinar, numerosDelWebinar, origenAutomatico } from "@/lib/webinar";
 import type { EstadoApp, Webinar } from "@/lib/types";
@@ -158,4 +158,35 @@ test("sin costos de WhatsApp todo queda como estaba", () => {
     assert.equal(numerosDelWebinar(e, e.webinars[0]).costoWhatsappApi, 0);
     assert.equal(origenAutomatico(e, e.webinars[0], "costoWhatsappApi"), undefined);
   }
+});
+
+test("cuando Meta rechaza por permisos, el resultado dice qué permisos tiene el token y si la cuenta se puede leer", async () => {
+  const pedir: PedirAMeta = async (ruta, p) => {
+    if (ruta === "me/permissions") return { data: [{ permission: "ads_read", status: "granted" }, { permission: "business_management", status: "granted" }, { permission: "whatsapp_business_messaging", status: "declined" }] };
+    if (p.fields === "id,name") return { id: "W1", name: "Apicanta" };
+    throw new ErrorMetaWhatsapp("(#200) You do not have permission to access this field.", 200);
+  };
+  const r = await sincronizarCostosWhatsapp(dbFalsa().db, pedir, ["W1"], "2026-10-01", "2026-10-10");
+  assert.match(r[0].error ?? "", /whatsapp_business_management/);
+  assert.deepEqual(r[0].diagnostico, { permisos: ["ads_read", "business_management"], cuentaLeible: true, nombre: "Apicanta", faltaPermiso: true });
+});
+
+test("el diagnóstico distingue «falta el permiso» de «la cuenta no está asignada» y no tira si no puede preguntar", async () => {
+  const sinAsignar: PedirAMeta = async (ruta) => {
+    if (ruta === "me/permissions") return { data: [{ permission: "whatsapp_business_management", status: "granted" }] };
+    throw new ErrorMetaWhatsapp("(#100) Object does not exist or you lack permission", 100);
+  };
+  const d = await diagnosticarWhatsapp(sinAsignar, "W1");
+  assert.equal(d.faltaPermiso, false, "el permiso está");
+  assert.equal(d.cuentaLeible, false, "pero la cuenta no se lee: falta asignarla al usuario de sistema");
+  assert.match(d.errorCuenta ?? "", /lack permission/);
+  const nada = await diagnosticarWhatsapp(async () => { throw new Error("sin red"); }, "W1");
+  assert.deepEqual(nada, { permisos: null, cuentaLeible: false, errorCuenta: "sin red" });
+});
+
+test("un error que no es de permisos no dispara el diagnóstico", async () => {
+  const pedir: PedirAMeta = async (_r, p) => { if (p.fields === "currency") return { currency: "USD" }; throw new ErrorMetaWhatsapp("(#1) Unknown error", 1); };
+  const r = await sincronizarCostosWhatsapp(dbFalsa().db, pedir, ["W1"], "2026-10-01", "2026-10-10");
+  assert.ok(r[0].error);
+  assert.equal(r[0].diagnostico, undefined);
 });

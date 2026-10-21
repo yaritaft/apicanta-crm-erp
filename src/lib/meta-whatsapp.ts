@@ -156,6 +156,36 @@ export interface ResultadoCostosWhatsapp {
   desde: string;
   hasta: string;
   error?: string;
+  /* Cuando Meta rechaza por permisos: qué permisos tiene el token y si la cuenta se puede leer, para saber si falta el permiso o la asignación. */
+  diagnostico?: DiagnosticoWhatsapp;
+}
+
+export interface DiagnosticoWhatsapp {
+  /** Los permisos concedidos al token (me/permissions); null si no se pudieron leer. */
+  permisos: string[] | null;
+  /** ¿Se pudo leer la cuenta de WhatsApp Business (id y nombre)? */
+  cuentaLeible: boolean;
+  nombre?: string;
+  errorCuenta?: string;
+  /** Si le falta justo el permiso que pide pricing_analytics. */
+  faltaPermiso?: boolean;
+}
+
+/** Por qué Meta rechaza: pregunta cuáles permisos tiene el token y si la cuenta se puede leer. Nunca tira. */
+export async function diagnosticarWhatsapp(pedir: PedirAMeta, cuenta: string): Promise<DiagnosticoWhatsapp> {
+  let permisos: string[] | null = null;
+  try {
+    const j = (await pedir("me/permissions", {})) as { data?: { permission?: string; status?: string }[] } | null;
+    permisos = (j?.data ?? []).filter((x) => x.status === "granted" && x.permission).map((x) => x.permission as string).sort();
+  } catch { /* algunos tokens no lo dejan leer */ }
+  const d: DiagnosticoWhatsapp = { permisos, cuentaLeible: false };
+  try {
+    const j = (await pedir(cuenta, { fields: "id,name" })) as { name?: string } | null;
+    d.cuentaLeible = true;
+    if (j?.name) d.nombre = j.name;
+  } catch (e) { d.errorCuenta = e instanceof Error ? e.message : String(e); }
+  if (permisos) d.faltaPermiso = !permisos.includes("whatsapp_business_management");
+  return d;
 }
 
 /** Trae de Meta y guarda en `whatsapp_costos`. Nunca tira: devuelve el error de cada cuenta para dejarlo en el estado del cron. */
@@ -180,7 +210,8 @@ export async function sincronizarCostosWhatsapp(
       salida.push({ ...base, dias, total: Math.round(t.filas.reduce((a, f) => a + f.costo, 0) * 100) / 100, moneda: t.moneda,
         ...(t.monedaSupuesta ? { monedaSupuesta: true } : {}), descartados: t.descartados });
     } catch (e) {
-      salida.push({ ...base, error: pistaDelError(e) });
+      const permisos = e instanceof ErrorMetaWhatsapp && (e.codigo === 10 || e.codigo === 200 || e.codigo === 190);
+      salida.push({ ...base, error: pistaDelError(e), ...(permisos ? { diagnostico: await diagnosticarWhatsapp(pedir, cuenta) } : {}) });
     }
   }
   return salida;
