@@ -255,6 +255,12 @@ async function reactivarEnZoom(token: string, reunion: string, email: string, id
   return null;
 }
 
+/** El nombre de una reunión de Zoom («Simulacros y Taller Tema Nuevo - ZOOM»), o null si no se pudo leer. */
+async function temaDeReunion(token: string, reunion: string): Promise<string | null> {
+  const r = await pedir(`https://api.zoom.us/v2/meetings/${encodeURIComponent(reunion)}`, { headers: { Authorization: `Bearer ${token}` } }).catch(() => null);
+  return r && typeof r.json?.topic === "string" && r.json.topic.trim() ? r.json.topic.trim() : null;
+}
+
 /** Por qué Zoom no inscribió a alguien, en castellano. 429 es su límite diario: no deja inscribir (ni volver a inscribir)
     muchas veces por día a la misma persona en la misma reunión. */
 export function motivoZoom(status: number, json: Record<string, unknown> | null): string {
@@ -410,12 +416,25 @@ export async function darAccesos(db: SupabaseClient, a: {
           body: JSON.stringify({ email: a.persona.email.trim(), first_name: first_name || a.persona.nombre, last_name: last_name || "-", auto_approve: true }),
         });
         const registrante = r.json?.registrant_id;
-        if (typeof registrante !== "string") throw new ErrorAcceso(motivoZoom(r.status, r.json));
+        if (typeof registrante !== "string") {
+          /* Su mail ya estuvo inscripto (por ejemplo, otra venta de la misma persona a la que se le hizo el
+             outboarding): Zoom no deja volver a crearla más de 3 veces por día, pero sí reactivar la que tiene. */
+          const re = ya ? null : await reactivarEnZoom(token, reunion, a.persona.email, null).catch(() => null);
+          if (re) {
+            const tema = (await temaDeReunion(token, reunion)) ?? nombreReunion;
+            await anotar({ plataforma: "zoom", recurso: reunion, recursoNombre: tema, estado: "dado", externo: { registranteId: re.id, joinUrl: re.joinUrl }, error: null, dadoEn: ahora, quitadoEn: null });
+            if (re.joinUrl) salida.links.push({ plataforma: "zoom", nombre: tema, url: re.joinUrl });
+            continue;
+          }
+          throw new ErrorAcceso(motivoZoom(r.status, r.json));
+        }
         const tema = typeof r.json?.topic === "string" ? r.json.topic : reunion;
         await anotar({ plataforma: "zoom", recurso: reunion, recursoNombre: tema, estado: "dado", externo: { registranteId: registrante, joinUrl: r.json?.join_url ?? null }, error: null, dadoEn: ahora, quitadoEn: null });
         if (typeof r.json?.join_url === "string") salida.links.push({ plataforma: "zoom", nombre: tema, url: r.json.join_url });
       } catch (e) {
-        await anotar({ plataforma: "zoom", recurso: reunion, recursoNombre: nombreReunion, estado: "fallo", externo: externoPrevio, error: textoDeFallo("Zoom", e), dadoEn: null, quitadoEn: null });
+        /* Sin fila previa, el nombre de la reunión se le pide a Zoom (si no, quedaba el número). */
+        const tema = ya?.recursoNombre ? nombreReunion : ((await temaDeReunion(token, reunion).catch(() => null)) ?? nombreReunion);
+        await anotar({ plataforma: "zoom", recurso: reunion, recursoNombre: tema, estado: "fallo", externo: externoPrevio, error: textoDeFallo("Zoom", e), dadoEn: null, quitadoEn: null });
       }
     }
   }
