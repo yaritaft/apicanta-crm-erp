@@ -31,6 +31,7 @@ import { useToast } from "@/components/ui/Toast";
 import { Paleta } from "./Paleta";
 import { Tour } from "./Tour";
 import { ID_ACCIONES_TOPBAR } from "./AccionesTopbar";
+import { useChatEnVivo } from "@/components/ficha/useChatEnVivo";
 
 export function Shell({ children }: { children: React.ReactNode }) {
   const ruta = usePathname();
@@ -67,6 +68,8 @@ export function Shell({ children }: { children: React.ReactNode }) {
   /* Cada pantalla vuelve como se dejó: con sus filtros, su orden y su
      período. El menú lleva directo a lo último que se vio en cada una. */
   const hrefRecordado = useRecordarVistas();
+  /* El chat del equipo de las fichas llega en vivo y anota lo que le llegó a cada uno (los tildes). */
+  useChatEnVivo();
 
   /* Menu colapsado. Se lee despues del montado a proposito: leer localStorage
      en el primer render rompe la hidratacion, porque el servidor no lo tiene. */

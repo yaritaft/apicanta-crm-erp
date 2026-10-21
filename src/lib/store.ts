@@ -7,7 +7,8 @@ import type {
   Adjunto, Arqueo, Campania, CampoPersonalizado, Comentario, Comprobante, Reaccion, Cuota, EntidadNombre, EstadoApp, Etapa, ID,
   Lead, Meta, Movimiento, OpcionCrm, OportunidadCrm, Pago, Reporte, Sesion, Venta, Webinar,
 } from "./types";
-import type { ConfigSeguimiento, Resell, RevisionCv, SeguimientoAlumno, Testimonio } from "./types";
+import type { ChatLectura, ConfigSeguimiento, Resell, RevisionCv, SeguimientoAlumno, Testimonio } from "./types";
+import { lecturaAlLeer, recibidosAlLlegar } from "./chat-equipo";
 import { configSeguimiento, seguimientoVacio } from "./seguimiento";
 import { resellNormal, seguimientoCompleto, siguienteNumero, testimonioNormal } from "./clientes-cs";
 import { revisionCvNormal } from "./revision-cv";
@@ -607,6 +608,8 @@ export async function cargarDeLaNube(): Promise<void> {
       resells: (porTabla.resells ?? []) as Resell[],
       /* Opcional: sin supabase/revision-cv.sql, ninguna. */
       revisionesCv: (porTabla.revisiones_cv ?? []) as RevisionCv[],
+      /* Opcional: sin la tabla de supabase/chat-adjuntos.sql, el chat queda sin tildes de leído. */
+      chatLecturas: (porTabla.chat_lecturas ?? []) as ChatLectura[],
       /* Opcional: sin supabase/gastos-recurrentes.sql, ninguno. */
       gastosRecurrentes: (porTabla.gastos_recurrentes ?? []) as GastoRecurrente[],
       /* Vacías para quien no es dueño: RLS las esconde. */
@@ -658,7 +661,7 @@ function ordenDeSiembra(e: EstadoApp): [string, unknown[]][] {
     ["campanias", e.campanias], ["metas", e.metas], ["campos", e.campos],
     ["ventas", e.ventas], ["cuotas", e.cuotas], ["movimientos", e.movimientos],
     ["pagos", e.pagos], ["devoluciones", e.devoluciones ?? []], ["gastos", e.gastos],
-    ["comentarios", e.comentarios ?? []],
+    ["comentarios", e.comentarios ?? []], ["chat_lecturas", e.chatLecturas ?? []],
     ["arqueos", e.arqueos ?? []],
     ["traspasos", e.traspasos ?? []],
     ["gastos_recurrentes", e.gastosRecurrentes ?? []],
@@ -708,7 +711,7 @@ async function vaciarNube() {
      es, no borran nada (RLS) y no dan error. */
   const orden = [
     "liquidaciones", "honorarios",
-    "actividad", "comentarios", "arqueos", "traspasos", "gastos_recurrentes", "campos", "metas", "devoluciones", "pagos", "movimientos", "cuotas", "ventas", "gastos",
+    "actividad", "chat_lecturas", "comentarios", "arqueos", "traspasos", "gastos_recurrentes", "campos", "metas", "devoluciones", "pagos", "movimientos", "cuotas", "ventas", "gastos",
     "campanias", "reportes", "sesiones", "seguimiento_alumnos", "testimonios", "resells", "revisiones_cv", "alumnos", "leads", "contactos", "webinars",
     "etapas", "equipo", "embudos", "procesadores", "productos",
     "etapas_servicio",
@@ -1944,7 +1947,7 @@ export const acciones = {
 
   /* ---------- Chat del equipo, en la ficha de cada persona ---------- */
 
-  comentar(contactoId: ID, texto: string, autor: string, autorEmail?: string, adjuntos: Adjunto[] = [], respondeA?: ID): void {
+  comentar(contactoId: ID, texto: string, autor: string, autorEmail?: string, adjuntos: Adjunto[] = [], respondeA?: ID, citaA?: ID): void {
     const limpio = texto.trim();
     /* Un mensaje puede ser sólo una foto o una nota de voz: lo que no puede es estar vacío del todo. */
     if (!limpio && adjuntos.length === 0) return;
@@ -1954,9 +1957,61 @@ export const acciones = {
       ...(autorEmail ? { autorEmail } : {}),
       ...(adjuntos.length ? { adjuntos } : {}),
       ...(respondeA ? { respondeA } : {}),
+      ...(citaA ? { citaA } : {}),
     };
     guardar({ ...e, comentarios: [...(e.comentarios ?? []), c] });
     empujar({ tipo: "upsert", tabla: "comentarios", filas: [c] });
+  },
+
+  /** Abrí el chat de esta ficha: leí (y me llegó) hasta el último mensaje de otro. Los tildes de quien lo mandó se ponen azules. */
+  marcarLeido(contactoId: ID, quien: string, nombre: string): void {
+    const e = snapshot();
+    const fila = lecturaAlLeer(contactoId, e.comentarios ?? [], e.chatLecturas ?? [], quien, nombre);
+    if (!fila) return;
+    guardar({ ...e, chatLecturas: [fila, ...(e.chatLecturas ?? []).filter((l) => l.id !== fila.id)] });
+    empujar({ tipo: "upsert", tabla: "chat_lecturas", filas: [fila] });
+  },
+
+  /** Me llegaron mensajes (al abrir la app o en vivo): en los chats de los que soy parte, el que los mandó ve el doble tilde. */
+  marcarRecibidos(quien: string, nombre: string): void {
+    const e = snapshot();
+    const filas = recibidosAlLlegar(e.comentarios ?? [], e.chatLecturas ?? [], quien, nombre);
+    if (filas.length === 0) return;
+    const nuevas = new Map(filas.map((l) => [l.id, l] as const));
+    guardar({ ...e, chatLecturas: [...filas, ...(e.chatLecturas ?? []).filter((l) => !nuevas.has(l.id))] });
+    empujarEnLotes("chat_lecturas", filas);
+  },
+
+  /* Lo que llega del chat en vivo (lo que escribió otro, sus reacciones, lo que borró): entra a la memoria sin
+     volver a escribirse, en orden de llegada. Lo que todavía está en la cola de acá es más nuevo y no se pisa. */
+  recibirComentarios(filas: Comentario[], borrados: ID[] = [], { completo = false } = {}): void {
+    const e = snapshot();
+    /* `completo`: llegó el chat entero (al reconectarse): lo que no vino se borró en la base mientras tanto. */
+    const enLaBase = new Set(filas.map((f) => f.id));
+    const sobran = completo ? (e.comentarios ?? []).map((c) => c.id).filter((id) => !enLaBase.has(id)) : [];
+    const fuera = new Set([...borrados, ...sobran].filter((id) => !escrituraPendiente("comentarios", id)));
+    const llegan = new Map(filas.filter((f) => !escrituraPendiente("comentarios", f.id)).map((f) => [f.id, f] as const));
+    let cambio = false;
+    const lista = (e.comentarios ?? []).flatMap((c) => {
+      if (fuera.has(c.id)) { cambio = true; return []; }
+      const n = llegan.get(c.id);
+      if (!n) return [c];
+      llegan.delete(c.id);
+      const junto = { ...c, ...n };
+      if (JSON.stringify(junto) !== JSON.stringify(c)) cambio = true;
+      return [junto];
+    });
+    if (!cambio && llegan.size === 0) return;
+    const comentarios = [...lista, ...llegan.values()].sort((a, b) => +new Date(a.creadoEn) - +new Date(b.creadoEn));
+    guardar({ ...e, comentarios });
+  },
+
+  recibirLecturas(filas: ChatLectura[]): void {
+    const e = snapshot();
+    const llegan = filas.filter((f) => !escrituraPendiente("chat_lecturas", f.id));
+    if (llegan.length === 0) return;
+    const ids = new Set(llegan.map((l) => l.id));
+    guardar({ ...e, chatLecturas: [...llegan, ...(e.chatLecturas ?? []).filter((l) => !ids.has(l.id))] });
   },
 
   /** Pone o saca MI reacción con ese emoji en un mensaje del chat (como en Blue OS: tocar una fichita la suma o la saca). */

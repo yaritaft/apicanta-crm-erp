@@ -3,17 +3,18 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
-  ArrowLeft, ArrowUp, Download, FileText, Loader2, MessageSquare, MessageSquareReply, Mic, Paperclip, Pause, Play, Smile, Trash2, X,
+  ArrowLeft, ArrowUp, Check, Download, FileText, Loader2, MessageSquare, MessageSquareReply, Mic, Paperclip, Pause, Play, Reply, Smile, Trash2, X,
 } from "lucide-react";
 import { Avatar, Empty } from "@/components/ui/ui";
 import { useToast } from "@/components/ui/Toast";
-import { acciones } from "@/lib/store";
+import { acciones, escrituraPendiente, useEstado, useSync } from "@/lib/store";
 import { fechaHora, relativo } from "@/lib/format";
 import { useUsuarioActual } from "@/lib/usuario";
 import {
   ADJUNTOS_POR_MENSAJE, descartarAdjunto, duracionLegible, normalizarPicos, problemaDeAdjunto, subirAdjunto, tamanioLegible, tipoDeArchivo, urlDeAdjunto,
 } from "@/lib/adjuntos-chat";
-import type { Adjunto, Comentario } from "@/lib/types";
+import { claveDe, entregaDe, resumenDeMensaje, type DetalleEntrega } from "@/lib/chat-equipo";
+import type { Adjunto, ChatLectura, Comentario } from "@/lib/types";
 import "./chat.css";
 
 /* ==================================================================
@@ -31,7 +32,14 @@ import "./chat.css";
      · cada mensaje se responde EN HILO (como Blue OS y Slack): debajo del
        original queda «N respuestas» con las caras de quienes contestaron;
        el hilo se abre encima de la conversación o, si el chat se estiró con
-       el divisor de la ficha, al costado; Esc lo cierra.
+       el divisor de la ficha, al costado; Esc lo cierra;
+     · «Responder» cita el mensaje como en WhatsApp: arriba de la respuesta
+       va un recuadro con él, y tocarlo lleva hasta el original;
+     · los mensajes propios llevan los tildes de WhatsApp (lib/chat-equipo.ts):
+       reloj si no salió, ✓ enviado, ✓✓ les llegó a todos, ✓✓ azul lo leyeron;
+     · una nota de voz grabada con texto o archivos ya cargados se suma al
+       mensaje (sale todo junto); con la caja vacía, sale sola al toque.
+     · En cada mensaje, las fotos y los archivos van arriba y el texto al final.
 
    Lo que el equipo anota acá lo ve cualquiera que abra la ficha. Los
    archivos van a un bucket privado (lib/adjuntos-chat.ts).
@@ -347,16 +355,23 @@ function useGrabadora(onError: (msg: string) => void) {
 
 /* ---------- La caja para escribir ---------- */
 
-interface Pendiente { clave: string; archivo: File; vista?: string; estado: "subiendo" | "listo" | "error"; adjunto?: Adjunto; error?: string }
+interface Pendiente {
+  clave: string; archivo: File; vista?: string; estado: "subiendo" | "listo" | "error"; adjunto?: Adjunto; error?: string;
+  /* Lo que ya se sabe del archivo (una nota de voz: su duración y su onda). */
+  extra?: Partial<Adjunto>;
+}
 
-type Puerta = { agregar: (f: File[]) => void };
+type Puerta = { agregar: (f: File[]) => void; enfocar: () => void };
 
-function Caja({ contactoId, puerta, respondeA, enfocar }: {
+function Caja({ contactoId, puerta, respondeA, enfocar, cita, onSacarCita }: {
   contactoId: string; puerta: React.MutableRefObject<Puerta | null>;
   /* En un hilo: el mensaje al que se responde. */
   respondeA?: string;
   /* Pone el cursor en la caja al aparecer (al abrir un hilo). */
   enfocar?: boolean;
+  /* El mensaje que se está citando («Responder»), si hay uno. */
+  cita?: Comentario | null;
+  onSacarCita?: () => void;
 }) {
   const yo = useUsuarioActual();
   const toast = useToast();
@@ -385,6 +400,17 @@ function Caja({ contactoId, puerta, respondeA, enfocar }: {
     }
   }, []);
 
+  /* Un archivo a la lista de lo que sale con el mensaje: se sube ya, mientras se escribe. */
+  const sumar = useCallback((archivo: File, extra?: Partial<Adjunto>) => {
+    const clave = crypto.randomUUID();
+    const vista = tipoDeArchivo(archivo.type, archivo.name) === "imagen" ? URL.createObjectURL(archivo) : undefined;
+    setPendientes((xs) => [...xs, { clave, archivo, vista, estado: "subiendo", extra }]);
+    subirAdjunto(archivo, contactoId, extra).then(
+      (adjunto) => setPendientes((xs) => xs.map((p) => (p.clave === clave ? { ...p, estado: "listo", adjunto } : p))),
+      (err: Error) => setPendientes((xs) => xs.map((p) => (p.clave === clave ? { ...p, estado: "error", error: err.message } : p))),
+    );
+  }, [contactoId]);
+
   /** La puerta única de un archivo: el clip, pegar o soltar. */
   const agregar = useCallback((archivos: File[]) => {
     const lugar = ADJUNTOS_POR_MENSAJE - pendientesRef.current.length;
@@ -392,19 +418,13 @@ function Caja({ contactoId, puerta, respondeA, enfocar }: {
     for (const archivo of archivos.slice(0, Math.max(0, lugar))) {
       const problema = problemaDeAdjunto(archivo);
       if (problema) { toast(problema, "err"); continue; }
-      const clave = crypto.randomUUID();
-      const vista = tipoDeArchivo(archivo.type, archivo.name) === "imagen" ? URL.createObjectURL(archivo) : undefined;
-      setPendientes((xs) => [...xs, { clave, archivo, vista, estado: "subiendo" }]);
-      subirAdjunto(archivo, contactoId).then(
-        (adjunto) => setPendientes((xs) => xs.map((p) => (p.clave === clave ? { ...p, estado: "listo", adjunto } : p))),
-        (err: Error) => setPendientes((xs) => xs.map((p) => (p.clave === clave ? { ...p, estado: "error", error: err.message } : p))),
-      );
+      sumar(archivo);
     }
-  }, [contactoId, toast]);
+  }, [sumar, toast]);
 
-  /* Lo que se suelta encima de los mensajes entra por la misma puerta. */
+  /* Lo que se suelta encima de los mensajes entra por la misma puerta; «Responder» pone el cursor acá. */
   useEffect(() => {
-    puerta.current = { agregar };
+    puerta.current = { agregar, enfocar: () => area.current?.focus() };
     return () => { puerta.current = null; };
   }, [puerta, agregar]);
 
@@ -420,20 +440,33 @@ function Caja({ contactoId, puerta, respondeA, enfocar }: {
 
   function mandar() {
     if (!puedeMandar) return;
-    acciones.comentar(contactoId, texto, yo.nombre, yo.email ?? undefined, listos, respondeA);
+    acciones.comentar(contactoId, texto, yo.nombre, yo.email ?? undefined, listos, respondeA, cita?.id);
     for (const p of pendientes) if (p.vista) URL.revokeObjectURL(p.vista);
     setTexto("");
     setPendientes([]);
+    onSacarCita?.();
     area.current?.focus();
   }
 
-  async function mandarNota() {
+  /* Si ya hay texto o archivos en la caja, la nota de voz se SUMA al mensaje (sale todo junto, con el texto al final);
+     con la caja vacía, sale sola al toque, como en WhatsApp. */
+  const sumaAlMensaje = texto.trim().length > 0 || pendientes.length > 0;
+
+  async function terminarNota() {
     setMandandoNota(true);
     try {
       const nota = await grabadora.terminar();
       if (!nota) { toast("No se grabó nada.", "err"); return; }
-      const adjunto = await subirAdjunto(nota.archivo, contactoId, { duracion: nota.duracion, picos: nota.picos, notaDeVoz: true });
-      acciones.comentar(contactoId, "", yo.nombre, yo.email ?? undefined, [adjunto], respondeA);
+      const extra: Partial<Adjunto> = { duracion: nota.duracion, picos: nota.picos, notaDeVoz: true };
+      if (sumaAlMensaje) {
+        if (pendientesRef.current.length >= ADJUNTOS_POR_MENSAJE) { toast(`Entran hasta ${ADJUNTOS_POR_MENSAJE} archivos por mensaje.`, "err"); return; }
+        sumar(nota.archivo, extra);
+        window.setTimeout(() => area.current?.focus(), 0);
+        return;
+      }
+      const adjunto = await subirAdjunto(nota.archivo, contactoId, extra);
+      acciones.comentar(contactoId, "", yo.nombre, yo.email ?? undefined, [adjunto], respondeA, cita?.id);
+      onSacarCita?.();
     } catch (err) {
       toast(err instanceof Error ? err.message : "No se pudo mandar la nota de voz.", "err");
     } finally {
@@ -461,8 +494,10 @@ function Caja({ contactoId, puerta, respondeA, enfocar }: {
             </>
           )}
         </div>
-        <button type="button" className="chatx-enviar" onClick={mandarNota} disabled={pidiendo || mandandoNota} aria-label="Mandar la nota de voz" title="Mandar">
-          {mandandoNota ? <Loader2 size={17} className="chatx-gira" /> : <ArrowUp size={18} />}
+        <button type="button" className="chatx-enviar" onClick={terminarNota} disabled={pidiendo || mandandoNota}
+          aria-label={sumaAlMensaje ? "Sumar la nota de voz al mensaje" : "Mandar la nota de voz"}
+          title={sumaAlMensaje ? "Sumarla al mensaje (sale con lo que ya escribiste)" : "Mandar"}>
+          {mandandoNota ? <Loader2 size={17} className="chatx-gira" /> : sumaAlMensaje ? <Check size={18} /> : <ArrowUp size={18} />}
         </button>
       </div>
     );
@@ -470,13 +505,22 @@ function Caja({ contactoId, puerta, respondeA, enfocar }: {
 
   return (
     <div className="chatx-caja">
+      {cita && (
+        <div className="chatx-cita chatx-cita--caja">
+          <span className="chatx-cita__txt">
+            <span className="chatx-cita__autor">Respondiendo a {cita.autor}</span>
+            <span className="chatx-cita__resumen">{resumenDeMensaje(cita)}</span>
+          </span>
+          <button type="button" className="chatx-cita__x" onClick={() => { onSacarCita?.(); area.current?.focus(); }} aria-label="No citar ese mensaje" title="No citar (Esc)"><X size={14} /></button>
+        </div>
+      )}
       {pendientes.length > 0 && (
         <div className="chatx-fichitas">
           {pendientes.map((p) => (
             <div key={p.clave} className={`chatx-fichita${p.estado === "error" ? " chatx-fichita--error" : ""}`} title={p.error ?? p.archivo.name}>
-              {p.vista ? <img src={p.vista} alt="" /> : <span className="chatx-fichita__ico"><FileText size={16} /></span>}
-              <span className="chatx-fichita__txt"><span className="truncate">{p.archivo.name}</span>
-                <small>{p.estado === "subiendo" ? "Subiendo…" : p.estado === "error" ? "No se pudo subir" : tamanioLegible(p.archivo.size)}</small></span>
+              {p.vista ? <img src={p.vista} alt="" /> : <span className="chatx-fichita__ico">{p.extra?.notaDeVoz ? <Mic size={16} /> : <FileText size={16} />}</span>}
+              <span className="chatx-fichita__txt"><span className="truncate">{p.extra?.notaDeVoz ? "Nota de voz" : p.archivo.name}</span>
+                <small>{p.estado === "subiendo" ? "Subiendo…" : p.estado === "error" ? "No se pudo subir" : p.extra?.notaDeVoz ? duracionLegible(p.extra.duracion) : tamanioLegible(p.archivo.size)}</small></span>
               {p.estado === "subiendo" && <Loader2 size={14} className="chatx-gira" aria-hidden />}
               <button type="button" className="chatx-fichita__x" onClick={() => sacar(p)} aria-label={`Sacar ${p.archivo.name}`}><X size={13} /></button>
             </div>
@@ -495,7 +539,8 @@ function Caja({ contactoId, puerta, respondeA, enfocar }: {
       />
       <div className="chatx-barra">
         <button type="button" className="chatx-boton" onClick={() => elegir.current?.click()} aria-label="Adjuntar fotos, videos o archivos" title="Adjuntar (también podés pegar o soltar)"><Paperclip size={17} /></button>
-        <button type="button" className="chatx-boton" onClick={grabadora.empezar} aria-label="Grabar una nota de voz" title="Grabar una nota de voz"><Mic size={17} /></button>
+        <button type="button" className="chatx-boton" onClick={grabadora.empezar} aria-label="Grabar una nota de voz"
+          title={sumaAlMensaje ? "Grabar una nota de voz (se suma a este mensaje)" : "Grabar una nota de voz"}><Mic size={17} /></button>
         <input ref={elegir} type="file" multiple hidden onChange={(ev) => { agregar(Array.from(ev.target.files ?? [])); ev.target.value = ""; }} />
         <span className="chatx-ayuda">Enter manda · Shift+Enter, otro renglón</span>
         <button type="button" className="chatx-enviar" onClick={mandar} disabled={!puedeMandar} aria-label="Mandar" title={subiendo ? "Esperá a que terminen de subir los archivos" : "Mandar"}>
@@ -600,13 +645,109 @@ function Reacciones({ c, yoEmail, yoNombre, onReaccionar }: { c: Comentario; yoE
   );
 }
 
+/* ---------- La cita y los tildes ---------- */
+
+/* Lleva hasta un mensaje ya dibujado en la misma lista y lo prende un momento (como Blue OS, destellarMensaje). */
+function irAlMensaje(desde: HTMLElement, id: string) {
+  const lista = desde.closest(".chatx-lista") ?? document;
+  const destino = lista.querySelector<HTMLElement>(`[data-mensaje="${CSS.escape(id)}"]`);
+  if (!destino) return;
+  destino.scrollIntoView({ block: "center", behavior: "smooth" });
+  destino.classList.remove("chatx-msj--destello");
+  void destino.offsetWidth; // si se toca dos veces seguidas, el destello vuelve a empezar
+  destino.classList.add("chatx-msj--destello");
+  window.setTimeout(() => destino.classList.remove("chatx-msj--destello"), 1800);
+}
+
+/* El recuadro de arriba de una respuesta: de quién y qué decía el mensaje citado. Tocarlo lleva hasta él. */
+function Cita({ original }: { original: Comentario | null }) {
+  if (!original) {
+    return <div className="chatx-cita chatx-cita--borrada"><span className="chatx-cita__txt"><span className="chatx-cita__resumen">Mensaje borrado</span></span></div>;
+  }
+  return (
+    <button type="button" className="chatx-cita" onClick={(ev) => irAlMensaje(ev.currentTarget, original.id)} title="Ir al mensaje citado" aria-label={`Ir al mensaje citado de ${original.autor}`}>
+      <span className="chatx-cita__txt">
+        <span className="chatx-cita__autor">{original.autor}</span>
+        <span className="chatx-cita__resumen">{resumenDeMensaje(original)}</span>
+      </span>
+    </button>
+  );
+}
+
+/* Los tildes de WhatsApp (el dibujo de Blue OS, components/chat/BurbujaMensaje → Tildes y Reloj). */
+function DibujoTildes({ estado }: { estado: DetalleEntrega["estado"] }) {
+  if (estado === "enviando" || estado === "sin-enviar") {
+    return <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" strokeLinecap="round" /></svg>;
+  }
+  return (
+    <svg width="17" height="12" viewBox="0 0 18 12" fill="none" aria-hidden>
+      <path d="M1 6.2 4.2 9.4 10.6 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+      {estado !== "enviado" && <path d="M6.6 6.2 9.8 9.4 16.2 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />}
+    </svg>
+  );
+}
+
+const QUE_DICE: Record<DetalleEntrega["estado"], string> = {
+  "enviando": "Enviando…",
+  "sin-enviar": "Todavía no se mandó: se reintenta solo al volver la conexión",
+  "enviado": "Enviado",
+  "recibido": "Les llegó a todos",
+  "leido": "Lo leyeron todos",
+};
+
+/* Tocar los tildes muestra quién lo leyó, a quién le llegó y a quién todavía no (el «Info del mensaje» de WhatsApp). */
+function Tildes({ d }: { d: DetalleEntrega }) {
+  const [abierto, setAbierto] = useState(false);
+  const caja = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    if (!abierto) return;
+    const fuera = (ev: PointerEvent) => { if (caja.current && !caja.current.contains(ev.target as Node)) setAbierto(false); };
+    const esc = (ev: KeyboardEvent) => { if (ev.key === "Escape") { ev.stopImmediatePropagation(); setAbierto(false); } };
+    document.addEventListener("pointerdown", fuera, true);
+    document.addEventListener("keydown", esc, true);
+    return () => { document.removeEventListener("pointerdown", fuera, true); document.removeEventListener("keydown", esc, true); };
+  }, [abierto]);
+  const enCola = d.estado === "enviando" || d.estado === "sin-enviar";
+  const grupos = [
+    { rot: "Lo leyeron", gente: d.leyeron, cls: "chatx-info__leido" },
+    { rot: "Les llegó, sin leer", gente: d.recibieron, cls: "" },
+    { rot: "Todavía no les llegó", gente: d.faltan, cls: "" },
+  ].filter((g) => g.gente.length > 0);
+  return (
+    <span ref={caja} className="chatx-estado">
+      <button type="button" className={`chatx-tildes chatx-tildes--${d.estado}`} onClick={() => !enCola && setAbierto((x) => !x)}
+        aria-label={QUE_DICE[d.estado]} title={QUE_DICE[d.estado]} aria-expanded={enCola ? undefined : abierto}>
+        <DibujoTildes estado={d.estado} />
+      </button>
+      {abierto && (
+        <span className="chatx-info" role="dialog" aria-label="Quién lo vio">
+          <span className="chatx-info__tit">{QUE_DICE[d.estado]}</span>
+          {grupos.length === 0
+            ? <span className="chatx-info__nada">Todavía nadie más abrió este chat. Cuando alguien lo abra, acá vas a ver si lo leyó.</span>
+            : grupos.map((g) => (
+              <span key={g.rot} className="chatx-info__grupo">
+                <span className={`chatx-info__rot ${g.cls}`}>{g.rot}</span>
+                {g.gente.map((n) => <span key={n} className="chatx-info__quien"><Avatar nombre={n} size={20} />{n}</span>)}
+              </span>
+            ))}
+        </span>
+      )}
+    </span>
+  );
+}
+
 /* ---------- Un mensaje (como la burbuja del chat del equipo de Blue OS) ---------- */
 
-function Mensaje({ c, esMio, respuestas, enHilo, seguido, onAbrirHilo }: {
+function Mensaje({ c, esMio, respuestas, enHilo, seguido, onAbrirHilo, original, onCitar, entrega }: {
   c: Comentario; esMio: boolean; respuestas: Comentario[]; enHilo: boolean;
   /* Seguido de otro de la misma persona (menos de 2 minutos): va pegado, sin foto ni nombre. */
   seguido?: boolean;
   onAbrirHilo?: () => void;
+  /* El mensaje que cita: undefined si no cita ninguno, null si el citado se borró. */
+  original?: Comentario | null;
+  onCitar?: () => void;
+  /* Los tildes, sólo en los míos. */
+  entrega?: DetalleEntrega;
 }) {
   const yo = useUsuarioActual();
   const [emojis, setEmojis] = useState<DOMRect | null>(null);
@@ -617,7 +758,7 @@ function Mensaje({ c, esMio, respuestas, enHilo, seguido, onAbrirHilo }: {
   const reaccionar = (emoji: string) => acciones.reaccionar(c.id, emoji, yo.nombre, yo.email ?? undefined);
   return (
     /* tabIndex -1: en el celular, tocar el mensaje le da el foco y así aparece su barra (no hay «pasar el mouse»). */
-    <article tabIndex={-1} className={`chatx-msj${seguido ? " chatx-msj--seguido" : ""}${emojis ? " chatx-msj--menu" : ""}`}>
+    <article tabIndex={-1} data-mensaje={c.id} className={`chatx-msj${seguido ? " chatx-msj--seguido" : ""}${emojis ? " chatx-msj--menu" : ""}${entrega ? " chatx-msj--con-tildes" : ""}`}>
       <div className="chatx-msj__foto">{!seguido && <Avatar nombre={c.autor} size={32} />}</div>
       <div className="chatx-msj__cuerpo">
         {!seguido ? (
@@ -626,8 +767,11 @@ function Mensaje({ c, esMio, respuestas, enHilo, seguido, onAbrirHilo }: {
             <span className="chatx-msj__hora" title={fechaHora(c.creadoEn)}>{relativo(c.creadoEn)}</span>
           </div>
         ) : <span className="chatx-msj__hora chatx-msj__hora--al-lado" title={fechaHora(c.creadoEn)}>{fechaHora(c.creadoEn).slice(-5)}</span>}
-        {c.texto && <p className="chatx-msj__texto">{c.texto}</p>}
+        {original !== undefined && <Cita original={original} />}
+        {/* Las fotos y los archivos arriba y el texto siempre al final, como en WhatsApp (pedido de Juan Cruz, 20/10). */}
         {c.adjuntos?.length ? <Adjuntos lista={c.adjuntos} /> : null}
+        {c.texto && <p className="chatx-msj__texto">{c.texto}</p>}
+        {entrega && <Tildes d={entrega} />}
         <Reacciones c={c} yoEmail={yo.email ?? undefined} yoNombre={yo.nombre} onReaccionar={reaccionar} />
         {!enHilo && respuestas.length > 0 && (
           <div className="chatx-hilo-pie">
@@ -648,6 +792,9 @@ function Mensaje({ c, esMio, respuestas, enHilo, seguido, onAbrirHilo }: {
           <Smile size={17} />
         </button>
         <span className="chatx-barra-msj__div" aria-hidden />
+        {onCitar && (
+          <button type="button" onClick={onCitar} aria-label="Responder citando este mensaje" data-tip="Responder"><Reply size={17} /></button>
+        )}
         {!enHilo && onAbrirHilo && (
           <button type="button" onClick={onAbrirHilo} aria-label="Responder en hilo" data-tip="Responder en hilo"><MessageSquareReply size={17} /></button>
         )}
@@ -668,49 +815,83 @@ function esSeguido(anterior: Comentario | undefined, c: Comentario, conHilo: boo
 
 /* ---------- El chat ---------- */
 
-export function ChatEquipo({ contactoId, comentarios, titulo = "Chat del equipo" }: { contactoId: string; comentarios: Comentario[]; titulo?: string }) {
+export function ChatEquipo({ contactoId, comentarios: llegados, titulo = "Chat del equipo" }: { contactoId: string; comentarios: Comentario[]; titulo?: string }) {
   const yo = useUsuarioActual();
+  const quien = claveDe(yo.email, yo.nombre);
+  const todasLasLecturas = useEstado().chatLecturas;
+  /* Re-dibuja cuando la cola termina de mandar: así el reloj pasa a tilde. */
+  const sync = useSync();
   const fin = useRef<HTMLDivElement>(null);
   const finHilo = useRef<HTMLDivElement>(null);
   const caja = useRef<Puerta | null>(null);
   const cajaHilo = useRef<Puerta | null>(null);
   const [soltando, setSoltando] = useState(false);
   const [hilo, setHilo] = useState<string | null>(null);
+  /* El mensaje que se está citando con «Responder», en la conversación y en el hilo. */
+  const [citaId, setCitaId] = useState<string | null>(null);
+  const [citaHiloId, setCitaHiloId] = useState<string | null>(null);
+
+  /* En orden de llegada: lo que entra en vivo puede venir desordenado. */
+  const comentarios = useMemo(() => [...llegados].sort((a, b) => +new Date(a.creadoEn) - +new Date(b.creadoEn)), [llegados]);
+  const porId = useMemo(() => new Map(comentarios.map((c) => [c.id, c] as const)), [comentarios]);
+  const lecturas = useMemo((): ChatLectura[] => (todasLasLecturas ?? []).filter((l) => l.contactoId === contactoId), [todasLasLecturas, contactoId]);
 
   /* La conversación son los mensajes de arriba; las respuestas cuelgan de su original. Una respuesta cuyo original
      ya no está se muestra en la conversación, para no perderla. */
   const { raices, respuestasDe } = useMemo(() => {
-    const ids = new Set(comentarios.map((c) => c.id));
     const de = new Map<string, Comentario[]>();
     const raices: Comentario[] = [];
     for (const c of comentarios) {
-      if (c.respondeA && ids.has(c.respondeA)) de.set(c.respondeA, [...(de.get(c.respondeA) ?? []), c]);
+      if (c.respondeA && porId.has(c.respondeA)) de.set(c.respondeA, [...(de.get(c.respondeA) ?? []), c]);
       else raices.push(c);
     }
     return { raices, respuestasDe: de };
-  }, [comentarios]);
-  const original = hilo ? comentarios.find((c) => c.id === hilo) : undefined;
+  }, [comentarios, porId]);
+  const original = hilo ? porId.get(hilo) : undefined;
   const delHilo = hilo ? respuestasDe.get(hilo) ?? [] : [];
+  const cita = citaId ? porId.get(citaId) ?? null : null;
+  const citaHilo = citaHiloId ? porId.get(citaHiloId) ?? null : null;
 
   /* Al abrir y con cada mensaje nuevo, lo último a la vista. */
   useEffect(() => { fin.current?.scrollIntoView({ block: "nearest" }); }, [raices.length]);
   useEffect(() => { finHilo.current?.scrollIntoView({ block: "nearest" }); }, [delHilo.length, hilo]);
-  /* Si borran el original, el hilo se cierra solo. */
+  /* Si borran el original, el hilo se cierra solo. Al cambiar de hilo, la cita del anterior no sigue. */
   useEffect(() => { if (hilo && !original) setHilo(null); }, [hilo, original]);
+  useEffect(() => { setCitaHiloId(null); }, [hilo]);
 
-  /* Esc cierra primero el hilo. Va antes que el Esc de la ficha (que la cerraría entera). */
+  /* Con el chat a la vista, lo que escribieron los demás queda LEÍDO (sus tildes se ponen azules).
+     Si la pestaña está escondida, recién cuando se vuelve a ella. */
   useEffect(() => {
-    if (!hilo) return;
+    const leer = () => { if (document.visibilityState === "visible") acciones.marcarLeido(contactoId, quien, yo.nombre); };
+    leer();
+    document.addEventListener("visibilitychange", leer);
+    return () => document.removeEventListener("visibilitychange", leer);
+  }, [contactoId, quien, yo.nombre, comentarios]);
+
+  /* Esc: primero deja de citar, después cierra el hilo. Va antes que el Esc de la ficha (que la cerraría entera). */
+  useEffect(() => {
+    if (!hilo && !citaId) return;
     const onKey = (ev: KeyboardEvent) => {
       if (ev.key !== "Escape" || document.querySelector(".modal-backdrop")) return;
       ev.stopImmediatePropagation();
-      setHilo(null);
+      if (hilo && citaHiloId) setCitaHiloId(null);
+      else if (hilo) setHilo(null);
+      else setCitaId(null);
     };
     document.addEventListener("keydown", onKey, true);
     return () => document.removeEventListener("keydown", onKey, true);
-  }, [hilo]);
+  }, [hilo, citaId, citaHiloId]);
 
   const esMio = (c: Comentario) => (yo.email ? c.autorEmail === yo.email : c.autor === yo.nombre);
+  const entrega = (c: Comentario): DetalleEntrega | undefined => (esMio(c)
+    ? entregaDe(c, comentarios, lecturas, { pendiente: escrituraPendiente("comentarios", c.id), error: sync.estado === "error" })
+    : undefined);
+  /* undefined: no cita nada · null: el citado se borró. */
+  const citadoDe = (c: Comentario) => (c.citaA ? porId.get(c.citaA) ?? null : undefined);
+  const citar = (c: Comentario, enHilo: boolean) => {
+    if (enHilo) { setCitaHiloId(c.id); cajaHilo.current?.enfocar(); }
+    else { setCitaId(c.id); caja.current?.enfocar(); }
+  };
 
   return (
     <>
@@ -741,11 +922,12 @@ export function ChatEquipo({ contactoId, comentarios, titulo = "Chat del equipo"
                 />
               ) : raices.map((c, i) => (
                 <Mensaje key={c.id} c={c} esMio={esMio(c)} respuestas={respuestasDe.get(c.id) ?? []} enHilo={false} onAbrirHilo={() => setHilo(c.id)}
-                  seguido={esSeguido(raices[i - 1], c, (respuestasDe.get(raices[i - 1]?.id ?? "")?.length ?? 0) > 0)} />
+                  seguido={esSeguido(raices[i - 1], c, (respuestasDe.get(raices[i - 1]?.id ?? "")?.length ?? 0) > 0)}
+                  original={citadoDe(c)} onCitar={() => citar(c, false)} entrega={entrega(c)} />
               ))}
               <div ref={fin} />
             </div>
-            <Caja contactoId={contactoId} puerta={caja} />
+            <Caja contactoId={contactoId} puerta={caja} cita={cita} onSacarCita={() => setCitaId(null)} />
           </section>
 
           {original && (
@@ -756,12 +938,15 @@ export function ChatEquipo({ contactoId, comentarios, titulo = "Chat del equipo"
                 <button type="button" className="chatx-boton chatx-hilo__cerrar" onClick={() => setHilo(null)} aria-label="Cerrar el hilo" title="Cerrar"><X size={16} /></button>
               </div>
               <div className="chat__lista lista-scroll chatx-lista chatx-hilo__lista" role="log" aria-label="Respuestas del hilo">
-                <Mensaje c={original} esMio={esMio(original)} respuestas={delHilo} enHilo />
+                <Mensaje c={original} esMio={esMio(original)} respuestas={delHilo} enHilo original={citadoDe(original)} onCitar={() => citar(original, true)} entrega={entrega(original)} />
                 <div className="chatx-hilo__separador"><span>{delHilo.length ? `${delHilo.length} ${delHilo.length === 1 ? "respuesta" : "respuestas"}` : "Todavía nadie respondió"}</span></div>
-                {delHilo.map((r, i) => <Mensaje key={r.id} c={r} esMio={esMio(r)} respuestas={[]} enHilo seguido={i > 0 && esSeguido(delHilo[i - 1], r, false)} />)}
+                {delHilo.map((r, i) => (
+                  <Mensaje key={r.id} c={r} esMio={esMio(r)} respuestas={[]} enHilo seguido={i > 0 && esSeguido(delHilo[i - 1], r, false)}
+                    original={citadoDe(r)} onCitar={() => citar(r, true)} entrega={entrega(r)} />
+                ))}
                 <div ref={finHilo} />
               </div>
-              <Caja key={original.id} contactoId={contactoId} puerta={cajaHilo} respondeA={original.id} enfocar />
+              <Caja key={original.id} contactoId={contactoId} puerta={cajaHilo} respondeA={original.id} enfocar cita={citaHilo} onSacarCita={() => setCitaHiloId(null)} />
             </section>
           )}
         </div>

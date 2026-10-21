@@ -12,7 +12,7 @@ import ts from "typescript";
 import type { BaseFalsa, Fila } from "./_nube";
 
 export const CLAVE_DE_TABLA: Record<string, string> = {
-  seguimiento_alumnos: "seguimientos", gastos_recurrentes: "gastosRecurrentes", revisiones_cv: "revisionesCv", ad_insights: "adInsights",
+  seguimiento_alumnos: "seguimientos", gastos_recurrentes: "gastosRecurrentes", revisiones_cv: "revisionesCv", ad_insights: "adInsights", chat_lecturas: "chatLecturas",
   etapas_servicio: "etapasServicio", tipos_cuenta: "tiposCuenta",
 };
 export const claveDe = (tabla: string) => CLAVE_DE_TABLA[tabla] ?? tabla;

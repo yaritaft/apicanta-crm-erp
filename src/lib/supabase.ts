@@ -30,8 +30,8 @@ export const TABLAS = [
   "metas", "campos", "actividad",
   "productos", "procesadores", "embudos", "equipo",
   "ventas", "cuotas", "pagos", "gastos", "movimientos",
-  /* El chat del equipo en la ficha de cada persona */
-  "comentarios",
+  /* El chat del equipo en la ficha de cada persona, y hasta dónde lo leyó cada uno (los tildes) */
+  "comentarios", "chat_lecturas",
   /* Los arqueos de caja (Finanzas → Caja) */
   "arqueos",
   /* Los movimientos entre cuentas propias (Finanzas → Caja) */
@@ -81,6 +81,8 @@ export const TABLAS_OPCIONALES = new Set<string>([
   /* El chat de la ficha: hasta que corra supabase/comentarios.sql, la app
      anda igual y el chat queda sólo en este navegador. */
   "comentarios",
+  /* Los tildes del chat: hasta que corra supabase/chat-adjuntos.sql, el chat anda sin «leído». */
+  "chat_lecturas",
   /* Los arqueos: hasta que corra supabase/arqueos.sql, quedan en este navegador. */
   "arqueos",
   /* Los movimientos entre cuentas: hasta que corra supabase/traspasos.sql,

@@ -843,6 +843,21 @@ export interface Comentario {
   respondeA?: ID;
   /* Las reacciones con emoji: una por persona y emoji. Columna `reacciones` (jsonb). */
   reacciones?: Reaccion[];
+  /* El mensaje que cita, como «Responder» de WhatsApp: arriba va un recuadro con ese mensaje, que lleva hasta él. Columna `citaA`. */
+  citaA?: ID;
+}
+
+/* Hasta dónde le llegó y hasta dónde leyó una persona el chat de una ficha (los tildes de WhatsApp, lib/chat-equipo.ts).
+   Una fila por persona y ficha, con la fecha del último mensaje de otro que le llegó y que leyó. Tabla `chat_lecturas`. */
+export interface ChatLectura {
+  /* `${contactoId}:${quien}` */
+  id: ID;
+  contactoId: ID;
+  /* Su mail en minúsculas (sin nube, su nombre): lib/chat-equipo.ts → claveDe. */
+  quien: string;
+  nombre: string;
+  recibidoHasta?: string;
+  leidoHasta?: string;
 }
 
 export interface Reaccion {
@@ -945,6 +960,8 @@ export interface EstadoApp {
   resells?: Resell[];
   /* La revisión de CVs de Customer Success (supabase/revision-cv.sql). */
   revisionesCv?: RevisionCv[];
+  /* Hasta dónde le llegó y leyó cada uno el chat de cada ficha (supabase/chat-adjuntos.sql). */
+  chatLecturas?: ChatLectura[];
   /* Los gastos que se repiten todos los meses (software, abonos): cada mes se
      proponen con el monto del anterior y alguien los aprueba (lib/gastos-recurrentes.ts).
      Opcional: sin supabase/gastos-recurrentes.sql, ninguno. */

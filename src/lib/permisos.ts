@@ -218,7 +218,9 @@ export const EDITAN: Record<string, AreaId[]> = {
 /* Lo que cualquiera que entra escribe: lo que hizo (actividad) y sus
    preferencias. Y el servicio que nace de una venta lo crea quien la carga
    (la base lo deja con Ventas editable, aunque no vea Alumnos). */
-const LIBRES = new Set(["actividad", "preferencias"]);
+/* `chat_lecturas`: hasta dónde leyó cada uno el chat de una ficha (los tildes). Cada uno escribe sólo la suya y sólo de
+   lo que ve: lo cuida la base (supabase/chat-adjuntos.sql), así que cualquiera que vea una ficha puede marcarla leída. */
+const LIBRES = new Set(["actividad", "preferencias", "chat_lecturas"]);
 
 /* Lo del lector de WhatsApp: el servidor lo escribe (nadie desde la app), el código QR tampoco lo lee nadie
    (ni un dueño: lo entrega el servidor), y los teléfonos de los grupos no los ve quien está limitado a lo suyo. */
