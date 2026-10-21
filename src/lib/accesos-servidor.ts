@@ -396,7 +396,9 @@ export async function darAccesos(db: SupabaseClient, a: {
         continue;
       }
       /* Si falla, la fila conserva el nombre de la reunión y la inscripción que ya tenía (para reactivarla después). */
-      const nombreReunion = ya?.recursoNombre || reunion;
+      /* Una fila que falló antes de saber el nombre guardó el número: ese no cuenta como nombre. */
+      const conNombre = Boolean(ya?.recursoNombre && ya.recursoNombre !== reunion);
+      const nombreReunion = conNombre ? ya!.recursoNombre : reunion;
       const externoPrevio = ya?.externo ?? {};
       if (!token) { await anotar({ plataforma: "zoom", recurso: reunion, recursoNombre: nombreReunion, estado: "fallo", externo: externoPrevio, error: errorToken, dadoEn: null, quitadoEn: null }); continue; }
       /* Ya estuvo inscripto (se le quitó, o falló): se reactiva su inscripción en vez de crear otra. Zoom deja crear sólo
@@ -405,8 +407,9 @@ export async function darAccesos(db: SupabaseClient, a: {
         const re = await reactivarEnZoom(token, reunion, a.persona.email, typeof externoPrevio.registranteId === "string" ? externoPrevio.registranteId : null).catch(() => null);
         if (re) {
           const joinUrl = re.joinUrl ?? (typeof externoPrevio.joinUrl === "string" ? externoPrevio.joinUrl : null);
-          await anotar({ plataforma: "zoom", recurso: reunion, recursoNombre: nombreReunion, estado: "dado", externo: { registranteId: re.id, joinUrl }, error: null, dadoEn: ahora, quitadoEn: null });
-          if (joinUrl) salida.links.push({ plataforma: "zoom", nombre: nombreReunion, url: joinUrl });
+          const tema = conNombre ? nombreReunion : ((await temaDeReunion(token, reunion)) ?? nombreReunion);
+          await anotar({ plataforma: "zoom", recurso: reunion, recursoNombre: tema, estado: "dado", externo: { registranteId: re.id, joinUrl }, error: null, dadoEn: ahora, quitadoEn: null });
+          if (joinUrl) salida.links.push({ plataforma: "zoom", nombre: tema, url: joinUrl });
           continue;
         }
       }
@@ -433,7 +436,7 @@ export async function darAccesos(db: SupabaseClient, a: {
         if (typeof r.json?.join_url === "string") salida.links.push({ plataforma: "zoom", nombre: tema, url: r.json.join_url });
       } catch (e) {
         /* Sin fila previa, el nombre de la reunión se le pide a Zoom (si no, quedaba el número). */
-        const tema = ya?.recursoNombre ? nombreReunion : ((await temaDeReunion(token, reunion).catch(() => null)) ?? nombreReunion);
+        const tema = conNombre ? nombreReunion : ((await temaDeReunion(token, reunion).catch(() => null)) ?? nombreReunion);
         await anotar({ plataforma: "zoom", recurso: reunion, recursoNombre: tema, estado: "fallo", externo: externoPrevio, error: textoDeFallo("Zoom", e), dadoEn: null, quitadoEn: null });
       }
     }
