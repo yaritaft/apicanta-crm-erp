@@ -1,5 +1,6 @@
 import type { CuotaVencida } from "./finanzas";
 import { cuotaPasa, opcionesSobre, type FiltroPersonas, type OpcionFiltro } from "./buscar-cliente";
+import { diaDeNegocio, enRangoDeDias, type RangoDeDias } from "./dia-negocio";
 
 /* ==================================================================
    Finanzas → Cobros: las cuotas vencidas, por producto y por closer.
@@ -10,6 +11,13 @@ import { cuotaPasa, opcionesSobre, type FiltroPersonas, type OpcionFiltro } from
    regla de closer y servicio que «Cargar el pago de una cuota» y Clientes
    (lib/buscar-cliente.ts).
    ================================================================== */
+
+/** Adentro de un paso del cierre (el mes, la semana, el día): sólo las cuotas que vencían en ese período. Las de períodos anteriores se
+ *  resuelven en el cierre de su mes; mezclarlas acá mostraba, en octubre, cuotas de junio con 115 días de atraso (Juan Cruz, 21/10).
+ *  Con `hoy` («aaaa-mm-dd»), una cuota que vence hoy todavía no cuenta: es lo mismo que cuenta el paso («venció y sigue sin cobrar»). */
+export function vencidasDelPeriodo(vencidas: readonly CuotaVencida[], periodo: RangoDeDias, hoy?: string): CuotaVencida[] {
+  return vencidas.filter((v) => enRangoDeDias(v.vence, periodo) && (!hoy || diaDeNegocio(v.vence) < hoy));
+}
 
 export interface FiltroMora extends FiltroPersonas {
   /** Sólo las que llevan al menos estos días de atraso (7, 10, 12, 15 o 20). */

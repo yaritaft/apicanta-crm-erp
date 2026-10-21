@@ -24,12 +24,13 @@ import { cuantosFaltan } from "@/lib/gastos-recurrentes";
 import { acciones, useEstado } from "@/lib/store";
 import { fechaLarga, money, num, tasaTexto } from "@/lib/format";
 import { rangoDeFechas } from "@/lib/metricas";
+import { diaDeNegocio } from "@/lib/dia-negocio";
 import { DateRangePicker, rangoSub } from "@/components/ui/DateRangePicker";
 import { useRangoURL } from "@/lib/useRango";
 import { CopiarLink, Filtro } from "@/components/ui/Filtros";
 import { InfoMetrica } from "@/components/ui/InfoMetrica";
 import { useParamsURL, useTablaURL } from "@/lib/useParamsURL";
-import { filtrarVencidas, opcionesDeMora, totalDeMora } from "@/lib/mora-filtros";
+import { filtrarVencidas, opcionesDeMora, totalDeMora, vencidasDelPeriodo } from "@/lib/mora-filtros";
 import { calcularPyL, comisionesDelMes, comisionesSetterYReferidor, cuotasVencidas, UMBRALES_ATRASO } from "@/lib/finanzas";
 import { SIN_CLOSER } from "@/lib/buscar-cliente";
 import { useAbrirFicha } from "@/components/ficha/abrir";
@@ -131,7 +132,11 @@ export function DetalleVista({ embebido = false, seccion: seccionFija, rangoFijo
   const mon = e.ajustes.monedaBase;
   const M = (n: number, d = 0) => money(n, mon, d);
 
-  const vencidas = useMemo(() => cuotasVencidas(e), [e]);
+  const vencidasTodas = useMemo(() => cuotasVencidas(e), [e]);
+  /* Adentro de un paso (rangoFijo), sólo lo que vencía en ese período: las de meses anteriores se resuelven en el cierre de su mes. */
+  const vencidas = useMemo(() => (rangoFijo ? vencidasDelPeriodo(vencidasTodas, rangoFijo, diaDeNegocio(new Date().toISOString())) : vencidasTodas), [vencidasTodas, rangoFijo?.desde, rangoFijo?.hasta]); // eslint-disable-line react-hooks/exhaustive-deps
+  /* Lo que queda afuera por ser de otros períodos, para decirlo y no esconderlo. */
+  const deOtrosPeriodos = useMemo(() => (rangoFijo ? totalDeMora(vencidasTodas.filter((v) => !vencidas.includes(v))) : null), [rangoFijo, vencidasTodas, vencidas]);
   /* ?atraso=7 (lo manda la alarma): sólo las cuotas con al menos esos días. */
   const atraso = Number(enURL.atraso) || 0;
   const setAtraso = (n: number) => setEnURL({ atraso: n ? String(n) : null });
@@ -196,7 +201,7 @@ export function DetalleVista({ embebido = false, seccion: seccionFija, rangoFijo
           {vencidas.length > 0 && (
             <Ayuda
               titulo={moraVista.cuotas === 0 ? "Ninguna cuota vencida con estos filtros"
-                : moraVista.cuotas === 1 ? "Hay 1 cuota vencida sin cobrar" : `Hay ${num(moraVista.cuotas)} cuotas vencidas sin cobrar`}
+                : `${moraVista.cuotas === 1 ? "Hay 1 cuota vencida sin cobrar" : `Hay ${num(moraVista.cuotas)} cuotas vencidas sin cobrar`}${rangoFijo ? " de este período" : ""}`}
               icono={<AlertTriangle size={18} />}
             >
               {moraVista.cuotas === 0 ? (
@@ -293,6 +298,12 @@ export function DetalleVista({ embebido = false, seccion: seccionFija, rangoFijo
               vacio={<Empty icono={<Check size={22} />} titulo={hayFiltroMora && vencidas.length > 0 ? "Ninguna con estos filtros" : "Nadie atrasado"} texto={hayFiltroMora && vencidas.length > 0 ? "Probá con otro atraso, servicio o closer." : "Todas las cuotas exigibles están cobradas. Si aparece una vencida, la vas a ver acá con los días de atraso."} />}
             />
           </Card>
+          {deOtrosPeriodos && deOtrosPeriodos.cuotas > 0 && (
+            <p className="t-sm t-subtle">
+              Además hay {num(deOtrosPeriodos.cuotas)} {deOtrosPeriodos.cuotas === 1 ? "cuota vencida" : "cuotas vencidas"} de períodos anteriores por {M(deOtrosPeriodos.saldo)}:
+              se resuelven en el cierre de su mes. <Link href="/finanzas/detalle?seccion=cobros" className="link">Ver todas las cuotas vencidas</Link>.
+            </p>
+          )}
         </div>
       )}
 
