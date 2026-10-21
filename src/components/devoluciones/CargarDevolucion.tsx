@@ -16,7 +16,7 @@ import { accesosQuitables, avisoDeAccesosQuitados, resumenDeAccesos } from "@/li
 import { contratosPrendidos } from "@/components/contratos/cliente";
 import { leerAccesosDeAlumno, quitarTodosLosAccesos } from "./accesos-cliente";
 import type { Acceso } from "@/lib/accesos-servidor";
-import { puedeDarDeBaja } from "@/lib/permisos";
+import { nivelEn, puedeDarDeBaja } from "@/lib/permisos";
 import { cerrarDevolucion, usePedidoDevolucion, type PedidoDevolucion } from "@/lib/devolucion-ui";
 import {
   cambioParaDevolver, devolvibleDeVenta, mediodiaDeNegocio, pesosDeLaDevolucion, problemaDeDevolucion, procesadorDeLaVenta,
@@ -87,7 +87,8 @@ function Formulario({ pedido }: { pedido: PedidoDevolucion }) {
   });
   const venta = ventas.find((v) => v.id === ventaId);
   const alumno = venta ? alumnoDeVenta(e, venta) : undefined;
-  const accesosPrendidos = contratosPrendidos(e.ajustes.contratos, esDueno);
+  /* Sacar accesos lo hace quien edita Alumnos (la ruta lo pide); ver los accesos alcanza con verlos: sin poder editar, la opción no aparece. */
+  const accesosPrendidos = contratosPrendidos(e.ajustes.contratos, esDueno) && nivelEn(acceso, "alumnos") >= 2;
   const [accesos, setAccesos] = useState<Acceso[] | null>(null);
   useEffect(() => {
     setQuitarAccesos(false);
