@@ -1,7 +1,7 @@
 import { cuotasExigibles, valorEn, type Contexto, type DefKpi, type FormatoKpi } from "./kpis";
 import { gastosDePublicidad } from "./finanzas";
 import { leadsCerrados } from "./metricas";
-import { numerosDelWebinar } from "./webinar";
+import type { GastoDeWebinar } from "./webinar";
 import type { Pago, Venta, Webinar } from "./types";
 
 /* ==================================================================
@@ -62,12 +62,17 @@ const inversion = (c: Contexto, signo?: SignoKpi): Pieza => {
   return inv !== null ? dato("Inversión del embudo", inv, "moneda", signo) : ref("inv_ads", signo);
 };
 
-/* Lo mismo con cada webinar del período: una línea por webinar. */
-const porWebinar = (c: Contexto, f: (w: Webinar) => number): Pieza[] | null => {
-  const ws = c.webinars();
-  if (ws.length === 0) return null;
+/* La inversión de los webinars del período tal como la usan los costos y los retornos: el total de cada webinar (el que va con sus formularios,
+   agendas y ventas), no lo gastado en los días del corte. Con `conPauta`, sólo los webinars con pauta cargada (ROAS, ROI, profit y CAC). */
+const invWeb = (c: Contexto, signo?: SignoKpi, conPauta = false): Pieza =>
+  dato("Inversión total de los webinars", (conPauta ? c.webConPauta() : c.web())?.inversionTotal ?? null, "moneda", signo, "El total de cada webinar, no lo gastado en los días del período");
+
+/* Una línea por webinar con lo que gastó en los días del corte (no sólo los que tuvieron el vivo en esos días). */
+const porGasto = (c: Contexto, f: (x: GastoDeWebinar) => number): Pieza[] | null => {
+  const xs = c.webinarsConGasto();
+  if (xs.length === 0) return null;
   const nombre = (w: Webinar) => `${w.titulo} · ${w.fecha.slice(8, 10)}/${w.fecha.slice(5, 7)}`;
-  return ws.map((w, i) => dato(nombre(w), f(w), "moneda", i === 0 ? undefined : "+"));
+  return xs.map((x, i) => dato(nombre(x.webinar), f(x.gasto), "moneda", i === 0 ? undefined : "+"));
 };
 
 const COSTOS_DIRECTOS: Pieza[] = [
@@ -90,19 +95,19 @@ const EXPLICACIONES: Record<string, ExplicacionKpi> = {
     },
   },
   w_pauta: {
-    formula: "Pauta de cada webinar del período (la de su planilla; si está en cero, lo que gastaron sus campañas de Meta), sumadas",
-    piezas: (c) => porWebinar(c, (w) => numerosDelWebinar(c.e, w).inversion),
+    formula: "Lo que gastaron en los días del período las campañas de captación «[WEBINAR dd/mm]» de Meta, cada día en su día y en el webinar al que pertenece. La pauta cargada a mano en la planilla de un webinar se cuenta el día del vivo",
+    piezas: (c) => porGasto(c, (x) => x.pauta),
   },
   w_dm: {
-    formula: "DM Ads de cada webinar del período (los de su planilla o, si están en cero, los de las campañas «DM» de Meta), sumados",
-    piezas: (c) => porWebinar(c, (w) => numerosDelWebinar(c.e, w).inversionDmAds),
+    formula: "Lo que gastaron en los días del período los anuncios «DM» de Meta, cada día en el próximo webinar. Lo cargado a mano en la planilla se cuenta el día del vivo",
+    piezas: (c) => porGasto(c, (x) => x.dmAds),
   },
   w_wapi: {
-    formula: "Costo de WhatsApp API de cada webinar del período, sumado: el cargado a mano o, si está en cero, lo que cobró Meta por los mensajes de la API (repartido al próximo webinar)",
-    piezas: (c) => porWebinar(c, (w) => w.costoWhatsappApi),
+    formula: "Lo que cobró WhatsApp en los días del período por los mensajes de la API, cada día en el próximo webinar. Lo cargado a mano en la planilla se cuenta el día del vivo",
+    piezas: (c) => porGasto(c, (x) => x.whatsappApi),
   },
   w_inv: {
-    formula: "Pauta de captación + DM Ads + WhatsApp API",
+    formula: "Pauta de captación + DM Ads + WhatsApp API gastados en los días del período",
     piezas: () => [ref("w_pauta"), ref("w_dm", "+"), ref("w_wapi", "+")],
   },
   meta_gasto: { formula: "Gasto que informa Meta, sumado de todos los días del período" },
@@ -125,9 +130,9 @@ const EXPLICACIONES: Record<string, ExplicacionKpi> = {
     piezas: () => [ref("meta_gasto"), ref("meta_leads", "÷")],
   },
   w_form: { formula: "Formularios completados de cada webinar del período (los de su planilla o, si están en cero, los de las campañas de Meta), sumados" },
-  w_cpf: { formula: "Inversión total del webinar ÷ Formularios completados", piezas: () => [ref("w_inv"), ref("w_form", "÷")] },
+  w_cpf: { formula: "Inversión total del webinar ÷ Formularios completados", piezas: (c) => [invWeb(c), ref("w_form", "÷")] },
   w_grupo: { formula: "Gente que entró al grupo de WhatsApp en cada webinar del período, sumada" },
-  w_cpg: { formula: "Inversión total del webinar ÷ Se unieron al grupo", piezas: () => [ref("w_inv"), ref("w_grupo", "÷")] },
+  w_cpg: { formula: "Inversión total del webinar ÷ Se unieron al grupo", piezas: (c) => [invWeb(c), ref("w_grupo", "÷")] },
   w_form_grupo: { formula: "Se unieron al grupo ÷ Formularios completados × 100", piezas: () => [ref("w_grupo"), ref("w_form", "÷")] },
   personas: { formula: "Contactos creados con fecha del período, por formulario, agenda u otro canal. Con un webinar elegido, sólo los que vinieron de ese webinar" },
   leads_nuevos: { formula: "Oportunidades abiertas con fecha del período" },
@@ -144,9 +149,9 @@ const EXPLICACIONES: Record<string, ExplicacionKpi> = {
   w_ll_qa: { formula: "Agendas con los links del Q&A (vivo, replay y seguimiento), de la gente de los webinars del período" },
   w_ll: { formula: "Agendas en el vivo + Agendas después del vivo", piezas: () => [ref("w_ll_vivo"), ref("w_ll_post", "+")] },
   w_pct_agenda: { formula: "Agendas del webinar ÷ Se unieron al grupo × 100", piezas: () => [ref("w_ll"), ref("w_grupo", "÷")] },
-  w_cpll: { formula: "Inversión total del webinar ÷ Agendas del webinar", piezas: () => [ref("w_inv"), ref("w_ll", "÷")] },
+  w_cpll: { formula: "Inversión total del webinar ÷ Agendas del webinar", piezas: (c) => [invWeb(c), ref("w_ll", "÷")] },
   w_ll_calif: { formula: "Llamadas del webinar con gente que califica: puede invertir 1.000 USD o más, tiene inglés conversacional y carrera" },
-  w_cpllc: { formula: "Inversión total del webinar ÷ Llamadas calificadas", piezas: () => [ref("w_inv"), ref("w_ll_calif", "÷")] },
+  w_cpllc: { formula: "Inversión total del webinar ÷ Llamadas calificadas", piezas: (c) => [invWeb(c), ref("w_ll_calif", "÷")] },
   ag_nuevas: { formula: "Llamadas cuya agenda se creó dentro del período (Calendly). Con un webinar elegido, las de la gente que vino de ese webinar" },
   ag_costo: {
     formula: "Inversión en publicidad ÷ Llamadas agendadas",
@@ -237,7 +242,7 @@ const EXPLICACIONES: Record<string, ExplicacionKpi> = {
   },
   w_cac: {
     formula: "Inversión total del webinar ÷ Ventas del webinar",
-    piezas: (c) => [ref("w_inv"), dato("Ventas del webinar", c.webConPauta()?.ventas ?? null, "cantidad", "÷")],
+    piezas: (c) => [invWeb(c, undefined, true), dato("Ventas del webinar", c.webConPauta()?.ventas ?? null, "cantidad", "÷")],
   },
   roas_cc: {
     formula: "Cash Collected (CC) ÷ Inversión en publicidad",
@@ -256,15 +261,15 @@ const EXPLICACIONES: Record<string, ExplicacionKpi> = {
   },
   w_roas_cc: {
     formula: "Cobrado de las ventas del webinar ÷ Inversión total del webinar",
-    piezas: (c) => [dato("Cobrado de las ventas del webinar", c.webConPauta()?.cobrado ?? null, "moneda"), ref("w_inv", "÷")],
+    piezas: (c) => [dato("Cobrado de las ventas del webinar", c.webConPauta()?.cobrado ?? null, "moneda"), invWeb(c, "÷", true)],
   },
   w_roi: {
     formula: "Profit on CC del webinar ÷ Inversión total del webinar",
-    piezas: () => [ref("w_profit_cc"), ref("w_inv", "÷")],
+    piezas: (c) => [ref("w_profit_cc"), invWeb(c, "÷", true)],
   },
   w_roas_rev: {
     formula: "Facturado por las ventas del webinar ÷ Inversión total del webinar",
-    piezas: (c) => [dato("Facturado por las ventas del webinar", c.webConPauta()?.facturado ?? null, "moneda"), ref("w_inv", "÷")],
+    piezas: (c) => [dato("Facturado por las ventas del webinar", c.webConPauta()?.facturado ?? null, "moneda"), invWeb(c, "÷", true)],
   },
 
   /* ===== Cobranza ===== */
@@ -360,7 +365,7 @@ const EXPLICACIONES: Record<string, ExplicacionKpi> = {
       const m = c.webConPauta();
       return [
         dato("Cobrado de las ventas del webinar", m?.cobrado ?? null, "moneda"),
-        ref("w_inv", "−"),
+        invWeb(c, "−", true),
         dato("Comisiones", m?.comisiones ?? null, "moneda", "−"),
         dato("Procesadores de pago", m?.procesador ?? null, "moneda", "−"),
         dato("Otros gastos del webinar", m?.otrosGastos ?? null, "moneda", "−"),
@@ -373,7 +378,7 @@ const EXPLICACIONES: Record<string, ExplicacionKpi> = {
       const m = c.webConPauta();
       return [
         dato("Facturado por las ventas del webinar", m?.facturado ?? null, "moneda"),
-        ref("w_inv", "−"),
+        invWeb(c, "−", true),
         dato("Comisiones", m?.comisiones ?? null, "moneda", "−"),
         dato("Procesadores de pago", m?.procesador ?? null, "moneda", "−"),
         dato("Otros gastos del webinar", m?.otrosGastos ?? null, "moneda", "−"),

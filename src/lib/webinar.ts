@@ -209,6 +209,26 @@ export const seUnieronAlGrupo = (g: GrupoWppResumen) => g.entraron + g.sinTelefo
 /* Cada día de costo de WhatsApp API va al próximo webinar, el que ese día se estaba calentando (la misma regla que los DM Ads: el vivo es ese
    día o hasta 21 días después). Se calcula una vez por combinación de costos y webinars. */
 const COSTO_WPP = new WeakMap<object, WeakMap<object, Map<string, number>>>();
+const REPARTO_WPP = new WeakMap<object, WeakMap<object, { dia: string; webinarId: string; costo: number }[]>>();
+
+/** A qué webinar va cada día de costo de WhatsApp API (el próximo vivo, hasta 21 días después). */
+function repartirCostosWpp(e: EstadoApp): { dia: string; webinarId: string; costo: number }[] {
+  const costos = e.costosWpp ?? [];
+  if (!costos.length || !e.webinars.length) return [];
+  let porWebinars = REPARTO_WPP.get(costos);
+  if (!porWebinars) { porWebinars = new WeakMap(); REPARTO_WPP.set(costos, porWebinars); }
+  const guardado = porWebinars.get(e.webinars);
+  if (guardado) return guardado;
+  const out: { dia: string; webinarId: string; costo: number }[] = [];
+  porWebinars.set(e.webinars, out);
+  const webinars = [...e.webinars].filter((w) => w.estado !== "borrador").map((w) => ({ w, dia: diaAr(w.fecha) })).sort((a, b) => a.dia.localeCompare(b.dia));
+  for (const c of costos) {
+    const destino = webinars.find(({ dia }) => dia >= c.dia && diasEntre(c.dia, dia) <= 21);
+    if (destino) out.push({ dia: c.dia, webinarId: destino.w.id, costo: c.costo });
+  }
+  return out;
+}
+
 function costosWppPorWebinar(e: EstadoApp): Map<string, number> {
   const costos = e.costosWpp ?? [];
   if (!costos.length || !e.webinars.length) return new Map();
@@ -218,17 +238,78 @@ function costosWppPorWebinar(e: EstadoApp): Map<string, number> {
   if (guardado) return guardado;
   const out = new Map<string, number>();
   porWebinars.set(e.webinars, out);
-  const webinars = [...e.webinars].filter((w) => w.estado !== "borrador").map((w) => ({ w, dia: diaAr(w.fecha) })).sort((a, b) => a.dia.localeCompare(b.dia));
-  for (const c of costos) {
-    const destino = webinars.find(({ dia }) => dia >= c.dia && diasEntre(c.dia, dia) <= 21);
-    if (destino) out.set(destino.w.id, (out.get(destino.w.id) ?? 0) + c.costo);
-  }
+  for (const r of repartirCostosWpp(e)) out.set(r.webinarId, (out.get(r.webinarId) ?? 0) + r.costo);
   for (const [k, v] of out) out.set(k, Math.round(v * 100) / 100);
   return out;
 }
 
 /** Lo que cobró WhatsApp por los mensajes de la API de ese webinar (0 si no se sabe). */
 export const costoWhatsappDelWebinar = (e: EstadoApp, w: Webinar): number => costosWppPorWebinar(e).get(w.id) ?? 0;
+
+/* ==================================================================
+   El gasto de los webinars, día por día
+
+   «Pauta de captación», «DM Ads» y «WhatsApp API» de un webinar se gastan a lo largo de las semanas de antes del vivo. En una tabla por día
+   (Dashboard) contarlos todos el día del vivo dejaba el resto de los días en blanco y no cuadraba con el gasto de Meta. Acá cada día de gasto
+   cae en SU día y en el webinar al que pertenece (las mismas reglas de arriba), y se puede pedir de un webinar o de todos juntos.
+   Lo cargado a mano en la planilla manda, como siempre: no tiene días, así que se cuenta el día del vivo.
+   ================================================================== */
+
+export interface GastoDeWebinar { pauta: number; dmAds: number; whatsappApi: number }
+
+interface GastoDiario { pauta: Map<string, number>; dm: Map<string, number>; whatsapp: Map<string, number> }
+const GASTO_DIARIO = new WeakMap<object, WeakMap<object, WeakMap<object, Map<string, GastoDiario>>>>();
+
+function gastoDiarioPorWebinar(e: EstadoApp): Map<string, GastoDiario> {
+  const insights = e.adInsights ?? [];
+  const costos = e.costosWpp ?? [];
+  let a = GASTO_DIARIO.get(insights);
+  if (!a) { a = new WeakMap(); GASTO_DIARIO.set(insights, a); }
+  let b = a.get(e.webinars);
+  if (!b) { b = new WeakMap(); a.set(e.webinars, b); }
+  const guardado = b.get(costos);
+  if (guardado) return guardado;
+  const out = new Map<string, GastoDiario>();
+  b.set(costos, out);
+  const de = (id: string) => {
+    let x = out.get(id);
+    if (!x) { x = { pauta: new Map(), dm: new Map(), whatsapp: new Map() }; out.set(id, x); }
+    return x;
+  };
+  const sumar = (m: Map<string, number>, dia: string, n: number) => m.set(dia, (m.get(dia) ?? 0) + n);
+  for (const { insight: i, webinarId, tipo } of repartirInsights(e)) sumar(tipo === "pauta" ? de(webinarId).pauta : de(webinarId).dm, i.dia, i.inversion);
+  for (const r of repartirCostosWpp(e)) sumar(de(r.webinarId).whatsapp, r.dia, r.costo);
+  return out;
+}
+
+const centavos = (n: number) => Math.round(n * 100) / 100;
+
+/** Lo que gastó un webinar entre dos días de Argentina (inclusive): cada día de gasto en su día. Lo cargado a mano en la planilla, el día del vivo. */
+export function gastoDelWebinarEnDias(e: EstadoApp, w: Webinar, desde: string, hasta: string): GastoDeWebinar {
+  const vivo = diaAr(w.fecha);
+  const dentro = vivo >= desde && vivo <= hasta;
+  const d = gastoDiarioPorWebinar(e).get(w.id);
+  const suma = (m: Map<string, number> | undefined) => {
+    let t = 0;
+    if (m) for (const [dia, n] of m) if (dia >= desde && dia <= hasta) t += n;
+    return t;
+  };
+  return {
+    pauta: centavos(w.inversion > 0 ? (dentro ? w.inversion : 0) : suma(d?.pauta)),
+    dmAds: centavos(w.inversionDmAds > 0 ? (dentro ? w.inversionDmAds : 0) : suma(d?.dm)),
+    whatsappApi: centavos(w.costoWhatsappApi > 0 ? (dentro ? w.costoWhatsappApi : 0) : suma(d?.whatsapp)),
+  };
+}
+
+/** Lo mismo de varios webinars juntos. */
+export function gastoDeWebinarsEnDias(e: EstadoApp, ws: Webinar[], desde: string, hasta: string): GastoDeWebinar {
+  const t: GastoDeWebinar = { pauta: 0, dmAds: 0, whatsappApi: 0 };
+  for (const w of ws) {
+    const x = gastoDelWebinarEnDias(e, w, desde, hasta);
+    t.pauta += x.pauta; t.dmAds += x.dmAds; t.whatsappApi += x.whatsappApi;
+  }
+  return { pauta: centavos(t.pauta), dmAds: centavos(t.dmAds), whatsappApi: centavos(t.whatsappApi) };
+}
 
 /** Cuántos se registraron en la landing para ese webinar (0 si no se sabe). */
 export const registrosDelWebinar = (e: EstadoApp, w: Webinar): number =>

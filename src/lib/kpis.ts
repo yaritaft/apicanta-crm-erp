@@ -11,7 +11,7 @@ import {
   deAlumnos, deAnuncios, deAtrasados, deCashCollected, deComisiones, deDevoluciones, deFees, deGastos, deLeads, deLlamadas, deMovimientos, dePagos, dePersonas,
   dePublicidad, deVencidas, deVentas, deWebinars, type PartesDetalle,
 } from "./kpis-detalle";
-import { metricasDeWebinar, numerosDelWebinar, sumarMetricas, sumarMetricasConPauta, type MetricasWebinar } from "./webinar";
+import { gastoDelWebinarEnDias, gastoDeWebinarsEnDias, metricasDeWebinar, sumarMetricas, sumarMetricasConPauta, type GastoDeWebinar, type MetricasWebinar } from "./webinar";
 import { numerosDe, rendimientoPorVia, type LinkVia, type NumerosVia } from "./vias-webinar";
 import type { ViaLanzamiento } from "./agendas-webinar";
 import { inversionDelEmbudo } from "./embudos";
@@ -262,6 +262,31 @@ export class Contexto {
     });
   }
 
+  /** Los webinars del filtro SIN mirar su fecha: su gasto se cuenta día por día, no el día del vivo. */
+  webinarsDelGasto(): Webinar[] {
+    return this.memo("webinarsDelGasto", () => {
+      if (this.alcanceWebinar === "ninguno") return [];
+      return this.e.webinars.filter((w) => !this.filtro.webinarId || w.id === this.filtro.webinarId);
+    });
+  }
+
+  /** Lo que se gastó en los días del corte en los webinars del filtro (pauta, DM Ads y WhatsApp API), cada día en su día.
+   *  null si en esos días no se gastó nada: la tabla muestra un guion, como con «Gasto en Meta». */
+  gastoWebinars(): GastoDeWebinar | null {
+    return this.memo("gastoWebinars", () => {
+      const x = gastoDeWebinarsEnDias(this.e, this.webinarsDelGasto(), this.corte.desde, this.corte.hasta);
+      return x.pauta + x.dmAds + x.whatsappApi > 0 ? x : null;
+    });
+  }
+
+  /** Los webinars que gastaron algo en los días del corte, con lo que gastó cada uno (para el detalle de cada número). */
+  webinarsConGasto(): { webinar: Webinar; gasto: GastoDeWebinar }[] {
+    return this.memo("webinarsConGasto", () =>
+      this.webinarsDelGasto()
+        .map((webinar) => ({ webinar, gasto: gastoDelWebinarEnDias(this.e, webinar, this.corte.desde, this.corte.hasta) }))
+        .filter((x) => x.gasto.pauta + x.gasto.dmAds + x.gasto.whatsappApi > 0));
+  }
+
   web(): MetricasWebinar | null {
     return this.memo("web", () => {
       const ws = this.webinars();
@@ -387,6 +412,11 @@ const w = (c: Contexto, f: (m: MetricasWebinar) => number | null): number | null
   const m = c.web();
   return m ? f(m) : null;
 };
+/* El gasto de los webinars cae día por día (lib/webinar.ts, gastoDelWebinarEnDias): no depende de qué día fue el vivo. */
+const gw = (c: Contexto, f: (x: GastoDeWebinar) => number): number | null => {
+  const x = c.gastoWebinars();
+  return x ? f(x) : null;
+};
 /* Lo que compara plata con lo que costó el webinar: sólo cuenta los webinars con pauta cargada. */
 const wp = (c: Contexto, f: (m: MetricasWebinar) => number | null): number | null => {
   const m = c.webConPauta();
@@ -415,13 +445,17 @@ export function catalogo(e: EstadoApp): DefKpi[] {
       ayuda: "Los gastos cargados como Meta Ads, Google Ads o TikTok Ads. Es la base del ROAS y el CAC de Finanzas.",
       valor: (c) => g(c, () => c.py()!.inversionAds) },
     { id: "w_pauta", etiqueta: "Pauta de captación (webinars)", formato: "moneda", href: "/webinars",
-      ayuda: "La pauta de cada webinar del período: la cargada en la planilla o, si está en cero, la de sus campañas de Meta.", valor: (c) => w(c, () => c.webinars().reduce((a, x) => a + numerosDelWebinar(c.e, x).inversion, 0)) },
+      ayuda: "Lo que se gastó cada día en las campañas de captación de los webinars (con un webinar elegido, sólo en las de ése). Si la pauta de un webinar está cargada a mano en su planilla, se cuenta el día del vivo.",
+      valor: (c) => gw(c, (x) => x.pauta) },
     { id: "w_dm", etiqueta: "DM Ads (webinars)", formato: "moneda", href: "/webinars",
-      ayuda: "Los anuncios a mensaje directo de cada webinar.", valor: (c) => w(c, () => c.webinars().reduce((a, x) => a + numerosDelWebinar(c.e, x).inversionDmAds, 0)) },
+      ayuda: "Lo que se gastó cada día en los anuncios a mensaje directo de los webinars (cada día va al próximo vivo). Lo cargado a mano en la planilla se cuenta el día del vivo.",
+      valor: (c) => gw(c, (x) => x.dmAds) },
     { id: "w_wapi", etiqueta: "WhatsApp API (webinars)", formato: "moneda", href: "/webinars",
-      ayuda: "Lo que cobró WhatsApp por los mensajes de cada webinar.", valor: (c) => w(c, () => c.webinars().reduce((a, x) => a + x.costoWhatsappApi, 0)) },
+      ayuda: "Lo que cobró WhatsApp cada día por los mensajes de la API (cada día va al próximo vivo). Lo cargado a mano en la planilla se cuenta el día del vivo.",
+      valor: (c) => gw(c, (x) => x.whatsappApi) },
     { id: "w_inv", etiqueta: "Inversión total del webinar", formato: "moneda", href: "/webinars",
-      ayuda: "Pauta + DM Ads + WhatsApp API: los tres gastos del webinar.", valor: (c) => w(c, (m) => m.inversionTotal) },
+      ayuda: "Pauta + DM Ads + WhatsApp API gastados ese día en los webinars. Los costos por formulario, por agenda y el ROAS usan el total de cada webinar, no este número.",
+      valor: (c) => gw(c, (x) => x.pauta + x.dmAds + x.whatsappApi) },
   ]);
 
   add("adquisicion", "Meta (sincronizado)", [
@@ -824,6 +858,13 @@ export function catalogo(e: EstadoApp): DefKpi[] {
   type Detalle = (c: Contexto) => PartesDetalle | null;
   const webinars = (cuenta: (c: Contexto, x: Webinar) => number | null, formato: "moneda" | "cantidad", etiqueta: string): Detalle =>
     (c) => (c.webinars().length ? deWebinars(c, c.webinars(), (x) => cuenta(c, x), formato, etiqueta) : null);
+  /* El gasto de los webinars en los días del corte: una línea por webinar con lo que gastó en esos días (lib/webinar.ts, gastoDelWebinarEnDias). */
+  const gastoWeb = (cuenta: (x: GastoDeWebinar) => number, etiqueta: string): Detalle => (c) => {
+    const xs = c.webinarsConGasto();
+    if (xs.length === 0) return null;
+    const por = new Map(xs.map((x) => [x.webinar.id, cuenta(x.gasto)] as const));
+    return deWebinars(c, xs.map((x) => x.webinar), (x) => por.get(x.id) ?? 0, "moneda", etiqueta);
+  };
   const deVia = (v: ViaLanzamiento, link: LinkVia | undefined, f: (n: NumerosVia) => number, etiqueta: string): Detalle =>
     webinars((c, x) => { const r = rendimientoPorVia(c.e, [x]); return r.hayAgendas ? f(numerosDe(r, v, link)) : null; }, "cantidad", etiqueta);
   const llamadas = (lista: (c: Contexto) => Sesion[] | null, orden: "llamada" | "agendo" = "llamada"): Detalle =>
@@ -836,10 +877,10 @@ export function catalogo(e: EstadoApp): DefKpi[] {
   const detalles: Record<string, Detalle> = {
     /* Adquisición */
     inv_ads: (c) => g(c, () => dePublicidad(c, gastosDePublicidad(c.e, c.m))),
-    w_pauta: webinars((c, x) => numerosDelWebinar(c.e, x).inversion, "moneda", "Pauta"),
-    w_dm: webinars((c, x) => numerosDelWebinar(c.e, x).inversionDmAds, "moneda", "DM Ads"),
-    w_wapi: webinars((_c, x) => x.costoWhatsappApi, "moneda", "WhatsApp API"),
-    w_inv: webinars((c, x) => metricasDeWebinar(c.e, x).inversionTotal, "moneda", "Inversión"),
+    w_pauta: gastoWeb((x) => x.pauta, "Pauta"),
+    w_dm: gastoWeb((x) => x.dmAds, "DM Ads"),
+    w_wapi: gastoWeb((x) => x.whatsappApi, "WhatsApp API"),
+    w_inv: gastoWeb((x) => x.pauta + x.dmAds + x.whatsappApi, "Inversión"),
     meta_gasto: (c) => g(c, () => deAnuncios(c, "inversion")),
     meta_impr: (c) => g(c, () => deAnuncios(c, "impresiones")),
     meta_leads: (c) => g(c, () => deAnuncios(c, "leads")),
