@@ -14,6 +14,7 @@ import { aMonedaBase, escribirMonto, fechaDePago, leerMonto } from "@/lib/gastos
 import {
   MESES_DE_COLCHON, cajaEsperada, enOtros, runway, ultimoArqueo, type MovimientoCaja,
 } from "@/lib/caja";
+import { primerConteo } from "@/lib/primer-conteo";
 import { saldosEsperados } from "@/lib/traspasos";
 import { controlarSaldos, quePasa, saldoParaElArqueo, textoDeLoPendiente, TOLERANCIA_DE_SALDO, type ControlDeSaldos, type RespuestaDeSaldos } from "@/lib/saldos-reales";
 import { traerSaldosReales } from "@/lib/saldos-cliente";
@@ -423,7 +424,11 @@ function NuevoArqueo({ e, onCerrar, onListo, traerAlAbrir = false }: { e: Estado
   const total = Math.round(saldos.reduce((a, s) => a + s.montoBase, 0) * 100) / 100;
   /* Contra lo que tiene que dar al contar: lo que viaja entre cuentas no está en ninguna. */
   const mov = previo ? cajaEsperada(e, previo, fecha, tipoCambio) : null;
-  const esperado = mov ? mov.enCuentas : null;
+  /* Una cuenta que no estaba en el arqueo anterior (dLocal y las Financieras, «en revisión» el 7/10) no tiene de dónde partir: lo que ya tenía se
+     deduce de lo contado menos lo que se movió, y se suma a lo esperado. Queda dicho en cada cuenta (lib/primer-conteo.ts). */
+  const primer = primerConteo(saldos, porCuenta, Boolean(previo), (m, mo) => money(m, mo, 2));
+  const esperado = mov ? Math.round((mov.enCuentas + primer.totalBase) * 100) / 100 : null;
+  const deEstaCuenta = (id: string) => primer.cuentas.find((c) => c.procesadorId === id);
   const hayPesos = cuentas.some((p) => p.moneda === "ARS");
   const faltaTc = hayPesos && saldos.some((s) => s.moneda === "ARS") && !(tipoCambio > 0);
 
@@ -470,8 +475,10 @@ function NuevoArqueo({ e, onCerrar, onListo, traerAlAbrir = false }: { e: Estado
   }, []);
 
   function guardar() {
+    /* Las cuentas que se cuentan por primera vez llevan su constancia (se ve en el arqueo guardado). */
+    const conNota = saldos.map((s) => { const c = deEstaCuenta(s.procesadorId); return c ? { ...s, nota: [s.nota, c.nota].filter(Boolean).join(" ") } : s; });
     const a: Arqueo = {
-      id: nuevoId("arq"), fecha, saldos, total,
+      id: nuevoId("arq"), fecha, saldos: conNota, total,
       tipoCambio: tipoCambio > 0 ? tipoCambio : undefined,
       esperado, diferencia: esperado === null ? null : Math.round((total - esperado) * 100) / 100,
       notas: notas.trim() || undefined, por: e.ajustes.responsable || undefined, creadoEn: hoyIso(),
@@ -511,7 +518,8 @@ function NuevoArqueo({ e, onCerrar, onListo, traerAlAbrir = false }: { e: Estado
             {s?.salio ? enSuMoneda(-s.salio, true) : "—"}
           </span>
           <span role="cell" data-titulo="Tendría que haber" className="t-num">
-            {s?.esperado !== undefined ? money(s.esperado, moneda) : "—"}
+            {s?.esperado !== undefined ? money(s.esperado, moneda) : deEstaCuenta(p.id)
+              ? <span className="t-sm t-subtle" title={deEstaCuenta(p.id)!.nota}>Primer conteo</span> : "—"}
           </span>
           <span
             role="cell" className="arqueo-hay" title={dice} data-estado={dif === null ? undefined : da ? "da" : "difiere"}
@@ -594,6 +602,12 @@ function NuevoArqueo({ e, onCerrar, onListo, traerAlAbrir = false }: { e: Estado
             {saldos.length > 0 && <Diferencia d={Math.round((total - esperado) * 100) / 100} M={M} />}
           </>
         ) : <span className="t-subtle">Es el primer arqueo: queda como punto de partida.</span>}
+        {primer.cuentas.length > 0 && (
+          <span className="t-sm t-subtle arqueo-resumen__nota">
+            El esperado incluye {M(primer.totalBase)} que ya tenían {new Intl.ListFormat("es", { style: "long", type: "conjunction" }).format(primer.cuentas.map((c) => e.procesadores.find((p) => p.id === c.procesadorId)?.nombre ?? "una cuenta"))} al arqueo anterior:
+            {primer.cuentas.length === 1 ? " no estaba" : " no estaban"} en ese arqueo, así que es su primer conteo y se parte de lo que se movió desde entonces.
+          </span>
+        )}
         {mov && mov.enCamino > 0 && (
           <span className="t-sm t-subtle arqueo-resumen__nota">
             El esperado ya descuenta {M(mov.enCamino)} que están en camino entre cuentas: salieron de una y todavía no se vieron llegar a la otra.
