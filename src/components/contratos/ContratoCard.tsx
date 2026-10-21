@@ -32,7 +32,12 @@ const REFRESCO_MS = 15_000;
 
 interface Edicion { tipo: "crear" | "corregir"; contrato?: Contrato; datos: DatosContrato; programaId: string; prueba: boolean }
 
-export function ContratoCard({ venta, alumnoId, sesionId }: { venta?: Venta; alumnoId?: string; sesionId?: string }) {
+export function ContratoCard({ venta, alumnoId, sesionId, manual }: {
+  venta?: Venta; alumnoId?: string; sesionId?: string;
+  /* Lo marcado a mano en la ficha (Airtable: firmado / pendiente y su estado), con su editor: se ve mientras la app
+     no tenga un contrato de esta venta. Lo pasa la vista Servicio. */
+  manual?: React.ReactNode;
+}) {
   const e = useEstado();
   const toast = useToast();
   const { esDueno } = useAcceso();
@@ -56,7 +61,8 @@ export function ContratoCard({ venta, alumnoId, sesionId }: { venta?: Venta; alu
     setContratos(r.contratos);
     setEventos(r.eventos);
   }, [ventaId, alumnoId]);
-  useEffect(() => { if (prendidos) void leer(); }, [leer, prendidos]);
+  /* Se lee siempre: el estado del contrato se ve aunque los contratos todavía estén apagados (sin botones). */
+  useEffect(() => { void leer(); }, [leer]);
 
   /* Mientras alguno espera algo de PandaDoc, se vuelve a leer solo. */
   const hayPendiente = (contratos ?? []).some((c) => estaPendiente(c.estado));
@@ -66,7 +72,9 @@ export function ContratoCard({ venta, alumnoId, sesionId }: { venta?: Venta; alu
     return () => window.clearInterval(t);
   }, [hayPendiente, leer]);
 
-  if (!prendidos || (!ventaId && !alumnoId)) return null;
+  if (!ventaId && !alumnoId) return null;
+  /* Apagados y sin nada que mostrar: no ocupa lugar. */
+  if (!prendidos && !manual && (contratos === null || contratos.length === 0)) return null;
 
   const modoPrueba = (config?.estado ?? "apagado") === "prueba";
 
@@ -133,7 +141,7 @@ export function ContratoCard({ venta, alumnoId, sesionId }: { venta?: Venta; alu
     <div className="stack-2" style={{ borderTop: "1px solid var(--border)", paddingTop: 12, marginTop: 4 }}>
       <div className="row-wrap" style={{ justifyContent: "space-between", gap: 8 }}>
         <span className="t-label">Contrato</span>
-        {lista.length === 0 && contratos !== null && !faltaTabla && venta && (
+        {prendidos && lista.length === 0 && contratos !== null && !faltaTabla && venta?.estado === "activa" && (
           <Button sm variante="secondary" icono={<FileSignature size={14} />} onClick={() => abrirNuevo()}>Mandar contrato</Button>
         )}
       </div>
@@ -142,10 +150,11 @@ export function ContratoCard({ venta, alumnoId, sesionId }: { venta?: Venta; alu
       ) : contratos === null ? (
         <div className="skeleton" style={{ height: 36 }} />
       ) : lista.length === 0 ? (
-        <p className="t-sm t-subtle">{venta ? "Todavía no se le mandó contrato desde la app." : "Sin contrato en la app."}</p>
+        manual ?? <p className="t-sm t-subtle">{venta ? "Todavía no se le mandó contrato desde la app." : "Sin contrato en la app."}</p>
       ) : lista.map((c) => {
         const r = ROTULO_ESTADO[c.estado];
-        const acciones = accionesDe(c);
+        /* Apagados, sólo se puede ver el PDF firmado. */
+        const acciones = prendidos ? accionesDe(c) : accionesDe(c).filter((a) => a === "ver-pdf");
         const evs = eventos.filter((x) => x.contratoId === c.id);
         const ocupado = (a: string) => trabajando === `${c.id}:${a}`;
         const nombrePrograma = programas.find((p) => p.id === c.programa)?.nombre ?? c.plantillaNombre;
@@ -192,7 +201,7 @@ export function ContratoCard({ venta, alumnoId, sesionId }: { venta?: Venta; alu
                     Ver PDF firmado
                   </Button>
                 )}
-                {acciones.includes("mandar-otro") && venta && (
+                {acciones.includes("mandar-otro") && venta?.estado === "activa" && (
                   <Button sm variante="secondary" icono={<FileSignature size={14} />} onClick={() => abrirNuevo(c)}>Mandar uno nuevo</Button>
                 )}
                 {acciones.includes("anular") && (

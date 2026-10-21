@@ -303,16 +303,15 @@ function HojaDeUnServicio({ e, p, f, venta, producto, conChat }: {
           </Bloque>
           <Bloque titulo="Accesos y contrato">
             {dato("acceso")}
-            {dato("wpp", false)}
-            {dato("zoom", false)}
-            {dato("wibo", false)}
-            {dato("contrato")}
-            {dato("estadoContrato", false)}
             {dato("stack")}
           </Bloque>
-          {/* El contrato de PandaDoc y los accesos (Wisboo, Telegram, Zoom) del circuito de onboarding: no se ven hasta prenderlos en Ajustes. */}
-          {venta && venta.estado === "activa" && <ContratoCard venta={venta} alumnoId={alumno.id} />}
-          <AccesosAlumno alumno={alumno} venta={venta} />
+          {/* El contrato de PandaDoc y los accesos (Wisboo, Telegram, Zoom), siempre a la vista: lo que hizo la app y,
+              donde todavía no hizo nada, lo marcado a mano en la ficha (con su editor de siempre). Los botones
+              (mandar, dar accesos, quitar) aparecen cuando se prenden en Ajustes. */}
+          <ContratoCard venta={venta} alumnoId={alumno.id}
+            manual={<>{dato("contrato")}{dato("estadoContrato", false)}</>} />
+          <AccesosAlumno alumno={alumno} venta={venta}
+            manual={{ wisboo: dato("wibo", false), zoom: dato("zoom", false), whatsapp: f.wpp ? dato("wpp", false) : undefined }} />
           <Bloque titulo="En la app">
             <Fila icono={<HeartHandshake size={15} />} rotulo="Etapa del servicio" ayuda="El pipeline de servicio (Alumnos → Pipeline)">
               {puedeAlumno ? (

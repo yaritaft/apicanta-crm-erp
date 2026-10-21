@@ -3,6 +3,9 @@ import { nubeServidor } from "@/lib/servidor";
 import { sincronizar } from "@/lib/contratos-servidor";
 import { conectarAvisoSolo, type Contrato } from "@/lib/contratos";
 import { clavePandadoc, crearSuscripcion } from "@/lib/pandadoc-servidor";
+import { randomBytes } from "node:crypto";
+import { hayTelegram, telegram } from "@/lib/accesos-servidor";
+import { leerWebhookTelegram, RUTA_WEBHOOK_TELEGRAM } from "@/lib/accesos-alumnos";
 
 /* ==================================================================
    La red de seguridad del aviso de PandaDoc: cada hora se le pregunta el
@@ -25,6 +28,7 @@ export async function GET(req: Request) {
   const db = nubeServidor();
   if (!db) return NextResponse.json({ error: "Sin base." }, { status: 503 });
   const aviso = await asegurarAvisoDeProduccion(db);
+  const bot = await asegurarBotDeTelegram(db);
   const desde = new Date(Date.now() - 90 * 24 * 3600 * 1000).toISOString();
   const r = await db.from("contratos").select("*")
     .gte("creadoEn", desde).not("documentoId", "is", null)
@@ -41,7 +45,7 @@ export async function GET(req: Request) {
       console.error("[cron contratos]", c.id, e instanceof Error ? e.message : String(e));
     }
   }
-  return NextResponse.json({ ok: true, aviso, revisados: r.data?.length ?? 0, cambiaron, fallaron });
+  return NextResponse.json({ ok: true, aviso, bot, revisados: r.data?.length ?? 0, cambiaron, fallaron });
 }
 
 /* El aviso de PandaDoc de producción se conecta solo la primera vez (Juan Cruz, 20/10: «dejalo listo»): la clave
@@ -65,6 +69,32 @@ async function asegurarAvisoDeProduccion(db: NonNullable<ReturnType<typeof nubeS
     return "conectado";
   } catch (e) {
     console.error("[cron contratos] no se pudo conectar el aviso de producción", e instanceof Error ? e.message : String(e));
+    return "no se pudo";
+  }
+}
+
+/* El bot de Telegram se conecta solo la primera vez (Juan Cruz, 20/10: «ya cargué el token»), pero SÓLO si nadie más
+   lo usa: Telegram deja una sola conexión por bot y conectarlo le cortaría los avisos a otra herramienta. Con eso el
+   bot anota los grupos donde lo agregan y quién entra con cada link. Desconectado a mano (fila sin secreto), no vuelve. */
+async function asegurarBotDeTelegram(db: NonNullable<ReturnType<typeof nubeServidor>>): Promise<string> {
+  try {
+    const dominio = process.env.VERCEL_PROJECT_PRODUCTION_URL;
+    if (process.env.VERCEL_ENV !== "production" || !dominio || !hayTelegram()) return "no corresponde";
+    const fila = await db.from("telegram_conexion").select("id").eq("id", 1).maybeSingle();
+    if (fila.error) return `no se pudo leer: ${fila.error.message}`;
+    if (fila.data) return "ya estaba";
+    const base = `https://${dominio}`;
+    const w = leerWebhookTelegram(await telegram("getWebhookInfo"), base);
+    if (w.uso === "otra") return `lo usa otra herramienta (${w.host ?? "otra dirección"}): no se conecta solo`;
+    const secreto = randomBytes(24).toString("hex");
+    const url = `${base}${RUTA_WEBHOOK_TELEGRAM}`;
+    const r = await telegram("setWebhook", { url, secret_token: secreto, allowed_updates: ["message", "my_chat_member", "chat_member"] });
+    if (!r.ok) return `Telegram no lo conectó: ${r.description ?? "sin motivo"}`;
+    const up = await db.from("telegram_conexion").insert({ id: 1, secreto, url, conectadoEn: new Date().toISOString(), conectadoPor: "Automático (pasada de cada hora)" });
+    if (up.error) return `se conectó pero no se guardó el secreto: ${up.error.message}`;
+    return "conectado";
+  } catch (e) {
+    console.error("[cron contratos] no se pudo conectar el bot", e instanceof Error ? e.message : String(e));
     return "no se pudo";
   }
 }

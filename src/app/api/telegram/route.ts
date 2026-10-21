@@ -67,7 +67,8 @@ export async function POST(peticion: Request) {
   if (!(await esDuenoDelPedido(peticion))) return NextResponse.json({ error: "Conectar el bot es de los dueños." }, { status: 403 });
   if (b.accion === "desconectar") {
     await telegram("deleteWebhook", { drop_pending_updates: false });
-    await db.from("telegram_conexion").delete().eq("id", 1);
+    /* La fila queda, sin secreto: así la pasada de cada hora sabe que se desconectó a mano y no lo reconecta. */
+    await db.from("telegram_conexion").upsert({ id: 1, secreto: null, url: null, conectadoEn: null, conectadoPor: correoDelPedido(peticion) }, { onConflict: "id" });
     return NextResponse.json({ ok: true });
   }
   if (b.accion !== "conectar") return NextResponse.json({ error: "No sé hacer eso." }, { status: 400 });
