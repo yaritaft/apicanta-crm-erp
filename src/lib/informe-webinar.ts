@@ -356,7 +356,7 @@ export function informeDelWebinar(e: EstadoApp, webinar: Webinar): InformeWebina
         { etiqueta: "Costo por llamada agendada", valor: dividir(m.inversionTotal, m.llamadas), formato: "moneda", nota: "Inversión total ÷ llamadas agendadas." },
         { etiqueta: "Costo por llamada calificada", valor: dividir(m.inversionTotal, m.llamadasCalificadas), formato: "moneda", nota: "Inversión total ÷ llamadas calificadas." },
         { etiqueta: "CPA (costo por venta)", valor: dividir(m.inversionTotal, m.ventas), formato: "moneda", nota: "Inversión total ÷ ventas." },
-        { etiqueta: "Tasa de cierre", valor: m.tasaCierre / 100, formato: "porcentaje", nota: "Ventas ÷ llamadas calificadas." },
+        { etiqueta: "Tasa de cierre", valor: m.tasaCierre / 100, formato: "porcentaje", nota: "Ventas ÷ llamadas agendadas." },
       ],
     },
     {

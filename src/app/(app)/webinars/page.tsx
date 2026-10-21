@@ -61,7 +61,7 @@ const CALCULADAS: {
   { clave: "porcentajeAgenda", titulo: "Grupo → agenda", grupo: "Conversión", ayuda: "Del grupo, cuántos agendaron una llamada.", tipo: "tasa" },
   { clave: "agendaSobreAsisten", titulo: "Asisten → agenda", grupo: "Conversión", ayuda: "De los que vieron el vivo, cuántos agendaron.", tipo: "tasa" },
   { clave: "convLeadVenta", titulo: "Grupo → venta", grupo: "Conversión", ayuda: "Del grupo, cuántos compraron.", tipo: "tasa", decimales: 2 },
-  { clave: "tasaCierre", titulo: "Tasa de cierre", grupo: "Conversión", ayuda: "Ventas sobre llamadas calificadas.", tipo: "tasa" },
+  { clave: "tasaCierre", titulo: "Tasa de cierre", grupo: "Conversión", ayuda: "Ventas sobre las llamadas agendadas del webinar (en el vivo y después), no sólo las calificadas.", tipo: "tasa" },
   { clave: "ventas", titulo: "Ventas", grupo: "Plata", ayuda: "Las ventas cargadas con este webinar como origen. Entran solas.", tipo: "cantidad" },
   { clave: "facturado", titulo: "Facturado", grupo: "Plata", ayuda: "El precio acordado de esas ventas.", tipo: "plata" },
   { clave: "cobrado", titulo: "Cobrado", grupo: "Plata", ayuda: "La plata que ya entró de esas ventas.", tipo: "plata" },

@@ -218,8 +218,8 @@ const EXPLICACIONES: Record<string, ExplicacionKpi> = {
   },
   v_ag_venta: { formula: "Ventas ÷ Llamadas agendadas × 100", piezas: () => [ref("v_n"), ref("ag_nuevas", "÷")] },
   w_cierre: {
-    formula: "Ventas del webinar ÷ Llamadas calificadas del webinar × 100",
-    piezas: (c) => [dato("Ventas del webinar", c.web()?.ventas ?? null, "cantidad"), ref("w_ll_calif", "÷")],
+    formula: "Ventas del webinar ÷ Agendas del webinar × 100",
+    piezas: (c) => [dato("Ventas del webinar", c.web()?.ventas ?? null, "cantidad"), ref("w_ll", "÷")],
   },
   w_grupo_venta: {
     formula: "Ventas del webinar ÷ Se unieron al grupo × 100",

@@ -32,7 +32,7 @@ export interface MetricasWebinar {
   porcentajeAgenda: number;     // llamadas / grupo
   agendaSobreAsisten: number;   // llamadas / asistentes
   convLeadVenta: number;        // ventas / grupo
-  tasaCierre: number;           // ventas / llamadas calificadas
+  tasaCierre: number;           // ventas / llamadas agendadas (todas las del webinar, no sólo las calificadas)
   /* Plata */
   facturado: number;
   /* El Cash Collected de las ventas del webinar: lo que entró menos lo que se
@@ -84,7 +84,9 @@ function derivar(b: Base): MetricasWebinar {
     porcentajeAgenda: pctDiv(b.llamadas, b.grupoWpp),
     agendaSobreAsisten: pctDiv(b.llamadas, b.asistentes),
     convLeadVenta: pctDiv(b.ventas, b.grupoWpp),
-    tasaCierre: pctDiv(b.ventas, b.llamadasCalificadas),
+    /* Sobre TODAS las agendas del webinar, no sobre las calificadas: «Calificadas» depende de una regla estricta
+       (7 de 76 el 21/10) y hacía que el cierre diera más de 100%. */
+    tasaCierre: pctDiv(b.ventas, b.llamadas),
 
     roasRev: div(b.facturado, b.inversionTotal),
     roasCC: div(b.cobrado, b.inversionTotal),

@@ -601,8 +601,8 @@ export function catalogo(e: EstadoApp): DefKpi[] {
     { id: "v_ag_venta", etiqueta: "Agenda → venta", formato: "pct", mejor: "sube", href: "/agenda",
       ayuda: "Ventas del período sobre llamadas agendadas en el período.",
       valor: (c) => { const a = agendadas(c); return a ? pctDe(c.ventasContables().length, a.length) : null; } },
-    { id: "w_cierre", etiqueta: "Cierre sobre calificadas (webinar)", formato: "pct", mejor: "sube", href: "/webinars",
-      ayuda: "Ventas del webinar sobre sus llamadas calificadas.", valor: (c) => w(c, (m) => m.tasaCierre) },
+    { id: "w_cierre", etiqueta: "Tasa de cierre (webinar)", formato: "pct", mejor: "sube", href: "/webinars",
+      ayuda: "Ventas del webinar sobre todas sus llamadas agendadas (en el vivo y después).", valor: (c) => w(c, (m) => m.tasaCierre) },
     { id: "w_grupo_venta", etiqueta: "Grupo → venta (webinar)", formato: "pct", mejor: "sube", href: "/webinars",
       ayuda: "Ventas del webinar sobre los que entraron al grupo.", valor: (c) => w(c, (m) => m.convLeadVenta) },
   ]);
