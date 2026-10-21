@@ -39,9 +39,9 @@ test("la modalidad sale del plan de cuotas", () => {
 });
 
 test("sesiones, bonos y fecha en palabras", () => {
-  assert.equal(textoSesiones(0), "Sin sesiones 1 a 1 con el mentor");
-  assert.equal(textoSesiones(1), "1 sesión 1 a 1 con el mentor");
-  assert.equal(textoSesiones(3), "3 sesiones 1 a 1 con el mentor");
+  assert.equal(textoSesiones(0), "No incluye sesiones 1 a 1 con el mentor");
+  assert.equal(textoSesiones(1), "1 sesión 1 a 1 con el mentor, válida durante los primeros 3 meses del programa");
+  assert.equal(textoSesiones(3), "3 sesiones 1 a 1 con el mentor, válidas durante los primeros 3 meses del programa");
   assert.equal(textoSesiones(null), "");
   assert.equal(textoBonos([]), "Sin bonos adicionales");
   assert.equal(textoBonos(["A", "B", "C"]), "A, B y C");
@@ -55,7 +55,7 @@ test("las variables de la plantilla, con los nombres que pone Manu", () => {
   assert.equal(v["Cliente.Domicilio"], "Av. Siempre Viva 742, Córdoba");
   assert.equal(v["Contrato.Fecha"], "20/10/2026");
   assert.equal(v["Venta.Modalidad"], "Tres pagos de 1.000 USD");
-  assert.equal(v["Venta.Sesiones"], "3 sesiones 1 a 1 con el mentor");
+  assert.equal(v["Venta.Sesiones"], "3 sesiones 1 a 1 con el mentor, válidas durante los primeros 3 meses del programa");
   assert.equal(v["Venta.Bonos"], "Revisión de LinkedIn y Simulacro extra");
 });
 

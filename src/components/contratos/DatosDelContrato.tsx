@@ -15,10 +15,10 @@ import { plantillaDelContrato, type Programa } from "@/lib/programas";
 
 const SESIONES = [
   { valor: "", texto: "Sin definir" },
-  { valor: "0", texto: "Sin sesiones 1 a 1" },
-  { valor: "1", texto: "1 sesión 1 a 1" },
-  { valor: "2", texto: "2 sesiones 1 a 1" },
-  { valor: "3", texto: "3 sesiones 1 a 1" },
+  { valor: "0", texto: "No incluye sesiones 1 a 1" },
+  { valor: "1", texto: "1 sesión 1 a 1 (primeros 3 meses)" },
+  { valor: "2", texto: "2 sesiones 1 a 1 (primeros 3 meses)" },
+  { valor: "3", texto: "3 sesiones 1 a 1 (primeros 3 meses)" },
 ];
 
 export function DatosDelContrato({ datos, onCambio, programas, programaId, onPrograma, bloquearPrograma }: {
@@ -77,7 +77,7 @@ export function DatosDelContrato({ datos, onCambio, programas, programaId, onPro
       )}
       {/* La reserva no lleva sesiones, inicio ni bonos: eso va en el contrato del programa. */}
       {!reserva && <>
-      <Field label="Sesiones 1 a 1 con el mentor" ayuda="Sólo si se las diste para cerrar la venta.">
+      <Field label="Sesiones 1 a 1 con el mentor" ayuda="Sólo si se las diste para cerrar la venta. En el contrato dice que valen los primeros 3 meses del programa.">
         <Select
           value={datos.sesiones === null ? "" : String(datos.sesiones)}
           onChange={(ev) => onCambio({ sesiones: ev.target.value === "" ? null : Number(ev.target.value) })}

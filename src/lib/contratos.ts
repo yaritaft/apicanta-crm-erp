@@ -170,10 +170,15 @@ export function modalidadDeReserva(monto: number, moneda = "USD"): string {
   return monto > 0 ? montoContrato(monto, moneda) : "";
 }
 
+/* Lo que va en [Venta.Sesiones]. Las sesiones valen sólo los primeros 3 meses del programa y después se pierden
+   (Lili, 21/10, como decía el contrato viejo); va en el texto de cada opción y no fijo en la plantilla, porque
+   quedaría raro cuando no hay sesiones (Manu). Y «No incluye» cuando no se dieron (Yari). */
 export function textoSesiones(n: number | null | undefined): string {
   if (n === null || n === undefined) return "";
-  if (n <= 0) return "Sin sesiones 1 a 1 con el mentor";
-  return n === 1 ? "1 sesión 1 a 1 con el mentor" : `${n} sesiones 1 a 1 con el mentor`;
+  if (n <= 0) return "No incluye sesiones 1 a 1 con el mentor";
+  return n === 1
+    ? "1 sesión 1 a 1 con el mentor, válida durante los primeros 3 meses del programa"
+    : `${n} sesiones 1 a 1 con el mentor, válidas durante los primeros 3 meses del programa`;
 }
 
 export function textoBonos(bonos: string[] | undefined): string {
