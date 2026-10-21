@@ -293,6 +293,7 @@ const RUTAS: [string, AreaId | "equipo"][] = [
   ["/clientes", "clientes"],
   ["/webinars", "webinars"],
   ["/formularios", "webinars"],
+  ["/grupos-whatsapp", "webinars"],
   ["/marketing", "marketing"],
   ["/alumnos", "alumnos"],
   ["/reportes", "alumnos"],

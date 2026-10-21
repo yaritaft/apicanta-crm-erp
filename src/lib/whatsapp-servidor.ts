@@ -10,7 +10,7 @@ import { nubeServidor } from "./servidor";
 import {
   aplicarAviso, aplicarFoto, contarDentro, MAX_BYTES_CUERPO, QR_VIGENTE_SEG,
   type CuerpoGrupo, type CuerpoLatido, type EstadoConexion, type EventoGrupo, type GrupoWhatsapp, type LatidoLector,
-  type MiembroWhatsapp, type RespuestaEstado, type RespuestaWebinar,
+  type MiembroWhatsapp, type RespuestaEstado, type RespuestaIntegrantes, type RespuestaWebinar,
 } from "./whatsapp";
 
 /* ==================================================================
@@ -53,6 +53,8 @@ export interface RepoWhatsapp {
   leerMiembros(grupoId: string, telefonos?: readonly string[]): Promise<MiembroWhatsapp[]>;
   guardarMiembros(filas: readonly MiembroWhatsapp[]): Promise<void>;
   contarDentro(grupoId: string): Promise<number>;
+  /** Los miembros de TODOS los grupos (la pantalla «Grupos de WhatsApp»): por páginas, sin la hora de creación. */
+  leerTodosLosMiembros(): Promise<MiembroWhatsapp[]>;
 }
 
 /** Faltan las tablas: hay que correr supabase/whatsapp-lector.sql. */
@@ -191,6 +193,18 @@ export class RepoSupabase implements RepoWhatsapp {
     this.ok({ data: null, error: r.error });
     return r.count ?? 0;
   }
+
+  async leerTodosLosMiembros() {
+    const salida: MiembroWhatsapp[] = [];
+    /* PostgREST corta en 1000 sin avisar: se pide por páginas, siempre en el mismo orden, hasta que una venga incompleta. */
+    for (let desde = 0; ; desde += PAGINA) {
+      const r = this.ok(await this.db.from("whatsapp_miembros").select("grupoId, telefono, dentro, entro, salio")
+        .order("grupoId", { ascending: true }).order("telefono", { ascending: true }).range(desde, desde + PAGINA - 1));
+      const filas = (r ?? []) as MiembroWhatsapp[];
+      salida.push(...filas);
+      if (filas.length < PAGINA) return salida;
+    }
+  }
 }
 
 /* ---------- En memoria, y en un archivo para probar sin nube ---------- */
@@ -271,6 +285,10 @@ export class RepoMemoria implements RepoWhatsapp {
 
   async contarDentro(grupoId: string) {
     return this.datos.miembros.filter((m) => m.grupoId === grupoId && m.dentro).length;
+  }
+
+  async leerTodosLosMiembros() {
+    return this.datos.miembros.map(({ grupoId, telefono, dentro, entro, salio }) => ({ grupoId, telefono, dentro, entro, salio }));
   }
 }
 
@@ -582,6 +600,12 @@ export async function datosDeWebinar(repo: RepoWhatsapp, modo: Modo, webinarId: 
     dentro: [...dentro], salieron: Object.fromEntries(salieron),
     generado: ahora.toISOString(),
   };
+}
+
+/** Todo lo que necesita «Grupos de WhatsApp»: los grupos y sus integrantes (con teléfono, estado y cuándo entraron o salieron). */
+export async function datosDeIntegrantes(repo: RepoWhatsapp, modo: Modo, ahora: Date = new Date()): Promise<RespuestaIntegrantes> {
+  const [lector, grupos, miembros] = await Promise.all([repo.leerLatido(), repo.leerGrupos(), repo.leerTodosLosMiembros()]);
+  return { configurado: Boolean(tokenDelLector()), tablas: true, modo, lector, grupos, miembros, generado: ahora.toISOString() };
 }
 
 /** Los pedidos de la pantalla que cambian algo. */

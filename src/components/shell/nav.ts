@@ -1,7 +1,7 @@
 import {
   LayoutDashboard, Users, Sheet, CalendarDays, Video, Megaphone,
   GraduationCap, ClipboardList, Wallet, Settings, HandCoins, ArrowDownUp, Banknote, Landmark, UserCheck,
-  ClipboardCheck, PhoneCall, ListChecks, FileInput, UserRound, CalendarCheck, TrendingUp, ArrowLeftRight, GitMerge,
+  ClipboardCheck, PhoneCall, ListChecks, FileInput, UserRound, CalendarCheck, TrendingUp, ArrowLeftRight, GitMerge, MessagesSquare,
 } from "lucide-react";
 import { SquareKanban } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
@@ -42,6 +42,7 @@ export const NAV: GrupoNav[] = [
     items: [
       { href: "/webinars", texto: "Webinars", icono: Video, ayuda: "Registrados, asistencia y conversión" },
       { href: "/formularios", texto: "Formularios", icono: FileInput, ayuda: "Quién se anotó a cada webinar: unidos al grupo, contactados y teléfono para escribirles" },
+      { href: "/grupos-whatsapp", texto: "Grupos de WhatsApp", icono: MessagesSquare, ayuda: "Cada grupo con cuánta gente hay, cuántos entraron, cuántos salieron y la retención, y todos sus integrantes" },
       { href: "/marketing", texto: "Marketing", icono: Megaphone, ayuda: "Campañas de Meta y costo por lead" },
       /* Es una pestaña de Marketing, no otra pantalla: el Shell marca el item más específico. */
       { href: "/marketing?nivel=conciliacion", texto: "Conciliación", icono: GitMerge, ayuda: "Quién agendó o compró y todavía no tiene su formulario atado, mes por mes" },

@@ -45,20 +45,20 @@ function tipoAlAzar(r: Azar, i: number): TipoCuenta {
    como alias (alumnos/page.tsx), pero el menú ya no lo usa. */
 const MENU_ESPERADO: Record<string, { menu: string[]; inicio: string }> = {
   dueno: {
-    menu: ["/panel", "/mi-panel", "/leads", "/crm", "/agenda", "/ventas", "/clientes", "/webinars", "/formularios", "/marketing", "/marketing?nivel=conciliacion", "/alumnos", "/alumnos?seccion=pipeline", "/reportes",
+    menu: ["/panel", "/mi-panel", "/leads", "/crm", "/agenda", "/ventas", "/clientes", "/webinars", "/formularios", "/grupos-whatsapp", "/marketing", "/marketing?nivel=conciliacion", "/alumnos", "/alumnos?seccion=pipeline", "/reportes",
       "/alumnos?seccion=hoy", "/alumnos?seccion=clientes", "/finanzas", "/finanzas/end-of-day", "/finanzas/resultados", "/finanzas/transacciones", "/equipo", "/ajustes"],
     inicio: "/panel",
   },
   equipo: {
-    menu: ["/panel", "/mi-panel", "/leads", "/crm", "/agenda", "/ventas", "/clientes", "/webinars", "/formularios", "/marketing", "/marketing?nivel=conciliacion", "/alumnos", "/alumnos?seccion=pipeline", "/reportes",
+    menu: ["/panel", "/mi-panel", "/leads", "/crm", "/agenda", "/ventas", "/clientes", "/webinars", "/formularios", "/grupos-whatsapp", "/marketing", "/marketing?nivel=conciliacion", "/alumnos", "/alumnos?seccion=pipeline", "/reportes",
       "/alumnos?seccion=hoy", "/alumnos?seccion=clientes", "/finanzas", "/finanzas/end-of-day", "/finanzas/resultados", "/finanzas/transacciones", "/ajustes"],
     inicio: "/panel",
   },
-  director: { menu: ["/panel", "/mi-panel", "/leads", "/crm", "/agenda", "/ventas", "/clientes", "/webinars", "/formularios"], inicio: "/panel" },
+  director: { menu: ["/panel", "/mi-panel", "/leads", "/crm", "/agenda", "/ventas", "/clientes", "/webinars", "/formularios", "/grupos-whatsapp"], inicio: "/panel" },
   closer: { menu: ["/mis-llamadas", "/mi-panel", "/crm", "/ventas", "/cerrar-el-dia", "/cargar-venta"], inicio: "/mis-llamadas" },
   setter: { menu: ["/mi-panel", "/leads", "/crm", "/agenda"], inicio: "/mi-panel" },
   admin: { menu: ["/panel", "/ventas", "/clientes", "/finanzas", "/finanzas/end-of-day", "/finanzas/resultados", "/finanzas/transacciones"], inicio: "/panel" },
-  marketing: { menu: ["/panel", "/leads", "/webinars", "/formularios", "/marketing", "/marketing?nivel=conciliacion"], inicio: "/panel" },
+  marketing: { menu: ["/panel", "/leads", "/webinars", "/formularios", "/grupos-whatsapp", "/marketing", "/marketing?nivel=conciliacion"], inicio: "/panel" },
   customer_success: {
     menu: ["/mi-panel", "/clientes", "/alumnos", "/alumnos?seccion=pipeline", "/reportes", "/alumnos?seccion=hoy", "/alumnos?seccion=clientes"],
     inicio: "/mi-panel",

@@ -3,7 +3,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { ArrowDown, ArrowUp, Check, Copy, FileSpreadsheet, MessageCircle, RefreshCw, Search, Users, X } from "lucide-react";
+import { ArrowDown, ArrowUp, Check, Copy, Download, FileSpreadsheet, MessageCircle, RefreshCw, Search, Users, X } from "lucide-react";
 import { Ayuda, Badge, Button, Card, Chip, Empty, Input, Tabs, Tag, Textarea } from "@/components/ui/ui";
 import { type Columna, DataTable } from "@/components/ui/DataTable";
 import { ConfigColumnas, type DefColumna, useColumnas } from "@/components/ui/ColumnasConfig";
@@ -19,6 +19,8 @@ import { useEstado } from "@/lib/store";
 import { useUsuarioActual } from "@/lib/usuario";
 import { paginaDeURL, useBusquedaURL, useEscribirURL, useParamsURL } from "@/lib/useParamsURL";
 import { aLista } from "@/lib/compartirLink";
+import { bajarCsv } from "@/lib/csv";
+import { csvParaManyChat } from "@/lib/grupos-whatsapp";
 import { PARAM_VISTA } from "@/lib/vistas-guardadas";
 import { textoDeFiltro } from "@/lib/crm-tabla";
 import { filtroAURL, filtrosDeURL, opcionesDeColumna, ordenarFilas, ordenesAURL, ordenesDeURL, pasaFiltros, MAX_ORDENES } from "@/lib/tabla-filtros";
@@ -157,6 +159,12 @@ export function VistaFormularios() {
     const res = await cambiarRegistros(ids, { grupo: "unido", grupoPor: "Lector de WhatsApp", grupoEn: new Date().toISOString() });
     if (res.ok) toast(`Listo: ${num(res.escritos)} ${res.escritos === 1 ? "quedó marcado" : "quedaron marcados"} como ${res.escritos === 1 ? "unido" : "unidos"}.`);
     else toast(res.error ?? "No se pudo guardar.", "err");
+  }
+  /* Los que se ven (con los filtros puestos), listos para importar en ManyChat y escribirles desde ahí. */
+  function bajarParaManyChat() {
+    const { texto, sinTelefono } = csvParaManyChat(filasOrdenadas);
+    bajarCsv(`manychat-formularios-${sel === "todos" ? "todos" : sel}`, texto);
+    toast(`Se bajó el CSV con ${num(filasOrdenadas.length)} ${filasOrdenadas.length === 1 ? "contacto" : "contactos"}${sinTelefono ? `; ${num(sinTelefono)} sin teléfono que se entienda (van con el mail)` : ""}.`);
   }
   async function copiarTexto(texto: string, aviso: string) {
     try { await navigator.clipboard.writeText(texto); toast(aviso); }
@@ -343,6 +351,8 @@ export function VistaFormularios() {
               {!enCruce && <ConfigColumnas todas={COLUMNAS} visibles={cols.visibles} alternar={cols.alternar} mover={cols.mover} restaurar={cols.restaurar} compacto />}
               <Button sm variante="ghost" icono={<RefreshCw size={15} />} aria-label="Actualizar" onClick={() => { void cargarResumen(); if (sel) void cargarRegistros(sel, true); }} title="Volver a leer la tabla: entran registros nuevos solos desde la landing" />
               <CopiarLink />
+              <Button sm variante="secondary" icono={<Download size={15} />} disabled={filasOrdenadas.length === 0} onClick={bajarParaManyChat}
+                title="Baja un CSV con los registros que se ven (con los filtros puestos): nombre, teléfono y mail, listos para importar en ManyChat">CSV para ManyChat</Button>
               {puedeEditar && <Button sm variante="secondary" icono={<FileSpreadsheet size={15} />} title="Traer las hojas del Excel de Yari" onClick={() => setImportando(true)}>Importar</Button>}
             </div>
           </div>

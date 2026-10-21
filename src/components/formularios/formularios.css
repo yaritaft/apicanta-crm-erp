@@ -37,3 +37,12 @@
 .fm-t .hk-paginador { position: sticky; bottom: 0; z-index: 3; background: var(--surface-100); }
 .fm-t .hk-table-wrap:has(.hk-paginador) .hk-table tfoot td { bottom: var(--fm-paginador, 49px); }
 .fm-lector-linea { display: inline-flex; align-items: center; gap: 6px; }
+
+/* Un total fijo (no abre ningún menú): la tabla de Grupos de WhatsApp. */
+.fm-pie--fijo { cursor: default; padding: 0; margin: 0; }
+.fm-pie--fijo:hover { background: none; }
+.gw-t .hk-table-wrap--alto { max-height: max(380px, calc(100vh - 290px)) !important; }
+.gw-t .hk-paginador { position: sticky; bottom: 0; z-index: 3; background: var(--surface-100); }
+.gw-t .hk-table-wrap:has(.hk-paginador) .hk-table tfoot td { bottom: var(--fm-paginador, 49px); }
+.gw-celda { display: block; max-width: 300px; }
+.gw-nota { margin: 0; padding: var(--space-3) var(--space-4) var(--space-4); }

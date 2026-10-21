@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { cabeceras } from "@/components/webinars/useYoutube";
-import { esSinAcceso, estadoDelLector, proximaPregunta, QR_VIGENTE_SEG, sinCodigoVencido, type RespuestaEstado, type RespuestaWebinar } from "./whatsapp";
+import { esSinAcceso, estadoDelLector, proximaPregunta, QR_VIGENTE_SEG, sinCodigoVencido, type RespuestaEstado, type RespuestaIntegrantes, type RespuestaWebinar } from "./whatsapp";
 
 /* ==================================================================
    WhatsApp de lectura, del lado de la pantalla.
@@ -298,4 +298,44 @@ export async function atarGruposAlCrear(
     if (!hecho) faltan.push(id);
   }
   return faltan;
+}
+
+/* ---------- Todos los grupos y sus integrantes (Crecimiento → Grupos de WhatsApp) ---------- */
+
+export interface VistaIntegrantes {
+  cargando: boolean;
+  datos: RespuestaIntegrantes | null;
+  error: string | null;
+  sinAcceso: boolean;
+  recargar: () => Promise<void>;
+}
+
+/** Los grupos que detectó el lector con todos sus integrantes. Se pide una vez al abrir la pantalla (son unos miles de teléfonos:
+    no se repite sola) y con `recargar`. `activo` en falso (quien no ve los Webinars) no pregunta nada. */
+export function useIntegrantes(activo = true): VistaIntegrantes {
+  const [datos, setDatos] = useState<RespuestaIntegrantes | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [sinAcceso, setSinAcceso] = useState(false);
+  const [cargando, setCargando] = useState(activo);
+  const vivo = useRef(true);
+  useEffect(() => { vivo.current = true; return () => { vivo.current = false; }; }, []);
+
+  const recargar = useCallback(async () => {
+    if (!activo) return;
+    setCargando(true);
+    try {
+      const d = await pedir<RespuestaIntegrantes>("/api/whatsapp/integrantes");
+      if (!vivo.current) return;
+      setDatos(d); setError(null); setSinAcceso(false);
+    } catch (e) {
+      if (!vivo.current) return;
+      const err = e as ErrorWhatsapp;
+      setError(err.message); setSinAcceso(esSinAcceso(err.estado));
+    } finally {
+      if (vivo.current) setCargando(false);
+    }
+  }, [activo]);
+
+  useEffect(() => { void recargar(); }, [recargar]);
+  return { cargando, datos, error, sinAcceso, recargar };
 }

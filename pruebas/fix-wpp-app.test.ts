@@ -649,7 +649,7 @@ test("el cliente sólo da por «sin acceso» a un 401 o 403: con un 503 conserva
   for (const e of [0, 429, 500, 502, 503, 504]) assert.equal(WA.esSinAcceso(e), false, String(e));
   const cliente = readFileSync(new URL("../src/lib/whatsapp-cliente.ts", import.meta.url), "utf8");
   assert.ok(!/estado === 40[13]/.test(cliente), "ningún lugar decide el acceso por su cuenta");
-  assert.equal(cliente.match(/esSinAcceso\(err\.estado\)/g)?.length, 3, "el lector compartido, el de Ajustes y el del grupo");
+  assert.equal(cliente.match(/esSinAcceso\(err\.estado\)/g)?.length, 4, "el lector compartido, el de Ajustes, el del grupo y el de los integrantes");
   /* Con un error no se vacía lo que había (sólo con sin acceso); el 503 sigue el ciclo normal de preguntas. */
   assert.match(cliente, /poner\(\{ cargando: false, datos: vista\.datos, error: err\.message, sinAcceso: esSinAcceso\(err\.estado\) \}\)/);
   assert.equal(WA.proximaPregunta(WA.esSinAcceso(503), false), 3_500, "vuelve a preguntar solo");

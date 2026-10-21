@@ -710,6 +710,17 @@ export interface RespuestaWebinar {
   generado: string;
 }
 
+export interface RespuestaIntegrantes {
+  configurado: boolean;
+  tablas: boolean;
+  modo: "nube" | "prueba-local";
+  lector: LatidoLector | null;
+  grupos: GrupoWhatsapp[];
+  /** Los integrantes de todos los grupos: quién está adentro y quién salió. */
+  miembros: MiembroWhatsapp[];
+  generado: string;
+}
+
 /** Un webinar al que todavía no se le ató ningún grupo, con los grupos sin atar cuyo nombre trae su fecha (los que el equipo
     puede confirmar con un clic). */
 export interface WebinarSinGrupo<W extends WebinarMinimo = WebinarMinimo> { webinar: W; sugeridos: GrupoWhatsapp[] }

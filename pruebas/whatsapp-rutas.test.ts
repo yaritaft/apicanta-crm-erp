@@ -390,3 +390,25 @@ test("sin la tabla del código, el latido entra igual y la pantalla lo dice", as
   const cuerpo = await leer(await responderEstado(pedirEstado("?qr=1"), d.deps));
   assert.deepEqual([cuerpo.qr, cuerpo.qrSinTabla, cuerpo.puedeVerQr], [null, true, true]);
 });
+
+test("/api/whatsapp/integrantes: los grupos con todos sus integrantes (quién está, quién salió) para Grupos de WhatsApp", async () => {
+  const { GET: getIntegrantes } = await import("@/app/api/whatsapp/integrantes/route");
+  await conArchivo(async () => {
+    /* El lector manda la foto del grupo (A, B, C adentro) y después sale B. */
+    const foto = { grupo: { id: G, nombre: "Taller Online 21/10/26 #1" }, evento: "foto", participantes: [A, B, C], en: "2026-10-21T01:00:00.000Z" };
+    assert.equal((await postGrupos(pedido("/api/whatsapp/grupos", foto, delLector))).status, 200);
+    assert.equal((await postGrupos(pedido("/api/whatsapp/grupos", { grupo: { id: G, nombre: "Taller Online 21/10/26 #1" }, evento: "salio", participantes: [B], en: "2026-10-21T02:00:00.000Z" }, delLector))).status, 200);
+
+    const r = await getIntegrantes(new Request("http://localhost/api/whatsapp/integrantes"));
+    assert.equal(r.status, 200);
+    assert.equal(r.headers.get("cache-control"), "no-store");
+    const j = await leer(r);
+    assert.equal(j.tablas, true);
+    assert.deepEqual(j.grupos.map((x: { id: string; nombre: string }) => [x.id, x.nombre]), [[G, "Taller Online 21/10/26 #1"]]);
+    const por = Object.fromEntries(j.miembros.map((m: { telefono: string; dentro: boolean; salio: string | null }) => [m.telefono, m]));
+    assert.deepEqual([por[A].dentro, por[B].dentro, por[C].dentro], [true, false, true]);
+    assert.ok(por[B].salio, "queda cuándo salió");
+    assert.equal(j.miembros.length, 3);
+    assert.ok(!("creadoEn" in j.miembros[0]), "sólo lo que la pantalla necesita");
+  });
+});
