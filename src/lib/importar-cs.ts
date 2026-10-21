@@ -211,6 +211,43 @@ export function leerSiNo(texto: string): boolean | null {
   return null;
 }
 
+/** El orden de las fechas de una tabla: «dm» (día/mes, la planilla argentina) o «md» (mes/día, como exporta el Airtable:
+    «10/19/2026»). Se mira el archivo entero: si alguna fecha con barras tiene el SEGUNDO número mayor a 12 y ninguna el primero, es
+    mes/día; ante la duda (todo hasta 12, o mezcla), día/mes, como siempre. Antes se leía todo como día/mes y el CSV del Airtable
+    perdía 493 de 752 fechas de ingreso y daba vuelta las otras (21/10). */
+export type OrdenFechas = "dm" | "md";
+const FECHA_CON_BARRAS = /^\s*(\d{1,2})([/.-])(\d{1,2})\2(\d{2,4})\b/;
+export function ordenDeFechas(filas: readonly (readonly string[])[]): OrdenFechas {
+  let dm = 0, md = 0;
+  for (const fila of filas) for (const celda of fila) {
+    const m = FECHA_CON_BARRAS.exec(celda);
+    if (!m) continue;
+    if (+m[1] > 12) dm++;
+    else if (+m[3] > 12) md++;
+  }
+  return md > 0 && dm === 0 ? "md" : "dm";
+}
+
+/** Una fecha de la tabla leída en su orden: con «md», «10/19/2026» es el 19 de octubre. */
+export function leerFechaEn(orden: OrdenFechas, texto: string | null | undefined, anio?: number): string | undefined {
+  const t = (texto ?? "").trim();
+  const m = orden === "md" ? FECHA_CON_BARRAS.exec(t) : null;
+  return leerFecha(m ? `${m[3]}/${m[1]}/${m[4]}${t.slice(m[0].length)}` : t, anio);
+}
+
+/** «Contacto Inicial» y «Contacto 1 semana» del Airtable son CASILLAS («checked»): dicen que se hizo, no cuándo, y la app guarda
+    una fecha. Con una fecha escrita, vale ésa; con la casilla marcada, el día de ingreso más `dias` (0 el inicial, 7 el de la
+    semana), sin pasar de hoy. Sin ingreso conocido o sin marcar: null (no se inventa). Antes la casilla se perdía al importar:
+    leerFecha("checked") no es una fecha (Juan Cruz, 21/10). */
+export function fechaDeContacto(texto: string, inicio: string, dias: number, hoy: string, orden: OrdenFechas = "dm"): string | null {
+  const fecha = leerFechaEn(orden, texto);
+  if (fecha) return fecha;
+  if (!texto || leerSiNo(texto) !== true || !/^\d{4}-\d{2}-\d{2}$/.test(inicio)) return null;
+  const [a, m, d] = inicio.split("-").map(Number);
+  const dia = new Date(Date.UTC(a, m - 1, d + dias)).toISOString().slice(0, 10);
+  return dia > hoy ? hoy : dia;
+}
+
 /** Un monto escrito de cualquier forma: «US$ 1.200,50», «$1,200.50», «1200». */
 export function leerMontoCs(texto: string): number | null {
   let t = texto.replace(/[^\d.,-]/g, "");
@@ -231,14 +268,14 @@ export function leerMontoCs(texto: string): number | null {
 }
 
 /** Una fecha con hora, de un Airtable (ISO con zona) o de un Excel («12/9/2026 15:30»): el instante, tomando la hora de Argentina si no dice otra. */
-export function leerFechaHora(texto: string, anio = new Date().getFullYear()): string | null {
+export function leerFechaHora(texto: string, anio = new Date().getFullYear(), orden: OrdenFechas = "dm"): string | null {
   const t = texto.trim();
   if (!t) return null;
   if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(t)) {
     const d = new Date(t.includes("Z") || /[+-]\d{2}:?\d{2}$/.test(t) ? t : `${t}-03:00`);
     return Number.isNaN(+d) ? null : d.toISOString();
   }
-  const dia = leerFecha(t, anio);
+  const dia = leerFechaEn(orden, t, anio);
   if (!dia) return null;
   const hm = /(\d{1,2}):(\d{2})(?::\d{2})?\s*(a\.?\s?m\.?|p\.?\s?m\.?)?/i.exec(t);
   let h = hm ? Number(hm[1]) : 12;
@@ -427,10 +464,19 @@ export function planificarImportacionCs(e: EstadoApp, tablas: readonly TablaImpo
   const segDe = (id: ID) => segs.get(id) ?? seguimientoCompleto({ alumnoId: id }, cfg);
 
   /* ---------- Clientes ---------- */
+  /* Cada tabla con el orden de fechas que trae (el Airtable, mes/día): se avisa cuando no es el de siempre. */
+  const ordenDe = (t: TablaImport): OrdenFechas => {
+    const orden = ordenDeFechas(t.filas);
+    if (orden === "md") plan.avisos.push(`«${t.nombre}»: las fechas vienen como mes/día/año (así exporta el Airtable) y se leyeron así.`);
+    return orden;
+  };
+
   for (const t of tablas.filter((x) => x.tipo === "clientes")) {
+    const orden = ordenDe(t);
     t.filas.forEach((fila, i) => {
       const n = i + 2;
       const v = (campo: string) => valorDe(fila, t.mapeo, campo);
+      const fecha = (campo: string) => leerFechaEn(orden, v(campo));
       if (fila.every((x) => !x.trim())) return;
       plan.porTabla.clientes.filas++;
       const nombre = v("nombre");
@@ -447,8 +493,8 @@ export function planificarImportacionCs(e: EstadoApp, tablas: readonly TablaImpo
       if (hallado.por === "N.º") plan.avisos.push(`Clientes, fila ${n}: «${nombre}» se tomó por su N.º ${numero}${hallado.mailDistinto ? ": el mail del archivo no es el que tiene en la app" : " (la fila no trae mail)"}.`);
 
       /* Lo que dice la fila. */
-      const inicio = leerFecha(v("inicio")) ?? "";
-      const egresoTxt = leerFecha(v("egreso")) ?? null;
+      const inicio = fecha("inicio") ?? "";
+      const egresoTxt = fecha("egreso") ?? null;
       const programasTxt = v("programa");
       const programas = programasTxt
         ? [...new Set(programasTxt.split(/[,;+/\n]| y /i).map((x) => x.trim()).filter(Boolean)
@@ -463,6 +509,8 @@ export function planificarImportacionCs(e: EstadoApp, tablas: readonly TablaImpo
       };
       /* Lo que dice la fila, campo por campo: sólo entra lo que se entiende. */
       const campos: Partial<SeguimientoAlumno> = {};
+      /* Lo que se dedujo y no se leyó (la fecha de una casilla de contacto): llena lo vacío, pero no pisa una fecha que ya tiene. */
+      const deducidos = new Set<keyof SeguimientoAlumno>();
       const poner = <K extends keyof SeguimientoAlumno>(k: K, x: SeguimientoAlumno[K] | null | undefined) => {
         if (x !== null && x !== undefined) campos[k] = x;
       };
@@ -479,9 +527,11 @@ export function planificarImportacionCs(e: EstadoApp, tablas: readonly TablaImpo
       poner("fechaEgreso", egresoTxt);
       if (v("mentor")) poner("sesionesMentor", numOk("mentor", [0, 10]));
       poner("notas", texto("comentarios"));
-      poner("contactoInicial", leerFecha(v("contactoInicial")));
-      poner("contactoSemana", leerFecha(v("contactoSemana")));
-      poner("ultimoContacto", leerFecha(v("ultimoContacto")));
+      for (const [k, dias] of [["contactoInicial", 0], ["contactoSemana", 7]] as const) {
+        if (v(k) && !fecha(k)) deducidos.add(k);
+        poner(k, fechaDeContacto(v(k), inicio, dias, op.hoy, orden));
+      }
+      poner("ultimoContacto", fecha("ultimoContacto"));
       if (v("acceso")) poner("acceso", valorDeLista(v("acceso"), listas.accesos));
       if (v("followUp")) poner("followUp", valorDeLista(v("followUp"), listas.followUps));
       if (v("garantia")) poner("garantia", valorDeLista(v("garantia"), listas.garantias));
@@ -541,7 +591,7 @@ export function planificarImportacionCs(e: EstadoApp, tablas: readonly TablaImpo
       const aplicar: Partial<SeguimientoAlumno> = {};
       for (const [k, x] of Object.entries(campos) as [keyof SeguimientoAlumno, unknown][]) {
         if (x === null || x === undefined) continue;
-        if (op.modo === "pisar" || eraNuevo || vacioEn(k)) (aplicar as Record<string, unknown>)[k] = x;
+        if (eraNuevo || vacioEn(k) || (op.modo === "pisar" && !deducidos.has(k))) (aplicar as Record<string, unknown>)[k] = x;
       }
       /* El N.º: si ya lo tiene otro alumno, no se repite. */
       if (aplicar.numero != null && numeros.has(aplicar.numero) && numeros.get(aplicar.numero) !== alumno.id) {
@@ -582,13 +632,14 @@ export function planificarImportacionCs(e: EstadoApp, tablas: readonly TablaImpo
   /* ---------- Testimonios ---------- */
   const vistosDeAlumno = new Map<ID, number>();
   for (const t of tablas.filter((x) => x.tipo === "testimonios")) {
+    const orden = ordenDe(t);
     t.filas.forEach((fila, i) => {
       const n = i + 2;
       const v = (campo: string) => valorDe(fila, t.mapeo, campo);
       if (fila.every((x) => !x.trim())) return;
       plan.porTabla.testimonios.filas++;
       const email = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(v("email")) ? v("email") : "";
-      const alumno = alumnoDeFila("testimonios", n, { nombre: v("alumno"), email, telefono: v("telefono"), pais: v("pais"), inicio: leerFecha(v("inicio")) ?? "" });
+      const alumno = alumnoDeFila("testimonios", n, { nombre: v("alumno"), email, telefono: v("telefono"), pais: v("pais"), inicio: leerFechaEn(orden, v("inicio")) ?? "" });
       if (!alumno) return;
       const k = (vistosDeAlumno.get(alumno.id) ?? 0) + 1;
       vistosDeAlumno.set(alumno.id, k);
@@ -596,7 +647,7 @@ export function planificarImportacionCs(e: EstadoApp, tablas: readonly TablaImpo
       const tec = v("tecnologias");
       const nuevo: Testimonio = {
         id, alumnoId: alumno.id,
-        followUp: valorDeLista(v("followUp"), listas.followUpsTestimonio), fechaGrabacion: leerFecha(v("fechaGrabacion")) ?? null,
+        followUp: valorDeLista(v("followUp"), listas.followUpsTestimonio), fechaGrabacion: leerFechaEn(orden, v("fechaGrabacion")) ?? null,
         conQuien: valorDeLista(v("conQuien"), listas.quienGraba), resell: valorDeLista(v("resell"), listas.resellsTestimonio),
         estadoVideo: valorDeLista(v("estadoVideo"), listas.estadosVideo), link: v("link"), tecnologias: tec,
         situacionPrevia: v("situacionPrevia"), situacionActual: v("situacionActual"), notas: v("notas"), creadoEn: op.ahora,
@@ -625,12 +676,13 @@ export function planificarImportacionCs(e: EstadoApp, tablas: readonly TablaImpo
   /* ---------- Agenda de resells ---------- */
   const resellsActuales = (e.resells ?? []).map((r) => resellNormal(r));
   for (const t of tablas.filter((x) => x.tipo === "resells")) {
+    const orden = ordenDe(t);
     t.filas.forEach((fila, i) => {
       const n = i + 2;
       const v = (campo: string) => valorDe(fila, t.mapeo, campo);
       if (fila.every((x) => !x.trim())) return;
       plan.porTabla.resells.filas++;
-      const fechaHora = leerFechaHora(v("fechaHora"));
+      const fechaHora = leerFechaHora(v("fechaHora"), undefined, orden);
       if (!fechaHora) return descartar("resells", n, v("fechaHora") ? `«${v("fechaHora")}» no se entendió como fecha.` : "No tiene fecha.");
       const email = v("email");
       const mail = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email) ? email : "";
@@ -681,12 +733,13 @@ export function planificarImportacionCs(e: EstadoApp, tablas: readonly TablaImpo
   const reportesActuales = new Set(e.reportes.map((r) => `${r.alumnoId}|${lunesDe(r.semanaDel)}`));
   const reportesNuevos = new Set<string>();
   for (const t of tablas.filter((x) => x.tipo === "reportes")) {
+    const orden = ordenDe(t);
     t.filas.forEach((fila, i) => {
       const n = i + 2;
       const v = (campo: string) => valorDe(fila, t.mapeo, campo);
       if (fila.every((x) => !x.trim())) return;
       plan.porTabla.reportes.filas++;
-      const dia = leerFecha(v("semana"));
+      const dia = leerFechaEn(orden, v("semana"));
       if (!dia) return descartar("reportes", n, v("semana") ? `«${v("semana")}» no se entendió como fecha.` : "No dice de qué semana es.");
       const email = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(v("email")) ? v("email") : "";
       const hallado = buscarAlumno({ email, numero: null, telefono: "", nombre: v("alumno") });

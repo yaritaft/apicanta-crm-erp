@@ -2,8 +2,9 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { leerCSV } from "@/lib/pasarelas";
 import {
-  adivinarMapeoCs, CAMPOS_CLIENTES, CAMPOS_RESELLS, CAMPOS_TESTIMONIOS, detectarTipo, faltaParaImportar, filaDeEncabezados, leerFechaHora,
-  leerMontoCs, leerSiNo, planificarImportacionCs, tablaDeHoja, type OpcionesImport, type PlanImportCs, type TablaImport,
+  adivinarMapeoCs, CAMPOS_CLIENTES, CAMPOS_RESELLS, CAMPOS_TESTIMONIOS, detectarTipo, faltaParaImportar, fechaDeContacto, filaDeEncabezados,
+  leerFechaEn, leerFechaHora, leerMontoCs, leerSiNo, ordenDeFechas, planificarImportacionCs, tablaDeHoja, type OpcionesImport, type PlanImportCs,
+  type TablaImport,
 } from "@/lib/importar-cs";
 import type { EstadoApp } from "@/lib/types";
 
@@ -436,6 +437,30 @@ test("las casillas del Airtable: «checked» es sí y «unchecked» o vacío es 
   for (const no of ["unchecked", "falso", ""]) assert.equal(leerSiNo(no), false, no);
 });
 
+test("las fechas del Airtable vienen como mes/día/año y se leen así; una planilla argentina sigue siendo día/mes", () => {
+  assert.equal(ordenDeFechas([["10/19/2026", "x"], ["10/5/2026"]]), "md", "un 19 en el segundo lugar sólo puede ser el día");
+  assert.equal(ordenDeFechas([["19/10/2026"], ["5/10/2026"]]), "dm");
+  assert.equal(ordenDeFechas([["5/10/2026"], ["3/4/2026"]]), "dm", "ante la duda, como siempre");
+  assert.equal(ordenDeFechas([["19/10/2026"], ["10/19/2026"]]), "dm", "mezclado: como siempre");
+  assert.equal(ordenDeFechas([["2026-10-19"], ["54 9 11 6373 8587"], ["33.037.033"], ["11-6373-8587"]]), "dm", "lo que no es una fecha con barras no cuenta");
+  assert.equal(leerFechaEn("md", "10/5/2026"), "2026-10-05");
+  assert.equal(leerFechaEn("md", "1/19/2027"), "2027-01-19");
+  assert.equal(leerFechaEn("dm", "10/5/2026"), "2026-05-10");
+  assert.equal(leerFechaEn("md", "2026-10-05"), "2026-10-05", "una fecha ISO no se da vuelta");
+  assert.equal(leerFechaEn("md", "checked"), undefined);
+  assert.equal(leerFechaHora("10/7/2026 3:30 pm", 2026, "md"), "2026-10-07T18:30:00.000Z");
+});
+
+test("«Contacto Inicial» y «Contacto 1 semana» son casillas: marcadas, valen el día de ingreso y una semana después (sin pasar de hoy)", () => {
+  assert.equal(fechaDeContacto("checked", "2026-08-31", 0, "2026-10-09"), "2026-08-31");
+  assert.equal(fechaDeContacto("checked", "2026-08-31", 7, "2026-10-09"), "2026-09-07", "cruza el fin de mes");
+  assert.equal(fechaDeContacto("checked", "2026-10-05", 7, "2026-10-09"), "2026-10-09", "no se anota un contacto en el futuro");
+  assert.equal(fechaDeContacto("03/09/2026", "2026-08-31", 0, "2026-10-09"), "2026-09-03", "una fecha escrita vale como está");
+  assert.equal(fechaDeContacto("9/3/2026", "2026-08-31", 0, "2026-10-09", "md"), "2026-09-03");
+  for (const nada of ["unchecked", "", "no"]) assert.equal(fechaDeContacto(nada, "2026-08-31", 0, "2026-10-09"), null, nada);
+  assert.equal(fechaDeContacto("checked", "", 0, "2026-10-09"), null, "sin día de ingreso no se inventa");
+});
+
 test("importar Clientes concilia por teléfono con el lead y su venta, elige la del programa que cursa y no confunde a quien comparte teléfono", () => {
   const base = estado();
   const e = estado({
@@ -459,4 +484,40 @@ test("importar Clientes concilia por teléfono con el lead y su venta, elige la 
   /* Ninguna venta queda atada a dos alumnos. */
   const ventas = [...e.alumnos, ...p.alumnos].map((a) => a.ventaId).filter(Boolean);
   assert.equal(new Set(ventas).size, ventas.length);
+});
+
+test("el CSV del Airtable: las casillas de contacto entran como fecha, el ingreso se lee mes/día y reimportar no pisa ni pierde nada", () => {
+  const fila = (d: Record<string, string>) => AIRTABLE_CLIENTES.map((c) => d[c] ?? "").join(",");
+  const csv = [AIRTABLE_CLIENTES.join(","),
+    /* Ana ya está en la app: sus dos casillas marcadas. */
+    fila({ "Alumno": "Ana López", "Email Cliente": "ana@mail.com", "Fecha de Ingreso": "8/31/2026", "Contacto Inicial": "checked", "Contacto 1 semana": "checked", "Último Contacto": "10/5/2026" }),
+    /* Beto es nuevo: entró el 5 de octubre (leído día/mes sería el 10 de mayo); la semana todavía no se cumplió. */
+    fila({ "Alumno": "Beto Pérez", "Email Cliente": "beto@mail.com", "Fecha de Ingreso": "10/5/2026", "Fecha de Finalización": "1/5/2027", "Contacto Inicial": "checked", "Contacto 1 semana": "checked" }),
+    /* Carla: sin marcar. */
+    fila({ "Alumno": "Carla Gómez", "Email Cliente": "carla@mail.com", "Fecha de Ingreso": "9/20/2026", "Contacto Inicial": "unchecked" }),
+  ].join("\n");
+  const t = tabla("Clientes-Todos los Alumnos", csv);
+  const e = estado();
+  const p = planificarImportacionCs(e, [t], OP);
+  assert.ok(p.avisos.some((x) => /mes\/día\/año/.test(x)), "se avisa en qué orden se leyeron las fechas");
+
+  const seg = (pl: PlanImportCs, nombre: string) => {
+    const a = [...pl.alumnos, ...e.alumnos].find((x) => x.nombre === nombre)!;
+    return pl.seguimientos.find((s) => s.alumnoId === a.id)!;
+  };
+  assert.deepEqual([seg(p, "Ana López").contactoInicial, seg(p, "Ana López").contactoSemana, seg(p, "Ana López").ultimoContacto], ["2026-08-31", "2026-09-07", "2026-10-05"]);
+  assert.deepEqual([seg(p, "Beto Pérez").contactoInicial, seg(p, "Beto Pérez").contactoSemana, seg(p, "Beto Pérez").fechaEgreso], ["2026-10-05", "2026-10-09", "2027-01-05"]);
+  assert.match(p.alumnos.find((a) => a.nombre === "Beto Pérez")!.inicio, /^2026-10-05/);
+  assert.deepEqual([seg(p, "Carla Gómez").contactoInicial ?? null, seg(p, "Carla Gómez").contactoSemana ?? null], [null, null], "sin marcar no se inventa un contacto");
+
+  /* Reimportar el mismo archivo no escribe nada. */
+  const e1 = aplicar(e, p);
+  assert.equal(escribe(planificarImportacionCs(e1, [t], OP)), 0, "la segunda vez no hay nada para escribir");
+
+  /* Lili anotó en la app el día real del primer contacto de Ana: ni «pisar» lo cambia por el que se deduce de la casilla. */
+  const e2: EstadoApp = { ...e1, seguimientos: e1.seguimientos!.map((s) => (s.alumnoId === "a1" ? { ...s, contactoInicial: "2026-09-02" } : s)) };
+  const p3 = planificarImportacionCs(e2, [t], { ...OP, modo: "pisar" });
+  const ana3 = p3.seguimientos.find((s) => s.alumnoId === "a1") ?? e2.seguimientos!.find((s) => s.alumnoId === "a1")!;
+  assert.equal(ana3.contactoInicial, "2026-09-02");
+  assert.equal(ana3.ultimoContacto, "2026-10-05", "lo que el archivo dice con fecha, «pisar» lo deja como en el archivo");
 });
