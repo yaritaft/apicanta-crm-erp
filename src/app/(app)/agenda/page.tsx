@@ -110,12 +110,22 @@ export default function Agenda() {
   const puedePasar = usePuedePasarLlamadas();
   const lista = useRef<HTMLDivElement>(null);
 
+  /* Una llamada se abre en la ficha de la persona (pestaña Llamadas), no en un panel al costado
+     (Juan Cruz, 21/10). El panel queda sólo para una llamada que no es de nadie todavía. Devuelve
+     undefined si no pudo abrir la ficha. */
+  function abrirLlamada(s?: Sesion): true | undefined {
+    if (!s || !(s.contactoId || s.leadId)) return undefined;
+    abrirFicha(s.id, "llamadas");
+    return true;
+  }
+
   const [vista, setVista] = useParamsURL(VISTA_AGENDA);
   const [busca, setBusca] = useBusquedaURL("q", ["pag"]);
 
   useEffect(() => {
     if (url.nuevo) { if (AGENDAR_A_MANO) setForm(VACIA(e.ajustes.tiposSesion[0] ?? "Sesión")); url.limpiar(); }
-    else if (url.ver) { setVer(url.ver); url.limpiar(); }
+    else if (url.ver) { abrirLlamada(e.sesiones.find((x) => x.id === url.ver)) ?? setVer(url.ver); url.limpiar(); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [url, e.ajustes.tiposSesion]);
 
   /* ---------- Período ----------
@@ -369,8 +379,8 @@ export default function Agenda() {
                   </div>
                   <div className="stack-2">
                     {items.map((s) => (
-                      <div key={s.id} className="agenda-item" onClick={() => setVer(s.id)} role="button" tabIndex={0}
-                        onKeyDown={(ev) => { if (ev.key === "Enter") setVer(s.id); }}>
+                      <div key={s.id} className="agenda-item" onClick={() => abrirLlamada(s) ?? setVer(s.id)} role="button" tabIndex={0}
+                        onKeyDown={(ev) => { if (ev.key === "Enter") abrirLlamada(s) ?? setVer(s.id); }}>
                         <span className="agenda-item__hora">{hora(s.inicia)}</span>
                         <span className="agenda-item__quien">
                           <span className="truncate t-strong" style={{ display: "block", color: "var(--ink)" }}>

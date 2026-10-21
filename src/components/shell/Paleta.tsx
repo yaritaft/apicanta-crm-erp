@@ -76,7 +76,7 @@ export function Paleta({ abierto, onCerrar }: { abierto: boolean; onCerrar: () =
       }
       for (const s of ve("/agenda") ? e.sesiones : []) {
         if (normal(s.invitado).includes(term) || normal(s.titulo).includes(term)) {
-          out.push({ id: `s${s.id}`, grupo: "Agenda", texto: `${s.titulo} — ${s.invitado}`, sub: fechaHora(s.inicia), icono: <Search size={18} />, ir: `/agenda?ver=${s.id}` });
+          out.push({ id: `s${s.id}`, grupo: "Agenda", texto: `${s.titulo} — ${s.invitado}`, sub: fechaHora(s.inicia), icono: <Search size={18} />, ir: s.contactoId || s.leadId ? `/agenda?ficha=${s.id}&vista=llamadas` : `/agenda?ver=${s.id}` });
         }
       }
     }

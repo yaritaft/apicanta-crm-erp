@@ -31,3 +31,11 @@ test("el hook usa la función y no vuelve a guardar el «ya lo abrí» para siem
   assert.match(src, /leerApertura\(params, consumido\.current\)/);
   assert.doesNotMatch(src, /if \(consumido\.current\) return;/);
 });
+
+test("una llamada se abre en la ficha de la persona, no en un panel al costado (Juan Cruz, 21/10)", () => {
+  const agenda = readFileSync("src/app/(app)/agenda/page.tsx", "utf8");
+  assert.match(agenda, /abrirFicha\(s\.id, "llamadas"\)/);
+  assert.match(agenda, /onClick=\{\(\) => abrirLlamada\(s\) \?\? setVer\(s\.id\)\}/, "el click en la fila abre la ficha");
+  const paleta = readFileSync("src/components/shell/Paleta.tsx", "utf8");
+  assert.match(paleta, /\/agenda\?ficha=\$\{s\.id\}&vista=llamadas/, "el buscador lleva a la ficha");
+});
