@@ -6,6 +6,7 @@ import {
   ORDEN_LISTA, panelDeServicio, renglonesCartera, resellResuelto, VISIBLES_CARTERA, VISIBLES_LISTA, type PanelDeServicio, type SeccionServicio,
 } from "@/lib/panel-servicio";
 import { SOLAPAS_SERVICIO } from "@/lib/solapas-servicio";
+import { DE_UN_USO } from "@/lib/vistas-guardadas";
 import { CONFIG_POR_DEFECTO, seguimientoVacio, situacionDe, terminoElServicio } from "@/lib/seguimiento";
 import { ACCESO_DUENO, areaDeRuta, nivelDeRuta, TIPOS_POR_DEFECTO, type MiAcceso } from "@/lib/permisos";
 import { conPanel, vistaDePanel } from "@/lib/mi-panel";
@@ -343,6 +344,8 @@ test("cada lista de «Para hoy» abre la ficha en una solapa que existe, y cada 
   assert.ok(pedidas.length >= 5, "el mapa de listas a solapas está");
   for (const h of pedidas) assert.ok((SOLAPAS_SERVICIO as readonly string[]).includes(h), `la solapa «${h}» existe`);
 
+  /* La solapa es de la ficha abierta: no se recuerda con la pantalla (si no, volver a Resells traía «?hoja=testimonio» sin ficha). */
+  assert.ok(DE_UN_USO.has("hoja") && DE_UN_USO.has("ficha"));
   const hoja = readFileSync("src/components/ficha/HojaServicio.tsx", "utf8");
   const dibujadas = new Set([...hoja.matchAll(/solapa === "([a-z]+)"/g)].map((m) => m[1]));
   assert.deepEqual([...dibujadas].sort(), [...SOLAPAS_SERVICIO].sort(), "las solapas que dibuja la ficha son las que acepta ?hoja");

@@ -2,6 +2,9 @@
    tabla del CRM (.crm-t, .xl-th, .crm-t__editable…): acá sólo lo que es distinto. */
 
 /* Un valor sugerido (el programa que corresponde al servicio, el egreso calculado): se lee, pero todavía no es un dato cargado. */
+/* El buscador no se achica hasta cortar lo que dice («Buscar alun…»): si no entra, la barra pasa a dos líneas. */
+.cs-t .crm-t__buscar { flex-basis: 300px; min-width: 300px; max-width: 340px; }
+@media (max-width: 760px) { .cs-t .crm-t__buscar { min-width: 0; max-width: none; } }
 .cs-t .cs-sugerido { color: var(--ink-subtle); font-style: italic; }
 .cs-t .cs-sugerido::after { content: " *"; font-style: normal; }
 

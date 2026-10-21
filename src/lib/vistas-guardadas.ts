@@ -34,7 +34,7 @@ export const PARAM_VISTA = "v";
    vuelta del login o de conectar Meta. No es parte de lo que se mira, así
    que ni se recuerda (lib/recordarVistas.ts) ni entra en una vista. */
 export const DE_UN_USO = new Set([
-  "nuevo", "ver", "editar", "ficha", "vista", "venta", "registro", "persona", "anuncio", "compartida",
+  "nuevo", "ver", "editar", "ficha", "vista", "venta", "hoja", "registro", "persona", "anuncio", "compartida",
   "meta", "code", "error", "error_code", "error_description",
 ]);
 

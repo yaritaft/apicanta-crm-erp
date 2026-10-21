@@ -79,9 +79,10 @@ button.ps-kpi:hover, a.ps-kpi:hover { box-shadow: inset 0 0 0 1px color-mix(in s
 .ps-filtro button:hover { background: color-mix(in srgb, var(--ink) 12%, transparent); }
 .ps-regla { margin: 0; padding: 0 22px 10px; font-size: 13px; line-height: 19px; color: var(--ink-subtle); }
 
-/* La tabla es la de Clientes y Testimonios (components/cs/TablaCs) pero adentro de esta tarjeta: sin su propio marco, con el aire
-   de la tarjeta, y la fila entera abre la ficha. */
-.ps-cartera .crm-t__card { padding: 12px 22px 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
+/* La tabla es la de Clientes y Testimonios (components/cs/TablaCs) pero adentro de esta tarjeta: sin su propio marco, con el mismo
+   aire que la tarjeta a los costados y abajo (sin el de abajo, el borde de la tabla quedaba pegado al de la tarjeta), y la fila
+   entera abre la ficha. */
+.ps-cartera .crm-t__card { padding: 12px 22px 22px; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
 .ps-cartera .crm-t .hk-table tbody tr { cursor: pointer; }
 .ps-cartera .crm-t .segmento button { white-space: nowrap; }
 .ps-alumno { display: inline-flex; align-items: center; gap: 10px; min-width: 0; max-width: 100%; }
@@ -120,6 +121,6 @@ button.ps-dato:hover, a.ps-dato:hover, button.ps-dato:hover b, a.ps-dato:hover b
   .ps-pipe::-webkit-scrollbar { display: none; }
   .ps-etapa { flex: 0 0 auto; min-width: 108px; scroll-snap-align: start; }
   .ps-cartera__head { padding-left: 16px; padding-right: 16px; }
-  .ps-cartera .crm-t__card { padding: 12px 16px 0; }
+  .ps-cartera .crm-t__card { padding: 12px 16px 16px; }
   .ps-regla { padding: 0 16px 10px; }
 }

@@ -95,6 +95,14 @@ function tomarDestino(): string | null {
 }
 
 /* Devuelve, para un link del menú, la dirección de lo último que se vio ahí. */
+/* Lo guardado, sin lo de un solo uso: un navegador puede tener guardado algo de antes de que una clave pasara a serlo
+   (?hoja, la solapa de la ficha, 21/10) y no tiene que volver sin su ficha. */
+function sinDeUnUso(texto: string): string {
+  const q = new URLSearchParams(texto);
+  for (const k of [...q.keys()]) if (DE_UN_USO.has(k)) q.delete(k);
+  return q.toString();
+}
+
 export function useRecordarVistas(): (href: string) => string {
   const ruta = usePathname();
   const params = useSearchParams();
@@ -139,8 +147,8 @@ export function useRecordarVistas(): (href: string) => string {
     const entro = anterior.current !== ruta;
     anterior.current = ruta;
     const pelada = [...q.keys()].every((k) => delMenu.includes(k));
-    if (entro && pelada && guardadas[clave]) {
-      const destino = new URLSearchParams(guardadas[clave]);
+    if (entro && pelada && sinDeUnUso(guardadas[clave] ?? "")) {
+      const destino = new URLSearchParams(sinDeUnUso(guardadas[clave]));
       for (const [k, v] of q) destino.set(k, v);
       router.replace(`${ruta}?${destino.toString()}`, { scroll: false });
       setVistas(guardadas);
@@ -161,7 +169,7 @@ export function useRecordarVistas(): (href: string) => string {
 
   return useCallback((href: string) => {
     const [r, query = ""] = href.split("?");
-    const guardada = vistas[claveDe(r, new URLSearchParams(query))];
+    const guardada = sinDeUnUso(vistas[claveDe(r, new URLSearchParams(query))] ?? "");
     return guardada ? `${r}?${guardada}` : href;
   }, [vistas]);
 }
