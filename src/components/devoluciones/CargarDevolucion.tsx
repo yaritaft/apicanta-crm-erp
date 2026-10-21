@@ -11,6 +11,11 @@ import { CampoComprobante } from "@/components/cobros/CampoComprobante";
 import { useToast } from "@/components/ui/Toast";
 import { acciones, tablaSinCrear, useEstado } from "@/lib/store";
 import { useAcceso } from "@/lib/acceso";
+import { alumnoDeVenta } from "@/lib/alumnos";
+import { accesosQuitables, avisoDeAccesosQuitados, resumenDeAccesos } from "@/lib/accesos-de-devolucion";
+import { contratosPrendidos } from "@/components/contratos/cliente";
+import { leerAccesosDeAlumno, quitarTodosLosAccesos } from "./accesos-cliente";
+import type { Acceso } from "@/lib/accesos-servidor";
 import { puedeDarDeBaja } from "@/lib/permisos";
 import { cerrarDevolucion, usePedidoDevolucion, type PedidoDevolucion } from "@/lib/devolucion-ui";
 import {
@@ -58,7 +63,7 @@ const hoyDia = () => diaDe(new Date().toISOString());
 function Formulario({ pedido }: { pedido: PedidoDevolucion }) {
   const e = useEstado();
   const toast = useToast();
-  const { acceso } = useAcceso();
+  const { acceso, esDueno } = useAcceso();
   const puedeBaja = puedeDarDeBaja(acceso);
   const mon = e.ajustes.monedaBase;
   const M = (n: number, d = 2) => money(n, mon, d);
@@ -81,6 +86,17 @@ function Formulario({ pedido }: { pedido: PedidoDevolucion }) {
     return (base?.ventaId ?? conCobro?.id ?? ventas[0]?.id) ?? "";
   });
   const venta = ventas.find((v) => v.id === ventaId);
+  const alumno = venta ? alumnoDeVenta(e, venta) : undefined;
+  const accesosPrendidos = contratosPrendidos(e.ajustes.contratos, esDueno);
+  const [accesos, setAccesos] = useState<Acceso[] | null>(null);
+  useEffect(() => {
+    setQuitarAccesos(false);
+    if (!alumno || !accesosPrendidos || previa) { setAccesos(null); return; }
+    let vivo = true;
+    void leerAccesosDeAlumno(alumno.id).then((r) => { if (vivo) setAccesos(r); });
+    return () => { vivo = false; };
+  }, [alumno?.id, accesosPrendidos, Boolean(previa)]); // eslint-disable-line react-hooks/exhaustive-deps
+  const conAccesos = accesosQuitables(accesos ?? []).length > 0;
   const [dia, setDia] = useState(() => diaDe(base?.fecha ?? new Date().toISOString()) || hoyDia());
   const fechaIso = mediodia(dia);
   const devolvible = venta ? devolvibleDeVenta(e, venta.id, fechaIso, previa?.id) : null;
@@ -91,6 +107,8 @@ function Formulario({ pedido }: { pedido: PedidoDevolucion }) {
   const [subiendo, setSubiendo] = useState(false);
   const [noDescontar, setNoDescontar] = useState(base?.noDescontarAlCloser ?? false);
   const [darDeBaja, setDarDeBaja] = useState(false);
+  /* «¿Le quitamos los accesos?»: no va solo (a veces se reembolsa sólo para cambiar el medio de pago). */
+  const [quitarAccesos, setQuitarAccesos] = useState(false);
   const [marcarLlamada, setMarcarLlamada] = useState(!previa);
   const [motivo, setMotivo] = useState(base?.motivo ?? "");
   const [notas, setNotas] = useState(base?.notas ?? "");
@@ -164,6 +182,12 @@ function Formulario({ pedido }: { pedido: PedidoDevolucion }) {
       });
       if (!id) return;
       toast(`Devolución cargada: resta ${M(montoNum)} de ${mes}${noDescontar ? "; el closer cobra igual" : ""}.`);
+      /* Los accesos se sacan aparte: si fallan, la devolución ya quedó cargada y se avisa qué hacer. */
+      if (quitarAccesos && alumno && conAccesos) {
+        void quitarTodosLosAccesos(alumno.id)
+          .then((r) => { const a = avisoDeAccesosQuitados(r); toast(a.texto, a.error ? "err" : "ok"); })
+          .catch((err) => toast(`La devolución quedó cargada, pero no pude quitar los accesos: ${err instanceof Error ? err.message : "error"}. Quitalos desde la ficha → Servicio → Accesos.`, "err"));
+      }
       /* Sin la tabla en la base (falta supabase/devoluciones.sql) queda sólo en este navegador. */
       window.setTimeout(() => {
         if (tablaSinCrear("devoluciones")) toast("La devolución quedó sólo en este navegador: falta crear la tabla en la base (supabase/devoluciones.sql).", "err");
@@ -262,6 +286,18 @@ function Formulario({ pedido }: { pedido: PedidoDevolucion }) {
                 <div className="t-sm t-subtle">La oportunidad pasa a Perdido. Si la llamada ya está en «Devolución», no cambia nada.</div>
               </div>
               <Switch checked={marcarLlamada} onChange={setMarcarLlamada} etiqueta="Dejar la llamada en Devolución" />
+            </div>
+          )}
+          {!previa && alumno && accesosPrendidos && conAccesos && (
+            <div className="devol-opcion">
+              <div>
+                <div className="t-strong">¿Le quitamos los accesos?</div>
+                <div className="t-sm t-subtle">
+                  Hoy tiene {resumenDeAccesos(accesos ?? [])}. Se le saca todo: los cursos de Wisboo, los grupos de Telegram y las reuniones de Zoom.
+                  No va solo: a veces se reembolsa sólo para cambiar el medio de pago y el alumno sigue. Coordinalo con Customer Success.
+                </div>
+              </div>
+              <Switch checked={quitarAccesos} onChange={setQuitarAccesos} etiqueta="Quitarle los accesos" />
             </div>
           )}
           {!previa && puedeBaja && venta?.estado === "activa" && (

@@ -115,6 +115,39 @@ export async function verComprobante(c: Comprobante): Promise<void> {
   }
 }
 
+/** El nombre con el que se baja el archivo: el que tenía al subirlo, sin barras ni caracteres que un sistema de archivos rechace; si no
+ *  trae extensión, la del tipo (así el Excel o el visor del sistema lo reconocen). */
+export function nombreDeDescarga(c: Pick<Comprobante, "nombre" | "tipo" | "ruta">): string {
+  const limpio = (c.nombre || "").replace(/[\\/:*?"<>|\u0000-\u001f]+/g, "_").trim().replace(/^\.+/, "");
+  const base = limpio || "comprobante";
+  /* Una extensión tiene alguna letra: «.14» al final de una fecha no lo es. */
+  if (/\.(?=[A-Za-z0-9]*[A-Za-z])[A-Za-z0-9]{2,5}$/.test(base)) return base;
+  const ext = ({ "application/pdf": "pdf", "image/png": "png", "image/jpeg": "jpg", "image/webp": "webp", "image/heic": "heic", "image/heif": "heif" } as Record<string, string>)[c.tipo]
+    ?? (c.ruta.match(/\.([A-Za-z0-9]{2,5})$/)?.[1] ?? "");
+  return ext ? `${base}.${ext}` : base;
+}
+
+/** Baja el comprobante a la compu (en vez de abrirlo): la dirección firmada pide el archivo como descarga, con su nombre. Aldana (21/10):
+ *  los comprobantes de dLocal y de la Financiera los pasa a su Excel, y «clic derecho, guardar imagen» no sirve con un PDF. */
+export async function descargarComprobante(c: Comprobante): Promise<void> {
+  const nombre = nombreDeDescarga(c);
+  let url: string;
+  let propio = false;
+  if (c.ruta.startsWith("data:")) {
+    url = URL.createObjectURL(await (await fetch(c.ruta)).blob());
+    propio = true;
+  } else {
+    if (!nube) throw new Error("Sin conexión a la nube no se puede bajar.");
+    const { data, error } = await nube.storage.from(BUCKET_COMPROBANTES).createSignedUrl(c.ruta, 300, { download: nombre });
+    if (error || !data) throw new Error(error?.message ?? "No se pudo bajar el comprobante.");
+    url = data.signedUrl;
+  }
+  const a = document.createElement("a");
+  a.href = url; a.download = nombre; a.rel = "noopener";
+  document.body.appendChild(a); a.click(); a.remove();
+  if (propio) window.setTimeout(() => URL.revokeObjectURL(url), 10_000);
+}
+
 /* Se borra el archivo cuando alguien lo saca ANTES de guardar el pago:
    si no, quedaría huérfano en el bucket. Un pago ya guardado no se toca
    desde acá. Si falla, no importa: es un archivo privado sin dueño. */

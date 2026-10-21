@@ -2,7 +2,7 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  AlertTriangle, Check, ExternalLink, FileText, ImageIcon, Link2, Loader2, Paperclip, ShieldAlert, ShieldCheck, Upload, X,
+  AlertTriangle, Check, Download, ExternalLink, FileText, ImageIcon, Link2, Loader2, Paperclip, ShieldAlert, ShieldCheck, Upload, X,
 } from "lucide-react";
 import { Badge, Button, Textarea } from "@/components/ui/ui";
 import { Modal } from "@/components/ui/Modal";
@@ -16,7 +16,7 @@ import {
   casilleroDe, comprobanteDeCobro, conciliacionDe, controlDeCobro, etiquetaDeControl, primerNombre, puedeCambiarComprobante,
   quienEs, ROL_DE_CASILLERO, type CasilleroChequeo, type ChequeoDeCasillero,
 } from "@/lib/control-cobros";
-import { descartarComprobante, tamanioLegible, urlDeComprobante, verComprobante } from "@/lib/comprobantes";
+import { descargarComprobante, descartarComprobante, tamanioLegible, urlDeComprobante, verComprobante } from "@/lib/comprobantes";
 import { vistaPreviaDeLink } from "@/lib/comprobante-vista";
 import { fechaHora, fechaLarga, money } from "@/lib/format";
 import { nombrePasarela } from "@/lib/pasarelas";
@@ -174,6 +174,12 @@ function VistaDelComprobante({ pago }: { pago: Pago }) {
           onClick={() => verComprobante(c).catch((err) => toast(err instanceof Error ? err.message : "No se pudo abrir.", "err"))}
         >
           <ExternalLink size={12} /> Abrir en otra pestaña
+        </button>
+        <button
+          type="button" className="link t-sm" aria-label={`Descargar el comprobante ${c.nombre}`}
+          onClick={() => descargarComprobante(c).catch((err) => toast(err instanceof Error ? err.message : "No se pudo bajar.", "err"))}
+        >
+          <Download size={12} /> Descargar
         </button>
       </div>
     </div>
