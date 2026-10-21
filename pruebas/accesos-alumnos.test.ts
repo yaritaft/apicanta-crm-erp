@@ -6,7 +6,7 @@ import {
 } from "@/lib/accesos-alumnos";
 import { clavePandadoc } from "@/lib/accesos-alumnos-servidor";
 import { cambiarGrupoEnProgramas } from "@/lib/programas";
-import { marcasDeLaFicha } from "@/lib/accesos-servidor";
+import { marcasDeLaFicha, motivoZoom } from "@/lib/accesos-servidor";
 
 /* La prueba de conexión de los accesos de alumnos (Ajustes → Integraciones)
    con respuestas como las devuelven Telegram, Wisboo, PandaDoc y Zoom. */
@@ -135,4 +135,11 @@ test("Accesos: lo que hizo la app queda en las marcas de la ficha de Customer Su
   assert.deepEqual(marcasDeLaFicha([dado("wisboo", "downsell"), dado("telegram", "downsell")]), { acceso: "Downsell", accesoWibo: true, accesoZoom: false });
   /* Después del outboarding (todo quitado) o si todo falló: sin acceso. */
   assert.deepEqual(marcasDeLaFicha([dado("wisboo", "hackear-ai", "quitado"), dado("zoom", "hackear-ai", "fallo")]), { acceso: "Sin acceso", accesoWibo: false, accesoZoom: false });
+});
+
+test("Zoom: por qué no inscribió a alguien, en castellano", () => {
+  assert.match(motivoZoom(429, { code: 429, message: "You have exceeded the daily rate limit" }), /límite por día/);
+  assert.match(motivoZoom(300, { code: 3043, message: "Meeting does not have registration enabled." }), /Registro/);
+  assert.match(motivoZoom(404, null), /no encuentra la reunión/);
+  assert.equal(motivoZoom(400, { message: "Invalid email" }), "Zoom no lo inscribió (contestó 400: Invalid email).");
 });

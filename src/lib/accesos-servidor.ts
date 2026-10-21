@@ -203,6 +203,16 @@ const nombreDeLink = (nombre: string) => nombre.trim().slice(0, 32) || "Alumno";
 
 /* ---------- Zoom ---------- */
 
+/** Por qué Zoom no inscribió a alguien, en castellano. 429 es su límite diario: no deja inscribir (ni volver a inscribir)
+    muchas veces por día a la misma persona en la misma reunión. */
+export function motivoZoom(status: number, json: Record<string, unknown> | null): string {
+  if (status === 429) return "Zoom no deja inscribir otra vez a la misma persona en esta reunión hoy (es su límite por día). Reintentá mañana.";
+  if (status === 404) return "Zoom no encuentra la reunión: ¿la borraron? Revisá el programa en Ajustes.";
+  const msj = typeof json?.message === "string" ? json.message : "";
+  if (/registration/i.test(msj)) return "La reunión no tiene la inscripción activada en Zoom: activale «Registro».";
+  return `Zoom no lo inscribió (contestó ${status}${msj ? `: ${msj}` : ""}).`;
+}
+
 export const hayZoom = () => Boolean(process.env.ZOOM_ACCOUNT_ID && process.env.ZOOM_CLIENT_ID && process.env.ZOOM_CLIENT_SECRET);
 
 async function tokenZoom(): Promise<string> {
@@ -318,19 +328,21 @@ export async function darAccesos(db: SupabaseClient, a: {
         if (typeof ya.externo.joinUrl === "string") salida.links.push({ plataforma: "zoom", nombre: ya.recursoNombre, url: ya.externo.joinUrl });
         continue;
       }
-      if (!token) { await anotar({ plataforma: "zoom", recurso: reunion, recursoNombre: reunion, estado: "fallo", externo: {}, error: errorToken, dadoEn: null, quitadoEn: null }); continue; }
+      /* Si falla, la fila conserva el nombre de la reunión que ya tenía (si no, queda el número). */
+      const nombreReunion = ya?.recursoNombre || reunion;
+      if (!token) { await anotar({ plataforma: "zoom", recurso: reunion, recursoNombre: nombreReunion, estado: "fallo", externo: {}, error: errorToken, dadoEn: null, quitadoEn: null }); continue; }
       try {
         const r = await pedir(`https://api.zoom.us/v2/meetings/${encodeURIComponent(reunion)}/registrants`, {
           method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
           body: JSON.stringify({ email: a.persona.email.trim(), first_name: first_name || a.persona.nombre, last_name: last_name || "-", auto_approve: true }),
         });
         const registrante = r.json?.registrant_id;
-        if (typeof registrante !== "string") throw new ErrorAcceso(`Zoom no lo inscribió (contestó ${r.status}). ¿La reunión tiene el registro activado?`);
+        if (typeof registrante !== "string") throw new ErrorAcceso(motivoZoom(r.status, r.json));
         const tema = typeof r.json?.topic === "string" ? r.json.topic : reunion;
         await anotar({ plataforma: "zoom", recurso: reunion, recursoNombre: tema, estado: "dado", externo: { registranteId: registrante, joinUrl: r.json?.join_url ?? null }, error: null, dadoEn: ahora, quitadoEn: null });
         if (typeof r.json?.join_url === "string") salida.links.push({ plataforma: "zoom", nombre: tema, url: r.json.join_url });
       } catch (e) {
-        await anotar({ plataforma: "zoom", recurso: reunion, recursoNombre: reunion, estado: "fallo", externo: {}, error: textoDeFallo("Zoom", e), dadoEn: null, quitadoEn: null });
+        await anotar({ plataforma: "zoom", recurso: reunion, recursoNombre: nombreReunion, estado: "fallo", externo: {}, error: textoDeFallo("Zoom", e), dadoEn: null, quitadoEn: null });
       }
     }
   }
