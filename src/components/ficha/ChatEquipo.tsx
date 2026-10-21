@@ -3,7 +3,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
-  ArrowLeft, ArrowUp, Check, Download, FileText, Loader2, MessageSquare, MessageSquareReply, Mic, Paperclip, Pause, Play, Reply, Smile, Trash2, X,
+  ArrowLeft, ArrowUp, Check, ChevronLeft, ChevronRight, Download, FileText, Loader2, MessageSquare, MessageSquareReply, Mic, Paperclip, Pause, Play, Reply, Smile, Trash2, X,
 } from "lucide-react";
 import { Avatar, Empty } from "@/components/ui/ui";
 import { useToast } from "@/components/ui/Toast";
@@ -57,14 +57,75 @@ function useUrl(a: Adjunto): string | null {
   return url;
 }
 
-function Imagen({ a }: { a: Adjunto }) {
+function Imagen({ a, onAbrir }: { a: Adjunto; onAbrir: () => void }) {
   const url = useUrl(a);
   const proporcion = a.ancho && a.alto ? `${a.ancho} / ${a.alto}` : "4 / 3";
   return (
-    <a className="chatx-imagen" href={url ?? undefined} target="_blank" rel="noopener noreferrer" title={`Abrir ${a.nombre}`} style={{ aspectRatio: proporcion }}
-      onClick={(ev) => { if (!url) ev.preventDefault(); }}>
+    <button type="button" className="chatx-imagen" onClick={onAbrir} disabled={!url} title={`Ver ${a.nombre}`} aria-label={`Ver ${a.nombre}`} style={{ aspectRatio: proporcion }}>
       {url ? <img src={url} alt={a.nombre} loading="lazy" /> : <Loader2 size={18} className="chatx-gira" aria-hidden />}
-    </a>
+    </button>
+  );
+}
+
+/* Baja un archivo con su nombre. Con la URL firmada de la nube (otro dominio) el `download` del link no
+   se respeta: se trae como blob y se guarda desde acá; si eso falla, se abre para guardarlo a mano. */
+async function bajarArchivo(url: string, nombre: string) {
+  try {
+    const blob = await (await fetch(url)).blob();
+    const local = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = local; link.download = nombre; link.rel = "noopener";
+    document.body.appendChild(link); link.click(); link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(local), 4000);
+  } catch {
+    window.open(url, "_blank", "noopener");
+  }
+}
+
+/* El visor de fotos AHÍ MISMO, sin otra pestaña (como MediaLightbox de Blue OS y WhatsApp): fondo oscuro,
+   flechas entre las fotos del mensaje, «2 de 3», bajarla, y se cierra con Esc, la X o tocando afuera.
+   Va a document.body (portal) para quedar encima de la ficha. Su Esc es SÓLO suyo: se escucha en `window`
+   en captura (antes que el hilo y la ficha) y no sigue de largo, así no cierra la ficha entera. */
+function VisorImagenes({ lista, inicio, onCerrar }: { lista: Adjunto[]; inicio: number; onCerrar: () => void }) {
+  const [i, setI] = useState(inicio);
+  const a = lista[i];
+  const url = useUrl(a);
+  const [bajando, setBajando] = useState(false);
+  const cerrarRef = useRef<HTMLButtonElement>(null);
+  const empezoEnElFondo = useRef(false);
+  const hay = lista.length;
+  const anterior = useCallback(() => setI((x) => (x - 1 + hay) % hay), [hay]);
+  const siguiente = useCallback(() => setI((x) => (x + 1) % hay), [hay]);
+
+  useEffect(() => {
+    const onKey = (ev: KeyboardEvent) => {
+      if (ev.key === "Escape") { ev.preventDefault(); ev.stopImmediatePropagation(); onCerrar(); }
+      else if (ev.key === "ArrowLeft" && hay > 1) { ev.preventDefault(); ev.stopImmediatePropagation(); anterior(); }
+      else if (ev.key === "ArrowRight" && hay > 1) { ev.preventDefault(); ev.stopImmediatePropagation(); siguiente(); }
+    };
+    window.addEventListener("keydown", onKey, true);
+    const antes = document.activeElement as HTMLElement | null;
+    cerrarRef.current?.focus();
+    return () => { window.removeEventListener("keydown", onKey, true); antes?.focus?.(); };
+  }, [onCerrar, anterior, siguiente, hay]);
+
+  return createPortal(
+    <div className="chatx-visor" role="dialog" aria-modal="true" aria-label={`Foto: ${a.nombre}`} data-flotante-abierto
+      onMouseDown={(ev) => { empezoEnElFondo.current = ev.target === ev.currentTarget; }}
+      onClick={(ev) => { if (empezoEnElFondo.current && ev.target === ev.currentTarget) onCerrar(); }}>
+      <div className="chatx-visor__arriba">
+        <span className="chatx-visor__nombre">{hay > 1 && <b className="t-num">{i + 1} de {hay}</b>}<span className="truncate">{a.nombre}</span></span>
+        <button type="button" className="chatx-visor__boton" disabled={!url || bajando} aria-label="Descargar" title="Descargar"
+          onClick={async () => { if (!url) return; setBajando(true); await bajarArchivo(url, a.nombre); setBajando(false); }}>
+          {bajando ? <Loader2 size={17} className="chatx-gira" /> : <Download size={17} />}
+        </button>
+        <button ref={cerrarRef} type="button" className="chatx-visor__boton" onClick={onCerrar} aria-label="Cerrar" title="Cerrar (Esc)"><X size={18} /></button>
+      </div>
+      {hay > 1 && <button type="button" className="chatx-visor__flecha chatx-visor__flecha--izq" onClick={anterior} aria-label="Foto anterior" title="Anterior (←)"><ChevronLeft size={22} /></button>}
+      {url ? <img key={a.id} className="chatx-visor__img" src={url} alt={a.nombre} /> : <Loader2 size={26} className="chatx-gira chatx-visor__cargando" aria-hidden />}
+      {hay > 1 && <button type="button" className="chatx-visor__flecha chatx-visor__flecha--der" onClick={siguiente} aria-label="Foto siguiente" title="Siguiente (→)"><ChevronRight size={22} /></button>}
+    </div>,
+    document.body,
   );
 }
 
@@ -195,14 +256,17 @@ function Archivo({ a }: { a: Adjunto }) {
 function Adjuntos({ lista }: { lista: Adjunto[] }) {
   const imagenes = lista.filter((a) => a.tipo === "imagen");
   const resto = lista.filter((a) => a.tipo !== "imagen");
+  const [viendo, setViendo] = useState<number | null>(null);
+  const cerrar = useCallback(() => setViendo(null), []);
   return (
     <div className="chatx-adjuntos">
       {imagenes.length > 0 && (
         <div className={`chatx-galeria${imagenes.length > 1 ? " chatx-galeria--varias" : ""}`}>
-          {imagenes.map((a) => <Imagen key={a.id} a={a} />)}
+          {imagenes.map((a, i) => <Imagen key={a.id} a={a} onAbrir={() => setViendo(i)} />)}
         </div>
       )}
       {resto.map((a) => a.tipo === "video" ? <Video key={a.id} a={a} /> : a.tipo === "audio" ? <NotaDeVoz key={a.id} a={a} /> : <Archivo key={a.id} a={a} />)}
+      {viendo !== null && <VisorImagenes lista={imagenes} inicio={viendo} onCerrar={cerrar} />}
     </div>
   );
 }

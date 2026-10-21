@@ -173,7 +173,36 @@ button.chatx-cita:focus-visible { outline: 2px solid var(--focus); outline-offse
 .chatx-galeria--varias { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .chatx-imagen {
   display: flex; align-items: center; justify-content: center; overflow: hidden; border-radius: 10px; background: var(--surface-200);
-  color: var(--ink-subtle); max-height: 320px; border: 1px solid var(--border);
+  color: var(--ink-subtle); max-height: 320px; border: 1px solid var(--border); padding: 0; font: inherit; cursor: zoom-in;
+}
+.chatx-imagen:disabled { cursor: progress; }
+.chatx-imagen:focus { outline: none; }
+.chatx-imagen:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+
+/* El visor de fotos, ahí mismo (como MediaLightbox de Blue OS): encima de todo, la foto entera sobre fondo oscuro. */
+.chatx-visor {
+  position: fixed; inset: 0; z-index: 400; display: flex; align-items: center; justify-content: center; padding: 64px 72px 32px;
+  background: rgba(8, 4, 18, 0.88); backdrop-filter: blur(10px) saturate(140%); -webkit-backdrop-filter: blur(10px) saturate(140%);
+  animation: fade 140ms ease-out;
+}
+.chatx-visor__img { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 10px; box-shadow: 0 20px 60px rgba(0, 0, 0, 0.45); }
+.chatx-visor__cargando { color: #fff; }
+.chatx-visor__arriba { position: absolute; top: 14px; left: 20px; right: 16px; display: flex; align-items: center; gap: 8px; }
+.chatx-visor__nombre { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; font-size: 13px; color: rgba(255, 255, 255, 0.82); }
+.chatx-visor__nombre b { flex: none; padding: 3px 10px; border-radius: 999px; background: rgba(255, 255, 255, 0.14); color: #fff; font-weight: 600; }
+.chatx-visor__boton, .chatx-visor__flecha {
+  flex: none; display: grid; place-items: center; width: 38px; height: 38px; padding: 0; border-radius: 999px; cursor: pointer;
+  color: #fff; background: rgba(255, 255, 255, 0.12); border: 1px solid rgba(255, 255, 255, 0.18); transition: background 120ms ease-out;
+}
+.chatx-visor__boton:hover:not(:disabled), .chatx-visor__flecha:hover { background: rgba(255, 255, 255, 0.22); }
+.chatx-visor__boton:focus, .chatx-visor__flecha:focus { outline: none; }
+.chatx-visor__boton:focus-visible, .chatx-visor__flecha:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+.chatx-visor__flecha { position: absolute; top: 50%; width: 44px; height: 44px; transform: translateY(-50%); }
+.chatx-visor__flecha--izq { left: 16px; }
+.chatx-visor__flecha--der { right: 16px; }
+@media (max-width: 640px) {
+  .chatx-visor { padding: 60px 8px 16px; }
+  .chatx-visor__flecha { top: auto; bottom: 18px; transform: none; }
 }
 .chatx-galeria--varias .chatx-imagen { aspect-ratio: 1 / 1 !important; }
 .chatx-imagen img { width: 100%; height: 100%; object-fit: cover; display: block; transition: transform 160ms ease-out; }
