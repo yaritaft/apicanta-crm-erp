@@ -16,6 +16,7 @@ import { Correo, Telefono } from "@/components/ui/Telefono";
 import { AsistenteVenta } from "@/components/ventas/AsistenteVenta";
 import { PastillaEstado, useCambiarEstado } from "@/components/estados/EstadoLlamada";
 import { acciones, useEstado, type CambiosLlamada } from "@/lib/store";
+import { personasQueCoinciden } from "@/lib/buscar-persona";
 import { useAcceso } from "@/lib/acceso";
 import { nivelEn, puedeEditar, puedeLeer } from "@/lib/permisos";
 import { useUsuarioActual } from "@/lib/usuario";
@@ -203,6 +204,8 @@ export function CrmTabla({ misLlamadas = false }: { misLlamadas?: boolean } = {}
   }, [escribir]);
   const conFiltro = (Object.keys(filtros) as ClaveColumna[]).filter((k) => hayFiltro(filtros[k]));
   const hayAlgo = conFiltro.length > 0 || soloSinCargar || Boolean(q);
+  /* Una búsqueda sin llamadas no dice que la persona no exista: puede tener una venta o ser alumno. */
+  const hallados = useMemo(() => (filas.length === 0 && q ? personasQueCoinciden(e, q) : []), [filas.length, q, e]);
   const limpiar = () => escribir({
     ...Object.assign({}, ...(Object.keys(filtros) as ClaveColumna[]).map((k) => filtroAURL(k, null))),
     pendientes: null, q: null, pag: null, [PARAM_VISTA]: null,
@@ -451,8 +454,15 @@ export function CrmTabla({ misLlamadas = false }: { misLlamadas?: boolean } = {}
               <Empty
                 icono={<Search size={22} />}
                 titulo={hayAlgo ? "Ninguna llamada coincide" : "No hay llamadas en este período"}
-                texto={hayAlgo ? "Probá sacando algún filtro." : "Elegí otro período en la barra."}
-                accion={hayAlgo ? <Button variante="secondary" onClick={limpiar}>Limpiar filtros</Button> : undefined}
+                texto={hayAlgo ? (hallados.length ? "No tiene llamadas con estos filtros, pero está en el sistema:" : "Probá sacando algún filtro.") : "Elegí otro período en la barra."}
+                accion={hayAlgo ? (
+                  <div className="stack-2" style={{ alignItems: "center" }}>
+                    {hallados.map((h) => (
+                      <Button key={h.id} variante="primary" sm onClick={() => abrirFicha(h.id, "ventas")}>Abrir la ficha de {h.nombre} · {h.detalle}</Button>
+                    ))}
+                    <Button variante="secondary" onClick={limpiar}>Limpiar filtros</Button>
+                  </div>
+                ) : undefined}
               />
             }
           />

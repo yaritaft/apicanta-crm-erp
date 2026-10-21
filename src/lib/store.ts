@@ -1518,6 +1518,39 @@ export const acciones = {
     empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
   },
 
+  /* Corregir lo que vale una cuota que todavía no se cobró entera, o quitar una que sobra (Dante, 21/10:
+     el cliente tenía que pagar 450 y la venta quedó en 499, con una cuota de 49,01 de más). El precio de la
+     venta se ajusta por la diferencia, así cuotas y venta siguen sumando lo mismo. Una cuota con cobros no se
+     quita: primero se corrige o se borra el cobro. Devuelve el texto de lo que pasó, o null si no se pudo. */
+  corregirCuota(id: ID, cambio: { monto: number } | { quitar: true }, motivo: string): string | null {
+    const e = snapshot();
+    const c = e.cuotas.find((x) => x.id === id);
+    if (!c || c.estado !== "pendiente" || !motivo.trim()) return null;
+    const venta = e.ventas.find((v) => v.id === c.ventaId);
+    const cobrado = e.pagos.filter((p) => p.cuotaId === id).reduce((t, p) => t + p.monto, 0);
+    const nombre = c.esReserva ? "la reserva" : `la cuota ${c.numero}`;
+    const quitar = "quitar" in cambio;
+    const montoNuevo = quitar ? 0 : Math.round(cambio.monto * 100) / 100;
+    if (quitar ? cobrado > 0 : !(montoNuevo > cobrado) || montoNuevo === c.monto) return null;
+    const diferencia = montoNuevo - c.monto;
+    const precioNuevo = venta ? Math.max(0, Math.round((venta.precioAcordado + diferencia) * 100) / 100) : undefined;
+    const texto = quitar
+      ? `Se quitó ${nombre} de ${c.monto}.`
+      : `${nombre[0].toUpperCase()}${nombre.slice(1)} pasó de ${c.monto} a ${montoNuevo}.`;
+    const linea = `${texto.replace(/\.$/, "")}: ${motivo.trim()}`;
+    const detalle = `${texto}${precioNuevo !== undefined && venta ? ` El precio de la venta pasó de ${venta.precioAcordado} a ${precioNuevo}.` : ""} Motivo: ${motivo.trim()}`;
+    const ventas = venta && precioNuevo !== undefined ? e.ventas.map((v) => (v.id === venta.id ? { ...v, precioAcordado: precioNuevo } : v)) : e.ventas;
+    const notas = c.notas ? `${c.notas} | ${linea}` : linea;
+    const cuotas = quitar ? e.cuotas.filter((x) => x.id !== id) : e.cuotas.map((x) => (x.id === id ? { ...x, monto: montoNuevo, notas } : x));
+    const { lista: act, nuevo } = registrar(e, "transaccion", c.ventaId, venta?.contactoNombre ?? "Venta", "actualizo", detalle);
+    guardar({ ...e, cuotas, ventas, actividad: act });
+    if (quitar) empujar({ tipo: "delete", tabla: "cuotas", ids: [id] });
+    else empujar({ tipo: "update", tabla: "cuotas", ids: [id], cambios: { monto: montoNuevo, notas } });
+    if (venta && precioNuevo !== undefined) empujar({ tipo: "update", tabla: "ventas", ids: [venta.id], cambios: { precioAcordado: precioNuevo } });
+    empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
+    return detalle;
+  },
+
   /* Los tipos de cuenta (Equipo → Tipos de cuenta). Los escriben sólo los
      dueños (la base rechaza a cualquier otro) y el de Dueño no se toca. */
   guardarTipoCuenta(t: TipoCuenta, detalle: string) {
