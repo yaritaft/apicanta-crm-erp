@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { controlarSaldos, explicarConPendientes, quePasa, saldoDeBilleteraEn, type PendientesDeBanco, type SaldoReal, type Transferencia } from "@/lib/saldos-reales";
+import { controlarSaldos, explicarConPendientes, quePasa, saldoDeBilleteraEn, saldoParaElArqueo, type PendientesDeBanco, type SaldoReal, type Transferencia } from "@/lib/saldos-reales";
 import { cuentaDeGasto, gastosSinCuenta, saldosEsperados } from "@/lib/traspasos";
 import { ESPERAS_DE_TRON, saldoDeMercury, saldoDeStripe, saldoDeTrust, saldosReales } from "@/lib/pasarelas-api";
 import { GET as rutaDeSaldos } from "@/app/api/pasarelas/saldos/route";
@@ -267,6 +267,58 @@ test("Mercury: un cobro pending que la app ya contó explica que falte, y explic
   assert.equal(una!.salidas, 100); assert.equal(una!.tarjeta, 0);
   assert.equal(explicarConPendientes(10, undefined), null);
   assert.equal(explicarConPendientes(10, { salidas: 0, nSalidas: 0, entradas: 0, nEntradas: 0 }), null, "nada en camino, nada que explicar");
+});
+
+/* ---------- Qué número guarda el arqueo ---------- */
+
+test("saldoParaElArqueo: si lo que el banco no asentó explica la diferencia, se guarda lo que va a quedar cuando lo asiente", () => {
+  const e = eMercury();
+  const esperado = 114453;
+  /* El caso del 20/10: el banco marca 117.792,33; 1.267 y la tarjeta (2.072) todavía no se debitaron. Se guarda 114.453,33. */
+  const a = saldoParaElArqueo(real("proc_mercury", 117792.33, { pendientes: enCamino() }), esperado);
+  assert.equal(a.monto, 114453.33); assert.equal(a.delBanco, 117792.33); assert.equal(a.diferencia, 3339.33);
+  assert.equal(a.ajuste!.porDebitar, 3339);
+  assert.match(a.nota!, /^El banco marcaba US\$\s*117\.792,33; se guardó US\$\s*114\.453,33 porque tiene US\$\s*3\.339,00 todavía por debitar/);
+  /* Sólo la salida pending. */
+  const b = saldoParaElArqueo(real("proc_mercury", 115720, { pendientes: enCamino({ tarjeta: undefined }) }), esperado);
+  assert.equal(b.monto, 114453);
+  /* Un cobro pending que la app ya contó: el banco tiene de menos, y se guarda lo que va a tener cuando lo acredite. */
+  const c = saldoParaElArqueo(real("proc_mercury", 113953, { pendientes: { salidas: 0, nSalidas: 0, entradas: 500, nEntradas: 1 } }), esperado);
+  assert.equal(c.monto, 114453);
+  /* Con un dólar de diferencia todavía se explica; se resta lo de en camino, no la diferencia. */
+  const d = saldoParaElArqueo(real("proc_mercury", 117792.9, { pendientes: enCamino() }), esperado);
+  assert.equal(d.monto, 114453.9);
+
+  /* Lo que NO se toca: no hay con qué comparar, no hay nada en camino, ya da, o la diferencia no se explica (restar lo que la app nunca descontó sería inventar plata). */
+  assert.deepEqual(saldoParaElArqueo(real("proc_mercury", 117792, { pendientes: enCamino() }), undefined), { monto: 117792, delBanco: 117792 });
+  assert.equal(saldoParaElArqueo(real("proc_mercury", 117792), esperado).monto, 117792);
+  assert.equal(saldoParaElArqueo(real("proc_mercury", 117792), esperado).ajuste, undefined);
+  const yaDa = saldoParaElArqueo(real("proc_mercury", 114453.4, { pendientes: enCamino() }), esperado);
+  assert.equal(yaDa.monto, 114453.4); assert.equal(yaDa.ajuste, undefined);
+  const noSeExplica = saldoParaElArqueo(real("proc_mercury", 118500, { pendientes: enCamino() }), esperado);
+  assert.equal(noSeExplica.monto, 118500); assert.equal(noSeExplica.ajuste, undefined); assert.equal(noSeExplica.nota, undefined);
+  /* Y el control de la misma cuenta, con ese esperado, es el que ya conocíamos. */
+  assert.equal(controlarSaldos(e, [real("proc_mercury", 117792, { pendientes: enCamino() })], AHORA).filas[0].diferencia, 3339);
+});
+
+test("guardar el arqueo con el saldo ajustado evita el «faltan 3.339» del arqueo siguiente (y sin ajustar, aparece)", () => {
+  /* Hoy: el banco marca 117.792 con 3.339 por debitar; la app esperaba 114.453. */
+  const hoy = real("proc_mercury", 117792, { pendientes: enCamino() });
+  const ajustado = saldoParaElArqueo(hoy, 114453).monto;
+  assert.equal(ajustado, 114453);
+  const nuevoArqueo = (monto: number): EstadoApp => estado([], [{ procesadorId: "proc_mercury", monto }]);
+  const MANANA = "2026-10-22T18:00:00.000Z";
+  const asentado = real("proc_mercury", 114453, { al: MANANA }); // el banco ya debitó todo
+  const aunNo = real("proc_mercury", 117792, { al: MANANA, pendientes: enCamino() });
+
+  /* Con el ajuste: mientras el banco no asienta sigue «da, con 3.339 por debitar»; cuando asienta, da. */
+  const e1 = nuevoArqueo(ajustado);
+  assert.equal(controlarSaldos(e1, [aunNo], MANANA).filas[0].lectura, "da-con-pendientes");
+  assert.equal(controlarSaldos(e1, [asentado], MANANA).filas[0].lectura, "da"); assert.equal(controlarSaldos(e1, [asentado], MANANA).hayAlarma, false);
+  /* Sin el ajuste (se guarda lo que marca el banco): cuando el banco asienta, falta plata que nunca faltó. */
+  const e2 = nuevoArqueo(hoy.saldo);
+  const falso = controlarSaldos(e2, [asentado], MANANA);
+  assert.equal(falso.filas[0].lectura, "falta"); assert.equal(falso.filas[0].diferencia, -3339); assert.equal(falso.hayAlarma, true);
 });
 
 /* Las cuentas y los movimientos de Mercury como los manda el banco. */

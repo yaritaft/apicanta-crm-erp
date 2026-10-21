@@ -206,6 +206,39 @@ export function textoDeLoPendiente(x: ExplicadoPorPendientes, moneda: Moneda = "
   return trozos.join(" y ");
 }
 
+/* ---------- Lo que se guarda en el arqueo ---------- */
+
+export interface SaldoParaArqueo {
+  /* Lo que va al casillero y se guarda. */
+  monto: number;
+  /* Lo que el banco marcaba. */
+  delBanco: number;
+  /* Lo que hay hoy menos lo que la app esperaba (si había con qué comparar). */
+  diferencia?: number;
+  /* Sólo si se corrigió: qué parte de lo que está en camino explicaba la diferencia, y la constancia para el arqueo. */
+  ajuste?: ExplicadoPorPendientes;
+  nota?: string;
+}
+
+/** El saldo que conviene guardar en el arqueo de una cuenta que se leyó sola.
+    La app descuenta un gasto el día que se carga; el banco, cuando lo asienta. Si el arqueo guardara lo que el banco marca hoy, el
+    «esperado» del arqueo siguiente arrancaría de ahí, y cuando el banco asiente lo que estaba en camino el control diría «faltan X» sin que falte
+    nada. Por eso, si la diferencia es justo lo que está en camino (lo que la app ya había descontado o sumado), se guarda el saldo que va a
+    quedar cuando el banco lo asiente: lo que marca menos lo por debitar, más lo por acreditar. Si la diferencia no se explica (o no hay con
+    qué comparar), no se toca nada: restar lo que la app nunca descontó sería inventar plata. */
+export function saldoParaElArqueo(real: SaldoReal, esperado: number | undefined): SaldoParaArqueo {
+  const delBanco = real.saldo;
+  if (esperado === undefined) return { monto: delBanco, delBanco };
+  const diferencia = Math.round((delBanco - esperado) * 100) / 100;
+  const explicado = Math.abs(diferencia) < TOLERANCIA_DE_SALDO ? null : explicarConPendientes(diferencia, real.pendientes);
+  if (!explicado) return { monto: delBanco, delBanco, diferencia };
+  const monto = Math.round((delBanco - explicado.porDebitar + explicado.porAcreditar) * 100) / 100;
+  return {
+    monto, delBanco, diferencia, ajuste: explicado,
+    nota: `El banco marcaba ${money(delBanco, real.moneda, 2)}; se guardó ${money(monto, real.moneda, 2)} porque tiene ${textoDeLoPendiente(explicado, real.moneda)}.`,
+  };
+}
+
 /** Lo que significa una diferencia, en una frase para quien carga las cosas. */
 export function quePasa(f: Pick<FilaDeControl, "lectura" | "diferencia" | "moneda" | "nombre" | "explicadoPor">): string {
   if (f.lectura === "da") return "Da con lo que la app esperaba.";
