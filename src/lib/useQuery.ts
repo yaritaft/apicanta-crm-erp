@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useEscribirURL } from "@/lib/useParamsURL";
+import { leerApertura } from "@/lib/abrir-desde-url";
 
 /* Lee ?nuevo=1 y ?ver=<id> para abrir modales desde enlaces.
 
@@ -16,10 +17,9 @@ export function useAbrirDesdeURL(): { nuevo: boolean; ver: string | null; limpia
   const consumido = useRef(false);
 
   useEffect(() => {
-    if (consumido.current) return;
-    const nuevo = params.get("nuevo") === "1";
-    const ver = params.get("ver");
-    if (nuevo || ver) { consumido.current = true; setEstado({ nuevo, ver }); }
+    const { abrir, consumido: ya } = leerApertura(params, consumido.current);
+    consumido.current = ya;
+    if (abrir) setEstado(abrir);
   }, [params]);
 
   /* Saca sólo ?nuevo y ?ver, que son de un solo uso. Antes borraba la query
