@@ -5,6 +5,7 @@ import {
   leerReunionesZoom, leerWebhookTelegram, PRODUCTOS_WISBOO,
 } from "@/lib/accesos-alumnos";
 import { clavePandadoc } from "@/lib/accesos-alumnos-servidor";
+import { cambiarGrupoEnProgramas } from "@/lib/programas";
 
 /* La prueba de conexión de los accesos de alumnos (Ajustes → Integraciones)
    con respuestas como las devuelven Telegram, Wisboo, PandaDoc y Zoom. */
@@ -92,4 +93,20 @@ test("Zoom: las reuniones con su id como texto (pasan los 10 dígitos)", () => {
   assert.deepEqual(leerReunionesZoom({ meetings: [{ id: 92674392836, topic: "Clase Hackear AI", type: 8 }, { topic: "sin id" }] }),
     [{ id: "92674392836", tema: "Clase Hackear AI", tipo: 8 }]);
   assert.deepEqual(leerReunionesZoom(null), []);
+});
+
+test("Telegram: cuando un grupo pasa a supergrupo, el id nuevo reemplaza al viejo en los programas", () => {
+  const programas = [
+    { id: "principals", nombre: "Principals", telegram: ["-5096373090"] },
+    { id: "hackear-ai", nombre: "Hackear AI", telegram: ["-100111", "-5096373090", "-1003910580644"] },
+    { id: "downsell", nombre: "Downsell", telegram: [] },
+  ];
+  assert.deepEqual(cambiarGrupoEnProgramas(programas, "-5096373090", "-1003910580644"), [
+    { id: "principals", nombre: "Principals", telegram: ["-1003910580644"] },
+    { id: "hackear-ai", nombre: "Hackear AI", telegram: ["-100111", "-1003910580644"] },
+    { id: "downsell", nombre: "Downsell", telegram: [] },
+  ]);
+  /* Sin programas guardados (los de siempre) o sin ese grupo: no hay nada que guardar. */
+  assert.equal(cambiarGrupoEnProgramas(null, "-1", "-2"), null);
+  assert.equal(cambiarGrupoEnProgramas(programas, "-999", "-2"), null);
 });

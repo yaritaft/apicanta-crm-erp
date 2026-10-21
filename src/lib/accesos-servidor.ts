@@ -1,7 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { partirNombre } from "./contratos";
 import { PRODUCTOS_WISBOO } from "./accesos-alumnos";
-import type { Programa } from "./programas";
+import { cambiarGrupoEnProgramas, type Programa } from "./programas";
 
 /* ==================================================================
    El onboarding y el outboarding del Loom de Yari, del lado del servidor.
@@ -108,13 +108,93 @@ export async function linkMagicoWisboo(usuarioId: string): Promise<{ link: strin
 
 export const hayTelegram = () => Boolean(process.env.TELEGRAM_BOT_TOKEN);
 
-export async function telegram(metodo: string, cuerpo: Record<string, unknown> = {}): Promise<{ ok: boolean; result?: unknown; description?: string }> {
+type RespuestaTelegram = { ok: boolean; result?: unknown; description?: string; parameters?: { migrate_to_chat_id?: number } };
+
+export async function telegram(metodo: string, cuerpo: Record<string, unknown> = {}): Promise<RespuestaTelegram> {
   const r = await fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/${metodo}`, {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(cuerpo),
     cache: "no-store", signal: AbortSignal.timeout(ESPERA_MS),
   });
-  const j = (await r.json().catch(() => ({ ok: false, description: `Telegram contestó ${r.status}` }))) as { ok: boolean; result?: unknown; description?: string };
+  const j = (await r.json().catch(() => ({ ok: false, description: `Telegram contestó ${r.status}` }))) as RespuestaTelegram;
   return j;
+}
+
+export type ChatTelegram = { id: number | string; title?: string; type?: string };
+export type MiembroTelegram = {
+  status?: string; user?: { id: number; username?: string; first_name?: string; is_bot?: boolean };
+  can_invite_users?: boolean; can_restrict_members?: boolean;
+};
+
+/* Así contesta Telegram cuando el bot ya no está en el grupo o el grupo no existe más: se saca de la lista. */
+const SIN_GRUPO = /chat not found|bot was kicked|bot is not a member|group chat was deactivated/i;
+
+let idDelBot: number | null = null;
+async function botId(): Promise<number | null> {
+  if (idDelBot) return idDelBot;
+  idDelBot = ((await telegram("getMe")).result as { id?: number } | undefined)?.id ?? null;
+  return idDelBot;
+}
+
+/** Anota (o pone al día) un grupo donde está el bot, con sus permisos, para elegirlo en el programa. */
+export async function anotarGrupoDeTelegram(db: SupabaseClient, chat: ChatTelegram, bot?: MiembroTelegram): Promise<"anotado" | "borrado" | "mudado" | "no es grupo" | "sin respuesta"> {
+  if (chat.type !== "group" && chat.type !== "supergroup" && chat.type !== "channel") return "no es grupo";
+  let m = bot;
+  if (!m) {
+    const id = await botId();
+    if (!id) return "sin respuesta";
+    const r = await telegram("getChatMember", { chat_id: chat.id, user_id: id });
+    const nuevo = r.parameters?.migrate_to_chat_id;
+    if (!r.ok && nuevo) {
+      await mudarGrupoDeTelegram(db, String(chat.id), String(nuevo));
+      await anotarGrupoDeTelegram(db, { id: nuevo, title: chat.title, type: "supergroup" });
+      return "mudado";
+    }
+    if (!r.ok) {
+      if (!SIN_GRUPO.test(r.description ?? "")) return "sin respuesta";
+      await db.from("telegram_grupos").delete().eq("chatId", String(chat.id));
+      return "borrado";
+    }
+    m = r.result as MiembroTelegram;
+  }
+  if (m?.status === "left" || m?.status === "kicked") {
+    await db.from("telegram_grupos").delete().eq("chatId", String(chat.id));
+    return "borrado";
+  }
+  const admin = m?.status === "administrator" || m?.status === "creator";
+  await db.from("telegram_grupos").upsert({
+    chatId: String(chat.id), titulo: chat.title ?? "", tipo: chat.type ?? "",
+    botEsAdmin: admin, puedeInvitar: m?.status === "creator" || Boolean(admin && m?.can_invite_users),
+    puedeExpulsar: m?.status === "creator" || Boolean(admin && m?.can_restrict_members), vistoEn: new Date().toISOString(),
+  }, { onConflict: "chatId" });
+  return "anotado";
+}
+
+/** Un grupo común que pasa a supergrupo cambia de id (Telegram lo hace solo, por ejemplo al hacer admin al bot):
+    el id nuevo reemplaza al viejo en los programas y en los accesos ya dados, y el viejo sale de la lista. */
+export async function mudarGrupoDeTelegram(db: SupabaseClient, viejo: string, nuevo: string): Promise<void> {
+  if (viejo === nuevo) return;
+  await db.from("telegram_grupos").delete().eq("chatId", viejo);
+  await db.from("accesos_alumno").update({ recurso: nuevo, actualizadoEn: new Date().toISOString() })
+    .eq("plataforma", "telegram").eq("recurso", viejo);
+  const aj = await db.from("ajustes").select("programas").eq("id", 1).maybeSingle();
+  const cambiados = cambiarGrupoEnProgramas(aj.data?.programas, viejo, nuevo);
+  if (cambiados) await db.from("ajustes").update({ programas: cambiados }).eq("id", 1);
+}
+
+/** La pasada de cada hora: cada grupo anotado se vuelve a mirar (nombre, permisos, si pasó a supergrupo, si
+    sacaron al bot). Devuelve un resumen para la respuesta del cron. */
+export async function revisarGruposDeTelegram(db: SupabaseClient): Promise<string> {
+  if (!hayTelegram()) return "sin bot";
+  const r = await db.from("telegram_grupos").select('"chatId", titulo, tipo');
+  if (r.error) return `no se pudo leer: ${r.error.message}`;
+  const cuenta = new Map<string, number>();
+  for (const g of (r.data ?? []) as { chatId: string; titulo: string; tipo: string }[]) {
+    const c = await telegram("getChat", { chat_id: g.chatId });
+    const chat: ChatTelegram = c.ok ? (c.result as ChatTelegram) : { id: g.chatId, title: g.titulo, type: g.tipo };
+    const asi = await anotarGrupoDeTelegram(db, chat);
+    cuenta.set(asi, (cuenta.get(asi) ?? 0) + 1);
+  }
+  return [...cuenta].map(([k, n]) => `${n} ${k}`).join(", ") || "sin grupos";
 }
 
 /* Telegram pide un nombre de link de hasta 32 caracteres. */

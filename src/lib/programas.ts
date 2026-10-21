@@ -109,6 +109,20 @@ export function programaDeProducto(programas: Programa[], productoId: ID | undef
   return programas.find((p) => p.activo && p.productos.includes(productoId)) ?? null;
 }
 
+/** Los programas guardados con el grupo de Telegram `viejo` cambiado por `nuevo` (cuando un grupo pasa a
+    supergrupo cambia de id), o null si ninguno lo tenía y no hay nada que guardar. */
+export function cambiarGrupoEnProgramas(programas: unknown, viejo: string, nuevo: string): unknown[] | null {
+  if (!Array.isArray(programas)) return null;
+  let cambio = false;
+  const nuevos = programas.map((p) => {
+    const tg = p && typeof p === "object" ? (p as { telegram?: unknown }).telegram : undefined;
+    if (!Array.isArray(tg) || !tg.includes(viejo)) return p;
+    cambio = true;
+    return { ...(p as object), telegram: [...new Set(tg.map((t) => (t === viejo ? nuevo : t)))] };
+  });
+  return cambio ? nuevos : null;
+}
+
 export function programaPorId(programas: Programa[], id: string | null | undefined): Programa | null {
   return id ? programas.find((p) => p.id === id) ?? null : null;
 }

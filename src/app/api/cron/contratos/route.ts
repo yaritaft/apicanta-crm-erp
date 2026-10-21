@@ -4,7 +4,7 @@ import { sincronizar } from "@/lib/contratos-servidor";
 import { conectarAvisoSolo, type Contrato } from "@/lib/contratos";
 import { clavePandadoc, crearSuscripcion } from "@/lib/pandadoc-servidor";
 import { randomBytes } from "node:crypto";
-import { hayTelegram, telegram } from "@/lib/accesos-servidor";
+import { hayTelegram, revisarGruposDeTelegram, telegram } from "@/lib/accesos-servidor";
 import { leerWebhookTelegram, RUTA_WEBHOOK_TELEGRAM } from "@/lib/accesos-alumnos";
 
 /* ==================================================================
@@ -12,6 +12,7 @@ import { leerWebhookTelegram, RUTA_WEBHOOK_TELEGRAM } from "@/lib/accesos-alumno
    estado a los contratos que todavía esperan algo (armándose, enviados,
    abiertos) y a los firmados que no tienen su PDF o sus accesos. Si un
    aviso se perdió, acá se recupera (y al firmar, se dan los accesos).
+   También se ponen al día los grupos de Telegram anotados.
    ================================================================== */
 
 export const runtime = "nodejs";
@@ -29,6 +30,7 @@ export async function GET(req: Request) {
   if (!db) return NextResponse.json({ error: "Sin base." }, { status: 503 });
   const aviso = await asegurarAvisoDeProduccion(db);
   const bot = await asegurarBotDeTelegram(db);
+  const grupos = await revisarGruposDeTelegram(db).catch((e) => `no se pudo: ${e instanceof Error ? e.message : String(e)}`);
   const desde = new Date(Date.now() - 90 * 24 * 3600 * 1000).toISOString();
   const r = await db.from("contratos").select("*")
     .gte("creadoEn", desde).not("documentoId", "is", null)
@@ -45,7 +47,7 @@ export async function GET(req: Request) {
       console.error("[cron contratos]", c.id, e instanceof Error ? e.message : String(e));
     }
   }
-  return NextResponse.json({ ok: true, aviso, bot, revisados: r.data?.length ?? 0, cambiaron, fallaron });
+  return NextResponse.json({ ok: true, aviso, bot, grupos, revisados: r.data?.length ?? 0, cambiaron, fallaron });
 }
 
 /* El aviso de PandaDoc de producción se conecta solo la primera vez (Juan Cruz, 20/10: «dejalo listo»): la clave

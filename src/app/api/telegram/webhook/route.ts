@@ -1,13 +1,14 @@
 import { timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
 import { nubeServidor } from "@/lib/servidor";
-import { telegram } from "@/lib/accesos-servidor";
+import { anotarGrupoDeTelegram, mudarGrupoDeTelegram, telegram, type ChatTelegram as Chat, type MiembroTelegram as Miembro } from "@/lib/accesos-servidor";
 
 /* ==================================================================
    POST /api/telegram/webhook — los avisos del bot de los accesos.
    - Lo agregan a un grupo o le cambian los permisos (my_chat_member), o
      alguien escribe /vincular en un grupo: el grupo queda anotado en
-     `telegram_grupos` para elegirlo en el programa.
+     `telegram_grupos` para elegirlo en el programa. Si el grupo pasa a
+     supergrupo, el id nuevo reemplaza al viejo en todos lados.
    - Alguien entra a un grupo con un link de los accesos (chat_member con
      invite_link): se anota su usuario en ese acceso (`entro`). Con eso el
      outboarding lo puede sacar.
@@ -17,32 +18,9 @@ import { telegram } from "@/lib/accesos-servidor";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-type Chat = { id: number; title?: string; type?: string };
-type Miembro = { status?: string; user?: { id: number; username?: string; first_name?: string; is_bot?: boolean }; can_invite_users?: boolean; can_restrict_members?: boolean };
-
 function iguales(a: string, b: string): boolean {
   const x = Buffer.from(a), y = Buffer.from(b);
   return x.length === y.length && timingSafeEqual(x, y);
-}
-
-async function anotarGrupo(db: NonNullable<ReturnType<typeof nubeServidor>>, chat: Chat, bot?: Miembro) {
-  if (chat.type !== "group" && chat.type !== "supergroup" && chat.type !== "channel") return;
-  let m = bot;
-  if (!m) {
-    const me = await telegram("getMe");
-    const id = (me.result as { id?: number } | undefined)?.id;
-    m = id ? ((await telegram("getChatMember", { chat_id: chat.id, user_id: id })).result as Miembro) : undefined;
-  }
-  const admin = m?.status === "administrator" || m?.status === "creator";
-  if (m?.status === "left" || m?.status === "kicked") {
-    await db.from("telegram_grupos").delete().eq("chatId", String(chat.id));
-    return;
-  }
-  await db.from("telegram_grupos").upsert({
-    chatId: String(chat.id), titulo: chat.title ?? "", tipo: chat.type ?? "",
-    botEsAdmin: admin, puedeInvitar: m?.status === "creator" || Boolean(admin && m?.can_invite_users),
-    puedeExpulsar: m?.status === "creator" || Boolean(admin && m?.can_restrict_members), vistoEn: new Date().toISOString(),
-  }, { onConflict: "chatId" });
 }
 
 export async function POST(peticion: Request) {
@@ -53,15 +31,22 @@ export async function POST(peticion: Request) {
   if (!secreto || !iguales(dado, secreto)) return NextResponse.json({ ok: false }, { status: 403 });
 
   const u = (await peticion.json().catch(() => ({}))) as {
-    message?: { chat: Chat; text?: string };
+    message?: { chat: Chat; text?: string; migrate_to_chat_id?: number; migrate_from_chat_id?: number };
     my_chat_member?: { chat: Chat; new_chat_member?: Miembro };
     chat_member?: { chat: Chat; new_chat_member?: Miembro; invite_link?: { invite_link?: string } };
   };
   try {
-    if (u.my_chat_member) await anotarGrupo(db, u.my_chat_member.chat, u.my_chat_member.new_chat_member);
-    if (u.message && /^\/vincular(@\w+)?\b/i.test(u.message.text ?? "")) {
-      await anotarGrupo(db, u.message.chat);
-      await telegram("sendMessage", { chat_id: u.message.chat.id, text: "Listo: este grupo quedó vinculado a Apicanta para los accesos de alumnos." });
+    if (u.my_chat_member) await anotarGrupoDeTelegram(db, u.my_chat_member.chat, u.my_chat_member.new_chat_member);
+    /* El grupo pasó a supergrupo (Telegram lo hace solo, por ejemplo al hacer admin al bot): cambia de id. */
+    const m = u.message;
+    if (m?.migrate_to_chat_id) await mudarGrupoDeTelegram(db, String(m.chat.id), String(m.migrate_to_chat_id));
+    if (m?.migrate_from_chat_id) {
+      await mudarGrupoDeTelegram(db, String(m.migrate_from_chat_id), String(m.chat.id));
+      await anotarGrupoDeTelegram(db, m.chat);
+    }
+    if (m && /^\/vincular(@\w+)?\b/i.test(m.text ?? "")) {
+      await anotarGrupoDeTelegram(db, m.chat);
+      await telegram("sendMessage", { chat_id: m.chat.id, text: "Listo: este grupo quedó vinculado a Apicanta para los accesos de alumnos." });
     }
     const cm = u.chat_member;
     const link = cm?.invite_link?.invite_link;
