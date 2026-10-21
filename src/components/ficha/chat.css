@@ -163,6 +163,8 @@ button.chatx-cita:focus-visible { outline: 2px solid var(--focus); outline-offse
 .chatx-hilo-pie button:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
 .chatx-hilo-pie__caras { display: inline-flex; }
 .chatx-hilo-pie__caras > * + * { margin-left: -6px; }
+/* Un aro del color del fondo separa cada cara: encimadas sin él, las iniciales se leían «AFMCDB». */
+.chatx-hilo-pie__caras > * { box-shadow: 0 0 0 2px var(--surface-100); border-radius: 999px; }
 .chatx-hilo-pie__n { color: var(--brand); font-weight: 650; }
 .chatx-hilo-pie__cuando { color: var(--ink-subtle); }
 
@@ -219,12 +221,12 @@ button.chatx-cita:focus-visible { outline: 2px solid var(--focus); outline-offse
 .chatx-audio__play:hover:not(:disabled) { transform: scale(1.05); }
 .chatx-audio__play:focus { outline: none; }
 .chatx-audio__play:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
-.chatx-onda { flex: 1; min-width: 0; height: 30px; display: flex; align-items: center; gap: 2px; padding: 0; border: 0; background: none; cursor: pointer; }
+.chatx-onda { flex: 1; min-width: 0; height: 30px; display: flex; align-items: center; gap: 2px; padding: 0; border: 0; background: none; cursor: pointer; overflow: hidden; }
 .chatx-onda:focus { outline: none; }
 .chatx-onda:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: 4px; }
-.chatx-onda__barra { flex: 1; min-width: 2px; min-height: 3px; border-radius: 999px; background: color-mix(in srgb, var(--ink) 28%, transparent); transition: background 140ms ease-out; }
+.chatx-onda__barra { flex: 1; min-width: 1px; min-height: 3px; border-radius: 999px; background: color-mix(in srgb, var(--ink) 28%, transparent); transition: background 140ms ease-out; }
 .chatx-onda__barra--hecha { background: var(--brand); }
-.chatx-audio__t { flex: none; min-width: 30px; text-align: right; font-size: 11px; font-variant-numeric: tabular-nums; color: var(--ink-subtle); }
+.chatx-audio__t { flex: none; min-width: 30px; margin-left: 2px; text-align: right; font-size: 11px; font-variant-numeric: tabular-nums; color: var(--ink-subtle); }
 .chatx-audio__vel {
   flex: none; padding: 1px 6px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface-200);
   font: inherit; font-size: 10.5px; font-weight: 700; color: var(--ink-muted); cursor: pointer;
@@ -275,6 +277,11 @@ button.chatx-cita:focus-visible { outline: 2px solid var(--focus); outline-offse
 .chatx-caja textarea::placeholder { color: var(--ink-subtle); }
 .chatx-barra { display: flex; align-items: center; gap: 2px; margin-left: -6px; }
 .chatx-ayuda { flex: 1; min-width: 0; padding: 0 6px; font-size: 11px; color: var(--ink-subtle); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* La ayuda del teclado: cortada a la mitad no dice nada (columna angosta), y en el celular no hay Enter ni Shift. */
+@container (max-width: 520px) { .chatx-ayuda { visibility: hidden; } }
+@media (hover: none) { .chatx-ayuda { visibility: hidden; } }
+/* Un mensaje que es sólo uno a tres emojis va grande, como en WhatsApp. */
+.chatx-msj__texto--emoji { font-size: 32px; line-height: 40px; letter-spacing: 2px; }
 .chatx-boton {
   flex: none; display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; border: 0; border-radius: 999px;
   background: none; color: var(--ink-muted); cursor: pointer; transition: background 120ms ease-out, color 120ms ease-out;

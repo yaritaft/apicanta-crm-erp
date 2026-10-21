@@ -160,6 +160,8 @@ test("el reporte semanal sale de los reportes; sin reportes, de lo marcado a man
   assert.deepEqual(reporteDeCliente(activo, { reporteManual: { completo: true, activo: true, semanasSin: 4, en: "" } }, false, undefined), { estado: "Al día", semanasSin: 0, origen: "manual" });
   assert.deepEqual(reporteDeCliente(activo, { reporteManual: { completo: false, activo: true, semanasSin: 2, en: "" } }, false, undefined), { estado: "Atrasado", semanasSin: 2, origen: "manual" });
   assert.equal(reporteDeCliente(activo, { reporteManual: { completo: false, activo: false, semanasSin: 0, en: "" } }, false, undefined).estado, "Inactivo");
+  assert.deepEqual(reporteDeCliente(activo, { reporteManual: { completo: false, activo: true, semanasSin: 0, en: "" } }, false, undefined), { estado: "Al día", semanasSin: 0, origen: "manual" },
+    "sin el tilde de completo pero sin semanas debidas: al día, no «Atrasado» con 0 semanas");
   assert.deepEqual(reporteDeCliente(activo, { reporteManual: null }, false, undefined), { estado: "Sin datos", semanasSin: null, origen: "sin-datos" });
 });
 

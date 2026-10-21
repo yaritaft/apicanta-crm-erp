@@ -17,8 +17,10 @@ import { resumenDePases } from "@/lib/traspasos";
 import { useChequeos } from "@/lib/chequeos-finanzas";
 import { diasDelEod } from "@/lib/eod-finanzas";
 import {
-  alNegarseEscritura, cargarDeLaNube, fijarAcceso, hayNube, reiniciarCarga, useEstado, useSync, useTema,
+  alNegarseEscritura, cargarDeLaNube, fijarAcceso, hayNube, reiniciarCarga, tablaSinCrear, useEstado, useSync, useTema,
 } from "@/lib/store";
+import { claveDe } from "@/lib/chat-equipo";
+import { fotoDe, mapaDeFotos } from "@/lib/fotos-perfil";
 import { useSalir, useSesion } from "@/lib/auth";
 import { useUsuarioActual } from "@/lib/usuario";
 import { elegirVerComo, useAcceso, useVerComo } from "@/lib/acceso";
@@ -32,6 +34,7 @@ import { Paleta } from "./Paleta";
 import { Tour } from "./Tour";
 import { ID_ACCIONES_TOPBAR } from "./AccionesTopbar";
 import { useChatEnVivo } from "@/components/ficha/useChatEnVivo";
+import { FotoDePerfil } from "./FotoDePerfil";
 
 export function Shell({ children }: { children: React.ReactNode }) {
   const ruta = usePathname();
@@ -70,6 +73,14 @@ export function Shell({ children }: { children: React.ReactNode }) {
   const hrefRecordado = useRecordarVistas();
   /* El chat del equipo de las fichas llega en vivo y anota lo que le llegó a cada uno (los tildes). */
   useChatEnVivo();
+
+  /* La foto de perfil: quien entra sin foto tiene que ponerla (pedido de Juan Cruz, 20/10); después se cambia tocándola abajo.
+     Se pide recién con los datos ya traídos (si no, la pediría a quien ya la tiene) y sólo si la tabla existe. */
+  const quienYo = claveDe(sesion.email, yo.nombre);
+  const miFoto = useMemo(() => fotoDe(mapaDeFotos(estado.fotosPerfil, estado.equipo), sesion.email, yo.nombre), [estado.fotosPerfil, estado.equipo, sesion.email, yo.nombre]);
+  const datosListos = sync.estado === "listo" || sync.estado === "local";
+  const faltaFoto = datosListos && Boolean(quienYo) && !miFoto && !tablaSinCrear("fotos_perfil");
+  const [cambiarFoto, setCambiarFoto] = useState(false);
 
   /* Menu colapsado. Se lee despues del montado a proposito: leer localStorage
      en el primer render rompe la hidratacion, porque el servidor no lo tiene. */
@@ -262,7 +273,9 @@ export function Shell({ children }: { children: React.ReactNode }) {
         <div className="hk-sidebar__footer">
           <EstadoDatos estado={sync.estado} error={sync.error} />
           <div className="row-3">
-            <Avatar nombre={nombreYo} />
+            <button type="button" className="fp-yo" onClick={() => setCambiarFoto(true)} aria-label="Cambiar tu foto de perfil" title="Cambiar tu foto de perfil">
+              <Avatar nombre={nombreYo} foto={miFoto} />
+            </button>
             <div style={{ minWidth: 0, flex: 1 }}>
               <div className="t-strong truncate" style={{ fontSize: 14 }}>{nombreYo}</div>
               <div className="t-sm t-subtle truncate">{sesion.email ?? estado.ajustes.negocio}</div>
@@ -343,6 +356,9 @@ export function Shell({ children }: { children: React.ReactNode }) {
       </div>
 
       <Paleta abierto={paleta} onCerrar={() => setPaleta(false)} />
+      {(faltaFoto || cambiarFoto) && (
+        <FotoDePerfil quien={quienYo} nombre={yo.nombre} obligatoria={faltaFoto} actual={miFoto} onCerrar={() => setCambiarFoto(false)} />
+      )}
       <Tour />
     </div>
   );

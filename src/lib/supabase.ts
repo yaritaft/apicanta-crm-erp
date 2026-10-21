@@ -32,6 +32,8 @@ export const TABLAS = [
   "ventas", "cuotas", "pagos", "gastos", "movimientos",
   /* El chat del equipo en la ficha de cada persona, y hasta dónde lo leyó cada uno (los tildes) */
   "comentarios", "chat_lecturas",
+  /* La foto de perfil de cada uno (la piden al entrar). */
+  "fotos_perfil",
   /* Los arqueos de caja (Finanzas → Caja) */
   "arqueos",
   /* Los movimientos entre cuentas propias (Finanzas → Caja) */
@@ -83,6 +85,8 @@ export const TABLAS_OPCIONALES = new Set<string>([
   "comentarios",
   /* Los tildes del chat: hasta que corra supabase/chat-adjuntos.sql, el chat anda sin «leído». */
   "chat_lecturas",
+  /* Las fotos de perfil: hasta que corra supabase/fotos-perfil.sql, nadie la pide y se ven las iniciales. */
+  "fotos_perfil",
   /* Los arqueos: hasta que corra supabase/arqueos.sql, quedan en este navegador. */
   "arqueos",
   /* Los movimientos entre cuentas: hasta que corra supabase/traspasos.sql,

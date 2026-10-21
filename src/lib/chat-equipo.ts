@@ -70,6 +70,45 @@ export interface DetalleEntrega {
   faltan: string[];
 }
 
+/** Lo que hace falta saber de una ficha para los tildes de TODOS sus mensajes: se arma una vez por chat, no por mensaje
+    (con 2000 mensajes recorrer el chat entero por cada uno se notaba; stress test del 20/10). */
+export interface ContextoEntrega {
+  gente: Map<string, string>;
+  /* El último mensaje de cada uno, en ms: si escribió después, lo vio. */
+  ultimoDe: Map<string, number>;
+  lecturaDe: Map<string, ChatLectura>;
+}
+
+export function contextoDeEntrega(comentarios: Comentario[], lecturas: ChatLectura[]): ContextoEntrega {
+  const ultimoDe = new Map<string, number>();
+  for (const c of comentarios) {
+    const q = autorDe(c), t = ms(c.creadoEn);
+    if (t > (ultimoDe.get(q) ?? Number.NEGATIVE_INFINITY)) ultimoDe.set(q, t);
+  }
+  return { gente: participantes(comentarios, lecturas), ultimoDe, lecturaDe: new Map(lecturas.map((l) => [l.quien, l] as const)) };
+}
+
+/** Los tildes de un mensaje propio, con el contexto de su ficha ya armado. */
+export function entregaCon(c: Comentario, ctx: ContextoEntrega, cola: { pendiente: boolean; error: boolean } = { pendiente: false, error: false }): DetalleEntrega {
+  if (cola.pendiente) return { estado: cola.error ? "sin-enviar" : "enviando", leyeron: [], recibieron: [], faltan: [] };
+  const t = ms(c.creadoEn);
+  const autor = autorDe(c);
+  const reaccionaron = new Set((c.reacciones ?? []).map((r) => claveDe(r.email, r.quien)));
+  const d: DetalleEntrega = { estado: "enviado", leyeron: [], recibieron: [], faltan: [] };
+  let cuantos = 0;
+  for (const [quien, nombre] of ctx.gente) {
+    if (quien === autor) continue;
+    cuantos++;
+    const l = ctx.lecturaDe.get(quien);
+    const leyo = ms(l?.leidoHasta) >= t || (ctx.ultimoDe.get(quien) ?? Number.NEGATIVE_INFINITY) > t || reaccionaron.has(quien);
+    if (leyo) d.leyeron.push(nombre);
+    else if (ms(l?.recibidoHasta) >= t) d.recibieron.push(nombre);
+    else d.faltan.push(nombre);
+  }
+  if (cuantos > 0 && d.faltan.length === 0) d.estado = d.recibieron.length === 0 ? "leido" : "recibido";
+  return d;
+}
+
 /**
  * Los tildes de un mensaje propio. `comentarios` y `lecturas` son los de su ficha.
  * Escribir otro mensaje después en esa ficha, o reaccionar a este, cuenta como leído: lo tuvo en pantalla.
@@ -78,24 +117,7 @@ export function entregaDe(
   c: Comentario, comentarios: Comentario[], lecturas: ChatLectura[],
   cola: { pendiente: boolean; error: boolean } = { pendiente: false, error: false },
 ): DetalleEntrega {
-  const vacio = { leyeron: [], recibieron: [], faltan: [] };
-  if (cola.pendiente) return { estado: cola.error ? "sin-enviar" : "enviando", ...vacio };
-  const t = ms(c.creadoEn);
-  const gente = participantes(comentarios, lecturas);
-  gente.delete(autorDe(c));
-  const lecturaDe = new Map(lecturas.map((l) => [l.quien, l] as const));
-  const d: DetalleEntrega = { estado: "enviado", leyeron: [], recibieron: [], faltan: [] };
-  for (const [quien, nombre] of gente) {
-    const l = lecturaDe.get(quien);
-    const leyo = ms(l?.leidoHasta) >= t
-      || comentarios.some((x) => autorDe(x) === quien && ms(x.creadoEn) > t)
-      || (c.reacciones ?? []).some((r) => claveDe(r.email, r.quien) === quien);
-    if (leyo) d.leyeron.push(nombre);
-    else if (ms(l?.recibidoHasta) >= t) d.recibieron.push(nombre);
-    else d.faltan.push(nombre);
-  }
-  if (gente.size > 0 && d.faltan.length === 0) d.estado = d.recibieron.length === 0 ? "leido" : "recibido";
-  return d;
+  return entregaCon(c, contextoDeEntrega(comentarios, lecturas), cola);
 }
 
 /* El último mensaje de OTRO en una ficha: hasta ahí le llegó o leyó quien la tiene. */
@@ -124,9 +146,9 @@ export function lecturaAlLeer(contactoId: ID, comentarios: Comentario[], lectura
 export function recibidosAlLlegar(comentarios: Comentario[], lecturas: ChatLectura[], quien: string, nombre: string): ChatLectura[] {
   if (!quien) return [];
   const porFicha = new Map<ID, Comentario[]>();
-  for (const c of comentarios) porFicha.set(c.contactoId, [...(porFicha.get(c.contactoId) ?? []), c]);
+  for (const c of comentarios) { const xs = porFicha.get(c.contactoId); if (xs) xs.push(c); else porFicha.set(c.contactoId, [c]); }
   const lecturasDe = new Map<ID, ChatLectura[]>();
-  for (const l of lecturas) lecturasDe.set(l.contactoId, [...(lecturasDe.get(l.contactoId) ?? []), l]);
+  for (const l of lecturas) { const xs = lecturasDe.get(l.contactoId); if (xs) xs.push(l); else lecturasDe.set(l.contactoId, [l]); }
   const cambios: ChatLectura[] = [];
   for (const [contactoId, cs] of porFicha) {
     const ls = lecturasDe.get(contactoId) ?? [];

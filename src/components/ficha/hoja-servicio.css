@@ -27,7 +27,11 @@
 .hs-hoy__txt b { color: var(--ink); font-weight: 600; }
 .hs-hoy__acc { display: flex; gap: 8px; flex-wrap: wrap; }
 
-.hs-solapas { display: flex; gap: 4px; overflow-x: auto; padding-bottom: 2px; scrollbar-width: none; border-bottom: 1px solid var(--border); }
+.hs-solapas { display: flex; gap: 4px; overflow-x: auto; padding-bottom: 2px; scrollbar-width: none; border-bottom: 1px solid var(--border); scroll-behavior: smooth; }
+/* Con la ficha angosta (el chat estirado, el celular) las solapas no entran: se deslizan, y un degradé en el borde avisa que hay más. */
+.hs-solapas[data-mas="der"] { mask-image: linear-gradient(90deg, #000 calc(100% - 48px), transparent); }
+.hs-solapas[data-mas="izq"] { mask-image: linear-gradient(90deg, transparent, #000 48px); }
+.hs-solapas[data-mas="ambos"] { mask-image: linear-gradient(90deg, transparent, #000 48px, #000 calc(100% - 48px), transparent); }
 .hs-solapas::-webkit-scrollbar { display: none; }
 .hs-solapa {
   flex: none; display: inline-flex; align-items: center; gap: 6px; padding: 9px 12px; margin-bottom: -1px; border: 0; border-bottom: 2px solid transparent;
@@ -85,9 +89,8 @@
 }
 
 @media (max-width: 640px) {
-  .hs-fila { flex-direction: column; align-items: stretch; gap: 2px; padding: 8px 12px; }
-  .hs-fila__rot { max-width: none; }
-  .hs-fila__val { justify-content: flex-start; text-align: left; }
-  .hs-editable { justify-content: flex-start; margin: 0 -10px; }
-  .hs-progreso { justify-content: flex-start; }
+  .hs-fila { flex-wrap: wrap; gap: 4px 12px; padding: 6px 12px; }
+  .hs-fila__rot { max-width: none; gap: 8px; }
+  .hs-fila__val { flex: 1 1 120px; }
+  .hs-editable.crm-t__editable--abierta { min-width: 0; width: 100%; }
 }

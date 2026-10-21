@@ -156,6 +156,9 @@ export function PanelServicio({ miembro, viendoOtro }: { miembro: MiembroEquipo;
   const abrir = (r: Renglon) => { if (r.alumnoId) abrirFicha(r.alumnoId, "servicio"); };
 
   const paraHoy = panel.secciones.filter((s) => s.total > 0);
+  /* Lo que suman las listas de hoy (una persona puede estar en dos: es lo que hay que hacer, no cuántas personas). */
+  const pendientesHoy = paraHoy.reduce((a, s) => a + s.total, 0);
+  const urgentesHoy = paraHoy.reduce((a, s) => a + s.rojos, 0);
   const primerNombre = miembro.nombre.split(" ")[0];
   const num = panel.numeros;
   const pct = (si: number, de: number) => (de ? `${Math.round((si / de) * 100)} %` : "—");
@@ -168,7 +171,7 @@ export function PanelServicio({ miembro, viendoOtro }: { miembro: MiembroEquipo;
           <h1 className="mp-saludo">{viendoOtro ? `Panel de ${miembro.nombre}` : `${saludoDe(ahora)}, ${primerNombre}`}</h1>
           <p className="mp-resumen">
             {plural(panel.activos, "alumno en servicio", "alumnos en servicio")}
-            {paraHoy.length > 0 ? ` · ${plural(paraHoy.length, "tarea", "tareas")} para hoy` : " · todo al día"}
+            {pendientesHoy > 0 ? <> · {plural(pendientesHoy, "pendiente", "pendientes")} hoy{urgentesHoy > 0 && <>, <span className="ps-rojo">{plural(urgentesHoy, "urgente", "urgentes")}</span></>}</> : " · todo al día"}
           </p>
         </div>
       </header>
@@ -197,7 +200,7 @@ export function PanelServicio({ miembro, viendoOtro }: { miembro: MiembroEquipo;
                     </span>
                     <span className="ps-tarea__n">
                       <b className={s.rojos > 0 ? "ps-rojo" : undefined}>{s.total}</b>
-                      {s.rojos > 0 && <small>{s.rojos === s.total ? "urgentes" : `${s.rojos} urgentes`}</small>}
+                      {s.rojos > 0 && <small>{s.rojos === s.total ? (s.total === 1 ? "urgente" : "todos urgentes") : `${s.rojos} ${s.rojos === 1 ? "urgente" : "urgentes"}`}</small>}
                     </span>
                     <ChevronRight size={16} className="ps-tarea__ir" aria-hidden />
                   </button>
@@ -274,7 +277,9 @@ export function PanelServicio({ miembro, viendoOtro }: { miembro: MiembroEquipo;
           )}
           <label className="ps-buscar">
             <Search size={15} aria-hidden />
-            <input value={q} onChange={(ev) => setQ(ev.target.value)} placeholder="Buscar alumno, mail o teléfono…" aria-label="Buscar en la cartera" />
+            <input value={q} onChange={(ev) => setQ(ev.target.value)} onKeyDown={(ev) => { if (ev.key === "Escape" && q) { ev.stopPropagation(); setQ(""); } }}
+              placeholder="Buscar alumno, mail o teléfono…" aria-label="Buscar en la cartera" />
+            {q && <button type="button" className="ps-buscar__x" onClick={() => setQ("")} aria-label="Borrar la búsqueda" title="Borrar la búsqueda (Esc)"><X size={14} /></button>}
           </label>
         </div>
         {lista && <p className="ps-regla">{lista.regla}</p>}
@@ -284,7 +289,7 @@ export function PanelServicio({ miembro, viendoOtro }: { miembro: MiembroEquipo;
             <thead>
               <tr>
                 <Cabecera c="nombre" titulo="Alumno" orden={orden} onOrden={ordenarPor} />
-                <Cabecera c="programa" titulo="Programa" orden={orden} onOrden={ordenarPor} ancho={130} />
+                <Cabecera c="programa" titulo="Programa" orden={orden} onOrden={ordenarPor} ancho={120} />
                 {lista ? (
                   <>
                     <Cabecera c="detalle" titulo="Qué pasa" orden={orden} onOrden={ordenarPor} />
@@ -292,14 +297,14 @@ export function PanelServicio({ miembro, viendoOtro }: { miembro: MiembroEquipo;
                   </>
                 ) : (
                   <>
-                    <Cabecera c="etapa" titulo="Follow up" orden={orden} onOrden={ordenarPor} ancho={160} />
-                    <Cabecera c="inicio" titulo="Inicio" orden={orden} onOrden={ordenarPor} ancho={110} />
-                    <Cabecera c="egreso" titulo="Vence" orden={orden} onOrden={ordenarPor} ancho={110} />
-                    <Cabecera c="ultimoContacto" titulo="Último contacto" orden={orden} onOrden={ordenarPor} ancho={120} />
-                    <Cabecera c="proximo" titulo="Próximo" orden={orden} onOrden={ordenarPor} ancho={100} />
+                    <Cabecera c="etapa" titulo="Follow up" orden={orden} onOrden={ordenarPor} ancho={150} />
+                    <Cabecera c="inicio" titulo="Inicio" orden={orden} onOrden={ordenarPor} ancho={86} />
+                    <Cabecera c="egreso" titulo="Vence" orden={orden} onOrden={ordenarPor} ancho={100} />
+                    <Cabecera c="ultimoContacto" titulo="Último contacto" orden={orden} onOrden={ordenarPor} ancho={124} />
+                    <Cabecera c="proximo" titulo="Próximo" orden={orden} onOrden={ordenarPor} ancho={88} />
                   </>
                 )}
-                <th style={{ width: 170 }}>Teléfono</th>
+                <th style={{ width: 168 }}>Teléfono</th>
                 {lista?.id === "contactar" && puedeEscribir && <th style={{ width: 120 }} aria-label="Acción" />}
               </tr>
             </thead>
@@ -317,13 +322,13 @@ export function PanelServicio({ miembro, viendoOtro }: { miembro: MiembroEquipo;
                     <td>
                       <span className="ps-alumno">
                         <span className={`ps-punto ps-punto--${r.item ? r.item.tono : f?.etapa === "riesgo" ? "rojo" : "neutro"}`} aria-hidden />
-                        <span className="ps-alumno__nombre">{r.nombre}</span>
+                        <span className="ps-alumno__nombre ps-2renglones">{r.nombre}</span>
                       </span>
                     </td>
                     <td className="ps-sutil">{r.programa || "—"}</td>
                     {lista ? (
                       <>
-                        <td className="ps-detalle-td" title={r.item?.detalle}>{r.item?.detalle}</td>
+                        <td className="ps-detalle-td" title={r.item?.detalle}><span className="ps-2renglones">{r.item?.detalle}</span></td>
                         <td className={`ps-num ps-cuando--${r.item?.tono}`}>{r.item?.cuando}</td>
                       </>
                     ) : (
@@ -350,8 +355,60 @@ export function PanelServicio({ miembro, viendoOtro }: { miembro: MiembroEquipo;
               })}
             </tbody>
           </table>
+
+          {/* En el celular la tabla no entra: cada alumno es una tarjeta con lo que importa (CSS decide cuál se ve). */}
+          <ul className="ps-tarjetas" aria-label="Alumnos">
+            {renglones.slice(0, n).map((r) => {
+              const f = r.fila;
+              const vencido = f && f.proximo && f.proximo < hoy;
+              return (
+                <li key={r.clave}>
+                  <div
+                    className={`ps-tarjeta${r.alumnoId ? " ps-tr--clic" : ""}`} role={r.alumnoId ? "button" : undefined} tabIndex={r.alumnoId ? 0 : undefined}
+                    onClick={() => abrir(r)} onKeyDown={(ev) => { if (ev.target === ev.currentTarget && ev.key === "Enter") abrir(r); }}
+                  >
+                    <span className="ps-tarjeta__cabeza">
+                      <span className={`ps-punto ps-punto--${r.item ? r.item.tono : f?.etapa === "riesgo" ? "rojo" : "neutro"}`} aria-hidden />
+                      <span className="ps-tarjeta__nombre">{r.nombre}</span>
+                      {r.alumnoId && <ChevronRight size={16} className="ps-tarea__ir" aria-hidden />}
+                    </span>
+                    <span className="ps-tarjeta__linea">
+                      <span className="ps-sutil">{r.programa || "Sin programa"}</span>
+                      {lista ? null : <span className={`ps-follow ps-follow--${f?.etapa}`}>{f?.followUp || "Sin follow up"}</span>}
+                    </span>
+                    {lista ? (
+                      <span className="ps-tarjeta__linea">
+                        <span className={`ps-num ps-cuando--${r.item?.tono}`}>{r.item?.cuando}</span>
+                        <span className="ps-sutil ps-2renglones">{r.item?.detalle}</span>
+                      </span>
+                    ) : (
+                      <span className="ps-tarjeta__linea ps-sutil">
+                        <span>Próximo <b className={vencido ? "ps-rojo" : undefined}>{f?.proximo ? formatoDia(f.proximo, hoy) : "—"}</b></span>
+                        <span>· Vence <b>{f?.egreso ? formatoDia(f.egreso, hoy) : "—"}</b></span>
+                      </span>
+                    )}
+                    <span className="ps-tarjeta__linea" onClick={(ev) => ev.stopPropagation()}>
+                      <Telefono valor={f?.telefono || r.item?.telefono} pais={f?.pais || r.item?.pais} compacto vacio="Sin teléfono" />
+                      {lista?.id === "contactar" && puedeEscribir && r.alumnoId && (
+                        <button type="button" className="ps-accion" onClick={() => contacte(r.alumnoId as string)}><Check size={14} aria-hidden />Lo contacté</button>
+                      )}
+                    </span>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
           {renglones.length === 0 && (
-            <p className="mp-vacio ps-tabla-vacia">{q ? "Nadie coincide con la búsqueda." : lista ? lista.vacio : "No hay alumnos en esta etapa."}</p>
+            <div className="mp-vacio ps-tabla-vacia">
+              <p>{q ? <>Nadie {todos ? "" : "en servicio "}{lista || etapa ? "con este filtro " : ""}coincide con «{q.trim()}».</> : lista ? lista.vacio : "No hay alumnos en esta etapa."}</p>
+              {q && (
+                <div className="ps-vacio__acc">
+                  {(lista || etapa) && <button type="button" className="ps-accion" onClick={() => cambiar({ lista: null, etapa: null })}>Buscar sin el filtro</button>}
+                  {!todos && <button type="button" className="ps-accion" onClick={() => cambiar({ base: "todos" })}>Buscar en todos los alumnos</button>}
+                  <button type="button" className="ps-accion" onClick={() => setQ("")}>Borrar la búsqueda</button>
+                </div>
+              )}
+            </div>
           )}
         </div>
 

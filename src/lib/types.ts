@@ -847,6 +847,16 @@ export interface Comentario {
   citaA?: ID;
 }
 
+/* La foto de perfil de alguien del equipo: cuadrada, chica (192 px) y guardada como data URL, así se dibuja al toque en
+   cualquier lado sin pedir nada más (lib/fotos-perfil.ts). Tabla `fotos_perfil`. */
+export interface FotoPerfil {
+  /* Su mail en minúsculas (sin nube, su nombre): lib/chat-equipo.ts → claveDe. */
+  id: ID;
+  nombre: string;
+  foto: string;
+  actualizadoEn: string;
+}
+
 /* Hasta dónde le llegó y hasta dónde leyó una persona el chat de una ficha (los tildes de WhatsApp, lib/chat-equipo.ts).
    Una fila por persona y ficha, con la fecha del último mensaje de otro que le llegó y que leyó. Tabla `chat_lecturas`. */
 export interface ChatLectura {
@@ -962,6 +972,8 @@ export interface EstadoApp {
   revisionesCv?: RevisionCv[];
   /* Hasta dónde le llegó y leyó cada uno el chat de cada ficha (supabase/chat-adjuntos.sql). */
   chatLecturas?: ChatLectura[];
+  /* La foto de perfil de cada uno (supabase/fotos-perfil.sql): la piden al entrar y se ve en el chat. */
+  fotosPerfil?: FotoPerfil[];
   /* Los gastos que se repiten todos los meses (software, abonos): cada mes se
      proponen con el monto del anterior y alguien los aprueba (lib/gastos-recurrentes.ts).
      Opcional: sin supabase/gastos-recurrentes.sql, ninguno. */

@@ -223,9 +223,12 @@ export function reporteDeCliente(
   }
   const m = seg.reporteManual;
   if (!m) return { estado: "Sin datos", semanasSin: null, origen: "sin-datos" };
+  /* Del Airtable vienen 583 con «completo» sin marcar y 0 semanas sin reportar: decía «Atrasado» con «0 semanas»
+     al lado (stress test del 20/10). Si no le falta ninguna semana, está al día. */
+  const debe = m.completo ? 0 : m.semanasSin ?? 0;
   return {
-    estado: !m.activo ? "Inactivo" : m.completo ? "Al día" : "Atrasado",
-    semanasSin: m.completo ? 0 : m.semanasSin, origen: "manual",
+    estado: !m.activo ? "Inactivo" : debe === 0 ? "Al día" : "Atrasado",
+    semanasSin: debe, origen: "manual",
   };
 }
 

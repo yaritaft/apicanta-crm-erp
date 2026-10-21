@@ -7,7 +7,7 @@ import type {
   Adjunto, Arqueo, Campania, CampoPersonalizado, Comentario, Comprobante, Reaccion, Cuota, EntidadNombre, EstadoApp, Etapa, ID,
   Lead, Meta, Movimiento, OpcionCrm, OportunidadCrm, Pago, Reporte, Sesion, Venta, Webinar,
 } from "./types";
-import type { ChatLectura, ConfigSeguimiento, Resell, RevisionCv, SeguimientoAlumno, Testimonio } from "./types";
+import type { ChatLectura, ConfigSeguimiento, FotoPerfil, Resell, RevisionCv, SeguimientoAlumno, Testimonio } from "./types";
 import { lecturaAlLeer, recibidosAlLlegar } from "./chat-equipo";
 import { configSeguimiento, seguimientoVacio } from "./seguimiento";
 import { resellNormal, seguimientoCompleto, siguienteNumero, testimonioNormal } from "./clientes-cs";
@@ -610,6 +610,8 @@ export async function cargarDeLaNube(): Promise<void> {
       revisionesCv: (porTabla.revisiones_cv ?? []) as RevisionCv[],
       /* Opcional: sin la tabla de supabase/chat-adjuntos.sql, el chat queda sin tildes de leído. */
       chatLecturas: (porTabla.chat_lecturas ?? []) as ChatLectura[],
+      /* Opcional: sin supabase/fotos-perfil.sql, todos con sus iniciales. */
+      fotosPerfil: (porTabla.fotos_perfil ?? []) as FotoPerfil[],
       /* Opcional: sin supabase/gastos-recurrentes.sql, ninguno. */
       gastosRecurrentes: (porTabla.gastos_recurrentes ?? []) as GastoRecurrente[],
       /* Vacías para quien no es dueño: RLS las esconde. */
@@ -661,7 +663,7 @@ function ordenDeSiembra(e: EstadoApp): [string, unknown[]][] {
     ["campanias", e.campanias], ["metas", e.metas], ["campos", e.campos],
     ["ventas", e.ventas], ["cuotas", e.cuotas], ["movimientos", e.movimientos],
     ["pagos", e.pagos], ["devoluciones", e.devoluciones ?? []], ["gastos", e.gastos],
-    ["comentarios", e.comentarios ?? []], ["chat_lecturas", e.chatLecturas ?? []],
+    ["comentarios", e.comentarios ?? []], ["chat_lecturas", e.chatLecturas ?? []], ["fotos_perfil", e.fotosPerfil ?? []],
     ["arqueos", e.arqueos ?? []],
     ["traspasos", e.traspasos ?? []],
     ["gastos_recurrentes", e.gastosRecurrentes ?? []],
@@ -711,7 +713,7 @@ async function vaciarNube() {
      es, no borran nada (RLS) y no dan error. */
   const orden = [
     "liquidaciones", "honorarios",
-    "actividad", "chat_lecturas", "comentarios", "arqueos", "traspasos", "gastos_recurrentes", "campos", "metas", "devoluciones", "pagos", "movimientos", "cuotas", "ventas", "gastos",
+    "actividad", "fotos_perfil", "chat_lecturas", "comentarios", "arqueos", "traspasos", "gastos_recurrentes", "campos", "metas", "devoluciones", "pagos", "movimientos", "cuotas", "ventas", "gastos",
     "campanias", "reportes", "sesiones", "seguimiento_alumnos", "testimonios", "resells", "revisiones_cv", "alumnos", "leads", "contactos", "webinars",
     "etapas", "equipo", "embudos", "procesadores", "productos",
     "etapas_servicio",
@@ -1961,6 +1963,15 @@ export const acciones = {
     };
     guardar({ ...e, comentarios: [...(e.comentarios ?? []), c] });
     empujar({ tipo: "upsert", tabla: "comentarios", filas: [c] });
+  },
+
+  /** Mi foto de perfil (o, si soy dueño, la de otro del equipo). `foto` es la data URL ya recortada y achicada. */
+  ponerFoto(quien: string, nombre: string, foto: string): void {
+    if (!quien || !foto.startsWith("data:image/")) return;
+    const e = snapshot();
+    const fila: FotoPerfil = { id: quien, nombre, foto, actualizadoEn: ahora() };
+    guardar({ ...e, fotosPerfil: [fila, ...(e.fotosPerfil ?? []).filter((f) => f.id !== quien)] });
+    empujar({ tipo: "upsert", tabla: "fotos_perfil", filas: [fila] });
   },
 
   /** Abrí el chat de esta ficha: leí (y me llegó) hasta el último mensaje de otro. Los tildes de quien lo mandó se ponen azules. */

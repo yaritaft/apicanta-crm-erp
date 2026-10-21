@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   ArrowLeft, ArrowUp, Check, ChevronLeft, ChevronRight, Download, FileText, Loader2, MessageSquare, MessageSquareReply, Mic, Paperclip, Pause, Play, Reply, Smile, Trash2, X,
@@ -13,7 +13,8 @@ import { useUsuarioActual } from "@/lib/usuario";
 import {
   ADJUNTOS_POR_MENSAJE, descartarAdjunto, duracionLegible, normalizarPicos, problemaDeAdjunto, subirAdjunto, tamanioLegible, tipoDeArchivo, urlDeAdjunto,
 } from "@/lib/adjuntos-chat";
-import { claveDe, entregaDe, resumenDeMensaje, type DetalleEntrega } from "@/lib/chat-equipo";
+import { claveDe, contextoDeEntrega, entregaCon, resumenDeMensaje, type DetalleEntrega } from "@/lib/chat-equipo";
+import { fotoDe, mapaDeFotos } from "@/lib/fotos-perfil";
 import type { Adjunto, ChatLectura, Comentario } from "@/lib/types";
 import "./chat.css";
 
@@ -651,9 +652,12 @@ function ElegirEmoji({ ancla, onElegir, onCerrar }: { ancla: DOMRect; onElegir: 
     return !q.trim() && recientes.length ? [{ rot: "Recientes", lista: recientes.map((e) => ({ e, palabras: "" })) }, ...g] : g;
   }, [buscar, q, recientes]);
   const elegir = (e: string) => { anotarReciente(e); onElegir(e); };
-  const ANCHO = 320, ALTO = 360;
+  /* Siempre entera en la pantalla, con aire: abajo del botón si entra, si no arriba, y si no entra en ninguno, lo más arriba posible.
+     En el celular, angosta como la pantalla. */
+  const ANCHO = Math.min(320, window.innerWidth - 16), ALTO = Math.min(360, window.innerHeight - 24);
   const izquierda = Math.max(8, Math.min(window.innerWidth - ANCHO - 8, ancla.right - ANCHO));
-  const arriba = ancla.bottom + 6 + ALTO > window.innerHeight ? Math.max(8, ancla.top - ALTO - 6) : ancla.bottom + 6;
+  const arriba = ancla.bottom + 8 + ALTO <= window.innerHeight - 12 ? ancla.bottom + 6
+    : ancla.top - ALTO - 6 >= 12 ? ancla.top - ALTO - 6 : Math.max(12, window.innerHeight - ALTO - 12);
   return createPortal(
     <div ref={caja} className="chatx-emojis" role="dialog" aria-label="Reaccionar con un emoji" style={{ left: izquierda, top: arriba, width: ANCHO, height: ALTO }}>
       <input
@@ -709,6 +713,18 @@ function Reacciones({ c, yoEmail, yoNombre, onReaccionar }: { c: Comentario; yoE
   );
 }
 
+/* ¿El mensaje es sólo uno a tres emojis? (va grande). Cuenta por grafema: 👍🏽 y 👨‍👩‍👧 son uno solo. */
+const SOLO_EMOJI = /^(?:\p{Extended_Pictographic}|\p{Emoji_Modifier}|\p{Emoji_Component}|\u200d|\ufe0f)+$/u;
+function soloEmojis(texto: string): boolean {
+  const t = texto.replace(/\s+/g, "");
+  if (!t || t.length > 40 || !SOLO_EMOJI.test(t) || /^[\d#*]+$/.test(t)) return false;
+  const n = typeof Intl !== "undefined" && "Segmenter" in Intl ? [...new Intl.Segmenter("es", { granularity: "grapheme" }).segment(t)].length : t.length;
+  return n <= 3;
+}
+
+/* La foto de perfil de cada uno (lib/fotos-perfil.ts): la arma ChatEquipo una vez y la usan los mensajes, las caras de un hilo y quién leyó. */
+const FotosCtx = createContext<(email: string | null | undefined, nombre: string) => string | undefined>(() => undefined);
+
 /* ---------- La cita y los tildes ---------- */
 
 /* Lleva hasta un mensaje ya dibujado en la misma lista y lo prende un momento (como Blue OS, destellarMensaje). */
@@ -761,6 +777,7 @@ const QUE_DICE: Record<DetalleEntrega["estado"], string> = {
 
 /* Tocar los tildes muestra quién lo leyó, a quién le llegó y a quién todavía no (el «Info del mensaje» de WhatsApp). */
 function Tildes({ d }: { d: DetalleEntrega }) {
+  const foto = useContext(FotosCtx);
   const [abierto, setAbierto] = useState(false);
   const caja = useRef<HTMLSpanElement>(null);
   useEffect(() => {
@@ -791,7 +808,7 @@ function Tildes({ d }: { d: DetalleEntrega }) {
             : grupos.map((g) => (
               <span key={g.rot} className="chatx-info__grupo">
                 <span className={`chatx-info__rot ${g.cls}`}>{g.rot}</span>
-                {g.gente.map((n) => <span key={n} className="chatx-info__quien"><Avatar nombre={n} size={20} />{n}</span>)}
+                {g.gente.map((n) => <span key={n} className="chatx-info__quien"><Avatar nombre={n} size={20} foto={foto(undefined, n)} />{n}</span>)}
               </span>
             ))}
         </span>
@@ -814,6 +831,7 @@ function Mensaje({ c, esMio, respuestas, enHilo, seguido, onAbrirHilo, original,
   entrega?: DetalleEntrega;
 }) {
   const yo = useUsuarioActual();
+  const foto = useContext(FotosCtx);
   const [emojis, setEmojis] = useState<DOMRect | null>(null);
   const quienes = [...new Map(respuestas.map((r) => [r.autor, r] as const)).values()].slice(-3);
   const ultima = respuestas.at(-1);
@@ -823,7 +841,7 @@ function Mensaje({ c, esMio, respuestas, enHilo, seguido, onAbrirHilo, original,
   return (
     /* tabIndex -1: en el celular, tocar el mensaje le da el foco y así aparece su barra (no hay «pasar el mouse»). */
     <article tabIndex={-1} data-mensaje={c.id} className={`chatx-msj${seguido ? " chatx-msj--seguido" : ""}${emojis ? " chatx-msj--menu" : ""}${entrega ? " chatx-msj--con-tildes" : ""}`}>
-      <div className="chatx-msj__foto">{!seguido && <Avatar nombre={c.autor} size={32} />}</div>
+      <div className="chatx-msj__foto">{!seguido && <Avatar nombre={c.autor} size={32} foto={foto(c.autorEmail, c.autor)} />}</div>
       <div className="chatx-msj__cuerpo">
         {!seguido ? (
           <div className="chatx-msj__cabeza">
@@ -834,14 +852,14 @@ function Mensaje({ c, esMio, respuestas, enHilo, seguido, onAbrirHilo, original,
         {original !== undefined && <Cita original={original} />}
         {/* Las fotos y los archivos arriba y el texto siempre al final, como en WhatsApp (pedido de Juan Cruz, 20/10). */}
         {c.adjuntos?.length ? <Adjuntos lista={c.adjuntos} /> : null}
-        {c.texto && <p className="chatx-msj__texto">{c.texto}</p>}
+        {c.texto && <p className={`chatx-msj__texto${soloEmojis(c.texto) ? " chatx-msj__texto--emoji" : ""}`}>{c.texto}</p>}
         {entrega && <Tildes d={entrega} />}
         <Reacciones c={c} yoEmail={yo.email ?? undefined} yoNombre={yo.nombre} onReaccionar={reaccionar} />
         {!enHilo && respuestas.length > 0 && (
           <div className="chatx-hilo-pie">
             <span className="chatx-hilo-pie__curva" aria-hidden />
             <button type="button" onClick={onAbrirHilo} title="Ver el hilo">
-              <span className="chatx-hilo-pie__caras">{quienes.map((r) => <Avatar key={r.autor} nombre={r.autor} size={22} />)}</span>
+              <span className="chatx-hilo-pie__caras">{quienes.map((r) => <Avatar key={r.autor} nombre={r.autor} size={22} foto={foto(r.autorEmail, r.autor)} />)}</span>
               <span className="chatx-hilo-pie__n">{respuestas.length} {respuestas.length === 1 ? "respuesta" : "respuestas"}</span>
               {ultima && <span className="chatx-hilo-pie__cuando">Última respuesta {relativo(ultima.creadoEn)}</span>}
             </button>
@@ -882,7 +900,9 @@ function esSeguido(anterior: Comentario | undefined, c: Comentario, conHilo: boo
 export function ChatEquipo({ contactoId, comentarios: llegados, titulo = "Chat del equipo" }: { contactoId: string; comentarios: Comentario[]; titulo?: string }) {
   const yo = useUsuarioActual();
   const quien = claveDe(yo.email, yo.nombre);
-  const todasLasLecturas = useEstado().chatLecturas;
+  const estado = useEstado();
+  const fotos = useMemo(() => mapaDeFotos(estado.fotosPerfil, estado.equipo), [estado.fotosPerfil, estado.equipo]);
+  const buscarFoto = useCallback((email: string | null | undefined, nombre: string) => fotoDe(fotos, email, nombre), [fotos]);
   /* Re-dibuja cuando la cola termina de mandar: así el reloj pasa a tilde. */
   const sync = useSync();
   const fin = useRef<HTMLDivElement>(null);
@@ -898,7 +918,7 @@ export function ChatEquipo({ contactoId, comentarios: llegados, titulo = "Chat d
   /* En orden de llegada: lo que entra en vivo puede venir desordenado. */
   const comentarios = useMemo(() => [...llegados].sort((a, b) => +new Date(a.creadoEn) - +new Date(b.creadoEn)), [llegados]);
   const porId = useMemo(() => new Map(comentarios.map((c) => [c.id, c] as const)), [comentarios]);
-  const lecturas = useMemo((): ChatLectura[] => (todasLasLecturas ?? []).filter((l) => l.contactoId === contactoId), [todasLasLecturas, contactoId]);
+  const lecturas = useMemo((): ChatLectura[] => (estado.chatLecturas ?? []).filter((l) => l.contactoId === contactoId), [estado.chatLecturas, contactoId]);
 
   /* La conversación son los mensajes de arriba; las respuestas cuelgan de su original. Una respuesta cuyo original
      ya no está se muestra en la conversación, para no perderla. */
@@ -906,7 +926,7 @@ export function ChatEquipo({ contactoId, comentarios: llegados, titulo = "Chat d
     const de = new Map<string, Comentario[]>();
     const raices: Comentario[] = [];
     for (const c of comentarios) {
-      if (c.respondeA && porId.has(c.respondeA)) de.set(c.respondeA, [...(de.get(c.respondeA) ?? []), c]);
+      if (c.respondeA && porId.has(c.respondeA)) { const xs = de.get(c.respondeA); if (xs) xs.push(c); else de.set(c.respondeA, [c]); }
       else raices.push(c);
     }
     return { raices, respuestasDe: de };
@@ -947,8 +967,9 @@ export function ChatEquipo({ contactoId, comentarios: llegados, titulo = "Chat d
   }, [hilo, citaId, citaHiloId]);
 
   const esMio = (c: Comentario) => (yo.email ? c.autorEmail === yo.email : c.autor === yo.nombre);
+  const ctxEntrega = useMemo(() => contextoDeEntrega(comentarios, lecturas), [comentarios, lecturas]);
   const entrega = (c: Comentario): DetalleEntrega | undefined => (esMio(c)
-    ? entregaDe(c, comentarios, lecturas, { pendiente: escrituraPendiente("comentarios", c.id), error: sync.estado === "error" })
+    ? entregaCon(c, ctxEntrega, { pendiente: escrituraPendiente("comentarios", c.id), error: sync.estado === "error" })
     : undefined);
   /* undefined: no cita nada · null: el citado se borró. */
   const citadoDe = (c: Comentario) => (c.citaA ? porId.get(c.citaA) ?? null : undefined);
@@ -958,7 +979,7 @@ export function ChatEquipo({ contactoId, comentarios: llegados, titulo = "Chat d
   };
 
   return (
-    <>
+    <FotosCtx.Provider value={buscarFoto}>
       <div
         className={`chat${hilo ? " chat--con-hilo" : ""}${soltando ? " chat--soltando" : ""}`}
         onDragOver={(ev) => { if (Array.from(ev.dataTransfer.types).includes("Files")) { ev.preventDefault(); setSoltando(true); } }}
@@ -1017,6 +1038,6 @@ export function ChatEquipo({ contactoId, comentarios: llegados, titulo = "Chat d
 
         {soltando && <div className="chatx-soltar" aria-hidden><Paperclip size={20} />Soltá para adjuntar</div>}
       </div>
-    </>
+    </FotosCtx.Provider>
   );
 }

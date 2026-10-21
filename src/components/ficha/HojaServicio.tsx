@@ -2,7 +2,7 @@
 
 import { ContratoCard } from "@/components/contratos/ContratoCard";
 import { AccesosAlumno } from "@/components/contratos/AccesosAlumno";
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   BadgeCheck, Briefcase, CalendarCheck, CalendarClock, CalendarDays, CalendarPlus, Contact, CreditCard, FileSignature, Flag, GraduationCap,
   Hash, HeartHandshake, Home, IdCard, KeyRound, Layers, Link2, Mail, MapPin, MessageSquareText, Phone, PhoneCall, PhoneMissed, Plus,
@@ -113,6 +113,34 @@ function Bloque({ titulo, children }: { titulo?: string; children: React.ReactNo
 
 /* ---------- La hoja de un servicio ---------- */
 
+/* Las solapas, cuando no entran (la ficha angosta con el chat estirado, el celular), se deslizan de costado: un degradé avisa
+   de qué lado hay más (data-mas, hoja-servicio.css) y la elegida siempre queda a la vista. */
+function useSolapasQueSeDeslizan(elegida: string) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const medir = () => {
+      const izq = el.scrollLeft > 4, der = el.scrollLeft + el.clientWidth < el.scrollWidth - 4;
+      if (izq || der) el.dataset.mas = izq && der ? "ambos" : izq ? "izq" : "der";
+      else delete el.dataset.mas;
+    };
+    medir();
+    el.addEventListener("scroll", medir, { passive: true });
+    const ro = new ResizeObserver(medir);
+    ro.observe(el);
+    return () => { el.removeEventListener("scroll", medir); ro.disconnect(); };
+  }, []);
+  useEffect(() => {
+    const el = ref.current, tab = el?.querySelector<HTMLElement>('[aria-selected="true"]');
+    if (!el || !tab) return;
+    const izq = tab.offsetLeft - 24, der = tab.offsetLeft + tab.offsetWidth + 24 - el.clientWidth;
+    if (el.scrollLeft > izq) el.scrollLeft = izq;
+    else if (el.scrollLeft < der) el.scrollLeft = der;
+  }, [elegida]);
+  return ref;
+}
+
 function HojaDeUnServicio({ e, p, f, venta, producto, conChat }: {
   e: EstadoApp; p: Persona; f: FilaCliente; venta?: Venta; producto: string; conChat: boolean;
 }) {
@@ -126,6 +154,7 @@ function HojaDeUnServicio({ e, p, f, venta, producto, conChat }: {
   const filas = useMemo(() => filasClientes(e, hoy), [e, hoy]);
   const { listas, opcionesDe, sugerenciasDe, guardar } = useEdicionCliente(filas, hoy);
   const [solapa, setSolapa] = useState<Solapa>("programa");
+  const solapasRef = useSolapasQueSeDeslizan(solapa);
   const [editando, setEditando] = useState<ClaveCliente | "programa" | null>(null);
   const [editarAlumno, setEditarAlumno] = useState<Alumno | null>(null);
   const alumno = f.alumno;
@@ -247,7 +276,7 @@ function HojaDeUnServicio({ e, p, f, venta, producto, conChat }: {
         </div>
       )}
 
-      <div className="hs-solapas" role="tablist" aria-label="Qué ver del servicio">
+      <div ref={solapasRef} className="hs-solapas" role="tablist" aria-label="Qué ver del servicio">
         {solapas.map((s) => {
           const n = s.id === "datos" ? faltanEn(DE_DATOS) : s.id === "programa" ? faltanEn(DE_PROGRAMA) : s.id === "seguimiento" ? faltanEn(["followUp"]) : 0;
           return (

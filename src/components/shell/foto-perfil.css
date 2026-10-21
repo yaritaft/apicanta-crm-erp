@@ -1,0 +1,45 @@
+/* La foto de perfil (FotoDePerfil): una ventana chica en el medio, con la foto redonda grande arriba. */
+
+.fp-fondo {
+  position: fixed; inset: 0; z-index: 420; display: grid; place-items: center; padding: 16px;
+  background: var(--overlay); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); animation: fade 160ms ease-out;
+}
+.fp-caja {
+  position: relative; display: flex; flex-direction: column; align-items: center; gap: 10px; width: min(420px, 100%); padding: 32px 28px 24px;
+  border-radius: 24px; background: var(--surface-000); border: 1px solid var(--border-strong); box-shadow: var(--shadow-lg); text-align: center;
+}
+.fp-x { position: absolute; top: 12px; right: 12px; display: grid; place-items: center; width: 34px; height: 34px; padding: 0; border: 0; border-radius: 999px; background: none; color: var(--ink-subtle); cursor: pointer; }
+.fp-x:hover { color: var(--ink); background: var(--surface-200); }
+
+.fp-foto {
+  position: relative; display: grid; place-items: center; width: 132px; height: 132px; margin-bottom: 6px; padding: 0; border-radius: 999px; cursor: pointer;
+  border: 2px dashed color-mix(in srgb, var(--brand) 55%, transparent); background: color-mix(in srgb, var(--brand) 10%, transparent); color: var(--brand);
+  overflow: visible; transition: border-color 140ms ease-out, background 140ms ease-out, transform 140ms ease-out;
+}
+.fp-foto:hover:not(:disabled), .fp-foto--encima { border-color: var(--brand); background: color-mix(in srgb, var(--brand) 16%, transparent); transform: scale(1.02); }
+.fp-foto:focus { outline: none; }
+.fp-foto:focus-visible { outline: 2px solid var(--focus); outline-offset: 4px; }
+.fp-foto img { width: 100%; height: 100%; border-radius: 999px; object-fit: cover; }
+.fp-foto:has(img) { border-style: solid; border-color: var(--surface-000); box-shadow: 0 0 0 2px var(--brand); }
+.fp-foto__vacia { display: flex; flex-direction: column; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; }
+.fp-foto__cambiar {
+  position: absolute; right: 2px; bottom: 2px; display: grid; place-items: center; width: 34px; height: 34px; border-radius: 999px;
+  color: var(--on-brand); background: var(--brand-fill); border: 3px solid var(--surface-000);
+}
+
+.fp-tit { margin: 4px 0 0; font-size: 20px; line-height: 26px; font-weight: 700; letter-spacing: -0.01em; color: var(--ink); }
+.fp-texto { margin: 0; font-size: 14px; line-height: 21px; color: var(--ink-muted); }
+.fp-error { margin: 2px 0 0; padding: 8px 12px; border-radius: 10px; font-size: 13px; line-height: 19px; color: var(--danger); background: color-mix(in srgb, var(--danger) 10%, transparent); }
+.fp-acc { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-top: 8px; }
+.fp-ayuda { margin: 4px 0 0; font-size: 12px; line-height: 17px; color: var(--ink-subtle); }
+
+/* Abajo a la izquierda: tocar tu foto la cambia. */
+.fp-yo { position: relative; padding: 0; border: 0; border-radius: 999px; background: none; cursor: pointer; flex: none; }
+.fp-yo::after {
+  content: ""; position: absolute; inset: 0; border-radius: 999px; background: rgba(0, 0, 0, 0.45) center / 16px no-repeat
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z'/%3E%3Ccircle cx='12' cy='13' r='3'/%3E%3C/svg%3E");
+  opacity: 0; transition: opacity 140ms ease-out;
+}
+.fp-yo:hover::after, .fp-yo:focus-visible::after { opacity: 1; }
+.fp-yo:focus { outline: none; }
+.fp-yo:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }

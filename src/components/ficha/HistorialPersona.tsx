@@ -69,7 +69,7 @@ export function HistorialPersona({ e, p }: { e: EstadoApp; p: Persona }) {
       const closer = e.equipo.find((x) => x.id === v.closerId)?.nombre;
       out.push({
         fecha: v.fecha, icono: <ShoppingBag size={15} />, titulo: `Compró ${producto}`,
-        detalle: [money(v.precioAcordado, v.moneda), closer ? `cerró ${closer}` : ""].filter(Boolean).join(" · "),
+        detalle: [v.precioAcordado > 0 ? money(v.precioAcordado, v.moneda) : "", closer ? `cerró ${closer}` : ""].filter(Boolean).join(" · "),
         tono: "accent",
       });
       const cuotas = e.cuotas.filter((c) => c.ventaId === v.id);

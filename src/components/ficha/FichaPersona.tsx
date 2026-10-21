@@ -68,7 +68,7 @@ export function FichaPersona({ id, vista, ventaResaltada, onCerrar, onVista }: {
   /* En una pantalla ancha el chat va en su propia columna, siempre a la vista; en una angosta, como una solapa más. */
   const conChat = useAnchoMinimo(1200);
   /* La línea entre la ficha y el chat se arrastra (como en Blue OS); el ancho del chat queda guardado en este navegador. */
-  const anchoChat = useAnchoPanel({ variable: "--chat-w", clave: "apicanta:ficha:ancho-chat", min: 280, minResto: 320 + 420 });
+  const anchoChat = useAnchoPanel({ variable: "--chat-w", clave: "apicanta:ficha:ancho-chat", min: 280, minResto: 320 + 480 });
 
   /* Esc cierra, salvo que haya algo abierto encima (un pago, un desplegable,
      el asistente de venta): eso se cierra primero. */

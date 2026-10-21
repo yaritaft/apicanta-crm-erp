@@ -27,7 +27,7 @@ const DEL_SERVIDOR = ["registros_webinar", "whatsapp_lector", "whatsapp_grupos",
 
 /* Qué colección del estado es cada tabla (lo que no coincide por nombre). */
 const CLAVE_DE_TABLA: Record<string, string> = {
-  seguimiento_alumnos: "seguimientos", gastos_recurrentes: "gastosRecurrentes", revisiones_cv: "revisionesCv", ad_insights: "adInsights", chat_lecturas: "chatLecturas",
+  seguimiento_alumnos: "seguimientos", gastos_recurrentes: "gastosRecurrentes", revisiones_cv: "revisionesCv", ad_insights: "adInsights", chat_lecturas: "chatLecturas", fotos_perfil: "fotosPerfil",
   etapas_servicio: "etapasServicio", tipos_cuenta: "tiposCuenta",
 };
 
@@ -162,7 +162,7 @@ test("cada tabla con LEEN/EDITAN existe en TABLAS o es una tabla del servidor co
 
 test("las tablas de TABLAS que no están en EDITAN son las de «sólo dueños», y ahí la base dice lo mismo", () => {
   /* chat_lecturas: cada uno escribe sólo la suya (los tildes del chat, supabase/chat-adjuntos.sql). */
-  const LIBRES = new Set(["actividad", "preferencias", "chat_lecturas"]);
+  const LIBRES = new Set(["actividad", "preferencias", "chat_lecturas", "fotos_perfil"]);
   const sinEditan = (TABLAS as readonly string[]).filter((t) => !(t in EDITAN) && !LIBRES.has(t)).sort();
   assert.deepEqual(sinEditan, ["equipo", "honorarios", "liquidaciones", "tipos_cuenta"], "cambió el conjunto de tablas que sólo escribe un dueño");
   const tc = archivosSql().find((a) => a.nombre === "supabase/tipos-cuenta.sql")!.texto;
@@ -173,7 +173,7 @@ test("las tablas de TABLAS que no están en EDITAN son las de «sólo dueños»,
 test("lo que sólo escriben los dueños y se siembra tiene que estar en TABLAS_DE_DUENOS (si no, restaurar siendo otro tipo de cuenta corta la siembra)", () => {
   /* La UI sólo deja restaurar al dueño (Ajustes → Datos), así que hoy no se llega. Pero el store no lo verifica:
      la regla «las de dueños se saltean» es la que impide dejar la base a la mitad. */
-  const soloDuenos = (TABLAS as readonly string[]).filter((t) => !(t in EDITAN) && t !== "actividad" && t !== "chat_lecturas");
+  const soloDuenos = (TABLAS as readonly string[]).filter((t) => !(t in EDITAN) && t !== "actividad" && t !== "chat_lecturas" && t !== "fotos_perfil");
   const faltan = soloDuenos.filter((t) => SIEMBRA.some((s) => s.tabla === t) && !TABLAS_DE_DUENOS.has(t));
   assert.deepEqual(faltan, ["equipo"], "si esto cambia, actualizá el test y el hallazgo");
 });

@@ -88,8 +88,8 @@ test("el buscador de lecturas sin guarda marca el uso de una colección opcional
   }
 });
 
-test("las colecciones opcionales (seguimientos, testimonios, resells, revisionesCv, gastosRecurrentes, chatLecturas) siempre se leen con ?? []", () => {
-  assert.deepEqual([...OPCIONALES].sort(), ["chatLecturas", "gastosRecurrentes", "resells", "revisionesCv", "seguimientos", "testimonios"], "cambió el conjunto de colecciones opcionales: revisá cada lugar que las lee");
+test("las colecciones opcionales (seguimientos, testimonios, resells, revisionesCv, gastosRecurrentes, chatLecturas, fotosPerfil) siempre se leen con ?? []", () => {
+  assert.deepEqual([...OPCIONALES].sort(), ["chatLecturas", "fotosPerfil", "gastosRecurrentes", "resells", "revisionesCv", "seguimientos", "testimonios"], "cambió el conjunto de colecciones opcionales: revisá cada lugar que las lee");
   const sinGuarda: string[] = [];
   const recorrer = (dir: string) => {
     for (const f of readdirSync(dir)) {

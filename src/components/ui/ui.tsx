@@ -221,10 +221,12 @@ export function Tabs<T extends string>({ valor, onChange, opciones }: {
 
 /* ---------------- Avatar / Persona ---------------- */
 
-export function Avatar({ nombre, size = 32 }: { nombre: string; size?: number }) {
+/* Con `foto` (la de perfil, lib/fotos-perfil.ts) va la foto; sin ella, las iniciales. */
+export function Avatar({ nombre, size = 32, foto }: { nombre: string; size?: number; foto?: string | null }) {
   return (
-    <span className="hk-avatar" style={{ width: size, height: size, fontSize: size < 30 ? 11 : 12 }}>
-      {iniciales(nombre)}
+    <span className={`hk-avatar${foto ? " hk-avatar--foto" : ""}`} style={{ width: size, height: size, fontSize: size < 30 ? 11 : 12 }} title={foto ? nombre : undefined}>
+      {/* eslint-disable-next-line @next/next/no-img-element -- data URL chica: next/image no aplica */}
+      {foto ? <img src={foto} alt={nombre} draggable={false} /> : iniciales(nombre)}
     </span>
   );
 }
