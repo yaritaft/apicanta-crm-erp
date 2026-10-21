@@ -151,7 +151,8 @@ export async function pdfDocumento(modo: ModoContrato, id: string, firmado: bool
 
 /* ---------- El aviso (webhook) ---------- */
 
-export const EVENTOS_AVISO = ["document_state_changed", "recipient_completed", "document_deleted"];
+/* document_completed_pdf_ready: el PDF firmado tarda unos segundos en generarse después de la firma (antes, 409). */
+export const EVENTOS_AVISO = ["document_state_changed", "recipient_completed", "document_completed_pdf_ready", "document_deleted"];
 
 export async function crearSuscripcion(modo: ModoContrato, url: string): Promise<{ id: string; clave: string }> {
   const j = await json<{ uuid?: string; shared_key?: string }>(await pd(modo, "/webhook-subscriptions", {

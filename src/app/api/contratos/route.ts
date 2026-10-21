@@ -48,6 +48,7 @@ function datosLimpios(d: Partial<DatosContrato> | undefined): DatosContrato {
     sesiones: typeof d?.sesiones === "number" && Number.isFinite(d.sesiones) ? Math.max(0, Math.round(d.sesiones)) : null,
     bonos: Array.isArray(d?.bonos) ? d!.bonos!.map(t).filter(Boolean) : [],
     fecha: /^\d{4}-\d{2}-\d{2}$/.test(t(d?.fecha)) ? t(d?.fecha) : diaDeNegocio(new Date().toISOString()),
+    inicio: /^\d{4}-\d{2}-\d{2}$/.test(t(d?.inicio)) ? t(d?.inicio) : undefined,
   };
 }
 

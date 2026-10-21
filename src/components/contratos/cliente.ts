@@ -76,7 +76,7 @@ export function datosDeVenta(e: EstadoApp, venta: Pick<Venta, "id" | "contactoId
       domicilio: seg?.domicilio ?? "",
       pais: persona.pais,
       modalidad: modalidadDeCuotas(plan, venta.moneda || "USD"),
-      sesiones: seg?.sesionesMentor ?? null,
+      sesiones: seg?.sesionesMentor ?? 0,
       bonos: [],
       fecha: diaDeNegocio(new Date().toISOString()),
     },

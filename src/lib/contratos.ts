@@ -37,6 +37,9 @@ export interface DatosContrato {
   bonos: string[];
   /* El día del contrato (2026-10-20). */
   fecha: string;
+  /* Cuándo arranca el servicio (Manu, 20/10: «si hoy paga y quiere empezar en una semana, va la fecha de una
+     semana adelante»). Sin dato, el día del contrato. Al firmar pasa a ser el inicio del alumno. */
+  inicio?: string;
 }
 
 export interface Contrato {
@@ -185,6 +188,7 @@ export function variablesDelContrato(d: Partial<DatosContrato>, programa: string
     ["Cliente.Telefono", d.telefono ?? ""],
     ["Cliente.Pais", d.pais ?? ""],
     ["Contrato.Fecha", fechaContrato(d.fecha)],
+    ["Contrato.Inicio", fechaContrato(d.inicio || d.fecha)],
     ["Venta.Modalidad", d.modalidad ?? ""],
     ["Venta.Sesiones", textoSesiones(d.sesiones)],
     ["Venta.Bonos", textoBonos(d.bonos)],
@@ -209,7 +213,9 @@ export function relleno(variables: { name: string; value: string }[], plantilla:
     const tipo = campos.get(v.name);
     if (!tipo || !v.value) continue;
     /* Un campo de fecha recibe el día en ISO; el formato lo pone la plantilla. */
-    fields[v.name] = { value: tipo === "date" ? (fecha && /^\d{4}-\d{2}-\d{2}$/.test(fecha) ? `${fecha}T12:00:00.000Z` : v.value) : v.value };
+    const dia = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(v.value);
+    const iso = dia ? `${dia[3]}-${dia[2]}-${dia[1]}` : fecha;
+    fields[v.name] = { value: tipo === "date" ? (iso && /^\d{4}-\d{2}-\d{2}$/.test(iso) ? `${iso}T12:00:00.000Z` : v.value) : v.value };
   }
   return { tokens: variables.filter((v) => tokensDe.has(v.name)), fields };
 }

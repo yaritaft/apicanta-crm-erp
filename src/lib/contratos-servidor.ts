@@ -221,8 +221,17 @@ async function aplicarDetalle(db: SupabaseClient, c: Contrato, det: Record<strin
     if (nuevo === "anulado") cambios.anuladoEn = c.anuladoEn ?? ahora();
     if (nuevo === "firmado" || nuevo === "anulado" || nuevo === "rechazado") cambios.enlace = null;
   }
-  await guardar(db, c.id, cambios);
-  if (cambios.estado && cambios.estado !== "borrador" && cambios.estado !== "creando") {
+  /* El cambio de estado se escribe sólo si la fila sigue como la leímos: dos avisos juntos (el del documento y el
+     del destinatario) no anotan dos veces «lo firmó». */
+  let cambio = Boolean(cambios.estado);
+  if (cambios.estado) {
+    const r = await db.from("contratos").update({ ...cambios, actualizadoEn: ahora() }).eq("id", c.id).eq("estado", c.estado).select("id");
+    cambio = Boolean(r.data?.length);
+    if (!cambio) await guardar(db, c.id, { sincronizadoEn: ahora() });
+  } else {
+    await guardar(db, c.id, cambios);
+  }
+  if (cambio && cambios.estado && cambios.estado !== "borrador" && cambios.estado !== "creando") {
     await evento(db, c.id, cambios.estado, cambios.estado === "firmado" ? (c.destinatario.nombre ?? "El alumno") : "PandaDoc", origen);
   }
   const actual = (await contratoPorId(db, c.id))!;
@@ -241,13 +250,19 @@ export async function alFirmar(db: SupabaseClient, c: Contrato): Promise<{ acces
       const up = await db.storage.from("contratos").upload(ruta, Buffer.from(pdf), { contentType: "application/pdf", upsert: true });
       if (!up.error) await guardar(db, c.id, { pdfPath: ruta });
       else console.error("[contratos] no se guardó el PDF", c.id, up.error.message);
-    } catch (e) { console.error("[contratos] no se bajó el PDF", c.id, mensajeDe(e)); }
+    } catch (e) {
+      /* 409: PandaDoc todavía está generando el PDF. Lo trae el aviso «PDF listo» o la pasada de cada hora. */
+      if (!(e instanceof ErrorPandadoc && e.status === 409)) console.error("[contratos] no se bajó el PDF", c.id, mensajeDe(e));
+    }
   }
 
   const alumnoId = await alumnoDelContrato(db, c);
   if (alumnoId && c.alumnoId !== alumnoId) await guardar(db, c.id, { alumnoId });
   if (alumnoId && c.modo === "produccion") {
     await db.from("seguimiento_alumnos").update({ contratoFirmado: "Firmado", estadoContrato: "Firmado en PandaDoc" }).eq("alumnoId", alumnoId);
+    /* El servicio arranca cuando dice el contrato (puede ser una semana después del pago). */
+    const inicio = typeof c.datos.inicio === "string" && /^\d{4}-\d{2}-\d{2}$/.test(c.datos.inicio) ? c.datos.inicio : null;
+    if (inicio) await db.from("alumnos").update({ inicio }).eq("id", alumnoId);
   }
 
   if (c.accesosEn) return { accesos: null };
@@ -294,6 +309,9 @@ export async function alumnoDelContrato(db: SupabaseClient, c: Pick<Contrato, "a
 /** El aviso de un documento que no salió de la app: si es de la plantilla de un programa, se anota (por el mail del alumno). */
 export async function contratoDeAfuera(db: SupabaseClient, documentoId: string, modo: ModoContrato): Promise<Contrato | null> {
   const det = await detalleDocumento(modo, documentoId);
+  /* Uno armado por la app trae su id: su fila ya existe (o se está escribiendo). No es «de afuera». */
+  const meta = (det.metadata ?? {}) as Record<string, unknown>;
+  if (typeof meta.apicanta_contrato === "string" && meta.apicanta_contrato) return null;
   const plantilla = (det.template ?? {}) as { id?: string; name?: string };
   const { programas } = await programasGuardados(db);
   const programa = programas.find((p) => p.plantillaId && p.plantillaId === plantilla.id);
@@ -305,7 +323,7 @@ export async function contratoDeAfuera(db: SupabaseClient, documentoId: string, 
   const id = nuevoId("ctr");
   const ins = await db.from("contratos").insert({
     id, leadId: lead ?? null, programa: programa.id, plantillaId: programa.plantillaId, plantillaNombre: plantilla.name ?? programa.plantillaNombre,
-    documentoId, modo, estado: "enviado", origen: "pandadoc", creadoPor: "PandaDoc",
+    documentoId, modo, estado: estadoDePandadoc(typeof det.status === "string" ? det.status : "") ?? "enviado", origen: "pandadoc", creadoPor: "PandaDoc",
     destinatario: { nombre: [alumno?.first_name, alumno?.last_name].filter(Boolean).join(" "), email, telefono: alumno?.phone ?? "" },
     datos: {}, enviadoEn: typeof det.date_sent === "string" ? det.date_sent : ahora(),
   });

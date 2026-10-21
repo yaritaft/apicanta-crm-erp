@@ -185,3 +185,14 @@ test("el relleno: variables que la plantilla tiene y campos con «merge field» 
   assert.equal((c.tokens as unknown[]).length, vars.length);
   assert.equal("fields" in c, false);
 });
+
+test("la fecha de inicio del servicio: sin dato es la del contrato; si arranca después, va esa (Manu, 20/10)", async () => {
+  const { relleno } = await import("@/lib/contratos");
+  const sin = Object.fromEntries(variablesDelContrato(DATOS, "Hackear AI").map((x) => [x.name, x.value]));
+  assert.equal(sin["Contrato.Inicio"], "20/10/2026");
+  const conInicio = variablesDelContrato({ ...DATOS, inicio: "2026-10-27" }, "Hackear AI");
+  assert.equal(Object.fromEntries(conInicio.map((x) => [x.name, x.value]))["Contrato.Inicio"], "27/10/2026");
+  /* Como campo de fecha con «merge field», va su propio día (no el del contrato). */
+  const r = relleno(conInicio, { fields: [{ merge_field: "Contrato.Inicio", type: "date" }] }, DATOS.fecha);
+  assert.deepEqual(r.fields, { "Contrato.Inicio": { value: "2026-10-27T12:00:00.000Z" } });
+});

@@ -65,23 +65,25 @@ export function DatosDelContrato({ datos, onCambio, programas, programaId, onPro
       <Field label="Modalidad de pago" ayuda="Sale del plan de cuotas; se puede escribir distinto." span2>
         <Input value={datos.modalidad} onChange={(ev) => onCambio({ modalidad: ev.target.value })} placeholder="Tres pagos de 1.000 USD" />
       </Field>
-      <Field label="Sesiones 1 a 1 con el mentor">
+      <Field label="Sesiones 1 a 1 con el mentor" ayuda="Sólo si se las diste para cerrar la venta.">
         <Select
           value={datos.sesiones === null ? "" : String(datos.sesiones)}
           onChange={(ev) => onCambio({ sesiones: ev.target.value === "" ? null : Number(ev.target.value) })}
           opciones={SESIONES}
         />
       </Field>
-      <Field label="Fecha del contrato">
-        <Input type="date" value={datos.fecha} onChange={(ev) => onCambio({ fecha: ev.target.value })} />
+      <Field label="Inicio del servicio" ayuda="Si quiere arrancar más adelante (por ejemplo, en una semana), poné ese día.">
+        <Input type="date" value={datos.inicio || datos.fecha} onChange={(ev) => onCambio({ inicio: ev.target.value })} />
       </Field>
-      <Field label="Bonos" ayuda={bonos.length ? "Tocá los que van en el contrato." : "Este programa todavía no tiene bonos cargados (Ajustes → Integraciones → Programas)."} span2>
-        {bonos.length > 0 && (
+      {/* Hoy el único «bono» que da el closer son las sesiones 1 a 1 (Manu, 20/10). Si un programa tiene bonos
+          cargados en Ajustes, aparecen acá para elegirlos. */}
+      {bonos.length > 0 && (
+        <Field label="Bonos" ayuda="Tocá los que van en el contrato." span2>
           <div className="row-wrap" style={{ gap: 6 }}>
             {bonos.map((b) => <Chip key={b} activo={datos.bonos.includes(b)} onClick={() => alternarBono(b)}>{b}</Chip>)}
           </div>
-        )}
-      </Field>
+        </Field>
+      )}
     </div>
   );
 }

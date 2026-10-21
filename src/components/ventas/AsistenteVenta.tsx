@@ -1084,7 +1084,7 @@ function PasoContrato({ b, setB, e, esDueno, modo, encendido }: {
       domicilio: seg?.domicilio ?? "",
       pais: (b.contactoPais || contacto?.pais || lead?.pais || "").trim(),
       modalidad: modalidadDeCuotas(b.cuotas, e.ajustes.monedaBase || "USD"),
-      sesiones: seg?.sesionesMentor ?? null,
+      sesiones: seg?.sesionesMentor ?? 0,
       bonos: [],
       fecha: diaDeNegocio(new Date().toISOString()),
     };
