@@ -51,7 +51,7 @@ import "./hoja-servicio.css";
    Un servicio por compra: si compró más de una vez, se elige arriba cuál.
    ================================================================== */
 
-type Solapa = "programa" | "datos" | "seguimiento" | "testimonio" | "cv" | "reportes" | "historial" | "chat";
+type Solapa = "programa" | "contrato" | "accesos" | "datos" | "seguimiento" | "testimonio" | "cv" | "reportes" | "historial" | "chat";
 
 /* Los datos que cuentan para «Faltan N»: los que Lili tiene que tener de cada alumno. */
 const CUENTAN: ClaveCliente[] = [
@@ -230,6 +230,8 @@ function HojaDeUnServicio({ e, p, f, venta, producto, conChat }: {
 
   const solapas: { id: Solapa; texto: string; n?: number }[] = [
     { id: "programa", texto: "Programa" },
+    { id: "contrato", texto: "Contrato" },
+    { id: "accesos", texto: "Accesos" },
     { id: "datos", texto: "Datos" },
     { id: "seguimiento", texto: "Seguimiento" },
     { id: "testimonio", texto: "Testimonio", n: testimonios.length + resells.length },
@@ -240,7 +242,7 @@ function HojaDeUnServicio({ e, p, f, venta, producto, conChat }: {
   ];
   const faltanEn = (claves: ClaveCliente[]) => claves.filter((c) => CUENTAN.includes(c) && estaVacio(f, c)).length;
   const DE_DATOS: ClaveCliente[] = ["nombre", "email", "telefono", "pais", "edad", "dni", "domicilio"];
-  const DE_PROGRAMA: ClaveCliente[] = ["programa", "inicio", "plan", "duracion", "acceso", "stack", "contrato"];
+  const DE_PROGRAMA: ClaveCliente[] = ["programa", "inicio", "plan", "duracion", "stack"];
 
   return (
     <div className="hs">
@@ -278,7 +280,8 @@ function HojaDeUnServicio({ e, p, f, venta, producto, conChat }: {
 
       <div ref={solapasRef} className="hs-solapas" role="tablist" aria-label="Qué ver del servicio">
         {solapas.map((s) => {
-          const n = s.id === "datos" ? faltanEn(DE_DATOS) : s.id === "programa" ? faltanEn(DE_PROGRAMA) : s.id === "seguimiento" ? faltanEn(["followUp"]) : 0;
+          const n = s.id === "datos" ? faltanEn(DE_DATOS) : s.id === "programa" ? faltanEn(DE_PROGRAMA) : s.id === "seguimiento" ? faltanEn(["followUp"])
+            : s.id === "contrato" ? faltanEn(["contrato"]) : s.id === "accesos" ? faltanEn(["acceso"]) : 0;
           return (
             <button key={s.id} type="button" role="tab" aria-selected={solapa === s.id} className="hs-solapa" onClick={() => setSolapa(s.id)}>
               {s.texto}
@@ -300,18 +303,8 @@ function HojaDeUnServicio({ e, p, f, venta, producto, conChat }: {
             {dato("mentor", false)}
             {dato("garantia", false)}
             {dato("closer", false)}
-          </Bloque>
-          <Bloque titulo="Accesos y contrato">
-            {dato("acceso")}
             {dato("stack")}
           </Bloque>
-          {/* El contrato de PandaDoc y los accesos (Wisboo, Telegram, Zoom), siempre a la vista: lo que hizo la app y,
-              donde todavía no hizo nada, lo marcado a mano en la ficha (con su editor de siempre). Los botones
-              (mandar, dar accesos, quitar) aparecen cuando se prenden en Ajustes. */}
-          <ContratoCard venta={venta} alumnoId={alumno.id}
-            manual={<>{dato("contrato")}{dato("estadoContrato", false)}</>} />
-          <AccesosAlumno alumno={alumno} venta={venta}
-            manual={{ wisboo: dato("wibo", false), zoom: dato("zoom", false), whatsapp: f.wpp ? dato("wpp", false) : undefined }} />
           <Bloque titulo="En la app">
             <Fila icono={<HeartHandshake size={15} />} rotulo="Etapa del servicio" ayuda="El pipeline de servicio (Alumnos → Pipeline)">
               {puedeAlumno ? (
@@ -360,6 +353,21 @@ function HojaDeUnServicio({ e, p, f, venta, producto, conChat }: {
               </div>
             </Bloque>
           )}
+        </>
+      )}
+
+      {/* El contrato de PandaDoc y los accesos (Wisboo, Telegram, Zoom), cada uno en su solapa y con las mismas filas
+          (Juan Cruz, 21/10): lo que hizo la app y, donde todavía no hizo nada, lo marcado a mano en la ficha (con su
+          editor de siempre). Los botones (mandar, dar accesos, quitar) aparecen cuando se prenden en Ajustes. */}
+      {solapa === "contrato" && (
+        <ContratoCard forma="hoja" venta={venta} alumnoId={alumno.id}
+          manual={<>{dato("contrato")}{dato("estadoContrato", false)}</>} />
+      )}
+      {solapa === "accesos" && (
+        <>
+          <AccesosAlumno forma="hoja" alumno={alumno} venta={venta}
+            manual={{ wisboo: dato("wibo", false), zoom: dato("zoom", false), whatsapp: f.wpp ? dato("wpp", false) : undefined }} />
+          <Bloque titulo="Marcado a mano">{dato("acceso")}</Bloque>
         </>
       )}
 

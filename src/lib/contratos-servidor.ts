@@ -276,7 +276,8 @@ export async function alFirmar(db: SupabaseClient, c: Contrato): Promise<{ acces
   if (alumnoId && c.modo === "produccion") {
     await db.from("seguimiento_alumnos").update({ contratoFirmado: "Firmado", estadoContrato: "Firmado en PandaDoc" }).eq("alumnoId", alumnoId);
     /* El servicio arranca cuando dice el contrato (puede ser una semana después del pago). */
-    const inicio = typeof c.datos.inicio === "string" && /^\d{4}-\d{2}-\d{2}$/.test(c.datos.inicio) ? c.datos.inicio : null;
+    /* A las 12 de Argentina: «2026-10-26» a secas es la medianoche UTC, que en Argentina todavía es el 25. */
+    const inicio = typeof c.datos.inicio === "string" && /^\d{4}-\d{2}-\d{2}$/.test(c.datos.inicio) ? `${c.datos.inicio}T15:00:00.000Z` : null;
     if (inicio) await db.from("alumnos").update({ inicio }).eq("id", alumnoId);
   }
 

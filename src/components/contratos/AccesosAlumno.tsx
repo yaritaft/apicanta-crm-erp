@@ -14,6 +14,7 @@ import { programaDeProducto, programasDe } from "@/lib/programas";
 import type { Alumno, Venta } from "@/lib/types";
 import type { Acceso, EstadoAcceso, Plataforma } from "@/lib/accesos-servidor";
 import { contratosPrendidos } from "./cliente";
+import { AccionesServicio, BloqueServicio, FilaServicio } from "@/components/ficha/FilaServicio";
 
 /* ==================================================================
    Los accesos de un alumno (el Loom de Yari), en la ficha → Servicio:
@@ -26,6 +27,8 @@ import { contratosPrendidos } from "./cliente";
      editor de siempre (`manual`, lo pasa la vista Servicio).
    Los botones (dar accesos, reintentar, quitar, el outboarding) aparecen
    cuando los contratos y accesos están prendidos en Ajustes.
+   Dos formas: «tarjeta» y «hoja» (la solapa Accesos de la ficha →
+   Servicio: un bloque por plataforma con las mismas filas de la hoja).
    ================================================================== */
 
 const ESTADO: Record<EstadoAcceso, { texto: string; variante: VarianteBadge }> = {
@@ -51,6 +54,23 @@ function FilaPlataforma({ icono, rotulo, children }: { icono: React.ReactNode; r
   );
 }
 
+/* El estado de un acceso: un link de Telegram que todavía no se usó es ámbar (falta que entre). */
+function estadoDe(x: Acceso): { texto: string; variante: VarianteBadge } {
+  if (x.plataforma === "telegram" && x.estado === "dado") return { texto: "Falta que entre", variante: "warning" };
+  if (x.plataforma === "telegram" && x.estado === "entro") return { texto: "Está en el grupo", variante: "success" };
+  if (x.plataforma === "zoom" && x.estado === "dado") return { texto: "Inscripto", variante: "success" };
+  return ESTADO[x.estado];
+}
+
+/* Debajo del nombre: cuándo y cómo se dio (o se quitó), o el error. */
+function detalleDe(x: Acceso): string {
+  if (x.estado === "fallo") return x.error ?? "No se pudo dar";
+  if (x.estado === "quitado" && x.quitadoEn) return `Quitado ${relativo(x.quitadoEn)}`;
+  if (x.estado === "entro") return `Entró${typeof x.externo.telegramUsuario === "string" ? ` como @${x.externo.telegramUsuario}` : ""}`;
+  if (!x.dadoEn) return "";
+  return `${x.plataforma === "telegram" ? "Link generado" : x.plataforma === "zoom" ? "Inscripto" : "Dado"} ${relativo(x.dadoEn)}${x.origen === "manual" ? " a mano" : " al firmar"}`;
+}
+
 /* El estado de una plataforma entera: lo peor manda (un error se ve aunque otro curso esté bien). */
 function resumen(xs: Acceso[], plataforma: Plataforma): { texto: string; variante: VarianteBadge } {
   if (xs.some((x) => x.estado === "fallo")) return { texto: "Con error", variante: "danger" };
@@ -73,8 +93,8 @@ async function pedir(cuerpo: Record<string, unknown>) {
   return j;
 }
 
-export function AccesosAlumno({ alumno, venta, manual }: {
-  alumno: Alumno; venta?: Venta;
+export function AccesosAlumno({ alumno, venta, manual, forma = "tarjeta" }: {
+  alumno: Alumno; venta?: Venta; forma?: "tarjeta" | "hoja";
   /* Lo marcado a mano en la ficha (Airtable), con su editor: se muestra donde la app todavía no dio nada. */
   manual?: Partial<Record<Plataforma | "whatsapp", React.ReactNode>>;
 }) {
@@ -121,6 +141,77 @@ export function AccesosAlumno({ alumno, venta, manual }: {
   }
 
   const programaSugerido = programaDeProducto(programas, venta?.productoId)?.id ?? "";
+  const modales = (
+    <>
+      {dar !== null && (
+        <ModalForm abierto titulo="Dar accesos" onCerrar={() => setDar(null)} guardarTexto={trabajando === "dar" ? "Dando…" : "Dar accesos"}
+          sub="Se le dan los cursos de Wisboo, los links a los grupos de Telegram y las reuniones de Zoom del programa. Lo que ya tenía no se repite."
+          puedeGuardar={Boolean(dar) && trabajando !== "dar"}
+          onGuardar={() => { const programa = dar; setDar(null); void correr("dar", { accion: "dar", programa }, (j) => `Accesos: ${String(j.dados ?? 0)} dados${Number(j.fallaron) ? `, ${String(j.fallaron)} con error` : ""}${Number(j.yaEstaban) ? `, ${String(j.yaEstaban)} ya los tenía` : ""}.`); }}>
+          <Field label="Programa" ayuda="Para un upsell, elegí el programa nuevo: se suman sus accesos.">
+            <Select value={dar} onChange={(ev) => setDar(ev.target.value)} placeholder="Elegí el programa"
+              opciones={programas.filter((p) => p.activo).map((p) => ({ valor: p.id, texto: p.nombre }))} />
+          </Field>
+        </ModalForm>
+      )}
+      <Confirmar
+        abierto={quitar !== null} onCerrar={() => setQuitar(null)} confirmarTexto="Quitar"
+        titulo={quitar?.ids ? "¿Quitar este acceso?" : "¿Hacerle el outboarding?"}
+        texto={`${quitar?.texto ?? ""} Wisboo no deja borrar al alumno por API: queda en la tienda sin acceso.`}
+        onConfirmar={() => { const q = quitar; if (q) void correr("quitar", { accion: "quitar", ids: q.ids }, (j) => `Quitados: ${String(j.quitados ?? 0)}${Number(j.fallaron) ? `, ${String(j.fallaron)} con error` : ""}.`); }}
+      />
+    </>
+  );
+
+  const reintentar = (x: Acceso) => (
+    <Button sm variante="ghost" icono={<RotateCcw size={14} />} cargando={trabajando === x.id}
+      onClick={() => void correr(x.id, { accion: "dar", programa: x.programa, solo: [{ plataforma: x.plataforma, recurso: x.recurso }] }, (j) => Number(j.fallaron) ? "Volvió a fallar." : "Listo, acceso dado.")}>
+      Reintentar
+    </Button>
+  );
+
+  /* ---------- La solapa Accesos de la ficha → Servicio ---------- */
+  if (forma === "hoja") {
+    return (
+      <>
+        {prendidos && (
+          <AccionesServicio>
+            {linksTelegram.length > 0 && <Button sm variante="ghost" icono={<Copy size={14} />} onClick={() => void copiarMensaje()}>Copiar mensaje con links</Button>}
+            {vigentes.length > 0 && (
+              <Button sm variante="ghost" icono={<UserMinus size={14} />} onClick={() => setQuitar({ texto: "Se le saca el acceso a todos sus cursos de Wisboo, se lo saca de los grupos de Telegram y se cancela su inscripción a las reuniones de Zoom." })}>Quitar todo</Button>
+            )}
+            <Button sm variante="primary" icono={<KeyRound size={14} />} onClick={() => setDar(programaSugerido)}>Dar accesos</Button>
+          </AccionesServicio>
+        )}
+        {accesos === null ? <div className="skeleton" style={{ height: 132, borderRadius: 12 }} /> : PLATAFORMAS.map(({ clave, nombre, icono }) => {
+          const xs = lista.filter((x) => x.plataforma === clave);
+          const r = xs.length ? resumen(xs, clave) : { texto: "Sin acceso", variante: "neutral" as VarianteBadge };
+          return (
+            <BloqueServicio key={clave} titulo={nombre} extra={<Badge variante={r.variante}>{r.texto}</Badge>}>
+              {xs.length === 0
+                ? (manual?.[clave] ?? <p className="hs-nada">Todavía no se le dio nada desde la app.</p>)
+                : xs.map((x) => {
+                  const est = estadoDe(x);
+                  return (
+                    <FilaServicio key={x.id} icono={icono} rotulo={x.recursoNombre || x.recurso} detalle={detalleDe(x) || undefined}>
+                      <Badge variante={est.variante}>{est.texto}</Badge>
+                      {prendidos && x.estado === "fallo" && reintentar(x)}
+                      {prendidos && (x.estado === "dado" || x.estado === "entro") && (
+                        <Button sm variante="ghost" onClick={() => setQuitar({ ids: [x.id], texto: `Se le saca «${x.recursoNombre || x.recurso}» (${nombre}).` })}>Quitar</Button>
+                      )}
+                    </FilaServicio>
+                  );
+                })}
+            </BloqueServicio>
+          );
+        })}
+        {/* Los grupos de antes eran de WhatsApp: la marca del Airtable se sigue viendo y editando. */}
+        {manual?.whatsapp && <BloqueServicio titulo="WhatsApp (los grupos de antes)">{manual.whatsapp}</BloqueServicio>}
+        {modales}
+      </>
+    );
+  }
+
   return (
     <div className="stack-2" style={{ borderTop: "1px solid var(--border)", paddingTop: 12, marginTop: 4 }}>
       <div className="row-wrap" style={{ justifyContent: "space-between", gap: 8 }}>
@@ -166,7 +257,7 @@ export function AccesosAlumno({ alumno, venta, manual }: {
                           </span>
                         )}
                       </span>
-                      <Badge variante={ESTADO[x.estado].variante}>{clave === "telegram" && x.estado === "dado" ? "Falta que entre" : ESTADO[x.estado].texto}</Badge>
+                      <Badge variante={estadoDe(x).variante}>{estadoDe(x).texto}</Badge>
                       {prendidos && x.estado === "fallo" && (
                         <Button sm variante="ghost" icono={<RotateCcw size={14} />} cargando={trabajando === x.id}
                           onClick={() => void correr(x.id, { accion: "dar", programa: x.programa, solo: [{ plataforma: x.plataforma, recurso: x.recurso }] }, (j) => Number(j.fallaron) ? "Volvió a fallar." : "Listo, acceso dado.")}>
@@ -187,23 +278,7 @@ export function AccesosAlumno({ alumno, venta, manual }: {
         </ul>
       )}
 
-      {dar !== null && (
-        <ModalForm abierto titulo="Dar accesos" onCerrar={() => setDar(null)} guardarTexto={trabajando === "dar" ? "Dando…" : "Dar accesos"}
-          sub="Se le dan los cursos de Wisboo, los links a los grupos de Telegram y las reuniones de Zoom del programa. Lo que ya tenía no se repite."
-          puedeGuardar={Boolean(dar) && trabajando !== "dar"}
-          onGuardar={() => { const programa = dar; setDar(null); void correr("dar", { accion: "dar", programa }, (j) => `Accesos: ${String(j.dados ?? 0)} dados${Number(j.fallaron) ? `, ${String(j.fallaron)} con error` : ""}${Number(j.yaEstaban) ? `, ${String(j.yaEstaban)} ya los tenía` : ""}.`); }}>
-          <Field label="Programa" ayuda="Para un upsell, elegí el programa nuevo: se suman sus accesos.">
-            <Select value={dar} onChange={(ev) => setDar(ev.target.value)} placeholder="Elegí el programa"
-              opciones={programas.filter((p) => p.activo).map((p) => ({ valor: p.id, texto: p.nombre }))} />
-          </Field>
-        </ModalForm>
-      )}
-      <Confirmar
-        abierto={quitar !== null} onCerrar={() => setQuitar(null)} confirmarTexto="Quitar"
-        titulo={quitar?.ids ? "¿Quitar este acceso?" : "¿Hacerle el outboarding?"}
-        texto={`${quitar?.texto ?? ""} Wisboo no deja borrar al alumno por API: queda en la tienda sin acceso.`}
-        onConfirmar={() => { const q = quitar; if (q) void correr("quitar", { accion: "quitar", ids: q.ids }, (j) => `Quitados: ${String(j.quitados ?? 0)}${Number(j.fallaron) ? `, ${String(j.fallaron)} con error` : ""}.`); }}
-      />
+      {modales}
     </div>
   );
 }

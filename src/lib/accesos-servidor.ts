@@ -328,6 +328,7 @@ export async function darAccesos(db: SupabaseClient, a: {
       }
     }
   }
+  await marcarEnLaFicha(db, a.alumnoId);
   return salida;
 }
 
@@ -387,7 +388,28 @@ export async function quitarAccesos(db: SupabaseClient, a: {
     salida.accesos.push({ ...x, ...cambio } as Acceso);
     if (error) salida.fallaron++; else salida.quitados++;
   }
+  await marcarEnLaFicha(db, a.alumnoId);
   return salida;
+}
+
+/* ---------- La ficha de Customer Success ---------- */
+
+/** Lo que hizo la app queda también en las marcas de la ficha (las del Airtable de Lili): «Acceso» (Completos, Downsell o
+    Sin acceso) y las casillas de Wisboo y Zoom. Así nadie ve «Falta» en un alumno que ya tiene todo. Sin ficha, no hace nada. */
+export async function marcarEnLaFicha(db: SupabaseClient, alumnoId: string): Promise<void> {
+  try {
+    const m = marcasDeLaFicha(await accesosDe(db, alumnoId));
+    await db.from("seguimiento_alumnos").update(m).eq("alumnoId", alumnoId);
+  } catch (e) { console.error("[accesos] no se marcó la ficha", alumnoId, e instanceof Error ? e.message : String(e)); }
+}
+
+export function marcasDeLaFicha(accesos: Pick<Acceso, "plataforma" | "estado" | "programa">[]): { acceso: string; accesoWibo: boolean; accesoZoom: boolean } {
+  const vigentes = accesos.filter((x) => x.estado === "dado" || x.estado === "entro");
+  return {
+    acceso: vigentes.length === 0 ? "Sin acceso" : vigentes.every((x) => x.programa === "downsell") ? "Downsell" : "Completos",
+    accesoWibo: vigentes.some((x) => x.plataforma === "wisboo"),
+    accesoZoom: vigentes.some((x) => x.plataforma === "zoom"),
+  };
 }
 
 /* ---------- Lectura ---------- */

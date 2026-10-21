@@ -94,12 +94,15 @@ create index if not exists contrato_eventos_contrato on public.contrato_eventos 
 alter table public.contratos enable row level security;
 alter table public.contrato_eventos enable row level security;
 
+-- Lo suyo se pregunta por la venta o el lead: si esta cuenta los ve (con su propia regla), ve el contrato. No se llama
+-- a es_mi_venta()/es_mi_lead(): solo-lo-suyo-seguro.sql las cierra para el navegador y la lectura daba «permission
+-- denied» a todos (corregido en producción el 21/10).
 drop policy if exists ver_contratos on public.contratos;
 create policy ver_contratos on public.contratos for select to authenticated using (
   ((select public.ve('ventas')) or (select public.ve('alumnos')))
   and ((select not public.solo_lo_suyo())
-       or ("ventaId" is not null and public.es_mi_venta("ventaId"))
-       or ("leadId" is not null and public.es_mi_lead("leadId"))));
+       or ("ventaId" is not null and exists (select 1 from public.ventas v where v.id = "ventaId"))
+       or ("leadId" is not null and exists (select 1 from public.leads l where l.id = "leadId"))));
 
 -- El historial se ve si se ve su contrato (la política de arriba corre también en la subconsulta).
 drop policy if exists ver_contrato_eventos on public.contrato_eventos;

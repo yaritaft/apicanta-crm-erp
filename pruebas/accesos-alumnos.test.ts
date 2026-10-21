@@ -6,6 +6,7 @@ import {
 } from "@/lib/accesos-alumnos";
 import { clavePandadoc } from "@/lib/accesos-alumnos-servidor";
 import { cambiarGrupoEnProgramas } from "@/lib/programas";
+import { marcasDeLaFicha } from "@/lib/accesos-servidor";
 
 /* La prueba de conexión de los accesos de alumnos (Ajustes → Integraciones)
    con respuestas como las devuelven Telegram, Wisboo, PandaDoc y Zoom. */
@@ -126,4 +127,12 @@ test("Zoom: si la reunión acepta inscriptos y cómo se llama para elegirla", ()
   assert.equal(nombreDeReunion(todas[0], todas), "Sesión de consultas IA · …5266");
   assert.equal(nombreDeReunion(todas[1], todas), "Sesión de consultas IA · …4264 (sin inscripción)");
   assert.equal(nombreDeReunion(todas[2], todas), "Clases de marketing");
+});
+
+test("Accesos: lo que hizo la app queda en las marcas de la ficha de Customer Success", () => {
+  const dado = (plataforma: "wisboo" | "telegram" | "zoom", programa = "hackear-ai", estado: "dado" | "entro" | "quitado" | "fallo" = "dado") => ({ plataforma, programa, estado });
+  assert.deepEqual(marcasDeLaFicha([dado("wisboo"), dado("telegram"), dado("zoom")]), { acceso: "Completos", accesoWibo: true, accesoZoom: true });
+  assert.deepEqual(marcasDeLaFicha([dado("wisboo", "downsell"), dado("telegram", "downsell")]), { acceso: "Downsell", accesoWibo: true, accesoZoom: false });
+  /* Después del outboarding (todo quitado) o si todo falló: sin acceso. */
+  assert.deepEqual(marcasDeLaFicha([dado("wisboo", "hackear-ai", "quitado"), dado("zoom", "hackear-ai", "fallo")]), { acceso: "Sin acceso", accesoWibo: false, accesoZoom: false });
 });

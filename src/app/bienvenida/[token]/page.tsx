@@ -134,7 +134,9 @@ export default function PaginaBienvenida() {
                 <Fila nombre="Plataforma de cursos" detalle={b.wisboo.cursos.join(" · ")}>
                   {b.wisboo.url && <a href={b.wisboo.url} target="_blank" rel="noopener noreferrer" className={claseBoton(primario())} aria-label="Entrar a mis cursos">Entrar</a>}
                 </Fila>
-                {!b.wisboo.url && <Chico>Entrá a la plataforma de cursos con el mail con el que firmaste.</Chico>}
+                <Chico>{b.wisboo.url
+                  ? "La primera vez te pide elegir una contraseña: tu usuario es el mail con el que firmaste."
+                  : "Entrá a la plataforma de cursos con el mail con el que firmaste."}</Chico>
               </Seccion>
             )}
 

@@ -94,3 +94,11 @@
   .hs-fila__val { flex: 1 1 120px; }
   .hs-editable.crm-t__editable--abierta { min-width: 0; width: 100%; }
 }
+
+/* Las solapas Contrato y Accesos (ficha/FilaServicio.tsx): las mismas filas, con un renglón chico abajo del rótulo
+   (cuándo se dio, a quién se mandó) y el estado pintado con su botón al lado. */
+.hs-fila__txt { display: flex; flex-direction: column; min-width: 0; }
+.hs-fila__det { font-size: 12px; line-height: 16px; font-weight: 400; color: var(--ink-subtle); }
+.hs-fila__acc { display: inline-flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 8px; }
+.hs-bloque__cab { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.hs-acciones { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
