@@ -292,6 +292,12 @@ function Programas({ pruebas }: { pruebas: Pruebas | null }) {
                         opciones={[{ valor: "", texto: "Sin contrato" }, ...plantillas.map((t) => ({ valor: t.id, texto: t.nombre })),
                           ...(p.plantillaId && !plantillas.some((t) => t.id === p.plantillaId) ? [{ valor: p.plantillaId, texto: p.plantillaNombre || p.plantillaId }] : [])]} />
                     </Field>
+                    <Field label="Contrato de reserva" span2 ayuda="Sale cuando la venta es «Sólo la reserva»: lleva el monto en [Venta.Modalidad] y al firmarlo no se dan accesos.">
+                      <Select value={p.plantillaReservaId ?? ""} placeholder="Sin contrato de reserva"
+                        onChange={(ev) => cambiar(p.id, { plantillaReservaId: ev.target.value, plantillaReservaNombre: plantillas.find((t) => t.id === ev.target.value)?.nombre ?? "" })}
+                        opciones={[{ valor: "", texto: "Sin contrato de reserva" }, ...plantillas.map((t) => ({ valor: t.id, texto: t.nombre })),
+                          ...(p.plantillaReservaId && !plantillas.some((t) => t.id === p.plantillaReservaId) ? [{ valor: p.plantillaReservaId, texto: p.plantillaReservaNombre || p.plantillaReservaId }] : [])]} />
+                    </Field>
                   </div>
                   <Opciones titulo="Productos de la venta que son este programa" valores={p.productos} onAlternar={(v) => alternar(p.id, "productos", v)}
                     opciones={productos.map((x) => ({ id: x.id, nombre: x.nombre }))} />

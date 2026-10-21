@@ -1,6 +1,6 @@
 import { nube } from "@/lib/supabase";
 import { cabeceras } from "@/components/webinars/useYoutube";
-import { modalidadDeCuotas, type Contrato, type DatosContrato, type EventoContrato } from "@/lib/contratos";
+import { modalidadDeCuotas, modalidadDeReserva, type Contrato, type DatosContrato, type EventoContrato } from "@/lib/contratos";
 import { alumnoDeVenta, personaDeVenta } from "@/lib/alumnos";
 import { programaDeProducto, programasDe, type Programa } from "@/lib/programas";
 import type { ConfigContratos, Cuota, EstadoApp, Venta } from "@/lib/types";
@@ -66,8 +66,12 @@ export function datosDeVenta(e: EstadoApp, venta: Pick<Venta, "id" | "contactoId
   const alumno = venta.id ? alumnoDeVenta(e, venta as Venta) : undefined;
   const seg = alumno ? (e.seguimientos ?? []).find((s) => s.alumnoId === alumno.id) : undefined;
   const plan = cuotas ?? e.cuotas.filter((c) => c.ventaId === venta.id && c.estado !== "cancelada").sort((a, b) => a.numero - b.numero);
+  /* Una venta que es sólo la reserva lleva el contrato de la reserva, con el monto (si el programa lo tiene). */
+  const programa = programaDeProducto(programasDe(e.ajustes), venta.productoId);
+  const soloReserva = plan.length > 0 && plan.every((c) => c.esReserva) && Boolean(programa?.plantillaReservaId);
+  const moneda = venta.moneda || "USD";
   return {
-    programa: programaDeProducto(programasDe(e.ajustes), venta.productoId),
+    programa,
     datos: {
       nombre: persona.nombre,
       email: persona.email,
@@ -75,10 +79,11 @@ export function datosDeVenta(e: EstadoApp, venta: Pick<Venta, "id" | "contactoId
       documento: seg?.dni ?? "",
       domicilio: seg?.domicilio ?? "",
       pais: persona.pais,
-      modalidad: modalidadDeCuotas(plan, venta.moneda || "USD"),
+      modalidad: soloReserva ? modalidadDeReserva(plan.reduce((t, c) => t + c.monto, 0), moneda) : modalidadDeCuotas(plan, moneda),
       sesiones: seg?.sesionesMentor ?? 0,
       bonos: [],
       fecha: diaDeNegocio(new Date().toISOString()),
+      ...(soloReserva ? { reserva: true } : {}),
     },
   };
 }

@@ -25,8 +25,8 @@ import { useUsuarioActual } from "@/lib/usuario";
 import { esperarGuardado } from "@/lib/store";
 import { useAcceso } from "@/lib/acceso";
 import { useToast } from "@/components/ui/Toast";
-import { modalidadDeCuotas, problemaDeDatos, ROTULO_ESTADO, type Contrato, type DatosContrato } from "@/lib/contratos";
-import { programaDeProducto, programasDe } from "@/lib/programas";
+import { modalidadDeCuotas, modalidadDeReserva, problemaDeDatos, ROTULO_ESTADO, type Contrato, type DatosContrato } from "@/lib/contratos";
+import { plantillaDelContrato, programaDeProducto, programasDe } from "@/lib/programas";
 import { contratosPrendidos, leerContratos, pedirContrato } from "@/components/contratos/cliente";
 import { DatosDelContrato } from "@/components/contratos/DatosDelContrato";
 import { diaDeNegocio } from "@/lib/dia-negocio";
@@ -101,6 +101,11 @@ interface Borrador {
   excluidoMarketing: boolean;
   notas: string;
   reserva: number;
+  /* Sólo deja la reserva (Manu, 21/10): el plan es una sola línea, el valor de la venta es la reserva (como las
+     ventas de sólo reserva de siempre) y el contrato sale con la plantilla de reserva. `precioPrograma` guarda el
+     valor que tenía para devolvérselo si se arrepiente. */
+  soloReserva: boolean;
+  precioPrograma: number;
   cantidadCuotas: number;
   frecuencia: Frecuencia;
   primerVencimiento: string;
@@ -133,6 +138,9 @@ function sumarFecha(iso: string, frecuencia: Frecuencia, pasos: number): string 
 /** Reparte el precio en cuotas parejas; el resto cae en la última. */
 function armarPlan(b: Borrador): LineaCuota[] {
   const lineas: LineaCuota[] = [];
+  if (b.soloReserva) {
+    return b.reserva > 0 ? [{ id: nuevoId("cuo"), numero: 0, esReserva: true, monto: redondear(b.reserva), vence: b.fecha, cobros: [] }] : [];
+  }
   if (b.reserva > 0) {
     lineas.push({
       id: nuevoId("cuo"), numero: 0, esReserva: true,
@@ -206,7 +214,7 @@ export function AsistenteVenta({ onCerrar, onListo, desdeMovimiento, cliente, cl
       const conCobros = nuevas.map((linea, k) => ({ ...linea, cobros: x.cuotas[k]?.cobros ?? [] }));
       return { ...x, cuotas: conCobros };
     });
-  }, [b.precioAcordado, b.reserva, b.cantidadCuotas, b.frecuencia, b.primerVencimiento, b.fecha, b.planTocado]);
+  }, [b.precioAcordado, b.reserva, b.soloReserva, b.cantidadCuotas, b.frecuencia, b.primerVencimiento, b.fecha, b.planTocado]);
 
   const closer = e.equipo.find((x) => x.id === b.closerId);
   const sinComision = Boolean(closer?.sinComision);
@@ -398,7 +406,7 @@ export function AsistenteVenta({ onCerrar, onListo, desdeMovimiento, cliente, cl
           {paso.id === "producto" && <PasoProducto b={b} set={set} e={e} M={M} />}
           {paso.id === "precio" && <PasoPrecio b={b} set={set} e={e} M={M} />}
           {paso.id === "equipo" && <PasoEquipo b={b} set={set} e={e} sinComision={sinComision} yo={yo.miembro} />}
-          {paso.id === "plan" && <PasoPlan b={b} setB={setB} M={M} diferencia={diferenciaPlan} />}
+          {paso.id === "plan" && <PasoPlan b={b} setB={setB} M={M} diferencia={diferenciaPlan} moneda={e.ajustes.monedaBase || "USD"} />}
           {paso.id === "cobros" && <PasoCobros b={b} setB={setB} e={e} M={M} onSubiendo={onSubiendo} />}
           {paso.id === "contrato" && (
             <PasoContrato b={b} setB={setB} e={e} esDueno={esDueno} modo={modoContrato} encendido={configContratos?.estado === "encendido" || configContratos?.estado === "duenos"} />
@@ -459,6 +467,8 @@ function inicial(e: EstadoApp, mov?: Movimiento, cliente?: { contactoId: string;
     excluidoMarketing: false,
     notas: "",
     reserva: 0,
+    soloReserva: false,
+    precioPrograma: 0,
     cantidadCuotas: 1,
     frecuencia: "mensual",
     primerVencimiento: mov?.fecha ?? hoy,
@@ -497,7 +507,9 @@ function validar(paso: PasoId, b: Borrador, diferencia: number, ctx: { e: Estado
       if (b.contrato.decision !== "mandar") return null;
       if (!b.contrato.datos) return "Armando los datos del contrato…";
       const programa = programasDe(ctx.e.ajustes).find((p) => p.id === b.contrato.programaId);
-      if (!programa?.plantillaId) return "Elegí el programa del contrato";
+      if (!plantillaDelContrato(programa, b.contrato.datos.reserva).id) {
+        return b.contrato.datos.reserva && programa ? `${programa.nombre} todavía no tiene contrato de reserva` : "Elegí el programa del contrato";
+      }
       return problemaDeDatos(b.contrato.datos, ctx.modoContrato);
     }
     case "precio":
@@ -506,6 +518,7 @@ function validar(paso: PasoId, b: Borrador, diferencia: number, ctx: { e: Estado
       if (!b.closerId) return "Decí quién es el vendedor";
       return b.esReferido && !b.referidorNombre.trim() ? "Poné el nombre del referidor" : null;
     case "plan":
+      if (b.soloReserva && b.reserva <= 0) return "Poné el monto de la reserva";
       if (Math.abs(diferencia) > 0.5) {
         return diferencia > 0
           ? `Las cuotas suman ${diferencia.toFixed(2)} menos que el precio`
@@ -823,11 +836,26 @@ function PasoEquipo({ b, set, e, sinComision, yo }: {
 
 /* ---------- Paso 6: plan de cobro ---------- */
 
-function PasoPlan({ b, setB, M, diferencia }: {
+function PasoPlan({ b, setB, M, diferencia, moneda }: {
   b: Borrador;
   setB: React.Dispatch<React.SetStateAction<Borrador>>;
-  M: (n: number, d?: number) => string; diferencia: number;
+  M: (n: number, d?: number) => string; diferencia: number; moneda: string;
 }) {
+  /* «Sólo la reserva»: el valor de la venta pasa a ser la reserva y los datos del contrato se rearman (cambia la
+     plantilla). Al volver, recupera el valor que tenía. */
+  const elegirSoloReserva = (solo: boolean) => setB((x) => x.soloReserva === solo ? x : ({
+    ...x, soloReserva: solo, planTocado: false,
+    precioPrograma: solo ? x.precioAcordado : x.precioPrograma,
+    precioAcordado: solo ? x.reserva : (x.precioPrograma || x.precioAcordado),
+    contrato: { ...x.contrato, datos: null },
+  }));
+  const cambiarReserva = (monto: number) => setB((x) => ({
+    ...x, reserva: monto, planTocado: false,
+    ...(x.soloReserva ? { precioAcordado: monto } : {}),
+    /* Si ya se armó el contrato de la reserva, el monto lo sigue. */
+    contrato: x.soloReserva && x.contrato.datos?.reserva
+      ? { ...x.contrato, datos: { ...x.contrato.datos, modalidad: modalidadDeReserva(monto, moneda) } } : x.contrato,
+  }));
   const editarCuota = (id: string, cambios: Partial<LineaCuota>) =>
     setB((x) => ({ ...x, planTocado: true, cuotas: x.cuotas.map((c) => (c.id === id ? { ...c, ...cambios } : c)) }));
 
@@ -835,7 +863,14 @@ function PasoPlan({ b, setB, M, diferencia }: {
 
   return (
     <>
-      <Pregunta texto="¿Cuál es el plan de pago?" sub="La reserva es una cuota más. Después podés mover monto y fecha de cualquiera." />
+      <Pregunta texto="¿Cuál es el plan de pago?" sub={b.soloReserva
+        ? "Sólo deja la reserva: no hay cuotas. El contrato sale con el monto de la reserva."
+        : "La reserva es una cuota más. Después podés mover monto y fecha de cualquiera."} />
+
+      <div className="row-wrap" style={{ gap: 6 }} role="group" aria-label="Qué se cobra">
+        <Chip activo={!b.soloReserva} onClick={() => elegirSoloReserva(false)}>Con plan de cuotas</Chip>
+        <Chip activo={b.soloReserva} onClick={() => elegirSoloReserva(true)}>Sólo la reserva</Chip>
+      </div>
 
       <div className="form-grid">
         <div className="hk-field">
@@ -849,25 +884,27 @@ function PasoPlan({ b, setB, M, diferencia }: {
             }}
           />
         </div>
-        <div className="hk-field">
-          <label className="hk-label">Plan de pago</label>
-          <Select
-            value={b.planTocado ? "" : String(b.cantidadCuotas)} placeholder="A mano" aria-label="Plan de pago"
-            onChange={(ev) => setB((x) => ({ ...x, cantidadCuotas: Number(ev.target.value), planTocado: false }))}
-            opciones={[1, 2, 3, 4, 5, 6].map((n) => ({ valor: String(n), texto: n === 1 ? "1 Cuota" : `${n} Cuotas` }))}
-          />
-        </div>
+        {!b.soloReserva && (
+          <div className="hk-field">
+            <label className="hk-label">Plan de pago</label>
+            <Select
+              value={b.planTocado ? "" : String(b.cantidadCuotas)} placeholder="A mano" aria-label="Plan de pago"
+              onChange={(ev) => setB((x) => ({ ...x, cantidadCuotas: Number(ev.target.value), planTocado: false }))}
+              opciones={[1, 2, 3, 4, 5, 6].map((n) => ({ valor: String(n), texto: n === 1 ? "1 Cuota" : `${n} Cuotas` }))}
+            />
+          </div>
+        )}
       </div>
 
       <div className="form-grid">
         <div className="hk-field">
-          <label className="hk-label">Reserva</label>
-          <InputMonto value={b.reserva || ""} placeholder="0"
-            onChange={(ev) => setB((x) => ({ ...x, reserva: montoDe(ev.target.value), planTocado: false }))} />
-          <span className="hk-help">Lo que dejó de seña el día que cerró.</span>
+          <label className="hk-label">{b.soloReserva ? "Monto de la reserva" : "Reserva"}</label>
+          <InputMonto value={b.reserva || ""} placeholder="0" aria-label={b.soloReserva ? "Monto de la reserva" : "Reserva"}
+            onChange={(ev) => cambiarReserva(montoDe(ev.target.value))} />
+          <span className="hk-help">{b.soloReserva ? "Es todo lo que paga hoy: se descuenta del precio del programa si avanza." : "Lo que dejó de seña el día que cerró."}</span>
         </div>
         {/* Con un solo pago no hay nada que espaciar. */}
-        {b.cantidadCuotas > 1 && (
+        {!b.soloReserva && b.cantidadCuotas > 1 && (
           <div className="hk-field">
             <label className="hk-label">Frecuencia</label>
             <Select value={b.frecuencia}
@@ -1083,12 +1120,15 @@ function PasoContrato({ b, setB, e, esDueno, modo, encendido }: {
       documento: seg?.dni ?? "",
       domicilio: seg?.domicilio ?? "",
       pais: (b.contactoPais || contacto?.pais || lead?.pais || "").trim(),
-      modalidad: modalidadDeCuotas(b.cuotas, e.ajustes.monedaBase || "USD"),
+      modalidad: b.soloReserva ? modalidadDeReserva(b.reserva, e.ajustes.monedaBase || "USD") : modalidadDeCuotas(b.cuotas, e.ajustes.monedaBase || "USD"),
       sesiones: seg?.sesionesMentor ?? 0,
       bonos: [],
       fecha: diaDeNegocio(new Date().toISOString()),
+      ...(b.soloReserva ? { reserva: true } : {}),
     };
-    setCt({ datos, programaId: programa?.id ?? "", decision: programa?.plantillaId ? ct.decision : "no-lleva" });
+    /* Sin plantilla: un programa sin contrato no lleva; una reserva sin contrato de reserva se manda después. */
+    const sinPlantilla = b.soloReserva ? "despues" : "no-lleva";
+    setCt({ datos, programaId: programa?.id ?? "", decision: plantillaDelContrato(programa, b.soloReserva).id ? ct.decision : sinPlantilla });
   }, [ct.datos, ct.decision, b, e, programas, setCt]);
 
   /* ¿Ya se le mandó uno desde la app? */
@@ -1105,15 +1145,24 @@ function PasoContrato({ b, setB, e, esDueno, modo, encendido }: {
   }, [b.contactoId, setCt]);
 
   const programa = programas.find((p) => p.id === ct.programaId);
+  const plantilla = plantillaDelContrato(programa, b.soloReserva);
   const opciones: { valor: DecisionContrato; nombre: string; sub: string }[] = [
-    { valor: "mandar", nombre: "Sí, mandalo al registrar la venta", sub: "Le llega por mail para firmar. Al firmar, se le dan los accesos del programa." },
+    { valor: "mandar", nombre: "Sí, mandalo al registrar la venta", sub: b.soloReserva
+      ? "Le llega por mail el contrato de la reserva para firmar. No da accesos: los da el contrato del programa."
+      : "Le llega por mail para firmar. Al firmar, se le dan los accesos del programa." },
     { valor: "ya", nombre: "Ya se le mandó", sub: "No sale otro." },
     { valor: "despues", nombre: "Todavía no", sub: "Lo mandás después desde la ficha de la venta." },
     { valor: "no-lleva", nombre: "No lleva contrato", sub: "Un evento, una cena o algo que no tiene contrato." },
   ];
   return (
     <div className="stack-4">
-      <Pregunta texto="¿Se le manda el contrato?" sub={programa?.plantillaNombre ? `Sale de la plantilla «${programa.plantillaNombre}» de PandaDoc.` : "Sale de la plantilla de PandaDoc del programa."} />
+      <Pregunta texto={b.soloReserva ? "¿Se le manda el contrato de la reserva?" : "¿Se le manda el contrato?"}
+        sub={plantilla.nombre ? `Sale de la plantilla «${plantilla.nombre}» de PandaDoc.` : "Sale de la plantilla de PandaDoc del programa."} />
+      {b.soloReserva && programa && !plantilla.id && (
+        <p className="t-sm" style={{ color: "var(--warning)" }}>
+          {programa.nombre} todavía no tiene contrato de reserva: se elige en Ajustes → Integraciones → Programas. Mientras tanto, la venta se registra y el contrato se manda después desde la ficha.
+        </p>
+      )}
       {previo && (
         <p className="t-sm" style={{ color: "var(--warning)" }}>
           A esta persona ya se le mandó un contrato de {programas.find((p) => p.id === previo.programa)?.nombre ?? previo.plantillaNombre}
@@ -1194,7 +1243,8 @@ function PasoResumen({ b, set, e, M, sinComision, totalCobrado }: {
         </dd>
         {setter && <><dt>Setter</dt><dd>{setter.nombre}</dd></>}
         {referidor && <><dt>Referidor</dt><dd>{referidor}{b.esReferido && b.referidorTelefono ? ` · ${b.referidorTelefono}` : ""}</dd></>}
-        <dt>Plan de pago</dt><dd>{planDePago({ estado: "activa" } as Venta, b.cuotas.map((c) => ({ esReserva: c.esReserva }) as Cuota))}{b.reserva > 0 ? ` + reserva de ${M(b.reserva)}` : ""}</dd>
+        <dt>Plan de pago</dt><dd>{b.soloReserva ? `Sólo la reserva: ${M(b.reserva)}`
+          : `${planDePago({ estado: "activa" } as Venta, b.cuotas.map((c) => ({ esReserva: c.esReserva }) as Cuota))}${b.reserva > 0 ? ` + reserva de ${M(b.reserva)}` : ""}`}</dd>
         <dt>Fecha</dt><dd>{fechaLarga(b.fecha)}</dd>
       </dl>
 

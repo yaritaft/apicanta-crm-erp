@@ -40,6 +40,9 @@ export interface DatosContrato {
   /* Cuándo arranca el servicio (Manu, 20/10: «si hoy paga y quiere empezar en una semana, va la fecha de una
      semana adelante»). Sin dato, el día del contrato. Al firmar pasa a ser el inicio del alumno. */
   inicio?: string;
+  /* El contrato de la reserva (Manu, 21/10): sale con la plantilla de reserva del programa, la modalidad es el
+     monto que deja a cuenta («300 USD») y al firmarlo no se dan accesos (los da el contrato del programa). */
+  reserva?: boolean;
 }
 
 export interface Contrato {
@@ -162,6 +165,11 @@ export function modalidadDeCuotas(cuotas: { monto: number; esReserva?: boolean }
   return pagos.charAt(0).toUpperCase() + pagos.slice(1);
 }
 
+/** Lo que va en [Venta.Modalidad] del contrato de la reserva: sólo el monto («300 USD»). */
+export function modalidadDeReserva(monto: number, moneda = "USD"): string {
+  return monto > 0 ? montoContrato(monto, moneda) : "";
+}
+
 export function textoSesiones(n: number | null | undefined): string {
   if (n === null || n === undefined) return "";
   if (n <= 0) return "Sin sesiones 1 a 1 con el mentor";
@@ -277,7 +285,7 @@ export interface Bienvenida {
   /* firmar: todavía no se ve la firma · preparando: firmó y se están dando los accesos · listo · sin-accesos: firmó,
      pero los accesos se los da el equipo (apagados, o el programa no tiene ninguno) · terminado: tuvo accesos y se los
      quitaron todos (el outboarding). */
-  fase: "firmar" | "preparando" | "listo" | "sin-accesos" | "terminado";
+  fase: "firmar" | "preparando" | "listo" | "sin-accesos" | "terminado" | "reserva";
   nombre: string;
   programa: string;
   telegram: { nombre: string; url: string | null; adentro: boolean }[];
@@ -289,7 +297,7 @@ export interface Bienvenida {
 
 /** Lo que ve el alumno: sólo su nombre de pila, el programa y sus links (nunca su mail, documento ni nada más). */
 export function armarBienvenida(a: {
-  contrato: Pick<Contrato, "estado" | "accesosEn" | "destinatario">;
+  contrato: Pick<Contrato, "estado" | "accesosEn" | "destinatario"> & { datos?: Partial<DatosContrato> | null };
   programa: string; accesos: AccesoParaBienvenida[]; linkWisboo: string | null;
   /* ¿Al firmar se dan los accesos solos? (prendidos en Ajustes). Si no, no hay nada que esperar: se los da el equipo. */
   accesosAutomaticos: boolean;
@@ -297,6 +305,8 @@ export function armarBienvenida(a: {
   const nombre = (a.contrato.destinatario.nombre ?? "").trim().split(/\s+/)[0] ?? "";
   const base = { nombre, programa: a.programa, telegram: [], wisboo: null, zoom: [], faltaAlgo: false };
   if (a.contrato.estado !== "firmado") return { ...base, fase: "firmar" };
+  /* La reserva no da accesos: reservó su lugar y los recibe con el contrato del programa. */
+  if (a.contrato.datos?.reserva) return { ...base, fase: "reserva" };
   if (!a.contrato.accesosEn) return { ...base, fase: a.accesosAutomaticos ? "preparando" : "sin-accesos" };
   const vigentes = a.accesos.filter((x) => x.estado !== "quitado");
   if (a.accesos.length > 0 && vigentes.length === 0) return { ...base, fase: "terminado" };
@@ -386,6 +396,7 @@ export function problemaDeDatos(d: Partial<DatosContrato>, modo: ModoContrato, d
   }
   if (!d.documento?.trim()) return "Falta el documento (DNI, pasaporte o el que tenga).";
   if (!d.domicilio?.trim()) return "Falta el domicilio.";
+  if (d.reserva && !d.modalidad?.trim()) return "Falta el monto de la reserva.";
   return null;
 }
 

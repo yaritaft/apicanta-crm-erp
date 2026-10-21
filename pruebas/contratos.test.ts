@@ -271,3 +271,29 @@ test("Contratos: lo que el contrato firmado deja en la ficha de Customer Success
   assert.deepEqual(fichaAlFirmar({ sesiones: 0 }, "Hackear AI", ["Hackear IT"]), { contratoFirmado: "Firmado", estadoContrato: "Firmado en PandaDoc" });
   assert.deepEqual(fichaAlFirmar({}, "Downsell", null), { contratoFirmado: "Firmado", estadoContrato: "Firmado en PandaDoc", programas: ["Downsell"] });
 });
+
+test("contrato de la reserva (Manu, 21/10): su plantilla, sólo el monto y sin accesos", async () => {
+  const { armarBienvenida, modalidadDeReserva } = await import("@/lib/contratos");
+  const { plantillaDelContrato, programaNormal } = await import("@/lib/programas");
+  const programa = programaNormal({
+    id: "hackear-ai", nombre: "Hackear AI", productos: ["prod_mentoria"], plantillaId: "PROG", plantillaNombre: "Contrato de Mentoría - Hackear AI",
+    plantillaReservaId: "RES", plantillaReservaNombre: "Contrato de reserva - Hackear AI",
+  })!;
+  assert.deepEqual(plantillaDelContrato(programa, true), { id: "RES", nombre: "Contrato de reserva - Hackear AI" });
+  assert.deepEqual(plantillaDelContrato(programa, false), { id: "PROG", nombre: "Contrato de Mentoría - Hackear AI" });
+  /* Un programa sin contrato de reserva cargado (los guardados de antes no traen el campo). */
+  const viejo = programaNormal({ id: "biz", nombre: "Hackear Biz", plantillaId: "BIZ", plantillaNombre: "Biz" })!;
+  assert.deepEqual(plantillaDelContrato(viejo, true), { id: "", nombre: "" });
+
+  /* [Venta.Modalidad] = sólo el monto: «El Cliente paga una reserva de 300 USD mediante el link…». */
+  assert.equal(modalidadDeReserva(300), "300 USD");
+  assert.equal(modalidadDeReserva(1500.5, "USD"), "1.500,50 USD");
+  assert.equal(modalidadDeReserva(0), "");
+  assert.equal(problemaDeDatos({ ...DATOS, reserva: true, modalidad: "" }, "produccion"), "Falta el monto de la reserva.");
+  assert.equal(problemaDeDatos({ ...DATOS, reserva: true, modalidad: "300 USD", sesiones: null, inicio: undefined }, "produccion"), null);
+
+  /* Firmada la reserva, la bienvenida no espera accesos: reservó su lugar. */
+  const contrato = { estado: "firmado" as const, accesosEn: null, destinatario: { nombre: "Juan Cruz" }, datos: { reserva: true } };
+  assert.equal(armarBienvenida({ contrato, programa: "Hackear AI", accesos: [], linkWisboo: null, accesosAutomaticos: true }).fase, "reserva");
+  assert.equal(armarBienvenida({ contrato: { ...contrato, estado: "enviado" }, programa: "Hackear AI", accesos: [], linkWisboo: null, accesosAutomaticos: true }).fase, "firmar");
+});

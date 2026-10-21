@@ -50,6 +50,7 @@ function datosLimpios(d: Partial<DatosContrato> | undefined): DatosContrato {
     bonos: Array.isArray(d?.bonos) ? d!.bonos!.map(t).filter(Boolean) : [],
     fecha: /^\d{4}-\d{2}-\d{2}$/.test(t(d?.fecha)) ? t(d?.fecha) : diaDeNegocio(new Date().toISOString()),
     inicio: /^\d{4}-\d{2}-\d{2}$/.test(t(d?.inicio)) ? t(d?.inicio) : undefined,
+    ...(d?.reserva === true ? { reserva: true } : {}),
   };
 }
 
@@ -105,7 +106,9 @@ export async function POST(peticion: Request) {
     else if (accion === "reenviar") await reenviar(db, c, quien);
     else if (accion === "anular") await anular(db, c, typeof b.motivo === "string" ? b.motivo.trim() : "", quien);
     else if (accion === "corregir") {
-      const datos = datosLimpios(b.datos as Partial<DatosContrato>);
+      /* Corregir no cambia la plantilla: si era el de la reserva, sigue siéndolo (lo dice el contrato, no la pantalla). */
+      const { reserva: _r, ...limpios } = datosLimpios(b.datos as Partial<DatosContrato>);
+      const datos: DatosContrato = { ...limpios, ...(c.datos.reserva ? { reserva: true } : {}) };
       const problema = problemaDeDatos(datos, c.modo);
       if (problema) return mal(problema);
       await corregir(db, c, datos, quien, config, new URL(peticion.url).origin);

@@ -110,6 +110,12 @@ export default function PaginaBienvenida() {
             <h1>Tus accesos a {b.programa} ya no están activos</h1>
             <p className="reporte-pub__sub">Si creés que es un error, escribinos por WhatsApp y lo vemos.</p>
           </div>
+        ) : b.fase === "reserva" ? (
+          <div className="reporte-pub__listo">
+            <CheckCircle2 size={40} style={{ color: "var(--success)" }} aria-hidden />
+            <h1>¡Reservaste tu lugar{hola}!</h1>
+            <p className="reporte-pub__sub">Firmaste el contrato de la reserva de {b.programa}. Cuando avances con el programa completo, te mandamos su contrato y, al firmarlo, tus accesos.</p>
+          </div>
         ) : b.fase === "sin-accesos" ? (
           <div className="reporte-pub__listo">
             <CheckCircle2 size={40} style={{ color: "var(--success)" }} aria-hidden />

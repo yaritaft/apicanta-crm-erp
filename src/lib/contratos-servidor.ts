@@ -9,7 +9,7 @@ import {
   esperarBorrador, mandarDocumento, pdfDocumento, recordarDocumento,
 } from "./pandadoc-servidor";
 import { cambiarFicha, darAccesos, type ResultadoAccesos } from "./accesos-servidor";
-import { programaPorId, programasDe, type Programa } from "./programas";
+import { plantillaDelContrato, programaPorId, programasDe, type Programa } from "./programas";
 import type { ConfigContratos } from "./types";
 
 /* ==================================================================
@@ -76,13 +76,18 @@ export interface PedidoContrato {
 }
 
 export async function crearContrato(db: SupabaseClient, p: PedidoContrato): Promise<Contrato> {
-  if (!p.programa.plantillaId) throw new Error(`El programa ${p.programa.nombre} no tiene plantilla de PandaDoc (Ajustes → Integraciones).`);
+  const plantillaElegida = plantillaDelContrato(p.programa, p.datos.reserva);
+  if (!plantillaElegida.id) {
+    throw new Error(p.datos.reserva
+      ? `El programa ${p.programa.nombre} no tiene contrato de reserva (Ajustes → Integraciones → Programas).`
+      : `El programa ${p.programa.nombre} no tiene plantilla de PandaDoc (Ajustes → Integraciones).`);
+  }
   const id = nuevoId("ctr");
   /* El código de la página de bienvenida: al azar y largo (es lo único que la abre). */
   const bienvenida = randomBytes(24).toString("base64url");
   const fila: Partial<Contrato> = {
     id, ventaId: p.ventaId ?? null, sesionId: p.sesionId ?? null, leadId: p.leadId ?? null, alumnoId: p.alumnoId ?? null,
-    programa: p.programa.id, plantillaId: p.programa.plantillaId, plantillaNombre: p.programa.plantillaNombre,
+    programa: p.programa.id, plantillaId: plantillaElegida.id, plantillaNombre: plantillaElegida.nombre,
     modo: p.modo, estado: "creando",
     destinatario: { nombre: p.datos.nombre.trim(), email: p.datos.email.trim().toLowerCase(), telefono: p.datos.telefono.trim() },
     datos: p.datos, origen: "app", creadoPor: p.quien, creadoEn: ahora(), actualizadoEn: ahora(), bienvenida,
@@ -94,9 +99,9 @@ export async function crearContrato(db: SupabaseClient, p: PedidoContrato): Prom
 
   try {
     /* Se lee la plantilla para mandar sólo las variables y los campos que tiene (si no se puede, van todas las variables). */
-    const plantilla = await detallePlantilla(p.modo, p.programa.plantillaId).catch(() => undefined);
+    const plantilla = await detallePlantilla(p.modo, plantillaElegida.id).catch(() => undefined);
     const doc = await crearDocumento(p.modo, cuerpoDocumento({
-      contratoId: id, ventaId: p.ventaId, modo: p.modo, plantillaId: p.programa.plantillaId, programa: p.programa.nombre, datos: p.datos, plantilla,
+      contratoId: id, ventaId: p.ventaId, modo: p.modo, plantillaId: plantillaElegida.id, programa: p.programa.nombre, datos: p.datos, plantilla,
       despuesDeFirmar: paginaDeBienvenida(baseDeLaApp(p.origen), bienvenida),
     }));
     await guardar(db, id, { documentoId: doc.id });
@@ -274,6 +279,14 @@ export async function alFirmar(db: SupabaseClient, c: Contrato): Promise<{ acces
   const alumnoId = await alumnoDelContrato(db, c);
   if (alumnoId && c.alumnoId !== alumnoId) await guardar(db, c.id, { alumnoId });
   const { programas, config } = await programasGuardados(db);
+  /* La reserva no toca la ficha ni da accesos: eso lo hace el contrato del programa cuando avanza. */
+  if (c.datos.reserva) {
+    if (!c.accesosEn) {
+      await evento(db, c.id, "accesos", "Apicanta", "app", { dados: 0, motivo: "Es el contrato de la reserva: los accesos se dan con el contrato del programa." });
+      await guardar(db, c.id, { accesosEn: ahora() });
+    }
+    return { accesos: null };
+  }
   if (alumnoId && c.modo === "produccion") {
     const ficha = await db.from("seguimiento_alumnos").select("programas").eq("alumnoId", alumnoId).maybeSingle();
     const nombre = programaPorId(programas, c.programa)?.nombre ?? "";
@@ -334,17 +347,20 @@ export async function contratoDeAfuera(db: SupabaseClient, documentoId: string, 
   const plantilla = (det.template ?? {}) as { id?: string; name?: string };
   const { programas } = await programasGuardados(db);
   const programa = programas.find((p) => p.plantillaId && p.plantillaId === plantilla.id);
-  if (!programa) return null;
+  const deReserva = programa ? null : programas.find((p) => p.plantillaReservaId && p.plantillaReservaId === plantilla.id);
+  if (!programa && !deReserva) return null;
   const alumno = ((det.recipients ?? []) as { email?: string; first_name?: string; last_name?: string; phone?: string; role?: string }[])
     .find((r) => r.role === ROL_ALUMNO) ?? null;
   const email = (alumno?.email ?? "").trim().toLowerCase();
   const lead = email ? (await db.from("leads").select("id").ilike("email", email).limit(1).maybeSingle()).data?.id as string | undefined : undefined;
   const id = nuevoId("ctr");
+  const elegido = (programa ?? deReserva)!;
   const ins = await db.from("contratos").insert({
-    id, leadId: lead ?? null, programa: programa.id, plantillaId: programa.plantillaId, plantillaNombre: plantilla.name ?? programa.plantillaNombre,
+    id, leadId: lead ?? null, programa: elegido.id, plantillaId: plantilla.id,
+    plantillaNombre: plantilla.name ?? (programa ? elegido.plantillaNombre : elegido.plantillaReservaNombre ?? ""),
     documentoId, modo, estado: estadoDePandadoc(typeof det.status === "string" ? det.status : "") ?? "enviado", origen: "pandadoc", creadoPor: "PandaDoc",
     destinatario: { nombre: [alumno?.first_name, alumno?.last_name].filter(Boolean).join(" "), email, telefono: alumno?.phone ?? "" },
-    datos: {}, enviadoEn: typeof det.date_sent === "string" ? det.date_sent : ahora(),
+    datos: programa ? {} : { reserva: true }, enviadoEn: typeof det.date_sent === "string" ? det.date_sent : ahora(),
   });
   if (ins.error) return contratoPorDocumento(db, documentoId);
   await evento(db, id, "creado", "PandaDoc", "pandadoc", { motivo: "Se mandó a mano desde PandaDoc" });

@@ -15,7 +15,7 @@ import {
   accionesDe, estaPendiente, fechaContrato, problemaDeDatos, ROTULO_ESTADO, ROTULO_EVENTO,
   type Contrato, type DatosContrato, type EventoContrato,
 } from "@/lib/contratos";
-import { programasDe } from "@/lib/programas";
+import { programasDe, type Programa } from "@/lib/programas";
 import type { Venta } from "@/lib/types";
 import { abrirPdf, contratosPrendidos, datosDeVenta, leerContratos, pedirContrato } from "./cliente";
 import { DatosDelContrato } from "./DatosDelContrato";
@@ -37,6 +37,12 @@ const VARIANTE: Record<string, VarianteBadge> = { neutral: "neutral", info: "inf
 const REFRESCO_MS = 15_000;
 
 interface Edicion { tipo: "crear" | "corregir"; contrato?: Contrato; datos: DatosContrato; programaId: string; prueba: boolean }
+
+/* «Hackear AI», o «Reserva de Hackear AI» si es el contrato de la reserva. */
+function nombreDelContrato(c: Contrato, programas: Programa[]): string {
+  const nombre = programas.find((p) => p.id === c.programa)?.nombre ?? c.plantillaNombre;
+  return c.datos.reserva ? `Reserva de ${nombre}` : nombre;
+}
 
 /* El ícono de cada paso del historial. */
 const ICONO_EVENTO: Record<string, React.ReactNode> = {
@@ -169,7 +175,8 @@ export function ContratoCard({ venta, alumnoId, sesionId, manual, forma = "tarje
           titulo={edicion.tipo === "corregir" ? "Corregir y mandar de nuevo" : "Mandar contrato"}
           sub={edicion.tipo === "corregir"
             ? "El contrato vuelve a borrador en PandaDoc, se cambian los datos y le llega de nuevo para firmar."
-            : "Se arma con la plantilla del programa y le llega por mail para firmar."}
+            : edicion.datos.reserva ? "Se arma con el contrato de reserva del programa y le llega por mail para firmar. No da accesos."
+              : "Se arma con la plantilla del programa y le llega por mail para firmar."}
           guardarTexto={trabajando === "edicion" ? "Mandando…" : edicion.tipo === "corregir" ? "Corregir y mandar" : "Mandar contrato"}
           puedeGuardar={trabajando !== "edicion"}
         >
@@ -238,7 +245,7 @@ export function ContratoCard({ venta, alumnoId, sesionId, manual, forma = "tarje
           const acciones = prendidos ? accionesDe(c) : accionesDe(c).filter((a) => a === "ver-pdf");
           const evs = eventos.filter((x) => x.contratoId === c.id);
           const ocupado = (a: string) => trabajando === `${c.id}:${a}`;
-          const nombrePrograma = programas.find((p) => p.id === c.programa)?.nombre ?? c.plantillaNombre;
+          const nombrePrograma = nombreDelContrato(c, programas);
           const inicio = typeof c.datos.inicio === "string" ? fechaContrato(c.datos.inicio) : "";
           const conBienvenida = c.bienvenida && (c.estado === "firmado" || c.estado === "enviado" || c.estado === "visto");
           const botones = [
@@ -337,7 +344,7 @@ export function ContratoCard({ venta, alumnoId, sesionId, manual, forma = "tarje
         const acciones = prendidos ? accionesDe(c) : accionesDe(c).filter((a) => a === "ver-pdf");
         const evs = eventos.filter((x) => x.contratoId === c.id);
         const ocupado = (a: string) => trabajando === `${c.id}:${a}`;
-        const nombrePrograma = programas.find((p) => p.id === c.programa)?.nombre ?? c.plantillaNombre;
+        const nombrePrograma = nombreDelContrato(c, programas);
         return (
           <div key={c.id} className="stack-1">
             <div className="row-wrap" style={{ gap: 8 }}>

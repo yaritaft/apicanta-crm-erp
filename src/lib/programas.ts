@@ -26,6 +26,10 @@ export interface Programa {
   /* La plantilla de PandaDoc del contrato (vacía: el programa no lleva contrato). */
   plantillaId: string;
   plantillaNombre: string;
+  /* La plantilla del contrato de la reserva (Manu, 21/10): cuando la venta es sólo la reserva, el contrato
+     dice el monto que deja a cuenta y al firmarlo no se dan accesos. Vacía: el programa no tiene. */
+  plantillaReservaId?: string;
+  plantillaReservaNombre?: string;
   /* Los productos de Wisboo que se regalan al firmar. */
   wisboo: string[];
   /* Los chats de Telegram (id) a los que se lo invita. */
@@ -90,6 +94,8 @@ export function programaNormal(v: unknown): Programa | null {
     productos: lista(o.productos),
     plantillaId: typeof o.plantillaId === "string" ? o.plantillaId : "",
     plantillaNombre: typeof o.plantillaNombre === "string" ? o.plantillaNombre : "",
+    plantillaReservaId: typeof o.plantillaReservaId === "string" ? o.plantillaReservaId : "",
+    plantillaReservaNombre: typeof o.plantillaReservaNombre === "string" ? o.plantillaReservaNombre : "",
     wisboo: lista(o.wisboo), telegram: lista(o.telegram), zoom: lista(o.zoom), bonos: lista(o.bonos),
     activo: o.activo !== false,
   };
@@ -121,6 +127,14 @@ export function cambiarGrupoEnProgramas(programas: unknown, viejo: string, nuevo
     return { ...(p as object), telegram: [...new Set(tg.map((t) => (t === viejo ? nuevo : t)))] };
   });
   return cambio ? nuevos : null;
+}
+
+/** La plantilla con la que sale el contrato: la del programa o, si es el de la reserva, la de la reserva. */
+export function plantillaDelContrato(programa: Programa | null | undefined, reserva: boolean | undefined): { id: string; nombre: string } {
+  if (!programa) return { id: "", nombre: "" };
+  return reserva
+    ? { id: programa.plantillaReservaId ?? "", nombre: programa.plantillaReservaNombre ?? "" }
+    : { id: programa.plantillaId, nombre: programa.plantillaNombre };
 }
 
 export function programaPorId(programas: Programa[], id: string | null | undefined): Programa | null {

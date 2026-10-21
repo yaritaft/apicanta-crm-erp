@@ -3,7 +3,7 @@
 import React from "react";
 import { Chip, Field, Input, Select } from "@/components/ui/ui";
 import type { DatosContrato } from "@/lib/contratos";
-import type { Programa } from "@/lib/programas";
+import { plantillaDelContrato, type Programa } from "@/lib/programas";
 
 /* ==================================================================
    Los datos del contrato, como los carga el closer en la llamada (Manu y
@@ -31,13 +31,17 @@ export function DatosDelContrato({ datos, onCambio, programas, programaId, onPro
   bloquearPrograma?: boolean;
 }) {
   const programa = programas.find((p) => p.id === programaId);
-  const conPlantilla = programas.filter((p) => p.activo && p.plantillaId);
+  /* El contrato de la reserva sale de la plantilla de reserva del programa y sólo lleva el monto (Manu, 21/10). */
+  const reserva = Boolean(datos.reserva);
+  const plantilla = plantillaDelContrato(programa, reserva);
+  const conPlantilla = programas.filter((p) => p.activo && plantillaDelContrato(p, reserva).id);
   const bonos = Array.from(new Set([...(programa?.bonos ?? []), ...datos.bonos]));
   const alternarBono = (b: string) => onCambio({ bonos: datos.bonos.includes(b) ? datos.bonos.filter((x) => x !== b) : [...datos.bonos, b] });
 
   return (
     <div className="form-grid">
-      <Field label="Programa" ayuda={programa?.plantillaNombre ? `Plantilla: ${programa.plantillaNombre}` : "Sale de la plantilla de PandaDoc de ese programa."} span2>
+      <Field label="Programa" span2
+        ayuda={plantilla.nombre ? `Plantilla: ${plantilla.nombre}` : reserva ? "Sale del contrato de reserva de ese programa." : "Sale de la plantilla de PandaDoc de ese programa."}>
         <Select
           value={programaId} onChange={(ev) => onPrograma(ev.target.value)} disabled={bloquearPrograma}
           placeholder="Elegí el programa"
@@ -62,9 +66,17 @@ export function DatosDelContrato({ datos, onCambio, programas, programaId, onPro
       <Field label="Domicilio" span2>
         <Input value={datos.domicilio} onChange={(ev) => onCambio({ domicilio: ev.target.value })} autoComplete="off" />
       </Field>
-      <Field label="Modalidad de pago" ayuda="Sale del plan de cuotas; se puede escribir distinto." span2>
-        <Input value={datos.modalidad} onChange={(ev) => onCambio({ modalidad: ev.target.value })} placeholder="Tres pagos de 1.000 USD" />
-      </Field>
+      {reserva ? (
+        <Field label="Monto de la reserva" ayuda="Va así en el contrato: «El Cliente paga una reserva de 300 USD…». No lleva plan de cuotas." span2>
+          <Input value={datos.modalidad} onChange={(ev) => onCambio({ modalidad: ev.target.value })} placeholder="300 USD" />
+        </Field>
+      ) : (
+        <Field label="Modalidad de pago" ayuda="Sale del plan de cuotas; se puede escribir distinto." span2>
+          <Input value={datos.modalidad} onChange={(ev) => onCambio({ modalidad: ev.target.value })} placeholder="Tres pagos de 1.000 USD" />
+        </Field>
+      )}
+      {/* La reserva no lleva sesiones, inicio ni bonos: eso va en el contrato del programa. */}
+      {!reserva && <>
       <Field label="Sesiones 1 a 1 con el mentor" ayuda="Sólo si se las diste para cerrar la venta.">
         <Select
           value={datos.sesiones === null ? "" : String(datos.sesiones)}
@@ -84,6 +96,7 @@ export function DatosDelContrato({ datos, onCambio, programas, programaId, onPro
           </div>
         </Field>
       )}
+      </>}
     </div>
   );
 }
