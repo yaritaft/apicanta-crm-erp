@@ -6,7 +6,7 @@ import {
 } from "@/lib/accesos-alumnos";
 import { clavePandadoc } from "@/lib/accesos-alumnos-servidor";
 import { cambiarGrupoEnProgramas } from "@/lib/programas";
-import { buscarRegistrante, marcasDeLaFicha, motivoZoom } from "@/lib/accesos-servidor";
+import { buscarRegistrante, claveAltaWisboo, marcasDeLaFicha, motivoZoom } from "@/lib/accesos-servidor";
 
 /* La prueba de conexión de los accesos de alumnos (Ajustes → Integraciones)
    con respuestas como las devuelven Telegram, Wisboo, PandaDoc y Zoom. */
@@ -135,6 +135,13 @@ test("Accesos: lo que hizo la app queda en las marcas de la ficha de Customer Su
   assert.deepEqual(marcasDeLaFicha([dado("wisboo", "downsell"), dado("telegram", "downsell")]), { acceso: "Downsell", accesoWibo: true, accesoZoom: false });
   /* Después del outboarding (todo quitado) o si todo falló: sin acceso. */
   assert.deepEqual(marcasDeLaFicha([dado("wisboo", "hackear-ai", "quitado"), dado("zoom", "hackear-ai", "fallo")]), { acceso: "Sin acceso", accesoWibo: false, accesoZoom: false });
+});
+
+test("Wisboo: volver a dar un curso quitado pide un alta nueva (no repite la respuesta de la primera)", () => {
+  const primera = claveAltaWisboo("USR-1", "PRO-1", Date.UTC(2026, 9, 21, 14, 4));
+  const otraVez = claveAltaWisboo("USR-1", "PRO-1", Date.UTC(2026, 9, 21, 15, 27));
+  assert.notEqual(primera, otraVez);
+  assert.match(primera, /^apicanta-acceso-USR-1-PRO-1-/);
 });
 
 test("Zoom: por qué no inscribió a alguien, en castellano", () => {

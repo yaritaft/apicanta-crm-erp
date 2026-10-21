@@ -85,9 +85,17 @@ async function accesoWisbooExistente(usuarioId: string, productoId: string): Pro
   return fila?.id ?? null;
 }
 
+/* La clave de idempotencia cambia en cada alta: con una fija (usuario + curso), volver a dar un
+   curso que se había quitado le devolvía la respuesta guardada del primer alta (el acceso ya
+   borrado) y la ficha decía «Con acceso» sin que el alumno lo tuviera (Juan Cruz, 21/10). Los
+   duplicados de verdad los frena Wisboo solo, con el 422 de abajo. */
+export function claveAltaWisboo(usuarioId: string, productoId: string, ahora = Date.now()): string {
+  return `apicanta-acceso-${usuarioId}-${productoId}-${ahora.toString(36)}`;
+}
+
 async function darCursoWisboo(usuarioId: string, productoId: string): Promise<{ accesoId: string | null; yaLoTenia: boolean }> {
   const r = await pedir(`${wisbooBase()}/product_accesses`, {
-    method: "POST", headers: wisbooCabeza({ "X-Idempotency-Key": `apicanta-acceso-${usuarioId}-${productoId}` }),
+    method: "POST", headers: wisbooCabeza({ "X-Idempotency-Key": claveAltaWisboo(usuarioId, productoId) }),
     body: JSON.stringify({ user_id: usuarioId, product_id: productoId }),
   });
   if (typeof r.json?.id === "string") return { accesoId: r.json.id, yaLoTenia: false };

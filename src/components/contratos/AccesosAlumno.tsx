@@ -106,7 +106,7 @@ export function AccesosAlumno({ alumno, venta, manual, forma = "tarjeta" }: {
   const [accesos, setAccesos] = useState<Acceso[] | null>(null);
   const [trabajando, setTrabajando] = useState<string | null>(null);
   const [dar, setDar] = useState<string | null>(null);
-  const [quitar, setQuitar] = useState<{ ids?: string[]; texto: string } | null>(null);
+  const [quitar, setQuitar] = useState<{ ids?: string[]; texto: string; wisboo?: boolean } | null>(null);
   const prendidos = contratosPrendidos(e.ajustes.contratos, esDueno);
 
   const leer = useCallback(async () => {
@@ -163,7 +163,7 @@ export function AccesosAlumno({ alumno, venta, manual, forma = "tarjeta" }: {
       <Confirmar
         abierto={quitar !== null} onCerrar={() => setQuitar(null)} confirmarTexto="Quitar"
         titulo={quitar?.ids ? "¿Quitar este acceso?" : "¿Hacerle el outboarding?"}
-        texto={`${quitar?.texto ?? ""} Wisboo no deja borrar al alumno por API: queda en la tienda sin acceso.`}
+        texto={`${quitar?.texto ?? ""}${quitar?.wisboo ? " Wisboo no deja borrar al alumno por API: queda en la tienda sin acceso." : ""}`}
         onConfirmar={() => { const q = quitar; if (q) void correr("quitar", { accion: "quitar", ids: q.ids }, (j) => `Quitados: ${String(j.quitados ?? 0)}${Number(j.fallaron) ? `, ${String(j.fallaron)} con error` : ""}.`); }}
       />
     </>
@@ -184,7 +184,7 @@ export function AccesosAlumno({ alumno, venta, manual, forma = "tarjeta" }: {
           <AccionesServicio>
             {linksTelegram.length + linksZoom.length > 0 && <Button sm variante="ghost" icono={<Copy size={14} />} onClick={() => void copiarMensaje()}>Copiar mensaje con links</Button>}
             {vigentes.length > 0 && (
-              <Button sm variante="ghost" icono={<UserMinus size={14} />} onClick={() => setQuitar({ texto: "Se le saca el acceso a todos sus cursos de Wisboo, se lo saca de los grupos de Telegram y se cancela su inscripción a las reuniones de Zoom." })}>Quitar todo</Button>
+              <Button sm variante="ghost" icono={<UserMinus size={14} />} onClick={() => setQuitar({ texto: "Se le saca el acceso a todos sus cursos de Wisboo, se lo saca de los grupos de Telegram y se cancela su inscripción a las reuniones de Zoom.", wisboo: true })}>Quitar todo</Button>
             )}
             <Button sm variante="primary" icono={<KeyRound size={14} />} onClick={() => setDar(programaSugerido)}>Dar accesos</Button>
           </AccionesServicio>
@@ -203,7 +203,7 @@ export function AccesosAlumno({ alumno, venta, manual, forma = "tarjeta" }: {
                       <Badge variante={est.variante}>{est.texto}</Badge>
                       {prendidos && x.estado === "fallo" && reintentar(x)}
                       {prendidos && (x.estado === "dado" || x.estado === "entro") && (
-                        <Button sm variante="ghost" onClick={() => setQuitar({ ids: [x.id], texto: `Se le saca «${x.recursoNombre || x.recurso}» (${nombre}).` })}>Quitar</Button>
+                        <Button sm variante="ghost" onClick={() => setQuitar({ ids: [x.id], texto: `Se le saca «${x.recursoNombre || x.recurso}» (${nombre}).`, wisboo: x.plataforma === "wisboo" })}>Quitar</Button>
                       )}
                     </FilaServicio>
                   );
@@ -227,7 +227,7 @@ export function AccesosAlumno({ alumno, venta, manual, forma = "tarjeta" }: {
             {linksTelegram.length + linksZoom.length > 0 && <Button sm variante="ghost" icono={<Copy size={14} />} onClick={() => void copiarMensaje()}>Copiar mensaje con links</Button>}
             <Button sm variante="secondary" icono={<KeyRound size={14} />} onClick={() => setDar(programaSugerido)}>Dar accesos</Button>
             {vigentes.length > 0 && (
-              <Button sm variante="ghost" icono={<UserMinus size={14} />} onClick={() => setQuitar({ texto: "Se le saca el acceso a todos sus cursos de Wisboo, se lo saca de los grupos de Telegram y se cancela su inscripción a las reuniones de Zoom." })}>Quitar todo</Button>
+              <Button sm variante="ghost" icono={<UserMinus size={14} />} onClick={() => setQuitar({ texto: "Se le saca el acceso a todos sus cursos de Wisboo, se lo saca de los grupos de Telegram y se cancela su inscripción a las reuniones de Zoom.", wisboo: true })}>Quitar todo</Button>
             )}
           </div>
         )}
@@ -271,7 +271,7 @@ export function AccesosAlumno({ alumno, venta, manual, forma = "tarjeta" }: {
                         </Button>
                       )}
                       {prendidos && (x.estado === "dado" || x.estado === "entro") && (
-                        <Button sm variante="ghost" onClick={() => setQuitar({ ids: [x.id], texto: `Se le saca «${x.recursoNombre || x.recurso}» (${nombre}).` })}>Quitar</Button>
+                        <Button sm variante="ghost" onClick={() => setQuitar({ ids: [x.id], texto: `Se le saca «${x.recursoNombre || x.recurso}» (${nombre}).`, wisboo: x.plataforma === "wisboo" })}>Quitar</Button>
                       )}
                     </li>
                   ))}
