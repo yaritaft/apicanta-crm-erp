@@ -155,6 +155,16 @@ test("lo que no se entiende de la pantalla se rechaza", async () => {
   });
 });
 
+test("«atar-solos» en la prueba local (sin base, no hay webinars de dónde leer) contesta bien y no ata nada", async () => {
+  await conArchivo(async () => {
+    await postGrupos(pedido("/api/whatsapp/grupos", { grupo: { id: G, nombre: "Taller Online 21/10/26 #1" }, evento: "foto", participantes: [A] }, delLector));
+    const r = await postWebinar(pedido("/api/whatsapp/webinar", { accion: "atar-solos" }));
+    assert.equal(r.status, 200);
+    assert.deepEqual(await leer(r), { ok: true, webinarsVistos: [], atados: [], fallidos: [] });
+    assert.equal((await leer(await getEstado(new Request("http://localhost/api/whatsapp/estado")))).grupos[0].webinarId, null);
+  });
+});
+
 test("en producción, sin la clave de servicio, no guarda: dice qué falta", async () => {
   await conArchivo(async () => {
     const r = await postGrupos(pedido("/api/whatsapp/grupos", { grupo: { id: G }, evento: "foto", participantes: [A] }, delLector));

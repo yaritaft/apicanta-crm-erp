@@ -20,8 +20,11 @@ import "./whatsapp.css";
    Sin el grupo atado el lector no puede decir quién se unió, y Formularios
    queda con las marcas a mano. Acá se ve cuáles faltan (los próximos y los de
    los últimos 45 días) y, si el lector ya detectó un grupo cuyo nombre trae la
-   fecha («Taller Online 21/10/26 #1»), se ata con un clic. Un webinar nuevo
-   también puede atar su grupo al crearlo (AsistenteWebinar).
+   fecha («Taller Online 21/10/26 #1»), se ata con un clic. Los que dicen la fecha
+   COMPLETA (con el año) se atan solos al crear el webinar y una vez por día
+   (api/cron/whatsapp-atar-grupos): acá quedan los que no se pueden decidir solos,
+   por ejemplo un nombre sin año. Un webinar nuevo también puede atar su grupo al
+   crearlo (AsistenteWebinar).
    ================================================================== */
 
 export function AvisoGruposSinAtar() {

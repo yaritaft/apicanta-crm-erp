@@ -8,9 +8,9 @@ import { hayEquipoConfigurado } from "./equipo-servidor";
 import { baseDelPedido, exigirArea, faltaLaFuncion } from "./permisos-servidor";
 import { nubeServidor } from "./servidor";
 import {
-  aplicarAviso, aplicarFoto, contarDentro, MAX_BYTES_CUERPO, QR_VIGENTE_SEG,
-  type CuerpoGrupo, type CuerpoLatido, type EstadoConexion, type EventoGrupo, type GrupoWhatsapp, type LatidoLector,
-  type MiembroWhatsapp, type RespuestaEstado, type RespuestaIntegrantes, type RespuestaWebinar,
+  aplicarAviso, aplicarFoto, contarDentro, gruposParaAtarSolos, MAX_BYTES_CUERPO, QR_VIGENTE_SEG,
+  type AtadoSolo, type CuerpoGrupo, type CuerpoLatido, type EstadoConexion, type EventoGrupo, type GrupoWhatsapp, type LatidoLector,
+  type MiembroWhatsapp, type RespuestaEstado, type RespuestaIntegrantes, type RespuestaWebinar, type WebinarMinimo,
 } from "./whatsapp";
 
 /* ==================================================================
@@ -608,10 +608,49 @@ export async function datosDeIntegrantes(repo: RepoWhatsapp, modo: Modo, ahora: 
   return { configurado: Boolean(tokenDelLector()), tablas: true, modo, lector, grupos, miembros, generado: ahora.toISOString() };
 }
 
+/* ---------- Atar los grupos solos ---------- */
+
+export interface ResultadoAtadoSolo {
+  /** Los webinars que se miraron (el que se acaba de crear tiene que estar acá para que valga la respuesta). */
+  webinarsVistos: string[];
+  atados: AtadoSolo[];
+  /** Los que correspondían pero no se pudieron atar (alguien lo ató mientras tanto, o la base dijo que no). */
+  fallidos: { grupoId: string; motivo: string }[];
+}
+
+/** Los webinars de la app, lo mínimo para atarles su grupo. Sólo desde el servidor (clave de servicio). */
+export async function leerWebinarsParaAtar(db: SupabaseClient): Promise<WebinarMinimo[]> {
+  const r = await db.from("webinars").select("id, titulo, fecha");
+  if (r.error) throw new ErrorDeBase(r.error.code, r.error.message ?? "No pude leer los webinars.");
+  return ((r.data ?? []) as { id: string; titulo?: string | null; fecha?: string | null }[])
+    .filter((w) => w.id && w.fecha)
+    .map((w) => ({ id: w.id, titulo: w.titulo ?? "", fecha: w.fecha as string }));
+}
+
+/** Ata cada grupo sin webinar al que dice su nombre (gruposParaAtarSolos). Se puede correr las veces que haga falta: sólo toca lo que está
+    sin atar, y antes de escribir vuelve a mirar el grupo, para no pisar un atado que alguien hizo en el medio. */
+export async function atarGruposSolos(repo: RepoWhatsapp, webinars: readonly WebinarMinimo[]): Promise<ResultadoAtadoSolo> {
+  const propuestas = gruposParaAtarSolos(await repo.leerGrupos(), webinars);
+  const atados: AtadoSolo[] = [];
+  const fallidos: { grupoId: string; motivo: string }[] = [];
+  for (const p of propuestas) {
+    try {
+      if ((await repo.leerGrupo(p.grupoId))?.webinarId) { fallidos.push({ grupoId: p.grupoId, motivo: "ya tenía webinar" }); continue; }
+      const r = await repo.atarGrupo(p.grupoId, p.webinarId);
+      if (r === "ok") atados.push(p); else fallidos.push({ grupoId: p.grupoId, motivo: r });
+    } catch (e) {
+      fallidos.push({ grupoId: p.grupoId, motivo: sinNumeros(e instanceof Error ? e.message : "error") });
+    }
+  }
+  return { webinarsVistos: webinars.map((w) => w.id), atados, fallidos };
+}
+
 /** Los pedidos de la pantalla que cambian algo. */
 export type AccionWebinar =
   | { accion: "atar"; grupoId: string; webinarId: string }
-  | { accion: "soltar"; grupoId: string };
+  | { accion: "soltar"; grupoId: string }
+  /* Atar solos todos los grupos que dicen su fecha completa (lo pide el asistente al crear un webinar). */
+  | { accion: "atar-solos" };
 
 const IDENTIFICADOR = /^[\w.:@+-]{1,160}$/;
 
@@ -627,5 +666,6 @@ export function leerAccion(json: unknown): { ok: true; accion: AccionWebinar } |
     const grupoId = texto("grupoId");
     return grupoId ? { ok: true, accion: { accion: "soltar", grupoId } } : { ok: false, error: "Falta el grupo." };
   }
-  return { ok: false, error: "No conozco esa acción: «atar» o «soltar»." };
+  if (b.accion === "atar-solos") return { ok: true, accion: { accion: "atar-solos" } };
+  return { ok: false, error: "No conozco esa acción: «atar», «soltar» o «atar-solos»." };
 }

@@ -28,6 +28,10 @@
     {
       "path": "/api/cron/contratos",
       "schedule": "25 * * * *"
+    },
+    {
+      "path": "/api/cron/whatsapp-atar-grupos",
+      "schedule": "40 12 * * *"
     }
   ]
 }

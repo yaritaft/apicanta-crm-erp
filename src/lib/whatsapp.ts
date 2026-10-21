@@ -543,6 +543,37 @@ export function sugerirWebinar(
   return null;
 }
 
+/** Un grupo que se ata solo, y por qué. */
+export interface AtadoSolo { grupoId: string; nombre: string; webinarId: string; motivo: string }
+
+/** Los grupos sin atar que su nombre manda, sin lugar a dudas, a un webinar: se ata solo, sin que nadie lo confirme. La regla es más
+    estricta que `sugerirWebinar` (que sólo propone y lo confirma una persona):
+    - el nombre trae la fecha COMPLETA, con el año («Taller Online 21/10/26 #1»): sin año puede ser de otro año y no se adivina;
+    - esa fecha es el día (hora de Argentina) de UN solo webinar de la app: si hay dos el mismo día, o el nombre dice dos fechas
+      que dan webinars distintos, no se ata;
+    - el grupo no es de ningún webinar: nunca se pisa lo que alguien ató a mano. */
+export function gruposParaAtarSolos(
+  grupos: readonly Pick<GrupoWhatsapp, "id" | "nombre" | "webinarId">[], webinars: readonly WebinarMinimo[],
+): AtadoSolo[] {
+  const salida: AtadoSolo[] = [];
+  for (const g of grupos) {
+    if (g.webinarId) continue;
+    const dias = fechasEnTexto(g.nombre).filter((f): f is FechaSuelta & { anio: number } => f.anio !== undefined);
+    const coinciden = new Map<string, FechaSuelta>();
+    for (const f of dias) {
+      for (const w of webinars) {
+        const d = diaArgentino(w.fecha);
+        if (d && d[0] === f.anio && d[1] === f.mes && d[2] === f.dia) coinciden.set(w.id, f);
+      }
+    }
+    if (coinciden.size !== 1) continue;
+    const [[webinarId, f]] = [...coinciden];
+    const dd = String(f.dia).padStart(2, "0"), mm = String(f.mes).padStart(2, "0");
+    salida.push({ grupoId: g.id, nombre: g.nombre, webinarId, motivo: `El nombre del grupo dice ${dd}/${mm}/${f.anio}, el día de este webinar.` });
+  }
+  return salida;
+}
+
 /* ---------- Quién de un webinar está en el grupo ---------- */
 
 export type EstadoUnion = "unida" | "no-unida" | "sin-telefono";

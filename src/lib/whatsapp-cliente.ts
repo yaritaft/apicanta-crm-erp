@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { cabeceras } from "@/components/webinars/useYoutube";
-import { esSinAcceso, estadoDelLector, proximaPregunta, QR_VIGENTE_SEG, sinCodigoVencido, type RespuestaEstado, type RespuestaIntegrantes, type RespuestaWebinar } from "./whatsapp";
+import { esSinAcceso, estadoDelLector, proximaPregunta, QR_VIGENTE_SEG, sinCodigoVencido, type AtadoSolo, type RespuestaEstado, type RespuestaIntegrantes, type RespuestaWebinar } from "./whatsapp";
 
 /* ==================================================================
    WhatsApp de lectura, del lado de la pantalla.
@@ -298,6 +298,32 @@ export async function atarGruposAlCrear(
     if (!hecho) faltan.push(id);
   }
   return faltan;
+}
+
+/** Al crear un webinar: ata solos los grupos que dicen su fecha completa («Taller Online 21/10/26 #1»). Lo hace el servidor (lib/whatsapp-servidor,
+    atarGruposSolos) y devuelve qué webinars miró: si el recién creado todavía no está en la base (se guarda unos instantes después) todavía no
+    vale la respuesta y se vuelve a pedir con calma, unos 40 segundos como mucho. Devuelve los grupos atados a ESTE webinar, o null si no se
+    pudo (sin permiso, sin conexión, o el webinar nunca llegó a la base). Los parámetros son para las pruebas. */
+export async function atarSolosAlCrear(
+  webinarId: string,
+  { llamar = () => pedir<{ webinarsVistos?: string[]; atados?: AtadoSolo[] }>("/api/whatsapp/webinar", { accion: "atar-solos" }),
+    esperar = (ms: number) => new Promise<void>((r) => setTimeout(r, ms)), esperas = [1500, 3000, 6000, 10_000, 20_000] }:
+    { llamar?: () => Promise<{ webinarsVistos?: string[]; atados?: AtadoSolo[] }>; esperar?: (ms: number) => Promise<void>; esperas?: readonly number[] } = {},
+): Promise<AtadoSolo[] | null> {
+  for (let i = 0; i <= esperas.length; i++) {
+    try {
+      const r = await llamar();
+      if ((r.webinarsVistos ?? []).includes(webinarId)) {
+        await recargarLector();
+        return (r.atados ?? []).filter((a) => a.webinarId === webinarId);
+      }
+    } catch (e) {
+      /* Sin permiso o sin conexión no se insiste: queda el cron diario y el aviso de Webinars. */
+      if (!(e instanceof ErrorWhatsapp) || e.estado !== 404) return null;
+    }
+    if (i < esperas.length) await esperar(esperas[i]);
+  }
+  return null;
 }
 
 /* ---------- Todos los grupos y sus integrantes (Crecimiento → Grupos de WhatsApp) ---------- */

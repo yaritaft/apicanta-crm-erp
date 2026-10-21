@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { exigirArea } from "@/lib/permisos-servidor";
+import { nubeServidor } from "@/lib/servidor";
 import {
-  datosDeWebinar, ErrorSinTablas, leerAccion, leerJson, repositorio, respuestaDeError, SIN_BASE, tokenDelLector,
+  atarGruposSolos, datosDeWebinar, ErrorSinTablas, leerAccion, leerJson, leerWebinarsParaAtar, repositorio, respuestaDeError, SIN_BASE, tokenDelLector,
 } from "@/lib/whatsapp-servidor";
 
 /* ==================================================================
@@ -15,6 +16,8 @@ import {
    - «atar» { grupoId, webinarId }: el grupo es de ese webinar (puede haber
      varios grupos de un mismo webinar).
    - «soltar» { grupoId }: el grupo deja de ser de su webinar.
+   - «atar-solos»: ata cada grupo sin webinar al que dice su fecha completa («Taller Online 21/10/26 #1»). Lo pide el asistente al
+     crear un webinar; lo mismo hace el cron diario (api/cron/whatsapp-atar-grupos). Contesta qué ató y qué webinars miró.
 
    Ver: quien ve los Webinars y no está limitado a lo suyo. Atar y soltar grupos: quien los edita. (Las
    marcas «Contactado» y «Unido» las lleva Formularios, en registros_webinar.)
@@ -62,6 +65,12 @@ export async function POST(peticion: Request) {
   if (!donde) return NextResponse.json({ error: SIN_BASE }, { status: 503 });
   try {
     const x = a.accion;
+    if (x.accion === "atar-solos") {
+      /* Los webinars están en la base (sin ella, la prueba local, no hay de dónde leerlos). */
+      const db = donde.modo === "nube" ? nubeServidor() : null;
+      if (!db) return NextResponse.json({ ok: true, webinarsVistos: [], atados: [], fallidos: [] }, SIN_CACHE);
+      return NextResponse.json({ ok: true, ...(await atarGruposSolos(donde.repo, await leerWebinarsParaAtar(db))) }, SIN_CACHE);
+    }
     const r = await donde.repo.atarGrupo(x.grupoId, x.accion === "atar" ? x.webinarId : null);
     if (r === "sin-grupo") return NextResponse.json({ error: "Ese grupo no está entre los que detectó el lector." }, { status: 404 });
     if (r === "sin-webinar") return NextResponse.json({ error: "Ese webinar no existe." }, { status: 404 });

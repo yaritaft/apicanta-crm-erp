@@ -10,7 +10,7 @@ import { useAcceso } from "@/lib/acceso";
 import { nivelEn } from "@/lib/permisos";
 import { num } from "@/lib/format";
 import { ordenarGrupos, puedeVerWhatsapp, sugerirWebinar } from "@/lib/whatsapp";
-import { atarGruposAlCrear, useLector } from "@/lib/whatsapp-cliente";
+import { atarGruposAlCrear, atarSolosAlCrear, useLector } from "@/lib/whatsapp-cliente";
 import { idDeYoutube, miniaturaDe, type DatosYoutube } from "@/lib/youtube";
 import type { Webinar } from "@/lib/types";
 import { fechaCompleta, hoyArgentina, isoDesdeArgentina, partesArgentina, sumarDias } from "./fechas";
@@ -146,15 +146,20 @@ export function AsistenteWebinar({ onCerrar, onCreado }: {
       extra: {},
     };
     const id = acciones.crear<Webinar>("webinars", nuevo, nuevo.titulo);
-    /* Los grupos elegidos se atan cuando el webinar ya está en la base (en segundo plano: la ficha se abre ya). */
+    /* Los grupos elegidos se atan cuando el webinar ya está en la base (en segundo plano: la ficha se abre ya). Y después se ata solo
+       cualquier otro grupo que diga la fecha completa de este webinar («Taller Online 21/10/26 #1»), lo haya tildado alguien o no. */
     const grupos = hayPasoWhatsapp ? [...elegidos] : [];
-    if (grupos.length) {
-      void atarGruposAlCrear(grupos, id).then((faltan) => {
+    void (async () => {
+      if (grupos.length) {
+        const faltan = await atarGruposAlCrear(grupos, id);
         const hechos = grupos.length - faltan.length;
         if (faltan.length === 0) toast(`${hechos === 1 ? "El grupo de WhatsApp quedó atado" : `Los ${hechos} grupos de WhatsApp quedaron atados`} a «${nuevo.titulo}».`);
         else toast(`No pude atar ${faltan.length === 1 ? "un grupo" : `${faltan.length} grupos`} de WhatsApp: atalo en la ficha del webinar.`, "err");
-      });
-    }
+      }
+      if (!puedeAtar) return;
+      const solos = (await atarSolosAlCrear(id) ?? []).filter((a) => !grupos.includes(a.grupoId));
+      if (solos.length) toast(`${solos.length === 1 ? "Un grupo de WhatsApp más quedó atado solo" : `${solos.length} grupos de WhatsApp más quedaron atados solos`} a «${nuevo.titulo}»: ${solos.length === 1 ? "su nombre dice" : "sus nombres dicen"} la fecha.`);
+    })();
     onCreado(id, nuevo.titulo);
   }
 
@@ -255,7 +260,7 @@ export function AsistenteWebinar({ onCerrar, onCreado }: {
         <>
           <Pregunta
             texto="¿Ya armaron el grupo de WhatsApp?"
-            sub="El lector detectó estos grupos que todavía no son de ningún webinar. Tildá los de éste (puede haber varios: WhatsApp deja 1.024 por grupo) y quedan atados al crearlo. Si todavía no está, seguí sin elegir: cuando el lector lo detecte, en Webinars aparece un aviso para atarlo con un clic."
+            sub="El lector detectó estos grupos que todavía no son de ningún webinar. Los que dicen la fecha completa («Taller Online 21/10/26 #1») se atan solos al crearlo, y también los que se armen después (una vez por día); acá podés tildar otros. Si todavía no está, seguí sin elegir."
           />
           <Input icono={<Search size={16} />} value={buscaGrupo} onChange={(ev) => setBuscaGrupo(ev.target.value)} placeholder="Buscar un grupo por su nombre" aria-label="Buscar un grupo" />
           <div className="wb-grupos" role="group" aria-label="Grupos de WhatsApp sin webinar">

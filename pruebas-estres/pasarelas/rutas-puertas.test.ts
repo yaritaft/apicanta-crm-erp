@@ -151,8 +151,9 @@ test("los GET públicos «¿estás listo?» no exponen nada: sólo ok y listo", 
 
 test("los crons: sólo el secreto exacto abre; «Bearer undefined» y variantes no", async () => {
   const crons = rutas.filter((r) => r.ruta.startsWith("/cron/"));
-  /* Seis desde el 20/10: se sumó /cron/contratos (la pasada de cada hora por los contratos de PandaDoc). */
-  assert.equal(crons.length, 6);
+  /* Siete desde el 21/10: a /cron/contratos (la pasada de cada hora por los contratos de PandaDoc) se sumó
+     /cron/whatsapp-atar-grupos (una vez por día ata solos los grupos de WhatsApp a su webinar). */
+  assert.equal(crons.length, 7);
   const antes = process.env.CRON_SECRET;
   try {
     await capturandoConsola(async () => {
