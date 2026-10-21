@@ -275,7 +275,7 @@ export function ResellsCs() {
 }
 
 /* El formulario de una agenda de resell: nueva o una existente. Lo que trajo Calendly no se corrige. */
-function FormResell({ resell, onCerrar }: { resell?: Resell; onCerrar: () => void }) {
+export function FormResell({ resell, onCerrar }: { resell?: Resell; onCerrar: () => void }) {
   const e = useEstado();
   const toast = useToast();
   const listas = useMemo(() => listasCs(e.ajustes.seguimiento), [e.ajustes.seguimiento]);

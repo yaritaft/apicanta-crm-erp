@@ -75,6 +75,10 @@ export function FichaPersona({ id, vista, ventaResaltada, onCerrar, onVista }: {
   useEffect(() => {
     const onKey = (ev: KeyboardEvent) => {
       if (ev.key !== "Escape") return;
+      /* Si un campo ya usó la tecla (cancelar la edición de una fecha o un texto), no se cierra la ficha. Hace falta mirarlo así:
+         React escucha en el mismo `document` que esto, y su stopPropagation no frena a otro oyente del mismo nodo (21/10: Esc
+         al editar la fecha de egreso cerraba toda la ficha). */
+      if (ev.defaultPrevented) return;
       if (document.querySelector(".modal-backdrop, [data-flotante-abierto], .asistente")) return;
       onCerrar();
     };

@@ -353,3 +353,17 @@ test("cada lista de «Para hoy» abre la ficha en una solapa que existe, y cada 
     assert.match(readFileSync(archivo, "utf8"), new RegExp(`abrirFicha\\([^)]*hoja: "${solapa}"`), `${archivo} abre la ficha en «${solapa}»`);
   }
 });
+
+test("la ficha no se cierra con la Escape que un campo usó para cancelar su edición, y «Se les termina el contrato» abre en «¿Renueva?»", () => {
+  /* Next monta React en `document`: el stopPropagation del campo no frena al oyente de la ficha en el mismo nodo. */
+  const ficha = readFileSync("src/components/ficha/FichaPersona.tsx", "utf8");
+  assert.match(ficha, /if \(ev\.defaultPrevented\) return;/);
+  const celda = readFileSync("src/components/crm-tabla/CeldaEditable.tsx", "utf8");
+  assert.match(celda, /ev\.key === "Escape"\) \{ ev\.preventDefault\(\)/, "el campo marca la tecla como usada");
+  const panel = readFileSync("src/components/mi-panel/PanelServicio.tsx", "utf8");
+  assert.match(panel, /renovar: "programa"/);
+  const hoja = readFileSync("src/components/ficha/HojaServicio.tsx", "utf8");
+  assert.match(hoja, /solapa === "programa" && porRenovar/, "el bloque «¿Renueva?» va en Programa");
+  assert.match(hoja, /guardar\(f, "followUp", "OUTBOARDING"\)/, "«No renueva» deja el Follow Up como en el Airtable (y sale de la lista)");
+});
+

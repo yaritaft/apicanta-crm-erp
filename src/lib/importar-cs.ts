@@ -211,6 +211,19 @@ export function leerSiNo(texto: string): boolean | null {
   return null;
 }
 
+/** «Caso de Éxito» / «No es Caso de Éxito» (las dos opciones del Airtable de resells), además de sí y no. null si es otro texto
+    (un link al caso, por ejemplo: el importador lo toma como caso y lo deja en las notas).
+    Antes «No es Caso de Éxito» no se entendía y, por traer texto, quedaba como SÍ: 56 de 79 resells del 10/10 (21/10). */
+export function leerCasoDeExito(texto: string): boolean | null {
+  const t = sinAcentos(texto);
+  if (!t) return false;
+  const siNo = leerSiNo(texto);
+  if (siNo !== null) return siNo;
+  if (/^(no|sin)\b/.test(t)) return false;
+  if (/^(es )?caso( de)? exito$/.test(t)) return true;
+  return null;
+}
+
 /** El orden de las fechas de una tabla: «dm» (día/mes, la planilla argentina) o «md» (mes/día, como exporta el Airtable:
     «10/19/2026»). Se mira el archivo entero: si alguna fecha con barras tiene el SEGUNDO número mayor a 12 y ninguna el primero, es
     mes/día; ante la duda (todo hasta 12, o mezcla), día/mes, como siempre. Antes se leía todo como día/mes y el CSV del Airtable
@@ -694,13 +707,14 @@ export function planificarImportacionCs(e: EstadoApp, tablas: readonly TablaImpo
       const id = existente?.id ?? idImportado;
       const cash = v("cash") ? leerMontoCs(v("cash")) : null;
       if (v("cash") && cash === null) plan.avisos.push(`Resells, fila ${n}: «${v("cash")}» no se entendió como monto; se ignoró.`);
-      const caso = v("caso") ? leerSiNo(v("caso")) : false;
+      const caso = leerCasoDeExito(v("caso"));
       const estadoTxt = v("estado");
       const archivo = resellNormal({
         id, sesionId: existente?.sesionId ?? null, fechaHora: existente?.fechaHora ?? fechaHora,
         nombre: v("nombre"), email: mail, telefono: v("telefono"), closer: v("closer"),
         /* El Estado del Airtable es de selección múltiple: «No quiere renovar,Outbording» son dos estados. */
         estado: estadosDeResell(estadoTxt).map((x) => valorDeLista(x, listas.estadosResell)).join(", "),
+        /* Otro texto (el link al caso, por ejemplo) cuenta como caso, y queda en las notas. */
         cashCollect: cash, casoDeExito: caso === true || (caso === null && Boolean(v("caso"))),
         notas: caso === null && v("caso") ? `${v("notas")}${v("notas") ? " · " : ""}Caso de éxito: ${v("caso")}`.trim() : v("notas"),
         cancelada: false, origen: existente?.origen ?? "importado",

@@ -41,7 +41,8 @@ import "./panel-servicio.css";
 
 /* La solapa de la ficha que abre cada lista de «Para hoy». */
 const HOJA_DE_LISTA: Partial<Record<SeccionServicio["id"], SolapaServicio>> = {
-  contactar: "seguimiento", nuevos: "seguimiento", resells: "testimonio", testimonios: "testimonio", reportes: "reportes", contratos: "contrato",
+  /* «Renovar» abre Programa, donde está «¿Renueva?» con la llamada de resell y los botones. */
+  contactar: "seguimiento", nuevos: "seguimiento", renovar: "programa", resells: "testimonio", testimonios: "testimonio", reportes: "reportes", contratos: "contrato",
 };
 
 /* Cómo se ve cada tarea de «Para hoy»: su ícono, su color y lo que pide. */

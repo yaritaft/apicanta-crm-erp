@@ -6,7 +6,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   BadgeCheck, Briefcase, CalendarCheck, CalendarClock, CalendarDays, CalendarPlus, Contact, CreditCard, FileSignature, Flag, GraduationCap,
   Hash, HeartHandshake, Home, IdCard, KeyRound, Layers, Link2, Mail, MapPin, MessageSquareText, Phone, PhoneCall, PhoneMissed, Plus,
-  Repeat2, ShieldCheck, Signal, Timer, UserRound, Users, Video,
+  Pencil, Repeat2, ShieldCheck, Signal, StickyNote, Timer, UserRound, Users, Video,
 } from "lucide-react";
 import { Badge, Button, Empty, Select } from "@/components/ui/ui";
 import { CeldaEditable } from "@/components/crm-tabla/CeldaEditable";
@@ -17,6 +17,9 @@ import { contenidoCliente, useEdicionCliente } from "@/components/cs/edicionClie
 import { RespuestasDelReporte } from "@/components/cs/ReportesDelCliente";
 import { useToast } from "@/components/ui/Toast";
 import { ChatEquipo } from "./ChatEquipo";
+import { BloqueServicio, FilaServicio } from "./FilaServicio";
+import { FormTestimonioCs } from "@/components/cs/TestimoniosCs";
+import { FormResell } from "@/components/cs/ResellsCs";
 import { SOLAPAS_SERVICIO, useSolapaServicio, type SolapaServicio } from "./abrir";
 import { HistorialPersona } from "./HistorialPersona";
 import { acciones } from "@/lib/store";
@@ -24,15 +27,17 @@ import { useAcceso } from "@/lib/acceso";
 import { puedeEditar } from "@/lib/permisos";
 import { alumnoDeVenta, etapaDelAlumno, etapasDeServicio } from "@/lib/alumnos";
 import {
-  EDITOR_CLIENTE, filasClientes, filasResells, MOTOR_CLIENTES, POR_QUE_NO_CLIENTE, valorEditableCliente, type ClaveCliente, type FilaCliente,
+  EDITOR_CLIENTE, estadosDeResell, filasClientes, filasResells, MOTOR_CLIENTES, POR_QUE_NO_CLIENTE, valorEditableCliente, type ClaveCliente,
+  type FilaCliente,
 } from "@/lib/clientes-cs";
-import { configSeguimiento, diasEntre, formatoDia, hoyDelNegocio, textoDeAtraso } from "@/lib/seguimiento";
-import { etapaDelFollowUp, ETAPAS_DEL_ALUMNO } from "@/lib/panel-servicio";
+import { configSeguimiento, diasEntre, formatoDia, hoyDelNegocio, terminoElServicio, textoDeAtraso } from "@/lib/seguimiento";
+import { DIAS_PARA_RENOVAR, etapaDelFollowUp, ETAPAS_DEL_ALUMNO } from "@/lib/panel-servicio";
+import { sinTildes } from "@/lib/crm";
 import { INGRESOS_COMUNIDAD } from "@/lib/angelo";
 import { SI } from "@/lib/tabla-cs";
 import { fechaLarga, money } from "@/lib/format";
 import type { Persona } from "@/lib/persona";
-import type { Alumno, EstadoApp, IngresoComunidad, SeguimientoAlumno, Venta } from "@/lib/types";
+import type { Alumno, EstadoApp, IngresoComunidad, Resell, SeguimientoAlumno, Testimonio, Venta } from "@/lib/types";
 import "@/components/cs/cs.css";
 import "./hoja-servicio.css";
 
@@ -103,6 +108,17 @@ function Fila({ icono, rotulo, falta, ayuda, children }: {
 }
 
 /* Una sección de filas, con su título chico arriba. */
+/* Un texto largo (la situación previa, las notas): abajo del rótulo y entero, en vez de apretado a la derecha. */
+function FilaTexto({ icono, rotulo, texto }: { icono?: React.ReactNode; rotulo: string; texto: string }) {
+  if (!texto.trim()) return <Fila icono={icono} rotulo={rotulo}><span className="hs-guion">—</span></Fila>;
+  return (
+    <div className="hs-fila hs-fila--texto">
+      <span className="hs-fila__rot"><span className="hs-fila__ico" aria-hidden>{icono}</span><span>{rotulo}</span></span>
+      <div className="hs-fila__val">{texto.trim()}</div>
+    </div>
+  );
+}
+
 function Bloque({ titulo, children }: { titulo?: string; children: React.ReactNode }) {
   return (
     <section className="hs-bloque">
@@ -161,6 +177,11 @@ function HojaDeUnServicio({ e, p, f, venta, producto, conChat }: {
   const solapasRef = useSolapasQueSeDeslizan(solapa);
   const [editando, setEditando] = useState<ClaveCliente | "programa" | null>(null);
   const [editarAlumno, setEditarAlumno] = useState<Alumno | null>(null);
+  /* Testimonio y resell se cargan y corrigen acá mismo, con los formularios de sus pantallas (Alumnos → Testimonios / Resells). */
+  const [formTestimonio, setFormTestimonio] = useState<{ t?: Testimonio } | null>(null);
+  const [formResell, setFormResell] = useState<Resell | null>(null);
+  const puedeTestimonio = puedeEditar(acceso, "testimonios");
+  const puedeResell = puedeEditar(acceso, "resells");
   const alumno = f.alumno;
   const etapas = useMemo(() => etapasDeServicio(e), [e]);
   const etapaPipeline = etapaDelAlumno(etapas, alumno);
@@ -230,6 +251,15 @@ function HojaDeUnServicio({ e, p, f, venta, producto, conChat }: {
   const testimonios = (e.testimonios ?? []).filter((t) => t.alumnoId === alumno.id).sort((a, b) => b.creadoEn.localeCompare(a.creadoEn));
   const resells = filasResells(e).filter((r) => r.alumno?.id === alumno.id).sort((a, b) => b.resell.fechaHora.localeCompare(a.resell.fechaHora));
   const cvs = (e.revisionesCv ?? []).filter((r) => r.alumnoId === alumno.id);
+
+  /* ¿Renueva? (Juan Cruz, 21/10): desde «Se les termina el contrato» se llega acá. Se decide con lo mismo que mira el panel: si
+     renovó, la nueva fecha de fin; si no, el Follow Up en OUTBOARDING (como en el Airtable). Al lado, lo que dejó el closer en
+     la última llamada de resell. */
+  const porRenovar = activo && quedan !== null && quedan <= DIAS_PARA_RENOVAR && !terminoElServicio(f.followUp);
+  const ultimoResell = resells[0];
+  const estadosUltimo = ultimoResell ? estadosDeResell(ultimoResell.resell.estado) : [];
+  const closerDijoQueNo = estadosUltimo.some((x) => /no quiere renovar|outbo?a?rding/.test(sinTildes(x)));
+  const closerDijoQueSi = estadosUltimo.some((x) => /upgrade|garantia extendida/.test(sinTildes(x)));
   const reportes = e.reportes.filter((r) => r.alumnoId === alumno.id).sort((a, b) => +new Date(b.semanaDel) - +new Date(a.semanaDel));
 
   const solapas: { id: Solapa; texto: string; n?: number }[] = [
@@ -295,6 +325,32 @@ function HojaDeUnServicio({ e, p, f, venta, producto, conChat }: {
           );
         })}
       </div>
+
+      {solapa === "programa" && porRenovar && (
+        <BloqueServicio titulo="¿Renueva?" extra={<span className={`hs-chip ${quedan! < 0 ? "hs-chip--rojo" : "hs-chip--ambar"}`}>
+          {quedan! < 0 ? `Terminó hace ${-quedan!} ${quedan === -1 ? "día" : "días"}` : quedan === 0 ? "Termina hoy" : `Termina en ${quedan} ${quedan === 1 ? "día" : "días"}`}
+        </span>}>
+          <FilaServicio icono={<CalendarClock size={15} />} rotulo="Fin del contrato" detalle={f.egresoSugerido ? "Calculado: inicio más duración" : undefined}>
+            <span className="t-num">{formatoDia(f.egreso as string, hoy)}</span>
+          </FilaServicio>
+          <FilaServicio icono={<Repeat2 size={15} />} rotulo="Llamada de resell"
+            detalle={ultimoResell ? `${formatoDia(ultimoResell.dia, hoy)}${ultimoResell.resell.closer ? ` · ${ultimoResell.resell.closer}` : ""}` : "Todavía no tuvo"}>
+            {!ultimoResell ? <span className="hs-guion">—</span>
+              : estadosUltimo.length ? estadosUltimo.map((x) => <Badge key={x} variante={/no quiere|outbo/i.test(x) ? "danger" : /upgrade|garant/i.test(x) ? "success" : "brand"}>{x}</Badge>)
+              : <Badge variante="warning">{ultimoResell.resell.cancelada ? "Cancelada" : "Sin resultado: lo carga el closer"}</Badge>}
+            {ultimoResell && puedeResell && (
+              <Button sm variante="ghost" icono={<Pencil size={13} />} onClick={() => setFormResell(ultimoResell.resell)}>Cargar resultado</Button>
+            )}
+          </FilaServicio>
+          {puede && (
+            <FilaServicio icono={<Flag size={15} />} rotulo="Qué hacemos"
+              detalle={closerDijoQueNo ? "El closer dejó que no renueva" : closerDijoQueSi ? "El closer dejó que renovó" : "Si renovó, la nueva fecha de fin; si no, pasa a outboarding"}>
+              <Button sm variante={closerDijoQueSi ? "primary" : "secondary"} icono={<CalendarCheck size={14} />} onClick={() => setEditando("egreso")}>Renovó</Button>
+              <Button sm variante={closerDijoQueNo ? "primary" : "secondary"} icono={<GraduationCap size={14} />} onClick={() => guardar(f, "followUp", "OUTBOARDING")}>No renueva</Button>
+            </FilaServicio>
+          )}
+        </BloqueServicio>
+      )}
 
       {solapa === "programa" && (
         <>
@@ -421,29 +477,56 @@ function HojaDeUnServicio({ e, p, f, venta, producto, conChat }: {
 
       {solapa === "testimonio" && (
         <>
-          <Bloque titulo="Testimonio">
-            {testimonios.length === 0 ? (
-              <p className="hs-nada">Todavía no tiene testimonio. Se carga en <a className="link" href="/alumnos?seccion=testimonios">Testimonios</a>.</p>
-            ) : testimonios.map((t) => (
-              <React.Fragment key={t.id}>
-                <Fila icono={<Flag size={15} />} rotulo="Follow-up del testimonio">{t.followUp || "—"}</Fila>
-                <Fila icono={<CalendarDays size={15} />} rotulo="Grabó">{t.fechaGrabacion ? `${formatoDia(String(t.fechaGrabacion), hoy)}${t.conQuien ? ` con ${t.conQuien}` : ""}` : "Todavía no"}</Fila>
-                <Fila icono={<Video size={15} />} rotulo="Video" falta={Boolean(t.fechaGrabacion) && !t.link.trim()}>
-                  {t.link.trim() ? <a className="link" href={t.link} target="_blank" rel="noopener noreferrer">{t.estadoVideo || "Ver el video"}</a> : (t.estadoVideo || "Sin link")}
-                </Fila>
-                {t.resell && <Fila icono={<Repeat2 size={15} />} rotulo="Resell después del testimonio">{t.resell}</Fila>}
-              </React.Fragment>
-            ))}
-          </Bloque>
-          <Bloque titulo="Llamadas de resell">
+          {testimonios.length === 0 && (
+            <BloqueServicio titulo="Testimonio" extra={puedeTestimonio ? (
+              <Button sm variante="secondary" icono={<Plus size={14} />} onClick={() => setFormTestimonio({})}>Cargar el testimonio</Button>
+            ) : undefined}>
+              <p className="hs-nada">Todavía no tiene testimonio.</p>
+            </BloqueServicio>
+          )}
+          {testimonios.map((t, i) => (
+            <BloqueServicio key={t.id} titulo={testimonios.length > 1 ? `Testimonio ${testimonios.length - i} de ${testimonios.length}` : "Testimonio"} extra={puedeTestimonio ? (
+              <span className="hs-acciones">
+                <Button sm variante="ghost" icono={<Pencil size={13} />} onClick={() => setFormTestimonio({ t })}>Editar</Button>
+                {i === 0 && <Button sm variante="ghost" icono={<Plus size={14} />} onClick={() => setFormTestimonio({})}>Otro</Button>}
+              </span>
+            ) : undefined}>
+              <Fila icono={<Flag size={15} />} rotulo="Follow-up del testimonio">{t.followUp || <span className="hs-guion">—</span>}</Fila>
+              <Fila icono={<CalendarDays size={15} />} rotulo="Fecha de grabación">{t.fechaGrabacion ? <span className="t-num">{formatoDia(String(t.fechaGrabacion), hoy)}</span> : "Todavía no"}</Fila>
+              <Fila icono={<UserRound size={15} />} rotulo="Con quién grabó">{t.conQuien || <span className="hs-guion">—</span>}</Fila>
+              <Fila icono={<Video size={15} />} rotulo="Estado del video">{t.estadoVideo || <span className="hs-guion">—</span>}</Fila>
+              <Fila icono={<Link2 size={15} />} rotulo="Link del video" falta={Boolean(t.fechaGrabacion) && !t.link.trim()}>
+                {t.link.trim() ? <a className="link" href={t.link} target="_blank" rel="noopener noreferrer">Ver el video</a> : "Sin link"}
+              </Fila>
+              <Fila icono={<Repeat2 size={15} />} rotulo="Resell después del testimonio">{t.resell || <span className="hs-guion">—</span>}</Fila>
+              <Fila icono={<Layers size={15} />} rotulo="Tecnologías">{t.tecnologias || <span className="hs-guion">—</span>}</Fila>
+              <FilaTexto icono={<Briefcase size={15} />} rotulo="Situación previa" texto={t.situacionPrevia} />
+              <FilaTexto icono={<BadgeCheck size={15} />} rotulo="Situación actual" texto={t.situacionActual} />
+              <FilaTexto icono={<StickyNote size={15} />} rotulo="Notas" texto={t.notas} />
+            </BloqueServicio>
+          ))}
+          <BloqueServicio titulo="Llamadas de resell">
             {resells.length === 0 ? (
               <p className="hs-nada">No tuvo llamadas de resell.</p>
-            ) : resells.map((r) => (
-              <Fila key={r.id} icono={<Repeat2 size={15} />} rotulo={`${formatoDia(r.dia, hoy)}${r.resell.closer ? ` · ${r.resell.closer}` : ""}`}>
-                <Badge variante={r.resell.cancelada ? "neutral" : r.estado === "Agendada" ? "warning" : "brand"}>{r.estado}</Badge>
-              </Fila>
-            ))}
-          </Bloque>
+            ) : resells.map((r) => {
+              const estados = estadosDeResell(r.resell.estado);
+              return (
+                <FilaServicio key={r.id} icono={<Repeat2 size={15} />}
+                  rotulo={`${formatoDia(r.dia, hoy)}${r.resell.closer ? ` · ${r.resell.closer}` : ""}`}
+                  detalle={[
+                    r.resell.cashCollect ? `Cobró ${money(r.resell.cashCollect)}` : "",
+                    r.resell.casoDeExito ? "Caso de éxito" : "",
+                    r.resell.notas,
+                  ].filter(Boolean).join(" · ") || undefined}>
+                  {r.resell.cancelada ? <Badge variante="neutral">Cancelada</Badge>
+                    : estados.length ? estados.map((x) => <Badge key={x} variante={/no quiere|outbo/i.test(x) ? "danger" : /upgrade|garant/i.test(x) ? "success" : "brand"}>{x}</Badge>)
+                    : <Badge variante="warning">{r.dia < hoy ? "Sin resultado" : "Agendada"}</Badge>}
+                  {r.grabacion && <a className="link t-sm" href={r.grabacion} target="_blank" rel="noopener noreferrer">Grabación</a>}
+                  {puedeResell && <Button sm variante="ghost" icono={<Pencil size={13} />} onClick={() => setFormResell(r.resell)} aria-label={`Editar la llamada de resell del ${formatoDia(r.dia, hoy)}`}>Editar</Button>}
+                </FilaServicio>
+              );
+            })}
+          </BloqueServicio>
         </>
       )}
 
@@ -493,6 +576,8 @@ function HojaDeUnServicio({ e, p, f, venta, producto, conChat }: {
       {solapa === "historial" && <HistorialPersona e={e} p={p} />}
       {solapa === "chat" && <ChatEquipo contactoId={p.clave} comentarios={p.comentarios} />}
 
+      {formTestimonio && <FormTestimonioCs testimonio={formTestimonio.t} alumnoId={alumno.id} onCerrar={() => setFormTestimonio(null)} />}
+      {formResell && <FormResell resell={formResell} onCerrar={() => setFormResell(null)} />}
       {editarAlumno && (
         <EditarAlumno form={editarAlumno} setForm={setEditarAlumno} onGuardar={() => {
           const { id, ...cambios } = editarAlumno;

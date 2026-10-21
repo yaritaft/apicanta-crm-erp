@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { leerCSV } from "@/lib/pasarelas";
 import {
   adivinarMapeoCs, CAMPOS_CLIENTES, CAMPOS_RESELLS, CAMPOS_TESTIMONIOS, detectarTipo, faltaParaImportar, fechaDeContacto, filaDeEncabezados,
-  leerFechaEn, leerFechaHora, leerMontoCs, leerSiNo, ordenDeFechas, planificarImportacionCs, tablaDeHoja, type OpcionesImport, type PlanImportCs,
+  leerCasoDeExito, leerFechaEn, leerFechaHora, leerMontoCs, leerSiNo, ordenDeFechas, planificarImportacionCs, tablaDeHoja, type OpcionesImport, type PlanImportCs,
   type TablaImport,
 } from "@/lib/importar-cs";
 import type { EstadoApp } from "@/lib/types";
@@ -435,6 +435,12 @@ test("los encabezados reales del Airtable se reconocen solos: todas las columnas
 test("las casillas del Airtable: «checked» es sí y «unchecked» o vacío es no", () => {
   for (const si of ["checked", "Checked", "marcado", "verdadero"]) assert.equal(leerSiNo(si), true, si);
   for (const no of ["unchecked", "falso", ""]) assert.equal(leerSiNo(no), false, no);
+});
+
+test("«Caso de Éxito» del Airtable de resells: «No es Caso de Éxito» es no (antes, por traer texto, quedaba como sí)", () => {
+  for (const si of ["Caso de Éxito", "caso de exito", "Sí", "x"]) assert.equal(leerCasoDeExito(si), true, si);
+  for (const no of ["No es Caso de Éxito", "no es caso de exito", "No", "", "Sin caso"]) assert.equal(leerCasoDeExito(no), false, no);
+  assert.equal(leerCasoDeExito("https://caso.example/luis"), null, "otro texto (el link al caso) lo decide el importador: caso, con el texto en las notas");
 });
 
 test("las fechas del Airtable vienen como mes/día/año y se leen así; una planilla argentina sigue siendo día/mes", () => {
