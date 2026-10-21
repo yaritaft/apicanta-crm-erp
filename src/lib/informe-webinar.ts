@@ -334,7 +334,7 @@ export function informeDelWebinar(e: EstadoApp, webinar: Webinar): InformeWebina
         { etiqueta: "Inversión total", valor: m.inversionTotal, formato: "moneda", nota: "Pauta + DM Ads + WhatsApp API." },
         { etiqueta: "   Pauta de captación", valor: w.inversion, formato: "moneda", nota: "Lo cargado a mano; si está en cero, lo que gastaron las campañas «[WEBINAR dd/mm]» de Meta." },
         { etiqueta: "   DM Ads", valor: w.inversionDmAds, formato: "moneda", nota: "Lo cargado a mano; si está en cero, las campañas «DM …» de Meta de los días previos." },
-        { etiqueta: "   WhatsApp API", valor: w.costoWhatsappApi, formato: "moneda", nota: "Lo cargado a mano." },
+        { etiqueta: "   WhatsApp API", valor: w.costoWhatsappApi, formato: "moneda", nota: "Lo cargado a mano; si está en cero, lo que cobró Meta por los mensajes de la API de WhatsApp en los días previos." },
         { etiqueta: "Facturado (Revenue)", valor: m.facturado, formato: "moneda", nota: "Suma del precio acordado de las ventas del webinar (sin las canceladas)." },
         { etiqueta: "Cobrado (Cash Collected)", valor: m.cobrado, formato: "moneda", nota: "Suma de los cobros que ya entraron de esas ventas, menos lo que se devolvió de ellas." },
         ...(m.devoluciones > 0 ? [{ etiqueta: "   Devuelto", valor: m.devoluciones, formato: "moneda" as const, nota: "Lo devuelto de esas ventas (devoluciones confirmadas): ya está restado del Cobrado." }] : []),

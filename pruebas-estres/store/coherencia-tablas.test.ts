@@ -122,10 +122,11 @@ test("cada tabla se carga en la colección que la siembra usa, y esa colección 
   for (const s of SIEMBRA) {
     assert.equal(cargaPorTabla.get(s.tabla), s.clave, `${s.tabla}: la siembra lee e.${s.clave} pero la carga escribe e.${cargaPorTabla.get(s.tabla)}`);
   }
-  /* Y al revés: toda colección de EstadoApp que sea una lista de filas viene de alguna tabla. Las excepciones son gruposWpp y
-     registrosPorWebinar: vienen de VISTAS de sólo lectura (whatsapp_resumen_webinar y registros_webinar_resumen) que se piden aparte
-     (traerGruposWpp, traerRegistrosPorWebinar), no se escriben ni se siembran. */
-  const sinTabla = [...estado].filter((k) => !["version", "ajustes", "gruposWpp", "registrosPorWebinar"].includes(k) && !CARGA.some((c) => c.clave === k));
+  /* Y al revés: toda colección de EstadoApp que sea una lista de filas viene de alguna tabla. Las excepciones son gruposWpp,
+     registrosPorWebinar y costosWpp: vienen de VISTAS o tablas de sólo lectura (whatsapp_resumen_webinar, registros_webinar_resumen y
+     whatsapp_costos, que llena el cron de Meta) que se piden aparte (traerGruposWpp, traerRegistrosPorWebinar, traerCostosWpp), no se
+     escriben ni se siembran. */
+  const sinTabla = [...estado].filter((k) => !["version", "ajustes", "gruposWpp", "registrosPorWebinar", "costosWpp"].includes(k) && !CARGA.some((c) => c.clave === k));
   assert.deepEqual(sinTabla, [], `colecciones de EstadoApp que nunca se cargan de la base: ${sinTabla.join(", ")}`);
 });
 

@@ -98,7 +98,7 @@ const EXPLICACIONES: Record<string, ExplicacionKpi> = {
     piezas: (c) => porWebinar(c, (w) => numerosDelWebinar(c.e, w).inversionDmAds),
   },
   w_wapi: {
-    formula: "Costo de WhatsApp API de cada webinar del período, sumado. Se carga a mano: no pasa por Meta",
+    formula: "Costo de WhatsApp API de cada webinar del período, sumado: el cargado a mano o, si está en cero, lo que cobró Meta por los mensajes de la API (repartido al próximo webinar)",
     piezas: (c) => porWebinar(c, (w) => w.costoWhatsappApi),
   },
   w_inv: {

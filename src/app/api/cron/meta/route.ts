@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { metaConfigurado, tokenDeSistema, traerCuentas } from "@/lib/meta";
 import { sincronizarMeta, ventana } from "@/lib/meta-sync";
+import { cuentasDeWhatsapp, pedirAMeta, sincronizarCostosWhatsapp, type ResultadoCostosWhatsapp } from "@/lib/meta-whatsapp";
+import { nubeServidor } from "@/lib/servidor";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -23,6 +25,25 @@ export const maxDuration = 300;
    sync largo no compite con nadie. */
 
 const HORA_DEL_SYNC_COMPLETO = 8; // UTC
+
+/* El costo de WhatsApp API (lo que cobra Meta por los mensajes de la API) sale de la cuenta de WhatsApp Business, no de las cuentas de anuncios:
+   se trae con el mismo token, en cada corrida y sobre la misma ventana, y se guarda día por día (lib/meta-whatsapp.ts). Nunca corta la
+   sincronización de anuncios: si falla (casi siempre por el permiso del token), queda el error en `cron_estado` y en la respuesta. */
+async function costosDeWhatsapp(token: string, desde: string, hasta: string, modo: string): Promise<ResultadoCostosWhatsapp[] | { error: string }> {
+  const db = nubeServidor();
+  if (!db) return { error: "Falta SUPABASE_SERVICE_ROLE_KEY." };
+  try {
+    const r = await sincronizarCostosWhatsapp(db, pedirAMeta(token), cuentasDeWhatsapp(), desde, hasta);
+    const x = await db.from("cron_estado").upsert(
+      { clave: "meta-whatsapp-costos", ejecutadoEn: new Date().toISOString(), ok: r.every((c) => !c.error), resultado: { modo, cuentas: r } },
+      { onConflict: "clave" },
+    );
+    if (x.error) console.error("[cron/meta] no pude guardar el estado de WhatsApp:", x.error.message);
+    return r;
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "No se pudo leer el costo de WhatsApp." };
+  }
+}
 
 export async function GET(req: Request) {
   /* El cron de Vercel manda este header. Sin la guarda, la ruta es un botón
@@ -58,6 +79,8 @@ export async function GET(req: Request) {
   const completo = ahora.getUTCHours() === HORA_DEL_SYNC_COMPLETO && ahora.getUTCMinutes() < 15;
   const { desde, hasta } = ventana(completo ? 30 : 3);
 
+  const whatsapp = await costosDeWhatsapp(token, desde, hasta, completo ? "completo" : "rapido");
+
   try {
     const cuentas = await traerCuentas(token);
     /* estado 1 = activa. Una cuenta deshabilitada no gasta, y pedirle insights
@@ -78,7 +101,7 @@ export async function GET(req: Request) {
       }
     }
 
-    const salida = { modo: completo ? "completo" : "rapido", desde, hasta, resultados, fallidas };
+    const salida = { modo: completo ? "completo" : "rapido", desde, hasta, resultados, fallidas, whatsapp };
     console.log("[cron/meta]", JSON.stringify(salida));
 
     /* 207 cuando alguna falló: el cron figura como corrido, pero queda

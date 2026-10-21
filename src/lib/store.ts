@@ -525,6 +525,21 @@ async function traerRegistrosPorWebinar(db: NonNullable<typeof nube>): Promise<{
   } catch { return undefined; }
 }
 
+/* Lo que cobró WhatsApp por los mensajes de la API, por día y en USD (tabla whatsapp_costos, que llena el cron de Meta). Se pide aparte y
+   nunca corta la carga: sin la tabla, sin permiso o sin red, el costo sigue siendo el que se cargó a mano (undefined = no cambiar nada). */
+async function traerCostosWpp(db: NonNullable<typeof nube>): Promise<{ dia: string; costo: number }[] | undefined> {
+  try {
+    const r = await db.from("whatsapp_costos").select("dia, costo, moneda");
+    if (r.error) return undefined;
+    const porDia = new Map<string, number>();
+    for (const x of (r.data ?? []) as { dia: string; costo: number | string; moneda?: string }[]) {
+      if ((x.moneda ?? "USD").toUpperCase() !== "USD") continue;
+      porDia.set(String(x.dia).slice(0, 10), (porDia.get(String(x.dia).slice(0, 10)) ?? 0) + Number(x.costo ?? 0));
+    }
+    return [...porDia].map(([dia, costo]) => ({ dia, costo: Math.round(costo * 1e6) / 1e6 })).sort((a, b) => a.dia.localeCompare(b.dia));
+  } catch { return undefined; }
+}
+
 export async function cargarDeLaNube(): Promise<void> {
   if (!nube || yaCargo) return;
   const db = nube;
@@ -592,12 +607,13 @@ export async function cargarDeLaNube(): Promise<void> {
     const base = semilla;
     const { id: _id, ...ajustes } = ajustesRes.data as Ajustes & { id: number };
     void _id;
-    const [gruposWpp, registrosPorWebinar] = await Promise.all([traerGruposWpp(db), traerRegistrosPorWebinar(db)]);
+    const [gruposWpp, registrosPorWebinar, costosWpp] = await Promise.all([traerGruposWpp(db), traerRegistrosPorWebinar(db), traerCostosWpp(db)]);
 
     guardar({
       version: 1,
       ...(gruposWpp ? { gruposWpp } : {}),
       ...(registrosPorWebinar?.length ? { registrosPorWebinar } : {}),
+      ...(costosWpp?.length ? { costosWpp } : {}),
       ajustes: { ...base.ajustes, ...ajustes },
       etapas: porTabla.etapas as Etapa[],
       /* Opcional: sin el SQL corrido (o con la tabla vacía) el pipeline de

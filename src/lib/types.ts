@@ -988,6 +988,9 @@ export interface EstadoApp {
   /* Cuántos se registraron en la landing para cada webinar (vista `registros_webinar_resumen`, supabase/registros-webinar.sql): de ahí sale
      «Formularios» de un webinar que no tiene pauta de Meta. Sólo se lee; lo traen quienes ven los Webinars. */
   registrosPorWebinar?: { webinarId: ID; registros: number }[];
+  /* Lo que cobró WhatsApp por los mensajes de la API, día por día y en USD (tabla `whatsapp_costos`, supabase/whatsapp-costos.sql; la llena el
+     cron de Meta). De ahí sale el «WhatsApp API» de un webinar que no lo tiene cargado a mano. Sólo se lee. */
+  costosWpp?: { dia: string; costo: number }[];
 }
 
 /* Los grupos de WhatsApp de un webinar, sumados (todos sus grupos, cada persona una vez). */

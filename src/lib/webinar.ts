@@ -101,10 +101,12 @@ function derivar(b: Base): MetricasWebinar {
    Las campañas de captación se llaman «[WEBINAR 23/09] …»: su gasto es la
    pauta del webinar y sus leads, los formularios completados. Los DM Ads
    son las campañas «DM …» (DM WP API): cada día de gasto va al próximo
-   webinar, el que ese día se estaba calentando. WhatsApp API no pasa por
-   Meta Ads: sigue a mano.
+   webinar, el que ese día se estaba calentando. WhatsApp API no es de
+   Meta Ads: se factura en la cuenta de WhatsApp Business (ver abajo).
 
    Lo cargado a mano manda: Meta sólo llena lo que está en cero.
+   El costo de WhatsApp API (lo que cobra Meta por los mensajes de la API) sale de la cuenta de WhatsApp Business, día por día, y se
+   reparte igual que los DM Ads (lib/meta-whatsapp.ts, tabla whatsapp_costos).
    ================================================================== */
 
 export interface MetaDelWebinar { pauta: number; formularios: number; dmAds: number }
@@ -202,6 +204,30 @@ export const gruposWppDelWebinar = (e: EstadoApp, w: Webinar): GrupoWppResumen |
 /** Cuántos se unieron: los que pasaron por los grupos y los que no se les ve el teléfono. */
 export const seUnieronAlGrupo = (g: GrupoWppResumen) => g.entraron + g.sinTelefono;
 
+/* Cada día de costo de WhatsApp API va al próximo webinar, el que ese día se estaba calentando (la misma regla que los DM Ads: el vivo es ese
+   día o hasta 21 días después). Se calcula una vez por combinación de costos y webinars. */
+const COSTO_WPP = new WeakMap<object, WeakMap<object, Map<string, number>>>();
+function costosWppPorWebinar(e: EstadoApp): Map<string, number> {
+  const costos = e.costosWpp ?? [];
+  if (!costos.length || !e.webinars.length) return new Map();
+  let porWebinars = COSTO_WPP.get(costos);
+  if (!porWebinars) { porWebinars = new WeakMap(); COSTO_WPP.set(costos, porWebinars); }
+  const guardado = porWebinars.get(e.webinars);
+  if (guardado) return guardado;
+  const out = new Map<string, number>();
+  porWebinars.set(e.webinars, out);
+  const webinars = [...e.webinars].filter((w) => w.estado !== "borrador").map((w) => ({ w, dia: diaAr(w.fecha) })).sort((a, b) => a.dia.localeCompare(b.dia));
+  for (const c of costos) {
+    const destino = webinars.find(({ dia }) => dia >= c.dia && diasEntre(c.dia, dia) <= 21);
+    if (destino) out.set(destino.w.id, (out.get(destino.w.id) ?? 0) + c.costo);
+  }
+  for (const [k, v] of out) out.set(k, Math.round(v * 100) / 100);
+  return out;
+}
+
+/** Lo que cobró WhatsApp por los mensajes de la API de ese webinar (0 si no se sabe). */
+export const costoWhatsappDelWebinar = (e: EstadoApp, w: Webinar): number => costosWppPorWebinar(e).get(w.id) ?? 0;
+
 /** Cuántos se registraron en la landing para ese webinar (0 si no se sabe). */
 export const registrosDelWebinar = (e: EstadoApp, w: Webinar): number =>
   e.registrosPorWebinar?.find((r) => r.webinarId === w.id)?.registros ?? 0;
@@ -232,10 +258,12 @@ export function numerosDelWebinar(e: EstadoApp, w: Webinar): Webinar {
   const m = metaDelWebinar(e, w);
   const g = gruposWppDelWebinar(e, w);
   const reg = registrosDelWebinar(e, w);
-  if (!m && !g && !reg) return w;
+  const wa = costoWhatsappDelWebinar(e, w);
+  if (!m && !g && !reg && !wa) return w;
   const f = formulariosDelWebinar(e, w);
   return {
     ...w,
+    ...(wa ? { costoWhatsappApi: w.costoWhatsappApi || wa } : {}),
     ...(m ? {
       inversion: w.inversion || m.pauta,
       inversionDmAds: w.inversionDmAds || m.dmAds,
@@ -253,6 +281,7 @@ export function camposDeWhatsapp(e: EstadoApp, w: Webinar): Set<CampoManual> {
 
 /** De dónde sale un número que no se cargó a mano, para decirlo al lado de la celda (undefined: lo cargó alguien). */
 export function origenAutomatico(e: EstadoApp, w: Webinar, campo: CampoManual): string | undefined {
+  if (campo === "costoWhatsappApi") return !w.costoWhatsappApi && costoWhatsappDelWebinar(e, w) > 0 ? "De la facturación de WhatsApp Business (Meta)" : undefined;
   if (campo === "formularios") {
     const f = formulariosDelWebinar(e, w);
     if (f.origen === "meta" && f.valor > 0) return "De sus campañas de Meta";
