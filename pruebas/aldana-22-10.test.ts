@@ -7,7 +7,7 @@ import { miPanelDe, rangoDelPanel } from "@/lib/mi-panel";
 import { cobrosSinVenta } from "@/lib/caja";
 import { transaccionesDe } from "@/lib/transacciones";
 import { sugerirCategoria } from "@/lib/gastos";
-import { comisionDePagoWhop, hotmart } from "@/lib/pasarelas-api";
+import { comisionDePagoWhop, hotmart, montoDeWhop } from "@/lib/pasarelas-api";
 import { importarCSV } from "@/lib/pasarelas";
 import { construirSemilla } from "@/lib/seed";
 import type { EstadoApp, Movimiento, Pago, Traspaso } from "@/lib/types";
@@ -217,6 +217,19 @@ test("el export de pagos de Whop se importa con su comisión real (la API de Who
   assert.equal(despues.movimientos.find((m) => m.id === mov.id)!.fee, 55.37);
   const pago = despues.pagos.find((p) => p.movimientoId === mov.id)!;
   assert.equal(pago.feeMonto, Math.round(55.37 * (pago.monto / 1000) * 100) / 100, "el pago toma la comisión real, en proporción");
+});
+
+test("Whop manda los montos del detalle como objetos {currency, amount: «2407.10»}: la comisión sale de ahí (el caso real del 22/10)", () => {
+  const dinero = (amount: string) => ({ currency: "usd", amount, decimals: 2, display_decimals: 2 });
+  /* Un cobro de 2.500: el detalle real traía total 2500.00 y amount_after_fees 2407.10. */
+  const real = comisionDePagoWhop({ total: dinero("2500.00"), subtotal: dinero("2500.00"), usd_total: dinero("2501.65"), amount_after_fees: dinero("2407.10") });
+  assert.equal(real.fee, 92.9);
+  assert.deepEqual([real.total, real.despues], [2500, 2407.1]);
+  /* Aldana: 600 cobrados, Whop decía 577,43. */
+  assert.equal(comisionDePagoWhop({ total: dinero("600.00"), amount_after_fees: dinero("577.43") }).fee, 22.57);
+  /* Las comisiones listadas también pueden venir como objetos. */
+  assert.equal(comisionDePagoWhop({ total: dinero("1000.00"), amount_after_fees: dinero("1000.00"), fees: [{ amount: dinero("27.00") }, { amount: dinero("15.00") }, { amount: 8 }] }).fee, 50);
+  assert.deepEqual([montoDeWhop(dinero("12.50")), montoDeWhop(7), montoDeWhop("3.20"), montoDeWhop(null), montoDeWhop({}), montoDeWhop({ amount: null })], [12.5, 7, 3.2, undefined, undefined, undefined]);
 });
 
 /* ---------- Hotmart ---------- */

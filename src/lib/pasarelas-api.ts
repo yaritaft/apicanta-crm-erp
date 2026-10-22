@@ -393,6 +393,12 @@ export function cobradoEnWhop(p: Obj): boolean | undefined {
 
 interface DetalleWhop { nombre?: string; email?: string; telefono?: string; metodo?: string; fee?: number; descripcion?: string; cobrado?: boolean; sinComision?: string }
 
+/** Un monto de Whop: en el detalle (API v1) viene como un objeto, {"currency":"usd","amount":"2407.10","decimals":2}, no como un número.
+ *  Por eso la comisión nunca se leyó: Number(objeto) es NaN. Se aceptan las dos formas. */
+export function montoDeWhop(v: unknown): number | undefined {
+  return v !== null && typeof v === "object" ? num((v as Obj).amount) : num(v);
+}
+
 /** Los campos de plata de un pago de Whop, tal cual vienen (sin nombres ni correos): para entender qué forma tienen cuando la comisión no sale. */
 function camposDePlataDeWhop(p: Obj): string {
   const quiero = ["total", "subtotal", "usd_total", "amount_after_fees", "presentment_total", "tax_amount", "refunded_amount", "currency", "settlement_time_at", "holds", "line_items", "payment_rule_matches"];
@@ -404,10 +410,10 @@ function camposDePlataDeWhop(p: Obj): string {
  *  Se toma la mayor: antes se usaba sólo la segunda y, si Whop devolvía las dos cifras iguales, la comisión quedaba en 0 y el sistema
  *  usaba el 3% estimado en vez de la real (Aldana, 22/10: «entró 582, pero Whop decía 577,43»: ningún cobro de Whop tenía su comisión). */
 export function comisionDePagoWhop(p: Obj): { fee?: number; total?: number; despues?: number; listadas: number } {
-  const total = num(p.total) ?? num(p.subtotal);
-  const despues = num(p.amount_after_fees);
+  const total = montoDeWhop(p.total) ?? montoDeWhop(p.subtotal);
+  const despues = montoDeWhop(p.amount_after_fees);
   const comisiones = Array.isArray(p.fees) ? (p.fees as Obj[]) : [];
-  const listadas = dinero(comisiones.reduce((a, f) => a + Math.abs(num(f.amount) ?? 0), 0));
+  const listadas = dinero(comisiones.reduce((a, f) => a + Math.abs(montoDeWhop(f.amount) ?? 0), 0));
   const porDiferencia = total !== undefined && despues !== undefined && total > despues ? dinero(total - despues) : 0;
   const fee = Math.max(listadas, porDiferencia);
   return { fee: fee > 0 && (total === undefined || fee < total) ? fee : undefined, total, despues, listadas: comisiones.length };
