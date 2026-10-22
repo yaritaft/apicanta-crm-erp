@@ -393,6 +393,12 @@ export function cobradoEnWhop(p: Obj): boolean | undefined {
 
 interface DetalleWhop { nombre?: string; email?: string; telefono?: string; metodo?: string; fee?: number; descripcion?: string; cobrado?: boolean; sinComision?: string }
 
+/** Los campos de plata de un pago de Whop, tal cual vienen (sin nombres ni correos): para entender qué forma tienen cuando la comisión no sale. */
+function camposDePlataDeWhop(p: Obj): string {
+  const quiero = ["total", "subtotal", "usd_total", "amount_after_fees", "presentment_total", "tax_amount", "refunded_amount", "currency", "settlement_time_at", "holds", "line_items", "payment_rule_matches"];
+  return JSON.stringify(Object.fromEntries(quiero.filter((k) => k in p).map((k) => [k, p[k]]))).slice(0, 700);
+}
+
 /** Lo que se quedó Whop de un pago (comisión de procesamiento, entre países, de orquestación, de facturación…), a partir de su detalle (API v1).
  *  Dos formas de saberlo: la suma de las comisiones que lista (`fees`) y lo que va de lo cobrado a lo que queda (`total` − `amount_after_fees`).
  *  Se toma la mayor: antes se usaba sólo la segunda y, si Whop devolvía las dos cifras iguales, la comisión quedaba en 0 y el sistema
@@ -429,14 +435,14 @@ async function detalleWhop(id: string, clave: string): Promise<DetalleWhop> {
   const c = comisionDePagoWhop(p);
   return {
     nombre: txt(usuario.name) ?? txt(facturacion.name) ?? txt(usuario.username),
-    email: txt(usuario.email)?.toLowerCase(),
+    email: (txt(usuario.email) ?? txt(p.customer_email))?.toLowerCase(),
     telefono: txt(miembro.phone) ?? txt(p.customer_phone) ?? txt(membresia.phone_number),
     metodo: metodoWhop(p),
     fee: c.fee,
     descripcion: txt(producto.title),
     cobrado: cobradoEnWhop(p),
     sinComision: c.fee === undefined
-      ? `cobrado ${c.total ?? "?"}, después de comisiones ${c.despues ?? "?"}, ${c.listadas} comisiones listadas; el detalle trae los campos: ${Object.keys(p).sort().join(", ") || "ninguno"}`
+      ? `cobrado ${c.total ?? "?"}, después de comisiones ${c.despues ?? "?"}, ${c.listadas} comisiones listadas; el detalle trae los campos: ${Object.keys(p).sort().join(", ") || "ninguno"}; los de plata, tal cual: ${camposDePlataDeWhop(p)}`
       : undefined,
   };
 }
