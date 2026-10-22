@@ -3,6 +3,7 @@ import { miembroDeCloser } from "./crm";
 import { claveEmail } from "./contactos";
 import { normalizar, quienPago } from "./conciliacion";
 import { esLlamadaDeResell } from "./resells";
+import { haceCuanto } from "./hace-cuanto";
 
 /* ==================================================================
    «Pedir la venta a un closer» (Aldana, 20/10).
@@ -42,13 +43,7 @@ export function nivelDePedido(horas: number): NivelDePedido {
   return horas >= HORAS_DE_ALARMA ? "urgente" : horas >= HORAS_DE_ATENCION ? "atrasado" : "nuevo";
 }
 
-/** «hace 3 horas», «hace 1 día», «hace 2 días»: lo que lleva esperando, en la voz de la pantalla. */
-export function haceCuanto(horas: number): string {
-  if (horas < 1) return "recién";
-  if (horas < 24) { const h = Math.floor(horas); return `hace ${h} ${h === 1 ? "hora" : "horas"}`; }
-  const d = Math.floor(horas / 24);
-  return `hace ${d} ${d === 1 ? "día" : "días"}`;
-}
+export { haceCuanto };
 
 /** Lo que lleva esperando lo que le pidieron a un closer, para el aviso de Finanzas: «hace 2 días» si es uno solo, «el más viejo hace 2 días» si son varios. */
 export function esperaDe(x: Pick<PedidosDeUnCloser, "n" | "masViejoHoras">): string {

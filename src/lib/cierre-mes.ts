@@ -12,6 +12,7 @@ import { propuestas as gastosFijosPorAprobar } from "./gastos-recurrentes";
 import { mesesCerrados } from "./mes-cerrado";
 import { situacionDe, TEXTO_SITUACION, type Situacion } from "./traspasos";
 import { closerDeCuota } from "./comision";
+import { closersDeRechazos, subDelRechazo } from "./rechazos-de-cobro";
 
 /* ==================================================================
    El cierre del mes (de la «Bandeja» de la Mesa de Finanzas de Blue OS): el
@@ -235,9 +236,9 @@ export function pasosDelTramo(e: EstadoApp, tramo: Tramo, { ahora = Date.now(), 
   paso({
     id: "cobros-rechazados", area: "cobros", titulo: "Arreglar los cobros rechazados",
     detalle: rechazados.length
-      ? `${pl(rechazados.length, "cobro fue rechazado", "cobros fueron rechazados")} al mirar el comprobante: el closer tiene que corregirlo o quien lo rechazó darlo por bueno.`
+      ? `${pl(rechazados.length, "cobro fue rechazado", "cobros fueron rechazados")} al mirar el comprobante: el closer tiene que corregirlo o quien lo rechazó darlo por bueno.${(() => { const quienes = closersDeRechazos(e, rechazados, ventaDeCuota, ventas, ahora); return quienes ? ` Ya está en «Para vos» del panel de ${quienes}.` : ""; })()}`
       : "Ningún cobro rechazado.",
-    pendientes: rechazados.map((p) => ({ clave: p.id, titulo: nombreDelPago(p), sub: controlDeCobro(p).rechazos[0]?.nota ?? "Rechazado", monto: p.monto, moneda: p.moneda, destino: fichaDelPago(p) })),
+    pendientes: rechazados.map((p) => ({ clave: p.id, titulo: nombreDelPago(p), sub: subDelRechazo(e, p, ventaDeCuota, ventas, ahora), monto: p.monto, moneda: p.moneda, destino: fichaDelPago(p) })),
     ir: { href: `/ventas?seccion=cobros&${qs}`, texto: "Ver los cobros" },
   });
 

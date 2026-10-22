@@ -13,6 +13,7 @@ import { CANCELADA, CON_CIERRE, NO_SE_PRESENTO, REPROGRAMO, SIN_CIERRE, HECHA } 
 import { diaDeNegocio } from "./dia-negocio";
 import { normalizarUtm, origenDe } from "./utms";
 import { haceCuanto, pedidosDeCloser, type PedidoDeVenta } from "./pedidos-de-venta";
+import { rechazoDeCobro } from "./rechazos-de-cobro";
 import { medioDeMovimiento } from "./conciliacion";
 
 /* ==================================================================
@@ -275,7 +276,7 @@ export function miPanelDe(e: EstadoApp, m: MiembroEquipo, rango: RangoMes, ahora
 
   /* Lo que le pide acción. */
   const pedidos = pedidosDeCloser(e, m.id, ahora);
-  const { avisos, total: totalAvisos } = avisosDe(e, { dia, porCobrar, cobros, ahora, pedidos: avisosDePedidos(e, pedidos), totalPedidos: pedidos.length });
+  const { avisos, total: totalAvisos } = avisosDe(e, { equipo: e, dia, porCobrar, cobros, ahora, pedidos: avisosDePedidos(e, pedidos), totalPedidos: pedidos.length });
 
   /* Las agendas que le cargaron como setter: las que entraron por su link (utm_campaign=setter_nombre). */
   const agendasDeSetter: AgendaDeSetter[] = [];
@@ -312,6 +313,9 @@ const POR_TIPO = 2;
 /** Hasta cuántos días atrás se avisa de una cuota vencida. */
 const DIAS_VENCIDAS = 30;
 
+/** Cuántos cobros rechazados se listan: son pocos y cada uno espera una respuesta. */
+const POR_RECHAZO = 8;
+
 /** Cuántos pedidos de venta se listan: Finanzas los pide de a pocos y cada uno es plata sin dueño, así que se muestran todos los razonables. */
 const POR_PEDIDO = 6;
 
@@ -330,7 +334,7 @@ function avisosDePedidos(e: EstadoApp, pedidos: PedidoDeVenta[]): Aviso[] {
 
 function avisosDe(
   e: Pick<EstadoApp, "productos">,
-  c: { dia: ResumenDelDia; porCobrar: CuotaPendiente[]; cobros: CobroCargado[]; ahora: number; pedidos: Aviso[]; totalPedidos: number },
+  c: { equipo: Pick<EstadoApp, "equipo">; dia: ResumenDelDia; porCobrar: CuotaPendiente[]; cobros: CobroCargado[]; ahora: number; pedidos: Aviso[]; totalPedidos: number },
 ): { avisos: Aviso[]; total: number } {
   const avisos: Aviso[] = [];
   let total = 0;
@@ -351,13 +355,15 @@ function avisosDe(
     });
   }
 
-  /* Cobros que rechazó quien los miró: hay que arreglarlos. */
+  /* Cobros que rechazó quien los miró: hay que arreglarlos. Dice quién lo rechazó, por qué y hace cuánto (Aldana, 22/10: se lo pidió tres veces a un closer
+     y el aviso era igual a todos los demás). Todos se listan: cada uno es plata que Finanzas no puede dar por buena. */
   const rechazados = c.cobros.filter((x) => x.control.estado === "rechazado");
   total += rechazados.length;
-  for (const x of rechazados.slice(0, POR_TIPO)) {
+  for (const x of rechazados.slice(0, POR_RECHAZO)) {
+    const r = rechazoDeCobro(c.equipo, x.pago, c.ahora);
     avisos.push({
       clave: `rc|${x.pago.id}`, tono: "danger", resaltado: x.venta?.contactoNombre ?? "Un cobro",
-      texto: `tiene un cobro rechazado: revisá el comprobante.`,
+      texto: `tiene un cobro de US$ ${Math.round(x.pago.monto).toLocaleString("es-AR")} rechazado por ${r.quien} (${r.cuando}): «${r.nota.replace(/[.\s]+$/, "")}». Corregilo, o avisale que está bien.`,
       accion: x.venta ? { texto: "Ver", ir: "ficha", id: x.venta.id } : undefined,
     });
   }
