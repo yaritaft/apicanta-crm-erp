@@ -96,12 +96,14 @@ function delPago(e: EstadoApp, p: Pago, cuotas: Map<ID, ID>, ventas: Map<ID, str
 }
 
 function delMovimiento(e: EstadoApp, m: Movimiento): Transaccion {
+  /* Si Finanzas ya le pidió la venta a un closer, la fila lo dice: es plata que entró y espera que ese closer la cargue. */
+  const closer = m.pedidoACloserId ? e.equipo.find((x) => x.id === m.pedidoACloserId)?.nombre : undefined;
   return {
     id: `sin-conciliar:${m.id}`, tipo: "ingreso", origen: "sin-conciliar", dia: diaDeNegocio(m.fecha), fecha: m.fecha,
     titulo: m.clienteNombre || m.descripcion || m.referencia || "Cobro sin nombre",
     detalle: [m.metodo, corta(m.referencia)].filter(Boolean).join(" · "), cuenta: medioDeMovimiento(e, m),
     monto: r2(m.monto), moneda: m.moneda, comision: m.fee ? r2(m.fee) : undefined,
-    estado: ESTADO_DE_ORIGEN["sin-conciliar"], movimientoId: m.id,
+    estado: m.pedidoACloserId ? `Esperando la venta de ${closer ?? "un closer"}` : ESTADO_DE_ORIGEN["sin-conciliar"], movimientoId: m.id,
   };
 }
 

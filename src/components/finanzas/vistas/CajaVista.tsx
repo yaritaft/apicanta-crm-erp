@@ -12,7 +12,7 @@ import { acciones, nuevoId, useEstado } from "@/lib/store";
 import { fechaLarga, money, num } from "@/lib/format";
 import { aMonedaBase, escribirMonto, fechaDePago, leerMonto } from "@/lib/gastos";
 import {
-  MESES_DE_COLCHON, cajaEsperada, enOtros, runway, ultimoArqueo, type MovimientoCaja,
+  MESES_DE_COLCHON, cajaEsperada, cobrosSinVenta, enOtros, runway, ultimoArqueo, type MovimientoCaja,
 } from "@/lib/caja";
 import { primerConteo } from "@/lib/primer-conteo";
 import { saldosEsperados } from "@/lib/traspasos";
@@ -63,6 +63,7 @@ export function CajaVista({ embebido = false, rangoFijo }: {
 
   const ultimo = ultimoArqueo(e);
   const mov = useMemo(() => (ultimo ? cajaEsperada(e, ultimo, hoyIso()) : null), [e, ultimo]);
+  const sinVentaHoy = useMemo(() => cobrosSinVenta(e, ultimo?.fecha ?? null, hoyIso()), [e, ultimo]);
   const caja = mov?.esperado ?? null;
   const vida = useMemo(() => runway(e, caja ?? 0), [e, caja]);
   const arqueos = useMemo(() => [...(e.arqueos ?? [])].sort((a, b) => +new Date(b.fecha) - +new Date(a.fecha)), [e.arqueos]);
@@ -163,7 +164,7 @@ export function CajaVista({ embebido = false, rangoFijo }: {
             />
           </div>
 
-          {mov && <Movimiento mov={mov} M={M} />}
+          {mov && <Movimiento mov={mov} M={M} sinVenta={sinVentaHoy} />}
         </>
       )}
 
@@ -247,7 +248,7 @@ function Diferencia({ d, M }: { d?: number | null; M: (n: number, dec?: number) 
   return <Badge variante={d < 0 ? "danger" : "warning"}>{d > 0 ? "Sobran " : "Faltan "}{M(Math.abs(d))}</Badge>;
 }
 
-function Movimiento({ mov, M }: { mov: MovimientoCaja; M: (n: number, d?: number) => string }) {
+function Movimiento({ mov, M, sinVenta }: { mov: MovimientoCaja; M: (n: number, d?: number) => string; sinVenta?: { n: number; monto: number } }) {
   const filas: [string, number, string?][] = [
     ["Caja del último arqueo", mov.inicial],
     ...(mov.enCaminoAntes ? [["+ Estaba en camino al contar", mov.enCaminoAntes, "Había salido de una cuenta y no había llegado a la otra"] as [string, number, string]] : []),
@@ -280,6 +281,12 @@ function Movimiento({ mov, M }: { mov: MovimientoCaja; M: (n: number, d?: number
           </>
         )}
       </dl>
+      {sinVenta && sinVenta.n > 0 && (
+        <p className="t-sm t-subtle" style={{ margin: "var(--space-3) 0 0" }}>
+          Además {sinVenta.n === 1 ? "entró 1 cobro" : `entraron ${sinVenta.n} cobros`} por {M(sinVenta.monto)} que todavía no tiene{sinVenta.n === 1 ? "" : "n"} su venta cargada: están en la cuenta
+          pero no en «Cobrado» hasta que se concilien. Si al contar sobra plata, puede ser esto.
+        </p>
+      )}
     </Card>
   );
 }
@@ -428,6 +435,7 @@ function NuevoArqueo({ e, onCerrar, onListo, traerAlAbrir = false }: { e: Estado
      deduce de lo contado menos lo que se movió, y se suma a lo esperado. Queda dicho en cada cuenta (lib/primer-conteo.ts). */
   const primer = primerConteo(saldos, porCuenta, Boolean(previo), (m, mo) => money(m, mo, 2));
   const esperado = mov ? Math.round((mov.enCuentas + primer.totalBase) * 100) / 100 : null;
+  const sinVenta = useMemo(() => cobrosSinVenta(e, previo?.fecha ?? null, fecha, tipoCambio), [e, previo?.fecha, fecha, tipoCambio]);
   const deEstaCuenta = (id: string) => primer.cuentas.find((c) => c.procesadorId === id);
   const hayPesos = cuentas.some((p) => p.moneda === "ARS");
   const faltaTc = hayPesos && saldos.some((s) => s.moneda === "ARS") && !(tipoCambio > 0);
@@ -611,6 +619,12 @@ function NuevoArqueo({ e, onCerrar, onListo, traerAlAbrir = false }: { e: Estado
         {mov && mov.enCamino > 0 && (
           <span className="t-sm t-subtle arqueo-resumen__nota">
             El esperado ya descuenta {M(mov.enCamino)} que están en camino entre cuentas: salieron de una y todavía no se vieron llegar a la otra.
+          </span>
+        )}
+        {sinVenta.n > 0 && (
+          <span className="t-sm t-subtle arqueo-resumen__nota">
+            Ojo: {sinVenta.n === 1 ? "entró 1 cobro" : `entraron ${sinVenta.n} cobros`} por {M(sinVenta.monto)} que todavía no tiene{sinVenta.n === 1 ? "" : "n"} su venta cargada: la plata está en la cuenta pero no
+            cuenta como cobrada hasta que se concilie. Si al contar sobra, puede ser esto (están en Conciliación).
           </span>
         )}
       </div>

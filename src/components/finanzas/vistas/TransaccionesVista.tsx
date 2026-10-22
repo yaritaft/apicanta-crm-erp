@@ -12,6 +12,7 @@ import { CopiarLink } from "@/components/ui/Filtros";
 import { FichaGasto } from "@/components/finanzas/FichaGasto";
 import { AsistenteGasto } from "@/components/finanzas/AsistenteGasto";
 import { CargaDeGastosMasiva } from "@/components/finanzas/CargaDeGastosMasiva";
+import { AyudaDeFinanzas } from "@/components/finanzas/AyudaDeFinanzas";
 import { useAbrirFicha } from "@/components/ficha/abrir";
 import { acciones, useEstado } from "@/lib/store";
 import { diaDeNegocio } from "@/lib/dia-negocio";
@@ -30,14 +31,16 @@ import type { Gasto } from "@/lib/types";
 
    Lo que se mira vive en la URL (se puede mandar el link):
    - mes: aaaa-mm, o «todos»; vacío es el mes en curso
-   - tipo: ingresos, egresos, pases o sin-conciliar
+   - dia: aaaa-mm-dd; un solo día (los ingresos de hoy, de ayer), sin importar el mes
+   - tipo: entradas (todo lo que entró, también lo que todavía espera su venta), ingresos, egresos, pases, sin-conciliar o sin-venta
    - cuenta: el nombre de la cuenta, o «sin-cuenta»
    - q: lo que se busca
    ================================================================== */
 
-const VISTA = { mes: "", tipo: "", cuenta: "" };
+const VISTA = { mes: "", tipo: "", cuenta: "", dia: "" };
 const TIPOS = [
   ["", "Todo"],
+  ["entradas", "Lo que entró"],
   ["ingresos", "Ingresos"],
   ["egresos", "Egresos"],
   ["sin-conciliar", "Sin conciliar"],
@@ -49,6 +52,7 @@ const SIN_CUENTA = "sin-cuenta";
 
 const pasaTipo = (f: Transaccion, t: FiltroTipo): boolean => {
   switch (t) {
+    case "entradas": return f.tipo === "ingreso" && f.origen !== "sin-venta";
     case "ingresos": return f.tipo === "ingreso" && f.origen !== "sin-conciliar";
     case "egresos": return f.tipo === "egreso";
     case "sin-conciliar": return f.origen === "sin-conciliar" || f.origen === "reembolso-propuesto";
@@ -85,7 +89,14 @@ export function TransaccionesVista({ embebido = false }: { embebido?: boolean })
     return [...k].sort().reverse();
   }, [todas, mesActual]);
 
-  const delMes = useMemo(() => (mes === "todos" ? todas : todas.filter((f) => f.dia.startsWith(mes))), [todas, mes]);
+  /* Un solo día (Aldana, 22/10: «un lugar donde pueda ver los ingresos del día»): hoy, ayer o el que se elija. Manda sobre el mes. */
+  const hoy = diaDeNegocio(new Date().toISOString());
+  const ayer = diaDeNegocio(new Date(Date.now() - 86400000).toISOString());
+  const dia = /^\d{4}-\d{2}-\d{2}$/.test(vista.dia) ? vista.dia : "";
+  const delMes = useMemo(
+    () => (dia ? todas.filter((f) => f.dia === dia) : mes === "todos" ? todas : todas.filter((f) => f.dia.startsWith(mes))),
+    [todas, mes, dia],
+  );
   const tipo = (TIPOS.some(([k]) => k === vista.tipo) ? vista.tipo : "") as FiltroTipo;
   const cuentas = useMemo(() => cuentasDe(delMes), [delMes]);
   const cuenta = vista.cuenta === SIN_CUENTA || cuentas.some((c) => c.cuenta === vista.cuenta) ? vista.cuenta : "";
@@ -144,8 +155,9 @@ export function TransaccionesVista({ embebido = false }: { embebido?: boolean })
     { clave: "monto", titulo: "Monto", tipo: "num", orden: (f) => (f.tipo === "egreso" ? -f.monto : f.monto), celda: monto },
   ];
 
-  const nombreMes = mes === "todos" ? "todos los meses" : nombrePeriodo(mes);
-  const hayFiltro = Boolean(busca.trim() || cuenta || tipo);
+  const nombreDia = (d: string) => (d === hoy ? "hoy" : d === ayer ? "ayer" : `el ${d.slice(8, 10)}/${d.slice(5, 7)}`);
+  const nombreMes = dia ? nombreDia(dia) : mes === "todos" ? "todos los meses" : nombrePeriodo(mes);
+  const hayFiltro = Boolean(busca.trim() || cuenta || tipo || dia);
 
   return (
     <div className="stack-5">
@@ -154,6 +166,7 @@ export function TransaccionesVista({ embebido = false }: { embebido?: boolean })
         sub="Todo lo que entró y salió, de todas las cuentas, en un solo lugar: cobros, gastos, devoluciones, lo que volvió y los pases entre cuentas."
         acciones={(
           <div className="row-wrap">
+            <AyudaDeFinanzas />
             <Button variante="secondary" icono={<ClipboardPaste size={16} />} onClick={() => setMasiva(true)}
               title="Pegá las filas de una planilla de Excel y cargá muchos gastos de una vez.">Cargar varios</Button>
             <Button variante="primary" icono={<Plus size={16} />} onClick={() => setAsistente({ gasto: null })}>Cargar gasto o ingreso</Button>
@@ -164,7 +177,7 @@ export function TransaccionesVista({ embebido = false }: { embebido?: boolean })
       <div className="grid-stats">
         <StatCard
           etiqueta="Ingresos" valor={M(resumen.ingresos, 0)} direccion="up"
-          contexto={`${nombreMes}${resumen.sinConciliarN ? ` · ${resumen.sinConciliarN} sin conciliar aparte` : ""}${resumen.sinVentaN ? ` · ${resumen.sinVentaN} sin venta aparte` : ""}`}
+          contexto={`${nombreMes}${resumen.sinConciliarN ? ` · ${resumen.sinConciliarN} sin conciliar aparte (${M(resumen.sinConciliar, 0)})` : ""}${resumen.sinVentaN ? ` · ${resumen.sinVentaN} sin venta aparte` : ""}`}
           onClick={() => setVista({ tipo: "ingresos" })}
           info={{
             ayuda: "Lo que entró: cobros imputados a una cuota y plata que volvió (un reembolso). Lo que entró a una pasarela y todavía no se ató a una cuota no se suma: está en «Sin conciliar».",
@@ -203,15 +216,30 @@ export function TransaccionesVista({ embebido = false }: { embebido?: boolean })
             <CopiarLink />
           </div>
 
-          <div className="row-wrap" style={{ marginTop: "var(--space-3)" }}>
-            <span className="t-label" style={{ marginRight: 4 }}>Mes</span>
-            <div style={{ minWidth: 200 }}>
-              <Select
-                aria-label="Mes" value={mes}
-                onChange={(ev) => setVista({ mes: ev.target.value === mesActual ? null : ev.target.value })}
-                opciones={[...meses.map((m) => ({ valor: m, texto: nombrePeriodo(m) })), { valor: "todos", texto: "Todos los meses" }]}
-              />
+          <div className="row-wrap" style={{ marginTop: "var(--space-3)" }} role="group" aria-label="Día">
+            <span className="t-label" style={{ marginRight: 4 }}>Día</span>
+            <Chip activo={dia === hoy} onClick={() => setVista({ dia: dia === hoy ? null : hoy, tipo: dia === hoy ? null : "entradas" })}>Hoy</Chip>
+            <Chip activo={dia === ayer} onClick={() => setVista({ dia: dia === ayer ? null : ayer, tipo: dia === ayer ? null : "entradas" })}>Ayer</Chip>
+            <div style={{ width: 170 }}>
+              <Input type="date" aria-label="Elegir un día" value={dia} max={hoy}
+                onChange={(ev) => setVista({ dia: ev.target.value || null, ...(ev.target.value && !tipo ? { tipo: "entradas" } : {}) })} />
             </div>
+            {dia && <Button sm variante="ghost" onClick={() => setVista({ dia: null })}>Ver el mes</Button>}
+          </div>
+
+          <div className="row-wrap" style={{ marginTop: "var(--space-3)" }}>
+            {!dia && (
+              <>
+                <span className="t-label" style={{ marginRight: 4 }}>Mes</span>
+                <div style={{ minWidth: 200 }}>
+                  <Select
+                    aria-label="Mes" value={mes}
+                    onChange={(ev) => setVista({ mes: ev.target.value === mesActual ? null : ev.target.value })}
+                    opciones={[...meses.map((m) => ({ valor: m, texto: nombrePeriodo(m) })), { valor: "todos", texto: "Todos los meses" }]}
+                  />
+                </div>
+              </>
+            )}
             <span className="t-label" style={{ marginLeft: 8, marginRight: 4 }}>Cuenta</span>
             <div style={{ minWidth: 200 }}>
               <Select
@@ -241,7 +269,7 @@ export function TransaccionesVista({ embebido = false }: { embebido?: boolean })
               icono={<ArrowLeftRight size={22} />}
               titulo={hayFiltro ? "Nada con estos filtros" : `Sin movimientos en ${nombreMes}`}
               texto={hayFiltro ? "Probá con otra búsqueda, otra cuenta u otro tipo." : "Cuando entre un cobro o se cargue un gasto, aparece acá."}
-              accion={hayFiltro ? <Button variante="secondary" onClick={() => { setBusca(""); setVista({ tipo: null, cuenta: null }); }}>Sacar los filtros</Button> : undefined}
+              accion={hayFiltro ? <Button variante="secondary" onClick={() => { setBusca(""); setVista({ tipo: null, cuenta: null, dia: null }); }}>Sacar los filtros</Button> : undefined}
             />
           }
         />

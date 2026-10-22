@@ -2,7 +2,7 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, Banknote } from "lucide-react";
 import { Button } from "@/components/ui/ui";
 import { useToast } from "@/components/ui/Toast";
 import { DateRangePicker } from "@/components/ui/DateRangePicker";
@@ -14,9 +14,10 @@ import { useRangoURL } from "@/lib/useRango";
 import { useChequeos } from "@/lib/chequeos-finanzas";
 import { olvidarVistaDe } from "@/lib/recordarVistas";
 import { moverPeriodo, nombrePeriodo, esPeriodo } from "@/lib/periodos";
-import { mesDeNegocio } from "@/lib/dia-negocio";
+import { diaDeNegocio, mesDeNegocio } from "@/lib/dia-negocio";
 import { avanceDeFinanzas, claveChequeo, pasosDeFinanzas } from "@/lib/finanzas-pasos";
 import type { Cadencia, PasoCierre } from "@/lib/cierre-mes";
+import { AyudaDeFinanzas } from "@/components/finanzas/AyudaDeFinanzas";
 import { Camino } from "./Camino";
 import "./cierre.css";
 
@@ -95,6 +96,13 @@ export function FinanzasHub() {
             <Button sm variante="ghost" onClick={() => elegirVista("mes")}>Volver al mes</Button>
           </div>
         )}
+        <div className="cm-ingresos" role="group" aria-label="Lo que entró">
+          <Banknote size={15} aria-hidden />
+          <span className="cm-ingresos__t">Lo que entró</span>
+          <Button sm variante="ghost" onClick={() => router.push(`/finanzas/transacciones?dia=${diaDeNegocio(new Date(ahora).toISOString())}&tipo=entradas`)}>Hoy</Button>
+          <Button sm variante="ghost" onClick={() => router.push(`/finanzas/transacciones?dia=${diaDeNegocio(new Date(ahora - 86400000).toISOString())}&tipo=entradas`)}>Ayer</Button>
+          <AyudaDeFinanzas />
+        </div>
         <span className="cm-conteo cm-barra__der" aria-live="polite">
           <b>{listos}</b> de {total} pasos listos
         </span>

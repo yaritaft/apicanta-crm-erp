@@ -155,7 +155,7 @@ function TipoDeMovimiento({ b, set, e }: { b: BorradorGasto; set: Poner; e: Esta
       </div>
       {b.ingreso && (
         <span className="t-sm t-subtle">
-          Un reembolso o una devolución (por ejemplo, el hotel que te devolvieron). Elegí la misma categoría del gasto que se devolvió: resta de ese gasto en el mes y entra a la caja.
+          Un reembolso, una devolución o el cashback de la tarjeta de Mercury (escribí «cashback» y se elige la categoría sola). Si es una devolución, elegí la misma categoría del gasto que se devolvió: resta de ese gasto en el mes y entra a la caja.
         </span>
       )}
     </div>

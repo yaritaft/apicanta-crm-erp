@@ -26,6 +26,8 @@
 .cm-barra__der { margin-left: auto; display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-3) var(--space-4); }
 .cm-mes { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); max-width: 100%; min-width: 0; }
 .cm-mes__nombre { min-width: 132px; text-align: center; font-weight: 600; text-transform: capitalize; }
+.cm-ingresos { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-2); color: var(--ink-subtle); }
+.cm-ingresos__t { font-size: 14px; margin-right: 2px; }
 .cm-conteo { font-size: 14px; color: var(--ink-subtle); font-variant-numeric: tabular-nums; }
 .cm-conteo b { color: var(--ink); font-weight: 650; }
 

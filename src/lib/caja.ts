@@ -1,4 +1,5 @@
 import type { Arqueo, EstadoApp, Procesador } from "./types";
+import { aMonedaBase } from "./gastos";
 import type { RangoMes } from "./metricas";
 import { calcularPyL, gastosPagadosEn } from "./finanzas";
 import { enCamino } from "./traspasos";
@@ -43,6 +44,26 @@ import { finDelDia } from "./periodos";
 export const MESES_DE_COLCHON = 6;
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
+
+/** La plata que entró a una cuenta desde el último arqueo y todavía no tiene su venta cargada (cobros pendientes en Conciliación). No está en lo
+ *  cobrado —un cobro cuenta cuando se ata a su cuota—, pero sí está en la cuenta: si al contar sobra plata, puede ser esto. En la moneda base,
+ *  neta de la comisión de la pasarela cuando se sabe. (Aldana, 22/10: «si el closer no lo carga no tengo forma de registrarlo… va a ser un
+ *  problema cuando se hagan los arqueos».) */
+export function cobrosSinVenta(
+  e: Pick<EstadoApp, "movimientos" | "ajustes">, desdeIso: string | null, hastaIso: string, tipoCambio = 0,
+): { n: number; monto: number } {
+  const desde = desdeIso ? Date.parse(desdeIso) : -Infinity;
+  const hasta = Date.parse(hastaIso);
+  let n = 0, monto = 0;
+  for (const m of e.movimientos ?? []) {
+    if (m.estado !== "pendiente") continue;
+    const t = Date.parse(m.fecha);
+    if (!(t > desde && t <= hasta)) continue;
+    n++;
+    monto += aMonedaBase(Math.max(0, m.monto - m.fee), m.moneda, e.ajustes.monedaBase, tipoCambio);
+  }
+  return { n, monto: r2(monto) };
+}
 
 /** Un rango de instantes, sin incluir el primero (el del arqueo anterior). */
 export function rangoEntre(desdeIso: string, hastaIso: string): RangoMes {
