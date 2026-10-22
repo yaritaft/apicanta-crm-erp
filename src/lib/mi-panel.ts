@@ -276,7 +276,11 @@ export function miPanelDe(e: EstadoApp, m: MiembroEquipo, rango: RangoMes, ahora
 
   /* Lo que le pide acción. */
   const pedidos = pedidosDeCloser(e, m.id, ahora);
-  const { avisos, total: totalAvisos } = avisosDe(e, { equipo: e, dia, porCobrar, cobros, ahora, pedidos: avisosDePedidos(e, pedidos), totalPedidos: pedidos.length });
+  /* Sus ventas de los últimos 60 días sin estrategia (embudo): Marketing no las cuenta y Finanzas no puede cerrar el mes (Aldana, 22/10: «eso depende de comercial»). */
+  const sinEstrategia = e.ventas
+    .filter((v) => v.closerId === m.id && v.estado !== "cancelada" && !v.embudoId && ahora - Date.parse(v.fecha) <= DIAS_SIN_ESTRATEGIA * DIA)
+    .sort((a, b) => b.fecha.localeCompare(a.fecha));
+  const { avisos, total: totalAvisos } = avisosDe(e, { equipo: e, dia, porCobrar, cobros, ahora, pedidos: avisosDePedidos(e, pedidos), totalPedidos: pedidos.length, sinEstrategia });
 
   /* Las agendas que le cargaron como setter: las que entraron por su link (utm_campaign=setter_nombre). */
   const agendasDeSetter: AgendaDeSetter[] = [];
@@ -313,6 +317,9 @@ const POR_TIPO = 2;
 /** Hasta cuántos días atrás se avisa de una cuota vencida. */
 const DIAS_VENCIDAS = 30;
 
+/** Hasta cuántos días atrás se avisa de una venta sin estrategia. */
+const DIAS_SIN_ESTRATEGIA = 60;
+
 /** Cuántos cobros rechazados se listan: son pocos y cada uno espera una respuesta. */
 const POR_RECHAZO = 8;
 
@@ -334,7 +341,7 @@ function avisosDePedidos(e: EstadoApp, pedidos: PedidoDeVenta[]): Aviso[] {
 
 function avisosDe(
   e: Pick<EstadoApp, "productos">,
-  c: { equipo: Pick<EstadoApp, "equipo">; dia: ResumenDelDia; porCobrar: CuotaPendiente[]; cobros: CobroCargado[]; ahora: number; pedidos: Aviso[]; totalPedidos: number },
+  c: { equipo: Pick<EstadoApp, "equipo">; sinEstrategia: Venta[]; dia: ResumenDelDia; porCobrar: CuotaPendiente[]; cobros: CobroCargado[]; ahora: number; pedidos: Aviso[]; totalPedidos: number },
 ): { avisos: Aviso[]; total: number } {
   const avisos: Aviso[] = [];
   let total = 0;
@@ -365,6 +372,16 @@ function avisosDe(
       clave: `rc|${x.pago.id}`, tono: "danger", resaltado: x.venta?.contactoNombre ?? "Un cobro",
       texto: `tiene un cobro de US$ ${Math.round(x.pago.monto).toLocaleString("es-AR")} rechazado por ${r.quien} (${r.cuando}): «${r.nota.replace(/[.\s]+$/, "")}». Corregilo, o avisale que está bien.`,
       accion: x.venta ? { texto: "Ver", ir: "ficha", id: x.venta.id } : undefined,
+    });
+  }
+
+  /* Ventas sin estrategia: sólo el closer sabe de qué embudo vino. */
+  total += c.sinEstrategia.length;
+  for (const v of c.sinEstrategia.slice(0, POR_TIPO)) {
+    avisos.push({
+      clave: `se|${v.id}`, tono: "warning", resaltado: v.contactoNombre,
+      texto: `no tiene estrategia (embudo): Marketing no cuenta la venta y Finanzas no puede cerrar el mes. Elegila en la ficha.`,
+      accion: { texto: "Ver", ir: "ficha", id: v.id },
     });
   }
 

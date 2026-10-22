@@ -150,6 +150,23 @@ test("el paso «Arreglar los cobros rechazados» dice en el panel de qué closer
   assert.match(aviso!.texto, /US\$ 49/);
 });
 
+test("las ventas del closer sin estrategia (embudo) le aparecen en «Para vos»; las de otro closer, las canceladas y las viejas no", () => {
+  fijarAcceso(null);
+  const base = construirSemilla() as EstadoApp;
+  const closer = base.equipo.find((m) => m.rol === "closer" && m.activo)!;
+  const otro = base.equipo.find((m) => m.rol === "closer" && m.activo && m.id !== closer.id)!;
+  const molde = base.ventas.find((v) => v.estado === "activa")!;
+  const venta = (id: string, extra: Record<string, unknown>) => ({ ...molde, id, contactoNombre: id, closerId: closer.id, embudoId: undefined, estado: "activa", fecha: "2026-10-15T15:00:00.000Z", ...extra }) as EstadoApp["ventas"][number];
+  const e: EstadoApp = {
+    ...base, pagos: [],
+    ventas: [venta("Con embudo", { embudoId: "emb_x" }), venta("Sin embudo", {}), venta("Cancelada", { estado: "cancelada" }), venta("De otro", { closerId: otro.id }), venta("Vieja", { fecha: "2026-07-01T15:00:00.000Z" })],
+  };
+  const aviso = miPanelDe(e, closer, rangoDelPanel("2026-10-01", "2026-10-31", "octubre"), AHORA).avisos.filter((a) => a.clave.startsWith("se|"));
+  assert.deepEqual(aviso.map((a) => a.resaltado), ["Sin embudo"]);
+  assert.match(aviso[0].texto, /no tiene estrategia \(embudo\)/);
+  assert.equal(aviso[0].accion?.ir, "ficha");
+});
+
 /* ---------- Whop ---------- */
 
 test("la comisión de Whop sale de las comisiones que lista o de lo que va de lo cobrado a lo que queda: la mayor, nunca el 3% a ciegas", () => {

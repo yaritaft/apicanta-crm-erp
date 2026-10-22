@@ -170,7 +170,11 @@ export function pasosDelTramo(e: EstadoApp, tramo: Tramo, { ahora = Date.now(), 
   paso({
     id: "ventas-embudo", area: "ventas", titulo: "Atribuir cada venta a su embudo",
     detalle: sinEmbudo.length
-      ? `${pl(sinEmbudo.length, "venta de " + nombre + " no tiene", "ventas de " + nombre + " no tienen")} estrategia: Marketing no las cuenta. Hay que decir de qué embudo vino cada una.`
+      ? `${pl(sinEmbudo.length, "venta de " + nombre + " no tiene", "ventas de " + nombre + " no tienen")} estrategia: Marketing no las cuenta. Hay que decir de qué embudo vino cada una.${(() => {
+          /* Sólo el closer sabe de dónde vino: a cada uno le aparece en «Para vos» de su panel. */
+          const quienes = [...new Set(sinEmbudo.map((v) => e.equipo.find((m) => m.id === v.closerId)?.nombre).filter((n): n is string => Boolean(n)))];
+          return quienes.length ? ` Le aparece en «Para vos» de ${quienes.join(", ")}.` : "";
+        })()}`
       : `Todas las ventas de ${nombre} tienen su estrategia: Marketing cuenta lo mismo que la empresa.`,
     progreso: { hecho: ventasDelMes.length - sinEmbudo.length, total: ventasDelMes.length },
     pendientes: sinEmbudo.map((v) => ({ clave: v.id, titulo: v.contactoNombre, sub: e.productos.find((x) => x.id === v.productoId)?.nombre, monto: v.precioAcordado, moneda: v.moneda, destino: { ficha: v.id } })),
