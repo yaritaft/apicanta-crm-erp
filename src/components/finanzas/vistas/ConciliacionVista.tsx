@@ -469,7 +469,7 @@ function FilaMovimiento({ mov, M, abierto, onAbrir, onNuevaVenta }: {
   const resto = restoDeMovimiento(e, mov);
 
   function conciliar(cuotaId: string, monto: number) {
-    if (acciones.conciliar(mov.id, [{ cuotaId, monto }])) toast("Cobro conciliado.");
+    if (acciones.conciliar(mov.id, [{ cuotaId, monto }])) toast(pase && pase.estado !== "ignorado" ? "Cobro conciliado. Estaba como movimiento entre cuentas: lo saqué de ahí para no contar la plata dos veces." : "Cobro conciliado.");
     else toast("No se pudo conciliar ese cobro.", "err");
   }
 
@@ -589,7 +589,7 @@ function FilaMovimiento({ mov, M, abierto, onAbrir, onNuevaVenta }: {
                       </span>
                       <span className="spacer t-sm t-num">{M(x.pago.monto, 2)}</span>
                       <Button sm variante="secondary" icono={<Link2 size={14} />}
-                        onClick={() => { if (acciones.vincularConPagos([{ movimientoId: mov.id, pagoId: x.pago.id }])) toast("Cobro atado a su pago."); }}>
+                        onClick={() => { if (acciones.vincularConPagos([{ movimientoId: mov.id, pagoId: x.pago.id }])) toast(pase && pase.estado !== "ignorado" ? "Cobro atado a su pago. Estaba como movimiento entre cuentas: lo saqué de ahí para no contar la plata dos veces." : "Cobro atado a su pago."); }}>
                         Es este pago
                       </Button>
                     </div>

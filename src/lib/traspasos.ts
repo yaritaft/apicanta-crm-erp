@@ -316,6 +316,21 @@ export const paseDelCobro = (traspasos: readonly Traspaso[] | undefined, m: Pick
   return (traspasos ?? []).find((t) => t.llegadaRef === ref && t.estado !== "ignorado");
 };
 
+/** El cobro que es la llegada de un pase: el mismo depósito del banco, que también entró a Conciliación como un cobro más. */
+export function cobroDeLaLlegada(movimientos: readonly Movimiento[] | undefined, t: Pick<Traspaso, "llegadaRef">): Movimiento | undefined {
+  if (!t.llegadaRef || t.llegadaRef === LLEGADA_A_MANO) return undefined;
+  return (movimientos ?? []).find((m) => llegadaDeCobro(m) === t.llegadaRef);
+}
+
+/** Un pase cuya llegada ya está conciliada con una cuota (Aldana, 13/10: un depósito de «Bridge Arx» era el pago de un alumno y quedó
+ *  como pase de Hotmart a Mercury): la plata cuenta como cobro y, si además es un pase, se cuenta dos veces —Mercury de más y Hotmart de menos
+ *  en el arqueo—. Devuelve el cobro con el que se pisa; los descartados no pisan nada. */
+export function paseQuePisaUnCobro(movimientos: readonly Movimiento[] | undefined, t: Pick<Traspaso, "llegadaRef" | "estado">): Movimiento | undefined {
+  if (t.estado === "ignorado") return undefined;
+  const cobro = cobroDeLaLlegada(movimientos, t);
+  return cobro?.estado === "conciliado" ? cobro : undefined;
+}
+
 /** Lo que queda escrito en el cobro sin venta cuando es un movimiento entre cuentas. */
 export function motivoDelMovimiento(e: Pick<EstadoApp, "procesadores">, t: Pick<Traspaso, "origenId" | "destinoId" | "notas">): string {
   const donde = t.origenId

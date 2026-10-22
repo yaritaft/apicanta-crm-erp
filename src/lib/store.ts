@@ -1223,6 +1223,8 @@ function empujarMovimientos(tocados: Map<ID, Movimiento>) {
       conciliadoEn: m.conciliadoEn ?? null, conciliadoPor: m.conciliadoPor ?? null,
     });
   }
+  /* Un depósito que quedó conciliado como el cobro de un cliente ya no es un pase entre cuentas (ver acciones.soltarPaseDeCobro). */
+  for (const m of tocados.values()) if (m.estado === "conciliado") acciones.soltarPaseDeCobro(m);
 }
 
 /* ---------- La baja de una venta ----------
@@ -2677,6 +2679,7 @@ export const acciones = {
     empujar({ tipo: "upsert", tabla: "cuotas", filas: cuotas });
     if (nuevosPagos.length) empujar({ tipo: "upsert", tabla: "pagos", filas: nuevosPagos });
     if (movimientosTocados.size) empujar({ tipo: "upsert", tabla: "movimientos", filas: [...movimientosTocados.values()] });
+    for (const m of movimientosTocados.values()) if (m.estado === "conciliado") acciones.soltarPaseDeCobro(m);
     empujar({ tipo: "upsert", tabla: "actividad", filas: registros });
     empujarTanda(t);
     return venta.id;
@@ -2814,6 +2817,7 @@ export const acciones = {
     const cuotasEscritas = [...(nueva ? [nueva] : []), ...cambiadas.values()];
     if (cuotasEscritas.length) empujar({ tipo: "upsert", tabla: "cuotas", filas: cuotasEscritas });
     if (movimientosTocados.size) empujar({ tipo: "upsert", tabla: "movimientos", filas: [...movimientosTocados.values()] });
+    for (const m of movimientosTocados.values()) if (m.estado === "conciliado") acciones.soltarPaseDeCobro(m);
     empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
     return true;
   },
@@ -3527,6 +3531,20 @@ export const acciones = {
     if (cuotasCambiadas.length) empujar({ tipo: "upsert", tabla: "cuotas", filas: cuotasCambiadas });
     empujar({ tipo: "upsert", tabla: "movimientos", filas: [actualizado] });
     empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
+    if (actualizado.estado === "conciliado") acciones.soltarPaseDeCobro(actualizado);
+    return true;
+  },
+
+  /* El mismo depósito del banco puede estar a la vez como un pase entre cuentas (lo propone la sincronización cuando la otra parte parece una
+     pasarela: «Bridge Arx», «Binance») y como un cobro en Conciliación. Al conciliarlo con una cuota, alguien dijo que es un cliente pagando:
+     el pase deja de contar. Si no, la plata se cuenta dos veces (Mercury de más y Hotmart de menos en el arqueo: Aldana, 13/10). */
+  soltarPaseDeCobro(mov: Pick<Movimiento, "proveedor" | "referencia">): boolean {
+    /* Quien concilia sin ser de Finanzas (un closer que carga la venta de un cobro) no edita los movimientos entre cuentas: queda a la vista
+       en la Caja («Ya es un cobro») para que Finanzas lo saque. */
+    if (!puedo("traspasos")) return false;
+    const t = paseDelCobro(snapshot().traspasos, mov);
+    if (!t || t.origen === "manual") return false;
+    acciones.marcarTraspaso(t.id, "ignorado");
     return true;
   },
 
@@ -3576,6 +3594,7 @@ export const acciones = {
     empujarEnLotes("pagos", [...pagosCambiados.values()]);
     empujarEnLotes("movimientos", [...movsCambiados.values()]);
     empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
+    for (const m of movsCambiados.values()) acciones.soltarPaseDeCobro(m);
     return pagosCambiados.size;
   },
 
