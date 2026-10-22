@@ -246,13 +246,35 @@ export async function retirosDeStripe(desde: Date): Promise<Punta[]> {
 
 /* Hotmart pagina con un cursor: se sigue pidiendo hasta que no haya
    próxima página, con un tope para no quedarse dando vueltas. */
+/* Hotmart contesta 400 («misconfigured parameter») sin decir cuál: desde el 21/10 no entraba ningún cobro de Hotmart a la app. No hay forma
+   de saber qué parámetro le molesta (el rango, el tamaño de la página), así que si el pedido normal falla con 400 se vuelve a pedir sin la fecha
+   de fin y sin el tamaño de página, y se sigue con el primero que Hotmart acepte. Con otro error (login, red, 5xx) no se reintenta. */
 async function paginasHotmart(
   ruta: string, parametros: Record<string, string>, token: string,
+): Promise<Record<string, never>[]> {
+  const sinFin = Object.fromEntries(Object.entries(parametros).filter(([k]) => k !== "end_date"));
+  const intentos: { params: Record<string, string>; max: string | null }[] = [
+    { params: parametros, max: "100" }, { params: sinFin, max: "100" }, { params: parametros, max: null }, { params: sinFin, max: null },
+  ];
+  let primero: unknown;
+  for (const { params, max } of intentos) {
+    try {
+      return await paginasHotmartCon(ruta, params, token, max);
+    } catch (err) {
+      primero ??= err;
+      if (!(err instanceof Error) || !/respondió 400/.test(err.message)) throw err;
+    }
+  }
+  throw primero;
+}
+
+async function paginasHotmartCon(
+  ruta: string, parametros: Record<string, string>, token: string, maxResultados: string | null,
 ): Promise<Record<string, never>[]> {
   const items: Record<string, never>[] = [];
   let cursor: string | undefined;
   for (let pagina = 0; pagina < 20; pagina++) {
-    const q = new URLSearchParams({ ...parametros, max_results: "100" });
+    const q = new URLSearchParams({ ...parametros, ...(maxResultados ? { max_results: maxResultados } : {}) });
     if (cursor) q.set("page_token", cursor);
     const r = await fetch(`https://developers.hotmart.com/payments/api/v1/${ruta}?${q}`, {
       /* Sin Content-Type, Hotmart contesta 400 aunque sea un GET. */
@@ -369,7 +391,21 @@ export function cobradoEnWhop(p: Obj): boolean | undefined {
   return true;
 }
 
-interface DetalleWhop { nombre?: string; email?: string; telefono?: string; metodo?: string; fee?: number; descripcion?: string; cobrado?: boolean }
+interface DetalleWhop { nombre?: string; email?: string; telefono?: string; metodo?: string; fee?: number; descripcion?: string; cobrado?: boolean; sinComision?: string }
+
+/** Lo que se quedó Whop de un pago (comisión de procesamiento, entre países, de orquestación, de facturación…), a partir de su detalle (API v1).
+ *  Dos formas de saberlo: la suma de las comisiones que lista (`fees`) y lo que va de lo cobrado a lo que queda (`total` − `amount_after_fees`).
+ *  Se toma la mayor: antes se usaba sólo la segunda y, si Whop devolvía las dos cifras iguales, la comisión quedaba en 0 y el sistema
+ *  usaba el 3% estimado en vez de la real (Aldana, 22/10: «entró 582, pero Whop decía 577,43»: ningún cobro de Whop tenía su comisión). */
+export function comisionDePagoWhop(p: Obj): { fee?: number; total?: number; despues?: number; listadas: number } {
+  const total = num(p.total) ?? num(p.subtotal);
+  const despues = num(p.amount_after_fees);
+  const comisiones = Array.isArray(p.fees) ? (p.fees as Obj[]) : [];
+  const listadas = dinero(comisiones.reduce((a, f) => a + Math.abs(num(f.amount) ?? 0), 0));
+  const porDiferencia = total !== undefined && despues !== undefined && total > despues ? dinero(total - despues) : 0;
+  const fee = Math.max(listadas, porDiferencia);
+  return { fee: fee > 0 && (total === undefined || fee < total) ? fee : undefined, total, despues, listadas: comisiones.length };
+}
 
 function metodoWhop(p: Obj): string | undefined {
   const tipo = txt(p.payment_method_type) ?? txt((p.payment_method as Obj | undefined)?.payment_method_type);
@@ -390,20 +426,16 @@ async function detalleWhop(id: string, clave: string): Promise<DetalleWhop> {
   const membresia = (p.membership ?? {}) as Obj;
   const facturacion = (p.billing_address ?? {}) as Obj;
   const producto = (p.product ?? {}) as Obj;
-  /* La comisión es lo que va de lo cobrado a lo que queda después de las
-     comisiones; si no viene, la suma de las comisiones que lista. */
-  const total = num(p.total) ?? num(p.subtotal);
-  const despues = num(p.amount_after_fees);
-  const listadas = Array.isArray(p.fees) ? (p.fees as Obj[]).reduce((a, f) => a + Math.abs(num(f.amount) ?? 0), 0) : 0;
-  const fee = total !== undefined && despues !== undefined && total >= despues ? total - despues : listadas;
+  const c = comisionDePagoWhop(p);
   return {
     nombre: txt(usuario.name) ?? txt(facturacion.name) ?? txt(usuario.username),
     email: txt(usuario.email)?.toLowerCase(),
     telefono: txt(miembro.phone) ?? txt(p.customer_phone) ?? txt(membresia.phone_number),
     metodo: metodoWhop(p),
-    fee: fee > 0 ? dinero(fee) : undefined,
+    fee: c.fee,
     descripcion: txt(producto.title),
     cobrado: cobradoEnWhop(p),
+    sinComision: c.fee === undefined ? `cobrado ${c.total ?? "?"}, después de comisiones ${c.despues ?? "?"}, ${c.listadas} comisiones listadas` : undefined,
   };
 }
 
@@ -452,11 +484,13 @@ export async function whop(desde: Date, opciones: OpcionesListar = {}): Promise<
   const faltan = lista.filter((m) => (!m.clienteEmail || !m.metodo || m.fee === 0) && (opciones.necesitaDetalle?.(m) ?? true));
   let fallo: string | undefined;
   const intentos = new Set<string>();
+  const sinComision: string[] = [];
   await enTandas(faltan, 4, async (m) => {
     if (fallo) return;
     try {
       const d = await detalleWhop(m.referencia, clave);
       if (d.cobrado === false) { intentos.add(m.referencia); return; }
+      if (d.sinComision && m.fee === 0) sinComision.push(d.sinComision);
       m.clienteNombre ??= d.nombre;
       m.clienteEmail ??= d.email;
       m.clienteTelefono ??= d.telefono;
@@ -470,6 +504,12 @@ export async function whop(desde: Date, opciones: OpcionesListar = {}): Promise<
     }
   });
   if (fallo) opciones.avisos?.push(`No se pudo ver quién pagó ni la comisión: ${fallo}`);
+  /* Si Whop no dice la comisión de un cobro, se usa el porcentaje de la cuenta (estimada). Queda en el registro del servidor, con lo que sí dijo,
+     para no tener que adivinar si es un permiso de la clave o un cambio en la API. Sin datos personales: sólo cifras. No es un error de la
+     sincronización: la pantalla ya marca cada cobro con su comisión estimada. */
+  else if (sinComision.length) {
+    console.warn(`[whop] sin comisión en ${sinComision.length} ${sinComision.length === 1 ? "cobro" : "cobros"} (por ejemplo: ${sinComision[0]}): se usa el porcentaje estimado de la cuenta. Si pasa con todos, a la clave de la API le faltan permisos de lectura.`);
+  }
   return lista.filter((m) => !intentos.has(m.referencia));
 }
 
