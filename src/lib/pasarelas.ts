@@ -162,12 +162,12 @@ const ALIAS: Record<string, string[]> = {
     "número de operación", "order", "order_id", "receipt id", "referencia",
   ],
   fecha: [
-    "created date (utc)", "created (utc)", "created_at", "created", "date",
+    "paid at", "created date (utc)", "created (utc)", "created_at", "created", "date",
     "order_date", "approval_date", "fecha", "fecha de aprobación",
     "fecha de la operación", "payment_date", "purchase_date",
   ],
   monto: [
-    "converted amount", "amount", "gross", "total_value", "total", "valor",
+    "converted amount", "payment amount", "amount", "gross", "total_value", "total", "valor",
     "valor de la transacción", "monto", "importe", "bruto", "price",
   ],
   fee: [

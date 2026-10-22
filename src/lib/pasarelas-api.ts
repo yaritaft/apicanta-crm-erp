@@ -435,7 +435,9 @@ async function detalleWhop(id: string, clave: string): Promise<DetalleWhop> {
     fee: c.fee,
     descripcion: txt(producto.title),
     cobrado: cobradoEnWhop(p),
-    sinComision: c.fee === undefined ? `cobrado ${c.total ?? "?"}, después de comisiones ${c.despues ?? "?"}, ${c.listadas} comisiones listadas` : undefined,
+    sinComision: c.fee === undefined
+      ? `cobrado ${c.total ?? "?"}, después de comisiones ${c.despues ?? "?"}, ${c.listadas} comisiones listadas; el detalle trae los campos: ${Object.keys(p).sort().join(", ") || "ninguno"}`
+      : undefined,
   };
 }
 
@@ -508,7 +510,7 @@ export async function whop(desde: Date, opciones: OpcionesListar = {}): Promise<
      para no tener que adivinar si es un permiso de la clave o un cambio en la API. Sin datos personales: sólo cifras. No es un error de la
      sincronización: la pantalla ya marca cada cobro con su comisión estimada. */
   else if (sinComision.length) {
-    console.warn(`[whop] sin comisión en ${sinComision.length} ${sinComision.length === 1 ? "cobro" : "cobros"} (por ejemplo: ${sinComision[0]}): se usa el porcentaje estimado de la cuenta. Si pasa con todos, a la clave de la API le faltan permisos de lectura.`);
+    console.warn(`[whop] sin comisión en ${sinComision.length} ${sinComision.length === 1 ? "cobro" : "cobros"} (por ejemplo: ${sinComision[0]}): se usa el porcentaje estimado de la cuenta. La lista trae los campos: ${Object.keys(filas[0] ?? {}).sort().join(", ") || "ninguno"}. Si pasa con todos, a la clave de la API le faltan permisos de lectura.`);
   }
   return lista.filter((m) => !intentos.has(m.referencia));
 }

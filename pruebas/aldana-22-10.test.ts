@@ -8,6 +8,7 @@ import { cobrosSinVenta } from "@/lib/caja";
 import { transaccionesDe } from "@/lib/transacciones";
 import { sugerirCategoria } from "@/lib/gastos";
 import { comisionDePagoWhop, hotmart } from "@/lib/pasarelas-api";
+import { importarCSV } from "@/lib/pasarelas";
 import { construirSemilla } from "@/lib/seed";
 import type { EstadoApp, Movimiento, Pago, Traspaso } from "@/lib/types";
 
@@ -169,6 +170,36 @@ test("la comisión de Whop sale de las comisiones que lista o de lo que va de lo
   assert.equal(comisionDePagoWhop({}).fee, undefined);
   /* Una comisión mayor que lo cobrado es un dato roto: no se usa. */
   assert.equal(comisionDePagoWhop({ total: 100, amount_after_fees: 0, fees: [{ amount: 250 }] }).fee, undefined);
+});
+
+test("el export de pagos de Whop se importa con su comisión real (la API de Whop no la trae con la clave actual): monto cobrado, fecha de pago y Fee", () => {
+  /* Columnas tal cual las trae el export de Whop (el de Aldana del 20/10), recortadas. */
+  const csv = [
+    'ID,Paid at,Created at,Status,Description,Payment method,Email,Subtotal,Tax amount,Amount excluding tax,Payment Amount,Refunded amount,Fee,Payment Currency,Customer name,Sub status,Total Amount USD (Excluding Fees)',
+    'pay_BCEzBGcIcUOUBj,2026-08-14 13:47:59 -0300,2026-08-14 13:47:57 -0300,paid,HACKEAR AI,card,nico@x.com,1000.0,0.0,1000.0,1000.0,0.0,55.37,usd,Nicolas Godoy,succeeded,944.63',
+    'pay_xibFKX9acdhyOn,2026-10-02 19:42:04 -0300,2026-10-02 19:42:00 -0300,paid,HACKEAR AI,card,otra@x.com,1000.0,0.0,1000.0,1000.0,0.0,37.37,usd,Otra Persona,succeeded,992.63',
+  ].join("\n");
+  const r = importarCSV(csv, "whop", "proc_whop", 0.03);
+  assert.equal(r.movimientos.length, 2);
+  const [a, b] = r.movimientos;
+  assert.deepEqual([a.referencia, a.monto, a.fee, a.neto], ["pay_BCEzBGcIcUOUBj", 1000, 55.37, 944.63], "la comisión es la que cobró Whop, no el 3%");
+  assert.deepEqual([b.referencia, b.monto, b.fee, b.neto], ["pay_xibFKX9acdhyOn", 1000, 37.37, 962.63]);
+  assert.equal(a.fecha, "2026-08-14T16:47:59.000Z", "la fecha es la de pago (Paid at), con su zona");
+  assert.equal(a.clienteEmail, "nico@x.com");
+  /* Importarlo sobre cobros que ya estaban con comisión 0 la completa, y los pagos conciliados toman la real. */
+  fijarAcceso(null);
+  const base = construirSemilla() as EstadoApp;
+  const cuota = base.cuotas.find((c) => c.estado === "pendiente" && !base.pagos.some((p) => p.cuotaId === c.id) && base.ventas.find((v) => v.id === c.ventaId)?.estado === "activa")!;
+  const mov: Movimiento = { id: "mov_w", proveedor: "whop", referencia: "pay_BCEzBGcIcUOUBj", monto: 1000, moneda: "USD", fee: 0, neto: 1000, fecha: a.fecha, estado: "pendiente", procesadorId: "proc_whop", creadoEn: a.fecha, origen: "api" } as Movimiento;
+  assert.equal(acciones.importar(JSON.stringify({ ...base, movimientos: [mov], pagos: [], arqueos: [], traspasos: [] })), true);
+  assert.equal(acciones.conciliar(mov.id, [{ cuotaId: cuota.id, monto: Math.min(1000, cuota.monto) }]), true);
+  const antes = estado().pagos.find((p) => p.movimientoId === mov.id)!;
+  assert.equal(antes.feeMonto, Math.round(antes.monto * 0.03 * 100) / 100, "conciliado con el 3% estimado");
+  acciones.importarMovimientos([a], "csv");
+  const despues = estado();
+  assert.equal(despues.movimientos.find((m) => m.id === mov.id)!.fee, 55.37);
+  const pago = despues.pagos.find((p) => p.movimientoId === mov.id)!;
+  assert.equal(pago.feeMonto, Math.round(55.37 * (pago.monto / 1000) * 100) / 100, "el pago toma la comisión real, en proporción");
 });
 
 /* ---------- Hotmart ---------- */
