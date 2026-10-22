@@ -332,6 +332,8 @@ export async function alFirmar(db: SupabaseClient, c: Contrato): Promise<{ acces
   return { accesos: r };
 }
 
+const DIAS_PARA_BIENVENIDA = 3;
+
 /** El mail de bienvenida (Lili, 22/10): su roadmap según el perfil, el paso a paso de lo que compró, el formulario de los
     lunes y el WhatsApp de soporte. Sale una sola vez por contrato y sólo si está Resend (RESEND_API_KEY y RESEND_FROM);
     si no, el equipo lo copia desde la ficha (Servicio → Contrato). Nunca frena la firma: un error queda en el historial. */
@@ -339,6 +341,9 @@ export async function mandarBienvenida(db: SupabaseClient, c: Contrato, alumnoId
   const cfg = configResend();
   const para = (c.destinatario.email ?? c.datos.email ?? "").trim();
   if (!cfg || !para || c.bienvenidaMailEn) return;
+  /* Sólo recién firmado: la pasada de cada hora vuelve a pasar por acá los contratos viejos a los que les falta el PDF o
+     los accesos, y el día que se prenda Resend no les tiene que llegar la bienvenida a alumnos que ya arrancaron. */
+  if (!c.firmadoEn || Date.now() - new Date(c.firmadoEn).getTime() > DIAS_PARA_BIENVENIDA * 86_400_000) return;
   let guia = guiaDeBienvenida({ reserva: c.datos.reserva, programa: c.programa, perfil: c.datos.perfil, config: await configBienvenida(db) });
   if (!guia) return;
   const origen = process.env.APP_URL?.trim() || baseDeLaApp(null);
