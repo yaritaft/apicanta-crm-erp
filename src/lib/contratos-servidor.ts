@@ -11,6 +11,9 @@ import {
 import { cambiarFicha, darAccesos, type ResultadoAccesos } from "./accesos-servidor";
 import { plantillaDelContrato, programaPorId, programasDe, type Programa } from "./programas";
 import type { ConfigContratos } from "./types";
+import { guiaDeBienvenida, htmlDeBienvenida, textoDeBienvenida, type ConfigBienvenida } from "./bienvenida-alumno";
+import { codigoDeAlumno, configResend, enviarPorResend } from "./reporte-servidor";
+import { enlaceDeReporte } from "./reporte-enlace";
 
 /* ==================================================================
    Los contratos del lado del servidor: lo que se hace con PandaDoc y lo
@@ -50,6 +53,12 @@ export async function programasGuardados(db: SupabaseClient): Promise<{ programa
   const r = await db.from("ajustes").select("programas, contratos").limit(1).maybeSingle();
   const fila = (r.data ?? {}) as { programas?: Programa[]; contratos?: ConfigContratos };
   return { programas: programasDe(fila), config: fila.contratos ?? { estado: "apagado" } };
+}
+
+/** Los roadmaps y los contactos de soporte de la bienvenida (Ajustes; no están en el código porque el repositorio es público). */
+export async function configBienvenida(db: SupabaseClient): Promise<ConfigBienvenida | null> {
+  const r = await db.from("ajustes").select("bienvenida").limit(1).maybeSingle();
+  return r.error ? null : ((r.data as { bienvenida?: ConfigBienvenida | null } | null)?.bienvenida ?? null);
 }
 
 /** La dirección de la app para la página de bienvenida: la de producción en la app publicada; si no, la del pedido. */
@@ -280,6 +289,7 @@ export async function alFirmar(db: SupabaseClient, c: Contrato): Promise<{ acces
   if (alumnoId && c.alumnoId !== alumnoId) await guardar(db, c.id, { alumnoId });
   const { programas, config } = await programasGuardados(db);
   /* La reserva no toca la ficha ni da accesos: eso lo hace el contrato del programa cuando avanza. */
+  await mandarBienvenida(db, c, alumnoId).catch((e) => console.error("[contratos] no salió el mail de bienvenida", c.id, mensajeDe(e)));
   if (c.datos.reserva) {
     if (!c.accesosEn) {
       await evento(db, c.id, "accesos", "Apicanta", "app", { dados: 0, motivo: "Es el contrato de la reserva: los accesos se dan con el contrato del programa." });
@@ -320,6 +330,34 @@ export async function alFirmar(db: SupabaseClient, c: Contrato): Promise<{ acces
   });
   await evento(db, c.id, "accesos", "Apicanta", "app", { dados: r.dados, fallaron: r.fallaron, yaEstaban: r.yaEstaban });
   return { accesos: r };
+}
+
+/** El mail de bienvenida (Lili, 22/10): su roadmap según el perfil, el paso a paso de lo que compró, el formulario de los
+    lunes y el WhatsApp de soporte. Sale una sola vez por contrato y sólo si está Resend (RESEND_API_KEY y RESEND_FROM);
+    si no, el equipo lo copia desde la ficha (Servicio → Contrato). Nunca frena la firma: un error queda en el historial. */
+export async function mandarBienvenida(db: SupabaseClient, c: Contrato, alumnoId: string | null): Promise<void> {
+  const cfg = configResend();
+  const para = (c.destinatario.email ?? c.datos.email ?? "").trim();
+  if (!cfg || !para || c.bienvenidaMailEn) return;
+  let guia = guiaDeBienvenida({ reserva: c.datos.reserva, programa: c.programa, perfil: c.datos.perfil, config: await configBienvenida(db) });
+  if (!guia) return;
+  const origen = process.env.APP_URL?.trim() || baseDeLaApp(null);
+  if (guia.modelo === "completo" && alumnoId && origen) {
+    const codigo = await codigoDeAlumno(db, alumnoId).catch(() => null);
+    if (codigo) guia = { ...guia, formulario: enlaceDeReporte(origen, codigo) };
+  }
+  /* Se marca ANTES de mandar: si dos avisos llegan juntos, sale uno solo. */
+  const toma = await db.from("contratos").update({ bienvenidaMailEn: ahora() }).eq("id", c.id).is("bienvenidaMailEn", null).select("id");
+  if (!toma.data?.length) return;
+  const { asunto, texto } = textoDeBienvenida(guia);
+  const r = await enviarPorResend(cfg, { para, asunto, texto, html: htmlDeBienvenida(texto) });
+  if (!r.ok) {
+    await db.from("contratos").update({ bienvenidaMailEn: null }).eq("id", c.id);
+    await evento(db, c.id, "bienvenida", "Apicanta", "app", { enviado: false, error: r.error });
+    return;
+  }
+  await db.from("contratos").update({ bienvenidaMailId: r.id }).eq("id", c.id);
+  await evento(db, c.id, "bienvenida", "Apicanta", "app", { enviado: true, id: r.id, modelo: guia.modelo, perfil: guia.perfil });
 }
 
 /** El alumno del contrato: el que tiene guardado, el de su venta o el de su persona. */

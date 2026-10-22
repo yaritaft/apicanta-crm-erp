@@ -1,0 +1,72 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { armarBienvenida, problemaDeDatos, type DatosContrato } from "@/lib/contratos";
+import { guiaDeBienvenida, htmlDeBienvenida, modeloDeBienvenida, textoDeBienvenida, type ConfigBienvenida } from "@/lib/bienvenida-alumno";
+
+/* Los links y los teléfonos de verdad viven en Ajustes (el repositorio es público): acá, inventados. */
+const CONFIG: ConfigBienvenida = {
+  roadmaps: { "Full Stack": "https://ejemplo.com/full", "AI Engineer": "https://ejemplo.com/ai", "Data Engineer": "https://ejemplo.com/data", "Mobile Developer": "https://ejemplo.com/mobile" },
+  soporte: { nombre: "Liliana", whatsapp: "+54 9 11 5555-0001" },
+  auditoriaCv: { nombre: "Aldana", whatsapp: "+54 9 11 5555-0002" },
+};
+const ROADMAPS = CONFIG.roadmaps as Record<string, string>;
+
+/* Lili (22/10): al firmar, el alumno recibe el roadmap de su perfil (lo carga el closer), el paso a paso de lo que compró,
+   el formulario de los lunes y el WhatsApp de soporte. Tres textos: programa completo, Downsell y Reserva. */
+
+test("el modelo sale del contrato: la reserva manda, después el programa; Hackear Biz todavía no tiene", () => {
+  assert.equal(modeloDeBienvenida({ programa: "hackear-ai" }), "completo");
+  assert.equal(modeloDeBienvenida({ programa: "downsell" }), "downsell");
+  assert.equal(modeloDeBienvenida({ programa: "hackear-ai", reserva: true }), "reserva");
+  assert.equal(modeloDeBienvenida({ programa: "hackear-biz" }), null);
+});
+
+test("el roadmap según el perfil; el formulario semanal sólo en el programa completo", () => {
+  const g = guiaDeBienvenida({ programa: "hackear-ai", perfil: "Data Engineer", formulario: "https://app/reporte?c=x", config: CONFIG })!;
+  assert.equal(g.roadmap, ROADMAPS["Data Engineer"]);
+  assert.equal(g.formulario, "https://app/reporte?c=x");
+  const d = guiaDeBienvenida({ programa: "downsell", perfil: "Full Stack", formulario: "https://app/reporte?c=x", config: CONFIG })!;
+  assert.equal(d.formulario, null, "el Downsell no tiene seguimiento semanal");
+  assert.equal(guiaDeBienvenida({ programa: "hackear-ai", perfil: "Otro", config: CONFIG })?.roadmap, null);
+});
+
+test("el texto lleva el roadmap, el formulario de los lunes y el WhatsApp de soporte", () => {
+  const completo = textoDeBienvenida(guiaDeBienvenida({ programa: "hackear-ai", perfil: "AI Engineer", formulario: "https://app/reporte?c=abc", config: CONFIG })!);
+  assert.equal(completo.asunto, "¡Bienvenido/a a la mentoría! 🚀");
+  assert.ok(completo.texto.includes(ROADMAPS["AI Engineer"]));
+  assert.ok(completo.texto.includes("https://app/reporte?c=abc"));
+  assert.match(completo.texto, /todos los lunes/);
+  assert.ok(completo.texto.includes("+54 9 11 5555-0001"), "el WhatsApp de soporte");
+  assert.ok(completo.texto.includes("+54 9 11 5555-0002"), "el de Aldana, para la auditoría del CV");
+  const reserva = textoDeBienvenida(guiaDeBienvenida({ programa: "hackear-ai", reserva: true, perfil: "Mobile Developer", config: CONFIG })!);
+  assert.match(reserva.asunto, /Felicitaciones/);
+  assert.ok(reserva.texto.includes(ROADMAPS["Mobile Developer"]));
+  assert.ok(!/formulario/i.test(reserva.texto));
+  const html = htmlDeBienvenida("Hola <b>\nhttps://x.com/a?b=1&c=2");
+  assert.ok(html.includes("&lt;b&gt;"), "el texto se escapa");
+  assert.ok(html.includes('<a href="https://x.com/a?b=1&amp;c=2">'), "los links se pueden tocar");
+});
+
+test("sin la configuración en Ajustes no se inventa nada: sin roadmap ni WhatsApp", () => {
+  const g = guiaDeBienvenida({ programa: "hackear-ai", perfil: "Full Stack" })!;
+  assert.equal(g.roadmap, null);
+  assert.equal(g.soporte, null);
+  const { texto } = textoDeBienvenida(g);
+  assert.match(texto, /te lo pasa el equipo de soporte/);
+  assert.ok(!/undefined|null/.test(texto));
+});
+
+test("el closer tiene que cargar el perfil en los programas con bienvenida", () => {
+  const datos: Partial<DatosContrato> = { nombre: "Ana Pérez", email: "ana@mail.com", documento: "1", domicilio: "Calle 1" };
+  assert.match(problemaDeDatos(datos, "produccion", undefined, "hackear-ai") ?? "", /perfil del alumno/);
+  assert.equal(problemaDeDatos({ ...datos, perfil: "Full Stack" }, "produccion", undefined, "hackear-ai"), null);
+  assert.equal(problemaDeDatos(datos, "produccion", undefined, "hackear-biz"), null, "Hackear Biz todavía no tiene bienvenida");
+  assert.equal(problemaDeDatos(datos, "produccion"), null, "sin programa no se pide (lo de antes sigue igual)");
+});
+
+test("la página de bienvenida muestra la guía recién firmado", () => {
+  const guia = guiaDeBienvenida({ programa: "hackear-ai", perfil: "Full Stack", config: CONFIG });
+  const base = { programa: "Hackear AI", accesos: [], linkWisboo: null, accesosAutomaticos: false, guia };
+  assert.equal(armarBienvenida({ ...base, contrato: { estado: "enviado", accesosEn: null, destinatario: { nombre: "Ana" } } }).guia, null);
+  assert.equal(armarBienvenida({ ...base, contrato: { estado: "firmado", accesosEn: null, destinatario: { nombre: "Ana" } } }).guia?.perfil, "Full Stack");
+});

@@ -4,6 +4,7 @@ import React from "react";
 import { Chip, Field, Input, Select } from "@/components/ui/ui";
 import type { DatosContrato } from "@/lib/contratos";
 import { plantillaDelContrato, type Programa } from "@/lib/programas";
+import { modeloDeBienvenida, PERFILES } from "@/lib/bienvenida-alumno";
 
 /* ==================================================================
    Los datos del contrato, como los carga el closer en la llamada (Manu y
@@ -48,6 +49,15 @@ export function DatosDelContrato({ datos, onCambio, programas, programaId, onPro
           opciones={conPlantilla.map((p) => ({ valor: p.id, texto: p.nombre }))}
         />
       </Field>
+      {/* Lili, 22/10: con el perfil le llega al alumno el roadmap que le corresponde (lib/bienvenida-alumno.ts). */}
+      {modeloDeBienvenida({ reserva, programa: programaId }) && (
+        <Field label="Perfil del alumno" span2
+          ayuda="Con esto le llega su roadmap al firmar. Full Stack incluye Frontend y Backend.">
+          <Select value={datos.perfil ?? ""} placeholder="Elegí el perfil" aria-label="Perfil del alumno"
+            onChange={(ev) => onCambio({ perfil: ev.target.value || undefined })}
+            opciones={PERFILES.map((p) => ({ valor: p, texto: p }))} />
+        </Field>
+      )}
       <Field label="Nombre completo" ayuda="Como va en el contrato." span2>
         <Input value={datos.nombre} onChange={(ev) => onCambio({ nombre: ev.target.value })} autoComplete="off" />
       </Field>

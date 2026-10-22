@@ -3875,6 +3875,19 @@ span.kpis__etiqueta:hover { color: var(--ink); text-decoration: none; }
 .aviso-tipo svg { flex: none; color: var(--info); }
 .aviso-tipo .link { margin-left: auto; }
 
+/* «Hay otra ficha con el mismo teléfono», arriba de la ficha (components/ficha/AvisoDuplicado.tsx). */
+.aviso-duplicado {
+  display: flex; flex-direction: column; gap: var(--space-2);
+  margin-bottom: var(--space-4); padding: 10px var(--space-3);
+  border: 1px solid color-mix(in srgb, var(--warning) 45%, var(--border)); border-radius: var(--radius-md);
+  background: var(--warning-soft); font-size: 13px; line-height: 20px;
+}
+.aviso-duplicado__fila { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); }
+.aviso-duplicado__fila > svg { flex: none; color: var(--warning); }
+.aviso-duplicado__texto { flex: 1 1 260px; min-width: 0; }
+.aviso-duplicado__texto .link { font: inherit; font-weight: 600; background: none; border: 0; padding: 0; cursor: pointer; }
+.aviso-duplicado__acciones { display: inline-flex; flex-wrap: wrap; gap: var(--space-2); margin-left: auto; }
+
 /* Equipo → Tipos de cuenta: un tipo por fila, un área por columna. */
 .tipos-vercomo { gap: var(--space-2); align-items: center; margin-bottom: var(--space-4); color: var(--ink-subtle); }
 .tipos-caja { max-height: none; }

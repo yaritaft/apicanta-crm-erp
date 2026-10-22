@@ -20,7 +20,11 @@ import { useToast } from "@/components/ui/Toast";
 import { ChatEquipo } from "./ChatEquipo";
 import { BloqueServicio, FilaServicio } from "./FilaServicio";
 import { FormSesionUnoAUno } from "./FormSesionUnoAUno";
+import { PausasAlumno } from "./PausasAlumno";
+import { BienvenidaAlumno } from "@/components/contratos/BienvenidaAlumno";
+import { textoDePausa } from "@/lib/pausas";
 import { resumenBonos } from "@/lib/bonos";
+import { reservaSinCompletar, type EstadoReserva } from "@/lib/reservas";
 import { FormTestimonioCs } from "@/components/cs/TestimoniosCs";
 import { FormResell } from "@/components/cs/ResellsCs";
 import { SOLAPAS_SERVICIO, useSolapaServicio, type SolapaServicio } from "./abrir";
@@ -164,8 +168,10 @@ function useSolapasQueSeDeslizan(elegida: string) {
 /* Con el chat en su columna (ficha ancha), no hay solapa «Chat». */
 const SIN_SOLAPA_CHAT = SOLAPAS_SERVICIO.filter((s) => s !== "chat");
 
-function HojaDeUnServicio({ e, p, f, venta, producto, conChat }: {
+function HojaDeUnServicio({ e, p, f, venta, producto, conChat, reserva }: {
   e: EstadoApp; p: Persona; f: FilaCliente; venta?: Venta; producto: string; conChat: boolean;
+  /* Si sólo pagó la reserva (lib/reservas): no corre el programa ni vence. */
+  reserva?: EstadoReserva;
 }) {
   const toast = useToast();
   const gestos = useGestos();
@@ -247,7 +253,8 @@ function HojaDeUnServicio({ e, p, f, venta, producto, conChat }: {
   /* ---------- La cabecera del servicio ---------- */
   const faltan = CUENTAN.filter((c) => estaVacio(f, c)).length;
   const etapa = ETAPAS_DEL_ALUMNO.find((x) => x.id === etapaDelFollowUp(f.followUp));
-  const dia = f.inicio ? diasEntre(f.inicio, hoy) + 1 : null;
+  /* Desde que arrancó de verdad: con demora de inicio, desde el día en que termina la demora (lib/pausas.ts). */
+  const dia = f.inicioReal ? diasEntre(f.inicioReal, hoy) + 1 : null;
   const quedan = f.egreso ? diasEntre(hoy, f.egreso) : null;
   const activo = alumno.estado === "activo";
 
@@ -289,15 +296,23 @@ function HojaDeUnServicio({ e, p, f, venta, producto, conChat }: {
     <div className="hs">
       <div className="hs-cabeza">
         <div className="hs-cabeza__que">
-          <span className="hs-producto">{producto}</span>
+          <span className="hs-producto">{producto}{reserva ? " · Reserva" : ""}</span>
           {venta && <span className="hs-sub">Compra del {fechaLarga(venta.fecha)}</span>}
         </div>
         <div className="hs-chips">
           {etapa && <span className={`hs-chip hs-chip--${etapa.id}`} title={`Etapa del recorrido según su Follow Up: ${f.followUp || "sin cargar"}`}>{etapa.label}</span>}
-          {dia !== null && (dia > 0
-            ? <span className="hs-chip" title={`Empezó el ${formatoDia(f.inicio, hoy)}`}>Día {dia} · Semana {Math.floor((dia - 1) / 7) + 1}</span>
-            : <span className="hs-chip">Empieza el {formatoDia(f.inicio, hoy)}</span>)}
-          {quedan !== null && (
+          {reserva && (
+            <span className="hs-chip hs-chip--ambar" title="Sólo pagó la reserva: el programa arranca cuando pague lo que falta">
+              Reserva de {money(reserva.pagado, venta?.moneda)}{reserva.falta > 0 ? ` · faltan ${money(reserva.falta, venta?.moneda)}` : ""} · todavía no arrancó
+            </span>
+          )}
+          {!reserva && f.pausa && (
+            <span className="hs-chip hs-chip--ambar" title={f.pausa.motivo || undefined}>{textoDePausa(f.pausa, hoy, (d) => formatoDia(d, hoy))}</span>
+          )}
+          {!reserva && !f.pausa && dia !== null && (dia > 0
+            ? <span className="hs-chip" title={`Empezó el ${formatoDia(f.inicioReal, hoy)}`}>Día {dia} · Semana {Math.floor((dia - 1) / 7) + 1}</span>
+            : <span className="hs-chip">Empieza el {formatoDia(f.inicioReal, hoy)}</span>)}
+          {!reserva && quedan !== null && (
             <span className={`hs-chip${quedan < 0 && activo ? " hs-chip--rojo" : quedan <= 30 && activo ? " hs-chip--ambar" : ""}`} title={f.egresoSugerido ? "Calculado: inicio más la duración" : undefined}>
               {quedan < 0 ? `Venció el ${formatoDia(f.egreso, hoy)}` : quedan === 0 ? "Vence hoy" : `Vence el ${formatoDia(f.egreso, hoy)}`}
             </span>
@@ -427,8 +442,11 @@ function HojaDeUnServicio({ e, p, f, venta, producto, conChat }: {
           (Juan Cruz, 21/10): lo que hizo la app y, donde todavía no hizo nada, lo marcado a mano en la ficha (con su
           editor de siempre). Los botones (mandar, dar accesos, quitar) aparecen cuando se prenden en Ajustes. */}
       {solapa === "contrato" && (
-        <ContratoCard forma="hoja" venta={venta} alumnoId={alumno.id}
-          manual={<>{dato("contrato")}{dato("estadoContrato", false)}</>} />
+        <>
+          <ContratoCard forma="hoja" venta={venta} alumnoId={alumno.id}
+            manual={<>{dato("contrato")}{dato("estadoContrato", false)}</>} />
+          <BienvenidaAlumno alumnoId={alumno.id} ventaId={venta?.id} />
+        </>
       )}
       {solapa === "accesos" && (
         <>
@@ -472,6 +490,7 @@ function HojaDeUnServicio({ e, p, f, venta, producto, conChat }: {
               ) : `Cada ${f.cadencia} días`}
             </Fila>
           </Bloque>
+          <PausasAlumno f={f} hoy={hoy} puede={puede} />
           <Bloque titulo="Reporte semanal">
             {dato("reporte", false)}
             {dato("semanasSin", false)}
@@ -483,7 +502,7 @@ function HojaDeUnServicio({ e, p, f, venta, producto, conChat }: {
       )}
 
       {solapa === "bonos" && (() => {
-        const b = resumenBonos(f.seg, f.inicio, hoy);
+        const b = resumenBonos(f.seg, f.inicioReal, hoy);
         const chip = b.incluidas === null ? { tono: "hs-chip--ambar", texto: "Sin cargar en el contrato" }
           : b.incluidas === 0 ? { tono: "", texto: "El contrato no incluye" }
           : b.vencidas ? { tono: "hs-chip--rojo", texto: `Vencieron ${b.quedan} sin tomar` }
@@ -655,7 +674,8 @@ export function VistaServicio({ e, p, conChat }: { e: EstadoApp; p: Persona; con
 
   /* Un servicio por compra: cada venta con su alumno, y los alumnos que no tienen venta (cargados a mano, de antes) también. */
   const servicios = useMemo(() => {
-    const conVenta = p.ventas.map((v) => {
+    /* Las ventas canceladas no son un servicio (una venta cargada dos veces y cancelada no tiene que aparecer como otra Mentoría). */
+    const conVenta = p.ventas.filter((v) => v.estado !== "cancelada").map((v) => {
       const enlazado = p.alumnos.find((a) => a.ventaId === v.id);
       const suelto = enlazado ? undefined : alumnoDeVenta(e, v);
       const alumno = enlazado ?? (suelto && !suelto.ventaId && p.alumnos.includes(suelto) ? suelto : undefined);
@@ -704,7 +724,8 @@ export function VistaServicio({ e, p, conChat }: { e: EstadoApp; p: Persona; con
       )}
 
       {fila ? (
-        <HojaDeUnServicio e={e} p={p} f={fila} venta={s.venta} producto={nombreDe(s)} conChat={conChat} />
+        <HojaDeUnServicio e={e} p={p} f={fila} venta={s.venta} producto={nombreDe(s)} conChat={conChat}
+          reserva={s.venta ? reservaSinCompletar(e.cuotas.filter((c) => c.ventaId === s.venta?.id)) ?? undefined : undefined} />
       ) : s.venta ? (
         <div className="hs-aviso">
           <span>{s.venta.estado === "activa" ? `La compra de ${nombreDe(s)} todavía no tiene su servicio.` : "La venta está cancelada: no tiene servicio."}</span>

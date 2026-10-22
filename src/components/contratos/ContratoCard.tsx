@@ -147,7 +147,7 @@ export function ContratoCard({ venta, alumnoId, sesionId, manual, forma = "tarje
   async function guardarEdicion() {
     if (!edicion) return;
     const modo = edicion.prueba ? "prueba" : "produccion";
-    const problema = !edicion.programaId ? "Elegí el programa." : problemaDeDatos(edicion.datos, edicion.contrato?.modo ?? modo);
+    const problema = !edicion.programaId ? "Elegí el programa." : problemaDeDatos(edicion.datos, edicion.contrato?.modo ?? modo, undefined, edicion.programaId);
     if (problema) { toast(problema, "err"); return; }
     setTrabajando("edicion");
     try {

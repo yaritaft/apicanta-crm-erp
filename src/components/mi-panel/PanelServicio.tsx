@@ -3,7 +3,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
-  CalendarClock, Check, ChevronRight, FileSignature, FileWarning, PhoneCall, Repeat2, UserPlus, Video, X,
+  CalendarClock, Check, ChevronRight, FileSignature, FileWarning, PhoneCall, PlayCircle, Repeat2, UserPlus, Video, X,
 } from "lucide-react";
 import { Telefono } from "@/components/ui/Telefono";
 import { NADA, Recorte, TablaCs } from "@/components/cs/TablaCs";
@@ -20,6 +20,8 @@ import {
 } from "@/lib/panel-servicio";
 import type { ColumnaCs } from "@/lib/tabla-cs";
 import type { MiembroEquipo } from "@/lib/types";
+import { posiblesDuplicados } from "@/lib/duplicados";
+import { personaDe } from "@/lib/persona";
 import { plural, saludoDe } from "./util";
 import "./mi-panel.css";
 import "./panel-servicio.css";
@@ -42,12 +44,13 @@ import "./panel-servicio.css";
 /* La solapa de la ficha que abre cada lista de «Para hoy». */
 const HOJA_DE_LISTA: Partial<Record<SeccionServicio["id"], SolapaServicio>> = {
   /* «Renovar» abre Programa, donde está «¿Renueva?» con la llamada de resell y los botones. */
-  contactar: "seguimiento", nuevos: "seguimiento", renovar: "programa", resells: "testimonio", testimonios: "testimonio", reportes: "reportes", contratos: "contrato",
+  contactar: "seguimiento", vuelven: "seguimiento", nuevos: "seguimiento", renovar: "programa", resells: "testimonio", testimonios: "testimonio", reportes: "reportes", contratos: "contrato",
 };
 
 /* Cómo se ve cada tarea de «Para hoy»: su ícono, su color y lo que pide. */
 const TAREA: Record<SeccionServicio["id"], { icono: React.ReactNode; tono: string; pide: string }> = {
   contactar: { icono: <PhoneCall size={16} />, tono: "var(--danger)", pide: "su seguimiento ya venció" },
+  vuelven: { icono: <PlayCircle size={16} />, tono: "var(--success)", pide: "termina su pausa o su demora" },
   nuevos: { icono: <UserPlus size={16} />, tono: "var(--info)", pide: "falta el primer contacto" },
   renovar: { icono: <CalendarClock size={16} />, tono: "var(--warning)", pide: "renovar o dar de baja" },
   resells: { icono: <Repeat2 size={16} />, tono: "var(--brand)", pide: "el closer no dijo en qué quedó" },
@@ -88,6 +91,17 @@ export function PanelServicio({ miembro, viendoOtro }: { miembro: MiembroEquipo;
   /* Una lista de «Para hoy» trae a los suyos (estén o no en servicio): sus datos se buscan en toda la cartera. */
   const renglones = useMemo(() => renglonesCartera(lista ? panel.cartera : base, lista, etapa), [panel, base, lista, etapa]);
   const irACartera = () => window.setTimeout(() => document.getElementById("ps-cartera")?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
+
+  /* Alumnos con dos fichas (el mismo teléfono, otro mail; Lili, 22/10). Se abre la ficha que tiene más historia: ahí está
+     el aviso para unificarlas o decir que no son la misma persona. */
+  const repetidos = useMemo(() => posiblesDuplicados(e.contactos).flatMap((par) => {
+    const pa = personaDe(e, par.a.id), pb = personaDe(e, par.b.id);
+    if (!pa?.alumnos.length && !pb?.alumnos.length) return [];
+    const peso = (p: typeof pa) => (p?.alumnos.length ?? 0) * 100 + (p?.ventas.length ?? 0) * 10 + (p?.sesiones.length ?? 0);
+    const [principal, otro] = peso(pa) >= peso(pb) ? [par.a, par.b] : [par.b, par.a];
+    return [{ principal, otro, seguro: par.seguro }];
+  }), [e]);
+  const [verRepetidos, setVerRepetidos] = useState(false);
 
   const puedeEscribir = !viendoOtro && nivelDeRuta(acceso, "/alumnos") >= 2;
   const contacte = (id: string) => {
@@ -314,8 +328,32 @@ export function PanelServicio({ miembro, viendoOtro }: { miembro: MiembroEquipo;
             <b>{panel.desactualizados}</b> para revisar: contrato vencido y siguen activos
           </span>
         )}
+        {repetidos.length > 0 && (
+          <button type="button" className="ps-dato" aria-expanded={verRepetidos} onClick={() => setVerRepetidos((x) => !x)}
+            title="La misma persona cargada dos veces, una con cada mail: se ve la mitad de su historia en cada ficha.">
+            <b>{repetidos.length}</b> {repetidos.length === 1 ? "alumno con dos fichas" : "alumnos con dos fichas"} (mismo teléfono)
+          </button>
+        )}
         <span className="ps-dato ps-fecha">Datos al {formatoDia(hoy, hoy)}</span>
       </div>
+
+      {verRepetidos && repetidos.length > 0 && (
+        <section className="mp-card ps-card" aria-label="Alumnos con dos fichas">
+          <h2 className="ps-tit">Alumnos con dos fichas</h2>
+          <p className="ps-ayuda">Tienen el mismo teléfono y otro mail. Abrí la ficha: arriba podés unificarlas (quedan los dos mails) o marcar que no son la misma persona.</p>
+          <div className="ps-tareas">
+            {repetidos.map(({ principal, otro, seguro }) => (
+              <button key={`${principal.id}:${otro.id}`} type="button" className="ps-tarea" onClick={() => abrirFicha(principal.id, "servicio")}>
+                <span className="ps-tarea__txt">
+                  <span className="ps-tarea__tit">{principal.nombre} <span className="ps-tarea__pide">· {seguro ? "parece la misma persona" : "otro nombre, revisar"}</span></span>
+                  <span className="ps-tarea__sub">{principal.email} y {otro.email}{otro.nombre.trim() !== principal.nombre.trim() ? ` (${otro.nombre.trim()})` : ""}</span>
+                </span>
+                <ChevronRight size={16} className="ps-tarea__ir" aria-hidden />
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
     </div>
   );
 }

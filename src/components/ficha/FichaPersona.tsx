@@ -17,6 +17,7 @@ import { desdeVenta, FormularioVenta, type BorradorVenta } from "@/components/ve
 import { RegistrarPago } from "@/components/cobros/RegistrarPago";
 import { ChatEquipo } from "./ChatEquipo";
 import { VistaServicio } from "./HojaServicio";
+import { AvisoDuplicado } from "./AvisoDuplicado";
 import { Divisor, useAnchoPanel } from "@/components/ui/Divisor";
 import { HistorialPersona } from "./HistorialPersona";
 import { UtmsPersona } from "./UtmsPersona";
@@ -30,6 +31,8 @@ import { nivelEn, type MiAcceso } from "@/lib/permisos";
 import { filasDePersona, filasTabla, type FilaTabla } from "@/lib/crm-tabla";
 import { personaDe, type Persona } from "@/lib/persona";
 import { saldoVenta } from "@/lib/finanzas";
+import { reservaSinCompletar } from "@/lib/reservas";
+import { otrosEmails } from "@/lib/duplicados";
 import { fechaLarga, money } from "@/lib/format";
 import type { Alumno, Cuota, EstadoApp, EstadoVenta, Pago, Venta } from "@/lib/types";
 
@@ -103,6 +106,7 @@ export function FichaPersona({ id, vista, ventaResaltada, onCerrar, onVista }: {
             <div ref={anchoChat.contRef} className={`ficha__cuerpo${conChat ? " ficha__cuerpo--chat" : ""}`}>
               <Lateral e={e} p={p} filas={filas} />
               <div className="ficha__principal">
+                <AvisoDuplicado e={e} p={p} />
                 {vistas.length === 0
                   ? null
                   : vistaReal === "llamadas"
@@ -159,7 +163,8 @@ function Cabecera({ e, p, vista, vistas, onVista, onCerrar }: {
         <div className="t-label">Ficha del contacto</div>
         <h2 className="ficha__nombre truncate">{p.nombre}</h2>
         <div className="row-wrap" style={{ gap: 6, marginTop: 4 }}>
-          {p.ventas.length > 0 && <Badge variante="success"><ShoppingBag size={12} />{p.ventas.length === 1 ? "Cliente" : `Cliente · ${p.ventas.length} compras`}</Badge>}
+          {/* Las canceladas no son compras (Diana Olivera, 21/10: una venta cargada tres veces y dos canceladas decía «3 compras»). */}
+          {comprasVigentes(p) > 0 && <Badge variante="success"><ShoppingBag size={12} />{comprasVigentes(p) === 1 ? "Cliente" : `Cliente · ${comprasVigentes(p)} compras`}</Badge>}
           {alumno && <Badge variante="brand"><GraduationCap size={12} />Alumno {alumno.estado}</Badge>}
         </div>
       </div>
@@ -183,10 +188,27 @@ function Cabecera({ e, p, vista, vistas, onVista, onCerrar }: {
    arriba de sus llamadas (PerfilPersona), y a la derecha queda lo de cada
    vista: sus llamadas, sus ventas, su servicio. */
 
+/** Las compras que valen: sin las canceladas. */
+const comprasVigentes = (p: Persona) => p.ventas.filter((v) => v.estado !== "cancelada").length;
+
+/** Lo que compró de verdad (sus ventas activas) y quién las cerró; null si todavía no compró. */
+function compraDe(e: EstadoApp, p: Persona): { texto: string; closers: string } | null {
+  const activas = p.ventas.filter((v) => v.estado === "activa");
+  if (!activas.length) return null;
+  const partes = activas.map((v) => {
+    const cuotas = e.cuotas.filter((c) => c.ventaId === v.id);
+    const r = reservaSinCompletar(cuotas);
+    return `${money(v.precioAcordado ?? 0, v.moneda)}${r ? (r.falta > 0 ? ` (pagó la reserva de ${money(r.pagado, v.moneda)})` : " (reserva)") : ""}`;
+  });
+  const closers = [...new Set(activas.map((v) => e.equipo.find((m) => m.id === v.closerId)?.nombre).filter(Boolean))].join(", ");
+  return { texto: partes.join(" + "), closers };
+}
+
 function Lateral({ e, p, filas }: { e: EstadoApp; p: Persona; filas: FilaTabla[] }) {
   const toast = useToast();
   const c = p.contacto;
   const lead = p.leads[0];
+  const compra = compraDe(e, p);
   const whatsapp = enlaceWhatsapp(p.telefono, p.contacto?.pais || p.leads[0]?.pais);
 
   const copiar = (valor: string, que: string) => {
@@ -209,6 +231,11 @@ function Lateral({ e, p, filas }: { e: EstadoApp; p: Persona; filas: FilaTabla[]
         <div className="t-label" style={{ marginBottom: 8 }}>Contacto</div>
         <Fila onCopiar={copiar} icono={<Mail size={15} />} valor={p.email} vacio="Sin email" que="el email"
           accion={<a className="link t-sm" href={`mailto:${p.email}`}>Escribir</a>} />
+        {/* Los otros mails de la persona: los de una ficha que se unificó con esta o con los que volvió a agendar (lib/duplicados.ts). */}
+        {otrosEmails(c).map((x) => (
+          <Fila key={x} onCopiar={copiar} icono={<Mail size={15} />} valor={x} vacio="" que="el email"
+            accion={<span className="t-sm t-subtle" title="Otro mail de la misma persona">otro mail</span>} />
+        ))}
         <Fila onCopiar={copiar} icono={<Phone size={15} />} valor={p.telefono} vacio="Sin teléfono" que="el teléfono"
           accion={whatsapp ? <a className="link t-sm" href={whatsapp} target="_blank" rel="noopener noreferrer" title="Abrir el chat de WhatsApp" aria-label="Abrir el chat de WhatsApp"><MessageCircle size={15} /></a> : undefined} />
         {c?.instagram && <Fila onCopiar={copiar} icono={<span className="t-sm">@</span>} valor={c.instagram.replace(/^@/, "")} vacio="" que="el Instagram" />}
@@ -223,8 +250,19 @@ function Lateral({ e, p, filas }: { e: EstadoApp; p: Persona; filas: FilaTabla[]
             opciones={[...e.etapas].sort((a, b) => a.orden - b.orden).map((x) => ({ valor: x.id, texto: x.nombre }))}
           />
           <dl className="dl dl--compacta">
-            <dt>Valor</dt><dd className="t-num">{money(lead.monto, lead.moneda)}</dd>
-            <dt>Responsable</dt><dd>{lead.responsable || "—"}</dd>
+            {/* Si ya compró, manda la venta: lo que pagó y quién la cerró (Lili, 21/10: la ficha decía «2.400 con Dante» y era
+                una reserva de 50; decía «Mariano» y la venta era de Valentín). El valor del lead es lo estimado antes de la venta. */}
+            {compra ? (
+              <>
+                <dt>Compró</dt><dd className="t-num">{compra.texto}</dd>
+                <dt>Closer</dt><dd>{compra.closers || lead.responsable || "—"}</dd>
+              </>
+            ) : (
+              <>
+                <dt>Valor</dt><dd className="t-num">{money(lead.monto, lead.moneda)}</dd>
+                <dt>Responsable</dt><dd>{lead.responsable || "—"}</dd>
+              </>
+            )}
             <DatosExtra campos={e.campos} entidad="lead" valores={lead.extra} />
           </dl>
           <a className="link t-sm" href={`/leads?editar=${lead.id}`}><Pencil size={13} /> Editar los datos</a>

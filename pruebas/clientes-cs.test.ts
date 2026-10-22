@@ -54,8 +54,13 @@ const seg = (alumnoId: string, c: Partial<SeguimientoAlumno>): SeguimientoAlumno
 test("las listas son las de Lili y se pueden ajustar sin perder las que no se tocan", () => {
   const d = listasCs();
   assert.deepEqual(d.stacks, ["Frontend", "Backend", "Full Stack", "Data Engineer", "Mobile Developer"]);
-  assert.deepEqual(d.programas, ["Hackear IT", "Hackear Biz", "Principals", "Principal Mastermind"]);
-  assert.equal(d.followUps.length, 1 + 13 + 1 + 1 + 3, "onboarding, módulos 0 a 12, módulo IA, Take Home Challenge y avanzando / no avanzando / no contesta");
+  /* Lili, 22/10: el programa se llama Hackear AI (los «Hackear IT» cargados se respetan) y el Downsell es aparte. */
+  assert.deepEqual(d.programas, ["Hackear AI", "Downsell", "Hackear Biz", "Principals", "Principal Mastermind"]);
+  assert.equal(d.followUps.length, 1 + 13 + 1 + 1 + 3 + 8,
+    "onboarding, módulos 0 a 12, módulo IA, Take Home Challenge, avanzando / no avanzando / no contesta y los ocho del 22/10");
+  for (const x of ["Roadmap", "Contenido Hackear AI", "Con entrevistas", "Caso de éxito", "No aplica recomendaciones", "Avanza lento", "Vio todo no tiene resultados", "Outboarding"]) {
+    assert.ok(d.followUps.includes(x), x);
+  }
   assert.ok(d.followUps.includes("Módulo 12") && d.followUps.includes("Take Home Challenge"));
   assert.deepEqual(d.estadosVideo, ["Pendiente de subir", "Subido a Drive", "No quiso grabar", "Subido a YouTube"]);
 

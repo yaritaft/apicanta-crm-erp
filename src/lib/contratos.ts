@@ -1,4 +1,5 @@
 import type { ConfigContratos } from "./types";
+import { esPerfil, modeloDeBienvenida, type GuiaBienvenida } from "./bienvenida-alumno";
 
 /* ==================================================================
    Los contratos de PandaDoc, lo que no depende de la red. Es el circuito
@@ -43,6 +44,9 @@ export interface DatosContrato {
   /* El contrato de la reserva (Manu, 21/10): sale con la plantilla de reserva del programa, la modalidad es el
      monto que deja a cuenta («300 USD») y al firmarlo no se dan accesos (los da el contrato del programa). */
   reserva?: boolean;
+  /* El perfil del alumno, que carga el closer (Lili, 22/10): Full Stack, Mobile Developer, Data Engineer o AI Engineer.
+     Con eso le llega su roadmap al firmar (lib/bienvenida-alumno.ts). */
+  perfil?: string;
 }
 
 export interface Contrato {
@@ -76,6 +80,10 @@ export interface Contrato {
   sincronizadoEn: string | null;
   /* El código de su página de bienvenida (/bienvenida/<código>): PandaDoc manda ahí al alumno apenas firma. */
   bienvenida?: string | null;
+  /* El mail de bienvenida con su roadmap (lib/bienvenida-alumno.ts): cuándo salió y su id en Resend. Sale una sola vez.
+     Columnas de supabase/bienvenida-mail.sql. */
+  bienvenidaMailEn?: string | null;
+  bienvenidaMailId?: string | null;
 }
 
 export interface EventoContrato {
@@ -298,6 +306,8 @@ export interface Bienvenida {
   zoom: { nombre: string; url: string | null }[];
   /* Algo no salió solo: el equipo lo termina a mano (se le dice, sin el detalle técnico). */
   faltaAlgo: boolean;
+  /* Su roadmap, su formulario semanal y el WhatsApp de soporte (Lili, 22/10; lib/bienvenida-alumno.ts). */
+  guia?: GuiaBienvenida | null;
 }
 
 /** Lo que ve el alumno: sólo su nombre de pila, el programa y sus links (nunca su mail, documento ni nada más). */
@@ -306,9 +316,12 @@ export function armarBienvenida(a: {
   programa: string; accesos: AccesoParaBienvenida[]; linkWisboo: string | null;
   /* ¿Al firmar se dan los accesos solos? (prendidos en Ajustes). Si no, no hay nada que esperar: se los da el equipo. */
   accesosAutomaticos: boolean;
+  guia?: GuiaBienvenida | null;
 }): Bienvenida {
   const nombre = (a.contrato.destinatario.nombre ?? "").trim().split(/\s+/)[0] ?? "";
-  const base = { nombre, programa: a.programa, telegram: [], wisboo: null, zoom: [], faltaAlgo: false };
+  /* La guía (roadmap, formulario y soporte) se muestra recién firmado. */
+  const guia = a.contrato.estado === "firmado" ? a.guia ?? null : null;
+  const base = { nombre, programa: a.programa, telegram: [], wisboo: null, zoom: [], faltaAlgo: false, guia };
   if (a.contrato.estado !== "firmado") return { ...base, fase: "firmar" };
   /* La reserva no da accesos: reservó su lugar y los recibe con el contrato del programa. */
   if (a.contrato.datos?.reserva) return { ...base, fase: "reserva" };
@@ -392,7 +405,7 @@ export function conectarAvisoSolo(a: { enProduccion: boolean; hayClave: boolean;
 }
 
 /** Lo que falta para poder mandarlo. null: se puede. */
-export function problemaDeDatos(d: Partial<DatosContrato>, modo: ModoContrato, dominioPrueba = "apicanta.com"): string | null {
+export function problemaDeDatos(d: Partial<DatosContrato>, modo: ModoContrato, dominioPrueba = "apicanta.com", programa?: string): string | null {
   if (!d.nombre?.trim()) return "Falta el nombre completo del alumno.";
   const email = (d.email ?? "").trim().toLowerCase();
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return "Falta un mail válido: es adonde le llega el contrato.";
@@ -402,6 +415,10 @@ export function problemaDeDatos(d: Partial<DatosContrato>, modo: ModoContrato, d
   if (!d.documento?.trim()) return "Falta el documento (DNI, pasaporte o el que tenga).";
   if (!d.domicilio?.trim()) return "Falta el domicilio.";
   if (d.reserva && !d.modalidad?.trim()) return "Falta el monto de la reserva.";
+  /* Los programas con bienvenida (Hackear AI, Downsell y la reserva) le mandan al alumno el roadmap de su perfil. */
+  if (programa && modeloDeBienvenida({ reserva: d.reserva, programa }) && !esPerfil(d.perfil)) {
+    return "Falta el perfil del alumno (Full Stack, Mobile, Data o AI Engineer): con eso le llega su roadmap.";
+  }
   return null;
 }
 

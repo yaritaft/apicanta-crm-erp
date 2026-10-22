@@ -1,9 +1,12 @@
 import { NextResponse } from "next/server";
 import { nubeServidor } from "@/lib/servidor";
 import { accesosAlFirmar, armarBienvenida, esCodigoBienvenida, type AccesoParaBienvenida, type Contrato } from "@/lib/contratos";
-import { programasGuardados, sincronizar } from "@/lib/contratos-servidor";
+import { configBienvenida, programasGuardados, sincronizar } from "@/lib/contratos-servidor";
 import { linkMagicoWisboo } from "@/lib/accesos-servidor";
 import { programaPorId } from "@/lib/programas";
+import { guiaDeBienvenida } from "@/lib/bienvenida-alumno";
+import { codigoDeAlumno } from "@/lib/reporte-servidor";
+import { enlaceDeReporte, origenDeLaApp } from "@/lib/reporte-enlace";
 
 /* ==================================================================
    GET /api/bienvenida/<código> — lo que ve el alumno apenas firma (PandaDoc lo manda a /bienvenida/<código>).
@@ -20,7 +23,7 @@ export const maxDuration = 60;
 const ESPERA_ENTRE_CONSULTAS_MS = 5_000;
 const sinCache = { "Cache-Control": "no-store" };
 
-export async function GET(_peticion: Request, ctx: { params: Promise<{ token?: string }> }) {
+export async function GET(peticion: Request, ctx: { params: Promise<{ token?: string }> }) {
   const { token } = await ctx.params;
   if (!esCodigoBienvenida(token)) return NextResponse.json({ error: "No encontramos esta página." }, { status: 404, headers: sinCache });
   const db = nubeServidor();
@@ -48,5 +51,14 @@ export async function GET(_peticion: Request, ctx: { params: Promise<{ token?: s
     const usuario = accesos.find((x) => x.plataforma === "wisboo" && x.estado === "dado" && typeof x.externo.usuarioId === "string");
     if (usuario) linkWisboo = (await linkMagicoWisboo(String(usuario.externo.usuarioId)))?.link ?? null;
   }
-  return NextResponse.json(armarBienvenida({ contrato: c, programa, accesos, linkWisboo, accesosAutomaticos }), { headers: sinCache });
+  /* Su roadmap (según el perfil que cargó el closer), su formulario semanal y el WhatsApp de soporte. */
+  let guia = null;
+  if (c.estado === "firmado") {
+    guia = guiaDeBienvenida({ reserva: c.datos.reserva, programa: c.programa, perfil: c.datos.perfil, config: await configBienvenida(db) });
+    if (guia?.modelo === "completo" && c.alumnoId) {
+      const codigo = await codigoDeAlumno(db, c.alumnoId).catch(() => null);
+      if (codigo) guia = { ...guia, formulario: enlaceDeReporte(origenDeLaApp(peticion), codigo) };
+    }
+  }
+  return NextResponse.json(armarBienvenida({ contrato: c, programa, accesos, linkWisboo, accesosAutomaticos, guia }), { headers: sinCache });
 }

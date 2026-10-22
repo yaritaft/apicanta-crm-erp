@@ -3,6 +3,7 @@
    alumnos, marketing, finanzas y metas. Cada entidad es editable y extensible. */
 
 import type { Programa } from "./programas";
+import type { ConfigBienvenida } from "./bienvenida-alumno";
 
 export type ID = string;
 
@@ -318,6 +319,18 @@ export interface Reporte {
    entera del alumno, no pise lo que cargó Customer Success. */
 
 /** Una sesión 1 a 1 que tomó un alumno, con quién, qué se habló y dónde quedó la grabación. */
+/* Una demora de inicio (arranca más tarde: hasta 60 días) o una pausa del programa (hasta 45 días). Días del negocio. En la
+   demora, `desde` es el ingreso y `hasta` el día en que arranca; en la pausa, `hasta` es el día en que retoma (lib/pausas.ts). */
+export interface PausaServicio {
+  id: ID;
+  tipo: "demora" | "pausa";
+  desde: string;
+  hasta: string;
+  motivo: string;
+  creadoEn: string;
+  creadoPor: string;
+}
+
 export interface SesionUnoAUno {
   id: ID;
   /* El día (aaaa-mm-dd). */
@@ -380,6 +393,8 @@ export interface SeguimientoAlumno {
   sesionesMentor: number | null;
   /* Las sesiones 1 a 1 que tomó: las del contrato con Yari (los «bonos») y las de acompañamiento con Lili (reunión del 21/10). */
   sesionesUnoAUno?: SesionUnoAUno[];
+  /* La demora de inicio y las pausas del programa (Lili, 22/10; lib/pausas.ts): corren el fin. Columna `pausas` (jsonb), supabase/pausas.sql. */
+  pausas?: PausaServicio[];
   contactoInicial: string | null;
   contactoSemana: string | null;
   /* completos, downsell o sin acceso. */
@@ -667,6 +682,9 @@ export interface Ajustes {
   programas?: Programa[];
   /* Los contratos de PandaDoc desde la venta (lib/contratos.ts). */
   contratos?: ConfigContratos;
+  /* La bienvenida del alumno (lib/bienvenida-alumno.ts): los links de los roadmaps por perfil y los WhatsApp de
+     soporte. Acá y no en el código, porque el repositorio es público. */
+  bienvenida?: ConfigBienvenida | null;
 }
 
 /* Cómo están los contratos desde la carga de la venta:

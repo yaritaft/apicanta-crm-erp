@@ -2,8 +2,9 @@
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
-import { CheckCircle2, GraduationCap, Send, Video } from "lucide-react";
+import { CheckCircle2, GraduationCap, LifeBuoy, Map as MapaIcono, NotebookPen, Send, Video } from "lucide-react";
 import type { Bienvenida } from "@/lib/contratos";
+import type { GuiaBienvenida } from "@/lib/bienvenida-alumno";
 
 /* ==================================================================
    La bienvenida: adonde PandaDoc manda al alumno apenas firma su contrato.
@@ -45,6 +46,40 @@ function Fila({ nombre, detalle, children }: { nombre: string; detalle?: string;
 }
 
 const Chico = ({ children }: { children: React.ReactNode }) => <p className="bienv-nota">{children}</p>;
+
+/* Lo que sigue después de los accesos (Lili, 22/10): su roadmap según el perfil, el formulario de los lunes y a quién
+   escribirle. `primario` decide si el primer botón va naranja. */
+function Guia({ g, primario }: { g: GuiaBienvenida; primario: () => boolean }) {
+  return (
+    <>
+      <Seccion icono={<MapaIcono size={15} />} titulo="Tu roadmap">
+        <Fila nombre={g.perfil ? `Roadmap ${g.perfil}` : "Tu roadmap personalizado"}
+          detalle="Tu guía para definir tu stack y alinearte con el mercado. Empezá por acá.">
+          {g.roadmap
+            ? <a href={g.roadmap} target="_blank" rel="noopener noreferrer" className={claseBoton(primario())} aria-label="Ver mi roadmap">Ver</a>
+            : <span className="bienv-nota bienv-fila__aparte">Te lo mandamos por WhatsApp</span>}
+        </Fila>
+      </Seccion>
+      {g.modelo === "completo" && (
+        <Seccion icono={<NotebookPen size={15} />} titulo="Tu seguimiento semanal">
+          <Fila nombre="Formulario de seguimiento" detalle="Completalo todos los lunes: tus avances, dificultades y próximos pasos.">
+            {g.formulario
+              ? <a href={g.formulario} target="_blank" rel="noopener noreferrer" className={claseBoton(primario())} aria-label="Completar el formulario semanal">Completar</a>
+              : <span className="bienv-nota bienv-fila__aparte">Te lo mandamos por WhatsApp</span>}
+          </Fila>
+          <Chico>Guardá este link: es tuyo y sirve todas las semanas.</Chico>
+        </Seccion>
+      )}
+      {g.soporte && (
+        <Seccion icono={<LifeBuoy size={15} />} titulo="¿Necesitás ayuda?">
+          <Fila nombre={`${g.soporte.nombre}, del equipo de soporte`} detalle={`WhatsApp ${g.soporte.whatsapp}`}>
+            {g.soporte.enlace && <a href={g.soporte.enlace} target="_blank" rel="noopener noreferrer" className={claseBoton(false)} aria-label={`Escribirle a ${g.soporte.nombre} por WhatsApp`}>Escribir</a>}
+          </Fila>
+        </Seccion>
+      )}
+    </>
+  );
+}
 
 export default function PaginaBienvenida() {
   const { token } = useParams<{ token: string }>();
@@ -115,12 +150,14 @@ export default function PaginaBienvenida() {
             <CheckCircle2 size={40} style={{ color: "var(--success)" }} aria-hidden />
             <h1>¡Reservaste tu lugar{hola}!</h1>
             <p className="reporte-pub__sub">Firmaste el contrato de la reserva de {b.programa}. Cuando avances con el programa completo, te mandamos su contrato y, al firmarlo, tus accesos.</p>
+            {b.guia && <div className="reporte-pub__form" style={{ textAlign: "left", width: "100%" }}><Guia g={b.guia} primario={primario} /></div>}
           </div>
         ) : b.fase === "sin-accesos" ? (
           <div className="reporte-pub__listo">
             <CheckCircle2 size={40} style={{ color: "var(--success)" }} aria-hidden />
             <h1>¡Gracias{hola}!</h1>
             <p className="reporte-pub__sub">Firmaste el contrato de {b.programa}. En las próximas horas te escribimos por WhatsApp con tus accesos.</p>
+            {b.guia && <div className="reporte-pub__form" style={{ textAlign: "left", width: "100%" }}><Guia g={b.guia} primario={primario} /></div>}
           </div>
         ) : (
           <div className="reporte-pub__form">
@@ -163,6 +200,8 @@ export default function PaginaBienvenida() {
                 <Chico>Cada link es tuyo: guardalo, sirve para todas las clases de esa reunión.</Chico>
               </Seccion>
             )}
+
+            {b.guia && <Guia g={b.guia} primario={primario} />}
 
             {b.faltaAlgo && <Chico>Alguno de tus accesos lo terminamos a mano: te escribimos por WhatsApp.</Chico>}
           </div>

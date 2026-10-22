@@ -8,8 +8,9 @@ import {
   situacionDe, type SituacionSeguimiento,
 } from "./seguimiento";
 import { crearMotor, numeroComoValor, siNo, SI, NO, uno, varios, type ColumnaCs, type OrdenCs } from "./tabla-cs";
+import { finConPausas, inicioReal, pausaEnCurso, pausasNormales } from "./pausas";
 import type {
-  Alumno, ConfigSeguimiento, Contacto, EstadoApp, ID, ListasCs, Resell, SeguimientoAlumno, SesionUnoAUno, Testimonio, Venta,
+  Alumno, ConfigSeguimiento, Contacto, EstadoApp, ID, ListasCs, PausaServicio, Resell, SeguimientoAlumno, SesionUnoAUno, Testimonio, Venta,
 } from "./types";
 
 /* ==================================================================
@@ -28,11 +29,16 @@ import type {
 
 export const LISTAS_POR_DEFECTO: ListasCs = {
   stacks: ["Frontend", "Backend", "Full Stack", "Data Engineer", "Mobile Developer"],
-  programas: ["Hackear IT", "Hackear Biz", "Principals", "Principal Mastermind"],
+  /* Lili, 22/10: «Hackear IT ahora es Hackear AI (incluye ambos + bonos)» y falta «Downsell». Los alumnos que ya tienen
+     «Hackear IT» lo conservan (es lo que compraron) y se sigue viendo en su ficha. */
+  programas: ["Hackear AI", "Downsell", "Hackear Biz", "Principals", "Principal Mastermind"],
   accesos: ["Completos", "Downsell", "Sin acceso"],
   followUps: [
     "Onboarding", ...Array.from({ length: 13 }, (_, i) => `Módulo ${i}`), "Módulo IA", "Take Home Challenge",
     "Avanzando", "No avanzando", "No contesta",
+    /* Lili, 22/10. «Outboarding» también: es el que deja «No renueva» y saca al alumno del servicio. */
+    "Roadmap", "Contenido Hackear AI", "Con entrevistas", "Caso de éxito", "No aplica recomendaciones", "Avanza lento",
+    "Vio todo no tiene resultados", "Outboarding",
   ],
   estadosContrato: ["Enviado", "Falta firma", "Firmado y subido a Drive"],
   garantias: [],
@@ -131,6 +137,7 @@ export function seguimientoCompleto(
     programas: aListaDeTextos(m.programas), planDePago: textoLimpio(m.planDePago),
     duracionMeses: aNumero(m.duracionMeses), fechaEgreso: aDia(m.fechaEgreso), sesionesMentor: aNumero(m.sesionesMentor),
     sesionesUnoAUno: sesionesNormales(m.sesionesUnoAUno),
+    pausas: pausasNormales(m.pausas),
     contactoInicial: aDia(m.contactoInicial), contactoSemana: aDia(m.contactoSemana),
     acceso: textoLimpio(m.acceso), followUp: textoLimpio(m.followUp), garantia: textoLimpio(m.garantia),
     accesoWhatsapp: aBool(m.accesoWhatsapp), accesoZoom: aBool(m.accesoZoom), accesoWibo: aBool(m.accesoWibo),
@@ -189,6 +196,14 @@ export function programasDeTexto(texto: string, lista: readonly string[] = LISTA
     ...elegir(/\bbiz\b|business/, "Hackear Biz"),
     ...elegir(/hackear\s*it|mentoria/, "Hackear IT"),
   ];
+}
+
+/** El fin del programa: el escrito a mano o el inicio más la duración, corrido por la demora de inicio y las pausas
+ *  (lib/pausas.ts). Calculado, la demora corre los meses enteros. */
+export function egresoDelPrograma(inicio: string, egresoPropio: string | null, duracion: number | null, pausas: readonly PausaServicio[]): string | null {
+  const base = egresoPropio ?? (inicio && duracion !== null ? sumarMeses(inicio, duracion) : null);
+  if (!inicio || !pausas.length) return base;
+  return finConPausas(inicio, base, pausas, egresoPropio === null && duracion !== null ? (desde) => sumarMeses(desde, duracion) : undefined);
 }
 
 /** «2026-09-30» más n meses, sin pasarse del fin de mes (30/09 + 5 meses = 28/02). */
@@ -268,6 +283,10 @@ export interface FilaCliente {
   inicio: string;
   egreso: string | null;
   egresoSugerido: boolean;
+  /* El día en que arranca de verdad: el ingreso o, con demora de inicio, el día en que termina la demora (lib/pausas.ts). */
+  inicioReal: string;
+  /* La demora o la pausa en curso, si hay. */
+  pausa: PausaServicio | null;
   programas: string[];
   programasSugeridos: boolean;
   plan: string;
@@ -362,14 +381,18 @@ export function filasClientes(e: EstadoApp, hoy: string): FilaCliente[] {
       ? DURACION_POR_PROGRAMA[programas[0]] ?? DURACION_POR_DEFECTO : null;
     const duracion = seg.duracionMeses ?? duracionSug;
     const egresoPropio = seg.fechaEgreso;
-    const egreso = egresoPropio ?? (inicio && duracion !== null ? sumarMeses(inicio, duracion) : null);
+    const egreso = egresoDelPrograma(inicio, egresoPropio, duracion, seg.pausas ?? []);
+    const arranca = inicio ? inicioReal(inicio, seg.pausas ?? []) : "";
+    const pausa = pausaEnCurso(seg.pausas ?? [], hoy);
 
     const planSug = seg.planDePago ? "" : venta ? planDePagoDe(cuotasDe.get(venta.id) ?? []) : "";
     const llamada = contacto ? ultimaLlamada.get(contacto.id) : undefined;
     const edadSug = seg.edad === null ? edadDeTexto(respuestaPerfil(llamada?.respuestas, "edad")) : null;
 
     const closerVenta = venta?.closerId ? equipo.get(venta.closerId) ?? "" : "";
-    const proximo = proximoDe(seg, a, cfg.contarDesde);
+    /* En pausa (o antes de arrancar) no toca el contacto de seguimiento: el próximo es el día en que retoma. */
+    const proximoSinPausa = proximoDe(seg, a, cfg.contarDesde);
+    const proximo = pausa && proximoSinPausa < pausa.hasta ? pausa.hasta : proximoSinPausa;
     const atraso = diasEntre(proximo, hoy);
     const testimonio = testimonioDe.get(a.id);
 
@@ -380,7 +403,7 @@ export function filasClientes(e: EstadoApp, hoy: string): FilaCliente[] {
       pais: (a.pais ?? "").trim() || (contacto?.pais ?? "").trim(),
       edad: seg.edad ?? edadSug, edadSugerida: seg.edad === null && edadSug !== null,
       stack: seg.stack, dni: seg.dni, domicilio: seg.domicilio,
-      inicio, egreso, egresoSugerido: egresoPropio === null && egreso !== null,
+      inicio, egreso, egresoSugerido: egresoPropio === null && egreso !== null, inicioReal: arranca, pausa,
       programas, programasSugeridos: programasSug.length > 0,
       plan: seg.planDePago || planSug, planSugerido: !seg.planDePago && planSug !== "",
       duracion, duracionSugerida: duracionSug !== null,

@@ -2,6 +2,8 @@ import type {
   Contacto, Cuota, Embudo, EstadoApp, ID, IngresoComunidad, Lead, MiembroEquipo, Movimiento, Pago, Procesador,
   Producto, TipoVentaPago, Venta, Webinar,
 } from "./types";
+import { claveEmail } from "./contactos";
+import { buscarMismaPersona } from "./duplicados";
 
 /* ==================================================================
    La planilla de Angelo ("Centro de control Apicanta LLC", hoja Ventas).
@@ -315,7 +317,7 @@ export function leerFilasVentas(tabla: string[][]): { filas: FilaVentas[]; falta
     const ars = numeroPlanilla(v(f, "Monto abonado ARS"));
     filas.push({
       fila: k + 2, fecha,
-      nombre: v(f, "Nombre Completo"), email: v(f, "Email").toLowerCase(),
+      nombre: v(f, "Nombre Completo"), email: claveEmail(v(f, "Email")),
       pais: v(f, "País del cliente"), telefono: v(f, "Teléfono"),
       vendedor: v(f, "Vendedor"), servicio: v(f, "Servicio adquirido"),
       proyecto: v(f, "Proyecto"), estrategia: v(f, "Estrategia utilizada"),
@@ -733,11 +735,13 @@ export function importarPlanilla(e: EstadoApp, filasCrudas: FilaVentas[], opcion
   };
 
   /* ---------- Personas ---------- */
-  const contactoPorEmail = new Map(e.contactos.filter((c) => c.email).map((c) => [c.email.trim().toLowerCase(), c]));
+  const contactoPorEmail = new Map(e.contactos.filter((c) => c.email).map((c) => [claveEmail(c.email), c]));
   const contactosNuevos = new Map<string, Contacto>();
   const personaDe = (f: FilaVentas): Contacto => {
     const clave = f.email || `sin-email:${normalizarTexto(f.nombre)}`;
-    const existente = f.email ? contactoPorEmail.get(f.email) : undefined;
+    /* Por mail o, con otro mail, por teléfono y nombre: la misma regla que el resto de las entradas (lib/duplicados.ts). */
+    const existente = (f.email ? contactoPorEmail.get(f.email) : undefined)
+      ?? buscarMismaPersona(e.contactos, { email: f.email, nombre: f.nombre, telefono: f.telefono })?.contacto;
     if (existente) return existente;
     const ya = contactosNuevos.get(clave);
     if (ya) {

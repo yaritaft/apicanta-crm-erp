@@ -6,6 +6,7 @@ import {
   ORDEN_LISTA, panelDeServicio, renglonesCartera, resellResuelto, VISIBLES_CARTERA, VISIBLES_LISTA, type PanelDeServicio, type SeccionServicio,
 } from "@/lib/panel-servicio";
 import { SOLAPAS_SERVICIO } from "@/lib/solapas-servicio";
+import { filasClientes } from "@/lib/clientes-cs";
 import { DE_UN_USO } from "@/lib/vistas-guardadas";
 import { CONFIG_POR_DEFECTO, seguimientoVacio, situacionDe, terminoElServicio } from "@/lib/seguimiento";
 import { ACCESO_DUENO, areaDeRuta, nivelDeRuta, TIPOS_POR_DEFECTO, type MiAcceso } from "@/lib/permisos";
@@ -75,9 +76,9 @@ function estado(extra: Partial<EstadoApp> = {}): EstadoApp {
 const seccion = (p: PanelDeServicio, id: SeccionServicio["id"]): SeccionServicio => p.secciones.find((s) => s.id === id)!;
 const nombres = (s: SeccionServicio) => s.items.map((i) => i.nombre);
 
-test("el panel trae las siete listas de la reunión, cada una con su regla escrita", () => {
+test("el panel trae las listas de la reunión (y «Arrancan o retoman», 22/10), cada una con su regla escrita", () => {
   const p = panelDeServicio(estado(), HOY, AHORA);
-  assert.deepEqual(p.secciones.map((s) => s.id), ["contactar", "nuevos", "renovar", "resells", "testimonios", "reportes", "contratos"]);
+  assert.deepEqual(p.secciones.map((s) => s.id), ["contactar", "vuelven", "nuevos", "renovar", "resells", "testimonios", "reportes", "contratos"]);
   for (const s of p.secciones) {
     assert.ok(s.regla.length > 20, `${s.id}: falta decir qué la hace aparecer`);
     assert.ok(s.verTodos?.href.startsWith("/"), `${s.id}: a dónde ir a ver la lista entera`);
@@ -319,14 +320,13 @@ test("la cartera como tabla: los alumnos de la base (de una etapa si se eligió)
   assert.deepEqual(MOTOR_CARTERA.ordenarFilas(deLista, ORDEN_LISTA).map((r) => r.id), deLista.map((r) => r.id), "sin orden elegido, el de la lista");
 });
 
-test("la cartera como tabla: de entrada por etapa del recorrido y después por nombre; se busca por nombre, teléfono o lo que pasa", () => {
+test("la cartera como tabla: de entrada el último que ingresó arriba (Lili, 22/10); se busca por nombre, teléfono o lo que pasa", () => {
   const p = panelDeServicio(estado(), HOY, AHORA);
   const filas = renglonesCartera(p.cartera);
   const ordenadas = MOTOR_CARTERA.ordenarFilas(filas, ORDEN_CARTERA, ORDEN_ETAPAS_CARTERA);
-  const puesto = (id: string | undefined) => ETAPAS_DEL_ALUMNO.findIndex((x) => x.id === id);
   for (let i = 1; i < ordenadas.length; i++) {
     const a = ordenadas[i - 1], b = ordenadas[i];
-    assert.ok(puesto(a.fila?.etapa) <= puesto(b.fila?.etapa), `${a.nombre} antes que ${b.nombre}: su etapa va antes`);
+    if (a.fila?.inicio && b.fila?.inicio) assert.ok(a.fila.inicio >= b.fila.inicio, `${a.nombre} antes que ${b.nombre}: ingresó después`);
   }
   const uno = filas[0];
   assert.ok(coincideCartera(uno, uno.nombre.toUpperCase()));
@@ -367,3 +367,39 @@ test("la ficha no se cierra con la Escape que un campo usó para cancelar su edi
   assert.match(hoja, /guardar\(f, "followUp", "OUTBOARDING"\)/, "«No renueva» deja el Follow Up como en el Airtable (y sale de la lista)");
 });
 
+
+/* ---------- Demora de inicio y pausas (Lili, 22/10) ---------- */
+
+test("en pausa no toca el contacto ni cuenta como que dejó de reportar; el día que retoma aparece en «Arrancan o retoman»", () => {
+  const pausa = (id: string, desde: string, hasta: string) => ({ id, tipo: "pausa" as const, desde, hasta, motivo: "Viaje", creadoEn: "", creadoPor: "" });
+  /* Atrasada (contacto vencido hace 10 días, sin reportar) está en pausa hasta el 01/11. */
+  const enPausa = estado({
+    seguimientos: [
+      seg("atrasada", { contratoFirmado: "Firmado", contactoInicial: "2026-09-01", ultimoContacto: "2026-09-25", pausas: [pausa("p1", "2026-10-10", "2026-11-01")],
+        reporteManual: { activo: false, completo: false, semanasSin: 4, en: "2026-10-12" } }),
+      seg("sinfirma", { contactoInicial: "2026-10-02", ultimoContacto: "2026-10-15", pausas: [pausa("p2", "2026-10-05", "2026-10-20")] }),
+    ],
+  });
+  const p = panelDeServicio(enPausa, HOY, AHORA);
+  assert.ok(!nombres(seccion(p, "contactar")).includes("Atrasada"), "en pausa: el próximo contacto es el día que retoma");
+  assert.ok(!nombres(seccion(p, "reportes")).includes("Atrasada"), "en pausa no se le pide el reporte");
+  assert.equal(p.cartera.find((f) => f.id === "atrasada")?.proximo, "2026-11-01");
+  /* Sin Firma retoma hoy: está en «Arrancan o retoman» y no repetida en «A contactar hoy». */
+  assert.deepEqual(nombres(seccion(p, "vuelven")), ["Sin Firma"]);
+  assert.match(seccion(p, "vuelven").items[0].detalle, /Retoma hoy después de 15 días de pausa/);
+  assert.ok(!nombres(seccion(p, "contactar")).includes("Sin Firma"));
+  /* Ya la contactaron el día que retomó: sale de la lista. */
+  const contactada = estado({ seguimientos: [seg("sinfirma", { contactoInicial: "2026-10-02", ultimoContacto: "2026-10-20", pausas: [pausa("p2", "2026-10-05", "2026-10-20")] })] });
+  assert.equal(seccion(panelDeServicio(contactada, HOY, AHORA), "vuelven").total, 0);
+});
+
+test("la demora de inicio corre el fin del programa y el día del recorrido", () => {
+  const e = estado({
+    seguimientos: [seg("nueva", { duracionMeses: 3, pausas: [{ id: "d1", tipo: "demora", desde: "2026-10-18", hasta: "2026-12-18", motivo: "", creadoEn: "", creadoPor: "" }] })],
+  });
+  const f = filasClientes(e, HOY).find((x) => x.id === "nueva")!;
+  assert.equal(f.inicioReal, "2026-12-18");
+  assert.equal(f.egreso, "2027-03-18");
+  assert.equal(f.pausa?.tipo, "demora", "hasta el 18/12 está en la demora");
+  assert.equal(panelDeServicio(e, HOY, AHORA).cartera.find((x) => x.id === "nueva")?.egreso, "2027-03-18");
+});

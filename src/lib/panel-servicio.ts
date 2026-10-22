@@ -1,6 +1,7 @@
 import type { EstadoApp, ID } from "./types";
 import { DURACION_POR_DEFECTO, estadosDeResell, filasClientes, filasResells, filasTestimonios, sumarMeses } from "./clientes-cs";
 import { diasEntre, formatoDia, terminoElServicio } from "./seguimiento";
+import { diasDe } from "./pausas";
 import { crearMotor, uno, varios, type ColumnaCs, type OrdenCs } from "./tabla-cs";
 
 /* ==================================================================
@@ -33,6 +34,8 @@ export const DIAS_PARA_CERRAR_RESELL = 7;
 export const DIAS_PARA_FIRMAR = 3;
 /** Hasta cuántos días después de que termina el contrato se lo sigue considerando «en servicio» (para renovarlo o darlo de baja). */
 export const DIAS_DE_GRACIA = 45;
+/* «Arrancan o retoman» los muestra unos días antes de que termine la demora o la pausa, para avisarle. */
+export const DIAS_ANTES_DE_RETOMAR = 3;
 
 /* Los estados con los que un resell queda resuelto: renueva (con o sin upgrade), no renueva, pasa a outboarding o sigue vigente.
    «2da Agenda» y «Seguimiento» lo dejan abierto: todavía falta una llamada o una respuesta. */
@@ -65,7 +68,7 @@ export interface ItemServicio {
 }
 
 export interface SeccionServicio {
-  id: "contactar" | "nuevos" | "renovar" | "resells" | "testimonios" | "reportes" | "contratos";
+  id: "contactar" | "vuelven" | "nuevos" | "renovar" | "resells" | "testimonios" | "reportes" | "contratos";
   titulo: string;
   /* El nombre para la tarjeta chica de arriba, donde el título entero no entra. */
   corto: string;
@@ -125,7 +128,7 @@ export function etapaDelFollowUp(followUp: string | null | undefined): EtapaAlum
   if (f.startsWith("outboarding") || f.startsWith("outbording")) return "outboarding";
   if (f.includes("caso de exito") || f.includes("ganancia mayor")) return "exito";
   if (f.includes("resell") || f.includes("renovacion")) return "renovacion";
-  if (["no contesta", "no responde", "no avanzando", "pauso", "pausa", "devolucion", "limitaciones", "excusas"].some((x) => f.includes(x))) return "riesgo";
+  if (["no contesta", "no responde", "no avanzando", "pauso", "pausa", "devolucion", "limitaciones", "excusas", "no aplica", "lento", "no tiene resultados", "sin resultados"].some((x) => f.includes(x))) return "riesgo";
   if (["edicion cv", "linkedin", "likendin", "entrevistas", "take home"].some((x) => f.includes(x))) return "busqueda";
   if (["reserva", "onboarding", "demora"].some((x) => f.includes(x))) return "iniciando";
   return "cursando";
@@ -201,8 +204,31 @@ export function panelDeServicio(e: EstadoApp, hoy: string, ahora: Date = new Dat
   const activos = activosTodos.filter((c) => !vencidoHaceMucho(c));
   const desactualizados = activosTodos.length - activos.length;
 
+  /* ---------- Arrancan o retoman (demora de inicio y pausas, lib/pausas.ts) ----------
+     El día en que termina la demora o la pausa hay que hablarle para que arranque: aparece unos días antes y queda hasta
+     que alguien lo contacta (o pasa una semana). Mientras está en pausa no le toca el contacto de seguimiento. */
+  const vuelve = new Map<ID, { tipo: "demora" | "pausa"; hasta: string; dias: number }>();
+  for (const c of activos) {
+    for (const p of c.seg.pausas ?? []) {
+      const d = diasEntre(p.hasta, hoy);
+      if (d < -DIAS_ANTES_DE_RETOMAR || d > 7) continue;
+      if (c.ultimoContacto && c.ultimoContacto >= p.hasta) continue;
+      vuelve.set(c.id, { tipo: p.tipo, hasta: p.hasta, dias: diasDe(p) });
+    }
+  }
+  const vuelven = activos.filter((c) => vuelve.has(c.id)).map((c): ItemServicio => {
+    const v = vuelve.get(c.id)!;
+    const d = diasEntre(v.hasta, hoy);
+    const cuando = d === 0 ? "hoy" : d < 0 ? `el ${formatoDia(v.hasta, hoy)}` : `desde el ${formatoDia(v.hasta, hoy)}`;
+    return {
+      clave: c.id, alumnoId: c.id, nombre: c.nombre, dias: d, cuando: cuandoEs(d), ...contactoDe(c),
+      detalle: v.tipo === "demora" ? `Arranca ${cuando} (demora de inicio de ${v.dias} días)` : `Retoma ${cuando} después de ${v.dias} días de pausa`,
+      tono: d >= 3 ? "rojo" : d >= 0 ? "ambar" : "neutro",
+    };
+  });
+
   /* ---------- A contactar hoy ---------- */
-  const contactar = activos.filter((c) => c.situacion === "vencido" || c.situacion === "hoy").map((c): ItemServicio => ({
+  const contactar = activos.filter((c) => (c.situacion === "vencido" || c.situacion === "hoy") && !vuelve.has(c.id)).map((c): ItemServicio => ({
     clave: c.id, alumnoId: c.id, nombre: c.nombre, dias: c.atraso, cuando: cuandoEs(c.atraso), ...contactoDe(c),
     detalle: `${c.ultimoContacto ? `Último contacto el ${formatoDia(c.ultimoContacto, hoy)}` : "Sin contacto registrado"}${c.intentos > 0 ? ` · ${c.intentos} ${c.intentos === 1 ? "intento" : "intentos"} sin respuesta` : ""}`,
     tono: tonoPorDias(c.atraso, 7),
@@ -275,7 +301,7 @@ export function panelDeServicio(e: EstadoApp, hoy: string, ahora: Date = new Dat
   }
 
   /* ---------- Reportes semanales ---------- */
-  const reportes = activos.filter((c) => c.reporte.estado === "Inactivo").map((c): ItemServicio => ({
+  const reportes = activos.filter((c) => c.reporte.estado === "Inactivo" && !c.pausa).map((c): ItemServicio => ({
     clave: c.id, alumnoId: c.id, nombre: c.nombre, dias: c.reporte.semanasSin, ...contactoDe(c),
     cuando: c.reporte.semanasSin ? `${c.reporte.semanasSin} sem` : "inactivo",
     detalle: c.reporte.semanasSin ? `${c.reporte.semanasSin} ${c.reporte.semanasSin === 1 ? "semana" : "semanas"} sin mandar el reporte` : "Marcado como inactivo en su reporte",
@@ -294,6 +320,7 @@ export function panelDeServicio(e: EstadoApp, hoy: string, ahora: Date = new Dat
 
   const secciones: SeccionServicio[] = [
     seccion({ id: "contactar", titulo: "A contactar hoy", corto: "Contactar", regla: "Su próximo contacto de seguimiento ya venció o toca hoy.", vacio: "Nadie para contactar hoy. La lista se llena a medida que vencen los días de cada alumno.", verTodos: { texto: "Ver la lista completa", href: "/alumnos?seccion=hoy" } }, contactar, masViejoPrimero),
+    seccion({ id: "vuelven", titulo: "Arrancan o retoman", corto: "Retoman", regla: "Termina su demora de inicio o su pausa: hablale para que arranque.", vacio: "Nadie termina una pausa ni una demora de inicio en estos días.", verTodos: { texto: "Ver Clientes del programa", href: "/alumnos?seccion=clientes" } }, vuelven, masViejoPrimero),
     seccion({ id: "nuevos", titulo: "Alumnos nuevos", corto: "Nuevos", vacio: "No entró nadie nuevo sin su primer contacto.", regla: `Entraron en los últimos ${DIAS_NUEVO} días y todavía no tienen el primer contacto.`, verTodos: { texto: "Ver Clientes del programa", href: "/alumnos?seccion=clientes" } }, nuevos, masViejoPrimero),
     seccion({ id: "renovar", titulo: "Se les termina el contrato", corto: "Renovar", vacio: "Ningún contrato por vencer en los próximos 30 días.", regla: `Les quedan ${DIAS_PARA_RENOVAR} días o menos (o ya terminó y siguen activos): renovar o dar de baja.`, verTodos: { texto: "Ver Clientes del programa", href: "/alumnos?seccion=clientes" } }, renovar, masCercanoPrimero),
     seccion({ id: "resells", titulo: "Resells sin cierre", corto: "Resells", vacio: "Todos los resells ya tienen su resultado.", regla: `La llamada ya pasó y el closer no dijo en qué quedó. A los ${DIAS_PARA_CERRAR_RESELL} días queda en rojo.`, verTodos: { texto: "Ver la agenda de resells", href: "/alumnos?seccion=resells" } }, sinCierre, masViejoPrimero),
@@ -375,8 +402,9 @@ export const COLUMNAS_CARTERA: ColumnaCs<RenglonCartera, ClaveCartera>[] = [
 export const MOTOR_CARTERA = crearMotor(COLUMNAS_CARTERA, "car");
 export const VISIBLES_CARTERA: ClaveCartera[] = ["nombre", "programa", "followUp", "inicio", "egreso", "ultimoContacto", "proximo", "telefono"];
 export const VISIBLES_LISTA: ClaveCartera[] = ["nombre", "programa", "detalle", "cuando", "telefono"];
-/* Sin orden elegido: la cartera por etapa y nombre; una lista, en el suyo (lo más atrasado primero). */
-export const ORDEN_CARTERA: OrdenCs<ClaveCartera>[] = [{ clave: "followUp", desc: false }, { clave: "nombre", desc: false }];
+/* Sin orden elegido: la cartera por fecha de ingreso, del más nuevo al más viejo (Lili, 22/10); una lista, en el suyo (lo más
+   atrasado primero). */
+export const ORDEN_CARTERA: OrdenCs<ClaveCartera>[] = [{ clave: "inicio", desc: true }, { clave: "nombre", desc: false }];
 export const ORDEN_LISTA: OrdenCs<ClaveCartera>[] = [];
 export const ORDEN_ETAPAS_CARTERA = { etapa: ETAPAS_DEL_ALUMNO.map((x) => x.label) };
 

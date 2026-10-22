@@ -17,6 +17,7 @@ import { fechaLarga, isoDia, money, pct } from "@/lib/format";
 import { medioDeMovimiento, normalizar, parecido, procesadorDeMovimiento } from "@/lib/conciliacion";
 import { buscarPersonas, nombreDeCuota, personaPorId, type PersonaBuscada } from "@/lib/buscar-cliente";
 import { claveEmail } from "@/lib/contactos";
+import { compararTelefonos } from "@/lib/telefonos";
 import { descartarComprobante } from "@/lib/comprobantes";
 import type { Cuota, EstadoApp, MiembroEquipo, Movimiento, Venta } from "@/lib/types";
 import { PAISES, planDePago, webinarDeProyecto } from "@/lib/angelo";
@@ -251,7 +252,15 @@ export function AsistenteVenta({ onCerrar, onListo, desdeMovimiento, cliente, cl
     mainRef.current?.scrollTo({ top: 0 });
   }, []);
 
+  /* Una sola venta por asistente: el 21/10 se registró la de Diana Olivera tres veces en el mismo milisegundo (doble o triple
+     clic en «Registrar la venta», o Enter apretado de más). Con la marca, el segundo toque no hace nada. */
+  const registrando = useRef(false);
+  const [registrada, setRegistrada] = useState(false);
+
   function guardar() {
+    if (registrando.current) return;
+    registrando.current = true;
+    setRegistrada(true);
     const ventaId = nuevoId("ven");
     let contactoId = b.contactoId;
     if (!contactoId && b.crearContacto && b.contactoNombre.trim()) {
@@ -428,7 +437,7 @@ export function AsistenteVenta({ onCerrar, onListo, desdeMovimiento, cliente, cl
           </span>
         )}
         {paso.id === "resumen" ? (
-          <Button variante="primary" icono={<Check size={16} />} onClick={guardar} disabled={!puedeAvanzar}>Registrar la venta</Button>
+          <Button variante="primary" icono={<Check size={16} />} onClick={guardar} disabled={!puedeAvanzar || registrada}>{registrada ? "Registrando…" : "Registrar la venta"}</Button>
         ) : (
           <>
             <span className="asistente__pista"><kbd>Enter</kbd><CornerDownLeft size={13} /></span>
@@ -510,7 +519,7 @@ function validar(paso: PasoId, b: Borrador, diferencia: number, ctx: { e: Estado
       if (!plantillaDelContrato(programa, b.contrato.datos.reserva).id) {
         return b.contrato.datos.reserva && programa ? `${programa.nombre} todavía no tiene contrato de reserva` : "Elegí el programa del contrato";
       }
-      return problemaDeDatos(b.contrato.datos, ctx.modoContrato);
+      return problemaDeDatos(b.contrato.datos, ctx.modoContrato, undefined, programa?.id);
     }
     case "precio":
       return b.precioAcordado > 0 ? null : "El valor total tiene que ser mayor a cero";
@@ -596,6 +605,17 @@ function PasoCliente({ b, set, e, M, onPagoDeCuota }: {
     [e, b.contactoNombre, b.contactoId, b.crearContacto],
   );
   const esAlguno = resultados.some((p) => normalizar(p.nombre) === normalizar(escrito));
+  /* Cargando un cliente nuevo: si el mail o el teléfono ya son de alguien, se avisa antes de crear la misma persona otra
+     vez (Lili, 22/10: Juan Camilo quedó dos veces, una con cada mail). */
+  const yaEstan = useMemo(() => {
+    if (!b.crearContacto) return [];
+    const mail = claveEmail(b.contactoEmail);
+    const porMail = mail.includes("@") ? buscarPersonas(e, mail, 3).filter((p) => claveEmail(p.email) === mail) : [];
+    const digitos = b.contactoTelefono.replace(/\D/g, "");
+    const porTel = digitos.length >= 8 ? buscarPersonas(e, digitos.slice(-8), 3).filter((p) => compararTelefonos(p.telefono, b.contactoTelefono) !== "no") : [];
+    return [...porMail, ...porTel.filter((p) => !porMail.some((x) => x.id === p.id))]
+      .map((p) => ({ p, por: porMail.some((x) => x.id === p.id) ? "el mismo mail" : "el mismo teléfono" }));
+  }, [e, b.crearContacto, b.contactoEmail, b.contactoTelefono]);
   const nombreCorto = elegido?.nombre.split(" ")[0] ?? "";
 
   return (
@@ -643,6 +663,24 @@ function PasoCliente({ b, set, e, M, onPagoDeCuota }: {
                 onChange={(ev) => set({ contactoPais: ev.target.value })} opciones={PAISES} />
             </Field>
           </div>
+          {yaEstan.length > 0 && (
+            <div className="aviso-cuotas" role="status">
+              <span className="t-strong">{yaEstan.length === 1 ? "Ya está en Apicanta" : "Ya hay alguien así en Apicanta"}</span>
+              <span className="t-sm t-muted">Si es la misma persona, usá su ficha: la venta queda pegada a su historia y no se crea otra.</span>
+              {yaEstan.map(({ p, por }) => (
+                <div className="aviso-cuotas__fila" key={p.id}>
+                  <span className="t-sm">
+                    <strong>{p.nombre}</strong>
+                    <span className="t-subtle"> · {por} · {[p.email, p.telefono].filter(Boolean).join(" · ")}</span>
+                  </span>
+                  <Button sm variante="secondary"
+                    onClick={() => set({ contactoId: p.id, contactoNombre: p.nombre, contactoEmail: p.email ?? "", contactoTelefono: p.telefono ?? "", crearContacto: false })}>
+                    Usar esa ficha
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       ) : (
         <>

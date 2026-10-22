@@ -36,6 +36,7 @@ import { entraEnTabla, esCompra, opcionesDe, tablasDe, ventaEsDeLlamada } from "
 import { etapaTrasEventos, eventosDeLlamada, leadDeSesion, type EventoEtapa } from "./etapas-auto";
 import { estadoDeAgenda, marcaDeAgenda, opcionDeCompraPara } from "./estados";
 import { personaDe } from "./persona";
+import { buscarMismaPersona, conOtroEmail, type PlanSeparar, type PlanUnificar } from "./duplicados";
 import type { OtroCamino } from "./pendientes-conciliar";
 import { extraConCorreccion, tituloPerfil, type CampoPerfil } from "./perfil";
 import { puedeCargarDevolucion, puedeDarDeBaja, puedeEditar, TIPOS_POR_DEFECTO, type MiAcceso } from "./permisos";
@@ -794,6 +795,13 @@ function registrar(
   return { lista: [nuevo, ...e.actividad].slice(0, 400), nuevo };
 }
 
+/* Cambia algunas columnas de algunas filas (las que movió el servidor), sin tocar el resto. */
+function moverFilas<T extends { id: ID }>(lista: T[], cambios: ({ id: ID } & Partial<T>)[]): T[] {
+  if (!cambios.length) return lista;
+  const por = new Map(cambios.map((c) => [c.id, c] as const));
+  return lista.map((x) => (por.has(x.id) ? { ...x, ...por.get(x.id) } : x));
+}
+
 /* Lo que el CRM carga sobre una agenda. `estado` lo mandan deshacer
    (devuelve la llamada a como estaba) y la tabla del CRM, que corrige el
    estado y el closer en la celda. `extra` lo manda pasar una llamada a otro
@@ -1018,11 +1026,15 @@ function asignarContactos(leads: Lead[], contactos: Contacto[]): {
     if (k && !porEmail.has(k)) porEmail.set(k, c);
   }
   const tocados = new Map<ID, Contacto>();
+  const todos = [...contactos];
 
   const salida = leads.map((l) => {
     if (l.contactoId && porId.has(l.contactoId)) return l;
     const k = claveEmail(l.email);
-    const previo = porId.get(l.id) ?? (k ? porEmail.get(k) : undefined);
+    /* Con otro mail pero el mismo teléfono y nombre, es la misma persona: su mail queda como otro mail (lib/duplicados.ts). */
+    const porTelefono = porId.get(l.id) || (k && porEmail.get(k)) ? undefined
+      : buscarMismaPersona(todos, { nombre: l.nombre, telefono: l.telefono })?.contacto;
+    const previo = porId.get(l.id) ?? (k ? porEmail.get(k) : undefined) ?? (porTelefono && conOtroEmail(porTelefono, l.email));
     const canal = l.webinarId ? ("webinar" as const) : undefined;
     const c: Contacto = previo
       ? {
@@ -1949,6 +1961,45 @@ export const acciones = {
     aLaBase("ventas", ventas);
     aLaBase("alumnos", alumnos);
     empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
+  },
+
+  /* ---------- Dos fichas de la misma persona (lib/duplicados.ts) ----------
+     Unificar lo escribe el servidor (api/personas/unificar), que devuelve
+     qué movió: esto lo deja igual en la app, sin volver a escribirlo. Sin
+     nube es lo único que pasa. */
+  aplicarUnificacion(plan: PlanUnificar): void {
+    const e = snapshot();
+    const { lista } = registrar(e, "contacto", plan.contacto.id, plan.contacto.nombre, "actualizo", plan.resumen);
+    guardar({
+      ...e,
+      contactos: e.contactos.filter((c) => c.id !== plan.borrar).map((c) => (c.id === plan.contacto.id ? plan.contacto : c)),
+      leads: moverFilas(e.leads, plan.leads),
+      sesiones: moverFilas(e.sesiones, plan.sesiones),
+      comentarios: moverFilas(e.comentarios ?? [], plan.comentarios),
+      alumnos: moverFilas(e.alumnos, plan.alumnos),
+      actividad: lista,
+    });
+  },
+
+  aplicarSeparacion(plan: PlanSeparar): void {
+    const e = snapshot();
+    const { lista } = registrar(e, "contacto", plan.contacto.id, plan.contacto.nombre, "actualizo", plan.resumen);
+    guardar({
+      ...e,
+      contactos: [...e.contactos.filter((c) => c.id !== plan.recrear.id).map((c) => (c.id === plan.contacto.id ? plan.contacto : c)), plan.recrear],
+      leads: moverFilas(e.leads, plan.leads),
+      sesiones: moverFilas(e.sesiones, plan.sesiones),
+      comentarios: moverFilas(e.comentarios ?? [], plan.comentarios),
+      alumnos: moverFilas(e.alumnos, plan.alumnos.map((a) => ({ id: a.id, leadId: a.leadId ?? undefined }))),
+      actividad: lista,
+    });
+  },
+
+  /* Los contactos como los dejó el servidor (por ejemplo, «no son la misma persona»). */
+  aplicarContactos(filas: Contacto[]): void {
+    const e = snapshot();
+    const por = new Map(filas.map((c) => [c.id, c] as const));
+    guardar({ ...e, contactos: e.contactos.map((c) => por.get(c.id) ?? c) });
   },
 
   /* ---------- Lo que se sabe de la persona, corregido a mano ----------

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { esPerfil } from "@/lib/bienvenida-alumno";
 import { nubeServidor } from "@/lib/servidor";
 import { baseDelPedido, correoDelPedido, esDuenoDelPedido, exigirArea } from "@/lib/permisos-servidor";
 import { problemaDeDatos, soloDuenos, type DatosContrato, type ModoContrato } from "@/lib/contratos";
@@ -51,6 +52,7 @@ function datosLimpios(d: Partial<DatosContrato> | undefined): DatosContrato {
     fecha: /^\d{4}-\d{2}-\d{2}$/.test(t(d?.fecha)) ? t(d?.fecha) : diaDeNegocio(new Date().toISOString()),
     inicio: /^\d{4}-\d{2}-\d{2}$/.test(t(d?.inicio)) ? t(d?.inicio) : undefined,
     ...(d?.reserva === true ? { reserva: true } : {}),
+    ...(esPerfil(d?.perfil) ? { perfil: d.perfil } : {}),
   };
 }
 
@@ -84,7 +86,7 @@ export async function POST(peticion: Request) {
       const programa = programaPorId(programas, typeof b.programa === "string" ? b.programa : null);
       if (!programa) return mal("Elegí el programa del contrato.");
       const datos = datosLimpios(b.datos as Partial<DatosContrato>);
-      const problema = problemaDeDatos(datos, modo);
+      const problema = problemaDeDatos(datos, modo, undefined, programa.id);
       if (problema) return mal(problema);
 
       const contrato = await crearContrato(db, {
@@ -109,7 +111,7 @@ export async function POST(peticion: Request) {
       /* Corregir no cambia la plantilla: si era el de la reserva, sigue siéndolo (lo dice el contrato, no la pantalla). */
       const { reserva: _r, ...limpios } = datosLimpios(b.datos as Partial<DatosContrato>);
       const datos: DatosContrato = { ...limpios, ...(c.datos.reserva ? { reserva: true } : {}) };
-      const problema = problemaDeDatos(datos, c.modo);
+      const problema = problemaDeDatos(datos, c.modo, undefined, c.programa);
       if (problema) return mal(problema);
       await corregir(db, c, datos, quien, config, new URL(peticion.url).origin);
     } else if (accion === "enlace") {

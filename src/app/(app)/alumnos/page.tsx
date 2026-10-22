@@ -27,7 +27,7 @@ import { CopiarLink } from "@/components/ui/Filtros";
 import { ordenAURL, ordenDeURL, paginaDeURL, useBusquedaURL, useParamsURL } from "@/lib/useParamsURL";
 import { etapaDelAlumno, etapasDeServicio } from "@/lib/alumnos";
 import { rachasAHoy } from "@/lib/reportes";
-import { money, num } from "@/lib/format";
+import { fecha, money, num } from "@/lib/format";
 import type { Alumno, EstadoAlumno } from "@/lib/types";
 
 type Vista = "lista" | "pipeline" | "clientes" | "hoy" | "testimonios" | "resells" | "cvs";
@@ -47,7 +47,7 @@ const VISTAS: Vista[] = ["lista", "pipeline", "clientes", "hoy", "testimonios", 
      los que entraron último van arriba.
    - pag: la página, desde 1 */
 const VISTA_ALUMNOS = { seccion: "lista", vista: "", estado: "todos", orden: "", pag: "1" };
-const COLUMNAS_QUE_ORDENAN = ["nombre", "etapa", "plan", "progreso", "reporte", "cuota"];
+const COLUMNAS_QUE_ORDENAN = ["nombre", "inicio", "etapa", "plan", "progreso", "reporte", "cuota"];
 const SIN_ORDEN = { clave: "", desc: false };
 
 /* Sin mayúsculas ni tildes: "benitez" encuentra a "Benítez". */
@@ -123,6 +123,12 @@ export default function Alumnos() {
     {
       clave: "nombre", titulo: "Alumno", tipo: "primary", orden: (a) => a.nombre,
       celda: (a) => <Persona nombre={a.nombre} sub={a.email || "Sin mail"} />,
+    },
+    {
+      /* Lili, 22/10: «acomodar a los alumnos por fecha de ingreso del más nuevo al más antiguo». La lista ya viene así;
+         la columna lo deja a la vista. */
+      clave: "inicio", titulo: "Ingreso", tipo: "num", orden: (a) => a.inicio,
+      celda: (a) => (a.inicio ? <span className="t-num">{fecha(a.inicio)}</span> : <span className="t-subtle">—</span>),
     },
     {
       /* La etapa del servicio, y el estado sólo cuando no es el de siempre:
