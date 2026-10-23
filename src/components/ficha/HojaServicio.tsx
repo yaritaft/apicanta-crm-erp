@@ -294,6 +294,8 @@ function HojaDeUnServicio({ e, p, f, venta, producto, conChat, reserva }: {
     { id: "programa", texto: "Programa" },
     { id: "contrato", texto: "Contrato" },
     { id: "accesos", texto: "Accesos" },
+    /* Las clases de Zoom a las que entró (Yari, 22/10: «saber si vino o no a las clases»), en su propia solapa. */
+    { id: "zoom", texto: "Sesiones Zoom" },
     { id: "datos", texto: "Datos" },
     { id: "seguimiento", texto: "Seguimiento" },
     /* Bonos (reunión del 21/10): las sesiones 1 a 1 del contrato con el mentor y las de Lili. */
@@ -474,10 +476,11 @@ function HojaDeUnServicio({ e, p, f, venta, producto, conChat, reserva }: {
         <>
           <AccesosAlumno forma="hoja" alumno={alumno} venta={venta}
             manual={{ wisboo: dato("wibo", false), zoom: dato("zoom", false), whatsapp: f.wpp ? dato("wpp", false) : undefined }} />
-          {/* Las clases de Zoom a las que entró (Yari, 22/10: «saber si vino o no a las clases»). */}
-          <SesionesZoom email={alumno.email} desde={f.inicioReal} reuniones={programaDeProducto(programasDe(e.ajustes), venta?.productoId)?.zoom} />
           <Bloque titulo="Marcado a mano">{dato("acceso")}</Bloque>
         </>
+      )}
+      {solapa === "zoom" && (
+        <SesionesZoom email={alumno.email} desde={f.inicioReal} reuniones={programaDeProducto(programasDe(e.ajustes), venta?.productoId)?.zoom} />
       )}
 
       {solapa === "datos" && (
