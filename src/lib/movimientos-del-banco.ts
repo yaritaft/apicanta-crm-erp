@@ -19,8 +19,9 @@ import { diaDeNegocio } from "./dia-negocio";
    ================================================================== */
 
 export type TipoDelBanco =
-  | "compra-tarjeta"      // una compra con tarjeta (Mercury): es un gasto
-  | "pago-tarjeta"        // el pago de la tarjeta de crédito: no es un gasto, son las compras que ya se cargan una por una
+  | "compra-tarjeta"      // una compra con la tarjeta de débito: la plata sale de la cuenta, es un gasto
+  | "compra-credito"      // una compra con la tarjeta de crédito: todavía no salió plata de la cuenta, sale cuando se paga la tarjeta
+  | "pago-tarjeta"        // el pago de la tarjeta de crédito: es lo que de verdad sale de la cuenta (las compras de la tarjeta, juntas)
   | "cashback"            // lo que devuelve la tarjeta
   | "cobro"               // plata que entra de un tercero (un cliente, una pasarela cobrando)
   | "pase"                // plata entre cuentas propias (un retiro de Stripe, un depósito de Whop)
@@ -34,7 +35,7 @@ export type TipoDelBanco =
   | "otro";
 
 export const TEXTO_DEL_TIPO: Record<TipoDelBanco, string> = {
-  "compra-tarjeta": "Compra con tarjeta", "pago-tarjeta": "Pago de la tarjeta", cashback: "Cashback", cobro: "Cobro", pase: "Entre cuentas",
+  "compra-tarjeta": "Compra con tarjeta de débito", "compra-credito": "Compra con la tarjeta de crédito", "pago-tarjeta": "Pago de la tarjeta", cashback: "Cashback", cobro: "Cobro", pase: "Entre cuentas",
   interno: "Entre cuentas del banco", comision: "Comisión", reembolso: "Reembolso", contracargo: "Contracargo", ajuste: "Ajuste", salida: "Salió plata", entrada: "Entró plata", otro: "Otro",
 };
 
@@ -72,7 +73,7 @@ export function movimientoDeMercury(t: Record<string, unknown>, cuentaId: ID, ex
   /* Una compra con tarjeta se reconoce por su tipo, no por lo que diga el comercio («Stripe Payments», «Cashback Bar»). */
   const esCompra = /cardtransaction/i.test(kind);
   let tipo: TipoDelBanco;
-  if (esCompra) tipo = monto < 0 ? "compra-tarjeta" : "reembolso";
+  if (esCompra) tipo = monto > 0 ? "reembolso" : /credit/i.test(kind) ? "compra-credito" : "compra-tarjeta";
   /* Lo que sale hacia la tarjeta es el pago de la tarjeta (aunque se llame «Mercury IO Cashback Credit Card»); lo que entra de Mercury, cashback. */
   else if (monto > 0 && (/cashback/i.test(todo) || /^mercury$/i.test(contraparte))) tipo = "cashback";
   else if (/creditcardpayment|autopay/i.test(todo) || c.motivo === "Pago de la tarjeta de crédito" || (monto < 0 && /credit\s*card/i.test(todo))) tipo = "pago-tarjeta";
@@ -139,13 +140,12 @@ export function cruzarConLaApp(
   const pases = new Set((e.traspasos ?? []).flatMap((t) => [t.salidaRef, t.llegadaRef]).filter((x): x is string => Boolean(x)));
   const devoluciones = new Map((e.devoluciones ?? []).filter((d) => d.referencia).map((d) => [d.referencia as string, d] as const));
   const usados = new Set<ID>();
-  /* Si el banco muestra las compras con tarjeta una por una, el pago de la tarjeta no se carga (sería contarlas dos veces). Si no las muestra
-     (Mercury no las manda por su API), el pago es lo único que se ve salir y hay que cargarlo para que el saldo dé. */
-  const hayCompras = movs.some((m) => m.tipo === "compra-tarjeta");
 
   return movs.map((m): MovimientoCruzado => {
     const proveedor = m.ref.split(":")[0];
-    if (m.tipo === "pago-tarjeta" && hayCompras) return { ...m, estadoApp: "no-se-carga", donde: "Es el pago de la tarjeta: lo que se gastó con la tarjeta se carga compra por compra, no acá." };
+    /* Lo que se compra con la tarjeta de crédito no saca plata de la cuenta: sale cuando se paga la tarjeta, y ESE pago es lo que baja el saldo (se
+       carga una vez, el pago). Cargar las compras además sería contarlas dos veces. */
+    if (m.tipo === "compra-credito") return { ...m, estadoApp: "no-se-carga", donde: "Compra con la tarjeta de crédito: la plata sale de la cuenta cuando se paga la tarjeta (se carga el pago)." };
     if (m.tipo === "interno") return { ...m, estadoApp: "no-se-carga", donde: "Plata entre cuentas del mismo banco: no es ingreso ni gasto." };
     if (m.refApp.some((r) => cobros.has(`${proveedor}:${r}`))) return { ...m, estadoApp: "cargado", donde: "Está como cobro en Conciliación." };
     if (m.refApp.some((r) => pases.has(`${proveedor}:${r}`)) || pases.has(m.ref)) return { ...m, estadoApp: "cargado", donde: "Está como movimiento entre cuentas." };

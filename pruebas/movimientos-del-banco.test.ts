@@ -21,9 +21,9 @@ test("Mercury: una compra con tarjeta (de débito o de crédito) es un gasto; el
   assert.equal(debito.fecha, "2026-10-22T10:00:00.000Z", "la fecha es la de asentado");
   assert.equal(debito.ref, "mercury:d1");
   const credito = movimientoDeMercury(mercury({ id: "c1", kind: "creditCardTransaction", counterpartyName: "Teatro Colón", amount: -85 }), "proc_mercury")!;
-  assert.equal(credito.tipo, "compra-tarjeta", "la tarjeta de crédito también: ahí están las compras");
+  assert.equal(credito.tipo, "compra-credito", "con la tarjeta de crédito todavía no salió plata de la cuenta: sale cuando se paga la tarjeta");
   /* Un comercio con «payment» en el nombre no la hace un pago de tarjeta: manda el tipo de movimiento. */
-  assert.equal(movimientoDeMercury(mercury({ id: "c2", kind: "creditCardTransaction", counterpartyName: "Stripe Payments Bar" }), "proc_mercury")!.tipo, "compra-tarjeta");
+  assert.equal(movimientoDeMercury(mercury({ id: "c2", kind: "creditCardTransaction", counterpartyName: "Stripe Payments Bar" }), "proc_mercury")!.tipo, "compra-credito");
   const pago = movimientoDeMercury(mercury({ id: "p1", kind: "creditCardPayment", counterpartyName: "Mercury IO Cashback Credit Card", amount: -5000 }), "proc_mercury")!;
   assert.equal(pago.tipo, "pago-tarjeta");
   /* Los casos reales del 22/10: el pago diario («Mercury Credit · IO AUTOPAY») y el cashback que entra («Mercury IO Cashback»). */
@@ -93,22 +93,24 @@ test("cruzar con la app: lo que ya está como cobro, pase o gasto se marca; lo p
     banco({ ref: "mercury:ck", refApp: ["ck"], tipo: "cashback", monto: 12.4, contraparte: "Mercury" }),
   ];
   const r = cruzarConLaApp(e, movs);
-  assert.deepEqual(r.map((x) => x.estadoApp), ["cargado", "cargado", "cargado", "parecido", "falta", "falta", "no-se-carga", "falta"]);
+  assert.deepEqual(r.map((x) => x.estadoApp), ["cargado", "cargado", "cargado", "parecido", "falta", "falta", "falta", "falta"]);
   assert.match(r[0].donde ?? "", /cobro/);
   assert.match(r[1].donde ?? "", /entre cuentas/);
   assert.match(r[2].donde ?? "", /Ya cargado/);
   assert.equal(r[3].gastoId, "g_parecido");
-  assert.match(r[6].donde ?? "", /compra por compra/);
-  /* Lo que falta: sólo lo asentado. */
+  /* Lo que falta: sólo lo asentado (el pago de la tarjeta también sale de la cuenta). */
   const faltan = resumenDeLoQueFalta([...r, { ...r[5], ref: "mercury:pend", pendiente: true, monto: -999 }]);
-  assert.deepEqual(faltan, { n: 3, sale: 92.5, entra: 12.4 });
+  assert.deepEqual(faltan, { n: 4, sale: 5092.5, entra: 12.4 });
 });
 
-test("el pago de la tarjeta: si el banco no muestra las compras es lo único que sale y se carga; si las muestra, no (sería contarlas dos veces)", () => {
+test("el pago de la tarjeta es lo que de verdad sale de la cuenta y se carga; las compras con la tarjeta de crédito no (sería contarlas dos veces)", () => {
   const e = estadoBase();
   const pago = banco({ ref: "mercury:pt", refApp: ["pt"], tipo: "pago-tarjeta", monto: -2310.5, contraparte: "Mercury Credit" });
-  assert.equal(cruzarConLaApp(e, [pago])[0].estadoApp, "falta", "sin compras visibles, hay que cargarlo");
-  assert.equal(cruzarConLaApp(e, [pago, banco({ ref: "mercury:c", refApp: ["c"] })])[0].estadoApp, "no-se-carga", "con las compras a la vista, no");
+  assert.equal(cruzarConLaApp(e, [pago])[0].estadoApp, "falta");
+  const compra = cruzarConLaApp(e, [pago, banco({ ref: "mercury:c", refApp: ["c"], tipo: "compra-credito", monto: -85 })]);
+  assert.equal(compra[0].estadoApp, "falta", "aunque se vean las compras, el pago se carga");
+  assert.equal(compra[1].estadoApp, "no-se-carga");
+  assert.match(compra[1].donde ?? "", /cuando se paga la tarjeta/);
   const inicial = borradorDesdeElBanco(pago, "ACH-WIRE Mercury", false);
   assert.deepEqual([inicial.concepto, inicial.monto, inicial.proveedor], ["Pago de la tarjeta de crédito Mercury", "2.310,50", "Mercury"]);
   assert.match(inicial.notas, /compras de esos días/);
@@ -197,7 +199,7 @@ test("el servidor trae los movimientos de Mercury de todas sus cuentas (también
     }) as typeof fetch;
     const r = await movimientosDeMercury(new Date("2026-10-20T00:00:00Z"));
     assert.equal(r.conectada, true);
-    assert.deepEqual(r.movimientos.map((m) => [m.ref, m.tipo, m.monto]), [["mercury:t3", "compra-tarjeta", -85], ["mercury:t2", "cobro", 1500], ["mercury:t1", "compra-tarjeta", -7.5]], "del más nuevo al más viejo, sin lo anterior al día pedido");
+    assert.deepEqual(r.movimientos.map((m) => [m.ref, m.tipo, m.monto]), [["mercury:t3", "compra-credito", -85], ["mercury:t2", "cobro", 1500], ["mercury:t1", "compra-tarjeta", -7.5]], "del más nuevo al más viejo, sin lo anterior al día pedido");
     assert.equal(r.avisos.length, 1, "la cuenta de ahorro falló: se avisa y lo demás sigue");
     assert.match(r.avisos[0], /Savings/);
     /* Una tarjeta que no devuelve compras se avisa. */

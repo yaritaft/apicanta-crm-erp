@@ -70,13 +70,13 @@ export function MovimientosDeLaCuenta({ cuentaId, desde, onCerrar }: { cuentaId:
     },
     {
       clave: "estado", titulo: "En la app", orden: (m) => TEXTO[m.estadoApp],
-      celda: (m) => <span title={m.donde}><Badge variante={VARIANTE[m.estadoApp]}>{TEXTO[m.estadoApp]}</Badge>{m.donde && (m.estadoApp !== "falta" || m.tipo === "contracargo") && <span className="t-sm t-subtle" style={{ display: "block", maxWidth: 260 }}>{m.donde}</span>}</span>,
+      celda: (m) => <span title={m.donde}><Badge variante={VARIANTE[m.estadoApp]}>{TEXTO[m.estadoApp]}</Badge>{m.donde && (m.estadoApp !== "falta" || m.tipo === "contracargo") && <span className="t-sm t-subtle" style={{ display: "block", maxWidth: 360, whiteSpace: "normal" }}>{m.donde}</span>}</span>,
     },
     {
       clave: "accion", titulo: "",
       celda: (m) => {
         if (m.estadoApp === "cargado" || m.estadoApp === "no-se-carga") return null;
-        if (m.tipo === "cobro" || m.tipo === "pase" || m.tipo === "contracargo") return <span className="t-sm t-subtle">Entra con «Sincronizar»</span>;
+        if (m.tipo === "cobro" || m.tipo === "pase") return <span className="t-sm t-subtle">Entra con «Sincronizar»</span>;
         return (
           <span className="row" style={{ gap: 6 }}>
             <Button sm variante={m.estadoApp === "parecido" ? "ghost" : "secondary"} onClick={() => setCargando({ mov: m, comoIngreso: m.monto > 0 })}>
