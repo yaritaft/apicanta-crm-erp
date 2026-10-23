@@ -3,7 +3,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
-  CalendarClock, Check, ChevronRight, FileSignature, FileWarning, Hourglass, PhoneCall, PlayCircle, Repeat2, UserPlus, Video, X,
+  CalendarClock, Check, ChevronRight, FileSignature, FileWarning, Hourglass, PhoneCall, Pin, PlayCircle, Repeat2, UserPlus, Video, X,
 } from "lucide-react";
 import { Telefono } from "@/components/ui/Telefono";
 import { NADA, Recorte, TablaCs } from "@/components/cs/TablaCs";
@@ -17,11 +17,14 @@ import { nivelDeRuta } from "@/lib/permisos";
 import { formatoDia, hoyDelNegocio } from "@/lib/seguimiento";
 import {
   COLUMNAS_CARTERA, coincideCartera, ETAPAS_DEL_ALUMNO, MOTOR_CARTERA, ORDEN_CARTERA, ORDEN_ETAPAS_CARTERA, ORDEN_LISTA, panelDeServicio,
-  renglonesCartera, VISIBLES_CARTERA, VISIBLES_LISTA, type ClaveCartera, type ContratoPendiente, type EtapaAlumnoId, type RenglonCartera, type SeccionServicio,
+  renglonesCartera, VISIBLES_CARTERA, VISIBLES_LISTA, type ClaveCartera, type ContratoPendiente,
+  FIJADOS_POR_DEFECTO, mismoFollowUp, validarFijados, type EtapaAlumnoId, type RenglonCartera, type SeccionServicio,
 } from "@/lib/panel-servicio";
 import type { ColumnaCs } from "@/lib/tabla-cs";
 import type { MiembroEquipo } from "@/lib/types";
 import { posiblesDuplicados } from "@/lib/duplicados";
+import { usePreferencia } from "@/lib/preferencias";
+import { listasCs } from "@/lib/clientes-cs";
 import { alumnosRepetidos } from "@/lib/alumnos-repetidos";
 import { personaDe } from "@/lib/persona";
 import { plural, saludoDe } from "./util";
@@ -74,7 +77,7 @@ export function PanelServicio({ miembro, viendoOtro }: { miembro: MiembroEquipo;
   const { acceso } = useAcceso();
   const gestos = useGestos();
   const abrirFicha = useAbrirFicha();
-  const [v, cambiar] = useParamsURL({ lista: "", etapa: "", base: "" });
+  const [v, cambiar] = useParamsURL({ lista: "", etapa: "", base: "", fu: "" });
   const [ahora, setAhora] = useState(() => Date.now());
   useEffect(() => { const t = window.setInterval(() => setAhora(Date.now()), 60000); return () => window.clearInterval(t); }, []);
 
@@ -100,7 +103,20 @@ export function PanelServicio({ miembro, viendoOtro }: { miembro: MiembroEquipo;
     return n;
   }, [base]);
   /* Una lista de «Para hoy» trae a los suyos (estén o no en servicio): sus datos se buscan en toda la cartera. */
-  const renglones = useMemo(() => renglonesCartera(lista ? panel.cartera : base, lista, etapa), [panel, base, lista, etapa]);
+  const fijadosPref = usePreferencia("panel-servicio:fijados", validarFijados);
+  const fijados = fijadosPref.valor ?? FIJADOS_POR_DEFECTO;
+  const fijado = !lista && !etapa && v.fu ? v.fu : undefined;
+  const opcionesFollowUp = useMemo(() => {
+    const deLaLista = listasCs(e.ajustes.seguimiento).followUps;
+    const cargados = panel.cartera.map((f) => f.followUp).filter((x) => x && !deLaLista.some((o) => mismoFollowUp(o, x)));
+    return [...deLaLista, ...new Set(cargados)].filter((o) => !fijados.some((f) => mismoFollowUp(f, o)));
+  }, [e.ajustes.seguimiento, panel.cartera, fijados]);
+  const fijar = (fu: string) => { if (fu) fijadosPref.guardar([...fijados, fu]); };
+  const desfijar = (fu: string) => {
+    fijadosPref.guardar(fijados.filter((x) => !mismoFollowUp(x, fu)));
+    if (fijado && mismoFollowUp(fijado, fu)) cambiar({ fu: null }, PRIMERA_HOJA);
+  };
+  const renglones = useMemo(() => renglonesCartera(lista ? panel.cartera : base, lista, etapa, fijado), [panel, base, lista, etapa, fijado]);
   const irACartera = () => window.setTimeout(() => document.getElementById("ps-cartera")?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
 
   /* Alumnos con dos fichas (el mismo teléfono, otro mail; Lili, 22/10). Se abre la ficha que tiene más historia: ahí está
@@ -221,7 +237,7 @@ export function PanelServicio({ miembro, viendoOtro }: { miembro: MiembroEquipo;
                 return (
                   <button
                     key={s.id} type="button" className={`ps-tarea${activa ? " ps-tarea--on" : ""}`} aria-pressed={activa}
-                    onClick={() => { cambiar({ lista: activa ? null : s.id, etapa: null }, TABLA_LIMPIA); if (!activa) irACartera(); }}
+                    onClick={() => { cambiar({ lista: activa ? null : s.id, etapa: null, fu: null }, TABLA_LIMPIA); if (!activa) irACartera(); }}
                   >
                     <span className="ps-ico" style={{ "--tono": t.tono } as React.CSSProperties}>{t.icono}</span>
                     <span className="ps-tarea__txt">
@@ -244,7 +260,7 @@ export function PanelServicio({ miembro, viendoOtro }: { miembro: MiembroEquipo;
           <h2 className="ps-tit">{viendoOtro ? "Sus números" : "Tus números"}</h2>
           <p className="ps-ayuda">Cómo va la cartera, con los datos que hay cargados.</p>
           <div className="ps-kpis">
-            <button type="button" className="ps-kpi" onClick={() => { cambiar({ lista: null, etapa: null, base: null }); irACartera(); }}>
+            <button type="button" className="ps-kpi" onClick={() => { cambiar({ lista: null, etapa: null, fu: null, base: null }); irACartera(); }}>
               <span className="ps-kpi__rot">En servicio</span><span className="ps-kpi__val">{num.enServicio}</span>
               <span className="ps-kpi__ctx">de {panel.cartera.length} alumnos en la app</span>
             </button>
@@ -256,7 +272,7 @@ export function PanelServicio({ miembro, viendoOtro }: { miembro: MiembroEquipo;
               <span className="ps-kpi__rot">Reportando</span><span className="ps-kpi__val">{pct(num.reportando.si, num.reportando.de)}</span>
               <span className="ps-kpi__ctx">{num.reportando.si} de {num.reportando.de} con el dato del reporte</span>
             </div>
-            <button type="button" className="ps-kpi" onClick={() => { cambiar({ lista: null, etapa: "exito", base: "todos" }); irACartera(); }}>
+            <button type="button" className="ps-kpi" onClick={() => { cambiar({ lista: null, etapa: "exito", base: "todos", fu: null }); irACartera(); }}>
               <span className="ps-kpi__rot">Casos de éxito</span><span className="ps-kpi__val">{num.casosDeExito}</span>
               <span className="ps-kpi__ctx">con el Follow Up en caso de éxito</span>
             </button>
@@ -278,6 +294,29 @@ export function PanelServicio({ miembro, viendoOtro }: { miembro: MiembroEquipo;
           <p className="ps-ayuda">Cada alumno en su etapa del recorrido (sale de su Follow Up). Tocá una etapa para filtrar y un alumno para abrir su ficha.</p>
         </div>
 
+        <div className="ps-fijados" aria-label="Follow Ups fijados">
+          <span className="ps-fijados__rot"><Pin size={13} aria-hidden />Fijados</span>
+          {fijados.map((fu) => {
+            const on = Boolean(fijado && mismoFollowUp(fijado, fu));
+            const cuenta = base.filter((f) => mismoFollowUp(f.followUp, fu)).length;
+            return (
+              <span key={fu} className={`ps-fijado${on ? " ps-fijado--on" : ""}`}>
+                <button type="button" aria-pressed={on} title={`Los alumnos con el Follow Up «${fu}»`}
+                  onClick={() => { cambiar({ fu: on ? null : fu, lista: null, etapa: null }, lista ? TABLA_LIMPIA : PRIMERA_HOJA); if (!on) irACartera(); }}>
+                  <b className={cuenta === 0 ? "ps-fijado__cero" : undefined}>{cuenta}</b>{fu}
+                </button>
+                <button type="button" className="ps-fijado__sacar" aria-label={`Desfijar «${fu}»`} title="Desfijar" onClick={() => desfijar(fu)}><X size={12} /></button>
+              </span>
+            );
+          })}
+          {opcionesFollowUp.length > 0 && (
+            <select className="ps-fijar" value="" aria-label="Fijar otro Follow Up" onChange={(ev) => fijar(ev.target.value)}>
+              <option value="">+ Fijar un Follow Up</option>
+              {opcionesFollowUp.map((o) => <option key={o} value={o}>{o}</option>)}
+            </select>
+          )}
+        </div>
+
         <div className="ps-pipe" aria-label="Etapas">
           {ETAPAS_DEL_ALUMNO.map((x) => {
             const on = !lista && etapa === x.id;
@@ -285,7 +324,7 @@ export function PanelServicio({ miembro, viendoOtro }: { miembro: MiembroEquipo;
             return (
               <button
                 key={x.id} type="button" className={`ps-etapa${on ? " ps-etapa--on" : ""}${x.riesgo ? " ps-etapa--riesgo" : ""}`} aria-pressed={on} title={x.ayuda}
-                onClick={() => cambiar({ etapa: on ? null : x.id, lista: null }, lista ? TABLA_LIMPIA : PRIMERA_HOJA)}
+                onClick={() => cambiar({ etapa: on ? null : x.id, lista: null, fu: null }, lista ? TABLA_LIMPIA : PRIMERA_HOJA)}
               >
                 <span className={`ps-etapa__n${cuenta === 0 ? " ps-etapa__n--cero" : ""}`}>{cuenta}</span>
                 <span className="ps-etapa__rot">{x.label}</span>
@@ -308,10 +347,10 @@ export function PanelServicio({ miembro, viendoOtro }: { miembro: MiembroEquipo;
                 <button type="button" role="tab" aria-selected={!todos} onClick={() => cambiar({ base: null }, PRIMERA_HOJA)}>En servicio <span className="ps-seg-n">{panel.activos}</span></button>
                 <button type="button" role="tab" aria-selected={todos} onClick={() => cambiar({ base: "todos" }, PRIMERA_HOJA)}>Todos <span className="ps-seg-n">{panel.cartera.length}</span></button>
               </div>
-              {(lista || etapa) && (
+              {(lista || etapa || fijado) && (
                 <span className="ps-filtro">
-                  {lista ? lista.titulo : ETAPAS_DEL_ALUMNO.find((x) => x.id === etapa)?.label}
-                  <button type="button" aria-label="Quitar el filtro" onClick={() => cambiar({ lista: null, etapa: null }, lista ? TABLA_LIMPIA : PRIMERA_HOJA)}><X size={13} /></button>
+                  {lista ? lista.titulo : etapa ? ETAPAS_DEL_ALUMNO.find((x) => x.id === etapa)?.label : `Follow Up: ${fijado}`}
+                  <button type="button" aria-label="Quitar el filtro" onClick={() => cambiar({ lista: null, etapa: null, fu: null }, lista ? TABLA_LIMPIA : PRIMERA_HOJA)}><X size={13} /></button>
                 </span>
               )}
             </>
@@ -335,7 +374,7 @@ export function PanelServicio({ miembro, viendoOtro }: { miembro: MiembroEquipo;
           <b>{cvs.enCurso}</b> CV y LinkedIn en curso (Aldana)
         </Link>
         {panel.enOutboarding > 0 && (
-          <button type="button" className="ps-dato" onClick={() => { cambiar({ lista: null, etapa: "outboarding", base: "todos" }); irACartera(); }}
+          <button type="button" className="ps-dato" onClick={() => { cambiar({ lista: null, etapa: "outboarding", base: "todos", fu: null }); irACartera(); }}
             title="Su Follow Up dice outboarding o caso de éxito: no entran a «Para hoy». Su estado de alumno no se tocó.">
             <b>{panel.enOutboarding}</b> figuran activos y ya cerraron el programa
           </button>

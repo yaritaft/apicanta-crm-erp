@@ -24,6 +24,7 @@ import { FormSesionUnoAUno } from "./FormSesionUnoAUno";
 import { PausasAlumno } from "./PausasAlumno";
 import { BienvenidaAlumno } from "@/components/contratos/BienvenidaAlumno";
 import { AvisoAlumnoRepetido } from "./AvisoAlumnoRepetido";
+import { NotaDeCharla } from "./NotaDeCharla";
 import { textoDePausa } from "@/lib/pausas";
 import { ventaPendienteDe } from "@/lib/alumnos";
 import { resumenBonos } from "@/lib/bonos";
@@ -189,6 +190,7 @@ function HojaDeUnServicio({ e, p, f, venta, producto, conChat, reserva }: {
   const [solapa, setSolapa] = useSolapaServicio(conChat ? SIN_SOLAPA_CHAT : SOLAPAS_SERVICIO);
   const solapasRef = useSolapasQueSeDeslizan(solapa);
   const [editando, setEditando] = useState<ClaveCliente | "programa" | null>(null);
+  const [nota, setNota] = useState(false);
   const [editarAlumno, setEditarAlumno] = useState<Alumno | null>(null);
   /* Testimonio y resell se cargan y corrigen acá mismo, con los formularios de sus pantallas (Alumnos → Testimonios / Resells). */
   const [formTestimonio, setFormTestimonio] = useState<{ t?: Testimonio } | null>(null);
@@ -356,8 +358,16 @@ function HojaDeUnServicio({ e, p, f, venta, producto, conChat, reserva }: {
           <span className="hs-hoy__acc">
             <Button sm variante="primary" icono={<PhoneCall size={14} />} onClick={() => gestos.contacte(f)}>Lo contacté</Button>
             <Button sm variante="secondary" icono={<PhoneMissed size={14} />} onClick={() => gestos.noContesto(f, cfg)}>No contestó</Button>
+            <Button sm variante="ghost" icono={<MessageSquareText size={14} />} onClick={() => setNota(true)}
+              title="Lo que hablaron (una queja, una sugerencia, un agradecimiento), con fotos o videos, y a quién del equipo avisarle">
+              Anotar la charla
+            </Button>
           </span>
         </div>
+      )}
+      {nota && (
+        <NotaDeCharla e={e} contactoId={p.clave} nombre={alumno.nombre} puedeContactar={activo && puede}
+          onContacte={() => gestos.contacte(f)} onCerrar={() => setNota(false)} />
       )}
 
       <div ref={solapasRef} className="hs-solapas" role="tablist" aria-label="Qué ver del servicio">

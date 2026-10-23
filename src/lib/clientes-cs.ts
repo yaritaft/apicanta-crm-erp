@@ -37,6 +37,8 @@ export const LISTAS_POR_DEFECTO: ListasCs = {
   followUps: [
     "Onboarding", ...Array.from({ length: 13 }, (_, i) => `Módulo ${i}`), "Módulo IA", "Take Home Challenge",
     "Avanzando", "No avanzando", "No contesta",
+    /* Lili, 23/10: el que ya hay que llamar para venderle la renovación (etapa «Renovación», lib/panel-servicio.ts). */
+    "Agendar para resell",
     /* Lili, 22/10. «Outboarding» también: es el que deja «No renueva» y saca al alumno del servicio. */
     "Roadmap", "Contenido Hackear AI", "Con entrevistas", "Caso de éxito", "No aplica recomendaciones", "Avanza lento",
     "Vio todo no tiene resultados", "Outboarding",

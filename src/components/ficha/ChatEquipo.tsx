@@ -13,6 +13,7 @@ import { useUsuarioActual } from "@/lib/usuario";
 import {
   ADJUNTOS_POR_MENSAJE, descartarAdjunto, duracionLegible, normalizarPicos, problemaDeAdjunto, subirAdjunto, tamanioLegible, tipoDeArchivo, urlDeAdjunto,
 } from "@/lib/adjuntos-chat";
+import { marcarLeidosDeLaFicha } from "@/components/avisos/avisos-nube";
 import {
   candidatosDeMencion, claveDe, contextoDeEntrega, entregaCon, mencionEnCurso, partesConMenciones, ponerMencion, resumenDeMensaje, type DetalleEntrega,
 } from "@/lib/chat-equipo";
@@ -1000,7 +1001,12 @@ export function ChatEquipo({ contactoId, comentarios: llegados, titulo = "Chat d
   /* Con el chat a la vista, lo que escribieron los demás queda LEÍDO (sus tildes se ponen azules).
      Si la pestaña está escondida, recién cuando se vuelve a ella. */
   useEffect(() => {
-    const leer = () => { if (document.visibilityState === "visible") acciones.marcarLeido(contactoId, quien, yo.nombre); };
+    /* Leer el chat también apaga los avisos de esta ficha (supabase/avisos.sql), como en Blue OS. */
+    const leer = () => {
+      if (document.visibilityState !== "visible") return;
+      acciones.marcarLeido(contactoId, quien, yo.nombre);
+      void marcarLeidosDeLaFicha(contactoId);
+    };
     leer();
     document.addEventListener("visibilitychange", leer);
     return () => document.removeEventListener("visibilitychange", leer);

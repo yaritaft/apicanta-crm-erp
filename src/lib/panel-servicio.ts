@@ -465,7 +465,23 @@ export function coincideCartera(r: RenglonCartera, q: string): boolean {
 }
 
 /** Los renglones de la cartera: los de la lista elegida o los alumnos de la base (en servicio o todos), de una etapa si se eligió. */
-export function renglonesCartera(cartera: readonly FilaCartera[], lista?: SeccionServicio, etapa?: EtapaAlumnoId): RenglonCartera[] {
+/* ---------- Follow Ups fijados ----------
+   Lili (23/10): «poder fijar en mi panel alumnos con el Follow Up No contestan / Agendar para resell». Cada uno fija los
+   que quiere (lib/preferencias, por usuario); de entrada, esos dos. */
+export const FIJADOS_POR_DEFECTO = ["No contesta", "Agendar para resell"];
+
+/** El mismo Follow Up sin mirar mayúsculas ni tildes («AGENDA PARA RESELL» del Airtable se pasó a «Agendar para resell»). */
+export const mismoFollowUp = (a: string | null | undefined, b: string | null | undefined): boolean =>
+  sinTildes(a ?? "") !== "" && sinTildes(a ?? "") === sinTildes(b ?? "");
+
+/** Lo guardado: una lista de textos cortos, sin repetidos ni vacíos (null si no es eso). */
+export function validarFijados(x: unknown): string[] | null {
+  if (!Array.isArray(x)) return null;
+  const limpios = x.filter((v): v is string => typeof v === "string").map((v) => v.trim().slice(0, 60)).filter(Boolean);
+  return limpios.filter((v, i) => limpios.findIndex((w) => mismoFollowUp(v, w)) === i).slice(0, 12);
+}
+
+export function renglonesCartera(cartera: readonly FilaCartera[], lista?: SeccionServicio, etapa?: EtapaAlumnoId, followUp?: string): RenglonCartera[] {
   if (lista) {
     const porId = new Map(cartera.map((f) => [f.id, f] as const));
     return lista.items.map((i) => {
@@ -473,5 +489,6 @@ export function renglonesCartera(cartera: readonly FilaCartera[], lista?: Seccio
       return { id: i.clave, alumnoId: i.alumnoId, nombre: i.nombre, programa: fila?.programa || i.programa || "", fila, item: i };
     });
   }
-  return cartera.filter((f) => !etapa || f.etapa === etapa).map((f) => ({ id: f.id, alumnoId: f.id, nombre: f.nombre, programa: f.programa, fila: f }));
+  return cartera.filter((f) => (!etapa || f.etapa === etapa) && (!followUp || mismoFollowUp(f.followUp, followUp)))
+    .map((f) => ({ id: f.id, alumnoId: f.id, nombre: f.nombre, programa: f.programa, fila: f }));
 }

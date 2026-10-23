@@ -35,6 +35,7 @@ import { Tour } from "./Tour";
 import { ID_ACCIONES_TOPBAR } from "./AccionesTopbar";
 import { useChatEnVivo } from "@/components/ficha/useChatEnVivo";
 import { FotoDePerfil } from "./FotoDePerfil";
+import { Campanita } from "@/components/avisos/Campanita";
 
 export function Shell({ children }: { children: React.ReactNode }) {
   const ruta = usePathname();
@@ -343,6 +344,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
                 <kbd>⌘K</kbd>
               </span>
             </Button>
+            <Campanita />
           </div>
         </header>
 

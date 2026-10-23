@@ -1,0 +1,63 @@
+/* La campanita de arriba y su lista (components/avisos/Campanita.tsx). */
+.avisos { position: relative; display: inline-flex; }
+.avisos__boton { position: relative; }
+.avisos__numero {
+  position: absolute; top: -4px; right: -6px; min-width: 18px; height: 18px; padding: 0 5px;
+  display: inline-grid; place-items: center; border-radius: var(--radius-full);
+  background: var(--accent); color: #fff; font-size: 11px; font-weight: 700; line-height: 1;
+  font-variant-numeric: tabular-nums; pointer-events: none;
+}
+.avisos__panel {
+  position: absolute; top: calc(100% + 8px); right: 0; z-index: 150;
+  width: min(400px, calc(100vw - 24px)); max-height: min(560px, 75vh);
+  display: flex; flex-direction: column;
+  background: var(--surface-100); border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg); box-shadow: var(--shadow-lg); overflow: hidden;
+  animation: pop 160ms cubic-bezier(.2,.8,.3,1);
+}
+.avisos__cab {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--space-3);
+  padding: var(--space-3) var(--space-4); border-bottom: 1px solid var(--border);
+}
+.avisos__todos {
+  display: inline-flex; align-items: center; gap: 6px; padding: 0; border: 0; background: none;
+  color: var(--brand); font-size: 13px; cursor: pointer;
+}
+.avisos__todos:hover { text-decoration: underline; }
+.avisos__lista { list-style: none; margin: 0; padding: var(--space-1); overflow-y: auto; }
+.avisos__item {
+  width: 100%; display: flex; align-items: flex-start; gap: var(--space-3);
+  padding: var(--space-3); border: 0; border-left: 2px solid transparent; border-radius: var(--radius-md);
+  background: none; color: var(--ink); text-align: left; cursor: pointer;
+}
+.avisos__item:hover, .avisos__item:focus-visible { background: var(--surface-200); }
+.avisos__item--nuevo { border-left-color: var(--accent); background: color-mix(in srgb, var(--accent) 7%, transparent); }
+.avisos__txt { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.avisos__tit { font-size: 14px; font-weight: 600; }
+.avisos__donde { font-size: 12px; color: var(--ink-subtle); }
+.avisos__cuerpo {
+  font-size: 13px; color: var(--ink-muted, var(--ink-subtle)); line-height: 1.45; white-space: pre-line;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden;
+}
+.avisos__cuando { flex: none; font-size: 12px; color: var(--ink-subtle); white-space: nowrap; }
+.avisos__vacio { display: flex; flex-direction: column; gap: 4px; padding: var(--space-6) var(--space-5); text-align: center; }
+
+/* El cartel del aviso que acaba de llegar: abajo a la derecha, arriba de los toasts. */
+.avisos-emergente {
+  position: fixed; right: var(--space-5); bottom: calc(var(--space-5) + 72px); z-index: 210;
+  width: min(380px, calc(100vw - 32px)); display: flex; align-items: flex-start; gap: var(--space-3);
+  padding: var(--space-4); background: var(--surface-200); border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  border-radius: var(--radius-md); box-shadow: var(--shadow-lg); color: var(--ink);
+  animation: pop 200ms cubic-bezier(.2,.8,.3,1);
+}
+.avisos-emergente__punto { flex: none; width: 8px; height: 8px; margin-top: 7px; border-radius: var(--radius-full); background: var(--accent); }
+.avisos-emergente__txt { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.avisos-emergente__cuerpo {
+  font-size: 13px; color: var(--ink-subtle); line-height: 1.45; white-space: pre-line;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden;
+}
+.avisos-emergente__abrir {
+  align-self: flex-start; margin-top: var(--space-2); height: 28px; padding: 0 12px; border: 0;
+  border-radius: var(--radius-sm); background: var(--accent); color: #fff; font-size: 13px; font-weight: 600; cursor: pointer;
+}
+.avisos-emergente__cerrar { flex: none; padding: 2px; border: 0; background: none; color: var(--ink-subtle); cursor: pointer; }
