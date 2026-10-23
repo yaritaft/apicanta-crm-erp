@@ -299,6 +299,30 @@ export function cambioDe(t: Pick<Traspaso, "montoSale" | "monedaSale" | "montoLl
   return dolares > 0 && pesos > 0 ? r2(pesos / dolares) : null;
 }
 
+/* ---------- Qué falta para cargar un movimiento, y en qué pantalla se arregla ----------
+   El formulario paso a paso (FormTraspaso) pregunta una cosa por pantalla: cada cosa que falta dice cuál es la suya. El primero de la lista es el
+   que se muestra cuando no se puede cargar. */
+
+export type PasoMovimiento = "de" | "a" | "sale" | "llega" | "costo";
+
+export function problemasDelMovimiento(b: {
+  origenId?: ID; destinoId?: ID;
+  /* Un cobro de Conciliación: la cuenta a la que llegó ya se sabe y la de la que salió puede quedar sin decir. */
+  desdeCobro?: boolean;
+  montoSale: number; montoLlega: number;
+  /* Hay un costo en pesos para pasar a dólares y falta el tipo de cambio. */
+  faltaTc?: boolean;
+}): { paso: PasoMovimiento; texto: string }[] {
+  const out: { paso: PasoMovimiento; texto: string }[] = [];
+  if (!b.origenId && !b.desdeCobro) out.push({ paso: "de", texto: "Elegí de qué cuenta salió" });
+  if (!b.destinoId) out.push({ paso: "a", texto: "Elegí a qué cuenta llegó" });
+  else if (b.origenId && b.origenId === b.destinoId) out.push({ paso: "a", texto: "Las dos cuentas son la misma" });
+  if (!(b.montoSale > 0)) out.push({ paso: "sale", texto: "Poné cuánto salió" });
+  if (!(b.montoLlega > 0)) out.push({ paso: "llega", texto: "Poné cuánto llegó" });
+  if (b.faltaTc) out.push({ paso: "costo", texto: "Poné el tipo de cambio para cargar el gasto" });
+  return out;
+}
+
 const nombreDe = (e: Pick<EstadoApp, "procesadores">, id?: ID) => e.procesadores.find((p) => p.id === id)?.nombre ?? "otra cuenta";
 
 /* ---------- Un cobro que en realidad es un movimiento entre cuentas ----------

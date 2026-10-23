@@ -1,0 +1,14 @@
+/* El resumen de «Revisá y cargá» de un asistente paso a paso: cada dato con su «Cambiar», y lo que falta pintado (el estado va en el casillero). */
+.resumen-asistente { display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; }
+.resumen-asistente__fila {
+  display: grid; grid-template-columns: 132px minmax(0, 1fr) auto; align-items: baseline; gap: var(--space-3);
+  padding: var(--space-3) var(--space-4); border-bottom: 1px solid var(--border);
+}
+.resumen-asistente__fila:last-child { border-bottom: 0; }
+.resumen-asistente__fila[data-falta="true"] { background: color-mix(in srgb, var(--warning) 12%, transparent); }
+.resumen-asistente__etiqueta { color: var(--ink-subtle); font-size: 13px; }
+.resumen-asistente__valor { min-width: 0; overflow-wrap: anywhere; color: var(--ink); font-weight: 500; }
+@media (max-width: 640px) {
+  .resumen-asistente__fila { grid-template-columns: minmax(0, 1fr) auto; }
+  .resumen-asistente__etiqueta { grid-column: 1 / -1; }
+}
