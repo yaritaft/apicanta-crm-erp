@@ -62,7 +62,7 @@ export function ListaDevoluciones({ e, mes }: { e: EstadoApp; mes: RangoMes }) {
           hero etiqueta={`Devuelto en ${mes.etiqueta}`} valor={M(total, 0)}
           contexto={`${delMes.length} ${delMes.length === 1 ? "devolución" : "devoluciones"}`}
           info={{
-            ayuda: "La plata que se le devolvió a clientes en el período. Resta del Cash Collected, del estado de resultados y de la caja de la cuenta de la que salió, en el mes en que se devolvió: la venta sigue contando en su mes.",
+            ayuda: "La plata que se le devolvió a clientes en el período. Resta del Cash Collected y del estado de resultados del mes en que se devolvió: la venta sigue contando en su mes. Baja además la caja de la cuenta de la que salió si es posterior al último arqueo; una devolución de antes del arqueo no mueve la caja de hoy (el saldo que se contó ya venía sin esa plata).",
             formula: "Suma de las devoluciones confirmadas con fecha en el período\nEl Cash Collected es lo cobrado menos esto",
             periodo: mes.etiqueta,
             componentes: () => [
@@ -167,7 +167,8 @@ export function ListaDevoluciones({ e, mes }: { e: EstadoApp; mes: RangoMes }) {
 
       <Ayuda titulo="Cómo se cuentan las devoluciones" icono={<Info size={18} />}>
         La venta sigue contando en el mes en que se hizo. La devolución resta en el mes en que se devuelve la plata: Cash Collected,
-        estado de resultados y la caja de la cuenta de la que salió. La comisión de la pasarela no vuelve (Stripe se la queda).
+        estado de resultados. La caja de la cuenta de la que salió baja sólo si el día es posterior al último arqueo: una devolución de antes del
+        conteo no mueve la caja de hoy, porque el saldo que se contó ya venía sin esa plata. La comisión de la pasarela no vuelve (Stripe se la queda).
         Al closer y al director se les revierte exactamente lo que se les comisionó por lo cobrado de esa venta, como una línea negativa
         «Devolución de …» en la liquidación del mes de la devolución; con «no descontar al closer», no se revierte nada. Si ese mes ya
         está cerrado, la liquidación cerrada no se reescribe: lo que se descuenta entra en la del mes que sigue.

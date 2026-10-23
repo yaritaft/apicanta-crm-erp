@@ -24,6 +24,7 @@ import {
 } from "@/lib/devoluciones";
 import { escribirMonto, leerMonto } from "@/lib/gastos";
 import { diaDeNegocio } from "@/lib/dia-negocio";
+import { cuentaEnLaCajaDeHoy } from "@/lib/caja";
 import { fechaLarga, money } from "@/lib/format";
 import { nombrePeriodo, periodoDeFecha } from "@/lib/periodos";
 import { esCuentaEnPesos } from "@/lib/reporteFinanciera";
@@ -159,6 +160,7 @@ function Formulario({ pedido }: { pedido: PedidoDevolucion }) {
     const otras = (e.devoluciones ?? []).filter((d) => d.id !== previa?.id && d.id !== propuesta?.id);
     return reversasDeComision({ ...e, devoluciones: [...otras, hipotetica] }).find((r) => r.devolucion.id === "__nueva__") ?? null;
   }, [e, venta, montoNum, fechaIso, medio, noDescontar, previa?.id, propuesta?.id]);
+  const enCaja = useMemo(() => cuentaEnLaCajaDeHoy(e, fechaIso), [e, fechaIso]);
   const mes = nombrePeriodo(periodoDeFecha(fechaIso) || periodoDeFecha(new Date().toISOString()));
   const mesVenta = venta ? nombrePeriodo(periodoDeFecha(venta.fecha)) : "";
   const cuenta = cuentaElegida?.nombre;
@@ -326,8 +328,21 @@ function Formulario({ pedido }: { pedido: PedidoDevolucion }) {
               <div className="t-strong">Qué pasa al cargarla</div>
               <ul className="devol-efecto__lista">
                 <li>
-                  Resta <b className="t-num">{M(montoNum)}</b> en Finanzas de <b>{mes}</b>: Cash Collected, estado de resultados y {cuenta ? `la caja de ${cuenta}` : "la caja"}{pesos.montoArs ? ` (salen ${money(pesos.montoArs, "ARS", 0)} de esa cuenta)` : ""}.
+                  Resta <b className="t-num">{M(montoNum)}</b> en Finanzas de <b>{mes}</b>: Cash Collected y estado de resultados.
                   La venta sigue contando en {mesVenta}. La comisión de la pasarela no vuelve.
+                </li>
+                <li>
+                  {enCaja.cuenta
+                    ? <>
+                      <b>Baja la caja de hoy</b>: sale de {cuenta ? `la caja de ${cuenta}` : "la caja"}{pesos.montoArs ? ` (salen ${money(pesos.montoArs, "ARS", 0)} de esa cuenta)` : ""}.
+                      {enCaja.arqueo
+                        ? ` Cuenta porque ese día es posterior al último arqueo (${fechaLarga(enCaja.arqueo.fecha)}). Si la plata ya había salido antes de ese conteo, poné el día en que salió de verdad.`
+                        : " Todavía no hay ningún arqueo: cuenta desde el principio."}
+                    </>
+                    : <>
+                      <b>No cambia la caja de hoy</b>: ese día es anterior al último arqueo ({enCaja.arqueo ? fechaLarga(enCaja.arqueo.fecha) : ""}) y el saldo que se contó ahí
+                      ya venía sin esa plata. Sólo se mueve {mes}.
+                    </>}
                 </li>
                 <li>
                   {efecto.sinDescuento

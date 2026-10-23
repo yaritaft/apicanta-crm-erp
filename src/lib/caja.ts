@@ -168,11 +168,19 @@ export function runway(e: EstadoApp, caja: number, hoy = new Date()): Runway {
 }
 
 /** El último arqueo hecho hasta ahora. */
-export function ultimoArqueo(e: EstadoApp, antesDe?: string): Arqueo | undefined {
+export function ultimoArqueo(e: Pick<EstadoApp, "arqueos">, antesDe?: string): Arqueo | undefined {
   const tope = antesDe ? new Date(antesDe).getTime() : Infinity;
   return [...(e.arqueos ?? [])]
     .filter((a) => new Date(a.fecha).getTime() < tope)
     .sort((a, b) => +new Date(b.fecha) - +new Date(a.fecha))[0];
+}
+
+/** Si algo que salió o entró ese día cuenta en lo que la app espera HOY en la caja y en cada cuenta (`cajaEsperada` y `saldosEsperados`): sólo
+    cuenta lo posterior al último arqueo, porque el saldo que se contó ahí ya traía todo lo anterior. Sin ningún arqueo, cuenta todo.
+    Una devolución cargada con fecha de un mes pasado resta en ESE mes (Cash Collected y estado de resultados), pero no mueve la caja de hoy. */
+export function cuentaEnLaCajaDeHoy(e: Pick<EstadoApp, "arqueos">, fechaIso: string): { cuenta: boolean; arqueo?: Arqueo } {
+  const arqueo = ultimoArqueo(e);
+  return { cuenta: !arqueo || Date.parse(fechaIso) > Date.parse(arqueo.fecha), arqueo };
 }
 
 /* Las cuentas que no se usan seguido van en «Otros», al final del arqueo: a

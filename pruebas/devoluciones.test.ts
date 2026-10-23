@@ -6,11 +6,11 @@ import {
 import {
   devolvibleDeVenta, mesDeLiquidacion, problemaDeDevolucion, reversasDeComision, reversasDelMes,
 } from "@/lib/devoluciones";
-import { cajaEsperada } from "@/lib/caja";
+import { cajaEsperada, cuentaEnLaCajaDeHoy } from "@/lib/caja";
 import { saldosEsperados } from "@/lib/traspasos";
 import { abribles, armarEstadoResultados, ayudaDeRenglon, esBloque, type ItemPyL, type NodoPyL } from "@/lib/estadoResultados";
 import { rangoDePeriodo } from "@/lib/periodos";
-import type { EstadoApp } from "@/lib/types";
+import type { Arqueo, EstadoApp } from "@/lib/types";
 import {
   devolucion, estadoDeYari, iso, liquidacionCerrada, NOVIEMBRE, OCTUBRE, pago, SEPTIEMBRE,
 } from "./estado-devolucion";
@@ -229,6 +229,36 @@ test("la caja resta la devolución (y la de la cuenta de la que salió), pero no
   assert.equal(stripe.entro, 1455);                // la cuota 2, neta de su comisión
   assert.equal(stripe.salio, 3000);
   assert.equal(stripe.esperado, r2(5000 + 1455 - 3000));
+});
+
+/* Aldana (23/10): «me pide cargar un reembolso de mayo; si lo cargo, ¿impacta en la caja de ahora?». El formulario lo dice con esta misma regla: sólo cuenta
+   para la caja (la total y la de cada cuenta) lo que cae después del último arqueo; lo anterior resta en su mes, pero el saldo que se contó ya lo traía. */
+test("una devolución de un mes pasado no mueve la caja de hoy; una posterior al último arqueo, sí (y el formulario lo avisa con la misma regla)", () => {
+  const arqueo = {
+    id: "arq1", fecha: iso(OCTUBRE, 21, 4), total: 10000,
+    saldos: [{ procesadorId: "proc_stripe", monto: 5000, moneda: "USD", montoBase: 5000 }],
+  } as unknown as Arqueo;
+  const hasta = iso(OCTUBRE, 23, 20);
+  const junio = "2026-06-15T15:00:00.000Z";
+  const base = estadoDeYari({ arqueos: [arqueo] });
+  const vieja = estadoDeYari({ arqueos: [arqueo], devoluciones: [devolucion({ id: "dj", monto: 610, fecha: junio })] });
+  const nueva = estadoDeYari({ arqueos: [arqueo], devoluciones: [devolucion({ id: "dn", monto: 610, fecha: iso(OCTUBRE, 22, 15) })] });
+  const stripe = (e: EstadoApp) => saldosEsperados(e, { fecha: arqueo.fecha, saldos: arqueo.saldos }, hasta).get("proc_stripe")!;
+
+  assert.equal(cuentaEnLaCajaDeHoy(vieja, junio).cuenta, false);
+  assert.equal(cuentaEnLaCajaDeHoy(vieja, junio).arqueo?.id, "arq1");
+  assert.equal(cajaEsperada(vieja, arqueo, hasta).esperado, cajaEsperada(base, arqueo, hasta).esperado);
+  assert.equal(stripe(vieja).salio, 0);
+  assert.equal(stripe(vieja).esperado, stripe(base).esperado);
+
+  assert.equal(cuentaEnLaCajaDeHoy(nueva, iso(OCTUBRE, 22, 15)).cuenta, true);
+  assert.ok(cajaEsperada(nueva, arqueo, hasta).esperado < cajaEsperada(base, arqueo, hasta).esperado);
+  assert.equal(stripe(nueva).salio, 610);
+
+  /* El día del arqueo mismo: lo anterior al conteo no cuenta, lo posterior sí; sin ningún arqueo, todo cuenta. */
+  assert.equal(cuentaEnLaCajaDeHoy(base, iso(OCTUBRE, 21, 3)).cuenta, false);
+  assert.equal(cuentaEnLaCajaDeHoy(base, iso(OCTUBRE, 21, 5)).cuenta, true);
+  assert.deepEqual(cuentaEnLaCajaDeHoy({ arqueos: [] }, junio), { cuenta: true, arqueo: undefined });
 });
 
 test("lo que salió de una cuenta en pesos se descuenta en pesos", () => {
