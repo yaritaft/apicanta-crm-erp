@@ -45,7 +45,7 @@ test("0 · el ancla: el formulario guarda las 12:00 de Argentina y las dos cuent
   const form = readFileSync(join(RAIZ, "src/components/devoluciones/CargarDevolucion.tsx"), "utf8");
   assert.ok(form.includes("const mediodia = mediodiaDeNegocio;"), "el formulario cambió");
   assert.ok(form.includes("const fechaIso = mediodia(dia);"), "el formulario ya no valida con el mediodía");
-  assert.ok(form.includes("devolvibleDeVenta(e, venta.id, fechaIso, previa?.id)") && form.includes("problemaDeDevolucion("), "el formulario cambió");
+  assert.ok(form.includes("devolvibleDeVenta(e, venta.id, fechaIso, previa?.id)") && form.includes("problemasDeDevolucion("), "el formulario cambió");
   const lib = readFileSync(join(RAIZ, "src/lib/devoluciones.ts"), "utf8");
   assert.ok(!lib.includes("Date.parse(p.fecha) <= t"), "alguna cuenta vuelve a comparar instantes");
   assert.ok(lib.includes("diasDePago") && lib.includes("delDia("), "ya no compara por día");
