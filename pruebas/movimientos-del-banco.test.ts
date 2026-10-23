@@ -5,9 +5,9 @@ import {
 } from "@/lib/movimientos-del-banco";
 import { borradorInicial, datosDelGasto } from "@/lib/carga-gasto";
 import { saldosEsperados } from "@/lib/traspasos";
-import { movimientosDeMercury, movimientosDeStripe } from "@/lib/pasarelas-api";
+import { movimientosDeMercury, movimientosDeStripe, reembolsoDeContracargoStripe } from "@/lib/pasarelas-api";
 import { construirSemilla } from "@/lib/seed";
-import type { EstadoApp, Gasto, Movimiento, Traspaso } from "@/lib/types";
+import type { Devolucion, EstadoApp, Gasto, Movimiento, Traspaso } from "@/lib/types";
 
 /* Aldana (22/10): el saldo de Mercury «está bien» pero no encuentra dónde queda lo que consume Yari ni el cashback; Stripe «marca diferencia si
    sólo hubo un movimiento». Lo que sale del banco y no es un cobro no se guardaba en ningún lado. */
@@ -26,6 +26,9 @@ test("Mercury: una compra con tarjeta (de débito o de crédito) es un gasto; el
   assert.equal(movimientoDeMercury(mercury({ id: "c2", kind: "creditCardTransaction", counterpartyName: "Stripe Payments Bar" }), "proc_mercury")!.tipo, "compra-tarjeta");
   const pago = movimientoDeMercury(mercury({ id: "p1", kind: "creditCardPayment", counterpartyName: "Mercury IO Cashback Credit Card", amount: -5000 }), "proc_mercury")!;
   assert.equal(pago.tipo, "pago-tarjeta");
+  /* Los casos reales del 22/10: el pago diario («Mercury Credit · IO AUTOPAY») y el cashback que entra («Mercury IO Cashback»). */
+  assert.equal(movimientoDeMercury(mercury({ id: "p2", kind: "externalTransfer", counterpartyName: "Mercury Credit", bankDescription: "IO AUTOPAY", amount: -2310.5 }), "proc_mercury")!.tipo, "pago-tarjeta");
+  assert.equal(movimientoDeMercury(mercury({ id: "k2", kind: "externalTransfer", counterpartyName: "Mercury IO Cashback", amount: 34.66 }), "proc_mercury")!.tipo, "cashback");
   const cashback = movimientoDeMercury(mercury({ id: "k1", kind: "other", counterpartyName: "Mercury", bankDescription: "Cashback", amount: 12.4 }), "proc_mercury")!;
   assert.equal(cashback.tipo, "cashback");
   assert.equal(cashback.monto, 12.4);
@@ -53,6 +56,9 @@ test("Stripe: el neto es lo que sube o baja el saldo; cobros, comisiones, reembo
   assert.equal(movimientoDeStripe(t({ type: "refund", amount: -50000, net: -50000, fee: 0 }), "proc_stripe")!.tipo, "reembolso");
   const retiro = movimientoDeStripe(t({ type: "payout", amount: -47750, net: -47750, fee: 0, source: "po_9" }), "proc_stripe")!;
   assert.deepEqual([retiro.tipo, retiro.monto, retiro.refApp], ["pase", -477.5, ["txn_1", "po_9"]]);
+  /* Los contracargos del 21/10 (lo que hacía que Stripe marcara 713 de diferencia): no son un retiro, son plata que un cliente disputó. */
+  const cc = movimientoDeStripe(t({ type: "adjustment", amount: -47200, net: -47200, fee: 0, description: "Chargeback withdrawal for ch_3UEVD8Cda71F5AQH1E3MEZNS", source: "du_1" }), "proc_stripe")!;
+  assert.deepEqual([cc.tipo, cc.monto], ["contracargo", -472]);
   /* «Stripe quitó plata para cubrir los saldos negativos»: es un retiro, aunque entre. */
   assert.equal(movimientoDeStripe(t({ type: "payout", amount: 24460, net: 24460, fee: 0, source: "po_10", description: "Withdrawal to cover a negative balance" }), "proc_stripe")!.tipo, "pase");
   assert.equal(movimientoDeStripe(t({ type: "adjustment", amount: -1200, net: -1200, fee: 0 }), "proc_stripe")!.tipo, "ajuste");
@@ -64,7 +70,7 @@ const banco = (extra: Partial<MovimientoDelBanco>): MovimientoDelBanco => ({
 });
 const estadoBase = () => {
   const base = construirSemilla() as EstadoApp;
-  return { ...base, movimientos: [] as Movimiento[], traspasos: [] as Traspaso[], gastos: [] as Gasto[], devoluciones: [], pagos: [] };
+  return { ...base, movimientos: [] as Movimiento[], traspasos: [] as Traspaso[], gastos: [] as Gasto[], devoluciones: [] as Devolucion[], pagos: [] };
 };
 const gasto = (extra: Partial<Gasto> & Record<string, unknown>): Gasto => ({
   id: "g1", categoria: "Pendiente de revisión", grupo: "operativo", concepto: "Café", monto: 7.5, moneda: "USD", fecha: "2026-10-21T12:00:00.000Z", creadoEn: "2026-10-21T12:00:00.000Z",
@@ -96,6 +102,28 @@ test("cruzar con la app: lo que ya está como cobro, pase o gasto se marca; lo p
   /* Lo que falta: sólo lo asentado. */
   const faltan = resumenDeLoQueFalta([...r, { ...r[5], ref: "mercury:pend", pendiente: true, monto: -999 }]);
   assert.deepEqual(faltan, { n: 3, sale: 92.5, entra: 12.4 });
+});
+
+test("el pago de la tarjeta: si el banco no muestra las compras es lo único que sale y se carga; si las muestra, no (sería contarlas dos veces)", () => {
+  const e = estadoBase();
+  const pago = banco({ ref: "mercury:pt", refApp: ["pt"], tipo: "pago-tarjeta", monto: -2310.5, contraparte: "Mercury Credit" });
+  assert.equal(cruzarConLaApp(e, [pago])[0].estadoApp, "falta", "sin compras visibles, hay que cargarlo");
+  assert.equal(cruzarConLaApp(e, [pago, banco({ ref: "mercury:c", refApp: ["c"] })])[0].estadoApp, "no-se-carga", "con las compras a la vista, no");
+  const inicial = borradorDesdeElBanco(pago, "ACH-WIRE Mercury", false);
+  assert.deepEqual([inicial.concepto, inicial.monto, inicial.proveedor], ["Pago de la tarjeta de crédito Mercury", "2.310,50", "Mercury"]);
+  assert.match(inicial.notas, /compras de esos días/);
+});
+
+test("un contracargo de Stripe: falta hasta que está como devolución (se propone con «Sincronizar»); cargado, avisa de la comisión de más", () => {
+  const e = estadoBase();
+  const cc = banco({ ref: "stripe:txn_9", refApp: ["txn_9", "du_1"], cuentaId: "proc_stripe", tipo: "contracargo", monto: -472, contraparte: "Chargeback withdrawal for ch_3UEVD8" });
+  const sin = cruzarConLaApp(e, [cc])[0];
+  assert.equal(sin.estadoApp, "falta");
+  assert.match(sin.donde ?? "", /Sincronizar/);
+  e.devoluciones = [{ id: "dev1", referencia: "stripe:disputa:du_1", monto: 457, estado: "confirmada" } as Devolucion];
+  const con = cruzarConLaApp(e, [cc])[0];
+  assert.equal(con.estadoApp, "cargado");
+  assert.match(con.donde ?? "", /contracargo.*457.*retiró US\$ 15 más/);
 });
 
 test("un gasto parecido de otra cuenta, de otro monto o de otra semana no cuenta como el del banco", () => {
@@ -172,6 +200,16 @@ test("el servidor trae los movimientos de Mercury de todas sus cuentas (también
     assert.deepEqual(r.movimientos.map((m) => [m.ref, m.tipo, m.monto]), [["mercury:t3", "compra-tarjeta", -85], ["mercury:t2", "cobro", 1500], ["mercury:t1", "compra-tarjeta", -7.5]], "del más nuevo al más viejo, sin lo anterior al día pedido");
     assert.equal(r.avisos.length, 1, "la cuenta de ahorro falló: se avisa y lo demás sigue");
     assert.match(r.avisos[0], /Savings/);
+    /* Una tarjeta que no devuelve compras se avisa. */
+    const sinCompras = globalThis.fetch;
+    globalThis.fetch = (async (url: string | URL | Request) => {
+      const u = String(url);
+      if (u.endsWith("/accounts")) return respuesta({ accounts: [{ id: "c1", kind: "creditCard", name: "Tarjeta" }] });
+      return respuesta({ transactions: [] });
+    }) as typeof fetch;
+    const sin = await movimientosDeMercury(new Date("2026-10-20T00:00:00Z"));
+    assert.match(sin.avisos[0] ?? "", /no mostró compras de la tarjeta «Tarjeta»/);
+    globalThis.fetch = sinCompras;
     assert.ok(pedidos.some((u) => u.includes("/account/c1/")), "también pidió la tarjeta de crédito");
     delete process.env.MERCURY_API_TOKEN;
     assert.deepEqual(await movimientosDeMercury(new Date()), { movimientos: [], avisos: [], conectada: false }, "sin clave: no está conectada");
@@ -205,4 +243,14 @@ test("el servidor trae los movimientos de Stripe de a páginas de 100 hasta que 
     globalThis.fetch = original;
     if (guardado === undefined) delete process.env.STRIPE_SECRET_KEY; else process.env.STRIPE_SECRET_KEY = guardado;
   }
+});
+
+test("un contracargo de Stripe se propone como devolución con el motivo; el que se ganó o es sólo un aviso de fraude, no", () => {
+  const d = (extra: Record<string, unknown>) => ({ id: "du_1", status: "needs_response", amount: 45700, currency: "usd", created: 1792537257, reason: "fraudulent", charge: { id: "ch_3UEVD8", payment_intent: "pi_8", billing_details: { name: "Erick Jiménez", email: "e@x.com" } }, ...extra });
+  const r = reembolsoDeContracargoStripe(d({}))!;
+  assert.deepEqual([r.proveedor, r.referencia, r.monto, r.referenciasCobro, r.motivo], ["stripe", "disputa:du_1", 457, ["ch_3UEVD8", "pi_8"], "Contracargo (fraudulent)"]);
+  assert.equal(reembolsoDeContracargoStripe(d({ status: "lost" }))!.monto, 457);
+  assert.equal(reembolsoDeContracargoStripe(d({ status: "won" })), null, "la plata volvió");
+  assert.equal(reembolsoDeContracargoStripe(d({ status: "warning_needs_response" })), null, "un aviso temprano no retiró nada");
+  assert.equal(reembolsoDeContracargoStripe(d({ amount: 0 })), null);
 });

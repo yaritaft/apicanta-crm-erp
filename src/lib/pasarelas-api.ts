@@ -619,6 +619,54 @@ export function reembolsoDeStripe(r: Obj): ReembolsoCrudo | null {
   };
 }
 
+/** Un contracargo de Stripe («du_…»): el cliente disputó el cobro con su banco y Stripe retiró la plata. Se propone como devolución (motivo
+ *  «Contracargo»), para confirmarla en Devoluciones con la venta y lo que se les revierte de comisión. Los que ya se ganaron (la plata volvió)
+ *  y los avisos tempranos de fraude (todavía no sacaron nada) no son plata devuelta. Aldana (22/10): dos contracargos de Stripe del 21/10
+ *  (US$ 240,53 y 472,00) nunca llegaron a la app: por eso «Stripe marca diferencia si sólo hubo un movimiento». */
+export function reembolsoDeContracargoStripe(d: Obj): ReembolsoCrudo | null {
+  const id = txt(d.id);
+  const estado = txt(d.status);
+  if (!id || !estado || estado === "won" || /^warning_/.test(estado)) return null;
+  const monto = dinero(Number(d.amount ?? 0) / 100);
+  if (!(monto > 0)) return null;
+  const cargo = (d.charge && typeof d.charge === "object" ? d.charge : undefined) as Obj | undefined;
+  const intento = d.payment_intent ?? cargo?.payment_intent;
+  const refs = [
+    txt(cargo?.id) ?? txt(d.charge),
+    txt(intento) ?? (intento && typeof intento === "object" ? txt((intento as Obj).id) : undefined),
+  ].filter((x): x is string => Boolean(x));
+  const quien = cargo ? pagadorStripe(cargo) : {};
+  const razon = txt(d.reason);
+  return {
+    proveedor: "stripe", referencia: `disputa:${id}`, referenciasCobro: refs.length ? refs : undefined,
+    monto, moneda: moneda(d.currency as string),
+    fecha: new Date(Number(d.created ?? 0) * 1000 || Date.now()).toISOString(),
+    clienteNombre: quien.nombre, clienteEmail: quien.email,
+    motivo: `Contracargo${razon ? ` (${razon.replace(/_/g, " ")})` : ""}`,
+    procesadorId: procesadorDe("stripe"),
+  };
+}
+
+export async function contracargosDeStripe(desde: Date): Promise<ReembolsoCrudo[]> {
+  const clave = process.env.STRIPE_SECRET_KEY;
+  if (!clave) return [];
+  const salida: ReembolsoCrudo[] = [];
+  let despuesDe: string | undefined;
+  for (let pagina = 0; pagina < 5; pagina++) {
+    const q = new URLSearchParams({ limit: "100", "created[gte]": String(Math.floor(desde.getTime() / 1000)) });
+    q.append("expand[]", "data.charge");
+    if (despuesDe) q.set("starting_after", despuesDe);
+    const r = await fetch(`https://api.stripe.com/v1/disputes?${q}`, { headers: { Authorization: `Bearer ${clave}` }, cache: "no-store" });
+    const data = await json(r);
+    if (!r.ok) throw rechazo("Stripe (contracargos)", r, data);
+    const filas = (data.data ?? []) as Obj[];
+    for (const f of filas) { const x = reembolsoDeContracargoStripe(f); if (x) salida.push(x); }
+    if (!data.has_more || filas.length === 0) break;
+    despuesDe = String(filas[filas.length - 1].id);
+  }
+  return salida;
+}
+
 export async function reembolsosDeStripe(desde: Date): Promise<ReembolsoCrudo[]> {
   const clave = process.env.STRIPE_SECRET_KEY;
   if (!clave) return [];
@@ -754,7 +802,8 @@ export async function reembolsosDeWhop(desde: Date): Promise<ReembolsoCrudo[]> {
 /** Lo que devolvió cada pasarela en la ventana. */
 export async function reembolsosDe(p: ProveedorPasarela, desde: Date, hasta: Date): Promise<ReembolsoCrudo[]> {
   switch (p) {
-    case "stripe": return reembolsosDeStripe(desde);
+    /* Los reembolsos y los contracargos: si Stripe no deja leer las disputas (una clave acotada), los reembolsos entran igual. */
+    case "stripe": return Promise.all([reembolsosDeStripe(desde), contracargosDeStripe(desde).catch(() => [] as ReembolsoCrudo[])]).then(([a, b]) => [...a, ...b]);
     case "hotmart": return reembolsosDeHotmart(desde, hasta);
     case "whop": return reembolsosDeWhop(desde);
     default: return [];
@@ -1388,10 +1437,13 @@ export async function movimientosDeMercury(desde: Date): Promise<RespuestaDeMovi
       const r = await fetch(`https://api.mercury.com/api/v1/account/${String(c.id)}/transactions?${q}`, { headers: cabeceras, cache: "no-store" });
       const d = await json(r);
       if (!r.ok) throw rechazo(`Mercury (movimientos de ${String(c.name ?? c.id)})`, r, d);
-      for (const t of (d.transactions ?? []) as Record<string, unknown>[]) {
+      const lista = (d.transactions ?? []) as Record<string, unknown>[];
+      for (const t of lista) {
         const m = movimientoDeMercury(t, "proc_mercury", extras);
         if (m && !vistos.has(m.ref) && new Date(m.fecha) >= desde) { vistos.add(m.ref); movimientos.push(m); }
       }
+      /* La tarjeta de crédito que no devuelve compras: el banco no las muestra por su API y sólo se ve el pago de la tarjeta. */
+      if (/credit/i.test(String(c.kind ?? "")) && lista.length === 0) avisos.push(`El banco no mostró compras de la tarjeta «${String(c.name ?? "de crédito")}»: sólo se ve lo que se paga de la tarjeta.`);
     } catch (err) {
       avisos.push(err instanceof Error ? err.message : String(err));
     }

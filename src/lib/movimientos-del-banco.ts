@@ -27,6 +27,7 @@ export type TipoDelBanco =
   | "interno"             // entre cuentas del mismo banco, Treasury: ni ingreso ni gasto
   | "comision"            // lo que cobra la pasarela (Stripe)
   | "reembolso"           // plata devuelta a un cliente (Stripe) o a la empresa (una compra reembolsada)
+  | "contracargo"         // un cliente disputó el cobro con su banco y Stripe retiró la plata
   | "ajuste"              // un ajuste o una disputa
   | "salida"              // otra plata que sale (una transferencia, un cheque)
   | "entrada"             // otra plata que entra
@@ -34,7 +35,7 @@ export type TipoDelBanco =
 
 export const TEXTO_DEL_TIPO: Record<TipoDelBanco, string> = {
   "compra-tarjeta": "Compra con tarjeta", "pago-tarjeta": "Pago de la tarjeta", cashback: "Cashback", cobro: "Cobro", pase: "Entre cuentas",
-  interno: "Entre cuentas del banco", comision: "Comisión", reembolso: "Reembolso", ajuste: "Ajuste", salida: "Salió plata", entrada: "Entró plata", otro: "Otro",
+  interno: "Entre cuentas del banco", comision: "Comisión", reembolso: "Reembolso", contracargo: "Contracargo", ajuste: "Ajuste", salida: "Salió plata", entrada: "Entró plata", otro: "Otro",
 };
 
 export interface MovimientoDelBanco {
@@ -73,8 +74,8 @@ export function movimientoDeMercury(t: Record<string, unknown>, cuentaId: ID, ex
   let tipo: TipoDelBanco;
   if (esCompra) tipo = monto < 0 ? "compra-tarjeta" : "reembolso";
   /* Lo que sale hacia la tarjeta es el pago de la tarjeta (aunque se llame «Mercury IO Cashback Credit Card»); lo que entra de Mercury, cashback. */
-  else if (/creditcardpayment|autopay/i.test(todo) || c.motivo === "Pago de la tarjeta de crédito" || (monto < 0 && /credit\s*card/i.test(todo))) tipo = "pago-tarjeta";
   else if (monto > 0 && (/cashback/i.test(todo) || /^mercury$/i.test(contraparte))) tipo = "cashback";
+  else if (/creditcardpayment|autopay/i.test(todo) || c.motivo === "Pago de la tarjeta de crédito" || (monto < 0 && /credit\s*card/i.test(todo))) tipo = "pago-tarjeta";
   else if (c.tipo === "pase") tipo = "pase";
   else if (c.tipo === "interno") tipo = "interno";
   else tipo = monto > 0 ? (c.tipo === "cobro" || c.tipo === "en-proceso" ? "cobro" : "entrada") : "salida";
@@ -99,6 +100,7 @@ export function movimientoDeStripe(t: Record<string, unknown>, cuentaId: ID): Mo
   let tipo: TipoDelBanco;
   if (/^(charge|payment)$/.test(tipoCrudo)) tipo = "cobro";
   else if (/refund/.test(tipoCrudo)) tipo = "reembolso";
+  else if (/chargeback|dispute/i.test(`${tipoCrudo} ${descripcion}`)) tipo = "contracargo";
   else if (/^payout/.test(tipoCrudo) || /withdrawal/i.test(descripcion)) tipo = "pase";
   else if (/fee/.test(tipoCrudo)) tipo = "comision";
   else if (/adjustment|dispute|chargeback|reserve/.test(tipoCrudo)) tipo = "ajuste";
@@ -135,16 +137,24 @@ export function cruzarConLaApp(
 ): MovimientoCruzado[] {
   const cobros = new Set((e.movimientos ?? []).map((m) => `${m.proveedor}:${m.referencia}`));
   const pases = new Set((e.traspasos ?? []).flatMap((t) => [t.salidaRef, t.llegadaRef]).filter((x): x is string => Boolean(x)));
-  const devoluciones = new Set((e.devoluciones ?? []).map((d) => d.referencia).filter((x): x is string => Boolean(x)));
+  const devoluciones = new Map((e.devoluciones ?? []).filter((d) => d.referencia).map((d) => [d.referencia as string, d] as const));
   const usados = new Set<ID>();
+  /* Si el banco muestra las compras con tarjeta una por una, el pago de la tarjeta no se carga (sería contarlas dos veces). Si no las muestra
+     (Mercury no las manda por su API), el pago es lo único que se ve salir y hay que cargarlo para que el saldo dé. */
+  const hayCompras = movs.some((m) => m.tipo === "compra-tarjeta");
 
   return movs.map((m): MovimientoCruzado => {
     const proveedor = m.ref.split(":")[0];
-    if (m.tipo === "pago-tarjeta") return { ...m, estadoApp: "no-se-carga", donde: "Es el pago de la tarjeta: lo que se gastó con la tarjeta se carga compra por compra, no acá." };
+    if (m.tipo === "pago-tarjeta" && hayCompras) return { ...m, estadoApp: "no-se-carga", donde: "Es el pago de la tarjeta: lo que se gastó con la tarjeta se carga compra por compra, no acá." };
     if (m.tipo === "interno") return { ...m, estadoApp: "no-se-carga", donde: "Plata entre cuentas del mismo banco: no es ingreso ni gasto." };
     if (m.refApp.some((r) => cobros.has(`${proveedor}:${r}`))) return { ...m, estadoApp: "cargado", donde: "Está como cobro en Conciliación." };
     if (m.refApp.some((r) => pases.has(`${proveedor}:${r}`)) || pases.has(m.ref)) return { ...m, estadoApp: "cargado", donde: "Está como movimiento entre cuentas." };
-    if (m.refApp.some((r) => devoluciones.has(`${proveedor}:${r}`))) return { ...m, estadoApp: "cargado", donde: "Está como reembolso." };
+    const devuelta = m.refApp.flatMap((r) => [`${proveedor}:${r}`, `${proveedor}:disputa:${r}`, `${proveedor}:reembolso:${r}`]).map((k) => devoluciones.get(k)).find(Boolean);
+    if (devuelta) {
+      const demas = r2(Math.abs(m.monto) - devuelta.monto);
+      return { ...m, estadoApp: "cargado", donde: `Está como ${m.tipo === "contracargo" ? "contracargo" : "reembolso"}${demas > 0.01 ? ` (de US$ ${devuelta.monto.toLocaleString("es-AR")}; la pasarela retiró US$ ${demas.toLocaleString("es-AR")} más en comisiones: cargalas como gasto)` : ""}.` };
+    }
+    if (m.tipo === "contracargo") return { ...m, estadoApp: "falta", donde: "El contracargo todavía no está como devolución: aparece con «Sincronizar» para confirmarlo en Devoluciones." };
     const propio = (e.gastos ?? []).find((g) => gastoApunta(g, m.ref));
     if (propio) return { ...m, estadoApp: "cargado", donde: `Está como ${propio.monto < 0 ? "ingreso" : "gasto"}: ${propio.concepto}.`, gastoId: propio.id };
     /* Algo que alguien cargó a mano: el mismo monto, de esa cuenta, en esos días. Se ofrece mirarlo, no se da por hecho. */
@@ -179,11 +189,14 @@ export function borradorDesdeElBanco(
   m: MovimientoDelBanco, nombreDeLaCuenta: string, comoIngreso: boolean,
 ): { concepto: string; monto: string; fecha: string; cuenta: string; ingreso: boolean; bancoRef: string; proveedor: string; notas: string } {
   const abs = Math.abs(m.monto);
-  const concepto = m.tipo === "cashback" ? "Cashback Mercury" : m.contraparte || TEXTO_DEL_TIPO[m.tipo];
+  const concepto = m.tipo === "cashback" ? "Cashback Mercury" : m.tipo === "pago-tarjeta" ? "Pago de la tarjeta de crédito Mercury" : m.contraparte || TEXTO_DEL_TIPO[m.tipo];
   return {
     concepto, monto: abs.toLocaleString("es-AR", { minimumFractionDigits: Number.isInteger(abs) ? 0 : 2, maximumFractionDigits: 2 }),
     fecha: m.fecha, cuenta: nombreDeLaCuenta, ingreso: comoIngreso, bancoRef: m.ref,
-    proveedor: m.tipo === "cashback" ? "Mercury" : m.contraparte,
-    notas: [`Del movimiento del banco del ${diaDeNegocio(m.fecha).slice(8, 10)}/${diaDeNegocio(m.fecha).slice(5, 7)}`, m.detalle].filter(Boolean).join(" · "),
+    proveedor: m.tipo === "cashback" || m.tipo === "pago-tarjeta" ? "Mercury" : m.contraparte,
+    notas: [
+      `Del movimiento del banco del ${diaDeNegocio(m.fecha).slice(8, 10)}/${diaDeNegocio(m.fecha).slice(5, 7)}`,
+      m.tipo === "pago-tarjeta" ? "Es lo que se pagó de la tarjeta: son compras de esos días (se reparten cuando se vean una por una)" : "", m.detalle,
+    ].filter(Boolean).join(" · "),
   };
 }
