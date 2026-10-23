@@ -191,7 +191,17 @@ const contactoDe = (c: { telefono: string; email: string; pais: string; programa
   telefono: c.telefono || undefined, email: c.email || undefined, pais: c.pais || undefined, programa: c.programas.join(" · ") || undefined,
 });
 
-export function panelDeServicio(e: EstadoApp, hoy: string, ahora: Date = new Date()): PanelDeServicio {
+/* Un contrato de PandaDoc mandado y sin firmar (components/contratos/cliente.ts → leerContratosPendientes). Los
+   contratos no están en el estado de la app: el panel los recibe aparte. */
+export interface ContratoPendiente {
+  alumnoId: ID | null;
+  ventaId: ID | null;
+  estado: string;
+  enviadoEn: string | null;
+  vistoEn: string | null;
+}
+
+export function panelDeServicio(e: EstadoApp, hoy: string, ahora: Date = new Date(), pendientes: readonly ContratoPendiente[] = []): PanelDeServicio {
   const clientes = filasClientes(e, hoy);
   const figuranActivos = clientes.filter((c) => c.alumno.estado === "activo");
   /* En la app siguen «activos» pero en el Follow Up de Lili ya cerraron: el estado se deja como está y lo actualiza ella. */
@@ -324,9 +334,29 @@ export function panelDeServicio(e: EstadoApp, hoy: string, ahora: Date = new Dat
     tono: "rojo",
   }));
 
-  /* ---------- Contratos sin firmar ---------- */
-  /* «No se realizaba contrato» (cargado o sugerido para las reservas y el Downsell viejos) no es un contrato pendiente. */
-  const contratos = activos.filter((c) => c.contrato !== "Firmado" && c.contrato !== NO_SE_HACIA_CONTRATO && c.inicio && diasEntre(c.inicio, hoy) >= DIAS_PARA_FIRMAR).map((c): ItemServicio => {
+  /* ---------- Contratos sin firmar ----------
+     El que ya recibió el contrato y no lo firmó aparece desde el día en que se mandó, para hacerle el seguimiento (Lili,
+     23/10: Santiago Bancalari lo abrió el 22/10 y no estaba); a los 3 días queda en rojo. Sin contrato mandado, como
+     antes: a los 3 días de empezar. «No se realizaba contrato» (cargado o sugerido para las reservas y el Downsell
+     viejos) no es un contrato pendiente. */
+  const alumnoDeLaVenta = new Map(e.alumnos.filter((a) => a.ventaId).map((a) => [a.ventaId!, a.id] as const));
+  const mandado = new Map<ID, ContratoPendiente & { enviadoEn: string }>();
+  for (const p of [...pendientes].sort((x, y) => (y.enviadoEn ?? "").localeCompare(x.enviadoEn ?? ""))) {
+    const id = p.alumnoId ?? (p.ventaId ? alumnoDeLaVenta.get(p.ventaId) : undefined);
+    if (id && p.enviadoEn && !mandado.has(id)) mandado.set(id, { ...p, enviadoEn: p.enviadoEn });
+  }
+  const contratos = activos.filter((c) => c.contrato !== "Firmado" && c.contrato !== NO_SE_HACIA_CONTRATO
+    && (mandado.has(c.id) || (c.inicio && diasEntre(c.inicio, hoy) >= DIAS_PARA_FIRMAR))).map((c): ItemServicio => {
+    const m = mandado.get(c.id);
+    if (m) {
+      const enviado = diaDeNegocio(m.enviadoEn);
+      const d = diasEntre(enviado, hoy);
+      return {
+        clave: c.id, alumnoId: c.id, nombre: c.nombre, dias: d, cuando: cuandoEs(d), ...contactoDe(c),
+        detalle: `Le mandamos el contrato el ${formatoDia(enviado, hoy)} · ${m.vistoEn ? `lo abrió el ${formatoDia(diaDeNegocio(m.vistoEn), hoy)} y no lo firmó` : "todavía no lo abrió"}`,
+        tono: d >= DIAS_PARA_FIRMAR ? "rojo" : "ambar",
+      };
+    }
     const d = diasEntre(c.inicio, hoy);
     return {
       clave: c.id, alumnoId: c.id, nombre: c.nombre, dias: d, cuando: cuandoEs(d), ...contactoDe(c),
@@ -344,7 +374,7 @@ export function panelDeServicio(e: EstadoApp, hoy: string, ahora: Date = new Dat
     seccion({ id: "resells", titulo: "Resells sin cierre", corto: "Resells", vacio: "Todos los resells ya tienen su resultado.", regla: `La llamada ya pasó y el closer no dijo en qué quedó. A los ${DIAS_PARA_CERRAR_RESELL} días queda en rojo.`, verTodos: { texto: "Ver la agenda de resells", href: "/alumnos?seccion=resells" } }, sinCierre, masViejoPrimero),
     seccion({ id: "testimonios", titulo: "Testimonios", corto: "Testimonios", vacio: "No hay testimonios pendientes.", regla: "Grabaron y falta el link del video, o falta agendar la llamada de grabación.", verTodos: { texto: "Ver testimonios", href: "/alumnos?seccion=testimonios" } }, [...sinLink, ...porAgendar], masViejoPrimero),
     seccion({ id: "reportes", titulo: "Dejaron de reportar", corto: "Reportes", vacio: "Todos al día con su reporte semanal.", regla: "Tres semanas o más sin mandar el reporte semanal.", verTodos: { texto: "Ver los formularios", href: "/reportes" } }, reportes, masViejoPrimero),
-    seccion({ id: "contratos", titulo: "Contrato sin firmar", corto: "Contratos", vacio: "Todos los contratos están firmados.", regla: `Empezaron hace ${DIAS_PARA_FIRMAR} días o más y el contrato sigue sin firmar.`, verTodos: { texto: "Ver Clientes del programa", href: "/alumnos?seccion=clientes" } }, contratos, masViejoPrimero),
+    seccion({ id: "contratos", titulo: "Contrato sin firmar", corto: "Contratos", vacio: "Todos los contratos están firmados.", regla: `Les mandamos el contrato y no lo firmaron (a los ${DIAS_PARA_FIRMAR} días, en rojo), o empezaron hace ${DIAS_PARA_FIRMAR} días o más sin firmarlo.`, verTodos: { texto: "Ver Clientes del programa", href: "/alumnos?seccion=clientes" } }, contratos, masViejoPrimero),
   ];
 
   /* La revisión de CV y LinkedIn, para que Lili sepa en qué anda Aldana sin preguntarle. */

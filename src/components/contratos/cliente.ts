@@ -5,6 +5,7 @@ import { alumnoDeVenta, personaDeVenta } from "@/lib/alumnos";
 import { programaDeProducto, programasDe, type Programa } from "@/lib/programas";
 import type { ConfigContratos, Cuota, EstadoApp, Venta } from "@/lib/types";
 import { diaDeNegocio } from "@/lib/dia-negocio";
+import type { ContratoPendiente } from "@/lib/panel-servicio";
 
 /* ==================================================================
    Los contratos desde el navegador: se LEEN directo de la base (las
@@ -30,6 +31,15 @@ export async function leerContratos(f: { ventaId?: string; leadId?: string; alum
   if (!contratos.length) return { contratos, eventos: [] };
   const ev = await nube.from("contrato_eventos").select("*").in("contratoId", contratos.map((c) => c.id)).order("cuando", { ascending: true });
   return { contratos, eventos: (ev.data ?? []) as EventoContrato[] };
+}
+
+/* Los contratos mandados y sin firmar, para «Contrato sin firmar» del panel de Servicio (lib/panel-servicio.ts). Los de
+   prueba no cuentan. */
+export async function leerContratosPendientes(): Promise<ContratoPendiente[]> {
+  if (!nube) return [];
+  const r = await nube.from("contratos").select("alumnoId, ventaId, estado, enviadoEn, vistoEn")
+    .in("estado", ["enviado", "visto"]).eq("modo", "produccion").order("enviadoEn", { ascending: false }).limit(500);
+  return r.error ? [] : ((r.data ?? []) as ContratoPendiente[]);
 }
 
 export async function pedirContrato(cuerpo: Record<string, unknown>): Promise<Contrato> {

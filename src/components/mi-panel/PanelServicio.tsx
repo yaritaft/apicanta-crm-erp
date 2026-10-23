@@ -9,6 +9,7 @@ import { Telefono } from "@/components/ui/Telefono";
 import { NADA, Recorte, TablaCs } from "@/components/cs/TablaCs";
 import { useAbrirFicha, type SolapaServicio } from "@/components/ficha/abrir";
 import { useGestos } from "@/components/alumnos/Seguimiento";
+import { leerContratosPendientes } from "@/components/contratos/cliente";
 import { useEstado } from "@/lib/store";
 import { useAcceso } from "@/lib/acceso";
 import { useParamsURL } from "@/lib/useParamsURL";
@@ -16,7 +17,7 @@ import { nivelDeRuta } from "@/lib/permisos";
 import { formatoDia, hoyDelNegocio } from "@/lib/seguimiento";
 import {
   COLUMNAS_CARTERA, coincideCartera, ETAPAS_DEL_ALUMNO, MOTOR_CARTERA, ORDEN_CARTERA, ORDEN_ETAPAS_CARTERA, ORDEN_LISTA, panelDeServicio,
-  renglonesCartera, VISIBLES_CARTERA, VISIBLES_LISTA, type ClaveCartera, type EtapaAlumnoId, type RenglonCartera, type SeccionServicio,
+  renglonesCartera, VISIBLES_CARTERA, VISIBLES_LISTA, type ClaveCartera, type ContratoPendiente, type EtapaAlumnoId, type RenglonCartera, type SeccionServicio,
 } from "@/lib/panel-servicio";
 import type { ColumnaCs } from "@/lib/tabla-cs";
 import type { MiembroEquipo } from "@/lib/types";
@@ -78,7 +79,15 @@ export function PanelServicio({ miembro, viendoOtro }: { miembro: MiembroEquipo;
   useEffect(() => { const t = window.setInterval(() => setAhora(Date.now()), 60000); return () => window.clearInterval(t); }, []);
 
   const hoy = hoyDelNegocio(new Date(ahora));
-  const panel = useMemo(() => panelDeServicio(e, hoy, new Date(ahora)), [e, hoy, ahora]);
+  /* Los contratos mandados y sin firmar (no están en el estado de la app): se leen al abrir y cada 5 minutos. */
+  const [pendientes, setPendientes] = useState<ContratoPendiente[]>([]);
+  const cada5 = Math.floor(ahora / 300000);
+  useEffect(() => {
+    let vivo = true;
+    void leerContratosPendientes().then((p) => { if (vivo) setPendientes(p); });
+    return () => { vivo = false; };
+  }, [cada5]);
+  const panel = useMemo(() => panelDeServicio(e, hoy, new Date(ahora), pendientes), [e, hoy, ahora, pendientes]);
   const lista = panel.secciones.find((s) => s.id === v.lista);
   const etapa = ETAPAS_DEL_ALUMNO.find((x) => x.id === v.etapa)?.id;
   const todos = v.base === "todos";

@@ -154,6 +154,33 @@ test("Dejaron de reportar y Contrato sin firmar", () => {
   assert.deepEqual(c.items.map((i) => i.tono), ["rojo", "ambar"]);
 });
 
+test("Contrato sin firmar: el que ya recibió el contrato aparece desde el día en que se mandó (Santiago Bancalari, 23/10)", () => {
+  /* Nueva (empezó hace 2 días) lo abrió ayer y no lo firmó: antes esperaba al tercer día y no aparecía. */
+  const pendientes = [
+    { alumnoId: "nueva", ventaId: null, estado: "visto", enviadoEn: "2026-10-19T16:37:29.436Z", vistoEn: "2026-10-19T16:46:30.432Z" },
+    /* Atado por la venta, sin abrir, mandado hace 4 días: en rojo. */
+    { alumnoId: null, ventaId: "ven_vence", estado: "enviado", enviadoEn: "2026-10-16T13:00:00.000Z", vistoEn: null },
+    /* De nadie que esté en Servicio: no aparece. */
+    { alumnoId: null, ventaId: "ven_otro", estado: "enviado", enviadoEn: "2026-10-20T13:00:00.000Z", vistoEn: null },
+    /* El firmado no está pendiente aunque venga la fila (Atrasada tiene «Firmado» en su ficha). */
+    { alumnoId: "atrasada", ventaId: null, estado: "visto", enviadoEn: "2026-10-18T13:00:00.000Z", vistoEn: null },
+  ];
+  const e = estado();
+  e.alumnos = e.alumnos.map((a) => (a.id === "vence" ? { ...a, ventaId: "ven_vence" } : a));
+  e.seguimientos = (e.seguimientos ?? []).map((s) => (s.alumnoId === "vence" ? { ...s, contratoFirmado: "" } : s));
+  const c = seccion(panelDeServicio(e, HOY, AHORA, pendientes), "contratos");
+  const de = (n: string) => c.items.find((i) => i.nombre === n);
+  assert.ok(de("Nueva"), "aparece al otro día de mandarlo");
+  assert.equal(de("Nueva")!.detalle, "Le mandamos el contrato el 19 oct · lo abrió el 19 oct y no lo firmó");
+  assert.deepEqual([de("Nueva")!.tono, de("Nueva")!.cuando], ["ambar", "hace 1 d"]);
+  assert.equal(de("Vence")!.detalle, "Le mandamos el contrato el 16 oct · todavía no lo abrió");
+  assert.equal(de("Vence")!.tono, "rojo", "a los 3 días de mandado");
+  assert.equal(de("Atrasada"), undefined);
+  /* Los de antes siguen igual. */
+  assert.ok(de("Sin Firma") && de("Nueva Cinco"));
+  assert.match(c.regla, /Les mandamos el contrato y no lo firmaron/);
+});
+
 test("el resumen de arriba cuenta lo que está en rojo", () => {
   const p = panelDeServicio(estado(), HOY, AHORA);
   /* contactar 1 + nuevos 1 + renovar 1 + resells 1 + testimonios 1 + reportes 1 + contratos 1 */
