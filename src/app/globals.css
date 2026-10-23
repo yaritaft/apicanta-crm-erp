@@ -15,8 +15,10 @@
   --border: #3a2a66;
   --border-strong: #6f5aa8;
   --ink: #f5f1fb;
-  --ink-muted: #b9aed3;
-  --ink-subtle: #8d7fae;
+  /* Más claros (Yari, 23/10: «letras violeta clarito sobre fondo violeta oscuro, cuesta leer»): el texto de apoyo sobre las tarjetas
+     (surface-200/300) daba 4,5 y 4,0 de contraste, ahora 5,7 o más; el jerárquico va por peso y tamaño, no por apagar el color. */
+  --ink-muted: #cdc4e4;
+  --ink-subtle: #a99dc8;
   --brand: #b07cf5;
   --brand-fill: #7a3fc2;
   --brand-fill-hover: #8b52d4;
