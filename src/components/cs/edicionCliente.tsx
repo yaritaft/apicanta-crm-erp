@@ -91,7 +91,7 @@ export function contenidoCliente(clave: ClaveCliente, f: FilaCliente, hoy: strin
       const d = clave === "contactoInicial" ? f.contactoInicial : clave === "contactoSemana" ? f.contactoSemana : f.ultimoContacto;
       return d ? <span className="t-num">{formatoDia(d, hoy)}</span> : NADA;
     }
-    case "proximo": return f.situacion === "fuera" ? NADA : (
+    case "proximo": return f.situacion === "fuera" ? NADA : f.situacion === "reserva" ? <span className="t-sm t-subtle">Reserva · todavía no arrancó</span> : (
       <span className="stack-1"><span className="t-num">{formatoDia(f.proximo, hoy)}</span><span className="t-sm t-subtle">{f.situacion === "no-contesta" ? "Dejó de contestar" : textoDeAtraso(f.atraso)}</span></span>
     );
     case "edad": return f.edad === null ? NADA : sug(String(f.edad), f.edadSugerida);
@@ -101,7 +101,10 @@ export function contenidoCliente(clave: ClaveCliente, f: FilaCliente, hoy: strin
       ? <span className="row" style={{ gap: 4, flexWrap: "wrap" }}>{f.programas.map((p) => <Pastilla key={p} texto={p} tono="neutra" tenue={f.programasSugeridos} title={f.programasSugeridos ? "Sugerido por el servicio que compró: confirmalo en la ficha" : p} />)}</span>
       : NADA;
     case "plan": return sug(f.plan, f.planSugerido);
-    case "stack": case "acceso": case "followUp": case "contrato": case "estadoContrato": case "estadoAlumno": case "etapa": case "testimonio":
+    case "contrato": return f.contrato
+      ? <Pastilla texto={f.contrato} tenue={f.contratoSugerido} title={f.contratoSugerido ? "Sugerido: a las reservas y al Downsell de antes del 22/09 no se les hacía contrato" : f.contrato} />
+      : NADA;
+    case "stack": case "acceso": case "followUp": case "estadoContrato": case "estadoAlumno": case "etapa": case "testimonio":
       return <Pastilla texto={(f as unknown as Record<string, string>)[clave] ?? ""} tono={clave === "etapa" ? "neutra" : undefined} />;
     case "reporte": return <Pastilla texto={f.reporte.estado} title={f.reporte.origen === "reportes" ? "Según sus reportes semanales" : f.reporte.origen === "manual" ? "Marcado a mano en la ficha" : "Todavía no hay reportes"} />;
     case "semanasSin": return f.reporte.semanasSin === null ? NADA : <span className="t-num">{f.reporte.semanasSin}</span>;

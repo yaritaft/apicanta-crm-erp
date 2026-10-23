@@ -29,7 +29,9 @@ export function PausasAlumno({ f, hoy, puede }: { f: FilaCliente; hoy: string; p
   const quedan = f.egreso ? diasEntre(hoy, f.egreso) : null;
   const fmt = (d: string) => formatoDia(d, hoy);
 
-  const chip = f.pausa
+  const chip = f.enReserva
+    ? <span className="hs-chip hs-chip--ambar">Reserva: todavía no arrancó</span>
+    : f.pausa
     ? <span className="hs-chip hs-chip--ambar">{textoDePausa(f.pausa, hoy, fmt)}</span>
     : quedan === null ? undefined
       : quedan < 0 ? <span className="hs-chip">Terminó el {fmt(f.egreso as string)}</span>

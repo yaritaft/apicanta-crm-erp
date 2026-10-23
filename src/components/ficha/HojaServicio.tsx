@@ -38,7 +38,7 @@ import {
   EDITOR_CLIENTE, estadosDeResell, filasClientes, filasResells, MOTOR_CLIENTES, POR_QUE_NO_CLIENTE, valorEditableCliente, type ClaveCliente,
   type FilaCliente,
 } from "@/lib/clientes-cs";
-import { configSeguimiento, diasEntre, formatoDia, hoyDelNegocio, terminoElServicio, textoDeAtraso } from "@/lib/seguimiento";
+import { configSeguimiento, diasEntre, formatoDia, hoyDelNegocio, sumarDias, terminoElServicio, textoDeAtraso } from "@/lib/seguimiento";
 import { DIAS_PARA_RENOVAR, etapaDelFollowUp, ETAPAS_DEL_ALUMNO } from "@/lib/panel-servicio";
 import { sinTildes } from "@/lib/crm";
 import { INGRESOS_COMUNIDAD } from "@/lib/angelo";
@@ -251,6 +251,20 @@ function HojaDeUnServicio({ e, p, f, venta, producto, conChat, reserva }: {
     );
   }
 
+  /* ---------- Por qué no le toca el seguimiento (Lili, 22/10: arriba decía «Próximo contacto: 9 nov» y abajo un guion) ----------
+     Una sola explicación para la barra de arriba y la fila de Seguimiento. */
+  const sinSeguimiento = f.situacion === "reserva"
+    ? "Es una reserva: el seguimiento arranca cuando pague lo que falta."
+    : f.situacion === "fuera"
+      ? (alumno.estado !== "activo"
+        ? `Está ${f.estadoAlumno.toLowerCase()}: no entra al seguimiento.`
+        : `Su Follow Up dice «${f.followUp}»: terminó el programa y no entra en «A contactar hoy». Si seguís en contacto, cambiá el Follow Up.`)
+      : null;
+  /* «Contar desde» (Ajustes): lo de antes de que arrancara la app se cuenta desde ese día, no desde el último contacto. */
+  const desdeLaApp = cfg.contarDesde && f.ultimoContacto && f.ultimoContacto < cfg.contarDesde && f.proximo === sumarDias(cfg.contarDesde, f.cadencia)
+    ? `Contando desde el ${formatoDia(cfg.contarDesde, hoy)}, cuando arrancó la app: el último contacto (${formatoDia(f.ultimoContacto, hoy)}) es de antes.`
+    : undefined;
+
   /* ---------- La cabecera del servicio ---------- */
   const faltan = CUENTAN.filter((c) => estaVacio(f, c)).length;
   const etapa = ETAPAS_DEL_ALUMNO.find((x) => x.id === etapaDelFollowUp(f.followUp));
@@ -325,8 +339,8 @@ function HojaDeUnServicio({ e, p, f, venta, producto, conChat, reserva }: {
       {activo && puede && (
         <div className="hs-hoy">
           <span className="hs-hoy__txt">
-            {f.situacion === "no-contesta" ? "Dejó de contestar" : <>Próximo contacto: <b>{formatoDia(f.proximo, hoy)}</b> · {textoDeAtraso(f.atraso).toLowerCase()}</>}
-            <span className="t-subtle"> · cada {f.cadencia} días{f.ultimoContacto ? ` · último el ${formatoDia(f.ultimoContacto, hoy)}` : ""}</span>
+            {sinSeguimiento ?? (f.situacion === "no-contesta" ? "Dejó de contestar" : <>Próximo contacto: <b>{formatoDia(f.proximo, hoy)}</b> · {textoDeAtraso(f.atraso).toLowerCase()}</>)}
+            {!sinSeguimiento && <span className="t-subtle"> · cada {f.cadencia} días{f.ultimoContacto ? ` · último el ${formatoDia(f.ultimoContacto, hoy)}` : ""}</span>}
           </span>
           <span className="hs-hoy__acc">
             <Button sm variante="primary" icono={<PhoneCall size={14} />} onClick={() => gestos.contacte(f)}>Lo contacté</Button>
@@ -480,7 +494,10 @@ function HojaDeUnServicio({ e, p, f, venta, producto, conChat, reserva }: {
             {dato("contactoInicial", false)}
             {dato("contactoSemana", false)}
             {dato("ultimoContacto", false)}
-            {dato("proximo", false)}
+            <FilaServicio icono={ICONO.proximo} rotulo="Próximo contacto" detalle={sinSeguimiento ?? desdeLaApp}>
+              {sinSeguimiento ? <span className="hs-guion">No le toca</span>
+                : <span className="t-num">{formatoDia(f.proximo, hoy)}<span className="t-subtle"> · {textoDeAtraso(f.atraso).toLowerCase()}</span></span>}
+            </FilaServicio>
             <Fila icono={ICONO.cadencia} rotulo="Cadencia" ayuda="Cada cuántos días le toca el contacto">
               {puede ? (
                 <span className="hs-progreso">

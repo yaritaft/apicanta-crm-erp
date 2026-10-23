@@ -344,7 +344,8 @@ export async function mandarBienvenida(db: SupabaseClient, c: Contrato, alumnoId
   /* Sólo recién firmado: la pasada de cada hora vuelve a pasar por acá los contratos viejos a los que les falta el PDF o
      los accesos, y el día que se prenda Resend no les tiene que llegar la bienvenida a alumnos que ya arrancaron. */
   if (!c.firmadoEn || Date.now() - new Date(c.firmadoEn).getTime() > DIAS_PARA_BIENVENIDA * 86_400_000) return;
-  let guia = guiaDeBienvenida({ reserva: c.datos.reserva, programa: c.programa, perfil: c.datos.perfil, config: await configBienvenida(db) });
+  const config = await configBienvenida(db);
+  let guia = guiaDeBienvenida({ reserva: c.datos.reserva, programa: c.programa, perfil: c.datos.perfil, config });
   if (!guia) return;
   const origen = process.env.APP_URL?.trim() || baseDeLaApp(null);
   if (guia.modelo === "completo" && alumnoId && origen) {
@@ -355,7 +356,8 @@ export async function mandarBienvenida(db: SupabaseClient, c: Contrato, alumnoId
   const toma = await db.from("contratos").update({ bienvenidaMailEn: ahora() }).eq("id", c.id).is("bienvenidaMailEn", null).select("id");
   if (!toma.data?.length) return;
   const { asunto, texto } = textoDeBienvenida(guia);
-  const r = await enviarPorResend(cfg, { para, asunto, texto, html: htmlDeBienvenida(texto) });
+  const responderA = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(config?.responderA ?? "") ? config!.responderA : undefined;
+  const r = await enviarPorResend(cfg, { para, asunto, texto, html: htmlDeBienvenida(texto), responderA });
   if (!r.ok) {
     await db.from("contratos").update({ bienvenidaMailEn: null }).eq("id", c.id);
     await evento(db, c.id, "bienvenida", "Apicanta", "app", { enviado: false, error: r.error });

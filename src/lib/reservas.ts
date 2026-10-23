@@ -1,4 +1,4 @@
-import type { Cuota } from "./types";
+import type { Alumno, Cuota } from "./types";
 
 /* ==================================================================
    Una compra que todavía es sólo la reserva (Lili, 21/10: Cristian Lopez dejó
@@ -26,4 +26,22 @@ export function reservaSinCompletar(cuotasVenta: readonly Pick<Cuota, "monto" | 
   const pagado = reservas.filter((c) => c.estado === "pagada").reduce((a, c) => a + (c.monto || 0), 0);
   const falta = cuotasVenta.filter((c) => c.estado !== "pagada").reduce((a, c) => a + (c.monto || 0), 0);
   return { pagado, falta };
+}
+
+const sinTildes = (x: string) => x.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+
+/** Lili le puso «Reserva» en el Follow Up: la reserva se pagó por fuera de la app (o todavía no está cargada). */
+export const followUpDeReserva = (followUp: string | null | undefined) => sinTildes(followUp ?? "").startsWith("reserva");
+
+/** Quién es hoy sólo una reserva (Lili, 22/10: «para que no me aparezca que falta el contacto a la semana»): lo único que
+ *  pagó de su venta es la reserva, o su Follow Up dice «Reserva». Todavía no arrancó: no entra al seguimiento, no se le
+ *  pide el primer contacto ni el reporte. Cuando paga lo que falta, pasa solo a ser un alumno más. Se arma una vez por lista. */
+export function indiceDeReservas(cuotas: readonly Pick<Cuota, "ventaId" | "monto" | "esReserva" | "estado">[]) {
+  const porVenta = new Map<string, Pick<Cuota, "ventaId" | "monto" | "esReserva" | "estado">[]>();
+  for (const c of cuotas) {
+    const l = porVenta.get(c.ventaId);
+    if (l) l.push(c); else porVenta.set(c.ventaId, [c]);
+  }
+  return (a: Pick<Alumno, "ventaId">, followUp?: string | null): boolean =>
+    followUpDeReserva(followUp) || Boolean(a.ventaId && reservaSinCompletar(porVenta.get(a.ventaId) ?? []));
 }

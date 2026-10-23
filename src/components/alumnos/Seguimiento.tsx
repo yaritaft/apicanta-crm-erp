@@ -93,6 +93,7 @@ const SITUACION: Record<SituacionSeguimiento, { texto: string; ayuda: string }> 
   hoy: { texto: "Hoy", ayuda: "Les toca el contacto hoy" },
   "al-dia": { texto: "Al día", ayuda: "Todavía no les toca" },
   "no-contesta": { texto: "Dejaron de contestar", ayuda: "Los marcaste como «dejó de contestar»: no entran en la lista de hoy" },
+  reserva: { texto: "Reservas", ayuda: "Sólo pagaron la reserva: el seguimiento arranca cuando paguen lo que falta" },
   fuera: { texto: "Fuera del programa", ayuda: "Pausados, egresados o dados de baja" },
 };
 
@@ -105,6 +106,7 @@ const INFO_PROXIMO = {
 
 function BadgeToca({ f }: { f: FilaSeguimiento }) {
   if (f.situacion === "fuera") return <span className="t-sm t-subtle">—</span>;
+  if (f.situacion === "reserva") return <Badge variante="neutral">Reserva · todavía no arrancó</Badge>;
   if (f.situacion === "no-contesta") return <Badge variante="neutral" icono={<UserX size={13} />}>Dejó de contestar</Badge>;
   const variante = f.situacion === "vencido" ? (f.atraso >= 7 ? "danger" : "warning") : f.situacion === "hoy" ? "info" : "success";
   return <Badge variante={variante} icono={<Clock size={13} />}>{textoDeAtraso(f.atraso)}</Badge>;

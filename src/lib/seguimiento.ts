@@ -1,5 +1,6 @@
 import { claveEmail } from "./contactos";
 import { diaDeNegocio } from "./dia-negocio";
+import { indiceDeReservas } from "./reservas";
 import type { Alumno, ConfigSeguimiento, Contacto, EstadoApp, ID, ListasCs, SeguimientoAlumno } from "./types";
 
 /* ==================================================================
@@ -175,6 +176,8 @@ export type SituacionSeguimiento =
   | "al-dia"
   /* Marcado como «dejó de contestar»: no se lo persigue. */
   | "no-contesta"
+  /* Sólo pagó la reserva (o su Follow Up dice «Reserva»): el programa todavía no arrancó, no entra al seguimiento. */
+  | "reserva"
   /* Pausado, egresado o dado de baja: no entra al seguimiento. */
   | "fuera";
 
@@ -234,8 +237,9 @@ export function terminoElServicio(followUp: string | null | undefined): boolean 
 }
 
 /** La situación de un alumno según cuándo le toca el próximo contacto. */
-export function situacionDe(estado: Alumno["estado"], dejoDeContestar: boolean, atraso: number, followUp?: string | null): SituacionSeguimiento {
+export function situacionDe(estado: Alumno["estado"], dejoDeContestar: boolean, atraso: number, followUp?: string | null, enReserva = false): SituacionSeguimiento {
   if (estado !== "activo" || terminoElServicio(followUp)) return "fuera";
+  if (enReserva) return "reserva";
   if (dejoDeContestar) return "no-contesta";
   return atraso > 0 ? "vencido" : atraso === 0 ? "hoy" : "al-dia";
 }
@@ -245,6 +249,7 @@ export function filasDeSeguimiento(e: EstadoApp, hoy: string): FilaSeguimiento[]
   const cfg = configSeguimiento(e.ajustes.seguimiento);
   const contactoDe = indiceDeContactos(e);
   const seg = new Map((e.seguimientos ?? []).map((s) => [s.alumnoId, s] as const));
+  const esReserva = indiceDeReservas(e.cuotas ?? []);
   return e.alumnos.map((a): FilaSeguimiento => {
     const s = seg.get(a.id) ?? null;
     const base = s ?? seguimientoVacio(a.id, cfg);
@@ -260,7 +265,7 @@ export function filasDeSeguimiento(e: EstadoApp, hoy: string): FilaSeguimiento[]
       ultimoContacto: base.ultimoContacto,
       proximoContacto: proximo,
       atraso,
-      situacion: situacionDe(a.estado, base.dejoDeContestar, atraso, base.followUp),
+      situacion: situacionDe(a.estado, base.dejoDeContestar, atraso, base.followUp, esReserva(a, base.followUp)),
       intentosSinRespuesta: base.intentosSinRespuesta,
       sugerirDejoDeContestar: !base.dejoDeContestar && base.intentosSinRespuesta >= cfg.intentosHastaDejar,
       dejoDeContestar: base.dejoDeContestar,
@@ -292,7 +297,7 @@ export interface ResumenSeguimiento {
 }
 
 export function resumenDeSeguimiento(filas: FilaSeguimiento[]): ResumenSeguimiento {
-  const activas = filas.filter((f) => f.situacion !== "fuera");
+  const activas = filas.filter((f) => f.situacion !== "fuera" && f.situacion !== "reserva");
   const cuenta = (p: (f: FilaSeguimiento) => boolean) => activas.filter(p).length;
   return {
     activos: activas.length,

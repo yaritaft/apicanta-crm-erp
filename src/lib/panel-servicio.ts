@@ -1,5 +1,5 @@
 import type { EstadoApp, ID } from "./types";
-import { DURACION_POR_DEFECTO, estadosDeResell, filasClientes, filasResells, filasTestimonios, sumarMeses } from "./clientes-cs";
+import { DURACION_POR_DEFECTO, estadosDeResell, filasClientes, filasResells, filasTestimonios, NO_SE_HACIA_CONTRATO, sumarMeses } from "./clientes-cs";
 import { diasEntre, formatoDia, terminoElServicio } from "./seguimiento";
 import { diasDe } from "./pausas";
 import { crearMotor, uno, varios, type ColumnaCs, type OrdenCs } from "./tabla-cs";
@@ -235,7 +235,8 @@ export function panelDeServicio(e: EstadoApp, hoy: string, ahora: Date = new Dat
   }));
 
   /* ---------- Nuevos sin el primer contacto ---------- */
-  const nuevos = activos.filter((c) => c.inicio && !c.contactoInicial && diasEntre(c.inicio, hoy) >= 0 && diasEntre(c.inicio, hoy) <= DIAS_NUEVO)
+  /* Las reservas todavía no arrancaron (Lili, 22/10): el primer contacto les toca cuando pagan lo que falta. */
+  const nuevos = activos.filter((c) => !c.enReserva && c.inicio && !c.contactoInicial && diasEntre(c.inicio, hoy) >= 0 && diasEntre(c.inicio, hoy) <= DIAS_NUEVO)
     .map((c): ItemServicio => {
       const d = diasEntre(c.inicio, hoy);
       return {
@@ -301,7 +302,7 @@ export function panelDeServicio(e: EstadoApp, hoy: string, ahora: Date = new Dat
   }
 
   /* ---------- Reportes semanales ---------- */
-  const reportes = activos.filter((c) => c.reporte.estado === "Inactivo" && !c.pausa).map((c): ItemServicio => ({
+  const reportes = activos.filter((c) => c.reporte.estado === "Inactivo" && !c.pausa && !c.enReserva).map((c): ItemServicio => ({
     clave: c.id, alumnoId: c.id, nombre: c.nombre, dias: c.reporte.semanasSin, ...contactoDe(c),
     cuando: c.reporte.semanasSin ? `${c.reporte.semanasSin} sem` : "inactivo",
     detalle: c.reporte.semanasSin ? `${c.reporte.semanasSin} ${c.reporte.semanasSin === 1 ? "semana" : "semanas"} sin mandar el reporte` : "Marcado como inactivo en su reporte",
@@ -309,7 +310,8 @@ export function panelDeServicio(e: EstadoApp, hoy: string, ahora: Date = new Dat
   }));
 
   /* ---------- Contratos sin firmar ---------- */
-  const contratos = activos.filter((c) => c.contrato !== "Firmado" && c.inicio && diasEntre(c.inicio, hoy) >= DIAS_PARA_FIRMAR).map((c): ItemServicio => {
+  /* «No se realizaba contrato» (cargado o sugerido para las reservas y el Downsell viejos) no es un contrato pendiente. */
+  const contratos = activos.filter((c) => c.contrato !== "Firmado" && c.contrato !== NO_SE_HACIA_CONTRATO && c.inicio && diasEntre(c.inicio, hoy) >= DIAS_PARA_FIRMAR).map((c): ItemServicio => {
     const d = diasEntre(c.inicio, hoy);
     return {
       clave: c.id, alumnoId: c.id, nombre: c.nombre, dias: d, cuando: cuandoEs(d), ...contactoDe(c),
@@ -341,7 +343,7 @@ export function panelDeServicio(e: EstadoApp, hoy: string, ahora: Date = new Dat
   const cartera = clientes.map((c): FilaCartera => ({
     id: c.id, nombre: c.nombre, programa: c.programas.join(" · "), followUp: c.followUp, etapa: etapaDelFollowUp(c.followUp),
     estadoAlumno: c.estadoAlumno, enServicio: enServicio.has(c.id), inicio: c.inicio, egreso: c.egreso, ultimoContacto: c.ultimoContacto,
-    proximo: c.situacion === "fuera" ? "" : c.proximo, atraso: c.atraso, reporte: c.reporte.estado, telefono: c.telefono, email: c.email, pais: c.pais,
+    proximo: c.situacion === "fuera" || c.situacion === "reserva" ? "" : c.proximo, atraso: c.atraso, reporte: c.reporte.estado, telefono: c.telefono, email: c.email, pais: c.pais,
   }));
   const conReporte = activos.filter((c) => c.reporte.estado !== "Sin datos");
   const mes = hoy.slice(0, 7);

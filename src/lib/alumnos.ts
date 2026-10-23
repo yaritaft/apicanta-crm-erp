@@ -1,5 +1,6 @@
 import type { Alumno, Cuota, EstadoApp, EtapaServicio, ID, Venta } from "./types";
 import { claveEmail } from "./contactos";
+import { esLaMismaPersona } from "./duplicados";
 
 /* ------------------------------------------------------------------
    Reglas del alumno.
@@ -37,7 +38,7 @@ export function etapaInicialDeServicio(e: EstadoApp): ID | undefined {
    los dos lados y el contacto manda, porque es la fuente de verdad de la
    persona; si no hay ninguno, queda el nombre que se escribió en la venta. */
 export function personaDeVenta(e: EstadoApp, v: Venta): {
-  nombre: string; email: string; pais: string; leadId?: ID;
+  nombre: string; email: string; pais: string; telefono: string; leadId?: ID;
 } {
   const lead = v.contactoId ? e.leads.find((l) => l.id === v.contactoId) : undefined;
   const contacto = v.contactoId
@@ -48,6 +49,7 @@ export function personaDeVenta(e: EstadoApp, v: Venta): {
     nombre: (contacto?.nombre || lead?.nombre || v.contactoNombre || "").trim(),
     email: (contacto?.email || lead?.email || "").trim(),
     pais: (contacto?.pais || lead?.pais || "").trim(),
+    telefono: (contacto?.telefono || lead?.telefono || "").trim(),
     leadId: v.contactoId,
   };
 }
@@ -65,8 +67,17 @@ export function alumnoDeVenta(e: EstadoApp, v: Venta): Alumno | undefined {
     const porLead = e.alumnos.find((a) => a.leadId === v.contactoId);
     if (porLead) return porLead;
   }
-  const k = claveEmail(personaDeVenta(e, v).email);
-  return k ? e.alumnos.find((a) => claveEmail(a.email) === k) : undefined;
+  const persona = personaDeVenta(e, v);
+  const k = claveEmail(persona.email);
+  const porMail = k ? e.alumnos.find((a) => claveEmail(a.email) === k) : undefined;
+  if (porMail) return porMail;
+  /* Lili lo cargó a mano porque el closer todavía no usaba la app (22/10) y el closer escribió otro mail: el mismo teléfono
+     y dos palabras del nombre, entre los alumnos que todavía no tienen venta (lib/duplicados.ts). La base hace lo mismo
+     para las cuentas que no ven a los alumnos (supabase/alumnos-sin-duplicar.sql). */
+  if (!persona.telefono) return undefined;
+  const telefonoDe = (a: Alumno) => (e.seguimientos ?? []).find((s) => s.alumnoId === a.id)?.telefono
+    || (a.leadId ? e.leads.find((l) => l.id === a.leadId)?.telefono : "") || "";
+  return e.alumnos.find((a) => !a.ventaId && esLaMismaPersona({ nombre: a.nombre, telefono: telefonoDe(a) }, persona));
 }
 
 /* El plan de un alumno que viene de una venta es el producto que compró. */

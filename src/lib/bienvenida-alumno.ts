@@ -27,6 +27,8 @@ export interface ConfigBienvenida {
   roadmaps?: Partial<Record<PerfilAlumno, string>>;
   soporte?: { nombre?: string; whatsapp?: string };
   auditoriaCv?: { nombre?: string; whatsapp?: string };
+  /* Adónde van las respuestas del alumno al mail de bienvenida (el remitente de hackearit.com no tiene casilla). */
+  responderA?: string;
 }
 
 export interface Contacto { nombre: string; whatsapp: string; enlace: string | null }

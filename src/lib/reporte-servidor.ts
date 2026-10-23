@@ -121,14 +121,15 @@ export type Pedir = typeof fetch;
 
 /** Un mail por Resend. Devuelve el id del envío, o por qué falló (sin la dirección ni la clave). */
 export async function enviarPorResend(
-  cfg: ConfigResend, mail: { para: string; asunto: string; texto: string; html: string }, pedir: Pedir = fetch,
+  cfg: ConfigResend, mail: { para: string; asunto: string; texto: string; html: string; responderA?: string }, pedir: Pedir = fetch,
 ): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
   let r: Response;
   try {
     r = await pedir("https://api.resend.com/emails", {
       method: "POST",
       headers: { Authorization: `Bearer ${cfg.clave}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ from: cfg.desde, to: [mail.para], subject: mail.asunto, text: mail.texto, html: mail.html }),
+      /* «Responder a»: el remitente puede ser una dirección que no recibe (hackearit.com no tiene casilla) y la respuesta va a quien atiende. */
+      body: JSON.stringify({ from: cfg.desde, to: [mail.para], subject: mail.asunto, text: mail.texto, html: mail.html, ...(mail.responderA ? { reply_to: mail.responderA } : {}) }),
     });
   } catch {
     return { ok: false, error: "No se pudo conectar con Resend." };

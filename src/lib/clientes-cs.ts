@@ -9,8 +9,9 @@ import {
 } from "./seguimiento";
 import { crearMotor, numeroComoValor, siNo, SI, NO, uno, varios, type ColumnaCs, type OrdenCs } from "./tabla-cs";
 import { finConPausas, inicioReal, pausaEnCurso, pausasNormales } from "./pausas";
+import { followUpDeReserva, reservaSinCompletar } from "./reservas";
 import type {
-  Alumno, ConfigSeguimiento, Contacto, EstadoApp, ID, ListasCs, PausaServicio, Resell, SeguimientoAlumno, SesionUnoAUno, Testimonio, Venta,
+  Alumno, ConfigSeguimiento, Contacto, Cuota, EstadoApp, ID, ListasCs, PausaServicio, Resell, SeguimientoAlumno, SesionUnoAUno, Testimonio, Venta,
 } from "./types";
 
 /* ==================================================================
@@ -39,6 +40,8 @@ export const LISTAS_POR_DEFECTO: ListasCs = {
     /* Lili, 22/10. «Outboarding» también: es el que deja «No renueva» y saca al alumno del servicio. */
     "Roadmap", "Contenido Hackear AI", "Con entrevistas", "Caso de éxito", "No aplica recomendaciones", "Avanza lento",
     "Vio todo no tiene resultados", "Outboarding",
+    /* Lili, 22/10: la reserva pagada por fuera de la app; mientras diga esto, no entra al seguimiento (lib/reservas.ts). */
+    "Reserva",
   ],
   estadosContrato: ["Enviado", "Falta firma", "Firmado y subido a Drive"],
   garantias: [],
@@ -52,7 +55,12 @@ export const LISTAS_POR_DEFECTO: ListasCs = {
 };
 
 /* Las dos que no se ajustan: Firmado o Pendiente, y las sesiones con el mentor (0 a 3). */
-export const CONTRATOS = ["Firmado", "Pendiente"];
+/* «No se realizaba contrato» (Lili, 22/10): a las reservas y al Downsell de antes del 22/09 no se les hacía; hoy no tiene sentido
+   hacérselo. No es un contrato pendiente: no entra en «Contrato sin firmar». */
+export const NO_SE_HACIA_CONTRATO = "No se realizaba contrato";
+export const CONTRATOS = ["Firmado", "Pendiente", NO_SE_HACIA_CONTRATO];
+/* Desde cuándo se hace contrato a las reservas y al Downsell (Lili, 22/10: «de un mes para atrás no se hacían»). */
+export const CONTRATO_RESERVA_DOWNSELL_DESDE = "2026-09-22";
 export const SESIONES_MENTOR = [0, 1, 2, 3];
 /* Lo que Lili contó que dura cada programa, «por ejemplo»: sólo es lo que se sugiere al cargar uno. */
 export const DURACION_POR_PROGRAMA: Record<string, number> = {
@@ -283,6 +291,10 @@ export interface FilaCliente {
   inicio: string;
   egreso: string | null;
   egresoSugerido: boolean;
+  /* Sólo pagó la reserva, o su Follow Up dice «Reserva» (lib/reservas.ts): todavía no arrancó. */
+  enReserva: boolean;
+  /* El contrato no se cargó y es una reserva o un Downsell de antes de que se hiciera contrato: se sugiere «No se realizaba contrato». */
+  contratoSugerido: boolean;
   /* El día en que arranca de verdad: el ingreso o, con demora de inicio, el día en que termina la demora (lib/pausas.ts). */
   inicioReal: string;
   /* La demora o la pausa en curso, si hay. */
@@ -348,7 +360,7 @@ export function filasClientes(e: EstadoApp, hoy: string): FilaCliente[] {
   const rachas = rachasAHoy(e);
   const conReportes = new Set(e.reportes.map((r) => r.alumnoId));
 
-  const cuotasDe = new Map<ID, { esReserva: boolean; estado: string }[]>();
+  const cuotasDe = new Map<ID, Pick<Cuota, "monto" | "esReserva" | "estado">[]>();
   for (const c of e.cuotas) {
     const l = cuotasDe.get(c.ventaId);
     if (l) l.push(c); else cuotasDe.set(c.ventaId, [c]);
@@ -390,6 +402,12 @@ export function filasClientes(e: EstadoApp, hoy: string): FilaCliente[] {
     const edadSug = seg.edad === null ? edadDeTexto(respuestaPerfil(llamada?.respuestas, "edad")) : null;
 
     const closerVenta = venta?.closerId ? equipo.get(venta.closerId) ?? "" : "";
+    /* Sólo una reserva (lib/reservas.ts): no entra al seguimiento hasta que pague lo que falta. */
+    const enReserva = Boolean(venta && reservaSinCompletar(cuotasDe.get(venta.id) ?? [])) || followUpDeReserva(seg.followUp);
+    /* A las reservas y al Downsell de antes del 22/09 no se les hacía contrato: no es un contrato pendiente. */
+    const esDownsell = /downsell/i.test(producto || a.plan || "");
+    const contratoSug = !seg.contratoFirmado && inicio !== "" && inicio < CONTRATO_RESERVA_DOWNSELL_DESDE && (enReserva || esDownsell)
+      ? NO_SE_HACIA_CONTRATO : "";
     /* En pausa (o antes de arrancar) no toca el contacto de seguimiento: el próximo es el día en que retoma. */
     const proximoSinPausa = proximoDe(seg, a, cfg.contarDesde);
     const proximo = pausa && proximoSinPausa < pausa.hasta ? pausa.hasta : proximoSinPausa;
@@ -411,13 +429,14 @@ export function filasClientes(e: EstadoApp, hoy: string): FilaCliente[] {
       contactoInicial: seg.contactoInicial, contactoSemana: seg.contactoSemana,
       acceso: seg.acceso, followUp: seg.followUp, garantia: seg.garantia,
       wpp: seg.accesoWhatsapp, zoom: seg.accesoZoom, wibo: seg.accesoWibo,
-      contrato: seg.contratoFirmado, estadoContrato: seg.estadoContrato,
+      contrato: seg.contratoFirmado || contratoSug, contratoSugerido: contratoSug !== "", estadoContrato: seg.estadoContrato,
       closer: closerVenta || seg.closerNombre, closerDeVenta: closerVenta !== "",
       reporte: reporteDeCliente(a, seg, conReportes.has(a.id), rachas.get(a.id)),
       ultimoContacto: seg.ultimoContacto, proximo, atraso,
-      situacion: situacionDe(a.estado, seg.dejoDeContestar, atraso, seg.followUp), cadencia: seg.cadenciaDias, intentos: seg.intentosSinRespuesta,
+      situacion: situacionDe(a.estado, seg.dejoDeContestar, atraso, seg.followUp, enReserva), enReserva,
+      cadencia: seg.cadenciaDias, intentos: seg.intentosSinRespuesta,
       cv: seg.cvCorregido, linkedin: seg.linkedinCorregido, responsableCv: seg.responsableCv,
-      estadoAlumno: ESTADO_ALUMNO_TEXTO[a.estado] ?? a.estado,
+      estadoAlumno: enReserva && a.estado === "activo" ? "Reserva" : ESTADO_ALUMNO_TEXTO[a.estado] ?? a.estado,
       etapa: (a.etapaServicioId ? etapas.get(a.etapaServicioId) : undefined) ?? primeraEtapa,
       testimonio: testimonio ? testimonio.estadoVideo || testimonio.followUp || SIN_TESTIMONIO : SIN_TESTIMONIO,
     };
@@ -610,7 +629,7 @@ export function escrituraCliente(f: FilaCliente, clave: ClaveCliente, valor: str
     case "garantia": return seg({ garantia: valorDeLista(v, listas.garantias) });
     case "contrato": {
       const c = valorDeLista(v, CONTRATOS);
-      return !v || CONTRATOS.includes(c) ? seg({ contratoFirmado: c }) : { tipo: "no", motivo: "El contrato está «Firmado» o «Pendiente»." };
+      return !v || CONTRATOS.includes(c) ? seg({ contratoFirmado: c }) : { tipo: "no", motivo: "El contrato está «Firmado», «Pendiente» o «No se realizaba contrato»." };
     }
     case "estadoContrato": return seg({ estadoContrato: valorDeLista(v, listas.estadosContrato) });
     case "responsableCv": return seg({ responsableCv: v });
