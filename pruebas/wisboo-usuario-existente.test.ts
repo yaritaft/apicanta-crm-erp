@@ -119,3 +119,21 @@ test("el motivo de Wisboo: sólo code y message, cortos", () => {
   assert.equal(motivoWisboo({ code: "X", message: "  algo  " }), ": X · algo");
   assert.equal(motivoWisboo({ details: [{ field: "email" }] }), "");
 });
+
+test("Wisboo: devuelve 50 por página aunque se pidan 100 → igual llega a la última (donde están los nuevos)", async () => {
+  const { db, filas } = baseMinima();
+  const de50 = (n: number) => Array.from({ length: 50 }, (_x, i) => ({ id: `usr_${n}_${i}`, email: `otro${n}_${i}@x.com` }));
+  const { resultado, pedidos } = await conWisbooFalso((url, init) => {
+    if (url.pathname.endsWith("/users") && init?.method === "POST") return YA_EXISTE;
+    if (url.pathname.endsWith("/users")) {
+      const n = Number(url.searchParams.get("page") ?? 1);
+      const data = n === 20 ? [...de50(20).slice(0, 21), { id: "usr_brian", email: "fmdiania@hotmail.com" }] : n < 20 ? de50(n) : [];
+      return { status: 200, json: { data, metadata: { total_record_count: 972, page_size: 50 } } };
+    }
+    if (url.pathname.endsWith("/product_accesses")) return { status: 200, json: { id: "pa_1" } };
+    return { status: 200, json: {} };
+  }, () => darAccesos(db, { alumnoId: "alu_1", persona, programa: PROGRAMA, origen: "manual", quien: "x" }));
+  assert.equal(resultado.dados, 1);
+  assert.equal((filas[0].externo as Fila).usuarioId, "usr_brian");
+  assert.equal(pedidos.filter((p) => p.includes("page=")).length, 2);
+});

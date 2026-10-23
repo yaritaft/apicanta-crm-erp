@@ -83,8 +83,10 @@ async function recorrerUsuariosWisboo(email: string): Promise<string | null> {
   const ya = conMail(filasDe(primera), email);
   if (ya) return ya;
   const total = totalDe(primera);
-  const ultima = total !== null ? Math.ceil(total / POR_PAGINA) : 50;
-  for (let n = Math.min(ultima, 100); n >= 2; n--) {
+  /* Wisboo puede devolver menos de las pedidas por página: las páginas se cuentan con las que devolvió de verdad. */
+  const porPagina = Math.max(1, filasDe(primera).length || POR_PAGINA);
+  const ultima = total !== null ? Math.ceil(total / porPagina) : 50;
+  for (let n = Math.min(ultima, 200); n >= 2; n--) {
     const json = await pagina(n);
     const id = conMail(filasDe(json), email);
     if (id) return id;
