@@ -75,7 +75,8 @@ export function MovimientosDeLaCuenta({ cuentaId, desde, onCerrar }: { cuentaId:
     {
       clave: "accion", titulo: "",
       celda: (m) => {
-        if (m.estadoApp === "cargado" || m.estadoApp === "no-se-carga") return null;
+        /* Un contracargo no se carga como gasto: se confirma como devolución (la propone «Sincronizar»), que es lo que revierte la comisión. */
+        if (m.estadoApp === "cargado" || m.estadoApp === "no-se-carga" || m.tipo === "contracargo") return null;
         if (m.tipo === "cobro" || m.tipo === "pase") return <span className="t-sm t-subtle">Entra con «Sincronizar»</span>;
         return (
           <span className="row" style={{ gap: 6 }}>
