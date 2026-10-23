@@ -433,10 +433,10 @@ export function accesosPendientes(
 
 /* ---------- Un contrato que se mandó a mano desde PandaDoc: lo que dice el documento ---------- */
 
-/** 20/10/2026 o 2026-10-20T12:00:00Z → 2026-10-20. */
+/** 20/10/2026, 20/10/26 (así lo escribe el equipo a mano en PandaDoc) o 2026-10-20T12:00:00Z → 2026-10-20. */
 function diaDe(texto: string): string {
-  const dmy = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(texto.trim());
-  if (dmy) return `${dmy[3]}-${dmy[2].padStart(2, "0")}-${dmy[1].padStart(2, "0")}`;
+  const dmy = /^(\d{1,2})\/(\d{1,2})\/(\d{4}|\d{2})$/.exec(texto.trim());
+  if (dmy) return `${dmy[3].length === 2 ? `20${dmy[3]}` : dmy[3]}-${dmy[2].padStart(2, "0")}-${dmy[1].padStart(2, "0")}`;
   const iso = /^(\d{4}-\d{2}-\d{2})/.exec(texto.trim());
   return iso ? iso[1] : "";
 }

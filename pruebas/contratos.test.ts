@@ -335,6 +335,8 @@ test("el documento todavía sin firmante (el aviso llega antes): nada que leer, 
   /* Un campo con «merge field» también vale (si la plantilla lo usa en vez de la variable). */
   const r = datosDelDocumento({ recipients: [{ email: "b@x.com", first_name: "Beto", last_name: "Gómez", role: "Client" }], fields: [{ merge_field: "Contrato.Inicio", value: "2026-11-10T12:00:00.000Z" }] });
   assert.equal(r.datos.inicio, "2026-11-10");
+  /* Así lo escribe el equipo a mano en PandaDoc: año de dos cifras. */
+  assert.equal(datosDelDocumento({ tokens: [{ name: "Contrato.Inicio", value: "22/10/26" }] }).datos.inicio, "2026-10-22");
   assert.equal(r.destinatario.nombre, "Beto Gómez");
 });
 
