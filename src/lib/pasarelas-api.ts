@@ -4,6 +4,7 @@ import { cuentaDeContraparte, type Punta } from "./traspasos";
 import type { ReembolsoCrudo } from "./reembolsos";
 import { MOTIVO_LIQUIDACION_PROBABLE } from "./motivos";
 import { clasificarMercury, reglasExtraDeEntorno, type ResumenMercury } from "./mercury";
+import { movimientoDeMercury, movimientoDeStripe, type MovimientoDelBanco } from "./movimientos-del-banco";
 import { FUENTES_DE_SALDO, saldoDeBilleteraEn, type ErrorDeSaldo, type PendientesDeBanco, type RespuestaDeSaldos, type SaldoReal, type Transferencia } from "./saldos-reales";
 import { money } from "./format";
 
@@ -1361,6 +1362,63 @@ export async function saldoDeStripe(): Promise<SaldoReal | null> {
     cuentaId: "proc_stripe", saldo: dinero((disponible + pendiente) / 100), moneda: "USD", al: new Date().toISOString(), fuente: FUENTES_DE_SALDO.proc_stripe,
     ...(notas ? { nota: notas } : {}),
   };
+}
+
+/* ---------- Qué pasó de verdad en la cuenta (lib/movimientos-del-banco.ts) ---------- */
+
+export interface RespuestaDeMovimientos { movimientos: MovimientoDelBanco[]; avisos: string[]; conectada: boolean }
+
+/** Lo que movió Mercury desde un día: las cuentas de plata y también la tarjeta de crédito (de ahí salen las compras, el cashback). Un movimiento
+ *  anulado no se trae. Si una cuenta no se puede leer, el resto se devuelve y el aviso lo dice. */
+export async function movimientosDeMercury(desde: Date): Promise<RespuestaDeMovimientos> {
+  const crudo = process.env.MERCURY_API_TOKEN?.trim();
+  if (!crudo) return { movimientos: [], avisos: [], conectada: false };
+  const clave = crudo.startsWith("secret-token:") ? crudo : `secret-token:${crudo}`;
+  const cabeceras = { Authorization: `Bearer ${clave}` };
+  const rc = await fetch("https://api.mercury.com/api/v1/accounts", { headers: cabeceras, cache: "no-store" });
+  const cuentas = await json(rc);
+  if (!rc.ok) throw rechazo("Mercury (cuentas)", rc, cuentas);
+  const extras = reglasExtraDeEntorno(process.env.MERCURY_REGLAS_INTERNAS);
+  const q = new URLSearchParams({ limit: "500", start: desde.toISOString().slice(0, 10) });
+  const avisos: string[] = [];
+  const movimientos: MovimientoDelBanco[] = [];
+  const vistos = new Set<string>();
+  await Promise.all(((cuentas.accounts ?? []) as Obj[]).filter((c) => c.id).map(async (c) => {
+    try {
+      const r = await fetch(`https://api.mercury.com/api/v1/account/${String(c.id)}/transactions?${q}`, { headers: cabeceras, cache: "no-store" });
+      const d = await json(r);
+      if (!r.ok) throw rechazo(`Mercury (movimientos de ${String(c.name ?? c.id)})`, r, d);
+      for (const t of (d.transactions ?? []) as Record<string, unknown>[]) {
+        const m = movimientoDeMercury(t, "proc_mercury", extras);
+        if (m && !vistos.has(m.ref) && new Date(m.fecha) >= desde) { vistos.add(m.ref); movimientos.push(m); }
+      }
+    } catch (err) {
+      avisos.push(err instanceof Error ? err.message : String(err));
+    }
+  }));
+  movimientos.sort((a, b) => b.fecha.localeCompare(a.fecha));
+  return { movimientos, avisos, conectada: true };
+}
+
+/** Lo que movió Stripe desde un día (balance transactions): cobros, comisiones, reembolsos, retiros, ajustes. */
+export async function movimientosDeStripe(desde: Date): Promise<RespuestaDeMovimientos> {
+  const clave = process.env.STRIPE_SECRET_KEY;
+  if (!clave) return { movimientos: [], avisos: [], conectada: false };
+  const movimientos: MovimientoDelBanco[] = [];
+  let despuesDe: string | undefined;
+  for (let pagina = 0; pagina < 5; pagina++) {
+    const q = new URLSearchParams({ limit: "100", "created[gte]": String(Math.floor(desde.getTime() / 1000)) });
+    if (despuesDe) q.set("starting_after", despuesDe);
+    const r = await fetch(`https://api.stripe.com/v1/balance_transactions?${q}`, { headers: { Authorization: `Bearer ${clave}` }, cache: "no-store" });
+    const d = await json(r);
+    if (!r.ok) throw rechazo("Stripe (movimientos)", r, d);
+    const lista = (d.data ?? []) as Record<string, unknown>[];
+    for (const t of lista) { const m = movimientoDeStripe(t, "proc_stripe"); if (m) movimientos.push(m); }
+    if (!d.has_more || lista.length === 0) break;
+    despuesDe = String(lista[lista.length - 1].id);
+  }
+  movimientos.sort((a, b) => b.fecha.localeCompare(a.fecha));
+  return { movimientos, avisos: [], conectada: true };
 }
 
 const LECTORES: Record<string, (al?: Date) => Promise<SaldoReal | null>> = {
