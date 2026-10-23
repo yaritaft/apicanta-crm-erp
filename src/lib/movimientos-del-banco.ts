@@ -125,6 +125,8 @@ export interface MovimientoCruzado extends MovimientoDelBanco {
   donde?: string;
   /* El gasto con el que se parece (para mirarlo). */
   gastoId?: ID;
+  /* Ya está propuesto como devolución y falta confirmarlo: se confirma ahí, no se carga como gasto. */
+  enDevoluciones?: boolean;
 }
 
 const DIA = 86400000;
@@ -152,7 +154,12 @@ export function cruzarConLaApp(
     const devuelta = m.refApp.flatMap((r) => [`${proveedor}:${r}`, `${proveedor}:disputa:${r}`, `${proveedor}:reembolso:${r}`]).map((k) => devoluciones.get(k)).find(Boolean);
     if (devuelta) {
       const demas = r2(Math.abs(m.monto) - devuelta.monto);
-      return { ...m, estadoApp: "cargado", donde: `Está como ${m.tipo === "contracargo" ? "contracargo" : "reembolso"}${demas > 0.01 ? ` (de US$ ${devuelta.monto.toLocaleString("es-AR")}; la pasarela retiró US$ ${demas.toLocaleString("es-AR")} más en comisiones: cargalas como gasto)` : ""}.` };
+      const que = m.tipo === "contracargo" ? "contracargo" : "reembolso";
+      const comision = demas > 0.01 ? ` (de US$ ${devuelta.monto.toLocaleString("es-AR")}; la pasarela retiró US$ ${demas.toLocaleString("es-AR")} más en comisiones: cargalas como gasto)` : "";
+      /* Una propuesta todavía no movió el saldo esperado: hasta que se confirma, el saldo sigue sin dar. */
+      if (devuelta.estado === "propuesta") return { ...m, estadoApp: "falta", enDevoluciones: true, donde: `Ya está propuesto como ${que}${comision}: confirmalo en Finanzas, paso «Atar los cobros y los reembolsos».` };
+      if (devuelta.estado === "ignorada") return { ...m, estadoApp: "no-se-carga", donde: `Se descartó como ${que} en Devoluciones.` };
+      return { ...m, estadoApp: "cargado", donde: `Está como ${que}${comision}.` };
     }
     if (m.tipo === "contracargo") return { ...m, estadoApp: "falta", donde: "El contracargo todavía no está como devolución: aparece con «Sincronizar» para confirmarlo en Devoluciones." };
     const propio = (e.gastos ?? []).find((g) => gastoApunta(g, m.ref));

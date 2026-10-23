@@ -122,6 +122,14 @@ test("un contracargo de Stripe: falta hasta que está como devolución (se propo
   const sin = cruzarConLaApp(e, [cc])[0];
   assert.equal(sin.estadoApp, "falta");
   assert.match(sin.donde ?? "", /Sincronizar/);
+  /* Propuesta por «Sincronizar» pero sin confirmar: el saldo esperado todavía no se movió, así que sigue faltando (y se confirma en Devoluciones). */
+  e.devoluciones = [{ id: "dev1", referencia: "stripe:disputa:du_1", monto: 457, estado: "propuesta" } as Devolucion];
+  const propuesta = cruzarConLaApp(e, [cc])[0];
+  assert.equal(propuesta.estadoApp, "falta");
+  assert.equal(propuesta.enDevoluciones, true);
+  assert.match(propuesta.donde ?? "", /propuesto como contracargo.*Atar los cobros y los reembolsos/);
+  e.devoluciones = [{ id: "dev1", referencia: "stripe:disputa:du_1", monto: 457, estado: "ignorada" } as Devolucion];
+  assert.equal(cruzarConLaApp(e, [cc])[0].estadoApp, "no-se-carga");
   e.devoluciones = [{ id: "dev1", referencia: "stripe:disputa:du_1", monto: 457, estado: "confirmada" } as Devolucion];
   const con = cruzarConLaApp(e, [cc])[0];
   assert.equal(con.estadoApp, "cargado");

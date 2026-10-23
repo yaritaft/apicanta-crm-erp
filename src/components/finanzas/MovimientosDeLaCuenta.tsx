@@ -70,13 +70,13 @@ export function MovimientosDeLaCuenta({ cuentaId, desde, onCerrar }: { cuentaId:
     },
     {
       clave: "estado", titulo: "En la app", orden: (m) => TEXTO[m.estadoApp],
-      celda: (m) => <span title={m.donde}><Badge variante={VARIANTE[m.estadoApp]}>{TEXTO[m.estadoApp]}</Badge>{m.donde && (m.estadoApp !== "falta" || m.tipo === "contracargo") && <span className="t-sm t-subtle" style={{ display: "block", maxWidth: 360, whiteSpace: "normal" }}>{m.donde}</span>}</span>,
+      celda: (m) => <span title={m.donde}><Badge variante={VARIANTE[m.estadoApp]}>{TEXTO[m.estadoApp]}</Badge>{m.donde && (m.estadoApp !== "falta" || m.tipo === "contracargo" || m.enDevoluciones) && <span className="t-sm t-subtle" style={{ display: "block", maxWidth: 360, whiteSpace: "normal" }}>{m.donde}</span>}</span>,
     },
     {
       clave: "accion", titulo: "",
       celda: (m) => {
         /* Un contracargo no se carga como gasto: se confirma como devolución (la propone «Sincronizar»), que es lo que revierte la comisión. */
-        if (m.estadoApp === "cargado" || m.estadoApp === "no-se-carga" || m.tipo === "contracargo") return null;
+        if (m.estadoApp === "cargado" || m.estadoApp === "no-se-carga" || m.tipo === "contracargo" || m.enDevoluciones) return null;
         if (m.tipo === "cobro" || m.tipo === "pase") return <span className="t-sm t-subtle">Entra con «Sincronizar»</span>;
         return (
           <span className="row" style={{ gap: 6 }}>
