@@ -91,8 +91,10 @@ export function MovimientosDeLaCuenta({ cuentaId, desde, onCerrar }: { cuentaId:
 
   return (
     <>
+      {/* Mientras se carga un movimiento el asistente (a pantalla completa, z-index 120) tiene que verse: la ventana va por debajo (130), así que se
+          esconde. Su lista y su filtro viven acá, no en el Modal: al terminar vuelve tal cual, con lo recién cargado ya marcado. */}
       <Modal
-        abierto onCerrar={onCerrar} xl titulo={`Qué pasó en ${nombre}`}
+        abierto={cargando === null} onCerrar={onCerrar} xl titulo={`Qué pasó en ${nombre}`}
         sub={`Lo que movió la cuenta desde el ${fechaLarga(desde)}, y cuánto de eso ya está en la app. Lo que falta es lo que hace que el saldo no dé.`}
         pie={<><Button variante="ghost" onClick={onCerrar}>Cerrar</Button><Button variante="secondary" icono={<RefreshCw size={15} />} cargando={estado.cargando} onClick={() => void leer()}>Volver a mirar</Button></>}
       >
