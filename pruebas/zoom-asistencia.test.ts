@@ -45,9 +45,9 @@ test("zoom: qué clases traer: las en curso esperan, las recientes se repiten ca
   assert.deepEqual(clasesParaTraer(inst, traidas, ahora).map((x) => x.uuid), ["reciente-sin-traer", "reciente-traida-hace-5h", "vieja-sin-traer"]);
 });
 
-test("zoom: el aviso de permiso nombra los scopes que dice Zoom, y otros errores no se confunden", () => {
-  const a = avisoDePermisoZoom(400, { code: 4711, message: "Invalid access token, does not contain scopes:[meeting:read:list_past_participants:admin]." });
-  assert.match(a ?? "", /meeting:read:list_past_participants:admin/);
+test("zoom: el aviso de permiso lista los scopes que hay que agregar, y otros errores no se confunden", () => {
+  const a = avisoDePermisoZoom(400, { code: 4711, message: "Invalid access token, does not contain scopes:[meeting:read:list_past_instances, meeting:read:list_past_instances:admin]." });
+  assert.match(a ?? "", /list_past_instances:admin.*list_past_participants:admin.*past_meeting:admin/);
   assert.equal(avisoDePermisoZoom(404, { message: "Meeting does not exist" }), null);
   assert.equal(avisoDePermisoZoom(429, null), null);
 });

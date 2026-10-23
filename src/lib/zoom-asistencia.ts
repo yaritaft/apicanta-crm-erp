@@ -99,13 +99,12 @@ export function clasesParaTraer(
 }
 
 /** Si Zoom dijo que a la app le falta un permiso, qué hay que hacer (en castellano); null si el error es otro. */
+export const PERMISOS_DE_ZOOM = ["meeting:read:list_past_instances:admin", "meeting:read:list_past_participants:admin", "meeting:read:past_meeting:admin"];
+
 export function avisoDePermisoZoom(status: number, json: Record<string, unknown> | null): string | null {
   const mensaje = typeof json?.message === "string" ? json.message : "";
-  if (status === 401 || status === 400 || status === 403) {
-    if (/scope/i.test(mensaje)) {
-      const permisos = mensaje.match(/\[([^\]]+)\]/)?.[1];
-      return `A la app de Zoom le falta un permiso para ver quién asistió${permisos ? ` (${permisos})` : ""}: agregalo en Zoom Marketplace → la app Server-to-Server → Scopes, y volvé a activarla.`;
-    }
+  if ((status === 401 || status === 400 || status === 403) && /scope/i.test(mensaje)) {
+    return `A la app de Zoom le faltan permisos para ver quién asistió. Agregá en Zoom Marketplace → tu app Server-to-Server → Scopes: ${PERMISOS_DE_ZOOM.join(", ")}; y volvé a activarla.`;
   }
   return null;
 }
