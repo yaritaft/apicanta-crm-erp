@@ -3,8 +3,10 @@
 import { enRangoDeDias, type RangoDeDias } from "@/lib/dia-negocio";
 import React, { useMemo, useState } from "react";
 import { AlertTriangle, ArrowRight, ArrowRightLeft, Check, Pencil, RefreshCw, RotateCcw, Trash2, X } from "lucide-react";
-import { Ayuda, Badge, Button, Card, CardHead, Chip, Field, IconButton, Input, Select, Textarea, type VarianteBadge } from "@/components/ui/ui";
+import { Ayuda, Badge, Button, Card, CardHead, Chip, Field, IconButton, Input, Textarea, type VarianteBadge } from "@/components/ui/ui";
 import { InputMonto } from "@/components/ui/InputMonto";
+import { Asistente, Opcion, Pregunta } from "@/components/ui/Asistente";
+import { ResumenAsistente } from "@/components/ui/ResumenAsistente";
 import { DataTable } from "@/components/ui/DataTable";
 import { Confirmar, ModalForm } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toast";
@@ -15,7 +17,7 @@ import { escribirMonto, leerMonto } from "@/lib/gastos";
 import { useParamsURL, useTablaURL } from "@/lib/useParamsURL";
 import {
   AYUDA_SITUACION, cambioDe, CATEGORIA_COSTO, cobroDeLaLlegada, conComisionDelRetiro, costoDe, esperaLlegada, faltaComisionDelRetiro, gastoDelCosto,
-  llegadaDeCobro, LLEGADA_A_MANO, parecidos, paseQuePisaUnCobro, resumenDePases, rutaDe, SALIDA_A_MANO, situacionDe, TEXTO_SITUACION, type Punta, type Situacion,
+  llegadaDeCobro, LLEGADA_A_MANO, parecidos, paseQuePisaUnCobro, problemasDelMovimiento, resumenDePases, rutaDe, SALIDA_A_MANO, situacionDe, TEXTO_SITUACION, type Punta, type Situacion,
 } from "@/lib/traspasos";
 import type { EstadoApp, EstadoTraspaso, Moneda, Movimiento, Traspaso } from "@/lib/types";
 
@@ -305,7 +307,16 @@ export function ComisionDelRetiro({ e, traspaso, onCerrar, onListo }: {
   );
 }
 
-/* ---------- Registrar o corregir uno ---------- */
+/* ---------- Registrar o corregir uno ----------
+   Una pregunta por pantalla, como el asistente de gastos y el de devoluciones (Juan Cruz, 23/10: «una banda de data en una sola pantalla»):
+   de qué cuenta salió, a cuál llegó, cuánto salió, cuánto llegó, el día, lo que costó (sólo si costó algo) y una nota; al final «Revisá y
+   cargá» con un «Cambiar» en cada dato. Un movimiento que detectó la sincronización arranca en la pregunta que importa («¿es plata que pasó
+   entre cuentas tuyas?»); uno que se corrige, en la revisión; un cobro que en realidad es un pase ya trae la cuenta y lo que llegó. */
+
+type PasoId = "decision" | "de" | "a" | "sale" | "llega" | "dia" | "costo" | "nota" | "revisar";
+const NOMBRE_PASO: Record<PasoId, string> = {
+  decision: "¿Es un pase?", de: "De", a: "A", sale: "Salió", llega: "Llegó", dia: "Día", costo: "Costo", nota: "Nota", revisar: "Revisá y cargá",
+};
 
 export function FormTraspaso({ e, traspaso, desdeCobro, onCerrar, onListo }: {
   e: EstadoApp;
@@ -334,6 +345,9 @@ export function FormTraspaso({ e, traspaso, desdeCobro, onCerrar, onListo }: {
   const detectado = t0?.origen === "api";
   const [decision, setDecision] = useState<EstadoTraspaso>(t0?.estado ?? "confirmado");
   const estado: EstadoTraspaso = detectado ? decision : "confirmado";
+  const conDecision = detectado && Boolean(t0);
+  const [pasoId, setPasoId] = useState<PasoId>(() => (t0 ? (conDecision ? "decision" : "revisar") : "de"));
+  const [vioRevision, setVioRevision] = useState(() => Boolean(t0) && !conDecision);
   /* El mismo depósito, ya conciliado como el cobro de una cuota: contarlo también como pase lo cuenta dos veces. */
   const cobroDelDeposito = useMemo(() => (t0 ? cobroDeLaLlegada(e.movimientos, t0) : undefined), [e.movimientos, t0]);
   const pisaUnCobro = Boolean(t0) && Boolean(paseQuePisaUnCobro(e.movimientos, { llegadaRef: t0?.llegadaRef, estado }));
@@ -380,16 +394,15 @@ export function FormTraspaso({ e, traspaso, desdeCobro, onCerrar, onListo }: {
     [e.traspasos, origenId, destinoId, borrador.montoSale, dia, t0?.id],
   );
 
-  const problema = (!origenId && !cobro) || !destinoId ? "Elegí las dos cuentas"
-    : origenId && origenId === destinoId ? "Las dos cuentas son la misma"
-      : !(borrador.montoSale > 0) ? "Poné cuánto salió"
-        : !(borrador.montoLlega > 0) ? "Poné cuánto llegó"
-          : faltaTc ? "Poné el tipo de cambio para cargar el gasto" : null;
+  const problemas = problemasDelMovimiento({
+    origenId: origenId || undefined, destinoId: destinoId || undefined, desdeCobro: Boolean(cobro),
+    montoSale: borrador.montoSale, montoLlega: borrador.montoLlega, faltaTc,
+  });
+  const problema = problemas[0]?.texto ?? null;
 
   /* Las cuentas activas, y las de este movimiento aunque ya no lo estén. */
   const cuentas = e.procesadores.filter((p) => p.activo || p.id === t0?.origenId || p.id === t0?.destinoId)
-    .sort((a, b) => a.nombre.localeCompare(b.nombre, "es"))
-    .map((p) => ({ valor: p.id, texto: `${p.nombre}${p.moneda === "ARS" ? " · en pesos" : ""}` }));
+    .sort((a, b) => a.nombre.localeCompare(b.nombre, "es"));
 
   function guardar() {
     if (problema) return;
@@ -410,108 +423,232 @@ export function FormTraspaso({ e, traspaso, desdeCobro, onCerrar, onListo }: {
     onListo(`Movimiento de ${rutaDe(e, borrador)} ${t0 ? "corregido" : "registrado"}${gasto ? `: ${plata(costo, monedaSale)} quedaron como gasto` : ""}.`);
   }
 
-  return (
-    <ModalForm
-      abierto ancho onCerrar={onCerrar} onGuardar={guardar} puedeGuardar={!problema}
-      guardarTexto={t0 ? (detectado && estado !== t0.estado ? (estado === "ignorado" ? "Guardar: no es un movimiento entre cuentas" : estado === "confirmado" ? "Confirmar el movimiento" : "Guardar") : "Guardar los cambios") : cobro ? "Dejarlo como movimiento entre cuentas" : "Registrar movimiento"}
-      titulo={t0 ? "Movimiento entre cuentas" : cobro ? "Este cobro es un movimiento entre cuentas" : "Registrar un movimiento entre cuentas"}
-      sub={cobro
-        ? `Entraron ${plata(cobro.monto, cobro.moneda)} a ${nombreCuenta(e, destinoId)} el ${fechaLarga(cobro.fecha)}, pero no son una venta: es plata que pasó de otra cuenta tuya. El cobro deja de estar pendiente y queda sin venta, con este motivo.`
-        : "Plata que pasó de una cuenta tuya a otra. No es un ingreso ni un gasto."}
-    >
-      <div className="form-grid">
-        <Field label="De qué cuenta salió" ayuda={cobro ? "Si todavía no sabés de dónde salió la otra mitad, dejalo así y averigualo después." : undefined}>
-          <Select value={origenId} placeholder={cobro ? "Todavía no sé de qué cuenta salió" : "Elegí la cuenta"} aria-label="De qué cuenta salió" onChange={(ev) => setOrigenId(ev.target.value)} opciones={cuentas} />
-        </Field>
-        <Field label="A qué cuenta llegó" error={origenId && origenId === destinoId ? "Es la misma cuenta." : undefined}>
-          {cobro
-            ? <Input value={nombreCuenta(e, destinoId)} readOnly aria-label="A qué cuenta llegó" />
-            : <Select value={destinoId} placeholder="Elegí la cuenta" aria-label="A qué cuenta llegó" onChange={(ev) => setDestinoId(ev.target.value)} opciones={cuentas} />}
-        </Field>
-        {!sinOrigen && (
-          <Field label={`Salió (${monedaSale === "USD" ? "US$" : "$"})`}>
-            <InputMonto value={sale} placeholder="5.000" aria-label="Cuánto salió" autoFocus={!t0}
-              onChange={(ev) => setSale(ev.target.value)} />
-          </Field>
-        )}
-        <Field label={`Llegó (${monedaLlega === "USD" ? "US$" : "$"})`} ayuda={cobro ? "Es lo que entró: no se cambia." : mismaMoneda ? "Si llegó menos, la diferencia es lo que costó." : "En la moneda de la cuenta a la que llegó."}>
-          {cobro
-            ? <Input value={plata(cobro.monto, monedaLlega)} readOnly aria-label="Cuánto llegó" />
-            : <InputMonto value={llegaTocado || !mismaMoneda ? llega : sale} placeholder={mismaMoneda ? "Lo mismo" : "0"} aria-label="Cuánto llegó"
-              onChange={(ev) => { setLlega(ev.target.value); setLlegaTocado(true); }} />}
-        </Field>
-        <Field label="Día">
-          <Input type="date" value={dia} onChange={(ev) => setDia(ev.target.value || diaAr(new Date().toISOString()))} />
-        </Field>
-        {costo > 0 && enPesos && conGasto && (
-          <Field label="Tipo de cambio (pesos por dólar)" ayuda="Para pasar el costo a dólares." error={faltaTc ? "Poné el tipo de cambio." : undefined}>
-            <InputMonto decimales={4} value={tc} onChange={(ev) => setTc(ev.target.value)} />
-          </Field>
-        )}
-      </div>
+  /* ---------- Los pasos ---------- */
+  const ids: PasoId[] = conDecision && decision === "ignorado"
+    ? ["decision", "nota", "revisar"]
+    : [
+      ...(conDecision ? (["decision"] as PasoId[]) : []),
+      "de", ...(cobro ? [] : (["a"] as PasoId[])), ...(sinOrigen ? [] : (["sale"] as PasoId[])), ...(cobro ? [] : (["llega"] as PasoId[])),
+      "dia", ...(cuentaComoPase && costo > 0 ? (["costo"] as PasoId[]) : []), "nota", "revisar",
+    ];
+  const actual = Math.max(0, ids.indexOf(pasoId));
+  const irAPaso = (id: PasoId) => { setPasoId(id); if (id === "revisar") setVioRevision(true); };
+  const delPaso = (id: PasoId) => problemas.find((p) => p.paso === id)?.texto ?? null;
+  const problemaPaso: string | null = pasoId === "revisar" ? problema : delPaso(pasoId);
+  const siguienteEsRevision = ids[actual + 1] === "revisar";
+  const volverARevisar = vioRevision && pasoId !== "revisar" && !siguienteEsRevision && problemaPaso === null
+    ? <button type="button" className="link t-sm" style={{ alignSelf: "flex-start" }} onClick={() => irAPaso("revisar")}>Listo, volver a revisar</button>
+    : null;
+  const cambiar = (id: PasoId) => (ids.includes(id) ? () => irAPaso(id) : undefined);
 
-      {/* Lo que dice el movimiento, antes de guardarlo. */}
-      {cuentaComoPase && costo > 0 && (
-        <label className="pases__costo">
-          <input type="checkbox" checked={conGasto} onChange={(ev) => setConGasto(ev.target.checked)} />
-          <span>
-            <strong>Costó {plata(costo, monedaSale)}.</strong> Cargarlo como gasto en «{CATEGORIA_COSTO}»
-            <span className="t-sm t-subtle"> · es lo único del movimiento que baja la caja y entra al P&L</span>
-          </span>
-        </label>
-      )}
-      {cambio && <p className="t-sm t-muted pases__nota">Entre pesos y dólares: a $ {num(cambio)} por dólar. No se carga ningún gasto.</p>}
-      {mismaMoneda && borrador.montoLlega > borrador.montoSale && borrador.montoSale > 0 && (
-        <p className="t-sm pases__nota pases__nota--ojo">Llegó más de lo que salió: revisá los montos.</p>
-      )}
-      {faltaLlegar && (
-        <label className="pases__costo">
-          <input type="checkbox" checked={yaLlego} onChange={(ev) => setYaLlego(ev.target.checked)} />
-          <span><strong>Ya llegó.</strong> La cuenta lo vio salir pero ninguna conectada lo vio llegar: marcalo si lo comprobaste a mano.</span>
-        </label>
-      )}
-      {detectado && t0 && (
-        <div className="pases__decision" role="group" aria-label="¿Es plata que pasó entre cuentas tuyas?">
-          <span className="t-label">¿Es plata que pasó entre cuentas tuyas?</span>
-          <div className="row-wrap">
-            <Chip activo={decision === "confirmado"} onClick={() => setDecision("confirmado")}>Sí, es un movimiento entre cuentas</Chip>
-            {t0.estado === "propuesto" && <Chip activo={decision === "propuesto"} onClick={() => setDecision("propuesto")}>Todavía no sé</Chip>}
-            <Chip activo={decision === "ignorado"} onClick={() => setDecision("ignorado")}>No: es un cobro de un cliente u otra cosa</Chip>
+  const hoy = diaAr(new Date().toISOString());
+  const ayer = diaAr(new Date(Date.now() - 86400000).toISOString());
+  const signo = (m: Moneda) => (m === "USD" ? "US$" : "$");
+  const titulo = t0 ? "Movimiento entre cuentas" : cobro ? "Este cobro es un movimiento entre cuentas" : "Registrar un movimiento entre cuentas";
+  const terminarTexto = t0 ? (detectado && estado !== t0.estado ? (estado === "ignorado" ? "Guardar: no es un movimiento entre cuentas" : estado === "confirmado" ? "Confirmar el movimiento" : "Guardar") : "Guardar los cambios") : cobro ? "Dejarlo como movimiento entre cuentas" : "Registrar movimiento";
+
+  const avisoDeCobroDoble = pisaUnCobro && cobroDelDeposito ? (
+    <p className="t-sm pases__nota pases__nota--ojo" role="alert">
+      Ojo: este depósito ya está conciliado como el cobro de {e.ventas.find((v) => v.id === cobroDelDeposito.ventaId)?.contactoNombre ?? cobroDelDeposito.clienteNombre ?? "un cliente"}.
+      Si además lo dejás como movimiento entre cuentas, la plata se cuenta dos veces (Mercury de más y {t0 ? nombreCuenta(e, t0.origenId) : "la otra cuenta"} de menos en el arqueo).
+      Si es el pago de un cliente, elegí «No».
+    </p>
+  ) : null;
+
+  const textoDeLaDecision = decision === "ignorado" ? "No: es un cobro de un cliente u otra cosa" : decision === "propuesto" ? "Todavía no sé: queda por confirmar" : "Sí, es un movimiento entre cuentas";
+  const filas = [
+    ...(conDecision ? [{ etiqueta: "¿Es un pase?", valor: textoDeLaDecision, onCambiar: cambiar("decision") }] : []),
+    ...(estado !== "ignorado" || !conDecision ? [
+      { etiqueta: "De", valor: origenId ? nombreCuenta(e, origenId) : "Todavía no sé", falta: problemas.some((p) => p.paso === "de"), onCambiar: cambiar("de") },
+      { etiqueta: "A", valor: destinoId ? nombreCuenta(e, destinoId) : "Sin elegir", falta: problemas.some((p) => p.paso === "a"), onCambiar: cambiar("a") },
+      ...(sinOrigen ? [] : [{ etiqueta: "Salió", valor: plata(borrador.montoSale, monedaSale), falta: problemas.some((p) => p.paso === "sale"), onCambiar: cambiar("sale") }]),
+      { etiqueta: "Llegó", valor: plata(borrador.montoLlega, monedaLlega), falta: problemas.some((p) => p.paso === "llega"), onCambiar: cambiar("llega") },
+      { etiqueta: "Día", valor: fechaLarga(fechaIso), onCambiar: cambiar("dia") },
+      ...(cuentaComoPase && costo > 0 ? [{
+        etiqueta: "Costo", valor: conGasto ? `${plata(costo, monedaSale)} · va como gasto en «${CATEGORIA_COSTO}»` : `${plata(costo, monedaSale)} · sin gasto`,
+        falta: problemas.some((p) => p.paso === "costo"), onCambiar: cambiar("costo"),
+      }] : []),
+    ] : []),
+    { etiqueta: "Nota", valor: notas.trim() || "Sin nota", onCambiar: cambiar("nota") },
+  ];
+
+  return (
+    <Asistente
+      etiqueta={titulo}
+      pasos={ids.map((id) => ({ id, titulo: NOMBRE_PASO[id] }))} actual={actual} onCambiarPaso={(i) => irAPaso(ids[i])}
+      problema={problemaPaso} problemaEsError={pasoId === "revisar"}
+      onCerrar={onCerrar} terminarTexto={terminarTexto} onTerminar={guardar}
+    >
+      {pasoId === "decision" && t0 && (
+        <>
+          <Pregunta
+            texto="¿Es plata que pasó entre cuentas tuyas?"
+            sub={`${t0.contraparte ? `El banco dice «${t0.contraparte}»: ` : ""}${rutaDe(e, borrador)} · ${plata(t0.montoSale, t0.monedaSale)} · ${fechaLarga(t0.fecha)}.`}
+          />
+          <div className="stack-3">
+            <div className="opciones opciones--lista">
+              <Opcion tecla="1" nombre="Sí, es un movimiento entre cuentas" sub="Cuenta como plata que pasó de una cuenta tuya a otra: no es una venta." activo={decision === "confirmado"} onClick={() => setDecision("confirmado")} />
+              {t0.estado === "propuesto" && (
+                <Opcion tecla="2" nombre="Todavía no sé" sub="Queda por confirmar. Guardar tu nota no lo confirma." activo={decision === "propuesto"} onClick={() => setDecision("propuesto")} />
+              )}
+              <Opcion
+                tecla={t0.estado === "propuesto" ? "3" : "2"} nombre="No: es un cobro de un cliente u otra cosa"
+                sub="Deja de contar como pase. El depósito sigue en Conciliación como un cobro más, para atarlo a su cuota."
+                activo={decision === "ignorado"} onClick={() => setDecision("ignorado")}
+              />
+            </div>
+            {avisoDeCobroDoble}
           </div>
-          <p className="t-sm t-subtle">
-            {decision === "ignorado"
-              ? "Deja de contar como pase. El depósito sigue en Conciliación como un cobro más, para atarlo a su cuota."
-              : decision === "propuesto"
-                ? "Queda por confirmar. Guardar tu nota no lo confirma."
-                : "Cuenta como plata que pasó de una cuenta tuya a otra: no es una venta."}
-          </p>
-        </div>
+        </>
       )}
-      {!detectado && t0 && t0.estado !== "confirmado" && (
-        <p className="t-sm t-muted pases__nota">
-          {t0.estado === "propuesto" ? "Está por confirmar" : "Estaba descartado"}: al guardarlo queda como un movimiento entre cuentas.
-        </p>
+
+      {pasoId === "de" && (
+        <>
+          <Pregunta
+            texto={cobro ? "¿De qué cuenta salió la otra mitad?" : "¿De qué cuenta salió la plata?"}
+            sub={cobro
+              ? `Entraron ${plata(cobro.monto, cobro.moneda)} a ${nombreCuenta(e, destinoId)} el ${fechaLarga(cobro.fecha)}, pero no son una venta: es plata que pasó de otra cuenta tuya. El cobro deja de estar pendiente y queda sin venta, con este motivo. Si todavía no sabés de dónde salió, elegí «Todavía no sé» y lo averiguás después.`
+              : "Plata que pasó de una cuenta tuya a otra. No es un ingreso ni un gasto."}
+          />
+          <div className="opciones">
+            {cobro && <Opcion tecla="1" nombre="Todavía no sé" activo={!origenId} onClick={() => setOrigenId("")} />}
+            {cuentas.filter((p) => p.id !== destinoId).map((p, i) => (
+              <Opcion
+                key={p.id} tecla={(cobro ? i + 2 : i + 1) <= 9 ? String(cobro ? i + 2 : i + 1) : undefined} nombre={p.nombre}
+                sub={p.moneda === "ARS" ? "En pesos" : undefined} activo={p.id === origenId} onClick={() => setOrigenId(p.id)}
+              />
+            ))}
+          </div>
+          {volverARevisar}
+        </>
       )}
-      {pisaUnCobro && cobroDelDeposito && (
-        <p className="t-sm pases__nota pases__nota--ojo" role="alert">
-          Ojo: este depósito ya está conciliado como el cobro de {e.ventas.find((v) => v.id === cobroDelDeposito.ventaId)?.contactoNombre ?? cobroDelDeposito.clienteNombre ?? "un cliente"}.
-          Si además lo dejás como movimiento entre cuentas, la plata se cuenta dos veces (Mercury de más y {t0 ? nombreCuenta(e, t0.origenId) : "la otra cuenta"} de menos en el arqueo).
-          Si es el pago de un cliente, elegí «No».
-        </p>
+
+      {pasoId === "a" && (
+        <>
+          <Pregunta texto="¿A qué cuenta llegó?" sub={origenId ? `Salió de ${nombreCuenta(e, origenId)}.` : undefined} />
+          <div className="opciones">
+            {cuentas.filter((p) => p.id !== origenId).map((p, i) => (
+              <Opcion
+                key={p.id} tecla={i < 9 ? String(i + 1) : undefined} nombre={p.nombre}
+                sub={p.moneda === "ARS" ? "En pesos" : undefined} activo={p.id === destinoId} onClick={() => setDestinoId(p.id)}
+              />
+            ))}
+          </div>
+          {volverARevisar}
+        </>
       )}
-      {yaHay.length > 0 && (
-        <p className="t-sm pases__nota pases__nota--ojo">
-          Ya hay {yaHay.length === 1 ? "uno parecido" : `${yaHay.length} parecidos`}: {yaHay.slice(0, 2).map((x) => `${fechaLarga(x.fecha)}, ${plata(x.montoSale, x.monedaSale)} (${TEXTO_SITUACION[situacionDe(x)].toLowerCase()})`).join(" · ")}. Fijate de no cargarlo dos veces.
-        </p>
+
+      {pasoId === "sale" && (
+        <>
+          <Pregunta texto="¿Cuánto salió?" sub={`De ${nombreCuenta(e, origenId)}, en ${monedaSale === "USD" ? "dólares" : "pesos"}.`} />
+          <InputMonto
+            value={sale} placeholder="5.000" aria-label="Cuánto salió" autoFocus onChange={(ev) => setSale(ev.target.value)}
+            icono={<span className="gasto-signo">{signo(monedaSale)}</span>} error={Boolean(delPaso("sale"))}
+          />
+          {volverARevisar}
+        </>
       )}
-      {t0 && (t0.salidaRef || t0.llegadaRef || t0.contraparte) && (
-        <p className="t-sm t-subtle pases__nota">
-          {[t0.salidaRef ? "La cuenta de salida lo vio salir" : "", t0.llegadaRef && !aMano ? "la de llegada lo vio llegar" : "",
-            aMano ? "la llegada la confirmó alguien a mano" : "", t0.contraparte ? `el banco dice «${t0.contraparte}»` : ""].filter(Boolean).join(" · ").replace(/^./, (x) => x.toUpperCase())}.
-        </p>
+
+      {pasoId === "llega" && (
+        <>
+          <Pregunta
+            texto="¿Cuánto llegó?"
+            sub={mismaMoneda ? "Si llegó menos, la diferencia es lo que costó." : `En la moneda de la cuenta a la que llegó (${monedaLlega === "USD" ? "dólares" : "pesos"}).`}
+          />
+          <div className="stack-3">
+            <InputMonto
+              value={llegaTocado || !mismaMoneda ? llega : sale} placeholder={mismaMoneda ? "Lo mismo" : "0"} aria-label="Cuánto llegó" autoFocus
+              onChange={(ev) => { setLlega(ev.target.value); setLlegaTocado(true); }}
+              icono={<span className="gasto-signo">{signo(monedaLlega)}</span>} error={Boolean(delPaso("llega"))}
+            />
+            {cambio && <p className="t-sm t-muted pases__nota">Entre pesos y dólares: a $ {num(cambio)} por dólar. No se carga ningún gasto.</p>}
+            {mismaMoneda && borrador.montoLlega > borrador.montoSale && borrador.montoSale > 0 && (
+              <p className="t-sm pases__nota pases__nota--ojo">Llegó más de lo que salió: revisá los montos.</p>
+            )}
+          </div>
+          {volverARevisar}
+        </>
       )}
-      <Field label="Nota" span2><Textarea rows={2} value={notas} onChange={(ev) => setNotas(ev.target.value)} placeholder="Para qué fue, quién lo hizo" /></Field>
-      {problema && (sale || origenId || destinoId) && <p className="t-sm t-subtle" role="status">{problema}.</p>}
-    </ModalForm>
+
+      {pasoId === "dia" && (
+        <>
+          <Pregunta texto="¿Qué día fue?" sub="El día en que la plata salió de una cuenta y llegó a la otra." />
+          <div className="stack-3">
+            <Input type="date" value={dia} onChange={(ev) => setDia(ev.target.value || hoy)} aria-label="Día del movimiento" />
+            <div className="row-wrap">
+              <Chip activo={dia === hoy} onClick={() => setDia(hoy)}>Hoy</Chip>
+              <Chip activo={dia === ayer} onClick={() => setDia(ayer)}>Ayer</Chip>
+            </div>
+          </div>
+          {volverARevisar}
+        </>
+      )}
+
+      {pasoId === "costo" && (
+        <>
+          <Pregunta
+            texto={`Costó ${plata(costo, monedaSale)}`}
+            sub="Es lo que salió de más: lo único del movimiento que baja la caja y entra al P&L. ¿Lo cargamos como gasto?"
+          />
+          <div className="stack-3">
+            <div className="opciones opciones--lista">
+              <Opcion tecla="1" nombre={`Sí, cargarlo como gasto en «${CATEGORIA_COSTO}»`} activo={conGasto} onClick={() => setConGasto(true)} />
+              <Opcion tecla="2" nombre="No, dejarlo sin gasto" activo={!conGasto} onClick={() => setConGasto(false)} />
+            </div>
+            {enPesos && conGasto && (
+              <Field label="Tipo de cambio (pesos por dólar)" ayuda="Para pasar el costo a dólares." error={faltaTc ? "Poné el tipo de cambio." : undefined}>
+                <InputMonto decimales={4} value={tc} onChange={(ev) => setTc(ev.target.value)} />
+              </Field>
+            )}
+          </div>
+          {volverARevisar}
+        </>
+      )}
+
+      {pasoId === "nota" && (
+        <>
+          <Pregunta texto="¿Algo para recordar?" sub="Es opcional: para qué fue, quién lo hizo." />
+          <Textarea rows={3} value={notas} onChange={(ev) => setNotas(ev.target.value)} placeholder="Para qué fue, quién lo hizo" aria-label="Nota" autoFocus />
+          {volverARevisar}
+        </>
+      )}
+
+      {pasoId === "revisar" && (
+        <>
+          <Pregunta
+            texto={t0 ? "Así está el movimiento" : "Así queda el movimiento"}
+            sub={cobro
+              ? `Entraron ${plata(cobro.monto, cobro.moneda)} a ${nombreCuenta(e, destinoId)}: no son una venta. El cobro deja de estar pendiente y queda sin venta, con este motivo.`
+              : "Plata que pasó de una cuenta tuya a otra: no es un ingreso ni un gasto. Con «Cambiar» volvés a cualquier dato."}
+          />
+          <div className="stack-3">
+            <ResumenAsistente filas={filas} />
+            {avisoDeCobroDoble}
+            {faltaLlegar && (
+              <label className="pases__costo">
+                <input type="checkbox" checked={yaLlego} onChange={(ev) => setYaLlego(ev.target.checked)} />
+                <span><strong>Ya llegó.</strong> La cuenta lo vio salir pero ninguna conectada lo vio llegar: marcalo si lo comprobaste a mano.</span>
+              </label>
+            )}
+            {yaHay.length > 0 && (
+              <p className="t-sm pases__nota pases__nota--ojo">
+                Ya hay {yaHay.length === 1 ? "uno parecido" : `${yaHay.length} parecidos`}: {yaHay.slice(0, 2).map((x) => `${fechaLarga(x.fecha)}, ${plata(x.montoSale, x.monedaSale)} (${TEXTO_SITUACION[situacionDe(x)].toLowerCase()})`).join(" · ")}. Fijate de no cargarlo dos veces.
+              </p>
+            )}
+            {!detectado && t0 && t0.estado !== "confirmado" && (
+              <p className="t-sm t-muted pases__nota">
+                {t0.estado === "propuesto" ? "Está por confirmar" : "Estaba descartado"}: al guardarlo queda como un movimiento entre cuentas.
+              </p>
+            )}
+            {t0 && (t0.salidaRef || t0.llegadaRef || t0.contraparte) && (
+              <p className="t-sm t-subtle pases__nota">
+                {[t0.salidaRef ? "La cuenta de salida lo vio salir" : "", t0.llegadaRef && !aMano ? "la de llegada lo vio llegar" : "",
+                  aMano ? "la llegada la confirmó alguien a mano" : "", t0.contraparte ? `el banco dice «${t0.contraparte}»` : ""].filter(Boolean).join(" · ").replace(/^./, (x) => x.toUpperCase())}.
+              </p>
+            )}
+          </div>
+        </>
+      )}
+    </Asistente>
   );
 }

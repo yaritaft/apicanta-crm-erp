@@ -4,6 +4,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { Info } from "lucide-react";
 import { Chip, Field, Input, Switch, Textarea } from "@/components/ui/ui";
 import { Asistente, Opcion, Pregunta } from "@/components/ui/Asistente";
+import { ResumenAsistente } from "@/components/ui/ResumenAsistente";
 import { InputMonto } from "@/components/ui/InputMonto";
 import { InfoMetrica } from "@/components/ui/InfoMetrica";
 import { AvisoMesCerrado } from "@/components/ui/AvisoMesCerrado";
@@ -29,7 +30,6 @@ import { fechaLarga, money } from "@/lib/format";
 import { nombrePeriodo, periodoDeFecha } from "@/lib/periodos";
 import { esCuentaEnPesos } from "@/lib/reporteFinanciera";
 import type { Comprobante, Devolucion } from "@/lib/types";
-import "./asistente-devolucion.css";
 
 /* ==================================================================
    Cargar una devolución (reunión del 02/10: «que den los números»).
@@ -535,15 +535,7 @@ function Formulario({ pedido }: { pedido: PedidoDevolucion }) {
               : "Revisá y cargala. Con «Cambiar» volvés a cualquier dato."}
           />
           <div className="stack-3">
-            <div className="devol-resumen">
-              {filas.map((f) => (
-                <div className="devol-resumen__fila" key={f.etiqueta} data-falta={f.falta ? "true" : undefined}>
-                  <span className="devol-resumen__etiqueta">{f.etiqueta}</span>
-                  <span className="devol-resumen__valor t-strong" style={{ fontWeight: 500 }}>{f.valor}</span>
-                  {f.paso ? <button type="button" className="link t-sm" onClick={() => irAPaso(f.paso as PasoId)}>{f.falta ? "Completar" : "Cambiar"}</button> : <span />}
-                </div>
-              ))}
-            </div>
+            <ResumenAsistente filas={filas.map((f) => ({ etiqueta: f.etiqueta, valor: f.valor, falta: f.falta, onCambiar: f.paso ? () => irAPaso(f.paso as PasoId) : undefined }))} />
             {efecto && cajaDeHoy}
           </div>
         </>
