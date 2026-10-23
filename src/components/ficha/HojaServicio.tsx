@@ -25,6 +25,7 @@ import { PausasAlumno } from "./PausasAlumno";
 import { BienvenidaAlumno } from "@/components/contratos/BienvenidaAlumno";
 import { textoDePausa } from "@/lib/pausas";
 import { resumenBonos } from "@/lib/bonos";
+import { programaDeProducto, programasDe } from "@/lib/programas";
 import { reservaSinCompletar, type EstadoReserva } from "@/lib/reservas";
 import { FormTestimonioCs } from "@/components/cs/TestimoniosCs";
 import { FormResell } from "@/components/cs/ResellsCs";
@@ -468,7 +469,7 @@ function HojaDeUnServicio({ e, p, f, venta, producto, conChat, reserva }: {
           <AccesosAlumno forma="hoja" alumno={alumno} venta={venta}
             manual={{ wisboo: dato("wibo", false), zoom: dato("zoom", false), whatsapp: f.wpp ? dato("wpp", false) : undefined }} />
           {/* Las clases de Zoom a las que entró (Yari, 22/10: «saber si vino o no a las clases»). */}
-          <SesionesZoom email={alumno.email} desde={f.inicioReal} />
+          <SesionesZoom email={alumno.email} desde={f.inicioReal} reuniones={programaDeProducto(programasDe(e.ajustes), venta?.productoId)?.zoom} />
           <Bloque titulo="Marcado a mano">{dato("acceso")}</Bloque>
         </>
       )}

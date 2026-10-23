@@ -125,12 +125,16 @@ export interface ResumenAsistencia {
 export function resumirAsistencia(
   clases: readonly ClaseZoom[],
   asistencias: readonly Pick<AsistenciaZoom, "instancia" | "minutos">[],
-  { desde, hoy = Date.now() }: { desde?: string; hoy?: number } = {},
+  { desde, hoy = Date.now(), reuniones }: { desde?: string; hoy?: number; reuniones?: readonly string[] } = {},
 ): ResumenAsistencia {
   const piso = desde && /^\d{4}-\d{2}-\d{2}/.test(desde) ? desde.slice(0, 10) : "";
   const fue = new Map(asistencias.map((a) => [a.instancia, a.minutos] as const));
+  /* Sólo cuentan las reuniones de su programa (a un alumno de AI no se le cuenta la clase de Hackear Biz), más cualquiera a la que
+     haya entrado. Sin saber cuáles son, todas. */
+  const suyas = reuniones?.length ? new Set(reuniones) : null;
   /* Una clase a la que fue cuenta siempre, aunque sea anterior a la fecha de inicio que tenemos. */
   const lista = clases
+    .filter((c) => fue.has(c.instancia) || !suyas || suyas.has(c.reunion))
     .filter((c) => !piso || c.inicio.slice(0, 10) >= piso || fue.has(c.instancia))
     .map((c) => ({ instancia: c.instancia, tema: c.tema, inicio: c.inicio, fue: fue.has(c.instancia), minutos: fue.get(c.instancia) ?? 0 }))
     .sort((a, b) => b.inicio.localeCompare(a.inicio));

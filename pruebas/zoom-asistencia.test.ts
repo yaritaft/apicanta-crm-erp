@@ -64,3 +64,16 @@ test("zoom: «asistió a X de Y» cuenta las clases desde que empezó, y una a l
   const nunca = resumirAsistencia(clases, [], { desde: "2026-10-01", hoy: +new Date("2026-10-22T12:00:00Z") });
   assert.deepEqual([nunca.asistio, nunca.deClases, nunca.activo], [0, 2, false]);
 });
+
+test("zoom: el total sólo cuenta las reuniones de su programa (a un alumno de AI no se le cuenta la clase de Biz), salvo las que fue", () => {
+  const clases = [
+    { instancia: "a", reunion: "ai", tema: "Consultas IA", inicio: "2026-10-01T22:00:00Z", participantes: 1 },
+    { instancia: "b", reunion: "ai", tema: "Consultas IA", inicio: "2026-10-08T22:00:00Z", participantes: 1 },
+    { instancia: "c", reunion: "biz", tema: "Marketing", inicio: "2026-10-08T22:00:00Z", participantes: 1 },
+    { instancia: "d", reunion: "biz", tema: "Marketing", inicio: "2026-10-15T22:00:00Z", participantes: 1 },
+  ];
+  const hoy = +new Date("2026-10-20T12:00:00Z");
+  assert.equal(resumirAsistencia(clases, [{ instancia: "a", minutos: 30 }], { reuniones: ["ai"], hoy }).deClases, 2);
+  assert.equal(resumirAsistencia(clases, [{ instancia: "a", minutos: 30 }, { instancia: "d", minutos: 5 }], { reuniones: ["ai"], hoy }).deClases, 3, "una a la que fue cuenta aunque sea de otra reunión");
+  assert.equal(resumirAsistencia(clases, [], { hoy }).deClases, 4, "sin saber sus reuniones, todas");
+});

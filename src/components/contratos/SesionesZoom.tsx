@@ -21,7 +21,7 @@ import { BloqueServicio, FilaServicio } from "@/components/ficha/FilaServicio";
    ahora» corre lo mismo sin esperar la hora.
    ================================================================== */
 
-export function SesionesZoom({ email, desde }: { email: string; desde?: string }) {
+export function SesionesZoom({ email, desde, reuniones }: { email: string; desde?: string; reuniones?: readonly string[] }) {
   const toast = useToast();
   const [datos, setDatos] = useState<{ clases: ClaseZoom[]; asistencias: AsistenciaZoom[] } | "sin-tablas" | null>(null);
   const [trayendo, setTrayendo] = useState(false);
@@ -51,7 +51,7 @@ export function SesionesZoom({ email, desde }: { email: string; desde?: string }
     await leer();
   }
 
-  const r = useMemo(() => (datos && datos !== "sin-tablas" ? resumirAsistencia(datos.clases, datos.asistencias, { desde }) : null), [datos, desde]);
+  const r = useMemo(() => (datos && datos !== "sin-tablas" ? resumirAsistencia(datos.clases, datos.asistencias, { desde, reuniones }) : null), [datos, desde, reuniones]);
   const hoy = hoyDelNegocio();
 
   const boton = (
