@@ -1,0 +1,14 @@
+/* El resumen de «Revisá y cargá» de una devolución: cada dato con su «Cambiar», y lo que falta pintado (el estado va en el casillero). */
+.devol-resumen { display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; }
+.devol-resumen__fila {
+  display: grid; grid-template-columns: 132px minmax(0, 1fr) auto; align-items: baseline; gap: var(--space-3);
+  padding: var(--space-3) var(--space-4); border-bottom: 1px solid var(--border);
+}
+.devol-resumen__fila:last-child { border-bottom: 0; }
+.devol-resumen__fila[data-falta="true"] { background: color-mix(in srgb, var(--warning) 12%, transparent); }
+.devol-resumen__etiqueta { color: var(--ink-subtle); font-size: 13px; }
+.devol-resumen__valor { min-width: 0; overflow-wrap: anywhere; }
+@media (max-width: 640px) {
+  .devol-resumen__fila { grid-template-columns: minmax(0, 1fr) auto; }
+  .devol-resumen__etiqueta { grid-column: 1 / -1; }
+}

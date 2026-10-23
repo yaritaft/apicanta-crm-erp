@@ -420,26 +420,46 @@ function noEmpeora(
   return dia !== null && dia === diaDe(antes.fecha) && r2(b.monto) <= r2(antes.monto);
 }
 
+/** La pantalla (paso del asistente) donde se arregla cada cosa que puede faltar. */
+export type PasoDevolucion = "venta" | "monto" | "dia" | "medio" | "comprobante";
+
+/** Todo lo que está mal de una devolución, en el orden de siempre (el primero es el que se muestra) y con el paso donde se arregla. Vacío si se
+ *  puede guardar. */
+export function problemasDeDevolucion(
+  e: Pick<EstadoApp, "pagos" | "cuotas"> & ConDevoluciones, b: BorradorDevolucion, ignorar?: ID,
+): { paso: PasoDevolucion; texto: string }[] {
+  const out: { paso: PasoDevolucion; texto: string }[] = [];
+  if (!b.ventaId) out.push({ paso: "venta", texto: "Elegí la venta que se devuelve" });
+  if (!(b.monto > 0)) out.push({ paso: "monto", texto: "Escribí cuánto se devolvió" });
+  const fechaValida = !Number.isNaN(Date.parse(b.fecha));
+  if (!fechaValida) out.push({ paso: "dia", texto: "Elegí el día que se devolvió" });
+  if (!b.procesadorId) out.push({ paso: "medio", texto: "Elegí por qué medio salió la plata" });
+  if (b.ventaId && b.monto > 0 && fechaValida) {
+    const d = devolvibleDeVenta(e, b.ventaId, b.fecha, ignorar);
+    if (b.monto > d.queda + 0.01 && !noEmpeora(e, b, ignorar)) {
+      if (d.cobrado <= 0) out.push({ paso: "monto", texto: "Esta venta no tiene cobros hasta ese día: no hay nada que devolver" });
+      else {
+        const l = d.limitadaPor;
+        out.push({
+          paso: "monto",
+          texto: l
+            ? `No se puede devolver más de lo cobrado: hasta el ${ddmmaaaa(l.dia)} ya hay devoluciones por ${usd(l.devuelto)} y se cobró ${usd(l.cobrado)}; quedan ${usd(d.queda)} para devolver`
+            : `No se puede devolver más de lo cobrado: quedan ${usd(d.queda)} para devolver`,
+        });
+      }
+    }
+  }
+  if (b.sinPesos) out.push({ paso: "medio", texto: MENSAJE_PESOS_DEVOLUCION });
+  if (!b.tieneComprobante && !b.tienePasarela) out.push({ paso: "comprobante", texto: MENSAJE_COMPROBANTE_DEVOLUCION });
+  return out;
+}
+
 /** Lo que está mal de una devolución, en el orden en que se lee la pantalla,
  *  o null si se puede guardar. */
 export function problemaDeDevolucion(
   e: Pick<EstadoApp, "pagos" | "cuotas"> & ConDevoluciones, b: BorradorDevolucion, ignorar?: ID,
 ): string | null {
-  if (!b.ventaId) return "Elegí la venta que se devuelve";
-  if (!(b.monto > 0)) return "Escribí cuánto se devolvió";
-  if (Number.isNaN(Date.parse(b.fecha))) return "Elegí el día que se devolvió";
-  if (!b.procesadorId) return "Elegí por qué medio salió la plata";
-  const d = devolvibleDeVenta(e, b.ventaId, b.fecha, ignorar);
-  if (b.monto > d.queda + 0.01 && !noEmpeora(e, b, ignorar)) {
-    if (d.cobrado <= 0) return "Esta venta no tiene cobros hasta ese día: no hay nada que devolver";
-    const l = d.limitadaPor;
-    return l
-      ? `No se puede devolver más de lo cobrado: hasta el ${ddmmaaaa(l.dia)} ya hay devoluciones por ${usd(l.devuelto)} y se cobró ${usd(l.cobrado)}; quedan ${usd(d.queda)} para devolver`
-      : `No se puede devolver más de lo cobrado: quedan ${usd(d.queda)} para devolver`;
-  }
-  if (b.sinPesos) return MENSAJE_PESOS_DEVOLUCION;
-  if (!b.tieneComprobante && !b.tienePasarela) return MENSAJE_COMPROBANTE_DEVOLUCION;
-  return null;
+  return problemasDeDevolucion(e, b, ignorar)[0]?.texto ?? null;
 }
 
 /* ---------- De qué venta es el pedido ----------
