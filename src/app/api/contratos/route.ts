@@ -1,20 +1,19 @@
 import { NextResponse } from "next/server";
-import { esPerfil } from "@/lib/bienvenida-alumno";
 import { nubeServidor } from "@/lib/servidor";
 import { baseDelPedido, correoDelPedido, esDuenoDelPedido, exigirArea } from "@/lib/permisos-servidor";
-import { problemaDeDatos, soloDuenos, type DatosContrato, type ModoContrato } from "@/lib/contratos";
+import { datosLimpios, problemaDeDatos, soloDuenos, type DatosContrato, type ModoContrato } from "@/lib/contratos";
 import {
-  anular, contratoPorId, corregir, crearContrato, mandarBorrador, nuevoEnlace, programasGuardados, reenviar, sincronizar,
+  anular, contratoPorId, corregir, crearContrato, darAccesosAhora, mandarBorrador, nuevoEnlace, programasGuardados, reenviar, sincronizar,
 } from "@/lib/contratos-servidor";
 import { programaPorId } from "@/lib/programas";
 import { ErrorPandadoc } from "@/lib/pandadoc-servidor";
-import { diaDeNegocio } from "@/lib/dia-negocio";
 
 /* ==================================================================
    POST { accion, … }: lo que se le hace a un contrato de PandaDoc.
    - "crear": { ventaId?, sesionId?, leadId?, alumnoId?, programa, datos, mandar?, prueba? } lo arma con la
      plantilla del programa y (salvo mandar:false) lo manda a firmar.
-   - "mandar" | "reenviar" | "anular" { motivo } | "corregir" { datos } | "enlace" | "sincronizar": { id }.
+   - "mandar" | "reenviar" | "anular" { motivo } | "corregir" { datos } | "enlace" | "sincronizar" | "accesos": { id }.
+     «accesos» da los del programa a un firmado que se quedó sin ellos (firmó antes de que se cargara la venta).
    Lo hace quien edita Ventas o Alumnos, y sólo sobre lo que ve: la venta, la persona o el contrato se leen
    antes con SU sesión (el closer, sólo lo suyo). Recién ahí se usa la clave de servicio.
    Los contratos se prenden en Ajustes: apagados no sale ninguno; en «prueba», sólo los dueños y con la
@@ -40,20 +39,6 @@ async function laVe(mia: NonNullable<ReturnType<typeof baseDelPedido>>, tabla: s
     if (i < intentos - 1) await dormir(1000);
   }
   return false;
-}
-
-function datosLimpios(d: Partial<DatosContrato> | undefined): DatosContrato {
-  const t = (x: unknown) => (typeof x === "string" ? x.trim() : "");
-  return {
-    nombre: t(d?.nombre), email: t(d?.email).toLowerCase(), telefono: t(d?.telefono), documento: t(d?.documento),
-    domicilio: t(d?.domicilio), pais: t(d?.pais), modalidad: t(d?.modalidad),
-    sesiones: typeof d?.sesiones === "number" && Number.isFinite(d.sesiones) ? Math.max(0, Math.round(d.sesiones)) : null,
-    bonos: Array.isArray(d?.bonos) ? d!.bonos!.map(t).filter(Boolean) : [],
-    fecha: /^\d{4}-\d{2}-\d{2}$/.test(t(d?.fecha)) ? t(d?.fecha) : diaDeNegocio(new Date().toISOString()),
-    inicio: /^\d{4}-\d{2}-\d{2}$/.test(t(d?.inicio)) ? t(d?.inicio) : undefined,
-    ...(d?.reserva === true ? { reserva: true } : {}),
-    ...(esPerfil(d?.perfil) ? { perfil: d.perfil } : {}),
-  };
 }
 
 export async function POST(peticion: Request) {
@@ -118,6 +103,7 @@ export async function POST(peticion: Request) {
       const enlace = await nuevoEnlace(db, c);
       if (!enlace) return mal("PandaDoc no dio el link: el contrato tiene que estar enviado.", 409);
     } else if (accion === "sincronizar") await sincronizar(db, c, "sincronizacion");
+    else if (accion === "accesos") await darAccesosAhora(db, c, quien || "Apicanta");
     else return mal("No sé hacer eso.");
 
     return NextResponse.json({ contrato: await contratoPorId(db, id) }, { headers: { "Cache-Control": "no-store" } });

@@ -1,5 +1,6 @@
 import type { ConfigContratos } from "./types";
 import { esPerfil, modeloDeBienvenida, type GuiaBienvenida } from "./bienvenida-alumno";
+import { diaDeNegocio } from "./dia-negocio";
 
 /* ==================================================================
    Los contratos de PandaDoc, lo que no depende de la red. Es el circuito
@@ -72,7 +73,9 @@ export interface Contrato {
   rechazadoEn: string | null;
   anuladoEn: string | null;
   accesosEn: string | null;
-  origen: "app" | "pandadoc";
+  /* app: lo armó la app · pandadoc: se mandó a mano desde PandaDoc y lo encontró el aviso · manual: firmado fuera de
+     PandaDoc, con el PDF subido desde la ficha (supabase/contratos-a-mano.sql). */
+  origen: "app" | "pandadoc" | "manual";
   error: string | null;
   creadoEn: string;
   creadoPor: string;
@@ -119,6 +122,7 @@ export const ROTULO_EVENTO: Record<string, string> = {
   corregido: "Se corrigió y se mandó de nuevo",
   enlace: "Se generó el link para firmar",
   accesos: "Se dieron los accesos",
+  subido: "Se subió firmado a mano",
   error: "No salió",
 };
 
@@ -144,6 +148,21 @@ export function estadoDePandadoc(status: string | null | undefined): EstadoContr
       return "anulado";
     default: return null;
   }
+}
+
+/** Los datos del contrato como llegan de la pantalla, limpios (textos recortados, mail en minúscula, fechas válidas). */
+export function datosLimpios(d: Partial<DatosContrato> | undefined): DatosContrato {
+  const t = (x: unknown) => (typeof x === "string" ? x.trim() : "");
+  return {
+    nombre: t(d?.nombre), email: t(d?.email).toLowerCase(), telefono: t(d?.telefono), documento: t(d?.documento),
+    domicilio: t(d?.domicilio), pais: t(d?.pais), modalidad: t(d?.modalidad),
+    sesiones: typeof d?.sesiones === "number" && Number.isFinite(d.sesiones) ? Math.max(0, Math.round(d.sesiones)) : null,
+    bonos: Array.isArray(d?.bonos) ? d!.bonos!.map(t).filter(Boolean) : [],
+    fecha: /^\d{4}-\d{2}-\d{2}$/.test(t(d?.fecha)) ? t(d?.fecha) : diaDeNegocio(new Date().toISOString()),
+    inicio: /^\d{4}-\d{2}-\d{2}$/.test(t(d?.inicio)) ? t(d?.inicio) : undefined,
+    ...(d?.reserva === true ? { reserva: true } : {}),
+    ...(esPerfil(d?.perfil) ? { perfil: d.perfil } : {}),
+  };
 }
 
 /* ---------- Lo que va en la plantilla ---------- */
@@ -380,7 +399,8 @@ export function mensajeDelContrato(config: ConfigContratos | undefined, d: Parti
 
 export type AccionContrato = "copiar-enlace" | "reenviar" | "corregir" | "anular" | "mandar" | "mandar-otro" | "ver-pdf" | "sincronizar";
 
-/** Los botones según el estado. No se ofrece lo que PandaDoc va a negar: un firmado no se anula ni se reenvía. */
+/** Los botones según el estado. No se ofrece lo que PandaDoc va a negar: un firmado no se anula, no se reenvía ni se
+    corrige. Si tiene un error, se manda otro (como en Blue OS): el firmado queda como está y el nuevo lo reemplaza. */
 export function accionesDe(c: Pick<Contrato, "estado" | "documentoId">): AccionContrato[] {
   const conDoc = Boolean(c.documentoId);
   switch (c.estado) {
@@ -388,11 +408,97 @@ export function accionesDe(c: Pick<Contrato, "estado" | "documentoId">): AccionC
     case "borrador": return conDoc ? ["mandar", "corregir", "anular"] : ["mandar-otro"];
     case "enviado":
     case "visto": return ["copiar-enlace", "reenviar", "corregir", "anular", "sincronizar"];
-    case "firmado": return ["ver-pdf"];
+    case "firmado": return ["ver-pdf", "mandar-otro"];
     case "rechazado":
     case "anulado":
     case "error": return ["mandar-otro"];
   }
+}
+
+/** ¿Le faltan los accesos a este contrato firmado? Pasa cuando firmó antes de que se cargara su venta (el equipo manda
+    el contrato a mano desde PandaDoc y carga la venta después) o cuando se subió firmado sin darlos. Los firmados
+    antes del 23/10 quedaron marcados como hechos sin haber dado nada: el último aviso de accesos dice «0 dados». */
+export function accesosPendientes(
+  c: Pick<Contrato, "estado" | "accesosEn"> & { datos?: Partial<DatosContrato> | null },
+  eventos: Pick<EventoContrato, "evento" | "detalle" | "cuando">[],
+): { pendiente: boolean; motivo: string | null } {
+  if (c.estado !== "firmado" || c.datos?.reserva) return { pendiente: false, motivo: null };
+  const ultimo = [...eventos].filter((e) => e.evento === "accesos").sort((a, b) => a.cuando.localeCompare(b.cuando)).pop();
+  const motivo = ultimo && typeof ultimo.detalle?.motivo === "string" && ultimo.detalle.motivo ? ultimo.detalle.motivo : null;
+  if (!c.accesosEn) return { pendiente: true, motivo };
+  const nada = ultimo !== undefined && Number(ultimo.detalle?.dados ?? 0) === 0 && !Number(ultimo.detalle?.fallaron ?? 0)
+    && !Number(ultimo.detalle?.yaEstaban ?? 0) && Boolean(motivo);
+  return { pendiente: nada, motivo: nada ? motivo : null };
+}
+
+/* ---------- Un contrato que se mandó a mano desde PandaDoc: lo que dice el documento ---------- */
+
+/** 20/10/2026 o 2026-10-20T12:00:00Z → 2026-10-20. */
+function diaDe(texto: string): string {
+  const dmy = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(texto.trim());
+  if (dmy) return `${dmy[3]}-${dmy[2].padStart(2, "0")}-${dmy[1].padStart(2, "0")}`;
+  const iso = /^(\d{4}-\d{2}-\d{2})/.exec(texto.trim());
+  return iso ? iso[1] : "";
+}
+
+/** «2 sesiones 1 a 1…» → 2 · «No incluye sesiones…» → 0 · otra cosa → null. */
+export function sesionesDeTexto(texto: string): number | null {
+  const t = texto.trim();
+  if (/^no incluye/i.test(t)) return 0;
+  const n = /^(\d+)\s+sesi/i.exec(t);
+  return n ? Number(n[1]) : null;
+}
+
+/** «Sin bonos adicionales» → [] · «A, B y C» → [A, B, C]. */
+export function bonosDeTexto(texto: string): string[] {
+  const t = texto.trim();
+  if (!t || /^sin bonos/i.test(t)) return [];
+  const partes = t.split(/,\s*/);
+  const ultimo = partes.pop() ?? "";
+  return [...partes, ...ultimo.split(/\s+y\s+/)].map((x) => x.trim()).filter(Boolean);
+}
+
+/** Lo que dice un contrato que no armó la app (Juan Cruz, 23/10: el equipo los manda a mano desde PandaDoc): quién lo
+    firma y lo que tienen sus variables ([Cliente.Nombre], [Contrato.Inicio]…). Con eso se ata a su venta, se puede
+    corregir desde la app y al firmar se carga el inicio del servicio. Sólo lo que trae: lo que falta no se inventa. */
+export function datosDelDocumento(detalle: unknown): {
+  destinatario: { nombre: string; email: string; telefono: string }; datos: Partial<DatosContrato>;
+} {
+  const d = (detalle && typeof detalle === "object" ? detalle : {}) as Record<string, unknown>;
+  const valores = new Map<string, string>();
+  for (const t of Array.isArray(d.tokens) ? d.tokens : []) {
+    const o = (t ?? {}) as { name?: unknown; value?: unknown };
+    if (typeof o.name === "string" && typeof o.value === "string" && o.value.trim()) valores.set(o.name, o.value.trim());
+  }
+  for (const f of Array.isArray(d.fields) ? d.fields : []) {
+    const o = (f ?? {}) as { merge_field?: unknown; value?: unknown };
+    if (typeof o.merge_field === "string" && typeof o.value === "string" && o.value.trim() && !valores.has(o.merge_field)) {
+      valores.set(o.merge_field, o.value.trim());
+    }
+  }
+  const firmantes = (Array.isArray(d.recipients) ? d.recipients : []) as { email?: string; first_name?: string | null; last_name?: string | null; phone?: string | null; role?: string; recipient_type?: string }[];
+  const alumno = firmantes.find((r) => r.role === ROL_ALUMNO) ?? firmantes.find((r) => !r.role && r.recipient_type !== "CC") ?? null;
+  const v = (k: string) => valores.get(k) ?? "";
+  const nombre = [alumno?.first_name, alumno?.last_name].map((x) => (x ?? "").trim()).filter(Boolean).join(" ") || v("Cliente.Nombre");
+  const email = ((alumno?.email ?? "").trim() || v("Cliente.Email")).toLowerCase();
+  const telefono = (alumno?.phone ?? "").trim() || v("Cliente.Telefono");
+
+  const datos: Partial<DatosContrato> = {};
+  const poner = <K extends keyof DatosContrato>(k: K, x: DatosContrato[K] | "" | null | undefined) => {
+    if (x !== "" && x !== null && x !== undefined) datos[k] = x as DatosContrato[K];
+  };
+  poner("nombre", v("Cliente.Nombre") || nombre);
+  poner("email", email);
+  poner("telefono", telefono);
+  poner("documento", v("Cliente.Documento"));
+  poner("domicilio", v("Cliente.Domicilio"));
+  poner("pais", v("Cliente.Pais"));
+  poner("fecha", diaDe(v("Contrato.Fecha")));
+  poner("inicio", diaDe(v("Contrato.Inicio")));
+  poner("modalidad", v("Venta.Modalidad"));
+  if (valores.has("Venta.Sesiones")) poner("sesiones", sesionesDeTexto(v("Venta.Sesiones")));
+  if (valores.has("Venta.Bonos")) datos.bonos = bonosDeTexto(v("Venta.Bonos"));
+  return { destinatario: { nombre, email, telefono }, datos };
 }
 
 /** ¿Este contrato todavía espera algo de PandaDoc? (la tarjeta se refresca sola mientras tanto). */

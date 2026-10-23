@@ -43,6 +43,24 @@ export async function pedirContrato(cuerpo: Record<string, unknown>): Promise<Co
   return j.contrato!;
 }
 
+/** Sube el PDF de un contrato firmado fuera de PandaDoc (ver api/contratos/subir). */
+export async function subirContratoFirmado(campos: {
+  archivo: File; ventaId?: string; alumnoId?: string; programa: string; fecha: string; datos: Partial<DatosContrato>; accesos: boolean;
+}): Promise<Contrato> {
+  const form = new FormData();
+  form.set("archivo", campos.archivo);
+  if (campos.ventaId) form.set("ventaId", campos.ventaId);
+  if (campos.alumnoId) form.set("alumnoId", campos.alumnoId);
+  form.set("programa", campos.programa);
+  form.set("fecha", campos.fecha);
+  form.set("datos", JSON.stringify(campos.datos));
+  form.set("accesos", campos.accesos ? "1" : "0");
+  const r = await fetch("/api/contratos/subir", { method: "POST", cache: "no-store", headers: await cabeceras(), body: form });
+  const j = (await r.json().catch(() => ({}))) as { contrato?: Contrato; error?: string };
+  if (!r.ok || !j.contrato) throw new Error(j.error ?? (r.status === 413 ? "El PDF es demasiado grande." : `Error ${r.status}`));
+  return j.contrato;
+}
+
 export async function abrirPdf(id: string): Promise<void> {
   const r = await fetch(`/api/contratos/pdf?id=${encodeURIComponent(id)}`, { cache: "no-store", headers: await cabeceras() });
   const j = (await r.json().catch(() => ({}))) as { url?: string; error?: string };

@@ -10,8 +10,10 @@ import { leerWebhookTelegram, RUTA_WEBHOOK_TELEGRAM } from "@/lib/accesos-alumno
 /* ==================================================================
    La red de seguridad del aviso de PandaDoc: cada hora se le pregunta el
    estado a los contratos que todavía esperan algo (armándose, enviados,
-   abiertos) y a los firmados que no tienen su PDF o sus accesos. Si un
-   aviso se perdió, acá se recupera (y al firmar, se dan los accesos).
+   abiertos), a los firmados que no tienen su PDF o sus accesos (firmó antes
+   de que se cargara su venta: se dan apenas aparece) y a los mandados a mano
+   desde PandaDoc que todavía no se ataron a su venta. Si un aviso se perdió,
+   acá se recupera (y al firmar, se dan los accesos).
    También se ponen al día los grupos de Telegram anotados.
    ================================================================== */
 
@@ -37,8 +39,14 @@ export async function GET(req: Request) {
     .or('estado.in.(creando,enviado,visto),and(estado.eq.firmado,accesosEn.is.null),and(estado.eq.firmado,pdfPath.is.null)')
     .order("sincronizadoEn", { ascending: true, nullsFirst: true }).limit(TOPE);
   if (r.error) return NextResponse.json({ error: r.error.message }, { status: 500 });
+  /* Los mandados a mano desde PandaDoc que todavía no se ataron a su venta (o a los que no se les leyó el firmante):
+     el equipo carga la venta después del contrato. */
+  const sueltos = await db.from("contratos").select("*")
+    .gte("creadoEn", desde).not("documentoId", "is", null).eq("origen", "pandadoc").or('ventaId.is.null,alumnoId.is.null,destinatario->>email.eq.')
+    .order("sincronizadoEn", { ascending: true, nullsFirst: true }).limit(TOPE);
+  const lista = [...(r.data ?? []), ...(sueltos.data ?? []).filter((x) => !(r.data ?? []).some((y) => y.id === x.id))] as Contrato[];
   let cambiaron = 0, fallaron = 0;
-  for (const c of (r.data ?? []) as Contrato[]) {
+  for (const c of lista) {
     try {
       const nuevo = await sincronizar(db, c, "sincronizacion");
       if (nuevo.estado !== c.estado) cambiaron++;
@@ -47,7 +55,7 @@ export async function GET(req: Request) {
       console.error("[cron contratos]", c.id, e instanceof Error ? e.message : String(e));
     }
   }
-  return NextResponse.json({ ok: true, aviso, bot, grupos, revisados: r.data?.length ?? 0, cambiaron, fallaron });
+  return NextResponse.json({ ok: true, aviso, bot, grupos, revisados: lista.length, cambiaron, fallaron, ...(sueltos.error ? { sueltos: sueltos.error.message } : {}) });
 }
 
 /* El aviso de PandaDoc de producción se conecta solo la primera vez (Juan Cruz, 20/10: «dejalo listo»): la clave

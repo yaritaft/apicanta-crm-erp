@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
 import {
+  accesosPendientes, bonosDeTexto, datosDelDocumento, datosLimpios, sesionesDeTexto,
   accesosAlFirmar, fichaAlFirmar, soloDuenos, accionesDe, cuerpoDocumento, estadoDePandadoc, fechaContrato, firmoElAlumno, leerAvisos, mensajeDelContrato,
   modalidadDeCuotas, partirNombre, problemaDeDatos, textoBonos, textoSesiones, variablesDelContrato, type DatosContrato,
 } from "@/lib/contratos";
@@ -77,8 +78,9 @@ test("el mensaje del mail reemplaza {nombre} y {programa}", () => {
   assert.match(mensajeDelContrato(undefined, DATOS, "Hackear Biz").subject, /Hackear Biz/);
 });
 
-test("los botones según el estado (un firmado no se anula ni se reenvía)", () => {
-  assert.deepEqual(accionesDe({ estado: "firmado", documentoId: "d" }), ["ver-pdf"]);
+test("los botones según el estado (un firmado no se anula ni se reenvía: se manda otro)", () => {
+  assert.deepEqual(accionesDe({ estado: "firmado", documentoId: "d" }), ["ver-pdf", "mandar-otro"]);
+  assert.deepEqual(accionesDe({ estado: "firmado", documentoId: null }), ["ver-pdf", "mandar-otro"]);
   assert.ok(accionesDe({ estado: "enviado", documentoId: "d" }).includes("reenviar"));
   assert.ok(accionesDe({ estado: "visto", documentoId: "d" }).includes("anular"));
   assert.deepEqual(accionesDe({ estado: "anulado", documentoId: "d" }), ["mandar-otro"]);
@@ -296,4 +298,78 @@ test("contrato de la reserva (Manu, 21/10): su plantilla, sólo el monto y sin a
   const contrato = { estado: "firmado" as const, accesosEn: null, destinatario: { nombre: "Juan Cruz" }, datos: { reserva: true } };
   assert.equal(armarBienvenida({ contrato, programa: "Hackear AI", accesos: [], linkWisboo: null, accesosAutomaticos: true }).fase, "reserva");
   assert.equal(armarBienvenida({ contrato: { ...contrato, estado: "enviado" }, programa: "Hackear AI", accesos: [], linkWisboo: null, accesosAutomaticos: true }).fase, "firmar");
+});
+
+/* ---------- Los contratos que el equipo manda a mano desde PandaDoc (23/10) ---------- */
+
+test("un contrato mandado a mano desde PandaDoc: quién firma y lo que dicen sus variables", () => {
+  const det = {
+    recipients: [
+      { email: "Yari@Apicanta.com", first_name: "Yari", last_name: "", role: "Sender", recipient_type: "signer" },
+      { email: "Ana.Perez@Gmail.com ", first_name: null, last_name: null, role: "Client", recipient_type: "signer", phone: "" },
+    ],
+    tokens: [
+      { name: "Cliente.Nombre", value: "Ana Pérez" }, { name: "Cliente.Documento", value: "30.111.222" },
+      { name: "Cliente.Domicilio", value: "Calle 1, Córdoba" }, { name: "Contrato.Fecha", value: "22/10/2026" },
+      { name: "Contrato.Inicio", value: "3/11/2026" }, { name: "Venta.Modalidad", value: "Una reserva de 300 USD y dos pagos de 1.000 USD" },
+      { name: "Venta.Sesiones", value: "2 sesiones 1 a 1 con el mentor, válidas durante los primeros 3 meses del programa" },
+      { name: "Venta.Bonos", value: "Bolsa de trabajo, Simulacros y Inglés" }, { name: "Cliente.Pais", value: "" },
+    ],
+  };
+  const { destinatario, datos } = datosDelDocumento(det);
+  /* Sin nombre en el firmante, sale de la variable; el mail, en minúscula. */
+  assert.deepEqual(destinatario, { nombre: "Ana Pérez", email: "ana.perez@gmail.com", telefono: "" });
+  assert.equal(datos.fecha, "2026-10-22");
+  assert.equal(datos.inicio, "2026-11-03");
+  assert.equal(datos.sesiones, 2);
+  assert.deepEqual(datos.bonos, ["Bolsa de trabajo", "Simulacros", "Inglés"]);
+  assert.equal(datos.documento, "30.111.222");
+  /* Lo vacío no se inventa. */
+  assert.equal("pais" in datos, false);
+  assert.equal("telefono" in datos, false);
+});
+
+test("el documento todavía sin firmante (el aviso llega antes): nada que leer, y no rompe", () => {
+  assert.deepEqual(datosDelDocumento({ recipients: [], tokens: [] }), { destinatario: { nombre: "", email: "", telefono: "" }, datos: {} });
+  assert.deepEqual(datosDelDocumento(null).destinatario.email, "");
+  /* Un campo con «merge field» también vale (si la plantilla lo usa en vez de la variable). */
+  const r = datosDelDocumento({ recipients: [{ email: "b@x.com", first_name: "Beto", last_name: "Gómez", role: "Client" }], fields: [{ merge_field: "Contrato.Inicio", value: "2026-11-10T12:00:00.000Z" }] });
+  assert.equal(r.datos.inicio, "2026-11-10");
+  assert.equal(r.destinatario.nombre, "Beto Gómez");
+});
+
+test("sesiones y bonos en palabras → de vuelta a datos (lo inverso de textoSesiones y textoBonos)", () => {
+  assert.equal(sesionesDeTexto("No incluye sesiones 1 a 1 con el mentor"), 0);
+  assert.equal(sesionesDeTexto("1 sesión 1 a 1 con el mentor, válida durante los primeros 3 meses del programa"), 1);
+  assert.equal(sesionesDeTexto("Tres sesiones"), null);
+  assert.deepEqual(bonosDeTexto("Sin bonos adicionales"), []);
+  assert.deepEqual(bonosDeTexto("Bolsa de trabajo"), ["Bolsa de trabajo"]);
+  assert.deepEqual(bonosDeTexto("A y B"), ["A", "B"]);
+});
+
+test("¿le faltan los accesos? firmó antes de que se cargara la venta, o quedó marcado sin dar nada", () => {
+  const ev = (detalle: Record<string, unknown>, cuando = "2026-10-22T13:05:45Z") => ({ evento: "accesos", detalle, cuando });
+  const espera = "Todavía no está cargada su venta: los accesos se dan solos apenas se cargue (o con «Dar los accesos»).";
+  /* Firmado sin accesos todavía: falta, con el motivo si lo hay. */
+  assert.deepEqual(accesosPendientes({ estado: "firmado", accesosEn: null }, []), { pendiente: true, motivo: null });
+  assert.deepEqual(accesosPendientes({ estado: "firmado", accesosEn: null }, [ev({ dados: 0, motivo: espera })]), { pendiente: true, motivo: espera });
+  /* Los de antes del 23/10: marcados como hechos con «0 dados» y el motivo. */
+  const viejo = ev({ dados: 0, motivo: "El contrato no tiene alumno: los accesos se dan a mano desde su servicio." });
+  assert.equal(accesosPendientes({ estado: "firmado", accesosEn: "2026-10-22T13:05:46Z" }, [viejo]).pendiente, true);
+  /* Se dieron (aunque uno falle o ya estuviera): no falta nada; lo puntual se hace en la solapa Accesos. */
+  assert.equal(accesosPendientes({ estado: "firmado", accesosEn: "x" }, [viejo, ev({ dados: 3, fallaron: 0, yaEstaban: 0 }, "2026-10-23T10:00:00Z")]).pendiente, false);
+  assert.equal(accesosPendientes({ estado: "firmado", accesosEn: "x" }, [ev({ dados: 0, fallaron: 1, yaEstaban: 0 })]).pendiente, false);
+  assert.equal(accesosPendientes({ estado: "firmado", accesosEn: "x" }, [ev({ dados: 0, yaEstaban: 2 })]).pendiente, false);
+  /* La reserva no da accesos, y sin firmar no se habla de accesos. */
+  assert.equal(accesosPendientes({ estado: "firmado", accesosEn: null, datos: { reserva: true } }, []).pendiente, false);
+  assert.equal(accesosPendientes({ estado: "visto", accesosEn: null }, []).pendiente, false);
+});
+
+test("los datos limpios: mail en minúscula, fechas válidas y la reserva sólo si es true", () => {
+  const d = datosLimpios({ nombre: "  Ana ", email: " ANA@X.COM ", fecha: "22/10/2026", inicio: "2026-11-03", reserva: "si" as unknown as boolean });
+  assert.equal(d.nombre, "Ana");
+  assert.equal(d.email, "ana@x.com");
+  assert.match(d.fecha, /^\d{4}-\d{2}-\d{2}$/);
+  assert.equal(d.inicio, "2026-11-03");
+  assert.equal("reserva" in d, false);
 });

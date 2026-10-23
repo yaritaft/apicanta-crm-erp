@@ -1,12 +1,12 @@
 import { randomBytes } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
-  accesosAlFirmar, cuerpoDocumento, destinatario, estadoDePandadoc, fichaAlFirmar, firmoElAlumno, mensajeDelContrato, ROL_ALUMNO,
-  type Contrato, type DatosContrato, type EstadoContrato, type EventoContrato, type ModoContrato,
+  accesosAlFirmar, cuerpoDocumento, datosDelDocumento, destinatario, estadoDePandadoc, fichaAlFirmar, firmoElAlumno, mensajeDelContrato,
+  ROL_ALUMNO, type Contrato, type DatosContrato, type EstadoContrato, type EventoContrato, type ModoContrato,
 } from "./contratos";
 import {
-  aBorrador, actualizarDocumento, anularDocumento, crearDocumento, detalleDocumento, detallePlantilla, enlaceDeFirma, ErrorPandadoc,
-  esperarBorrador, mandarDocumento, pdfDocumento, recordarDocumento,
+  aBorrador, actualizarDocumento, anularDocumento, clavePandadoc, crearDocumento, detalleDocumento, detallePlantilla, enlaceDeFirma,
+  ErrorPandadoc, esperarBorrador, mandarDocumento, pdfDocumento, recordarDocumento,
 } from "./pandadoc-servidor";
 import { cambiarFicha, darAccesos, type ResultadoAccesos } from "./accesos-servidor";
 import { plantillaDelContrato, programaPorId, programasDe, type Programa } from "./programas";
@@ -263,7 +263,9 @@ async function aplicarDetalle(db: SupabaseClient, c: Contrato, det: Record<strin
   if (cambio && cambios.estado && cambios.estado !== "borrador" && cambios.estado !== "creando") {
     await evento(db, c.id, cambios.estado, cambios.estado === "firmado" ? (c.destinatario.nombre ?? "El alumno") : "PandaDoc", origen);
   }
-  const actual = (await contratoPorId(db, c.id))!;
+  let actual = (await contratoPorId(db, c.id))!;
+  if (actual.origen === "pandadoc") actual = await completarDeAfuera(db, actual, det);
+  actual = await vincular(db, actual);
   if (actual.estado === "firmado" && (!actual.accesosEn || !actual.pdfPath)) await alFirmar(db, actual);
   return (await contratoPorId(db, c.id))!;
 }
@@ -271,7 +273,7 @@ async function aplicarDetalle(db: SupabaseClient, c: Contrato, det: Record<strin
 /* ---------- Al firmar ---------- */
 
 /** El PDF al bucket, «Firmado» en la ficha de Customer Success y los accesos del programa. Cada parte es independiente. */
-export async function alFirmar(db: SupabaseClient, c: Contrato): Promise<{ accesos: ResultadoAccesos | null }> {
+export async function alFirmar(db: SupabaseClient, c: Contrato, opciones: { quien?: string; sinAccesos?: string } = {}): Promise<{ accesos: ResultadoAccesos | null }> {
   if (!c.pdfPath && c.documentoId) {
     try {
       const pdf = await pdfDocumento(c.modo, c.documentoId, true);
@@ -309,27 +311,69 @@ export async function alFirmar(db: SupabaseClient, c: Contrato): Promise<{ acces
   }
 
   if (c.accesosEn) return { accesos: null };
+  /* Subido firmado a mano sin dar los accesos: queda anotado por qué y el botón «Dar los accesos» a la vista. */
+  if (opciones.sinAccesos) {
+    await eventoDeEspera(db, c.id, opciones.sinAccesos);
+    return { accesos: null };
+  }
   /* Los accesos solos se prenden con los contratos: con «prueba», sólo los de prueba; apagado, ninguno.
      No se marca nada: el día que se prendan, la próxima pasada los da. */
   const prendidos = accesosAlFirmar(config.estado, c.modo);
   if (!prendidos) return { accesos: null };
   const programa = programaPorId(programas, c.programa);
+  /* Sin servicio todavía no se marca como hecho (hasta el 23/10 se marcaba y no se volvía a intentar): el equipo manda
+     el contrato desde PandaDoc y carga la venta después, a veces horas más tarde. La pasada de cada hora lo vuelve a
+     probar y los da apenas aparece el servicio; o el equipo aprieta «Dar los accesos». */
   if (!alumnoId || !programa) {
-    await evento(db, c.id, "accesos", "Apicanta", "app", {
-      dados: 0, motivo: !alumnoId ? "El contrato no tiene alumno: los accesos se dan a mano desde su servicio." : "El programa del contrato ya no existe en Ajustes.",
-    });
-    await guardar(db, c.id, { accesosEn: ahora() });
+    await eventoDeEspera(db, c.id, alumnoId ? "El programa del contrato ya no existe en Ajustes."
+      : c.origen === "manual" ? "Todavía no está cargado su servicio: cuando esté, tocá «Dar los accesos»." : ESPERA_SERVICIO);
     return { accesos: null };
   }
   /* Se marca ANTES de dar: si dos avisos llegan juntos, sólo uno da los accesos. */
   const toma = await db.from("contratos").update({ accesosEn: ahora() }).eq("id", c.id).is("accesosEn", null).select("id");
   if (!toma.data?.length) return { accesos: null };
   const r = await darAccesos(db, {
-    alumnoId, contratoId: c.id, programa, origen: "automatico", quien: "Al firmar el contrato",
+    alumnoId, contratoId: c.id, programa, origen: opciones.quien ? "manual" : "automatico", quien: opciones.quien ?? "Al firmar el contrato",
     persona: { nombre: c.destinatario.nombre ?? "", email: c.destinatario.email ?? "", telefono: c.destinatario.telefono },
   });
-  await evento(db, c.id, "accesos", "Apicanta", "app", { dados: r.dados, fallaron: r.fallaron, yaEstaban: r.yaEstaban });
+  await evento(db, c.id, "accesos", opciones.quien ?? "Apicanta", "app", { dados: r.dados, fallaron: r.fallaron, yaEstaban: r.yaEstaban });
   return { accesos: r };
+}
+
+const ESPERA_SERVICIO = "Todavía no está cargada su venta: los accesos se dan solos apenas se cargue (o con «Dar los accesos»).";
+
+/** El «todavía no» de los accesos, una sola vez: la pasada de cada hora vuelve a pasar y no tiene que llenar el historial
+    (antes quedaban dos iguales porque el aviso del documento y el del destinatario llegan juntos). */
+async function eventoDeEspera(db: SupabaseClient, contratoId: string, motivo: string): Promise<void> {
+  const ultimo = await db.from("contrato_eventos").select("detalle").eq("contratoId", contratoId).eq("evento", "accesos")
+    .order("cuando", { ascending: false }).limit(1).maybeSingle();
+  if ((ultimo.data?.detalle as { motivo?: unknown } | undefined)?.motivo === motivo) return;
+  await evento(db, contratoId, "accesos", "Apicanta", "app", { dados: 0, motivo });
+}
+
+/** «Dar los accesos» desde la ficha: para el que firmó antes de que se cargara su venta, el que se subió sin darlos o
+    los que quedaron marcados sin haber dado nada (los firmados antes del 23/10). Si ya se dio alguno, no se repite:
+    para uno puntual está la solapa Accesos. */
+export async function darAccesosAhora(db: SupabaseClient, c: Contrato, quien: string): Promise<ResultadoAccesos> {
+  if (c.estado !== "firmado") throw new Error("Los accesos se dan cuando está firmado.");
+  if (c.datos.reserva) throw new Error("Es el contrato de la reserva: los accesos se dan con el contrato del programa.");
+  const { config } = await programasGuardados(db);
+  if (!accesosAlFirmar(config.estado, c.modo)) throw new Error("Los accesos de los contratos están apagados (Ajustes → Integraciones).");
+  const atado = await vincular(db, c);
+  if (!(await alumnoDelContrato(db, atado))) throw new Error("Todavía no está cargada su venta (o su servicio): cargala y probá de nuevo.");
+  if (atado.accesosEn) {
+    const dados = await db.from("accesos_alumno").select("id", { count: "exact", head: true }).eq("contratoId", c.id);
+    if ((dados.count ?? 0) > 0) throw new Error("Los accesos de este contrato ya se dieron: para uno puntual, usá la solapa Accesos.");
+    /* Quedó marcado sin haber dado nada: se libera, con la misma condición que la toma (si otro lo hace a la vez, uno solo). */
+    const libre = await db.from("contratos").update({ accesosEn: null }).eq("id", c.id).eq("accesosEn", atado.accesosEn).select("id");
+    if (!libre.data?.length) throw new Error("Alguien más los está dando en este momento: actualizá en un minuto.");
+  }
+  const r = await alFirmar(db, (await contratoPorId(db, c.id))!, { quien });
+  if (!r.accesos) {
+    const ahoraEs = await contratoPorId(db, c.id);
+    throw new Error(ahoraEs?.accesosEn ? "Los accesos ya se estaban dando." : "No se pudieron dar los accesos: mirá el historial del contrato.");
+  }
+  return r.accesos;
 }
 
 const DIAS_PARA_BIENVENIDA = 3;
@@ -368,7 +412,9 @@ export async function mandarBienvenida(db: SupabaseClient, c: Contrato, alumnoId
 }
 
 /** El alumno del contrato: el que tiene guardado, el de su venta o el de su persona. */
-export async function alumnoDelContrato(db: SupabaseClient, c: Pick<Contrato, "alumnoId" | "ventaId" | "leadId">): Promise<string | null> {
+export async function alumnoDelContrato(
+  db: SupabaseClient, c: Pick<Contrato, "alumnoId" | "ventaId" | "leadId"> & Partial<Pick<Contrato, "destinatario" | "datos">>,
+): Promise<string | null> {
   if (c.alumnoId) return c.alumnoId;
   if (c.ventaId) {
     const r = await db.from("alumnos").select("id").eq("ventaId", c.ventaId).limit(1).maybeSingle();
@@ -378,7 +424,78 @@ export async function alumnoDelContrato(db: SupabaseClient, c: Pick<Contrato, "a
     const r = await db.from("alumnos").select("id").eq("leadId", c.leadId).order("creadoEn", { ascending: false }).limit(1).maybeSingle();
     if (r.data?.id) return r.data.id as string;
   }
+  /* Por el mail con el que firmó: el servicio puede estar atado a otro lead de la misma persona. */
+  const email = mailDelContrato(c);
+  if (email) {
+    const r = await db.from("alumnos").select("id").ilike("email", sinComodines(email)).order("creadoEn", { ascending: false }).limit(1).maybeSingle();
+    if (r.data?.id) return r.data.id as string;
+  }
   return null;
+}
+
+const mailDelContrato = (c: { destinatario?: Contrato["destinatario"]; datos?: Contrato["datos"] }) =>
+  (c.destinatario?.email || c.datos?.email || "").trim().toLowerCase();
+/* ilike con el mail tal cual: «_» y «%» son comodines. */
+const sinComodines = (x: string) => x.replace(/[\\%_]/g, (m) => `\\${m}`);
+
+/** Lo ata a su persona, su servicio y su venta, con lo que falte. Hace falta para los que se mandan a mano desde
+    PandaDoc (sólo traen el mail) y para los que firman antes de que se cargue la venta: sin venta ni servicio, el
+    contrato no aparece en ninguna ficha. La venta es la del servicio o la última activa de esa persona, siempre desde
+    un mes antes del contrato: una venta vieja es otra compra. */
+export async function vincular(db: SupabaseClient, c: Contrato): Promise<Contrato> {
+  if (c.leadId && c.alumnoId && c.ventaId) return c;
+  const cambios: Partial<Contrato> = {};
+  const email = mailDelContrato(c);
+  let leadId = c.leadId;
+  if (!leadId && email) {
+    const r = await db.from("leads").select("id").ilike("email", sinComodines(email)).order("creadoEn", { ascending: false }).limit(1).maybeSingle();
+    if (r.data?.id) leadId = cambios.leadId = r.data.id as string;
+  }
+  const alumnoId = c.alumnoId ?? await alumnoDelContrato(db, { ...c, leadId });
+  type DelAlumno = { ventaId?: string | null; leadId?: string | null };
+  let alumno: DelAlumno | null = null;
+  if (alumnoId) {
+    if (!c.alumnoId) cambios.alumnoId = alumnoId;
+    alumno = (await db.from("alumnos").select("ventaId, leadId").eq("id", alumnoId).maybeSingle()).data as DelAlumno | null;
+    if (!leadId && alumno?.leadId) leadId = cambios.leadId = alumno.leadId;
+  }
+  if (!c.ventaId) {
+    const desde = new Date(new Date(c.creadoEn).getTime() - 31 * 86_400_000).toISOString();
+    if (alumno?.ventaId) {
+      const v = await db.from("ventas").select("id").eq("id", alumno.ventaId).gte("fecha", desde).maybeSingle();
+      if (v.data?.id) cambios.ventaId = v.data.id as string;
+    }
+    if (!cambios.ventaId && leadId) {
+      const v = await db.from("ventas").select("id").eq("contactoId", leadId).eq("estado", "activa").gte("fecha", desde)
+        .order("fecha", { ascending: false }).limit(1).maybeSingle();
+      if (v.data?.id) cambios.ventaId = v.data.id as string;
+    }
+  }
+  if (!Object.keys(cambios).length) return c;
+  await guardar(db, c.id, cambios);
+  return { ...c, ...cambios };
+}
+
+/** Un contrato mandado a mano desde PandaDoc trae sólo lo que tiene el documento: se completa quién firma y sus datos
+    (los que faltan; lo que se corrigió desde la app no se pisa). El aviso a veces llega cuando el documento todavía no
+    tiene firmante (hasta el 23/10 quedaban sin mail y no se ataban a nada). */
+async function completarDeAfuera(db: SupabaseClient, c: Contrato, det: Record<string, unknown>): Promise<Contrato> {
+  const leido = datosDelDocumento(det);
+  const cambios: Partial<Contrato> = {};
+  const dest = {
+    nombre: c.destinatario.nombre || leido.destinatario.nombre,
+    email: c.destinatario.email || leido.destinatario.email,
+    telefono: c.destinatario.telefono || leido.destinatario.telefono,
+  };
+  if (JSON.stringify(dest) !== JSON.stringify({ nombre: c.destinatario.nombre ?? "", email: c.destinatario.email ?? "", telefono: c.destinatario.telefono ?? "" })) {
+    cambios.destinatario = dest;
+  }
+  const datos = { ...leido.datos, ...Object.fromEntries(Object.entries(c.datos).filter(([, x]) => x !== "" && x !== null && x !== undefined)) };
+  if (JSON.stringify(datos) !== JSON.stringify(c.datos)) cambios.datos = datos;
+  if (!c.bienvenida) cambios.bienvenida = randomBytes(24).toString("base64url");
+  if (!Object.keys(cambios).length) return c;
+  await guardar(db, c.id, cambios);
+  return { ...c, ...cambios };
 }
 
 /* ---------- Un contrato que se mandó a mano desde PandaDoc ---------- */
@@ -394,20 +511,58 @@ export async function contratoDeAfuera(db: SupabaseClient, documentoId: string, 
   const programa = programas.find((p) => p.plantillaId && p.plantillaId === plantilla.id);
   const deReserva = programa ? null : programas.find((p) => p.plantillaReservaId && p.plantillaReservaId === plantilla.id);
   if (!programa && !deReserva) return null;
-  const alumno = ((det.recipients ?? []) as { email?: string; first_name?: string; last_name?: string; phone?: string; role?: string }[])
-    .find((r) => r.role === ROL_ALUMNO) ?? null;
-  const email = (alumno?.email ?? "").trim().toLowerCase();
-  const lead = email ? (await db.from("leads").select("id").ilike("email", email).limit(1).maybeSingle()).data?.id as string | undefined : undefined;
+  const leido = datosDelDocumento(det);
   const id = nuevoId("ctr");
   const elegido = (programa ?? deReserva)!;
+  /* Uno armado a mano en PandaDoc es un contrato real, aunque lo haya traído el aviso de la clave de prueba (que ve
+     el mismo espacio): hasta el 23/10 quedaban como «prueba» y al firmar no se marcaba la ficha. */
+  const modoReal: ModoContrato = clavePandadoc("produccion") ? "produccion" : modo;
   const ins = await db.from("contratos").insert({
-    id, leadId: lead ?? null, programa: elegido.id, plantillaId: plantilla.id,
+    id, programa: elegido.id, plantillaId: plantilla.id,
     plantillaNombre: plantilla.name ?? (programa ? elegido.plantillaNombre : elegido.plantillaReservaNombre ?? ""),
-    documentoId, modo, estado: estadoDePandadoc(typeof det.status === "string" ? det.status : "") ?? "enviado", origen: "pandadoc", creadoPor: "PandaDoc",
-    destinatario: { nombre: [alumno?.first_name, alumno?.last_name].filter(Boolean).join(" "), email, telefono: alumno?.phone ?? "" },
-    datos: programa ? {} : { reserva: true }, enviadoEn: typeof det.date_sent === "string" ? det.date_sent : ahora(),
+    documentoId, modo: modoReal, estado: estadoDePandadoc(typeof det.status === "string" ? det.status : "") ?? "enviado", origen: "pandadoc", creadoPor: "PandaDoc",
+    destinatario: leido.destinatario, datos: { ...leido.datos, ...(programa ? {} : { reserva: true }) },
+    enviadoEn: typeof det.date_sent === "string" ? det.date_sent : ahora(), bienvenida: randomBytes(24).toString("base64url"),
   });
   if (ins.error) return contratoPorDocumento(db, documentoId);
   await evento(db, id, "creado", "PandaDoc", "pandadoc", { motivo: "Se mandó a mano desde PandaDoc" });
-  return contratoPorId(db, id);
+  const c = await contratoPorId(db, id);
+  return c ? vincular(db, c) : null;
+}
+
+/* ---------- Un contrato firmado fuera de PandaDoc ---------- */
+
+export interface SubidaFirmado {
+  ventaId: string | null; leadId: string | null; alumnoId: string | null;
+  programa: Programa; datos: DatosContrato; pdf: Uint8Array;
+  /* El día que lo firmó (2026-10-23). */
+  fecha: string;
+  quien: string;
+  /* false: se anota firmado y se marca la ficha, pero los accesos los da el equipo después («Dar los accesos»). */
+  darAccesos: boolean;
+}
+
+/** Subir el PDF de un contrato firmado en papel o por otro lado (como en Blue OS): queda firmado en la venta, con su
+    PDF y su página de bienvenida, y corre lo mismo que al firmar en PandaDoc (la ficha y, si se pide, los accesos). */
+export async function subirFirmado(db: SupabaseClient, p: SubidaFirmado): Promise<Contrato> {
+  const id = nuevoId("ctr");
+  const ruta = `${id}.pdf`;
+  const up = await db.storage.from("contratos").upload(ruta, Buffer.from(p.pdf), { contentType: "application/pdf", upsert: false });
+  if (up.error) throw new Error(`No se pudo guardar el PDF: ${up.error.message}`);
+  /* A las 12 de Argentina, como el inicio: «2026-10-23» a secas es la medianoche UTC, que en Argentina es el 22. */
+  const firmadoEn = `${p.fecha}T15:00:00.000Z`;
+  const ins = await db.from("contratos").insert({
+    id, ventaId: p.ventaId, leadId: p.leadId, alumnoId: p.alumnoId, programa: p.programa.id, plantillaId: "",
+    plantillaNombre: p.programa.plantillaNombre || `Contrato ${p.programa.nombre}`, modo: "produccion", estado: "firmado", origen: "manual",
+    destinatario: { nombre: p.datos.nombre, email: p.datos.email, telefono: p.datos.telefono }, datos: p.datos,
+    pdfPath: ruta, firmadoEn, creadoPor: p.quien, creadoEn: ahora(), actualizadoEn: ahora(), bienvenida: randomBytes(24).toString("base64url"),
+  });
+  if (ins.error) {
+    await db.storage.from("contratos").remove([ruta]);
+    throw new Error(/origen/.test(ins.error.message) ? "Falta correr supabase/contratos-a-mano.sql en la base." : `No se pudo guardar el contrato: ${ins.error.message}`);
+  }
+  await evento(db, id, "subido", p.quien, "app", { programa: p.programa.nombre, firmado: p.fecha });
+  const c = await vincular(db, (await contratoPorId(db, id))!);
+  await alFirmar(db, c, p.darAccesos ? { quien: p.quien } : { sinAccesos: "Se subió firmado sin dar los accesos: se dan con «Dar los accesos»." });
+  return (await contratoPorId(db, id))!;
 }
