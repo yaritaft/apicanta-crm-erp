@@ -1,5 +1,4 @@
 /* «Anotar la charla» (components/ficha/NotaDeCharla.tsx). */
-.nota-charla__chips { display: flex; flex-wrap: wrap; gap: var(--space-2); }
 .nota-charla__archivos { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
 .nota-charla__archivo {
   display: inline-flex; align-items: center; gap: 6px; max-width: 260px; height: 28px; padding: 0 6px 0 10px;
@@ -9,3 +8,12 @@
 .nota-charla__archivo button { display: inline-grid; place-items: center; padding: 2px; border: 0; background: none; color: var(--ink-subtle); cursor: pointer; }
 .nota-charla__gira { animation: nota-charla-gira 900ms linear infinite; }
 @keyframes nota-charla-gira { to { transform: rotate(360deg); } }
+/* Paso «A quién avisarle»: los elegidos debajo del desplegable. */
+.nota-charla__elegidos { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.nota-charla__elegido {
+  display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 6px 0 12px; border-radius: var(--radius-full);
+  background: color-mix(in srgb, var(--brand) 16%, transparent); border: 1px solid color-mix(in srgb, var(--brand) 45%, transparent);
+  font-size: 14px; color: var(--ink);
+}
+.nota-charla__elegido button { display: inline-grid; place-items: center; padding: 2px; border: 0; background: none; color: var(--ink-subtle); cursor: pointer; }
+.nota-charla__elegido button:hover { color: var(--ink); }
