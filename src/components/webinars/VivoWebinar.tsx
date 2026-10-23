@@ -431,8 +431,8 @@ function Espectadores({ w, a, datos, cargando, error, ejemplo, enElAire, onEjemp
         {!ejemplo && w.asistentes > 0 && (
           <Kpi
             etiqueta="Asistieron" valor={`≈ ${num(w.asistentes)}`}
-            sub={w.extra?.asistentesFuente === "analytics" ? "vistas en vivo · YouTube Analytics" : "vistas durante el vivo"}
-            ayuda="Cuánta gente pasó por el vivo. YouTube no da personas únicas: son las vistas del vivo, y quien se fue y volvió cuenta dos veces. Se completa solo; si alguien lo carga a mano, no se pisa."
+            sub={w.extra?.asistentesFuente === "analytics" ? "pico a la vez · YouTube Analytics" : "pico a la vez durante el vivo"}
+            ayuda="Lo que se cuenta como asistentes: el pico, la mayor cantidad de gente viendo a la vez. Las vistas del vivo contaban dos veces a quien se iba y volvía. Se completa solo; si alguien lo carga a mano, no se pisa."
           />
         )}
         <Kpi etiqueta="Promedio" valor={num(Math.round(a.promedio))} sub={`${pct(a.retencionMedia * 100, 0)} del pico en promedio`} />

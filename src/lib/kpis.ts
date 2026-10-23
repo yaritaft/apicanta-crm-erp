@@ -502,7 +502,7 @@ export function catalogo(e: EstadoApp): DefKpi[] {
     { id: "w_n", etiqueta: "Webinars", formato: "cantidad", href: "/webinars",
       ayuda: "Webinars con fecha en el período.", valor: (c) => (c.alcanceWebinar === "ninguno" ? null : c.webinars().length || null) },
     { id: "w_asist", etiqueta: "Asistieron al vivo", formato: "cantidad", mejor: "sube", href: "/webinars",
-      ayuda: "Los que estuvieron en el vivo.", valor: (c) => w(c, (m) => m.asistentes) },
+      ayuda: "El pico: la mayor cantidad de gente viendo a la vez en el vivo.", valor: (c) => w(c, (m) => m.asistentes) },
     { id: "w_asist_pct", etiqueta: "Asistencia al taller", formato: "pct", mejor: "sube", href: "/webinars",
       ayuda: "Asistentes al vivo sobre los que entraron al grupo.", valor: (c) => w(c, (m) => m.asistenciaTaller) },
     { id: "w_ll_vivo", etiqueta: "Agendas en el vivo", formato: "cantidad", mejor: "sube", href: "/webinars",

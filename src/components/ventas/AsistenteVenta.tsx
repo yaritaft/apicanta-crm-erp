@@ -459,7 +459,8 @@ export function AsistenteVenta({ onCerrar, onListo, desdeMovimiento, cliente, cl
 
 function inicial(e: EstadoApp, mov?: Movimiento, cliente?: { contactoId: string; nombre: string; email: string }): Borrador {
   const hoy = new Date().toISOString();
-  const producto = e.productos.find((p) => p.activo);
+  /* Sin servicio elegido de antemano: el que venía marcado era «Mentoría», y los closers pasaban de largo y quedaba como «Mentoría» lo
+     que era Hackear IT, AI o Biz (Yari, 22/10: «debería decir el nombre del servicio»). Tiene que elegirlo quien cierra. */
   const b: Borrador = {
     /* Desde un cobro: si su correo es de alguien que ya está, queda elegido. */
     contactoId: cliente?.contactoId
@@ -468,8 +469,8 @@ function inicial(e: EstadoApp, mov?: Movimiento, cliente?: { contactoId: string;
     contactoEmail: cliente?.email ?? mov?.clienteEmail ?? "",
     contactoPais: "",
     contactoTelefono: mov?.clienteTelefono ?? "",
-    productoId: producto?.id ?? "",
-    precioAcordado: mov?.monto ?? producto?.precioLista ?? 0,
+    productoId: "",
+    precioAcordado: mov?.monto ?? 0,
     precioTocado: Boolean(mov),
     closerId: "",
     directorId: e.equipo.find((x) => x.rol === "director" && x.activo)?.id ?? "",
@@ -789,7 +790,7 @@ function PasoCliente({ b, set, e, M, onPagoDeCuota }: {
 function PasoProducto({ b, set, e, M }: {
   b: Borrador; set: (c: Partial<Borrador>) => void; e: EstadoApp; M: (n: number, d?: number) => string;
 }) {
-  const productos = e.productos.filter((p) => p.activo);
+  const productos = e.productos.filter((p) => p.activo).sort((a, b) => a.orden - b.orden);
   return (
     <>
       <Pregunta texto="¿Qué servicio adquirió?" sub="El precio de lista se carga solo; en el próximo paso ponés el valor total de la venta." />

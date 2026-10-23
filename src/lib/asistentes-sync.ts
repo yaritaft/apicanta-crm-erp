@@ -6,14 +6,16 @@ import { analyticsDeVideo, conexion } from "./youtube-analytics";
 /* ==================================================================
    Completar solo "Asistieron al vivo" de cada webinar con video.
 
-   YouTube no da personas únicas: da vistas. Las vistas del vivo son lo más
-   parecido a los asistentes (quien se va y vuelve cuenta dos veces). De
-   dónde sale, de mejor a peor:
-   1. YouTube Analytics: las vistas en vivo (liveOrOnDemand = LIVE). Tardan
-      dos o tres días, así que una vez por día se le vuelve a preguntar
-      por los vivos de las últimas dos semanas.
-   2. Lo que guardó el cron: las vistas del video en el último minuto en
-      que estuvo en el aire.
+   Asistentes = el PICO: la mayor cantidad de gente que hubo viendo a la vez
+   (Yari, 22/10: «lo que siempre medíamos es el pico de más gente en vivo»).
+   Las vistas del vivo no sirven: cuentan dos veces a quien se va y vuelve,
+   y daban asistencias de más de 100% (132%) contra el grupo. De dónde sale:
+   1. YouTube Analytics: el pico de espectadores simultáneos
+      (peakConcurrentViewers). Tarda dos o tres días, así que una vez por día
+      se le vuelve a preguntar por los vivos de las últimas dos semanas.
+   2. Lo que guardó el cron: el máximo de espectadores simultáneos de las
+      muestras de cada minuto (yt_muestras.espectadores), con el vivo terminado.
+   Sin ninguno de los dos no se toca nada: nunca se cae a las vistas.
 
    No pisa lo cargado a mano: sólo escribe si el campo está en 0 o si
    todavía tiene el último número que puso él (extra.asistentesAuto).
@@ -32,6 +34,10 @@ interface FilaWebinar {
 }
 
 const vistasEnVivo = (d?: AnalyticsVideo | null) => d?.vivoVsGrabacion?.find((f) => f.clave === "LIVE")?.valor;
+const picoDeAnalytics = (d?: AnalyticsVideo | null) => {
+  const p = d?.resumen?.picoConcurrentes;
+  return typeof p === "number" && p > 0 ? p : undefined;
+};
 const vistasGrabacion = (d?: AnalyticsVideo | null) => d?.vivoVsGrabacion?.find((f) => f.clave === "ON_DEMAND")?.valor;
 
 export async function completarAsistentes(): Promise<{ actualizados: number; errores: string[] }> {
@@ -64,7 +70,7 @@ export async function completarAsistentes(): Promise<{ actualizados: number; err
     const pendiente = webinars.find(({ w, v }) => {
       const a = analytics.get(v);
       const reciente = Date.now() - +new Date(w.fecha) < 14 * DIA && Date.now() - +new Date(w.fecha) > 6 * 3600_000;
-      return reciente && (!a || (vistasEnVivo(a.datos) === undefined && Date.now() - +new Date(a.traidoEn) > DIA));
+      return reciente && (!a || ((vistasEnVivo(a.datos) === undefined || picoDeAnalytics(a.datos) === undefined) && Date.now() - +new Date(a.traidoEn) > DIA));
     });
     if (pendiente) {
       const desde = new Date(+new Date(pendiente.w.fecha) - DIA).toISOString().slice(0, 10);
@@ -78,7 +84,7 @@ export async function completarAsistentes(): Promise<{ actualizados: number; err
 
   for (const { w, v } of webinars) {
     const d = analytics.get(v)?.datos;
-    let valor = vistasEnVivo(d);
+    let valor = picoDeAnalytics(d);
     let grabacion = vistasGrabacion(d);
     let fuente = "analytics";
     const terminado = estados.get(v)?.estado === "terminado";
@@ -87,14 +93,17 @@ export async function completarAsistentes(): Promise<{ actualizados: number; err
          durante, los números todavía crecen. Las vistas de la grabación son
          las de ahora menos las que tenía al cortar el vivo. */
       if (!terminado) continue;
-      const [enVivo, ahora] = await Promise.all([
+      const [pico, enVivo, ahora] = await Promise.all([
+        db.from("yt_muestras").select("espectadores").eq("videoId", v).eq("enVivo", true)
+          .not("espectadores", "is", null).order("espectadores", { ascending: false }).limit(1).maybeSingle(),
         db.from("yt_muestras").select("vistas").eq("videoId", v).eq("enVivo", true)
           .not("vistas", "is", null).order("minuto", { ascending: false }).limit(1).maybeSingle(),
         db.from("yt_muestras").select("vistas").eq("videoId", v).eq("enVivo", false)
           .not("vistas", "is", null).order("minuto", { ascending: false }).limit(1).maybeSingle(),
       ]);
+      const delPico = pico.data?.espectadores as number | undefined;
+      if (valor === undefined && delPico !== undefined && delPico > 0) { valor = delPico; fuente = "vivo"; }
       const alCortar = enVivo.data?.vistas as number | undefined;
-      if (valor === undefined) { valor = alCortar; fuente = "vivo"; }
       if (grabacion === undefined && alCortar !== undefined) {
         const ult = ahora.data?.vistas as number | undefined;
         grabacion = ult !== undefined ? Math.max(0, ult - alCortar) : 0;
@@ -111,7 +120,7 @@ export async function completarAsistentes(): Promise<{ actualizados: number; err
       cambios.asistentes = valor;
       extra.asistentesAuto = valor;
       extra.asistentesFuente = fuente;
-      partes.push(`asistieron al vivo ${w.asistentes} → ${valor} (${fuente === "analytics" ? "vistas en vivo según YouTube Analytics" : "vistas al terminar el vivo"})`);
+      partes.push(`asistieron al vivo (pico) ${w.asistentes} → ${valor} (${fuente === "analytics" ? "pico de espectadores a la vez según YouTube Analytics" : "pico de espectadores a la vez que guardó el cron"})`);
     }
     if (grabacion !== undefined && grabacion !== extra.vistasGrabacion) {
       extra.vistasGrabacion = grabacion;

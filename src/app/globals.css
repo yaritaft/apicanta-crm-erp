@@ -2486,6 +2486,9 @@ a.wb-canal:hover { background: var(--surface-200); border-color: var(--border-st
 
 .kpis-card .planilla-caja { border-top: 0; border-radius: var(--radius-lg); }
 .kpis-caja { max-height: min(80vh, 920px); scroll-padding: 48px 140px 0 var(--planilla-fija, 280px); }
+/* Mientras llegan los datos: barras que laten en vez de una tabla en ceros. */
+.kpis-cargando { display: flex; flex-direction: column; gap: 14px; padding: 28px 24px 32px; }
+.kpis-cargando__barra { height: 18px; width: 100%; }
 .kpis thead th:first-child { border-top-left-radius: var(--radius-lg); }
 .kpis thead th:last-child { border-top-right-radius: var(--radius-lg); }
 

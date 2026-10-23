@@ -6,7 +6,7 @@ import { Button, Field, Input, Select, Textarea } from "@/components/ui/ui";
 import { ModalForm } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toast";
 import { acciones, nuevoId } from "@/lib/store";
-import { conSesion } from "@/lib/bonos";
+import { conQuien, conSesion } from "@/lib/bonos";
 import { formatoDia, hoyDelNegocio } from "@/lib/seguimiento";
 import type { SeguimientoAlumno, SesionUnoAUno } from "@/lib/types";
 
@@ -17,14 +17,15 @@ import type { SeguimientoAlumno, SesionUnoAUno } from "@/lib/types";
    faltan»). Se guarda en su ficha de seguimiento, con historial y Deshacer.
    ================================================================== */
 
-const CON = ["Yari", "Lili"];
+/* «Mentor» es quien da las sesiones del contrato: Yari, un socio o un closer. Las viejas que dicen «Yari» se siguen mostrando. */
+const CON = ["Mentor", "Lili"];
 
 export function FormSesionUnoAUno({ alumnoId, nombre, sesion, con, onCerrar }: {
   alumnoId: string; nombre: string; sesion?: SesionUnoAUno; con?: string; onCerrar: () => void;
 }) {
   const toast = useToast();
   const [b, setB] = useState({
-    fecha: sesion?.fecha ?? hoyDelNegocio(), con: sesion?.con ?? con ?? "Yari", notas: sesion?.notas ?? "", grabacion: sesion?.grabacion ?? "",
+    fecha: sesion?.fecha ?? hoyDelNegocio(), con: sesion?.con ?? con ?? "Mentor", notas: sesion?.notas ?? "", grabacion: sesion?.grabacion ?? "",
   });
   const set = <K extends keyof typeof b>(k: K, v: string) => setB((x) => ({ ...x, [k]: v }));
   const linkOk = !b.grabacion.trim() || /^https?:\/\/\S+$/i.test(b.grabacion.trim());
@@ -33,10 +34,10 @@ export function FormSesionUnoAUno({ alumnoId, nombre, sesion, con, onCerrar }: {
   function escribir(borrar: boolean) {
     const ahora = new Date().toISOString();
     const nueva: SesionUnoAUno = {
-      id: sesion?.id ?? nuevoId("ses1a1"), fecha: b.fecha, con: b.con.trim() || "Yari", notas: b.notas.trim(), grabacion: b.grabacion.trim(),
+      id: sesion?.id ?? nuevoId("ses1a1"), fecha: b.fecha, con: b.con.trim() || "Mentor", notas: b.notas.trim(), grabacion: b.grabacion.trim(),
       creadoEn: sesion?.creadoEn ?? ahora, creadoPor: sesion?.creadoPor ?? "",
     };
-    const que = `Sesión 1 a 1 con ${nueva.con} del ${formatoDia(nueva.fecha, hoyDelNegocio())}`;
+    const que = `Sesión 1 a 1 con ${conQuien(nueva.con)} del ${formatoDia(nueva.fecha, hoyDelNegocio())}`;
     const antes = acciones.guardarSeguimiento(alumnoId, (s: SeguimientoAlumno, quien: string): SeguimientoAlumno => ({
       ...s, sesionesUnoAUno: conSesion(s.sesionesUnoAUno, { ...nueva, creadoPor: nueva.creadoPor || quien }, borrar),
       actualizadoEn: ahora, actualizadoPor: quien,
@@ -51,7 +52,7 @@ export function FormSesionUnoAUno({ alumnoId, nombre, sesion, con, onCerrar }: {
   return (
     <ModalForm
       abierto onCerrar={onCerrar} titulo={sesion ? "Corregir la sesión 1 a 1" : "Anotar una sesión 1 a 1"}
-      sub={`${nombre}. Las de Yari cuentan contra las que incluye el contrato; las de Lili quedan anotadas aparte.`}
+      sub={`${nombre}. Las del mentor cuentan contra las que incluye el contrato; las de Lili quedan anotadas aparte.`}
       puedeGuardar={fechaOk && linkOk} onGuardar={() => escribir(false)}
     >
       <div className="form-grid">

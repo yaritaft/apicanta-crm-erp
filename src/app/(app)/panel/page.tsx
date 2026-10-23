@@ -20,7 +20,7 @@ import { AlarmaCobranza } from "@/components/finanzas/AlarmaCobranza";
 import { AlarmaCarga } from "@/components/finanzas/AlarmaCarga";
 import { AvisoLectorWhatsapp } from "@/components/webinars/AvisoLectorWhatsapp";
 import { TablaKpis, variacionKpi, type ExplicarKpis, type FilaKpi } from "@/components/panel/TablaKpis";
-import { useEstado } from "@/lib/store";
+import { useEstado, useSync } from "@/lib/store";
 import { useAcceso } from "@/lib/acceso";
 import { veSeccion } from "@/lib/permisos";
 import { money, num } from "@/lib/format";
@@ -68,6 +68,9 @@ const VISTA_PANEL = { area: "todo", columnas: "dia", comparar: "", embudo: "", w
 
 export default function DashboardKpis() {
   const e = useEstado();
+  /* Mientras la base trae los datos, lo que hay en pantalla es una copia vieja del navegador (sin Meta, sin lo de hoy): dibujarla daba una
+     tabla en ceros que parecía rota y hacía la cuenta dos veces. Hasta que llegan, un «trayendo» y sin calcular nada (Yari, 22/10). */
+  const cargando = useSync().estado === "cargando";
   const params = useSearchParams();
   const mon = e.ajustes.monedaBase;
 
@@ -149,6 +152,7 @@ export default function DashboardKpis() {
      filtrando un webinar, el P&L o el gasto de Meta no existen (no tienen
      webinar), y una fila de guiones no dice nada. */
   const todas: FilaKpi[] = useMemo(() => {
+    if (cargando) return [];
     const ctx = cortes.map((c) => new Contexto(e, c));
     const ctxPrevio = cortes.map((c) => (c.previo ? new Contexto(e, c.previo) : null));
     const tiene = (v: number | null, def: DefKpi) => v !== null && (!def.ocultarEnCero || v !== 0);
@@ -160,19 +164,19 @@ export default function DashboardKpis() {
         previos: ctxPrevio.map((c) => (c ? valorEn(def, c) : null)),
       }))
       .filter((f) => f.valores.some((v) => tiene(v, f.def)));
-  }, [e, catalogoTodo, cortes, secciones]);
+  }, [e, catalogoTodo, cortes, secciones, cargando]);
 
   /* «Cómo se calcula» de cada fila, con los números del Total (todo lo que se
      está mirando): las piezas de cada cuenta son filas de esta misma tabla. */
   const explicar: ExplicarKpis | undefined = useMemo(() => {
     const total = cortes.find((c) => c.total) ?? cortes[cortes.length - 1];
-    if (!total) return undefined;
+    if (!total || cargando) return undefined;
     return {
       ctx: new Contexto(e, total),
       porId: new Map(catalogoTodo.map((d) => [d.id, d])),
       periodo: rangoStr({ preset: "custom", desde: total.desde, hasta: total.hasta }),
     };
-  }, [e, catalogoTodo, cortes]);
+  }, [e, catalogoTodo, cortes, cargando]);
 
   /* Qué métricas se ven y en qué orden: lo elige cada uno (useFilasKpi). */
   const defs = useMemo(() => todas.map((f) => f.def), [todas]);
@@ -296,7 +300,17 @@ export default function DashboardKpis() {
         )}
       </AccionesTopbar>
 
-      {ver === "graficos" && explicar ? (
+      {cargando ? (
+        <Card className="planilla-card kpis-card">
+          <div className="kpis-cargando" role="status" aria-live="polite" aria-busy="true">
+            <div className="skeleton kpis-cargando__barra" aria-hidden />
+            <div className="skeleton kpis-cargando__barra" aria-hidden style={{ width: "72%" }} />
+            <div className="skeleton kpis-cargando__barra" aria-hidden style={{ width: "86%" }} />
+            <div className="skeleton kpis-cargando__barra" aria-hidden style={{ width: "58%" }} />
+            <span className="t-sm t-subtle">Trayendo los datos del negocio…</span>
+          </div>
+        </Card>
+      ) : ver === "graficos" && explicar ? (
         <Graficos
           cortes={cortes} comparar={comparar} moneda={mon} explicar={explicar}
           verVentas={veSeccion(acceso, "ventas")} verCobranza={veSeccion(acceso, "cobranza")} segmento={segmentoTexto}

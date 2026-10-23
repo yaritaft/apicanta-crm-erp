@@ -23,7 +23,7 @@ export async function GET(req: Request) {
     const r = await seguirVivos();
     /* Y de paso, las agendas de Calendly de cada webinar a la planilla. */
     const l = await completarLlamadas().catch((e: unknown) => ({ actualizados: 0, errores: [e instanceof Error ? e.message : "agendas"] }));
-    /* Y los asistentes de cada vivo, con las vistas en vivo de YouTube. */
+    /* Y los asistentes de cada vivo, con el pico de espectadores a la vez de YouTube. */
     const a = await completarAsistentes().catch((e: unknown) => ({ actualizados: 0, errores: [e instanceof Error ? e.message : "asistentes"] }));
     const errores = [...r.errores, ...l.errores, ...a.errores];
     const cuenta = { ...r, llamadas: l.actualizados, asistentes: a.actualizados, errores };

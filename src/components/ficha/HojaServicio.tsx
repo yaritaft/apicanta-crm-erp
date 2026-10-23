@@ -2,6 +2,7 @@
 
 import { ContratoCard } from "@/components/contratos/ContratoCard";
 import { AccesosAlumno } from "@/components/contratos/AccesosAlumno";
+import { SesionesZoom } from "@/components/contratos/SesionesZoom";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   BadgeCheck, Briefcase, CalendarCheck, CalendarClock, CalendarDays, CalendarPlus, Contact, CreditCard, FileSignature, Flag, GraduationCap,
@@ -279,7 +280,7 @@ function HojaDeUnServicio({ e, p, f, venta, producto, conChat, reserva }: {
     { id: "accesos", texto: "Accesos" },
     { id: "datos", texto: "Datos" },
     { id: "seguimiento", texto: "Seguimiento" },
-    /* Bonos (reunión del 21/10): las sesiones 1 a 1 del contrato con Yari y las de Lili. */
+    /* Bonos (reunión del 21/10): las sesiones 1 a 1 del contrato con el mentor y las de Lili. */
     { id: "bonos", texto: "Bonos", n: (f.seg.sesionesUnoAUno ?? []).length },
     { id: "testimonio", texto: "Testimonio", n: testimonios.length + resells.length },
     { id: "cv", texto: "CV" },
@@ -452,6 +453,8 @@ function HojaDeUnServicio({ e, p, f, venta, producto, conChat, reserva }: {
         <>
           <AccesosAlumno forma="hoja" alumno={alumno} venta={venta}
             manual={{ wisboo: dato("wibo", false), zoom: dato("zoom", false), whatsapp: f.wpp ? dato("wpp", false) : undefined }} />
+          {/* Las clases de Zoom a las que entró (Yari, 22/10: «saber si vino o no a las clases»). */}
+          <SesionesZoom email={alumno.email} desde={f.inicioReal} />
           <Bloque titulo="Marcado a mano">{dato("acceso")}</Bloque>
         </>
       )}
@@ -515,15 +518,15 @@ function HojaDeUnServicio({ e, p, f, venta, producto, conChat, reserva }: {
         );
         return (
           <>
-            <BloqueServicio titulo="Sesiones 1 a 1 con Yari" extra={<span className={`hs-chip ${chip.tono}`}>{chip.texto}</span>}>
+            <BloqueServicio titulo="Sesiones 1 a 1 con el mentor" extra={<span className={`hs-chip ${chip.tono}`}>{chip.texto}</span>}>
               {dato("mentor", false)}
               <FilaServicio icono={<CalendarClock size={15} />} rotulo="Se toman hasta" detalle="Dentro de los primeros 3 meses del programa; después se pierden">
                 {b.vencen ? <span className={`t-num${b.vencidas ? " hs-rojo" : ""}`}>{formatoDia(b.vencen, hoy)}</span> : <span className="hs-guion">Falta la fecha de inicio</span>}
               </FilaServicio>
-              {b.conYari.map(sesion)}
+              {b.conMentor.map(sesion)}
               {puede && (
                 <div className="hs-pie-bloque">
-                  <Button sm variante="secondary" icono={<Plus size={14} />} onClick={() => setFormSesion({ con: "Yari" })}>Anotar sesión con Yari</Button>
+                  <Button sm variante="secondary" icono={<Plus size={14} />} onClick={() => setFormSesion({ con: "Mentor" })}>Anotar sesión con el mentor</Button>
                 </div>
               )}
             </BloqueServicio>

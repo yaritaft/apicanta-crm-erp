@@ -348,7 +348,7 @@ export function informeDelWebinar(e: EstadoApp, webinar: Webinar): InformeWebina
       filas: [
         { etiqueta: "Formularios", valor: m.formularios, formato: "entero", nota: "Cargado a mano o contado solo desde los registros de la landing y los formularios de Meta." },
         { etiqueta: "Se unieron al grupo", valor: m.grupoWpp, formato: "entero", nota: "Cargado a mano o, si está en cero, los que entraron a sus grupos de WhatsApp según el lector (los que están más los que salieron, y los que no se les ve el teléfono)." },
-        { etiqueta: "Asistieron al vivo", valor: m.asistentes, formato: "entero", nota: "Vistas del vivo en YouTube, o lo cargado a mano." },
+        { etiqueta: "Asistieron al vivo", valor: m.asistentes, formato: "entero", nota: "El pico de gente viendo a la vez en el vivo (YouTube), o lo cargado a mano." },
         { etiqueta: "Llamadas agendadas", valor: m.llamadas, formato: "entero", nota: "Las agendadas en el vivo + las de después (sin canceladas)." },
         { etiqueta: "Llamadas calificadas", valor: m.llamadasCalificadas, formato: "entero", nota: "Pueden invertir 1000 USD o más, inglés conversacional y carrera." },
         { etiqueta: "Ventas", valor: m.ventas, formato: "entero", nota: "Ventas del webinar, sin las canceladas." },

@@ -149,7 +149,7 @@ export function FormularioVenta({ borrador, onCerrar, onGuardado }: {
               const p = e.productos.find((x) => x.id === ev.target.value);
               setF({ ...f, productoId: ev.target.value, precioAcordado: p?.precioLista ?? f.precioAcordado });
             }}
-            opciones={e.productos.filter((p) => p.activo).map((p) => ({ valor: p.id, texto: p.nombre }))} />
+            opciones={e.productos.filter((p) => p.activo).sort((a, b) => a.orden - b.orden).map((p) => ({ valor: p.id, texto: p.nombre }))} />
         </Field>
         <Field label="Valor total de la venta" ayuda="Lo que realmente acordó el vendedor.">
           <InputMonto value={f.precioAcordado} onChange={(ev) => setF({ ...f, precioAcordado: montoDe(ev.target.value) })} />

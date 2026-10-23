@@ -123,7 +123,7 @@ export async function probarPandadoc(): Promise<PruebaPandadoc> {
 export interface PruebaZoom { estado: EstadoConexion; error?: string; falta?: string[]; reuniones?: ReunionZoom[] }
 
 /** El token de la app Server-to-Server OAuth (dura una hora; no se guarda). */
-async function tokenZoom(): Promise<{ token: string } | { error: string }> {
+export async function tokenZoom(): Promise<{ token: string } | { error: string }> {
   const cuenta = process.env.ZOOM_ACCOUNT_ID, id = process.env.ZOOM_CLIENT_ID, secreto = process.env.ZOOM_CLIENT_SECRET;
   const basico = Buffer.from(`${id}:${secreto}`).toString("base64");
   const r = await pedirJson(

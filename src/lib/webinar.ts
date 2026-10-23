@@ -120,6 +120,11 @@ const RE_CAMPANIA_DM = /(^|[^a-z])DM([^a-z]|$)/i;
 const diaAr = (iso: string) => new Date(new Date(iso).getTime() - 3 * 3600000).toISOString().slice(0, 10);
 const diasEntre = (a: string, b: string) => (new Date(`${b}T12:00:00Z`).getTime() - new Date(`${a}T12:00:00Z`).getTime()) / 86400000;
 
+/* Las memorias de abajo se indexan por la IDENTIDAD de los arreglos del estado. Un `e.costosWpp ?? []` crea un arreglo nuevo en cada llamada:
+   con la API de WhatsApp sin conectar (sin costos), ninguna memoria acertaba nunca y el Dashboard recalculaba los 8.000 días de gasto de Meta
+   por cada webinar y cada columna (15 s con el mes de septiembre). Lo vacío es siempre el mismo arreglo. */
+const SIN_FILAS: never[] = [];
+
 /* Se calcula una vez por cada combinación de anuncios y webinars: la
    planilla lo pide para cada fila a cada celda que se carga. */
 const META_WEBINAR = new WeakMap<object, WeakMap<object, Map<string, MetaDelWebinar>>>();
@@ -130,10 +135,18 @@ const META_WEBINAR = new WeakMap<object, WeakMap<object, Map<string, MetaDelWebi
  *  la planilla y el informe del webinar (lib/informe-webinar.ts). */
 export interface InsightDeWebinar { insight: AdInsight; webinarId: string; tipo: "pauta" | "dm" }
 
+const REPARTO_INSIGHTS = new WeakMap<object, WeakMap<object, { ads: unknown; campaigns: unknown; out: InsightDeWebinar[] }>>();
+
 export function repartirInsights(e: EstadoApp): InsightDeWebinar[] {
-  const insights = e.adInsights ?? [];
+  const insights = e.adInsights ?? SIN_FILAS;
   const out: InsightDeWebinar[] = [];
   if (!insights.length || !e.webinars.length) return out;
+  /* Se reparte una vez por combinación de anuncios, campañas y webinars (lo piden el gasto de cada webinar y cada columna del Dashboard). */
+  let porWebinars = REPARTO_INSIGHTS.get(insights);
+  if (!porWebinars) { porWebinars = new WeakMap(); REPARTO_INSIGHTS.set(insights, porWebinars); }
+  const previo = porWebinars.get(e.webinars);
+  if (previo && previo.ads === e.ads && previo.campaigns === e.campaigns) return previo.out;
+  porWebinars.set(e.webinars, { ads: e.ads, campaigns: e.campaigns, out });
   const campania = new Map((e.campaigns ?? []).map((c) => [c.id, c.nombre] as const));
   const campaniaDeAd = new Map((e.ads ?? []).map((a) => [a.id, campania.get(a.campaignId) ?? ""] as const));
   const webinars = [...e.webinars].map((w) => ({ w, dia: diaAr(w.fecha) })).sort((a, b) => a.dia.localeCompare(b.dia));
@@ -161,7 +174,7 @@ export const insightsDelWebinar = (e: EstadoApp, w: Webinar): InsightDeWebinar[]
   repartirInsights(e).filter((x) => x.webinarId === w.id);
 
 function metaPorWebinar(e: EstadoApp): Map<string, MetaDelWebinar> {
-  const insights = e.adInsights ?? [];
+  const insights = e.adInsights ?? SIN_FILAS;
   let porWebinars = META_WEBINAR.get(insights);
   if (!porWebinars) { porWebinars = new WeakMap(); META_WEBINAR.set(insights, porWebinars); }
   const guardado = porWebinars.get(e.webinars);
@@ -213,7 +226,7 @@ const REPARTO_WPP = new WeakMap<object, WeakMap<object, { dia: string; webinarId
 
 /** A qué webinar va cada día de costo de WhatsApp API (el próximo vivo, hasta 21 días después). */
 function repartirCostosWpp(e: EstadoApp): { dia: string; webinarId: string; costo: number }[] {
-  const costos = e.costosWpp ?? [];
+  const costos = e.costosWpp ?? SIN_FILAS;
   if (!costos.length || !e.webinars.length) return [];
   let porWebinars = REPARTO_WPP.get(costos);
   if (!porWebinars) { porWebinars = new WeakMap(); REPARTO_WPP.set(costos, porWebinars); }
@@ -230,7 +243,7 @@ function repartirCostosWpp(e: EstadoApp): { dia: string; webinarId: string; cost
 }
 
 function costosWppPorWebinar(e: EstadoApp): Map<string, number> {
-  const costos = e.costosWpp ?? [];
+  const costos = e.costosWpp ?? SIN_FILAS;
   if (!costos.length || !e.webinars.length) return new Map();
   let porWebinars = COSTO_WPP.get(costos);
   if (!porWebinars) { porWebinars = new WeakMap(); COSTO_WPP.set(costos, porWebinars); }
@@ -261,8 +274,8 @@ interface GastoDiario { pauta: Map<string, number>; dm: Map<string, number>; wha
 const GASTO_DIARIO = new WeakMap<object, WeakMap<object, WeakMap<object, Map<string, GastoDiario>>>>();
 
 function gastoDiarioPorWebinar(e: EstadoApp): Map<string, GastoDiario> {
-  const insights = e.adInsights ?? [];
-  const costos = e.costosWpp ?? [];
+  const insights = e.adInsights ?? SIN_FILAS;
+  const costos = e.costosWpp ?? SIN_FILAS;
   let a = GASTO_DIARIO.get(insights);
   if (!a) { a = new WeakMap(); GASTO_DIARIO.set(insights, a); }
   let b = a.get(e.webinars);
@@ -510,7 +523,7 @@ export const CAMPOS_MANUALES: DefCampoManual[] = [
   { campo: "costoWhatsappApi", titulo: "WhatsApp API", largo: "WhatsApp API", grupo: "Inversión", moneda: true, ayuda: "Lo que cobró WhatsApp por los mensajes y recordatorios." },
   { campo: "formularios", titulo: "Formularios", largo: "Formularios completados", grupo: "Captación", moneda: false, ayuda: "Gente que completó el formulario de registro." },
   { campo: "grupoWpp", titulo: "Grupo", largo: "Se unieron al grupo", grupo: "Captación", moneda: false, ayuda: "Los que entraron al grupo de WhatsApp." },
-  { campo: "asistentes", titulo: "Asistentes", largo: "Asistieron al vivo", grupo: "Captación", moneda: false, ayuda: "Los que estuvieron en el vivo." },
+  { campo: "asistentes", titulo: "Asistentes", largo: "Asistieron al vivo", grupo: "Captación", moneda: false, ayuda: "El pico: la mayor cantidad de gente viendo a la vez en el vivo." },
   { campo: "llamadasVivo", titulo: "Llamadas en vivo", largo: "Agendadas en el vivo", grupo: "Llamadas", moneda: false, ayuda: "Llamadas agendadas durante el vivo." },
   { campo: "llamadasPosterior", titulo: "Llamadas después", largo: "Agendadas después", grupo: "Llamadas", moneda: false, ayuda: "Llamadas agendadas después del vivo: con el replay, el seguimiento, la clase cero o el Q&A." },
   { campo: "llamadasCanceladas", titulo: "Canceladas", largo: "Canceladas", grupo: "Llamadas", moneda: false, ayuda: "Llamadas que se cancelaron." },
