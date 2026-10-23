@@ -399,7 +399,7 @@ export async function mandarBienvenida(db: SupabaseClient, c: Contrato, alumnoId
   /* Se marca ANTES de mandar: si dos avisos llegan juntos, sale uno solo. */
   const toma = await db.from("contratos").update({ bienvenidaMailEn: ahora() }).eq("id", c.id).is("bienvenidaMailEn", null).select("id");
   if (!toma.data?.length) return;
-  const { asunto, texto } = textoDeBienvenida(guia);
+  const { asunto, texto } = textoDeBienvenida(guia, origen ? paginaDeBienvenida(origen, c.bienvenida) : null);
   const responderA = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(config?.responderA ?? "") ? config!.responderA : undefined;
   const r = await enviarPorResend(cfg, { para, asunto, texto, html: htmlDeBienvenida(texto), responderA });
   if (!r.ok) {

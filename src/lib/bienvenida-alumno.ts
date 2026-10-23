@@ -143,8 +143,19 @@ const roadmapTexto = (g: GuiaBienvenida) => g.roadmap
   ? `Tu roadmap personalizado (${g.perfil}): ${g.roadmap}`
   : "Tu roadmap personalizado te lo pasa el equipo de soporte en estos días.";
 
-/** El mail de bienvenida, en texto: el que sale por Resend y el que se copia para mandar por WhatsApp. */
-export function textoDeBienvenida(g: GuiaBienvenida): { asunto: string; texto: string } {
+/* El link a su página de bienvenida, donde están los accesos (el link a Wisboo, los grupos de Telegram y el Zoom). Hace falta
+   en el mail: a los contratos que el equipo manda a mano desde PandaDoc, la firma no los lleva a esa página (23/10: Eduardo
+   no sabía a qué Wisboo entrar y se hizo una cuenta en otro sitio). */
+const accesosTexto = (pagina: string | null | undefined) => pagina ? `
+
+🔑 Tus accesos
+
+Entrá acá para ingresar a Wisboo, sumarte a los grupos de Telegram y ver tus reuniones de Zoom (guardá este link):
+${pagina}` : "";
+
+/** El mail de bienvenida, en texto: el que sale por Resend y el que se copia para mandar por WhatsApp. `pagina`: el link a su
+    página de bienvenida (con sus accesos); la reserva no lo lleva porque todavía no tiene accesos. */
+export function textoDeBienvenida(g: GuiaBienvenida, pagina?: string | null): { asunto: string; texto: string } {
   if (g.modelo === "reserva") {
     return {
       asunto: "¡Felicitaciones por dar este primer paso! 🚀",
@@ -191,7 +202,7 @@ Mentoría Hackear IA`,
       asunto: "¡Bienvenido/a a Hackear IA! 🚀",
       texto: `¡Bienvenido/a a Hackear IA! 🚀
 
-¡Ya tenés todo listo para comenzar!
+¡Ya tenés todo listo para comenzar!${accesosTexto(pagina)}
 
 Para aprovechar al máximo el programa, es fundamental que sigas el orden de tu roadmap, avances por etapas y enfoques tu tiempo en lo que realmente necesitás en cada momento.
 
@@ -227,7 +238,7 @@ Equipo de Yari Taft`,
     asunto: "¡Bienvenido/a a la mentoría! 🚀",
     texto: `¡Bienvenido/a a la mentoría! 🚀
 
-Ya tenés todo listo para comenzar. Para aprovechar al máximo la mentoría, es fundamental que sigas el orden, avances por etapas y enfoques tu energía en lo que necesitás en cada momento.
+Ya tenés todo listo para comenzar. Para aprovechar al máximo la mentoría, es fundamental que sigas el orden, avances por etapas y enfoques tu energía en lo que necesitás en cada momento.${accesosTexto(pagina)}
 
 📍 1. Tu roadmap y paso a paso
 

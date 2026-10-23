@@ -55,7 +55,7 @@ export function BienvenidaAlumno({ alumnoId, ventaId }: { alumnoId: string; vent
   const copiar = async () => {
     setCopiando(true);
     const formulario = guia.modelo === "completo" ? await enlaceDelFormulario(alumnoId) : null;
-    const { texto } = textoDeBienvenida({ ...guia, formulario });
+    const { texto } = textoDeBienvenida({ ...guia, formulario }, contrato.bienvenida ? `${window.location.origin}/bienvenida/${contrato.bienvenida}` : null);
     const ok = await copiarTexto(texto);
     setCopiando(false);
     toast(ok ? "Mensaje de bienvenida copiado: pegalo en WhatsApp o en un mail." : "No se pudo copiar.", ok ? "ok" : "err");

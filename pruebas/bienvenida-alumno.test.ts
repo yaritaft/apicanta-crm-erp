@@ -70,3 +70,17 @@ test("la página de bienvenida muestra la guía recién firmado", () => {
   assert.equal(armarBienvenida({ ...base, contrato: { estado: "enviado", accesosEn: null, destinatario: { nombre: "Ana" } } }).guia, null);
   assert.equal(armarBienvenida({ ...base, contrato: { estado: "firmado", accesosEn: null, destinatario: { nombre: "Ana" } } }).guia?.perfil, "Full Stack");
 });
+
+test("el mail de bienvenida lleva el link a su página con los accesos (los contratos hechos a mano no pasan por ahí al firmar)", () => {
+  const pagina = "https://apicanta-erp.vercel.app/bienvenida/abc123";
+  const downsell = textoDeBienvenida(guiaDeBienvenida({ programa: "downsell", config: CONFIG })!, pagina).texto;
+  const completo = textoDeBienvenida(guiaDeBienvenida({ programa: "hackear-ai", perfil: "AI Engineer", config: CONFIG })!, pagina).texto;
+  const reserva = textoDeBienvenida(guiaDeBienvenida({ programa: "hackear-ai", reserva: true, config: CONFIG })!, pagina).texto;
+  assert.ok(downsell.includes(`Tus accesos`) && downsell.includes(pagina));
+  assert.ok(completo.includes(pagina));
+  /* Va arriba, antes del paso a paso: es lo primero que tiene que hacer. */
+  assert.ok(completo.indexOf(pagina) < completo.indexOf("1. Tu roadmap"));
+  assert.equal(reserva.includes(pagina), false, "la reserva todavía no tiene accesos");
+  /* Sin página (no hay código), el mail sale como antes. */
+  assert.equal(textoDeBienvenida(guiaDeBienvenida({ programa: "downsell", config: CONFIG })!).texto.includes("Tus accesos"), false);
+});
