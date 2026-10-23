@@ -34,6 +34,8 @@ export interface ResultadoAsistenciaZoom {
   errores: string[];
   /* Falta el permiso en la app de Zoom (con qué agregar). */
   permiso?: string;
+  /* Clases que quedaron para la próxima corrida (se acabó el tiempo). */
+  faltan?: number;
 }
 
 /** Los ids de las reuniones de Zoom de todos los programas, sin repetir. */
@@ -41,9 +43,18 @@ export function reunionesDeZoom(programas: ReturnType<typeof programasDe>): stri
   return [...new Set(programas.filter((p) => p.activo).flatMap((p) => p.zoom).map((z) => String(z).trim()).filter(Boolean))];
 }
 
-export async function traerAsistenciaZoom(db: SupabaseClient, opciones: { ahora?: number; dias?: number } = {}): Promise<ResultadoAsistenciaZoom> {
+/** Zoom guarda seis meses de reuniones pasadas: se trae todo lo que dé, y queda en nuestra base para siempre (Yari, 23/10: «algunos servicios
+ *  duran un año: si viene y dice que fue a las clases, me sirve tener el histórico»). */
+export const DIAS_QUE_GUARDA_ZOOM = 185;
+
+export async function traerAsistenciaZoom(
+  db: SupabaseClient,
+  /* `presupuestoMs`: cuánto trabajar antes de cortar (la función de Vercel dura 60 s). Lo que falta se trae en la próxima corrida, la más nueva primero. */
+  opciones: { ahora?: number; dias?: number; presupuestoMs?: number } = {},
+): Promise<ResultadoAsistenciaZoom> {
   const res: ResultadoAsistenciaZoom = { reuniones: 0, clases: 0, personas: 0, errores: [] };
   const ahora = opciones.ahora ?? Date.now();
+  const hasta = Date.now() + (opciones.presupuestoMs ?? 45_000);
 
   const aj = await db.from("ajustes").select("programas").eq("id", 1).maybeSingle();
   if (aj.error) { res.errores.push(`ajustes: ${aj.error.message}`); return res; }
@@ -72,13 +83,18 @@ export async function traerAsistenciaZoom(db: SupabaseClient, opciones: { ahora?
       const instancias = ((lista.json?.meetings ?? []) as { uuid?: string; start_time?: string }[])
         .filter((i): i is { uuid: string; start_time: string } => Boolean(i.uuid && i.start_time));
 
-      for (const inst of clasesParaTraer(instancias, yaTraidas, ahora, { dias: opciones.dias })) {
+      const pendientes = clasesParaTraer(instancias, yaTraidas, ahora, { dias: opciones.dias ?? DIAS_QUE_GUARDA_ZOOM })
+        .sort((a, b) => b.start_time.localeCompare(a.start_time));
+      for (const inst of pendientes) {
+        if (Date.now() > hasta) { res.faltan = (res.faltan ?? 0) + 1; continue; }
         const detalle = await pedir(`${BASE}/past_meetings/${uuidEnLaDireccion(inst.uuid)}`, t.token).catch(() => null);
         const tema = typeof detalle?.json?.topic === "string" ? detalle.json.topic : "";
+        const cuantos = typeof detalle?.json?.participants_count === "number" ? detalle.json.participants_count : null;
 
         const participantes: ParticipanteZoom[] = [];
         let pagina = "";
-        for (let vuelta = 0; vuelta < 20; vuelta++) {
+        /* Una reunión de uno o dos (el anfitrión probando) no es una clase: no se piden sus participantes, sólo se anota. */
+        for (let vuelta = 0; vuelta < (cuantos !== null && cuantos < 3 ? 0 : 20); vuelta++) {
           const r = await pedir(`${BASE}/past_meetings/${uuidEnLaDireccion(inst.uuid)}/participants?page_size=300${pagina ? `&next_page_token=${encodeURIComponent(pagina)}` : ""}`, t.token);
           const avisoPermiso = avisoDePermisoZoom(r.status, r.json);
           if (avisoPermiso) { res.permiso = avisoPermiso; res.errores.push(avisoPermiso); return res; }
@@ -94,7 +110,7 @@ export async function traerAsistenciaZoom(db: SupabaseClient, opciones: { ahora?
           if (g.error) { res.errores.push(`asistencias_zoom: ${g.error.message}`); continue; }
         }
         const c = await db.from("asistencias_zoom_clases").upsert({
-          instancia: inst.uuid, reunion, tema, inicio: inst.start_time, participantes: participantes.length, traidoEn: new Date(ahora).toISOString(),
+          instancia: inst.uuid, reunion, tema, inicio: inst.start_time, participantes: cuantos ?? participantes.length, traidoEn: new Date(ahora).toISOString(),
         }, { onConflict: "instancia" });
         if (c.error) { res.errores.push(`asistencias_zoom_clases: ${c.error.message}`); continue; }
         res.clases++; res.personas += filas.length;
