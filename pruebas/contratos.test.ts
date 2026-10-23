@@ -335,6 +335,11 @@ test("el documento todavía sin firmante (el aviso llega antes): nada que leer, 
   /* Un campo con «merge field» también vale (si la plantilla lo usa en vez de la variable). */
   const r = datosDelDocumento({ recipients: [{ email: "b@x.com", first_name: "Beto", last_name: "Gómez", role: "Client" }], fields: [{ merge_field: "Contrato.Inicio", value: "2026-11-10T12:00:00.000Z" }] });
   assert.equal(r.datos.inicio, "2026-11-10");
+  /* El perfil, si la plantilla tiene [Cliente.Perfil]: decide el roadmap del mail de bienvenida. Uno inventado, no. */
+  assert.equal(datosDelDocumento({ tokens: [{ name: "Cliente.Perfil", value: "full stack" }] }).datos.perfil, "Full Stack");
+  assert.equal(datosDelDocumento({ tokens: [{ name: "Cliente.Perfil", value: "Data-Engineer" }] }).datos.perfil, "Data Engineer");
+  assert.equal("perfil" in datosDelDocumento({ tokens: [{ name: "Cliente.Perfil", value: "Backend" }] }).datos, false);
+  assert.equal(Object.fromEntries(variablesDelContrato({ ...DATOS, perfil: "AI Engineer" }, "Hackear AI").map((x) => [x.name, x.value]))["Cliente.Perfil"], "AI Engineer");
   /* Así lo escribe el equipo a mano en PandaDoc: año de dos cifras. */
   assert.equal(datosDelDocumento({ tokens: [{ name: "Contrato.Inicio", value: "22/10/26" }] }).datos.inicio, "2026-10-22");
   assert.equal(r.destinatario.nombre, "Beto Gómez");

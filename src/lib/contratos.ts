@@ -1,5 +1,5 @@
 import type { ConfigContratos } from "./types";
-import { esPerfil, modeloDeBienvenida, type GuiaBienvenida } from "./bienvenida-alumno";
+import { esPerfil, modeloDeBienvenida, PERFILES, type GuiaBienvenida } from "./bienvenida-alumno";
 import { diaDeNegocio } from "./dia-negocio";
 
 /* ==================================================================
@@ -234,6 +234,8 @@ export function variablesDelContrato(d: Partial<DatosContrato>, programa: string
     ["Venta.Modalidad", d.modalidad ?? ""],
     ["Venta.Sesiones", textoSesiones(d.sesiones)],
     ["Venta.Bonos", textoBonos(d.bonos)],
+    /* Si la plantilla la tiene, el perfil queda en el documento y vuelve al leer uno mandado a mano (SERVICIO, 23/10). */
+    ["Cliente.Perfil", d.perfil ?? ""],
     ["Programa.Nombre", programa],
   ].map(([name, value]) => ({ name, value: value.trim() }));
 }
@@ -449,6 +451,12 @@ export function sesionesDeTexto(texto: string): number | null {
   return n ? Number(n[1]) : null;
 }
 
+/** «full stack» o «Data engineer» → el perfil tal como lo conoce la bienvenida (lib/bienvenida-alumno.ts). */
+export function perfilDeTexto(texto: string): string | undefined {
+  const plano = (x: string) => x.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[\s-]+/g, " ").trim().toLowerCase();
+  return PERFILES.find((p) => plano(p) === plano(texto));
+}
+
 /** «Sin bonos adicionales» → [] · «A, B y C» → [A, B, C]. */
 export function bonosDeTexto(texto: string): string[] {
   const t = texto.trim();
@@ -498,6 +506,8 @@ export function datosDelDocumento(detalle: unknown): {
   poner("modalidad", v("Venta.Modalidad"));
   if (valores.has("Venta.Sesiones")) poner("sesiones", sesionesDeTexto(v("Venta.Sesiones")));
   if (valores.has("Venta.Bonos")) datos.bonos = bonosDeTexto(v("Venta.Bonos"));
+  /* El perfil decide qué roadmap le llega en el mail de bienvenida: sólo si la plantilla tiene [Cliente.Perfil]. */
+  poner("perfil", perfilDeTexto(v("Cliente.Perfil")));
   return { destinatario: { nombre, email, telefono }, datos };
 }
 
