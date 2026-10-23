@@ -272,7 +272,8 @@ export function panelDeServicio(e: EstadoApp, hoy: string, ahora: Date = new Dat
   });
 
   /* ---------- El contrato por vencer (renovar o dar de baja) ---------- */
-  const renovar = activos.filter((c) => c.egreso && diasEntre(hoy, c.egreso) <= DIAS_PARA_RENOVAR).map((c): ItemServicio => {
+  /* La reserva no arrancó: no hay contrato que renovar (aunque tenga un egreso cargado a mano). */
+  const renovar = activos.filter((c) => !c.enReserva && c.egreso && diasEntre(hoy, c.egreso) <= DIAS_PARA_RENOVAR).map((c): ItemServicio => {
     const quedan = diasEntre(hoy, c.egreso as string);
     return {
       clave: c.id, alumnoId: c.id, nombre: c.nombre, ...contactoDe(c),

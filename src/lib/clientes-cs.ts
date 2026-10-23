@@ -392,8 +392,12 @@ export function filasClientes(e: EstadoApp, hoy: string): FilaCliente[] {
     const duracionSug = seg.duracionMeses === null && programas.length
       ? DURACION_POR_PROGRAMA[programas[0]] ?? DURACION_POR_DEFECTO : null;
     const duracion = seg.duracionMeses ?? duracionSug;
+    /* Sólo una reserva (lib/reservas.ts): no entra al seguimiento hasta que pague lo que falta. */
+    const enReserva = Boolean(venta && reservaSinCompletar(cuotasDe.get(venta.id) ?? [])) || followUpDeReserva(seg.followUp);
     const egresoPropio = seg.fechaEgreso;
-    const egreso = egresoDelPrograma(inicio, egresoPropio, duracion, seg.pausas ?? []);
+    /* La reserva todavía no arrancó: no se le calcula el fin (inicio más duración) hasta que pague lo que falta. Las
+       reservas de junio y julio figuraban «se les terminó el contrato» (Lili, 23/10). Un egreso cargado a mano se respeta. */
+    const egreso = enReserva && egresoPropio === null ? null : egresoDelPrograma(inicio, egresoPropio, duracion, seg.pausas ?? []);
     const arranca = inicio ? inicioReal(inicio, seg.pausas ?? []) : "";
     const pausa = pausaEnCurso(seg.pausas ?? [], hoy);
 
@@ -402,8 +406,6 @@ export function filasClientes(e: EstadoApp, hoy: string): FilaCliente[] {
     const edadSug = seg.edad === null ? edadDeTexto(respuestaPerfil(llamada?.respuestas, "edad")) : null;
 
     const closerVenta = venta?.closerId ? equipo.get(venta.closerId) ?? "" : "";
-    /* Sólo una reserva (lib/reservas.ts): no entra al seguimiento hasta que pague lo que falta. */
-    const enReserva = Boolean(venta && reservaSinCompletar(cuotasDe.get(venta.id) ?? [])) || followUpDeReserva(seg.followUp);
     /* A las reservas y al Downsell de antes del 22/09 no se les hacía contrato: no es un contrato pendiente. */
     const esDownsell = /downsell/i.test(producto || a.plan || "");
     const contratoSug = !seg.contratoFirmado && inicio !== "" && inicio < CONTRATO_RESERVA_DOWNSELL_DESDE && (enReserva || esDownsell)

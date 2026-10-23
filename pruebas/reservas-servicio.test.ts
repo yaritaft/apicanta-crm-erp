@@ -69,6 +69,24 @@ test("el Follow Up «Reserva» la marca a mano (la reserva se pagó por fuera de
   assert.equal(filasClientes(e, HOY).find((f) => f.id === "ana")!.situacion, "reserva");
 });
 
+test("a la reserva no se le termina el contrato: no se le calcula el fin hasta que pague lo que falta (Lili, 23/10)", () => {
+  /* Silvia Herrera y Andrea Corrales: reservas de junio y julio con Follow Up «Reserva» figuraban en «Se les termina el
+     contrato» porque el fin salía de inicio más 3 meses. */
+  const e = estado();
+  e.alumnos.push(alumno("silvia", "Silvia Herrera", { inicio: "2026-07-21T12:00:00.000Z" }) as never);
+  e.seguimientos = [...(e.seguimientos ?? []), seg("silvia", { followUp: "RESERVA", duracionMeses: 3 }), seg("agustin", { fechaEgreso: "2026-10-28" })];
+  const filas = filasClientes(e, HOY);
+  const silvia = filas.find((f) => f.id === "silvia")!;
+  assert.deepEqual([silvia.enReserva, silvia.egreso], [true, null], "sin fin calculado");
+  assert.equal(filas.find((f) => f.id === "agustin")!.egreso, "2026-10-28", "un fin cargado a mano se respeta");
+  const renovar = panelDeServicio(e, HOY, AHORA).secciones.find((s) => s.id === "renovar")!.items.map((i) => i.alumnoId);
+  assert.ok(!renovar.includes("silvia"));
+  assert.ok(!renovar.includes("agustin"), "aunque tenga el fin a mano, una reserva no renueva");
+  /* Cuando paga lo que falta deja de ser reserva y el fin vuelve a calcularse. */
+  e.seguimientos = (e.seguimientos ?? []).map((s) => (s.alumnoId === "silvia" ? { ...s, followUp: "Onboarding" } : s));
+  assert.equal(filasClientes(e, HOY).find((f) => f.id === "silvia")!.egreso, "2026-10-21");
+});
+
 test("a las reservas y al Downsell de antes del 22/09 no se les hacía contrato: se sugiere y no figura como pendiente", () => {
   const e = estado();
   const filas = filasClientes(e, HOY);
