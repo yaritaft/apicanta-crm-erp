@@ -122,14 +122,34 @@ test("un contracargo de Stripe: falta hasta que está como devolución (se propo
   const sin = cruzarConLaApp(e, [cc])[0];
   assert.equal(sin.estadoApp, "falta");
   assert.match(sin.donde ?? "", /Sincronizar/);
-  /* Propuesta por «Sincronizar» pero sin confirmar: el saldo esperado todavía no se movió, así que sigue faltando (y se confirma en Devoluciones). */
+  /* Una disputa propuesta por «Sincronizar», sin saber cómo terminó: está EN DISPUTA. Stripe retuvo la plata mientras se resuelve y no hay nada que
+     hacer (ni botón): si se gana, vuelve; si se pierde, aparece el botón para cargarla como gasto (Juan Cruz, 23/10). */
   e.devoluciones = [{ id: "dev1", referencia: "stripe:disputa:du_1", monto: 457, estado: "propuesta" } as Devolucion];
-  const propuesta = cruzarConLaApp(e, [cc])[0];
-  assert.equal(propuesta.estadoApp, "falta");
-  assert.equal(propuesta.enDevoluciones, true);
-  assert.match(propuesta.donde ?? "", /propuesto como contracargo.*Atar los cobros y los reembolsos/);
+  const enDisputa = cruzarConLaApp(e, [cc])[0];
+  assert.equal(enDisputa.estadoApp, "en-disputa");
+  assert.match(enDisputa.donde ?? "", /retuvo la plata/);
+  assert.equal(enDisputa.cargableComoGasto, undefined);
+  assert.equal(resumenDeLoQueFalta([enDisputa]).n, 0, "una disputa en curso no es algo que falte cargar");
+  /* Perdida: aparece el botón para cargarla como gasto. */
+  e.devoluciones = [{ id: "dev1", referencia: "stripe:disputa:du_1", monto: 457, estado: "propuesta", extra: { estadoDisputa: "perdida" } } as unknown as Devolucion];
+  const perdida = cruzarConLaApp(e, [cc])[0];
+  assert.deepEqual([perdida.estadoApp, perdida.cargableComoGasto], ["falta", true]);
+  assert.equal(resumenDeLoQueFalta([perdida]).n, 1);
+  /* Ganada (la propuesta se fue sola) o perdida y ya cargada: no falta nada. */
+  e.devoluciones = [{ id: "dev1", referencia: "stripe:disputa:du_1", monto: 457, estado: "ignorada", extra: { estadoDisputa: "ganada" } } as unknown as Devolucion];
+  assert.equal(cruzarConLaApp(e, [cc])[0].estadoApp, "no-se-carga");
+  e.devoluciones = [{ id: "dev1", referencia: "stripe:disputa:du_1", monto: 457, estado: "ignorada", extra: { estadoDisputa: "perdida" } } as unknown as Devolucion];
+  assert.equal(cruzarConLaApp(e, [cc])[0].estadoApp, "cargado");
+  /* Y lo que alguien descartó a mano sigue como siempre. */
   e.devoluciones = [{ id: "dev1", referencia: "stripe:disputa:du_1", monto: 457, estado: "ignorada" } as Devolucion];
   assert.equal(cruzarConLaApp(e, [cc])[0].estadoApp, "no-se-carga");
+  /* Si se cargó el gasto desde este mismo movimiento, está cargado diga lo que diga la propuesta. */
+  e.devoluciones = [{ id: "dev1", referencia: "stripe:disputa:du_1", monto: 457, estado: "propuesta", extra: { estadoDisputa: "perdida" } } as unknown as Devolucion];
+  e.gastos = [gasto({ id: "gd", concepto: "Contracargo perdido", extra: { cuenta: "Stripe", bancoRef: "stripe:txn_9" } })];
+  assert.equal(cruzarConLaApp(e, [cc])[0].estadoApp, "cargado");
+  e.gastos = [];
+  /* La plata que Stripe repone al ganar una disputa (un movimiento positivo) no es nada que cargar. */
+  assert.equal(cruzarConLaApp(e, [{ ...cc, ref: "stripe:txn_10", refApp: ["txn_10"], monto: 472 }])[0].estadoApp, "no-se-carga");
   e.devoluciones = [{ id: "dev1", referencia: "stripe:disputa:du_1", monto: 457, estado: "confirmada" } as Devolucion];
   const con = cruzarConLaApp(e, [cc])[0];
   assert.equal(con.estadoApp, "cargado");
@@ -260,7 +280,10 @@ test("un contracargo de Stripe se propone como devolución con el motivo; el que
   const r = reembolsoDeContracargoStripe(d({}))!;
   assert.deepEqual([r.proveedor, r.referencia, r.monto, r.referenciasCobro, r.motivo], ["stripe", "disputa:du_1", 457, ["ch_3UEVD8", "pi_8"], "Contracargo (fraudulent)"]);
   assert.equal(reembolsoDeContracargoStripe(d({ status: "lost" }))!.monto, 457);
-  assert.equal(reembolsoDeContracargoStripe(d({ status: "won" })), null, "la plata volvió");
+  /* Las ganadas también se informan (si ya había una propuesta se va sola), con su estado; un aviso temprano de fraude no retiró nada. */
+  assert.equal(reembolsoDeContracargoStripe(d({ status: "won" }))!.disputa?.estado, "ganada");
+  assert.equal(reembolsoDeContracargoStripe(d({ status: "lost" }))!.disputa?.estado, "perdida");
+  assert.equal(reembolsoDeContracargoStripe(d({ status: "under_review" }))!.disputa?.estado, "en-disputa");
   assert.equal(reembolsoDeContracargoStripe(d({ status: "warning_needs_response" })), null, "un aviso temprano no retiró nada");
   assert.equal(reembolsoDeContracargoStripe(d({ amount: 0 })), null);
 });

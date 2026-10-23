@@ -1,3 +1,4 @@
+import { AVISO_EN_DISPUTA, AVISO_GANADA, disputaDe } from "./disputas";
 import type { EstadoApp, Gasto, ID } from "./types";
 import { clasificarMercury } from "./mercury";
 import { cuentaDeGasto } from "./traspasos";
@@ -117,7 +118,7 @@ export function movimientoDeStripe(t: Record<string, unknown>, cuentaId: ID): Mo
 
 /* ---------- Cruzar con lo que la app ya tiene ---------- */
 
-export type EstadoEnLaApp = "cargado" | "parecido" | "no-se-carga" | "falta";
+export type EstadoEnLaApp = "cargado" | "parecido" | "no-se-carga" | "falta" | "en-disputa";
 
 export interface MovimientoCruzado extends MovimientoDelBanco {
   estadoApp: EstadoEnLaApp;
@@ -127,6 +128,8 @@ export interface MovimientoCruzado extends MovimientoDelBanco {
   gastoId?: ID;
   /* Ya está propuesto como devolución y falta confirmarlo: se confirma ahí, no se carga como gasto. */
   enDevoluciones?: boolean;
+  /* Una disputa que se perdió: lo que Stripe retiró ya no es «a ver qué pasa», se carga como gasto (aparece el botón). */
+  cargableComoGasto?: boolean;
 }
 
 const DIA = 86400000;
@@ -151,7 +154,24 @@ export function cruzarConLaApp(
     if (m.tipo === "interno") return { ...m, estadoApp: "no-se-carga", donde: "Plata entre cuentas del mismo banco: no es ingreso ni gasto." };
     if (m.refApp.some((r) => cobros.has(`${proveedor}:${r}`))) return { ...m, estadoApp: "cargado", donde: "Está como cobro en Conciliación." };
     if (m.refApp.some((r) => pases.has(`${proveedor}:${r}`)) || pases.has(m.ref)) return { ...m, estadoApp: "cargado", donde: "Está como movimiento entre cuentas." };
+    /* Lo que ya se cargó como gasto desde este mismo movimiento (una disputa perdida, por ejemplo) está cargado, diga lo que diga la propuesta. */
+    const propioAntes = (e.gastos ?? []).find((g) => gastoApunta(g, m.ref));
+    if (propioAntes) return { ...m, estadoApp: "cargado", donde: `Está como ${propioAntes.monto < 0 ? "ingreso" : "gasto"}: ${propioAntes.concepto}.`, gastoId: propioAntes.id };
+    /* Stripe devolviendo la plata de una disputa que se ganó: ya está en el saldo, no hay nada que cargar. */
+    if (m.tipo === "contracargo" && m.monto > 0) return { ...m, estadoApp: "no-se-carga", donde: "Stripe devolvió la plata de una disputa que se ganó: no hay nada que cargar." };
     const devuelta = m.refApp.flatMap((r) => [`${proveedor}:${r}`, `${proveedor}:disputa:${r}`, `${proveedor}:reembolso:${r}`]).map((k) => devoluciones.get(k)).find(Boolean);
+    /* Una disputa de Stripe que todavía no se decidió (propuesta) o que ya se resolvió sin ser una devolución confirmada (se ganó, o se perdió y se
+       cargó como gasto). Una devolución confirmada sigue el camino de siempre. */
+    const disputa = devuelta && devuelta.estado !== "confirmada" ? disputaDe(devuelta) : null;
+    if (devuelta && disputa) {
+      if (devuelta.estado === "propuesta") {
+        if (disputa === "en-disputa") return { ...m, estadoApp: "en-disputa", donde: AVISO_EN_DISPUTA };
+        if (disputa === "ganada") return { ...m, estadoApp: "no-se-carga", donde: AVISO_GANADA };
+        return { ...m, estadoApp: "falta", cargableComoGasto: true, donde: "Se perdió la disputa: Stripe se quedó con la plata. Cargala como gasto." };
+      }
+      if (disputa === "ganada") return { ...m, estadoApp: "no-se-carga", donde: AVISO_GANADA };
+      if (disputa === "perdida") return { ...m, estadoApp: "cargado", donde: "Se perdió la disputa y ya está cargada." };
+    }
     if (devuelta) {
       const demas = r2(Math.abs(m.monto) - devuelta.monto);
       const que = m.tipo === "contracargo" ? "contracargo" : "reembolso";
@@ -196,11 +216,12 @@ export function borradorDesdeElBanco(
   m: MovimientoDelBanco, nombreDeLaCuenta: string, comoIngreso: boolean,
 ): { concepto: string; monto: string; fecha: string; cuenta: string; ingreso: boolean; bancoRef: string; proveedor: string; notas: string } {
   const abs = Math.abs(m.monto);
-  const concepto = m.tipo === "cashback" ? "Cashback Mercury" : m.tipo === "pago-tarjeta" ? "Pago de la tarjeta de crédito Mercury" : m.contraparte || TEXTO_DEL_TIPO[m.tipo];
+  const concepto = m.tipo === "cashback" ? "Cashback Mercury" : m.tipo === "pago-tarjeta" ? "Pago de la tarjeta de crédito Mercury"
+    : m.tipo === "contracargo" ? "Contracargo perdido en Stripe" : m.contraparte || TEXTO_DEL_TIPO[m.tipo];
   return {
     concepto, monto: abs.toLocaleString("es-AR", { minimumFractionDigits: Number.isInteger(abs) ? 0 : 2, maximumFractionDigits: 2 }),
     fecha: m.fecha, cuenta: nombreDeLaCuenta, ingreso: comoIngreso, bancoRef: m.ref,
-    proveedor: m.tipo === "cashback" || m.tipo === "pago-tarjeta" ? "Mercury" : m.contraparte,
+    proveedor: m.tipo === "cashback" || m.tipo === "pago-tarjeta" ? "Mercury" : m.tipo === "contracargo" ? "Stripe" : m.contraparte,
     notas: [
       `Del movimiento del banco del ${diaDeNegocio(m.fecha).slice(8, 10)}/${diaDeNegocio(m.fecha).slice(5, 7)}`,
       m.tipo === "pago-tarjeta" ? "Es lo que se pagó de la tarjeta: son compras de esos días (se reparten cuando se vean una por una)" : "", m.detalle,

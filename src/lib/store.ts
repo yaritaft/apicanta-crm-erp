@@ -3282,8 +3282,8 @@ export const acciones = {
     const e = snapshot();
     if (acceso && !puedeCargarDevolucion(acceso)) return null;
     const r = conciliarReembolsos(e, crudos, ahora());
-    if (!r.atadas.length && !r.nuevas.length) return r;
-    const cambios = new Map(r.atadas.map((a) => [a.devolucionId, a.cambios] as const));
+    if (!r.atadas.length && !r.nuevas.length && !r.actualizadas.length) return r;
+    const cambios = new Map([...r.atadas, ...r.actualizadas].map((a) => [a.devolucionId, a.cambios] as const));
     const devoluciones = [
       ...r.nuevas,
       ...(e.devoluciones ?? []).map((d) => (cambios.has(d.id) ? { ...d, ...cambios.get(d.id) } as Devolucion : d)),
@@ -3291,6 +3291,7 @@ export const acciones = {
     const partes = [
       r.atadas.length ? `${r.atadas.length === 1 ? "se ató 1" : `se ataron ${r.atadas.length}`} a una devolución ya cargada` : "",
       r.nuevas.length ? `${r.nuevas.length === 1 ? "queda 1 propuesta" : `quedan ${r.nuevas.length} propuestas`} para confirmar` : "",
+      r.actualizadas.length ? `${r.actualizadas.length === 1 ? "cambió 1 disputa" : `cambiaron ${r.actualizadas.length} disputas`} de estado` : "",
     ].filter(Boolean).join(" y ");
     const { lista, nuevo } = registrar(
       e, "transaccion", "reembolsos", "Reembolsos de las pasarelas", "creo",
@@ -3298,7 +3299,7 @@ export const acciones = {
     );
     guardar({ ...e, devoluciones, actividad: lista });
     if (r.nuevas.length) empujar({ tipo: "upsert", tabla: "devoluciones", filas: r.nuevas });
-    for (const a of r.atadas) empujarUpdate("devoluciones", [a.devolucionId], a.cambios as Record<string, unknown>);
+    for (const a of [...r.atadas, ...r.actualizadas]) empujarUpdate("devoluciones", [a.devolucionId], a.cambios as Record<string, unknown>);
     empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
     return r;
   },

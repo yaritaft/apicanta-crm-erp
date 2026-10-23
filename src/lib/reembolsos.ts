@@ -1,5 +1,6 @@
 import type { Devolucion, EstadoApp, ID, Moneda, Movimiento, Pago, ProveedorPasarela, Venta } from "./types";
 import { enRangoDeDias, type RangoDeDias } from "./dia-negocio";
+import { disputaDe, MOTIVO_GANADA, type EstadoDisputa } from "./disputas";
 
 /* ==================================================================
    Los reembolsos que informa una pasarela, atados a las devoluciones.
@@ -52,6 +53,9 @@ export interface ReembolsoCrudo {
   /* Lo que dijo la pasarela: «requested_by_customer», «contracargo»… */
   motivo?: string;
   procesadorId?: ID;
+  /* Sólo una disputa (contracargo) de Stripe: en qué está (lib/disputas.ts), qué dijo Stripe, cuánto retiró en total (el monto más su comisión)
+     y el movimiento del saldo en el que lo retiró (para atar el gasto si se pierde). */
+  disputa?: { estado: EstadoDisputa; estadoStripe: string; retenido?: number; balanceTx?: string };
 }
 
 /** Cómo queda anotado en `Devolucion.referencia`: «stripe:re_3Q…». */
@@ -182,9 +186,16 @@ export function propuestaDe(r: ReembolsoCrudo, ventaId: ID | undefined, ahora: s
       ...(r.fechaDelCobro ? { fechaDelCobro: true } : {}),
       ...(r.clienteNombre ? { clienteNombre: r.clienteNombre } : {}),
       ...(r.clienteEmail ? { clienteEmail: r.clienteEmail } : {}),
+      ...(r.disputa ? extraDeDisputa(r.disputa) : {}),
     },
   };
 }
+
+/** Lo que se guarda de una disputa en la propuesta. */
+const extraDeDisputa = (x: NonNullable<ReembolsoCrudo["disputa"]>): Record<string, unknown> => ({
+  estadoDisputa: x.estado, disputaStripe: x.estadoStripe,
+  ...(x.retenido ? { retenido: x.retenido } : {}), ...(x.balanceTx ? { balanceTx: x.balanceTx } : {}),
+});
 
 export interface ResultadoReembolsos {
   /* Devoluciones cargadas a mano a las que se les ató el reembolso de la pasarela. */
@@ -196,12 +207,30 @@ export interface ResultadoReembolsos {
   /* Calzan con más de una devolución cargada: quedaron como propuesta, con las
      candidatas anotadas, para decidir a mano. */
   dudosas: number;
+  /* Disputas de Stripe que ya estaban guardadas y cambiaron de estado (en disputa → ganada o perdida): lo que hay que cambiarles. Una ganada
+     que seguía como propuesta se va sola (queda «ignorada», con su motivo). */
+  actualizadas: { devolucionId: ID; cambios: Partial<Devolucion> }[];
+}
+
+/** Lo que hay que cambiarle a una disputa ya guardada cuando Stripe dice otra cosa. Null si no cambió nada. Una ganada que seguía esperando
+ *  (propuesta) se va sola: no hay nada que cargar, la plata volvió. Una que ya se confirmó queda marcada como ganada para que alguien la deshaga. */
+export function cambiosPorLaDisputa(ya: Devolucion, disputa: NonNullable<ReembolsoCrudo["disputa"]>): Partial<Devolucion> | null {
+  const antes = disputaDe(ya);
+  const distinto = antes !== disputa.estado || ya.extra?.disputaStripe !== disputa.estadoStripe || (disputa.retenido && ya.extra?.retenido !== disputa.retenido)
+    || (disputa.balanceTx && ya.extra?.balanceTx !== disputa.balanceTx);
+  if (!distinto) return null;
+  const extra = { ...(ya.extra ?? {}), ...extraDeDisputa(disputa) };
+  if (disputa.estado === "ganada" && ya.estado === "propuesta") {
+    return { estado: "ignorada", extra: { ...extra, motivoDescarte: MOTIVO_GANADA } };
+  }
+  return { extra };
 }
 
 /** Qué hacer con lo que informó una pasarela, dado lo que ya hay cargado. No
  *  escribe nada: devuelve qué atar y qué proponer. */
 export function conciliarReembolsos(e: Base, crudos: ReembolsoCrudo[], ahora: string): ResultadoReembolsos {
-  const out: ResultadoReembolsos = { atadas: [], nuevas: [], yaEstaban: 0, dudosas: 0 };
+  const out: ResultadoReembolsos = { atadas: [], nuevas: [], yaEstaban: 0, dudosas: 0, actualizadas: [] };
+  const porReferencia = new Map((e.devoluciones ?? []).filter((d) => d.referencia).map((d) => [d.referencia as string, d] as const));
   const referencias = new Set((e.devoluciones ?? []).map((d) => d.referencia).filter(Boolean) as string[]);
   const idsUsados = new Set((e.devoluciones ?? []).map((d) => d.id));
   /* Dos fuentes pueden informar el mismo reembolso con otro id (el CSV trae el
@@ -216,6 +245,17 @@ export function conciliarReembolsos(e: Base, crudos: ReembolsoCrudo[], ahora: st
   for (const r of crudos) {
     if (!r.referencia || !(r.monto > 0)) continue;
     const ref = referenciaDeReembolso(r);
+    /* Una disputa que ya teníamos puede haber cambiado de estado; una ganada que no teníamos no es nada que cargar. */
+    if (r.disputa) {
+      const ya = porReferencia.get(ref) ?? (e.devoluciones ?? []).find((d) => d.id === idDePropuesta(r));
+      if (ya) {
+        const cambios = cambiosPorLaDisputa(ya, r.disputa);
+        if (cambios) out.actualizadas.push({ devolucionId: ya.id, cambios });
+        out.yaEstaban++;
+        continue;
+      }
+      if (r.disputa.estado === "ganada") continue;
+    }
     if (referencias.has(ref) || idsUsados.has(idDePropuesta(r)) || yaDeCobro(r)) { out.yaEstaban++; continue; }
 
     const cobro = cobroDelReembolso(e, r);
@@ -270,8 +310,17 @@ export function atarPropuesta(
 /** Las propuestas que todavía esperan una decisión, de la más nueva a la más vieja. Con `rango`, sólo las de esos días: Finanzas en pasos
  *  mira un mes por vez, y lo de septiembre se resuelve en septiembre, no en octubre. */
 export function propuestasPendientes(e: Pick<EstadoApp, "devoluciones">, rango?: RangoDeDias): Devolucion[] {
+  /* Una disputa que todavía se está resolviendo (o que se ganó) no espera ninguna decisión: no hay nada que hacer. */
   return (e.devoluciones ?? [])
-    .filter((d) => d.estado === "propuesta" && (!rango || enRangoDeDias(d.fecha, rango)))
+    .filter((d) => d.estado === "propuesta" && disputaDe(d) !== "en-disputa" && disputaDe(d) !== "ganada" && (!rango || enRangoDeDias(d.fecha, rango)))
+    .sort((a, b) => Date.parse(b.fecha) - Date.parse(a.fecha));
+}
+
+/** Las disputas de Stripe que todavía no se resolvieron: se ven, pero no se puede hacer nada hasta que se ganen (no pasa nada) o se pierdan (aparece
+ *  el botón para cargarlas como gasto). */
+export function propuestasEnDisputa(e: Pick<EstadoApp, "devoluciones">, rango?: RangoDeDias): Devolucion[] {
+  return (e.devoluciones ?? [])
+    .filter((d) => d.estado === "propuesta" && disputaDe(d) === "en-disputa" && (!rango || enRangoDeDias(d.fecha, rango)))
     .sort((a, b) => Date.parse(b.fecha) - Date.parse(a.fecha));
 }
 

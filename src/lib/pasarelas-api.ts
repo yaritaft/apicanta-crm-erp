@@ -1,3 +1,4 @@
+import { estadoDeDisputaStripe } from "./disputas";
 import { createHmac } from "node:crypto";
 import type { Moneda, ProveedorPasarela } from "./types";
 import { cuentaDeContraparte, type Punta } from "./traspasos";
@@ -626,7 +627,8 @@ export function reembolsoDeStripe(r: Obj): ReembolsoCrudo | null {
 export function reembolsoDeContracargoStripe(d: Obj): ReembolsoCrudo | null {
   const id = txt(d.id);
   const estado = txt(d.status);
-  if (!id || !estado || estado === "won" || /^warning_/.test(estado)) return null;
+  /* Las ganadas también se informan: si ya había una propuesta, se va sola (lib/disputas.ts); un aviso temprano (warning_) no retiró nada. */
+  if (!id || !estado || /^warning_/.test(estado)) return null;
   const monto = dinero(Number(d.amount ?? 0) / 100);
   if (!(monto > 0)) return null;
   const cargo = (d.charge && typeof d.charge === "object" ? d.charge : undefined) as Obj | undefined;
@@ -644,16 +646,30 @@ export function reembolsoDeContracargoStripe(d: Obj): ReembolsoCrudo | null {
     clienteNombre: quien.nombre, clienteEmail: quien.email,
     motivo: `Contracargo${razon ? ` (${razon.replace(/_/g, " ")})` : ""}`,
     procesadorId: procesadorDe("stripe"),
+    disputa: { estado: estadoDeDisputaStripe(estado), estadoStripe: estado, ...retiroDeLaDisputa(d) },
   };
 }
+
+/** Lo que Stripe retiró por la disputa (el monto más su comisión) y el movimiento del saldo donde lo retiró: el que tiene plata de menos. */
+function retiroDeLaDisputa(d: Obj): { retenido?: number; balanceTx?: string } {
+  const movs = Array.isArray(d.balance_transactions) ? (d.balance_transactions as unknown[]).filter((x): x is Obj => Boolean(x) && typeof x === "object") : [];
+  const retiros = movs.filter((m) => Number(m.net ?? 0) < 0);
+  const retenido = dinero(retiros.reduce((a, m) => a + Math.abs(Number(m.net ?? 0)), 0) / 100);
+  return { ...(retenido > 0 ? { retenido } : {}), ...(retiros[0] && txt(retiros[0].id) ? { balanceTx: txt(retiros[0].id) } : {}) };
+}
+
+/** Una disputa tarda semanas en resolverse (hasta ~75 días): para saber cómo terminaron las que siguen abiertas se mira más atrás que la ventana
+ *  de la sincronización. */
+const DIAS_PARA_VER_DISPUTAS = 120;
 
 export async function contracargosDeStripe(desde: Date): Promise<ReembolsoCrudo[]> {
   const clave = process.env.STRIPE_SECRET_KEY;
   if (!clave) return [];
   const salida: ReembolsoCrudo[] = [];
   let despuesDe: string | undefined;
+  const mirarDesde = Math.min(desde.getTime(), Date.now() - DIAS_PARA_VER_DISPUTAS * 86400000);
   for (let pagina = 0; pagina < 5; pagina++) {
-    const q = new URLSearchParams({ limit: "100", "created[gte]": String(Math.floor(desde.getTime() / 1000)) });
+    const q = new URLSearchParams({ limit: "100", "created[gte]": String(Math.floor(mirarDesde / 1000)) });
     q.append("expand[]", "data.charge");
     if (despuesDe) q.set("starting_after", despuesDe);
     const r = await fetch(`https://api.stripe.com/v1/disputes?${q}`, { headers: { Authorization: `Bearer ${clave}` }, cache: "no-store" });
