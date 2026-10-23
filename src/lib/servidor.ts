@@ -265,5 +265,10 @@ export async function guardarReembolsos(
     const u = await db.from("devoluciones").update(a.cambios).eq("id", a.devolucionId);
     if (u.error) return { nuevas, atadas: 0, yaEstaban: r.yaEstaban, error: u.error.message };
   }
+  /* Las disputas que ya teníamos y cambiaron de estado (una ganada se va sola de la lista). */
+  for (const a of r.actualizadas) {
+    const u = await db.from("devoluciones").update(a.cambios).eq("id", a.devolucionId);
+    if (u.error) return { nuevas, atadas: r.atadas.length, yaEstaban: r.yaEstaban, error: u.error.message };
+  }
   return { nuevas, atadas: r.atadas.length, yaEstaban: r.yaEstaban };
 }

@@ -162,6 +162,7 @@ export const CATEGORIAS_GASTO: CategoriaGasto[] = [
   { categoria: "Formaciones",                grupo: "operativo", ayuda: "Cursos y capacitaciones", claves: ["formacion", "curso", "capacitacion"] },
   { categoria: "Producción audiovisual",     grupo: "operativo", ayuda: "Estudio, equipos y producción de video", claves: ["audiovisual", "estudio"] },
   { categoria: "Comisiones bancarias",       grupo: "operativo", ayuda: "Costos de transferencias y bancos", claves: ["bancari", "banco", "wire", "transferencia", "fee transaction"] },
+  { categoria: "Contracargos",                grupo: "operativo", ayuda: "Plata que un cliente recuperó con su banco y Stripe se quedó (una disputa perdida, con su comisión): se carga como gasto.", claves: ["contracargo", "chargeback", "disputa"] },
   { categoria: "Cashback",                   grupo: "operativo", ayuda: "Lo que devuelve la tarjeta o el banco por las compras (el cashback de Mercury): se carga como ingreso y resta de los gastos", claves: ["cashback", "cash back"] },
   { categoria: "Pendiente de revisión",      grupo: "operativo", ayuda: "Lo que todavía no sabés dónde va: revisalo después" },
   /* Honorarios del dueño: después del resultado operativo */

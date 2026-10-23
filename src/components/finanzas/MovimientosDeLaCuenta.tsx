@@ -23,8 +23,8 @@ import {
    de una, con el monto, el día y la cuenta puestos.
    ================================================================== */
 
-const VARIANTE: Record<EstadoEnLaApp, VarianteBadge> = { cargado: "success", parecido: "info", "no-se-carga": "neutral", falta: "warning" };
-const TEXTO: Record<EstadoEnLaApp, string> = { cargado: "Cargado", parecido: "Parece cargado", "no-se-carga": "No se carga", falta: "Falta cargar" };
+const VARIANTE: Record<EstadoEnLaApp, VarianteBadge> = { cargado: "success", parecido: "info", "no-se-carga": "neutral", falta: "warning", "en-disputa": "warning" };
+const TEXTO: Record<EstadoEnLaApp, string> = { cargado: "Cargado", parecido: "Parece cargado", "no-se-carga": "No se carga", falta: "Falta cargar", "en-disputa": "En disputa" };
 
 type Fila = MovimientoCruzado & { id: string };
 
@@ -49,7 +49,10 @@ export function MovimientosDeLaCuenta({ cuentaId, desde, onCerrar }: { cuentaId:
 
   const cruzados: Fila[] = useMemo(() => cruzarConLaApp(e, estado.movs).map((m) => ({ ...m, id: m.ref })), [e, estado.movs]);
   const faltan = useMemo(() => resumenDeLoQueFalta(cruzados), [cruzados]);
-  const visibles = filtro === "falta" ? cruzados.filter((m) => m.estadoApp === "falta" || m.estadoApp === "parecido") : cruzados;
+  const pendientes = cruzados.filter((m) => m.estadoApp === "falta" || m.estadoApp === "parecido" || m.estadoApp === "en-disputa");
+  const visibles = filtro === "falta" ? pendientes : cruzados;
+  const enDisputa = cruzados.filter((m) => m.estadoApp === "en-disputa");
+  const retenido = enDisputa.reduce((a, m) => a + Math.abs(m.monto), 0);
   const M = (n: number, d = 2) => money(n, "USD", d);
   const nombre = cuenta?.nombre ?? cuentaId;
 
@@ -70,13 +73,14 @@ export function MovimientosDeLaCuenta({ cuentaId, desde, onCerrar }: { cuentaId:
     },
     {
       clave: "estado", titulo: "En la app", orden: (m) => TEXTO[m.estadoApp],
-      celda: (m) => <span title={m.donde}><Badge variante={VARIANTE[m.estadoApp]}>{TEXTO[m.estadoApp]}</Badge>{m.donde && (m.estadoApp !== "falta" || m.tipo === "contracargo" || m.enDevoluciones) && <span className="t-sm t-subtle" style={{ display: "block", maxWidth: 360, whiteSpace: "normal" }}>{m.donde}</span>}</span>,
+      celda: (m) => <span title={m.donde}><Badge variante={VARIANTE[m.estadoApp]}>{TEXTO[m.estadoApp]}</Badge>{m.donde && (m.estadoApp !== "falta" || m.tipo === "contracargo" || m.enDevoluciones || m.cargableComoGasto) && <span className="t-sm t-subtle" style={{ display: "block", maxWidth: 360, whiteSpace: "normal" }}>{m.donde}</span>}</span>,
     },
     {
       clave: "accion", titulo: "",
       celda: (m) => {
         /* Un contracargo no se carga como gasto: se confirma como devolución (la propone «Sincronizar»), que es lo que revierte la comisión. */
-        if (m.estadoApp === "cargado" || m.estadoApp === "no-se-carga" || m.tipo === "contracargo" || m.enDevoluciones) return null;
+        if (m.estadoApp === "cargado" || m.estadoApp === "no-se-carga" || m.estadoApp === "en-disputa" || m.enDevoluciones) return null;
+        if (m.tipo === "contracargo" && !m.cargableComoGasto) return null;
         if (m.tipo === "cobro" || m.tipo === "pase") return <span className="t-sm t-subtle">Entra con «Sincronizar»</span>;
         return (
           <span className="row" style={{ gap: 6 }}>
@@ -111,8 +115,14 @@ export function MovimientosDeLaCuenta({ cuentaId, desde, onCerrar }: { cuentaId:
                   {faltan.sale > 0 ? <> · salieron {M(faltan.sale)}</> : null}{faltan.entra > 0 ? <> · entraron {M(faltan.entra)}</> : null}.
                   Cargalos y el saldo vuelve a dar.</>}
             </p>
+            {enDisputa.length > 0 && (
+              <p className="t-sm" style={{ margin: 0, color: "var(--warning)" }}>
+                {enDisputa.length === 1 ? "1 disputa en curso" : `${enDisputa.length} disputas en curso`}: Stripe retuvo {M(retenido)} mientras se resuelven. Si se ganan, vuelve y no pasa nada;
+                si se pierden, acá aparece el botón para cargarlas como gasto.
+              </p>
+            )}
             <div className="row-wrap" role="group" aria-label="Qué mostrar">
-              <Chip activo={filtro === "falta"} onClick={() => setFiltro("falta")} count={cruzados.filter((m) => m.estadoApp === "falta" || m.estadoApp === "parecido").length}>Lo que falta</Chip>
+              <Chip activo={filtro === "falta"} onClick={() => setFiltro("falta")} count={pendientes.length}>Pendiente</Chip>
               <Chip activo={filtro === "todos"} onClick={() => setFiltro("todos")} count={cruzados.length}>Todos</Chip>
             </div>
             <DataTable
