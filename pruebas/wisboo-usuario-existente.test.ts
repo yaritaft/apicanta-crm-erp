@@ -93,3 +93,24 @@ test("el motivo de Wisboo: sólo code y message, cortos", () => {
   assert.equal(motivoWisboo({ code: "X", message: "  algo  " }), ": X · algo");
   assert.equal(motivoWisboo({ details: [{ field: "email" }] }), "");
 });
+
+test("Wisboo: ni el filtro por mail ni por nombre la traen → se recorre la lista de la tienda hasta dar con el mail", async () => {
+  const { db, filas } = baseMinima();
+  const pagina = (n: number) => Array.from({ length: 100 }, (_x, i) => ({ id: `usr_${n}_${i}`, email: `otro${n}_${i}@x.com` }));
+  const { resultado, pedidos } = await conWisbooFalso((url, init) => {
+    if (url.pathname.endsWith("/users") && init?.method === "POST") {
+      return { status: 422, json: { code: "INVALID_RESOURCE_VALUES", details: [{ field: "email", explanation: "Ya existe un usuario registrado con este email" }] } };
+    }
+    if (url.pathname.endsWith("/users") && url.searchParams.has("page")) {
+      const n = Number(url.searchParams.get("page"));
+      const data = n === 3 ? [...pagina(3).slice(0, 40), { id: "usr_arnold", email: "Arnold.Salazar@Gmail.com " }] : n < 3 ? pagina(n) : [];
+      return { status: 200, json: { data, metadata: { total_record_count: 241, page_size: 100, page_number: n } } };
+    }
+    if (url.pathname.endsWith("/users")) return { status: 200, json: { data: [], metadata: { total_record_count: 0 } } };
+    if (url.pathname.endsWith("/product_accesses")) return { status: 200, json: { id: "pa_1" } };
+    return { status: 200, json: {} };
+  }, () => darAccesos(db, { alumnoId: "alu_1", persona: { nombre: "Arnold Salazar Salazar", email: "arnold.salazar@gmail.com", telefono: "" }, programa: PROGRAMA, origen: "manual", quien: "x" }));
+  assert.equal(resultado.dados, 1);
+  assert.equal((filas[0].externo as Fila).usuarioId, "usr_arnold");
+  assert.equal(pedidos.filter((p) => p.includes("page=")).length, 3, "para en la página donde lo encuentra");
+});
