@@ -627,20 +627,27 @@ function PasoCliente({ b, set, e, M, onPagoDeCuota }: {
      nombre (supabase/personas-unicas.sql). Por mail es la misma persona sí o sí (la base no deja dos fichas con el mismo
      mail); por teléfono, si el nombre también coincide, se ofrece usar esa ficha. */
   const [enLaBase, setEnLaBase] = useState<{ id: string; nombre: string; por: "email" | "telefono" }[]>([]);
+  /* La base también avisa si ese teléfono o mail es de un ALUMNO sin venta (importado o cargado por Servicio, sin
+     contacto): Mariano cargó la venta de Saul Rivas Martínez como «Edgar» y quedaron dos alumnos (Lili, 23/10). Con el
+     mismo nombre la base los une sola (alumnos-sin-duplicar.sql); con otro, se avisa para que el closer lo revise. */
+  const [alumnoDeServicio, setAlumnoDeServicio] = useState<{ id: string; nombre: string }[]>([]);
   useEffect(() => {
     const mail = claveEmail(b.contactoEmail);
     const digitos = b.contactoTelefono.replace(/\D/g, "");
-    if (!nube || !b.crearContacto || yaEstan.length > 0 || (!mail.includes("@") && digitos.length < 8)) { setEnLaBase([]); return; }
+    if (!nube || !(b.crearContacto || b.contactoId) || (!mail.includes("@") && digitos.length < 8)) { setEnLaBase([]); setAlumnoDeServicio([]); return; }
     let vivo = true;
     const t = window.setTimeout(() => {
       void nube!.rpc("persona_existente", { p_email: mail, p_telefono: b.contactoTelefono }).then((r) => {
         if (!vivo || r.error) return;
-        const filas = (r.data ?? []) as { id: string; nombre: string; por: "email" | "telefono" }[];
-        setEnLaBase(filas.filter((x) => x.por === "email" || palabrasEnComun(x.nombre, b.contactoNombre) >= 2));
+        const filas = (r.data ?? []) as { id: string; nombre: string; por: "email" | "telefono" | "alumno" }[];
+        const contactos = filas.filter((x): x is { id: string; nombre: string; por: "email" | "telefono" } => x.por !== "alumno");
+        setEnLaBase(b.crearContacto && yaEstan.length === 0
+          ? contactos.filter((x) => x.por === "email" || palabrasEnComun(x.nombre, b.contactoNombre) >= 2) : []);
+        setAlumnoDeServicio(filas.filter((x) => x.por === "alumno" && palabrasEnComun(x.nombre, b.contactoNombre) < 2));
       });
     }, 450);
     return () => { vivo = false; window.clearTimeout(t); };
-  }, [b.crearContacto, b.contactoEmail, b.contactoTelefono, b.contactoNombre, yaEstan.length]);
+  }, [b.crearContacto, b.contactoId, b.contactoEmail, b.contactoTelefono, b.contactoNombre, yaEstan.length]);
   const delMail = enLaBase.find((x) => x.por === "email");
   useEffect(() => {
     if (delMail && b.contactoExistenteId !== delMail.id) set({ contactoExistenteId: delMail.id, contactoExistentePor: "email" });
@@ -761,6 +768,19 @@ function PasoCliente({ b, set, e, M, onPagoDeCuota }: {
             </div>
           )}
         </>
+      )}
+
+      {alumnoDeServicio.length > 0 && (
+        <div className="aviso-cuotas" role="status">
+          <span className="t-strong">
+            {alumnoDeServicio.length === 1
+              ? `Ese teléfono o mail ya es de ${alumnoDeServicio[0].nombre}, que es alumno de Servicio`
+              : `Ese teléfono o mail ya es de ${alumnoDeServicio.map((x) => x.nombre).join(" y ")}, alumnos de Servicio`}
+          </span>
+          <span className="t-sm t-muted">
+            Si es la misma persona, revisá que el nombre y el mail sean los suyos antes de guardar: Servicio ve la venta y la une a su ficha.
+          </span>
+        </div>
       )}
 
       {elegido && elegido.cuotas.length > 0 && onPagoDeCuota && (

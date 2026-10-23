@@ -36,7 +36,7 @@ import { entraEnTabla, esCompra, opcionesDe, tablasDe, ventaEsDeLlamada } from "
 import { etapaTrasEventos, eventosDeLlamada, leadDeSesion, type EventoEtapa } from "./etapas-auto";
 import { estadoDeAgenda, marcaDeAgenda, opcionDeCompraPara } from "./estados";
 import { personaDe } from "./persona";
-import { buscarMismaPersona, conOtroEmail, type PlanSeparar, type PlanUnificar } from "./duplicados";
+import { buscarMismaPersona, conOtroEmail, palabrasDelNombre, type PlanSeparar, type PlanUnificar } from "./duplicados";
 import type { OtroCamino } from "./pendientes-conciliar";
 import { extraConCorreccion, tituloPerfil, type CampoPerfil } from "./perfil";
 import { puedeCargarDevolucion, puedeDarDeBaja, puedeEditar, TIPOS_POR_DEFECTO, type MiAcceso } from "./permisos";
@@ -1920,7 +1920,7 @@ export const acciones = {
      lados: el contacto, sus oportunidades, sus llamadas (el CRM y la
      Agenda), sus ventas y su servicio. Vacío no es un dato: no borra nada.
      A la base va sólo esa columna de cada fila, no la fila entera. */
-  corregirPersona(idPersona: ID, cambios: { nombre?: string; email?: string; telefono?: string }) {
+  corregirPersona(idPersona: ID, cambios: { nombre?: string; email?: string; telefono?: string }, opciones: { yaEnLaBase?: boolean } = {}) {
     const e = snapshot();
     const p = personaDe(e, idPersona);
     if (!p) return;
@@ -1935,8 +1935,9 @@ export const acciones = {
       const claves = Object.keys(valores) as (keyof T)[];
       return claves.length === 0 ? [] : filas.filter((x) => claves.some((k) => x[k] !== valores[k])).map((x) => ({ fila: { ...x, ...valores }, valores }));
     };
-    /* Sólo en lo que la cuenta edita: el resto queda como está. */
-    const si = <T,>(tabla: string, cambiadas: T[]) => (puedo(tabla) ? cambiadas : []);
+    /* Sólo en lo que la cuenta edita: el resto queda como está. Si ya lo escribió el servidor (Servicio corrige el
+       teléfono de su alumno y no edita contactos: api/personas/corregir), se refleja todo y no se vuelve a escribir. */
+    const si = <T,>(tabla: string, cambiadas: T[]) => (opciones.yaEnLaBase || puedo(tabla) ? cambiadas : []);
     const contactos = si("contactos", p.contacto ? tocar([p.contacto], { nombre, email, telefono }) : []);
     const leads = si("leads", tocar(p.leads, { nombre, email, telefono }));
     const sesiones = si("sesiones", tocar(p.sesiones, { invitado: nombre, email }));
@@ -1963,6 +1964,7 @@ export const acciones = {
       alumnos: reemplazar(e.alumnos, alumnos),
       actividad: lista,
     });
+    if (opciones.yaEnLaBase) return;
     const aLaBase = (tabla: string, cambiadas: { fila: { id: ID }; valores: object }[], extra: object = {}) => {
       if (cambiadas.length) empujarUpdate(tabla, cambiadas.map((c) => c.fila.id), { ...cambiadas[0].valores, ...extra });
     };
@@ -2004,6 +2006,44 @@ export const acciones = {
       alumnos: moverFilas(e.alumnos, plan.alumnos.map((a) => ({ id: a.id, leadId: a.leadId ?? undefined }))),
       actividad: lista,
     });
+  },
+
+  /* Unir dos alumnos sin nube (con nube lo hace la base: supabase/unificar-alumnos.sql, y la app vuelve a cargar). Queda
+     el que no tenía venta, con lo de Servicio; se lleva la venta del otro y, si se pide, la persona toma su nombre y mail. */
+  unificarAlumnosLocal(quedaId: ID, otroId: ID, corregir: boolean): string {
+    const e = snapshot();
+    const q = e.alumnos.find((a) => a.id === quedaId);
+    const o = e.alumnos.find((a) => a.id === otroId);
+    if (!q || !o) throw new Error("No encuentro uno de los dos alumnos.");
+    const leadId = o.leadId ?? q.leadId;
+    const resumen = `Se unió con «${o.nombre}»${o.email ? ` (${o.email})` : ""}: la venta y lo de servicio quedaron en esta ficha${corregir ? " y la persona de la venta tomó este nombre y este mail" : ""}.`;
+    /* Como supabase/unificar-alumnos.sql: el nombre más completo y lo vacío del que queda, completado con lo del otro. */
+    const deO = new Set(palabrasDelNombre(o.nombre));
+    const queda: Alumno = {
+      ...q, ventaId: q.ventaId ?? o.ventaId, leadId: q.leadId ?? o.leadId,
+      nombre: palabrasDelNombre(q.nombre).every((p) => deO.has(p)) ? o.nombre : q.nombre,
+      email: q.email || o.email, pais: q.pais || o.pais, plan: q.plan || o.plan, cohorte: q.cohorte || o.cohorte,
+      cuotaMensual: q.cuotaMensual || o.cuotaMensual, moneda: q.moneda ?? o.moneda,
+      extra: { ...sinVentaPendiente(q.extra), alumnosUnificados: [...((q.extra?.alumnosUnificados as unknown[]) ?? []), o] },
+    };
+    const segs = e.seguimientos ?? [];
+    const segQ = segs.find((x) => x.alumnoId === q.id);
+    const segO = segs.find((x) => x.alumnoId === o.id);
+    const lleno = (v: unknown) => v !== undefined && v !== null && v !== "" && !(Array.isArray(v) && v.length === 0);
+    const combinado = segQ && segO
+      ? { ...segO, ...Object.fromEntries(Object.entries(segQ).filter(([, v]) => lleno(v))), id: segQ.id, alumnoId: q.id }
+      : undefined;
+    const { lista } = registrar(e, "alumno", q.id, q.nombre, "actualizo", resumen);
+    guardar({
+      ...e,
+      alumnos: e.alumnos.filter((a) => a.id !== o.id).map((a) => (a.id === q.id ? queda : a)),
+      seguimientos: combinado
+        ? segs.filter((x) => x.alumnoId !== o.id).map((x) => (x.alumnoId === q.id ? combinado : x))
+        : segs.map((x) => (x.alumnoId === o.id ? { ...x, alumnoId: q.id, id: `seg_${q.id}` } : x)),
+      actividad: lista,
+    });
+    if (corregir && leadId) acciones.corregirPersona(leadId, { nombre: queda.nombre, email: queda.email || undefined }, { yaEnLaBase: true });
+    return resumen;
   },
 
   /* Los contactos como los dejó el servidor (por ejemplo, «no son la misma persona»). */

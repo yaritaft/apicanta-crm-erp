@@ -21,6 +21,7 @@ import {
 import type { ColumnaCs } from "@/lib/tabla-cs";
 import type { MiembroEquipo } from "@/lib/types";
 import { posiblesDuplicados } from "@/lib/duplicados";
+import { alumnosRepetidos } from "@/lib/alumnos-repetidos";
 import { personaDe } from "@/lib/persona";
 import { plural, saludoDe } from "./util";
 import "./mi-panel.css";
@@ -100,8 +101,14 @@ export function PanelServicio({ miembro, viendoOtro }: { miembro: MiembroEquipo;
     if (!pa?.alumnos.length && !pb?.alumnos.length) return [];
     const peso = (p: typeof pa) => (p?.alumnos.length ?? 0) * 100 + (p?.ventas.length ?? 0) * 10 + (p?.sesiones.length ?? 0);
     const [principal, otro] = peso(pa) >= peso(pb) ? [par.a, par.b] : [par.b, par.a];
-    return [{ principal, otro, seguro: par.seguro }];
-  }), [e]);
+    return [{ id: `${principal.id}:${otro.id}`, abrir: principal.id, titulo: principal.nombre, pide: par.seguro ? "parece la misma persona" : "otro nombre, revisar",
+      sub: `${principal.email} y ${otro.email}${otro.nombre.trim() !== principal.nombre.trim() ? ` (${otro.nombre.trim()})` : ""}` }];
+  }).concat(alumnosRepetidos(e).map((par) => ({
+    /* Dos alumnos de la misma persona: uno con la venta y otro con lo de Servicio (Saul y «Edgar», 23/10). */
+    id: `alu:${par.conVenta.id}:${par.sinVenta.id}`, abrir: par.sinVenta.id, titulo: par.sinVenta.nombre,
+    pide: `mismo ${par.por === "telefono" ? "teléfono" : "mail"} que el alumno «${par.conVenta.nombre.trim()}»`,
+    sub: "Uno tiene la venta y el otro lo de Servicio: unilos desde la ficha",
+  }))), [e]);
   const [verRepetidos, setVerRepetidos] = useState(false);
 
   const puedeEscribir = !viendoOtro && nivelDeRuta(acceso, "/alumnos") >= 2;
@@ -331,8 +338,8 @@ export function PanelServicio({ miembro, viendoOtro }: { miembro: MiembroEquipo;
         )}
         {repetidos.length > 0 && (
           <button type="button" className="ps-dato" aria-expanded={verRepetidos} onClick={() => setVerRepetidos((x) => !x)}
-            title="La misma persona cargada dos veces, una con cada mail: se ve la mitad de su historia en cada ficha.">
-            <b>{repetidos.length}</b> {repetidos.length === 1 ? "alumno con dos fichas" : "alumnos con dos fichas"} (mismo teléfono)
+            title="La misma persona cargada dos veces (una con cada mail, o la venta con otro nombre): se ve la mitad de su historia en cada ficha.">
+            <b>{repetidos.length}</b> {repetidos.length === 1 ? "alumno con dos fichas" : "alumnos con dos fichas"} (mismo teléfono o mail)
           </button>
         )}
         <span className="ps-dato ps-fecha">Datos al {formatoDia(hoy, hoy)}</span>
@@ -341,13 +348,13 @@ export function PanelServicio({ miembro, viendoOtro }: { miembro: MiembroEquipo;
       {verRepetidos && repetidos.length > 0 && (
         <section className="mp-card ps-card" aria-label="Alumnos con dos fichas">
           <h2 className="ps-tit">Alumnos con dos fichas</h2>
-          <p className="ps-ayuda">Tienen el mismo teléfono y otro mail. Abrí la ficha: arriba podés unificarlas (quedan los dos mails) o marcar que no son la misma persona.</p>
+          <p className="ps-ayuda">Tienen el mismo teléfono (o el mismo mail) en dos fichas. Abrí la ficha: arriba podés unirlas o marcar que no son la misma persona.</p>
           <div className="ps-tareas">
-            {repetidos.map(({ principal, otro, seguro }) => (
-              <button key={`${principal.id}:${otro.id}`} type="button" className="ps-tarea" onClick={() => abrirFicha(principal.id, "servicio")}>
+            {repetidos.map((r) => (
+              <button key={r.id} type="button" className="ps-tarea" onClick={() => abrirFicha(r.abrir, "servicio")}>
                 <span className="ps-tarea__txt">
-                  <span className="ps-tarea__tit">{principal.nombre} <span className="ps-tarea__pide">· {seguro ? "parece la misma persona" : "otro nombre, revisar"}</span></span>
-                  <span className="ps-tarea__sub">{principal.email} y {otro.email}{otro.nombre.trim() !== principal.nombre.trim() ? ` (${otro.nombre.trim()})` : ""}</span>
+                  <span className="ps-tarea__tit">{r.titulo} <span className="ps-tarea__pide">· {r.pide}</span></span>
+                  <span className="ps-tarea__sub">{r.sub}</span>
                 </span>
                 <ChevronRight size={16} className="ps-tarea__ir" aria-hidden />
               </button>

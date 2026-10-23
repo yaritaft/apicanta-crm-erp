@@ -3,6 +3,10 @@
 import React, { useMemo } from "react";
 import { useToast } from "@/components/ui/Toast";
 import { acciones, useEstado } from "@/lib/store";
+import { nube } from "@/lib/supabase";
+import { useAcceso } from "@/lib/acceso";
+import { puedeEditar } from "@/lib/permisos";
+import { corregirPersonaDesdeServicio } from "@/components/ficha/unificar-cliente";
 import { PAISES } from "@/lib/crm-tabla";
 import { formatoDia, textoDeAtraso } from "@/lib/seguimiento";
 import {
@@ -26,6 +30,7 @@ const opciones = (xs: readonly string[], color: ColorCrm = "gris1"): OpcionCrm[]
 export function useEdicionCliente(filas: readonly FilaCliente[], hoy: string) {
   const e = useEstado();
   const toast = useToast();
+  const { acceso } = useAcceso();
   const listas = useMemo(() => listasCs(e.ajustes.seguimiento), [e.ajustes.seguimiento]);
 
   const opcionesDe = (clave: ClaveCliente): OpcionCrm[] | undefined => {
@@ -68,7 +73,12 @@ export function useEdicionCliente(filas: readonly FilaCliente[], hoy: string) {
     const previo = Object.fromEntries(Object.keys(w.tipo === "alumno" ? w.cambios : w.alumno).map((k) => [k, (f.alumno as unknown as Record<string, unknown>)[k]]));
     const cambios = w.tipo === "alumno" ? w.cambios : w.alumno;
     if (Object.keys(cambios).length) acciones.actualizar<Alumno>("alumnos", f.id, cambios, f.nombre, w.detalle);
-    if (w.tipo === "persona") acciones.corregirPersona(w.id, w.cambios);
+    if (w.tipo === "persona") {
+      /* La cuenta de Servicio no edita contactos: el servidor corrige la persona en todos lados (si no, no se escribía nada). */
+      if (nube && !puedeEditar(acceso, "contactos")) {
+        void corregirPersonaDesdeServicio(w.id, w.cambios).catch((err: unknown) => toast(err instanceof Error ? err.message : "No se pudo corregir.", "err"));
+      } else acciones.corregirPersona(w.id, w.cambios);
+    }
     toast(`${titulo} de ${f.nombre}: ${valor.trim() || "vacío"}.`, "ok", {
       texto: "Deshacer",
       onClick: () => {

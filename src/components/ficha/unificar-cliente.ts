@@ -1,5 +1,5 @@
 import { nube } from "@/lib/supabase";
-import { acciones, esperarGuardado } from "@/lib/store";
+import { acciones, cargarDeLaNube, esperarGuardado, reiniciarCarga } from "@/lib/store";
 import { cabeceras } from "@/components/webinars/useYoutube";
 import { loDelOtroEnLaApp, noSonDuplicados, planSeparar, planUnificar, type PlanSeparar, type PlanUnificar } from "@/lib/duplicados";
 import type { Contacto, EstadoApp, ID } from "@/lib/types";
@@ -7,10 +7,10 @@ import type { Contacto, EstadoApp, ID } from "@/lib/types";
 /* Unificar dos fichas desde el navegador: con nube lo hace el servidor (api/personas/unificar) y acá se deja la app
    igual; sin nube, se hace acá mismo con la misma regla (lib/duplicados.ts). Devuelve qué pasó, para el aviso. */
 
-async function pedir<T>(cuerpo: Record<string, string>): Promise<T> {
+async function pedir<T>(cuerpo: Record<string, unknown>, ruta = "/api/personas/unificar"): Promise<T> {
   /* Lo que todavía no llegó a la base (un mensaje recién escrito en el chat) tiene que estar antes de moverlo. */
   await esperarGuardado();
-  const r = await fetch("/api/personas/unificar", {
+  const r = await fetch(ruta, {
     method: "POST", cache: "no-store", headers: { ...(await cabeceras()), "Content-Type": "application/json" },
     body: JSON.stringify(cuerpo),
   });
@@ -60,4 +60,24 @@ export async function noSonLaMismaPersona(e: EstadoApp, aId: ID, bId: ID): Promi
     return c ? { ...c, extra: { ...(c.extra ?? {}), noEsLaMismaPersona: [...new Set([...noSonDuplicados(c), otro])] } } : null;
   };
   acciones.aplicarContactos([marcar(aId, bId), marcar(bId, aId)].filter((c): c is Contacto => Boolean(c)));
+}
+
+/* Servicio corrige el teléfono (o el nombre o el mail) de su alumno: lo escribe el servidor en la persona y en todo lo que
+   cuelga de ella, porque la cuenta no edita contactos (api/personas/corregir). Después se refleja en la app. */
+export async function corregirPersonaDesdeServicio(contactoId: ID, cambios: { nombre?: string; email?: string; telefono?: string }): Promise<void> {
+  await pedir<{ ok: boolean }>({ contactoId, cambios }, "/api/personas/corregir");
+  acciones.corregirPersona(contactoId, cambios, { yaEnLaBase: true });
+}
+
+/* Une dos alumnos que son la misma persona (lib/alumnos-repetidos.ts): con nube lo hace la base en una transacción
+   (api/alumnos/unificar → unificar_alumnos) y después se vuelve a traer todo (cambian alumnos, seguimientos, la persona y
+   la venta); sin nube, se hace acá con lo mismo que haría la base. */
+export async function unificarAlumnos(e: EstadoApp, quedaId: ID, otroId: ID, corregirPersona: boolean): Promise<string> {
+  if (nube) {
+    const r = await pedir<{ resumen: string }>({ quedaId, otroId, corregirPersona }, "/api/alumnos/unificar");
+    reiniciarCarga();
+    await cargarDeLaNube();
+    return r.resumen;
+  }
+  return acciones.unificarAlumnosLocal(quedaId, otroId, corregirPersona);
 }

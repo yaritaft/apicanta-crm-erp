@@ -23,6 +23,7 @@ import { BloqueServicio, FilaServicio } from "./FilaServicio";
 import { FormSesionUnoAUno } from "./FormSesionUnoAUno";
 import { PausasAlumno } from "./PausasAlumno";
 import { BienvenidaAlumno } from "@/components/contratos/BienvenidaAlumno";
+import { AvisoAlumnoRepetido } from "./AvisoAlumnoRepetido";
 import { textoDePausa } from "@/lib/pausas";
 import { ventaPendienteDe } from "@/lib/alumnos";
 import { resumenBonos } from "@/lib/bonos";
@@ -313,6 +314,7 @@ function HojaDeUnServicio({ e, p, f, venta, producto, conChat, reserva }: {
 
   return (
     <div className="hs">
+      <AvisoAlumnoRepetido e={e} alumno={alumno} puede={puede} />
       <div className="hs-cabeza">
         <div className="hs-cabeza__que">
           <span className="hs-producto">{producto}{reserva ? " · Reserva" : ""}</span>
