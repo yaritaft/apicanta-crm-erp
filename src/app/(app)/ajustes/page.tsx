@@ -6,7 +6,7 @@ import { useSearchParams } from "next/navigation";
 import { EtapasServicio } from "@/components/alumnos/EtapasServicio";
 import {
   AlertTriangle, Check, Database, Download, GripVertical, Info, Layers, ListPlus,
-  Moon, Plug, Plus, Settings2, Sun, Trash2, Upload, X,
+  Moon, Plug, Plus, RefreshCw, Settings2, Sun, Trash2, Upload, X,
 } from "lucide-react";
 import { CatalogosVenta } from "@/components/ajustes/CatalogosVenta";
 import { CierreDelDiaAjustes } from "@/components/ajustes/CierreDelDiaAjustes";
@@ -33,6 +33,8 @@ import { num, relativo } from "@/lib/format";
 import type { Ajustes as TAjustes, CampoPersonalizado, EntidadNombre, Etapa, TipoCampo } from "@/lib/types";
 import { objecionesDe } from "@/lib/eod";
 import { cabeceras } from "@/components/webinars/useYoutube";
+import { marcarRecargaPropia } from "@/components/shell/AvisoVersion";
+import { hayNube } from "@/lib/supabase";
 
 type Seccion = "negocio" | "ventas" | "utms" | "pipeline" | "listas" | "crm" | "campos" | "integraciones" | "whatsapp" | "datos";
 
@@ -125,6 +127,7 @@ export default function Ajustes() {
 function Negocio({ tema, setTema }: { tema: "dark" | "light"; setTema: (t: "dark" | "light") => void }) {
   const e = useEstado();
   const toast = useToast();
+  const { esDueno } = useAcceso();
   const [borrador, setBorrador] = useState<Partial<TAjustes>>({});
   const v = <K extends keyof TAjustes>(k: K): TAjustes[K] => (borrador[k] ?? e.ajustes[k]) as TAjustes[K];
 
@@ -163,6 +166,8 @@ function Negocio({ tema, setTema }: { tema: "dark" | "light"; setTema: (t: "dark
         </div>
       </Card>
 
+      {esDueno && hayNube && <PedirActualizar />}
+
       <Card>
         <CardHead titulo="Guía de bienvenida" sub="El recorrido de 5 pasos que se muestra la primera vez." />
         <div className="row-3">
@@ -171,6 +176,28 @@ function Negocio({ tema, setTema }: { tema: "dark" | "light"; setTema: (t: "dark
         </div>
       </Card>
     </div>
+  );
+}
+
+/* Cada versión publicada ya pide actualizar sola (components/shell/AvisoVersion). Esto es para cuando un dueño cambia algo
+   de Ajustes que el equipo tiene que ver ya. */
+function PedirActualizar() {
+  const e = useEstado();
+  const toast = useToast();
+  return (
+    <Card>
+      <CardHead titulo="Actualizar la app de todo el equipo"
+        sub="Cuando se publica una versión nueva, a todos les aparece un cartel para actualizar y a los 2 minutos la app se bloquea hasta que lo hagan. Usá esto si cambiaste algo de Ajustes que el equipo tiene que ver ya." />
+      <div className="row-wrap" style={{ gap: 12 }}>
+        <Button variante="secondary" icono={<RefreshCw size={16} />} onClick={() => {
+          const recargaPedida = new Date().toISOString();
+          marcarRecargaPropia(recargaPedida);
+          acciones.ajustes({ recargaPedida }, "Se pidió a todo el equipo que actualice la app.");
+          toast("Listo: en menos de dos minutos a todos les aparece el cartel para actualizar.");
+        }}>Pedir a todos que actualicen</Button>
+        {e.ajustes.recargaPedida && <span className="t-sm t-muted">Último pedido: {relativo(e.ajustes.recargaPedida)}</span>}
+      </div>
+    </Card>
   );
 }
 

@@ -36,6 +36,7 @@ import { ID_ACCIONES_TOPBAR } from "./AccionesTopbar";
 import { useChatEnVivo } from "@/components/ficha/useChatEnVivo";
 import { FotoDePerfil } from "./FotoDePerfil";
 import { Campanita } from "@/components/avisos/Campanita";
+import { AvisoVersion } from "./AvisoVersion";
 
 export function Shell({ children }: { children: React.ReactNode }) {
   const ruta = usePathname();
@@ -392,6 +393,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
         <FotoDePerfil quien={quienYo} nombre={yo.nombre} obligatoria={faltaFoto} actual={miFoto} onCerrar={() => setCambiarFoto(false)} onDespues={fotoDespues} />
       )}
       <Tour />
+      {hayNube && <AvisoVersion />}
     </div>
   );
 }

@@ -13,6 +13,7 @@ import { PROGRAMAS_POR_DEFECTO, programasDe, type Programa } from "@/lib/program
 import { nombreDeReunion, PRODUCTOS_WISBOO } from "@/lib/accesos-alumnos";
 import type { ConfigContratos } from "@/lib/types";
 import type { Pruebas } from "./AccesosAlumnosIntegracion";
+import { marcarRecargaPropia } from "@/components/shell/AvisoVersion";
 
 /* ==================================================================
    La configuración de los contratos y los accesos (Ajustes → Integraciones,
@@ -86,7 +87,13 @@ function EstadoContratos({ config }: { config: ConfigContratos }) {
       <div className="row-wrap" style={{ gap: 6 }} role="radiogroup" aria-label="Estado de los contratos">
         {ESTADOS.map((x) => (
           <Chip key={x.valor} activo={config.estado === x.valor}
-            onClick={() => { acciones.ajustes({ contratos: { ...config, estado: x.valor } }, `Contratos desde la venta: ${x.texto.toLowerCase()}.`); toast(`Contratos: ${x.texto.toLowerCase()}.`); }}>
+            onClick={() => {
+              /* Quién ve el paso del contrato cambia con esto: se pide a todos que actualicen la app (AvisoVersion). */
+              const recargaPedida = new Date().toISOString();
+              marcarRecargaPropia(recargaPedida);
+              acciones.ajustes({ contratos: { ...config, estado: x.valor }, recargaPedida }, `Contratos desde la venta: ${x.texto.toLowerCase()}.`);
+              toast(`Contratos: ${x.texto.toLowerCase()}. Al resto del equipo le aparece el cartel para actualizar la app.`);
+            }}>
             {x.texto}
           </Chip>
         ))}

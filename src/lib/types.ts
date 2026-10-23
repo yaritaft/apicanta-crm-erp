@@ -665,6 +665,8 @@ export interface Ajustes {
   calendlyToken: string;
   tema: "dark" | "light";
   tourVisto: boolean;
+  /* Un dueño pidió que todos actualicen la app (components/shell/AvisoVersion; supabase/aviso-version.sql). */
+  recargaPedida?: string | null;
   /* Los "Proyectos" de la planilla de Angelo: MENT, DOWN, WEB-13/04/26… */
   proyectos: string[];
   /* Lo que cobra quien refiere una venta, sobre lo que entra post pasarelas (0,1 = 10%). */
