@@ -4,7 +4,7 @@ import {
   calcularPyL, cashCollected, comisionesDelMes, comisionesPorCloser, totalComisiones,
 } from "@/lib/finanzas";
 import {
-  devolvibleDeVenta, mesDeLiquidacion, problemaDeDevolucion, reversasDeComision, reversasDelMes,
+  devolvibleDeVenta, mesDeLiquidacion, problemaDeDevolucion, problemasDeDevolucion, reversasDeComision, reversasDelMes,
 } from "@/lib/devoluciones";
 import { cajaEsperada, cuentaEnLaCajaDeHoy } from "@/lib/caja";
 import { saldosEsperados } from "@/lib/traspasos";
@@ -361,6 +361,23 @@ test("qué falta para poder cargar una devolución, en el orden de la pantalla",
   assert.equal(problemaDeDevolucion(e, { ...ok, tieneComprobante: false, tienePasarela: true }), null);
   /* Una venta sin cobros hasta esa fecha no tiene nada que devolver. */
   assert.match(problemaDeDevolucion(e, { ...ok, fecha: iso("2026-08", 1) })!, /no tiene cobros/);
+});
+
+/* El asistente paso a paso necesita saber QUÉ pantalla arregla cada cosa que falta; el primero de la lista es siempre el de `problemaDeDevolucion`. */
+test("qué falta para cargar una devolución, con el paso donde se arregla (y el primero es el de siempre)", () => {
+  const e = estadoDeYari();
+  const ok = { ventaId: "v1", monto: 1500, fecha: iso(OCTUBRE, 3), procesadorId: "proc_stripe", tieneComprobante: true };
+  assert.deepEqual(problemasDeDevolucion(e, ok), []);
+  assert.deepEqual(problemasDeDevolucion(e, { ...ok, ventaId: undefined }).map((p) => p.paso), ["venta"]);
+  assert.deepEqual(problemasDeDevolucion(e, { ...ok, monto: 0 }).map((p) => p.paso), ["monto"]);
+  assert.deepEqual(problemasDeDevolucion(e, { ...ok, fecha: "nada" }).map((p) => p.paso), ["dia"]);
+  /* Sin medio ni comprobante, y de más: cada cosa en su pantalla (el monto de más se marca aunque falte el medio). */
+  const varias = problemasDeDevolucion(e, { ...ok, monto: 3500, procesadorId: undefined, tieneComprobante: false });
+  assert.deepEqual(varias.map((p) => p.paso), ["medio", "monto", "comprobante"]);
+  assert.equal(varias[0].texto, problemaDeDevolucion(e, { ...ok, monto: 3500, procesadorId: undefined, tieneComprobante: false }));
+  /* Los pesos que faltan son del paso del medio; el comprobante, del suyo. */
+  assert.deepEqual(problemasDeDevolucion(e, { ...ok, sinPesos: true, tieneComprobante: false }).map((p) => p.paso), ["medio", "comprobante"]);
+  assert.deepEqual(problemasDeDevolucion(e, { ...ok, tieneComprobante: false, tienePasarela: true }), []);
 });
 
 /* ---------- En qué liquidación entra ---------- */

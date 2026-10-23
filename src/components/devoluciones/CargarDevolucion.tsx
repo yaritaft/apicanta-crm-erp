@@ -2,8 +2,8 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import { Info } from "lucide-react";
-import { Field, Input, Select, Switch, Textarea } from "@/components/ui/ui";
-import { ModalForm } from "@/components/ui/Modal";
+import { Chip, Field, Input, Switch, Textarea } from "@/components/ui/ui";
+import { Asistente, Opcion, Pregunta } from "@/components/ui/Asistente";
 import { InputMonto } from "@/components/ui/InputMonto";
 import { InfoMetrica } from "@/components/ui/InfoMetrica";
 import { AvisoMesCerrado } from "@/components/ui/AvisoMesCerrado";
@@ -19,7 +19,7 @@ import type { Acceso } from "@/lib/accesos-servidor";
 import { nivelEn, puedeDarDeBaja } from "@/lib/permisos";
 import { cerrarDevolucion, usePedidoDevolucion, type PedidoDevolucion } from "@/lib/devolucion-ui";
 import {
-  cambioParaDevolver, devolvibleDeVenta, mediodiaDeNegocio, pesosDeLaDevolucion, problemaDeDevolucion, procesadorDeLaVenta,
+  cambioParaDevolver, devolvibleDeVenta, mediodiaDeNegocio, pesosDeLaDevolucion, problemasDeDevolucion, procesadorDeLaVenta,
   reversasDeComision, ventasDelPedido,
 } from "@/lib/devoluciones";
 import { escribirMonto, leerMonto } from "@/lib/gastos";
@@ -29,6 +29,7 @@ import { fechaLarga, money } from "@/lib/format";
 import { nombrePeriodo, periodoDeFecha } from "@/lib/periodos";
 import { esCuentaEnPesos } from "@/lib/reporteFinanciera";
 import type { Comprobante, Devolucion } from "@/lib/types";
+import "./asistente-devolucion.css";
 
 /* ==================================================================
    Cargar una devolución (reunión del 02/10: «que den los números»).
@@ -43,10 +44,25 @@ import type { Comprobante, Devolucion } from "@/lib/types";
      · el comprobante, obligatorio (salvo que la pasarela ya lo informe);
      · si no se le descuenta al closer (por defecto sí).
 
-   Y antes de guardar muestra qué pasa: lo que resta en Finanzas y lo que se
-   les revierte de la comisión al closer y al director, con la cuenta a la
-   vista. La cargan Finanzas o el director comercial; el closer sólo la ve.
+   Y antes de guardar muestra qué pasa: lo que resta en Finanzas, si toca la caja
+   de hoy y lo que se les revierte de la comisión al closer y al director, con la
+   cuenta a la vista. La cargan Finanzas o el director comercial; el closer sólo
+   la ve.
+
+   Una pregunta por pantalla, como el asistente de gastos (Aldana, 23/10: «es una
+   banda de data en una sola pantalla»): la venta (sólo si hay que elegir), cuánto,
+   qué día, por dónde salió, el comprobante, qué pasa con el closer, qué más hacer
+   con la persona y el motivo. Al final, «Revisá y cargá» con todo junto y un
+   «Cambiar» en cada dato. Corregir una devolución o confirmar la que informó una
+   pasarela abre directo en la revisión. Qué falta en cada pantalla lo dice
+   lib/devoluciones.ts (problemasDeDevolucion).
    ================================================================== */
+
+type PasoId = "venta" | "monto" | "dia" | "medio" | "comprobante" | "closer" | "despues" | "motivo" | "revisar";
+const NOMBRE_PASO: Record<PasoId, string> = {
+  venta: "Venta", monto: "Cuánto", dia: "Día", medio: "Medio", comprobante: "Comprobante", closer: "Closer", despues: "Después", motivo: "Motivo",
+  revisar: "Revisá y cargá",
+};
 
 export function CargarDevolucion() {
   const pedido = usePedidoDevolucion();
@@ -141,14 +157,14 @@ function Formulario({ pedido }: { pedido: PedidoDevolucion }) {
   const escritos = pesosTxt === null ? undefined : leerMonto(pesosTxt);
   const pesos = enPesos ? pesosDeLaDevolucion(montoNum, cambioInicial, escritos) : {};
 
-  const problema = problemaDeDevolucion(
+  const problemas = problemasDeDevolucion(
     e, {
       ventaId: venta?.id, monto: montoNum, fecha: fechaIso, procesadorId: medio || undefined, tieneComprobante: Boolean(comprobante),
       tienePasarela: Boolean(base?.referencia), sinPesos: enPesos && !pesos.montoArs,
     },
     previa?.id,
   );
-  const falta = subiendo ? "Esperá que termine de subir el comprobante" : problema;
+  const falta = subiendo ? "Esperá que termine de subir el comprobante" : problemas[0]?.texto ?? null;
 
   /* Lo que pasaría al cargarla: las mismas cuentas que usan Finanzas y la liquidación. */
   const efecto = useMemo(() => {
@@ -206,83 +222,264 @@ function Formulario({ pedido }: { pedido: PedidoDevolucion }) {
       : "No hay un tipo de cambio de referencia: escribí cuántos pesos salieron.";
 
   const titulo = previa ? "Corregir la devolución" : propuesta ? "Confirmar la devolución" : "Cargar una devolución";
+
+  /* ---------- Los pasos ---------- */
+  const ids = useMemo<PasoId[]>(() => [
+    /* La venta sólo se pregunta si hay que elegir (o si no se encontró ninguna: ahí se explica). */
+    ...(!previa && ventas.length !== 1 ? (["venta"] as PasoId[]) : []),
+    "monto", "dia", "medio", "comprobante", "closer",
+    ...(!previa ? (["despues"] as PasoId[]) : []),
+    "motivo", "revisar",
+  ], [previa, ventas.length]);
+  /* Corregir o confirmar una devolución que informó la pasarela ya trae casi todo: se abre en la revisión. */
+  const [pasoId, setPasoId] = useState<PasoId>(() => (previa || (propuesta && ventas.length === 1) ? "revisar" : ventas.length !== 1 ? "venta" : "monto"));
+  const [vioRevision, setVioRevision] = useState(() => Boolean(previa || (propuesta && ventas.length === 1)));
+  const actual = Math.max(0, ids.indexOf(pasoId));
+  const irAPaso = (id: PasoId) => { setPasoId(id); if (id === "revisar") setVioRevision(true); };
+
+  const delPaso = (id: PasoId) => problemas.find((p) => p.paso === id)?.texto ?? null;
+  const problemaPaso: string | null =
+    pasoId === "revisar" ? falta
+      : pasoId === "venta" ? (ventas.length === 0 ? "No encontramos la venta de esta persona: buscala en Ventas." : delPaso("venta"))
+        : pasoId === "comprobante" ? (subiendo ? "Esperá que termine de subir el comprobante" : delPaso("comprobante"))
+          : delPaso(pasoId);
+  const siguienteEsRevision = ids[actual + 1] === "revisar";
+  const volverARevisar = vioRevision && pasoId !== "revisar" && !siguienteEsRevision && problemaPaso === null
+    ? <button type="button" className="link t-sm" style={{ alignSelf: "flex-start" }} onClick={() => irAPaso("revisar")}>Listo, volver a revisar</button>
+    : null;
+
+  /* ---------- Lo que se ve en más de una pantalla ---------- */
+  const producto = (v: { productoId?: string }) => e.productos.find((x) => x.id === v.productoId)?.nombre ?? "Venta";
+  const ayudaMonto = devolvible ? [
+    `Se cobró ${M(devolvible.cobrado)}${devolvible.devuelto ? `, ya se devolvió ${M(devolvible.devuelto)}` : ""}`,
+    /* Una devolución ya cargada con fecha posterior también cuenta: entre todas no pueden pasar de lo cobrado. */
+    devolvible.limitadaPor ? `, y hasta el ${fechaLarga(mediodia(devolvible.limitadaPor.dia))} hay ${M(devolvible.limitadaPor.devuelto)} devueltos de ${M(devolvible.limitadaPor.cobrado)} cobrados` : "",
+    `: se puede devolver hasta ${M(devolvible.queda)}.`,
+  ].join("") : undefined;
+
+  /* Qué pasa en Finanzas y en la caja de hoy: el día decide si toca la caja (sólo lo posterior al último arqueo). */
+  const notaDeFinanzasYCaja = venta && montoNum > 0 ? (
+    <>
+      <li>
+        Resta <b className="t-num">{M(montoNum)}</b> en Finanzas de <b>{mes}</b>: Cash Collected y estado de resultados.
+        La venta sigue contando en {mesVenta}. La comisión de la pasarela no vuelve.
+      </li>
+      <li>
+        {enCaja.cuenta
+          ? <>
+            <b>Baja la caja de hoy</b>: sale de {cuenta ? `la caja de ${cuenta}` : "la caja"}{pesos.montoArs ? ` (salen ${money(pesos.montoArs, "ARS", 0)} de esa cuenta)` : ""}.
+            {enCaja.arqueo
+              ? ` Cuenta porque ese día es posterior al último arqueo (${fechaLarga(enCaja.arqueo.fecha)}). Si la plata ya había salido antes de ese conteo, poné el día en que salió de verdad.`
+              : " Todavía no hay ningún arqueo: cuenta desde el principio."}
+          </>
+          : <>
+            <b>No cambia la caja de hoy</b>: ese día es anterior al último arqueo ({enCaja.arqueo ? fechaLarga(enCaja.arqueo.fecha) : ""}) y el saldo que se contó ahí
+            ya venía sin esa plata. Sólo se mueve {mes}.
+          </>}
+      </li>
+    </>
+  ) : null;
+
+  const notaDeComision = efecto ? (
+    <li>
+      {efecto.sinDescuento
+        ? "No se le descuenta nada al closer ni al director: cobran igual."
+        : revierte.length === 0
+          ? "No hay comisión que revertir en esta venta."
+          : <>Se les revierte la comisión: {revierte.map((p, i) => <span key={`${p.rol}-${p.miembroId ?? i}`}>{i ? " · " : ""}{p.nombre} ({p.rol === "closer" ? "closer" : "director"}) <b className="t-num">−{M(p.reversa)}</b></span>)}.
+            {" "}<InfoMetrica
+              titulo="Lo que se revierte de la comisión"
+              ayuda="A cada uno se le revierte exactamente lo que se le comisionó por lo cobrado de esta venta, en la parte que se devuelve. Aparece como una línea «Devolución de …» en la liquidación del mes de la devolución."
+              formula="Comisionado por lo cobrado de la venta (cobrado − procesador, × su %) × lo devuelto ÷ lo cobrado que quedaba sin devolver"
+              periodo={mes}
+              componentes={() => [
+                { concepto: "Cobrado de la venta hasta ese día", valor: M(efecto.cobradoVenta) },
+                { concepto: "Ya devuelto antes", valor: M(efecto.yaDevuelto), signo: "−" },
+                { concepto: "Lo que se devuelve ahora", valor: M(efecto.devuelto), nota: `${(efecto.parte * 100).toLocaleString("es-AR", { maximumFractionDigits: 1 })}% de lo que quedaba` },
+                ...efecto.partes.filter((p) => p.reversa > 0).map((p) => ({
+                  concepto: `${p.nombre} · comisionó ${M(p.comision)} (${(p.tasa * 100).toLocaleString("es-AR", { maximumFractionDigits: 2 })}% de ${M(p.neto)})`,
+                  valor: M(p.reversa), signo: "−" as const,
+                })),
+                { concepto: "Total que se revierte", valor: M(totalRevierte), signo: "=" },
+              ]}
+            /></>}
+    </li>
+  ) : null;
+
+  const cajaDeHoy = (
+    <div className="devol-efecto" role="note">
+      <Info size={16} aria-hidden />
+      <div className="stack-2" style={{ minWidth: 0 }}>
+        <div className="t-strong">Qué pasa al cargarla</div>
+        <ul className="devol-efecto__lista">{notaDeFinanzasYCaja}{notaDeComision}</ul>
+      </div>
+    </div>
+  );
+
+  const opcionesPosteriores: string[] = [];
+  if (!previa) {
+    if (marcarLlamada) opcionesPosteriores.push("dejar la llamada en «Devolución» en el CRM");
+    if (quitarAccesos && alumno && conAccesos) opcionesPosteriores.push("quitarle los accesos");
+    if (darDeBaja && puedeBaja && venta?.estado === "activa") opcionesPosteriores.push("dar de baja la venta");
+  }
+  const hoy = hoyDia();
+  const ayer = diaDe(new Date(Date.now() - 86400000).toISOString());
+  const sugerida = venta ? procesadorDeLaVenta(e, venta.id) : undefined;
+  const procesadoresPosibles = e.procesadores.filter((p) => p.activo || p.id === medio);
+
+  const filas: { etiqueta: string; valor: React.ReactNode; paso?: PasoId; falta?: boolean }[] = [
+    {
+      etiqueta: "Venta", paso: ids.includes("venta") ? "venta" : undefined, falta: !venta,
+      valor: venta ? `${venta.contactoNombre} · ${producto(venta)} · ${fechaLarga(venta.fecha)} · ${M(venta.precioAcordado, 0)}` : "Sin elegir",
+    },
+    {
+      etiqueta: "Cuánto se devolvió", paso: "monto", falta: problemas.some((p) => p.paso === "monto"),
+      valor: montoNum > 0 ? <>{M(montoNum)}{devolvible ? (esTotal ? " · todo lo que quedaba" : ` · parcial (quedaban ${M(devolvible.queda)})`) : ""}</> : "Falta",
+    },
+    { etiqueta: "El día", paso: "dia", falta: problemas.some((p) => p.paso === "dia"), valor: fechaLarga(fechaIso) },
+    {
+      etiqueta: "Salió por", paso: "medio", falta: problemas.some((p) => p.paso === "medio"),
+      valor: cuenta ? `${cuenta}${pesos.montoArs ? ` · ${money(pesos.montoArs, "ARS", 0)}` : ""}` : "Sin elegir",
+    },
+    {
+      etiqueta: "Comprobante", paso: "comprobante", falta: problemas.some((p) => p.paso === "comprobante"),
+      valor: comprobante ? "Subido" : base?.referencia ? "Lo informó la pasarela" : "Falta",
+    },
+    { etiqueta: "Al closer", paso: "closer", valor: noDescontar ? "No se le descuenta: cobra igual" : "Se le descuenta lo que cobró por esta venta" },
+    ...(!previa ? [{ etiqueta: "Después", paso: "despues" as PasoId, valor: opcionesPosteriores.length ? `Se va a ${opcionesPosteriores.join(", ")}` : "Nada más" }] : []),
+    { etiqueta: "Motivo", paso: "motivo", valor: motivo.trim() || "Sin motivo" },
+  ];
+
   return (
-    <ModalForm
-      abierto ancho onCerrar={cerrarDevolucion} onGuardar={guardar} puedeGuardar={!falta}
-      guardarTexto={previa ? "Guardar cambios" : "Cargar devolución"}
-      titulo={titulo}
-      sub={propuesta
-        ? `La informó ${propuesta.proveedor ?? "la pasarela"}: no resta de Finanzas hasta que la confirmes.`
-        : "Resta de Finanzas el día que se devolvió la plata. La venta sigue en su mes."}
+    <Asistente
+      etiqueta={titulo}
+      pasos={ids.map((id) => ({ id, titulo: NOMBRE_PASO[id] }))} actual={actual} onCambiarPaso={(i) => irAPaso(ids[i])}
+      problema={problemaPaso} problemaEsError={pasoId === "revisar"}
+      onCerrar={cerrarDevolucion}
+      terminarTexto={previa ? "Guardar cambios" : propuesta ? "Confirmar devolución" : "Cargar devolución"}
+      onTerminar={guardar}
     >
-      <div className="form-grid">
-        <div className="span-2">
-          <Field label="Venta que se devuelve" error={ventas.length === 0 ? "No encontramos la venta de esta persona: buscala en Ventas." : undefined}>
-            <Select
-              value={ventaId} onChange={(ev) => { setVentaId(ev.target.value); setPesosTxt(null); }} disabled={Boolean(previa) || ventas.length <= 1}
-              placeholder="Elegí la venta"
-              opciones={ventas.map((v) => ({
-                valor: v.id,
-                texto: `${v.contactoNombre} · ${e.productos.find((p) => p.id === v.productoId)?.nombre ?? "Venta"} · ${fechaLarga(v.fecha)} · ${M(v.precioAcordado, 0)}`,
-              }))}
-            />
-          </Field>
-        </div>
-
-        <Field
-          label="Cuánto se devolvió"
-          ayuda={devolvible ? [
-            `Se cobró ${M(devolvible.cobrado)}${devolvible.devuelto ? `, ya se devolvió ${M(devolvible.devuelto)}` : ""}`,
-            /* Una devolución ya cargada con fecha posterior también cuenta: entre todas no pueden pasar de lo cobrado. */
-            devolvible.limitadaPor ? `, y hasta el ${fechaLarga(mediodia(devolvible.limitadaPor.dia))} hay ${M(devolvible.limitadaPor.devuelto)} devueltos de ${M(devolvible.limitadaPor.cobrado)} cobrados` : "",
-            `: se puede devolver hasta ${M(devolvible.queda)}.`,
-          ].join("") : undefined}
-        >
-          <InputMonto value={monto} onChange={(ev) => { setMonto(ev.target.value); setPesosTxt(null); }} placeholder="0" aria-label="Monto devuelto" autoFocus />
-        </Field>
-
-        <Field label="El día que se devolvió">
-          <Input type="date" value={dia} onChange={(ev) => { if (ev.target.value) setDia(ev.target.value); }} aria-label="Día de la devolución" />
-        </Field>
-
-        <div className="span-2">
-          <AvisoMesCerrado fecha={fechaIso} que="devolucion" />
-        </div>
-
-        <div className="span-2">
-          <Field label="Medio por el que salió la plata" ayuda="El mismo con el que pagó: tarjeta con tarjeta, cripto con una transferencia cripto.">
-            <Select
-              value={medio} onChange={(ev) => { setMedio(ev.target.value); setPesosTxt(null); }} placeholder="Elegí la cuenta"
-              opciones={e.procesadores.filter((p) => p.activo || p.id === medio).map((p) => ({ valor: p.id, texto: p.nombre }))}
-            />
-          </Field>
-        </div>
-
-        {enPesos && (
-          <div className="span-2">
-            <Field label="Pesos que salieron de la cuenta" ayuda={ayudaPesos}>
-              <InputMonto
-                value={pesosTxt ?? (pesos.montoArs ?? "")} onChange={(ev) => setPesosTxt(ev.target.value)} placeholder="0"
-                aria-label="Pesos que salieron" icono={<span className="t-subtle">$</span>}
-              />
-            </Field>
-          </div>
-        )}
-
-        <div className="span-2 hk-field">
-          <span className="hk-label">Comprobante {base?.referencia ? "(opcional: la pasarela ya la informó)" : ""}</span>
-          <CampoComprobante valor={comprobante} onCambio={setComprobante} obligatorio={!base?.referencia} onSubiendo={setSubiendo} />
-        </div>
-
-        <div className="span-2 devol-opciones">
-          <div className="devol-opcion">
-            <div>
-              <div className="t-strong">No descontar al closer</div>
-              <div className="t-sm t-subtle">Se devuelve por decisión de la empresa (el perfil no encajaba): el closer cobra igual. Por defecto se le descuenta lo que cobró por esta venta.</div>
+      {pasoId === "venta" && (
+        <>
+          <Pregunta
+            texto="¿De qué venta es la devolución?"
+            sub={ventas.length === 0 ? "No encontramos ninguna venta de esta persona." : "Esta persona tiene más de una venta: elegí la que se devuelve."}
+          />
+          {ventas.length > 0 && (
+            <div className="opciones opciones--lista">
+              {ventas.map((v, i) => (
+                <Opcion
+                  key={v.id} tecla={i < 9 ? String(i + 1) : undefined} activo={v.id === ventaId}
+                  nombre={`${v.contactoNombre} · ${producto(v)}`}
+                  sub={`${fechaLarga(v.fecha)} · ${M(v.precioAcordado, 0)}${v.estado !== "activa" ? ` · ${v.estado}` : ""}`}
+                  onClick={() => { setVentaId(v.id); setPesosTxt(null); }}
+                />
+              ))}
             </div>
-            <Switch checked={noDescontar} onChange={setNoDescontar} etiqueta="No descontar al closer" />
+          )}
+        </>
+      )}
+
+      {pasoId === "monto" && (
+        <>
+          <Pregunta
+            texto="¿Cuánto se devolvió?"
+            sub={ayudaMonto ?? "Resta de Finanzas el día que se devolvió la plata. La venta sigue en su mes."}
+          />
+          <div className="stack-3">
+            <InputMonto
+              value={monto} onChange={(ev) => { setMonto(ev.target.value); setPesosTxt(null); }} placeholder="0" aria-label="Monto devuelto" autoFocus
+              icono={<span className="gasto-signo">{mon === "USD" ? "US$" : "$"}</span>} error={Boolean(delPaso("monto"))}
+            />
+            {devolvible && devolvible.queda > 0.01 && (
+              <div className="row-wrap">
+                <Chip activo={esTotal} onClick={() => { setMonto(escribirMonto(devolvible.queda)); setPesosTxt(null); }}>Todo lo que queda ({M(devolvible.queda)})</Chip>
+              </div>
+            )}
           </div>
-          {!previa && (
+          {volverARevisar}
+        </>
+      )}
+
+      {pasoId === "dia" && (
+        <>
+          <Pregunta
+            texto="¿Qué día salió la plata?"
+            sub="El día en que la cuenta la devolvió de verdad: es el que cuenta para Finanzas y para la caja."
+          />
+          <div className="stack-3">
+            <Input type="date" value={dia} onChange={(ev) => { if (ev.target.value) setDia(ev.target.value); }} aria-label="Día de la devolución" />
+            <div className="row-wrap">
+              <Chip activo={dia === hoy} onClick={() => setDia(hoy)}>Hoy</Chip>
+              <Chip activo={dia === ayer} onClick={() => setDia(ayer)}>Ayer</Chip>
+            </div>
+            <AvisoMesCerrado fecha={fechaIso} que="devolucion" />
+            {notaDeFinanzasYCaja && (
+              <div className="devol-efecto" role="note">
+                <Info size={16} aria-hidden />
+                <ul className="devol-efecto__lista">{notaDeFinanzasYCaja}</ul>
+              </div>
+            )}
+          </div>
+          {volverARevisar}
+        </>
+      )}
+
+      {pasoId === "medio" && (
+        <>
+          <Pregunta texto="¿Por dónde salió la plata?" sub="El mismo medio con el que pagó: tarjeta con tarjeta, cripto con una transferencia cripto." />
+          <div className="stack-3">
+            <div className="opciones">
+              {procesadoresPosibles.map((p, i) => (
+                <Opcion
+                  key={p.id} tecla={i < 9 ? String(i + 1) : undefined} nombre={p.nombre} activo={p.id === medio}
+                  sub={p.id === sugerida ? "Con esta pagó" : undefined}
+                  onClick={() => { setMedio(p.id); setPesosTxt(null); }}
+                />
+              ))}
+            </div>
+            {enPesos && (
+              <Field label="Pesos que salieron de la cuenta" ayuda={ayudaPesos}>
+                <InputMonto
+                  value={pesosTxt ?? (pesos.montoArs ?? "")} onChange={(ev) => setPesosTxt(ev.target.value)} placeholder="0"
+                  aria-label="Pesos que salieron" icono={<span className="t-subtle">$</span>}
+                />
+              </Field>
+            )}
+          </div>
+          {volverARevisar}
+        </>
+      )}
+
+      {pasoId === "comprobante" && (
+        <>
+          <Pregunta
+            texto="Subí el comprobante"
+            sub={base?.referencia ? "Es opcional: la pasarela ya informó esta devolución." : "Es obligatorio: la captura o el PDF de la devolución. Elegilo, arrastralo o pegalo."}
+          />
+          <CampoComprobante valor={comprobante} onCambio={setComprobante} obligatorio={!base?.referencia} onSubiendo={setSubiendo} />
+          {volverARevisar}
+        </>
+      )}
+
+      {pasoId === "closer" && (
+        <>
+          <Pregunta texto="¿Le descontamos la comisión al closer?" sub="Por defecto se le descuenta lo que cobró por esta venta." />
+          <div className="stack-3">
+            <div className="opciones opciones--lista">
+              <Opcion tecla="1" nombre="Sí, se le descuenta" sub="Se le revierte exactamente lo que se le comisionó por lo cobrado de esta venta (y al director comercial)." activo={!noDescontar} onClick={() => setNoDescontar(false)} />
+              <Opcion tecla="2" nombre="No, el closer cobra igual" sub="Se devuelve por decisión de la empresa (el perfil no encajaba): el closer cobra igual." activo={noDescontar} onClick={() => setNoDescontar(true)} />
+            </div>
+            {notaDeComision && <ul className="devol-efecto__lista t-sm">{notaDeComision}</ul>}
+          </div>
+          {volverARevisar}
+        </>
+      )}
+
+      {pasoId === "despues" && (
+        <>
+          <Pregunta texto="¿Qué más hacemos con esta persona?" sub="Es opcional: se hace al cargar la devolución." />
+          <div className="devol-opciones">
             <div className="devol-opcion">
               <div>
                 <div className="t-strong">Dejar la llamada en «Devolución» en el CRM</div>
@@ -290,89 +487,67 @@ function Formulario({ pedido }: { pedido: PedidoDevolucion }) {
               </div>
               <Switch checked={marcarLlamada} onChange={setMarcarLlamada} etiqueta="Dejar la llamada en Devolución" />
             </div>
-          )}
-          {!previa && alumno && accesosPrendidos && conAccesos && (
-            <div className="devol-opcion">
-              <div>
-                <div className="t-strong">¿Le quitamos los accesos?</div>
-                <div className="t-sm t-subtle">
-                  Hoy tiene {resumenDeAccesos(accesos ?? [])}. Se le saca todo: los cursos de Wisboo, los grupos de Telegram y las reuniones de Zoom.
-                  No va solo: a veces se reembolsa sólo para cambiar el medio de pago y el alumno sigue. Coordinalo con Customer Success.
+            {alumno && accesosPrendidos && conAccesos && (
+              <div className="devol-opcion">
+                <div>
+                  <div className="t-strong">¿Le quitamos los accesos?</div>
+                  <div className="t-sm t-subtle">
+                    Hoy tiene {resumenDeAccesos(accesos ?? [])}. Se le saca todo: los cursos de Wisboo, los grupos de Telegram y las reuniones de Zoom.
+                    No va solo: a veces se reembolsa sólo para cambiar el medio de pago y el alumno sigue. Coordinalo con Customer Success.
+                  </div>
                 </div>
+                <Switch checked={quitarAccesos} onChange={setQuitarAccesos} etiqueta="Quitarle los accesos" />
               </div>
-              <Switch checked={quitarAccesos} onChange={setQuitarAccesos} etiqueta="Quitarle los accesos" />
-            </div>
-          )}
-          {!previa && puedeBaja && venta?.estado === "activa" && (
-            <div className="devol-opcion">
-              <div>
-                <div className="t-strong">Dar de baja la venta {esTotal ? "" : "(es una devolución parcial)"}</div>
-                <div className="t-sm t-subtle">Queda como reembolsada: sus cuotas sin pagos se cancelan y el servicio del alumno pasa a baja.</div>
+            )}
+            {puedeBaja && venta?.estado === "activa" && (
+              <div className="devol-opcion">
+                <div>
+                  <div className="t-strong">Dar de baja la venta {esTotal ? "" : "(es una devolución parcial)"}</div>
+                  <div className="t-sm t-subtle">Queda como reembolsada: sus cuotas sin pagos se cancelan y el servicio del alumno pasa a baja.</div>
+                </div>
+                <Switch checked={darDeBaja} onChange={setDarDeBaja} etiqueta="Dar de baja la venta" />
               </div>
-              <Switch checked={darDeBaja} onChange={setDarDeBaja} etiqueta="Dar de baja la venta" />
-            </div>
-          )}
-        </div>
-
-        <Field label="Motivo" span2>
-          <Input value={motivo} onChange={(ev) => setMotivo(ev.target.value)} placeholder="Por qué pidió la plata de vuelta" />
-        </Field>
-        <Field label="Notas" span2>
-          <Textarea rows={2} value={notas} onChange={(ev) => setNotas(ev.target.value)} placeholder="Lo que haya que recordar" />
-        </Field>
-
-        {efecto && (
-          <div className="span-2 devol-efecto" role="note">
-            <Info size={16} aria-hidden />
-            <div className="stack-2" style={{ minWidth: 0 }}>
-              <div className="t-strong">Qué pasa al cargarla</div>
-              <ul className="devol-efecto__lista">
-                <li>
-                  Resta <b className="t-num">{M(montoNum)}</b> en Finanzas de <b>{mes}</b>: Cash Collected y estado de resultados.
-                  La venta sigue contando en {mesVenta}. La comisión de la pasarela no vuelve.
-                </li>
-                <li>
-                  {enCaja.cuenta
-                    ? <>
-                      <b>Baja la caja de hoy</b>: sale de {cuenta ? `la caja de ${cuenta}` : "la caja"}{pesos.montoArs ? ` (salen ${money(pesos.montoArs, "ARS", 0)} de esa cuenta)` : ""}.
-                      {enCaja.arqueo
-                        ? ` Cuenta porque ese día es posterior al último arqueo (${fechaLarga(enCaja.arqueo.fecha)}). Si la plata ya había salido antes de ese conteo, poné el día en que salió de verdad.`
-                        : " Todavía no hay ningún arqueo: cuenta desde el principio."}
-                    </>
-                    : <>
-                      <b>No cambia la caja de hoy</b>: ese día es anterior al último arqueo ({enCaja.arqueo ? fechaLarga(enCaja.arqueo.fecha) : ""}) y el saldo que se contó ahí
-                      ya venía sin esa plata. Sólo se mueve {mes}.
-                    </>}
-                </li>
-                <li>
-                  {efecto.sinDescuento
-                    ? "No se le descuenta nada al closer ni al director: cobran igual."
-                    : revierte.length === 0
-                      ? "No hay comisión que revertir en esta venta."
-                      : <>Se les revierte la comisión: {revierte.map((p, i) => <span key={`${p.rol}-${p.miembroId ?? i}`}>{i ? " · " : ""}{p.nombre} ({p.rol === "closer" ? "closer" : "director"}) <b className="t-num">−{M(p.reversa)}</b></span>)}.
-                        {" "}<InfoMetrica
-                          titulo="Lo que se revierte de la comisión"
-                          ayuda="A cada uno se le revierte exactamente lo que se le comisionó por lo cobrado de esta venta, en la parte que se devuelve. Aparece como una línea «Devolución de …» en la liquidación del mes de la devolución."
-                          formula="Comisionado por lo cobrado de la venta (cobrado − procesador, × su %) × lo devuelto ÷ lo cobrado que quedaba sin devolver"
-                          periodo={mes}
-                          componentes={() => [
-                            { concepto: "Cobrado de la venta hasta ese día", valor: M(efecto.cobradoVenta) },
-                            { concepto: "Ya devuelto antes", valor: M(efecto.yaDevuelto), signo: "−" },
-                            { concepto: "Lo que se devuelve ahora", valor: M(efecto.devuelto), nota: `${(efecto.parte * 100).toLocaleString("es-AR", { maximumFractionDigits: 1 })}% de lo que quedaba` },
-                            ...efecto.partes.filter((p) => p.reversa > 0).map((p) => ({
-                              concepto: `${p.nombre} · comisionó ${M(p.comision)} (${(p.tasa * 100).toLocaleString("es-AR", { maximumFractionDigits: 2 })}% de ${M(p.neto)})`,
-                              valor: M(p.reversa), signo: "−" as const,
-                            })),
-                            { concepto: "Total que se revierte", valor: M(totalRevierte), signo: "=" },
-                          ]}
-                        /></>}
-                </li>
-              </ul>
-            </div>
+            )}
           </div>
-        )}
-        {falta && <p className="hk-help hk-help--error span-2">{falta}</p>}
-      </div>
-    </ModalForm>
+          {volverARevisar}
+        </>
+      )}
+
+      {pasoId === "motivo" && (
+        <>
+          <Pregunta texto="¿Por qué pidió la plata de vuelta?" sub="Es opcional, pero ayuda a entender qué pasó." />
+          <div className="stack-3">
+            <Input value={motivo} onChange={(ev) => setMotivo(ev.target.value)} placeholder="Por qué pidió la plata de vuelta" aria-label="Motivo" autoFocus />
+            <Field label="Notas">
+              <Textarea rows={3} value={notas} onChange={(ev) => setNotas(ev.target.value)} placeholder="Lo que haya que recordar" />
+            </Field>
+          </div>
+          {volverARevisar}
+        </>
+      )}
+
+      {pasoId === "revisar" && (
+        <>
+          <Pregunta
+            texto={previa ? "Así está la devolución" : "Así queda la devolución"}
+            sub={propuesta
+              ? `La informó ${propuesta.proveedor ? propuesta.proveedor[0].toUpperCase() + propuesta.proveedor.slice(1) : "la pasarela"}: no resta de Finanzas hasta que la confirmes.`
+              : "Revisá y cargala. Con «Cambiar» volvés a cualquier dato."}
+          />
+          <div className="stack-3">
+            <div className="devol-resumen">
+              {filas.map((f) => (
+                <div className="devol-resumen__fila" key={f.etiqueta} data-falta={f.falta ? "true" : undefined}>
+                  <span className="devol-resumen__etiqueta">{f.etiqueta}</span>
+                  <span className="devol-resumen__valor t-strong" style={{ fontWeight: 500 }}>{f.valor}</span>
+                  {f.paso ? <button type="button" className="link t-sm" onClick={() => irAPaso(f.paso as PasoId)}>{f.falta ? "Completar" : "Cambiar"}</button> : <span />}
+                </div>
+              ))}
+            </div>
+            {efecto && cajaDeHoy}
+          </div>
+        </>
+      )}
+    </Asistente>
   );
 }
