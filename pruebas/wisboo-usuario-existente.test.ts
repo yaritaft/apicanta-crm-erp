@@ -56,61 +56,66 @@ async function conWisbooFalso<T>(responder: (url: URL, init?: RequestInit) => { 
 }
 
 const persona = { nombre: "Diana Beatriz Olivera", email: "fmdiania@hotmail.com", telefono: "" };
+const YA_EXISTE = { status: 422, json: { code: "INVALID_RESOURCE_VALUES", message: "El modelo \"User\" contiene errores", details: [{ field: "email", explanation: "Ya existe un usuario registrado con este email" }] } };
+const pagina = (n: number) => Array.from({ length: 100 }, (_x, i) => ({ id: `usr_${n}_${i}`, email: `otro${n}_${i}@x.com` }));
 
-test("Wisboo: la cuenta ya existe (422) y la búsqueda por mail no la trae → se la encuentra por nombre y se dan los cursos", async () => {
+test("Wisboo: alumno nuevo → se crea el usuario y se dan los cursos, sin recorrer nada", async () => {
   const { db, filas } = baseMinima();
   const { resultado, pedidos } = await conWisbooFalso((url, init) => {
-    if (url.pathname.endsWith("/users") && init?.method === "POST") return { status: 422, json: { code: "DUPLICATE_ERROR", message: "Email already exists" } };
-    if (url.pathname.endsWith("/users") && url.searchParams.has("email")) return { status: 200, json: { data: [] } };
-    if (url.pathname.endsWith("/users") && url.searchParams.get("name") === "Diana Olivera") {
-      return { status: 200, json: { data: [{ id: "usr_diana", email: "FMDiania@Hotmail.com" }] } };
-    }
-    if (url.pathname.endsWith("/users")) return { status: 200, json: { data: [] } };
+    if (url.pathname.endsWith("/users") && init?.method === "POST") return { status: 201, json: { id: "usr_nuevo" } };
     if (url.pathname.endsWith("/product_accesses")) return { status: 200, json: { id: "pa_1" } };
-    if (url.pathname.endsWith("/magic_links")) return { status: 200, json: { link: "https://wisboo/entrar" } };
-    return { status: 404, json: {} };
+    return { status: 200, json: {} };
+  }, () => darAccesos(db, { alumnoId: "alu_1", persona, programa: PROGRAMA, origen: "manual", quien: "x" }));
+  assert.equal(resultado.dados, 1);
+  assert.equal((filas[0].externo as Fila).usuarioId, "usr_nuevo");
+  assert.equal(pedidos.filter((p) => p.startsWith("GET") && p.includes("/users")).length, 0);
+});
+
+test("Wisboo: ya tiene cuenta (422) y el filtro por mail no sirve → se recorre la lista desde el final y se dan los cursos", async () => {
+  const { db, filas } = baseMinima();
+  const { resultado, pedidos } = await conWisbooFalso((url, init) => {
+    if (url.pathname.endsWith("/users") && init?.method === "POST") return YA_EXISTE;
+    if (url.pathname.endsWith("/users")) {
+      const n = Number(url.searchParams.get("page") ?? 1);
+      /* 972 cuentas: las más nuevas al final (Brian estaba en la última página). */
+      const data = n === 10 ? [...pagina(10).slice(0, 71), { id: "usr_diana", email: "FMDiania@Hotmail.com " }] : n < 10 ? pagina(n) : [];
+      return { status: 200, json: { data, metadata: { total_record_count: 972, page_size: 100, page_number: n } } };
+    }
+    if (url.pathname.endsWith("/product_accesses")) return { status: 200, json: { id: "pa_1" } };
+    return { status: 200, json: {} };
   }, () => darAccesos(db, { alumnoId: "alu_1", persona, programa: PROGRAMA, origen: "manual", quien: "x" }));
   assert.equal(resultado.fallaron, 0);
   assert.equal(resultado.dados, 1);
   assert.equal((filas[0].externo as Fila).usuarioId, "usr_diana");
-  /* Primero por mail, después por nombre completo y por nombre corto. */
-  assert.ok(pedidos.some((p) => p.includes("name=Diana+Beatriz+Olivera") || p.includes("name=Diana%20Beatriz%20Olivera")));
+  /* La primera para saber cuántas hay y después la última: dos pedidos, no diez. */
+  assert.deepEqual(pedidos.filter((p) => p.includes("page=")).map((p) => new URL(`http://x${p.split(" ")[1]}`).searchParams.get("page")), ["1", "10"]);
 });
 
-test("Wisboo: 422 y no aparece por ningún lado → el error dice qué contestó Wisboo y qué hacer", async () => {
+test("Wisboo: 422 y no está en la lista → el error dice qué contestó Wisboo y qué hacer", async () => {
   const { db, filas } = baseMinima();
   const { resultado } = await conWisbooFalso((url, init) => {
-    if (url.pathname.endsWith("/users") && init?.method === "POST") return { status: 422, json: { code: "INVALID_EMAIL", message: "Invalid email" } };
-    return { status: 200, json: { data: [] } };
+    if (url.pathname.endsWith("/users") && init?.method === "POST") return YA_EXISTE;
+    if (url.pathname.endsWith("/users")) return { status: 200, json: { data: url.searchParams.get("page") === "1" ? pagina(1) : [], metadata: { total_record_count: 100 } } };
+    return { status: 200, json: {} };
   }, () => darAccesos(db, { alumnoId: "alu_1", persona, programa: PROGRAMA, origen: "manual", quien: "x" }));
   assert.equal(resultado.fallaron, 1);
-  assert.match(String(filas[0].error), /INVALID_EMAIL · Invalid email/);
+  assert.match(String(filas[0].error), /INVALID_RESOURCE_VALUES/);
   assert.match(String(filas[0].error), /a mano desde Wisboo/);
+});
+
+test("Wisboo: si no da el curso, el error lleva lo que contestó", async () => {
+  const { db, filas } = baseMinima();
+  const { resultado } = await conWisbooFalso((url, init) => {
+    if (url.pathname.endsWith("/users") && init?.method === "POST") return { status: 201, json: { id: "usr_1" } };
+    if (url.pathname.endsWith("/product_accesses")) return { status: 400, json: { code: "BAD_REQUEST", message: "user_id inválido" } };
+    return { status: 200, json: {} };
+  }, () => darAccesos(db, { alumnoId: "alu_1", persona, programa: PROGRAMA, origen: "manual", quien: "x" }));
+  assert.equal(resultado.fallaron, 1);
+  assert.match(String(filas[0].error), /contestó 400: BAD_REQUEST · user_id inválido/);
 });
 
 test("el motivo de Wisboo: sólo code y message, cortos", () => {
   assert.equal(motivoWisboo(null), "");
   assert.equal(motivoWisboo({ code: "X", message: "  algo  " }), ": X · algo");
   assert.equal(motivoWisboo({ details: [{ field: "email" }] }), "");
-});
-
-test("Wisboo: ni el filtro por mail ni por nombre la traen → se recorre la lista de la tienda hasta dar con el mail", async () => {
-  const { db, filas } = baseMinima();
-  const pagina = (n: number) => Array.from({ length: 100 }, (_x, i) => ({ id: `usr_${n}_${i}`, email: `otro${n}_${i}@x.com` }));
-  const { resultado, pedidos } = await conWisbooFalso((url, init) => {
-    if (url.pathname.endsWith("/users") && init?.method === "POST") {
-      return { status: 422, json: { code: "INVALID_RESOURCE_VALUES", details: [{ field: "email", explanation: "Ya existe un usuario registrado con este email" }] } };
-    }
-    if (url.pathname.endsWith("/users") && url.searchParams.has("page")) {
-      const n = Number(url.searchParams.get("page"));
-      const data = n === 3 ? [...pagina(3).slice(0, 40), { id: "usr_arnold", email: "Arnold.Salazar@Gmail.com " }] : n < 3 ? pagina(n) : [];
-      return { status: 200, json: { data, metadata: { total_record_count: 241, page_size: 100, page_number: n } } };
-    }
-    if (url.pathname.endsWith("/users")) return { status: 200, json: { data: [], metadata: { total_record_count: 0 } } };
-    if (url.pathname.endsWith("/product_accesses")) return { status: 200, json: { id: "pa_1" } };
-    return { status: 200, json: {} };
-  }, () => darAccesos(db, { alumnoId: "alu_1", persona: { nombre: "Arnold Salazar Salazar", email: "arnold.salazar@gmail.com", telefono: "" }, programa: PROGRAMA, origen: "manual", quien: "x" }));
-  assert.equal(resultado.dados, 1);
-  assert.equal((filas[0].externo as Fila).usuarioId, "usr_arnold");
-  assert.equal(pedidos.filter((p) => p.includes("page=")).length, 3, "para en la página donde lo encuentra");
 });

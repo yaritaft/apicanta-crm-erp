@@ -69,30 +69,27 @@ const totalDe = (json: Record<string, unknown> | null) => {
   const n = (json?.metadata as { total_record_count?: unknown } | undefined)?.total_record_count;
   return typeof n === "number" ? n : null;
 };
+const POR_PAGINA = 100;
 
-/** La cuenta de Wisboo con ese mail (sin importar mayúsculas), buscando por mail o por nombre completo. */
-async function buscarUsuarioWisboo(email: string, filtro: "email" | "name", valor: string): Promise<string | null> {
-  if (!valor.trim()) return null;
-  const busca = await pedir(`${wisbooBase()}/users?${filtro}=${encodeURIComponent(valor.trim())}&size=20`, { headers: wisbooCabeza() });
-  if (busca.status === 401) throw new ErrorAcceso("Wisboo no acepta la clave.");
-  return conMail(filasDe(busca.json), email);
-}
-
-/** La lista entera de usuarios de la tienda, de a páginas, hasta dar con el mail. Es el último recurso: el 23/10 Wisboo
-    decía «Ya existe un usuario registrado con este email» y ni el filtro por mail ni el de nombre lo traían. */
-async function recorrerUsuariosWisboo(email: string): Promise<{ id: string | null; vistos: number; total: number | null }> {
-  let vistos = 0;
-  let total: number | null = null;
-  for (let pagina = 1; pagina <= 80; pagina++) {
-    const r = await pedir(`${wisbooBase()}/users?page=${pagina}&size=100`, { headers: wisbooCabeza() });
-    const filas = filasDe(r.json);
-    total = totalDe(r.json) ?? total;
-    vistos += filas.length;
-    const id = conMail(filas, email);
-    if (id) return { id, vistos, total };
-    if (filas.length === 0 || (total !== null && vistos >= total)) break;
+/** La cuenta de la tienda con ese mail, recorriendo la lista. Wisboo IGNORA el filtro por mail (23/10: con ?email= devolvía
+    las mismas 20 de las 972 cuentas), así que se recorre de a 100, desde el final (las más nuevas están al final). */
+async function recorrerUsuariosWisboo(email: string): Promise<string | null> {
+  const pagina = async (n: number) => {
+    const r = await pedir(`${wisbooBase()}/users?page=${n}&size=${POR_PAGINA}`, { headers: wisbooCabeza() });
+    if (r.status === 401) throw new ErrorAcceso("Wisboo no acepta la clave.");
+    return r.json;
+  };
+  const primera = await pagina(1);
+  const ya = conMail(filasDe(primera), email);
+  if (ya) return ya;
+  const total = totalDe(primera);
+  const ultima = total !== null ? Math.ceil(total / POR_PAGINA) : 50;
+  for (let n = Math.min(ultima, 100); n >= 2; n--) {
+    const json = await pagina(n);
+    const id = conMail(filasDe(json), email);
+    if (id) return id;
   }
-  return { id: null, vistos, total };
+  return null;
 }
 
 /** Lo que Wisboo dijo al negar algo (code y message, sin datos de la cuenta), para el error que ve el equipo. */
@@ -101,34 +98,24 @@ export function motivoWisboo(json: Record<string, unknown> | null): string {
   return partes.length ? `: ${partes.join(" · ").slice(0, 160)}` : "";
 }
 
+/** El usuario de Wisboo del alumno: se lo crea y, si ya tiene cuenta (422: «Ya existe un usuario registrado con este
+    email»), se la busca en la lista de la tienda. La clave de idempotencia por mail hace que volver a crear uno que
+    creó la app devuelva el mismo usuario. */
 async function usuarioWisboo(p: Persona): Promise<string> {
   const email = p.email.trim().toLowerCase();
-  const encontrado = await buscarUsuarioWisboo(email, "email", email);
-  if (encontrado) return encontrado;
   const { first_name, last_name } = partirNombre(p.nombre);
   const crea = await pedir(`${wisbooBase()}/users`, {
     method: "POST", headers: wisbooCabeza({ "X-Idempotency-Key": `apicanta-usuario-${email}` }),
     body: JSON.stringify({ email, name: first_name || p.nombre, last_name: last_name || "-", ...(p.telefono ? { phone: p.telefono } : {}) }),
   });
+  if (crea.status === 401) throw new ErrorAcceso("Wisboo no acepta la clave.");
   const id = typeof crea.json?.id === "string" ? crea.json.id : null;
   if (id) return id;
-  /* 422: ya hay una cuenta con ese mail en la tienda (Wisboo, «Create user»), aunque la búsqueda por mail no la trajo
-     (23/10: Diana y Sergio, a los que el equipo había dado de alta a mano). Se la busca por su nombre. */
   if (crea.status === 422) {
-    const palabras = p.nombre.trim().split(/\s+/);
-    const corto = palabras.length > 2 ? `${palabras[0]} ${palabras[palabras.length - 1]}` : "";
-    const porNombre = await buscarUsuarioWisboo(email, "name", p.nombre) ?? await buscarUsuarioWisboo(email, "name", corto);
-    if (porNombre) return porNombre;
-    const recorrida = await recorrerUsuariosWisboo(email);
-    /* Para entender por qué el filtro no lo trae (sin datos de la persona): cuántas filas devolvió y de cuántas. */
-    const filtro = await pedir(`${wisbooBase()}/users?email=${encodeURIComponent(email)}&size=20`, { headers: wisbooCabeza() });
-    console.info("[wisboo] cuenta existente", JSON.stringify({
-      encontrada: Boolean(recorrida.id), recorridos: recorrida.vistos, totalTienda: recorrida.total,
-      filtroMail: { filas: filasDe(filtro.json).length, total: totalDe(filtro.json), conMail: filasDe(filtro.json).filter((u) => typeof u.email === "string").length },
-    }));
-    if (recorrida.id) return recorrida.id;
-    console.error("[wisboo] 422 al crear el usuario y no aparece buscándolo", JSON.stringify({ code: crea.json?.code, message: crea.json?.message, details: crea.json?.details }));
-    throw new ErrorAcceso(`Wisboo dice que ya hay una cuenta con ese mail (o que el mail no vale) y no la encuentro${motivoWisboo(crea.json)}. Dale los cursos a mano desde Wisboo.`);
+    const existente = await recorrerUsuariosWisboo(email);
+    if (existente) return existente;
+    console.error("[wisboo] 422 al crear el usuario y no está en la lista", JSON.stringify({ code: crea.json?.code, message: crea.json?.message, details: crea.json?.details }));
+    throw new ErrorAcceso(`Wisboo no creó el usuario ni lo encuentro en la tienda${motivoWisboo(crea.json)}. Dale los cursos a mano desde Wisboo.`);
   }
   throw new ErrorAcceso(`Wisboo no creó el usuario (contestó ${crea.status}${motivoWisboo(crea.json)}).`);
 }
@@ -156,7 +143,8 @@ async function darCursoWisboo(usuarioId: string, productoId: string): Promise<{ 
   /* 422 DUPLICATE_ERROR: ya lo tenía. Se busca su acceso para poder sacarlo después. */
   if (r.status === 422) return { accesoId: await accesoWisbooExistente(usuarioId, productoId), yaLoTenia: true };
   if (r.status === 404) throw new ErrorAcceso("Wisboo no encuentra ese curso.");
-  throw new ErrorAcceso(`Wisboo no dio el acceso (contestó ${r.status}).`);
+  console.error("[wisboo] no dio el acceso", r.status, JSON.stringify({ code: r.json?.code, message: r.json?.message, details: r.json?.details }));
+  throw new ErrorAcceso(`Wisboo no dio el acceso (contestó ${r.status}${motivoWisboo(r.json)}).`);
 }
 
 export async function linkMagicoWisboo(usuarioId: string): Promise<{ link: string; vence: string | null } | null> {
