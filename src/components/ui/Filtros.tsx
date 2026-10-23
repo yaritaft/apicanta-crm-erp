@@ -1,8 +1,10 @@
 "use client";
 
-import React from "react";
-import { Link2 } from "lucide-react";
+import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
+import { Check, Link2, Search } from "lucide-react";
 import { Button, Select } from "./ui";
+import { Panel, useClicAfuera, usePosicion } from "./Campos";
+import { textoDelFiltro } from "@/lib/filtro-multiple";
 import { useToast } from "./Toast";
 import { num } from "@/lib/format";
 import { aportesAlLink } from "@/lib/compartirLink";
@@ -49,6 +51,99 @@ export function Filtro({ etiqueta, todos, valor, opciones, onCambiar }: {
           texto: o.cuenta === undefined ? o.texto : `${o.texto} (${num(o.cuenta)})`,
         }))}
       />
+    </div>
+  );
+}
+
+/* El mismo filtro, con varias opciones a la vez: el panel queda abierto para tildar
+   las que se quieran (Inasistió y Reagendó) y se cierra al tocar afuera o con Esc.
+   Sin nada tildado es "todos". `cuenta` va entre paréntesis, como en `Filtro`. */
+export function FiltroMulti({ etiqueta, todos, valores, opciones, onCambiar }: {
+  etiqueta: string;
+  todos: string;
+  valores: string[];
+  opciones: OpcionFiltro[];
+  onCambiar: (valores: string[]) => void;
+}) {
+  const [abierto, setAbierto] = useState(false);
+  const [activa, setActiva] = useState(0);
+  const [q, setQ] = useState("");
+  const boton = useRef<HTMLButtonElement>(null);
+  const panel = useRef<HTMLDivElement>(null);
+  const lista = useRef<HTMLDivElement>(null);
+  const idLista = useId();
+  const conBuscador = opciones.length > 8;
+  const visibles = useMemo(() => {
+    const t = q.trim().toLowerCase();
+    return t ? opciones.filter((o) => o.texto.toLowerCase().includes(t)) : opciones;
+  }, [opciones, q]);
+  const textoDe = (v: string) => opciones.find((o) => o.valor === v)?.texto ?? v;
+  const pos = usePosicion(boton, abierto, Math.min(visibles.length * 38 + (conBuscador ? 96 : 56), 380), 220);
+  const cerrar = useCallback(() => { setAbierto(false); setQ(""); }, []);
+  const refs = useMemo(() => [boton, panel], []);
+  useClicAfuera(abierto, refs, cerrar);
+
+  /* Con el panel abierto el foco va al buscador (o a la lista), para manejarlo con el teclado. */
+  useEffect(() => {
+    if (!abierto) return;
+    const h = window.setTimeout(() => (panel.current?.querySelector<HTMLElement>(".sel__buscar input") ?? lista.current)?.focus(), 0);
+    return () => window.clearTimeout(h);
+  }, [abierto]);
+
+  const alternar = (valor: string) => onCambiar(valores.includes(valor) ? valores.filter((v) => v !== valor) : [...valores, valor]);
+  function tecla(ev: React.KeyboardEvent) {
+    if (ev.key === "ArrowDown") { ev.preventDefault(); setActiva((i) => Math.min(i + 1, visibles.length - 1)); }
+    else if (ev.key === "ArrowUp") { ev.preventDefault(); setActiva((i) => Math.max(i - 1, 0)); }
+    else if (ev.key === "Enter" || ev.key === " ") {
+      if ((ev.target as HTMLElement).tagName === "INPUT" && ev.key === " ") return;
+      ev.preventDefault(); ev.stopPropagation(); const o = visibles[activa]; if (o) alternar(o.valor);
+    } else if (ev.key === "Escape") { ev.preventDefault(); ev.stopPropagation(); cerrar(); boton.current?.focus(); }
+    else if (ev.key === "Tab") cerrar();
+  }
+
+  return (
+    <div className={`filtro${valores.length ? " filtro--on" : ""}`}>
+      <div className="sel-caja">
+        <button
+          ref={boton} type="button" className="hk-input hk-input--select sel" aria-label={etiqueta}
+          aria-haspopup="listbox" aria-expanded={abierto} aria-controls={abierto ? idLista : undefined}
+          title={valores.length > 1 ? valores.map(textoDe).join(", ") : undefined}
+          onClick={() => { if (abierto) cerrar(); else { setActiva(0); setAbierto(true); } }}
+          onKeyDown={(ev) => { if (ev.key === "ArrowDown" || ev.key === "ArrowUp") { ev.preventDefault(); ev.stopPropagation(); setActiva(0); setAbierto(true); } }}
+        >
+          <span className={`sel__valor${valores.length === 0 ? " sel__valor--vacio" : ""}`}>{textoDelFiltro(valores, textoDe, todos)}</span>
+        </button>
+        {abierto && pos && (
+          <Panel pos={pos} panelRef={panel} className="sel__panel">
+            <div onKeyDown={tecla} style={{ display: "flex", flexDirection: "column", minHeight: 0, maxHeight: "inherit" }}>
+              {conBuscador && (
+                <div className="sel__buscar">
+                  <Search size={15} />
+                  <input value={q} placeholder="Buscar…" aria-label="Buscar opción" onChange={(ev) => { setQ(ev.target.value); setActiva(0); }} />
+                </div>
+              )}
+              <div id={idLista} role="listbox" aria-multiselectable="true" aria-label={etiqueta} tabIndex={-1} className="sel__lista" ref={lista}>
+                {visibles.length === 0 && <div className="sel__vacio">Nada coincide</div>}
+                {visibles.map((o, i) => {
+                  const on = valores.includes(o.valor);
+                  return (
+                    <div key={o.valor} role="option" aria-selected={on}
+                      className={`sel__opcion${i === activa ? " sel__opcion--activa" : ""}`}
+                      onMouseEnter={() => setActiva(i)} onClick={() => alternar(o.valor)}>
+                      <span className={`sel__marca${on ? " sel__marca--on" : ""}`} aria-hidden>{on && <Check size={12} strokeWidth={3} />}</span>
+                      <span className="truncate">{o.texto}</span>
+                      {o.cuenta !== undefined && <span className="sel__cuenta t-num">{num(o.cuenta)}</span>}
+                    </div>
+                  );
+                })}
+              </div>
+              {valores.length > 0 && (
+                <button type="button" className="sel__limpiar" onClick={() => { onCambiar([]); }}>Quitar {valores.length === 1 ? "el filtro" : `los ${valores.length} filtros`}</button>
+              )}
+            </div>
+          </Panel>
+        )}
+      </div>
     </div>
   );
 }

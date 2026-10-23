@@ -7,7 +7,7 @@ import { Ayuda, Badge, Button, Card, Empty, Field, IconButton, Input, Select, Te
 import { ModalForm, Confirmar } from "@/components/ui/Modal";
 import { Drawer, Dato } from "@/components/ui/Drawer";
 import { DateRangePicker, diaDeNegocio } from "@/components/ui/DateRangePicker";
-import { CopiarLink, Filtro, opcionesDe, SIN, type OpcionFiltro } from "@/components/ui/Filtros";
+import { CopiarLink, Filtro, FiltroMulti, opcionesDe, SIN, type OpcionFiltro } from "@/components/ui/Filtros";
 import { Origen } from "@/components/leads/Origen";
 import { EstadoDeLlamada, EstadoEditable } from "@/components/estados/EstadoLlamada";
 import { PasarLlamadas } from "@/components/closers/PasarLlamadas";
@@ -16,6 +16,7 @@ import { ETIQUETA_CANAL } from "@/lib/calendly";
 import { atribucionDe, claveDeFecha, embudoDe, viaDe } from "@/lib/agendas-webinar";
 import { bajarCSV, clasesDe, tablaDeDescarga, type FilaDescarga } from "@/lib/agendas-descarga";
 import { diaUtm } from "@/lib/utm-estandar";
+import { aURL, elegidosValidos, pasaFiltro } from "@/lib/filtro-multiple";
 import { estadoAutomatico, opcionesDe as opcionesDelCrm } from "@/lib/crm";
 import { esDeVenta, estadoVisible, HECHA, POR_VENIR, SIN_CARGAR } from "@/lib/estados";
 import { evaluarAgenda, textoEvaluacion } from "@/lib/calificacion";
@@ -42,7 +43,9 @@ const DOW = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"];
    Ventas: el período va en ?periodo — arranca en "Todo lo próximo", que es
    lo que antes era la pestaña Próximas — y el resto acá. Vacío es "todos".
    - estado: el Estado de Llamada tal cual se ve (Compra Full, Inasistió…,
-     o Sin cargar / Por venir si todavía no tiene)
+     o Sin cargar / Por venir si todavía no tiene). Estado, webinar, tipo,
+     anfitrión y canal admiten VARIOS a la vez, separados por «|»
+     (?estado=Inasistió|Reagendó: lib/filtro-multiple.ts)
    - tipo: el tipo de sesión tal cual, o "sin"
    - anfitrion: quien la atiende (el closer en Calendly), o "sin"
    - webinar: el webinar al que pertenece la agenda (su link, su clase cero o su
@@ -222,8 +225,8 @@ export default function Agenda() {
   /* Un filtro de la URL que ya no existe (un anfitrión que se fue, un link
      viejo) se ignora en vez de dejar la agenda vacía sin explicación. */
   const f = useMemo(() => Object.fromEntries(FACETAS.map((k) => [
-    k, opciones[k].some((o) => o.valor === vista[k]) ? vista[k] : "",
-  ])) as Record<Faceta, string>, [vista, opciones]);
+    k, elegidosValidos(vista[k], opciones[k]),
+  ])) as Record<Faceta, string[]>, [vista, opciones]);
 
   /* Las llamadas que quedan, y cuántas hay de cada opción. Cada desplegable
      cuenta sobre lo que dejan pasar los DEMÁS filtros, el período y la
@@ -231,7 +234,7 @@ export default function Agenda() {
   const { visibles, cuentas } = useMemo(() => {
     const t = normal(busca.trim());
     const base = t ? enPeriodo.filter((s) => normal(`${s.invitado} ${s.email ?? ""}`).includes(t)) : enPeriodo;
-    const pasa = (s: Sesion, salvo?: Faceta) => FACETAS.every((k) => k === salvo || !f[k] || valor(k, s) === f[k]);
+    const pasa = (s: Sesion, salvo?: Faceta) => FACETAS.every((k) => k === salvo || pasaFiltro(f[k], valor(k, s)));
     const cuentas = Object.fromEntries(FACETAS.map((k) => {
       const m = new Map<string, number>();
       for (const s of base) if (pasa(s, k)) { const v = valor(k, s); m.set(v, (m.get(v) ?? 0) + 1); }
@@ -280,11 +283,11 @@ export default function Agenda() {
   }
 
   /* Cambiar un filtro vuelve a la primera página. */
-  const filtrar = (faceta: Faceta, valor: string) => setVista({ [faceta]: valor || null, pag: null });
+  const filtrar = (faceta: Faceta, valores: string[]) => setVista({ [faceta]: aURL(valores), pag: null });
   const conCuenta = (xs: OpcionFiltro[], m: Map<string, number>) => xs.map((o) => ({ ...o, cuenta: m.get(o.valor) ?? 0 }));
 
   /* Limpia lo que recorta la lista; el período queda, que se elige arriba. */
-  const hayFiltros = FACETAS.some((k) => f[k]) || busca.trim() !== "";
+  const hayFiltros = FACETAS.some((k) => f[k].length > 0) || busca.trim() !== "";
   function limpiarFiltros() {
     setBusca("");
     setVista({ estado: null, webinar: null, tipo: null, anfitrion: null, canal: null, calificada: null, pag: null }, { q: null });
@@ -304,7 +307,7 @@ export default function Agenda() {
       };
     });
     const { tabla, personas: n } = tablaDeDescarga(filas, ["Webinar"]);
-    const w = e.webinars.find((x) => x.id === f.webinar);
+    const w = f.webinar.length === 1 ? e.webinars.find((x) => x.id === f.webinar[0]) : undefined;
     bajarCSV(`agenda-${w ? `webinar-${diaUtm(w.fecha)}` : `${rango.desde}-a-${rango.hasta}`}.csv`, tabla);
     toast(`Se bajó la lista: ${num(n)} ${n === 1 ? "persona" : "personas"}, con teléfono y mail.`);
   }
@@ -364,24 +367,24 @@ export default function Agenda() {
             onApply={(r) => setRango(r, { pag: null })}
             footerNota="Por el día de la llamada · hora de Argentina"
           />
-          <Filtro etiqueta="Filtrar por estado de llamada" todos="Estado" valor={f.estado}
+          <FiltroMulti etiqueta="Filtrar por estado de llamada" todos="Estado" valores={f.estado}
             opciones={conCuenta(opciones.estado, cuentas.estado)} onCambiar={(v) => filtrar("estado", v)} />
           {opciones.webinar.length > 0 && (
-            <Filtro etiqueta="Filtrar por webinar" todos="Webinar" valor={f.webinar}
+            <FiltroMulti etiqueta="Filtrar por webinar" todos="Webinar" valores={f.webinar}
               opciones={conCuenta(opciones.webinar, cuentas.webinar)} onCambiar={(v) => filtrar("webinar", v)} />
           )}
-          <Filtro etiqueta="Filtrar por calificación" todos="Califica" valor={f.calificada}
-            opciones={conCuenta(opciones.calificada, cuentas.calificada)} onCambiar={(v) => filtrar("calificada", v)} />
+          <Filtro etiqueta="Filtrar por calificación" todos="Califica" valor={f.calificada[0] ?? ""}
+            opciones={conCuenta(opciones.calificada, cuentas.calificada)} onCambiar={(v) => filtrar("calificada", v ? [v] : [])} />
           {opciones.tipo.length > 1 && (
-            <Filtro etiqueta="Filtrar por tipo de sesión" todos="Tipo" valor={f.tipo}
+            <FiltroMulti etiqueta="Filtrar por tipo de sesión" todos="Tipo" valores={f.tipo}
               opciones={conCuenta(opciones.tipo, cuentas.tipo)} onCambiar={(v) => filtrar("tipo", v)} />
           )}
           {opciones.anfitrion.length > 1 && (
-            <Filtro etiqueta="Filtrar por anfitrión" todos="Anfitrión" valor={f.anfitrion}
+            <FiltroMulti etiqueta="Filtrar por anfitrión" todos="Anfitrión" valores={f.anfitrion}
               opciones={conCuenta(opciones.anfitrion, cuentas.anfitrion)} onCambiar={(v) => filtrar("anfitrion", v)} />
           )}
           {opciones.canal.length > 1 && (
-            <Filtro etiqueta="Filtrar por canal" todos="Canal" valor={f.canal}
+            <FiltroMulti etiqueta="Filtrar por canal" todos="Canal" valores={f.canal}
               opciones={conCuenta(opciones.canal, cuentas.canal)} onCambiar={(v) => filtrar("canal", v)} />
           )}
           <span className="t-sm t-subtle t-num agenda-barra__cuenta"
