@@ -32,7 +32,8 @@ export function AvisoVersion() {
     let vivo = true;
     const propia = process.env.VERSION_APP ?? "";
     const avisar = (tapar: boolean) => {
-      if (desdeRef.current === null) { desdeRef.current = Date.now(); setDesde(desdeRef.current); }
+      /* La hora de ahora también: si no, el primer cuadro cuenta desde que se abrió la pestaña («en 3:31»). */
+      if (desdeRef.current === null) { desdeRef.current = Date.now(); setAhora(desdeRef.current); setDesde(desdeRef.current); }
       if (tapar) setBloqueado(true);
     };
     async function mirar() {
@@ -99,7 +100,7 @@ export function AvisoVersion() {
       }}>
       <span className="t-body" style={{ flex: "1 1 260px" }}>
         <strong>Hay una versión nueva de la app.</strong>{" "}
-        <span className="t-muted">Guardá lo que estés haciendo: en {cuentaRegresiva(ESPERA_PARA_BLOQUEAR_MS - (ahora - desde))} se bloquea hasta que actualices.</span>
+        <span className="t-muted">Guardá lo que estés haciendo: en {cuentaRegresiva(Math.min(ESPERA_PARA_BLOQUEAR_MS, ESPERA_PARA_BLOQUEAR_MS - (ahora - desde)))} se bloquea hasta que actualices.</span>
       </span>
       <Button sm variante="primary" icono={<RefreshCw size={14} />} onClick={recargar}>Actualizar ahora</Button>
     </div>
