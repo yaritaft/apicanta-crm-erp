@@ -9,7 +9,7 @@ import {
   ErrorPandadoc, esperarBorrador, mandarDocumento, pdfDocumento, recordarDocumento,
 } from "./pandadoc-servidor";
 import { cambiarFicha, darAccesos, type ResultadoAccesos } from "./accesos-servidor";
-import { plantillaDelContrato, programaPorId, programasDe, type Programa } from "./programas";
+import { plantillaDelContrato, programaDePlantilla, programaPorId, programasDe, type Programa } from "./programas";
 import type { ConfigContratos } from "./types";
 import { guiaDeBienvenida, htmlDeBienvenida, textoDeBienvenida, type ConfigBienvenida } from "./bienvenida-alumno";
 import { codigoDeAlumno, configResend, enviarPorResend } from "./reporte-servidor";
@@ -509,10 +509,10 @@ export async function contratoDeAfuera(db: SupabaseClient, documentoId: string, 
   const plantilla = (det.template ?? {}) as { id?: string; name?: string };
   const { programas } = await programasGuardados(db);
   /* La plantilla sin sesiones 1 a 1 es del programa (no de la reserva): el documento no trae el punto, así que son 0. */
-  const sinSesiones = programas.find((p) => p.plantillaSinSesionesId && p.plantillaSinSesionesId === plantilla.id);
-  const programa = programas.find((p) => p.plantillaId && p.plantillaId === plantilla.id) ?? sinSesiones;
-  const deReserva = programa ? null : programas.find((p) => p.plantillaReservaId && p.plantillaReservaId === plantilla.id);
-  if (!programa && !deReserva) return null;
+  const reconocida = programaDePlantilla(programas, plantilla.id);
+  if (!reconocida) return null;
+  const programa = reconocida.tipo === "reserva" ? null : reconocida.programa;
+  const deReserva = reconocida.tipo === "reserva" ? reconocida.programa : null;
   const leido = datosDelDocumento(det);
   const id = nuevoId("ctr");
   const elegido = (programa ?? deReserva)!;
@@ -523,7 +523,7 @@ export async function contratoDeAfuera(db: SupabaseClient, documentoId: string, 
     id, programa: elegido.id, plantillaId: plantilla.id,
     plantillaNombre: plantilla.name ?? (programa ? elegido.plantillaNombre : elegido.plantillaReservaNombre ?? ""),
     documentoId, modo: modoReal, estado: estadoDePandadoc(typeof det.status === "string" ? det.status : "") ?? "enviado", origen: "pandadoc", creadoPor: "PandaDoc",
-    destinatario: leido.destinatario, datos: { ...leido.datos, ...(programa ? {} : { reserva: true }), ...(sinSesiones && programa === sinSesiones ? { sesiones: 0 } : {}) },
+    destinatario: leido.destinatario, datos: { ...leido.datos, ...(programa ? {} : { reserva: true }), ...(reconocida.tipo === "sinSesiones" ? { sesiones: 0 } : {}) },
     enviadoEn: typeof det.date_sent === "string" ? det.date_sent : ahora(), bienvenida: randomBytes(24).toString("base64url"),
   });
   if (ins.error) return contratoPorDocumento(db, documentoId);

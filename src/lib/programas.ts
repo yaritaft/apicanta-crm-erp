@@ -144,6 +144,23 @@ export function plantillaDelContrato(programa: Programa | null | undefined, rese
   return { id: programa.plantillaId, nombre: programa.plantillaNombre };
 }
 
+/** De qué programa es la plantilla de un documento mandado a mano desde PandaDoc, y cuál de sus plantillas es. */
+export function programaDePlantilla(programas: Programa[], plantillaId: string | null | undefined): { programa: Programa; tipo: "programa" | "sinSesiones" | "reserva" } | null {
+  if (!plantillaId) return null;
+  const de = (tipo: "programa" | "sinSesiones" | "reserva", campo: "plantillaId" | "plantillaSinSesionesId" | "plantillaReservaId") => {
+    const programa = programas.find((p) => p[campo] && p[campo] === plantillaId);
+    return programa ? { programa, tipo } : null;
+  };
+  return de("programa", "plantillaId") ?? de("sinSesiones", "plantillaSinSesionesId") ?? de("reserva", "plantillaReservaId");
+}
+
+/** Corregir un contrato no cambia su plantilla (el documento ya está armado): pasar de 0 sesiones a tener (o al revés)
+    en un programa con plantilla sin sesiones necesitaría otra, así que se pide anular y mandar uno nuevo. */
+export function cambiaLaPlantilla(programa: Programa | null | undefined, reserva: boolean | undefined, antes: number | null | undefined, despues: number | null | undefined): boolean {
+  if (!programa?.plantillaSinSesionesId || reserva) return false;
+  return (antes === 0) !== (despues === 0);
+}
+
 export function programaPorId(programas: Programa[], id: string | null | undefined): Programa | null {
   return id ? programas.find((p) => p.id === id) ?? null : null;
 }

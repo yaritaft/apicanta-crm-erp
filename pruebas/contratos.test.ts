@@ -292,6 +292,25 @@ test("sin sesiones 1 a 1, la plantilla sin el punto «Sesiones personalizadas» 
   assert.equal(textoSesiones(0), "No incluye sesiones 1 a 1 con el mentor");
 });
 
+test("sin sesiones: un documento mandado a mano se reconoce, y «Corregir» no cruza de 0 a tener sesiones (es otra plantilla)", async () => {
+  const { cambiaLaPlantilla, programaDePlantilla, programaNormal } = await import("@/lib/programas");
+  const ai = programaNormal({ id: "hackear-ai", nombre: "Hackear AI", plantillaId: "PROG", plantillaNombre: "Mentoría", plantillaReservaId: "RES", plantillaSinSesionesId: "SIN" })!;
+  const biz = programaNormal({ id: "biz", nombre: "Hackear Biz", plantillaId: "BIZ", plantillaNombre: "Biz" })!;
+  const programas = [ai, biz];
+  assert.deepEqual(programaDePlantilla(programas, "SIN"), { programa: ai, tipo: "sinSesiones" });
+  assert.deepEqual(programaDePlantilla(programas, "PROG"), { programa: ai, tipo: "programa" });
+  assert.deepEqual(programaDePlantilla(programas, "RES"), { programa: ai, tipo: "reserva" });
+  assert.equal(programaDePlantilla(programas, "OTRA"), null);
+  assert.equal(programaDePlantilla(programas, ""), null);
+  /* De 0 a 2 o de 2 a 0: otra plantilla, se frena. Entre cantidades o sin tocar las sesiones, se corrige. */
+  assert.equal(cambiaLaPlantilla(ai, false, 0, 2), true);
+  assert.equal(cambiaLaPlantilla(ai, false, 2, 0), true);
+  assert.equal(cambiaLaPlantilla(ai, false, 1, 3), false);
+  assert.equal(cambiaLaPlantilla(ai, false, 0, 0), false);
+  assert.equal(cambiaLaPlantilla(ai, true, 0, 2), false, "la reserva siempre sale con la suya");
+  assert.equal(cambiaLaPlantilla(biz, false, 0, 2), false, "un programa sin plantilla sin sesiones usa siempre la misma");
+});
+
 test("contrato de la reserva (Manu, 21/10): su plantilla, sólo el monto y sin accesos", async () => {
   const { armarBienvenida, modalidadDeReserva } = await import("@/lib/contratos");
   const { plantillaDelContrato, programaNormal } = await import("@/lib/programas");

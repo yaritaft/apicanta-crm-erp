@@ -5,7 +5,7 @@ import { datosLimpios, problemaDeDatos, soloDuenos, type DatosContrato, type Mod
 import {
   anular, contratoPorId, corregir, crearContrato, darAccesosAhora, mandarBorrador, nuevoEnlace, programasGuardados, reenviar, sincronizar,
 } from "@/lib/contratos-servidor";
-import { programaPorId } from "@/lib/programas";
+import { cambiaLaPlantilla, programaPorId } from "@/lib/programas";
 import { ErrorPandadoc } from "@/lib/pandadoc-servidor";
 
 /* ==================================================================
@@ -87,7 +87,7 @@ export async function POST(peticion: Request) {
     if (!(await laVe(mia, "contratos", id))) return mal("No encuentro ese contrato (o tu cuenta no lo ve).", 404);
     const c = await contratoPorId(db, id);
     if (!c) return mal("No encuentro ese contrato.", 404);
-    const { config } = await programasGuardados(db);
+    const { config, programas } = await programasGuardados(db);
 
     if (accion === "mandar") await mandarBorrador(db, c, quien, config);
     else if (accion === "reenviar") await reenviar(db, c, quien);
@@ -98,6 +98,9 @@ export async function POST(peticion: Request) {
       const datos: DatosContrato = { ...limpios, ...(c.datos.reserva ? { reserva: true } : {}) };
       const problema = problemaDeDatos(datos, c.modo, undefined, c.programa);
       if (problema) return mal(problema);
+      if (cambiaLaPlantilla(programaPorId(programas, c.programa), datos.reserva, c.datos.sesiones, datos.sesiones)) {
+        return mal("Para cambiar si incluye sesiones 1 a 1, anulá este contrato y mandá otro: sale con otra plantilla.");
+      }
       await corregir(db, c, datos, quien, config, new URL(peticion.url).origin);
     } else if (accion === "enlace") {
       const enlace = await nuevoEnlace(db, c);

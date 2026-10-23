@@ -523,7 +523,7 @@ function validar(paso: PasoId, b: Borrador, diferencia: number, ctx: { e: Estado
       if (b.contrato.decision !== "mandar") return null;
       if (!b.contrato.datos) return "Armando los datos del contrato…";
       const programa = programasDe(ctx.e.ajustes).find((p) => p.id === b.contrato.programaId);
-      if (!plantillaDelContrato(programa, b.contrato.datos.reserva).id) {
+      if (!plantillaDelContrato(programa, b.contrato.datos.reserva, b.contrato.datos.sesiones).id) {
         return b.contrato.datos.reserva && programa ? `${programa.nombre} todavía no tiene contrato de reserva` : "Elegí el programa del contrato";
       }
       return problemaDeDatos(b.contrato.datos, ctx.modoContrato, undefined, programa?.id);
@@ -1252,7 +1252,7 @@ function PasoContrato({ b, setB, e, esDueno, modo, encendido }: {
   }, [b.contactoId, setCt]);
 
   const programa = programas.find((p) => p.id === ct.programaId);
-  const plantilla = plantillaDelContrato(programa, b.soloReserva);
+  const plantilla = plantillaDelContrato(programa, b.soloReserva, ct.datos?.sesiones);
   const opciones: { valor: DecisionContrato; nombre: string; sub: string }[] = [
     { valor: "mandar", nombre: "Sí, mandalo al registrar la venta", sub: b.soloReserva
       ? "Le llega por mail el contrato de la reserva para firmar. No da accesos: los da el contrato del programa."
