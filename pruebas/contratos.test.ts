@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
 import {
-  accesosPendientes, bonosDeTexto, datosDelDocumento, datosLimpios, sesionesDeTexto,
+  accesosPendientes, bonosDeTexto, datosDelDocumento, datosLimpios, rotuloEvento, sesionesDeTexto,
   accesosAlFirmar, fichaAlFirmar, soloDuenos, accionesDe, cuerpoDocumento, estadoDePandadoc, fechaContrato, firmoElAlumno, leerAvisos, mensajeDelContrato,
   modalidadDeCuotas, partirNombre, problemaDeDatos, textoBonos, textoSesiones, variablesDelContrato, type DatosContrato,
 } from "@/lib/contratos";
@@ -379,4 +379,11 @@ test("los datos limpios: mail en minúscula, fechas válidas y la reserva sólo 
   assert.match(d.fecha, /^\d{4}-\d{2}-\d{2}$/);
   assert.equal(d.inicio, "2026-11-03");
   assert.equal("reserva" in d, false);
+});
+
+test("el historial no dice «Se dieron los accesos» cuando no se dio nada", () => {
+  assert.equal(rotuloEvento({ evento: "accesos", detalle: { dados: 0, motivo: "Todavía no está cargada su venta" } }), "Los accesos todavía no se dieron");
+  assert.equal(rotuloEvento({ evento: "accesos", detalle: { dados: 8, fallaron: 3 } }), "Se dieron los accesos");
+  assert.equal(rotuloEvento({ evento: "accesos", detalle: { dados: 0, fallaron: 3 } }), "Se dieron los accesos");
+  assert.equal(rotuloEvento({ evento: "firmado", detalle: {} }), "Lo firmó");
 });

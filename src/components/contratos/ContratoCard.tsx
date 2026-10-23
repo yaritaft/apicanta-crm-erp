@@ -13,7 +13,7 @@ import { acciones, useEstado } from "@/lib/store";
 import { useAcceso } from "@/lib/acceso";
 import { fechaHora, relativo } from "@/lib/format";
 import {
-  accesosPendientes, accionesDe, estaPendiente, fechaContrato, problemaDeDatos, ROTULO_ESTADO, ROTULO_EVENTO,
+  accesosPendientes, accionesDe, estaPendiente, fechaContrato, problemaDeDatos, ROTULO_ESTADO, rotuloEvento,
   type Contrato, type DatosContrato, type EventoContrato,
 } from "@/lib/contratos";
 import { diaDeNegocio } from "@/lib/dia-negocio";
@@ -415,7 +415,7 @@ export function ContratoCard({ venta, alumnoId, sesionId, manual, forma = "tarje
                       typeof ev.detalle?.motivo === "string" ? ev.detalle.motivo : "",
                     ].filter(Boolean).join(" · ");
                     return (
-                      <FilaServicio key={ev.id} icono={ICONO_EVENTO[ev.evento] ?? <FileSignature size={15} />} rotulo={ROTULO_EVENTO[ev.evento] ?? ev.evento} detalle={detalle || undefined}>
+                      <FilaServicio key={ev.id} icono={ICONO_EVENTO[ev.evento] ?? <FileSignature size={15} />} rotulo={rotuloEvento(ev)} detalle={detalle || undefined}>
                         {typeof ev.detalle?.error === "string" ? <span style={{ color: "var(--danger)" }}>{ev.detalle.error}</span> : <span className="hs-guion">{fechaHora(ev.cuando)}</span>}
                       </FilaServicio>
                     );
@@ -536,7 +536,7 @@ export function ContratoCard({ venta, alumnoId, sesionId, manual, forma = "tarje
                   <ul className="stack-1" style={{ listStyle: "none", margin: "6px 0 0", padding: "0 0 0 18px" }}>
                     {[...evs].reverse().map((ev) => (
                       <li key={ev.id} className="t-sm">
-                        <span>{ROTULO_EVENTO[ev.evento] ?? ev.evento}</span>
+                        <span>{rotuloEvento(ev)}</span>
                         <span className="t-subtle"> · {fechaHora(ev.cuando)}{ev.quien ? ` · ${ev.quien}` : ""}</span>
                         {typeof ev.detalle?.error === "string" && <span style={{ color: "var(--danger)" }}> · {ev.detalle.error}</span>}
                         {typeof ev.detalle?.motivo === "string" && ev.detalle.motivo && <span className="t-subtle"> · {ev.detalle.motivo}</span>}

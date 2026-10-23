@@ -62,21 +62,43 @@ export const hayWisboo = () => Boolean(process.env.WISBOO_API_KEY && process.env
 const wisbooBase = () => `https://api.wisboo.com/v1/stores/${encodeURIComponent(process.env.WISBOO_STORE_ID ?? "")}`;
 const wisbooCabeza = (extra: Record<string, string> = {}) => ({ Authorization: `Bearer ${process.env.WISBOO_API_KEY}`, "Content-Type": "application/json", ...extra });
 
-async function usuarioWisboo(p: Persona): Promise<string> {
-  const email = p.email.trim().toLowerCase();
-  const busca = await pedir(`${wisbooBase()}/users?email=${encodeURIComponent(email)}&size=5`, { headers: wisbooCabeza() });
+/** La cuenta de Wisboo con ese mail (sin importar mayúsculas), buscando por mail o por nombre completo. */
+async function buscarUsuarioWisboo(email: string, filtro: "email" | "name", valor: string): Promise<string | null> {
+  if (!valor.trim()) return null;
+  const busca = await pedir(`${wisbooBase()}/users?${filtro}=${encodeURIComponent(valor.trim())}&size=20`, { headers: wisbooCabeza() });
   if (busca.status === 401) throw new ErrorAcceso("Wisboo no acepta la clave.");
   const ya = (Array.isArray(busca.json?.data) ? busca.json!.data : []) as { id?: string; email?: string }[];
-  const encontrado = ya.find((u) => (u.email ?? "").toLowerCase() === email);
-  if (encontrado?.id) return encontrado.id;
+  return ya.find((u) => (u.email ?? "").trim().toLowerCase() === email)?.id ?? null;
+}
+
+/** Lo que Wisboo dijo al negar algo (code y message, sin datos de la cuenta), para el error que ve el equipo. */
+export function motivoWisboo(json: Record<string, unknown> | null): string {
+  const partes = [json?.code, json?.message].filter((x): x is string => typeof x === "string" && x.trim() !== "").map((x) => x.trim());
+  return partes.length ? `: ${partes.join(" · ").slice(0, 160)}` : "";
+}
+
+async function usuarioWisboo(p: Persona): Promise<string> {
+  const email = p.email.trim().toLowerCase();
+  const encontrado = await buscarUsuarioWisboo(email, "email", email);
+  if (encontrado) return encontrado;
   const { first_name, last_name } = partirNombre(p.nombre);
   const crea = await pedir(`${wisbooBase()}/users`, {
     method: "POST", headers: wisbooCabeza({ "X-Idempotency-Key": `apicanta-usuario-${email}` }),
     body: JSON.stringify({ email, name: first_name || p.nombre, last_name: last_name || "-", ...(p.telefono ? { phone: p.telefono } : {}) }),
   });
   const id = typeof crea.json?.id === "string" ? crea.json.id : null;
-  if (!id) throw new ErrorAcceso(`Wisboo no creó el usuario (contestó ${crea.status}).`);
-  return id;
+  if (id) return id;
+  /* 422: ya hay una cuenta con ese mail en la tienda (Wisboo, «Create user»), aunque la búsqueda por mail no la trajo
+     (23/10: Diana y Sergio, a los que el equipo había dado de alta a mano). Se la busca por su nombre. */
+  if (crea.status === 422) {
+    const palabras = p.nombre.trim().split(/\s+/);
+    const corto = palabras.length > 2 ? `${palabras[0]} ${palabras[palabras.length - 1]}` : "";
+    const porNombre = await buscarUsuarioWisboo(email, "name", p.nombre) ?? await buscarUsuarioWisboo(email, "name", corto);
+    if (porNombre) return porNombre;
+    console.error("[wisboo] 422 al crear el usuario y no aparece buscándolo", JSON.stringify({ code: crea.json?.code, message: crea.json?.message, details: crea.json?.details }));
+    throw new ErrorAcceso(`Wisboo dice que ya hay una cuenta con ese mail (o que el mail no vale) y no la encuentro${motivoWisboo(crea.json)}. Dale los cursos a mano desde Wisboo.`);
+  }
+  throw new ErrorAcceso(`Wisboo no creó el usuario (contestó ${crea.status}${motivoWisboo(crea.json)}).`);
 }
 
 async function accesoWisbooExistente(usuarioId: string, productoId: string): Promise<string | null> {

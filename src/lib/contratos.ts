@@ -126,6 +126,16 @@ export const ROTULO_EVENTO: Record<string, string> = {
   error: "No salió",
 };
 
+/** El rótulo de un paso del historial. Un aviso de accesos que no dio nada (esperaba la venta, la reserva…) no dice
+    «Se dieron los accesos». */
+export function rotuloEvento(ev: Pick<EventoContrato, "evento" | "detalle">): string {
+  const d = ev.detalle ?? {};
+  if (ev.evento === "accesos" && Number(d.dados ?? 0) === 0 && !Number(d.fallaron ?? 0) && !Number(d.yaEstaban ?? 0) && typeof d.motivo === "string" && d.motivo) {
+    return "Los accesos todavía no se dieron";
+  }
+  return ROTULO_EVENTO[ev.evento] ?? ev.evento;
+}
+
 /** Nuestro estado ← el de PandaDoc. null: un estado que no cambia nada. */
 export function estadoDePandadoc(status: string | null | undefined): EstadoContrato | null {
   switch ((status ?? "").trim()) {
