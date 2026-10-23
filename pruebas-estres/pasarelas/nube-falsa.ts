@@ -193,12 +193,23 @@ function cumpleUno(op: string, val: string, x: unknown): boolean {
       case "lte": if (!(x !== undefined && x !== null && String(x) <= val)) return false; break;
       case "ilike": if (!aLike(val).test(String(x ?? ""))) return false; break;
       case "like": if (!aLike(val, "").test(String(x ?? ""))) return false; break;
-      case "cs": break; /* contains de JSON: la nube falsa no lo evalúa (deja pasar todo) */
+      /* contains de JSON (@>), como lo evalúa Postgres: lo que no es JSON (un arreglo «{a,b}») deja pasar. */
+      case "cs": { let y: unknown; try { y = JSON.parse(val); } catch { break; } if (!contiene(x, y)) return false; break; }
       case "is": if (val === "null" ? !(x === null || x === undefined) : String(x) !== val) return false; break;
       default: return false;
     }
   }
   return true;
+}
+
+/* x @> y de jsonb: cada elemento de un arreglo, y cada clave de un objeto, tiene que estar adentro. */
+function contiene(x: unknown, y: unknown): boolean {
+  if (Array.isArray(y)) return Array.isArray(x) && y.every((e) => x.some((z) => contiene(z, e)));
+  if (y && typeof y === "object") {
+    return Boolean(x) && typeof x === "object" && !Array.isArray(x)
+      && Object.entries(y as Fila).every(([k, v]) => contiene((x as Fila)[k], v));
+  }
+  return x === y;
 }
 
 /* El patrón de like/ilike de PostgREST (con «\\%», «\\_» y «\\\\» escapados) a una expresión regular. */

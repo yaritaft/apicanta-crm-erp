@@ -1835,11 +1835,21 @@ export const acciones = {
      lo que el codigo de ventas hace hoy. Cuando ventas pase a apuntar al
      contacto, esa ambiguedad se termina; hasta entonces existe y conviene
      saberlo. */
-  altaDeLead(datos: Omit<Lead, "id" | "contactoId">, etiqueta: string): ID {
+  altaDeLead(datos: Omit<Lead, "id" | "contactoId">, etiqueta: string, contactoExistente?: ID): ID {
     const e = snapshot();
     const leadId = nuevoId("lea");
+    /* La persona ya existe en una ficha que esta cuenta no ve (lo averiguó la carga de la venta con persona_existente):
+       el lead nuevo cuelga de ella y no se crea otro contacto (la base no deja dos con el mismo mail). */
+    if (contactoExistente && !e.contactos.some((c) => c.id === contactoExistente)) {
+      const lead = { ...datos, id: leadId, contactoId: contactoExistente } as Lead;
+      const { lista, nuevo: act } = registrar(e, "lead", leadId, etiqueta, "creo", `Se creó «${etiqueta}» sobre un contacto que ya existía.`);
+      guardar({ ...e, leads: [lead, ...e.leads], actividad: lista });
+      empujar({ tipo: "upsert", tabla: "leads", filas: [lead] });
+      empujar({ tipo: "upsert", tabla: "actividad", filas: [act] });
+      return leadId;
+    }
     const { leads: [lead], contactos, tocados } = asignarContactos(
-      [{ ...datos, id: leadId, contactoId: undefined } as Lead], e.contactos,
+      [{ ...datos, id: leadId, contactoId: contactoExistente } as Lead], e.contactos,
     );
     const reusado = lead.contactoId !== leadId;
     const { lista, nuevo: act } = registrar(

@@ -1,6 +1,9 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { claveEmail } from "./contactos";
-import { noSonDuplicados, planSeparar, planUnificar, type PlanSeparar, type PlanUnificar } from "./duplicados";
+import {
+  buscarMismaPersona, conOtroEmail, noSonDuplicados, planSeparar, planUnificar, type PlanSeparar, type PlanUnificar,
+} from "./duplicados";
+import { normalizarTelefono } from "./telefonos";
 import type { Contacto, ID } from "./types";
 
 /* ==================================================================
@@ -12,6 +15,38 @@ import type { Contacto, ID } from "./types";
    las dos fichas. La regla de qué se mueve es la de lib/duplicados.ts, la
    misma que usa la app sin nube.
    ================================================================== */
+
+/* ilike con el email tal cual: sin comodines, así "a_b@x.com" no matchea "aXb@x.com". */
+const exacto = (x: string) => x.replace(/[\\%_]/g, (c) => `\\${c}`);
+
+/** La persona en la base con la regla de lib/duplicados.ts: su mail (también entre sus otros mails) o, con otro mail, el
+    mismo teléfono y nombre; en ese caso viene con el mail nuevo sumado como «otro mail». Es la búsqueda de TODAS las
+    entradas del servidor (Calendly, el formulario de los webinars y los formularios de Meta): con la clave de servicio
+    ve a todos, así que no crea a nadie dos veces (la base además lo traba por mail: supabase/personas-unicas.sql). */
+export async function buscarContactoEnLaBase(
+  db: SupabaseClient, datos: { email?: string | null; nombre?: string | null; telefono?: string | null },
+): Promise<Contacto | null> {
+  const email = claveEmail(datos.email);
+  if (email) {
+    const r = await db.from("contactos").select("*").ilike("email", exacto(email)).limit(1);
+    if (r.error) throw new Error(`contactos: ${r.error.message}`);
+    if (r.data?.[0]) return r.data[0] as Contacto;
+    try {
+      const otro = await db.from("contactos").select("*").contains("extra", { emails: [email] }).limit(1);
+      if (!otro.error && otro.data?.[0]) return otro.data[0] as Contacto;
+    } catch { /* sin el filtro, sigue por el teléfono */ }
+  }
+  const ultimos = normalizarTelefono(datos.telefono).local;
+  if (!datos.telefono || ultimos.length !== 8) return null;
+  try {
+    const r = await db.rpc("contactos_por_telefono", { ultimos });
+    if (r.error) return null;
+    const hallado = buscarMismaPersona((r.data ?? []) as Contacto[], { nombre: datos.nombre, telefono: datos.telefono })?.contacto;
+    return hallado ? conOtroEmail(hallado, datos.email) : null;
+  } catch {
+    return null;
+  }
+}
 
 const idActividad = () => `act_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
 

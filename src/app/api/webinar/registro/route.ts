@@ -9,6 +9,7 @@ import { eventosDeRegistro } from "@/lib/capi-registro";
 import { nombreSinFormula } from "@/lib/whatsapp";
 import { adIdDeUtm, filaParaBase, fusionarRegistro, idRegistro, nuevoRegistro, type RegistroForm } from "@/lib/registros-webinar";
 import type { Contacto } from "@/lib/types";
+import { buscarContactoEnLaBase } from "@/lib/duplicados-servidor";
 
 /* ==================================================================
    El formulario de la landing del webinar.
@@ -95,7 +96,6 @@ const CONOCIDOS = new Set([
 
 const primero = (d: Record<string, string>, ks: string[]) => ks.map((k) => d[k]?.trim()).find(Boolean);
 const limpio = <T extends object>(o: T) => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined)) as T;
-const exacto = (s: string) => s.replace(/[\\%_]/g, (c) => `\\${c}`);
 
 export interface RegistroWebinar {
   id: string;
@@ -174,10 +174,9 @@ export async function POST(req: Request) {
       || webinars.filter((x) => x.estado !== "borrador" && new Date(x.fecha).getTime() > Date.now() - 6 * 3600000)
         .sort((a, b) => +new Date(a.fecha) - +new Date(b.fecha))[0]?.id;
 
-    /* ---------- El contacto: el mismo email es la misma persona ---------- */
-    const busqueda = await db.from("contactos").select("*").ilike("email", exacto(email)).limit(1);
-    if (busqueda.error) throw new Error(busqueda.error.message);
-    const previo = (busqueda.data?.[0] ?? null) as Contacto | null;
+    /* ---------- El contacto: la misma persona por mail o, con otro mail, por teléfono y nombre ----------
+       (lib/duplicados-servidor.ts). Antes buscaba sólo el mail y el que se anotaba con otro quedaba dos veces. */
+    const previo = await buscarContactoEnLaBase(db, { email, nombre, telefono });
     const registroId = `reg_${createHash("sha256").update(`${email}|${webinarId ?? "sin"}`).digest("hex").slice(0, 16)}`;
     const registro: RegistroWebinar = {
       id: registroId, webinarId, creado: cuando,

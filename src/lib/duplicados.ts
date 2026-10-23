@@ -67,8 +67,9 @@ export function otrosEmails(c: Pick<Contacto, "email" | "extra"> | undefined): s
 
 /* El contacto con un mail más, si no lo tenía (ni como principal ni entre los otros). */
 export function conOtroEmail(c: Contacto, email: string | undefined | null): Contacto {
-  const nuevo = limpiarEmail(email);
-  if (!nuevo || claveEmail(nuevo) === claveEmail(c.email) || otrosEmails(c).some((x) => claveEmail(x) === claveEmail(nuevo))) return c;
+  /* En minúsculas: así la base lo encuentra entre los otros mails con un «contiene» exacto. */
+  const nuevo = claveEmail(email);
+  if (!nuevo || nuevo === claveEmail(c.email) || otrosEmails(c).some((x) => claveEmail(x) === nuevo)) return c;
   return { ...c, extra: { ...(c.extra ?? {}), emails: [...otrosEmails(c), nuevo] } };
 }
 
@@ -236,7 +237,7 @@ export function planUnificar(principal: Contacto, otro: Contacto, del: LoDelOtro
   }, otro.email);
   for (const x of otrosEmails(otro)) contacto = conOtroEmail(contacto, x);
   const yaLoTenia = [principal.email, ...otrosEmails(principal)].some((x) => claveEmail(x) === claveEmail(otro.email));
-  const emailAgregado = claveEmail(otro.email) && !yaLoTenia ? limpiarEmail(otro.email) : undefined;
+  const emailAgregado = claveEmail(otro.email) && !yaLoTenia ? claveEmail(otro.email) : undefined;
 
   const registro: Unificacion = {
     contacto: otro,

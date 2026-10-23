@@ -5,6 +5,7 @@ import {
   buscarMismaPersona, duplicadosDe, esLaMismaPersona, otrosEmails, planSeparar, planUnificar, posiblesDuplicados,
 } from "@/lib/duplicados";
 import type { Contacto } from "@/lib/types";
+import { buscarContactoEnLaBase } from "@/lib/duplicados-servidor";
 
 /* Lili (22/10): Juan Camilo López estaba dos veces, con un mail en cada ficha, porque todas las entradas buscaban a la
    persona sólo por el mail. Los casos son los de producción. */
@@ -81,4 +82,31 @@ test("unificar mueve todo del otro, guarda su mail y se puede deshacer", () => {
   assert.deepEqual(sep.alumnos, [{ id: "alu_x", leadId: null }]);
   assert.deepEqual(otrosEmails(sep.contacto), []);
   assert.equal(planSeparar(sep.contacto, "lea_cal_d9"), null, "ya no está unificada");
+});
+
+/* ---------- La búsqueda de las entradas del servidor (Calendly, webinars, Meta) ---------- */
+
+/* Una base de mentira: sólo lo que usa buscarContactoEnLaBase. */
+function baseFalsa(contactos: Contacto[]) {
+  const de = (filas: Contacto[]) => ({ data: filas.slice(0, 1), error: null });
+  return {
+    from: () => ({
+      select: () => ({
+        ilike: (_c: string, v: string) => ({ limit: async () => de(contactos.filter((c) => c.email.toLowerCase() === v.replace(/\\/g, ""))) }),
+        contains: (_c: string, v: { emails: string[] }) => ({ limit: async () => de(contactos.filter((c) => (c.extra?.emails as string[] | undefined)?.includes(v.emails[0]))) }),
+      }),
+    }),
+    rpc: async (_f: string, a: { ultimos: string }) => ({ data: contactos.filter((c) => (c.telefono ?? "").replace(/\D/g, "").endsWith(a.ultimos)), error: null }),
+  } as unknown as Parameters<typeof buscarContactoEnLaBase>[0];
+}
+
+test("las entradas del servidor encuentran a la persona por mail, por otro mail o por teléfono y nombre", async () => {
+  const juan = c("con_ef_9rwhz6", "Juan Camilo López", "jukaloma@gmail.com", "57 311 3652301", { emails: ["jukamilo2010@hotmail.com"] });
+  const db = baseFalsa([c("x", "Otra Persona", "otra@x.com", "+54 11 1111-2222"), juan]);
+  assert.equal((await buscarContactoEnLaBase(db, { email: "JUKALOMA@gmail.com" }))?.id, "con_ef_9rwhz6");
+  assert.equal((await buscarContactoEnLaBase(db, { email: "jukamilo2010@hotmail.com" }))?.id, "con_ef_9rwhz6", "su otro mail");
+  const porTel = await buscarContactoEnLaBase(db, { email: "nuevo@mail.com", nombre: "Juan Camilo Lopez", telefono: "+57 311 3652301" });
+  assert.equal(porTel?.id, "con_ef_9rwhz6");
+  assert.ok(otrosEmails(porTel!).includes("nuevo@mail.com"), "el mail nuevo queda como otro mail");
+  assert.equal(await buscarContactoEnLaBase(db, { email: "nuevo@mail.com", nombre: "Pedro Gómez", telefono: "+57 311 3652301" }), null, "mismo teléfono con otro nombre: no se junta solo");
 });

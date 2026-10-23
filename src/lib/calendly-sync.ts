@@ -29,9 +29,8 @@ import {
   idPersonaCalendly, idSesionCalendly, nivelDeIngles, respuestaA, respuestasDe, utmDe, webinarDeUtm,
   type EventoCalendly, type InvitadoCalendly,
 } from "./calendly";
-import { claveEmail, completar } from "./contactos";
-import { buscarMismaPersona, conOtroEmail } from "./duplicados";
-import { normalizarTelefono } from "./telefonos";
+import { completar } from "./contactos";
+import { buscarContactoEnLaBase } from "./duplicados-servidor";
 import { nubeServidor } from "./servidor";
 import { etapaPorEvento } from "./etapas-auto";
 import { anfitrionTrasCalendly } from "./pasada-closer";
@@ -100,23 +99,6 @@ async function etapaSesionDe(ctx: Contexto): Promise<string | null> {
 const limpio = <T extends object>(o: T) =>
   Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined)) as T;
 
-/* ilike con el email tal cual: sin comodines, así "a_b@x.com" no matchea "aXb@x.com". */
-const exacto = (s: string) => s.replace(/[\\%_]/g, (c) => `\\${c}`);
-
-/* La persona con otro mail pero el mismo teléfono y nombre. Los candidatos salen de la base por los últimos 8 dígitos
-   (supabase/duplicados.sql); sin esa función, se sigue como antes (sólo por mail). */
-async function mismaPersonaPorTelefono(db: SupabaseClient, nombre: string, email: string, telefono: string): Promise<Contacto | null> {
-  const ultimos = normalizarTelefono(telefono).local;
-  if (ultimos.length !== 8) return null;
-  try {
-    const r = await db.rpc("contactos_por_telefono", { ultimos });
-    if (r.error) return null;
-    const hallado = buscarMismaPersona((r.data ?? []) as Contacto[], { nombre, telefono })?.contacto;
-    return hallado ? conOtroEmail(hallado, email) : null;
-  } catch {
-    return null;
-  }
-}
 
 /**
  * Guarda una agenda de Calendly.
@@ -159,13 +141,7 @@ export async function ingresarInvitado(
   /* ---------- 1. El contacto: el mismo email es la misma persona ----------
      Y con otro mail, el mismo teléfono y nombre también (lib/duplicados.ts): antes nacía otra ficha y la historia
      quedaba partida en dos (Lili, 22/10). El mail nuevo queda como otro mail de la persona. */
-  const email = claveEmail(inv.email);
-  const busqueda = email
-    ? await db.from("contactos").select("*").ilike("email", exacto(email)).limit(1)
-    : { data: [], error: null };
-  if (busqueda.error) throw new Error(`contactos: ${busqueda.error.message}`);
-  let previo = (busqueda.data?.[0] ?? null) as Contacto | null;
-  if (!previo && del.telefono) previo = await mismaPersonaPorTelefono(db, inv.name, inv.email, del.telefono);
+  const previo = await buscarContactoEnLaBase(db, { email: inv.email, nombre: inv.name, telefono: del.telefono });
 
   const contacto: Contacto = previo
     ? {

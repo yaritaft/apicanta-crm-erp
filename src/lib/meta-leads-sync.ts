@@ -7,6 +7,7 @@ import {
 import { aniosDeTexto, nivelDeIngles, respuestaA, webinarDeUtm } from "./calendly";
 import { claveEmail, completar } from "./contactos";
 import { nubeServidor } from "./servidor";
+import { buscarContactoEnLaBase } from "./duplicados-servidor";
 import { normalizarUtm, reglaQueCalza } from "./utms";
 import type { Contacto, Lead, ReglaUtm } from "./types";
 
@@ -71,7 +72,6 @@ export interface ResultadoLeadsMeta {
 /* PostgREST: undefined no es "dejalo como está", es "no lo mandes". */
 const limpio = <T extends object>(o: T) =>
   Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined)) as T;
-const exacto = (s: string) => s.replace(/[\\%_]/g, (c) => `\\${c}`);
 
 const inscripcionesDe = (c: Pick<Contacto, "extra"> | null | undefined): InscripcionMeta[] =>
   Array.isArray(c?.extra?.formulariosMeta) ? (c!.extra.formulariosMeta as InscripcionMeta[]) : [];
@@ -164,13 +164,10 @@ async function ingresar(ctx: Contexto, l: LeadMeta, f: FormularioMeta, res: Resu
     sueldoUsd: respuestaA(qa, /(ganas|sueldo|salario)/),
   };
 
-  /* ---------- 1. El contacto: el mismo email es la misma persona ---------- */
+  /* ---------- 1. El contacto: la misma persona por mail o, con otro mail, por teléfono y nombre ----------
+     (lib/duplicados-servidor.ts). Antes buscaba sólo el mail. */
   const email = claveEmail(persona.email);
-  const busqueda = email
-    ? await db.from("contactos").select("*").ilike("email", exacto(email)).limit(1)
-    : { data: [], error: null };
-  if (busqueda.error) throw new Error(`contactos: ${busqueda.error.message}`);
-  const previo = (busqueda.data?.[0] ?? null) as Contacto | null;
+  const previo = await buscarContactoEnLaBase(db, { email, nombre: persona.nombre, telefono: persona.telefono });
   const ya = inscripcionesDe(previo);
 
   const contacto: Contacto = previo

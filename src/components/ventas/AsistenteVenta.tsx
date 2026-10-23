@@ -18,6 +18,8 @@ import { medioDeMovimiento, normalizar, parecido, procesadorDeMovimiento } from 
 import { buscarPersonas, nombreDeCuota, personaPorId, type PersonaBuscada } from "@/lib/buscar-cliente";
 import { claveEmail } from "@/lib/contactos";
 import { compararTelefonos } from "@/lib/telefonos";
+import { palabrasEnComun } from "@/lib/duplicados";
+import { nube } from "@/lib/supabase";
 import { descartarComprobante } from "@/lib/comprobantes";
 import type { Cuota, EstadoApp, MiembroEquipo, Movimiento, Venta } from "@/lib/types";
 import { PAISES, planDePago, webinarDeProyecto } from "@/lib/angelo";
@@ -87,6 +89,10 @@ interface Borrador {
   /* La persona no estaba cargada: se crea como lead inscripto recién al
      guardar la venta, así cancelar el asistente no deja un lead suelto. */
   crearContacto?: boolean;
+  /* El cliente nuevo ya está en la base en una ficha que esta cuenta no ve (el closer ve sólo lo suyo): la venta se suma a
+     esa ficha en vez de crear otra. «email»: el mail ya es suyo y es obligatorio; «telefono»: lo eligió quien carga. */
+  contactoExistenteId?: string;
+  contactoExistentePor?: "email" | "telefono";
   contactoNombre: string;
   contactoEmail: string;
   contactoPais: string;
@@ -274,7 +280,7 @@ export function AsistenteVenta({ onCerrar, onListo, desdeMovimiento, cliente, cl
         monto: redondear(b.precioAcordado), moneda: mon,
         responsable: e.equipo.find((x) => x.id === b.closerId)?.nombre ?? "",
         etiquetas: [], creadoEn: ahora, actualizadoEn: ahora, extra: {},
-      }, b.contactoNombre.trim());
+      }, b.contactoNombre.trim(), b.contactoExistenteId);
     }
     /* El origen sale de la UTM de quien compró; si no tiene una con regla,
        lo que traía el lead (su webinar). El proyecto WEB-día/mes/año ya
@@ -616,6 +622,30 @@ function PasoCliente({ b, set, e, M, onPagoDeCuota }: {
     return [...porMail, ...porTel.filter((p) => !porMail.some((x) => x.id === p.id))]
       .map((p) => ({ p, por: porMail.some((x) => x.id === p.id) ? "el mismo mail" : "el mismo teléfono" }));
   }, [e, b.crearContacto, b.contactoEmail, b.contactoTelefono]);
+  /* El closer ve sólo sus contactos: lo que no encuentra acá se le pregunta a la base, que ve a todos y devuelve sólo el
+     nombre (supabase/personas-unicas.sql). Por mail es la misma persona sí o sí (la base no deja dos fichas con el mismo
+     mail); por teléfono, si el nombre también coincide, se ofrece usar esa ficha. */
+  const [enLaBase, setEnLaBase] = useState<{ id: string; nombre: string; por: "email" | "telefono" }[]>([]);
+  useEffect(() => {
+    const mail = claveEmail(b.contactoEmail);
+    const digitos = b.contactoTelefono.replace(/\D/g, "");
+    if (!nube || !b.crearContacto || yaEstan.length > 0 || (!mail.includes("@") && digitos.length < 8)) { setEnLaBase([]); return; }
+    let vivo = true;
+    const t = window.setTimeout(() => {
+      void nube!.rpc("persona_existente", { p_email: mail, p_telefono: b.contactoTelefono }).then((r) => {
+        if (!vivo || r.error) return;
+        const filas = (r.data ?? []) as { id: string; nombre: string; por: "email" | "telefono" }[];
+        setEnLaBase(filas.filter((x) => x.por === "email" || palabrasEnComun(x.nombre, b.contactoNombre) >= 2));
+      });
+    }, 450);
+    return () => { vivo = false; window.clearTimeout(t); };
+  }, [b.crearContacto, b.contactoEmail, b.contactoTelefono, b.contactoNombre, yaEstan.length]);
+  const delMail = enLaBase.find((x) => x.por === "email");
+  useEffect(() => {
+    if (delMail && b.contactoExistenteId !== delMail.id) set({ contactoExistenteId: delMail.id, contactoExistentePor: "email" });
+    if (!delMail && b.contactoExistentePor === "email") set({ contactoExistenteId: undefined, contactoExistentePor: undefined });
+    if (b.contactoExistentePor === "telefono" && !enLaBase.some((x) => x.id === b.contactoExistenteId)) set({ contactoExistenteId: undefined, contactoExistentePor: undefined });
+  }, [delMail, enLaBase, b.contactoExistenteId, b.contactoExistentePor, set]);
   const nombreCorto = elegido?.nombre.split(" ")[0] ?? "";
 
   return (
@@ -644,7 +674,7 @@ function PasoCliente({ b, set, e, M, onPagoDeCuota }: {
             <span className="t-strong">Cliente nuevo</span>
             <span className="t-sm t-subtle">Se crea al guardar la venta.</span>
             <span className="spacer" />
-            <button type="button" className="link t-sm" onClick={() => set({ crearContacto: false })}>Volver a buscar</button>
+            <button type="button" className="link t-sm" onClick={() => set({ crearContacto: false, contactoExistenteId: undefined, contactoExistentePor: undefined })}>Volver a buscar</button>
           </div>
           <div className="form-grid">
             <Field label="Nombre completo" span2>
@@ -677,6 +707,24 @@ function PasoCliente({ b, set, e, M, onPagoDeCuota }: {
                     onClick={() => set({ contactoId: p.id, contactoNombre: p.nombre, contactoEmail: p.email ?? "", contactoTelefono: p.telefono ?? "", crearContacto: false })}>
                     Usar esa ficha
                   </Button>
+                </div>
+              ))}
+            </div>
+          )}
+          {yaEstan.length === 0 && enLaBase.length > 0 && (
+            <div className="aviso-cuotas" role="status">
+              <span className="t-strong">Ya está en Apicanta, en una ficha de otra persona del equipo</span>
+              <span className="t-sm t-muted">
+                {delMail
+                  ? `Ese mail es de ${delMail.nombre}: la venta se suma a su ficha, no se crea otra.`
+                  : "Si es la misma persona, usá su ficha: la venta queda pegada a su historia."}
+              </span>
+              {!delMail && enLaBase.map((x) => (
+                <div className="aviso-cuotas__fila" key={x.id}>
+                  <span className="t-sm"><strong>{x.nombre}</strong><span className="t-subtle"> · el mismo teléfono</span></span>
+                  {b.contactoExistenteId === x.id
+                    ? <span className="t-sm t-strong">La venta va a su ficha</span>
+                    : <Button sm variante="secondary" onClick={() => set({ contactoExistenteId: x.id, contactoExistentePor: "telefono" })}>Usar esa ficha</Button>}
                 </div>
               ))}
             </div>
