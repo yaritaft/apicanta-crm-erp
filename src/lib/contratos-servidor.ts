@@ -85,7 +85,7 @@ export interface PedidoContrato {
 }
 
 export async function crearContrato(db: SupabaseClient, p: PedidoContrato): Promise<Contrato> {
-  const plantillaElegida = plantillaDelContrato(p.programa, p.datos.reserva);
+  const plantillaElegida = plantillaDelContrato(p.programa, p.datos.reserva, p.datos.sesiones);
   if (!plantillaElegida.id) {
     throw new Error(p.datos.reserva
       ? `El programa ${p.programa.nombre} no tiene contrato de reserva (Ajustes → Integraciones → Programas).`
@@ -508,7 +508,9 @@ export async function contratoDeAfuera(db: SupabaseClient, documentoId: string, 
   if (typeof meta.apicanta_contrato === "string" && meta.apicanta_contrato) return null;
   const plantilla = (det.template ?? {}) as { id?: string; name?: string };
   const { programas } = await programasGuardados(db);
-  const programa = programas.find((p) => p.plantillaId && p.plantillaId === plantilla.id);
+  /* La plantilla sin sesiones 1 a 1 es del programa (no de la reserva): el documento no trae el punto, así que son 0. */
+  const sinSesiones = programas.find((p) => p.plantillaSinSesionesId && p.plantillaSinSesionesId === plantilla.id);
+  const programa = programas.find((p) => p.plantillaId && p.plantillaId === plantilla.id) ?? sinSesiones;
   const deReserva = programa ? null : programas.find((p) => p.plantillaReservaId && p.plantillaReservaId === plantilla.id);
   if (!programa && !deReserva) return null;
   const leido = datosDelDocumento(det);
@@ -521,7 +523,7 @@ export async function contratoDeAfuera(db: SupabaseClient, documentoId: string, 
     id, programa: elegido.id, plantillaId: plantilla.id,
     plantillaNombre: plantilla.name ?? (programa ? elegido.plantillaNombre : elegido.plantillaReservaNombre ?? ""),
     documentoId, modo: modoReal, estado: estadoDePandadoc(typeof det.status === "string" ? det.status : "") ?? "enviado", origen: "pandadoc", creadoPor: "PandaDoc",
-    destinatario: leido.destinatario, datos: { ...leido.datos, ...(programa ? {} : { reserva: true }) },
+    destinatario: leido.destinatario, datos: { ...leido.datos, ...(programa ? {} : { reserva: true }), ...(sinSesiones && programa === sinSesiones ? { sesiones: 0 } : {}) },
     enviadoEn: typeof det.date_sent === "string" ? det.date_sent : ahora(), bienvenida: randomBytes(24).toString("base64url"),
   });
   if (ins.error) return contratoPorDocumento(db, documentoId);

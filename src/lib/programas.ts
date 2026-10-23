@@ -30,6 +30,10 @@ export interface Programa {
      dice el monto que deja a cuenta y al firmarlo no se dan accesos. Vacía: el programa no tiene. */
   plantillaReservaId?: string;
   plantillaReservaNombre?: string;
+  /* La plantilla para cuando no se dan sesiones 1 a 1 (Lili, 23/10): la misma sin el punto «Sesiones personalizadas»,
+     porque con «No incluye» el alumno las reclamaba. Vacía: sale la de siempre. */
+  plantillaSinSesionesId?: string;
+  plantillaSinSesionesNombre?: string;
   /* Los productos de Wisboo que se regalan al firmar. */
   wisboo: string[];
   /* Los chats de Telegram (id) a los que se lo invita. */
@@ -96,6 +100,8 @@ export function programaNormal(v: unknown): Programa | null {
     plantillaNombre: typeof o.plantillaNombre === "string" ? o.plantillaNombre : "",
     plantillaReservaId: typeof o.plantillaReservaId === "string" ? o.plantillaReservaId : "",
     plantillaReservaNombre: typeof o.plantillaReservaNombre === "string" ? o.plantillaReservaNombre : "",
+    plantillaSinSesionesId: typeof o.plantillaSinSesionesId === "string" ? o.plantillaSinSesionesId : "",
+    plantillaSinSesionesNombre: typeof o.plantillaSinSesionesNombre === "string" ? o.plantillaSinSesionesNombre : "",
     wisboo: lista(o.wisboo), telegram: lista(o.telegram), zoom: lista(o.zoom), bonos: lista(o.bonos),
     activo: o.activo !== false,
   };
@@ -129,12 +135,13 @@ export function cambiarGrupoEnProgramas(programas: unknown, viejo: string, nuevo
   return cambio ? nuevos : null;
 }
 
-/** La plantilla con la que sale el contrato: la del programa o, si es el de la reserva, la de la reserva. */
-export function plantillaDelContrato(programa: Programa | null | undefined, reserva: boolean | undefined): { id: string; nombre: string } {
+/** La plantilla con la que sale el contrato: la del programa; si es el de la reserva, la de la reserva; y si no se dan
+    sesiones 1 a 1 y el programa tiene la plantilla sin ese punto, esa. */
+export function plantillaDelContrato(programa: Programa | null | undefined, reserva: boolean | undefined, sesiones?: number | null): { id: string; nombre: string } {
   if (!programa) return { id: "", nombre: "" };
-  return reserva
-    ? { id: programa.plantillaReservaId ?? "", nombre: programa.plantillaReservaNombre ?? "" }
-    : { id: programa.plantillaId, nombre: programa.plantillaNombre };
+  if (reserva) return { id: programa.plantillaReservaId ?? "", nombre: programa.plantillaReservaNombre ?? "" };
+  if (sesiones === 0 && programa.plantillaSinSesionesId) return { id: programa.plantillaSinSesionesId, nombre: programa.plantillaSinSesionesNombre ?? "" };
+  return { id: programa.plantillaId, nombre: programa.plantillaNombre };
 }
 
 export function programaPorId(programas: Programa[], id: string | null | undefined): Programa | null {

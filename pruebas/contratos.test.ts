@@ -274,6 +274,24 @@ test("Contratos: lo que el contrato firmado deja en la ficha de Customer Success
   assert.deepEqual(fichaAlFirmar({}, "Downsell", null), { contratoFirmado: "Firmado", estadoContrato: "Firmado en PandaDoc", programas: ["Downsell"] });
 });
 
+test("sin sesiones 1 a 1, la plantilla sin el punto «Sesiones personalizadas» (Lili, 23/10: Santiago Ayala Restrepo las reclamaba)", async () => {
+  const { plantillaDelContrato, programaNormal } = await import("@/lib/programas");
+  const { textoSesiones } = await import("@/lib/contratos");
+  const programa = programaNormal({
+    id: "hackear-ai", nombre: "Hackear AI", productos: ["prod_mentoria"], plantillaId: "PROG", plantillaNombre: "Contrato de Mentoría - Hackear AI",
+    plantillaReservaId: "RES", plantillaReservaNombre: "Contrato de reserva - Hackear AI",
+    plantillaSinSesionesId: "SIN", plantillaSinSesionesNombre: "Contrato de Mentoría - Hackear AI (sin sesiones)",
+  })!;
+  assert.deepEqual(plantillaDelContrato(programa, false, 0), { id: "SIN", nombre: "Contrato de Mentoría - Hackear AI (sin sesiones)" });
+  assert.deepEqual(plantillaDelContrato(programa, false, 2), { id: "PROG", nombre: "Contrato de Mentoría - Hackear AI" }, "con sesiones, la de siempre");
+  assert.deepEqual(plantillaDelContrato(programa, false, null), { id: "PROG", nombre: "Contrato de Mentoría - Hackear AI" }, "sin decir cuántas, la de siempre");
+  assert.deepEqual(plantillaDelContrato(programa, true, 0), { id: "RES", nombre: "Contrato de reserva - Hackear AI" }, "la reserva manda");
+  /* Sin la plantilla cargada en Ajustes, sale la de siempre con «No incluye» (como hasta hoy). */
+  const sinCargar = programaNormal({ id: "hackear-ai", nombre: "Hackear AI", plantillaId: "PROG", plantillaNombre: "Contrato de Mentoría - Hackear AI" })!;
+  assert.equal(plantillaDelContrato(sinCargar, false, 0).id, "PROG");
+  assert.equal(textoSesiones(0), "No incluye sesiones 1 a 1 con el mentor");
+});
+
 test("contrato de la reserva (Manu, 21/10): su plantilla, sólo el monto y sin accesos", async () => {
   const { armarBienvenida, modalidadDeReserva } = await import("@/lib/contratos");
   const { plantillaDelContrato, programaNormal } = await import("@/lib/programas");

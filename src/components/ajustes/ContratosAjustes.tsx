@@ -305,6 +305,12 @@ function Programas({ pruebas }: { pruebas: Pruebas | null }) {
                         opciones={[{ valor: "", texto: "Sin contrato de reserva" }, ...plantillas.map((t) => ({ valor: t.id, texto: t.nombre })),
                           ...(p.plantillaReservaId && !plantillas.some((t) => t.id === p.plantillaReservaId) ? [{ valor: p.plantillaReservaId, texto: p.plantillaReservaNombre || p.plantillaReservaId }] : [])]} />
                     </Field>
+                    <Field label="Contrato sin sesiones 1 a 1" span2 ayuda="Sale cuando el closer pone 0 sesiones con el mentor: la misma plantilla sin el punto «Sesiones personalizadas» (Lili, 23/10). Sin elegir, sale la de siempre con «No incluye».">
+                      <Select value={p.plantillaSinSesionesId ?? ""} placeholder="La de siempre"
+                        onChange={(ev) => cambiar(p.id, { plantillaSinSesionesId: ev.target.value, plantillaSinSesionesNombre: plantillas.find((t) => t.id === ev.target.value)?.nombre ?? "" })}
+                        opciones={[{ valor: "", texto: "La de siempre (con «No incluye»)" }, ...plantillas.map((t) => ({ valor: t.id, texto: t.nombre })),
+                          ...(p.plantillaSinSesionesId && !plantillas.some((t) => t.id === p.plantillaSinSesionesId) ? [{ valor: p.plantillaSinSesionesId, texto: p.plantillaSinSesionesNombre || p.plantillaSinSesionesId }] : [])]} />
+                    </Field>
                   </div>
                   <Opciones titulo="Productos de la venta que son este programa" valores={p.productos} onAlternar={(v) => alternar(p.id, "productos", v)}
                     opciones={productos.map((x) => ({ id: x.id, nombre: x.nombre }))} />

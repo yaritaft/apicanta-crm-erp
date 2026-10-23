@@ -34,7 +34,8 @@ export function DatosDelContrato({ datos, onCambio, programas, programaId, onPro
   const programa = programas.find((p) => p.id === programaId);
   /* El contrato de la reserva sale de la plantilla de reserva del programa y sólo lleva el monto (Manu, 21/10). */
   const reserva = Boolean(datos.reserva);
-  const plantilla = plantillaDelContrato(programa, reserva);
+  /* Sin sesiones 1 a 1, la plantilla sin ese punto (si el programa la tiene). */
+  const plantilla = plantillaDelContrato(programa, reserva, datos.sesiones);
   const conPlantilla = programas.filter((p) => p.activo && plantillaDelContrato(p, reserva).id);
   const bonos = Array.from(new Set([...(programa?.bonos ?? []), ...datos.bonos]));
   const alternarBono = (b: string) => onCambio({ bonos: datos.bonos.includes(b) ? datos.bonos.filter((x) => x !== b) : [...datos.bonos, b] });
