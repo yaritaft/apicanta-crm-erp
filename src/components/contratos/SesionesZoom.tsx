@@ -91,7 +91,7 @@ export function SesionesZoom({ email, desde, reuniones }: { email: string; desde
           : <span className="hs-guion">Nunca entró a una clase</span>}
       </FilaServicio>
       {r.lista.slice(0, 12).map((x) => (
-        <FilaServicio key={x.instancia} icono={<Video size={15} />} rotulo={x.tema || "Clase"} detalle={formatoDia(x.inicio.slice(0, 10), hoy)}>
+        <FilaServicio key={x.id} icono={<Video size={15} />} rotulo={x.tema || "Clase"} detalle={formatoDia(x.inicio.slice(0, 10), hoy)}>
           {x.fue ? <Badge variante="success">Entró · {Math.round(x.minutos)} min</Badge> : <Badge variante="neutral">No entró</Badge>}
         </FilaServicio>
       ))}

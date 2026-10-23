@@ -19,6 +19,7 @@ import { ContactarHoy } from "@/components/alumnos/Seguimiento";
 import { ClientesCs } from "@/components/cs/ClientesCs";
 import { ResellsCs } from "@/components/cs/ResellsCs";
 import { RevisionCvCs } from "@/components/cs/RevisionCvCs";
+import { SesionesZoomGeneral } from "@/components/alumnos/SesionesZoomGeneral";
 import { TestimoniosCs } from "@/components/cs/TestimoniosCs";
 import { BadgeEtapa, ESTADO_ALUMNO, ESTADOS_ALUMNO } from "@/components/alumnos/comun";
 import { acciones, useEstado } from "@/lib/store";
@@ -30,15 +31,15 @@ import { rachasAHoy } from "@/lib/reportes";
 import { fecha, money, num } from "@/lib/format";
 import type { Alumno, EstadoAlumno } from "@/lib/types";
 
-type Vista = "lista" | "pipeline" | "clientes" | "hoy" | "testimonios" | "resells" | "cvs";
-const VISTAS: Vista[] = ["lista", "pipeline", "clientes", "hoy", "testimonios", "resells", "cvs"];
+type Vista = "lista" | "pipeline" | "clientes" | "hoy" | "testimonios" | "resells" | "cvs" | "zoom";
+const VISTAS: Vista[] = ["lista", "pipeline", "clientes", "hoy", "testimonios", "resells", "cvs", "zoom"];
 
 /* Lo que se está mirando vive en la URL (lib/useParamsURL): el menú lateral
    entra directo al pipeline (/alumnos?seccion=pipeline), y el link se puede
    guardar o mandar y se ve tal cual.
    - seccion: lista (por defecto), pipeline o, para Customer Success, clientes
      (la lista con las columnas de Lili), hoy (a quién contactar), testimonios y
-     resells (la agenda) y cvs (la revisión de CVs de Aldana). No va en ?vista, que es de la ficha de una persona:
+     resells (la agenda), cvs (la revisión de CVs de Aldana) y zoom (la asistencia a las clases). No va en ?vista, que es de la ficha de una persona:
      abrir una desde el pipeline pasaba el fondo a la lista. Un link viejo con
      ?vista=pipeline o ?seccion=seguimiento se sigue entendiendo.
    - estado: activo, pausado, egresado o baja
@@ -221,6 +222,8 @@ export default function Alumnos() {
           { valor: "testimonios", texto: "Testimonios" },
           { valor: "resells", texto: "Resells" },
           { valor: "cvs", texto: "CVs" },
+          /* Las clases de Zoom: cuánta gente entra y qué alumnos vienen (Juan Cruz, 23/10). */
+          { valor: "zoom", texto: "Sesiones Zoom" },
         ]}
       />
 
@@ -250,6 +253,7 @@ export default function Alumnos() {
       {vista === "testimonios" && <TestimoniosCs />}
       {vista === "resells" && <ResellsCs />}
       {vista === "cvs" && <RevisionCvCs />}
+      {vista === "zoom" && <SesionesZoomGeneral />}
 
       {vista === "pipeline" && (
         <div className="stack-4">
