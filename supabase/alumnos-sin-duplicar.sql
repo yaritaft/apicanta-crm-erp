@@ -10,8 +10,11 @@
 -- todos: si llega un alumno con venta y ya hay uno SIN venta de la misma
 -- persona, se le pega la venta al que estaba y el nuevo no se crea.
 --
--- La misma persona: el mismo mail (clave_email, de personas-unicas.sql) o
--- el mismo teléfono (últimos 8 dígitos) y dos palabras del nombre.
+-- La misma persona: la misma persona del CRM (el mismo lead o el mismo
+-- contacto: Lili lo da de alta atado a su llamada, «esperando la venta»),
+-- el mismo mail (clave_email, de personas-unicas.sql) o el mismo teléfono
+-- (últimos 8 dígitos) y dos palabras del nombre. Al unir, se le saca la
+-- marca de «esperando la venta» (extra.ventaPendiente).
 -- Se puede volver a correr.
 -- ==================================================================
 
@@ -52,14 +55,19 @@ begin
   where a.id <> new.id
     and (a."ventaId" is null or a."ventaId" = new."ventaId")
     and (
-      (public.clave_email(new.email) <> '' and public.clave_email(a.email) = public.clave_email(new.email))
+      (new."leadId" is not null and a."leadId" is not null and (
+        a."leadId" = new."leadId"
+        or exists (select 1 from leads la join leads lb on coalesce(la."contactoId", la.id) = coalesce(lb."contactoId", lb.id)
+                   where la.id = a."leadId" and lb.id = new."leadId")))
+      or (public.clave_email(new.email) <> '' and public.clave_email(a.email) = public.clave_email(new.email))
       or (length(tel) = 8 and public.telefono_de_alumno(a) = tel
           and (select count(*) from unnest(public.palabras_nombre(a.nombre)) x where x = any(public.palabras_nombre(new.nombre))) >= 2)
     )
   order by (a."ventaId" = new."ventaId") desc nulls last, a."creadoEn"
   limit 1;
   if ya.id is null then return new; end if;
-  update alumnos set "ventaId" = new."ventaId", "leadId" = coalesce(ya."leadId", new."leadId") where id = ya.id;
+  update alumnos set "ventaId" = new."ventaId", "leadId" = coalesce(ya."leadId", new."leadId"),
+    extra = coalesce(ya.extra, '{}'::jsonb) - 'ventaPendiente' where id = ya.id;
   insert into actividad (id, accion, actor, entidad, "entidadId", titulo, fecha, detalle)
   values ('act_alu_' || substr(md5(new.id || ya.id), 1, 12), 'actualizo', 'Apicanta', 'alumno', ya.id, ya.nombre, now(),
     'La venta se sumó a su ficha de servicio (ya estaba cargado a mano): no se creó otro alumno.')

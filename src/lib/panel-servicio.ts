@@ -2,6 +2,8 @@ import type { EstadoApp, ID } from "./types";
 import { DURACION_POR_DEFECTO, estadosDeResell, filasClientes, filasResells, filasTestimonios, NO_SE_HACIA_CONTRATO, sumarMeses } from "./clientes-cs";
 import { diasEntre, formatoDia, terminoElServicio } from "./seguimiento";
 import { diasDe } from "./pausas";
+import { ventaPendienteDe } from "./alumnos";
+import { diaDeNegocio } from "./dia-negocio";
 import { crearMotor, uno, varios, type ColumnaCs, type OrdenCs } from "./tabla-cs";
 
 /* ==================================================================
@@ -68,7 +70,7 @@ export interface ItemServicio {
 }
 
 export interface SeccionServicio {
-  id: "contactar" | "vuelven" | "nuevos" | "renovar" | "resells" | "testimonios" | "reportes" | "contratos";
+  id: "contactar" | "vuelven" | "nuevos" | "esperanVenta" | "renovar" | "resells" | "testimonios" | "reportes" | "contratos";
   titulo: string;
   /* El nombre para la tarjeta chica de arriba, donde el título entero no entra. */
   corto: string;
@@ -246,6 +248,19 @@ export function panelDeServicio(e: EstadoApp, hoy: string, ahora: Date = new Dat
       };
     });
 
+  /* ---------- Esperan la venta del closer (lib/alumnos.ts → ventaPendienteDe) ----------
+     Lili los dio de alta porque compraron y el closer todavía no cargó la venta. Se van de la lista solos cuando la carga. */
+  const esperanVenta = figuranActivos.flatMap((c): ItemServicio[] => {
+    const v = ventaPendienteDe(c.alumno);
+    if (!v) return [];
+    const d = diasEntre(diaDeNegocio(v.desde), hoy);
+    return [{
+      clave: c.id, alumnoId: c.id, nombre: c.nombre, dias: d, cuando: cuandoEs(d), ...contactoDe(c),
+      detalle: `Lo diste de alta el ${formatoDia(diaDeNegocio(v.desde), hoy)} · falta que ${v.closer || "el closer"} cargue la venta`,
+      tono: d >= 3 ? "rojo" : d >= 1 ? "ambar" : "neutro",
+    }];
+  });
+
   /* ---------- El contrato por vencer (renovar o dar de baja) ---------- */
   const renovar = activos.filter((c) => c.egreso && diasEntre(hoy, c.egreso) <= DIAS_PARA_RENOVAR).map((c): ItemServicio => {
     const quedan = diasEntre(hoy, c.egreso as string);
@@ -324,6 +339,7 @@ export function panelDeServicio(e: EstadoApp, hoy: string, ahora: Date = new Dat
     seccion({ id: "contactar", titulo: "A contactar hoy", corto: "Contactar", regla: "Su próximo contacto de seguimiento ya venció o toca hoy.", vacio: "Nadie para contactar hoy. La lista se llena a medida que vencen los días de cada alumno.", verTodos: { texto: "Ver la lista completa", href: "/alumnos?seccion=hoy" } }, contactar, masViejoPrimero),
     seccion({ id: "vuelven", titulo: "Arrancan o retoman", corto: "Retoman", regla: "Termina su demora de inicio o su pausa: hablale para que arranque.", vacio: "Nadie termina una pausa ni una demora de inicio en estos días.", verTodos: { texto: "Ver Clientes del programa", href: "/alumnos?seccion=clientes" } }, vuelven, masViejoPrimero),
     seccion({ id: "nuevos", titulo: "Alumnos nuevos", corto: "Nuevos", vacio: "No entró nadie nuevo sin su primer contacto.", regla: `Entraron en los últimos ${DIAS_NUEVO} días y todavía no tienen el primer contacto.`, verTodos: { texto: "Ver Clientes del programa", href: "/alumnos?seccion=clientes" } }, nuevos, masViejoPrimero),
+    seccion({ id: "esperanVenta", titulo: "Esperan la venta del closer", corto: "Sin venta", regla: "Los diste de alta antes de que el closer cargara la venta: se unen solos cuando la carga. A los 3 días queda en rojo: avisale al closer.", vacio: "Todos los alumnos tienen su venta cargada.", verTodos: { texto: "Ver Clientes del programa", href: "/alumnos?seccion=clientes" } }, esperanVenta, masViejoPrimero),
     seccion({ id: "renovar", titulo: "Se les termina el contrato", corto: "Renovar", vacio: "Ningún contrato por vencer en los próximos 30 días.", regla: `Les quedan ${DIAS_PARA_RENOVAR} días o menos (o ya terminó y siguen activos): renovar o dar de baja.`, verTodos: { texto: "Ver Clientes del programa", href: "/alumnos?seccion=clientes" } }, renovar, masCercanoPrimero),
     seccion({ id: "resells", titulo: "Resells sin cierre", corto: "Resells", vacio: "Todos los resells ya tienen su resultado.", regla: `La llamada ya pasó y el closer no dijo en qué quedó. A los ${DIAS_PARA_CERRAR_RESELL} días queda en rojo.`, verTodos: { texto: "Ver la agenda de resells", href: "/alumnos?seccion=resells" } }, sinCierre, masViejoPrimero),
     seccion({ id: "testimonios", titulo: "Testimonios", corto: "Testimonios", vacio: "No hay testimonios pendientes.", regla: "Grabaron y falta el link del video, o falta agendar la llamada de grabación.", verTodos: { texto: "Ver testimonios", href: "/alumnos?seccion=testimonios" } }, [...sinLink, ...porAgendar], masViejoPrimero),

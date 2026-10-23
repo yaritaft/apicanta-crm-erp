@@ -3,7 +3,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
-  CalendarClock, Check, ChevronRight, FileSignature, FileWarning, PhoneCall, PlayCircle, Repeat2, UserPlus, Video, X,
+  CalendarClock, Check, ChevronRight, FileSignature, FileWarning, Hourglass, PhoneCall, PlayCircle, Repeat2, UserPlus, Video, X,
 } from "lucide-react";
 import { Telefono } from "@/components/ui/Telefono";
 import { NADA, Recorte, TablaCs } from "@/components/cs/TablaCs";
@@ -44,7 +44,7 @@ import "./panel-servicio.css";
 /* La solapa de la ficha que abre cada lista de «Para hoy». */
 const HOJA_DE_LISTA: Partial<Record<SeccionServicio["id"], SolapaServicio>> = {
   /* «Renovar» abre Programa, donde está «¿Renueva?» con la llamada de resell y los botones. */
-  contactar: "seguimiento", vuelven: "seguimiento", nuevos: "seguimiento", renovar: "programa", resells: "testimonio", testimonios: "testimonio", reportes: "reportes", contratos: "contrato",
+  contactar: "seguimiento", vuelven: "seguimiento", nuevos: "seguimiento", esperanVenta: "programa", renovar: "programa", resells: "testimonio", testimonios: "testimonio", reportes: "reportes", contratos: "contrato",
 };
 
 /* Cómo se ve cada tarea de «Para hoy»: su ícono, su color y lo que pide. */
@@ -52,6 +52,7 @@ const TAREA: Record<SeccionServicio["id"], { icono: React.ReactNode; tono: strin
   contactar: { icono: <PhoneCall size={16} />, tono: "var(--danger)", pide: "su seguimiento ya venció" },
   vuelven: { icono: <PlayCircle size={16} />, tono: "var(--success)", pide: "termina su pausa o su demora" },
   nuevos: { icono: <UserPlus size={16} />, tono: "var(--info)", pide: "falta el primer contacto" },
+  esperanVenta: { icono: <Hourglass size={16} />, tono: "var(--warning)", pide: "el closer no cargó la venta" },
   renovar: { icono: <CalendarClock size={16} />, tono: "var(--warning)", pide: "renovar o dar de baja" },
   resells: { icono: <Repeat2 size={16} />, tono: "var(--brand)", pide: "el closer no dijo en qué quedó" },
   testimonios: { icono: <Video size={16} />, tono: "var(--success)", pide: "falta el link o agendar" },

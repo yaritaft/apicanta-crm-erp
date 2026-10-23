@@ -105,3 +105,26 @@ test("el mail de bienvenida sale con «responder a» la persona de soporte", asy
   await enviarPorResend({ clave: "x", desde: "x <x@x.com>" }, { para: "a@b.com", asunto: "Hola", texto: "t", html: "h" }, pedir);
   assert.equal(cuerpo.reply_to, undefined, "sin dato, no se manda");
 });
+
+/* ---------- Compró, pero el closer todavía no cargó la venta (23/10) ---------- */
+
+test("el alumno que espera la venta aparece en «Esperan la venta del closer» y se une solo cuando el closer la carga", async () => {
+  const { alumnoDesdeVenta } = await import("@/lib/store");
+  const { ventaPendienteDe } = await import("@/lib/alumnos");
+  const e = estado();
+  e.leads = [...e.leads, { id: "l_pend", nombre: "Paula Espera", email: "paula@mail.com", responsable: "Mariano" } as EstadoApp["leads"][number]];
+  e.alumnos = [...e.alumnos, alumno("paula", "Paula Espera", {
+    leadId: "l_pend", email: "paula@mail.com", extra: { ventaPendiente: { desde: "2026-10-20T12:00:00.000Z", closer: "Mariano" } },
+  }) as unknown as EstadoApp["alumnos"][number]];
+  const lista = panelDeServicio(e, HOY, AHORA).secciones.find((s) => s.id === "esperanVenta")!;
+  assert.deepEqual(lista.items.map((i) => i.alumnoId), ["paula"]);
+  assert.match(lista.items[0].detalle, /falta que Mariano cargue la venta/);
+  assert.equal(lista.items[0].tono, "ambar", "hace 2 días que espera: a los 3 días queda en rojo");
+  /* El closer carga la venta de esa persona (el mismo lead): se pega al alumno que ya estaba y deja de esperar. */
+  const venta = { id: "v_paula", contactoId: "l_pend", contactoNombre: "Paula Espera", estado: "activa", fecha: "2026-10-22T12:00:00.000Z", moneda: "USD" } as Venta;
+  const r = alumnoDesdeVenta(e, venta);
+  assert.equal(r.tocado?.id, "paula", "no se creó otro alumno");
+  assert.equal(r.tocado?.ventaId, "v_paula");
+  assert.equal(ventaPendienteDe(r.tocado!), null);
+  assert.equal(r.alumnos.length, e.alumnos.length);
+});

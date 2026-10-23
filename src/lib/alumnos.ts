@@ -80,6 +80,30 @@ export function alumnoDeVenta(e: EstadoApp, v: Venta): Alumno | undefined {
   return e.alumnos.find((a) => !a.ventaId && esLaMismaPersona({ nombre: a.nombre, telefono: telefonoDe(a) }, persona));
 }
 
+/* ---------- Compró, pero el closer todavía no cargó la venta (Lili y Juan Cruz, 23/10) ----------
+   Los closers todavía no usan la app: Lili da de alta al alumno atado a su persona del CRM (el lead de la llamada) y queda
+   esperando la venta. Cuando el closer la carga, se le pega sola: acá (alumnoDeVenta, por el mismo lead) y en la base
+   (supabase/alumnos-sin-duplicar.sql), que lo hace también para quien no ve a los alumnos. */
+export interface VentaPendiente {
+  /* Cuándo se lo dio de alta esperando la venta. */
+  desde: string;
+  /* El closer de su llamada, si se sabe: a quién reclamarle la venta. */
+  closer?: string;
+}
+
+export function ventaPendienteDe(a: Pick<Alumno, "ventaId" | "extra">): VentaPendiente | null {
+  if (a.ventaId) return null;
+  const v = (a.extra ?? {}).ventaPendiente as VentaPendiente | undefined;
+  return v && typeof v === "object" && typeof v.desde === "string" ? v : null;
+}
+
+/* El alumno ya tiene su venta: deja de esperarla. */
+export function sinVentaPendiente(extra: Record<string, unknown> | undefined): Record<string, unknown> {
+  const { ventaPendiente: _v, ...resto } = extra ?? {};
+  void _v;
+  return resto;
+}
+
 /* El plan de un alumno que viene de una venta es el producto que compró. */
 export function planDeVenta(e: EstadoApp, v: Venta): string {
   return e.productos.find((p) => p.id === v.productoId)?.nombre ?? "";

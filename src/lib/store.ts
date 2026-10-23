@@ -20,7 +20,7 @@ import { MOTIVO_ANULADO } from "./motivos";
 import { conExtraEnMes, mismasTasas, nombrePeriodo, sinExtraEnLiquidacion, tasaParaFinanzas, tasasPorServicio } from "./honorarios";
 import {
   alumnoDeVenta, cuotaMensualDeVenta, etapaDelAlumno, etapaInicialDeServicio, etapasDeServicio,
-  personaDeVenta, planDeVenta,
+  personaDeVenta, planDeVenta, sinVentaPendiente,
 } from "./alumnos";
 import { pagoDesdeMovimiento, tasaEstimada } from "./conciliacion";
 import { candadoDeCobro } from "./candado-cobro";
@@ -1091,7 +1091,8 @@ export function alumnoDesdeVenta(e: EstadoApp, venta: Venta, cuotas?: Cuota[]): 
   const ya = alumnoDeVenta(e, venta);
   if (ya) {
     if (ya.ventaId) return sinCambios;
-    const enlazado: Alumno = { ...ya, ventaId: venta.id, leadId: ya.leadId ?? venta.contactoId };
+    /* Si lo habían dado de alta esperando la venta (lib/alumnos.ts → ventaPendienteDe), ya la tiene. */
+    const enlazado: Alumno = { ...ya, ventaId: venta.id, leadId: ya.leadId ?? venta.contactoId, extra: sinVentaPendiente(ya.extra) };
     return { alumnos: e.alumnos.map((a) => (a.id === ya.id ? enlazado : a)), tocado: enlazado };
   }
   if (venta.estado !== "activa") return sinCambios;

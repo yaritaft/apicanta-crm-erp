@@ -13,6 +13,7 @@ import {
   opcionesDePlan, personaDeVenta, planDeVenta,
 } from "@/lib/alumnos";
 import { claveEmail, lleno } from "@/lib/contactos";
+import { buscarPersonas, type PersonaBuscada } from "@/lib/buscar-cliente";
 import { fechaLarga, isoDia, money } from "@/lib/format";
 import type { Alumno, EstadoAlumno, EstadoApp, Moneda, Venta } from "@/lib/types";
 import { BadgeEtapa, ESTADO_ALUMNO, ESTADOS_ALUMNO } from "./comun";
@@ -40,7 +41,8 @@ const PASOS: { id: PasoId; titulo: string }[] = [
 ];
 
 interface Borrador {
-  modo: "venta" | "manual" | null;
+  /* «pendiente»: compró y el closer todavía no cargó la venta; se ata a su persona del CRM y espera la venta. */
+  modo: "venta" | "pendiente" | "manual" | null;
   ventaId?: string;
   leadId?: string;
   busca: string;
@@ -56,6 +58,8 @@ interface Borrador {
   estado: EstadoAlumno;
   notas: string;
   extra: Record<string, unknown>;
+  /* El closer de su llamada (el responsable del lead), para la lista de los que esperan la venta. */
+  closer?: string;
 }
 
 /* Lo que sale de una venta. Se vuelve a esto al pasar a "a mano" después de
@@ -90,6 +94,7 @@ function validar(paso: PasoId, b: Borrador, e: EstadoApp): string | null {
   switch (paso) {
     case "origen":
       if (!b.modo) return "Elegí una opción";
+      if (b.modo === "pendiente" && !b.leadId) return "Elegí a la persona del CRM (o cargalo a mano)";
       return b.modo === "venta" && !b.ventaId ? "Elegí la venta de la lista" : null;
     case "persona":
       if (b.nombre.trim().length < 2) return "Escribí el nombre";
@@ -135,6 +140,14 @@ export function AsistenteAlumno({ onCerrar, onListo, onAbrirAlumno }: {
     });
   }
 
+  function elegirPersona(p: PersonaBuscada) {
+    const lead = e.leads.find((l) => l.id === p.id);
+    set({
+      modo: "pendiente", ventaId: undefined, leadId: p.id, busca: p.nombre,
+      nombre: p.nombre, email: p.email ?? "", pais: lead?.pais ?? "", closer: lead?.responsable || undefined,
+    });
+  }
+
   function aMano() {
     set({
       modo: "manual", ventaId: undefined, leadId: undefined,
@@ -152,7 +165,9 @@ export function AsistenteAlumno({ onCerrar, onListo, onAbrirAlumno }: {
       cohorte: b.cohorte.trim(), plan: b.plan.trim(),
       cuotaMensual: Math.round(b.cuotaMensual * 100) / 100, moneda: b.moneda,
       estado: b.estado, inicio: b.inicio, progreso: 0,
-      leadId: b.leadId, notas: b.notas.trim(), creadoEn: new Date().toISOString(), extra: b.extra,
+      leadId: b.leadId, notas: b.notas.trim(), creadoEn: new Date().toISOString(),
+      /* Esperando la venta del closer (lib/alumnos.ts): se le pega sola cuando la cargue. */
+      extra: b.modo === "pendiente" ? { ...b.extra, ventaPendiente: { desde: new Date().toISOString(), ...(b.closer ? { closer: b.closer } : {}) } } : b.extra,
       etapaServicioId: b.etapaServicioId || undefined, ventaId: b.ventaId,
     }, nombre);
     onListo(id, nombre);
@@ -167,7 +182,7 @@ export function AsistenteAlumno({ onCerrar, onListo, onAbrirAlumno }: {
       {paso.id === "origen" && (
         <PasoOrigen
           b={b} set={set} e={e} venta={venta}
-          onElegirVenta={elegirVenta} onManual={aMano} onAbrirAlumno={onAbrirAlumno}
+          onElegirVenta={elegirVenta} onElegirPersona={elegirPersona} onManual={aMano} onAbrirAlumno={onAbrirAlumno}
         />
       )}
       {paso.id === "persona" && <PasoPersona b={b} set={set} e={e} onAbrirAlumno={onAbrirAlumno} />}
@@ -181,11 +196,13 @@ export function AsistenteAlumno({ onCerrar, onListo, onAbrirAlumno }: {
 
 /* ---------- Paso 1: ¿viene de una venta? ---------- */
 
-function PasoOrigen({ b, set, e, venta, onElegirVenta, onManual, onAbrirAlumno }: {
+function PasoOrigen({ b, set, e, venta, onElegirVenta, onElegirPersona, onManual, onAbrirAlumno }: {
   b: Borrador; set: (c: Partial<Borrador>) => void; e: EstadoApp; venta?: Venta;
-  onElegirVenta: (v: Venta) => void; onManual: () => void; onAbrirAlumno: (id: string) => void;
+  onElegirVenta: (v: Venta) => void; onElegirPersona: (p: PersonaBuscada) => void; onManual: () => void; onAbrirAlumno: (id: string) => void;
 }) {
   const q = normal(b.busca.trim());
+  /* Compró y el closer todavía no cargó la venta: la persona del CRM (agendó y tuvo su llamada). */
+  const personas = useMemo(() => (b.modo === "pendiente" && b.busca.trim().length >= 2 ? buscarPersonas(e, b.busca, 8) : []), [e, b.modo, b.busca]);
 
   /* Sin texto: las ventas más nuevas que todavía no tienen alumno, que son
      las que casi seguro se vienen a cargar. Con texto: todas las que
@@ -218,10 +235,46 @@ function PasoOrigen({ b, set, e, venta, onElegirVenta, onManual, onAbrirAlumno }
           activo={b.modo === "venta"} onClick={() => set({ modo: "venta" })}
         />
         <Opcion
-          tecla="2" nombre="No, lo cargo a mano" sub="Alguien que no pasó por Ventas"
+          tecla="2" nombre="Sí, falta que el closer la cargue" sub="Lo busco en el CRM; se une solo cuando la cargue"
+          activo={b.modo === "pendiente"} onClick={() => set({ modo: "pendiente", ventaId: undefined, ...(b.ventaId ? datosVacios(e) : {}) })}
+        />
+        <Opcion
+          tecla="3" nombre="No pasó por Ventas" sub="Una beca, un canje o alguien sin llamada"
           activo={b.modo === "manual"} onClick={onManual}
         />
       </div>
+
+      {b.modo === "pendiente" && (
+        <div className="stack-3">
+          <Input
+            icono={<Search size={18} />} value={b.busca} autoFocus
+            onChange={(ev) => set({ busca: ev.target.value, leadId: undefined })}
+            placeholder="Nombre, mail o teléfono…" aria-label="Buscar a la persona en el CRM"
+          />
+          {b.leadId && (
+            <div className="row-wrap">
+              <Badge variante="brand" icono={<Link2 size={13} />}>Atado a su llamada</Badge>
+              <span className="t-sm">{b.nombre}</span>
+              <span className="t-sm t-subtle">{[b.email, b.closer && `closer: ${b.closer}`].filter(Boolean).join(" · ")}</span>
+            </div>
+          )}
+          {!b.leadId && b.busca.trim().length >= 2 && (
+            personas.length === 0 ? (
+              <p className="t-sm t-subtle">No está en el CRM con ese nombre, mail o teléfono. Revisá cómo está escrito, o cargalo a mano con su mail: se une igual cuando el closer cargue la venta con ese mail.</p>
+            ) : (
+              <div className="opciones opciones--lista">
+                {personas.map((p) => {
+                  const ya = e.alumnos.find((a) => a.leadId === p.id);
+                  const sub = [p.email, p.telefono].filter(Boolean).join(" · ") || "Sin mail ni teléfono";
+                  return ya
+                    ? <Opcion key={p.id} nombre={p.nombre} activo={false} sub={`${sub} · ya es alumno: abrir su ficha`} onClick={() => onAbrirAlumno(ya.id)} />
+                    : <Opcion key={p.id} nombre={p.nombre} activo={false} sub={sub} onClick={() => onElegirPersona(p)} />;
+                })}
+              </div>
+            )
+          )}
+        </div>
+      )}
 
       {b.modo === "venta" && (
         <div className="stack-3">

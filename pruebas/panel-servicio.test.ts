@@ -78,7 +78,7 @@ const nombres = (s: SeccionServicio) => s.items.map((i) => i.nombre);
 
 test("el panel trae las listas de la reunión (y «Arrancan o retoman», 22/10), cada una con su regla escrita", () => {
   const p = panelDeServicio(estado(), HOY, AHORA);
-  assert.deepEqual(p.secciones.map((s) => s.id), ["contactar", "vuelven", "nuevos", "renovar", "resells", "testimonios", "reportes", "contratos"]);
+  assert.deepEqual(p.secciones.map((s) => s.id), ["contactar", "vuelven", "nuevos", "esperanVenta", "renovar", "resells", "testimonios", "reportes", "contratos"]);
   for (const s of p.secciones) {
     assert.ok(s.regla.length > 20, `${s.id}: falta decir qué la hace aparecer`);
     assert.ok(s.verTodos?.href.startsWith("/"), `${s.id}: a dónde ir a ver la lista entera`);

@@ -24,6 +24,7 @@ import { FormSesionUnoAUno } from "./FormSesionUnoAUno";
 import { PausasAlumno } from "./PausasAlumno";
 import { BienvenidaAlumno } from "@/components/contratos/BienvenidaAlumno";
 import { textoDePausa } from "@/lib/pausas";
+import { ventaPendienteDe } from "@/lib/alumnos";
 import { resumenBonos } from "@/lib/bonos";
 import { programaDeProducto, programasDe } from "@/lib/programas";
 import { reservaSinCompletar, type EstadoReserva } from "@/lib/reservas";
@@ -320,6 +321,11 @@ function HojaDeUnServicio({ e, p, f, venta, producto, conChat, reserva }: {
           {reserva && (
             <span className="hs-chip hs-chip--ambar" title="Sólo pagó la reserva: el programa arranca cuando pague lo que falta">
               Reserva de {money(reserva.pagado, venta?.moneda)}{reserva.falta > 0 ? ` · faltan ${money(reserva.falta, venta?.moneda)}` : ""} · todavía no arrancó
+            </span>
+          )}
+          {ventaPendienteDe(alumno) && (
+            <span className="hs-chip hs-chip--ambar" title="Lo dieron de alta antes de que el closer cargara la venta: se une sola cuando la cargue">
+              Falta que {ventaPendienteDe(alumno)?.closer || "el closer"} cargue la venta
             </span>
           )}
           {!reserva && f.pausa && (
