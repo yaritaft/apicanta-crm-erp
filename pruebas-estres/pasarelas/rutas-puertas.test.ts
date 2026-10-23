@@ -76,6 +76,8 @@ const PUBLICAS = new Set([
   "GET /pandadoc/webhook",
   /* La página de bienvenida del alumno que acaba de firmar: la abre sólo su código (pruebas/contratos.test.ts). */
   "GET /bienvenida/[token]",
+  /* La versión publicada y el último «Pedir a todos que actualicen» (el cartel de «actualizá la app», 23/10): sin datos. */
+  "GET /version",
 ]);
 const clave = (r: Ruta) => `${r.metodo} ${r.ruta}`;
 
