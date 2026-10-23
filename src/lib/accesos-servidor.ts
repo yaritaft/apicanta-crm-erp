@@ -122,10 +122,24 @@ async function usuarioWisboo(p: Persona): Promise<string> {
   throw new ErrorAcceso(`Wisboo no creó el usuario (contestó ${crea.status}${motivoWisboo(crea.json)}).`);
 }
 
+/** El acceso que ya tenía (para poder sacarlo en el outboarding). Sólo vale uno de ESE usuario y ESE curso: si Wisboo
+    ignorara los filtros (como el de mail en la lista de usuarios), el primero de la lista sería de otra persona y el
+    outboarding le sacaría el curso a otro. Sin filtro que sirva, se recorren hasta 20 páginas; si no aparece, null. */
 async function accesoWisbooExistente(usuarioId: string, productoId: string): Promise<string | null> {
-  const r = await pedir(`${wisbooBase()}/product_accesses?user_id[]=${encodeURIComponent(usuarioId)}&product_id[]=${encodeURIComponent(productoId)}&size=5`, { headers: wisbooCabeza() });
-  const fila = (Array.isArray(r.json?.data) ? r.json!.data : [])[0] as { id?: string } | undefined;
-  return fila?.id ?? null;
+  type Fila = { id?: string; user?: { id?: string }; product?: { id?: string } };
+  const esEse = (f: Fila) => f.user?.id === usuarioId && f.product?.id === productoId;
+  const base = `${wisbooBase()}/product_accesses?user_id[]=${encodeURIComponent(usuarioId)}&product_id[]=${encodeURIComponent(productoId)}&size=${POR_PAGINA}`;
+  for (let n = 1; n <= 20; n++) {
+    const r = await pedir(`${base}&page=${n}`, { headers: wisbooCabeza() });
+    const filas = (Array.isArray(r.json?.data) ? r.json!.data : []) as Fila[];
+    const fila = filas.find(esEse);
+    if (fila?.id) return fila.id;
+    /* El filtro anduvo (todas las filas son de ese usuario y curso) o no hay más: no hay nada más que buscar. */
+    if (filas.length === 0 || filas.every(esEse)) return null;
+    const total = totalDe(r.json);
+    if (total !== null && n * filas.length >= total) return null;
+  }
+  return null;
 }
 
 /* La clave de idempotencia cambia en cada alta: con una fija (usuario + curso), volver a dar un
@@ -142,8 +156,9 @@ async function darCursoWisboo(usuarioId: string, productoId: string): Promise<{ 
     body: JSON.stringify({ user_id: usuarioId, product_id: productoId }),
   });
   if (typeof r.json?.id === "string") return { accesoId: r.json.id, yaLoTenia: false };
-  /* 422 DUPLICATE_ERROR: ya lo tenía. Se busca su acceso para poder sacarlo después. */
-  if (r.status === 422) return { accesoId: await accesoWisbooExistente(usuarioId, productoId), yaLoTenia: true };
+  /* DUPLICATE_ERROR: ya lo tenía. La documentación dice 422; el 23/10 llegó como 400 («El usuario ya tiene accesso a este
+     producto»). Se busca su acceso para poder sacarlo después. */
+  if (r.status === 422 || r.json?.code === "DUPLICATE_ERROR") return { accesoId: await accesoWisbooExistente(usuarioId, productoId), yaLoTenia: true };
   if (r.status === 404) throw new ErrorAcceso("Wisboo no encuentra ese curso.");
   console.error("[wisboo] no dio el acceso", r.status, JSON.stringify({ code: r.json?.code, message: r.json?.message, details: r.json?.details }));
   throw new ErrorAcceso(`Wisboo no dio el acceso (contestó ${r.status}${motivoWisboo(r.json)}).`);

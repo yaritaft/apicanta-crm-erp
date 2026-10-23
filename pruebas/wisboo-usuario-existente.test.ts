@@ -137,3 +137,33 @@ test("Wisboo: devuelve 50 por página aunque se pidan 100 → igual llega a la �
   assert.equal((filas[0].externo as Fila).usuarioId, "usr_brian");
   assert.equal(pedidos.filter((p) => p.includes("page=")).length, 2);
 });
+
+test("Wisboo: ya tenía el curso (llega como 400 DUPLICATE_ERROR) → queda dado, con SU acceso y no el de otro", async () => {
+  const { db, filas } = baseMinima();
+  const { resultado } = await conWisbooFalso((url, init) => {
+    if (url.pathname.endsWith("/users") && init?.method === "POST") return { status: 201, json: { id: "usr_brian" } };
+    if (url.pathname.endsWith("/product_accesses") && init?.method === "POST") return { status: 400, json: { code: "DUPLICATE_ERROR", message: "El usuario ya tiene accesso a este producto" } };
+    if (url.pathname.endsWith("/product_accesses")) {
+      /* Sin filtro que sirva: la primera página es de otra gente; el suyo está en la segunda. */
+      const n = Number(url.searchParams.get("page") ?? 1);
+      const otros = Array.from({ length: 50 }, (_x, i) => ({ id: `pa_otro_${n}_${i}`, user: { id: `usr_${i}` }, product: { id: "PRO-ai" } }));
+      const data = n === 2 ? [...otros.slice(0, 10), { id: "pa_brian", user: { id: "usr_brian" }, product: { id: "PRO-ai" } }] : n === 1 ? otros : [];
+      return { status: 200, json: { data, metadata: { total_record_count: 61 } } };
+    }
+    return { status: 200, json: {} };
+  }, () => darAccesos(db, { alumnoId: "alu_1", persona, programa: PROGRAMA, origen: "manual", quien: "x" }));
+  assert.equal(resultado.fallaron, 0);
+  assert.deepEqual(filas[0].externo, { usuarioId: "usr_brian", accesoId: "pa_brian", yaLoTenia: true });
+});
+
+test("Wisboo: ya tenía el curso pero su acceso no aparece → queda dado sin id (nunca el de otra persona)", async () => {
+  const { db, filas } = baseMinima();
+  await conWisbooFalso((url, init) => {
+    if (url.pathname.endsWith("/users") && init?.method === "POST") return { status: 201, json: { id: "usr_brian" } };
+    if (url.pathname.endsWith("/product_accesses") && init?.method === "POST") return { status: 400, json: { code: "DUPLICATE_ERROR" } };
+    if (url.pathname.endsWith("/product_accesses")) return { status: 200, json: { data: [{ id: "pa_de_otro", user: { id: "usr_9" }, product: { id: "PRO-ai" } }], metadata: { total_record_count: 1 } } };
+    return { status: 200, json: {} };
+  }, () => darAccesos(db, { alumnoId: "alu_1", persona, programa: PROGRAMA, origen: "manual", quien: "x" }));
+  assert.equal(filas[0].estado, "dado");
+  assert.equal((filas[0].externo as Fila).accesoId, null);
+});
