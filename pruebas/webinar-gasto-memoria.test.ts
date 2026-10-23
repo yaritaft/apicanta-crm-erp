@@ -12,7 +12,7 @@ function estado(): EstadoApp {
   const e = estadoVacio();
   e.costosWpp = undefined;
   e.webinars = Array.from({ length: 30 }, (_, i) => ({
-    ...estadoVacio().webinars[0], id: `w${i}`, titulo: `Taller ${i}`, estado: "terminado" as const,
+    ...estadoVacio().webinars[0], id: `w${i}`, titulo: `Taller ${i}`, estado: "finalizado" as const,
     fecha: new Date(Date.UTC(2026, 0, 7 + i * 7, 22)).toISOString(), inversion: 0, inversionDmAds: 0, costoWhatsappApi: 0,
   }));
   e.campaigns = e.webinars.map((w, i) => ({ id: `c${i}`, nombre: `[WEBINAR ${String(7 + i * 7 > 28 ? ((i * 7) % 28) + 1 : 7 + i * 7).padStart(2, "0")}/${String(1 + Math.floor((i * 7) / 28)).padStart(2, "0")}] pauta` })) as never;
