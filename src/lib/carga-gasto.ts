@@ -94,6 +94,8 @@ export interface BorradorGasto {
   cuenta: string;
   /* El gasto anterior del que se copió, para marcarlo en la lista. */
   copiadoDe?: string;
+  /* El movimiento del banco del que sale («mercury:<id>»): queda en el gasto para que la pantalla de la cuenta lo marque como cargado. */
+  bancoRef?: string;
 }
 
 const redondear = (n: number) => Math.round(n * 100) / 100;
@@ -478,6 +480,7 @@ export function datosDelGasto(
   const propio: Record<string, unknown> = { ...extraLimpio };
   if (b.ingreso) propio.ingreso = true;
   if (b.cuenta.trim()) propio.cuenta = b.cuenta.trim();
+  if (b.bancoRef) propio.bancoRef = b.bancoRef;
   if (b.embudoId) propio.embudoId = b.embudoId;
   if (prov.equipoId) propio.proveedorEquipoId = prov.equipoId;
   if (b.moneda !== c.base) {

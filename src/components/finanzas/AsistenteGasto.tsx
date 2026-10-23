@@ -8,7 +8,7 @@ import { InputMonto } from "@/components/ui/InputMonto";
 import { acciones, useEstado } from "@/lib/store";
 import { fechaLarga, money } from "@/lib/format";
 import {
-  GRUPOS_GASTO, aMonedaBase, categoriasDisponibles, gastosParecidos, infoGrupo, leerMonto, normalizar, sugerirCategoria,
+  GRUPOS_GASTO, aMonedaBase, categoriaDe, categoriasDisponibles, gastosParecidos, infoGrupo, leerMonto, normalizar, sugerirCategoria,
 } from "@/lib/gastos";
 import {
   borradorInicial, cambiosAlRepetir, datosDelGasto, esCategoriaDeEquipo, esProveedorValido, modoDeCarga,
@@ -43,9 +43,11 @@ import { CampoFechasGasto } from "./CampoFechasGasto";
 
 const redondear = (n: number) => Math.round(n * 100) / 100;
 
-export function AsistenteGasto({ gasto, onCerrar, onListo }: {
+export function AsistenteGasto({ gasto, inicial, onCerrar, onListo }: {
   /* Con un gasto, se edita; sin, se carga uno nuevo. */
   gasto?: Gasto | null;
+  /* Un borrador ya armado (un movimiento del banco que falta cargar): se abre directo en la revisión, con todo puesto. */
+  inicial?: Partial<BorradorGasto>;
   onCerrar: () => void;
   onListo: (g: Gasto, editado: boolean) => void;
 }) {
@@ -54,16 +56,25 @@ export function AsistenteGasto({ gasto, onCerrar, onListo }: {
   const M = useCallback((n: number, d = 2) => money(n, base, d), [base]);
 
   const editando = Boolean(gasto);
-  const [b, setB] = useState<BorradorGasto>(() => borradorInicial(e.ajustes, gasto));
+  const [b, setB] = useState<BorradorGasto>(() => {
+    const base = borradorInicial(e.ajustes, gasto);
+    if (!inicial) return base;
+    /* La categoría se sugiere por lo que dice el movimiento (un ingreso «cashback» cae en Cashback). */
+    const concepto = inicial.concepto ?? "";
+    /* Un gasto del banco que no se sabe dónde va queda «Pendiente de revisión»: se carga ya y se clasifica después (Aldana lo ve en el paso de gastos). */
+    const sug = (concepto ? sugerirCategoria(textoParaCategoria(concepto, Boolean(inicial.ingreso)), e) : null)
+      ?? (inicial.bancoRef && !inicial.ingreso ? categoriaDe(e, "Pendiente de revisión") ?? null : null);
+    return { ...base, ...(sug ? { categoria: sug.categoria, grupo: sug.grupo, categoriaElegida: true } : {}), ...inicial };
+  });
   const set = useCallback((cambios: Partial<BorradorGasto>) => setB((x) => ({ ...x, ...cambios })), []);
 
   const modo = modoDeCarga({ editando, copiadoDe: b.copiadoDe });
   const pasos = useMemo(() => pasosDeCarga(modo), [modo]);
   /* El paso se guarda por su nombre y no por su lugar: al repetir un gasto
      la lista de pasos se acorta. */
-  const [pasoId, setPasoId] = useState<PasoId>(editando ? "revisar" : "concepto");
+  const [pasoId, setPasoId] = useState<PasoId>(editando || inicial ? "revisar" : "concepto");
   /* Una vez que se vio la revisión, cada paso ofrece volver directo a ella. */
-  const [vioRevision, setVioRevision] = useState(editando);
+  const [vioRevision, setVioRevision] = useState(editando || Boolean(inicial));
 
   const actual = Math.max(0, pasos.findIndex((p) => p.id === pasoId));
   const paso = pasos[actual];

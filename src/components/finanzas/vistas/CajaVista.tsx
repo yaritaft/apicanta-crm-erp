@@ -22,6 +22,7 @@ import { nube } from "@/lib/supabase";
 import type { Arqueo, EstadoApp, Gasto, Moneda, Procesador, SaldoCuenta, Traspaso } from "@/lib/types";
 import { CopiarLink } from "@/components/ui/Filtros";
 import { FormTraspaso, PasesEntreCuentas } from "@/components/finanzas/PasesEntreCuentas";
+import { MovimientosDeLaCuenta } from "@/components/finanzas/MovimientosDeLaCuenta";
 import { useTablaURL } from "@/lib/useParamsURL";
 
 /* ==================================================================
@@ -311,6 +312,9 @@ function ControlDeSaldosCard({ e, onArquear }: { e: EstadoApp; onArquear: () => 
     () => (estado.resp && estado.cuando ? controlarSaldos(e, estado.resp.saldos, estado.cuando) : null),
     [e, estado.resp, estado.cuando],
   );
+  /* Qué movió de verdad una cuenta desde el último arqueo (Mercury, Stripe): lo que falta cargar es lo que hace que el saldo no dé. */
+  const [verCuenta, setVerCuenta] = useState<string | null>(null);
+  const desdeElArqueo = ultimoArqueo(e)?.fecha ?? new Date(Date.now() - 14 * 86400000).toISOString();
   if (!nube) return null;
 
   const nombre = (id: string) => e.procesadores.find((p) => p.id === id)?.nombre ?? id;
@@ -360,7 +364,12 @@ function ControlDeSaldosCard({ e, onArquear }: { e: EstadoApp; onArquear: () => 
                     ) : f.diferencia !== undefined ? `${f.diferencia > 0 ? "+" : "−"}${money(Math.abs(f.diferencia), f.moneda)}` : "—"}
                 </span>
                 {/* Si lo que está en camino ya explica la diferencia, la frase lo dice con sus montos: la nota (que repite lo mismo) queda en el globito del saldo. */}
-                <span role="cell" className="t-sm t-muted">{quePasa(f)}{f.nota && f.lectura !== "da-con-pendientes" ? ` ${f.nota}` : ""}</span>
+                <span role="cell" className="t-sm t-muted">
+                  {quePasa(f)}{f.nota && f.lectura !== "da-con-pendientes" ? ` ${f.nota}` : ""}
+                  {(f.cuentaId === "proc_mercury" || f.cuentaId === "proc_stripe") && (
+                    <> <button type="button" className="link" onClick={() => setVerCuenta(f.cuentaId)}>Ver qué pasó en la cuenta</button></>
+                  )}
+                </span>
               </div>
             ))}
           </div>
@@ -384,6 +393,7 @@ function ControlDeSaldosCard({ e, onArquear }: { e: EstadoApp; onArquear: () => 
           </div>
         )}
       </div>
+      {verCuenta && <MovimientosDeLaCuenta cuentaId={verCuenta} desde={desdeElArqueo} onCerrar={() => setVerCuenta(null)} />}
     </Card>
   );
 }
@@ -515,6 +525,9 @@ function NuevoArqueo({ e, onCerrar, onListo, traerAlAbrir = false }: { e: Estado
         <div className="arqueo-fila" role="row" key={p.id}>
           <span role="cell" className="t-strong">
             {p.nombre}{moneda === "ARS" && <span className="t-sm t-subtle"> · en pesos</span>}
+            {p.id === "proc_stripe" && (
+              <span className="t-sm t-subtle" title="Poné el saldo TOTAL de Stripe (disponible + pendiente de acreditarse, el «saldo total» del panel), no el «disponible para instant payouts»: ese es sólo una parte. «Traer los saldos reales» lo completa solo."> · saldo total, no «instant payouts»</span>
+            )}
             {automaticos[p.id] && (
               <span className="t-sm arqueo-auto" title={`Leído de ${automaticos[p.id].fuente} a las ${new Date(automaticos[p.id].al).toLocaleString("es-AR", { timeZone: "America/Argentina/Buenos_Aires" })}.${automaticos[p.id].ajuste ? ` ${automaticos[p.id].ajuste!.nota}` : ""}${automaticos[p.id].nota ? ` ${automaticos[p.id].nota}` : ""}`}> · automático{automaticos[p.id].ajuste ? ", ajustado" : ""}</span>
             )}
