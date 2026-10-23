@@ -3,7 +3,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Info, MoveHorizontal, Pencil, Plus, Video, Youtube } from "lucide-react";
+import { CalendarCheck, Info, MoveHorizontal, Pencil, Plus, Video, Youtube } from "lucide-react";
 import { PageHead } from "@/components/shell/PageHead";
 import { Ayuda, Badge, Button, Card, CardHead, Chip, Empty, StatCard } from "@/components/ui/ui";
 import { ConfigColumnas, type DefColumna, useColumnas } from "@/components/ui/ColumnasConfig";
@@ -310,6 +310,15 @@ export default function Webinars() {
               webinars={e.webinars} elegidos={elegidos} fuera={fuera}
               onCambiar={(ids) => setParams({ webinars: ids.length ? ids.join(",") : null })}
             />
+            {/* Con un solo webinar a la vista, sus agendas (con los que no vinieron y los que
+                reagendaron, para bajarlos) están a un clic: antes sólo se llegaba entrando a su ficha. */}
+            {filtrados.length === 1 && (
+              <Button variante="secondary" icono={<CalendarCheck size={16} />}
+                title={`Las agendas de «${filtrados[0].titulo}»: los que no vinieron, reagendaron o cancelaron, para bajarlos`}
+                onClick={() => router.push(`/webinars/${encodeURIComponent(filtrados[0].id)}#agendas`)}>
+                Ver agendas
+              </Button>
+            )}
             <CopiarLink sm={false} />
             <Button variante="primary" icono={<Plus size={16} />} onClick={() => setNuevo(true)}>Nuevo webinar</Button>
           </>

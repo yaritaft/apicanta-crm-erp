@@ -1,8 +1,8 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { CalendarCheck, Star } from "lucide-react";
-import { Badge, Card, CardHead, Empty, Select } from "@/components/ui/ui";
+import { CalendarCheck, Download, Star } from "lucide-react";
+import { Badge, Button, Card, CardHead, Chip, Empty, Select } from "@/components/ui/ui";
 import { EstadoDeLlamada, PastillaEstado } from "@/components/estados/EstadoLlamada";
 import { useToast } from "@/components/ui/Toast";
 import { num } from "@/lib/format";
@@ -10,6 +10,8 @@ import { acciones, useEstado } from "@/lib/store";
 import { estadoVisible } from "@/lib/estados";
 import { useUsuarioActual } from "@/lib/usuario";
 import { claveDeFecha, type AgendaDelWebinar } from "@/lib/agendas-webinar";
+import { bajarCSV, clasesDe, NOMBRE_CLASE, tablaDeDescarga, type ClaseAgenda, type FilaDescarga } from "@/lib/agendas-descarga";
+import { useParamsURL } from "@/lib/useParamsURL";
 import { fechaUtm } from "@/lib/utm-estandar";
 import { NOMBRE_VIA } from "@/lib/vias-webinar";
 import type { Webinar } from "@/lib/types";
@@ -27,7 +29,22 @@ import { MarcaPitch } from "./MarcaPitch";
    segundos: el webhook de Calendly las trae en segundos.
 
    Arriba, el pitch marcado a mano (MarcaPitch): anda con o sin YouTube.
+
+   Se filtran por lo que les pasó (no vinieron, reagendaron, cancelaron) o
+   por cuándo agendaron (en el vivo, después), y lo que se ve se baja en CSV
+   para mandarles un broadcast (Santi, 23/10). El filtro va en el link
+   (?agendas=) y la tarjeta tiene su ancla (#agendas): la lista de Webinars
+   manda directo acá.
    ================================================================== */
+
+type Corte = "" | "vivo" | "despues" | ClaseAgenda;
+const CORTES: { valor: Exclude<Corte, "">; texto: string; ayuda: string }[] = [
+  { valor: "vivo", texto: "En el vivo", ayuda: "Agendaron mientras duró la transmisión" },
+  { valor: "despues", texto: "Después", ayuda: "Agendaron después del vivo (replay, seguimiento, clase cero y Q&A)" },
+  { valor: "no-vino", texto: NOMBRE_CLASE["no-vino"], ayuda: "Su llamada ya pasó y no se presentaron" },
+  { valor: "reagendo", texto: NOMBRE_CLASE.reagendo, ayuda: "Pidieron otra fecha o ya reagendaron" },
+  { valor: "cancelo", texto: NOMBRE_CLASE.cancelo, ayuda: "Cancelaron sin reagendar" },
+];
 
 export function AgendasWebinar({ w, className }: { w: Webinar; className?: string }) {
   const r = useAgendasWebinar(w.id);
@@ -35,6 +52,49 @@ export function AgendasWebinar({ w, className }: { w: Webinar; className?: strin
   /* El Estado de Llamada de cada agenda, el mismo del CRM y la Agenda. */
   const app = useEstado();
   const sesiones = React.useMemo(() => new Map(app.sesiones.map((s) => [s.id, s])), [app.sesiones]);
+  const toast = useToast();
+  const [vista, setVista] = useParamsURL({ agendas: "" });
+  const corte = (CORTES.some((c) => c.valor === vista.agendas) ? vista.agendas : "") as Corte;
+
+  /* Qué le pasó a cada agenda, con el Estado de Llamada tal cual se ve. */
+  const clases = React.useMemo(() => {
+    const m = new Map<string, ClaseAgenda[]>();
+    for (const a of d?.agendas ?? []) {
+      const s = sesiones.get(a.id);
+      m.set(a.id, s ? clasesDe(s, estadoVisible(app, s).desenlace)
+        : a.estado === "no-show" ? ["no-vino"] : a.cancelada ? ["cancelo"] : []);
+    }
+    return m;
+  }, [d, sesiones, app]);
+  const cuenta = (c: Exclude<Corte, "">, a: AgendaDelWebinar) =>
+    c === "vivo" || c === "despues" ? !a.cancelada && a.momento === c : (clases.get(a.id) ?? []).includes(c);
+  const cuentan = (d?.agendas ?? []).filter((a) => !a.fuera);
+  const visibles = corte ? cuentan.filter((a) => cuenta(corte, a)) : (d?.agendas ?? []);
+
+  function descargar() {
+    const personas = new Map([...app.contactos, ...app.leads].map((p) => [p.id, p] as const));
+    const filas: FilaDescarga[] = [];
+    for (const a of visibles) {
+      const s = sesiones.get(a.id);
+      if (!s || a.fuera) continue;
+      filas.push({
+        s, clases: clases.get(a.id) ?? [], estado: estadoVisible(app, s).texto, persona: personas.get(s.contactoId ?? "") ?? personas.get(s.leadId ?? ""),
+        extra: [a.cancelada ? "Cancelada" : a.momento === "vivo" ? "En el vivo" : "Después", NOMBRE_VIA[a.via]],
+      });
+    }
+    if (filas.length === 0) { toast("No hay agendas para bajar con este filtro.", "err"); return; }
+    const { tabla, personas: n } = tablaDeDescarga(filas, ["Momento", "Vía"]);
+    bajarCSV(`agendas-webinar-${fechaUtm(w.fecha)}-${corte || "todas"}.csv`, tabla);
+    toast(`Se bajó la lista: ${num(n)} ${n === 1 ? "persona" : "personas"}, con teléfono y mail.`);
+  }
+
+  /* Si llegó por #agendas (desde la lista de Webinars), baja hasta la tarjeta: los datos tardan en llegar. */
+  const yaBajo = React.useRef(false);
+  useEffect(() => {
+    if (!d || yaBajo.current || window.location.hash !== "#agendas") return;
+    yaBajo.current = true;
+    document.getElementById("agendas")?.scrollIntoView({ block: "start" });
+  }, [d]);
 
   /* Lo mismo que el cron va a escribir en la planilla, ya: así el embudo y
      las llamadas de la ficha no esperan su vuelta (sólo en memoria). */
@@ -47,9 +107,16 @@ export function AgendasWebinar({ w, className }: { w: Webinar; className?: strin
   const clave = claveDeFecha(w.fecha);
 
   return (
-    <Card className={className}>
+    /* scrollMarginTop: la barra de arriba no tapa el título cuando se llega por #agendas. */
+    <Card className={className} id="agendas" style={{ scrollMarginTop: 72 }}>
       <CardHead
         titulo="Agendas de Calendly"
+        acciones={d && d.agendas.length > 0 ? (
+          <Button sm variante="secondary" icono={<Download size={15} />} onClick={descargar}
+            title="Baja en CSV lo que ves, una fila por persona, con teléfono y mail">
+            Descargar CSV
+          </Button>
+        ) : undefined}
         sub={`Las que llegan con los links de este webinar, de su clase cero y de su Q&A (utm_campaign=webinar_${fechaUtm(w.fecha)}, clase0_webinar_${fechaUtm(w.fecha)} y qa_webinar_${fechaUtm(w.fecha)}; los links de antes, utm_medium=${clave}). Completan solas las llamadas de la planilla.`}
       />
       <MarcaPitch w={w} agendas={d?.agendas} />
@@ -62,6 +129,18 @@ export function AgendasWebinar({ w, className }: { w: Webinar; className?: strin
             <Kpi etiqueta="Después" valor={d.despues} />
             <Kpi etiqueta="Canceladas" valor={d.canceladas} tenue />
           </div>
+          {d.agendas.length > 0 && (
+            <div className="row-wrap" role="group" aria-label="Filtrar las agendas">
+              <Chip activo={!corte} onClick={() => setVista({ agendas: null })} count={cuentan.length}>Todas</Chip>
+              {CORTES.map((c) => (
+                <Chip key={c.valor} activo={corte === c.valor} title={c.ayuda}
+                  onClick={() => setVista({ agendas: corte === c.valor ? null : c.valor })}
+                  count={cuentan.filter((a) => cuenta(c.valor, a)).length}>
+                  {c.texto}
+                </Chip>
+              ))}
+            </div>
+          )}
           {d.agendas.length === 0 ? (
             <Empty
               icono={<CalendarCheck size={22} />}
@@ -71,7 +150,8 @@ export function AgendasWebinar({ w, className }: { w: Webinar; className?: strin
           ) : (
             /* Con scroll adentro: la lista no estira la ficha y los números de arriba no se mueven. */
             <div className="wb-filas lista-scroll">
-              {d.agendas.map((a) => {
+              {visibles.length === 0 && <p className="t-sm t-muted" style={{ padding: "var(--space-3) 0" }}>Ninguna agenda coincide con este filtro.</p>}
+              {visibles.map((a) => {
                 const s = sesiones.get(a.id);
                 return (
                   <div key={a.id} className="wb-fila" style={a.fuera ? { opacity: 0.55 } : undefined}>

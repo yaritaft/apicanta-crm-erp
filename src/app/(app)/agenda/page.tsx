@@ -2,7 +2,7 @@
 
 import { BadgeResell } from "@/components/ui/BadgeResell";
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, ArrowRight, ArrowRightLeft, CalendarDays, Check, ExternalLink, Link2, Pencil, Plus, Search, Star, Trash2, UserRound, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, ArrowRightLeft, CalendarDays, Check, Download, ExternalLink, Link2, Pencil, Plus, Search, Star, Trash2, UserRound, X } from "lucide-react";
 import { Ayuda, Badge, Button, Card, Empty, Field, IconButton, Input, Select, Textarea } from "@/components/ui/ui";
 import { ModalForm, Confirmar } from "@/components/ui/Modal";
 import { Drawer, Dato } from "@/components/ui/Drawer";
@@ -13,7 +13,9 @@ import { EstadoDeLlamada, EstadoEditable } from "@/components/estados/EstadoLlam
 import { PasarLlamadas } from "@/components/closers/PasarLlamadas";
 import { sePuedePasar, usePuedePasarLlamadas } from "@/components/closers/usePasarLlamadas";
 import { ETIQUETA_CANAL } from "@/lib/calendly";
-import { embudoDe } from "@/lib/agendas-webinar";
+import { atribucionDe, claveDeFecha, embudoDe, viaDe } from "@/lib/agendas-webinar";
+import { bajarCSV, clasesDe, tablaDeDescarga, type FilaDescarga } from "@/lib/agendas-descarga";
+import { diaUtm } from "@/lib/utm-estandar";
 import { estadoAutomatico, opcionesDe as opcionesDelCrm } from "@/lib/crm";
 import { esDeVenta, estadoVisible, HECHA, POR_VENIR, SIN_CARGAR } from "@/lib/estados";
 import { evaluarAgenda, textoEvaluacion } from "@/lib/calificacion";
@@ -43,17 +45,19 @@ const DOW = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"];
      o Sin cargar / Por venir si todavía no tiene)
    - tipo: el tipo de sesión tal cual, o "sin"
    - anfitrion: quien la atiende (el closer en Calendly), o "sin"
+   - webinar: el webinar al que pertenece la agenda (su link, su clase cero o su
+     Q&A: lib/agendas-webinar.ts, igual que en la ficha del webinar), o "sin"
    - canal: webinar · vsl · setter · otro · sin (Calendly sin canal) · manual
    - calificada: si · no (invierte +1000, inglés y carrera: lib/calificacion.ts)
    - pag: la página, desde 1 */
-const VISTA_AGENDA = { estado: "", tipo: "", anfitrion: "", canal: "", calificada: "", pag: "1" };
+const VISTA_AGENDA = { estado: "", webinar: "", tipo: "", anfitrion: "", canal: "", calificada: "", pag: "1" };
 
 /* Llamadas por página. Se corta entre un día y otro, nunca en el medio de
    uno: ver `paginas` más abajo. */
 const POR_PAGINA = 30;
 
-type Faceta = "estado" | "tipo" | "anfitrion" | "canal" | "calificada";
-const FACETAS: Faceta[] = ["estado", "tipo", "anfitrion", "canal", "calificada"];
+type Faceta = "estado" | "webinar" | "tipo" | "anfitrion" | "canal" | "calificada";
+const FACETAS: Faceta[] = ["estado", "webinar", "tipo", "anfitrion", "canal", "calificada"];
 
 /* De dónde vino: el canal de Calendly o, si se cargó a mano, eso. Son
    excluyentes, así que van en un solo desplegable. */
@@ -68,8 +72,8 @@ const CANALES: OpcionFiltro[] = [
    que el equipo le corrigió a mano (lib/perfil.ts). */
 type PersonaDeAgenda = Parameters<typeof evaluarAgenda>[1];
 
-/* El estado sale de lib/estados (necesita toda la app): ver `valor` más abajo. */
-const valorDe: Record<Exclude<Faceta, "estado">, (s: Sesion, persona?: PersonaDeAgenda) => string> = {
+/* El estado y el webinar salen de toda la app: ver `valor` más abajo. */
+const valorDe: Record<Exclude<Faceta, "estado" | "webinar">, (s: Sesion, persona?: PersonaDeAgenda) => string> = {
   tipo: (s) => s.tipo?.trim() || SIN,
   anfitrion: (s) => s.anfitrion?.trim() || SIN,
   canal: canalDe,
@@ -163,6 +167,23 @@ export default function Agenda() {
     return (s: Sesion): PersonaDeAgenda => contactos.get(s.contactoId ?? "") ?? leads.get(s.leadId ?? "");
   }, [e.contactos, e.leads]);
 
+  /* De qué webinar es cada llamada: la que trae su link, el de su clase cero
+     o el de su Q&A, con la misma regla que las agendas de la ficha del webinar
+     (y respetando la que se sacó a mano de ahí). Sin esto, la Agenda mezclaba
+     todos los embudos y no había cómo ver sólo los de un webinar (Santi, 23/10). */
+  const webinarDe = useMemo(() => {
+    const dias = e.webinars.map((w) => diaUtm(w.fecha));
+    const cand = [...e.webinars].sort((a, b) => +new Date(b.fecha) - +new Date(a.fecha))
+      .map((w) => ({ id: w.id, clave: claveDeFecha(w.fecha), dia: diaUtm(w.fecha) }));
+    const m = new Map<string, string>();
+    for (const s of e.sesiones) {
+      if (!s.utm || atribucionDe(s.extra)?.fuera) continue;
+      const w = cand.find((c) => viaDe({ id: s.id, creadoEn: s.creadoEn, utm: s.utm }, c.clave, c.dia, dias) !== null);
+      if (w) m.set(s.id, w.id);
+    }
+    return m;
+  }, [e.sesiones, e.webinars]);
+
   /* El estado de cada llamada, igual que en el CRM, la ficha y el cierre
      del día (lib/estados.ts). */
   const estadoDeSesion = useMemo(() => {
@@ -174,8 +195,8 @@ export default function Agenda() {
     };
   }, [e, ahora]);
   const valor = useMemo(
-    () => (k: Faceta, s: Sesion) => (k === "estado" ? estadoDeSesion(s).texto : valorDe[k](s, personaDe(s))),
-    [estadoDeSesion, personaDe],
+    () => (k: Faceta, s: Sesion) => (k === "estado" ? estadoDeSesion(s).texto : k === "webinar" ? webinarDe.get(s.id) ?? SIN : valorDe[k](s, personaDe(s))),
+    [estadoDeSesion, personaDe, webinarDe],
   );
 
   /* Cada desplegable ofrece lo que existe en las llamadas. Los estados, en
@@ -185,12 +206,18 @@ export default function Agenda() {
     const lugar = (t: string) => { const i = orden.indexOf(t); return i < 0 ? orden.length : i; };
     return {
     estado: [...new Set(e.sesiones.map((s) => estadoDeSesion(s).texto))].filter(Boolean).sort((a, b) => lugar(a) - lugar(b) || a.localeCompare(b, "es")).map((t) => ({ valor: t, texto: t })),
+    /* Los webinars que tienen agendas, del más nuevo al más viejo. */
+    webinar: [
+      ...[...e.webinars].sort((a, b) => +new Date(b.fecha) - +new Date(a.fecha))
+        .filter((w) => [...webinarDe.values()].includes(w.id)).map((w) => ({ valor: w.id, texto: w.titulo })),
+      ...(e.sesiones.some((s) => !webinarDe.has(s.id)) && webinarDe.size > 0 ? [{ valor: SIN, texto: "Sin webinar" }] : []),
+    ],
     tipo: opcionesDe(e.sesiones.map((s) => valorDe.tipo(s)), (t) => t, "Sin tipo"),
     anfitrion: opcionesDe(e.sesiones.map((s) => valorDe.anfitrion(s)), (a) => a, "Sin anfitrión"),
     canal: CANALES.filter((c) => e.sesiones.some((s) => canalDe(s) === c.valor)),
     calificada: CALIFICACION,
     };
-  }, [e.sesiones, e.ajustes, estadoDeSesion]);
+  }, [e.sesiones, e.ajustes, e.webinars, estadoDeSesion, webinarDe]);
 
   /* Un filtro de la URL que ya no existe (un anfitrión que se fue, un link
      viejo) se ignora en vez de dejar la agenda vacía sin explicación. */
@@ -260,10 +287,27 @@ export default function Agenda() {
   const hayFiltros = FACETAS.some((k) => f[k]) || busca.trim() !== "";
   function limpiarFiltros() {
     setBusca("");
-    setVista({ estado: null, tipo: null, anfitrion: null, canal: null, calificada: null, pag: null }, { q: null });
+    setVista({ estado: null, webinar: null, tipo: null, anfitrion: null, canal: null, calificada: null, pag: null }, { q: null });
   }
 
   const sesionVista = e.sesiones.find((s) => s.id === ver) ?? null;
+
+  function descargar() {
+    const titulo = (id?: string) => e.webinars.find((w) => w.id === id)?.titulo ?? "";
+    /* El teléfono y el país son de la persona: su contacto o, si no tiene, su lead. */
+    const personas = new Map([...e.leads, ...e.contactos].map((p) => [p.id, p] as const));
+    const filas: FilaDescarga[] = visibles.map((s) => {
+      const v = estadoDeSesion(s);
+      return {
+        s, estado: v.texto, clases: clasesDe(s, v.desenlace), extra: [titulo(webinarDe.get(s.id))],
+        persona: personas.get(s.contactoId ?? "") ?? personas.get(s.leadId ?? ""),
+      };
+    });
+    const { tabla, personas: n } = tablaDeDescarga(filas, ["Webinar"]);
+    const w = e.webinars.find((x) => x.id === f.webinar);
+    bajarCSV(`agenda-${w ? `webinar-${diaUtm(w.fecha)}` : `${rango.desde}-a-${rango.hasta}`}.csv`, tabla);
+    toast(`Se bajó la lista: ${num(n)} ${n === 1 ? "persona" : "personas"}, con teléfono y mail.`);
+  }
 
   function guardar() {
     if (!form) return;
@@ -322,6 +366,10 @@ export default function Agenda() {
           />
           <Filtro etiqueta="Filtrar por estado de llamada" todos="Estado" valor={f.estado}
             opciones={conCuenta(opciones.estado, cuentas.estado)} onCambiar={(v) => filtrar("estado", v)} />
+          {opciones.webinar.length > 0 && (
+            <Filtro etiqueta="Filtrar por webinar" todos="Webinar" valor={f.webinar}
+              opciones={conCuenta(opciones.webinar, cuentas.webinar)} onCambiar={(v) => filtrar("webinar", v)} />
+          )}
           <Filtro etiqueta="Filtrar por calificación" todos="Califica" valor={f.calificada}
             opciones={conCuenta(opciones.calificada, cuentas.calificada)} onCambiar={(v) => filtrar("calificada", v)} />
           {opciones.tipo.length > 1 && (
@@ -342,6 +390,13 @@ export default function Agenda() {
           </span>
           {hayFiltros && <IconButton etiqueta="Limpiar los filtros" onClick={limpiarFiltros}><X size={15} /></IconButton>}
           <CopiarLink />
+          {/* Lo que se ve, en CSV: una fila por persona, con teléfono y mail (para un broadcast). */}
+          {visibles.length > 0 && (
+            <Button sm variante="secondary" icono={<Download size={15} />} onClick={descargar}
+              title="Baja en CSV las llamadas que ves (todas las páginas), una fila por persona, con teléfono y mail">
+              Descargar
+            </Button>
+          )}
           {/* El director (o un dueño) le pasa las llamadas de un closer a otro. */}
           {puedePasar && visibles.some(sePuedePasar) && (
             <Button sm variante="secondary" icono={<ArrowRightLeft size={15} />} onClick={() => setPasando({ llamadas: visibles, lote: true })}
