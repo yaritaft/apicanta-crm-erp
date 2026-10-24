@@ -12,8 +12,9 @@ import { acciones, nuevoId, useEstado } from "@/lib/store";
 import { fechaLarga, money, num } from "@/lib/format";
 import { aMonedaBase, escribirMonto, fechaDePago, leerMonto } from "@/lib/gastos";
 import {
-  MESES_DE_COLCHON, cajaEsperada, cobrosSinVenta, enOtros, runway, ultimoArqueo, type MovimientoCaja,
+  MESES_DE_COLCHON, cajaEsperada, cobrosSinVenta, detalleDeSaldo, enOtros, monedasDelSaldo, runway, totalDelDetalle, ultimoArqueo, type MovimientoCaja,
 } from "@/lib/caja";
+import "./arqueo-detalle.css";
 import { primerConteo } from "@/lib/primer-conteo";
 import { saldosEsperados } from "@/lib/traspasos";
 import { controlarSaldos, quePasa, saldoParaElArqueo, textoDeLoPendiente, TOLERANCIA_DE_SALDO, type ControlDeSaldos, type RespuestaDeSaldos } from "@/lib/saldos-reales";
@@ -406,6 +407,9 @@ function NuevoArqueo({ e, onCerrar, onListo, traerAlAbrir = false }: { e: Estado
   const [dia, setDia] = useState(diaAr(hoyIso()));
   const [tc, setTc] = useState(e.ajustes.tipoCambio > 0 ? escribirMonto(e.ajustes.tipoCambio) : "");
   const [textos, setTextos] = useState<Record<string, string>>({});
+  /* Las cuentas con saldo en varias monedas (dLocal) se cuentan moneda por moneda: cuenta → moneda → lo escrito. */
+  const [detalles, setDetalles] = useState<Record<string, Record<string, { monto?: string; tc?: string }>>>({});
+  const [verDetalle, setVerDetalle] = useState<Record<string, boolean>>({});
   const [notas, setNotas] = useState("");
   /* Los saldos que trajo la app solos (no los escribió nadie): cuenta → de dónde y a qué hora. */
   const [automaticos, setAutomaticos] = useState<Record<string, { fuente: string; al: string; nota?: string; ajuste?: { delBanco: number; nota: string } }>>({});
@@ -422,6 +426,24 @@ function NuevoArqueo({ e, onCerrar, onListo, traerAlAbrir = false }: { e: Estado
     return p.activo || Boolean(s && (s.entro || s.pases || s.salio)) || previo?.saldos.some((x) => x.procesadorId === p.id);
   });
   const tipoCambio = leerMonto(tc);
+  /* El tipo de cambio de cada moneda arranca en el del último arqueo (dLocal usa el suyo, no el de Ajustes); los pesos argentinos, en el del arqueo. */
+  const tcInicial = (p: Procesador, moneda: string): number =>
+    previo?.saldos.find((x) => x.procesadorId === p.id)?.detalle?.find((l) => l.moneda === moneda)?.tipoCambio ?? (moneda === "ARS" && tipoCambio > 0 ? tipoCambio : 0);
+  const lineasDe = (p: Procesador, det = detalles) => monedasDelSaldo(p).map((m) => {
+    const d = det[p.id]?.[m.codigo];
+    const tcTxt = d?.tc ?? (tcInicial(p, m.codigo) > 0 ? escribirMonto(tcInicial(p, m.codigo)) : "");
+    const montoTxt = d?.monto ?? "";
+    return { ...m, montoTxt, tcTxt, monto: montoTxt.trim() ? leerMonto(montoTxt) : NaN, tipoCambio: leerMonto(tcTxt) };
+  });
+  const detalleDe = (p: Procesador, det = detalles) => detalleDeSaldo(lineasDe(p, det).map((l) => ({ moneda: l.codigo, monto: l.monto, tipoCambio: l.tipoCambio })));
+  function cambiarLinea(p: Procesador, moneda: string, campo: "monto" | "tc", valor: string) {
+    const nuevo = { ...detalles, [p.id]: { ...(detalles[p.id] ?? {}), [moneda]: { ...(detalles[p.id]?.[moneda] ?? {}), [campo]: valor } } };
+    setDetalles(nuevo);
+    const det = detalleDe(p, nuevo);
+    /* El saldo de la cuenta es la suma en dólares; sin ninguna línea, queda vacío. */
+    setTextos((t) => ({ ...t, [p.id]: det.length ? escribirMonto(totalDelDetalle(det)) : "" }));
+    if (automaticos[p.id]) setAutomaticos(({ [p.id]: _x, ...resto }) => resto);
+  }
   const hayPases = cuentas.some((p) => porCuenta.get(p.id)?.pases);
   /* Lo que se usa todo el tiempo arriba; lo demás, en «Otros» (plegado salvo que ya tenga un saldo escrito). */
   const [verOtros, setVerOtros] = useState(false);
@@ -436,7 +458,11 @@ function NuevoArqueo({ e, onCerrar, onListo, traerAlAbrir = false }: { e: Estado
     if (!Number.isFinite(monto)) return [];
     const moneda: Moneda = p.moneda ?? "USD";
     const ajuste = automaticos[p.id]?.ajuste;
-    return [{ procesadorId: p.id, monto, moneda, montoBase: Math.round(aMonedaBase(monto, moneda, base, tipoCambio) * 100) / 100, ...(ajuste ? { nota: ajuste.nota } : {}) }];
+    const det = monedasDelSaldo(p).length ? detalleDe(p) : [];
+    return [{
+      procesadorId: p.id, monto, moneda, montoBase: Math.round(aMonedaBase(monto, moneda, base, tipoCambio) * 100) / 100,
+      ...(ajuste ? { nota: ajuste.nota } : {}), ...(det.length ? { detalle: det } : {}),
+    }];
   });
   const total = Math.round(saldos.reduce((a, s) => a + s.montoBase, 0) * 100) / 100;
   /* Contra lo que tiene que dar al contar: lo que viaja entre cuentas no está en ninguna. */
@@ -521,10 +547,24 @@ function NuevoArqueo({ e, onCerrar, onListo, traerAlAbrir = false }: { e: Estado
         : `${dif > 0 ? "+" : "−"}${cuanto >= 1e6 ? `${(cuanto / 1e6).toLocaleString("es-AR", { maximumFractionDigits: 2 })} M` : num(cuanto)}`;
       const dice = dif === null ? undefined : da ? "Da con lo que tendría que haber en esta cuenta"
         : `${dif > 0 ? "Sobran" : "Faltan"} ${money(Math.abs(dif), moneda)} contra lo que tendría que haber en esta cuenta`;
+      const monedas = monedasDelSaldo(p);
+      const lineas = monedas.length ? lineasDe(p) : [];
+      const conDetalle = monedas.length > 0 && detalleDe(p).length > 0;
+      const panelAbierto = monedas.length > 0 && (verDetalle[p.id] || conDetalle);
       return (
-        <div className="arqueo-fila" role="row" key={p.id}>
+        <React.Fragment key={p.id}>
+        <div className="arqueo-fila" role="row">
           <span role="cell" className="t-strong">
             {p.nombre}{moneda === "ARS" && <span className="t-sm t-subtle"> · en pesos</span>}
+            {monedas.length > 0 && (
+              <button
+                type="button" className="link t-sm" style={{ marginLeft: 8 }} aria-expanded={panelAbierto}
+                title="Esta cuenta guarda un saldo en cada moneda: contalas una por una y se suman en dólares."
+                onClick={() => setVerDetalle((v) => ({ ...v, [p.id]: !panelAbierto }))}
+              >
+                {panelAbierto ? "Ocultar monedas" : "Contar por moneda"}
+              </button>
+            )}
             {p.id === "proc_stripe" && (
               <span className="t-sm t-subtle" title="Poné el saldo TOTAL de Stripe (disponible + pendiente de acreditarse, el «saldo total» del panel), no el «disponible para instant payouts»: ese es sólo una parte. «Traer los saldos reales» lo completa solo."> · saldo total, no «instant payouts»</span>
             )}
@@ -548,6 +588,7 @@ function NuevoArqueo({ e, onCerrar, onListo, traerAlAbrir = false }: { e: Estado
           >
             <InputMonto
               aria-label={`Saldo de ${p.nombre}`} placeholder={moneda === "ARS" ? "$ 0" : "US$ 0"} negativos
+              readOnly={conDetalle} title={conDetalle ? "Es la suma de las monedas de abajo, en dólares." : undefined}
               value={textos[p.id] ?? ""}
               onChange={(ev) => { setTextos({ ...textos, [p.id]: ev.target.value }); if (automaticos[p.id]) setAutomaticos(({ [p.id]: _x, ...resto }) => resto); }}
             />
@@ -556,6 +597,37 @@ function NuevoArqueo({ e, onCerrar, onListo, traerAlAbrir = false }: { e: Estado
               : <span className="arqueo-hay__marca" aria-label={dice}>{marca}</span>)}
           </span>
         </div>
+        {panelAbierto && (
+          <div className="arqueo-detalle" role="group" aria-label={`Saldo de ${p.nombre} por moneda`}>
+            <p className="t-sm t-subtle" style={{ margin: 0 }}>
+              {p.nombre} tiene un saldo en cada moneda. Escribí el de cada una (como lo muestra su panel) y su tipo de cambio en unidades por dólar: acá se suman en
+              dólares. El tipo de cambio de cada moneda queda guardado para el próximo arqueo.
+            </p>
+            <div className="arqueo-detalle__fila arqueo-detalle__fila--cabeza" aria-hidden>
+              <span>Moneda</span><span>Saldo</span><span>Por dólar</span><span>En dólares</span>
+            </div>
+            {lineas.map((l) => {
+              const dolares = Number.isFinite(l.monto) && l.tipoCambio > 0 ? Math.round((l.monto / l.tipoCambio) * 100) / 100 : null;
+              return (
+                <div className="arqueo-detalle__fila" key={l.codigo}>
+                  <span>{l.nombre} <span className="t-subtle">({l.codigo})</span></span>
+                  <InputMonto
+                    aria-label={`Saldo de ${p.nombre} en ${l.codigo}`} placeholder="0" negativos value={l.montoTxt}
+                    onChange={(ev) => cambiarLinea(p, l.codigo, "monto", ev.target.value)}
+                  />
+                  <InputMonto
+                    aria-label={`Tipo de cambio de ${l.codigo} por dólar`} placeholder="0" decimales={4} value={l.tcTxt}
+                    error={Number.isFinite(l.monto) && l.monto !== 0 && !(l.tipoCambio > 0)}
+                    onChange={(ev) => cambiarLinea(p, l.codigo, "tc", ev.target.value)}
+                  />
+                  <span className="t-num">{dolares === null ? "—" : money(dolares, base, 2)}</span>
+                </div>
+              );
+            })}
+            <div className="arqueo-detalle__total"><span>Total en dólares</span><span className="t-num">{money(totalDelDetalle(detalleDe(p)), base, 2)}</span></div>
+          </div>
+        )}
+        </React.Fragment>
       );
   };
 
@@ -657,6 +729,12 @@ function VerArqueo({ e, a, onCerrar }: { e: EstadoApp; a: Arqueo; onCerrar: () =
             <dd className="t-num">{money(s.monto, s.moneda)}{s.moneda !== e.ajustes.monedaBase && <span className="t-sm t-subtle"> · {M(s.montoBase)}</span>}</dd>
             {/* La constancia de un saldo corregido (lo que el banco marcaba y por qué se guardó otro) va debajo, a todo el ancho. */}
             {s.nota && <dd className="t-sm t-subtle" style={{ gridColumn: "1 / -1", textAlign: "left", marginTop: -4 }}>{s.nota}</dd>}
+            {/* Una cuenta con varias monedas (dLocal) deja dicho cuánto había en cada una y a qué tipo de cambio se pasó. */}
+            {s.detalle?.map((l) => (
+              <dd key={l.moneda} className="t-sm t-subtle" style={{ gridColumn: "1 / -1", textAlign: "left", marginTop: -4 }}>
+                {num(l.monto)} {l.moneda} a {l.tipoCambio.toLocaleString("es-AR", { maximumFractionDigits: 4 })} por dólar = {M(l.montoBase)}
+              </dd>
+            ))}
           </React.Fragment>
         ))}
         <dt className="caja-mov__total">Total</dt>

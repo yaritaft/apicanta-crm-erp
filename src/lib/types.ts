@@ -1081,6 +1081,17 @@ export interface SaldoCuenta {
   /* Lo mismo en la moneda base, con el tipo de cambio del arqueo. */
   montoBase: number;
   nota?: string;
+  /* Una cuenta con saldo en varias monedas (dLocal: pesos argentinos, mexicanos, soles, pesos colombianos) se cuenta moneda por moneda: cada línea
+     lleva su monto, el tipo de cambio con el que se pasó a dólares (unidades por dólar) y lo que dio. El saldo de la cuenta es la suma. */
+  detalle?: DetalleDeSaldo[];
+}
+
+export interface DetalleDeSaldo {
+  moneda: string;
+  monto: number;
+  /* Unidades de esa moneda por dólar. */
+  tipoCambio: number;
+  montoBase: number;
 }
 
 export interface Arqueo {

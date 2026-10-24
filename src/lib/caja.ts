@@ -1,4 +1,4 @@
-import type { Arqueo, EstadoApp, Procesador } from "./types";
+import type { Arqueo, DetalleDeSaldo, EstadoApp, Procesador } from "./types";
 import { aMonedaBase } from "./gastos";
 import type { RangoMes } from "./metricas";
 import { calcularPyL, gastosPagadosEn } from "./finanzas";
@@ -182,6 +182,31 @@ export function cuentaEnLaCajaDeHoy(e: Pick<EstadoApp, "arqueos">, fechaIso: str
   const arqueo = ultimoArqueo(e);
   return { cuenta: !arqueo || Date.parse(fechaIso) > Date.parse(arqueo.fecha), arqueo };
 }
+
+/* ---------- Cuentas con saldo en varias monedas ----------
+   Aldana (23/10): dLocal guarda un saldo en cada moneda (pesos argentinos, mexicanos, soles peruanos, pesos colombianos) y el arqueo pedía un solo
+   número en dólares: «como todos tienen distinto tipo de cambio, no sé a qué valor se toma cada uno». Ahora esa cuenta se cuenta moneda por
+   moneda, con el tipo de cambio de cada una (se acuerda del último), y el saldo en dólares es la suma. */
+
+export const MONEDAS_DE_DLOCAL: readonly { codigo: string; nombre: string }[] = [
+  { codigo: "ARS", nombre: "Pesos argentinos" },
+  { codigo: "MXN", nombre: "Pesos mexicanos" },
+  { codigo: "PEN", nombre: "Soles peruanos" },
+  { codigo: "COP", nombre: "Pesos colombianos" },
+];
+
+/** Las monedas en las que una cuenta guarda saldo, si son varias (si no, vacío: se cuenta con un solo número). */
+export const monedasDelSaldo = (p: Pick<Procesador, "proveedor">): readonly { codigo: string; nombre: string }[] =>
+  p.proveedor === "dlocal" ? MONEDAS_DE_DLOCAL : [];
+
+/** Lo que dice cada línea escrita (monto y tipo de cambio por dólar) pasado a dólares. Las que no tienen monto o tipo de cambio no cuentan. */
+export function detalleDeSaldo(lineas: readonly { moneda: string; monto: number; tipoCambio: number }[]): DetalleDeSaldo[] {
+  return lineas
+    .filter((l) => Number.isFinite(l.monto) && l.monto !== 0 && l.tipoCambio > 0)
+    .map((l) => ({ moneda: l.moneda, monto: l.monto, tipoCambio: l.tipoCambio, montoBase: r2(l.monto / l.tipoCambio) }));
+}
+
+export const totalDelDetalle = (d: readonly DetalleDeSaldo[]): number => r2(d.reduce((a, l) => a + l.montoBase, 0));
 
 /* Las cuentas que no se usan seguido van en «Otros», al final del arqueo: a
    mano lo que se usa todo el tiempo y lo demás un clic más abajo (Yari, 02/10:
