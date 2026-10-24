@@ -398,6 +398,13 @@ export const COLUMNAS: ColumnaTabla[] = [
 
 export const COLUMNA: Record<ClaveColumna, ColumnaTabla> = Object.fromEntries(COLUMNAS.map((c) => [c.clave, c])) as Record<ClaveColumna, ColumnaTabla>;
 
+/** Lo que dice la celda, para un CSV (lib/agendas-descarga.ts): lo cobrado como número, para sumarlo en la
+    planilla (vacío sin venta); el resto, lo que dice la celda y, si está vacía, sus valores («Sin venta»). */
+export function celdaParaCsv(c: ColumnaTabla, f: FilaTabla): string {
+  if (c.clave === "cobrado") return f.cobrado === null ? "" : String(Math.round(f.cobrado * 100) / 100);
+  return textoDeColumna(f, c) || c.valores(f).filter((v) => v !== VACIAS).join(", ");
+}
+
 /** ¿Es una columna de la tabla? Sólo las propias: `in` también dice que sí a «constructor», «toString» o
  *  «__proto__» (las hereda de Object.prototype), y esas claves llegan por la URL. */
 export const esColumna = (k: string): k is ClaveColumna => Object.prototype.hasOwnProperty.call(COLUMNA, k);

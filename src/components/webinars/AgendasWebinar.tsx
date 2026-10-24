@@ -10,7 +10,9 @@ import { acciones, useEstado } from "@/lib/store";
 import { estadoVisible } from "@/lib/estados";
 import { useUsuarioActual } from "@/lib/usuario";
 import { claveDeFecha, type AgendaDelWebinar } from "@/lib/agendas-webinar";
-import { bajarCSV, clasesDe, NOMBRE_CLASE, tablaDeDescarga, type ClaseAgenda, type FilaDescarga } from "@/lib/agendas-descarga";
+import { bajarCSV, clasesDe, crmDeDescarga, NOMBRE_CLASE, tablaDeDescarga, type ClaseAgenda, type FilaDescarga } from "@/lib/agendas-descarga";
+import { useAcceso } from "@/lib/acceso";
+import { puedeLeer } from "@/lib/permisos";
 import { useParamsURL } from "@/lib/useParamsURL";
 import { fechaUtm } from "@/lib/utm-estandar";
 import { NOMBRE_VIA } from "@/lib/vias-webinar";
@@ -51,6 +53,7 @@ export function AgendasWebinar({ w, className }: { w: Webinar; className?: strin
   const d = r.estado === "listo" ? r.datos : null;
   /* El Estado de Llamada de cada agenda, el mismo del CRM y la Agenda. */
   const app = useEstado();
+  const { acceso } = useAcceso();
   const sesiones = React.useMemo(() => new Map(app.sesiones.map((s) => [s.id, s])), [app.sesiones]);
   const toast = useToast();
   const [vista, setVista] = useParamsURL({ agendas: "" });
@@ -83,9 +86,11 @@ export function AgendasWebinar({ w, className }: { w: Webinar; className?: strin
       });
     }
     if (filas.length === 0) { toast("No hay agendas para bajar con este filtro.", "err"); return; }
-    const { tabla, personas: n } = tablaDeDescarga(filas, ["Momento", "Vía"]);
+    /* Después van las columnas del CRM: la venta, lo cobrado, el origen y el perfil (lo que esta cuenta ve). */
+    const ve = { ventas: puedeLeer(acceso, "ventas"), cobros: puedeLeer(acceso, "pagos") };
+    const { tabla, personas: n } = tablaDeDescarga(filas, ["Momento", "Vía"], crmDeDescarga(app, ve));
     bajarCSV(`agendas-webinar-${fechaUtm(w.fecha)}-${corte || "todas"}.csv`, tabla);
-    toast(`Se bajó la lista: ${num(n)} ${n === 1 ? "persona" : "personas"}, con teléfono y mail.`);
+    toast(`Se bajó la lista: ${num(n)} ${n === 1 ? "persona" : "personas"}, con teléfono, mail${ve.cobros ? ", venta, lo cobrado" : ""} y el resto de las columnas del CRM.`);
   }
 
   /* Si llegó por #agendas (desde la lista de Webinars), baja hasta la tarjeta: los datos tardan en llegar. */

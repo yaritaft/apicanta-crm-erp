@@ -14,7 +14,7 @@ import { PasarLlamadas } from "@/components/closers/PasarLlamadas";
 import { sePuedePasar, usePuedePasarLlamadas } from "@/components/closers/usePasarLlamadas";
 import { ETIQUETA_CANAL } from "@/lib/calendly";
 import { atribucionDe, claveDeFecha, embudoDe, viaDe } from "@/lib/agendas-webinar";
-import { bajarCSV, clasesDe, tablaDeDescarga, type FilaDescarga } from "@/lib/agendas-descarga";
+import { bajarCSV, clasesDe, crmDeDescarga, tablaDeDescarga, type FilaDescarga } from "@/lib/agendas-descarga";
 import { diaUtm } from "@/lib/utm-estandar";
 import { aURL, elegidosValidos, pasaFiltro } from "@/lib/filtro-multiple";
 import { estadoAutomatico, opcionesDe as opcionesDelCrm } from "@/lib/crm";
@@ -24,6 +24,8 @@ import { pasadaDe } from "@/lib/pasada-closer";
 import { CamposExtra, DatosExtra } from "@/components/ui/CamposExtra";
 import { useToast } from "@/components/ui/Toast";
 import { acciones, useEstado } from "@/lib/store";
+import { useAcceso } from "@/lib/acceso";
+import { puedeLeer } from "@/lib/permisos";
 import { useAbrirDesdeURL } from "@/lib/useQuery";
 import { useRangoURL } from "@/lib/useRango";
 import { paginaDeURL, useBusquedaURL, useParamsURL } from "@/lib/useParamsURL";
@@ -106,6 +108,7 @@ const VACIA = (tipo: string): Omit<Sesion, "id"> => {
 
 export default function Agenda() {
   const e = useEstado();
+  const { acceso } = useAcceso();
   const abrirFicha = useAbrirFicha();
   const toast = useToast();
   const url = useAbrirDesdeURL();
@@ -306,10 +309,12 @@ export default function Agenda() {
         persona: personas.get(s.contactoId ?? "") ?? personas.get(s.leadId ?? ""),
       };
     });
-    const { tabla, personas: n } = tablaDeDescarga(filas, ["Webinar"]);
+    /* Después van las columnas del CRM: la venta, lo cobrado, el origen y el perfil (lo que esta cuenta ve). */
+    const ve = { ventas: puedeLeer(acceso, "ventas"), cobros: puedeLeer(acceso, "pagos") };
+    const { tabla, personas: n } = tablaDeDescarga(filas, ["Webinar"], crmDeDescarga(e, ve));
     const w = f.webinar.length === 1 ? e.webinars.find((x) => x.id === f.webinar[0]) : undefined;
     bajarCSV(`agenda-${w ? `webinar-${diaUtm(w.fecha)}` : `${rango.desde}-a-${rango.hasta}`}.csv`, tabla);
-    toast(`Se bajó la lista: ${num(n)} ${n === 1 ? "persona" : "personas"}, con teléfono y mail.`);
+    toast(`Se bajó la lista: ${num(n)} ${n === 1 ? "persona" : "personas"}, con teléfono, mail${ve.cobros ? ", venta, lo cobrado" : ""} y el resto de las columnas del CRM.`);
   }
 
   function guardar() {
