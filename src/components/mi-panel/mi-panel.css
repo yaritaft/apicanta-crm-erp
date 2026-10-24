@@ -108,6 +108,12 @@ button.mp-tile:focus-visible { outline: 2px solid var(--focus); outline-offset: 
 .mp-cabeza h2 { margin: 0; font-size: 19px; line-height: 26px; font-weight: 650; letter-spacing: -0.015em; color: var(--ink); }
 .mp-cuenta { display: inline-flex; align-items: center; justify-content: center; min-width: 24px; height: 24px; padding: 0 8px; border-radius: 999px; font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--ink-muted); background: var(--mp-bloque-alto); }
 .mp-cabeza__der { margin-left: auto; display: flex; align-items: center; gap: var(--space-3); }
+.mp-cabeza__der > .link { white-space: nowrap; }
+/* En el celular la barra (buscar, links, botón) baja entera y se acomoda en renglones: no se sale de la tarjeta. */
+@media (max-width: 720px) {
+  .mp-cabeza__der { margin-left: 0; width: 100%; flex-wrap: wrap; }
+  .mp-cabeza__der > .mp-buscar { flex: 1 1 100%; width: auto; }
+}
 .mp-buscar { font: inherit; font-size: 14px; width: 168px; padding: 8px 14px; border-radius: var(--radius-full); background: var(--mp-bloque-alto); border: 0; color: var(--ink); outline: none; }
 .mp-buscar::placeholder { color: var(--ink-subtle); }
 .mp-buscar:focus-visible { outline: 2px solid var(--focus); }
@@ -120,6 +126,17 @@ button.mp-tile:focus-visible { outline: 2px solid var(--focus); outline-offset: 
 .mp-lista__fila--tachada .mp-lista__nombre { text-decoration: line-through; color: var(--ink-subtle); }
 .mp-lista__hora { font-variant-numeric: tabular-nums; font-weight: 600; color: var(--ink); }
 .mp-lista__nombre { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink); font-weight: 500; }
+/* Las agendas del setter: hora, persona, closer y cómo terminó. En el celular se apilan (las columnas fijas dejaban el nombre en 12 px). */
+.mp-lista__fila--setter { grid-template-columns: 128px minmax(0, 1fr) 190px 170px; }
+@media (max-width: 720px) {
+  .mp-lista__fila--setter { grid-template-columns: minmax(0, 1fr) auto; row-gap: 2px; }
+  .mp-lista__fila--setter > :nth-child(1) { grid-column: 1 / -1; }
+  .mp-lista__fila--setter > :nth-child(3) { grid-column: 1; grid-row: 3; }
+  .mp-lista__fila--setter > :nth-child(4) { grid-column: 2; grid-row: 2 / span 2; align-self: center; }
+}
+/* De dónde salió la agenda del setter: su link o la sumó él (Daniel, 24/10). */
+.mp-lista__origen { display: block; margin-top: 2px; font-size: 12px; line-height: 16px; color: var(--ink-subtle); white-space: nowrap; }
+.mp-lista__origen .link { font-size: 12px; }
 .mp-lista__pie { padding: 4px 26px 20px; font-size: 13px; color: var(--ink-subtle); }
 .mp-lista__vacio { padding: 6px 26px 26px; }
 
@@ -171,3 +188,21 @@ button.mp-tile:focus-visible { outline: 2px solid var(--focus); outline-offset: 
 .mp-vercomo--otro .mp-cap { color: var(--warning); }
 .mp-vercomo__select { flex: 0 1 280px; min-width: 210px; }
 .mp-vercomo__texto { flex: 1 1 240px; min-width: 0; font-size: 13px; line-height: 20px; color: var(--ink-muted); }
+
+/* ---------- Sumar agendas (el setter marca las que setteó) ---------- */
+
+.sumar-agendas { display: flex; flex-direction: column; gap: var(--space-3); }
+.sumar-agendas__lista { display: flex; flex-direction: column; max-height: min(60vh, 520px); overflow-y: auto; }
+.sumar-agendas__fila { display: grid; grid-template-columns: 116px minmax(0, 1fr) auto; gap: var(--space-3); align-items: center; padding: 10px 10px; border-top: 1px solid var(--border); border-radius: 0; }
+.sumar-agendas__fila:first-child, .sumar-agendas__grupo + .sumar-agendas__fila { border-top: 0; }
+.sumar-agendas__grupo { padding: 14px 10px 6px; font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-subtle); }
+.sumar-agendas__grupo:first-child { padding-top: 2px; }
+/* La suya se pinta entera: el estado va en la fila, no en un textito aparte. */
+.sumar-agendas__fila[data-mia="true"] { background: var(--success-soft); border-top-color: transparent; border-radius: var(--radius-md); }
+.sumar-agendas__fila[data-mia="true"] + .sumar-agendas__fila { border-top-color: transparent; }
+.sumar-agendas__fecha { font-variant-numeric: tabular-nums; color: var(--ink-muted); }
+.sumar-agendas__accion { display: inline-flex; align-items: center; gap: var(--space-2); white-space: nowrap; }
+@media (max-width: 560px) {
+  .sumar-agendas__fila { grid-template-columns: minmax(0, 1fr) auto; row-gap: 2px; }
+  .sumar-agendas__fecha { grid-column: 1 / -1; }
+}

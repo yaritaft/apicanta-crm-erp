@@ -1,12 +1,12 @@
 "use client";
 
 import React, { useMemo, useState } from "react";
-import { Search, Sparkles } from "lucide-react";
+import { AlertTriangle, Search, Sparkles } from "lucide-react";
 import { Badge, Button, Chip, Empty, Input } from "@/components/ui/ui";
 import { Modal } from "@/components/ui/Modal";
 import { useEstado } from "@/lib/store";
 import { fechaLarga, money } from "@/lib/format";
-import { medioDeMovimiento, parecido } from "@/lib/conciliacion";
+import { medioDeMovimiento, quienPagoVsCliente } from "@/lib/conciliacion";
 import { nombrePasarela } from "@/lib/pasarelas";
 import type { ID, Movimiento, ProveedorPasarela } from "@/lib/types";
 
@@ -16,7 +16,11 @@ import type { ID, Movimiento, ProveedorPasarela } from "@/lib/types";
    Muestra TODOS los pagos sin conciliar de esa pasarela, no sólo los que
    parecen del cliente: el nombre en Stripe muchas veces es el de quien
    pagó con su tarjeta (la pareja, la empresa), no el del alumno. Arriba
-   van los que coinciden por nombre, email o monto; después, por fecha.
+   van los que son del cliente (mail, o nombre y apellido), después los de
+   ese monto y después por fecha. «Coincide» es sólo el del cliente: el
+   mismo monto o un nombre en común no alcanzan (dos «Andres» con seña de
+   US$ 50 el mismo día, Dante 23/10). Elegir el de otra persona pide
+   confirmarlo.
 
    Un pago puede repartirse entre dos cuotas (pagó la reserva y la
    primera cuota juntas): por eso se muestra lo que QUEDA de cada uno.
@@ -55,6 +59,8 @@ export function SelectorMovimiento({ abierto, onCerrar, proveedor, cliente, mont
   const [q, setQ] = useState("");
   const [todas, setTodas] = useState(!proveedor);
   const [tope, setTope] = useState(60);
+  /* El pago de otra persona que se tocó: se pide confirmarlo antes de elegirlo. */
+  const [dudoso, setDudoso] = useState<ID | null>(null);
 
   const lista = useMemo(() => {
     const texto = q.trim().toLowerCase();
@@ -70,16 +76,11 @@ export function SelectorMovimiento({ abierto, onCerrar, proveedor, cliente, mont
           .some((c) => c?.toLowerCase().includes(texto));
       })
       .map((x) => {
-        const porNombre = cliente?.nombre ? parecido(x.mov.clienteNombre, cliente.nombre) : 0;
-        const porMail = cliente?.email && x.mov.clienteEmail
-          && x.mov.clienteEmail.toLowerCase() === cliente.email.trim().toLowerCase() ? 1 : 0;
-        const porMonto = monto && Math.abs(x.disponible - monto) < 0.5 ? 0.5 : 0;
-        const puntaje = Math.max(porNombre, porMail) + porMonto;
-        return { ...x, puntaje, coincide: Math.max(porNombre, porMail) >= 0.5 || porMonto > 0 };
+        const quien = quienPagoVsCliente(x.mov, cliente);
+        const mismoMonto = Boolean(monto && Math.abs(x.disponible - monto) < 0.5);
+        return { ...x, quien, mismoMonto, puntaje: (quien === "es" ? 2 : 0) + (mismoMonto ? 1 : 0) };
       })
-      .sort((a, b) => (Number(b.coincide) - Number(a.coincide))
-        || (b.coincide ? b.puntaje - a.puntaje : 0)
-        || +new Date(b.mov.fecha) - +new Date(a.mov.fecha));
+      .sort((a, b) => b.puntaje - a.puntaje || +new Date(b.mov.fecha) - +new Date(a.mov.fecha));
   }, [e.movimientos, e.pagos, usado, q, todas, proveedor, cliente?.nombre, cliente?.email, monto, liberar]);
 
   const nombre = proveedor ? nombrePasarela(proveedor) : "las pasarelas";
@@ -89,7 +90,7 @@ export function SelectorMovimiento({ abierto, onCerrar, proveedor, cliente, mont
     <Modal
       abierto={abierto} onCerrar={onCerrar} ancho
       titulo={todas ? "Pagos sin conciliar" : `Pagos de ${nombre} sin conciliar`}
-      sub="Elegí el que corresponde a este cobro. Arriba, los que parecen de este cliente o son de este monto."
+      sub="Elegí el que corresponde a este cobro. Arriba, los de este cliente (mismo mail o nombre y apellido) y después los de este monto."
     >
       <div className="stack-3">
         <Input
@@ -111,29 +112,43 @@ export function SelectorMovimiento({ abierto, onCerrar, proveedor, cliente, mont
           />
         ) : (
           <div className="pagos-lista" role="list">
-            {lista.slice(0, tope).map(({ mov, disponible, coincide }) => (
-              <button
-                key={mov.id} type="button" role="listitem" className="pago-fila"
-                onClick={() => onElegir({ mov, disponible })}
-              >
-                <span className="pago-fila__fecha t-sm t-subtle">{fechaLarga(mov.fecha)}</span>
-                <span style={{ minWidth: 0, flex: 1 }}>
-                  <span className="truncate t-strong" style={{ display: "block" }}>
-                    {mov.clienteNombre || "Sin nombre"}
+            {lista.slice(0, tope).map(({ mov, disponible, quien, mismoMonto }) => (
+              <div key={mov.id} role="listitem" className="pago-fila__caja" data-duda={dudoso === mov.id || undefined}>
+                <button
+                  type="button" className="pago-fila"
+                  onClick={() => (quien === "otra-persona" && cliente?.nombre ? setDudoso(mov.id) : onElegir({ mov, disponible }))}
+                >
+                  <span className="pago-fila__fecha t-sm t-subtle">{fechaLarga(mov.fecha)}</span>
+                  <span style={{ minWidth: 0, flex: 1 }}>
+                    <span className="truncate t-strong" style={{ display: "block" }}>
+                      {mov.clienteNombre || "Sin nombre"}
+                    </span>
+                    <span className="truncate t-sm t-subtle" style={{ display: "block" }}>
+                      {[mov.clienteEmail, mov.referencia, mov.descripcion].filter(Boolean).join(" · ")}
+                    </span>
                   </span>
-                  <span className="truncate t-sm t-subtle" style={{ display: "block" }}>
-                    {[mov.clienteEmail, mov.referencia, mov.descripcion].filter(Boolean).join(" · ")}
+                  {quien === "es"
+                    ? <Badge variante="success"><Sparkles size={12} />Coincide</Badge>
+                    : mismoMonto && <Badge variante="neutral">Mismo monto</Badge>}
+                  {todas && <Badge variante="neutral">{medioDeMovimiento(e, mov)}</Badge>}
+                  <span className="pago-fila__monto">
+                    <span className="t-num t-strong">{money(disponible, mov.moneda ?? mon, 2)}</span>
+                    {disponible < mov.monto - 0.009 && (
+                      <span className="t-sm t-subtle" style={{ display: "block" }}>quedan de {money(mov.monto, mov.moneda ?? mon, 2)}</span>
+                    )}
                   </span>
-                </span>
-                {coincide && <Badge variante="success"><Sparkles size={12} />Coincide</Badge>}
-                {todas && <Badge variante="neutral">{medioDeMovimiento(e, mov)}</Badge>}
-                <span className="pago-fila__monto">
-                  <span className="t-num t-strong">{money(disponible, mov.moneda ?? mon, 2)}</span>
-                  {disponible < mov.monto - 0.009 && (
-                    <span className="t-sm t-subtle" style={{ display: "block" }}>quedan de {money(mov.monto, mov.moneda ?? mon, 2)}</span>
-                  )}
-                </span>
-              </button>
+                </button>
+                {dudoso === mov.id && (
+                  <div className="pago-fila__duda" role="alert">
+                    <AlertTriangle size={16} aria-hidden />
+                    <span className="t-sm" style={{ flex: 1, minWidth: 0 }}>
+                      Este pago lo hizo <strong>{mov.clienteNombre || mov.clienteEmail}</strong>, no {cliente?.nombre}. ¿Es de este cliente igual (pagó otra persona por él)?
+                    </span>
+                    <Button sm variante="ghost" onClick={() => setDudoso(null)}>No, otro</Button>
+                    <Button sm onClick={() => { setDudoso(null); onElegir({ mov, disponible }); }}>Sí, es este</Button>
+                  </div>
+                )}
+              </div>
             ))}
             {lista.length > tope && (
               <Button variante="ghost" onClick={() => setTope((t) => t + 60)}>

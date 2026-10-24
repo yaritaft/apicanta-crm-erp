@@ -14,7 +14,7 @@ import {
 import { disponibleDe } from "@/components/cobros/SelectorMovimiento";
 import { acciones, nuevoId, useEstado } from "@/lib/store";
 import { fechaLarga, isoDia, money, pct } from "@/lib/format";
-import { medioDeMovimiento, normalizar, parecido, procesadorDeMovimiento } from "@/lib/conciliacion";
+import { medioDeMovimiento, normalizar, procesadorDeMovimiento, quienPagoVsCliente } from "@/lib/conciliacion";
 import { buscarPersonas, nombreDeCuota, personaPorId, type PersonaBuscada } from "@/lib/buscar-cliente";
 import { claveEmail } from "@/lib/contactos";
 import { compararTelefonos } from "@/lib/telefonos";
@@ -24,6 +24,7 @@ import { descartarComprobante } from "@/lib/comprobantes";
 import type { Cuota, EstadoApp, MiembroEquipo, Movimiento, Venta } from "@/lib/types";
 import { PAISES, planDePago, webinarDeProyecto } from "@/lib/angelo";
 import { origenDeUtm, textoUtm } from "@/lib/utms";
+import { setterDeAgendas } from "@/lib/setter-agendas";
 import { useUsuarioActual } from "@/lib/usuario";
 import { esperarGuardado } from "@/lib/store";
 import { useAcceso } from "@/lib/acceso";
@@ -212,6 +213,19 @@ export function AsistenteVenta({ onCerrar, onListo, desdeMovimiento, cliente, cl
     setB((x) => (x.closerId ? x : { ...x, closerId: m.id }));
   }, [yo.miembro]);
 
+  /* El setter que marcó la agenda de esta persona como suya (Daniel, 24/10): viene elegido. Si el closer
+     lo cambia, queda lo que eligió; si lo deja en «Sin setter», la venta igual lo toma (lo hace la base). */
+  const setterMarcado = useMemo(
+    () => setterDeAgendas(e.sesiones, { sesionId, contactoId: b.contactoId || undefined, fecha: b.fecha }),
+    [e.sesiones, sesionId, b.contactoId, b.fecha],
+  );
+  const setterSugerido = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (!setterMarcado || setterSugerido.current === setterMarcado) return;
+    setterSugerido.current = setterMarcado;
+    setB((x) => (x.setterId ? x : { ...x, setterId: setterMarcado }));
+  }, [setterMarcado]);
+
   /* El plan se rearma solo mientras nadie lo toque a mano. */
   useEffect(() => {
     setB((x) => {
@@ -309,7 +323,7 @@ export function AsistenteVenta({ onCerrar, onListo, desdeMovimiento, cliente, cl
       proyecto,
       /* Si el closer no los eligió, los que dice el link (setter_{nombre},
          el referidor en utm_content). */
-      setterId: b.setterId || o?.setterId || undefined,
+      setterId: b.setterId || setterMarcado || o?.setterId || undefined,
       referidorNombre: b.esReferido && b.referidorNombre.trim() ? b.referidorNombre.trim() : o?.referidorNombre,
       referidorTelefono: b.esReferido && b.referidorTelefono.trim() ? b.referidorTelefono.trim() : undefined,
     };
@@ -420,14 +434,14 @@ export function AsistenteVenta({ onCerrar, onListo, desdeMovimiento, cliente, cl
           {paso.id === "cliente" && <PasoCliente b={b} set={set} e={e} M={M} onPagoDeCuota={onPagoDeCuota} />}
           {paso.id === "producto" && <PasoProducto b={b} set={set} e={e} M={M} />}
           {paso.id === "precio" && <PasoPrecio b={b} set={set} e={e} M={M} />}
-          {paso.id === "equipo" && <PasoEquipo b={b} set={set} e={e} sinComision={sinComision} yo={yo.miembro} />}
+          {paso.id === "equipo" && <PasoEquipo b={b} set={set} e={e} sinComision={sinComision} yo={yo.miembro} setterMarcado={setterMarcado} />}
           {paso.id === "plan" && <PasoPlan b={b} setB={setB} M={M} diferencia={diferenciaPlan} moneda={e.ajustes.monedaBase || "USD"} />}
           {paso.id === "cobros" && <PasoCobros b={b} setB={setB} e={e} M={M} onSubiendo={onSubiendo} />}
           {paso.id === "contrato" && (
             <PasoContrato b={b} setB={setB} e={e} esDueno={esDueno} modo={modoContrato} encendido={configContratos?.estado === "encendido" || configContratos?.estado === "duenos"} />
           )}
           {paso.id === "resumen" && (
-            <PasoResumen b={b} set={set} e={e} M={M} sinComision={sinComision} totalCobrado={totalCobrado} />
+            <PasoResumen b={b} set={set} e={e} M={M} sinComision={sinComision} totalCobrado={totalCobrado} setterMarcado={setterMarcado} />
           )}
         </div>
       </div>
@@ -873,9 +887,11 @@ function PasoPrecio({ b, set, e, M }: {
 
 /* ---------- Paso 4: vendedor, director, setter y referido ---------- */
 
-function PasoEquipo({ b, set, e, sinComision, yo }: {
+function PasoEquipo({ b, set, e, sinComision, yo, setterMarcado }: {
   b: Borrador; set: (c: Partial<Borrador>) => void; e: EstadoApp; sinComision: boolean;
   yo?: MiembroEquipo;
+  /* El setter que marcó la agenda de esta persona (lib/setter-agendas.ts). */
+  setterMarcado?: string;
 }) {
   /* Yari (CEO) como closer sólo le aparece a Yari. Si la app no sabe quién
      está cargando (sin email en Equipo y honorarios), se muestran todos. */
@@ -914,6 +930,9 @@ function PasoEquipo({ b, set, e, sinComision, yo }: {
             onChange={(ev) => set({ setterId: ev.target.value })}
             opciones={[{ valor: "", texto: "Sin setter" }, ...setters.map((x) => ({ valor: x.id, texto: x.nombre }))]}
           />
+          {setterMarcado && (b.setterId === setterMarcado || !b.setterId) && (
+            <span className="hk-help">{e.equipo.find((x) => x.id === setterMarcado)?.nombre ?? "El setter"} marcó esta agenda como suya. Si no corresponde, avisale al director.</span>
+          )}
         </div>
         <div className="hk-field">
           <label className="hk-label">¿Es referido?</label>
@@ -1078,21 +1097,17 @@ function PasoCobros({ b, setB, e, M, onSubiendo }: {
     return usado;
   }, [b.cuotas]);
 
-  /* Pagos de pasarela sin conciliar que parecen de este cliente. */
+  /* Pagos de pasarela sin conciliar que son de este cliente: mismo mail, o nombre y apellido. Un nombre en común no
+     alcanza: a Dante le ofrecía la seña de Andres Lopez en la venta de Andres Gallego (23/10) y la imputó ahí. Los de
+     otra persona (la pareja que pagó, la empresa) se eligen igual desde cada cuota, y ahí se pide confirmarlo. */
   const candidatos = useMemo(() => {
     const usado = usadoFuera();
+    const cliente = { nombre: b.contactoNombre, email: b.contactoEmail };
     return e.movimientos
       .filter((m) => m.estado === "pendiente" && disponibleDe(m, e.pagos, usado) > 0.009)
-      .map((m) => {
-        const porNombre = parecido(m.clienteNombre, b.contactoNombre);
-        const porMail = b.contactoEmail && m.clienteEmail
-          && m.clienteEmail.toLowerCase() === b.contactoEmail.toLowerCase() ? 1 : 0;
-        return { m, afinidad: Math.max(porNombre, porMail) };
-      })
-      .filter((x) => x.afinidad >= 0.5)
-      .sort((x, y) => y.afinidad - x.afinidad)
-      .slice(0, 6)
-      .map((x) => x.m);
+      .filter((m) => quienPagoVsCliente(m, cliente) === "es")
+      .sort((x, y) => +new Date(y.fecha) - +new Date(x.fecha))
+      .slice(0, 6);
   }, [e.movimientos, e.pagos, b.contactoNombre, b.contactoEmail, usadoFuera]);
 
   const cambiarCobros = (cuotaId: string) => (f: (cobros: Cobro[]) => Cobro[]) =>
@@ -1303,9 +1318,9 @@ function PasoContrato({ b, setB, e, esDueno, modo, encendido }: {
 
 /* ---------- Paso 8: resumen ---------- */
 
-function PasoResumen({ b, set, e, M, sinComision, totalCobrado }: {
+function PasoResumen({ b, set, e, M, sinComision, totalCobrado, setterMarcado }: {
   b: Borrador; set: (c: Partial<Borrador>) => void; e: EstadoApp;
-  M: (n: number, d?: number) => string; sinComision: boolean; totalCobrado: number;
+  M: (n: number, d?: number) => string; sinComision: boolean; totalCobrado: number; setterMarcado?: string;
 }) {
   const producto = e.productos.find((p) => p.id === b.productoId);
   const closer = e.equipo.find((x) => x.id === b.closerId);
@@ -1317,7 +1332,7 @@ function PasoResumen({ b, set, e, M, sinComision, totalCobrado }: {
   const proyecto = o?.proyecto ?? b.proyecto;
   const webinar = e.webinars.find((x) => x.id === (o?.webinarId ?? b.webinarId))
     ?? webinarDeProyecto(proyecto, e.webinars, b.fecha);
-  const setter = e.equipo.find((x) => x.id === (b.setterId || o?.setterId));
+  const setter = e.equipo.find((x) => x.id === (b.setterId || setterMarcado || o?.setterId));
   const referidor = b.esReferido && b.referidorNombre.trim() ? b.referidorNombre.trim() : o?.referidorNombre;
   const conciliados = b.cuotas.flatMap((c) => c.cobros).filter((p) => p.movimientoId).length;
 

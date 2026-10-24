@@ -219,6 +219,11 @@ export interface Sesion {
      que estar cargada para terminar el día; la única salida es avisar que la
      carga otra persona, y eso queda anotado acá (quién lo dijo y cuándo). */
   ventaPorOtro?: { por: string; en: string };
+  /* El setter que marcó la agenda como suya desde Mi panel (Daniel, 24/10): la
+     venta de esa persona lo toma solo (lib/setter-agendas.ts). La escribe sólo
+     marcar_agenda_de_setter() en la base. */
+  setterId?: ID;
+  setterMarcadoEn?: string;
 }
 
 /* Cómo terminó una llamada según el cierre del día de antes: con cierre

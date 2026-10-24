@@ -43,6 +43,7 @@ import { puedeCargarDevolucion, puedeDarDeBaja, puedeEditar, TIPOS_POR_DEFECTO, 
 import { esDevolucionConfirmada } from "./devoluciones";
 import { esIncobrable, notasDeIncobrable, notasSinIncobrable } from "./cuota-incobrable";
 import { atarPropuesta, conciliarReembolsos, quienDelReembolso, type ReembolsoCrudo, type ResultadoReembolsos } from "./reembolsos";
+import { setterDeAgendas } from "./setter-agendas";
 import {
   cambiosDeChequeo, conChequeo, conComprobanteNuevo, puedeCambiarComprobante, puedeUsarCasillero,
   quienEs, ROL_DE_CASILLERO, sinColumnasDelControl, type CasilleroChequeo, type VeredictoChequeo,
@@ -1227,7 +1228,12 @@ function movimientosDeCobros(e: EstadoApp, pagos: Pago[], ids: (ID | undefined)[
 }
 
 /* A la base va sólo lo de la conciliación, con los nulos escritos: quien no es
-   de Finanzas no puede tocar otra columna del movimiento (lo frena un trigger). */
+   de Finanzas no puede tocar otra columna del movimiento (lo frena un trigger).
+   Siempre un UPDATE, nunca la fila entera: un upsert también pide permiso de
+   INSERT, que un closer no tiene, y la base lo rechazaba entero. El cobro
+   quedaba «pendiente» con su pago ya atado y se volvía a usar en otra venta
+   (la seña de Andres Lopez, Dante 23/10). Igual la base ya lo pone al día sola
+   (supabase/cobro-de-pasarela-una-vez.sql). */
 function empujarMovimientos(tocados: Map<ID, Movimiento>) {
   for (const m of tocados.values()) {
     empujarUpdate("movimientos", [m.id], {
@@ -1399,6 +1405,23 @@ export const acciones = {
     empujarUpdate(coleccion, [id], Object.fromEntries(Object.entries(cambios).map(([k, v]) => [k, v === undefined ? null : v])));
     empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
     if (t.leads.size) empujarTanda(t);
+  },
+
+  /* El setter marca (o desmarca) una agenda como suya (Daniel, 24/10). Lo decide la base
+     (marcar_agenda_de_setter): sólo un setter, sólo a su nombre, sin pisar la de otro setter, y si esa
+     persona ya tenía la venta cargada sin setter, la venta lo toma. Acá se refleja sin volver a escribirlo.
+     Sin nube (la app local), queda sólo en memoria. */
+  async marcarAgendaDeSetter(sesionId: ID, mia: boolean, setterId: ID): Promise<{ ok: true; ventas: number } | { ok: false; error: string }> {
+    let ventas = 0;
+    if (nube) {
+      const r = await nube.rpc("marcar_agenda_de_setter", { p_sesion: sesionId, p_mia: mia });
+      if (r.error) {
+        return { ok: false, error: /^(Sólo un setter|Esa agenda|No encontré)/.test(r.error.message) ? r.error.message : "No se pudo marcar la agenda. Probá de nuevo." };
+      }
+      ventas = Number((r.data as { ventas?: number } | null)?.ventas ?? 0);
+    }
+    acciones.aplicarDeLaNube<Sesion>("sesiones", { [sesionId]: mia ? { setterId, setterMarcadoEn: ahora() } : { setterId: undefined, setterMarcadoEn: undefined } });
+    return { ok: true, ventas };
   },
 
   /* Lo que cambió en la base sin pasar por esta pantalla (lo escriben el
@@ -2665,7 +2688,11 @@ export const acciones = {
        (`sesionId`): la puerta del cierre del día, los strikes y el descuento
        la necesitan, y inferirla cada vez daba falsos «sin venta». */
     const llamada = llamadaDeVenta(e, datos.venta, datos.sesionId);
-    const venta: Venta = llamada && !datos.venta.sesionId ? { ...datos.venta, sesionId: llamada.id } : datos.venta;
+    const conLlamada: Venta = llamada && !datos.venta.sesionId ? { ...datos.venta, sesionId: llamada.id } : datos.venta;
+    /* Sin setter elegido, el que marcó la agenda como suya (Daniel, 24/10). La base hace lo mismo al guardarla
+       (supabase/setter-marca-agendas.sql): acá es para que la pantalla lo muestre ya. */
+    const setterMarcado = conLlamada.setterId ? undefined : setterDeAgendas(e.sesiones, conLlamada);
+    const venta: Venta = setterMarcado ? { ...conLlamada, setterId: setterMarcado } : conLlamada;
 
     let nuevosPagos: Pago[] = [];
 
@@ -2716,7 +2743,7 @@ export const acciones = {
         cuotaId: unaSola ? suyos[0].cuotaId : mov.cuotaId,
         ventaId: venta.id,
         conciliadoEn: saldado ? ahora() : mov.conciliadoEn,
-        conciliadoPor: saldado ? (e.ajustes.responsable || "Apicanta") : mov.conciliadoPor,
+        conciliadoPor: saldado ? nombreDeQuien(e, quienSoy(e)) : mov.conciliadoPor,
       });
     }
 
@@ -2783,8 +2810,7 @@ export const acciones = {
     if (conAlumno.tocado) empujar({ tipo: "upsert", tabla: "alumnos", filas: [conAlumno.tocado] });
     empujar({ tipo: "upsert", tabla: "cuotas", filas: cuotas });
     if (nuevosPagos.length) empujar({ tipo: "upsert", tabla: "pagos", filas: nuevosPagos });
-    if (movimientosTocados.size) empujar({ tipo: "upsert", tabla: "movimientos", filas: [...movimientosTocados.values()] });
-    for (const m of movimientosTocados.values()) if (m.estado === "conciliado") acciones.soltarPaseDeCobro(m);
+    empujarMovimientos(movimientosTocados);
     empujar({ tipo: "upsert", tabla: "actividad", filas: registros });
     empujarTanda(t);
     return venta.id;
@@ -2903,7 +2929,7 @@ export const acciones = {
         cuotaId: unaSola ? suyos[0].cuotaId : mov.cuotaId,
         ventaId: venta.id,
         conciliadoEn: saldado ? ahora() : mov.conciliadoEn,
-        conciliadoPor: saldado ? (e.ajustes.responsable || "Apicanta") : mov.conciliadoPor,
+        conciliadoPor: saldado ? nombreDeQuien(e, quienSoy(e)) : mov.conciliadoPor,
       });
     }
     const movimientos = movimientosTocados.size === 0
@@ -2921,8 +2947,7 @@ export const acciones = {
     empujar({ tipo: "upsert", tabla: "pagos", filas: nuevosPagos });
     const cuotasEscritas = [...(nueva ? [nueva] : []), ...cambiadas.values()];
     if (cuotasEscritas.length) empujar({ tipo: "upsert", tabla: "cuotas", filas: cuotasEscritas });
-    if (movimientosTocados.size) empujar({ tipo: "upsert", tabla: "movimientos", filas: [...movimientosTocados.values()] });
-    for (const m of movimientosTocados.values()) if (m.estado === "conciliado") acciones.soltarPaseDeCobro(m);
+    empujarMovimientos(movimientosTocados);
     empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
     return true;
   },
@@ -3622,7 +3647,7 @@ export const acciones = {
       cuotaId: unaSola ? nuevosPagos[0].cuotaId : mov.cuotaId,
       ventaId: unaSola ? venta : mov.ventaId,
       conciliadoEn: saldado ? ahora() : mov.conciliadoEn,
-      conciliadoPor: saldado ? (e.ajustes.responsable || "Apicanta") : mov.conciliadoPor,
+      conciliadoPor: saldado ? nombreDeQuien(e, quienSoy(e)) : mov.conciliadoPor,
     };
     const movimientos = e.movimientos.map((m) => (m.id === mov.id ? actualizado : m));
 
@@ -3635,9 +3660,8 @@ export const acciones = {
     guardar({ ...e, pagos, cuotas, movimientos, actividad: lista });
     empujar({ tipo: "upsert", tabla: "pagos", filas: nuevosPagos });
     if (cuotasCambiadas.length) empujar({ tipo: "upsert", tabla: "cuotas", filas: cuotasCambiadas });
-    empujar({ tipo: "upsert", tabla: "movimientos", filas: [actualizado] });
+    empujarMovimientos(new Map([[actualizado.id, actualizado]]));
     empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
-    if (actualizado.estado === "conciliado") acciones.soltarPaseDeCobro(actualizado);
     return true;
   },
 
@@ -3664,11 +3688,14 @@ export const acciones = {
     const r2 = (n: number) => Math.round(n * 100) / 100;
     const pagosCambiados = new Map<ID, Pago>();
     const movsCambiados = new Map<ID, Movimiento>();
+    const usado = new Set(e.pagos.map((p) => p.movimientoId).filter(Boolean) as ID[]);
     const cuando = ahora();
     for (const { movimientoId, pagoId } of pares) {
       const mov = movPorId.get(movimientoId);
       const pago = pagoPorId.get(pagoId);
       if (!mov || mov.estado !== "pendiente" || !pago || pago.movimientoId || pagosCambiados.has(pago.id)) continue;
+      /* Un cobro que ya está atado a otro pago (lo cargó un closer con la venta) no se ata a un segundo: se contaría dos veces. */
+      if (usado.has(mov.id)) continue;
       /* Con la comisión real el pago toma la suya. Si la pasarela todavía
          no la mandó (Whop no la traía, Stripe tarda), conserva la que tenía:
          ponerle 0 inflaba el cash post pasarelas y las comisiones. */
@@ -3682,7 +3709,7 @@ export const acciones = {
       movsCambiados.set(mov.id, {
         ...mov, estado: "conciliado", vinculado: true, pagoId: pago.id, cuotaId: pago.cuotaId,
         ventaId: e.cuotas.find((c) => c.id === pago.cuotaId)?.ventaId,
-        conciliadoEn: cuando, conciliadoPor: e.ajustes.responsable || "Apicanta",
+        conciliadoEn: cuando, conciliadoPor: nombreDeQuien(e, quienSoy(e)),
       });
     }
     if (pagosCambiados.size === 0) return 0;
@@ -3769,7 +3796,7 @@ export const acciones = {
     guardar({ ...e, pagos, cuotas, movimientos, actividad: lista });
     if (ids.length) empujar({ tipo: "delete", tabla: "pagos", ids });
     if (cuotasCambiadas.length) empujar({ tipo: "upsert", tabla: "cuotas", filas: cuotasCambiadas });
-    empujar({ tipo: "upsert", tabla: "movimientos", filas: [actualizado] });
+    empujarMovimientos(new Map([[actualizado.id, actualizado]]));
     empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
     return true;
   },

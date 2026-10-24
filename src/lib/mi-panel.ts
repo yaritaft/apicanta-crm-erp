@@ -62,6 +62,9 @@ export interface ResumenControl { total: number; chequeados: number; pendientes:
 
 export interface AgendaDeSetter {
   sesion: Sesion;
+  /* Por qué es suya: entró por su link, o la marcó él desde Mi panel (o las dos). */
+  porLink: boolean;
+  marcada: boolean;
   /* La llamada tal como la ve el CRM (estado, cómo terminó). */
   fila?: FilaTabla;
   /* Si esa persona terminó comprando, la venta. */
@@ -282,19 +285,21 @@ export function miPanelDe(e: EstadoApp, m: MiembroEquipo, rango: RangoMes, ahora
     .sort((a, b) => b.fecha.localeCompare(a.fecha));
   const { avisos, total: totalAvisos } = avisosDe(e, { equipo: e, dia, porCobrar, cobros, ahora, pedidos: avisosDePedidos(e, pedidos), totalPedidos: pedidos.length, sinEstrategia });
 
-  /* Las agendas que le cargaron como setter: las que entraron por su link (utm_campaign=setter_nombre). */
+  /* Las agendas del setter: las que entraron por su link (utm_campaign=setter_nombre) y las que marcó él
+     como suyas desde Mi panel (Daniel, 24/10; lib/setter-agendas.ts). */
   const agendasDeSetter: AgendaDeSetter[] = [];
   if (vista === "setter") {
     const ventasPorContacto = new Map<string, Venta>();
     for (const v of e.ventas) if (v.contactoId && v.estado !== "cancelada") ventasPorContacto.set(v.contactoId, v);
     const filaPorSesion = new Map(filasTabla(e, ahora).map((f) => [f.sesion.id, f] as const));
     for (const s of e.sesiones) {
+      const marcada = s.setterId === m.id;
       const utm = normalizarUtm(s.utm);
-      if (!utm.campaign && !utm.source) continue;
-      if (origenDe(e, utm, s.inicia)?.setterId !== m.id) continue;
+      const porLink = Boolean(utm.campaign || utm.source) && origenDe(e, utm, s.inicia)?.setterId === m.id;
+      if (!marcada && !porLink) continue;
       const dia = diaDeNegocio(s.inicia);
       if (dia < desdeDia || dia > hastaDia) continue;
-      agendasDeSetter.push({ sesion: s, fila: filaPorSesion.get(s.id), venta: s.contactoId ? ventasPorContacto.get(s.contactoId) : undefined });
+      agendasDeSetter.push({ sesion: s, porLink, marcada, fila: filaPorSesion.get(s.id), venta: s.contactoId ? ventasPorContacto.get(s.contactoId) : undefined });
     }
     agendasDeSetter.sort((a, b) => b.sesion.inicia.localeCompare(a.sesion.inicia));
   }

@@ -45,6 +45,34 @@ export function parecido(a?: string, b?: string): number {
   return comunes / Math.min(ta.length, tb.length);
 }
 
+/* ¿El pago de la pasarela es de este cliente? Dante (23/10) tuvo llamada con dos
+   Andrés el mismo día y cargó la seña de Andres Lopez en la venta de Andres
+   Gallego: el selector le decía «Coincide» porque compartían «Andres» y el monto.
+   Ahora un nombre en común no alcanza: hace falta el mail o dos nombres.
+   - "es": mismo mail, o dos nombres (o más) en común y casi todo el nombre.
+   - "otra-persona": la pasarela dice quién pagó y no es el cliente (puede ser la
+     pareja o la empresa, por eso se pregunta y no se prohíbe).
+   - "sin-dato": la pasarela no dice quién pagó, o no sabemos quién es el cliente. */
+export type PagoDelCliente = "es" | "otra-persona" | "sin-dato";
+
+export function quienPagoVsCliente(
+  mov: Pick<Movimiento, "clienteNombre" | "clienteEmail">, cliente?: { nombre?: string; email?: string },
+): PagoDelCliente {
+  const mailMov = mov.clienteEmail?.trim().toLowerCase();
+  const mailCli = cliente?.email?.trim().toLowerCase();
+  if (mailMov && mailCli && mailMov === mailCli) return "es";
+  const ta = tokens(mov.clienteNombre ?? "");
+  const tb = tokens(cliente?.nombre ?? "");
+  if (ta.length && tb.length) {
+    const comunes = ta.filter((t) => tb.includes(t)).length;
+    if (comunes >= 2 && comunes / Math.min(ta.length, tb.length) >= 0.75) return "es";
+    /* Un nombre solo de cada lado (o uno solo en común con alguien de un nombre): no hay cómo distinguir dos «Andres». */
+    if (comunes >= 1 && Math.min(ta.length, tb.length) === 1) return "sin-dato";
+  }
+  if ((!ta.length && !mailMov) || (!tb.length && !mailCli)) return "sin-dato";
+  return "otra-persona";
+}
+
 /* ---------- Índices ----------
    Lo que se busca una y otra vez (cuánto se pagó de cada cuota, la venta de
    una cuota, por qué medios pagó cada venta) se arma una vez por estado.
@@ -180,8 +208,10 @@ export function sugerenciasPara(e: EstadoApp, mov: Movimiento, limite = 4): Suge
       motivos.push("El correo es el del cliente");
     }
     const sim = parecido(mov.clienteNombre, venta.contactoNombre);
+    /* Un nombre en común solo no es «se parece»: Andres Lopez no es Andres Gallego (Dante, 23/10). */
+    const otraPersona = quienPagoVsCliente(mov, { nombre: venta.contactoNombre, email: lead?.email }) === "otra-persona";
     if (sim >= 0.99) { puntaje += 30; motivos.push("El nombre es el mismo"); }
-    else if (sim >= 0.5) { puntaje += 20; motivos.push("El nombre se parece"); }
+    else if (sim >= 0.5 && !otraPersona) { puntaje += 20; motivos.push("El nombre se parece"); }
     else if (mov.clienteNombre && !mismoMail) { reparos.push("El nombre no coincide"); }
 
     /* 3. Cuándo */

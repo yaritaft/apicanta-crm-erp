@@ -376,7 +376,8 @@ export function Shell({ children }: { children: React.ReactNode }) {
             </Card>
           ) : (
             <>
-              {nivelRuta === 1 && areaDeRuta(ruta) !== "panel" && (
+              {/* Mi panel es lo de cada uno: el setter (que mira el CRM) suma ahí sus agendas, y eso sí se guarda. */}
+              {nivelRuta === 1 && areaDeRuta(ruta) !== "panel" && ruta !== "/mi-panel" && (
                 <div className="aviso-tipo" role="note">
                   <Eye size={15} aria-hidden />
                   <span>Con tu tipo de cuenta esta pantalla es para mirar: lo que cambies no se guarda.</span>

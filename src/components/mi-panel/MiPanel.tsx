@@ -133,7 +133,7 @@ export function MiPanel() {
       {TOMAN_SIMULACROS.includes(miembro.id) && <TarjetaSimulacro />}
 
       {esSetter ? (
-        <PanelSetter datos={datos} rangoTxt={rangoTxt} ahora={ahora} />
+        <PanelSetter datos={datos} rangoTxt={rangoTxt} ahora={ahora} puedeMarcar={!viendoOtro} />
       ) : (
         <>
           <div className="mp-arriba">
