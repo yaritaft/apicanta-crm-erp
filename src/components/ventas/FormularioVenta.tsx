@@ -212,7 +212,7 @@ export function FormularioVenta({ borrador, onCerrar, onGuardado }: {
         <div className="span-2 row-3" style={{ padding: "8px 0" }}>
           <Switch checked={f.excluidoMarketing || sinComision} onChange={(x) => setF({ ...f, excluidoMarketing: x })} etiqueta="Excluida de marketing" />
           <span className="t-body t-muted">
-            <strong>Excluida de marketing</strong> — el growth partner no comisiona esta venta
+            <strong>Excluida de marketing</strong>
             {sinComision && <span className="t-subtle"> (se marca sola cuando el closer es Yari)</span>}
           </span>
         </div>

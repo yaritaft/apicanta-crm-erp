@@ -1447,7 +1447,7 @@ function PasoResumen({ b, set, e, M, sinComision, totalCobrado, setterMarcado, a
         <Switch checked={b.excluidoMarketing || sinComision} etiqueta="Excluida de marketing"
           onChange={(v) => set({ excluidoMarketing: v })} />
         <span className="t-body t-muted">
-          <strong>Excluida de marketing</strong> — el growth partner no comisiona esta venta
+          <strong>Excluida de marketing</strong>
           {sinComision && <span className="t-subtle"> (se marca sola con este closer)</span>}
         </span>
       </div>
