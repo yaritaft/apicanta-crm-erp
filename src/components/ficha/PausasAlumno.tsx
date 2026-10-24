@@ -2,12 +2,12 @@
 
 import React, { useState } from "react";
 import { CalendarClock, Hourglass, PauseCircle, Pencil, Plus, Trash2 } from "lucide-react";
-import { Button, Field, Input, Textarea } from "@/components/ui/ui";
+import { Button, Field, Input, Select, Textarea } from "@/components/ui/ui";
 import { ModalForm } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toast";
-import { acciones, nuevoId } from "@/lib/store";
+import { acciones, nuevoId, useEstado } from "@/lib/store";
 import { egresoDelPrograma, type FilaCliente } from "@/lib/clientes-cs";
-import { conPausa, demoraDe, diasDe, diasDePausa, MAX_DEMORA_DIAS, MAX_PAUSA_DIAS, problemaDePausa, textoDePausa } from "@/lib/pausas";
+import { conPausa, demoraDe, diasDe, diasDePausa, MAX_DEMORA_DIAS, MAX_PAUSA_DIAS, pasaDelTope, problemaDePausa, textoDePausa } from "@/lib/pausas";
 import { diasEntre, formatoDia, sumarDias } from "@/lib/seguimiento";
 import type { PausaServicio, SeguimientoAlumno } from "@/lib/types";
 import { BloqueServicio, FilaServicio } from "./FilaServicio";
@@ -47,7 +47,7 @@ export function PausasAlumno({ f, hoy, puede }: { f: FilaCliente; hoy: string; p
       {pausas.map((p) => (
         <FilaServicio key={p.id} icono={p.tipo === "demora" ? <Hourglass size={15} /> : <PauseCircle size={15} />}
           rotulo={p.tipo === "demora" ? `Demora de inicio: arranca el ${fmt(p.hasta)}` : `Pausa del ${fmt(p.desde)} al ${fmt(p.hasta)}`}
-          detalle={[dias(diasDe(p)), p.motivo, p.creadoPor && `cargó ${p.creadoPor}`].filter(Boolean).join(" · ")}>
+          detalle={[dias(diasDe(p)), p.motivo, p.autorizadoPor && `autorizó ${p.autorizadoPor}`, p.creadoPor && `cargó ${p.creadoPor}`].filter(Boolean).join(" · ")}>
           {puede && (
             <Button sm variante="ghost" icono={<Pencil size={13} />} onClick={() => setForm({ tipo: p.tipo, p })}
               aria-label={p.tipo === "demora" ? "Corregir la demora de inicio" : `Corregir la pausa del ${fmt(p.desde)}`}>Editar</Button>
@@ -74,14 +74,18 @@ function FormPausa({ f, hoy, tipo, pausa, onCerrar }: {
     desde: pausa?.desde ?? (tipo === "demora" ? ingreso : hoy),
     hasta: pausa?.hasta ?? "",
     motivo: pausa?.motivo ?? "",
+    autorizadoPor: pausa?.autorizadoPor ?? "",
   });
+  const equipo = useEstado().equipo.filter((m) => m.activo !== false && m.nombre?.trim()).map((m) => m.nombre.trim()).sort((x, y) => x.localeCompare(y, "es"));
   const nueva: PausaServicio = {
     id: pausa?.id ?? nuevoId(tipo === "demora" ? "demora" : "pausa"), tipo,
     desde: tipo === "demora" ? ingreso : b.desde, hasta: b.hasta, motivo: b.motivo.trim(),
     creadoEn: pausa?.creadoEn ?? new Date().toISOString(), creadoPor: pausa?.creadoPor ?? "",
+    ...(b.autorizadoPor.trim() ? { autorizadoPor: b.autorizadoPor.trim() } : {}),
   };
   const otras = (f.seg.pausas ?? []).filter((x) => x.id !== nueva.id);
   const problema = b.hasta ? problemaDePausa(nueva, f.inicio, otras) : null;
+  const sobreTope = b.hasta ? pasaDelTope(nueva, otras) : null;
   const lista = conPausa(f.seg.pausas, nueva);
   const finNuevo = !problema && b.hasta ? egresoDelPrograma(f.inicio, f.seg.fechaEgreso, f.duracion, lista) : null;
   const fmt = (d: string) => formatoDia(d, hoy);
@@ -93,7 +97,7 @@ function FormPausa({ f, hoy, tipo, pausa, onCerrar }: {
       ...s, pausas: conPausa(s.pausas, { ...nueva, creadoPor: nueva.creadoPor || quien }, borrar), actualizadoEn: ahora, actualizadoPor: quien,
     }), (d) => {
       const fin = egresoDelPrograma(f.inicio, d.fechaEgreso, f.duracion, d.pausas ?? []);
-      return `${que}${borrar ? " se borró" : tipo === "demora" ? `: arranca el ${fmt(nueva.hasta)}` : ` al ${fmt(nueva.hasta)}`}${nueva.motivo && !borrar ? ` (${nueva.motivo})` : ""}.${fin ? ` El programa termina el ${fmt(fin)}.` : ""}`;
+      return `${que}${borrar ? " se borró" : tipo === "demora" ? `: arranca el ${fmt(nueva.hasta)}` : ` al ${fmt(nueva.hasta)}`}${nueva.motivo && !borrar ? ` (${nueva.motivo})` : ""}${nueva.autorizadoPor && !borrar ? `, autorizó ${nueva.autorizadoPor}` : ""}.${fin ? ` El programa termina el ${fmt(fin)}.` : ""}`;
     });
     if (!antes) return;
     toast(`${que} ${borrar ? "se borró" : pausa ? "quedó corregida" : "quedó cargada"} para ${f.nombre}.`, "ok", {
@@ -122,6 +126,13 @@ function FormPausa({ f, hoy, tipo, pausa, onCerrar }: {
         <Field label="Motivo" span2>
           <Textarea rows={2} value={b.motivo} onChange={(ev) => setB((x) => ({ ...x, motivo: ev.target.value }))}
             placeholder={tipo === "demora" ? "Por qué arranca más tarde (trabajo, viaje…)" : "Por qué pausa (salud, mudanza, trabajo…)"} />
+        </Field>
+        <Field label="Lo autoriza" span2
+          ayuda={sobreTope ? `${sobreTope} Para dar más, alguien del equipo lo autoriza y queda anotado.` : "Opcional dentro del tope: quién del equipo se la dio (por ejemplo, el closer)."}>
+          <Select value={b.autorizadoPor} placeholder="Nadie en particular" aria-label="Quién lo autoriza" error={Boolean(sobreTope && !b.autorizadoPor)}
+            onChange={(ev) => setB((x) => ({ ...x, autorizadoPor: ev.target.value }))}
+            opciones={[{ valor: "", texto: "Nadie en particular" }, ...equipo.map((n) => ({ valor: n, texto: n })),
+              ...(b.autorizadoPor && !equipo.includes(b.autorizadoPor) ? [{ valor: b.autorizadoPor, texto: b.autorizadoPor }] : [])]} />
         </Field>
         {finNuevo && (
           <p className="t-sm t-muted" style={{ gridColumn: "1 / -1", margin: 0 }}>

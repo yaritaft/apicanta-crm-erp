@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { conPausa, finConPausas, inicioReal, pausaEnCurso, problemaDePausa } from "@/lib/pausas";
+import { conPausa, finConPausas, inicioReal, pasaDelTope, pausaEnCurso, pausasNormales, problemaDePausa } from "@/lib/pausas";
 import { sumarMeses } from "@/lib/clientes-cs";
 import type { PausaServicio } from "@/lib/types";
 
@@ -52,4 +52,20 @@ test("la demora es una sola: una nueva reemplaza la anterior; borrar saca sólo 
   const c = conPausa(b, p("pausa", "2026-12-10", "2026-12-20", "p1"));
   assert.deepEqual(c.map((x) => x.id), ["d2", "p1"]);
   assert.deepEqual(conPausa(c, c[1], true).map((x) => x.id), ["d2"]);
+});
+
+test("pasar del tope se puede si alguien del equipo lo autoriza, y queda anotado (Lili, 23/10: Mariano le dio 64 días a Julio Rojas)", () => {
+  const julio = p("demora", "2026-06-29", "2026-09-01");
+  assert.match(problemaDePausa(julio, "2026-06-29", []) ?? "", /serían 64\. Para dar más, elegí quién lo autoriza/);
+  assert.equal(problemaDePausa({ ...julio, autorizadoPor: "Mariano Arias" }, "2026-06-29", []), null);
+  assert.match(pasaDelTope(julio, []) ?? "", /serían 64/, "igual se sabe que pasó del tope");
+  /* Las pausas también: 50 días entre todas, con autorización. */
+  const larga = p("pausa", "2026-11-01", "2026-12-21");
+  assert.match(problemaDePausa(larga, "2026-10-22", []) ?? "", /hasta 45 días/);
+  assert.equal(problemaDePausa({ ...larga, autorizadoPor: "Yari" }, "2026-10-22", []), null);
+  /* Lo que no es del tope no se salva con una autorización. */
+  assert.match(problemaDePausa({ ...p("pausa", "2026-11-10", "2026-11-05"), autorizadoPor: "Yari" }, "2026-10-22", []) ?? "", /después/);
+  /* Queda guardado (y una vacía no). */
+  assert.equal(pausasNormales([{ ...julio, autorizadoPor: " Mariano Arias " }])[0].autorizadoPor, "Mariano Arias");
+  assert.equal(pausasNormales([{ ...julio, autorizadoPor: "" }])[0].autorizadoPor, undefined);
 });

@@ -329,6 +329,8 @@ export interface PausaServicio {
   motivo: string;
   creadoEn: string;
   creadoPor: string;
+  /* Quién del equipo la autorizó (Lili, 23/10: «se lo da Mariano, el closer»). Hace falta para pasar del tope. */
+  autorizadoPor?: string;
 }
 
 export interface SesionUnoAUno {

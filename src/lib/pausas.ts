@@ -34,6 +34,7 @@ export function pausasNormales(x: unknown): PausaServicio[] {
     .map((p) => ({
       id: String(p.id), tipo: p.tipo, desde: p.desde, hasta: p.hasta, motivo: String(p.motivo ?? ""),
       creadoEn: String(p.creadoEn ?? ""), creadoPor: String(p.creadoPor ?? ""),
+      ...(typeof p.autorizadoPor === "string" && p.autorizadoPor.trim() ? { autorizadoPor: p.autorizadoPor.trim() } : {}),
     }))
     .sort((a, b) => a.desde.localeCompare(b.desde));
 }
@@ -75,23 +76,31 @@ function dosMesesDespues(dia: string): string {
   return new Date(Date.UTC(a, m + 1, Math.min(d, finDeMes))).toISOString().slice(0, 10);
 }
 
-/* Lo que no se puede cargar, en palabras (o null si está bien). */
-export function problemaDePausa(p: Pick<PausaServicio, "id" | "tipo" | "desde" | "hasta">, inicio: string, otras: readonly PausaServicio[]): string | null {
+/* Lo que no se puede cargar, en palabras (o null si está bien). Pasar del tope se puede si alguien del equipo lo
+   autoriza (Lili, 23/10: Mariano le dio más días de demora a Julio Rojas): queda anotado quién. */
+export function problemaDePausa(p: Pick<PausaServicio, "id" | "tipo" | "desde" | "hasta" | "autorizadoPor">, inicio: string, otras: readonly PausaServicio[]): string | null {
   if (!DIA.test(p.desde) || !DIA.test(p.hasta)) return "Faltan las fechas.";
   const dias = diasEntre(p.desde, p.hasta);
   if (dias <= 0) return p.tipo === "demora" ? "El día en que arranca tiene que ser después del ingreso." : "El día en que retoma tiene que ser después del día en que pausa.";
+  if (p.tipo !== "demora") {
+    if (inicio && p.desde < inicioReal(inicio, otras)) return "La pausa empieza antes de que arranque el programa.";
+    const resto = soloPausas(otras).filter((x) => x.id !== p.id);
+    if (resto.some((x) => p.desde < x.hasta && x.desde < p.hasta)) return "Se superpone con otra pausa.";
+  }
+  const tope = pasaDelTope(p, otras);
+  return tope && !p.autorizadoPor?.trim() ? `${tope} Para dar más, elegí quién lo autoriza.` : null;
+}
+
+/** Si pasa del tope (60 días de demora, 45 de pausas entre todas), cuánto sería; si no, null. */
+export function pasaDelTope(p: Pick<PausaServicio, "id" | "tipo" | "desde" | "hasta">, otras: readonly PausaServicio[]): string | null {
+  const dias = diasEntre(p.desde, p.hasta);
   if (p.tipo === "demora") {
     /* «60 días» es «dos meses»: del 22/10 al 22/12 son 61 días y es lo que Lili cuenta como 60. */
     const tope = Math.max(MAX_DEMORA_DIAS, diasEntre(p.desde, dosMesesDespues(p.desde)));
-    if (dias > tope) return `La demora de inicio es de hasta ${MAX_DEMORA_DIAS} días (dos meses): con ésta serían ${dias}.`;
-    return null;
+    return dias > tope ? `La demora de inicio es de hasta ${MAX_DEMORA_DIAS} días (dos meses): con ésta serían ${dias}.` : null;
   }
-  if (inicio && p.desde < inicioReal(inicio, otras)) return "La pausa empieza antes de que arranque el programa.";
-  const resto = soloPausas(otras).filter((x) => x.id !== p.id);
-  if (resto.some((x) => p.desde < x.hasta && x.desde < p.hasta)) return "Se superpone con otra pausa.";
-  const total = resto.reduce((n, x) => n + diasDe(x), 0) + dias;
-  if (total > MAX_PAUSA_DIAS) return `Las pausas suman hasta ${MAX_PAUSA_DIAS} días: con ésta serían ${total}.`;
-  return null;
+  const total = soloPausas(otras).filter((x) => x.id !== p.id).reduce((n, x) => n + diasDe(x), 0) + dias;
+  return total > MAX_PAUSA_DIAS ? `Las pausas suman hasta ${MAX_PAUSA_DIAS} días: con ésta serían ${total}.` : null;
 }
 
 /* La lista con una demora o pausa nueva (o corregida, o borrada). La demora es una sola: una nueva reemplaza la anterior. */
