@@ -106,7 +106,9 @@ function ModalCorregir({ cuota, cobrado, quitar, onCerrar }: { cuota: Cuota; cob
   const [motivo, setMotivo] = useState("");
   const nuevoMonto = quitar ? 0 : monto;
   const precioNuevo = venta ? Math.max(0, Math.round((venta.precioAcordado - cuota.monto + nuevoMonto) * 100) / 100) : undefined;
-  const sirve = motivo.trim().length > 0 && (quitar || (monto > cobrado && monto !== cuota.monto));
+  /* Igual a lo cobrado se puede: la cuota queda saldada (Demian, 24/10: la diferencia de redondeo del plan). */
+  const sirve = motivo.trim().length > 0 && (quitar || (monto > 0 && monto >= cobrado - 0.005 && monto !== cuota.monto));
+  const saldada = !quitar && cobrado > 0 && monto > 0 && Math.abs(monto - cobrado) < 0.005;
   function guardar() {
     const cambio = quitar ? { quitar: true as const } : { monto };
     if (acciones.corregirCuota(cuota.id, cambio, motivo)) toast(quitar ? `Se quitó ${nombreDe(cuota)}.` : `Listo: ${nombreDe(cuota)} ahora es de ${money(monto, mon, 2)}.`);
@@ -121,7 +123,9 @@ function ModalCorregir({ cuota, cobrado, quitar, onCerrar }: { cuota: Cuota; cob
         <Button variante={quitar ? "danger" : "primary"} disabled={!sirve} onClick={guardar}>{quitar ? "Quitar la cuota" : "Guardar el monto"}</Button></>}
     >
       {!quitar && (
-        <Field label="Monto correcto" ayuda={cobrado > 0 ? `Tiene que ser más de lo ya cobrado (${money(cobrado, mon, 2)}).` : undefined}>
+        <Field label="Monto correcto" ayuda={cobrado > 0
+          ? saldada ? `Igual a lo ya cobrado: la cuota queda saldada.` : `No puede ser menos de lo ya cobrado (${money(cobrado, mon, 2)}). Si es igual, la cuota queda saldada.`
+          : undefined}>
           <InputMonto value={monto} onChange={(ev) => setMonto(montoDe(ev.target.value))} />
         </Field>
       )}

@@ -1575,7 +1575,10 @@ export const acciones = {
     const nombre = c.esReserva ? "la reserva" : `la cuota ${c.numero}`;
     const quitar = "quitar" in cambio;
     const montoNuevo = quitar ? 0 : Math.round(cambio.monto * 100) / 100;
-    if (quitar ? cobrado > 0 : !(montoNuevo > cobrado) || montoNuevo === c.monto) return null;
+    /* Igual a lo cobrado se puede: la cuota queda saldada (Aldana, 24/10: Demian pagó 976 por Stripe y la cuota era de
+       979 por el redondeo del plan; «tenía que ser más» no dejaba cerrarla). Menos que lo cobrado, no. */
+    if (quitar ? cobrado > 0 : montoNuevo < cobrado - 0.005 || montoNuevo <= 0 || montoNuevo === c.monto) return null;
+    const saldada = !quitar && cobrado > 0 && montoNuevo <= cobrado + 0.005;
     const diferencia = montoNuevo - c.monto;
     const precioNuevo = venta ? Math.max(0, Math.round((venta.precioAcordado + diferencia) * 100) / 100) : undefined;
     const texto = quitar
@@ -1585,11 +1588,11 @@ export const acciones = {
     const detalle = `${texto}${precioNuevo !== undefined && venta ? ` El precio de la venta pasó de ${venta.precioAcordado} a ${precioNuevo}.` : ""} Motivo: ${motivo.trim()}`;
     const ventas = venta && precioNuevo !== undefined ? e.ventas.map((v) => (v.id === venta.id ? { ...v, precioAcordado: precioNuevo } : v)) : e.ventas;
     const notas = c.notas ? `${c.notas} | ${linea}` : linea;
-    const cuotas = quitar ? e.cuotas.filter((x) => x.id !== id) : e.cuotas.map((x) => (x.id === id ? { ...x, monto: montoNuevo, notas } : x));
+    const cuotas = quitar ? e.cuotas.filter((x) => x.id !== id) : e.cuotas.map((x) => (x.id === id ? { ...x, monto: montoNuevo, notas, ...(saldada ? { estado: "pagada" as const } : {}) } : x));
     const { lista: act, nuevo } = registrar(e, "transaccion", c.ventaId, venta?.contactoNombre ?? "Venta", "actualizo", detalle);
     guardar({ ...e, cuotas, ventas, actividad: act });
     if (quitar) empujar({ tipo: "delete", tabla: "cuotas", ids: [id] });
-    else empujar({ tipo: "update", tabla: "cuotas", ids: [id], cambios: { monto: montoNuevo, notas } });
+    else empujar({ tipo: "update", tabla: "cuotas", ids: [id], cambios: { monto: montoNuevo, notas, ...(saldada ? { estado: "pagada" } : {}) } });
     if (venta && precioNuevo !== undefined) empujar({ tipo: "update", tabla: "ventas", ids: [venta.id], cambios: { precioAcordado: precioNuevo } });
     empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
     return detalle;

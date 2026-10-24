@@ -76,3 +76,18 @@ test("buscar a alguien sin llamadas lo encuentra por su venta o como alumno (el 
   assert.deepEqual(personasQueCoinciden(e, "zz"), [], "con menos de 3 letras no busca");
   assert.deepEqual(personasQueCoinciden(e, "qwertyuiopasdf"), []);
 });
+
+test("corregir una cuota a lo ya cobrado la deja pagada (Demian, 24/10: pagó 976 por Stripe y la cuota era de 979 por el redondeo)", () => {
+  const { cuota, venta } = pendienteSinCobros();
+  const e0 = estado();
+  const proc = e0.procesadores[0]?.id;
+  const cobrado = Math.round((cuota.monto - 3) * 100) / 100;
+  assert.equal(acciones.registrarPago({ cuotaId: cuota.id, cobros: [{ procesadorId: proc, monto: cobrado, fecha: "2026-10-23" }], reajuste: "pendiente" }), true);
+  assert.equal(estado().cuotas.find((c) => c.id === cuota.id)!.estado, "pendiente", "le faltan 3");
+  assert.equal(acciones.corregirCuota(cuota.id, { monto: cobrado - 1 }, "menos de lo cobrado"), null, "menos de lo cobrado, no");
+  assert.ok(acciones.corregirCuota(cuota.id, { monto: cobrado }, "diferencia de redondeo: Stripe le cobra 976 por mes"));
+  const e = estado();
+  const c = e.cuotas.find((x) => x.id === cuota.id)!;
+  assert.deepEqual([c.monto, c.estado], [cobrado, "pagada"]);
+  assert.equal(e.ventas.find((v) => v.id === venta.id)!.precioAcordado, Math.round((venta.precioAcordado - 3) * 100) / 100, "el total de la venta baja los 3");
+});
