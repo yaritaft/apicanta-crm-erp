@@ -37,6 +37,14 @@ export const MOTIVOS_DE_REEMBOLSO: readonly OpcionMotivo[] = [
   { id: "otro", texto: "Otro motivo", pideDetalle: "obligatorio" },
 ];
 
+/** Por qué se elimina una venta (Aldana, 24/10): lo que se escribe queda en Actividad junto a quién la eliminó. */
+export const MOTIVOS_DE_ELIMINAR_VENTA: readonly OpcionMotivo[] = [
+  { id: "repetida", texto: "Está cargada dos veces", ayuda: "Es la misma compra cargada otra vez: queda la otra.", pideDetalle: "opcional" },
+  { id: "no-pago", texto: "El cliente no pagó", ayuda: "Se cargó pero la compra nunca se concretó.", pideDetalle: "opcional" },
+  { id: "error", texto: "Se cargó por error", ayuda: "Persona, servicio o precio equivocados.", pideDetalle: "opcional" },
+  { id: "otro", texto: "Otro motivo", pideDetalle: "obligatorio" },
+];
+
 const LARGO_MINIMO = 3;
 
 /** ¿Alcanza lo elegido y escrito para guardar el motivo? */

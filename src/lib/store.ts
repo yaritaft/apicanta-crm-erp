@@ -393,7 +393,7 @@ async function drenar() {
         if (r.error.code === "42501") {
           cola.shift();
           /* Los candados de los cobros (supabase/cobros-de-closers.sql) dicen por qué: se muestra tal cual. */
-          negada(op.tabla, /^(Este cobro|Ese cobro|Un pago de la pasarela)/.test(r.error.message) ? r.error.message : undefined);
+          negada(op.tabla, /^(Este cobro|Ese cobro|Un pago de la pasarela|Esta venta)/.test(r.error.message) ? r.error.message : undefined);
           continue;
         }
         /* Un borrado que la base frena porque otra cosa todavía lo usa (un
@@ -3085,6 +3085,86 @@ export const acciones = {
     empujarMovimientos(movimientosTocados);
     empujar({ tipo: "upsert", tabla: "actividad", filas: [act] });
     return true;
+  },
+
+  /* ---------- Eliminar una venta (Aldana, 24/10) ----------
+     Una venta cargada dos veces, o una que el cliente al final no pagó: cancelarla la deja escrita como cancelada y lo cobrado SIGUE SUMANDO (es plata
+     que existe), así que una carga repetida seguía contando. Eliminar la saca con sus cuotas y sus cobros. Sólo quien puede dar de baja (los closers no:
+     lo frena también la base); pide el motivo; no deja eliminar una con devoluciones. Los cobros de pasarela que tenía atados vuelven a la bandeja y, si
+     se dice cuál es la venta que se queda, se atan a su pago idéntico (queda el mismo cobro con su comisión real, una sola vez). Lo que se borra queda
+     respaldado en la base (supabase/ventas-eliminadas.sql). */
+
+  eliminarVenta(ventaId: ID, motivo: string, opciones: { reatarA?: ID } = {}): { ok: true; cobros: number; cuotas: number; reatados: number } | { ok: false; error: string } {
+    const e = snapshot();
+    const venta = e.ventas.find((v) => v.id === ventaId);
+    if (!venta) return { ok: false, error: "No encuentro la venta." };
+    const porQue = (motivo ?? "").trim();
+    if (porQue.length < 3) return { ok: false, error: "Escribí por qué se elimina." };
+    if (acceso && !puedeDarDeBaja(acceso)) {
+      negada("ventas", "Tu tipo de cuenta no puede eliminar ventas.");
+      return { ok: false, error: "Tu tipo de cuenta no puede eliminar ventas." };
+    }
+    if ((e.devoluciones ?? []).some((d) => d.ventaId === ventaId && d.estado !== "ignorada")) {
+      return { ok: false, error: "Tiene devoluciones cargadas: no se puede eliminar. Si es una devolución, dala de baja como reembolsada." };
+    }
+    const r2 = (n: number) => Math.round(n * 100) / 100;
+    const cuotas = e.cuotas.filter((c) => c.ventaId === ventaId);
+    const idsCuotas = new Set(cuotas.map((c) => c.id));
+    const pagos = e.pagos.filter((p) => idsCuotas.has(p.cuotaId));
+    const pagosQueQuedan = e.pagos.filter((p) => !idsCuotas.has(p.cuotaId));
+    const total = r2(pagos.reduce((a, p) => a + p.monto, 0));
+
+    /* Los cobros de pasarela atados a estos pagos vuelven a la bandeja; los que tenían esta venta sin pago, también quedan sueltos. */
+    const movimientosTocados = movimientosDeCobros(e, pagosQueQuedan, pagos.map((p) => p.movimientoId), ventaId);
+    for (const m of e.movimientos) {
+      if (m.ventaId === ventaId && !movimientosTocados.has(m.id)) {
+        movimientosTocados.set(m.id, { ...m, ventaId: undefined, cuotaId: undefined, pagoId: undefined });
+      }
+    }
+    /* Su servicio: si la persona tiene la otra venta, el alumno pasa a ella; si no, queda de baja (se puede reactivar). */
+    const alumnosDeEsta = e.alumnos.filter((a) => a.ventaId === ventaId);
+    const alumnosNuevos = alumnosDeEsta.map((a) => (opciones.reatarA
+      ? { ...a, ventaId: opciones.reatarA }
+      : { ...a, ventaId: undefined, estado: "baja" as const, extra: { ...a.extra, [ESTADO_ANTES_DE_LA_BAJA]: a.estado } }));
+    const porId = new Map(alumnosNuevos.map((a) => [a.id, a] as const));
+
+    const { lista, nuevo } = registrar(
+      e, "transaccion", ventaId, venta.contactoNombre, "elimino",
+      `Se eliminó la venta de ${venta.contactoNombre} (US$ ${venta.precioAcordado.toLocaleString("es-AR")}, ${venta.fecha.slice(0, 10)}) con ${pagos.length} ${pagos.length === 1 ? "cobro" : "cobros"} por US$ ${total.toLocaleString("es-AR")}. Motivo: ${porQue}`,
+    );
+    guardar({
+      ...e,
+      ventas: e.ventas.filter((v) => v.id !== ventaId),
+      cuotas: e.cuotas.filter((c) => c.ventaId !== ventaId),
+      pagos: pagosQueQuedan,
+      movimientos: e.movimientos.map((m) => movimientosTocados.get(m.id) ?? m),
+      alumnos: e.alumnos.map((a) => porId.get(a.id) ?? a),
+      actividad: lista,
+    });
+    /* A la base, de adentro para afuera: los cobros, las cuotas y la venta (la base también borra en cascada y respalda cada fila). */
+    if (pagos.length) empujar({ tipo: "delete", tabla: "pagos", ids: pagos.map((p) => p.id) });
+    if (cuotas.length) empujar({ tipo: "delete", tabla: "cuotas", ids: cuotas.map((c) => c.id) });
+    empujarMovimientos(movimientosTocados);
+    if (alumnosNuevos.length) empujar({ tipo: "upsert", tabla: "alumnos", filas: alumnosNuevos });
+    empujar({ tipo: "delete", tabla: "ventas", ids: [ventaId] });
+    empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
+
+    /* Atar el mismo cobro de pasarela al pago idéntico de la venta que se queda. */
+    let reatados = 0;
+    if (opciones.reatarA) {
+      const despues = snapshot();
+      const cuotasDeLaOtra = new Set(despues.cuotas.filter((c) => c.ventaId === opciones.reatarA).map((c) => c.id));
+      const libres = despues.pagos.filter((p) => cuotasDeLaOtra.has(p.cuotaId) && !p.movimientoId);
+      const usados = new Set<ID>();
+      const pares: { movimientoId: ID; pagoId: ID }[] = [];
+      for (const m of movimientosTocados.values()) {
+        if (m.estado !== "pendiente" || m.pagoId) continue;
+        const p = libres.find((x) => !usados.has(x.id) && Math.abs(x.monto - m.monto) <= 0.01);
+        if (p) { usados.add(p.id); pares.push({ movimientoId: m.id, pagoId: p.id }); }
+      }
+      if (pares.length) reatados = acciones.vincularConPagos(pares);
+    }
+    return { ok: true, cobros: pagos.length, cuotas: cuotas.length, reatados };
   },
 
   /* ---------- Devoluciones (lib/devoluciones.ts) ----------

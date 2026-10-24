@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { AlertTriangle, Check, Link2, Lock, Paperclip, Pencil, Receipt } from "lucide-react";
+import { AlertTriangle, Check, Link2, Lock, Paperclip, Pencil, Receipt, Trash2 } from "lucide-react";
 import { Badge, Bar, Button, IconButton } from "@/components/ui/ui";
 import { useToast } from "@/components/ui/Toast";
 import { saldoVenta } from "@/lib/finanzas";
@@ -35,7 +35,7 @@ const ESTADO: Record<EstadoVenta, { texto: string; variante: "success" | "neutra
   reembolsada: { texto: "Reembolsada", variante: "danger" },
 };
 
-export function TarjetaVenta({ e, venta, resaltada, abierta, onAlternar, onPagar, onEditar, onEstado, onEditarPago }: {
+export function TarjetaVenta({ e, venta, resaltada, abierta, onAlternar, onPagar, onEditar, onEstado, onEditarPago, onEliminar }: {
   e: EstadoApp; venta: Venta; resaltada?: boolean;
   abierta: boolean; onAlternar: () => void;
   onPagar: (cuota: Cuota) => void;
@@ -44,6 +44,8 @@ export function TarjetaVenta({ e, venta, resaltada, abierta, onAlternar, onPagar
   onEditar: () => void;
   /* Darla de baja (cancelada o reembolsada) o reactivarla. */
   onEstado: (estado: EstadoVenta) => void;
+  /* Sacarla de verdad, con sus cuotas y cobros (EliminarVenta). Sólo Finanzas y dueños. */
+  onEliminar?: () => void;
 }) {
   const toast = useToast();
   /* El closer no cancela ni marca reembolsada su venta (D6): una devolución se carga con su comprobante. */
@@ -207,6 +209,14 @@ export function TarjetaVenta({ e, venta, resaltada, abierta, onAlternar, onPagar
             ))}
           </div>
 
+          {/* Cancelar no saca lo cobrado: si la venta estaba mal cargada, esa plata sigue sumando (Aldana, 24/10). */}
+          {!activa && saldo.cobrado > 0.01 && (
+            <p className="t-sm t-muted" role="note">
+              Está {venta.estado === "reembolsada" ? "reembolsada" : "cancelada"} pero conserva {M(saldo.cobrado, 2)} cobrados, que siguen sumando
+              como plata cobrada.{puedeBaja && onEliminar ? " Si la cargaron de más, eliminala." : " Si la cargaron de más, pedile a Finanzas que la elimine."}
+            </p>
+          )}
+
           {venta.notas && <p className="t-sm t-muted" style={{ whiteSpace: "pre-wrap" }}>{venta.notas}</p>}
 
           <DevolucionesDeVenta e={e} venta={venta} />
@@ -221,6 +231,9 @@ export function TarjetaVenta({ e, venta, resaltada, abierta, onAlternar, onPagar
               </>
             ) : (
               <Button sm variante="ghost" onClick={() => onEstado("activa")}>Reactivar venta</Button>
+            )}
+            {puedeBaja && onEliminar && (
+              <Button sm variante="ghost" icono={<Trash2 size={13} />} onClick={onEliminar} style={{ color: "var(--danger)" }}>Eliminar venta</Button>
             )}
           </div>
         </div>

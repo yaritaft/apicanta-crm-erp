@@ -34,6 +34,8 @@ import { plantillaDelContrato, programaDeProducto, programasDe } from "@/lib/pro
 import { contratosPrendidos, leerContratos, pedirContrato } from "@/components/contratos/cliente";
 import { DatosDelContrato } from "@/components/contratos/DatosDelContrato";
 import { diaDeNegocio } from "@/lib/dia-negocio";
+import { ventasIdenticas } from "@/lib/ventas-repetidas";
+import { AvisoVentaIdentica } from "./AvisoVentaIdentica";
 
 /* ==================================================================
    Asistente de venta.
@@ -255,9 +257,21 @@ export function AsistenteVenta({ onCerrar, onListo, desdeMovimiento, cliente, cl
     });
   }, []);
 
+  /* ¿Ya existe una venta idéntica (misma persona, servicio y precio, en esos días)? Avisa; en el resumen pide confirmar que es otra
+     compra (Aldana, 24/10: una venta se cargó dos veces y sumaba US$ 6.000 en vez de 3.000). */
+  const identicas = useMemo(() => {
+    if (!b.productoId || !(b.precioAcordado > 0) || !(b.contactoId || b.contactoExistenteId || b.contactoNombre.trim().length >= 2)) return [];
+    return ventasIdenticas(e, {
+      quien: { contactoId: b.contactoId || b.contactoExistenteId, nombre: b.contactoNombre, email: b.contactoEmail, telefono: b.contactoTelefono },
+      productoId: b.productoId, precioAcordado: b.precioAcordado, fecha: b.fecha,
+    });
+  }, [e, b.productoId, b.precioAcordado, b.contactoId, b.contactoExistenteId, b.contactoNombre, b.contactoEmail, b.contactoTelefono, b.fecha]);
+  const [otraCompra, setOtraCompra] = useState(false);
+  const repetida = identicas.length > 0 && !otraCompra;
+
   const problema = useMemo(
-    () => validar(paso.id, b, diferenciaPlan, { e, subiendo: subiendo.size, modoContrato }),
-    [paso.id, b, diferenciaPlan, e, subiendo.size, modoContrato],
+    () => validar(paso.id, b, diferenciaPlan, { e, subiendo: subiendo.size, modoContrato, repetida }),
+    [paso.id, b, diferenciaPlan, e, subiendo.size, modoContrato, repetida],
   );
   const puedeAvanzar = problema === null;
 
@@ -433,7 +447,12 @@ export function AsistenteVenta({ onCerrar, onListo, desdeMovimiento, cliente, cl
         <div className="asistente__paso" key={paso.id}>
           {paso.id === "cliente" && <PasoCliente b={b} set={set} e={e} M={M} onPagoDeCuota={onPagoDeCuota} />}
           {paso.id === "producto" && <PasoProducto b={b} set={set} e={e} M={M} />}
-          {paso.id === "precio" && <PasoPrecio b={b} set={set} e={e} M={M} />}
+          {paso.id === "precio" && (
+            <>
+              <PasoPrecio b={b} set={set} e={e} M={M} />
+              <AvisoVentaIdentica e={e} identicas={identicas} />
+            </>
+          )}
           {paso.id === "equipo" && <PasoEquipo b={b} set={set} e={e} sinComision={sinComision} yo={yo.miembro} setterMarcado={setterMarcado} />}
           {paso.id === "plan" && <PasoPlan b={b} setB={setB} M={M} diferencia={diferenciaPlan} moneda={e.ajustes.monedaBase || "USD"} />}
           {paso.id === "cobros" && <PasoCobros b={b} setB={setB} e={e} M={M} onSubiendo={onSubiendo} />}
@@ -441,7 +460,10 @@ export function AsistenteVenta({ onCerrar, onListo, desdeMovimiento, cliente, cl
             <PasoContrato b={b} setB={setB} e={e} esDueno={esDueno} modo={modoContrato} encendido={configContratos?.estado === "encendido" || configContratos?.estado === "duenos"} />
           )}
           {paso.id === "resumen" && (
-            <PasoResumen b={b} set={set} e={e} M={M} sinComision={sinComision} totalCobrado={totalCobrado} setterMarcado={setterMarcado} />
+            <PasoResumen
+              b={b} set={set} e={e} M={M} sinComision={sinComision} totalCobrado={totalCobrado} setterMarcado={setterMarcado}
+              aviso={<AvisoVentaIdentica e={e} identicas={identicas} confirmada={otraCompra} onConfirmar={setOtraCompra} />}
+            />
           )}
         </div>
       </div>
@@ -525,7 +547,7 @@ function inicial(e: EstadoApp, mov?: Movimiento, cliente?: { contactoId: string;
 
 /* ---------- Validación por paso ---------- */
 
-function validar(paso: PasoId, b: Borrador, diferencia: number, ctx: { e: EstadoApp; subiendo: number; modoContrato: "produccion" | "prueba" }): string | null {
+function validar(paso: PasoId, b: Borrador, diferencia: number, ctx: { e: EstadoApp; subiendo: number; modoContrato: "produccion" | "prueba"; repetida: boolean }): string | null {
   switch (paso) {
     case "cliente":
       if (b.contactoId) return null;
@@ -557,6 +579,7 @@ function validar(paso: PasoId, b: Borrador, diferencia: number, ctx: { e: Estado
       return null;
     case "cobros":
     case "resumen": {
+      if (paso === "resumen" && ctx.repetida) return "Ya hay una venta idéntica: marcá que es otra compra, o salí sin registrar";
       const nombre = (c: LineaCuota) => (c.esReserva ? "la reserva" : `la cuota ${c.numero}`);
       const mal = b.cuotas.find((c) => sumar(c.cobros) > c.monto + 0.01);
       if (mal) return `Los cobros de ${nombre(mal)} superan su monto`;
@@ -1319,9 +1342,11 @@ function PasoContrato({ b, setB, e, esDueno, modo, encendido }: {
 
 /* ---------- Paso 8: resumen ---------- */
 
-function PasoResumen({ b, set, e, M, sinComision, totalCobrado, setterMarcado }: {
+function PasoResumen({ b, set, e, M, sinComision, totalCobrado, setterMarcado, aviso }: {
   b: Borrador; set: (c: Partial<Borrador>) => void; e: EstadoApp;
   M: (n: number, d?: number) => string; sinComision: boolean; totalCobrado: number; setterMarcado?: string;
+  /* Un cartel arriba del resumen (la venta idéntica ya cargada). */
+  aviso?: React.ReactNode;
 }) {
   const producto = e.productos.find((p) => p.id === b.productoId);
   const closer = e.equipo.find((x) => x.id === b.closerId);
@@ -1340,6 +1365,7 @@ function PasoResumen({ b, set, e, M, sinComision, totalCobrado, setterMarcado }:
   return (
     <>
       <Pregunta texto="Así queda la venta" sub="Revisá y confirmá. Después se puede editar todo desde la ficha." />
+      {aviso}
 
       <dl className="dl">
         <dt>Quién compró</dt>

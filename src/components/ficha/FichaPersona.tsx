@@ -22,6 +22,8 @@ import { Divisor, useAnchoPanel } from "@/components/ui/Divisor";
 import { HistorialPersona } from "./HistorialPersona";
 import { UtmsPersona } from "./UtmsPersona";
 import { TarjetaVenta } from "./TarjetaVenta";
+import { AvisoVentaRepetida } from "./AvisoVentaRepetida";
+import { EliminarVenta } from "./EliminarVenta";
 import { VistaLlamadas } from "./VistaLlamadas";
 import { usePlegado } from "./Plegable";
 import type { VistaFicha } from "./abrir";
@@ -31,6 +33,7 @@ import { nivelEn, type MiAcceso } from "@/lib/permisos";
 import { filasDePersona, filasTabla, type FilaTabla } from "@/lib/crm-tabla";
 import { personaDe, type Persona } from "@/lib/persona";
 import { saldoVenta } from "@/lib/finanzas";
+import { cobradoDeVenta } from "@/lib/ventas-repetidas";
 import { reservaSinCompletar } from "@/lib/reservas";
 import { otrosEmails } from "@/lib/duplicados";
 import { fechaLarga, money } from "@/lib/format";
@@ -336,6 +339,8 @@ function VistaVentas({ e, p, ventaResaltada, conChat }: { e: EstadoApp; p: Perso
   const [editar, setEditar] = useState<BorradorVenta | null>(null);
   /* La venta que se da de baja o se reactiva, y a qué estado pasa. */
   const [baja, setBaja] = useState<{ venta: Venta; estado: EstadoVenta } | null>(null);
+  /* La venta que se elimina de verdad (EliminarVenta). */
+  const [eliminar, setEliminar] = useState<Venta | null>(null);
   const [nuevaVenta, setNuevaVenta] = useState(false);
   const plegado = usePlegado();
 
@@ -390,6 +395,7 @@ function VistaVentas({ e, p, ventaResaltada, conChat }: { e: EstadoApp; p: Perso
             />
           ) : (
             <>
+              <AvisoVentaRepetida e={e} p={p} onEliminar={setEliminar} />
               {p.ventas.map((v) => {
                 /* Abierto lo que está en curso: la única, la que se buscó o la
                    que tiene cuotas por cobrar. Lo saldado o cancelado, plegado. */
@@ -404,6 +410,7 @@ function VistaVentas({ e, p, ventaResaltada, conChat }: { e: EstadoApp; p: Perso
                     onEditarPago={setCorregir}
                     onEditar={() => setEditar(desdeVenta(e, v))}
                     onEstado={(estado) => setBaja({ venta: v, estado })}
+                    onEliminar={() => setEliminar(v)}
                   />
                 );
               })}
@@ -423,6 +430,7 @@ function VistaVentas({ e, p, ventaResaltada, conChat }: { e: EstadoApp; p: Perso
           onGuardado={(n) => { toast(`Venta de ${n} actualizada.`); setEditar(null); }} />
       )}
       {baja && <ConfirmarBaja e={e} venta={baja.venta} estado={baja.estado} onCerrar={() => setBaja(null)} />}
+      {eliminar && <EliminarVenta e={e} venta={eliminar} onCerrar={() => setEliminar(null)} />}
       {nuevaVenta && (
         <AsistenteVenta
           cliente={{ contactoId: p.leads[0]?.id ?? p.clave, nombre: p.nombre, email: p.email }}
@@ -445,6 +453,7 @@ function ConfirmarBaja({ e, venta, estado, onCerrar }: {
   const M = (n: number) => money(n, venta.moneda, 2);
   const nombre = venta.contactoNombre;
   const servicio = e.alumnos.some((a) => a.ventaId === venta.id);
+  const cobrado = cobradoDeVenta(e, venta.id);
 
   let titulo: string, texto: string, boton: string, detalle: string, aviso: string;
   if (estado === "activa") {
@@ -468,7 +477,9 @@ function ConfirmarBaja({ e, venta, estado, onCerrar }: {
       ? `${cuotas.length === 1 ? "La cuota que faltaba cobrar queda cancelada" : `Las ${cuotas.length} cuotas que faltaban cobrar quedan canceladas`} (${M(monto)}): no se borran, quedan escritas como canceladas y dejan de contar como por cobrar y como mora.`
       : "No le quedan cuotas por cobrar.")
       + (servicio ? " Su servicio pasa a baja." : "")
-      + " Lo cobrado queda como historial."
+      + (cobrado > 0.01 && !reembolso
+        ? ` Ojo: lo cobrado (${M(cobrado)}) sigue contando como cobrado. Si la venta estaba mal cargada o repetida, usá «Eliminar venta».`
+        : " Lo cobrado queda como historial.")
       + (reembolso ? " La plata devuelta cargala como gasto en Reembolsos." : "")
       + " Se puede reactivar.";
     boton = reembolso ? "Marcar reembolsada" : "Cancelar la venta";
