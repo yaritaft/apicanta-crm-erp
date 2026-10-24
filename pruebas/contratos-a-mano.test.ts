@@ -169,3 +169,96 @@ test("«Dar los accesos» no aplica a la reserva ni a uno sin firmar", async () 
   await assert.rejects(darAccesosAhora(baseFalsa(t), contrato({ datos: { reserva: true } }), "x"), /reserva/);
   await assert.rejects(darAccesosAhora(baseFalsa(t), contrato({ estado: "visto" }), "x"), /firmado/);
 });
+
+/* ---------- Corregir un contrato ya mandado (Lili, 23/10: Santiago Ayala Restrepo, de 0 a 2 sesiones, daba 400) ---------- */
+
+type Llamada = { metodo: string; ruta: string; cuerpo: Record<string, unknown> | null };
+function pandadocFalso(estadoInicial: string, falla?: (l: Llamada) => Response | null) {
+  const llamadas: Llamada[] = [];
+  let estado = estadoInicial;
+  const recipients = [{ id: "rcp_1", email: "sammetiago@gmail.com", first_name: "Santiago Ayala", last_name: "Restrepo", role: "Client", recipient_type: "signer" }];
+  const viejo = globalThis.fetch;
+  const previo = process.env.PANDADOC_SANDBOX_KEY;
+  process.env.PANDADOC_SANDBOX_KEY = "clave-de-prueba";
+  globalThis.fetch = (async (url: string | URL, init?: RequestInit) => {
+    const ruta = String(url).replace("https://api.pandadoc.com/public/v1", "");
+    const l: Llamada = { metodo: init?.method ?? "GET", ruta, cuerpo: init?.body ? JSON.parse(String(init.body)) : null };
+    llamadas.push(l);
+    const mal = falla?.(l);
+    if (mal) return mal;
+    const ok = (j: unknown, s = 200) => new Response(s === 204 ? null : JSON.stringify(j), { status: s });
+    if (l.metodo === "POST" && ruta.endsWith("/draft")) {
+      if (estado === "document.draft") return ok({ type: "request_error", detail: "Document is already in status 'draft'" }, 400);
+      estado = "document.draft";
+      return ok({ status: estado });
+    }
+    if (l.metodo === "GET" && ruta.endsWith("/details")) return ok({ status: estado, recipients, tokens: [{ name: "Venta.Sesiones" }], fields: [] });
+    if (l.metodo === "GET") return ok({ status: estado });
+    if (l.metodo === "PATCH" && ruta.includes("/recipients/recipient/")) return ok(null, 204);
+    if (l.metodo === "PATCH") {
+      /* Como PandaDoc: el alumno que viene por mail es un destinatario NUEVO. */
+      const r = (l.cuerpo?.recipients ?? []) as { email?: string; id?: string }[];
+      if (r.some((x) => !x.id && recipients.some((y) => y.email === x.email))) return ok({ type: "request_error", detail: [`\`${r[0].email}\` already in recipients list`] }, 400);
+      return ok(null, 204);
+    }
+    if (l.metodo === "POST" && ruta.endsWith("/send")) { estado = "document.sent"; return ok({ status: estado }); }
+    if (l.metodo === "POST" && ruta.endsWith("/session")) return ok({ id: "ses_1", expires_at: "2026-10-30T00:00:00Z" });
+    return ok({}, 404);
+  }) as typeof fetch;
+  return { llamadas, restaurar: () => { globalThis.fetch = viejo; process.env.PANDADOC_SANDBOX_KEY = previo; } };
+}
+
+const DATOS_SANTI = {
+  nombre: "Santiago Ayala Restrepo", email: "sammetiago@gmail.com", telefono: "+57 319 2822424", documento: "1214715839", domicilio: "Calle 43",
+  pais: "Colombia", fecha: "2026-10-23", inicio: "2026-10-23", modalidad: "Pagos de 2.500 USD y 500 USD", sesiones: 2, bonos: [],
+};
+
+test("corregir un contrato visto: no se manda de nuevo al alumno por mail (PandaDoc lo sumaba como otro) y sale enviado", async () => {
+  const { corregir } = await import("@/lib/contratos-servidor");
+  const pd = pandadocFalso("document.viewed");
+  try {
+    const c = contrato({ estado: "visto", modo: "prueba", datos: { ...DATOS_SANTI, sesiones: 0 }, destinatario: { nombre: "Santiago Ayala Restrepo", email: "sammetiago@gmail.com", telefono: "" } });
+    const t = tablasCon(c);
+    await corregir(baseFalsa(t), c, DATOS_SANTI as never, "liliana@apicanta.com");
+    const patch = pd.llamadas.find((l) => l.metodo === "PATCH" && l.ruta === "/documents/doc1")!;
+    assert.equal(patch.cuerpo?.recipients, undefined, "el alumno no va en la corrección");
+    assert.ok((patch.cuerpo?.tokens as { name: string; value: string }[]).some((x) => x.name === "Venta.Sesiones" && /2 sesiones/.test(x.value)));
+    assert.equal(pd.llamadas.filter((l) => l.ruta.includes("/recipients/recipient/")).length, 0, "mismo nombre y mail: no se toca");
+    assert.ok(pd.llamadas.some((l) => l.ruta.endsWith("/send")));
+    assert.equal(t.contratos[0].estado, "enviado");
+    assert.equal((t.contratos[0].datos as { sesiones: number }).sesiones, 2);
+  } finally { pd.restaurar(); }
+});
+
+test("corregir uno que un intento anterior dejó en borrador: no se lo vuelve a pasar a borrador (daba «already in status 'draft'»)", async () => {
+  const { corregir } = await import("@/lib/contratos-servidor");
+  const pd = pandadocFalso("document.draft");
+  try {
+    const c = contrato({ estado: "visto", modo: "prueba", datos: { ...DATOS_SANTI, sesiones: 0 }, destinatario: { nombre: "Santiago Ayala Restrepo", email: "sammetiago@gmail.com", telefono: "" } });
+    const t = tablasCon(c);
+    await corregir(baseFalsa(t), c, DATOS_SANTI as never, "liliana@apicanta.com");
+    assert.equal(pd.llamadas.filter((l) => l.ruta.endsWith("/draft")).length, 0);
+    assert.equal(t.contratos[0].estado, "enviado");
+  } finally { pd.restaurar(); }
+});
+
+test("corregir el mail del alumno lo edita por su id; si algo falla a mitad, queda anotado en borrador con el motivo", async () => {
+  const { corregir } = await import("@/lib/contratos-servidor");
+  const pd = pandadocFalso("document.sent");
+  try {
+    const c = contrato({ estado: "enviado", modo: "prueba", datos: DATOS_SANTI, destinatario: { nombre: "Santiago Ayala Restrepo", email: "sammetiago@gmail.com", telefono: "" } });
+    const t = tablasCon(c);
+    await corregir(baseFalsa(t), c, { ...DATOS_SANTI, email: "santiago.ayala@gmail.com" } as never, "liliana@apicanta.com");
+    const editar = pd.llamadas.find((l) => l.ruta === "/documents/doc1/recipients/recipient/rcp_1")!;
+    assert.deepEqual(editar.cuerpo, { email: "santiago.ayala@gmail.com" });
+  } finally { pd.restaurar(); }
+
+  const roto = pandadocFalso("document.viewed", (l) => (l.metodo === "POST" && l.ruta.endsWith("/send") ? new Response(JSON.stringify({ detail: "boom" }), { status: 400 }) : null));
+  try {
+    const c = contrato({ estado: "visto", modo: "prueba", datos: DATOS_SANTI });
+    const t = tablasCon(c);
+    await assert.rejects(corregir(baseFalsa(t), c, DATOS_SANTI as never, "liliana@apicanta.com"));
+    assert.equal(t.contratos[0].estado, "borrador", "la ficha sabe que quedó en borrador y ofrece mandarlo");
+    assert.match(String(t.contratos[0].error), /PandaDoc contestó 400/);
+  } finally { roto.restaurar(); }
+});

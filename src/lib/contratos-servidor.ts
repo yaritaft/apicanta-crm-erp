@@ -1,12 +1,12 @@
 import { randomBytes } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
-  accesosAlFirmar, cuerpoDocumento, datosDelDocumento, destinatario, estadoDePandadoc, fichaAlFirmar, firmoElAlumno, mensajeDelContrato,
-  ROL_ALUMNO, type Contrato, type DatosContrato, type EstadoContrato, type EventoContrato, type ModoContrato,
+  accesosAlFirmar, cambiosDelFirmante, cuerpoDocumento, datosDelDocumento, destinatario, estadoDePandadoc, fichaAlFirmar, firmanteDelDocumento,
+  firmoElAlumno, mensajeDelContrato, ROL_ALUMNO, type Contrato, type DatosContrato, type EstadoContrato, type EventoContrato, type ModoContrato,
 } from "./contratos";
 import {
-  aBorrador, actualizarDocumento, anularDocumento, clavePandadoc, crearDocumento, detalleDocumento, detallePlantilla, enlaceDeFirma,
-  ErrorPandadoc, esperarBorrador, mandarDocumento, pdfDocumento, recordarDocumento,
+  aBorrador, actualizarDocumento, anularDocumento, clavePandadoc, crearDocumento, detalleDocumento, detallePlantilla, editarDestinatario,
+  enlaceDeFirma, ErrorPandadoc, esperarBorrador, mandarDocumento, pdfDocumento, recordarDocumento,
 } from "./pandadoc-servidor";
 import { cambiarFicha, darAccesos, type ResultadoAccesos } from "./accesos-servidor";
 import { plantillaDelContrato, programaDePlantilla, programaPorId, programasDe, type Programa } from "./programas";
@@ -176,20 +176,37 @@ export async function corregir(db: SupabaseClient, c: Contrato, datos: DatosCont
   if (!c.documentoId) throw new Error("Este contrato no llegó a PandaDoc: mandá uno nuevo.");
   if (c.estado === "firmado") throw new Error("Un contrato firmado no se corrige: si hace falta otro, mandá uno nuevo.");
   const programa = nombrePrograma(c);
-  if (c.estado !== "borrador") await aBorrador(c.modo, c.documentoId);
-  await esperarBorrador(c.modo, c.documentoId);
+  const documentoId = c.documentoId;
+  /* Cómo está de verdad en PandaDoc: si un intento anterior lo dejó en borrador, no se lo vuelve a pasar (contestaba 400
+     «already in status 'draft'», Lili 23/10). Y desde que está en borrador, la ficha lo sabe. */
+  const antes = await detalleDocumento(c.modo, documentoId);
+  if (antes.status !== "document.draft") {
+    await aBorrador(c.modo, documentoId);
+    await guardar(db, c.id, { estado: "borrador" });
+  }
+  await esperarBorrador(c.modo, documentoId);
   const nombre = datos.nombre.trim();
-  /* El documento sabe qué variables y campos tiene: se corrigen ésos. */
-  const actual = await detalleDocumento(c.modo, c.documentoId).catch(() => undefined);
-  const cuerpo = cuerpoDocumento({ contratoId: c.id, ventaId: c.ventaId, modo: c.modo, plantillaId: c.plantillaId, programa, datos, plantilla: actual });
-  await actualizarDocumento(c.modo, c.documentoId, {
-    name: `${c.modo === "prueba" ? "[Prueba] " : ""}Contrato ${programa} - ${nombre}`,
-    recipients: [destinatario(datos, paginaDeBienvenida(baseDeLaApp(origen), c.bienvenida))],
-    tokens: cuerpo.tokens,
-    ...(cuerpo.fields ? { fields: cuerpo.fields } : {}),
-  });
-  await esperarBorrador(c.modo, c.documentoId);
-  await mandarDocumento(c.modo, c.documentoId, mensajeDelContrato(config, datos, programa));
+  try {
+    /* El documento sabe qué variables y campos tiene: se corrigen ésos. Al alumno no se lo manda de nuevo (por mail,
+       PandaDoc lo suma como otro destinatario): si cambió su nombre o su mail, se lo edita por su id. */
+    const actual = await detalleDocumento(c.modo, documentoId).catch(() => antes);
+    const cuerpo = cuerpoDocumento({ contratoId: c.id, ventaId: c.ventaId, modo: c.modo, plantillaId: c.plantillaId, programa, datos, plantilla: actual });
+    await actualizarDocumento(c.modo, documentoId, {
+      name: `${c.modo === "prueba" ? "[Prueba] " : ""}Contrato ${programa} - ${nombre}`,
+      tokens: cuerpo.tokens,
+      ...(cuerpo.fields ? { fields: cuerpo.fields } : {}),
+    });
+    const firmante = firmanteDelDocumento(actual, c.destinatario.email);
+    if (!firmante) throw new Error("No encuentro al alumno entre los firmantes del contrato en PandaDoc: anulalo y mandá uno nuevo.");
+    const cambios = cambiosDelFirmante(firmante, datos);
+    if (cambios) await editarDestinatario(c.modo, documentoId, firmante.id, cambios);
+    await esperarBorrador(c.modo, documentoId);
+    await mandarDocumento(c.modo, documentoId, mensajeDelContrato(config, datos, programa));
+  } catch (e) {
+    /* Quedó en borrador sin mandar: se anota con el motivo, y la ficha ofrece mandarlo o volver a corregirlo. */
+    await guardar(db, c.id, { estado: "borrador", error: e instanceof Error ? e.message : "No se pudo corregir." });
+    throw e;
+  }
   await guardar(db, c.id, {
     estado: "enviado", enviadoEn: ahora(), vistoEn: null, error: null, datos,
     destinatario: { nombre, email: datos.email.trim().toLowerCase(), telefono: datos.telefono.trim() },

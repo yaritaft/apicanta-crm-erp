@@ -141,6 +141,15 @@ export async function actualizarDocumento(modo: ModoContrato, id: string, cambio
   if (r.status !== 204) await json(r, "corregir el contrato");
 }
 
+/** Cambia el nombre o el mail de un destinatario que ya está en el documento (por su id: por mail, PandaDoc lo suma
+    como otro). Vale en borrador, enviado o visto, mientras no haya firmado. */
+export async function editarDestinatario(modo: ModoContrato, id: string, destinatarioId: string, cambios: Record<string, unknown>): Promise<void> {
+  const r = await pd(modo, `/documents/${encodeURIComponent(id)}/recipients/recipient/${encodeURIComponent(destinatarioId)}`, {
+    method: "PATCH", body: JSON.stringify(cambios),
+  });
+  if (r.status !== 204) await json(r, "cambiar el nombre o el mail del alumno en el contrato");
+}
+
 /** El PDF. Con la clave de producción y el documento firmado, el «protegido» (con su certificado). */
 export async function pdfDocumento(modo: ModoContrato, id: string, firmado: boolean): Promise<ArrayBuffer> {
   const ruta = modo === "produccion" && firmado ? "download-protected" : "download";

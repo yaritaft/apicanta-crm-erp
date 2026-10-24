@@ -316,6 +316,35 @@ export function destinatario(d: Partial<DatosContrato>, despuesDeFirmar?: string
   };
 }
 
+/* ---------- Corregir un documento ya mandado ----------
+   Lili (23/10): corregir el de Santiago Ayala Restrepo (de 0 a 2 sesiones) daba «PandaDoc contestó 400». Al corregir se
+   mandaba otra vez al alumno por mail, y PandaDoc lo toma como un destinatario NUEVO («already in recipients list»); el
+   documento quedaba en borrador y cada reintento lo volvía a pasar a borrador («already in status 'draft'»). Ahora al
+   alumno se lo busca en el documento y, si cambió su nombre o su mail, se lo edita por su id. */
+
+export interface FirmanteDelDocumento { id: string; email: string; first_name?: string; last_name?: string }
+
+/** El alumno entre los destinatarios del documento: el de rol «Client» o, si no, el que tiene su mail. Los CC no firman. */
+export function firmanteDelDocumento(detalle: unknown, email?: string | null): FirmanteDelDocumento | null {
+  const d = (detalle && typeof detalle === "object" ? detalle : {}) as { recipients?: unknown };
+  const lista = (Array.isArray(d.recipients) ? d.recipients : []) as Record<string, unknown>[];
+  const firmantes = lista.filter((r) => typeof r.id === "string" && String(r.recipient_type ?? "signer").toLowerCase() !== "cc");
+  const mail = (email ?? "").trim().toLowerCase();
+  const r = firmantes.find((x) => x.role === ROL_ALUMNO) ?? firmantes.find((x) => String(x.email ?? "").toLowerCase() === mail) ?? (firmantes.length === 1 ? firmantes[0] : undefined);
+  return r ? { id: String(r.id), email: String(r.email ?? ""), first_name: r.first_name ? String(r.first_name) : undefined, last_name: r.last_name ? String(r.last_name) : undefined } : null;
+}
+
+/** Lo que hay que cambiarle al alumno en el documento (nombre o mail), o null si está igual. */
+export function cambiosDelFirmante(f: FirmanteDelDocumento, d: Partial<DatosContrato>): Record<string, string> | null {
+  const { first_name, last_name } = partirNombre((d.nombre ?? "").trim());
+  const email = (d.email ?? "").trim();
+  const cambios: Record<string, string> = {};
+  if (email && email.toLowerCase() !== f.email.trim().toLowerCase()) cambios.email = email;
+  if (first_name && first_name !== (f.first_name ?? "")) cambios.first_name = first_name;
+  if (last_name !== (f.last_name ?? "") && (first_name || last_name)) cambios.last_name = last_name;
+  return Object.keys(cambios).length ? cambios : null;
+}
+
 /* ---------- La página de bienvenida ---------- */
 
 export interface AccesoParaBienvenida {
