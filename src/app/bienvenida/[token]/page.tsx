@@ -2,7 +2,7 @@
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
-import { CheckCircle2, GraduationCap, LifeBuoy, Map as MapaIcono, NotebookPen, Send, Video } from "lucide-react";
+import { CheckCircle2, GraduationCap, LifeBuoy, Map as MapaIcono, Mic, NotebookPen, Send, Video } from "lucide-react";
 import type { Bienvenida } from "@/lib/contratos";
 import type { GuiaBienvenida } from "@/lib/bienvenida-alumno";
 
@@ -68,6 +68,18 @@ function Guia({ g, primario }: { g: GuiaBienvenida; primario: () => boolean }) {
               : <span className="bienv-nota bienv-fila__aparte">Te lo mandamos por WhatsApp</span>}
           </Fila>
           <Chico>Guardá este link: es tuyo y sirve todas las semanas.</Chico>
+        </Seccion>
+      )}
+      {g.modelo === "completo" && (
+        <Seccion icono={<Mic size={15} />} titulo="Simulacros de entrevista">
+          <Fila nombre="Anotarte al simulacro" detalle="Los martes a las 18 h (Argentina) practicás una entrevista en vivo, con feedback.">
+            {g.simulacro
+              ? <a href={g.simulacro} target="_blank" rel="noopener noreferrer" className={claseBoton(primario())} aria-label="Anotarme al simulacro del martes">Anotarme</a>
+              : <span className="bienv-nota bienv-fila__aparte">Te lo mandamos por WhatsApp</span>}
+          </Fila>
+          {g.codigo && (
+            <Chico>Tu código personal, el mismo para el formulario y los simulacros (tus links ya lo traen):<code className="bienv-codigo">{g.codigo}</code></Chico>
+          )}
         </Seccion>
       )}
       {g.soporte && (

@@ -7,7 +7,7 @@ import { useToast } from "@/components/ui/Toast";
 import { copiarTexto } from "@/components/ui/Telefono";
 import { cabeceras } from "@/components/webinars/useYoutube";
 import { BloqueServicio, FilaServicio } from "@/components/ficha/FilaServicio";
-import { guiaDeBienvenida, textoDeBienvenida } from "@/lib/bienvenida-alumno";
+import { conCodigoDelAlumno, guiaDeBienvenida, textoDeBienvenida } from "@/lib/bienvenida-alumno";
 import { fechaLarga } from "@/lib/format";
 import { useEstado } from "@/lib/store";
 import type { Contrato } from "@/lib/contratos";
@@ -23,13 +23,14 @@ import { leerContratos } from "./cliente";
 
 const MODELO = { completo: "Programa completo", downsell: "Downsell", reserva: "Reserva" } as const;
 
-async function enlaceDelFormulario(alumnoId: string): Promise<string | null> {
+/* Su código personal (el del reporte, que también lo anota a los simulacros): con él se arman sus links. */
+async function codigoDelAlumno(alumnoId: string): Promise<string | null> {
   const r = await fetch("/api/reportes/enlace", {
     method: "POST", cache: "no-store", headers: { ...(await cabeceras()), "Content-Type": "application/json" },
     body: JSON.stringify({ alumnoId }),
   }).catch(() => null);
-  const j = (await r?.json().catch(() => ({}))) as { enlace?: string } | undefined;
-  return r?.ok && j?.enlace ? j.enlace : null;
+  const j = (await r?.json().catch(() => ({}))) as { codigo?: string } | undefined;
+  return r?.ok && j?.codigo ? j.codigo : null;
 }
 
 export function BienvenidaAlumno({ alumnoId, ventaId }: { alumnoId: string; ventaId?: string }) {
@@ -54,8 +55,8 @@ export function BienvenidaAlumno({ alumnoId, ventaId }: { alumnoId: string; vent
 
   const copiar = async () => {
     setCopiando(true);
-    const formulario = guia.modelo === "completo" ? await enlaceDelFormulario(alumnoId) : null;
-    const { texto } = textoDeBienvenida({ ...guia, formulario }, contrato.bienvenida ? `${window.location.origin}/bienvenida/${contrato.bienvenida}` : null);
+    const codigo = guia.modelo === "completo" ? await codigoDelAlumno(alumnoId) : null;
+    const { texto } = textoDeBienvenida(conCodigoDelAlumno(guia, window.location.origin, codigo), contrato.bienvenida ? `${window.location.origin}/bienvenida/${contrato.bienvenida}` : null);
     const ok = await copiarTexto(texto);
     setCopiando(false);
     toast(ok ? "Mensaje de bienvenida copiado: pegalo en WhatsApp o en un mail." : "No se pudo copiar.", ok ? "ok" : "err");

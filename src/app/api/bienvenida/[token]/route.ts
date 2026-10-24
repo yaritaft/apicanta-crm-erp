@@ -4,9 +4,9 @@ import { accesosAlFirmar, armarBienvenida, esCodigoBienvenida, type AccesoParaBi
 import { configBienvenida, programasGuardados, sincronizar } from "@/lib/contratos-servidor";
 import { linkMagicoWisboo } from "@/lib/accesos-servidor";
 import { programaPorId } from "@/lib/programas";
-import { guiaDeBienvenida } from "@/lib/bienvenida-alumno";
+import { conCodigoDelAlumno, guiaDeBienvenida } from "@/lib/bienvenida-alumno";
 import { codigoDeAlumno } from "@/lib/reporte-servidor";
-import { enlaceDeReporte, origenDeLaApp } from "@/lib/reporte-enlace";
+import { origenDeLaApp } from "@/lib/reporte-enlace";
 
 /* ==================================================================
    GET /api/bienvenida/<código> — lo que ve el alumno apenas firma (PandaDoc lo manda a /bienvenida/<código>).
@@ -57,7 +57,7 @@ export async function GET(peticion: Request, ctx: { params: Promise<{ token?: st
     guia = guiaDeBienvenida({ reserva: c.datos.reserva, programa: c.programa, perfil: c.datos.perfil, config: await configBienvenida(db) });
     if (guia?.modelo === "completo" && c.alumnoId) {
       const codigo = await codigoDeAlumno(db, c.alumnoId).catch(() => null);
-      if (codigo) guia = { ...guia, formulario: enlaceDeReporte(origenDeLaApp(peticion), codigo) };
+      guia = conCodigoDelAlumno(guia, origenDeLaApp(peticion), codigo);
     }
   }
   return NextResponse.json(armarBienvenida({ contrato: c, programa, accesos, linkWisboo, accesosAutomaticos, guia }), { headers: sinCache });

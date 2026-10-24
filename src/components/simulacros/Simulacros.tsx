@@ -5,6 +5,8 @@ import Link from "next/link";
 import { ChevronLeft, ChevronRight, ClipboardCheck, Copy, Mic, Plus } from "lucide-react";
 import { Badge, Button, Empty } from "@/components/ui/ui";
 import { useToast } from "@/components/ui/Toast";
+import { copiarTexto } from "@/components/ui/Telefono";
+import { cabeceras } from "@/components/webinars/useYoutube";
 import { useAbrirFicha } from "@/components/ficha/abrir";
 import { useEstado } from "@/lib/store";
 import { useAcceso } from "@/lib/acceso";
@@ -29,16 +31,41 @@ const VARIANTE: Record<EstadoSimulacro, "success" | "accent" | "danger" | "neutr
   inscripto: "accent", hecho: "success", no_se_presento: "danger", no_se_preparo: "danger", otro: "neutral",
 };
 
-/** El link público para anotarse (el que se manda los martes en el grupo de novedades). */
+/** El link general para anotarse (el que se manda los martes en el grupo de novedades): cada uno entra con su código. */
 export const linkDeInscripcion = () => (typeof window !== "undefined" ? `${window.location.origin}/simulacro` : "/simulacro");
 
 export function CopiarLinkInscripcion({ chico }: { chico?: boolean }) {
   const toast = useToast();
   return (
     <Button sm={chico} variante="secondary" icono={<Copy size={14} />}
-      onClick={() => { void navigator.clipboard?.writeText(linkDeInscripcion()); toast("Link copiado: pegalo en el grupo de novedades."); }}>
+      onClick={() => { void navigator.clipboard?.writeText(linkDeInscripcion()); toast("Link copiado: pegalo en el grupo de novedades. Cada uno entra con su código, el mismo del reporte."); }}>
       Copiar el link para anotarse
     </Button>
+  );
+}
+
+/* El link personal de un alumno (ya trae su código: entra sin escribir nada), en un mensaje listo para su WhatsApp. */
+function CopiarLinkPersonal({ alumnoId }: { alumnoId: string }) {
+  const toast = useToast();
+  const [ocupado, setOcupado] = useState(false);
+  const copiar = async () => {
+    setOcupado(true);
+    try {
+      const r = await fetch("/api/reportes/enlace", {
+        method: "POST", cache: "no-store", headers: { ...(await cabeceras()), "Content-Type": "application/json" },
+        body: JSON.stringify({ alumnoId, para: "simulacro" }),
+      });
+      const j = (await r.json().catch(() => ({}))) as { mensaje?: string; error?: string };
+      if (!r.ok || !j.mensaje) { toast(j.error ?? "No se pudo armar su link.", "err"); return; }
+      const ok = await copiarTexto(j.mensaje);
+      toast(ok ? "Copiado: pegalo en su WhatsApp. El link ya trae su código." : "No se pudo copiar.", ok ? "ok" : "err");
+    } catch {
+      toast("No se pudo armar su link. Probá de nuevo.", "err");
+    } finally { setOcupado(false); }
+  };
+  return (
+    <Button sm variante="ghost" icono={<Copy size={14} />} cargando={ocupado} onClick={() => void copiar()}
+      title="Su link para anotarse a los simulacros, con su código (el mismo del reporte)">Copiar su link</Button>
   );
 }
 
@@ -71,7 +98,7 @@ export function SimulacrosPagina() {
 
       {!cargando && lista.length === 0 ? (
         <Empty icono={<Mic size={22} />} titulo={futuro ? "Todavía no se anotó nadie" : "Nadie se anotó para este martes"}
-          texto="Los alumnos se anotan con el link (reemplaza al Google Form). Si se le tomó a alguien que no se anotó, cargalo con «Cargar otro alumno»." />
+          texto="Los alumnos se anotan con el link y su código, el mismo del reporte (reemplaza al Google Form). Si se le tomó a alguien que no se anotó, cargalo con «Cargar otro alumno»." />
       ) : (
         <div className="sim-lista">
           {lista.map((s) => {
@@ -141,6 +168,7 @@ export function TarjetaSimulacro() {
 
 /* En la ficha (Seguimiento): sus simulacros y si cumple la condición del contrato (al menos uno hecho). */
 export function SimulacrosAlumno({ alumnoId }: { alumnoId: string }) {
+  const { acceso } = useAcceso();
   const { lista, cargando } = useSimulacros({ alumnoId });
   if (cargando) return null;
   const r = resumenDeSimulacros(lista);
@@ -152,6 +180,8 @@ export function SimulacrosAlumno({ alumnoId }: { alumnoId: string }) {
         <span className={`hs-chip ${r.cumple ? "hs-chip--ok" : "hs-chip--ambar"}`} title="Hacer al menos un simulacro es condición del contrato">
           {r.cumple ? `${r.texto} ✓` : r.texto}
         </span>
+        <span className="spacer" />
+        {puedeEditar(acceso, "alumnos") && <CopiarLinkPersonal alumnoId={alumnoId} />}
       </div>
       {lista.map((s) => (
         <p key={s.id} className="sim-ficha__fila">
@@ -161,7 +191,7 @@ export function SimulacrosAlumno({ alumnoId }: { alumnoId: string }) {
           {s.estado === "otro" && s.motivo && <span className="t-subtle"> — {s.motivo}</span>}
         </p>
       ))}
-      {lista.length === 0 && <p className="sim-ficha__fila t-subtle">Se anota con el link de los martes (Programa → Simulacros).</p>}
+      {lista.length === 0 && <p className="sim-ficha__fila t-subtle">Se anota con su link (ya trae su código, el mismo del reporte) o con el de los martes.</p>}
     </div>
   );
 }

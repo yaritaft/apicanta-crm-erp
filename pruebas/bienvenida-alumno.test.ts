@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { armarBienvenida, problemaDeDatos, type DatosContrato } from "@/lib/contratos";
-import { guiaDeBienvenida, htmlDeBienvenida, modeloDeBienvenida, textoDeBienvenida, type ConfigBienvenida } from "@/lib/bienvenida-alumno";
+import { conCodigoDelAlumno, guiaDeBienvenida, htmlDeBienvenida, modeloDeBienvenida, textoDeBienvenida, type ConfigBienvenida } from "@/lib/bienvenida-alumno";
 
 /* Los links y los teléfonos de verdad viven en Ajustes (el repositorio es público): acá, inventados. */
 const CONFIG: ConfigBienvenida = {
@@ -83,4 +83,23 @@ test("el mail de bienvenida lleva el link a su página con los accesos (los cont
   assert.equal(reserva.includes(pagina), false, "la reserva todavía no tiene accesos");
   /* Sin página (no hay código), el mail sale como antes. */
   assert.equal(textoDeBienvenida(guiaDeBienvenida({ programa: "downsell", config: CONFIG })!).texto.includes("Tus accesos"), false);
+});
+
+test("con su código: el formulario de los lunes y los simulacros con el código adentro, y el código a la vista (Juan Cruz, 24/10)", () => {
+  const codigo = "3f2b8c1e-9d4a-4c6b-8e2f-1a2b3c4d5e6f";
+  const g = conCodigoDelAlumno(guiaDeBienvenida({ programa: "hackear-ai", perfil: "AI Engineer", config: CONFIG })!, "https://app.x", codigo);
+  assert.equal(g.formulario, `https://app.x/reporte?c=${codigo}`);
+  assert.equal(g.simulacro, `https://app.x/simulacro?c=${codigo}`);
+  const texto = textoDeBienvenida(g).texto;
+  assert.ok(texto.includes(`https://app.x/reporte?c=${codigo}`), "el link del formulario");
+  assert.ok(texto.includes(`https://app.x/simulacro?c=${codigo}`), "el link de los simulacros");
+  assert.ok(texto.includes(`Tu código personal: ${codigo}`), "el código a la vista");
+  /* Sin código (todavía no se pudo crear): el texto de siempre, sin renglones vacíos. */
+  const sin = textoDeBienvenida(conCodigoDelAlumno(guiaDeBienvenida({ programa: "hackear-ai", config: CONFIG })!, "https://app.x", null)).texto;
+  assert.ok(!sin.includes("Tu código personal") && !sin.includes("/simulacro"));
+  /* El Downsell y la reserva no tienen seguimiento ni simulacros. */
+  for (const otro of [{ programa: "downsell" }, { programa: "hackear-ai", reserva: true }]) {
+    const t = textoDeBienvenida(conCodigoDelAlumno(guiaDeBienvenida({ ...otro, config: CONFIG })!, "https://app.x", codigo)).texto;
+    assert.ok(!t.includes(codigo), JSON.stringify(otro));
+  }
 });

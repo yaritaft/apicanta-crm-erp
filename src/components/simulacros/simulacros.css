@@ -19,5 +19,5 @@ button.sim-item__nombre { color: var(--brand); }
 .sim-tarjeta__txt { display: flex; flex-direction: column; gap: 2px; min-width: 200px; }
 .sim-ficha { display: flex; flex-direction: column; gap: 6px; padding: var(--space-3) var(--space-4); border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface-100); }
 .sim-ficha__cab { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); color: var(--ink); }
-.sim-ficha__cab svg { color: var(--brand); }
+.sim-ficha__cab > svg { color: var(--brand); }
 .sim-ficha__fila { margin: 0; font-size: 13px; color: var(--ink); line-height: 1.5; }

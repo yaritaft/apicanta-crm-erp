@@ -11,9 +11,8 @@ import {
 import { cambiarFicha, darAccesos, type ResultadoAccesos } from "./accesos-servidor";
 import { plantillaDelContrato, programaDePlantilla, programaPorId, programasDe, type Programa } from "./programas";
 import type { ConfigContratos } from "./types";
-import { guiaDeBienvenida, htmlDeBienvenida, textoDeBienvenida, type ConfigBienvenida } from "./bienvenida-alumno";
+import { conCodigoDelAlumno, guiaDeBienvenida, htmlDeBienvenida, textoDeBienvenida, type ConfigBienvenida } from "./bienvenida-alumno";
 import { codigoDeAlumno, configResend, enviarPorResend } from "./reporte-servidor";
-import { enlaceDeReporte } from "./reporte-enlace";
 
 /* ==================================================================
    Los contratos del lado del servidor: lo que se hace con PandaDoc y lo
@@ -414,7 +413,7 @@ export async function mandarBienvenida(db: SupabaseClient, c: Contrato, alumnoId
   const origen = process.env.APP_URL?.trim() || baseDeLaApp(null);
   if (guia.modelo === "completo" && alumnoId && origen) {
     const codigo = await codigoDeAlumno(db, alumnoId).catch(() => null);
-    if (codigo) guia = { ...guia, formulario: enlaceDeReporte(origen, codigo) };
+    guia = conCodigoDelAlumno(guia, origen, codigo);
   }
   /* Se marca ANTES de mandar: si dos avisos llegan juntos, sale uno solo. */
   const toma = await db.from("contratos").update({ bienvenidaMailEn: ahora() }).eq("id", c.id).is("bienvenidaMailEn", null).select("id");

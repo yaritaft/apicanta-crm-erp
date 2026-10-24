@@ -17,6 +17,8 @@
    ================================================================== */
 
 import { enlaceWhatsapp } from "./contacto-telefono";
+import { enlaceDeReporte } from "./reporte-enlace";
+import { enlaceDeSimulacro } from "./simulacros";
 
 export const PERFILES = ["Full Stack", "Mobile Developer", "Data Engineer", "AI Engineer"] as const;
 export type PerfilAlumno = (typeof PERFILES)[number];
@@ -55,12 +57,17 @@ export interface GuiaBienvenida {
   roadmap: string | null;
   /* El formulario semanal (sólo el programa completo). */
   formulario: string | null;
+  /* El link para anotarse al simulacro de los martes (sólo el programa completo). */
+  simulacro: string | null;
+  /* Su código personal, el mismo para todo (el reporte y los simulacros); los dos links ya lo traen. */
+  codigo: string | null;
   soporte: Contacto | null;
   auditoriaCv: Contacto | null;
 }
 
 export function guiaDeBienvenida(a: {
-  reserva?: boolean; programa: string; perfil?: string | null; formulario?: string | null; config?: ConfigBienvenida | null;
+  reserva?: boolean; programa: string; perfil?: string | null; formulario?: string | null; simulacro?: string | null; codigo?: string | null;
+  config?: ConfigBienvenida | null;
 }): GuiaBienvenida | null {
   const modelo = modeloDeBienvenida(a);
   if (!modelo) return null;
@@ -69,9 +76,19 @@ export function guiaDeBienvenida(a: {
   return {
     modelo, perfil, roadmap: roadmap && /^https:\/\//.test(roadmap) ? roadmap : null,
     formulario: modelo === "completo" ? a.formulario ?? null : null,
+    simulacro: modelo === "completo" ? a.simulacro ?? null : null,
+    codigo: modelo === "completo" ? a.codigo ?? null : null,
     soporte: contactoDe(a.config?.soporte, "Liliana"),
     auditoriaCv: contactoDe(a.config?.auditoriaCv, "Aldana"),
   };
+}
+
+/** Con su código personal (Juan Cruz, 24/10): el link del formulario de los lunes y el de los simulacros ya lo traen, y el
+    código va también a la vista. Sólo el programa completo, el que tiene seguimiento y simulacros. El mail, la página de
+    bienvenida y el mensaje que se copia desde la ficha pasan por acá, así dicen lo mismo. */
+export function conCodigoDelAlumno(g: GuiaBienvenida, origen: string, codigo: string | null | undefined): GuiaBienvenida {
+  if (g.modelo !== "completo" || !codigo) return g;
+  return { ...g, formulario: enlaceDeReporte(origen, codigo), simulacro: enlaceDeSimulacro(origen, codigo), codigo };
 }
 
 /* ---------- El mail ---------- */
@@ -256,11 +273,15 @@ Para acompañar tu proceso y ayudarte a mantener el foco, todos los lunes deber�
 
 Dedicá unos minutos a responderlo con sinceridad, indicando tus avances, dificultades y próximos pasos. Esto nos permitirá conocer cómo venís, detectar posibles bloqueos y ayudarte a ajustar el rumbo cuando sea necesario.
 
-Recordá: completarlo todos los lunes es parte de tu proceso de seguimiento.
+Recordá: completarlo todos los lunes es parte de tu proceso de seguimiento.${g.codigo ? `
+
+🔑 Tu código personal: ${g.codigo}
+Es tuyo y sirve para todo: el formulario de los lunes y los simulacros de los martes. Tus links ya lo traen, así que no hace falta escribirlo; guardalo por las dudas.` : ""}
 
 🎥 3. Aprovechá las salas de Zoom
 Hora 18hs hora Argentina
-• Martes: práctica y simulacros de entrevistas o tema nuevo.
+• Martes: práctica y simulacros de entrevistas o tema nuevo.${g.simulacro ? ` Para que te tomen un simulacro, anotate acá:
+👉 ${g.simulacro}` : ""}
 • Miércoles: consultas exclusivamente sobre IA.
 • Jueves: consultas generales.
 

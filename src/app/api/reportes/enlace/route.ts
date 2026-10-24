@@ -4,12 +4,17 @@ import { nubeServidor } from "@/lib/servidor";
 import { leerJson } from "@/lib/whatsapp-servidor";
 import { alumnoPorId, codigoDeAlumno, ErrorSinTablaCodigos } from "@/lib/reporte-servidor";
 import { enlaceDeReporte, mensajeParaAlumno, origenDeLaApp } from "@/lib/reporte-enlace";
+import { enlaceDeSimulacro, mensajeDeSimulacro } from "@/lib/simulacros";
 
 /* ==================================================================
    El link del reporte de un alumno, para copiárselo por WhatsApp.
 
-     POST /api/reportes/enlace   { "alumnoId": "alu_…" }
+     POST /api/reportes/enlace   { "alumnoId": "alu_…", "para"?: "simulacro" }
      → { codigo, enlace, mensaje }   (el mensaje, listo para pegar)
+
+   El código es uno solo por alumno y sirve para todo (Juan Cruz, 24/10): con
+   «para: simulacro» devuelve su link para anotarse a los simulacros de los
+   martes, con el mismo código adentro.
 
    Lo pide quien edita Alumnos (Customer Success, los dueños), con su sesión:
    el código es la llave con la que se completa el reporte de ese alumno, así que
@@ -26,7 +31,9 @@ export async function POST(req: Request) {
   if (noPuede) return noPuede;
   const leido = await leerJson(req, 2_000);
   if (!leido.ok) return NextResponse.json({ error: leido.error }, { status: leido.status });
-  const alumnoId = typeof (leido.json as { alumnoId?: unknown } | null)?.alumnoId === "string" ? (leido.json as { alumnoId: string }).alumnoId.trim() : "";
+  const cuerpo = (leido.json ?? {}) as { alumnoId?: unknown; para?: unknown };
+  const alumnoId = typeof cuerpo.alumnoId === "string" ? cuerpo.alumnoId.trim() : "";
+  const paraSimulacro = cuerpo.para === "simulacro";
   if (!alumnoId || alumnoId.length > 120) return NextResponse.json({ error: "Falta el alumno." }, { status: 400 });
   const db = nubeServidor();
   if (!db) return NextResponse.json({ error: "Falta SUPABASE_SERVICE_ROLE_KEY en el servidor de la app." }, { status: 503 });
@@ -35,6 +42,10 @@ export async function POST(req: Request) {
     if (!alumno) return NextResponse.json({ error: "No encontré a ese alumno." }, { status: 404 });
     const codigo = await codigoDeAlumno(db, alumnoId);
     if (!codigo) return NextResponse.json({ error: "No encontré a ese alumno." }, { status: 404 });
+    if (paraSimulacro) {
+      const enlace = enlaceDeSimulacro(origenDeLaApp(req), codigo);
+      return NextResponse.json({ ok: true, codigo, enlace, mensaje: mensajeDeSimulacro({ nombre: alumno.nombre, enlace }) }, { headers: SIN_CACHE });
+    }
     const enlace = enlaceDeReporte(origenDeLaApp(req), codigo);
     return NextResponse.json({ ok: true, codigo, enlace, mensaje: mensajeParaAlumno({ nombre: alumno.nombre, enlace, codigo }) }, { headers: SIN_CACHE });
   } catch (e) {

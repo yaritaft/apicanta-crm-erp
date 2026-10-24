@@ -1,7 +1,8 @@
 import test, { after } from "node:test";
 import assert from "node:assert/strict";
 import {
-  claseDeEntrada, martesDeLaClase, otroMartes, problemaDeInscripcion, problemaDeResultado, resumenDeClase, resumenDeSimulacros, TIPOS_PEDIDOS,
+  claseDeEntrada, codigoEnTexto, enlaceDeSimulacro, literalParaIlike, mailDeSimulacro, martesDeLaClase, mensajeDeSimulacro, otroMartes,
+  problemaDeInscripcion, problemaDeResultado, resumenDeClase, resumenDeSimulacros, TIPOS_PEDIDOS,
 } from "@/lib/simulacros";
 import { armarBanco, cargarPglite, ESQUEMA_MINIMO, PERMISOS_DE_ENSAYO, sqlDe, type Banco } from "./sql/arnes-pg";
 
@@ -19,14 +20,42 @@ test("el martes de la clase: hoy si es martes; si no, el próximo. Y la clase qu
   assert.equal(otroMartes("2026-10-27", 1), "2026-11-03");
 });
 
-test("la inscripción pide lo mismo que el Google Form", () => {
-  const ok = { nombre: "Santiago Ayala Restrepo", telefono: "+57 319 2822424", stack: "Full Stack", tipoPedido: TIPOS_PEDIDOS[1], preparado: true };
+test("la inscripción pide lo del Google Form menos quién es: eso lo dice su código", () => {
+  const ok = { stack: "Full Stack", tipoPedido: TIPOS_PEDIDOS[1], preparado: true };
   assert.equal(problemaDeInscripcion(ok), null);
-  assert.match(problemaDeInscripcion({ ...ok, nombre: "Santi" }) ?? "", /apellido/);
-  assert.match(problemaDeInscripcion({ ...ok, telefono: "1234" }) ?? "", /código de país/);
   assert.match(problemaDeInscripcion({ ...ok, stack: " " }) ?? "", /stack/);
   assert.match(problemaDeInscripcion({ ...ok, tipoPedido: "Cualquiera" }) ?? "", /tipo de entrevista/);
   assert.match(problemaDeInscripcion({ ...ok, preparado: false }) ?? "", /preparado/);
+});
+
+/* Juan Cruz (24/10): un solo código por alumno, el del reporte; el link personal ya lo trae. */
+const CODIGO = "3f2b8c1e-9d4a-4c6b-8e2f-1a2b3c4d5e6f";
+
+test("el link personal trae el código; el general, no", () => {
+  assert.equal(enlaceDeSimulacro("https://app.x/", CODIGO), `https://app.x/simulacro?c=${CODIGO}`);
+  assert.equal(enlaceDeSimulacro("https://app.x"), "https://app.x/simulacro");
+});
+
+test("el código se encuentra en lo que pegue: el código, su link o el mensaje entero", () => {
+  assert.equal(codigoEnTexto(CODIGO), CODIGO);
+  assert.equal(codigoEnTexto(` ${CODIGO.toUpperCase()} `), CODIGO);
+  assert.equal(codigoEnTexto(`Hola Ana! Tu link: https://app.x/reporte?c=${CODIGO}\nSi te pide tu código, es: ${CODIGO}`), CODIGO);
+  assert.equal(codigoEnTexto("hola"), "");
+  assert.equal(codigoEnTexto("12345"), "");
+});
+
+test("el mensaje para su WhatsApp y el mail llevan su link con el código", () => {
+  const enlace = enlaceDeSimulacro("https://app.x", CODIGO);
+  const m = mensajeDeSimulacro({ nombre: "santiago ayala", enlace });
+  assert.match(m, /^Hola Santiago!/);
+  assert.ok(m.includes(enlace));
+  const mail = mailDeSimulacro({ nombre: "Ana", enlace, codigo: CODIGO });
+  assert.ok(mail.texto.includes(enlace) && mail.texto.includes(`Tu código es ${CODIGO}`));
+});
+
+test("buscar un mail no deja que «_» o «%» hagan de comodín", () => {
+  assert.equal(literalParaIlike("ana_perez@x.com"), "ana\\_perez@x.com");
+  assert.equal(literalParaIlike("a%b@x.com"), "a\\%b@x.com");
 });
 
 test("cargar cómo fue: si se hizo, qué entrevista y quién la tomó; si fue otro motivo, cuál", () => {
