@@ -198,8 +198,11 @@ export async function corregir(db: SupabaseClient, c: Contrato, datos: DatosCont
     });
     const firmante = firmanteDelDocumento(actual, c.destinatario.email);
     if (!firmante) throw new Error("No encuentro al alumno entre los firmantes del contrato en PandaDoc: anulalo y mandá uno nuevo.");
-    const cambios = cambiosDelFirmante(firmante, datos);
-    if (cambios) await editarDestinatario(c.modo, documentoId, firmante.id, cambios);
+    const cambios: Record<string, unknown> = cambiosDelFirmante(firmante, datos) ?? {};
+    /* Uno mandado a mano desde PandaDoc no tiene el redirect a su página de bienvenida: al corregirlo se le pone. */
+    const pagina = c.origen === "pandadoc" && c.bienvenida ? paginaDeBienvenida(baseDeLaApp(origen), c.bienvenida) : null;
+    if (pagina) cambios.redirect = { url: pagina, is_enabled: true };
+    if (Object.keys(cambios).length) await editarDestinatario(c.modo, documentoId, firmante.id, cambios);
     await esperarBorrador(c.modo, documentoId);
     await mandarDocumento(c.modo, documentoId, mensajeDelContrato(config, datos, programa));
   } catch (e) {

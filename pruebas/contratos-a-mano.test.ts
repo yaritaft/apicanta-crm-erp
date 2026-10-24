@@ -253,6 +253,16 @@ test("corregir el mail del alumno lo edita por su id; si algo falla a mitad, que
     assert.deepEqual(editar.cuerpo, { email: "santiago.ayala@gmail.com" });
   } finally { pd.restaurar(); }
 
+  /* Uno mandado a mano desde PandaDoc no tenía el redirect a la bienvenida: al corregirlo se le pone. */
+  const amano = pandadocFalso("document.viewed");
+  try {
+    const c = contrato({ estado: "visto", modo: "prueba", origen: "pandadoc", bienvenida: "codigo-de-bienvenida-123456789012", datos: { ...DATOS_SANTI, sesiones: 0 },
+      destinatario: { nombre: "Santiago Ayala Restrepo", email: "sammetiago@gmail.com", telefono: "" } } as never);
+    await corregir(baseFalsa(tablasCon(c)), c, DATOS_SANTI as never, "liliana@apicanta.com", undefined, "https://apicanta-erp.vercel.app");
+    const editar = amano.llamadas.find((l) => l.ruta === "/documents/doc1/recipients/recipient/rcp_1")!;
+    assert.deepEqual(editar.cuerpo?.redirect, { url: "https://apicanta-erp.vercel.app/bienvenida/codigo-de-bienvenida-123456789012", is_enabled: true });
+  } finally { amano.restaurar(); }
+
   const roto = pandadocFalso("document.viewed", (l) => (l.metodo === "POST" && l.ruta.endsWith("/send") ? new Response(JSON.stringify({ detail: "boom" }), { status: 400 }) : null));
   try {
     const c = contrato({ estado: "visto", modo: "prueba", datos: DATOS_SANTI });
