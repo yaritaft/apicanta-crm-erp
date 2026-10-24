@@ -2,7 +2,7 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import { Info } from "lucide-react";
-import { Chip, Field, Input, Switch, Textarea } from "@/components/ui/ui";
+import { Button, Chip, Field, Input, Switch, Textarea } from "@/components/ui/ui";
 import { Asistente, Opcion, Pregunta } from "@/components/ui/Asistente";
 import { ResumenAsistente } from "@/components/ui/ResumenAsistente";
 import { InputMonto } from "@/components/ui/InputMonto";
@@ -20,7 +20,7 @@ import type { Acceso } from "@/lib/accesos-servidor";
 import { nivelEn, puedeDarDeBaja } from "@/lib/permisos";
 import { cerrarDevolucion, usePedidoDevolucion, type PedidoDevolucion } from "@/lib/devolucion-ui";
 import {
-  cambioParaDevolver, devolvibleDeVenta, mediodiaDeNegocio, pesosDeLaDevolucion, problemasDeDevolucion, procesadorDeLaVenta,
+  buscarVentas, cambioParaDevolver, devolvibleDeVenta, mediodiaDeNegocio, pesosDeLaDevolucion, problemasDeDevolucion, procesadorDeLaVenta,
   reversasDeComision, ventasDelPedido,
 } from "@/lib/devoluciones";
 import { escribirMonto, leerMonto } from "@/lib/gastos";
@@ -29,7 +29,9 @@ import { cuentaEnLaCajaDeHoy } from "@/lib/caja";
 import { fechaLarga, money } from "@/lib/format";
 import { nombrePeriodo, periodoDeFecha } from "@/lib/periodos";
 import { esCuentaEnPesos } from "@/lib/reporteFinanciera";
-import type { Comprobante, Devolucion } from "@/lib/types";
+import { movimientoDelReembolso, ventaDelReembolso } from "@/lib/reembolsos";
+import { nombrePasarela } from "@/lib/pasarelas";
+import type { Comprobante, Devolucion, Venta } from "@/lib/types";
 
 /* ==================================================================
    Cargar una devolución (reunión del 02/10: «que den los números»).
@@ -89,18 +91,26 @@ function Formulario({ pedido }: { pedido: PedidoDevolucion }) {
   const propuesta: Devolucion | undefined = pedido.propuestaId ? (e.devoluciones ?? []).find((d) => d.id === pedido.propuestaId) : undefined;
   const base = previa ?? propuesta;
 
-  const ventas = useMemo(
+  /* El cobro de la pasarela que se devuelve: la devolución de Whop no dice quién es, pero su cobro sí (nombre y mail), y a veces ya está conciliado. */
+  const cobroDelReembolso = propuesta ? movimientoDelReembolso(e, propuesta) : undefined;
+  const ventaDeLaPasarela = propuesta ? ventaDelReembolso(e, propuesta) : undefined;
+  const ventasAuto = useMemo(
     () => ventasDelPedido(e, {
-      ventaId: pedido.ventaId ?? base?.ventaId, personaId: pedido.personaId, sesionId: pedido.sesionId,
+      ventaId: pedido.ventaId ?? base?.ventaId ?? ventaDeLaPasarela?.id, personaId: pedido.personaId, sesionId: pedido.sesionId,
       /* Una devolución que informó la pasarela sin saber la venta: se busca por quién pagó. */
-      email: typeof propuesta?.extra?.clienteEmail === "string" ? propuesta.extra.clienteEmail : undefined,
-      nombre: typeof propuesta?.extra?.clienteNombre === "string" ? propuesta.extra.clienteNombre : undefined,
+      email: typeof propuesta?.extra?.clienteEmail === "string" ? propuesta.extra.clienteEmail : cobroDelReembolso?.clienteEmail,
+      nombre: typeof propuesta?.extra?.clienteNombre === "string" ? propuesta.extra.clienteNombre : cobroDelReembolso?.clienteNombre,
     }),
-    [e, pedido, base?.ventaId, propuesta],
+    [e, pedido, base?.ventaId, propuesta, ventaDeLaPasarela?.id, cobroDelReembolso?.clienteEmail, cobroDelReembolso?.clienteNombre],
   );
+  /* Las que se eligieron buscando a mano (la persona pagó con otro mail o con otro nombre que el del sistema). */
+  const [manuales, setManuales] = useState<Venta[]>([]);
+  const ventas = useMemo(() => [...ventasAuto, ...manuales.filter((m) => !ventasAuto.some((a) => a.id === m.id))], [ventasAuto, manuales]);
+  const [busqueda, setBusqueda] = useState<string | null>(null);
+  const [vistoVenta, setVistoVenta] = useState(false);
   const [ventaId, setVentaId] = useState<string>(() => {
-    const conCobro = ventas.find((v) => devolvibleDeVenta(e, v.id, new Date().toISOString()).queda > 0.01);
-    return (base?.ventaId ?? conCobro?.id ?? ventas[0]?.id) ?? "";
+    const conCobro = ventasAuto.find((v) => devolvibleDeVenta(e, v.id, new Date().toISOString()).queda > 0.01);
+    return (base?.ventaId ?? conCobro?.id ?? ventasAuto[0]?.id) ?? "";
   });
   const venta = ventas.find((v) => v.id === ventaId);
   const alumno = venta ? alumnoDeVenta(e, venta) : undefined;
@@ -226,27 +236,65 @@ function Formulario({ pedido }: { pedido: PedidoDevolucion }) {
   /* ---------- Los pasos ---------- */
   const ids = useMemo<PasoId[]>(() => [
     /* La venta sólo se pregunta si hay que elegir (o si no se encontró ninguna: ahí se explica). */
-    ...(!previa && ventas.length !== 1 ? (["venta"] as PasoId[]) : []),
+    ...(!previa && (ventasAuto.length !== 1 || vistoVenta) ? (["venta"] as PasoId[]) : []),
     "monto", "dia", "medio", "comprobante", "closer",
     ...(!previa ? (["despues"] as PasoId[]) : []),
     "motivo", "revisar",
-  ], [previa, ventas.length]);
+  ], [previa, ventasAuto.length, vistoVenta]);
   /* Corregir o confirmar una devolución que informó la pasarela ya trae casi todo: se abre en la revisión. */
-  const [pasoId, setPasoId] = useState<PasoId>(() => (previa || (propuesta && ventas.length === 1) ? "revisar" : ventas.length !== 1 ? "venta" : "monto"));
-  const [vioRevision, setVioRevision] = useState(() => Boolean(previa || (propuesta && ventas.length === 1)));
+  const [pasoId, setPasoId] = useState<PasoId>(() => (previa || (propuesta && ventasAuto.length === 1) ? "revisar" : ventasAuto.length !== 1 ? "venta" : "monto"));
+  const [vioRevision, setVioRevision] = useState(() => Boolean(previa || (propuesta && ventasAuto.length === 1)));
   const actual = Math.max(0, ids.indexOf(pasoId));
-  const irAPaso = (id: PasoId) => { setPasoId(id); if (id === "revisar") setVioRevision(true); };
+  const irAPaso = (id: PasoId) => { setPasoId(id); if (id === "revisar") setVioRevision(true); if (id === "venta") setVistoVenta(true); };
 
   const delPaso = (id: PasoId) => problemas.find((p) => p.paso === id)?.texto ?? null;
   const problemaPaso: string | null =
     pasoId === "revisar" ? falta
-      : pasoId === "venta" ? (ventas.length === 0 ? "No encontramos la venta de esta persona: buscala en Ventas." : delPaso("venta"))
+      : pasoId === "venta" ? (!venta && ventas.length === 0 ? "Buscá la venta abajo, por nombre, mail o teléfono" : delPaso("venta"))
         : pasoId === "comprobante" ? (subiendo ? "Esperá que termine de subir el comprobante" : delPaso("comprobante"))
           : delPaso(pasoId);
   const siguienteEsRevision = ids[actual + 1] === "revisar";
   const volverARevisar = vioRevision && pasoId !== "revisar" && !siguienteEsRevision && problemaPaso === null
     ? <button type="button" className="link t-sm" style={{ alignSelf: "flex-start" }} onClick={() => irAPaso("revisar")}>Listo, volver a revisar</button>
     : null;
+
+  /* Buscar a mano: arranca con el nombre del cobro (si se sabe) y sube las ventas que coinciden en el monto, el mail o el día. */
+  const nombreParaBuscar = ventasAuto.length === 0 ? (cobroDelReembolso?.clienteNombre ?? "") : "";
+  const resultados = useMemo(
+    () => buscarVentas(e, busqueda ?? nombreParaBuscar, {
+      monto: propuesta?.monto, email: cobroDelReembolso?.clienteEmail, fecha: cobroDelReembolso?.fecha ?? propuesta?.fecha,
+    }, 8).filter((v) => !ventas.some((x) => x.id === v.id)),
+    [e, busqueda, nombreParaBuscar, propuesta?.monto, propuesta?.fecha, cobroDelReembolso?.clienteEmail, cobroDelReembolso?.fecha, ventas],
+  );
+  /* El cobro de la pasarela sigue pendiente en Conciliación: la venta elegida no tiene cobros que devolver hasta que se concilie. Se puede hacer desde acá. */
+  const cuotaParaElCobro = (() => {
+    if (!venta || !cobroDelReembolso || cobroDelReembolso.estado !== "pendiente" || cobroDelReembolso.pagoId) return undefined;
+    if (devolvible && devolvible.cobrado + 0.01 >= cobroDelReembolso.monto) return undefined;
+    const pendientes = e.cuotas.filter((c) => c.ventaId === venta.id && c.estado === "pendiente").sort((a, b) => a.numero - b.numero);
+    return pendientes.find((c) => Math.abs(c.monto - cobroDelReembolso.monto) < 0.01) ?? pendientes.find((c) => c.monto >= cobroDelReembolso.monto - 0.01) ?? null;
+  })();
+  const avisoDelCobro = cuotaParaElCobro !== undefined && cobroDelReembolso ? (
+    <div className="devol-efecto" role="note">
+      <Info size={16} aria-hidden />
+      <div className="stack-2" style={{ minWidth: 0 }}>
+        <div>
+          El cobro de {nombrePasarela(cobroDelReembolso.proveedor)} de <b className="t-num">{M(cobroDelReembolso.monto)}</b> todavía no está conciliado, así que esta venta no tiene
+          cobros para devolver.{cuotaParaElCobro ? "" : " Esta venta no tiene una cuota pendiente que lo cubra: conciliá el cobro desde Conciliación y volvé."}
+        </div>
+        {cuotaParaElCobro && (
+          <div>
+            <Button sm variante="secondary" onClick={() => {
+              if (acciones.conciliar(cobroDelReembolso.id, [{ cuotaId: cuotaParaElCobro.id, monto: Math.min(cobroDelReembolso.monto, cuotaParaElCobro.monto) }])) {
+                toast(`Cobro conciliado con la cuota ${cuotaParaElCobro.numero} de ${venta?.contactoNombre ?? "la venta"}.`);
+              }
+            }}>
+              Conciliarlo con la cuota {cuotaParaElCobro.numero} de esta venta ({M(cuotaParaElCobro.monto)})
+            </Button>
+          </div>
+        )}
+      </div>
+    </div>
+  ) : null;
 
   /* ---------- Lo que se ve en más de una pantalla ---------- */
   const producto = (v: { productoId?: string }) => e.productos.find((x) => x.id === v.productoId)?.nombre ?? "Venta";
@@ -329,7 +377,7 @@ function Formulario({ pedido }: { pedido: PedidoDevolucion }) {
 
   const filas: { etiqueta: string; valor: React.ReactNode; paso?: PasoId; falta?: boolean }[] = [
     {
-      etiqueta: "Venta", paso: ids.includes("venta") ? "venta" : undefined, falta: !venta,
+      etiqueta: "Venta", paso: !previa ? "venta" : undefined, falta: !venta,
       valor: venta ? `${venta.contactoNombre} · ${producto(venta)} · ${fechaLarga(venta.fecha)} · ${M(venta.precioAcordado, 0)}` : "Sin elegir",
     },
     {
@@ -363,20 +411,52 @@ function Formulario({ pedido }: { pedido: PedidoDevolucion }) {
         <>
           <Pregunta
             texto="¿De qué venta es la devolución?"
-            sub={ventas.length === 0 ? "No encontramos ninguna venta de esta persona." : "Esta persona tiene más de una venta: elegí la que se devuelve."}
+            sub={ventas.length === 0
+              ? "No encontramos la venta de esta persona sola. Buscala abajo: a veces paga con un mail o un nombre y en el sistema está cargada con otro."
+              : "Elegí la que se devuelve, o buscá otra a mano."}
           />
-          {ventas.length > 0 && (
-            <div className="opciones opciones--lista">
-              {ventas.map((v, i) => (
-                <Opcion
-                  key={v.id} tecla={i < 9 ? String(i + 1) : undefined} activo={v.id === ventaId}
-                  nombre={`${v.contactoNombre} · ${producto(v)}`}
-                  sub={`${fechaLarga(v.fecha)} · ${M(v.precioAcordado, 0)}${v.estado !== "activa" ? ` · ${v.estado}` : ""}`}
-                  onClick={() => { setVentaId(v.id); setPesosTxt(null); }}
-                />
-              ))}
-            </div>
-          )}
+          <div className="stack-3">
+            {cobroDelReembolso && (
+              <p className="t-sm t-subtle" style={{ margin: 0 }}>
+                El cobro que se devuelve ({nombrePasarela(cobroDelReembolso.proveedor)}): {cobroDelReembolso.clienteNombre || "sin nombre"}
+                {cobroDelReembolso.clienteEmail ? ` · ${cobroDelReembolso.clienteEmail}` : ""} · {M(cobroDelReembolso.monto)} · {fechaLarga(cobroDelReembolso.fecha)}
+                {cobroDelReembolso.estado === "pendiente" ? " · todavía sin conciliar" : ""}
+              </p>
+            )}
+            {ventas.length > 0 && (
+              <div className="opciones opciones--lista">
+                {ventas.map((v, i) => (
+                  <Opcion
+                    key={v.id} tecla={i < 9 ? String(i + 1) : undefined} activo={v.id === ventaId}
+                    nombre={`${v.contactoNombre} · ${producto(v)}`}
+                    sub={`${fechaLarga(v.fecha)} · ${M(v.precioAcordado, 0)}${v.estado !== "activa" ? ` · ${v.estado}` : ""}`}
+                    onClick={() => { setVentaId(v.id); setPesosTxt(null); }}
+                  />
+                ))}
+              </div>
+            )}
+            {avisoDelCobro}
+            <Field label="Buscar otra venta" ayuda="Por nombre, mail o teléfono. Arriba van las que coinciden en el monto o el día del cobro.">
+              <Input
+                value={busqueda ?? nombreParaBuscar} onChange={(ev) => setBusqueda(ev.target.value)} aria-label="Buscar la venta a mano"
+                placeholder="Nombre, mail o teléfono"
+              />
+            </Field>
+            {resultados.length > 0 && (
+              <div className="opciones opciones--lista" role="group" aria-label="Ventas que coinciden">
+                {resultados.map((v) => (
+                  <Opcion
+                    key={v.id} activo={v.id === ventaId} nombre={`${v.contactoNombre} · ${producto(v)}`}
+                    sub={`${fechaLarga(v.fecha)} · ${M(v.precioAcordado, 0)}${v.estado !== "activa" ? ` · ${v.estado}` : ""}`}
+                    onClick={() => { setManuales((m) => (m.some((x) => x.id === v.id) ? m : [...m, v])); setVentaId(v.id); setPesosTxt(null); }}
+                  />
+                ))}
+              </div>
+            )}
+            {resultados.length === 0 && (busqueda ?? nombreParaBuscar).trim().length >= 2 && (
+              <p className="t-sm t-subtle" style={{ margin: 0 }}>No hay ventas que coincidan: probá con otra parte del nombre o con el mail.</p>
+            )}
+          </div>
         </>
       )}
 

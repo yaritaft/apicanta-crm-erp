@@ -507,6 +507,47 @@ export function ventasDelPedido(
     .sort((a, b) => Date.parse(b.fecha) - Date.parse(a.fecha));
 }
 
+/* ---------- Buscar la venta a mano ----------
+   Aldana (23/10): un reembolso de Whop de la misma persona que pagó con otro mail o con el nombre completo («vega luna Sebastian A») cuando en el sistema
+   está cargada como «Sebastian»: la app no encontraba la venta y no había cómo elegirla. Se busca entre todas las ventas por nombre, mail o teléfono,
+   y lo que ya se sabe del cobro (el monto, el día, el mail) sube a las que más se le parecen. */
+
+export interface PistasDeLaVenta { monto?: number; email?: string; fecha?: string }
+
+export function buscarVentas(
+  e: Pick<EstadoApp, "ventas" | "cuotas" | "leads" | "contactos">, texto: string, pistas: PistasDeLaVenta = {}, limite = 10,
+): Venta[] {
+  const tokens = sinTildes(texto).split(" ").filter((t) => t.length >= 2);
+  const quien = new Map<ID, { nombre: string; email: string; tel: string }>();
+  for (const c of [...(e.contactos ?? []), ...(e.leads ?? [])]) {
+    if (!quien.has(c.id)) quien.set(c.id, { nombre: sinTildes(c.nombre), email: sinTildes(c.email), tel: (c.telefono ?? "").replace(/\D/g, "") });
+  }
+  const cuotasDe = new Map<ID, number[]>();
+  for (const c of e.cuotas ?? []) cuotasDe.set(c.ventaId, [...(cuotasDe.get(c.ventaId) ?? []), c.monto]);
+  const mail = sinTildes(pistas.email);
+  const dia = pistas.fecha ? Date.parse(pistas.fecha) : NaN;
+  const cerca = (a: number, b: number) => Math.abs(a - b) <= 0.01;
+
+  const puntos = (v: Venta): number => {
+    const c = v.contactoId ? quien.get(v.contactoId) : undefined;
+    const pajar = `${sinTildes(v.contactoNombre)} ${c?.nombre ?? ""} ${c?.email ?? ""} ${c?.tel ?? ""}`;
+    const porTexto = tokens.filter((t) => pajar.includes(t)).length;
+    if (tokens.length > 0 && porTexto === 0 && !(mail && c?.email === mail)) return 0;
+    let pt = porTexto;
+    if (mail && c?.email === mail) pt += 5;
+    if (pistas.monto && pistas.monto > 0 && (cerca(v.precioAcordado, pistas.monto) || (cuotasDe.get(v.id) ?? []).some((m) => cerca(m, pistas.monto as number)))) pt += 3;
+    if (Number.isFinite(dia) && Math.abs(Date.parse(v.fecha) - dia) <= 3 * 86400000) pt += 2;
+    /* Sin nada escrito sólo salen las que coinciden en el monto Y en el día (o en el mail): no es una lista de todas las del mismo monto. */
+    return tokens.length === 0 && pt < 5 ? 0 : pt;
+  };
+  return (e.ventas ?? [])
+    .map((v) => ({ v, pt: puntos(v) }))
+    .filter((x) => x.pt > 0)
+    .sort((a, b) => b.pt - a.pt || Date.parse(b.v.fecha) - Date.parse(a.v.fecha))
+    .slice(0, limite)
+    .map((x) => x.v);
+}
+
 /** La cuenta por la que probablemente salió la plata: la del último cobro de la
  *  venta (la misma con la que se pagó). */
 export function procesadorDeLaVenta(e: Pick<EstadoApp, "pagos" | "cuotas" | "procesadores">, ventaId: ID): ID | undefined {

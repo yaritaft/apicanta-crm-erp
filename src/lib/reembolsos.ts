@@ -246,15 +246,23 @@ export function conciliarReembolsos(e: Base, crudos: ReembolsoCrudo[], ahora: st
     if (!r.referencia || !(r.monto > 0)) continue;
     const ref = referenciaDeReembolso(r);
     /* Una disputa que ya teníamos puede haber cambiado de estado; una ganada que no teníamos no es nada que cargar. */
+    const yaGuardada = porReferencia.get(ref) ?? (e.devoluciones ?? []).find((d) => d.id === idDePropuesta(r));
+    /* Una propuesta que quedó sin venta porque su cobro todavía no estaba conciliado la toma cuando se concilia (Aldana, 23/10). */
+    const ventaNueva = yaGuardada && yaGuardada.estado === "propuesta" && !yaGuardada.ventaId ? cobroDelReembolso(e, r)?.venta.id : undefined;
     if (r.disputa) {
-      const ya = porReferencia.get(ref) ?? (e.devoluciones ?? []).find((d) => d.id === idDePropuesta(r));
+      const ya = yaGuardada;
       if (ya) {
         const cambios = cambiosPorLaDisputa(ya, r.disputa);
-        if (cambios) out.actualizadas.push({ devolucionId: ya.id, cambios });
+        const todos = cambios || ventaNueva ? { ...(cambios ?? {}), ...(ventaNueva ? { ventaId: ventaNueva } : {}) } : null;
+        if (todos) out.actualizadas.push({ devolucionId: ya.id, cambios: todos });
         out.yaEstaban++;
         continue;
       }
       if (r.disputa.estado === "ganada") continue;
+    } else if (yaGuardada && ventaNueva) {
+      out.actualizadas.push({ devolucionId: yaGuardada.id, cambios: { ventaId: ventaNueva } });
+      out.yaEstaban++;
+      continue;
     }
     if (referencias.has(ref) || idsUsados.has(idDePropuesta(r)) || yaDeCobro(r)) { out.yaEstaban++; continue; }
 
@@ -330,6 +338,14 @@ export function movimientoDelReembolso(e: Pick<EstadoApp, "movimientos">, d: Pic
   const refs = Array.isArray(d.extra?.referenciasCobro) ? (d.extra.referenciasCobro as unknown[]).filter((x): x is string => typeof x === "string" && x.length > 0) : [];
   if (refs.length === 0) return undefined;
   return (e.movimientos ?? []).find((m) => (!d.proveedor || m.proveedor === d.proveedor) && refs.includes(m.referencia));
+}
+
+/** La venta de un reembolso: la que quedó guardada o, si todavía no tenía, la del cobro que se devuelve en cuanto ese cobro se concilia. La
+ *  devolución de una pasarela (Whop) no sabe de qué venta es, pero su cobro sí, cuando ya está atado a una cuota. */
+export function ventaDelReembolso(e: Base, d: Devolucion): Venta | undefined {
+  if (d.ventaId) return (e.ventas ?? []).find((v) => v.id === d.ventaId);
+  const r = reembolsoDePropuesta(d);
+  return r ? cobroDelReembolso(e, r)?.venta : undefined;
 }
 
 /** De quién es un reembolso: la venta, lo que mandó la pasarela o, si no mandó nada, el nombre de su cobro original. `cobroSinContar` es el caso

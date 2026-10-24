@@ -11,7 +11,7 @@ import { abrirDevolucion } from "@/lib/devolucion-ui";
 import { fechaLarga, money } from "@/lib/format";
 import { puedeCargarDevolucion } from "@/lib/permisos";
 import { nombrePasarela } from "@/lib/pasarelas";
-import { candidatasDe, propuestasAtables, propuestasDescartadas, propuestasEnDisputa, propuestasPendientes, quienDelReembolso, reembolsoDePropuesta } from "@/lib/reembolsos";
+import { candidatasDe, propuestasAtables, propuestasDescartadas, propuestasEnDisputa, propuestasPendientes, quienDelReembolso, reembolsoDePropuesta, ventaDelReembolso } from "@/lib/reembolsos";
 import { AVISO_EN_DISPUTA, AVISO_GANADA, borradorDeDisputaPerdida, disputaDe, MOTIVO_PERDIDA_CARGADA, retenidoDe } from "@/lib/disputas";
 import { AsistenteGasto } from "@/components/finanzas/AsistenteGasto";
 import { MotivoDeDescarte } from "@/components/finanzas/MotivoDeDescarte";
@@ -100,7 +100,8 @@ export function ReembolsosPasarelas({ e, rango }: { e: EstadoApp; rango?: RangoD
       )}
       <div className="stack-2">
         {pendientes.map((d) => {
-          const venta = e.ventas.find((v) => v.id === d.ventaId);
+          /* La venta guardada o, si el cobro que se devuelve se concilió después, la de ese cobro. */
+          const venta = ventaDelReembolso(e, d);
           const crudo = reembolsoDePropuesta(d);
           const candidatas = crudo ? candidatasDe(e, crudo) : [];
           const { nombre: quien, cobro, cobroSinContar } = quienDelReembolso(e, d);
@@ -140,12 +141,12 @@ export function ReembolsosPasarelas({ e, rango }: { e: EstadoApp; rango?: RangoD
                         Cargar como gasto
                       </Button>
                       <Button sm variante="ghost" title="Si en cambio es plata que se le devolvió al cliente: resta del Cash Collected y revierte la comisión del closer."
-                        onClick={() => abrirDevolucion({ propuestaId: d.id, ventaId: d.ventaId })}>
+                        onClick={() => abrirDevolucion({ propuestaId: d.id, ventaId: venta?.id ?? d.ventaId })}>
                         Confirmar como devolución
                       </Button>
                     </>
                   ) : (
-                    <Button sm variante="primary" onClick={() => abrirDevolucion({ propuestaId: d.id, ventaId: d.ventaId })}>Confirmar</Button>
+                    <Button sm variante="primary" onClick={() => abrirDevolucion({ propuestaId: d.id, ventaId: venta?.id ?? d.ventaId })}>Confirmar</Button>
                   )}
                   {disputa !== "perdida" && cobroSinContar && cobro && (cobro.estado === "pendiente" || cobro.estado === "ignorado") && (
                     <Button sm variante="secondary"
