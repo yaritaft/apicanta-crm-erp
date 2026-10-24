@@ -10,6 +10,7 @@ import { NADA, Recorte, TablaCs } from "@/components/cs/TablaCs";
 import { useAbrirFicha, type SolapaServicio } from "@/components/ficha/abrir";
 import { useGestos } from "@/components/alumnos/Seguimiento";
 import { leerContratosPendientes } from "@/components/contratos/cliente";
+import { TarjetaSimulacro } from "@/components/simulacros/Simulacros";
 import { useEstado } from "@/lib/store";
 import { useAcceso } from "@/lib/acceso";
 import { useParamsURL } from "@/lib/useParamsURL";
@@ -221,6 +222,9 @@ export function PanelServicio({ miembro, viendoOtro }: { miembro: MiembroEquipo;
           </p>
         </div>
       </header>
+
+      {/* La clase de entrevistas de los martes (Lili, 23/10). */}
+      <TarjetaSimulacro />
 
       <div className="ps-cols">
         <section className="mp-card ps-card" aria-label="Para hoy">

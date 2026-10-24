@@ -338,7 +338,8 @@ test("los tipos de fábrica siguen con su menú de siempre", () => {
     director: ["/panel", "/mi-panel", "/leads", "/crm", "/agenda", "/ventas", "/clientes", "/webinars", "/formularios", "/grupos-whatsapp"],
     admin: ["/panel", "/ventas", "/clientes", "/finanzas", "/finanzas/end-of-day", "/finanzas/resultados", "/finanzas/transacciones"],
     marketing: ["/panel", "/leads", "/webinars", "/formularios", "/grupos-whatsapp", "/marketing", "/marketing?nivel=conciliacion"],
-    customer_success: ["/mi-panel", "/clientes", "/alumnos", "/alumnos?seccion=pipeline", "/reportes", "/alumnos?seccion=hoy", "/alumnos?seccion=clientes"],
+    /* «Simulacros» (Lili, 23/10): la clase de entrevistas de los martes. */
+    customer_success: ["/mi-panel", "/clientes", "/alumnos", "/alumnos?seccion=pipeline", "/reportes", "/simulacros", "/alumnos?seccion=hoy", "/alumnos?seccion=clientes"],
   };
   const inicios: Record<string, string> = { closer: "/mis-llamadas", setter: "/mi-panel", director: "/panel", admin: "/panel", marketing: "/panel", customer_success: "/mi-panel" };
   for (const [id, esperado] of Object.entries(menus)) {

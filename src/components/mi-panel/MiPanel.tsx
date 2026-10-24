@@ -19,6 +19,8 @@ import { BarraVerComo } from "./BarraVerComo";
 import { DetalleComisiones, DetalleMesa, type TramoMesa } from "./Detalles";
 import { CobrosCargados, LlamadasDeHoy, ParaVos } from "./Listas";
 import { PanelServicio } from "./PanelServicio";
+import { TarjetaSimulacro } from "@/components/simulacros/Simulacros";
+import { TOMAN_SIMULACROS } from "@/lib/simulacros";
 import { PanelSetter } from "./PanelSetter";
 import { Rendimiento } from "./Rendimiento";
 import { TarjetaComisiones, TarjetaMesa } from "./Tarjetas";
@@ -126,6 +128,9 @@ export function MiPanel() {
           )}
         </div>
       </header>
+
+      {/* Yari y Nahuel toman los simulacros de entrevista de los martes (Lili, 23/10). */}
+      {TOMAN_SIMULACROS.includes(miembro.id) && <TarjetaSimulacro />}
 
       {esSetter ? (
         <PanelSetter datos={datos} rangoTxt={rangoTxt} ahora={ahora} />

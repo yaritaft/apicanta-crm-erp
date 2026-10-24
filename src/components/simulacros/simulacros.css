@@ -1,0 +1,23 @@
+/* Simulacros de entrevista (components/simulacros/Simulacros.tsx). */
+.sim-barra { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); }
+.sim-fecha { display: inline-flex; align-items: center; gap: var(--space-2); padding: 4px; border: 1px solid var(--border); border-radius: var(--radius-full); background: var(--surface-100); }
+.sim-fecha button { display: inline-grid; place-items: center; width: 30px; height: 30px; border: 0; border-radius: var(--radius-full); background: none; color: var(--ink-subtle); cursor: pointer; }
+.sim-fecha button:hover { background: var(--surface-200); color: var(--ink); }
+.sim-fecha > span { padding: 0 6px; font-size: 14px; color: var(--ink); white-space: nowrap; }
+.sim-lista { display: flex; flex-direction: column; gap: var(--space-2); }
+.sim-item { padding: var(--space-4); border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface-100); }
+.sim-item--inscripto { border-left: 3px solid var(--accent); }
+.sim-item__cab { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); }
+.sim-item__quien { flex: 1; min-width: 220px; display: flex; flex-direction: column; gap: 2px; }
+.sim-item__nombre { font-size: 15px; font-weight: 600; color: var(--ink); }
+button.sim-item__nombre { color: var(--brand); }
+.sim-item__det { margin: var(--space-3) 0 0; font-size: 14px; color: var(--ink-muted, var(--ink-subtle)); line-height: 1.5; }
+.sim-item__det b { color: var(--ink); }
+.sim-item__com { display: block; margin-top: 4px; color: var(--ink); white-space: pre-line; }
+.sim-tarjeta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); padding: 14px 18px; }
+.sim-tarjeta__icono { color: var(--brand); flex: none; }
+.sim-tarjeta__txt { display: flex; flex-direction: column; gap: 2px; min-width: 200px; }
+.sim-ficha { display: flex; flex-direction: column; gap: 6px; padding: var(--space-3) var(--space-4); border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface-100); }
+.sim-ficha__cab { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); color: var(--ink); }
+.sim-ficha__cab svg { color: var(--brand); }
+.sim-ficha__fila { margin: 0; font-size: 13px; color: var(--ink); line-height: 1.5; }

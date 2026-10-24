@@ -80,6 +80,10 @@ begin
   update sesiones set "alumnoId" = q.id where "alumnoId" = o.id;
   update testimonios set "alumnoId" = q.id where "alumnoId" = o.id;
   update transacciones set "alumnoId" = q.id where "alumnoId" = o.id;
+  /* Los simulacros de entrevista (simulacros.sql), si la tabla ya está. */
+  if to_regclass('public.simulacros') is not null then
+    execute 'update simulacros set "alumnoId" = $1 where "alumnoId" = $2' using q.id, o.id;
+  end if;
 
   lead_id := coalesce(o."leadId", q."leadId");
   delete from alumnos where id = o.id;
