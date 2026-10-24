@@ -25,7 +25,7 @@ import { TarjetaVenta } from "./TarjetaVenta";
 import { VistaLlamadas } from "./VistaLlamadas";
 import { usePlegado } from "./Plegable";
 import type { VistaFicha } from "./abrir";
-import { acciones, cuotasQueCancelaLaBaja, useEstado } from "@/lib/store";
+import { acciones, cuotasQueCancelaLaBaja, useEstado, useSync } from "@/lib/store";
 import { useAcceso } from "@/lib/acceso";
 import { nivelEn, type MiAcceso } from "@/lib/permisos";
 import { filasDePersona, filasTabla, type FilaTabla } from "@/lib/crm-tabla";
@@ -60,6 +60,9 @@ export function FichaPersona({ id, vista, ventaResaltada, onCerrar, onVista }: {
 }) {
   const e = useEstado();
   const p = useMemo(() => personaDe(e, id), [e, id]);
+  /* Un link a una ficha abierto en frío llega antes que los datos de la nube: mientras cargan, no es «no existe» (24/10: Lili
+     abría el link de un alumno y le decía «Puede que la hayan borrado» unos segundos, hasta que llegaba la base). */
+  const cargando = useSync().estado === "cargando";
   /* Sus llamadas como filas del CRM, de la más nueva a la más vieja: de ahí
      salen su perfil (a la izquierda) y la vista Llamadas. */
   const filas = useMemo(() => (p && p.sesiones.length ? filasDePersona(filasTabla(e), p.sesiones.map((s) => s.id)) : []), [e, p]);
@@ -94,7 +97,11 @@ export function FichaPersona({ id, vista, ventaResaltada, onCerrar, onVista }: {
   return (
     <div className="ficha-fondo" onMouseDown={(ev) => { if (ev.target === ev.currentTarget) onCerrar(); }}>
       <div className="ficha" role="dialog" aria-modal="true" aria-label={p ? `Ficha de ${p.nombre}` : "Ficha"}>
-        {!p ? (
+        {!p && cargando ? (
+          <div style={{ padding: 32 }}>
+            <p className="t-sm t-subtle" role="status">Cargando su ficha…</p>
+          </div>
+        ) : !p ? (
           <div style={{ padding: 32 }}>
             <Empty icono={<X size={22} />} titulo="No encontramos a esta persona"
               texto="Puede que la hayan borrado o que el link sea de otra base."
