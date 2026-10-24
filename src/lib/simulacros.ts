@@ -9,7 +9,8 @@ import { enlaceDelAlumno, mailDelLink, mensajeDelLink } from "./links-alumno";
    cómo fue. Tabla `simulacros` (supabase/simulacros.sql).
    ================================================================== */
 
-export type EstadoSimulacro = "inscripto" | "hecho" | "no_se_presento" | "no_se_preparo" | "otro";
+/* «sin_registro»: las inscripciones viejas del Google Form (importadas el 24/10): la planilla no dice si se hizo. */
+export type EstadoSimulacro = "inscripto" | "hecho" | "no_se_presento" | "no_se_preparo" | "otro" | "sin_registro";
 
 export interface Simulacro {
   id: ID;
@@ -22,7 +23,7 @@ export interface Simulacro {
   tipoPedido: string;
   preparado: boolean;
   alumnoId: ID | null;
-  origen: "formulario" | "panel";
+  origen: "formulario" | "panel" | "google_form";
   estado: EstadoSimulacro;
   motivo: string | null;
   /* Lo que se le tomó: «Técnica» o «Recursos Humanos». */
@@ -65,6 +66,7 @@ export const RESULTADOS: { valor: Exclude<EstadoSimulacro, "inscripto">; nombre:
 
 export const NOMBRE_ESTADO: Record<EstadoSimulacro, string> = {
   inscripto: "Inscripto", hecho: "Hecho", no_se_presento: "No se presentó", no_se_preparo: "No se preparó", otro: "No se hizo",
+  sin_registro: "Sin registro (Google Form)",
 };
 
 const dia = (d: Date) => d.toISOString().slice(0, 10);
@@ -127,8 +129,11 @@ export function problemaDeResultado(x: { estado?: EstadoSimulacro | null; tipoTo
 export function resumenDeSimulacros(lista: readonly Pick<Simulacro, "estado" | "fecha">[]): { hechos: number; ultimo: string | null; cumple: boolean; texto: string } {
   const hechos = lista.filter((s) => s.estado === "hecho");
   const ultimo = hechos.map((s) => s.fecha).sort().pop() ?? null;
+  /* Las del Google Form no dicen si se hizo: no es «todavía no hizo ninguno», es «no se sabe». */
+  const sinRegistro = lista.filter((s) => s.estado === "sin_registro").length;
   const texto = hechos.length === 0
-    ? lista.length ? "Se anotó pero todavía no hizo ningún simulacro" : "Todavía no hizo ningún simulacro"
+    ? sinRegistro ? `Se anotó ${sinRegistro === 1 ? "1 vez" : `${sinRegistro} veces`} por el Google Form: falta cargar si lo hizo`
+      : lista.length ? "Se anotó pero todavía no hizo ningún simulacro" : "Todavía no hizo ningún simulacro"
     : hechos.length === 1 ? "Hizo 1 simulacro" : `Hizo ${hechos.length} simulacros`;
   return { hechos: hechos.length, ultimo, cumple: hechos.length > 0, texto };
 }

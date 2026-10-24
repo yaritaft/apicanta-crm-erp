@@ -34,10 +34,14 @@ create table if not exists public.simulacros (
   responsable text,
   "cargadoPor" text,
   "creadoEn" timestamptz not null default now(),
-  "actualizadoEn" timestamptz not null default now(),
-  constraint simulacros_estado check (estado in ('inscripto', 'hecho', 'no_se_presento', 'no_se_preparo', 'otro')),
-  constraint simulacros_origen check (origen in ('formulario', 'panel'))
+  "actualizadoEn" timestamptz not null default now()
 );
+-- Los estados y de dónde vino. «sin_registro» / «google_form»: las 46 inscripciones viejas del Google Form (26/05 al 20/10),
+-- importadas el 24/10: la planilla no dice si el simulacro se hizo, así que no se inventa; quien lo sepa lo edita.
+alter table public.simulacros drop constraint if exists simulacros_estado;
+alter table public.simulacros add constraint simulacros_estado check (estado in ('inscripto', 'hecho', 'no_se_presento', 'no_se_preparo', 'otro', 'sin_registro'));
+alter table public.simulacros drop constraint if exists simulacros_origen;
+alter table public.simulacros add constraint simulacros_origen check (origen in ('formulario', 'panel', 'google_form'));
 create index if not exists simulacros_fecha_idx on public.simulacros (fecha desc);
 create index if not exists simulacros_alumno_idx on public.simulacros ("alumnoId");
 

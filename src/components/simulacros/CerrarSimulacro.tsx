@@ -28,7 +28,8 @@ export function CerrarSimulacro({ e, simulacro, fecha, onCerrar, onListo }: {
   const yo = useUsuarioActual();
   const nuevo = simulacro === null;
   const [alumnoId, setAlumnoId] = useState(simulacro?.alumnoId ?? "");
-  const [estado, setEstado] = useState<EstadoSimulacro | null>(simulacro && simulacro.estado !== "inscripto" ? simulacro.estado : null);
+  /* Una del Google Form «sin registro» pide elegir cómo fue de verdad (no se guarda otra vez «sin registro»). */
+  const [estado, setEstado] = useState<EstadoSimulacro | null>(simulacro && simulacro.estado !== "inscripto" && simulacro.estado !== "sin_registro" ? simulacro.estado : null);
   const [tipoTomado, setTipoTomado] = useState(simulacro?.tipoTomado ?? "");
   const [tecnologias, setTecnologias] = useState(simulacro?.tecnologias ?? simulacro?.stack ?? "");
   const [comentario, setComentario] = useState(simulacro?.comentario ?? "");

@@ -28,7 +28,7 @@ import "./simulacros.css";
    ================================================================== */
 
 const VARIANTE: Record<EstadoSimulacro, "success" | "accent" | "danger" | "neutral"> = {
-  inscripto: "accent", hecho: "success", no_se_presento: "danger", no_se_preparo: "danger", otro: "neutral",
+  inscripto: "accent", hecho: "success", no_se_presento: "danger", no_se_preparo: "danger", otro: "neutral", sin_registro: "neutral",
 };
 
 /** El link general para anotarse (el que se manda los martes en el grupo de novedades): cada uno entra con su código. */
@@ -112,7 +112,7 @@ export function SimulacrosPagina() {
                       ? <button type="button" className="link sim-item__nombre" onClick={() => abrirFicha(alumno.id, "servicio", { hoja: "seguimiento" })}>{alumno.nombre}</button>
                       : <span className="sim-item__nombre">{s.nombre}</span>}
                     <span className="t-sm t-subtle">
-                      {[s.telefono, s.stack, s.tipoPedido && `pidió ${s.tipoPedido}`].filter(Boolean).join(" · ") || "Cargado desde el panel"}
+                      {[s.telefono, s.stack, s.tipoPedido && `pidió ${s.tipoPedido}`, s.origen === "google_form" && "del Google Form"].filter(Boolean).join(" · ") || "Cargado desde el panel"}
                       {!alumno && s.estado !== "inscripto" ? "" : !alumno ? " · sin atar a un alumno" : ""}
                     </span>
                   </div>

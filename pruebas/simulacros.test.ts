@@ -74,6 +74,11 @@ test("la ficha dice si cumple la condición del contrato, y el panel cuántos fa
   assert.deepEqual([dos.cumple, dos.hechos, dos.ultimo, dos.texto], [true, 2, "2026-10-21", "Hizo 2 simulacros"]);
   assert.equal(resumenDeClase([{ estado: "hecho" }, { estado: "inscripto" }, { estado: "no_se_preparo" }]).texto, "3 inscriptos · 1 hecho · 1 sin cargar");
   assert.equal(resumenDeClase([]).texto, "Todavía no se anotó nadie");
+  /* Las del Google Form (importadas el 24/10) no dicen si se hizo: ni «hizo» ni «no hizo ninguno», y no son «sin cargar» de la clase. */
+  const gf = resumenDeSimulacros([{ estado: "sin_registro", fecha: "2026-06-02" }, { estado: "sin_registro", fecha: "2026-06-09" }]);
+  assert.deepEqual([gf.cumple, gf.texto], [false, "Se anotó 2 veces por el Google Form: falta cargar si lo hizo"]);
+  assert.equal(resumenDeSimulacros([{ estado: "sin_registro", fecha: "2026-06-02" }, { estado: "hecho", fecha: "2026-10-20" }]).texto, "Hizo 1 simulacro");
+  assert.equal(resumenDeClase([{ estado: "sin_registro" }]).sinCargar, 0);
 });
 
 /* ---------- supabase/simulacros.sql en un Postgres en memoria (PGlite) ---------- */
