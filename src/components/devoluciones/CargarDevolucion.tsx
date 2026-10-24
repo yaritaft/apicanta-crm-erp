@@ -260,11 +260,13 @@ function Formulario({ pedido }: { pedido: PedidoDevolucion }) {
 
   /* Buscar a mano: arranca con el nombre del cobro (si se sabe) y sube las ventas que coinciden en el monto, el mail o el día. */
   const nombreParaBuscar = ventasAuto.length === 0 ? (cobroDelReembolso?.clienteNombre ?? "") : "";
+  /* Si ya encontramos la venta sola, las sugerencias esperan a que se escriba algo: no hace falta ofrecer otras. */
+  const sinSugerir = ventasAuto.length > 0 && busqueda === null;
   const resultados = useMemo(
-    () => buscarVentas(e, busqueda ?? nombreParaBuscar, {
+    () => sinSugerir ? [] : buscarVentas(e, busqueda ?? nombreParaBuscar, {
       monto: propuesta?.monto, email: cobroDelReembolso?.clienteEmail, fecha: cobroDelReembolso?.fecha ?? propuesta?.fecha,
     }, 8).filter((v) => !ventas.some((x) => x.id === v.id)),
-    [e, busqueda, nombreParaBuscar, propuesta?.monto, propuesta?.fecha, cobroDelReembolso?.clienteEmail, cobroDelReembolso?.fecha, ventas],
+    [e, sinSugerir, busqueda, nombreParaBuscar, propuesta?.monto, propuesta?.fecha, cobroDelReembolso?.clienteEmail, cobroDelReembolso?.fecha, ventas],
   );
   /* El cobro de la pasarela sigue pendiente en Conciliación: la venta elegida no tiene cobros que devolver hasta que se concilie. Se puede hacer desde acá. */
   const cuotaParaElCobro = (() => {
