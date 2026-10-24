@@ -1,0 +1,4 @@
+/* Consultas de los jueves (components/consultas/Consultas.tsx). Usa el armazón de simulacros.css (sim-*). */
+.cq-texto { margin: var(--space-3) 0 0; font-size: 14px; line-height: 1.55; color: var(--ink); white-space: pre-line; overflow-wrap: anywhere; }
+.cq-item--paso { opacity: 0.72; }
+.cq-cita { margin: 0; padding: var(--space-3) var(--space-4); border-left: 3px solid var(--brand); border-radius: var(--radius-md); background: var(--surface-100); font-size: 15px; line-height: 1.55; color: var(--ink); white-space: pre-line; overflow-wrap: anywhere; max-height: 40vh; overflow-y: auto; }

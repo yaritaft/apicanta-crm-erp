@@ -17,8 +17,7 @@
    ================================================================== */
 
 import { enlaceWhatsapp } from "./contacto-telefono";
-import { enlaceDeReporte } from "./reporte-enlace";
-import { enlaceDeSimulacro } from "./simulacros";
+import { enlaceDelAlumno } from "./links-alumno";
 
 export const PERFILES = ["Full Stack", "Mobile Developer", "Data Engineer", "AI Engineer"] as const;
 export type PerfilAlumno = (typeof PERFILES)[number];
@@ -59,6 +58,8 @@ export interface GuiaBienvenida {
   formulario: string | null;
   /* El link para anotarse al simulacro de los martes (sólo el programa completo). */
   simulacro: string | null;
+  /* El link para dejar la consulta de los jueves si no puede ir a la clase (sólo el programa completo). */
+  consulta: string | null;
   /* Su código personal, el mismo para todo (el reporte y los simulacros); los dos links ya lo traen. */
   codigo: string | null;
   soporte: Contacto | null;
@@ -66,7 +67,7 @@ export interface GuiaBienvenida {
 }
 
 export function guiaDeBienvenida(a: {
-  reserva?: boolean; programa: string; perfil?: string | null; formulario?: string | null; simulacro?: string | null; codigo?: string | null;
+  reserva?: boolean; programa: string; perfil?: string | null; formulario?: string | null; simulacro?: string | null; consulta?: string | null; codigo?: string | null;
   config?: ConfigBienvenida | null;
 }): GuiaBienvenida | null {
   const modelo = modeloDeBienvenida(a);
@@ -77,18 +78,24 @@ export function guiaDeBienvenida(a: {
     modelo, perfil, roadmap: roadmap && /^https:\/\//.test(roadmap) ? roadmap : null,
     formulario: modelo === "completo" ? a.formulario ?? null : null,
     simulacro: modelo === "completo" ? a.simulacro ?? null : null,
+    consulta: modelo === "completo" ? a.consulta ?? null : null,
     codigo: modelo === "completo" ? a.codigo ?? null : null,
     soporte: contactoDe(a.config?.soporte, "Liliana"),
     auditoriaCv: contactoDe(a.config?.auditoriaCv, "Aldana"),
   };
 }
 
-/** Con su código personal (Juan Cruz, 24/10): el link del formulario de los lunes y el de los simulacros ya lo traen, y el
-    código va también a la vista. Sólo el programa completo, el que tiene seguimiento y simulacros. El mail, la página de
+/** Con su código personal (Juan Cruz, 24/10): el link del formulario de los lunes, el de los simulacros y el de las consultas
+    de los jueves ya lo traen (lib/links-alumno.ts), y el código va también a la vista. Sólo el programa completo, el que tiene seguimiento y simulacros. El mail, la página de
     bienvenida y el mensaje que se copia desde la ficha pasan por acá, así dicen lo mismo. */
 export function conCodigoDelAlumno(g: GuiaBienvenida, origen: string, codigo: string | null | undefined): GuiaBienvenida {
   if (g.modelo !== "completo" || !codigo) return g;
-  return { ...g, formulario: enlaceDeReporte(origen, codigo), simulacro: enlaceDeSimulacro(origen, codigo), codigo };
+  return {
+    ...g, codigo,
+    formulario: enlaceDelAlumno("reporte", origen, codigo),
+    simulacro: enlaceDelAlumno("simulacro", origen, codigo),
+    consulta: enlaceDelAlumno("consulta", origen, codigo),
+  };
 }
 
 /* ---------- El mail ---------- */
@@ -276,14 +283,15 @@ Dedicá unos minutos a responderlo con sinceridad, indicando tus avances, dificu
 Recordá: completarlo todos los lunes es parte de tu proceso de seguimiento.${g.codigo ? `
 
 🔑 Tu código personal: ${g.codigo}
-Es tuyo y sirve para todo: el formulario de los lunes y los simulacros de los martes. Tus links ya lo traen, así que no hace falta escribirlo; guardalo por las dudas.` : ""}
+Es tuyo y sirve para todo: el formulario de los lunes, los simulacros de los martes y las consultas de los jueves. Tus links ya lo traen, así que no hace falta escribirlo; guardalo por las dudas.` : ""}
 
 🎥 3. Aprovechá las salas de Zoom
 Hora 18hs hora Argentina
 • Martes: práctica y simulacros de entrevistas o tema nuevo.${g.simulacro ? ` Para que te tomen un simulacro, anotate acá:
 👉 ${g.simulacro}` : ""}
 • Miércoles: consultas exclusivamente sobre IA.
-• Jueves: consultas generales.
+• Jueves: consultas generales.${g.consulta ? ` Si no podés venir, dejá tu consulta acá y mirá la respuesta en la grabación:
+👉 ${g.consulta}` : ""}
 
 Estas instancias son una oportunidad para resolver dudas, practicar y seguir avanzando.
 

@@ -44,8 +44,9 @@ export function CopiarLinkInscripcion({ chico }: { chico?: boolean }) {
   );
 }
 
-/* El link personal de un alumno (ya trae su código: entra sin escribir nada), en un mensaje listo para su WhatsApp. */
-function CopiarLinkPersonal({ alumnoId }: { alumnoId: string }) {
+/* El link personal de un alumno (ya trae su código: entra sin escribir nada), en un mensaje listo para su WhatsApp. Sirve para
+   el simulacro y para la consulta de los jueves (lib/links-alumno.ts). */
+export function CopiarLinkPersonal({ alumnoId, para = "simulacro" }: { alumnoId: string; para?: "simulacro" | "consulta" }) {
   const toast = useToast();
   const [ocupado, setOcupado] = useState(false);
   const copiar = async () => {
@@ -53,7 +54,7 @@ function CopiarLinkPersonal({ alumnoId }: { alumnoId: string }) {
     try {
       const r = await fetch("/api/reportes/enlace", {
         method: "POST", cache: "no-store", headers: { ...(await cabeceras()), "Content-Type": "application/json" },
-        body: JSON.stringify({ alumnoId, para: "simulacro" }),
+        body: JSON.stringify({ alumnoId, para }),
       });
       const j = (await r.json().catch(() => ({}))) as { mensaje?: string; error?: string };
       if (!r.ok || !j.mensaje) { toast(j.error ?? "No se pudo armar su link.", "err"); return; }
@@ -65,7 +66,7 @@ function CopiarLinkPersonal({ alumnoId }: { alumnoId: string }) {
   };
   return (
     <Button sm variante="ghost" icono={<Copy size={14} />} cargando={ocupado} onClick={() => void copiar()}
-      title="Su link para anotarse a los simulacros, con su código (el mismo del reporte)">Copiar su link</Button>
+      title={`Su link para ${para === "consulta" ? "dejar consultas para los jueves" : "anotarse a los simulacros"}, con su código (el mismo del reporte)`}>Copiar su link</Button>
   );
 }
 

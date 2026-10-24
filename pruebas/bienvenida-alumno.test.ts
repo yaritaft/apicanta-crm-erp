@@ -93,10 +93,12 @@ test("con su código: el formulario de los lunes y los simulacros con el código
   const texto = textoDeBienvenida(g).texto;
   assert.ok(texto.includes(`https://app.x/reporte?c=${codigo}`), "el link del formulario");
   assert.ok(texto.includes(`https://app.x/simulacro?c=${codigo}`), "el link de los simulacros");
+  assert.equal(g.consulta, `https://app.x/consulta?c=${codigo}`);
+  assert.match(texto, new RegExp(`Jueves: consultas generales\\. Si no podés venir, dejá tu consulta acá[^\\n]*\\n👉 https://app\\.x/consulta\\?c=${codigo}`), "el de las consultas, en la línea del jueves");
   assert.ok(texto.includes(`Tu código personal: ${codigo}`), "el código a la vista");
   /* Sin código (todavía no se pudo crear): el texto de siempre, sin renglones vacíos. */
   const sin = textoDeBienvenida(conCodigoDelAlumno(guiaDeBienvenida({ programa: "hackear-ai", config: CONFIG })!, "https://app.x", null)).texto;
-  assert.ok(!sin.includes("Tu código personal") && !sin.includes("/simulacro"));
+  assert.ok(!sin.includes("Tu código personal") && !sin.includes("/simulacro") && !sin.includes("/consulta"));
   /* El Downsell y la reserva no tienen seguimiento ni simulacros. */
   for (const otro of [{ programa: "downsell" }, { programa: "hackear-ai", reserva: true }]) {
     const t = textoDeBienvenida(conCodigoDelAlumno(guiaDeBienvenida({ ...otro, config: CONFIG })!, "https://app.x", codigo)).texto;

@@ -10,7 +10,7 @@ import { useAcceso } from "@/lib/acceso";
 import { useUsuarioActual } from "@/lib/usuario";
 import { puedeLeer } from "@/lib/permisos";
 import { esDelCloser } from "@/lib/eod";
-import { filasResells } from "@/lib/clientes-cs";
+import { filasResells, resellAbierto } from "@/lib/clientes-cs";
 import { useEscribirURL } from "@/lib/useParamsURL";
 
 /* ==================================================================
@@ -35,12 +35,12 @@ export function CrmConResells({ misLlamadas }: { misLlamadas?: boolean }) {
   const veResells = puedeLeer(acceso, "resells");
   const grupo: Grupo = veResells && params.get("grupo") === "resell" ? "resell" : "ventas";
 
-  /* Las agendas de resell que ya pasaron y todavía no dicen cómo terminaron: lo que hay para cargar. */
+  /* Las agendas de resell abiertas (ya pasaron y no tienen un resultado que las cierre): lo que hay para cerrar. */
   const porCargar = useMemo(() => {
     if (!veResells) return 0;
     const ahora = Date.now();
     const suyas = (r: { closer: string }) => !acceso?.soloLoSuyo || (yo.miembro ? esDelCloser({ anfitrion: r.closer }, yo.miembro.nombre, e.equipo) : false);
-    return filasResells(e).filter((f) => suyas(f.resell) && !f.resell.estado && !f.resell.cancelada && Date.parse(f.resell.fechaHora) <= ahora).length;
+    return filasResells(e).filter((f) => suyas(f.resell) && resellAbierto(f.resell, ahora)).length;
   }, [e, veResells, acceso?.soloLoSuyo, yo.miembro]);
 
   if (!veResells) return <CrmTabla misLlamadas={misLlamadas} />;
@@ -51,7 +51,7 @@ export function CrmConResells({ misLlamadas }: { misLlamadas?: boolean }) {
           valor={grupo} onChange={(g) => escribir(g === "resell" ? { grupo: "resell", "por-cargar": porCargar > 0 ? "1" : null } : { grupo: null, "por-cargar": null })}
           opciones={[
             { valor: "ventas", texto: "Ventas" },
-            { valor: "resell", texto: porCargar > 0 ? `Resell · ${porCargar} por cargar` : "Resell" },
+            { valor: "resell", texto: porCargar > 0 ? `Resell · ${porCargar} por cerrar` : "Resell" },
           ]}
         />
       </div>

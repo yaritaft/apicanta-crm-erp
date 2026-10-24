@@ -20,6 +20,7 @@ import { DetalleComisiones, DetalleMesa, type TramoMesa } from "./Detalles";
 import { CobrosCargados, LlamadasDeHoy, ParaVos } from "./Listas";
 import { PanelServicio } from "./PanelServicio";
 import { TarjetaSimulacro } from "@/components/simulacros/Simulacros";
+import { TarjetaConsultas } from "@/components/consultas/Consultas";
 import { TOMAN_SIMULACROS } from "@/lib/simulacros";
 import { PanelSetter } from "./PanelSetter";
 import { Rendimiento } from "./Rendimiento";
@@ -129,8 +130,9 @@ export function MiPanel() {
         </div>
       </header>
 
-      {/* Yari y Nahuel toman los simulacros de entrevista de los martes (Lili, 23/10). */}
+      {/* Yari y Nahuel toman los simulacros de entrevista de los martes (Lili, 23/10) y responden las consultas de los jueves (24/10). */}
       {TOMAN_SIMULACROS.includes(miembro.id) && <TarjetaSimulacro />}
+      {TOMAN_SIMULACROS.includes(miembro.id) && <TarjetaConsultas />}
 
       {esSetter ? (
         <PanelSetter datos={datos} rangoTxt={rangoTxt} ahora={ahora} puedeMarcar={!viendoOtro} />

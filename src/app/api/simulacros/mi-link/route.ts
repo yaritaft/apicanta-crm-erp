@@ -5,14 +5,14 @@ import { configBienvenida } from "@/lib/contratos-servidor";
 import { htmlDeBienvenida } from "@/lib/bienvenida-alumno";
 import { codigoDeAlumno, configResend, enviarPorResend, ErrorSinTablaCodigos } from "@/lib/reporte-servidor";
 import { limitador, origenDeLaApp } from "@/lib/reporte-enlace";
-import { enlaceDeSimulacro, esMailValido, literalParaIlike, mailDeSimulacro } from "@/lib/simulacros";
+import { enlaceDelAlumno, esLinkDelAlumno, esMailValido, literalParaIlike, mailDelLink } from "@/lib/links-alumno";
 
 /* ==================================================================
-   POST /api/simulacros/mi-link  { "email": "…" }
+   POST /api/simulacros/mi-link  { "email": "…", "para"?: "simulacro" | "consulta" | "reporte" }
 
-   «No tengo mi código» en /simulacro: si el mail es de un alumno, le llega
-   por mail su link para anotarse (con su código adentro, el mismo del
-   reporte). Contesta lo mismo exista o no ese mail, así no sirve para
+   «No tengo mi código» en /simulacro y /consulta: si el mail es de un
+   alumno, le llega por mail su link de ese formulario (con su código
+   adentro, el mismo del reporte; lib/links-alumno.ts). Contesta lo mismo exista o no ese mail, así no sirve para
    averiguar quién es alumno. Pública: campo trampa (`sitio`) y límites por
    IP y por mail (no se le llena la casilla a nadie).
    ================================================================== */
@@ -35,6 +35,7 @@ export async function POST(req: Request) {
   const b = (leido.json && typeof leido.json === "object" ? leido.json : {}) as Record<string, unknown>;
   if (typeof b.sitio === "string" && b.sitio.trim()) return responder({ ok: true, mensaje: LISTO });
   const email = typeof b.email === "string" ? b.email.trim().toLowerCase().slice(0, 200) : "";
+  const para = esLinkDelAlumno(b.para) ? b.para : "simulacro";
   if (!esMailValido(email)) return responder({ ok: false, error: "Escribí el mail con el que compraste." }, 400);
   if (porMail.golpea(email)) return responder({ ok: true, mensaje: LISTO });
 
@@ -50,7 +51,7 @@ export async function POST(req: Request) {
     if (!alumno) return responder({ ok: true, mensaje: LISTO });
     const codigo = await codigoDeAlumno(db, alumno.id);
     if (!codigo) return responder({ ok: true, mensaje: LISTO });
-    const { asunto, texto } = mailDeSimulacro({ nombre: alumno.nombre, enlace: enlaceDeSimulacro(origenDeLaApp(req), codigo), codigo });
+    const { asunto, texto } = mailDelLink(para, { nombre: alumno.nombre, enlace: enlaceDelAlumno(para, origenDeLaApp(req), codigo), codigo });
     const responderA = (await configBienvenida(db).catch(() => null))?.responderA;
     const envio = await enviarPorResend(cfg, { para: alumno.email, asunto, texto, html: htmlDeBienvenida(texto), responderA: responderA && esMailValido(responderA) ? responderA : undefined });
     if (!envio.ok) {

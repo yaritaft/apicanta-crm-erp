@@ -1,5 +1,5 @@
 import type { EstadoApp, ID } from "./types";
-import { DURACION_POR_DEFECTO, estadosDeResell, filasClientes, filasResells, filasTestimonios, NO_SE_HACIA_CONTRATO, sumarMeses } from "./clientes-cs";
+import { DIAS_PARA_CERRAR_RESELL, DURACION_POR_DEFECTO, estadosDeResell, filasClientes, filasResells, filasTestimonios, NO_SE_HACIA_CONTRATO, resellAbierto, sumarMeses } from "./clientes-cs";
 import { diasEntre, formatoDia, terminoElServicio } from "./seguimiento";
 import { diasDe } from "./pausas";
 import { ventaPendienteDe } from "./alumnos";
@@ -30,8 +30,8 @@ import { crearMotor, uno, varios, type ColumnaCs, type OrdenCs } from "./tabla-c
 export const DIAS_NUEVO = 14;
 /** Cuántos días antes de que termine el contrato se avisa para renovar. */
 export const DIAS_PARA_RENOVAR = 30;
-/** Una semana: pasada la llamada de resell, el closer tiene que decir en qué quedó (Lili, 19/10). */
-export const DIAS_PARA_CERRAR_RESELL = 7;
+/* Una semana para cerrar un resell y qué lo deja resuelto: la regla vive en lib/clientes-cs.ts (la usan también el closer y su cierre del día). */
+export { DIAS_PARA_CERRAR_RESELL, resellResuelto } from "./clientes-cs";
 /** Cuántos días después de empezar se espera el contrato firmado. */
 export const DIAS_PARA_FIRMAR = 3;
 /** Hasta cuántos días después de que termina el contrato se lo sigue considerando «en servicio» (para renovarlo o darlo de baja). */
@@ -39,12 +39,7 @@ export const DIAS_DE_GRACIA = 45;
 /* «Arrancan o retoman» los muestra unos días antes de que termine la demora o la pausa, para avisarle. */
 export const DIAS_ANTES_DE_RETOMAR = 3;
 
-/* Los estados con los que un resell queda resuelto: renueva (con o sin upgrade), no renueva, pasa a outboarding o sigue vigente.
-   «2da Agenda» y «Seguimiento» lo dejan abierto: todavía falta una llamada o una respuesta. */
-const RESELL_RESUELTO = ["upgrade a hackear ia", "no quiere renovar", "outbording", "outboarding", "garantia extendida", "alumno vigente", "renueva", "no renueva"];
 const sinTildes = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().trim();
-
-export const resellResuelto = (estado: string | null | undefined): boolean => estadosDeResell(estado).some((x) => RESELL_RESUELTO.includes(sinTildes(x)));
 
 export type TonoServicio = "rojo" | "ambar" | "neutro";
 
@@ -288,7 +283,7 @@ export function panelDeServicio(e: EstadoApp, hoy: string, ahora: Date = new Dat
   const resells = filasResells(e);
   const ahoraMs = ahora.getTime();
   const sinCierre: ItemServicio[] = resells
-    .filter((f) => !f.resell.cancelada && new Date(f.resell.fechaHora).getTime() <= ahoraMs && !resellResuelto(f.resell.estado))
+    .filter((f) => resellAbierto(f.resell, ahoraMs))
     .map((f): ItemServicio => {
       const d = diasEntre(f.dia, hoy);
       const cliente = f.alumno ? clientes.find((c) => c.id === f.alumno?.id) : undefined;

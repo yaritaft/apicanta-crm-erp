@@ -26,6 +26,7 @@ import { BienvenidaAlumno } from "@/components/contratos/BienvenidaAlumno";
 import { AvisoAlumnoRepetido } from "./AvisoAlumnoRepetido";
 import { NotaDeCharla } from "./NotaDeCharla";
 import { SimulacrosAlumno } from "@/components/simulacros/Simulacros";
+import { ConsultasAlumno } from "@/components/consultas/Consultas";
 import { textoDePausa } from "@/lib/pausas";
 import { ventaPendienteDe } from "@/lib/alumnos";
 import { resumenBonos } from "@/lib/bonos";
@@ -513,6 +514,8 @@ function HojaDeUnServicio({ e, p, f, venta, producto, conChat, reserva }: {
         <>
           {/* Hacer al menos un simulacro de entrevista es condición del contrato (Lili, 23/10). */}
           <SimulacrosAlumno alumnoId={alumno.id} />
+          {/* Las consultas de los jueves de cuando no pudo ir a la clase (Lili, 24/10). */}
+          <ConsultasAlumno alumnoId={alumno.id} />
           <Bloque>
             {dato("followUp")}
             {dato("estadoAlumno", false)}

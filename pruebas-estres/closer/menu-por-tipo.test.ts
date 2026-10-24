@@ -46,12 +46,12 @@ function tipoAlAzar(r: Azar, i: number): TipoCuenta {
 const MENU_ESPERADO: Record<string, { menu: string[]; inicio: string }> = {
   dueno: {
     menu: ["/panel", "/mi-panel", "/leads", "/crm", "/agenda", "/ventas", "/clientes", "/webinars", "/formularios", "/grupos-whatsapp", "/marketing", "/marketing?nivel=conciliacion", "/alumnos", "/alumnos?seccion=pipeline", "/reportes",
-      "/simulacros", "/alumnos?seccion=hoy", "/alumnos?seccion=clientes", "/finanzas", "/finanzas/end-of-day", "/finanzas/resultados", "/finanzas/transacciones", "/equipo", "/ajustes"],
+      "/simulacros", "/consultas", "/alumnos?seccion=hoy", "/alumnos?seccion=clientes", "/finanzas", "/finanzas/end-of-day", "/finanzas/resultados", "/finanzas/transacciones", "/equipo", "/ajustes"],
     inicio: "/panel",
   },
   equipo: {
     menu: ["/panel", "/mi-panel", "/leads", "/crm", "/agenda", "/ventas", "/clientes", "/webinars", "/formularios", "/grupos-whatsapp", "/marketing", "/marketing?nivel=conciliacion", "/alumnos", "/alumnos?seccion=pipeline", "/reportes",
-      "/simulacros", "/alumnos?seccion=hoy", "/alumnos?seccion=clientes", "/finanzas", "/finanzas/end-of-day", "/finanzas/resultados", "/finanzas/transacciones", "/ajustes"],
+      "/simulacros", "/consultas", "/alumnos?seccion=hoy", "/alumnos?seccion=clientes", "/finanzas", "/finanzas/end-of-day", "/finanzas/resultados", "/finanzas/transacciones", "/ajustes"],
     inicio: "/panel",
   },
   director: { menu: ["/panel", "/mi-panel", "/leads", "/crm", "/agenda", "/ventas", "/clientes", "/webinars", "/formularios", "/grupos-whatsapp"], inicio: "/panel" },
@@ -60,7 +60,7 @@ const MENU_ESPERADO: Record<string, { menu: string[]; inicio: string }> = {
   admin: { menu: ["/panel", "/ventas", "/clientes", "/finanzas", "/finanzas/end-of-day", "/finanzas/resultados", "/finanzas/transacciones"], inicio: "/panel" },
   marketing: { menu: ["/panel", "/leads", "/webinars", "/formularios", "/grupos-whatsapp", "/marketing", "/marketing?nivel=conciliacion"], inicio: "/panel" },
   customer_success: {
-    menu: ["/mi-panel", "/clientes", "/alumnos", "/alumnos?seccion=pipeline", "/reportes", "/simulacros", "/alumnos?seccion=hoy", "/alumnos?seccion=clientes"],
+    menu: ["/mi-panel", "/clientes", "/alumnos", "/alumnos?seccion=pipeline", "/reportes", "/simulacros", "/consultas", "/alumnos?seccion=hoy", "/alumnos?seccion=clientes"],
     inicio: "/mi-panel",
   },
 };

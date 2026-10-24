@@ -775,6 +775,23 @@ export interface FilaResell {
 export const estadosDeResell = (texto: string | null | undefined): string[] =>
   [...new Set(String(texto ?? "").split(",").map((x) => x.trim()).filter(Boolean))];
 
+/* Los estados con los que un resell queda resuelto: renueva (con o sin upgrade), no renueva, pasa a outboarding o sigue vigente.
+   «2da Agenda» y «Seguimiento» lo dejan abierto: todavía falta una llamada o una respuesta. */
+const RESELL_RESUELTO = ["upgrade a hackear ia", "no quiere renovar", "outbording", "outboarding", "garantia extendida", "alumno vigente", "renueva", "no renueva"];
+const sinTildesResell = (s: string) => s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+
+export const resellResuelto = (estado: string | null | undefined): boolean => estadosDeResell(estado).some((x) => RESELL_RESUELTO.includes(sinTildesResell(x)));
+
+/** Una semana: pasada la llamada de resell, el closer tiene que decir en qué quedó (Lili, 19/10). */
+export const DIAS_PARA_CERRAR_RESELL = 7;
+
+/** Un resell ABIERTO: la llamada ya pasó, no se canceló y todavía no tiene un resultado que lo cierre (sin estado, o sólo
+    «Seguimiento» o «2da Agenda»). Es la misma regla para el panel de Lili, el «por cerrar» de la solapa Resell, Mi panel del
+    closer y su cierre del día: antes el closer contaba sólo los que no tenían NINGÚN estado y Lili los que no estaban
+    resueltos, y un resell en «Seguimiento» le figuraba cargado a él y abierto a ella (24/10). */
+export const resellAbierto = (r: Pick<Resell, "cancelada" | "fechaHora" | "estado">, ahoraMs: number): boolean =>
+  !r.cancelada && Date.parse(r.fechaHora) <= ahoraMs && !resellResuelto(r.estado);
+
 /** Suma o saca un estado de los de un resell (el texto que se guarda). `Vaciar` los deja en blanco. */
 export function alternarEstadoResell(texto: string | null | undefined, estado: string): string {
   if (estado === "Vaciar") return "";
@@ -786,7 +803,7 @@ export function filasResells(e: Pick<EstadoApp, "resells" | "alumnos"> & Partial
   const grabacionDeSesion = new Map<string, string>();
   for (const x of e.sesiones ?? []) if (x.grabacion) grabacionDeSesion.set(x.id, x.grabacion);
   const porMail = new Map<string, Alumno>();
-  for (const a of e.alumnos) {
+  for (const a of e.alumnos ?? []) {
     const k = a.email.trim().toLowerCase();
     if (k && !porMail.has(k)) porMail.set(k, a);
   }

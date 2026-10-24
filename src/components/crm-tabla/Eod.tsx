@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useMemo, useRef, useState, type ComponentProps } from "react";
+import Link from "next/link";
 import { AlertTriangle, Check, ShoppingBag, Star, UserRoundCheck } from "lucide-react";
 import { Asistente, Pregunta, type PasoAsistente } from "@/components/ui/Asistente";
 import { Badge, Button, Input, Select, Textarea } from "@/components/ui/ui";
@@ -17,6 +18,7 @@ import { miembroDeCloser, opcionesDe } from "@/lib/crm";
 import { esReagendar, estadoVisible, preguntaDe, type PreguntaEod } from "@/lib/estados";
 import { leadDeSesion } from "@/lib/etapas-auto";
 import { esLlamadaDeResell } from "@/lib/resells";
+import { filasResells, resellAbierto } from "@/lib/clientes-cs";
 import { filasTabla, type FilaTabla } from "@/lib/crm-tabla";
 import {
   atajosDeCierre, cambiosDelEod, closersConLlamadas, esDelCloser, faltaEnRespuesta, llamadasDelDia, llamadasParaCargar, repasoDelDia, objecionSugerida, objecionesDe, type GrupoDeLlamada,
@@ -132,6 +134,16 @@ export function Eod({ onCerrar, soloSesionId }: { onCerrar: () => void; soloSesi
     }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [e, closer, dia, filas, soloSesionId]);
+  /* Sus resells abiertos (la llamada ya pasó y no dice en qué quedó): no se cargan acá sino en la solapa Resell, pero el cierre
+     del día los muestra para que no queden colgados (Lili, 24/10: a ella le aparecían abiertos y al closer en ningún lado). */
+  const resells = useMemo(() => {
+    if (soloSesionId || !closer) return [];
+    return filasResells(e)
+      .filter((f) => esDelCloser({ anfitrion: f.resell.closer }, closer, e.equipo) && resellAbierto(f.resell, ahora))
+      .sort((a, b) => a.resell.fechaHora.localeCompare(b.resell.fechaHora))
+      .map((f) => ({ id: f.id, nombre: f.resell.nombre || f.alumno?.nombre || "Sin nombre", cuando: textoFecha(f.dia), estado: f.resell.estado }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [e, closer, soloSesionId]);
   /* La lista queda fija mientras se carga: una llamada que se carga no se
      va de la lista (dejaría de estar "sin cargar"). */
   const [fijas, setFijas] = useState<Sesion[] | null>(null);
@@ -249,7 +261,7 @@ export function Eod({ onCerrar, soloSesionId }: { onCerrar: () => void; soloSesi
           dia={dia} hoy={hoy} onDia={setDia}
           delDia={delDia.length} pendientes={pendientes.length} conPendientes={conPendientes} onConPendientes={setConPendientes}
           cargadas={cargadasDelDia} conCargadas={conCargadas} onConCargadas={setConCargadas}
-          repaso={repaso}
+          repaso={repaso} resells={resells}
           cuales={[...(conPendientes ? pendientes : []), ...delDia].map((s) => ({ id: s.id, nombre: filas.get(s.id)?.nombre || s.invitado || "Llamada", cuando: `${textoFecha(diaDeNegocio(s.inicia))} · ${HORA.format(new Date(s.inicia))} hs`, cargada: filas.get(s.id)?.sinCargar === false }))}
           strikes={strikes} regla={regla}
         />
@@ -279,7 +291,7 @@ export function Eod({ onCerrar, soloSesionId }: { onCerrar: () => void; soloSesi
 
 /* ---------- Tu día ---------- */
 
-function Inicio({ closers, closer, fijo, onCloser, dia, hoy, onDia, delDia, pendientes, conPendientes, onConPendientes, cargadas, conCargadas, onConCargadas, cuales, repaso, strikes, regla }: {
+function Inicio({ closers, closer, fijo, onCloser, dia, hoy, onDia, delDia, pendientes, conPendientes, onConPendientes, cargadas, conCargadas, onConCargadas, cuales, repaso, resells, strikes, regla }: {
   closers: string[]; closer: string; fijo: boolean; onCloser: (c: string) => void;
   dia: string; hoy: string; onDia: (d: string) => void;
   delDia: number; pendientes: number; conPendientes: boolean; onConPendientes: (v: boolean) => void;
@@ -289,6 +301,8 @@ function Inicio({ closers, closer, fijo, onCloser, dia, hoy, onDia, delDia, pend
   cuales: { id: string; nombre: string; cuando: string; cargada: boolean }[];
   /* Todas las llamadas del día, cada una con dónde está. */
   repaso: { id: string; nombre: string; hora: string; grupo: GrupoDeLlamada; texto: string }[];
+  /* Sus resells abiertos: se cierran en la solapa Resell. */
+  resells: { id: string; nombre: string; cuando: string; estado: string }[];
   strikes: ComponentProps<typeof CuentaDeStrikes>["strikes"]; regla: ComponentProps<typeof CuentaDeStrikes>["regla"];
 }) {
   const ayer = new Date(Date.parse(`${hoy}T12:00:00Z`) - 86_400_000).toISOString().slice(0, 10);
@@ -376,6 +390,24 @@ function Inicio({ closers, closer, fijo, onCloser, dia, hoy, onDia, delDia, pend
             ))}
           </ul>
           {cuales.length > 12 && <span className="t-sm t-subtle">y {num(cuales.length - 12)} más</span>}
+        </div>
+      )}
+      {closer && resells.length > 0 && (
+        <div className="crm-eod__cuales" aria-label="Resells sin cerrar">
+          <span className="t-label">Resells sin cerrar ({num(resells.length)})</span>
+          <ul>
+            {resells.slice(0, 8).map((r) => (
+              <li key={r.id}>
+                <span className="t-strong truncate">{r.nombre}</span>
+                <span className="t-sm t-subtle t-num">{r.cuando}</span>
+                {r.estado ? <Badge variante="neutral">{r.estado}</Badge> : <Badge variante="accent">Sin resultado</Badge>}
+              </li>
+            ))}
+          </ul>
+          <span className="t-sm t-subtle">
+            {resells.length > 8 ? `Y ${num(resells.length - 8)} más. ` : ""}Se cierran en la solapa Resell: hasta que digas en qué quedó cada uno, Customer Success lo ve abierto.{" "}
+            <Link href="/mis-llamadas?grupo=resell&por-cargar=1" className="link">Cerrarlos</Link>
+          </span>
         </div>
       )}
       {closer && <CuentaDeStrikes strikes={strikes} regla={regla} />}

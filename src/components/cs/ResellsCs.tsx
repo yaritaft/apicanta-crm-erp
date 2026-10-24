@@ -21,7 +21,7 @@ import { puedeEditar } from "@/lib/permisos";
 import { formatoDia, hoyDelNegocio } from "@/lib/seguimiento";
 import { diaDeNegocio } from "@/lib/dia-negocio";
 import {
-  alternarEstadoResell, coincideResell, COLUMNAS_SUMADAS_RESELLS, estadosDeResell, filasResells, listasCs, MOTOR_RESELLS, ORDEN_RESELLS, resellNormal, VISIBLES_RESELLS, type ClaveResell, type FilaResell,
+  alternarEstadoResell, coincideResell, COLUMNAS_SUMADAS_RESELLS, estadosDeResell, filasResells, resellAbierto, listasCs, MOTOR_RESELLS, ORDEN_RESELLS, resellNormal, VISIBLES_RESELLS, type ClaveResell, type FilaResell,
 } from "@/lib/clientes-cs";
 import { leerMontoCs } from "@/lib/importar-cs";
 import { money } from "@/lib/format";
@@ -61,14 +61,15 @@ export function ResellsCs() {
   const params = useSearchParams();
   const escribirURL = useEscribirURL();
   const [vendiendo, setVendiendo] = useState<Resell | null>(null);
-  /* ?por-cargar=1: sólo las que ya pasaron y todavía no dicen cómo terminaron («Resell · 13 por cargar»). */
+  /* ?por-cargar=1: sólo las abiertas: ya pasaron y todavía no tienen un resultado que las cierre (sin estado, o sólo «Seguimiento»
+     o «2da Agenda»). La misma regla que el panel de Lili y Mi panel del closer (resellAbierto, lib/clientes-cs.ts). */
   const soloPorCargar = params.get("por-cargar") === "1";
   /* Un closer ve sólo sus agendas (la base ya lo recorta; acá también, para que sea igual sin nube). */
   const suyas = useMemo(() => {
     const todas = filasResells(e);
     return acceso?.soloLoSuyo && yo.miembro ? todas.filter((f) => esDelCloser({ anfitrion: f.resell.closer }, yo.miembro!.nombre, e.equipo)) : todas;
   }, [e, acceso?.soloLoSuyo, yo.miembro]);
-  const porCargar = useMemo(() => suyas.filter((f) => !f.resell.estado && !f.resell.cancelada && Date.parse(f.resell.fechaHora) <= Date.now()), [suyas]);
+  const porCargar = useMemo(() => suyas.filter((f) => resellAbierto(f.resell, Date.now())), [suyas]);
   const filas = soloPorCargar ? porCargar : suyas;
   /* El país de la persona, para escribir su teléfono con el «+»: el de su ficha (por mail) o, si el número ya empieza con un código de
      país (los del Airtable vienen «54 9 11…», «57 300…» sin el «+»), el de ese código. Un número corto no se adivina. */
@@ -238,9 +239,9 @@ export function ResellsCs() {
               title="Trae de la nube lo que agendaron por Calendly desde que abriste la app">Actualizar</Button>}
             {porCargar.length > 0 && (
               <Button sm variante={soloPorCargar ? "primary" : "secondary"} aria-pressed={soloPorCargar}
-                title="Las que ya pasaron y todavía no dicen cómo terminaron"
+                title="Las que ya pasaron y todavía no tienen un resultado final: sin estado, o sólo «Seguimiento» o «2da Agenda»"
                 onClick={() => escribirURL({ "por-cargar": soloPorCargar ? null : "1" })}>
-                Por cargar ({porCargar.length})
+                Por cerrar ({porCargar.length})
               </Button>
             )}
             {puede && <Button sm variante="primary" icono={<Plus size={15} />} onClick={() => setForm({})}>Nueva agenda</Button>}

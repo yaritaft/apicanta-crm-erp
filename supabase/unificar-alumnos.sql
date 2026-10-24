@@ -9,9 +9,11 @@
 --
 -- unificar_alumnos(queda, otro, corregir_persona, quien), en una sola
 -- transacción:
---   - lo que cuelga del otro (seguimiento, accesos, contratos, reportes,
---     código del formulario, CV, sesiones, testimonios, transacciones) pasa
---     al que queda; si los dos tienen el mismo dato único, vale el del que
+--   - lo que cuelga del otro pasa al que queda: el seguimiento, los
+--     accesos, los reportes y el código del formulario a mano (tienen datos
+--     únicos), y toda otra tabla con "alumnoId" (contratos, CV, sesiones,
+--     testimonios, transacciones, simulacros, consultas y las que se sumen)
+--     buscándola en la base; si los dos tienen el mismo dato único, vale el del que
 --     queda; el seguimiento se combina (lo vacío del que queda se completa
 --     con lo del otro);
 --   - lo vacío del que queda (mail, país, plan, cohorte, cuota) se completa
@@ -43,6 +45,7 @@ declare
   mail_nuevo text;
   mail_viejo text;
   resumen text;
+  tabla text;
 begin
   select * into q from alumnos where id = p_queda for update;
   select * into o from alumnos where id = p_otro for update;
@@ -75,15 +78,18 @@ begin
   update accesos_alumno set "alumnoId" = q.id where "alumnoId" = o.id;
   delete from reportes r where r."alumnoId" = o.id and exists (select 1 from reportes x where x."alumnoId" = q.id and x."semanaDel" = r."semanaDel");
   update reportes set "alumnoId" = q.id where "alumnoId" = o.id;
-  update contratos set "alumnoId" = q.id where "alumnoId" = o.id;
-  update revisiones_cv set "alumnoId" = q.id where "alumnoId" = o.id;
-  update sesiones set "alumnoId" = q.id where "alumnoId" = o.id;
-  update testimonios set "alumnoId" = q.id where "alumnoId" = o.id;
-  update transacciones set "alumnoId" = q.id where "alumnoId" = o.id;
-  /* Los simulacros de entrevista (simulacros.sql), si la tabla ya está. */
-  if to_regclass('public.simulacros') is not null then
-    execute 'update simulacros set "alumnoId" = $1 where "alumnoId" = $2' using q.id, o.id;
-  end if;
+  /* Todo lo demás que apunta a un alumno (contratos, CV, llamadas, testimonios, transacciones, simulacros, consultas… y las
+     tablas que se sumen): se busca en la base. Antes era una lista escrita a mano, y cada tabla nueva había que acordarse de
+     sumarla o quedaba colgando del alumno que se borra (24/10). */
+  for tabla in
+    select c.table_name from information_schema.columns c
+    join information_schema.tables t on t.table_schema = c.table_schema and t.table_name = c.table_name and t.table_type = 'BASE TABLE'
+    where c.table_schema = 'public' and c.column_name = 'alumnoId'
+      and c.table_name not in ('alumnos', 'seguimiento_alumnos', 'reporte_codigos', 'accesos_alumno', 'reportes')
+    order by c.table_name
+  loop
+    execute format('update public.%I set "alumnoId" = $1 where "alumnoId" = $2', tabla) using q.id, o.id;
+  end loop;
 
   lead_id := coalesce(o."leadId", q."leadId");
   delete from alumnos where id = o.id;

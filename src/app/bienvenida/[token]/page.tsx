@@ -71,14 +71,19 @@ function Guia({ g, primario }: { g: GuiaBienvenida; primario: () => boolean }) {
         </Seccion>
       )}
       {g.modelo === "completo" && (
-        <Seccion icono={<Mic size={15} />} titulo="Simulacros de entrevista">
+        <Seccion icono={<Mic size={15} />} titulo="Simulacros y consultas">
           <Fila nombre="Anotarte al simulacro" detalle="Los martes a las 18 h (Argentina) practicás una entrevista en vivo, con feedback.">
             {g.simulacro
               ? <a href={g.simulacro} target="_blank" rel="noopener noreferrer" className={claseBoton(primario())} aria-label="Anotarme al simulacro del martes">Anotarme</a>
               : <span className="bienv-nota bienv-fila__aparte">Te lo mandamos por WhatsApp</span>}
           </Fila>
+          <Fila nombre="Dejar una consulta" detalle="Los jueves a las 18 h son las consultas: si no podés venir, dejala acá y mirá la respuesta en la grabación.">
+            {g.consulta
+              ? <a href={g.consulta} target="_blank" rel="noopener noreferrer" className={claseBoton(false)} aria-label="Dejar una consulta para el jueves">Consultar</a>
+              : <span className="bienv-nota bienv-fila__aparte">Te lo mandamos por WhatsApp</span>}
+          </Fila>
           {g.codigo && (
-            <Chico>Tu código personal, el mismo para el formulario y los simulacros (tus links ya lo traen):<code className="bienv-codigo">{g.codigo}</code></Chico>
+            <Chico>Tu código personal, el mismo para el formulario, los simulacros y las consultas (tus links ya lo traen):<code className="bienv-codigo">{g.codigo}</code></Chico>
           )}
         </Seccion>
       )}

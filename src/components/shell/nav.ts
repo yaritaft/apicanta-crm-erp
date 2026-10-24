@@ -3,7 +3,7 @@ import {
   GraduationCap, ClipboardList, Wallet, Settings, HandCoins, ArrowDownUp, Banknote, Landmark, UserCheck,
   ClipboardCheck, PhoneCall, ListChecks, FileInput, UserRound, CalendarCheck, TrendingUp, ArrowLeftRight, GitMerge, MessagesSquare,
 } from "lucide-react";
-import { Mic, SquareKanban } from "lucide-react";
+import { MessageCircleQuestion, Mic, SquareKanban } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { esCuentaDeCloser, nivelDeRuta, nivelEn, type MiAcceso } from "@/lib/permisos";
 
@@ -59,6 +59,8 @@ export const NAV: GrupoNav[] = [
       { href: "/reportes", texto: "Formularios de alumnos", icono: ClipboardList, ayuda: "El formulario semanal de cada alumno: respuestas, quién lo completa y su link" },
       /* Lili (23/10): la clase de entrevistas de los martes, con la inscripción en la app en vez del Google Form. */
       { href: "/simulacros", texto: "Simulacros", icono: Mic, ayuda: "La clase de entrevistas de los martes: quién se anotó y cómo le fue a cada uno" },
+      /* Lili (24/10): las consultas de los jueves de quienes no pueden ir, con el formulario en la app en vez del Google Form. */
+      { href: "/consultas", texto: "Consultas", icono: MessageCircleQuestion, ayuda: "Las consultas de los jueves de quienes no pueden ir a la clase, y si se respondieron" },
       /* Customer Success (F2-09): la lista de a quién contactar hoy y la de Clientes del programa, con todo lo que lleva
          Lili. Son vistas de Alumnos; el nombre es «del programa» para no confundirla con Clientes, la de lo que pagaron. */
       { href: "/alumnos?seccion=hoy", texto: "A contactar hoy", icono: PhoneCall, ayuda: "Los alumnos a los que les toca el contacto de seguimiento, lo más vencido arriba" },

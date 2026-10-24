@@ -90,6 +90,8 @@ export function ParaVos({ titulo, avisos, total, puedeCerrarElDia }: { titulo: s
               {a.accion && (a.accion.ir === "ficha" || puedeCerrarElDia) && (
                 a.accion.ir === "cerrar-el-dia"
                   ? <Link href="/cerrar-el-dia" className="hk-btn hk-btn--secondary hk-btn--sm">{a.accion.texto}</Link>
+                  : a.accion.ir === "resells"
+                  ? <Link href="/mis-llamadas?grupo=resell&por-cargar=1" className="hk-btn hk-btn--secondary hk-btn--sm">{a.accion.texto}</Link>
                   : a.accion.ir === "cargar-venta"
                     ? <Button sm variante="primary" onClick={() => setCargando(e.movimientos.find((m) => m.id === a.accion!.id) ?? null)}>{a.accion.texto}</Button>
                     : <Button sm variante="secondary" onClick={() => abrirFicha(a.accion!.id!, "ventas", { venta: a.accion!.id! })}>{a.accion.texto}</Button>

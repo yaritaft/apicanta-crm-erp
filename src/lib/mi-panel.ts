@@ -15,6 +15,7 @@ import { normalizarUtm, origenDe } from "./utms";
 import { haceCuanto, pedidosDeCloser, type PedidoDeVenta } from "./pedidos-de-venta";
 import { rechazoDeCobro } from "./rechazos-de-cobro";
 import { medioDeMovimiento } from "./conciliacion";
+import { DIAS_PARA_CERRAR_RESELL, filasResells, resellAbierto, type FilaResell } from "./clientes-cs";
 
 /* ==================================================================
    «Mi panel» (reunión del 15/10, armado sobre el Mi Panel de Blue OS): lo
@@ -114,7 +115,7 @@ export interface Aviso {
   texto: string;
   /* El nombre en negrita dentro del texto, para que se lea de un vistazo. */
   resaltado?: string;
-  accion?: { texto: string; ir: "cerrar-el-dia" | "ficha" | "cargar-venta"; id?: string };
+  accion?: { texto: string; ir: "cerrar-el-dia" | "ficha" | "cargar-venta" | "resells"; id?: string };
 }
 
 export interface MiPanel {
@@ -283,7 +284,12 @@ export function miPanelDe(e: EstadoApp, m: MiembroEquipo, rango: RangoMes, ahora
   const sinEstrategia = e.ventas
     .filter((v) => v.closerId === m.id && v.estado !== "cancelada" && !v.embudoId && ahora - Date.parse(v.fecha) <= DIAS_SIN_ESTRATEGIA * DIA)
     .sort((a, b) => b.fecha.localeCompare(a.fecha));
-  const { avisos, total: totalAvisos } = avisosDe(e, { equipo: e, dia, porCobrar, cobros, ahora, pedidos: avisosDePedidos(e, pedidos), totalPedidos: pedidos.length, sinEstrategia });
+  /* Sus resells abiertos: la llamada ya pasó y no dice en qué quedó (o quedó en «Seguimiento» o «2da Agenda»). Lili los ve en su
+     panel y sólo se cierran cuando el closer carga el resultado: antes al closer no le aparecían en ningún lado (Lili, 24/10). */
+  const resells = vista === "setter" ? [] : filasResells(e)
+    .filter((f) => esDelCloser({ anfitrion: f.resell.closer }, m.nombre, e.equipo) && resellAbierto(f.resell, ahora))
+    .sort((a, b) => a.resell.fechaHora.localeCompare(b.resell.fechaHora));
+  const { avisos, total: totalAvisos } = avisosDe(e, { equipo: e, dia, porCobrar, cobros, ahora, pedidos: avisosDePedidos(e, pedidos), totalPedidos: pedidos.length, sinEstrategia, resells });
 
   /* Las agendas del setter: las que entraron por su link (utm_campaign=setter_nombre) y las que marcó él
      como suyas desde Mi panel (Daniel, 24/10; lib/setter-agendas.ts). */
@@ -346,7 +352,7 @@ function avisosDePedidos(e: EstadoApp, pedidos: PedidoDeVenta[]): Aviso[] {
 
 function avisosDe(
   e: Pick<EstadoApp, "productos">,
-  c: { equipo: Pick<EstadoApp, "equipo">; sinEstrategia: Venta[]; dia: ResumenDelDia; porCobrar: CuotaPendiente[]; cobros: CobroCargado[]; ahora: number; pedidos: Aviso[]; totalPedidos: number },
+  c: { equipo: Pick<EstadoApp, "equipo">; sinEstrategia: Venta[]; dia: ResumenDelDia; porCobrar: CuotaPendiente[]; cobros: CobroCargado[]; ahora: number; pedidos: Aviso[]; totalPedidos: number; resells?: FilaResell[] },
 ): { avisos: Aviso[]; total: number } {
   const avisos: Aviso[] = [];
   let total = 0;
@@ -364,6 +370,20 @@ function avisosDe(
       clave: "eod", tono: "warning",
       texto: `Te ${sinCargar === 1 ? "falta" : "faltan"} cargar cómo ${sinCargar === 1 ? "terminó" : "terminaron"} ${sinCargar} ${sinCargar === 1 ? "llamada" : "llamadas"}: sin eso no se concilia tu comisión.`,
       accion: { texto: "Cerrar el día", ir: "cerrar-el-dia" },
+    });
+  }
+
+  /* Los resells abiertos: uno solo, con los nombres; en rojo si alguno pasó la semana. */
+  const resells = c.resells ?? [];
+  if (resells.length > 0) {
+    total += 1;
+    const n = resells.length;
+    const nombres = resells.slice(0, 3).map((f) => f.resell.nombre || f.alumno?.nombre || "sin nombre").join(", ");
+    const vencido = resells.some((f) => c.ahora - Date.parse(f.resell.fechaHora) >= DIAS_PARA_CERRAR_RESELL * DIA);
+    avisos.push({
+      clave: "resells", tono: vencido ? "danger" : "warning", resaltado: `${n} ${n === 1 ? "resell" : "resells"} sin cerrar`,
+      texto: `(${nombres}${n > 3 ? ` y ${n - 3} más` : ""}): cargá en qué quedó ${n === 1 ? "la llamada" : "cada llamada"}. Hasta que lo cargues, Customer Success lo ve abierto.`,
+      accion: { texto: "Cerrarlos", ir: "resells" },
     });
   }
 

@@ -11,6 +11,7 @@ import { useAbrirFicha, type SolapaServicio } from "@/components/ficha/abrir";
 import { useGestos } from "@/components/alumnos/Seguimiento";
 import { leerContratosPendientes } from "@/components/contratos/cliente";
 import { TarjetaSimulacro } from "@/components/simulacros/Simulacros";
+import { TarjetaConsultas } from "@/components/consultas/Consultas";
 import { useEstado } from "@/lib/store";
 import { useAcceso } from "@/lib/acceso";
 import { useParamsURL } from "@/lib/useParamsURL";
@@ -223,8 +224,9 @@ export function PanelServicio({ miembro, viendoOtro }: { miembro: MiembroEquipo;
         </div>
       </header>
 
-      {/* La clase de entrevistas de los martes (Lili, 23/10). */}
+      {/* La clase de entrevistas de los martes (Lili, 23/10) y las consultas de los jueves (24/10). */}
       <TarjetaSimulacro />
+      <TarjetaConsultas />
 
       <div className="ps-cols">
         <section className="mp-card ps-card" aria-label="Para hoy">
