@@ -2,7 +2,7 @@ import test, { after } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
-  cambiosDeResultado, enLaClase, juevesDeLaConsulta, otroJueves, problemaDeConsulta, resumenDeConsultas, ultimoJueves,
+  cambiosDeResultado, enLaClase, juevesDeLaConsulta, NOMBRE_ESTADO_CONSULTA, otroJueves, problemaDeConsulta, resumenDeConsultas, ultimoJueves,
 } from "@/lib/consultas";
 import { codigoEnTexto, enlaceDelAlumno, esLinkDelAlumno, LINKS_DEL_ALUMNO, mailDelLink, mensajeDelLink } from "@/lib/links-alumno";
 import { armarBanco, cargarPglite, ESQUEMA_MINIMO, PERMISOS_DE_ENSAYO, sqlDe, type Banco } from "./sql/arnes-pg";
@@ -75,6 +75,14 @@ test("unificar dos alumnos mueve TODAS las tablas con alumnoId: la lista ya no s
   for (const t of ["contratos", "simulacros", "consultas_clase", "testimonios"]) {
     assert.doesNotMatch(sql, new RegExp(`update (public\\.)?${t} set "alumnoId"`), `${t} no se escribe a mano`);
   }
+});
+
+test("las consultas viejas del Google Form entran como «Sin registro»: no cuentan como pendientes ni se inventa que se respondieron", () => {
+  assert.equal(NOMBRE_ESTADO_CONSULTA.sin_registro, "Sin registro (Google Form)");
+  assert.equal(resumenDeConsultas([{ estado: "sin_registro" }, { estado: "sin_registro" }]).sinCargar, 0);
+  assert.match(sqlDe("consultas-clase.sql"), /'recibida', 'respondida', 'no_respondida', 'sin_registro'/);
+  /* Quien sabe qué pasó la puede editar: el resultado la saca de «sin registro». */
+  assert.equal(cambiosDeResultado({ fecha: "2026-09-10", postergada: 0 }, "respondida", "Yari", "", "Lili").estado, "respondida");
 });
 
 test("la página pública y las rutas no piden nombre, mail ni celular: sólo el código y la consulta", () => {

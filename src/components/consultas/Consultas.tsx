@@ -27,7 +27,7 @@ import "./consultas.css";
    Yari, Nahuel o Lili, tipo Typeform; queda en la ficha del alumno.
    ================================================================== */
 
-const VARIANTE: Record<EstadoConsulta, "success" | "accent" | "danger"> = { recibida: "accent", respondida: "success", no_respondida: "danger" };
+const VARIANTE: Record<EstadoConsulta, "success" | "accent" | "danger" | "neutral"> = { recibida: "accent", respondida: "success", no_respondida: "danger", sin_registro: "neutral" };
 
 /* La clase que se abre de entrada: la última que ya pasó y quedó sin cargar; si no hay, la próxima. null mientras se averigua. */
 function useClaseDeEntrada(): string | null {
@@ -106,7 +106,7 @@ export function ConsultasPagina() {
                       : <span className="sim-item__nombre">{c.nombre || "Sin nombre"}</span>}
                     <span className="t-sm t-subtle">
                       {c.postergada > 0 && !paso ? `Viene de la clase del ${diaDeClase(c.primeraFecha, fechaLarga)} · ` : ""}
-                      {c.origen === "panel" ? `Cargada por ${c.cargadoPor ?? "el equipo"}` : "Por el formulario"}
+                      {c.origen === "panel" ? `Cargada por ${c.cargadoPor ?? "el equipo"}` : c.origen === "google_form" ? "Del Google Form" : "Por el formulario"}
                     </span>
                   </div>
                   {paso ? <Badge variante="neutral">Pasó al jueves {diaDeClase(c.fecha, fechaLarga)}</Badge> : <Badge variante={VARIANTE[c.estado]}>{NOMBRE_ESTADO_CONSULTA[c.estado]}</Badge>}

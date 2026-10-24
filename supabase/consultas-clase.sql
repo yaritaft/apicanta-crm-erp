@@ -39,11 +39,14 @@ create table if not exists public.consultas_clase (
   "cargadoPor" text,
   "creadoEn" timestamptz not null default now(),
   "actualizadoEn" timestamptz not null default now(),
-  constraint consultas_clase_estado check (estado in ('recibida', 'respondida', 'no_respondida')),
   constraint consultas_clase_origen check (origen in ('formulario', 'panel', 'google_form')),
   constraint consultas_clase_texto check (length(btrim(consulta)) > 0),
   constraint consultas_clase_fechas check ("primeraFecha" <= fecha)
 );
+-- Los estados. «sin_registro»: las 62 consultas viejas del Google Form (27/08 al 01/10), importadas el 24/10: la planilla no
+-- dice si se respondieron, así que no se inventa; quien lo sepa la edita.
+alter table public.consultas_clase drop constraint if exists consultas_clase_estado;
+alter table public.consultas_clase add constraint consultas_clase_estado check (estado in ('recibida', 'respondida', 'no_respondida', 'sin_registro'));
 create index if not exists consultas_clase_fecha_idx on public.consultas_clase (fecha desc);
 create index if not exists consultas_clase_alumno_idx on public.consultas_clase ("alumnoId");
 

@@ -20,7 +20,7 @@ function conPrimerasDosColisionando<T>(f: () => T): T {
   try { return f(); } finally { Date.now = ahora; Math.random = azar; }
 }
 
-test("importarLeads: dos leads con el mismo id quedan atados al mismo contacto y se pisan en la base", { todo: true }, async () => {
+test("importarLeads: dos leads con el mismo id quedan atados al mismo contacto y se pisan en la base", async () => {
   base.vaciar();
   const S = await storeNuevo();
   await S.acciones.vaciarTodo();
@@ -36,7 +36,7 @@ test("importarLeads: dos leads con el mismo id quedan atados al mismo contacto y
   assert.equal(new Set(leads.map((l) => l.id)).size, 2, "los dos leads deberían tener ids distintos");
 });
 
-test("importarMovimientos: dos cobros con el mismo id traban la cola de escritura", { todo: true }, async () => {
+test("importarMovimientos: dos cobros con el mismo id traban la cola de escritura", async () => {
   base.vaciar();
   const S = await storeNuevo();
   await S.acciones.vaciarTodo();

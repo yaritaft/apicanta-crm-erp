@@ -1,7 +1,7 @@
 /* Estrés del almacén: los ids que genera nuevoId() son únicos dentro de una tanda.
 
-   nuevoId = prefijo + Date.now() en base 36 + 5 caracteres al azar (36^5 ≈ 60 millones). Dentro de un mismo milisegundo, 1000 ids tienen una
-   chance de repetirse de 1000²/2/60M ≈ 0,8%, y un bucle rápido hace miles por milisegundo. Dos filas con el mismo id en un upsert hacen fallar
+   nuevoId = prefijo + Date.now() en base 36 + un contador de la sesión + 3 al azar (desde el 24/10; antes eran 5 al azar y sin contador, y dentro de un mismo milisegundo, 1000 ids tienen una
+   chance de repetirse de 1000²/2/60M ≈ 0,8%, y un bucle rápido hace miles por milisegundo). Dos filas con el mismo id en un upsert hacen fallar
    el pedido entero en PostgREST («ON CONFLICT DO UPDATE command cannot affect row a second time»): el store ya lo tuvo en la actividad y lo arregló ahí
    (Tanda.base + un contador). Acá se prueba el resto de las cargas masivas, con el reloj y el azar controlados para que sea repetible:
    importarLeads (un CSV de miles de filas) e importarMovimientos (el CSV de una pasarela). */
@@ -28,8 +28,8 @@ function conRelojYAzarControlados<T>(semilla: number, porMs: number, f: () => T)
 
 const repetidos = (ids: string[]) => ids.length - new Set(ids).size;
 
-/* BUG: nuevoId() no garantiza unicidad: la parte al azar es de 5 caracteres y no hay contador (ver abajo lo que provoca en las cargas masivas). */
-test("nuevoId: 4000 ids seguidos (unos 2000 por milisegundo) no se repiten, para ninguna de 30 semillas", { todo: true }, () => {
+/* ARREGLADO (24/10): nuevoId() lleva un contador de la sesión; antes la parte al azar era de 5 caracteres y sin contador. Quedan como guardia. */
+test("nuevoId: 4000 ids seguidos (unos 2000 por milisegundo) no se repiten, para ninguna de 30 semillas", () => {
   const conRepetidos: string[] = [];
   return (async () => {
     const S = await storeNuevo();
@@ -38,13 +38,12 @@ test("nuevoId: 4000 ids seguidos (unos 2000 por milisegundo) no se repiten, para
       const rep = repetidos(ids);
       if (rep) conRepetidos.push(`semilla ${semilla}: ${rep} repetido(s)`);
     }
-    /* BUG: nuevoId() no garantiza unicidad: la parte al azar es de 5 caracteres y no hay contador. */
     assert.deepEqual(conRepetidos, []);
   })();
 });
 
-test("importarLeads con un CSV de miles de filas no repite ids ni traba la cola de escritura", { todo: true }, async () => {
-  /* BUG: importarLeads() pone `id: nuevoId("lead")` a cada fila en un map(): con miles de filas dos comparten milisegundo y sufijo (el 10% de las
+test("importarLeads con un CSV de miles de filas no repite ids ni traba la cola de escritura", async () => {
+  /* Era un BUG hasta el 24/10 (nuevoId sin contador): importarLeads() pone `id: nuevoId("lead")` a cada fila en un map(): con miles de filas dos comparten milisegundo y sufijo (el 10% de las
      tandas de 5000 filas medidas con el reloj real). En memoria quedan dos leads con el mismo id; en la base, el upsert de ese lote falla entero
      con 21000 y la cola queda trabada para siempre (todo lo que se cargue después no se guarda, y al recargar se pierde el CSV). */
   const hallazgos: string[] = [];
@@ -62,7 +61,7 @@ test("importarLeads con un CSV de miles de filas no repite ids ni traba la cola 
   assert.deepEqual(hallazgos, []);
 });
 
-test("importarMovimientos con miles de cobros no repite ids", { todo: true }, async () => {
+test("importarMovimientos con miles de cobros no repite ids", async () => {
   /* BUG: igual que importarLeads, con `id: nuevoId("mov")` por fila. */
   const hallazgos: string[] = [];
   for (let semilla = 1; semilla <= 25 && hallazgos.length === 0; semilla++) {

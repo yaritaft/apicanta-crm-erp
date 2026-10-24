@@ -775,8 +775,15 @@ async function vaciarNube() {
 
 /* ---------- utilidades ---------- */
 
+/* La hora en base 36, un contador de la sesión y 3 letras al azar. El contador hace que dos ids de la misma sesión no se repitan
+   nunca, aunque salgan en el mismo milisegundo: antes eran 5 letras al azar y un CSV de miles de filas repetía alguno, la base
+   rechazaba el lote entero («ON CONFLICT DO UPDATE command cannot affect row a second time») y la cola de escritura quedaba
+   trabada (pruebas-estres/store/ids-unicos.test.ts). Las letras al azar separan dos sesiones (dos navegadores) en el mismo milisegundo. */
+let secuenciaDeIds = 0;
 export function nuevoId(prefijo: string): string {
-  return `${prefijo}_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
+  secuenciaDeIds = (secuenciaDeIds + 1) % 1_679_616; // 36^4
+  const azar = Math.random().toString(36).slice(2, 5).padEnd(3, "0");
+  return `${prefijo}_${Date.now().toString(36)}${secuenciaDeIds.toString(36).padStart(4, "0")}${azar}`;
 }
 
 const ahora = () => new Date().toISOString();

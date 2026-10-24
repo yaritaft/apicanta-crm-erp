@@ -6,7 +6,7 @@
 
    El patrón de los agujeros es el mismo: «lo suyo» de un closer se calcula con referencias que él mismo puede escribir (una cuota
    con su closerId, una venta con su closerId y el contactoId de otro, una llamada suya con el leadId de otro). Le alcanza con saber
-   el id de lo ajeno (los ids de venta son nuevoId(): prefijo + hora en base 36 + 5 letras al azar) para quedárselo.
+   el id de lo ajeno (los ids de venta son nuevoId(): prefijo + hora en base 36 + contador + letras al azar) para quedárselo.
 
    Necesita PGlite (ver pg-arnes.ts); sin él, se saltea. */
 import test, { after } from "node:test";

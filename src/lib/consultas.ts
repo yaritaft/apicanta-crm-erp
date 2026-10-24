@@ -10,7 +10,8 @@ import type { ID } from "./types";
    (supabase/consultas-clase.sql).
    ================================================================== */
 
-export type EstadoConsulta = "recibida" | "respondida" | "no_respondida";
+/* «sin_registro»: las consultas viejas del Google Form (importadas el 24/10): la planilla no dice si se respondieron. */
+export type EstadoConsulta = "recibida" | "respondida" | "no_respondida" | "sin_registro";
 
 export interface ConsultaClase {
   id: ID;
@@ -44,7 +45,7 @@ export const RESULTADOS_CONSULTA: { valor: ResultadoConsulta; nombre: string; su
 ];
 
 export const NOMBRE_ESTADO_CONSULTA: Record<EstadoConsulta, string> = {
-  recibida: "Sin responder", respondida: "Respondida", no_respondida: "No se respondió",
+  recibida: "Sin responder", respondida: "Respondida", no_respondida: "No se respondió", sin_registro: "Sin registro (Google Form)",
 };
 
 /* La clase empieza a las 18 h de Argentina (UTC-3, sin horario de verano): hasta entonces, la consulta es para ese jueves. */
