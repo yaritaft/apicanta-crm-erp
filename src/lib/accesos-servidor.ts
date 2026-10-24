@@ -193,6 +193,20 @@ export type MiembroTelegram = {
   can_invite_users?: boolean; can_restrict_members?: boolean;
 };
 
+/** Quien escribe /vincular es administrador del grupo (o un admin anónimo, que escribe como el grupo). Lili (23/10): los
+    alumnos vieron su «/vincular» en el historial, lo copiaron y el bot les contestaba a todos. */
+export async function esAdministradorDelGrupo(
+  m: { chat: ChatTelegram; from?: { id: number }; sender_chat?: { id: number | string } },
+  consultar: (metodo: string, cuerpo: Record<string, unknown>) => Promise<RespuestaTelegram> = telegram,
+): Promise<boolean> {
+  if (m.chat.type === "private") return false;
+  if (m.sender_chat && String(m.sender_chat.id) === String(m.chat.id)) return true;
+  if (!m.from?.id) return false;
+  const r = await consultar("getChatMember", { chat_id: m.chat.id, user_id: m.from.id }).catch(() => null);
+  const estado = (r?.result as { status?: string } | undefined)?.status;
+  return Boolean(r?.ok) && (estado === "creator" || estado === "administrator");
+}
+
 /* Así contesta Telegram cuando el bot ya no está en el grupo o el grupo no existe más: se saca de la lista. */
 const SIN_GRUPO = /chat not found|bot was kicked|bot is not a member|group chat was deactivated/i;
 

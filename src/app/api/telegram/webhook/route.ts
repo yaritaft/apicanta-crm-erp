@@ -1,12 +1,14 @@
 import { timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
 import { nubeServidor } from "@/lib/servidor";
-import { anotarGrupoDeTelegram, mudarGrupoDeTelegram, telegram, type ChatTelegram as Chat, type MiembroTelegram as Miembro } from "@/lib/accesos-servidor";
+import {
+  anotarGrupoDeTelegram, esAdministradorDelGrupo, mudarGrupoDeTelegram, telegram, type ChatTelegram as Chat, type MiembroTelegram as Miembro,
+} from "@/lib/accesos-servidor";
 
 /* ==================================================================
    POST /api/telegram/webhook — los avisos del bot de los accesos.
    - Lo agregan a un grupo o le cambian los permisos (my_chat_member), o
-     alguien escribe /vincular en un grupo: el grupo queda anotado en
+     un administrador escribe /vincular en un grupo: el grupo queda anotado en
      `telegram_grupos` para elegirlo en el programa. Si el grupo pasa a
      supergrupo, el id nuevo reemplaza al viejo en todos lados.
    - Alguien entra a un grupo con un link de los accesos (chat_member con
@@ -31,7 +33,10 @@ export async function POST(peticion: Request) {
   if (!secreto || !iguales(dado, secreto)) return NextResponse.json({ ok: false }, { status: 403 });
 
   const u = (await peticion.json().catch(() => ({}))) as {
-    message?: { chat: Chat; text?: string; migrate_to_chat_id?: number; migrate_from_chat_id?: number };
+    message?: {
+      chat: Chat; text?: string; message_id?: number; from?: { id: number }; sender_chat?: { id: number };
+      migrate_to_chat_id?: number; migrate_from_chat_id?: number;
+    };
     my_chat_member?: { chat: Chat; new_chat_member?: Miembro };
     chat_member?: { chat: Chat; new_chat_member?: Miembro; invite_link?: { invite_link?: string } };
   };
@@ -44,9 +49,15 @@ export async function POST(peticion: Request) {
       await mudarGrupoDeTelegram(db, String(m.migrate_from_chat_id), String(m.chat.id));
       await anotarGrupoDeTelegram(db, m.chat);
     }
+    /* Sólo un administrador del grupo vincula. A los demás no se les contesta y su mensaje se borra (si el bot puede),
+       para que el siguiente no lo copie del historial. */
     if (m && /^\/vincular(@\w+)?\b/i.test(m.text ?? "")) {
-      await anotarGrupoDeTelegram(db, m.chat);
-      await telegram("sendMessage", { chat_id: m.chat.id, text: "Listo: este grupo quedó vinculado a Apicanta para los accesos de alumnos." });
+      if (await esAdministradorDelGrupo(m)) {
+        await anotarGrupoDeTelegram(db, m.chat);
+        await telegram("sendMessage", { chat_id: m.chat.id, text: "Listo: este grupo quedó vinculado a Apicanta para los accesos de alumnos." });
+      } else if (m.message_id) {
+        await telegram("deleteMessage", { chat_id: m.chat.id, message_id: m.message_id }).catch(() => null);
+      }
     }
     const cm = u.chat_member;
     const link = cm?.invite_link?.invite_link;

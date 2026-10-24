@@ -161,3 +161,24 @@ test("Zoom: para volver a darle el acceso a alguien se busca su inscripción vie
   assert.equal(buscarRegistrante(lista, "nadie@ejemplo.com", null), null);
   assert.equal(buscarRegistrante(null, "x@y.com", null), null);
 });
+
+test("Telegram: /vincular sólo lo puede usar un administrador del grupo (Lili, 23/10: los alumnos lo copiaron del historial)", async () => {
+  const { esAdministradorDelGrupo } = await import("@/lib/accesos-servidor");
+  const grupo = { id: -1004492115716, type: "supergroup" };
+  const pedidos: Record<string, unknown>[] = [];
+  const con = (status: string | null, ok = true) => async (_m: string, cuerpo: Record<string, unknown>) => {
+    pedidos.push(cuerpo);
+    return ok ? { ok: true, result: status ? { status } : {} } : { ok: false, description: "Bad Request" };
+  };
+  assert.equal(await esAdministradorDelGrupo({ chat: grupo, from: { id: 7 } }, con("creator")), true);
+  assert.equal(await esAdministradorDelGrupo({ chat: grupo, from: { id: 7 } }, con("administrator")), true);
+  assert.deepEqual(pedidos[0], { chat_id: grupo.id, user_id: 7 });
+  assert.equal(await esAdministradorDelGrupo({ chat: grupo, from: { id: 8 } }, con("member")), false, "un alumno");
+  assert.equal(await esAdministradorDelGrupo({ chat: grupo, from: { id: 8 } }, con("restricted")), false);
+  assert.equal(await esAdministradorDelGrupo({ chat: grupo, from: { id: 8 } }, con(null, false)), false, "si Telegram no contesta, no");
+  assert.equal(await esAdministradorDelGrupo({ chat: grupo, from: { id: 8 } }, async () => { throw new Error("timeout"); }), false);
+  /* Un administrador anónimo escribe «como el grupo». */
+  assert.equal(await esAdministradorDelGrupo({ chat: grupo, sender_chat: { id: grupo.id } }, con("member")), true);
+  assert.equal(await esAdministradorDelGrupo({ chat: grupo, sender_chat: { id: -100999 } }, con("member")), false, "un canal ajeno no");
+  assert.equal(await esAdministradorDelGrupo({ chat: { id: 5, type: "private" }, from: { id: 5 } }, con("creator")), false, "por privado no se vincula");
+});
