@@ -109,7 +109,7 @@ export function seguimientoVacio(alumnoId: ID, cfg: ConfigSeguimiento, cuando = 
     cvCorregido: false, cvCorregidoEn: null, linkedinCorregido: false, linkedinCorregidoEn: null,
     notas: "", actualizadoEn: cuando, actualizadoPor: "",
     /* La ficha del cliente (lib/clientes-cs.ts): vacía hasta que Customer Success la cargue. */
-    numero: null, telefono: "", edad: null, stack: "", dni: "", domicilio: "", programas: [], planDePago: "",
+    numero: null, telefono: "", edad: null, nacimiento: null, stack: "", dni: "", domicilio: "", programas: [], planDePago: "",
     duracionMeses: null, fechaEgreso: null, sesionesMentor: null, contactoInicial: null, contactoSemana: null,
     acceso: "", followUp: "", garantia: "", accesoWhatsapp: false, accesoZoom: false, accesoWibo: false,
     contratoFirmado: "", estadoContrato: "", closerNombre: "", responsableCv: "", reporteManual: null,

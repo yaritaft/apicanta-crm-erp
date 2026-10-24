@@ -11,7 +11,7 @@ import { PAISES } from "@/lib/crm-tabla";
 import { configSeguimiento, hoyDelNegocio } from "@/lib/seguimiento";
 import { diaAInstante } from "@/lib/dia-negocio";
 import {
-  aNumero, CONTRATOS, DURACION_POR_PROGRAMA, ENTRE, listasCs, OPCIONES_ESTADO_ALUMNO, SESIONES_MENTOR, valorDeLista,
+  aNumero, CONTRATOS, DURACION_POR_PROGRAMA, edadDeNacimiento, ENTRE, listasCs, OPCIONES_ESTADO_ALUMNO, problemaDeNacimiento, SESIONES_MENTOR, valorDeLista,
   type FilaCliente,
 } from "@/lib/clientes-cs";
 import type { Alumno, SeguimientoAlumno } from "@/lib/types";
@@ -24,7 +24,7 @@ import type { Alumno, SeguimientoAlumno } from "@/lib/types";
    ================================================================== */
 
 interface Borrador {
-  nombre: string; email: string; telefono: string; pais: string; edad: string; dni: string; domicilio: string;
+  nombre: string; email: string; telefono: string; pais: string; edad: string; nacimiento: string; dni: string; domicilio: string;
   numero: string;
   inicio: string; programas: string[]; planDePago: string; duracion: string; egreso: string; mentor: string; stack: string;
   garantia: string; acceso: string; closer: string;
@@ -49,7 +49,7 @@ export function FichaClienteCs({ fila, onCerrar }: { fila: FilaCliente; onCerrar
   const [tocoProgramas, setTocoProgramas] = useState(false);
   const [b, setB] = useState<Borrador>(() => ({
     nombre: fila.nombre, email: fila.email, telefono: fila.telefono, pais: fila.pais,
-    edad: s.edad === null ? "" : String(s.edad), dni: s.dni, domicilio: s.domicilio,
+    edad: s.edad === null ? "" : String(s.edad), nacimiento: s.nacimiento ?? "", dni: s.dni, domicilio: s.domicilio,
     numero: s.numero === null ? "" : String(s.numero),
     inicio: fila.inicio, programas: fila.programas, planDePago: s.planDePago, duracion: s.duracionMeses === null ? "" : String(s.duracionMeses),
     egreso: s.fechaEgreso ?? "", mentor: s.sesionesMentor === null ? "" : String(s.sesionesMentor), stack: s.stack,
@@ -75,6 +75,7 @@ export function FichaClienteCs({ fila, onCerrar }: { fila: FilaCliente; onCerrar
   const mailOk = !b.email.trim() || /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(b.email.trim());
   const errores = {
     edad: edad.ok ? undefined : `Un número entre ${ENTRE.edad[0]} y ${ENTRE.edad[1]}.`,
+    nacimiento: b.nacimiento ? problemaDeNacimiento(b.nacimiento, hoyDelNegocio()) ?? undefined : undefined,
     duracion: duracion.ok ? undefined : `Meses, entre ${ENTRE.duracion[0]} y ${ENTRE.duracion[1]}.`,
     mentor: mentor.ok ? undefined : "De 0 a 3 sesiones.",
     numero: numero.ok ? undefined : "Un número entero desde 1.",
@@ -92,7 +93,7 @@ export function FichaClienteCs({ fila, onCerrar }: { fila: FilaCliente; onCerrar
     const cadencia = Number(b.cadencia);
     const nombre = b.nombre.trim();
     const cambiosSeg: Partial<SeguimientoAlumno> = {
-      ...(numero.n !== null ? { numero: numero.n } : {}), edad: edad.n, dni: b.dni.trim(), domicilio: b.domicilio.trim(),
+      ...(numero.n !== null ? { numero: numero.n } : {}), edad: edad.n, nacimiento: b.nacimiento || null, dni: b.dni.trim(), domicilio: b.domicilio.trim(),
       stack: valorDeLista(b.stack, listas.stacks), planDePago: b.planDePago.trim(), duracionMeses: duracion.n,
       fechaEgreso: b.egreso || null, sesionesMentor: mentor.n, garantia: valorDeLista(b.garantia, listas.garantias),
       acceso: valorDeLista(b.acceso, listas.accesos), followUp: valorDeLista(b.followUp, listas.followUps),
@@ -169,9 +170,19 @@ export function FichaClienteCs({ fila, onCerrar }: { fila: FilaCliente; onCerrar
               <Input value={b.pais} onChange={(ev) => set("pais", ev.target.value)} list="cs-paises" />
               <datalist id="cs-paises">{PAISES.map((p) => <option key={p} value={p} />)}</datalist>
             </Field>
-            <Field label="Edad" error={errores.edad} ayuda={fila.edadSugerida && fila.edad ? `Contestó ${fila.edad} al agendar.` : undefined}>
-              <Input type="number" min={ENTRE.edad[0]} max={ENTRE.edad[1]} value={b.edad} placeholder={fila.edadSugerida && fila.edad ? String(fila.edad) : ""} onChange={(ev) => set("edad", ev.target.value)} error={Boolean(errores.edad)} />
+            {/* Con la fecha de nacimiento la edad se calcula sola (Juan Cruz, 24/10); sin ella, se puede poner la edad a mano. */}
+            <Field label="Fecha de nacimiento" error={errores.nacimiento}>
+              <Input type="date" value={b.nacimiento} max={hoyDelNegocio()} onChange={(ev) => set("nacimiento", ev.target.value)} error={Boolean(errores.nacimiento)} />
             </Field>
+            {b.nacimiento ? (
+              <Field label="Edad" ayuda="Se calcula de la fecha de nacimiento.">
+                <Input value={String(edadDeNacimiento(b.nacimiento, hoyDelNegocio()) ?? "")} disabled aria-label="Edad (calculada)" />
+              </Field>
+            ) : (
+              <Field label="Edad" error={errores.edad} ayuda={fila.edadSugerida && fila.edad ? `Contestó ${fila.edad} al agendar.` : undefined}>
+                <Input type="number" min={ENTRE.edad[0]} max={ENTRE.edad[1]} value={b.edad} placeholder={fila.edadSugerida && fila.edad ? String(fila.edad) : ""} onChange={(ev) => set("edad", ev.target.value)} error={Boolean(errores.edad)} />
+              </Field>
+            )}
             <Field label="DNI"><Input value={b.dni} onChange={(ev) => set("dni", ev.target.value)} /></Field>
             <Field label="Domicilio" span2><Input value={b.domicilio} onChange={(ev) => set("domicilio", ev.target.value)} /></Field>
             <Field label="N.º de alumno" error={errores.numero}><Input type="number" min={1} value={b.numero} onChange={(ev) => set("numero", ev.target.value)} error={Boolean(errores.numero)} /></Field>

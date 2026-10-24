@@ -106,6 +106,7 @@ export function datosDeVenta(e: EstadoApp, venta: Pick<Venta, "id" | "contactoId
       telefono: (contacto as { telefono?: string } | undefined)?.telefono || lead?.telefono || seg?.telefono || "",
       documento: seg?.dni ?? "",
       domicilio: seg?.domicilio ?? "",
+      ...(seg?.nacimiento ? { nacimiento: seg.nacimiento } : {}),
       pais: persona.pais,
       modalidad: soloReserva ? modalidadDeReserva(plan.reduce((t, c) => t + c.monto, 0), moneda) : modalidadDeCuotas(plan, moneda),
       sesiones: seg?.sesionesMentor ?? 0,

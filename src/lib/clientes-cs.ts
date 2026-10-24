@@ -142,7 +142,7 @@ export function seguimientoCompleto(
   return {
     ...m,
     id: m.id || base.id,
-    numero: aNumero(m.numero), edad: aNumero(m.edad),
+    numero: aNumero(m.numero), edad: aNumero(m.edad), nacimiento: aDia(m.nacimiento),
     telefono: textoLimpio(m.telefono), stack: textoLimpio(m.stack), dni: textoLimpio(m.dni), domicilio: textoLimpio(m.domicilio),
     programas: aListaDeTextos(m.programas), planDePago: textoLimpio(m.planDePago),
     duracionMeses: aNumero(m.duracionMeses), fechaEgreso: aDia(m.fechaEgreso), sesionesMentor: aNumero(m.sesionesMentor),
@@ -287,6 +287,8 @@ export interface FilaCliente {
   pais: string;
   edad: number | null;
   edadSugerida: boolean;
+  /* La fecha de nacimiento: si está, la edad sale de ahí. */
+  nacimiento: string | null;
   stack: string;
   dni: string;
   domicilio: string;
@@ -342,6 +344,25 @@ export const ESTADO_ALUMNO_TEXTO: Record<Alumno["estado"], string> = {
   activo: "Activo", pausado: "Pausado", graduado: "Egresado", baja: "Baja",
 };
 export const SIN_TESTIMONIO = "Sin testimonio";
+
+/** La edad hoy de quien nació en `nacimiento` (aaaa-mm-dd). null si no hay fecha o no es creíble (ENTRE.edad). */
+export function edadDeNacimiento(nacimiento: string | null | undefined, hoy: string): number | null {
+  const n = /^(\d{4})-(\d{2})-(\d{2})$/.exec(nacimiento ?? "");
+  const h = /^(\d{4})-(\d{2})-(\d{2})/.exec(hoy);
+  if (!n || !h) return null;
+  const anios = Number(h[1]) - Number(n[1]) - (`${h[2]}-${h[3]}` < `${n[2]}-${n[3]}` ? 1 : 0);
+  return dentro(anios, ENTRE.edad);
+}
+
+/** Lo que falta en una fecha de nacimiento, en palabras (o null). */
+export function problemaDeNacimiento(v: string, hoy: string): string | null {
+  /* Un día que existe: «1993-02-30» tiene la forma pero no es un día. */
+  const real = esDia(v) && !Number.isNaN(Date.parse(`${v}T12:00:00Z`)) && new Date(`${v}T12:00:00Z`).toISOString().slice(0, 10) === v;
+  if (!real) return "La fecha de nacimiento tiene que ser un día válido.";
+  if (v > hoy) return "La fecha de nacimiento no puede ser en el futuro.";
+  if (edadDeNacimiento(v, hoy) === null) return `Con esa fecha tendría una edad fuera de ${ENTRE.edad[0]} a ${ENTRE.edad[1]} años: revisala.`;
+  return null;
+}
 
 const edadDeTexto = (t: string | undefined): number | null => {
   const m = /\d{1,3}/.exec(t ?? "");
@@ -405,7 +426,8 @@ export function filasClientes(e: EstadoApp, hoy: string): FilaCliente[] {
 
     const planSug = seg.planDePago ? "" : venta ? planDePagoDe(cuotasDe.get(venta.id) ?? []) : "";
     const llamada = contacto ? ultimaLlamada.get(contacto.id) : undefined;
-    const edadSug = seg.edad === null ? edadDeTexto(respuestaPerfil(llamada?.respuestas, "edad")) : null;
+    const edadNac = edadDeNacimiento(seg.nacimiento, hoy);
+    const edadSug = edadNac === null && seg.edad === null ? edadDeTexto(respuestaPerfil(llamada?.respuestas, "edad")) : null;
 
     const closerVenta = venta?.closerId ? equipo.get(venta.closerId) ?? "" : "";
     /* A las reservas y al Downsell de antes del 22/09 no se les hacía contrato: no es un contrato pendiente. */
@@ -423,7 +445,7 @@ export function filasClientes(e: EstadoApp, hoy: string): FilaCliente[] {
       numero: seg.numero, nombre: a.nombre, email: a.email,
       telefono: (contacto?.telefono ?? "").trim() || seg.telefono,
       pais: (a.pais ?? "").trim() || (contacto?.pais ?? "").trim(),
-      edad: seg.edad ?? edadSug, edadSugerida: seg.edad === null && edadSug !== null,
+      edad: edadNac ?? seg.edad ?? edadSug, edadSugerida: edadNac === null && seg.edad === null && edadSug !== null, nacimiento: seg.nacimiento,
       stack: seg.stack, dni: seg.dni, domicilio: seg.domicilio,
       inicio, egreso, egresoSugerido: egresoPropio === null && egreso !== null, inicioReal: arranca, pausa,
       programas, programasSugeridos: programasSug.length > 0,
@@ -450,7 +472,7 @@ export function filasClientes(e: EstadoApp, hoy: string): FilaCliente[] {
 /* ---------- Las columnas de Clientes ---------- */
 
 export type ClaveCliente =
-  | "numero" | "nombre" | "inicio" | "egreso" | "edad" | "stack" | "telefono" | "dni" | "domicilio" | "email"
+  | "numero" | "nombre" | "inicio" | "egreso" | "edad" | "nacimiento" | "stack" | "telefono" | "dni" | "domicilio" | "email"
   | "programa" | "plan" | "duracion" | "mentor" | "comentarios" | "contactoInicial" | "contactoSemana" | "acceso"
   | "followUp" | "reporte" | "ultimoContacto" | "garantia" | "wpp" | "zoom" | "wibo" | "contrato" | "pais" | "closer"
   | "estadoContrato" | "cv" | "linkedin" | "responsableCv" | "semanasSin" | "proximo" | "cadencia" | "estadoAlumno"
@@ -466,7 +488,9 @@ export const COLUMNAS_CLIENTES: ColumnaCs<FilaCliente, ClaveCliente>[] = [
   { clave: "inicio", titulo: "Fecha de inicio", grupo: "Programa", valores: (f) => uno(f.inicio), fecha: true, ancho: 120 },
   { clave: "egreso", titulo: "Fecha de egreso", grupo: "Programa", valores: (f) => uno(f.egreso), fecha: true, ancho: 120,
     ayuda: "Si no se cargó, es el inicio más la duración del programa." },
-  { clave: "edad", titulo: "Edad", grupo: "Datos", valores: (f) => numeroComoValor(f.edad), orden: (f) => f.edad ?? "", numerica: true, ancho: 80 },
+  { clave: "edad", titulo: "Edad", grupo: "Datos", valores: (f) => numeroComoValor(f.edad), orden: (f) => f.edad ?? "", numerica: true, ancho: 80,
+    ayuda: "Si tiene fecha de nacimiento, se calcula de ahí." },
+  { clave: "nacimiento", titulo: "Fecha de nacimiento", grupo: "Datos", valores: (f) => uno(f.nacimiento ?? ""), fecha: true, ancho: 130 },
   { clave: "stack", titulo: "Stack", grupo: "Programa", valores: (f) => uno(f.stack), ancho: 140 },
   { clave: "telefono", titulo: "Teléfono", grupo: "Datos", valores: (f) => uno(f.telefono), ancho: 150 },
   { clave: "dni", titulo: "DNI", grupo: "Datos", valores: (f) => uno(f.dni), ancho: 110 },
@@ -531,7 +555,7 @@ export type EditorCliente = "texto" | "largo" | "fecha" | "opciones" | "sugerenc
 
 /* Cómo se corrige cada columna. Las que no están no se tocan desde la tabla (salen de los reportes, de la venta o de los días). */
 export const EDITOR_CLIENTE: Partial<Record<ClaveCliente, EditorCliente>> = {
-  numero: "texto", nombre: "texto", inicio: "fecha", egreso: "fecha", edad: "texto", stack: "opciones", telefono: "texto", dni: "texto",
+  numero: "texto", nombre: "texto", inicio: "fecha", egreso: "fecha", edad: "texto", nacimiento: "fecha", stack: "opciones", telefono: "texto", dni: "texto",
   domicilio: "texto", email: "texto", programa: "ficha", plan: "sugerencias", duracion: "texto", mentor: "opciones", comentarios: "largo",
   contactoInicial: "fecha", contactoSemana: "fecha", acceso: "opciones", followUp: "opciones", reporte: "ficha", ultimoContacto: "fecha",
   garantia: "sugerencias", wpp: "si-no", zoom: "si-no", wibo: "si-no", contrato: "opciones", pais: "sugerencias", closer: "sugerencias",
@@ -566,6 +590,7 @@ const esMail = (v: string) => /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(v);
 /** Qué se guarda al corregir una celda. `valor` es lo que escribió la persona (o la opción elegida). */
 export function escrituraCliente(f: FilaCliente, clave: ClaveCliente, valor: string, listas: ListasCs): EscrituraCliente {
   const v = valor.trim();
+  const hoyDeEdicion = diaDeNegocio(new Date().toISOString());
   const titulo = MOTOR_CLIENTES.columna[clave].titulo;
   const seg = (cambios: Partial<SeguimientoAlumno>, texto = v): EscrituraCliente =>
     ({ tipo: "seguimiento", cambios, detalle: `${titulo}: ${texto || "vacío"}.` });
@@ -608,7 +633,14 @@ export function escrituraCliente(f: FilaCliente, clave: ClaveCliente, valor: str
       if (!Number.isInteger(Number(v)) || Number(v) < 1) return { tipo: "no", motivo: "El N.º de alumno tiene que ser un número entero desde 1." };
       return seg({ numero: Number(v) });
     }
-    case "edad": return numero(ENTRE.edad, "edad", "Edad");
+    case "edad":
+      if (f.nacimiento) return { tipo: "no", motivo: "La edad se calcula de la fecha de nacimiento: corregí esa." };
+      return numero(ENTRE.edad, "edad", "Edad");
+    case "nacimiento": {
+      if (!v) return seg({ nacimiento: null });
+      const problema = problemaDeNacimiento(v, hoyDeEdicion);
+      return problema ? { tipo: "no", motivo: problema } : seg({ nacimiento: v }, v);
+    }
     case "duracion": return numero(ENTRE.duracion, "duracionMeses", "Duración (meses)");
     case "mentor": {
       /* Se elige «2 sesiones»; también sirve escribir «2». */
@@ -656,6 +688,7 @@ export function valorEditableCliente(f: FilaCliente, clave: ClaveCliente): strin
   switch (clave) {
     case "numero": return f.numero === null ? "" : String(f.numero);
     case "edad": return f.edad === null || f.edadSugerida ? "" : String(f.edad);
+    case "nacimiento": return f.nacimiento ?? "";
     case "duracion": return f.seg.duracionMeses === null ? "" : String(f.seg.duracionMeses);
     case "mentor": return f.mentor === null ? "" : sesiones(f.mentor);
     case "inicio": return f.inicio;

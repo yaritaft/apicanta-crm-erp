@@ -6,8 +6,8 @@
 -- a pedir («Falta») aunque el alumno ya tuviera todo el onboarding hecho
 -- (Simon Perez). Ahora, cada vez que un contrato tiene alumno y datos
 -- (al crearlo, al corregirlo o cuando se le ata el alumno después),
--- completa lo que la ficha tiene VACÍO: DNI, domicilio y teléfono en
--- seguimiento_alumnos; país y mail en alumnos. Lo que Lili ya cargó no se
+-- completa lo que la ficha tiene VACÍO: DNI, domicilio, teléfono y fecha
+-- de nacimiento en seguimiento_alumnos; país y mail en alumnos. Lo que Lili ya cargó no se
 -- pisa nunca. Si el alumno todavía no tiene seguimiento, se le crea.
 -- Un contrato anulado o con error no completa nada.
 --
@@ -15,6 +15,9 @@
 -- alumnos (un closer corrigiendo los datos) y eso no tiene que fallar.
 -- Se puede volver a correr.
 -- ==================================================================
+
+-- La fecha de nacimiento (nacimiento.sql), por si este archivo corre antes.
+alter table public.seguimiento_alumnos add column if not exists nacimiento date;
 
 create or replace function public.completar_ficha_del_contrato(p_alumno text, p_estado text, p_datos jsonb)
 returns void
@@ -28,22 +31,31 @@ declare
   v_tel text := nullif(btrim(coalesce(p_datos ->> 'telefono', '')), '');
   v_pais text := nullif(btrim(coalesce(p_datos ->> 'pais', '')), '');
   v_mail text := nullif(lower(btrim(coalesce(p_datos ->> 'email', ''))), '');
+  v_nac date;
 begin
   if p_alumno is null or p_estado in ('anulado', 'error') then return; end if;
   if not exists (select 1 from alumnos where id = p_alumno) then return; end if;
-  if v_dni is null and v_dom is null and v_tel is null and v_pais is null and v_mail is null then return; end if;
+  /* Una fecha mal escrita no frena el contrato: se ignora. */
+  begin
+    if coalesce(p_datos ->> 'nacimiento', '') ~ '^\d{4}-\d{2}-\d{2}$' then v_nac := (p_datos ->> 'nacimiento')::date; end if;
+  exception when others then v_nac := null;
+  end;
+  if v_dni is null and v_dom is null and v_tel is null and v_pais is null and v_mail is null and v_nac is null then return; end if;
 
   update seguimiento_alumnos set
     dni = case when coalesce(btrim(dni), '') = '' and v_dni is not null then v_dni else dni end,
     domicilio = case when coalesce(btrim(domicilio), '') = '' and v_dom is not null then v_dom else domicilio end,
-    telefono = case when coalesce(btrim(telefono), '') = '' and v_tel is not null then v_tel else telefono end
+    telefono = case when coalesce(btrim(telefono), '') = '' and v_tel is not null then v_tel else telefono end,
+    nacimiento = coalesce(nacimiento, v_nac)
   where "alumnoId" = p_alumno
     and ((coalesce(btrim(dni), '') = '' and v_dni is not null)
       or (coalesce(btrim(domicilio), '') = '' and v_dom is not null)
-      or (coalesce(btrim(telefono), '') = '' and v_tel is not null));
+      or (coalesce(btrim(telefono), '') = '' and v_tel is not null)
+      or (nacimiento is null and v_nac is not null));
   if not exists (select 1 from seguimiento_alumnos where "alumnoId" = p_alumno) then
-    insert into seguimiento_alumnos (id, "alumnoId", dni, domicilio, telefono)
-    values ('seg_' || p_alumno, p_alumno, v_dni, v_dom, v_tel)
+    insert into seguimiento_alumnos (id, "alumnoId", dni, domicilio, telefono, nacimiento)
+    /* dni, domicilio y teléfono son «not null default ''»: un null explícito no toma el default. */
+    values ('seg_' || p_alumno, p_alumno, coalesce(v_dni, ''), coalesce(v_dom, ''), coalesce(v_tel, ''), v_nac)
     on conflict (id) do nothing;
   end if;
 
@@ -63,7 +75,12 @@ security definer
 set search_path = public
 as $$
 begin
-  perform public.completar_ficha_del_contrato(new."alumnoId", new.estado, new.datos);
+  /* Completar la ficha nunca frena guardar el contrato: si algo falla, queda un aviso en el registro de la base y listo. */
+  begin
+    perform public.completar_ficha_del_contrato(new."alumnoId", new.estado, new.datos);
+  exception when others then
+    raise warning 'contrato_completa_ficha (%): %', new.id, sqlerrm;
+  end;
   return new;
 end;
 $$;

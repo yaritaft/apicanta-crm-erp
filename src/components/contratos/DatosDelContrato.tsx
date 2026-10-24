@@ -2,7 +2,8 @@
 
 import React from "react";
 import { Chip, Field, Input, Select } from "@/components/ui/ui";
-import type { DatosContrato } from "@/lib/contratos";
+import { nacimientoValido, type DatosContrato } from "@/lib/contratos";
+import { diaDeNegocio } from "@/lib/dia-negocio";
 import { plantillaDelContrato, type Programa } from "@/lib/programas";
 import { modeloDeBienvenida, PERFILES } from "@/lib/bienvenida-alumno";
 
@@ -73,10 +74,16 @@ export function DatosDelContrato({ datos, onCambio, programas, programaId, onPro
       <Field label="Documento" ayuda="DNI, pasaporte o el que tenga.">
         <Input value={datos.documento} onChange={(ev) => onCambio({ documento: ev.target.value })} autoComplete="off" />
       </Field>
+      {/* Juan Cruz (24/10): no va al contrato; pasa a la ficha del alumno y de ahí sale su edad. */}
+      <Field label="Fecha de nacimiento" ayuda="No va al contrato: queda en su ficha y de ahí sale la edad."
+        error={datos.nacimiento && !nacimientoValido(datos.nacimiento) ? "Revisá la fecha." : undefined}>
+        <Input type="date" value={datos.nacimiento ?? ""} max={diaDeNegocio(new Date().toISOString())}
+          onChange={(ev) => onCambio({ nacimiento: ev.target.value || undefined })} error={Boolean(datos.nacimiento && !nacimientoValido(datos.nacimiento))} />
+      </Field>
       <Field label="País">
         <Input value={datos.pais} onChange={(ev) => onCambio({ pais: ev.target.value })} autoComplete="off" />
       </Field>
-      <Field label="Domicilio" span2>
+      <Field label="Domicilio">
         <Input value={datos.domicilio} onChange={(ev) => onCambio({ domicilio: ev.target.value })} autoComplete="off" />
       </Field>
       {reserva ? (

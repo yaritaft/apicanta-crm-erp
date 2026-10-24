@@ -384,6 +384,8 @@ export interface SeguimientoAlumno {
   /* Si la persona no tiene contacto en la app (un alumno importado): su teléfono. */
   telefono: string;
   edad: number | null;
+  /* La fecha de nacimiento (aaaa-mm-dd): con ella la edad se calcula sola (Juan Cruz, 24/10). La carga el closer en el contrato. */
+  nacimiento: string | null;
   /* Frontend, Backend, Full Stack, Data Engineer o Mobile Developer (la lista se ajusta). */
   stack: string;
   dni: string;

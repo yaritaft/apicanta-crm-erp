@@ -48,6 +48,9 @@ export interface DatosContrato {
   /* El perfil del alumno, que carga el closer (Lili, 22/10): Full Stack, Mobile Developer, Data Engineer o AI Engineer.
      Con eso le llega su roadmap al firmar (lib/bienvenida-alumno.ts). */
   perfil?: string;
+  /* La fecha de nacimiento (aaaa-mm-dd), opcional (Juan Cruz, 24/10): no va al documento; pasa sola a la ficha del alumno
+     (supabase/contrato-completa-ficha.sql) y de ahí sale su edad. */
+  nacimiento?: string;
 }
 
 export interface Contrato {
@@ -172,7 +175,18 @@ export function datosLimpios(d: Partial<DatosContrato> | undefined): DatosContra
     inicio: /^\d{4}-\d{2}-\d{2}$/.test(t(d?.inicio)) ? t(d?.inicio) : undefined,
     ...(d?.reserva === true ? { reserva: true } : {}),
     ...(esPerfil(d?.perfil) ? { perfil: d.perfil } : {}),
+    ...(nacimientoValido(t(d?.nacimiento)) ? { nacimiento: t(d?.nacimiento) } : {}),
   };
+}
+
+/** Una fecha de nacimiento creíble: un día real, no en el futuro y de alguien de 10 a 99 años. */
+export function nacimientoValido(v: string): boolean {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(v);
+  if (!m) return false;
+  const d = new Date(`${v}T12:00:00Z`);
+  if (Number.isNaN(d.getTime()) || d.toISOString().slice(0, 10) !== v) return false;
+  const anio = Number(m[1]), hoy = diaDeNegocio(new Date().toISOString());
+  return v <= hoy && Number(hoy.slice(0, 4)) - anio >= 10 && Number(hoy.slice(0, 4)) - anio <= 100;
 }
 
 /* ---------- Lo que va en la plantilla ---------- */

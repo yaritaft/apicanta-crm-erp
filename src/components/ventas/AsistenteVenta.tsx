@@ -1241,6 +1241,7 @@ function PasoContrato({ b, setB, e, esDueno, modo, encendido }: {
       telefono: (b.contactoTelefono || (contacto as { telefono?: string } | undefined)?.telefono || lead?.telefono || seg?.telefono || "").trim(),
       documento: seg?.dni ?? "",
       domicilio: seg?.domicilio ?? "",
+      ...(seg?.nacimiento ? { nacimiento: seg.nacimiento } : {}),
       pais: (b.contactoPais || contacto?.pais || lead?.pais || "").trim(),
       modalidad: b.soloReserva ? modalidadDeReserva(b.reserva, e.ajustes.monedaBase || "USD") : modalidadDeCuotas(b.cuotas, e.ajustes.monedaBase || "USD"),
       sesiones: seg?.sesionesMentor ?? 0,

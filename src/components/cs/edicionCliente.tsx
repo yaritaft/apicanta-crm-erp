@@ -9,6 +9,7 @@ import { puedeEditar } from "@/lib/permisos";
 import { corregirPersonaDesdeServicio } from "@/components/ficha/unificar-cliente";
 import { PAISES } from "@/lib/crm-tabla";
 import { formatoDia, textoDeAtraso } from "@/lib/seguimiento";
+import { fechaLarga } from "@/lib/format";
 import {
   aplicarEscritura, CONTRATOS, escrituraCliente, listasCs, MOTOR_CLIENTES, OPCIONES_ESTADO_ALUMNO, SESIONES_MENTOR,
   type ClaveCliente, type FilaCliente,
@@ -105,6 +106,8 @@ export function contenidoCliente(clave: ClaveCliente, f: FilaCliente, hoy: strin
       <span className="stack-1"><span className="t-num">{formatoDia(f.proximo, hoy)}</span><span className="t-sm t-subtle">{f.situacion === "no-contesta" ? "Dejó de contestar" : textoDeAtraso(f.atraso)}</span></span>
     );
     case "edad": return f.edad === null ? NADA : sug(String(f.edad), f.edadSugerida);
+    /* A las 12 de Argentina: «1993-05-10» a secas es la medianoche UTC, que en Argentina todavía es el 9. */
+    case "nacimiento": return f.nacimiento ? <span className="t-num">{fechaLarga(`${f.nacimiento}T15:00:00.000Z`)}</span> : NADA;
     case "duracion": return f.duracion === null ? NADA : sug(`${f.duracion} ${f.duracion === 1 ? "mes" : "meses"}`, f.duracionSugerida);
     case "mentor": return f.mentor === null ? NADA : <span className="t-num">{f.mentor} {f.mentor === 1 ? "sesión" : "sesiones"}</span>;
     case "programa": return f.programas.length

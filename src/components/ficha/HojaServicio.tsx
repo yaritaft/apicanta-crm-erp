@@ -5,7 +5,7 @@ import { AccesosAlumno } from "@/components/contratos/AccesosAlumno";
 import { SesionesZoom } from "@/components/contratos/SesionesZoom";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
-  BadgeCheck, Briefcase, CalendarCheck, CalendarClock, CalendarDays, CalendarPlus, Contact, CreditCard, FileSignature, Flag, GraduationCap,
+  BadgeCheck, Briefcase, Cake, CalendarCheck, CalendarClock, CalendarDays, CalendarPlus, Contact, CreditCard, FileSignature, Flag, GraduationCap,
   Hash, HeartHandshake, Home, IdCard, KeyRound, Layers, Link2, Mail, MapPin, MessageSquareText, Phone, PhoneCall, PhoneMissed, Plus,
   Pencil, Repeat2, ShieldCheck, Signal, StickyNote, Timer, UserRound, Users, Video,
 } from "lucide-react";
@@ -80,7 +80,7 @@ const CUENTAN: ClaveCliente[] = [
 
 const ICONO: Partial<Record<ClaveCliente, React.ReactNode>> = {
   numero: <Hash size={15} />, nombre: <UserRound size={15} />, email: <Mail size={15} />, telefono: <Phone size={15} />, pais: <MapPin size={15} />,
-  edad: <CalendarDays size={15} />, dni: <IdCard size={15} />, domicilio: <Home size={15} />, programa: <GraduationCap size={15} />,
+  edad: <CalendarDays size={15} />, nacimiento: <Cake size={15} />, dni: <IdCard size={15} />, domicilio: <Home size={15} />, programa: <GraduationCap size={15} />,
   inicio: <CalendarPlus size={15} />, egreso: <CalendarCheck size={15} />, duracion: <Timer size={15} />, plan: <CreditCard size={15} />,
   mentor: <Users size={15} />, garantia: <ShieldCheck size={15} />, acceso: <KeyRound size={15} />, closer: <Briefcase size={15} />,
   contrato: <FileSignature size={15} />, estadoContrato: <FileSignature size={15} />, stack: <Layers size={15} />,
@@ -313,7 +313,7 @@ function HojaDeUnServicio({ e, p, f, venta, producto, conChat, reserva }: {
     ...(conChat ? [] : [{ id: "chat" as Solapa, texto: "Chat", n: p.comentarios.length }]),
   ];
   const faltanEn = (claves: ClaveCliente[]) => claves.filter((c) => CUENTAN.includes(c) && estaVacio(f, c)).length;
-  const DE_DATOS: ClaveCliente[] = ["nombre", "email", "telefono", "pais", "edad", "dni", "domicilio"];
+  const DE_DATOS: ClaveCliente[] = ["nombre", "email", "telefono", "pais", "edad", "nacimiento", "dni", "domicilio"];
   const DE_PROGRAMA: ClaveCliente[] = ["programa", "inicio", "plan", "duracion", "stack"];
 
   return (
@@ -504,6 +504,8 @@ function HojaDeUnServicio({ e, p, f, venta, producto, conChat, reserva }: {
           {dato("telefono")}
           {dato("pais")}
           {dato("edad")}
+          {/* La edad sale de acá (Juan Cruz, 24/10): la carga el closer en el contrato y pasa sola a la ficha. */}
+          {dato("nacimiento")}
           {dato("dni")}
           {dato("domicilio")}
           {dato("numero", false)}
