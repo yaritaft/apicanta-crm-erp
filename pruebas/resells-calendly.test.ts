@@ -135,3 +135,12 @@ test("una reprogramación encuentra la agenda vieja por su LLAMADA, aunque sea u
   const f = filas.get(idResell("ses_2"))!;
   assert.deepEqual([f.estado, f.cashCollect, f.casoDeExito, f.notas, f.grabacion], ["Seguimiento", 300, true, "Quiere pensarlo", "https://fathom.video/x"], "hereda todo lo cargado, también la grabación");
 });
+
+test("una agenda de testimonio entra como caso de éxito, y si Customer Success dijo que no era, volver a traerla no lo pisa", async () => {
+  const { db, filas } = baseDeMentira();
+  await registrarResell(db, { ...AGENDA, testimonio: true });
+  assert.equal(filas.get("rs_ses_1")!.casoDeExito, true);
+  filas.set("rs_ses_1", { ...filas.get("rs_ses_1"), casoDeExito: false });
+  await registrarResell(db, { ...AGENDA, testimonio: true, fechaHora: "2026-10-08T19:00:00.000Z" });
+  assert.deepEqual([filas.get("rs_ses_1")!.casoDeExito, filas.get("rs_ses_1")!.fechaHora], [false, "2026-10-08T19:00:00.000Z"]);
+});

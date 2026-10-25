@@ -3,8 +3,10 @@ import { nubeServidor } from "@/lib/servidor";
 import { leerJson } from "@/lib/whatsapp-servidor";
 import { baseSupabaseReportes } from "@/lib/reportes-servidor";
 import { hoyParaReportes } from "@/lib/reportes-webhook";
-import { alumnoDeCodigo, ErrorSinTablaCodigos, formularioDelAlumno, recibirDelAlumno } from "@/lib/reporte-servidor";
-import { esCodigoValido, leerEnvio, limitador, MAX_BYTES_ENVIO, primerNombre } from "@/lib/reporte-enlace";
+import { alumnoDeCodigo, ErrorSinTablaCodigos, formularioDelAlumno, recibirDelAlumno, recibirSinCodigo } from "@/lib/reporte-servidor";
+import { esCodigoValido, leerEnvio, limitador, MAX_BYTES_ENVIO, origenDeLaApp, primerNombre } from "@/lib/reporte-enlace";
+import { leerEnvioSinCodigo } from "@/lib/reporte-sin-codigo";
+import { mandarLinkDelAlumno } from "@/lib/links-alumno-servidor";
 
 /* ==================================================================
    El formulario público del reporte semanal (/reporte).
@@ -24,6 +26,12 @@ import { esCodigoValido, leerEnvio, limitador, MAX_BYTES_ENVIO, primerNombre } f
    - nada de lo que contesta dice si un código existe más que para quien lo tiene
      (un código malo y uno que no existe dan el mismo mensaje).
 
+   Sin código (Lili, 24/10; lib/reporte-sin-codigo.ts):
+     { "sinCodigo": { "email", "nombre", "apellido", "telefono" }, "formulario", "respuestas" }
+   Si el mail es de un alumno, va a su ficha y le llega por mail su link personal (una vez por día); si no, queda en
+   `reportes_sin_alumno` para que Customer Success lo ate. Al que lo manda se le contesta lo mismo en los dos casos, sin nombre:
+   no sirve para averiguar quién es alumno.
+
    GET /api/reportes/enviar?c=<código> devuelve el primer nombre del alumno y el
    formulario que le toca por su programa (null si hay que preguntárselo), para
    saludarlo y mostrarle sus preguntas.
@@ -36,6 +44,9 @@ export const maxDuration = 30;
 
 const porIp = limitador(20, 60_000);
 const porCodigo = limitador(8, 5 * 60_000);
+const porMail = limitador(8, 5 * 60_000);
+/* El link personal por mail, a lo sumo uno por día y por alumno (corregir el reporte no le manda otro). */
+const linkPorAlumno = limitador(1, 24 * 3600_000);
 const SIN_CACHE = { "Cache-Control": "no-store" };
 const CODIGO_MALO = "No encontramos ese código. Copialo de nuevo del mensaje que te mandamos, o pedile a tu coordinadora que te lo pase.";
 
@@ -66,6 +77,8 @@ export async function POST(req: Request) {
   const crudo = leido.json as Record<string, unknown> | null;
   if (crudo && typeof crudo === "object" && String(crudo.sitio ?? "").trim()) return NextResponse.json({ ok: true }, { headers: SIN_CACHE });
 
+  if (crudo && typeof crudo === "object" && "sinCodigo" in crudo) return sinCodigo(req, leido.json);
+
   const v = leerEnvio(leido.json);
   if (!v.ok) return NextResponse.json({ ok: false, error: v.error, campo: v.campo }, { status: 400, headers: SIN_CACHE });
   if (porCodigo.golpea(v.valor.codigo)) return NextResponse.json({ ok: false, error: "Ya mandaste varios reportes seguidos. Esperá unos minutos." }, { status: 429, headers: SIN_CACHE });
@@ -83,6 +96,26 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, error: "No pudimos guardar tu reporte. Avisale a tu coordinadora." }, { status: 422, headers: SIN_CACHE });
     }
     return NextResponse.json({ ok: true, nombre: primerNombre(alumno.nombre), reemplazo: r.actualizados > 0 }, { headers: SIN_CACHE });
+  } catch (e) {
+    return errorInesperado(e);
+  }
+}
+
+async function sinCodigo(req: Request, json: unknown) {
+  const v = leerEnvioSinCodigo(json);
+  if (!v.ok) return NextResponse.json({ ok: false, error: v.error, campo: v.campo }, { status: 400, headers: SIN_CACHE });
+  if (porMail.golpea(v.valor.datos.email)) return NextResponse.json({ ok: false, error: "Ya mandaste varios reportes seguidos. Esperá unos minutos." }, { status: 429, headers: SIN_CACHE });
+  const db = nubeServidor();
+  if (!db) return NextResponse.json({ ok: false, error: "El reporte todavía no está habilitado." }, { status: 503, headers: SIN_CACHE });
+  try {
+    const r = await recibirSinCodigo(db, baseSupabaseReportes(db), v.valor, hoyParaReportes(), new Date().toISOString());
+    if (!r.ok) return NextResponse.json({ ok: false, error: r.error }, { status: r.status, headers: SIN_CACHE });
+    /* La semana que viene, que entre con su código: se lo mandamos a SU mail (si falla, el reporte ya quedó guardado igual). */
+    if (r.alumno && !linkPorAlumno.golpea(r.alumno.id)) {
+      const envio = await mandarLinkDelAlumno(db, origenDeLaApp(req), r.alumno, "reporte").catch((e: unknown) => ({ ok: false as const, motivo: "error" as const, error: e instanceof Error ? e.message : "error" }));
+      if (!envio.ok && envio.motivo === "error") console.error("[reportes/enviar] link por mail:", (envio.error ?? "").slice(0, 200));
+    }
+    return NextResponse.json({ ok: true, reemplazo: r.reemplazo }, { headers: SIN_CACHE });
   } catch (e) {
     return errorInesperado(e);
   }

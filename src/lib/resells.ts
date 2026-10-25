@@ -14,10 +14,16 @@ const sinTildes = (s: string) => s.toLowerCase().normalize("NFD").replace(/[̀-�
 /** Si una llamada de Calendly es de resell: el evento se llama «auditoría», «resell» o «próximos pasos» (el que usan para
     hablar con alumnos: 15 de los 73 resells del Airtable entraron por ahí, 19/10), o llegó con el utm_source «Resell». */
 export function esLlamadaDeResell(s: { tipo?: string | null; titulo?: string | null; utm?: Record<string, string> | null }): boolean {
-  if (/(auditor|resell|proximos pasos)/.test(sinTildes(`${s.tipo ?? ""} ${s.titulo ?? ""}`))) return true;
+  /* «Testimonio» (Lili, 24/10): la llamada en que el caso de éxito graba su testimonio y se le hace el pitch para renovar. */
+  if (/(auditor|resell|proximos pasos|testimonio)/.test(sinTildes(`${s.tipo ?? ""} ${s.titulo ?? ""}`))) return true;
   const src = s.utm?.utm_source ?? s.utm?.source ?? "";
   return /resell/.test(sinTildes(src));
 }
+
+/** Si es una llamada de testimonio: el evento «Testimonio» de Yari (casos de más de 5K) o el «Próximos pasos» de Mariano (los de
+    menos de 5K; Lili, 24/10). Esa agenda entra como caso de éxito: después de la llamada se carga si grabó y el link. */
+export const esLlamadaDeTestimonio = (s: { tipo?: string | null; titulo?: string | null }): boolean =>
+  /(testimonio|proximos pasos)/.test(sinTildes(`${s.tipo ?? ""} ${s.titulo ?? ""}`));
 
 /** «rs_<id de la llamada>»: una llamada de Calendly, un resell. */
 export const idResell = (sesionId: string) => `rs_${sesionId}`;
@@ -43,11 +49,13 @@ export interface AgendaDeResell {
   cancelada: boolean;
   /* La llamada que reprogramó esta, si la hay: su fila de resell le pasa lo que Customer Success cargó. */
   reprogramadaDe?: string;
+  /* El evento de testimonio: la agenda entra marcada como caso de éxito (sólo al crearse: si Customer Success dice que no era, queda así). */
+  testimonio?: boolean;
   ahora: string;
 }
 
 /** Lo que Customer Success lleva en cada resell: no lo escribe Calendly nunca, y una reprogramación lo hereda. */
-const DE_CUSTOMER_SUCCESS = ["estado", "cashCollect", "casoDeExito", "notas"] as const;
+const DE_CUSTOMER_SUCCESS = ["estado", "cashCollect", "casoDeExito", "notas", "testimonio", "linkTestimonio", "linkPitch"] as const;
 
 /**
  * Guarda la agenda de un resell. Sólo escribe lo que viene de Calendly (cuándo, quién, el contacto y si se canceló): lo que
@@ -77,13 +85,18 @@ export async function registrarResell(db: BaseDeResells, a: AgendaDeResell): Pro
       id, sesionId: a.sesionId, fechaHora: a.fechaHora, nombre: a.nombre, email: a.email, telefono: a.telefono,
       closer: a.closer, cancelada: false, origen: "calendly", actualizadoEn: a.ahora,
     };
+    let nueva: boolean | null = null;
+    const esNueva = async () => {
+      if (nueva === null) { const ya = await t.select("id").eq("id", id).limit(1); nueva = !ya.error && (ya.data ?? []).length === 0; }
+      return nueva;
+    };
+    if (a.testimonio && await esNueva()) fila.casoDeExito = true;
 
     /* Una reprogramación hereda lo cargado en la anterior (sólo la primera vez que entra la nueva). La anterior se busca por su
        LLAMADA y no por su id: una agenda importada del Airtable que se ató a su llamada tiene otro id («rs_imp_…») y, buscándola por
        id, quedaba repetida (Mariano, 21/10: Marcos Aguilo, Nicolás González). */
     if (a.reprogramadaDe && a.reprogramadaDe !== a.sesionId) {
-      const ya = await t.select("id").eq("id", id).limit(1);
-      if (!ya.error && (ya.data ?? []).length === 0) {
+      if (await esNueva()) {
         const v = await t.select(["id", ...DE_CUSTOMER_SUCCESS, "grabacion"].join(",")).eq("sesionId", a.reprogramadaDe).limit(1);
         const vieja = (v.data?.[0] ?? null) as Record<string, unknown> | null;
         if (!v.error && vieja) {

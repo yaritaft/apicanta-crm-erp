@@ -91,6 +91,12 @@ export function leerEnvio(json: unknown): { ok: true; valor: EnvioDelAlumno } | 
   const codigo = typeof d.codigo === "string" ? d.codigo.trim() : "";
   if (!esCodigoValido(codigo)) return { ok: false, error: "Ese código no es válido. Copialo de nuevo del mensaje que te mandamos.", campo: "codigo" };
 
+  const f = leerFormularioYRespuestas(d);
+  return f.ok ? { ok: true, valor: { codigo, formulario: f.formulario, respuestas: f.respuestas } } : f;
+}
+
+/** El formulario y sus respuestas revisadas: lo mismo con código y sin código (lib/reporte-sin-codigo.ts). */
+export function leerFormularioYRespuestas(d: Record<string, unknown>): { ok: true; formulario: FormularioReporte; respuestas: Respuestas } | { ok: false; error: string; campo?: string } {
   const antiguo = d.respuestas === undefined && d.formulario === undefined;
   const idFormulario = antiguo ? "hackear-it" : d.formulario;
   if (!esIdFormulario(idFormulario)) return { ok: false, error: "No se entendió de qué programa es este reporte. Actualizá la página y probá de nuevo.", campo: "formulario" };
@@ -102,7 +108,7 @@ export function leerEnvio(json: unknown): { ok: true; valor: EnvioDelAlumno } | 
     const p = formulario.preguntas.find((x) => x.id === v.campo);
     return { ok: false, error: p ? `${v.error} (${p.etiqueta ?? p.titulo})` : v.error, campo: v.campo || undefined };
   }
-  return { ok: true, valor: { codigo, formulario, respuestas: v.valor } };
+  return { ok: true, formulario, respuestas: v.valor };
 }
 
 /** Frena a quien insiste: `golpea(clave)` anota un intento y dice si ya pasó el máximo en la ventana. En memoria, por instancia. */

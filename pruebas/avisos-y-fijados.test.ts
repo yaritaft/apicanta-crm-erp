@@ -1,4 +1,5 @@
 import test from "node:test";
+import { readFileSync } from "node:fs";
 import assert from "node:assert/strict";
 import { alCambiarAvisos, avisarCambioDeAvisos, dondeEs, hace, marcarEnLista, sinLeer, sumarAviso, type Aviso } from "@/lib/avisos";
 import { textoDeNota, TIPOS_DE_NOTA } from "@/lib/nota-de-charla";
@@ -64,4 +65,21 @@ test("fijar Follow Ups: de entrada «No contesta» y «Agendar para resell», si
   assert.deepEqual(renglonesCartera(cartera, undefined, undefined, "No contesta").map((r) => r.id), ["a", "d"]);
   assert.deepEqual(renglonesCartera(cartera, undefined, "renovacion").map((r) => r.id), ["b"], "las etapas siguen como antes");
   assert.equal(renglonesCartera(cartera).length, 4);
+});
+
+test("«Contactados hoy / ayer» trae a los que se marcaron contactados ese día; el fijado cuenta a todos, no sólo a los en servicio", () => {
+  /* Lili (24/10): «el filtro de no contestan / agendar para resell no se me actualiza» (contaba sólo los que están en servicio, y
+     «Agendar para resell» casi siempre es de alguien que ya terminó) y «filtrar por la última fecha de contactado». */
+  const fila = (id: string, followUp: string, ultimoContacto: string | null, enServicio = true) =>
+    ({ id, nombre: id, programa: "Hackear IT", followUp, etapa: etapaDelFollowUp(followUp), ultimoContacto, enServicio }) as unknown as FilaCartera;
+  const cartera = [
+    fila("hoy", "Módulo 3", "2026-10-24T14:00:00.000Z"), fila("ayer", "No contesta", "2026-10-23T22:00:00.000Z"),
+    fila("viejo", "No contesta", "2026-10-01T12:00:00.000Z"), fila("termino", "Agendar para resell", "2026-10-24T09:00:00.000Z", false),
+  ];
+  assert.deepEqual(renglonesCartera(cartera, undefined, undefined, undefined, "2026-10-24").map((r) => r.id), ["hoy", "termino"]);
+  assert.deepEqual(renglonesCartera(cartera, undefined, undefined, undefined, "2026-10-23").map((r) => r.id), ["ayer"]);
+  assert.deepEqual(renglonesCartera(cartera, undefined, undefined, "Agendar para resell").map((r) => r.id), ["termino"], "aunque ya no esté en servicio");
+  const panel = readFileSync("src/components/mi-panel/PanelServicio.tsx", "utf8");
+  assert.match(panel, /renglonesCartera\(lista \|\| fijado \|\| contactadoEl \? panel\.cartera : base/, "con un fijado o «contactados» se mira toda la cartera");
+  assert.match(panel, /const cuenta = panel\.cartera\.filter\(\(f\) => mismoFollowUp/, "el número del fijado cuenta lo mismo que trae");
 });

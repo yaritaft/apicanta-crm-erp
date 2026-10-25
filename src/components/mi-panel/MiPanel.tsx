@@ -21,6 +21,7 @@ import { CobrosCargados, LlamadasDeHoy, ParaVos } from "./Listas";
 import { PanelServicio } from "./PanelServicio";
 import { TarjetaSimulacro } from "@/components/simulacros/Simulacros";
 import { TarjetaConsultas } from "@/components/consultas/Consultas";
+import { LlamadasParaCerrar } from "./LlamadasParaCerrar";
 import { TOMAN_SIMULACROS } from "@/lib/simulacros";
 import { PanelSetter } from "./PanelSetter";
 import { Rendimiento } from "./Rendimiento";
@@ -133,6 +134,8 @@ export function MiPanel() {
       {/* Yari y Nahuel toman los simulacros de entrevista de los martes (Lili, 23/10) y responden las consultas de los jueves (24/10). */}
       {TOMAN_SIMULACROS.includes(miembro.id) && <TarjetaSimulacro />}
       {TOMAN_SIMULACROS.includes(miembro.id) && <TarjetaConsultas />}
+      {/* Resells y testimonios que ya pasaron y no dicen cómo salieron (Lili, 24/10). */}
+      <LlamadasParaCerrar e={e} miembro={miembro} llamadas={datos.llamadasParaCerrar} viendoOtro={viendoOtro} />
 
       {esSetter ? (
         <PanelSetter datos={datos} rangoTxt={rangoTxt} ahora={ahora} puedeMarcar={!viendoOtro} />

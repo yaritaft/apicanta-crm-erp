@@ -1,0 +1,16 @@
+/* Reportes → Sin alumno (ReportesSinAlumno.tsx). */
+.rsa-lista { list-style: none; margin: 0; padding: 0; }
+.rsa-fila { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); padding: 14px 16px; border-bottom: 1px solid var(--border); }
+.rsa-fila:last-child { border-bottom: 0; }
+.rsa-fila__quien { display: flex; flex-direction: column; gap: 2px; flex: 1 1 260px; min-width: 0; }
+.rsa-fila__quien .t-sm { overflow-wrap: anywhere; }
+.rsa-fila__acciones { display: flex; flex-wrap: wrap; gap: var(--space-2); justify-content: flex-end; }
+.rsa-fila__ver { flex-basis: 100%; text-align: left; }
+.rsa-buscar { flex-basis: 100%; display: flex; flex-direction: column; gap: var(--space-2); max-width: 460px; }
+.rsa-buscar__lista { list-style: none; margin: 0; padding: 4px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface-100); }
+.rsa-buscar__lista > li.t-sm { padding: 8px 10px; }
+.rsa-buscar__op { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; width: 100%; padding: 8px 10px; border: 0; border-radius: var(--radius-sm); background: none; color: var(--ink); text-align: left; cursor: pointer; }
+.rsa-buscar__op:hover, .rsa-buscar__op:focus-visible { background: var(--surface-200); }
+.rsa-respuestas { flex-basis: 100%; display: grid; gap: 8px; margin: 0; padding: 12px; border-radius: var(--radius-md); background: var(--surface-100); }
+.rsa-respuestas dt { font-size: 12px; color: var(--ink-subtle); }
+.rsa-respuestas dd { margin: 2px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }

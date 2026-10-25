@@ -484,6 +484,10 @@ export interface Resell {
   notas: string;
   /* El link de la grabación de la llamada (Fathom); si está vacío y la llamada vino de Calendly, se muestra la de la llamada. */
   grabacion?: string;
+  /* La llamada de testimonio de un caso de éxito (Lili, 24/10): si grabó, el link del testimonio y el del pitch (la venta). */
+  testimonio?: "" | "Grabó" | "Se reagenda" | "No quiso grabar";
+  linkTestimonio?: string;
+  linkPitch?: string;
   cancelada: boolean;
   origen: "calendly" | "manual" | "importado";
   creadoEn: string;

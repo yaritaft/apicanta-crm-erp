@@ -2,9 +2,11 @@
 
 import React, { useMemo } from "react";
 import Link from "next/link";
-import { AlertTriangle, Check, ClipboardList, Clock, Download, Info, Search, X } from "lucide-react";
+import { AlertTriangle, Check, ClipboardList, Clock, Download, Info, Link2, Search, X } from "lucide-react";
 import { useAbrirFicha } from "@/components/ficha/abrir";
 import { EnlaceDeReporte } from "@/components/cs/EnlaceDeReporte";
+import { linkGeneralDelReporte, ReportesSinAlumno } from "@/components/reportes/ReportesSinAlumno";
+import { useSinAlumno } from "@/components/reportes/sin-alumno-nube";
 import { Ayuda, Badge, Bar, Button, Card, CardHead, Chip, Empty, Input, Persona, StatCard, Tabs, Tag } from "@/components/ui/ui";
 import { AreaChart, BarChart } from "@/components/charts/charts";
 import { Columna, DataTable } from "@/components/ui/DataTable";
@@ -23,7 +25,7 @@ import {
 import { fechaLarga, num, pct } from "@/lib/format";
 import type { EstadoReporte, Reporte } from "@/lib/types";
 
-type Vista = "dashboard" | "tabla" | "alumnos";
+type Vista = "dashboard" | "tabla" | "alumnos" | "sin-alumno";
 type Metrica = "horas" | "postulaciones" | "entrevistas";
 
 const ETIQUETA: Record<EstadoReporte, { texto: string; variante: "success" | "accent" | "danger" | "neutral" }> = {
@@ -85,7 +87,9 @@ export default function Reportes() {
 
   const [rango, setRango] = useRangoURL("mes");
   const [enURL, setEnURL] = useParamsURL(VISTA_REPORTES);
-  const vista: Vista = enURL.seccion === "tabla" || enURL.vista === "tabla" ? "tabla" : enURL.seccion === "alumnos" ? "alumnos" : "dashboard";
+  const vista: Vista = enURL.seccion === "tabla" || enURL.vista === "tabla" ? "tabla" : enURL.seccion === "alumnos" ? "alumnos" : enURL.seccion === "sin-alumno" ? "sin-alumno" : "dashboard";
+  /* Los que se completaron sin código con un mail que no es de ningún alumno (Lili, 24/10). */
+  const sinAlumno = useSinAlumno();
   const cambiarVista = (v: Vista) => setEnURL({ seccion: v }, enURL.vista === "tabla" ? { vista: null } : {});
   const [busca, setBusca] = useBusquedaURL("q", ["pag"]);
   const filtro: "todos" | EstadoReporte = ESTADOS.includes(enURL.estado as EstadoReporte) ? (enURL.estado as EstadoReporte) : "todos";
@@ -327,9 +331,10 @@ export default function Reportes() {
           { valor: "dashboard", texto: "Dashboard" },
           { valor: "tabla", texto: `Tabla · ${num(total)}` },
           { valor: "alumnos", texto: "Por alumno" },
+          { valor: "sin-alumno", texto: sinAlumno.lista.length > 0 ? `Sin alumno · ${num(sinAlumno.lista.length)}` : "Sin alumno" },
         ]} />
         <span className="toolbar__fin">
-          {vista !== "alumnos" && (
+          {vista !== "alumnos" && vista !== "sin-alumno" && (
             <DateRangePicker
               value={rango} minDate={primeraSemana} onApply={setRango}
               footerNota="Semanas que tocan el período · hora de Argentina"
@@ -528,6 +533,12 @@ export default function Reportes() {
               <Input icono={<Search size={16} />} value={busca} onChange={(ev) => setBusca(ev.target.value)} placeholder="Buscar por alumno o mail" aria-label="Buscar por alumno" />
             </div>
             <span className="t-sm t-subtle">Cada alumno tiene un link de por vida: se le pasa una vez y lo completa todas las semanas.</span>
+            <span className="rep-barra__acciones">
+              <Button sm variante="secondary" icono={<Link2 size={14} />} title="El link para todos: con su código entra directo; sin código, pone su mail, nombre, apellido y WhatsApp"
+                onClick={() => { void navigator.clipboard?.writeText(linkGeneralDelReporte()).then(() => toast("Link general copiado: el que no tiene su código lo completa con su mail.")); }}>
+                Copiar el link general
+              </Button>
+            </span>
           </div>
           <Card style={{ padding: 0 }}>
             <DataTable
@@ -538,6 +549,8 @@ export default function Reportes() {
           </Card>
         </div>
       )}
+
+      {vista === "sin-alumno" && <ReportesSinAlumno {...sinAlumno} />}
 
       <Ayuda titulo="Cómo se cuenta" icono={<Info size={18} />}>
         Cada alumno activo o pausado debe un reporte por semana desde que empezó; si no lo mandó, figura como

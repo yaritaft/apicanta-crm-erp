@@ -21,7 +21,7 @@ import { puedeEditar } from "@/lib/permisos";
 import { formatoDia, hoyDelNegocio } from "@/lib/seguimiento";
 import { diaDeNegocio } from "@/lib/dia-negocio";
 import {
-  alternarEstadoResell, coincideResell, COLUMNAS_SUMADAS_RESELLS, estadosDeResell, filasResells, resellAbierto, listasCs, MOTOR_RESELLS, ORDEN_RESELLS, resellNormal, VISIBLES_RESELLS, type ClaveResell, type FilaResell,
+  alternarEstadoResell, coincideResell, COLUMNAS_SUMADAS_RESELLS, esDeTestimonio, estadosDeResell, filasResells, RESULTADOS_TESTIMONIO, resellAbierto, listasCs, MOTOR_RESELLS, ORDEN_RESELLS, resellNormal, VISIBLES_RESELLS, type ClaveResell, type FilaResell,
 } from "@/lib/clientes-cs";
 import { leerMontoCs } from "@/lib/importar-cs";
 import { money } from "@/lib/format";
@@ -46,7 +46,9 @@ const HORA = new Intl.DateTimeFormat("es-AR", { timeZone: "America/Argentina/Bue
 const DE_CALENDLY: ClaveResell[] = ["fechaHora", "nombre", "email", "telefono", "closer"];
 const EDITOR: Partial<Record<ClaveResell, "texto" | "largo" | "opciones" | "si-no">> = {
   nombre: "texto", email: "texto", telefono: "texto", closer: "texto", estado: "opciones", cash: "texto", caso: "si-no", grabacion: "texto", notas: "largo",
+  testimonio: "opciones", linkTestimonio: "texto", linkPitch: "texto",
 };
+const esLink = (v: string) => !v || /^https?:\/\/\S+\.\S+/.test(v);
 
 export function ResellsCs() {
   const e = useEstado();
@@ -106,6 +108,15 @@ export function ResellsCs() {
       }
       case "caso": return guardar(r, { casoDeExito: v === "Sí" }, titulo, v === "Sí" ? "Sí" : "No");
       case "grabacion": return guardar(r, { grabacion: v }, titulo, v ? "cargada" : "vacía");
+      case "testimonio": {
+        const t = (RESULTADOS_TESTIMONIO as readonly string[]).includes(v) ? (v as Resell["testimonio"]) : "";
+        /* Un testimonio cargado marca la agenda como caso de éxito. */
+        return guardar(r, { testimonio: t, ...(t ? { casoDeExito: true } : {}) }, titulo, t || "vacío");
+      }
+      case "linkTestimonio":
+      case "linkPitch":
+        if (!esLink(v)) { toast("El link tiene que empezar con https://", "err"); return; }
+        return guardar(r, { [clave]: v } as Partial<Resell>, titulo, v ? "cargado" : "vacío");
       case "notas": return guardar(r, { notas: valor }, titulo, v ? "con texto" : "");
       case "nombre": return guardar(r, { nombre: v }, titulo, v);
       case "email":
@@ -128,6 +139,12 @@ export function ResellsCs() {
         ? <a className="link" href={f.grabacion} target="_blank" rel="noopener noreferrer" onClick={(ev) => ev.stopPropagation()}><ExternalLink size={13} /> Verla</a>
         : NADA;
       case "notas": return <Recorte texto={r.notas} />;
+      case "testimonio": return r.testimonio ? <Pastilla texto={r.testimonio} tono={r.testimonio === "Grabó" ? "ok" : "neutra"} />
+        : esDeTestimonio(r) ? <Pastilla texto="Sin cargar" /> : NADA;
+      case "linkTestimonio": case "linkPitch": {
+        const l = clave === "linkTestimonio" ? r.linkTestimonio : r.linkPitch;
+        return l ? <a className="link" href={l} target="_blank" rel="noopener noreferrer" onClick={(ev) => ev.stopPropagation()}><ExternalLink size={13} /> Verlo</a> : NADA;
+      }
       case "nombre": return <Recorte texto={r.nombre} />;
       case "email": return <Recorte texto={r.email} />;
       case "telefono": return r.telefono ? <Telefono valor={r.telefono} pais={paisDe(r)} compacto /> : NADA;
@@ -143,6 +160,9 @@ export function ResellsCs() {
       case "caso": return r.casoDeExito ? "Sí" : "No";
       case "grabacion": return f.grabacion;
       case "notas": return r.notas;
+      case "testimonio": return r.testimonio ?? "";
+      case "linkTestimonio": return r.linkTestimonio ?? "";
+      case "linkPitch": return r.linkPitch ?? "";
       case "nombre": return r.nombre;
       case "email": return r.email;
       case "telefono": return r.telefono;
@@ -194,7 +214,7 @@ export function ResellsCs() {
       <CeldaEditable
         editor={editor} valor={valorEditable(clave, f)} titulo={titulo} abierta={abierta}
         onAbrir={() => setEditando({ id: f.id, clave })} onCerrar={() => setEditando((x) => (x?.id === f.id && x.clave === clave ? null : x))}
-        onGuardar={(v) => guardarCelda(f, clave, v)} opciones={clave === "estado" ? opciones(listas.estadosResell) : undefined} vaciable multiple={clave === "estado"}
+        onGuardar={(v) => guardarCelda(f, clave, v)} opciones={clave === "estado" ? opciones(listas.estadosResell) : clave === "testimonio" ? opciones([...RESULTADOS_TESTIMONIO]) : undefined} vaciable multiple={clave === "estado"}
       >
         {contenido(clave, f)}
       </CeldaEditable>

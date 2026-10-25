@@ -1,11 +1,10 @@
 import { NextResponse } from "next/server";
 import { nubeServidor } from "@/lib/servidor";
 import { leerJson } from "@/lib/whatsapp-servidor";
-import { configBienvenida } from "@/lib/contratos-servidor";
-import { htmlDeBienvenida } from "@/lib/bienvenida-alumno";
-import { codigoDeAlumno, configResend, enviarPorResend, ErrorSinTablaCodigos } from "@/lib/reporte-servidor";
+import { alumnoPorMail, configResend, ErrorSinTablaCodigos } from "@/lib/reporte-servidor";
+import { mandarLinkDelAlumno } from "@/lib/links-alumno-servidor";
 import { limitador, origenDeLaApp } from "@/lib/reporte-enlace";
-import { enlaceDelAlumno, esLinkDelAlumno, esMailValido, literalParaIlike, mailDelLink } from "@/lib/links-alumno";
+import { esLinkDelAlumno, esMailValido } from "@/lib/links-alumno";
 
 /* ==================================================================
    POST /api/simulacros/mi-link  { "email": "…", "para"?: "simulacro" | "consulta" | "reporte" }
@@ -43,19 +42,11 @@ export async function POST(req: Request) {
   const cfg = configResend();
   if (!db || !cfg) return responder({ ok: false, error: "Ahora no podemos mandarte el mail: pedile tu link a tu coordinadora." }, 503);
   try {
-    const r = await db.from("alumnos").select("id, nombre, email, estado, inicio").ilike("email", literalParaIlike(email)).limit(10);
-    if (r.error) throw new Error(r.error.message);
-    /* Si el mail está en más de una ficha: la del alumno activo y, entre esas, la más nueva. */
-    const alumno = ((r.data ?? []) as { id: string; nombre: string; email: string; estado: string | null; inicio: string | null }[])
-      .sort((x, y) => Number(y.estado === "activo") - Number(x.estado === "activo") || (y.inicio ?? "").localeCompare(x.inicio ?? ""))[0];
+    const alumno = await alumnoPorMail(db, email);
     if (!alumno) return responder({ ok: true, mensaje: LISTO });
-    const codigo = await codigoDeAlumno(db, alumno.id);
-    if (!codigo) return responder({ ok: true, mensaje: LISTO });
-    const { asunto, texto } = mailDelLink(para, { nombre: alumno.nombre, enlace: enlaceDelAlumno(para, origenDeLaApp(req), codigo), codigo });
-    const responderA = (await configBienvenida(db).catch(() => null))?.responderA;
-    const envio = await enviarPorResend(cfg, { para: alumno.email, asunto, texto, html: htmlDeBienvenida(texto), responderA: responderA && esMailValido(responderA) ? responderA : undefined });
-    if (!envio.ok) {
-      console.error("[simulacros/mi-link]", envio.error);
+    const envio = await mandarLinkDelAlumno(db, origenDeLaApp(req), alumno, para);
+    if (!envio.ok && envio.motivo !== "sin-codigo") {
+      console.error("[simulacros/mi-link]", envio.error ?? envio.motivo);
       return responder({ ok: false, error: "No pudimos mandarte el mail. Probá de nuevo en un rato o pedile tu link a tu coordinadora." }, 502);
     }
     return responder({ ok: true, mensaje: LISTO });

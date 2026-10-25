@@ -3,7 +3,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
-  CalendarClock, Check, ChevronRight, FileSignature, FileWarning, Hourglass, PhoneCall, Pin, PlayCircle, Repeat2, UserPlus, Video, X,
+  CalendarCheck, CalendarClock, Check, ChevronRight, FileSignature, FileWarning, Hourglass, PhoneCall, Pin, PlayCircle, Repeat2, UserPlus, Video, X,
 } from "lucide-react";
 import { Telefono } from "@/components/ui/Telefono";
 import { NADA, Recorte, TablaCs } from "@/components/cs/TablaCs";
@@ -16,7 +16,7 @@ import { useEstado } from "@/lib/store";
 import { useAcceso } from "@/lib/acceso";
 import { useParamsURL } from "@/lib/useParamsURL";
 import { nivelDeRuta } from "@/lib/permisos";
-import { formatoDia, hoyDelNegocio } from "@/lib/seguimiento";
+import { formatoDia, hoyDelNegocio, sumarDias } from "@/lib/seguimiento";
 import {
   COLUMNAS_CARTERA, coincideCartera, ETAPAS_DEL_ALUMNO, MOTOR_CARTERA, ORDEN_CARTERA, ORDEN_ETAPAS_CARTERA, ORDEN_LISTA, panelDeServicio,
   renglonesCartera, VISIBLES_CARTERA, VISIBLES_LISTA, type ClaveCartera, type ContratoPendiente,
@@ -25,6 +25,7 @@ import {
 import type { ColumnaCs } from "@/lib/tabla-cs";
 import type { MiembroEquipo } from "@/lib/types";
 import { posiblesDuplicados } from "@/lib/duplicados";
+import { useSinAlumno } from "@/components/reportes/sin-alumno-nube";
 import { usePreferencia } from "@/lib/preferencias";
 import { listasCs } from "@/lib/clientes-cs";
 import { alumnosRepetidos } from "@/lib/alumnos-repetidos";
@@ -79,7 +80,8 @@ export function PanelServicio({ miembro, viendoOtro }: { miembro: MiembroEquipo;
   const { acceso } = useAcceso();
   const gestos = useGestos();
   const abrirFicha = useAbrirFicha();
-  const [v, cambiar] = useParamsURL({ lista: "", etapa: "", base: "", fu: "" });
+  const [v, cambiar] = useParamsURL({ lista: "", etapa: "", base: "", fu: "", contacto: "" });
+  const sinAlumno = useSinAlumno();
   const [ahora, setAhora] = useState(() => Date.now());
   useEffect(() => { const t = window.setInterval(() => setAhora(Date.now()), 60000); return () => window.clearInterval(t); }, []);
 
@@ -108,6 +110,10 @@ export function PanelServicio({ miembro, viendoOtro }: { miembro: MiembroEquipo;
   const fijadosPref = usePreferencia("panel-servicio:fijados", validarFijados);
   const fijados = fijadosPref.valor ?? FIJADOS_POR_DEFECTO;
   const fijado = !lista && !etapa && v.fu ? v.fu : undefined;
+  /* «Contactados hoy / ayer»: a quién le habló, para volver a cargar la charla y el Follow Up. */
+  const ayer = sumarDias(hoy, -1);
+  const contactadoEl = !lista && !etapa && !fijado ? (v.contacto === "hoy" ? hoy : v.contacto === "ayer" ? ayer : undefined) : undefined;
+  const contactadosEl = (dia: string) => panel.cartera.filter((f) => (f.ultimoContacto ?? "").slice(0, 10) === dia).length;
   const opcionesFollowUp = useMemo(() => {
     const deLaLista = listasCs(e.ajustes.seguimiento).followUps;
     const cargados = panel.cartera.map((f) => f.followUp).filter((x) => x && !deLaLista.some((o) => mismoFollowUp(o, x)));
@@ -118,7 +124,10 @@ export function PanelServicio({ miembro, viendoOtro }: { miembro: MiembroEquipo;
     fijadosPref.guardar(fijados.filter((x) => !mismoFollowUp(x, fu)));
     if (fijado && mismoFollowUp(fijado, fu)) cambiar({ fu: null }, PRIMERA_HOJA);
   };
-  const renglones = useMemo(() => renglonesCartera(lista ? panel.cartera : base, lista, etapa, fijado), [panel, base, lista, etapa, fijado]);
+  /* Un Follow Up fijado trae a TODOS los que lo tienen, estén o no en servicio: «Agendar para resell» casi siempre es de alguien
+     que ya terminó, y con la base «en servicio» no aparecía (Lili, 24/10: «no se me actualiza el filtro»). */
+  const renglones = useMemo(() => renglonesCartera(lista || fijado || contactadoEl ? panel.cartera : base, lista, etapa, fijado, contactadoEl),
+    [panel, base, lista, etapa, fijado, contactadoEl]);
   const irACartera = () => window.setTimeout(() => document.getElementById("ps-cartera")?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
 
   /* Alumnos con dos fichas (el mismo teléfono, otro mail; Lili, 22/10). Se abre la ficha que tiene más historia: ahí está
@@ -304,14 +313,26 @@ export function PanelServicio({ miembro, viendoOtro }: { miembro: MiembroEquipo;
           <span className="ps-fijados__rot"><Pin size={13} aria-hidden />Fijados</span>
           {fijados.map((fu) => {
             const on = Boolean(fijado && mismoFollowUp(fijado, fu));
-            const cuenta = base.filter((f) => mismoFollowUp(f.followUp, fu)).length;
+            const cuenta = panel.cartera.filter((f) => mismoFollowUp(f.followUp, fu)).length;
             return (
               <span key={fu} className={`ps-fijado${on ? " ps-fijado--on" : ""}`}>
                 <button type="button" aria-pressed={on} title={`Los alumnos con el Follow Up «${fu}»`}
-                  onClick={() => { cambiar({ fu: on ? null : fu, lista: null, etapa: null }, lista ? TABLA_LIMPIA : PRIMERA_HOJA); if (!on) irACartera(); }}>
+                  onClick={() => { cambiar({ fu: on ? null : fu, lista: null, etapa: null, contacto: null }, lista ? TABLA_LIMPIA : PRIMERA_HOJA); if (!on) irACartera(); }}>
                   <b className={cuenta === 0 ? "ps-fijado__cero" : undefined}>{cuenta}</b>{fu}
                 </button>
                 <button type="button" className="ps-fijado__sacar" aria-label={`Desfijar «${fu}»`} title="Desfijar" onClick={() => desfijar(fu)}><X size={12} /></button>
+              </span>
+            );
+          })}
+          {(["hoy", "ayer"] as const).map((cual) => {
+            const on = v.contacto === cual && Boolean(contactadoEl);
+            const cuenta = contactadosEl(cual === "hoy" ? hoy : ayer);
+            return (
+              <span key={cual} className={`ps-fijado ps-fijado--contacto${on ? " ps-fijado--on" : ""}`}>
+                <button type="button" aria-pressed={on} title={`Los alumnos que marcaste «Lo contacté» ${cual}: para cargar cómo fue cada charla y su Follow Up`}
+                  onClick={() => { cambiar({ contacto: on ? null : cual, fu: null, lista: null, etapa: null }, lista ? TABLA_LIMPIA : PRIMERA_HOJA); if (!on) irACartera(); }}>
+                  <CalendarCheck size={12} aria-hidden /><b className={cuenta === 0 ? "ps-fijado__cero" : undefined}>{cuenta}</b>{cual === "hoy" ? "Contactados hoy" : "Ayer"}
+                </button>
               </span>
             );
           })}
@@ -395,6 +416,12 @@ export function PanelServicio({ miembro, viendoOtro }: { miembro: MiembroEquipo;
             title="La misma persona cargada dos veces (una con cada mail, o la venta con otro nombre): se ve la mitad de su historia en cada ficha.">
             <b>{repetidos.length}</b> {repetidos.length === 1 ? "alumno con dos fichas" : "alumnos con dos fichas"} (mismo teléfono o mail)
           </button>
+        )}
+        {sinAlumno.lista.length > 0 && (
+          <Link className="ps-dato" href="/reportes?seccion=sin-alumno"
+            title="Completaron el reporte semanal sin código con un mail que no es de ningún alumno: atalos o crealos.">
+            <b>{sinAlumno.lista.length}</b> {sinAlumno.lista.length === 1 ? "reporte semanal sin alumno" : "reportes semanales sin alumno"}
+          </Link>
         )}
         <span className="ps-dato ps-fecha">Datos al {formatoDia(hoy, hoy)}</span>
       </div>

@@ -185,6 +185,8 @@ export function resellNormal(r: Partial<Resell> & Pick<Resell, "id">): Resell {
     nombre: textoLimpio(r.nombre), email: textoLimpio(r.email), telefono: textoLimpio(r.telefono), closer: textoLimpio(r.closer),
     estado: textoLimpio(r.estado), cashCollect: aNumero(r.cashCollect), casoDeExito: aBool(r.casoDeExito),
     notas: typeof r.notas === "string" ? r.notas : "", grabacion: textoLimpio(r.grabacion), cancelada: aBool(r.cancelada),
+    testimonio: RESULTADOS_TESTIMONIO.includes(r.testimonio as (typeof RESULTADOS_TESTIMONIO)[number]) ? r.testimonio : "",
+    linkTestimonio: textoLimpio(r.linkTestimonio), linkPitch: textoLimpio(r.linkPitch),
     origen: r.origen === "calendly" || r.origen === "importado" ? r.origen : "manual",
     creadoEn: r.creadoEn ?? new Date().toISOString(), actualizadoEn: r.actualizadoEn ?? new Date().toISOString(),
     actualizadoPor: textoLimpio(r.actualizadoPor),
@@ -818,12 +820,37 @@ export const resellResuelto = (estado: string | null | undefined): boolean => es
 /** Una semana: pasada la llamada de resell, el closer tiene que decir en qué quedó (Lili, 19/10). */
 export const DIAS_PARA_CERRAR_RESELL = 7;
 
-/** Un resell ABIERTO: la llamada ya pasó, no se canceló y todavía no tiene un resultado que lo cierre (sin estado, o sólo
-    «Seguimiento» o «2da Agenda»). Es la misma regla para el panel de Lili, el «por cerrar» de la solapa Resell, Mi panel del
-    closer y su cierre del día: antes el closer contaba sólo los que no tenían NINGÚN estado y Lili los que no estaban
-    resueltos, y un resell en «Seguimiento» le figuraba cargado a él y abierto a ella (24/10). */
-export const resellAbierto = (r: Pick<Resell, "cancelada" | "fechaHora" | "estado">, ahoraMs: number): boolean =>
-  !r.cancelada && Date.parse(r.fechaHora) <= ahoraMs && !resellResuelto(r.estado);
+/* ---------- La llamada de testimonio (Lili, 24/10) ----------
+   Los casos de éxito graban su testimonio (con Mariano si compraron menos de 5K, con Yari si más) y en la misma llamada se les hace
+   el pitch para renovar. Una agenda es de testimonio si está marcada «Caso de éxito» (el evento «Testimonio» de Yari la marca sola).
+   Desde octubre (antes no se pedía) no se cierra hasta que se carga si grabó y, si grabó, el link. */
+export const RESULTADOS_TESTIMONIO = ["Grabó", "Se reagenda", "No quiso grabar"] as const;
+export const TESTIMONIO_DESDE = "2026-10-01";
+
+type LlamadaParaCerrar = Pick<Resell, "fechaHora" | "estado"> & Partial<Pick<Resell, "casoDeExito" | "testimonio" | "linkTestimonio" | "cancelada">>;
+
+export const esDeTestimonio = (r: Pick<Resell, "fechaHora"> & Partial<Pick<Resell, "casoDeExito">>): boolean =>
+  Boolean(r.casoDeExito) && r.fechaHora.slice(0, 10) >= TESTIMONIO_DESDE;
+
+/** Lo que falta cargar de una llamada para cerrarla, en palabras (vacío: no falta nada). */
+export function faltaDeLaLlamada(r: LlamadaParaCerrar): string[] {
+  if (r.testimonio === "Se reagenda") return [];
+  const falta: string[] = [];
+  if (esDeTestimonio(r)) {
+    if (!r.testimonio) falta.push("si grabó el testimonio");
+    else if (r.testimonio === "Grabó" && !r.linkTestimonio?.trim()) falta.push("el link de la grabación");
+  }
+  if (!resellResuelto(r.estado)) falta.push(estadosDeResell(r.estado).length ? `en qué terminó el resell (está en «${r.estado}»)` : "si compró (el resell)");
+  return falta;
+}
+
+/** Un resell ABIERTO: la llamada ya pasó, no se canceló y le falta algo para cerrarla: el resultado del resell (sin estado, o
+    sólo «Seguimiento» o «2da Agenda») y, si es de testimonio, si grabó y el link (faltaDeLaLlamada). «Se reagenda» la cierra: la
+    nueva agenda entra sola. Es la misma regla para el panel de Lili, el «por cerrar» de la solapa Resell, Mi panel de quien la
+    tomó (y de Manu y el director) y el cierre del día: antes el closer contaba sólo los que no tenían NINGÚN estado y Lili los que
+    no estaban resueltos, y un resell en «Seguimiento» le figuraba cargado a él y abierto a ella (24/10). */
+export const resellAbierto = (r: LlamadaParaCerrar, ahoraMs: number): boolean =>
+  !r.cancelada && Date.parse(r.fechaHora) <= ahoraMs && faltaDeLaLlamada(r).length > 0;
 
 /** Suma o saca un estado de los de un resell (el texto que se guarda). `Vaciar` los deja en blanco. */
 export function alternarEstadoResell(texto: string | null | undefined, estado: string): string {
@@ -852,7 +879,8 @@ export function filasResells(e: Pick<EstadoApp, "resells" | "alumnos"> & Partial
   });
 }
 
-export type ClaveResell = "fechaHora" | "nombre" | "email" | "telefono" | "closer" | "estado" | "cash" | "caso" | "grabacion" | "notas";
+export type ClaveResell = "fechaHora" | "nombre" | "email" | "telefono" | "closer" | "estado" | "cash" | "caso" | "grabacion" | "notas"
+  | "testimonio" | "linkTestimonio" | "linkPitch";
 
 export const COLUMNAS_RESELLS: ColumnaCs<FilaResell, ClaveResell>[] = [
   { clave: "fechaHora", titulo: "Fecha y hora de agenda", grupo: "Agenda", valores: (f) => uno(f.dia), orden: (f) => f.resell.fechaHora, fecha: true, ancho: 170 },
@@ -864,12 +892,18 @@ export const COLUMNAS_RESELLS: ColumnaCs<FilaResell, ClaveResell>[] = [
   { clave: "cash", titulo: "Cash Collect", grupo: "Resultado", valores: (f) => numeroComoValor(f.resell.cashCollect), orden: (f) => f.resell.cashCollect ?? "", numerica: true, ancho: 120 },
   { clave: "caso", titulo: "Caso de éxito", grupo: "Resultado", valores: (f) => siNo(f.resell.casoDeExito), ancho: 110 },
   { clave: "grabacion", titulo: "Grabación", grupo: "Resultado", valores: (f) => [f.grabacion ? "Con grabación" : "Sin grabación"], texto: (f) => f.grabacion, ancho: 150 },
+  /* La llamada de testimonio de los casos de éxito (Lili, 24/10). */
+  { clave: "testimonio", titulo: "Testimonio", grupo: "Testimonio", ayuda: "Si es caso de éxito: si grabó el testimonio en la llamada",
+    valores: (f) => [f.resell.testimonio || (esDeTestimonio(f.resell) ? "Sin cargar" : "—")], ancho: 140 },
+  { clave: "linkTestimonio", titulo: "Link del testimonio", grupo: "Testimonio", valores: (f) => [f.resell.linkTestimonio ? "Con link" : "Sin link"], texto: (f) => f.resell.linkTestimonio ?? "", ancho: 150 },
+  { clave: "linkPitch", titulo: "Link del pitch", grupo: "Testimonio", ayuda: "La grabación de la parte de la venta", valores: (f) => [f.resell.linkPitch ? "Con link" : "Sin link"], texto: (f) => f.resell.linkPitch ?? "", ancho: 140 },
   { clave: "notas", titulo: "Notas", grupo: "Resultado", valores: (f) => [conTexto(f.resell.notas, "Con notas", "Sin notas")], texto: (f) => f.resell.notas, ancho: 260 },
 ];
 
 /* Columnas que se sumaron después: quien ya guardó las suyas las recibe una sola vez (ColumnasConfig.useColumnas). */
 export const COLUMNAS_SUMADAS_RESELLS: { id: string; despuesDe: string; claves: string[] }[] = [
   { id: "grabacion-2110", despuesDe: "caso", claves: ["grabacion"] },
+  { id: "testimonio-2410", despuesDe: "grabacion", claves: ["testimonio", "linkTestimonio", "linkPitch"] },
 ];
 
 export const VISIBLES_RESELLS: ClaveResell[] = COLUMNAS_RESELLS.map((c) => c.clave);

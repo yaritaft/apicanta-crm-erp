@@ -3,6 +3,10 @@ import { guardarItems, type BaseReportes, type ResultadoReportes } from "./repor
 import type { AlumnoBasico } from "./reportes-webhook";
 import type { EnvioDelAlumno } from "./reporte-enlace";
 import { camposDelReporte, formularioDe, type FormularioReporte } from "./reporte-formularios";
+import { literalParaIlike } from "./links-alumno";
+import { lunesDelDia } from "./reportes";
+import { diaAInstante } from "./dia-negocio";
+import { idSinAlumno, reporteParaAtar, type EnvioSinCodigo } from "./reporte-sin-codigo";
 
 /* ==================================================================
    El reporte semanal con link único, del lado del SERVIDOR: usa la clave de
@@ -104,6 +108,52 @@ export async function recibirDelAlumno(
       detalle: { programa: c.programa, formulario: c.formulario, respuestas: c.respuestas },
     },
   }], [], hoy, ahora);
+}
+
+/** El alumno de un mail. Si el mail está en más de una ficha: la del alumno activo y, entre esas, la más nueva. */
+export async function alumnoPorMail(db: SupabaseClient, email: string): Promise<AlumnoBasico | null> {
+  const r = await db.from("alumnos").select("id, nombre, email, estado, inicio").ilike("email", literalParaIlike(email)).limit(10);
+  if (r.error) throw new Error(`alumnos: ${r.error.message}`);
+  const a = ((r.data ?? []) as (AlumnoBasico & { estado: string | null; inicio: string | null })[])
+    .sort((x, y) => Number(y.estado === "activo") - Number(x.estado === "activo") || (y.inicio ?? "").localeCompare(x.inicio ?? ""))[0];
+  return a ? { id: a.id, nombre: a.nombre, email: a.email } : null;
+}
+
+/**
+ * El reporte de alguien sin código (lib/reporte-sin-codigo.ts). Si el mail es de un alumno, o es un mail que Lili ya ató a un
+ * alumno antes, va a ese alumno como cualquier reporte. Si no, queda en `reportes_sin_alumno` (supabase/reportes-sin-alumno.sql)
+ * para que lo ate ella; el de la misma semana y el mismo mail se reemplaza.
+ */
+export async function recibirSinCodigo(
+  db: SupabaseClient, base: BaseReportes, envio: EnvioSinCodigo, hoy: string, ahora: string,
+): Promise<{ ok: true; alumno: AlumnoBasico | null; reemplazo: boolean } | { ok: false; status: number; error: string }> {
+  const { datos, formulario, respuestas } = envio;
+  let alumno = await alumnoPorMail(db, datos.email);
+  if (!alumno) {
+    const atado = await db.from("reportes_sin_alumno").select("alumnoId").ilike("email", literalParaIlike(datos.email))
+      .eq("estado", "atado").not("alumnoId", "is", null).order("actualizadoEn", { ascending: false }).limit(1);
+    if (atado.error) throw new Error(`reportes_sin_alumno: ${atado.error.message}`);
+    const id = ((atado.data ?? [])[0] as { alumnoId?: string } | undefined)?.alumnoId;
+    if (id) alumno = await alumnoPorId(db, id);
+  }
+  if (alumno) {
+    const r = await recibirDelAlumno(base, alumno, { formulario, respuestas }, hoy, ahora);
+    if (!r.ok) return r;
+    if (r.guardados === 0) return { ok: false, status: 422, error: "No pudimos guardar tu reporte. Avisale a tu coordinadora." };
+    return { ok: true, alumno, reemplazo: r.actualizados > 0 };
+  }
+
+  const semana = lunesDelDia(hoy);
+  const id = idSinAlumno(datos.email, semana);
+  const ya = await db.from("reportes_sin_alumno").select("id").eq("id", id).limit(1);
+  if (ya.error) throw new Error(`reportes_sin_alumno: ${ya.error.message}`);
+  const g = await db.from("reportes_sin_alumno").upsert({
+    id, email: datos.email, nombre: datos.nombre, apellido: datos.apellido, telefono: datos.telefono,
+    semanaDel: diaAInstante(semana), formulario: formulario.id, programa: formulario.programa, reporte: reporteParaAtar(formulario, respuestas),
+    estado: "pendiente", alumnoId: null, reporteId: null, actualizadoEn: ahora,
+  }, { onConflict: "id" });
+  if (g.error) throw new Error(`reportes_sin_alumno: ${g.error.message}`);
+  return { ok: true, alumno: null, reemplazo: (ya.data ?? []).length > 0 };
 }
 
 /* ---------- Resend ---------- */

@@ -1,5 +1,5 @@
 import type { EstadoApp, ID } from "./types";
-import { DIAS_PARA_CERRAR_RESELL, DURACION_POR_DEFECTO, estadosDeResell, filasClientes, filasResells, filasTestimonios, NO_SE_HACIA_CONTRATO, resellAbierto, sumarMeses } from "./clientes-cs";
+import { DIAS_PARA_CERRAR_RESELL, DURACION_POR_DEFECTO, esDeTestimonio, estadosDeResell, faltaDeLaLlamada, filasClientes, filasResells, filasTestimonios, NO_SE_HACIA_CONTRATO, resellAbierto, sumarMeses } from "./clientes-cs";
 import { diasEntre, formatoDia, terminoElServicio } from "./seguimiento";
 import { diasDe } from "./pausas";
 import { ventaPendienteDe } from "./alumnos";
@@ -17,7 +17,7 @@ import { crearMotor, uno, varios, type ColumnaCs, type OrdenCs } from "./tabla-c
      · A contactar hoy      el seguimiento que ya venció o toca hoy.
      · Nuevos               entraron hace poco y todavía no tienen el primer contacto.
      · Contrato por vencer  se les acaba en los próximos 30 días (o ya se acabó y siguen activos): renovar o dar de baja.
-     · Resells sin cierre   la llamada de renovación ya pasó y el closer no dijo en qué quedó (más de una semana, en rojo).
+     · Resells y testimonios sin cierre   la llamada ya pasó y quien la tomó no cargó cómo salió (más de una semana, en rojo).
      · Testimonios          por agendar la grabación, o grabados sin el link del video.
      · Reportes             alumnos que dejaron de mandar el reporte semanal.
      · Contratos            sin firmar a los pocos días de empezar.
@@ -291,7 +291,7 @@ export function panelDeServicio(e: EstadoApp, hoy: string, ahora: Date = new Dat
         clave: f.id, alumnoId: f.alumno?.id, nombre: f.resell.nombre || f.alumno?.nombre || f.resell.email || "Sin nombre", dias: d, cuando: cuandoEs(d),
         ...(cliente ? contactoDe(cliente) : {}),
         telefono: cliente?.telefono || f.resell.telefono || undefined, email: cliente?.email || f.resell.email || undefined,
-        detalle: `Llamada del ${formatoDia(f.dia, hoy)}${f.resell.closer ? ` con ${f.resell.closer}` : ""} · el closer no dijo en qué quedó`,
+        detalle: `${esDeTestimonio(f.resell) ? "Testimonio" : "Llamada"} del ${formatoDia(f.dia, hoy)}${f.resell.closer ? ` con ${f.resell.closer}` : ""} · falta ${faltaDeLaLlamada(f.resell).join(" y ")}`,
         tono: d >= DIAS_PARA_CERRAR_RESELL ? "rojo" : "ambar",
       };
     });
@@ -367,7 +367,7 @@ export function panelDeServicio(e: EstadoApp, hoy: string, ahora: Date = new Dat
     seccion({ id: "nuevos", titulo: "Alumnos nuevos", corto: "Nuevos", vacio: "No entró nadie nuevo sin su primer contacto.", regla: `Entraron en los últimos ${DIAS_NUEVO} días y todavía no tienen el primer contacto.`, verTodos: { texto: "Ver Clientes del programa", href: "/alumnos?seccion=clientes" } }, nuevos, masViejoPrimero),
     seccion({ id: "esperanVenta", titulo: "Esperan la venta del closer", corto: "Sin venta", regla: "Los diste de alta antes de que el closer cargara la venta: se unen solos cuando la carga. A los 3 días queda en rojo: avisale al closer.", vacio: "Todos los alumnos tienen su venta cargada.", verTodos: { texto: "Ver Clientes del programa", href: "/alumnos?seccion=clientes" } }, esperanVenta, masViejoPrimero),
     seccion({ id: "renovar", titulo: "Se les termina el contrato", corto: "Renovar", vacio: "Ningún contrato por vencer en los próximos 30 días.", regla: `Les quedan ${DIAS_PARA_RENOVAR} días o menos (o ya terminó y siguen activos): renovar o dar de baja.`, verTodos: { texto: "Ver Clientes del programa", href: "/alumnos?seccion=clientes" } }, renovar, masCercanoPrimero),
-    seccion({ id: "resells", titulo: "Resells sin cierre", corto: "Resells", vacio: "Todos los resells ya tienen su resultado.", regla: `La llamada ya pasó y el closer no dijo en qué quedó. A los ${DIAS_PARA_CERRAR_RESELL} días queda en rojo.`, verTodos: { texto: "Ver la agenda de resells", href: "/alumnos?seccion=resells" } }, sinCierre, masViejoPrimero),
+    seccion({ id: "resells", titulo: "Resells y testimonios sin cierre", corto: "Resells", vacio: "Todos los resells y testimonios ya tienen su resultado.", regla: `La llamada ya pasó y quien la tomó no cargó cómo salió (si grabó el testimonio y el link, si compró). Le aparece en su panel hasta que lo cargue; a los ${DIAS_PARA_CERRAR_RESELL} días queda en rojo.`, verTodos: { texto: "Ver la agenda de resells", href: "/alumnos?seccion=resells" } }, sinCierre, masViejoPrimero),
     seccion({ id: "testimonios", titulo: "Testimonios", corto: "Testimonios", vacio: "No hay testimonios pendientes.", regla: "Grabaron y falta el link del video, o falta agendar la llamada de grabación.", verTodos: { texto: "Ver testimonios", href: "/alumnos?seccion=testimonios" } }, [...sinLink, ...porAgendar], masViejoPrimero),
     seccion({ id: "reportes", titulo: "Dejaron de reportar", corto: "Reportes", vacio: "Todos al día con su reporte semanal.", regla: "Tres semanas o más sin mandar el reporte semanal.", verTodos: { texto: "Ver los formularios", href: "/reportes" } }, reportes, masViejoPrimero),
     seccion({ id: "contratos", titulo: "Contrato sin firmar", corto: "Contratos", vacio: "Todos los contratos están firmados.", regla: `Les mandamos el contrato y no lo firmaron (a los ${DIAS_PARA_FIRMAR} días, en rojo), o empezaron hace ${DIAS_PARA_FIRMAR} días o más sin firmarlo.`, verTodos: { texto: "Ver Clientes del programa", href: "/alumnos?seccion=clientes" } }, contratos, masViejoPrimero),
@@ -476,7 +476,9 @@ export function validarFijados(x: unknown): string[] | null {
   return limpios.filter((v, i) => limpios.findIndex((w) => mismoFollowUp(v, w)) === i).slice(0, 12);
 }
 
-export function renglonesCartera(cartera: readonly FilaCartera[], lista?: SeccionServicio, etapa?: EtapaAlumnoId, followUp?: string): RenglonCartera[] {
+/** `contactadoEl` (aaaa-mm-dd): sólo los que se contactaron ese día (Lili, 24/10: contacta a diez, y después vuelve a cargar
+    cómo fue cada charla y su Follow Up sin tener que anotarse a quién le habló). */
+export function renglonesCartera(cartera: readonly FilaCartera[], lista?: SeccionServicio, etapa?: EtapaAlumnoId, followUp?: string, contactadoEl?: string): RenglonCartera[] {
   if (lista) {
     const porId = new Map(cartera.map((f) => [f.id, f] as const));
     return lista.items.map((i) => {
@@ -484,6 +486,7 @@ export function renglonesCartera(cartera: readonly FilaCartera[], lista?: Seccio
       return { id: i.clave, alumnoId: i.alumnoId, nombre: i.nombre, programa: fila?.programa || i.programa || "", fila, item: i };
     });
   }
-  return cartera.filter((f) => (!etapa || f.etapa === etapa) && (!followUp || mismoFollowUp(f.followUp, followUp)))
+  return cartera.filter((f) => (!etapa || f.etapa === etapa) && (!followUp || mismoFollowUp(f.followUp, followUp))
+    && (!contactadoEl || (f.ultimoContacto ?? "").slice(0, 10) === contactadoEl))
     .map((f) => ({ id: f.id, alumnoId: f.id, nombre: f.nombre, programa: f.programa, fila: f }));
 }

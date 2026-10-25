@@ -149,17 +149,18 @@ export function Asistente({
       </div>
 
       <div className="asistente__foot">
-        {actual > 0 && <Button variante="ghost" icono={<ArrowLeft size={16} />} onClick={volver}>Atrás</Button>}
+        {actual > 0 && <Button variante="ghost" icono={<ArrowLeft size={16} />} onClick={volver} style={{ flexShrink: 0 }}>Atrás</Button>}
         <span className="spacer" />
         {problema && (
-          <span className="t-sm" style={{ color: problemaEsError ? "var(--warning)" : "var(--ink-subtle)" }}>
+          /* En un teléfono, un aviso largo se parte en renglones: no puede empujar «Continuar» fuera de la pantalla. */
+          <span className="t-sm" style={{ color: problemaEsError ? "var(--warning)" : "var(--ink-subtle)", minWidth: 0, flex: "0 1 auto" }}>
             {problema}
           </span>
         )}
         {!ultimo && <span className="asistente__pista"><kbd>Enter</kbd><CornerDownLeft size={13} /></span>}
         <Button
           variante="primary" onClick={avanzar} disabled={!puedeAvanzar}
-          icono={ultimo ? <Check size={16} /> : undefined}
+          icono={ultimo ? <Check size={16} /> : undefined} style={{ flexShrink: 0 }}
         >
           {ultimo ? terminarTexto : "Continuar"}
         </Button>

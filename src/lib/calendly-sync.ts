@@ -34,7 +34,7 @@ import { buscarContactoEnLaBase } from "./duplicados-servidor";
 import { nubeServidor } from "./servidor";
 import { etapaPorEvento } from "./etapas-auto";
 import { anfitrionTrasCalendly } from "./pasada-closer";
-import { esLlamadaDeResell, registrarResell } from "./resells";
+import { esLlamadaDeResell, esLlamadaDeTestimonio, registrarResell } from "./resells";
 import type { Contacto, Etapa, Lead, Sesion } from "./types";
 
 /* "Sesión agendada" en las etapas de la base. */
@@ -272,6 +272,7 @@ export async function ingresarInvitado(
       sesionId, fechaHora: sesion.inicia, nombre: sesion.invitado, email: sesion.email ?? "", telefono: contacto.telefono ?? "",
       closer: sesion.anfitrion ?? "", cancelada: inv.status === "canceled",
       reprogramadaDe: !antes && inv.old_invitee ? idSesionCalendly(inv.old_invitee) : undefined, ahora,
+      testimonio: esLlamadaDeTestimonio({ tipo: sesion.tipo, titulo: sesion.titulo }),
     });
     resell = r.hecho;
     if (!r.hecho) console.warn(`resells: no se guardó la agenda de ${sesionId}: ${r.motivo ?? "sin motivo"}`);

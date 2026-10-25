@@ -14,6 +14,10 @@
 -- Es aditivo y se puede correr más de una vez.
 
 alter table public.resells add column if not exists grabacion text not null default '';
+-- Los de la llamada de testimonio (resells-testimonio.sql), por si este archivo corre antes: la unión de abajo los usa.
+alter table public.resells add column if not exists testimonio text not null default '';
+alter table public.resells add column if not exists "linkTestimonio" text not null default '';
+alter table public.resells add column if not exists "linkPitch" text not null default '';
 
 create schema if not exists respaldo;
 create table if not exists respaldo.resells_2110 as select * from public.resells;
@@ -62,6 +66,10 @@ begin
       "cashCollect" = coalesce(n."cashCollect", v."cashCollect"),
       "casoDeExito" = n."casoDeExito" or v."casoDeExito",
       grabacion = case when coalesce(n.grabacion, '') = '' then coalesce(v.grabacion, '') else n.grabacion end,
+      /* Lo de la llamada de testimonio (resells-testimonio.sql), si ya está la columna. */
+      testimonio = case when coalesce(n.testimonio, '') = '' then coalesce(v.testimonio, '') else n.testimonio end,
+      "linkTestimonio" = case when coalesce(n."linkTestimonio", '') = '' then coalesce(v."linkTestimonio", '') else n."linkTestimonio" end,
+      "linkPitch" = case when coalesce(n."linkPitch", '') = '' then coalesce(v."linkPitch", '') else n."linkPitch" end,
       notas = notas_nuevas,
       "actualizadoEn" = now()
     where id = n.id;

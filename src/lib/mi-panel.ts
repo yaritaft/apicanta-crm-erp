@@ -15,7 +15,7 @@ import { normalizarUtm, origenDe } from "./utms";
 import { haceCuanto, pedidosDeCloser, type PedidoDeVenta } from "./pedidos-de-venta";
 import { rechazoDeCobro } from "./rechazos-de-cobro";
 import { medioDeMovimiento } from "./conciliacion";
-import { DIAS_PARA_CERRAR_RESELL, filasResells, resellAbierto, type FilaResell } from "./clientes-cs";
+import { filasResells, resellAbierto, type FilaResell } from "./clientes-cs";
 
 /* ==================================================================
    «Mi panel» (reunión del 15/10, armado sobre el Mi Panel de Blue OS): lo
@@ -148,6 +148,8 @@ export interface MiPanel {
   pedidos: PedidoDeVenta[];
   /* Cuántos avisos hay de verdad (la lista muestra los primeros de cada tipo). */
   totalAvisos: number;
+  /* Las llamadas de resell y de testimonio que le toca cerrar (llamadasParaCerrar). */
+  llamadasParaCerrar: FilaResell[];
   /* ---- los cobros que cargó ---- */
   cobros: CobroCargado[];
   controlDeCobros: ResumenControl;
@@ -284,12 +286,8 @@ export function miPanelDe(e: EstadoApp, m: MiembroEquipo, rango: RangoMes, ahora
   const sinEstrategia = e.ventas
     .filter((v) => v.closerId === m.id && v.estado !== "cancelada" && !v.embudoId && ahora - Date.parse(v.fecha) <= DIAS_SIN_ESTRATEGIA * DIA)
     .sort((a, b) => b.fecha.localeCompare(a.fecha));
-  /* Sus resells abiertos: la llamada ya pasó y no dice en qué quedó (o quedó en «Seguimiento» o «2da Agenda»). Lili los ve en su
-     panel y sólo se cierran cuando el closer carga el resultado: antes al closer no le aparecían en ningún lado (Lili, 24/10). */
-  const resells = vista === "setter" ? [] : filasResells(e)
-    .filter((f) => esDelCloser({ anfitrion: f.resell.closer }, m.nombre, e.equipo) && resellAbierto(f.resell, ahora))
-    .sort((a, b) => a.resell.fechaHora.localeCompare(b.resell.fechaHora));
-  const { avisos, total: totalAvisos } = avisosDe(e, { equipo: e, dia, porCobrar, cobros, ahora, pedidos: avisosDePedidos(e, pedidos), totalPedidos: pedidos.length, sinEstrategia, resells });
+  const { avisos, total: totalAvisos } = avisosDe(e, { equipo: e, dia, porCobrar, cobros, ahora, pedidos: avisosDePedidos(e, pedidos), totalPedidos: pedidos.length, sinEstrategia });
+  const paraCerrar = vista === "setter" ? [] : llamadasParaCerrar(e, m, ahora);
 
   /* Las agendas del setter: las que entraron por su link (utm_campaign=setter_nombre) y las que marcó él
      como suyas desde Mi panel (Daniel, 24/10; lib/setter-agendas.ts). */
@@ -315,7 +313,7 @@ export function miPanelDe(e: EstadoApp, m: MiembroEquipo, rango: RangoMes, ahora
     miembro: m, vista, rango,
     cobradoRango, comisionCloser, descuentoCierre, comisionDirector, comisionSetter: r2(comisionSetter), comisiones,
     ventasDelRango, porCobrar, porCobrarTotal, mesa, rendimiento,
-    llamadas, llamadasDeHoy, porVenirHoy, dia, strikes, avisos, pedidos, totalAvisos,
+    llamadas, llamadasDeHoy, porVenirHoy, dia, strikes, avisos, pedidos, totalAvisos, llamadasParaCerrar: paraCerrar,
     cobros, controlDeCobros,
     agendasDeSetter, ventasDeSetter,
   };
@@ -352,7 +350,7 @@ function avisosDePedidos(e: EstadoApp, pedidos: PedidoDeVenta[]): Aviso[] {
 
 function avisosDe(
   e: Pick<EstadoApp, "productos">,
-  c: { equipo: Pick<EstadoApp, "equipo">; sinEstrategia: Venta[]; dia: ResumenDelDia; porCobrar: CuotaPendiente[]; cobros: CobroCargado[]; ahora: number; pedidos: Aviso[]; totalPedidos: number; resells?: FilaResell[] },
+  c: { equipo: Pick<EstadoApp, "equipo">; sinEstrategia: Venta[]; dia: ResumenDelDia; porCobrar: CuotaPendiente[]; cobros: CobroCargado[]; ahora: number; pedidos: Aviso[]; totalPedidos: number },
 ): { avisos: Aviso[]; total: number } {
   const avisos: Aviso[] = [];
   let total = 0;
@@ -373,19 +371,6 @@ function avisosDe(
     });
   }
 
-  /* Los resells abiertos: uno solo, con los nombres; en rojo si alguno pasó la semana. */
-  const resells = c.resells ?? [];
-  if (resells.length > 0) {
-    total += 1;
-    const n = resells.length;
-    const nombres = resells.slice(0, 3).map((f) => f.resell.nombre || f.alumno?.nombre || "sin nombre").join(", ");
-    const vencido = resells.some((f) => c.ahora - Date.parse(f.resell.fechaHora) >= DIAS_PARA_CERRAR_RESELL * DIA);
-    avisos.push({
-      clave: "resells", tono: vencido ? "danger" : "warning", resaltado: `${n} ${n === 1 ? "resell" : "resells"} sin cerrar`,
-      texto: `(${nombres}${n > 3 ? ` y ${n - 3} más` : ""}): cargá en qué quedó ${n === 1 ? "la llamada" : "cada llamada"}. Hasta que lo cargues, Customer Success lo ve abierto.`,
-      accion: { texto: "Cerrarlos", ir: "resells" },
-    });
-  }
 
   /* Cobros que rechazó quien los miró: hay que arreglarlos. Dice quién lo rechazó, por qué y hace cuánto (Aldana, 22/10: se lo pidió tres veces a un closer
      y el aviso era igual a todos los demás). Todos se listan: cada uno es plata que Finanzas no puede dar por buena. */
@@ -427,4 +412,22 @@ function avisosDe(
   }
 
   return { avisos, total };
+}
+
+/* ---------- Las llamadas de resell y de testimonio para cerrar (Lili, 24/10) ----------
+   Quedan en el panel hasta que se carga cómo salió (resellAbierto): «los tengo que andar persiguiendo». Las ve quien la tomó; las de
+   Yari también Manu, que las completa cuando ella no puede y sigue la venta; y el director comercial ve todas, para hacer el
+   seguimiento. */
+
+/** Manu (COO): ve y cierra las llamadas de Yari. */
+export const VEN_LAS_DE_YARI = ["eq_muexnypwe579r"];
+const YARI = "eq_yari";
+
+export function llamadasParaCerrar(e: EstadoApp, m: MiembroEquipo, ahora = Date.now()): FilaResell[] {
+  const yari = e.equipo.find((x) => x.id === YARI)?.nombre;
+  const esDe = (closer: string, nombre: string | undefined) => Boolean(nombre) && esDelCloser({ anfitrion: closer }, nombre!, e.equipo);
+  return filasResells(e)
+    .filter((f) => resellAbierto(f.resell, ahora)
+      && (m.rol === "director" || esDe(f.resell.closer, m.nombre) || (VEN_LAS_DE_YARI.includes(m.id) && esDe(f.resell.closer, yari))))
+    .sort((a, b) => a.resell.fechaHora.localeCompare(b.resell.fechaHora));
 }

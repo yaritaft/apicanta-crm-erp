@@ -7,7 +7,8 @@ import { Badge, Chip, Field, Input, Textarea } from "@/components/ui/ui";
 import { InputMonto } from "@/components/ui/InputMonto";
 import { montoDe } from "@/lib/monto";
 import { CamposExtra } from "@/components/ui/CamposExtra";
-import { acciones, useEstado } from "@/lib/store";
+import { acciones, cargarDeLaNube, reiniciarCarga, useEstado } from "@/lib/store";
+import { alumnoEnLaBase, type AlumnoExistente } from "./alumno-en-la-base";
 import {
   alumnoDeVenta, cohortesRecientes, cuotaMensualDeVenta, etapaInicialDeServicio, etapasDeServicio,
   opcionesDePlan, personaDeVenta, planDeVenta,
@@ -113,15 +114,17 @@ function validar(paso: PasoId, b: Borrador, e: EstadoApp): string | null {
   }
 }
 
-export function AsistenteAlumno({ onCerrar, onListo, onAbrirAlumno }: {
+export function AsistenteAlumno({ onCerrar, onListo, onAbrirAlumno, persona }: {
   onCerrar: () => void;
   onListo: (alumnoId: string, nombre: string) => void;
   /* Para ir a la ficha de alguien que ya es alumno en vez de duplicarlo. */
   onAbrirAlumno: (alumnoId: string) => void;
+  /* Quién es, si ya se sabe (un reporte semanal que llegó sin alumno): sale escrito y se busca su venta por el nombre. */
+  persona?: { nombre: string; email: string };
 }) {
   const e = useEstado();
   const [i, setI] = useState(0);
-  const [b, setB] = useState<Borrador>(() => inicial(e));
+  const [b, setB] = useState<Borrador>(() => ({ ...inicial(e), ...(persona ? { nombre: persona.nombre, email: persona.email, busca: persona.nombre } : {}) }));
   const set = useCallback((cambios: Partial<Borrador>) => setB((x) => ({ ...x, ...cambios })), []);
   const creado = useRef(false);
 
@@ -155,10 +158,22 @@ export function AsistenteAlumno({ onCerrar, onListo, onAbrirAlumno }: {
     });
   }
 
-  function crear() {
+  /* Si la base ya lo tiene (otra pantalla lo creó mientras ésta estaba abierta), no se crea de nuevo. */
+  const [yaExiste, setYaExiste] = useState<AlumnoExistente | null>(null);
+
+  async function crear() {
     /* Enter dos veces rápido no puede crear dos alumnos. */
     if (creado.current) return;
     creado.current = true;
+    const existente = await alumnoEnLaBase({ ventaId: b.ventaId, leadId: b.leadId, email: b.email });
+    if (existente) {
+      creado.current = false;
+      setYaExiste(existente);
+      /* Que la pantalla lo traiga, para poder abrir su ficha. */
+      reiniciarCarga();
+      await cargarDeLaNube();
+      return;
+    }
     const nombre = b.nombre.trim();
     const id = acciones.crear<Alumno>("alumnos", {
       nombre, email: b.email.trim(), pais: b.pais.trim() || undefined,
@@ -177,8 +192,20 @@ export function AsistenteAlumno({ onCerrar, onListo, onAbrirAlumno }: {
     <Asistente
       etiqueta="Nuevo alumno" pasos={PASOS} actual={i} onCambiarPaso={setI}
       problema={problema} onCerrar={onCerrar}
-      terminarTexto="Crear alumno" onTerminar={crear}
+      terminarTexto="Crear alumno" onTerminar={() => void crear()}
     >
+      {yaExiste && (
+        <div className="help-card" role="alert">
+          <Info size={18} />
+          <div>
+            <div className="help-card__title">{yaExiste.nombre} ya es alumno</div>
+            <div className="help-card__text">
+              Ya está en la base (seguramente lo creó la venta que cargó el closer): no se crea de nuevo.{" "}
+              <button type="button" className="link" onClick={() => onAbrirAlumno(yaExiste.id)}>Abrí su ficha</button> y cargá ahí lo que falte.
+            </div>
+          </div>
+        </div>
+      )}
       {paso.id === "origen" && (
         <PasoOrigen
           b={b} set={set} e={e} venta={venta}

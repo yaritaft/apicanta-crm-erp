@@ -6,6 +6,7 @@ import { CheckCircle2 } from "lucide-react";
 import { Button, Input, Textarea } from "@/components/ui/ui";
 import { Asistente, Opcion, Pregunta } from "@/components/ui/Asistente";
 import { esCodigoValido } from "@/lib/reporte-enlace";
+import { esPreguntaDeIdentidad, PREGUNTAS_IDENTIDAD, problemaDeIdentidad, separarIdentidad } from "@/lib/reporte-sin-codigo";
 import {
   esIdFormulario, FORMULARIOS, LARGO_TEXTO, LARGO_TEXTO_CORTO, problemaDeRespuesta,
   type FormularioReporte, type PreguntaReporte, type Respuestas,
@@ -19,6 +20,9 @@ import {
 
    Es pública (no pide iniciar sesión): lo único que abre es el código, un
    UUID al azar. Completarlo de nuevo la misma semana reemplaza el anterior.
+   Quien no tiene su código toca «No tengo mi código» y antes de las preguntas
+   de su programa pone su mail, nombre, apellido y WhatsApp
+   (lib/reporte-sin-codigo.ts; Lili, 24/10).
    Lo que va escribiendo se guarda en el navegador hasta que lo manda, así un
    cierre sin querer no le hace perder diez respuestas.
    ================================================================== */
@@ -59,7 +63,14 @@ function Formulario() {
   const [aviso, setAviso] = useState<string | null>(null);
   const [enviando, setEnviando] = useState(false);
   const [reemplazo, setReemplazo] = useState(false);
+  const [sinCodigo, setSinCodigo] = useState(false);
   const pedido = useRef("");
+  /* Sin código, el borrador se guarda aparte; y las preguntas de quién es van antes de las del programa. */
+  const clave = sinCodigo ? "sin-codigo" : codigo;
+  const visible = useMemo(
+    () => (formulario && sinCodigo ? { ...formulario, preguntas: [...PREGUNTAS_IDENTIDAD, ...formulario.preguntas] } : formulario),
+    [formulario, sinCodigo],
+  );
 
   /* Con el código se pregunta de quién es y qué formulario le toca. */
   const entrar = useCallback(async (c: string) => {
@@ -99,13 +110,13 @@ function Formulario() {
   const cambiarPaso = (i: number) => {
     setPaso(i);
     setAviso(null);
-    if (formulario) guardarBorrador(codigo, formulario.id, respuestas, i);
+    if (formulario) guardarBorrador(clave, formulario.id, respuestas, i);
   };
   const responder = (id: string, valor: string | number) => {
     const nuevas = { ...respuestas, [id]: valor };
     setRespuestas(nuevas);
     setAviso(null);
-    if (formulario) guardarBorrador(codigo, formulario.id, nuevas, paso);
+    if (formulario) guardarBorrador(clave, formulario.id, nuevas, paso);
   };
 
   const enviar = async () => {
@@ -113,20 +124,23 @@ function Formulario() {
     setEnviando(true);
     setAviso(null);
     try {
+      const { datos, respuestas: delPrograma } = separarIdentidad(respuestas);
       const r = await fetch("/api/reportes/enviar", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ codigo: codigo.trim(), formulario: formulario.id, respuestas, sitio: trampa }),
+        body: JSON.stringify(sinCodigo
+          ? { sinCodigo: datos, formulario: formulario.id, respuestas: delPrograma, sitio: trampa }
+          : { codigo: codigo.trim(), formulario: formulario.id, respuestas, sitio: trampa }),
       });
       const j = (await r.json().catch(() => ({}))) as { ok?: boolean; nombre?: string; reemplazo?: boolean; error?: string; campo?: string };
       if (r.ok && j.ok) {
-        borrarBorrador(codigo, formulario.id);
+        borrarBorrador(clave, formulario.id);
         if (j.nombre) setNombre(j.nombre);
         setReemplazo(Boolean(j.reemplazo));
         setFase("listo");
         return;
       }
       /* La pregunta que falló: se vuelve a ella. */
-      const donde = formulario.preguntas.findIndex((p) => p.id === j.campo);
+      const donde = (visible ?? formulario).preguntas.findIndex((p) => p.id === j.campo);
       if (donde >= 0) setPaso(donde + 1);
       if (j.campo === "codigo") { setFase("codigo"); }
       setAviso(j.error ?? "No pudimos guardar tu reporte. Probá de nuevo.");
@@ -141,12 +155,12 @@ function Formulario() {
     </div>
   );
 
-  if (fase === "preguntas" && formulario) {
+  if (fase === "preguntas" && visible) {
     return (
       <>
         {trampaEl}
         <PreguntasPaso
-          formulario={formulario} nombre={nombre} respuestas={respuestas} paso={paso} aviso={aviso} enviando={enviando}
+          formulario={visible} nombre={nombre} respuestas={respuestas} paso={paso} aviso={aviso} enviando={enviando}
           onResponder={responder} onPaso={cambiarPaso} onEnviar={enviar}
         />
       </>
@@ -170,6 +184,10 @@ function Formulario() {
             </div>
             {aviso && <p className="reporte-pub__error" role="alert">{aviso}</p>}
             <Button type="submit" variante="primary" lg style={{ width: "100%" }}>Continuar</Button>
+            <Button type="button" variante="ghost" onClick={() => {
+              setSinCodigo(true); setNombre(""); setAviso(null);
+              if (atajo && esIdFormulario(atajo)) empezar(FORMULARIOS[atajo], "sin-codigo"); else setFase("programa");
+            }}>No tengo mi código</Button>
           </form>
         )}
 
@@ -179,7 +197,7 @@ function Formulario() {
             <p className="reporte-pub__sub">¿De qué programa es el reporte que vas a completar?</p>
             <div className="opciones opciones--lista">
               {Object.values(FORMULARIOS).map((f, i) => (
-                <Opcion key={f.id} tecla={String(i + 1)} nombre={f.programa} activo={false} onClick={() => empezar(f, codigo)} />
+                <Opcion key={f.id} tecla={String(i + 1)} nombre={f.programa} activo={false} onClick={() => empezar(f, clave)} />
               ))}
             </div>
           </div>
@@ -190,6 +208,7 @@ function Formulario() {
             <CheckCircle2 size={44} aria-hidden />
             <h1>¡Listo{nombre ? `, ${nombre}` : ""}!</h1>
             <p>Tu reporte de esta semana quedó guardado.{reemplazo ? " Reemplazó al que habías mandado antes." : ""}</p>
+            {sinCodigo && <p className="reporte-pub__chico">Si tu mail es el de tu compra, te llega por mail tu link personal: la semana que viene entrás directo con él.</p>}
             <p className="reporte-pub__chico">Si te equivocaste en algo, volvé a completarlo: el nuevo reemplaza al de esta semana.</p>
             <Button variante="secondary" onClick={() => { setPaso(1); setFase("preguntas"); }}>Corregir mi reporte</Button>
           </div>
@@ -212,7 +231,8 @@ function PreguntasPaso({ formulario, nombre, respuestas, paso, aviso, enviando, 
     [formulario],
   );
   const pregunta = paso > 0 ? formulario.preguntas[paso - 1] : null;
-  const problema = enviando ? "Enviando…" : pregunta ? problemaDeRespuesta(pregunta, respuestas[pregunta.id]) : null;
+  const problema = enviando ? "Enviando…" : !pregunta ? null
+    : esPreguntaDeIdentidad(pregunta.id) ? problemaDeIdentidad(pregunta.id, respuestas[pregunta.id]) : problemaDeRespuesta(pregunta, respuestas[pregunta.id]);
 
   return (
     <Asistente
@@ -270,7 +290,13 @@ function Respuesta({ pregunta, valor, onCambio }: { pregunta: PreguntaReporte; v
   }
 
   if (pregunta.tipo === "texto-corto") {
-    return <Input value={texto} onChange={(e) => onCambio(e.target.value)} maxLength={LARGO_TEXTO_CORTO} placeholder="Tu respuesta" autoComplete="off" aria-label={pregunta.titulo} />;
+    /* Las de quién es (sin código): el teclado y el autocompletar de cada una. */
+    const comoEs = ({ _email: ["email", "email", "nombre@gmail.com"], _nombre: ["text", "given-name", "Tu nombre"], _apellido: ["text", "family-name", "Tu apellido"], _telefono: ["tel", "tel", "+54 9 11 5555 5555"] } as Record<string, [string, string, string]>)[pregunta.id];
+    return (
+      <Input value={texto} onChange={(e) => onCambio(e.target.value)} maxLength={LARGO_TEXTO_CORTO} aria-label={pregunta.titulo}
+        type={comoEs?.[0] ?? "text"} inputMode={comoEs?.[0] === "tel" ? "tel" : comoEs?.[0] === "email" ? "email" : undefined}
+        autoComplete={comoEs?.[1] ?? "off"} placeholder={comoEs?.[2] ?? "Tu respuesta"} />
+    );
   }
 
   return (
