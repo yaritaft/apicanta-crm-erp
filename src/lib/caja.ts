@@ -45,23 +45,39 @@ export const MESES_DE_COLCHON = 6;
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
 
-/** La plata que entró a una cuenta desde el último arqueo y todavía no tiene su venta cargada (cobros pendientes en Conciliación). No está en lo
- *  cobrado —un cobro cuenta cuando se ata a su cuota—, pero sí está en la cuenta: si al contar sobra plata, puede ser esto. En la moneda base,
- *  neta de la comisión de la pasarela cuando se sabe. (Aldana, 22/10: «si el closer no lo carga no tengo forma de registrarlo… va a ser un
- *  problema cuando se hagan los arqueos».) */
-export function cobrosSinVenta(
+/** Lo que entró a una cuenta y todavía no tiene su venta: cuántos cobros, cuánta plata (en la moneda base, neta de la comisión de la pasarela) y de quién. */
+export interface CobrosSinVentaDeCuenta { n: number; monto: number; quienes: string[] }
+
+/** La plata que entró a cada cuenta desde el último arqueo y todavía no tiene su venta cargada (cobros pendientes en Conciliación). No está en lo
+ *  cobrado —un cobro cuenta cuando se ata a su cuota—, pero sí está en la cuenta: al contar, sobra esa plata. Por cuenta, para ponérsela a lo que
+ *  esa cuenta tendría que tener. (Aldana, 22/10: «si el closer no lo carga no tengo forma de registrarlo… va a ser un problema cuando se hagan los
+ *  arqueos»; 24/10: dos cobros de Whop sin venta —US$ 2.029— se veían como una diferencia de Whop.) */
+export function cobrosSinVentaPorCuenta(
   e: Pick<EstadoApp, "movimientos" | "ajustes">, desdeIso: string | null, hastaIso: string, tipoCambio = 0,
-): { n: number; monto: number } {
+): Map<string, CobrosSinVentaDeCuenta> {
   const desde = desdeIso ? Date.parse(desdeIso) : -Infinity;
   const hasta = Date.parse(hastaIso);
-  let n = 0, monto = 0;
+  const out = new Map<string, CobrosSinVentaDeCuenta>();
   for (const m of e.movimientos ?? []) {
     if (m.estado !== "pendiente") continue;
     const t = Date.parse(m.fecha);
     if (!(t > desde && t <= hasta)) continue;
-    n++;
-    monto += aMonedaBase(Math.max(0, m.monto - m.fee), m.moneda, e.ajustes.monedaBase, tipoCambio);
+    const c = out.get(m.procesadorId ?? "") ?? { n: 0, monto: 0, quienes: [] };
+    c.n++;
+    c.monto += aMonedaBase(Math.max(0, m.monto - m.fee), m.moneda, e.ajustes.monedaBase, tipoCambio);
+    if (m.clienteNombre) c.quienes.push(m.clienteNombre);
+    out.set(m.procesadorId ?? "", c);
   }
+  for (const c of out.values()) c.monto = r2(c.monto);
+  return out;
+}
+
+/** Lo mismo, todo junto: cuántos cobros y cuánta plata. */
+export function cobrosSinVenta(
+  e: Pick<EstadoApp, "movimientos" | "ajustes">, desdeIso: string | null, hastaIso: string, tipoCambio = 0,
+): { n: number; monto: number } {
+  let n = 0, monto = 0;
+  for (const c of cobrosSinVentaPorCuenta(e, desdeIso, hastaIso, tipoCambio).values()) { n += c.n; monto += c.monto; }
   return { n, monto: r2(monto) };
 }
 
@@ -207,6 +223,25 @@ export function detalleDeSaldo(lineas: readonly { moneda: string; monto: number;
 }
 
 export const totalDelDetalle = (d: readonly DetalleDeSaldo[]): number => r2(d.reduce((a, l) => a + l.montoBase, 0));
+
+/** Lo que cambió el valor en dólares de lo que ya había en cada moneda por moverse el tipo de cambio entre un arqueo y el otro: 4.000.000 pesos
+ *  a 1.600 son US$ 2.500 y a 1.545 son US$ 2.589; nadie puso ni sacó plata, es el cambio. Sólo cuenta lo que había en el arqueo anterior (lo
+ *  que entró después ya se anotó a su cambio) y las monedas que se cuentan en los dos arqueos con tipo de cambio. (Aldana, 24/10: con dLocal en
+ *  cuatro monedas «me da como mil usd de diferencia».) */
+export function efectoDelCambio(
+  anterior: readonly Pick<DetalleDeSaldo, "moneda" | "monto" | "tipoCambio">[] | undefined,
+  ahora: readonly { moneda: string; tipoCambio: number }[],
+): { total: number; lineas: { moneda: string; monto: number; antes: number; ahora: number; efecto: number }[] } {
+  const lineas: { moneda: string; monto: number; antes: number; ahora: number; efecto: number }[] = [];
+  for (const prev of anterior ?? []) {
+    const hoy = ahora.find((l) => l.moneda === prev.moneda);
+    if (!hoy || !(hoy.tipoCambio > 0) || !(prev.tipoCambio > 0) || !prev.monto) continue;
+    const antes = r2(prev.monto / prev.tipoCambio), valeAhora = r2(prev.monto / hoy.tipoCambio);
+    const efecto = r2(valeAhora - antes);
+    if (efecto !== 0) lineas.push({ moneda: prev.moneda, monto: prev.monto, antes, ahora: valeAhora, efecto });
+  }
+  return { total: r2(lineas.reduce((a, l) => a + l.efecto, 0)), lineas };
+}
 
 /* Las cuentas que no se usan seguido van en «Otros», al final del arqueo: a
    mano lo que se usa todo el tiempo y lo demás un clic más abajo (Yari, 02/10:

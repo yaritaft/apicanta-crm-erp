@@ -12,7 +12,7 @@ import { acciones, nuevoId, useEstado } from "@/lib/store";
 import { fechaLarga, money, num } from "@/lib/format";
 import { aMonedaBase, escribirMonto, fechaDePago, leerMonto } from "@/lib/gastos";
 import {
-  MESES_DE_COLCHON, cajaEsperada, cobrosSinVenta, detalleDeSaldo, enOtros, monedasDelSaldo, runway, totalDelDetalle, ultimoArqueo, type MovimientoCaja,
+  MESES_DE_COLCHON, cajaEsperada, cobrosSinVenta, cobrosSinVentaPorCuenta, detalleDeSaldo, efectoDelCambio, enOtros, monedasDelSaldo, runway, totalDelDetalle, ultimoArqueo, type MovimientoCaja,
 } from "@/lib/caja";
 import "./arqueo-detalle.css";
 import { primerConteo } from "@/lib/primer-conteo";
@@ -470,8 +470,21 @@ function NuevoArqueo({ e, onCerrar, onListo, traerAlAbrir = false }: { e: Estado
   /* Una cuenta que no estaba en el arqueo anterior (dLocal y las Financieras, «en revisión» el 7/10) no tiene de dónde partir: lo que ya tenía se
      deduce de lo contado menos lo que se movió, y se suma a lo esperado. Queda dicho en cada cuenta (lib/primer-conteo.ts). */
   const primer = primerConteo(saldos, porCuenta, Boolean(previo), (m, mo) => money(m, mo, 2));
-  const esperado = mov ? Math.round((mov.enCuentas + primer.totalBase) * 100) / 100 : null;
   const sinVenta = useMemo(() => cobrosSinVenta(e, previo?.fecha ?? null, fecha, tipoCambio), [e, previo?.fecha, fecha, tipoCambio]);
+  /* Lo que ya entró a cada cuenta y todavía no tiene su venta (está en la cuenta, no en «Cobrado») y lo que cambió el valor de lo que había en cada
+     moneda por moverse el tipo de cambio: es plata que está o que vale distinto, no plata que falte. Se le suma a lo que esa cuenta tendría que tener
+     (Aldana, 24/10: «había diferencia en Whop y en dLocal»: eran dos cobros de Whop sin venta y el cambio). */
+  const sinVentaPorCuenta = useMemo(() => cobrosSinVentaPorCuenta(e, previo?.fecha ?? null, fecha, tipoCambio), [e, previo?.fecha, fecha, tipoCambio]);
+  const sinVentaDe = (p: Procesador) => (p.moneda === "ARS" ? undefined : sinVentaPorCuenta.get(p.id));
+  const cambioDe = (p: Procesador) => {
+    const anterior = previo?.saldos.find((x) => x.procesadorId === p.id)?.detalle;
+    return monedasDelSaldo(p).length && anterior?.length
+      ? efectoDelCambio(anterior, lineasDe(p).map((l) => ({ moneda: l.codigo, tipoCambio: l.tipoCambio })))
+      : { total: 0, lineas: [] };
+  };
+  const ajusteDe = (p: Procesador) => Math.round(((sinVentaDe(p)?.monto ?? 0) + cambioDe(p).total) * 100) / 100;
+  const ajusteTotal = Math.round(cuentas.reduce((a, p) => a + ajusteDe(p), 0) * 100) / 100;
+  const esperado = mov ? Math.round((mov.enCuentas + primer.totalBase + ajusteTotal) * 100) / 100 : null;
   const deEstaCuenta = (id: string) => primer.cuentas.find((c) => c.procesadorId === id);
   const hayPesos = cuentas.some((p) => p.moneda === "ARS");
   const faltaTc = hayPesos && saldos.some((s) => s.moneda === "ARS") && !(tipoCambio > 0);
@@ -537,7 +550,11 @@ function NuevoArqueo({ e, onCerrar, onListo, traerAlAbrir = false }: { e: Estado
       const moneda = p.moneda ?? "USD";
       const enSuMoneda = (n: number, signo = false) => `${signo && n > 0 ? "+ " : n < 0 ? "− " : ""}${money(Math.abs(n), moneda)}`;
       const contado = textos[p.id]?.trim() ? leerMonto(textos[p.id]) : NaN;
-      const dif = s?.esperado !== undefined && Number.isFinite(contado) ? Math.round((contado - s.esperado) * 100) / 100 : null;
+      const sinVentaCuenta = sinVentaDe(p);
+      const cambio = cambioDe(p);
+      const ajuste = ajusteDe(p);
+      const esperadoCuenta = s?.esperado !== undefined ? Math.round((s.esperado + ajuste) * 100) / 100 : undefined;
+      const dif = esperadoCuenta !== undefined && Number.isFinite(contado) ? Math.round((contado - esperadoCuenta) * 100) / 100 : null;
       /* Lo contado contra lo que tendría que haber: el casillero se pinta
          (verde si da, ámbar si no) y adentro va el tilde o la diferencia. */
       const da = dif !== null && Math.abs(dif) < 1;
@@ -579,8 +596,24 @@ function NuevoArqueo({ e, onCerrar, onListo, traerAlAbrir = false }: { e: Estado
             {s?.salio ? enSuMoneda(-s.salio, true) : "—"}
           </span>
           <span role="cell" data-titulo="Tendría que haber" className="t-num">
-            {s?.esperado !== undefined ? money(s.esperado, moneda) : deEstaCuenta(p.id)
+            {esperadoCuenta !== undefined ? money(esperadoCuenta, moneda) : deEstaCuenta(p.id)
               ? <span className="t-sm t-subtle" title={deEstaCuenta(p.id)!.nota}>Primer conteo</span> : "—"}
+            {sinVentaCuenta && sinVentaCuenta.monto > 0 && (
+              <span
+                className="t-subtle arqueo-ajuste" data-ajuste="sin-venta"
+                title={`${sinVentaCuenta.n === 1 ? "Entró 1 cobro" : `Entraron ${sinVentaCuenta.n} cobros`} a esta cuenta que todavía no ${sinVentaCuenta.n === 1 ? "tiene" : "tienen"} su venta cargada${sinVentaCuenta.quienes.length ? ` (${sinVentaCuenta.quienes.join(", ")})` : ""}: la plata está en la cuenta pero no en «Cobró» hasta que se concilie. Ya está sumada acá.`}
+              >
+                incl. {money(sinVentaCuenta.monto, moneda)} sin venta
+              </span>
+            )}
+            {cambio.total !== 0 && (
+              <span
+                className="t-subtle arqueo-ajuste" data-ajuste="cambio"
+                title={`Lo que ya había en cada moneda en el último arqueo, al tipo de cambio de hoy contra el de entonces: ${cambio.lineas.map((l) => `${l.moneda} ${money(l.antes, base, 2)} → ${money(l.ahora, base, 2)}`).join("; ")}. Nadie puso ni sacó plata: es el cambio.`}
+              >
+                incl. {cambio.total > 0 ? "+" : "−"}{money(Math.abs(cambio.total), moneda)} por el cambio
+              </span>
+            )}
           </span>
           <span
             role="cell" className="arqueo-hay" title={dice} data-estado={dif === null ? undefined : da ? "da" : "difiere"}
@@ -625,6 +658,18 @@ function NuevoArqueo({ e, onCerrar, onListo, traerAlAbrir = false }: { e: Estado
               );
             })}
             <div className="arqueo-detalle__total"><span>Total en dólares</span><span className="t-num">{money(totalDelDetalle(detalleDe(p)), base, 2)}</span></div>
+            {monedas.length > 0 && previo?.saldos.some((x) => x.procesadorId === p.id && !x.detalle?.length) && (
+              <p className="t-sm t-subtle" style={{ margin: 0 }}>
+                El arqueo anterior contó {p.nombre} como un solo número en dólares, así que no se puede separar lo que cambió por el tipo de cambio: si no da, parte de la
+                diferencia puede ser el cambio de las monedas. Guardando éste por moneda, el próximo lo separa solo.
+              </p>
+            )}
+            {cambio.total !== 0 && (
+              <p className="t-sm t-subtle" style={{ margin: 0 }}>
+                Lo que ya había en el último arqueo vale {cambio.total > 0 ? "+" : "−"} {money(Math.abs(cambio.total), base, 2)} por el tipo de cambio de hoy
+                ({cambio.lineas.map((l) => `${l.moneda}: ${money(l.antes, base, 2)} → ${money(l.ahora, base, 2)}`).join(" · ")}). Ya está en «Tendría que haber»: no es plata que falte.
+              </p>
+            )}
           </div>
         )}
         </React.Fragment>
@@ -708,8 +753,8 @@ function NuevoArqueo({ e, onCerrar, onListo, traerAlAbrir = false }: { e: Estado
         )}
         {sinVenta.n > 0 && (
           <span className="t-sm t-subtle arqueo-resumen__nota">
-            Ojo: {sinVenta.n === 1 ? "entró 1 cobro" : `entraron ${sinVenta.n} cobros`} por {M(sinVenta.monto)} que todavía no tiene{sinVenta.n === 1 ? "" : "n"} su venta cargada: la plata está en la cuenta pero no
-            cuenta como cobrada hasta que se concilie. Si al contar sobra, puede ser esto (están en Conciliación).
+            El esperado ya incluye {sinVenta.n === 1 ? "1 cobro" : `${sinVenta.n} cobros`} por {M(sinVenta.monto)} que {sinVenta.n === 1 ? "entró" : "entraron"} a las cuentas y todavía no tiene{sinVenta.n === 1 ? "" : "n"} su venta cargada
+            (están en Conciliación): la plata está en la cuenta pero no cuenta como cobrada hasta que se concilie.
           </span>
         )}
       </div>

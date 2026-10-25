@@ -14,3 +14,6 @@
   .arqueo-detalle__fila { grid-template-columns: 1fr 1fr; }
   .arqueo-detalle__fila--cabeza { display: none; }
 }
+
+/* Lo que ya viene sumado a «Tendría que haber» de una cuenta: cobros que entraron sin venta cargada y el cambio de las monedas. */
+.arqueo-ajuste { display: block; font-size: 11px; line-height: 13px; font-weight: 400; cursor: help; text-wrap: balance; }
