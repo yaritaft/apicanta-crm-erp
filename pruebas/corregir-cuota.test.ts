@@ -91,3 +91,34 @@ test("corregir una cuota a lo ya cobrado la deja pagada (Demian, 24/10: pagó 97
   assert.deepEqual([c.monto, c.estado], [cobrado, "pagada"]);
   assert.equal(e.ventas.find((v) => v.id === venta.id)!.precioAcordado, Math.round((venta.precioAcordado - 3) * 100) / 100, "el total de la venta baja los 3");
 });
+
+/* La raíz (25/10): al cargar el pago de 976 la única salida era dejar 3 pendientes o pasarlos a una cuota nueva.
+   Ahora, al registrarlo, la diferencia se puede dar por no cobrada y la cuota queda cerrada en el momento. */
+test("registrar un pago corto con «saldar»: la cuota queda pagada en lo cobrado y la venta baja la diferencia, con el motivo", () => {
+  const { cuota, venta } = pendienteSinCobros();
+  const proc = estado().procesadores[0]?.id;
+  const cobrado = Math.round((cuota.monto - 3) * 100) / 100;
+  const pagosAntes = estado().pagos.length;
+  assert.equal(acciones.registrarPago({ cuotaId: cuota.id, cobros: [{ procesadorId: proc, monto: cobrado, fecha: "2026-10-23" }], reajuste: "saldar", motivo: "  " }), false, "sin motivo no se salda");
+  assert.equal(estado().pagos.length, pagosAntes, "y no queda el pago a medias");
+  assert.equal(acciones.registrarPago({ cuotaId: cuota.id, cobros: [{ procesadorId: proc, monto: cobrado, fecha: "2026-10-23" }], reajuste: "saldar", motivo: "redondeo del plan" }), true);
+  const e = estado();
+  const c = e.cuotas.find((x) => x.id === cuota.id)!;
+  assert.deepEqual([c.monto, c.estado], [cobrado, "pagada"]);
+  assert.match(c.notas ?? "", /no se cobra: redondeo del plan/);
+  const v = e.ventas.find((x) => x.id === venta.id)!;
+  assert.equal(v.precioAcordado, Math.round((venta.precioAcordado - 3) * 100) / 100, "el total de la venta baja los 3");
+  const plan = e.cuotas.filter((x) => x.ventaId === venta.id && x.estado !== "cancelada").reduce((t, x) => t + Math.round(x.monto * 100), 0);
+  assert.equal(plan, Math.round(v.precioAcordado * 100), "las cuotas siguen sumando el precio de la venta");
+  assert.equal(e.cuotas.filter((x) => x.ventaId === venta.id).length, estado().cuotas.filter((x) => x.ventaId === venta.id).length);
+  assert.ok(e.actividad.some((a) => /no se cobra/.test(a.detalle ?? "") && /redondeo del plan/.test(a.detalle ?? "")), "queda en la actividad con el motivo");
+});
+
+test("el asistente de pago ofrece «no se cobra» y la cuota cobrada en parte, «Dar por saldada»", () => {
+  const pago = readFileSync("src/components/cobros/RegistrarPago.tsx", "utf8");
+  assert.match(pago, /saldar: "No se cobra: la cuota queda saldada"/);
+  assert.match(pago, /Escribí por qué no se cobra la diferencia/);
+  const acc = readFileSync("src/components/cobros/AccionesDeCuota.tsx", "utf8");
+  assert.match(acc, /Dar por saldada/);
+  assert.match(acc, /Falta escribir por qué/, "el botón apagado dice qué le falta");
+});

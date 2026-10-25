@@ -2,7 +2,7 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { ArrowRight, Link2, Paperclip, Trash2 } from "lucide-react";
-import { Button, Select } from "@/components/ui/ui";
+import { Button, Field, Select, Textarea } from "@/components/ui/ui";
 import { Asistente, Pregunta, type PasoAsistente } from "@/components/ui/Asistente";
 import {
   agregarMedio, datosDeCobro, EditorCobros, esFinanciera, enPesos, problemaDeCuenta, problemaDeDatos,
@@ -10,6 +10,7 @@ import {
 } from "@/components/cobros/EditorCobros";
 import { acciones, nuevoId, useEstado } from "@/lib/store";
 import { useAcceso } from "@/lib/acceso";
+import { puedeEditar } from "@/lib/permisos";
 import { nube } from "@/lib/supabase";
 import { candadoDeCobro, corrigeSiempre } from "@/lib/candado-cobro";
 import { fechaLarga, money } from "@/lib/format";
@@ -33,17 +34,24 @@ import type { Cuota, Pago } from "@/lib/types";
 
    Si se paga menos de lo que vale la cuota, las cuotas se reacomodan
    solas (lo elige quien carga, con la vista previa de cómo quedan): la
-   plata que falta no se pierde, se mueve.
+   plata que falta no se pierde, se mueve. O, si es una diferencia que no
+   se va a cobrar (el redondeo del plan, lo que descontó la pasarela), la
+   cuota se da por saldada con el motivo, y el precio de la venta baja lo
+   mismo: quien puede corregir cuotas lo elige ahí, sin arreglarlo después.
    ================================================================== */
 
-type Reajuste = "repartir" | "proxima" | "pendiente";
+type Reajuste = "repartir" | "proxima" | "pendiente" | "saldar";
 type IdPaso = "cobro" | "prueba" | "datos" | "saldo" | "resumen";
 
-const REAJUSTES: { valor: Reajuste; texto: string }[] = [
-  { valor: "repartir", texto: "Repartirlo en las cuotas que siguen" },
-  { valor: "proxima", texto: "Sumarlo a la próxima cuota" },
-  { valor: "pendiente", texto: "Dejarlo pendiente en esta cuota" },
-];
+const TEXTO_REAJUSTE: Record<Reajuste, string> = {
+  repartir: "Repartirlo en las cuotas que siguen",
+  proxima: "Sumarlo a la próxima cuota",
+  pendiente: "Dejarlo pendiente en esta cuota",
+  saldar: "No se cobra: la cuota queda saldada",
+};
+
+/* Hasta cuánto la diferencia es «chica» y se propone darla por saldada (Demian, 23/10: 979 contra los 976 de Stripe). */
+const DIFERENCIA_CHICA = 5;
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
 
@@ -87,7 +95,9 @@ export function RegistrarPago({ cuota, onCerrar, onGuardado, embebido = false, p
     return () => { vivo = false; };
   }, [editando, acceso]);
   const candado = editando ? candadoDeCobro(editando, acceso, mesCerrado) : { bloqueado: false };
-  const [reajuste, setReajuste] = useState<Reajuste>("repartir");
+  /* Sin elegir, se propone según lo que falta (ver `reajuste` más abajo). */
+  const [reajusteElegido, setReajuste] = useState<Reajuste | null>(null);
+  const [motivoSaldar, setMotivoSaldar] = useState("");
   const [idPaso, setIdPaso] = useState<IdPaso>("cobro");
   const [subiendo, setSubiendo] = useState<Set<string>>(() => new Set());
   const onSubiendo = useCallback((id: string, si: boolean) => {
@@ -118,12 +128,32 @@ export function RegistrarPago({ cuota, onCerrar, onGuardado, embebido = false, p
   const actual = Math.max(0, pasos.findIndex((p) => p.id === idPaso));
   const paso = pasos[actual].id;
 
-  /* Cómo quedarían las cuotas que siguen, para verlo antes de guardar. */
+  const siguientes = useMemo(
+    () => (venta ? e.cuotas.filter((c) => c.ventaId === venta.id && c.id !== cuota.id && c.estado === "pendiente" && c.numero > cuota.numero) : [])
+      .sort((a, b) => a.numero - b.numero),
+    [venta, e.cuotas, cuota],
+  );
+  /* Darla por saldada cambia lo que vale la cuota y la venta: lo mismo que «Corregir monto», para quien edita cuotas. */
+  const puedeSaldar = puedeEditar(acceso, "cuotas") && !editando;
+  const chica = saldo > 0.01 && saldo <= DIFERENCIA_CHICA;
+  const reajuste: Reajuste = reajusteElegido === "saldar" && !puedeSaldar ? "repartir"
+    : reajusteElegido ?? (chica && puedeSaldar ? "saldar" : "repartir");
+  /* Sin cuotas después, repartir y sumar a la próxima hacen lo mismo: una cuota nueva con lo que falta. */
+  const opcionesReajuste: { valor: Reajuste; texto: string }[] = [
+    ...(siguientes.length === 0
+      ? [{ valor: "repartir" as const, texto: "Pasarlo a una cuota nueva" }]
+      : [{ valor: "repartir" as const, texto: TEXTO_REAJUSTE.repartir }, { valor: "proxima" as const, texto: TEXTO_REAJUSTE.proxima }]),
+    { valor: "pendiente", texto: TEXTO_REAJUSTE.pendiente },
+    ...(puedeSaldar ? [{ valor: "saldar" as const, texto: TEXTO_REAJUSTE.saldar }] : []),
+  ];
+  const textoReajuste = opcionesReajuste.find((x) => x.valor === reajuste)?.texto ?? TEXTO_REAJUSTE[reajuste];
+
+  /* Cómo quedarían las cuotas que siguen (o el valor de la venta, si no se cobra), para verlo antes de guardar. */
   const vistaPrevia = useMemo(() => {
     if (saldo <= 0.01 || reajuste === "pendiente" || !venta) return [];
-    const siguientes = e.cuotas
-      .filter((c) => c.ventaId === venta.id && c.id !== cuota.id && c.estado === "pendiente" && c.numero > cuota.numero)
-      .sort((a, b) => a.numero - b.numero);
+    if (reajuste === "saldar") {
+      return [{ nombre: "Valor de la venta", antes: venta.precioAcordado, despues: Math.max(0, r2(venta.precioAcordado - saldo)), vence: undefined }];
+    }
     if (siguientes.length === 0) {
       const ultima = e.cuotas.filter((c) => c.ventaId === venta.id).sort((a, b) => b.numero - a.numero)[0] ?? cuota;
       const vence = new Date(ultima.vence ?? cuota.vence ?? new Date().toISOString());
@@ -139,7 +169,7 @@ export function RegistrarPago({ cuota, onCerrar, onGuardado, embebido = false, p
       nombre: `Cuota ${c.numero}`, antes: c.monto, vence: c.vence,
       despues: r2(c.monto + (k === siguientes.length - 1 ? r2(saldo - parte * (siguientes.length - 1)) : parte)),
     }));
-  }, [saldo, reajuste, venta, e.cuotas, cuota]);
+  }, [saldo, reajuste, venta, e.cuotas, cuota, siguientes]);
 
   const problemaCobro = cobrado > resta + 0.01
     ? `Se cobra ${M(cobrado)} y a ${nombreCuota} le faltan ${M(resta)}`
@@ -155,11 +185,14 @@ export function RegistrarPago({ cuota, onCerrar, onGuardado, embebido = false, p
     ? "Esperá que termine de subir el comprobante"
     : (sinExigirPrueba ? null : problemaDePrueba(e, cobros, nombreCuota)) ?? problemaDePasarelas(eSinElCobro, cobros);
   const problemaDatos = problemaDeDatos(e, cobros, nombreCuota);
-  const problemaTotal = problemaCobro ?? problemaPrueba ?? problemaDatos;
+  const conSaldo = saldo > 0.01 && cobrado > 0 && !editando;
+  const problemaSaldo = conSaldo && reajuste === "saldar" && !motivoSaldar.trim() ? "Escribí por qué no se cobra la diferencia" : null;
+  const problemaTotal = problemaCobro ?? problemaPrueba ?? problemaDatos ?? problemaSaldo;
   const problema = paso === "cobro" ? problemaCobro
     : paso === "prueba" ? problemaPrueba
       : paso === "datos" ? problemaDatos
-        : paso === "resumen" ? problemaTotal : null;
+        : paso === "saldo" ? problemaSaldo
+          : paso === "resumen" ? problemaTotal : null;
 
   function guardar() {
     if (problemaTotal) return;
@@ -172,12 +205,14 @@ export function RegistrarPago({ cuota, onCerrar, onGuardado, embebido = false, p
       cuotaId: cuota.id,
       cobros: cobros.map(datosDeCobro),
       reajuste: saldo > 0.01 ? reajuste : "pendiente",
+      motivo: motivoSaldar,
     });
     if (!ok) return;
     onGuardado(
       saldo <= 0.01 ? "Pago registrado: la cuota quedó saldada."
         : reajuste === "pendiente" ? `Pago registrado. Quedan ${M(saldo)} pendientes en ${nombreCuota}.`
-          : "Pago registrado y cuotas reacomodadas.",
+          : reajuste === "saldar" ? `Pago registrado: ${nombreCuota} quedó saldada en ${M(r2(pagado + cobrado))} y los ${M(saldo)} que faltaban no se cobran.`
+            : "Pago registrado y cuotas reacomodadas.",
     );
   }
 
@@ -280,12 +315,14 @@ export function RegistrarPago({ cuota, onCerrar, onGuardado, embebido = false, p
         <>
           <Pregunta
             texto={`Faltan ${M(saldo)}: ¿qué hacemos con eso?`}
-            sub={`${laCuota} vale ${M(cuota.monto)} y con este pago entran ${M(r2(pagado + cobrado))}.`}
+            sub={`${laCuota} vale ${M(cuota.monto)} y con este pago entran ${M(r2(pagado + cobrado))}.${chica && puedeSaldar
+              ? " Si es el redondeo del plan o lo que descontó la pasarela, no hace falta cobrarlo: la cuota se da por saldada."
+              : ""}`}
           />
           <Select
             value={reajuste} aria-label="Qué hacer con lo que falta"
             onChange={(ev) => setReajuste(ev.target.value as Reajuste)}
-            opciones={REAJUSTES}
+            opciones={opcionesReajuste}
           />
           {reajuste === "pendiente" ? (
             <p className="t-sm t-subtle">
@@ -312,6 +349,14 @@ export function RegistrarPago({ cuota, onCerrar, onGuardado, embebido = false, p
               ))}
             </div>
           )}
+          {reajuste === "saldar" && (
+            <Field label="¿Por qué no se cobra?" ayuda="Queda anotado en la cuota y en la actividad.">
+              <Textarea
+                rows={2} value={motivoSaldar} onChange={(ev) => setMotivoSaldar(ev.target.value)}
+                placeholder="Ej.: diferencia de redondeo del plan, Stripe le cobra 976 por mes"
+              />
+            </Field>
+          )}
         </>
       )}
 
@@ -323,7 +368,7 @@ export function RegistrarPago({ cuota, onCerrar, onGuardado, embebido = false, p
             <dt>Cuota</dt><dd>{laCuota}{cuota.vence ? ` · vence ${fechaLarga(cuota.vence)}` : ""}</dd>
             <dt>Se cobra</dt><dd className="t-num">{M(cobrado)} de {M(resta)}</dd>
             {saldo > 0.01 && (
-              <><dt>Lo que falta</dt><dd>{M(saldo)} · {REAJUSTES.find((x) => x.valor === reajuste)?.texto.toLowerCase()}</dd></>
+              <><dt>Lo que falta</dt><dd>{M(saldo)} · {textoReajuste.toLowerCase()}{reajuste === "saldar" && motivoSaldar.trim() ? ` (${motivoSaldar.trim()})` : ""}</dd></>
             )}
           </dl>
           <div className="stack-2">

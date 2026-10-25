@@ -2863,14 +2863,22 @@ export const acciones = {
      - "repartir": la cuota queda en lo que se pagó y el saldo se reparte
        parejo entre las cuotas pendientes que siguen;
      - "proxima": el saldo se suma entero a la próxima cuota pendiente;
-     - "pendiente": la cuota queda como estaba, con su saldo.
+     - "pendiente": la cuota queda como estaba, con su saldo;
+     - "saldar": el saldo no se cobra; la cuota queda en lo que se pagó, ya
+       pagada, y el precio de la venta baja lo mismo (con `motivo`, obligatorio).
      Si no hay cuotas después, el saldo pasa a una cuota nueva un mes más
-     tarde. El total de la venta no cambia nunca: sólo se mueve el saldo. */
+     tarde. Salvo al saldar, el total de la venta no cambia: sólo se mueve el saldo.
+
+     «Saldar» es para la diferencia chica que no se va a cobrar (Demian, 23/10:
+     la cuota era de 979 por el redondeo del plan y Stripe le cobra 976). Sin
+     esa opción la cuota quedaba abierta por 3 dólares, o le nacía una cuota
+     nueva de 3, y había que arreglarla después a mano. */
 
   registrarPago(datos: {
     cuotaId: ID;
     cobros: DatosCobro[];
-    reajuste: "repartir" | "proxima" | "pendiente";
+    reajuste: "repartir" | "proxima" | "pendiente" | "saldar";
+    motivo?: string;
   }): boolean {
     const e = snapshot();
     const cuota = e.cuotas.find((c) => c.id === datos.cuotaId);
@@ -2914,9 +2922,18 @@ export const acciones = {
     const cambiadas = new Map<ID, Cuota>();
     let nueva: Cuota | undefined;
     let detalleReajuste = "";
+    let ventaSaldada: Venta | undefined;
 
     if (saldo <= 0.01) {
       cambiadas.set(cuota.id, { ...cuota, estado: "pagada" });
+    } else if (datos.reajuste === "saldar") {
+      const motivo = datos.motivo?.trim();
+      if (!motivo) return false;
+      const nombre = cuota.esReserva ? "La reserva" : `La cuota ${cuota.numero}`;
+      const linea = `${nombre} pasó de ${cuota.monto} a ${cubierto}, la diferencia no se cobra: ${motivo}`;
+      cambiadas.set(cuota.id, { ...cuota, monto: cubierto, estado: "pagada", notas: cuota.notas ? `${cuota.notas} | ${linea}` : linea });
+      ventaSaldada = { ...venta, precioAcordado: Math.max(0, r2(venta.precioAcordado - saldo)) };
+      detalleReajuste = ` La diferencia de ${saldo} no se cobra: la cuota queda saldada en ${cubierto} y el precio de la venta pasó de ${venta.precioAcordado} a ${ventaSaldada.precioAcordado}. Motivo: ${motivo}`;
     } else if (datos.reajuste !== "pendiente") {
       /* La cuota queda en lo que se pagó, y saldada. */
       cambiadas.set(cuota.id, { ...cuota, monto: cubierto, estado: "pagada" });
@@ -2983,10 +3000,13 @@ export const acciones = {
       `Se registró un pago de ${cobrado} en ${nombreCuota} de ${venta.contactoNombre}.${detalleReajuste}`,
     );
 
-    guardar({ ...e, pagos, cuotas, movimientos, actividad: lista });
+    const vs = ventaSaldada;
+    const ventas = vs ? e.ventas.map((v) => (v.id === vs.id ? vs : v)) : e.ventas;
+    guardar({ ...e, pagos, cuotas, ventas, movimientos, actividad: lista });
     empujar({ tipo: "upsert", tabla: "pagos", filas: nuevosPagos });
     const cuotasEscritas = [...(nueva ? [nueva] : []), ...cambiadas.values()];
     if (cuotasEscritas.length) empujar({ tipo: "upsert", tabla: "cuotas", filas: cuotasEscritas });
+    if (ventaSaldada) empujar({ tipo: "update", tabla: "ventas", ids: [venta.id], cambios: { precioAcordado: ventaSaldada.precioAcordado } });
     empujarMovimientos(movimientosTocados);
     empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
     return true;
