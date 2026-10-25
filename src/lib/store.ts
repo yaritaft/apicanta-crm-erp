@@ -17,6 +17,8 @@ import { conciliarPuntas, llegadaDeCobro, motivoDelMovimiento, paseDelCobro, rut
 import { gastoAprobado, plantillasDesdeGastos } from "./gastos-recurrentes";
 import { cobrosAnulados, NOTA_ANULADO } from "./mercury";
 import { MOTIVO_ANULADO } from "./motivos";
+import { categoriaDe } from "./gastos";
+import { esPagoDeTarjeta, problemaDelReparto, type CompraDeTarjeta } from "./reparto-tarjeta";
 import { conExtraEnMes, mismasTasas, nombrePeriodo, sinExtraEnLiquidacion, tasaParaFinanzas, tasasPorServicio } from "./honorarios";
 import {
   alumnoDeVenta, cuotaMensualDeVenta, etapaDelAlumno, etapaInicialDeServicio, etapasDeServicio,
@@ -1339,6 +1341,37 @@ export const acciones = {
     empujarEnLotes("gastos", nuevos);
     empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
     return { loteId, ids: nuevos.map((g) => g.id) };
+  },
+
+  /* El pago de la tarjeta de crédito, repartido en sus compras (lib/reparto-tarjeta.ts): el gasto único se va y en su lugar quedan una compra por línea,
+     cada una con su categoría, el mismo día, la misma cuenta y la misma referencia del banco. Suman lo que se pagó, así que la caja no cambia. */
+  repartirPagoDeTarjeta(gastoId: ID, compras: readonly CompraDeTarjeta[]): { ok: true; ids: ID[] } | { ok: false; error: string } {
+    const e = snapshot();
+    const g = e.gastos.find((x) => x.id === gastoId);
+    if (!g) return { ok: false, error: "No encuentro el gasto." };
+    if (!esPagoDeTarjeta(g)) return { ok: false, error: "Este gasto no es el pago de la tarjeta de crédito, o ya está repartido." };
+    const problema = problemaDelReparto(g.monto, compras);
+    if (problema) return { ok: false, error: problema };
+    const r2 = (n: number) => Math.round(n * 100) / 100;
+    const ahoraIso = ahora();
+    const nuevos: Gasto[] = compras.map((c) => ({
+      ...g, id: nuevoId("gas"), concepto: c.concepto.trim(), monto: r2(c.monto), categoria: c.categoria,
+      grupo: categoriaDe(e, c.categoria)?.grupo ?? g.grupo, creadoEn: ahoraIso,
+      notas: `Compra con la tarjeta de crédito · parte del pago de ${g.monto.toLocaleString("es-AR", { minimumFractionDigits: 2 })} del banco`,
+      extra: { ...g.extra, repartidoDe: g.id, repartidoConcepto: g.concepto, repartidoMonto: g.monto, repartidoEn: ahoraIso },
+    }));
+    /* El centavo que deja el redondeo se lo lleva la última, para que sumen exacto. */
+    const resto = r2(g.monto - nuevos.reduce((a, x) => a + x.monto, 0));
+    if (resto !== 0) nuevos[nuevos.length - 1] = { ...nuevos[nuevos.length - 1], monto: r2(nuevos[nuevos.length - 1].monto + resto) };
+    const { lista, nuevo } = registrar(
+      e, "transaccion", g.id, g.concepto, "actualizo",
+      `Se repartió el pago de la tarjeta de ${g.monto.toLocaleString("es-AR", { minimumFractionDigits: 2 })} ${g.moneda} en ${nuevos.length} ${nuevos.length === 1 ? "compra" : "compras"}: ${nuevos.map((x) => `${x.concepto} (${x.categoria})`).join(", ")}.`,
+    );
+    guardar({ ...e, gastos: [...nuevos, ...e.gastos.filter((x) => x.id !== g.id)], actividad: lista });
+    empujar({ tipo: "upsert", tabla: "gastos", filas: nuevos });
+    empujar({ tipo: "delete", tabla: "gastos", ids: [g.id] });
+    empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
+    return { ok: true, ids: nuevos.map((x) => x.id) };
   },
 
   /* Deshacer una carga masiva: se van todos los gastos de ese lote (los que se editaron después también). */

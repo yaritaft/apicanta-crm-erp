@@ -1,0 +1,19 @@
+/* Repartir el pago de la tarjeta de crédito en sus compras (RepartirPagoDeTarjeta). */
+.reparto { display: flex; flex-direction: column; gap: var(--space-2); }
+.reparto__fila { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(96px, 0.6fr) minmax(0, 1fr) 32px; gap: var(--space-2); align-items: center; }
+.reparto__fila--cabeza { font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-subtle); }
+.reparto__pegar { border: 1px dashed var(--border); border-radius: var(--radius-md); padding: var(--space-3) var(--space-4); }
+.reparto__pegar > summary { cursor: pointer; font-weight: 600; font-size: 13px; color: var(--ink-muted); }
+.reparto__pegar[open] > summary { margin-bottom: var(--space-3); }
+.reparto__total {
+  display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--space-2);
+  padding: var(--space-3) var(--space-4); border: 1px solid var(--border); border-radius: var(--radius-md); font-size: 14px;
+}
+.reparto__total[data-estado="da"] { border-color: color-mix(in srgb, var(--success) 45%, var(--border)); background: color-mix(in srgb, var(--success) 10%, transparent); }
+.reparto__total[data-estado="falta"], .reparto__total[data-estado="sobra"] { border-color: color-mix(in srgb, var(--warning) 45%, var(--border)); background: color-mix(in srgb, var(--warning) 10%, transparent); }
+.reparto__ok { display: inline-flex; align-items: center; gap: 4px; color: var(--success); font-weight: 600; }
+@media (max-width: 760px) {
+  .reparto__fila { grid-template-columns: 1fr 1fr 32px; }
+  .reparto__fila > :first-child { grid-column: 1 / -1; }
+  .reparto__fila--cabeza { display: none; }
+}

@@ -1,8 +1,8 @@
 "use client";
 
-import React from "react";
+import React, { useState } from "react";
 import Link from "next/link";
-import { Pencil, Trash2 } from "lucide-react";
+import { CreditCard, Pencil, Trash2 } from "lucide-react";
 import { Badge, Button } from "@/components/ui/ui";
 import { Drawer, Dato } from "@/components/ui/Drawer";
 import { fechaHora, fechaLarga, money, num } from "@/lib/format";
@@ -11,6 +11,8 @@ import { esIngreso } from "@/lib/carga-gasto";
 import { nombrePeriodo, periodoDeFecha } from "@/lib/periodos";
 import type { EstadoApp, Gasto } from "@/lib/types";
 import { VARIANTE_GRUPO } from "./ListaGastos";
+import { esParteDeUnPago, esPagoDeTarjeta } from "@/lib/reparto-tarjeta";
+import { RepartirPagoDeTarjeta } from "./RepartirPagoDeTarjeta";
 
 /* La ficha de un gasto: a donde lleva cada gasto del estado de resultados.
    Se ve todo lo que se cargó, y de acá se edita o se borra. */
@@ -27,6 +29,10 @@ export function FichaGasto({ gasto, e, onCerrar, onEditar, onBorrar }: {
   const dosFechas = tieneOtraFechaDePago(gasto);
   const mesQueCorresponde = nombrePeriodo(periodoDeFecha(gasto.fecha) || periodoDeFecha(new Date().toISOString()));
   const webinar = gasto.webinarId ? e.webinars.find((w) => w.id === gasto.webinarId) : undefined;
+  /* El pago de la tarjeta de crédito en un solo gasto: se reparte en sus compras (Aldana, 24/10). */
+  const [repartiendo, setRepartiendo] = useState(false);
+  const pagoDeTarjeta = esPagoDeTarjeta(gasto);
+  const deUnPago = esParteDeUnPago(gasto);
 
   return (
     <Drawer
@@ -55,6 +61,25 @@ export function FichaGasto({ gasto, e, onCerrar, onEditar, onBorrar }: {
             {" "}del estado de resultados, en las dos columnas. {grupo.ayuda}</>}
       </p>
 
+      {pagoDeTarjeta && (
+        <div className="help-card" role="note">
+          <CreditCard size={18} aria-hidden />
+          <div>
+            <div className="help-card__title">Es lo que se pagó de la tarjeta de crédito</div>
+            <div className="help-card__text">
+              Son las compras de esos días, juntas: el banco no las detalla. Repartilo en sus compras para que cada una caiga en su categoría (la mayoría, honorarios del CEO)
+              en vez de quedar todo en «{gasto.categoria}».
+            </div>
+            <Button sm variante="primary" style={{ marginTop: 8 }} onClick={() => setRepartiendo(true)}>Repartir en compras</Button>
+          </div>
+        </div>
+      )}
+      {deUnPago && (
+        <p className="t-sm t-subtle">
+          Es una de las compras en que se repartió el pago de la tarjeta de {money(Number(gasto.extra.repartidoMonto) || 0, e.ajustes.monedaBase, 2)}.
+        </p>
+      )}
+
       <dl className="dl">
         <Dato label="Categoría">{gasto.categoria}</Dato>
         {dosFechas ? (
@@ -78,6 +103,7 @@ export function FichaGasto({ gasto, e, onCerrar, onEditar, onBorrar }: {
         <Dato label="Notas">{gasto.notas || "—"}</Dato>
         <Dato label="Cargado">{gasto.creadoEn ? fechaHora(gasto.creadoEn) : "—"}</Dato>
       </dl>
+      {repartiendo && <RepartirPagoDeTarjeta e={e} gasto={gasto} onCerrar={() => setRepartiendo(false)} onListo={() => { setRepartiendo(false); onCerrar(); }} />}
     </Drawer>
   );
 }

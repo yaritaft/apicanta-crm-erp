@@ -2,7 +2,7 @@
 
 import React, { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeftRight, ClipboardPaste, Plus, Search } from "lucide-react";
+import { ArrowLeftRight, ClipboardPaste, CreditCard, Plus, Search } from "lucide-react";
 import { CabeceraVista } from "@/components/finanzas/vistas/CabeceraVista";
 import { Badge, Button, Card, Chip, Empty, Input, Select, StatCard } from "@/components/ui/ui";
 import { type Columna, DataTable } from "@/components/ui/DataTable";
@@ -20,6 +20,7 @@ import { fechaLarga, money, num } from "@/lib/format";
 import { nombrePeriodo } from "@/lib/periodos";
 import { cuentasDe, resumenDe, transaccionesDe, type Transaccion } from "@/lib/transacciones";
 import { normalizar } from "@/lib/gastos";
+import { esPagoDeTarjeta } from "@/lib/reparto-tarjeta";
 import { useBusquedaURL, useParamsURL, useTablaURL } from "@/lib/useParamsURL";
 import type { Gasto } from "@/lib/types";
 
@@ -117,6 +118,11 @@ export function TransaccionesVista({ embebido = false }: { embebido?: boolean })
   const [masiva, setMasiva] = useState(false);
   const [borrar, setBorrar] = useState<Gasto | null>(null);
   const gVista = verId ? e.gastos.find((g) => g.id === verId) ?? null : null;
+  /* Los pagos de la tarjeta de crédito que siguen siendo un solo gasto: las compras de adentro no tienen su categoría (Aldana, 24/10). */
+  const tarjetasSinRepartir = useMemo(
+    () => e.gastos.filter(esPagoDeTarjeta).sort((a, b) => Date.parse(b.fecha) - Date.parse(a.fecha)),
+    [e.gastos],
+  );
 
   const abrir = (f: Transaccion) => {
     if (f.gastoId) { setVerId(f.gastoId); return; }
@@ -173,6 +179,21 @@ export function TransaccionesVista({ embebido = false }: { embebido?: boolean })
           </div>
         )}
       />
+
+      {tarjetasSinRepartir.length > 0 && (
+        <div className="aviso-duplicado" role="status">
+          <div className="aviso-duplicado__fila">
+            <CreditCard size={16} aria-hidden />
+            <span className="aviso-duplicado__texto">
+              <strong>{tarjetasSinRepartir.length === 1 ? "1 pago de la tarjeta de crédito" : `${tarjetasSinRepartir.length} pagos de la tarjeta de crédito`} sin repartir: </strong>
+              {M(tarjetasSinRepartir.reduce((a, g) => a + g.monto, 0), 2)} en un solo gasto cada uno. El banco no detalla las compras: repartilas para que cada una caiga en su categoría.
+            </span>
+            <span className="aviso-duplicado__acciones">
+              <Button sm variante="primary" onClick={() => setVerId(tarjetasSinRepartir[0].id)}>Repartir el último</Button>
+            </span>
+          </div>
+        </div>
+      )}
 
       <div className="grid-stats">
         <StatCard
