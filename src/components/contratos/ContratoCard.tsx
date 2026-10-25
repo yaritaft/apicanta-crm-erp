@@ -341,7 +341,9 @@ export function ContratoCard({ venta, alumnoId, sesionId, manual, forma = "tarje
           </>
         ) : lista.map((c) => {
           const r = ROTULO_ESTADO[c.estado];
-          const acciones = prendidos ? accionesDe(c) : accionesDe(c).filter((a) => a === "ver-pdf");
+          /* «Volver a intentar» sólo en el último: los intentos viejos que no salieron quedan como historia (24/10: Ricardo tenía cuatro). */
+          const acciones = (prendidos ? accionesDe(c) : accionesDe(c).filter((a) => a === "ver-pdf"))
+            .filter((a) => !(a === "mandar" && c.estado === "error" && c !== lista[0]));
           const evs = eventos.filter((x) => x.contratoId === c.id);
           const ocupado = (a: string) => trabajando === `${c.id}:${a}`;
           const nombrePrograma = nombreDelContrato(c, programas);
@@ -451,7 +453,8 @@ export function ContratoCard({ venta, alumnoId, sesionId, manual, forma = "tarje
       ) : lista.map((c) => {
         const r = ROTULO_ESTADO[c.estado];
         /* Apagados, sólo se puede ver el PDF firmado. */
-        const acciones = prendidos ? accionesDe(c) : accionesDe(c).filter((a) => a === "ver-pdf");
+        const acciones = (prendidos ? accionesDe(c) : accionesDe(c).filter((a) => a === "ver-pdf"))
+          .filter((a) => !(a === "mandar" && c.estado === "error" && c !== lista[0]));
         const evs = eventos.filter((x) => x.contratoId === c.id);
         const ocupado = (a: string) => trabajando === `${c.id}:${a}`;
         const nombrePrograma = nombreDelContrato(c, programas);
