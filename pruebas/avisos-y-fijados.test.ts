@@ -83,3 +83,9 @@ test("«Contactados hoy / ayer» trae a los que se marcaron contactados ese día
   assert.match(panel, /renglonesCartera\(lista \|\| fijado \|\| contactadoEl \? panel\.cartera : base/, "con un fijado o «contactados» se mira toda la cartera");
   assert.match(panel, /const cuenta = panel\.cartera\.filter\(\(f\) => mismoFollowUp/, "el número del fijado cuenta lo mismo que trae");
 });
+
+test("la campanita dice de dónde viene el aviso: la ficha de la persona, o Contratos de PandaDoc", () => {
+  assert.equal(dondeEs({ persona: "Ricardo Alberto Chi Garcia", tipo: "pandadoc" }), "En la ficha de Ricardo Alberto Chi Garcia");
+  assert.equal(dondeEs({ persona: null, tipo: "pandadoc" } as never), "Contratos de PandaDoc");
+  assert.equal(dondeEs({ persona: null } as never), "En el chat de una ficha");
+});

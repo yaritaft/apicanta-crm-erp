@@ -147,7 +147,7 @@ export async function avisarSiEsElLimite(db: SupabaseClient, e: unknown, c: { no
       id: `av_pandadoc_limite_${dia}_${createHash("sha1").update(d.email.toLowerCase()).digest("hex").slice(0, 10)}`,
       para: d.email.toLowerCase(), tipo: "pandadoc", titulo: "PandaDoc llegó al límite del plan",
       cuerpo: `No salió el contrato${c.nombre ? ` de ${c.nombre.trim()}` : ""}${c.quien ? ` (lo intentó ${c.quien})` : ""}. Para que los contratos vuelvan a salir desde la app hay que ampliar el uso de la API en PandaDoc; mientras tanto se mandan desde PandaDoc a mano y la app los toma solos.`,
-      de: "PandaDoc", contactoId: c.leadId ?? null,
+      de: "PandaDoc", contactoId: c.leadId ?? null, persona: c.nombre?.trim() || null,
     }));
     if (filas.length) await db.from("avisos").upsert(filas, { onConflict: "id", ignoreDuplicates: true });
   } catch (err) { console.error("[contratos] no se pudo avisar del límite de PandaDoc", mensajeDe(err)); }

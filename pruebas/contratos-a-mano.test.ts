@@ -291,6 +291,7 @@ test("el tope del plan se dice como tal (no «no acepta la clave»), se les avis
     assert.deepEqual(t.avisos.map((a) => a.para).sort(), ["juan@apicanta.com", "yari@apicanta.com"], "sólo a los dueños");
     assert.match(String(t.avisos[0].cuerpo), /Ricardo Alberto Chi Garcia/);
     assert.equal(t.avisos[0].contactoId, "lead_ricardo", "el aviso abre su ficha");
+    assert.equal(t.avisos[0].persona, "Ricardo Alberto Chi Garcia", "la campanita dice de quién es");
     assert.equal(pd.llamadas.filter((l) => l.metodo === "POST" && l.ruta === "/documents").length, 0, "no se creó otro documento");
   } finally { pd.restaurar(); }
 
