@@ -350,7 +350,7 @@ export function ContratoCard({ venta, alumnoId, sesionId, manual, forma = "tarje
           const faltan = accesosPendientes(c, evs);
           const botones = [
             prendidos && faltan.pendiente && <Button key="accesos" sm variante="primary" icono={<KeyRound size={14} />} cargando={ocupado("accesos")} onClick={() => darAccesos(c)}>Dar los accesos</Button>,
-            acciones.includes("mandar") && <Button key="mandar" sm variante="secondary" icono={<Send size={14} />} cargando={ocupado("mandar")} onClick={() => void hacer(c, "mandar", {}, "Contrato mandado.")}>Mandar</Button>,
+            acciones.includes("mandar") && <Button key="mandar" sm variante={c.estado === "error" ? "primary" : "secondary"} icono={<Send size={14} />} cargando={ocupado("mandar")} onClick={() => void hacer(c, "mandar", {}, "Contrato mandado.")}>{c.estado === "error" ? "Volver a intentar" : "Mandar"}</Button>,
             acciones.includes("reenviar") && <Button key="reenviar" sm variante="secondary" icono={<Send size={14} />} cargando={ocupado("reenviar")} onClick={() => void hacer(c, "reenviar", {}, "Se le volvió a mandar el mail para firmar.")}>Reenviar</Button>,
             acciones.includes("corregir") && (
               <Button key="corregir" sm variante="ghost" icono={<Pencil size={14} />}
@@ -488,7 +488,7 @@ export function ContratoCard({ venta, alumnoId, sesionId, manual, forma = "tarje
                   <Button sm variante="secondary" icono={<Copy size={14} />} cargando={ocupado("enlace")} onClick={() => void copiarEnlace(c)}>Copiar link</Button>
                 )}
                 {acciones.includes("mandar") && (
-                  <Button sm variante="secondary" icono={<Send size={14} />} cargando={ocupado("mandar")} onClick={() => void hacer(c, "mandar", {}, "Contrato mandado.")}>Mandar</Button>
+                  <Button sm variante={c.estado === "error" ? "primary" : "secondary"} icono={<Send size={14} />} cargando={ocupado("mandar")} onClick={() => void hacer(c, "mandar", {}, "Contrato mandado.")}>{c.estado === "error" ? "Volver a intentar" : "Mandar"}</Button>
                 )}
                 {acciones.includes("reenviar") && (
                   <Button sm variante="ghost" icono={<Send size={14} />} cargando={ocupado("reenviar")} onClick={() => void hacer(c, "reenviar", {}, "Se le volvió a mandar el mail para firmar.")}>Reenviar</Button>

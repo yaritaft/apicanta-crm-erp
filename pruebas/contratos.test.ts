@@ -85,6 +85,7 @@ test("los botones según el estado (un firmado no se anula ni se reenvía: se ma
   assert.ok(accionesDe({ estado: "visto", documentoId: "d" }).includes("anular"));
   assert.deepEqual(accionesDe({ estado: "anulado", documentoId: "d" }), ["mandar-otro"]);
   assert.deepEqual(accionesDe({ estado: "error", documentoId: null }), ["mandar-otro"]);
+  assert.deepEqual(accionesDe({ estado: "error", documentoId: "d" }), ["mandar", "mandar-otro"], "llegó a PandaDoc: se vuelve a intentar con el mismo");
   assert.deepEqual(accionesDe({ estado: "creando", documentoId: null }), []);
 });
 

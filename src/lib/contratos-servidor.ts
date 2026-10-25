@@ -1,4 +1,4 @@
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   accesosAlFirmar, cambiosDelFirmante, cuerpoDocumento, datosDelDocumento, destinatario, estadoDePandadoc, fichaAlFirmar, firmanteDelDocumento,
@@ -13,6 +13,7 @@ import { plantillaDelContrato, programaDePlantilla, programaPorId, programasDe, 
 import type { ConfigContratos } from "./types";
 import { conCodigoDelAlumno, guiaDeBienvenida, htmlDeBienvenida, textoDeBienvenida, type ConfigBienvenida } from "./bienvenida-alumno";
 import { codigoDeAlumno, configResend, enviarPorResend } from "./reporte-servidor";
+import { diaDeNegocio } from "./dia-negocio";
 
 /* ==================================================================
    Los contratos del lado del servidor: lo que se hace con PandaDoc y lo
@@ -130,8 +131,26 @@ export async function crearContrato(db: SupabaseClient, p: PedidoContrato): Prom
   } catch (e) {
     await guardar(db, id, { estado: "error", error: mensajeDe(e) });
     await evento(db, id, "error", p.quien, "app", { error: mensajeDe(e), detalle: e instanceof ErrorPandadoc ? e.detalle : "" });
+    await avisarSiEsElLimite(db, e, { nombre: p.datos.nombre, leadId: p.leadId ?? null, quien: p.quien });
   }
   return (await contratoPorId(db, id))!;
+}
+
+/* El tope de documentos del plan de PandaDoc no lo arregla nadie desde la ficha: hay que ampliarlo en PandaDoc. Se les avisa a los
+   dueños en la campanita (uno por día, aunque fallen varios), así no se enteran por el WhatsApp de quien no pudo mandarlo. */
+export async function avisarSiEsElLimite(db: SupabaseClient, e: unknown, c: { nombre?: string | null; leadId?: string | null; quien?: string }): Promise<void> {
+  if (!(e instanceof ErrorPandadoc) || e.motivo !== "limite") return;
+  try {
+    const r = await db.from("usuarios_permitidos").select("email").eq("rol", "dueno");
+    const dia = diaDeNegocio(ahora()).replace(/-/g, "");
+    const filas = ((r.data ?? []) as { email: string }[]).filter((d) => d.email).map((d) => ({
+      id: `av_pandadoc_limite_${dia}_${createHash("sha1").update(d.email.toLowerCase()).digest("hex").slice(0, 10)}`,
+      para: d.email.toLowerCase(), tipo: "pandadoc", titulo: "PandaDoc llegó al límite del plan",
+      cuerpo: `No salió el contrato${c.nombre ? ` de ${c.nombre.trim()}` : ""}${c.quien ? ` (lo intentó ${c.quien})` : ""}. Para que los contratos vuelvan a salir desde la app hay que ampliar el uso de la API en PandaDoc; mientras tanto se mandan desde PandaDoc a mano y la app los toma solos.`,
+      de: "PandaDoc", contactoId: c.leadId ?? null,
+    }));
+    if (filas.length) await db.from("avisos").upsert(filas, { onConflict: "id", ignoreDuplicates: true });
+  } catch (err) { console.error("[contratos] no se pudo avisar del límite de PandaDoc", mensajeDe(err)); }
 }
 
 /** El link para firmar, para copiarlo y mandarlo por WhatsApp. Si no sale, el contrato sigue igual. */
@@ -144,9 +163,24 @@ async function refrescarEnlace(db: SupabaseClient, id: string, modo: ModoContrat
 
 /* ---------- Lo que se le hace a uno que ya existe ---------- */
 
+/** Manda el que quedó en borrador, o vuelve a intentar uno que no salió («Volver a intentar»): usa el MISMO documento que ya está
+    en PandaDoc, así un reintento no gasta otro documento del plan (el 24/10 se gastaron cuatro probando «Mandar uno nuevo»). */
 export async function mandarBorrador(db: SupabaseClient, c: Contrato, quien: string, config?: ConfigContratos): Promise<void> {
   if (!c.documentoId) throw new Error("Este contrato no llegó a PandaDoc: mandá uno nuevo.");
-  await mandarDocumento(c.modo, c.documentoId, mensajeDelContrato(config, c.datos, nombrePrograma(c)));
+  try {
+    if (c.estado === "error") {
+      const estado = await esperarBorrador(c.modo, c.documentoId);
+      if (estado !== "document.draft") throw new ErrorPandadoc(409, `Ese intento quedó en «${estado || "sin estado"}» en PandaDoc: mandá uno nuevo.`);
+    }
+    await mandarDocumento(c.modo, c.documentoId, mensajeDelContrato(config, c.datos, nombrePrograma(c)));
+  } catch (e) {
+    if (c.estado === "error") {
+      await guardar(db, c.id, { error: mensajeDe(e) });
+      await evento(db, c.id, "error", quien, "app", { error: mensajeDe(e), detalle: e instanceof ErrorPandadoc ? e.detalle : "", reintento: true });
+    }
+    await avisarSiEsElLimite(db, e, { nombre: c.destinatario?.nombre ?? c.datos?.nombre, leadId: c.leadId ?? null, quien });
+    throw e;
+  }
   await guardar(db, c.id, { estado: "enviado", enviadoEn: ahora(), sincronizadoEn: ahora(), error: null });
   await evento(db, c.id, "enviado", quien, "app", { a: c.destinatario.email });
   await refrescarEnlace(db, c.id, c.modo, c.documentoId, c.destinatario.email ?? "");

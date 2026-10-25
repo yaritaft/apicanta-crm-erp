@@ -1,7 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { alFirmar, darAccesosAhora, vincular } from "@/lib/contratos-servidor";
+import { alFirmar, darAccesosAhora, mandarBorrador, vincular } from "@/lib/contratos-servidor";
+import { MENSAJE_LIMITE } from "@/lib/pandadoc-servidor";
 import type { Contrato } from "@/lib/contratos";
 
 /* ==================================================================
@@ -271,4 +272,45 @@ test("corregir el mail del alumno lo edita por su id; si algo falla a mitad, que
     assert.equal(t.contratos[0].estado, "borrador", "la ficha sabe que quedó en borrador y ofrece mandarlo");
     assert.match(String(t.contratos[0].error), /PandaDoc contestó 400/);
   } finally { roto.restaurar(); }
+});
+
+/* ---------- El tope del plan de PandaDoc (24/10: el contrato de Ricardo Chi Garcia «no aceptaba la clave») ---------- */
+
+const LIMITE = () => new Response(JSON.stringify({ type: "authorization_error", detail: "You have reached your document usage limit. Please contact support or upgrade your plan to increase your limit." }), { status: 403 });
+
+test("el tope del plan se dice como tal (no «no acepta la clave»), se les avisa a los dueños y «Volver a intentar» no crea otro documento", async () => {
+  const c = contrato({ estado: "error", modo: "prueba", documentoId: "doc_ricardo", leadId: "lead_ricardo", error: "PandaDoc no acepta la clave.",
+    destinatario: { nombre: "Ricardo Alberto Chi Garcia", email: "ricardo@x.com", telefono: "" } });
+  const t = tablasCon(c, { usuarios_permitidos: [{ email: "Yari@apicanta.com", rol: "dueno" }, { email: "juan@apicanta.com", rol: "dueno" }, { email: "lili@apicanta.com", rol: "cs" }], avisos: [] });
+  const db = baseFalsa(t);
+  const pd = pandadocFalso("document.draft", (l) => (l.metodo === "POST" && l.ruta.endsWith("/send") ? LIMITE() : null));
+  try {
+    await assert.rejects(mandarBorrador(db, c, "liliana@apicanta.com"), (e: Error) => e.message === MENSAJE_LIMITE);
+    assert.equal(t.contratos[0].error, MENSAJE_LIMITE, "la ficha dice la causa real");
+    assert.equal(t.contratos[0].estado, "error");
+    assert.deepEqual(t.avisos.map((a) => a.para).sort(), ["juan@apicanta.com", "yari@apicanta.com"], "sólo a los dueños");
+    assert.match(String(t.avisos[0].cuerpo), /Ricardo Alberto Chi Garcia/);
+    assert.equal(t.avisos[0].contactoId, "lead_ricardo", "el aviso abre su ficha");
+    assert.equal(pd.llamadas.filter((l) => l.metodo === "POST" && l.ruta === "/documents").length, 0, "no se creó otro documento");
+  } finally { pd.restaurar(); }
+
+  /* Ampliado el plan: «Volver a intentar» manda el MISMO documento. */
+  const ok = pandadocFalso("document.draft");
+  try {
+    await mandarBorrador(db, { ...c, error: MENSAJE_LIMITE }, "liliana@apicanta.com");
+    assert.equal(t.contratos[0].estado, "enviado");
+    assert.equal(t.contratos[0].error, null);
+    assert.deepEqual(ok.llamadas.filter((l) => l.metodo === "POST").map((l) => l.ruta), ["/documents/doc_ricardo/send", "/documents/doc_ricardo/session"]);
+  } finally { ok.restaurar(); }
+});
+
+test("un 401 sigue siendo la clave; un 403 de permiso ya no se confunde con la clave", async () => {
+  const c = contrato({ estado: "borrador", modo: "prueba", documentoId: "doc_x" });
+  for (const [respuesta, esperado] of [
+    [new Response(JSON.stringify({ detail: "Authentication credentials were not provided." }), { status: 401 }), /no acepta la clave/],
+    [new Response(JSON.stringify({ detail: "You do not have permission to perform this action." }), { status: 403 }), /no le da permiso/],
+  ] as const) {
+    const pd = pandadocFalso("document.draft", (l) => (l.ruta.endsWith("/send") ? respuesta.clone() : null));
+    try { await assert.rejects(mandarBorrador(baseFalsa(tablasCon(c)), c, "x"), esperado); } finally { pd.restaurar(); }
+  }
 });

@@ -455,7 +455,7 @@ export function mensajeDelContrato(config: ConfigContratos | undefined, d: Parti
 export type AccionContrato = "copiar-enlace" | "reenviar" | "corregir" | "anular" | "mandar" | "mandar-otro" | "ver-pdf" | "sincronizar";
 
 /** Los botones según el estado. No se ofrece lo que PandaDoc va a negar: un firmado no se anula, no se reenvía ni se
-    corrige. Si tiene un error, se manda otro (como en Blue OS): el firmado queda como está y el nuevo lo reemplaza. */
+    corrige. Si tiene un error, se vuelve a intentar con el mismo documento o se manda otro (como en Blue OS). */
 export function accionesDe(c: Pick<Contrato, "estado" | "documentoId">): AccionContrato[] {
   const conDoc = Boolean(c.documentoId);
   switch (c.estado) {
@@ -465,8 +465,9 @@ export function accionesDe(c: Pick<Contrato, "estado" | "documentoId">): AccionC
     case "visto": return ["copiar-enlace", "reenviar", "corregir", "anular", "sincronizar"];
     case "firmado": return ["ver-pdf", "mandar-otro"];
     case "rechazado":
-    case "anulado":
-    case "error": return ["mandar-otro"];
+    case "anulado": return ["mandar-otro"];
+    /* Si llegó a PandaDoc, «Volver a intentar» manda ese mismo (no gasta otro documento del plan). */
+    case "error": return conDoc ? ["mandar", "mandar-otro"] : ["mandar-otro"];
   }
 }
 

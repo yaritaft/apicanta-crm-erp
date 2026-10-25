@@ -29,10 +29,21 @@ export function clavePandadoc(modo?: ModoContrato): { clave: string; modo: ModoC
   return prueba ? { clave: prueba, modo: "prueba" } : null;
 }
 
+/** Por qué dijo que no: la clave, el tope de documentos del plan, un permiso, u otra cosa. */
+export type MotivoPandadoc = "clave" | "limite" | "permiso" | "otro";
+
 /** Un error de PandaDoc, con un texto propio (el de PandaDoc va aparte, para el registro). */
 export class ErrorPandadoc extends Error {
-  constructor(public status: number, mensaje: string, public detalle = "") { super(mensaje); }
+  constructor(public status: number, mensaje: string, public detalle = "", public motivo: MotivoPandadoc = "otro") { super(mensaje); }
 }
+
+/** El plan llegó a su tope de documentos por API. PandaDoc contesta 403 con «You have reached your document usage limit» y la
+    app lo mostraba como «no acepta la clave» (24/10: el contrato de Ricardo Chi Garcia no salía y nadie sabía por qué). */
+export const esLimiteDelPlan = (status: number, detalle: string): boolean =>
+  (status === 402 || status === 403 || status === 429) && /usage limit|upgrade your plan|document limit/i.test(detalle);
+
+export const MENSAJE_LIMITE = "PandaDoc llegó al límite de contratos que su plan deja mandar desde la app. Ya se les avisó a los dueños para ampliarlo. "
+  + "Mientras tanto, mandalo desde PandaDoc con la plantilla (la app lo toma solo) o tocá «Volver a intentar» más tarde.";
 
 async function pd(modo: ModoContrato, ruta: string, init: RequestInit = {}): Promise<Response> {
   const c = clavePandadoc(modo);
@@ -56,12 +67,17 @@ async function json<T = Record<string, unknown>>(r: Response, que: string): Prom
   const cuerpo = await r.json().catch(() => null) as T & { detail?: unknown; type?: string } | null;
   if (!r.ok) {
     const detalle = typeof cuerpo?.detail === "string" ? cuerpo.detail : JSON.stringify(cuerpo?.detail ?? cuerpo ?? "").slice(0, 300);
-    const texto = r.status === 401 || r.status === 403 ? "PandaDoc no acepta la clave."
+    /* Lo que dice PandaDoc decide el texto: un 403 no siempre es la clave (el tope del plan también es 403). */
+    const limite = esLimiteDelPlan(r.status, detalle);
+    const motivo: MotivoPandadoc = limite ? "limite" : r.status === 401 ? "clave" : r.status === 403 ? "permiso" : "otro";
+    const texto = limite ? MENSAJE_LIMITE
+      : r.status === 401 ? "PandaDoc no acepta la clave."
+      : r.status === 403 ? `PandaDoc no le da permiso a la cuenta de la clave para ${que}.`
       : r.status === 404 ? "PandaDoc no encuentra el documento."
       : r.status === 409 ? "PandaDoc no deja hacer eso con el documento en este estado."
       : r.status === 429 ? "PandaDoc pidió esperar un poco: probá de nuevo en un minuto."
       : `PandaDoc contestó ${r.status} al ${que}.`;
-    throw new ErrorPandadoc(r.status, texto, detalle);
+    throw new ErrorPandadoc(r.status, texto, detalle, motivo);
   }
   return (cuerpo ?? {}) as T;
 }
