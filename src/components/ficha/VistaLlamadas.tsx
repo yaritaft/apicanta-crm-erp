@@ -17,6 +17,7 @@ import type { Persona } from "@/lib/persona";
 import type { Grabacion } from "@/lib/fathom";
 import { GrabacionFathom, useGrabaciones } from "./GrabacionFathom";
 import { PerfilPersona } from "./PerfilPersona";
+import { CapturasPrecall } from "./CapturasPrecall";
 
 /* ==================================================================
    La ficha, vista Llamadas: cada llamada de esta persona con sus dos
@@ -25,7 +26,8 @@ import { PerfilPersona } from "./PerfilPersona";
    para cuándo se estima el cierre, la grabación y las notas. La que ya
    pasó y nadie cargó se carga desde acá (el mismo EOD, para esa sola). Si
    Fathom la grabó, abajo va lo suyo: el resumen, los accionables y la
-   transcripción (GrabacionFathom). Quien dirige las ventas (no el closer)
+   transcripción (GrabacionFathom), y las capturas de la pre-call
+   (CapturasPrecall). Quien dirige las ventas (no el closer)
    puede pasarla a otro closer desde acá (components/closers/PasarLlamadas).
 
    Arriba, quién es (PerfilPersona): cada dato una sola vez en la ficha.
@@ -113,6 +115,8 @@ function Llamada({ f, grabaciones, onCargar, onPasar, contrato }: {
       )}
       {f.notas && <p className="t-sm t-muted" style={{ whiteSpace: "pre-wrap", margin: 0 }}>{f.notas}</p>}
       {grabaciones.map((g) => <GrabacionFathom key={g.id} g={g} />)}
+      {/* El chat de antes de la llamada: para la comisión del setter y como prueba si se cancela. */}
+      <CapturasPrecall sesionId={f.id} />
       {(cargable || onPasar) && (
         <div className="row-wrap">
           {cargable && (

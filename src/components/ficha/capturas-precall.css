@@ -1,0 +1,25 @@
+/* Las capturas de la pre-call de una llamada (components/ficha/CapturasPrecall.tsx). */
+.precall { display: flex; flex-direction: column; gap: var(--space-2); }
+.precall__cabeza { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; min-height: 28px; }
+.precall__botones { display: inline-flex; gap: 4px; margin-left: auto; }
+.precall__zona {
+  display: flex; align-items: center; justify-content: center; text-align: center; min-height: 44px; padding: var(--space-2) var(--space-3);
+  border: 1px dashed var(--border-strong, var(--border)); border-radius: var(--radius-md); background: transparent; outline: none;
+  transition: border-color 120ms, background 120ms;
+}
+.precall__zona:focus-visible, .precall__zona[data-encima="true"] {
+  border-color: var(--brand); background: color-mix(in srgb, var(--brand) 10%, transparent);
+}
+.precall__subiendo { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--ink-muted, var(--ink)); }
+.precall__error { margin: 0; font-size: 13px; color: var(--danger); }
+.precall__grilla { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(112px, 1fr)); gap: var(--space-2); }
+.precall__item { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.precall__miniatura {
+  display: grid; place-items: center; width: 100%; aspect-ratio: 3 / 4; padding: 0; overflow: hidden; cursor: zoom-in;
+  border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface-200);
+}
+.precall__miniatura:hover, .precall__miniatura:focus-visible { border-color: var(--brand); outline: none; }
+.precall__miniatura img { width: 100%; height: 100%; object-fit: cover; object-position: top; display: block; }
+.precall__pie { font-size: 12px; }
+.precall__grande { display: grid; place-items: center; max-height: 72vh; overflow: auto; }
+.precall__grande img { max-width: 100%; height: auto; border-radius: var(--radius-md); }

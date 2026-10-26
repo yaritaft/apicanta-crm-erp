@@ -1617,3 +1617,13 @@ por sus encabezados (`CAMPOS_CVS` en `src/lib/importar-cs.ts`; acepta los nombre
 
 - Pruebas: `pruebas/fathom-links.test.ts`, `pruebas/transcripciones.test.ts` (el zip se abre con `unzip`), `pruebas-estres/pasarelas/fathom-barrido.test.ts` y el caso nuevo de `fathom-webhook.test.ts`.
 - Para instalarlo: `supabase/fathom-links.sql` (idempotente; necesita `supabase/fathom.sql`). Sin la tabla el cron no avanza pero no rompe nada.
+
+## Capturas de la pre-call en cada llamada (Santi, 26/10)
+
+«Poner en cada call un apartado para la captura de pantalla de la pre-call: que el setter cargue el chat y le asignemos comisión, o como prueba de que el closer le escribió cuando la llamada se cancela.»
+
+- **Dónde:** el apartado «Capturas de la pre-call» (`src/components/ficha/CapturasPrecall.tsx`) está en cada llamada de la ficha de la persona (Llamadas) y en el cierre del día, debajo del link de la grabación. Se suben eligiendo, arrastrando, pegando con Ctrl+V sobre el recuadro o con el botón «Pegar» (lee el portapapeles). Se ven en grande con un clic y se borran con confirmación. Cada una dice quién la subió y cuándo.
+- **Dónde se guardan:** bucket PRIVADO `precall` de Supabase Storage (8 MB, sólo imágenes), en la carpeta de su llamada, y la tabla `precall_capturas` (quién, cuándo, ruta). Para verlas la app pide una URL firmada de 5 minutos (`src/lib/precall.ts`). Sin nube, quedan en el navegador (para probar).
+- **Quién puede qué** (`supabase/precall-capturas.sql`, la misma función `precall_puede` para la tabla y los archivos): ve quien ve las llamadas (el closer, las suyas; el setter, las que marcó); sube quien edita las llamadas y un setter activo en una agenda suya o sin marcar; borra quien la subió, un dueño o el director. Una captura no se reemplaza: se sube otra. Ensayado con una cuenta de cada tipo dentro de una transacción que se revirtió.
+- Pruebas: `pruebas/precall-capturas.test.ts` (tipos y tamaños, la ruta con la llamada de carpeta, el nombre de lo pegado y que el SQL deja el bucket privado y sin UPDATE).
+- Para instalarlo: `supabase/precall-capturas.sql` (idempotente; necesita `tipos-cuenta.sql` y `setter-marca-agendas.sql`).

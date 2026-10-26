@@ -28,6 +28,7 @@ import { reglaDeCierre, strikesDe } from "@/lib/cierre-del-dia";
 import type { OpcionCrm, Sesion } from "@/lib/types";
 import { textoFecha } from "./FiltroColumna";
 import { GrabacionDeLlamada } from "./GrabacionDeLlamada";
+import { CapturasPrecall } from "@/components/ficha/CapturasPrecall";
 import { CuentaDeStrikes } from "./Strikes";
 
 /* ==================================================================
@@ -613,6 +614,7 @@ function PasoLlamada({ s, f, hoy, r, objeciones, opciones, buscaEnFathom, conPue
               placeholder={porQue ? "Qué dijo, qué le falta, cuándo lo volvés a llamar…" : "Algo para acordarse"} />
           </div>
           <GrabacionDeLlamada s={s} valor={r.grabacion ?? s.grabacion ?? ""} buscar={buscaEnFathom} onCambiar={(link) => onResponder({ grabacion: link })} />
+          <CapturasPrecall sesionId={s.id} />
         </div>
       )}
       </div>
