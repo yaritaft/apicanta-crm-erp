@@ -1,7 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { BARRIDO_VACIO, decidirBarrido, type EstadoBarrido } from "./fathom-barrido";
 import { equipoDeLaPasada, escribirPasada, leerPasada, PRIMERA_PASADA, seguir } from "./fathom-equipos";
-import { equiposDeVentasDeFathom, EsperarAFathom, guardarGrabacion, reunionesDesde } from "./fathom-servidor";
+import { equiposDeVentasDeFathom, EsperarAFathom, guardarGrabacion, POR_QUIEN, reunionesDesde } from "./fathom-servidor";
 import { idDeShare } from "./fathom";
 
 /* El barrido de Fathom por los links, del lado del servidor (lib/fathom-barrido
@@ -29,6 +29,17 @@ export async function llamadasConLink(db: SupabaseClient): Promise<{ todas: Llam
     for (const g of (r.data ?? []) as { sesionId: string }[]) listas.add(g.sesionId);
   }
   return { todas, pendientes: todas.filter((x) => !listas.has(x.id)) };
+}
+
+/** Después de la pasada por todo lo que la clave ve: cada equipo de ventas de Fathom y, aparte, lo que grabó cada
+    closer por su correo de Equipo. Sin ese pedido por persona, Fathom no devuelve las llamadas de quien está fuera de
+    la organización (varios closers graban con otra cuenta), aunque las haya compartido. */
+async function pasadasExtra(db: SupabaseClient): Promise<string[]> {
+  const equipos = await equiposDeVentasDeFathom();
+  const r = await db.from("equipo").select("email, rol");
+  const correos = [...new Set(((r.data ?? []) as { email?: string | null; rol?: string | null }[])
+    .filter((m) => m.rol === "closer" && /@/.test(m.email ?? "")).map((m) => (m.email ?? "").trim().toLowerCase()))];
+  return [...equipos, ...correos.map((c) => `${POR_QUIEN}${c}`)];
 }
 
 async function leerEstado(db: SupabaseClient): Promise<EstadoBarrido> {
@@ -96,7 +107,7 @@ export async function barrerLinks(db: SupabaseClient, op: { reloj: number; maxPa
       if (g.guardada && !g.yaEstaba) r.nuevas++;
       if (g.guardada && g.por === "link") r.porLink++;
     }
-    const sigue = await seguir(pasada, pagina.siguiente, equiposDeVentasDeFathom);
+    const sigue = await seguir(pasada, pagina.siguiente, () => pasadasExtra(db));
     if (!sigue) { r.estado = "terminado"; break; }
     pasada = sigue;
   }

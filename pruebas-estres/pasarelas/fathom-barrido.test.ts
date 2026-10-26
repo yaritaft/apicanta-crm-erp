@@ -41,6 +41,8 @@ red.manejar((url) => {
   pedidos.push(`${url.pathname}${url.search}`);
   if (url.pathname.endsWith("/teams")) return { json: { items: [] } };
   const cursor = url.searchParams.get("cursor");
+  /* Lo que grabó una persona de afuera de la organización sólo sale si se pide por su correo. */
+  if (url.searchParams.get("recorded_by[]") === "externo@gmail.com") return { json: { items: [reunion("rec_externo", hace(6))], next_cursor: null } };
   if (!cursor) return { json: { items: [reunion("rec_1", hace(30)), reunion("rec_personal", hace(29))], next_cursor: "p2" } };
   if (pedirEsperar) { pedirEsperar = false; return new Response("{}", { status: 429, headers: { "retry-after": "7" } }); }
   return { json: { items: [reunion("rec_2", hace(5))], next_cursor: null } };
@@ -113,4 +115,16 @@ test("las que faltan se cuentan por closer, para saber a quién pedirle que comp
   sesiones().push({ id: "cal_F", email: "f@c.com", inicia: hace(61), anfitrion: "Mariano Arias", estado: "agendada", calendlyInvitadoUri: "u/F", grabacion: "https://fathom.video/share/tampoco" });
   const e = await estadoDeLinks(db);
   assert.deepEqual(e.faltanPorCloser, [{ closer: "Mariano Arias", n: 3 }, { closer: "Cami Ruiz", n: 2 }]);
+});
+
+test("lo que grabó un closer de afuera de la organización se trae pidiéndolo por su correo de Equipo", async () => {
+  sembrar();
+  red.nube.filas("equipo").push({ id: "eq_2", nombre: "Externo Gómez", email: "Externo@Gmail.com", rol: "closer" });
+  red.nube.filas("equipo").push({ id: "eq_3", nombre: "Setter", email: "setter@x.com", rol: "setter" });
+  sesiones().push({ id: "cal_X", email: "x@cliente.com", inicia: hace(6), anfitrion: "Externo Gómez", estado: "agendada", calendlyInvitadoUri: "u/X", grabacion: "https://fathom.video/share/rec_externo" });
+  const { valor: r } = await capturandoConsola(() => barrerLinks(db, { reloj: Date.now() + 60_000, maxPaginas: 20 }));
+  assert.equal(r.estado, "terminado", r.error);
+  assert.ok(graba().some((g) => g.recordingId === "rec_externo" && g.sesionId === "cal_X" && g.emparejadaPor === "link"));
+  assert.ok(pedidos.some((p) => p.includes("recorded_by%5B%5D=externo%40gmail.com")), "lo pidió por su correo");
+  assert.ok(!pedidos.some((p) => p.includes("setter%40x.com")), "sólo closers");
 });

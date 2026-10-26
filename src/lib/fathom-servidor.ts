@@ -138,6 +138,9 @@ export async function atarGrabacion(db: SupabaseClient, payload: unknown, sesion
   return { ok: true, shareUrl: g.shareUrl ?? null };
 }
 
+/** Una «pasada» que pide lo que grabó una persona en vez de un equipo: `quien:<correo>`. */
+export const POR_QUIEN = "quien:";
+
 export interface PaginaReuniones { items: unknown[]; siguiente: string | null }
 
 /** Las reuniones que grabó una persona (por su correo) entre dos momentos.
@@ -188,7 +191,10 @@ export async function reunionesDesde(desde: string, cursor?: string | null, equi
     include_summary: "true", include_transcript: "true", include_action_items: "true",
     created_after: desde,
   });
-  if (equipo) q.append("teams[]", equipo);
+  /* «quien:<mail>» pide lo que grabó esa persona (recorded_by[]): sin ese filtro Fathom no devuelve las
+     llamadas de gente de afuera de la organización, que es como graban varios closers. */
+  if (equipo?.startsWith(POR_QUIEN)) q.append("recorded_by[]", equipo.slice(POR_QUIEN.length));
+  else if (equipo) q.append("teams[]", equipo);
   if (cursor) q.set("cursor", cursor);
   const r = await fathom(`/meetings?${q}`);
   if (r.status === 429) throw new EsperarAFathom(segundosDeEspera(r.headers.get("retry-after"), Date.now()));
