@@ -9,7 +9,6 @@ import { useAbrirFicha } from "@/components/ficha/abrir";
 import { Pastilla } from "@/components/cs/pastillas";
 import { useEstado } from "@/lib/store";
 import { formatoDia } from "@/lib/seguimiento";
-import { diaDeNegocio } from "@/lib/dia-negocio";
 import { mesEnLetras, otroMes, resellsDelMes, resumenResells, textoParaPasar } from "@/lib/resells-agendados";
 import { estadosDeResell } from "@/lib/clientes-cs";
 
@@ -20,7 +19,7 @@ import { estadosDeResell } from "@/lib/clientes-cs";
 
    El número del mes, con quién, y «Copiar para pasar» con el detalle. Es la
    misma cuenta que usa la liquidación de Honorarios (lib/resells-agendados.ts):
-   cuenta el día en que se reservó la llamada, sin las canceladas.
+   las llamadas del mes, como la vista del Airtable de Lili, sin las canceladas.
    ================================================================== */
 
 const VISIBLES = 6;
@@ -46,16 +45,17 @@ export function ResellsDelMes({ hoy, viendoOtro }: { hoy: string; viendoOtro: bo
     toast(ok ? `Copiado: ${resumen.total} ${resumen.total === 1 ? "resell" : "resells"} de ${mesEnLetras(mes)}, con el detalle.` : "No se pudo copiar.", ok ? "ok" : "err");
   };
   const ir = (cuantos: number) => { setMes((m) => otroMes(m, cuantos)); setTodos(false); };
-  /* Lo último agendado arriba. */
+  /* La llamada más nueva arriba. */
   const recientes = [...items].reverse();
   const vistos = todos ? recientes : recientes.slice(0, VISIBLES);
+  const porHacerse = items.filter((i) => Date.parse(i.resell.fechaHora) > Date.now()).length;
 
   return (
     <section className="mp-card ps-card ps-rs" aria-label="Resells agendados">
       <div className="ps-rs__cab">
         <div>
           <h2 className="ps-tit">{viendoOtro ? "Resells que agendó" : "Resells que agendaste"}</h2>
-          <p className="ps-ayuda">Los que entraron a la agenda de resells en el mes, por el día en que se reservaron, sin los cancelados. Es el número de la liquidación.</p>
+          <p className="ps-ayuda">Las llamadas de la agenda de resells del mes, como la vista del Airtable, sin las canceladas. Es el número de la liquidación.</p>
         </div>
         <div className="ps-rs__mes" role="group" aria-label="Mes">
           <IconButton etiqueta="Mes anterior" onClick={() => ir(-1)}><ChevronLeft size={16} /></IconButton>
@@ -68,7 +68,7 @@ export function ResellsDelMes({ hoy, viendoOtro }: { hoy: string; viendoOtro: bo
         <div className="ps-rs__total">
           <span className="ps-rs__n">{resumen.total}</span>
           <span className="ps-kpi__ctx">
-            {resumen.total === 1 ? "resell agendado" : "resells agendados"}{mes === actual ? " hasta hoy" : ""}
+            {resumen.total === 1 ? "resell agendado" : "resells agendados"}{porHacerse ? ` (${porHacerse} por hacerse)` : ""}
             {` · ${anterior} en ${mesEnLetras(otroMes(mes, -1)).split(" ")[0]}`}
           </span>
         </div>
@@ -81,9 +81,8 @@ export function ResellsDelMes({ hoy, viendoOtro }: { hoy: string; viendoOtro: bo
 
       {items.length > 0 && (
         <ul className="ps-rs__lista">
-          {vistos.map(({ resell: r, dia, porLlamada }) => {
+          {vistos.map(({ resell: r, dia, agendado }) => {
             const alumnoId = r.email ? alumnoPorMail.get(r.email.trim().toLowerCase()) : undefined;
-            const llamada = diaDeNegocio(r.fechaHora);
             const abrir = alumnoId ? () => abrirFicha(alumnoId, "servicio", { hoja: "testimonio" }) : r.sesionId ? () => abrirFicha(r.sesionId!, "llamadas") : undefined;
             const estado = estadosDeResell(r.estado)[0];
             return (
@@ -92,7 +91,7 @@ export function ResellsDelMes({ hoy, viendoOtro }: { hoy: string; viendoOtro: bo
                   ? <button type="button" className="ps-rs__nombre truncate" onClick={abrir} title={`Abrir la ficha de ${r.nombre}`}>{r.nombre || "Sin nombre"}</button>
                   : <span className="ps-rs__nombre truncate">{r.nombre || "Sin nombre"}</span>}
                 <span className="ps-rs__con truncate">con {r.closer.split(",")[0].trim().split(/\s+/)[0] || "—"}</span>
-                <span className="ps-rs__cuando ps-num">{porLlamada ? `llamada ${formatoDia(dia, hoy)}` : `agendado ${formatoDia(dia, hoy)}`}{!porLlamada && llamada && llamada !== dia ? ` · llamada ${formatoDia(llamada, hoy)}` : ""}</span>
+                <span className="ps-rs__cuando ps-num">llamada {formatoDia(dia, hoy)}{agendado && agendado !== dia ? ` · agendado ${formatoDia(agendado, hoy)}` : ""}</span>
                 <span className="ps-rs__estado">{estado ? <Pastilla texto={estado} /> : <span className="t-subtle t-sm">{Date.parse(r.fechaHora) > Date.now() ? "Por hacerse" : "Sin resultado"}</span>}</span>
               </li>
             );

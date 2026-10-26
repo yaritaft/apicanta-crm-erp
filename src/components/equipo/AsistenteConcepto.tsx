@@ -460,7 +460,7 @@ function PasoDeQue({ b, set, e, miembro }: { b: Borrador; set: Poner; e: EstadoA
     return (
       <Pregunta
         texto="Se cuentan solos"
-        sub="Las llamadas de resell y de testimonio que se reservaron en el mes, de la agenda de resells (Alumnos → Resells), sin las canceladas. Una reprogramación cuenta una vez, en el mes de la reserva original. Es el mismo número que Customer Success ve en su panel."
+        sub="Las llamadas de resell y de testimonio del mes, de la agenda de resells (Alumnos → Resells), por el día de la llamada y sin las canceladas. Una reprogramación cuenta una vez. Es el mismo número que Customer Success ve en su panel."
       />
     );
   }
@@ -657,7 +657,7 @@ function deQueTexto(b: Borrador, e: EstadoApp): string {
     return partes.join(" · ");
   }
   if (b.base === "llamadas" || b.base === "llamadas-hechas") return b.utmSource.trim() ? `Las de utm_source ${b.utmSource.trim()}` : "Todas";
-  if (b.base === "resells") return "Los de la agenda de resells, por el día de la reserva";
+  if (b.base === "resells") return "Los de la agenda de resells, por el día de la llamada";
   if (b.base === "manual") return b.unidad.trim() || "—";
   const partes = [ALCANCES.find((a) => a.alcance === b.alcance)?.nombre ?? "—"];
   const prods = b.productoIds.map((id) => e.productos.find((p) => p.id === id)?.nombre).filter(Boolean);

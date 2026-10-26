@@ -2,6 +2,7 @@
 
 import { ContratoCard } from "@/components/contratos/ContratoCard";
 import { AccesosAlumno } from "@/components/contratos/AccesosAlumno";
+import { diaDelOutboarding, esOutboarding } from "@/lib/outboarding";
 import { SesionesZoom } from "@/components/contratos/SesionesZoom";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -497,6 +498,7 @@ function HojaDeUnServicio({ e, p, f, venta, producto, conChat, reserva }: {
       {solapa === "accesos" && (
         <>
           <AccesosAlumno forma="hoja" alumno={alumno} venta={venta}
+            outboarding={esOutboarding(f.followUp) ? { dia: diaDelOutboarding(f.egreso, hoy), fin: f.egreso } : undefined}
             manual={{ wisboo: dato("wibo", false), zoom: dato("zoom", false), whatsapp: f.wpp ? dato("wpp", false) : undefined }} />
           <Bloque titulo="Marcado a mano">{dato("acceso")}</Bloque>
         </>

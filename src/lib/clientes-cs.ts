@@ -212,6 +212,22 @@ export function programasDeTexto(texto: string, lista: readonly string[] = LISTA
   ];
 }
 
+/** Los programas y la duración de un alumno: los de su ficha o, si no están, los que sugiere su venta (el producto o el plan). */
+export function programasYDuracion(
+  seg: Pick<SeguimientoAlumno, "programas" | "duracionMeses">, productoOPlan: string, lista: readonly string[],
+): { programas: string[]; programasSug: string[]; duracion: number | null; duracionSug: number | null } {
+  const programasSug = seg.programas.length ? [] : programasDeTexto(productoOPlan, lista);
+  const programas = seg.programas.length ? seg.programas : programasSug;
+  const duracionSug = seg.duracionMeses === null && programas.length ? DURACION_POR_PROGRAMA[programas[0]] ?? DURACION_POR_DEFECTO : null;
+  return { programas, programasSug, duracion: seg.duracionMeses ?? duracionSug, duracionSug };
+}
+
+/** El fin del programa de un alumno, el mismo de «Fecha de egreso» en Clientes (sin el caso de la reserva, que no arrancó):
+ *  lo usa también la pasada que le saca los accesos en el outboarding (lib/outboarding-servidor.ts). */
+export function finDelPrograma(inicio: string, seg: SeguimientoAlumno, productoOPlan: string, lista: readonly string[]): string | null {
+  return egresoDelPrograma(inicio, seg.fechaEgreso, programasYDuracion(seg, productoOPlan, lista).duracion, seg.pausas ?? []);
+}
+
 /** El fin del programa: el escrito a mano o el inicio más la duración, corrido por la demora de inicio y las pausas
  *  (lib/pausas.ts). Calculado, la demora corre los meses enteros. */
 export function egresoDelPrograma(inicio: string, egresoPropio: string | null, duracion: number | null, pausas: readonly PausaServicio[]): string | null {
@@ -414,11 +430,7 @@ export function filasClientes(e: EstadoApp, hoy: string): FilaCliente[] {
     const inicio = diaDeNegocio(a.inicio) || "";
     const producto = venta?.productoId ? productos.get(venta.productoId) ?? "" : "";
 
-    const programasSug = seg.programas.length ? [] : programasDeTexto(producto || a.plan, listas.programas);
-    const programas = seg.programas.length ? seg.programas : programasSug;
-    const duracionSug = seg.duracionMeses === null && programas.length
-      ? DURACION_POR_PROGRAMA[programas[0]] ?? DURACION_POR_DEFECTO : null;
-    const duracion = seg.duracionMeses ?? duracionSug;
+    const { programas, programasSug, duracion, duracionSug } = programasYDuracion(seg, producto || a.plan, listas.programas);
     /* Sólo una reserva (lib/reservas.ts): no entra al seguimiento hasta que pague lo que falta. */
     const enReserva = Boolean(venta && reservaSinCompletar(cuotasDe.get(venta.id) ?? [])) || followUpDeReserva(seg.followUp);
     const egresoPropio = seg.fechaEgreso;
@@ -886,8 +898,8 @@ export type ClaveResell = "fechaHora" | "agendado" | "nombre" | "email" | "telef
 
 export const COLUMNAS_RESELLS: ColumnaCs<FilaResell, ClaveResell>[] = [
   { clave: "fechaHora", titulo: "Fecha y hora de agenda", grupo: "Agenda", valores: (f) => uno(f.dia), orden: (f) => f.resell.fechaHora, fecha: true, ancho: 170 },
-  /* Cuándo se reservó (Lili, 26/10: los resells que agendó en el mes son parte de su sueldo; lib/resells-agendados.ts). */
-  { clave: "agendado", titulo: "Agendado el", grupo: "Agenda", ayuda: "El día en que se reservó la llamada (la reserva original, si se reprogramó). Con esto se cuentan los resells agendados del mes. Los importados del Airtable no lo tienen.",
+  /* Cuándo se reservó (Lili, 26/10). El mes de los resells agendados lo decide la llamada (lib/resells-agendados.ts). */
+  { clave: "agendado", titulo: "Agendado el", grupo: "Agenda", ayuda: "El día en que se reservó la llamada (la reserva original, si se reprogramó). Los importados del Airtable no lo tienen.",
     valores: (f) => uno(f.resell.agendadoEn ? diaDeNegocio(f.resell.agendadoEn) : ""), orden: (f) => f.resell.agendadoEn ?? "", fecha: true, ancho: 130 },
   { clave: "nombre", titulo: "Nombre completo", grupo: "Agenda", valores: (f) => uno(f.resell.nombre), orden: (f) => sinTildes(f.resell.nombre), ancho: 220 },
   { clave: "email", titulo: "Mail", grupo: "Agenda", valores: (f) => uno(f.resell.email), ancho: 220 },

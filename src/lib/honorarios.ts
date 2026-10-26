@@ -61,7 +61,7 @@ export const BASES: InfoBase[] = [
   { base: "llamadas", nombre: "Llamadas agendadas", sub: "Las que se reservaron en el mes en la Agenda, sin las canceladas.", plata: false, deVentas: false },
   { base: "llamadas-hechas", nombre: "Llamadas hechas", sub: "Las que se hicieron en el mes, según la Agenda.", plata: false, deVentas: false },
   /* Lili (26/10): las llamadas de resell no traen utm_source desde que entran por «Próximos pasos»; se cuentan de su agenda. */
-  { base: "resells", nombre: "Resells agendados", sub: "Las llamadas de resell y de testimonio que se reservaron en el mes (la agenda de resells de Customer Success), sin las canceladas.", plata: false, deVentas: false },
+  { base: "resells", nombre: "Resells agendados", sub: "Las llamadas de resell y de testimonio del mes (la agenda de resells de Customer Success, por el día de la llamada), sin las canceladas.", plata: false, deVentas: false },
   { base: "manual", nombre: "Una cantidad que cargás al liquidar", sub: "Lo que la app no mide sola: se escribe cada mes.", plata: false, deVentas: false },
 ];
 
@@ -545,7 +545,7 @@ function medir(cx: Contexto, c: ConceptoPago, m: MiembroEquipo, r: RangoMes, her
       return { valor: n, cuantos: "según la Agenda", n };
     }
     case "resells": {
-      /* Los de la agenda de Customer Success, por el día de la reserva (lib/resells-agendados.ts: la misma cuenta que ve Lili). */
+      /* Los de la agenda de Customer Success, por el día de la llamada (lib/resells-agendados.ts: la misma cuenta que ve Lili). */
       let n = 0;
       for (const x of cx.e.resells ?? []) if (!x.cancelada && enRango(instanteDeAgenda(x), r)) n++;
       return { valor: n, cuantos: "según la agenda de resells", n };

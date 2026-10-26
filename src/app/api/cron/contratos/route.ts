@@ -6,6 +6,7 @@ import { clavePandadoc, crearSuscripcion } from "@/lib/pandadoc-servidor";
 import { randomBytes } from "node:crypto";
 import { hayTelegram, revisarGruposDeTelegram, telegram } from "@/lib/accesos-servidor";
 import { leerWebhookTelegram, RUTA_WEBHOOK_TELEGRAM } from "@/lib/accesos-alumnos";
+import { pasarOutboardings } from "@/lib/outboarding-servidor";
 
 /* ==================================================================
    La red de seguridad del aviso de PandaDoc: cada hora se le pregunta el
@@ -14,7 +15,9 @@ import { leerWebhookTelegram, RUTA_WEBHOOK_TELEGRAM } from "@/lib/accesos-alumno
    de que se cargara su venta: se dan apenas aparece) y a los mandados a mano
    desde PandaDoc que todavía no se ataron a su venta. Si un aviso se perdió,
    acá se recupera (y al firmar, se dan los accesos).
-   También se ponen al día los grupos de Telegram anotados.
+   También se ponen al día los grupos de Telegram anotados, y se hace el
+   outboarding automático: a quien está en Outboarding y ya terminó su programa
+   se le sacan los accesos (lib/outboarding-servidor.ts; Lili, 26/10).
    ================================================================== */
 
 export const runtime = "nodejs";
@@ -55,7 +58,9 @@ export async function GET(req: Request) {
       console.error("[cron contratos]", c.id, e instanceof Error ? e.message : String(e));
     }
   }
-  return NextResponse.json({ ok: true, aviso, bot, grupos, revisados: lista.length, cambiaron, fallaron, ...(sueltos.error ? { sueltos: sueltos.error.message } : {}) });
+  /* Después de los contratos: un alumno que firmó y ya estaba en outboarding no recibe y pierde accesos en la misma pasada. */
+  const outboarding = await pasarOutboardings(db).catch((e) => ({ error: e instanceof Error ? e.message : String(e) }));
+  return NextResponse.json({ ok: true, aviso, bot, grupos, revisados: lista.length, cambiaron, fallaron, outboarding, ...(sueltos.error ? { sueltos: sueltos.error.message } : {}) });
 }
 
 /* El aviso de PandaDoc de producción se conecta solo la primera vez (Juan Cruz, 20/10: «dejalo listo»): la clave

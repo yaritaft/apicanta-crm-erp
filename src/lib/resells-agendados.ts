@@ -5,10 +5,12 @@
    Un resell agendado es una fila de la agenda de resells (Alumnos → Resells:
    las llamadas de resell y de testimonio que entran solas de Calendly, las que
    se cargan a mano y las importadas del Airtable) que no se canceló. Cuenta en
-   el mes en que se RESERVÓ, no en el de la llamada: `agendadoEn` lo pone la
-   base (supabase/resells-agendado-en.sql) con el día de la reserva original,
-   así que una reprogramación no cuenta dos veces ni se muda de mes. Las
-   importadas del Airtable no traen ese dato: cuentan por el día de la llamada.
+   el mes de la LLAMADA, como la vista «Todas las Agendas» del Airtable de Lili
+   (26/10: ella contaba 18 en octubre y la app, por el día de la reserva, 16:
+   dos se habían agendado el 30/09 para el 1 y el 2/10). Una reprogramación es
+   una sola fila: cuenta una vez, en el mes de la llamada que quedó. El día en
+   que se reservó (`agendadoEn`, supabase/resells-agendado-en.sql) se muestra
+   al lado, pero no decide el mes.
 
    Es la misma cuenta para su panel (lo que ella pasa) y para la liquidación
    de Honorarios (la base «Resells agendados», lib/honorarios.ts). Antes la
@@ -23,15 +25,16 @@ type DeLaAgenda = Pick<Resell, "id" | "fechaHora" | "nombre" | "closer" | "cance
 
 export interface ResellAgendado<R extends DeLaAgenda = Resell> {
   resell: R;
-  /* El día en que se reservó, en Argentina («2026-10-22»); si no se sabe (importado del Airtable), el de la llamada. */
+  /* El día de la llamada, en Argentina («2026-10-30»): el que decide el mes. */
   dia: string;
-  porLlamada: boolean;
+  /* El día en que se reservó, si se sabe (los importados del Airtable no lo traen). */
+  agendado: string | null;
 }
 
-/** Cuándo cuenta un resell: el instante de la reserva o, si no se sabe, el de la llamada. */
-export const instanteDeAgenda = (r: Pick<Resell, "fechaHora"> & Partial<Pick<Resell, "agendadoEn">>): string => r.agendadoEn || r.fechaHora;
+/** Cuándo cuenta un resell: el instante de la llamada (la liquidación lo compara con el rango del mes). */
+export const instanteDeAgenda = (r: Pick<Resell, "fechaHora">): string => r.fechaHora;
 
-/** Los resells reservados entre dos días de Argentina (inclusive), sin los cancelados, del más viejo al más nuevo. */
+/** Los resells con la llamada entre dos días de Argentina (inclusive), sin los cancelados, del más viejo al más nuevo. */
 export function resellsAgendados<R extends DeLaAgenda>(resells: readonly R[] | undefined, desdeDia: string, hastaDia: string): ResellAgendado<R>[] {
   const vistos = new Set<string>();
   const out: ResellAgendado<R>[] = [];
@@ -40,7 +43,7 @@ export function resellsAgendados<R extends DeLaAgenda>(resells: readonly R[] | u
     vistos.add(r.id);
     const dia = diaDeNegocio(instanteDeAgenda(r));
     if (!dia || dia < desdeDia || dia > hastaDia) continue;
-    out.push({ resell: r, dia, porLlamada: !r.agendadoEn });
+    out.push({ resell: r, dia, agendado: r.agendadoEn ? diaDeNegocio(r.agendadoEn) || null : null });
   }
   return out.sort((a, b) => a.dia.localeCompare(b.dia) || a.resell.nombre.localeCompare(b.resell.nombre, "es"));
 }
@@ -101,8 +104,7 @@ export function textoParaPasar(mes: string, items: readonly ResellAgendado<DeLaA
     r.testimonio ? `${r.testimonio} de testimonio` : "",
   ].filter(Boolean).join(" — ");
   const renglones = items.map((i) => {
-    const llamada = diaDeNegocio(i.resell.fechaHora);
-    const cuando = i.porLlamada ? `llamada el ${ddmm(i.dia)}` : `agendado el ${ddmm(i.dia)}${llamada && llamada !== i.dia ? `, llamada el ${ddmm(llamada)}` : ""}`;
+    const cuando = `llamada el ${ddmm(i.dia)}${i.agendado && i.agendado !== i.dia ? `, agendado el ${ddmm(i.agendado)}` : ""}`;
     return `• ${i.resell.nombre.trim() || "Sin nombre"} (con ${nombreCorto(i.resell.closer.split(",")[0] ?? "")}, ${cuando})`;
   });
   return [cabeza, detalle, "", ...renglones].join("\n");

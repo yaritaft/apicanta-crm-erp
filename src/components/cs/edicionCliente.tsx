@@ -9,6 +9,7 @@ import { puedeEditar } from "@/lib/permisos";
 import { corregirPersonaDesdeServicio } from "@/components/ficha/unificar-cliente";
 import { PAISES } from "@/lib/crm-tabla";
 import { formatoDia, textoDeAtraso } from "@/lib/seguimiento";
+import { diaDelOutboarding, esOutboarding } from "@/lib/outboarding";
 import { fechaLarga } from "@/lib/format";
 import {
   aplicarEscritura, CONTRATOS, escrituraCliente, listasCs, MOTOR_CLIENTES, OPCIONES_ESTADO_ALUMNO, SESIONES_MENTOR,
@@ -65,7 +66,10 @@ export function useEdicionCliente(filas: readonly FilaCliente[], hoy: string) {
       const descripcion = w.tipo === "seguimiento" ? w.detalle : `${w.que === "cv" ? "CV" : "LinkedIn"} ${w.corregido ? "corregido" : "marcado como pendiente"}.`;
       const antes = acciones.guardarSeguimiento(f.id, (s, quien) => aplicarEscritura(s, w, hoy, quien, cuando), () => descripcion);
       if (!antes) return;
-      toast(`${titulo} de ${f.nombre}: ${valor.trim() || "vacío"}.`, "ok", {
+      /* Pasó a Outboarding (también con «No renueva»): la app le saca sola los accesos cuando termina su programa (lib/outboarding.ts). */
+      const sale = clave === "followUp" && esOutboarding(valor) && !esOutboarding(f.followUp) ? diaDelOutboarding(f.egreso, hoy) : null;
+      const outboarding = sale ? ` Los accesos de la app (Wisboo, Telegram y Zoom) se le sacan solos ${sale > hoy ? `el ${formatoDia(sale, hoy)}, cuando termina su programa` : "en la próxima pasada"}.` : "";
+      toast(`${titulo} de ${f.nombre}: ${valor.trim() || "vacío"}.${outboarding}`, "ok", {
         texto: "Deshacer", onClick: () => acciones.restaurarSeguimiento(antes, `Se deshizo el cambio de ${titulo} de ${f.nombre}.`),
       });
       return;

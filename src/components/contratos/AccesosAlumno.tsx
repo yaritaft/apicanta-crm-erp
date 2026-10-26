@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { Copy, GraduationCap, KeyRound, RotateCcw, Send, UserMinus, Video } from "lucide-react";
+import { CalendarX2, Copy, GraduationCap, KeyRound, RotateCcw, Send, UserMinus, Video } from "lucide-react";
 import { Badge, Button, Field, Select, type VarianteBadge } from "@/components/ui/ui";
 import { Confirmar, ModalForm } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toast";
@@ -11,6 +11,7 @@ import { nivelEn } from "@/lib/permisos";
 import { nube } from "@/lib/supabase";
 import { cabeceras } from "@/components/webinars/useYoutube";
 import { relativo } from "@/lib/format";
+import { formatoDia, hoyDelNegocio } from "@/lib/seguimiento";
 import { programaDeProducto, programasDe } from "@/lib/programas";
 import type { Alumno, Venta } from "@/lib/types";
 import type { Acceso, EstadoAcceso, Plataforma } from "@/lib/accesos-servidor";
@@ -95,10 +96,20 @@ async function pedir(cuerpo: Record<string, unknown>) {
   return j;
 }
 
-export function AccesosAlumno({ alumno, venta, manual, forma = "tarjeta" }: {
+/* La próxima pasada de la app (api/cron/contratos corre a las :25 de cada hora), en hora de Argentina. */
+function proximaPasada(ahora = new Date()): string {
+  const t = new Date(ahora);
+  t.setMinutes(25, 0, 0);
+  if (t.getTime() <= ahora.getTime()) t.setHours(t.getHours() + 1);
+  return `${String(t.getHours()).padStart(2, "0")}:25`;
+}
+
+export function AccesosAlumno({ alumno, venta, manual, outboarding, forma = "tarjeta" }: {
   alumno: Alumno; venta?: Venta; forma?: "tarjeta" | "hoja";
   /* Lo marcado a mano en la ficha (Airtable), con su editor: se muestra donde la app todavía no dio nada. */
   manual?: Partial<Record<Plataforma | "whatsapp", React.ReactNode>>;
+  /* Está en Outboarding: el día en que la app le saca los accesos sola y el fin de su programa (lib/outboarding.ts). */
+  outboarding?: { dia: string; fin: string | null };
 }) {
   const e = useEstado();
   const toast = useToast();
@@ -191,6 +202,22 @@ export function AccesosAlumno({ alumno, venta, manual, forma = "tarjeta" }: {
             )}
             {acciona && <Button sm variante="primary" icono={<KeyRound size={14} />} onClick={() => setDar(programaSugerido)}>Dar accesos</Button>}
           </AccionesServicio>
+        )}
+        {/* El outboarding automático (Lili, 26/10): cuándo se le sacan solos los accesos de la app. */}
+        {outboarding && accesos !== null && (
+          <BloqueServicio titulo="Outboarding">
+            <FilaServicio icono={<CalendarX2 size={15} />} rotulo="Se le sacan los accesos solos"
+              detalle={lista.length === 0 ? "La app no le dio accesos: lo que tenga de antes (Wisboo, grupos, Zoom) se le saca a mano."
+                : vigentes.length === 0 ? "Ya se le sacaron los accesos que le dio la app."
+                  : `Wisboo, Telegram y Zoom${outboarding.fin ? `: su programa termina el ${formatoDia(outboarding.fin)}` : ""}. Si renueva, cambiale el Follow Up antes y no pasa nada.`}>
+              {lista.length === 0 ? <Badge variante="neutral">A mano</Badge>
+                : vigentes.length === 0 ? <Badge variante="success">Hecho</Badge>
+                  : <Badge variante="warning">{outboarding.dia > hoyDelNegocio() ? `El ${formatoDia(outboarding.dia)}` : `Hoy a las ${proximaPasada()}`}</Badge>}
+              {acciona && vigentes.length > 0 && (
+                <Button sm variante="ghost" icono={<UserMinus size={14} />} onClick={() => setQuitar({ texto: "Se le saca ya el acceso a todos sus cursos de Wisboo, se lo saca de los grupos de Telegram y se cancela su inscripción a las reuniones de Zoom.", wisboo: true })}>Sacarlos ahora</Button>
+              )}
+            </FilaServicio>
+          </BloqueServicio>
         )}
         {accesos === null ? <div className="skeleton" style={{ height: 132, borderRadius: 12 }} /> : PLATAFORMAS.map(({ clave, nombre, icono }) => {
           const xs = lista.filter((x) => x.plataforma === clave);

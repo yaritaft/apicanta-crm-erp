@@ -15,8 +15,9 @@
 --   · la importada del Airtable sin llamada queda vacía (la app la cuenta por el
 --     día de la llamada).
 -- Lo pone la base con un disparador: la escriba el cron de Calendly, la app o el
--- importador, queda igual. Con esto cuentan el panel de Lili y la liquidación
--- (lib/resells-agendados.ts).
+-- importador, queda igual. Se muestra como «Agendado el»; el mes de cada resell
+-- en el panel de Lili y en la liquidación lo decide el día de la LLAMADA, como
+-- su Airtable (lib/resells-agendados.ts; corregido el 26/10 a la tarde).
 --
 -- Y el concepto de la liquidación que contaba «llamadas con utm_source Resell»
 -- pasa a contar los resells de la agenda (la base «resells» de lib/honorarios.ts),

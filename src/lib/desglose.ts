@@ -402,7 +402,7 @@ function pasosDeLoMedido(a: ArgsMedido, f: Extract<Fuente, { tipo: "medido" }>):
     case "ventas": return [paso("base", "Ventas cerradas en el mes", a.valor, "cantidad")];
     case "llamadas": return [paso("base", `Llamadas agendadas en el mes${utm}`, a.valor, "cantidad", { nota: "Según la Agenda, sin las canceladas" })];
     case "llamadas-hechas": return [paso("base", `Llamadas hechas en el mes${utm}`, a.valor, "cantidad", { nota: "Según la Agenda" })];
-    case "resells": return [paso("base", "Resells agendados en el mes", a.valor, "cantidad", { nota: "Según la agenda de resells, por el día de la reserva, sin los cancelados" })];
+    case "resells": return [paso("base", "Resells agendados en el mes", a.valor, "cantidad", { nota: "Según la agenda de resells, por el día de la llamada, sin los cancelados" })];
     default: return [paso("base", mayus(queSeCuenta(a)), a.valor, "cantidad")];
   }
 }
