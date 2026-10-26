@@ -587,6 +587,15 @@ export function contratoDeLlamada(visibles: readonly Contrato[], f: { id: string
   return visibles.find((c) => c.sesionId === f.id) ?? (f.venta ? visibles[0] : undefined);
 }
 
+/** El mensaje de WhatsApp para pasarle a quien firmó su página de accesos (Mariano, 26/10: Jacob firmó, el mail con los accesos no lo vio y el closer
+    no tenía cómo mandárselos desde la app). La página trae el grupo de Telegram y los cursos; el usuario de los cursos es el mail con el que firmó. */
+export function mensajeDeAccesosPorWhatsapp(nombre: string, email: string, url: string): string {
+  const primero = nombre.trim().split(/\s+/)[0] || "";
+  return `${primero ? `${primero}, ya` : "Ya"} tenés tus accesos listos. Entrá desde acá: ${url}\n`
+    + `Ahí está el grupo de Telegram (el link sirve una sola vez, abrilo con Telegram instalado) y los cursos: la primera vez te pide elegir una contraseña y tu usuario es tu mail${email ? ` (${email})` : ""}. `
+    + `Si no encontrás el mail que te mandamos, mirá en spam.`;
+}
+
 /** Lo que le pasó al contrato, en una frase para el closer. */
 export function quePasoConElContrato(c: Contrato): string {
   const a = c.destinatario?.email || c.datos?.email || "su mail";

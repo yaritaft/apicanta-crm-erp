@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { contratoDeLlamada, contratosAMostrar, quePasoConElContrato, type Contrato } from "@/lib/contratos";
+import { contratoDeLlamada, contratosAMostrar, mensajeDeAccesosPorWhatsapp, quePasoConElContrato, type Contrato } from "@/lib/contratos";
 import { avisarDelContrato } from "@/lib/contratos-servidor";
 import { ACCESO_DUENO, TIPOS_POR_DEFECTO, veElServicio, type MiAcceso } from "@/lib/permisos";
 
@@ -125,4 +125,13 @@ test("la llamada dice lo mismo que la ficha: si su intento no salió y después 
   assert.equal(contratoDeLlamada(visibles, { id: "s1", venta: "Downsell · US$ 500" })?.id, "m");
   assert.equal(contratoDeLlamada(visibles, { id: "s1", venta: "" }), undefined, "una llamada sin venta no muestra contrato");
   assert.equal(contratoDeLlamada([malo], { id: "s1", venta: "x" })?.id, "e", "sin reemplazo, el que no salió se ve como tal");
+});
+
+test("el mensaje de accesos para WhatsApp lleva el link de su página, su mail como usuario y el aviso del spam", () => {
+  const m = mensajeDeAccesosPorWhatsapp("Jacob Mendoza Hernandez", "jacob@x.com", "https://apicanta-erp.vercel.app/bienvenida/abc");
+  assert.match(m, /^Jacob, ya tenés tus accesos listos/);
+  assert.match(m, /https:\/\/apicanta-erp\.vercel\.app\/bienvenida\/abc/);
+  assert.match(m, /tu usuario es tu mail \(jacob@x\.com\)/);
+  assert.match(m, /spam/);
+  assert.match(mensajeDeAccesosPorWhatsapp("", "", "u"), /^Ya tenés tus accesos listos/);
 });

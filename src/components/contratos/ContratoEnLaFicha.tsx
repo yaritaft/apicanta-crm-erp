@@ -2,12 +2,13 @@
 
 import "./contrato-ficha.css";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { AlertTriangle, FileSignature, RefreshCw } from "lucide-react";
+import { AlertTriangle, Copy, FileSignature, MessageCircle, RefreshCw } from "lucide-react";
 import { Badge, Button } from "@/components/ui/ui";
 import { useToast } from "@/components/ui/Toast";
 import { useAcceso } from "@/lib/acceso";
 import { useEstado } from "@/lib/store";
-import { accionesDe, contratosAMostrar, estaPendiente, quePasoConElContrato, ROTULO_ESTADO, type Contrato } from "@/lib/contratos";
+import { accionesDe, contratosAMostrar, estaPendiente, mensajeDeAccesosPorWhatsapp, quePasoConElContrato, ROTULO_ESTADO, type Contrato } from "@/lib/contratos";
+import { enlaceWhatsapp } from "@/lib/contacto-telefono";
 import { programasDe } from "@/lib/programas";
 import type { Persona } from "@/lib/persona";
 import { contratosPrendidos, leerContratosDe, pedirContrato } from "./cliente";
@@ -90,6 +91,18 @@ export function SeccionContrato({ p, contratos, recargar, onVerVentas }: {
     await recargar();
   }
 
+  /* Firmó: la página con sus accesos (Telegram y cursos) se la manda el closer por WhatsApp con un clic, o se copia el link. */
+  const paginaDe = (c: Contrato) => `${window.location.origin}/bienvenida/${c.bienvenida}`;
+  const textoDe = (c: Contrato) => mensajeDeAccesosPorWhatsapp(c.destinatario?.nombre ?? c.datos?.nombre ?? "", c.destinatario?.email ?? c.datos?.email ?? "", paginaDe(c));
+  const whatsappDe = (c: Contrato) => {
+    const base = enlaceWhatsapp(c.destinatario?.telefono || c.datos?.telefono, c.datos?.pais);
+    return base ? `${base}?text=${encodeURIComponent(textoDe(c))}` : null;
+  };
+  async function copiarMensaje(c: Contrato) {
+    try { await navigator.clipboard.writeText(textoDe(c)); toast("Mensaje copiado: pegáselo por WhatsApp o por donde le escribas."); }
+    catch { window.prompt("Copiá el mensaje:", textoDe(c)); }
+  }
+
   return (
     <section className="stack-2 ctr-ficha" aria-label="Contrato">
       <div className="t-label">Contrato</div>
@@ -111,6 +124,16 @@ export function SeccionContrato({ p, contratos, recargar, onVerVentas }: {
             </div>
             <p className="t-sm t-muted" style={{ margin: 0 }}>{quePasoConElContrato(c)}</p>
             {falla && c.error && <p className="t-sm ctr-ficha__motivo">{c.error}</p>}
+            {c.estado === "firmado" && c.bienvenida && !c.datos?.reserva && (
+              <div className="row-wrap" style={{ gap: 6 }}>
+                {whatsappDe(c) && (
+                  <a className="hk-btn hk-btn--primary hk-btn--sm" href={whatsappDe(c)!} target="_blank" rel="noopener noreferrer">
+                    <MessageCircle size={14} aria-hidden /> Mandarle los accesos por WhatsApp
+                  </a>
+                )}
+                <Button sm variante="ghost" icono={<Copy size={14} />} onClick={() => void copiarMensaje(c)}>Copiar mensaje</Button>
+              </div>
+            )}
             {falla && (
               <div className="row-wrap" style={{ gap: 6 }}>
                 {accionesDe(c).includes("mandar") ? (
