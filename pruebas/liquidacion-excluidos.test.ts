@@ -30,9 +30,10 @@ const conRegla = (desde: string): EstadoApp => {
 
 test("el director deja afuera las cuotas de ventas anteriores a su inicio y cada una dice por qué", () => {
   const sin = renglon(calcularLiquidacion(estadoDePrueba(), PERIODO, liq()), "santi", "c_dir");
-  /* Sin la regla: Belén cobró el 5 y el 20: 2 cobros y nada afuera. */
+  /* Sin la regla: Belén cobró el 5 y el 20: 2 cobros. Afuera, sólo lo que no dirige él (las otras tres ventas del mes no tienen director). */
   assert.equal(sin.desglose!.lista!.total, 2);
-  assert.equal(sin.desglose!.lista!.excluidos, undefined);
+  assert.ok(sin.desglose!.lista!.excluidos!.every((x) => x.motivo === "La venta no tiene director asignado"));
+  assert.equal(sin.desglose!.lista!.excluidos!.some((x) => x.cliente === "Belén Godoy"), false);
 
   const l = renglon(calcularLiquidacion(conRegla("2026-09-04"), PERIODO, liq()), "santi", "c_dir");
   const lista = l.desglose!.lista;
@@ -40,7 +41,7 @@ test("el director deja afuera las cuotas de ventas anteriores a su inicio y cada
   assert.equal(l.monto, 0);
   assert.ok(lista, "sin cobros que cuenten, la lista sale igual si hay cobros que no cuentan");
   assert.equal(lista.total, 0);
-  assert.equal(lista.totalExcluidos, 2);
+  assert.equal(lista.excluidos!.filter((x) => x.cliente === "Belén Godoy").length, 2);
 });
 
 test("la lista del director trae los cobros que no cuentan al lado de los que sí", () => {
@@ -56,12 +57,12 @@ test("la lista del director trae los cobros que no cuentan al lado de los que s�
   const lista = l.desglose!.lista!;
   assert.deepEqual(lista.items.map((x) => x.cliente), ["Venta nueva"]);
   /* Los 2 cobros de Belén (venta del 03/09, anterior al 04/09) quedan afuera, con el motivo. */
-  assert.equal(lista.totalExcluidos, 2);
-  assert.deepEqual(lista.excluidos!.map((x) => [x.cliente, x.monto]), [["Belén Godoy", 1500], ["Belén Godoy", 1500]]);
-  assert.ok(lista.excluidos!.every((x) => /Venta del 03\/09, anterior al inicio de su regla \(04\/09\)/.test(x.motivo ?? "")), "dice la fecha de la venta y la del inicio");
+  const belen = lista.excluidos!.filter((x) => x.cliente === "Belén Godoy");
+  assert.deepEqual(belen.map((x) => x.monto), [1500, 1500]);
+  assert.ok(belen.every((x) => /Venta del 03\/09, anterior al inicio de su regla \(04\/09\)/.test(x.motivo ?? "")), "dice la fecha de la venta y la del inicio");
   assert.ok(lista.excluidos!.every((x) => x.cuota && x.ventaFecha), "con su cuota y la fecha de la venta, para compararlos");
-  /* Lo que cuenta y lo que no, juntos, son todos los cobros de las ventas que dirige. */
-  assert.equal(lista.total + lista.totalExcluidos!, 3);
+  /* Lo que cuenta y lo que no, juntos, son todos los cobros del mes: los de las ventas que dirige y los que no. */
+  assert.equal(lista.total + lista.totalExcluidos!, 3 + 3);
   /* Lo que cuenta: (1.000 − 30) · 5% = 48,50. */
   assert.equal(l.monto, 48.5);
 });
@@ -96,4 +97,34 @@ test("sin ninguna regla que deje cobros afuera, nada cambia en la liquidación",
   /* Los totales siguen siendo los de siempre (cuentas hechas a mano en estado-liquidacion.ts). */
   assert.equal(renglon(r, "mariano", "c_com").monto, 509.25);
   assert.equal(renglon(r, "santi", "c_dir").monto, 145.5);
+});
+
+test("a Santiago le explica los cobros de ventas que dirige otra persona: son los que separan su lista de la suma de los closers", () => {
+  /* La venta de Pedro (día 8, cierra Mariano) la dirigía Noelia, que ya no está: su cuota cobrada en el mes no es de Santiago. */
+  const e = estadoDePrueba();
+  const e2 = {
+    ...e,
+    equipo: [...e.equipo, { id: "noe", nombre: "Noelia Perelo", rol: "director", comisionRate: 0.05, activo: false }],
+    ventas: e.ventas.map((v) => v.id === "v2" ? { ...v, directorId: "noe", fecha: "2026-08-08T15:00:00.000Z" } : v),
+  } as EstadoApp;
+  const conRegla2 = {
+    ...e2,
+    honorarios: e2.honorarios.map((h) => h.miembroId !== "santi" ? h : esquema("santi", [concepto({
+      id: "c_dir", tipo: "porcentaje", nombre: "Comisión de director", tasa: 0.05, base: "cash-neto", alcance: "director", desde: "2026-09-01", soloVentasDesdeInicio: true,
+    })])),
+  } as EstadoApp;
+  const lista = renglon(calcularLiquidacion(conRegla2, PERIODO, liq()), "santi", "c_dir").desglose!.lista!;
+  const pedro = lista.excluidos!.filter((x) => x.cliente === "Pedro Gómez");
+  assert.equal(pedro.length, 1);
+  assert.equal(pedro[0].motivo, "La dirige Noelia Perelo, no Santiago Burghiani (venta del 08/08, anterior al inicio de su regla)");
+  /* Y lo que él sí dirige sigue contando igual: no se le suma ni se le resta nada. */
+  assert.equal(lista.total, 2);
+  assert.equal(calcularLiquidacion(conRegla2, PERIODO, liq()).personas.find((p) => p.miembroId === "santi")!.total, 145.5);
+});
+
+test("las ventas canceladas de otro director no se listan entre lo que no le cuenta a Santiago", () => {
+  const e = estadoDePrueba();
+  const e2 = { ...e, ventas: e.ventas.map((v) => v.id === "v2" ? { ...v, estado: "cancelada" } : v) } as EstadoApp;
+  const lista = renglon(calcularLiquidacion(e2, PERIODO, liq()), "santi", "c_dir").desglose!.lista!;
+  assert.equal(lista.excluidos!.some((x) => x.cliente === "Pedro Gómez"), false);
 });

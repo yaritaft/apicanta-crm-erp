@@ -489,10 +489,20 @@ function veredicto(cx: Contexto, c: ConceptoPago, m: MiembroEquipo, v: Venta | u
   if (!v) return { cuenta: false };
   const alcance = c.alcance ?? "todas";
   const esSuya = alcance === "closer" ? (p ? cx.closerDeCuota.get(p.cuotaId) : v.closerId) === m.id
-    : alcance === "director" ? v.directorId === m.id
+    : alcance === "director" ? true
     : alcance === "setter" ? v.setterId === m.id : true;
   const no = (motivo: string): Veredicto => ({ cuenta: false, ...(esSuya ? { motivo } : {}) });
-  if (v.estado === "cancelada") return no("La venta está cancelada");
+  /* Al director se le explica también lo que dirige otro (o nadie): es justo lo que separa su lista de la suma de los closers. Hay pocos
+     directores y las ventas de otro no se repiten acá cuando están canceladas, así que la lista no se llena de ruido. */
+  const deOtroDirector = alcance === "director" && v.directorId !== m.id;
+  if (v.estado === "cancelada") return deOtroDirector ? { cuenta: false } : no("La venta está cancelada");
+  if (deOtroDirector) {
+    const otro = v.directorId ? cx.equipo.get(v.directorId)?.nombre : undefined;
+    const antes = c.soloVentasDesdeInicio && c.desde && diaDe(v.fecha) < c.desde.slice(0, 10);
+    return no(otro
+      ? `La dirige ${otro}, no ${m.nombre}${antes ? ` (venta del ${ddmm(diaDe(v.fecha))}, anterior al inicio de su regla)` : ""}`
+      : "La venta no tiene director asignado");
+  }
   /* La regla de cuotas: sólo las ventas cerradas desde el inicio de la regla; lo que se
      cobra hoy de una venta anterior no cuenta, aunque entre dentro de los días de la regla. */
   if (c.soloVentasDesdeInicio && c.desde && diaDe(v.fecha) < c.desde.slice(0, 10)) {

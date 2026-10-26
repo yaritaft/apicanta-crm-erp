@@ -167,8 +167,8 @@ function ListaDeLoQueEntro({ lista }: { lista: ListaDesglose }) {
           {verExcluidos && (
             <>
               <p className="t-sm t-subtle">
-                Son cobros que eran de esta persona (o del negocio que se mide) y una regla de su esquema deja afuera. Sirven para
-                comparar esta lista con la de otro: lo que a uno le cuenta y al otro no está acá.
+                Son cobros del mes que no entran en este renglón, con el motivo de cada uno: una regla del esquema o una venta que es de
+                otra persona. Sirven para comparar esta lista con la de otro: lo que a uno le cuenta y al otro no está acá.
               </p>
               <div className="desglose__tabla desglose__tabla--larga">
                 <table className="liq-lista">
