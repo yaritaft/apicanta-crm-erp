@@ -37,6 +37,8 @@ import { useChatEnVivo } from "@/components/ficha/useChatEnVivo";
 import { FotoDePerfil } from "./FotoDePerfil";
 import { Campanita } from "@/components/avisos/Campanita";
 import { AvisoVersion } from "./AvisoVersion";
+import { PedirAccesoPantalla, PedirPermisoParaEditar } from "./PedirAcceso";
+import { pedirAcceso } from "@/lib/pedir-acceso";
 
 export function Shell({ children }: { children: React.ReactNode }) {
   const ruta = usePathname();
@@ -63,7 +65,14 @@ export function Shell({ children }: { children: React.ReactNode }) {
     return alNegarseEscritura((tabla, motivo) => {
       if (Date.now() - ultimo < 4000) return;
       ultimo = Date.now();
-      toast(motivo ?? `Tu tipo de cuenta no puede cambiar ${queEsTabla(tabla)}: vuelve a como estaba.`, "err");
+      /* Sin salida no sirve: el aviso trae el botón que le pide el permiso a los dueños (26/10: se pedía por WhatsApp). */
+      toast(motivo ?? `Tu tipo de cuenta no puede cambiar ${queEsTabla(tabla)}: vuelve a como estaba.`, "err", {
+        texto: "Pedir permiso",
+        onClick: () => {
+          void pedirAcceso({ pantalla: queEsTabla(tabla), ruta: `tabla:${tabla}`, quiere: "editar" }).then((r) =>
+            toast(r.ok ? "Listo: les avisé a los dueños. Cuando te lo den, recargá la página." : r.error, r.ok ? "ok" : "err"));
+        },
+      });
     });
   }, [toast]);
   /* El inicio es el Dashboard; quien no lo ve arranca en su primera pantalla. */
@@ -370,8 +379,13 @@ export function Shell({ children }: { children: React.ReactNode }) {
             <Card>
               <Empty
                 icono={<Lock size={22} />} titulo="Esta pantalla no es de tu tipo de cuenta"
-                texto={`Con tu tipo de cuenta (${acceso.nombre}) no se ve. Si la necesitás, pediselo a los dueños.`}
-                accion={<Link href={inicio}><Button variante="secondary">Ir a mi inicio</Button></Link>}
+                texto={`Con tu tipo de cuenta (${acceso.nombre}) no se ve. Si la necesitás, pedísela a los dueños desde acá.`}
+                accion={
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 12 }}>
+                    <PedirAccesoPantalla pedido={{ pantalla: encabezado?.texto ?? "esta pantalla", ruta, quiere: "ver" }} />
+                    <Link href={inicio}><Button variante="ghost">Ir a mi inicio</Button></Link>
+                  </div>
+                }
               />
             </Card>
           ) : (
@@ -381,6 +395,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
                 <div className="aviso-tipo" role="note">
                   <Eye size={15} aria-hidden />
                   <span>Con tu tipo de cuenta esta pantalla es para mirar: lo que cambies no se guarda.</span>
+                  <PedirPermisoParaEditar pedido={{ pantalla: encabezado?.texto ?? "esta pantalla", ruta }} />
                 </div>
               )}
               {children}

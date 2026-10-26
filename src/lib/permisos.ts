@@ -72,8 +72,8 @@ export const TIPOS_POR_DEFECTO: TipoCuenta[] = [
   },
   {
     id: "marketing", nombre: "Marketing", orden: 6, soloLoSuyo: false,
-    descripcion: "Webinars y Marketing; ve los leads. En el Dashboard, adquisición y el webinar.",
-    areas: { panel: "ver", leads: "ver", webinars: "editar", marketing: "editar" },
+    descripcion: "Webinars y Marketing; ve los leads y el CRM. En el Dashboard, adquisición y el webinar.",
+    areas: { panel: "ver", leads: "ver", crm: "ver", webinars: "editar", marketing: "editar" },
   },
   CUSTOMER_SUCCESS,
 ];
@@ -322,9 +322,17 @@ export function nivelDeRuta(a: MiAcceso | null | undefined, ruta: string): 0 | 1
   if (area === null) return 2;
   if (area === "equipo") return esDueno(a) ? 2 : 0;
   let nivel: 0 | 1 | 2 = 0;
-  for (const x of areasDeRuta(ruta)) nivel = Math.max(nivel, nivelEn(a, x)) as 0 | 1 | 2;
+  for (const x of areasDeRuta(ruta)) {
+    /* Mi panel es de quien trabaja las llamadas; mirar el CRM no alcanza (Marketing lo ve desde el 26/10 y no tiene nada ahí). */
+    if (x === "crm" && esMiPanel(ruta) && !trabajaLlamadas(a)) continue;
+    nivel = Math.max(nivel, nivelEn(a, x)) as 0 | 1 | 2;
+  }
   return nivel;
 }
+
+const esMiPanel = (ruta: string) => /^\/mi-panel(\/|$)/.test(ruta.split("?")[0]);
+/** Tiene llamadas propias: edita el CRM (closer, director) o los leads (setter), o ve sólo lo suyo. */
+const trabajaLlamadas = (a: MiAcceso | null | undefined) => nivelEn(a, "crm") === 2 || nivelEn(a, "leads") === 2 || Boolean(a?.soloLoSuyo);
 
 /* Las secciones del Dashboard y las áreas que necesita cada una: se ve la
    sección si el tipo ve alguna (y el Dashboard). Adquisición sale de Meta;

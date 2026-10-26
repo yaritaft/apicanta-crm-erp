@@ -2,6 +2,7 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { useRouter } from "next/navigation";
 import { Bell, CheckCheck, X } from "lucide-react";
 import { Avatar, IconButton } from "@/components/ui/ui";
 import { useAbrirFicha } from "@/components/ficha/abrir";
@@ -56,6 +57,7 @@ export function Campanita() {
   const { email } = useSesion();
   const e = useEstado();
   const abrirFicha = useAbrirFicha();
+  const router = useRouter();
   const [avisos, setAvisos] = useState<Aviso[]>([]);
   const [abierta, setAbierta] = useState(false);
   const [emergente, setEmergente] = useState<Aviso | null>(null);
@@ -110,6 +112,8 @@ export function Campanita() {
       setAvisos((l) => marcarEnLista(l, (x) => x.id === a.id, new Date().toISOString()));
       void marcarLeidos([a.id]);
     }
+    /* Un pedido de acceso se resuelve en Equipo: ahí se le cambia el tipo o lo que ve el tipo. */
+    if (a.tipo === "acceso") { router.push("/equipo?seccion=accesos"); return; }
     if (!a.contactoId) return;
     /* Si la persona es alumna, en Servicio; si no, en Ventas. El chat está en las dos. */
     const p = personaDe(e, a.contactoId);

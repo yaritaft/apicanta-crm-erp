@@ -69,8 +69,8 @@ insert into public.tipos_cuenta (id, nombre, descripcion, areas, "soloLoSuyo", o
     '{"leads":"editar","crm":"ver"}', false, 4),
   ('admin', 'Administración', 'Finanzas, Caja, Conciliación, Ventas y Clientes. En el Dashboard, cobranza y rentabilidad.',
     '{"panel":"ver","ventas":"editar","finanzas":"editar"}', false, 5),
-  ('marketing', 'Marketing', 'Webinars y Marketing; ve los leads. En el Dashboard, adquisición y el webinar.',
-    '{"panel":"ver","leads":"ver","webinars":"editar","marketing":"editar"}', false, 6)
+  ('marketing', 'Marketing', 'Webinars y Marketing; ve los leads y el CRM. En el Dashboard, adquisición y el webinar.',
+    '{"panel":"ver","leads":"ver","crm":"ver","webinars":"editar","marketing":"editar"}', false, 6)
 on conflict (id) do nothing;
 
 -- El de Dueño es siempre todo: aunque alguien lo editara por SQL, las

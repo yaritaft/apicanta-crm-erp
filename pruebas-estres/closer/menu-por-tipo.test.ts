@@ -58,7 +58,7 @@ const MENU_ESPERADO: Record<string, { menu: string[]; inicio: string }> = {
   closer: { menu: ["/mis-llamadas", "/mi-panel", "/crm", "/ventas", "/cerrar-el-dia", "/cargar-venta"], inicio: "/mis-llamadas" },
   setter: { menu: ["/mi-panel", "/leads", "/crm", "/agenda"], inicio: "/mi-panel" },
   admin: { menu: ["/panel", "/ventas", "/clientes", "/finanzas", "/finanzas/end-of-day", "/finanzas/resultados", "/finanzas/transacciones"], inicio: "/panel" },
-  marketing: { menu: ["/panel", "/leads", "/webinars", "/formularios", "/grupos-whatsapp", "/marketing", "/marketing?nivel=conciliacion"], inicio: "/panel" },
+  marketing: { menu: ["/panel", "/leads", "/crm", "/agenda", "/webinars", "/formularios", "/grupos-whatsapp", "/marketing", "/marketing?nivel=conciliacion"], inicio: "/panel" },
   customer_success: {
     menu: ["/mi-panel", "/clientes", "/alumnos", "/alumnos?seccion=pipeline", "/reportes", "/simulacros", "/consultas", "/alumnos?seccion=hoy", "/alumnos?seccion=clientes"],
     inicio: "/mi-panel",

@@ -2,9 +2,10 @@ import type { ID } from "./types";
 
 /* ==================================================================
    Los avisos de cada persona del equipo: la campanita de arriba, como
-   en Blue OS (Juan Cruz, 23/10). Hoy, «X te mencionó» en el chat de una
-   ficha. Los crea la base (supabase/avisos.sql, disparador de
-   `comentarios`); la app los lee, los muestra y los marca leídos. Cada
+   en Blue OS (Juan Cruz, 23/10). «X te mencionó» en el chat de una ficha,
+   el tope de PandaDoc y «X pidió acceso a…» (26/10). Los crea la base
+   (supabase/avisos.sql, disparador de `comentarios`; supabase/pedir-acceso.sql)
+   o el servidor; la app los lee, los muestra y los marca leídos. Cada
    uno ve sólo los suyos (RLS por mail).
    ================================================================== */
 
@@ -12,7 +13,7 @@ export interface Aviso {
   id: ID;
   /* El mail de quien lo recibe, en minúsculas. */
   para: string;
-  tipo: "mencion" | string;
+  tipo: "mencion" | "pandadoc" | "acceso" | string;
   titulo: string;
   /* El mensaje (hasta 400 caracteres). */
   cuerpo: string | null;
@@ -44,7 +45,7 @@ export function hace(iso: string, ahora: number = Date.now()): string {
 
 /** El renglón de abajo del título: de qué ficha es. */
 export const dondeEs = (a: Pick<Aviso, "persona"> & Partial<Pick<Aviso, "tipo">>): string =>
-  a.persona ? `En la ficha de ${a.persona}` : a.tipo === "pandadoc" ? "Contratos de PandaDoc" : "En el chat de una ficha";
+  a.persona ? `En la ficha de ${a.persona}` : a.tipo === "pandadoc" ? "Contratos de PandaDoc" : a.tipo === "acceso" ? "Pedido de acceso · se resuelve en Equipo" : "En el chat de una ficha";
 
 /** Un aviso nuevo en la lista: arriba, sin repetir (llega por Realtime y también al volver a leer). */
 export function sumarAviso(lista: readonly Aviso[], nuevo: Aviso, tope = AVISOS_A_MOSTRAR): Aviso[] {
