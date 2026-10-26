@@ -2,7 +2,7 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { ArrowRight, Link2, Paperclip, Trash2 } from "lucide-react";
-import { Button, Field, Select, Textarea } from "@/components/ui/ui";
+import { Button, Chip, Field, Input, Select, Textarea } from "@/components/ui/ui";
 import { Asistente, Pregunta, type PasoAsistente } from "@/components/ui/Asistente";
 import {
   agregarMedio, datosDeCobro, EditorCobros, esFinanciera, enPesos, problemaDeCuenta, problemaDeDatos,
@@ -13,7 +13,7 @@ import { useAcceso } from "@/lib/acceso";
 import { puedeEditar } from "@/lib/permisos";
 import { nube } from "@/lib/supabase";
 import { candadoDeCobro, corrigeSiempre } from "@/lib/candado-cobro";
-import { fechaLarga, money } from "@/lib/format";
+import { fechaLarga, isoDia, money } from "@/lib/format";
 import type { Cuota, Pago } from "@/lib/types";
 
 /* ==================================================================
@@ -38,6 +38,11 @@ import type { Cuota, Pago } from "@/lib/types";
    se va a cobrar (el redondeo del plan, lo que descontó la pasarela), la
    cuota se da por saldada con el motivo, y el precio de la venta baja lo
    mismo: quien puede corregir cuotas lo elige ahí, sin arreglarlo después.
+
+   Lo más común, y lo que se propone: el alumno paga una parte hoy y el resto
+   en unos días (Mariano, 26/10: 1.000 de 1.500 y los 500 a los 7 días). Ahí
+   la cuota queda con lo que falta y pasa a vencer el día que dijo que paga:
+   se carga el resto con «Registrar pago» cuando llegue, sin mover otras cuotas.
    ================================================================== */
 
 type Reajuste = "repartir" | "proxima" | "pendiente" | "saldar";
@@ -46,7 +51,7 @@ type IdPaso = "cobro" | "prueba" | "datos" | "saldo" | "resumen";
 const TEXTO_REAJUSTE: Record<Reajuste, string> = {
   repartir: "Repartirlo en las cuotas que siguen",
   proxima: "Sumarlo a la próxima cuota",
-  pendiente: "Dejarlo pendiente en esta cuota",
+  pendiente: "Lo paga después: el resto queda en esta cuota",
   saldar: "No se cobra: la cuota queda saldada",
 };
 
@@ -54,6 +59,10 @@ const TEXTO_REAJUSTE: Record<Reajuste, string> = {
 const DIFERENCIA_CHICA = 5;
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
+
+/* Aaaa-mm-dd de dentro de `dias` días (hora de Argentina: el shim de Date ya la fija). */
+const enDias = (dias: number) => isoDia(new Date(Date.now() + dias * 86_400_000).toISOString());
+const finDeMes = () => { const h = new Date(); return isoDia(new Date(h.getFullYear(), h.getMonth() + 1, 0, 12).toISOString()); };
 
 /* El cobro tal como está, como borrador para volver a pasarlo por el asistente. */
 function borradorDe(p: Pago): CobroBorrador {
@@ -98,6 +107,8 @@ export function RegistrarPago({ cuota, onCerrar, onGuardado, embebido = false, p
   /* Sin elegir, se propone según lo que falta (ver `reajuste` más abajo). */
   const [reajusteElegido, setReajuste] = useState<Reajuste | null>(null);
   const [motivoSaldar, setMotivoSaldar] = useState("");
+  /* Cuándo paga el resto: por defecto, en una semana; vacío deja el vencimiento como estaba. */
+  const [venceSaldo, setVenceSaldo] = useState(() => enDias(7));
   const [idPaso, setIdPaso] = useState<IdPaso>("cobro");
   const [subiendo, setSubiendo] = useState<Set<string>>(() => new Set());
   const onSubiendo = useCallback((id: string, si: boolean) => {
@@ -137,13 +148,13 @@ export function RegistrarPago({ cuota, onCerrar, onGuardado, embebido = false, p
   const puedeSaldar = puedeEditar(acceso, "cuotas") && !editando;
   const chica = saldo > 0.01 && saldo <= DIFERENCIA_CHICA;
   const reajuste: Reajuste = reajusteElegido === "saldar" && !puedeSaldar ? "repartir"
-    : reajusteElegido ?? (chica && puedeSaldar ? "saldar" : "repartir");
+    : reajusteElegido ?? (chica && puedeSaldar ? "saldar" : "pendiente");
   /* Sin cuotas después, repartir y sumar a la próxima hacen lo mismo: una cuota nueva con lo que falta. */
   const opcionesReajuste: { valor: Reajuste; texto: string }[] = [
+    { valor: "pendiente", texto: TEXTO_REAJUSTE.pendiente },
     ...(siguientes.length === 0
       ? [{ valor: "repartir" as const, texto: "Pasarlo a una cuota nueva" }]
       : [{ valor: "repartir" as const, texto: TEXTO_REAJUSTE.repartir }, { valor: "proxima" as const, texto: TEXTO_REAJUSTE.proxima }]),
-    { valor: "pendiente", texto: TEXTO_REAJUSTE.pendiente },
     ...(puedeSaldar ? [{ valor: "saldar" as const, texto: TEXTO_REAJUSTE.saldar }] : []),
   ];
   const textoReajuste = opcionesReajuste.find((x) => x.valor === reajuste)?.texto ?? TEXTO_REAJUSTE[reajuste];
@@ -170,6 +181,10 @@ export function RegistrarPago({ cuota, onCerrar, onGuardado, embebido = false, p
       despues: r2(c.monto + (k === siguientes.length - 1 ? r2(saldo - parte * (siguientes.length - 1)) : parte)),
     }));
   }, [saldo, reajuste, venta, e.cuotas, cuota, siguientes]);
+
+  /* Si el resto se promete para otro día, la cuota pasa a vencer ese día. */
+  const nuevoVence = venceSaldo ? new Date(`${venceSaldo}T12:00:00-03:00`).toISOString() : undefined;
+  const venceCambia = Boolean(nuevoVence) && isoDia(cuota.vence) !== venceSaldo;
 
   const problemaCobro = cobrado > resta + 0.01
     ? `Se cobra ${M(cobrado)} y a ${nombreCuota} le faltan ${M(resta)}`
@@ -206,11 +221,12 @@ export function RegistrarPago({ cuota, onCerrar, onGuardado, embebido = false, p
       cobros: cobros.map(datosDeCobro),
       reajuste: saldo > 0.01 ? reajuste : "pendiente",
       motivo: motivoSaldar,
+      venceSaldo: saldo > 0.01 && reajuste === "pendiente" ? venceSaldo : undefined,
     });
     if (!ok) return;
     onGuardado(
       saldo <= 0.01 ? "Pago registrado: la cuota quedó saldada."
-        : reajuste === "pendiente" ? `Pago registrado. Quedan ${M(saldo)} pendientes en ${nombreCuota}.`
+        : reajuste === "pendiente" ? `Pago registrado. Quedan ${M(saldo)} por cobrar en ${nombreCuota}${venceCambia ? `, que ahora vence el ${fechaLarga(nuevoVence)}` : ""}.`
           : reajuste === "saldar" ? `Pago registrado: ${nombreCuota} quedó saldada en ${M(r2(pagado + cobrado))} y los ${M(saldo)} que faltaban no se cobran.`
             : "Pago registrado y cuotas reacomodadas.",
     );
@@ -325,9 +341,35 @@ export function RegistrarPago({ cuota, onCerrar, onGuardado, embebido = false, p
             opciones={opcionesReajuste}
           />
           {reajuste === "pendiente" ? (
-            <p className="t-sm t-subtle">
-              {laCuota} queda con {M(saldo)} por cobrar y las demás no cambian.
-            </p>
+            <>
+              <Field label="¿Cuándo paga el resto?" ayuda="La cuota pasa a vencer ese día, así no figura vencida mientras tanto y el sistema avisa si no llega.">
+                <Input type="date" value={venceSaldo} onChange={(ev) => setVenceSaldo(ev.target.value)} />
+              </Field>
+              <div className="row" style={{ gap: 6, flexWrap: "wrap" }}>
+                <Chip activo={venceSaldo === enDias(7)} onClick={() => setVenceSaldo(enDias(7))}>En 7 días</Chip>
+                <Chip activo={venceSaldo === enDias(15)} onClick={() => setVenceSaldo(enDias(15))}>En 15 días</Chip>
+                <Chip activo={venceSaldo === finDeMes()} onClick={() => setVenceSaldo(finDeMes())}>A fin de mes</Chip>
+                <Chip activo={venceSaldo === ""} onClick={() => setVenceSaldo("")}>No dijo cuándo</Chip>
+              </div>
+              <div className="stack-2" aria-label="Cómo queda la cuota">
+                <div className="reajuste-fila">
+                  <span className="truncate t-strong">{laCuota} · lo que se cobra hoy</span>
+                  <span className="t-num t-subtle">{M(cuota.monto)}</span>
+                  <ArrowRight size={13} className="t-subtle" />
+                  <span className="t-num t-strong">{M(r2(pagado + cobrado))}</span>
+                </div>
+                <div className="reajuste-fila">
+                  <span className="truncate">
+                    <span className="t-strong">Queda por cobrar</span>
+                    <span className="t-subtle"> · {venceCambia ? `vence ${fechaLarga(nuevoVence)}` : cuota.vence ? `sigue venciendo ${fechaLarga(cuota.vence)}` : "sin fecha"}</span>
+                  </span>
+                  <span className="t-num t-subtle">—</span>
+                  <ArrowRight size={13} className="t-subtle" />
+                  <span className="t-num t-strong" style={{ color: "var(--accent-text)" }}>{M(saldo)}</span>
+                </div>
+              </div>
+              <p className="t-sm t-subtle">Las demás cuotas no cambian. Cuando llegue el resto, lo cargás con «Registrar pago» en esta misma cuota.</p>
+            </>
           ) : (
             <div className="stack-2" aria-label="Cómo quedan las cuotas">
               <div className="reajuste-fila">
@@ -368,7 +410,12 @@ export function RegistrarPago({ cuota, onCerrar, onGuardado, embebido = false, p
             <dt>Cuota</dt><dd>{laCuota}{cuota.vence ? ` · vence ${fechaLarga(cuota.vence)}` : ""}</dd>
             <dt>Se cobra</dt><dd className="t-num">{M(cobrado)} de {M(resta)}</dd>
             {saldo > 0.01 && (
-              <><dt>Lo que falta</dt><dd>{M(saldo)} · {textoReajuste.toLowerCase()}{reajuste === "saldar" && motivoSaldar.trim() ? ` (${motivoSaldar.trim()})` : ""}</dd></>
+              <><dt>Lo que falta</dt>
+                <dd>
+                  {M(saldo)} · {reajuste === "pendiente"
+                    ? `queda en esta cuota${venceCambia ? `, la paga el ${fechaLarga(nuevoVence)}` : ""}`
+                    : `${textoReajuste.toLowerCase()}${reajuste === "saldar" && motivoSaldar.trim() ? ` (${motivoSaldar.trim()})` : ""}`}
+                </dd></>
             )}
           </dl>
           <div className="stack-2">

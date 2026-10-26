@@ -2881,7 +2881,10 @@ export const acciones = {
      - "repartir": la cuota queda en lo que se pagó y el saldo se reparte
        parejo entre las cuotas pendientes que siguen;
      - "proxima": el saldo se suma entero a la próxima cuota pendiente;
-     - "pendiente": la cuota queda como estaba, con su saldo;
+     - "pendiente": la cuota queda como estaba, con su saldo. Con `venceSaldo`
+       (aaaa-mm-dd) el saldo se promete para esa fecha: la cuota pasa a vencer
+       ese día y la nota deja dicho de cuándo a cuándo (Mariano, 26/10: el
+       alumno pagó 1.000 de 1.500 y el resto lo paga en 7 días);
      - "saldar": el saldo no se cobra; la cuota queda en lo que se pagó, ya
        pagada, y el precio de la venta baja lo mismo (con `motivo`, obligatorio).
      Si no hay cuotas después, el saldo pasa a una cuota nueva un mes más
@@ -2897,6 +2900,7 @@ export const acciones = {
     cobros: DatosCobro[];
     reajuste: "repartir" | "proxima" | "pendiente" | "saldar";
     motivo?: string;
+    venceSaldo?: string;
   }): boolean {
     const e = snapshot();
     const cuota = e.cuotas.find((c) => c.id === datos.cuotaId);
@@ -2952,7 +2956,22 @@ export const acciones = {
       cambiadas.set(cuota.id, { ...cuota, monto: cubierto, estado: "pagada", notas: cuota.notas ? `${cuota.notas} | ${linea}` : linea });
       ventaSaldada = { ...venta, precioAcordado: Math.max(0, r2(venta.precioAcordado - saldo)) };
       detalleReajuste = ` La diferencia de ${saldo} no se cobra: la cuota queda saldada en ${cubierto} y el precio de la venta pasó de ${venta.precioAcordado} a ${ventaSaldada.precioAcordado}. Motivo: ${motivo}`;
-    } else if (datos.reajuste !== "pendiente") {
+    } else if (datos.reajuste === "pendiente") {
+      /* El saldo queda en esta cuota; si el cliente dijo cuándo lo paga, la cuota pasa a vencer ese día. */
+      const prometido = datos.venceSaldo && /^\d{4}-\d{2}-\d{2}$/.test(datos.venceSaldo) ? datos.venceSaldo : undefined;
+      const de = cuota.vence ? cuota.vence.slice(0, 10) : "sin fecha";
+      if (prometido && prometido !== de) {
+        const nombre = cuota.esReserva ? "La reserva" : `La cuota ${cuota.numero}`;
+        const linea = `${nombre}: pagó ${cubierto} de ${cuota.monto} y el resto (${saldo}) lo paga el ${prometido}; vencía el ${de}`;
+        cambiadas.set(cuota.id, {
+          ...cuota, vence: new Date(`${prometido}T12:00:00-03:00`).toISOString(),
+          notas: cuota.notas ? `${cuota.notas} | ${linea}` : linea,
+        });
+        detalleReajuste = ` Quedan ${saldo} en esta cuota y el cliente los paga el ${prometido} (vencía el ${de}).`;
+      } else {
+        detalleReajuste = ` Quedan ${saldo} pendientes en esta cuota.`;
+      }
+    } else {
       /* La cuota queda en lo que se pagó, y saldada. */
       cambiadas.set(cuota.id, { ...cuota, monto: cubierto, estado: "pagada" });
       const orden = (c: Cuota) => c.numero;

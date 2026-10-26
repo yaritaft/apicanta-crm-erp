@@ -14,6 +14,7 @@ import { CopiarLink, Filtro, opcionesDe, SIN, type OpcionFiltro } from "@/compon
 import { Confirmar } from "@/components/ui/Modal";
 import { AsistenteVenta } from "@/components/ventas/AsistenteVenta";
 import { CargarCuota } from "@/components/cobros/CargarCuota";
+import { AyudaDeCuotas } from "@/components/cobros/AyudaDeCuotas";
 import { ListaCobros, PARAMS_COBROS, PARAMS_TABLA_COBROS } from "@/components/cobros/ListaCobros";
 import { ControlDeVenta } from "@/components/cobros/columnasControl";
 import { ImportarPlanilla } from "@/components/ventas/ImportarPlanilla";
@@ -405,6 +406,7 @@ export default function Ventas() {
             ))}
             <span className="spacer" />
             {hayFiltros && <Button sm variante="ghost" onClick={limpiarFiltros}>Limpiar filtros</Button>}
+            <AyudaDeCuotas />
             <CopiarLink />
           </div>
         </div>

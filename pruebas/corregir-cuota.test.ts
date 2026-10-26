@@ -122,3 +122,69 @@ test("el asistente de pago ofrece «no se cobra» y la cuota cobrada en parte, �
   assert.match(acc, /Dar por saldada/);
   assert.match(acc, /Falta escribir por qué/, "el botón apagado dice qué le falta");
 });
+
+/* Mariano, 26/10: Oscar Abad tenía 2 cuotas de 1.500, pagó 1.000 de la segunda y el resto lo paga en 7 días.
+   No había forma de decirlo: el asistente proponía pasar los 500 a una cuota nueva un mes más tarde. */
+test("pago parcial con el resto prometido: la cuota queda con lo que falta, vence el día prometido y no se mueve nada más", () => {
+  const { cuota, venta } = pendienteSinCobros();
+  const proc = estado().procesadores[0]?.id;
+  const otras = estado().cuotas.filter((c) => c.ventaId === venta.id && c.id !== cuota.id).map((c) => [c.id, c.monto, c.vence]);
+  const cobrado = Math.round(cuota.monto * 0.66 * 100) / 100;
+  const falta = Math.round((cuota.monto - cobrado) * 100) / 100;
+  const venceAntes = (cuota.vence ?? "").slice(0, 10);
+  assert.equal(acciones.registrarPago({ cuotaId: cuota.id, cobros: [{ procesadorId: proc, monto: cobrado, fecha: "2026-10-26" }], reajuste: "pendiente", venceSaldo: "2026-11-02" }), true);
+  const e = estado();
+  const c = e.cuotas.find((x) => x.id === cuota.id)!;
+  assert.deepEqual([c.estado, c.monto], ["pendiente", cuota.monto], "sigue pendiente por el mismo monto");
+  assert.equal((c.vence ?? "").slice(0, 10), "2026-11-02", "pasa a vencer el día que dijo que paga");
+  assert.match(c.notas ?? "", new RegExp(`pagó ${cobrado} de ${cuota.monto} y el resto \\(${falta}\\) lo paga el 2026-11-02`));
+  assert.deepEqual(
+    e.cuotas.filter((x) => x.ventaId === venta.id && x.id !== cuota.id).map((x) => [x.id, x.monto, x.vence]), otras,
+    "las demás cuotas no cambian y no nace una cuota nueva",
+  );
+  assert.equal(e.ventas.find((v) => v.id === venta.id)!.precioAcordado, venta.precioAcordado, "el valor de la venta no cambia");
+  assert.ok(e.actividad.some((a) => /el cliente los paga el 2026-11-02/.test(a.detalle ?? "") && new RegExp(`vencía el ${venceAntes}`).test(a.detalle ?? "")));
+
+  // Cuando llega el resto, se carga en la misma cuota y queda cobrada.
+  assert.equal(acciones.registrarPago({ cuotaId: cuota.id, cobros: [{ procesadorId: proc, monto: falta, fecha: "2026-11-02" }], reajuste: "pendiente" }), true);
+  const final = estado().cuotas.find((x) => x.id === cuota.id)!;
+  assert.deepEqual([final.estado, final.monto], ["pagada", cuota.monto]);
+});
+
+test("sin fecha prometida (o la misma que ya tenía) el vencimiento no se toca", () => {
+  const { cuota } = pendienteSinCobros();
+  const proc = estado().procesadores[0]?.id;
+  const antes = cuota.vence;
+  assert.equal(acciones.registrarPago({ cuotaId: cuota.id, cobros: [{ procesadorId: proc, monto: 10, fecha: "2026-10-26" }], reajuste: "pendiente" }), true);
+  const c = estado().cuotas.find((x) => x.id === cuota.id)!;
+  assert.equal(c.vence, antes);
+  assert.ok(!/lo paga el/.test(c.notas ?? ""));
+});
+
+test("el asistente propone dejar el resto en la cuota con fecha, y no repartirlo en otras cuotas", () => {
+  const pago = readFileSync("src/components/cobros/RegistrarPago.tsx", "utf8");
+  assert.match(pago, /pendiente: "Lo paga después: el resto queda en esta cuota"/);
+  assert.match(pago, /¿Cuándo paga el resto\?/);
+  assert.match(pago, /\? "saldar" : "pendiente"\)/, "por defecto el resto queda pendiente (antes se repartía solo en las otras cuotas)");
+  assert.match(pago, /venceSaldo: saldo > 0\.01 && reajuste === "pendiente" \? venceSaldo : undefined/);
+});
+
+test("la ayuda «¿Cambió cómo paga?» cubre cada caso con el botón que existe de verdad", () => {
+  const ayuda = readFileSync("src/components/cobros/AyudaDeCuotas.tsx", "utf8");
+  const pago = readFileSync("src/components/cobros/RegistrarPago.tsx", "utf8");
+  const acc = readFileSync("src/components/cobros/AccionesDeCuota.tsx", "utf8");
+  const ficha = readFileSync("src/components/ficha/TarjetaVenta.tsx", "utf8");
+  const pagina = readFileSync("src/app/(app)/ventas/page.tsx", "utf8");
+  assert.match(pagina, /<AyudaDeCuotas \/>/, "el botón está en Ventas");
+  /* Cada botón que la ayuda nombra tiene que estar escrito igual en la pantalla donde se toca. */
+  for (const texto of ["Lo paga después: el resto queda en esta cuota", "No se cobra: la cuota queda saldada", "Repartirlo en las cuotas que siguen",
+    "Sumarlo a la próxima cuota", "Pasarlo a una cuota nueva"]) {
+    assert.ok(ayuda.includes(texto), `la ayuda nombra «${texto}»`);
+    assert.ok(pago.includes(texto), `el asistente tiene «${texto}»`);
+  }
+  for (const boton of ["Cambiar fecha", "Incobrable", "Dar por saldada", "Corregir monto", "Quitar cuota", "Volver a cobrar"]) {
+    assert.ok(ayuda.includes(boton) && acc.includes(boton), `«${boton}» está en la ayuda y en la cuota`);
+  }
+  for (const boton of ["Eliminar este pago"]) assert.ok(ayuda.includes(boton) && pago.includes(boton));
+  for (const boton of ["Marcar reembolsada", "Cargar una devolución", "Corregir"]) assert.ok(ayuda.includes(boton) && (ficha.includes(boton) || ficha.includes("devolución")), boton);
+});
