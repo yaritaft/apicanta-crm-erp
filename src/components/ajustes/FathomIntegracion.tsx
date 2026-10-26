@@ -24,6 +24,10 @@ import { FathomDiagnostico } from "./FathomDiagnostico";
      hasta que no hay más: primero todo lo que la clave ve y después las
      llamadas de cada equipo de ventas de Fathom (las «Team Calls»). Si
      Fathom pide una pausa, espera y sigue.
+   - «Traer las transcripciones de los links»: los closers pegan el link de
+     Fathom en el cierre del día; el cron (api/cron/fathom) busca esa grabación
+     en Fathom cada 5 minutos y la ata a su llamada (lib/fathom-barrido). El
+     botón lo hace ya, sin esperar, y muestra cuántas faltan.
    - «Diagnosticar» (sólo dueños, FathomDiagnostico): por qué no llegan las
      llamadas de los closers, con la clave del servidor.
    ================================================================== */
@@ -32,6 +36,7 @@ interface Estado {
   clave: boolean; tablas?: boolean; conectado: boolean; aMano?: boolean; paraElEquipo?: boolean;
   conectadoEn?: string | null; conectadoPor?: string | null;
   grabaciones: number; atadas: number; ultima?: string | null; desde?: string | null; error?: string;
+  links?: { conLink: number; conTranscripcion: number; pendientes: number; enCurso: boolean; ultimoCompleto?: string | null; error?: string };
 }
 
 async function pedir(metodo: "GET" | "POST", cuerpo?: object) {
@@ -118,6 +123,36 @@ export function FathomIntegracion() {
     await recargar();
   }
 
+  /* Trae la transcripción de las llamadas con link, a pedido: vuelve a pedir mientras el barrido siga en curso. */
+  async function traerLinks() {
+    setTrabajando("links");
+    setPausa(null);
+    let pausas = 0, nuevas = 0, porLink = 0;
+    try {
+      for (let i = 0; i < 400 && montado.current; i++) {
+        const j = await pedir("POST", { accion: "links", forzar: i === 0 });
+        nuevas += Number(j.nuevas ?? 0);
+        porLink += Number(j.porLink ?? 0);
+        if (j.estado === "esperar") {
+          if (++pausas > PAUSAS_MAXIMAS) throw new Error("Fathom sigue pidiendo pausas. Probá de nuevo en un rato: lo que ya se trajo queda guardado.");
+          for (let s = Math.ceil(Number(j.esperar ?? 30)); s > 0 && montado.current; s--) { setPausa(s); await dormir(1000); }
+          setPausa(null);
+          continue;
+        }
+        if (j.estado !== "en-curso") break;
+      }
+      if (!montado.current) return;
+      await recargar();
+      toast(porLink > 0
+        ? `Listo: ${num(porLink)} ${porLink === 1 ? "llamada con su transcripción" : "llamadas con su transcripción"}.`
+        : "Listo. No se encontró ninguna transcripción nueva en Fathom: las que faltan son de grabaciones que la clave de Fathom no ve.");
+    } catch (err) { if (montado.current) toast(err instanceof Error ? err.message : "No se pudo traer.", "err"); }
+    if (!montado.current) return;
+    setPausa(null);
+    setTrabajando(null);
+    await recargar();
+  }
+
   /* Las que llegaron antes de que se descartaran las que no tienen llamada. */
   const sinAtar = estado ? estado.grabaciones - estado.atadas : 0;
 
@@ -195,6 +230,27 @@ export function FathomIntegracion() {
             <p className="t-sm t-subtle">
               Hay {num(sinAtar)} {sinAtar === 1 ? "grabación guardada" : "grabaciones guardadas"} sin llamada, de antes de que se descartaran: no se muestran en ningún lado.
             </p>
+          )}
+          {estado.links && estado.links.conLink > 0 && (
+            <div className="stack-2">
+              <p className="t-sm t-muted">
+                <strong>{num(estado.links.conTranscripcion)} de {num(estado.links.conLink)}</strong> llamadas con link de Fathom ya tienen su transcripción en la app
+                {estado.links.pendientes > 0
+                  ? `; faltan ${num(estado.links.pendientes)}. La app las busca sola cada 5 minutos${estado.links.enCurso ? " (hay una búsqueda en curso)" : ""}; las que Fathom no deja ver a esta clave no se pueden traer.`
+                  : ". Las nuevas llegan solas."}
+              </p>
+              {estado.links.pendientes > 0 && (
+                <div className="row-wrap" style={{ gap: 8 }}>
+                  <Button variante="secondary" icono={<Download size={16} />} disabled={!estado.clave || estado.tablas === false || Boolean(trabajando)}
+                    cargando={trabajando === "links"} onClick={() => void traerLinks()}>Traer las transcripciones ahora</Button>
+                </div>
+              )}
+              {trabajando === "links" && (
+                <p className="t-sm t-subtle" role="status">
+                  {pausa ? `Fathom pidió una pausa: sigo en ${pausa} s…` : "Buscando en Fathom las grabaciones de los links… puede tardar unos minutos."}
+                </p>
+              )}
+            </div>
           )}
           <FathomDiagnostico deshabilitado={!estado.clave || Boolean(trabajando)} />
         </div>

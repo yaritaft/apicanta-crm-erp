@@ -64,6 +64,21 @@ test("la reunión de una llamada de venta se guarda atada a ella, una sola vez, 
   assert.equal(graba()[0].grabadoPor, "cami@apicanta.com");
 }));
 
+test("la llamada que ya tiene pegado el link de la grabación la recibe aunque el invitado haya entrado con otro mail o lejos de la hora", async () => {
+  const inicia = new Date(Date.now() - 3600000).toISOString();
+  sembrar(inicia);
+  sesiones()[0].grabacion = "https://fathom.video/share/rec_link_1/";
+  sesiones().push({ id: "cal_B", email: "otro@cliente.com", inicia, anfitrion: "Cami Ruiz", estado: "agendada", calendlyInvitadoUri: "u/B", grabacion: "https://fathom.video/share/otra" });
+  /* Un mail que no es el de ninguna llamada y seis horas de distancia: sólo el link los une. */
+  const r = await enviar(JSON.stringify(reunion("rec_link_1", ["alias@raro.com"], new Date(Date.parse(inicia) + 6 * 3600000).toISOString())));
+  assert.deepEqual(await r.json(), { recibido: true, guardado: true });
+  assert.equal(graba().length, 1);
+  assert.equal(graba()[0].sesionId, "cal_A");
+  assert.equal(graba()[0].emparejadaPor, "link");
+  /* El link que el closer pegó no se toca. */
+  assert.equal(sesiones()[0].grabacion, "https://fathom.video/share/rec_link_1/");
+});
+
 test("una reunión sin llamada de Calendly (personal, interna o con otro mail) no se guarda: 200 para que Fathom no la reintente", async () => {
   const inicia = new Date(Date.now() - 3600000).toISOString();
   sembrar(inicia);

@@ -1,6 +1,6 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { decidirGrabacion, leerReunion, llamadaDe, segundosDeEspera, type Grabacion, type LlamadaCandidata } from "./fathom";
+import { decidirGrabacion, idDeShare, leerReunion, llamadaDe, llamadaDeLink, segundosDeEspera, type Grabacion, type LlamadaCandidata } from "./fathom";
 import { equiposDeVentas, leerEquipos } from "./fathom-equipos";
 import { desdeDelDiagnostico, diagnosticar, leerMiembrosDeFathom, type Diagnostico, type LlamadaDiag, type MiembroDiag, type PasadaPorEquipo } from "./fathom-diagnostico";
 
@@ -63,6 +63,8 @@ export async function secretoWebhook(db: SupabaseClient): Promise<string | null>
 
 export interface ResultadoGrabacion {
   ok: boolean; guardada: boolean; sesionId: string | null; error?: string;
+  /* Cómo se ató: por el link que pegó el closer, por el correo y la hora, o a mano. */
+  por?: Grabacion["emparejadaPor"];
   /* Si ya estaba guardada de antes (una vuelta por equipo repite lo que trajo la general). */
   yaEstaba?: boolean;
 }
@@ -79,7 +81,18 @@ export async function guardarGrabacion(db: SupabaseClient, payload: unknown): Pr
   const antes = previa.data as { sesionId: string | null; emparejadaPor: Grabacion["emparejadaPor"]; creadoEn: string } | null;
 
   let encontrada: string | null = null;
+  let por: "link" | "email-y-hora" = "email-y-hora";
   if (antes?.emparejadaPor !== "a-mano") {
+    /* Lo más seguro: la llamada que ya tiene pegado el link de esta grabación (el closer lo pega en el cierre del día). */
+    const idLink = idDeShare(g.shareUrl);
+    if (idLink) {
+      const l = await db.from("sesiones").select("id, grabacion, inicia").ilike("grabacion", `%fathom.video/share/${escaparLike(idLink)}%`);
+      if (l.error) return { ok: false, guardada: false, sesionId: null, error: l.error.message };
+      encontrada = llamadaDeLink(g, (l.data ?? []) as { id: string; grabacion: string | null; inicia: string }[]);
+      if (encontrada) por = "link";
+    }
+  }
+  if (!encontrada && antes?.emparejadaPor !== "a-mano") {
     const t = Date.parse(g.empieza ?? g.grabadaDesde ?? g.creadoEn ?? "");
     if (Number.isFinite(t)) {
       const [ll, eq] = await Promise.all([
@@ -92,7 +105,7 @@ export async function guardarGrabacion(db: SupabaseClient, payload: unknown): Pr
     }
   }
 
-  const d = decidirGrabacion(antes, encontrada);
+  const d = decidirGrabacion(antes, encontrada, por);
   if (!d.guardar) return { ok: true, guardada: false, sesionId: null };
 
   const ahora = new Date().toISOString();
@@ -103,8 +116,11 @@ export async function guardarGrabacion(db: SupabaseClient, payload: unknown): Pr
   if (d.sesionId && g.shareUrl) {
     await db.from("sesiones").update({ grabacion: g.shareUrl }).eq("id", d.sesionId).or("grabacion.is.null,grabacion.eq.");
   }
-  return { ok: true, guardada: true, sesionId: d.sesionId, yaEstaba: Boolean(antes) };
+  return { ok: true, guardada: true, sesionId: d.sesionId, por: d.por, yaEstaba: Boolean(antes) };
 }
+
+/* `_` y `%` son comodines de ilike: el id de un link de Fathom puede llevar «_». */
+const escaparLike = (s: string) => s.replace(/[\\%_]/g, (c) => `\\${c}`);
 
 /* ---------- la API ---------- */
 

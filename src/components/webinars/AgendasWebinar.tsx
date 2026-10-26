@@ -20,6 +20,8 @@ import type { Webinar } from "@/lib/types";
 import { diaYHora } from "./fechas";
 import { atribuirAgenda, useAgendasWebinar } from "./useVivo";
 import { MarcaPitch } from "./MarcaPitch";
+import { DescargarTranscripciones } from "@/components/fathom/DescargarTranscripciones";
+import type { LlamadaParaTranscribir } from "@/lib/transcripciones";
 
 /* ==================================================================
    Las agendas de Calendly del webinar: cuántas se hicieron en el vivo,
@@ -74,6 +76,12 @@ export function AgendasWebinar({ w, className }: { w: Webinar; className?: strin
   const cuentan = (d?.agendas ?? []).filter((a) => !a.fuera);
   const visibles = corte ? cuentan.filter((a) => cuenta(corte, a)) : (d?.agendas ?? []);
 
+  /* Las llamadas que se ven, para bajar la transcripción de Fathom de cada una. */
+  const paraTranscribir: LlamadaParaTranscribir[] = visibles.flatMap((a) => {
+    const s = sesiones.get(a.id);
+    return s && !a.fuera ? [{ sesionId: s.id, nombre: s.invitado, inicia: s.inicia, closer: s.anfitrion, estado: estadoVisible(app, s).texto, link: s.grabacion }] : [];
+  });
+
   function descargar() {
     const personas = new Map([...app.contactos, ...app.leads].map((p) => [p.id, p] as const));
     const filas: FilaDescarga[] = [];
@@ -117,10 +125,13 @@ export function AgendasWebinar({ w, className }: { w: Webinar; className?: strin
       <CardHead
         titulo="Agendas de Calendly"
         acciones={d && d.agendas.length > 0 ? (
-          <Button sm variante="secondary" icono={<Download size={15} />} onClick={descargar}
-            title="Baja en CSV lo que ves, una fila por persona, con teléfono y mail">
-            Descargar CSV
-          </Button>
+          <span className="row-wrap" style={{ gap: 8 }}>
+            <DescargarTranscripciones llamadas={paraTranscribir} nombreArchivo={`transcripciones-webinar-${fechaUtm(w.fecha)}-${corte || "todas"}`} />
+            <Button sm variante="secondary" icono={<Download size={15} />} onClick={descargar}
+              title="Baja en CSV lo que ves, una fila por persona, con teléfono y mail">
+              Descargar CSV
+            </Button>
+          </span>
         ) : undefined}
         sub={`Las que llegan con los links de este webinar, de su clase cero y de su Q&A (utm_campaign=webinar_${fechaUtm(w.fecha)}, clase0_webinar_${fechaUtm(w.fecha)} y qa_webinar_${fechaUtm(w.fecha)}; los links de antes, utm_medium=${clave}). Completan solas las llamadas de la planilla.`}
       />

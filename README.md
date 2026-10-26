@@ -1602,3 +1602,18 @@ por sus encabezados (`CAMPOS_CVS` en `src/lib/importar-cs.ts`; acepta los nombre
 - Pruebas: `pruebas/importar-cvs.test.ts` (detección de la tabla, fechas, teléfonos, links, casillas, estados, nombres repetidos, atar al alumno, los dos modos, que repetir el archivo no duplique y que no se cree ningún alumno).
 
 - Para instalarlo: Supabase → SQL Editor: `supabase/revision-cv.sql` (antes, ensayarlo contra la base real dentro de una transacción que se revierte). Para deshacerlo: `drop table public.revisiones_cv;`.
+
+## Fathom: la transcripción de cada llamada con link, y bajarlas juntas (Santi, 26/10)
+
+**El problema:** Santi pidió «descargar todas las transcripciones juntas de Fathom» de un webinar para armar un reporte macro con Claude. En producción la tabla `grabaciones` estaba **vacía** aunque 840 llamadas tenían el link de Fathom pegado por los closers: la grabación sólo se guardaba si el mail del invitado y la hora coincidían con una llamada de Calendly, y el aviso de Fathom llega antes de que el closer pegue nada. La API de Fathom no deja pedir una grabación por su link (`developers.fathom.ai/faq`), pero cada reunión trae su `share_url`.
+
+**La raíz, arreglada en tres capas:**
+
+- **Atar por el link** (`idDeShare`, `llamadaDeLink` en `src/lib/fathom.ts`; `guardarGrabacion` lo prueba primero): la llamada que tiene pegado `fathom.video/share/<id>` de esa reunión la recibe, aunque el mail no coincida. Queda `emparejadaPor = "link"`. Lo atado a mano no se pisa y el link del closer no se toca.
+- **Barrido automático** (`/api/cron/fathom`, cada 5 minutos; `src/lib/fathom-barrido.ts` decide, `fathom-barrido-servidor.ts` recorre): trae las reuniones que ve la clave (todo y después cada equipo de ventas), de a páginas, y las ata. Sigue donde quedó (tabla `fathom_barrido`, `supabase/fathom-links.sql`) porque Fathom limita los pedidos con transcripción (30 por minuto). Lo fresco (3 días) se revisa cada 30 minutos; lo viejo que Fathom no mostró, una vez por día. Si Fathom pide esperar, corta y sigue en la vuelta siguiente.
+- **Ajustes → Integraciones → Fathom** dice «X de Y llamadas con link de Fathom ya tienen su transcripción» y trae el botón «Traer las transcripciones ahora».
+
+**La descarga:** botón «Descargar transcripciones» en la tarjeta «Agendas de Calendly» de cada webinar (respeta el filtro: no vinieron, reagendaron, etc.) y «Transcripciones» en la Agenda (respeta todos los filtros). Baja un `.zip` con `llamadas/<fecha>_<nombre>.md` (quién, cuándo, closer, estado, resumen de Fathom y transcripción, sin teléfono ni mail), `todas-juntas.md` e `indice.csv`, que dice llamada por llamada si tiene transcripción y por qué no. Se arma en el navegador con la sesión de quien mira (`src/lib/transcripciones.ts`, `src/lib/zip.ts`): el closer baja sólo las de sus llamadas.
+
+- Pruebas: `pruebas/fathom-links.test.ts`, `pruebas/transcripciones.test.ts` (el zip se abre con `unzip`), `pruebas-estres/pasarelas/fathom-barrido.test.ts` y el caso nuevo de `fathom-webhook.test.ts`.
+- Para instalarlo: `supabase/fathom-links.sql` (idempotente; necesita `supabase/fathom.sql`). Sin la tabla el cron no avanza pero no rompe nada.

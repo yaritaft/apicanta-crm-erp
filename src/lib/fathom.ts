@@ -22,8 +22,8 @@ export interface Grabacion {
   recordingId: string;
   /* La llamada (sesiones.id) con la que va, si se encontró. */
   sesionId?: string | null;
-  /* Cómo se ató: por el correo y la hora, o a mano. */
-  emparejadaPor?: "email-y-hora" | "a-mano" | null;
+  /* Cómo se ató: por el link que pegó el closer, por el correo y la hora, o a mano. */
+  emparejadaPor?: "link" | "email-y-hora" | "a-mano" | null;
   titulo: string;
   url?: string | null;
   shareUrl?: string | null;
@@ -101,6 +101,31 @@ export function leerReunion(payload: unknown): Grabacion | null {
 
 /* ---------- con qué llamada va ---------- */
 
+/** El id de un link compartido de Fathom (fathom.video/share/<id>), o null si
+    no es uno. Es lo que pegan los closers en el cierre del día: la API no
+    deja pedir una grabación por ese link, pero cada reunión que devuelve
+    trae su `share_url`, y con el id se encuentran. */
+export function idDeShare(url: string | null | undefined): string | null {
+  const m = /fathom\.video\/share\/([A-Za-z0-9_-]+)/i.exec(url ?? "");
+  return m ? m[1] : null;
+}
+
+/** De las llamadas que tienen pegado el link de esta grabación, la que va:
+    la más cercana en el tiempo a cuando se grabó (si la misma grabación se
+    pegó en varias, por ejemplo en una reagenda). */
+export function llamadaDeLink(
+  g: Pick<Grabacion, "shareUrl" | "empieza" | "grabadaDesde" | "creadoEn">,
+  conLink: { id: string; grabacion?: string | null; inicia: string }[],
+): string | null {
+  const id = idDeShare(g.shareUrl);
+  if (!id) return null;
+  const t = Date.parse(g.empieza ?? g.grabadaDesde ?? g.creadoEn ?? "");
+  const mias = conLink.filter((l) => idDeShare(l.grabacion) === id);
+  if (mias.length === 0) return null;
+  const lejos = (l: { inicia: string }) => (Number.isFinite(t) && Number.isFinite(Date.parse(l.inicia)) ? Math.abs(Date.parse(l.inicia) - t) : 0);
+  return [...mias].sort((a, b) => lejos(a) - lejos(b))[0].id;
+}
+
 export interface LlamadaCandidata { id: string; email?: string | null; inicia: string; anfitrion?: string | null }
 
 const MARGEN = 4 * 3600_000;
@@ -142,14 +167,16 @@ export function llamadaDe(
 export interface DecisionGrabacion { guardar: boolean; sesionId: string | null; por: Grabacion["emparejadaPor"] }
 
 /** Qué hacer con una grabación que llega: `antes` es la que ya estaba
-    guardada (si había) y `encontrada`, la llamada que se le encontró ahora. */
+    guardada (si había) y `encontrada`, la llamada que se le encontró ahora
+    (`por` dice cómo: por el link pegado o por el correo y la hora). */
 export function decidirGrabacion(
   antes: Pick<Grabacion, "sesionId" | "emparejadaPor"> | null | undefined,
   encontrada: string | null,
+  por: "link" | "email-y-hora" = "email-y-hora",
 ): DecisionGrabacion {
   /* La que se ató a mano no se desata sola. */
   if (antes?.emparejadaPor === "a-mano" && antes.sesionId) return { guardar: true, sesionId: antes.sesionId, por: "a-mano" };
-  if (encontrada) return { guardar: true, sesionId: encontrada, por: "email-y-hora" };
+  if (encontrada) return { guardar: true, sesionId: encontrada, por };
   /* Si ya estaba atada y ahora no se encuentra (la llamada se movió), sigue con la de antes. */
   if (antes?.sesionId) return { guardar: true, sesionId: antes.sesionId, por: antes.emparejadaPor ?? "email-y-hora" };
   return { guardar: false, sesionId: null, por: null };

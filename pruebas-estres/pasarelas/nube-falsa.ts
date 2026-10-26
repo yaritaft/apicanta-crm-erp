@@ -34,7 +34,7 @@ export class NubeFalsa {
     this.declarar("movimientos", [["id"], ["proveedor", "referencia"]]);
     this.declarar("devoluciones", [["id"]]);
     this.declarar("sesiones", [["id"], ["calendlyInvitadoUri"]]);
-    for (const t of ["pagos", "cuotas", "ventas", "procesadores", "contactos", "leads", "traspasos", "capi_enviados", "webinars", "ads", "registros_webinar", "etapas", "actividad", "equipo", "yt_estado", "grabaciones", "fathom_conexion", "ajustes"]) this.declarar(t, [["id"]]);
+    for (const t of ["pagos", "cuotas", "ventas", "procesadores", "contactos", "leads", "traspasos", "capi_enviados", "webinars", "ads", "registros_webinar", "etapas", "actividad", "equipo", "yt_estado", "grabaciones", "fathom_conexion", "fathom_barrido", "ajustes"]) this.declarar(t, [["id"]]);
   }
 
   declarar(tabla: string, unicas: string[][]) {

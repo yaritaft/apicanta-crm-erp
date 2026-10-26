@@ -14,6 +14,7 @@ import { PasarLlamadas } from "@/components/closers/PasarLlamadas";
 import { sePuedePasar, usePuedePasarLlamadas } from "@/components/closers/usePasarLlamadas";
 import { ETIQUETA_CANAL } from "@/lib/calendly";
 import { atribucionDe, claveDeFecha, embudoDe, viaDe } from "@/lib/agendas-webinar";
+import { DescargarTranscripciones } from "@/components/fathom/DescargarTranscripciones";
 import { bajarCSV, clasesDe, crmDeDescarga, tablaDeDescarga, type FilaDescarga } from "@/lib/agendas-descarga";
 import { diaUtm } from "@/lib/utm-estandar";
 import { aURL, elegidosValidos, pasaFiltro } from "@/lib/filtro-multiple";
@@ -298,6 +299,9 @@ export default function Agenda() {
 
   const sesionVista = e.sesiones.find((s) => s.id === ver) ?? null;
 
+  /* El webinar, si el filtro tiene uno solo: para el nombre de lo que se baja. */
+  const w1 = f.webinar.length === 1 ? e.webinars.find((x) => x.id === f.webinar[0]) : undefined;
+
   function descargar() {
     const titulo = (id?: string) => e.webinars.find((w) => w.id === id)?.titulo ?? "";
     /* El teléfono y el país son de la persona: su contacto o, si no tiene, su lead. */
@@ -312,7 +316,7 @@ export default function Agenda() {
     /* Después van las columnas del CRM: la venta, lo cobrado, el origen y el perfil (lo que esta cuenta ve). */
     const ve = { ventas: puedeLeer(acceso, "ventas"), cobros: puedeLeer(acceso, "pagos") };
     const { tabla, personas: n } = tablaDeDescarga(filas, ["Webinar"], crmDeDescarga(e, ve));
-    const w = f.webinar.length === 1 ? e.webinars.find((x) => x.id === f.webinar[0]) : undefined;
+    const w = w1;
     bajarCSV(`agenda-${w ? `webinar-${diaUtm(w.fecha)}` : `${rango.desde}-a-${rango.hasta}`}.csv`, tabla);
     toast(`Se bajó la lista: ${num(n)} ${n === 1 ? "persona" : "personas"}, con teléfono, mail${ve.cobros ? ", venta, lo cobrado" : ""} y el resto de las columnas del CRM.`);
   }
@@ -399,6 +403,10 @@ export default function Agenda() {
           {hayFiltros && <IconButton etiqueta="Limpiar los filtros" onClick={limpiarFiltros}><X size={15} /></IconButton>}
           <CopiarLink />
           {/* Lo que se ve, en CSV: una fila por persona, con teléfono y mail (para un broadcast). */}
+          {visibles.length > 0 && (
+            <DescargarTranscripciones texto="Transcripciones" nombreArchivo={`transcripciones-${w1 ? `webinar-${diaUtm(w1.fecha)}` : `${rango.desde}-a-${rango.hasta}`}`}
+              llamadas={visibles.map((s) => ({ sesionId: s.id, nombre: s.invitado, inicia: s.inicia, closer: s.anfitrion, estado: estadoDeSesion(s).texto, link: s.grabacion }))} />
+          )}
           {visibles.length > 0 && (
             <Button sm variante="secondary" icono={<Download size={15} />} onClick={descargar}
               title="Baja en CSV las llamadas que ves (todas las páginas), una fila por persona, con teléfono y mail">
