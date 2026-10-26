@@ -53,6 +53,9 @@ export function textoDeTranscripcion(frases: FraseGrabacion[]): string {
   return lineas.join("\n");
 }
 
+/* El resumen de Fathom trae cada frase como un link largo al minuto de la grabación: sólo estorba para analizarlo. */
+const sinLinks = (md: string) => md.replace(/\[([^\]]+)\]\(https?:[^)\s]+\)/g, "$1");
+
 const palabras = (frases: FraseGrabacion[]) => frases.reduce((n, f) => n + f.texto.split(/\s+/).filter(Boolean).length, 0);
 
 /** La llamada como un documento (markdown): quién, cuándo, cómo terminó, el resumen de Fathom y la transcripción. */
@@ -66,7 +69,7 @@ export function documentoDeLlamada(l: LlamadaParaTranscribir, gs: GrabacionDeTra
   const link = gs.find((g) => g.shareUrl)?.shareUrl ?? l.link;
   if (link) sal.push(`- Grabación: ${link}`);
   for (const g of gs) {
-    if (g.resumen) sal.push("", "## Resumen de Fathom", "", g.resumen.trim());
+    if (g.resumen) sal.push("", "## Resumen de Fathom", "", sinLinks(g.resumen.trim()));
     if (g.transcripcion?.length) sal.push("", gs.length > 1 ? `## Transcripción (${g.titulo})` : "## Transcripción", "", textoDeTranscripcion(g.transcripcion));
   }
   return sal.join("\n") + "\n";

@@ -62,6 +62,10 @@ test("el documento de una llamada trae quién, cuándo, cómo terminó, el resum
   assert.match(doc, /## Resumen de Fathom\n\n## Resumen\n- Compró/);
   assert.match(doc, /## Transcripción\n\n\[00:00:01\] Mariano: Hola/);
   assert.doesNotMatch(doc, /@|\+54/);
+  /* Los links al minuto del resumen no van: queda el texto. */
+  const conLinks = documentoDeLlamada(llamada({ sesionId: "s1" }), [{ ...grabacion("s1", [["M", "00:00:01", "Hola"]]), resumen: "- [**Meta:** conseguir trabajo](https://fathom.video/share/x?tab=summary&timestamp=163.0)" }]);
+  assert.match(conLinks, /- \*\*Meta:\*\* conseguir trabajo\n/);
+  assert.doesNotMatch(conLinks, /timestamp=/);
 });
 
 test("el paquete: las que tienen transcripción van en un archivo cada una y en todas-juntas; el índice dice por qué faltan las otras", () => {

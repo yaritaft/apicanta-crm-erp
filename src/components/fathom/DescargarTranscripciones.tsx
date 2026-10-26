@@ -48,7 +48,7 @@ export function DescargarTranscripciones({ llamadas, nombreArchivo, texto = "Des
       const paquete = armarPaquete(llamadas, grabaciones);
       if (paquete.conTranscripcion === 0) {
         toast(`Ninguna de estas ${num(paquete.total)} llamadas tiene transcripción todavía. ${paquete.linkSinTranscripcion
-          ? `${num(paquete.linkSinTranscripcion)} tienen el link de Fathom y la app las está trayendo (tarda unos minutos).` : "No tienen link de Fathom."}`, "err");
+          ? `${num(paquete.linkSinTranscripcion)} tienen el link de Fathom: la app las busca sola cada 5 minutos; si pasó más de un día de la llamada, esa grabación no está compartida con el equipo en Fathom (Ajustes → Integraciones → Fathom dice de quién faltan).` : "No tienen link de Fathom."}`, "err");
         return;
       }
       setAvance("Armando el archivo…");
