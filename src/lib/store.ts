@@ -48,7 +48,7 @@ import { atarPropuesta, conciliarReembolsos, quienDelReembolso, type ReembolsoCr
 import { setterDeAgendas } from "./setter-agendas";
 import {
   cambiosDeChequeo, conChequeo, conComprobanteNuevo, puedeCambiarComprobante, puedeUsarCasillero,
-  quienEs, ROL_DE_CASILLERO, sinColumnasDelControl, type CasilleroChequeo, type VeredictoChequeo,
+  quienEs, quienFirma, ROL_DE_CASILLERO, sinColumnasDelControl, type CasilleroChequeo, type VeredictoChequeo,
 } from "./control-cobros";
 
 const CLAVE = "apicanta.erp.v1";
@@ -298,11 +298,25 @@ const puedo = (tabla: string) => !acceso || puedeEditar(acceso, tabla);
    cruzado.sql) y acá se pone igual, para que se vea al instante sin esperar a
    volver a leer. Sin nube nadie inicia sesión: va el «Responsable» de Ajustes. */
 let correoDeSesion: string | null = null;
+/* El nombre en Accesos de quien no está en Equipo (los dueños). Esa lista la
+   leen sólo los dueños: para el resto la base no devuelve nada, y alcanza con Equipo. */
+let nombreEnAccesos: string | null = null;
+function fijarSesion(correo: string | null) {
+  if (correo === correoDeSesion) return;
+  correoDeSesion = correo;
+  nombreEnAccesos = null;
+  if (!correo || !nube) return;
+  void nube.from("usuarios_permitidos").select("nombre").eq("email", correo).maybeSingle().then(({ data }) => {
+    if (correoDeSesion === correo) nombreEnAccesos = (data as { nombre?: string } | null)?.nombre?.trim() || null;
+  });
+}
 if (nube && typeof window !== "undefined") {
-  void nube.auth.getSession().then(({ data }) => { correoDeSesion = data.session?.user?.email?.toLowerCase() ?? null; });
-  nube.auth.onAuthStateChange((_evento, sesion) => { correoDeSesion = sesion?.user?.email?.toLowerCase() ?? null; });
+  void nube.auth.getSession().then(({ data }) => fijarSesion(data.session?.user?.email?.toLowerCase() ?? null));
+  nube.auth.onAuthStateChange((_evento, sesion) => fijarSesion(sesion?.user?.email?.toLowerCase() ?? null));
 }
 const quienSoy = (e: EstadoApp): string => correoDeSesion ?? (e.ajustes.responsable || "Apicanta");
+/* Quién firma la actividad: quien entró (control-cobros.ts → quienFirma). */
+const firma = (e: EstadoApp): string => quienFirma(e.equipo, correoDeSesion, nombreEnAccesos, e.ajustes.responsable);
 /* Cómo se lee en la actividad: el nombre que tiene en Equipo, no el correo. */
 const nombreDeQuien = (e: EstadoApp, por: string): string => quienEs(e.equipo, por) || por;
 /* Los cobros que se cargan en esta sesión llevan quién los cargó. */
@@ -794,7 +808,7 @@ function nuevaActividad(
   e: EstadoApp, entidad: Actividad["entidad"], entidadId: ID,
   titulo: string, accion: AccionActividad, detalle: string, id = nuevoId("act"),
 ): Actividad {
-  return { id, entidad, entidadId, titulo, accion, detalle, actor: e.ajustes.responsable || "Apicanta", fecha: ahora() };
+  return { id, entidad, entidadId, titulo, accion, detalle, actor: firma(e), fecha: ahora() };
 }
 
 function registrar(
@@ -2335,7 +2349,7 @@ export const acciones = {
        no tenía, se le da su N.º de alumno: el que sigue al más alto (lib/clientes-cs.ts). */
     const base = existente ? seguimientoCompleto(existente, cfg) : seguimientoVacio(alumnoId, cfg);
     const antes = base.numero === null ? { ...base, numero: siguienteNumero(e.seguimientos ?? []) } : base;
-    const quien = e.equipo.find((m) => m.id === acceso?.miembroId)?.nombre ?? e.ajustes.responsable ?? "";
+    const quien = firma(e);
     const despues = cambio(antes, quien);
     const { lista, nuevo } = registrar(e, "alumno", alumnoId, alumno.nombre, "actualizo", detalle(despues));
     guardar({ ...e, seguimientos: [...(e.seguimientos ?? []).filter((s) => s.alumnoId !== alumnoId), despues], actividad: lista });
@@ -2384,7 +2398,7 @@ export const acciones = {
      las de a mano, se completa lo que Customer Success lleva (estado, cash collect, caso de éxito, notas) y se corrige. */
   guardarResell(r0: Resell): void {
     const e = snapshot();
-    const quien = e.equipo.find((m) => m.id === acceso?.miembroId)?.nombre ?? e.ajustes.responsable ?? "";
+    const quien = firma(e);
     const r = resellNormal({ ...r0, actualizadoEn: ahora(), actualizadoPor: quien });
     guardar({ ...e, resells: [r, ...(e.resells ?? []).filter((x) => x.id !== r.id)] });
     empujar({ tipo: "upsert", tabla: "resells", filas: [r] });
@@ -2400,7 +2414,7 @@ export const acciones = {
   /* La revisión de CVs (lib/revision-cv.ts): se carga, se corrige (estado, rondas, links, notas) y se borra. */
   guardarRevisionCv(r0: RevisionCv): void {
     const e = snapshot();
-    const quien = e.equipo.find((m) => m.id === acceso?.miembroId)?.nombre ?? e.ajustes.responsable ?? "";
+    const quien = firma(e);
     const r = revisionCvNormal({ ...r0, actualizadoEn: ahora(), actualizadoPor: quien });
     guardar({ ...e, revisionesCv: [r, ...(e.revisionesCv ?? []).filter((x) => x.id !== r.id)] });
     empujar({ tipo: "upsert", tabla: "revisiones_cv", filas: [r] });
@@ -2417,7 +2431,7 @@ export const acciones = {
   numerarAlumnos(): number {
     const e = snapshot();
     const cfg = configSeguimiento(e.ajustes.seguimiento);
-    const quien = e.equipo.find((m) => m.id === acceso?.miembroId)?.nombre ?? e.ajustes.responsable ?? "";
+    const quien = firma(e);
     const segs = new Map((e.seguimientos ?? []).map((s) => [s.alumnoId, s] as const));
     const sinNumero = e.alumnos
       .filter((a) => (segs.get(a.id)?.numero ?? null) === null)

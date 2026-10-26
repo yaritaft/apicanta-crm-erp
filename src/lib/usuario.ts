@@ -2,6 +2,7 @@
 
 import { useSesion } from "./auth";
 import { useEstado } from "./store";
+import { nombreDeCorreo } from "./control-cobros";
 import type { MiembroEquipo } from "./types";
 
 /* Quién está usando la app: el email de la sesión y, si ese email es de
@@ -19,9 +20,6 @@ export function useUsuarioActual(): { email: string | null; nombre: string; miem
   const e = useEstado();
   const miembro = miembroActual(e.equipo, email);
   if (miembro) return { email, nombre: miembro.nombre, miembro };
-  if (email) {
-    const local = email.split("@")[0].replace(/[._-]+/g, " ").trim();
-    return { email, nombre: local.replace(/\b\p{L}/gu, (l) => l.toUpperCase()) };
-  }
+  if (email) return { email, nombre: nombreDeCorreo(email) };
   return { email: null, nombre: e.ajustes.responsable || "Yo" };
 }

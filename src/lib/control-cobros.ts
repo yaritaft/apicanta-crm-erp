@@ -147,6 +147,27 @@ export function quienEs(equipo: readonly Pick<MiembroEquipo, "email" | "nombre">
   return m?.nombre ?? v;
 }
 
+/** Un correo sin nombre conocido, legible: «juan.cruz@x.com» → «Juan Cruz». */
+export function nombreDeCorreo(correo: string): string {
+  const local = correo.split("@")[0].replace(/[._-]+/g, " ").trim();
+  return local.replace(/\b\p{L}/gu, (l) => l.toUpperCase());
+}
+
+/** Quién firma lo que se hace en esta sesión (la actividad): su nombre en
+ *  Equipo; si no está ahí (los dueños), el nombre que tiene en Accesos; si
+ *  tampoco, lo de antes de la arroba. Sin sesión (la app sin nube, el
+ *  servidor), el «Responsable» de Ajustes. Antes firmaba siempre el
+ *  Responsable, y lo que hacían Lili, Dante o Aldana decía «Yari Taft». */
+export function quienFirma(
+  equipo: readonly Pick<MiembroEquipo, "email" | "nombre">[], correo: string | null,
+  nombreEnAccesos: string | null, responsable: string,
+): string {
+  if (!correo) return responsable || "Apicanta";
+  const enEquipo = quienEs(equipo, correo);
+  if (enEquipo && enEquipo !== correo) return enEquipo;
+  return nombreEnAccesos?.trim() || nombreDeCorreo(correo);
+}
+
 /** «Santiago Burghiani» → «Santiago»; un correo → lo de antes de la arroba. */
 export function primerNombre(nombre: string): string {
   const t = nombre.trim();
