@@ -1,9 +1,10 @@
 "use client";
 
 import React, { useMemo, useState } from "react";
-import { AlertTriangle, ChevronLeft, ChevronRight, Lock, RefreshCw } from "lucide-react";
+import { AlertTriangle, ChevronLeft, ChevronRight, Copy, Lock, RefreshCw } from "lucide-react";
 import { Badge, Button, IconButton } from "@/components/ui/ui";
 import { Modal } from "@/components/ui/Modal";
+import { useToast } from "@/components/ui/Toast";
 import { useEstado } from "@/lib/store";
 import { fecha, fechaLarga, num, tasaTexto } from "@/lib/format";
 import { calcularLiquidacion, mesesDelRenglon, nombrePeriodo, plata, renglonDe } from "@/lib/honorarios";
@@ -31,6 +32,8 @@ const SIMBOLO: Record<PasoDesglose["op"], { signo: string; dice: string }> = {
   tramos: { signo: "÷", dice: "dividido en" },
   igual: { signo: "=", dice: "igual a" },
 };
+
+const r2 = (n: number) => Math.round(n * 100) / 100;
 
 function valorDe(p: PasoDesglose): string {
   switch (p.formato) {
@@ -65,15 +68,23 @@ function CuentaDelDesglose({ pasos }: { pasos: PasoDesglose[] }) {
 }
 
 function ListaDeLoQueEntro({ lista }: { lista: ListaDesglose }) {
+  const toast = useToast();
   const cobros = lista.tipo === "cobros";
   const moneda = lista.moneda;
+  /* Los más grandes, o (si se guardó) todos los cobros, para compararlos con lo que lleva el closer. */
+  const [verTodos, setVerTodos] = useState(false);
+  const completa = verTodos && Boolean(lista.todos?.length);
+  const filas = completa ? lista.todos! : lista.items;
+  const total = (k: "monto" | "fee" | "neto") => r2(filas.reduce((a, x) => a + (k === "neto" ? x.neto ?? x.monto : x[k] ?? 0), 0));
   const fila = (x: ItemDesglose, i: number) => (
     <tr key={i}>
       <td className="liq-lista__fecha">{fecha(x.fecha)}</td>
       <td className="liq-lista__quien">
         <span>{x.cliente}</span>
-        {(x.servicio || (cobros && x.procesador)) && (
-          <span className="liq-lista__sub">{[x.servicio, cobros ? x.procesador : undefined].filter(Boolean).join(" · ")}</span>
+        {(x.servicio || (cobros && x.procesador) || x.cuota) && (
+          <span className="liq-lista__sub">
+            {[x.servicio, cobros ? x.procesador : undefined, x.cuota, completa && x.ventaFecha ? `venta del ${fecha(x.ventaFecha)}` : undefined].filter(Boolean).join(" · ")}
+          </span>
         )}
       </td>
       <td className="liq-lista__num">{plata(x.monto, moneda)}</td>
@@ -81,10 +92,28 @@ function ListaDeLoQueEntro({ lista }: { lista: ListaDesglose }) {
       {cobros && <td className="liq-lista__num">{plata(x.neto ?? x.monto, moneda)}</td>}
     </tr>
   );
+  /* Para pegar en una planilla o mandárselo al closer: una línea por cobro, separado por tabulaciones, con los números sin formato. */
+  async function copiar() {
+    const n2 = (v?: number) => (v ?? 0).toFixed(2);
+    const lineas = [["Fecha", "Cliente", "Servicio", "Procesador", "Cuota", "Fecha de la venta", "Cobrado", "Lo que se quedó el procesador", "Neto"].join("\t")];
+    for (const x of filas) {
+      lineas.push([x.fecha.slice(0, 10), x.cliente, x.servicio ?? "", x.procesador ?? "", x.cuota ?? "", x.ventaFecha?.slice(0, 10) ?? "", n2(x.monto), n2(x.fee), n2(x.neto ?? x.monto)].join("\t"));
+    }
+    try { await navigator.clipboard.writeText(lineas.join("\n")); toast(`Copiados los ${filas.length} cobros: pegalos en una planilla.`); }
+    catch { toast("No pude copiar. Probá de nuevo.", "err"); }
+  }
   return (
     <section className="stack-2" aria-label={lista.titulo}>
-      <h4 className="t-label">{lista.titulo}{lista.resto ? ` (de ${lista.total})` : ` (${lista.total})`}</h4>
-      <div className="desglose__tabla">
+      <h4 className="t-label">{completa ? `Los ${lista.total} cobros` : lista.titulo}{!completa && lista.resto ? ` (de ${lista.total})` : completa ? "" : ` (${lista.total})`}</h4>
+      {lista.todos && (
+        <div className="row-wrap">
+          <Button sm variante="ghost" onClick={() => setVerTodos((v) => !v)}>
+            {completa ? `Ver sólo los ${lista.items.length} más grandes` : `Ver los ${lista.total} cobros`}
+          </Button>
+          {completa && <Button sm variante="ghost" icono={<Copy size={14} />} onClick={copiar}>Copiar la lista</Button>}
+        </div>
+      )}
+      <div className={completa ? "desglose__tabla desglose__tabla--larga" : "desglose__tabla"}>
         <table className="liq-lista">
           <thead>
             <tr>
@@ -96,14 +125,23 @@ function ListaDeLoQueEntro({ lista }: { lista: ListaDesglose }) {
             </tr>
           </thead>
           <tbody>
-            {lista.items.map(fila)}
-            {lista.resto && (
+            {filas.map(fila)}
+            {!completa && lista.resto && (
               <tr className="liq-lista__resto">
                 <td />
                 <td>Y {lista.resto.cantidad} {cobros ? (lista.resto.cantidad === 1 ? "cobro más" : "cobros más") : (lista.resto.cantidad === 1 ? "venta más" : "ventas más")}</td>
                 <td className="liq-lista__num">{plata(lista.resto.monto, moneda)}</td>
                 {cobros && <td className="liq-lista__num liq-lista__num--chico">{lista.resto.fee ? `−${plata(lista.resto.fee, moneda)}` : "—"}</td>}
                 {cobros && <td className="liq-lista__num">{plata(lista.resto.neto ?? lista.resto.monto, moneda)}</td>}
+              </tr>
+            )}
+            {completa && (
+              <tr className="liq-lista__resto liq-lista__total">
+                <td />
+                <td>Total · {filas.length} cobros</td>
+                <td className="liq-lista__num">{plata(total("monto"), moneda)}</td>
+                {cobros && <td className="liq-lista__num liq-lista__num--chico">{total("fee") ? `−${plata(total("fee"), moneda)}` : "—"}</td>}
+                {cobros && <td className="liq-lista__num">{plata(total("neto"), moneda)}</td>}
               </tr>
             )}
           </tbody>

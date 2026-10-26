@@ -1723,6 +1723,9 @@ export interface ItemDesglose {
   /* Cobros: lo que se quedó el procesador y lo que quedó neto. */
   fee?: number;
   neto?: number;
+  /* Sólo en la lista completa (`todos`): a qué cuota de la venta corresponde («Cuota 2 de 3») y cuándo se vendió. */
+  cuota?: string;
+  ventaFecha?: string;
 }
 
 /* La lista corta: los más grandes, y cuántos faltan ver y cuánto suman. */
@@ -1735,6 +1738,9 @@ export interface ListaDesglose {
   total: number;
   items: ItemDesglose[];
   resto?: { cantidad: number; monto: number; fee?: number; neto?: number };
+  /* Todos los cobros que entraron (por fecha), para verlos de a uno y copiarlos: sólo cuando `items` es un
+     recorte. Lo guardado antes de que existiera no lo trae. */
+  todos?: ItemDesglose[];
 }
 
 export interface DesgloseLinea {

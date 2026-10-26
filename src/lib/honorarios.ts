@@ -414,21 +414,27 @@ interface Contexto {
   /* Las ventas de un día sin cierre cargado ese mismo día: vacío con el
      interruptor apagado (lib/cierre-del-dia.ts). */
   sinCierre: ReadonlySet<ID>;
+  /* «Cuota 2 de 3» de cada cuota, para la lista completa de cobros. */
+  cuotaTexto: Map<ID, string>;
 }
 
 function armarContexto(e: EstadoApp, rango: RangoMes, tc: number): Contexto {
   const ventas = new Map(e.ventas.map((v) => [v.id, v] as const));
   const ventaDeCuota = new Map<ID, Venta>();
   const closerDe = new Map<ID, ID | undefined>();
+  const porVenta = new Map<ID, number>();
+  for (const c of e.cuotas) if (!c.esReserva) porVenta.set(c.ventaId, (porVenta.get(c.ventaId) ?? 0) + 1);
+  const cuotaTexto = new Map<ID, string>();
   for (const c of e.cuotas) {
     const v = ventas.get(c.ventaId);
     if (!v) continue;
     ventaDeCuota.set(c.id, v);
     closerDe.set(c.id, closerDeCuota(v, c));
+    cuotaTexto.set(c.id, c.esReserva ? "Reserva" : `Cuota ${c.numero} de ${porVenta.get(c.ventaId) ?? c.numero}`);
   }
   return {
     e, rango, base: e.ajustes.monedaBase, tc, ventaDeCuota, closerDeCuota: closerDe,
-    equipo: new Map(e.equipo.map((m) => [m.id, m] as const)), ventas, sinCierre: ventasSinCierre(e),
+    equipo: new Map(e.equipo.map((m) => [m.id, m] as const)), ventas, sinCierre: ventasSinCierre(e), cuotaTexto,
   };
 }
 
@@ -583,6 +589,7 @@ type DescuentoProfit = { nombre: string; monto: number };
 const nombresDeLista = (cx: Contexto) => ({
   servicio: (id?: ID) => (id ? cx.e.productos.find((p) => p.id === id)?.nombre : undefined),
   procesador: (id?: ID) => (id ? cx.e.procesadores.find((p) => p.id === id)?.nombre : undefined),
+  cuota: (id?: ID) => (id ? cx.cuotaTexto.get(id) : undefined),
 });
 
 function linea(

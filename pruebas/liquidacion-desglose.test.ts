@@ -169,6 +169,41 @@ test("la lista es corta: los más grandes, y una línea con cuántos faltan y cu
   assert.equal(resultadoDelDesglose(l.desglose!), l.monto);
 });
 
+test("la lista completa trae todos los cobros, por fecha y con su cuota, y suma lo mismo que la cuenta", () => {
+  const e = estadoDePrueba();
+  const extraV = venta({ id: "vx", contactoNombre: "Muchos cobros", precioAcordado: 1400, fecha: dia(2), closerId: "mariano" });
+  const cuotasX = Array.from({ length: 14 }, (_, i) => ({ id: `cx${i}`, ventaId: "vx", numero: i + 1, monto: 100, estado: "pagada", esReserva: false }));
+  const pagosX = cuotasX.map((c, i) => pago(`px${i}`, c.id, 100, 3, dia(2 + (i % 20)), "proc_stripe"));
+  const e2 = { ...e, ventas: [...e.ventas, extraV], cuotas: [...e.cuotas, ...cuotasX], pagos: [...e.pagos, ...pagosX] } as EstadoApp;
+  const l = renglon(calcularLiquidacion(e2, PERIODO, liqCon(entradas())), "mariano", "c_com");
+  const lista = l.desglose!.lista!;
+  /* Están los 17, no sólo los 10 más grandes, y por fecha. */
+  assert.ok(lista.todos, "con más cobros que el límite, trae la lista completa");
+  assert.equal(lista.todos!.length, 17);
+  const fechas = lista.todos!.map((x) => Date.parse(x.fecha));
+  assert.deepEqual(fechas, [...fechas].sort((a, b) => a - b));
+  /* Suman lo mismo que la cuenta: cobrado, lo que se quedó el procesador y neto. */
+  const suma = (k: "monto" | "fee" | "neto") => Math.round(lista.todos!.reduce((a, x) => a + (x[k] ?? 0), 0) * 100) / 100;
+  assert.equal(suma("monto"), pasoDe(l, "Cobrado en el mes").valor);
+  assert.equal(suma("neto"), pasoDe(l, "Cash collected post pasarelas").valor);
+  assert.equal(Math.round((suma("monto") - suma("fee")) * 100) / 100, suma("neto"));
+  /* A qué cuota de qué venta corresponde cada cobro, y cuándo se vendió. */
+  const delExtra = lista.todos!.filter((x) => x.cliente === "Muchos cobros");
+  assert.equal(delExtra.length, 14);
+  assert.ok(delExtra.every((x) => /^Cuota \d+ de 14$/.test(x.cuota ?? "")), "«Cuota n de 14»");
+  assert.ok(delExtra.every((x) => x.ventaFecha === extraV.fecha));
+  /* Los 10 más grandes de siempre siguen ahí, para quien no abre la lista completa. */
+  assert.equal(lista.items.length, LIMITE_LISTA);
+  assert.equal(lista.resto?.cantidad, 7);
+});
+
+test("con pocos cobros no hace falta la lista completa: la lista corta ya es toda", () => {
+  const l = renglon(calcularLiquidacion(estadoDePrueba(), PERIODO, liqCon(entradas())), "mariano", "c_com");
+  const lista = l.desglose!.lista!;
+  assert.equal(lista.todos, undefined);
+  assert.equal(lista.items.length, lista.total);
+});
+
 test("un cobro con cuota heredada o sin venta no rompe la lista", () => {
   const e = estadoDePrueba();
   const huerfano = pago("pz", "cuota_que_no_existe", 100, 3, dia(15), "proc_stripe");

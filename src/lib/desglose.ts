@@ -161,6 +161,8 @@ export interface CobroContado { pago: Pago; venta?: Venta }
 export interface NombresDeLista {
   servicio: (id?: ID) => string | undefined;
   procesador: (id?: ID) => string | undefined;
+  /* «Cuota 2 de 3» de la cuota de un cobro (opcional: sin esto la lista completa no la trae). */
+  cuota?: (id?: ID) => string | undefined;
 }
 
 const sinVacios = <T extends object>(o: T): T =>
@@ -175,16 +177,24 @@ export function listaDeCobros(lista: CobroContado[], nombres: NombresDeLista, mo
   const porTamano = [...lista].sort((a, b) => b.pago.monto - a.pago.monto || t(a.pago.fecha) - t(b.pago.fecha));
   const quedan = porTamano.slice(0, LIMITE_LISTA).sort((a, b) => t(a.pago.fecha) - t(b.pago.fecha));
   const resto = porTamano.slice(LIMITE_LISTA);
-  const items: ItemDesglose[] = quedan.map(({ pago: p, venta: v }) => sinVacios({
+  const item = ({ pago: p, venta: v }: CobroContado): ItemDesglose => sinVacios({
     fecha: p.fecha,
     cliente: v?.contactoNombre?.trim() || "Cobro sin venta",
     servicio: nombres.servicio(v?.productoId),
     procesador: nombres.procesador(p.procesadorId),
     monto: r2(p.monto), fee: r2(p.feeMonto), neto: r2(p.monto - p.feeMonto),
-  }));
+  });
+  const items: ItemDesglose[] = quedan.map(item);
+  /* La lista completa, para quien necesita compararla con otra (el closer, su planilla): por fecha, con la cuota y el día de la venta. */
+  const todos: ItemDesglose[] = resto.length
+    ? [...lista].sort((a, b) => t(a.pago.fecha) - t(b.pago.fecha) || b.pago.monto - a.pago.monto).map((x) => sinVacios({
+      ...item(x), cuota: nombres.cuota?.(x.pago.cuotaId), ventaFecha: x.venta?.fecha,
+    }))
+    : [];
   return {
     tipo: "cobros", titulo: lista.length > LIMITE_LISTA ? `Los ${LIMITE_LISTA} cobros más grandes` : "Los cobros",
     moneda, total: lista.length, items,
+    ...(todos.length ? { todos } : {}),
     ...(resto.length ? {
       resto: {
         cantidad: resto.length,
