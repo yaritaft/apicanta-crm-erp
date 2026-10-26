@@ -51,10 +51,13 @@ export function perfilDeStack(stack: string | null | undefined): PerfilAlumno | 
   return PERFILES.find((p) => plano(p) === t) ?? null;
 }
 
-/** El perfil con el que se arma la bienvenida: el que cargó el closer en el contrato y, si no cargó ninguno, el de la
-    ficha de Servicio. Así lo que completa Lili en un lado se ve en el otro (25/10) y el mail de bienvenida sale igual. */
+/** El perfil con el que se arma la bienvenida. Es UN solo dato con Programa → Perfil de la ficha (Lili, 25–26/10: «que se
+    complete en los dos lados y viceversa»): manda el de la ficha si es uno de los roadmaps, porque es el que Servicio
+    mantiene al día; si ahí no hay ninguno (vacío, o uno más fino como «Backend»), el que cargó el closer en el contrato.
+    Elegirlo en la bienvenida lo deja en los dos lados, y el contrato que lo cambia lo pasa a la ficha
+    (supabase/contrato-completa-ficha.sql). */
 export function perfilEfectivo(delContrato: unknown, stackDeLaFicha: string | null | undefined): PerfilAlumno | null {
-  return esPerfil(delContrato) ? delContrato : perfilDeStack(stackDeLaFicha);
+  return perfilDeStack(stackDeLaFicha) ?? (esPerfil(delContrato) ? delContrato : null);
 }
 
 /* Lo que cubre la bienvenida: el programa completo (Hackear AI), el Downsell o la Reserva. */

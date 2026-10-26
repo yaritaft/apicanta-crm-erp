@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { alFirmar, darAccesosAhora, mandarBorrador, vincular } from "@/lib/contratos-servidor";
+import { alFirmar, darAccesosAhora, mandarBorrador, perfilDelContrato, ponerPerfil, vincular } from "@/lib/contratos-servidor";
 import { MENSAJE_LIMITE } from "@/lib/pandadoc-servidor";
 import type { Contrato } from "@/lib/contratos";
 
@@ -34,6 +34,7 @@ function baseFalsa(tablas: Record<string, Fila[]>) {
     const q = {
       select(_c?: string, o?: { count?: string; head?: boolean }) { conSelect = true; contar = Boolean(o?.count); return q; },
       eq(c: string, v: unknown) { filtros.push((f) => f[c] === v); return q; },
+      neq(c: string, v: unknown) { filtros.push((f) => f[c] !== v); return q; },
       is(c: string, v: unknown) { filtros.push((f) => (f[c] ?? null) === v); return q; },
       gte(c: string, v: string) { filtros.push((f) => String(f[c] ?? "") >= v); return q; },
       ilike(c: string, v: string) { const re = comoIlike(v); filtros.push((f) => re.test(String(f[c] ?? ""))); return q; },
@@ -314,4 +315,23 @@ test("un 401 sigue siendo la clave; un 403 de permiso ya no se confunde con la c
     const pd = pandadocFalso("document.draft", (l) => (l.ruta.endsWith("/send") ? respuesta.clone() : null));
     try { await assert.rejects(mandarBorrador(baseFalsa(tablasCon(c)), c, "x"), esperado); } finally { pd.restaurar(); }
   }
+});
+
+/* ---------- El perfil: un solo dato con Programa → Perfil (Lili, 25–26/10: «y viceversa») ---------- */
+
+test("elegir el perfil en la bienvenida lo deja en el contrato Y en Programa, aunque ahí hubiera otro; y la bienvenida lee la ficha", async () => {
+  const c = contrato({ estado: "firmado", alumnoId: "alu_jacob", programa: "downsell", datos: {} });
+  const t = tablasCon(c, { seguimiento_alumnos: [{ id: "seg_jacob", alumnoId: "alu_jacob", stack: "Full Stack" }] });
+  const db = baseFalsa(t);
+  await ponerPerfil(db, c, "Data Engineer", "liliana@apicanta.com");
+  assert.equal((t.contratos[0].datos as { perfil?: string }).perfil, "Data Engineer");
+  assert.equal(t.seguimiento_alumnos[0].stack, "Data Engineer", "Programa → Perfil dice lo mismo");
+  assert.equal(eventos(t, "perfil").length, 1);
+  /* Lili lo cambia en Programa → Perfil: la bienvenida (y el mail) toman ese. */
+  t.seguimiento_alumnos[0].stack = "Mobile Developer";
+  assert.equal(await perfilDelContrato(db, t.contratos[0] as unknown as Contrato), "Mobile Developer");
+  /* En Programa algo que no es roadmap: manda el del contrato. */
+  t.seguimiento_alumnos[0].stack = "Backend";
+  assert.equal(await perfilDelContrato(db, t.contratos[0] as unknown as Contrato), "Data Engineer");
+  await assert.rejects(ponerPerfil(db, c, "Cualquiera", "x"), /no existe/);
 });

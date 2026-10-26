@@ -119,8 +119,11 @@ test("el Stack de la ficha, escrito como sea, es un perfil de la bienvenida", ()
   for (const sinRoadmap of ["Backend", "Frontend", "Tech lead", "NO CORRESPONDE", "", null, undefined]) assert.equal(perfilDeStack(sinRoadmap), null);
 });
 
-test("el perfil de la bienvenida: el del contrato y, si falta, el de la ficha", () => {
-  assert.equal(perfilEfectivo("Data Engineer", "Full Stack"), "Data Engineer", "manda el que cargó el closer");
+test("el perfil de la bienvenida es el de Programa → Perfil (si es un roadmap) y, si no, el del contrato", () => {
+  /* Lili (26/10): «que se complete en programa → perfil y viceversa»: cambiarlo en Programa cambia el roadmap. */
+  assert.equal(perfilEfectivo("Data Engineer", "Full Stack"), "Full Stack", "manda la ficha, que es la que Servicio tiene al día");
+  assert.equal(perfilEfectivo("Data Engineer", "Backend"), "Data Engineer", "en Programa uno más fino que no es roadmap: el del contrato");
+  assert.equal(perfilEfectivo("Data Engineer", ""), "Data Engineer");
   assert.equal(perfilEfectivo(undefined, "AI ENGINEER"), "AI Engineer", "sin perfil en el contrato, el de Programa → Perfil");
   assert.equal(perfilEfectivo("Otro", "Mobile Developer"), "Mobile Developer", "uno inválido no cuenta");
   assert.equal(perfilEfectivo(undefined, "Backend"), null);

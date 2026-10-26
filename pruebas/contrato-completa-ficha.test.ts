@@ -91,10 +91,18 @@ test("el perfil del contrato completa el Perfil de la ficha si está vacío, y n
   const b = await banco();
   await b.ejecutar(`insert into public.contratos (id, "alumnoId", estado, datos) values ('ctr_7', 'alu_simon', 'enviado', '{"perfil": "Data Engineer"}')`);
   assert.equal(await stackDe(b, "alu_simon"), "Data Engineer", "vacío: se completa");
+  await b.ejecutar(`update public.contratos set datos = datos || '{"documento": "1"}' where id = 'ctr_7'`);
+  assert.equal(await stackDe(b, "alu_simon"), "Data Engineer", "tocar otra cosa del contrato no lo cambia");
+  await b.ejecutar(`update public.seguimiento_alumnos set stack = 'Mobile Developer' where "alumnoId" = 'alu_simon'`);
+  await b.ejecutar(`update public.contratos set datos = datos || '{"documento": "2"}' where id = 'ctr_7'`);
+  assert.equal(await stackDe(b, "alu_simon"), "Mobile Developer", "lo que Lili cambió en Programa no lo pisa un contrato que no cambió de perfil");
+  /* 26/10, «y viceversa»: si al contrato le CAMBIAN el perfil (Corregir, o Cambiar en la bienvenida), Programa lo sigue. */
   await b.ejecutar(`update public.contratos set datos = datos || '{"perfil": "AI Engineer"}' where id = 'ctr_7'`);
-  assert.equal(await stackDe(b, "alu_simon"), "Data Engineer", "ya cargado: no se pisa");
+  assert.equal(await stackDe(b, "alu_simon"), "AI Engineer", "cambiado en el contrato: Programa lo sigue");
   await b.ejecutar(`insert into public.contratos (id, "alumnoId", estado, datos) values ('ctr_8', 'alu_lili', 'firmado', '{"perfil": "Full Stack"}')`);
   assert.equal(await stackDe(b, "alu_lili"), "Backend", "lo que cargó Lili no se pisa");
+  await b.ejecutar(`update public.contratos set datos = datos || '{"perfil": "Data Engineer"}' where id = 'ctr_8'`);
+  assert.equal(await stackDe(b, "alu_lili"), "Backend", "uno más fino que no es roadmap («Backend») tampoco: es de Servicio");
   await b.ejecutar(`insert into public.contratos (id, "alumnoId", estado, datos) values ('ctr_9', 'alu_nuevo', 'enviado', '{"perfil": "Otra cosa"}')`);
   assert.equal(await stackDe(b, "alu_nuevo"), null, "un perfil que no existe no crea nada");
   await b.ejecutar(`insert into public.contratos (id, "alumnoId", estado, datos) values ('ctr_10', 'alu_nuevo', 'enviado', '{"perfil": "Mobile Developer"}')`);

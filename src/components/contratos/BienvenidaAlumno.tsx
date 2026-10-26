@@ -7,7 +7,7 @@ import { useToast } from "@/components/ui/Toast";
 import { copiarTexto } from "@/components/ui/Telefono";
 import { cabeceras } from "@/components/webinars/useYoutube";
 import { BloqueServicio, FilaServicio } from "@/components/ficha/FilaServicio";
-import { conCodigoDelAlumno, guiaDeBienvenida, perfilEfectivo, PERFILES, textoDeBienvenida } from "@/lib/bienvenida-alumno";
+import { conCodigoDelAlumno, guiaDeBienvenida, perfilDeStack, perfilEfectivo, PERFILES, textoDeBienvenida } from "@/lib/bienvenida-alumno";
 import { fechaLarga } from "@/lib/format";
 import { acciones, useEstado } from "@/lib/store";
 import { useAcceso } from "@/lib/acceso";
@@ -22,10 +22,11 @@ import { leerContratos, pedirContrato } from "./cliente";
    copia acá y se le manda por WhatsApp o por mail, con el link de su
    formulario semanal ya puesto.
 
-   El perfil lo carga el closer en el contrato, pero si no lo cargó lo completa
-   Servicio desde acá (Lili, 25/10: «habilitame para completar el perfil»). Es el
-   mismo dato que Programa → Perfil de la ficha: elegirlo en un lado lo deja en el
-   otro, y si sólo está en la ficha la bienvenida lo toma de ahí.
+   El perfil lo carga el closer en el contrato, pero si no lo cargó (o el
+   contrato se mandó a mano desde PandaDoc) lo completa Servicio desde acá (Lili,
+   25/10). Es el mismo dato que Programa → Perfil de la ficha: elegirlo acá lo deja
+   en los dos lados, y cambiarlo en Programa cambia el roadmap de acá (26/10:
+   «y viceversa»; ver perfilEfectivo).
    ================================================================== */
 
 const MODELO = { completo: "Programa completo", downsell: "Downsell", reserva: "Reserva" } as const;
@@ -47,6 +48,8 @@ export function BienvenidaAlumno({ alumnoId, ventaId }: { alumnoId: string; vent
   const { acceso } = useAcceso();
   const puedeCambiar = puedeEditar(acceso, "alumnos");
   const stackDeLaFicha = (e.seguimientos ?? []).find((x) => x.alumnoId === alumnoId)?.stack;
+  /* En Programa dice algo que no es un roadmap («Backend»): se le dice a Servicio, que es quien elige cuál le toca. */
+  const otroEnPrograma = stackDeLaFicha?.trim() && !perfilDeStack(stackDeLaFicha) ? stackDeLaFicha.trim() : null;
   const [contrato, setContrato] = useState<Contrato | null | undefined>(undefined);
   const [copiando, setCopiando] = useState(false);
   const [eligiendo, setEligiendo] = useState(false);
@@ -82,6 +85,7 @@ export function BienvenidaAlumno({ alumnoId, ventaId }: { alumnoId: string; vent
     try {
       const guardado = await pedirContrato({ accion: "perfil", id: contrato.id, perfil });
       setContrato(guardado);
+      /* El servidor ya lo dejó en la ficha; esto es para verlo al instante. */
       if (stackDeLaFicha !== perfil && puedeEditar(acceso, "seguimiento_alumnos")) {
         acciones.guardarSeguimiento(alumnoId, (x, quien) => ({ ...x, stack: perfil, actualizadoEn: new Date().toISOString(), actualizadoPor: quien }), () => `Perfil: ${perfil}.`);
       }
@@ -105,14 +109,14 @@ export function BienvenidaAlumno({ alumnoId, ventaId }: { alumnoId: string; vent
           <span className="stack-1" style={{ minWidth: 200 }}>
             <Select value={guia.perfil ?? ""} placeholder="Elegí el perfil" aria-label="Perfil del alumno" disabled={guardando}
               onChange={(ev) => void elegirPerfil(ev.target.value)} opciones={PERFILES.map((p) => ({ valor: p, texto: p }))} />
-            {!guia.perfil && <span className="hs-rojo t-sm">El closer no cargó el perfil</span>}
+            {!guia.perfil && <span className="hs-rojo t-sm">{otroEnPrograma ? `En Programa dice «${otroEnPrograma}»: elegí qué roadmap le toca` : "Falta el perfil: elegilo y queda también en Programa"}</span>}
           </span>
         ) : (
           <>
             {guia.perfil && guia.roadmap
               ? <a className="link t-sm" href={guia.roadmap} target="_blank" rel="noopener noreferrer">{guia.perfil}</a>
               : guia.perfil ? <span className="hs-guion">{guia.perfil} · falta el link en Ajustes</span>
-                : <span className="hs-rojo">El closer no cargó el perfil</span>}
+                : <span className="hs-rojo">Falta el perfil (lo elige Servicio)</span>}
             {guia.perfil && puedeCambiar && <button type="button" className="link t-sm" style={{ marginLeft: 8 }} onClick={() => setEligiendo(true)}>Cambiar</button>}
           </>
         )}

@@ -9,6 +9,9 @@
 -- completa lo que la ficha tiene VACÍO: DNI, domicilio, teléfono y fecha
 -- de nacimiento y perfil (Stack) en seguimiento_alumnos; país y mail en alumnos. Lo que Lili ya cargó no se
 -- pisa nunca. Si el alumno todavía no tiene seguimiento, se le crea.
+-- La excepción es el perfil (26/10): si al contrato le cambian el perfil de
+-- un roadmap a otro, Programa → Perfil lo sigue (salvo que ahí diga algo
+-- más fino que no es un roadmap, como «Backend»).
 -- Un contrato anulado o con error no completa nada.
 --
 -- Es security definer: el contrato lo puede escribir quien no edita
@@ -78,10 +81,24 @@ language plpgsql
 security definer
 set search_path = public
 as $$
+declare
+  v_antes text := case when tg_op = 'UPDATE' then old.datos ->> 'perfil' end;
+  v_ahora text := new.datos ->> 'perfil';
 begin
   /* Completar la ficha nunca frena guardar el contrato: si algo falla, queda un aviso en el registro de la base y listo. */
   begin
     perform public.completar_ficha_del_contrato(new."alumnoId", new.estado, new.datos);
+    /* Le CAMBIARON el perfil al contrato (de un roadmap a otro: «Corregir», o «Cambiar» en la bienvenida): Programa → Perfil
+       lo sigue (Lili, 26/10: «y viceversa»). Si ahí hay uno más fino que no es un roadmap («Backend», «Frontend»), es de
+       Servicio y se deja: la bienvenida toma el del contrato. */
+    if new."alumnoId" is not null and new.estado not in ('anulado', 'error')
+       and v_antes in ('Full Stack', 'Mobile Developer', 'Data Engineer', 'AI Engineer')
+       and v_ahora in ('Full Stack', 'Mobile Developer', 'Data Engineer', 'AI Engineer') and v_ahora <> v_antes then
+      update seguimiento_alumnos set stack = v_ahora
+      where "alumnoId" = new."alumnoId" and stack is distinct from v_ahora
+        and (coalesce(btrim(stack), '') = ''
+          or lower(regexp_replace(btrim(stack), '\s+', ' ', 'g')) in ('full stack', 'mobile developer', 'data engineer', 'ai engineer', 'ia engineer'));
+    end if;
   exception when others then
     raise warning 'contrato_completa_ficha (%): %', new.id, sqlerrm;
   end;

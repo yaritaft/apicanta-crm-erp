@@ -477,9 +477,8 @@ export async function darAccesosAhora(db: SupabaseClient, c: Contrato, quien: st
 /** El perfil con el que sale la bienvenida de un contrato: el del contrato y, si el closer no lo cargó, el que tiene el
     alumno en su ficha de Servicio (Programa → Perfil). */
 export async function perfilDelContrato(db: SupabaseClient, c: Pick<Contrato, "datos" | "alumnoId">, alumnoId?: string | null): Promise<string | null> {
-  if (esPerfil(c.datos.perfil)) return c.datos.perfil;
   const id = alumnoId ?? c.alumnoId;
-  if (!id) return null;
+  if (!id) return esPerfil(c.datos.perfil) ? c.datos.perfil : null;
   const r = await db.from("seguimiento_alumnos").select("stack").eq("alumnoId", id).maybeSingle();
   return perfilEfectivo(c.datos.perfil, (r.data as { stack?: string } | null)?.stack);
 }
@@ -488,9 +487,16 @@ export async function perfilDelContrato(db: SupabaseClient, c: Pick<Contrato, "d
     estado: el perfil sólo decide qué roadmap le llega al alumno, y sirve en cualquier estado (también firmado). */
 export async function ponerPerfil(db: SupabaseClient, c: Contrato, perfil: string, quien: string): Promise<void> {
   if (!esPerfil(perfil)) throw new Error("Ese perfil no existe.");
-  if (c.datos.perfil === perfil) return;
-  await guardar(db, c.id, { datos: { ...c.datos, perfil } });
-  await evento(db, c.id, "perfil", quien, "app", { antes: c.datos.perfil ?? null, despues: perfil });
+  if (c.datos.perfil !== perfil) {
+    await guardar(db, c.id, { datos: { ...c.datos, perfil } });
+    await evento(db, c.id, "perfil", quien, "app", { antes: c.datos.perfil ?? null, despues: perfil });
+  }
+  /* Elegido a propósito: también es el de Programa → Perfil, aunque ahí hubiera otro (la ficha la crea el disparador si no
+     existía). Así lo elija quien lo elija, los dos lados dicen lo mismo. */
+  if (c.alumnoId) {
+    const r = await db.from("seguimiento_alumnos").update({ stack: perfil }).eq("alumnoId", c.alumnoId).neq("stack", perfil);
+    if (r.error) throw new Error(`El perfil quedó en el contrato pero no en la ficha: ${r.error.message}`);
+  }
 }
 
 const DIAS_PARA_BIENVENIDA = 3;
