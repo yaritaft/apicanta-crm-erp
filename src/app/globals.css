@@ -2782,6 +2782,7 @@ span.kpis__etiqueta:hover { color: var(--ink); text-decoration: none; }
 .liq-lista .liq-lista__num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .liq-lista__num--chico { color: var(--ink-subtle); }
 .liq-lista__resto td { background: var(--surface-000); color: var(--ink-subtle); }
+.liq-lista__motivo { color: var(--ink-muted); min-width: 220px; }
 .liq-lista__total td { font-weight: 600; color: var(--ink); background: var(--surface-200); }
 /* La lista completa de cobros: se desplaza sola y el encabezado se queda arriba. */
 .desglose__tabla--larga { max-height: min(56vh, 520px); overflow: auto; }

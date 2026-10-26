@@ -1726,6 +1726,8 @@ export interface ItemDesglose {
   /* Sólo en la lista completa (`todos`): a qué cuota de la venta corresponde («Cuota 2 de 3») y cuándo se vendió. */
   cuota?: string;
   ventaFecha?: string;
+  /* Sólo en los que no cuentan (`excluidos`): por qué una regla lo dejó afuera. */
+  motivo?: string;
 }
 
 /* La lista corta: los más grandes, y cuántos faltan ver y cuánto suman. */
@@ -1741,6 +1743,10 @@ export interface ListaDesglose {
   /* Todos los cobros que entraron (por fecha), para verlos de a uno y copiarlos: sólo cuando `items` es un
      recorte. Lo guardado antes de que existiera no lo trae. */
   todos?: ItemDesglose[];
+  /* Los cobros que parecen de esta persona (la venta que cerró, agendó o dirige) y una regla dejó afuera, con el motivo; por
+     fecha. `totalExcluidos` es cuántos son en total (se guardan hasta 150). Sirve para comparar dos listas (los closers contra el director). */
+  excluidos?: ItemDesglose[];
+  totalExcluidos?: number;
 }
 
 export interface DesgloseLinea {

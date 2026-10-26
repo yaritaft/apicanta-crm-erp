@@ -157,6 +157,10 @@ export function desglosePieza(a: ArgsPieza): DesgloseLinea {
 export const LIMITE_LISTA = 10;
 
 export interface CobroContado { pago: Pago; venta?: Venta }
+/** Un cobro que una regla dejó afuera de lo que se mide, con el motivo dicho en castellano. */
+export interface CobroExcluido extends CobroContado { motivo: string }
+/** Cuántos cobros que no cuentan se guardan como mucho (el resto se resume con su cantidad). */
+export const LIMITE_EXCLUIDOS = 150;
 
 export interface NombresDeLista {
   servicio: (id?: ID) => string | undefined;
@@ -172,8 +176,9 @@ const t = (iso: string) => { const n = Date.parse(iso); return Number.isFinite(n
 
 /** Los cobros que entraron en lo medido: los LIMITE_LISTA más grandes, por
  *  fecha, y una línea con los que quedaron afuera. */
-export function listaDeCobros(lista: CobroContado[], nombres: NombresDeLista, moneda: Moneda): ListaDesglose | undefined {
-  if (lista.length === 0) return undefined;
+export function listaDeCobros(lista: CobroContado[], nombres: NombresDeLista, moneda: Moneda, excluidos: CobroExcluido[] = []): ListaDesglose | undefined {
+  /* Sin cobros que cuenten pero con cobros que no cuentan, la lista sale igual: lo que importa es ver por qué quedaron afuera. */
+  if (lista.length === 0 && excluidos.length === 0) return undefined;
   const porTamano = [...lista].sort((a, b) => b.pago.monto - a.pago.monto || t(a.pago.fecha) - t(b.pago.fecha));
   const quedan = porTamano.slice(0, LIMITE_LISTA).sort((a, b) => t(a.pago.fecha) - t(b.pago.fecha));
   const resto = porTamano.slice(LIMITE_LISTA);
@@ -195,6 +200,12 @@ export function listaDeCobros(lista: CobroContado[], nombres: NombresDeLista, mo
     tipo: "cobros", titulo: lista.length > LIMITE_LISTA ? `Los ${LIMITE_LISTA} cobros más grandes` : "Los cobros",
     moneda, total: lista.length, items,
     ...(todos.length ? { todos } : {}),
+    ...(excluidos.length ? {
+      excluidos: [...excluidos].sort((x, y) => t(x.pago.fecha) - t(y.pago.fecha) || y.pago.monto - x.pago.monto).slice(0, LIMITE_EXCLUIDOS).map((x) => sinVacios({
+        ...item(x), cuota: nombres.cuota?.(x.pago.cuotaId), ventaFecha: x.venta?.fecha, motivo: x.motivo,
+      })),
+      totalExcluidos: excluidos.length,
+    } : {}),
     ...(resto.length ? {
       resto: {
         cantidad: resto.length,

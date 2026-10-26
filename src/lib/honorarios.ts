@@ -11,7 +11,7 @@ import { fechaLarga, money, num, pct, tasaTexto } from "./format";
 import {
   conCorreccion, desgloseBono, desgloseDeudaQueEntra, desgloseDeudaQueSale, desgloseFijo, desgloseMedido, desglosePieza,
   desgloseReversa, listaDeCobros, listaDeVentas, paso,
-  type CobroContado, type Fuente, type PartesProfit,
+  type CobroContado, type CobroExcluido, type Fuente, type PartesProfit,
 } from "./desglose";
 import { devolucionesDelMes, liquidadaEn, mesDeLiquidacion, reversasDeComision, type ParteReversa, type Reversa } from "./devoluciones";
 import { descuentaPorCierre, descuentoDesde, diaSinCierreDe, reglaDeCierre, ventasSinCierre } from "./cierre-del-dia";
@@ -478,26 +478,48 @@ const esTotal = (c: ConceptoPago) =>
    Con un cobro (`p`), el del closer va para el closer de la cuota (el que
    la heredó, si el suyo se fue), y quien ya no está no suma lo que entró
    después de su fecha de salida: lo mismo que Finanzas. */
-function cuenta(cx: Contexto, c: ConceptoPago, m: MiembroEquipo, v: Venta | undefined, p?: Pago, hermanos?: ConceptoPago[]): boolean {
-  if (esTotal(c)) return true;
-  if (!v || v.estado === "cancelada") return false;
+/** Si un cobro (o una venta) cuenta para este concepto, y, cuando era de esta persona y una regla lo dejó afuera, por qué.
+ *  «Era de esta persona»: la venta que cerró, agendó o dirige; para lo que se mide sobre todo el negocio (el profit propio, los
+ *  tramos), cualquiera. Sin esto, comparar dos totales (lo de los closers contra lo del director) es adivinar. */
+interface Veredicto { cuenta: boolean; motivo?: string }
+const ddmm = (iso: string) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
+
+function veredicto(cx: Contexto, c: ConceptoPago, m: MiembroEquipo, v: Venta | undefined, p?: Pago, hermanos?: ConceptoPago[]): Veredicto {
+  if (esTotal(c)) return { cuenta: true };
+  if (!v) return { cuenta: false };
+  const alcance = c.alcance ?? "todas";
+  const esSuya = alcance === "closer" ? (p ? cx.closerDeCuota.get(p.cuotaId) : v.closerId) === m.id
+    : alcance === "director" ? v.directorId === m.id
+    : alcance === "setter" ? v.setterId === m.id : true;
+  const no = (motivo: string): Veredicto => ({ cuenta: false, ...(esSuya ? { motivo } : {}) });
+  if (v.estado === "cancelada") return no("La venta está cancelada");
   /* La regla de cuotas: sólo las ventas cerradas desde el inicio de la regla; lo que se
      cobra hoy de una venta anterior no cuenta, aunque entre dentro de los días de la regla. */
-  if (c.soloVentasDesdeInicio && c.desde && diaDe(v.fecha) < c.desde.slice(0, 10)) return false;
+  if (c.soloVentasDesdeInicio && c.desde && diaDe(v.fecha) < c.desde.slice(0, 10)) {
+    return no(`Venta del ${ddmm(diaDe(v.fecha))}, anterior al inicio de su regla (${ddmm(c.desde.slice(0, 10))}): no cuenta lo que se cobra de ventas de antes`);
+  }
   /* Un % general y otro por servicio: el cobro entra en uno solo. */
   if (hermanos && esComisionDeVentas(c)) {
     const propia = comisionDelServicio(hermanos, c, v.productoId, p ? diaDe(p.fecha) : undefined);
-    if (propia && propia.id !== c.id) return false;
+    if (propia && propia.id !== c.id) return { cuenta: false };
   }
-  const alcance = c.alcance ?? "todas";
-  if (alcance === "closer" && (p ? cx.closerDeCuota.get(p.cuotaId) : v.closerId) !== m.id) return false;
-  if (p && (alcance === "closer" || alcance === "director") && !cobraEnFecha(m, p.fecha)) return false;
-  if (alcance === "setter" && v.setterId !== m.id) return false;
-  if (alcance === "director" && v.directorId !== m.id) return false;
-  if (c.productoIds?.length && !(v.productoId && c.productoIds.includes(v.productoId))) return false;
-  if ((alcance !== "todas" || c.sinVentasSinComision) && v.closerId && cx.equipo.get(v.closerId)?.sinComision) return false;
-  if (c.sinExcluidasMarketing && v.excluidoMarketing) return false;
-  return true;
+  if (alcance === "closer" && (p ? cx.closerDeCuota.get(p.cuotaId) : v.closerId) !== m.id) return { cuenta: false };
+  if (p && (alcance === "closer" || alcance === "director") && !cobraEnFecha(m, p.fecha)) return no("Se cobró después de su salida");
+  if (alcance === "setter" && v.setterId !== m.id) return { cuenta: false };
+  if (alcance === "director" && v.directorId !== m.id) return { cuenta: false };
+  if (c.productoIds?.length && !(v.productoId && c.productoIds.includes(v.productoId))) {
+    const servicio = cx.e.productos.find((x) => x.id === v.productoId)?.nombre;
+    return no(servicio ? `Es de ${servicio}, que no está entre los servicios que cuentan` : "No es de ninguno de los servicios que cuentan");
+  }
+  if ((alcance !== "todas" || c.sinVentasSinComision) && v.closerId && cx.equipo.get(v.closerId)?.sinComision) {
+    return no(`La cerró ${cx.equipo.get(v.closerId)?.nombre ?? "alguien"}, que no comisiona`);
+  }
+  if (c.sinExcluidasMarketing && v.excluidoMarketing) return no("Venta excluida de marketing");
+  return { cuenta: true };
+}
+
+function cuenta(cx: Contexto, c: ConceptoPago, m: MiembroEquipo, v: Venta | undefined, p?: Pago, hermanos?: ConceptoPago[]): boolean {
+  return veredicto(cx, c, m, v, p, hermanos).cuenta;
 }
 
 const enRango = (iso: string | undefined, r: RangoMes) => {
@@ -510,6 +532,8 @@ const enRango = (iso: string | undefined, r: RangoMes) => {
    la cuenta, cuáles, y lo cobrado antes de restar el procesador. */
 interface Medido {
   valor: number; cuantos: string; n?: number; bruto?: number; cobros?: CobroContado[]; ventas?: Venta[];
+  /* Los cobros de esta persona que una regla dejó afuera, y por qué (para poder compararlos con otra lista). */
+  excluidos?: CobroExcluido[];
   /* Lo devuelto en esos días que resta de lo medido, cuántas devoluciones son y
      lo que daba la cuenta antes de no bajar de cero. */
   devoluciones?: number; nDev?: number; crudo?: number;
@@ -523,9 +547,11 @@ function medir(cx: Contexto, c: ConceptoPago, m: MiembroEquipo, r: RangoMes, her
     case "cash": case "cash-neto": {
       let valor = 0, bruto = 0, n = 0;
       const cobros: CobroContado[] = [];
+      const excluidos: CobroExcluido[] = [];
       for (const p of pagosDelMes(cx.e, r)) {
         const venta = cx.ventaDeCuota.get(p.cuotaId);
-        if (!cuenta(cx, c, m, venta, p, hermanos)) continue;
+        const ver = veredicto(cx, c, m, venta, p, hermanos);
+        if (!ver.cuenta) { if (ver.motivo) excluidos.push({ pago: p, venta, motivo: ver.motivo }); continue; }
         valor += b === "cash" ? p.monto : p.monto - p.feeMonto;
         bruto += p.monto;
         cobros.push({ pago: p, venta });
@@ -546,11 +572,11 @@ function medir(cx: Contexto, c: ConceptoPago, m: MiembroEquipo, r: RangoMes, her
           dev += d.monto; nDev++;
         }
       }
-      if (dev <= 0) return { valor: r2(valor), cuantos: cant(n, "cobro", "cobros"), n, bruto: r2(bruto), cobros };
+      if (dev <= 0) return { valor: r2(valor), cuantos: cant(n, "cobro", "cobros"), n, bruto: r2(bruto), cobros, excluidos };
       const crudo = r2(valor - dev);
       return {
         valor: Math.max(0, crudo), cuantos: `${cant(n, "cobro", "cobros")} y ${cant(nDev, "devolución", "devoluciones")}`,
-        n, bruto: r2(bruto), cobros, devoluciones: r2(dev), nDev, crudo,
+        n, bruto: r2(bruto), cobros, excluidos, devoluciones: r2(dev), nDev, crudo,
       };
     }
     case "facturado": case "ventas": {
@@ -703,7 +729,7 @@ function linea(
         origen = crudo < -0.004 ? "lo de sus ventas no cubre los costos que se le imputan" : "lo de sus ventas menos la parte de los costos del mes";
         fuente = {
           tipo: "profit-propio", ingresos, cuantos: x?.n ?? 0,
-          ...(x?.cobros ? { lista: listaDeCobros(x.cobros, nombresDeLista(cx), cx.base) } : {}),
+          ...(x?.cobros ? { lista: listaDeCobros(x.cobros, nombresDeLista(cx), cx.base, x.excluidos) } : {}),
           costos: r2(prof.costos), imputado, costosImputados, descuentos, crudo,
           ...(parcial ? { dias: { dias: vig.dias, diasMes: vig.diasMes } } : {}),
           ...(c.soloVentasDesdeInicio && c.desde ? { soloVentasDesde: c.desde.slice(0, 10) } : {}),
@@ -724,7 +750,7 @@ function linea(
           valor = x.valor; origen = x.cuantos;
           fuente = {
             tipo: "medido", bruto: x.bruto, cuantos: x.n ?? 0,
-            lista: x.cobros ? listaDeCobros(x.cobros, nombresDeLista(cx), cx.base) : x.ventas ? listaDeVentas(x.ventas, nombresDeLista(cx), cx.base) : undefined,
+            lista: x.cobros ? listaDeCobros(x.cobros, nombresDeLista(cx), cx.base, x.excluidos) : x.ventas ? listaDeVentas(x.ventas, nombresDeLista(cx), cx.base) : undefined,
             ...(x.devoluciones ? { devoluciones: x.devoluciones, nDev: x.nDev ?? 0, crudo: x.crudo } : {}),
           };
         } else { falta = "Cargá la cantidad"; origen = "falta cargarla"; }

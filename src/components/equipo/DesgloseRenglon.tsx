@@ -73,6 +73,8 @@ function ListaDeLoQueEntro({ lista }: { lista: ListaDesglose }) {
   const moneda = lista.moneda;
   /* Los más grandes, o (si se guardó) todos los cobros, para compararlos con lo que lleva el closer. */
   const [verTodos, setVerTodos] = useState(false);
+  const [verExcluidos, setVerExcluidos] = useState(false);
+  const excluidos = lista.excluidos ?? [];
   const completa = verTodos && Boolean(lista.todos?.length);
   const filas = completa ? lista.todos! : lista.items;
   const total = (k: "monto" | "fee" | "neto") => r2(filas.reduce((a, x) => a + (k === "neto" ? x.neto ?? x.monto : x[k] ?? 0), 0));
@@ -100,6 +102,13 @@ function ListaDeLoQueEntro({ lista }: { lista: ListaDesglose }) {
       lineas.push([x.fecha.slice(0, 10), x.cliente, x.servicio ?? "", x.procesador ?? "", x.cuota ?? "", x.ventaFecha?.slice(0, 10) ?? "", n2(x.monto), n2(x.fee), n2(x.neto ?? x.monto)].join("\t"));
     }
     try { await navigator.clipboard.writeText(lineas.join("\n")); toast(`Copiados los ${filas.length} cobros: pegalos en una planilla.`); }
+    catch { toast("No pude copiar. Probá de nuevo.", "err"); }
+  }
+  async function copiarExcluidos() {
+    const n2 = (v?: number) => (v ?? 0).toFixed(2);
+    const lineas = [["Fecha", "Cliente", "Servicio", "Procesador", "Cuota", "Fecha de la venta", "Cobrado", "Por qué no cuenta"].join("\t")];
+    for (const x of excluidos) lineas.push([x.fecha.slice(0, 10), x.cliente, x.servicio ?? "", x.procesador ?? "", x.cuota ?? "", x.ventaFecha?.slice(0, 10) ?? "", n2(x.monto), x.motivo ?? ""].join("\t"));
+    try { await navigator.clipboard.writeText(lineas.join("\n")); toast(`Copiados los ${excluidos.length} cobros que no cuentan: pegalos en una planilla.`); }
     catch { toast("No pude copiar. Probá de nuevo.", "err"); }
   }
   return (
@@ -147,6 +156,49 @@ function ListaDeLoQueEntro({ lista }: { lista: ListaDesglose }) {
           </tbody>
         </table>
       </div>
+      {excluidos.length > 0 && (
+        <div className="stack-2">
+          <div className="row-wrap">
+            <Button sm variante="ghost" onClick={() => setVerExcluidos((v) => !v)}>
+              {verExcluidos ? "Ocultar los que no cuentan" : `Ver los ${lista.totalExcluidos ?? excluidos.length} cobros que no cuentan, y por qué`}
+            </Button>
+            {verExcluidos && <Button sm variante="ghost" icono={<Copy size={14} />} onClick={copiarExcluidos}>Copiar los que no cuentan</Button>}
+          </div>
+          {verExcluidos && (
+            <>
+              <p className="t-sm t-subtle">
+                Son cobros que eran de esta persona (o del negocio que se mide) y una regla de su esquema deja afuera. Sirven para
+                comparar esta lista con la de otro: lo que a uno le cuenta y al otro no está acá.
+              </p>
+              <div className="desglose__tabla desglose__tabla--larga">
+                <table className="liq-lista">
+                  <thead>
+                    <tr>
+                      <th scope="col">Fecha</th>
+                      <th scope="col">Cliente</th>
+                      <th scope="col" className="liq-lista__num">Cobrado</th>
+                      <th scope="col">Por qué no cuenta</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {excluidos.map((x, i) => (
+                      <tr key={i}>
+                        <td className="liq-lista__fecha">{fecha(x.fecha)}</td>
+                        <td className="liq-lista__quien">
+                          <span>{x.cliente}</span>
+                          <span className="liq-lista__sub">{[x.servicio, x.procesador, x.cuota].filter(Boolean).join(" · ")}</span>
+                        </td>
+                        <td className="liq-lista__num">{plata(x.monto, moneda)}</td>
+                        <td className="liq-lista__motivo">{x.motivo}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
+        </div>
+      )}
     </section>
   );
 }
