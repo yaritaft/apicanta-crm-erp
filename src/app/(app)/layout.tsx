@@ -4,6 +4,7 @@ import { SoloCliente } from "@/components/shell/SoloCliente";
 import { Puerta } from "@/components/shell/Puerta";
 import { FichaGlobal } from "@/components/ficha/FichaGlobal";
 import { DevolucionGlobal } from "@/components/devoluciones/DevolucionGlobal";
+import { ResellsEnVivo } from "@/components/cs/ResellsEnVivo";
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -15,6 +16,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           <Suspense fallback={null}><FichaGlobal /></Suspense>
           {/* «Cargar una devolución»: se abre desde la ficha, una llamada en «Devolución» o Finanzas. */}
           <DevolucionGlobal />
+          {/* La agenda de resells al día sin recargar: la escribe Calendly desde el servidor. */}
+          <ResellsEnVivo />
         </Shell>
       </Puerta>
     </SoloCliente>

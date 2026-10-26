@@ -1,6 +1,6 @@
 /* ==================================================================
    Una base de mentira, en memoria, con la parte de la API de Supabase que
-   usa la entrada de Calendly (lib/calendly-sync.ts): select, eq, ilike, in,
+   usa la entrada de Calendly (lib/calendly-sync.ts): select, eq, ilike, in, is,
    order, limit, upsert (sin pisar las columnas que no se mandan, como
    `defaultToNull: false`) y update. Sólo para las pruebas: no toca ninguna
    base de verdad ni usa la red.
@@ -26,6 +26,8 @@ class Consulta implements PromiseLike<Resultado> {
     return this;
   }
   in(columna: string, valores: unknown[]) { this.filtros.push((f) => valores.includes(f[columna])); return this; }
+  /* «is null»: lo que no está o es null. */
+  is(columna: string, valor: null) { this.filtros.push((f) => (f[columna] ?? null) === valor); return this; }
   order() { return this; }
   limit(n: number) { this.limite = n; return this; }
   upsert(carga: Fila | Fila[], _opciones?: unknown) { this.operacion = "upsert"; this.carga = carga; return this; }

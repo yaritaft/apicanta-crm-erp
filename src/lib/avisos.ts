@@ -45,7 +45,8 @@ export function hace(iso: string, ahora: number = Date.now()): string {
 
 /** El renglón de abajo del título: de qué ficha es. */
 export const dondeEs = (a: Pick<Aviso, "persona"> & Partial<Pick<Aviso, "tipo">>): string =>
-  a.persona ? `En la ficha de ${a.persona}` : a.tipo === "pandadoc" ? "Contratos de PandaDoc" : a.tipo === "acceso" ? "Pedido de acceso · se resuelve en Equipo" : "En el chat de una ficha";
+  a.persona ? `En la ficha de ${a.persona}` : a.tipo === "pandadoc" ? "Contratos de PandaDoc" : a.tipo === "acceso" ? "Pedido de acceso · se resuelve en Equipo"
+    : a.tipo === "reporte-semanal" ? "Formularios de alumnos" : "En el chat de una ficha";
 
 /** Un aviso nuevo en la lista: arriba, sin repetir (llega por Realtime y también al volver a leer). */
 export function sumarAviso(lista: readonly Aviso[], nuevo: Aviso, tope = AVISOS_A_MOSTRAR): Aviso[] {

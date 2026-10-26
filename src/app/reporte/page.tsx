@@ -8,7 +8,7 @@ import { Asistente, Opcion, Pregunta } from "@/components/ui/Asistente";
 import { esCodigoValido } from "@/lib/reporte-enlace";
 import { esPreguntaDeIdentidad, PREGUNTAS_IDENTIDAD, problemaDeIdentidad, separarIdentidad } from "@/lib/reporte-sin-codigo";
 import {
-  esIdFormulario, FORMULARIOS, LARGO_TEXTO, LARGO_TEXTO_CORTO, problemaDeRespuesta,
+  esIdFormulario, formularioDeAtajo, FORMULARIOS, LARGO_TEXTO, LARGO_TEXTO_CORTO, problemaDeRespuesta,
   type FormularioReporte, type PreguntaReporte, type Respuestas,
 } from "@/lib/reporte-formularios";
 
@@ -22,7 +22,9 @@ import {
    UUID al azar. Completarlo de nuevo la misma semana reemplaza el anterior.
    Quien no tiene su código toca «No tengo mi código» y antes de las preguntas
    de su programa pone su mail, nombre, apellido y WhatsApp
-   (lib/reporte-sin-codigo.ts; Lili, 24/10).
+   (lib/reporte-sin-codigo.ts; Lili, 24/10). El link de un programa
+   (/reporte?p=biz, el que reemplaza al Google Form en el grupo; 26/10) entra
+   directo así, sin la pantalla del código.
    Lo que va escribiendo se guarda en el navegador hasta que lo manda, así un
    cierre sin querer no le hace perder diez respuestas.
    ================================================================== */
@@ -31,7 +33,6 @@ type Fase = "codigo" | "cargando" | "programa" | "preguntas" | "listo";
 
 const BORRADOR = "apicanta.reporte.borrador.";
 const TRES_DIAS = 3 * 24 * 3600 * 1000;
-const POR_ATAJO: Record<string, string> = { biz: "hackear-biz", it: "hackear-it" };
 
 /* El borrador vive en este navegador. Si no se puede leer o escribir (modo privado), se sigue sin él. */
 const leerBorrador = (codigo: string, formulario: string): { respuestas: Respuestas; paso: number } | null => {
@@ -52,8 +53,11 @@ const borrarBorrador = (codigo: string, formulario: string) => {
 
 function Formulario() {
   const params = useSearchParams();
-  const atajo = POR_ATAJO[(params.get("p") ?? "").trim().toLowerCase()] ?? null;
-  const [fase, setFase] = useState<Fase>(params.get("c") && esCodigoValido(params.get("c")) ? "cargando" : "codigo");
+  const atajo = formularioDeAtajo(params.get("p"));
+  const conCodigo = esCodigoValido(params.get("c"));
+  /* Con el link de su programa y sin código: directo a las preguntas (arranca en «cargando» para no mostrar la del código). */
+  const directo = !conCodigo && atajo !== null;
+  const [fase, setFase] = useState<Fase>(conCodigo || directo ? "cargando" : "codigo");
   const [codigo, setCodigo] = useState(params.get("c")?.trim() ?? "");
   const [nombre, setNombre] = useState("");
   const [formulario, setFormulario] = useState<FormularioReporte | null>(null);
@@ -104,6 +108,7 @@ function Formulario() {
   useEffect(() => {
     const c = params.get("c")?.trim() ?? "";
     if (esCodigoValido(c)) void entrar(c);
+    else if (directo && atajo) { setSinCodigo(true); empezar(FORMULARIOS[atajo], "sin-codigo"); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

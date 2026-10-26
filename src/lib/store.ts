@@ -78,6 +78,8 @@ let vistaSync: { estado: EstadoSync; error: string } = { estado: sync, error: ""
 const VISTA_SERVIDOR: { estado: EstadoSync; error: string } = { estado: "local", error: "" };
 
 export const estadoSync = () => sync;
+/** Los ids de los resells en memoria: para saber cuáles se borraron en la base (components/cs/ResellsEnVivo.tsx). */
+export const snapshotDeResells = (): ID[] => (snapshot().resells ?? []).map((r) => r.id);
 export const errorSync = () => ultimoError;
 
 function marcar(s: EstadoSync, error = "") {
@@ -1013,7 +1015,9 @@ type Coleccion =
   | "contactos" | "leads" | "sesiones" | "webinars" | "alumnos" | "reportes"
   | "campanias" | "metas" | "campos" | "etapas"
   | "productos" | "procesadores" | "embudos" | "equipo"
-  | "ventas" | "cuotas" | "pagos" | "gastos" | "movimientos";
+  | "ventas" | "cuotas" | "pagos" | "gastos" | "movimientos"
+  /* La agenda de resells: la escribe el servidor (Calendly) y entra en vivo (components/cs/ResellsEnVivo.tsx). */
+  | "resells";
 
 const ENTIDAD_DE: Record<string, Actividad["entidad"]> = {
   contactos: "contacto", leads: "lead", sesiones: "sesion", webinars: "webinar", alumnos: "alumno",

@@ -95,7 +95,39 @@ export const FORMULARIOS: Record<IdFormulario, FormularioReporte> = { "hackear-b
 
 export const esIdFormulario = (x: unknown): x is IdFormulario => x === "hackear-biz" || x === "hackear-it";
 
+/* El link de cada programa para compartir (el grupo, Wisboo): /reporte?p=biz entra directo a sus preguntas (Lili, 26/10: Manu
+   pidió que el Google Form de Hackear Biz pase a la app; el formulario ya estaba desde el 09/10, pero no había un link listo
+   para reemplazar el del Google Form). */
+export const ATAJO_DE: Record<IdFormulario, string> = { "hackear-biz": "biz", "hackear-it": "it" };
+export const formularioDeAtajo = (p: string | null | undefined): IdFormulario | null =>
+  (Object.keys(ATAJO_DE) as IdFormulario[]).find((id) => ATAJO_DE[id] === String(p ?? "").trim().toLowerCase()) ?? null;
+export const linkDelPrograma = (origen: string, id: IdFormulario): string => `${origen.replace(/\/+$/, "")}/reporte?p=${ATAJO_DE[id]}`;
+
+/* Los programas a los que la app les manda sola su link personal todos los lunes (api/cron/reporte-semanal): el formulario
+   se completa los lunes (la bienvenida lo dice). Hackear IT todavía no: su formulario es provisorio. */
+export const CON_RECORDATORIO: readonly IdFormulario[] = ["hackear-biz"];
+export const DIA_Y_HORA_DEL_RECORDATORIO = "los lunes a las 10";
+
 const sinTildes = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+
+/** El formulario de un alumno con lo que hay de él: los programas de su ficha de Customer Success y, si no tiene ninguno
+ *  cargado, el plan de su venta. Es la regla del servidor (formularioDelAlumno) y de la pantalla de Formularios de alumnos. */
+export function formularioDelAlumnoCon(programas: unknown, plan: unknown): FormularioReporte | null {
+  const textos = Array.isArray(programas) ? programas.filter((x): x is string => typeof x === "string") : [];
+  if (textos.length) return formularioDe(textos);
+  return typeof plan === "string" ? formularioDe([plan]) : null;
+}
+
+/** El formulario que se le pide cada semana a un alumno: está activo, todavía cursa (su Follow Up no dice Outboarding ni caso de
+ *  éxito) y se sabe su programa. Es la misma regla para el recordatorio de los lunes y para la cuenta de la pantalla. */
+export function formularioQueSeLePide(
+  a: { estado: string; plan?: string | null }, seg: { programas?: unknown; followUp?: string | null } | undefined,
+): IdFormulario | null {
+  if (a.estado !== "activo") return null;
+  const f = (seg?.followUp ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+  if (f.startsWith("outboarding") || f.startsWith("outbording") || f.startsWith("caso de exito")) return null;
+  return formularioDelAlumnoCon(seg?.programas, a.plan)?.id ?? null;
+}
 
 /** El formulario que le toca a un alumno según su programa (los de Customer Success y, si no hay, el plan de su venta: «Mentoría»
  *  es Hackear IT). Si cursa los dos, o ninguno de los dos (Principals…), null: hay que preguntarle. */

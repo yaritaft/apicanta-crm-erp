@@ -35,6 +35,7 @@ import { nubeServidor } from "./servidor";
 import { etapaPorEvento } from "./etapas-auto";
 import { anfitrionTrasCalendly } from "./pasada-closer";
 import { esLlamadaDeResell, esLlamadaDeTestimonio, registrarResell } from "./resells";
+import { literalParaIlike } from "./links-alumno";
 import type { Contacto, Etapa, Lead, Sesion } from "./types";
 
 /* "Sesión agendada" en las etapas de la base. */
@@ -142,6 +143,9 @@ export async function ingresarInvitado(
      Y con otro mail, el mismo teléfono y nombre también (lib/duplicados.ts): antes nacía otra ficha y la historia
      quedaba partida en dos (Lili, 22/10). El mail nuevo queda como otro mail de la persona. */
   const previo = await buscarContactoEnLaBase(db, { email: inv.email, nombre: inv.name, telefono: del.telefono });
+  /* Un alumno que vino del Airtable sin persona en la app (Daniel Arroyo, 26/10: agendó su resell como «Daniel» y Lili lo
+     buscaba como «Daniel Arroyo Mendoza»): la persona nueva lleva su nombre de alumno, y el alumno queda atado a ella. */
+  const alumnoSuelto = previo ? null : await alumnoSinPersona(db, inv.email);
 
   const contacto: Contacto = previo
     ? {
@@ -159,7 +163,8 @@ export async function ingresarInvitado(
       }
     : {
         id: idPersonaCalendly(inv.uri),
-        nombre: inv.name, email: inv.email,
+        nombre: alumnoSuelto?.nombre?.trim() || inv.name, email: inv.email,
+        ...(alumnoSuelto?.pais?.trim() ? { pais: alumnoSuelto.pais.trim() } : {}),
         ...del,
         origenCanal: canal, origenWebinarId: webinarId, utm,
         creadoEn: inv.created_at, extra: {},
@@ -189,6 +194,11 @@ export async function ingresarInvitado(
     if (rl.error) throw new Error(`leads: ${rl.error.message}`);
     leadId = lead.id;
     leadNuevo = true;
+  }
+  if (alumnoSuelto && leadId) {
+    /* Sólo si sigue sin persona: no pisa un vínculo que alguien hizo mientras tanto. */
+    const ra = await db.from("alumnos").update({ leadId }).eq("id", alumnoSuelto.id).is("leadId", null);
+    if (ra.error) console.warn(`alumnos: no se ató ${alumnoSuelto.id} a su persona: ${ra.error.message}`);
   }
 
   /* ---------- 3. La llamada ---------- */
@@ -229,7 +239,7 @@ export async function ingresarInvitado(
     /* La persona tiene un solo nombre: si ya estaba (o se corrigió en la
        ficha), las agendas nuevas usan ése, y volver a traer una agenda no
        pisa la corrección. */
-    invitado: antes?.invitado || previo?.nombre || inv.name,
+    invitado: antes?.invitado || previo?.nombre || alumnoSuelto?.nombre?.trim() || inv.name,
     email: antes?.email || inv.email,
     /* Una llamada que el closer pasó a otro día u hora a mano (extra.inicioManual: reagendó por fuera de Calendly) conserva lo que
        eligió: Calendly seguiría diciendo el horario de antes cada vez que se vuelve a traer. */
@@ -287,6 +297,18 @@ export async function ingresarInvitado(
   }
 
   return { sesionId, contactoId: contacto.id, leadId, contactoNuevo: !previo, leadNuevo, estado, resell };
+}
+
+/** El alumno de ese mail que todavía no está atado a una persona de la app (los que vinieron del Airtable). Nunca frena la agenda. */
+async function alumnoSinPersona(db: SupabaseClient, email: string | null | undefined): Promise<{ id: string; nombre: string; pais?: string | null } | null> {
+  const e = (email ?? "").trim();
+  if (!e) return null;
+  try {
+    const r = await db.from("alumnos").select("id, nombre, pais").ilike("email", literalParaIlike(e)).is("leadId", null).limit(1);
+    return r.error ? null : ((r.data?.[0] as { id: string; nombre: string; pais?: string | null } | undefined) ?? null);
+  } catch {
+    return null;
+  }
 }
 
 /**

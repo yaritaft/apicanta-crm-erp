@@ -40,6 +40,10 @@
     {
       "path": "/api/cron/fathom",
       "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/cron/reporte-semanal",
+      "schedule": "0 13 * * 1"
     }
   ]
 }

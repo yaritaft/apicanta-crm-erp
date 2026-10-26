@@ -56,20 +56,21 @@ export function mensajeParaAlumno(a: { nombre?: string | null; enlace: string; c
 const escaparHtml = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
 /** El aviso por mail: asunto, texto y HTML. El nombre lo escribe cualquiera: se escapa. */
-export function armarMail(a: { nombre?: string | null; enlace: string }): { asunto: string; texto: string; html: string } {
+export function armarMail(a: { nombre?: string | null; enlace: string; programa?: string }): { asunto: string; texto: string; html: string } {
   const saludo = primerNombre(a.nombre);
-  const asunto = "Tu reporte semanal";
+  const asunto = a.programa ? `Tu formulario semanal de ${a.programa}` : "Tu reporte semanal";
+  const deQue = a.programa ? `el formulario de seguimiento de esta semana de ${a.programa}` : "el reporte de esta semana";
   const texto = [
     `Hola${saludo ? ` ${saludo}` : ""}!`,
     "",
-    "Ya podés completar el reporte de esta semana. Es el mismo link de siempre, con tu código:",
+    `Ya podés completar ${deQue}. Es el mismo link de siempre, con tu código:`,
     a.enlace,
     "",
     "Si el link no abre, copialo y pegalo en el navegador.",
   ].join("\n");
   const html = `<div style="font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.5;color:#1c1530">`
     + `<p>Hola${saludo ? ` ${escaparHtml(saludo)}` : ""}!</p>`
-    + `<p>Ya podés completar el reporte de esta semana. Es el mismo link de siempre, con tu código:</p>`
+    + `<p>Ya podés completar ${escaparHtml(deQue)}. Es el mismo link de siempre, con tu código:</p>`
     + `<p><a href="${escaparHtml(a.enlace)}" style="display:inline-block;background:#f7931e;color:#1c1530;text-decoration:none;font-weight:700;padding:10px 18px;border-radius:8px">Completar mi reporte</a></p>`
     + `<p style="color:#6b6480;font-size:13px">Si el botón no abre, copiá este link en el navegador:<br>${escaparHtml(a.enlace)}</p></div>`;
   return { asunto, texto, html };

@@ -2,7 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { guardarItems, type BaseReportes, type ResultadoReportes } from "./reportes-servidor";
 import type { AlumnoBasico } from "./reportes-webhook";
 import type { EnvioDelAlumno } from "./reporte-enlace";
-import { camposDelReporte, formularioDe, type FormularioReporte } from "./reporte-formularios";
+import { camposDelReporte, formularioDelAlumnoCon, type FormularioReporte } from "./reporte-formularios";
 import { literalParaIlike } from "./links-alumno";
 import { lunesDelDia } from "./reportes";
 import { diaAInstante } from "./dia-negocio";
@@ -81,16 +81,12 @@ export async function alumnoDeCodigo(db: SupabaseClient, codigo: string): Promis
 /** El formulario que le toca a un alumno: el de su programa en Customer Success; si todavía no lo tiene cargado, el del plan de
  *  su venta. null si no se sabe (cursa los dos, o ninguno de los dos): el formulario público se lo pregunta. */
 export async function formularioDelAlumno(db: SupabaseClient, alumnoId: string): Promise<FormularioReporte | null> {
-  const textos: string[] = [];
   const seg = await db.from("seguimiento_alumnos").select("programas").eq("alumnoId", alumnoId).maybeSingle();
   /* Sin la tabla o sin fila: se sigue con el plan, no se corta el reporte. */
   const programas = !seg.error ? (seg.data as { programas?: unknown } | null)?.programas : null;
-  if (Array.isArray(programas)) textos.push(...programas.filter((x): x is string => typeof x === "string"));
-  const delSeguimiento = formularioDe(textos);
-  if (delSeguimiento || textos.length) return delSeguimiento;
+  if (Array.isArray(programas) && programas.some((x) => typeof x === "string")) return formularioDelAlumnoCon(programas, null);
   const a = await db.from("alumnos").select("plan").eq("id", alumnoId).maybeSingle();
-  const plan = !a.error ? (a.data as { plan?: unknown } | null)?.plan : null;
-  return typeof plan === "string" ? formularioDe([plan]) : null;
+  return formularioDelAlumnoCon(null, !a.error ? (a.data as { plan?: unknown } | null)?.plan : null);
 }
 
 /** Guarda el reporte que completó el alumno con su código: el de esta semana, reemplazando el que ya hubiera. */

@@ -6,6 +6,7 @@ import { AlertTriangle, Check, ClipboardList, Clock, Download, Info, Link2, Sear
 import { useAbrirFicha } from "@/components/ficha/abrir";
 import { EnlaceDeReporte } from "@/components/cs/EnlaceDeReporte";
 import { linkGeneralDelReporte, ReportesSinAlumno } from "@/components/reportes/ReportesSinAlumno";
+import { FormulariosPorPrograma } from "@/components/reportes/FormulariosPorPrograma";
 import { useSinAlumno } from "@/components/reportes/sin-alumno-nube";
 import { Ayuda, Badge, Bar, Button, Card, CardHead, Chip, Empty, Input, Persona, StatCard, Tabs, Tag } from "@/components/ui/ui";
 import { AreaChart, BarChart } from "@/components/charts/charts";
@@ -343,6 +344,9 @@ export default function Reportes() {
           <CopiarLink />
         </span>
       </div>
+
+      {/* El formulario de cada programa: su link, a cuántos se les pide y si les llega solo (Lili, 26/10). */}
+      {(vista === "dashboard" || vista === "alumnos") && <FormulariosPorPrograma />}
 
       {vista === "dashboard" && (
         <div className="stack-4">
