@@ -335,3 +335,13 @@ test("elegir el perfil en la bienvenida lo deja en el contrato Y en Programa, au
   assert.equal(await perfilDelContrato(db, t.contratos[0] as unknown as Contrato), "Data Engineer");
   await assert.rejects(ponerPerfil(db, c, "Cualquiera", "x"), /no existe/);
 });
+
+test("«Volver a intentar» sobre un intento que PandaDoc ya no tiene dice que hay que mandar uno nuevo", async () => {
+  const c = contrato({ estado: "error", modo: "prueba", documentoId: "doc_borrado", error: "x" });
+  const t = tablasCon(c);
+  const pd = pandadocFalso("document.draft", (l) => (l.metodo === "GET" ? new Response(JSON.stringify({ detail: "Not found" }), { status: 404 }) : null));
+  try {
+    await assert.rejects(mandarBorrador(baseFalsa(t), c, "liliana@apicanta.com"), /ya no está en PandaDoc: tocá «Mandar uno nuevo»/);
+    assert.match(String(t.contratos[0].error), /Mandar uno nuevo/);
+  } finally { pd.restaurar(); }
+});

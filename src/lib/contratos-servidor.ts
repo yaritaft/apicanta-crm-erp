@@ -211,7 +211,11 @@ export async function mandarBorrador(db: SupabaseClient, c: Contrato, quien: str
   if (!c.documentoId) throw new Error("Este contrato no llegó a PandaDoc: mandá uno nuevo.");
   try {
     if (c.estado === "error") {
-      const estado = await esperarBorrador(c.modo, c.documentoId);
+      /* Un intento que se cortó puede no estar más en PandaDoc (26/10, Jacob Mendoza: «no encuentra el documento»). */
+      const estado = await esperarBorrador(c.modo, c.documentoId).catch((e: unknown) => {
+        if (e instanceof ErrorPandadoc && e.status === 404) throw new ErrorPandadoc(404, "Ese intento ya no está en PandaDoc: tocá «Mandar uno nuevo».", e.detalle);
+        throw e;
+      });
       if (estado !== "document.draft") throw new ErrorPandadoc(409, `Ese intento quedó en «${estado || "sin estado"}» en PandaDoc: mandá uno nuevo.`);
     }
     await mandarDocumento(c.modo, c.documentoId, mensajeDelContrato(config, c.datos, nombrePrograma(c)));
