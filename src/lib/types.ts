@@ -1833,6 +1833,8 @@ export interface ResultadoLiquidacion {
   /* El profit del mes con esta liquidación adentro: la base de los % del profit. */
   profit: number;
   calculadoEn: string;
+  /* Si cuenta sólo hasta un día del mes ("2026-10-25"): lo cobrado, vendido y medido de los días siguientes no entra. */
+  corte?: string;
 }
 
 export interface PagoLiquidacion {
@@ -1850,6 +1852,9 @@ export interface Liquidacion {
   extras: ExtraLiquidacion[];
   /* Pesos por dólar para lo que se paga en ARS. */
   tipoCambio?: number;
+  /* Hasta qué día cuenta lo que se mide ("2026-10-25"): para pagar a mitad de mes o sin un día que todavía no cerró.
+     Sin esto (o un día de fin de mes), cuenta el mes entero. Lo fijo no se recorta. */
+  corte?: string | null;
   /* Al cerrar, la foto de lo que se paga: cerrada no se recalcula aunque
      después entre un cobro atrasado. */
   resultado?: ResultadoLiquidacion | null;

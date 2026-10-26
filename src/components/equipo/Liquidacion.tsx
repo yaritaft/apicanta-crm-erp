@@ -164,6 +164,7 @@ export function LiquidacionMes({ onVerPersona, soloMirar = false }: { onVerPerso
       ? <Badge variante="success" icono={<Check size={12} />}>Pagada</Badge>
       : <Badge variante="brand" icono={<Lock size={12} />}>Cerrada</Badge>
     : <Badge variante="neutral">Abierta</Badge>;
+  const corte = r.corte;
 
   return (
     <div className="stack-4">
@@ -175,6 +176,7 @@ export function LiquidacionMes({ onVerPersona, soloMirar = false }: { onVerPerso
             <IconButton etiqueta="Mes siguiente" onClick={() => cambiar({ mes: moverPeriodo(periodo, 1) })}><ChevronRight size={18} /></IconButton>
           </div>
           {estado}
+          {corte && <Badge variante="brand">Hasta el {diaCorto(corte)}</Badge>}
           {periodo !== hoyPeriodo() && (
             <button type="button" className="link t-sm" onClick={() => cambiar({ mes: null })}>Ir a este mes</button>
           )}
@@ -190,6 +192,7 @@ export function LiquidacionMes({ onVerPersona, soloMirar = false }: { onVerPerso
       {cerrada && (
         <p className="t-sm t-subtle" style={{ marginTop: -8 }}>
           Cerrada el {fechaLarga(liq.cerradaEn)}{liq.cerradaPor ? ` por ${liq.cerradaPor}` : ""}: los montos quedaron fijos y los sueldos ya están en Finanzas.
+          {corte && ` Cuenta lo cobrado y vendido hasta el ${diaCorto(corte)}: lo que entró después va en la liquidación que sigue.`}
         </p>
       )}
 
@@ -250,8 +253,10 @@ export function LiquidacionMes({ onVerPersona, soloMirar = false }: { onVerPerso
       </div>
 
       {cambios.length > 0 && (
-        <Ayuda titulo="Algo del mes cambió después de cerrar" icono={<RefreshCw size={18} />}>
-          {cambios.map((x) => `${x.nombre}: cerrado en ${plata(x.cerrado, base)}, hoy daría ${plata(x.hoy, base)}`).join(" · ")}.
+        <Ayuda
+          titulo={corte ? `Lo que entró después del ${diaCorto(corte)}` : "Algo del mes cambió después de cerrar"} icono={<RefreshCw size={18} />}
+        >
+          {cambios.map((x) => `${x.nombre}: cerrado en ${plata(x.cerrado, base)}, ${corte ? "con todo el mes" : "hoy"} daría ${plata(x.hoy, base)}`).join(" · ")}.
           {" "}Lo pagado no se toca: la diferencia se puede sumar a mano en la liquidación del mes que viene, o reabrir esta.
         </Ayuda>
       )}
@@ -270,6 +275,10 @@ export function LiquidacionMes({ onVerPersona, soloMirar = false }: { onVerPerso
             </ul>
           </div>
         </div>
+      )}
+
+      {!cerrada && !soloMirar && (
+        <CorteDeLiquidacion periodo={periodo} valor={liq.corte ?? ""} activo={Boolean(corte)} onCambiar={(c) => guardar({ corte: c })} />
       )}
 
       {!cerrada && !soloMirar && hayPesos && (
@@ -314,7 +323,7 @@ export function LiquidacionMes({ onVerPersona, soloMirar = false }: { onVerPerso
                 onPagado={(v) => acciones.marcarPagado(liq, persona.miembroId, v, yo.nombre)}
                 onVerPersona={onVerPersona ? () => onVerPersona(persona.miembroId) : undefined}
                 onCopiar={async () => {
-                  try { await navigator.clipboard.writeText(textoParaEnviar(persona, periodo)); toast(`Copiado: pegáselo a ${persona.nombre.split(" ")[0]}.`); }
+                  try { await navigator.clipboard.writeText(textoParaEnviar(persona, periodo, corte)); toast(`Copiado: pegáselo a ${persona.nombre.split(" ")[0]}.`); }
                   catch { toast("No pude copiar. Probá de nuevo.", "err"); }
                 }}
               />
@@ -373,6 +382,47 @@ export function LiquidacionMes({ onVerPersona, soloMirar = false }: { onVerPerso
       )}
     </div>
   );
+}
+
+/* «2026-10-25» → «25/10». */
+const diaCorto = (iso: string) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
+const aISO = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
+/* ---------- Hasta qué día cuenta ----------
+   «En la liquidación incluye las ventas del día de hoy. Pero como el día aún no cerró estaría bueno poder
+   discriminar las de hoy y que sea el cierre sólo hasta el 25/10» (Aldana, 26/10). */
+function CorteDeLiquidacion({ periodo, valor, activo, onCambiar }: {
+  periodo: string; valor: string; activo: boolean; onCambiar: (corte: string | null) => void;
+}) {
+  const [a, m] = periodo.split("-").map(Number);
+  const primero = `${periodo}-01`, ultimo = aISO(new Date(a, m, 0));
+  const ayer = new Date(); ayer.setDate(ayer.getDate() - 1);
+  const ayerISO = aISO(ayer);
+  const ayerEsDeEsteMes = ayerISO >= primero && ayerISO <= ultimo;
+  return (
+    <Card className="liq-tc">
+      <div style={{ minWidth: 0, flex: "1 1 280px" }}>
+        <h3 className="card-head__title">Cuenta hasta el día</h3>
+        <p className="card-head__sub">
+          {activo
+            ? `Las ventas, cobros y llamadas desde el ${diaCorto(addDia(valor))} no entran en esta liquidación; los sueldos fijos y bonos van enteros.`
+            : "Para pagar a mitad de mes o sin contar un día que todavía no cerró. Sin fecha, cuenta el mes entero, hoy incluido."}
+        </p>
+      </div>
+      <div className="row-wrap">
+        <div style={{ width: 190 }}>
+          <Input type="date" value={valor} min={primero} max={ultimo} aria-label="Cuenta hasta el día" onChange={(ev) => onCambiar(ev.target.value || null)} />
+        </div>
+        <Button variante="secondary" sm disabled={!ayerEsDeEsteMes || valor === ayerISO} onClick={() => onCambiar(ayerISO)}>Hasta ayer</Button>
+        <Button variante="ghost" sm disabled={!valor} onClick={() => onCambiar(null)}>Todo el mes</Button>
+      </div>
+    </Card>
+  );
+}
+/* El día siguiente a «2026-10-25», para decir «desde el 26/10». */
+function addDia(iso: string): string {
+  const [a, m, d] = iso.split("-").map(Number);
+  return aISO(new Date(a, m - 1, d + 1));
 }
 
 /* ---------- El tipo de cambio de lo que se paga en pesos ---------- */
@@ -815,6 +865,7 @@ function ModalCerrar({ e, liq, r, onCerrar, onConfirmar }: {
 
         <dl className="dl">
           {bonos.length > 0 && (<><dt>Bonos</dt><dd>Se pagan los de {bonos.join(", ")}. Si alguno no lo ganó, apagalo en su renglón.</dd></>)}
+          {r.corte && (<><dt>Cuenta hasta</dt><dd>El {diaCorto(r.corte)}: lo que se cobró, vendió o llamó después va en la liquidación que sigue. Los sueldos fijos y bonos van enteros.</dd></>)}
           <dt>A Finanzas</dt>
           <dd>
             {gastos.length === 0

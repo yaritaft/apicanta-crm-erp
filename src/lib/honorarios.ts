@@ -399,6 +399,30 @@ export function mismasTasas(a: Record<ID, number> | undefined, b: Record<ID, num
   return true;
 }
 
+/* ---------- Hasta qué día cuenta la liquidación ----------
+   «En la liquidación incluye las ventas del día de hoy. Como el día aún no cerró estaría bueno poder discriminar las
+   de hoy y que sea el cierre sólo hasta el 25/10» (Aldana, 26/10). La fecha de corte recorta lo que se MIDE (cobros,
+   ventas, llamadas, el profit); lo fijo (sueldos, bonos, piezas cargadas) sigue siendo del mes entero. */
+
+/** El último instante del día de corte, o null si no hay corte o llega al fin del mes (es como no tenerlo). Una fecha
+ *  anterior al mes se toma como el día anterior al primero: no cuenta nada. */
+export function corteDe(periodo: string, corte?: string | null): Date | null {
+  if (!corte || !/^\d{4}-\d{2}-\d{2}$/.test(corte)) return null;
+  const [a, m, d] = corte.split("-").map(Number);
+  const dia = new Date(a, m - 1, d);
+  if (Number.isNaN(dia.getTime())) return null;
+  const rango = rangoDePeriodo(periodo);
+  const fin = finDelDia(dia);
+  if (fin.getTime() >= rango.hasta.getTime()) return null;
+  return fin.getTime() < rango.desde.getTime() ? new Date(rango.desde.getTime() - 1) : fin;
+}
+
+/* La parte de la regla que se mide: con corte, sólo hasta ese día. */
+function medida(vig: NonNullable<ReturnType<typeof vigenciaEnMes>>, corte: Date | null): RangoMes {
+  if (!corte || corte.getTime() >= vig.rango.hasta.getTime()) return vig.rango;
+  return { ...vig.rango, hasta: corte.getTime() < vig.rango.desde.getTime() ? new Date(vig.rango.desde.getTime() - 1) : corte };
+}
+
 /* ---------- Medir ---------- */
 
 interface Contexto {
@@ -416,9 +440,12 @@ interface Contexto {
   sinCierre: ReadonlySet<ID>;
   /* «Cuota 2 de 3» de cada cuota, para la lista completa de cobros. */
   cuotaTexto: Map<ID, string>;
+  /* Hasta qué día cuenta lo que se mide (cobros, ventas, llamadas, profit): el último instante de ese día. Null:
+     todo el mes. Los fijos no se tocan: un sueldo es del mes entero. */
+  corte: Date | null;
 }
 
-function armarContexto(e: EstadoApp, rango: RangoMes, tc: number): Contexto {
+function armarContexto(e: EstadoApp, rango: RangoMes, tc: number, corte: Date | null = null): Contexto {
   const ventas = new Map(e.ventas.map((v) => [v.id, v] as const));
   const ventaDeCuota = new Map<ID, Venta>();
   const closerDe = new Map<ID, ID | undefined>();
@@ -434,7 +461,7 @@ function armarContexto(e: EstadoApp, rango: RangoMes, tc: number): Contexto {
   }
   return {
     e, rango, base: e.ajustes.monedaBase, tc, ventaDeCuota, closerDeCuota: closerDe,
-    equipo: new Map(e.equipo.map((m) => [m.id, m] as const)), ventas, sinCierre: ventasSinCierre(e), cuotaTexto,
+    equipo: new Map(e.equipo.map((m) => [m.id, m] as const)), ventas, sinCierre: ventasSinCierre(e), cuotaTexto, corte,
   };
 }
 
@@ -605,6 +632,9 @@ function linea(
   if (!vig) return null;
   const M = (n: number, mon: Moneda = c.moneda) => plata(n, mon);
   const parcial = vig.dias < vig.diasMes;
+  /* Lo que se mide llega hasta el corte (si hay); el prorrateo de lo fijo, no. */
+  const rm = medida(vig, cx.corte);
+  const recortada = rm !== vig.rango;
   let monto = 0;
   let detalle = "";
   let medido: number | undefined;
@@ -663,7 +693,7 @@ function linea(
         /* El profit de lo suyo (como lo calculan las hojas de comisión): lo cobrado de sus ventas en los
            días de la regla, menos la parte de los costos del mes que le toca, menos la comisión de
            quienes se nombran. El cobrado va bruto: lo devuelto ya está en los costos. */
-        const x = medir(cx, { ...c, base: "cash" }, m, vig.rango);
+        const x = medir(cx, { ...c, base: "cash" }, m, rm);
         const ingresos = r2(x?.bruto ?? 0);
         /* A cuatro decimales (66,67%): la parte que se ve es la parte con la que se hace la cuenta. */
         const imputado = Math.round((vig.dias / vig.diasMes) * 1e4) / 1e4;
@@ -689,7 +719,7 @@ function linea(
             : "el resultado operativo del mes";
         fuente = { tipo: "profit", profit: p.profit, parte, partes: p.partes };
       } else {
-        const x = medir(cx, c, m, vig.rango, hermanos);
+        const x = medir(cx, c, m, rm, hermanos);
         if (x) {
           valor = x.valor; origen = x.cuantos;
           fuente = {
@@ -699,8 +729,8 @@ function linea(
           };
         } else { falta = "Cargá la cantidad"; origen = "falta cargarla"; }
       }
-      if (parcial && b !== "manual" && b !== "profit" && entrada?.cantidad === undefined) {
-        origen = `${origen}, del ${vig.rango.desde.getDate()} al ${vig.rango.hasta.getDate()}`;
+      if ((parcial || recortada) && b !== "manual" && b !== "profit" && entrada?.cantidad === undefined) {
+        origen = `${origen}, del ${rm.desde.getDate()} al ${rm.hasta.getDate()}`;
       }
       medido = valor;
       const lo = medidoTexto(b, valor, cx.base, c.unidad);
@@ -719,8 +749,8 @@ function linea(
         regla, tipo: c.tipo, base: b, plataBase, monedaBase: cx.base, moneda: c.moneda, fuente, valor,
         tasa: c.tasa, cada: c.cada, veces, montoPorTramo: c.monto, monto: r2(monto),
         unidad: c.unidad?.trim() || undefined, utm: c.utmSource,
-        ...(parcial && b !== "manual" && b !== "profit" && entrada?.cantidad === undefined
-          ? { vigencia: { desde: vig.rango.desde.getDate(), hasta: vig.rango.hasta.getDate(), mes: nombrePeriodo(cx.rango.clave) } }
+        ...((parcial || recortada) && b !== "manual" && b !== "profit" && entrada?.cantidad === undefined
+          ? { vigencia: { desde: rm.desde.getDate(), hasta: rm.hasta.getDate(), mes: nombrePeriodo(cx.rango.clave) } }
           : {}),
       });
       break;
@@ -773,7 +803,7 @@ function lineaDeDescuento(
   let valor = 0, bruto = 0;
   const cobros: CobroContado[] = [];
   const dias = new Set<string>();
-  for (const p of pagosDelMes(cx.e, vig.rango)) {
+  for (const p of pagosDelMes(cx.e, medida(vig, cx.corte))) {
     const venta = cx.ventaDeCuota.get(p.cuotaId);
     if (!venta || !descuentaPorCierre(cx.sinCierre, venta, cx.closerDeCuota.get(p.cuotaId))) continue;
     if (!cuenta(cx, c, m, venta, p, hermanos)) continue;
@@ -994,8 +1024,11 @@ function comisionDeFinanzas(m: MiembroEquipo): ConceptoPago[] {
  *  cerrada se muestra con su foto (`resultado`), no con esto. */
 export function calcularLiquidacion(e: EstadoApp, periodo: string, liq?: Liquidacion | null): ResultadoLiquidacion {
   const rango = rangoDePeriodo(periodo);
+  /* Con fecha de corte, el profit y las devoluciones también llegan sólo hasta ese día. */
+  const corte = corteDe(periodo, liq?.corte);
+  const rangoMedido: RangoMes = corte ? { ...rango, hasta: corte } : rango;
   const tc = liq?.tipoCambio ?? e.ajustes.tipoCambio ?? 0;
-  const cx = armarContexto(e, rango, tc);
+  const cx = armarContexto(e, rango, tc, corte);
   const entradas = liq?.entradas ?? {};
   const extras = liq?.extras ?? [];
   const esquemaDe = new Map(e.honorarios.map((h) => [h.miembroId, h] as const));
@@ -1020,7 +1053,8 @@ export function calcularLiquidacion(e: EstadoApp, periodo: string, liq?: Liquida
      igual aunque ya no esté entre los que se liquidan: una deuda no puede
      perderse en silencio. */
   const liquidadas = liquidadaEn(e.liquidaciones);
-  const reversas = reversasDeComision(e).filter((r) => !r.sinDescuento && mesDeLiquidacion(r.devolucion, e.liquidaciones, liquidadas) === periodo);
+  const reversas = reversasDeComision(e).filter((r) => !r.sinDescuento && mesDeLiquidacion(r.devolucion, e.liquidaciones, liquidadas) === periodo
+    && (!corte || new Date(r.devolucion.fecha).getTime() <= corte.getTime()));
   const conReversa = new Set(reversas.flatMap((r) => r.partes.filter((x) => x.reversa >= 0.005 && x.miembroId).map((x) => x.miembroId as ID)));
   const mesAnterior = moverPeriodo(periodo, -1);
   const fotoAnterior = e.liquidaciones.find((l) => l.periodo === mesAnterior && l.estado === "cerrada" && l.resultado);
@@ -1077,7 +1111,7 @@ export function calcularLiquidacion(e: EstadoApp, periodo: string, liq?: Liquida
      va a cargar en costos directos y gastos operativos. Las comisiones de
      closers y del director ya están adentro: Finanzas las calcula solas. */
   const idLiq = idLiquidacion(periodo);
-  const pyl = calcularPyL({ ...e, gastos: e.gastos.filter((g) => g.extra?.liquidacionId !== idLiq) }, rango);
+  const pyl = calcularPyL({ ...e, gastos: e.gastos.filter((g) => g.extra?.liquidacionId !== idLiq) }, rangoMedido);
   let aCargar = 0;
   for (const f of filas) {
     if ((categoriaDe(e, f.persona.categoriaGasto)?.grupo ?? "operativo") === "dueno") continue;
@@ -1085,7 +1119,7 @@ export function calcularLiquidacion(e: EstadoApp, periodo: string, liq?: Liquida
   }
   const profit = r2(pyl.operativoCC - aCargar);
   const prof: Profit = {
-    profit, parte: parteMarketing(e, rango),
+    profit, parte: parteMarketing(e, rangoMedido),
     /* Lo cobrado menos el profit: todo lo que le resta el mes (devoluciones incluidas). */
     costos: r2(pyl.cobrado - profit),
     partes: {
@@ -1152,6 +1186,7 @@ export function calcularLiquidacion(e: EstadoApp, periodo: string, liq?: Liquida
     fijo: r2(personas.reduce((a, p) => a + p.fijo, 0)),
     variable: r2(personas.reduce((a, p) => a + p.variable, 0)),
     aPagar, tipoCambio: tc, profit, calculadoEn: new Date().toISOString(),
+    ...(corte && liq?.corte ? { corte: liq.corte } : {}),
   };
 }
 
@@ -1168,7 +1203,9 @@ export function faltantes(r: ResultadoLiquidacion) {
  *  venta que se corrigió. Lo cerrado no se toca; esto dice cuánto sería hoy. */
 export function diferenciasDesdeElCierre(e: EstadoApp, liq: Liquidacion) {
   if (liq.estado !== "cerrada" || !liq.resultado) return [];
-  const hoy = calcularLiquidacion(e, liq.periodo, liq);
+  /* Con fecha de corte, «hoy» es el mes entero: la diferencia es lo que entró después del corte (lo que se suma en la
+     liquidación que sigue). */
+  const hoy = calcularLiquidacion(e, liq.periodo, { ...liq, corte: null });
   const antes = new Map(liq.resultado.personas.map((p) => [p.miembroId, p] as const));
   return hoy.personas
     .map((p) => ({ miembroId: p.miembroId, nombre: p.nombre, cerrado: antes.get(p.miembroId)?.total ?? 0, hoy: p.total }))
@@ -1249,7 +1286,7 @@ export function liquidacionCsv(r: ResultadoLiquidacion, periodo: string): string
 }
 
 /** Lo que se le manda a cada uno: su liquidación en texto, lista para pegar. */
-export function textoParaEnviar(p: PersonaLiquidada, periodo: string): string {
+export function textoParaEnviar(p: PersonaLiquidada, periodo: string, corte?: string | null): string {
   /* La nota de un monto a mano va debajo de su renglón: quien ejecuta el pago la lee ahí. */
   const lineas = p.lineas.flatMap((l) => [
     `• ${l.nombre}: ${plata(l.monto, l.moneda)}${l.detalle ? ` — ${l.detalle}` : ""}`,
@@ -1257,7 +1294,8 @@ export function textoParaEnviar(p: PersonaLiquidada, periodo: string): string {
   ]);
   const total = (Object.entries(p.aPagar) as [Moneda, number][])
     .filter(([, x]) => Math.abs(x) >= 0.005).map(([m, x]) => plata(x, m)).join(" + ");
-  return [`Hola ${p.nombre.split(" ")[0]}, tu liquidación de ${nombrePeriodo(periodo)}:`, ...lineas, `Total: ${total || plata(0, "USD")}`].join("\n");
+  const hasta = corte ? ` (hasta el ${corte.slice(8, 10)}/${corte.slice(5, 7)})` : "";
+  return [`Hola ${p.nombre.split(" ")[0]}, tu liquidación de ${nombrePeriodo(periodo)}${hasta}:`, ...lineas, `Total: ${total || plata(0, "USD")}`].join("\n");
 }
 
 /* ---------- Ver un renglón, mes a mes ---------- */
