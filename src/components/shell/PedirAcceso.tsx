@@ -45,7 +45,7 @@ export function PedirAccesoPantalla({ pedido }: { pedido: Omit<PedidoDeAcceso, "
   }
   return (
     <form
-      style={{ display: "flex", flexDirection: "column", alignItems: "stretch", gap: 8, width: "min(420px, 100%)" }}
+      style={{ display: "flex", flexDirection: "column", alignItems: "stretch", gap: 8, width: 380, maxWidth: "100%" }}
       onSubmit={(ev) => { ev.preventDefault(); void mandar(mensaje); }}
     >
       <Input
@@ -65,7 +65,7 @@ export function PedirAccesoPantalla({ pedido }: { pedido: Omit<PedidoDeAcceso, "
 /** En el aviso de «esta pantalla es para mirar»: un solo clic, sin mensaje. */
 export function PedirPermisoParaEditar({ pedido }: { pedido: Omit<PedidoDeAcceso, "mensaje" | "quiere"> }) {
   const { fase, error, mandar } = useEnvio({ ...pedido, quiere: "editar" });
-  if (fase === "hecho") return <span className="t-sm" role="status"><Check size={14} aria-hidden style={{ verticalAlign: "-2px" }} /> Pedido enviado a los dueños</span>;
+  if (fase === "hecho") return <span className="t-sm" role="status" style={{ marginLeft: "auto" }}><Check size={14} aria-hidden style={{ verticalAlign: "-2px" }} /> Pedido enviado a los dueños</span>;
   return (
     <>
       {error && <span className="t-sm" role="alert" style={{ color: "var(--danger)" }}>{error}</span>}
