@@ -15,6 +15,7 @@ import {
 } from "./desglose";
 import { devolucionesDelMes, liquidadaEn, mesDeLiquidacion, reversasDeComision, type ParteReversa, type Reversa } from "./devoluciones";
 import { descuentaPorCierre, descuentoDesde, diaSinCierreDe, reglaDeCierre, ventasSinCierre } from "./cierre-del-dia";
+import { instanteDeAgenda } from "./resells-agendados";
 
 /* ==================================================================
    Honorarios: lo que cobra cada uno y la liquidación de cada mes.
@@ -59,6 +60,8 @@ export const BASES: InfoBase[] = [
   { base: "ventas", nombre: "Ventas cerradas", sub: "Cuántas ventas se cerraron en el mes.", plata: false, deVentas: true },
   { base: "llamadas", nombre: "Llamadas agendadas", sub: "Las que se reservaron en el mes en la Agenda, sin las canceladas.", plata: false, deVentas: false },
   { base: "llamadas-hechas", nombre: "Llamadas hechas", sub: "Las que se hicieron en el mes, según la Agenda.", plata: false, deVentas: false },
+  /* Lili (26/10): las llamadas de resell no traen utm_source desde que entran por «Próximos pasos»; se cuentan de su agenda. */
+  { base: "resells", nombre: "Resells agendados", sub: "Las llamadas de resell y de testimonio que se reservaron en el mes (la agenda de resells de Customer Success), sin las canceladas.", plata: false, deVentas: false },
   { base: "manual", nombre: "Una cantidad que cargás al liquidar", sub: "Lo que la app no mide sola: se escribe cada mes.", plata: false, deVentas: false },
 ];
 
@@ -182,6 +185,8 @@ function queSeMide(c: ConceptoPago, e: Catalogos, cada?: number, hermanos?: Conc
       const utm = c.utmSource?.trim() ? ` con utm_source ${c.utmSource.trim()}` : "";
       return cada !== undefined ? `${porCada(n, que)}${utm}` : `de las ${que[1]}${utm}`;
     }
+    case "resells":
+      return cada !== undefined ? porCada(n, ["resell agendado", "resells agendados"]) : "de los resells agendados";
     default: {
       const unidad = c.unidad?.trim() || "unidades";
       return cada !== undefined ? porCada(n, [unidad, unidad]) : `de lo que se cargue a mano (${unidad})`;
@@ -227,7 +232,7 @@ const PORCENTAJE_CORTO: Partial<Record<BaseMedicion, string>> = {
 };
 const TRAMOS_DE: Record<BaseMedicion, string> = {
   "cash": "cash", "cash-neto": "cash", "facturado": "facturación", "profit": "profit",
-  "ventas": "ventas", "llamadas": "llamadas", "llamadas-hechas": "llamadas", "manual": "cantidad",
+  "ventas": "ventas", "llamadas": "llamadas", "llamadas-hechas": "llamadas", "resells": "resells", "manual": "cantidad",
 };
 
 /** Lo que cobra alguien, en una línea: "US$ 1.700 fijo + bono + tramos de
@@ -539,6 +544,12 @@ function medir(cx: Contexto, c: ConceptoPago, m: MiembroEquipo, r: RangoMes, her
       }
       return { valor: n, cuantos: "según la Agenda", n };
     }
+    case "resells": {
+      /* Los de la agenda de Customer Success, por el día de la reserva (lib/resells-agendados.ts: la misma cuenta que ve Lili). */
+      let n = 0;
+      for (const x of cx.e.resells ?? []) if (!x.cancelada && enRango(instanteDeAgenda(x), r)) n++;
+      return { valor: n, cuantos: "según la agenda de resells", n };
+    }
     default:
       return null;
   }
@@ -554,6 +565,7 @@ function medidoTexto(b: BaseMedicion, valor: number, base: Moneda, unidad?: stri
     case "ventas": return cant(valor, "venta", "ventas");
     case "llamadas": return cant(valor, "llamada agendada", "llamadas agendadas");
     case "llamadas-hechas": return cant(valor, "llamada hecha", "llamadas hechas");
+    case "resells": return cant(valor, "resell agendado", "resells agendados");
     default: return `${num(valor, Number.isInteger(valor) ? 0 : 2)} ${unidad?.trim() || "unidades"}`;
   }
 }

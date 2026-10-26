@@ -490,6 +490,9 @@ export interface Resell {
   linkPitch?: string;
   cancelada: boolean;
   origen: "calendly" | "manual" | "importado";
+  /* Cuándo se reservó (la reserva original si después se reprogramó): lo pone la base (supabase/resells-agendado-en.sql).
+     Vacío en los importados del Airtable. Con esto se cuentan los resells agendados del mes (lib/resells-agendados.ts). */
+  agendadoEn?: string | null;
   creadoEn: string;
   actualizadoEn: string;
   actualizadoPor: string;
@@ -1575,6 +1578,7 @@ export type BaseMedicion =
   | "ventas"           // Cuántas ventas se cerraron
   | "llamadas"         // Llamadas agendadas (Agenda)
   | "llamadas-hechas"  // Llamadas que se hicieron
+  | "resells"          // Resells agendados en el mes (la agenda de Customer Success)
   | "manual";          // Una cantidad que se carga al liquidar
 
 /* De qué ventas sale lo medido, cuando sale de las ventas. */

@@ -132,6 +132,7 @@ export function ResellsCs() {
     const r = f.resell;
     switch (clave) {
       case "fechaHora": return <span className="t-num">{formatoDia(f.dia, hoy)} · {HORA.format(new Date(r.fechaHora))}</span>;
+      case "agendado": return r.agendadoEn ? <span className="t-num">{formatoDia(diaDeNegocio(r.agendadoEn), hoy)}</span> : NADA;
       case "estado": return <span className="cs-pastillas">{estadosDeResell(f.estado).map((x) => <Pastilla key={x} texto={x} />)}</span>;
       case "cash": return r.cashCollect === null ? NADA : <span className="t-num">{montoCs(r.cashCollect)}</span>;
       case "caso": return <Pastilla texto={r.casoDeExito ? "Sí" : "No"} tono={r.casoDeExito ? "ok" : "neutra"} />;
@@ -330,6 +331,8 @@ export function FormResell({ resell, onCerrar }: { resell?: Resell; onCerrar: ()
           telefono: deCalendly ? r0!.telefono : b.telefono.trim(), closer: deCalendly ? r0!.closer : b.closer.trim(),
           estado: b.estado, cashCollect: cash, casoDeExito: b.caso, notas: b.notas, grabacion: b.grabacion.trim(), cancelada: r0?.cancelada ?? false,
           origen: r0?.origen ?? "manual", creadoEn: r0?.creadoEn ?? new Date().toISOString(),
+          /* Una cargada a mano se agendó hoy: cuenta en los resells agendados de este mes (la base pone lo mismo). */
+          ...(r0 ? {} : { agendadoEn: new Date().toISOString() }),
         } as Resell);
         toast(resell ? "Agenda actualizada." : "Agenda cargada.");
         onCerrar();

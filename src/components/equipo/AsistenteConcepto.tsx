@@ -109,6 +109,7 @@ function nombreSugerido(b: Borrador): string {
       return b.alcance === "setter" ? "Comisión de setter" : b.alcance === "director" ? "Comisión de director" : "Comisión";
     case "tramo":
       if (b.base === "llamadas" || b.base === "llamadas-hechas") return b.utmSource.trim() ? `Llamadas de ${b.utmSource.trim()}` : "Bono por llamadas";
+      if (b.base === "resells") return "Resells agendados";
       if (b.base === "ventas") return "Bono por ventas";
       if (b.base === "manual") return b.unidad.trim() ? `Bono por ${b.unidad.trim()}` : "Bono por tramo";
       return b.base === "profit" ? "Bono por profit" : "Bono por cash";
@@ -455,6 +456,15 @@ function PasoDeQue({ b, set, e, miembro }: { b: Borrador; set: Poner; e: EstadoA
     );
   }
 
+  if (b.base === "resells") {
+    return (
+      <Pregunta
+        texto="Se cuentan solos"
+        sub="Las llamadas de resell y de testimonio que se reservaron en el mes, de la agenda de resells (Alumnos → Resells), sin las canceladas. Una reprogramación cuenta una vez, en el mes de la reserva original. Es el mismo número que Customer Success ve en su panel."
+      />
+    );
+  }
+
   if (b.base === "manual") {
     return (
       <>
@@ -647,6 +657,7 @@ function deQueTexto(b: Borrador, e: EstadoApp): string {
     return partes.join(" · ");
   }
   if (b.base === "llamadas" || b.base === "llamadas-hechas") return b.utmSource.trim() ? `Las de utm_source ${b.utmSource.trim()}` : "Todas";
+  if (b.base === "resells") return "Los de la agenda de resells, por el día de la reserva";
   if (b.base === "manual") return b.unidad.trim() || "—";
   const partes = [ALCANCES.find((a) => a.alcance === b.alcance)?.nombre ?? "—"];
   const prods = b.productoIds.map((id) => e.productos.find((p) => p.id === id)?.nombre).filter(Boolean);

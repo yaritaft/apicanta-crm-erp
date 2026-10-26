@@ -31,6 +31,7 @@ import { listasCs } from "@/lib/clientes-cs";
 import { alumnosRepetidos } from "@/lib/alumnos-repetidos";
 import { personaDe } from "@/lib/persona";
 import { plural, saludoDe } from "./util";
+import { ResellsDelMes } from "./ResellsDelMes";
 import "./mi-panel.css";
 import "./panel-servicio.css";
 
@@ -302,6 +303,9 @@ export function PanelServicio({ miembro, viendoOtro }: { miembro: MiembroEquipo;
           </div>
         </section>
       </div>
+
+      {/* Lo que agendó en el mes, para la liquidación (Lili, 26/10). */}
+      <ResellsDelMes hoy={hoy} viendoOtro={viendoOtro} />
 
       <section className="mp-card ps-cartera" id="ps-cartera" aria-label="Cartera">
         <div className="ps-cartera__head">

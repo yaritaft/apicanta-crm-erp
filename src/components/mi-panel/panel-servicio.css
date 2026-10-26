@@ -52,6 +52,41 @@ button.ps-kpi:hover, a.ps-kpi:hover { box-shadow: inset 0 0 0 1px color-mix(in s
 .ps-kpi__val { font-size: 26px; line-height: 32px; font-weight: 650; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; color: var(--ink); }
 .ps-kpi__ctx { font-size: 12px; line-height: 16px; color: var(--ink-subtle); }
 
+/* ---------- los resells agendados del mes (Lili, 26/10) ---------- */
+
+.ps-rs { padding-bottom: 18px; }
+.ps-rs__cab { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.ps-rs__cab > div:first-child { min-width: 0; flex: 1 1 320px; }
+.ps-rs__mes { display: inline-flex; align-items: center; gap: 4px; padding: 2px; border-radius: 12px; background: var(--mp-bloque-alto); }
+.ps-rs__mes-txt { min-width: 150px; text-align: center; font-size: 14px; font-weight: 600; color: var(--ink); }
+.ps-rs__cuerpo { display: flex; align-items: center; gap: 16px 20px; flex-wrap: wrap; margin-top: 14px; }
+.ps-rs__total { display: flex; flex-direction: column; gap: 2px; padding: 12px 18px; border-radius: 16px; background: var(--mp-bloque-alto); min-width: 160px; }
+.ps-rs__n { font-size: 32px; line-height: 38px; font-weight: 650; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; color: var(--ink); }
+.ps-rs__detalle { display: flex; flex-wrap: wrap; gap: 8px; flex: 1 1 200px; }
+.ps-rs__chip {
+  display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; font-size: 13px; color: var(--ink-muted);
+  box-shadow: inset 0 0 0 1px var(--mp-linea);
+}
+.ps-rs__chip b { color: var(--ink); font-weight: 650; font-variant-numeric: tabular-nums; }
+.ps-rs__lista { list-style: none; margin: 14px 0 0; padding: 0; }
+.ps-rs__fila {
+  display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 0.7fr) minmax(0, 1.3fr) minmax(0, 1fr); align-items: center; gap: 12px;
+  padding: 9px 0; border-top: 1px solid var(--mp-linea); font-size: 13px;
+}
+.ps-rs__nombre { min-width: 0; padding: 0; border: 0; background: none; font: inherit; font-weight: 550; color: var(--ink); text-align: left; }
+button.ps-rs__nombre { cursor: pointer; }
+button.ps-rs__nombre:hover { text-decoration: underline; }
+.ps-rs__con, .ps-rs__cuando { color: var(--ink-subtle); }
+.ps-rs__estado { justify-self: end; min-width: 0; }
+.ps-rs__mas { margin-top: 6px; padding: 6px 0 0; border: 0; background: none; font: inherit; font-size: 13px; font-weight: 600; color: var(--brand); cursor: pointer; }
+@media (max-width: 720px) {
+  .ps-rs__fila { grid-template-columns: minmax(0, 1fr) auto; row-gap: 2px; }
+  .ps-rs__con { display: none; }
+  .ps-rs__cuando { grid-column: 1; grid-row: 2; }
+  .ps-rs__estado { grid-row: 1 / span 2; grid-column: 2; }
+  .ps-rs__mes-txt { min-width: 120px; }
+}
+
 /* ---------- la cartera ---------- */
 
 .ps-cartera { padding: 22px 0 0; overflow: hidden; }

@@ -291,7 +291,7 @@ export interface ArgsMedido {
 const NOMBRE_BASE: Record<BaseMedicion, string> = {
   "cash": "cash collected", "cash-neto": "cash collected post pasarelas", "facturado": "facturado",
   "profit": "profit del mes", "ventas": "ventas cerradas", "llamadas": "llamadas agendadas",
-  "llamadas-hechas": "llamadas hechas", "manual": "cantidad",
+  "llamadas-hechas": "llamadas hechas", "resells": "resells agendados", "manual": "cantidad",
 };
 
 /* Qué se cuenta: "cash collected post pasarelas", "llamadas agendadas", o la
@@ -402,6 +402,7 @@ function pasosDeLoMedido(a: ArgsMedido, f: Extract<Fuente, { tipo: "medido" }>):
     case "ventas": return [paso("base", "Ventas cerradas en el mes", a.valor, "cantidad")];
     case "llamadas": return [paso("base", `Llamadas agendadas en el mes${utm}`, a.valor, "cantidad", { nota: "Según la Agenda, sin las canceladas" })];
     case "llamadas-hechas": return [paso("base", `Llamadas hechas en el mes${utm}`, a.valor, "cantidad", { nota: "Según la Agenda" })];
+    case "resells": return [paso("base", "Resells agendados en el mes", a.valor, "cantidad", { nota: "Según la agenda de resells, por el día de la reserva, sin los cancelados" })];
     default: return [paso("base", mayus(queSeCuenta(a)), a.valor, "cantidad")];
   }
 }

@@ -188,6 +188,8 @@ export function resellNormal(r: Partial<Resell> & Pick<Resell, "id">): Resell {
     testimonio: RESULTADOS_TESTIMONIO.includes(r.testimonio as (typeof RESULTADOS_TESTIMONIO)[number]) ? r.testimonio : "",
     linkTestimonio: textoLimpio(r.linkTestimonio), linkPitch: textoLimpio(r.linkPitch),
     origen: r.origen === "calendly" || r.origen === "importado" ? r.origen : "manual",
+    /* Sólo si lo trae: sin el dato no se manda, y guardar la agenda no lo borra en la base. */
+    ...(typeof r.agendadoEn === "string" && r.agendadoEn ? { agendadoEn: r.agendadoEn } : {}),
     creadoEn: r.creadoEn ?? new Date().toISOString(), actualizadoEn: r.actualizadoEn ?? new Date().toISOString(),
     actualizadoPor: textoLimpio(r.actualizadoPor),
   };
@@ -879,11 +881,14 @@ export function filasResells(e: Pick<EstadoApp, "resells" | "alumnos"> & Partial
   });
 }
 
-export type ClaveResell = "fechaHora" | "nombre" | "email" | "telefono" | "closer" | "estado" | "cash" | "caso" | "grabacion" | "notas"
+export type ClaveResell = "fechaHora" | "agendado" | "nombre" | "email" | "telefono" | "closer" | "estado" | "cash" | "caso" | "grabacion" | "notas"
   | "testimonio" | "linkTestimonio" | "linkPitch";
 
 export const COLUMNAS_RESELLS: ColumnaCs<FilaResell, ClaveResell>[] = [
   { clave: "fechaHora", titulo: "Fecha y hora de agenda", grupo: "Agenda", valores: (f) => uno(f.dia), orden: (f) => f.resell.fechaHora, fecha: true, ancho: 170 },
+  /* Cuándo se reservó (Lili, 26/10: los resells que agendó en el mes son parte de su sueldo; lib/resells-agendados.ts). */
+  { clave: "agendado", titulo: "Agendado el", grupo: "Agenda", ayuda: "El día en que se reservó la llamada (la reserva original, si se reprogramó). Con esto se cuentan los resells agendados del mes. Los importados del Airtable no lo tienen.",
+    valores: (f) => uno(f.resell.agendadoEn ? diaDeNegocio(f.resell.agendadoEn) : ""), orden: (f) => f.resell.agendadoEn ?? "", fecha: true, ancho: 130 },
   { clave: "nombre", titulo: "Nombre completo", grupo: "Agenda", valores: (f) => uno(f.resell.nombre), orden: (f) => sinTildes(f.resell.nombre), ancho: 220 },
   { clave: "email", titulo: "Mail", grupo: "Agenda", valores: (f) => uno(f.resell.email), ancho: 220 },
   { clave: "telefono", titulo: "Teléfono", grupo: "Agenda", valores: (f) => uno(f.resell.telefono), ancho: 150 },
@@ -904,6 +909,7 @@ export const COLUMNAS_RESELLS: ColumnaCs<FilaResell, ClaveResell>[] = [
 export const COLUMNAS_SUMADAS_RESELLS: { id: string; despuesDe: string; claves: string[] }[] = [
   { id: "grabacion-2110", despuesDe: "caso", claves: ["grabacion"] },
   { id: "testimonio-2410", despuesDe: "grabacion", claves: ["testimonio", "linkTestimonio", "linkPitch"] },
+  { id: "agendado-2610", despuesDe: "fechaHora", claves: ["agendado"] },
 ];
 
 export const VISIBLES_RESELLS: ClaveResell[] = COLUMNAS_RESELLS.map((c) => c.clave);

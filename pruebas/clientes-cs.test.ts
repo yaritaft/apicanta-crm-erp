@@ -495,7 +495,7 @@ test("la agenda de resells muestra «Agendada» o «Cancelada» hasta que Custom
   assert.equal(filas[0].alumno?.id, "a1", "el mail es de un alumno (sin importar mayúsculas)");
   assert.equal(filas[1].alumno, undefined);
   assert.equal(filas[1].dia, "2026-10-07", "las 23:30 de Argentina todavía son el 7");
-  assert.equal(MOTOR_RESELLS.columnas.length, 13, "las 9 de Lili, la grabación (Mariano, 21/10) y las del testimonio: si grabó, su link y el del pitch (Lili, 24/10)");
+  assert.equal(MOTOR_RESELLS.columnas.length, 14, "las 9 de Lili, la grabación (Mariano, 21/10), las del testimonio: si grabó, su link y el del pitch (Lili, 24/10), y cuándo se agendó (26/10)");
   assert.equal(MOTOR_RESELLS.pasaFiltros(filas[2], { caso: { modo: "solo", valores: ["Sí"] } }), true);
   assert.equal(MOTOR_RESELLS.pasaFiltros(filas[0], { caso: { modo: "solo", valores: ["Sí"] } }), false);
   assert.deepEqual(MOTOR_RESELLS.ordenarFilas(filas, [{ clave: "cash", desc: true }]).map((f) => f.id), ["r3", "r1", "r2"], "lo sin cash, al final");
