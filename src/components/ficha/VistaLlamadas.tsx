@@ -12,7 +12,7 @@ import { sePuedePasar, usePuedePasarLlamadas } from "@/components/closers/usePas
 import type { FilaTabla } from "@/lib/crm-tabla";
 import { pasadaDe } from "@/lib/pasada-closer";
 import type { Sesion } from "@/lib/types";
-import { ROTULO_ESTADO, type Contrato } from "@/lib/contratos";
+import { contratoDeLlamada, contratosAMostrar, ROTULO_ESTADO, type Contrato } from "@/lib/contratos";
 import type { Persona } from "@/lib/persona";
 import type { Grabacion } from "@/lib/fathom";
 import { GrabacionFathom, useGrabaciones } from "./GrabacionFathom";
@@ -43,6 +43,7 @@ export function VistaLlamadas({ p, filas, contratos }: {
   const [pasando, setPasando] = useState<Sesion | null>(null);
   const puedePasar = usePuedePasarLlamadas();
   const { porSesion } = useGrabaciones(filas.map((f) => f.id));
+  const visibles = contratosAMostrar(contratos ?? []);
 
   if (p.sesiones.length === 0) {
     return (
@@ -60,7 +61,7 @@ export function VistaLlamadas({ p, filas, contratos }: {
       <span className="t-label">Llamadas ({filas.length})</span>
       {filas.map((f) => (
         <Llamada key={f.id} f={f} grabaciones={porSesion.get(f.id) ?? []} onCargar={() => setCargar(f.id)}
-          contrato={(contratos ?? []).find((c) => c.sesionId === f.id && c.estado !== "anulado")}
+          contrato={contratoDeLlamada(visibles, f)}
           onPasar={puedePasar && sePuedePasar(f.sesion) ? () => setPasando(f.sesion) : undefined} />
       ))}
       {cargar && <Eod soloSesionId={cargar} onCerrar={() => setCargar(null)} />}

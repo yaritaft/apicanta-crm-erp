@@ -581,6 +581,12 @@ export function contratosAMostrar(todos: readonly Contrato[]): Contrato[] {
     .slice(0, 3);
 }
 
+/** El contrato que le toca a una llamada: el de su sesión y, si ese ya tiene reemplazo (se mandó a mano desde PandaDoc, sin sesión), el vigente,
+    para que la llamada y la columna de la ficha digan lo mismo. Sólo si la llamada terminó en venta. */
+export function contratoDeLlamada(visibles: readonly Contrato[], f: { id: string; venta?: unknown }): Contrato | undefined {
+  return visibles.find((c) => c.sesionId === f.id) ?? (f.venta ? visibles[0] : undefined);
+}
+
 /** Lo que le pasó al contrato, en una frase para el closer. */
 export function quePasoConElContrato(c: Contrato): string {
   const a = c.destinatario?.email || c.datos?.email || "su mail";

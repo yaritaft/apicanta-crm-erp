@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { contratosAMostrar, quePasoConElContrato, type Contrato } from "@/lib/contratos";
+import { contratoDeLlamada, contratosAMostrar, quePasoConElContrato, type Contrato } from "@/lib/contratos";
 import { avisarDelContrato } from "@/lib/contratos-servidor";
 import { ACCESO_DUENO, TIPOS_POR_DEFECTO, veElServicio, type MiAcceso } from "@/lib/permisos";
 
@@ -116,4 +116,13 @@ test("buscar a alguien mira todo el historial; sin búsqueda, sólo el período"
   assert.deepEqual(llamadasQueSeVen(todas, rango, "").map((f) => f.id), ["c"], "sin búsqueda, el período recorta");
   assert.deepEqual(llamadasQueSeVen(todas, rango, "jacob").map((f) => f.id), ["a", "b"], "con búsqueda, el período no cuenta");
   assert.deepEqual(llamadasQueSeVen(todas, rango, "  ").map((f) => f.id), ["c"], "espacios no son una búsqueda");
+});
+
+test("la llamada dice lo mismo que la ficha: si su intento no salió y después se mandó a mano, muestra el vigente (el de Jacob, 26/10)", () => {
+  const malo = c({ id: "e", estado: "error", sesionId: "s1", creadoEn: "2026-10-25T22:43:00Z" });
+  const aMano = c({ id: "m", estado: "visto", sesionId: null, ventaId: null, origen: "pandadoc", creadoEn: "2026-10-26T12:09:00Z" });
+  const visibles = contratosAMostrar([malo, aMano]);
+  assert.equal(contratoDeLlamada(visibles, { id: "s1", venta: "Downsell · US$ 500" })?.id, "m");
+  assert.equal(contratoDeLlamada(visibles, { id: "s1", venta: "" }), undefined, "una llamada sin venta no muestra contrato");
+  assert.equal(contratoDeLlamada([malo], { id: "s1", venta: "x" })?.id, "e", "sin reemplazo, el que no salió se ve como tal");
 });
