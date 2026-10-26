@@ -116,7 +116,7 @@ test("comisión de director (el caso de Santiago): 5% de US$ 2.910 de cash post 
   assert.equal(l.monto, 145.5);
   assert.equal(l.enFinanzas, true);
   const d = l.desglose!;
-  assert.equal(d.regla, "5% del cash collected post pasarelas de las ventas que dirige");
+  assert.equal(d.regla, "5% del cash collected post pasarelas de las ventas que dirige (sin restar lo que cobran los closers)");
   assert.deepEqual(d.pasos.map((p) => [p.op, p.valor]), [
     ["base", 3000], ["menos", 90], ["igual", 2910], ["por", 0.05], ["igual", 145.5],
   ]);
@@ -656,3 +656,15 @@ test("el descuento de un mes no aparece en otro mes ni cambia el profit de los d
   assert.ok(!a.personas.flatMap((p) => p.lineas).some((l) => l.tipo === "extra"));
 });
 
+
+test("la regla de cada comisión de ventas dice que no resta lo que cobra otro (Aldana: «¿a Santiago se le descuenta lo de los closers?»)", () => {
+  const r = calcularLiquidacion(estadoDePrueba(), PERIODO, liqCon(entradas()));
+  assert.match(renglon(r, "santi", "c_dir").desglose!.regla, /sin restar lo que cobran los closers/);
+  assert.match(renglon(r, "dani", "c_com").desglose!.regla, /sin restar lo que cobran los closers/);
+  assert.match(renglon(r, "mariano", "c_com").desglose!.regla, /sin restar lo que cobra el director/);
+  /* El profit propio, que sí resta la comisión de alguien, dice otra cosa y no esto. */
+  assert.doesNotMatch(renglon(r, "agus", "c_profit").desglose!.regla, /sin restar lo que cobra/);
+  /* Y es cierto: lo del director es 5% de lo cobrado post pasarelas (2.910), con los closers cobrando aparte. */
+  assert.equal(renglon(r, "santi", "c_dir").monto, 145.5);
+  assert.ok(renglon(r, "mariano", "c_com").monto > 0);
+});

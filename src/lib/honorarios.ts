@@ -155,6 +155,9 @@ function filtros(c: ConceptoPago, e: Catalogos, hermanos?: ConceptoPago[]): stri
   if (c.sinVentasSinComision && (c.alcance ?? "todas") === "todas") out.push(`sin las que cerró ${quienesNoComisionan(e)}`);
   if (c.sinExcluidasMarketing) out.push("sin las excluidas de marketing");
   if (c.soloVentasDesdeInicio && c.desde) out.push("sólo ventas cerradas desde el inicio");
+  /* Una comisión de ventas va directo sobre su base: no resta lo que cobra otro (eso sólo lo hace el profit propio, con
+     `descuentaComisionDe`). Se dice en la regla para que nadie tenga que preguntarlo. */
+  if (esComisionDeVentas(c)) out.push(c.alcance === "closer" ? "sin restar lo que cobra el director" : "sin restar lo que cobran los closers");
   if (c.profitPropio && c.descuentaComisionDe?.length) {
     const nombres = c.descuentaComisionDe.map((id) => e.equipo.find((m) => m.id === id)?.nombre).filter(Boolean);
     if (nombres.length) out.push(`sin la comisión de ${nombres.join(" y ")}`);
