@@ -32,9 +32,14 @@ export const AREAS: { id: AreaId; nombre: string; pantallas: string }[] = [
   { id: "alumnos", nombre: "Alumnos", pantallas: "Alumnos, Pipeline de servicio y Reportes" },
   { id: "finanzas", nombre: "Finanzas", pantallas: "Finanzas, Caja y Conciliación" },
   { id: "ajustes", nombre: "Ajustes", pantallas: "Ajustes" },
+  /* Aldana (26/10): hacer el cierre de comisiones sola, sin ser dueña. Ve la liquidación del mes (lo que se le paga a cada uno) y, con «editar», la
+     carga y la cierra y marca quién cobró. Lo que cobra cada uno, los accesos y los tipos de cuenta siguen siendo sólo de los dueños. */
+  { id: "liquidacion", nombre: "Liquidación", pantallas: "Equipo y honorarios → Liquidación del mes y Comisiones (para mirar). No cambia lo que cobra cada uno ni los accesos" },
 ];
 
 const TODO: AreasDeTipo = Object.fromEntries(AREAS.map((a) => [a.id, "editar"])) as AreasDeTipo;
+/* «Todo menos honorarios»: la liquidación es justamente lo que no entra. */
+const TODO_MENOS_LIQUIDACION: AreasDeTipo = Object.fromEntries(AREAS.filter((a) => a.id !== "liquidacion").map((a) => [a.id, "editar"])) as AreasDeTipo;
 
 /* Customer Success (Lili y las chicas): los alumnos —seguimiento, CV y
    LinkedIn, testimonios— y los clientes, y sólo eso. Lo siembra
@@ -49,7 +54,7 @@ export const CUSTOMER_SUCCESS: TipoCuenta = {
 /* Los mismos que siembra supabase/tipos-cuenta.sql. */
 export const TIPOS_POR_DEFECTO: TipoCuenta[] = [
   { id: "dueno", nombre: "Dueño", descripcion: "Todo, incluido lo que cobra cada uno y los accesos a la app.", areas: TODO, soloLoSuyo: false, orden: 0 },
-  { id: "equipo", nombre: "Todo menos honorarios", descripcion: "Toda la app menos Equipo y honorarios.", areas: TODO, soloLoSuyo: false, orden: 1 },
+  { id: "equipo", nombre: "Todo menos honorarios", descripcion: "Toda la app menos Equipo y honorarios.", areas: TODO_MENOS_LIQUIDACION, soloLoSuyo: false, orden: 1 },
   {
     id: "director", nombre: "Director comercial", orden: 2, soloLoSuyo: false,
     descripcion: "Leads, CRM, Agenda, Ventas y Clientes de todos los closers. Ve los webinars y el Dashboard, sin Finanzas.",
@@ -92,6 +97,11 @@ export interface MiAcceso {
 export const ACCESO_DUENO: MiAcceso = { tipo: "dueno", nombre: "Dueño", areas: TODO, soloLoSuyo: false };
 
 export const esDueno = (a: MiAcceso | null | undefined) => a?.tipo === "dueno";
+
+/** La liquidación del mes: 0 no la ve · 1 la mira · 2 la carga, la cierra y marca quién cobró. Los dueños, siempre 2. */
+export const nivelDeLiquidacion = (a: MiAcceso | null | undefined): 0 | 1 | 2 => (esDueno(a) ? 2 : nivelEn(a, "liquidacion"));
+/** ¿Puede ver la liquidación (y los pasos de Finanzas que dependen de ella)? Un dueño, o quien tiene el permiso «Liquidación». */
+export const veLaLiquidacion = (a: MiAcceso | null | undefined): boolean => nivelDeLiquidacion(a) >= 1;
 
 /** Una cuenta que ve sólo lo suyo (el closer): su menú es el mínimo, «Mis
  *  llamadas», «Cerrar el día» y «Cargar venta», cada una si su tipo la puede
@@ -326,7 +336,8 @@ export function areaDeRuta(ruta: string): AreaId | "equipo" | null {
 export function nivelDeRuta(a: MiAcceso | null | undefined, ruta: string): 0 | 1 | 2 {
   const area = areaDeRuta(ruta);
   if (area === null) return 2;
-  if (area === "equipo") return esDueno(a) ? 2 : 0;
+  /* Equipo y honorarios: entera, sólo los dueños; quien tiene «Liquidación» entra a la liquidación (la página decide qué solapas). */
+  if (area === "equipo") return nivelDeLiquidacion(a);
   let nivel: 0 | 1 | 2 = 0;
   for (const x of areasDeRuta(ruta)) {
     /* Mi panel es de quien trabaja las llamadas; mirar el CRM no alcanza (Marketing lo ve desde el 26/10 y no tiene nada ahí). */

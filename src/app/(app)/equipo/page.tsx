@@ -11,7 +11,8 @@ import { FichaMiembro } from "@/components/equipo/FichaMiembro";
 import { AccesosApp } from "@/components/equipo/Accesos";
 import { TiposCuenta } from "@/components/equipo/TiposCuenta";
 import { useEstadoDeClosers } from "@/components/closers/EstadoDeClosers";
-import { useAccesos, useNivelAcceso } from "@/lib/acceso";
+import { useAcceso, useAccesos } from "@/lib/acceso";
+import { nivelDeLiquidacion } from "@/lib/permisos";
 import { useEstado, useSelector, useSync } from "@/lib/store";
 import { useParamsURL } from "@/lib/useParamsURL";
 import { CopiarLink } from "@/components/ui/Filtros";
@@ -28,6 +29,12 @@ import { CopiarLink } from "@/components/ui/Filtros";
    base cada vez. Hasta que llegan, la sección espera; mostrarla vacía diría
    "Sin cargar" de todos.
 
+   Quien tiene el permiso «Liquidación» (Aldana: el cierre de comisiones, 26/10)
+   entra sólo a «Liquidación del mes» y «Comisiones», para mirar: lo que cobra
+   cada uno, los accesos y los tipos de cuenta siguen siendo de los dueños. Con
+   «ver» sólo mira; con «editar» carga lo que falta, cierra el mes y marca quién
+   cobró. La base lo dice igual (supabase/permiso-liquidacion.sql).
+
    En la URL: ?seccion= (liquidacion, equipo, comisiones, accesos, tipos), ?mes=2026-09 y
    ?persona=<id> para la ficha abierta. No se usa ?vista= porque es de la
    ficha global de personas.
@@ -35,11 +42,15 @@ import { CopiarLink } from "@/components/ui/Filtros";
 
 type Seccion = "liquidacion" | "equipo" | "comisiones" | "accesos" | "tipos";
 const SECCIONES: Seccion[] = ["liquidacion", "equipo", "comisiones", "accesos", "tipos"];
+const SECCIONES_DE_LIQUIDACION: Seccion[] = ["liquidacion", "comisiones"];
 
 export default function EquipoYHonorarios() {
-  const acceso = useNivelAcceso();
+  const acceso = useAcceso();
+  const nivelLiq = nivelDeLiquidacion(acceso.acceso);
   const [p, cambiar] = useParamsURL({ seccion: "liquidacion", persona: "" });
-  const seccion = (SECCIONES as string[]).includes(p.seccion) ? (p.seccion as Seccion) : "liquidacion";
+  /* Quien no es dueño sólo tiene la liquidación y las comisiones. */
+  const permitidas = acceso.esDueno ? SECCIONES : SECCIONES_DE_LIQUIDACION;
+  const seccion = (permitidas as string[]).includes(p.seccion) ? (p.seccion as Seccion) : "liquidacion";
   const accesos = useAccesos(acceso.esDueno);
   /* Si cada closer va a ver sus llamadas (su correo en Equipo y su nombre en Calendly): se avisa en la solapa. */
   const closers = useEstadoDeClosers(accesos.lista);
@@ -49,7 +60,9 @@ export default function EquipoYHonorarios() {
   const cabecera = (
     <PageHead
       titulo="Equipo y honorarios"
-      sub="Quién es quién, con qué entra a la app y cuánto cobra: el fijo, los variables y sobre qué se mide cada uno. La liquidación de cada mes se calcula sola. Sólo la ven los dueños."
+      sub={acceso.esDueno
+        ? "Quién es quién, con qué entra a la app y cuánto cobra: el fijo, los variables y sobre qué se mide cada uno. La liquidación de cada mes se calcula sola. Sólo la ven los dueños."
+        : "La liquidación de cada mes se calcula sola: lo que se le paga a cada uno. Lo que cobra cada uno y los accesos a la app los cambian sólo los dueños."}
       acciones={acceso.esDueno ? <CopiarLink sm={false} /> : undefined}
     />
   );
@@ -63,7 +76,7 @@ export default function EquipoYHonorarios() {
     );
   }
 
-  if (!acceso.esDueno) {
+  if (nivelLiq === 0) {
     return (
       <div className="stack-5">
         {cabecera}
@@ -100,30 +113,32 @@ export default function EquipoYHonorarios() {
         valor={seccion} onChange={(v) => cambiar({ seccion: v })}
         opciones={[
           { valor: "liquidacion", texto: "Liquidación del mes" },
-          { valor: "equipo", texto: "Equipo y lo que cobra" },
+          ...(acceso.esDueno ? [{ valor: "equipo" as Seccion, texto: "Equipo y lo que cobra" }] : []),
           { valor: "comisiones", texto: "Comisiones" },
-          {
-            valor: "accesos",
-            texto: closers.sinVer > 0
-              ? <>Accesos a la app<span className="tab-aviso" title={`${closers.sinVer === 1 ? "Un closer no va" : `${closers.sinVer} closers no van`} a ver nada`}>{closers.sinVer}</span></>
-              : "Accesos a la app",
-          },
-          { valor: "tipos", texto: "Tipos de cuenta" },
+          ...(acceso.esDueno ? [
+            {
+              valor: "accesos" as Seccion,
+              texto: closers.sinVer > 0
+                ? <>Accesos a la app<span className="tab-aviso" title={`${closers.sinVer === 1 ? "Un closer no va" : `${closers.sinVer} closers no van`} a ver nada`}>{closers.sinVer}</span></>
+                : "Accesos a la app",
+            },
+            { valor: "tipos" as Seccion, texto: "Tipos de cuenta" },
+          ] : []),
         ]}
       />
-      {seccion === "liquidacion" && <LiquidacionMes onVerPersona={ver} />}
+      {seccion === "liquidacion" && <LiquidacionMes onVerPersona={acceso.esDueno ? ver : undefined} soloMirar={nivelLiq < 2} />}
       {seccion === "equipo" && <ListaEquipo accesos={accesos} onVer={ver} />}
-      {seccion === "comisiones" && <Comisiones onVer={ver} />}
+      {seccion === "comisiones" && <Comisiones onVer={acceso.esDueno ? ver : undefined} editable={acceso.esDueno} />}
       {seccion === "accesos" && <AccesosApp accesos={accesos} closers={closers} onVerMiembro={ver} />}
       {seccion === "tipos" && <TiposCuenta accesos={accesos} />}
-      {p.persona && <FichaMiembro key={p.persona} miembroId={p.persona} accesos={accesos} onCerrar={() => cambiar({ persona: null })} />}
+      {acceso.esDueno && p.persona && <FichaMiembro key={p.persona} miembroId={p.persona} accesos={accesos} onCerrar={() => cambiar({ persona: null })} />}
     </div>
   );
 }
 
 /* El % de cada uno que vende, agenda o dirige, servicio por servicio. Lo
    mismo que se ve en Finanzas → Detalle → Comisiones, pero acá se cambia. */
-function Comisiones({ onVer }: { onVer: (id: string) => void }) {
+function Comisiones({ onVer, editable }: { onVer?: (id: string) => void; editable: boolean }) {
   const e = useEstado();
   return (
     <Card>
@@ -131,7 +146,7 @@ function Comisiones({ onVer }: { onVer: (id: string) => void }) {
         titulo="Cómo comisiona cada uno"
         sub="El % que cobra cada persona de lo que entra de sus ventas, neto de procesador. El general vale para todo; si un servicio comisiona distinto, se le pone su propio %. De acá salen la liquidación y lo que resta Finanzas."
       />
-      <CuadroComisiones e={e} editable onVerPersona={onVer} />
+      <CuadroComisiones e={e} editable={editable} onVerPersona={onVer} />
     </Card>
   );
 }

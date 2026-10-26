@@ -101,9 +101,11 @@ test("3000 tipos al azar: cada item del menú es una ruta que sus áreas ven, de
     for (const h of menu) {
       assert.ok(conocidos.has(h) && permitidos.has(h), `${h} no es de su menú`);
       const area = areaDeRuta(h);
-      assert.ok(area !== null && area !== "equipo", `${h}: sin área (o sólo de dueños) en el menú de un tipo que no es dueño`);
+      assert.ok(area !== null, `${h}: sin área en el menú de un tipo que no es dueño`);
       assert.ok(nivelDeRuta(a, h) >= 1, `${h}: no la ve`);
-      assert.ok(areasDeRuta(h).some((x) => nivelEn(a, x) >= 1), `${h}: ninguna de sus áreas la deja ver`);
+      /* Equipo y honorarios: de los dueños, salvo para quien tiene el permiso «Liquidación» (Aldana, 26/10). */
+      if (area === "equipo") assert.ok(nivelEn(a, "liquidacion") >= 1, `${h}: sólo con el permiso «Liquidación»`);
+      else assert.ok(areasDeRuta(h).some((x) => nivelEn(a, x) >= 1), `${h}: ninguna de sus áreas la deja ver`);
     }
     /* Y al revés: lo que su menú muestra es TODO lo que puede usar (en el menú que le toca): lo que ve y, si guarda algo, lo que edita. */
     for (const i of lista.flatMap((g) => g.items)) assert.equal(menu.includes(i.href), nivelDeRuta(a, i.href) >= nivelMinimo(i), `${i.href}`);
@@ -263,12 +265,20 @@ test("ninguna pantalla de la app queda sin área: una ruta sin dueño en RUTAS l
   for (const i of TODOS_LOS_ITEMS) assert.notEqual(areaDeRuta(i.href), null, i.href);
 });
 
-test("Equipo y honorarios son sólo del dueño: ningún tipo, ni el que lo edita todo, ve /equipo", () => {
+test("Equipo y honorarios son de los dueños: ningún tipo, ni el que edita todo lo demás, ve /equipo sin el permiso «Liquidación»; con él, ve o usa la liquidación", () => {
   porSemillas(500, 60_001, (r, s) => {
     const t = tipoAlAzar(r, s);
-    for (const area of IDS_AREA) t.areas[area] = r.elige(["ver", "editar"] as const);
+    /* Un «sólo lo suyo» usa el menú mínimo del closer, que no trae Equipo: acá se mira el menú de siempre. */
+    t.soloLoSuyo = false;
+    for (const area of IDS_AREA) if (area !== "liquidacion") t.areas[area] = r.elige(["ver", "editar"] as const);
+    delete t.areas.liquidacion;
     assert.equal(nivelDeRuta(acceso(t), "/equipo"), 0);
     assert.ok(!hrefs(acceso(t)).includes("/equipo"));
+    t.areas.liquidacion = "ver";
+    assert.equal(nivelDeRuta(acceso(t), "/equipo"), 1);
+    assert.ok(hrefs(acceso(t)).includes("/equipo"));
+    t.areas.liquidacion = "editar";
+    assert.equal(nivelDeRuta(acceso(t), "/equipo"), 2);
   });
   assert.equal(nivelDeRuta(ACCESO_DUENO, "/equipo"), 2);
 });

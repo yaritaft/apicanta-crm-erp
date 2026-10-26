@@ -3,6 +3,8 @@
 import React, { useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { useEstado } from "@/lib/store";
+import { useAcceso } from "@/lib/acceso";
+import { nivelDeLiquidacion } from "@/lib/permisos";
 import { LimiteDeError } from "@/components/ui/LimiteDeError";
 import { ListaCobros } from "@/components/cobros/ListaCobros";
 import { LiquidacionMes } from "@/components/equipo/Liquidacion";
@@ -43,6 +45,7 @@ export function HerramientaDelPaso(props: { h: Herramienta; cadencia: Cadencia; 
 function HerramientaInterna({ h, cadencia, periodo, ahora }: { h: Herramienta; cadencia: Cadencia; periodo: string; ahora: number }) {
   const e = useEstado();
   const router = useRouter();
+  const { acceso, esDueno: esDuenoDeVerdad } = useAcceso();
   const hoy = diaDeNegocio(new Date(ahora).toISOString());
   const rango = useMemo(() => periodoDe(cadencia, periodo, hoy.slice(0, 7)), [cadencia, periodo, hoy]);
 
@@ -65,7 +68,12 @@ function HerramientaInterna({ h, cadencia, periodo, ahora }: { h: Herramienta; c
       /* Es una lista de un mes: el del paso, o el en curso cuando el paso es de un día o una semana. */
       return <PendientesDeConciliar mes={cadencia === "mes" ? periodo : hoy.slice(0, 7)} />;
     case "liquidacion":
-      return <LiquidacionMes onVerPersona={(id) => router.push(`/equipo?seccion=equipo&persona=${id}`)} />;
+      return (
+        <LiquidacionMes
+          onVerPersona={esDuenoDeVerdad ? (id) => router.push(`/equipo?seccion=equipo&persona=${id}`) : undefined}
+          soloMirar={nivelDeLiquidacion(acceso) < 2}
+        />
+      );
     case "cobros": {
       /* Hoy y la semana miran lo reciente (45 días y la semana); el mes, el mes entero. */
       const delPeriodo = cadencia === "mes" || cadencia === "rango";

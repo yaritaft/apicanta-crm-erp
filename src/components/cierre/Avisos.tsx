@@ -4,6 +4,7 @@ import React, { useMemo } from "react";
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 import { useAcceso } from "@/lib/acceso";
+import { veLaLiquidacion } from "@/lib/permisos";
 import { useChequeos } from "@/lib/chequeos-finanzas";
 import { pasosDeFinanzas, periodoActual } from "@/lib/finanzas-pasos";
 import { nombrePeriodo } from "@/lib/periodos";
@@ -18,7 +19,8 @@ import "./cierre.css";
    ================================================================== */
 
 export function PasosDeConciliacion({ e }: { e: EstadoApp }) {
-  const { esDueno } = useAcceso();
+  const { acceso } = useAcceso();
+  const esDueno = veLaLiquidacion(acceso);
   const { chequeos } = useChequeos();
   const mes = periodoActual("mes");
   const pasos = useMemo(() => pasosDeFinanzas(e, "mes", mes, { esDueno, chequeos }), [e, mes, esDueno, chequeos]);

@@ -60,7 +60,9 @@ function limpiar(x: EntradaLiquidacion): EntradaLiquidacion | null {
   return Object.keys(out).length ? out : null;
 }
 
-export function LiquidacionMes({ onVerPersona }: { onVerPersona: (miembroId: string) => void }) {
+/* `soloMirar`: quien sólo ve la liquidación (permiso «Liquidación» en «ver») no la cierra ni carga nada. `onVerPersona` falta para quien no es dueño:
+   lo que cobra cada uno (su ficha) es de los dueños. */
+export function LiquidacionMes({ onVerPersona, soloMirar = false }: { onVerPersona?: (miembroId: string) => void; soloMirar?: boolean }) {
   const e = useEstado();
   const toast = useToast();
   const yo = useUsuarioActual();
@@ -179,9 +181,9 @@ export function LiquidacionMes({ onVerPersona }: { onVerPersona: (miembroId: str
         </div>
         <div className="row-wrap">
           <Button variante="secondary" icono={<Download size={16} />} onClick={exportar} disabled={r.personas.length === 0}>Exportar</Button>
-          {cerrada
+          {!soloMirar && (cerrada
             ? <Button variante="secondary" icono={<LockOpen size={16} />} onClick={() => setReabriendo(true)}>Reabrir</Button>
-            : <Button variante="primary" icono={<Lock size={16} />} onClick={() => setCerrando(true)} disabled={r.personas.length === 0}>Cerrar liquidación</Button>}
+            : <Button variante="primary" icono={<Lock size={16} />} onClick={() => setCerrando(true)} disabled={r.personas.length === 0}>Cerrar liquidación</Button>)}
         </div>
       </div>
 
@@ -270,7 +272,7 @@ export function LiquidacionMes({ onVerPersona }: { onVerPersona: (miembroId: str
         </div>
       )}
 
-      {!cerrada && hayPesos && (
+      {!cerrada && !soloMirar && hayPesos && (
         <TipoCambio valor={liq.tipoCambio ?? e.ajustes.tipoCambio} onCambiar={(tipoCambio) => guardar({ tipoCambio })} />
       )}
 
@@ -303,14 +305,14 @@ export function LiquidacionMes({ onVerPersona }: { onVerPersona: (miembroId: str
           <div className="liq" role="table" aria-label={`Liquidación de ${nombrePeriodo(periodo)}`}>
             {r.personas.map((persona) => (
               <FilaPersona
-                key={persona.miembroId} persona={persona} liq={liq} cerrada={cerrada}
+                key={persona.miembroId} persona={persona} liq={liq} cerrada={cerrada} soloMirar={soloMirar}
                 abierta={abiertos.has(persona.miembroId)} onAlternar={() => alternar(persona.miembroId)}
                 onEntrada={(conceptoId, cambio) => guardarEntrada(persona.miembroId, conceptoId, cambio)}
                 meses={mesesParaMonto} porVenir={porVenir.get(persona.miembroId)}
                 onAgregarExtra={(x) => agregarExtra(persona, x)} onQuitarExtra={quitarExtra}
                 onVerDesglose={(clave) => setVerDesglose({ miembroId: persona.miembroId, clave })}
                 onPagado={(v) => acciones.marcarPagado(liq, persona.miembroId, v, yo.nombre)}
-                onVerPersona={() => onVerPersona(persona.miembroId)}
+                onVerPersona={onVerPersona ? () => onVerPersona(persona.miembroId) : undefined}
                 onCopiar={async () => {
                   try { await navigator.clipboard.writeText(textoParaEnviar(persona, periodo)); toast(`Copiado: pegáselo a ${persona.nombre.split(" ")[0]}.`); }
                   catch { toast("No pude copiar. Probá de nuevo.", "err"); }
@@ -439,10 +441,10 @@ function CampoNumero({ valor, onCambiar, etiqueta, placeholder, autoFocus }: {
 /* ---------- Una persona ---------- */
 
 function FilaPersona({
-  persona, liq, cerrada, abierta, onAlternar, onEntrada, meses, porVenir, onAgregarExtra, onQuitarExtra, onVerDesglose,
+  persona, liq, cerrada, soloMirar, abierta, onAlternar, onEntrada, meses, porVenir, onAgregarExtra, onQuitarExtra, onVerDesglose,
   onPagado, onVerPersona, onCopiar,
 }: {
-  persona: PersonaLiquidada; liq: Liquidacion; cerrada: boolean;
+  persona: PersonaLiquidada; liq: Liquidacion; cerrada: boolean; soloMirar: boolean;
   abierta: boolean; onAlternar: () => void;
   onEntrada: (conceptoId: string, cambio: Partial<EntradaLiquidacion> | null) => void;
   /* Los meses en los que se puede anotar un monto, y lo ya anotado para los que vienen. */
@@ -451,7 +453,7 @@ function FilaPersona({
   onAgregarExtra: (x: { concepto: string; monto: number; moneda: Moneda; nota: string; periodo: string }) => boolean;
   onQuitarExtra: (liquidacionId: string, extraId: string) => void;
   onVerDesglose: (clave: string) => void;
-  onPagado: (v: boolean) => void; onVerPersona: () => void; onCopiar: () => void;
+  onPagado: (v: boolean) => void; onVerPersona?: () => void; onCopiar: () => void;
 }) {
   const faltan = persona.lineas.filter((l) => l.falta).length;
   const conNota = persona.lineas.some((l) => l.nota);
@@ -494,7 +496,7 @@ function FilaPersona({
                   : persona.pendiente ?? (persona.lineas.length
                     ? "No tiene cargado lo que cobra: su comisión sale con la tasa que usa Finanzas."
                     : "Todavía no tiene cargado lo que cobra: no se le liquida nada.")}
-                {" "}<button type="button" className="link" onClick={onVerPersona}>{persona.sinCargar ? "Cargar lo que cobra" : "Ver lo que cobra"}</button>
+                {onVerPersona && <>{" "}<button type="button" className="link" onClick={onVerPersona}>{persona.sinCargar ? "Cargar lo que cobra" : "Ver lo que cobra"}</button></>}
                 </span>
               </div>
             </div>
@@ -512,12 +514,12 @@ function FilaPersona({
           )}
           {persona.lineas.length === 0 && !persona.pendiente && !persona.sinCargar && (
             <div role="row" className="liq__fila liq__fila--nota">
-              <div role="cell" className="liq__nota">Nada que pagarle este mes. <button type="button" className="link" onClick={onVerPersona}>Ver lo que cobra</button></div>
+              <div role="cell" className="liq__nota">Nada que pagarle este mes.{onVerPersona && <> <button type="button" className="link" onClick={onVerPersona}>Ver lo que cobra</button></>}</div>
             </div>
           )}
           {persona.lineas.map((l) => (
             <Linea
-              key={l.clave} l={l} cerrada={cerrada} entrada={l.conceptoId ? liq.entradas[claveEntrada(persona.miembroId, l.conceptoId)] : undefined}
+              key={l.clave} l={l} cerrada={cerrada} soloMirar={soloMirar} entrada={l.conceptoId ? liq.entradas[claveEntrada(persona.miembroId, l.conceptoId)] : undefined}
               onEntrada={(cambio) => l.conceptoId && onEntrada(l.conceptoId, cambio)}
               onBorrarExtra={() => l.extraId && onQuitarExtra(liq.id, l.extraId)}
               onVerDesglose={() => onVerDesglose(l.clave)}
@@ -534,7 +536,7 @@ function FilaPersona({
                         <b>{nombrePeriodo(mes)}</b> · {x.concepto}: {plata(x.monto, x.moneda)}
                         {x.nota ? <span className="liq__sub"> Nota: {x.nota}</span> : null}
                       </span>
-                      <IconButton etiqueta={`Sacar lo anotado para ${nombrePeriodo(mes)}`} onClick={() => onQuitarExtra(liquidacionId, x.id)}><Trash2 size={14} /></IconButton>
+                      {!soloMirar && <IconButton etiqueta={`Sacar lo anotado para ${nombrePeriodo(mes)}`} onClick={() => onQuitarExtra(liquidacionId, x.id)}><Trash2 size={14} /></IconButton>}
                     </li>
                   ))}
                 </ul>
@@ -550,17 +552,19 @@ function FilaPersona({
           )}
           <div role="row" className="liq__fila liq__fila--acciones">
             <div role="cell" className="liq__acciones">
-              {!agregando && meses.length > 0 && (
+              {!soloMirar && !agregando && meses.length > 0 && (
                 <Button sm variante="ghost" icono={<Plus size={15} />} onClick={() => setAgregando(true)}>Sumar o descontar un monto</Button>
               )}
               <Button sm variante="ghost" icono={<Copy size={15} />} onClick={onCopiar}>Copiar para mandarle</Button>
-              <Button sm variante="ghost" icono={<UserRound size={15} />} onClick={onVerPersona}>Ver lo que cobra</Button>
-              {cerrada && (
-                <label className="row liq__pagado">
-                  <Switch checked={Boolean(pago)} onChange={onPagado} etiqueta={`${persona.nombre}: pagado`} />
-                  <span className="t-sm">{pago ? `Pagado el ${fechaLarga(pago.pagadoEn)}${pago.por ? ` por ${pago.por}` : ""}` : "Marcar como pagado"}</span>
-                </label>
-              )}
+              {onVerPersona && <Button sm variante="ghost" icono={<UserRound size={15} />} onClick={onVerPersona}>Ver lo que cobra</Button>}
+              {cerrada && (soloMirar
+                ? <span className="t-sm t-subtle">{pago ? `Pagado el ${fechaLarga(pago.pagadoEn)}${pago.por ? ` por ${pago.por}` : ""}` : "Por pagar"}</span>
+                : (
+                  <label className="row liq__pagado">
+                    <Switch checked={Boolean(pago)} onChange={onPagado} etiqueta={`${persona.nombre}: pagado`} />
+                    <span className="t-sm">{pago ? `Pagado el ${fechaLarga(pago.pagadoEn)}${pago.por ? ` por ${pago.por}` : ""}` : "Marcar como pagado"}</span>
+                  </label>
+                ))}
             </div>
           </div>
         </>
@@ -571,8 +575,8 @@ function FilaPersona({
 
 /* ---------- Un renglón ---------- */
 
-function Linea({ l, cerrada, entrada, onEntrada, onBorrarExtra, onVerDesglose }: {
-  l: LineaLiquidada; cerrada: boolean; entrada?: EntradaLiquidacion;
+function Linea({ l, cerrada, soloMirar, entrada, onEntrada, onBorrarExtra, onVerDesglose }: {
+  l: LineaLiquidada; cerrada: boolean; soloMirar: boolean; entrada?: EntradaLiquidacion;
   onEntrada: (cambio: Partial<EntradaLiquidacion> | null) => void;
   onBorrarExtra: () => void;
   onVerDesglose: () => void;
@@ -604,7 +608,7 @@ function Linea({ l, cerrada, entrada, onEntrada, onBorrarExtra, onVerDesglose }:
             {l.cargado && <span className="liq__sub">{l.cargado}</span>}
           </span>
           <span className="liq__carga" onClick={(ev) => ev.stopPropagation()}>
-            {!cerrada && (<>
+            {!cerrada && !soloMirar && (<>
               {l.tipo === "bono" && (
                 <label className="row" style={{ gap: 8 }}>
                   <Switch checked={entrada?.cumplido !== false} onChange={(v) => onEntrada({ cumplido: v ? undefined : false })} etiqueta={`${l.nombre}: lo ganó`} />
@@ -641,7 +645,7 @@ function Linea({ l, cerrada, entrada, onEntrada, onBorrarExtra, onVerDesglose }:
         </div>
         <div role="cell" className="liq__monto">{plata(l.monto, l.moneda)}</div>
       </div>
-      {corrigiendo && !cerrada && (
+      {corrigiendo && !cerrada && !soloMirar && (
         <Corregir
           l={l}
           onGuardar={(monto, nota) => { onEntrada({ monto, nota }); setCorrigiendo(false); }}

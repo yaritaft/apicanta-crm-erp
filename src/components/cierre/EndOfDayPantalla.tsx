@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import { useAcceso } from "@/lib/acceso";
-import { nivelDeRuta } from "@/lib/permisos";
+import { nivelDeRuta, veLaLiquidacion } from "@/lib/permisos";
 import { useToast } from "@/components/ui/Toast";
 import { useChequeos } from "@/lib/chequeos-finanzas";
 import { EndOfDay } from "./EndOfDay";
@@ -10,7 +10,8 @@ import "./cierre.css";
 
 /* La pantalla propia del End of Day (antes era una pestaña de Finanzas): trae lo que tilda el equipo y el reloj. */
 export function EndOfDayPantalla() {
-  const { acceso, esDueno } = useAcceso();
+  const { acceso } = useAcceso();
+  const esDueno = veLaLiquidacion(acceso);
   const { chequeos, marcar, cargando, error, limpiarError } = useChequeos();
   const toast = useToast();
   /* Si la base rechazó lo último que se guardó, se avisa (y no queda como hecho). */

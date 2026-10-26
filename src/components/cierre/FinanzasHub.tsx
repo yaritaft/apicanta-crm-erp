@@ -8,7 +8,7 @@ import { useToast } from "@/components/ui/Toast";
 import { DateRangePicker } from "@/components/ui/DateRangePicker";
 import { useEstado } from "@/lib/store";
 import { useAcceso } from "@/lib/acceso";
-import { nivelDeRuta } from "@/lib/permisos";
+import { nivelDeRuta, veLaLiquidacion } from "@/lib/permisos";
 import { useParamsURL } from "@/lib/useParamsURL";
 import { useRangoURL } from "@/lib/useRango";
 import { useChequeos } from "@/lib/chequeos-finanzas";
@@ -36,7 +36,9 @@ type Vista = "mes" | "rango";
 
 export function FinanzasHub() {
   const e = useEstado();
-  const { acceso, esDueno } = useAcceso();
+  const { acceso } = useAcceso();
+  /* Los pasos de la liquidación (revisarla, pagarle al equipo, cerrar el mes) los hace quien la ve: un dueño o quien tiene el permiso «Liquidación». */
+  const esDueno = veLaLiquidacion(acceso);
   const { chequeos, marcar, desmarcar, error, limpiarError } = useChequeos();
   const toast = useToast();
   useEffect(() => { if (error) { toast(error); limpiarError(); } }, [error, limpiarError, toast]);
