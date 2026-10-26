@@ -574,9 +574,12 @@ export const estaPendiente = (estado: EstadoContrato) => estado === "creando" ||
 export function contratosAMostrar(todos: readonly Contrato[]): Contrato[] {
   const mismaCompra = (a: Contrato, b: Contrato) => (Boolean(a.ventaId) && a.ventaId === b.ventaId) || (Boolean(a.leadId) && a.leadId === b.leadId);
   const reemplazado = (c: Contrato, valen: (o: Contrato) => boolean) => todos.some((o) => o.id !== c.id && valen(o) && mismaCompra(o, c) && o.creadoEn > c.creadoEn);
+  /* Uno firmado de la misma compra tapa a los que no salieron o se anularon, aunque sea más viejo (Sebastián Vega: el de la venta repetida
+     quedó anulado y el firmado era del 22/10). */
+  const firmado = (c: Contrato) => todos.some((o) => o.id !== c.id && o.estado === "firmado" && mismaCompra(o, c));
   return todos
-    .filter((c) => c.estado === "error" ? !reemplazado(c, (o) => o.estado !== "error" && o.estado !== "anulado")
-      : c.estado === "anulado" ? !reemplazado(c, () => true) : true)
+    .filter((c) => c.estado === "error" ? !firmado(c) && !reemplazado(c, (o) => o.estado !== "error" && o.estado !== "anulado")
+      : c.estado === "anulado" ? !firmado(c) && !reemplazado(c, () => true) : true)
     .sort((a, b) => b.creadoEn.localeCompare(a.creadoEn))
     .slice(0, 3);
 }

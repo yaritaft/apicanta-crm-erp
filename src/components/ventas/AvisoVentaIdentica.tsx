@@ -19,6 +19,7 @@ export function AvisoVentaIdentica({ e, identicas, confirmada, onConfirmar }: {
   if (identicas.length === 0) return null;
   const v = identicas[0];
   const producto = e.productos.find((x) => x.id === v.productoId)?.nombre ?? "la venta";
+  const conReembolso = (e.devoluciones ?? []).some((d) => d.ventaId === v.id && d.estado !== "ignorada");
   const estado = v.estado === "activa" ? "activa" : v.estado === "cancelada" ? "cancelada" : "reembolsada";
   return (
     <div className="aviso-duplicado" role="alert">
@@ -31,6 +32,12 @@ export function AvisoVentaIdentica({ e, identicas, confirmada, onConfirmar }: {
             {" "}({estado}, {money(cobradoDeVenta(e, v.id), v.moneda)} cobrados){identicas.length > 1 ? ` y ${identicas.length - 1} más` : ""}.
             {" "}Si es la misma compra, no la cargues de nuevo: sumale el pago a esa venta desde la ficha.
           </span>
+          {/* Sebastián Vega (26/10): pagó por Whop, se lo reembolsaron y pagó de nuevo por dLocal; se cargó otra venta en vez de sumar el pago a la original. */}
+          {conReembolso && (
+            <strong style={{ display: "block", marginTop: 4 }}>
+              Esa venta tiene un reembolso: si la persona volvió a pagar, no es otra venta. Sumale el pago nuevo a esa misma (su ficha → Ventas → Registrar pago).
+            </strong>
+          )}
         </span>
       </div>
       {onConfirmar && (

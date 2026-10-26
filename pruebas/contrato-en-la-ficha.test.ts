@@ -135,3 +135,12 @@ test("el mensaje de accesos para WhatsApp lleva el link de su página, su mail c
   assert.match(m, /spam/);
   assert.match(mensajeDeAccesosPorWhatsapp("", "", "u"), /^Ya tenés tus accesos listos/);
 });
+
+test("un contrato firmado de la misma compra tapa al que no salió o se anuló, aunque sea más viejo", () => {
+  const firmado = c({ id: "f", estado: "firmado", ventaId: "v1", creadoEn: "2026-10-22T09:13:00Z" });
+  const anulado = c({ id: "a", estado: "anulado", ventaId: "v1", creadoEn: "2026-10-25T16:31:00Z" });
+  const roto = c({ id: "e", estado: "error", ventaId: "v1", creadoEn: "2026-10-25T17:00:00Z" });
+  assert.deepEqual(contratosAMostrar([anulado, roto, firmado]).map((x) => x.id), ["f"]);
+  const otro = c({ id: "o", estado: "error", ventaId: "v9", leadId: "l9", creadoEn: "2026-10-25T17:00:00Z" });
+  assert.deepEqual(contratosAMostrar([firmado, otro]).map((x) => x.id), ["o", "f"], "el de otra persona sigue a la vista");
+});
