@@ -70,6 +70,7 @@ test("cada llamada con su link recibe su transcripción (aunque el mail no coinc
   assert.ok(graba().every((g) => Array.isArray(g.transcripcion) && (g.transcripcion as unknown[]).length === 1));
   const e = await estadoDeLinks(db);
   assert.deepEqual([e.conLink, e.conTranscripcion, e.pendientes, e.enCurso], [2, 2, 0, false]);
+  assert.deepEqual(e.faltanPorCloser, []);
   assert.ok(barrido()[0].ultimoCompleto);
 });
 
@@ -103,4 +104,13 @@ test("con pocas páginas por vuelta, el barrido se reparte y termina", async () 
   const { valor: b } = await capturandoConsola(() => barrerLinks(db, { reloj: Date.now() + 60_000, maxPaginas: 1 }));
   assert.equal(b.estado, "terminado");
   assert.equal(graba().length, 2);
+});
+
+test("las que faltan se cuentan por closer, para saber a quién pedirle que comparta sus grabaciones", async () => {
+  sembrar();
+  sesiones().push({ id: "cal_E", email: "e@c.com", inicia: hace(60), anfitrion: "Mariano Arias", estado: "agendada", calendlyInvitadoUri: "u/E", grabacion: "https://fathom.video/share/no_visible" });
+  sesiones().push({ id: "cal_G", email: "g@c.com", inicia: hace(62), anfitrion: "Mariano Arias", estado: "agendada", calendlyInvitadoUri: "u/G", grabacion: "https://fathom.video/share/ni_idea" });
+  sesiones().push({ id: "cal_F", email: "f@c.com", inicia: hace(61), anfitrion: "Mariano Arias", estado: "agendada", calendlyInvitadoUri: "u/F", grabacion: "https://fathom.video/share/tampoco" });
+  const e = await estadoDeLinks(db);
+  assert.deepEqual(e.faltanPorCloser, [{ closer: "Mariano Arias", n: 3 }, { closer: "Cami Ruiz", n: 2 }]);
 });

@@ -9,13 +9,13 @@ import { idDeShare } from "./fathom";
    (api/fathom, accion «links»). El avance se guarda en `fathom_barrido`
    (supabase/fathom-links.sql) para seguir en la próxima vuelta. */
 
-interface LlamadaConLink { id: string; grabacion: string; inicia: string }
+interface LlamadaConLink { id: string; grabacion: string; inicia: string; anfitrion?: string | null }
 
 /** Las llamadas con el link de Fathom pegado, sus ids de link y cuáles ya tienen su transcripción guardada. */
 export async function llamadasConLink(db: SupabaseClient): Promise<{ todas: LlamadaConLink[]; pendientes: LlamadaConLink[]; error?: string }> {
   const todas: LlamadaConLink[] = [];
   for (let desde = 0; ; desde += 1000) {
-    const r = await db.from("sesiones").select("id, grabacion, inicia").ilike("grabacion", "%fathom.video/share/%")
+    const r = await db.from("sesiones").select("id, grabacion, inicia, anfitrion").ilike("grabacion", "%fathom.video/share/%")
       .order("inicia", { ascending: true }).range(desde, desde + 999);
     if (r.error) return { todas: [], pendientes: [], error: r.error.message };
     const filas = (r.data ?? []) as LlamadaConLink[];
@@ -44,9 +44,13 @@ async function guardarEstado(db: SupabaseClient, e: EstadoBarrido) {
 /** Cómo van los links: para la pantalla de Ajustes. */
 export async function estadoDeLinks(db: SupabaseClient) {
   const [l, e] = await Promise.all([llamadasConLink(db), leerEstado(db)]);
+  /* Las que faltan, por closer: es a quien hay que pedirle que comparta sus grabaciones con el equipo en Fathom. */
+  const porCloser = new Map<string, number>();
+  for (const p of l.pendientes) porCloser.set(p.anfitrion?.trim() || "Sin closer", (porCloser.get(p.anfitrion?.trim() || "Sin closer") ?? 0) + 1);
   return {
     conLink: l.todas.length, conTranscripcion: l.todas.length - l.pendientes.length, pendientes: l.pendientes.length,
     enCurso: Boolean(e.cursor), ultimoCompleto: e.ultimoCompleto, error: l.error,
+    faltanPorCloser: [...porCloser].map(([closer, n]) => ({ closer, n })).sort((a, b) => b.n - a.n),
   };
 }
 

@@ -96,7 +96,7 @@ export function armarPaquete(llamadas: LlamadaParaTranscribir[], grabaciones: Ma
       const linkPegado = tieneLinkDeFathom(l.link);
       if (linkPegado) sinTrans++; else sinLink++;
       indice.push(["", l.nombre, isoDia(l.inicia), l.closer ?? "", l.estado ?? "", "No",
-        linkPegado ? "Tiene el link de Fathom, pero la transcripción todavía no llegó" : "No tiene link de Fathom", "0"]);
+        linkPegado ? "Tiene el link de Fathom, pero la app todavía no pudo traer su transcripción (si pasó más de un día, la grabación no está compartida con el equipo en Fathom)" : "No tiene link de Fathom", "0"]);
       continue;
     }
     con++;

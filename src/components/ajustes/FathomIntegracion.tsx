@@ -36,7 +36,7 @@ interface Estado {
   clave: boolean; tablas?: boolean; conectado: boolean; aMano?: boolean; paraElEquipo?: boolean;
   conectadoEn?: string | null; conectadoPor?: string | null;
   grabaciones: number; atadas: number; ultima?: string | null; desde?: string | null; error?: string;
-  links?: { conLink: number; conTranscripcion: number; pendientes: number; enCurso: boolean; ultimoCompleto?: string | null; error?: string };
+  links?: { conLink: number; conTranscripcion: number; pendientes: number; enCurso: boolean; ultimoCompleto?: string | null; error?: string; faltanPorCloser?: { closer: string; n: number }[] };
 }
 
 async function pedir(metodo: "GET" | "POST", cuerpo?: object) {
@@ -239,6 +239,12 @@ export function FathomIntegracion() {
                   ? `; faltan ${num(estado.links.pendientes)}. La app las busca sola cada 5 minutos${estado.links.enCurso ? " (hay una búsqueda en curso)" : ""}; las que Fathom no deja ver a esta clave no se pueden traer.`
                   : ". Las nuevas llegan solas."}
               </p>
+              {estado.links.pendientes > 0 && !estado.links.enCurso && (estado.links.faltanPorCloser?.length ?? 0) > 0 && (
+                <p className="t-sm t-subtle">
+                  Faltan por closer: {estado.links.faltanPorCloser!.map((x) => `${x.closer} ${num(x.n)}`).join(" · ")}. Si una persona tiene muchas, sus grabaciones no están compartidas
+                  con el equipo en Fathom: que las comparta con el equipo de ventas (o que el administrador de Fathom le dé a esta cuenta acceso a todas las llamadas compartidas) y la app las trae sola.
+                </p>
+              )}
               {estado.links.pendientes > 0 && (
                 <div className="row-wrap" style={{ gap: 8 }}>
                   <Button variante="secondary" icono={<Download size={16} />} disabled={!estado.clave || estado.tablas === false || Boolean(trabajando)}

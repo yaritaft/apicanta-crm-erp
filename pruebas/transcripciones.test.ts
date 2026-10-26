@@ -80,7 +80,7 @@ test("el paquete: las que tienen transcripción van en un archivo cada una y en 
   const juntas = String(p.archivos[1].contenido);
   assert.ok(juntas.indexOf("Uno") < juntas.indexOf("Dos") && juntas.includes("\n---\n"));
   const indice = String(p.archivos[0].contenido);
-  assert.match(indice, /Tiene el link de Fathom, pero la transcripción todavía no llegó/);
+  assert.match(indice, /Tiene el link de Fathom, pero la app todavía no pudo traer su transcripción/);
   assert.match(indice, /No tiene link de Fathom/);
   assert.ok(indice.startsWith("﻿"));
   assert.equal(resumenDeDescarga(p), "Se bajaron 2 transcripciones de 4 llamadas; 1 no tiene link de Fathom y 1 tiene el link pero su transcripción todavía no llegó (están en indice.csv).");
