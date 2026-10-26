@@ -280,6 +280,25 @@ function desdeIso(s: string): Date | null {
   return m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])) : null;
 }
 
+/* Escribir la fecha de corrido (Mariano, 25/10: para una fecha de nacimiento había que ir de a un mes, 12 por año, hasta
+   1980): sólo dígitos y la app pone las barras. «07012004» queda «07/01/2004». */
+export function formatoEscrito(crudo: string): string {
+  const d = crudo.replace(/\D/g, "").slice(0, 8);
+  return d.length <= 2 ? d : d.length <= 4 ? `${d.slice(0, 2)}/${d.slice(2)}` : `${d.slice(0, 2)}/${d.slice(2, 4)}/${d.slice(4)}`;
+}
+
+/** «07/01/2004» → «2004-01-07». null si está incompleta o el día no existe (31/02). */
+export function isoDeEscrito(texto: string): string | null {
+  const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(texto);
+  if (!m) return null;
+  const [d, mes, a] = [Number(m[1]), Number(m[2]), Number(m[3])];
+  if (a < 1000) return null;
+  const f = new Date(a, mes - 1, d);
+  return f.getFullYear() === a && f.getMonth() === mes - 1 && f.getDate() === d ? `${a}-${dos(mes)}-${dos(d)}` : null;
+}
+
+const textoDeIso = (iso: string) => { const f = desdeIso(iso); return f ? `${dos(f.getDate())}/${dos(f.getMonth() + 1)}/${f.getFullYear()}` : ""; };
+
 export function CampoFecha({
   value, onChange, conHora = false, disabled, autoFocus, min, max, required, placeholder, id, style, className,
   "aria-label": ariaLabel,
@@ -312,11 +331,16 @@ export function CampoFecha({
   const [vista, setVista] = useState(() => { const d = fecha ?? new Date(); return d.getFullYear() * 12 + d.getMonth(); });
   const [foco, setFoco] = useState<string>(dia || isoDe(new Date()));
   const [hora, setHora] = useState(horaActual || "19:00");
+  /* Qué se ve en el panel: los días de un mes, los meses de un año o una tanda de 12 años. */
+  const [modo, setModo] = useState<"dias" | "meses" | "anios">("dias");
+  const [bloque, setBloque] = useState(0);
+  const [escrito, setEscrito] = useState(() => textoDeIso(dia));
   const boton = useRef<HTMLButtonElement>(null);
+  const entrada = useRef<HTMLInputElement>(null);
   const panel = useRef<HTMLDivElement>(null);
   const grilla = useRef<HTMLDivElement>(null);
 
-  const pos = usePosicion(boton, abierto, conHora ? 380 : 330, 272);
+  const pos = usePosicion(boton, abierto, conHora ? 430 : 380, 272);
   const cerrar = useCallback(() => setAbierto(false), []);
   const refs = useMemo(() => [boton, panel], []);
   useClicAfuera(abierto, refs, cerrar);
@@ -327,6 +351,8 @@ export function CampoFecha({
     setVista(d.getFullYear() * 12 + d.getMonth());
     setFoco(dia || isoDe(new Date()));
     setHora(horaActual || "19:00");
+    setModo("dias");
+    setEscrito(textoDeIso(dia));
     setAbierto(true);
   }
 
@@ -346,6 +372,7 @@ export function CampoFecha({
   function elegir(iso: string) {
     if (fuera(iso)) return;
     emitir(iso);
+    setEscrito(textoDeIso(iso));
     if (!conHora) { cerrar(); boton.current?.focus(); }
     else setFoco(iso);
   }
@@ -366,14 +393,30 @@ export function CampoFecha({
     irA(d);
   }
 
+  /* Lo que se escribe: con las 8 cifras y una fecha que existe y está permitida, el calendario salta ahí. */
+  function escribir(crudo: string) {
+    const texto = formatoEscrito(crudo);
+    setEscrito(texto);
+    const iso = isoDeEscrito(texto);
+    if (iso && !fuera(iso)) { emitir(iso); const d = desdeIso(iso); if (d) irA(d); }
+  }
+  const escritoCompleto = escrito.length === 10;
+  const escritoMal = escritoCompleto && (() => { const iso = isoDeEscrito(escrito); return !iso || fuera(iso); })();
+
   function teclaGrilla(ev: React.KeyboardEvent) {
     const mapa: Record<string, number> = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -7, ArrowDown: 7 };
     if (ev.key in mapa) { ev.preventDefault(); moverFoco(mapa[ev.key]); }
     else if (ev.key === "PageUp" || ev.key === "PageDown") {
       ev.preventDefault();
       const d = desdeIso(focoRef.current) ?? new Date();
-      d.setMonth(d.getMonth() + (ev.key === "PageUp" ? -1 : 1));
+      /* Con Mayús, de a un año. */
+      d.setMonth(d.getMonth() + (ev.key === "PageUp" ? -1 : 1) * (ev.shiftKey ? 12 : 1));
       irA(d);
+    } else if (/^\d$/.test(ev.key) && !ev.ctrlKey && !ev.metaKey && !ev.altKey) {
+      /* Quien empieza a tipear números está escribiendo la fecha. */
+      ev.preventDefault();
+      setEscrito(formatoEscrito(ev.key));
+      entrada.current?.focus();
     } else if (ev.key === "Enter" || ev.key === " ") {
       ev.preventDefault(); ev.stopPropagation();
       elegir(focoRef.current);
@@ -414,15 +457,70 @@ export function CampoFecha({
       {abierto && pos && (
         <Panel pos={pos} panelRef={panel} ancho={272} className="fecha__panel">
           <div onKeyDown={teclaPanel} role="dialog" aria-label={ariaLabel ?? "Elegir fecha"}>
+            <label className="fecha__escribir">
+              <span className="t-sm t-subtle">Escribila</span>
+              <input
+                ref={entrada} value={escrito} inputMode="numeric" placeholder="dd/mm/aaaa" maxLength={10} autoComplete="off"
+                aria-label="Fecha (dd/mm/aaaa)" aria-invalid={escritoMal || undefined}
+                className={`fecha__escrito${escritoMal ? " fecha__escrito--mal" : ""}`}
+                onChange={(ev) => escribir(ev.target.value)}
+                onKeyDown={(ev) => {
+                  if (ev.key === "Enter") {
+                    ev.preventDefault(); ev.stopPropagation();
+                    const iso = isoDeEscrito(escrito);
+                    if (iso && !fuera(iso)) { elegir(iso); cerrar(); boton.current?.focus(); }
+                  }
+                }}
+              />
+            </label>
+            {escritoMal && <span className="fecha__aviso" role="alert">{isoDeEscrito(escrito) ? "Esa fecha no está permitida." : "Esa fecha no existe."}</span>}
             <div className="fecha__nav">
-              <button type="button" className="dp-nav-btn" aria-label="Mes anterior" onClick={() => setVista((v) => v - 1)}>
+              <button type="button" className="dp-nav-btn"
+                aria-label={modo === "dias" ? "Mes anterior" : modo === "meses" ? "Año anterior" : "Años anteriores"}
+                onClick={() => (modo === "dias" ? setVista((v) => v - 1) : modo === "meses" ? setVista((v) => v - 12) : setBloque((b) => b - 12))}>
                 <ChevronLeft size={15} />
               </button>
-              <span className="fecha__mes">{MESES[m]} {y}</span>
-              <button type="button" className="dp-nav-btn" aria-label="Mes siguiente" onClick={() => setVista((v) => v + 1)}>
+              <button type="button" className="fecha__mes fecha__titulo" aria-live="polite"
+                aria-label={modo === "anios" ? "Volver a los días" : "Elegir el año y el mes"}
+                onClick={() => { if (modo === "anios") setModo("dias"); else { setBloque(y - (y % 12)); setModo("anios"); } }}>
+                {modo === "dias" ? `${MESES[m]} ${y}` : modo === "meses" ? String(y) : `${bloque} – ${bloque + 11}`}
+              </button>
+              <button type="button" className="dp-nav-btn"
+                aria-label={modo === "dias" ? "Mes siguiente" : modo === "meses" ? "Año siguiente" : "Años siguientes"}
+                onClick={() => (modo === "dias" ? setVista((v) => v + 1) : modo === "meses" ? setVista((v) => v + 12) : setBloque((b) => b + 12))}>
                 <ChevronRight size={15} />
               </button>
             </div>
+            {modo === "anios" && (
+              <div className="fecha__cuadricula" role="listbox" aria-label="Año">
+                {Array.from({ length: 12 }, (_, i) => bloque + i).map((a) => {
+                  const afuera = Boolean((maximo && a > Number(maximo.slice(0, 4))) || (minimo && a < Number(minimo.slice(0, 4))));
+                  return (
+                    <button key={a} type="button" role="option" aria-selected={a === y} disabled={afuera}
+                      className={`fecha__celda${a === y ? " fecha__celda--on" : ""}${a === new Date().getFullYear() ? " fecha__celda--hoy" : ""}`}
+                      onClick={() => { setVista(a * 12 + m); setModo("meses"); }}>
+                      {a}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+            {modo === "meses" && (
+              <div className="fecha__cuadricula fecha__cuadricula--meses" role="listbox" aria-label="Mes">
+                {MESES.map((nombre, i) => {
+                  const desde = isoDe(new Date(y, i, 1)), hasta = isoDe(new Date(y, i + 1, 0));
+                  const afuera = Boolean((maximo && desde > maximo) || (minimo && hasta < minimo));
+                  return (
+                    <button key={nombre} type="button" role="option" aria-selected={i === m} disabled={afuera}
+                      className={`fecha__celda${i === m ? " fecha__celda--on" : ""}`}
+                      onClick={() => { setVista(y * 12 + i); setModo("dias"); setTimeout(() => grilla.current?.focus(), 0); }}>
+                      {nombre.slice(0, 3)}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+            {modo === "dias" && (
             <div
               ref={grilla} className="dp-grid fecha__grilla" role="grid" tabIndex={0}
               aria-label={`${MESES[m]} de ${y}`} onKeyDown={teclaGrilla}
@@ -439,6 +537,7 @@ export function CampoFecha({
                 );
               })}
             </div>
+            )}
 
             {conHora && (
               <label className="fecha__hora">

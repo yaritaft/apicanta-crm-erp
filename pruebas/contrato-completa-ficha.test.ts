@@ -17,12 +17,13 @@ async function banco(): Promise<Banco> {
   await db.exec(`
     alter table public.alumnos add column nombre text, add column pais text, add column email text;
     -- Como en producción: dni, domicilio y teléfono son «not null default ''» (un null explícito no toma el default).
-    create table public.seguimiento_alumnos (id text primary key, "alumnoId" text not null, dni text not null default '', domicilio text not null default '', telefono text not null default '');
+    create table public.seguimiento_alumnos (id text primary key, "alumnoId" text not null, dni text not null default '', domicilio text not null default '', telefono text not null default '', stack text not null default '');
     create table public.contratos (id text primary key, "alumnoId" text, estado text, datos jsonb not null default '{}', "creadoEn" timestamptz not null default now());
     insert into public.alumnos (id, nombre, pais, email) values ('alu_simon', 'Simon Perez', 'Chile', ''), ('alu_lili', 'Ya Cargado', '', 'propio@x.com'), ('alu_nuevo', 'Sin Seguimiento', null, null);
     insert into public.seguimiento_alumnos (id, "alumnoId", dni, domicilio, telefono) values
       ('seg_alu_simon', 'alu_simon', '', '', '+56 9 9761 2361'),
       ('seg_alu_lili', 'alu_lili', '12.345.678', 'Lo que cargó Lili', '');
+    update public.seguimiento_alumnos set stack = 'Backend' where "alumnoId" = 'alu_lili';
   `);
   await db.exec(sqlDe("nacimiento.sql"));
   await db.exec(sqlDe("contrato-completa-ficha.sql"));
@@ -31,6 +32,9 @@ async function banco(): Promise<Banco> {
   abiertos.push(b);
   return b;
 }
+
+const stackDe = async (b: Banco, id: string) =>
+  (await b.servicio<{ stack: string | null }>(`select stack from public.seguimiento_alumnos where "alumnoId" = '${id}'`))[0]?.stack ?? null;
 
 const ficha = async (b: Banco, id: string) =>
   (await b.servicio<{ dni: string | null; domicilio: string | null; telefono: string | null; pais: string | null; email: string | null; nacimiento: string | null }>(
@@ -79,4 +83,20 @@ test("completar la ficha nunca frena guardar el contrato", { skip: saltear }, as
   const r = await b.intentar(null, `insert into public.contratos (id, "alumnoId", estado, datos) values ('ctr_6', 'alu_nuevo', 'enviado', '{"documento": "1"}')`);
   assert.ok(r.ok, "el contrato se guarda aunque la ficha no se pueda completar");
   assert.equal((await b.servicio<{ n: number }>(`select count(*)::int as n from public.contratos where id = 'ctr_6'`))[0].n, 1);
+});
+
+/* Lili (25/10): «cuando se complete esa parte del roadmap, que se complete en programa → perfil y viceversa». El perfil del
+   contrato es el Stack de la ficha (que la app muestra como «Perfil»): se completa si está vacío y no pisa lo que cargó ella. */
+test("el perfil del contrato completa el Perfil de la ficha si está vacío, y no pisa el que ya hay", { skip: saltear }, async () => {
+  const b = await banco();
+  await b.ejecutar(`insert into public.contratos (id, "alumnoId", estado, datos) values ('ctr_7', 'alu_simon', 'enviado', '{"perfil": "Data Engineer"}')`);
+  assert.equal(await stackDe(b, "alu_simon"), "Data Engineer", "vacío: se completa");
+  await b.ejecutar(`update public.contratos set datos = datos || '{"perfil": "AI Engineer"}' where id = 'ctr_7'`);
+  assert.equal(await stackDe(b, "alu_simon"), "Data Engineer", "ya cargado: no se pisa");
+  await b.ejecutar(`insert into public.contratos (id, "alumnoId", estado, datos) values ('ctr_8', 'alu_lili', 'firmado', '{"perfil": "Full Stack"}')`);
+  assert.equal(await stackDe(b, "alu_lili"), "Backend", "lo que cargó Lili no se pisa");
+  await b.ejecutar(`insert into public.contratos (id, "alumnoId", estado, datos) values ('ctr_9', 'alu_nuevo', 'enviado', '{"perfil": "Otra cosa"}')`);
+  assert.equal(await stackDe(b, "alu_nuevo"), null, "un perfil que no existe no crea nada");
+  await b.ejecutar(`insert into public.contratos (id, "alumnoId", estado, datos) values ('ctr_10', 'alu_nuevo', 'enviado', '{"perfil": "Mobile Developer"}')`);
+  assert.equal(await stackDe(b, "alu_nuevo"), "Mobile Developer", "sin seguimiento, nace con el perfil");
 });

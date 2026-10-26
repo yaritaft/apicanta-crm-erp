@@ -232,7 +232,8 @@ function HojaDeUnServicio({ e, p, f, venta, producto, conChat, reserva }: {
         </CeldaEditable>
       );
     }
-    return <Fila key={clave} icono={ICONO[clave]} rotulo={col.titulo} falta={falta} ayuda={col.ayuda}>{valor}</Fila>;
+    /* Lili lo llama «perfil» (Programa → Perfil): es el mismo dato que el perfil del contrato y de la bienvenida. */
+    return <Fila key={clave} icono={ICONO[clave]} rotulo={clave === "stack" ? "Perfil" : col.titulo} falta={falta} ayuda={col.ayuda}>{valor}</Fila>;
   };
 
   /* El programa puede ser más de uno: se elige de la lista. Si no se cargó, se sugiere el de lo que compró. */

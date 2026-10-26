@@ -29,7 +29,7 @@ import type {
 /* ---------- Las listas de opciones ---------- */
 
 export const LISTAS_POR_DEFECTO: ListasCs = {
-  stacks: ["Frontend", "Backend", "Full Stack", "Data Engineer", "Mobile Developer"],
+  stacks: ["Frontend", "Backend", "Full Stack", "Data Engineer", "Mobile Developer", "AI Engineer"],
   /* Lili, 22/10: «Hackear IT ahora es Hackear AI (incluye ambos + bonos)» y falta «Downsell». Los alumnos que ya tienen
      «Hackear IT» lo conservan (es lo que compraron) y se sigue viendo en su ficha. */
   programas: ["Hackear AI", "Downsell", "Hackear Biz", "Principals", "Principal Mastermind"],

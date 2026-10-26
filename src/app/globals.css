@@ -503,6 +503,25 @@ a { color: inherit; text-decoration: none; }
 .fecha__panel { padding: var(--space-3); gap: var(--space-2); }
 .fecha__nav { display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--space-2); }
 .fecha__mes { font-size: 13.5px; font-weight: 700; color: var(--ink); text-transform: capitalize; }
+.fecha__escribir { display: flex; align-items: center; gap: var(--space-2); margin-bottom: var(--space-2); }
+.fecha__escrito {
+  flex: 1; min-width: 0; height: 32px; padding: 0 var(--space-2); border-radius: var(--radius-sm);
+  border: 1px solid var(--border); background: var(--surface-100); color: var(--ink);
+  font: inherit; font-size: 13px; font-variant-numeric: tabular-nums;
+}
+.fecha__escrito:focus { border-color: var(--brand); outline: 0; }
+.fecha__escrito--mal { border-color: var(--danger, #e5484d); }
+.fecha__aviso { display: block; margin: -4px 0 var(--space-2); font-size: 12px; color: var(--danger, #e5484d); }
+.fecha__titulo { border: 0; background: transparent; font: inherit; font-size: 13.5px; font-weight: 700; color: var(--ink); text-transform: capitalize; cursor: pointer; padding: 4px 8px; border-radius: var(--radius-sm); }
+.fecha__titulo:hover { background: var(--surface-200); }
+.fecha__cuadricula { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
+.fecha__cuadricula--meses { grid-template-columns: repeat(3, 1fr); }
+.fecha__celda { height: 40px; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--ink-muted); font: inherit; font-size: 13px; text-transform: capitalize; cursor: pointer; font-variant-numeric: tabular-nums; }
+.fecha__celda:hover:not(:disabled) { background: var(--surface-300); color: var(--ink); }
+.fecha__celda--on { background: var(--brand-soft); color: var(--ink); font-weight: 700; }
+.fecha__celda--hoy { box-shadow: inset 0 0 0 1px var(--border-strong); }
+.fecha__celda:disabled { opacity: .35; cursor: not-allowed; }
+.fecha__celda:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
 .fecha__grilla { grid-template-columns: repeat(7, 1fr); outline: 0; border-radius: var(--radius-sm); }
 .fecha__grilla:focus-visible .fecha__foco { box-shadow: inset 0 0 0 2px var(--focus); }
 .fecha__hora { display: flex; align-items: center; gap: var(--space-2); margin-top: var(--space-2); }

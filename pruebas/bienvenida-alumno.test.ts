@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { armarBienvenida, problemaDeDatos, type DatosContrato } from "@/lib/contratos";
-import { conCodigoDelAlumno, guiaDeBienvenida, htmlDeBienvenida, modeloDeBienvenida, textoDeBienvenida, type ConfigBienvenida } from "@/lib/bienvenida-alumno";
+import { conCodigoDelAlumno, guiaDeBienvenida, htmlDeBienvenida, modeloDeBienvenida, perfilDeStack, perfilEfectivo, textoDeBienvenida, type ConfigBienvenida } from "@/lib/bienvenida-alumno";
 
 /* Los links y los teléfonos de verdad viven en Ajustes (el repositorio es público): acá, inventados. */
 const CONFIG: ConfigBienvenida = {
@@ -104,4 +104,26 @@ test("con su código: el formulario de los lunes y los simulacros con el código
     const t = textoDeBienvenida(conCodigoDelAlumno(guiaDeBienvenida({ ...otro, config: CONFIG })!, "https://app.x", codigo)).texto;
     assert.ok(!t.includes(codigo), JSON.stringify(otro));
   }
+});
+
+/* Lili (25/10): el closer a veces no carga el perfil y la bienvenida quedaba sin roadmap. El perfil es uno solo: el del
+   contrato y el «Perfil» de Programa en la ficha. Lo que se completa en un lado se ve en el otro. */
+
+test("el Stack de la ficha, escrito como sea, es un perfil de la bienvenida", () => {
+  assert.equal(perfilDeStack("Full Stack"), "Full Stack");
+  assert.equal(perfilDeStack("full stack"), "Full Stack");
+  assert.equal(perfilDeStack("AI ENGINEER"), "AI Engineer");
+  assert.equal(perfilDeStack("IA Engineer"), "AI Engineer");
+  assert.equal(perfilDeStack(" Data  Engineer "), "Data Engineer");
+  assert.equal(perfilDeStack("Mobile Developer"), "Mobile Developer");
+  for (const sinRoadmap of ["Backend", "Frontend", "Tech lead", "NO CORRESPONDE", "", null, undefined]) assert.equal(perfilDeStack(sinRoadmap), null);
+});
+
+test("el perfil de la bienvenida: el del contrato y, si falta, el de la ficha", () => {
+  assert.equal(perfilEfectivo("Data Engineer", "Full Stack"), "Data Engineer", "manda el que cargó el closer");
+  assert.equal(perfilEfectivo(undefined, "AI ENGINEER"), "AI Engineer", "sin perfil en el contrato, el de Programa → Perfil");
+  assert.equal(perfilEfectivo("Otro", "Mobile Developer"), "Mobile Developer", "uno inválido no cuenta");
+  assert.equal(perfilEfectivo(undefined, "Backend"), null);
+  const g = guiaDeBienvenida({ programa: "hackear-ai", perfil: perfilEfectivo(undefined, "full stack"), config: CONFIG })!;
+  assert.equal(g.roadmap, ROADMAPS["Full Stack"], "con eso ya le llega su roadmap");
 });

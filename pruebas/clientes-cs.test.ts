@@ -53,7 +53,8 @@ const seg = (alumnoId: string, c: Partial<SeguimientoAlumno>): SeguimientoAlumno
 
 test("las listas son las de Lili y se pueden ajustar sin perder las que no se tocan", () => {
   const d = listasCs();
-  assert.deepEqual(d.stacks, ["Frontend", "Backend", "Full Stack", "Data Engineer", "Mobile Developer"]);
+  /* «AI Engineer» (Lili, 25/10): es uno de los cuatro perfiles de la bienvenida y el Perfil de Programa es el mismo dato. */
+  assert.deepEqual(d.stacks, ["Frontend", "Backend", "Full Stack", "Data Engineer", "Mobile Developer", "AI Engineer"]);
   /* Lili, 22/10: el programa se llama Hackear AI (los «Hackear IT» cargados se respetan) y el Downsell es aparte. */
   assert.deepEqual(d.programas, ["Hackear AI", "Downsell", "Hackear Biz", "Principals", "Principal Mastermind"]);
   assert.equal(d.followUps.length, 1 + 13 + 1 + 1 + 3 + 9 + 1,

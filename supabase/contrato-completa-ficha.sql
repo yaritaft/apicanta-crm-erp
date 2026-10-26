@@ -7,7 +7,7 @@
 -- (Simon Perez). Ahora, cada vez que un contrato tiene alumno y datos
 -- (al crearlo, al corregirlo o cuando se le ata el alumno después),
 -- completa lo que la ficha tiene VACÍO: DNI, domicilio, teléfono y fecha
--- de nacimiento en seguimiento_alumnos; país y mail en alumnos. Lo que Lili ya cargó no se
+-- de nacimiento y perfil (Stack) en seguimiento_alumnos; país y mail en alumnos. Lo que Lili ya cargó no se
 -- pisa nunca. Si el alumno todavía no tiene seguimiento, se le crea.
 -- Un contrato anulado o con error no completa nada.
 --
@@ -32,6 +32,8 @@ declare
   v_pais text := nullif(btrim(coalesce(p_datos ->> 'pais', '')), '');
   v_mail text := nullif(lower(btrim(coalesce(p_datos ->> 'email', ''))), '');
   v_nac date;
+  /* El perfil del alumno (Lili, 25/10): el que cargó el closer en el contrato es el «Perfil» de Programa en la ficha. */
+  v_perfil text := case when p_datos ->> 'perfil' in ('Full Stack', 'Mobile Developer', 'Data Engineer', 'AI Engineer') then p_datos ->> 'perfil' end;
 begin
   if p_alumno is null or p_estado in ('anulado', 'error') then return; end if;
   if not exists (select 1 from alumnos where id = p_alumno) then return; end if;
@@ -40,22 +42,24 @@ begin
     if coalesce(p_datos ->> 'nacimiento', '') ~ '^\d{4}-\d{2}-\d{2}$' then v_nac := (p_datos ->> 'nacimiento')::date; end if;
   exception when others then v_nac := null;
   end;
-  if v_dni is null and v_dom is null and v_tel is null and v_pais is null and v_mail is null and v_nac is null then return; end if;
+  if v_dni is null and v_dom is null and v_tel is null and v_pais is null and v_mail is null and v_nac is null and v_perfil is null then return; end if;
 
   update seguimiento_alumnos set
     dni = case when coalesce(btrim(dni), '') = '' and v_dni is not null then v_dni else dni end,
     domicilio = case when coalesce(btrim(domicilio), '') = '' and v_dom is not null then v_dom else domicilio end,
     telefono = case when coalesce(btrim(telefono), '') = '' and v_tel is not null then v_tel else telefono end,
-    nacimiento = coalesce(nacimiento, v_nac)
+    nacimiento = coalesce(nacimiento, v_nac),
+    stack = case when coalesce(btrim(stack), '') = '' and v_perfil is not null then v_perfil else stack end
   where "alumnoId" = p_alumno
     and ((coalesce(btrim(dni), '') = '' and v_dni is not null)
       or (coalesce(btrim(domicilio), '') = '' and v_dom is not null)
       or (coalesce(btrim(telefono), '') = '' and v_tel is not null)
-      or (nacimiento is null and v_nac is not null));
+      or (nacimiento is null and v_nac is not null)
+      or (coalesce(btrim(stack), '') = '' and v_perfil is not null));
   if not exists (select 1 from seguimiento_alumnos where "alumnoId" = p_alumno) then
-    insert into seguimiento_alumnos (id, "alumnoId", dni, domicilio, telefono, nacimiento)
+    insert into seguimiento_alumnos (id, "alumnoId", dni, domicilio, telefono, nacimiento, stack)
     /* dni, domicilio y teléfono son «not null default ''»: un null explícito no toma el default. */
-    values ('seg_' || p_alumno, p_alumno, coalesce(v_dni, ''), coalesce(v_dom, ''), coalesce(v_tel, ''), v_nac)
+    values ('seg_' || p_alumno, p_alumno, coalesce(v_dni, ''), coalesce(v_dom, ''), coalesce(v_tel, ''), v_nac, coalesce(v_perfil, ''))
     on conflict (id) do nothing;
   end if;
 

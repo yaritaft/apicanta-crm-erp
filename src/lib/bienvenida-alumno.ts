@@ -39,6 +39,24 @@ const contactoDe = (c: { nombre?: string; whatsapp?: string } | undefined, nombr
 
 export const esPerfil = (x: unknown): x is PerfilAlumno => typeof x === "string" && (PERFILES as readonly string[]).includes(x);
 
+const plano = (t: string) => t.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+
+/** El perfil de la bienvenida que corresponde a lo que dice el «Stack» de la ficha de Servicio (Programa → Perfil), que
+    en la base viene escrito de muchas maneras («AI ENGINEER», «IA Engineer», «full stack»). Backend, Frontend y los
+    demás no tienen roadmap propio: null. */
+export function perfilDeStack(stack: string | null | undefined): PerfilAlumno | null {
+  const t = plano(stack ?? "");
+  if (!t) return null;
+  if (t === "ai engineer" || t === "ia engineer") return "AI Engineer";
+  return PERFILES.find((p) => plano(p) === t) ?? null;
+}
+
+/** El perfil con el que se arma la bienvenida: el que cargó el closer en el contrato y, si no cargó ninguno, el de la
+    ficha de Servicio. Así lo que completa Lili en un lado se ve en el otro (25/10) y el mail de bienvenida sale igual. */
+export function perfilEfectivo(delContrato: unknown, stackDeLaFicha: string | null | undefined): PerfilAlumno | null {
+  return esPerfil(delContrato) ? delContrato : perfilDeStack(stackDeLaFicha);
+}
+
 /* Lo que cubre la bienvenida: el programa completo (Hackear AI), el Downsell o la Reserva. */
 export type ModeloBienvenida = "completo" | "downsell" | "reserva";
 

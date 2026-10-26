@@ -2,16 +2,18 @@
 
 import React, { useEffect, useState } from "react";
 import { Copy, Mail, Map as MapaIcono } from "lucide-react";
-import { Button } from "@/components/ui/ui";
+import { Button, Select } from "@/components/ui/ui";
 import { useToast } from "@/components/ui/Toast";
 import { copiarTexto } from "@/components/ui/Telefono";
 import { cabeceras } from "@/components/webinars/useYoutube";
 import { BloqueServicio, FilaServicio } from "@/components/ficha/FilaServicio";
-import { conCodigoDelAlumno, guiaDeBienvenida, textoDeBienvenida } from "@/lib/bienvenida-alumno";
+import { conCodigoDelAlumno, guiaDeBienvenida, perfilEfectivo, PERFILES, textoDeBienvenida } from "@/lib/bienvenida-alumno";
 import { fechaLarga } from "@/lib/format";
-import { useEstado } from "@/lib/store";
+import { acciones, useEstado } from "@/lib/store";
+import { useAcceso } from "@/lib/acceso";
+import { puedeEditar } from "@/lib/permisos";
 import type { Contrato } from "@/lib/contratos";
-import { leerContratos } from "./cliente";
+import { leerContratos, pedirContrato } from "./cliente";
 
 /* ==================================================================
    La bienvenida del alumno en Servicio → Contrato (Lili, 22/10): qué
@@ -19,6 +21,11 @@ import { leerContratos } from "./cliente";
    Mientras el envío de mails no esté configurado (Resend), el mensaje se
    copia acá y se le manda por WhatsApp o por mail, con el link de su
    formulario semanal ya puesto.
+
+   El perfil lo carga el closer en el contrato, pero si no lo cargó lo completa
+   Servicio desde acá (Lili, 25/10: «habilitame para completar el perfil»). Es el
+   mismo dato que Programa → Perfil de la ficha: elegirlo en un lado lo deja en el
+   otro, y si sólo está en la ficha la bienvenida lo toma de ahí.
    ================================================================== */
 
 const MODELO = { completo: "Programa completo", downsell: "Downsell", reserva: "Reserva" } as const;
@@ -35,9 +42,15 @@ async function codigoDelAlumno(alumnoId: string): Promise<string | null> {
 
 export function BienvenidaAlumno({ alumnoId, ventaId }: { alumnoId: string; ventaId?: string }) {
   const toast = useToast();
-  const config = useEstado().ajustes.bienvenida;
+  const e = useEstado();
+  const config = e.ajustes.bienvenida;
+  const { acceso } = useAcceso();
+  const puedeCambiar = puedeEditar(acceso, "alumnos");
+  const stackDeLaFicha = (e.seguimientos ?? []).find((x) => x.alumnoId === alumnoId)?.stack;
   const [contrato, setContrato] = useState<Contrato | null | undefined>(undefined);
   const [copiando, setCopiando] = useState(false);
+  const [eligiendo, setEligiendo] = useState(false);
+  const [guardando, setGuardando] = useState(false);
 
   useEffect(() => {
     let vivo = true;
@@ -50,7 +63,7 @@ export function BienvenidaAlumno({ alumnoId, ventaId }: { alumnoId: string; vent
   }, [alumnoId, ventaId]);
 
   if (!contrato) return null;
-  const guia = guiaDeBienvenida({ reserva: contrato.datos.reserva, programa: contrato.programa, perfil: contrato.datos.perfil, config });
+  const guia = guiaDeBienvenida({ reserva: contrato.datos.reserva, programa: contrato.programa, perfil: perfilEfectivo(contrato.datos.perfil, stackDeLaFicha), config });
   if (!guia) return null;
 
   const copiar = async () => {
@@ -62,6 +75,24 @@ export function BienvenidaAlumno({ alumnoId, ventaId }: { alumnoId: string; vent
     toast(ok ? "Mensaje de bienvenida copiado: pegalo en WhatsApp o en un mail." : "No se pudo copiar.", ok ? "ok" : "err");
   };
 
+  /* Lo elegido queda en el contrato (de ahí sale el mail de bienvenida) y en Programa → Perfil de la ficha. */
+  const elegirPerfil = async (perfil: string) => {
+    if (!perfil) return;
+    setGuardando(true);
+    try {
+      const guardado = await pedirContrato({ accion: "perfil", id: contrato.id, perfil });
+      setContrato(guardado);
+      if (stackDeLaFicha !== perfil && puedeEditar(acceso, "seguimiento_alumnos")) {
+        acciones.guardarSeguimiento(alumnoId, (x, quien) => ({ ...x, stack: perfil, actualizadoEn: new Date().toISOString(), actualizadoPor: quien }), () => `Perfil: ${perfil}.`);
+      }
+      setEligiendo(false);
+      toast(`Perfil ${perfil}: quedó en el contrato y en Programa.`, "ok");
+    } catch (err) {
+      toast(err instanceof Error ? err.message : "No se pudo guardar el perfil.", "err");
+    }
+    setGuardando(false);
+  };
+
   const firmado = contrato.estado === "firmado";
   return (
     <BloqueServicio titulo="Bienvenida" extra={
@@ -70,10 +101,21 @@ export function BienvenidaAlumno({ alumnoId, ventaId }: { alumnoId: string; vent
         : <span className={`hs-chip${firmado ? " hs-chip--ambar" : ""}`}>{firmado ? "Mandásela vos" : "Sale al firmar"}</span>
     }>
       <FilaServicio icono={<MapaIcono size={15} />} rotulo="Perfil y roadmap" detalle={MODELO[guia.modelo]}>
-        {guia.perfil && guia.roadmap
-          ? <a className="link t-sm" href={guia.roadmap} target="_blank" rel="noopener noreferrer">{guia.perfil}</a>
-          : guia.perfil ? <span className="hs-guion">{guia.perfil} · falta el link en Ajustes</span>
-            : <span className="hs-rojo">El closer no cargó el perfil</span>}
+        {eligiendo || (!guia.perfil && puedeCambiar) ? (
+          <span className="stack-1" style={{ minWidth: 200 }}>
+            <Select value={guia.perfil ?? ""} placeholder="Elegí el perfil" aria-label="Perfil del alumno" disabled={guardando}
+              onChange={(ev) => void elegirPerfil(ev.target.value)} opciones={PERFILES.map((p) => ({ valor: p, texto: p }))} />
+            {!guia.perfil && <span className="hs-rojo t-sm">El closer no cargó el perfil</span>}
+          </span>
+        ) : (
+          <>
+            {guia.perfil && guia.roadmap
+              ? <a className="link t-sm" href={guia.roadmap} target="_blank" rel="noopener noreferrer">{guia.perfil}</a>
+              : guia.perfil ? <span className="hs-guion">{guia.perfil} · falta el link en Ajustes</span>
+                : <span className="hs-rojo">El closer no cargó el perfil</span>}
+            {guia.perfil && puedeCambiar && <button type="button" className="link t-sm" style={{ marginLeft: 8 }} onClick={() => setEligiendo(true)}>Cambiar</button>}
+          </>
+        )}
       </FilaServicio>
       <FilaServicio icono={<Mail size={15} />} rotulo="Mail de bienvenida"
         detalle={contrato.bienvenidaMailEn ? undefined : "Todavía no sale solo: copiá el mensaje y mandáselo por WhatsApp o mail."}>

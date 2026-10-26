@@ -11,7 +11,7 @@ import {
 import { cambiarFicha, darAccesos, type ResultadoAccesos } from "./accesos-servidor";
 import { plantillaDelContrato, programaDePlantilla, programaPorId, programasDe, type Programa } from "./programas";
 import type { ConfigContratos } from "./types";
-import { conCodigoDelAlumno, guiaDeBienvenida, htmlDeBienvenida, textoDeBienvenida, type ConfigBienvenida } from "./bienvenida-alumno";
+import { conCodigoDelAlumno, esPerfil, guiaDeBienvenida, htmlDeBienvenida, perfilEfectivo, textoDeBienvenida, type ConfigBienvenida } from "./bienvenida-alumno";
 import { codigoDeAlumno, configResend, enviarPorResend } from "./reporte-servidor";
 import { diaDeNegocio } from "./dia-negocio";
 
@@ -429,6 +429,25 @@ export async function darAccesosAhora(db: SupabaseClient, c: Contrato, quien: st
   return r.accesos;
 }
 
+/** El perfil con el que sale la bienvenida de un contrato: el del contrato y, si el closer no lo cargó, el que tiene el
+    alumno en su ficha de Servicio (Programa → Perfil). */
+export async function perfilDelContrato(db: SupabaseClient, c: Pick<Contrato, "datos" | "alumnoId">, alumnoId?: string | null): Promise<string | null> {
+  if (esPerfil(c.datos.perfil)) return c.datos.perfil;
+  const id = alumnoId ?? c.alumnoId;
+  if (!id) return null;
+  const r = await db.from("seguimiento_alumnos").select("stack").eq("alumnoId", id).maybeSingle();
+  return perfilEfectivo(c.datos.perfil, (r.data as { stack?: string } | null)?.stack);
+}
+
+/** Servicio completa el perfil de un contrato que el closer dejó sin cargar (Lili, 25/10). No toca PandaDoc ni el
+    estado: el perfil sólo decide qué roadmap le llega al alumno, y sirve en cualquier estado (también firmado). */
+export async function ponerPerfil(db: SupabaseClient, c: Contrato, perfil: string, quien: string): Promise<void> {
+  if (!esPerfil(perfil)) throw new Error("Ese perfil no existe.");
+  if (c.datos.perfil === perfil) return;
+  await guardar(db, c.id, { datos: { ...c.datos, perfil } });
+  await evento(db, c.id, "perfil", quien, "app", { antes: c.datos.perfil ?? null, despues: perfil });
+}
+
 const DIAS_PARA_BIENVENIDA = 3;
 
 /** El mail de bienvenida (Lili, 22/10): su roadmap según el perfil, el paso a paso de lo que compró, el formulario de los
@@ -442,7 +461,7 @@ export async function mandarBienvenida(db: SupabaseClient, c: Contrato, alumnoId
      los accesos, y el día que se prenda Resend no les tiene que llegar la bienvenida a alumnos que ya arrancaron. */
   if (!c.firmadoEn || Date.now() - new Date(c.firmadoEn).getTime() > DIAS_PARA_BIENVENIDA * 86_400_000) return;
   const config = await configBienvenida(db);
-  let guia = guiaDeBienvenida({ reserva: c.datos.reserva, programa: c.programa, perfil: c.datos.perfil, config });
+  let guia = guiaDeBienvenida({ reserva: c.datos.reserva, programa: c.programa, perfil: await perfilDelContrato(db, c, alumnoId), config });
   if (!guia) return;
   const origen = process.env.APP_URL?.trim() || baseDeLaApp(null);
   if (guia.modelo === "completo" && alumnoId && origen) {

@@ -3,7 +3,7 @@ import { nubeServidor } from "@/lib/servidor";
 import { baseDelPedido, correoDelPedido, esDuenoDelPedido, exigirArea } from "@/lib/permisos-servidor";
 import { datosLimpios, problemaDeDatos, soloDuenos, type DatosContrato, type ModoContrato } from "@/lib/contratos";
 import {
-  anular, contratoPorId, corregir, crearContrato, darAccesosAhora, mandarBorrador, nuevoEnlace, programasGuardados, reenviar, sincronizar,
+  anular, contratoPorId, corregir, crearContrato, darAccesosAhora, mandarBorrador, nuevoEnlace, ponerPerfil, programasGuardados, reenviar, sincronizar,
 } from "@/lib/contratos-servidor";
 import { cambiaLaPlantilla, programaPorId } from "@/lib/programas";
 import { ErrorPandadoc } from "@/lib/pandadoc-servidor";
@@ -12,7 +12,7 @@ import { ErrorPandadoc } from "@/lib/pandadoc-servidor";
    POST { accion, … }: lo que se le hace a un contrato de PandaDoc.
    - "crear": { ventaId?, sesionId?, leadId?, alumnoId?, programa, datos, mandar?, prueba? } lo arma con la
      plantilla del programa y (salvo mandar:false) lo manda a firmar.
-   - "mandar" | "reenviar" | "anular" { motivo } | "corregir" { datos } | "enlace" | "sincronizar" | "accesos": { id }.
+   - "mandar" | "reenviar" | "anular" { motivo } | "corregir" { datos } | "enlace" | "sincronizar" | "accesos": { id }; "perfil" { id, perfil } completa el perfil (roadmap) en cualquier estado.
      «accesos» da los del programa a un firmado que se quedó sin ellos (firmó antes de que se cargara la venta).
    Lo hace quien edita Ventas o Alumnos, y sólo sobre lo que ve: la venta, la persona o el contrato se leen
    antes con SU sesión (el closer, sólo lo suyo). Recién ahí se usa la clave de servicio.
@@ -107,6 +107,7 @@ export async function POST(peticion: Request) {
       if (!enlace) return mal("PandaDoc no dio el link: el contrato tiene que estar enviado.", 409);
     } else if (accion === "sincronizar") await sincronizar(db, c, "sincronizacion");
     else if (accion === "accesos") await darAccesosAhora(db, c, quien || "Apicanta");
+    else if (accion === "perfil") await ponerPerfil(db, c, typeof b.perfil === "string" ? b.perfil : "", quien || "Apicanta");
     else return mal("No sé hacer eso.");
 
     return NextResponse.json({ contrato: await contratoPorId(db, id) }, { headers: { "Cache-Control": "no-store" } });

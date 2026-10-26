@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { nubeServidor } from "@/lib/servidor";
 import { accesosAlFirmar, armarBienvenida, esCodigoBienvenida, type AccesoParaBienvenida, type Contrato } from "@/lib/contratos";
-import { configBienvenida, programasGuardados, sincronizar } from "@/lib/contratos-servidor";
+import { configBienvenida, perfilDelContrato, programasGuardados, sincronizar } from "@/lib/contratos-servidor";
 import { linkMagicoWisboo } from "@/lib/accesos-servidor";
 import { programaPorId } from "@/lib/programas";
 import { conCodigoDelAlumno, guiaDeBienvenida } from "@/lib/bienvenida-alumno";
@@ -54,7 +54,7 @@ export async function GET(peticion: Request, ctx: { params: Promise<{ token?: st
   /* Su roadmap (según el perfil que cargó el closer), su formulario semanal y el WhatsApp de soporte. */
   let guia = null;
   if (c.estado === "firmado") {
-    guia = guiaDeBienvenida({ reserva: c.datos.reserva, programa: c.programa, perfil: c.datos.perfil, config: await configBienvenida(db) });
+    guia = guiaDeBienvenida({ reserva: c.datos.reserva, programa: c.programa, perfil: await perfilDelContrato(db, c), config: await configBienvenida(db) });
     if (guia?.modelo === "completo" && c.alumnoId) {
       const codigo = await codigoDeAlumno(db, c.alumnoId).catch(() => null);
       guia = conCodigoDelAlumno(guia, origenDeLaApp(peticion), codigo);
