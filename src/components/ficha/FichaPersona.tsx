@@ -25,13 +25,15 @@ import { TarjetaVenta } from "./TarjetaVenta";
 import { AvisoVentaRepetida } from "./AvisoVentaRepetida";
 import { EliminarVenta } from "./EliminarVenta";
 import { VistaLlamadas } from "./VistaLlamadas";
+import { SeccionContrato, useContratosDe } from "@/components/contratos/ContratoEnLaFicha";
 import { usePlegado } from "./Plegable";
 import type { VistaFicha } from "./abrir";
 import { acciones, cuotasQueCancelaLaBaja, useEstado, useSync } from "@/lib/store";
 import { useAcceso } from "@/lib/acceso";
-import { nivelEn, type MiAcceso } from "@/lib/permisos";
+import { nivelEn, veElServicio, type MiAcceso } from "@/lib/permisos";
 import { filasDePersona, filasTabla, type FilaTabla } from "@/lib/crm-tabla";
 import { personaDe, type Persona } from "@/lib/persona";
+import type { Contrato } from "@/lib/contratos";
 import { saldoVenta } from "@/lib/finanzas";
 import { cobradoDeVenta } from "@/lib/ventas-repetidas";
 import { reservaSinCompletar } from "@/lib/reservas";
@@ -72,8 +74,10 @@ export function FichaPersona({ id, vista, ventaResaltada, onCerrar, onVista }: {
   /* Cada tipo de cuenta ve las vistas de sus áreas: el setter, sin ventas;
      el closer, sin el servicio. */
   const { acceso } = useAcceso();
-  const vistas = vistasDe(acceso);
+  const vistas = vistasDe(acceso, Boolean(p && (p.ventas.length > 0 || p.alumnos.length > 0)));
   const vistaReal = vistas.includes(vista) ? vista : vistas[0] ?? vista;
+  /* El contrato se ve en todas las solapas (Mariano, 26/10: no sabía si le había llegado). Se vuelve a leer al cambiar de solapa. */
+  const { contratos, recargar: recargarContratos } = useContratosDe(p, vistaReal);
   /* En una pantalla ancha el chat va en su propia columna, siempre a la vista; en una angosta, como una solapa más. */
   const conChat = useAnchoMinimo(1200);
   /* La línea entre la ficha y el chat se arrastra (como en Blue OS); el ancho del chat queda guardado en este navegador. */
@@ -114,13 +118,13 @@ export function FichaPersona({ id, vista, ventaResaltada, onCerrar, onVista }: {
           <>
             <Cabecera e={e} p={p} vista={vistaReal} vistas={vistas} onVista={onVista} onCerrar={onCerrar} />
             <div ref={anchoChat.contRef} className={`ficha__cuerpo${conChat ? " ficha__cuerpo--chat" : ""}`}>
-              <Lateral e={e} p={p} filas={filas} />
+              <Lateral e={e} p={p} filas={filas} contratos={contratos} recargarContratos={recargarContratos} onVerVentas={() => onVista("ventas")} />
               <div className="ficha__principal">
                 <AvisoDuplicado e={e} p={p} />
                 {vistas.length === 0
                   ? null
                   : vistaReal === "llamadas"
-                    ? <VistaLlamadas p={p} filas={filas} />
+                    ? <VistaLlamadas p={p} filas={filas} contratos={contratos} />
                     : vistaReal === "ventas"
                       ? <VistaVentas e={e} p={p} ventaResaltada={ventaResaltada} conChat={conChat} />
                       : <VistaServicio e={e} p={p} conChat={conChat} />}
@@ -151,12 +155,12 @@ function useAnchoMinimo(px: number): boolean {
 
 /* ---------- Cabecera ---------- */
 
-/* Llamadas: CRM o Leads. Ventas: Ventas, Clientes o Finanzas. Servicio: Alumnos. */
-function vistasDe(a: MiAcceso | null): VistaFicha[] {
+/* Llamadas: CRM o Leads. Ventas: Ventas, Clientes o Finanzas. Servicio: Alumnos, y el closer con una persona que compró. */
+function vistasDe(a: MiAcceso | null, compro: boolean): VistaFicha[] {
   const xs: VistaFicha[] = [];
   if (nivelEn(a, "crm") >= 1 || nivelEn(a, "leads") >= 1) xs.push("llamadas");
   if (nivelEn(a, "ventas") >= 1 || nivelEn(a, "clientes") >= 1 || nivelEn(a, "finanzas") >= 1) xs.push("ventas");
-  if (nivelEn(a, "alumnos") >= 1) xs.push("servicio");
+  if (veElServicio(a, compro)) xs.push("servicio");
   return xs;
 }
 
@@ -214,7 +218,9 @@ function compraDe(e: EstadoApp, p: Persona): { texto: string; closers: string } 
   return { texto: partes.join(" + "), closers };
 }
 
-function Lateral({ e, p, filas }: { e: EstadoApp; p: Persona; filas: FilaTabla[] }) {
+function Lateral({ e, p, filas, contratos, recargarContratos, onVerVentas }: {
+  e: EstadoApp; p: Persona; filas: FilaTabla[]; contratos: Contrato[] | null; recargarContratos: () => Promise<void>; onVerVentas: () => void;
+}) {
   const toast = useToast();
   const c = p.contacto;
   const lead = p.leads[0];
@@ -278,6 +284,8 @@ function Lateral({ e, p, filas }: { e: EstadoApp; p: Persona; filas: FilaTabla[]
           <a className="link t-sm" href={`/leads?editar=${lead.id}`}><Pencil size={13} /> Editar los datos</a>
         </section>
       )}
+
+      <SeccionContrato p={p} contratos={contratos} recargar={recargarContratos} onVerVentas={onVerVentas} />
 
       {(vias.length > 0 || ad || campania || webinar || fuente || entro) && (
         <section>

@@ -38,7 +38,7 @@ import { SOLAPAS_SERVICIO, useSolapaServicio, type SolapaServicio } from "./abri
 import { HistorialPersona } from "./HistorialPersona";
 import { acciones } from "@/lib/store";
 import { useAcceso } from "@/lib/acceso";
-import { puedeEditar } from "@/lib/permisos";
+import { nivelEn, puedeEditar } from "@/lib/permisos";
 import { alumnoDeVenta, etapaDelAlumno, etapasDeServicio } from "@/lib/alumnos";
 import {
   EDITOR_CLIENTE, estadosDeResell, filasClientes, filasResells, MOTOR_CLIENTES, POR_QUE_NO_CLIENTE, valorEditableCliente, type ClaveCliente,
@@ -173,7 +173,10 @@ function useSolapasQueSeDeslizan(elegida: string) {
 }
 
 /* Con el chat en su columna (ficha ancha), no hay solapa «Chat». */
-const SIN_SOLAPA_CHAT = SOLAPAS_SERVICIO.filter((s) => s !== "chat");
+/* El closer (26/10) ve el servicio de SUS alumnos, pero la base sólo le abre el seguimiento y los accesos (supabase/servicio-del-closer.sql):
+   las solapas que leen otra cosa —las clases de Zoom, testimonios, CV y formularios— le dirían «nada» sin que sea verdad, así que no las ve. */
+const SOLAPAS_DE_OTRA_AREA: readonly string[] = ["zoom", "testimonio", "cv", "reportes"];
+const SOLAPAS_DEL_CLOSER = SOLAPAS_SERVICIO.filter((s) => !SOLAPAS_DE_OTRA_AREA.includes(s));
 
 function HojaDeUnServicio({ e, p, f, venta, producto, conChat, reserva }: {
   e: EstadoApp; p: Persona; f: FilaCliente; venta?: Venta; producto: string; conChat: boolean;
@@ -184,12 +187,15 @@ function HojaDeUnServicio({ e, p, f, venta, producto, conChat, reserva }: {
   const gestos = useGestos();
   const { acceso } = useAcceso();
   const puede = puedeEditar(acceso, "seguimiento_alumnos");
-  const puedeAlumno = puedeEditar(acceso, "alumnos");
+  /* El closer puede crear el alumno de su venta, pero acá sólo lo mira: el progreso y los datos del servicio son de Servicio. */
+  const soloMira = nivelEn(acceso, "alumnos") < 1;
+  const puedeAlumno = puedeEditar(acceso, "alumnos") && !soloMira;
   const hoy = hoyDelNegocio();
   const cfg = configSeguimiento(e.ajustes.seguimiento);
   const filas = useMemo(() => filasClientes(e, hoy), [e, hoy]);
   const { listas, opcionesDe, sugerenciasDe, guardar } = useEdicionCliente(filas, hoy);
-  const [solapa, setSolapa] = useSolapaServicio(conChat ? SIN_SOLAPA_CHAT : SOLAPAS_SERVICIO);
+  const permitidas = soloMira ? SOLAPAS_DEL_CLOSER : SOLAPAS_SERVICIO;
+  const [solapa, setSolapa] = useSolapaServicio(conChat ? permitidas.filter((s) => s !== "chat") : permitidas);
   const solapasRef = useSolapasQueSeDeslizan(solapa);
   const [editando, setEditando] = useState<ClaveCliente | "programa" | null>(null);
   const [nota, setNota] = useState(false);
@@ -296,7 +302,7 @@ function HojaDeUnServicio({ e, p, f, venta, producto, conChat, reserva }: {
   const closerDijoQueSi = estadosUltimo.some((x) => /upgrade|garantia extendida/.test(sinTildes(x)));
   const reportes = e.reportes.filter((r) => r.alumnoId === alumno.id).sort((a, b) => +new Date(b.semanaDel) - +new Date(a.semanaDel));
 
-  const solapas: { id: Solapa; texto: string; n?: number }[] = [
+  const todasLasSolapas: { id: Solapa; texto: string; n?: number }[] = [
     { id: "programa", texto: "Programa" },
     { id: "contrato", texto: "Contrato" },
     { id: "accesos", texto: "Accesos" },
@@ -313,6 +319,7 @@ function HojaDeUnServicio({ e, p, f, venta, producto, conChat, reserva }: {
     { id: "historial", texto: "Historial" },
     ...(conChat ? [] : [{ id: "chat" as Solapa, texto: "Chat", n: p.comentarios.length }]),
   ];
+  const solapas = todasLasSolapas.filter((x) => permitidas.includes(x.id));
   const faltanEn = (claves: ClaveCliente[]) => claves.filter((c) => CUENTAN.includes(c) && estaVacio(f, c)).length;
   const DE_DATOS: ClaveCliente[] = ["nombre", "email", "telefono", "pais", "edad", "nacimiento", "dni", "domicilio"];
   const DE_PROGRAMA: ClaveCliente[] = ["programa", "inicio", "plan", "duracion", "stack"];

@@ -743,6 +743,13 @@ export function coincideBusqueda(f: FilaTabla, q: string): boolean {
   return [f.nombre, f.email, f.telefono, f.closer, f.notas].some((x) => sinTildes(x ?? "").includes(t));
 }
 
+/** Las llamadas que se ven: las del período y las que coinciden con lo que se busca. Buscar a alguien es mirar TODO el historial: con algo
+ *  escrito en el buscador el período no recorta (Mariano, 26/10: el período recordado del día anterior no le dejaba encontrar a Jacob). */
+export function llamadasQueSeVen(todas: readonly FilaTabla[], rango: { desde: string; hasta: string }, q: string): FilaTabla[] {
+  const buscando = q.trim().length > 0;
+  return todas.filter((f) => (buscando || (f.dia >= rango.desde && f.dia <= rango.hasta)) && coincideBusqueda(f, q));
+}
+
 /** Los valores de una columna para su filtro, con cuántas filas tiene cada
  *  uno según los DEMÁS filtros (como en Excel: lo que ya está filtrado en
  *  otra columna no aparece). `orden`: el de los valores, si no es el

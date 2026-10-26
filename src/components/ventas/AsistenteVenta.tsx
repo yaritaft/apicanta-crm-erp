@@ -32,6 +32,7 @@ import { useToast } from "@/components/ui/Toast";
 import { modalidadDeCuotas, modalidadDeReserva, problemaDeDatos, ROTULO_ESTADO, type Contrato, type DatosContrato } from "@/lib/contratos";
 import { plantillaDelContrato, programaDeProducto, programasDe } from "@/lib/programas";
 import { contratosPrendidos, leerContratos, pedirContrato } from "@/components/contratos/cliente";
+import { useAbrirFicha } from "@/components/ficha/abrir";
 import { DatosDelContrato } from "@/components/contratos/DatosDelContrato";
 import { diaDeNegocio } from "@/lib/dia-negocio";
 import { ventasIdenticas } from "@/lib/ventas-repetidas";
@@ -192,6 +193,7 @@ export function AsistenteVenta({ onCerrar, onListo, desdeMovimiento, cliente, cl
 
   const [i, setI] = useState(cliente ? 1 : 0);
   const toast = useToast();
+  const abrirFicha = useAbrirFicha();
   const { esDueno } = useAcceso();
   const configContratos = e.ajustes.contratos;
   const conContrato = contratosPrendidos(configContratos, esDueno);
@@ -369,7 +371,9 @@ export function AsistenteVenta({ onCerrar, onListo, desdeMovimiento, cliente, cl
           });
           toast(`Contrato mandado a ${datos.email} para firmar.`);
         } catch (err) {
-          toast(`La venta quedó registrada, pero el contrato no salió: ${err instanceof Error ? err.message : "no se pudo"}. Mandalo desde la ficha.`, "err");
+          /* Con botón, el aviso dura más; y en la ficha queda el contrato en rojo con «Volver a intentar» (y la campanita lo avisa). */
+          toast(`La venta quedó registrada, pero el contrato NO salió y la persona no recibió nada: ${err instanceof Error ? err.message : "no se pudo"}`, "err",
+            { texto: "Abrir su ficha", onClick: () => { if (contactoId) abrirFicha(contactoId, "ventas"); } });
         }
       })();
     }

@@ -1,6 +1,7 @@
 import type { ConfigContratos } from "./types";
 import { esPerfil, modeloDeBienvenida, PERFILES, type GuiaBienvenida } from "./bienvenida-alumno";
 import { diaDeNegocio } from "./dia-negocio";
+import { fechaHora, relativo } from "./format";
 
 /* ==================================================================
    Los contratos de PandaDoc, lo que no depende de la red. Es el circuito
@@ -567,6 +568,34 @@ export function datosDelDocumento(detalle: unknown): {
 
 /** ¿Este contrato todavía espera algo de PandaDoc? (la tarjeta se refresca sola mientras tanto). */
 export const estaPendiente = (estado: EstadoContrato) => estado === "creando" || estado === "enviado" || estado === "visto";
+
+/** Los que valen la pena mostrar de una persona: un intento que no salió y ya tiene otro más nuevo (volvieron a mandarlo, a mano o desde la app)
+    es historia, y un anulado también si hay otro después. Hasta tres, del más nuevo al más viejo. */
+export function contratosAMostrar(todos: readonly Contrato[]): Contrato[] {
+  const mismaCompra = (a: Contrato, b: Contrato) => (Boolean(a.ventaId) && a.ventaId === b.ventaId) || (Boolean(a.leadId) && a.leadId === b.leadId);
+  const reemplazado = (c: Contrato, valen: (o: Contrato) => boolean) => todos.some((o) => o.id !== c.id && valen(o) && mismaCompra(o, c) && o.creadoEn > c.creadoEn);
+  return todos
+    .filter((c) => c.estado === "error" ? !reemplazado(c, (o) => o.estado !== "error" && o.estado !== "anulado")
+      : c.estado === "anulado" ? !reemplazado(c, () => true) : true)
+    .sort((a, b) => b.creadoEn.localeCompare(a.creadoEn))
+    .slice(0, 3);
+}
+
+/** Lo que le pasó al contrato, en una frase para el closer. */
+export function quePasoConElContrato(c: Contrato): string {
+  const a = c.destinatario?.email || c.datos?.email || "su mail";
+  switch (c.estado) {
+    case "error": return `${a} no recibió nada.`;
+    case "creando": return "Se está armando…";
+    case "borrador": return "Quedó armado pero sin mandar.";
+    case "enviado": return `Le llegó a ${a} (${c.enviadoEn ? fechaHora(c.enviadoEn) : "recién"}). Todavía no lo abrió.`;
+    case "visto": return `Lo abrió ${relativo(c.vistoEn)}. Falta que firme.`;
+    case "firmado": return `Firmó el ${fechaHora(c.firmadoEn)}.`;
+    case "rechazado": return "Lo rechazó. Hay que corregirlo y mandarlo de nuevo.";
+    case "anulado": return "Se anuló.";
+  }
+}
+
 
 /** ¿La pasada de cada hora tiene que conectar sola el aviso de producción? Sólo en la app publicada, con la clave,
     y si NUNCA se conectó: una fila desconectada a mano (sin clave) no se vuelve a conectar sola. */

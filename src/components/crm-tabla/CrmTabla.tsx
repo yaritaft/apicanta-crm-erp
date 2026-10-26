@@ -38,7 +38,7 @@ import { bajarExcel, excelCobros, filasExcelCobros } from "@/lib/excelCobros";
 import { paginaDeURL, useBusquedaURL, useEscribirURL, useParamsURL } from "@/lib/useParamsURL";
 import { useRangoURL } from "@/lib/useRango";
 import {
-  CAMPO_DE_OPCIONES, COLUMNA, COLUMNAS, COLUMNAS_DE_ANTES, COLUMNAS_DE_COBROS, COLUMNAS_SUMADAS, COLOR_COBROS, coincideBusqueda, EDITOR, escrituraDe, filasTabla, filtroAURL, filtrosDeURL,
+  CAMPO_DE_OPCIONES, COLUMNA, COLUMNAS, COLUMNAS_DE_ANTES, COLUMNAS_DE_COBROS, COLUMNAS_SUMADAS, COLOR_COBROS, EDITOR, escrituraDe, filasTabla, filtroAURL, filtrosDeURL, llamadasQueSeVen,
   hayFiltro, MAX_ORDENES, opcionesDeColumna, ORDEN_CHEQUEO, ORDEN_COMPROBANTE, ORDEN_CONCILIADO, ORDEN_POR_DEFECTO, ordenarFilas, pagosDeLlamadas, totalCobrado, ordenesAURL, ordenesDeURL, PAISES, pasaFiltros, POR_QUE_NO,
   textoDeFiltro, VACIAS, valorEditable, VISIBLES_POR_DEFECTO,
   type ClaveColumna, type FilaTabla, type FiltroColumna as Filtro, type OrdenColumna,
@@ -137,9 +137,12 @@ export function CrmTabla({ misLlamadas = false }: { misLlamadas?: boolean } = {}
   const ahora = Math.floor(Date.now() / 60000) * 60000;
   /* Las llamadas de resell tienen su propio grupo (CrmConResells): acá sólo las de venta. */
   const todas = useMemo(() => filasTabla(e, ahora).filter((f) => !esLlamadaDeResell(f.sesion)), [e, ahora]);
+  /* Buscar a alguien es mirar TODO el historial (Mariano, 26/10: el período quedaba recordado del día anterior y, para encontrar a
+     una persona, tenía que acordarse de qué día era su llamada): con algo escrito en el buscador, el período no recorta. */
+  const buscando = q.trim().length > 0;
   const enPeriodo = useMemo(
-    () => todas.filter((f) => f.dia >= rango.desde && f.dia <= rango.hasta && coincideBusqueda(f, q)),
-    [todas, rango.desde, rango.hasta, q],
+    () => llamadasQueSeVen(todas, rango, q),
+    [todas, rango, q],
   );
   const textoParams = params.toString();
   const filtros = useMemo(() => {
@@ -370,6 +373,7 @@ export function CrmTabla({ misLlamadas = false }: { misLlamadas?: boolean } = {}
           <div className="crm-t__buscar">
             <Input icono={<Search size={16} />} value={q} onChange={(ev) => setQ(ev.target.value)} placeholder="Buscar por nombre, mail o teléfono" aria-label="Buscar" />
           </div>
+          {buscando && <span className="t-sm t-subtle" role="status" style={{ whiteSpace: "nowrap" }}>Buscando en todo el historial</span>}
           <DateRangePicker
             value={rango} minDate={limites.min} maxDate={limites.max} futuro
             onApply={(r) => setRango(r, { pag: null })}
@@ -414,7 +418,7 @@ export function CrmTabla({ misLlamadas = false }: { misLlamadas?: boolean } = {}
         <div className="crm-t__filtros">
           <span className="t-sm t-subtle t-num crm-t__cuenta">
             {num(filas.length)} {filas.length === 1 ? "llamada" : "llamadas"}
-            {filas.length !== enPeriodo.length ? ` de ${num(enPeriodo.length)} en el período` : " en el período"}
+            {filas.length !== enPeriodo.length ? ` de ${num(enPeriodo.length)}` : ""}{buscando ? " en todo el historial" : " en el período"}
           </span>
           {soloSinCargar && (
             <span className="crm-t__pastilla">

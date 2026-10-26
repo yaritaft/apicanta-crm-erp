@@ -33,6 +33,19 @@ export async function leerContratos(f: { ventaId?: string; leadId?: string; alum
   return { contratos, eventos: (ev.data ?? []) as EventoContrato[] };
 }
 
+/** Los contratos de una persona por todos los ids con los que puede figurar (su lead, su contacto, sus ventas), del más nuevo al más
+    viejo. Sin los eventos: es para mostrar el estado en la ficha; el historial se lee al abrir la tarjeta. */
+export async function leerContratosDe(f: { leadIds?: string[]; ventaIds?: string[] }): Promise<Contrato[]> {
+  if (!nube) return [];
+  /* Los ids van dentro de un in.(…): sin comas, paréntesis ni comillas que lo rompan. */
+  const limpios = (xs?: string[]) => [...new Set((xs ?? []).filter(Boolean).map((x) => x.replace(/[(),"\\]/g, "")))];
+  const leads = limpios(f.leadIds), ventas = limpios(f.ventaIds);
+  const filtros = [leads.length && `leadId.in.(${leads.join(",")})`, ventas.length && `ventaId.in.(${ventas.join(",")})`].filter(Boolean).join(",");
+  if (!filtros) return [];
+  const r = await nube.from("contratos").select("*").or(filtros).order("creadoEn", { ascending: false });
+  return r.error ? [] : ((r.data ?? []) as Contrato[]);
+}
+
 /* Los contratos mandados y sin firmar, para «Contrato sin firmar» del panel de Servicio (lib/panel-servicio.ts). Los de
    prueba no cuentan. */
 export async function leerContratosPendientes(): Promise<ContratoPendiente[]> {

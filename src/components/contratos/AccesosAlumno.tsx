@@ -7,6 +7,7 @@ import { Confirmar, ModalForm } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toast";
 import { acciones, useEstado } from "@/lib/store";
 import { useAcceso } from "@/lib/acceso";
+import { nivelEn } from "@/lib/permisos";
 import { nube } from "@/lib/supabase";
 import { cabeceras } from "@/components/webinars/useYoutube";
 import { relativo } from "@/lib/format";
@@ -101,13 +102,15 @@ export function AccesosAlumno({ alumno, venta, manual, forma = "tarjeta" }: {
 }) {
   const e = useEstado();
   const toast = useToast();
-  const { esDueno } = useAcceso();
+  const { esDueno, acceso } = useAcceso();
   const programas = useMemo(() => programasDe(e.ajustes), [e.ajustes]);
   const [accesos, setAccesos] = useState<Acceso[] | null>(null);
   const [trabajando, setTrabajando] = useState<string | null>(null);
   const [dar, setDar] = useState<string | null>(null);
   const [quitar, setQuitar] = useState<{ ids?: string[]; texto: string; wisboo?: boolean } | null>(null);
   const prendidos = contratosPrendidos(e.ajustes.contratos, esDueno);
+  /* Dar, quitar y reintentar accesos es de Alumnos (el servidor lo exige): el closer ve a qué tiene acceso su alumno, sin los botones. */
+  const acciona = prendidos && nivelEn(acceso, "alumnos") === 2;
 
   const leer = useCallback(async () => {
     if (!nube) { setAccesos([]); return; }
@@ -183,10 +186,10 @@ export function AccesosAlumno({ alumno, venta, manual, forma = "tarjeta" }: {
         {prendidos && (
           <AccionesServicio>
             {linksTelegram.length + linksZoom.length > 0 && <Button sm variante="ghost" icono={<Copy size={14} />} onClick={() => void copiarMensaje()}>Copiar mensaje con links</Button>}
-            {vigentes.length > 0 && (
+            {acciona && vigentes.length > 0 && (
               <Button sm variante="ghost" icono={<UserMinus size={14} />} onClick={() => setQuitar({ texto: "Se le saca el acceso a todos sus cursos de Wisboo, se lo saca de los grupos de Telegram y se cancela su inscripción a las reuniones de Zoom.", wisboo: true })}>Quitar todo</Button>
             )}
-            <Button sm variante="primary" icono={<KeyRound size={14} />} onClick={() => setDar(programaSugerido)}>Dar accesos</Button>
+            {acciona && <Button sm variante="primary" icono={<KeyRound size={14} />} onClick={() => setDar(programaSugerido)}>Dar accesos</Button>}
           </AccionesServicio>
         )}
         {accesos === null ? <div className="skeleton" style={{ height: 132, borderRadius: 12 }} /> : PLATAFORMAS.map(({ clave, nombre, icono }) => {
@@ -201,8 +204,8 @@ export function AccesosAlumno({ alumno, venta, manual, forma = "tarjeta" }: {
                   return (
                     <FilaServicio key={x.id} icono={icono} rotulo={x.recursoNombre || x.recurso} detalle={detalleDe(x) || undefined}>
                       <Badge variante={est.variante}>{est.texto}</Badge>
-                      {prendidos && x.estado === "fallo" && reintentar(x)}
-                      {prendidos && (x.estado === "dado" || x.estado === "entro") && (
+                      {acciona && x.estado === "fallo" && reintentar(x)}
+                      {acciona && (x.estado === "dado" || x.estado === "entro") && (
                         <Button sm variante="ghost" onClick={() => setQuitar({ ids: [x.id], texto: `Se le saca «${x.recursoNombre || x.recurso}» (${nombre}).`, wisboo: x.plataforma === "wisboo" })}>Quitar</Button>
                       )}
                     </FilaServicio>
@@ -225,8 +228,8 @@ export function AccesosAlumno({ alumno, venta, manual, forma = "tarjeta" }: {
         {prendidos && (
           <div className="row-wrap" style={{ gap: 6 }}>
             {linksTelegram.length + linksZoom.length > 0 && <Button sm variante="ghost" icono={<Copy size={14} />} onClick={() => void copiarMensaje()}>Copiar mensaje con links</Button>}
-            <Button sm variante="secondary" icono={<KeyRound size={14} />} onClick={() => setDar(programaSugerido)}>Dar accesos</Button>
-            {vigentes.length > 0 && (
+            {acciona && <Button sm variante="secondary" icono={<KeyRound size={14} />} onClick={() => setDar(programaSugerido)}>Dar accesos</Button>}
+            {acciona && vigentes.length > 0 && (
               <Button sm variante="ghost" icono={<UserMinus size={14} />} onClick={() => setQuitar({ texto: "Se le saca el acceso a todos sus cursos de Wisboo, se lo saca de los grupos de Telegram y se cancela su inscripción a las reuniones de Zoom.", wisboo: true })}>Quitar todo</Button>
             )}
           </div>
@@ -264,13 +267,13 @@ export function AccesosAlumno({ alumno, venta, manual, forma = "tarjeta" }: {
                         )}
                       </span>
                       <Badge variante={estadoDe(x).variante}>{estadoDe(x).texto}</Badge>
-                      {prendidos && x.estado === "fallo" && (
+                      {acciona && x.estado === "fallo" && (
                         <Button sm variante="ghost" icono={<RotateCcw size={14} />} cargando={trabajando === x.id}
                           onClick={() => void correr(x.id, { accion: "dar", programa: x.programa, solo: [{ plataforma: x.plataforma, recurso: x.recurso }] }, (j) => Number(j.fallaron) ? "Volvió a fallar." : "Listo, acceso dado.")}>
                           Reintentar
                         </Button>
                       )}
-                      {prendidos && (x.estado === "dado" || x.estado === "entro") && (
+                      {acciona && (x.estado === "dado" || x.estado === "entro") && (
                         <Button sm variante="ghost" onClick={() => setQuitar({ ids: [x.id], texto: `Se le saca «${x.recursoNombre || x.recurso}» (${nombre}).`, wisboo: x.plataforma === "wisboo" })}>Quitar</Button>
                       )}
                     </li>

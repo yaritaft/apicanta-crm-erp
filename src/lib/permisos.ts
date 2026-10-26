@@ -100,6 +100,12 @@ export const esDueno = (a: MiAcceso | null | undefined) => a?.tipo === "dueno";
  *  lo que ve ya lo recorta la base, así que no hay nada de otros que esconder
  *  (Yari, 02/10: «tan simple que no se pueda equivocar»). */
 export const esCuentaDeCloser = (a: MiAcceso | null | undefined) => Boolean(a?.soloLoSuyo) && !esDueno(a);
+/** ¿La ficha le muestra el servicio de una persona que compró? Quien ve Alumnos, y el closer: el servicio de SUS alumnos, para
+ *  mirar (Juan Cruz, 26/10: «que el closer también vea esa parte de sus clientes»; la base se lo abre en
+ *  supabase/servicio-del-closer.sql y no le deja cambiar nada). */
+export const veElServicio = (a: MiAcceso | null | undefined, compro: boolean): boolean =>
+  nivelEn(a, "alumnos") >= 1 || (compro && esCuentaDeCloser(a) && nivelEn(a, "ventas") >= 1);
+
 /** El nivel de un área según lo que dice un tipo: 0 no la ve, 1 la ve, 2 la edita.
     Clientes cuelga de Ventas desde siempre: lo que da Ventas, lo da también
     Clientes (un tipo de antes no pierde la pantalla), y Clientes se puede dar

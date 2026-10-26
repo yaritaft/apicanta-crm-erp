@@ -132,6 +132,7 @@ export async function crearContrato(db: SupabaseClient, p: PedidoContrato): Prom
     await guardar(db, id, { estado: "error", error: mensajeDe(e) });
     await evento(db, id, "error", p.quien, "app", { error: mensajeDe(e), detalle: e instanceof ErrorPandadoc ? e.detalle : "" });
     await avisarSiEsElLimite(db, e, { nombre: p.datos.nombre, leadId: p.leadId ?? null, quien: p.quien });
+    await avisarDelContrato(db, { id, creadoPor: p.quien, ventaId: p.ventaId ?? null, leadId: p.leadId ?? null, modo: p.modo, datos: p.datos, destinatario: { nombre: p.datos.nombre }, programa: p.programa.id }, "error", mensajeDe(e));
   }
   return (await contratoPorId(db, id))!;
 }
@@ -151,6 +152,47 @@ export async function avisarSiEsElLimite(db: SupabaseClient, e: unknown, c: { no
     }));
     if (filas.length) await db.from("avisos").upsert(filas, { onConflict: "id", ignoreDuplicates: true });
   } catch (err) { console.error("[contratos] no se pudo avisar del límite de PandaDoc", mensajeDe(err)); }
+}
+
+/* Quién se entera de cómo le fue a un contrato: quien lo mandó y el closer de la venta (puede ser otro: lo mandó Lili o un dueño). */
+async function paraQuienEsElAviso(db: SupabaseClient, c: Pick<Contrato, "creadoPor" | "ventaId">): Promise<string[]> {
+  const mails = new Set<string>();
+  if (/@/.test(c.creadoPor ?? "")) mails.add(c.creadoPor.trim().toLowerCase());
+  if (c.ventaId) {
+    const v = await db.from("ventas").select("closerId").eq("id", c.ventaId).maybeSingle();
+    const closerId = (v.data as { closerId?: string | null } | null)?.closerId;
+    if (closerId) {
+      const m = await db.from("equipo").select("email").eq("id", closerId).maybeSingle();
+      const mail = (m.data as { email?: string | null } | null)?.email;
+      if (mail) mails.add(mail.trim().toLowerCase());
+    }
+  }
+  return [...mails];
+}
+
+/** La campanita de quien mandó el contrato (26/10, Mariano: «¿cómo me doy cuenta si lo hice bien o si llegó?»): avisa cuando NO salió —con
+    el motivo y qué hacer— y cuando se firmó. Uno por contrato y por persona (volver a intentar no lo repite). Los de prueba no avisan. */
+export async function avisarDelContrato(
+  db: SupabaseClient, c: Pick<Contrato, "id" | "creadoPor" | "ventaId" | "leadId" | "modo" | "datos" | "destinatario" | "programa">,
+  que: "error" | "firmado", motivo?: string,
+): Promise<void> {
+  if (c.modo !== "produccion") return;
+  try {
+    const para = await paraQuienEsElAviso(db, c);
+    if (!para.length) return;
+    const nombre = (c.destinatario?.nombre ?? c.datos?.nombre ?? "").trim() || "la persona";
+    const filas = para.map((mail) => ({
+      id: `av_contrato_${que}_${c.id}_${createHash("sha1").update(mail).digest("hex").slice(0, 8)}`,
+      para: mail, tipo: "contrato", de: "Contratos", contactoId: c.leadId ?? null, persona: nombre === "la persona" ? null : nombre,
+      ...(que === "error"
+        ? {
+          titulo: `El contrato de ${nombre} NO salió`,
+          cuerpo: `${nombre} no recibió nada. Abrí su ficha y tocá «Volver a intentar». ${motivo ? `Motivo: ${motivo.slice(0, 220)}` : ""}`.trim(),
+        }
+        : { titulo: `${nombre} firmó el contrato`, cuerpo: "Ya figura firmado en su ficha." }),
+    }));
+    await db.from("avisos").upsert(filas, { onConflict: "id", ignoreDuplicates: true });
+  } catch (err) { console.error("[contratos] no se pudo avisar del contrato", c.id, mensajeDe(err)); }
 }
 
 /** El link para firmar, para copiarlo y mandarlo por WhatsApp. Si no sale, el contrato sigue igual. */
@@ -179,6 +221,8 @@ export async function mandarBorrador(db: SupabaseClient, c: Contrato, quien: str
       await evento(db, c.id, "error", quien, "app", { error: mensajeDe(e), detalle: e instanceof ErrorPandadoc ? e.detalle : "", reintento: true });
     }
     await avisarSiEsElLimite(db, e, { nombre: c.destinatario?.nombre ?? c.datos?.nombre, leadId: c.leadId ?? null, quien });
+    /* A quien lo mandó la primera vez (no a quien aprieta «Volver a intentar»): el aviso es del contrato, no del intento. */
+    if (c.estado === "error") await avisarDelContrato(db, c, "error", mensajeDe(e));
     throw e;
   }
   await guardar(db, c.id, { estado: "enviado", enviadoEn: ahora(), sincronizadoEn: ahora(), error: null });
@@ -327,6 +371,7 @@ async function aplicarDetalle(db: SupabaseClient, c: Contrato, det: Record<strin
 
 /** El PDF al bucket, «Firmado» en la ficha de Customer Success y los accesos del programa. Cada parte es independiente. */
 export async function alFirmar(db: SupabaseClient, c: Contrato, opciones: { quien?: string; sinAccesos?: string } = {}): Promise<{ accesos: ResultadoAccesos | null }> {
+  await avisarDelContrato(db, c, "firmado");
   if (!c.pdfPath && c.documentoId) {
     try {
       const pdf = await pdfDocumento(c.modo, c.documentoId, true);

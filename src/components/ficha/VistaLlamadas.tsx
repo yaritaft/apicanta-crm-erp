@@ -3,7 +3,7 @@
 import { BadgeResell } from "@/components/ui/BadgeResell";
 import React, { useState } from "react";
 import { ArrowRightLeft, CalendarDays, ClipboardCheck, ExternalLink, Pencil } from "lucide-react";
-import { Button, Empty } from "@/components/ui/ui";
+import { Badge, Button, Empty } from "@/components/ui/ui";
 import { Eod } from "@/components/crm-tabla/Eod";
 import { textoFecha } from "@/components/crm-tabla/FiltroColumna";
 import { EstadoEditable } from "@/components/estados/EstadoLlamada";
@@ -12,6 +12,7 @@ import { sePuedePasar, usePuedePasarLlamadas } from "@/components/closers/usePas
 import type { FilaTabla } from "@/lib/crm-tabla";
 import { pasadaDe } from "@/lib/pasada-closer";
 import type { Sesion } from "@/lib/types";
+import { ROTULO_ESTADO, type Contrato } from "@/lib/contratos";
 import type { Persona } from "@/lib/persona";
 import type { Grabacion } from "@/lib/fathom";
 import { GrabacionFathom, useGrabaciones } from "./GrabacionFathom";
@@ -33,7 +34,11 @@ import { PerfilPersona } from "./PerfilPersona";
 
 const HORA = new Intl.DateTimeFormat("es-AR", { timeZone: "America/Argentina/Buenos_Aires", hour: "2-digit", minute: "2-digit", hour12: false });
 
-export function VistaLlamadas({ p, filas }: { p: Persona; /* Sus llamadas, de la más nueva a la más vieja. */ filas: FilaTabla[] }) {
+export function VistaLlamadas({ p, filas, contratos }: {
+  p: Persona; /* Sus llamadas, de la más nueva a la más vieja. */ filas: FilaTabla[];
+  /* Sus contratos: cada llamada dice el de su venta (el closer no se queda sin saber si salió). */
+  contratos?: Contrato[] | null;
+}) {
   const [cargar, setCargar] = useState<string | null>(null);
   const [pasando, setPasando] = useState<Sesion | null>(null);
   const puedePasar = usePuedePasarLlamadas();
@@ -55,6 +60,7 @@ export function VistaLlamadas({ p, filas }: { p: Persona; /* Sus llamadas, de la
       <span className="t-label">Llamadas ({filas.length})</span>
       {filas.map((f) => (
         <Llamada key={f.id} f={f} grabaciones={porSesion.get(f.id) ?? []} onCargar={() => setCargar(f.id)}
+          contrato={(contratos ?? []).find((c) => c.sesionId === f.id && c.estado !== "anulado")}
           onPasar={puedePasar && sePuedePasar(f.sesion) ? () => setPasando(f.sesion) : undefined} />
       ))}
       {cargar && <Eod soloSesionId={cargar} onCerrar={() => setCargar(null)} />}
@@ -63,8 +69,8 @@ export function VistaLlamadas({ p, filas }: { p: Persona; /* Sus llamadas, de la
   );
 }
 
-function Llamada({ f, grabaciones, onCargar, onPasar }: {
-  f: FilaTabla; grabaciones: Grabacion[]; onCargar: () => void;
+function Llamada({ f, grabaciones, onCargar, onPasar, contrato }: {
+  f: FilaTabla; grabaciones: Grabacion[]; onCargar: () => void; contrato?: Contrato;
   /* Sólo para quien dirige las ventas: pasarla a otro closer. */
   onPasar?: () => void;
 }) {
@@ -76,6 +82,8 @@ function Llamada({ f, grabaciones, onCargar, onPasar }: {
     ["¿Hizo la oferta?", f.oferta],
     ["Cierre estimado", f.cierre ? textoFecha(f.cierre) : ""],
     ["Venta", f.venta ? <span className="crm-t__venta">{f.venta}</span> : ""],
+    /* El contrato de esa venta, con su estado a la vista (el que no salió, en rojo): el detalle está en la columna de la izquierda. */
+    ["Contrato", contrato ? <Badge variante={ROTULO_ESTADO[contrato.estado].tono}>{ROTULO_ESTADO[contrato.estado].texto}</Badge> : ""],
     /* Se eligió a mano: Calendly no la vuelve a pisar. */
     ["Pasada a mano", pasada ? [pasada.por || "Alguien", pasada.calendly ? `en Calendly figura ${pasada.calendly}` : ""].filter(Boolean).join(" · ") : ""],
     /* Con Fathom, el link va en su bloque de abajo. */
