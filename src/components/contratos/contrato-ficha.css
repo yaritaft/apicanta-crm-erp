@@ -7,3 +7,6 @@
 .ctr-ficha__fila--aviso { border-color: color-mix(in srgb, var(--warning) 45%, var(--border)); background: var(--warning-soft); }
 .ctr-ficha__fila--error { border-color: color-mix(in srgb, var(--danger) 55%, var(--border)); background: var(--danger-soft); }
 .ctr-ficha__motivo { margin: 0; color: var(--danger); overflow-wrap: anywhere; }
+/* La columna de la ficha es angosta: los botones ocupan su ancho y el texto baja de renglón en vez de salirse de la caja. */
+.ctr-ficha__fila .row-wrap { flex-direction: column; align-items: stretch; }
+.ctr-ficha__fila .hk-btn { white-space: normal; height: auto; min-height: 32px; padding-block: 6px; text-align: center; width: 100%; }
