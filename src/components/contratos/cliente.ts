@@ -56,14 +56,21 @@ export async function leerContratosPendientes(): Promise<ContratoPendiente[]> {
 }
 
 export async function pedirContrato(cuerpo: Record<string, unknown>): Promise<Contrato> {
+  return (await pedirContratoYRoadmap(cuerpo)).contrato;
+}
+
+/** Si al elegir el perfil (o con «Mandárselo por mail») le salió el mail con su roadmap (Juan Cruz, 26/10). */
+export interface RoadmapPedido { mail: boolean; motivo?: string; yaEstaba?: boolean }
+
+export async function pedirContratoYRoadmap(cuerpo: Record<string, unknown>): Promise<{ contrato: Contrato; roadmap?: RoadmapPedido }> {
   const r = await fetch("/api/contratos", {
     method: "POST", cache: "no-store",
     headers: { ...(await cabeceras()), "Content-Type": "application/json" }, body: JSON.stringify(cuerpo),
   });
-  const j = (await r.json().catch(() => ({}))) as { contrato?: Contrato; error?: string };
+  const j = (await r.json().catch(() => ({}))) as { contrato?: Contrato; roadmap?: RoadmapPedido; error?: string };
   if (!r.ok && !j.contrato) throw new Error(j.error ?? `Error ${r.status}`);
   if (j.contrato?.estado === "error") throw new Error(j.contrato.error ?? "El contrato no salió.");
-  return j.contrato!;
+  return { contrato: j.contrato!, roadmap: j.roadmap };
 }
 
 /** Sube el PDF de un contrato firmado fuera de PandaDoc (ver api/contratos/subir). */

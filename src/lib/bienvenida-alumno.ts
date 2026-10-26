@@ -343,3 +343,50 @@ export function htmlDeBienvenida(texto: string): string {
   return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.55;color:#1f1d24;max-width:600px">${conLinks
     .split(/\n{2,}/).map((p) => `<p style="margin:0 0 14px">${p.replace(/\n/g, "<br>")}</p>`).join("")}</div>`;
 }
+
+/* ---------- El roadmap que se elige DESPUÉS de la bienvenida (Juan Cruz, 26/10) ----------
+   El mail de bienvenida sale al firmar aunque falte el perfil (con «tu roadmap te lo pasa el equipo de soporte»). Cuando
+   después se elige el perfil, le llega un mail aparte con su roadmap y Customer Success recibe un aviso para mandárselo
+   también por WhatsApp, con el mensaje listo para copiar desde la ficha (Contrato → Bienvenida). */
+
+const pilaDe = (nombre?: string | null) => (nombre ?? "").trim().split(/\s+/)[0] ?? "";
+
+/** El mail con su roadmap. null si no hay perfil o si falta el link de ese perfil en Ajustes. */
+export function textoDelRoadmap(g: Pick<GuiaBienvenida, "perfil" | "roadmap" | "soporte">, nombre?: string | null): { asunto: string; texto: string } | null {
+  if (!g.perfil || !g.roadmap) return null;
+  const pila = pilaDe(nombre);
+  return {
+    asunto: `Tu roadmap personalizado (${g.perfil})`,
+    texto: `Hola${pila ? ` ${pila}` : ""}!
+
+Te compartimos tu roadmap personalizado (${g.perfil}): ${g.roadmap}
+
+Es la guía para identificar qué tecnologías priorizar y cómo orientar tu preparación según la demanda actual del mercado. Seguí sus indicaciones en orden: no intentes estudiar todo al mismo tiempo.${g.soporte ? `
+
+Ante cualquier duda, escribinos.
+📲 WhatsApp de soporte: ${g.soporte.whatsapp}` : ""}
+
+Apicanta
+Equipo de Yari Taft`,
+  };
+}
+
+/** El mismo roadmap, corto, para pegar en el WhatsApp del alumno. */
+export function mensajeDelRoadmap(g: Pick<GuiaBienvenida, "perfil" | "roadmap">, nombre?: string | null): string | null {
+  if (!g.perfil || !g.roadmap) return null;
+  const pila = pilaDe(nombre);
+  return `Hola${pila ? ` ${pila}` : ""}! Te paso tu roadmap personalizado (${g.perfil}): ${g.roadmap}\nSeguí sus indicaciones en orden y cualquier duda me escribís.`;
+}
+
+/** ¿Ya le llegó el roadmap de ESTE perfil? En el mail de bienvenida (salió con ese perfil) o en el mail aparte. */
+export function roadmapYaEnviado(eventos: readonly { evento: string; detalle: Record<string, unknown>; cuando: string }[], perfil: string | null):
+  { por: "bienvenida" | "mail"; cuando: string } | null {
+  if (!perfil) return null;
+  for (let i = eventos.length - 1; i >= 0; i--) {
+    const e = eventos[i];
+    if (e.detalle?.enviado !== true || e.detalle?.perfil !== perfil) continue;
+    if (e.evento === "roadmap") return { por: "mail", cuando: e.cuando };
+    if (e.evento === "bienvenida") return { por: "bienvenida", cuando: e.cuando };
+  }
+  return null;
+}

@@ -117,8 +117,10 @@ export function Campanita() {
     if (!a.contactoId) return;
     /* Si la persona es alumna, en Servicio; si no, en Ventas. El chat está en las dos. */
     const p = personaDe(e, a.contactoId);
-    /* Un contrato que no salió o se firmó: la solapa Contrato del servicio, si ya hay servicio (si no, la venta lo muestra). */
-    abrirFicha(a.contactoId, p?.alumnos.length ? "servicio" : "ventas", a.tipo === "contrato" && p?.alumnos.length ? { hoja: "contrato" } : undefined);
+    /* Un contrato que no salió o se firmó, o el roadmap para mandar por WhatsApp: la solapa Contrato del servicio, si ya hay
+       servicio (si no, la venta lo muestra). */
+    const aContrato = (a.tipo === "contrato" || a.tipo === "roadmap") && p?.alumnos.length;
+    abrirFicha(a.contactoId, p?.alumnos.length ? "servicio" : "ventas", aContrato ? { hoja: "contrato" } : undefined);
   };
   const todos = () => {
     setAvisos((l) => marcarEnLista(l, () => true, new Date().toISOString()));

@@ -11,7 +11,7 @@ import {
 import { cambiarFicha, darAccesos, type ResultadoAccesos } from "./accesos-servidor";
 import { plantillaDelContrato, programaDePlantilla, programaPorId, programasDe, type Programa } from "./programas";
 import type { ConfigContratos } from "./types";
-import { conCodigoDelAlumno, esPerfil, guiaDeBienvenida, htmlDeBienvenida, perfilEfectivo, textoDeBienvenida, type ConfigBienvenida } from "./bienvenida-alumno";
+import { conCodigoDelAlumno, esPerfil, guiaDeBienvenida, htmlDeBienvenida, perfilEfectivo, roadmapYaEnviado, textoDeBienvenida, textoDelRoadmap, type ConfigBienvenida } from "./bienvenida-alumno";
 import { codigoDeAlumno, configResend, enviarPorResend } from "./reporte-servidor";
 import { diaDeNegocio } from "./dia-negocio";
 
@@ -489,7 +489,7 @@ export async function perfilDelContrato(db: SupabaseClient, c: Pick<Contrato, "d
 
 /** Servicio completa el perfil de un contrato que el closer dejó sin cargar (Lili, 25/10). No toca PandaDoc ni el
     estado: el perfil sólo decide qué roadmap le llega al alumno, y sirve en cualquier estado (también firmado). */
-export async function ponerPerfil(db: SupabaseClient, c: Contrato, perfil: string, quien: string): Promise<void> {
+export async function ponerPerfil(db: SupabaseClient, c: Contrato, perfil: string, quien: string): Promise<ResultadoRoadmap | null> {
   if (!esPerfil(perfil)) throw new Error("Ese perfil no existe.");
   if (c.datos.perfil !== perfil) {
     await guardar(db, c.id, { datos: { ...c.datos, perfil } });
@@ -501,6 +501,57 @@ export async function ponerPerfil(db: SupabaseClient, c: Contrato, perfil: strin
     const r = await db.from("seguimiento_alumnos").update({ stack: perfil }).eq("alumnoId", c.alumnoId).neq("stack", perfil);
     if (r.error) throw new Error(`El perfil quedó en el contrato pero no en la ficha: ${r.error.message}`);
   }
+  /* La bienvenida ya salió (sin este roadmap): le llega aparte y se le avisa a Servicio (Juan Cruz, 26/10). */
+  if (!c.bienvenidaMailEn) return null;
+  return mandarRoadmap(db, { ...c, datos: { ...c.datos, perfil } }, quien)
+    .catch((e) => ({ mail: false, motivo: mensajeDe(e) }));
+}
+
+export interface ResultadoRoadmap { mail: boolean; motivo?: string; yaEstaba?: boolean }
+
+/** Le manda por mail su roadmap a quien recibió la bienvenida sin él (o con otro perfil), y le avisa a Customer Success
+    en la campanita para que se lo mande también por WhatsApp (Juan Cruz, 26/10: «que cuando selecciona el perfil le mande
+    el perfil por mail y un aviso a Lili»). Una sola vez por perfil: elegir el mismo de nuevo no lo repite. */
+export async function mandarRoadmap(db: SupabaseClient, c: Contrato, quien: string): Promise<ResultadoRoadmap> {
+  const alumnoId = await alumnoDelContrato(db, c);
+  const perfil = await perfilDelContrato(db, c, alumnoId);
+  const config = await configBienvenida(db);
+  const guia = guiaDeBienvenida({ reserva: c.datos.reserva, programa: c.programa, perfil, config });
+  const nombre = (c.destinatario?.nombre || c.datos?.nombre || "").trim();
+  const mail = guia ? textoDelRoadmap(guia, nombre) : null;
+  if (!mail) return { mail: false, motivo: perfil ? `Falta el link del roadmap de ${perfil} en Ajustes.` : "Falta elegir el perfil." };
+  const ev = await db.from("contrato_eventos").select("evento, detalle, cuando").eq("contratoId", c.id);
+  if (roadmapYaEnviado((ev.data ?? []) as { evento: string; detalle: Record<string, unknown>; cuando: string }[], perfil)) return { mail: true, yaEstaba: true };
+
+  const cfg = configResend();
+  const para = (c.destinatario?.email ?? c.datos?.email ?? "").trim();
+  let enviado = false, error = "", id = "";
+  if (!cfg) error = "El envío de mails no está configurado.";
+  else if (!para) error = "El contrato no tiene el mail del alumno.";
+  else {
+    const responderA = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(config?.responderA ?? "") ? config!.responderA : undefined;
+    const r = await enviarPorResend(cfg, { para, asunto: mail.asunto, texto: mail.texto, html: htmlDeBienvenida(mail.texto), responderA });
+    if (r.ok) { enviado = true; id = r.id ?? ""; } else error = r.error ?? "No salió el mail.";
+  }
+  await evento(db, c.id, "roadmap", quien, "app", { enviado, perfil, ...(id ? { id } : {}), ...(error ? { error } : {}) });
+  await avisarRoadmapAServicio(db, c, perfil!, nombre, enviado);
+  return enviado ? { mail: true } : { mail: false, motivo: error };
+}
+
+/* La campanita de Customer Success (en Equipo, el puesto «Customer Success»): que se lo mande también por WhatsApp. Uno por
+   contrato y perfil. */
+async function avisarRoadmapAServicio(db: SupabaseClient, c: Contrato, perfil: string, nombre: string, enviado: boolean): Promise<void> {
+  try {
+    const r = await db.from("equipo").select("email").eq("activo", true)
+      .or("puesto.ilike.%customer success%,puesto.ilike.%servicio%,puesto.ilike.%csm%");
+    const filas = ((r.data ?? []) as { email: string | null }[]).filter((x) => x.email?.trim()).map((x) => ({
+      id: `av_roadmap_${c.id}_${perfil.toLowerCase().replace(/[^a-z]+/g, "")}_${createHash("sha1").update(x.email!.trim().toLowerCase()).digest("hex").slice(0, 10)}`,
+      para: x.email!.trim().toLowerCase(), tipo: "roadmap", titulo: "Mandale el roadmap por WhatsApp",
+      cuerpo: `${enviado ? `Ya le salió por mail su roadmap (${perfil}).` : `No le pudo salir el mail con su roadmap (${perfil}).`} Mandáselo también por WhatsApp: el mensaje está listo para copiar en su ficha, en Contrato → Bienvenida.`,
+      de: "Apicanta", contactoId: c.leadId ?? null, persona: nombre || null,
+    }));
+    if (filas.length) await db.from("avisos").upsert(filas, { onConflict: "id", ignoreDuplicates: true });
+  } catch (err) { console.error("[contratos] no se pudo avisar del roadmap", mensajeDe(err)); }
 }
 
 const DIAS_PARA_BIENVENIDA = 3;

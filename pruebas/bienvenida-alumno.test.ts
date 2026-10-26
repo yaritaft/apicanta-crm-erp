@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { armarBienvenida, problemaDeDatos, type DatosContrato } from "@/lib/contratos";
-import { conCodigoDelAlumno, guiaDeBienvenida, htmlDeBienvenida, modeloDeBienvenida, perfilDeStack, perfilEfectivo, textoDeBienvenida, type ConfigBienvenida } from "@/lib/bienvenida-alumno";
+import { conCodigoDelAlumno, guiaDeBienvenida, htmlDeBienvenida, mensajeDelRoadmap, modeloDeBienvenida, perfilDeStack, perfilEfectivo, roadmapYaEnviado, textoDeBienvenida, textoDelRoadmap, type ConfigBienvenida } from "@/lib/bienvenida-alumno";
 
 /* Los links y los teléfonos de verdad viven en Ajustes (el repositorio es público): acá, inventados. */
 const CONFIG: ConfigBienvenida = {
@@ -129,4 +129,20 @@ test("el perfil de la bienvenida es el de Programa → Perfil (si es un roadmap)
   assert.equal(perfilEfectivo(undefined, "Backend"), null);
   const g = guiaDeBienvenida({ programa: "hackear-ai", perfil: perfilEfectivo(undefined, "full stack"), config: CONFIG })!;
   assert.equal(g.roadmap, ROADMAPS["Full Stack"], "con eso ya le llega su roadmap");
+});
+
+test("el roadmap que se elige después: el mail, el mensaje de WhatsApp y si ya le llegó", () => {
+  const g = guiaDeBienvenida({ programa: "downsell", perfil: "Full Stack", config: CONFIG })!;
+  const m = textoDelRoadmap(g, "Jacob Mendoza")!;
+  assert.equal(m.asunto, "Tu roadmap personalizado (Full Stack)");
+  assert.match(m.texto, /^Hola Jacob!/);
+  assert.ok(m.texto.includes(ROADMAPS["Full Stack"]));
+  assert.ok(mensajeDelRoadmap(g, "Jacob")!.includes(ROADMAPS["Full Stack"]));
+  assert.equal(textoDelRoadmap({ ...g, roadmap: null }, "Jacob"), null, "sin link no hay mail");
+  const ev = (evento: string, perfil: string | null, enviado = true) => ({ evento, detalle: { enviado, perfil }, cuando: "2026-10-26T15:00:00Z" });
+  assert.equal(roadmapYaEnviado([ev("bienvenida", null)], "Full Stack"), null, "la bienvenida salió sin roadmap");
+  assert.equal(roadmapYaEnviado([ev("bienvenida", "Full Stack")], "Full Stack")?.por, "bienvenida");
+  assert.equal(roadmapYaEnviado([ev("bienvenida", null), ev("roadmap", "Full Stack")], "Full Stack")?.por, "mail");
+  assert.equal(roadmapYaEnviado([ev("roadmap", "Full Stack", false)], "Full Stack"), null, "uno que no salió no cuenta");
+  assert.equal(roadmapYaEnviado([ev("roadmap", "Data Engineer")], "Full Stack"), null, "otro perfil: hay que mandar el nuevo");
 });

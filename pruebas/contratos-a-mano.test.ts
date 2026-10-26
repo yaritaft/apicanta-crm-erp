@@ -35,6 +35,16 @@ function baseFalsa(tablas: Record<string, Fila[]>) {
       select(_c?: string, o?: { count?: string; head?: boolean }) { conSelect = true; contar = Boolean(o?.count); return q; },
       eq(c: string, v: unknown) { filtros.push((f) => f[c] === v); return q; },
       neq(c: string, v: unknown) { filtros.push((f) => f[c] !== v); return q; },
+      /* «col.ilike.patrón,col.eq.valor»: alcanza uno. */
+      or(expr: string) {
+        const partes = expr.split(",").map((p) => {
+          const [col, op, ...resto] = p.split(".");
+          const v = resto.join(".");
+          return op === "ilike" ? (f: Fila) => comoIlike(v).test(String(f[col] ?? "")) : op === "eq" ? (f: Fila) => String(f[col] ?? "") === v : () => false;
+        });
+        filtros.push((f) => partes.some((p) => p(f)));
+        return q;
+      },
       is(c: string, v: unknown) { filtros.push((f) => (f[c] ?? null) === v); return q; },
       gte(c: string, v: string) { filtros.push((f) => String(f[c] ?? "") >= v); return q; },
       ilike(c: string, v: string) { const re = comoIlike(v); filtros.push((f) => re.test(String(f[c] ?? ""))); return q; },
@@ -207,7 +217,7 @@ function pandadocFalso(estadoInicial: string, falla?: (l: Llamada) => Response |
     if (l.metodo === "POST" && ruta.endsWith("/session")) return ok({ id: "ses_1", expires_at: "2026-10-30T00:00:00Z" });
     return ok({}, 404);
   }) as typeof fetch;
-  return { llamadas, restaurar: () => { globalThis.fetch = viejo; process.env.PANDADOC_SANDBOX_KEY = previo; } };
+  return { llamadas, restaurar: () => { globalThis.fetch = viejo; if (previo === undefined) delete process.env.PANDADOC_SANDBOX_KEY; else process.env.PANDADOC_SANDBOX_KEY = previo; } };
 }
 
 const DATOS_SANTI = {
@@ -344,4 +354,87 @@ test("«Volver a intentar» sobre un intento que PandaDoc ya no tiene dice que h
     await assert.rejects(mandarBorrador(baseFalsa(t), c, "liliana@apicanta.com"), /ya no está en PandaDoc: tocá «Mandar uno nuevo»/);
     assert.match(String(t.contratos[0].error), /Mandar uno nuevo/);
   } finally { pd.restaurar(); }
+});
+
+/* ---------- El roadmap que se elige después de la bienvenida (Juan Cruz, 26/10) ----------
+   «Dejarlo así (la bienvenida sale al firmar) y, cuando seleccionan el perfil, que le mande el roadmap por mail y un aviso a
+   Lili para que se lo mande por WhatsApp». */
+
+function resendFalso() {
+  const mails: { to: string[]; subject: string; text: string }[] = [];
+  const viejo = globalThis.fetch;
+  const previo = { k: process.env.RESEND_API_KEY, f: process.env.RESEND_FROM };
+  process.env.RESEND_API_KEY = "re_prueba"; process.env.RESEND_FROM = "Apicanta <hola@x.com>";
+  globalThis.fetch = (async (url: string | URL, init?: RequestInit) => {
+    if (String(url).includes("api.resend.com")) { mails.push(JSON.parse(String(init?.body))); return new Response(JSON.stringify({ id: `re_${mails.length}` }), { status: 200 }); }
+    return new Response("{}", { status: 404 });
+  }) as typeof fetch;
+  /* Asignar undefined a process.env deja el TEXTO «undefined» (y una clave «undefined» saldría a Resend de verdad): se borra. */
+  const volver = (k: "RESEND_API_KEY" | "RESEND_FROM", v: string | undefined) => { if (v === undefined) delete process.env[k]; else process.env[k] = v; };
+  return { mails, restaurar: () => { globalThis.fetch = viejo; volver("RESEND_API_KEY", previo.k); volver("RESEND_FROM", previo.f); } };
+}
+
+function conBienvenida(c: Contrato, stack = "") {
+  const t = tablasCon(c, {
+    seguimiento_alumnos: [{ id: "seg_jacob", alumnoId: "alu_jacob", stack }],
+    equipo: [
+      { id: "eq_lili", nombre: "Liliana Riveros", puesto: "Customer Success Manager", email: "Liliana@apicanta.com", activo: true },
+      { id: "eq_mariano", nombre: "Mariano", puesto: "Closer", email: "mariano@apicanta.com", activo: true },
+    ],
+    avisos: [],
+  });
+  t.ajustes[0].bienvenida = { roadmaps: { "Data Engineer": "https://roadmaps.x/data", "Full Stack": "https://roadmaps.x/fs" }, soporte: { nombre: "Liliana", whatsapp: "+54 9 11 0000 0000" } };
+  return t;
+}
+
+test("elegir el perfil cuando la bienvenida ya salió sin roadmap: le llega por mail y Lili recibe el aviso para el WhatsApp", async () => {
+  const c = contrato({ estado: "firmado", alumnoId: "alu_jacob", leadId: "lead_jacob", programa: "downsell", datos: {}, bienvenidaMailEn: "2026-10-26T15:20:00Z",
+    destinatario: { nombre: "Jacob Mendoza Hernandez", email: "jacob@x.com", telefono: "" } } as Partial<Contrato>);
+  const t = conBienvenida(c);
+  t.contrato_eventos.push({ id: "cev_b", contratoId: c.id, evento: "bienvenida", detalle: { enviado: true, perfil: null }, cuando: "2026-10-26T15:20:00Z" });
+  const db = baseFalsa(t);
+  const rs = resendFalso();
+  try {
+    const r = await ponerPerfil(db, c, "Data Engineer", "liliana@apicanta.com");
+    assert.deepEqual(r, { mail: true });
+    assert.equal(rs.mails.length, 1);
+    assert.deepEqual(rs.mails[0].to, ["jacob@x.com"]);
+    assert.equal(rs.mails[0].subject, "Tu roadmap personalizado (Data Engineer)");
+    assert.match(rs.mails[0].text, /Hola Jacob!/);
+    assert.match(rs.mails[0].text, /https:\/\/roadmaps\.x\/data/);
+    assert.equal(eventos(t, "roadmap").length, 1);
+    assert.deepEqual(t.avisos.map((a) => [a.para, a.tipo, a.persona, a.contactoId]), [["liliana@apicanta.com", "roadmap", "Jacob Mendoza Hernandez", "lead_jacob"]], "sólo a Customer Success");
+    assert.match(String(t.avisos[0].cuerpo), /WhatsApp/);
+    /* Elegir el mismo otra vez no lo repite. */
+    const otra = await ponerPerfil(db, { ...c, datos: { perfil: "Data Engineer" } } as Contrato, "Data Engineer", "liliana@apicanta.com");
+    assert.equal(otra?.yaEstaba, true);
+    assert.equal(rs.mails.length, 1);
+    assert.equal(t.avisos.length, 1);
+  } finally { rs.restaurar(); }
+});
+
+test("sin bienvenida enviada todavía no sale nada aparte (el roadmap va en la bienvenida al firmar); ni si ya fue con ese perfil", async () => {
+  const rs = resendFalso();
+  try {
+    const sinFirmar = contrato({ estado: "enviado", alumnoId: "alu_jacob", programa: "downsell", datos: {}, bienvenidaMailEn: null } as Partial<Contrato>);
+    const t1 = conBienvenida(sinFirmar);
+    assert.equal(await ponerPerfil(baseFalsa(t1), sinFirmar, "Full Stack", "x"), null);
+    const conEse = contrato({ estado: "firmado", alumnoId: "alu_jacob", programa: "downsell", datos: {}, bienvenidaMailEn: "2026-10-26T15:20:00Z" } as Partial<Contrato>);
+    const t2 = conBienvenida(conEse, "Full Stack");
+    t2.contrato_eventos.push({ id: "cev_b", contratoId: conEse.id, evento: "bienvenida", detalle: { enviado: true, perfil: "Full Stack" }, cuando: "2026-10-26T15:20:00Z" });
+    assert.equal((await ponerPerfil(baseFalsa(t2), conEse, "Full Stack", "x"))?.yaEstaba, true, "la bienvenida ya lo llevaba");
+    assert.equal(rs.mails.length, 0);
+    assert.equal(t2.avisos.length, 0);
+  } finally { rs.restaurar(); }
+});
+
+test("sin Resend o sin el link del roadmap no se rompe nada: lo dice y Lili igual recibe el aviso para el WhatsApp", async () => {
+  const c = contrato({ estado: "firmado", alumnoId: "alu_jacob", leadId: "lead_jacob", programa: "downsell", datos: {}, bienvenidaMailEn: "2026-10-26T15:20:00Z" } as Partial<Contrato>);
+  const t = conBienvenida(c);
+  const r = await ponerPerfil(baseFalsa(t), c, "Data Engineer", "x");
+  assert.deepEqual(r, { mail: false, motivo: "El envío de mails no está configurado." });
+  assert.equal(t.avisos.length, 1, "igual se avisa para mandarlo por WhatsApp");
+  const sinLink = await ponerPerfil(baseFalsa(conBienvenida(c)), c, "AI Engineer", "x");
+  assert.equal(sinLink?.mail, false);
+  assert.match(String(sinLink?.motivo), /Falta el link del roadmap de AI Engineer/);
 });

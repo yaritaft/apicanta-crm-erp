@@ -3,7 +3,7 @@ import { nubeServidor } from "@/lib/servidor";
 import { baseDelPedido, correoDelPedido, esDuenoDelPedido, exigirArea } from "@/lib/permisos-servidor";
 import { datosLimpios, problemaDeDatos, soloDuenos, type DatosContrato, type ModoContrato } from "@/lib/contratos";
 import {
-  anular, contratoPorId, corregir, crearContrato, darAccesosAhora, mandarBorrador, nuevoEnlace, ponerPerfil, programasGuardados, reenviar, sincronizar,
+  anular, contratoPorId, corregir, crearContrato, darAccesosAhora, mandarBorrador, mandarRoadmap, nuevoEnlace, ponerPerfil, programasGuardados, reenviar, sincronizar, type ResultadoRoadmap,
 } from "@/lib/contratos-servidor";
 import { cambiaLaPlantilla, programaPorId } from "@/lib/programas";
 import { ErrorPandadoc } from "@/lib/pandadoc-servidor";
@@ -88,6 +88,8 @@ export async function POST(peticion: Request) {
     const c = await contratoPorId(db, id);
     if (!c) return mal("No encuentro ese contrato.", 404);
     const { config, programas } = await programasGuardados(db);
+    /* «perfil» y «roadmap»: si le salió (o no) el mail con su roadmap (lib/contratos-servidor.ts, mandarRoadmap). */
+    let roadmap: ResultadoRoadmap | null = null;
 
     if (accion === "mandar") await mandarBorrador(db, c, quien, config);
     else if (accion === "reenviar") await reenviar(db, c, quien);
@@ -107,10 +109,11 @@ export async function POST(peticion: Request) {
       if (!enlace) return mal("PandaDoc no dio el link: el contrato tiene que estar enviado.", 409);
     } else if (accion === "sincronizar") await sincronizar(db, c, "sincronizacion");
     else if (accion === "accesos") await darAccesosAhora(db, c, quien || "Apicanta");
-    else if (accion === "perfil") await ponerPerfil(db, c, typeof b.perfil === "string" ? b.perfil : "", quien || "Apicanta");
+    else if (accion === "perfil") roadmap = await ponerPerfil(db, c, typeof b.perfil === "string" ? b.perfil : "", quien || "Apicanta");
+    else if (accion === "roadmap") roadmap = await mandarRoadmap(db, c, quien || "Apicanta");
     else return mal("No sé hacer eso.");
 
-    return NextResponse.json({ contrato: await contratoPorId(db, id) }, { headers: { "Cache-Control": "no-store" } });
+    return NextResponse.json({ contrato: await contratoPorId(db, id), ...(roadmap ? { roadmap } : {}) }, { headers: { "Cache-Control": "no-store" } });
   } catch (e) {
     const status = e instanceof ErrorPandadoc ? (e.status >= 500 ? 502 : 409) : 500;
     if (e instanceof ErrorPandadoc) console.error("[contratos]", accion, e.status, e.detalle);
