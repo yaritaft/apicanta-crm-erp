@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-  ACCESO_DUENO, AREAS, TIPOS_POR_DEFECTO, nivelDeLiquidacion, nivelDeRuta, veLaLiquidacion, type MiAcceso,
+  ACCESO_DUENO, AREAS, TIPOS_POR_DEFECTO, nivelDeLiquidacion, nivelDeRuta, puedeEditar, puedeLeer, veLaLiquidacion, type MiAcceso,
 } from "@/lib/permisos";
 import { navPara } from "@/components/shell/nav";
 
@@ -56,4 +56,29 @@ test("el menú: «Equipo y honorarios» aparece para quien tiene el permiso y no
   assert.ok(!items(aldana()).includes("/equipo"));
   assert.ok(!items(tipo("equipo")).includes("/equipo"));
   assert.ok(items(ACCESO_DUENO).includes("/equipo"));
+});
+
+test("la app deja guardar la liquidación a quien tiene «Liquidación: editar» (y a nadie más): el aviso «Tu tipo de cuenta no puede cambiar la liquidación» era esto", () => {
+  /* Aldana (26/10) quiso descontarle US$ 2.500 a un closer y la app lo frenó antes de llegar a la base: faltaba esta regla. */
+  assert.equal(puedeEditar(ACCESO_DUENO, "liquidaciones"), true);
+  assert.equal(puedeEditar(aldana("editar"), "liquidaciones"), true);
+  assert.equal(puedeEditar(aldana("ver"), "liquidaciones"), false, "«ver» sólo mira");
+  assert.equal(puedeEditar(aldana(), "liquidaciones"), false);
+  for (const id of ["equipo", "admin", "closer", "director", "setter", "marketing", "customer_success"]) assert.equal(puedeEditar(tipo(id), "liquidaciones"), false, id);
+  assert.equal(puedeEditar(null, "liquidaciones"), false);
+  /* Lo que cobra cada uno (los esquemas) lo cambian sólo los dueños, tenga el permiso que tenga. */
+  assert.equal(puedeEditar(ACCESO_DUENO, "honorarios"), true);
+  assert.equal(puedeEditar(aldana("editar"), "honorarios"), false);
+  /* Lo que la liquidación carga en Finanzas (los gastos) lo puede cargar quien edita Finanzas, como siempre. */
+  assert.equal(puedeEditar(aldana("editar"), "gastos"), true);
+});
+
+test("la app lee los esquemas y la liquidación con «ver» o «editar», y sin el permiso no", () => {
+  for (const t of ["honorarios", "liquidaciones"]) {
+    assert.equal(puedeLeer(ACCESO_DUENO, t), true, t);
+    assert.equal(puedeLeer(aldana("editar"), t), true, t);
+    assert.equal(puedeLeer(aldana("ver"), t), true, t);
+    assert.equal(puedeLeer(aldana(), t), false, t);
+    assert.equal(puedeLeer(tipo("equipo"), t), false, t);
+  }
 });

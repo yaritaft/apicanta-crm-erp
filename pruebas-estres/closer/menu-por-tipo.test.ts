@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { NAV, NAV_CLOSER, TODOS_LOS_ITEMS, inicioPara, navPara, type ItemNav } from "@/components/shell/nav";
 import {
   ACCESO_DUENO, AREAS, AREAS_DE_SECCION, EDITAN, LEEN, TIPOS_POR_DEFECTO, areaDeRuta, areasDeRuta, esCuentaDeCloser, nivelDeRuta, nivelEn, puedeCargarDevolucion,
-  puedeDarDeBaja, puedeEditar, puedeLeer, resumenDeTipo, tipoLimpio, veSeccion, type MiAcceso,
+  puedeDarDeBaja, puedeEditar, puedeLeer, resumenDeTipo, tipoLimpio, veSeccion, type MiAcceso, nivelDeLiquidacion,
 } from "@/lib/permisos";
 import type { AreaId, AreasDeTipo, TipoCuenta } from "@/lib/types";
 import { porSemillas, type Azar } from "./azar";
@@ -219,7 +219,10 @@ test("3000 tipos al azar: leer una tabla es ver al menos una de las áreas que l
     for (const [tabla, areas] of Object.entries(LEEN)) {
       /* Las tablas del lector de WhatsApp son la excepción, a propósito (ver el test de abajo): el código QR no lo lee nadie, y los
          teléfonos de los grupos no los ve quien está limitado a lo suyo aunque vea Webinars. */
-      const esperado = tabla === "whatsapp_qr" ? false : t.soloLoSuyo && TELEFONOS_DE_GRUPOS.has(tabla) ? false : areas.some((x) => nivelEn(a, x) >= 1);
+      /* Los esquemas y la liquidación son de los dueños, y de quien tiene el permiso «Liquidación» (ver o editar): no están repartidos entre las áreas de LEEN. */
+      const esperado = tabla === "whatsapp_qr" ? false
+        : tabla === "honorarios" || tabla === "liquidaciones" ? nivelDeLiquidacion(a) >= 1
+        : t.soloLoSuyo && TELEFONOS_DE_GRUPOS.has(tabla) ? false : areas.some((x) => nivelEn(a, x) >= 1);
       assert.equal(puedeLeer(a, tabla), esperado, tabla);
     }
     /* Lo que no está en LEEN lo lee cualquiera con una sesión; sin acceso, nada. */

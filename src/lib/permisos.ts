@@ -248,6 +248,8 @@ export function puedeLeer(a: MiAcceso | null | undefined, tabla: string): boolea
   if (!a) return false;
   if (tabla === "whatsapp_qr") return false;
   if (esDueno(a)) return true;
+  /* Los esquemas y la liquidación: los dueños y quien tiene el permiso «Liquidación» (ver o editar). */
+  if (tabla === "honorarios" || tabla === "liquidaciones") return nivelDeLiquidacion(a) >= 1;
   if (a.soloLoSuyo && SIN_SOLO_LO_SUYO.has(tabla)) return false;
   const areas = LEEN[tabla];
   return !areas || areas.some((x) => nivelEn(a, x) >= 1);
@@ -276,6 +278,9 @@ export function puedeEditar(a: MiAcceso | null | undefined, tabla: string): bool
   if (!a) return false;
   if (SOLO_EL_SERVIDOR.has(tabla)) return false;
   if (esDueno(a) || LIBRES.has(tabla)) return true;
+  /* La liquidación: cargarla, cerrarla y marcar quién cobró es de quien tiene «Liquidación: editar» (Aldana, 26/10: «Tu tipo de cuenta no
+     puede cambiar la liquidación» al querer descontarle un monto a un closer). Los esquemas (honorarios) siguen siendo sólo de los dueños. */
+  if (tabla === "liquidaciones") return nivelDeLiquidacion(a) >= 2;
   if (tabla === "devoluciones") return puedeCargarDevolucion(a);
   if (tabla === "alumnos" && nivelEn(a, "ventas") === 2) return true;
   /* Quien registra pagos concilia el cobro con el pago de la pasarela: la base le deja ver los
