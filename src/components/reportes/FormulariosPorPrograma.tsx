@@ -85,7 +85,7 @@ export function FormulariosPorPrograma() {
         return (
           <article key={id} className="fpp__prog">
             <div className="fpp__cab">
-              <span className="fpp__nombre">{f.programa}</span>
+              <span className="fpp__nombre">{f.programa}{solo && <Badge variante="success">Automático</Badge>}</span>
               <span className="fpp__n">{n === 1 ? "1 alumno lo completa" : `${n} alumnos lo completan`} · {f.preguntas.length} preguntas</span>
             </div>
             <div className={`fpp__estado${solo ? " fpp__estado--ok" : ""}`}>
@@ -97,10 +97,10 @@ export function FormulariosPorPrograma() {
             <div className="fpp__acciones">
               <Button sm variante="secondary" icono={<Copy size={14} />} onClick={() => void copiar(id)}>Copiar link para el grupo</Button>
               <a className="hk-btn hk-btn--ghost hk-btn--sm" href={`/reporte?p=${ATAJO_DE[id]}`} target="_blank" rel="noopener noreferrer"><ExternalLink size={14} />Ver el formulario</a>
-              {puede && n > 0 && (
+              {/* Sólo donde ya les llega solo: el de Hackear IT es provisorio y no se le manda a 160 alumnos por un clic. */}
+              {puede && solo && n > 0 && (
                 <Button sm variante="ghost" icono={<Send size={14} />} cargando={mandando === id} onClick={() => setMandar(id)}>Mandárselo ahora</Button>
               )}
-              {solo && <Badge variante="success">Automático</Badge>}
             </div>
           </article>
         );

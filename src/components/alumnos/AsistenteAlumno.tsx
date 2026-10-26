@@ -27,7 +27,10 @@ import { BadgeEtapa, ESTADO_ALUMNO, ESTADOS_ALUMNO } from "./comun";
    Desde que registrar una venta crea el alumno solo, esto queda para las
    ventas de antes y para quien no pasó por Ventas. Por eso la búsqueda
    marca las ventas que ya tienen alumno y lleva a su ficha en vez de
-   dejar cargarlo dos veces.
+   dejar cargarlo dos veces. «Alumno viejo sin registro» (Lili, 26/10) es
+   para los de antes de la app que ya tienen acceso a todo y no están en
+   ningún lado: se carga a mano, queda marcado como viejo y con el acceso
+   completo, y al terminar se abre su ficha para completarla.
    ================================================================== */
 
 type PasoId = "origen" | "persona" | "plan" | "cuota" | "etapa" | "notas";
@@ -42,8 +45,9 @@ const PASOS: { id: PasoId; titulo: string }[] = [
 ];
 
 interface Borrador {
-  /* «pendiente»: compró y el closer todavía no cargó la venta; se ata a su persona del CRM y espera la venta. */
-  modo: "venta" | "pendiente" | "manual" | null;
+  /* «pendiente»: compró y el closer todavía no cargó la venta; se ata a su persona del CRM y espera la venta.
+     «viejo»: un alumno de antes de la app, con acceso a todo y sin registro (se carga a mano, como «manual»). */
+  modo: "venta" | "pendiente" | "manual" | "viejo" | null;
   ventaId?: string;
   leadId?: string;
   busca: string;
@@ -151,9 +155,9 @@ export function AsistenteAlumno({ onCerrar, onListo, onAbrirAlumno, persona }: {
     });
   }
 
-  function aMano() {
+  function aMano(modo: "manual" | "viejo" = "manual") {
     set({
-      modo: "manual", ventaId: undefined, leadId: undefined,
+      modo, ventaId: undefined, leadId: undefined,
       ...(b.ventaId ? datosVacios(e) : {}),
     });
   }
@@ -182,9 +186,17 @@ export function AsistenteAlumno({ onCerrar, onListo, onAbrirAlumno, persona }: {
       estado: b.estado, inicio: b.inicio, progreso: 0,
       leadId: b.leadId, notas: b.notas.trim(), creadoEn: new Date().toISOString(),
       /* Esperando la venta del closer (lib/alumnos.ts): se le pega sola cuando la cargue. */
-      extra: b.modo === "pendiente" ? { ...b.extra, ventaPendiente: { desde: new Date().toISOString(), ...(b.closer ? { closer: b.closer } : {}) } } : b.extra,
+      extra: b.modo === "pendiente" ? { ...b.extra, ventaPendiente: { desde: new Date().toISOString(), ...(b.closer ? { closer: b.closer } : {}) } }
+        : b.modo === "viejo" ? { ...b.extra, alumnoViejo: { cargadoEn: new Date().toISOString() } } : b.extra,
       etapaServicioId: b.etapaServicioId || undefined, ventaId: b.ventaId,
     }, nombre);
+    /* El alumno viejo ya tiene acceso a todo: así figura en su ficha (Acceso, Wisboo, Zoom y los grupos) y no le marca «Falta». */
+    if (b.modo === "viejo") {
+      acciones.guardarSeguimiento(id, (s, quien) => ({
+        ...s, acceso: "Completos", accesoWibo: true, accesoZoom: true, accesoWhatsapp: true,
+        actualizadoEn: new Date().toISOString(), actualizadoPor: quien,
+      }), () => "Alumno viejo sin registro: con acceso completo.");
+    }
     onListo(id, nombre);
   }
 
@@ -209,7 +221,7 @@ export function AsistenteAlumno({ onCerrar, onListo, onAbrirAlumno, persona }: {
       {paso.id === "origen" && (
         <PasoOrigen
           b={b} set={set} e={e} venta={venta}
-          onElegirVenta={elegirVenta} onElegirPersona={elegirPersona} onManual={aMano} onAbrirAlumno={onAbrirAlumno}
+          onElegirVenta={elegirVenta} onElegirPersona={elegirPersona} onManual={() => aMano("manual")} onViejo={() => aMano("viejo")} onAbrirAlumno={onAbrirAlumno}
         />
       )}
       {paso.id === "persona" && <PasoPersona b={b} set={set} e={e} onAbrirAlumno={onAbrirAlumno} />}
@@ -223,9 +235,9 @@ export function AsistenteAlumno({ onCerrar, onListo, onAbrirAlumno, persona }: {
 
 /* ---------- Paso 1: ¿viene de una venta? ---------- */
 
-function PasoOrigen({ b, set, e, venta, onElegirVenta, onElegirPersona, onManual, onAbrirAlumno }: {
+function PasoOrigen({ b, set, e, venta, onElegirVenta, onElegirPersona, onManual, onViejo, onAbrirAlumno }: {
   b: Borrador; set: (c: Partial<Borrador>) => void; e: EstadoApp; venta?: Venta;
-  onElegirVenta: (v: Venta) => void; onElegirPersona: (p: PersonaBuscada) => void; onManual: () => void; onAbrirAlumno: (id: string) => void;
+  onElegirVenta: (v: Venta) => void; onElegirPersona: (p: PersonaBuscada) => void; onManual: () => void; onViejo: () => void; onAbrirAlumno: (id: string) => void;
 }) {
   const q = normal(b.busca.trim());
   /* Compró y el closer todavía no cargó la venta: la persona del CRM (agendó y tuvo su llamada). */
@@ -269,7 +281,14 @@ function PasoOrigen({ b, set, e, venta, onElegirVenta, onElegirPersona, onManual
           tecla="3" nombre="No pasó por Ventas" sub="Una beca, un canje o alguien sin llamada"
           activo={b.modo === "manual"} onClick={onManual}
         />
+        <Opcion
+          tecla="4" nombre="Alumno viejo sin registro" sub="De antes de la app, con acceso a todo: completo su ficha a mano"
+          activo={b.modo === "viejo"} onClick={onViejo}
+        />
       </div>
+      {b.modo === "viejo" && (
+        <p className="t-sm t-subtle">Queda marcado como alumno viejo y con el acceso completo (Wisboo, Zoom y grupos). Al terminar se abre su ficha para que completes el resto.</p>
+      )}
 
       {b.modo === "pendiente" && (
         <div className="stack-3">
@@ -378,7 +397,9 @@ function PasoPersona({ b, set, e, onAbrirAlumno }: {
     <>
       <Pregunta
         texto="¿Quién es?"
-        sub={b.ventaId ? "Lo trajimos de la venta: corregí lo que haga falta." : "Sólo el nombre es obligatorio. El mail sirve para no cargarlo dos veces."}
+        sub={b.ventaId ? "Lo trajimos de la venta: corregí lo que haga falta." : b.modo === "viejo"
+          ? "Sólo el nombre es obligatorio. Con el mail le llegan sus formularios y se lo reconoce si agenda por Calendly."
+          : "Sólo el nombre es obligatorio. El mail sirve para no cargarlo dos veces."}
       />
       <Input
         value={b.nombre} onChange={(ev) => set({ nombre: ev.target.value })}
@@ -461,7 +482,8 @@ function PasoCuota({ b, set, e, venta }: { b: Borrador; set: (c: Partial<Borrado
     ? deVenta > 0
       ? `Sale del plan de cuotas de la venta: ${M(deVenta)} por mes.`
       : "La venta se pagó en un solo pago: no deja cuota mensual."
-    : "Es lo que suma al MRR mientras esté activo. Si pagó todo junto, dejalo en cero.";
+    : b.modo === "viejo" ? "Si no sabés cuánto paga (o ya pagó todo), dejalo en cero: no suma al MRR."
+      : "Es lo que suma al MRR mientras esté activo. Si pagó todo junto, dejalo en cero.";
 
   return (
     <>
@@ -491,6 +513,7 @@ function PasoCuota({ b, set, e, venta }: { b: Borrador; set: (c: Partial<Borrado
           onChange={(ev) => { if (ev.target.value) set({ inicio: new Date(`${ev.target.value}T12:00:00`).toISOString() }); }}
         />
         {venta && <span className="hk-help">Es la fecha de la venta. Cambiala si arranca otro día.</span>}
+        {b.modo === "viejo" && <span className="hk-help">Cuándo empezó (aunque sea aproximado): con esto se calcula cuándo termina su programa.</span>}
       </div>
     </>
   );

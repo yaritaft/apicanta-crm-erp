@@ -6,7 +6,7 @@
   border: 1px solid var(--border); border-radius: var(--radius-lg, 16px); background: var(--surface-100, var(--surface));
 }
 .fpp__cab { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
-.fpp__nombre { font-size: 15px; font-weight: 650; color: var(--ink); }
+.fpp__nombre { display: inline-flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 650; color: var(--ink); }
 .fpp__n { font-size: 12px; color: var(--ink-subtle); font-variant-numeric: tabular-nums; }
 .fpp__estado {
   display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 10px; font-size: 13px; color: var(--ink-muted);
@@ -16,5 +16,4 @@
 .fpp__estado--ok svg { color: var(--success); }
 .fpp__estado b { font-weight: 650; }
 .fpp__acciones { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-.fpp__acciones .hk-badge { margin-left: auto; }
 @media (max-width: 560px) { .fpp { grid-template-columns: minmax(0, 1fr); } }
