@@ -113,6 +113,19 @@ function EstadoContratos({ config }: { config: ConfigContratos }) {
   );
 }
 
+/** Lo que le falta a una plantilla de PandaDoc: sin la variable, lo que carga el closer no sale en el contrato. */
+function AvisoPlantilla({ faltan }: { faltan: string[] }) {
+  const monto = faltan.includes("Venta.Modalidad");
+  return (
+    <p className="t-sm" role="status" style={{ color: "var(--warning)", margin: "6px 0 0" }}>
+      A esta plantilla le {faltan.length === 1 ? "falta" : "faltan"} {faltan.map((n) => `[${n}]`).join(", ")}.{" "}
+      {monto
+        ? "Sin [Venta.Modalidad] el monto que carga el closer no sale: queda el que esté escrito en la plantilla. Reemplazá ese texto en PandaDoc por [Venta.Modalidad]."
+        : "Lo que cargue el closer en ese dato no va a salir en el contrato: agregalo en PandaDoc."}
+    </p>
+  );
+}
+
 /* ---------- El aviso de PandaDoc ---------- */
 
 interface ModoAviso { modo: "produccion" | "prueba"; clave: boolean; conectado: boolean; conectadoEn: string | null; conectadoPor: string }
@@ -238,6 +251,17 @@ function Programas({ pruebas }: { pruebas: Pruebas | null }) {
   const [grupos, setGrupos] = useState<Grupo[]>([]);
   useEffect(() => { setLista(guardados); }, [guardados]);
   useEffect(() => { void pedir("/api/telegram").then((j) => setGrupos((j.grupos ?? []) as Grupo[])).catch(() => setGrupos([])); }, []);
+  /* Qué variables no tiene cada plantilla elegida: si no está [Venta.Modalidad], lo que carga el closer no sale en el contrato. */
+  const [revisadas, setRevisadas] = useState<Record<string, string[] | null>>({});
+  const idsDePlantillas = useMemo(() => Array.from(new Set(lista.flatMap((p) => [p.plantillaId, p.plantillaReservaId, p.plantillaSinSesionesId]).filter((x): x is string => Boolean(x)))).sort().join(","), [lista]);
+  useEffect(() => {
+    if (!idsDePlantillas) return;
+    let vivo = true;
+    void pedir(`/api/contratos/plantillas?ids=${encodeURIComponent(idsDePlantillas)}`)
+      .then((j) => { if (vivo) setRevisadas((r) => ({ ...r, ...((j.revisadas ?? {}) as Record<string, string[] | null>) })); }).catch(() => {});
+    return () => { vivo = false; };
+  }, [idsDePlantillas]);
+  const sinVariables = (id: string | undefined) => (id ? revisadas[id] ?? [] : []);
   const cambiado = JSON.stringify(lista) !== JSON.stringify(guardados);
 
   const plantillas = pruebas?.pandadoc.plantillas ?? [];
@@ -281,6 +305,7 @@ function Programas({ pruebas }: { pruebas: Pruebas | null }) {
                 {ab ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
                 <span className="t-body" style={{ fontWeight: 500 }}>{p.nombre}</span>
                 {!p.activo && <Badge variante="neutral">Inactivo</Badge>}
+                {[p.plantillaId, p.plantillaReservaId, p.plantillaSinSesionesId].some((id) => sinVariables(id).length > 0) && <Badge variante="warning">Plantilla incompleta</Badge>}
                 <span className="t-sm t-subtle" style={{ marginLeft: "auto" }}>{resumen}</span>
               </button>
               {ab && (
@@ -298,18 +323,21 @@ function Programas({ pruebas }: { pruebas: Pruebas | null }) {
                         onChange={(ev) => cambiar(p.id, { plantillaId: ev.target.value, plantillaNombre: plantillas.find((t) => t.id === ev.target.value)?.nombre ?? p.plantillaNombre })}
                         opciones={[{ valor: "", texto: "Sin contrato" }, ...plantillas.map((t) => ({ valor: t.id, texto: t.nombre })),
                           ...(p.plantillaId && !plantillas.some((t) => t.id === p.plantillaId) ? [{ valor: p.plantillaId, texto: p.plantillaNombre || p.plantillaId }] : [])]} />
+                      {sinVariables(p.plantillaId).length > 0 && <AvisoPlantilla faltan={sinVariables(p.plantillaId)} />}
                     </Field>
                     <Field label="Contrato de reserva" span2 ayuda="Sale cuando la venta es «Sólo la reserva»: lleva el monto en [Venta.Modalidad] y al firmarlo no se dan accesos.">
                       <Select value={p.plantillaReservaId ?? ""} placeholder="Sin contrato de reserva"
                         onChange={(ev) => cambiar(p.id, { plantillaReservaId: ev.target.value, plantillaReservaNombre: plantillas.find((t) => t.id === ev.target.value)?.nombre ?? "" })}
                         opciones={[{ valor: "", texto: "Sin contrato de reserva" }, ...plantillas.map((t) => ({ valor: t.id, texto: t.nombre })),
                           ...(p.plantillaReservaId && !plantillas.some((t) => t.id === p.plantillaReservaId) ? [{ valor: p.plantillaReservaId, texto: p.plantillaReservaNombre || p.plantillaReservaId }] : [])]} />
+                      {sinVariables(p.plantillaReservaId).length > 0 && <AvisoPlantilla faltan={sinVariables(p.plantillaReservaId)} />}
                     </Field>
                     <Field label="Contrato sin sesiones 1 a 1" span2 ayuda="Sale cuando el closer pone 0 sesiones con el mentor: la misma plantilla sin el punto «Sesiones personalizadas» (Lili, 23/10). Sin elegir, sale la de siempre con «No incluye».">
                       <Select value={p.plantillaSinSesionesId ?? ""} placeholder="La de siempre"
                         onChange={(ev) => cambiar(p.id, { plantillaSinSesionesId: ev.target.value, plantillaSinSesionesNombre: plantillas.find((t) => t.id === ev.target.value)?.nombre ?? "" })}
                         opciones={[{ valor: "", texto: "La de siempre (con «No incluye»)" }, ...plantillas.map((t) => ({ valor: t.id, texto: t.nombre })),
                           ...(p.plantillaSinSesionesId && !plantillas.some((t) => t.id === p.plantillaSinSesionesId) ? [{ valor: p.plantillaSinSesionesId, texto: p.plantillaSinSesionesNombre || p.plantillaSinSesionesId }] : [])]} />
+                      {sinVariables(p.plantillaSinSesionesId).length > 0 && <AvisoPlantilla faltan={sinVariables(p.plantillaSinSesionesId)} />}
                     </Field>
                   </div>
                   <Opciones titulo="Productos de la venta que son este programa" valores={p.productos} onAlternar={(v) => alternar(p.id, "productos", v)}

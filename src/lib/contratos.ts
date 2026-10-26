@@ -127,6 +127,7 @@ export const ROTULO_EVENTO: Record<string, string> = {
   enlace: "Se generó el link para firmar",
   accesos: "Se dieron los accesos",
   subido: "Se subió firmado a mano",
+  plantilla: "La plantilla no lleva lo que se cargó",
   error: "No salió",
 };
 
@@ -287,6 +288,30 @@ export function relleno(variables: { name: string; value: string }[], plantilla:
     fields[v.name] = { value: tipo === "date" ? (iso && /^\d{4}-\d{2}-\d{2}$/.test(iso) ? `${iso}T12:00:00.000Z` : v.value) : v.value };
   }
   return { tokens: variables.filter((v) => tokensDe.has(v.name)), fields };
+}
+
+/* Las variables sin las que una plantilla no puede llevar lo que el closer cargó: si la plantilla las tiene escritas a mano («Un pago único de
+   500 USD»), el contrato sale con ese texto aunque la venta sea de otro monto (Manu, 26/10: el Downsell era el único sin [Venta.Modalidad] y los
+   closers, que ya no venden siempre a 500, lo editaban a mano en PandaDoc). */
+export const VARIABLES_CLAVE: { nombre: string; para: string }[] = [
+  { nombre: "Venta.Modalidad", para: "el monto y la forma de pago" },
+  { nombre: "Cliente.Nombre", para: "el nombre del alumno" },
+  { nombre: "Cliente.Documento", para: "el documento del alumno" },
+  { nombre: "Cliente.Domicilio", para: "el domicilio del alumno" },
+  { nombre: "Contrato.Fecha", para: "la fecha del contrato" },
+];
+
+/** Cuáles de esas variables (o de `nombres`) la plantilla NO tiene, ni como [variable] ni como campo con merge field. Una plantilla que no
+    se pudo leer no dice nada: [] (no se avisa de lo que no se sabe). La API lista de más las variables que se borraron del texto, pero no
+    inventa que falta una que está: lo que dice que falta, falta. */
+export function variablesQueFaltan(plantilla: unknown, nombres: readonly string[] = VARIABLES_CLAVE.map((v) => v.nombre)): string[] {
+  if (!plantilla || typeof plantilla !== "object") return [];
+  const d = plantilla as Record<string, unknown>;
+  if (!Array.isArray(d.tokens) && !Array.isArray(d.fields)) return [];
+  const tiene = new Set<string>();
+  for (const t of Array.isArray(d.tokens) ? d.tokens : []) { const n = (t as { name?: unknown })?.name; if (typeof n === "string") tiene.add(n); }
+  for (const f of Array.isArray(d.fields) ? d.fields : []) { const n = (f as { merge_field?: unknown })?.merge_field; if (typeof n === "string") tiene.add(n); }
+  return nombres.filter((n) => !tiene.has(n));
 }
 
 /** «María José Pérez» → nombre «María José», apellido «Pérez» (PandaDoc los pide por separado). */

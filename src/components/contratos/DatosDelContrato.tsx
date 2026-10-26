@@ -91,7 +91,7 @@ export function DatosDelContrato({ datos, onCambio, programas, programaId, onPro
           <Input value={datos.modalidad} onChange={(ev) => onCambio({ modalidad: ev.target.value })} placeholder="300 USD" />
         </Field>
       ) : (
-        <Field label="Modalidad de pago" ayuda="Sale del plan de cuotas; se puede escribir distinto." span2>
+        <Field label="Modalidad de pago" ayuda="Es lo que dice el contrato en «Tarifas y modalidades de pago». Sale del plan de cuotas (un pago único, tres pagos…) y se puede escribir distinto, por ejemplo si el monto no es el de siempre." span2>
           <Input value={datos.modalidad} onChange={(ev) => onCambio({ modalidad: ev.target.value })} placeholder="Tres pagos de 1.000 USD" />
         </Field>
       )}

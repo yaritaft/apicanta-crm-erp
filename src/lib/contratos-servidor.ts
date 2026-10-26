@@ -2,7 +2,7 @@ import { createHash, randomBytes } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   accesosAlFirmar, cambiosDelFirmante, cuerpoDocumento, datosDelDocumento, destinatario, estadoDePandadoc, fichaAlFirmar, firmanteDelDocumento,
-  firmoElAlumno, mensajeDelContrato, ROL_ALUMNO, type Contrato, type DatosContrato, type EstadoContrato, type EventoContrato, type ModoContrato,
+  firmoElAlumno, mensajeDelContrato, ROL_ALUMNO, VARIABLES_CLAVE, variablesDelContrato, variablesQueFaltan, type Contrato, type DatosContrato, type EstadoContrato, type EventoContrato, type ModoContrato,
 } from "./contratos";
 import {
   aBorrador, actualizarDocumento, anularDocumento, clavePandadoc, crearDocumento, detalleDocumento, detallePlantilla, editarDestinatario,
@@ -109,6 +109,7 @@ export async function crearContrato(db: SupabaseClient, p: PedidoContrato): Prom
   try {
     /* Se lee la plantilla para mandar sólo las variables y los campos que tiene (si no se puede, van todas las variables). */
     const plantilla = await detallePlantilla(p.modo, plantillaElegida.id).catch(() => undefined);
+    await avisarSiLaPlantillaNoLleva(db, { id, creadoPor: p.quien, ventaId: p.ventaId ?? null, leadId: p.leadId ?? null, modo: p.modo, datos: p.datos, destinatario: { nombre: p.datos.nombre }, programa: p.programa.id }, plantillaElegida.nombre, plantilla);
     const doc = await crearDocumento(p.modo, cuerpoDocumento({
       contratoId: id, ventaId: p.ventaId, modo: p.modo, plantillaId: plantillaElegida.id, programa: p.programa.nombre, datos: p.datos, plantilla,
       despuesDeFirmar: paginaDeBienvenida(baseDeLaApp(p.origen), bienvenida),
@@ -193,6 +194,36 @@ export async function avisarDelContrato(
     }));
     await db.from("avisos").upsert(filas, { onConflict: "id", ignoreDuplicates: true });
   } catch (err) { console.error("[contratos] no se pudo avisar del contrato", c.id, mensajeDe(err)); }
+}
+
+/** Una plantilla que no tiene [Venta.Modalidad] (o el nombre, el documento…) deja el contrato con lo que está escrito en ella, no con lo que el closer
+    cargó: no se frena (el contrato sale igual), pero quedan el aviso en el historial y la campanita de quien lo mandó, del closer y de los dueños para
+    que lo revisen antes de que firme. Sólo avisa de las variables que traían un valor. Nunca hace fallar el contrato. */
+export async function avisarSiLaPlantillaNoLleva(
+  db: SupabaseClient, c: Pick<Contrato, "id" | "creadoPor" | "ventaId" | "leadId" | "modo" | "datos" | "destinatario" | "programa">,
+  plantillaNombre: string, plantilla: unknown,
+): Promise<string[]> {
+  try {
+    const claves = new Set(VARIABLES_CLAVE.map((v) => v.nombre));
+    const conValor = variablesDelContrato(c.datos, c.programa).filter((v) => v.value && claves.has(v.name)).map((v) => v.name);
+    const faltan = variablesQueFaltan(plantilla, conValor);
+    if (!faltan.length) return [];
+    await evento(db, c.id, "plantilla", c.creadoPor, "app", { plantilla: plantillaNombre, faltan });
+    if (c.modo !== "produccion") return faltan;
+    const duenos = await db.from("usuarios_permitidos").select("email").eq("rol", "dueno");
+    const para = new Set<string>([...(await paraQuienEsElAviso(db, c)), ...((duenos.data ?? []) as { email: string }[]).map((d) => (d.email ?? "").trim().toLowerCase()).filter(Boolean)]);
+    const nombre = (c.destinatario?.nombre ?? c.datos?.nombre ?? "").trim() || "la persona";
+    const lista = faltan.map((n) => `[${n}]`).join(", ");
+    const monto = faltan.includes("Venta.Modalidad") && c.datos?.modalidad ? ` (cargaste «${c.datos.modalidad}»)` : "";
+    const filas = [...para].map((mail) => ({
+      id: `av_contrato_plantilla_${c.id}_${createHash("sha1").update(mail).digest("hex").slice(0, 8)}`,
+      para: mail, tipo: "contrato", de: "Contratos", contactoId: c.leadId ?? null, persona: nombre === "la persona" ? null : nombre,
+      titulo: `El contrato de ${nombre} no lleva lo que cargaste`,
+      cuerpo: `La plantilla «${plantillaNombre}» no tiene ${lista}${monto}: el contrato sale con lo que está escrito en la plantilla. Abrí el contrato en PandaDoc y revisalo antes de que lo firme; después hay que agregar la variable a la plantilla.`,
+    }));
+    if (filas.length) await db.from("avisos").upsert(filas, { onConflict: "id", ignoreDuplicates: true });
+    return faltan;
+  } catch (err) { console.error("[contratos] no se pudo revisar la plantilla", c.id, mensajeDe(err)); return []; }
 }
 
 /** El link para firmar, para copiarlo y mandarlo por WhatsApp. Si no sale, el contrato sigue igual. */
