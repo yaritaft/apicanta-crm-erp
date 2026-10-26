@@ -30,7 +30,7 @@ import { cobrosConOtraTasa, conTasa } from "./finanzas";
 import { ventasParaAtar, webinarNuevoDeProyecto, webinarsQueFaltan } from "./atar-webinars";
 import { caracteristicaDePago, estadoDespuesDeImportar, montoArsDe, tipoVentaDePago, type ResultadoImport } from "./angelo";
 import { claveEmail, completar } from "./contactos";
-import { feeDelPago, feeDesconocido, parcheDeCobro, type ParcheDeCobro } from "./completar-cobros";
+import { COBRAN_COMISION, feeDelPago, feeDesconocido, parcheDeCobro, type ParcheDeCobro } from "./completar-cobros";
 import { construirSemilla, estadoVacio } from "./seed";
 import { hayNube, nube, tablaFaltante, TABLAS, TABLAS_DE_DUENOS, TABLAS_OPCIONALES } from "./supabase";
 import { idAd, idAdset, idCampaign } from "./meta";
@@ -3841,8 +3841,12 @@ export const acciones = {
          ponerle 0 inflaba el cash post pasarelas y las comisiones. */
       const real = !feeDesconocido(mov);
       const fee = !real ? pago.feeMonto : mov.monto > 0 ? r2(mov.fee * (pago.monto / mov.monto)) : 0;
+      /* El día de un pago atado a una pasarela es el día en que la pasarela cobró, no un vencimiento ni el día en que se cargó (Aldana, 25/10: el pago
+         de US$ 500 de Simon Perez, cobrado el 24/10, estaba con fecha del 27/10 y quedaba fuera del período). La base hace lo mismo
+         (supabase/pago-con-datos-del-cobro.sql). Mercury no: ahí el día lo decide quien ata el depósito. */
+      const fechaDelCobro = COBRAN_COMISION.has(mov.proveedor) && Number.isFinite(Date.parse(mov.fecha)) ? new Date(mov.fecha).toISOString() : pago.fecha;
       pagosCambiados.set(pago.id, {
-        ...pago, movimientoId: mov.id, feeMonto: fee,
+        ...pago, movimientoId: mov.id, feeMonto: fee, fecha: fechaDelCobro,
         feeRate: !real ? pago.feeRate : pago.monto > 0 ? Math.round((fee / pago.monto) * 10000) / 10000 : 0,
         feeManual: false, chequeado: true, referencia: pago.referencia || mov.referencia,
       });
