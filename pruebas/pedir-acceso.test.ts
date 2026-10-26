@@ -122,3 +122,11 @@ test("sigue sin poderse escribir un aviso a mano: la función es la única puert
   const inventa = await b.intentar("agustin@apicanta.com", `insert into public.avisos (id, para, tipo, titulo) values ('x', 'yari@apicanta.com', 'acceso', 'soy yo')`);
   assert.equal(inventa.ok, false);
 });
+
+test("«Cerrar el día» del CRM sólo se ofrece a quien edita el CRM, como en el menú", () => {
+  const src = readFileSync(new URL("../src/components/crm-tabla/CrmTabla.tsx", import.meta.url), "utf8");
+  assert.match(src, /!misLlamadas && nivelEn\(acceso, "crm"\) === 2 && <Button[\s\S]{0,160}?>Cerrar el día</);
+  for (const [tipo, edita] of [["marketing", false], ["setter", false], ["director", true], ["closer", true]] as const) {
+    assert.equal(nivelDeRuta(porDefecto(tipo), "/cerrar-el-dia") >= 2, edita, tipo);
+  }
+});

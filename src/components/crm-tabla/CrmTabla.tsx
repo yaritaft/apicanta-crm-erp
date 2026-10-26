@@ -406,7 +406,8 @@ export function CrmTabla({ misLlamadas = false }: { misLlamadas?: boolean } = {}
                 Pasar llamadas
               </Button>
             )}
-            {!misLlamadas && <Button variante="primary" sm icono={<ClipboardCheck size={15} />} onClick={() => setEod(true)}>Cerrar el día</Button>}
+            {/* Cerrar el día guarda: igual que en el menú, sólo quien edita el CRM (Marketing y el setter lo miran). */}
+            {!misLlamadas && nivelEn(acceso, "crm") === 2 && <Button variante="primary" sm icono={<ClipboardCheck size={15} />} onClick={() => setEod(true)}>Cerrar el día</Button>}
           </div>
         </div>
 
