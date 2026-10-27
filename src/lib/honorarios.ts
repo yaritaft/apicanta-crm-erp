@@ -819,6 +819,14 @@ function linea(
     corregido = true;
     falta = undefined;
   }
+  /* La regla acordada: lo que se escribió en sus notas y quién la confirmó (o que falta confirmarla). */
+  if (desglose && (c.tipo === "porcentaje" || c.tipo === "tramo")) {
+    desglose = {
+      ...desglose,
+      ...(c.notas?.trim() ? { criterio: c.notas.trim() } : {}),
+      confirmada: c.confirmadaPor?.trim() ? { por: c.confirmadaPor.trim(), el: c.confirmadaEl ?? "" } : null,
+    };
+  }
   monto = r2(monto);
   return {
     clave: c.id, conceptoId: c.id, tipo: c.tipo, nombre: c.nombre, detalle, moneda: c.moneda,

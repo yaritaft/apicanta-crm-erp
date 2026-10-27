@@ -1,13 +1,14 @@
 "use client";
 
 import React, { useMemo, useState } from "react";
-import { AlertTriangle, ChevronLeft, ChevronRight, Copy, Lock, RefreshCw } from "lucide-react";
+import { AlertTriangle, Check, ChevronLeft, ChevronRight, Copy, Lock, RefreshCw } from "lucide-react";
 import { Badge, Button, IconButton } from "@/components/ui/ui";
 import { Modal } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toast";
 import { useEstado } from "@/lib/store";
 import { fecha, fechaLarga, num, tasaTexto } from "@/lib/format";
 import { calcularLiquidacion, mesesDelRenglon, nombrePeriodo, plata, renglonDe } from "@/lib/honorarios";
+import { selloDeRegla } from "@/lib/reglas";
 import type { DesgloseLinea, ItemDesglose, LineaLiquidada, ListaDesglose, PasoDesglose } from "@/lib/types";
 
 /* ==================================================================
@@ -225,6 +226,16 @@ function ContenidoDelDesglose({ d, monto }: { d: DesgloseLinea; monto?: number }
       <section className="stack-2" aria-label="La regla">
         <h4 className="t-label">La regla</h4>
         <p className="desglose__regla">{d.regla}</p>
+        {d.confirmada !== undefined && (
+          <div className="desglose__acordado">
+            <span>
+              <Badge variante={d.confirmada ? "success" : "warning"} icono={d.confirmada ? <Check size={12} /> : <AlertTriangle size={12} />}>
+                {selloDeRegla(d.confirmada)}
+              </Badge>
+            </span>
+            {d.criterio && <p className="t-sm"><b>Lo acordado:</b> {d.criterio}</p>}
+          </div>
+        )}
       </section>
 
       <section className="stack-2" aria-label="La cuenta">

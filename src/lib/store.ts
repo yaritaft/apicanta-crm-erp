@@ -20,6 +20,7 @@ import { MOTIVO_ANULADO } from "./motivos";
 import { categoriaDe } from "./gastos";
 import { esPagoDeTarjeta, problemaDelReparto, type CompraDeTarjeta } from "./reparto-tarjeta";
 import { conExtraEnMes, mismasTasas, nombrePeriodo, sinExtraEnLiquidacion, tasaParaFinanzas, tasasPorServicio } from "./honorarios";
+import { sinConfirmarSiCambio } from "./reglas";
 import {
   alumnoDeVenta, cuotaMensualDeVenta, etapaDelAlumno, etapaInicialDeServicio, etapasDeServicio,
   personaDeVenta, planDeVenta, sinVentaPendiente,
@@ -4316,7 +4317,9 @@ export const acciones = {
      distintos. */
   guardarEsquema(esq: EsquemaPago, por?: string) {
     const e = snapshot();
-    const actualizado: EsquemaPago = { ...esq, actualizadoEn: ahora(), ...(por ? { actualizadoPor: por } : {}) };
+    /* Una regla confirmada que cambió deja de estar confirmada (lib/reglas.ts). */
+    const conceptos = sinConfirmarSiCambio(e.honorarios.find((h) => h.id === esq.id)?.conceptos, esq.conceptos);
+    const actualizado: EsquemaPago = { ...esq, conceptos, actualizadoEn: ahora(), ...(por ? { actualizadoPor: por } : {}) };
     const existe = e.honorarios.some((h) => h.id === esq.id);
     const honorarios = existe ? e.honorarios.map((h) => (h.id === esq.id ? actualizado : h)) : [...e.honorarios, actualizado];
     const m = e.equipo.find((x) => x.id === esq.miembroId);

@@ -1634,6 +1634,10 @@ export interface ConceptoPago {
   descuentaComisionDe?: ID[];
   /* llamadas: sólo las que llegaron con este utm_source ("Resell"). */
   utmSource?: string;
+  /* Quién confirmó esta regla y cuándo (YYYY-MM-DD): «Yari», 2026-10-26. Sin esto la regla figura «sin confirmar» y la liquidación lo
+     avisa antes de cerrar. Lo acordado, con sus palabras, va en `notas`. Si se cambia la regla en el asistente, la confirmación se borra. */
+  confirmadaPor?: string;
+  confirmadaEl?: string;
   /* unidad: cómo se llama la pieza, en singular ("reel complejo"). */
   unidad?: string;
   /* bono: qué tiene que pasar para ganarlo. Se lee al liquidar. */
@@ -1771,6 +1775,10 @@ export interface DesgloseLinea {
   avisos?: string[];
   /* Si se corrigió a mano: lo que daba la cuenta. El monto del renglón es el corregido. */
   correccion?: { cuentaDaba: number; nota?: string };
+  /* Lo acordado con sus palabras (las notas de la regla) y quién la confirmó: null, sin confirmar; ausente, lo guardado antes de que
+     existiera. Sólo en las comisiones (porcentaje y tramo). */
+  criterio?: string;
+  confirmada?: { por: string; el: string } | null;
 }
 
 export interface LineaLiquidada {

@@ -13,6 +13,7 @@ import { Modal } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toast";
 import { acciones, nuevoId, useEstado } from "@/lib/store";
 import { useParamsURL } from "@/lib/useParamsURL";
+import { reglasSinConfirmar } from "@/lib/reglas";
 import { useUsuarioActual } from "@/lib/usuario";
 import { fechaLarga, money, num } from "@/lib/format";
 import { escribirMonto, infoGrupo, categoriaDe, leerMonto } from "@/lib/gastos";
@@ -62,7 +63,7 @@ function limpiar(x: EntradaLiquidacion): EntradaLiquidacion | null {
 
 /* `soloMirar`: quien sólo ve la liquidación (permiso «Liquidación» en «ver») no la cierra ni carga nada. `onVerPersona` falta para quien no es dueño:
    lo que cobra cada uno (su ficha) es de los dueños. */
-export function LiquidacionMes({ onVerPersona, soloMirar = false }: { onVerPersona?: (miembroId: string) => void; soloMirar?: boolean }) {
+export function LiquidacionMes({ onVerPersona, soloMirar = false, onVerReglas }: { onVerPersona?: (miembroId: string) => void; soloMirar?: boolean; onVerReglas?: () => void }) {
   const e = useEstado();
   const toast = useToast();
   const yo = useUsuarioActual();
@@ -77,6 +78,8 @@ export function LiquidacionMes({ onVerPersona, soloMirar = false }: { onVerPerso
   const vivo = useMemo(() => calcularLiquidacion(e, periodo, liq), [e, periodo, liq]);
   const r: ResultadoLiquidacion = cerrada ? liq.resultado! : vivo;
   const falta = useMemo(() => faltantes(r), [r]);
+  /* Las reglas de comisión de este mes que nadie confirmó: se avisa antes de pagar (lib/reglas.ts). */
+  const sinConfirmar = useMemo(() => (cerrada ? [] : reglasSinConfirmar(e, periodo)), [cerrada, e, periodo]);
   const cambios = useMemo(() => (cerrada ? diferenciasDesdeElCierre(e, liq) : []), [cerrada, e, liq]);
 
   /* Las notas para quien paga: los montos a mano que traen una. */
@@ -258,6 +261,16 @@ export function LiquidacionMes({ onVerPersona, soloMirar = false }: { onVerPerso
         >
           {cambios.map((x) => `${x.nombre}: cerrado en ${plata(x.cerrado, base)}, ${corte ? "con todo el mes" : "hoy"} daría ${plata(x.hoy, base)}`).join(" · ")}.
           {" "}Lo pagado no se toca: la diferencia se puede sumar a mano en la liquidación del mes que viene, o reabrir esta.
+        </Ayuda>
+      )}
+
+      {sinConfirmar.length > 0 && (
+        <Ayuda
+          titulo={sinConfirmar.length === 1 ? "Hay una regla de comisión sin confirmar" : `Hay ${sinConfirmar.length} reglas de comisión sin confirmar`}
+          icono={<AlertTriangle size={18} />}
+        >
+          {sinConfirmar.map((x) => `${x.miembro.nombre} (${x.concepto.nombre})`).join(" · ")}. Se calculan como están cargadas; conviene confirmarlas con Yari antes de pagar.
+          {onVerReglas && <Button sm variante="ghost" onClick={onVerReglas} style={{ marginLeft: 8 }}>Ver las reglas</Button>}
         </Ayuda>
       )}
 
@@ -807,6 +820,7 @@ function ModalCerrar({ e, liq, r, onCerrar, onConfirmar }: {
 }) {
   const base = e.ajustes.monedaBase;
   const falta = faltantes(r);
+  const sinConfirmar = reglasSinConfirmar(e, liq.periodo);
   const gastos = gastosDeLiquidacion(e, liq, r);
   const bonos = r.personas.flatMap((p) => p.lineas.filter((l) => l.tipo === "bono" && l.monto > 0).map(() => p.nombre.split(" ")[0]));
   /* Lo que tiene que saber quien ejecuta los pagos. */
@@ -842,6 +856,11 @@ function ModalCerrar({ e, liq, r, onCerrar, onConfirmar }: {
         {falta.lineas.length > 0 && (
           <Ayuda titulo={`${falta.lineas.length === 1 ? "Un renglón" : `${falta.lineas.length} renglones`} sin cargar: van en cero`} icono={<AlertTriangle size={18} />}>
             {[...new Set(falta.lineas.map((x) => x.persona.nombre))].join(", ")}. Si trabajaron este mes, cargá cuántas piezas antes de cerrar.
+          </Ayuda>
+        )}
+        {sinConfirmar.length > 0 && (
+          <Ayuda titulo={`${sinConfirmar.length === 1 ? "Una regla" : `${sinConfirmar.length} reglas`} sin confirmar`} icono={<AlertTriangle size={18} />}>
+            {sinConfirmar.map((x) => `${x.miembro.nombre} (${x.concepto.nombre})`).join(" · ")}. Se pagan como están cargadas; están en la solapa «Reglas».
           </Ayuda>
         )}
         {falta.pendientes.length > 0 && (

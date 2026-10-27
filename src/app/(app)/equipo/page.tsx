@@ -10,6 +10,8 @@ import { ListaEquipo } from "@/components/equipo/ListaEquipo";
 import { FichaMiembro } from "@/components/equipo/FichaMiembro";
 import { AccesosApp } from "@/components/equipo/Accesos";
 import { TiposCuenta } from "@/components/equipo/TiposCuenta";
+import { ReglasAcordadas } from "@/components/equipo/Reglas";
+import { reglasSinConfirmar } from "@/lib/reglas";
 import { useEstadoDeClosers } from "@/components/closers/EstadoDeClosers";
 import { useAcceso, useAccesos } from "@/lib/acceso";
 import { nivelDeLiquidacion } from "@/lib/permisos";
@@ -35,14 +37,14 @@ import { CopiarLink } from "@/components/ui/Filtros";
    «ver» sólo mira; con «editar» carga lo que falta, cierra el mes y marca quién
    cobró. La base lo dice igual (supabase/permiso-liquidacion.sql).
 
-   En la URL: ?seccion= (liquidacion, equipo, comisiones, accesos, tipos), ?mes=2026-09 y
+   En la URL: ?seccion= (liquidacion, equipo, comisiones, reglas, accesos, tipos), ?mes=2026-09 y
    ?persona=<id> para la ficha abierta. No se usa ?vista= porque es de la
    ficha global de personas.
    ================================================================== */
 
-type Seccion = "liquidacion" | "equipo" | "comisiones" | "accesos" | "tipos";
-const SECCIONES: Seccion[] = ["liquidacion", "equipo", "comisiones", "accesos", "tipos"];
-const SECCIONES_DE_LIQUIDACION: Seccion[] = ["liquidacion", "comisiones"];
+type Seccion = "liquidacion" | "equipo" | "comisiones" | "reglas" | "accesos" | "tipos";
+const SECCIONES: Seccion[] = ["liquidacion", "equipo", "comisiones", "reglas", "accesos", "tipos"];
+const SECCIONES_DE_LIQUIDACION: Seccion[] = ["liquidacion", "comisiones", "reglas"];
 
 export default function EquipoYHonorarios() {
   const acceso = useAcceso();
@@ -56,6 +58,8 @@ export default function EquipoYHonorarios() {
   const closers = useEstadoDeClosers(accesos.lista);
   const sync = useSync();
   const hayEsquemas = useSelector((e) => e.honorarios.length > 0);
+  /* Las reglas de comisión que todavía nadie confirmó: se avisan en la solapa. */
+  const sinConfirmar = useSelector((e) => reglasSinConfirmar(e).length);
 
   const cabecera = (
     <PageHead
@@ -115,6 +119,12 @@ export default function EquipoYHonorarios() {
           { valor: "liquidacion", texto: "Liquidación del mes" },
           ...(acceso.esDueno ? [{ valor: "equipo" as Seccion, texto: "Equipo y lo que cobra" }] : []),
           { valor: "comisiones", texto: "Comisiones" },
+          {
+            valor: "reglas" as Seccion,
+            texto: sinConfirmar > 0
+              ? <>Reglas<span className="tab-aviso" title={`${sinConfirmar === 1 ? "Una regla sin confirmar" : `${sinConfirmar} reglas sin confirmar`}`}>{sinConfirmar}</span></>
+              : "Reglas",
+          },
           ...(acceso.esDueno ? [
             {
               valor: "accesos" as Seccion,
@@ -126,9 +136,10 @@ export default function EquipoYHonorarios() {
           ] : []),
         ]}
       />
-      {seccion === "liquidacion" && <LiquidacionMes onVerPersona={acceso.esDueno ? ver : undefined} soloMirar={nivelLiq < 2} />}
+      {seccion === "liquidacion" && <LiquidacionMes onVerPersona={acceso.esDueno ? ver : undefined} soloMirar={nivelLiq < 2} onVerReglas={() => cambiar({ seccion: "reglas" })} />}
       {seccion === "equipo" && <ListaEquipo accesos={accesos} onVer={ver} />}
       {seccion === "comisiones" && <Comisiones onVer={acceso.esDueno ? ver : undefined} editable={acceso.esDueno} />}
+      {seccion === "reglas" && <ReglasAcordadas editable={acceso.esDueno} onEditar={acceso.esDueno ? ver : undefined} />}
       {seccion === "accesos" && <AccesosApp accesos={accesos} closers={closers} onVerMiembro={ver} />}
       {seccion === "tipos" && <TiposCuenta accesos={accesos} />}
       {acceso.esDueno && p.persona && <FichaMiembro key={p.persona} miembroId={p.persona} accesos={accesos} onCerrar={() => cambiar({ persona: null })} />}

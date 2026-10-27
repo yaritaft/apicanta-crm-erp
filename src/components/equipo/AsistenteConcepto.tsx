@@ -664,8 +664,9 @@ function PasoResumen({ b, set, e, final, editando, pasos, irA, miembro }: {
           <span className="hk-help">Un fijo que empieza o termina a mitad de mes se prorratea por días.</span>
         </div>
         <div className="hk-field span-2">
-          <label className="hk-label" htmlFor="con-notas">Notas</label>
-          <Textarea id="con-notas" rows={2} value={b.notas} onChange={(ev) => set({ notas: ev.target.value })} placeholder="Lo que haya que recordar de este acuerdo" />
+          <label className="hk-label" htmlFor="con-notas">Lo acordado (notas)</label>
+          <Textarea id="con-notas" rows={2} value={b.notas} onChange={(ev) => set({ notas: ev.target.value })} placeholder="Lo que acordó Yari, con sus palabras: qué cuenta, qué no, desde cuándo" />
+          <span className="hk-help">Al guardar un cambio, la regla vuelve a quedar sin confirmar hasta que se confirme en la solapa «Reglas».</span>
         </div>
       </div>
     </>

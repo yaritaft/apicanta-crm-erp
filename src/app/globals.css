@@ -2750,6 +2750,11 @@ span.kpis__etiqueta:hover { color: var(--ink); text-decoration: none; }
   background: var(--brand-soft); border: 1px solid var(--brand-fill);
   font-family: var(--font-display); font-size: 17px; line-height: 24px; font-weight: 600; color: var(--ink);
 }
+.reglas__fila { display: flex; flex-direction: column; gap: var(--space-2); padding-bottom: var(--space-3); border-bottom: 1px solid var(--border); }
+.reglas__fila:last-child { padding-bottom: 0; border-bottom: 0; }
+.reglas__criterio { margin: 0; white-space: pre-line; color: var(--ink-muted); }
+.desglose__acordado { display: flex; flex-direction: column; gap: var(--space-2); }
+.desglose__acordado p { margin: 0; white-space: pre-line; color: var(--ink-muted); }
 .desglose__tabla { border: 1px solid var(--border); border-radius: var(--radius-md); overflow-x: auto; background: var(--surface-100); }
 .desglose__avisos { list-style: disc; margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: var(--space-1); font-size: 13px; line-height: 20px; color: var(--ink-muted); }
 .desglose__avisos li { display: list-item; }
