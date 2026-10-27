@@ -656,6 +656,13 @@ const nombresDeLista = (cx: Contexto) => ({
   servicio: (id?: ID) => (id ? cx.e.productos.find((p) => p.id === id)?.nombre : undefined),
   procesador: (id?: ID) => (id ? cx.e.procesadores.find((p) => p.id === id)?.nombre : undefined),
   cuota: (id?: ID) => (id ? cx.cuotaTexto.get(id) : undefined),
+  closer: (cuotaId?: ID) => {
+    const id = cuotaId ? cx.closerDeCuota.get(cuotaId) : undefined;
+    return id ? cx.equipo.get(id)?.nombre : undefined;
+  },
+  estrategia: (v?: Venta) => v
+    ? (v.embudoId ? cx.e.embudos.find((x) => x.id === v.embudoId)?.nombre ?? "Estrategia borrada" : "Sin estrategia")
+    : undefined,
 });
 
 function linea(

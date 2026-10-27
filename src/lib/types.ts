@@ -1723,6 +1723,10 @@ export interface ItemDesglose {
   /* Cobros: lo que se quedó el procesador y lo que quedó neto. */
   fee?: number;
   neto?: number;
+  /* Cobros: quién cerró la venta (el closer de esa cuota) y por qué estrategia entró («Webinar», «Sin estrategia»): para
+     chequear que no haya ventas de Yari ni lanzamientos internos en lo que se mide. Lo guardado antes no lo trae. */
+  closer?: string;
+  estrategia?: string;
   /* Sólo en la lista completa (`todos`): a qué cuota de la venta corresponde («Cuota 2 de 3») y cuándo se vendió. */
   cuota?: string;
   ventaFecha?: string;

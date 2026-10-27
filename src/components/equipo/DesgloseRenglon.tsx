@@ -78,6 +78,9 @@ function ListaDeLoQueEntro({ lista }: { lista: ListaDesglose }) {
   const completa = verTodos && Boolean(lista.todos?.length);
   const filas = completa ? lista.todos! : lista.items;
   const total = (k: "monto" | "fee" | "neto") => r2(filas.reduce((a, x) => a + (k === "neto" ? x.neto ?? x.monto : x[k] ?? 0), 0));
+  /* Quién cerró y por qué estrategia entró cada cobro: para chequear que no haya ventas de Yari ni lanzamientos internos. Lo guardado antes no lo trae. */
+  const conQuien = cobros && filas.some((x) => x.closer || x.estrategia);
+  const exConQuien = excluidos.some((x) => x.closer || x.estrategia);
   const fila = (x: ItemDesglose, i: number) => (
     <tr key={i}>
       <td className="liq-lista__fecha">{fecha(x.fecha)}</td>
@@ -89,6 +92,8 @@ function ListaDeLoQueEntro({ lista }: { lista: ListaDesglose }) {
           </span>
         )}
       </td>
+      {conQuien && <td className="liq-lista__txt">{x.closer ?? "—"}</td>}
+      {conQuien && <td className="liq-lista__txt">{x.estrategia ?? "—"}</td>}
       <td className="liq-lista__num">{plata(x.monto, moneda)}</td>
       {cobros && <td className="liq-lista__num liq-lista__num--chico">{x.fee ? `−${plata(x.fee, moneda)}` : "—"}</td>}
       {cobros && <td className="liq-lista__num">{plata(x.neto ?? x.monto, moneda)}</td>}
@@ -97,17 +102,17 @@ function ListaDeLoQueEntro({ lista }: { lista: ListaDesglose }) {
   /* Para pegar en una planilla o mandárselo al closer: una línea por cobro, separado por tabulaciones, con los números sin formato. */
   async function copiar() {
     const n2 = (v?: number) => (v ?? 0).toFixed(2);
-    const lineas = [["Fecha", "Cliente", "Servicio", "Procesador", "Cuota", "Fecha de la venta", "Cobrado", "Lo que se quedó el procesador", "Neto"].join("\t")];
+    const lineas = [["Fecha", "Cliente", "Servicio", "Closer", "Estrategia", "Procesador", "Cuota", "Fecha de la venta", "Cobrado", "Lo que se quedó el procesador", "Neto"].join("\t")];
     for (const x of filas) {
-      lineas.push([x.fecha.slice(0, 10), x.cliente, x.servicio ?? "", x.procesador ?? "", x.cuota ?? "", x.ventaFecha?.slice(0, 10) ?? "", n2(x.monto), n2(x.fee), n2(x.neto ?? x.monto)].join("\t"));
+      lineas.push([x.fecha.slice(0, 10), x.cliente, x.servicio ?? "", x.closer ?? "", x.estrategia ?? "", x.procesador ?? "", x.cuota ?? "", x.ventaFecha?.slice(0, 10) ?? "", n2(x.monto), n2(x.fee), n2(x.neto ?? x.monto)].join("\t"));
     }
     try { await navigator.clipboard.writeText(lineas.join("\n")); toast(`Copiados los ${filas.length} cobros: pegalos en una planilla.`); }
     catch { toast("No pude copiar. Probá de nuevo.", "err"); }
   }
   async function copiarExcluidos() {
     const n2 = (v?: number) => (v ?? 0).toFixed(2);
-    const lineas = [["Fecha", "Cliente", "Servicio", "Procesador", "Cuota", "Fecha de la venta", "Cobrado", "Por qué no cuenta"].join("\t")];
-    for (const x of excluidos) lineas.push([x.fecha.slice(0, 10), x.cliente, x.servicio ?? "", x.procesador ?? "", x.cuota ?? "", x.ventaFecha?.slice(0, 10) ?? "", n2(x.monto), x.motivo ?? ""].join("\t"));
+    const lineas = [["Fecha", "Cliente", "Servicio", "Closer", "Estrategia", "Procesador", "Cuota", "Fecha de la venta", "Cobrado", "Por qué no cuenta"].join("\t")];
+    for (const x of excluidos) lineas.push([x.fecha.slice(0, 10), x.cliente, x.servicio ?? "", x.closer ?? "", x.estrategia ?? "", x.procesador ?? "", x.cuota ?? "", x.ventaFecha?.slice(0, 10) ?? "", n2(x.monto), x.motivo ?? ""].join("\t"));
     try { await navigator.clipboard.writeText(lineas.join("\n")); toast(`Copiados los ${excluidos.length} cobros que no cuentan: pegalos en una planilla.`); }
     catch { toast("No pude copiar. Probá de nuevo.", "err"); }
   }
@@ -128,6 +133,8 @@ function ListaDeLoQueEntro({ lista }: { lista: ListaDesglose }) {
             <tr>
               <th scope="col">Fecha</th>
               <th scope="col">{cobros ? "Cliente" : "Venta"}</th>
+              {conQuien && <th scope="col">Closer</th>}
+              {conQuien && <th scope="col">Estrategia</th>}
               <th scope="col" className="liq-lista__num">{cobros ? "Cobrado" : "Precio"}</th>
               {cobros && <th scope="col" className="liq-lista__num">Procesador</th>}
               {cobros && <th scope="col" className="liq-lista__num">Neto</th>}
@@ -139,6 +146,8 @@ function ListaDeLoQueEntro({ lista }: { lista: ListaDesglose }) {
               <tr className="liq-lista__resto">
                 <td />
                 <td>Y {lista.resto.cantidad} {cobros ? (lista.resto.cantidad === 1 ? "cobro más" : "cobros más") : (lista.resto.cantidad === 1 ? "venta más" : "ventas más")}</td>
+                {conQuien && <td />}
+                {conQuien && <td />}
                 <td className="liq-lista__num">{plata(lista.resto.monto, moneda)}</td>
                 {cobros && <td className="liq-lista__num liq-lista__num--chico">{lista.resto.fee ? `−${plata(lista.resto.fee, moneda)}` : "—"}</td>}
                 {cobros && <td className="liq-lista__num">{plata(lista.resto.neto ?? lista.resto.monto, moneda)}</td>}
@@ -148,6 +157,8 @@ function ListaDeLoQueEntro({ lista }: { lista: ListaDesglose }) {
               <tr className="liq-lista__resto liq-lista__total">
                 <td />
                 <td>Total · {filas.length} cobros</td>
+                {conQuien && <td />}
+                {conQuien && <td />}
                 <td className="liq-lista__num">{plata(total("monto"), moneda)}</td>
                 {cobros && <td className="liq-lista__num liq-lista__num--chico">{total("fee") ? `−${plata(total("fee"), moneda)}` : "—"}</td>}
                 {cobros && <td className="liq-lista__num">{plata(total("neto"), moneda)}</td>}
@@ -176,6 +187,8 @@ function ListaDeLoQueEntro({ lista }: { lista: ListaDesglose }) {
                     <tr>
                       <th scope="col">Fecha</th>
                       <th scope="col">Cliente</th>
+                      {exConQuien && <th scope="col">Closer</th>}
+                      {exConQuien && <th scope="col">Estrategia</th>}
                       <th scope="col" className="liq-lista__num">Cobrado</th>
                       <th scope="col">Por qué no cuenta</th>
                     </tr>
@@ -188,6 +201,8 @@ function ListaDeLoQueEntro({ lista }: { lista: ListaDesglose }) {
                           <span>{x.cliente}</span>
                           <span className="liq-lista__sub">{[x.servicio, x.procesador, x.cuota].filter(Boolean).join(" · ")}</span>
                         </td>
+                        {exConQuien && <td className="liq-lista__txt">{x.closer ?? "—"}</td>}
+                        {exConQuien && <td className="liq-lista__txt">{x.estrategia ?? "—"}</td>}
                         <td className="liq-lista__num">{plata(x.monto, moneda)}</td>
                         <td className="liq-lista__motivo">{x.motivo}</td>
                       </tr>

@@ -167,6 +167,9 @@ export interface NombresDeLista {
   procesador: (id?: ID) => string | undefined;
   /* «Cuota 2 de 3» de la cuota de un cobro (opcional: sin esto la lista completa no la trae). */
   cuota?: (id?: ID) => string | undefined;
+  /* Quién cerró la venta de la cuota de un cobro, y la estrategia de la venta (opcionales: sin esto la lista no los trae). */
+  closer?: (cuotaId?: ID) => string | undefined;
+  estrategia?: (venta?: Venta) => string | undefined;
 }
 
 const sinVacios = <T extends object>(o: T): T =>
@@ -186,6 +189,8 @@ export function listaDeCobros(lista: CobroContado[], nombres: NombresDeLista, mo
     fecha: p.fecha,
     cliente: v?.contactoNombre?.trim() || "Cobro sin venta",
     servicio: nombres.servicio(v?.productoId),
+    closer: nombres.closer?.(p.cuotaId),
+    estrategia: nombres.estrategia?.(v),
     procesador: nombres.procesador(p.procesadorId),
     monto: r2(p.monto), fee: r2(p.feeMonto), neto: r2(p.monto - p.feeMonto),
   });
