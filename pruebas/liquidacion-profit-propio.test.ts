@@ -101,6 +101,8 @@ function septiembre(extra: { carla?: Partial<ConceptoPago>; ana?: Partial<Concep
   } as unknown as EstadoApp;
 }
 
+const esqDe = (e: EstadoApp, id: string) => e.honorarios.find((h) => h.miembroId === id)!.conceptos[0];
+
 const linea = (r: ResultadoLiquidacion, miembroId: string, conceptoId: string): LineaLiquidada => {
   const l = r.personas.find((p) => p.miembroId === miembroId)?.lineas.find((x) => x.conceptoId === conceptoId);
   assert.ok(l, `falta el renglón ${conceptoId} de ${miembroId}`);
@@ -215,4 +217,31 @@ test("la regla dicha en castellano nombra el profit propio, los servicios, la re
   assert.match(frase, /Servicio A, Servicio B, Servicio C/);
   assert.match(frase, /sólo ventas cerradas desde el inicio/);
   assert.match(frase, /sin la comisión de Ana Tráfico/);
+});
+
+/* Aldana preguntó (27/10) si lo que se lleva el CEO entra en los gastos que se les descuentan al director de tráfico
+   y al socio. No entra: el profit es el resultado operativo, y los honorarios del CEO se restan después. La app lo
+   tiene que decir sola, en la regla y en el desglose. */
+test("los honorarios del CEO no mueven el profit propio, y el desglose lo dice con el monto y con de qué están hechos los costos", () => {
+  const sin = calcularLiquidacion(septiembre(), PERIODO);
+  const e = septiembre();
+  e.gastos = [...e.gastos, {
+    id: "g_ceo", categoria: "Honorarios del CEO", grupo: "dueno", concepto: "Lo que se lleva el dueño",
+    monto: 9_000, moneda: "USD", fecha: f(9, 20), recurrente: false, creadoEn: f(9, 20), extra: {},
+  } as never];
+  const con = calcularLiquidacion(e, PERIODO);
+  for (const [quien, cid] of [["ana", "c_ana"], ["beto", "c_beto"]] as const) {
+    assert.equal(linea(con, quien, cid).monto, linea(sin, quien, cid).monto, `${quien}: lo del CEO no cambia su comisión`);
+  }
+  for (const [quien, cid] of [["ana", "c_ana"], ["beto", "c_beto"]] as const) {
+    const d = linea(con, quien, cid).desglose!;
+    assert.ok(d.avisos?.some((a) => /honorarios del CEO \(.*9\.000.* en el mes\) no entran/.test(a)), `${quien}: dice cuánto es y que no entra`);
+    /* Y de qué están hechos los costos que sí entran. */
+    const partes = d.avisos?.find((a) => /de costos del mes son:/.test(a));
+    assert.ok(partes, `${quien}: lista de qué están hechos los costos`);
+    assert.match(partes!, /procesadores/);
+    assert.match(partes!, /gastos operativos/);
+    assert.doesNotMatch(partes!, /CEO/);
+  }
+  assert.match(describirConcepto(esqDe(e, "beto"), e as never), /antes de los honorarios del CEO/);
 });

@@ -256,7 +256,14 @@ export interface PartesProfit {
   gastosOperativos: number;
   /* Lo que esta misma liquidación carga como sueldos y honorarios. */
   sueldos: number;
+  /* Lo que se lleva el dueño: NO resta del profit (se descuenta después del resultado operativo). Se
+     guarda sólo para decirlo en el desglose. */
+  honorariosCeo?: number;
 }
+
+/* Lo que no cuenta en el profit, dicho con el monto del mes cuando lo hay. */
+const sinHonorariosDelCeo = (p: PartesProfit | undefined, B: Moneda): string =>
+  `Los honorarios del CEO${p?.honorariosCeo ? ` (${M(p.honorariosCeo, B)} en el mes)` : ""} no entran: se restan después del resultado operativo, no del profit con el que se calcula esta comisión.`;
 
 export type Fuente =
   /* La cantidad se cargó a mano en la liquidación. */
@@ -279,6 +286,8 @@ export type Fuente =
     dias?: { dias: number; diasMes: number };
     /* La regla de cuotas: desde qué día cuentan las ventas, si se pidió. */
     soloVentasDesde?: string;
+    /* De qué están hechos los costos del mes (para listarlos y decir qué no entra). */
+    partes?: PartesProfit;
   }
   | {
     tipo: "medido"; bruto?: number; cuantos: number; lista?: ListaDesglose;
@@ -363,6 +372,7 @@ function pasosDeProfit(f: Extract<Fuente, { tipo: "profit" }>, valor: number, B:
     avisos.push("A esta regla no le cuentan las ventas marcadas «Excluida de marketing»: se saca su parte del profit, medida sobre lo facturado.");
   }
   avisos.push("El profit sale de lo que está cargado en Finanzas y con los sueldos de esta misma liquidación adentro: un gasto que falte cargar lo infla.");
+  avisos.push(sinHonorariosDelCeo(p, B));
   return { pasos, avisos };
 }
 
@@ -382,6 +392,20 @@ function pasosDeProfitPropio(f: Extract<Fuente, { tipo: "profit-propio" }>, valo
   }
   pasos.push(plataPaso("igual", "Profit de lo suyo", valor, B));
   avisos.push("Los costos son los de toda la empresa en el mes (lo cargado en Finanzas y los sueldos de esta liquidación, con lo devuelto a clientes adentro), no sólo los de sus ventas: un gasto que falte cargar infla el profit.");
+  const p = f.partes;
+  if (p) {
+    const dev = p.devoluciones ?? 0;
+    const partes = [
+      ...(dev > 0 ? [`devoluciones ${M(dev, B)}`] : []),
+      `lo que se quedan los procesadores ${M(p.procesadores, B)}`,
+      `comisiones de closers y del director ${M(p.comisiones, B)}`,
+      `otros costos directos ${M(p.otrosDirectos, B)}`,
+      `gastos operativos ${M(p.gastosOperativos, B)}`,
+      `sueldos de esta liquidación ${M(p.sueldos, B)}`,
+    ];
+    avisos.push(`Los ${M(f.costos, B)} de costos del mes son: ${partes.join(", ")}.`);
+  }
+  avisos.push(sinHonorariosDelCeo(p, B));
   if (f.dias && f.dias.dias < f.dias.diasMes) {
     avisos.push(`La regla vale ${f.dias.dias} de ${f.dias.diasMes} días del mes: sólo cuenta lo cobrado esos días y se le imputa el ${parte} de los costos.`);
   }

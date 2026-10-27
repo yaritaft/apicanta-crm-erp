@@ -223,7 +223,7 @@ test("% del profit: el profit del mes armado paso a paso, con lo que se deja afu
   assert.equal(l.monto, 155.59);
   assert.equal(l.enFinanzas, true);
   const d = l.desglose!;
-  assert.equal(d.regla, "10% del profit del mes (sin las excluidas de marketing)");
+  assert.equal(d.regla, "10% del profit del mes (sin las excluidas de marketing, antes de los honorarios del CEO)");
   assert.deepEqual(d.pasos.map((p) => [p.op, p.texto, p.valor]), [
     ["base", "Cobrado en el mes (cash collected)", 9500],
     ["menos", "Lo que se quedaron los procesadores de pago", 285],

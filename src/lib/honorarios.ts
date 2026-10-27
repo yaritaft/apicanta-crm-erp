@@ -166,6 +166,8 @@ function filtros(c: ConceptoPago, e: Catalogos, hermanos?: ConceptoPago[]): stri
     const nombres = c.descuentaComisionDe.map((id) => e.equipo.find((m) => m.id === id)?.nombre).filter(Boolean);
     if (nombres.length) out.push(`sin la comisión de ${nombres.join(" y ")}`);
   }
+  /* El profit es el resultado operativo: lo que se lleva el CEO se resta después. Aldana preguntó si entraba. */
+  if (c.base === "profit") out.push("antes de los honorarios del CEO");
   return out;
 }
 
@@ -759,6 +761,7 @@ function linea(
           tipo: "profit-propio", ingresos, cuantos: x?.n ?? 0,
           ...(x?.cobros ? { lista: listaDeCobros(x.cobros, nombresDeLista(cx), cx.base, x.excluidos) } : {}),
           costos: r2(prof.costos), imputado, costosImputados, descuentos, crudo,
+          ...(prof.partes ? { partes: prof.partes } : {}),
           ...(parcial ? { dias: { dias: vig.dias, diasMes: vig.diasMes } } : {}),
           ...(c.soloVentasDesdeInicio && c.desde ? { soloVentasDesde: c.desde.slice(0, 10) } : {}),
         };
@@ -1188,6 +1191,7 @@ export function calcularLiquidacion(e: EstadoApp, periodo: string, liq?: Liquida
       cash: r2(pyl.cobrado), ...(pyl.devoluciones > 0 ? { devoluciones: r2(pyl.devoluciones) } : {}),
       procesadores: r2(pyl.feesProcesador), comisiones: r2(pyl.comisionCloser + pyl.comisionDirector),
       otrosDirectos: r2(pyl.otrosDirectos), gastosOperativos: r2(pyl.gastosOperativos), sueldos: r2(aCargar),
+      honorariosCeo: r2(pyl.honorariosCeo),
     },
   };
   const calcular = (x: (typeof delProfit)[number], descuentos: DescuentoProfit[] = []) => {
