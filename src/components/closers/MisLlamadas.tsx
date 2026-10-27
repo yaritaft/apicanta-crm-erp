@@ -6,6 +6,7 @@ import { ClipboardCheck, PhoneCall, TriangleAlert } from "lucide-react";
 import { Button } from "@/components/ui/ui";
 import { useEstado, useSync } from "@/lib/store";
 import { useAcceso } from "@/lib/acceso";
+import { laBaseLeRecortaLlamadas } from "@/lib/permisos";
 import { useUsuarioActual } from "@/lib/usuario";
 import { avisoDeCuenta, resumenDelDia } from "@/lib/cuenta-closer";
 import { esDelCloser } from "@/lib/eod";
@@ -33,14 +34,16 @@ export function AvisoMisLlamadas({ filas, hoy }: {
   const yo = useUsuarioActual();
   const { acceso } = useAcceso();
   const soloLoSuyo = Boolean(acceso?.soloLoSuyo);
+  /* El closer que ve los leads de todos recibe las llamadas de todos: las suyas se separan acá, como con el director. */
+  const recortada = laBaseLeRecortaLlamadas(acceso);
   const escribir = useEscribirURL();
 
   /* Un closer ve sólo lo suyo; quien ve todo y atiende llamadas, las que le tocan. */
-  const mias = soloLoSuyo ? filas : yo.miembro ? filas.filter((f) => esDelCloser(f.sesion, yo.miembro!.nombre, e.equipo)) : filas;
+  const mias = recortada ? filas : yo.miembro ? filas.filter((f) => esDelCloser(f.sesion, yo.miembro!.nombre, e.equipo)) : filas;
   const dia = resumenDelDia(mias, hoy);
 
   const aviso = avisoDeCuenta({
-    soloLoSuyo, email: yo.email, miembro: yo.miembro, llamadasVisibles: e.sesiones.length,
+    soloLoSuyo, email: yo.email, miembro: yo.miembro, llamadasVisibles: recortada ? e.sesiones.length : mias.length,
     cargado: sync.estado === "listo" || sync.estado === "guardando",
   });
 

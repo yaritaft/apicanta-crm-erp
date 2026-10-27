@@ -1,5 +1,9 @@
 -- «Sólo lo suyo» seguro — Apicanta ERP (arreglos del estrés de la base: 07/10 y segunda ronda del 09/10)
 --
+-- (Un closer con «ve los leads de todos», tipos-cuenta.sql → solo_lo_suyo_en(), no pasa por los triggers de
+-- sesiones, leads ni personas, y es_mi_lead() / es_mi_persona() le dicen que sí a cualquiera: ya los ve todos.
+-- Ventas, cuotas y cobros siguen siendo sólo los suyos.)
+--
 -- Un tipo de cuenta con «sólo lo suyo» (el closer) ve las llamadas, ventas,
 -- cuotas, personas y chat que el mismo calcula con referencias que él escribe
 -- (mis_ventas(), mis_cuotas(), mis_leads(), mis_contactos() de
@@ -85,6 +89,9 @@ do $$ begin
      or to_regprocedure('public.mi_email()') is null or to_regprocedure('public.son_mios(text[])') is null then
     raise exception 'Primero hay que correr tipos-cuenta.sql: faltan solo_lo_suyo(), mi_miembro_id(), mi_email() o son_mios().';
   end if;
+  if to_regprocedure('public.solo_lo_suyo_en(text)') is null or to_regprocedure('public.ve_todos_los_leads()') is null then
+    raise exception 'Primero hay que correr tipos-cuenta.sql (o closer-ve-todos-los-leads.sql): faltan solo_lo_suyo_en() y ve_todos_los_leads().';
+  end if;
   if not exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'leads' and column_name = 'creadoPor')
      or not exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'contactos' and column_name = 'creadoPor') then
     raise exception 'Primero hay que correr tipos-cuenta.sql: faltan las columnas creadoPor de leads y contactos.';
@@ -152,7 +159,7 @@ returns boolean
 language sql stable security definer
 set search_path = public
 as $$
-  select coalesce(x, '') = '' or exists (
+  select coalesce(x, '') = '' or public.ve_todos_los_leads() or exists (
     select 1 from public.leads l
     where l.id = x
       and ((coalesce(l.responsable, '') <> '' and public.anfitrion_es_mio(l.responsable))
@@ -172,7 +179,7 @@ returns boolean
 language sql stable security definer
 set search_path = public
 as $$
-  select coalesce(x, '') = ''
+  select coalesce(x, '') = '' or public.ve_todos_los_leads()
       or exists (select 1 from public.contactos c
                   where c.id = x and c."creadoPor" <> '' and c."creadoPor" = (select public.mi_email()))
       or exists (select 1 from public.sesiones s where s."contactoId" = x and public.anfitrion_es_mio(s.anfitrion))
@@ -281,7 +288,7 @@ language plpgsql security definer
 set search_path = public
 as $$
 begin
-  if coalesce(auth.jwt() ->> 'email', '') = '' or not coalesce((select public.solo_lo_suyo()), false) then
+  if coalesce(auth.jwt() ->> 'email', '') = '' or not coalesce((select public.solo_lo_suyo_en('sesiones')), false) then
     return new;
   end if;
 
@@ -319,7 +326,7 @@ language plpgsql security definer
 set search_path = public
 as $$
 begin
-  if coalesce(auth.jwt() ->> 'email', '') = '' or not coalesce((select public.solo_lo_suyo()), false) then
+  if coalesce(auth.jwt() ->> 'email', '') = '' or not coalesce((select public.solo_lo_suyo_en('leads')), false) then
     return new;
   end if;
 
@@ -358,7 +365,7 @@ language plpgsql security definer
 set search_path = public
 as $$
 begin
-  if coalesce(auth.jwt() ->> 'email', '') = '' or not coalesce((select public.solo_lo_suyo()), false) then
+  if coalesce(auth.jwt() ->> 'email', '') = '' or not coalesce((select public.solo_lo_suyo_en('contactos')), false) then
     return new;
   end if;
   -- El upsert de una persona que ya está entra por acá antes de chocar con su fila.

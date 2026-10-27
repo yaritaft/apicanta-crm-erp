@@ -268,6 +268,7 @@ test("mi_acceso() (lo que pide la pantalla al entrar) devuelve el acceso que esp
     const a = r.ok ? r.rows[0].a : {};
     const t = TIPOS_POR_DEFECTO.find((x) => x.id === p.tipo)!;
     assert.equal(a.tipo, t.id); assert.equal(a.nombre, t.nombre); assert.equal(a.soloLoSuyo, t.soloLoSuyo);
+    assert.equal(Boolean(a.veTodosLosLeads), false, `${p.tipo}: ningún tipo de fábrica ve los leads de todos`);
     for (const x of AREAS) assert.equal(nivelDeAreas(a.areas as AreasDeTipo, x.id), nivelDeAreas(t.areas, x.id), `${p.tipo}: nivel de ${x.id}`);
     /* El miembro de Equipo por el correo: sólo si la persona está cargada en Equipo. */
     if (p.miembroId) assert.equal(a.miembroId, p.miembroId, `${p.tipo}: quién es en Equipo`);

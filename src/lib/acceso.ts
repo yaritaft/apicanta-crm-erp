@@ -34,7 +34,7 @@ function acceso(json: unknown): MiAcceso | null {
   return {
     tipo: x.tipo, nombre: String(x.nombre ?? x.tipo),
     areas: (x.areas && typeof x.areas === "object" ? x.areas : {}) as MiAcceso["areas"],
-    soloLoSuyo: Boolean(x.soloLoSuyo), miembroId: typeof x.miembroId === "string" ? x.miembroId : undefined,
+    soloLoSuyo: Boolean(x.soloLoSuyo), veTodosLosLeads: Boolean(x.soloLoSuyo && x.veTodosLosLeads), miembroId: typeof x.miembroId === "string" ? x.miembroId : undefined,
   };
 }
 
@@ -109,7 +109,7 @@ export function useAcceso(): { acceso: MiAcceso | null; esDueno: boolean; cargan
   const local = useMemo<MiAcceso>(() => {
     const t = como ? tipos.find((x) => x.id === como) : undefined;
     if (!t || t.id === "dueno") return ACCESO_DUENO;
-    return { tipo: t.id, nombre: t.nombre, areas: t.areas, soloLoSuyo: t.soloLoSuyo };
+    return { tipo: t.id, nombre: t.nombre, areas: t.areas, soloLoSuyo: t.soloLoSuyo, veTodosLosLeads: t.soloLoSuyo && Boolean(t.veTodosLosLeads) };
   }, [como, tipos]);
 
   if (!hayNube) return { acceso: local, esDueno: local.tipo === "dueno", cargando: false };

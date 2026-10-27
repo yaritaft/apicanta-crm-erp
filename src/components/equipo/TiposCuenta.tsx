@@ -107,6 +107,7 @@ export function TiposCuenta({ accesos }: { accesos: Accesos }) {
                 <th key={a.id} scope="col" title={a.pantallas}>{a.nombre}</th>
               ))}
               <th scope="col" title="Llamadas, ventas y personas: sólo las suyas">Sólo lo suyo</th>
+              <th scope="col" title="Con «sólo lo suyo»: ve además los leads, las personas, las llamadas y el chat de todos los closers. Sus ventas y cobros siguen siendo sólo los suyos.">Ve los leads de todos</th>
               <th scope="col" className="tipos-tabla__num">Personas</th>
               <th scope="col" aria-label="Acciones" />
             </tr>
@@ -147,6 +148,17 @@ export function TiposCuenta({ accesos }: { accesos: Accesos }) {
                         onChange={(v) => {
                           acciones.guardarTipoCuenta(tipoLimpio({ ...t, soloLoSuyo: v }), `${t.nombre}: ${v ? "ahora ve sólo lo suyo" : "ya no ve sólo lo suyo"}.`);
                           toast(v ? `${t.nombre}: sólo sus llamadas, sus ventas y su gente.` : `${t.nombre}: ve lo de todos en sus áreas.`);
+                        }}
+                      />
+                    )}
+                  </td>
+                  <td className="tipos-tabla__celda">
+                    {fijo || !t.soloLoSuyo ? <span className="t-sm t-subtle">{fijo || t.id === "equipo" ? "—" : "Ya ve lo de todos"}</span> : (
+                      <Switch
+                        checked={Boolean(t.veTodosLosLeads)} etiqueta={`${t.nombre}: ve los leads de todos`}
+                        onChange={(v) => {
+                          acciones.guardarTipoCuenta(tipoLimpio({ ...t, veTodosLosLeads: v }), `${t.nombre}: ${v ? "ahora ve los leads, llamadas y chat de todos" : "ya no ve los leads de todos"}.`);
+                          toast(v ? `${t.nombre}: ve los leads, llamadas y chat de todos los closers. Sus ventas y cobros siguen siendo sólo los suyos. Se ve la próxima vez que entren.` : `${t.nombre}: vuelve a ver sólo sus leads y llamadas.`);
                         }}
                       />
                     )}
@@ -224,6 +236,7 @@ function EditarTipo({ tipo, tipos, onCerrar, onGuardar }: {
           id, nombre, descripcion,
           areas: desde && desde.id !== "dueno" ? { ...desde.areas } : {},
           soloLoSuyo: desde?.soloLoSuyo ?? false,
+          ...(desde?.soloLoSuyo && desde.veTodosLosLeads ? { veTodosLosLeads: true } : {}),
           orden: Math.max(0, ...tipos.map((t) => t.orden)) + 1,
         }, true);
       }}

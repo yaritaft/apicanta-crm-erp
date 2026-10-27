@@ -52,18 +52,18 @@ drop policy if exists borrar_chat_lecturas on public.chat_lecturas;
 
 create policy ver_chat_lecturas on public.chat_lecturas
   for select to authenticated
-  using ((select public.ve('comentarios')) and ((select not public.solo_lo_suyo()) or "contactoId" = any ((select public.mis_contactos())::text[])));
+  using ((select public.ve('comentarios')) and ((select not public.solo_lo_suyo_en('chat_lecturas')) or "contactoId" = any ((select public.mis_contactos())::text[])));
 
 create policy crear_chat_lecturas on public.chat_lecturas
   for insert to authenticated
   with check (quien = lower(coalesce(auth.jwt() ->> 'email', ''))
-    and (select public.ve('comentarios')) and ((select not public.solo_lo_suyo()) or "contactoId" = any ((select public.mis_contactos())::text[])));
+    and (select public.ve('comentarios')) and ((select not public.solo_lo_suyo_en('chat_lecturas')) or "contactoId" = any ((select public.mis_contactos())::text[])));
 
 create policy editar_chat_lecturas on public.chat_lecturas
   for update to authenticated
   using (quien = lower(coalesce(auth.jwt() ->> 'email', '')))
   with check (quien = lower(coalesce(auth.jwt() ->> 'email', ''))
-    and (select public.ve('comentarios')) and ((select not public.solo_lo_suyo()) or "contactoId" = any ((select public.mis_contactos())::text[])));
+    and (select public.ve('comentarios')) and ((select not public.solo_lo_suyo_en('chat_lecturas')) or "contactoId" = any ((select public.mis_contactos())::text[])));
 
 -- Los dueños pueden vaciar la base (Ajustes → volver a la demo); nadie más borra lecturas.
 create policy borrar_chat_lecturas on public.chat_lecturas

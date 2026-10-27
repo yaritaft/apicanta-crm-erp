@@ -90,6 +90,8 @@ export interface MiAcceso {
   nombre: string;
   areas: AreasDeTipo;
   soloLoSuyo: boolean;
+  /* «Sólo lo suyo» en ventas y cobros, pero con los leads, las llamadas y el chat de todos abiertos (ver TipoCuenta.veTodosLosLeads). */
+  veTodosLosLeads?: boolean;
   /* Quién es en Equipo (por su correo): con eso se sabe qué es "lo suyo". */
   miembroId?: string;
 }
@@ -110,6 +112,9 @@ export const veLaLiquidacion = (a: MiAcceso | null | undefined): boolean => nive
  *  lo que ve ya lo recorta la base, así que no hay nada de otros que esconder
  *  (Yari, 02/10: «tan simple que no se pueda equivocar»). */
 export const esCuentaDeCloser = (a: MiAcceso | null | undefined) => Boolean(a?.soloLoSuyo) && !esDueno(a);
+/** ¿La base ya le recortó las llamadas, los leads y las personas a lo suyo? Un closer sí, salvo el que ve los leads de todos: a ése le llega
+ *  todo y la pantalla tiene que separar «las mías» (como con el director). */
+export const laBaseLeRecortaLlamadas = (a: MiAcceso | null | undefined) => Boolean(a?.soloLoSuyo) && !a?.veTodosLosLeads;
 /** ¿La ficha le muestra el servicio de una persona que compró? Quien ve Alumnos, y el closer: el servicio de SUS alumnos, para
  *  mirar (Juan Cruz, 26/10: «que el closer también vea esa parte de sus clientes»; la base se lo abre en
  *  supabase/servicio-del-closer.sql y no le deja cambiar nada). */
@@ -387,7 +392,7 @@ export function tipoLimpio(t: TipoCuenta): TipoCuenta {
 }
 
 /** Lo que ve un tipo, en una línea: «Edita CRM y Agenda, Ventas y Clientes; ve Webinars». */
-export function resumenDeTipo(t: Pick<TipoCuenta, "id" | "areas" | "soloLoSuyo">): string {
+export function resumenDeTipo(t: Pick<TipoCuenta, "id" | "areas" | "soloLoSuyo" | "veTodosLosLeads">): string {
   if (t.id === "dueno") return "Todo, incluidos Equipo y honorarios.";
   const edita = AREAS.filter((a) => nivelDeAreas(t.areas, a.id) === 2).map((a) => a.nombre);
   const ve = AREAS.filter((a) => nivelDeAreas(t.areas, a.id) === 1).map((a) => a.nombre);
@@ -396,7 +401,7 @@ export function resumenDeTipo(t: Pick<TipoCuenta, "id" | "areas" | "soloLoSuyo">
     : xs.some((x) => x.includes(" y ")) ? xs.join(", ") : `${xs.slice(0, -1).join(", ")} y ${xs[xs.length - 1]}`);
   const partes = [edita.length ? `Edita ${lista(edita)}` : "", ve.length ? `${edita.length ? "ve" : "Ve"} ${lista(ve)}` : ""].filter(Boolean);
   if (partes.length === 0) return "No ve nada todavía.";
-  return `${partes.join("; ")}.${t.soloLoSuyo ? " Sólo lo suyo." : ""}`;
+  return `${partes.join("; ")}.${t.soloLoSuyo ? (t.veTodosLosLeads ? " Sólo sus ventas y cobros; los leads, llamadas y chat de todos." : " Sólo lo suyo.") : ""}`;
 }
 
 /* Para el aviso cuando la base no deja guardar algo: «no puede cambiar las ventas». */

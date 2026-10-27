@@ -52,9 +52,15 @@ create table if not exists public.tipos_cuenta (
   areas           jsonb not null default '{}'::jsonb check (public.areas_validas(areas)),
   -- Llamadas, ventas y personas: sólo las suyas.
   "soloLoSuyo"    boolean not null default false,
+  -- Con «sólo lo suyo», además ve los leads, las personas, las llamadas y el chat
+  -- de TODOS (no las ventas, ni los cobros, ni la liquidación de los demás): para
+  -- quien retoma leads de otros closers. Lo prenden los dueños en Equipo → Tipos
+  -- de cuenta. Ver solo_lo_suyo_en() más abajo.
+  "veTodosLosLeads" boolean not null default false,
   orden           integer not null default 100,
   "actualizadoEn" timestamptz not null default now()
 );
+alter table public.tipos_cuenta add column if not exists "veTodosLosLeads" boolean not null default false;
 
 insert into public.tipos_cuenta (id, nombre, descripcion, areas, "soloLoSuyo", orden) values
   ('dueno', 'Dueño', 'Todo, incluido lo que cobra cada uno y los accesos a la app.',
@@ -100,6 +106,7 @@ set search_path = public
 as $$
   select jsonb_build_object(
     'tipo', t.id, 'nombre', t.nombre, 'areas', t.areas, 'soloLoSuyo', t."soloLoSuyo",
+    'veTodosLosLeads', t."soloLoSuyo" and t."veTodosLosLeads" and t.id <> 'dueno',
     'miembroId', (select e.id from public.equipo e
                   where coalesce(e.email, '') <> '' and lower(trim(e.email)) = lower(u.email)
                   order by e.activo desc, e.id limit 1))
@@ -133,6 +140,34 @@ as $$
     from public.usuarios_permitidos u join public.tipos_cuenta t on t.id = u.rol
     where lower(u.email) = lower(coalesce(auth.jwt() ->> 'email', ''))
     limit 1), false);
+$$;
+
+-- ¿Su tipo de cuenta, además de «sólo lo suyo», ve los leads de todos?
+create or replace function public.ve_todos_los_leads()
+returns boolean
+language sql stable security definer
+set search_path = public
+as $$
+  select coalesce((
+    select t."soloLoSuyo" and t."veTodosLosLeads" and t.id <> 'dueno'
+    from public.usuarios_permitidos u join public.tipos_cuenta t on t.id = u.rol
+    where lower(u.email) = lower(coalesce(auth.jwt() ->> 'email', ''))
+    limit 1), false);
+$$;
+
+-- «Sólo lo suyo» PARA ESTA TABLA. Es lo que miran las políticas de leads,
+-- contactos, sesiones, comentarios y chat_lecturas (y las ramas de lead,
+-- contacto y sesión de actividad): un closer con «ve los leads de todos» las
+-- ve enteras. Todo lo demás (ventas, cuotas, pagos, devoluciones, resells...)
+-- sigue con solo_lo_suyo(). Si mañana hace falta abrir otra tabla, se agrega
+-- acá a la lista y en ningún otro lado.
+create or replace function public.solo_lo_suyo_en(tabla text)
+returns boolean
+language sql stable security definer
+set search_path = public
+as $$
+  select public.solo_lo_suyo()
+     and not (tabla in ('leads', 'contactos', 'sesiones', 'comentarios', 'chat_lecturas') and public.ve_todos_los_leads());
 $$;
 
 create or replace function public.mi_miembro_id()
@@ -437,6 +472,8 @@ $$;
 grant execute on function public.mi_acceso() to authenticated;
 grant execute on function public.nivel_area(text) to authenticated;
 grant execute on function public.solo_lo_suyo() to authenticated;
+grant execute on function public.ve_todos_los_leads() to authenticated;
+grant execute on function public.solo_lo_suyo_en(text) to authenticated;
 grant execute on function public.mi_miembro_id() to authenticated;
 grant execute on function public.mi_email() to authenticated;
 grant execute on function public.ve(text) to authenticated;
@@ -524,14 +561,14 @@ begin
     execute format('drop policy if exists %I on public.%I', 'crear_' || r.t, r.t);
     execute format('drop policy if exists %I on public.%I', 'editar_' || r.t, r.t);
     execute format('drop policy if exists %I on public.%I', 'borrar_' || r.t, r.t);
-    execute format('create policy %I on public.%I for select to authenticated using ((select public.ve(%L)) and ((select not public.solo_lo_suyo()) or %s))',
-      'ver_' || r.t, r.t, r.t, r.alcance);
-    execute format('create policy %I on public.%I for insert to authenticated with check ((select public.edita(%L)) and ((select not public.solo_lo_suyo()) or %s))',
-      'crear_' || r.t, r.t, r.t, r.alcance_nuevo);
-    execute format('create policy %I on public.%I for update to authenticated using ((select public.edita(%L)) and ((select not public.solo_lo_suyo()) or %s)) with check ((select public.edita(%L)) and ((select not public.solo_lo_suyo()) or %s))',
-      'editar_' || r.t, r.t, r.t, r.alcance, r.t, r.alcance_nuevo);
-    execute format('create policy %I on public.%I for delete to authenticated using ((select public.edita(%L)) and ((select not public.solo_lo_suyo()) or %s))',
-      'borrar_' || r.t, r.t, r.t, r.alcance);
+    execute format('create policy %I on public.%I for select to authenticated using ((select public.ve(%L)) and ((select not public.solo_lo_suyo_en(%L)) or %s))',
+      'ver_' || r.t, r.t, r.t, r.t, r.alcance);
+    execute format('create policy %I on public.%I for insert to authenticated with check ((select public.edita(%L)) and ((select not public.solo_lo_suyo_en(%L)) or %s))',
+      'crear_' || r.t, r.t, r.t, r.t, r.alcance_nuevo);
+    execute format('create policy %I on public.%I for update to authenticated using ((select public.edita(%L)) and ((select not public.solo_lo_suyo_en(%L)) or %s)) with check ((select public.edita(%L)) and ((select not public.solo_lo_suyo_en(%L)) or %s))',
+      'editar_' || r.t, r.t, r.t, r.t, r.alcance, r.t, r.t, r.alcance_nuevo);
+    execute format('create policy %I on public.%I for delete to authenticated using ((select public.edita(%L)) and ((select not public.solo_lo_suyo_en(%L)) or %s))',
+      'borrar_' || r.t, r.t, r.t, r.t, r.alcance);
   end loop;
 end $$;
 
@@ -589,11 +626,11 @@ create policy ver_actividad on public.actividad for select to authenticated usin
   or ("creadoPor" <> '' and "creadoPor" = (select public.mi_email()))
   or case entidad
     when 'lead'        then (select public.ve('leads'))
-                            and ((select not public.solo_lo_suyo()) or "entidadId" = any((select public.mis_leads())::text[]))
+                            and ((select not public.solo_lo_suyo_en('leads')) or "entidadId" = any((select public.mis_leads())::text[]))
     when 'contacto'    then (select public.ve('contactos'))
-                            and ((select not public.solo_lo_suyo()) or "entidadId" = any((select public.mis_contactos())::text[]))
+                            and ((select not public.solo_lo_suyo_en('contactos')) or "entidadId" = any((select public.mis_contactos())::text[]))
     when 'sesion'      then (select public.ve('sesiones'))
-                            and ((select not public.solo_lo_suyo()) or "entidadId" = any((select public.mis_sesiones())::text[]))
+                            and ((select not public.solo_lo_suyo_en('sesiones')) or "entidadId" = any((select public.mis_sesiones())::text[]))
     -- Los cobros y las ventas; los arqueos y las importaciones, sólo Finanzas.
     when 'transaccion' then (select public.ve('movimientos'))
                             or ((select public.ve('ventas')) and exists (select 1 from public.ventas v where v.id = "entidadId")

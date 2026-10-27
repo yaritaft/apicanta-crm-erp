@@ -969,6 +969,9 @@ export interface TipoCuenta {
   areas: AreasDeTipo;
   /* Llamadas, ventas y personas: sólo las suyas. */
   soloLoSuyo: boolean;
+  /* Con «sólo lo suyo», además ve los leads, las personas, las llamadas y el chat de TODOS (no sus ventas ni sus cobros): para quien retoma
+     leads de otros closers. Lo recorta la base (supabase/tipos-cuenta.sql, solo_lo_suyo_en). Sin definir = no. */
+  veTodosLosLeads?: boolean;
   orden: number;
   actualizadoEn?: string;
 }

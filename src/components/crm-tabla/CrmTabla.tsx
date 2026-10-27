@@ -18,9 +18,9 @@ import { PastillaEstado, useCambiarEstado } from "@/components/estados/EstadoLla
 import { acciones, useEstado, type CambiosLlamada } from "@/lib/store";
 import { personasQueCoinciden } from "@/lib/buscar-persona";
 import { useAcceso } from "@/lib/acceso";
-import { nivelEn, puedeEditar, puedeLeer } from "@/lib/permisos";
+import { laBaseLeRecortaLlamadas, nivelEn, puedeEditar, puedeLeer } from "@/lib/permisos";
 import { useUsuarioActual } from "@/lib/usuario";
-import { closersConLlamadas, objecionesDe } from "@/lib/eod";
+import { closersConLlamadas, esDelCloser, objecionesDe } from "@/lib/eod";
 import { destinosDePase } from "@/lib/pasar-llamadas";
 import { sePuedePasar, usePasarLlamadas } from "@/components/closers/usePasarLlamadas";
 import { PasarLlamadas } from "@/components/closers/PasarLlamadas";
@@ -135,8 +135,15 @@ export function CrmTabla({ misLlamadas = false }: { misLlamadas?: boolean } = {}
 
   /* `ahora` al minuto: la fila que pasa de "Por venir" a "Sin cargar". */
   const ahora = Math.floor(Date.now() / 60000) * 60000;
+  const yo = useUsuarioActual();
+  /* El closer que ve los leads de todos recibe las llamadas de todos: en «Mis llamadas» quedan las suyas (a un closer común la base ya se
+     las recorta). En el CRM ve todas, con «Mis llamadas» a un clic. */
+  const soloSusLlamadas = misLlamadas && Boolean(acceso?.soloLoSuyo) && !laBaseLeRecortaLlamadas(acceso) ? yo.miembro?.nombre ?? null : null;
   /* Las llamadas de resell tienen su propio grupo (CrmConResells): acá sólo las de venta. */
-  const todas = useMemo(() => filasTabla(e, ahora).filter((f) => !esLlamadaDeResell(f.sesion)), [e, ahora]);
+  const todas = useMemo(
+    () => filasTabla(e, ahora).filter((f) => !esLlamadaDeResell(f.sesion) && (!soloSusLlamadas || esDelCloser(f.sesion, soloSusLlamadas, e.equipo))),
+    [e, ahora, soloSusLlamadas],
+  );
   /* Buscar a alguien es mirar TODO el historial (Mariano, 26/10: el período quedaba recordado del día anterior y, para encontrar a
      una persona, tenía que acordarse de qué día era su llamada): con algo escrito en el buscador, el período no recorta. */
   const buscando = q.trim().length > 0;
@@ -216,8 +223,7 @@ export function CrmTabla({ misLlamadas = false }: { misLlamadas?: boolean } = {}
 
   /* Si quien mira atiende llamadas y ve las de todos, las suyas a un clic
      (el closer que ve sólo lo suyo ya las tiene filtradas por la base). */
-  const yo = useUsuarioActual();
-  const miNombre = yo.miembro && !acceso?.soloLoSuyo && closersConLlamadas(e).includes(yo.miembro.nombre) ? yo.miembro.nombre : "";
+  const miNombre = yo.miembro && !laBaseLeRecortaLlamadas(acceso) && closersConLlamadas(e).includes(yo.miembro.nombre) ? yo.miembro.nombre : "";
   const soloMias = Boolean(miNombre) && filtros.closer?.modo === "solo" && filtros.closer.valores.length === 1 && filtros.closer.valores[0] === miNombre;
   const sinCargar = enPeriodo.filter((f) => f.sinCargar).length;
 
