@@ -77,7 +77,7 @@ test("el paquete: las que tienen transcripción van en un archivo cada una y en 
   ];
   const gs = new Map([["s1", [grabacion("s1", [["M", "00:00:01", "Uno"]])]], ["s2", [grabacion("s2", [["M", "00:00:01", "Dos"]])]]]);
   const p = armarPaquete(llamadas, gs);
-  assert.deepEqual([p.total, p.conTranscripcion, p.linkSinTranscripcion, p.sinLink], [4, 2, 1, 1]);
+  assert.deepEqual([p.total, p.conTranscripcion, p.linkSinTranscripcion, p.sinLink, p.noSeHicieron, p.sinLinkHechas], [4, 2, 1, 1, 0, 1]);
   const nombres = p.archivos.map((a) => a.nombre);
   /* Dos llamadas el mismo día de la misma persona no se pisan. */
   assert.deepEqual(nombres, ["LEEME.md", "indice.csv", "resumenes.md", "todas-juntas.md", "llamadas/2026-10-22_ana-perez.md", "llamadas/2026-10-22_ana-perez-2.md"]);
@@ -85,9 +85,9 @@ test("el paquete: las que tienen transcripción van en un archivo cada una y en 
   assert.ok(juntas.indexOf("Uno") < juntas.indexOf("Dos") && juntas.includes("\n---\n"));
   const indice = String(p.archivos[1].contenido);
   assert.match(indice, /Tiene el link de Fathom, pero la app todavía no pudo traer su transcripción/);
-  assert.match(indice, /No tiene link de Fathom/);
+  assert.match(indice, /La llamada se hizo pero el closer no pegó el link de Fathom/);
   assert.ok(indice.startsWith("﻿"));
-  assert.equal(resumenDeDescarga(p), "Se bajaron 2 transcripciones de 4 llamadas; 1 no tiene link de Fathom y 1 tiene el link pero su transcripción todavía no llegó (están en indice.csv).");
+  assert.equal(resumenDeDescarga(p), "Se bajaron 2 transcripciones de 4 llamadas; 1 se hizo pero no tiene link de Fathom · 1 tiene el link pero está privada en Fathom (el motivo de cada una está en indice.csv).");
 });
 
 test("el link de Fathom: sólo el compartido cuenta", () => {
@@ -114,5 +114,19 @@ test("el resultado de cada llamada (compró o no) va en el documento, el índice
   assert.match(texto("resumenes.md"), /## 2026-10-22 · Ana · Mariano · Compró\n\n## Resumen\n- Compró/);
   assert.match(texto("LEEME.md"), /2 transcripciones de 3 llamadas, del 2026-10-22 al 2026-10-25\. 1 terminaron en compra/);
   assert.match(texto("LEEME.md"), /Claude Code o Cowork/);
-  assert.match(leemeDeDescarga({ conTranscripcion: 0, total: 0, compraron: 0, sinLink: 0, linkSinTranscripcion: 0 }), /0 transcripciones de 0 llamadas\./);
+  assert.match(leemeDeDescarga({ conTranscripcion: 0, total: 0, compraron: 0, noSeHicieron: 0, sinLinkHechas: 0, linkSinTranscripcion: 0 }), /0 transcripciones de 0 llamadas\./);
+});
+
+test("el índice distingue las llamadas que no se hicieron (canceladas, no show, reprogramadas) de las que se hicieron y no tienen link", () => {
+  const sin = (id: string, resultado?: string) => llamada({ sesionId: id, nombre: id, link: null, resultado, inicia: `2026-10-2${id.length}T10:00:00.000Z` });
+  const p = armarPaquete([sin("a", "Cancelada"), sin("bb", "No se presentó"), sin("ccc", "Reprogramó"), sin("dddd", "Sin cargar"), sin("eeeee", "Con cierre"), sin("ffffff", undefined)], new Map());
+  assert.deepEqual([p.total, p.sinLink, p.noSeHicieron, p.sinLinkHechas], [6, 6, 3, 3]);
+  const indice = String(p.archivos.find((a) => a.nombre === "indice.csv")!.contenido);
+  assert.match(indice, /La llamada se canceló: no hay grabación/);
+  assert.match(indice, /La persona no se presentó: no hay grabación/);
+  assert.match(indice, /Se reprogramó/);
+  assert.match(indice, /Nadie cargó cómo terminó la llamada y no tiene link de Fathom/);
+  assert.equal((indice.match(/La llamada se hizo pero el closer no pegó el link de Fathom/g) ?? []).length, 2);
+  assert.match(resumenDeDescarga(p), /3 no se hicieron \(canceladas, no se presentaron o reprogramadas\) · 3 se hicieron pero no tienen link de Fathom/);
+  assert.match(String(p.archivos[0].contenido), /3 no se hicieron .* 3 se hicieron pero el closer no pegó el link/);
 });

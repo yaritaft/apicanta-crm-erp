@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { avisosDeConexion, avisosDeGrabacionesPrivadas, barridoParado, HORAS_PARA_AVISAR, porCloser, queNoLlegan } from "@/lib/fathom-alertas";
+import { avisosDeComprasSinLink, avisosDeConexion, avisosDeGrabacionesPrivadas, barridoParado, HORAS_PARA_AVISAR, porCloser, queNoLlegan } from "@/lib/fathom-alertas";
 
 /* Que no vuelva a pasar en silencio (26/10): una grabación en privado o un barrido parado se lo dicen a quien puede arreglarlo. */
 
@@ -66,4 +66,15 @@ test("el resumen para los supervisores nombra a los 10 con más llamadas y dice 
   assert.match(f[0].cuerpo, /Closer 14 15 · Closer 13 14/);
   assert.match(f[0].cuerpo, /y 5 más/);
   assert.doesNotMatch(f[0].cuerpo, /Closer 0 1/);
+});
+
+test("las compras sin el link de Fathom: un aviso por closer y por semana, con qué hacer", () => {
+  const f = avisosDeComprasSinLink(
+    [{ id: "1", inicia: "2026-10-05T14:00:00.000Z", anfitrion: "Dante Barbieri" }, { id: "2", inicia: "2026-10-20T14:00:00.000Z", anfitrion: "Dante Barbieri" }, { id: "3", inicia: "2026-10-21T14:00:00.000Z", anfitrion: "Martín" }],
+    { closers: [{ nombre: "Dante Barbieri", email: "Dante@x.com" }, { nombre: "Martín", email: null }] }, "20261026", hash);
+  assert.equal(f.length, 1, "Martín no tiene mail: no hay a quién avisarle");
+  assert.equal(f[0].id, "av_fathom_sinlink_20261026_h_dante@x.com");
+  assert.equal(f[0].titulo, "2 compras sin el link de Fathom");
+  assert.match(f[0].cuerpo, /del 05\/10/);
+  assert.match(f[0].cuerpo, /Completar o corregir/);
 });

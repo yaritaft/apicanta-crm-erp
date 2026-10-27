@@ -90,6 +90,22 @@ export function avisosDeGrabacionesPrivadas(
   return filas;
 }
 
+/** Las compras (las llamadas más valiosas para los reportes) que quedaron sin el link de Fathom: un aviso por closer y por semana. */
+export function avisosDeComprasSinLink(compras: LlamadaSinTranscripcion[], d: Pick<Destinatarios, "closers">, semana: string, hash: (s: string) => string): AvisoFila[] {
+  const filas: AvisoFila[] = [];
+  for (const g of porCloser(compras)) {
+    const m = d.closers.find((c) => corto(c.nombre) === corto(g.closer));
+    const mail = m?.email?.trim().toLowerCase();
+    if (!mail || !/@/.test(mail)) continue;
+    filas.push({
+      id: `av_fathom_sinlink_${semana}_${hash(mail)}`, para: mail, tipo: "fathom", de: "Fathom", contactoId: null, persona: null,
+      titulo: plural(g.llamadas.length, "compra sin el link de Fathom", "compras sin el link de Fathom"),
+      cuerpo: `Cargaste ${plural(g.llamadas.length, "compra", "compras")} sin pegar el link de su grabación (la más vieja, del ${dd(g.llamadas[0].inicia)}). Sin el link no queda la transcripción de las llamadas que cierran, que son las que más sirven para los reportes. Abrí la llamada → «Completar o corregir» → Grabación y pegá el link de Fathom.`,
+    });
+  }
+  return filas;
+}
+
 /** El aviso a los dueños cuando la conexión con Fathom falla, o el barrido lleva días sin completarse. Uno por motivo y por día. */
 export function avisosDeConexion(
   motivo: { tipo: "error"; mensaje: string } | { tipo: "parado"; desde: string | null }, dueños: string[], dia: string, hash: (s: string) => string,

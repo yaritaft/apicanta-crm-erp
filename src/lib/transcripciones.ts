@@ -30,6 +30,15 @@ export interface LlamadaParaTranscribir {
 
 export type GrabacionDeTranscripcion = Pick<Grabacion, "sesionId" | "titulo" | "shareUrl" | "grabadaDesde" | "grabadaHasta" | "grabadoPorNombre" | "resumen" | "transcripcion">;
 
+/** Las llamadas que no tuvieron grabación porque no se hicieron: canceladas, la persona no se presentó, reprogramadas o todavía por venir. */
+const NO_SE_HIZO: Record<string, string> = {
+  "Cancelada": "La llamada se canceló: no hay grabación",
+  "No se presentó": "La persona no se presentó: no hay grabación",
+  "Reprogramó": "Se reprogramó: la grabación, si hay, está en la otra llamada de esa persona",
+  "Por venir": "Todavía no se hizo",
+};
+export const motivoDeNoHecha = (resultado?: string): string | null => (resultado && NO_SE_HIZO[resultado]) || null;
+
 /** Si la llamada tiene el link de Fathom pegado. */
 export const tieneLinkDeFathom = (link?: string | null) => idDeShare(link) !== null;
 
@@ -87,7 +96,10 @@ export interface PaqueteDeTranscripciones {
   desde?: string; hasta?: string; compraron: number;
   /* Cuántas llamadas tienen transcripción y de las otras, por qué no. */
   conTranscripcion: number;
+  /* Sin link de Fathom: total, y de ésas cuántas ni se hicieron (cancelada, no se presentó, reprogramada, por venir) y cuántas sí se hicieron. */
   sinLink: number;
+  noSeHicieron: number;
+  sinLinkHechas: number;
   linkSinTranscripcion: number;
   total: number;
 }
@@ -100,15 +112,17 @@ export function armarPaquete(llamadas: LlamadaParaTranscribir[], grabaciones: Ma
   const juntas: string[] = [];
   const resumenes: string[] = [];
   const indice: string[][] = [];
-  let con = 0, sinLink = 0, sinTrans = 0, compraron = 0, desde = "", hasta = "";
+  let con = 0, sinLink = 0, noSeHicieron = 0, sinTrans = 0, compraron = 0, desde = "", hasta = "";
 
   for (const l of ordenadas) {
     const gs = (grabaciones.get(l.sesionId) ?? []).filter((g) => (g.transcripcion?.length ?? 0) > 0);
     if (gs.length === 0) {
       const linkPegado = tieneLinkDeFathom(l.link);
-      if (linkPegado) sinTrans++; else sinLink++;
-      indice.push(["", l.nombre, isoDia(l.inicia), l.closer ?? "", l.estado ?? "", l.resultado ? textoDeResultado(l.resultado) : "", "No",
-        linkPegado ? "Tiene el link de Fathom, pero la app todavía no pudo traer su transcripción (si pasó más de un día, la grabación no está compartida con el equipo en Fathom)" : "No tiene link de Fathom", "0"]);
+      const noHecha = motivoDeNoHecha(l.resultado);
+      if (linkPegado) sinTrans++; else { sinLink++; if (noHecha) noSeHicieron++; }
+      const porQue = linkPegado ? "Tiene el link de Fathom, pero la app todavía no pudo traer su transcripción (si pasó más de un día, la grabación no está compartida con el equipo en Fathom)"
+        : noHecha ?? (l.resultado === "Sin cargar" ? "Nadie cargó cómo terminó la llamada y no tiene link de Fathom" : "La llamada se hizo pero el closer no pegó el link de Fathom");
+      indice.push(["", l.nombre, isoDia(l.inicia), l.closer ?? "", l.estado ?? "", l.resultado ? textoDeResultado(l.resultado) : "", "No", porQue, "0"]);
       continue;
     }
     con++;
@@ -129,7 +143,7 @@ export function armarPaquete(llamadas: LlamadaParaTranscribir[], grabaciones: Ma
 
   const cabeza = ["Archivo", "Nombre", "Fecha", "Closer", "Estado de la llamada", "Resultado", "Transcripción", "Por qué no", "Palabras"];
   const paquete: PaqueteDeTranscripciones = {
-    archivos: [], conTranscripcion: con, sinLink, linkSinTranscripcion: sinTrans, total: ordenadas.length, desde, hasta, compraron,
+    archivos: [], conTranscripcion: con, sinLink, noSeHicieron, sinLinkHechas: sinLink - noSeHicieron, linkSinTranscripcion: sinTrans, total: ordenadas.length, desde, hasta, compraron,
   };
   paquete.archivos = [
     { nombre: "LEEME.md", contenido: leemeDeDescarga(paquete) },
@@ -142,22 +156,22 @@ export function armarPaquete(llamadas: LlamadaParaTranscribir[], grabaciones: Ma
 }
 
 /** Qué decir cuando termina: cuántas bajaron y por qué faltan las otras. */
-export function resumenDeDescarga(p: Pick<PaqueteDeTranscripciones, "conTranscripcion" | "sinLink" | "linkSinTranscripcion" | "total">): string {
+export function resumenDeDescarga(p: Pick<PaqueteDeTranscripciones, "conTranscripcion" | "noSeHicieron" | "sinLinkHechas" | "linkSinTranscripcion" | "total">): string {
   const lista = (n: number, uno: string, varios: string) => `${n} ${n === 1 ? uno : varios}`;
   const faltan = [
-    p.sinLink ? `${lista(p.sinLink, "no tiene", "no tienen")} link de Fathom` : "",
-    p.linkSinTranscripcion ? `${lista(p.linkSinTranscripcion, "tiene el link pero su transcripción todavía no llegó", "tienen el link pero su transcripción todavía no llegó")}` : "",
+    p.noSeHicieron ? `${lista(p.noSeHicieron, "no se hizo", "no se hicieron")} (canceladas, no se presentaron o reprogramadas)` : "",
+    p.sinLinkHechas ? `${lista(p.sinLinkHechas, "se hizo pero no tiene", "se hicieron pero no tienen")} link de Fathom` : "",
+    p.linkSinTranscripcion ? `${lista(p.linkSinTranscripcion, "tiene el link pero está privada en Fathom", "tienen el link pero están privadas en Fathom")}` : "",
   ].filter(Boolean);
-  return `Se bajaron ${lista(p.conTranscripcion, "transcripción", "transcripciones")} de ${lista(p.total, "llamada", "llamadas")}${faltan.length ? `; ${faltan.join(" y ")} (están en indice.csv)` : ""}.`;
+  return `Se bajaron ${lista(p.conTranscripcion, "transcripción", "transcripciones")} de ${lista(p.total, "llamada", "llamadas")}${faltan.length ? `; ${faltan.join(" · ")} (el motivo de cada una está en indice.csv)` : ""}.`;
 }
 
-
 /** El LEEME del zip: qué trae, cómo llevarlo a Claude (son millones de palabras: no entra en un chat) y un pedido para armar el reporte macro. */
-export function leemeDeDescarga(p: Pick<PaqueteDeTranscripciones, "conTranscripcion" | "total" | "desde" | "hasta" | "compraron" | "sinLink" | "linkSinTranscripcion">): string {
+export function leemeDeDescarga(p: Pick<PaqueteDeTranscripciones, "conTranscripcion" | "total" | "desde" | "hasta" | "compraron" | "noSeHicieron" | "sinLinkHechas" | "linkSinTranscripcion">): string {
   return `# Transcripciones de llamadas de Fathom
 
 ${p.conTranscripcion} transcripciones de ${p.total} llamadas${p.desde ? `, del ${p.desde} al ${p.hasta}` : ""}. ${p.compraron} terminaron en compra (campo «Resultado» de cada llamada).
-${p.sinLink + p.linkSinTranscripcion > 0 ? `Faltan ${p.sinLink + p.linkSinTranscripcion}: ${p.sinLink} sin link de Fathom y ${p.linkSinTranscripcion} con link pero privadas en Fathom (indice.csv dice cuáles).\n` : ""}
+${p.noSeHicieron + p.sinLinkHechas + p.linkSinTranscripcion > 0 ? `Las otras ${p.noSeHicieron + p.sinLinkHechas + p.linkSinTranscripcion}: ${p.noSeHicieron} no se hicieron (canceladas, no se presentaron o reprogramadas: no hay nada que grabar), ${p.sinLinkHechas} se hicieron pero el closer no pegó el link de Fathom y ${p.linkSinTranscripcion} tienen el link pero están privadas en Fathom (indice.csv dice el motivo de cada una).\n` : ""}
 ## Qué hay en cada archivo
 - \`indice.csv\`: una fila por llamada, con closer, estado, resultado (compró o no) y si tiene transcripción.
 - \`resumenes.md\`: sólo el resumen de Fathom de cada llamada (liviano: es lo primero para mirar el panorama).

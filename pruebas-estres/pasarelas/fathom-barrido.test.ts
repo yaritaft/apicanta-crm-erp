@@ -200,3 +200,27 @@ test("un error pasajero de Fathom (502 con la página de Cloudflare, 429) no ala
   assert.equal(n, 0);
   assert.equal(avisos().length, 0);
 });
+
+test("tras un barrido completo, las compras de las últimas semanas sin link de Fathom le avisan a su closer (y las que tienen link o grabación atada, no)", async () => {
+  sembrarPrivadas();
+  /* Un Fathom sano que no tiene nada más para mostrar. */
+  red.soltar();
+  red.manejar((url) => url.host === "api.fathom.ai" ? { json: { items: [], next_cursor: null } } : null);
+  sesiones().push(
+    { id: "cal_C1", email: "c1@c.com", inicia: hace(24 * 5), anfitrion: "Mariano Arias", estado: "hecha", estadoLlamada: "Compra Full", calendlyInvitadoUri: "u/C1" },
+    { id: "cal_C2", email: "c2@c.com", inicia: hace(24 * 6), anfitrion: "Mariano Arias", estado: "hecha", estadoLlamada: "Compra Cuotas", calendlyInvitadoUri: "u/C2", grabacion: "" },
+    { id: "cal_C3", email: "c3@c.com", inicia: hace(24 * 6), anfitrion: "Mariano Arias", estado: "hecha", estadoLlamada: "Compra Full", calendlyInvitadoUri: "u/C3", grabacion: "https://fathom.video/share/tiene_link" },
+    { id: "cal_C4", email: "c4@c.com", inicia: hace(24 * 7), anfitrion: "Mariano Arias", estado: "hecha", estadoLlamada: "Compra Full", calendlyInvitadoUri: "u/C4" },
+    { id: "cal_C5", email: "c5@c.com", inicia: hace(10), anfitrion: "Mariano Arias", estado: "hecha", estadoLlamada: "Compra Full", calendlyInvitadoUri: "u/C5" },
+    { id: "cal_C6", email: "c6@c.com", inicia: hace(24 * 90), anfitrion: "Mariano Arias", estado: "hecha", estadoLlamada: "Compra Full", calendlyInvitadoUri: "u/C6" },
+    { id: "cal_C7", email: "c7@c.com", inicia: hace(24 * 8), anfitrion: "Mariano Arias", estado: "hecha", estadoLlamada: "Seguimiento", calendlyInvitadoUri: "u/C7" },
+  );
+  /* La C4 ya tiene su grabación atada por el mail y la hora. */
+  red.nube.filas("grabaciones").push({ id: "fathom_x", recordingId: "x", sesionId: "cal_C4", transcripcion: [{ quien: "a", texto: "b", t: "00:00:01" }] });
+  const { valor: r } = await capturandoConsola(() => barrerLinks(db, { reloj: Date.now() + 60_000, maxPaginas: 20 }));
+  await capturandoConsola(() => avisarDeFathom(db, r));
+  const compras = avisos().filter((a) => String(a.id).startsWith("av_fathom_sinlink_") && a.para === "mariano@x.com");
+  assert.equal(compras.length, 1);
+  /* Sólo C1 y C2: C3 tiene link, C4 ya tiene grabación, C5 es de hace 10 horas, C6 es de hace 90 días y C7 no es compra. */
+  assert.equal(compras[0].titulo, "2 compras sin el link de Fathom");
+});

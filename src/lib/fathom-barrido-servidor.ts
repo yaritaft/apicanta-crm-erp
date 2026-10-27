@@ -3,7 +3,7 @@ import { BARRIDO_VACIO, decidirBarrido, type EstadoBarrido } from "./fathom-barr
 import { equipoDeLaPasada, escribirPasada, leerPasada, PRIMERA_PASADA, seguir } from "./fathom-equipos";
 import { equiposDeVentasDeFathom, EsperarAFathom, guardarGrabacion, POR_QUIEN, reunionesDesde } from "./fathom-servidor";
 import { idDeShare } from "./fathom";
-import { avisosDeConexion, avisosDeGrabacionesPrivadas, barridoParado, esErrorDeClave, queNoLlegan } from "./fathom-alertas";
+import { avisosDeComprasSinLink, avisosDeConexion, avisosDeGrabacionesPrivadas, barridoParado, esErrorDeClave, HORAS_PARA_AVISAR, queNoLlegan } from "./fathom-alertas";
 import { diaDeNegocio } from "./dia-negocio";
 import { createHash } from "node:crypto";
 
@@ -145,6 +145,21 @@ const lunesDe = (dia: string) => {
   return d.toISOString().slice(0, 10).replace(/-/g, "");
 };
 
+/** Las llamadas que terminaron en compra (Compra Full, Cuotas, Downsell…) en los últimos 45 días, de hace más de 36 horas, sin el link de Fathom
+    y sin una grabación que se haya atado sola por el mail y la hora. */
+async function comprasSinLink(db: SupabaseClient, ahora: number): Promise<{ id: string; inicia: string; anfitrion?: string | null }[]> {
+  const r = await db.from("sesiones").select("id, inicia, anfitrion, grabacion").ilike("estadoLlamada", "Compra%")
+    .gte("inicia", new Date(ahora - 45 * 86_400_000).toISOString()).lte("inicia", new Date(ahora - HORAS_PARA_AVISAR * 3600_000).toISOString());
+  if (r.error) return [];
+  const sin = ((r.data ?? []) as { id: string; inicia: string; anfitrion?: string | null; grabacion?: string | null }[]).filter((x) => !idDeShare(x.grabacion));
+  const conGrabacion = new Set<string>();
+  for (let i = 0; i < sin.length; i += 60) {
+    const g = await db.from("grabaciones").select("sesionId").in("sesionId", sin.slice(i, i + 60).map((x) => x.id));
+    for (const x of (g.data ?? []) as { sesionId: string }[]) conGrabacion.add(x.sesionId);
+  }
+  return sin.filter((x) => !conGrabacion.has(x.id)).map(({ id, inicia, anfitrion }) => ({ id, inicia, anfitrion }));
+}
+
 /** Lo que mira el cron después de cada vuelta y le dice a quien puede arreglarlo, por la campanita: una conexión que falla, un barrido
     parado, y —cuando terminó un barrido completo— las grabaciones con link que siguen sin verse (privadas en Fathom). Sin repetir: cada aviso
     tiene su id por día (o por semana, el resumen de supervisores) y el que ya existe no se pisa. Nunca rompe el cron. */
@@ -171,10 +186,11 @@ export async function avisarDeFathom(db: SupabaseClient, r: ResultadoBarrido, ah
       /* Sólo tras un barrido COMPLETO: ahí «no apareció» quiere decir que Fathom no deja verla. */
       if (r.estado === "terminado" && r.tipo === "completo") {
         const sin = queNoLlegan(l.pendientes.map((p) => ({ id: p.id, inicia: p.inicia, anfitrion: p.anfitrion })), ahora);
-        filas.push(...avisosDeGrabacionesPrivadas(
-          sin, { closers: ((equipo.data ?? []) as { nombre: string; email?: string | null; rol?: string }[]).filter((m) => m.rol === "closer"), supervisores: [...dueñosMails, ...mails(director)] },
-          dia, lunesDe(`${dia.slice(0, 4)}-${dia.slice(4, 6)}-${dia.slice(6, 8)}`), hash,
-        ));
+        const closers = ((equipo.data ?? []) as { nombre: string; email?: string | null; rol?: string }[]).filter((m) => m.rol === "closer");
+        const semana = lunesDe(`${dia.slice(0, 4)}-${dia.slice(4, 6)}-${dia.slice(6, 8)}`);
+        filas.push(...avisosDeGrabacionesPrivadas(sin, { closers, supervisores: [...dueñosMails, ...mails(director)] }, dia, semana, hash));
+        /* Las compras de las últimas semanas sin el link de Fathom: son las llamadas que más sirven para los reportes. */
+        filas.push(...avisosDeComprasSinLink(await comprasSinLink(db, ahora), { closers }, semana, hash));
       }
     }
     if (filas.length === 0) return 0;
