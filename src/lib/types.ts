@@ -1611,6 +1611,10 @@ export interface ConceptoPago {
   /* Sin las ventas marcadas "Excluida de marketing". En el profit se
      descuenta la parte de esas ventas, como el reparto de Finanzas. */
   sinExcluidasMarketing?: boolean;
+  /* Sin las ventas de estas estrategias (embudos): por ejemplo VSL YouTube, que no comisiona, o una Venta interna que no es un
+     lanzamiento. Vacío: cuentan todas. Finanzas no sabe filtrar por estrategia: con esto la comisión es un costo de la
+     liquidación (entra a Finanzas al cerrarla). */
+  sinEmbudoIds?: ID[];
   /* profit: sacarlo sobre lo suyo y no sobre el profit de toda la empresa (como
      lo calculan las hojas de comisión). Ingresos = lo cobrado de las
      ventas que le tocan (los servicios elegidos), en los días en que vale la

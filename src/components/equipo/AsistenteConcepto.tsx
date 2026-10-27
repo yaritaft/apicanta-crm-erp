@@ -54,6 +54,8 @@ interface Borrador {
   cada: string;
   alcance?: AlcanceVentas;
   productoIds: string[];
+  /* Sin las ventas de estas estrategias (ConceptoPago.sinEmbudoIds). */
+  sinEmbudoIds: string[];
   sinVentasSinComision: boolean;
   sinExcluidasMarketing: boolean;
   /* Profit propio (ConceptoPago.profitPropio), la regla de cuotas y de quién se descuenta la comisión. */
@@ -76,7 +78,7 @@ function inicial(m: MiembroEquipo, c: ConceptoPago | null | undefined, base: Mon
     const reparte = m.rol === "growth" || m.rol === "socio";
     return {
       tipo: null, nombre: "", nombreTocado: false, monto: "", moneda: base, tasa: "",
-      base: reparte ? "profit" : "cash-neto", cada: "", alcance: alcanceDeRol(m), productoIds: [],
+      base: reparte ? "profit" : "cash-neto", cada: "", alcance: alcanceDeRol(m), productoIds: [], sinEmbudoIds: [],
       sinVentasSinComision: false, sinExcluidasMarketing: m.rol === "growth",
       profitPropio: false, soloVentasDesdeInicio: false, descuentaComisionDe: [],
       utmSource: "", unidad: "", condicion: "", desde: "", hasta: "", notas: "",
@@ -87,7 +89,7 @@ function inicial(m: MiembroEquipo, c: ConceptoPago | null | undefined, base: Mon
     monto: c.monto !== undefined ? escribirMonto(c.monto) : "", moneda: c.moneda,
     tasa: c.tasa !== undefined ? escribirMonto(Math.round(c.tasa * 1e6) / 1e4) : "",
     base: c.base, cada: c.cada !== undefined ? escribirMonto(c.cada) : "",
-    alcance: c.alcance ?? "todas", productoIds: c.productoIds ?? [],
+    alcance: c.alcance ?? "todas", productoIds: c.productoIds ?? [], sinEmbudoIds: c.sinEmbudoIds ?? [],
     sinVentasSinComision: Boolean(c.sinVentasSinComision), sinExcluidasMarketing: Boolean(c.sinExcluidasMarketing),
     profitPropio: Boolean(c.profitPropio), soloVentasDesdeInicio: Boolean(c.soloVentasDesdeInicio),
     descuentaComisionDe: c.descuentaComisionDe ?? [],
@@ -137,6 +139,8 @@ function armar(b: Borrador, id: string, base: Moneda): ConceptoPago {
       if (c.alcance === "todas" && b.sinVentasSinComision) c.sinVentasSinComision = true;
     }
     if ((info.deVentas || b.base === "profit") && b.sinExcluidasMarketing) c.sinExcluidasMarketing = true;
+    /* Sin las ventas de ciertas estrategias: sobre las ventas de alguien o sobre el profit de lo suyo. */
+    if (b.sinEmbudoIds.length && (info.deVentas || (b.base === "profit" && b.profitPropio))) c.sinEmbudoIds = b.sinEmbudoIds;
     /* El profit de lo suyo: sus servicios, y la comisión de otros que se resta antes del porcentaje. */
     if (b.base === "profit" && b.profitPropio) {
       c.profitPropio = true;
@@ -366,6 +370,9 @@ function PasoDeQue({ b, set, e, miembro }: { b: Borrador; set: Poner; e: EstadoA
     const productos = e.productos.filter((p) => p.activo || b.productoIds.includes(p.id));
     const alternar = (id: string) =>
       set({ productoIds: b.productoIds.includes(id) ? b.productoIds.filter((x) => x !== id) : [...b.productoIds, id] });
+    const estrategias = e.embudos.filter((x) => x.activo || b.sinEmbudoIds.includes(x.id));
+    const alternarEstrategia = (id: string) =>
+      set({ sinEmbudoIds: b.sinEmbudoIds.includes(id) ? b.sinEmbudoIds.filter((x) => x !== id) : [...b.sinEmbudoIds, id] });
     /* A quiénes se les puede restar la comisión: los que ya cobran un % del profit. */
     const conProfit = e.equipo.filter((x) => x.id !== miembro.id
       && e.honorarios.some((h) => h.miembroId === x.id && h.conceptos.some((c) => c.tipo === "porcentaje" && c.base === "profit")));
@@ -403,6 +410,15 @@ function PasoDeQue({ b, set, e, miembro }: { b: Borrador; set: Poner; e: EstadoA
                   ))}
                 </div>
                 <span className="t-sm t-subtle">Sin elegir ninguno, cuentan todos. Resell y Upsell (Hackear Biz) quedan afuera si no los elegís.</span>
+              </div>
+              <div className="stack-2">
+                <span className="t-label">Sin las ventas de estas estrategias (opcional)</span>
+                <div className="row-wrap">
+                  {estrategias.map((x) => (
+                    <Chip key={x.id} activo={b.sinEmbudoIds.includes(x.id)} onClick={() => alternarEstrategia(x.id)}>{x.nombre}</Chip>
+                  ))}
+                </div>
+                <span className="t-sm t-subtle">Por ejemplo VSL YouTube, que no comisiona. Sin elegir ninguna, cuentan todas. Finanzas no filtra por estrategia: el costo entra a Finanzas al cerrar la liquidación.</span>
               </div>
               <label className="row" style={{ gap: 10 }}>
                 <Switch checked={b.soloVentasDesdeInicio} onChange={(v) => set({ soloVentasDesdeInicio: v })} etiqueta="Sólo ventas cerradas desde el inicio" />
@@ -478,6 +494,9 @@ function PasoDeQue({ b, set, e, miembro }: { b: Borrador; set: Poner; e: EstadoA
   const productos = e.productos.filter((p) => p.activo || b.productoIds.includes(p.id));
   const alternar = (id: string) =>
     set({ productoIds: b.productoIds.includes(id) ? b.productoIds.filter((x) => x !== id) : [...b.productoIds, id] });
+  const estrategias = e.embudos.filter((x) => x.activo || b.sinEmbudoIds.includes(x.id));
+  const alternarEstrategia = (id: string) =>
+    set({ sinEmbudoIds: b.sinEmbudoIds.includes(id) ? b.sinEmbudoIds.filter((x) => x !== id) : [...b.sinEmbudoIds, id] });
   return (
     <>
       <Pregunta
@@ -508,6 +527,15 @@ function PasoDeQue({ b, set, e, miembro }: { b: Borrador; set: Poner; e: EstadoA
           {b.tipo === "porcentaje" && b.alcance !== "todas" && (b.base === "cash" || b.base === "cash-neto")
             ? " Si elegís alguno, en esas ventas vale este % en vez de su comisión general." : ""}
         </span>
+      </div>
+      <div className="stack-2">
+        <span className="t-label">Sin las ventas de estas estrategias (opcional)</span>
+        <div className="row-wrap">
+          {estrategias.map((x) => (
+            <Chip key={x.id} activo={b.sinEmbudoIds.includes(x.id)} onClick={() => alternarEstrategia(x.id)}>{x.nombre}</Chip>
+          ))}
+        </div>
+        <span className="t-sm t-subtle">Sin elegir ninguna, cuentan todas. Finanzas no filtra por estrategia: con esto el costo entra a Finanzas al cerrar la liquidación.</span>
       </div>
       <div className="stack-2">
         {b.alcance === "todas" && (
@@ -651,6 +679,8 @@ function deQueTexto(b: Borrador, e: EstadoApp): string {
       const prods = b.productoIds.map((id) => e.productos.find((p) => p.id === id)?.nombre).filter(Boolean);
       if (prods.length) partes.push(`sólo ${prods.join(", ")}`);
       if (b.soloVentasDesdeInicio) partes.push("ventas desde el inicio");
+      const sinEstr = b.sinEmbudoIds.map((id) => e.embudos.find((x) => x.id === id)?.nombre).filter(Boolean);
+      if (sinEstr.length) partes.push(`sin ${sinEstr.join(" ni ")}`);
       const otros = b.descuentaComisionDe.map((id) => e.equipo.find((m) => m.id === id)?.nombre).filter(Boolean);
       if (otros.length) partes.push(`sin la comisión de ${otros.join(" y ")}`);
     }
@@ -665,6 +695,8 @@ function deQueTexto(b: Borrador, e: EstadoApp): string {
   if (b.alcance === "todas" && b.sinVentasSinComision) partes.push(`sin las de ${quienesNoComisionan(e)}`);
   if (b.sinExcluidasMarketing) partes.push("sin las excluidas de marketing");
   if (b.soloVentasDesdeInicio) partes.push("ventas desde el inicio");
+  const sinEstr = b.sinEmbudoIds.map((id) => e.embudos.find((x) => x.id === id)?.nombre).filter(Boolean);
+  if (sinEstr.length) partes.push(`sin ${sinEstr.join(" ni ")}`);
   return partes.join(" · ");
 }
 

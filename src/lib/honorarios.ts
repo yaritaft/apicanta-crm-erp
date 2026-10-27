@@ -135,7 +135,7 @@ const VENTAS_DE: Record<AlcanceVentas, [string, string]> = {
   todas: ["venta del negocio", "ventas del negocio"],
 };
 
-type Catalogos = Pick<EstadoApp, "equipo" | "productos" | "ajustes">;
+type Catalogos = Pick<EstadoApp, "equipo" | "productos" | "ajustes"> & Partial<Pick<EstadoApp, "embudos">>;
 
 /* "por cada 15 llamadas", pero "por cada llamada": con uno, sin el número. */
 const porCada = (n: number, [uno, varios]: [string, string]) =>
@@ -151,6 +151,10 @@ function filtros(c: ConceptoPago, e: Catalogos, hermanos?: ConceptoPago[]): stri
     /* Los servicios que tienen su propio %: en ésos no vale esta comisión. */
     const propios = nombresDe([...serviciosConComisionPropia(hermanos, c)]);
     if (propios.length) out.push(`menos ${propios.join(", ")}, que ${propios.length === 1 ? "tiene su propio %" : "tienen su propio %"}`);
+  }
+  if (c.sinEmbudoIds?.length) {
+    const nombres = c.sinEmbudoIds.map((id) => e.embudos?.find((x) => x.id === id)?.nombre ?? "una estrategia borrada");
+    out.push(`sin ${nombres.length === 1 ? "la estrategia" : "las estrategias"} ${nombres.join(" y ")}`);
   }
   if (c.sinVentasSinComision && (c.alcance ?? "todas") === "todas") out.push(`sin las que cerró ${quienesNoComisionan(e)}`);
   if (c.sinExcluidasMarketing) out.push("sin las excluidas de marketing");
@@ -333,7 +337,7 @@ export function calculaFinanzas(m: Pick<MiembroEquipo, "rol">, c: ConceptoPago):
   /* Finanzas no sabe sacar el profit de lo suyo ni la regla de cuotas por fecha de venta: con
      alguna de las dos, el renglón es un costo de la liquidación (entra a Finanzas al cerrarla) y
      su tasa para Finanzas queda en 0, así no se cuenta dos veces. */
-  if (c.profitPropio || (c.soloVentasDesdeInicio && c.desde)) return false;
+  if (c.profitPropio || (c.soloVentasDesdeInicio && c.desde) || c.sinEmbudoIds?.length) return false;
   if (c.base === "profit") return m.rol === "growth" || m.rol === "socio";
   if (c.base !== "cash-neto") return false;
   if (c.alcance === "closer") return m.rol === "closer" || m.rol === "ceo";
@@ -471,7 +475,7 @@ function armarContexto(e: EstadoApp, rango: RangoMes, tc: number, corte: Date | 
 /* Todo lo cobrado de la empresa, sin filtro: tiene que dar lo mismo que el
    Cash collected de Finanzas, así que cuenta todos los pagos. */
 const esTotal = (c: ConceptoPago) =>
-  (c.alcance ?? "todas") === "todas" && !c.productoIds?.length && !c.sinVentasSinComision && !c.sinExcluidasMarketing
+  (c.alcance ?? "todas") === "todas" && !c.productoIds?.length && !c.sinVentasSinComision && !c.sinExcluidasMarketing && !c.sinEmbudoIds?.length
   && !(c.soloVentasDesdeInicio && c.desde);
 
 /* Si una venta cuenta para este concepto. Con cualquier filtro, las ventas
@@ -523,6 +527,10 @@ function veredicto(cx: Contexto, c: ConceptoPago, m: MiembroEquipo, v: Venta | u
   if (c.productoIds?.length && !(v.productoId && c.productoIds.includes(v.productoId))) {
     const servicio = cx.e.productos.find((x) => x.id === v.productoId)?.nombre;
     return no(servicio ? `Es de ${servicio}, que no está entre los servicios que cuentan` : "No es de ninguno de los servicios que cuentan");
+  }
+  if (c.sinEmbudoIds?.length && v.embudoId && c.sinEmbudoIds.includes(v.embudoId)) {
+    const estrategia = cx.e.embudos?.find((x) => x.id === v.embudoId)?.nombre;
+    return no(estrategia ? `Es de la estrategia ${estrategia}, que no cuenta` : "Es de una estrategia que no cuenta");
   }
   if ((alcance !== "todas" || c.sinVentasSinComision) && v.closerId && cx.equipo.get(v.closerId)?.sinComision) {
     return no(`La cerró ${cx.equipo.get(v.closerId)?.nombre ?? "alguien"}, que no comisiona`);
