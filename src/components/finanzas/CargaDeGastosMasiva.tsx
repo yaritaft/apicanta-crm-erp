@@ -6,6 +6,9 @@ import { ModalForm } from "@/components/ui/Modal";
 import { Badge, Button, Chip } from "@/components/ui/ui";
 import { acciones, nuevoId } from "@/lib/store";
 import { isoDia, money } from "@/lib/format";
+import { diaDeNegocio } from "@/lib/dia-negocio";
+import { fechaDePago } from "@/lib/gastos";
+import { esExportDeMercury, pagosDeTarjetaDelRango, sumaDe } from "@/lib/gastos-mercury";
 import {
   adivinarColumnas, armarFilas, CAMPOS_MASIVOS, catalogoDe, clavesCargadas, gastosDeFilas, leerFecha, parsearPegado, problemasDeFila,
   resumenDeFilas, tieneTitulos, yaEstaCargada, type CampoMasivo, type FilaMasiva,
@@ -23,7 +26,7 @@ import type { EstadoApp, Moneda } from "@/lib/types";
    deshacer la carga entera. Las reglas están en lib/gastos-masivos.ts.
    ================================================================== */
 
-type Filtro = "todas" | "problemas" | "ya" | "cargar";
+type Filtro = "todas" | "problemas" | "ya" | "cargar" | "afuera";
 
 const diaAr = (iso: string) => iso.split("-").reverse().join("/");
 
@@ -44,7 +47,7 @@ function CeldaFecha({ valor, mal, onCambio, etiqueta }: { valor: string; mal: bo
 export function CargaDeGastosMasiva({ e, onCerrar, onListo }: {
   e: EstadoApp;
   onCerrar: () => void;
-  onListo: (r: { loteId: string; cargados: number }) => void;
+  onListo: (r: { loteId: string; cargados: number; quitados?: number }) => void;
 }) {
   const base = e.ajustes.monedaBase;
   const [texto, setTexto] = useState("");
@@ -56,11 +59,14 @@ export function CargaDeGastosMasiva({ e, onCerrar, onListo }: {
   const [manuales, setManuales] = useState<FilaMasiva[]>([]);
   const [filtro, setFiltro] = useState<Filtro>("todas");
   const [categoriaMasiva, setCategoriaMasiva] = useState("");
+  const [quitarPagos, setQuitarPagos] = useState(true);
 
   const tabla = useMemo(() => parsearPegado(texto), [texto]);
   const conTitulos = titulosElegido ?? tieneTitulos(tabla);
   const mapaAuto = useMemo(() => adivinarColumnas(tabla, conTitulos), [tabla, conTitulos]);
   const mapa = mapaElegido && mapaElegido.length === mapaAuto.length ? mapaElegido : mapaAuto;
+  /* Un export de Mercury (tarjeta y cuenta corriente) se lee solo, con las reglas del banco: no hace falta decir qué es cada columna. */
+  const esMercury = useMemo(() => tabla.length > 1 && esExportDeMercury(tabla[0]), [tabla]);
 
   const catalogo = useMemo(() => catalogoDe(e), [e]);
   const categorias = useMemo(() => [...catalogo.values()], [catalogo]);
@@ -76,7 +82,9 @@ export function CargaDeGastosMasiva({ e, onCerrar, onListo }: {
   const filas: FilaMasiva[] = useMemo(
     () => [...leidas, ...manuales].map((f) => {
       const x = { ...f, ...ediciones[f.id] };
-      return { ...x, yaCargada: yaEstaCargada(x, cargadas) };
+      /* Lo que dijo la lectura (un movimiento del banco que ya está cargado aunque con otro día o nombre) vale hasta que se toca el día, el monto o el concepto. */
+      const tocada = ediciones[f.id] && ("fecha" in ediciones[f.id] || "monto" in ediciones[f.id] || "concepto" in ediciones[f.id]);
+      return { ...x, yaCargada: f.id.startsWith("m") || tocada ? yaEstaCargada(x, cargadas) : f.yaCargada };
     }),
     [leidas, manuales, ediciones, cargadas],
   );
@@ -87,10 +95,18 @@ export function CargaDeGastosMasiva({ e, onCerrar, onListo }: {
     const mal = Object.keys(problemas.get(f.id) ?? {}).length > 0;
     if (filtro === "problemas") return f.incluir && mal;
     if (filtro === "ya") return f.yaCargada;
+    if (filtro === "afuera") return Boolean(f.afuera);
     if (filtro === "cargar") return f.incluir && !mal;
     return true;
   }), [filas, problemas, filtro]);
 
+  /* Las compras de la tarjeta que se cargan reemplazan al pago diario del banco, cargado como un solo gasto: se pueden quitar al cargar. */
+  const pagosAReemplazar = useMemo(() => {
+    const compras = filas.filter((f) => f.incluir && !f.ingreso && f.extraGasto?.origen === "mercury-export" && f.extraGasto?.tarjeta && f.fecha);
+    if (!esMercury || compras.length === 0) return [];
+    const dias = compras.map((f) => f.fecha).sort();
+    return pagosDeTarjetaDelRango(e.gastos, dias[0], dias[dias.length - 1], (g) => diaDeNegocio(fechaDePago(g)));
+  }, [esMercury, filas, e.gastos]);
   const sinCategoria = filas.filter((f) => f.incluir && !f.categoria.trim());
   /* Lo escrito en una fila leída se descarta al volver a leer la planilla; las filas agregadas a mano no. */
   const editar = (id: string, cambios: Partial<FilaMasiva>) => {
@@ -127,7 +143,10 @@ export function CargaDeGastosMasiva({ e, onCerrar, onListo }: {
     const loteId = nuevoId("lote");
     const datos = gastosDeFilas(filas, e, loteId);
     const r = acciones.cargarGastosEnLote(datos, loteId);
-    onListo({ loteId: r.loteId, cargados: r.ids.length });
+    const quitados = quitarPagos && pagosAReemplazar.length
+      ? acciones.quitarGastos(pagosAReemplazar.map((g) => g.id), `se reemplazan por las compras de la tarjeta cargadas una por una (carga ${loteId})`)
+      : 0;
+    onListo({ loteId: r.loteId, cargados: r.ids.length, quitados });
   }
 
   const M = (n: number) => money(n, base, 0);
@@ -159,15 +178,26 @@ export function CargaDeGastosMasiva({ e, onCerrar, onListo }: {
           placeholder={"Pegá acá las filas copiadas de Excel.\nPor ejemplo:\n07/10/2026\tUber del aeropuerto\t12,50\n08/10/2026\tNotion\t20,00"}
           onChange={(ev) => { setTexto(ev.target.value); setTitulosElegido(null); setMapaElegido(null); }}
         />
-        {tabla.length > 0 && (
+        {tabla.length > 0 && !esMercury && (
           <p className="t-sm t-muted" role="status">
             Leí {tabla.length - (conTitulos ? 1 : 0)} {tabla.length - (conTitulos ? 1 : 0) === 1 ? "fila" : "filas"} y {columnas} {columnas === 1 ? "columna" : "columnas"}.
             Las fechas se leen día/mes (07/10 es el 7 de octubre).
           </p>
         )}
+        {esMercury && (
+          <div className="aviso-duplicado" role="status">
+            <div className="aviso-duplicado__fila">
+              <span className="aviso-duplicado__texto">
+                <strong>Reconocí un export de Mercury ({tabla.length - 1} movimientos). </strong>
+                Lo que sale es gasto y lo que vuelve a la tarjeta, ingreso. Dejo afuera lo que no es un gasto: el pago de la tarjeta, los pagos de equipo (se registran al
+                cerrar la liquidación), lo que pasa entre cuentas propias, lo que entra y lo fallido. Marco lo que ya estaba cargado aunque tenga otro día o nombre.
+              </span>
+            </div>
+          </div>
+        )}
       </div>
 
-      {tabla.length > 0 && (
+      {tabla.length > 0 && !esMercury && (
         <div className="stack-2">
           <div className="row-wrap" style={{ alignItems: "center", gap: 12 }}>
             <span className="t-label">¿Qué es cada columna?</span>
@@ -209,6 +239,7 @@ export function CargaDeGastosMasiva({ e, onCerrar, onListo }: {
             <Chip activo={filtro === "cargar"} onClick={() => setFiltro("cargar")} count={resumen.aCargar}>Para cargar</Chip>
             <Chip activo={filtro === "problemas"} onClick={() => setFiltro("problemas")} count={resumen.conProblemas}>Con problemas</Chip>
             <Chip activo={filtro === "ya"} onClick={() => setFiltro("ya")} count={filas.filter((f) => f.yaCargada).length}>Ya cargadas</Chip>
+            <Chip activo={filtro === "afuera"} onClick={() => setFiltro("afuera")} count={filas.filter((f) => f.afuera).length}>Afuera</Chip>
             <span className="spacer" />
             <Button sm variante="ghost" icono={<Plus size={14} />} onClick={agregarFila}>Agregar una fila</Button>
           </div>
@@ -262,6 +293,12 @@ export function CargaDeGastosMasiva({ e, onCerrar, onListo }: {
                       <td><input className="gm-celda" list="gm-cuentas" aria-label={`Cuenta de la fila ${n}`} value={f.cuenta} onChange={(ev) => editar(f.id, { cuenta: ev.target.value })} /></td>
                       <td className="gm-estado">
                         {f.yaCargada ? <Badge variante="neutral">Ya cargada</Badge>
+                          : f.afuera ? (
+                            <span title={f.afuera}>
+                              <Badge variante={f.incluir ? "warning" : "neutral"}>{f.incluir ? "Ojo: duplica" : "Afuera"}</Badge>
+                              <span className="t-sm t-subtle truncate" style={{ display: "block", maxWidth: 260 }}>{f.afuera}</span>
+                            </span>
+                          )
                           : f.ingreso ? <Badge variante="success">Ingreso</Badge>
                             : f.incluir && mal ? <span className="gm-problema" title={Object.values(p).join(" · ")}>{Object.values(p)[0]}</span>
                               : f.incluir ? <span className="t-subtle">Lista</span> : <span className="t-subtle">Afuera</span>}
@@ -277,11 +314,29 @@ export function CargaDeGastosMasiva({ e, onCerrar, onListo }: {
             <datalist id="gm-cuentas">{cuentas.map((c) => <option key={c} value={c} />)}</datalist>
           </div>
 
+          {pagosAReemplazar.length > 0 && (
+            <div className="aviso-duplicado" role="status">
+              <div className="aviso-duplicado__fila">
+                <span className="aviso-duplicado__texto">
+                  <strong>{pagosAReemplazar.length === 1 ? "Hay 1 pago de la tarjeta" : `Hay ${pagosAReemplazar.length} pagos de la tarjeta`} de esas fechas ({M(sumaDe(pagosAReemplazar))}) cargados como un solo gasto: </strong>
+                  las compras que cargás ahora ya los incluyen, así que se contarían dos veces.
+                </span>
+                <span className="aviso-duplicado__acciones">
+                  <label className="gm-check">
+                    <input type="checkbox" checked={quitarPagos} onChange={(ev) => setQuitarPagos(ev.target.checked)} />
+                    <span>Quitarlos al cargar</span>
+                  </label>
+                </span>
+              </div>
+            </div>
+          )}
+
           {hayAlgo && (
             <p className="t-sm" role="status" style={{ margin: 0 }}>
               <strong>{resumen.aCargar === 1 ? "1 gasto para cargar" : `${resumen.aCargar} gastos para cargar`}</strong>
               {resumen.aCargar > 0 && <> · {M(resumen.gastosTotal)} en gastos{resumen.ingresos > 0 ? ` y ${M(resumen.ingresosTotal)} que ${resumen.ingresos === 1 ? "volvió" : "volvieron"}` : ""}</>}
               {resumen.yaCargadas > 0 && <span className="t-muted"> · {resumen.yaCargadas} ya {resumen.yaCargadas === 1 ? "estaba cargada" : "estaban cargadas"}, quedan afuera</span>}
+              {resumen.afuera > 0 && <span className="t-muted"> · {resumen.afuera} {resumen.afuera === 1 ? "no es un gasto o duplicaría algo" : "no son gastos o duplicarían algo"} (mirá «Afuera»)</span>}
               {resumen.conProblemas > 0 && <span style={{ color: "var(--warning)" }}> · {resumen.conProblemas} con problemas no se {resumen.conProblemas === 1 ? "carga" : "cargan"}: corregilas o sacalas</span>}
             </p>
           )}

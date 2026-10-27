@@ -3,6 +3,10 @@ import type { CategoriaGasto } from "./seed";
 import { aMonedaBase, categoriasDisponibles, fechaDePago, leerMonto, escribirMonto, montoOriginal, normalizar, sugerirCategoria } from "./gastos";
 import { datosDelGasto, opcionesProveedor, problemasDelGasto, tipoCambioDeAjustes, type BorradorGasto, type ProblemasGasto } from "./carga-gasto";
 import { diaDeNegocio } from "./dia-negocio";
+import {
+  categoriaDeRubroMercury, esComisionDeProcesador, gastoParecido, indiceDeGastos, leerExportDeMercury, personaDelEquipo, queEsMercury,
+  type FilaMercury,
+} from "./gastos-mercury";
 
 /* ==================================================================
    Cargar muchos gastos de una vez, pegando las filas de una planilla.
@@ -208,6 +212,10 @@ export interface FilaMasiva {
   ingreso: boolean;
   /* Ya hay un gasto igual (mismo día, monto y concepto). */
   yaCargada: boolean;
+  /* Por qué esta fila no se carga sola aunque no esté repetida: «es la comisión de un procesador», «es el pago de la tarjeta»… Se puede marcar igual. */
+  afuera?: string;
+  /* Lo que se guarda aparte en el gasto (de dónde salió, la referencia del banco): sirve para no cargarlo dos veces. */
+  extraGasto?: Record<string, unknown>;
 }
 
 export interface ContextoMasivo {
@@ -251,6 +259,9 @@ export function clavesCargadas(e: Pick<EstadoApp, "gastos">): Set<string> {
 /** Las filas de lo pegado, ya leídas, con categoría y proveedor propuestos y marcadas las que ya estaban cargadas. */
 export function armarFilas(tabla: string[][], mapa: (CampoMasivo | null)[], conTitulos: boolean, c: ContextoMasivo): FilaMasiva[] {
   const { e } = c;
+  /* Un export de Mercury se lee por sus títulos y con las reglas del banco: tarjeta, pagos de equipo, entre cuentas… */
+  const deMercury = leerExportDeMercury(tabla);
+  if (deMercury) return armarFilasDeMercury(deMercury, c);
   const hoy = c.hoy ?? new Date();
   const base = c.moneda ?? e.ajustes.monedaBase;
   const ya = clavesCargadas(e);
@@ -287,9 +298,66 @@ export function armarFilas(tabla: string[][], mapa: (CampoMasivo | null)[], conT
       yaCargada: false,
     };
     f.yaCargada = Boolean(fecha) && Number.isFinite(monto) && ya.has(clave(fecha, monto, concepto));
-    f.incluir = !f.yaCargada;
+    /* Lo que duplicaría algo que el sistema ya calcula o registra queda afuera, con su motivo (se puede marcar igual). */
+    f.afuera = razonParaDejarAfuera(f, e);
+    f.incluir = !f.yaCargada && !f.afuera;
     return f;
   });
+}
+
+/** Por qué una fila pegada no se carga sola, aunque no esté repetida; undefined si se puede cargar. */
+export function razonParaDejarAfuera(f: Pick<FilaMasiva, "concepto" | "proveedor" | "ingreso">, e: Pick<EstadoApp, "equipo">): string | undefined {
+  if (f.ingreso) return undefined;
+  if (esComisionDeProcesador(f.concepto, f.proveedor)) return "Es la comisión de un procesador: ya se calcula de cada cobro, cargarla también la duplica";
+  if (/\b(autopay|pago de la tarjeta)\b/i.test(f.concepto)) return "Es el pago de la tarjeta: las compras se cargan una por una, cargarlo también las duplica";
+  return personaDelEquipo(`${f.concepto} ${f.proveedor}`, e) && /\b(sueldo|salario|pago|honorario|comision|bono)\b/i.test(f.concepto)
+    ? "Parece un pago de equipo: se registra al cerrar la liquidación del mes, cargarlo acá lo duplica" : undefined;
+}
+
+/** Las filas de un export de Mercury: cada movimiento con lo que es (gasto, plata que volvió o algo que se deja afuera), la categoría que corresponde y si ya
+ *  estaba cargado (aunque la planilla lo haya puesto un día antes o con otro nombre). */
+function armarFilasDeMercury(movs: readonly FilaMercury[], c: ContextoMasivo): FilaMasiva[] {
+  const { e } = c;
+  const catalogo = catalogoDe(e);
+  const dePrevio = categoriasPorNombre(e);
+  const dia = (g: { fecha: string; fechaPago?: string }) => diaDeNegocio(g.fechaPago ?? g.fecha);
+  const indice = indiceDeGastos(e.gastos.map((g) => ({ id: g.id, fecha: g.fecha, fechaPago: g.fechaPago, monto: g.monto, concepto: g.concepto, proveedor: g.proveedor })), dia);
+  const usados = new Set<string>();
+  const yaConTs = new Set(e.gastos.map((g) => g.extra?.mercuryTs).filter((x): x is string => typeof x === "string"));
+  const hay = (cat: string) => (catalogo.has(cat) ? cat : "");
+  const sinRevisar = hay("Pendiente de revisión");
+
+  /* De a una y por fecha: así cada gasto cargado le toca a un solo movimiento. */
+  const orden = movs.map((m, n) => ({ m, n })).sort((a, b) => a.m.fecha.localeCompare(b.m.fecha) || a.n - b.n);
+  const filas = new Map<number, FilaMasiva>();
+  for (const { m, n } of orden) {
+    const que = queEsMercury(m, e);
+    const esIngreso = que.tipo === "ingreso" || (que.tipo === "afuera" && m.monto > 0);
+    const monto = Math.abs(m.monto);
+    const previa = dePrevio.get(normalizar(m.descripcion)) ?? "";
+    const rubro = categoriaDeRubroMercury(m);
+    const categoria = que.tipo === "afuera" ? "" : hay(previa) || hay(rubro) || sugerirCategoria(m.descripcion, e)?.categoria || sinRevisar;
+    const sinSaber = que.tipo !== "afuera" && !previa && !rubro && Boolean(sinRevisar);
+    /* Un movimiento ya cargado se reconoce por su hora de creación (única); lo demás se empareja de a uno, así tres Facebook de 600 el mismo día piden tres gastos. */
+    const exacta = m.timestamp !== "" && yaConTs.has(m.timestamp);
+    const parecida = que.tipo === "afuera" || exacta ? null : gastoParecido(indice, usados, m.fecha, esIngreso ? -monto : monto, m.descripcion);
+    const yaCargada = exacta || parecida !== null;
+    filas.set(n, {
+      id: `f${n + 1}`,
+      incluir: que.tipo !== "afuera" && !yaCargada,
+      fecha: m.fecha, concepto: m.descripcion, proveedor: m.descripcion, categoria,
+      monto: escribirMonto(monto), moneda: "USD", cuenta: "Mercury",
+      notas: [m.nota, sinSaber ? "Revisar: no sé a qué categoría va" : ""].filter(Boolean).join(" · "),
+      ingreso: esIngreso && que.tipo !== "afuera",
+      yaCargada,
+      ...(que.tipo === "afuera" ? { afuera: que.motivo } : {}),
+      extraGasto: {
+        origen: "mercury-export", ...(m.timestamp ? { mercuryTs: m.timestamp } : {}), ...(m.tarjeta ? { tarjeta: m.tarjeta } : {}),
+        ...(m.estado ? { mercuryEstado: m.estado } : {}), ...(m.rubroMercury ? { categoriaMercury: m.rubroMercury } : {}), ...(m.comercio ? { comercioMercury: m.comercio } : {}),
+      },
+    });
+  }
+  return movs.map((_, n) => filas.get(n)).filter((f): f is FilaMasiva => f !== undefined);
 }
 
 /* ---------- Lo que falta para poder cargarlas ---------- */
@@ -320,6 +388,8 @@ export interface ResumenMasivo {
   filas: number;
   aCargar: number;
   yaCargadas: number;
+  /* Las que quedaron afuera con un motivo (comisión de procesador, pago de la tarjeta, pago de equipo…) y siguen sin marcar. */
+  afuera: number;
   conProblemas: number;
   /* Lo que se va a cargar, en la moneda base: los gastos, y aparte lo que volvió (ingresos). */
   gastosTotal: number;
@@ -332,17 +402,17 @@ export interface ResumenMasivo {
 export function resumenDeFilas(filas: readonly FilaMasiva[], e: EstadoApp, cat: Catalogo = catalogoDe(e)): ResumenMasivo {
   const base = e.ajustes.monedaBase;
   const tc = e.ajustes.tipoCambio;
-  let aCargar = 0, yaCargadas = 0, conProblemas = 0, gastosTotal = 0, ingresosTotal = 0, ingresos = 0;
+  let aCargar = 0, yaCargadas = 0, afuera = 0, conProblemas = 0, gastosTotal = 0, ingresosTotal = 0, ingresos = 0;
   for (const f of filas) {
     if (f.yaCargada && !f.incluir) { yaCargadas++; continue; }
-    if (!f.incluir) continue;
+    if (!f.incluir) { if (f.afuera) afuera++; continue; }
     if (Object.keys(problemasDeFila(f, e, cat)).length) { conProblemas++; continue; }
     aCargar++;
     const n = aMonedaBase(Math.abs(leerMonto(f.monto)), f.moneda, base, tc);
     if (f.ingreso) { ingresosTotal += n; ingresos++; } else gastosTotal += n;
   }
   const r2 = (n: number) => Math.round(n * 100) / 100;
-  return { filas: filas.length, aCargar, yaCargadas, conProblemas, gastosTotal: r2(gastosTotal), ingresosTotal: r2(ingresosTotal), total: r2(gastosTotal - ingresosTotal), ingresos };
+  return { filas: filas.length, aCargar, yaCargadas, afuera, conProblemas, gastosTotal: r2(gastosTotal), ingresosTotal: r2(ingresosTotal), total: r2(gastosTotal - ingresosTotal), ingresos };
 }
 
 /** Los gastos listos para guardar: sólo las filas marcadas y sin problemas. Todos llevan `extra.cargaMasiva` con el lote, para poder
@@ -355,7 +425,7 @@ export function gastosDeFilas(filas: readonly FilaMasiva[], e: EstadoApp, loteId
   for (const f of filas) {
     if (!f.incluir || Object.keys(problemasDeFila(f, e, cat)).length) continue;
     const datos = datosDelGasto(borradorDe(f, e, cat), { base, opciones, ahora });
-    salida.push({ ...datos, extra: { ...datos.extra, cargaMasiva: loteId } });
+    salida.push({ ...datos, extra: { ...datos.extra, ...f.extraGasto, cargaMasiva: loteId } });
   }
   return salida;
 }

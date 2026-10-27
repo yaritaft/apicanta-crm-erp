@@ -136,7 +136,7 @@ test("lo que se carga: sólo las filas marcadas y sin problemas, con el lote, el
   const filas = [f("f1"), f("f2", { incluir: false }), f("f3", { monto: "" }), f("f4", { ingreso: true, monto: "80" }), f("f5", { moneda: "ARS", monto: "145.000" })];
   const r = resumenDeFilas(filas, e);
   assert.deepEqual({ ...r, total: Math.round(r.total) }, {
-    filas: 5, aCargar: 3, yaCargadas: 0, conProblemas: 1, gastosTotal: 112.5, ingresosTotal: 80, total: Math.round(12.5 - 80 + 145000 / 1450), ingresos: 1,
+    filas: 5, aCargar: 3, yaCargadas: 0, afuera: 0, conProblemas: 1, gastosTotal: 112.5, ingresosTotal: 80, total: Math.round(12.5 - 80 + 145000 / 1450), ingresos: 1,
   });
   const gastos = gastosDeFilas(filas, e, "lote_1", "2026-10-20T15:00:00.000Z");
   assert.equal(gastos.length, 3);

@@ -21,6 +21,7 @@ import { nombrePeriodo } from "@/lib/periodos";
 import { cuentasDe, resumenDe, transaccionesDe, type Transaccion } from "@/lib/transacciones";
 import { normalizar } from "@/lib/gastos";
 import { esPagoDeTarjeta } from "@/lib/reparto-tarjeta";
+import { esGastoDeComisionDeProcesador } from "@/lib/gastos-mercury";
 import { useBusquedaURL, useParamsURL, useTablaURL } from "@/lib/useParamsURL";
 import type { Gasto } from "@/lib/types";
 
@@ -124,6 +125,10 @@ export function TransaccionesVista({ embebido = false }: { embebido?: boolean })
     [e.gastos],
   );
 
+  /* Las comisiones de procesador cargadas como gasto (de una planilla): el sistema ya las calcula de cada cobro, así que cuentan dos veces. */
+  const comisionesDuplicadas = useMemo(() => e.gastos.filter(esGastoDeComisionDeProcesador), [e.gastos]);
+  const [quitandoComisiones, setQuitandoComisiones] = useState(false);
+
   const abrir = (f: Transaccion) => {
     if (f.gastoId) { setVerId(f.gastoId); return; }
     if (f.origen === "cobro" && f.ventaId) { abrirFicha(f.ventaId); return; }
@@ -179,6 +184,21 @@ export function TransaccionesVista({ embebido = false }: { embebido?: boolean })
           </div>
         )}
       />
+
+      {comisionesDuplicadas.length > 0 && (
+        <div className="aviso-duplicado" role="status">
+          <div className="aviso-duplicado__fila">
+            <CreditCard size={16} aria-hidden />
+            <span className="aviso-duplicado__texto">
+              <strong>{comisionesDuplicadas.length === 1 ? "1 gasto es la comisión de un procesador" : `${comisionesDuplicadas.length} gastos son comisiones de procesadores`} ({M(comisionesDuplicadas.reduce((a, g) => a + g.monto, 0), 2)}): </strong>
+              el sistema ya calcula la comisión de cada cobro, así que cargadas además como gasto cuentan dos veces y bajan el profit.
+            </span>
+            <span className="aviso-duplicado__acciones">
+              <Button sm variante="primary" onClick={() => setQuitandoComisiones(true)}>Quitarlas</Button>
+            </span>
+          </div>
+        </div>
+      )}
 
       {tarjetasSinRepartir.length > 0 && (
         <div className="aviso-duplicado" role="status">
@@ -324,16 +344,26 @@ export function TransaccionesVista({ embebido = false }: { embebido?: boolean })
       {masiva && (
         <CargaDeGastosMasiva
           e={e} onCerrar={() => setMasiva(false)}
-          onListo={({ loteId, cargados }) => {
+          onListo={({ loteId, cargados, quitados }) => {
             setMasiva(false);
             toast(
-              `Se ${cargados === 1 ? "cargó 1 gasto" : `cargaron ${cargados} gastos`}. Si no eran, los sacás todos juntos.`,
+              `Se ${cargados === 1 ? "cargó 1 gasto" : `cargaron ${cargados} gastos`}${quitados ? ` y se ${quitados === 1 ? "quitó 1 pago" : `quitaron ${quitados} pagos`} de la tarjeta que ya estaban en esas compras` : ""}. Si no eran, los sacás todos juntos${quitados ? " (los pagos quitados no vuelven)" : ""}.`,
               "ok",
               { texto: "Deshacer", onClick: () => { const n = acciones.deshacerCargaDeGastos(loteId); toast(n ? `Se deshizo la carga: ${n} ${n === 1 ? "gasto" : "gastos"} menos.` : "Esa carga ya no estaba."); } },
             );
           }}
         />
       )}
+
+      <Confirmar
+        abierto={quitandoComisiones} onCerrar={() => setQuitandoComisiones(false)}
+        titulo="¿Quitar las comisiones de procesador cargadas como gasto?"
+        texto={`Se quitan ${comisionesDuplicadas.length} gastos (${M(comisionesDuplicadas.reduce((a, g) => a + g.monto, 0), 2)}): ${comisionesDuplicadas.slice(0, 5).map((g) => g.concepto).join(", ")}${comisionesDuplicadas.length > 5 ? "…" : ""}. La comisión de cada cobro sigue restando sola.`}
+        onConfirmar={() => {
+          const n = acciones.quitarGastos(comisionesDuplicadas.map((g) => g.id), "comisiones de procesador: ya se calculan de cada cobro");
+          toast(`Se quitaron ${n} ${n === 1 ? "gasto" : "gastos"}.`);
+        }}
+      />
 
       <Confirmar
         abierto={borrar !== null} onCerrar={() => setBorrar(null)}

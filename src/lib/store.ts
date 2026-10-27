@@ -1393,6 +1393,26 @@ export const acciones = {
     return { ok: true, ids: nuevos.map((x) => x.id) };
   },
 
+  /* Quitar varios gastos de una vez, con el motivo en la actividad (los pagos de la tarjeta que se reemplazan por sus compras, las comisiones de procesador
+     que se cargaron como gasto y ya se calculan de cada cobro). Devuelve cuántos se quitaron. */
+  quitarGastos(ids: readonly ID[], motivo: string): number {
+    const e = snapshot();
+    const set = new Set(ids);
+    const quitar = e.gastos.filter((g) => set.has(g.id));
+    if (quitar.length === 0) return 0;
+    const total = quitar.reduce((a, g) => a + g.monto, 0);
+    const lista = quitar.slice(0, 12).map((g) => `${g.concepto} ${g.monto.toLocaleString("es-AR", { minimumFractionDigits: 2 })}`).join(", ");
+    const { lista: act, nuevo } = registrar(
+      e, "transaccion", quitar[0].id, "Gastos quitados", "elimino",
+      `Se quitaron ${quitar.length} ${quitar.length === 1 ? "gasto" : "gastos"} (${Math.round(total * 100) / 100} ${e.ajustes.monedaBase}): ${motivo}. ${lista}${quitar.length > 12 ? "…" : ""}.`,
+    );
+    guardar({ ...e, gastos: e.gastos.filter((g) => !set.has(g.id)), actividad: act });
+    const borrar = quitar.map((g) => g.id);
+    for (let i = 0; i < borrar.length; i += 100) empujar({ tipo: "delete", tabla: "gastos", ids: borrar.slice(i, i + 100) });
+    empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
+    return quitar.length;
+  },
+
   /* Deshacer una carga masiva: se van todos los gastos de ese lote (los que se editaron después también). */
   deshacerCargaDeGastos(loteId: ID): number {
     const e = snapshot();
