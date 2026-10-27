@@ -58,3 +58,12 @@ test("un barrido completo parado: hay llamadas esperando y el último completo e
   assert.equal(barridoParado(null, 5, AHORA), false, "recién instalado: el primer barrido completo todavía no terminó");
   assert.equal(barridoParado(hace(500), 0, AHORA), false, "sin llamadas esperando no hay nada parado");
 });
+
+test("el resumen para los supervisores nombra a los 10 con más llamadas y dice cuántos más hay", () => {
+  const pend = Array.from({ length: 15 }, (_, i) => Array.from({ length: i + 1 }, (_, j) => ({ id: `${i}_${j}`, inicia: hace(100), anfitrion: `Closer ${i}` }))).flat();
+  const f = avisosDeGrabacionesPrivadas(pend, { closers: [], supervisores: ["yari@x.com"] }, "d", "s", hash);
+  assert.equal(f.length, 1);
+  assert.match(f[0].cuerpo, /Closer 14 15 · Closer 13 14/);
+  assert.match(f[0].cuerpo, /y 5 más/);
+  assert.doesNotMatch(f[0].cuerpo, /Closer 0 1/);
+});

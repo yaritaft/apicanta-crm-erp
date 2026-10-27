@@ -186,3 +186,17 @@ test("un barrido completo que lleva más de 3 días sin terminar avisa a los due
   await capturandoConsola(() => avisarDeFathom(db, { ok: true, estado: "nada", paginas: 0, vistas: 0, nuevas: 0, porLink: 0, pendientes: 3 }));
   assert.ok(avisos().some((a) => a.para === "yari@x.com" && /lleva días sin terminar/.test(String(a.titulo))));
 });
+
+test("un error pasajero de Fathom (502 con la página de Cloudflare, 429) no alarma a nadie y el mensaje no trae HTML", async () => {
+  sembrarPrivadas();
+  red.soltar();
+  red.manejar((url) => url.host === "api.fathom.ai"
+    ? (url.pathname.endsWith("/teams") ? { json: { items: [] } } : new Response("<!DOCTYPE html>\n<html class=\"no-js\"><body>Bad gateway</body></html>", { status: 502 }))
+    : null);
+  const { valor: r } = await capturandoConsola(() => barrerLinks(db, { reloj: Date.now() + 20_000, maxPaginas: 5 }));
+  assert.equal(r.ok, false);
+  assert.equal(r.error, "Fathom contestó 502.", "sin el HTML");
+  const { valor: n } = await capturandoConsola(() => avisarDeFathom(db, r));
+  assert.equal(n, 0);
+  assert.equal(avisos().length, 0);
+});

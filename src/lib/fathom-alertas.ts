@@ -77,7 +77,8 @@ export function avisosDeGrabacionesPrivadas(
       cuerpo: `Tenés ${plural(g.llamadas.length, "llamada", "llamadas")} con el link de Fathom pegado, pero en privado (la más vieja, del ${dd(vieja)}): sin eso no se puede bajar su transcripción para los reportes. ${QUE_HACER}`,
     });
   }
-  const resumen = grupos.map((g) => `${g.closer} ${g.llamadas.length}`).join(" · ");
+  /* Los 10 con más llamadas: con muchos closers el aviso no puede crecer sin límite (el resto, en Ajustes → Fathom). */
+  const resumen = grupos.slice(0, 10).map((g) => `${g.closer.slice(0, 40)} ${g.llamadas.length}`).join(" · ") + (grupos.length > 10 ? ` · y ${grupos.length - 10} más` : "");
   const total = grupos.reduce((n, g) => n + g.llamadas.length, 0);
   for (const mail of [...new Set(d.supervisores.map((x) => x.trim().toLowerCase()).filter((x) => /@/.test(x)))]) {
     filas.push({
@@ -101,6 +102,9 @@ export function avisosDeConexion(
     id: `av_fathom_${motivo.tipo}_${dia}_${hash(mail)}`, para: mail, tipo: "fathom" as const, de: "Fathom", contactoId: null, persona: null, titulo, cuerpo,
   }));
 }
+
+/** El error que no se arregla solo: Fathom no acepta la clave (vencida, borrada o del usuario dado de baja). */
+export const esErrorDeClave = (mensaje: string): boolean => /no aceptó la clave|FATHOM_API_KEY/i.test(mensaje);
 
 /** Un barrido completo parado: hay llamadas esperando y el último completo es de hace más de 72 horas. Si todavía no hubo ninguno
     (recién instalado: el primero tarda un par de horas) no se avisa. */

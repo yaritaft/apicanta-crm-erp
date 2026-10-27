@@ -353,5 +353,7 @@ async function errorDe(r: Response): Promise<string> {
   const t = await r.text().catch(() => "");
   if (r.status === 401 || r.status === 403) return "Fathom no aceptó la clave (FATHOM_API_KEY).";
   if (r.status === 429) return "Fathom pidió esperar (demasiados pedidos seguidos). Probá en un minuto.";
-  return `Fathom contestó ${r.status}${t ? `: ${t.slice(0, 200)}` : ""}.`;
+  /* Una página de error de Cloudflare (HTML) no es un mensaje: sólo el número. */
+  const legible = t.trim() && !/^\s*<|<\/?(html|body|head|!doctype)/i.test(t) ? t.replace(/\s+/g, " ").trim().slice(0, 200) : "";
+  return `Fathom contestó ${r.status}${legible ? `: ${legible}` : ""}.`;
 }

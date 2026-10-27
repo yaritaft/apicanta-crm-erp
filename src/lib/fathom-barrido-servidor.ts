@@ -3,7 +3,7 @@ import { BARRIDO_VACIO, decidirBarrido, type EstadoBarrido } from "./fathom-barr
 import { equipoDeLaPasada, escribirPasada, leerPasada, PRIMERA_PASADA, seguir } from "./fathom-equipos";
 import { equiposDeVentasDeFathom, EsperarAFathom, guardarGrabacion, POR_QUIEN, reunionesDesde } from "./fathom-servidor";
 import { idDeShare } from "./fathom";
-import { avisosDeConexion, avisosDeGrabacionesPrivadas, barridoParado, queNoLlegan } from "./fathom-alertas";
+import { avisosDeConexion, avisosDeGrabacionesPrivadas, barridoParado, esErrorDeClave, queNoLlegan } from "./fathom-alertas";
 import { diaDeNegocio } from "./dia-negocio";
 import { createHash } from "node:crypto";
 
@@ -96,7 +96,10 @@ export async function barrerLinks(db: SupabaseClient, op: { reloj: number; maxPa
   let pasada = leerPasada(e.cursor);
   r.estado = "en-curso";
 
+  /* Una página que ya se pidió en esta vuelta (un cursor que da vueltas): se da por terminada esa pasada, no se gira para siempre. */
+  const vistos = new Set<string>();
   while (r.paginas < op.maxPaginas && Date.now() < op.reloj) {
+    vistos.add(`${pasada.i}|${pasada.c ?? ""}`);
     let pagina;
     try { pagina = await reunionesDesde(e.desde ?? new Date(ahora - 365 * 86_400_000).toISOString(), pasada.c, equipoDeLaPasada(pasada)); }
     catch (err) {
@@ -113,7 +116,9 @@ export async function barrerLinks(db: SupabaseClient, op: { reloj: number; maxPa
       if (g.guardada && !g.yaEstaba) r.nuevas++;
       if (g.guardada && g.por === "link") r.porLink++;
     }
-    const sigue = await seguir(pasada, pagina.siguiente, () => pasadasExtra(db));
+    const siguiente = pagina.siguiente && !vistos.has(`${pasada.i}|${pagina.siguiente}`) ? pagina.siguiente : null;
+    if (pagina.siguiente && !siguiente) console.error("[fathom] el cursor volvió a una página ya pedida: se da por terminada esa pasada.");
+    const sigue = await seguir(pasada, siguiente, () => pasadasExtra(db));
     if (!sigue) { r.estado = "terminado"; break; }
     pasada = sigue;
   }
@@ -155,7 +160,8 @@ export async function avisarDeFathom(db: SupabaseClient, r: ResultadoBarrido, ah
     const dueñosMails = mails(duenos);
     let filas: ReturnType<typeof avisosDeConexion> = [];
 
-    if (!r.ok && r.error) filas.push(...avisosDeConexion({ tipo: "error", mensaje: r.error }, dueñosMails, dia, hash));
+    /* Sólo la clave que Fathom no acepta: un 502 o un 429 pasajeros se arreglan solos (y si no, avisa el barrido parado a los 3 días). */
+    if (!r.ok && r.error && esErrorDeClave(r.error)) filas.push(...avisosDeConexion({ tipo: "error", mensaje: r.error }, dueñosMails, dia, hash));
 
     const [l, estado] = await Promise.all([llamadasConLink(db), leerEstado(db)]);
     if (!l.error) {
