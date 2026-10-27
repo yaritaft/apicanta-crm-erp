@@ -107,7 +107,7 @@ export function TiposCuenta({ accesos }: { accesos: Accesos }) {
                 <th key={a.id} scope="col" title={a.pantallas}>{a.nombre}</th>
               ))}
               <th scope="col" title="Llamadas, ventas y personas: sólo las suyas">Sólo lo suyo</th>
-              <th scope="col" title="Con «sólo lo suyo»: ve además los leads, las personas, las llamadas y el chat de todos los closers. Sus ventas y cobros siguen siendo sólo los suyos.">Ve los leads de todos</th>
+              <th scope="col" title="Con «sólo lo suyo»: ve además los leads, las personas, las llamadas y el chat de todos los closers. Sus ventas y cobros siguen siendo sólo los suyos.">Leads de todos</th>
               <th scope="col" className="tipos-tabla__num">Personas</th>
               <th scope="col" aria-label="Acciones" />
             </tr>
