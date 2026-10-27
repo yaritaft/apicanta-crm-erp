@@ -236,12 +236,32 @@ test("los honorarios del CEO no mueven el profit propio, y el desglose lo dice c
   for (const [quien, cid] of [["ana", "c_ana"], ["beto", "c_beto"]] as const) {
     const d = linea(con, quien, cid).desglose!;
     assert.ok(d.avisos?.some((a) => /honorarios del CEO \(.*9\.000.* en el mes\) no entran/.test(a)), `${quien}: dice cuánto es y que no entra`);
-    /* Y de qué están hechos los costos que sí entran. */
-    const partes = d.avisos?.find((a) => /de costos del mes son:/.test(a));
-    assert.ok(partes, `${quien}: lista de qué están hechos los costos`);
-    assert.match(partes!, /procesadores/);
-    assert.match(partes!, /gastos operativos/);
-    assert.doesNotMatch(partes!, /CEO/);
+    /* Y de qué están hechos los costos que sí entran: lo cargado como gasto y lo que la app calcula sola. */
+    const costos = d.pasos.find((p) => /Costos del mes que se le imputan/.test(p.texto))!;
+    const partes = costos.partes;
+    assert.ok(partes?.length, `${quien}: el paso de los costos trae de qué están hechos`);
+    const textos = partes!.map((x) => x.texto).join(" | ");
+    assert.match(textos, /Gastos cargados en Finanzas/);
+    assert.match(textos, /Lo que la app calcula sola/);
+    assert.match(textos, /procesadores/);
+    assert.doesNotMatch(textos, /CEO/);
+    /* Quien paga con todos los costos del mes (el socio) ve que los dos subtotales suman lo que resta la cuenta. */
+    const subtotales = partes!.filter((x) => x.grupo).reduce((a, x) => a + x.valor, 0);
+    if (quien === "beto") assert.ok(Math.abs(subtotales - costos.valor) < 0.02, "los subtotales suman los costos que resta la cuenta");
+    /* Y cada grupo suma sus renglones. */
+    const detalle = (desde: number, hasta: number) => partes!.slice(desde, hasta).reduce((a, x) => a + x.valor, 0);
+    const iApp = partes!.findIndex((x) => /Lo que la app calcula sola/.test(x.texto));
+    assert.ok(Math.abs(detalle(1, iApp) - partes![0].valor) < 0.005, `${quien}: lo cargado suma sus renglones`);
+    assert.ok(Math.abs(detalle(iApp + 1, partes!.length) - partes![iApp].valor) < 0.005, `${quien}: lo calculado suma sus renglones`);
+    assert.equal(evaluarPasos(d.pasos).fallas.length, 0, `${quien}: la cuenta sigue cerrando`);
   }
   assert.match(describirConcepto(esqDe(e, "beto"), e as never), /antes de los honorarios del CEO/);
+});
+
+test("con fecha de corte, el paso de los costos dice hasta qué día cuentan", () => {
+  const e = septiembre();
+  const r = calcularLiquidacion(e, PERIODO, { id: "liq_x", periodo: PERIODO, estado: "abierta", entradas: {}, extras: [], corte: "2026-09-25" } as never);
+  const d = linea(r, "beto", "c_beto").desglose!;
+  const costos = d.pasos.find((p) => /Costos del mes que se le imputan/.test(p.texto))!;
+  assert.match(costos.nota!, /hasta el 25\/09/);
 });

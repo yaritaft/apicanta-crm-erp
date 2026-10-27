@@ -762,6 +762,7 @@ function linea(
           ...(x?.cobros ? { lista: listaDeCobros(x.cobros, nombresDeLista(cx), cx.base, x.excluidos) } : {}),
           costos: r2(prof.costos), imputado, costosImputados, descuentos, crudo,
           ...(prof.partes ? { partes: prof.partes } : {}),
+          ...(cx.corte ? { corte: `${cx.corte.getFullYear()}-${String(cx.corte.getMonth() + 1).padStart(2, "0")}-${String(cx.corte.getDate()).padStart(2, "0")}` } : {}),
           ...(parcial ? { dias: { dias: vig.dias, diasMes: vig.diasMes } } : {}),
           ...(c.soloVentasDesdeInicio && c.desde ? { soloVentasDesde: c.desde.slice(0, 10) } : {}),
         };

@@ -37,12 +37,13 @@ const ventasTxt = (n: number) => `${C(n)} ${n === 1 ? "venta" : "ventas"}`;
    no lleva undefined ni NaN). */
 export function paso(
   op: PasoDesglose["op"], texto: string, valor: number, formato: PasoDesglose["formato"],
-  extra: { moneda?: Moneda; de?: number; nota?: string } = {},
+  extra: { moneda?: Moneda; de?: number; nota?: string; partes?: PasoDesglose["partes"] } = {},
 ): PasoDesglose {
   const p: PasoDesglose = { op, texto, valor: Number.isFinite(valor) ? valor : 0, formato };
   if (extra.moneda) p.moneda = extra.moneda;
   if (extra.de !== undefined) p.de = extra.de;
   if (extra.nota) p.nota = extra.nota;
+  if (extra.partes?.length) p.partes = extra.partes;
   return p;
 }
 
@@ -288,6 +289,8 @@ export type Fuente =
     soloVentasDesde?: string;
     /* De qué están hechos los costos del mes (para listarlos y decir qué no entra). */
     partes?: PartesProfit;
+    /* Con fecha de corte: el último día que cuenta (aaaa-mm-dd), para que se compare con los totales del mes entero. */
+    corte?: string;
   }
   | {
     tipo: "medido"; bruto?: number; cuantos: number; lista?: ListaDesglose;
@@ -376,6 +379,22 @@ function pasosDeProfit(f: Extract<Fuente, { tipo: "profit" }>, valor: number, B:
   return { pasos, avisos };
 }
 
+/** De qué están hechos los costos del mes, separando lo que se cargó como gasto de lo que la app calcula sola
+ *  (Aldana, 27/10: «los gastos que aparecen son 34.181,60 y los costos dicen 61.804,71, ¿de dónde sale la diferencia?»). */
+function partesDeLosCostos(p: PartesProfit, B: Moneda): NonNullable<PasoDesglose["partes"]> {
+  const dev = p.devoluciones ?? 0;
+  return [
+    { texto: "Gastos cargados en Finanzas", valor: r2(p.otrosDirectos + p.gastosOperativos), grupo: true },
+    { texto: "Otros costos directos", valor: p.otrosDirectos },
+    { texto: "Gastos operativos", valor: p.gastosOperativos },
+    { texto: "Lo que la app calcula sola (no está cargado como gasto)", valor: r2(dev + p.procesadores + p.comisiones + p.sueldos), grupo: true },
+    ...(dev > 0 ? [{ texto: "Devoluciones a clientes", valor: dev }] : []),
+    { texto: "Lo que se quedan los procesadores de pago", valor: p.procesadores, nota: "Se calcula de cada cobro" },
+    { texto: "Comisiones de closers y del director", valor: p.comisiones, nota: "Se calculan de las ventas" },
+    { texto: "Sueldos y honorarios de esta liquidación", valor: p.sueldos, nota: "Lo que se carga en esta pantalla (sin el CEO)" },
+  ];
+}
+
 /** El profit de lo suyo: lo cobrado de sus ventas, menos la parte de los costos del mes que le toca y
  *  lo que se descuenta antes. Termina en el valor con el que se saca el porcentaje. */
 function pasosDeProfitPropio(f: Extract<Fuente, { tipo: "profit-propio" }>, valor: number, B: Moneda): { pasos: PasoDesglose[]; avisos: string[] } {
@@ -383,8 +402,12 @@ function pasosDeProfitPropio(f: Extract<Fuente, { tipo: "profit-propio" }>, valo
   const avisos: string[] = [];
   const parte = pct(f.imputado * 100, Number.isInteger(r2(f.imputado * 100)) ? 0 : 2);
   pasos.push(plataPaso("base", "Cobrado de las ventas que le tocan", f.ingresos, B, cobros(f.cuantos)));
-  pasos.push(plataPaso("menos", "Costos del mes que se le imputan", f.costosImputados, B,
-    f.imputado < 1 ? `${M(f.costos, B)} de costos del mes × ${parte}` : `Todos los costos del mes: ${M(f.costos, B)}`));
+  const hasta = f.corte ? ` hasta el ${f.corte.slice(8, 10)}/${f.corte.slice(5, 7)}` : "";
+  pasos.push(paso("menos", "Costos del mes que se le imputan", f.costosImputados, "plata", {
+    moneda: B,
+    nota: f.imputado < 1 ? `${M(f.costos, B)} de costos del mes${hasta} × ${parte}` : `Todos los costos del mes${hasta}: ${M(f.costos, B)}`,
+    ...(f.partes ? { partes: partesDeLosCostos(f.partes, B) } : {}),
+  }));
   for (const d of f.descuentos) pasos.push(plataPaso("menos", `Comisión de ${d.nombre}`, d.monto, B, "Se descuenta antes de sacar el porcentaje"));
   if (f.crudo < -0.004) {
     pasos.push(paso("por", "Con pérdida no hay profit para repartir", 0, "cantidad"));
@@ -393,18 +416,6 @@ function pasosDeProfitPropio(f: Extract<Fuente, { tipo: "profit-propio" }>, valo
   pasos.push(plataPaso("igual", "Profit de lo suyo", valor, B));
   avisos.push("Los costos son los de toda la empresa en el mes (lo cargado en Finanzas y los sueldos de esta liquidación, con lo devuelto a clientes adentro), no sólo los de sus ventas: un gasto que falte cargar infla el profit.");
   const p = f.partes;
-  if (p) {
-    const dev = p.devoluciones ?? 0;
-    const partes = [
-      ...(dev > 0 ? [`devoluciones ${M(dev, B)}`] : []),
-      `lo que se quedan los procesadores ${M(p.procesadores, B)}`,
-      `comisiones de closers y del director ${M(p.comisiones, B)}`,
-      `otros costos directos ${M(p.otrosDirectos, B)}`,
-      `gastos operativos ${M(p.gastosOperativos, B)}`,
-      `sueldos de esta liquidación ${M(p.sueldos, B)}`,
-    ];
-    avisos.push(`Los ${M(f.costos, B)} de costos del mes son: ${partes.join(", ")}.`);
-  }
   avisos.push(sinHonorariosDelCeo(p, B));
   if (f.dias && f.dias.dias < f.dias.diasMes) {
     avisos.push(`La regla vale ${f.dias.dias} de ${f.dias.diasMes} días del mes: sólo cuenta lo cobrado esos días y se le imputa el ${parte} de los costos.`);

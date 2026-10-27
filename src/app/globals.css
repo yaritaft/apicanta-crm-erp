@@ -2767,6 +2767,13 @@ span.kpis__etiqueta:hover { color: var(--ink); text-decoration: none; }
 .liq-cuenta__texto { color: var(--ink-muted); overflow-wrap: anywhere; }
 .liq-cuenta__nota { display: block; font-size: 12px; line-height: 16px; font-weight: 400; color: var(--ink-subtle); }
 .liq-cuenta tr[data-op="igual"] .liq-cuenta__nota { font-weight: 400; color: var(--ink-subtle); }
+.liq-cuenta__partes { list-style: none; margin: 8px 0 2px; padding: 8px 0 0; border-top: 1px dashed var(--border); display: grid; gap: 2px; }
+.liq-cuenta__partes li { display: flex; justify-content: space-between; gap: var(--space-4); font-size: 12px; line-height: 16px; font-weight: 400; color: var(--ink-subtle); font-variant-numeric: tabular-nums; }
+.liq-cuenta__partes li > span:last-child { white-space: nowrap; }
+.liq-cuenta__partes li > span:first-child { padding-left: 10px; }
+.liq-cuenta__partes li[data-grupo] { margin-top: 6px; font-weight: 600; color: var(--ink-muted); }
+.liq-cuenta__partes li[data-grupo] > span:first-child { padding-left: 0; }
+.liq-cuenta__partes em { display: block; font-style: normal; font-weight: 400; color: var(--ink-subtle); }
 .liq-cuenta__valor { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; font-weight: 500; color: var(--ink); }
 .liq-cuenta tr[data-op="igual"] td { background: var(--surface-200); }
 .liq-cuenta tr[data-op="igual"] .liq-cuenta__texto, .liq-cuenta tr[data-op="igual"] .liq-cuenta__valor { color: var(--ink); font-weight: 600; }
