@@ -10,7 +10,7 @@ import { useAcceso } from "@/lib/acceso";
 import { puedeEditar } from "@/lib/permisos";
 import { evaluarAgenda, textoEvaluacion } from "@/lib/calificacion";
 import { EDITOR, PAISES, perfilDe, valorParaGuardar, type ClaveColumna, type DatoPerfil, type FilaTabla } from "@/lib/crm-tabla";
-import { corregidoDe } from "@/lib/perfil";
+import { corregidoDe, textoDeDia } from "@/lib/perfil";
 import type { Persona } from "@/lib/persona";
 
 /* ==================================================================
@@ -41,7 +41,7 @@ export function PerfilPersona({ p, filas }: {
     if (valor.split("\n").join(", ") === d.valor) return;
     const antes = d.campo === "pais" ? c?.pais ?? lead?.pais ?? "" : corregidoDe(c, lead)?.[d.campo] ?? "";
     acciones.corregirPerfil(p.clave, d.campo, valor);
-    toast(valor ? `${d.titulo} de ${p.nombre}: ${valor.split("\n").join(", ")}.` : `${d.titulo} de ${p.nombre}: volvió a lo que contestó.`, "ok",
+    toast(valor ? `${d.titulo} de ${p.nombre}: ${d.clave === "nacimiento" ? textoDeDia(valor) : valor.split("\n").join(", ")}.` : `${d.titulo} de ${p.nombre}: volvió a lo que contestó.`, "ok",
       { texto: "Deshacer", onClick: () => { acciones.corregirPerfil(p.clave, d.campo, antes, `${p.nombre}: se deshizo el cambio de ${d.titulo}.`); } });
   };
 
@@ -68,9 +68,9 @@ export function PerfilPersona({ p, filas }: {
                   className={`ficha__editable${d.corregido ? " crm-t__editable--corregida" : ""}`}
                   ayuda={d.corregido ? `${d.titulo} corregido a mano. Vaciá el dato para volver a lo que contestó al agendar.` : undefined}
                 >
-                  {d.valor ? <span>{d.valor}</span> : <span className="t-subtle">Agregar</span>}
+                  {d.valor ? <span>{d.clave === "nacimiento" ? textoDeDia(d.valor) : d.valor}</span> : <span className="t-subtle">Agregar</span>}
                 </CeldaEditable>
-              ) : d.valor}
+              ) : d.clave === "nacimiento" ? textoDeDia(d.valor) : d.valor}
             </dd>
           </div>
         ))}

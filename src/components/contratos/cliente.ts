@@ -5,6 +5,7 @@ import { alumnoDeVenta, personaDeVenta } from "@/lib/alumnos";
 import { programaDeProducto, programasDe, type Programa } from "@/lib/programas";
 import type { ConfigContratos, Cuota, EstadoApp, Venta } from "@/lib/types";
 import { diaDeNegocio } from "@/lib/dia-negocio";
+import { nacimientoDeLaPersona } from "@/lib/persona";
 import type { ContratoPendiente } from "@/lib/panel-servicio";
 
 /* ==================================================================
@@ -113,6 +114,8 @@ export function datosDeVenta(e: EstadoApp, venta: Pick<Venta, "id" | "contactoId
   const contacto = venta.contactoId ? e.contactos.find((c) => c.id === venta.contactoId) : undefined;
   const alumno = venta.id ? alumnoDeVenta(e, venta as Venta) : undefined;
   const seg = alumno ? (e.seguimientos ?? []).find((s) => s.alumnoId === alumno.id) : undefined;
+  /* La que ya está en su ficha de alumno; si no, la que contestó al agendar en Calendly (el closer no se la vuelve a pedir). */
+  const nacimiento = seg?.nacimiento || nacimientoDeLaPersona(e, venta.contactoId) || undefined;
   const plan = cuotas ?? e.cuotas.filter((c) => c.ventaId === venta.id && c.estado !== "cancelada").sort((a, b) => a.numero - b.numero);
   /* Una venta que es sólo la reserva lleva el contrato de la reserva, con el monto (si el programa lo tiene). */
   const programa = programaDeProducto(programasDe(e.ajustes), venta.productoId);
@@ -126,7 +129,7 @@ export function datosDeVenta(e: EstadoApp, venta: Pick<Venta, "id" | "contactoId
       telefono: (contacto as { telefono?: string } | undefined)?.telefono || lead?.telefono || seg?.telefono || "",
       documento: seg?.dni ?? "",
       domicilio: seg?.domicilio ?? "",
-      ...(seg?.nacimiento ? { nacimiento: seg.nacimiento } : {}),
+      ...(nacimiento ? { nacimiento } : {}),
       pais: persona.pais,
       modalidad: soloReserva ? modalidadDeReserva(plan.reduce((t, c) => t + c.monto, 0), moneda) : modalidadDeCuotas(plan, moneda),
       sesiones: seg?.sesionesMentor ?? 0,

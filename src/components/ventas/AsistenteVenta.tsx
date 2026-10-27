@@ -35,6 +35,7 @@ import { contratosPrendidos, leerContratos, pedirContrato } from "@/components/c
 import { useAbrirFicha } from "@/components/ficha/abrir";
 import { DatosDelContrato } from "@/components/contratos/DatosDelContrato";
 import { diaDeNegocio } from "@/lib/dia-negocio";
+import { nacimientoDeLaPersona } from "@/lib/persona";
 import { ventasIdenticas } from "@/lib/ventas-repetidas";
 import { AvisoVentaIdentica } from "./AvisoVentaIdentica";
 
@@ -1262,13 +1263,15 @@ function PasoContrato({ b, setB, e, esDueno, modo, encendido }: {
     const alumno = b.contactoId ? e.alumnos.find((a) => a.leadId === b.contactoId) : undefined;
     const seg = alumno ? (e.seguimientos ?? []).find((x) => x.alumnoId === alumno.id) : undefined;
     const programa = programaDeProducto(programas, b.productoId);
+    /* La de su ficha de alumno o, si no, la que contestó al agendar en Calendly: el closer no se la vuelve a pedir. */
+    const nacimiento = seg?.nacimiento || nacimientoDeLaPersona(e, b.contactoId) || undefined;
     const datos: DatosContrato = {
       nombre: (contacto?.nombre || lead?.nombre || b.contactoNombre).trim(),
       email: (b.contactoEmail || contacto?.email || lead?.email || "").trim(),
       telefono: (b.contactoTelefono || (contacto as { telefono?: string } | undefined)?.telefono || lead?.telefono || seg?.telefono || "").trim(),
       documento: seg?.dni ?? "",
       domicilio: seg?.domicilio ?? "",
-      ...(seg?.nacimiento ? { nacimiento: seg.nacimiento } : {}),
+      ...(nacimiento ? { nacimiento } : {}),
       pais: (b.contactoPais || contacto?.pais || lead?.pais || "").trim(),
       modalidad: b.soloReserva ? modalidadDeReserva(b.reserva, e.ajustes.monedaBase || "USD") : modalidadDeCuotas(b.cuotas, e.ajustes.monedaBase || "USD"),
       sesiones: seg?.sesionesMentor ?? 0,

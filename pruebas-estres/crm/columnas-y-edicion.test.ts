@@ -114,10 +114,10 @@ test("el perfil de una persona se arma para cualquier mezcla de llamadas, contac
       assert.equal(suyas.length, ids.length, conSemilla(semilla, persona));
       const c = m.contactos.find((x) => x.id === persona), l = m.leads.find((x) => x.id === persona);
       const datos = perfilDe(suyas, c, l);
-      assert.equal(datos.length, 8, conSemilla(semilla, persona));
+      assert.equal(datos.length, 9, conSemilla(semilla, persona));
       for (const d of datos) assert.ok(typeof d.valor === "string" && typeof d.titulo === "string", conSemilla(semilla, `${persona} ${d.clave}`));
     }
-    assert.equal(perfilDe([], null, null).length, 8);
+    assert.equal(perfilDe([], null, null).length, 9);
     assert.ok(perfilDe([], null, null).every((d) => d.valor === ""));
   }
 });

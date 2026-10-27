@@ -29,7 +29,10 @@ import {
   idPersonaCalendly, idSesionCalendly, nivelDeIngles, respuestaA, respuestasDe, utmDe, webinarDeUtm,
   type EventoCalendly, type InvitadoCalendly,
 } from "./calendly";
+import { createHash } from "node:crypto";
 import { completar } from "./contactos";
+import { avisosDePreguntasNuevas } from "./calendly-alertas";
+import { preguntasNuevas } from "./perfil";
 import { buscarContactoEnLaBase } from "./duplicados-servidor";
 import { nubeServidor } from "./servidor";
 import { etapaPorEvento } from "./etapas-auto";
@@ -272,6 +275,7 @@ export async function ingresarInvitado(
 
   const rs = await db.from("sesiones").upsert(limpio(sesion), { defaultToNull: false });
   if (rs.error) throw new Error(`sesiones: ${rs.error.message}`);
+  await avisarPreguntasNuevas(db, qa, { id: contacto.id, nombre: contacto.nombre });
 
   /* ---------- 5. La agenda de resells ----------
      Una llamada de «auditoría» o «resell» también va a la agenda de Customer Success (lib/resells.ts), que no lee las
@@ -297,6 +301,24 @@ export async function ingresarInvitado(
   }
 
   return { sesionId, contactoId: contacto.id, leadId, contactoNuevo: !previo, leadNuevo, estado, resell };
+}
+
+const hashCorto = (t: string) => createHash("sha1").update(t).digest("hex").slice(0, 10);
+
+/** Si el formulario trae una pregunta que la app no reconoce (lib/perfil.ts), la campanita se lo dice a los dueños, una vez por pregunta.
+    Es un aviso, no parte de la agenda: nunca la frena. */
+async function avisarPreguntasNuevas(db: SupabaseClient, qa: { pregunta: string; respuesta: string }[], persona: { id: string; nombre: string }): Promise<void> {
+  try {
+    const nuevas = preguntasNuevas(qa);
+    if (nuevas.length === 0) return;
+    const duenos = await db.from("usuarios_permitidos").select("email").eq("rol", "dueno");
+    const filas = avisosDePreguntasNuevas(nuevas, ((duenos.data ?? []) as { email?: string | null }[]).map((d) => d.email ?? ""), persona, hashCorto);
+    if (filas.length === 0) return;
+    const g = await db.from("avisos").upsert(filas, { onConflict: "id", ignoreDuplicates: true });
+    if (g.error) console.error("[calendly] no se pudo avisar de la pregunta nueva:", g.error.message);
+  } catch (err) {
+    console.error("[calendly] no se pudo avisar de la pregunta nueva:", err instanceof Error ? err.message : String(err));
+  }
 }
 
 /** El alumno de ese mail que todavía no está atado a una persona de la app (los que vinieron del Airtable). Nunca frena la agenda. */

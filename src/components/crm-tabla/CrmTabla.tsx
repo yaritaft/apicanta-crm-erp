@@ -43,7 +43,7 @@ import {
   textoDeFiltro, VACIAS, valorEditable, VISIBLES_POR_DEFECTO,
   type ClaveColumna, type FilaTabla, type FiltroColumna as Filtro, type OrdenColumna,
 } from "@/lib/crm-tabla";
-import { tituloPerfil, type CampoPerfil } from "@/lib/perfil";
+import { textoDeDia, tituloPerfil, type CampoPerfil } from "@/lib/perfil";
 import { CeldaEditable } from "./CeldaEditable";
 import { CeldaCobros } from "./CeldaCobros";
 import { FiltroColumna, textoFecha } from "./FiltroColumna";
@@ -84,11 +84,11 @@ const esDeCobros = (k: string) => COLUMNAS_DE_COBROS.includes(k as ClaveColumna)
 const HORA = new Intl.DateTimeFormat("es-AR", { timeZone: "America/Argentina/Buenos_Aires", hour: "2-digit", minute: "2-digit", hour12: false });
 
 /* Lo que es de la persona (se guarda en su contacto) y lo que es de la llamada. */
-const DE_LA_PERSONA = new Set<ClaveColumna>(["nombre", "email", "telefono", "pais", "edad", "tecnologias", "ingles", "experiencia", "formacion", "ingreso", "inversion"]);
+const DE_LA_PERSONA = new Set<ClaveColumna>(["nombre", "email", "telefono", "pais", "edad", "nacimiento", "tecnologias", "ingles", "experiencia", "formacion", "ingreso", "inversion"]);
 /* Las que se eligen de una lista y se pueden dejar vacías. */
 const VACIABLES = new Set<ClaveColumna>(["estadoPreCall", "estadoLlamada", "preCall", "objecion", "oferta"]);
 const PERFIL: Partial<Record<ClaveColumna, CampoPerfil>> = {
-  edad: "edad", tecnologias: "tecnologias", ingles: "ingles", experiencia: "experiencia", formacion: "formacion", ingreso: "ingreso", inversion: "inversion",
+  edad: "edad", nacimiento: "nacimiento", tecnologias: "tecnologias", ingles: "ingles", experiencia: "experiencia", formacion: "formacion", ingreso: "ingreso", inversion: "inversion",
 };
 const opciones = (xs: string[], color: (x: string) => ColorCrm = () => "gris1"): OpcionCrm[] => xs.map((nombre) => ({ nombre, color: color(nombre) }));
 
@@ -551,6 +551,8 @@ function Celda({ clave, f, color }: { clave: ClaveColumna; f: FilaTabla; color?:
     case "llamada": return <span className="t-num">{textoFecha(f.dia)} · {HORA.format(new Date(f.llamada))}</span>;
     case "agendo": return <span className="t-num">{textoFecha(diaDeNegocio(f.agendo))}</span>;
     case "cierre": return f.cierre ? <span className="t-num">{textoFecha(f.cierre)}</span> : nada;
+    /* Una fecha de nacimiento no lleva día de la semana: se lee como en un documento. */
+    case "nacimiento": return f.nacimiento ? <span className="t-num">{textoDeDia(f.nacimiento)}</span> : nada;
     case "calificada": return f.calificada === "Sí" ? <span className="crm-t__si"><Star size={13} fill="currentColor" className="estrella-calificada" />Sí</span> : <span className="t-subtle">No</span>;
     case "grabacion": return f.grabacion
       ? <a className="link t-sm" href={f.grabacion} target="_blank" rel="noopener noreferrer" onClick={(ev) => ev.stopPropagation()}><ExternalLink size={13} /> Ver</a>

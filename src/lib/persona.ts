@@ -1,4 +1,5 @@
 import { claveEmail } from "./contactos";
+import { corregidoDe, nacimientoDePersona } from "./perfil";
 import type {
   Actividad, Alumno, Comentario, Contacto, EstadoApp, ID, Lead, Sesion, Venta,
 } from "./types";
@@ -101,6 +102,13 @@ export function personaDe(e: EstadoApp, id: ID): Persona | null {
     pais: contacto?.pais || principal?.pais || alumnoSuelto?.pais,
     leads, sesiones, ventas, alumnos, comentarios,
   };
+}
+
+/** La fecha de nacimiento (aaaa-mm-dd) que la persona contestó al agendar en Calendly o que el equipo corrigió; null si no la dio.
+    La usan el contrato y el asistente de ventas para no pedirla otra vez. */
+export function nacimientoDeLaPersona(e: EstadoApp, id: ID | undefined): string | null {
+  const p = id ? personaDe(e, id) : null;
+  return p ? nacimientoDePersona(p.sesiones, corregidoDe(p.contacto, p.leads[0])) : null;
 }
 
 /* Lo que se registró en la actividad sobre cualquier cosa de la persona. */

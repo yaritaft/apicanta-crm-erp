@@ -2,7 +2,7 @@ import { sinTildes } from "./crm";
 import { ESTADOS_CV } from "./revision-cv";
 import { diaAInstante, diaDeNegocio } from "./dia-negocio";
 import { rachasAHoy } from "./reportes";
-import { respuestaPerfil } from "./perfil";
+import { edadDeDia, nacimientoDeRespuestas, RANGO_EDAD, respuestaPerfil } from "./perfil";
 import {
   aplicarCorreccion, CLAVES_DE_LISTAS, configSeguimiento, diasEntre, indiceDeContactos, listasPropias, proximoDe, seguimientoVacio,
   situacionDe, type SituacionSeguimiento,
@@ -128,7 +128,7 @@ function aListaDeTextos(x: unknown): string[] {
 }
 
 /* Cuántos meses se pueden poner de duración; las sesiones con el mentor; la edad: fuera de eso es un error de carga. */
-export const ENTRE = { duracion: [1, 60], mentor: [0, 10], edad: [10, 99] } as const;
+export const ENTRE = { duracion: [1, 60], mentor: [0, 10], edad: RANGO_EDAD } as const;
 const dentro = (n: number | null, [min, max]: readonly [number, number]) => (n !== null && n >= min && n <= max ? n : null);
 
 /** La ficha de un alumno completa: lo que falte (una fila de antes, o una base sin el SQL nuevo) queda vacío. */
@@ -367,11 +367,7 @@ export const SIN_TESTIMONIO = "Sin testimonio";
 
 /** La edad hoy de quien nació en `nacimiento` (aaaa-mm-dd). null si no hay fecha o no es creíble (ENTRE.edad). */
 export function edadDeNacimiento(nacimiento: string | null | undefined, hoy: string): number | null {
-  const n = /^(\d{4})-(\d{2})-(\d{2})$/.exec(nacimiento ?? "");
-  const h = /^(\d{4})-(\d{2})-(\d{2})/.exec(hoy);
-  if (!n || !h) return null;
-  const anios = Number(h[1]) - Number(n[1]) - (`${h[2]}-${h[3]}` < `${n[2]}-${n[3]}` ? 1 : 0);
-  return dentro(anios, ENTRE.edad);
+  return edadDeDia(nacimiento, hoy);
 }
 
 /** Lo que falta en una fecha de nacimiento, en palabras (o null). */
@@ -443,7 +439,7 @@ export function filasClientes(e: EstadoApp, hoy: string): FilaCliente[] {
     const planSug = seg.planDePago ? "" : venta ? planDePagoDe(cuotasDe.get(venta.id) ?? []) : "";
     const llamada = contacto ? ultimaLlamada.get(contacto.id) : undefined;
     const edadNac = edadDeNacimiento(seg.nacimiento, hoy);
-    const edadSug = edadNac === null && seg.edad === null ? edadDeTexto(respuestaPerfil(llamada?.respuestas, "edad")) : null;
+    const edadSug = edadNac === null && seg.edad === null ? (edadDeTexto(respuestaPerfil(llamada?.respuestas, "edad")) ?? edadDeNacimiento(nacimientoDeRespuestas(llamada?.respuestas), hoy)) : null;
 
     const closerVenta = venta?.closerId ? equipo.get(venta.closerId) ?? "" : "";
     /* A las reservas y al Downsell de antes del 22/09 no se les hacía contrato: no es un contrato pendiente. */

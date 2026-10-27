@@ -3,7 +3,7 @@ import { filasCrm, opcionesDe, partir, sinTildes, type FilaCrm } from "./crm";
 import { diaDeNegocio } from "./dia-negocio";
 import { EVENTOS, leerUtm, NOMBRE_FUNNEL } from "./utm-estandar";
 import { CANCELADA, CON_CIERRE, estadoDe, NO_SE_PRESENTO, POR_VENIR, SIN_CARGAR, SIN_CIERRE } from "./estados";
-import { conCorrecciones, corregidoDe, respuestaPerfil, type CampoPerfil, type Corregido } from "./perfil";
+import { conCorrecciones, corregidoDe, edadDeDia, nacimientoDeRespuestas, respuestaPerfil, textoDeDia, type CampoPerfil, type Corregido } from "./perfil";
 import type { CambiosLlamada } from "./store";
 import { COBROS_EN_CERO, cobrosPorVenta, quienEs, sumarCobros, type CobrosDeVenta } from "./control-cobros";
 import { devolucionesDeVenta } from "./devoluciones";
@@ -60,6 +60,8 @@ export interface FilaTabla {
   /* El país cargado en la persona; vacío si sale del prefijo del teléfono. */
   paisCargado: string;
   edad: string;
+  /* La fecha de nacimiento (aaaa-mm-dd) que contestó al agendar o se corrigió; vacía si no la preguntó o no se entiende. */
+  nacimiento: string;
   tecnologias: string[];
   ingles: string;
   experiencia: string;
@@ -163,6 +165,7 @@ export function filasTabla(
     & Partial<Pick<EstadoApp, "pagos" | "cuotas" | "procesadores" | "equipo" | "devoluciones">>,
   ahora = Date.now(),
 ): FilaTabla[] {
+  const hoy = diaDeNegocio(new Date(ahora).toISOString());
   /* Sin los cobros (quien arma las filas sólo mira llamadas) las dos columnas quedan en blanco. */
   const cobros = e.pagos && e.cuotas && e.procesadores ? cobrosPorVenta({ pagos: e.pagos, cuotas: e.cuotas, procesadores: e.procesadores }) : null;
   /* Las ventas que dicen haber salido de cada llamada (la mentoría y el upsell de la misma llamada): sus cobros
@@ -207,6 +210,7 @@ export function filasTabla(
     const l = leads.get(s.leadId ?? "");
     const corregido = corregidoDe(c, l);
     const qa = conCorrecciones(s.respuestas, corregido);
+    const nacimiento = nacimientoDeRespuestas(qa);
     const { ad, campania } = adDe(s, c);
     /* El mismo estado que se ve en la grilla, la Agenda y la ficha. */
     const ver = estadoDe(s, { opciones: estados, auto: f.estadoAuto ? f.estadoLlamada : "", venta: Boolean(f.venta), ahora });
@@ -226,7 +230,9 @@ export function filasTabla(
       ad, angulo: anguloDe(ad), campania,
       pais: c?.pais?.trim() || l?.pais?.trim() || paisDeTelefono(f.telefono),
       paisCargado: c?.pais?.trim() || l?.pais?.trim() || "",
-      edad: respuestaPerfil(qa, "edad") ?? "",
+      nacimiento: nacimiento ?? "",
+      /* Lo que contestó de edad; si el formulario sólo preguntó la fecha de nacimiento, la edad sale de ahí. */
+      edad: respuestaPerfil(qa, "edad") ?? (nacimiento ? String(edadDeDia(nacimiento, hoy) ?? "") : ""),
       tecnologias: f.lenguajes,
       ingles: f.ingles,
       experiencia: f.anios,
@@ -253,7 +259,7 @@ export function filasTabla(
 
 export type ClaveColumna =
   | "llamada" | "nombre" | "closer" | "estadoPreCall" | "estadoLlamada" | "preCall" | "objecion" | "oferta" | "cierre"
-  | "via" | "ad" | "angulo" | "campania" | "pais" | "edad" | "tecnologias" | "ingles" | "experiencia" | "formacion"
+  | "via" | "ad" | "angulo" | "campania" | "pais" | "edad" | "nacimiento" | "tecnologias" | "ingles" | "experiencia" | "formacion"
   | "ingreso" | "inversion" | "calificada" | "grabacion" | "venta" | "producto" | "cobrado" | "comprobante" | "conciliado" | "cargo" | "chequeo" | "email" | "telefono" | "agendo" | "notas";
 
 export interface ColumnaTabla {
@@ -382,6 +388,7 @@ export const COLUMNAS: ColumnaTabla[] = [
   { clave: "campania", titulo: "Campaña", grupo: "Origen", valores: (f) => uno(f.campania), ancho: 200 },
   { clave: "pais", titulo: "País", grupo: "Perfil", valores: (f) => uno(f.pais), ancho: 130 },
   { clave: "edad", titulo: "Edad", grupo: "Perfil", valores: (f) => uno(f.edad), ancho: 90 },
+  { clave: "nacimiento", titulo: "Fecha de nacimiento", grupo: "Perfil", valores: (f) => uno(f.nacimiento), fecha: true, ancho: 150 },
   { clave: "tecnologias", titulo: "Tecnologías", grupo: "Perfil", valores: (f) => varios(f.tecnologias), orden: (f) => f.tecnologias.join(", "), ancho: 220 },
   { clave: "ingles", titulo: "Inglés", grupo: "Perfil", valores: (f) => uno(f.ingles), ancho: 200 },
   { clave: "experiencia", titulo: "Experiencia", grupo: "Perfil", valores: (f) => uno(f.experiencia), ancho: 130 },
@@ -453,7 +460,7 @@ export const EDITOR: Partial<Record<ClaveColumna, EditorColumna>> = {
   closer: "opciones", estadoPreCall: "opciones", estadoLlamada: "opciones", preCall: "opciones", objecion: "opciones", oferta: "opciones",
   /* La llamada se puede pasar a mano: si reagendaron por fuera de Calendly (Dante, 19/10: «reagendó para el lunes y quedó en el sábado»). */
   llamada: "fechahora", cierre: "fecha", grabacion: "texto", notas: "largo",
-  pais: "sugerencias", edad: "texto", ingles: "sugerencias", experiencia: "sugerencias", ingreso: "sugerencias", inversion: "sugerencias",
+  pais: "sugerencias", edad: "texto", nacimiento: "fecha", ingles: "sugerencias", experiencia: "sugerencias", ingreso: "sugerencias", inversion: "sugerencias",
   tecnologias: "lista", formacion: "lista",
 };
 
@@ -475,7 +482,7 @@ export const POR_QUE_NO: Partial<Record<ClaveColumna, string>> = {
 };
 
 const PERFIL_DE: Partial<Record<ClaveColumna, CampoPerfil | "pais">> = {
-  pais: "pais", edad: "edad", tecnologias: "tecnologias", ingles: "ingles", experiencia: "experiencia",
+  pais: "pais", edad: "edad", nacimiento: "nacimiento", tecnologias: "tecnologias", ingles: "ingles", experiencia: "experiencia",
   formacion: "formacion", ingreso: "ingreso", inversion: "inversion",
 };
 
@@ -536,7 +543,8 @@ export function escrituraDe(
   const limpio = lista ? valor.split(/[,;\n]/).map((x) => x.trim()).filter(Boolean).join(", ") : valor.trim();
   if (limpio === valorEditable(f, clave).trim()) return null;
   const quien = f.nombre || "Sin nombre";
-  const detalle = limpio ? `${quien}: ${titulo} → ${limpio.length > 60 ? `${limpio.slice(0, 60)}…` : limpio}.` : `${quien}: se vació ${titulo}.`;
+  const aMostrar = clave === "nacimiento" ? textoDeDia(limpio) : limpio;
+  const detalle = limpio ? `${quien}: ${titulo} → ${aMostrar.length > 60 ? `${aMostrar.slice(0, 60)}…` : aMostrar}.` : `${quien}: se vació ${titulo}.`;
   const s = f.sesion;
 
   if (clave === "nombre" || clave === "email" || clave === "telefono") {
@@ -580,7 +588,7 @@ export function escrituraDe(
 
 export interface DatoPerfil { clave: ClaveColumna; campo: CampoPerfil | "pais"; titulo: string; valor: string; corregido: boolean }
 
-const COLUMNAS_PERFIL: ClaveColumna[] = ["pais", "edad", "tecnologias", "ingles", "experiencia", "formacion", "ingreso", "inversion"];
+const COLUMNAS_PERFIL: ClaveColumna[] = ["pais", "edad", "nacimiento", "tecnologias", "ingles", "experiencia", "formacion", "ingreso", "inversion"];
 const NIVEL_INGLES: Record<string, string> = { ninguno: "Ninguno", basico: "Básico", intermedio: "Intermedio", conversacional: "Conversacional", nativo: "Nativo" };
 
 /** Las llamadas de una persona, de la más nueva a la más vieja. */
