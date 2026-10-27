@@ -16,7 +16,7 @@ process.env.FATHOM_API_KEY = "clave-falsa-de-fathom";
 for (const k of ["NEXT_PUBLIC_SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_ANON_KEY", "FATHOM_EQUIPOS"]) delete process.env[k];
 
 const red = instalarFetchFalso();
-const { barrerLinks, estadoDeLinks } = await import("@/lib/fathom-barrido-servidor");
+const { avisarDeFathom, barrerLinks, estadoDeLinks } = await import("@/lib/fathom-barrido-servidor");
 const { nubeServidor } = await import("@/lib/servidor");
 test.after(() => red.restaurar());
 
@@ -127,4 +127,62 @@ test("lo que grabó un closer de afuera de la organización se trae pidiéndolo 
   assert.ok(graba().some((g) => g.recordingId === "rec_externo" && g.sesionId === "cal_X" && g.emparejadaPor === "link"));
   assert.ok(pedidos.some((p) => p.includes("recorded_by%5B%5D=externo%40gmail.com")), "lo pidió por su correo");
   assert.ok(!pedidos.some((p) => p.includes("setter%40x.com")), "sólo closers");
+});
+
+/* ---------- que no pase en silencio ---------- */
+
+const avisos = () => red.nube.filas("avisos");
+const sembrarPrivadas = () => {
+  red.nube.vaciar();
+  pedidos = [];
+  sesiones().push(
+    { id: "cal_P1", email: "a@c.com", inicia: hace(100), anfitrion: "Mariano Arias", estado: "agendada", calendlyInvitadoUri: "u/P1", grabacion: "https://fathom.video/share/privada_1" },
+    { id: "cal_P2", email: "b@c.com", inicia: hace(60), anfitrion: "Mariano Arias", estado: "agendada", calendlyInvitadoUri: "u/P2", grabacion: "https://fathom.video/share/privada_2" },
+    { id: "cal_P3", email: "c@c.com", inicia: hace(5), anfitrion: "Mariano Arias", estado: "agendada", calendlyInvitadoUri: "u/P3", grabacion: "https://fathom.video/share/privada_3" },
+  );
+  red.nube.filas("equipo").push({ id: "eq_m", nombre: "Mariano Arias", email: "Mariano@x.com", rol: "closer" });
+  red.nube.filas("usuarios_permitidos").push({ email: "yari@x.com", rol: "dueno", id: "u1" }, { email: "santi@x.com", rol: "director", id: "u2" }, { email: "closer@x.com", rol: "closer", id: "u3" });
+};
+
+test("tras un barrido completo, las grabaciones privadas con más de 36 horas avisan al closer y a los supervisores, una sola vez", async () => {
+  sembrarPrivadas();
+  const { valor: r } = await capturandoConsola(() => barrerLinks(db, { reloj: Date.now() + 60_000, maxPaginas: 20 }));
+  assert.equal(r.estado, "terminado");
+  assert.equal(r.tipo, "completo");
+  const { valor: n } = await capturandoConsola(() => avisarDeFathom(db, r));
+  assert.equal(n, 3, "el closer, el dueño y el director");
+  const para = (m: string) => avisos().filter((a) => a.para === m);
+  assert.equal(para("mariano@x.com").length, 1);
+  assert.match(String(para("mariano@x.com")[0].titulo), /^2 grabaciones de Fathom que la app no puede ver/);
+  assert.match(String(para("mariano@x.com")[0].cuerpo), /Visible to Sales Only/);
+  assert.equal(para("yari@x.com").length, 1);
+  assert.match(String(para("santi@x.com")[0].cuerpo), /Mariano Arias 2/);
+  assert.equal(para("closer@x.com").length, 0, "otros tipos de cuenta no reciben nada");
+  assert.ok(avisos().every((a) => a.tipo === "fathom"));
+  /* Otra vuelta el mismo día: no se repiten. */
+  await capturandoConsola(() => avisarDeFathom(db, r));
+  assert.equal(avisos().length, 3);
+});
+
+test("un barrido de lo fresco no dice que una grabación no llega: sólo el completo", async () => {
+  sembrarPrivadas();
+  const { valor: n } = await capturandoConsola(() => avisarDeFathom(db, { ok: true, estado: "terminado", tipo: "fresco", paginas: 1, vistas: 0, nuevas: 0, porLink: 0, pendientes: 3 }));
+  assert.equal(n, 0);
+});
+
+test("si la conexión con Fathom falla, los dueños se enteran por la campanita (uno por día)", async () => {
+  sembrarPrivadas();
+  const caida = { ok: false, estado: "en-curso" as const, tipo: "completo" as const, error: "Fathom no aceptó la clave (FATHOM_API_KEY).", paginas: 0, vistas: 0, nuevas: 0, porLink: 0, pendientes: 3 };
+  await capturandoConsola(() => avisarDeFathom(db, caida));
+  await capturandoConsola(() => avisarDeFathom(db, caida));
+  const deError = avisos().filter((a) => String(a.titulo).startsWith("Fathom dejó de traer"));
+  assert.deepEqual(deError.map((a) => a.para), ["yari@x.com"]);
+  assert.match(String(deError[0].cuerpo), /no aceptó la clave/);
+});
+
+test("un barrido completo que lleva más de 3 días sin terminar avisa a los dueños", async () => {
+  sembrarPrivadas();
+  red.nube.filas("fathom_barrido").push({ id: 1, ultimoCompleto: hace(24 * 5), ultimoFresco: hace(1), cursor: null });
+  await capturandoConsola(() => avisarDeFathom(db, { ok: true, estado: "nada", paginas: 0, vistas: 0, nuevas: 0, porLink: 0, pendientes: 3 }));
+  assert.ok(avisos().some((a) => a.para === "yari@x.com" && /lleva días sin terminar/.test(String(a.titulo))));
 });

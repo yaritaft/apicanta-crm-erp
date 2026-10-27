@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { nubeServidor } from "@/lib/servidor";
 import { hayApiFathom } from "@/lib/fathom-servidor";
-import { barrerLinks } from "@/lib/fathom-barrido-servidor";
+import { avisarDeFathom, barrerLinks } from "@/lib/fathom-barrido-servidor";
 
 /* ==================================================================
    Cada 5 minutos: a las llamadas que tienen el link de Fathom pegado y
@@ -26,5 +26,7 @@ export async function GET(req: Request) {
   if (!hayApiFathom()) return NextResponse.json({ ok: true, omitido: "Falta FATHOM_API_KEY." });
   const r = await barrerLinks(db, { reloj: Date.now() + 240_000, maxPaginas: 80 });
   if (!r.ok) console.error("[cron fathom]", r.error);
-  return NextResponse.json(r, { status: r.ok ? 200 : 500 });
+  /* Que no pase en silencio: si algo impide que lleguen las transcripciones, la campanita se lo dice a quien puede arreglarlo. */
+  const avisos = await avisarDeFathom(db, r);
+  return NextResponse.json({ ...r, avisos }, { status: r.ok ? 200 : 500 });
 }

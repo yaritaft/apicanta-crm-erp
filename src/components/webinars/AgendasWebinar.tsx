@@ -79,7 +79,7 @@ export function AgendasWebinar({ w, className }: { w: Webinar; className?: strin
   /* Las llamadas que se ven, para bajar la transcripción de Fathom de cada una. */
   const paraTranscribir: LlamadaParaTranscribir[] = visibles.flatMap((a) => {
     const s = sesiones.get(a.id);
-    return s && !a.fuera ? [{ sesionId: s.id, nombre: s.invitado, inicia: s.inicia, closer: s.anfitrion, estado: estadoVisible(app, s).texto, link: s.grabacion }] : [];
+    return s && !a.fuera ? [{ sesionId: s.id, nombre: s.invitado, inicia: s.inicia, closer: s.anfitrion, estado: estadoVisible(app, s).texto, resultado: estadoVisible(app, s).desenlace, link: s.grabacion }] : [];
   });
 
   function descargar() {

@@ -3,6 +3,9 @@ import { BARRIDO_VACIO, decidirBarrido, type EstadoBarrido } from "./fathom-barr
 import { equipoDeLaPasada, escribirPasada, leerPasada, PRIMERA_PASADA, seguir } from "./fathom-equipos";
 import { equiposDeVentasDeFathom, EsperarAFathom, guardarGrabacion, POR_QUIEN, reunionesDesde } from "./fathom-servidor";
 import { idDeShare } from "./fathom";
+import { avisosDeConexion, avisosDeGrabacionesPrivadas, barridoParado, queNoLlegan } from "./fathom-alertas";
+import { diaDeNegocio } from "./dia-negocio";
+import { createHash } from "node:crypto";
 
 /* El barrido de Fathom por los links, del lado del servidor (lib/fathom-barrido
    explica el porqué). Lo llama el cron (api/cron/fathom) y el botón de Ajustes
@@ -70,6 +73,8 @@ export interface ResultadoBarrido {
   /* en-curso: queda por recorrer; terminado: llegó al final; esperar: Fathom pidió una pausa; nada: no tocaba. */
   estado: "en-curso" | "terminado" | "esperar" | "nada";
   esperar?: number; motivo?: string; error?: string;
+  /* Si el barrido que terminó (o siguió) era de lo fresco o de todo lo pendiente. */
+  tipo?: "fresco" | "completo" | null;
   paginas: number; vistas: number; nuevas: number; porLink: number; pendientes: number;
 }
 
@@ -87,6 +92,7 @@ export async function barrerLinks(db: SupabaseClient, op: { reloj: number; maxPa
 
   let e: EstadoBarrido = d.accion === "seguir" ? antes
     : { ...antes, cursor: escribirPasada(PRIMERA_PASADA), desde: d.desde, tipo: d.tipo };
+  r.tipo = e.tipo;
   let pasada = leerPasada(e.cursor);
   r.estado = "en-curso";
 
@@ -122,4 +128,55 @@ export async function barrerLinks(db: SupabaseClient, op: { reloj: number; maxPa
   const error = await guardarEstado(db, e);
   if (error) return { ...r, ok: false, error: `No se pudo guardar el avance del barrido: ${error}` };
   return r;
+}
+
+/* ---------- que no pase en silencio (lib/fathom-alertas) ---------- */
+
+const hash = (s: string) => createHash("sha1").update(s).digest("hex").slice(0, 10);
+/* La semana, para no repetirle el resumen a los supervisores todos los días: el lunes de esa semana. */
+const lunesDe = (dia: string) => {
+  const d = new Date(`${dia}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7));
+  return d.toISOString().slice(0, 10).replace(/-/g, "");
+};
+
+/** Lo que mira el cron después de cada vuelta y le dice a quien puede arreglarlo, por la campanita: una conexión que falla, un barrido
+    parado, y —cuando terminó un barrido completo— las grabaciones con link que siguen sin verse (privadas en Fathom). Sin repetir: cada aviso
+    tiene su id por día (o por semana, el resumen de supervisores) y el que ya existe no se pisa. Nunca rompe el cron. */
+export async function avisarDeFathom(db: SupabaseClient, r: ResultadoBarrido, ahora = Date.now()): Promise<number> {
+  try {
+    const dia = diaDeNegocio(new Date(ahora).toISOString()).replace(/-/g, "");
+    const [duenos, director, equipo] = await Promise.all([
+      db.from("usuarios_permitidos").select("email").eq("rol", "dueno"),
+      db.from("usuarios_permitidos").select("email").eq("rol", "director"),
+      db.from("equipo").select("nombre, email, rol"),
+    ]);
+    const mails = (x: { data: unknown }) => ((x.data ?? []) as { email?: string | null }[]).map((m) => m.email ?? "").filter(Boolean);
+    const dueñosMails = mails(duenos);
+    let filas: ReturnType<typeof avisosDeConexion> = [];
+
+    if (!r.ok && r.error) filas.push(...avisosDeConexion({ tipo: "error", mensaje: r.error }, dueñosMails, dia, hash));
+
+    const [l, estado] = await Promise.all([llamadasConLink(db), leerEstado(db)]);
+    if (!l.error) {
+      if (barridoParado(estado.ultimoCompleto, l.pendientes.length, ahora)) {
+        filas.push(...avisosDeConexion({ tipo: "parado", desde: estado.ultimoCompleto }, dueñosMails, dia, hash));
+      }
+      /* Sólo tras un barrido COMPLETO: ahí «no apareció» quiere decir que Fathom no deja verla. */
+      if (r.estado === "terminado" && r.tipo === "completo") {
+        const sin = queNoLlegan(l.pendientes.map((p) => ({ id: p.id, inicia: p.inicia, anfitrion: p.anfitrion })), ahora);
+        filas.push(...avisosDeGrabacionesPrivadas(
+          sin, { closers: ((equipo.data ?? []) as { nombre: string; email?: string | null; rol?: string }[]).filter((m) => m.rol === "closer"), supervisores: [...dueñosMails, ...mails(director)] },
+          dia, lunesDe(`${dia.slice(0, 4)}-${dia.slice(4, 6)}-${dia.slice(6, 8)}`), hash,
+        ));
+      }
+    }
+    if (filas.length === 0) return 0;
+    const g = await db.from("avisos").upsert(filas, { onConflict: "id", ignoreDuplicates: true });
+    if (g.error) console.error("[fathom] no se pudieron guardar los avisos:", g.error.message);
+    return filas.length;
+  } catch (err) {
+    console.error("[fathom] no se pudo avisar:", err instanceof Error ? err.message : String(err));
+    return 0;
+  }
 }

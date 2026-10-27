@@ -5,7 +5,7 @@ import { mkdtempSync, writeFileSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { crc32, crearZip } from "@/lib/zip";
-import { armarPaquete, documentoDeLlamada, nombreSeguro, resumenDeDescarga, textoDeTranscripcion, tieneLinkDeFathom, type GrabacionDeTranscripcion, type LlamadaParaTranscribir } from "@/lib/transcripciones";
+import { armarPaquete, documentoDeLlamada, leemeDeDescarga, nombreSeguro, resumenDeDescarga, textoDeTranscripcion, tieneLinkDeFathom, type GrabacionDeTranscripcion, type LlamadaParaTranscribir } from "@/lib/transcripciones";
 
 /* Bajar las transcripciones de Fathom de todo un webinar juntas, para llevarlas a Claude (Santi, 26/10). */
 
@@ -80,10 +80,10 @@ test("el paquete: las que tienen transcripción van en un archivo cada una y en 
   assert.deepEqual([p.total, p.conTranscripcion, p.linkSinTranscripcion, p.sinLink], [4, 2, 1, 1]);
   const nombres = p.archivos.map((a) => a.nombre);
   /* Dos llamadas el mismo día de la misma persona no se pisan. */
-  assert.deepEqual(nombres, ["indice.csv", "todas-juntas.md", "llamadas/2026-10-22_ana-perez.md", "llamadas/2026-10-22_ana-perez-2.md"]);
-  const juntas = String(p.archivos[1].contenido);
+  assert.deepEqual(nombres, ["LEEME.md", "indice.csv", "resumenes.md", "todas-juntas.md", "llamadas/2026-10-22_ana-perez.md", "llamadas/2026-10-22_ana-perez-2.md"]);
+  const juntas = String(p.archivos[3].contenido);
   assert.ok(juntas.indexOf("Uno") < juntas.indexOf("Dos") && juntas.includes("\n---\n"));
-  const indice = String(p.archivos[0].contenido);
+  const indice = String(p.archivos[1].contenido);
   assert.match(indice, /Tiene el link de Fathom, pero la app todavía no pudo traer su transcripción/);
   assert.match(indice, /No tiene link de Fathom/);
   assert.ok(indice.startsWith("﻿"));
@@ -94,4 +94,25 @@ test("el link de Fathom: sólo el compartido cuenta", () => {
   assert.equal(tieneLinkDeFathom("https://fathom.video/share/abc"), true);
   assert.equal(tieneLinkDeFathom("https://drive.google.com/file/x"), false);
   assert.equal(tieneLinkDeFathom(undefined), false);
+});
+
+test("el resultado de cada llamada (compró o no) va en el documento, el índice y el LEEME, y el resumen en su archivo liviano", () => {
+  const llamadas = [
+    llamada({ sesionId: "s1", nombre: "Ana", resultado: "Con cierre" }),
+    llamada({ sesionId: "s2", nombre: "Beto", resultado: "Sin cierre", inicia: "2026-10-25T15:00:00.000Z" }),
+    llamada({ sesionId: "s3", nombre: "Cata", resultado: "No se presentó", link: null, inicia: "2026-10-26T15:00:00.000Z" }),
+  ];
+  const gs = new Map([["s1", [grabacion("s1", [["M", "00:00:01", "Uno"]])]], ["s2", [grabacion("s2", [["M", "00:00:01", "Dos"]])]]]);
+  const p = armarPaquete(llamadas, gs);
+  assert.equal(p.compraron, 1);
+  assert.deepEqual([p.desde, p.hasta], ["2026-10-22", "2026-10-25"]);
+  const texto = (n: string) => String(p.archivos.find((a) => a.nombre === n)!.contenido);
+  assert.match(texto("llamadas/2026-10-22_ana.md"), /- Resultado: Compró/);
+  assert.match(texto("llamadas/2026-10-25_beto.md"), /- Resultado: No compró/);
+  assert.match(texto("indice.csv"), /"Resultado"/);
+  assert.match(texto("indice.csv"), /"No se presentó"/);
+  assert.match(texto("resumenes.md"), /## 2026-10-22 · Ana · Mariano · Compró\n\n## Resumen\n- Compró/);
+  assert.match(texto("LEEME.md"), /2 transcripciones de 3 llamadas, del 2026-10-22 al 2026-10-25\. 1 terminaron en compra/);
+  assert.match(texto("LEEME.md"), /Claude Code o Cowork/);
+  assert.match(leemeDeDescarga({ conTranscripcion: 0, total: 0, compraron: 0, sinLink: 0, linkSinTranscripcion: 0 }), /0 transcripciones de 0 llamadas\./);
 });

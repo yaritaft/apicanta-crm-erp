@@ -1627,3 +1627,13 @@ por sus encabezados (`CAMPOS_CVS` en `src/lib/importar-cs.ts`; acepta los nombre
 - **Quién puede qué** (`supabase/precall-capturas.sql`, la misma función `precall_puede` para la tabla y los archivos): ve quien ve las llamadas (el closer, las suyas; el setter, las que marcó); sube quien edita las llamadas y un setter activo en una agenda suya o sin marcar; borra quien la subió, un dueño o el director. Una captura no se reemplaza: se sube otra. Ensayado con una cuenta de cada tipo dentro de una transacción que se revirtió.
 - Pruebas: `pruebas/precall-capturas.test.ts` (tipos y tamaños, la ruta con la llamada de carpeta, el nombre de lo pegado y que el SQL deja el bucket privado y sin UPDATE).
 - Para instalarlo: `supabase/precall-capturas.sql` (idempotente; necesita `tipos-cuenta.sql` y `setter-marca-agendas.sql`).
+
+### Fathom: que no vuelva a pasar en silencio (26/10)
+
+La causa de fondo no fue un bug sino que nadie se enteraba: la tabla de grabaciones estuvo vacía semanas y las grabaciones en privado (el closer las deja «sin visibilidad de equipo»: ni un administrador de Fathom las ve) no avisaban a nadie. Ahora el cron de Fathom (`/api/cron/fathom`) termina cada vuelta con `avisarDeFathom` (`src/lib/fathom-alertas.ts`, `fathom-barrido-servidor.ts`), que escribe en la campanita (tipo `fathom`, sin repetir: un id por día, o por semana el resumen de supervisores):
+
+- **Grabación privada:** tras un barrido COMPLETO, a cada closer que tenga llamadas con link pegado y más de 36 horas sin transcripción le llega qué hacer (pasarla a «Visible to Sales Only» o «All Teams» y dejar «All Teams» por defecto); a los dueños y al director, un resumen por closer.
+- **Conexión caída** (clave vencida, Fathom caído): aviso a los dueños, uno por día.
+- **Barrido parado:** si hay llamadas esperando y el último barrido completo es de hace más de 3 días, aviso a los dueños.
+- Lo que sigue a mano, en Fathom: dejar «All Teams» por defecto en la cuenta de cada closer nuevo y ponerlo en el equipo de ventas. El zip de transcripciones trae un `LEEME.md` con cómo llevarlo a Claude y el pedido para el reporte macro, `resumenes.md` y el resultado (compró o no) de cada llamada.
+- Pruebas: `pruebas/fathom-alertas.test.ts` y los casos nuevos de `pruebas-estres/pasarelas/fathom-barrido.test.ts`.

@@ -405,7 +405,7 @@ export default function Agenda() {
           {/* Lo que se ve, en CSV: una fila por persona, con teléfono y mail (para un broadcast). */}
           {visibles.length > 0 && (
             <DescargarTranscripciones texto="Transcripciones" nombreArchivo={`transcripciones-${w1 ? `webinar-${diaUtm(w1.fecha)}` : `${rango.desde}-a-${rango.hasta}`}`}
-              llamadas={visibles.map((s) => ({ sesionId: s.id, nombre: s.invitado, inicia: s.inicia, closer: s.anfitrion, estado: estadoDeSesion(s).texto, link: s.grabacion }))} />
+              llamadas={visibles.map((s) => ({ sesionId: s.id, nombre: s.invitado, inicia: s.inicia, closer: s.anfitrion, estado: estadoDeSesion(s).texto, resultado: estadoDeSesion(s).desenlace, link: s.grabacion }))} />
           )}
           {visibles.length > 0 && (
             <Button sm variante="secondary" icono={<Download size={15} />} onClick={descargar}

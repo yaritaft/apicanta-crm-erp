@@ -8,6 +8,7 @@ import { Avatar, IconButton } from "@/components/ui/ui";
 import { useAbrirFicha } from "@/components/ficha/abrir";
 import { nube } from "@/lib/supabase";
 import { useSesion } from "@/lib/auth";
+import { useAcceso } from "@/lib/acceso";
 import { useEstado } from "@/lib/store";
 import { personaDe } from "@/lib/persona";
 import { fotoDe, mapaDeFotos } from "@/lib/fotos-perfil";
@@ -58,6 +59,7 @@ export function Campanita() {
   const e = useEstado();
   const abrirFicha = useAbrirFicha();
   const router = useRouter();
+  const { esDueno } = useAcceso();
   const [avisos, setAvisos] = useState<Aviso[]>([]);
   const [abierta, setAbierta] = useState(false);
   const [emergente, setEmergente] = useState<Aviso | null>(null);
@@ -116,6 +118,8 @@ export function Campanita() {
     if (a.tipo === "acceso") { router.push("/equipo?seccion=accesos"); return; }
     /* El recordatorio del formulario semanal de los lunes (lib/reporte-recordatorio.ts): quién lo completó y a quién le llegó. */
     if (a.tipo === "reporte-semanal") { router.push("/reportes?seccion=alumnos"); return; }
+    /* Las grabaciones de Fathom que no llegan: quien puede, ve la lista por closer en Ajustes; el closer, sus llamadas en la Agenda. */
+    if (a.tipo === "fathom") { router.push(esDueno ? "/ajustes?seccion=integraciones" : "/agenda"); return; }
     if (!a.contactoId) return;
     /* Si la persona es alumna, en Servicio; si no, en Ventas. El chat está en las dos. */
     const p = personaDe(e, a.contactoId);
