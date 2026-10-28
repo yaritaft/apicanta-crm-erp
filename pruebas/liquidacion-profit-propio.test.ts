@@ -265,3 +265,25 @@ test("con fecha de corte, el paso de los costos dice hasta qué día cuentan", (
   const costos = d.pasos.find((p) => /Costos del mes que se le imputan/.test(p.texto))!;
   assert.match(costos.nota!, /hasta el 25\/09/);
 });
+
+test("un gasto marcado como pago al equipo no suma en los costos del profit propio, y el paso lo dice aparte con su monto", () => {
+  const sin = calcularLiquidacion(septiembre(), PERIODO);
+  const e = septiembre();
+  e.gastos = [...e.gastos, {
+    id: "g_pago", categoria: "Equipo / Salarios", grupo: "operativo", concepto: "Manuel Federico Perez", proveedor: "Manuel Federico Perez",
+    monto: 4_000, moneda: "USD", fecha: f(9, 26), recurrente: false, creadoEn: f(9, 26), extra: {},
+  } as never];
+  /* Sin marcar suma como costo: el profit de los dos baja. */
+  const suma = calcularLiquidacion(e, PERIODO);
+  assert.ok(linea(suma, "beto", "c_beto").monto < linea(sin, "beto", "c_beto").monto);
+  /* Marcado, vuelve a lo de antes, y el paso trae la línea aparte. */
+  e.gastos = e.gastos.map((g) => (g.id === "g_pago" ? { ...g, extra: { pagoDeEquipo: true } } : g));
+  const marca = calcularLiquidacion(e, PERIODO);
+  assert.equal(linea(marca, "beto", "c_beto").monto, linea(sin, "beto", "c_beto").monto);
+  assert.equal(linea(marca, "ana", "c_ana").monto, linea(sin, "ana", "c_ana").monto);
+  const costos = linea(marca, "beto", "c_beto").desglose!.pasos.find((p) => /Costos del mes que se le imputan/.test(p.texto))!;
+  const aparte = costos.partes!.find((x) => x.aparte)!;
+  assert.equal(aparte.valor, 4_000);
+  assert.match(aparte.texto, /Pagos al equipo cargados como gasto y marcados/);
+  assert.equal(evaluarPasos(linea(marca, "beto", "c_beto").desglose!.pasos).fallas.length, 0);
+});

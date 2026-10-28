@@ -10,7 +10,7 @@ import { useEstado } from "@/lib/store";
 import { Contexto, type Corte, type DefKpi } from "@/lib/kpis";
 import type { FilaDetalle } from "@/lib/kpis-detalle";
 import { fecha, money, num, pct, relativo } from "@/lib/format";
-import { comisionesDelMes, cuotasPorCobrar, devolucionesDelMes, gastosDelMes, pagosDelMes } from "@/lib/finanzas";
+import { comisionesDelMes, costosDelMes, cuotasPorCobrar, devolucionesDelMes, pagosDelMes } from "@/lib/finanzas";
 import {
   alumnosActivos, inscriptosMes, leadsCerrados, leadsDelPipeline, leadsMes, type RangoMes,
 } from "@/lib/metricas";
@@ -133,7 +133,7 @@ function contenido(e: EstadoApp, que: QueDesglosar, mes: RangoMes): Contenido {
       const totalFees = conFee.reduce((a, x) => a + x.p.feeMonto, 0);
 
       const gastos = (grupo: "directo" | "operativo" | "dueno") => {
-        const g = gastosDelMes(e, mes, grupo).sort((a, b) => b.monto - a.monto);
+        const g = costosDelMes(e, mes, grupo).sort((a, b) => b.monto - a.monto);
         return {
           total: g.reduce((a, x) => a + x.monto, 0),
           filas: g.map((x) => ({ id: x.id, titulo: x.concepto || x.categoria, detalle: `${x.categoria} · ${fecha(x.fecha)}`, valor: M(x.monto) })),

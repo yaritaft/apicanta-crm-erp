@@ -61,7 +61,7 @@ function CuentaDelDesglose({ pasos }: { pasos: PasoDesglose[] }) {
                 {p.partes && (
                   <ul className="liq-cuenta__partes" aria-label="De qué está hecho">
                     {p.partes.map((x, j) => (
-                      <li key={j} data-grupo={x.grupo ? true : undefined}>
+                      <li key={j} data-grupo={x.grupo ? true : undefined} data-aparte={x.aparte ? true : undefined}>
                         <span>{x.texto}{x.nota && <em>{x.nota}</em>}</span>
                         <span>{plata(x.valor, p.moneda ?? "USD")}</span>
                       </li>

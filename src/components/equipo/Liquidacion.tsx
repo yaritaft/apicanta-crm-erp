@@ -20,12 +20,14 @@ import { escribirMonto, infoGrupo, categoriaDe, leerMonto } from "@/lib/gastos";
 import { pedirBlue } from "@/lib/dolar";
 import {
   calcularLiquidacion, claveEntrada, diferenciasDesdeElCierre, esPeriodo, extrasPorVenir, faltantes, gastosDeLiquidacion,
-  infoBase, liquidacionCsv, liquidacionVacia, mesesParaExtra, moverPeriodo, nombrePeriodo, periodoDe, plata, textoParaEnviar,
+  infoBase, liquidacionCsv, liquidacionVacia, mesesParaExtra, moverPeriodo, nombrePeriodo, periodoDe, plata, rangoDePeriodo, textoParaEnviar,
 } from "@/lib/honorarios";
 import type {
   EntradaLiquidacion, EstadoApp, ExtraLiquidacion, LineaLiquidada, Liquidacion, Moneda, PersonaLiquidada, ResultadoLiquidacion,
 } from "@/lib/types";
 import { DesgloseRenglon } from "./DesgloseRenglon";
+import { GastosQueCuentan } from "./GastosQueCuentan";
+import { pagosSospechosos } from "@/lib/pagos-equipo";
 
 /* ==================================================================
    La liquidación del mes.
@@ -297,6 +299,8 @@ export function LiquidacionMes({ onVerPersona, soloMirar = false, onVerReglas }:
       {!cerrada && !soloMirar && hayPesos && (
         <TipoCambio valor={liq.tipoCambio ?? e.ajustes.tipoCambio} onCambiar={(tipoCambio) => guardar({ tipoCambio })} />
       )}
+
+      {r.personas.length > 0 && <GastosQueCuentan e={e} periodo={periodo} r={r} soloMirar={soloMirar} />}
 
       <Card style={{ padding: 0, overflow: "hidden" }}>
         <div className="pyl-head">
@@ -821,6 +825,8 @@ function ModalCerrar({ e, liq, r, onCerrar, onConfirmar }: {
   const base = e.ajustes.monedaBase;
   const falta = faltantes(r);
   const sinConfirmar = reglasSinConfirmar(e, liq.periodo);
+  /* Pagos al equipo cargados como gasto sin marcar: al cerrar, el mismo sueldo entra otra vez a Finanzas. */
+  const dobles = pagosSospechosos(e, r, rangoDePeriodo(liq.periodo));
   const gastos = gastosDeLiquidacion(e, liq, r);
   const bonos = r.personas.flatMap((p) => p.lineas.filter((l) => l.tipo === "bono" && l.monto > 0).map(() => p.nombre.split(" ")[0]));
   /* Lo que tiene que saber quien ejecuta los pagos. */
@@ -861,6 +867,12 @@ function ModalCerrar({ e, liq, r, onCerrar, onConfirmar }: {
         {sinConfirmar.length > 0 && (
           <Ayuda titulo={`${sinConfirmar.length === 1 ? "Una regla" : `${sinConfirmar.length} reglas`} sin confirmar`} icono={<AlertTriangle size={18} />}>
             {sinConfirmar.map((x) => `${x.miembro.nombre} (${x.concepto.nombre})`).join(" · ")}. Se pagan como están cargadas; están en la solapa «Reglas».
+          </Ayuda>
+        )}
+        {dobles.length > 0 && (
+          <Ayuda titulo={`${dobles.length === 1 ? "Un gasto parece" : `${dobles.length} gastos parecen`} un pago al equipo ya cargado`} icono={<AlertTriangle size={18} />}>
+            {plata(dobles.reduce((a, x) => a + x.gasto.monto, 0), base)} ({[...new Set(dobles.map((x) => x.nombre.split(" ")[0]))].join(", ")}). Al cerrar, los sueldos entran a Finanzas y esos pagos se cuentan dos veces.
+            Marcalos en «Gastos que cuentan en los costos del mes» antes de cerrar.
           </Ayuda>
         )}
         {falta.pendientes.length > 0 && (

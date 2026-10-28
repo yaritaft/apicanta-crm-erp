@@ -1721,7 +1721,7 @@ export interface PasoDesglose {
   /* Una aclaración corta. */
   nota?: string;
   /* De qué se compone el valor, para leerlo (no entra en la cuenta). `grupo` marca un subtotal. */
-  partes?: { texto: string; valor: number; grupo?: boolean; nota?: string }[];
+  partes?: { texto: string; valor: number; grupo?: boolean; nota?: string; aparte?: boolean }[];
 }
 
 /* Un cobro o una venta de los que entraron en lo medido. */

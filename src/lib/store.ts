@@ -1413,6 +1413,32 @@ export const acciones = {
     return quitar.length;
   },
 
+  /* Marcar (o desmarcar) gastos como el PAGO de un sueldo o una comisión que ya se cuenta aparte (la liquidación o las comisiones de Finanzas): siguen en la
+     caja y en Transacciones, pero no suman otra vez como costo ni en el profit de quienes cobran sobre él. Devuelve cuántos cambió. */
+  marcarPagosDeEquipo(ids: readonly ID[], marcar: boolean): number {
+    const e = snapshot();
+    const set = new Set(ids);
+    const cambian = e.gastos.filter((g) => set.has(g.id) && g.grupo !== "dueno" && (g.extra?.pagoDeEquipo === true) !== marcar);
+    if (cambian.length === 0) return 0;
+    const total = cambian.reduce((a, g) => a + g.monto, 0);
+    const lista = cambian.slice(0, 12).map((g) => `${g.proveedor || g.concepto} ${g.monto.toLocaleString("es-AR", { minimumFractionDigits: 2 })}`).join(", ");
+    const nuevos = cambian.map((g): Gasto => {
+      const { pagoDeEquipo: _quitar, ...resto } = g.extra ?? {};
+      return { ...g, extra: marcar ? { ...resto, pagoDeEquipo: true } : resto };
+    });
+    const porId = new Map(nuevos.map((g) => [g.id, g] as const));
+    const { lista: act, nuevo } = registrar(
+      e, "transaccion", cambian[0].id, "Pagos al equipo", "actualizo",
+      marcar
+        ? `Se marcaron ${cambian.length} ${cambian.length === 1 ? "gasto" : "gastos"} como pago al equipo (${Math.round(total * 100) / 100} ${e.ajustes.monedaBase}): ya los cuenta la liquidación o las comisiones, así que no suman otra vez como costo. ${lista}${cambian.length > 12 ? "…" : ""}.`
+        : `Se desmarcaron ${cambian.length} ${cambian.length === 1 ? "gasto" : "gastos"} (${Math.round(total * 100) / 100} ${e.ajustes.monedaBase}): vuelven a sumar como costo. ${lista}${cambian.length > 12 ? "…" : ""}.`,
+    );
+    guardar({ ...e, gastos: e.gastos.map((g) => porId.get(g.id) ?? g), actividad: act });
+    for (let i = 0; i < nuevos.length; i += 100) empujar({ tipo: "upsert", tabla: "gastos", filas: nuevos.slice(i, i + 100) });
+    empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
+    return cambian.length;
+  },
+
   /* Deshacer una carga masiva: se van todos los gastos de ese lote (los que se editaron después también). */
   deshacerCargaDeGastos(loteId: ID): number {
     const e = snapshot();

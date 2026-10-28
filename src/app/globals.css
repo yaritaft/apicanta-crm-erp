@@ -2773,6 +2773,8 @@ span.kpis__etiqueta:hover { color: var(--ink); text-decoration: none; }
 .liq-cuenta__partes li > span:first-child { padding-left: 10px; }
 .liq-cuenta__partes li[data-grupo] { margin-top: 6px; font-weight: 600; color: var(--ink-muted); }
 .liq-cuenta__partes li[data-grupo] > span:first-child { padding-left: 0; }
+.liq-cuenta__partes li[data-aparte] { margin-top: 6px; font-style: italic; }
+.liq-cuenta__partes li[data-aparte] > span:first-child { padding-left: 0; }
 .liq-cuenta__partes em { display: block; font-style: normal; font-weight: 400; color: var(--ink-subtle); }
 .liq-cuenta__valor { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; font-weight: 500; color: var(--ink); }
 .liq-cuenta tr[data-op="igual"] td { background: var(--surface-200); }
@@ -4535,3 +4537,15 @@ select.gm-celda { background: var(--surface-100); }
    horizontal llega al borde de la página: con esto, lo que sobra se queda adentro de la tabla. */
 html, body { overscroll-behavior-x: none; }
 .hk-table-wrap, [class*="crm-t"], .kpis-caja { overscroll-behavior-x: contain; }
+
+/* Gastos que cuentan en los costos del mes (liquidación): el resumen, el aviso de posibles pagos duplicados y la lista. */
+.gq__resumen { display: flex; flex-wrap: wrap; gap: var(--space-5); padding: 0 var(--space-5) var(--space-4); }
+.gq__resumen > div { display: grid; gap: 2px; min-width: 150px; }
+.gq__resumen b { font-size: 20px; line-height: 26px; font-variant-numeric: tabular-nums; color: var(--ink); }
+.gq__alerta b { color: var(--warning, var(--ink)); }
+.gq__aviso { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; margin: 0 var(--space-5) var(--space-4); padding: var(--space-3) var(--space-4); border: 1px solid var(--border-strong); border-radius: var(--radius-md); background: var(--surface-200); font-size: 13px; line-height: 18px; color: var(--ink-muted); }
+.gq__aviso > span { flex: 1 1 320px; }
+.gq__acciones { padding: var(--space-2) var(--space-3); border-radius: var(--radius-md); background: var(--surface-200); }
+.liq-lista tr[data-marcado] td { opacity: .7; }
+.liq-lista td input[type="checkbox"] { margin-top: 2px; }
+@media (max-width: 640px) { .gq__resumen, .gq__aviso { padding-left: var(--space-4); padding-right: var(--space-4); margin-left: var(--space-4); margin-right: var(--space-4); } }

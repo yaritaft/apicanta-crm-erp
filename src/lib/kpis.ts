@@ -1,7 +1,7 @@
 import { evaluarAgenda } from "./calificacion";
 import type { Contacto, Cuota, EstadoApp, ID, Lead, Pago, Sesion, Venta, Webinar, Devolucion } from "./types";
 import {
-  calcularPyL, comisionesDelMes, cuotasPorCobrar, cuotasVencidas, devolucionesDelMes, gastosDelMes, gastosDePublicidad, pagosDelMes, type ComisionVenta, type PyL,
+  calcularPyL, comisionesDelMes, costosDelMes, cuotasPorCobrar, cuotasVencidas, devolucionesDelMes, gastosDelMes, gastosDePublicidad, pagosDelMes, type ComisionVenta, type PyL,
 } from "./finanzas";
 import {
   filasMeta, leadsDelPipeline, leadsMes, leadsSinContactar, mrr, periodoAnterior, rangoDeFechas, tasaConversion, totalesMeta,
@@ -779,7 +779,7 @@ export function catalogo(e: EstadoApp): DefKpi[] {
     ...[...porCategoria.entries()].sort((a, b) => b[1] - a[1]).map(([cat]) => ({
       id: `r_cat:${cat}`, etiqueta: cat, formato: "moneda" as const, ocultarEnCero: true, href: `/finanzas/detalle?seccion=gastos&categoria=${encodeURIComponent(cat)}`,
       ayuda: `Los gastos cargados como «${cat}».`,
-      valor: (c: Contexto) => g(c, () => gastosDelMes(c.e, c.m!).filter((x) => x.categoria === cat && x.grupo !== "dueno" && x.grupo !== "retiro").reduce((a, x) => a + x.monto, 0)),
+      valor: (c: Contexto) => g(c, () => costosDelMes(c.e, c.m!).filter((x) => x.categoria === cat && x.grupo !== "dueno" && x.grupo !== "retiro").reduce((a, x) => a + x.monto, 0)),
     })),
   ]);
 
@@ -936,8 +936,8 @@ export function catalogo(e: EstadoApp): DefKpi[] {
     r_fees: (c) => deFees(c, c.pagos()),
     r_closers: (c) => deComisiones(c, c.comisionesPorVenta(), "closer"),
     r_director: (c) => deComisiones(c, c.comisionesPorVenta(), "director"),
-    r_directos: gastos((c) => gastosDelMes(c.e, c.m, "directo"), "Costos directos"),
-    r_opex: gastos((c) => gastosDelMes(c.e, c.m, "operativo"), "Gastos operativos"),
+    r_directos: gastos((c) => costosDelMes(c.e, c.m, "directo"), "Costos directos"),
+    r_opex: gastos((c) => costosDelMes(c.e, c.m, "operativo"), "Gastos operativos"),
     r_ceo: gastos((c) => gastosDelMes(c.e, c.m, "dueno"), "Honorarios"),
     /* Servicio */
     s_activos: alumnos(activos),
@@ -945,7 +945,7 @@ export function catalogo(e: EstadoApp): DefKpi[] {
     s_sinreportar: alumnos((c) => { const r = rachasAHoy(c.e); return activos(c).filter((a) => (r.get(a.id) ?? 0) >= 2); }),
   };
   for (const cat of porCategoria.keys()) {
-    detalles[`r_cat:${cat}`] = gastos((c) => gastosDelMes(c.e, c.m).filter((x) => x.categoria === cat && x.grupo !== "dueno" && x.grupo !== "retiro"), cat);
+    detalles[`r_cat:${cat}`] = gastos((c) => costosDelMes(c.e, c.m).filter((x) => x.categoria === cat && x.grupo !== "dueno" && x.grupo !== "retiro"), cat);
   }
   for (const et of etapas) detalles[`s_etapa:${et.id}`] = alumnos((c) => c.e.alumnos.filter((a) => etapaDelAlumno(etapas, a)?.id === et.id));
   for (const d of lista) if (detalles[d.id]) d.detalle = detalles[d.id];

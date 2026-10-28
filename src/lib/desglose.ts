@@ -260,6 +260,8 @@ export interface PartesProfit {
   /* Lo que se lleva el dueño: NO resta del profit (se descuenta después del resultado operativo). Se
      guarda sólo para decirlo en el desglose. */
   honorariosCeo?: number;
+  /* Gastos marcados como pago de equipo (sueldos y comisiones que se cuentan aparte): tampoco suman. */
+  pagosDeEquipo?: number;
 }
 
 /* Lo que no cuenta en el profit, dicho con el monto del mes cuando lo hay. */
@@ -376,6 +378,7 @@ function pasosDeProfit(f: Extract<Fuente, { tipo: "profit" }>, valor: number, B:
   }
   avisos.push("El profit sale de lo que está cargado en Finanzas y con los sueldos de esta misma liquidación adentro: un gasto que falte cargar lo infla.");
   avisos.push(sinHonorariosDelCeo(p, B));
+  if (p?.pagosDeEquipo) avisos.push(`Hay ${M(p.pagosDeEquipo, B)} de gastos marcados como pago al equipo: no suman, porque ya los cuenta la liquidación o las comisiones de Finanzas.`);
   return { pasos, avisos };
 }
 
@@ -392,6 +395,10 @@ function partesDeLosCostos(p: PartesProfit, B: Moneda): NonNullable<PasoDesglose
     { texto: "Lo que se quedan los procesadores de pago", valor: p.procesadores, nota: "Se calcula de cada cobro" },
     { texto: "Comisiones de closers y del director", valor: p.comisiones, nota: "Se calculan de las ventas" },
     { texto: "Sueldos y honorarios de esta liquidación", valor: p.sueldos, nota: "Lo que se carga en esta pantalla (sin el CEO)" },
+    ...(p.pagosDeEquipo ? [{
+      texto: "Pagos al equipo cargados como gasto y marcados", valor: p.pagosDeEquipo, aparte: true,
+      nota: "No suman: ya los cuenta la liquidación o las comisiones de Finanzas",
+    }] : []),
   ];
 }
 

@@ -7,6 +7,7 @@ import type { RangoMes } from "./metricas";
 import { calcularPyL, closerDeCuota, cobraEnFecha, pagosDelMes, parteMarketing, tasaDeComision, ventasDelMes } from "./finanzas";
 import { esPeriodo, finDelDia, moverPeriodo, nombrePeriodo, periodoDe, rangoDePeriodo } from "./periodos";
 import { aMonedaBase, categoriaDe, normalizar } from "./gastos";
+import { totalMarcados } from "./pagos-equipo";
 import { fechaLarga, money, num, pct, tasaTexto } from "./format";
 import {
   conCorreccion, desgloseBono, desgloseDeudaQueEntra, desgloseDeudaQueSale, desgloseFijo, desgloseMedido, desglosePieza,
@@ -1193,6 +1194,7 @@ export function calcularLiquidacion(e: EstadoApp, periodo: string, liq?: Liquida
       procesadores: r2(pyl.feesProcesador), comisiones: r2(pyl.comisionCloser + pyl.comisionDirector),
       otrosDirectos: r2(pyl.otrosDirectos), gastosOperativos: r2(pyl.gastosOperativos), sueldos: r2(aCargar),
       honorariosCeo: r2(pyl.honorariosCeo),
+      ...(totalMarcados(e, rangoMedido) > 0 ? { pagosDeEquipo: totalMarcados(e, rangoMedido) } : {}),
     },
   };
   const calcular = (x: (typeof delProfit)[number], descuentos: DescuentoProfit[] = []) => {

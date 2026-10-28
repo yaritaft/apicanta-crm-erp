@@ -311,13 +311,23 @@ export function gastosPagadosEn(e: Pick<EstadoApp, "gastos">, m: RangoMes, grupo
   return e.gastos.filter((g) => enRango(fechaDePago(g), m) && (!grupo || g.grupo === grupo));
 }
 
+/** Un gasto que es el PAGO de un sueldo o de una comisión que ya se cuenta aparte (la liquidación de sueldos o las comisiones que
+ *  Finanzas calcula de las ventas). Sigue en la caja y en Transacciones —la plata salió—, pero no suma otra vez como costo: si no, el mismo
+ *  sueldo cuenta dos veces (el pago cargado a mano y la liquidación). Lo marca quien carga, desde Equipo y honorarios → Liquidación. */
+export const esPagoDeEquipo = (g: Pick<Gasto, "extra">): boolean => g.extra?.pagoDeEquipo === true;
+
+/** Los gastos del período que cuentan como costo: todos menos los pagos de equipo marcados. Es lo que suma el P&L. */
+export function costosDelMes(e: EstadoApp, m: RangoMes, grupo?: Gasto["grupo"]): Gasto[] {
+  return gastosDelMes(e, m, grupo).filter((g) => !esPagoDeEquipo(g));
+}
+
 export function totalGastos(e: EstadoApp, m: RangoMes, grupo?: Gasto["grupo"]): number {
-  return gastosDelMes(e, m, grupo).reduce((a, g) => a + g.monto, 0);
+  return costosDelMes(e, m, grupo).reduce((a, g) => a + g.monto, 0);
 }
 
 export function gastosPorCategoria(e: EstadoApp, m: RangoMes, grupo?: Gasto["grupo"]) {
   const acc = new Map<string, number>();
-  for (const g of gastosDelMes(e, m, grupo)) acc.set(g.categoria, (acc.get(g.categoria) ?? 0) + g.monto);
+  for (const g of costosDelMes(e, m, grupo)) acc.set(g.categoria, (acc.get(g.categoria) ?? 0) + g.monto);
   return [...acc.entries()].sort((a, b) => b[1] - a[1]).map(([categoria, monto]) => ({ categoria, monto }));
 }
 
@@ -715,7 +725,7 @@ export interface GastosCategoria { categoria: string; total: number; gastos: Gas
 
 export function gastosPorCategoriaDetalle(e: EstadoApp, m: RangoMes, grupo?: Gasto["grupo"]): GastosCategoria[] {
   const grupos = new Map<string, GastosCategoria>();
-  for (const g of gastosDelMes(e, m, grupo)) {
+  for (const g of costosDelMes(e, m, grupo)) {
     let c = grupos.get(g.categoria);
     if (!c) { c = { categoria: g.categoria, total: 0, gastos: [] }; grupos.set(g.categoria, c); }
     c.total += g.monto;
