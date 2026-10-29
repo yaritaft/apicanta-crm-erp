@@ -37,7 +37,7 @@ import { buscarContactoEnLaBase } from "./duplicados-servidor";
 import { nubeServidor } from "./servidor";
 import { etapaPorEvento } from "./etapas-auto";
 import { anfitrionTrasCalendly } from "./pasada-closer";
-import { esLlamadaDeResell, esLlamadaDeTestimonio, registrarResell } from "./resells";
+import { entraComoCasoDeExito, esLlamadaDeResell, esLlamadaDeTestimonio, registrarResell } from "./resells";
 import { literalParaIlike } from "./links-alumno";
 import type { Contacto, Etapa, Lead, Sesion } from "./types";
 
@@ -286,7 +286,8 @@ export async function ingresarInvitado(
       sesionId, fechaHora: sesion.inicia, nombre: sesion.invitado, email: sesion.email ?? "", telefono: contacto.telefono ?? "",
       closer: sesion.anfitrion ?? "", cancelada: inv.status === "canceled",
       reprogramadaDe: !antes && inv.old_invitee ? idSesionCalendly(inv.old_invitee) : undefined, ahora,
-      testimonio: esLlamadaDeTestimonio({ tipo: sesion.tipo, titulo: sesion.titulo }),
+      testimonio: entraComoCasoDeExito({ tipo: sesion.tipo, titulo: sesion.titulo },
+        esLlamadaDeTestimonio({ tipo: sesion.tipo, titulo: sesion.titulo }) && await testimonioPendiente(db, contacto.email)),
     });
     resell = r.hecho;
     if (!r.hecho) console.warn(`resells: no se guardó la agenda de ${sesionId}: ${r.motivo ?? "sin motivo"}`);
@@ -318,6 +319,23 @@ async function avisarPreguntasNuevas(db: SupabaseClient, qa: { pregunta: string;
     if (g.error) console.error("[calendly] no se pudo avisar de la pregunta nueva:", g.error.message);
   } catch (err) {
     console.error("[calendly] no se pudo avisar de la pregunta nueva:", err instanceof Error ? err.message : String(err));
+  }
+}
+
+/** ¿El alumno de ese mail tiene un testimonio por grabar (sin llamada agendada ni grabado)? Nunca frena la agenda. */
+async function testimonioPendiente(db: SupabaseClient, email: string | null | undefined): Promise<boolean> {
+  const e = (email ?? "").trim();
+  if (!e) return false;
+  try {
+    const a = await db.from("alumnos").select("id").ilike("email", literalParaIlike(e));
+    const ids = ((a.data ?? []) as { id: string }[]).map((x) => x.id);
+    if (a.error || !ids.length) return false;
+    const t = await db.from("testimonios").select("followUp,estadoVideo").in("alumnoId", ids);
+    if (t.error) return false;
+    return ((t.data ?? []) as { followUp?: string | null; estadoVideo?: string | null }[])
+      .some((x) => ["", "Pendiente de agendar", "No agendada", "Llamada agendada"].includes((x.followUp ?? "").trim()) && !["Subido a Drive", "Subido a YouTube", "No quiso grabar"].includes((x.estadoVideo ?? "").trim()));
+  } catch {
+    return false;
   }
 }
 

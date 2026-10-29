@@ -132,6 +132,7 @@ export function contenidoCliente(clave: ClaveCliente, f: FilaCliente, hoy: strin
     case "zoom": return <Pastilla texto={f.zoom ? "Sí" : "No"} tono={f.zoom ? "ok" : "neutra"} />;
     case "wibo": return <Pastilla texto={f.wibo ? "Sí" : "No"} tono={f.wibo ? "ok" : "neutra"} />;
     case "comentarios": return <Recorte texto={f.comentarios} />;
+    case "otrosMails": return <Recorte texto={f.otrosMails.join(", ")} />;
     default: {
       const v = (f as unknown as Record<string, unknown>)[clave];
       return <Recorte texto={typeof v === "string" ? v : ""} />;

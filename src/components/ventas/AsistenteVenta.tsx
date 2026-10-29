@@ -36,6 +36,7 @@ import { useAbrirFicha } from "@/components/ficha/abrir";
 import { DatosDelContrato } from "@/components/contratos/DatosDelContrato";
 import { diaDeNegocio } from "@/lib/dia-negocio";
 import { nacimientoDeLaPersona } from "@/lib/persona";
+import { soloSeCobroLaReserva } from "@/lib/accesos-minimo";
 import { ventasIdenticas } from "@/lib/ventas-repetidas";
 import { AvisoVentaIdentica } from "./AvisoVentaIdentica";
 
@@ -1265,6 +1266,9 @@ function PasoContrato({ b, setB, e, esDueno, modo, encendido }: {
     const programa = programaDeProducto(programas, b.productoId);
     /* La de su ficha de alumno o, si no, la que contestó al agendar en Calendly: el closer no se la vuelve a pedir. */
     const nacimiento = seg?.nacimiento || nacimientoDeLaPersona(e, b.contactoId) || undefined;
+    /* Si por ahora sólo se cobró la reserva, el contrato que sale es el de la reserva (el del programa da los accesos al
+       firmar: Luis Mejía, 27/10). Se puede cambiar en «Programa». */
+    const deReserva = b.soloReserva || (soloSeCobroLaReserva(b.cuotas) && Boolean(plantillaDelContrato(programa, true).id));
     const datos: DatosContrato = {
       nombre: (contacto?.nombre || lead?.nombre || b.contactoNombre).trim(),
       email: (b.contactoEmail || contacto?.email || lead?.email || "").trim(),
@@ -1273,15 +1277,15 @@ function PasoContrato({ b, setB, e, esDueno, modo, encendido }: {
       domicilio: seg?.domicilio ?? "",
       ...(nacimiento ? { nacimiento } : {}),
       pais: (b.contactoPais || contacto?.pais || lead?.pais || "").trim(),
-      modalidad: b.soloReserva ? modalidadDeReserva(b.reserva, e.ajustes.monedaBase || "USD") : modalidadDeCuotas(b.cuotas, e.ajustes.monedaBase || "USD"),
+      modalidad: deReserva ? modalidadDeReserva(b.reserva, e.ajustes.monedaBase || "USD") : modalidadDeCuotas(b.cuotas, e.ajustes.monedaBase || "USD"),
       sesiones: seg?.sesionesMentor ?? 0,
       bonos: [],
       fecha: diaDeNegocio(new Date().toISOString()),
-      ...(b.soloReserva ? { reserva: true } : {}),
+      ...(deReserva ? { reserva: true } : {}),
     };
     /* Sin plantilla: un programa sin contrato no lleva; una reserva sin contrato de reserva se manda después. */
-    const sinPlantilla = b.soloReserva ? "despues" : "no-lleva";
-    setCt({ datos, programaId: programa?.id ?? "", decision: plantillaDelContrato(programa, b.soloReserva).id ? ct.decision : sinPlantilla });
+    const sinPlantilla = deReserva ? "despues" : "no-lleva";
+    setCt({ datos, programaId: programa?.id ?? "", decision: plantillaDelContrato(programa, deReserva).id ? ct.decision : sinPlantilla });
   }, [ct.datos, ct.decision, b, e, programas, setCt]);
 
   /* ¿Ya se le mandó uno desde la app? */
@@ -1298,9 +1302,11 @@ function PasoContrato({ b, setB, e, esDueno, modo, encendido }: {
   }, [b.contactoId, setCt]);
 
   const programa = programas.find((p) => p.id === ct.programaId);
-  const plantilla = plantillaDelContrato(programa, b.soloReserva, ct.datos?.sesiones);
+  /* Lo que se manda es el contrato de la reserva si así quedó elegido en «Programa» (aunque la venta sea con plan de cuotas). */
+  const esReserva = Boolean(ct.datos?.reserva) || b.soloReserva;
+  const plantilla = plantillaDelContrato(programa, esReserva, ct.datos?.sesiones);
   const opciones: { valor: DecisionContrato; nombre: string; sub: string }[] = [
-    { valor: "mandar", nombre: "Sí, mandalo al registrar la venta", sub: b.soloReserva
+    { valor: "mandar", nombre: "Sí, mandalo al registrar la venta", sub: esReserva
       ? "Le llega por mail el contrato de la reserva para firmar. No da accesos: los da el contrato del programa."
       : "Le llega por mail para firmar. Al firmar, se le dan los accesos del programa." },
     { valor: "ya", nombre: "Ya se le mandó", sub: "No sale otro." },
@@ -1309,11 +1315,17 @@ function PasoContrato({ b, setB, e, esDueno, modo, encendido }: {
   ];
   return (
     <div className="stack-4">
-      <Pregunta texto={b.soloReserva ? "¿Se le manda el contrato de la reserva?" : "¿Se le manda el contrato?"}
+      <Pregunta texto={esReserva ? "¿Se le manda el contrato de la reserva?" : "¿Se le manda el contrato?"}
         sub={plantilla.nombre ? `Sale de la plantilla «${plantilla.nombre}» de PandaDoc.` : "Sale de la plantilla de PandaDoc del programa."} />
-      {b.soloReserva && programa && !plantilla.id && (
+      {esReserva && programa && !plantilla.id && (
         <p className="t-sm" style={{ color: "var(--warning)" }}>
           {programa.nombre} todavía no tiene contrato de reserva: se elige en Ajustes → Integraciones → Programas. Mientras tanto, la venta se registra y el contrato se manda después desde la ficha.
+        </p>
+      )}
+      {!esReserva && b.reserva > 0 && !b.soloReserva && (
+        <p className="t-sm t-muted">
+          Este contrato da todos los accesos al firmar. Si por ahora sólo dejó la reserva de US$ {b.reserva.toLocaleString("es-AR")}, elegí abajo en «Programa» la opción «sólo la reserva»:
+          el contrato del programa se manda cuando pague.
         </p>
       )}
       {previo && (
@@ -1332,6 +1344,11 @@ function PasoContrato({ b, setB, e, esDueno, modo, encendido }: {
           <DatosDelContrato
             datos={ct.datos} programas={programas} programaId={ct.programaId}
             onPrograma={(id) => setCt({ programaId: id })}
+            onReserva={(reserva) => {
+              const { reserva: _antes, ...resto } = ct.datos!;
+              const moneda = e.ajustes.monedaBase || "USD";
+              setCt({ datos: { ...resto, ...(reserva ? { reserva: true, modalidad: modalidadDeReserva(b.reserva, moneda) } : { modalidad: modalidadDeCuotas(b.cuotas, moneda) }) } });
+            }}
             onCambio={(c) => setCt({ datos: { ...ct.datos!, ...c } })}
           />
           {esDueno && encendido && (

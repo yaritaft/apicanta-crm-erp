@@ -20,10 +20,22 @@ export function esLlamadaDeResell(s: { tipo?: string | null; titulo?: string | n
   return /resell/.test(sinTildes(src));
 }
 
-/** Si es una llamada de testimonio: el evento «Testimonio» de Yari (casos de más de 5K) o el «Próximos pasos» de Mariano (los de
-    menos de 5K; Lili, 24/10). Esa agenda entra como caso de éxito: después de la llamada se carga si grabó y el link. */
+/** Si puede ser una llamada de testimonio: el evento «Testimonio» de Yari (casos de más de 5K) o el «Próximos pasos» de Mariano (los de
+    menos de 5K; Lili, 24/10). Para saber si entra como caso de éxito, `entraComoCasoDeExito`. */
 export const esLlamadaDeTestimonio = (s: { tipo?: string | null; titulo?: string | null }): boolean =>
   /(testimonio|proximos pasos)/.test(sinTildes(`${s.tipo ?? ""} ${s.titulo ?? ""}`));
+
+/** El evento «Testimonio» de Yari: siempre es la llamada en que un caso de éxito graba. */
+export const esEventoDeTestimonio = (s: { tipo?: string | null; titulo?: string | null }): boolean =>
+  /testimonio/.test(sinTildes(`${s.tipo ?? ""} ${s.titulo ?? ""}`));
+
+/** ¿Entra como caso de éxito? El evento «Testimonio», sí. El «Próximos pasos» de Mariano sólo si el alumno ya tiene un testimonio
+    por grabar (`testimonioPendiente`): ese evento también es el de la renovación a secas (Lili, 28/10: Juan Diego Mosquera, vencido
+    e inactivo, agendó para renovar y la app lo anotó «caso de éxito»). Lo demás lo marca Customer Success en la tabla de resells. */
+export function entraComoCasoDeExito(s: { tipo?: string | null; titulo?: string | null }, testimonioPendiente: boolean): boolean {
+  if (esEventoDeTestimonio(s)) return true;
+  return esLlamadaDeTestimonio(s) && testimonioPendiente;
+}
 
 /** «rs_<id de la llamada>»: una llamada de Calendly, un resell. */
 export const idResell = (sesionId: string) => `rs_${sesionId}`;

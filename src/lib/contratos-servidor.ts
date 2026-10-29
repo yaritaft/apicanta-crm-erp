@@ -9,6 +9,7 @@ import {
   enlaceDeFirma, ErrorPandadoc, esperarBorrador, mandarDocumento, pdfDocumento, recordarDocumento,
 } from "./pandadoc-servidor";
 import { cambiarFicha, darAccesos, type ResultadoAccesos } from "./accesos-servidor";
+import { motivoSinPagoDelPrograma, type CuotaDelPlan, type PagoDeCuota } from "./accesos-minimo";
 import { plantillaDelContrato, programaDePlantilla, programaPorId, programasDe, type Programa } from "./programas";
 import type { ConfigContratos } from "./types";
 import { conCodigoDelAlumno, esPerfil, guiaDeBienvenida, htmlDeBienvenida, perfilEfectivo, roadmapYaEnviado, textoDeBienvenida, textoDelRoadmap, type ConfigBienvenida } from "./bienvenida-alumno";
@@ -462,6 +463,15 @@ export async function alFirmar(db: SupabaseClient, c: Contrato, opciones: { quie
       : c.origen === "manual" ? "Todavía no está cargado su servicio: cuando esté, tocá «Dar los accesos»." : ESPERA_SERVICIO);
     return { accesos: null };
   }
+  /* El mínimo (lib/accesos-minimo.ts): si de la venta sólo entró la reserva, esperan al primer pago del programa. Lo que
+     decide una persona con «Dar los accesos» no pasa por acá. No se marca nada: la pasada de cada hora lo vuelve a mirar. */
+  if (!opciones.quien) {
+    const falta = await faltaPagoDelPrograma(db, c, alumnoId).catch(() => null);
+    if (falta) {
+      await eventoDeEspera(db, c.id, falta);
+      return { accesos: null };
+    }
+  }
   /* Se marca ANTES de dar: si dos avisos llegan juntos, sólo uno da los accesos. */
   const toma = await db.from("contratos").update({ accesosEn: ahora() }).eq("id", c.id).is("accesosEn", null).select("id");
   if (!toma.data?.length) return { accesos: null };
@@ -471,6 +481,20 @@ export async function alFirmar(db: SupabaseClient, c: Contrato, opciones: { quie
   });
   await evento(db, c.id, "accesos", opciones.quien ?? "Apicanta", "app", { dados: r.dados, fallaron: r.fallaron, yaEstaban: r.yaEstaban });
   return { accesos: r };
+}
+
+/** La venta del contrato (la del contrato o, si no la trae, la del servicio) y por qué los accesos todavía no: sólo pagó la reserva. */
+export async function faltaPagoDelPrograma(db: SupabaseClient, c: Pick<Contrato, "ventaId">, alumnoId: string): Promise<string | null> {
+  let ventaId = c.ventaId ?? null;
+  if (!ventaId) ventaId = ((await db.from("alumnos").select("ventaId").eq("id", alumnoId).maybeSingle()).data as { ventaId?: string | null } | null)?.ventaId ?? null;
+  if (!ventaId) return null;
+  const cuotas = await db.from("cuotas").select("id,monto,esReserva").eq("ventaId", ventaId);
+  if (cuotas.error || !cuotas.data?.length) return null;
+  const lista = cuotas.data as CuotaDelPlan[];
+  const pagos = await db.from("pagos").select("cuotaId,monto").in("cuotaId", lista.map((q) => q.id));
+  if (pagos.error) return null;
+  const moneda = ((await db.from("ventas").select("moneda").eq("id", ventaId).maybeSingle()).data as { moneda?: string } | null)?.moneda || "USD";
+  return motivoSinPagoDelPrograma(lista, (pagos.data ?? []) as PagoDeCuota[], moneda);
 }
 
 const ESPERA_SERVICIO = "Todavía no está cargada su venta: los accesos se dan solos apenas se cargue (o con «Dar los accesos»).";
@@ -495,7 +519,8 @@ export async function darAccesosAhora(db: SupabaseClient, c: Contrato, quien: st
   const atado = await vincular(db, c);
   if (!(await alumnoDelContrato(db, atado))) throw new Error("Todavía no está cargada su venta (o su servicio): cargala y probá de nuevo.");
   if (atado.accesosEn) {
-    const dados = await db.from("accesos_alumno").select("id", { count: "exact", head: true }).eq("contratoId", c.id);
+    /* Los que se quitaron a mano no cuentan: quien los saca (Lili con Luis Mejía, 27/10) y después quiere volver a darlos. */
+    const dados = await db.from("accesos_alumno").select("id", { count: "exact", head: true }).eq("contratoId", c.id).neq("estado", "quitado");
     if ((dados.count ?? 0) > 0) throw new Error("Los accesos de este contrato ya se dieron: para uno puntual, usá la solapa Accesos.");
     /* Quedó marcado sin haber dado nada: se libera, con la misma condición que la toma (si otro lo hace a la vez, uno solo). */
     const libre = await db.from("contratos").update({ accesosEn: null }).eq("id", c.id).eq("accesosEn", atado.accesosEn).select("id");

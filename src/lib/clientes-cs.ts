@@ -50,7 +50,8 @@ export const LISTAS_POR_DEFECTO: ListasCs = {
   followUpsTestimonio: ["Llamada agendada", "No agendada", "Pendiente de agendar", "No quiere grabar"],
   estadosVideo: ["Pendiente de subir", "Subido a Drive", "No quiso grabar", "Subido a YouTube"],
   quienGraba: ["Yari", "Mariano"],
-  resellsTestimonio: ["Pendiente", "Renueva", "No renueva", "Lo piensa"],
+  /* «No corresponde, alumno activo» (Lili, 28/10): todavía tiene contrato vigente, así que no se le hace el pitch de venta. */
+  resellsTestimonio: ["Pendiente", "Renueva", "No renueva", "Lo piensa", "No corresponde, alumno activo"],
   /* Los de «Estado» de la tabla «Agendas Resells» del Airtable (export del 09/10) más «No responde» (Mariano, 21/10): se eligen varios a la vez («No quiere renovar» + «Outbording»). */
   estadosResell: ["2da Agenda", "Upgrade a Hackear IA", "No quiere renovar", "Outbording", "Seguimiento", "Garantía Extendida", "Alumno vigente", "No responde"],
   estadosCv: [...ESTADOS_CV],
@@ -131,6 +132,13 @@ function aListaDeTextos(x: unknown): string[] {
 export const ENTRE = { duracion: [1, 60], mentor: [0, 10], edad: RANGO_EDAD } as const;
 const dentro = (n: number | null, [min, max]: readonly [number, number]) => (n !== null && n >= min && n <= max ? n : null);
 
+/** Los otros mails de un alumno: una lista (o un texto con comas, espacios o renglones), sin repetir y en minúscula; lo que no parece un mail se descarta. */
+export function otrosMailsDe(x: unknown, principal = ""): string[] {
+  const crudo = Array.isArray(x) ? x.map(String) : typeof x === "string" ? x.split(/[,;\s]+/) : [];
+  const ya = principal.trim().toLowerCase();
+  return [...new Set(crudo.map((t) => t.trim().toLowerCase()).filter((t) => /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(t) && t !== ya))];
+}
+
 /** La ficha de un alumno completa: lo que falte (una fila de antes, o una base sin el SQL nuevo) queda vacío. */
 export function seguimientoCompleto(
   s: Partial<SeguimientoAlumno> & Pick<SeguimientoAlumno, "alumnoId">, cfg: ConfigSeguimiento,
@@ -142,7 +150,7 @@ export function seguimientoCompleto(
   return {
     ...m,
     id: m.id || base.id,
-    numero: aNumero(m.numero), edad: aNumero(m.edad), nacimiento: aDia(m.nacimiento),
+    numero: aNumero(m.numero), edad: aNumero(m.edad), nacimiento: aDia(m.nacimiento), otrosMails: otrosMailsDe(m.otrosMails),
     telefono: textoLimpio(m.telefono), stack: textoLimpio(m.stack), dni: textoLimpio(m.dni), domicilio: textoLimpio(m.domicilio),
     programas: aListaDeTextos(m.programas), planDePago: textoLimpio(m.planDePago),
     duracionMeses: aNumero(m.duracionMeses), fechaEgreso: aDia(m.fechaEgreso), sesionesMentor: aNumero(m.sesionesMentor),
@@ -228,10 +236,23 @@ export function finDelPrograma(inicio: string, seg: SeguimientoAlumno, productoO
   return egresoDelPrograma(inicio, seg.fechaEgreso, programasYDuracion(seg, productoOPlan, lista).duracion, seg.pausas ?? []);
 }
 
-/** El fin del programa: el escrito a mano o el inicio más la duración, corrido por la demora de inicio y las pausas
- *  (lib/pausas.ts). Calculado, la demora corre los meses enteros. */
+/** El fin que calcula la app solo: el inicio más la duración, sin demoras ni pausas (null si falta alguno de los dos). */
+export const egresoAutomatico = (inicio: string, duracion: number | null): string | null =>
+  inicio && duracion !== null ? sumarMeses(inicio, duracion) : null;
+
+/** ¿El egreso guardado lo escribió una persona? Sí cuando no es el que calcula la app (inicio + duración). Uno igual al calculado es
+    el automático y se corre con la demora y las pausas; uno distinto es la fecha definitiva (Lili, 28/10: Javier Hernández, inicio
+    5/8 con 60 días de demora y 45 de pausa, termina el 20/02; ella escribió «20/02» y la app lo corría otros 106 días). */
+export function egresoEscritoAMano(inicio: string, egresoPropio: string | null, duracion: number | null): boolean {
+  const auto = egresoAutomatico(inicio, duracion);
+  return egresoPropio !== null && auto !== null && egresoPropio !== auto;
+}
+
+/** El fin del programa: la fecha escrita a mano tal cual (es la definitiva) o, si no, el inicio más la duración corrido por la demora de
+ *  inicio y las pausas (lib/pausas.ts); calculado, la demora corre los meses enteros. */
 export function egresoDelPrograma(inicio: string, egresoPropio: string | null, duracion: number | null, pausas: readonly PausaServicio[]): string | null {
-  const base = egresoPropio ?? (inicio && duracion !== null ? sumarMeses(inicio, duracion) : null);
+  if (egresoEscritoAMano(inicio, egresoPropio, duracion)) return egresoPropio;
+  const base = egresoPropio ?? egresoAutomatico(inicio, duracion);
   if (!inicio || !pausas.length) return base;
   return finConPausas(inicio, base, pausas, egresoPropio === null && duracion !== null ? (desde) => sumarMeses(desde, duracion) : undefined);
 }
@@ -309,6 +330,7 @@ export interface FilaCliente {
   edadSugerida: boolean;
   /* La fecha de nacimiento: si está, la edad sale de ahí. */
   nacimiento: string | null;
+  otrosMails: string[];
   stack: string;
   dni: string;
   domicilio: string;
@@ -458,7 +480,7 @@ export function filasClientes(e: EstadoApp, hoy: string): FilaCliente[] {
       telefono: (contacto?.telefono ?? "").trim() || seg.telefono,
       pais: (a.pais ?? "").trim() || (contacto?.pais ?? "").trim(),
       edad: edadNac ?? seg.edad ?? edadSug, edadSugerida: edadNac === null && seg.edad === null && edadSug !== null, nacimiento: seg.nacimiento,
-      stack: seg.stack, dni: seg.dni, domicilio: seg.domicilio,
+      otrosMails: seg.otrosMails, stack: seg.stack, dni: seg.dni, domicilio: seg.domicilio,
       inicio, egreso, egresoSugerido: egresoPropio === null && egreso !== null, inicioReal: arranca, pausa,
       programas, programasSugeridos: programasSug.length > 0,
       plan: seg.planDePago || planSug, planSugerido: !seg.planDePago && planSug !== "",
@@ -484,7 +506,7 @@ export function filasClientes(e: EstadoApp, hoy: string): FilaCliente[] {
 /* ---------- Las columnas de Clientes ---------- */
 
 export type ClaveCliente =
-  | "numero" | "nombre" | "inicio" | "egreso" | "edad" | "nacimiento" | "stack" | "telefono" | "dni" | "domicilio" | "email"
+  | "numero" | "nombre" | "inicio" | "egreso" | "edad" | "nacimiento" | "stack" | "telefono" | "dni" | "domicilio" | "email" | "otrosMails"
   | "programa" | "plan" | "duracion" | "mentor" | "comentarios" | "contactoInicial" | "contactoSemana" | "acceso"
   | "followUp" | "reporte" | "ultimoContacto" | "garantia" | "wpp" | "zoom" | "wibo" | "contrato" | "pais" | "closer"
   | "estadoContrato" | "cv" | "linkedin" | "responsableCv" | "semanasSin" | "proximo" | "cadencia" | "estadoAlumno"
@@ -508,6 +530,8 @@ export const COLUMNAS_CLIENTES: ColumnaCs<FilaCliente, ClaveCliente>[] = [
   { clave: "dni", titulo: "DNI", grupo: "Datos", valores: (f) => uno(f.dni), ancho: 110 },
   { clave: "domicilio", titulo: "Domicilio", grupo: "Datos", valores: (f) => uno(f.domicilio), ancho: 220 },
   { clave: "email", titulo: "Mail", grupo: "Datos", valores: (f) => uno(f.email), ancho: 220 },
+  { clave: "otrosMails", titulo: "Otros mails", grupo: "Datos", valores: (f) => varios(f.otrosMails), orden: (f) => f.otrosMails.join(", "), ancho: 220,
+    ayuda: "Los demás mails con los que entra a Wisboo, Zoom o Telegram: hace falta para sacarlo de todos en el outboarding." },
   { clave: "programa", titulo: "Programa", grupo: "Programa", valores: (f) => varios(f.programas), ancho: 190,
     ayuda: "Puede estar en más de un programa. Si no se cargó, se sugiere el que corresponde al servicio que compró." },
   { clave: "plan", titulo: "Plan de pago", grupo: "Programa", valores: (f) => uno(f.plan), ancho: 150,
@@ -568,7 +592,7 @@ export type EditorCliente = "texto" | "largo" | "fecha" | "opciones" | "sugerenc
 /* Cómo se corrige cada columna. Las que no están no se tocan desde la tabla (salen de los reportes, de la venta o de los días). */
 export const EDITOR_CLIENTE: Partial<Record<ClaveCliente, EditorCliente>> = {
   numero: "texto", nombre: "texto", inicio: "fecha", egreso: "fecha", edad: "texto", nacimiento: "fecha", stack: "opciones", telefono: "texto", dni: "texto",
-  domicilio: "texto", email: "texto", programa: "ficha", plan: "sugerencias", duracion: "texto", mentor: "opciones", comentarios: "largo",
+  domicilio: "texto", email: "texto", otrosMails: "texto", programa: "ficha", plan: "sugerencias", duracion: "texto", mentor: "opciones", comentarios: "largo",
   contactoInicial: "fecha", contactoSemana: "fecha", acceso: "opciones", followUp: "opciones", reporte: "ficha", ultimoContacto: "fecha",
   garantia: "sugerencias", wpp: "si-no", zoom: "si-no", wibo: "si-no", contrato: "opciones", pais: "sugerencias", closer: "sugerencias",
   estadoContrato: "opciones", cv: "si-no", linkedin: "si-no", responsableCv: "sugerencias", estadoAlumno: "opciones",
@@ -625,6 +649,12 @@ export function escrituraCliente(f: FilaCliente, clave: ClaveCliente, valor: str
     case "email":
       if (v && !esMail(v)) return { tipo: "no", motivo: "Ese mail no parece válido." };
       return { tipo: "persona", id: f.alumno.leadId ?? f.id, cambios: { email: v }, alumno: { email: v }, detalle: `Mail: ${v || "vacío"}.` };
+    case "otrosMails": {
+      const malos = v.split(/[,;\s]+/).map((t) => t.trim()).filter(Boolean).filter((t) => !esMail(t));
+      if (malos.length) return { tipo: "no", motivo: `«${malos[0]}» no parece un mail.` };
+      const lista = otrosMailsDe(v, f.email);
+      return seg({ otrosMails: lista }, lista.join(", ") || "vacío");
+    }
     case "telefono":
       /* Si la persona tiene contacto en la app, el teléfono es suyo; si no (un alumno importado), de la ficha. */
       return f.contacto
@@ -701,6 +731,7 @@ export function valorEditableCliente(f: FilaCliente, clave: ClaveCliente): strin
     case "numero": return f.numero === null ? "" : String(f.numero);
     case "edad": return f.edad === null || f.edadSugerida ? "" : String(f.edad);
     case "nacimiento": return f.nacimiento ?? "";
+    case "otrosMails": return f.otrosMails.join(", ");
     case "duracion": return f.seg.duracionMeses === null ? "" : String(f.seg.duracionMeses);
     case "mentor": return f.mentor === null ? "" : sesiones(f.mentor);
     case "inicio": return f.inicio;

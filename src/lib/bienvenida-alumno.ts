@@ -30,7 +30,14 @@ export interface ConfigBienvenida {
   auditoriaCv?: { nombre?: string; whatsapp?: string };
   /* Adónde van las respuestas del alumno al mail de bienvenida (el remitente de hackearit.com no tiene casilla). */
   responderA?: string;
+  /* Las salas de Zoom de la semana (Lili, 28/10: «agregá al mail de bienvenida, sólo el de Hackear AI, los links de las salas»): el
+     link, el ID y la clave de cada día. Salas con clave: tampoco van en el código. */
+  salasZoom?: Partial<Record<DiaDeSala, SalaZoom>>;
 }
+
+export const DIAS_DE_SALA = ["martes", "miercoles", "jueves"] as const;
+export type DiaDeSala = (typeof DIAS_DE_SALA)[number];
+export interface SalaZoom { link?: string; id?: string; clave?: string }
 
 export interface Contacto { nombre: string; whatsapp: string; enlace: string | null }
 
@@ -83,8 +90,21 @@ export interface GuiaBienvenida {
   consulta: string | null;
   /* Su código personal, el mismo para todo (el reporte y los simulacros); los dos links ya lo traen. */
   codigo: string | null;
+  /* Las salas de Zoom con su link, ID y clave (sólo el programa completo). */
+  salas: Partial<Record<DiaDeSala, SalaZoom>>;
   soporte: Contacto | null;
   auditoriaCv: Contacto | null;
+}
+
+/** Las salas de la config que tienen algo para mostrar (link o ID): el resto se descarta. */
+function salasDe(config: ConfigBienvenida | null | undefined): Partial<Record<DiaDeSala, SalaZoom>> {
+  const out: Partial<Record<DiaDeSala, SalaZoom>> = {};
+  for (const d of DIAS_DE_SALA) {
+    const s = config?.salasZoom?.[d];
+    const link = s?.link?.trim() ?? "", id = s?.id?.trim() ?? "", clave = s?.clave?.trim() ?? "";
+    if (/^https:\/\//.test(link) || id) out[d] = { ...(/^https:\/\//.test(link) ? { link } : {}), ...(id ? { id } : {}), ...(clave ? { clave } : {}) };
+  }
+  return out;
 }
 
 export function guiaDeBienvenida(a: {
@@ -101,6 +121,7 @@ export function guiaDeBienvenida(a: {
     simulacro: modelo === "completo" ? a.simulacro ?? null : null,
     consulta: modelo === "completo" ? a.consulta ?? null : null,
     codigo: modelo === "completo" ? a.codigo ?? null : null,
+    salas: modelo === "completo" ? salasDe(a.config) : {},
     soporte: contactoDe(a.config?.soporte, "Liliana"),
     auditoriaCv: contactoDe(a.config?.auditoriaCv, "Aldana"),
   };
@@ -120,6 +141,13 @@ export function conCodigoDelAlumno(g: GuiaBienvenida, origen: string, codigo: st
 }
 
 /* ---------- El mail ---------- */
+
+/** El renglón de una sala: su link y, si hay, el ID y la clave (para entrar desde la app de Zoom si el link no abre). */
+const salaTexto = (s?: SalaZoom): string => {
+  if (!s) return "";
+  const datos = [s.id ? `ID: ${s.id}` : "", s.clave ? `Clave: ${s.clave}` : ""].filter(Boolean).join(" · ");
+  return `${s.link ? `\n👉 Sala: ${s.link}` : ""}${datos ? `\n${datos}` : ""}`;
+};
 
 const pasosCompleto = (aldana: string) => `1. Comenzá en Wisboo – Hackear IT
 • Realizá la Introducción, el Módulo 0 y el Módulo 1.
@@ -309,10 +337,12 @@ Es tuyo y sirve para todo: el formulario de los lunes, los simulacros de los mar
 🎥 3. Aprovechá las salas de Zoom
 Hora 18hs hora Argentina
 • Martes: práctica y simulacros de entrevistas o tema nuevo.${g.simulacro ? ` Para que te tomen un simulacro, anotate acá:
-👉 ${g.simulacro}` : ""}
-• Miércoles: consultas exclusivamente sobre IA.
+👉 ${g.simulacro}` : ""}${salaTexto(g.salas.martes)}
+• Miércoles: consultas exclusivamente sobre IA.${salaTexto(g.salas.miercoles)}
 • Jueves: consultas generales.${g.consulta ? ` Si no podés venir, dejá tu consulta acá y mirá la respuesta en la grabación:
-👉 ${g.consulta}` : ""}
+👉 ${g.consulta}` : ""}${salaTexto(g.salas.jueves)}${Object.keys(g.salas).length ? `
+
+Si con el link no podés ingresar, bajá la app de Zoom e ingresá con el ID y la clave de la sala.` : ""}
 
 Estas instancias son una oportunidad para resolver dudas, practicar y seguir avanzando.
 

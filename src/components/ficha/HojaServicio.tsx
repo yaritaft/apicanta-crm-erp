@@ -80,7 +80,7 @@ const CUENTAN: ClaveCliente[] = [
 ];
 
 const ICONO: Partial<Record<ClaveCliente, React.ReactNode>> = {
-  numero: <Hash size={15} />, nombre: <UserRound size={15} />, email: <Mail size={15} />, telefono: <Phone size={15} />, pais: <MapPin size={15} />,
+  numero: <Hash size={15} />, nombre: <UserRound size={15} />, email: <Mail size={15} />, otrosMails: <Mail size={15} />, telefono: <Phone size={15} />, pais: <MapPin size={15} />,
   edad: <CalendarDays size={15} />, nacimiento: <Cake size={15} />, dni: <IdCard size={15} />, domicilio: <Home size={15} />, programa: <GraduationCap size={15} />,
   inicio: <CalendarPlus size={15} />, egreso: <CalendarCheck size={15} />, duracion: <Timer size={15} />, plan: <CreditCard size={15} />,
   mentor: <Users size={15} />, garantia: <ShieldCheck size={15} />, acceso: <KeyRound size={15} />, closer: <Briefcase size={15} />,
@@ -322,7 +322,7 @@ function HojaDeUnServicio({ e, p, f, venta, producto, conChat, reserva }: {
   ];
   const solapas = todasLasSolapas.filter((x) => permitidas.includes(x.id));
   const faltanEn = (claves: ClaveCliente[]) => claves.filter((c) => CUENTAN.includes(c) && estaVacio(f, c)).length;
-  const DE_DATOS: ClaveCliente[] = ["nombre", "email", "telefono", "pais", "edad", "nacimiento", "dni", "domicilio"];
+  const DE_DATOS: ClaveCliente[] = ["nombre", "email", "otrosMails", "telefono", "pais", "edad", "nacimiento", "dni", "domicilio"];
   const DE_PROGRAMA: ClaveCliente[] = ["programa", "inicio", "plan", "duracion", "stack"];
 
   return (
@@ -511,6 +511,7 @@ function HojaDeUnServicio({ e, p, f, venta, producto, conChat, reserva }: {
         <Bloque>
           {dato("nombre")}
           {dato("email")}
+          {dato("otrosMails")}
           {dato("telefono")}
           {dato("pais")}
           {dato("edad")}

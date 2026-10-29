@@ -67,7 +67,7 @@ export async function pasarOutboardings(db: SupabaseClient, ahora = new Date(), 
     try {
       const r = await quitar(db, { alumnoId: a.id, quien: "Outboarding automático" });
       salida.hechos.push({ alumnoId: a.id, quitados: r.quitados, fallaron: r.fallaron });
-      if (r.quitados + r.fallaron > 0) await avisarAServicio(db, a, fin, r.quitados, r.accesos.filter((x) => x.error).map((x) => x.recursoNombre || x.recurso));
+      if (r.quitados + r.fallaron > 0) await avisarAServicio(db, a, fin, r.quitados, r.accesos.filter((x) => x.error).map((x) => x.recursoNombre || x.recurso), seg.otrosMails);
     } catch (e) {
       console.error("[outboarding]", a.id, e instanceof Error ? e.message : String(e));
     }
@@ -77,7 +77,7 @@ export async function pasarOutboardings(db: SupabaseClient, ahora = new Date(), 
 
 /* El aviso a Customer Success (como el del roadmap, lib/contratos-servidor.ts): uno por alumno y por día. */
 async function avisarAServicio(
-  db: SupabaseClient, a: { id: string; nombre: string; leadId: string | null }, fin: string | null, quitados: number, fallaron: string[],
+  db: SupabaseClient, a: { id: string; nombre: string; leadId: string | null }, fin: string | null, quitados: number, fallaron: string[], otrosMails: readonly string[] = [],
 ): Promise<void> {
   try {
     const r = await db.from("equipo").select("email").eq("activo", true)
@@ -86,6 +86,8 @@ async function avisarAServicio(
     const partes = [
       `Está en Outboarding${fin ? ` y su programa terminó el ${ddmm(fin)}` : ""}: se le ${quitados === 1 ? "sacó 1 acceso" : `sacaron ${quitados} accesos`} (Wisboo, Telegram y Zoom).`,
       fallaron.length ? `No se pudo sacar: ${fallaron.join(", ")}. Hacelo a mano desde su ficha → Servicio → Accesos.` : "",
+      /* Lili, 28/10: los viejos entran a Wisboo con un mail y a Zoom con otro. */
+      otrosMails.length ? `Además de su mail principal usa ${otrosMails.join(", ")}: revisá que no le quede acceso con ninguno.` : "",
     ];
     const filas = ((r.data ?? []) as { email: string | null }[]).filter((x) => x.email?.trim()).map((x) => ({
       id: `av_outboarding_${a.id}_${dia}_${createHash("sha1").update(x.email!.trim().toLowerCase()).digest("hex").slice(0, 10)}`,

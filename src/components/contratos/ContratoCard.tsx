@@ -13,7 +13,7 @@ import { acciones, useEstado } from "@/lib/store";
 import { useAcceso } from "@/lib/acceso";
 import { fechaHora, relativo } from "@/lib/format";
 import {
-  accesosPendientes, accionesDe, estaPendiente, fechaContrato, problemaDeDatos, ROTULO_ESTADO, rotuloEvento,
+  accesosPendientes, accionesDe, estaPendiente, fechaContrato, modalidadDeReserva, problemaDeDatos, ROTULO_ESTADO, rotuloEvento,
   type Contrato, type DatosContrato, type EventoContrato,
 } from "@/lib/contratos";
 import { diaDeNegocio } from "@/lib/dia-negocio";
@@ -230,6 +230,13 @@ export function ContratoCard({ venta, alumnoId, sesionId, manual, forma = "tarje
             datos={edicion.datos} programas={programas} programaId={edicion.programaId}
             bloquearPrograma={edicion.tipo === "corregir"}
             onPrograma={(id) => setEdicion({ ...edicion, programaId: id })}
+            onReserva={edicion.tipo === "crear" && venta ? (reserva) => {
+              const { reserva: _antes, ...resto } = edicion.datos;
+              /* La reserva de la venta; si no hay, la modalidad queda vacía para escribirla. */
+              const monto = e.cuotas.filter((c) => c.ventaId === venta.id && c.esReserva && c.estado !== "cancelada").reduce((n, c) => n + c.monto, 0);
+              const delPlan = datosDeVenta(e, venta).datos;
+              setEdicion({ ...edicion, datos: { ...resto, ...(reserva ? { reserva: true, modalidad: modalidadDeReserva(monto, venta.moneda || "USD") } : { modalidad: delPlan.reserva ? "" : delPlan.modalidad }) } });
+            } : undefined}
             onCambio={(c) => setEdicion({ ...edicion, datos: { ...edicion.datos, ...c } })}
           />
           {edicion.tipo === "crear" && esDueno && !modoPrueba && (

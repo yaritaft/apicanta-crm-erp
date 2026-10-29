@@ -35,6 +35,7 @@ function baseFalsa(tablas: Record<string, Fila[]>) {
       select(_c?: string, o?: { count?: string; head?: boolean }) { conSelect = true; contar = Boolean(o?.count); return q; },
       eq(c: string, v: unknown) { filtros.push((f) => f[c] === v); return q; },
       neq(c: string, v: unknown) { filtros.push((f) => f[c] !== v); return q; },
+      in(c: string, v: unknown[]) { filtros.push((f) => v.includes(f[c])); return q; },
       /* «col.ilike.patrón,col.eq.valor»: alcanza uno. */
       or(expr: string) {
         const partes = expr.split(",").map((p) => {
@@ -174,6 +175,67 @@ test("«Dar los accesos»: sin servicio avisa qué falta; uno marcado sin dar na
 
   /* Ya se dieron: no se repiten (para uno puntual está la solapa Accesos). */
   await assert.rejects(darAccesosAhora(db, (t.contratos[0] as unknown) as Contrato, "juan@x.com"), /ya se dieron/);
+});
+
+/* ---------- El mínimo para dar los accesos (Luis Mejía, 27/10: dejó US$ 100 de reserva y la app le dio todo) ---------- */
+
+function ventaConReserva(pagos: Fila[] = []) {
+  const c = contrato();
+  const t = tablasCon(c, {
+    leads: [{ id: "lead_1", email: "diana@x.com", creadoEn: "2026-10-21T00:00:00Z" }],
+    alumnos: [{ id: "alu_1", email: "diana@x.com", leadId: "lead_1", ventaId: "ven_1", creadoEn: "2026-10-22T13:06:37Z" }],
+    ventas: [{ id: "ven_1", contactoId: "lead_1", estado: "activa", fecha: "2026-10-21T21:14:46Z", moneda: "USD" }],
+    cuotas: [
+      { id: "cuo_0", ventaId: "ven_1", numero: 0, monto: 100, esReserva: true, estado: "pagada" },
+      { id: "cuo_1", ventaId: "ven_1", numero: 1, monto: 1400, esReserva: false, estado: "pendiente" },
+      { id: "cuo_2", ventaId: "ven_1", numero: 2, monto: 1500, esReserva: false, estado: "pendiente" },
+    ],
+    pagos: [{ id: "pag_0", cuotaId: "cuo_0", monto: 100 }, ...pagos],
+  });
+  return { c, t, db: baseFalsa(t) };
+}
+
+test("sólo pagó la reserva: el contrato del programa firmado NO da los accesos; esperan al primer pago del programa", async () => {
+  const { c, t, db } = ventaConReserva();
+  const atado = await vincular(db, c);
+  const r = await alFirmar(db, atado);
+  assert.equal(r.accesos, null);
+  assert.equal(t.contratos[0].accesosEn ?? null, null, "no se marca: la pasada de cada hora lo vuelve a mirar");
+  assert.equal(t.accesos_alumno.length, 0, "no se dio nada");
+  assert.match(String((eventos(t)[0].detalle as Fila).motivo), /Sólo pagó la reserva \(US\$ 100 de US\$ 3\.000\)/);
+  await alFirmar(db, atado);
+  assert.equal(eventos(t).length, 1, "el aviso de espera queda una sola vez");
+
+  /* Entra el primer pago del programa: la próxima pasada los da. */
+  t.pagos.push({ id: "pag_1", cuotaId: "cuo_1", monto: 1400 });
+  await alFirmar(db, atado);
+  assert.ok(t.contratos[0].accesosEn, "con un pago del programa, se dan");
+  assert.ok(t.accesos_alumno.some((x) => x.alumnoId === "alu_1"));
+});
+
+test("sólo pagó la reserva: quien aprieta «Dar los accesos» decide y se dan igual (queda quién)", async () => {
+  const { c, t, db } = ventaConReserva();
+  await alFirmar(db, await vincular(db, c));
+  assert.equal(t.accesos_alumno.length, 0);
+  const r = await darAccesosAhora(db, (t.contratos[0] as unknown) as Contrato, "lili@x.com");
+  assert.equal(r.fallaron + r.dados, 1);
+  assert.equal(t.accesos_alumno[0].quien, "lili@x.com");
+});
+
+test("sin pagos cargados no hay evidencia de que sea sólo la reserva: se dan como siempre", async () => {
+  const { c, t, db } = ventaConReserva();
+  t.pagos.length = 0;
+  await alFirmar(db, await vincular(db, c));
+  assert.ok(t.contratos[0].accesosEn, "el contrato a veces se manda antes de cargar los cobros");
+});
+
+test("los accesos que se quitaron a mano no cuentan: «Dar los accesos» los vuelve a dar", async () => {
+  const { c, t, db } = ventaConReserva([{ id: "pag_1", cuotaId: "cuo_1", monto: 1400 }]);
+  const marcado = { ...(t.contratos[0] as unknown as Contrato), accesosEn: "2026-10-27T21:52:25Z", alumnoId: "alu_1", ventaId: "ven_1" };
+  t.contratos[0] = marcado as unknown as Fila;
+  t.accesos_alumno.push({ id: "acc_1", alumnoId: "alu_1", contratoId: c.id, plataforma: "wisboo", recurso: "PRO-curso", estado: "quitado", quitadoEn: "2026-10-27T22:19:13Z", externo: {} });
+  const r = await darAccesosAhora(db, marcado, "lili@x.com");
+  assert.equal(r.fallaron + r.dados, 1, "los volvió a dar aunque la fila de antes siga ahí como «quitado»");
 });
 
 test("«Dar los accesos» no aplica a la reserva ni a uno sin firmar", async () => {

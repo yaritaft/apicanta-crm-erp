@@ -386,6 +386,9 @@ export interface SeguimientoAlumno {
   edad: number | null;
   /* La fecha de nacimiento (aaaa-mm-dd): con ella la edad se calcula sola (Juan Cruz, 24/10). La carga el closer en el contrato. */
   nacimiento: string | null;
+  /* Otros mails con los que entra a las plataformas (Lili, 28/10: los alumnos viejos tienen Wisboo con uno y Zoom con otro). Sirve al
+     outboarding: hay que sacarlo con cada uno. El principal es el de `alumnos.email`. */
+  otrosMails: string[];
   /* Frontend, Backend, Full Stack, Data Engineer o Mobile Developer (la lista se ajusta). */
   stack: string;
   dni: string;

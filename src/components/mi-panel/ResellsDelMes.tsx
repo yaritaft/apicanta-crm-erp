@@ -9,6 +9,7 @@ import { useAbrirFicha } from "@/components/ficha/abrir";
 import { Pastilla } from "@/components/cs/pastillas";
 import { useEstado } from "@/lib/store";
 import { formatoDia } from "@/lib/seguimiento";
+import { diaDeNegocio } from "@/lib/dia-negocio";
 import { mesEnLetras, otroMes, resellsDelMes, resumenResells, textoParaPasar } from "@/lib/resells-agendados";
 import { estadosDeResell } from "@/lib/clientes-cs";
 
@@ -34,6 +35,18 @@ export function ResellsDelMes({ hoy, viendoOtro }: { hoy: string; viendoOtro: bo
   const items = useMemo(() => resellsDelMes(e.resells, mes), [e.resells, mes]);
   const anterior = useMemo(() => resellsDelMes(e.resells, otroMes(mes, -1)).length, [e.resells, mes]);
   const resumen = resumenResells(items);
+  /* Lo agendado para llamadas de meses que vienen (Lili, 27/10: agendó a Nahuel Alonso el 27/10 para el 2/11 y «no se actualizó»:
+     cuenta en noviembre, el mes de la llamada, y el panel no dejaba pasar de octubre). */
+  const masAdelante = useMemo(() => {
+    const porMes = new Map<string, number>();
+    for (const r of e.resells ?? []) {
+      if (r.cancelada) continue;
+      const m = diaDeNegocio(r.fechaHora).slice(0, 7);
+      if (m > mes) porMes.set(m, (porMes.get(m) ?? 0) + 1);
+    }
+    return [...porMes].sort((a, b) => a[0].localeCompare(b[0]));
+  }, [e.resells, mes]);
+  const ultimoMes = masAdelante.length ? masAdelante[masAdelante.length - 1][0] : actual;
   const alumnoPorMail = useMemo(() => {
     const m = new Map<string, string>();
     for (const a of e.alumnos) { const k = a.email.trim().toLowerCase(); if (k && !m.has(k)) m.set(k, a.id); }
@@ -60,7 +73,7 @@ export function ResellsDelMes({ hoy, viendoOtro }: { hoy: string; viendoOtro: bo
         <div className="ps-rs__mes" role="group" aria-label="Mes">
           <IconButton etiqueta="Mes anterior" onClick={() => ir(-1)}><ChevronLeft size={16} /></IconButton>
           <span className="ps-rs__mes-txt">{mesEnLetras(mes)}</span>
-          <IconButton etiqueta="Mes siguiente" disabled={mes >= actual} onClick={() => ir(1)}><ChevronRight size={16} /></IconButton>
+          <IconButton etiqueta="Mes siguiente" disabled={mes >= ultimoMes} onClick={() => ir(1)}><ChevronRight size={16} /></IconButton>
         </div>
       </div>
 
@@ -78,6 +91,20 @@ export function ResellsDelMes({ hoy, viendoOtro }: { hoy: string; viendoOtro: bo
         </div>
         <Button variante="secondary" icono={<Copy size={15} />} disabled={!resumen.total} onClick={() => void copiar()}>Copiar para pasar</Button>
       </div>
+      {masAdelante.length > 0 && (
+        <p className="ps-ayuda" style={{ margin: "0 0 8px" }}>
+          Con llamada en los meses que vienen:{" "}
+          {masAdelante.map(([m, n], i) => (
+            <React.Fragment key={m}>
+              {i > 0 && " · "}
+              <button type="button" className="ps-rs__mas" style={{ display: "inline", padding: 0 }} onClick={() => { setMes(m); setTodos(false); }}>
+                {mesEnLetras(m).split(" ")[0]} {n}
+              </button>
+            </React.Fragment>
+          ))}
+          . Cuentan en el mes de la llamada.
+        </p>
+      )}
 
       {items.length > 0 && (
         <ul className="ps-rs__lista">

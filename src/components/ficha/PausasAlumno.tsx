@@ -6,7 +6,7 @@ import { Button, Field, Input, Select, Textarea } from "@/components/ui/ui";
 import { ModalForm } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toast";
 import { acciones, nuevoId, useEstado } from "@/lib/store";
-import { egresoDelPrograma, type FilaCliente } from "@/lib/clientes-cs";
+import { egresoDelPrograma, egresoEscritoAMano, type FilaCliente } from "@/lib/clientes-cs";
 import { conPausa, demoraDe, diasDe, diasDePausa, MAX_DEMORA_DIAS, MAX_PAUSA_DIAS, pasaDelTope, problemaDePausa, textoDePausa } from "@/lib/pausas";
 import { diasEntre, formatoDia, sumarDias } from "@/lib/seguimiento";
 import type { PausaServicio, SeguimientoAlumno } from "@/lib/types";
@@ -23,7 +23,9 @@ const dias = (n: number) => `${n} ${n === 1 ? "día" : "días"}`;
 
 export function PausasAlumno({ f, hoy, puede }: { f: FilaCliente; hoy: string; puede: boolean }) {
   const [form, setForm] = useState<{ tipo: PausaServicio["tipo"]; p?: PausaServicio } | null>(null);
+  const [editandoFin, setEditandoFin] = useState(false);
   const pausas = f.seg.pausas ?? [];
+  const aMano = egresoEscritoAMano(f.inicio, f.seg.fechaEgreso, f.duracion);
   const demora = demoraDe(pausas);
   const corrido = (demora ? diasDe(demora) : 0) + diasDePausa(pausas);
   const quedan = f.egreso ? diasEntre(hoy, f.egreso) : null;
@@ -40,8 +42,14 @@ export function PausasAlumno({ f, hoy, puede }: { f: FilaCliente; hoy: string; p
   return (
     <BloqueServicio titulo="Demora de inicio y pausas" extra={chip}>
       <FilaServicio icono={<CalendarClock size={15} />} rotulo="Fin del programa"
-        detalle={corrido ? `Corrido ${dias(corrido)} por la demora y las pausas` : "Sin demora ni pausas"}>
-        {f.egreso ? <span className="t-num">{fmt(f.egreso)}</span> : <span className="hs-guion">Falta el inicio o la duración</span>}
+        detalle={aMano ? "Fecha escrita a mano: es la definitiva y la demora y las pausas no la corren"
+          : corrido ? `Corrido ${dias(corrido)} por la demora y las pausas` : "Sin demora ni pausas"}>
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+          {f.egreso ? <span className="t-num">{fmt(f.egreso)}</span> : <span className="hs-guion">Falta el inicio o la duración</span>}
+          {puede && (
+            <Button sm variante="ghost" icono={<Pencil size={13} />} onClick={() => setEditandoFin(true)} aria-label="Corregir la fecha de fin del programa">Editar</Button>
+          )}
+        </span>
       </FilaServicio>
       {pausas.length === 0 && <p className="hs-nada">Arrancó cuando ingresó y no pausó. Si arranca más tarde o pausa, cargalo acá y el fin se corre solo.</p>}
       {pausas.map((p) => (
@@ -61,7 +69,48 @@ export function PausasAlumno({ f, hoy, puede }: { f: FilaCliente; hoy: string; p
         </div>
       )}
       {form && <FormPausa f={f} hoy={hoy} tipo={form.tipo} pausa={form.p} onCerrar={() => setForm(null)} />}
+      {editandoFin && <FormFin f={f} hoy={hoy} aMano={aMano} onCerrar={() => setEditandoFin(false)} />}
     </BloqueServicio>
+  );
+}
+
+/* Corregir el fin del programa a mano (Lili, 28/10: «no me permite corregir la fecha de egreso»). Lo que se escribe es la fecha definitiva;
+   «Volver a calcularlo» deja que lo calcule la app (inicio + duración, corrido por la demora y las pausas). */
+function FormFin({ f, hoy, aMano, onCerrar }: { f: FilaCliente; hoy: string; aMano: boolean; onCerrar: () => void }) {
+  const toast = useToast();
+  const [fecha, setFecha] = useState(f.egreso ?? "");
+  const fmt = (d: string) => formatoDia(d, hoy);
+
+  function guardar(nueva: string | null) {
+    const ahora = new Date().toISOString();
+    const antes = acciones.guardarSeguimiento(f.id, (s: SeguimientoAlumno, quien: string): SeguimientoAlumno => ({
+      ...s, fechaEgreso: nueva, actualizadoEn: ahora, actualizadoPor: quien,
+    }), (d) => {
+      const fin = egresoDelPrograma(f.inicio, d.fechaEgreso, f.duracion, d.pausas ?? []);
+      return nueva ? `El fin del programa de ${f.nombre} quedó el ${fmt(nueva)} (escrito a mano).` : `El fin del programa de ${f.nombre} se vuelve a calcular solo${fin ? `: ${fmt(fin)}` : ""}.`;
+    });
+    if (!antes) return;
+    toast(nueva ? `Fin del programa de ${f.nombre}: ${fmt(nueva)}.` : `Fin del programa de ${f.nombre}: se calcula solo otra vez.`, "ok", {
+      texto: "Deshacer", onClick: () => acciones.restaurarSeguimiento(antes, `Se deshizo el cambio del fin del programa de ${f.nombre}.`),
+    });
+    onCerrar();
+  }
+
+  return (
+    <ModalForm abierto onCerrar={onCerrar} titulo="Corregir el fin del programa"
+      sub={`${f.nombre}. Lo que escribas es la fecha definitiva: la demora y las pausas no la mueven.`}
+      puedeGuardar={Boolean(fecha) && fecha !== f.egreso} onGuardar={() => guardar(fecha)}>
+      <div className="form-grid">
+        <Field label="El programa termina el" span2>
+          <Input type="date" value={fecha} onChange={(ev) => setFecha(ev.target.value)} aria-label="Fecha de fin del programa" />
+        </Field>
+        {(aMano || f.seg.fechaEgreso !== null) && (
+          <div style={{ gridColumn: "1 / -1" }}>
+            <Button variante="ghost" sm onClick={() => guardar(null)}>Volver a calcularlo solo</Button>
+          </div>
+        )}
+      </div>
+    </ModalForm>
   );
 }
 
@@ -134,6 +183,11 @@ function FormPausa({ f, hoy, tipo, pausa, onCerrar }: {
             opciones={[{ valor: "", texto: "Nadie en particular" }, ...equipo.map((n) => ({ valor: n, texto: n })),
               ...(b.autorizadoPor && !equipo.includes(b.autorizadoPor) ? [{ valor: b.autorizadoPor, texto: b.autorizadoPor }] : [])]} />
         </Field>
+        {egresoEscritoAMano(f.inicio, f.seg.fechaEgreso, f.duracion) && (
+          <p className="t-sm t-muted" style={{ gridColumn: "1 / -1", margin: 0 }}>
+            Su fin del programa está escrito a mano ({f.egreso ? fmt(f.egreso) : "—"}): no se corre solo. Si cambia, corregilo en «Fin del programa».
+          </p>
+        )}
         {finNuevo && (
           <p className="t-sm t-muted" style={{ gridColumn: "1 / -1", margin: 0 }}>
             {b.hasta && `${dias(diasEntre(nueva.desde, b.hasta))} · `}El programa termina el <strong>{fmt(finNuevo)}</strong>

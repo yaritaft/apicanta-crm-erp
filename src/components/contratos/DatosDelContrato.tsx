@@ -25,12 +25,16 @@ const SESIONES = [
   { valor: "3", texto: "3 sesiones 1 a 1 (primeros 3 meses)" },
 ];
 
-export function DatosDelContrato({ datos, onCambio, programas, programaId, onPrograma, bloquearPrograma }: {
+export function DatosDelContrato({ datos, onCambio, programas, programaId, onPrograma, onReserva, bloquearPrograma }: {
   datos: DatosContrato;
   onCambio: (cambios: Partial<DatosContrato>) => void;
   programas: Programa[];
   programaId: string;
   onPrograma: (id: string) => void;
+  /* Con esto, el mismo selector ofrece «<Programa> — sólo la reserva» al lado de cada programa que tenga contrato de reserva
+     (Manuel, 28/10: «que también esté la opción de Reserva directamente donde se elige el programa»). Quien lo usa decide qué
+     cambia en los datos (la modalidad de pago). */
+  onReserva?: (reserva: boolean) => void;
   /* Al corregir un contrato ya mandado, el programa (la plantilla) no cambia. */
   bloquearPrograma?: boolean;
 }) {
@@ -40,6 +44,21 @@ export function DatosDelContrato({ datos, onCambio, programas, programaId, onPro
   /* Sin sesiones 1 a 1, la plantilla sin ese punto (si el programa la tiene). */
   const plantilla = plantillaDelContrato(programa, reserva, datos.sesiones);
   const conPlantilla = programas.filter((p) => p.activo && plantillaDelContrato(p, reserva).id);
+  /* Con «sólo la reserva» a la par: el programa completo y, al lado, su reserva. */
+  const conReserva = Boolean(onReserva) && !bloquearPrograma;
+  const SUFIJO = "::reserva";
+  const opcionesPrograma = conReserva
+    ? [
+      ...programas.filter((p) => p.activo && plantillaDelContrato(p, false).id).map((p) => ({ valor: p.id, texto: p.nombre })),
+      ...programas.filter((p) => p.activo && plantillaDelContrato(p, true).id).map((p) => ({ valor: `${p.id}${SUFIJO}`, texto: `${p.nombre} — sólo la reserva` })),
+    ]
+    : conPlantilla.map((p) => ({ valor: p.id, texto: p.nombre }));
+  const elegirPrograma = (valor: string) => {
+    if (!conReserva) { onPrograma(valor); return; }
+    const deReserva = valor.endsWith(SUFIJO);
+    onPrograma(deReserva ? valor.slice(0, -SUFIJO.length) : valor);
+    if (deReserva !== reserva) onReserva?.(deReserva);
+  };
   const bonos = Array.from(new Set([...(programa?.bonos ?? []), ...datos.bonos]));
   const alternarBono = (b: string) => onCambio({ bonos: datos.bonos.includes(b) ? datos.bonos.filter((x) => x !== b) : [...datos.bonos, b] });
 
@@ -48,9 +67,9 @@ export function DatosDelContrato({ datos, onCambio, programas, programaId, onPro
       <Field label="Programa" span2
         ayuda={plantilla.nombre ? `Plantilla: ${plantilla.nombre}` : reserva ? "Sale del contrato de reserva de ese programa." : "Sale de la plantilla de PandaDoc de ese programa."}>
         <Select
-          value={programaId} onChange={(ev) => onPrograma(ev.target.value)} disabled={bloquearPrograma}
-          placeholder="Elegí el programa"
-          opciones={conPlantilla.map((p) => ({ valor: p.id, texto: p.nombre }))}
+          value={conReserva && reserva ? `${programaId}${SUFIJO}` : programaId} onChange={(ev) => elegirPrograma(ev.target.value)} disabled={bloquearPrograma}
+          placeholder="Elegí el programa" aria-label="Programa del contrato"
+          opciones={opcionesPrograma}
         />
       </Field>
       {/* Lili, 22/10: con el perfil le llega al alumno el roadmap que le corresponde (lib/bienvenida-alumno.ts). */}
