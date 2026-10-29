@@ -9,7 +9,8 @@ import { AvisoMesCerrado } from "@/components/ui/AvisoMesCerrado";
 import { montoDe } from "@/lib/monto";
 import { CampoComprobante } from "@/components/cobros/CampoComprobante";
 import { disponibleDe, SelectorMovimiento, type PagoDisponible } from "@/components/cobros/SelectorMovimiento";
-import { nuevoId } from "@/lib/store";
+import { nuevoId, useEstado } from "@/lib/store";
+import { faltanLosPesos, textoDePesosQueFaltan } from "@/lib/pesos-reales";
 import { fechaLarga, isoDia, money } from "@/lib/format";
 import { medioDeMovimiento, procesadorDeMovimiento } from "@/lib/conciliacion";
 import { descartarComprobante } from "@/lib/comprobantes";
@@ -121,6 +122,8 @@ export function problemaDeDatos(e: EstadoApp, cobros: CobroBorrador[], nombre: s
     if (p.movimientoId) continue;
     const proc = e.procesadores.find((x) => x.id === p.procesadorId);
     if (enPesos(proc) && !(p.tipoCambio && p.tipoCambio > 0)) return `Poné el tipo de cambio de ${nombre}`;
+    /* Un cobro nuevo en pesos lleva los pesos que ENTRARON, escritos (lib/pesos-reales.ts). */
+    if (faltanLosPesos(e, p, enPesos(proc))) return textoDePesosQueFaltan(nombre);
     if (pideNombreYCuit(proc)) {
       if (!p.pagador?.trim()) return `Falta el nombre de quien transfirió (${nombre}): la Financiera lo necesita`;
       if (!p.cuit?.trim()) return `Falta el CUIT de quien transfirió (${nombre}): la Financiera lo necesita`;
@@ -380,6 +383,8 @@ function CampoCambio({ cobro, proc, onCambio }: {
   cobro: CobroBorrador; proc?: Procesador; onCambio: (c: Partial<CobroBorrador>) => void;
 }) {
   const { cotizacion, error, cargando } = useBlue(isoDia(cobro.fecha) || null);
+  /* Un cobro que ya estaba cargado y se corrige puede ser de antes de que se pidieran los pesos: no se marca. */
+  const yaCargado = useEstado().pagos.some((x) => x.id === cobro.id);
 
   useEffect(() => {
     if (!cotizacion) return;
@@ -407,8 +412,9 @@ function CampoCambio({ cobro, proc, onCambio }: {
           onChange={(ev) => onCambio({ tipoCambio: ev.target.value ? montoDe(ev.target.value) : undefined, montoArs: undefined })}
         />
         <InputMonto
-          value={pesos > 0 ? pesos : ""} placeholder="Monto en pesos" icono={<span className="t-subtle">$</span>}
-          aria-label="Cuántos pesos transfirió" title="Cuántos pesos transfirió: sale solo del monto y el tipo de cambio, o escribilo"
+          value={yaCargado ? (pesos > 0 ? pesos : "") : (cobro.montoArs ?? "")} placeholder="Pesos que recibimos" icono={<span className="t-subtle">$</span>}
+          aria-label="Cuántos pesos recibimos" title="Los pesos que recibimos nosotros: el monto del link de pago o lo que acreditó la Financiera, no lo que le cobró su banco o su tarjeta de más"
+          error={cobro.montoArs === undefined && pesos > 0 && !yaCargado}
           onChange={(ev) => {
             const n = ev.target.value ? montoDe(ev.target.value) : 0;
             if (!(n > 0)) { onCambio({ montoArs: undefined }); return; }
@@ -416,6 +422,13 @@ function CampoCambio({ cobro, proc, onCambio }: {
           }}
         />
       </div>
+      {!yaCargado && (
+        <span className={`t-sm ${cobro.montoArs === undefined ? "t-strong" : "t-subtle"}`}>
+          {cobro.montoArs === undefined
+            ? `Escribí los pesos que recibimos nosotros (el monto del link de pago o lo que acreditó la Financiera), no lo que su banco o su tarjeta le cobró de más.${calculado > 0 ? ` Con el cambio propuesto serían ${money(calculado, "ARS", 0)}.` : ""}`
+            : `Recibimos ${money(cobro.montoArs, "ARS", 2)}: el tipo de cambio real es ${money(cobro.tipoCambio ?? 0, "ARS", 2)}.`}
+        </span>
+      )}
       <span className="t-sm t-subtle">
         {cargando ? "Buscando el dólar blue y el cripto…"
           : error ? error
