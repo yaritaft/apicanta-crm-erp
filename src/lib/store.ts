@@ -47,6 +47,7 @@ import { esDevolucionConfirmada } from "./devoluciones";
 import { esIncobrable, notasDeIncobrable, notasSinIncobrable } from "./cuota-incobrable";
 import { atarPropuesta, conciliarReembolsos, quienDelReembolso, type ReembolsoCrudo, type ResultadoReembolsos } from "./reembolsos";
 import { setterDeAgendas } from "./setter-agendas";
+import { rearmarPlan } from "./cambio-de-plan";
 import {
   cambiosDeChequeo, conChequeo, conComprobanteNuevo, puedeCambiarComprobante, puedeUsarCasillero,
   quienEs, quienFirma, ROL_DE_CASILLERO, sinColumnasDelControl, type CasilleroChequeo, type VeredictoChequeo,
@@ -1726,6 +1727,44 @@ export const acciones = {
     return detalle;
   },
 
+  /* Cambió lo que vale la venta (otro producto o un descuento): se rearma el plan de lo que falta sin tocar lo cobrado
+     (lib/cambio-de-plan.ts). Dante, 27/10: la seña era para Hackear AI y al final compró el Downsell. */
+  rearmarPlanDeVenta(ventaId: ID, a: { precio: number; productoId?: ID; cantidad: number; primera: string; motivo?: string }): string | null {
+    const e = snapshot();
+    const venta = e.ventas.find((v) => v.id === ventaId);
+    if (!venta || !(a.precio >= 0)) return null;
+    const plan = rearmarPlan(e.cuotas, e.pagos, { ventaId, precio: a.precio, cantidad: a.cantidad, primera: a.primera, nuevoId: () => nuevoId("cuo"), motivo: a.motivo });
+    const quitar = new Set(plan.quitadas.map((c) => c.id));
+    const saldadas = new Map(plan.saldadas.map((c) => [c.id, c] as const));
+    const cuotas = [...plan.nuevas, ...e.cuotas.filter((c) => !quitar.has(c.id)).map((c) => saldadas.get(c.id) ?? c)];
+    const productoId = a.productoId ?? venta.productoId;
+    const ventaNueva: Venta = { ...venta, precioAcordado: a.precio, productoId };
+    /* El plan del alumno sale del producto de la venta: si cambió, también. */
+    const planNuevo = planDeVenta(e, ventaNueva);
+    const alumnosTocados = productoId !== venta.productoId
+      ? e.alumnos.filter((x) => x.ventaId === ventaId && x.plan !== planNuevo).map((x) => ({ ...x, plan: planNuevo }))
+      : [];
+    const nombreProd = (id?: ID) => e.productos.find((p) => p.id === id)?.nombre ?? "Venta";
+    const detalle = `${productoId !== venta.productoId ? `Cambió de ${nombreProd(venta.productoId)} a ${nombreProd(productoId)}. ` : ""}`
+      + `El valor pasó de ${venta.precioAcordado} a ${a.precio}. Cobrado: ${plan.cobrado}. `
+      + (plan.nuevas.length ? `Lo que falta (${plan.falta}) quedó en ${plan.nuevas.length} ${plan.nuevas.length === 1 ? "cuota" : "cuotas"}.` : plan.falta < -0.009 ? `Ya se cobró ${-plan.falta} más de lo que vale ahora.` : "No queda nada por cobrar.")
+      + (a.motivo ? ` Motivo: ${a.motivo}` : "");
+    const { lista, nuevo } = registrar(e, "transaccion", ventaId, venta.contactoNombre, "actualizo", detalle);
+    const alumnosPorId = new Map(alumnosTocados.map((x) => [x.id, x] as const));
+    guardar({
+      ...e, cuotas, actividad: lista,
+      ventas: e.ventas.map((v) => (v.id === ventaId ? ventaNueva : v)),
+      alumnos: alumnosTocados.length ? e.alumnos.map((x) => alumnosPorId.get(x.id) ?? x) : e.alumnos,
+    });
+    empujar({ tipo: "update", tabla: "ventas", ids: [ventaId], cambios: { precioAcordado: a.precio, productoId: productoId ?? null } });
+    if (quitar.size) empujar({ tipo: "delete", tabla: "cuotas", ids: [...quitar] });
+    const escritas = [...plan.saldadas, ...plan.nuevas];
+    if (escritas.length) empujar({ tipo: "upsert", tabla: "cuotas", filas: escritas });
+    for (const x of alumnosTocados) empujar({ tipo: "update", tabla: "alumnos", ids: [x.id], cambios: { plan: x.plan } });
+    empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
+    return detalle;
+  },
+
   /* Los tipos de cuenta (Equipo → Tipos de cuenta). Los escriben sólo los
      dueños (la base rechaza a cualquier otro) y el de Dueño no se toca. */
   guardarTipoCuenta(t: TipoCuenta, detalle: string) {
@@ -2948,6 +2987,10 @@ export const acciones = {
     reajuste: "repartir" | "proxima" | "pendiente" | "saldar";
     motivo?: string;
     venceSaldo?: string;
+    /* Pagó MÁS de lo que falta (Dante, 27/10: la cuota 2 debía 950 y pagó 1.000 por Hotmart): «proxima» lo descuenta
+       de las cuotas que siguen (lo adelantó) y «venta» sube lo que vale la venta. Lo que no entra en las cuotas que
+       siguen, sube la venta. */
+    sobrante?: "proxima" | "venta";
   }): boolean {
     const e = snapshot();
     const cuota = e.cuotas.find((c) => c.id === datos.cuotaId);
@@ -2993,7 +3036,33 @@ export const acciones = {
     let detalleReajuste = "";
     let ventaSaldada: Venta | undefined;
 
-    if (saldo <= 0.01) {
+    if (saldo < -0.01) {
+      /* Pagó de más: la cuota queda en lo que se pagó (saldada) y lo que sobra baja las que siguen o sube la venta. */
+      const extra = r2(-saldo);
+      const nombre = cuota.esReserva ? "La reserva" : `La cuota ${cuota.numero}`;
+      const anota = (c: Cuota, linea: string): Cuota => ({ ...c, notas: c.notas ? `${c.notas} | ${linea}` : linea });
+      cambiadas.set(cuota.id, anota({ ...cuota, monto: cubierto, estado: "pagada" }, `${nombre} pasó de ${cuota.monto} a ${cubierto}: pagó ${extra} de más`));
+      let queda = extra;
+      const bajadas: string[] = [];
+      if (datos.sobrante !== "venta") {
+        const siguientes = e.cuotas
+          .filter((c) => c.ventaId === venta.id && c.id !== cuota.id && c.estado === "pendiente" && c.numero > cuota.numero)
+          .sort((x, y) => x.numero - y.numero);
+        for (const c of siguientes) {
+          if (queda <= 0.009) break;
+          const baja = r2(Math.min(c.monto, queda));
+          const monto = r2(c.monto - baja);
+          queda = r2(queda - baja);
+          /* Una que queda en cero ya está cubierta por lo que adelantó. */
+          cambiadas.set(c.id, monto <= 0.009
+            ? anota({ ...c, monto: 0, estado: "pagada" }, `Cubierta con lo que se pagó de más en ${nombre.toLowerCase()}`)
+            : { ...c, monto });
+          bajadas.push(`la cuota ${c.numero} pasó de ${c.monto} a ${monto}`);
+        }
+      }
+      if (queda > 0.009) ventaSaldada = { ...venta, precioAcordado: r2(venta.precioAcordado + queda) };
+      detalleReajuste = ` Pagó ${extra} de más: ${[...bajadas, ...(ventaSaldada ? [`el valor de la venta pasó de ${venta.precioAcordado} a ${ventaSaldada.precioAcordado}`] : [])].join("; ")}.`;
+    } else if (saldo <= 0.01) {
       cambiadas.set(cuota.id, { ...cuota, estado: "pagada" });
     } else if (datos.reajuste === "saldar") {
       const motivo = datos.motivo?.trim();

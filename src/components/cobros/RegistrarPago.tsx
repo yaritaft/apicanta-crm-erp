@@ -43,10 +43,15 @@ import type { Cuota, Pago } from "@/lib/types";
    en unos días (Mariano, 26/10: 1.000 de 1.500 y los 500 a los 7 días). Ahí
    la cuota queda con lo que falta y pasa a vencer el día que dijo que paga:
    se carga el resto con «Registrar pago» cuando llegue, sin mover otras cuotas.
+
+   Y si paga MÁS de lo que falta (Dante, 27/10: la cuota debía 950 y pagó
+   1.000 por Hotmart), antes no dejaba seguir. Ahora pregunta qué es lo que
+   sobra: lo adelantó (baja las cuotas que siguen) o la venta vale más.
    ================================================================== */
 
 type Reajuste = "repartir" | "proxima" | "pendiente" | "saldar";
-type IdPaso = "cobro" | "prueba" | "datos" | "saldo" | "resumen";
+type IdPaso = "cobro" | "prueba" | "datos" | "saldo" | "sobrante" | "resumen";
+type Sobrante = "proxima" | "venta";
 
 const TEXTO_REAJUSTE: Record<Reajuste, string> = {
   repartir: "Repartirlo en las cuotas que siguen",
@@ -107,6 +112,7 @@ export function RegistrarPago({ cuota, onCerrar, onGuardado, embebido = false, p
   /* Sin elegir, se propone según lo que falta (ver `reajuste` más abajo). */
   const [reajusteElegido, setReajuste] = useState<Reajuste | null>(null);
   const [motivoSaldar, setMotivoSaldar] = useState("");
+  const [sobranteElegido, setSobrante] = useState<Sobrante | null>(null);
   /* Cuándo paga el resto: por defecto, en una semana; vacío deja el vencimiento como estaba. */
   const [venceSaldo, setVenceSaldo] = useState(() => enDias(7));
   const [idPaso, setIdPaso] = useState<IdPaso>("cobro");
@@ -122,6 +128,8 @@ export function RegistrarPago({ cuota, onCerrar, onGuardado, embebido = false, p
 
   const cobrado = r2(cobros.reduce((a, p) => a + p.monto, 0));
   const saldo = r2(resta - cobrado);
+  /* Lo que pagó de más (corrigiendo un cobro no se reacomodan cuotas: ahí sigue el tope). */
+  const sobra = editando ? 0 : Math.max(0, r2(cobrado - resta));
   const nombreCuota = cuota.esReserva ? "la reserva" : `la cuota ${cuota.numero}`;
   const laCuota = cuota.esReserva ? "Reserva" : `Cuota ${cuota.numero}`;
   const procDe = (p: CobroBorrador) => e.procesadores.find((x) => x.id === p.procesadorId);
@@ -134,6 +142,7 @@ export function RegistrarPago({ cuota, onCerrar, onGuardado, embebido = false, p
     { id: "prueba", titulo: "Prueba" },
     ...(cobros.some((p) => !p.movimientoId) ? [{ id: "datos" as const, titulo: "Transferencia" }] : []),
     ...(saldo > 0.01 && cobrado > 0 && !editando ? [{ id: "saldo" as const, titulo: "Lo que falta" }] : []),
+    ...(sobra > 0.01 ? [{ id: "sobrante" as const, titulo: "Lo que sobra" }] : []),
     { id: "resumen", titulo: "Resumen" },
   ];
   const actual = Math.max(0, pasos.findIndex((p) => p.id === idPaso));
@@ -182,11 +191,29 @@ export function RegistrarPago({ cuota, onCerrar, onGuardado, embebido = false, p
     }));
   }, [saldo, reajuste, venta, e.cuotas, cuota, siguientes]);
 
+  /* Lo que sobra: por defecto lo adelantó (baja las cuotas que siguen); sin cuotas después, la venta vale más. */
+  const sobrante: Sobrante = sobranteElegido ?? (siguientes.length ? "proxima" : "venta");
+  const vistaSobrante = useMemo(() => {
+    if (sobra <= 0.01 || !venta) return [];
+    const filas: { nombre: string; antes: number; despues: number; vence?: string }[] = [];
+    let queda = sobra;
+    if (sobrante === "proxima") {
+      for (const c of siguientes) {
+        if (queda <= 0.009) break;
+        const baja = Math.min(c.monto, queda);
+        queda = r2(queda - baja);
+        filas.push({ nombre: `Cuota ${c.numero}`, antes: c.monto, despues: r2(c.monto - baja), vence: c.vence });
+      }
+    }
+    if (queda > 0.009) filas.push({ nombre: "Valor de la venta", antes: venta.precioAcordado, despues: r2(venta.precioAcordado + queda) });
+    return filas;
+  }, [sobra, sobrante, siguientes, venta]);
+
   /* Si el resto se promete para otro día, la cuota pasa a vencer ese día. */
   const nuevoVence = venceSaldo ? new Date(`${venceSaldo}T12:00:00-03:00`).toISOString() : undefined;
   const venceCambia = Boolean(nuevoVence) && isoDia(cuota.vence) !== venceSaldo;
 
-  const problemaCobro = cobrado > resta + 0.01
+  const problemaCobro = editando && cobrado > resta + 0.01
     ? `Se cobra ${M(cobrado)} y a ${nombreCuota} le faltan ${M(resta)}`
     : problemaDeCuenta(cobros, nombreCuota);
   /* Corrigiendo, el cobro que se está cambiando no cuenta como «ya usado» del pago de la pasarela. */
@@ -222,10 +249,12 @@ export function RegistrarPago({ cuota, onCerrar, onGuardado, embebido = false, p
       reajuste: saldo > 0.01 ? reajuste : "pendiente",
       motivo: motivoSaldar,
       venceSaldo: saldo > 0.01 && reajuste === "pendiente" ? venceSaldo : undefined,
+      ...(sobra > 0.01 ? { sobrante } : {}),
     });
     if (!ok) return;
     onGuardado(
-      saldo <= 0.01 ? "Pago registrado: la cuota quedó saldada."
+      sobra > 0.01 ? `Pago registrado: ${nombreCuota} quedó saldada en ${M(r2(pagado + cobrado))} y los ${M(sobra)} de más ${vistaSobrante[0]?.nombre === "Valor de la venta" ? "suben el valor de la venta" : "se descuentan de lo que sigue"}.`
+        : saldo <= 0.01 ? "Pago registrado: la cuota quedó saldada."
         : reajuste === "pendiente" ? `Pago registrado. Quedan ${M(saldo)} por cobrar en ${nombreCuota}${venceCambia ? `, que ahora vence el ${fechaLarga(nuevoVence)}` : ""}.`
           : reajuste === "saldar" ? `Pago registrado: ${nombreCuota} quedó saldada en ${M(r2(pagado + cobrado))} y los ${M(saldo)} que faltaban no se cobran.`
             : "Pago registrado y cuotas reacomodadas.",
@@ -327,6 +356,42 @@ export function RegistrarPago({ cuota, onCerrar, onGuardado, embebido = false, p
         </>
       )}
 
+      {paso === "sobrante" && (
+        <>
+          <Pregunta
+            texto={`Pagó ${M(sobra)} de más: ¿qué es eso?`}
+            sub={`A ${nombreCuota} le faltaban ${M(resta)} y entran ${M(cobrado)}. ${laCuota} queda saldada en lo que pagó.`}
+          />
+          <Select
+            value={sobrante} aria-label="Qué hacer con lo que pagó de más"
+            onChange={(ev) => setSobrante(ev.target.value as Sobrante)}
+            opciones={[
+              ...(siguientes.length ? [{ valor: "proxima", texto: "Lo adelantó: se descuenta de las cuotas que siguen" }] : []),
+              { valor: "venta", texto: "La venta vale más (un recargo, lo que cobra la pasarela)" },
+            ]}
+          />
+          <div className="stack-2" aria-label="Cómo quedan las cuotas">
+            <div className="reajuste-fila">
+              <span className="truncate t-strong">{laCuota}</span>
+              <span className="t-num t-subtle">{M(cuota.monto)}</span>
+              <ArrowRight size={13} className="t-subtle" />
+              <span className="t-num t-strong">{M(r2(pagado + cobrado))}</span>
+            </div>
+            {vistaSobrante.map((f) => (
+              <div className="reajuste-fila" key={f.nombre}>
+                <span className="truncate">
+                  <span className="t-strong">{f.nombre}</span>
+                  {f.vence && <span className="t-subtle"> · {fechaLarga(f.vence)}</span>}
+                </span>
+                <span className="t-num t-subtle">{M(f.antes)}</span>
+                <ArrowRight size={13} className="t-subtle" />
+                <span className="t-num t-strong" style={{ color: "var(--accent-text)" }}>{M(f.despues)}</span>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
       {paso === "saldo" && (
         <>
           <Pregunta
@@ -416,6 +481,10 @@ export function RegistrarPago({ cuota, onCerrar, onGuardado, embebido = false, p
                     ? `queda en esta cuota${venceCambia ? `, la paga el ${fechaLarga(nuevoVence)}` : ""}`
                     : `${textoReajuste.toLowerCase()}${reajuste === "saldar" && motivoSaldar.trim() ? ` (${motivoSaldar.trim()})` : ""}`}
                 </dd></>
+            )}
+            {sobra > 0.01 && (
+              <><dt>Lo que sobra</dt>
+                <dd>{M(sobra)} · {vistaSobrante.map((f) => `${f.nombre.toLowerCase()} pasa de ${M(f.antes)} a ${M(f.despues)}`).join("; ")}</dd></>
             )}
           </dl>
           <div className="stack-2">

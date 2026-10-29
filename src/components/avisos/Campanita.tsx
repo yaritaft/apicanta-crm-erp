@@ -155,7 +155,7 @@ export function Campanita() {
           {avisos.length === 0 ? (
             <div className="avisos__vacio">
               <span className="t-strong">No tenés avisos</span>
-              <span className="t-sm t-subtle">Cuando alguien te mencione con @ en el chat de una ficha, te aparece acá.</span>
+              <span className="t-sm t-subtle">Cuando alguien te mencione con @ en el chat de una ficha o te toque cobrar una cuota, te aparece acá.</span>
             </div>
           ) : (
             <ul className="avisos__lista">

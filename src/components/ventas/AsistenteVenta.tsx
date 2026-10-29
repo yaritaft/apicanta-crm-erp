@@ -88,7 +88,9 @@ const PASO_CONTRATO: { id: PasoId; titulo: string } = { id: "contrato", titulo: 
 
 type DecisionContrato = "mandar" | "ya" | "despues" | "no-lleva";
 
-type Frecuencia = "mensual" | "quincenal" | "semanal";
+/* «medida»: las fechas que le dio el closer, una por una (Mariano, 28/10: «no siempre es tan redondo, a veces le damos
+   fechas personalizadas»). Se elige o se pone sola al cambiar una fecha del plan; para rehacerlo parejo, mensual. */
+type Frecuencia = "mensual" | "quincenal" | "semanal" | "medida";
 
 interface Borrador {
   contactoId?: string;
@@ -143,8 +145,8 @@ function sumar(xs: { monto: number }[]) {
 
 function sumarFecha(iso: string, frecuencia: Frecuencia, pasos: number): string {
   const d = new Date(iso);
-  if (frecuencia === "mensual") d.setMonth(d.getMonth() + pasos);
-  else d.setDate(d.getDate() + pasos * (frecuencia === "quincenal" ? 15 : 7));
+  if (frecuencia === "quincenal" || frecuencia === "semanal") d.setDate(d.getDate() + pasos * (frecuencia === "quincenal" ? 15 : 7));
+  else d.setMonth(d.getMonth() + pasos);
   return d.toISOString();
 }
 
@@ -1011,10 +1013,11 @@ function PasoPlan({ b, setB, M, diferencia, moneda }: {
     contrato: x.soloReserva && x.contrato.datos?.reserva
       ? { ...x.contrato, datos: { ...x.contrato.datos, modalidad: modalidadDeReserva(monto, moneda) } } : x.contrato,
   }));
+  /* Cambiar una fecha a mano ya es un plan con fechas a medida: la frecuencia lo dice. */
   const editarCuota = (id: string, cambios: Partial<LineaCuota>) =>
-    setB((x) => ({ ...x, planTocado: true, cuotas: x.cuotas.map((c) => (c.id === id ? { ...c, ...cambios } : c)) }));
+    setB((x) => ({ ...x, planTocado: true, ...(cambios.vence ? { frecuencia: "medida" as const } : {}), cuotas: x.cuotas.map((c) => (c.id === id ? { ...c, ...cambios } : c)) }));
 
-  const rehacer = () => setB((x) => ({ ...x, planTocado: false }));
+  const rehacer = () => setB((x) => ({ ...x, planTocado: false, frecuencia: x.frecuencia === "medida" ? "mensual" : x.frecuencia }));
 
   return (
     <>
@@ -1063,12 +1066,20 @@ function PasoPlan({ b, setB, M, diferencia, moneda }: {
           <div className="hk-field">
             <label className="hk-label">Frecuencia</label>
             <Select value={b.frecuencia}
-              onChange={(ev) => setB((x) => ({ ...x, frecuencia: ev.target.value as Frecuencia, planTocado: false }))}
+              onChange={(ev) => {
+                const f = ev.target.value as Frecuencia;
+                /* A medida no rearma nada: deja las fechas como están para cambiarlas una por una. */
+                setB((x) => (f === "medida" ? { ...x, frecuencia: f } : { ...x, frecuencia: f, planTocado: false }));
+              }}
               opciones={[
                 { valor: "mensual", texto: "Mensual" },
                 { valor: "quincenal", texto: "Quincenal" },
                 { valor: "semanal", texto: "Semanal" },
+                { valor: "medida", texto: "Fechas a medida" },
               ]} />
+            <span className="hk-help">{b.frecuencia === "medida"
+              ? "Poné la fecha de cada cuota en el plan de abajo."
+              : "Arma las fechas solas desde la primera. Si le diste otras, cambialas abajo una por una."}</span>
           </div>
         )}
       </div>

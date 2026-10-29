@@ -44,6 +44,10 @@
     {
       "path": "/api/cron/reporte-semanal",
       "schedule": "0 13 * * 1"
+    },
+    {
+      "path": "/api/cron/cuotas-a-cobrar",
+      "schedule": "0 12 * * *"
     }
   ]
 }

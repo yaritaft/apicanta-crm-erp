@@ -7,9 +7,10 @@ import { montoDe } from "@/lib/monto";
 import { ModalForm } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toast";
 import { acciones, nuevoId, useEstado } from "@/lib/store";
-import { isoDia, money } from "@/lib/format";
+import { fechaLarga, isoDia, money } from "@/lib/format";
 import type { Cuota, EstadoVenta, Moneda, Venta } from "@/lib/types";
 import { proyectoDeWebinar, webinarDeProyecto } from "@/lib/angelo";
+import { rearmarPlan } from "@/lib/cambio-de-plan";
 
 /* Editar una venta ya cargada (y el alta vieja, en un solo formulario).
    Vive aparte porque lo usan la pantalla de Ventas y la ficha de la
@@ -67,6 +68,17 @@ export function FormularioVenta({ borrador, onCerrar, onGuardado }: {
   const resto = f.precioAcordado - f.reserva;
   const porCuota = f.planCuotas > 0 ? resto / f.planCuotas : 0;
 
+  /* Editando: si cambia lo que vale (otro producto, un descuento), se rearma el plan de lo que falta (lib/cambio-de-plan.ts).
+     Antes las cuotas quedaban como estaban y la venta decía una cosa y las cuotas otra (Dante, 27/10). */
+  const antes = f.id ? e.ventas.find((v) => v.id === f.id) : undefined;
+  const pendientes = antes ? e.cuotas.filter((c) => c.ventaId === antes.id && c.estado === "pendiente").sort((a, b) => a.numero - b.numero) : [];
+  const [cuantas, setCuantas] = useState(() => Math.max(1, pendientes.filter((c) => !e.pagos.some((p) => p.cuotaId === c.id)).length));
+  const [primera, setPrimera] = useState(() => (pendientes[0]?.vence ? isoDia(pendientes[0].vence) : isoDia(new Date().toISOString())));
+  const cambiaPrecio = Boolean(antes && Math.abs(f.precioAcordado - antes.precioAcordado) > 0.009);
+  const plan = antes && cambiaPrecio
+    ? rearmarPlan(e.cuotas, e.pagos, { ventaId: antes.id, precio: f.precioAcordado, cantidad: cuantas, primera, nuevoId: () => "vista" })
+    : null;
+
   function guardar() {
     if (!f.contactoNombre.trim()) { toast("Poné el nombre del cliente.", "err"); return; }
 
@@ -95,6 +107,7 @@ export function FormularioVenta({ borrador, onCerrar, onGuardado }: {
          canceló la baja, de dónde vino). */
       const { creadoEn: _creado, extra: _extra, ...cambios } = datos;
       acciones.actualizar<Venta>("ventas", f.id, cambios, f.contactoNombre);
+      if (plan) acciones.rearmarPlanDeVenta(f.id, { precio: f.precioAcordado, productoId: f.productoId || undefined, cantidad: cuantas, primera });
       /* Se corrigió el nombre del cliente, no se cambió de persona: queda
          corregido en todos lados (su ficha, el CRM, la Agenda, su servicio). */
       if (f.contactoId && antes?.contactoId === f.contactoId && antes.contactoNombre !== datos.contactoNombre) {
@@ -126,7 +139,7 @@ export function FormularioVenta({ borrador, onCerrar, onGuardado }: {
     <ModalForm
       abierto onCerrar={onCerrar} onGuardar={guardar} ancho
       titulo={f.id ? "Editar venta" : "Nueva venta"}
-      sub={f.id ? "El plan de cuotas no se toca desde acá: editá las cuotas en la ficha de la venta." : "Elegí el producto, el precio que cerró y en cuántas cuotas."}
+      sub={f.id ? "Si cambiás el producto o el valor, se rearma el plan de lo que falta cobrar: lo cobrado no se toca." : "Elegí el producto, el precio que cerró y en cuántas cuotas."}
       guardarTexto={f.id ? "Guardar cambios" : "Registrar venta"}
       puedeGuardar={f.contactoNombre.trim().length > 0}
     >
@@ -154,6 +167,44 @@ export function FormularioVenta({ borrador, onCerrar, onGuardado }: {
         <Field label="Valor total de la venta" ayuda="Lo que realmente acordó el vendedor.">
           <InputMonto value={f.precioAcordado} onChange={(ev) => setF({ ...f, precioAcordado: montoDe(ev.target.value) })} />
         </Field>
+
+        {plan && antes && (
+          <div className="span-2 plan-rearmado" role="group" aria-label="El plan de lo que falta cobrar">
+            <div className="t-strong">El valor pasa de {money(antes.precioAcordado, mon, 2)} a {money(f.precioAcordado, mon, 2)}</div>
+            <div className="t-sm t-subtle">
+              Ya se cobraron {money(plan.cobrado, mon, 2)}{plan.falta > 0.009 ? ` y quedan ${money(plan.falta, mon, 2)} por cobrar.` : "."} Las cuotas cobradas no se tocan; las pendientes sin cobros se reemplazan por las de abajo.
+            </div>
+            {plan.falta > 0.009 ? (
+              <>
+                <div className="form-grid">
+                  <Field label="¿En cuántas cuotas?">
+                    <Select value={String(cuantas)} onChange={(ev) => setCuantas(Number(ev.target.value))}
+                      opciones={Array.from({ length: 12 }, (_, k) => ({ valor: String(k + 1), texto: k === 0 ? "En 1 pago" : `En ${k + 1} cuotas` }))} />
+                  </Field>
+                  <Field label="La primera vence" ayuda="Las demás, una por mes. Después podés mover cada fecha en la ficha.">
+                    <Input type="date" value={primera} onChange={(ev) => setPrimera(ev.target.value || primera)} />
+                  </Field>
+                </div>
+                <div className="stack-2">
+                  {plan.nuevas.map((c) => (
+                    <div className="reajuste-fila" key={c.numero}>
+                      <span className="truncate"><span className="t-strong">Cuota {c.numero}</span><span className="t-subtle"> · {fechaLarga(c.vence)}</span></span>
+                      <span />
+                      <span />
+                      <span className="t-num t-strong">{money(c.monto, mon, 2)}</span>
+                    </div>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <div className="t-sm" style={{ color: plan.falta < -0.009 ? "var(--warning)" : undefined }}>
+                {plan.falta < -0.009
+                  ? `Ya se cobró ${money(-plan.falta, mon, 2)} más de lo que vale ahora: no queda nada por cobrar.`
+                  : "No queda nada por cobrar: la venta queda saldada."}
+              </div>
+            )}
+          </div>
+        )}
 
         <Field label="Vendedor" ayuda={sinComision ? "Con Yari como vendedor no comisiona nadie." : undefined}>
           <Select value={f.closerId} placeholder="Sin asignar"

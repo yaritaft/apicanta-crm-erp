@@ -1282,6 +1282,8 @@ button.cuadro-com__persona:hover { color: var(--brand); text-decoration: underli
 .pago-fila__caja[data-duda="true"] > .pago-fila { border-color: transparent; background: transparent; }
 .pago-fila__duda { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; padding: 0 12px 10px; }
 .pago-fila__duda > svg { flex: none; color: var(--warning); }
+/* Editar una venta y cambiar lo que vale: el plan de lo que falta cobrar (Dante, 27/10). */
+.plan-rearmado { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-3) var(--space-4); border: 1px solid var(--border-strong); border-radius: var(--radius-md); background: var(--surface-200); }
 /* Vista previa del reajuste de cuotas: nombre, antes → después. */
 .reajuste-fila { display: grid; grid-template-columns: minmax(0, 1fr) auto 14px minmax(88px, auto); gap: var(--space-2); align-items: center; font-size: 13px; }
 .reajuste-fila > :not(:first-child) { white-space: nowrap; text-align: right; }

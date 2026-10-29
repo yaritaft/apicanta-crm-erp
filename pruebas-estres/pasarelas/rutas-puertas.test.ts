@@ -157,8 +157,9 @@ test("los crons: sólo el secreto exacto abre; «Bearer undefined» y variantes 
      /cron/whatsapp-atar-grupos (una vez por día ata solos los grupos de WhatsApp a su webinar) se sumaron
      /cron/zoom-asistencia (cada hora trae de Zoom quién asistió a cada clase), /cron/fathom (cada 5
      minutos trae la transcripción de las llamadas con el link de Fathom pegado) y /cron/reporte-semanal
-     (los lunes le manda a cada alumno de Hackear Biz su link del formulario semanal). */
-  assert.equal(crons.length, 10);
+     (los lunes le manda a cada alumno de Hackear Biz su link del formulario semanal). Once desde el 29/10:
+     /cron/cuotas-a-cobrar (todos los días le avisa a cada closer en la campanita las cuotas que vencen). */
+  assert.equal(crons.length, 11);
   const antes = process.env.CRON_SECRET;
   try {
     await capturandoConsola(async () => {

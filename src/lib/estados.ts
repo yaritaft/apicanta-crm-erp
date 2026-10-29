@@ -26,6 +26,22 @@ import { entraEnTabla, esCompra, estadoAutomatico, filasCrm, opcionesDe, sinTild
 
 export const SIN_CARGAR = "Sin cargar";
 export const POR_VENIR = "Por venir";
+
+/* Las llamadas que se trajeron del Airtable de Booking Calls (21/10: 1.883, de marzo a septiembre) y allá tampoco
+   decían cómo terminaron. No son tarea de nadie: a Mariano el cierre del día le pedía cargar llamadas de marzo con
+   leads que nunca tuvo (28/10). Se ven con lo que decía el Airtable («Airtable: No compra») o «Sin dato (Airtable)»,
+   y no cuentan como sin cargar en el cierre del día, en Mi panel ni en el CRM. Si alguien les carga un estado, vale
+   ése. Las de Calendly (las de la app) siguen pidiéndose todas. */
+export const SIN_DATO_AIRTABLE = "Sin dato (Airtable)";
+
+/** Lo que se lee de una llamada importada del Airtable sin estado, o null si no es una. */
+export function avisoDeImportada(s: { origen?: string; extra?: Record<string, unknown> }): string | null {
+  if (s.origen !== "airtable") return null;
+  const at = s.extra?.airtable as { estadoAirtable?: unknown } | undefined;
+  /* «❌ NO USAR (No compra)» era una opción vieja del Airtable: queda lo de adentro. */
+  const limpio = String(at?.estadoAirtable ?? "").replace(/^[❌\s]*NO USAR\s*\(?/i, "").replace(/\)\s*$/, "").trim();
+  return limpio ? `Airtable: ${limpio}` : SIN_DATO_AIRTABLE;
+}
 /* Una sesión que no es de venta (una 1 a 1, un testimonio) y se hizo: las
    de venta dicen cómo terminó. */
 export const HECHA = "Hecha";
@@ -179,7 +195,7 @@ export const COLOR_AVISO: Record<string, ColorCrm> = {
 /** El Estado de Llamada tal cual se ve. `auto` es el que pone la app
     mientras nadie cargue otro (lib/crm: estadoAutomatico). */
 export function estadoDe(
-  s: Pick<Sesion, "estado" | "estadoLlamada" | "estadoPreCall" | "resultado" | "inicia">,
+  s: Pick<Sesion, "estado" | "estadoLlamada" | "estadoPreCall" | "resultado" | "inicia"> & { origen?: string; extra?: Record<string, unknown> },
   o: { opciones: OpcionCrm[]; auto?: string; deVenta?: boolean; venta?: boolean; ahora?: number },
 ): EstadoVisible {
   const deVenta = o.deVenta ?? true;
@@ -194,6 +210,9 @@ export function estadoDe(
   }
   /* Una que no es de venta y se marcó hecha: no hay más que decir. */
   const texto = !deVenta && s.estado === "hecha" ? HECHA : desenlace === REPROGRAMO ? "" : desenlace;
+  /* Una del Airtable de antes sin estado: lo que decía allá, y no es una pendiente (ver avisoDeImportada). */
+  const importada = texto === SIN_CARGAR ? avisoDeImportada(s) : null;
+  if (importada) return { ...base, sinCargar: false, texto: importada, color: "gris2", auto: true, vacio: true };
   return { ...base, sinCargar: texto === SIN_CARGAR, texto, color: COLOR_AVISO[texto] ?? "gris1", auto: true, vacio: true };
 }
 
