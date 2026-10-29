@@ -22,6 +22,7 @@ import { PanelServicio } from "./PanelServicio";
 import { TarjetaSimulacro } from "@/components/simulacros/Simulacros";
 import { TarjetaConsultas } from "@/components/consultas/Consultas";
 import { LlamadasParaCerrar } from "./LlamadasParaCerrar";
+import { CuotasVencidas } from "./CuotasVencidas";
 import { TOMAN_SIMULACROS } from "@/lib/simulacros";
 import { PanelSetter } from "./PanelSetter";
 import { Rendimiento } from "./Rendimiento";
@@ -159,6 +160,9 @@ export function MiPanel() {
               <ParaVos titulo="Pendientes" avisos={datos.avisos} total={datos.totalAvisos} puedeCerrarElDia={!viendoOtro} />
             )}
           </div>
+
+          {/* Las cuotas atrasadas de sus clientes, con el teléfono y cómo va el cobro (Aldana, 28/10). */}
+          {!esDirector && <CuotasVencidas e={e} miembro={miembro} viendoOtro={viendoOtro} ahora={ahora} />}
 
           {!esDirector && <Rendimiento datos={datos} e={e} rangoTxt={rangoTxt} />}
 

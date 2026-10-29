@@ -12,7 +12,7 @@ import { lecturaAlLeer, recibidosAlLlegar } from "./chat-equipo";
 import { configSeguimiento, seguimientoVacio } from "./seguimiento";
 import { resellNormal, seguimientoCompleto, siguienteNumero, testimonioNormal } from "./clientes-cs";
 import { revisionCvNormal } from "./revision-cv";
-import type { EsquemaPago, EstadoTraspaso, EtapaServicio, ExtraLiquidacion, Gasto, GastoRecurrente, ID as IdMiembro, Liquidacion, MiembroEquipo, ResultadoLiquidacion, TipoCuenta, Traspaso } from "./types";
+import type { EsquemaPago, EstadoSeguimientoCobro, SeguimientoCobro, EstadoTraspaso, EtapaServicio, ExtraLiquidacion, Gasto, GastoRecurrente, ID as IdMiembro, Liquidacion, MiembroEquipo, ResultadoLiquidacion, TipoCuenta, Traspaso } from "./types";
 import { conciliarPuntas, llegadaDeCobro, motivoDelMovimiento, paseDelCobro, rutaDe, type Punta } from "./traspasos";
 import { gastoAprobado, plantillasDesdeGastos } from "./gastos-recurrentes";
 import { cobrosAnulados, NOTA_ANULADO } from "./mercury";
@@ -46,6 +46,7 @@ import { puedeCargarDevolucion, puedeDarDeBaja, puedeEditar, TIPOS_POR_DEFECTO, 
 import { esDevolucionConfirmada } from "./devoluciones";
 import { esIncobrable, notasDeIncobrable, notasSinIncobrable } from "./cuota-incobrable";
 import { cuotasARepartir, problemaDelPlan, totalARepartir, type CuotaDePlan } from "./plan-de-cuotas";
+import { textoDeSeguimiento } from "./cobranza-seguimiento";
 import { atarPropuesta, conciliarReembolsos, quienDelReembolso, type ReembolsoCrudo, type ResultadoReembolsos } from "./reembolsos";
 import { setterDeAgendas } from "./setter-agendas";
 import { rearmarPlan } from "./cambio-de-plan";
@@ -1659,6 +1660,32 @@ export const acciones = {
     const { lista: act, nuevo } = registrar(e, "transaccion", c.ventaId, venta?.contactoNombre ?? "Venta", "actualizo", `Se pasó ${nombre} del ${de} al ${vence}.${motivo.trim() ? ` Motivo: ${motivo.trim()}` : ""}`);
     guardar({ ...e, cuotas, actividad: act });
     empujar({ tipo: "update", tabla: "cuotas", ids: [id], cambios: { vence: nueva, notas } });
+    empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
+  },
+
+  /* Cómo va el cobro de una cuota vencida (Aldana, 28/10): el closer marca «contactado», «no responde» o que pide dar de baja por
+     falta de pago, y Finanzas lo ve. `null` borra la marca. Queda en la actividad. */
+  seguirCobro(cuotaId: ID, estado: EstadoSeguimientoCobro | null, nota?: string) {
+    const e = snapshot();
+    const c = e.cuotas.find((x) => x.id === cuotaId);
+    if (!c) return;
+    const venta = e.ventas.find((v) => v.id === c.ventaId);
+    const seguimiento: SeguimientoCobro | undefined = estado
+      ? { estado, ...(nota?.trim() ? { nota: nota.trim() } : {}), por: firma(e), en: ahora() }
+      : undefined;
+    const nombre = c.esReserva ? "la reserva" : `la cuota ${c.numero}`;
+    const detalle = seguimiento
+      ? `Cobranza de ${nombre}: ${textoDeSeguimiento(seguimiento.estado).toLowerCase()}${seguimiento.nota ? `. ${seguimiento.nota}` : ""}`
+      : `Se sacó la marca de cobranza de ${nombre}.`;
+    const cuotas = e.cuotas.map((x) => {
+      if (x.id !== cuotaId) return x;
+      const { seguimientoCobro: _antes, ...resto } = x;
+      void _antes;
+      return seguimiento ? { ...resto, seguimientoCobro: seguimiento } : resto;
+    });
+    const { lista: act, nuevo } = registrar(e, "transaccion", c.ventaId, venta?.contactoNombre ?? "Venta", "actualizo", detalle);
+    guardar({ ...e, cuotas, actividad: act });
+    empujar({ tipo: "update", tabla: "cuotas", ids: [cuotaId], cambios: { seguimientoCobro: seguimiento ?? null } });
     empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
   },
 

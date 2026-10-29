@@ -1393,6 +1393,18 @@ export interface Cuota {
      venta: el que la heredó cuando el suyo se fue ("lo que hacemos es
      pasarle las cuotas a otro closer", Yari 29/09). */
   closerId?: ID;
+  /* Cómo va el cobro de una cuota vencida: lo marca quien la va a cobrar (el closer) y lo ve Finanzas
+     (Aldana, 28/10: «un estado de contactado / no responde / dar de baja por falta de pago»). */
+  seguimientoCobro?: SeguimientoCobro;
+}
+
+export type EstadoSeguimientoCobro = "contactado" | "no-responde" | "baja";
+export interface SeguimientoCobro {
+  estado: EstadoSeguimientoCobro;
+  nota?: string;
+  /* Quién lo marcó y cuándo (ISO). */
+  por: string;
+  en: string;
 }
 
 /* El archivo que prueba un pago: foto de la transferencia, PDF del recibo.

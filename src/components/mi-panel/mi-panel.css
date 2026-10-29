@@ -214,3 +214,16 @@ button.mp-tile:focus-visible { outline: 2px solid var(--focus); outline-offset: 
 .mp-llamada--roja { border-left-color: var(--danger); }
 .mp-llamada__quien { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; flex: 1; min-width: 220px; }
 .mp-llamada__falta { color: var(--ink-muted, var(--ink-subtle)); flex-basis: 100%; order: 3; }
+
+/* Cuotas vencidas de mis clientes, con el teléfono y cómo va el cobro (Aldana, 28/10). */
+.mp-cobranza__lista { list-style: none; margin: var(--space-3) 0 var(--space-2); padding: 0; display: flex; flex-direction: column; gap: var(--space-2); }
+.mp-cobranza__fila { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; border: 1px solid var(--border); border-left: 3px solid var(--warning, #e3a33b); border-radius: var(--radius-md); }
+.mp-cobranza__fila--roja { border-left-color: var(--danger); }
+.mp-cobranza__fila--pago { border-left-color: var(--success); }
+.mp-cobranza__quien { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; min-width: 0; }
+.mp-cobranza__monto { margin-left: auto; }
+.mp-cobranza__acciones { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.mp-cobranza__estado { min-width: 230px; flex: 0 1 280px; }
+.mp-cobranza__nota { flex: 1 1 220px; min-width: 0; height: 36px; padding: 0 10px; border-radius: var(--radius-md); border: 1px solid var(--border); background: var(--surface-2, transparent); color: inherit; font: inherit; }
+.mp-cobranza__nota:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.mp-cobranza__marca { display: block; }

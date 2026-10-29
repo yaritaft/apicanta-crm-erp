@@ -38,6 +38,9 @@ import { CobrosProcesador, PARAMS_PROCESADORES } from "@/components/finanzas/Cob
 import { CuadroComisiones } from "@/components/finanzas/CuadroComisiones";
 import { useNivelAcceso } from "@/lib/acceso";
 import { reglaDeCierre } from "@/lib/cierre-del-dia";
+import { Telefono } from "@/components/ui/Telefono";
+import { contactoDeVenta, cuotasQuePagaronVencidas, textoDeSeguimiento, tonoDeSeguimiento } from "@/lib/cobranza-seguimiento";
+import { haceCuanto } from "@/lib/hace-cuanto";
 import type { Cuota, Gasto } from "@/lib/types";
 
 type Vista = "cobros" | "procesadores" | "gastos" | "fijos" | "comisiones" | "devoluciones";
@@ -147,6 +150,8 @@ export function DetalleVista({ embebido = false, seccion: seccionFija, rangoFijo
   const nombreCloser = (id?: string) => (id ? e.equipo.find((m) => m.id === id)?.nombre : undefined);
   /* Lo que se ve: las del atraso elegido, del servicio y del closer elegidos. El aviso, los días y la tabla salen de esta lista. */
   const vencidasVista = useMemo(() => filtrarVencidas(vencidas, { atraso, productoId: servicioId, closerId }), [vencidas, atraso, servicioId, closerId]);
+  /* Las que estaban vencidas y se cobraron hace poco: se ven como «pagó» un día antes de irse de la lista (Aldana, 28/10). */
+  const pagaronHace = useMemo(() => cuotasQuePagaronVencidas(e, null), [e]);
   const enAlcance = useMemo(() => filtrarVencidas(vencidas, { productoId: servicioId, closerId }), [vencidas, servicioId, closerId]);
   const opcionesMora = useMemo(
     () => opcionesDeMora(vencidas, { servicio: nombreServicio, closer: nombreCloser }, { atraso, productoId: servicioId, closerId }),
@@ -256,6 +261,19 @@ export function DetalleVista({ embebido = false, seccion: seccionFija, rangoFijo
             {hayFiltroMora && <Button sm variante="ghost" onClick={() => setEnURL({ atraso: null, servicio: null, closer: null })}>Limpiar filtros</Button>}
           </div>
 
+          {pagaronHace.length > 0 && (
+            <Ayuda titulo={`${pagaronHace.length === 1 ? "Pagó 1 cuota vencida" : `Pagaron ${pagaronHace.length} cuotas vencidas`} en las últimas 36 horas`} icono={<Check size={18} />}>
+              {pagaronHace.slice(0, 8).map((f) => (
+                <span key={f.cuota.id} style={{ display: "block" }}>
+                  <button type="button" className="link t-strong" onClick={() => abrirFicha(f.venta.id)}>{f.venta.contactoNombre}</button>
+                  {" "}· {f.cuota.esReserva ? "reserva" : `cuota ${f.cuota.numero}`} · con {f.diasTarde} {f.diasTarde === 1 ? "día" : "días"} de atraso
+                  {f.cuota.seguimientoCobro ? ` · antes figuraba «${textoDeSeguimiento(f.cuota.seguimientoCobro.estado).toLowerCase()}»` : ""}
+                </span>
+              ))}
+              {pagaronHace.length > 8 && <span className="t-subtle">… y {pagaronHace.length - 8} más.</span>}
+            </Ayuda>
+          )}
+
           <Card style={{ padding: 0 }}>
             <DataTable
               alto={460}
@@ -280,6 +298,30 @@ export function DetalleVista({ embebido = false, seccion: seccionFija, rangoFijo
                   ),
                 },
                 { clave: "closer", titulo: "Closer", tipo: "secondary", orden: (c) => nombreCloser(c.closerId) ?? "~", celda: (c) => nombreCloser(c.closerId) ?? <span className="t-subtle">Sin closer</span> },
+                {
+                  clave: "telefono", titulo: "Teléfono", tipo: "secondary",
+                  celda: (c) => {
+                    const venta = e.ventas.find((x) => x.id === c.ventaId);
+                    const k = venta ? contactoDeVenta(e, venta) : {};
+                    return <Telefono valor={k.telefono} pais={k.pais} compacto vacio="—" />;
+                  },
+                },
+                {
+                  /* Lo que marcó el closer: contactado, no responde o que pide la baja (Aldana, 28/10). */
+                  clave: "seguimiento", titulo: "Seguimiento", tipo: "secondary",
+                  orden: (c) => e.cuotas.find((x) => x.id === c.cuotaId)?.seguimientoCobro?.estado ?? "~",
+                  celda: (c) => {
+                    const seg = e.cuotas.find((x) => x.id === c.cuotaId)?.seguimientoCobro;
+                    if (!seg) return <span className="t-subtle">Sin marcar</span>;
+                    const tono = tonoDeSeguimiento(seg.estado);
+                    return (
+                      <span title={`${seg.por}${seg.nota ? `: ${seg.nota}` : ""}`}>
+                        <Badge variante={tono === "danger" ? "danger" : tono === "warning" ? "warning" : "info"}>{textoDeSeguimiento(seg.estado)}</Badge>
+                        <span className="t-sm t-subtle"> {haceCuanto(Math.max(0, Date.now() - Date.parse(seg.en)) / 3_600_000)}</span>
+                      </span>
+                    );
+                  },
+                },
                 {
                   clave: "saldo", titulo: "Saldo", tipo: "num", orden: (c) => c.saldo, celda: (c) => M(c.saldo, 2),
                   pie: <strong className="t-num">{M(moraVista.saldo, 2)}</strong>,
