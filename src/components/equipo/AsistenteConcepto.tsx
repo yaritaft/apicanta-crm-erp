@@ -61,6 +61,8 @@ interface Borrador {
   /* Profit propio (ConceptoPago.profitPropio), la regla de cuotas y de quién se descuenta la comisión. */
   profitPropio: boolean;
   soloVentasDesdeInicio: boolean;
+  /* ConceptoPago.procesadoresDeTodas: en el cash post pasarelas, restar los procesadores de todas las ventas del mes. */
+  procesadoresDeTodas: boolean;
   descuentaComisionDe: string[];
   utmSource: string;
   unidad: string;
@@ -80,7 +82,7 @@ function inicial(m: MiembroEquipo, c: ConceptoPago | null | undefined, base: Mon
       tipo: null, nombre: "", nombreTocado: false, monto: "", moneda: base, tasa: "",
       base: reparte ? "profit" : "cash-neto", cada: "", alcance: alcanceDeRol(m), productoIds: [], sinEmbudoIds: [],
       sinVentasSinComision: false, sinExcluidasMarketing: m.rol === "growth",
-      profitPropio: false, soloVentasDesdeInicio: false, descuentaComisionDe: [],
+      profitPropio: false, soloVentasDesdeInicio: false, procesadoresDeTodas: false, descuentaComisionDe: [],
       utmSource: "", unidad: "", condicion: "", desde: "", hasta: "", notas: "",
     };
   }
@@ -92,6 +94,7 @@ function inicial(m: MiembroEquipo, c: ConceptoPago | null | undefined, base: Mon
     alcance: c.alcance ?? "todas", productoIds: c.productoIds ?? [], sinEmbudoIds: c.sinEmbudoIds ?? [],
     sinVentasSinComision: Boolean(c.sinVentasSinComision), sinExcluidasMarketing: Boolean(c.sinExcluidasMarketing),
     profitPropio: Boolean(c.profitPropio), soloVentasDesdeInicio: Boolean(c.soloVentasDesdeInicio),
+    procesadoresDeTodas: Boolean(c.procesadoresDeTodas),
     descuentaComisionDe: c.descuentaComisionDe ?? [],
     utmSource: c.utmSource ?? "", unidad: c.unidad ?? "", condicion: c.condicion ?? "",
     desde: c.desde ?? "", hasta: c.hasta ?? "", notas: c.notas ?? "",
@@ -149,6 +152,7 @@ function armar(b: Borrador, id: string, base: Moneda): ConceptoPago {
     }
     /* La regla de cuotas necesita la fecha de inicio: sin ella no hace nada, y no se guarda. */
     if (b.soloVentasDesdeInicio && b.desde && (info.deVentas || (b.base === "profit" && b.profitPropio))) c.soloVentasDesdeInicio = true;
+    if (b.base === "cash-neto" && b.procesadoresDeTodas) c.procesadoresDeTodas = true;
     if ((b.base === "llamadas" || b.base === "llamadas-hechas") && b.utmSource.trim()) c.utmSource = b.utmSource.trim();
     if (b.base === "manual" && b.unidad.trim()) c.unidad = b.unidad.trim();
   }
@@ -553,6 +557,12 @@ function PasoDeQue({ b, set, e, miembro }: { b: Borrador; set: Poner; e: EstadoA
           <span className="t-sm">Sólo las ventas cerradas desde la fecha de inicio: las cuotas de ventas anteriores no cuentan</span>
         </label>
         {b.soloVentasDesdeInicio && <span className="t-sm t-subtle">La fecha de inicio se pone en «Desde», en el resumen. Esta regla no la calcula Finanzas: el costo entra a Finanzas al cerrar la liquidación.</span>}
+        {b.base === "cash-neto" && (
+          <label className="row" style={{ gap: 10 }}>
+            <Switch checked={b.procesadoresDeTodas} onChange={(v) => set({ procesadoresDeTodas: v })} etiqueta="Restar los procesadores de todas las ventas del mes" />
+            <span className="t-sm">Restar los procesadores de pago de todas las ventas del mes, no sólo los de sus cobros (así se cuenta el director)</span>
+          </label>
+        )}
       </div>
     </>
   );
@@ -696,6 +706,7 @@ function deQueTexto(b: Borrador, e: EstadoApp): string {
   if (b.alcance === "todas" && b.sinVentasSinComision) partes.push(`sin las de ${quienesNoComisionan(e)}`);
   if (b.sinExcluidasMarketing) partes.push("sin las excluidas de marketing");
   if (b.soloVentasDesdeInicio) partes.push("ventas desde el inicio");
+  if (b.base === "cash-neto" && b.procesadoresDeTodas) partes.push("procesadores de todas las ventas");
   const sinEstr = b.sinEmbudoIds.map((id) => e.embudos.find((x) => x.id === id)?.nombre).filter(Boolean);
   if (sinEstr.length) partes.push(`sin ${sinEstr.join(" ni ")}`);
   return partes.join(" · ");

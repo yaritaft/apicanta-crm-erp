@@ -160,6 +160,7 @@ function filtros(c: ConceptoPago, e: Catalogos, hermanos?: ConceptoPago[]): stri
   if (c.sinVentasSinComision && (c.alcance ?? "todas") === "todas") out.push(`sin las que cerró ${quienesNoComisionan(e)}`);
   if (c.sinExcluidasMarketing) out.push("sin las excluidas de marketing");
   if (c.soloVentasDesdeInicio && c.desde) out.push("sólo ventas cerradas desde el inicio");
+  if (c.base === "cash-neto" && c.procesadoresDeTodas) out.push("restando los procesadores de pago de todas las ventas del mes");
   /* Una comisión de ventas va directo sobre su base: no resta lo que cobra otro (eso sólo lo hace el profit propio, con
      `descuentaComisionDe`). Se dice en la regla para que nadie tenga que preguntarlo. */
   if (esComisionDeVentas(c)) out.push(c.alcance === "closer" ? "sin restar lo que cobra el director" : "sin restar lo que cobran los closers");
@@ -556,6 +557,8 @@ const enRango = (iso: string | undefined, r: RangoMes) => {
    la cuenta, cuáles, y lo cobrado antes de restar el procesador. */
 interface Medido {
   valor: number; cuantos: string; n?: number; bruto?: number; cobros?: CobroContado[]; ventas?: Venta[];
+  /* ConceptoPago.procesadoresDeTodas: lo que se quedaron los procesadores en TODAS las ventas de esos días (lo que se resta). */
+  feesDeTodas?: number;
   /* Los cobros de esta persona que una regla dejó afuera, y por qué (para poder compararlos con otra lista). */
   excluidos?: CobroExcluido[];
   /* Lo devuelto en esos días que resta de lo medido, cuántas devoluciones son y
@@ -596,11 +599,18 @@ function medir(cx: Contexto, c: ConceptoPago, m: MiembroEquipo, r: RangoMes, her
           dev += d.monto; nDev++;
         }
       }
-      if (dev <= 0) return { valor: r2(valor), cuantos: cant(n, "cobro", "cobros"), n, bruto: r2(bruto), cobros, excluidos };
+      /* Los procesadores de todas las ventas del mes, no sólo los de estos cobros. */
+      let feesDeTodas: number | undefined;
+      if (b === "cash-neto" && c.procesadoresDeTodas) {
+        feesDeTodas = r2(pagosDelMes(cx.e, r).reduce((a, p) => a + p.feeMonto, 0));
+        valor = bruto - feesDeTodas;
+      }
+      const conFees = feesDeTodas !== undefined ? { feesDeTodas } : {};
+      if (dev <= 0) return { valor: r2(valor), cuantos: cant(n, "cobro", "cobros"), n, bruto: r2(bruto), cobros, excluidos, ...conFees };
       const crudo = r2(valor - dev);
       return {
         valor: Math.max(0, crudo), cuantos: `${cant(n, "cobro", "cobros")} y ${cant(nDev, "devolución", "devoluciones")}`,
-        n, bruto: r2(bruto), cobros, excluidos, devoluciones: r2(dev), nDev, crudo,
+        n, bruto: r2(bruto), cobros, excluidos, devoluciones: r2(dev), nDev, crudo, ...conFees,
       };
     }
     case "facturado": case "ventas": {
@@ -783,6 +793,7 @@ function linea(
           valor = x.valor; origen = x.cuantos;
           fuente = {
             tipo: "medido", bruto: x.bruto, cuantos: x.n ?? 0,
+            ...(x.feesDeTodas !== undefined ? { feesDeTodas: x.feesDeTodas } : {}),
             lista: x.cobros ? listaDeCobros(x.cobros, nombresDeLista(cx), cx.base, x.excluidos) : x.ventas ? listaDeVentas(x.ventas, nombresDeLista(cx), cx.base) : undefined,
             ...(x.devoluciones ? { devoluciones: x.devoluciones, nDev: x.nDev ?? 0, crudo: x.crudo } : {}),
           };

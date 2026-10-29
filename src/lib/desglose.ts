@@ -296,6 +296,8 @@ export type Fuente =
   }
   | {
     tipo: "medido"; bruto?: number; cuantos: number; lista?: ListaDesglose;
+    /* Los procesadores de TODAS las ventas de esos días, cuando la regla los resta todos y no sólo los de sus cobros. */
+    feesDeTodas?: number;
     /* Lo devuelto en el mes que resta de lo medido, y cuántas devoluciones son. */
     devoluciones?: number; nDev?: number;
     /* Lo que da la cuenta antes de no pasar de cero (con más devoluciones que cobros). */
@@ -451,7 +453,9 @@ function pasosDeLoMedido(a: ArgsMedido, f: Extract<Fuente, { tipo: "medido" }>):
       return [
         plataPaso("base", "Cobrado en el mes", bruto, B, cobros(f.cuantos)),
         ...(dev > 0 ? [plataPaso("menos", "Devoluciones del mes", dev, B, devoluciones(f.nDev ?? 0))] : []),
-        plataPaso("menos", "Lo que se quedaron los procesadores de pago", r2(bruto - dev - crudo), B),
+        f.feesDeTodas !== undefined
+          ? plataPaso("menos", "Lo que se quedaron los procesadores de pago en TODAS las ventas del mes", r2(bruto - dev - crudo), B, "No sólo los de sus cobros: así se cuenta el director")
+          : plataPaso("menos", "Lo que se quedaron los procesadores de pago", r2(bruto - dev - crudo), B),
         plataPaso("igual", "Cash collected post pasarelas", crudo, B),
         ...devolucionesYPiso(crudo),
       ];

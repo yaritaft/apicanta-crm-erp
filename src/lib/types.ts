@@ -1630,6 +1630,10 @@ export interface ConceptoPago {
      no cuenta lo que entra en septiembre de ventas de antes de agosto.
      Sin `desde`, no hace nada. */
   soloVentasDesdeInicio?: boolean;
+  /* cash-neto: en vez de restar el procesador de cada cobro que le toca, se restan los procesadores de TODAS las ventas del mes (los
+     de las de otros y los de las que no comisionan también): así lo cuenta Aldana para el director (Manuel, 28/10). Sin esto, los
+     de sus cobros. */
+  procesadoresDeTodas?: boolean;
   /* profitPropio: ids de miembros del equipo cuya comisión sobre el profit se
      resta del profit antes de sacar el porcentaje (por ejemplo, al socio se le
      descuenta la del director de tráfico). Se mira un solo nivel: la de ellos
