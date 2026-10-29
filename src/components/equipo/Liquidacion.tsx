@@ -27,6 +27,7 @@ import type {
 } from "@/lib/types";
 import { DesgloseRenglon } from "./DesgloseRenglon";
 import { GastosQueCuentan } from "./GastosQueCuentan";
+import { EquipoPorTipo } from "./EquipoPorTipo";
 import { pagosSospechosos } from "@/lib/pagos-equipo";
 
 /* ==================================================================
@@ -299,6 +300,8 @@ export function LiquidacionMes({ onVerPersona, soloMirar = false, onVerReglas }:
       {!cerrada && !soloMirar && hayPesos && (
         <TipoCambio valor={liq.tipoCambio ?? e.ajustes.tipoCambio} onCambiar={(tipoCambio) => guardar({ tipoCambio })} />
       )}
+
+      {r.personas.length > 0 && <EquipoPorTipo e={e} r={r} />}
 
       {r.personas.length > 0 && <GastosQueCuentan e={e} periodo={periodo} r={r} soloMirar={soloMirar} />}
 

@@ -4551,3 +4551,18 @@ html, body { overscroll-behavior-x: none; }
 .liq-lista tr[data-marcado] td { opacity: .7; }
 .liq-lista td input[type="checkbox"] { margin-top: 2px; }
 @media (max-width: 640px) { .gq__resumen, .gq__aviso { padding-left: var(--space-4); padding-right: var(--space-4); margin-left: var(--space-4); margin-right: var(--space-4); } }
+
+/* El equipo, por tipo de pago (Liquidación; Aldana, 28/10). */
+.eq-tipo { display: grid; gap: var(--space-4); padding: 0 var(--space-5) var(--space-5); }
+.eq-tipo__grupo { border: 1px solid var(--border); border-radius: var(--radius-md); overflow: hidden; }
+.eq-tipo__cab { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-3); flex-wrap: wrap; padding: var(--space-3) var(--space-4); background: var(--surface-200); }
+.eq-tipo__cab > div { display: grid; gap: 2px; min-width: 0; flex: 1 1 280px; }
+.eq-tipo__titulo { margin: 0; font-size: 15px; line-height: 20px; }
+.eq-tipo__filas { list-style: none; margin: 0; padding: 0; }
+.eq-tipo__fila { display: grid; grid-template-columns: minmax(150px, 220px) 1fr auto; gap: var(--space-2) var(--space-4); align-items: baseline; padding: var(--space-3) var(--space-4); border-top: 1px solid var(--border); }
+.eq-tipo__quien { display: grid; gap: 1px; min-width: 0; }
+.eq-tipo__total { text-align: right; min-width: 90px; }
+.eq-tipo__pie { display: flex; flex-wrap: wrap; gap: var(--space-5); padding-top: var(--space-2); }
+.eq-tipo__pie > div { display: grid; gap: 2px; min-width: 170px; }
+.eq-tipo__pie b { font-size: 20px; line-height: 26px; color: var(--ink); }
+@media (max-width: 720px) { .eq-tipo { padding-left: var(--space-4); padding-right: var(--space-4); } .eq-tipo__fila { grid-template-columns: 1fr auto; } .eq-tipo__partes { grid-column: 1 / -1; order: 3; } }
