@@ -2,8 +2,9 @@ import { NextResponse } from "next/server";
 import { exigirArea } from "@/lib/permisos-servidor";
 import { nubeServidor } from "@/lib/servidor";
 import { leerJson } from "@/lib/whatsapp-servidor";
-import { alumnoPorId, codigoDeAlumno, ErrorSinTablaCodigos } from "@/lib/reporte-servidor";
-import { enlaceDeReporte, mensajeParaAlumno, origenDeLaApp } from "@/lib/reporte-enlace";
+import { alumnoPorId, codigoDeAlumno, ErrorSinTablaCodigos, formulariosDelAlumno } from "@/lib/reporte-servidor";
+import { enlaceDeReporte, mensajeConFormularios, mensajeParaAlumno, origenDeLaApp } from "@/lib/reporte-enlace";
+import { esIdFormulario, FORMULARIOS } from "@/lib/reporte-formularios";
 import { enlaceDelAlumno, mensajeDelLink } from "@/lib/links-alumno";
 
 /* ==================================================================
@@ -31,7 +32,7 @@ export async function POST(req: Request) {
   if (noPuede) return noPuede;
   const leido = await leerJson(req, 2_000);
   if (!leido.ok) return NextResponse.json({ error: leido.error }, { status: leido.status });
-  const cuerpo = (leido.json ?? {}) as { alumnoId?: unknown; para?: unknown };
+  const cuerpo = (leido.json ?? {}) as { alumnoId?: unknown; para?: unknown; formulario?: unknown };
   const alumnoId = typeof cuerpo.alumnoId === "string" ? cuerpo.alumnoId.trim() : "";
   const para = cuerpo.para === "simulacro" || cuerpo.para === "consulta" ? cuerpo.para : null;
   if (!alumnoId || alumnoId.length > 120) return NextResponse.json({ error: "Falta el alumno." }, { status: 400 });
@@ -46,7 +47,22 @@ export async function POST(req: Request) {
       const enlace = enlaceDelAlumno(para, origenDeLaApp(req), codigo);
       return NextResponse.json({ ok: true, codigo, enlace, mensaje: mensajeDelLink(para, { nombre: alumno.nombre, enlace }) }, { headers: SIN_CACHE });
     }
-    const enlace = enlaceDeReporte(origenDeLaApp(req), codigo);
+    const origen = origenDeLaApp(req);
+    /* Quien cursa Hackear Biz e IA completa dos formularios (Lili, 29/10): cada uno tiene su link. Con `formulario` se pide uno; sin él,
+       si le tocan dos, el mensaje trae los dos. */
+    const elegido = esIdFormulario(cuerpo.formulario) ? cuerpo.formulario : null;
+    const suyos = await formulariosDelAlumno(db, alumnoId);
+    if (elegido) {
+      const enlace = enlaceDeReporte(origen, codigo, elegido);
+      const mensaje = mensajeConFormularios({ nombre: alumno.nombre, codigo, formularios: [{ programa: FORMULARIOS[elegido].programa, enlace }] })
+        .replace("para completar el reporte semanal:", `para completar el formulario semanal de ${FORMULARIOS[elegido].programa}:`);
+      return NextResponse.json({ ok: true, codigo, enlace, mensaje }, { headers: SIN_CACHE });
+    }
+    if (suyos.length >= 2) {
+      const formularios = suyos.map((f) => ({ programa: f.programa, enlace: enlaceDeReporte(origen, codigo, f.id) }));
+      return NextResponse.json({ ok: true, codigo, enlace: formularios[0].enlace, formularios, mensaje: mensajeConFormularios({ nombre: alumno.nombre, codigo, formularios }) }, { headers: SIN_CACHE });
+    }
+    const enlace = enlaceDeReporte(origen, codigo);
     return NextResponse.json({ ok: true, codigo, enlace, mensaje: mensajeParaAlumno({ nombre: alumno.nombre, enlace, codigo }) }, { headers: SIN_CACHE });
   } catch (e) {
     if (e instanceof ErrorSinTablaCodigos) return NextResponse.json({ error: e.message, tabla: false }, { status: 503 });

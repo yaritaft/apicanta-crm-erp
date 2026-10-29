@@ -1,5 +1,6 @@
 "use client";
 
+import { formulariosDelAlumnoCon } from "@/lib/reporte-formularios";
 import { ContratoCard } from "@/components/contratos/ContratoCard";
 import { AccesosAlumno } from "@/components/contratos/AccesosAlumno";
 import { diaDelOutboarding, esOutboarding } from "@/lib/outboarding";
@@ -682,7 +683,8 @@ function HojaDeUnServicio({ e, p, f, venta, producto, conChat, reserva }: {
       {solapa === "reportes" && (
         <BloqueServicio titulo="Su link">
           <div className="hs-enlace">
-            <EnlaceDeReporte alumnoId={alumno.id} email={alumno.email} />
+            <EnlaceDeReporte alumnoId={alumno.id} email={alumno.email}
+              formularios={formulariosDelAlumnoCon(f.seg.programas, alumno.plan).map((x) => ({ id: x.id, programa: x.programa }))} />
           </div>
         </BloqueServicio>
       )}
@@ -694,6 +696,7 @@ function HojaDeUnServicio({ e, p, f, venta, producto, conChat, reserva }: {
             <div key={r.id} className="hs-reporte">
               <div className="row t-sm" style={{ gap: 8 }}>
                 <span>Semana del {fechaLarga(r.semanaDel)}</span>
+                {r.programa && <span className="t-subtle">{r.programa}</span>}
                 {r.estado === "completado" && r.horasEstudio !== undefined && <span className="t-subtle t-num">{r.horasEstudio} h · {r.postulaciones ?? 0} post.</span>}
                 <span className="spacer" />
                 <Badge variante={r.estado === "completado" ? "success" : r.estado === "vencido" ? "danger" : r.estado === "pendiente" ? "accent" : "neutral"}>

@@ -11,7 +11,7 @@ import { useAcceso } from "@/lib/acceso";
 import { puedeEditar } from "@/lib/permisos";
 import { nube } from "@/lib/supabase";
 import {
-  ATAJO_DE, CON_RECORDATORIO, DIA_Y_HORA_DEL_RECORDATORIO, FORMULARIOS, formularioQueSeLePide, linkDelPrograma, type IdFormulario,
+  ATAJO_DE, CON_RECORDATORIO, DIA_Y_HORA_DEL_RECORDATORIO, FORMULARIOS, formulariosQueSeLePiden, linkDelPrograma, type IdFormulario,
 } from "@/lib/reporte-formularios";
 import "./formularios-programa.css";
 
@@ -50,8 +50,8 @@ export function FormulariosPorPrograma() {
     const segs = new Map((e.seguimientos ?? []).map((s) => [s.alumnoId, s] as const));
     const out: Record<IdFormulario, string[]> = { "hackear-biz": [], "hackear-it": [] };
     for (const a of e.alumnos) {
-      const id = formularioQueSeLePide(a, segs.get(a.id));
-      if (id) out[id].push(a.id);
+      /* Quien cursa Hackear Biz e IA completa los dos (Lili, 29/10): cuenta en cada uno. */
+      for (const id of formulariosQueSeLePiden(a, segs.get(a.id))) out[id].push(a.id);
     }
     return out;
   }, [e.alumnos, e.seguimientos]);

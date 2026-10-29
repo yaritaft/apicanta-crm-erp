@@ -2,7 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { guardarItems, type BaseReportes, type ResultadoReportes } from "./reportes-servidor";
 import type { AlumnoBasico } from "./reportes-webhook";
 import type { EnvioDelAlumno } from "./reporte-enlace";
-import { camposDelReporte, formularioDelAlumnoCon, type FormularioReporte } from "./reporte-formularios";
+import { camposDelReporte, formularioDelAlumnoCon, formulariosDelAlumnoCon, type FormularioReporte } from "./reporte-formularios";
 import { literalParaIlike } from "./links-alumno";
 import { lunesDelDia } from "./reportes";
 import { diaAInstante } from "./dia-negocio";
@@ -87,6 +87,15 @@ export async function formularioDelAlumno(db: SupabaseClient, alumnoId: string):
   if (Array.isArray(programas) && programas.some((x) => typeof x === "string")) return formularioDelAlumnoCon(programas, null);
   const a = await db.from("alumnos").select("plan").eq("id", alumnoId).maybeSingle();
   return formularioDelAlumnoCon(null, !a.error ? (a.data as { plan?: unknown } | null)?.plan : null);
+}
+
+/** TODOS los formularios que le tocan a un alumno (dos si cursa Hackear Biz e IA): los programas de su ficha y, si no tiene ninguno, el plan de su venta. */
+export async function formulariosDelAlumno(db: SupabaseClient, alumnoId: string): Promise<FormularioReporte[]> {
+  const seg = await db.from("seguimiento_alumnos").select("programas").eq("alumnoId", alumnoId).maybeSingle();
+  const programas = !seg.error ? (seg.data as { programas?: unknown } | null)?.programas : null;
+  if (Array.isArray(programas) && programas.some((x) => typeof x === "string")) return formulariosDelAlumnoCon(programas, null);
+  const a = await db.from("alumnos").select("plan").eq("id", alumnoId).maybeSingle();
+  return formulariosDelAlumnoCon(null, !a.error ? (a.data as { plan?: unknown } | null)?.plan : null);
 }
 
 /** Guarda el reporte que completó el alumno con su código: el de esta semana, reemplazando el que ya hubiera. */

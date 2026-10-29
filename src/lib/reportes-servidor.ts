@@ -38,7 +38,7 @@ export function baseSupabaseReportes(db: SupabaseClient): BaseReportes {
       /* Los ids van en la URL: de a 100. */
       for (let i = 0; i < ids.length; i += 100) {
         const lote = ids.slice(i, i + 100);
-        out.push(...await paginado<ReporteExistente>((a, b) => db.from("reportes").select("id,alumnoId,semanaDel").in("alumnoId", lote).order("id").range(a, b), "reportes"));
+        out.push(...await paginado<ReporteExistente>((a, b) => db.from("reportes").select("id,alumnoId,semanaDel,formulario").in("alumnoId", lote).order("id").range(a, b), "reportes"));
       }
       return out;
     },

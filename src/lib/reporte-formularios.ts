@@ -129,15 +129,40 @@ export function formularioQueSeLePide(
   return formularioDelAlumnoCon(seg?.programas, a.plan)?.id ?? null;
 }
 
-/** El formulario que le toca a un alumno según su programa (los de Customer Success y, si no hay, el plan de su venta: «Mentoría»
- *  es Hackear IT). Si cursa los dos, o ninguno de los dos (Principals…), null: hay que preguntarle. */
-export function formularioDe(textos: readonly (string | null | undefined)[] | null | undefined): FormularioReporte | null {
+/** TODOS los formularios que le tocan a un alumno según sus programas (Lili, 29/10: los de Hackear Biz que además cursan Hackear IA
+ *  completan los dos cada semana). «Hackear IA» y «Hackear AI» son el mismo programa que Hackear IT (se vende con ese nombre), y
+ *  «Mentoría», el plan de su venta. Principals y los demás programas no tienen formulario: lista vacía. */
+export function formulariosDe(textos: readonly (string | null | undefined)[] | null | undefined): FormularioReporte[] {
   const ts = (textos ?? []).map((t) => sinTildes(String(t ?? "")));
   const biz = ts.some((t) => /\bbiz\b|business/.test(t));
-  const it = ts.some((t) => /\bit\b|mentoria/.test(t));
-  if (biz && !it) return FORMULARIO_BIZ;
-  if (it && !biz) return FORMULARIO_IT;
-  return null;
+  const it = ts.some((t) => /\bit\b|\bia\b|\bai\b|mentoria/.test(t));
+  return [...(biz ? [FORMULARIO_BIZ] : []), ...(it ? [FORMULARIO_IT] : [])];
+}
+
+/** El formulario que le toca a un alumno cuando es uno solo (Hackear Biz o Hackear IT). Si cursa los dos, o ninguno (Principals…),
+ *  null: hay que preguntarle (la página pública se lo pregunta) o usar `formulariosDe`. */
+export function formularioDe(textos: readonly (string | null | undefined)[] | null | undefined): FormularioReporte | null {
+  const fs = formulariosDe(textos);
+  return fs.length === 1 ? fs[0] : null;
+}
+
+/** Los formularios de un alumno con lo que hay de él: los programas de su ficha de Customer Success y, si no tiene ninguno
+ *  cargado, el plan de su venta. */
+export function formulariosDelAlumnoCon(programas: unknown, plan: unknown): FormularioReporte[] {
+  const textos = Array.isArray(programas) ? programas.filter((x): x is string => typeof x === "string") : [];
+  if (textos.length) return formulariosDe(textos);
+  return typeof plan === "string" ? formulariosDe([plan]) : [];
+}
+
+/** Los formularios que se le piden cada semana a un alumno: está activo, todavía cursa (su Follow Up no dice Outboarding ni caso
+ *  de éxito) y se sabe su programa. */
+export function formulariosQueSeLePiden(
+  a: { estado: string; plan?: string | null }, seg: { programas?: unknown; followUp?: string | null } | undefined,
+): IdFormulario[] {
+  if (a.estado !== "activo") return [];
+  const f = (seg?.followUp ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+  if (f.startsWith("outboarding") || f.startsWith("outbording") || f.startsWith("caso de exito")) return [];
+  return formulariosDelAlumnoCon(seg?.programas, a.plan).map((x) => x.id);
 }
 
 export const LARGO_TEXTO = 2000;

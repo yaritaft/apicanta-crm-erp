@@ -104,7 +104,7 @@ export function leerItems(json: unknown): { items: { posicion: number; item: Ite
 }
 
 export interface AlumnoBasico { id: string; nombre: string; email: string }
-export interface ReporteExistente { id: string; alumnoId: string; semanaDel: string }
+export interface ReporteExistente { id: string; alumnoId: string; semanaDel: string; formulario?: string | null }
 
 export interface PlanReportes {
   /* Los reportes a escribir (nuevos o que reemplazan al de esa semana). */
@@ -114,7 +114,9 @@ export interface PlanReportes {
   rechazados: { posicion: number; motivo: string }[];
 }
 
-/** De qué alumno es cada reporte y en qué semana cae. Dos del mismo alumno y semana en un pedido: gana el último. */
+/** De qué alumno es cada reporte y en qué semana cae. Un reporte es de un alumno, una semana y un FORMULARIO (Lili, 29/10: quien
+    cursa Hackear Biz e IA completa los dos cada semana, y el segundo pisaba al primero): dos del mismo alumno, semana y formulario
+    en un pedido, gana el último. Un reporte viejo sin formulario se reemplaza con el primero que entra de esa semana. */
 export function planificarReportes(
   items: readonly { posicion: number; item: ItemReporte }[], alumnos: readonly AlumnoBasico[], existentes: readonly ReporteExistente[],
   hoy: string, ahora: string,
@@ -128,7 +130,8 @@ export function planificarReportes(
     const n = sinTildes(a.nombre);
     if (n) porNombre.set(n, [...(porNombre.get(n) ?? []), a]);
   }
-  const yaTiene = new Map<string, string>(existentes.map((r): [string, string] => [`${r.alumnoId}|${lunesDe(r.semanaDel)}`, r.id]));
+  const claveDe = (alumnoId: string, semana: string, formulario?: string | null) => `${alumnoId}|${semana}|${formulario ?? ""}`;
+  const yaTiene = new Map<string, string>(existentes.map((r): [string, string] => [claveDe(r.alumnoId, lunesDe(r.semanaDel), r.formulario), r.id]));
 
   const plan: PlanReportes = { filas: [], nuevos: 0, actualizados: 0, rechazados: [] };
   const porClave = new Map<string, Reporte>();
@@ -143,10 +146,13 @@ export function planificarReportes(
     const dia = item.dia ?? hoy;
     /* Las semanas van de lunes a domingo: un reporte del domingo es de la semana que termina ese día. */
     const semana = lunesDelDia(dia);
-    const clave = `${alumno.id}|${semana}`;
-    const existente = yaTiene.get(clave);
+    const formulario = item.detalle?.formulario;
+    const clave = claveDe(alumno.id, semana, formulario);
+    /* El de ese formulario; si no hay, uno viejo sin formulario de la misma semana. */
+    const sinFormulario = claveDe(alumno.id, semana);
+    const existente = yaTiene.get(clave) ?? (formulario ? yaTiene.get(sinFormulario) : undefined);
     const fila: Reporte = {
-      id: existente ?? `rep_cs_${alumno.id}_${semana}`, alumnoId: alumno.id, semanaDel: diaAInstante(semana), estado: "completado",
+      id: existente ?? `rep_cs_${alumno.id}_${semana}${formulario ? `_${formulario}` : ""}`, alumnoId: alumno.id, semanaDel: diaAInstante(semana), estado: "completado",
       completadoEn: item.dia ? diaAInstante(dia) : ahora,
       ...(item.horas !== undefined ? { horasEstudio: item.horas } : {}),
       ...(item.entrevistas !== undefined ? { entrevistas: item.entrevistas } : {}),
@@ -156,10 +162,11 @@ export function planificarReportes(
     };
     porClave.set(clave, fila);
     if (!existente) yaTiene.set(clave, fila.id);
+    if (existente && !yaTiene.has(clave)) yaTiene.set(clave, existente);
   }
   for (const [clave, fila] of porClave) {
     plan.filas.push(fila);
-    if (existentes.some((r) => `${r.alumnoId}|${lunesDe(r.semanaDel)}` === clave)) plan.actualizados++; else plan.nuevos++;
+    if (existentes.some((r) => r.id === fila.id)) plan.actualizados++; else plan.nuevos++;
   }
   return plan;
 }

@@ -24,6 +24,7 @@ import {
   deDia, filasDeReportes, hoyDelNegocio, lunesDelDia, primeraSemanaEsperada, rachasHasta, type FilaReporte,
 } from "@/lib/reportes";
 import { fechaLarga, num, pct } from "@/lib/format";
+import { formulariosDelAlumnoCon } from "@/lib/reporte-formularios";
 import type { EstadoReporte, Reporte } from "@/lib/types";
 
 type Vista = "dashboard" | "tabla" | "alumnos" | "sin-alumno";
@@ -196,16 +197,44 @@ export default function Reportes() {
   const porAlumno = useMemo(() => {
     const t = normal(busca.trim());
     const ultimo = new Map<string, string>();
-    for (const r of e.reportes) if (r.estado === "completado" && r.semanaDel > (ultimo.get(r.alumnoId) ?? "")) ultimo.set(r.alumnoId, r.semanaDel);
+    /* El último de cada formulario (Lili, 29/10: quien cursa Hackear Biz e IA completa los dos y había que ver cuál le falta). */
+    const ultimoPor = new Map<string, string>();
+    for (const r of e.reportes) {
+      if (r.estado !== "completado") continue;
+      if (r.semanaDel > (ultimo.get(r.alumnoId) ?? "")) ultimo.set(r.alumnoId, r.semanaDel);
+      const k = `${r.alumnoId}|${r.formulario ?? ""}`;
+      if (r.semanaDel > (ultimoPor.get(k) ?? "")) ultimoPor.set(k, r.semanaDel);
+    }
+    const segs = new Map((e.seguimientos ?? []).map((s) => [s.alumnoId, s] as const));
     return e.alumnos
       .filter((a) => (a.estado === "activo" || a.estado === "pausado") && (!t || normal(a.nombre).includes(t) || normal(a.email ?? "").includes(t)))
-      .map((a) => ({ id: a.id, alumno: a, ultimo: ultimo.get(a.id) ?? "" }))
+      .map((a) => {
+        const formularios = formulariosDelAlumnoCon(segs.get(a.id)?.programas, a.plan);
+        return {
+          id: a.id, alumno: a, ultimo: ultimo.get(a.id) ?? "", formularios,
+          ultimoDe: (id: string) => ultimoPor.get(`${a.id}|${id}`) ?? "",
+        };
+      })
       .sort((x, y) => x.alumno.nombre.localeCompare(y.alumno.nombre, "es"));
-  }, [e.alumnos, e.reportes, busca]);
+  }, [e.alumnos, e.reportes, e.seguimientos, busca]);
   const columnasAlumnos: Columna<(typeof porAlumno)[number]>[] = [
     { clave: "alumno", titulo: "Alumno", tipo: "primary", celda: (f) => <Persona nombre={f.alumno.nombre} sub={f.alumno.email || "Sin mail"} /> },
     { clave: "plan", titulo: "Programa", celda: (f) => f.alumno.plan || "—" },
-    { clave: "ultimo", titulo: "Último formulario", celda: (f) => (f.ultimo ? `Semana del ${fechaLarga(f.ultimo)}` : <span className="t-subtle">Nunca</span>) },
+    /* Cuál o cuáles formularios completa cada uno: se deduce de sus programas (Customer Success) o del plan de su venta. */
+    {
+      clave: "formularios", titulo: "Formularios que completa",
+      celda: (f) => (f.formularios.length
+        ? <span className="row-wrap" style={{ gap: 4 }}>{f.formularios.map((x) => <Tag key={x.id}>{x.programa}</Tag>)}</span>
+        : <span className="t-subtle" title="Su programa no tiene formulario (o no está cargado en su ficha)">Ninguno</span>),
+    },
+    {
+      clave: "ultimo", titulo: "Último formulario",
+      celda: (f) => f.formularios.length >= 2
+        ? <span className="stack-1">{f.formularios.map((x) => (
+          <span key={x.id} className="t-sm">{x.programa}: {f.ultimoDe(x.id) ? `semana del ${fechaLarga(f.ultimoDe(x.id))}` : <span className="t-subtle">nunca</span>}</span>
+        ))}</span>
+        : f.ultimo ? `Semana del ${fechaLarga(f.ultimo)}` : <span className="t-subtle">Nunca</span>,
+    },
     { clave: "link", titulo: "Su link", celda: (f) => <EnlaceDeReporte compacto alumnoId={f.alumno.id} email={f.alumno.email ?? ""} /> },
   ];
 

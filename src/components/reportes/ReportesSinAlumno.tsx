@@ -57,7 +57,7 @@ export function ReportesSinAlumno({ lista, cargando, releer }: ReturnType<typeof
     try {
       /* El de esa semana se reemplaza (como cuando lo manda con su código). */
       const semana = lunesDe(f.semanaDel);
-      const ya = (e.reportes ?? []).find((r) => r.alumnoId === alumno.id && lunesDe(r.semanaDel) === semana);
+      const ya = (e.reportes ?? []).find((r) => r.alumnoId === alumno.id && lunesDe(r.semanaDel) === semana && (!r.formulario || !f.formulario || r.formulario === f.formulario));
       const datos: Partial<Reporte> = { ...f.reporte, estado: "completado", completadoEn: f.actualizadoEn };
       let reporteId: string;
       if (ya) { acciones.actualizarSilencioso<Reporte>("reportes", ya.id, datos); reporteId = ya.id; }

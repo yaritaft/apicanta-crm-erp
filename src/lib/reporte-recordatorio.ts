@@ -1,8 +1,8 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createHash } from "node:crypto";
 import { anotarAviso, avisosDe, codigoDeAlumno, configResend, enviarPorResend, type ConfigResend } from "./reporte-servidor";
-import { armarMail, enlaceDeReporte } from "./reporte-enlace";
-import { CON_RECORDATORIO, FORMULARIOS, formularioDelAlumnoCon, formularioQueSeLePide, type IdFormulario } from "./reporte-formularios";
+import { armarMailConFormularios, enlaceDeReporte } from "./reporte-enlace";
+import { CON_RECORDATORIO, FORMULARIOS, formulariosDelAlumnoCon, formulariosQueSeLePiden, type IdFormulario } from "./reporte-formularios";
 import { lunesDelDia } from "./reportes";
 import { diaAInstante, diaDeNegocio } from "./dia-negocio";
 
@@ -12,7 +12,8 @@ import { diaAInstante, diaDeNegocio } from "./dia-negocio";
 
    Todos los lunes a las 10 (api/cron/reporte-semanal), a cada alumno activo de
    un programa con recordatorio (CON_RECORDATORIO, hoy Hackear Biz) que todavía
-   no completó el de esa semana, le llega por mail su link personal: entra
+   no completó el de esa semana, le llega por mail su link personal (uno por
+   formulario que le falte: quien cursa Biz e IA completa los dos): entra
    directo con su código y lo que contesta va a su ficha y a Formularios de
    alumnos. No se le escribe a quien ya terminó (Outboarding o caso de éxito),
    a quien no tiene un mail válido, ni a quien ya recibió un aviso en los
@@ -52,16 +53,16 @@ export async function recordarReportes(
     for (const s of (r.data ?? []) as { alumnoId: string; programas?: unknown; followUp?: string | null }[]) segs.set(s.alumnoId, s);
   }
 
-  /* Los de un programa con recordatorio que todavía cursan (la misma regla que cuenta la pantalla de Formularios de alumnos). */
+  /* Los de un programa con recordatorio que todavía cursan (la misma regla que cuenta la pantalla de Formularios de alumnos). Quien
+     cursa Hackear Biz e IA completa los dos formularios (Lili, 29/10): le llega el link de cada uno que le falte. */
   const candidatos = alumnos.flatMap((a) => {
     const s = segs.get(a.id);
-    const id = formularioQueSeLePide(a, s);
-    if (!id) {
-      const delPrograma = formularioDelAlumnoCon(s?.programas, a.plan);
-      if (delPrograma && CON_RECORDATORIO.includes(delPrograma.id)) salida.salteados.termino++;
+    const ids = formulariosQueSeLePiden(a, s);
+    if (!ids.length) {
+      if (formulariosDelAlumnoCon(s?.programas, a.plan).some((f) => CON_RECORDATORIO.includes(f.id))) salida.salteados.termino++;
       return [];
     }
-    return CON_RECORDATORIO.includes(id) ? [{ ...a, formulario: FORMULARIOS[id] }] : [];
+    return ids.some((id) => CON_RECORDATORIO.includes(id)) ? [{ ...a, formularios: ids.map((id) => FORMULARIOS[id]) }] : [];
   });
   if (!candidatos.length) return salida;
 
@@ -69,8 +70,14 @@ export async function recordarReportes(
   const hoy = diaDeNegocio(ahora.toISOString());
   const lunes = lunesDelDia(hoy);
   const desde = new Date(new Date(diaAInstante(lunes)).getTime() - 86_400_000).toISOString();
-  const rep = await db.from("reportes").select("alumnoId").in("alumnoId", candidatos.map((c) => c.id)).eq("estado", "completado").gte("semanaDel", desde);
-  const completaron = new Set(((rep.data ?? []) as { alumnoId: string }[]).map((r) => r.alumnoId));
+  const rep = await db.from("reportes").select("alumnoId, formulario").in("alumnoId", candidatos.map((c) => c.id)).eq("estado", "completado").gte("semanaDel", desde);
+  /* Qué formularios completó cada uno (uno viejo sin formulario cuenta como todos). */
+  const completaron = new Map<string, Set<string>>();
+  for (const r of (rep.data ?? []) as { alumnoId: string; formulario?: string | null }[]) {
+    const set = completaron.get(r.alumnoId) ?? new Set<string>();
+    set.add(r.formulario ?? "*");
+    completaron.set(r.alumnoId, set);
+  }
   const avisos = await avisosDe(db, candidatos.map((c) => c.id));
   /* El remitente no recibe respuestas: si el alumno contesta el mail, le llega a quien atiende (el mismo de la bienvenida). */
   const aj = await db.from("ajustes").select("bienvenida").eq("id", 1).maybeSingle();
@@ -78,7 +85,9 @@ export async function recordarReportes(
   const responderA = MAIL.test(responder) ? responder : undefined;
 
   for (const c of candidatos) {
-    if (completaron.has(c.id)) { salida.salteados.yaLoCompleto++; continue; }
+    const hechos = completaron.get(c.id);
+    const faltan = c.formularios.filter((f) => !hechos?.has(f.id) && !hechos?.has("*"));
+    if (faltan.length === 0) { salida.salteados.yaLoCompleto++; continue; }
     const ultimo = avisos.get(c.id)?.en;
     if (ultimo && ahora.getTime() - new Date(ultimo).getTime() < DIAS_ENTRE_AVISOS * 86_400_000) { salida.salteados.avisadoHace++; continue; }
     const email = (c.email ?? "").trim();
@@ -86,12 +95,12 @@ export async function recordarReportes(
     try {
       const codigo = await codigoDeAlumno(db, c.id);
       if (!codigo) { salida.fallaron++; continue; }
-      const mail = armarMail({ nombre: c.nombre, enlace: enlaceDeReporte(origen, codigo), programa: c.formulario.programa });
+      const mail = armarMailConFormularios({ nombre: c.nombre, formularios: faltan.map((f) => ({ programa: f.programa, enlace: enlaceDeReporte(origen, codigo, f.id) })) });
       const r = await enviar(cfg, { para: email, asunto: mail.asunto, texto: mail.texto, html: mail.html, responderA });
       if (!r.ok) { salida.fallaron++; console.error("[reporte-semanal]", c.id, r.error); continue; }
       await anotarAviso(db, c.id, { id: r.id, estado: "sent" });
       salida.mandados++;
-      salida.porPrograma[c.formulario.id] = (salida.porPrograma[c.formulario.id] ?? 0) + 1;
+      for (const f of faltan) salida.porPrograma[f.id] = (salida.porPrograma[f.id] ?? 0) + 1;
     } catch (e) {
       salida.fallaron++;
       console.error("[reporte-semanal]", c.id, e instanceof Error ? e.message : String(e));

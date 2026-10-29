@@ -15,7 +15,7 @@
    insiste. La base y el envío están en lib/reporte-servidor.ts.
    ================================================================== */
 
-import { esIdFormulario, FORMULARIOS, validarRespuestas, type FormularioReporte, type Respuestas } from "./reporte-formularios";
+import { ATAJO_DE, esIdFormulario, FORMULARIOS, validarRespuestas, type FormularioReporte, type IdFormulario, type Respuestas } from "./reporte-formularios";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -30,10 +30,12 @@ export function origenDeLaApp(req: Request): string {
   return process.env.APP_URL?.trim() || new URL(req.url).origin;
 }
 
-/** El link que se le da a todos; con el código, el formulario ya viene lleno. */
-export function enlaceDeReporte(origen: string, codigo?: string): string {
+/** El link que se le da a todos; con el código, el formulario ya viene lleno. Con `formulario`, entra directo al de ese programa:
+ *  el alumno que cursa Hackear Biz e IA tiene dos links, uno por formulario (Lili, 29/10). */
+export function enlaceDeReporte(origen: string, codigo?: string, formulario?: IdFormulario): string {
   const base = `${origen.replace(/\/+$/, "")}/reporte`;
-  return codigo ? `${base}?c=${encodeURIComponent(codigo)}` : base;
+  if (!codigo) return base;
+  return `${base}?c=${encodeURIComponent(codigo)}${formulario ? `&p=${ATAJO_DE[formulario]}` : ""}`;
 }
 
 export const primerNombre = (nombre?: string | null): string => {
@@ -53,7 +55,42 @@ export function mensajeParaAlumno(a: { nombre?: string | null; enlace: string; c
   ].join("\n");
 }
 
+/** El texto para pegar en un WhatsApp con el link de cada formulario que le toca (dos si cursa Hackear Biz e IA). */
+export function mensajeConFormularios(a: { nombre?: string | null; codigo: string; formularios: { programa: string; enlace: string }[] }): string {
+  const saludo = primerNombre(a.nombre);
+  if (a.formularios.length <= 1) return mensajeParaAlumno({ nombre: a.nombre, enlace: a.formularios[0]?.enlace ?? "", codigo: a.codigo });
+  return [
+    `Hola${saludo ? ` ${saludo}` : ""}! Estos son tus links para completar los formularios semanales (son dos, uno por programa):`,
+    "",
+    ...a.formularios.flatMap((f) => [`• ${f.programa}:`, f.enlace, ""]),
+    `Si el formulario te pide tu código, es: ${a.codigo}`,
+    "Son tuyos y siempre los mismos: guardalos y usalos cada semana.",
+  ].join("\n");
+}
+
 const escaparHtml = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+
+/** El aviso por mail de un alumno que completa más de un formulario: un botón por formulario que todavía le falta. */
+export function armarMailConFormularios(a: { nombre?: string | null; formularios: { programa: string; enlace: string }[] }): { asunto: string; texto: string; html: string } {
+  if (a.formularios.length <= 1) return armarMail({ nombre: a.nombre, enlace: a.formularios[0]?.enlace ?? "", programa: a.formularios[0]?.programa });
+  const saludo = primerNombre(a.nombre);
+  const programas = a.formularios.map((f) => f.programa);
+  const asunto = `Tus formularios semanales de ${programas.join(" y ")}`;
+  const texto = [
+    `Hola${saludo ? ` ${saludo}` : ""}!`,
+    "",
+    "Ya podés completar tus formularios de seguimiento de esta semana. Son los mismos links de siempre, con tu código:",
+    "",
+    ...a.formularios.flatMap((f) => [`• ${f.programa}:`, f.enlace, ""]),
+    "Si un link no abre, copialo y pegalo en el navegador.",
+  ].join("\n");
+  const botones = a.formularios.map((f) => `<p style="margin:0 0 12px"><a href="${escaparHtml(f.enlace)}" style="display:inline-block;background:#f7931e;color:#1c1530;text-decoration:none;font-weight:700;padding:10px 18px;border-radius:8px">Completar ${escaparHtml(f.programa)}</a><br><span style="color:#6b6480;font-size:13px">${escaparHtml(f.enlace)}</span></p>`).join("");
+  const html = `<div style="font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.5;color:#1c1530">`
+    + `<p>Hola${saludo ? ` ${escaparHtml(saludo)}` : ""}!</p>`
+    + `<p>Ya podés completar tus formularios de seguimiento de esta semana. Son los mismos links de siempre, con tu código:</p>${botones}`
+    + `<p style="color:#6b6480;font-size:13px">Si un botón no abre, copiá su link en el navegador.</p></div>`;
+  return { asunto, texto, html };
+}
 
 /** El aviso por mail: asunto, texto y HTML. El nombre lo escribe cualquiera: se escapa. */
 export function armarMail(a: { nombre?: string | null; enlace: string; programa?: string }): { asunto: string; texto: string; html: string } {

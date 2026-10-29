@@ -3,9 +3,9 @@ import { exigirArea } from "@/lib/permisos-servidor";
 import { nubeServidor } from "@/lib/servidor";
 import { leerJson } from "@/lib/whatsapp-servidor";
 import {
-  alumnoPorId, anotarAviso, avisosDe, codigoDeAlumno, configResend, enviarPorResend, ErrorSinTablaCodigos, estadoEnResend,
+  alumnoPorId, anotarAviso, avisosDe, codigoDeAlumno, configResend, enviarPorResend, ErrorSinTablaCodigos, estadoEnResend, formulariosDelAlumno,
 } from "@/lib/reporte-servidor";
-import { armarMail, enlaceDeReporte, origenDeLaApp } from "@/lib/reporte-enlace";
+import { armarMail, armarMailConFormularios, enlaceDeReporte, origenDeLaApp } from "@/lib/reporte-enlace";
 
 /* ==================================================================
    El aviso del reporte semanal por mail (Resend).
@@ -68,7 +68,11 @@ export async function POST(req: Request) {
         if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(alumno.email ?? "")) { resultados.push({ alumnoId: id, ok: false, error: "No tiene un mail válido cargado." }); continue; }
         const codigo = await codigoDeAlumno(db, id);
         if (!codigo) { resultados.push({ alumnoId: id, ok: false, error: "No encontré a ese alumno." }); continue; }
-        const mail = armarMail({ nombre: alumno.nombre, enlace: enlaceDeReporte(origen, codigo) });
+        /* Con dos formularios (Hackear Biz e IA), un link por cada uno. */
+        const suyos = await formulariosDelAlumno(db, id);
+        const mail = suyos.length >= 2
+          ? armarMailConFormularios({ nombre: alumno.nombre, formularios: suyos.map((f) => ({ programa: f.programa, enlace: enlaceDeReporte(origen, codigo, f.id) })) })
+          : armarMail({ nombre: alumno.nombre, enlace: enlaceDeReporte(origen, codigo) });
         const r = await enviarPorResend(cfg, { para: alumno.email, asunto: mail.asunto, texto: mail.texto, html: mail.html });
         if (!r.ok) { resultados.push({ alumnoId: id, ok: false, error: r.error }); continue; }
         await anotarAviso(db, id, { id: r.id, estado: "sent" });
