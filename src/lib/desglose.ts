@@ -257,6 +257,10 @@ export interface PartesProfit {
   gastosOperativos: number;
   /* Lo que esta misma liquidación carga como sueldos y honorarios. */
   sueldos: number;
+  /* De eso, lo que es comisión (la del director y la del setter, y los descuentos a un closer): se dice aparte de los sueldos. */
+  comisionesDeLiquidacion?: number;
+  /* Pagos al equipo cargados a mano como gasto que entran como costo (la liquidación no los cuenta). */
+  equipoCargado?: number;
   /* Lo que se lleva el dueño: NO resta del profit (se descuenta después del resultado operativo). Se
      guarda sólo para decirlo en el desglose. */
   honorariosCeo?: number;
@@ -388,15 +392,28 @@ function pasosDeProfit(f: Extract<Fuente, { tipo: "profit" }>, valor: number, B:
  *  (Aldana, 27/10: «los gastos que aparecen son 34.181,60 y los costos dicen 61.804,71, ¿de dónde sale la diferencia?»). */
 function partesDeLosCostos(p: PartesProfit, B: Moneda): NonNullable<PasoDesglose["partes"]> {
   const dev = p.devoluciones ?? 0;
+  /* Las comisiones juntas, como las suma quien paga (Aldana, 29/10: «si sumo las de los closers y Santi me da 13.693,87»): las de
+     los closers (Finanzas las calcula de las ventas) y las de esta liquidación (director, setter, descuentos a un closer). Los
+     sueldos, lo que queda. Sin ese dato (una liquidación vieja), como siempre. */
+  const separadas = p.comisionesDeLiquidacion !== undefined;
+  const comisiones = separadas ? r2(p.comisiones + p.comisionesDeLiquidacion!) : p.comisiones;
+  const sueldos = separadas ? r2(p.sueldos - p.comisionesDeLiquidacion!) : p.sueldos;
   return [
     { texto: "Gastos cargados en Finanzas", valor: r2(p.otrosDirectos + p.gastosOperativos), grupo: true },
     { texto: "Otros costos directos", valor: p.otrosDirectos },
-    { texto: "Gastos operativos", valor: p.gastosOperativos },
+    {
+      texto: "Gastos operativos", valor: p.gastosOperativos,
+      ...(p.equipoCargado ? { nota: `Incluye ${M(p.equipoCargado, B)} de pagos al equipo cargados a mano (editores, filmmaker, otros): la liquidación no los cuenta` } : {}),
+    },
     { texto: "Lo que la app calcula sola (no está cargado como gasto)", valor: r2(dev + p.procesadores + p.comisiones + p.sueldos), grupo: true },
     ...(dev > 0 ? [{ texto: "Devoluciones a clientes", valor: dev }] : []),
     { texto: "Lo que se quedan los procesadores de pago", valor: p.procesadores, nota: "Se calcula de cada cobro" },
-    { texto: "Comisiones de closers y del director", valor: p.comisiones, nota: "Se calculan de las ventas" },
-    { texto: "Sueldos y honorarios de esta liquidación", valor: p.sueldos, nota: "Lo que se carga en esta pantalla (sin el CEO)" },
+    separadas
+      ? { texto: "Comisiones de closers, setters y director", valor: comisiones, nota: "Las de los closers salen de las ventas; las del director y el setter, de esta liquidación; menos los descuentos a mano a un closer" }
+      : { texto: "Comisiones de closers y del director", valor: comisiones, nota: "Se calculan de las ventas" },
+    separadas
+      ? { texto: "Sueldos, bonos y pagos por pieza de esta liquidación", valor: sueldos, nota: "Fijos, bonos y piezas que se cargan en esta pantalla (sin el CEO ni las comisiones)" }
+      : { texto: "Sueldos y honorarios de esta liquidación", valor: sueldos, nota: "Lo que se carga en esta pantalla (sin el CEO)" },
     ...(p.pagosDeEquipo ? [{
       texto: "Pagos al equipo cargados como gasto y marcados", valor: p.pagosDeEquipo, aparte: true,
       nota: "No suman: ya los cuenta la liquidación o las comisiones de Finanzas",

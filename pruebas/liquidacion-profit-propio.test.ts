@@ -287,3 +287,29 @@ test("un gasto marcado como pago al equipo no suma en los costos del profit prop
   assert.match(aparte.texto, /Pagos al equipo cargados como gasto y marcados/);
   assert.equal(evaluarPasos(linea(marca, "beto", "c_beto").desglose!.pasos).fallas.length, 0);
 });
+
+test("el paso de los costos junta las comisiones por un lado y los sueldos por otro, y dice cuánto del equipo está cargado a mano (Aldana, 29/10)", () => {
+  const e = septiembre();
+  e.gastos = [...e.gastos, {
+    id: "g_edit", categoria: "Edición de contenido", grupo: "operativo", concepto: "Pago a editores", proveedor: "Julio",
+    monto: 1_267, moneda: "USD", fecha: f(9, 20), recurrente: false, creadoEn: f(9, 20), extra: {},
+  } as never, {
+    id: "g_marcado", categoria: "Equipo / Salarios", grupo: "operativo", concepto: "Sueldo ya contado", proveedor: "Otro",
+    monto: 400, moneda: "USD", fecha: f(9, 21), recurrente: false, creadoEn: f(9, 21), extra: { pagoDeEquipo: true },
+  } as never];
+  const r = calcularLiquidacion(e, PERIODO);
+  const d = linea(r, "beto", "c_beto").desglose!;
+  const partes = d.pasos.find((p) => /Costos del mes que se le imputan/.test(p.texto))!.partes!;
+  const por = (re: RegExp) => partes.find((x) => re.test(x.texto))!;
+  const comisiones = por(/^Comisiones de closers, setters y director/);
+  const sueldos = por(/^Sueldos, bonos y pagos por pieza/);
+  assert.ok(comisiones && sueldos, "las comisiones y los sueldos van en dos renglones");
+  assert.match(sueldos.nota ?? "", /sin el CEO ni las comisiones/);
+  /* Lo que el motor suma por esos dos renglones no cambió: sólo se reparte distinto. */
+  const iApp = partes.findIndex((x) => /Lo que la app calcula sola/.test(x.texto));
+  const resto = partes.slice(iApp + 1).filter((x) => !x.aparte && !/Devoluciones|procesadores/.test(x.texto)).reduce((a, x) => a + x.valor, 0);
+  assert.ok(Math.abs(comisiones.valor + sueldos.valor - resto) < 0.005);
+  /* Los pagos al equipo cargados a mano (los marcados no) figuran en los gastos operativos. */
+  assert.match(por(/^Gastos operativos/).nota ?? "", /Incluye .*1\.267.* de pagos al equipo cargados a mano/);
+  assert.doesNotMatch(por(/^Gastos operativos/).nota ?? "", /400/);
+});

@@ -4,10 +4,11 @@ import type {
   ResultadoLiquidacion, TipoConcepto, Venta,
 } from "./types";
 import type { RangoMes } from "./metricas";
-import { calcularPyL, closerDeCuota, cobraEnFecha, pagosDelMes, parteMarketing, tasaDeComision, ventasDelMes } from "./finanzas";
+import { calcularPyL, closerDeCuota, cobraEnFecha, costosDelMes, pagosDelMes, parteMarketing, tasaDeComision, ventasDelMes } from "./finanzas";
 import { esPeriodo, finDelDia, moverPeriodo, nombrePeriodo, periodoDe, rangoDePeriodo } from "./periodos";
 import { aMonedaBase, categoriaDe, normalizar } from "./gastos";
 import { totalMarcados } from "./pagos-equipo";
+import { grupoDeLinea } from "./equipo-por-tipo";
 import { fechaLarga, money, num, pct, tasaTexto } from "./format";
 import {
   conCorreccion, desgloseBono, desgloseDeudaQueEntra, desgloseDeudaQueSale, desgloseFijo, desgloseMedido, desglosePieza,
@@ -1100,6 +1101,9 @@ function comisionDeFinanzas(m: MiembroEquipo): ConceptoPago[] {
 
 /** La liquidación del mes, calculada con los datos de hoy. Una liquidación
  *  cerrada se muestra con su foto (`resultado`), no con esto. */
+/* Las categorías de gasto donde se cargan a mano los pagos a la gente del equipo. */
+const CATEGORIAS_DE_EQUIPO = new Set(["Equipo / Salarios", "Edición de contenido", "Filmmaker"]);
+
 export function calcularLiquidacion(e: EstadoApp, periodo: string, liq?: Liquidacion | null): ResultadoLiquidacion {
   const rango = rangoDePeriodo(periodo);
   /* Con fecha de corte, el profit y las devoluciones también llegan sólo hasta ese día. */
@@ -1191,10 +1195,22 @@ export function calcularLiquidacion(e: EstadoApp, periodo: string, liq?: Liquida
   const idLiq = idLiquidacion(periodo);
   const pyl = calcularPyL({ ...e, gastos: e.gastos.filter((g) => g.extra?.liquidacionId !== idLiq) }, rangoMedido);
   let aCargar = 0;
+  /* De lo que carga esta liquidación, lo que es comisión (del director, del setter, y los descuentos que se le hacen a un closer):
+     para decirlo aparte de los sueldos en el desglose de los costos (Aldana, 29/10). */
+  let aCargarComisiones = 0;
   for (const f of filas) {
     if ((categoriaDe(e, f.persona.categoriaGasto)?.grupo ?? "operativo") === "dueno") continue;
-    for (const l of f.lineas) if (l && !l.enFinanzas) aCargar += l.montoBase;
+    for (const l of f.lineas) {
+      if (!l || l.enFinanzas) continue;
+      aCargar += l.montoBase;
+      const g = grupoDeLinea(f.m.rol, f.persona.categoriaGasto, l);
+      if (g === "closers" || g === "directores") aCargarComisiones += l.montoBase;
+    }
   }
+  /* Los pagos al equipo que alguien cargó a mano como gasto y la liquidación no cuenta (editores, filmmaker, una sociedad):
+     entran como gasto operativo; se dice cuánto es para poder compararlo con «sueldos del equipo». */
+  const equipoCargado = r2(costosDelMes({ ...e, gastos: e.gastos.filter((g) => g.extra?.liquidacionId !== idLiq) }, rangoMedido)
+    .filter((g) => g.grupo === "operativo" && CATEGORIAS_DE_EQUIPO.has(g.categoria)).reduce((a, g) => a + g.monto, 0));
   const profit = r2(pyl.operativoCC - aCargar);
   const prof: Profit = {
     profit, parte: parteMarketing(e, rangoMedido),
@@ -1204,6 +1220,7 @@ export function calcularLiquidacion(e: EstadoApp, periodo: string, liq?: Liquida
       cash: r2(pyl.cobrado), ...(pyl.devoluciones > 0 ? { devoluciones: r2(pyl.devoluciones) } : {}),
       procesadores: r2(pyl.feesProcesador), comisiones: r2(pyl.comisionCloser + pyl.comisionDirector),
       otrosDirectos: r2(pyl.otrosDirectos), gastosOperativos: r2(pyl.gastosOperativos), sueldos: r2(aCargar),
+      comisionesDeLiquidacion: r2(aCargarComisiones), ...(equipoCargado > 0 ? { equipoCargado } : {}),
       honorariosCeo: r2(pyl.honorariosCeo),
       ...(totalMarcados(e, rangoMedido) > 0 ? { pagosDeEquipo: totalMarcados(e, rangoMedido) } : {}),
     },
