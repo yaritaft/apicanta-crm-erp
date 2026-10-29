@@ -134,9 +134,40 @@ export function formularioQueSeLePide(
  *  «Mentoría», el plan de su venta. Principals y los demás programas no tienen formulario: lista vacía. */
 export function formulariosDe(textos: readonly (string | null | undefined)[] | null | undefined): FormularioReporte[] {
   const ts = (textos ?? []).map((t) => sinTildes(String(t ?? "")));
-  const biz = ts.some((t) => /\bbiz\b|business/.test(t));
-  const it = ts.some((t) => /\bit\b|\bia\b|\bai\b|mentoria/.test(t));
+  const biz = ts.some((t) => ES_BIZ.test(t));
+  const it = ts.some((t) => ES_IT.test(t));
   return [...(biz ? [FORMULARIO_BIZ] : []), ...(it ? [FORMULARIO_IT] : [])];
+}
+
+/* Cómo se reconoce el programa de cada formulario (sobre el texto sin tildes y en minúscula). Es lo único que decide qué formulario
+   recibe un alumno: el programa es un texto libre de su ficha, así que un nombre nuevo («Hackear Pro») no dejaba un error: el
+   alumno simplemente no recibía ninguno (Lili, 29/10: «Hackear IA» no se reconocía y los de Biz que cursaban los dos no
+   completaban el de IA). Por eso, abajo, también se sabe qué programas NO tienen formulario a propósito, y todo lo demás es «programa
+   sin reconocer» y se avisa. */
+const ES_BIZ = /\bbiz\b|business/;
+const ES_IT = /\bit\b|\bia\b|\bai\b|mentoria/;
+/* Programas que no completan un formulario semanal: el Downsell (contenido grabado), Principals y su Mastermind, y las devoluciones. */
+const SIN_FORMULARIO = /downsell|principal|mastermind|devolucion|reembolso|no aplica/;
+
+/** Los textos de programa (o plan) que la app no sabe qué hacer: ni de un formulario ni de un programa que no lo lleva. */
+export function programasSinReconocer(programas: unknown, plan: unknown): string[] {
+  const propios = Array.isArray(programas) ? programas.filter((x): x is string => typeof x === "string" && x.trim() !== "") : [];
+  const textos = propios.length ? propios : typeof plan === "string" && plan.trim() ? [plan] : [];
+  if (textos.length === 0) return ["(sin programa ni plan)"];
+  return textos.filter((t) => {
+    const s = sinTildes(t);
+    return !ES_BIZ.test(s) && !ES_IT.test(s) && !SIN_FORMULARIO.test(s);
+  });
+}
+
+/** Los alumnos activos con un programa que la app no reconoce: no reciben ningún formulario y nadie se entera. */
+export function alumnosConProgramaSinReconocer<A extends { id: string; nombre: string; estado: string; plan?: string | null }>(
+  alumnos: readonly A[], seguimientos: ReadonlyMap<string, { programas?: unknown; followUp?: string | null }>,
+): { id: string; nombre: string; programas: string[] }[] {
+  return alumnos
+    .filter((a) => a.estado === "activo")
+    .map((a) => ({ id: a.id, nombre: a.nombre, programas: programasSinReconocer(seguimientos.get(a.id)?.programas, a.plan) }))
+    .filter((x) => x.programas.length > 0);
 }
 
 /** El formulario que le toca a un alumno cuando es uno solo (Hackear Biz o Hackear IT). Si cursa los dos, o ninguno (Principals…),

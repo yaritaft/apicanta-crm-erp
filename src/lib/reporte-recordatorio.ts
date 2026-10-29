@@ -2,7 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { createHash } from "node:crypto";
 import { anotarAviso, avisosDe, codigoDeAlumno, configResend, enviarPorResend, type ConfigResend } from "./reporte-servidor";
 import { armarMailConFormularios, enlaceDeReporte } from "./reporte-enlace";
-import { CON_RECORDATORIO, FORMULARIOS, formulariosDelAlumnoCon, formulariosQueSeLePiden, type IdFormulario } from "./reporte-formularios";
+import { alumnosConProgramaSinReconocer, CON_RECORDATORIO, FORMULARIOS, formulariosDelAlumnoCon, formulariosQueSeLePiden, type IdFormulario } from "./reporte-formularios";
 import { lunesDelDia } from "./reportes";
 import { diaAInstante, diaDeNegocio } from "./dia-negocio";
 
@@ -33,12 +33,14 @@ export interface PasadaRecordatorio {
   fallaron: number;
   salteados: { yaLoCompleto: number; avisadoHace: number; sinMail: number; termino: number };
   porPrograma: Partial<Record<IdFormulario, number>>;
+  /* Alumnos activos con un programa que la app no reconoce: no reciben ningún formulario (se avisa a Customer Success). */
+  sinReconocer: { id: string; nombre: string; programas: string[] }[];
 }
 
 export async function recordarReportes(
   db: SupabaseClient, origen: string, ahora = new Date(), enviar: Enviar = enviarPorResend, cfg: ConfigResend | null = configResend(),
 ): Promise<PasadaRecordatorio> {
-  const salida: PasadaRecordatorio = { habilitado: Boolean(cfg), mandados: 0, fallaron: 0, salteados: { yaLoCompleto: 0, avisadoHace: 0, sinMail: 0, termino: 0 }, porPrograma: {} };
+  const salida: PasadaRecordatorio = { habilitado: Boolean(cfg), mandados: 0, fallaron: 0, salteados: { yaLoCompleto: 0, avisadoHace: 0, sinMail: 0, termino: 0 }, porPrograma: {}, sinReconocer: [] };
   if (!cfg) return salida;
 
   const al = await db.from("alumnos").select("id, nombre, email, plan, estado").eq("estado", "activo");
@@ -53,6 +55,9 @@ export async function recordarReportes(
     for (const s of (r.data ?? []) as { alumnoId: string; programas?: unknown; followUp?: string | null }[]) segs.set(s.alumnoId, s);
   }
 
+  /* El programa es un texto libre de la ficha: uno que la app no reconoce deja al alumno sin formulario y sin error. Se avisa. */
+  salida.sinReconocer = alumnosConProgramaSinReconocer(alumnos, segs as ReadonlyMap<string, { programas?: unknown; followUp?: string | null }>);
+
   /* Los de un programa con recordatorio que todavía cursan (la misma regla que cuenta la pantalla de Formularios de alumnos). Quien
      cursa Hackear Biz e IA completa los dos formularios (Lili, 29/10): le llega el link de cada uno que le falte. */
   const candidatos = alumnos.flatMap((a) => {
@@ -64,7 +69,7 @@ export async function recordarReportes(
     }
     return ids.some((id) => CON_RECORDATORIO.includes(id)) ? [{ ...a, formularios: ids.map((id) => FORMULARIOS[id]) }] : [];
   });
-  if (!candidatos.length) return salida;
+  if (!candidatos.length) { if (salida.sinReconocer.length) await avisarSinReconocer(db, diaDeNegocio(ahora.toISOString()), salida.sinReconocer); return salida; }
 
   /* Los que ya completaron el de esta semana. */
   const hoy = diaDeNegocio(ahora.toISOString());
@@ -107,7 +112,24 @@ export async function recordarReportes(
     }
   }
   if (salida.mandados + salida.fallaron > 0) await avisarAServicio(db, hoy, salida);
+  if (salida.sinReconocer.length) await avisarSinReconocer(db, hoy, salida.sinReconocer);
   return salida;
+}
+
+/* Un aviso por lunes a Customer Success: quiénes tienen un programa que la app no reconoce (no reciben ningún formulario). */
+async function avisarSinReconocer(db: SupabaseClient, hoy: string, lista: PasadaRecordatorio["sinReconocer"]): Promise<void> {
+  try {
+    const r = await db.from("equipo").select("email").eq("activo", true)
+      .or("puesto.ilike.%customer success%,puesto.ilike.%servicio%,puesto.ilike.%csm%");
+    const ejemplos = lista.slice(0, 8).map((a) => `${a.nombre} («${a.programas.join("», «")}»)`).join("; ");
+    const cuerpo = `${lista.length === 1 ? "1 alumno activo tiene" : `${lista.length} alumnos activos tienen`} un programa que la app no reconoce y por eso no ${lista.length === 1 ? "recibe" : "reciben"} ningún formulario semanal: ${ejemplos}${lista.length > 8 ? "…" : ""}. Corregí su Programa en la ficha (Servicio → Programa) o avisá para sumar el nombre nuevo a la app.`;
+    const filas = ((r.data ?? []) as { email: string | null }[]).filter((x) => x.email?.trim()).map((x) => ({
+      id: `av_reporte_sinprograma_${hoy}_${createHash("sha1").update(x.email!.trim().toLowerCase()).digest("hex").slice(0, 10)}`,
+      para: x.email!.trim().toLowerCase(), tipo: "reporte-semanal", titulo: "Alumnos sin formulario semanal: programa sin reconocer",
+      cuerpo, de: "Apicanta", contactoId: null, persona: null,
+    }));
+    if (filas.length) await db.from("avisos").upsert(filas, { onConflict: "id", ignoreDuplicates: true });
+  } catch (err) { console.error("[reporte-semanal] no se pudo avisar de los programas sin reconocer", err instanceof Error ? err.message : String(err)); }
 }
 
 /* Un aviso por lunes a Customer Success: cuántos salieron y cuántos fallaron. */

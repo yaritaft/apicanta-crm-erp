@@ -24,7 +24,7 @@ import {
   deDia, filasDeReportes, hoyDelNegocio, lunesDelDia, primeraSemanaEsperada, rachasHasta, type FilaReporte,
 } from "@/lib/reportes";
 import { fechaLarga, num, pct } from "@/lib/format";
-import { formulariosDelAlumnoCon } from "@/lib/reporte-formularios";
+import { alumnosConProgramaSinReconocer, formulariosDelAlumnoCon, programasSinReconocer } from "@/lib/reporte-formularios";
 import type { EstadoReporte, Reporte } from "@/lib/types";
 
 type Vista = "dashboard" | "tabla" | "alumnos" | "sin-alumno";
@@ -211,12 +211,17 @@ export default function Reportes() {
       .map((a) => {
         const formularios = formulariosDelAlumnoCon(segs.get(a.id)?.programas, a.plan);
         return {
-          id: a.id, alumno: a, ultimo: ultimo.get(a.id) ?? "", formularios,
+          id: a.id, alumno: a, ultimo: ultimo.get(a.id) ?? "", formularios, programas: segs.get(a.id)?.programas,
           ultimoDe: (id: string) => ultimoPor.get(`${a.id}|${id}`) ?? "",
         };
       })
       .sort((x, y) => x.alumno.nombre.localeCompare(y.alumno.nombre, "es"));
   }, [e.alumnos, e.reportes, e.seguimientos, busca]);
+  /* Los activos con un programa que la app no reconoce (sin formulario y sin error): se ven arriba de la tabla. */
+  const sinReconocer = useMemo(
+    () => alumnosConProgramaSinReconocer(e.alumnos, new Map((e.seguimientos ?? []).map((s) => [s.alumnoId, s] as const))),
+    [e.alumnos, e.seguimientos],
+  );
   const columnasAlumnos: Columna<(typeof porAlumno)[number]>[] = [
     { clave: "alumno", titulo: "Alumno", tipo: "primary", celda: (f) => <Persona nombre={f.alumno.nombre} sub={f.alumno.email || "Sin mail"} /> },
     { clave: "plan", titulo: "Programa", celda: (f) => f.alumno.plan || "—" },
@@ -225,7 +230,12 @@ export default function Reportes() {
       clave: "formularios", titulo: "Formularios que completa",
       celda: (f) => (f.formularios.length
         ? <span className="row-wrap" style={{ gap: 4 }}>{f.formularios.map((x) => <Tag key={x.id}>{x.programa}</Tag>)}</span>
-        : <span className="t-subtle" title="Su programa no tiene formulario (o no está cargado en su ficha)">Ninguno</span>),
+        : (() => {
+          const raros = programasSinReconocer(f.programas, f.alumno.plan);
+          return raros.length
+            ? <span style={{ color: "var(--warning)" }} title="La app no reconoce este programa y por eso no le llega ningún formulario: corregilo en su ficha">Programa sin reconocer: «{raros.join("», «")}»</span>
+            : <span className="t-subtle" title="Su programa no lleva formulario semanal (Downsell, Principals…)">Ninguno</span>;
+        })()),
     },
     {
       clave: "ultimo", titulo: "Último formulario",
@@ -573,6 +583,12 @@ export default function Reportes() {
               </Button>
             </span>
           </div>
+          {sinReconocer.length > 0 && (
+            <p className="t-sm" role="alert" style={{ color: "var(--warning)", margin: "0 0 12px" }}>
+              {sinReconocer.length === 1 ? "1 alumno activo tiene" : `${sinReconocer.length} alumnos activos tienen`} un programa que la app no reconoce y no {sinReconocer.length === 1 ? "recibe" : "reciben"} ningún formulario:{" "}
+              {sinReconocer.slice(0, 6).map((a) => `${a.nombre} («${a.programas.join("», «")}»)`).join("; ")}{sinReconocer.length > 6 ? "…" : ""}. Corregí su Programa en la ficha (Servicio).
+            </p>
+          )}
           <Card style={{ padding: 0 }}>
             <DataTable
               filas={porAlumno} columnas={columnasAlumnos} alto={620} porPagina={50}

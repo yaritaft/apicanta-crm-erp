@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { formularioDe, formulariosDe, formulariosDelAlumnoCon, formulariosQueSeLePiden } from "@/lib/reporte-formularios";
+import { alumnosConProgramaSinReconocer, formularioDe, formulariosDe, formulariosDelAlumnoCon, formulariosQueSeLePiden, programasSinReconocer } from "@/lib/reporte-formularios";
 import { armarMailConFormularios, enlaceDeReporte, mensajeConFormularios } from "@/lib/reporte-enlace";
 import { planificarReportes } from "@/lib/reportes-webhook";
 import { recordarReportes } from "@/lib/reporte-recordatorio";
@@ -146,4 +146,63 @@ test("los lunes: quien cursa Biz e IA recibe un mail con el link de cada formula
   assert.doesNotMatch(de("romina@x.com").texto, /&p=it/, "Romina no es programadora: sólo Biz");
   assert.deepEqual(r.salteados, { yaLoCompleto: 1, avisadoHace: 0, sinMail: 0, termino: 1 });
   assert.deepEqual(r.porPrograma, { "hackear-biz": 2, "hackear-it": 2 });
+});
+
+/* ---------- La raíz: un programa que la app no reconoce no puede dejar a nadie sin formulario en silencio ---------- */
+
+
+/* Los programas y planes que tienen hoy los alumnos activos en producción (29/10). */
+const REALES = ["Hackear IT", "HACKEAR IA", "Hackear AI", "Hackear Biz", "DOWNSELL", "Downsell", "Principals", "Devolución"];
+
+test("todos los programas que existen hoy están clasificados: con formulario o sin formulario a propósito", () => {
+  for (const p of REALES) assert.deepEqual(programasSinReconocer([p], null), [], p);
+  for (const plan of ["Mentoría", "Hackear IT Full", "Upgrade AI", "Upsell", "Hackear Biz - 6 meses"]) {
+    /* El plan de la venta sólo cuenta cuando el alumno no tiene programa cargado. */
+    if (/upsell|upgrade/i.test(plan)) continue;
+    assert.deepEqual(programasSinReconocer(null, plan), [], plan);
+  }
+});
+
+test("un programa nuevo, o un alumno sin ninguno, se marca como sin reconocer", () => {
+  assert.deepEqual(programasSinReconocer(["Hackear Pro"], null), ["Hackear Pro"]);
+  assert.deepEqual(programasSinReconocer(["Hackear IT", "Hackear Pro"], null), ["Hackear Pro"], "los demás sí se reconocen");
+  assert.deepEqual(programasSinReconocer([], ""), ["(sin programa ni plan)"]);
+  assert.deepEqual(programasSinReconocer(null, null), ["(sin programa ni plan)"]);
+  assert.deepEqual(programasSinReconocer(["  "], "Mentoría"), [], "un programa vacío cae al plan");
+});
+
+test("la lista de alumnos con programa sin reconocer: sólo los activos", () => {
+  const segs = new Map<string, { programas?: unknown }>([["a1", { programas: ["Hackear Pro"] }], ["a2", { programas: ["Principals"] }], ["a3", { programas: ["Hackear Pro"] }]]);
+  const lista = alumnosConProgramaSinReconocer([
+    { id: "a1", nombre: "Ana", estado: "activo", plan: "" }, { id: "a2", nombre: "Beto", estado: "activo", plan: "" },
+    { id: "a3", nombre: "Caro", estado: "egresado", plan: "" },
+  ], segs);
+  assert.deepEqual(lista, [{ id: "a1", nombre: "Ana", programas: ["Hackear Pro"] }]);
+});
+
+test("los lunes, quien tiene un programa nuevo no pasa desapercibido: Customer Success recibe el aviso con su nombre", async () => {
+  const db = {
+    escritos: [] as { tabla: string; datos: unknown }[],
+    from(tabla: string) {
+      const filas: Record<string, Record<string, unknown>[]> = {
+        alumnos: [{ id: "a1", nombre: "Ana Pro", email: "ana@x.com", plan: "", estado: "activo" }, { id: "a2", nombre: "Beto IT", email: "beto@x.com", plan: "Mentoría", estado: "activo" }],
+        seguimiento_alumnos: [{ alumnoId: "a1", programas: ["Hackear Pro"], followUp: "" }],
+        equipo: [{ email: "lili@apicanta.com", activo: true }], reportes: [], reporte_codigos: [], ajustes: [{ id: 1, bienvenida: {} }],
+      };
+      const q = {
+        select: () => q, in: () => q, eq: () => q, gte: () => q, or: () => q, update: () => q,
+        maybeSingle: () => Promise.resolve({ data: (filas[tabla] ?? [])[0] ?? null, error: null }),
+        upsert: (datos: unknown) => { db.escritos.push({ tabla, datos }); return Promise.resolve({ error: null }); },
+        then: (ok: (r: unknown) => unknown, mal?: (e: unknown) => unknown) => Promise.resolve({ data: filas[tabla] ?? [], error: null }).then(ok, mal),
+      };
+      return q;
+    },
+  };
+  const r = await recordarReportes(db as never, "https://app.test", new Date("2026-11-02T13:00:00.000Z"), (async () => ({ ok: true, id: "x" })) as never, { clave: "x", desde: "y" });
+  assert.deepEqual(r.sinReconocer, [{ id: "a1", nombre: "Ana Pro", programas: ["Hackear Pro"] }]);
+  const avisos = db.escritos.filter((x) => x.tabla === "avisos").flatMap((x) => x.datos as Record<string, unknown>[]);
+  assert.equal(avisos.length, 1, "aunque no haya salido ningún mail");
+  assert.equal(avisos[0].para, "lili@apicanta.com");
+  assert.match(String(avisos[0].titulo), /programa sin reconocer/);
+  assert.match(String(avisos[0].cuerpo), /Ana Pro \(«Hackear Pro»\)/);
 });
