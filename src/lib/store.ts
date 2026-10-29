@@ -45,6 +45,7 @@ import { extraConCorreccion, tituloPerfil, type CampoPerfil } from "./perfil";
 import { puedeCargarDevolucion, puedeDarDeBaja, puedeEditar, TIPOS_POR_DEFECTO, type MiAcceso } from "./permisos";
 import { esDevolucionConfirmada } from "./devoluciones";
 import { esIncobrable, notasDeIncobrable, notasSinIncobrable } from "./cuota-incobrable";
+import { cuotasARepartir, problemaDelPlan, totalARepartir, type CuotaDePlan } from "./plan-de-cuotas";
 import { atarPropuesta, conciliarReembolsos, quienDelReembolso, type ReembolsoCrudo, type ResultadoReembolsos } from "./reembolsos";
 import { setterDeAgendas } from "./setter-agendas";
 import { rearmarPlan } from "./cambio-de-plan";
@@ -1659,6 +1660,40 @@ export const acciones = {
     guardar({ ...e, cuotas, actividad: act });
     empujar({ tipo: "update", tabla: "cuotas", ids: [id], cambios: { vence: nueva, notas } });
     empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
+  },
+
+  /* Cambiar el plan de pagos de una venta (Aldana, 28/10: el cliente que pagaba en dos cuotas va a pagar en tres). Lo que falta
+     cobrar —las cuotas pendientes sin ningún cobro— se vuelve a repartir en `plan`; lo cobrado no se toca y el precio de la venta
+     queda igual (el plan tiene que sumar lo mismo). Las cuotas de antes se reemplazan por las nuevas, que siguen la numeración, y
+     lo que decían queda en sus notas. Devuelve lo que pasó, o null si no se pudo. */
+  cambiarPlanDeCuotas(ventaId: ID, plan: CuotaDePlan[], motivo: string): string | null {
+    const e = snapshot();
+    const venta = e.ventas.find((v) => v.id === ventaId);
+    if (!venta || venta.estado !== "activa" || !motivo.trim()) return null;
+    const viejas = cuotasARepartir(e, ventaId);
+    const total = totalARepartir(viejas);
+    if (viejas.length === 0 || problemaDelPlan(total, plan)) return null;
+    const r2 = (n: number) => Math.round(n * 100) / 100;
+    const ids = new Set(viejas.map((c) => c.id));
+    const deAntes = viejas.map((c) => `${c.numero}: ${c.monto}${c.vence ? ` el ${c.vence.slice(0, 10)}` : ""}`).join("; ");
+    const hoy = ahora().slice(0, 10);
+    const linea = `Plan cambiado el ${hoy}: antes ${viejas.length === 1 ? "la cuota" : "las cuotas"} ${deAntes}. Motivo: ${motivo.trim()}`;
+    let numero = Math.max(0, ...e.cuotas.filter((c) => c.ventaId === ventaId && !ids.has(c.id) && !c.esReserva).map((c) => c.numero));
+    /* Quien heredó las cuotas sigue cobrando por las nuevas, si era el mismo en todas. */
+    const herederos = new Set(viejas.map((c) => c.closerId ?? ""));
+    const closerId = herederos.size === 1 ? [...herederos][0] || undefined : undefined;
+    const nuevas: Cuota[] = plan.map((p) => ({
+      id: nuevoId("cuo"), ventaId, numero: ++numero, monto: r2(p.monto),
+      vence: new Date(`${p.vence}T12:00:00-03:00`).toISOString(), estado: "pendiente", esReserva: false, notas: linea,
+      ...(closerId ? { closerId } : {}),
+    }));
+    const detalle = `Se cambió el plan de pagos: ${total} que faltaban cobrar pasaron de ${viejas.length} ${viejas.length === 1 ? "cuota" : "cuotas"} a ${nuevas.length} (${nuevas.map((c) => `${c.numero}: ${c.monto} el ${(c.vence ?? "").slice(0, 10)}`).join("; ")}). Motivo: ${motivo.trim()}`;
+    const { lista: act, nuevo } = registrar(e, "transaccion", ventaId, venta.contactoNombre ?? "Venta", "actualizo", detalle);
+    guardar({ ...e, cuotas: [...e.cuotas.filter((c) => !ids.has(c.id)), ...nuevas], actividad: act });
+    empujar({ tipo: "delete", tabla: "cuotas", ids: [...ids] });
+    empujar({ tipo: "upsert", tabla: "cuotas", filas: nuevas });
+    empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
+    return detalle;
   },
 
   /* Dar una cuota por incobrable (no se va a cobrar), con el motivo. Sale de lo

@@ -17,6 +17,7 @@ import { useAcceso } from "@/lib/acceso";
 import { puedeDarDeBaja, puedeEditar } from "@/lib/permisos";
 import { esIncobrable } from "@/lib/cuota-incobrable";
 import { AccionesDeCuota } from "@/components/cobros/AccionesDeCuota";
+import { CambiarPlan } from "@/components/cobros/CambiarPlan";
 import { ContratoCard } from "@/components/contratos/ContratoCard";
 
 /* ==================================================================
@@ -207,6 +208,8 @@ export function TarjetaVenta({ e, venta, resaltada, abierta, onAlternar, onPagar
                 {activa && puedeCuotas && esIncobrable(c) && <AccionesDeCuota cuota={c} />}
               </div>
             ))}
+            {/* El cliente cambió cómo paga (de 2 a 3 cuotas): lo que falta se vuelve a repartir (Aldana, 28/10). */}
+            {activa && puedeCuotas && <CambiarPlan ventaId={venta.id} />}
           </div>
 
           {/* Cancelar no saca lo cobrado: si la venta estaba mal cargada, esa plata sigue sumando (Aldana, 24/10). */}
