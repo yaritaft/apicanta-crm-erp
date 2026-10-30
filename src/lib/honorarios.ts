@@ -1059,10 +1059,12 @@ function restoDelMesAnterior(e: EstadoApp, mesAnterior: string): Map<ID, RestoDe
   if (!prev?.resultado) return out;
   for (const d of diferenciasDesdeElCierre(e, prev)) {
     const lineas = prev.resultado.personas.find((p) => p.miembroId === d.miembroId)?.lineas ?? [];
-    const variables = lineas.filter((l) => l.variable && Math.abs(l.montoBase) >= 0.005 && !l.clave.startsWith(PREFIJO_DE_RESTO));
+    /* Las que calcula Finanzas son las comisiones de las ventas (y lo que se les revierte): un descuento o un monto a mano a un closer no
+       cambia de qué lado va su resto. */
+    const comisiones = lineas.filter((l) => ["porcentaje", "tramo", "devolucion"].includes(l.tipo) && Math.abs(l.montoBase) >= 0.005 && !l.clave.startsWith(PREFIJO_DE_RESTO));
     out.set(d.miembroId, {
       miembroId: d.miembroId, cerrado: d.cerrado, hoy: d.hoy, corte: String(prev.corte).slice(0, 10),
-      enFinanzas: variables.length > 0 && variables.every((l) => l.enFinanzas),
+      enFinanzas: comisiones.length > 0 && comisiones.every((l) => l.enFinanzas),
     });
   }
   return out;
