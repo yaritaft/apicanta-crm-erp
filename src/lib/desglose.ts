@@ -47,7 +47,7 @@ export function paso(
   return p;
 }
 
-const plataPaso = (op: PasoDesglose["op"], texto: string, valor: number, moneda: Moneda, nota?: string) =>
+export const plataPaso = (op: PasoDesglose["op"], texto: string, valor: number, moneda: Moneda, nota?: string) =>
   paso(op, texto, valor, "plata", { moneda, nota });
 
 /* ---------- Leer una cuenta ---------- */

@@ -263,7 +263,9 @@ export function LiquidacionMes({ onVerPersona, soloMirar = false, onVerReglas }:
           titulo={corte ? `Lo que entró después del ${diaCorto(corte)}` : "Algo del mes cambió después de cerrar"} icono={<RefreshCw size={18} />}
         >
           {cambios.map((x) => `${x.nombre}: cerrado en ${plata(x.cerrado, base)}, ${corte ? "con todo el mes" : "hoy"} daría ${plata(x.hoy, base)}`).join(" · ")}.
-          {" "}Lo pagado no se toca: la diferencia se puede sumar a mano en la liquidación del mes que viene, o reabrir esta.
+          {" "}{corte
+            ? <>Lo pagado no se toca: la diferencia pasa sola a la liquidación de {nombrePeriodo(moverPeriodo(periodo, 1))}, a cada uno lo suyo («Resto de {nombrePeriodo(periodo)}»). También se puede reabrir esta.</>
+            : "Lo pagado no se toca: la diferencia se puede sumar a mano en la liquidación del mes que viene, o reabrir esta."}
         </Ayuda>
       )}
 

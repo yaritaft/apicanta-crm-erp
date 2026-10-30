@@ -11,7 +11,7 @@ import { totalMarcados } from "./pagos-equipo";
 import { grupoDeLinea } from "./equipo-por-tipo";
 import { fechaLarga, money, num, pct, tasaTexto } from "./format";
 import {
-  conCorreccion, desgloseBono, desgloseDeudaQueEntra, desgloseDeudaQueSale, desgloseFijo, desgloseMedido, desglosePieza,
+  conCorreccion, plataPaso, desgloseBono, desgloseDeudaQueEntra, desgloseDeudaQueSale, desgloseFijo, desgloseMedido, desglosePieza,
   desgloseReversa, listaDeCobros, listaDeVentas, paso,
   type CobroContado, type CobroExcluido, type Fuente, type PartesProfit,
 } from "./desglose";
@@ -1034,6 +1034,73 @@ function lineaDeDeudaQueEntra(cx: Contexto, m: MiembroEquipo, mesAnterior: strin
   };
 }
 
+/* ---------- Lo que entró después del corte del mes anterior ----------
+   Aldana (29/10): «el próximo cierre tiene que cubrir todo lo que pase del 25 al 31». Un mes cerrado con fecha de corte deja afuera lo que
+   entró después: la liquidación que sigue lo trae solo, para cada uno, como la diferencia entre lo que daba el mes entero hoy y lo que se
+   pagó. Lo que se cobró antes no se toca; si se reabre el mes y se vuelve a cerrar entero, la diferencia es cero. */
+
+export const PREFIJO_DE_RESTO = "resto:";
+const claveDeResto = (mesAnterior: string) => `${PREFIJO_DE_RESTO}${mesAnterior}`;
+
+export interface RestoDeCorte {
+  miembroId: ID;
+  /* Lo que se cerró (sin el resto de otro mes) y lo que daría hoy con todo el mes. */
+  cerrado: number;
+  hoy: number;
+  /* El día del corte (aaaa-mm-dd), para decirlo. */
+  corte: string;
+  /* Si sus renglones variables los calcula Finanzas (los closers): el resto ya está en los costos de ese mes, no se vuelve a cargar al cerrar. */
+  enFinanzas: boolean;
+}
+
+function restoDelMesAnterior(e: EstadoApp, mesAnterior: string): Map<ID, RestoDeCorte> {
+  const out = new Map<ID, RestoDeCorte>();
+  const prev = e.liquidaciones.find((l) => l.periodo === mesAnterior && l.estado === "cerrada" && l.resultado && l.corte);
+  if (!prev?.resultado) return out;
+  for (const d of diferenciasDesdeElCierre(e, prev)) {
+    const lineas = prev.resultado.personas.find((p) => p.miembroId === d.miembroId)?.lineas ?? [];
+    const variables = lineas.filter((l) => l.variable && Math.abs(l.montoBase) >= 0.005 && !l.clave.startsWith(PREFIJO_DE_RESTO));
+    out.set(d.miembroId, {
+      miembroId: d.miembroId, cerrado: d.cerrado, hoy: d.hoy, corte: String(prev.corte).slice(0, 10),
+      enFinanzas: variables.length > 0 && variables.every((l) => l.enFinanzas),
+    });
+  }
+  return out;
+}
+
+function lineaDeResto(cx: Contexto, m: MiembroEquipo, r: RestoDeCorte, entrada: EntradaLiquidacion | undefined): LineaLiquidada {
+  const mesAnterior = moverPeriodo(cx.rango.clave, -1);
+  const clave = claveDeResto(mesAnterior);
+  const nombreMes = nombrePeriodo(mesAnterior);
+  const dia = `${r.corte.slice(8, 10)}/${r.corte.slice(5, 7)}`;
+  const nombre = `Resto de ${nombreMes}, después del ${dia}`;
+  const mon = cx.base;
+  let monto = r2(r.hoy - r.cerrado);
+  let desglose: DesgloseLinea | undefined = {
+    regla: `${nombreMes} se cerró con fecha de corte el ${dia}: lo que entró después y lo que cambió desde el cierre se paga en esta liquidación, a cada uno lo suyo.`,
+    moneda: mon,
+    pasos: [
+      plataPaso("base", `Lo que da ${nombreMes} entero, con los datos de hoy`, r.hoy, mon),
+      plataPaso("menos", `Lo que ya se pagó al cerrar ${nombreMes}`, r.cerrado, mon),
+      plataPaso("igual", "Lo que falta pagar", monto, mon),
+    ],
+    avisos: ["Si se reabre el mes anterior y se cierra entero, esta diferencia queda en cero. Si no corresponde, se puede corregir el monto a mano."],
+  };
+  let detalle = `Con todo ${nombreMes} da ${plata(r.hoy, mon)} y se pagaron ${plata(r.cerrado, mon)} al cerrar hasta el ${dia}`;
+  let corregido = false;
+  if (entrada?.monto !== undefined && Number.isFinite(entrada.monto)) {
+    detalle = `Corregido a mano: la cuenta daba ${plata(monto, mon)}${entrada.nota?.trim() ? ` · ${entrada.nota.trim()}` : ""}`;
+    desglose = conCorreccion(desglose, monto, entrada.nota);
+    monto = entrada.monto;
+    corregido = true;
+  }
+  monto = r2(monto);
+  return {
+    clave, conceptoId: clave, tipo: "arrastre", nombre, detalle, moneda: mon,
+    monto, montoBase: monto, variable: true, enFinanzas: r.enFinanzas, corregido, desglose,
+  };
+}
+
 /** El mes da en negativo: no se le paga nada y lo que queda debiendo pasa al mes siguiente. */
 function lineaDeDeudaQueSale(cx: Contexto, nombre: string, mon: Moneda, suma: number): LineaLiquidada {
   const periodo = cx.rango.clave;
@@ -1104,7 +1171,11 @@ function comisionDeFinanzas(m: MiembroEquipo): ConceptoPago[] {
 /* Las categorías de gasto donde se cargan a mano los pagos a la gente del equipo. */
 const CATEGORIAS_DE_EQUIPO = new Set(["Equipo / Salarios", "Edición de contenido", "Filmmaker"]);
 
-export function calcularLiquidacion(e: EstadoApp, periodo: string, liq?: Liquidacion | null): ResultadoLiquidacion {
+/** `sinResto`: sin lo que quedó de después del corte del mes anterior. Lo usa la cuenta que compara contra lo cerrado (para no pedir el resto del
+ *  resto) y nadie más. */
+export interface OpcionesDeLiquidacion { sinResto?: boolean }
+
+export function calcularLiquidacion(e: EstadoApp, periodo: string, liq?: Liquidacion | null, opciones: OpcionesDeLiquidacion = {}): ResultadoLiquidacion {
   const rango = rangoDePeriodo(periodo);
   /* Con fecha de corte, el profit y las devoluciones también llegan sólo hasta ese día. */
   const corte = corteDe(periodo, liq?.corte);
@@ -1145,8 +1216,10 @@ export function calcularLiquidacion(e: EstadoApp, periodo: string, liq?: Liquida
     const d = (Object.entries(p.deuda ?? {}) as [Moneda, number][]).filter(([, n]) => n >= 0.005);
     if (d.length) deudasDeAntes.set(p.miembroId, d);
   }
+  /* Lo que entró después del corte del mes anterior (si se cerró con fecha de corte): pasa solo a esta liquidación, a cada uno lo suyo. */
+  const restos = opciones.sinResto ? new Map<ID, RestoDeCorte>() : restoDelMesAnterior(e, mesAnterior);
   const soloDevolucion = new Set(e.equipo
-    .filter((m) => !yaSalen.has(m.id) && !soloMontos.has(m.id) && (conReversa.has(m.id) || deudasDeAntes.has(m.id))).map((m) => m.id));
+    .filter((m) => !yaSalen.has(m.id) && !soloMontos.has(m.id) && (conReversa.has(m.id) || deudasDeAntes.has(m.id) || restos.has(m.id))).map((m) => m.id));
   /* De éstos sólo salen sus montos a mano, sus devoluciones y su deuda. */
   const soloLoSuyo = new Set([...soloMontos, ...soloDevolucion]);
   const miembros = soloLoSuyo.size
@@ -1185,6 +1258,8 @@ export function calcularLiquidacion(e: EstadoApp, periodo: string, liq?: Liquida
     for (const [mon, deuda] of deudasDeAntes.get(m.id) ?? []) {
       fila.lineas.push(lineaDeDeudaQueEntra(cx, m, mesAnterior, mon, deuda, entradas[claveEntrada(m.id, idDeuda(mesAnterior, mon, "entra"))]));
     }
+    const resto = restos.get(m.id);
+    if (resto) fila.lineas.push(lineaDeResto(cx, m, resto, entradas[claveEntrada(m.id, claveDeResto(mesAnterior))]));
     filas.push(fila);
   }
 
@@ -1202,6 +1277,8 @@ export function calcularLiquidacion(e: EstadoApp, periodo: string, liq?: Liquida
     if ((categoriaDe(e, f.persona.categoriaGasto)?.grupo ?? "operativo") === "dueno") continue;
     for (const l of f.lineas) {
       if (!l || l.enFinanzas) continue;
+      /* El resto del mes anterior ya estaba en los costos de ese mes (con todo el mes): contarlo acá lo sumaría dos veces. */
+      if (l.clave.startsWith(PREFIJO_DE_RESTO)) continue;
       aCargar += l.montoBase;
       const g = grupoDeLinea(f.m.rol, f.persona.categoriaGasto, l);
       if (g === "closers" || g === "directores") aCargarComisiones += l.montoBase;
@@ -1302,10 +1379,12 @@ export function diferenciasDesdeElCierre(e: EstadoApp, liq: Liquidacion) {
   if (liq.estado !== "cerrada" || !liq.resultado) return [];
   /* Con fecha de corte, «hoy» es el mes entero: la diferencia es lo que entró después del corte (lo que se suma en la
      liquidación que sigue). */
-  const hoy = calcularLiquidacion(e, liq.periodo, { ...liq, corte: null });
+  const hoy = calcularLiquidacion(e, liq.periodo, { ...liq, corte: null }, { sinResto: true });
   const antes = new Map(liq.resultado.personas.map((p) => [p.miembroId, p] as const));
+  /* Lo cerrado sin el resto que traía de otro mes: se compara el mes con el mes. */
+  const delResto = (id: ID) => (antes.get(id)?.lineas ?? []).filter((l) => l.clave.startsWith(PREFIJO_DE_RESTO)).reduce((a, l) => a + l.montoBase, 0);
   return hoy.personas
-    .map((p) => ({ miembroId: p.miembroId, nombre: p.nombre, cerrado: antes.get(p.miembroId)?.total ?? 0, hoy: p.total }))
+    .map((p) => ({ miembroId: p.miembroId, nombre: p.nombre, cerrado: r2((antes.get(p.miembroId)?.total ?? 0) - delResto(p.miembroId)), hoy: p.total }))
     .filter((x) => Math.abs(x.hoy - x.cerrado) >= 0.01);
 }
 
