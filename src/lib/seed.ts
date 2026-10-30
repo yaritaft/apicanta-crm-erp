@@ -58,13 +58,15 @@ export const PROCESADORES: Procesador[] = [
   { id: "proc_financiera_usd",   nombre: "Financiera USD Juan", feeRate: 0,     activo: true, automatico: false },
   { id: "proc_stripe",           nombre: "Stripe",              feeRate: 0.029, activo: true, automatico: true,  proveedor: "stripe" },
   { id: "proc_mercury",          nombre: "ACH-WIRE Mercury",    feeRate: 0,     activo: true, automatico: true,  proveedor: "mercury" },
+  /* Desde fines de octubre, lo que retiran Stripe, Whop y Hotmart llega acá (Yari, 28/10: definitivo). Se cuenta a mano. */
+  { id: "proc_bofa",             nombre: "Bank of America",     feeRate: 0,     activo: true, automatico: false },
   { id: "proc_binance",          nombre: "USDT Binance",        feeRate: 0,     activo: true, automatico: true,  proveedor: "binance" },
   { id: "proc_dlocal",           nombre: "Dlocal",              feeRate: 0.050, activo: true, automatico: true,  proveedor: "dlocal" },
   { id: "proc_trust",            nombre: "USDT Trust",          feeRate: 0,     activo: true, automatico: true,  proveedor: "trust" },
   { id: "proc_mercadopago",      nombre: "Mercado Pago Yari",   feeRate: 0.062, activo: true, automatico: true,  proveedor: "mercadopago", moneda: "ARS" },
   { id: "proc_galicia_ars",      nombre: "Galicia (ARS)",       feeRate: 0,     activo: true, automatico: false, moneda: "ARS" },
   { id: "proc_galicia_usd",      nombre: "Galicia (USD)",       feeRate: 0,     activo: true, automatico: false },
-  { id: "proc_hotmart",          nombre: "Hotmart",             feeRate: 0.099, activo: true, automatico: true,  proveedor: "hotmart" },
+  { id: "proc_hotmart",          nombre: "Hotmart",             feeRate: 0.099, activo: true, automatico: true,  proveedor: "hotmart", diasDeRetencion: 15, retencionDesde: "2026-10-26" },
   { id: "proc_efectivo",         nombre: "Efectivo USD",        feeRate: 0,     activo: true, automatico: false },
   { id: "proc_whop",             nombre: "Whop",                feeRate: 0.030, activo: true, automatico: true,  proveedor: "whop" },
 ];

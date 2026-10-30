@@ -132,21 +132,24 @@ test("pago parcial con el resto prometido: la cuota queda con lo que falta, venc
   const cobrado = Math.round(cuota.monto * 0.66 * 100) / 100;
   const falta = Math.round((cuota.monto - cobrado) * 100) / 100;
   const venceAntes = (cuota.vence ?? "").slice(0, 10);
-  assert.equal(acciones.registrarPago({ cuotaId: cuota.id, cobros: [{ procesadorId: proc, monto: cobrado, fecha: "2026-10-26" }], reajuste: "pendiente", venceSaldo: "2026-11-02" }), true);
+  /* Una semana y media después de cuando vencía: la semilla arma sus fechas contra el día de hoy, así que un día fijo cae a veces justo
+     en el vencimiento (y entonces «no cambia»). */
+  const prometido = new Date(Date.parse(`${venceAntes}T12:00:00Z`) + 10 * 86_400_000).toISOString().slice(0, 10);
+  assert.equal(acciones.registrarPago({ cuotaId: cuota.id, cobros: [{ procesadorId: proc, monto: cobrado, fecha: "2026-10-26" }], reajuste: "pendiente", venceSaldo: prometido }), true);
   const e = estado();
   const c = e.cuotas.find((x) => x.id === cuota.id)!;
   assert.deepEqual([c.estado, c.monto], ["pendiente", cuota.monto], "sigue pendiente por el mismo monto");
-  assert.equal((c.vence ?? "").slice(0, 10), "2026-11-02", "pasa a vencer el día que dijo que paga");
-  assert.match(c.notas ?? "", new RegExp(`pagó ${cobrado} de ${cuota.monto} y el resto \\(${falta}\\) lo paga el 2026-11-02`));
+  assert.equal((c.vence ?? "").slice(0, 10), prometido, "pasa a vencer el día que dijo que paga");
+  assert.match(c.notas ?? "", new RegExp(`pagó ${cobrado} de ${cuota.monto} y el resto \\(${falta}\\) lo paga el ${prometido}`));
   assert.deepEqual(
     e.cuotas.filter((x) => x.ventaId === venta.id && x.id !== cuota.id).map((x) => [x.id, x.monto, x.vence]), otras,
     "las demás cuotas no cambian y no nace una cuota nueva",
   );
   assert.equal(e.ventas.find((v) => v.id === venta.id)!.precioAcordado, venta.precioAcordado, "el valor de la venta no cambia");
-  assert.ok(e.actividad.some((a) => /el cliente los paga el 2026-11-02/.test(a.detalle ?? "") && new RegExp(`vencía el ${venceAntes}`).test(a.detalle ?? "")));
+  assert.ok(e.actividad.some((a) => new RegExp(`el cliente los paga el ${prometido}`).test(a.detalle ?? "") && new RegExp(`vencía el ${venceAntes}`).test(a.detalle ?? "")));
 
   // Cuando llega el resto, se carga en la misma cuota y queda cobrada.
-  assert.equal(acciones.registrarPago({ cuotaId: cuota.id, cobros: [{ procesadorId: proc, monto: falta, fecha: "2026-11-02" }], reajuste: "pendiente" }), true);
+  assert.equal(acciones.registrarPago({ cuotaId: cuota.id, cobros: [{ procesadorId: proc, monto: falta, fecha: prometido }], reajuste: "pendiente" }), true);
   const final = estado().cuotas.find((x) => x.id === cuota.id)!;
   assert.deepEqual([final.estado, final.monto], ["pagada", cuota.monto]);
 });

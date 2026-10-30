@@ -1211,6 +1211,11 @@ export interface Procesador {
   /* Si va en «Otros», al final del arqueo de la Caja: las cuentas que no se
      usan seguido. Sin decirlo, lo deciden los nombres (lib/caja: enOtros). */
   cajaOtros?: boolean;
+  /* Días que la cuenta retiene lo que cobra antes de acreditarlo (Hotmart, 28/10: «los pagos entran 15 días más tarde»). Mientras tanto
+     el cobro no cuenta en la caja ni en las comisiones: cuenta el día que se acredita (lib/acreditacion.ts). Sin esto, al instante. */
+  diasDeRetencion?: number;
+  /* Desde qué día de pago (aaaa-mm-dd) rige esa retención: los cobros anteriores ya se acreditaron como siempre. */
+  retencionDesde?: string;
 }
 
 export interface CuentaBancaria {

@@ -1,3 +1,4 @@
+import { fechaDeAcreditacion, retenciones } from "./acreditacion";
 import type { Arqueo, EstadoApp, Gasto, ID, Moneda, Movimiento, Traspaso } from "./types";
 import { aMonedaBase, categoriaDe, fechaDePago, montoOriginal, normalizar } from "./gastos";
 import { esDevolucionConfirmada, pesosQueSalieron } from "./devoluciones";
@@ -29,6 +30,18 @@ import { esDevolucionConfirmada, pesosQueSalieron } from "./devoluciones";
 export const CATEGORIA_COSTO = "Comisiones bancarias";
 /* Lo que puede tardar un depósito en llegar; pasado eso, «salió y no llegó». */
 export const DIAS_EN_CAMINO = 7;
+/* A dónde van, desde fines de octubre, los retiros de Stripe, Whop y Hotmart: a una cuenta del Bank of America que ninguna API nos deja
+   leer (Yari, 28/10: queda definitivo). Un retiro de esas cuentas que sale y nadie dijo a dónde fue se anota con ese destino; como el banco
+   no avisa llegadas, se da por llegado (`esperaLlegada`) en vez de quedar «salió y no llegó». */
+export const DESTINO_DE_RETIROS = { cuentaId: "proc_bofa", desde: "2026-10-28", origenes: new Set<ID>(["proc_stripe", "proc_whop", "proc_hotmart"]) } as const;
+export function destinoDelRetiro(origenId: ID, fechaIso: string): ID | undefined {
+  return DESTINO_DE_RETIROS.origenes.has(origenId) && fechaIso.slice(0, 10) >= DESTINO_DE_RETIROS.desde ? DESTINO_DE_RETIROS.cuentaId : undefined;
+}
+/* El destino que se dio por supuesto (lo puso esta regla, no una persona ni el banco): si después un banco que sí avisa ve llegar esa plata,
+   la llegada manda y el destino pasa a ser ése. Uno cargado a mano nunca se pisa. */
+export const destinoSupuesto = (t: Pick<Traspaso, "origen" | "destinoId" | "llegadaRef">): boolean =>
+  t.origen === "api" && t.destinoId === DESTINO_DE_RETIROS.cuentaId && !t.llegadaRef;
+
 /* Las cuentas que avisan cuando les llega plata de otra cuenta propia: de
    las demás no se puede esperar la llegada, se da por hecha. */
 const AVISAN_LLEGADAS = new Set<ID>(["proc_mercury"]);
@@ -105,7 +118,7 @@ function distancia(t: Traspaso, p: Punta): number | null {
   /* La llegada que alguien dio por hecha a mano no es una punta: si después
      la cuenta la ve llegar, es ésa (y no un pase nuevo, que la contaría dos veces). */
   if (p.lado === "salida" ? t.salidaRef : t.llegadaRef && t.llegadaRef !== LLEGADA_A_MANO) return null;
-  const [esta, otra] = p.lado === "salida" ? [t.origenId, t.destinoId] : [t.destinoId, t.origenId];
+  const [esta, otra] = p.lado === "salida" ? [t.origenId, t.destinoId] : [destinoSupuesto(t) ? undefined : t.destinoId, t.origenId];
   if (esta && esta !== p.cuentaId) return null;
   if (otra && p.otraCuentaId && otra !== p.otraCuentaId) return null;
   if (esta !== p.cuentaId && !(otra && otra === p.otraCuentaId)) return null;
@@ -138,7 +151,9 @@ export interface ResultadoPuntas {
     la que ya está no se repite, la que es de un pase existente (cargado a
     mano, o del que ya se vio la otra punta) se le ata, y el resto son pases
     nuevos. No toca `existentes`. */
-export function conciliarPuntas(existentes: Traspaso[], puntas: Punta[], ahora: string): ResultadoPuntas {
+export function conciliarPuntas(existentes: Traspaso[], puntas: Punta[], ahora: string, cuentas?: readonly { id: ID }[]): ResultadoPuntas {
+  /* Sin la cuenta del banco dada de alta, nada se manda hacia ella. */
+  const hayDestino = !cuentas || cuentas.some((c) => c.id === DESTINO_DE_RETIROS.cuentaId);
   const todos = existentes.map((t) => ({ ...t }));
   const deAntes = new Set(existentes.map((t) => t.id));
   const tocados = new Map<ID, Partial<Traspaso>>();
@@ -173,7 +188,7 @@ export function conciliarPuntas(existentes: Traspaso[], puntas: Punta[], ahora: 
         }
       } else {
         c.llegadaRef = p.ref;
-        if (!mejor.destinoId) c.destinoId = p.cuentaId;
+        if (!mejor.destinoId || destinoSupuesto(mejor)) c.destinoId = p.cuentaId;
         if (!mejor.origenId && p.otraCuentaId) c.origenId = p.otraCuentaId;
         if (otroDia(mejor.fecha, p.fecha)) c.fechaLlega = p.fecha;
         if (!manual) c.montoLlega = p.monto;
@@ -193,7 +208,7 @@ export function conciliarPuntas(existentes: Traspaso[], puntas: Punta[], ahora: 
       id: idDePunta(p.ref),
       fecha: p.fecha,
       origenId: salida ? p.cuentaId : p.otraCuentaId,
-      destinoId: salida ? p.otraCuentaId : p.cuentaId,
+      destinoId: salida ? p.otraCuentaId ?? (hayDestino ? destinoDelRetiro(p.cuentaId, p.fecha) : undefined) : p.cuentaId,
       montoSale: p.monto, monedaSale: p.moneda,
       montoLlega: p.monto, monedaLlega: p.moneda,
       estado: p.seguro ? "confirmado" : "propuesto",
@@ -499,9 +514,11 @@ export function saldosEsperados(
   for (const p of e.procesadores) {
     out.set(p.id, { moneda: p.moneda ?? "USD", anterior: previo?.saldos.find((s) => s.procesadorId === p.id)?.monto, entro: 0, pases: pases.get(p.id) ?? 0, salio: 0 });
   }
+  /* Un cobro de una cuenta que retiene (Hotmart) entra a la caja el día que se acredita, no el del pago. */
+  const retencion = retenciones(e.procesadores);
   for (const p of e.pagos) {
     const s = p.procesadorId ? out.get(p.procesadorId) : undefined;
-    if (!s || !entre(p.fecha, desde, hasta)) continue;
+    if (!s || !entre(fechaDeAcreditacion(p, retencion), desde, hasta)) continue;
     if (s.moneda === "ARS") {
       const tc = p.tipoCambio ?? 0;
       const bruto = p.montoArs ?? (tc > 0 ? p.monto * tc : NaN);

@@ -2717,7 +2717,7 @@ export const acciones = {
      mismas reglas que usa el cron del servidor. */
   importarPuntas(puntas: Punta[]): { nuevos: number; conciliados: number } {
     const e = snapshot();
-    const r = conciliarPuntas(e.traspasos ?? [], puntas, ahora());
+    const r = conciliarPuntas(e.traspasos ?? [], puntas, ahora(), e.procesadores);
     if (r.nuevos.length === 0 && r.cambios.length === 0) return { nuevos: 0, conciliados: 0 };
     const cambios = new Map(r.cambios.map((c) => [c.id, c.cambios] as const));
     guardar({

@@ -195,6 +195,28 @@ function Cuentas() {
                   <span className="t-sm t-muted">Otros</span>
                 </label>
               </div>
+              {/* Cuentas que retienen lo cobrado unos días (Hotmart, 28/10): el cobro cuenta en la caja y en las comisiones el día que se acredita. */}
+              <div className="row-wrap" style={{ gridColumn: "1 / -1", gap: 8, alignItems: "center" }}>
+                <span className="t-sm t-muted">Retiene lo cobrado</span>
+                <div style={{ width: 84 }}>
+                  <Input
+                    aria-label={`Días que ${p.nombre} retiene lo cobrado antes de acreditarlo`} type="number" min={0} max={90} step={1}
+                    defaultValue={p.diasDeRetencion ?? 0}
+                    onBlur={(ev) => {
+                      const v = Math.max(0, Math.min(90, Math.floor(Number(ev.target.value) || 0)));
+                      if (v !== (p.diasDeRetencion ?? 0)) cambiar(p, { diasDeRetencion: v }, v ? `${p.nombre} acredita ${v} días después del pago.` : `${p.nombre} acredita al instante.`);
+                    }}
+                  />
+                </div>
+                <span className="t-sm t-muted">días, para los pagos desde</span>
+                <div style={{ width: 160 }}>
+                  <Input
+                    aria-label={`Desde qué día de pago ${p.nombre} retiene lo cobrado`} type="date" value={p.retencionDesde ?? ""}
+                    onChange={(ev) => cambiar(p, { retencionDesde: (ev.target.value || null) as unknown as string | undefined }, "Fecha guardada.")}
+                  />
+                </div>
+                <span className="t-sm t-subtle">Mientras no se acredita, el cobro no cuenta en la caja ni en las comisiones.</span>
+              </div>
             </div>
           );
         })}

@@ -16,6 +16,7 @@ import { DevolucionesDeVenta } from "@/components/devoluciones/DevolucionesDeVen
 import { useAcceso } from "@/lib/acceso";
 import { puedeDarDeBaja, puedeEditar } from "@/lib/permisos";
 import { esIncobrable } from "@/lib/cuota-incobrable";
+import { estaPorAcreditar, fechaDeAcreditacion, retenciones } from "@/lib/acreditacion";
 import { AccionesDeCuota } from "@/components/cobros/AccionesDeCuota";
 import { CambiarPlan } from "@/components/cobros/CambiarPlan";
 import { ContratoCard } from "@/components/contratos/ContratoCard";
@@ -63,6 +64,8 @@ export function TarjetaVenta({ e, venta, resaltada, abierta, onAlternar, onPagar
   const setter = e.equipo.find((x) => x.id === venta.setterId)?.nombre;
   const activa = venta.estado === "activa";
   const cuotasVenta = e.cuotas.filter((c) => c.ventaId === venta.id);
+  /* Los cobros de una cuenta que retiene (Hotmart) que todavía no se acreditaron: no cuentan como plata hasta ese día. */
+  const retencion = retenciones(e.procesadores);
   const filas = saldo.cuotas.map((c) => {
     const pagos = e.pagos.filter((p) => p.cuotaId === c.id);
     const pagado = pagos.reduce((a, p) => a + p.monto, 0);
@@ -184,6 +187,11 @@ export function TarjetaVenta({ e, venta, resaltada, abierta, onAlternar, onPagar
                           }}>
                             <Paperclip size={12} /> comprobante
                           </button>
+                        )}
+                        {estaPorAcreditar(p, retencion) && (
+                          <span className="t-subtle" title="Esta cuenta retiene lo cobrado unos días: hasta que se acredita no cuenta en la caja ni en las comisiones.">
+                            se acredita el {fechaLarga(fechaDeAcreditacion(p, retencion))}
+                          </span>
                         )}
                         <span className="spacer t-num">{M(p.monto, 2)}</span>
                         {activa && puedeCobros && onEditarPago && (() => {

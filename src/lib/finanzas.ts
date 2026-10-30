@@ -1,3 +1,4 @@
+import { fechaDeAcreditacion, retenciones } from "./acreditacion";
 import type { Cuota, EstadoApp, Gasto, MiembroEquipo, Pago, Venta } from "./types";
 import type { RangoMes } from "./metricas";
 import { esSoloReserva } from "./angelo";
@@ -53,7 +54,10 @@ export function revenue(e: EstadoApp, m: RangoMes): number {
  *  Panel: los dos salen de la misma lista, así el panel lateral no puede
  *  sumar distinto que la tarjeta. */
 export function pagosDelMes(e: EstadoApp, m: RangoMes) {
-  return e.pagos.filter((p) => enRango(p.fecha, m));
+  /* Un cobro de una cuenta que retiene (Hotmart) cuenta el día que se acredita, no el del pago (lib/acreditacion.ts). */
+  const ret = retenciones(e.procesadores);
+  if (ret.size === 0) return e.pagos.filter((p) => enRango(p.fecha, m));
+  return e.pagos.filter((p) => enRango(fechaDeAcreditacion(p, ret), m));
 }
 
 /** Lo que entró en el mes: la suma de sus pagos, sin importar cuándo se
