@@ -81,7 +81,8 @@ export function equipoPorTipo(personas: PersonaLiquidada[], equipo: EstadoApp["e
       fila.partes.push({ nombre: l.nombre, monto: l.montoBase });
       fila.total = r2(fila.total + l.montoBase);
       filas.set(p.miembroId, fila);
-      if (l.base !== "profit") enLosCostos += l.montoBase;
+      /* El resto del mes anterior ya estaba en los costos de ese mes: no vuelve a contar (lib/honorarios.ts, «resto:»). */
+      if (l.base !== "profit" && !l.clave.startsWith("resto:")) enLosCostos += l.montoBase;
     }
   }
   const grupos = GRUPOS_DE_EQUIPO.map((g) => {

@@ -74,3 +74,15 @@ test("quien no tiene nada para pagar no figura en ningún grupo y se cuenta apar
   assert.equal(t.sinNada, 1 + equipoPorTipo(r.personas, e.equipo).sinNada);
   assert.equal(t.grupos.flatMap((g) => g.filas).some((f) => f.miembroId === "nadie"), false);
 });
+
+test("el resto del mes anterior se paga pero no cuenta como costo del mes (ya estaba en los del mes anterior)", () => {
+  const e = estadoDePrueba();
+  const r = calcularLiquidacion(e, PERIODO);
+  const p = r.personas.find((x) => x.miembroId === "manu")!;
+  const conResto = { ...r.personas.find((x) => x.miembroId === "manu")!, lineas: [...p.lineas, { ...p.lineas[0], clave: "resto:2026-08", nombre: "Resto de agosto", monto: 500, montoBase: 500, base: undefined, enFinanzas: false }] };
+  const personas = r.personas.map((x) => (x.miembroId === "manu" ? conResto : x));
+  const sin = equipoPorTipo(r.personas, e.equipo);
+  const con = equipoPorTipo(personas, e.equipo);
+  assert.equal(Math.round((con.total - sin.total) * 100), 50000, "se paga");
+  assert.equal(con.enLosCostos, sin.enLosCostos, "pero no suma a los costos");
+});
