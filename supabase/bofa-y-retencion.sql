@@ -42,4 +42,4 @@ select 'procesadores' as tabla, id, nombre, "diasDeRetencion"::text as dato, "re
 union all
 select 'traspasos', id, "origenId" || ' → ' || coalesce("destinoId", '—'), "montoSale"::text, left(fecha::text, 10) from public.traspasos where "destinoId" = 'proc_bofa';
 
-rollback;  -- ENSAYO: cambiar por commit para aplicarlo
+commit;  -- APLICADO el 30/10 con el OK de Juan Cruz
