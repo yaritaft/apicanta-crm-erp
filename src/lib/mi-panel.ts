@@ -390,7 +390,7 @@ function avisosDe(
   for (const v of c.sinEstrategia.slice(0, POR_TIPO)) {
     avisos.push({
       clave: `se|${v.id}`, tono: "warning", resaltado: v.contactoNombre,
-      texto: `no tiene estrategia (embudo): Marketing no cuenta la venta y Finanzas no puede cerrar el mes. Elegila en la ficha.`,
+      texto: `no tiene estrategia (embudo): Marketing no cuenta la venta y Finanzas no puede cerrar el mes. Abrí la ficha y elegila arriba de la venta, donde dice «Elegir estrategia».`,
       accion: { texto: "Ver", ir: "ficha", id: v.id },
     });
   }

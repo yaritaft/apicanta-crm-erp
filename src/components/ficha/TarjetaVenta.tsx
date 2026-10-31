@@ -15,6 +15,7 @@ import { ChequeoDeCobro } from "@/components/cobros/ControlCobro";
 import { DevolucionesDeVenta } from "@/components/devoluciones/DevolucionesDeVenta";
 import { useAcceso } from "@/lib/acceso";
 import { puedeDarDeBaja, puedeEditar } from "@/lib/permisos";
+import { EstrategiaRapida } from "@/components/ventas/EstrategiaRapida";
 import { esIncobrable } from "@/lib/cuota-incobrable";
 import { estaPorAcreditar, fechaDeAcreditacion, retenciones } from "@/lib/acreditacion";
 import { AccionesDeCuota } from "@/components/cobros/AccionesDeCuota";
@@ -116,6 +117,15 @@ export function TarjetaVenta({ e, venta, resaltada, abierta, onAlternar, onPagar
           {!abierta && resumen}
         </span>
       </CabezaPlegable>
+
+      {/* Sin estrategia: Marketing no la cuenta y Finanzas no puede cerrar el mes. Se elige acá, sin abrir el formulario
+          (fuera del encabezado: es un botón que pliega la tarjeta y no puede llevar otro adentro). */}
+      {!embudo && activa && puedeEditar(acceso, "ventas") && (
+        <div className="row t-sm" style={{ gap: 8, padding: "0 16px 12px" }}>
+          <span className="t-subtle">Sin estrategia</span>
+          <EstrategiaRapida venta={venta} />
+        </div>
+      )}
 
       {abierta && (
         <div className="venta-card__cuerpo" id={`venta-${venta.id}-cuerpo`}>

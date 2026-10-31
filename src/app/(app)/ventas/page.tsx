@@ -13,6 +13,7 @@ import { DateRangePicker, diaDeNegocio } from "@/components/ui/DateRangePicker";
 import { CopiarLink, Filtro, opcionesDe, SIN, type OpcionFiltro } from "@/components/ui/Filtros";
 import { Confirmar } from "@/components/ui/Modal";
 import { AsistenteVenta } from "@/components/ventas/AsistenteVenta";
+import { EstrategiaRapida } from "@/components/ventas/EstrategiaRapida";
 import { CargarCuota } from "@/components/cobros/CargarCuota";
 import { AyudaDeCuotas } from "@/components/cobros/AyudaDeCuotas";
 import { ListaCobros, PARAMS_COBROS, PARAMS_TABLA_COBROS } from "@/components/cobros/ListaCobros";
@@ -31,6 +32,7 @@ import { fechaLarga, money, num } from "@/lib/format";
 import { saldoVenta } from "@/lib/finanzas";
 import { casilleroDe, controlPorVenta } from "@/lib/control-cobros";
 import { useAcceso } from "@/lib/acceso";
+import { puedeEditar } from "@/lib/permisos";
 import type { EstadoVenta, Venta } from "@/lib/types";
 
 const ESTADO: Record<EstadoVenta, { texto: string; variante: "success" | "neutral" | "danger" }> = {
@@ -284,7 +286,11 @@ export default function Ventas() {
        los servicios agrupados en un orden que nadie entendía. */
     { clave: "producto", titulo: "Servicio adquirido", tipo: "secondary", orden: (v) => nombreDe(e.productos, v.productoId) ?? "", celda: (v) => nombreDe(e.productos, v.productoId) ?? "—" },
     { clave: "proyecto", titulo: "Proyecto", tipo: "secondary", orden: (v) => v.proyecto ?? "", celda: (v) => v.proyecto || "—" },
-    { clave: "estrategia", titulo: "Estrategia", tipo: "secondary", orden: (v) => nombreDe(e.embudos, v.embudoId) ?? "", celda: (v) => nombreDe(e.embudos, v.embudoId) ?? "—" },
+    {
+      /* Sin estrategia, se elige ahí mismo (Aldana, 31/10): sin abrir el formulario de la venta. */
+      clave: "estrategia", titulo: "Estrategia", tipo: "secondary", orden: (v) => nombreDe(e.embudos, v.embudoId) ?? "",
+      celda: (v) => nombreDe(e.embudos, v.embudoId) ?? (v.estado === "activa" && puedeEditar(acceso, "ventas") ? <EstrategiaRapida venta={v} /> : "—"),
+    },
     { clave: "closer", titulo: "Vendedor", tipo: "secondary", orden: (v) => nombreDe(e.equipo, v.closerId) ?? "", celda: (v) => nombreDe(e.equipo, v.closerId) ?? "—" },
     {
       /* Quién la setteó y cómo llegó a la venta (Aldana, 31/10): marcó la agenda, entró por su link o lo puso el closer. */

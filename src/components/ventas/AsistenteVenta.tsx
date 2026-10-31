@@ -23,6 +23,7 @@ import { nube } from "@/lib/supabase";
 import { descartarComprobante } from "@/lib/comprobantes";
 import type { Cuota, EstadoApp, MiembroEquipo, Movimiento, Venta } from "@/lib/types";
 import { PAISES, planDePago, webinarDeProyecto } from "@/lib/angelo";
+import { estrategiaDeLaVenta, FALTA_ESTRATEGIA } from "@/lib/estrategia-de-venta";
 import { origenDeUtm, textoUtm } from "@/lib/utms";
 import { setterDeAgendas } from "@/lib/setter-agendas";
 import { useUsuarioActual } from "@/lib/usuario";
@@ -320,7 +321,7 @@ export function AsistenteVenta({ onCerrar, onListo, desdeMovimiento, cliente, cl
        lo que traía el lead (su webinar). El proyecto WEB-día/mes/año ya
        dice de qué webinar vino. */
     const o = origenDeUtm(e, contactoId, b.fecha);
-    const embudoId = o?.embudoId ?? (b.embudoId || undefined);
+    const embudoId = estrategiaDeLaVenta(e, contactoId, b.fecha, b.embudoId);
     const proyecto = o?.proyecto ?? (b.proyecto || undefined);
     const webinarId = o?.webinarId ?? (b.webinarId || webinarDeProyecto(proyecto, e.webinars, b.fecha)?.id);
     const venta: Venta = {
@@ -588,6 +589,8 @@ function validar(paso: PasoId, b: Borrador, diferencia: number, ctx: { e: Estado
     case "cobros":
     case "resumen": {
       if (paso === "resumen" && ctx.repetida) return "Ya hay una venta idéntica: marcá que es otra compra, o salí sin registrar";
+      /* Una venta sin estrategia no se cuenta en Marketing ni deja cerrar el mes: se elige acá, en el resumen. */
+      if (paso === "resumen" && !estrategiaDeLaVenta(ctx.e, b.contactoId, b.fecha, b.embudoId)) return FALTA_ESTRATEGIA;
       const nombre = (c: LineaCuota) => (c.esReserva ? "la reserva" : `la cuota ${c.numero}`);
       const mal = b.cuotas.find((c) => sumar(c.cobros) > c.monto + 0.01);
       if (mal) return `Los cobros de ${nombre(mal)} superan su monto`;
@@ -1420,6 +1423,13 @@ function PasoResumen({ b, set, e, M, sinComision, totalCobrado, setterMarcado, a
           {embudo || proyecto || webinar
             ? [embudo?.nombre, proyecto, webinar?.titulo].filter(Boolean).join(" · ")
             : <span className="t-subtle">Sin origen todavía</span>}
+          {!o?.embudoId && (
+            <div style={{ marginTop: 6, maxWidth: 320 }}>
+              <Select value={b.embudoId} placeholder="Elegí la estrategia" aria-label="Estrategia de la venta" error={!b.embudoId}
+                onChange={(ev) => set({ embudoId: ev.target.value })}
+                opciones={e.embudos.filter((x) => x.activo).sort((a, c) => a.orden - c.orden).map((x) => ({ valor: x.id, texto: x.nombre }))} />
+            </div>
+          )}
           <span className="t-sm t-subtle" style={{ display: "block" }}>
             {o ? `De la UTM ${textoUtm(o.utm)}.`
               : "Quien compró no llegó con una UTM del estándar ni con una que tenga regla: si se asigna en Ajustes → UTMs, se completa solo."}
