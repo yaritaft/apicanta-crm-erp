@@ -80,3 +80,53 @@ export function agendasParaMarcar(e: EstadoApp, setterId: ID, ahora: number, bus
   const pasadas = lista.filter((x) => x.yaPaso).sort((a, b) => b.sesion.inicia.localeCompare(a.sesion.inicia));
   return [...proximas, ...pasadas];
 }
+
+/* ---------- De dónde sale el setter de una venta (Aldana, 31/10) ----------
+   «Necesito saber qué ventas está comisionando Daniel: su comisión según el cierre mensual es mil y pico y nunca comisionó tanto por
+   setting, o los closers están marcando mal esa opción o hay algo que se está computando mal.» Cada venta con setter dice cómo lo tiene:
+   porque el setter marcó la agenda de esa persona, porque entró por su link (utm_campaign=setter_nombre) o porque el closer lo puso. */
+
+export type ViaDelSetter = "marcada" | "link" | "closer";
+export interface OrigenDelSetter {
+  via: ViaDelSetter;
+  /* aaaa-mm-dd: cuándo marcó la agenda, si la marcó */
+  marcadaEl?: string;
+  /* La marcó un día después de la venta: el closer ya había cerrado cuando se la quedó el setter. */
+  despuesDeLaVenta?: boolean;
+}
+
+const hayLinkDeSetter = (s: Pick<Sesion, "utm">) => /^setter[_-]/i.test(String((s.utm as Record<string, string> | undefined)?.utm_campaign ?? ""));
+
+/** Cómo llegó el setter a cada venta que lo tiene. Sólo mira las agendas del setter (unas pocas): barato aunque haya miles de ventas. */
+export function origenDelSetterPorVenta(
+  e: { ventas: readonly { id: ID; setterId?: ID; contactoId?: ID; fecha: string }[]; sesiones: readonly Pick<Sesion, "id" | "contactoId" | "leadId" | "inicia" | "setterId" | "setterMarcadoEn" | "utm">[] },
+): Map<ID, OrigenDelSetter> {
+  const delSetter = e.sesiones.filter((s) => s.setterId);
+  const out = new Map<ID, OrigenDelSetter>();
+  for (const v of e.ventas) {
+    if (!v.setterId) continue;
+    const cuando = Date.parse(v.fecha);
+    let mejor: (typeof delSetter)[number] | undefined;
+    for (const s of delSetter) {
+      if (s.setterId !== v.setterId || !v.contactoId || (s.contactoId !== v.contactoId && s.leadId !== v.contactoId)) continue;
+      const t = Date.parse(s.inicia);
+      if (t > cuando + DIA || t < cuando - DIAS_DE_LA_MARCA * DIA) continue;
+      if (!mejor || Date.parse(s.inicia) > Date.parse(mejor.inicia)) mejor = s;
+    }
+    if (!mejor) { out.set(v.id, { via: "closer" }); continue; }
+    if (hayLinkDeSetter(mejor) && !mejor.setterMarcadoEn) { out.set(v.id, { via: "link" }); continue; }
+    const marcadaEl = mejor.setterMarcadoEn ? mejor.setterMarcadoEn.slice(0, 10) : undefined;
+    out.set(v.id, { via: "marcada", marcadaEl, despuesDeLaVenta: Boolean(marcadaEl && marcadaEl > v.fecha.slice(0, 10)) });
+  }
+  return out;
+}
+
+/** Lo dicho en una frase corta, para la tabla y la ficha. */
+export function textoDelOrigen(o: OrigenDelSetter | undefined): string {
+  if (!o) return "";
+  if (o.via === "marcada") {
+    const cuando = o.marcadaEl ? ` el ${o.marcadaEl.slice(8, 10)}/${o.marcadaEl.slice(5, 7)}` : "";
+    return `marcó la agenda${cuando}${o.despuesDeLaVenta ? " (la venta ya estaba hecha)" : ""}`;
+  }
+  return o.via === "link" ? "entró por su link" : "lo puso el closer";
+}

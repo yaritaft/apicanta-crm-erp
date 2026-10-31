@@ -22,6 +22,7 @@ import { aCSV, filasParaPlanilla } from "@/lib/exportarPlanilla";
 import { desdeVenta, FormularioVenta, type BorradorVenta } from "@/components/ventas/FormularioVenta";
 import { useToast } from "@/components/ui/Toast";
 import { acciones, useEstado } from "@/lib/store";
+import { origenDelSetterPorVenta, textoDelOrigen } from "@/lib/setter-agendas";
 import { useAbrirDesdeURL } from "@/lib/useQuery";
 import { useRangoURL } from "@/lib/useRango";
 import { ordenAURL, ordenDeURL, paginaDeURL, useBusquedaURL, useParamsURL } from "@/lib/useParamsURL";
@@ -44,7 +45,7 @@ const ESTADOS = Object.keys(ESTADO) as EstadoVenta[];
    ?periodo. Vacío es "sin filtro"; lo que está en su valor por defecto no se
    escribe, así un link sin tocar nada es /ventas a secas.
    - estado: saldo · activa · cancelada · reembolsada
-   - vendedor, servicio, estrategia: el id, o "sin"
+   - vendedor, setter, servicio, estrategia: el id, o "sin"
    - proyecto: el proyecto tal cual se escribió, o "sin"
    - cuenta: el id de la cuenta recaudadora de alguno de sus cobros
    - orden: la columna, con "-" adelante si va de mayor a menor
@@ -53,19 +54,20 @@ const ESTADOS = Object.keys(ESTADO) as EstadoVenta[];
      control cruzado (components/cobros/ListaCobros.tsx). Los filtros, el
      período y la búsqueda valen para las dos. */
 const VISTA_VENTAS = {
-  estado: "", vendedor: "", servicio: "", estrategia: "", proyecto: "", cuenta: "",
+  estado: "", vendedor: "", setter: "", servicio: "", estrategia: "", proyecto: "", cuenta: "",
   orden: "-fecha", pag: "1", seccion: "ventas",
 };
 const ORDEN_INICIAL = { clave: "fecha", desc: true };
-const COLUMNAS_QUE_ORDENAN = ["contacto", "producto", "proyecto", "estrategia", "closer", "fecha", "precio", "saldo", "control"];
+const COLUMNAS_QUE_ORDENAN = ["contacto", "producto", "proyecto", "estrategia", "closer", "setter", "fecha", "precio", "saldo", "control"];
 const POR_PAGINA = 50;
 
-type Faceta = "estado" | "vendedor" | "servicio" | "estrategia" | "proyecto" | "cuenta";
-const FACETAS: Faceta[] = ["estado", "vendedor", "servicio", "estrategia", "proyecto", "cuenta"];
+type Faceta = "estado" | "vendedor" | "setter" | "servicio" | "estrategia" | "proyecto" | "cuenta";
+const FACETAS: Faceta[] = ["estado", "vendedor", "setter", "servicio", "estrategia", "proyecto", "cuenta"];
 
 /* Lo que cada venta tiene en cada filtro de un solo valor. */
 const valorDe = {
   vendedor: (v: Venta) => v.closerId || SIN,
+  setter: (v: Venta) => v.setterId || SIN,
   servicio: (v: Venta) => v.productoId || SIN,
   estrategia: (v: Venta) => v.embudoId || SIN,
   proyecto: (v: Venta) => v.proyecto?.trim() || SIN,
@@ -168,6 +170,7 @@ export default function Ventas() {
       xs.find((x) => x.id === id)?.nombre ?? otro;
     return {
       vendedor: opcionesDe(e.ventas.map(valorDe.vendedor), (id) => nombre(e.equipo, id, "Ya no está en el equipo"), "Sin vendedor"),
+      setter: opcionesDe(e.ventas.map(valorDe.setter), (id) => nombre(e.equipo, id, "Ya no está en el equipo"), "Sin setter"),
       servicio: opcionesDe(e.ventas.map(valorDe.servicio), (id) => nombre(e.productos, id, "Servicio borrado"), "Sin servicio"),
       estrategia: opcionesDe(e.ventas.map(valorDe.estrategia), (id) => nombre(e.embudos, id, "Estrategia borrada"), "Sin estrategia"),
       proyecto: opcionesDe(e.ventas.map(valorDe.proyecto), (p) => p, "Sin proyecto"),
@@ -183,6 +186,7 @@ export default function Ventas() {
     return {
       estado: vista.estado === "saldo" || (ESTADOS as string[]).includes(vista.estado) ? vista.estado : "",
       vendedor: valido(opciones.vendedor, vista.vendedor),
+      setter: valido(opciones.setter, vista.setter),
       servicio: valido(opciones.servicio, vista.servicio),
       estrategia: valido(opciones.estrategia, vista.estrategia),
       proyecto: valido(opciones.proyecto, vista.proyecto),
@@ -199,6 +203,7 @@ export default function Ventas() {
     const pasa: Record<Faceta, (v: Venta) => boolean> = {
       estado: (v) => !f.estado || (f.estado === "saldo" ? conSaldo(v) : v.estado === f.estado),
       vendedor: (v) => !f.vendedor || valorDe.vendedor(v) === f.vendedor,
+      setter: (v) => !f.setter || valorDe.setter(v) === f.setter,
       servicio: (v) => !f.servicio || valorDe.servicio(v) === f.servicio,
       estrategia: (v) => !f.estrategia || valorDe.estrategia(v) === f.estrategia,
       proyecto: (v) => !f.proyecto || valorDe.proyecto(v) === f.proyecto,
@@ -228,6 +233,7 @@ export default function Ventas() {
           porEstado: contar(paraEstado, (v) => [v.estado]),
         },
         vendedor: contar(salvo("vendedor"), (v) => [valorDe.vendedor(v)]),
+        setter: contar(salvo("setter"), (v) => [valorDe.setter(v)]),
         servicio: contar(salvo("servicio"), (v) => [valorDe.servicio(v)]),
         estrategia: contar(salvo("estrategia"), (v) => [valorDe.estrategia(v)]),
         proyecto: contar(salvo("proyecto"), (v) => [valorDe.proyecto(v)]),
@@ -260,12 +266,14 @@ export default function Ventas() {
   function limpiarFiltros() {
     setBusca("");
     setVista(
-      { estado: null, vendedor: null, servicio: null, estrategia: null, proyecto: null, cuenta: null, pag: null },
+      { estado: null, vendedor: null, setter: null, servicio: null, estrategia: null, proyecto: null, cuenta: null, pag: null },
       { q: null },
     );
   }
 
   const nombreDe = (xs: { id: string; nombre: string }[], id?: string) => (id ? xs.find((x) => x.id === id)?.nombre : undefined);
+  /* Cómo llegó cada setter a su venta: la agenda que marcó, su link o el closer. */
+  const origenes = useMemo(() => origenDelSetterPorVenta(e), [e.ventas, e.sesiones]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const columnas: Columna<Venta>[] = [
     {
@@ -278,6 +286,22 @@ export default function Ventas() {
     { clave: "proyecto", titulo: "Proyecto", tipo: "secondary", orden: (v) => v.proyecto ?? "", celda: (v) => v.proyecto || "—" },
     { clave: "estrategia", titulo: "Estrategia", tipo: "secondary", orden: (v) => nombreDe(e.embudos, v.embudoId) ?? "", celda: (v) => nombreDe(e.embudos, v.embudoId) ?? "—" },
     { clave: "closer", titulo: "Vendedor", tipo: "secondary", orden: (v) => nombreDe(e.equipo, v.closerId) ?? "", celda: (v) => nombreDe(e.equipo, v.closerId) ?? "—" },
+    {
+      /* Quién la setteó y cómo llegó a la venta (Aldana, 31/10): marcó la agenda, entró por su link o lo puso el closer. */
+      clave: "setter", titulo: "Setter", tipo: "secondary", orden: (v) => nombreDe(e.equipo, v.setterId) ?? "~",
+      celda: (v) => {
+        const quien = nombreDe(e.equipo, v.setterId);
+        if (!quien) return "—";
+        const origen = origenes.get(v.id);
+        const o = textoDelOrigen(origen);
+        return (
+          <span style={{ display: "grid", gap: 2 }}>
+            <span>{quien}</span>
+            {o && <span className="t-sm t-subtle" style={origen?.despuesDeLaVenta ? { color: "var(--warning)" } : undefined}>{o}</span>}
+          </span>
+        );
+      },
+    },
     { clave: "fecha", titulo: "Fecha", tipo: "secondary", orden: (v) => v.fecha, celda: (v) => fechaLarga(v.fecha) },
     {
       clave: "precio", titulo: "Valor total", tipo: "num", orden: (v) => v.precioAcordado, celda: (v) => M(v.precioAcordado),
@@ -337,6 +361,10 @@ export default function Ventas() {
           <Filtro etiqueta="Filtrar por vendedor" todos="Todos los vendedores" valor={f.vendedor}
             opciones={contar(opciones.vendedor, cuentas.vendedor)} onCambiar={(v) => filtrar("vendedor", v)} />
         )}
+        {opciones.setter.length > 1 && (
+          <Filtro etiqueta="Filtrar por setter" todos="Todos los setters" valor={f.setter}
+            opciones={contar(opciones.setter, cuentas.setter)} onCambiar={(v) => filtrar("setter", v)} />
+        )}
         {opciones.servicio.length > 1 && (
           <Filtro etiqueta="Filtrar por servicio" todos="Todos los servicios" valor={f.servicio}
             opciones={contar(opciones.servicio, cuentas.servicio)} onCambiar={(v) => filtrar("servicio", v)} />
@@ -390,7 +418,7 @@ export default function Ventas() {
       {seccion === "cobros" ? (
         <ListaCobros
           e={e} desde={rango.desde} hasta={rango.hasta} busca={busca}
-          filtros={{ vendedor: f.vendedor, servicio: f.servicio, estrategia: f.estrategia, proyecto: f.proyecto, cuenta: f.cuenta }}
+          filtros={{ vendedor: f.vendedor, setter: f.setter, servicio: f.servicio, estrategia: f.estrategia, proyecto: f.proyecto, cuenta: f.cuenta }}
           hayFiltros={FACETAS.some((k) => k !== "estado" && f[k]) || busca.trim() !== ""}
           onLimpiar={limpiarFiltros} cabecera={barraDeFiltros}
         />

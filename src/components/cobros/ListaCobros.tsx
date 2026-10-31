@@ -4,7 +4,8 @@ import React, { useMemo, useState } from "react";
 import { FileSpreadsheet, Info, Receipt, ShieldCheck } from "lucide-react";
 import { Ayuda, Button, Card, Chip, Empty } from "@/components/ui/ui";
 import { DataTable, type Columna } from "@/components/ui/DataTable";
-import { CopiarLink, SIN } from "@/components/ui/Filtros";
+import { CopiarLink } from "@/components/ui/Filtros";
+import { pasaFiltrosDeVenta } from "@/lib/filtros-de-venta";
 import { useToast } from "@/components/ui/Toast";
 import { ModalChequeo, useNombreDeQuien } from "@/components/cobros/ControlCobro";
 import { columnaCargo, columnaChequeo, columnaComprobante, columnaConciliado } from "@/components/cobros/columnasControl";
@@ -32,19 +33,11 @@ import type { EstadoApp, Venta } from "@/lib/types";
    sin-comprobante, sin-conciliar), ?orden-cobros y ?pag-cobros.
    ================================================================== */
 
-export interface FiltrosDeCobros { vendedor: string; servicio: string; estrategia: string; proyecto: string; cuenta: string }
+export interface FiltrosDeCobros { vendedor: string; setter: string; servicio: string; estrategia: string; proyecto: string; cuenta: string }
 export const PARAMS_COBROS = ["mostrar"] as const;
 export const PARAMS_TABLA_COBROS = ["orden-cobros", "pag-cobros"] as const;
 
 const normal = (s: string) => s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
-
-/* Una venta pasa los filtros de la lista: vendedor, servicio, estrategia y proyecto. */
-export function pasaFiltrosDeVenta(v: Venta | undefined, f: Omit<FiltrosDeCobros, "cuenta">): boolean {
-  return (!f.vendedor || (v?.closerId || SIN) === f.vendedor)
-    && (!f.servicio || (v?.productoId || SIN) === f.servicio)
-    && (!f.estrategia || (v?.embudoId || SIN) === f.estrategia)
-    && (!f.proyecto || (v?.proyecto?.trim() || SIN) === f.proyecto);
-}
 
 /** Los cobros del período con los filtros de la lista, antes de elegir qué control mostrar. */
 export function cobrosDeLaLista(
@@ -83,7 +76,7 @@ export function ListaCobros({ e, desde, hasta, filtros, busca, hayFiltros, onLim
   const enLaLista = useMemo(
     () => cobrosDeLaLista(e, desde, hasta, filtros, busca),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [e.pagos, e.cuotas, e.ventas, desde, hasta, filtros.vendedor, filtros.servicio, filtros.estrategia, filtros.proyecto, filtros.cuenta, busca],
+    [e.pagos, e.cuotas, e.ventas, desde, hasta, filtros.vendedor, filtros.setter, filtros.servicio, filtros.estrategia, filtros.proyecto, filtros.cuenta, busca],
   );
   const filas = useMemo(() => enLaLista.filter((f) => pasaControl(f.pago, e.procesadores, mostrar)), [enLaLista, e.procesadores, mostrar]);
   const cuenta = (m: FiltroControl) => enLaLista.filter((f) => pasaControl(f.pago, e.procesadores, m)).length;

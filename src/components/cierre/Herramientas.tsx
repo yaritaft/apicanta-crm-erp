@@ -82,7 +82,7 @@ function HerramientaInterna({ h, cadencia, periodo, ahora }: { h: Herramienta; c
       return (
         <ListaCobros
           e={e} desde={desde} hasta={hasta} busca=""
-          filtros={{ vendedor: "", servicio: "", estrategia: "", proyecto: "", cuenta: "" }}
+          filtros={{ vendedor: "", setter: "", servicio: "", estrategia: "", proyecto: "", cuenta: "" }}
           hayFiltros={false} onLimpiar={() => undefined}
         />
       );

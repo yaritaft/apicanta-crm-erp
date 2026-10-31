@@ -27,7 +27,9 @@ import type {
 } from "@/lib/types";
 import { DesgloseRenglon } from "./DesgloseRenglon";
 import { GastosQueCuentan } from "./GastosQueCuentan";
+import Link from "next/link";
 import { EquipoPorTipo } from "./EquipoPorTipo";
+import { mesDelAviso, settersConComisionInusual } from "@/lib/comision-inusual";
 import { pagosSospechosos } from "@/lib/pagos-equipo";
 
 /* ==================================================================
@@ -84,6 +86,8 @@ export function LiquidacionMes({ onVerPersona, soloMirar = false, onVerReglas }:
   /* Las reglas de comisión de este mes que nadie confirmó: se avisa antes de pagar (lib/reglas.ts). */
   const sinConfirmar = useMemo(() => (cerrada ? [] : reglasSinConfirmar(e, periodo)), [cerrada, e, periodo]);
   const cambios = useMemo(() => (cerrada ? diferenciasDesdeElCierre(e, liq) : []), [cerrada, e, liq]);
+  /* Un setter que cobra mucho más que su mejor mes: se mira antes de pagar (Aldana, 31/10). */
+  const settersInusuales = useMemo(() => settersConComisionInusual(e, periodo), [e, periodo]);
 
   /* Las notas para quien paga: los montos a mano que traen una. */
   const notas = useMemo(
@@ -266,6 +270,19 @@ export function LiquidacionMes({ onVerPersona, soloMirar = false, onVerReglas }:
           {" "}{corte
             ? <>Lo pagado no se toca: la diferencia pasa sola a la liquidación de {nombrePeriodo(moverPeriodo(periodo, 1))}, a cada uno lo suyo («Resto de {nombrePeriodo(periodo)}»). También se puede reabrir esta.</>
             : "Lo pagado no se toca: la diferencia se puede sumar a mano en la liquidación del mes que viene, o reabrir esta."}
+        </Ayuda>
+      )}
+
+      {settersInusuales.length > 0 && (
+        <Ayuda
+          titulo={settersInusuales.length === 1 ? "Una comisión de setter está muy por encima de lo de siempre" : "Hay comisiones de setter muy por encima de lo de siempre"}
+          icono={<AlertTriangle size={18} />}
+        >
+          {settersInusuales.map((x) => `${x.nombre}: ${plata(x.esteMes, base)} este mes, ${String(x.veces).replace(".", ",")} veces su mejor mes de los últimos seis (${plata(x.mejorAntes, base)} en ${mesDelAviso(x)})`).join(" · ")}.
+          {" "}Conviene mirar las ventas que lo traen antes de pagar: puede ser que se hayan marcado agendas de más.
+          {settersInusuales.map((x) => (
+            <Link key={x.miembroId} href={`/ventas?setter=${x.miembroId}`} className="hk-btn hk-btn--ghost hk-btn--sm" style={{ marginLeft: 8 }}>Ver las ventas de {x.nombre.split(" ")[0]}</Link>
+          ))}
         </Ayuda>
       )}
 
