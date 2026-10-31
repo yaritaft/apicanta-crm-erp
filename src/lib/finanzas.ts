@@ -2,14 +2,14 @@ import { fechaDeAcreditacion, retenciones } from "./acreditacion";
 import type { Cuota, EstadoApp, Gasto, MiembroEquipo, Pago, Venta } from "./types";
 import type { RangoMes } from "./metricas";
 import { esSoloReserva } from "./angelo";
-import { cobraDirector, cobraEnFecha, closerDeCuota, tasaDeComision } from "./comision";
+import { cobraDirector, cobraEnFecha, closerDeCuota, tasaDeComision, tasaDeSetterEnVenta } from "./comision";
 import { devolucionesDelMes, reversasDelMes, totalDevuelto, type Reversa } from "./devoluciones";
 import { fechaDePago } from "./gastos";
 
 /* Las reglas de cuándo y cuánto comisiona alguien viven en lib/comision.ts
    (sin dependencias, para que las devoluciones las usen); acá se reexportan
    para quien las importaba de Finanzas. */
-export { cobraDirector, cobraEnFecha, closerDeCuota, tasaDeComision };
+export { cobraDirector, cobraEnFecha, closerDeCuota, tasaDeComision, tasaDeSetterEnVenta };
 export { devolucionesDelMes, totalDevuelto };
 import { descuentaPorCierre, ventasSinCierre } from "./cierre-del-dia";
 
@@ -264,7 +264,7 @@ export function comisionSetterDePago(e: EstadoApp, venta: Venta | undefined, p: 
   if (!venta?.setterId) return 0;
   if (e.equipo.find((x) => x.id === venta.closerId)?.sinComision) return 0;
   const setter = e.equipo.find((x) => x.id === venta.setterId);
-  return setter ? Math.round(netoDe(p) * tasaDeComision(setter, venta.productoId) * 100) / 100 : 0;
+  return setter ? Math.round(netoDe(p) * tasaDeSetterEnVenta(setter, venta) * 100) / 100 : 0;
 }
 
 export function comisionReferidorDePago(e: EstadoApp, venta: Venta | undefined, p: Pago): number {

@@ -14,8 +14,9 @@ import { CabezaPlegable } from "./Plegable";
 import { ChequeoDeCobro } from "@/components/cobros/ControlCobro";
 import { DevolucionesDeVenta } from "@/components/devoluciones/DevolucionesDeVenta";
 import { useAcceso } from "@/lib/acceso";
-import { puedeDarDeBaja, puedeEditar } from "@/lib/permisos";
+import { puedeDarDeBaja, puedeEditar, puedeFijarComisionDeSetter } from "@/lib/permisos";
 import { EstrategiaRapida } from "@/components/ventas/EstrategiaRapida";
+import { textoDeTasa } from "@/lib/comision-setter";
 import { esIncobrable } from "@/lib/cuota-incobrable";
 import { estaPorAcreditar, fechaDeAcreditacion, retenciones } from "@/lib/acreditacion";
 import { AccionesDeCuota } from "@/components/cobros/AccionesDeCuota";
@@ -108,6 +109,7 @@ export function TarjetaVenta({ e, venta, resaltada, abierta, onAlternar, onPagar
                 ? `${tipoDePago(venta, cuotasVenta)} · ${planDePago(venta, cuotasVenta)}`
                 : tipoDePago(venta, cuotasVenta)}
               {setter ? ` · setter ${setter}` : ""}
+              {setter && typeof venta.comisionSetter === "number" && puedeFijarComisionDeSetter(acceso) ? ` (comisiona ${textoDeTasa(venta.comisionSetter)})` : ""}
               {venta.referidorNombre ? ` · referido por ${venta.referidorNombre}` : ""}
             </span>
           )}

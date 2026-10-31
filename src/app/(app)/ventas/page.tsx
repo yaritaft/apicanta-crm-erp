@@ -13,6 +13,7 @@ import { DateRangePicker, diaDeNegocio } from "@/components/ui/DateRangePicker";
 import { CopiarLink, Filtro, opcionesDe, SIN, type OpcionFiltro } from "@/components/ui/Filtros";
 import { Confirmar } from "@/components/ui/Modal";
 import { AsistenteVenta } from "@/components/ventas/AsistenteVenta";
+import { ComisionDeSetter } from "@/components/ventas/ComisionDeSetter";
 import { EstrategiaRapida } from "@/components/ventas/EstrategiaRapida";
 import { CargarCuota } from "@/components/cobros/CargarCuota";
 import { AyudaDeCuotas } from "@/components/cobros/AyudaDeCuotas";
@@ -32,7 +33,7 @@ import { fechaLarga, money, num } from "@/lib/format";
 import { saldoVenta } from "@/lib/finanzas";
 import { casilleroDe, controlPorVenta } from "@/lib/control-cobros";
 import { useAcceso } from "@/lib/acceso";
-import { puedeEditar } from "@/lib/permisos";
+import { puedeEditar, puedeFijarComisionDeSetter } from "@/lib/permisos";
 import type { EstadoVenta, Venta } from "@/lib/types";
 
 const ESTADO: Record<EstadoVenta, { texto: string; variante: "success" | "neutral" | "danger" }> = {
@@ -304,6 +305,8 @@ export default function Ventas() {
           <span style={{ display: "grid", gap: 2 }}>
             <span>{quien}</span>
             {o && <span className="t-sm t-subtle" style={origen?.despuesDeLaVenta ? { color: "var(--warning)" } : undefined}>{o}</span>}
+            {/* Quien liquida fija el % del setter en esta venta (Aldana, 31/10). */}
+            {puedeFijarComisionDeSetter(acceso) && <ComisionDeSetter venta={v} />}
           </span>
         );
       },

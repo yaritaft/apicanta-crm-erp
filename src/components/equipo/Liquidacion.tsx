@@ -764,7 +764,7 @@ function Linea({ l, cerrada, soloMirar, entrada, onEntrada, onBorrarExtra, onVer
               )}
               {l.tipo === "extra" ? (
                 <IconButton etiqueta="Sacar este monto" onClick={onBorrarExtra}><Trash2 size={15} /></IconButton>
-              ) : l.tipo === "descuento" ? null /* Lo calcula el interruptor del cierre del día (Ajustes → CRM): no se corrige acá. */
+              ) : l.tipo === "descuento" ? null /* Lo calcula la app (el interruptor del cierre del día de Ajustes → CRM, o el % propio de una venta del setter): no se corrige acá. */
               : l.tipo === "devolucion" || l.tipo === "arrastre" ? null /* Lo calcula la devolución cargada (Finanzas → Devoluciones): se corrige allá. */
               : l.corregido ? (
                 <button type="button" className="link t-sm" onClick={() => onEntrada({ monto: undefined, nota: undefined })}>Volver a la cuenta</button>

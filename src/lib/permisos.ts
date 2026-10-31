@@ -103,6 +103,9 @@ export const esDueno = (a: MiAcceso | null | undefined) => a?.tipo === "dueno";
 /** La liquidación del mes: 0 no la ve · 1 la mira · 2 la carga, la cierra y marca quién cobró. Los dueños, siempre 2. */
 export const nivelDeLiquidacion = (a: MiAcceso | null | undefined): 0 | 1 | 2 => (esDueno(a) ? 2 : nivelEn(a, "liquidacion"));
 /** ¿Puede ver la liquidación (y los pasos de Finanzas que dependen de ella)? Un dueño, o quien tiene el permiso «Liquidación». */
+/** Fijar el % del setter en una venta (Venta.comisionSetter): lo hace quien liquida, los dueños y «Liquidación: editar». */
+export const puedeFijarComisionDeSetter = (a: MiAcceso | null | undefined): boolean => nivelDeLiquidacion(a) >= 2;
+
 export const veLaLiquidacion = (a: MiAcceso | null | undefined): boolean => nivelDeLiquidacion(a) >= 1;
 
 /** Una cuenta que ve sólo lo suyo (el closer): su menú es el mínimo, «Mis

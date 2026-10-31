@@ -1370,6 +1370,10 @@ export interface Venta {
   proyecto?: string;
   /* Nombre del setter: un miembro del equipo con rol setter. */
   setterId?: ID;
+  /* El % que cobra el setter de ESTA venta, como fracción (0,05 = 5%). Sin dato, el de siempre de esa persona (su comisionRate o el de
+     ese servicio); 0, no comisiona. Lo fija quien liquida (dueños y «Liquidación: editar»): Aldana, 31/10, por las ventas que un setter
+     se queda con sólo marcar la agenda. */
+  comisionSetter?: number | null;
   /* Nombre del referidor y su número de teléfono: quien refiere no es del
      equipo, por eso va escrito y no elegido. */
   referidorNombre?: string;

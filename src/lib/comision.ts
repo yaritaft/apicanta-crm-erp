@@ -23,6 +23,15 @@ export const cobraDirector = cobraEnFecha;
 export const tasaDeComision = (m: Pick<MiembroEquipo, "comisionRate" | "comisionServicios"> | undefined, productoId?: string): number =>
   !m ? 0 : (productoId !== undefined ? m.comisionServicios?.[productoId] : undefined) ?? m.comisionRate ?? 0;
 
+/** El % del setter en una venta: el de esa venta, si quien liquida lo fijó aparte (0 = no comisiona), o el de siempre de esa persona. */
+export const tasaDeSetterEnVenta = (
+  setter: Pick<MiembroEquipo, "comisionRate" | "comisionServicios"> | undefined,
+  venta: { productoId?: string; comisionSetter?: number | null },
+): number => {
+  const propio = venta.comisionSetter;
+  return typeof propio === "number" && Number.isFinite(propio) && propio >= 0 ? propio : tasaDeComision(setter, venta.productoId);
+};
+
 /** Quién comisiona los cobros de una cuota: el que la heredó o, si nadie,
  *  el closer de la venta. */
 export const closerDeCuota = (v: { closerId?: string }, c?: { closerId?: string }) => c?.closerId || v.closerId;

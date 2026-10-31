@@ -934,6 +934,78 @@ function lineaDeDescuento(
   };
 }
 
+/* ---------- El porcentaje propio de una venta (setter) ----------
+   Una venta puede traer su propio % para el setter (Venta.comisionSetter; vacío = el de siempre; 0 = no comisiona). Finanzas lo usa
+   en cada cobro (comisionSetterDePago). Acá la comisión del setter sale entera, con el % de su regla, y un renglón aparte suma o
+   resta la diferencia de esas ventas: se ve cuánto fue y por qué, y la suma da lo mismo que Finanzas. Sin ventas con % propio no
+   existe: ningún número cambia. Lo fija quien liquida (supabase/comision-setter-por-venta.sql). */
+
+function lineaDeAjusteDeSetter(
+  cx: Contexto, m: MiembroEquipo, c: ConceptoPago, comision: LineaLiquidada, entrada: EntradaLiquidacion | undefined, hermanos?: ConceptoPago[],
+): LineaLiquidada | null {
+  if (c.tipo !== "porcentaje" || c.alcance !== "setter" || (c.base !== "cash" && c.base !== "cash-neto")) return null;
+  if (comision.corregido || entrada?.cantidad !== undefined) return null;
+  if (!cx.e.ventas.some((v) => v.setterId === m.id && typeof v.comisionSetter === "number")) return null;
+  const hasta = m.hasta && (!c.hasta || m.hasta < c.hasta) ? m.hasta : c.hasta;
+  const vig = vigenciaEnMes({ desde: c.desde, hasta }, cx.rango);
+  if (!vig) return null;
+  const b = c.base === "cash" ? "cash" : "cash-neto";
+  const tasa = c.tasa ?? 0;
+  let valor = 0, bruto = 0, conPropia = 0;
+  const cobros: CobroContado[] = [];
+  const porVenta = new Map<ID, { venta: Venta; tasa: number }>();
+  for (const p of pagosDelMes(cx.e, medida(vig, cx.corte))) {
+    const venta = cx.ventaDeCuota.get(p.cuotaId);
+    const propia = venta?.comisionSetter;
+    if (!venta || typeof propia !== "number" || !Number.isFinite(propia) || propia < 0 || Math.abs(propia - tasa) < 1e-9) continue;
+    if (!cuenta(cx, c, m, venta, p, hermanos)) continue;
+    const neto = b === "cash" ? p.monto : p.monto - p.feeMonto;
+    valor += neto; bruto += p.monto; conPropia += neto * propia;
+    cobros.push({ pago: p, venta });
+    porVenta.set(venta.id, { venta, tasa: propia });
+  }
+  valor = r2(valor); bruto = r2(bruto);
+  const conLaDeSiempre = r2(valor * tasa);
+  const monto = r2(conPropia - valor * tasa);
+  if (cobros.length === 0 || Math.abs(monto) < 0.005) return null;
+
+  const B = cx.base;
+  const cuantos = cant(cobros.length, "cobro", "cobros");
+  const ventasTexto = cant(porVenta.size, "venta", "ventas");
+  const propias = r2(conPropia);
+  const pasos = [
+    ...(b === "cash-neto"
+      ? [
+        paso("base", "Cobrado de esas ventas", bruto, "plata", { moneda: B, nota: cuantos }),
+        paso("menos", "Lo que se quedaron los procesadores de pago", r2(bruto - valor), "plata", { moneda: B }),
+        paso("igual", "Cash collected post pasarelas de esas ventas", valor, "plata", { moneda: B }),
+      ]
+      : [paso("base", "Cash collected de esas ventas", valor, "plata", { moneda: B, nota: cuantos })]),
+    paso("por", "Porcentaje de su regla", tasa, "tasa"),
+    paso("igual", "Comisión con el porcentaje de su regla (ya contada arriba)", conLaDeSiempre, "plata", { moneda: c.moneda }),
+    paso("base", "Comisión con el porcentaje propio de cada venta", propias, "plata", { moneda: c.moneda }),
+    paso("menos", "Lo que ya se contó arriba", conLaDeSiempre, "plata", { moneda: c.moneda }),
+    paso("igual", monto < 0 ? "Diferencia: se resta" : "Diferencia: se suma", monto, "plata", { moneda: c.moneda }),
+  ];
+  const lista = listaDeCobros(cobros, nombresDeLista(cx), B);
+  const quien = (x: { venta: Venta; tasa: number }) => `${x.venta.contactoNombre?.trim() || "Una venta"}: ${pct(x.tasa * 100, decimalesTasa(x.tasa))}`;
+  return {
+    clave: `setter-propio:${c.id}`, tipo: "descuento", nombre: "Ajuste por porcentaje propio",
+    detalle: `${ventasTexto} con su propio porcentaje en vez del ${pct(tasa * 100, decimalesTasa(tasa))} de su regla (${cuantos})`,
+    moneda: c.moneda, monto, montoBase: r2(aMonedaBase(monto, c.moneda, B, cx.tc)),
+    variable: true, enFinanzas: comision.enFinanzas,
+    desglose: {
+      regla: `La diferencia entre el ${pct(tasa * 100, decimalesTasa(tasa))} de su regla y el porcentaje que se fijó en cada una de estas ventas`,
+      moneda: c.moneda, pasos,
+      ...(lista ? { lista: { ...lista, titulo: "Los cobros de esas ventas" } } : {}),
+      avisos: [
+        `Porcentaje de cada venta: ${[...porVenta.values()].map(quien).join(" · ")}.`,
+        "La comisión de arriba está entera, con el porcentaje de su regla; Finanzas y el panel del setter ya usan el de cada venta, así que acá se suma o resta la diferencia y da lo mismo. Se cambia en Ventas, en la columna Setter.",
+      ],
+    },
+  };
+}
+
 /* "Lo cargó Juan Cruz el 7 oct 2026 desde la liquidación de septiembre 2026". */
 function cargadoTexto(x: ExtraLiquidacion, periodo: string): string | undefined {
   if (!x.creadoEn && !x.creadoPor?.trim()) return undefined;
@@ -1254,6 +1326,9 @@ export function calcularLiquidacion(e: EstadoApp, periodo: string, liq?: Liquida
       /* Con el interruptor del cierre del día prendido, el renglón que resta lo que no se paga. */
       const descuento = l ? lineaDeDescuento(cx, m, c, l, entradas[claveEntrada(m.id, c.id)], conceptos) : null;
       if (descuento) fila.lineas.push(descuento);
+      /* Y, si una venta del setter trae su propio porcentaje, el renglón que suma o resta la diferencia. */
+      const ajuste = l ? lineaDeAjusteDeSetter(cx, m, c, l, entradas[claveEntrada(m.id, c.id)], conceptos) : null;
+      if (ajuste) fila.lineas.push(ajuste);
     }
     fila.lineas.push(...lineasDeReversa(cx, m, reversas, entradas));
     for (const x of extras) if (x.miembroId === m.id) fila.lineas.push(lineaExtra(cx, x));
