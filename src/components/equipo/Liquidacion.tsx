@@ -3,12 +3,15 @@
 import React, { useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle, Calculator, Check, ChevronLeft, ChevronRight, ChevronsDownUp, ChevronsUpDown, Copy, Download,
-  Lock, LockOpen, Plus, RefreshCw, Trash2, UserRound,
+  Lock, LockOpen, Plus, RefreshCw, StickyNote, Trash2, UserRound,
 } from "lucide-react";
 import {
-  Ayuda, Badge, Button, Card, Chip, Empty, IconButton, Input, Select, StatCard, Switch,
+  Avatar, Ayuda, Badge, Button, Card, Chip, Empty, IconButton, Input, Select, Switch,
 } from "@/components/ui/ui";
+import { InfoMetrica } from "@/components/ui/InfoMetrica";
 import { InputMonto } from "@/components/ui/InputMonto";
+import { Avance, PartesDeUnTotal, Segmentado, Senal, Senales } from "@/components/finanzas/visual/visual";
+import { equipoPorTipo } from "@/lib/equipo-por-tipo";
 import { Modal } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toast";
 import { acciones, nuevoId, useEstado } from "@/lib/store";
@@ -47,6 +50,9 @@ import { pagosSospechosos } from "@/lib/pagos-equipo";
 
 const hoyPeriodo = () => periodoDe(new Date());
 
+/* Los nombres cortos de cada tipo de pago, para la barra de arriba. */
+const CORTO_DE_GRUPO: Record<string, string> = { fijos: "Fijos y bonos", closers: "Closers y setters", directores: "Directores", socio: "Socio", externos: "Externos" };
+
 /* "US$ 2.700 + $ 50.000": lo que se transfiere, por moneda. */
 function aPagarTexto(a: Partial<Record<Moneda, number>>): string {
   const partes = (Object.entries(a) as [Moneda, number][])
@@ -83,6 +89,7 @@ export function LiquidacionMes({ onVerPersona, soloMirar = false, onVerReglas }:
   const vivo = useMemo(() => calcularLiquidacion(e, periodo, liq), [e, periodo, liq]);
   const r: ResultadoLiquidacion = cerrada ? liq.resultado! : vivo;
   const falta = useMemo(() => faltantes(r), [r]);
+  const corte = r.corte;
   /* Las reglas de comisión de este mes que nadie confirmó: se avisa antes de pagar (lib/reglas.ts). */
   const sinConfirmar = useMemo(() => (cerrada ? [] : reglasSinConfirmar(e, periodo)), [cerrada, e, periodo]);
   const cambios = useMemo(() => (cerrada ? diferenciasDesdeElCierre(e, liq) : []), [cerrada, e, liq]);
@@ -105,10 +112,10 @@ export function LiquidacionMes({ onVerPersona, soloMirar = false, onVerReglas }:
   const [verDesglose, setVerDesglose] = useState<{ miembroId: string; clave: string } | null>(null);
 
   const [abiertos, setAbiertos] = useState<Set<string>>(new Set());
-  /* Al cambiar de mes se abren las personas a las que les falta cargar algo
-     o que traen una nota para quien paga: es lo primero que hay que ver. */
+  /* Al cambiar de mes se abren las personas a las que les falta cargar algo: es lo
+     primero que hay que hacer. Las notas para quien paga ya están arriba, en las señales. */
   useEffect(() => {
-    setAbiertos(new Set([...falta.lineas.map((x) => x.persona.miembroId), ...notas.map((x) => x.persona.miembroId)]));
+    setAbiertos(new Set(falta.lineas.map((x) => x.persona.miembroId)));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [periodo]);
   const alternar = (id: string) => setAbiertos((s) => {
@@ -153,7 +160,43 @@ export function LiquidacionMes({ onVerPersona, soloMirar = false, onVerReglas }:
     if (!acciones.quitarExtraLiquidacion(liquidacionId, extraId)) toast("No se pudo sacar: esa liquidación ya se cerró.", "err");
   };
 
-  const pagados = r.personas.filter((x) => liq.pagos[x.miembroId]).length;
+  /* Quién tiene algo para cobrar: a quien le toca cero no se le paga nada, así que no cuenta en «pagados». Lo mismo en el paso «Pagarle al equipo». */
+  const aCobrar = useMemo(() => r.personas.filter((x) => x.total > 0), [r.personas]);
+  const pagados = aCobrar.filter((x) => liq.pagos[x.miembroId]).length;
+  const pagadoPlata = aCobrar.filter((x) => liq.pagos[x.miembroId]).reduce((a, x) => a + x.total, 0);
+  const porTipo = useMemo(() => equipoPorTipo(r.personas, e.equipo), [r.personas, e.equipo]);
+  const [vistaLista, setVistaLista] = useState<"persona" | "tipo">("persona");
+  const [verSinNada, setVerSinNada] = useState(false);
+  const sumaCambios = cambios.reduce((a, x) => a + (x.hoy - x.cerrado), 0);
+  const topeCambios = Math.max(1, ...cambios.map((x) => Math.max(x.hoy, x.cerrado)));
+  /* Lo que hay que hacer primero, arriba: lo que falta pagar o cargar y, dentro de eso, lo más grande. Quien no cobra nada queda aparte. */
+  const quedaAparte = (x: PersonaLiquidada) => Math.abs(x.total) < 0.005 && (cerrada || (!x.lineas.some((l) => l.falta) && !x.pendiente && !x.sinCargar));
+  const porMonto = (a: PersonaLiquidada, b: PersonaLiquidada) => b.total - a.total || a.nombre.localeCompare(b.nombre, "es");
+  const conMonto = r.personas.filter((x) => !quedaAparte(x));
+  const sinNada = r.personas.filter(quedaAparte);
+  const topeMonto = Math.max(1, ...conMonto.map((x) => x.total));
+  const gruposLista: { id: string; titulo: string; personas: PersonaLiquidada[] }[] = cerrada
+    ? [
+      { id: "por-pagar", titulo: "Por pagar", personas: conMonto.filter((x) => !liq.pagos[x.miembroId]).sort(porMonto) },
+      { id: "pagados", titulo: "Pagados", personas: conMonto.filter((x) => liq.pagos[x.miembroId]).sort(porMonto) },
+    ].filter((g) => g.personas.length > 0)
+    : [{ id: "todos", titulo: "", personas: [...conMonto].sort((a, b) => Number(b.lineas.some((l) => l.falta)) - Number(a.lineas.some((l) => l.falta)) || porMonto(a, b)) }];
+  const fila = (persona: PersonaLiquidada) => (
+    <FilaPersona
+      key={persona.miembroId} persona={persona} liq={liq} cerrada={cerrada} soloMirar={soloMirar} tope={topeMonto}
+      abierta={abiertos.has(persona.miembroId)} onAlternar={() => alternar(persona.miembroId)}
+      onEntrada={(conceptoId, cambio) => guardarEntrada(persona.miembroId, conceptoId, cambio)}
+      meses={mesesParaMonto} porVenir={porVenir.get(persona.miembroId)}
+      onAgregarExtra={(x) => agregarExtra(persona, x)} onQuitarExtra={quitarExtra}
+      onVerDesglose={(clave) => setVerDesglose({ miembroId: persona.miembroId, clave })}
+      onPagado={(v) => acciones.marcarPagado(liq, persona.miembroId, v, yo.nombre)}
+      onVerPersona={onVerPersona ? () => onVerPersona(persona.miembroId) : undefined}
+      onCopiar={async () => {
+        try { await navigator.clipboard.writeText(textoParaEnviar(persona, periodo, corte)); toast(`Copiado: pegáselo a ${persona.nombre.split(" ")[0]}.`); }
+        catch { toast("No pude copiar. Probá de nuevo.", "err"); }
+      }}
+    />
+  );
   /* Alguien cobra en pesos: hace falta el tipo de cambio. Y si ya hay pesos
      para transferir, el total se dice en las dos monedas. */
   const hayPesos = r.personas.some((x) => x.lineas.some((l) => l.moneda !== "USD"));
@@ -170,11 +213,12 @@ export function LiquidacionMes({ onVerPersona, soloMirar = false, onVerReglas }:
   }
 
   const estado = cerrada
-    ? pagados === r.personas.length && r.personas.length > 0
+    ? pagados === aCobrar.length && aCobrar.length > 0
       ? <Badge variante="success" icono={<Check size={12} />}>Pagada</Badge>
       : <Badge variante="brand" icono={<Lock size={12} />}>Cerrada</Badge>
     : <Badge variante="neutral">Abierta</Badge>;
-  const corte = r.corte;
+  const mesQueSigue = nombrePeriodo(moverPeriodo(periodo, 1));
+  const haySenales = cambios.length > 0 || settersInusuales.length > 0 || sinConfirmar.length > 0 || notas.length > 0;
 
   return (
     <div className="stack-4">
@@ -182,7 +226,7 @@ export function LiquidacionMes({ onVerPersona, soloMirar = false, onVerReglas }:
         <div className="liq-mes">
           <div className="liq-mes__nav">
             <IconButton etiqueta="Mes anterior" onClick={() => cambiar({ mes: moverPeriodo(periodo, -1) })}><ChevronLeft size={18} /></IconButton>
-            <h2 className="t-h2 liq-mes__nombre">Liquidación de {nombrePeriodo(periodo)}</h2>
+            <h2 className="t-h2 liq-mes__nombre">{nombrePeriodo(periodo)}</h2>
             <IconButton etiqueta="Mes siguiente" onClick={() => cambiar({ mes: moverPeriodo(periodo, 1) })}><ChevronRight size={18} /></IconButton>
           </div>
           {estado}
@@ -190,6 +234,7 @@ export function LiquidacionMes({ onVerPersona, soloMirar = false, onVerReglas }:
           {periodo !== hoyPeriodo() && (
             <button type="button" className="link t-sm" onClick={() => cambiar({ mes: null })}>Ir a este mes</button>
           )}
+          {cerrada && <span className="t-sm t-subtle liq-mes__quien">Cerrada el {fechaLarga(liq.cerradaEn)}{liq.cerradaPor ? ` por ${liq.cerradaPor.split(" ")[0]}` : ""}</span>}
         </div>
         <div className="row-wrap">
           <Button variante="secondary" icono={<Download size={16} />} onClick={exportar} disabled={r.personas.length === 0}>Exportar</Button>
@@ -199,147 +244,134 @@ export function LiquidacionMes({ onVerPersona, soloMirar = false, onVerReglas }:
         </div>
       </div>
 
-      {cerrada && (
-        <p className="t-sm t-subtle" style={{ marginTop: -8 }}>
-          Cerrada el {fechaLarga(liq.cerradaEn)}{liq.cerradaPor ? ` por ${liq.cerradaPor}` : ""}: los montos quedaron fijos y los sueldos ya están en Finanzas.
-          {corte && ` Cuenta lo cobrado y vendido hasta el ${diaCorto(corte)}: lo que entró después va en la liquidación que sigue.`}
-        </p>
-      )}
-
-      <div className="grid-stats">
-        {/* Redondeados: con centavos no entran en la tarjeta. Los centavos están en cada persona. */}
-        <StatCard
-          hero etiqueta="A pagar" valor={money(r.total, base)} contexto={pagaPesos ? aPagarTexto(r.aPagar) : `${r.personas.length} personas`}
-          info={{
-            ayuda: "Todo lo que hay que pagarle al equipo por este mes: lo fijo más lo variable de todas las personas, en la moneda base.",
-            formula: "Fijo + Variable, sumados de todas las personas",
-            periodo: nombrePeriodo(periodo),
-            componentes: () => [
-              { concepto: "Fijo", valor: money(r.fijo, base, 2) },
-              { concepto: "Variable", valor: money(r.variable, base, 2), signo: "+" },
-              { concepto: "A pagar", valor: money(r.total, base, 2), signo: "=" },
-            ],
-          }}
-        />
-        <StatCard
-          etiqueta="Fijo" valor={money(r.fijo, base)} contexto="Sueldos y abonos"
-          info={{
-            ayuda: "Lo que no depende de las ventas: sueldos y abonos.",
-            formula: "Suma de los renglones fijos de cada persona. Tocá una persona y «Ver cómo se calculó» para ver cada uno.",
-            periodo: nombrePeriodo(periodo),
-          }}
-        />
-        <StatCard
-          etiqueta="Variable" valor={money(r.variable, base)} contexto="Comisiones, bonos y piezas"
-          info={{
-            ayuda: "Lo que depende de las ventas, del profit o de lo que se produjo: comisiones, bonos y piezas.",
-            formula: "Suma de los renglones variables de cada persona. Tocá una persona y «Ver cómo se calculó» para ver la cuenta de cada uno.",
-            periodo: nombrePeriodo(periodo),
-          }}
-        />
-        {cerrada
-          ? (
-            <StatCard
-              etiqueta="Pagados" valor={`${pagados} de ${r.personas.length}`} contexto={pagados === r.personas.length ? "No queda nadie" : "Marcalos al transferir"}
-              info={{
-                ayuda: "Cuántas personas ya cobraron esta liquidación: se marcan al hacer la transferencia.",
-                formula: "Personas marcadas como pagadas ÷ Personas con liquidación este mes",
-                periodo: nombrePeriodo(periodo),
-              }}
+      {/* Un solo número y lo que lo explica: cuánto, cuánto va pagado y en qué se va. */}
+      <section className="fz-hero" aria-label="Lo que se paga este mes">
+        <div>
+          <span className="fz-hero__etiqueta">
+            A pagar
+            <InfoMetrica
+              titulo="A pagar" periodo={nombrePeriodo(periodo)}
+              ayuda="Todo lo que hay que pagarle al equipo por este mes: lo fijo más lo variable de todas las personas, en la moneda base."
+              formula="Fijo + Variable, sumados de todas las personas"
+              componentes={() => [
+                { concepto: "Fijo: sueldos y abonos", valor: money(r.fijo, base, 2) },
+                { concepto: "Variable: comisiones, bonos y piezas", valor: money(r.variable, base, 2), signo: "+" },
+                { concepto: "A pagar", valor: money(r.total, base, 2), signo: "=" },
+              ]}
             />
-          )
-          : (
-            <StatCard
-              etiqueta="Falta cargar" valor={String(falta.lineas.length)}
-              direccion={falta.lineas.length ? "accent" : "neutral"}
-              contexto={falta.lineas.length ? "Piezas y cantidades del mes" : "Está todo"}
-              info={{
-                ayuda: "Renglones que dependen de una cantidad del mes que todavía no se cargó (piezas, llamadas, cantidades). Hasta que se carguen, valen cero.",
-                formula: "Cantidad de renglones marcados «Falta cargar» en esta liquidación",
-                periodo: nombrePeriodo(periodo),
-              }}
+          </span>
+          <span className="fz-hero__valor">{money(r.total, base)}</span>
+          <p className="fz-hero__sub">
+            {aCobrar.length} {aCobrar.length === 1 ? "persona" : "personas"}{pagaPesos ? ` · ${aPagarTexto(r.aPagar)}` : ""}
+          </p>
+        </div>
+        <div className="fz-hero__der">
+          {cerrada ? (
+            <Avance
+              hecho={pagadoPlata} total={r.total}
+              izquierda={pagados === aCobrar.length ? <b>Ya se les pagó a todos</b> : <><b>{money(pagadoPlata, base)}</b> pagados</>}
+              derecha={pagados === aCobrar.length ? undefined : <>Faltan <b>{money(r.total - pagadoPlata, base)}</b> · {aCobrar.length - pagados} de {aCobrar.length}</>}
+            />
+          ) : (
+            <Avance
+              hecho={r.personas.reduce((a, x) => a + x.lineas.filter((l) => !l.falta).length, 0)}
+              total={r.personas.reduce((a, x) => a + x.lineas.length, 0)} tono={falta.lineas.length ? "alerta" : "brand"}
+              izquierda={falta.lineas.length ? <><b>Falta cargar {falta.lineas.length}</b> {falta.lineas.length === 1 ? "renglón" : "renglones"}: valen cero hasta que se carguen</> : <b>Está todo cargado: se puede cerrar</b>}
             />
           )}
-      </div>
-
-      {cambios.length > 0 && (
-        <Ayuda
-          titulo={corte ? `Lo que entró después del ${diaCorto(corte)}` : "Algo del mes cambió después de cerrar"} icono={<RefreshCw size={18} />}
-        >
-          {cambios.map((x) => `${x.nombre}: cerrado en ${plata(x.cerrado, base)}, ${corte ? "con todo el mes" : "hoy"} daría ${plata(x.hoy, base)}`).join(" · ")}.
-          {" "}{corte
-            ? <>Lo pagado no se toca: la diferencia pasa sola a la liquidación de {nombrePeriodo(moverPeriodo(periodo, 1))}, a cada uno lo suyo («Resto de {nombrePeriodo(periodo)}»). También se puede reabrir esta.</>
-            : "Lo pagado no se toca: la diferencia se puede sumar a mano en la liquidación del mes que viene, o reabrir esta."}
-        </Ayuda>
-      )}
-
-      {settersInusuales.length > 0 && (
-        <Ayuda
-          titulo={settersInusuales.length === 1 ? "Una comisión de setter está muy por encima de lo de siempre" : "Hay comisiones de setter muy por encima de lo de siempre"}
-          icono={<AlertTriangle size={18} />}
-        >
-          {settersInusuales.map((x) => `${x.nombre}: ${plata(x.esteMes, base)} este mes, ${String(x.veces).replace(".", ",")} veces su mejor mes de los últimos seis (${plata(x.mejorAntes, base)} en ${mesDelAviso(x)})`).join(" · ")}.
-          {" "}Conviene mirar las ventas que lo traen antes de pagar: puede ser que se hayan marcado agendas de más.
-          {settersInusuales.map((x) => (
-            <Link key={x.miembroId} href={`/ventas?setter=${x.miembroId}`} className="hk-btn hk-btn--ghost hk-btn--sm" style={{ marginLeft: 8 }}>Ver las ventas de {x.nombre.split(" ")[0]}</Link>
-          ))}
-        </Ayuda>
-      )}
-
-      {sinConfirmar.length > 0 && (
-        <Ayuda
-          titulo={sinConfirmar.length === 1 ? "Hay una regla de comisión sin confirmar" : `Hay ${sinConfirmar.length} reglas de comisión sin confirmar`}
-          icono={<AlertTriangle size={18} />}
-        >
-          {sinConfirmar.map((x) => `${x.miembro.nombre} (${x.concepto.nombre})`).join(" · ")}. Se calculan como están cargadas; conviene confirmarlas con Yari antes de pagar.
-          {onVerReglas && <Button sm variante="ghost" onClick={onVerReglas} style={{ marginLeft: 8 }}>Ver las reglas</Button>}
-        </Ayuda>
-      )}
-
-      {notas.length > 0 && (
-        <div className="liq-notas" role="note">
-          <AlertTriangle size={18} aria-hidden />
-          <div>
-            <div className="liq-notas__titulo">{notas.length === 1 ? "Hay una nota para quien paga" : `Hay ${notas.length} notas para quien paga`}</div>
-            <ul className="liq-notas__lista">
-              {notas.map(({ persona, linea }) => (
-                <li key={`${persona.miembroId}:${linea.clave}`}>
-                  <b>{persona.nombre}</b> · {linea.nombre} ({plata(linea.monto, linea.moneda)}): {linea.nota}
-                </li>
-              ))}
-            </ul>
-          </div>
+          {r.personas.length > 0 && (
+            <PartesDeUnTotal
+              etiqueta="En qué se va"
+              onElegir={() => setVistaLista("tipo")}
+              partes={porTipo.grupos.map((g) => ({ id: g.id, nombre: CORTO_DE_GRUPO[g.id] ?? g.titulo, valor: g.total, texto: money(g.total, base), ayuda: g.ayuda }))}
+            />
+          )}
         </div>
+      </section>
+
+      {haySenales && (
+        <Senales titulo={cerrada && pagados < aCobrar.length ? "Antes de pagar" : "Para tener en cuenta"}>
+          {notas.map(({ persona, linea }) => (
+            <Senal
+              key={`${persona.miembroId}:${linea.clave}`} tono="atencion" icono={<StickyNote size={16} />}
+              titulo={<><b>{persona.nombre}</b> · {linea.nota}</>} sub="Nota para quien paga"
+              der={<span className="t-num t-strong">{plata(linea.monto, linea.moneda)}</span>}
+            />
+          ))}
+          {settersInusuales.map((x) => (
+            <Senal
+              key={x.miembroId} tono="atencion" icono={<AlertTriangle size={16} />}
+              titulo={<><b>{x.nombre}</b> cobra {String(x.veces).replace(".", ",")} veces su mejor mes como setter</>}
+              sub="Conviene mirar las ventas antes de pagar: puede que se hayan marcado agendas de más."
+              der={(
+                <>
+                  <span className="fz-comparar" aria-hidden>
+                    <span>Este mes</span><i data-fuerte style={{ width: 44 }} /><b>{money(x.esteMes, base)}</b>
+                    <span>{mesDelAviso(x).split(" ")[0].replace(/^./, (c) => c.toUpperCase())}</span><i style={{ width: Math.max(4, 44 / x.veces) }} /><span>{money(x.mejorAntes, base)}</span>
+                  </span>
+                  <Link href={`/ventas?setter=${x.miembroId}`} className="hk-btn hk-btn--secondary hk-btn--sm">Ver sus ventas</Link>
+                </>
+              )}
+            />
+          ))}
+          {sinConfirmar.length > 0 && (
+            <Senal
+              tono="atencion" icono={<AlertTriangle size={16} />}
+              titulo={sinConfirmar.length === 1 ? <>Hay <b>una regla de comisión</b> sin confirmar</> : <>Hay <b>{sinConfirmar.length} reglas de comisión</b> sin confirmar</>}
+              sub={sinConfirmar.map((x) => x.miembro.nombre.split(" ")[0]).filter((n, i, xs) => xs.indexOf(n) === i).join(", ")}
+              der={onVerReglas && <Button sm variante="secondary" onClick={onVerReglas}>Ver las reglas</Button>}
+            />
+          )}
+          {cambios.length > 0 && (
+            <Senal
+              icono={<RefreshCw size={16} />}
+              titulo={corte
+                ? <>Después del {diaCorto(corte)} entraron comisiones por <b>{money(sumaCambios, base)}</b></>
+                : <>Algo del mes cambió después de cerrar: <b>{money(sumaCambios, base)}</b></>}
+              sub={corte ? `Pasan solas a ${mesQueSigue}, a cada uno lo suyo. Lo pagado no se toca.` : "Lo pagado no se toca: se suma a mano en el mes que viene, o se reabre esta."}
+              der={<span className="t-sm t-muted">{cambios.length} {cambios.length === 1 ? "persona" : "personas"}</span>}
+            >
+              <ul className="liq-difs">
+                {cambios.map((x) => (
+                  <li key={x.miembroId} className="liq-difs__fila">
+                    <span className="truncate">{x.nombre}</span>
+                    <span className="liq-difs__barra" aria-hidden>
+                      <i style={{ width: `${(x.cerrado / topeCambios) * 100}%` }} /><i data-suma style={{ width: `${(Math.max(x.hoy - x.cerrado, 0) / topeCambios) * 100}%` }} />
+                    </span>
+                    <span className="t-num t-sm t-subtle">{plata(x.cerrado, base)}</span>
+                    <span className="t-num t-sm t-strong">{x.hoy >= x.cerrado ? "+" : "−"}{plata(Math.abs(x.hoy - x.cerrado), base)}</span>
+                  </li>
+                ))}
+              </ul>
+            </Senal>
+          )}
+        </Senales>
       )}
 
       {!cerrada && !soloMirar && (
-        <CorteDeLiquidacion periodo={periodo} valor={liq.corte ?? ""} activo={Boolean(corte)} onCambiar={(c) => guardar({ corte: c })} />
+        <div className="liq-ajustes">
+          <CorteDeLiquidacion periodo={periodo} valor={liq.corte ?? ""} activo={Boolean(corte)} onCambiar={(c) => guardar({ corte: c })} />
+          {hayPesos && <TipoCambio valor={liq.tipoCambio ?? e.ajustes.tipoCambio} onCambiar={(tipoCambio) => guardar({ tipoCambio })} />}
+        </div>
       )}
-
-      {!cerrada && !soloMirar && hayPesos && (
-        <TipoCambio valor={liq.tipoCambio ?? e.ajustes.tipoCambio} onCambiar={(tipoCambio) => guardar({ tipoCambio })} />
-      )}
-
-      {r.personas.length > 0 && <EquipoPorTipo e={e} r={r} />}
-
-      {r.personas.length > 0 && <GastosQueCuentan e={e} periodo={periodo} r={r} soloMirar={soloMirar} />}
 
       <Card style={{ padding: 0, overflow: "hidden" }}>
-        <div className="pyl-head">
-          <div className="pyl-head__texto">
-            <h3 className="card-head__title">Persona por persona</h3>
-            <p className="card-head__sub">
-              {cerrada
-                ? "Lo que se le paga a cada uno. Tocá una persona para ver de dónde sale y marcar que ya se le pagó."
-                : "Tocá una persona para ver de dónde sale cada monto y cargar lo que falta."}
-            </p>
-          </div>
-          <Button
-            sm variante="ghost" icono={todoAbierto ? <ChevronsDownUp size={15} /> : <ChevronsUpDown size={15} />}
-            onClick={() => setAbiertos(todoAbierto ? new Set() : new Set(r.personas.map((x) => x.miembroId)))}
-          >
-            {todoAbierto ? "Contraer todo" : "Expandir todo"}
-          </Button>
+        <div className="liq-lista-cab">
+          <Segmentado
+            etiqueta="Cómo mirar al equipo" valor={vistaLista} onCambiar={setVistaLista}
+            opciones={[{ valor: "persona", texto: "Por persona" }, { valor: "tipo", texto: "Por tipo de pago" }]}
+          />
+          {vistaLista === "persona" && conMonto.length > 0 && (
+            <span className="liq-leyenda" aria-hidden><i data-tipo="fijo" />Fijo<i data-tipo="variable" />Variable</span>
+          )}
+          {vistaLista === "persona" && r.personas.length > 0 && (
+            <Button
+              sm variante="ghost" icono={todoAbierto ? <ChevronsDownUp size={15} /> : <ChevronsUpDown size={15} />}
+              onClick={() => setAbiertos(todoAbierto ? new Set() : new Set(r.personas.map((x) => x.miembroId)))}
+            >
+              {todoAbierto ? "Contraer todo" : "Expandir todo"}
+            </Button>
+          )}
         </div>
 
         {r.personas.length === 0 ? (
@@ -349,38 +381,49 @@ export function LiquidacionMes({ onVerPersona, soloMirar = false, onVerReglas }:
               texto="Cargá lo que cobra cada persona en «Equipo y lo que cobra» y la liquidación se arma sola."
             />
           </div>
+        ) : vistaLista === "tipo" ? (
+          <EquipoPorTipo e={e} r={r} />
         ) : (
           <div className="liq" role="table" aria-label={`Liquidación de ${nombrePeriodo(periodo)}`}>
-            {r.personas.map((persona) => (
-              <FilaPersona
-                key={persona.miembroId} persona={persona} liq={liq} cerrada={cerrada} soloMirar={soloMirar}
-                abierta={abiertos.has(persona.miembroId)} onAlternar={() => alternar(persona.miembroId)}
-                onEntrada={(conceptoId, cambio) => guardarEntrada(persona.miembroId, conceptoId, cambio)}
-                meses={mesesParaMonto} porVenir={porVenir.get(persona.miembroId)}
-                onAgregarExtra={(x) => agregarExtra(persona, x)} onQuitarExtra={quitarExtra}
-                onVerDesglose={(clave) => setVerDesglose({ miembroId: persona.miembroId, clave })}
-                onPagado={(v) => acciones.marcarPagado(liq, persona.miembroId, v, yo.nombre)}
-                onVerPersona={onVerPersona ? () => onVerPersona(persona.miembroId) : undefined}
-                onCopiar={async () => {
-                  try { await navigator.clipboard.writeText(textoParaEnviar(persona, periodo, corte)); toast(`Copiado: pegáselo a ${persona.nombre.split(" ")[0]}.`); }
-                  catch { toast("No pude copiar. Probá de nuevo.", "err"); }
-                }}
-              />
+            {gruposLista.map((g) => (
+              <React.Fragment key={g.id}>
+                {gruposLista.length > 1 && (
+                  <div className="liq-grupo" role="row">
+                    <span role="cell">{g.titulo} · {g.personas.length}</span>
+                    <span role="cell" className="t-num">{money(g.personas.reduce((a, x) => a + x.total, 0), base)}</span>
+                  </div>
+                )}
+                {g.personas.map(fila)}
+              </React.Fragment>
             ))}
+            {sinNada.length > 0 && (
+              <>
+                <button type="button" className="liq-sinnada" aria-expanded={verSinNada} onClick={() => setVerSinNada((v) => !v)}>
+                  <ChevronRight size={15} className="liq-sinnada__chev" aria-hidden />
+                  {sinNada.length === 1 ? "1 persona no cobra nada este mes" : `${sinNada.length} personas no cobran nada este mes`}
+                </button>
+                {verSinNada && sinNada.map(fila)}
+              </>
+            )}
             <div role="row" className="liq__fila liq__fila--total">
               <div role="rowheader" className="liq__concepto"><span className="liq__titulo">Todo el equipo</span></div>
               <div role="cell" className="liq__monto">{aPagarTexto(r.aPagar)}</div>
+              <span aria-hidden />
             </div>
           </div>
         )}
       </Card>
 
-      <Ayuda titulo="Qué pasa con Finanzas" icono={<AlertTriangle size={18} />}>
-        Las comisiones de closers y del director, y el reparto del profit, Finanzas ya las calcula solas de las ventas: acá
-        se ven para pagarlas, pero no se cargan de nuevo. Todo lo demás entra al cerrar, como un gasto por categoría del mes
-        y sin nombres, porque Finanzas la ve todo el equipo. El profit de {nombrePeriodo(periodo)} con esta liquidación
-        adentro da {plata(r.profit, base)}: sale de lo que hay cargado en Finanzas, así que un gasto que falte cargar lo infla.
-      </Ayuda>
+      {r.personas.length > 0 && <GastosQueCuentan e={e} periodo={periodo} r={r} soloMirar={soloMirar} />}
+
+      <p className="liq-pie">
+        Con esta liquidación adentro, el profit de {nombrePeriodo(periodo).split(" ")[0]} da <b className="t-num">{plata(r.profit, base)}</b>
+        <InfoMetrica
+          titulo="Qué pasa con Finanzas" periodo={nombrePeriodo(periodo)}
+          ayuda="Las comisiones de closers y del director y el reparto del profit, Finanzas ya las calcula solas de las ventas: acá se ven para pagarlas, pero no se cargan de nuevo. Todo lo demás entra al cerrar, como un gasto por categoría del mes y sin nombres, porque Finanzas la ve todo el equipo."
+          formula="El profit sale de lo que hay cargado en Finanzas: un gasto que falte cargar lo infla."
+        />
+      </p>
 
       {verDesglose && (
         <DesgloseRenglon
@@ -439,23 +482,16 @@ function CorteDeLiquidacion({ periodo, valor, activo, onCambiar }: {
   const ayerISO = aISO(ayer);
   const ayerEsDeEsteMes = ayerISO >= primero && ayerISO <= ultimo;
   return (
-    <Card className="liq-tc">
-      <div style={{ minWidth: 0, flex: "1 1 280px" }}>
-        <h3 className="card-head__title">Cuenta hasta el día</h3>
-        <p className="card-head__sub">
-          {activo
-            ? `Las ventas, cobros y llamadas desde el ${diaCorto(addDia(valor))} no entran en esta liquidación; los sueldos fijos y bonos van enteros.`
-            : "Para pagar a mitad de mes o sin contar un día que todavía no cerró. Sin fecha, cuenta el mes entero, hoy incluido."}
-        </p>
+    <div className="liq-ajuste">
+      <span className="liq-ajuste__nombre" title={activo
+        ? `Las ventas, cobros y llamadas desde el ${diaCorto(addDia(valor))} no entran en esta liquidación; los sueldos fijos y bonos van enteros.`
+        : "Para pagar a mitad de mes o sin contar un día que todavía no cerró. Sin fecha, cuenta el mes entero, hoy incluido."}>Cuenta hasta</span>
+      <div style={{ width: 170 }}>
+        <Input type="date" value={valor} min={primero} max={ultimo} aria-label="Cuenta hasta el día" onChange={(ev) => onCambiar(ev.target.value || null)} />
       </div>
-      <div className="row-wrap">
-        <div style={{ width: 190 }}>
-          <Input type="date" value={valor} min={primero} max={ultimo} aria-label="Cuenta hasta el día" onChange={(ev) => onCambiar(ev.target.value || null)} />
-        </div>
-        <Button variante="secondary" sm disabled={!ayerEsDeEsteMes || valor === ayerISO} onClick={() => onCambiar(ayerISO)}>Hasta ayer</Button>
-        <Button variante="ghost" sm disabled={!valor} onClick={() => onCambiar(null)}>Todo el mes</Button>
-      </div>
-    </Card>
+      <Button variante="secondary" sm disabled={!ayerEsDeEsteMes || valor === ayerISO} onClick={() => onCambiar(ayerISO)}>Hasta ayer</Button>
+      <Button variante="ghost" sm disabled={!valor} onClick={() => onCambiar(null)}>Todo el mes</Button>
+    </div>
   );
 }
 /* El día siguiente a «2026-10-25», para decir «desde el 26/10». */
@@ -470,11 +506,8 @@ function TipoCambio({ valor, onCambiar }: { valor: number; onCambiar: (n: number
   const toast = useToast();
   const [trayendo, setTrayendo] = useState(false);
   return (
-    <Card className="liq-tc">
-      <div style={{ minWidth: 0, flex: "1 1 280px" }}>
-        <h3 className="card-head__title">Tipo de cambio</h3>
-        <p className="card-head__sub">Pesos por dólar para lo que se paga en pesos: con esto se suma al total y entra a Finanzas.</p>
-      </div>
+    <div className="liq-ajuste">
+      <span className="liq-ajuste__nombre" title="Pesos por dólar para lo que se paga en pesos: con esto se suma al total y entra a Finanzas.">Tipo de cambio</span>
       <div className="row-wrap">
         <div style={{ width: 140 }}>
           <CampoNumero valor={valor} onCambiar={(n) => { if (n !== undefined && n > 0) onCambiar(n); }} etiqueta="Tipo de cambio" />
@@ -497,7 +530,7 @@ function TipoCambio({ valor, onCambiar }: { valor: number; onCambiar: (n: number
           Usar el blue de hoy
         </Button>
       </div>
-    </Card>
+    </div>
   );
 }
 
@@ -530,10 +563,12 @@ function CampoNumero({ valor, onCambiar, etiqueta, placeholder, autoFocus }: {
 /* ---------- Una persona ---------- */
 
 function FilaPersona({
-  persona, liq, cerrada, soloMirar, abierta, onAlternar, onEntrada, meses, porVenir, onAgregarExtra, onQuitarExtra, onVerDesglose,
+  persona, liq, cerrada, soloMirar, tope, abierta, onAlternar, onEntrada, meses, porVenir, onAgregarExtra, onQuitarExtra, onVerDesglose,
   onPagado, onVerPersona, onCopiar,
 }: {
   persona: PersonaLiquidada; liq: Liquidacion; cerrada: boolean; soloMirar: boolean;
+  /* Lo que cobra el que más cobra: de ahí sale el largo de la barra de cada uno. */
+  tope: number;
   abierta: boolean; onAlternar: () => void;
   onEntrada: (conceptoId: string, cambio: Partial<EntradaLiquidacion> | null) => void;
   /* Los meses en los que se puede anotar un monto, y lo ya anotado para los que vienen. */
@@ -551,26 +586,46 @@ function FilaPersona({
 
   return (
     <div role="rowgroup" className="liq__persona" data-abierta={abierta || undefined}>
-      <div role="row" className="liq__fila liq__fila--persona" onClick={onAlternar}>
+      <div role="row" className="liq__fila liq__fila--persona" onClick={onAlternar} data-pagado={cerrada && pago ? true : undefined}>
         <div role="rowheader" className="liq__concepto">
           <button type="button" className="liq__toggle" aria-expanded={abierta} onClick={(ev) => { ev.stopPropagation(); onAlternar(); }}>
             <ChevronRight size={16} className="liq__chevron" aria-hidden />
+            <Avatar nombre={persona.nombre} size={32} />
             <span className="liq__textos">
               <span className="liq__titulo">{persona.nombre}</span>
-              {persona.puesto && <span className="liq__sub">{persona.puesto}</span>}
+              {persona.puesto && <span className="liq__sub liq__sub--una">{persona.puesto}</span>}
             </span>
           </button>
           <span className="liq__marcas">
             {persona.inactivo && <Badge variante="neutral">Ya no está</Badge>}
-            {conNota && <Badge variante="warning" icono={<AlertTriangle size={12} />}>Con nota</Badge>}
+            {conNota && <Badge variante="warning" icono={<StickyNote size={12} />}>Con nota</Badge>}
             {persona.pendiente
               ? <Badge variante="warning">A definir</Badge>
               : persona.sinCargar && !persona.inactivo && <Badge variante="neutral">Sin cargar</Badge>}
             {!cerrada && faltan > 0 && <Badge variante="accent">Falta cargar {faltan}</Badge>}
-            {cerrada && (pago ? <Badge variante="success" icono={<Check size={12} />}>Pagado</Badge> : <Badge variante="neutral">Por pagar</Badge>)}
           </span>
+          {persona.total > 0 && (
+            <span className="liq__prop" aria-hidden title={`Fijo ${plata(persona.fijo, "USD")} · Variable ${plata(persona.variable, "USD")}`}>
+              {persona.fijo > 0 && <i data-tipo="fijo" style={{ width: `${(persona.fijo / tope) * 100}%` }} />}
+              {persona.variable > 0 && <i data-tipo="variable" style={{ width: `${(persona.variable / tope) * 100}%` }} />}
+            </span>
+          )}
         </div>
         <div role="cell" className="liq__monto liq__monto--persona">{aPagarTexto(persona.aPagar)}</div>
+        <div role="cell" className="liq__pagar" onClick={(ev) => ev.stopPropagation()}>
+          {cerrada && persona.total > 0 && (soloMirar
+            ? (pago ? <span className="liq-check" data-hecho title={`Pagado el ${fechaLarga(pago.pagadoEn)}${pago.por ? ` por ${pago.por}` : ""}`}><Check size={15} strokeWidth={2.5} aria-label="Pagado" /></span> : <span className="liq-check" title="Por pagar" />)
+            : (
+              <button
+                type="button" className="liq-check" data-hecho={pago ? true : undefined} aria-pressed={Boolean(pago)}
+                aria-label={`${persona.nombre}: ${pago ? "pagado, tocá para desmarcar" : "marcar como pagado"}`}
+                title={pago ? `Pagado el ${fechaLarga(pago.pagadoEn)}${pago.por ? ` por ${pago.por}` : ""}. Tocá para desmarcar.` : "Marcar como pagado"}
+                onClick={() => onPagado(!pago)}
+              >
+                <Check size={15} strokeWidth={2.5} aria-hidden />
+              </button>
+            ))}
+        </div>
       </div>
 
       {abierta && (
@@ -646,14 +701,7 @@ function FilaPersona({
               )}
               <Button sm variante="ghost" icono={<Copy size={15} />} onClick={onCopiar}>Copiar para mandarle</Button>
               {onVerPersona && <Button sm variante="ghost" icono={<UserRound size={15} />} onClick={onVerPersona}>Ver lo que cobra</Button>}
-              {cerrada && (soloMirar
-                ? <span className="t-sm t-subtle">{pago ? `Pagado el ${fechaLarga(pago.pagadoEn)}${pago.por ? ` por ${pago.por}` : ""}` : "Por pagar"}</span>
-                : (
-                  <label className="row liq__pagado">
-                    <Switch checked={Boolean(pago)} onChange={onPagado} etiqueta={`${persona.nombre}: pagado`} />
-                    <span className="t-sm">{pago ? `Pagado el ${fechaLarga(pago.pagadoEn)}${pago.por ? ` por ${pago.por}` : ""}` : "Marcar como pagado"}</span>
-                  </label>
-                ))}
+              {cerrada && pago && <span className="t-sm t-subtle liq__pagado">Pagado el {fechaLarga(pago.pagadoEn)}{pago.por ? ` por ${pago.por}` : ""}</span>}
             </div>
           </div>
         </>
@@ -679,12 +727,12 @@ function Linea({ l, cerrada, soloMirar, entrada, onEntrada, onBorrarExtra, onVer
 
   return (
     <>
-      <div role="row" className="liq__fila liq__fila--linea" data-falta={l.falta ? true : undefined} data-tipo={l.tipo}>
+      <div role="row" className="liq__fila liq__fila--linea" data-falta={l.falta ? true : undefined} data-cero={!l.falta && Math.abs(l.monto) < 0.005 ? true : undefined} data-tipo={l.tipo}>
         <div role="rowheader" className="liq__concepto liq__concepto--linea">
           <span className="liq__textos">
             <span className="liq__titulo">
               {l.nombre}
-              {l.enFinanzas && <span className="tag liq__tag" title="Finanzas ya la calcula de las ventas: al cerrar no se carga de nuevo.">Ya está en Finanzas</span>}
+              {l.enFinanzas && <span className="liq__enfin" title="Finanzas ya la calcula de las ventas: al cerrar no se carga de nuevo.">en Finanzas</span>}
               {l.corregido && <span className="tag liq__tag">Corregido</span>}
             </span>
             <span className="liq__sub">{l.detalle}</span>
@@ -727,12 +775,13 @@ function Linea({ l, cerrada, soloMirar, entrada, onEntrada, onBorrarExtra, onVer
             {/* Siempre al final, pegado al monto: así queda en la misma columna en todos los renglones. */}
             {l.tipo !== "extra" && (
               <button type="button" className="link t-sm liq__ver" onClick={onVerDesglose}>
-                <Calculator size={14} aria-hidden /> Ver cómo se calculó
+                <Calculator size={14} aria-hidden /> Cómo se calculó
               </button>
             )}
           </span>
         </div>
         <div role="cell" className="liq__monto">{plata(l.monto, l.moneda)}</div>
+        <span aria-hidden />
       </div>
       {corrigiendo && !cerrada && !soloMirar && (
         <Corregir

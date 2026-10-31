@@ -2,7 +2,6 @@
 
 import React from "react";
 import { CloudOff, Lock } from "lucide-react";
-import { PageHead } from "@/components/shell/PageHead";
 import { Card, CardHead, Empty, Tabs } from "@/components/ui/ui";
 import { CuadroComisiones } from "@/components/finanzas/CuadroComisiones";
 import { LiquidacionMes } from "@/components/equipo/Liquidacion";
@@ -18,6 +17,7 @@ import { nivelDeLiquidacion } from "@/lib/permisos";
 import { useEstado, useSelector, useSync } from "@/lib/store";
 import { useParamsURL } from "@/lib/useParamsURL";
 import { CopiarLink } from "@/components/ui/Filtros";
+import "@/components/finanzas/visual/visual.css";
 
 /* ==================================================================
    Equipo y honorarios: quién es quién, con qué entra a la app, cuánto
@@ -61,15 +61,7 @@ export default function EquipoYHonorarios() {
   /* Las reglas de comisión que todavía nadie confirmó: se avisan en la solapa. */
   const sinConfirmar = useSelector((e) => reglasSinConfirmar(e).length);
 
-  const cabecera = (
-    <PageHead
-      titulo="Equipo y honorarios"
-      sub={acceso.esDueno
-        ? "Quién es quién, con qué entra a la app y cuánto cobra: el fijo, los variables y sobre qué se mide cada uno. La liquidación de cada mes se calcula sola. Sólo la ven los dueños."
-        : "La liquidación de cada mes se calcula sola: lo que se le paga a cada uno. Lo que cobra cada uno y los accesos a la app los cambian sólo los dueños."}
-      acciones={acceso.esDueno ? <CopiarLink sm={false} /> : undefined}
-    />
-  );
+  const cabecera = <h1 className="sr-only">Equipo y honorarios</h1>;
 
   if (acceso.cargando || sync.estado === "cargando") {
     return (
@@ -111,8 +103,10 @@ export default function EquipoYHonorarios() {
   const ver = (id: string) => cambiar({ persona: id });
 
   return (
-    <div className="stack-5">
-      {cabecera}
+    <div className="stack-4">
+      {/* El nombre de la pantalla ya está en la barra de arriba. */}
+      <h1 className="sr-only">Equipo y honorarios</h1>
+      <div className="fz-barra">
       <Tabs
         valor={seccion} onChange={(v) => cambiar({ seccion: v })}
         opciones={[
@@ -136,6 +130,8 @@ export default function EquipoYHonorarios() {
           ] : []),
         ]}
       />
+      {acceso.esDueno && <div className="fz-barra__der"><CopiarLink variante="ghost" /></div>}
+      </div>
       {seccion === "liquidacion" && <LiquidacionMes onVerPersona={acceso.esDueno ? ver : undefined} soloMirar={nivelLiq < 2} onVerReglas={() => cambiar({ seccion: "reglas" })} />}
       {seccion === "equipo" && <ListaEquipo accesos={accesos} onVer={ver} />}
       {seccion === "comisiones" && <Comisiones onVer={acceso.esDueno ? ver : undefined} editable={acceso.esDueno} />}
@@ -155,7 +151,7 @@ function Comisiones({ onVer, editable }: { onVer?: (id: string) => void; editabl
     <Card>
       <CardHead
         titulo="Cómo comisiona cada uno"
-        sub="El % que cobra cada persona de lo que entra de sus ventas, neto de procesador. El general vale para todo; si un servicio comisiona distinto, se le pone su propio %. De acá salen la liquidación y lo que resta Finanzas."
+        sub="El % de lo que entra de sus ventas, neto de procesador. De acá salen la liquidación y lo que resta Finanzas."
       />
       <CuadroComisiones e={e} editable={editable} onVerPersona={onVer} />
     </Card>

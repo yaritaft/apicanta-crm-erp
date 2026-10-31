@@ -65,8 +65,9 @@ export function columnaConciliado(e: Pick<EstadoApp, "procesadores">): Columna<F
     celda: (f) => {
       const c = conciliacionDe(e.procesadores, f.pago);
       if (c === "conciliado") {
+        /* La cuenta ya se lee debajo del cliente. */
         const prov = e.procesadores.find((p) => p.id === f.pago.procesadorId)?.proveedor;
-        return <Badge variante="success" icono={<Link2 size={13} />}>Sí{prov ? ` · ${nombrePasarela(prov)}` : ""}</Badge>;
+        return <span title={prov ? `Conciliado con ${nombrePasarela(prov)}` : undefined}><Badge variante="success" icono={<Link2 size={13} />}>Sí</Badge></span>;
       }
       return c === "sin-conciliar" ? <Badge variante="warning">Sin conciliar</Badge> : <Badge variante="neutral">A mano</Badge>;
     },

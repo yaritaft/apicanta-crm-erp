@@ -118,7 +118,7 @@ export function ListaGastos({ e, mes, onNuevo, onVer, onEditar, onBorrar }: {
       clave: "grupo", titulo: "Bloque", orden: (g) => GRUPOS_GASTO.findIndex((x) => x.grupo === g.grupo),
       celda: (g) => <Badge variante={VARIANTE_GRUPO[g.grupo] ?? "neutral"}>{infoGrupo(g.grupo).corto}</Badge>,
     },
-    tipo: { clave: "tipo", titulo: "Fijo o variable", tipo: "secondary", orden: (g) => (g.recurrente ? 0 : 1), celda: (g) => (g.recurrente ? "Fijo" : "Variable") },
+    tipo: { clave: "tipo", titulo: "Tipo", tipo: "secondary", orden: (g) => (g.recurrente ? 0 : 1), celda: (g) => (g.recurrente ? "Fijo" : "Variable") },
     fecha: {
       clave: "fecha", titulo: "Fecha", tipo: "secondary", orden: (g) => g.fecha,
       /* Un gasto de un mes que se pagó en otro lo dice acá mismo, sin abrir la ficha. */

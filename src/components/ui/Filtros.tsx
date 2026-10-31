@@ -152,7 +152,7 @@ export function FiltroMulti({ etiqueta, todos, valores, opciones, onCambiar }: {
    lo que pidió Yari: pasarle el reporte a otro TAL CUAL, sin que tenga que
    armarlo a clics. ?nuevo y ?ver se sacan: abren algo una sola vez (un
    asistente, una ficha) y al que recibe el link le saltaría un modal. */
-export function CopiarLink({ sm = true }: { sm?: boolean }) {
+export function CopiarLink({ sm = true, variante = "secondary" }: { sm?: boolean; variante?: "secondary" | "ghost" }) {
   const toast = useToast();
 
   function copiar() {
@@ -173,7 +173,7 @@ export function CopiarLink({ sm = true }: { sm?: boolean }) {
      por eso el nombre va también en aria-label. */
   return (
     <Button
-      sm={sm} variante="secondary" icono={<Link2 size={16} />} onClick={copiar} className="copiar-link"
+      sm={sm} variante={variante} icono={<Link2 size={16} />} onClick={copiar} className="copiar-link"
       aria-label="Copiar link" title="Copia la dirección con los filtros puestos, para guardarla o mandarla"
     >
       <span className="copiar-link__texto">Copiar link</span>

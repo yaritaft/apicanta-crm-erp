@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useMemo } from "react";
-import { Card } from "@/components/ui/ui";
 import { equipoPorTipo } from "@/lib/equipo-por-tipo";
 import { plata } from "@/lib/honorarios";
 import type { EstadoApp, ResultadoLiquidacion } from "@/lib/types";
@@ -18,23 +17,13 @@ export function EquipoPorTipo({ e, r }: { e: EstadoApp; r: ResultadoLiquidacion 
   const t = useMemo(() => equipoPorTipo(r.personas, e.equipo), [r.personas, e.equipo]);
   if (t.grupos.length === 0) return null;
   return (
-    <Card style={{ padding: 0, overflow: "hidden" }}>
-      <div className="pyl-head">
-        <div className="pyl-head__texto">
-          <h3 className="card-head__title">El equipo, por tipo de pago</h3>
-          <p className="card-head__sub">
-            Los fijos y las comisiones por separado, con lo que calcula esta liquidación (no con los pagos cargados como gasto). Para cambiar algo,
-            tocá a la persona abajo, en «Persona por persona».
-          </p>
-        </div>
-      </div>
+    <>
       <div className="eq-tipo">
         {t.grupos.map((g) => (
           <section key={g.id} className="eq-tipo__grupo" aria-label={g.titulo}>
-            <header className="eq-tipo__cab">
+            <header className="eq-tipo__cab" title={g.ayuda}>
               <div>
                 <h4 className="eq-tipo__titulo">{g.titulo}</h4>
-                <span className="t-sm t-subtle">{g.ayuda}</span>
               </div>
               <b className="t-num">{plata(g.total, base)}</b>
             </header>
@@ -65,6 +54,6 @@ export function EquipoPorTipo({ e, r }: { e: EstadoApp; r: ResultadoLiquidacion 
           {t.sinNada > 0 && <div><span className="t-label">Sin nada para pagar este mes</span><b className="t-num">{t.sinNada}</b></div>}
         </footer>
       </div>
-    </Card>
+    </>
   );
 }

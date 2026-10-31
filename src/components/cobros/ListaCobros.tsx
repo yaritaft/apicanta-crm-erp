@@ -1,14 +1,15 @@
 "use client";
 
 import React, { useMemo, useState } from "react";
-import { FileSpreadsheet, Info, Receipt, ShieldCheck } from "lucide-react";
-import { Ayuda, Button, Card, Chip, Empty } from "@/components/ui/ui";
+import { FileSpreadsheet, Receipt, ShieldCheck } from "lucide-react";
+import { Button, Card, Chip, Empty } from "@/components/ui/ui";
 import { DataTable, type Columna } from "@/components/ui/DataTable";
 import { CopiarLink } from "@/components/ui/Filtros";
 import { pasaFiltrosDeVenta } from "@/lib/filtros-de-venta";
 import { useToast } from "@/components/ui/Toast";
 import { ModalChequeo, useNombreDeQuien } from "@/components/cobros/ControlCobro";
-import { columnaCargo, columnaChequeo, columnaComprobante, columnaConciliado } from "@/components/cobros/columnasControl";
+import { Plegable } from "@/components/finanzas/visual/visual";
+import { columnaChequeo, columnaComprobante, columnaConciliado } from "@/components/cobros/columnasControl";
 import { useAcceso } from "@/lib/acceso";
 import {
   casilleroDe, filasDeCobros, FILTROS_CONTROL, pasaControl, TEXTO_DE_FILTRO, type FilaCobro, type FiltroControl,
@@ -85,14 +86,15 @@ export function ListaCobros({ e, desde, hasta, filtros, busca, hayFiltros, onLim
   const tabla = useTablaURL("cobros", { clave: "fecha", desc: true }, ["fecha", "cliente", "monto", "chequeo", "comprobante", "conciliado", "cuenta", "cargo"]);
 
   const columnas: Columna<FilaCobro>[] = [
-    { clave: "fecha", titulo: "Fecha del cobro", tipo: "secondary", orden: (f) => f.pago.fecha, celda: (f) => fechaLarga(f.pago.fecha) },
+    { clave: "fecha", titulo: "Fecha", tipo: "secondary", orden: (f) => f.pago.fecha, celda: (f) => fechaLarga(f.pago.fecha) },
     {
       clave: "cliente", titulo: "Cliente", tipo: "primary", orden: (f) => f.venta?.contactoNombre ?? "",
       celda: (f) => {
         const servicio = f.venta?.productoId ? e.productos.find((p) => p.id === f.venta?.productoId)?.nombre : undefined;
         const closer = f.venta?.closerId ? e.equipo.find((p) => p.id === f.venta?.closerId)?.nombre : undefined;
         const cuota = f.pago.caracteristica ?? (f.cuota ? (f.cuota.esReserva ? "Reserva" : `Cuota ${f.cuota.numero}`) : undefined);
-        const resto = [servicio, cuota, closer].filter(Boolean).join(" · ");
+        const cuenta = e.procesadores.find((p) => p.id === f.pago.procesadorId)?.nombre ?? "Sin cuenta";
+        const resto = [cuenta, servicio, cuota, closer].filter(Boolean).join(" · ");
         return (
           <span style={{ display: "block", minWidth: 0 }}>
             <span className="truncate" style={{ display: "block" }}>{f.venta?.contactoNombre ?? "Sin venta"}</span>
@@ -118,12 +120,6 @@ export function ListaCobros({ e, desde, hasta, filtros, busca, hayFiltros, onLim
     columnaChequeo(setAbierto),
     columnaComprobante(),
     columnaConciliado(e),
-    {
-      clave: "cuenta", titulo: "Cuenta", tipo: "secondary",
-      orden: (f) => e.procesadores.find((p) => p.id === f.pago.procesadorId)?.nombre ?? "",
-      celda: (f) => e.procesadores.find((p) => p.id === f.pago.procesadorId)?.nombre ?? "Sin cuenta",
-    },
-    columnaCargo(nombreDe),
   ];
 
   async function descargar() {
@@ -180,12 +176,12 @@ export function ListaCobros({ e, desde, hasta, filtros, busca, hayFiltros, onLim
         />
       </Card>
 
-      <Ayuda titulo="Cómo se chequea un cobro" icono={<Info size={18} />}>
+      <Plegable titulo="Cómo se chequea un cobro">
         El closer carga el cobro y sube su comprobante; después <strong>otra persona</strong> lo mira: el director comercial o finanzas.
         Un clic en el cobro abre el comprobante <strong>al lado de lo que se cargó</strong> (nombre, mail, monto, medio y cuántos pagos);
         si coincide, «Chequeado» (se confirma dos veces) y queda anotado quién y cuándo. Con que uno de los dos lo chequee alcanza.
         Si el comprobante no sirve se rechaza con el motivo y el closer puede subir otro. Chequear no cambia ningún número.
-      </Ayuda>
+      </Plegable>
 
       {abierto && <ModalChequeo pagoId={abierto} onCerrar={() => setAbierto(null)} />}
     </div>

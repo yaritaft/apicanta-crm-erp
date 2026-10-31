@@ -1,8 +1,10 @@
 "use client";
 
+
+import { Plegable } from "@/components/finanzas/visual/visual";
 import React, { useMemo, useState } from "react";
 import { Check, Pause, Pencil, Play, Plus, Repeat, Trash2, Wand2 } from "lucide-react";
-import { Ayuda, Badge, Button, Card, CardHead, Empty, Field, IconButton, Input, Select, Textarea } from "@/components/ui/ui";
+import { Badge, Button, Card, CardHead, Empty, Field, IconButton, Input, Select, Textarea } from "@/components/ui/ui";
 import { InputMonto } from "@/components/ui/InputMonto";
 import { DataTable } from "@/components/ui/DataTable";
 import { Confirmar, ModalForm } from "@/components/ui/Modal";
@@ -72,7 +74,9 @@ export function GastosFijos({ e }: { e: EstadoApp }) {
 
   return (
     <div className="stack-4">
-      <Card style={{ padding: 0 }}>
+      {lista.length === 0 && plantillas.length > 0 ? (
+        <div className="fz-todo-bien"><Check size={16} aria-hidden /> Todo al día: no hay gastos fijos por aprobar.</div>
+      ) : <Card style={{ padding: 0 }}>
         <div style={{ padding: "var(--space-4) var(--space-4) 0" }}>
           <CardHead
             titulo={faltan > 0 ? `Gastos fijos por aprobar · ${faltan}` : "Gastos fijos por aprobar"}
@@ -129,7 +133,7 @@ export function GastosFijos({ e }: { e: EstadoApp }) {
             })}
           </ul>
         )}
-      </Card>
+      </Card>}
 
       <Card style={{ padding: 0 }}>
         <div style={{ padding: "var(--space-4) var(--space-4) 0" }}>
@@ -150,7 +154,7 @@ export function GastosFijos({ e }: { e: EstadoApp }) {
         <DataTable
           filas={plantillas}
           columnas={[
-            { clave: "concepto", titulo: "Gasto", tipo: "primary", orden: (t) => t.concepto, celda: (t) => <span>{t.concepto}{t.proveedor && <span className="t-subtle"> · {t.proveedor}</span>}</span> },
+            { clave: "concepto", titulo: "Gasto", tipo: "primary", orden: (t) => t.concepto, celda: (t) => <span>{t.concepto}{t.proveedor && t.proveedor !== t.concepto && <span className="t-subtle"> · {t.proveedor}</span>}</span> },
             { clave: "categoria", titulo: "Categoría", tipo: "secondary", orden: (t) => t.categoria, celda: (t) => t.categoria },
             { clave: "dia", titulo: "Día", tipo: "num", orden: (t) => t.diaDelMes, celda: (t) => `El ${t.diaDelMes}` },
             { clave: "monto", titulo: "Habitual", tipo: "num", orden: (t) => t.monto, celda: (t) => M(t.monto, t.moneda) },
@@ -172,13 +176,13 @@ export function GastosFijos({ e }: { e: EstadoApp }) {
         />
       </Card>
 
-      <Ayuda titulo="Cómo funciona" icono={<Repeat size={18} />}>
+      <Plegable titulo="Cómo funcionan los gastos fijos">
         Cada gasto fijo se propone todos los meses, desde el día en que se paga, con lo que fue el mes anterior. Si el mes
         pasado fue distinto, se propone ese monto. «Aprobar» carga el gasto de verdad (con la fecha de ese día del mes, como
         «Fijo»); si cambiaste el monto, carga el que pusiste y ése queda para el mes que viene. «Este mes no» lo saltea sin
         cargar nada. Si ya cargaste a mano el gasto de ese mes, no se vuelve a proponer. Lo que se queda sin aprobar se sigue
         mostrando hasta dos meses para atrás.
-      </Ayuda>
+      </Plegable>
 
       {editando && (
         <FormGastoFijo

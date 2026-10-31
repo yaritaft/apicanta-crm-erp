@@ -10,7 +10,8 @@ import { rutaDeGasto } from "@/lib/estadoResultados";
 import { AsistenteGasto } from "@/components/finanzas/AsistenteGasto";
 import { useToast } from "@/components/ui/Toast";
 import { useEstado } from "@/lib/store";
-import { fechaLarga } from "@/lib/format";
+import { fechaLarga, money, pct } from "@/lib/format";
+import { Cascada, Segmentado, type PasoCascada } from "@/components/finanzas/visual/visual";
 import { rangoDeFechas, type RangoMes } from "@/lib/metricas";
 import { DateRangePicker, rangoSub } from "@/components/ui/DateRangePicker";
 import { useRangoURL } from "@/lib/useRango";
@@ -81,27 +82,28 @@ export function ResultadosVista({ embebido = false, rangoFijo }: {
     <div className="stack-5">
       <CabeceraVista embebido={embebido}
         titulo="P&L"
-        sub="Lo facturado y lo realmente cobrado, lado a lado. Los ingresos salen de las ventas; los gastos, de lo que cargás."
+        izquierda={!rangoFijo ? <DateRangePicker
+          value={rango} minDate={limites.min} maxDate={limites.max}
+          onApply={setRango} footerNota="Días calendario · zona horaria de Argentina"
+        /> : undefined}
         acciones={
           <>
-            {!rangoFijo && <DateRangePicker
-              value={rango} minDate={limites.min} maxDate={limites.max}
-              onApply={setRango} footerNota="Días calendario · zona horaria de Argentina"
-            />}
-            <CopiarLink sm={false} />
-            <Button variante="secondary" icono={<CalendarDays size={16} />} onClick={() => document.getElementById("ingresos-semanales")?.scrollIntoView({ behavior: "smooth", block: "start" })}>
-              Ingresos de la semana
+            <CopiarLink variante="ghost" />
+            <Button sm variante="ghost" icono={<CalendarDays size={15} />} onClick={() => document.getElementById("ingresos-semanales")?.scrollIntoView({ behavior: "smooth", block: "start" })}>
+              La semana
             </Button>
-            <Button variante="secondary" icono={<Download size={16} />} onClick={() => exportarPyL(e, mes, p)}>Exportar</Button>
+            <Button sm variante="ghost" icono={<Download size={15} />} onClick={() => exportarPyL(e, mes, p)}>Exportar</Button>
             <Link href={`/finanzas/detalle?${qs}`}>
               <Button variante="secondary" icono={<ArrowRight size={16} />}>
-                {vencidas.length > 0 ? `Ver el detalle · ${vencidas.length} vencidas` : "Ver el detalle"}
+                {vencidas.length > 0 ? `Detalle · ${vencidas.length} vencidas` : "Detalle"}
               </Button>
             </Link>
             <Button variante="primary" icono={<Plus size={16} />} onClick={() => setCargando(true)}>Cargar gasto</Button>
           </>
         }
       />
+
+      <ResumenDelResultado e={e} p={p} etiqueta={mes.etiqueta} onVerRenglon={(id) => setEnfoque({ ruta: [id, id], marca: Date.now() })} />
 
       <AlarmaCobranza e={e} />
 
@@ -120,6 +122,50 @@ export function ResultadosVista({ embebido = false, rangoFijo }: {
 
       {cargando && <AsistenteGasto onCerrar={() => setCargando(false)} onListo={alCargar} />}
     </div>
+  );
+}
+
+/* Lo primero que se quiere saber: cuánto quedó, y de dónde a dónde llegó la plata. */
+function ResumenDelResultado({ e, p, etiqueta, onVerRenglon }: { e: EstadoApp; p: ReturnType<typeof calcularPyL>; etiqueta: string; onVerRenglon: (id: string) => void }) {
+  const [lado, setLado] = useState<"cc" | "rev">("cc");
+  const mon = e.ajustes.monedaBase;
+  const M = (n: number) => money(Math.abs(n) < 0.5 ? 0 : n, mon);
+  const cc = lado === "cc";
+  const base = cc ? p.cobrado : p.revenue;
+  const neto = cc ? p.netoCC : p.netoRev;
+  const otroNeto = cc ? p.netoRev : p.netoCC;
+  const baseMargen = cc ? p.cashCollected : p.revenue;
+  const margen = baseMargen > 0 ? pct((neto / baseMargen) * 100, 1) : null;
+  const restas: [string, string, number][] = [
+    ["devoluciones", "Devoluciones", p.devoluciones],
+    ["closers", "Comisiones de closers", p.comisionCloser],
+    ["director", "Comisión del director", p.comisionDirector],
+    ["procesadores", "Procesadores de pago", p.feesProcesador],
+    ["directos", "Otros costos directos", p.otrosDirectos],
+    ["operativos", "Gastos operativos", p.gastosOperativos],
+    ["honorarios", "Honorarios del CEO", p.honorariosCeo],
+  ];
+  const pasos: PasoCascada[] = [
+    { id: "ingresos", nombre: cc ? "Cobrado" : "Facturado", valor: base, texto: M(base), tipo: "base", onClick: () => onVerRenglon("ingresos") },
+    ...restas.filter(([, , n]) => Math.abs(n) >= 0.5).map(([id, nombre, n]): PasoCascada => ({ id, nombre, valor: -n, texto: M(-n), tipo: "resta", onClick: () => onVerRenglon(id) })),
+    { id: "neto", nombre: "Profit neto", valor: neto, texto: M(neto), tipo: "total", onClick: () => onVerRenglon("neto") },
+  ];
+  return (
+    <section className="fz-hero" aria-label={`El resultado de ${etiqueta}`}>
+      <div>
+        <span className="fz-hero__etiqueta">Profit neto · {etiqueta}</span>
+        <span className="fz-hero__valor" data-tono={neto >= 0 ? "bien" : "mal"}>{M(neto)}</span>
+        <p className="fz-hero__sub">{margen ? <><b>{margen}</b> {cc ? "de lo cobrado" : "de lo facturado"}</> : null}</p>
+        <p className="fz-hero__sub">{cc ? "Sobre lo facturado" : "Sobre lo cobrado"}: {M(otroNeto)}</p>
+        <div style={{ marginTop: "var(--space-4)" }}>
+          <Segmentado
+            etiqueta="Sobre qué se mira" valor={lado} onCambiar={setLado}
+            opciones={[{ valor: "cc", texto: "Cobrado" }, { valor: "rev", texto: "Facturado" }]}
+          />
+        </div>
+      </div>
+      <Cascada pasos={pasos} etiqueta={`De ${cc ? "lo cobrado" : "lo facturado"} al profit neto`} />
+    </section>
   );
 }
 

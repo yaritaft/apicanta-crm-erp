@@ -2,7 +2,9 @@
 
 import React, { useMemo, useState } from "react";
 import { CalendarDays, ChevronLeft, ChevronRight, FileSpreadsheet, Wallet } from "lucide-react";
-import { Badge, Button, Card, CardHead, Empty, IconButton, StatCard } from "@/components/ui/ui";
+import { Badge, Button, Card, Empty, IconButton } from "@/components/ui/ui";
+import { InfoMetrica } from "@/components/ui/InfoMetrica";
+import { PartesDeUnTotal } from "@/components/finanzas/visual/visual";
 import { DataTable, type Columna } from "@/components/ui/DataTable";
 import { DateRangePicker } from "@/components/ui/DateRangePicker";
 import { Drawer } from "@/components/ui/Drawer";
@@ -214,75 +216,69 @@ export function IngresosSemanales({ e }: { e: EstadoApp }) {
 
   return (
     <section className="stack-4" aria-label="Ingresos de la semana">
-      <Card>
-        <CardHead
-          titulo="Ingresos de la semana"
-          sub="Lo que entró de verdad (Cash Collected: lo cobrado menos lo devuelto), por cuenta y por servicio, según la fecha del cobro. Para supervisar cada semana sin esperar a fin de mes."
-        />
-        <div className="row-wrap ingresos-rango">
-          <IconButton etiqueta={dias === 7 ? "La semana anterior" : `Los ${dias} días anteriores`} onClick={() => ir(-1)}><ChevronLeft size={16} /></IconButton>
-          <DateRangePicker
-            value={{ preset: "custom", desde, hasta }} minDate={primerDia} maxDate={hoy} etiqueta={etiqueta}
-            onApply={(x) => setUrl(x.desde === actual.desde && x.hasta === actual.hasta ? { sdesde: null, shasta: null } : { sdesde: x.desde, shasta: x.hasta })}
-            footerNota="Por la fecha del cobro (y de la devolución) · zona horaria de Argentina"
-          />
-          <IconButton etiqueta={dias === 7 ? "La semana siguiente" : `Los ${dias} días siguientes`} onClick={() => ir(1)} disabled={moverDias(desde, dias) > hoy}><ChevronRight size={16} /></IconButton>
-          {!esActual && (
-            <Button sm variante="ghost" icono={<CalendarDays size={15} />} onClick={() => setUrl({ sdesde: null, shasta: null })}>Esta semana</Button>
+      <Card style={{ padding: 0, overflow: "hidden" }} className="cobros-tabla ingresos-tabla">
+        <div className="fz-cabtabla">
+          <div className="fz-cabtabla__tit">
+            <h2 className="card-head__title">Ingresos de la semana</h2>
+            <InfoMetrica
+              titulo="Ingresos de la semana" periodo={etiqueta}
+              ayuda="Lo que entró de verdad (Cash Collected: lo cobrado menos lo devuelto), por cuenta y por servicio, según la fecha del cobro. Para supervisar cada semana sin esperar a fin de mes."
+            />
+          </div>
+          <div className="row-wrap">
+            <IconButton etiqueta={dias === 7 ? "La semana anterior" : `Los ${dias} días anteriores`} onClick={() => ir(-1)}><ChevronLeft size={16} /></IconButton>
+            <DateRangePicker
+              value={{ preset: "custom", desde, hasta }} minDate={primerDia} maxDate={hoy} etiqueta={etiqueta}
+              onApply={(x) => setUrl(x.desde === actual.desde && x.hasta === actual.hasta ? { sdesde: null, shasta: null } : { sdesde: x.desde, shasta: x.hasta })}
+              footerNota="Por la fecha del cobro (y de la devolución) · zona horaria de Argentina"
+            />
+            <IconButton etiqueta={dias === 7 ? "La semana siguiente" : `Los ${dias} días siguientes`} onClick={() => ir(1)} disabled={moverDias(desde, dias) > hoy}><ChevronRight size={16} /></IconButton>
+            {!esActual && (
+              <Button sm variante="ghost" icono={<CalendarDays size={15} />} onClick={() => setUrl({ sdesde: null, shasta: null })}>Esta semana</Button>
+            )}
+          </div>
+          <Button sm variante="ghost" icono={<FileSpreadsheet size={15} />} disabled={!hayCobros || bajando} onClick={descargar}>
+            {bajando ? "Armando el Excel…" : "Bajar Excel"}
+          </Button>
+        </div>
+
+        <div className="fz-semana">
+          <div>
+            <span className="fz-hero__etiqueta">
+              Cash Collected
+              <InfoMetrica
+                titulo="Cash Collected (CC)" periodo={etiqueta}
+                ayuda="Lo que entró de verdad en el rango: todos los cobros por su fecha de cobro, menos lo que se devolvió, por el día que salió la plata. Es el mismo número que el Cash Collected del Dashboard y del estado de resultados para esas fechas, y se compara con el del rango anterior, que se calcula igual."
+                formula={"Cash Collected (CC) = suma de los cobros con fecha de cobro dentro del rango − suma de las devoluciones confirmadas con fecha dentro del rango\nVariación = (CC del rango − CC del rango anterior del mismo largo) ÷ CC del rango anterior"}
+                componentes={() => [
+                  ...cuentasDeCobros.map((c, i) => ({ concepto: c.nombre, valor: M(c.total.monto), signo: (i === 0 ? undefined : "+") as "+" | undefined })),
+                  ...(hayDevoluciones ? [{ concepto: "Devoluciones", valor: M(-r.devuelto.monto), signo: "−" as const, nota: cuantos(0, r.devuelto.devoluciones) }] : []),
+                  { concepto: "Cash Collected (CC)", valor: M(r.total.monto), signo: "=" as const, nota: cuantos(r.total.cobros, 0) },
+                  { concepto: `El rango anterior (${etiquetaDeRango(anterior.desde, anterior.hasta, hoy)})`, valor: M(anterior.cc) },
+                ]}
+              />
+            </span>
+            <span className="fz-semana__valor">{money(r.total.monto, mon)}</span>
+            <p className="fz-hero__sub">
+              {cambio !== null && <b style={{ color: cambio >= 0 ? "var(--success)" : "var(--danger)" }}>{delta(cambio)}</b>}
+              {cambio !== null ? " · " : ""}{cuantos(r.total.cobros, r.total.devoluciones)}
+            </p>
+          </div>
+          {hayCobros && (
+            <PartesDeUnTotal
+              etiqueta="Por qué cuenta entró"
+              partes={[
+                ...cuentasDeCobros.slice(0, 4).map((c) => ({ id: c.id, nombre: c.nombre, valor: c.total.monto, texto: money(c.total.monto, mon) })),
+                ...(cuentasDeCobros.length > 4 ? [{
+                  id: "otras", nombre: `${cuentasDeCobros.length - 4} más`,
+                  valor: cuentasDeCobros.slice(4).reduce((a, c) => a + c.total.monto, 0),
+                  texto: money(cuentasDeCobros.slice(4).reduce((a, c) => a + c.total.monto, 0), mon),
+                }] : []),
+              ]}
+            />
           )}
         </div>
 
-        <div className="grid-stats ingresos-stats">
-          <StatCard
-            hero etiqueta="Cash Collected (CC)" valor={M(r.total.monto)}
-            direccion={cambio === null ? "neutral" : cambio >= 0 ? "up" : "down"}
-            delta={cambio === null ? undefined : delta(cambio)}
-            contexto={`${cuantos(r.total.cobros, r.total.devoluciones)} · antes ${M(anterior.cc)}`}
-            info={{
-              ayuda: "Lo que entró de verdad en el rango: todos los cobros por su fecha de cobro, menos lo que se devolvió, por el día que salió la plata. Es el mismo número que el Cash Collected del Dashboard y del estado de resultados para esas fechas, y se compara con el del rango anterior, que se calcula igual.",
-              formula: "Cash Collected (CC) = suma de los cobros con fecha de cobro dentro del rango − suma de las devoluciones confirmadas con fecha dentro del rango\nVariación = (CC del rango − CC del rango anterior del mismo largo) ÷ CC del rango anterior",
-              periodo: etiqueta,
-              componentes: () => [
-                ...cuentasDeCobros.map((c, i) => ({ concepto: c.nombre, valor: M(c.total.monto), signo: (i === 0 ? undefined : "+") as "+" | undefined })),
-                ...(hayDevoluciones ? [{ concepto: "Devoluciones", valor: M(-r.devuelto.monto), signo: "−" as const, nota: cuantos(0, r.devuelto.devoluciones) }] : []),
-                { concepto: "Cash Collected (CC)", valor: M(r.total.monto), signo: "=" as const, nota: cuantos(r.total.cobros, 0) },
-                { concepto: `El rango anterior (${etiquetaDeRango(anterior.desde, anterior.hasta, hoy)})`, valor: M(anterior.cc) },
-              ],
-            }}
-          />
-          <StatCard
-            etiqueta="La cuenta que más entró" valor={cuentaTop ? M(cuentaTop.total.monto) : "—"}
-            contexto={cuentaTop ? `${cuentaTop.nombre} · ${pct((cuentaTop.total.centavos / Math.max(r.cobrado.centavos, 1)) * 100, 0)} ${hayDevoluciones ? "de lo cobrado" : "del total"}` : "Sin cobros en este rango"}
-            info={{
-              ayuda: "La cuenta recaudadora por la que entró más plata en el rango, y qué parte de lo cobrado es (antes de restar las devoluciones, que no son de una cuenta sino de la venta).",
-              formula: "Parte de lo cobrado = lo cobrado por esa cuenta ÷ lo cobrado en el rango\nSin devoluciones en el rango, lo cobrado es el Cash Collected (CC)",
-            }}
-          />
-          <StatCard
-            etiqueta="El servicio que más entró" valor={servicioTop ? M(servicioTop.cobrado.monto) : "—"}
-            contexto={servicioTop ? `${servicioTop.nombre} · ${pct((servicioTop.cobrado.centavos / Math.max(r.cobrado.centavos, 1)) * 100, 0)} ${hayDevoluciones ? "de lo cobrado" : "del total"}` : "Sin cobros en este rango"}
-            info={{
-              ayuda: "El servicio (el de la venta de cada cobro) por el que entró más plata en el rango, y qué parte de lo cobrado es (antes de restar lo que se devolvió de ese servicio, que muestra la fila «Devoluciones»).",
-              formula: "Parte de lo cobrado = lo cobrado de ese servicio ÷ lo cobrado en el rango\nSin devoluciones en el rango, lo cobrado es el Cash Collected (CC)",
-            }}
-          />
-        </div>
-      </Card>
-
-      <Card style={{ padding: 0 }} className="cobros-tabla ingresos-tabla">
-        <div className="row-wrap" style={{ padding: "var(--space-3) var(--space-4)" }}>
-          <span className="t-sm t-muted">
-            {hayCobros
-              ? <>Del <strong>{etiqueta}</strong> · {num(r.total.cobros)} {r.total.cobros === 1 ? "cobro" : "cobros"} en {num(cuentasDeCobros.length)} {cuentasDeCobros.length === 1 ? "cuenta" : "cuentas"}{hayDevoluciones && <> · {cuantos(0, r.total.devoluciones)}</>}</>
-              : hayDevoluciones
-                ? <>Del <strong>{etiqueta}</strong> · {cuantos(0, r.total.devoluciones)}</>
-                : <>Del <strong>{etiqueta}</strong></>}
-          </span>
-          <span className="spacer" />
-          <Button sm variante="secondary" icono={<FileSpreadsheet size={15} />} disabled={!hayCobros || bajando} onClick={descargar}>
-            {bajando ? "Armando el Excel…" : "Descargar Excel de los cobros"}
-          </Button>
-        </div>
         <DataTable
           filas={r.cuentas} columnas={columnas}
           vacio={

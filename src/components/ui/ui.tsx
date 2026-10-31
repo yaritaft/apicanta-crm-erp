@@ -84,7 +84,9 @@ export function CardHead({ titulo, sub, acciones }: { titulo: string; sub?: stri
 
 /* ---------------- StatCard ---------------- */
 
-export function StatCard({ etiqueta, valor, delta, direccion = "neutral", contexto, hero, ayuda, onClick, info }: {
+export function StatCard({ etiqueta, valor, delta, direccion = "neutral", contexto, hero, ayuda, onClick, info, activo }: {
+  /* La tarjeta elegida, cuando las tarjetas también son el filtro de lo que sigue abajo. */
+  activo?: boolean;
   etiqueta: string; valor: string; delta?: string;
   direccion?: "up" | "down" | "accent" | "neutral";
   contexto?: string; hero?: boolean; ayuda?: string;
@@ -104,7 +106,7 @@ export function StatCard({ etiqueta, valor, delta, direccion = "neutral", contex
       }
     : {};
   return (
-    <div className={`hk-card hk-stat${hero ? " hk-stat--hero" : ""}${onClick ? " hk-stat--link" : ""}`} title={info ? undefined : ayuda} {...clic}>
+    <div className={`hk-card hk-stat${hero ? " hk-stat--hero" : ""}${onClick ? " hk-stat--link" : ""}${activo ? " hk-stat--activo" : ""}`} title={info ? undefined : ayuda} {...clic} {...(onClick ? { "aria-pressed": Boolean(activo) } : {})}>
       <span className="hk-stat__label">
         {etiqueta}
         {info && <InfoMetrica {...info} titulo={info.titulo ?? etiqueta} />}

@@ -3,6 +3,7 @@
 import React, { useMemo, useState } from "react";
 import { AlertTriangle, ChevronDown, ChevronUp, Copy } from "lucide-react";
 import { Badge, Button, Card, Chip } from "@/components/ui/ui";
+import { InfoMetrica } from "@/components/ui/InfoMetrica";
 import { useToast } from "@/components/ui/Toast";
 import { acciones } from "@/lib/store";
 import { fecha } from "@/lib/format";
@@ -90,30 +91,22 @@ export function GastosQueCuentan({ e, periodo, r, soloMirar }: { e: EstadoApp; p
 
   return (
     <Card style={{ padding: 0, overflow: "hidden" }}>
-      <div className="pyl-head">
-        <div className="pyl-head__texto">
-          <h3 className="card-head__title">Gastos que cuentan en los costos del mes</h3>
-          <p className="card-head__sub">
-            El profit de quienes cobran sobre él sale de estos gastos. Si alguno es el pago de un sueldo o una comisión que la liquidación ya cuenta,
-            marcalo para que no sume dos veces: sigue en la caja y en Transacciones.
-          </p>
+      <div className="gq__cab">
+        <div className="gq__titulo">
+          <h3 className="card-head__title">Gastos que cuentan en los costos</h3>
+          <InfoMetrica
+            titulo="Gastos que cuentan en los costos"
+            ayuda="El profit de quienes cobran sobre él sale de estos gastos. Si alguno es el pago de un sueldo o una comisión que la liquidación ya cuenta, marcalo para que no sume dos veces: sigue en la caja y en Transacciones."
+          />
+        </div>
+        <div className="gq__numeros">
+          <span title={`${datos.cuentan.n} gastos`}><span className="t-sm t-subtle">Cuentan{hasta}</span> <b>{plata(datos.cuentan.total, base)}</b></span>
+          {datos.marcados.n > 0 && <span title={`${datos.marcados.n} ${datos.marcados.n === 1 ? "pago" : "pagos"} al equipo`}><span className="t-sm t-subtle">Marcados, no suman</span> <b>{plata(datos.marcados.total, base)}</b></span>}
+          {datos.sospechosos.n > 0 && <span className="gq__alerta" title={`${datos.sospechosos.n} sin marcar`}><span className="t-sm">Parecen pagos al equipo</span> <b>{plata(datos.sospechosos.total, base)}</b></span>}
         </div>
         <Button sm variante="ghost" icono={abierto ? <ChevronUp size={15} /> : <ChevronDown size={15} />} onClick={() => setAbierto((v) => !v)}>
-          {abierto ? "Ocultar los gastos" : `Ver los ${datos.filas.length} gastos`}
+          {abierto ? "Ocultar" : `Ver los ${datos.filas.length}`}
         </Button>
-      </div>
-
-      <div className="gq__resumen">
-        <div><span className="t-label">Cuentan{hasta}</span><b>{plata(datos.cuentan.total, base)}</b><span className="t-sm t-subtle">{datos.cuentan.n} gastos</span></div>
-        {datos.marcados.n > 0 && (
-          <div><span className="t-label">Marcados: no suman</span><b>{plata(datos.marcados.total, base)}</b><span className="t-sm t-subtle">{datos.marcados.n} {datos.marcados.n === 1 ? "pago" : "pagos"} al equipo</span></div>
-        )}
-        {datos.sospechosos.n > 0 && (
-          <div className="gq__alerta">
-            <span className="t-label">Parecen pagos al equipo</span><b>{plata(datos.sospechosos.total, base)}</b>
-            <span className="t-sm">{datos.sospechosos.n} {datos.sospechosos.n === 1 ? "gasto" : "gastos"} sin marcar</span>
-          </div>
-        )}
       </div>
 
       {datos.sospechosos.n > 0 && !soloMirar && (

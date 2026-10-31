@@ -40,42 +40,49 @@ export function Camino({ pasos, cadencia, periodo, ahora, abierto, onAbrir, agru
   return (
     <ol className="cm-path" aria-label="El camino">
       {pasos.map((p, i) => {
-        const nuevaArea = agrupar && (i === 0 || pasos[i - 1].area !== p.area);
+        /* «Conciliar el origen» va después de validar los cobros (y antes de las cuotas): se lee con ellos, sin partir la banda en dos. */
+        const bandaDe = (x: PasoCierre) => (x.id === "m-origen" ? "cobros" : x.area);
+        const nuevaArea = agrupar && (i === 0 || bandaDe(pasos[i - 1]) !== bandaDe(p));
         const estaAbierto = abierto === p.id;
         const sinAcceso = p.soloDuenos && !esDueno;
         const manual = p.tipo === "manual";
         const rapido = manual && p.estado === "pendiente" && !soloMirar;            // se tilda con un clic, sin abrirlo
         return (
           <React.Fragment key={p.id}>
-            {nuevaArea && <li className="cm-banda-fila" aria-hidden>{AREAS_DEL_CIERRE.find((a) => a.id === p.area)?.nombre}</li>}
+            {nuevaArea && <li className="cm-banda-fila" aria-hidden>{AREAS_DEL_CIERRE.find((a) => a.id === bandaDe(p))?.nombre}</li>}
             <li className={`cm-step cm-step--${p.estado}${estaAbierto ? " cm-step--abierto" : ""}${p.siguiente ? " cm-step--sigue" : ""}`}>
               <Nodo estado={p.estado} n={i + 1} />
               <div className="cm-step__tarjeta">
                 <button type="button" className="cm-step__cab" aria-expanded={estaAbierto} onClick={() => onAbrir(estaAbierto ? null : p.id)}>
                   <h3 className="cm-step__titulo">
                     {p.titulo}
-                    {p.siguiente && <span className="cm-step__sigue">Siguiente</span>}
-                    {p.tipo === "manual" && p.estado !== "listo" && <span className="cm-step__tipo">Se tilda</span>}
-                    {p.tipo === "revisable" && p.estado !== "listo" && <span className="cm-step__tipo">Se revisa</span>}
                     <span className="sr-only"> ({TEXTO_ESTADO[p.estado].toLowerCase()})</span>
                   </h3>
-                  <p className="cm-step__det">{p.detalle}</p>
-                  {p.chequeo && <p className="cm-step__hecho">Hecho por {p.chequeo.por ?? "alguien"} · {fechaHora(p.chequeo.en)}</p>}
-                  {p.progreso && p.progreso.total > 0 && p.estado !== "listo" && (
-                    <div className="cm-pmini">
+                  {/* El detalle, sólo donde hace falta leerlo: en el que sigue y en el que está abierto. */}
+                  {(p.siguiente || estaAbierto) && <p className="cm-step__det">{p.detalle}</p>}
+                  {estaAbierto && p.chequeo && <p className="cm-step__hecho">Hecho por {p.chequeo.por ?? "alguien"} · {fechaHora(p.chequeo.en)}</p>}
+                </button>
+                <div className="cm-step__acc">
+                  {p.progreso && p.progreso.total > 0 && p.estado !== "listo" ? (
+                    <div className="cm-pmini" title={`${p.progreso.hecho} de ${p.progreso.total}`}>
                       <div className="cm-pbar"><i style={{ width: `${Math.round((p.progreso.hecho / p.progreso.total) * 100)}%` }} /></div>
                       <span>{p.progreso.hecho} de {p.progreso.total}</span>
                     </div>
-                  )}
-                </button>
-                <div className="cm-step__acc">
-                  <Cuenta p={p} />
+                  ) : p.estado === "pendiente" && p.faltan > 0 ? <Cuenta p={p} />
+                    : p.estado === "en-curso" ? <span className="cm-acc__t">En curso</span>
+                      : p.estado === "bloqueado" ? <span className="cm-acc__t">Todavía no</span>
+                        : p.estado === "listo" && p.chequeo ? <span className="cm-acc__t" title={fechaHora(p.chequeo.en)}>{(p.chequeo.por ?? "").split(" ")[0]}</span> : null}
                   {rapido ? (
-                    <Button sm variante={p.siguiente ? "primary" : "secondary"} icono={<Check size={15} />} onClick={() => marcar(p)}>Hecho</Button>
+                    <Button sm variante={p.siguiente ? "primary" : "ghost"} icono={<Check size={15} />} onClick={() => marcar(p)}>Hecho</Button>
                   ) : !sinAcceso && (
-                    <Button sm variante={p.siguiente ? "primary" : "secondary"} icono={estaAbierto ? undefined : <ChevronRight size={15} />} onClick={() => onAbrir(estaAbierto ? null : p.id)}>
-                      {estaAbierto ? "Cerrar" : p.siguiente ? "Resolver" : "Ver"}
-                    </Button>
+                    p.siguiente || estaAbierto ? (
+                      <Button sm variante={p.siguiente ? "primary" : "ghost"} icono={estaAbierto ? undefined : <ChevronRight size={15} />} onClick={() => onAbrir(estaAbierto ? null : p.id)}>
+                        {estaAbierto ? "Cerrar" : "Resolver"}
+                      </Button>
+                    ) : (
+                      /* Toda la fila se abre: la flecha alcanza, sin un «Ver» por renglón. */
+                      <button type="button" className="cm-step__ir" aria-label={`Ver ${p.titulo}`} onClick={() => onAbrir(p.id)}><ChevronRight size={16} aria-hidden /></button>
+                    )
                   )}
                 </div>
               </div>

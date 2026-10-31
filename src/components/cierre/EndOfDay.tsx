@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useMemo, useState } from "react";
-import { CalendarCheck, Check, CircleAlert } from "lucide-react";
+import { CalendarCheck, Check, CircleAlert, Minus } from "lucide-react";
 import { Asistente, Opcion, Pregunta, type PasoAsistente } from "@/components/ui/Asistente";
 import { Button, Textarea } from "@/components/ui/ui";
 import { useToast } from "@/components/ui/Toast";
@@ -59,7 +59,7 @@ export function EndOfDay({ ahora, esDueno, chequeos, marcar, soloMirar = false }
           <p className="cm-eod__sub">
             {cerrado
               ? <>Lo cerró <b>{deHoy.cierre?.por ?? "alguien"}</b> a las {HORA.format(new Date(deHoy.cierre!.en))}: {resumenTexto(deHoy)}.</>
-              : <>{fechaLarga(hoy)}. Son {num(cuantas)} {cuantas === 1 ? "tarea" : "tareas"}{pendientes.length ? `, ${num(pendientes.length)} de ellas ${pendientes.length === 1 ? "quedó" : "quedaron"} pendiente${pendientes.length === 1 ? "" : "s"} de antes` : ""}. Las contás de a una y el día queda cerrado.</>}
+              : <>{fechaLarga(hoy)} · {num(cuantas)} {cuantas === 1 ? "tarea" : "tareas"}{pendientes.length ? ` · ${num(pendientes.length)} ${pendientes.length === 1 ? "quedó" : "quedaron"} de antes` : ""}</>}
           </p>
         </div>
         {soloMirar ? (
@@ -72,14 +72,21 @@ export function EndOfDay({ ahora, esDueno, chequeos, marcar, soloMirar = false }
       </section>
 
       <section className="cm-caja" aria-label="Los últimos días">
-        <h4 className="cm-caja__tit">Los últimos días</h4>
-        <ul className="cm-dias">
-          {[...dias].reverse().map((d) => (
+        <h4 className="cm-caja__tit">Los últimos 7 días</h4>
+        <ul className="cm-semana">
+          {dias.map((d) => (
             <li key={d.dia}>
-              <button type="button" className={`cm-dia cm-dia--${d.estado}`} disabled={soloMirar} onClick={() => setAbierto(d.dia)} aria-label={`${fechaLarga(d.dia)}: ${ESTADO_DEL_DIA[d.estado].toLowerCase()}`}>
-                <span className="cm-dia__fecha"><b>{letraDelDia(d.dia)}</b> {d.dia.slice(8, 10)}</span>
-                <span className="cm-dia__estado">{ESTADO_DEL_DIA[d.estado]}</span>
-                <span className="cm-dia__resumen">{d.estado === "cerrado" ? resumenCorto(d) : d.estado === "sin-cerrar" && !soloMirar ? "Tocá para cerrarlo" : ""}</span>
+              <button
+                type="button" className={`cm-dial cm-dial--${d.estado}`} disabled={soloMirar} onClick={() => setAbierto(d.dia)}
+                aria-label={`${fechaLarga(d.dia)}: ${ESTADO_DEL_DIA[d.estado].toLowerCase()}`}
+                title={d.estado === "cerrado" ? resumenCorto(d) : d.estado === "sin-cerrar" && !soloMirar ? "Tocá para cerrarlo" : ESTADO_DEL_DIA[d.estado]}
+              >
+                <span className="cm-dial__dow">{letraDelDia(d.dia)}</span>
+                <span className="cm-dial__num">{d.dia.slice(8, 10)}</span>
+                <span className="cm-dial__marca" aria-hidden>
+                  {d.estado === "cerrado" ? <Check size={15} strokeWidth={2.5} /> : d.estado === "sin-cerrar" ? <CircleAlert size={15} /> : <Minus size={15} />}
+                </span>
+                <span className="cm-dial__est">{d.estado === "cerrado" ? resumenCorto(d).split(" · ")[0] : ESTADO_DEL_DIA[d.estado]}</span>
               </button>
             </li>
           ))}

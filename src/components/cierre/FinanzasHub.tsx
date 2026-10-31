@@ -98,16 +98,20 @@ export function FinanzasHub() {
             <Button sm variante="ghost" onClick={() => elegirVista("mes")}>Volver al mes</Button>
           </div>
         )}
-        <div className="cm-ingresos" role="group" aria-label="Lo que entró">
+        {/* El avance, sin ocupar lugar: un tramo por paso, en la misma línea. */}
+        <div className="cm-avance" aria-live="polite" title={`${listos} de ${total} pasos listos`}>
+          <div className="cm-tramos" aria-hidden>
+            {pasos.map((p) => <span key={p.id} className={`cm-tramo${p.estado === "listo" ? " cm-tramo--listo" : ""}${p.siguiente ? " cm-tramo--sigue" : ""}`} title={p.titulo} />)}
+          </div>
+          <span className="cm-conteo"><b>{listos}</b> de {total}</span>
+        </div>
+        <div className="cm-ingresos cm-barra__der" role="group" aria-label="Lo que entró">
           <Banknote size={15} aria-hidden />
           <span className="cm-ingresos__t">Lo que entró</span>
           <Button sm variante="ghost" onClick={() => router.push(`/finanzas/transacciones?dia=${diaDeNegocio(new Date(ahora).toISOString())}&tipo=entradas`)}>Hoy</Button>
           <Button sm variante="ghost" onClick={() => router.push(`/finanzas/transacciones?dia=${diaDeNegocio(new Date(ahora - 86400000).toISOString())}&tipo=entradas`)}>Ayer</Button>
           <AyudaDeFinanzas />
         </div>
-        <span className="cm-conteo cm-barra__der" aria-live="polite">
-          <b>{listos}</b> de {total} pasos listos
-        </span>
       </div>
 
       <Camino

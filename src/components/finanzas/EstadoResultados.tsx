@@ -7,6 +7,7 @@ import { ChevronRight, ChevronsDownUp, ChevronsUpDown } from "lucide-react";
 import { Button, Card } from "@/components/ui/ui";
 import { InfoMetrica } from "@/components/ui/InfoMetrica";
 import { money } from "@/lib/format";
+import { Cifra } from "@/components/finanzas/visual/visual";
 import {
   abribles, armarEstadoResultados, ayudaDeRenglon, esBloque, TOPE, type FmtMonto, type NodoPyL,
 } from "@/lib/estadoResultados";
@@ -89,8 +90,8 @@ export function EstadoResultados({ e, mes, p, hrefGasto, enfoque, onCargarGasto 
     }
     const color = estilo === "neto" ? (n >= 0 ? "var(--success)" : "var(--danger)") : undefined;
     return (
-      <div role="cell" className={`pyl__monto pyl__monto--${lado}`} data-etiqueta={etiqueta} style={color ? { color } : undefined}>
-        {M(n)}
+      <div role="cell" className={`pyl__monto pyl__monto--${lado}`} data-etiqueta={etiqueta} data-cero={Math.abs(n) < 0.005 ? true : undefined} style={color ? { color } : undefined}>
+        <Cifra texto={M(n)} />
       </div>
     );
   };
@@ -220,12 +221,12 @@ export function EstadoResultados({ e, mes, p, hrefGasto, enfoque, onCargarGasto 
   return (
     <Card style={{ padding: 0, overflow: "hidden" }}>
       <div className="pyl-head">
-        <div className="pyl-head__texto">
-          <h2 className="card-head__title">Estado de resultados — {mes.etiqueta}</h2>
-          <p className="card-head__sub">
-            Dos columnas porque casi todo se vende en cuotas: una cosa es lo que vendiste y otra la que ya está en la cuenta.
-            Tocá un renglón para ver de dónde sale.
-          </p>
+        <div className="pyl-head__texto" style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <h2 className="card-head__title" style={{ margin: 0 }}>Estado de resultados</h2>
+          <InfoMetrica
+            titulo="Estado de resultados" periodo={mes.etiqueta}
+            ayuda="Dos columnas porque casi todo se vende en cuotas: una cosa es lo que vendiste y otra la que ya está en la cuenta. Los ingresos salen de las ventas; los gastos, de lo que cargás. Tocá un renglón para ver de dónde sale."
+          />
         </div>
         <Button
           sm variante="ghost"

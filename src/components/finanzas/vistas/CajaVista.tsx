@@ -1,10 +1,12 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, ArrowRightLeft, Check, ChevronRight, HandCoins, Info, Landmark, Plus, RefreshCw, Trash2 } from "lucide-react";
+import { AlertTriangle, ArrowRightLeft, Check, ChevronRight, HandCoins, Landmark, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { CabeceraVista } from "@/components/finanzas/vistas/CabeceraVista";
-import { Ayuda, Badge, Button, Card, CardHead, Empty, Field, IconButton, Input, Select, StatCard, Textarea } from "@/components/ui/ui";
+import { Ayuda, Badge, Button, Card, CardHead, Empty, Field, IconButton, Input, Select, Textarea } from "@/components/ui/ui";
 import { InputMonto } from "@/components/ui/InputMonto";
+import { InfoMetrica } from "@/components/ui/InfoMetrica";
+import { Cascada, Medidor, Plegable, type PasoCascada } from "@/components/finanzas/visual/visual";
 import { DataTable } from "@/components/ui/DataTable";
 import { Confirmar, Modal, ModalForm } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toast";
@@ -80,12 +82,11 @@ export function CajaVista({ embebido = false, rangoFijo }: {
     <div className="stack-5">
       <CabeceraVista embebido={embebido}
         titulo="Caja"
-        sub="Cuánta plata hay de verdad en las cuentas, si da con lo que la app esperaba y cuántos meses de vida le da al negocio."
         acciones={
           <>
-            <CopiarLink sm={false} />
-            <Button variante="secondary" icono={<ArrowRightLeft size={16} />} onClick={() => setPase("nuevo")}>Movimiento entre cuentas</Button>
-            <Button variante="secondary" icono={<HandCoins size={16} />} onClick={() => setRetirando(true)}>Registrar retiro</Button>
+            <CopiarLink variante="ghost" />
+            <Button sm variante="ghost" icono={<ArrowRightLeft size={15} />} onClick={() => setPase("nuevo")}>Movimiento entre cuentas</Button>
+            <Button sm variante="ghost" icono={<HandCoins size={15} />} onClick={() => setRetirando(true)}>Registrar retiro</Button>
             <Button variante="primary" icono={<Plus size={16} />} onClick={() => setArqueando("vacio")}>Hacer un arqueo</Button>
           </>
         }
@@ -100,16 +101,15 @@ export function CajaVista({ embebido = false, rangoFijo }: {
           />
         </Card>
       ) : (
-        <>
-          <div className="grid-stats">
-            <StatCard
-              hero etiqueta="Caja esperada hoy" valor={M(caja ?? 0)}
-              contexto={`Último arqueo: ${M(ultimo.total)} el ${fechaLarga(ultimo.fecha)}${mov && mov.enCamino > 0 ? ` · ${M(mov.enCamino)} están en camino entre cuentas` : ""}`}
-              info={{
-                ayuda: "Cuánta plata tendría que haber hoy entre todas las cuentas, partiendo de lo que se contó en el último arqueo. Si al contar no da, falta cargar un gasto, una venta o un cobro.",
-                formula: "Caja del último arqueo + lo que estaba en camino entre cuentas + lo cobrado − las devoluciones − procesadores − comisiones − gastos pagados − reparto (growth partner y socio) − retiros del dueño\nLo cobrado menos las devoluciones es el Cash Collected (CC) del período.\nUn gasto cuenta el día que se pagó, no el mes al que corresponde (ese es del estado de resultados).",
-                periodo: `desde el arqueo del ${fechaLarga(ultimo.fecha)}`,
-                componentes: mov ? () => [
+        <section className="fz-hero" aria-label="La plata hoy">
+          <div>
+            <span className="fz-hero__etiqueta">
+              Caja esperada hoy
+              <InfoMetrica
+                titulo="Caja esperada hoy" periodo={`desde el arqueo del ${fechaLarga(ultimo.fecha)}`}
+                ayuda="Cuánta plata tendría que haber hoy entre todas las cuentas, partiendo de lo que se contó en el último arqueo. Si al contar no da, falta cargar un gasto, una venta o un cobro."
+                formula={"Caja del último arqueo + lo que estaba en camino entre cuentas + lo cobrado − las devoluciones − procesadores − comisiones − gastos pagados − reparto (growth partner y socio) − retiros del dueño\nLo cobrado menos las devoluciones es el Cash Collected (CC) del período.\nUn gasto cuenta el día que se pagó, no el mes al que corresponde (ese es del estado de resultados)."}
+                componentes={mov ? () => [
                   { concepto: "Caja del último arqueo", valor: M(mov.inicial, 2) },
                   { concepto: "Estaba en camino al contarlo", valor: M(mov.enCaminoAntes, 2), signo: "+" },
                   { concepto: "Cobrado (lo que entró por las cuentas)", valor: M(mov.cobrado, 2), signo: "+" },
@@ -120,63 +120,60 @@ export function CajaVista({ embebido = false, rangoFijo }: {
                   { concepto: "Reparto: growth partner y socio", valor: M(mov.reparto, 2), signo: "−" },
                   { concepto: "Retiros del dueño", valor: M(mov.retiros, 2), signo: "−" },
                   { concepto: "Caja esperada", valor: M(mov.esperado, 2), signo: "=" },
-                ] : undefined,
-              }}
-            />
-            <StatCard
-              etiqueta="Meses de vida" valor={vida.mesesDeVida === null ? "—" : num(vida.mesesDeVida, 1)}
-              direccion={vida.mesesDeVida !== null && vida.mesesDeVida >= MESES_DE_COLCHON ? "up" : "down"}
-              delta={`objetivo ${MESES_DE_COLCHON}`}
-              contexto={`Un mes sin vender cuesta ${M(vida.gastoMensual)} (promedio de ${vida.meses})`}
-              info={{
-                ayuda: "Cuántos meses aguanta el negocio sin vender nada con la plata que hay. Yari apunta a tener seis.",
-                formula: "Caja esperada ÷ Lo que cuesta un mes sin vender\n(gastos operativos + honorarios del CEO, promedio de los últimos tres meses cerrados)",
-                ejemplo: "Con US$ 90.000 en caja y gastos de US$ 15.000 por mes: 90.000 ÷ 15.000 = 6 meses de vida.",
-                periodo: `promedio de ${vida.meses}`,
-                componentes: vida.mesesDeVida === null ? undefined : () => [
-                  { concepto: "Caja esperada", valor: M(caja ?? 0, 2) },
-                  { concepto: "Lo que cuesta un mes sin vender", valor: M(vida.gastoMensual, 2), signo: "÷" },
-                  { concepto: "Meses de vida", valor: num(vida.mesesDeVida!, 1), signo: "=" },
-                ],
-              }}
-            />
-            <StatCard
-              etiqueta={vida.excedente >= 0 ? "Se puede retirar" : "Falta para 6 meses"}
-              valor={M(Math.abs(vida.excedente))}
-              direccion={vida.excedente >= 0 ? "up" : "down"}
-              contexto={`El colchón de ${MESES_DE_COLCHON} meses es ${M(vida.colchon)}`}
-              info={{
-                ayuda: "Lo que sobra (o falta) de la caja para tener el colchón de seis meses. Lo que pasa de eso se puede retirar.",
-                formula: "Caja esperada − Colchón\nColchón = Lo que cuesta un mes sin vender × 6",
-                periodo: `promedio de ${vida.meses}`,
-                componentes: () => [
-                  { concepto: "Caja esperada", valor: M(caja ?? 0, 2) },
-                  { concepto: `Colchón de ${MESES_DE_COLCHON} meses`, valor: M(vida.colchon, 2), signo: "−", nota: `${M(vida.gastoMensual, 2)} × ${MESES_DE_COLCHON}` },
-                  { concepto: vida.excedente >= 0 ? "Se puede retirar" : "Falta para el colchón", valor: M(Math.abs(vida.excedente), 2), signo: "=" },
-                ],
-              }}
-            />
-            <StatCard
-              etiqueta={`Retiros de ${anio}`} valor={M(retirosDelAnio)}
-              contexto={retiros.length ? `${retiros.length} en total` : "Todavía ninguno"}
-              info={{
-                ayuda: "Plata que el dueño sacó de la caja este año. No es un gasto del negocio: no resta del profit, sí de la caja.",
-                formula: `Suma de los retiros del dueño pagados en ${anio}`,
-              }}
-            />
+                ] : undefined}
+              />
+            </span>
+            <span className="fz-hero__valor">{M(caja ?? 0)}</span>
+            <p className="fz-hero__sub">Último arqueo: <b>{M(ultimo.total)}</b> el {fechaLarga(ultimo.fecha)}</p>
+            {mov && mov.enCamino > 0 && <p className="fz-hero__sub">{M(mov.enCamino)} en camino entre cuentas</p>}
+            {retirosDelAnio > 0 && (
+              <p className="fz-hero__sub" title="Plata que el dueño sacó de la caja este año. No es un gasto del negocio: no resta del profit, sí de la caja.">Retiros de {anio}: <b>{M(retirosDelAnio)}</b></p>
+            )}
           </div>
-
-          {mov && <Movimiento mov={mov} M={M} sinVenta={sinVentaHoy} />}
-        </>
+          <div className="fz-hero__der">
+            <div className="fz-vida">
+              <span className="fz-hero__etiqueta">
+                Meses de vida
+                <InfoMetrica
+                  titulo="Meses de vida" periodo={`promedio de ${vida.meses}`}
+                  ayuda="Cuántos meses aguanta el negocio sin vender nada con la plata que hay. Yari apunta a tener seis."
+                  formula={"Caja esperada ÷ Lo que cuesta un mes sin vender\n(gastos operativos + honorarios del CEO, promedio de los últimos tres meses cerrados)"}
+                  ejemplo="Con US$ 90.000 en caja y gastos de US$ 15.000 por mes: 90.000 ÷ 15.000 = 6 meses de vida."
+                  componentes={vida.mesesDeVida === null ? undefined : () => [
+                    { concepto: "Caja esperada", valor: M(caja ?? 0, 2) },
+                    { concepto: "Lo que cuesta un mes sin vender", valor: M(vida.gastoMensual, 2), signo: "÷" },
+                    { concepto: "Meses de vida", valor: num(vida.mesesDeVida!, 1), signo: "=" },
+                  ]}
+                />
+              </span>
+              <Medidor
+                valor={vida.mesesDeVida === null ? "—" : num(vida.mesesDeVida, 1)} unidad={`de ${MESES_DE_COLCHON} meses`} etiqueta="Meses de vida contra el objetivo"
+                parte={(vida.mesesDeVida ?? 0) / MESES_DE_COLCHON} tono={(vida.mesesDeVida ?? 0) >= MESES_DE_COLCHON ? "bien" : "alerta"}
+                desde={`Un mes sin vender cuesta ${M(vida.gastoMensual)}`}
+                hasta={`Colchón: ${M(vida.colchon)}`}
+              />
+            </div>
+            <div className="fz-vida__falta" title={vida.excedente >= 0 ? "Lo que sobra de la caja después de guardar el colchón." : "Lo que falta para tener el colchón."}>
+              {vida.excedente >= 0
+                ? <>Se pueden retirar <b>{M(vida.excedente)}</b> sin tocar el colchón</>
+                : <>Faltan <b>{M(Math.abs(vida.excedente))}</b> para llegar al colchón</>}
+            </div>
+          </div>
+        </section>
       )}
+
+      {ultimo && mov && <Movimiento mov={mov} M={M} sinVenta={sinVentaHoy} />}
 
       <ControlDeSaldosCard e={e} onArquear={() => setArqueando("traer")} />
 
-      <PasesEntreCuentas e={e} rango={rangoFijo} onNuevo={() => setPase("nuevo")} onEditar={(t) => setPase(t)} />
+      <PasesEntreCuentas e={e} rango={rangoFijo} plegable={!embebido} onNuevo={() => setPase("nuevo")} onEditar={(t) => setPase(t)} />
 
       <Card style={{ padding: 0 }}>
-        <div style={{ padding: "var(--space-4) var(--space-4) 0" }}>
-          <CardHead titulo="Arqueos" sub="Cada vez que se contó la plata. La diferencia es contra lo que la app esperaba ese día: si no da, falta cargar un gasto, una venta o un cobro." />
+        <div className="fz-cabtabla">
+          <div className="fz-cabtabla__tit">
+            <h2 className="card-head__title">Arqueos</h2>
+            <InfoMetrica titulo="Arqueos" ayuda="Cada vez que se contó la plata. La diferencia es contra lo que la app esperaba ese día: si no da, falta cargar un gasto, una venta o un cobro." />
+          </div>
         </div>
         <DataTable
           filas={arqueos}
@@ -195,7 +192,7 @@ export function CajaVista({ embebido = false, rangoFijo }: {
         />
       </Card>
 
-      <Card style={{ padding: 0 }}>
+      {retiros.length > 0 && <Card style={{ padding: 0 }}>
         <div style={{ padding: "var(--space-4) var(--space-4) 0" }}>
           <CardHead titulo="Retiros del dueño" sub="La plata que sale de la caja y no es un gasto del negocio (el retiro de fin de año): no resta del profit, sí de la caja." />
         </div>
@@ -209,9 +206,9 @@ export function CajaVista({ embebido = false, rangoFijo }: {
           ]}
           vacio={<p className="t-sm t-muted" style={{ padding: 16 }}>Sin retiros cargados.</p>}
         />
-      </Card>
+      </Card>}
 
-      <Ayuda titulo="Cómo se calcula" icono={<Info size={18} />}>
+      <Plegable titulo="Cómo se calcula">
         La caja esperada parte del último arqueo y le suma lo cobrado, menos procesadores, comisiones de closers y
         director, los gastos pagados (cada uno el día que se pagó, aunque corresponda a otro mes del estado de resultados),
         el growth partner y el socio, y los retiros. Las comisiones se pagan a mes
@@ -220,7 +217,7 @@ export function CajaVista({ embebido = false, rangoFijo }: {
         no cambia el total: sólo lo que tendría que haber en cada cuenta, y lo que costó el pase, que va como gasto.
         Mientras la plata viaja de una cuenta a otra sigue siendo de la caja, pero no está en ninguna: por eso el
         arqueo la descuenta de lo que tiene que dar al contar.
-      </Ayuda>
+      </Plegable>
 
       {arqueando && <NuevoArqueo e={e} traerAlAbrir={arqueando === "traer"} onCerrar={() => setArqueando(false)} onListo={(a) => {
         setArqueando(false);
@@ -251,42 +248,34 @@ function Diferencia({ d, M }: { d?: number | null; M: (n: number, dec?: number) 
 }
 
 function Movimiento({ mov, M, sinVenta }: { mov: MovimientoCaja; M: (n: number, d?: number) => string; sinVenta?: { n: number; monto: number } }) {
-  const filas: [string, number, string?][] = [
-    ["Caja del último arqueo", mov.inicial],
-    ...(mov.enCaminoAntes ? [["+ Estaba en camino al contar", mov.enCaminoAntes, "Había salido de una cuenta y no había llegado a la otra"] as [string, number, string]] : []),
-    ["+ Cobrado", mov.cobrado, "Todo lo que entró por las cuentas"],
-    ...(mov.devoluciones ? [["− Devoluciones a clientes", -mov.devoluciones, "La plata devuelta; la comisión de la pasarela no vuelve"] as [string, number, string]] : []),
-    ["− Procesadores", -mov.procesador],
-    ["− Comisiones de closers y director", -mov.comisiones, "Se pagan a mes vencido"],
-    ["− Gastos pagados", -mov.gastos, "Directos, operativos y honorarios del CEO, el día que se pagaron"],
-    ["− Growth partner y socio", -mov.reparto],
-    ["− Retiros del dueño", -mov.retiros],
+  const restas: [string, string, number, string?][] = [
+    ["devoluciones", "Devoluciones a clientes", mov.devoluciones, "La plata devuelta; la comisión de la pasarela no vuelve"],
+    ["procesador", "Procesadores", mov.procesador],
+    ["comisiones", "Comisiones de closers y director", mov.comisiones, "Se pagan a mes vencido"],
+    ["gastos", "Gastos pagados", mov.gastos, "Directos, operativos y honorarios del CEO, el día que se pagaron"],
+    ["reparto", "Growth partner y socio", mov.reparto],
+    ["retiros", "Retiros del dueño", mov.retiros],
+  ];
+  const pasos: PasoCascada[] = [
+    { id: "inicial", nombre: "Último arqueo", valor: mov.inicial, texto: M(mov.inicial), tipo: "base" },
+    ...(mov.enCaminoAntes ? [{ id: "camino", nombre: "Estaba en camino al contar", valor: mov.enCaminoAntes, texto: `+${M(mov.enCaminoAntes)}`, tipo: "suma" as const, ayuda: "Había salido de una cuenta y no había llegado a la otra" }] : []),
+    { id: "cobrado", nombre: "Cobrado", valor: mov.cobrado, texto: `+${M(mov.cobrado)}`, tipo: "suma", ayuda: "Todo lo que entró por las cuentas" },
+    ...restas.filter(([, , n]) => Math.abs(n) >= 0.5).map(([id, nombre, n, ayuda]): PasoCascada => ({ id, nombre, valor: -n, texto: M(-n), tipo: "resta", ayuda })),
+    { id: "esperado", nombre: "Caja esperada hoy", valor: mov.esperado, texto: M(mov.esperado), tipo: "total" },
+    ...(mov.enCamino > 0 ? [{ id: "encuentas", nombre: "Al contar las cuentas tiene que dar", valor: mov.enCuentas, texto: M(mov.enCuentas), tipo: "total" as const, ayuda: "Lo que salió de una cuenta y todavía no llegó a la otra no está en ninguna" }] : []),
   ];
   return (
     <Card>
-      <CardHead titulo={`Desde el último arqueo (${fechaLarga(mov.desde)})`} sub="Lo que la app sabe que pasó con la plata. Si al contar no da, lo que falta está acá." />
-      <dl className="caja-mov">
-        {filas.map(([t, n, ayuda]) => (
-          <React.Fragment key={t}>
-            <dt>{t}{ayuda && <span className="t-sm t-subtle"> · {ayuda}</span>}</dt>
-            <dd className="t-num">{M(n)}</dd>
-          </React.Fragment>
-        ))}
-        <dt className="caja-mov__total">= Caja esperada hoy</dt>
-        <dd className="caja-mov__total t-num">{M(mov.esperado)}</dd>
-        {mov.enCamino > 0 && (
-          <>
-            <dt>− En camino entre cuentas<span className="t-sm t-subtle"> · Salió de una y todavía no llegó a la otra: al contar no está en ninguna</span></dt>
-            <dd className="t-num">{M(-mov.enCamino)}</dd>
-            <dt>= Lo que tendría que dar al contar las cuentas</dt>
-            <dd className="t-num">{M(mov.enCuentas)}</dd>
-          </>
-        )}
-      </dl>
+      <div className="fz-cabtabla fz-cabtabla--suelta">
+        <div className="fz-cabtabla__tit">
+          <h2 className="card-head__title">Qué pasó con la plata desde el {fechaLarga(mov.desde)}</h2>
+          <InfoMetrica titulo="Desde el último arqueo" ayuda="Lo que la app sabe que pasó con la plata. Si al contar no da, lo que falta está acá." />
+        </div>
+      </div>
+      <Cascada pasos={pasos} etiqueta="Del último arqueo a la caja esperada" />
       {sinVenta && sinVenta.n > 0 && (
-        <p className="t-sm t-subtle" style={{ margin: "var(--space-3) 0 0" }}>
-          Además {sinVenta.n === 1 ? "entró 1 cobro" : `entraron ${sinVenta.n} cobros`} por {M(sinVenta.monto)} que todavía no tiene{sinVenta.n === 1 ? "" : "n"} su venta cargada: están en la cuenta
-          pero no en «Cobrado» hasta que se concilien. Si al contar sobra plata, puede ser esto.
+        <p className="t-sm t-subtle" style={{ margin: "var(--space-3) 0 0" }} title="Están en la cuenta pero no en «Cobrado» hasta que se concilien. Si al contar sobra plata, puede ser esto.">
+          Además {sinVenta.n === 1 ? "hay 1 cobro" : `hay ${sinVenta.n} cobros`} por {M(sinVenta.monto)} sin su venta cargada: si al contar sobra plata, puede ser esto.
         </p>
       )}
     </Card>

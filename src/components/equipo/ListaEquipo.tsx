@@ -58,7 +58,7 @@ export function ListaEquipo({ accesos, onVer }: { accesos: Accesos; onVer: (id: 
         ? <Badge variante="warning">A definir</Badge>
         : (
           <span className="row" style={{ gap: 8 }}>
-            <span className={f.cobra === "Sin cargar" ? "t-subtle" : undefined}>{f.cobra}</span>
+            <span className={`truncate${f.cobra === "Sin cargar" ? " t-subtle" : ""}`} style={{ maxWidth: 360 }} title={f.cobra}>{f.cobra}</span>
             {f.aDefinir && <Badge variante="warning">A definir</Badge>}
           </span>
         )),

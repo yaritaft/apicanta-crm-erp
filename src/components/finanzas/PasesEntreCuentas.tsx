@@ -3,7 +3,8 @@
 import { enRangoDeDias, type RangoDeDias } from "@/lib/dia-negocio";
 import React, { useMemo, useState } from "react";
 import { AlertTriangle, ArrowRight, ArrowRightLeft, Check, Pencil, RefreshCw, RotateCcw, Trash2, X } from "lucide-react";
-import { Ayuda, Badge, Button, Card, CardHead, Chip, Field, IconButton, Input, Textarea, type VarianteBadge } from "@/components/ui/ui";
+import { InfoMetrica } from "@/components/ui/InfoMetrica";
+import { Ayuda, Badge, Button, Card, Chip, Field, IconButton, Input, Textarea, type VarianteBadge } from "@/components/ui/ui";
 import { InputMonto } from "@/components/ui/InputMonto";
 import { Asistente, Opcion, Pregunta } from "@/components/ui/Asistente";
 import { ResumenAsistente } from "@/components/ui/ResumenAsistente";
@@ -48,15 +49,18 @@ const plata = (n: number, m: Moneda) => money(n, m, Math.abs(n - Math.round(n)) 
 /* Un monto guardado, como se escribe en el formulario: 3.900 · 5.230,40. */
 const enTexto = (n: number) => n.toLocaleString("es-AR", { minimumFractionDigits: Number.isInteger(n) ? 0 : 2, maximumFractionDigits: 2 });
 
-export function PasesEntreCuentas({ e, onNuevo, onEditar, rango }: {
+export function PasesEntreCuentas({ e, onNuevo, onEditar, rango, plegable = false }: {
   e: EstadoApp;
   onNuevo: () => void;
   onEditar: (t: Traspaso) => void;
   /* Adentro de un paso del mes: sólo los movimientos de esos días (lo de otros meses va en el cierre de su mes). */
   rango?: RangoDeDias | null;
+  /* En la Caja arranca cerrado: se ve lo que espera a alguien y la lista entera se abre al tocarla. */
+  plegable?: boolean;
 }) {
   const toast = useToast();
   const [v, setV] = useParamsURL({ pases: "" });
+  const [verLista, setVerLista] = useState(false);
   const filtro = (["por-confirmar", "no-llego", "en-camino", "ignorado", "falta-comision", "diferencia"].includes(v.pases) ? v.pases : "") as Filtro;
   const tabla = useTablaURL("pases", { clave: "fecha", desc: true }, ["fecha", "ruta", "sale", "llega", "costo", "estado"]);
   const [buscando, setBuscando] = useState(false);
@@ -114,16 +118,20 @@ export function PasesEntreCuentas({ e, onNuevo, onEditar, rango }: {
   return (
     <Card style={{ padding: 0 }}>
       <div className="pases__cabeza" style={{ padding: "var(--space-4) var(--space-4) 0" }}>
-        <CardHead
-          titulo="Movimientos entre cuentas"
-          sub="La plata que pasa de una cuenta tuya a otra (de Stripe a Mercury, de Mercury a la Financiera). No es ingreso ni gasto: no mueve el total de la caja; lo que cueste el pase sí queda como gasto."
-          acciones={
-            <Button sm variante="secondary" icono={<RefreshCw size={15} />} cargando={buscando} onClick={() => void buscar()}
+        <div className="fz-cabtabla fz-cabtabla--suelta" style={{ marginBottom: "var(--space-3)" }}>
+          <div className="fz-cabtabla__tit">
+            <h2 className="card-head__title">Movimientos entre cuentas</h2>
+            <InfoMetrica titulo="Movimientos entre cuentas" ayuda="La plata que pasa de una cuenta tuya a otra (de Stripe a Mercury, de Mercury a la Financiera). No es ingreso ni gasto: no mueve el total de la caja; lo que cueste el pase sí queda como gasto." />
+            <span className="t-sm t-subtle">{num(todos.length - descartados)} en total</span>
+          </div>
+          <div className="row-wrap">
+            <Button sm variante="ghost" icono={<RefreshCw size={15} />} cargando={buscando} onClick={() => void buscar()}
               title="Le pregunta ahora a Mercury y a Stripe. Igual se revisa solo cada hora.">Buscar en las cuentas</Button>
-          }
-        />
+            {plegable && !filtro && <Button sm variante="ghost" onClick={() => setVerLista((x) => !x)}>{verLista ? "Ocultar la lista" : "Ver la lista"}</Button>}
+          </div>
+        </div>
         <div className="row-wrap pases__filtros">
-          <Chip activo={filtro === ""} onClick={() => setV({ pases: null })}>Todos</Chip>
+          {(!plegable || verLista || filtro) && <Chip activo={filtro === ""} onClick={() => setV({ pases: null })}>Todos</Chip>}
           {resumen.faltaComision > 0 && (
             <Chip activo={filtro === "falta-comision"} count={resumen.faltaComision} title="Retiros de Hotmart sin la comisión cargada"
               onClick={() => setV({ pases: filtro === "falta-comision" ? null : "falta-comision" })}>Falta la comisión</Chip>
@@ -132,9 +140,9 @@ export function PasesEntreCuentas({ e, onNuevo, onEditar, rango }: {
             <Chip activo={filtro === "diferencia"} count={resumen.diferencias} title="Stripe o Whop: salió un monto y llegó otro"
               onClick={() => setV({ pases: filtro === "diferencia" ? null : "diferencia" })}>Salió ≠ llegó</Chip>
           )}
-          <Chip activo={filtro === "por-confirmar"} count={resumen.porConfirmar} onClick={() => setV({ pases: filtro === "por-confirmar" ? null : "por-confirmar" })}>Por confirmar</Chip>
-          <Chip activo={filtro === "no-llego"} count={resumen.noLlegaron} onClick={() => setV({ pases: filtro === "no-llego" ? null : "no-llego" })}>Salieron y no llegaron</Chip>
-          <Chip activo={filtro === "en-camino"} count={resumen.enCamino} onClick={() => setV({ pases: filtro === "en-camino" ? null : "en-camino" })}>En camino</Chip>
+          {(!plegable || verLista || filtro || resumen.porConfirmar > 0) && <Chip activo={filtro === "por-confirmar"} count={resumen.porConfirmar} onClick={() => setV({ pases: filtro === "por-confirmar" ? null : "por-confirmar" })}>Por confirmar</Chip>}
+          {(!plegable || verLista || filtro || resumen.noLlegaron > 0) && <Chip activo={filtro === "no-llego"} count={resumen.noLlegaron} onClick={() => setV({ pases: filtro === "no-llego" ? null : "no-llego" })}>Salieron y no llegaron</Chip>}
+          {(!plegable || verLista || filtro || resumen.enCamino > 0) && <Chip activo={filtro === "en-camino"} count={resumen.enCamino} onClick={() => setV({ pases: filtro === "en-camino" ? null : "en-camino" })}>En camino</Chip>}
           {descartados > 0 && <Chip activo={filtro === "ignorado"} count={descartados} onClick={() => setV({ pases: filtro === "ignorado" ? null : "ignorado" })}>Descartados</Chip>}
         </div>
       </div>
@@ -155,7 +163,7 @@ export function PasesEntreCuentas({ e, onNuevo, onEditar, rango }: {
           </Ayuda>
         </div>
       )}
-      <DataTable
+      {plegable && !verLista && !filtro ? <div style={{ height: "var(--space-4)" }} /> : <DataTable
         filas={filas}
         orden={tabla.orden} onOrden={tabla.onOrden} pagina={tabla.pagina} onPagina={tabla.onPagina} porPagina={15}
         onFila={(t) => editar(t.id)}
@@ -243,7 +251,7 @@ export function PasesEntreCuentas({ e, onNuevo, onEditar, rango }: {
             </div>
           )
         }
-      />
+      />}
       <Confirmar
         abierto={borrar !== null} onCerrar={() => setBorrar(null)} confirmarTexto="Borrar"
         titulo="¿Borrar este movimiento entre cuentas?"

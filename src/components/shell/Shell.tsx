@@ -8,7 +8,7 @@ import {
   AlertCircle, Check, Cloud, Eye, HardDrive, Lock, LogOut, Menu, Moon, PanelLeft, PanelLeftClose,
   RefreshCw, Search, Sun, X,
 } from "lucide-react";
-import { inicioPara, navPara, TODOS_LOS_ITEMS } from "./nav";
+import { inicioPara, navPara, TODOS_LOS_ITEMS, PANTALLAS_SIN_MENU } from "./nav";
 import { alarmaCobranza } from "@/lib/finanzas";
 import { cuantosFaltan } from "@/lib/gastos-recurrentes";
 import { llamadasEnDevolucionSinCargar } from "@/lib/devoluciones";
@@ -250,7 +250,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
   const masEspecifico = (items: typeof TODOS_LOS_ITEMS) => items.filter((i) => coincide(i.href)).sort((a, b) => b.href.length - a.href.length)[0];
   const item = masEspecifico(nav.flatMap((g) => g.items));
   /* Una pantalla que no está en su menú (el closer abre la Agenda por link) igual lleva su título. */
-  const encabezado = item ?? masEspecifico(TODOS_LOS_ITEMS);
+  const encabezado = PANTALLAS_SIN_MENU.find((p) => coincide(p.href)) ?? item ?? masEspecifico(TODOS_LOS_ITEMS);
 
   return (
     <div className="app-shell" data-colapsado={colapsado}>

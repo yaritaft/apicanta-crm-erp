@@ -2,7 +2,9 @@
 
 import React, { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeftRight, ClipboardPaste, CreditCard, Plus, Search } from "lucide-react";
+import { AlertTriangle, ArrowLeftRight, ClipboardPaste, CreditCard, Plus, Search } from "lucide-react";
+import { InfoMetrica } from "@/components/ui/InfoMetrica";
+import { Cascada } from "@/components/finanzas/visual/visual";
 import { CabeceraVista } from "@/components/finanzas/vistas/CabeceraVista";
 import { Badge, Button, Card, Chip, Empty, Input, Select, StatCard } from "@/components/ui/ui";
 import { type Columna, DataTable } from "@/components/ui/DataTable";
@@ -158,7 +160,7 @@ export function TransaccionesVista({ embebido = false }: { embebido?: boolean })
       ),
     },
     { clave: "cuenta", titulo: "Cuenta", tipo: "secondary", orden: (f) => f.cuenta, celda: (f) => f.cuenta || <span className="t-subtle">—</span> },
-    { clave: "estado", titulo: "Estado", orden: (f) => f.estado, celda: (f) => <Badge variante={VARIANTE_ESTADO[f.origen]}>{f.estado}</Badge> },
+    { clave: "estado", titulo: "Estado", orden: (f) => f.estado, celda: (f) => (f.origen === "cobro" || f.origen === "gasto" ? <span className="t-sm t-muted">{f.estado}</span> : <Badge variante={VARIANTE_ESTADO[f.origen]}>{f.estado}</Badge>) },
     {
       clave: "comision", titulo: "Comisión", tipo: "num", orden: (f) => f.comision ?? 0,
       celda: (f) => (f.comision ? M(f.comision, 2, f.moneda) : <span className="t-subtle">—</span>),
@@ -174,14 +176,14 @@ export function TransaccionesVista({ embebido = false }: { embebido?: boolean })
     <div className="stack-5">
       <CabeceraVista embebido={embebido}
         titulo="Transacciones"
-        sub="Todo lo que entró y salió, de todas las cuentas, en un solo lugar: cobros, gastos, devoluciones, lo que volvió y los pases entre cuentas."
         acciones={(
-          <div className="row-wrap">
+          <>
             <AyudaDeFinanzas />
-            <Button variante="secondary" icono={<ClipboardPaste size={16} />} onClick={() => setMasiva(true)}
+            <CopiarLink variante="ghost" />
+            <Button sm variante="ghost" icono={<ClipboardPaste size={15} />} onClick={() => setMasiva(true)}
               title="Pegá las filas de una planilla de Excel y cargá muchos gastos de una vez.">Cargar varios</Button>
             <Button variante="primary" icono={<Plus size={16} />} onClick={() => setAsistente({ gasto: null })}>Cargar gasto o ingreso</Button>
-          </div>
+          </>
         )}
       />
 
@@ -215,87 +217,72 @@ export function TransaccionesVista({ embebido = false }: { embebido?: boolean })
         </div>
       )}
 
-      <div className="grid-stats">
-        <StatCard
-          etiqueta="Ingresos" valor={M(resumen.ingresos, 0)} direccion="up"
-          contexto={`${nombreMes}${resumen.sinConciliarN ? ` · ${resumen.sinConciliarN} sin conciliar aparte (${M(resumen.sinConciliar, 0)})` : ""}${resumen.sinVentaN ? ` · ${resumen.sinVentaN} sin venta aparte` : ""}`}
-          onClick={() => setVista({ tipo: "ingresos" })}
-          info={{
-            ayuda: "Lo que entró: cobros imputados a una cuota y plata que volvió (un reembolso). Lo que entró a una pasarela y todavía no se ató a una cuota no se suma: está en «Sin conciliar».",
-            formula: "Cobros del período + ingresos cargados\n(sin lo sin conciliar ni los pases entre cuentas)",
-          }}
+      <section className="fz-hero" aria-label={`Lo que entró y salió en ${nombreMes}`}>
+        <div>
+          <span className="fz-hero__etiqueta">
+            Neto · {nombreMes}
+            <InfoMetrica
+              titulo="Neto" ayuda="Lo que quedó en el período entre lo que entró y lo que salió, sin contar lo sin conciliar ni los pases entre cuentas."
+              formula={"Ingresos − Egresos\nIngresos: cobros del período + ingresos cargados (sin lo sin conciliar ni los pases entre cuentas)\nEgresos: gastos pagados + retiros + devoluciones del período (sin los pases entre cuentas)"}
+            />
+          </span>
+          <span className="fz-hero__valor" data-tono={resumen.neto >= 0 ? undefined : "mal"}>{M(resumen.neto, 0)}</span>
+          {resumen.sinVentaN > 0 && <p className="fz-hero__sub">{resumen.sinVentaN} {resumen.sinVentaN === 1 ? "cobro" : "cobros"} sin venta, aparte</p>}
+        </div>
+        <Cascada
+          etiqueta="Lo que entró y lo que salió"
+          pasos={[
+            { id: "ingresos", nombre: "Ingresos", valor: resumen.ingresos, texto: M(resumen.ingresos, 0), tipo: "base", onClick: () => setVista({ tipo: "ingresos" }) },
+            { id: "egresos", nombre: "Egresos", valor: -resumen.egresos, texto: M(-resumen.egresos, 0), tipo: "resta", onClick: () => setVista({ tipo: "egresos" }) },
+            { id: "neto", nombre: "Neto", valor: resumen.neto, texto: M(resumen.neto, 0), tipo: "total" },
+          ]}
         />
-        <StatCard
-          etiqueta="Egresos" valor={M(resumen.egresos, 0)} direccion="down"
-          contexto={nombreMes}
-          onClick={() => setVista({ tipo: "egresos" })}
-          info={{
-            ayuda: "Lo que salió: gastos (el día que se pagaron), retiros y devoluciones a clientes.",
-            formula: "Gastos pagados + retiros + devoluciones del período\n(sin los pases entre cuentas)",
-          }}
-        />
-        <StatCard
-          etiqueta="Neto" valor={M(resumen.neto, 0)} direccion={resumen.neto >= 0 ? "up" : "down"}
-          contexto="Ingresos − egresos"
-          info={{ ayuda: "Lo que quedó en el período entre lo que entró y lo que salió, sin contar lo sin conciliar ni los pases entre cuentas.", formula: "Ingresos − Egresos" }}
-        />
-        <StatCard
-          etiqueta="Sin conciliar" valor={M(resumen.sinConciliar, 0)} direccion={resumen.sinConciliarN ? "down" : "neutral"}
-          contexto={`${num(resumen.sinConciliarN)} ${resumen.sinConciliarN === 1 ? "cobro" : "cobros"} · todavía no cuentan`}
-          onClick={() => setVista({ tipo: "sin-conciliar" })}
-          info={{ ayuda: "Plata que entró a una pasarela o al banco y todavía no se ató a una cuota. Se resuelve en Conciliación.", formula: "Suma de los cobros en estado Pendiente del período", href: "/conciliacion" }}
-        />
-      </div>
+      </section>
+
+      {resumen.sinConciliarN > 0 && (
+        <button type="button" className="fz-linea fz-linea--atencion" onClick={() => setVista({ tipo: "sin-conciliar" })} title="Plata que entró a una pasarela o al banco y todavía no se ató a una cuota. Se resuelve en Conciliación.">
+          <AlertTriangle size={16} className="fz-linea__chev" aria-hidden />
+          <span className="fz-linea__titulo">{num(resumen.sinConciliarN)} {resumen.sinConciliarN === 1 ? "cobro" : "cobros"} sin conciliar por {M(resumen.sinConciliar, 0)}: todavía no cuentan</span>
+          <span className="fz-linea__resumen">Ver</span>
+        </button>
+      )}
 
       <Card style={{ padding: 0, overflow: "hidden" }}>
-        <div style={{ padding: "var(--space-4)" }}>
-          <div className="toolbar" style={{ marginBottom: 0 }} role="group" aria-label="Tipo de movimiento">
-            {TIPOS.map(([k, t]) => (
-              <Chip key={k || "todo"} activo={tipo === k} onClick={() => setVista({ tipo: k || null })} count={cuentaN(k)}>{t}</Chip>
-            ))}
-            <span className="spacer" />
-            <CopiarLink />
-          </div>
-
-          <div className="row-wrap" style={{ marginTop: "var(--space-3)" }} role="group" aria-label="Día">
-            <span className="t-label" style={{ marginRight: 4 }}>Día</span>
+        <div style={{ padding: "var(--space-4) var(--space-5)" }}>
+          <div className="row-wrap fz-filtros">
             <Chip activo={dia === hoy} onClick={() => setVista({ dia: dia === hoy ? null : hoy, tipo: dia === hoy ? null : "entradas" })}>Hoy</Chip>
             <Chip activo={dia === ayer} onClick={() => setVista({ dia: dia === ayer ? null : ayer, tipo: dia === ayer ? null : "entradas" })}>Ayer</Chip>
-            <div style={{ width: 170 }}>
+            <div style={{ width: 160 }}>
               <Input type="date" aria-label="Elegir un día" value={dia} max={hoy}
                 onChange={(ev) => setVista({ dia: ev.target.value || null, ...(ev.target.value && !tipo ? { tipo: "entradas" } : {}) })} />
             </div>
-            {dia && <Button sm variante="ghost" onClick={() => setVista({ dia: null })}>Ver el mes</Button>}
-          </div>
-
-          <div className="row-wrap" style={{ marginTop: "var(--space-3)" }}>
-            {!dia && (
-              <>
-                <span className="t-label" style={{ marginRight: 4 }}>Mes</span>
-                <div style={{ minWidth: 200 }}>
-                  <Select
-                    aria-label="Mes" value={mes}
-                    onChange={(ev) => setVista({ mes: ev.target.value === mesActual ? null : ev.target.value })}
-                    opciones={[...meses.map((m) => ({ valor: m, texto: nombrePeriodo(m) })), { valor: "todos", texto: "Todos los meses" }]}
-                  />
-                </div>
-              </>
+            {dia ? <Button sm variante="ghost" onClick={() => setVista({ dia: null })}>Ver el mes</Button> : (
+              <div style={{ width: 170 }}>
+                <Select
+                  aria-label="Mes" value={mes}
+                  onChange={(ev) => setVista({ mes: ev.target.value === mesActual ? null : ev.target.value })}
+                  opciones={[...meses.map((m) => ({ valor: m, texto: nombrePeriodo(m) })), { valor: "todos", texto: "Todos los meses" }]}
+                />
+              </div>
             )}
-            <span className="t-label" style={{ marginLeft: 8, marginRight: 4 }}>Cuenta</span>
-            <div style={{ minWidth: 200 }}>
+            <div style={{ width: 190 }}>
               <Select
                 aria-label="Cuenta" value={cuenta} placeholder="Todas las cuentas"
                 onChange={(ev) => setVista({ cuenta: ev.target.value || null })}
                 opciones={cuentas.map((c) => ({ valor: c.cuenta || SIN_CUENTA, texto: `${c.cuenta || "Sin cuenta"} (${c.n})` }))}
               />
             </div>
+            <div className="fz-filtros__buscar">
+              <Input
+                icono={<Search size={15} />} value={busca} onChange={(ev) => setBusca(ev.target.value)}
+                placeholder="Buscar" aria-label="Buscar por nombre, concepto, categoría, proveedor o cuenta" title="Por nombre, concepto, categoría, proveedor o cuenta"
+              />
+            </div>
           </div>
-
-          <div style={{ marginTop: "var(--space-3)", maxWidth: 520 }}>
-            <Input
-              icono={<Search size={15} />} value={busca} onChange={(ev) => setBusca(ev.target.value)}
-              placeholder="Buscar por nombre, concepto, categoría, proveedor o cuenta" aria-label="Buscar transacciones"
-            />
+          <div className="row-wrap" style={{ marginTop: "var(--space-3)" }} role="group" aria-label="Tipo de movimiento">
+            {TIPOS.map(([k, t]) => (
+              <Chip key={k || "todo"} activo={tipo === k} onClick={() => setVista({ tipo: k || null })} count={cuentaN(k)}>{t}</Chip>
+            ))}
           </div>
         </div>
 

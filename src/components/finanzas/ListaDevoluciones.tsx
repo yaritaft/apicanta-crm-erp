@@ -1,13 +1,14 @@
 "use client";
 
 import React, { useMemo, useState } from "react";
-import { Info, Paperclip, Pencil, Plus, Trash2, Undo2 } from "lucide-react";
-import { Ayuda, Badge, Button, Card, CardHead, IconButton, StatCard } from "@/components/ui/ui";
+import { Paperclip, Pencil, Plus, Trash2, Undo2 } from "lucide-react";
+import { Badge, Button, Card, CardHead, IconButton, StatCard } from "@/components/ui/ui";
 import { DataTable } from "@/components/ui/DataTable";
 import { Confirmar } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toast";
 import { ReembolsosPasarelas } from "@/components/devoluciones/ReembolsosPasarelas";
 import { useAbrirFicha } from "@/components/ficha/abrir";
+import { Plegable } from "@/components/finanzas/visual/visual";
 import { acciones } from "@/lib/store";
 import { useAcceso } from "@/lib/acceso";
 import { verComprobante } from "@/lib/comprobantes";
@@ -57,9 +58,9 @@ export function ListaDevoluciones({ e, mes }: { e: EstadoApp; mes: RangoMes }) {
 
   return (
     <div className="stack-4">
-      <div className="grid-stats">
+      <div className={sinCargar.length > 0 || porConfirmar > 0 ? "grid-stats" : "grid-2"}>
         <StatCard
-          hero etiqueta={`Devuelto en ${mes.etiqueta}`} valor={M(total, 0)}
+          etiqueta={`Devuelto en ${mes.etiqueta}`} valor={M(total, 0)}
           contexto={`${delMes.length} ${delMes.length === 1 ? "devolución" : "devoluciones"}`}
           info={{
             ayuda: "La plata que se le devolvió a clientes en el período. Resta del Cash Collected y del estado de resultados del mes en que se devolvió: la venta sigue contando en su mes. Baja además la caja de la cuenta de la que salió si es posterior al último arqueo; una devolución de antes del arqueo no mueve la caja de hoy (el saldo que se contó ya venía sin esa plata).",
@@ -80,22 +81,22 @@ export function ListaDevoluciones({ e, mes }: { e: EstadoApp; mes: RangoMes }) {
             periodo: mes.etiqueta,
           }}
         />
-        <StatCard
+        {sinCargar.length > 0 && <StatCard
           etiqueta="Llamadas por cargar" valor={String(sinCargar.length)} direccion={sinCargar.length > 0 ? "down" : "neutral"}
           contexto="En «Devolución» sin devolución cargada"
           info={{
             ayuda: "Llamadas que el closer dejó en «Devolución» en el CRM y todavía no tienen su devolución cargada: Finanzas no las ve hasta que alguien las cargue.",
             formula: "Llamadas con Estado de Llamada «Devolución» cuya persona no tiene ninguna devolución cargada",
           }}
-        />
-        <StatCard
+        />}
+        {porConfirmar > 0 && <StatCard
           etiqueta="Para confirmar" valor={String(porConfirmar)} direccion={porConfirmar > 0 ? "down" : "neutral"}
           contexto="Reembolsos que informó una pasarela"
           info={{
             ayuda: "Reembolsos que informaron Stripe, Hotmart o Whop y nadie confirmó. No restan de Finanzas hasta que se confirman.",
             formula: "Cantidad de devoluciones en estado «propuesta»",
           }}
-        />
+        />}
       </div>
 
       {sinCargar.length > 0 && (
@@ -165,14 +166,14 @@ export function ListaDevoluciones({ e, mes }: { e: EstadoApp; mes: RangoMes }) {
         />
       </Card>
 
-      <Ayuda titulo="Cómo se cuentan las devoluciones" icono={<Info size={18} />}>
+      <Plegable titulo="Cómo se cuentan las devoluciones">
         La venta sigue contando en el mes en que se hizo. La devolución resta en el mes en que se devuelve la plata: Cash Collected,
         estado de resultados. La caja de la cuenta de la que salió baja sólo si el día es posterior al último arqueo: una devolución de antes del
         conteo no mueve la caja de hoy, porque el saldo que se contó ya venía sin esa plata. La comisión de la pasarela no vuelve (Stripe se la queda).
         Al closer y al director se les revierte exactamente lo que se les comisionó por lo cobrado de esa venta, como una línea negativa
         «Devolución de …» en la liquidación del mes de la devolución; con «no descontar al closer», no se revierte nada. Si ese mes ya
         está cerrado, la liquidación cerrada no se reescribe: lo que se descuenta entra en la del mes que sigue.
-      </Ayuda>
+      </Plegable>
 
       <Confirmar
         abierto={Boolean(borrar)} onCerrar={() => setBorrar(null)}

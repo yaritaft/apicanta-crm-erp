@@ -4,11 +4,11 @@ import React, { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import {
-  AlertTriangle, ArrowLeft, Check, Info, Plus, Wallet,
+  AlertTriangle, ArrowLeft, Check, Plus, Wallet,
 } from "lucide-react";
 import { CabeceraVista } from "@/components/finanzas/vistas/CabeceraVista";
 import {
-  Ayuda, Badge, Button, Card, CardHead, Chip, Empty, IconButton, Tabs,
+  Badge, Button, Card, CardHead, Chip, Empty, IconButton, Tabs,
 } from "@/components/ui/ui";
 import { DataTable } from "@/components/ui/DataTable";
 import { Confirmar } from "@/components/ui/Modal";
@@ -29,6 +29,7 @@ import { DateRangePicker, rangoSub } from "@/components/ui/DateRangePicker";
 import { useRangoURL } from "@/lib/useRango";
 import { CopiarLink, Filtro } from "@/components/ui/Filtros";
 import { InfoMetrica } from "@/components/ui/InfoMetrica";
+import { Plegable, Senal, Senales } from "@/components/finanzas/visual/visual";
 import { useParamsURL, useTablaURL } from "@/lib/useParamsURL";
 import { filtrarVencidas, opcionesDeMora, totalDeMora, vencidasDelPeriodo } from "@/lib/mora-filtros";
 import { calcularPyL, comisionesDelMes, comisionesSetterYReferidor, cuotasVencidas, UMBRALES_ATRASO } from "@/lib/finanzas";
@@ -173,18 +174,17 @@ export function DetalleVista({ embebido = false, seccion: seccionFija, rangoFijo
     <div className="stack-5">
       <CabeceraVista embebido={embebido}
         titulo="Detalle de finanzas"
-        sub="Fila por fila: qué se debe, en qué se fue la plata y cuánto comisiona cada uno."
+        izquierda={!embebido ? <DateRangePicker
+          value={rango} minDate={limites.min} maxDate={limites.max}
+          onApply={setRango} footerNota="Días calendario · zona horaria de Argentina"
+        /> : undefined}
         acciones={
           <>
             {!embebido && <>
-            <Link href={`/finanzas?${qs}`}>
-              <Button variante="secondary" icono={<ArrowLeft size={16} />}>Volver al resumen</Button>
+            <CopiarLink variante="ghost" />
+            <Link href={`/finanzas/resultados?${qs}`}>
+              <Button sm variante="ghost" icono={<ArrowLeft size={15} />}>Volver al P&amp;L</Button>
             </Link>
-            <DateRangePicker
-              value={rango} minDate={limites.min} maxDate={limites.max}
-              onApply={setRango} footerNota="Días calendario · zona horaria de Argentina"
-            />
-            <CopiarLink sm={false} />
             </>}
             {(!embebido || vista === "gastos" || vista === "fijos") && <Button variante="primary" icono={<Plus size={16} />} onClick={() => { setVista("gastos"); setAsistente({ gasto: null }); }}>Cargar gasto o ingreso</Button>}
           </>
@@ -203,75 +203,76 @@ export function DetalleVista({ embebido = false, seccion: seccionFija, rangoFijo
       {/* ---------------- Cobros: las cuotas vencidas ---------------- */}
       {vista === "cobros" && (
         <div className="stack-4">
-          {vencidas.length > 0 && (
-            <Ayuda
-              titulo={moraVista.cuotas === 0 ? "Ninguna cuota vencida con estos filtros"
-                : `${moraVista.cuotas === 1 ? "Hay 1 cuota vencida sin cobrar" : `Hay ${num(moraVista.cuotas)} cuotas vencidas sin cobrar`}${rangoFijo ? " de este período" : ""}`}
-              icono={<AlertTriangle size={18} />}
-            >
-              {moraVista.cuotas === 0 ? (
-                <>
-                  En total hay {num(moraTotal.cuotas)} {moraTotal.cuotas === 1 ? "cuota vencida" : "cuotas vencidas"} por <strong>{M(moraTotal.saldo)}</strong>.
-                  Sacá algún filtro para verlas.
-                </>
-              ) : (
-                <>
-                  {moraVista.cuotas === 1 ? "Es de" : "Suman"} <strong>{M(moraVista.saldo)}</strong>
+          <div className="fz-mora">
+            {vencidas.length > 0 && (
+              <div className="fz-mora__num">
+                <span className="fz-hero__etiqueta">
+                  Vencido sin cobrar{rangoFijo ? " de este período" : ""}
                   <InfoMetrica
                     titulo="Lo que suman las cuotas vencidas"
-                    ayuda="Lo que falta cobrar de las cuotas vencidas de la tabla: las del atraso, el servicio y el closer que elegiste. Sin filtros, son todas."
+                    ayuda="Lo que falta cobrar de las cuotas vencidas de la tabla: las del atraso, el servicio y el closer que elegiste. Sin filtros, son todas. Marcá el pago cuando entre y desaparece de esta lista."
                     formula={"Suma de lo que falta de cada cuota vencida (monto − lo ya pagado)\nSólo las de ventas activas, con el vencimiento ya pasado y sin cobrar"}
                     componentes={() => [
                       { concepto: "Cuotas vencidas en la tabla", valor: num(moraVista.cuotas), nota: `${num(moraVista.clientes)} ${moraVista.clientes === 1 ? "cliente" : "clientes"}` },
                       { concepto: "Lo que falta cobrar", valor: M(moraVista.saldo, 2), signo: "=" },
                       ...(hayFiltroMora ? [{ concepto: "En total, sin filtros", valor: M(moraTotal.saldo, 2), nota: `${num(moraTotal.cuotas)} cuotas` }] : []),
                     ]}
-                  />.{" "}
-                  {moraVista.cuotas === 1 ? "Lleva" : "La más vieja lleva"}{" "}
-                  <strong>{vencidasVista[0].diasAtraso} {vencidasVista[0].diasAtraso === 1 ? "día" : "días"}</strong> y es de {vencidasVista[0].contacto}.{" "}
-                  {hayFiltroMora && <>Es lo que estás viendo: en total hay {num(moraTotal.cuotas)} {moraTotal.cuotas === 1 ? "cuota vencida" : "cuotas vencidas"} por {M(moraTotal.saldo)}. </>}
-                  Marcá el pago cuando entre y desaparece de esta lista.
-                </>
-              )}
-            </Ayuda>
-          )}
-
-          <div className="row-wrap">
-            <Chip activo={atraso === 0} onClick={() => setAtraso(0)} count={enAlcance.length}>Todas las vencidas</Chip>
-            {UMBRALES_ATRASO.map((d) => (
-              <Chip key={d} activo={atraso === d} onClick={() => setAtraso(d)} count={enAlcance.filter((c) => c.diasAtraso >= d).length}>
-                {d} días o más
-              </Chip>
-            ))}
-            <span className="spacer" />
-            {opcionesMora.servicios.length > 0 && (
-              <Filtro
-                etiqueta="Filtrar por servicio" todos="Todos los servicios" valor={servicioId ?? ""}
-                opciones={opcionesMora.servicios.map((o) => ({ valor: o.id, texto: o.nombre, cuenta: o.personas }))}
-                onCambiar={(v) => setEnURL({ servicio: v || null })}
-              />
+                  />
+                </span>
+                <span className="fz-semana__valor">{M(moraVista.saldo)}</span>
+                <span className="fz-hero__sub">
+                  {moraVista.cuotas === 0
+                    ? `Con estos filtros, ninguna. En total: ${num(moraTotal.cuotas)} por ${M(moraTotal.saldo)}`
+                    : <>{num(moraVista.cuotas)} {moraVista.cuotas === 1 ? "cuota" : "cuotas"} · {moraVista.cuotas === 1 ? "lleva" : "la más vieja lleva"} <b>{vencidasVista[0].diasAtraso} {vencidasVista[0].diasAtraso === 1 ? "día" : "días"}</b></>}
+                </span>
+              </div>
             )}
-            {opcionesMora.closers.length > 0 && (
-              <Filtro
-                etiqueta="Filtrar por closer" todos="Todos los closers" valor={closerId ?? ""}
-                opciones={opcionesMora.closers.map((o) => ({ valor: o.id, texto: o.nombre, cuenta: o.personas }))}
-                onCambiar={(v) => setEnURL({ closer: v || null })}
-              />
-            )}
-            {hayFiltroMora && <Button sm variante="ghost" onClick={() => setEnURL({ atraso: null, servicio: null, closer: null })}>Limpiar filtros</Button>}
+            <div className="fz-mora__filtros">
+              <div className="row-wrap">
+                <Chip activo={atraso === 0} onClick={() => setAtraso(0)} count={enAlcance.length}>Todas</Chip>
+                {UMBRALES_ATRASO.map((d) => (
+                  <Chip key={d} activo={atraso === d} onClick={() => setAtraso(d)} count={enAlcance.filter((c) => c.diasAtraso >= d).length}>
+                    {d}+ días
+                  </Chip>
+                ))}
+              </div>
+              <div className="row-wrap">
+                {opcionesMora.servicios.length > 0 && (
+                  <Filtro
+                    etiqueta="Filtrar por servicio" todos="Todos los servicios" valor={servicioId ?? ""}
+                    opciones={opcionesMora.servicios.map((o) => ({ valor: o.id, texto: o.nombre, cuenta: o.personas }))}
+                    onCambiar={(v) => setEnURL({ servicio: v || null })}
+                  />
+                )}
+                {opcionesMora.closers.length > 0 && (
+                  <Filtro
+                    etiqueta="Filtrar por closer" todos="Todos los closers" valor={closerId ?? ""}
+                    opciones={opcionesMora.closers.map((o) => ({ valor: o.id, texto: o.nombre, cuenta: o.personas }))}
+                    onCambiar={(v) => setEnURL({ closer: v || null })}
+                  />
+                )}
+                {hayFiltroMora && <Button sm variante="ghost" onClick={() => setEnURL({ atraso: null, servicio: null, closer: null })}>Limpiar filtros</Button>}
+              </div>
+            </div>
           </div>
 
           {pagaronHace.length > 0 && (
-            <Ayuda titulo={`${pagaronHace.length === 1 ? "Pagó 1 cuota vencida" : `Pagaron ${pagaronHace.length} cuotas vencidas`} en las últimas 36 horas`} icono={<Check size={18} />}>
-              {pagaronHace.slice(0, 8).map((f) => (
-                <span key={f.cuota.id} style={{ display: "block" }}>
-                  <button type="button" className="link t-strong" onClick={() => abrirFicha(f.venta.id)}>{f.venta.contactoNombre}</button>
-                  {" "}· {f.cuota.esReserva ? "reserva" : `cuota ${f.cuota.numero}`} · con {f.diasTarde} {f.diasTarde === 1 ? "día" : "días"} de atraso
-                  {f.cuota.seguimientoCobro ? ` · antes figuraba «${textoDeSeguimiento(f.cuota.seguimientoCobro.estado).toLowerCase()}»` : ""}
-                </span>
-              ))}
-              {pagaronHace.length > 8 && <span className="t-subtle">… y {pagaronHace.length - 8} más.</span>}
-            </Ayuda>
+            <Senales titulo="En las últimas 36 horas">
+              <Senal
+                tono="bien" icono={<Check size={16} />}
+                titulo={pagaronHace.length === 1 ? <>Pagó <b>{pagaronHace[0].venta.contactoNombre}</b>, con {pagaronHace[0].diasTarde} {pagaronHace[0].diasTarde === 1 ? "día" : "días"} de atraso</> : <>Pagaron <b>{pagaronHace.length} cuotas vencidas</b></>}
+                sub={pagaronHace.length === 1 ? undefined : pagaronHace.slice(0, 3).map((f) => f.venta.contactoNombre).join(", ")}
+              >
+                {pagaronHace.slice(0, 8).map((f) => (
+                  <span key={f.cuota.id} className="t-sm t-muted" style={{ display: "block" }}>
+                    <button type="button" className="link t-strong" onClick={() => abrirFicha(f.venta.id)}>{f.venta.contactoNombre}</button>
+                    {" "}· {f.cuota.esReserva ? "reserva" : `cuota ${f.cuota.numero}`} · con {f.diasTarde} {f.diasTarde === 1 ? "día" : "días"} de atraso
+                    {f.cuota.seguimientoCobro ? ` · antes figuraba «${textoDeSeguimiento(f.cuota.seguimientoCobro.estado).toLowerCase()}»` : ""}
+                  </span>
+                ))}
+                {pagaronHace.length > 8 && <span className="t-sm t-subtle">… y {pagaronHace.length - 8} más.</span>}
+              </Senal>
+            </Senales>
           )}
 
           <Card style={{ padding: 0 }}>
@@ -283,18 +284,23 @@ export function DetalleVista({ embebido = false, seccion: seccionFija, rangoFijo
               orden={tablaCobros.orden} onOrden={tablaCobros.onOrden}
               columnas={[
                 {
-                  clave: "contacto", titulo: "Cliente", tipo: "primary", orden: (c) => c.contacto, celda: (c) => c.contacto,
+                  clave: "contacto", titulo: "Cliente", tipo: "primary", orden: (c) => c.contacto,
+                  celda: (c) => (
+                    <span style={{ display: "block", minWidth: 0 }}>
+                      <span style={{ display: "block" }}>{c.contacto}</span>
+                      <span className="t-sm t-subtle" style={{ display: "block", fontWeight: 400 }}>{nombreServicio(c.productoId) ?? "—"} · {c.numero === 0 ? "Reserva" : `Cuota ${c.numero}`}</span>
+                    </span>
+                  ),
                   pie: <strong>Total · {num(moraVista.cuotas)} {moraVista.cuotas === 1 ? "cuota" : "cuotas"}</strong>,
                 },
-                { clave: "servicio", titulo: "Servicio", tipo: "secondary", orden: (c) => nombreServicio(c.productoId) ?? "", celda: (c) => nombreServicio(c.productoId) ?? "—" },
-                { clave: "cuota", titulo: "Cuota", tipo: "secondary", orden: (c) => c.numero, celda: (c) => c.numero === 0 ? "Reserva" : `Cuota ${c.numero}` },
-                { clave: "vence", titulo: "Vencía", tipo: "secondary", orden: (c) => c.vence, celda: (c) => fechaLarga(c.vence) },
                 {
                   clave: "dias", titulo: "Atraso", orden: (c) => c.diasAtraso,
                   celda: (c) => (
-                    <Badge variante={c.diasAtraso >= 30 ? "danger" : c.diasAtraso >= 14 ? "warning" : "accent"}>
-                      {c.diasAtraso} días
-                    </Badge>
+                    <span title={`Vencía el ${fechaLarga(c.vence)}`}>
+                      <Badge variante={c.diasAtraso >= 30 ? "danger" : c.diasAtraso >= 14 ? "warning" : "accent"}>
+                        {c.diasAtraso} días
+                      </Badge>
+                    </span>
                   ),
                 },
                 { clave: "closer", titulo: "Closer", tipo: "secondary", orden: (c) => nombreCloser(c.closerId) ?? "~", celda: (c) => nombreCloser(c.closerId) ?? <span className="t-subtle">Sin closer</span> },
@@ -381,7 +387,7 @@ export function DetalleVista({ embebido = false, seccion: seccionFija, rangoFijo
             <CuadroComisiones e={e} />
           </Card>
 
-          <Ayuda titulo="Cómo se calcula" icono={<Info size={18} />}>
+          <Plegable titulo="Cómo se calcula">
             Cada uno cobra sobre el <strong>cash collected neto de procesador</strong>, no sobre el profit:
             si entraron US$ 1.000 por Stripe, la base es 1.000 − 2,9% y sobre eso va su porcentaje, que es
             el del cuadro: el del servicio vendido si tiene uno propio, o el general. El director cobra con
@@ -392,7 +398,7 @@ export function DetalleVista({ embebido = false, seccion: seccionFija, rangoFijo
               <> Con el descuento por cierre del día prendido (Ajustes → CRM), la comisión del closer de las ventas que salieron de un día en
               que no cargó el cierre ese mismo día no se paga: figura en cero y dice cuánto se descontó.</>
             )}
-          </Ayuda>
+          </Plegable>
 
           <Card style={{ padding: 0 }}>
             <DataTable
@@ -404,12 +410,13 @@ export function DetalleVista({ embebido = false, seccion: seccionFija, rangoFijo
                   clave: "closer", titulo: "Venta", tipo: "primary", orden: (c) => c.closerNombre,
                   celda: (c) => {
                     const v = e.ventas.find((x) => x.id === c.ventaId);
-                    return <span>{v?.contactoNombre ?? "—"} <span className="t-subtle">· {c.closerNombre}{c.heredadaDe ? ` (cuotas heredadas de ${c.heredadaDe})` : ""}</span></span>;
+                    return (
+                      <span style={{ display: "block", minWidth: 0 }}>
+                        <span style={{ display: "block" }}>{v?.contactoNombre ?? "—"}</span>
+                        <span className="t-sm t-subtle" style={{ display: "block", fontWeight: 400 }}>{c.closerNombre}{c.heredadaDe ? ` (cuotas heredadas de ${c.heredadaDe})` : ""} · {e.productos.find((x) => x.id === c.productoId)?.nombre ?? "—"}</span>
+                      </span>
+                    );
                   },
-                },
-                {
-                  clave: "servicio", titulo: "Servicio", tipo: "secondary", orden: (c) => e.productos.find((x) => x.id === c.productoId)?.nombre ?? "",
-                  celda: (c) => e.productos.find((x) => x.id === c.productoId)?.nombre ?? "—",
                 },
                 { clave: "cobrado", titulo: "Cobrado", tipo: "num", orden: (c) => c.cobradoEnMes, celda: (c) => M(c.cobradoEnMes) },
                 { clave: "neto", titulo: "Neto", tipo: "num", orden: (c) => c.netoProcesador, celda: (c) => M(c.netoProcesador) },
@@ -443,11 +450,10 @@ export function DetalleVista({ embebido = false, seccion: seccionFija, rangoFijo
                 <dt>Socio</dt><dd className="t-num">{M(p.socio)}</dd>
                 <dt>Queda</dt><dd className="t-num t-strong">{M(p.operativoCC - p.growth - p.socio)}</dd>
               </dl>
-              <Ayuda titulo="Ojo con esto" icono={<Info size={18} />}>
-                El growth partner no comisiona las ventas marcadas como <strong>excluidas de marketing</strong>
-                (eventos y conocidos), así que su número ya sale prorrateado. Lo del socio, que cobra distinto
-                según el producto, todavía está como un 10% parejo — falta definirlo.
-              </Ayuda>
+              <p className="t-sm t-subtle" style={{ margin: "var(--space-3) 0 0" }}>
+                El growth partner no comisiona las ventas <strong>excluidas de marketing</strong> (eventos y conocidos). Lo del socio, que cobra distinto
+                según el producto, todavía está como un 10% parejo: falta definirlo.
+              </p>
             </Card>
             <Card>
               <CardHead titulo="Setters y referidores" sub="Un porcentaje de lo que entró post pasarelas, como todas las comisiones." />
@@ -461,10 +467,9 @@ export function DetalleVista({ embebido = false, seccion: seccionFija, rangoFijo
                   <dt>Total</dt><dd className="t-num t-strong">{M(setRef.setter + setRef.referidor, 2)}</dd>
                 </dl>
               )}
-              <Ayuda titulo="No se resta dos veces" icono={<Info size={18} />}>
-                Es lo que les toca por lo que entró. Lo que se les paga entra al estado de resultados como gasto
-                (Setters, Referidores), igual que en la planilla.
-              </Ayuda>
+              <p className="t-sm t-subtle" style={{ margin: "var(--space-3) 0 0" }}>
+                No se resta dos veces: lo que se les paga entra al estado de resultados como gasto (Setters, Referidores).
+              </p>
             </Card>
           </div>
         </div>

@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { Link2, RotateCcw, Undo2 } from "lucide-react";
+import { ChevronRight, Link2, RotateCcw, Undo2 } from "lucide-react";
 import { Badge, Button, Card, CardHead } from "@/components/ui/ui";
 import { InfoMetrica } from "@/components/ui/InfoMetrica";
 import { useToast } from "@/components/ui/Toast";
@@ -33,6 +33,7 @@ export function ReembolsosPasarelas({ e, rango }: { e: EstadoApp; rango?: RangoD
   const { acceso } = useAcceso();
   const toast = useToast();
   const puede = puedeCargarDevolucion(acceso);
+  const [verTodo, setVerTodo] = useState(false);
   const M = (n: number) => money(n, e.ajustes.monedaBase, 2);
   /* El reembolso que se está descartando: pide el motivo antes (ningún reembolso se deja de lado sin decir por qué). */
   const [descartando, setDescartando] = useState<{ id: string; nombre: string } | null>(null);
@@ -46,15 +47,22 @@ export function ReembolsosPasarelas({ e, rango }: { e: EstadoApp; rango?: RangoD
   const atables = propuestasAtables(e, rango ?? undefined);
   const total = pendientes.reduce((a, d) => a + d.monto, 0);
 
+  /* Sin nada para decidir, una línea: lo demás está a un toque. */
+  const plegado = pendientes.length === 0 && !verTodo;
+
   return (
-    <Card>
-      <CardHead
+    <Card style={plegado ? { padding: 0 } : undefined}>
+      {pendientes.length === 0 ? (
+        <button type="button" className="fz-linea" aria-expanded={verTodo} onClick={() => setVerTodo((v) => !v)} style={plegado ? undefined : { margin: "calc(var(--space-5) * -1) calc(var(--space-5) * -1) var(--space-3)", width: "calc(100% + var(--space-5) * 2)" }}>
+          <ChevronRight size={16} className="fz-linea__chev" aria-hidden />
+          <span className="fz-linea__titulo">Reembolsos de las pasarelas</span>
+          <span className="fz-linea__resumen">
+            Nada para decidir{enDisputa.length ? ` · ${enDisputa.length} en disputa` : ""}{descartadas.length ? ` · ${descartadas.length} descartados` : ""}
+          </span>
+        </button>
+      ) : <CardHead
         titulo={`Reembolsos de las pasarelas · ${pendientes.length}`}
-        sub={pendientes.length
-          ? "La pasarela informó plata devuelta a clientes. No resta de Finanzas hasta que la confirmes con su comprobante, la ates a la devolución que ya cargaste o digas que no es una devolución."
-          : enDisputa.length
-            ? "No hay reembolsos esperando una decisión. Las disputas de Stripe se ven abajo, pero no se puede hacer nada hasta que se resuelvan."
-            : "No hay reembolsos esperando una decisión. Abajo están los que marcaste como «no es una devolución»: si alguno fue un error, deshacelo."}
+        sub="La pasarela informó plata devuelta a clientes. No resta de Finanzas hasta que la confirmes con su comprobante, la ates a la devolución que ya cargaste o digas que no es una devolución."
         acciones={puede && atables.length > 0 ? (
           <Button sm variante="primary" icono={<Link2 size={14} />} onClick={() => {
             const n = acciones.atarReembolsos(atables);
@@ -63,7 +71,8 @@ export function ReembolsosPasarelas({ e, rango }: { e: EstadoApp; rango?: RangoD
             Atar las que calzan ({atables.length})
           </Button>
         ) : undefined}
-      />
+      />}
+      {!plegado && <>
       {pendientes.length > 0 && <div className="row t-sm" style={{ gap: 6, marginBottom: 8 }}>
         <span className="t-subtle">Sin confirmar</span>
         <span className="t-num t-strong">{M(total)}</span>
@@ -198,6 +207,7 @@ export function ReembolsosPasarelas({ e, rango }: { e: EstadoApp; rango?: RangoD
           })}
         </div>
       )}
+      </>}
       {cargandoGasto && (
         <AsistenteGasto
           inicial={borradorDeDisputaPerdida(cargandoGasto.d, cargandoGasto.nombre, e.procesadores.find((p) => p.id === cargandoGasto.d.procesadorId)?.nombre ?? "Stripe")}

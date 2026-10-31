@@ -1,20 +1,21 @@
 "use client";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { FileSpreadsheet, Info, Link2, Wallet } from "lucide-react";
-import { Ayuda, Badge, Button, Card, Chip, Empty, Field, Select } from "@/components/ui/ui";
+import { FileSpreadsheet, Link2, Wallet } from "lucide-react";
+import { Badge, Button, Card, Chip, Empty, Field, Select } from "@/components/ui/ui";
 import { InputMonto } from "@/components/ui/InputMonto";
 import { montoDe } from "@/lib/monto";
 import { DataTable, type Columna } from "@/components/ui/DataTable";
 import { DateRangePicker, rangoDePreset, type RangoFechas } from "@/components/ui/DateRangePicker";
 import { ModalForm } from "@/components/ui/Modal";
+import { Plegable } from "@/components/finanzas/visual/visual";
 import { useToast } from "@/components/ui/Toast";
 import { acciones } from "@/lib/store";
 import { useParamsURL, useTablaURL } from "@/lib/useParamsURL";
 import { fechaLarga, money, num } from "@/lib/format";
 import { pagosDelMes } from "@/lib/finanzas";
 import { ModalChequeo, useNombreDeQuien } from "@/components/cobros/ControlCobro";
-import { columnaCargo, columnaChequeo, columnaComprobante, columnaConciliado } from "@/components/cobros/columnasControl";
+import { columnaChequeo, columnaComprobante, columnaConciliado } from "@/components/cobros/columnasControl";
 import { controlDeCobro, filasDeCobros, type FilaCobro } from "@/lib/control-cobros";
 import { bajarExcel, excelCobros, filasExcelCobros } from "@/lib/excelCobros";
 import { hayNube } from "@/lib/supabase";
@@ -85,23 +86,21 @@ export function CobrosProcesador({ e, mes }: { e: EstadoApp; mes: RangoMes }) {
   }
 
   const columnas: Columna<Fila>[] = [
-    { clave: "fecha", titulo: "Fecha del pago", tipo: "secondary", orden: (x) => x.pago.fecha, celda: (x) => fechaLarga(x.pago.fecha) },
+    { clave: "fecha", titulo: "Fecha", tipo: "secondary", orden: (x) => x.pago.fecha, celda: (x) => fechaLarga(x.pago.fecha) },
     {
-      clave: "cliente", titulo: "Cliente", tipo: "primary", orden: (x) => x.venta?.contactoNombre ?? "", celda: (x) => x.venta?.contactoNombre ?? "Sin venta",
+      clave: "cliente", titulo: "Cliente", tipo: "primary", orden: (x) => x.venta?.contactoNombre ?? "",
+      celda: (x) => (
+        <span style={{ display: "block", minWidth: 0 }}>
+          <span className="truncate" style={{ display: "block", maxWidth: 240 }}>{x.venta?.contactoNombre ?? "Sin venta"}</span>
+          <span className="t-sm t-subtle truncate" style={{ display: "block", fontWeight: 400, maxWidth: 240 }}>
+            {e.procesadores.find((p) => p.id === x.pago.procesadorId)?.nombre ?? "Sin cuenta"} · {x.pago.caracteristica ?? (x.cuota?.esReserva ? "Reserva" : x.cuota ? `Cuota #${x.cuota.numero}` : "—")}
+          </span>
+        </span>
+      ),
       pie: <strong>Total · {num(filas.length)} {filas.length === 1 ? "cobro" : "cobros"}</strong>,
     },
     {
-      clave: "caracteristica", titulo: "Característica", tipo: "secondary",
-      orden: (x) => x.pago.caracteristica ?? "",
-      celda: (x) => x.pago.caracteristica ?? (x.cuota?.esReserva ? "Reserva" : x.cuota ? `Cuota #${x.cuota.numero}` : "—"),
-    },
-    {
-      clave: "cuenta", titulo: "Cuenta recaudadora", tipo: "secondary",
-      orden: (x) => e.procesadores.find((p) => p.id === x.pago.procesadorId)?.nombre ?? "",
-      celda: (x) => e.procesadores.find((p) => p.id === x.pago.procesadorId)?.nombre ?? "Sin cuenta",
-    },
-    {
-      clave: "monto", titulo: "Monto abonado USD", tipo: "num", orden: (x) => x.pago.monto, celda: (x) => M(x.pago.monto),
+      clave: "monto", titulo: "Monto", tipo: "num", orden: (x) => x.pago.monto, celda: (x) => M(x.pago.monto),
       pie: <strong className="t-num">{M(totalMonto)}</strong>,
       info: {
         ayuda: "Lo que entró en cada cobro, en dólares. Abajo, la suma de los cobros de la vista (de todas las páginas). No resta las devoluciones: el Cash Collected (CC) del Dashboard y de Finanzas es lo cobrado menos lo devuelto en el período.",
@@ -113,7 +112,7 @@ export function CobrosProcesador({ e, mes }: { e: EstadoApp; mes: RangoMes }) {
       },
     },
     {
-      clave: "fee", titulo: "Comisión del procesador", tipo: "num", orden: (x) => x.pago.feeMonto,
+      clave: "fee", titulo: "Comisión", tipo: "num", orden: (x) => x.pago.feeMonto,
       pie: <strong className="t-num">{M(total)}</strong>,
       info: {
         ayuda: "Lo que se quedó el procesador de cada cobro: la real si se concilió con la pasarela, o la de la cuenta (corregible a mano). Abajo, la suma de los cobros de la vista.",
@@ -128,8 +127,8 @@ export function CobrosProcesador({ e, mes }: { e: EstadoApp; mes: RangoMes }) {
         <span className="row" style={{ gap: 6, justifyContent: "flex-end" }}>
           {x.pago.feeManual
             ? <Badge variante="brand">A mano</Badge>
-            : <Badge variante="neutral">Tasa de la cuenta</Badge>}
-          <span style={{ width: 112 }}>
+            : <span title="Sale de la tasa de la cuenta"><Badge variante="neutral">Tasa</Badge></span>}
+          <span style={{ width: 96 }}>
             <InputMonto
               key={`${x.pago.id}-${x.pago.feeMonto}`}
               defaultValue={x.pago.feeMonto}
@@ -148,7 +147,6 @@ export function CobrosProcesador({ e, mes }: { e: EstadoApp; mes: RangoMes }) {
     },
     columnaComprobante(),
     columnaConciliado(e),
-    columnaCargo(nombreDe),
     columnaChequeo(setAbierto),
   ];
 
@@ -156,25 +154,19 @@ export function CobrosProcesador({ e, mes }: { e: EstadoApp; mes: RangoMes }) {
 
   return (
     <div className="stack-4">
-      <Ayuda titulo="De dónde sale cada comisión" icono={<Info size={18} />}>
-        Si el cobro se concilió con la pasarela, la comisión es la <strong>real</strong> y no se toca. Si no,
-        sale de la tasa de la cuenta recaudadora (Ajustes → Ventas): en los medios que no se concilian —la
-        Financiera, Trust, una transferencia— corregila acá con lo que se pagó de verdad.
-      </Ayuda>
-
       <div className="row-wrap">
         <Chip activo={filtro === "todos"} onClick={() => setFiltro("todos")} count={cuenta("todos")}>Todos</Chip>
         <Chip activo={filtro === "sin-conciliar"} onClick={() => setFiltro("sin-conciliar")} count={cuenta("sin-conciliar")}>Sin conciliar</Chip>
-        <Chip activo={filtro === "a-mano"} onClick={() => setFiltro("a-mano")} count={cuenta("a-mano")}>Con comisión a mano</Chip>
+        {(cuenta("a-mano") > 0 || filtro === "a-mano") && <Chip activo={filtro === "a-mano"} onClick={() => setFiltro("a-mano")} count={cuenta("a-mano")}>A mano</Chip>}
         <Chip activo={filtro === "sin-chequear"} onClick={() => setFiltro("sin-chequear")} count={cuenta("sin-chequear")}>Sin chequear</Chip>
-        <Chip activo={filtro === "rechazados"} onClick={() => setFiltro("rechazados")} count={cuenta("rechazados")}>Rechazados</Chip>
-        <span className="spacer t-sm t-muted">
-          Comisiones de lo que se ve: <strong className="t-num" style={{ color: "var(--ink)" }}>{M(total)}</strong>
+        {(cuenta("rechazados") > 0 || filtro === "rechazados") && <Chip activo={filtro === "rechazados"} onClick={() => setFiltro("rechazados")} count={cuenta("rechazados")}>Rechazados</Chip>}
+        <span className="spacer t-sm t-muted" style={{ textAlign: "right" }}>
+          Comisiones: <strong className="t-num" style={{ color: "var(--ink)" }}>{M(total)}</strong>
         </span>
-        <Button variante="secondary" icono={<FileSpreadsheet size={16} />} disabled={filas.length === 0 || bajando} onClick={descargar}>
-          {bajando ? "Armando el Excel…" : "Descargar Excel"}
+        <Button sm variante="ghost" icono={<FileSpreadsheet size={15} />} disabled={filas.length === 0 || bajando} onClick={descargar}>
+          {bajando ? "Armando el Excel…" : "Excel"}
         </Button>
-        <Button variante="secondary" icono={<FileSpreadsheet size={16} />} onClick={() => setReporte(true)}>
+        <Button sm variante="ghost" icono={<FileSpreadsheet size={15} />} onClick={() => setReporte(true)}>
           Reporte para la Financiera
         </Button>
       </div>
@@ -187,6 +179,13 @@ export function CobrosProcesador({ e, mes }: { e: EstadoApp; mes: RangoMes }) {
           vacio={<Empty icono={<Wallet size={22} />} titulo={`Sin cobros en ${mes.etiqueta}`} texto="Cuando entre un cobro, su comisión aparece acá: la real si se concilió, o la de la cuenta para corregir." />}
         />
       </Card>
+
+      <Plegable titulo="De dónde sale cada comisión">
+        Si el cobro se concilió con la pasarela, la comisión es la <strong>real</strong> y no se toca. Si no,
+        sale de la tasa de la cuenta recaudadora (Ajustes → Ventas): en los medios que no se concilian —la
+        Financiera, Trust, una transferencia— corregila acá con lo que se pagó de verdad.
+      </Plegable>
+
 
       {reporte && <ReporteFinanciera e={e} mes={mes} onCerrar={() => setReporte(false)} />}
       {abierto && <ModalChequeo pagoId={abierto} onCerrar={() => setAbierto(null)} />}

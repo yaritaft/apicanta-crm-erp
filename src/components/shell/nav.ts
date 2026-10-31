@@ -105,6 +105,13 @@ export const NAV_CLOSER: GrupoNav[] = [
 
 export const TODOS_LOS_ITEMS = [...NAV, ...NAV_CLOSER].flatMap((g) => g.items);
 
+/* Las pantallas que no están en el menú (se llega desde un paso o con ⌘K): sólo para que la barra de arriba diga dónde estás. */
+export const PANTALLAS_SIN_MENU: { href: string; texto: string; ayuda: string }[] = [
+  { href: "/finanzas/caja", texto: "Caja", ayuda: "Cuánta plata hay en las cuentas y cuántos meses de vida le da al negocio" },
+  { href: "/finanzas/detalle", texto: "Detalle de finanzas", ayuda: "Fila por fila: qué se debe, en qué se fue la plata y cuánto comisiona cada uno" },
+  { href: "/conciliacion", texto: "Conciliación de cobros", ayuda: "La plata que entró a una pasarela y hay que asignar a su cuota para que cuente como cobrada" },
+];
+
 /* De un menú, lo que esa cuenta puede usar: lo que ve y, si el item guarda
    algo (`edita`), sólo si edita su área. */
 function alAlcance(menu: GrupoNav[], a: MiAcceso | null): GrupoNav[] {

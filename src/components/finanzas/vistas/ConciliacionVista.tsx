@@ -4,6 +4,7 @@ import { enlaceWhatsapp } from "@/lib/contacto-telefono";
 import { PasosDeConciliacion } from "@/components/cierre/Avisos";
 import React, { useMemo, useState } from "react";
 import {
+  AlertTriangle,
   ArrowDownUp, ArrowRightLeft, BellRing, Check, EyeOff, Link2, Plus, RefreshCw, Search, Sparkles, Undo2, Upload,
 } from "lucide-react";
 import { CabeceraVista } from "@/components/finanzas/vistas/CabeceraVista";
@@ -216,10 +217,10 @@ export function ConciliacionVista({ embebido = false, rangoFijo }: {
     <div className="stack-5">
       <CabeceraVista embebido={embebido}
         titulo="Conciliación"
-        sub="La plata que entró a una pasarela (Stripe, Hotmart, Whop, dLocal, Mercado Pago, Mercury, Binance, Trust) y todavía hay que asignar a su cuota para que cuente como cobrada."
         acciones={
           <>
-            <Button variante="secondary" icono={<Upload size={16} />} onClick={() => setImportar(true)}>Importar</Button>
+            <CopiarLink variante="ghost" />
+            <Button sm variante="ghost" icono={<Upload size={15} />} onClick={() => setImportar(true)}>Importar</Button>
             <Button variante="secondary" icono={<RefreshCw size={16} />} cargando={sincronizando} onClick={sincronizar}>
               Sincronizar
             </Button>
@@ -227,18 +228,11 @@ export function ConciliacionVista({ embebido = false, rangoFijo }: {
         }
       />
 
-      <ComoFuncionaConciliacion />
-
-      {/* Los pasos del mes para que ningún cobro se pase (cierre del mes). */}
-      {!embebido && <PasosDeConciliacion e={e} />}
-
-      {/* Lo que las pasarelas dicen que devolvieron: se ata a la devolución cargada o se confirma. */}
-      <ReembolsosPasarelas e={e} rango={rango} />
-
+      {/* Las tres tarjetas son también el filtro de la bandeja de abajo: un solo lugar para las dos cosas. */}
       <div className="grid-3">
         <StatCard
-          etiqueta="Sin conciliar" valor={M(porEstado.pendiente.monto)} direccion={porEstado.pendiente.n > 0 ? "down" : "neutral"}
-          contexto={`${cobros(porEstado.pendiente.n)} · todavía no cuentan como cobrado`}
+          etiqueta="Sin conciliar" valor={M(porEstado.pendiente.monto)} activo={filtro === "pendiente"}
+          contexto={`${cobros(porEstado.pendiente.n)} · todavía no cuentan`}
           onClick={() => setFiltro("pendiente")}
           info={{
             ayuda: "Plata que entró a una pasarela y todavía no se asignó a ninguna cuota. Se ve acá, pero no cuenta como Cash Collected ni genera comisión.",
@@ -247,8 +241,8 @@ export function ConciliacionVista({ embebido = false, rangoFijo }: {
           }}
         />
         <StatCard
-          etiqueta="Conciliados" valor={M(porEstado.conciliado.monto)}
-          contexto={`${cobros(porEstado.conciliado.n)} · ya cuentan como cobrado`}
+          etiqueta="Conciliados" valor={M(porEstado.conciliado.monto)} activo={filtro === "conciliado"}
+          contexto={`${cobros(porEstado.conciliado.n)} · ya cuentan`}
           onClick={() => setFiltro("conciliado")}
           info={{
             ayuda: "Cobros que ya se asignaron a su cuota. Son pagos: cuentan como Cash Collected, con la comisión real de la pasarela.",
@@ -256,7 +250,7 @@ export function ConciliacionVista({ embebido = false, rangoFijo }: {
           }}
         />
         <StatCard
-          etiqueta="Sin venta" valor={M(porEstado.ignorado.monto)}
+          etiqueta="Sin venta" valor={M(porEstado.ignorado.monto)} activo={filtro === "ignorado"}
           contexto={`${cobros(porEstado.ignorado.n)} · no cuentan${sinMotivoN ? ` · ${sinMotivoN} sin motivo` : ""}`}
           onClick={() => setFiltro("ignorado")}
           info={{
@@ -265,6 +259,9 @@ export function ConciliacionVista({ embebido = false, rangoFijo }: {
           }}
         />
       </div>
+
+      {/* Los pasos del mes para que ningún cobro se pase (cierre del mes). */}
+      {!embebido && <PasosDeConciliacion e={e} />}
 
       {filtro === "ignorado" && sinMotivoN > 0 && (
         <div className="help-card">
@@ -332,22 +329,9 @@ export function ConciliacionVista({ embebido = false, rangoFijo }: {
 
       <Card style={{ padding: 0, overflow: "hidden" }}>
         <div style={{ padding: "var(--space-4)" }}>
-          <div className="toolbar" style={{ marginBottom: 0 }}>
-            {([
-              ["pendiente", "Pendientes", "Entraron a una pasarela y todavía no se asignaron a una cuota. No cuentan como Cash Collected."],
-              ["conciliado", "Conciliados", "Ya asignados a su cuota: cuentan como Cash Collected."],
-              ["ignorado", "Sin venta", "No corresponden a ninguna venta (se reembolsaron, el intento falló, están repetidos…): cada uno dice por qué. No cuentan."],
-            ] as const).map(([k, t, ayuda]) => (
-              <Chip key={k} activo={filtro === k} onClick={() => setFiltro(k)} title={ayuda}
-                count={porEstado[k].n}>{t}</Chip>
-            ))}
-            <span className="spacer" />
-            <CopiarLink />
-          </div>
-          {!rangoFijo && (
-            <div className="row-wrap" style={{ marginTop: "var(--space-3)" }} role="group" aria-label="Mes de los cobros">
-              <span className="t-label" style={{ marginRight: 4 }}>Mes</span>
-              <div style={{ minWidth: 220 }}>
+          <div className="row-wrap fz-filtros">
+            {!rangoFijo && (
+              <div style={{ width: 200 }}>
                 <Select
                   aria-label="Mes de los cobros" value={mesElegido}
                   onChange={(ev) => setVista({ mes: ev.target.value === mesActual ? "" : ev.target.value })}
@@ -357,25 +341,22 @@ export function ConciliacionVista({ embebido = false, rangoFijo }: {
                   ]}
                 />
               </div>
-              {pendientesAfuera > 0 && (
-                <>
-                  <span className="t-sm t-subtle">
-                    {pendientesAfuera === 1 ? "Hay 1 cobro sin conciliar en otro mes." : `Hay ${pendientesAfuera} cobros sin conciliar en otros meses.`}
-                  </span>
-                  <Button sm variante="ghost" onClick={() => setVista({ mes: "todos" })}>Ver todos los meses</Button>
-                </>
-              )}
+            )}
+            <div className="fz-filtros__buscar">
+              <Input
+                icono={<Search size={15} />} value={busca} onChange={(ev) => setBusca(ev.target.value)}
+                placeholder="Buscar por nombre, correo, teléfono, monto o referencia" aria-label="Buscar cobros"
+              />
             </div>
-          )}
-          <div style={{ marginTop: "var(--space-3)", maxWidth: 520 }}>
-            <Input
-              icono={<Search size={15} />} value={busca} onChange={(ev) => setBusca(ev.target.value)}
-              placeholder="Buscar por nombre, correo, teléfono, monto o referencia" aria-label="Buscar cobros"
-            />
+            {!rangoFijo && pendientesAfuera > 0 && (
+              <button type="button" className="fz-filtros__aviso" onClick={() => setVista({ mes: "todos" })}>
+                <AlertTriangle size={14} aria-hidden />
+                {pendientesAfuera === 1 ? "1 sin conciliar en otro mes" : `${pendientesAfuera} sin conciliar en otros meses`}
+              </button>
+            )}
           </div>
           {medios.length > 0 && (
             <div className="row-wrap" style={{ marginTop: "var(--space-3)" }} role="group" aria-label="Filtrar por medio de pago">
-              <span className="t-label" style={{ marginRight: 4 }}>Medio de pago</span>
               <Chip activo={pasarela === "todas"} onClick={() => setPasarela("todas")}
                 count={medios.reduce((a, [, x]) => a + x.n, 0)}>Todos</Chip>
               {medios.map(([id, x]) => (
@@ -393,13 +374,10 @@ export function ConciliacionVista({ embebido = false, rangoFijo }: {
           {filas.length === 0 ? (
             <Empty
               icono={<ArrowDownUp size={22} />}
-              titulo={busca.trim() ? "Ningún cobro coincide con la búsqueda" : filtro === "pendiente" ? "No queda nada sin conciliar" : "Nada por acá"}
+              titulo={busca.trim() ? "Ningún cobro coincide con la búsqueda" : filtro === "pendiente" ? (pendientesAfuera > 0 && mesElegido && mesElegido !== "todos" ? `En ${nombrePeriodo(mesElegido).split(" ")[0].toLowerCase()} no queda nada sin conciliar` : "No queda nada sin conciliar") : "Nada por acá"}
               texto={filtro === "pendiente"
                 ? "Cuando entre plata a una pasarela, el cobro aparece en esta bandeja hasta que se impute a una cuota."
                 : "Los cobros que vayas conciliando o ignorando quedan guardados en esta pestaña."}
-              accion={filtro === "pendiente"
-                ? <Button variante="brand" icono={<Upload size={16} />} onClick={() => setImportar(true)}>Importar cobros</Button>
-                : undefined}
             />
           ) : (
             filas.map((m) => (
@@ -413,6 +391,11 @@ export function ConciliacionVista({ embebido = false, rangoFijo }: {
           )}
         </div>
       </Card>
+
+      {/* Lo que las pasarelas dicen que devolvieron: se ata a la devolución cargada o se confirma. */}
+      <ReembolsosPasarelas e={e} rango={rango} />
+
+      <ComoFuncionaConciliacion />
 
       {importar && <ModalImportar onCerrar={() => setImportar(false)} />}
 
