@@ -12,9 +12,10 @@ import { useAcceso } from "@/lib/acceso";
 import { puedeEditar } from "@/lib/permisos";
 import { formatoDia, hoyDelNegocio } from "@/lib/seguimiento";
 import {
-  coincideTestimonio, filasClientes, filasTestimonios, listasCs, MOTOR_TESTIMONIOS, ORDEN_TESTIMONIOS, testimonioNormal,
-  VISIBLES_TESTIMONIOS, type ClaveTestimonio, type FilaTestimonio,
+  coincideTestimonio, filasClientes, filasTestimonios, JUEGOS_TESTIMONIOS, listasCs, MOTOR_TESTIMONIOS, ORDEN_TESTIMONIOS, testimonioNormal,
+  type ClaveTestimonio, type FilaTestimonio,
 } from "@/lib/clientes-cs";
+import { ResumenCs } from "./ResumenCs";
 import type { ColorCrm, OpcionCrm, Testimonio } from "@/lib/types";
 import { Pastilla } from "./pastillas";
 import { NADA, Recorte, TablaCs } from "./TablaCs";
@@ -141,7 +142,15 @@ export function TestimoniosCs() {
     <>
       <TablaCs
         motor={MOTOR_TESTIMONIOS} pantalla="testimonios-cs" filas={filas} coincide={coincideTestimonio}
-        visiblesPorDefecto={VISIBLES_TESTIMONIOS} ordenPorDefecto={ORDEN_TESTIMONIOS} fija="alumno" ordenValores={ordenValores}
+        visiblesPorDefecto={JUEGOS_TESTIMONIOS[0].claves} juegos={JUEGOS_TESTIMONIOS}
+        resumen={(
+          <ResumenCs
+            etiqueta="Subidos a YouTube" valor={filas.filter((f) => /youtube/i.test(f.testimonio.estadoVideo)).length} sub={`de ${filas.length} testimonios`}
+            ayuda="En qué quedó el video de cada testimonio. Tocá un estado para filtrar la tabla."
+            motor={MOTOR_TESTIMONIOS} columna="estadoVideo" filas={filas}
+          />
+        )}
+        ordenPorDefecto={ORDEN_TESTIMONIOS} fija="alumno" ordenValores={ordenValores}
         celda={(col, f) => celda(col, f)}
         filaAcciones={puede ? (f) => <IconButton etiqueta="Borrar" onClick={() => setBorrar(f.testimonio)}><Trash2 size={15} /></IconButton> : undefined}
         excel={{ nombre: "Testimonios", hoy, valor: (col, f) => {

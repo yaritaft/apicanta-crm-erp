@@ -517,10 +517,10 @@ const sesiones = (n: number | null) => (n === null ? "" : `${n} ${n === 1 ? "ses
 const comentarios = (f: FilaCliente) => (f.comentarios.trim() ? "Con comentarios" : "Sin comentarios");
 
 export const COLUMNAS_CLIENTES: ColumnaCs<FilaCliente, ClaveCliente>[] = [
-  { clave: "numero", titulo: "N.º de alumno", grupo: "Datos", valores: (f) => numeroComoValor(f.numero), orden: (f) => f.numero ?? "", numerica: true, ancho: 90 },
-  { clave: "nombre", titulo: "Nombre y apellido", grupo: "Datos", valores: (f) => uno(f.nombre), orden: (f) => sinTildes(f.nombre), ancho: 220 },
+  { clave: "numero", titulo: "N.º de alumno", corto: "N.º", grupo: "Datos", valores: (f) => numeroComoValor(f.numero), orden: (f) => f.numero ?? "", numerica: true, ancho: 90 },
+  { clave: "nombre", titulo: "Nombre y apellido", corto: "Alumno", grupo: "Datos", valores: (f) => uno(f.nombre), orden: (f) => sinTildes(f.nombre), ancho: 190 },
   { clave: "inicio", titulo: "Fecha de inicio", grupo: "Programa", valores: (f) => uno(f.inicio), fecha: true, ancho: 120 },
-  { clave: "egreso", titulo: "Fecha de egreso", grupo: "Programa", valores: (f) => uno(f.egreso), fecha: true, ancho: 120,
+  { clave: "egreso", titulo: "Fecha de egreso", corto: "Egreso", grupo: "Programa", valores: (f) => uno(f.egreso), fecha: true, ancho: 120,
     ayuda: "Si no se cargó, es el inicio más la duración del programa." },
   { clave: "edad", titulo: "Edad", grupo: "Datos", valores: (f) => numeroComoValor(f.edad), orden: (f) => f.edad ?? "", numerica: true, ancho: 80,
     ayuda: "Si tiene fecha de nacimiento, se calcula de ahí." },
@@ -543,9 +543,9 @@ export const COLUMNAS_CLIENTES: ColumnaCs<FilaCliente, ClaveCliente>[] = [
   { clave: "contactoSemana", titulo: "Contacto semana", grupo: "Seguimiento", valores: (f) => uno(f.contactoSemana), fecha: true, ancho: 120 },
   { clave: "acceso", titulo: "Acceso", grupo: "Programa", valores: (f) => uno(f.acceso), ancho: 120 },
   { clave: "followUp", titulo: "Follow-up", grupo: "Seguimiento", valores: (f) => uno(f.followUp), ancho: 150 },
-  { clave: "reporte", titulo: "Reporte semanal", grupo: "Seguimiento", valores: (f) => [f.reporte.estado], ancho: 130,
+  { clave: "reporte", titulo: "Reporte semanal", corto: "Reporte", grupo: "Seguimiento", valores: (f) => [f.reporte.estado], ancho: 130,
     ayuda: "Sale de los reportes semanales del alumno; si todavía no tiene ninguno cargado, de lo que se marcó a mano en su ficha." },
-  { clave: "ultimoContacto", titulo: "Último contacto", grupo: "Seguimiento", valores: (f) => uno(f.ultimoContacto), fecha: true, ancho: 120 },
+  { clave: "ultimoContacto", titulo: "Último contacto", corto: "Contacto", grupo: "Seguimiento", valores: (f) => uno(f.ultimoContacto), fecha: true, ancho: 120 },
   { clave: "garantia", titulo: "Garantía", grupo: "Programa", valores: (f) => uno(f.garantia), ancho: 140 },
   { clave: "wpp", titulo: "Acceso WhatsApp", grupo: "Accesos", valores: (f) => siNo(f.wpp), ancho: 110 },
   { clave: "zoom", titulo: "Acceso Zoom", grupo: "Accesos", valores: (f) => siNo(f.zoom), ancho: 100 },
@@ -560,7 +560,7 @@ export const COLUMNAS_CLIENTES: ColumnaCs<FilaCliente, ClaveCliente>[] = [
   { clave: "responsableCv", titulo: "Responsable del CV y LinkedIn", grupo: "CV y LinkedIn", valores: (f) => uno(f.responsableCv), ancho: 150 },
   { clave: "semanasSin", titulo: "Semanas sin reportar", grupo: "Seguimiento", valores: (f) => numeroComoValor(f.reporte.semanasSin),
     orden: (f) => f.reporte.semanasSin ?? "", numerica: true, ancho: 120 },
-  { clave: "proximo", titulo: "Próximo contacto", grupo: "Seguimiento", valores: (f) => uno(f.situacion === "fuera" ? "" : f.proximo), fecha: true, ancho: 130,
+  { clave: "proximo", titulo: "Próximo contacto", corto: "Próximo", grupo: "Seguimiento", valores: (f) => uno(f.situacion === "fuera" ? "" : f.proximo), fecha: true, ancho: 130,
     ayuda: "Último contacto (o el ingreso) más la cadencia del alumno." },
   { clave: "cadencia", titulo: "Cadencia", grupo: "Seguimiento", valores: (f) => [`Cada ${f.cadencia} días`], orden: (f) => f.cadencia, numerica: true, ancho: 110 },
   { clave: "estadoAlumno", titulo: "Estado del alumno", grupo: "Seguimiento", valores: (f) => [f.estadoAlumno], ancho: 120 },
@@ -574,6 +574,14 @@ export const VISIBLES_CLIENTES: ClaveCliente[] = [
   "comentarios", "contactoInicial", "contactoSemana", "acceso", "followUp", "reporte", "ultimoContacto", "garantia", "wpp", "zoom", "wibo",
   "contrato", "pais", "closer", "estadoContrato", "cv", "linkedin", "responsableCv",
 ];
+/* Las columnas de a una tarea: se ve lo de cada cosa sin correr la tabla. «Todas» son las 32 de la planilla de Lili. */
+export const JUEGOS_CLIENTES: { id: string; nombre: string; claves: readonly ClaveCliente[] }[] = [
+  { id: "seguimiento", nombre: "Seguimiento", claves: ["numero", "nombre", "programa", "followUp", "ultimoContacto", "proximo", "reporte", "telefono"] },
+  { id: "accesos", nombre: "Accesos y contrato", claves: ["numero", "nombre", "programa", "acceso", "wpp", "zoom", "wibo", "contrato", "estadoContrato"] },
+  { id: "datos", nombre: "Datos", claves: ["numero", "nombre", "pais", "edad", "stack", "dni", "domicilio", "email", "telefono"] },
+  { id: "todas", nombre: "Todas", claves: VISIBLES_CLIENTES },
+];
+
 export const ORDEN_CLIENTES: OrdenCs<ClaveCliente>[] = [{ clave: "inicio", desc: true }];
 
 export const MOTOR_CLIENTES = crearMotor(COLUMNAS_CLIENTES, "cli");
@@ -806,12 +814,12 @@ export const COLUMNAS_TESTIMONIOS: ColumnaCs<FilaTestimonio, ClaveTestimonio>[] 
   { clave: "telefono", titulo: "Teléfono", grupo: "Alumno", valores: (f) => uno(f.telefono), ancho: 150, ayuda: "Sale de la ficha del cliente." },
   { clave: "followUp", titulo: "Follow-up", grupo: "Testimonio", valores: (f) => uno(f.testimonio.followUp), ancho: 170,
     ayuda: "Si ya se agendó la llamada de grabación, si no se agendó, si está pendiente de agendar o si no quiere grabar." },
-  { clave: "fechaGrabacion", titulo: "Fecha de grabación", grupo: "Testimonio", valores: (f) => uno(f.testimonio.fechaGrabacion), fecha: true, ancho: 130 },
-  { clave: "conQuien", titulo: "Con quién grabó", grupo: "Testimonio", valores: (f) => uno(f.testimonio.conQuien), ancho: 130 },
+  { clave: "fechaGrabacion", titulo: "Fecha de grabación", corto: "Grabación", grupo: "Testimonio", valores: (f) => uno(f.testimonio.fechaGrabacion), fecha: true, ancho: 130 },
+  { clave: "conQuien", titulo: "Con quién grabó", corto: "Con quién", grupo: "Testimonio", valores: (f) => uno(f.testimonio.conQuien), ancho: 130 },
   { clave: "resell", titulo: "Resell", grupo: "Testimonio", valores: (f) => uno(f.testimonio.resell), ancho: 120,
     ayuda: "Cómo salió el pitch de renovación que se hace después de la llamada del testimonio." },
-  { clave: "estadoVideo", titulo: "Estado del video", grupo: "Testimonio", valores: (f) => uno(f.testimonio.estadoVideo), ancho: 160 },
-  { clave: "link", titulo: "Link del video", grupo: "Testimonio", valores: (f) => [conTexto(f.testimonio.link, "Con link", "Sin link")], texto: (f) => f.testimonio.link, ancho: 120 },
+  { clave: "estadoVideo", titulo: "Estado del video", corto: "Video", grupo: "Testimonio", valores: (f) => uno(f.testimonio.estadoVideo), ancho: 160 },
+  { clave: "link", titulo: "Link del video", corto: "Link", grupo: "Testimonio", valores: (f) => [conTexto(f.testimonio.link, "Con link", "Sin link")], texto: (f) => f.testimonio.link, ancho: 120 },
   { clave: "tecnologias", titulo: "Tecnologías", grupo: "Perfil", valores: (f) => uno(f.tecnologias), ancho: 180 },
   { clave: "stack", titulo: "Stack", grupo: "Perfil", valores: (f) => uno(f.stack), ancho: 140, ayuda: "Sale de la ficha del cliente." },
   { clave: "previa", titulo: "Situación previa", grupo: "Perfil", valores: (f) => [conTexto(f.testimonio.situacionPrevia, "Con texto", "Sin texto")], texto: (f) => f.testimonio.situacionPrevia, ancho: 240 },
@@ -821,6 +829,12 @@ export const COLUMNAS_TESTIMONIOS: ColumnaCs<FilaTestimonio, ClaveTestimonio>[] 
 ];
 
 export const VISIBLES_TESTIMONIOS: ClaveTestimonio[] = COLUMNAS_TESTIMONIOS.map((c) => c.clave);
+export const JUEGOS_TESTIMONIOS: { id: string; nombre: string; claves: readonly ClaveTestimonio[] }[] = [
+  { id: "video", nombre: "El video", claves: ["alumno", "followUp", "fechaGrabacion", "conQuien", "estadoVideo", "link", "resell"] },
+  { id: "historia", nombre: "Su historia", claves: ["alumno", "pais", "stack", "tecnologias", "previa", "actual", "notas"] },
+  { id: "todas", nombre: "Todas", claves: VISIBLES_TESTIMONIOS },
+];
+
 export const ORDEN_TESTIMONIOS: OrdenCs<ClaveTestimonio>[] = [{ clave: "fechaGrabacion", desc: true }];
 export const MOTOR_TESTIMONIOS = crearMotor(COLUMNAS_TESTIMONIOS, "tes");
 
@@ -924,11 +938,11 @@ export type ClaveResell = "fechaHora" | "agendado" | "nombre" | "email" | "telef
   | "testimonio" | "linkTestimonio" | "linkPitch";
 
 export const COLUMNAS_RESELLS: ColumnaCs<FilaResell, ClaveResell>[] = [
-  { clave: "fechaHora", titulo: "Fecha y hora de agenda", grupo: "Agenda", valores: (f) => uno(f.dia), orden: (f) => f.resell.fechaHora, fecha: true, ancho: 170 },
+  { clave: "fechaHora", titulo: "Fecha y hora de agenda", corto: "Fecha", grupo: "Agenda", valores: (f) => uno(f.dia), orden: (f) => f.resell.fechaHora, fecha: true, ancho: 170 },
   /* Cuándo se reservó (Lili, 26/10). El mes de los resells agendados lo decide la llamada (lib/resells-agendados.ts). */
   { clave: "agendado", titulo: "Agendado el", grupo: "Agenda", ayuda: "El día en que se reservó la llamada (la reserva original, si se reprogramó). Los importados del Airtable no lo tienen.",
     valores: (f) => uno(f.resell.agendadoEn ? diaDeNegocio(f.resell.agendadoEn) : ""), orden: (f) => f.resell.agendadoEn ?? "", fecha: true, ancho: 130 },
-  { clave: "nombre", titulo: "Nombre completo", grupo: "Agenda", valores: (f) => uno(f.resell.nombre), orden: (f) => sinTildes(f.resell.nombre), ancho: 220 },
+  { clave: "nombre", titulo: "Nombre completo", corto: "Nombre", grupo: "Agenda", valores: (f) => uno(f.resell.nombre), orden: (f) => sinTildes(f.resell.nombre), ancho: 220 },
   { clave: "email", titulo: "Mail", grupo: "Agenda", valores: (f) => uno(f.resell.email), ancho: 220 },
   { clave: "telefono", titulo: "Teléfono", grupo: "Agenda", valores: (f) => uno(f.resell.telefono), ancho: 150 },
   { clave: "closer", titulo: "Closer", grupo: "Agenda", valores: (f) => uno(f.resell.closer), ancho: 140 },
@@ -952,6 +966,12 @@ export const COLUMNAS_SUMADAS_RESELLS: { id: string; despuesDe: string; claves: 
 ];
 
 export const VISIBLES_RESELLS: ClaveResell[] = COLUMNAS_RESELLS.map((c) => c.clave);
+export const JUEGOS_RESELLS: { id: string; nombre: string; claves: readonly ClaveResell[] }[] = [
+  { id: "agenda", nombre: "Agenda", claves: ["fechaHora", "nombre", "closer", "estado", "cash", "telefono"] },
+  { id: "testimonio", nombre: "Testimonio", claves: ["fechaHora", "nombre", "caso", "testimonio", "linkTestimonio", "linkPitch", "grabacion"] },
+  { id: "todas", nombre: "Todas", claves: VISIBLES_RESELLS },
+];
+
 export const ORDEN_RESELLS: OrdenCs<ClaveResell>[] = [{ clave: "fechaHora", desc: true }];
 export const MOTOR_RESELLS = crearMotor(COLUMNAS_RESELLS, "res");
 

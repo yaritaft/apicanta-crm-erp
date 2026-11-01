@@ -1064,7 +1064,7 @@ export function ChatEquipo({ contactoId, comentarios: llegados, titulo = "Chat d
                 <Empty
                   icono={<MessageSquare size={22} />}
                   titulo="Todavía nadie escribió"
-                  texto="Lo que el equipo anote acá lo ve cualquiera que abra esta ficha: cómo fue la llamada, qué pidió, por qué se atrasó. También se pueden mandar fotos, audios y archivos, y responder en hilo."
+                  texto="Lo que anotes acá lo ve todo el equipo."
                 />
               ) : raices.map((c, i) => (
                 <Mensaje key={c.id} c={c} esMio={esMio(c)} respuestas={respuestasDe.get(c.id) ?? []} enHilo={false} onAbrirHilo={() => setHilo(c.id)}

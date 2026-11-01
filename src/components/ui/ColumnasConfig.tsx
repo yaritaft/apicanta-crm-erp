@@ -119,7 +119,7 @@ export function useColumnas(tabla: string, todas: DefColumna[], porDefecto: stri
 
   useAporteAlLink(() => ({ [enURL]: aLista(visibles.filter((k) => !fijas.includes(k))) }));
 
-  return { visibles, alternar, mover, restaurar, esVisible: (k: string) => visibles.includes(k) };
+  return { visibles, alternar, mover, restaurar, fijar: guardar, esVisible: (k: string) => visibles.includes(k) };
 }
 
 export function ConfigColumnas({ todas, visibles, alternar, mover, restaurar, titulo = "Columnas", icono, conCuenta = true, compacto }: {

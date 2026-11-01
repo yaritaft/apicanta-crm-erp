@@ -50,7 +50,7 @@
 .hs-bloque__tit { font-size: 12px; font-weight: 600; color: var(--ink-subtle); padding-left: 2px; }
 .hs-filas { border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; background: var(--surface-000); }
 .hs-fila {
-  display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 44px; padding: 4px 16px;
+  display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 36px; padding: 3px 14px;
   border-bottom: 1px solid var(--border); font-size: 14px;
 }
 .hs-fila:last-child { border-bottom: 0; }

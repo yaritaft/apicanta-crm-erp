@@ -84,22 +84,17 @@ export function FormulariosPorPrograma() {
         const solo = CON_RECORDATORIO.includes(id);
         return (
           <article key={id} className="fpp__prog">
-            <div className="fpp__cab">
-              <span className="fpp__nombre">{f.programa}{solo && <Badge variante="success">Automático</Badge>}</span>
-              <span className="fpp__n">{n === 1 ? "1 alumno lo completa" : `${n} alumnos lo completan`} · {f.preguntas.length} preguntas</span>
-            </div>
-            <div className={`fpp__estado${solo ? " fpp__estado--ok" : ""}`}>
-              <BellRing size={14} aria-hidden />
-              {solo
-                ? <span>Les llega solo por mail <b>{DIA_Y_HORA_DEL_RECORDATORIO}</b>, a quien todavía no lo completó</span>
-                : <span>Sin recordatorio automático: su formulario es provisorio</span>}
-            </div>
+            <span className="fpp__nombre">{f.programa}</span>
+            {solo
+              ? <span title={`Les llega solo por mail ${DIA_Y_HORA_DEL_RECORDATORIO}, a quien todavía no lo completó`}><Badge variante="success" icono={<BellRing size={12} />}>Automático</Badge></span>
+              : <span title="Sin recordatorio automático: su formulario es provisorio"><Badge variante="neutral">Manual</Badge></span>}
+            <span className="fpp__n">{n === 1 ? "1 alumno" : `${n} alumnos`} · {f.preguntas.length} preguntas</span>
             <div className="fpp__acciones">
-              <Button sm variante="secondary" icono={<Copy size={14} />} onClick={() => void copiar(id)}>Copiar link para el grupo</Button>
-              <a className="hk-btn hk-btn--ghost hk-btn--sm" href={`/reporte?p=${ATAJO_DE[id]}`} target="_blank" rel="noopener noreferrer"><ExternalLink size={14} />Ver el formulario</a>
+              <Button sm variante="ghost" icono={<Copy size={14} />} title="Copiar el link para pegar en el grupo" onClick={() => void copiar(id)}>Copiar link</Button>
+              <a className="hk-btn hk-btn--ghost hk-btn--sm" href={`/reporte?p=${ATAJO_DE[id]}`} target="_blank" rel="noopener noreferrer"><ExternalLink size={14} />Ver</a>
               {/* Sólo donde ya les llega solo: el de Hackear IT es provisorio y no se le manda a 160 alumnos por un clic. */}
               {puede && solo && n > 0 && (
-                <Button sm variante="ghost" icono={<Send size={14} />} cargando={mandando === id} onClick={() => setMandar(id)}>Mandárselo ahora</Button>
+                <Button sm variante="ghost" icono={<Send size={14} />} cargando={mandando === id} onClick={() => setMandar(id)}>Mandar ahora</Button>
               )}
             </div>
           </article>

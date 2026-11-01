@@ -2,13 +2,13 @@
 
 import React, { useMemo } from "react";
 import Link from "next/link";
-import { AlertTriangle, Check, ClipboardList, Clock, Download, Info, Link2, Search, X } from "lucide-react";
+import { AlertTriangle, Check, ClipboardList, Clock, Download, Link2, Search, X } from "lucide-react";
 import { useAbrirFicha } from "@/components/ficha/abrir";
 import { EnlaceDeReporte } from "@/components/cs/EnlaceDeReporte";
 import { linkGeneralDelReporte, ReportesSinAlumno } from "@/components/reportes/ReportesSinAlumno";
 import { FormulariosPorPrograma } from "@/components/reportes/FormulariosPorPrograma";
 import { useSinAlumno } from "@/components/reportes/sin-alumno-nube";
-import { Ayuda, Badge, Bar, Button, Card, CardHead, Chip, Empty, Input, Persona, StatCard, Tabs, Tag } from "@/components/ui/ui";
+import { Badge, Bar, Button, Card, CardHead, Chip, Empty, Input, Persona, StatCard, Tabs, Tag } from "@/components/ui/ui";
 import { AreaChart, BarChart } from "@/components/charts/charts";
 import { Columna, DataTable } from "@/components/ui/DataTable";
 import { ConfigColumnas, DefColumna, useColumnas } from "@/components/ui/ColumnasConfig";
@@ -18,6 +18,9 @@ import { BadgeEtapa, ESTADO_ALUMNO } from "@/components/alumnos/comun";
 import { acciones, useEstado } from "@/lib/store";
 import { useRangoURL } from "@/lib/useRango";
 import { CopiarLink } from "@/components/ui/Filtros";
+import { InfoMetrica } from "@/components/ui/InfoMetrica";
+import { Avance, Plegable } from "@/components/finanzas/visual/visual";
+import "@/components/cs/cs.css";
 import { ordenAURL, ordenDeURL, paginaDeURL, useBusquedaURL, useParamsURL } from "@/lib/useParamsURL";
 import { etapaDelAlumno, etapasDeServicio } from "@/lib/alumnos";
 import {
@@ -389,50 +392,35 @@ export default function Reportes() {
 
       {vista === "dashboard" && (
         <div className="stack-4">
-          <div className="grid-stats">
-            <StatCard
-              hero etiqueta="Completados" valor={sinNada ? "—" : `${num(completados)}/${num(total)}`}
-              contexto={`reportes · ${periodo}`}
-              info={{
-                ayuda: "Reportes semanales que los alumnos completaron, sobre los que se esperaban en el período.",
-                formula: "Reportes completados / Reportes esperados (de los alumnos activos, en las semanas que toca el período)",
-                periodo: periodo,
-              }}
-            />
-            <StatCard
-              etiqueta="Tasa de respuesta" valor={sinNada ? "—" : pct(tasa, 0)}
-              delta={sinNada ? undefined : tasa >= 70 ? "Bien" : "Baja"} direccion={tasa >= 70 ? "up" : "down"}
-              contexto="de los reportes esperados"
-              info={{
-                ayuda: "Qué porcentaje de los reportes esperados se completó. Desde 70% se considera bien.",
-                formula: "Reportes completados ÷ Reportes esperados × 100",
-                periodo: periodo,
-                componentes: sinNada ? undefined : () => [
-                  { concepto: "Reportes completados", valor: num(completados) },
-                  { concepto: "Reportes esperados", valor: num(total), signo: "÷" },
-                  { concepto: "Tasa de respuesta", valor: pct(tasa, 1), signo: "=" },
-                ],
-              }}
-            />
-            <StatCard
-              etiqueta="Sin contestar" valor={num(sinContestar)} contexto="pendientes o sin enviar"
-              info={{
-                ayuda: "Reportes del período que figuran pendientes o sin enviar. En la tabla se filtran por estado.",
-                formula: "Reportes pendientes + Reportes sin enviar",
-                periodo: periodo,
-              }}
-            />
-            <StatCard
-              etiqueta="En riesgo" valor={num(enRiesgo.length)}
-              delta={enRiesgo.length > 0 ? "Seguir" : undefined} direccion="accent"
-              contexto="2+ semanas sin reportar"
-              info={{
-                ayuda: "Alumnos activos que, al cierre del período, llevan dos semanas seguidas o más sin completar el reporte.",
-                formula: "Alumnos activos con 2 o más semanas seguidas sin completar su reporte, al cierre del período",
-                periodo: periodo,
-              }}
-            />
-          </div>
+          <section className="fz-hero fz-hero--bajo cs-resumen" aria-label="Reportes del período">
+            <div>
+              <span className="fz-hero__etiqueta">
+                Tasa de respuesta
+                <InfoMetrica
+                  titulo="Tasa de respuesta"
+                  ayuda="Qué porcentaje de los reportes esperados se completó. Desde 70% se considera bien."
+                  formula="Reportes completados ÷ Reportes esperados × 100"
+                  periodo={periodo}
+                  componentes={sinNada ? undefined : () => [
+                    { concepto: "Reportes completados", valor: num(completados) },
+                    { concepto: "Reportes esperados", valor: num(total), signo: "÷" },
+                    { concepto: "Tasa de respuesta", valor: pct(tasa, 1), signo: "=" },
+                  ]}
+                />
+              </span>
+              <div className="cs-resumen__cifra">
+                <span className="fz-semana__valor">{sinNada ? "—" : pct(tasa, 0)}</span>
+                {!sinNada && <span className="fz-hero__sub" style={{ color: tasa >= 70 ? "var(--success)" : "var(--danger)" }}>{tasa >= 70 ? "Bien" : "Baja"}</span>}
+              </div>
+            </div>
+            <div className="fz-hero__der cs-resumen__fila">
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <Avance tono="brand" hecho={completados} total={total} izquierda={`${num(completados)} de ${num(total)} reportes completados`} derecha={periodo} />
+              </div>
+              <span className="rep-chico" title="Reportes del período que figuran pendientes o sin enviar. En la tabla se filtran por estado."><b className="t-num">{num(sinContestar)}</b>Sin contestar</span>
+              <span className="rep-chico" title="Alumnos activos que, al cierre del período, llevan dos semanas seguidas o más sin completar el reporte."><b className="t-num" style={enRiesgo.length ? { color: "var(--warning)" } : undefined}>{num(enRiesgo.length)}</b>En riesgo</span>
+            </div>
+          </section>
 
           {sinNada ? (
             <Card>
@@ -446,6 +434,17 @@ export default function Reportes() {
             </Card>
           ) : (
             <>
+              {/* Con una sola semana, un gráfico es un punto: alcanza con los totales. */}
+              {evolucion.length < 2 ? (
+                <Card>
+                  <div className="rep-tres">
+                    <span className="fz-hero__etiqueta">En el período</span>
+                    <span className="rep-chico"><b className="t-num">{unDecimal(totales.horas)} h</b>de estudio</span>
+                    <span className="rep-chico"><b className="t-num">{num(totales.postulaciones)}</b>postulaciones</span>
+                    <span className="rep-chico"><b className="t-num">{num(totales.entrevistas)}</b>entrevistas</span>
+                  </div>
+                </Card>
+              ) : (
               <div className="grid-2">
                 <Card>
                   <CardHead titulo="Tasa de respuesta por semana" sub="Qué parte de los reportes que se debían se completó." />
@@ -478,34 +477,33 @@ export default function Reportes() {
                   </p>
                 </Card>
               </div>
+              )}
 
-              <div className="grid-2">
+              <div className={enRiesgo.length > 0 ? "grid-2" : undefined}>
                 <Card>
                   <CardHead titulo="Bloqueos más frecuentes" sub="Lo que los alumnos cuentan que los frena." />
                   {bloqueos.length === 0 ? (
                     <p className="t-sm t-subtle rep-sin-datos">Nadie reportó un bloqueo en este período.</p>
                   ) : (
-                    <div className="stack-3">
+                    <div className={bloqueos[0].veces > 1 ? "stack-3" : "stack-2"}>
                       {bloqueos.map((b) => (
                         <div key={b.texto} className="rep-bloqueo">
                           <div className="row" style={{ gap: "var(--space-3)" }}>
-                            <span className="t-sm t-strong truncate" style={{ flex: 1, minWidth: 0 }} title={b.texto}>{b.texto}</span>
+                            <span className={`t-sm truncate${bloqueos[0].veces > 1 ? " t-strong" : ""}`} style={{ flex: 1, minWidth: 0 }} title={b.texto}>{b.texto}</span>
                             <span className="t-sm t-subtle t-num" style={{ whiteSpace: "nowrap" }}>
-                              {num(b.veces)} {b.veces === 1 ? "vez" : "veces"} · {num(b.alumnos.size)} {b.alumnos.size === 1 ? "alumno" : "alumnos"}
+                              {b.veces > 1 && `${num(b.veces)} veces · ${num(b.alumnos.size)} ${b.alumnos.size === 1 ? "alumno" : "alumnos"}`}
                             </span>
                           </div>
-                          <Bar valor={(b.veces / bloqueos[0].veces) * 100} />
+                          {/* Si todos aparecen una vez, las barras son todas iguales y no dicen nada. */}
+                          {bloqueos[0].veces > 1 && <Bar valor={(b.veces / bloqueos[0].veces) * 100} />}
                         </div>
                       ))}
                     </div>
                   )}
                 </Card>
-                <Card>
+                {enRiesgo.length > 0 && <Card>
                   <CardHead titulo="En riesgo" sub="Activos con dos semanas o más sin completar el reporte." />
-                  {enRiesgo.length === 0 ? (
-                    <Empty icono={<Check size={22} />} titulo="Todos al día" texto="Ningún alumno activo lleva dos semanas sin reportar." />
-                  ) : (
-                    <div className="stack-2 rep-riesgo">
+                  <div className="stack-2 rep-riesgo">
                       {enRiesgo.map(({ alumno: a, semanas }) => (
                         <Link key={a.id} href={`/alumnos?ver=${a.id}`} className="agenda-item">
                           <span style={{ flex: 1, minWidth: 0 }}>
@@ -516,9 +514,8 @@ export default function Reportes() {
                           </Badge>
                         </Link>
                       ))}
-                    </div>
-                  )}
-                </Card>
+                  </div>
+                </Card>}
               </div>
             </>
           )}
@@ -601,12 +598,12 @@ export default function Reportes() {
 
       {vista === "sin-alumno" && <ReportesSinAlumno {...sinAlumno} />}
 
-      <Ayuda titulo="Cómo se cuenta" icono={<Info size={18} />}>
+      <Plegable titulo="Cómo se cuenta">
         Cada alumno activo o pausado debe un reporte por semana desde que empezó; si no lo mandó, figura como
         <strong> No enviado</strong> y se puede marcar desde la tabla. Una semana entra en el período si alguno de sus
         días cae adentro. Quien deja de contestar dos semanas seguidas suele estar por caerse: por eso aparece
         <strong> en riesgo</strong>.
-      </Ayuda>
+      </Plegable>
     </div>
   );
 }

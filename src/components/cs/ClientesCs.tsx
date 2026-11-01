@@ -14,10 +14,13 @@ import { nivelEn, puedeEditar } from "@/lib/permisos";
 import { useEscribirURL } from "@/lib/useParamsURL";
 import { configSeguimiento, hoyDelNegocio } from "@/lib/seguimiento";
 import {
-  CONTRATOS, coincideCliente, EDITOR_CLIENTE, filasClientes, listasCs,
+  CONTRATOS, coincideCliente, EDITOR_CLIENTE, filasClientes, JUEGOS_CLIENTES, listasCs,
   MOTOR_CLIENTES, ORDEN_CLIENTES, ORDEN_REPORTE, OPCIONES_ESTADO_ALUMNO, POR_QUE_NO_CLIENTE, resumenClientes,
-  valorEditableCliente, VISIBLES_CLIENTES, type ClaveCliente, type FilaCliente,
+  valorEditableCliente, type ClaveCliente, type FilaCliente,
 } from "@/lib/clientes-cs";
+import { ETAPAS_DEL_ALUMNO, etapaDelFollowUp } from "@/lib/panel-servicio";
+import { MenuMas } from "./MenuMas";
+import { ResumenCs } from "./ResumenCs";
 import { SI } from "@/lib/tabla-cs";
 import { FichaClienteCs } from "./FichaClienteCs";
 import { AjustarCs } from "./AjustarCs";
@@ -77,10 +80,15 @@ export function ClientesCs({ onNuevo }: { onNuevo: () => void }) {
   const atajos = (
     <div className="cs-atajos">
       <Chip activo={atajo("estadoAlumno", ["Activo"])} count={resumen.activos} onClick={() => alternarAtajo("estadoAlumno", ["Activo"])}>Activos</Chip>
-      <Chip activo={atajo("cv", ["Pendiente"])} count={resumen.cvPendiente} onClick={() => alternarAtajo("cv", ["Pendiente"])}
-        title="Alumnos activos con el CV sin corregir">CV pendiente</Chip>
-      <Chip activo={atajo("linkedin", ["Pendiente"])} count={resumen.linkedinPendiente} onClick={() => alternarAtajo("linkedin", ["Pendiente"])}
-        title="Alumnos activos con el LinkedIn sin corregir">LinkedIn pendiente</Chip>
+      {/* Un filtro que trae a todos no filtra nada: aparece cuando hay alguno corregido. */}
+      {resumen.cvPendiente < resumen.activos && (
+        <Chip activo={atajo("cv", ["Pendiente"])} count={resumen.cvPendiente} onClick={() => alternarAtajo("cv", ["Pendiente"])}
+          title="Alumnos activos con el CV sin corregir">CV pendiente</Chip>
+      )}
+      {resumen.linkedinPendiente < resumen.activos && (
+        <Chip activo={atajo("linkedin", ["Pendiente"])} count={resumen.linkedinPendiente} onClick={() => alternarAtajo("linkedin", ["Pendiente"])}
+          title="Alumnos activos con el LinkedIn sin corregir">LinkedIn pendiente</Chip>
+      )}
       <Chip activo={atajo("reporte", ["Atrasado", "Inactivo"])} count={cuenta((f) => f.reporte.estado === "Atrasado" || f.reporte.estado === "Inactivo")}
         onClick={() => alternarAtajo("reporte", ["Atrasado", "Inactivo"])} title="Activos que deben el reporte semanal">Reporte atrasado</Chip>
     </div>
@@ -164,7 +172,19 @@ export function ClientesCs({ onNuevo }: { onNuevo: () => void }) {
     <>
       <TablaCs
         motor={MOTOR_CLIENTES} pantalla="clientes-cs" filas={filas} coincide={coincideCliente}
-        visiblesPorDefecto={VISIBLES_CLIENTES} ordenPorDefecto={ORDEN_CLIENTES} fija="nombre" fijaAntes="numero" ordenValores={ordenValores}
+        visiblesPorDefecto={JUEGOS_CLIENTES[0].claves} juegos={JUEGOS_CLIENTES}
+        resumen={(
+          <ResumenCs
+            etiqueta="Alumnos activos" valor={resumen.activos} sub={`de ${filas.length} en la lista`}
+            ayuda="Cada alumno activo en su etapa del recorrido, según su Follow Up. Tocá una etapa para filtrar la tabla."
+            motor={MOTOR_CLIENTES} columna="followUp" filas={activos}
+            grupos={ETAPAS_DEL_ALUMNO.map((x) => ({
+              id: x.id, nombre: x.label, ayuda: x.ayuda, tono: x.riesgo ? "alerta" as const : x.id === "exito" ? "bien" as const : x.id === "outboarding" ? "apagado" as const : undefined,
+              es: (f: FilaCliente) => etapaDelFollowUp(MOTOR_CLIENTES.columna.followUp.valores(f)[0]) === x.id,
+            }))}
+          />
+        )}
+        ordenPorDefecto={ORDEN_CLIENTES} fija="nombre" fijaAntes="numero" ordenValores={ordenValores}
         celda={(col, f) => celda(col, f)} filaAcciones={filaAcciones}
         excel={{ nombre: "Clientes", hoy, valor: (col, f) => {
           const k = col.clave;
@@ -181,13 +201,11 @@ export function ClientesCs({ onNuevo }: { onNuevo: () => void }) {
         }}
         acciones={
           <>
-            {puede && resumen.sinNumero > 0 && (
-              <Button sm variante="ghost" icono={<Hash size={15} />} onClick={numerar} title="Les da su N.º de alumno, del más viejo al más nuevo, a los que todavía no tienen">
-                Numerar ({resumen.sinNumero})
-              </Button>
-            )}
-            {puede && <Button sm variante="secondary" icono={<FileDown size={15} />} onClick={() => setImportando(true)}>Importar</Button>}
-            {puedeAjustar && <Button sm variante="secondary" icono={<Settings2 size={15} />} onClick={() => setAjustando(true)}>Ajustar</Button>}
+            <MenuMas acciones={[
+              ...(puede && resumen.sinNumero > 0 ? [{ texto: `Numerar (${resumen.sinNumero})`, icono: <Hash size={15} />, onClick: numerar, title: "Les da su N.º de alumno, del más viejo al más nuevo, a los que todavía no tienen" }] : []),
+              ...(puede ? [{ texto: "Importar", icono: <FileDown size={15} />, onClick: () => setImportando(true) }] : []),
+              ...(puedeAjustar ? [{ texto: "Ajustar listas", icono: <Settings2 size={15} />, onClick: () => setAjustando(true) }] : []),
+            ]} />
             {puede && <Button sm variante="primary" icono={<Plus size={15} />} onClick={onNuevo}>Nuevo cliente</Button>}
           </>
         }

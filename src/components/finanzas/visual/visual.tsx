@@ -19,28 +19,46 @@ export function Cifra({ texto }: { texto: string }) {
 
 const COLORES = ["var(--viz-2)", "var(--viz-3)", "var(--viz-4)", "var(--viz-5)", "var(--viz-1)"];
 
-export interface Parte { id: string; nombre: string; valor: number; texto: string; ayuda?: string }
+export interface Parte { id: string; nombre: string; valor: number; texto: string; ayuda?: string; tono?: "alerta" | "bien" | "apagado" }
 
 /** Una barra con las partes de un total, en el mismo orden que su leyenda. */
-export function PartesDeUnTotal({ partes, etiqueta, onElegir }: { partes: Parte[]; etiqueta: string; onElegir?: (id: string) => void }) {
+export function PartesDeUnTotal({ partes, etiqueta, onElegir, activo }: {
+  partes: Parte[]; etiqueta: string;
+  /* Con esto, la barra y la leyenda también filtran lo que sigue abajo. */
+  onElegir?: (id: string) => void; activo?: string;
+}) {
   const total = partes.reduce((a, p) => a + Math.max(p.valor, 0), 0) || 1;
+  /* La rampa la gastan sólo las partes sin tono propio: así no se repite un violeta mientras queden. */
+  const sinTono = partes.filter((p) => !p.tono);
+  const color = (p: Parte) => (p.tono === "alerta" ? "var(--warning)" : p.tono === "bien" ? "var(--success)" : p.tono === "apagado" ? "color-mix(in srgb, var(--ink-subtle) 45%, transparent)" : COLORES[sinTono.indexOf(p) % COLORES.length]);
+  const atenuado = (p: Parte) => (activo && activo !== p.id ? { opacity: 0.35 } : undefined);
   return (
     <div className="fz-partes" role="group" aria-label={etiqueta}>
       <div className="fz-partes__barra" aria-hidden>
-        {partes.filter((p) => p.valor > 0).map((p) => {
-          const estilo = { flexGrow: p.valor / total, flexBasis: 0, background: COLORES[partes.indexOf(p) % COLORES.length] };
+        {partes.map((p) => {
+          if (p.valor <= 0) return null;
+          const estilo = { flexGrow: p.valor / total, flexBasis: 0, background: color(p), ...atenuado(p) };
           return onElegir
             ? <button key={p.id} type="button" tabIndex={-1} className="fz-partes__tramo" style={estilo} title={`${p.nombre}: ${p.texto}`} onClick={() => onElegir(p.id)} />
             : <span key={p.id} className="fz-partes__tramo" style={estilo} title={`${p.nombre}: ${p.texto}`} />;
         })}
       </div>
       <ul className="fz-partes__leyenda">
-        {partes.map((p, i) => (
-          <li key={p.id} className="fz-partes__item" title={p.ayuda}>
-            <span className="fz-partes__nombre"><span className="fz-partes__muestra" style={{ background: COLORES[i % COLORES.length] }} aria-hidden />{p.nombre}</span>
-            <span className="fz-partes__valor">{p.texto}</span>
-          </li>
-        ))}
+        {partes.map((p) => {
+          const dentro = (
+            <>
+              <span className="fz-partes__nombre"><span className="fz-partes__muestra" style={{ background: color(p) }} aria-hidden />{p.nombre}</span>
+              <span className="fz-partes__valor">{p.texto}</span>
+            </>
+          );
+          return (
+            <li key={p.id} className="fz-partes__item" title={p.ayuda}>
+              {onElegir
+                ? <button type="button" className="fz-partes__boton" aria-pressed={activo === p.id} onClick={() => onElegir(p.id)}>{dentro}</button>
+                : dentro}
+            </li>
+          );
+        })}
       </ul>
     </div>
   );

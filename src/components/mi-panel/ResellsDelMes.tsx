@@ -7,6 +7,7 @@ import { useToast } from "@/components/ui/Toast";
 import { copiarTexto } from "@/components/ui/Telefono";
 import { useAbrirFicha } from "@/components/ficha/abrir";
 import { Pastilla } from "@/components/cs/pastillas";
+import { InfoMetrica } from "@/components/ui/InfoMetrica";
 import { useEstado } from "@/lib/store";
 import { formatoDia } from "@/lib/seguimiento";
 import { diaDeNegocio } from "@/lib/dia-negocio";
@@ -23,7 +24,6 @@ import { estadosDeResell } from "@/lib/clientes-cs";
    las llamadas del mes, como la vista del Airtable de Lili, sin las canceladas.
    ================================================================== */
 
-const VISIBLES = 6;
 
 export function ResellsDelMes({ hoy, viendoOtro }: { hoy: string; viendoOtro: boolean }) {
   const e = useEstado();
@@ -60,15 +60,16 @@ export function ResellsDelMes({ hoy, viendoOtro }: { hoy: string; viendoOtro: bo
   const ir = (cuantos: number) => { setMes((m) => otroMes(m, cuantos)); setTodos(false); };
   /* La llamada más nueva arriba. */
   const recientes = [...items].reverse();
-  const vistos = todos ? recientes : recientes.slice(0, VISIBLES);
   const porHacerse = items.filter((i) => Date.parse(i.resell.fechaHora) > Date.now()).length;
 
   return (
     <section className="mp-card ps-card ps-rs" aria-label="Resells agendados">
       <div className="ps-rs__cab">
         <div>
-          <h2 className="ps-tit">{viendoOtro ? "Resells que agendó" : "Resells que agendaste"}</h2>
-          <p className="ps-ayuda">Las llamadas de la agenda de resells del mes, como la vista del Airtable, sin las canceladas. Es el número de la liquidación.</p>
+          <h2 className="ps-tit">
+            {viendoOtro ? "Resells que agendó" : "Resells que agendaste"}{" "}
+            <InfoMetrica titulo="Resells del mes" ayuda="Las llamadas de la agenda de resells del mes, como la vista del Airtable, sin las canceladas. Es el número de la liquidación. Cuentan en el mes de la llamada." />
+          </h2>
         </div>
         <div className="ps-rs__mes" role="group" aria-label="Mes">
           <IconButton etiqueta="Mes anterior" onClick={() => ir(-1)}><ChevronLeft size={16} /></IconButton>
@@ -88,27 +89,21 @@ export function ResellsDelMes({ hoy, viendoOtro }: { hoy: string; viendoOtro: bo
         <div className="ps-rs__detalle">
           {resumen.porCloser.map((x) => <span key={x.closer} className="ps-rs__chip">{x.closer} <b>{x.n}</b></span>)}
           {resumen.testimonio > 0 && <span className="ps-rs__chip">De testimonio <b>{resumen.testimonio}</b></span>}
-        </div>
-        <Button variante="secondary" icono={<Copy size={15} />} disabled={!resumen.total} onClick={() => void copiar()}>Copiar para pasar</Button>
-      </div>
-      {masAdelante.length > 0 && (
-        <p className="ps-ayuda" style={{ margin: "0 0 8px" }}>
-          Con llamada en los meses que vienen:{" "}
-          {masAdelante.map(([m, n], i) => (
-            <React.Fragment key={m}>
-              {i > 0 && " · "}
-              <button type="button" className="ps-rs__mas" style={{ display: "inline", padding: 0 }} onClick={() => { setMes(m); setTodos(false); }}>
-                {mesEnLetras(m).split(" ")[0]} {n}
-              </button>
-            </React.Fragment>
+          {masAdelante.map(([m, n]) => (
+            <button key={m} type="button" className="ps-rs__chip ps-rs__chip--ir" title={`Llamadas de ${mesEnLetras(m)}`} onClick={() => { setMes(m); setTodos(false); }}>
+              {mesEnLetras(m).split(" ")[0]} <b>{n}</b>
+            </button>
           ))}
-          . Cuentan en el mes de la llamada.
-        </p>
-      )}
+        </div>
+        <span className="ps-rs__fin">
+          {items.length > 0 && <Button variante="ghost" sm aria-expanded={todos} onClick={() => setTodos((x) => !x)}>{todos ? "Ocultar" : `Ver los ${items.length}`}</Button>}
+          <Button variante="ghost" sm icono={<Copy size={15} />} disabled={!resumen.total} onClick={() => void copiar()}>Copiar para pasar</Button>
+        </span>
+      </div>
 
-      {items.length > 0 && (
+      {todos && items.length > 0 && (
         <ul className="ps-rs__lista">
-          {vistos.map(({ resell: r, dia, agendado }) => {
+          {recientes.map(({ resell: r, dia, agendado }) => {
             const alumnoId = r.email ? alumnoPorMail.get(r.email.trim().toLowerCase()) : undefined;
             const abrir = alumnoId ? () => abrirFicha(alumnoId, "servicio", { hoja: "testimonio" }) : r.sesionId ? () => abrirFicha(r.sesionId!, "llamadas") : undefined;
             const estado = estadosDeResell(r.estado)[0];
@@ -124,9 +119,6 @@ export function ResellsDelMes({ hoy, viendoOtro }: { hoy: string; viendoOtro: bo
             );
           })}
         </ul>
-      )}
-      {items.length > VISIBLES && (
-        <button type="button" className="ps-rs__mas" onClick={() => setTodos((x) => !x)}>{todos ? "Ver menos" : `Ver los ${items.length}`}</button>
       )}
     </section>
   );

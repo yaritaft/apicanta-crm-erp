@@ -32,6 +32,8 @@ import { alumnosRepetidos } from "@/lib/alumnos-repetidos";
 import { personaDe } from "@/lib/persona";
 import { plural, saludoDe } from "./util";
 import { ResellsDelMes } from "./ResellsDelMes";
+import { Avance, PartesDeUnTotal } from "@/components/finanzas/visual/visual";
+import { InfoMetrica } from "@/components/ui/InfoMetrica";
 import "./mi-panel.css";
 import "./panel-servicio.css";
 
@@ -235,13 +237,14 @@ export function PanelServicio({ miembro, viendoOtro }: { miembro: MiembroEquipo;
       </header>
 
       {/* La clase de entrevistas de los martes (Lili, 23/10) y las consultas de los jueves (24/10). */}
-      <TarjetaSimulacro />
-      <TarjetaConsultas />
+      <div className="ps-clases">
+        <TarjetaSimulacro />
+        <TarjetaConsultas />
+      </div>
 
       <div className="ps-cols">
         <section className="mp-card ps-card" aria-label="Para hoy">
           <h2 className="ps-tit">Para hoy</h2>
-          <p className="ps-ayuda">Lo que pide el servicio hoy. Tocá una fila para ver a quiénes.</p>
           {paraHoy.length === 0 ? (
             <div className="ps-aldia"><span className="ps-ico" style={{ "--tono": "var(--success)" } as React.CSSProperties}><Check size={16} /></span>
               <div><b>Todo al día.</b><span>Nadie para contactar, renovar ni firmar. Hoy toca acompañar.</span></div></div>
@@ -252,18 +255,16 @@ export function PanelServicio({ miembro, viendoOtro }: { miembro: MiembroEquipo;
                 const activa = lista?.id === s.id;
                 return (
                   <button
-                    key={s.id} type="button" className={`ps-tarea${activa ? " ps-tarea--on" : ""}`} aria-pressed={activa}
+                    key={s.id} type="button" className={`ps-tarea${activa ? " ps-tarea--on" : ""}`} aria-pressed={activa} title={s.regla}
                     onClick={() => { cambiar({ lista: activa ? null : s.id, etapa: null, fu: null }, TABLA_LIMPIA); if (!activa) irACartera(); }}
                   >
                     <span className="ps-ico" style={{ "--tono": t.tono } as React.CSSProperties}>{t.icono}</span>
                     <span className="ps-tarea__txt">
-                      <span className="ps-tarea__tit">{s.titulo} <span className="ps-tarea__pide">· {t.pide}</span></span>
-                      <span className="ps-tarea__sub">{s.regla}</span>
+                      <span className="ps-tarea__tit truncate">{s.titulo}</span>
+                      <span className="ps-tarea__pide truncate">{t.pide}</span>
                     </span>
-                    <span className="ps-tarea__n">
-                      <b className={s.rojos > 0 ? "ps-rojo" : undefined}>{s.total}</b>
-                      {s.rojos > 0 && <small>{s.rojos === s.total ? (s.total === 1 ? "urgente" : "todos urgentes") : `${s.rojos} ${s.rojos === 1 ? "urgente" : "urgentes"}`}</small>}
-                    </span>
+                    {s.rojos > 0 && <span className="ps-tarea__urg t-num">{s.rojos === s.total ? "Todos urgentes" : `${s.rojos} ${s.rojos === 1 ? "urgente" : "urgentes"}`}</span>}
+                    <b className="ps-tarea__n t-num">{s.total}</b>
                     <ChevronRight size={16} className="ps-tarea__ir" aria-hidden />
                   </button>
                 );
@@ -274,32 +275,20 @@ export function PanelServicio({ miembro, viendoOtro }: { miembro: MiembroEquipo;
 
         <section className="mp-card ps-card" aria-label="Tus números">
           <h2 className="ps-tit">{viendoOtro ? "Sus números" : "Tus números"}</h2>
-          <p className="ps-ayuda">Cómo va la cartera, con los datos que hay cargados.</p>
-          <div className="ps-kpis">
-            <button type="button" className="ps-kpi" onClick={() => { cambiar({ lista: null, etapa: null, fu: null, base: null }); irACartera(); }}>
-              <span className="ps-kpi__rot">En servicio</span><span className="ps-kpi__val">{num.enServicio}</span>
-              <span className="ps-kpi__ctx">de {panel.cartera.length} alumnos en la app</span>
+          <button type="button" className="ps-nums__base" onClick={() => { cambiar({ lista: null, etapa: null, fu: null, base: null }); irACartera(); }}>
+            <span className="fz-semana__valor">{num.enServicio}</span>
+            <span className="fz-hero__sub">en servicio de {panel.cartera.length} alumnos</span>
+          </button>
+          <div className="ps-nums__avances">
+            <Avance tono="brand" hecho={num.contactados30.si} total={num.contactados30.de} izquierda="Contactados en 30 días" derecha={pct(num.contactados30.si, num.contactados30.de)} />
+            <Avance tono="brand" hecho={num.reportando.si} total={num.reportando.de} izquierda="Mandan el reporte" derecha={pct(num.reportando.si, num.reportando.de)} />
+          </div>
+          <div className="ps-nums__chicos">
+            <button type="button" className="ps-nums__chico" title="Con el Follow Up en caso de éxito" onClick={() => { cambiar({ lista: null, etapa: "exito", base: "todos", fu: null }); irACartera(); }}>
+              <b className="t-num">{num.casosDeExito}</b>Casos de éxito
             </button>
-            <div className="ps-kpi">
-              <span className="ps-kpi__rot">Contactados</span><span className="ps-kpi__val">{pct(num.contactados30.si, num.contactados30.de)}</span>
-              <span className="ps-kpi__ctx">{num.contactados30.si} con un contacto en los últimos 30 días</span>
-            </div>
-            <div className="ps-kpi">
-              <span className="ps-kpi__rot">Reportando</span><span className="ps-kpi__val">{pct(num.reportando.si, num.reportando.de)}</span>
-              <span className="ps-kpi__ctx">{num.reportando.si} de {num.reportando.de} con el dato del reporte</span>
-            </div>
-            <button type="button" className="ps-kpi" onClick={() => { cambiar({ lista: null, etapa: "exito", base: "todos", fu: null }); irACartera(); }}>
-              <span className="ps-kpi__rot">Casos de éxito</span><span className="ps-kpi__val">{num.casosDeExito}</span>
-              <span className="ps-kpi__ctx">con el Follow Up en caso de éxito</span>
-            </button>
-            <Link href="/alumnos?seccion=testimonios" className="ps-kpi">
-              <span className="ps-kpi__rot">Testimonios</span><span className="ps-kpi__val">{num.testimoniosConVideo}</span>
-              <span className="ps-kpi__ctx">con el video cargado</span>
-            </Link>
-            <Link href="/alumnos?seccion=resells" className="ps-kpi">
-              <span className="ps-kpi__rot">Renovaciones</span><span className="ps-kpi__val">{num.renovacionesMes}</span>
-              <span className="ps-kpi__ctx">resells que renovaron este mes</span>
-            </Link>
+            <Link href="/alumnos?seccion=testimonios" className="ps-nums__chico" title="Testimonios con el video cargado"><b className="t-num">{num.testimoniosConVideo}</b>Testimonios</Link>
+            <Link href="/alumnos?seccion=resells" className="ps-nums__chico" title="Resells que renovaron este mes"><b className="t-num">{num.renovacionesMes}</b>Renovaron</Link>
           </div>
         </section>
       </div>
@@ -309,8 +298,18 @@ export function PanelServicio({ miembro, viendoOtro }: { miembro: MiembroEquipo;
 
       <section className="mp-card ps-cartera" id="ps-cartera" aria-label="Cartera">
         <div className="ps-cartera__head">
-          <h2 className="ps-tit">Cartera</h2>
-          <p className="ps-ayuda">Cada alumno en su etapa del recorrido (sale de su Follow Up). Tocá una etapa para filtrar y un alumno para abrir su ficha.</p>
+          <h2 className="ps-tit">Cartera <InfoMetrica titulo="Cartera" ayuda="Cada alumno en su etapa del recorrido (sale de su Follow Up). Tocá una etapa para filtrar y un alumno para abrir su ficha." /></h2>
+        </div>
+
+        <div className="ps-etapas">
+          <PartesDeUnTotal
+            etiqueta="Alumnos por etapa" activo={!lista ? etapa : undefined}
+            partes={ETAPAS_DEL_ALUMNO.filter((x) => porEtapa[x.id] > 0 || (!lista && etapa === x.id)).map((x) => ({
+              id: x.id, nombre: x.label, valor: porEtapa[x.id], texto: String(porEtapa[x.id]), ayuda: x.ayuda,
+              tono: x.riesgo ? "alerta" as const : x.id === "exito" ? "bien" as const : x.id === "outboarding" || x.id === "sin" ? "apagado" as const : undefined,
+            }))}
+            onElegir={(id) => cambiar({ etapa: !lista && etapa === id ? null : id, lista: null, fu: null }, lista ? TABLA_LIMPIA : PRIMERA_HOJA)}
+          />
         </div>
 
         <div className="ps-fijados" aria-label="Follow Ups fijados">
@@ -346,22 +345,6 @@ export function PanelServicio({ miembro, viendoOtro }: { miembro: MiembroEquipo;
               {opcionesFollowUp.map((o) => <option key={o} value={o}>{o}</option>)}
             </select>
           )}
-        </div>
-
-        <div className="ps-pipe" aria-label="Etapas">
-          {ETAPAS_DEL_ALUMNO.map((x) => {
-            const on = !lista && etapa === x.id;
-            const cuenta = porEtapa[x.id];
-            return (
-              <button
-                key={x.id} type="button" className={`ps-etapa${on ? " ps-etapa--on" : ""}${x.riesgo ? " ps-etapa--riesgo" : ""}`} aria-pressed={on} title={x.ayuda}
-                onClick={() => cambiar({ etapa: on ? null : x.id, lista: null, fu: null }, lista ? TABLA_LIMPIA : PRIMERA_HOJA)}
-              >
-                <span className={`ps-etapa__n${cuenta === 0 ? " ps-etapa__n--cero" : ""}`}>{cuenta}</span>
-                <span className="ps-etapa__rot">{x.label}</span>
-              </button>
-            );
-          })}
         </div>
 
         {lista && <p className="ps-regla">{lista.regla}</p>}

@@ -54,7 +54,7 @@ export const NAV: GrupoNav[] = [
       { href: "/alumnos", texto: "Alumnos", icono: GraduationCap, ayuda: "Quién está cursando y cómo va" },
       /* Es una vista de Alumnos, no otra pantalla: el Shell marca el item más
          específico, así que acá se prende éste y no los dos. */
-      { href: "/alumnos?seccion=pipeline", texto: "Pipeline de servicio", icono: SquareKanban, ayuda: "Arrastrá alumnos entre las etapas del servicio" },
+      { href: "/alumnos?seccion=pipeline", texto: "Pipeline de servicio", icono: SquareKanban, ayuda: "Cada alumno en la etapa que dice su Follow Up" },
       /* «Formularios» (reunión del 21/10), «de alumnos» para no confundirlo con Formularios de Crecimiento (los registros de la landing). */
       { href: "/reportes", texto: "Formularios de alumnos", icono: ClipboardList, ayuda: "El formulario semanal de cada alumno: respuestas, quién lo completa y su link" },
       /* Lili (23/10): la clase de entrevistas de los martes, con la inscripción en la app en vez del Google Form. */
@@ -109,6 +109,10 @@ export const TODOS_LOS_ITEMS = [...NAV, ...NAV_CLOSER].flatMap((g) => g.items);
 export const PANTALLAS_SIN_MENU: { href: string; texto: string; ayuda: string }[] = [
   { href: "/finanzas/caja", texto: "Caja", ayuda: "Cuánta plata hay en las cuentas y cuántos meses de vida le da al negocio" },
   { href: "/finanzas/detalle", texto: "Detalle de finanzas", ayuda: "Fila por fila: qué se debe, en qué se fue la plata y cuánto comisiona cada uno" },
+  { href: "/alumnos?seccion=testimonios", texto: "Testimonios", ayuda: "Quién grabó, con quién y en qué quedó cada video" },
+  { href: "/alumnos?seccion=resells", texto: "Resells", ayuda: "Cada llamada de renovación y en qué quedó" },
+  { href: "/alumnos?seccion=cvs", texto: "Revisión de CVs", ayuda: "En qué etapa está el CV de cada alumno" },
+  { href: "/alumnos?seccion=zoom", texto: "Sesiones de Zoom", ayuda: "Las clases por Zoom y quién estuvo" },
   { href: "/conciliacion", texto: "Conciliación de cobros", ayuda: "La plata que entró a una pasarela y hay que asignar a su cuota para que cuente como cobrada" },
 ];
 

@@ -21,13 +21,14 @@ import { puedeEditar } from "@/lib/permisos";
 import { formatoDia, hoyDelNegocio } from "@/lib/seguimiento";
 import { diaDeNegocio } from "@/lib/dia-negocio";
 import {
-  alternarEstadoResell, coincideResell, COLUMNAS_SUMADAS_RESELLS, esDeTestimonio, estadosDeResell, filasResells, RESULTADOS_TESTIMONIO, resellAbierto, listasCs, MOTOR_RESELLS, ORDEN_RESELLS, resellNormal, VISIBLES_RESELLS, type ClaveResell, type FilaResell,
+  alternarEstadoResell, coincideResell, COLUMNAS_SUMADAS_RESELLS, esDeTestimonio, estadosDeResell, filasResells, RESULTADOS_TESTIMONIO, resellAbierto, listasCs, MOTOR_RESELLS, ORDEN_RESELLS, resellNormal, JUEGOS_RESELLS, type ClaveResell, type FilaResell,
 } from "@/lib/clientes-cs";
 import { leerMontoCs } from "@/lib/importar-cs";
 import { money } from "@/lib/format";
 import type { ColorCrm, OpcionCrm, Resell } from "@/lib/types";
 import { Pastilla } from "./pastillas";
 import { NADA, Recorte, TablaCs } from "./TablaCs";
+import { ResumenCs } from "./ResumenCs";
 
 /* ==================================================================
    Agenda de resells: la tercera pestaña de Lili, con sus 9 columnas. Las
@@ -49,6 +50,12 @@ const EDITOR: Partial<Record<ClaveResell, "texto" | "largo" | "opciones" | "si-n
   testimonio: "opciones", linkTestimonio: "texto", linkPitch: "texto",
 };
 const esLink = (v: string) => !v || /^https?:\/\/\S+\.\S+/.test(v);
+
+/* Los estados que dicen en qué quedó la renovación (una llamada puede tener varios, como «2da Agenda» y el resultado). */
+const VALORES_RENOVO = ["Upgrade a Hackear IA", "Renueva"];
+const VALORES_NO_RENOVO = ["No quiere renovar", "No renueva", "Outbording", "Outboarding"];
+const renovo = (f: FilaResell) => estadosDeResell(f.resell.estado).some((x) => VALORES_RENOVO.includes(x));
+const noRenovo = (f: FilaResell) => estadosDeResell(f.resell.estado).some((x) => VALORES_NO_RENOVO.includes(x));
 
 export function ResellsCs() {
   const e = useEstado();
@@ -232,7 +239,22 @@ export function ResellsCs() {
     <>
       <TablaCs
         motor={MOTOR_RESELLS} pantalla="resells-cs" filas={filas} coincide={coincideResell}
-        visiblesPorDefecto={VISIBLES_RESELLS} ordenPorDefecto={ORDEN_RESELLS} fija="fechaHora" ordenValores={ordenValores}
+        visiblesPorDefecto={JUEGOS_RESELLS[0].claves} juegos={JUEGOS_RESELLS}
+        resumen={(
+          <ResumenCs
+            etiqueta="Renovaron" valor={suyas.filter(renovo).length} sub={`de ${suyas.length} llamadas`}
+            ayuda="En qué quedó cada llamada de resell. «Por cerrar»: ya pasó y el closer todavía no cargó en qué quedó. Tocá una parte para filtrar la tabla."
+            motor={MOTOR_RESELLS} columna="estado" filas={suyas} alFiltrar={{ "por-cargar": null }}
+            grupos={[
+              { id: "renovo", nombre: "Renovaron", tono: "bien", es: renovo, valores: () => VALORES_RENOVO },
+              { id: "no", nombre: "No renovaron", es: noRenovo, valores: () => VALORES_NO_RENOVO },
+              { id: "cerrar", nombre: "Por cerrar", tono: "alerta", es: (f) => resellAbierto(f.resell, Date.now()), elegida: soloPorCargar,
+                alElegir: () => escribirURL({ "por-cargar": soloPorCargar ? null : "1" }) },
+              { id: "otro", nombre: "Garantía extendida", es: (f) => estadosDeResell(f.resell.estado).includes("Garantía Extendida"), valores: () => ["Garantía Extendida"] },
+            ]}
+          />
+        )}
+        ordenPorDefecto={ORDEN_RESELLS} fija="fechaHora" ordenValores={ordenValores}
         celda={(col, f) => celda(col, f)}
         filaAcciones={puede ? (f) => (
           <>
@@ -258,13 +280,6 @@ export function ResellsCs() {
           <>
             {hayNube && <Button sm variante="ghost" icono={<RefreshCw size={14} />} disabled={sync !== "listo"} onClick={() => void actualizar()}
               title="Trae de la nube lo que agendaron por Calendly desde que abriste la app">Actualizar</Button>}
-            {porCargar.length > 0 && (
-              <Button sm variante={soloPorCargar ? "primary" : "secondary"} aria-pressed={soloPorCargar}
-                title="Las que ya pasaron y todavía no tienen un resultado final: sin estado, o sólo «Seguimiento» o «2da Agenda»"
-                onClick={() => escribirURL({ "por-cargar": soloPorCargar ? null : "1" })}>
-                Por cerrar ({porCargar.length})
-              </Button>
-            )}
             {puede && <Button sm variante="primary" icono={<Plus size={15} />} onClick={() => setForm({})}>Nueva agenda</Button>}
           </>
         }

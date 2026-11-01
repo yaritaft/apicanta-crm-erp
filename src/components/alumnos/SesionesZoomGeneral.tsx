@@ -4,6 +4,9 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { RefreshCw, Search, Video } from "lucide-react";
 import { Badge, Button, Card, Chip, Empty, Input } from "@/components/ui/ui";
 import { Columna, DataTable } from "@/components/ui/DataTable";
+import { InfoMetrica } from "@/components/ui/InfoMetrica";
+import { Avance, Segmentado } from "@/components/finanzas/visual/visual";
+import "@/components/cs/cs.css";
 import { useToast } from "@/components/ui/Toast";
 import { useAbrirFicha } from "@/components/ficha/abrir";
 import { ESTADO_ALUMNO } from "@/components/alumnos/comun";
@@ -41,16 +44,6 @@ async function traerTodo<T>(tabla: string, orden: string): Promise<T[] | null> {
 
 type Filtro = "todos" | "vienen" | "nunca";
 
-function Kpi({ etiqueta, valor, sub, ayuda }: { etiqueta: string; valor: string; sub?: string; ayuda?: string }) {
-  return (
-    <div className="wb-kpi" title={ayuda}>
-      <span className="t-label">{etiqueta}</span>
-      <span className="wb-kpi__valor t-num">{valor}</span>
-      {sub && <span className="t-sm t-subtle">{sub}</span>}
-    </div>
-  );
-}
-
 export function SesionesZoomGeneral() {
   const e = useEstado();
   const toast = useToast();
@@ -59,6 +52,7 @@ export function SesionesZoomGeneral() {
   const [trayendo, setTrayendo] = useState(false);
   const [q, setQ] = useState("");
   const [filtro, setFiltro] = useState<Filtro>("todos");
+  const [ver, setVer] = useState<"alumnos" | "clases">("alumnos");
   const hoy = hoyDelNegocio();
 
   const leer = useCallback(async () => {
@@ -130,41 +124,61 @@ export function SesionesZoomGeneral() {
   const columnasClases: Columna<(typeof g.clases)[number]>[] = [
     { clave: "dia", titulo: "Día", tipo: "primary", celda: (c) => formatoDia(c.dia, hoy), orden: (c) => c.dia },
     { clave: "tema", titulo: "Clase", celda: (c) => c.tema || "Clase", orden: (c) => c.tema },
-    { clave: "asistentes", titulo: "Alumnos y registrados", tipo: "num", celda: (c) => num(c.asistentes), orden: (c) => c.asistentes },
-    { clave: "partes", titulo: "Veces que alguien entró", tipo: "num", celda: (c) => num(c.participantes), orden: (c) => c.participantes },
+    { clave: "asistentes", titulo: "Alumnos", tipo: "num", celda: (c) => num(c.asistentes), orden: (c) => c.asistentes },
+    { clave: "partes", titulo: "Entradas", tipo: "num", celda: (c) => num(c.participantes), orden: (c) => c.participantes },
   ];
   const nuncaCuenta = g.activosNunca;
 
   return (
     <div className="stack-4">
-      <div className="wb-vivo__kpis">
-        <Kpi etiqueta="Clases · 30 días" valor={num(g.clases30)} sub={`${num(g.clasesTotal)} desde que se trae`} ayuda="Una clase es una reunión en un día. Las reuniones que Zoom parte en varias o donde estuvo sólo el anfitrión no cuentan." />
-        <Kpi etiqueta="Personas · 30 días" valor={num(g.personas30)} sub="distintas, por mail" />
-        <Kpi etiqueta="Por clase" valor={num(g.promedio30)} sub="asistentes en promedio, 30 días" />
-        <Kpi etiqueta="Activos que vienen" valor={`${num(g.activosConAsistencia)} de ${num(g.activos)}`} sub="entraron en los últimos 14 días" ayuda="Alumnos activos que entraron a alguna clase en las últimas dos semanas." />
-        <Kpi etiqueta="Activos que nunca entraron" valor={num(nuncaCuenta)} sub={g.activos ? `${Math.round((nuncaCuenta / g.activos) * 100)}% de los activos` : undefined} ayuda="Alumnos activos sin ninguna clase de Zoom registrada con su mail." />
-      </div>
+      <section className="fz-hero fz-hero--bajo cs-resumen" aria-label="Asistencia a las clases de Zoom">
+        <div>
+          <span className="fz-hero__etiqueta">
+            Activos que vienen
+            <InfoMetrica titulo="Activos que vienen" ayuda="Alumnos activos que entraron a alguna clase en las últimas dos semanas." />
+          </span>
+          <div className="cs-resumen__cifra">
+            <span className="fz-semana__valor">{num(g.activosConAsistencia)}</span>
+            <span className="fz-hero__sub">de {num(g.activos)} activos</span>
+          </div>
+        </div>
+        <div className="fz-hero__der cs-resumen__fila">
+          <div style={{ flex: "1 1 200px", minWidth: 0 }}>
+            <Avance tono="brand" hecho={g.activosConAsistencia} total={g.activos} izquierda="Entraron en los últimos 14 días" derecha={g.activos ? `${Math.round((g.activosConAsistencia / g.activos) * 100)} %` : undefined} />
+          </div>
+          <span className="rep-chico" title="Una clase es una reunión en un día. Las reuniones que Zoom parte en varias o donde estuvo sólo el anfitrión no cuentan."><b className="t-num">{num(g.clases30)}</b>Clases en 30 días</span>
+          <span className="rep-chico" title="Personas distintas, por mail, en los últimos 30 días"><b className="t-num">{num(g.personas30)}</b>Personas</span>
+          <span className="rep-chico" title="Asistentes en promedio, últimos 30 días"><b className="t-num">{num(g.promedio30)}</b>Por clase</span>
+          <button type="button" className="rep-chico rep-chico--ir" title="Alumnos activos sin ninguna clase de Zoom registrada con su mail" onClick={() => { setVer("alumnos"); setFiltro("nunca"); }}>
+            <b className="t-num" style={nuncaCuenta ? { color: "var(--warning)" } : undefined}>{num(nuncaCuenta)}</b>Nunca entraron
+          </button>
+        </div>
+      </section>
 
-      <Card style={{ padding: 0, overflow: "hidden" }}>
+      <Card className="cs-t" style={{ padding: 0, overflow: "hidden" }}>
         <div style={{ padding: "var(--space-4) var(--space-4) 0" }}>
           <div className="toolbar">
-            <Input value={q} onChange={(ev) => setQ(ev.target.value)} placeholder="Buscar alumno" aria-label="Buscar alumno" icono={<Search size={15} />} />
-            <Chip activo={filtro === "todos"} onClick={() => setFiltro("todos")}>Todos {num(g.alumnos.length)}</Chip>
-            <Chip activo={filtro === "vienen"} onClick={() => setFiltro("vienen")}>Vienen {num(g.alumnos.filter((f) => f.activo).length)}</Chip>
-            <Chip activo={filtro === "nunca"} onClick={() => setFiltro("nunca")}>Activos que nunca entraron {num(nuncaCuenta)}</Chip>
+            <Segmentado etiqueta="Qué ver" valor={ver} onCambiar={(v) => setVer(v as "alumnos" | "clases")} opciones={[{ valor: "alumnos", texto: "Por alumno" }, { valor: "clases", texto: `Por clase · ${num(g.clases.length)}` }]} />
+            {ver === "alumnos" && (
+              <>
+                <Input value={q} onChange={(ev) => setQ(ev.target.value)} placeholder="Buscar alumno" aria-label="Buscar alumno" icono={<Search size={15} />} />
+                <Chip activo={filtro === "todos"} onClick={() => setFiltro("todos")}>Todos {num(g.alumnos.length)}</Chip>
+                <Chip activo={filtro === "vienen"} onClick={() => setFiltro("vienen")}>Vienen {num(g.alumnos.filter((f) => f.activo).length)}</Chip>
+                <Chip activo={filtro === "nunca"} onClick={() => setFiltro("nunca")}>Nunca entraron {num(nuncaCuenta)}</Chip>
+              </>
+            )}
             <span style={{ marginLeft: "auto" }}>{boton}</span>
           </div>
         </div>
-        <DataTable
-          filas={filas} columnas={columnasAlumnos} alto={560} porPagina={50} ordenInicial={{ clave: "clases", desc: true }}
-          onFila={(f) => abrirFicha(f.alumnoId, "servicio", { hoja: "zoom" })} etiquetaFila={(f) => `Ver las sesiones de Zoom de ${f.nombre}`}
-          vacio={<Empty icono={<Video size={22} />} titulo="Nadie en esta lista" texto="Probá con otro filtro o búsqueda." />}
-        />
-      </Card>
-
-      <Card style={{ padding: 0, overflow: "hidden" }}>
-        <div style={{ padding: "var(--space-4) var(--space-4) 0" }}><span className="t-label">Cada clase</span></div>
-        <DataTable filas={g.clases} columnas={columnasClases} alto={420} porPagina={30} ordenInicial={{ clave: "dia", desc: true }} vacio={<Empty icono={<Video size={22} />} titulo="Sin clases" texto="Todavía no hay clases." />} />
+        {ver === "alumnos" ? (
+          <DataTable
+            filas={filas} columnas={columnasAlumnos} alto={560} porPagina={50} ordenInicial={{ clave: "clases", desc: true }}
+            onFila={(f) => abrirFicha(f.alumnoId, "servicio", { hoja: "zoom" })} etiquetaFila={(f) => `Ver las sesiones de Zoom de ${f.nombre}`}
+            vacio={<Empty icono={<Video size={22} />} titulo="Nadie en esta lista" texto="Probá con otro filtro o búsqueda." />}
+          />
+        ) : (
+          <DataTable filas={g.clases} columnas={columnasClases} alto={560} porPagina={30} ordenInicial={{ clave: "dia", desc: true }} vacio={<Empty icono={<Video size={22} />} titulo="Sin clases" texto="Todavía no hay clases." />} />
+        )}
       </Card>
     </div>
   );

@@ -79,10 +79,10 @@ export const COLUMNAS_REVISIONES_CV: ColumnaCs<FilaRevisionCv, ClaveRevisionCv>[
   { clave: "alumno", titulo: "Alumno en la app", grupo: "Alumno", valores: (f) => uno(f.alumno?.nombre ?? "Sin atar"), orden: (f) => sinTildes(f.alumno?.nombre ?? ""), ancho: 180,
     ayuda: "El alumno de la app al que está atada la revisión, si se pudo saber de quién es." },
   { clave: "estado", titulo: "Estado", grupo: "Revisión", valores: (f) => [f.estado], ancho: 150 },
-  { clave: "cvRecibido", titulo: "CV recibido", grupo: "Revisión", valores: (f) => siNo(f.revision.cvRecibido), ancho: 110 },
-  { clave: "correccion1", titulo: "Corrección 1 enviada", grupo: "Revisión", valores: (f) => siNo(f.revision.correccion1), ancho: 140 },
-  { clave: "correccion2", titulo: "Corrección 2 enviada", grupo: "Revisión", valores: (f) => siNo(f.revision.correccion2), ancho: 140 },
-  { clave: "fechaInicio", titulo: "Fecha de inicio", grupo: "Revisión", valores: (f) => uno(f.revision.fechaInicio), orden: (f) => f.revision.fechaInicio ?? "", fecha: true, ancho: 130 },
+  { clave: "cvRecibido", titulo: "CV recibido", corto: "Recibido", grupo: "Revisión", valores: (f) => siNo(f.revision.cvRecibido), ancho: 110 },
+  { clave: "correccion1", titulo: "1.ª corrección", corto: "Corr. 1", grupo: "Revisión", valores: (f) => siNo(f.revision.correccion1), ancho: 140 },
+  { clave: "correccion2", titulo: "2.ª corrección", corto: "Corr. 2", grupo: "Revisión", valores: (f) => siNo(f.revision.correccion2), ancho: 140 },
+  { clave: "fechaInicio", titulo: "Fecha de inicio", corto: "Inicio", grupo: "Revisión", valores: (f) => uno(f.revision.fechaInicio), orden: (f) => f.revision.fechaInicio ?? "", fecha: true, ancho: 130 },
   { clave: "linkCv", titulo: "CV (Drive)", grupo: "Links", valores: (f) => conLink(f.revision.linkCv), texto: (f) => f.revision.linkCv, ancho: 130 },
   { clave: "linkLinkedin", titulo: "LinkedIn", grupo: "Links", valores: (f) => conLink(f.revision.linkLinkedin), texto: (f) => f.revision.linkLinkedin, ancho: 130 },
   { clave: "linkCorreccion", titulo: "Documento de corrección", grupo: "Links", valores: (f) => conLink(f.revision.linkCorreccion), texto: (f) => f.revision.linkCorreccion, ancho: 170 },
@@ -95,6 +95,12 @@ export const COLUMNAS_REVISIONES_CV: ColumnaCs<FilaRevisionCv, ClaveRevisionCv>[
 export const VISIBLES_REVISIONES_CV: ClaveRevisionCv[] = [
   "nombre", "estado", "cvRecibido", "correccion1", "correccion2", "fechaInicio", "linkCorreccion", "linkLoom", "telefono", "mensajes", "notas",
 ];
+export const JUEGOS_REVISIONES_CV: { id: string; nombre: string; claves: readonly ClaveRevisionCv[] }[] = [
+  { id: "avance", nombre: "Avance", claves: ["nombre", "estado", "cvRecibido", "correccion1", "correccion2", "fechaInicio", "notas"] },
+  { id: "links", nombre: "Links", claves: ["nombre", "linkCv", "linkLinkedin", "linkCorreccion", "linkLoom", "telefono"] },
+  { id: "todas", nombre: "Todas", claves: VISIBLES_REVISIONES_CV },
+];
+
 export const ORDEN_REVISIONES_CV: OrdenCs<ClaveRevisionCv>[] = [{ clave: "fechaInicio", desc: true }];
 export const MOTOR_REVISIONES_CV = crearMotor(COLUMNAS_REVISIONES_CV, "cvr");
 

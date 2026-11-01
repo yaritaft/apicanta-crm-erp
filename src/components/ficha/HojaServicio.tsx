@@ -55,6 +55,7 @@ import { fechaLarga, money } from "@/lib/format";
 import type { Persona } from "@/lib/persona";
 import type { Alumno, EstadoApp, IngresoComunidad, Resell, SeguimientoAlumno, SesionUnoAUno, Testimonio, Venta } from "@/lib/types";
 import "@/components/cs/cs.css";
+import { Avance, Plegable } from "@/components/finanzas/visual/visual";
 import "./hoja-servicio.css";
 
 /* ==================================================================
@@ -349,23 +350,29 @@ function HojaDeUnServicio({ e, p, f, venta, producto, conChat, reserva }: {
           {!reserva && f.pausa && (
             <span className="hs-chip hs-chip--ambar" title={f.pausa.motivo || undefined}>{textoDePausa(f.pausa, hoy, (d) => formatoDia(d, hoy))}</span>
           )}
-          {!reserva && !f.pausa && dia !== null && (dia > 0
-            ? <span className="hs-chip" title={`Empezó el ${formatoDia(f.inicioReal, hoy)}`}>Día {dia} · Semana {Math.floor((dia - 1) / 7) + 1}</span>
-            : <span className="hs-chip">Empieza el {formatoDia(f.inicioReal, hoy)}</span>)}
-          {!reserva && quedan !== null && (
-            <span className={`hs-chip${quedan < 0 && activo ? " hs-chip--rojo" : quedan <= 30 && activo ? " hs-chip--ambar" : ""}`} title={f.egresoSugerido ? "Calculado: inicio más la duración" : undefined}>
-              {quedan < 0 ? `Venció el ${formatoDia(f.egreso, hoy)}` : quedan === 0 ? "Vence hoy" : `Vence el ${formatoDia(f.egreso, hoy)}`}
-            </span>
-          )}
-          <span className={`hs-chip ${faltan ? "hs-chip--ambar" : "hs-chip--ok"}`} title="Datos de Customer Success que todavía están vacíos">{faltan ? `Faltan ${faltan}` : "Completa"}</span>
+          {!reserva && !f.pausa && dia !== null && dia <= 0 && <span className="hs-chip">Empieza el {formatoDia(f.inicioReal, hoy)}</span>}
+          <span className={`hs-chip ${faltan ? "hs-chip--ambar" : "hs-chip--ok"}`} title="Datos de Customer Success que todavía están vacíos">{faltan ? `Faltan ${faltan} datos` : "Datos completos"}</span>
         </div>
       </div>
+
+      {/* Dónde está en su programa: de un vistazo, en vez de sacar la cuenta con tres fechas. */}
+      {!reserva && !f.pausa && dia !== null && dia > 0 && f.egreso && f.inicioReal && (
+        <div title={f.egresoSugerido ? "El egreso está calculado: inicio más la duración" : undefined}>
+          <Avance
+            tono={quedan !== null && quedan <= 30 && activo ? "alerta" : "brand"}
+            hecho={dia} total={diasEntre(f.inicioReal, f.egreso) + 1}
+            izquierda={`Día ${dia} de ${diasEntre(f.inicioReal, f.egreso) + 1} · semana ${Math.floor((dia - 1) / 7) + 1}`}
+            derecha={<span style={quedan! < 0 && activo ? { color: "var(--danger)" } : undefined}>{quedan! < 0 ? `Venció el ${formatoDia(f.egreso, hoy)}` : quedan === 0 ? "Vence hoy" : `Vence el ${formatoDia(f.egreso, hoy)}`}</span>}
+          />
+        </div>
+      )}
+      {!reserva && !f.pausa && dia !== null && dia > 0 && !f.egreso && <span className="hs-sub">Día {dia} · semana {Math.floor((dia - 1) / 7) + 1}</span>}
 
       {activo && puede && (
         <div className="hs-hoy">
           <span className="hs-hoy__txt">
-            {sinSeguimiento ?? (f.situacion === "no-contesta" ? "Dejó de contestar" : <>Próximo contacto: <b>{formatoDia(f.proximo, hoy)}</b> · {textoDeAtraso(f.atraso).toLowerCase()}</>)}
-            {!sinSeguimiento && <span className="t-subtle"> · cada {f.cadencia} días{f.ultimoContacto ? ` · último el ${formatoDia(f.ultimoContacto, hoy)}` : ""}</span>}
+            {sinSeguimiento ?? (f.situacion === "no-contesta" ? "Dejó de contestar" : <>Próximo: <b>{formatoDia(f.proximo, hoy)}</b> · {textoDeAtraso(f.atraso).toLowerCase()}</>)}
+            {!sinSeguimiento && f.ultimoContacto && <span className="t-subtle" title={`Se lo contacta cada ${f.cadencia} días`}> · último el {formatoDia(f.ultimoContacto, hoy)}</span>}
           </span>
           <span className="hs-hoy__acc">
             <Button sm variante="primary" icono={<PhoneCall size={14} />} onClick={() => gestos.contacte(f)}>Lo contacté</Button>
@@ -435,7 +442,8 @@ function HojaDeUnServicio({ e, p, f, venta, producto, conChat, reserva }: {
             {dato("closer", false)}
             {dato("stack")}
           </Bloque>
-          <Bloque titulo="En la app">
+          <Plegable titulo="En la app" resumen={venta?.ingresoComunidad || undefined}>
+            <div className="hs-filas">
             <Fila icono={<HeartHandshake size={15} />} rotulo="Etapa del servicio" ayuda="El pipeline de servicio (Alumnos → Pipeline)">
               {puedeAlumno ? (
                 <Select aria-label="Etapa del servicio" value={etapaPipeline?.id ?? ""} className="hs-select"
@@ -473,7 +481,8 @@ function HojaDeUnServicio({ e, p, f, venta, producto, conChat, reserva }: {
               </span>
             </Fila>
             {alumno.cuotaMensual > 0 && <Fila icono={<CreditCard size={15} />} rotulo="Cuota mensual"><span className="t-num">{money(alumno.cuotaMensual, alumno.moneda)}</span></Fila>}
-          </Bloque>
+            </div>
+          </Plegable>
           {(e.campos.some((c) => c.entidad === "alumno") || alumno.notas) && (
             <Bloque titulo="Otros datos">
               <div className="hs-otros">

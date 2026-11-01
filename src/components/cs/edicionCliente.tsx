@@ -106,8 +106,12 @@ export function contenidoCliente(clave: ClaveCliente, f: FilaCliente, hoy: strin
       const d = clave === "contactoInicial" ? f.contactoInicial : clave === "contactoSemana" ? f.contactoSemana : f.ultimoContacto;
       return d ? <span className="t-num">{formatoDia(d, hoy)}</span> : NADA;
     }
-    case "proximo": return f.situacion === "fuera" ? NADA : f.situacion === "reserva" ? <span className="t-sm t-subtle">Reserva · todavía no arrancó</span> : (
-      <span className="stack-1"><span className="t-num">{formatoDia(f.proximo, hoy)}</span><span className="t-sm t-subtle">{f.situacion === "no-contesta" ? "Dejó de contestar" : textoDeAtraso(f.atraso)}</span></span>
+    case "proximo": return f.situacion === "fuera" ? NADA : f.situacion === "reserva" ? <span className="t-sm t-subtle" title="Todavía no arrancó">Reserva</span> : (
+      /* Una línea: la fecha y, si hay algo que mirar, qué. Lo que viene no necesita aclaración. */
+      <span className={`t-num${f.situacion === "no-contesta" || f.atraso > 0 ? " cs-atraso" : ""}`} title={textoDeAtraso(f.atraso)}>
+        {formatoDia(f.proximo, hoy)}
+        {f.situacion === "no-contesta" ? " · dejó de contestar" : f.atraso > 0 ? ` · ${textoDeAtraso(f.atraso).toLowerCase()}` : ""}
+      </span>
     );
     case "edad": return f.edad === null ? NADA : sug(String(f.edad), f.edadSugerida);
     /* A las 12 de Argentina: «1993-05-10» a secas es la medianoche UTC, que en Argentina todavía es el 9. */
@@ -123,7 +127,8 @@ export function contenidoCliente(clave: ClaveCliente, f: FilaCliente, hoy: strin
       : NADA;
     case "stack": case "acceso": case "followUp": case "estadoContrato": case "estadoAlumno": case "etapa": case "testimonio":
       return <Pastilla texto={(f as unknown as Record<string, string>)[clave] ?? ""} tono={clave === "etapa" ? "neutra" : undefined} />;
-    case "reporte": return <Pastilla texto={f.reporte.estado} title={f.reporte.origen === "reportes" ? "Según sus reportes semanales" : f.reporte.origen === "manual" ? "Marcado a mano en la ficha" : "Todavía no hay reportes"} />;
+    /* «Sin datos» es la falta de un estado: en texto, para que resalten los que dicen algo. */
+    case "reporte": return f.reporte.estado === "Sin datos" ? <span className="t-sm t-subtle" title="Todavía no hay reportes">Sin datos</span> : <Pastilla texto={f.reporte.estado} title={f.reporte.origen === "reportes" ? "Según sus reportes semanales" : f.reporte.origen === "manual" ? "Marcado a mano en la ficha" : "Todavía no hay reportes"} />;
     case "semanasSin": return f.reporte.semanasSin === null ? NADA : <span className="t-num">{f.reporte.semanasSin}</span>;
     case "cadencia": return <span>Cada {f.cadencia} días</span>;
     case "cv": return <Pastilla texto={f.cv ? "Corregido" : "Pendiente"} />;

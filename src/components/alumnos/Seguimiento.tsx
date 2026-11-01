@@ -1,5 +1,7 @@
 "use client";
 
+import { PartesDeUnTotal } from "@/components/finanzas/visual/visual";
+import "@/components/cs/cs.css";
 import React, { useMemo } from "react";
 import { CheckCheck, Clock, PhoneCall, PhoneMissed, UserX } from "lucide-react";
 import { Badge, Button, Card, Empty } from "@/components/ui/ui";
@@ -140,18 +142,17 @@ export function ContactarHoy() {
     {
       clave: "toca", titulo: "Le tocaba", orden: (f) => -f.atraso, info: INFO_PROXIMO,
       celda: (f) => (
-        <span className="stack-1">
+        <span className="row" style={{ gap: 8 }}>
           <BadgeToca f={f} />
-          <span className="t-sm t-subtle">{formatoDia(f.proximoContacto)}</span>
+          <span className="t-sm t-subtle t-num">{formatoDia(f.proximoContacto)}</span>
         </span>
       ),
     },
     {
       clave: "ultimo", titulo: "Último contacto", orden: (f) => f.ultimoContacto ?? "",
       celda: (f) => (
-        <span className="stack-1">
-          <span>{f.ultimoContacto ? formatoDia(f.ultimoContacto) : "Nunca"}</span>
-          <span className="t-sm t-subtle">Cada {f.cadenciaDias} días</span>
+        <span className="t-num" title={`Se lo contacta cada ${f.cadenciaDias} días`}>
+          {f.ultimoContacto ? formatoDia(f.ultimoContacto) : "Nunca"}
         </span>
       ),
     },
@@ -169,12 +170,13 @@ export function ContactarHoy() {
 
   return (
     <div className="stack-4">
-      <Card>
-        <div className="row-wrap" style={{ gap: "var(--space-3)", alignItems: "center" }}>
-          <PhoneCall size={20} aria-hidden />
-          <div className="stack-1" style={{ flex: 1, minWidth: 220 }}>
-            <span className="t-strong">
-              {lista.length === 0 ? "Hoy no hay a quién contactar" : `${lista.length} ${lista.length === 1 ? "alumno" : "alumnos"} para contactar`}
+      {lista.length === 0 ? (
+        <div className="fz-todo-bien"><CheckCheck size={16} aria-hidden />Hoy no hay a quién contactar: todos están al día con su cadencia.</div>
+      ) : (
+      <section className="fz-hero fz-hero--bajo cs-resumen" aria-label="A quién contactar hoy">
+        <div>
+          <span className="fz-hero__etiqueta">
+            Para contactar
               <InfoMetrica
                 className="info-inline"
                 titulo="A quién contactar hoy"
@@ -186,28 +188,40 @@ export function ContactarHoy() {
                   { concepto: "Para contactar", valor: String(lista.length), signo: "=" },
                 ]}
               />
-            </span>
-            <span className="t-sm t-subtle">
-              {lista.length === 0
-                ? "Todos están al día con su cadencia."
-                : `${vencidos} ya vencidos y ${lista.length - vencidos} que tocan hoy. Cuando lo contactás, el próximo toca según su cadencia.`}
-            </span>
+          </span>
+          <div className="cs-resumen__cifra">
+            <span className="fz-semana__valor">{lista.length}</span>
+            {(vencidos === 0 || vencidos === lista.length) && <span className="fz-hero__sub">{vencidos === 0 ? (lista.length === 1 ? "le toca hoy" : "les toca hoy") : (lista.length === 1 ? "vencido" : "vencidos")}</span>}
           </div>
-          <CopiarLink />
         </div>
-      </Card>
+        <div className="fz-hero__der cs-resumen__fila">
+          {/* La barra sólo si hay dos cosas para comparar. */}
+          {vencidos > 0 && vencidos < lista.length ? (
+            <PartesDeUnTotal
+              etiqueta="Para contactar"
+              partes={[
+                { id: "vencidos", nombre: "Vencidos", valor: vencidos, texto: String(vencidos), tono: "alerta" as const },
+                { id: "hoy", nombre: "Les toca hoy", valor: lista.length - vencidos, texto: String(lista.length - vencidos) },
+              ]}
+            />
+          ) : <span style={{ flex: 1 }} />}
+          <CopiarLink variante="ghost" />
+        </div>
+      </section>
+      )}
 
-      <Card className="cs-tabla" style={{ padding: 0, overflow: "hidden" }}>
+      {lista.length > 0 && <Card className="cs-tabla cs-t" style={{ padding: 0, overflow: "hidden" }}>
         <DataTable
           filas={lista} columnas={columnas} alto={640} porPagina={50}
           orden={tabla.orden} onOrden={tabla.onOrden} pagina={tabla.pagina} onPagina={tabla.onPagina}
           onFila={(f) => abrirFicha(f.id, "servicio", { hoja: "seguimiento" })} etiquetaFila={(f) => `Ver la ficha de ${f.alumno.nombre}`}
           acciones={puede ? (f) => (
             <span className="row" style={{ gap: 6 }}>
-              <Button sm variante="primary" icono={<PhoneCall size={14} />} onClick={() => gestos.contacte(f)} title="Lo contacté hoy: el próximo toca según su cadencia">
+              {/* Una sola acción fuerte por pantalla: el que sigue en la lista. */}
+              <Button sm variante={f.id === lista[0]?.id ? "primary" : "secondary"} icono={<PhoneCall size={14} />} onClick={() => gestos.contacte(f)} title="Lo contacté hoy: el próximo toca según su cadencia">
                 Lo contacté
               </Button>
-              <Button sm variante="secondary" icono={<PhoneMissed size={14} />} onClick={() => gestos.noContesto(f, cfg)} title="Lo intenté y no contestó: se vuelve a probar en unos días">
+              <Button sm variante="ghost" icono={<PhoneMissed size={14} />} onClick={() => gestos.noContesto(f, cfg)} title="Lo intenté y no contestó: se vuelve a probar en unos días">
                 No contestó
               </Button>
               {f.sugerirDejoDeContestar && (
@@ -217,14 +231,9 @@ export function ContactarHoy() {
               )}
             </span>
           ) : undefined}
-          vacio={(
-            <Empty
-              icono={<CheckCheck size={22} />} titulo="Al día"
-              texto="Hoy no hay alumnos para contactar. Mirá el seguimiento para ver cuándo le toca a cada uno."
-            />
-          )}
+          vacio={<Empty icono={<CheckCheck size={22} />} titulo="Al día" texto="Hoy no hay alumnos para contactar." />}
         />
-      </Card>
+      </Card>}
     </div>
   );
 }

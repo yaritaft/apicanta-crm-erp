@@ -17,3 +17,10 @@
 .fpp__estado b { font-weight: 650; }
 .fpp__acciones { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 @media (max-width: 560px) { .fpp { grid-template-columns: minmax(0, 1fr); } }
+
+/* Una línea por programa: los dos en la misma tarjeta. */
+.fpp { display: flex; flex-direction: column; gap: 0; border: 1px solid var(--border); border-radius: var(--radius-lg, 16px); background: var(--surface-100, var(--surface)); overflow: hidden; }
+.fpp__prog { flex-direction: row; flex-wrap: wrap; align-items: center; gap: 6px 12px; padding: 8px 14px; border: 0; border-radius: 0; background: none; }
+.fpp__prog + .fpp__prog { border-top: 1px solid var(--border); }
+.fpp__acciones { margin-left: auto; gap: 2px; }
+@media (max-width: 560px) { .fpp { display: flex; } .fpp__acciones { margin-left: 0; width: 100%; } }

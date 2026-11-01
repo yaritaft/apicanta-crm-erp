@@ -46,9 +46,9 @@ function useClaseDeEntrada(): string | null {
 export function CopiarLinkConsultas({ chico }: { chico?: boolean }) {
   const toast = useToast();
   return (
-    <Button sm={chico} variante="secondary" icono={<Copy size={14} />}
+    <Button sm={chico} variante={chico ? "ghost" : "secondary"} icono={<Copy size={14} />} title="Copia el link para consultas"
       onClick={() => { void navigator.clipboard?.writeText(enlaceDelAlumno("consulta", window.location.origin)); toast("Link copiado: pegalo en el grupo de novedades. Cada uno entra con su código, el mismo del reporte."); }}>
-      Copiar el link para consultas
+      {chico ? "Copiar link" : "Copiar el link para consultas"}
     </Button>
   );
 }
@@ -91,7 +91,7 @@ export function ConsultasPagina() {
 
       {!cargando && deLaClase.length === 0 && pasaron.length === 0 ? (
         <Empty icono={<MessageCircleQuestion size={22} />} titulo={futura ? "Todavía no llegó ninguna consulta" : "No hubo consultas para este jueves"}
-          texto="Los alumnos que no pueden venir dejan su consulta con el link y su código, el mismo del reporte (reemplaza al Google Form). Si alguien la mandó por WhatsApp, cargala con «Cargar una consulta»." />
+          texto="Quien no puede venir la deja con el link y su código." />
       ) : (
         <div className="sim-lista">
           {[...deLaClase, ...pasaron].map((c) => {
@@ -143,13 +143,13 @@ export function TarjetaConsultas() {
     <section className="mp-card sim-tarjeta" aria-label="Consultas del jueves">
       <MessageCircleQuestion size={18} aria-hidden className="sim-tarjeta__icono" />
       <div className="sim-tarjeta__txt">
-        <span className="t-strong">Consultas del jueves {diaDeClase(fecha, fechaLarga)}</span>
+        <span className="t-strong">Consultas · {diaDeClase(fecha, fechaLarga).replace(/ \d{4}$/, "")}</span>
         <span className="t-sm t-subtle">{r.texto}{cargar ? ": cargá qué pasó con cada una" : ""}</span>
       </div>
       <span className="spacer" />
       <CopiarLinkConsultas chico />
-      <Link href={`/consultas?fecha=${fecha}`} className={`hk-btn hk-btn--sm ${cargar ? "hk-btn--primary" : "hk-btn--secondary"}`}>
-        {cargar ? "Cargar cómo fue" : "Ver las consultas"}
+      <Link href={`/consultas?fecha=${fecha}`} className={`hk-btn hk-btn--sm ${cargar ? "hk-btn--primary" : "hk-btn--ghost"}`}>
+        {cargar ? "Cargar cómo fue" : "Ver"}
       </Link>
     </section>
   );
@@ -180,7 +180,6 @@ export function ConsultasAlumno({ alumnoId }: { alumnoId: string }) {
         </p>
       ))}
       {lista.length > 8 && <p className="sim-ficha__fila t-subtle">Y {lista.length - 8} más (Programa → Consultas).</p>}
-      {lista.length === 0 && <p className="sim-ficha__fila t-subtle">Si no puede venir el jueves, deja su consulta con su link (ya trae su código, el mismo del reporte).</p>}
     </div>
   );
 }

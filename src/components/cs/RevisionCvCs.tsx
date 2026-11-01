@@ -17,9 +17,11 @@ import { formatoDia, hoyDelNegocio } from "@/lib/seguimiento";
 import { diaDeNegocio } from "@/lib/dia-negocio";
 import { listasCs } from "@/lib/clientes-cs";
 import {
-  coincideRevisionCv, contadoresCv, filasRevisionesCv, MOTOR_REVISIONES_CV, ORDEN_REVISIONES_CV, revisionCvNormal, VISIBLES_REVISIONES_CV,
-  type ClaveRevisionCv, type ContadorCv, type FilaRevisionCv,
+  coincideRevisionCv, contadoresCv, filasRevisionesCv, JUEGOS_REVISIONES_CV, MOTOR_REVISIONES_CV, ORDEN_REVISIONES_CV, revisionCvNormal,
+  type ClaveRevisionCv, type FilaRevisionCv,
 } from "@/lib/revision-cv";
+import { Check } from "lucide-react";
+import { ResumenCs } from "./ResumenCs";
 import type { ColorCrm, OpcionCrm, RevisionCv } from "@/lib/types";
 import { ImportarCs } from "./ImportarCs";
 import { Pastilla, type TonoPastilla } from "./pastillas";
@@ -71,21 +73,7 @@ export function RevisionCvCs() {
   const [importando, setImportando] = useState(false);
   const ordenValores = useMemo(() => ({ estado: listas.estadosCv }), [listas]);
 
-  /* ---------- El contador: un clic filtra por ese estado (y otro clic saca el filtro) ---------- */
-  const filtros = MOTOR_REVISIONES_CV.filtrosDeURL(new URLSearchParams(params.toString()));
-  const activo = (c: ContadorCv) => {
-    const f = filtros.estado;
-    return Boolean(f && f.modo === "solo" && f.valores.length === c.valores.length && c.valores.every((v) => f.valores.includes(v)));
-  };
-  const alternar = (c: ContadorCv) =>
-    escribir({ ...MOTOR_REVISIONES_CV.filtroAURL("estado", activo(c) ? null : { modo: "solo", valores: c.valores }), [MOTOR_REVISIONES_CV.paramPagina]: null });
-  const atajos = (
-    <div className="cs-atajos" aria-label="Cuántos hay en cada estado pendiente">
-      {contadores.map((c) => (
-        <Chip key={c.estado} activo={activo(c)} count={c.n} onClick={() => alternar(c)} title={`Revisiones en «${c.estado}»: un clic filtra la tabla`}>{c.estado}</Chip>
-      ))}
-    </div>
-  );
+  const enCurso = contadores.reduce((n, c) => n + c.n, 0);
 
   /* ---------- Corregir en la celda ---------- */
   const guardar = (r: RevisionCv, cambios: Partial<RevisionCv>, titulo: string, texto: string) => {
@@ -144,7 +132,8 @@ export function RevisionCvCs() {
       case "estado": return <Pastilla texto={f.estado} tono={tonoDeEstado(f.estado)} />;
       case "cvRecibido": case "correccion1": case "correccion2": {
         const si = clave === "cvRecibido" ? r.cvRecibido : clave === "correccion1" ? r.correccion1 : r.correccion2;
-        return <Pastilla texto={si ? "Sí" : "No"} tono={si ? "ok" : "neutra"} />;
+        /* Un paso hecho o por hacer: se lee de un vistazo cuánto le falta a cada uno. */
+        return <span className="cs-paso" data-hecho={si || undefined} role="img" aria-label={si ? "Sí" : "No"}>{si && <Check size={13} strokeWidth={2.5} aria-hidden />}</span>;
       }
       case "fechaInicio": return r.fechaInicio ? <span className="t-num">{formatoDia(r.fechaInicio, hoy)}</span> : NADA;
       case "linkCv": case "linkLinkedin": case "linkCorreccion": case "linkLoom": {
@@ -208,8 +197,17 @@ export function RevisionCvCs() {
     <>
       <TablaCs
         motor={MOTOR_REVISIONES_CV} pantalla="revision-cv" filas={filas} coincide={coincideRevisionCv}
-        visiblesPorDefecto={VISIBLES_REVISIONES_CV} ordenPorDefecto={ORDEN_REVISIONES_CV} fija="nombre" ordenValores={ordenValores}
-        celda={(col, f) => celda(col, f)} atajos={atajos}
+        visiblesPorDefecto={JUEGOS_REVISIONES_CV[0].claves} juegos={JUEGOS_REVISIONES_CV}
+        resumen={(
+          <ResumenCs
+            etiqueta="CVs en curso" valor={enCurso} sub={`de ${filas.length} en total`}
+            ayuda="Dónde está cada CV que todavía no se cerró. Tocá un estado para filtrar la tabla."
+            motor={MOTOR_REVISIONES_CV} columna="estado" filas={filas}
+            grupos={contadores.map((c) => ({ id: c.estado, nombre: c.estado, es: (f: FilaRevisionCv) => c.valores.includes(f.estado), valores: () => c.valores }))}
+          />
+        )}
+        ordenPorDefecto={ORDEN_REVISIONES_CV} fija="nombre" ordenValores={ordenValores}
+        celda={(col, f) => celda(col, f)}
         filaAcciones={puede ? (f) => <IconButton etiqueta="Borrar" onClick={() => setBorrar(f.revision)}><Trash2 size={15} /></IconButton> : undefined}
         excel={{ nombre: "Revisión de CVs", hoy, valor: (col, f) => {
           const r = f.revision;
@@ -227,7 +225,7 @@ export function RevisionCvCs() {
         singular="revisión" plural="revisiones" placeholder="Buscar por nombre, teléfono o notas"
         acciones={puede ? (
           <>
-            <Button sm variante="secondary" icono={<FileDown size={15} />} onClick={() => setImportando(true)} title="Trae la tabla de Notion (un CSV o un Excel): se ve qué entra antes de escribir">Importar</Button>
+            <Button sm variante="ghost" icono={<FileDown size={15} />} onClick={() => setImportando(true)} title="Trae la tabla de Notion (un CSV o un Excel): se ve qué entra antes de escribir">Importar</Button>
             <Button sm variante="primary" icono={<Plus size={15} />} onClick={() => setForm({})}>Nuevo CV</Button>
           </>
         ) : undefined}

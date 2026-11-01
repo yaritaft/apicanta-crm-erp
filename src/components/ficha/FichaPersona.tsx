@@ -321,8 +321,8 @@ function Fila({ icono, valor, vacio, que, accion, onCopiar }: {
     <div className="dato-fila">
       <span className="t-subtle" style={{ display: "inline-flex" }}>{icono}</span>
       {valor ? (
-        <button type="button" className="telefono__num t-sm" style={{ flex: 1, minWidth: 0, border: 0, background: "none", padding: 0, textAlign: "left", overflowWrap: "anywhere", cursor: "copy" }}
-          title={`Tocá para copiar ${que}`} onClick={() => onCopiar(valor, que)}>{valor}</button>
+        <button type="button" className="telefono__num t-sm" style={{ flex: 1, minWidth: 0, border: 0, background: "none", padding: 0, textAlign: "left", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", cursor: "copy" }}
+          title={`${valor}: tocá para copiar`} onClick={() => onCopiar(valor, que)}>{valor}</button>
       ) : (
         <span className="truncate t-sm t-subtle" style={{ flex: 1, minWidth: 0 }}>{vacio}</span>
       )}

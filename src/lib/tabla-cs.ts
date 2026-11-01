@@ -23,6 +23,8 @@ import { sinTildes } from "./crm";
 export interface ColumnaCs<F, K extends string = string> {
   clave: K;
   titulo: string;
+  /* Lo que entra en el encabezado cuando el título completo no (el título sigue en la lista de columnas). */
+  corto?: string;
   /* En qué apartado del selector de columnas va. */
   grupo: string;
   /* Los valores por los que se filtra (una lista: una fila con varios programas aparece tildando cualquiera). */

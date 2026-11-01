@@ -10,6 +10,7 @@ import { ConfigColumnas, useColumnas, type DefColumna } from "@/components/ui/Co
 import { CopiarLink } from "@/components/ui/Filtros";
 import { VistasGuardadas } from "@/components/ui/VistasGuardadas";
 import { useToast } from "@/components/ui/Toast";
+import { Segmentado } from "@/components/finanzas/visual/visual";
 import { FiltroColumna, textoFecha } from "@/components/crm-tabla/FiltroColumna";
 import { hayFiltro, MAX_ORDENES, textoDeFiltro } from "@/lib/crm-tabla";
 import { aLista } from "@/lib/compartirLink";
@@ -54,8 +55,12 @@ export interface PropsTablaCs<F extends { id: string }, K extends string> {
   excel?: { nombre: string; hoy: string; valor: (col: ColumnaCs<F, K>, f: F) => string | number | null };
   /* Los botones de la derecha de la barra. */
   acciones?: React.ReactNode;
-  /* Lo que va junto a la búsqueda (atajos, como «CV pendiente»). */
+  /* Lo que va debajo de la búsqueda (atajos, como «Reporte atrasado»). */
   atajos?: React.ReactNode;
+  /* Las columnas de a grupos, para ver lo de una tarea sin correr la tabla: «Seguimiento», «Accesos», «Todas». */
+  juegos?: { id: string; nombre: string; claves: readonly K[] }[];
+  /* Lo que resume la tabla, arriba de todo. */
+  resumen?: React.ReactNode;
   singular: string;
   plural: string;
   /* Lo que se muestra cuando no hay nada que listar (sin filtros). */
@@ -102,6 +107,8 @@ export function TablaCs<F extends { id: string }, K extends string>(p: PropsTabl
   const porDefecto = useMemo(() => [...p.visiblesPorDefecto] as string[], [p.visiblesPorDefecto]);
   const cols = useColumnas(pantalla, defs, porDefecto, undefined, p.columnasSumadas);
   const visibles = useMemo(() => cols.visibles.filter((k): k is K => motor.esColumna(k)), [cols.visibles, motor]);
+  /* Qué juego se está viendo: el que tiene exactamente esas columnas (si no, las eligió a mano). */
+  const juegoActual = p.juegos?.find((j) => j.claves.length === visibles.length && j.claves.every((k) => visibles.includes(k)))?.id;
 
   const cambiarFiltro = useCallback(
     (clave: K, fc: Parameters<Motor<F, K>["filtroAURL"]>[1]) => escribir({ ...motor.filtroAURL(clave, fc), [motor.paramPagina]: null }),
@@ -150,9 +157,9 @@ export function TablaCs<F extends { id: string }, K extends string>(p: PropsTabl
       ancho: col.ancho,
       tipo: col.clave === fija ? "primary" as const : undefined,
       encabezado: (
-        <span title={col.ayuda}>
+        <span title={col.ayuda ?? (col.corto ? col.titulo : undefined)}>
           <FiltroColumna
-            titulo={col.titulo}
+            titulo={col.corto ?? col.titulo}
             opciones={() => motor.opcionesDeColumna(base, filtros, col.clave, ordenValores?.[col.clave])}
             filtro={filtros[col.clave]}
             onFiltro={(fc) => cambiarFiltro(col.clave, fc)}
@@ -174,18 +181,18 @@ export function TablaCs<F extends { id: string }, K extends string>(p: PropsTabl
 
   return (
     <div className={`crm-t cs-t${fijaAntes ? " cs-t--doble" : ""}`}>
+      {p.resumen}
       <Card className="crm-t__card">
         <div className="crm-t__barra">
           <VistasGuardadas pantalla={pantalla} todas={`Todos los ${plural}`} extra={{ [`cols-${pantalla}`]: aLista(cols.visibles.filter((k) => k !== fija && k !== fijaAntes)) }} />
           <div className="crm-t__buscar">
             <Input icono={<Search size={16} />} value={q} onChange={(ev) => setQ(ev.target.value)} placeholder={p.placeholder ?? "Buscar"} aria-label="Buscar" />
           </div>
-          {p.atajos}
           <div className="crm-t__acciones">
             <ConfigColumnas todas={defs} visibles={visibles} alternar={cols.alternar} mover={cols.mover} restaurar={cols.restaurar} compacto />
-            <CopiarLink />
+            <CopiarLink variante="ghost" />
             {p.excel && (
-              <Button sm variante="secondary" icono={<FileSpreadsheet size={15} />} disabled={ordenadas.length === 0 || bajando} onClick={() => void descargar()}
+              <Button sm variante="ghost" icono={<FileSpreadsheet size={15} />} disabled={ordenadas.length === 0 || bajando} onClick={() => void descargar()}
                 title={`Los ${plural} que ves, con las columnas que ves, en un Excel`}>
                 {bajando ? "Armando el Excel…" : "Excel"}
               </Button>
@@ -195,6 +202,14 @@ export function TablaCs<F extends { id: string }, K extends string>(p: PropsTabl
         </div>
 
         <div className="crm-t__filtros">
+          {p.juegos && (
+            <Segmentado
+              etiqueta="Qué columnas ver" valor={juegoActual ?? ""}
+              onCambiar={(id) => { const j = p.juegos?.find((x) => x.id === id); if (j) cols.fijar([...j.claves]); }}
+              opciones={p.juegos.map((j) => ({ valor: j.id, texto: j.nombre }))}
+            />
+          )}
+          {p.atajos}
           <span className="t-sm t-subtle t-num crm-t__cuenta">
             {num(ordenadas.length)} {ordenadas.length === 1 ? singular : plural}
             {ordenadas.length !== filas.length ? ` de ${num(filas.length)}` : ""}

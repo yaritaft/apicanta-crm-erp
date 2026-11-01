@@ -37,9 +37,9 @@ export const linkDeInscripcion = () => (typeof window !== "undefined" ? `${windo
 export function CopiarLinkInscripcion({ chico }: { chico?: boolean }) {
   const toast = useToast();
   return (
-    <Button sm={chico} variante="secondary" icono={<Copy size={14} />}
+    <Button sm={chico} variante={chico ? "ghost" : "secondary"} icono={<Copy size={14} />} title="Copia el link para anotarse"
       onClick={() => { void navigator.clipboard?.writeText(linkDeInscripcion()); toast("Link copiado: pegalo en el grupo de novedades. Cada uno entra con su código, el mismo del reporte."); }}>
-      Copiar el link para anotarse
+      {chico ? "Copiar link" : "Copiar el link para anotarse"}
     </Button>
   );
 }
@@ -94,12 +94,12 @@ export function SimulacrosPagina() {
         <span className="t-sm t-subtle">{cargando ? "Cargando…" : r.texto}</span>
         <span className="spacer" />
         <CopiarLinkInscripcion />
-        {puede && !futuro && <Button variante="primary" icono={<Plus size={16} />} onClick={() => setCargar({ s: null })}>Cargar otro alumno</Button>}
+        {puede && !futuro && <Button variante="secondary" icono={<Plus size={16} />} onClick={() => setCargar({ s: null })}>Cargar otro alumno</Button>}
       </div>
 
       {!cargando && lista.length === 0 ? (
         <Empty icono={<Mic size={22} />} titulo={futuro ? "Todavía no se anotó nadie" : "Nadie se anotó para este martes"}
-          texto="Los alumnos se anotan con el link y su código, el mismo del reporte (reemplaza al Google Form). Si se le tomó a alguien que no se anotó, cargalo con «Cargar otro alumno»." />
+          texto="Se anotan con el link y su código." />
       ) : (
         <div className="sim-lista">
           {lista.map((s) => {
@@ -155,13 +155,13 @@ export function TarjetaSimulacro() {
     <section className="mp-card sim-tarjeta" aria-label="Simulacro del martes">
       <Mic size={18} aria-hidden className="sim-tarjeta__icono" />
       <div className="sim-tarjeta__txt">
-        <span className="t-strong">Simulacro del martes {diaDeClase(fecha, fechaLarga)}</span>
+        <span className="t-strong">Simulacro · {diaDeClase(fecha, fechaLarga).replace(/ \d{4}$/, "")}</span>
         <span className="t-sm t-subtle">{r.texto}{pasoLaClase && r.sinCargar ? ": cargá cómo fue" : ""}</span>
       </div>
       <span className="spacer" />
       <CopiarLinkInscripcion chico />
-      <Link href={`/simulacros?fecha=${fecha}`} className={`hk-btn hk-btn--sm ${pasoLaClase && r.sinCargar ? "hk-btn--primary" : "hk-btn--secondary"}`}>
-        {pasoLaClase && r.sinCargar ? "Cargar cómo fue" : "Ver la clase"}
+      <Link href={`/simulacros?fecha=${fecha}`} className={`hk-btn hk-btn--sm ${pasoLaClase && r.sinCargar ? "hk-btn--primary" : "hk-btn--ghost"}`}>
+        {pasoLaClase && r.sinCargar ? "Cargar cómo fue" : "Ver"}
       </Link>
     </section>
   );
@@ -192,7 +192,6 @@ export function SimulacrosAlumno({ alumnoId }: { alumnoId: string }) {
           {s.estado === "otro" && s.motivo && <span className="t-subtle"> — {s.motivo}</span>}
         </p>
       ))}
-      {lista.length === 0 && <p className="sim-ficha__fila t-subtle">Se anota con su link (ya trae su código, el mismo del reporte) o con el de los martes.</p>}
     </div>
   );
 }

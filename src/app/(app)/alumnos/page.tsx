@@ -3,10 +3,10 @@
 import React, { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
-  Check, Clock, GraduationCap, Pencil, Plus, Search, Settings2, Trash2,
+  Clock, GraduationCap, Pencil, Plus, Search, Settings2, Trash2,
 } from "lucide-react";
 import {
-  Badge, Bar, Button, Card, Chip, Empty, IconButton, Input, Persona, Tabs, Tag,
+  Badge, Button, Card, Chip, Empty, IconButton, Input, Tabs, Tag,
 } from "@/components/ui/ui";
 import { Columna, DataTable } from "@/components/ui/DataTable";
 import { Confirmar } from "@/components/ui/Modal";
@@ -15,20 +15,23 @@ import { AsistenteAlumno } from "@/components/alumnos/AsistenteAlumno";
 import { EditarAlumno } from "@/components/alumnos/Servicio";
 import { useAbrirFicha } from "@/components/ficha/abrir";
 import { PipelineServicio } from "@/components/alumnos/PipelineServicio";
+import { CambioDeTablero, TableroFollowUp } from "@/components/alumnos/TableroFollowUp";
 import { ContactarHoy } from "@/components/alumnos/Seguimiento";
 import { ClientesCs } from "@/components/cs/ClientesCs";
 import { ResellsCs } from "@/components/cs/ResellsCs";
 import { RevisionCvCs } from "@/components/cs/RevisionCvCs";
 import { SesionesZoomGeneral } from "@/components/alumnos/SesionesZoomGeneral";
 import { TestimoniosCs } from "@/components/cs/TestimoniosCs";
-import { BadgeEtapa, ESTADO_ALUMNO, ESTADOS_ALUMNO } from "@/components/alumnos/comun";
+import { ESTADO_ALUMNO, ESTADOS_ALUMNO } from "@/components/alumnos/comun";
 import { acciones, useEstado } from "@/lib/store";
 import { useAbrirDesdeURL } from "@/lib/useQuery";
 import { CopiarLink } from "@/components/ui/Filtros";
 import { ordenAURL, ordenDeURL, paginaDeURL, useBusquedaURL, useParamsURL } from "@/lib/useParamsURL";
-import { etapaDelAlumno, etapasDeServicio } from "@/lib/alumnos";
+import { ETAPAS_DEL_ALUMNO, panelDeServicio } from "@/lib/panel-servicio";
+import { formatoDia, hoyDelNegocio } from "@/lib/seguimiento";
 import { rachasAHoy } from "@/lib/reportes";
-import { fecha, money, num } from "@/lib/format";
+import { diaDeNegocio } from "@/lib/dia-negocio";
+import { num } from "@/lib/format";
 import type { Alumno, EstadoAlumno } from "@/lib/types";
 
 type Vista = "lista" | "pipeline" | "clientes" | "hoy" | "testimonios" | "resells" | "cvs" | "zoom";
@@ -47,8 +50,8 @@ const VISTAS: Vista[] = ["lista", "pipeline", "clientes", "hoy", "testimonios", 
    - orden: la columna, con "-" adelante si va de mayor a menor. Sin orden,
      los que entraron último van arriba.
    - pag: la página, desde 1 */
-const VISTA_ALUMNOS = { seccion: "lista", vista: "", estado: "todos", orden: "", pag: "1" };
-const COLUMNAS_QUE_ORDENAN = ["nombre", "inicio", "etapa", "plan", "progreso", "reporte", "cuota"];
+const VISTA_ALUMNOS = { seccion: "lista", vista: "", estado: "todos", orden: "", pag: "1", tablero: "follow", base: "servicio", etapa: "" };
+const COLUMNAS_QUE_ORDENAN = ["nombre", "inicio", "plan", "follow", "contacto", "reporte"];
 const SIN_ORDEN = { clave: "", desc: false };
 
 /* Sin mayúsculas ni tildes: "benitez" encuentra a "Benítez". */
@@ -82,7 +85,10 @@ export default function Alumnos() {
     else if (url.ver) abrirFicha(url.ver, "servicio");
   }, [url]);
 
-  const etapas = useMemo(() => etapasDeServicio(e), [e]);
+  const hoy = hoyDelNegocio();
+  /* El Follow Up y el último contacto de cada alumno: la misma cuenta que el panel de Lili. */
+  const cartera = useMemo(() => (vista === "lista" || vista === "pipeline" ? panelDeServicio(e, hoy, new Date(), []).cartera : []), [e, hoy, vista]);
+  const carteraDe = useMemo(() => new Map(cartera.map((f) => [f.id, f])), [cartera]);
   /* La misma cuenta que Reportes: una semana que se debía y no tiene reporte
      también es una semana sin reportar. */
   const rachas = useMemo(() => rachasAHoy(e), [e]);
@@ -121,54 +127,45 @@ export default function Alumnos() {
   }
 
   const columnas: Columna<Alumno>[] = [
-    {
-      clave: "nombre", titulo: "Alumno", tipo: "primary", orden: (a) => a.nombre,
-      celda: (a) => <Persona nombre={a.nombre} sub={a.email || "Sin mail"} />,
-    },
+    { clave: "nombre", titulo: "Alumno", tipo: "primary", orden: (a) => a.nombre, celda: (a) => a.nombre },
     {
       /* Lili, 22/10: «acomodar a los alumnos por fecha de ingreso del más nuevo al más antiguo». La lista ya viene así;
          la columna lo deja a la vista. */
-      clave: "inicio", titulo: "Ingreso", tipo: "num", orden: (a) => a.inicio,
-      celda: (a) => (a.inicio ? <span className="t-num">{fecha(a.inicio)}</span> : <span className="t-subtle">—</span>),
+      clave: "inicio", titulo: "Ingreso", orden: (a) => a.inicio,
+      celda: (a) => (a.inicio ? <span className="t-num">{formatoDia(diaDeNegocio(a.inicio), hoy)}</span> : <span className="t-subtle">—</span>),
     },
     {
-      /* La etapa del servicio, y el estado sólo cuando no es el de siempre:
-         así entra todo en seis columnas. */
-      clave: "etapa", titulo: "Etapa",
-      orden: (a) => (etapaDelAlumno(etapas, a)?.orden ?? 99) * 10 + ESTADOS_ALUMNO.indexOf(a.estado),
-      celda: (a) => (
-        <span className="row" style={{ gap: 6 }}>
-          <BadgeEtapa etapa={etapaDelAlumno(etapas, a)} />
-          {a.estado !== "activo" && <Tag>{ESTADO_ALUMNO[a.estado].texto}</Tag>}
-        </span>
-      ),
+      clave: "plan", titulo: "Programa", tipo: "secondary", orden: (a) => carteraDe.get(a.id)?.programa || a.plan,
+      celda: (a) => carteraDe.get(a.id)?.programa || a.plan || "Sin plan",
     },
     {
-      clave: "plan", titulo: "Plan", tipo: "secondary", orden: (a) => a.plan,
-      celda: (a) => <span>{a.plan || "Sin plan"}{a.cohorte && <span className="t-subtle"> · {a.cohorte}</span>}</span>,
+      /* En qué anda: el Follow Up, y el estado sólo cuando no es el de siempre. */
+      clave: "follow", titulo: "Follow up",
+      orden: (a) => { const f = carteraDe.get(a.id); return `${ETAPAS_DEL_ALUMNO.findIndex((x) => x.id === f?.etapa)} ${f?.followUp ?? ""}`; },
+      celda: (a) => {
+        const f = carteraDe.get(a.id);
+        return (
+          <span className="row" style={{ gap: 6 }}>
+            {f?.followUp ? <span className={`ps-follow ps-follow--${f.etapa}`}>{f.followUp}</span> : <span className="t-subtle">—</span>}
+            {a.estado !== "activo" && <Tag>{ESTADO_ALUMNO[a.estado].texto}</Tag>}
+          </span>
+        );
+      },
     },
     {
-      clave: "progreso", titulo: "Progreso", orden: (a) => a.progreso,
-      celda: (a) => (
-        <span style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 120 }}>
-          <span style={{ flex: 1 }}><Bar valor={a.progreso} tono={a.progreso >= 80 ? "success" : "brand"} /></span>
-          <span className="t-sm t-num t-subtle">{a.progreso}%</span>
-        </span>
-      ),
+      clave: "contacto", titulo: "Último contacto", orden: (a) => carteraDe.get(a.id)?.ultimoContacto ?? "",
+      celda: (a) => { const d = carteraDe.get(a.id)?.ultimoContacto; return d ? <span className="t-num">{formatoDia(d, hoy)}</span> : <span className="t-subtle">—</span>; },
     },
     {
       clave: "reporte", titulo: "Reportes", orden: (a) => sinReportar(a),
       celda: (a) => {
         if (a.estado !== "activo") return <span className="t-sm t-subtle">—</span>;
         const s = sinReportar(a);
+        /* Estar al día es lo normal: sólo se marca el que se atrasó. */
         return s === 0
-          ? <Badge variante="success" icono={<Check size={13} />}>Al día</Badge>
+          ? <span className="t-sm t-subtle">Al día</span>
           : <Badge variante={s >= 3 ? "danger" : "warning"} icono={<Clock size={13} />}>{s} sem.</Badge>;
       },
-    },
-    {
-      clave: "cuota", titulo: "Cuota", tipo: "num", orden: (a) => a.cuotaMensual,
-      celda: (a) => (a.cuotaMensual > 0 ? money(a.cuotaMensual, a.moneda) : <span className="t-subtle">—</span>),
     },
   ];
 
@@ -179,11 +176,10 @@ export default function Alumnos() {
         placeholder="Buscá por nombre, cohorte o plan…" aria-label="Buscar alumnos"
       />
       <Chip activo={estado === "todos"} onClick={() => setEstado("todos")} count={e.alumnos.length}>Todos</Chip>
-      {ESTADOS_ALUMNO.map((k) => (
-        <Chip key={k} activo={estado === k} onClick={() => setEstado(k)} count={e.alumnos.filter((a) => a.estado === k).length}>
-          {ESTADO_ALUMNO[k].texto}
-        </Chip>
-      ))}
+      {ESTADOS_ALUMNO.map((k) => {
+        const n = e.alumnos.filter((a) => a.estado === k).length;
+        return n > 0 || estado === k ? <Chip key={k} activo={estado === k} onClick={() => setEstado(k)} count={n}>{ESTADO_ALUMNO[k].texto}</Chip> : null;
+      })}
     </>
   );
 
@@ -203,7 +199,7 @@ export default function Alumnos() {
   const botones = (antes?: React.ReactNode) => (
     <span className="toolbar__fin">
       {antes}
-      <CopiarLink />
+      <CopiarLink variante="ghost" />
       <Button sm variante="primary" icono={<Plus size={15} />} onClick={() => setAsistente(true)}>Nuevo alumno</Button>
     </span>
   );
@@ -228,7 +224,7 @@ export default function Alumnos() {
       />
 
       {vista === "lista" && (
-        <Card style={{ padding: 0, overflow: "hidden" }}>
+        <Card className="cs-t" style={{ padding: 0, overflow: "hidden" }}>
           <div style={{ padding: "var(--space-4) var(--space-4) 0" }}>
             <div className="toolbar">{filtrosBarra}{botones()}</div>
           </div>
@@ -255,14 +251,28 @@ export default function Alumnos() {
       {vista === "cvs" && <RevisionCvCs />}
       {vista === "zoom" && <SesionesZoomGeneral />}
 
-      {vista === "pipeline" && (
+      {vista === "pipeline" && enURL.tablero !== "mano" && (
+        <TableroFollowUp
+          cartera={cartera} hoy={hoy} q={q} setQ={setQ}
+          base={enURL.base === "todos" ? "todos" : "servicio"} setBase={(v) => setEnURL({ base: v, etapa: null })}
+          etapa={ETAPAS_DEL_ALUMNO.find((x) => x.id === enURL.etapa)?.id} setEtapa={(x) => setEnURL({ etapa: x })}
+          onAbrir={(id) => abrirFicha(id, "servicio")}
+          cambio={<CambioDeTablero valor="follow" onCambiar={(v) => setEnURL({ tablero: v })} />}
+          botones={botones()}
+        />
+      )}
+
+      {vista === "pipeline" && enURL.tablero === "mano" && (
         <div className="stack-4">
           <div className="toolbar" style={{ marginBottom: 0 }}>
             {filtrosBarra}
             {botones(
-              <Link href="/ajustes?seccion=pipeline&pipeline=servicio" className="hk-btn hk-btn--ghost hk-btn--sm">
-                <Settings2 size={15} />Editar etapas
-              </Link>,
+              <>
+                <CambioDeTablero valor="mano" onCambiar={(v) => setEnURL({ tablero: v })} />
+                <Link href="/ajustes?seccion=pipeline&pipeline=servicio" className="hk-btn hk-btn--ghost hk-btn--sm">
+                  <Settings2 size={15} />Editar etapas
+                </Link>
+              </>,
             )}
           </div>
           {filtrados.length === 0

@@ -200,7 +200,7 @@ export function AccesosAlumno({ alumno, venta, manual, outboarding, forma = "tar
             {acciona && vigentes.length > 0 && (
               <Button sm variante="ghost" icono={<UserMinus size={14} />} onClick={() => setQuitar({ texto: "Se le saca el acceso a todos sus cursos de Wisboo, se lo saca de los grupos de Telegram y se cancela su inscripción a las reuniones de Zoom.", wisboo: true })}>Quitar todo</Button>
             )}
-            {acciona && <Button sm variante="primary" icono={<KeyRound size={14} />} onClick={() => setDar(programaSugerido)}>Dar accesos</Button>}
+            {acciona && <Button sm variante="secondary" icono={<KeyRound size={14} />} onClick={() => setDar(programaSugerido)}>Dar accesos</Button>}
           </AccionesServicio>
         )}
         {/* El outboarding automático (Lili, 26/10): cuándo se le sacan solos los accesos de la app. */}
