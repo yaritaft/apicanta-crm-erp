@@ -404,7 +404,7 @@ export function FormTraspaso({ e, traspaso, desdeCobro, onCerrar, onListo }: {
 
   const problemas = problemasDelMovimiento({
     origenId: origenId || undefined, destinoId: destinoId || undefined, desdeCobro: Boolean(cobro),
-    montoSale: borrador.montoSale, montoLlega: borrador.montoLlega, faltaTc,
+    montoSale: borrador.montoSale, montoLlega: borrador.montoLlega, faltaTc, dia, hoy: diaAr(new Date().toISOString()),
   });
   const problema = problemas[0]?.texto ?? null;
 
@@ -471,7 +471,7 @@ export function FormTraspaso({ e, traspaso, desdeCobro, onCerrar, onListo }: {
       { etiqueta: "A", valor: destinoId ? nombreCuenta(e, destinoId) : "Sin elegir", falta: problemas.some((p) => p.paso === "a"), onCambiar: cambiar("a") },
       ...(sinOrigen ? [] : [{ etiqueta: "Salió", valor: plata(borrador.montoSale, monedaSale), falta: problemas.some((p) => p.paso === "sale"), onCambiar: cambiar("sale") }]),
       { etiqueta: "Llegó", valor: plata(borrador.montoLlega, monedaLlega), falta: problemas.some((p) => p.paso === "llega"), onCambiar: cambiar("llega") },
-      { etiqueta: "Día", valor: fechaLarga(fechaIso), onCambiar: cambiar("dia") },
+      { etiqueta: "Día", valor: fechaLarga(fechaIso), falta: problemas.some((p) => p.paso === "dia"), onCambiar: cambiar("dia") },
       ...(cuentaComoPase && costo > 0 ? [{
         etiqueta: "Costo", valor: conGasto ? `${plata(costo, monedaSale)} · va como gasto en «${CATEGORIA_COSTO}»` : `${plata(costo, monedaSale)} · sin gasto`,
         falta: problemas.some((p) => p.paso === "costo"), onCambiar: cambiar("costo"),
@@ -582,7 +582,7 @@ export function FormTraspaso({ e, traspaso, desdeCobro, onCerrar, onListo }: {
         <>
           <Pregunta texto="¿Qué día fue?" sub="El día en que la plata salió de una cuenta y llegó a la otra." />
           <div className="stack-3">
-            <Input type="date" value={dia} onChange={(ev) => setDia(ev.target.value || hoy)} aria-label="Día del movimiento" />
+            <Input type="date" value={dia} max={hoy} onChange={(ev) => setDia(ev.target.value || hoy)} aria-label="Día del movimiento" />
             <div className="row-wrap">
               <Chip activo={dia === hoy} onClick={() => setDia(hoy)}>Hoy</Chip>
               <Chip activo={dia === ayer} onClick={() => setDia(ayer)}>Ayer</Chip>

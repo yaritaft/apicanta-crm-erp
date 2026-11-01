@@ -60,6 +60,8 @@ export const PROCESADORES: Procesador[] = [
   { id: "proc_mercury",          nombre: "ACH-WIRE Mercury",    feeRate: 0,     activo: true, automatico: true,  proveedor: "mercury" },
   /* Desde fines de octubre, lo que retiran Stripe, Whop y Hotmart llega acá (Yari, 28/10: definitivo). Se cuenta a mano. */
   { id: "proc_bofa",             nombre: "Bank of America",     feeRate: 0,     activo: true, automatico: false },
+  /* El otro banco de Apicanta LLC: Mercury le manda plata (Aldana, 01/11). Se cuenta a mano. */
+  { id: "proc_relay",            nombre: "Relay",               feeRate: 0,     activo: true, automatico: false },
   { id: "proc_binance",          nombre: "USDT Binance",        feeRate: 0,     activo: true, automatico: true,  proveedor: "binance" },
   { id: "proc_dlocal",           nombre: "Dlocal",              feeRate: 0.050, activo: true, automatico: true,  proveedor: "dlocal" },
   { id: "proc_trust",            nombre: "USDT Trust",          feeRate: 0,     activo: true, automatico: true,  proveedor: "trust" },

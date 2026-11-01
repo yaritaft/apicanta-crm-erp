@@ -100,6 +100,9 @@ const CONTRAPARTES: [RegExp, ID, boolean][] = [
   [/\bbinance\b/i, "proc_binance", false],
   /* Las vías por las que Hotmart liquida, según Yari («creo que»): también. */
   [/\b(arx|bridge|masspay)\b/i, "proc_hotmart", false],
+  /* Relay es el otro banco de Apicanta LLC («Apicanta LLC - Relay»): lo que Mercury le manda es un pase, pero se propone y alguien lo confirma
+     (Aldana, 01/11: los 30.000 de Mercury a Relay no estaban en ninguna parte). */
+  [/\brelay\b/i, "proc_relay", false],
 ];
 
 export function cuentaDeContraparte(texto: string | undefined | null): { cuentaId: ID; seguro: boolean } | null {
@@ -318,7 +321,7 @@ export function cambioDe(t: Pick<Traspaso, "montoSale" | "monedaSale" | "montoLl
    El formulario paso a paso (FormTraspaso) pregunta una cosa por pantalla: cada cosa que falta dice cuál es la suya. El primero de la lista es el
    que se muestra cuando no se puede cargar. */
 
-export type PasoMovimiento = "de" | "a" | "sale" | "llega" | "costo";
+export type PasoMovimiento = "de" | "a" | "sale" | "llega" | "dia" | "costo";
 
 export function problemasDelMovimiento(b: {
   origenId?: ID; destinoId?: ID;
@@ -327,6 +330,9 @@ export function problemasDelMovimiento(b: {
   montoSale: number; montoLlega: number;
   /* Hay un costo en pesos para pasar a dólares y falta el tipo de cambio. */
   faltaTc?: boolean;
+  /* El día elegido y el de hoy (aaaa-mm-dd, hora de Argentina). Un movimiento es plata que ya pasó: el calendario del navegador abre en el mes
+     de hoy y es fácil marcar el 29 de noviembre queriendo decir el 29 de octubre (Aldana, 01/11). */
+  dia?: string; hoy?: string;
 }): { paso: PasoMovimiento; texto: string }[] {
   const out: { paso: PasoMovimiento; texto: string }[] = [];
   if (!b.origenId && !b.desdeCobro) out.push({ paso: "de", texto: "Elegí de qué cuenta salió" });
@@ -334,6 +340,7 @@ export function problemasDelMovimiento(b: {
   else if (b.origenId && b.origenId === b.destinoId) out.push({ paso: "a", texto: "Las dos cuentas son la misma" });
   if (!(b.montoSale > 0)) out.push({ paso: "sale", texto: "Poné cuánto salió" });
   if (!(b.montoLlega > 0)) out.push({ paso: "llega", texto: "Poné cuánto llegó" });
+  if (b.dia && b.hoy && b.dia > b.hoy) out.push({ paso: "dia", texto: "Ese día todavía no llegó: revisá el mes (el calendario abre en el de hoy)" });
   if (b.faltaTc) out.push({ paso: "costo", texto: "Poné el tipo de cambio para cargar el gasto" });
   return out;
 }
