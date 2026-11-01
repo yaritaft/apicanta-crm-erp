@@ -99,6 +99,8 @@ export function Camino({ pasos, cadencia, periodo, ahora, abierto, onAbrir, agru
                           ? <Button sm variante="ghost" onClick={() => desmarcar(p)}>Deshacer</Button>
                           : <Button sm variante="secondary" icono={<Check size={15} />} onClick={() => marcar(p)}>{manual ? "Marcar como hecho" : "Ya lo revisé"}</Button>}
                       </div>
+                      {/* Aldana (01/11): «si lo tildo, ¿me modifica algo?». No: queda anotado quién y cuándo, y nada más. */}
+                      <p className="t-sm t-subtle" style={{ margin: "8px 0 0" }}>Tildarlo sólo anota quién lo hizo y cuándo: no cambia ningún número ni ningún saldo.</p>
                     </div>
                   )}
 

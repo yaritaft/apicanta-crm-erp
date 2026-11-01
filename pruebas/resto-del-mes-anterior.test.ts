@@ -69,3 +69,21 @@ test("el resto se puede corregir a mano como cualquier renglón", () => {
   assert.equal(l.monto, 5);
   assert.equal(l.corregido, true);
 });
+
+/* Aldana (01/11): «quería ver cuáles son las ventas que está contemplando» en el resto de cada uno. */
+test("el resto dice qué renglones cambiaron y qué cobros entraron después del corte, para poder revisarlo venta por venta", () => {
+  const { e, cerrada } = cerradaConCorte("2026-09-16");
+  const dif = diferenciasDesdeElCierre(e, cerrada).find((d) => d.miembroId === "mariano")!;
+  assert.ok(dif.renglones.length > 0, "dice qué renglón cambió");
+  const comision = dif.renglones.find((r) => r.nombre === "Comisión de closer")!;
+  assert.ok(comision && comision.hoy > comision.cerrado, "la comisión de Mariano subió desde el cierre");
+  assert.equal(Math.round((dif.hoy - dif.cerrado) * 100), Math.round(dif.renglones.reduce((a, r) => a + (r.hoy - r.cerrado), 0) * 100), "los renglones explican toda la diferencia");
+  assert.deepEqual(dif.despues.map((c) => c.cliente), ["Belén Godoy"], "el único cobro de sus ventas después del 16/9 es el del 20/9");
+  assert.ok(dif.despues.every((c) => c.fecha.slice(0, 10) > "2026-09-16"));
+
+  const resto = restos(e).find((x) => x.p.miembroId === "mariano")!.l;
+  assert.ok(resto.desglose?.lista, "el renglón del resto trae la lista de cobros");
+  assert.equal(resto.desglose!.lista!.items[0].cliente, "Belén Godoy");
+  assert.match(resto.desglose!.lista!.titulo, /cobros después del 16\/09/);
+  assert.match(resto.desglose!.avisos!.join(" "), /Qué cambió, renglón por renglón: Comisión de closer/);
+});

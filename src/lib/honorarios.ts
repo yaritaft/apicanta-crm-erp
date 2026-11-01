@@ -1,7 +1,7 @@
 import type {
   AlcanceVentas, BaseMedicion, ConceptoPago, Devolucion, DesgloseLinea, EntradaLiquidacion, EsquemaPago, EstadoApp, ExtraLiquidacion,
-  Gasto, ID, LineaLiquidada, Liquidacion, MiembroEquipo, Moneda, Pago, PersonaLiquidada,
-  ResultadoLiquidacion, TipoConcepto, Venta,
+  Gasto, ID, ItemDesglose, LineaLiquidada, Liquidacion, MiembroEquipo, Moneda, Pago, PersonaLiquidada,
+  PasoDesglose, ResultadoLiquidacion, TipoConcepto, Venta,
 } from "./types";
 import type { RangoMes } from "./metricas";
 import { calcularPyL, closerDeCuota, cobraEnFecha, costosDelMes, pagosDelMes, parteMarketing, tasaDeComision, ventasDelMes } from "./finanzas";
@@ -12,7 +12,7 @@ import { grupoDeLinea } from "./equipo-por-tipo";
 import { fechaLarga, money, num, pct, tasaTexto } from "./format";
 import {
   conCorreccion, plataPaso, desgloseBono, desgloseDeudaQueEntra, desgloseDeudaQueSale, desgloseFijo, desgloseMedido, desglosePieza,
-  desgloseReversa, listaDeCobros, listaDeVentas, paso,
+  desgloseReversa, LIMITE_LISTA, listaDeCobros, listaDeItems, listaDeVentas, paso,
   type CobroContado, type CobroExcluido, type Fuente, type PartesProfit,
 } from "./desglose";
 import { devolucionesDelMes, liquidadaEn, mesDeLiquidacion, reversasDeComision, type ParteReversa, type Reversa } from "./devoluciones";
@@ -1022,10 +1022,39 @@ function lineaExtra(cx: Contexto, x: ExtraLiquidacion): LineaLiquidada {
   const cargado = cargadoTexto(x, cx.rango.clave);
   return {
     clave: `extra:${x.id}`, extraId: x.id, tipo: "extra", nombre: x.concepto.trim() || "Monto a mano",
-    detalle: monto < 0 ? "Descuento cargado a mano" : "Cargado a mano",
+    detalle: monto < 0 ? "Descuento cargado a mano" : x.adelantoDe ? "Cargado a mano, como adelanto" : "Cargado a mano",
     moneda: x.moneda, monto, montoBase: r2(aMonedaBase(monto, x.moneda, cx.base, cx.tc)),
     variable: true, enFinanzas: false,
     ...(nota ? { nota } : {}), ...(cargado ? { cargado } : {}),
+  };
+}
+
+/* ---------- Lo que ya se adelantó ----------
+   Un monto a mano puede decir que es el adelanto de un renglón que se calcula solo (ExtraLiquidacion.adelantoDe): el bono por cada
+   US$ 100.000 de cash que se pagó antes de llegar, por ejemplo. Mientras el renglón da cero, el adelanto es lo único que se paga. Cuando
+   el renglón da, este renglón resta lo ya adelantado (hasta lo que da) y no se paga dos veces. */
+function lineaDeAdelanto(cx: Contexto, x: ExtraLiquidacion, concepto: LineaLiquidada): LineaLiquidada | null {
+  if (!(x.monto > 0) || concepto.moneda !== x.moneda || concepto.monto <= 0.004) return null;
+  const monto = -r2(Math.min(x.monto, concepto.monto));
+  if (Math.abs(monto) < 0.005) return null;
+  const mon = x.moneda;
+  const nombre = x.concepto.trim() || "Monto a mano";
+  return {
+    clave: `adelanto:${x.id}`, tipo: "descuento", nombre: `Ya adelantado: ${nombre}`,
+    detalle: `Se le adelantó ${plata(r2(x.monto), mon)} de «${concepto.nombre}» (cargado a mano): ahora que da ${plata(concepto.monto, mon)}, no se paga dos veces`,
+    moneda: mon, monto, montoBase: r2(aMonedaBase(monto, mon, cx.base, cx.tc)), variable: true, enFinanzas: false,
+    desglose: {
+      regla: `Lo que se adelantó a mano de «${concepto.nombre}» se resta cuando ese renglón da: queda pagado una sola vez`,
+      moneda: mon,
+      pasos: [
+        paso("base", `Lo que da «${concepto.nombre}» este mes`, concepto.monto, "plata", { moneda: mon }),
+        paso("base", `Lo que se adelantó a mano (${nombre})`, r2(x.monto), "plata", { moneda: mon }),
+        paso("base", "Lo que ya se pagó de más y se resta", -monto, "plata", { moneda: mon }),
+        paso("por", "Se resta: ya está pagado", -1, "cantidad"),
+        paso("igual", "Se descuenta", monto, "plata", { moneda: mon }),
+      ],
+      avisos: ["El adelanto se cargó como un monto a mano, marcado como adelanto de este renglón. Si el renglón diera menos de lo adelantado, se resta sólo lo que da."],
+    },
   };
 }
 
@@ -1123,7 +1152,14 @@ export interface RestoDeCorte {
   corte: string;
   /* Si sus renglones variables los calcula Finanzas (los closers): el resto ya está en los costos de ese mes, no se vuelve a cargar al cerrar. */
   enFinanzas: boolean;
+  /* Qué renglones cambiaron desde el cierre, y los cobros que entraron después del corte y cuentan en lo suyo: para ver DE DÓNDE sale el
+     resto (Aldana, 01/11: «quería ver cuáles son las ventas que está contemplando»). */
+  renglones: CambioDeRenglon[];
+  despues: ItemDesglose[];
 }
+
+/** Un renglón de una persona: lo que se cerró y lo que da hoy con todo el mes. */
+export interface CambioDeRenglon { clave: string; nombre: string; cerrado: number; hoy: number }
 
 function restoDelMesAnterior(e: EstadoApp, mesAnterior: string): Map<ID, RestoDeCorte> {
   const out = new Map<ID, RestoDeCorte>();
@@ -1137,6 +1173,7 @@ function restoDelMesAnterior(e: EstadoApp, mesAnterior: string): Map<ID, RestoDe
     out.set(d.miembroId, {
       miembroId: d.miembroId, cerrado: d.cerrado, hoy: d.hoy, corte: String(prev.corte).slice(0, 10),
       enFinanzas: comisiones.length > 0 && comisiones.every((l) => l.enFinanzas),
+      renglones: d.renglones, despues: d.despues,
     });
   }
   return out;
@@ -1158,7 +1195,14 @@ function lineaDeResto(cx: Contexto, m: MiembroEquipo, r: RestoDeCorte, entrada: 
       plataPaso("menos", `Lo que ya se pagó al cerrar ${nombreMes}`, r.cerrado, mon),
       plataPaso("igual", "Lo que falta pagar", monto, mon),
     ],
-    avisos: ["Si se reabre el mes anterior y se cierra entero, esta diferencia queda en cero. Si no corresponde, se puede corregir el monto a mano."],
+    avisos: [
+      ...(r.renglones.length ? [`Qué cambió, renglón por renglón: ${r.renglones.map((x) => {
+        const d = r2(x.hoy - x.cerrado);
+        return `${x.nombre}: ${plata(r2(x.cerrado), mon)} → ${plata(r2(x.hoy), mon)} (${d > 0 ? "+" : ""}${plata(d, mon)})`;
+      }).join(" · ")}.`] : []),
+      "Si se reabre el mes anterior y se cierra entero, esta diferencia queda en cero. Si no corresponde, se puede corregir el monto a mano.",
+    ],
+    ...(r.despues.length ? { lista: listaDeItems(r.despues, mon, `Los cobros después del ${dia} que cuentan en lo suyo`, `Los ${LIMITE_LISTA} cobros más grandes después del ${dia} que cuentan en lo suyo`) } : {}),
   };
   let detalle = `Con todo ${nombreMes} da ${plata(r.hoy, mon)} y se pagaron ${plata(r.cerrado, mon)} al cerrar hasta el ${dia}`;
   let corregido = false;
@@ -1410,6 +1454,13 @@ export function calcularLiquidacion(e: EstadoApp, periodo: string, liq?: Liquida
        son más que lo que cobra), no se le paga nada: lo que queda debiendo es
        otro renglón que pasa a la liquidación que sigue. Un descuento a mano
        solo (sin devoluciones) sigue como siempre: queda en negativo. */
+    /* Un monto a mano marcado como adelanto de un renglón que ya da: se resta lo adelantado (no se paga dos veces). */
+    for (const x of extras) {
+      if (x.miembroId !== persona.miembroId || !x.adelantoDe) continue;
+      const concepto = ls.find((l) => l.conceptoId === x.adelantoDe && l.tipo !== "extra");
+      const adelanto = concepto ? lineaDeAdelanto(cx, x, concepto) : null;
+      if (adelanto) ls.push(adelanto);
+    }
     const sumas: Partial<Record<Moneda, number>> = {};
     for (const l of ls) sumas[l.moneda] = r2((sumas[l.moneda] ?? 0) + l.monto);
     const deuda: Partial<Record<Moneda, number>> = {};
@@ -1460,8 +1511,33 @@ export function diferenciasDesdeElCierre(e: EstadoApp, liq: Liquidacion) {
   const antes = new Map(liq.resultado.personas.map((p) => [p.miembroId, p] as const));
   /* Lo cerrado sin el resto que traía de otro mes: se compara el mes con el mes. */
   const delResto = (id: ID) => (antes.get(id)?.lineas ?? []).filter((l) => l.clave.startsWith(PREFIJO_DE_RESTO)).reduce((a, l) => a + l.montoBase, 0);
+  const corteDia = String(liq.corte ?? "").slice(0, 10);
   return hoy.personas
-    .map((p) => ({ miembroId: p.miembroId, nombre: p.nombre, cerrado: r2((antes.get(p.miembroId)?.total ?? 0) - delResto(p.miembroId)), hoy: p.total }))
+    .map((p) => {
+      const a = antes.get(p.miembroId);
+      const claves = new Set([...(a?.lineas ?? []).map((l) => l.clave), ...p.lineas.map((l) => l.clave)]);
+      const renglones: CambioDeRenglon[] = [...claves].filter((c) => !c.startsWith(PREFIJO_DE_RESTO)).map((clave) => {
+        const x = a?.lineas.find((l) => l.clave === clave), y = p.lineas.find((l) => l.clave === clave);
+        return { clave, nombre: y?.nombre ?? x?.nombre ?? clave, cerrado: x?.montoBase ?? 0, hoy: y?.montoBase ?? 0 };
+      }).filter((c) => Math.abs(c.hoy - c.cerrado) >= 0.01);
+      /* Los cobros que entraron después del corte y cuentan en algún renglón suyo: salen de las listas de sus renglones de hoy. */
+      const vistos = new Set<string>();
+      const despues: ItemDesglose[] = [];
+      if (corteDia) {
+        for (const l of p.lineas) {
+          const lista = l.desglose?.lista;
+          if (!lista || lista.tipo !== "cobros") continue;
+          for (const it of lista.todos ?? lista.items) {
+            if (diaDe(it.fecha) <= corteDia) continue;
+            const k = `${it.fecha}|${it.cliente}|${it.monto}|${it.procesador ?? ""}`;
+            if (vistos.has(k)) continue;
+            vistos.add(k);
+            despues.push(it);
+          }
+        }
+      }
+      return { miembroId: p.miembroId, nombre: p.nombre, cerrado: r2((a?.total ?? 0) - delResto(p.miembroId)), hoy: p.total, renglones, despues };
+    })
     .filter((x) => Math.abs(x.hoy - x.cerrado) >= 0.01);
 }
 
@@ -1551,6 +1627,52 @@ export function textoParaEnviar(p: PersonaLiquidada, periodo: string, corte?: st
   return [`Hola ${p.nombre.split(" ")[0]}, tu liquidación de ${nombrePeriodo(periodo)}${hasta}:`, ...lineas, `Total: ${total || plata(0, "USD")}`].join("\n");
 }
 
+/** El detalle de lo que cobra una persona, para mandarle: cada renglón con su regla, su cuenta paso a paso y los cobros que cuentan
+ *  (Aldana, 01/11: «un reporte que le pueda mandar a Nahuel, a Agustín, a Santi y a Yari, con el detalle de qué es lo que cobran»). */
+export function informeParaEnviar(p: PersonaLiquidada, periodo: string, corte?: string | null): string {
+  const hasta = corte ? ` (hasta el ${corte.slice(8, 10)}/${corte.slice(5, 7)})` : "";
+  const dia = (iso: string) => { const d = diaDe(iso); return `${d.slice(8, 10)}/${d.slice(5, 7)}`; };
+  const valor = (x: PasoDesglose, mon: Moneda): string =>
+    x.formato === "plata" ? plata(x.valor, x.moneda ?? mon)
+    : x.formato === "tasa" ? pct(x.valor * 100, decimalesTasa(x.valor))
+    : x.formato === "fraccion" ? `${num(x.valor, 0)} de ${num(x.de ?? 0, 0)}`
+    : num(x.valor, Number.isInteger(x.valor) ? 0 : 2);
+  const signo = (op: PasoDesglose["op"]) => (op === "menos" ? "− " : op === "mas" ? "+ " : op === "por" ? "× " : op === "igual" ? "= " : "");
+  const bloques = p.lineas.map((l, i) => {
+    const d = l.desglose;
+    const partes: string[] = [`${i + 1}. ${l.nombre}: ${plata(l.monto, l.moneda)}`];
+    if (d?.regla) partes.push(`   Regla: ${d.regla}.`);
+    if (d?.pasos.length) {
+      partes.push("   La cuenta:");
+      for (const x of d.pasos) partes.push(`     ${signo(x.op)}${x.texto}: ${valor(x, l.moneda)}${x.nota ? ` (${x.nota})` : ""}`);
+    } else if (l.detalle) {
+      partes.push(`   ${l.detalle}`);
+    }
+    if (l.nota) partes.push(`   Nota: ${l.nota}`);
+    const lista = d?.lista;
+    if (lista && lista.tipo === "cobros") {
+      const filas = lista.todos ?? lista.items;
+      partes.push(`   ${lista.titulo.replace(/^Los \d+ cobros más grandes/, "Los cobros")} (${lista.total}):`);
+      for (const c of filas) {
+        partes.push(`     • ${dia(c.fecha)} · ${c.cliente}${c.servicio ? ` · ${c.servicio}` : ""}${c.procesador ? ` · ${c.procesador}` : ""} · ${plata(c.monto, lista.moneda)}${c.neto !== undefined && Math.abs((c.fee ?? 0)) > 0.004 ? ` (neto ${plata(c.neto, lista.moneda)})` : ""}`);
+      }
+      if (!lista.todos && lista.resto) partes.push(`     … y ${lista.resto.cantidad} más por ${plata(lista.resto.monto, lista.moneda)}`);
+    } else if (lista && lista.tipo === "ventas") {
+      partes.push(`   ${lista.titulo} (${lista.total}):`);
+      for (const c of lista.items) partes.push(`     • ${dia(c.fecha)} · ${c.cliente}${c.servicio ? ` · ${c.servicio}` : ""} · ${plata(c.monto, lista.moneda)}`);
+    }
+    return partes.join("\n");
+  });
+  const total = (Object.entries(p.aPagar) as [Moneda, number][])
+    .filter(([, x]) => Math.abs(x) >= 0.005).map(([m, x]) => plata(x, m)).join(" + ");
+  return [
+    `Hola ${p.nombre.split(" ")[0]}, el detalle de tu liquidación de ${nombrePeriodo(periodo)}${hasta}:`,
+    "",
+    ...bloques.flatMap((b) => [b, ""]),
+    `Total: ${total || plata(0, "USD")}`,
+  ].join("\n");
+}
+
 /* ---------- Ver un renglón, mes a mes ---------- */
 
 /** El renglón de una persona en una liquidación (con su desglose, si lo tiene). */
@@ -1603,6 +1725,22 @@ export function conExtraEnMes(
     liquidacion,
     liquidaciones: actual ? liquidaciones.map((l) => (l.id === actual.id ? liquidacion : l)) : [...liquidaciones, liquidacion],
   };
+}
+
+/** Marca (o desmarca) un monto a mano como adelanto de un renglón. A diferencia de sacarlo, se puede en una liquidación cerrada: no cambia
+ *  ningún monto pagado, sólo dice que ese monto ya incluía el renglón. null si no está. */
+export function conAdelantoEnExtra(
+  liquidaciones: Liquidacion[], liquidacionId: ID, extraId: ID, conceptoId: ID | null, ahora = new Date().toISOString(),
+): { liquidaciones: Liquidacion[]; liquidacion: Liquidacion } | null {
+  const actual = liquidaciones.find((l) => l.id === liquidacionId);
+  if (!actual || !actual.extras.some((x) => x.id === extraId)) return null;
+  const extras = actual.extras.map((x) => {
+    if (x.id !== extraId) return x;
+    const { adelantoDe: _antes, ...resto } = x;
+    return conceptoId ? { ...resto, adelantoDe: conceptoId } : resto;
+  });
+  const liquidacion: Liquidacion = { ...actual, extras, actualizadoEn: ahora };
+  return { liquidacion, liquidaciones: liquidaciones.map((l) => (l.id === actual.id ? liquidacion : l)) };
 }
 
 /** La lista sin ese monto, o null si no está o la liquidación ya se cerró. */

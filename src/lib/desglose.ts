@@ -178,6 +178,26 @@ const sinVacios = <T extends object>(o: T): T =>
 
 const t = (iso: string) => { const n = Date.parse(iso); return Number.isFinite(n) ? n : 0; };
 
+/** Una lista de cobros que ya vienen armados (los de otro renglón), sin volver a medirlos: los LIMITE_LISTA más grandes y lo que falta. */
+export function listaDeItems(items: ItemDesglose[], moneda: Moneda, titulo: string, tituloRecortado = titulo): ListaDesglose | undefined {
+  if (items.length === 0) return undefined;
+  const porTamano = [...items].sort((a, b) => b.monto - a.monto || t(a.fecha) - t(b.fecha));
+  const quedan = porTamano.slice(0, LIMITE_LISTA).sort((a, b) => t(a.fecha) - t(b.fecha));
+  const resto = porTamano.slice(LIMITE_LISTA);
+  return {
+    tipo: "cobros", titulo: items.length > LIMITE_LISTA ? tituloRecortado : titulo, moneda, total: items.length, items: quedan,
+    ...(resto.length ? {
+      todos: [...items].sort((a, b) => t(a.fecha) - t(b.fecha) || b.monto - a.monto),
+      resto: {
+        cantidad: resto.length,
+        monto: r2(resto.reduce((a, x) => a + x.monto, 0)),
+        fee: r2(resto.reduce((a, x) => a + (x.fee ?? 0), 0)),
+        neto: r2(resto.reduce((a, x) => a + (x.neto ?? x.monto - (x.fee ?? 0)), 0)),
+      },
+    } : {}),
+  };
+}
+
 /** Los cobros que entraron en lo medido: los LIMITE_LISTA más grandes, por
  *  fecha, y una línea con los que quedaron afuera. */
 export function listaDeCobros(lista: CobroContado[], nombres: NombresDeLista, moneda: Moneda, excluidos: CobroExcluido[] = []): ListaDesglose | undefined {

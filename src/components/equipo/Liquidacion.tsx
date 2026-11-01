@@ -23,7 +23,7 @@ import { escribirMonto, infoGrupo, categoriaDe, leerMonto } from "@/lib/gastos";
 import { pedirBlue } from "@/lib/dolar";
 import {
   calcularLiquidacion, claveEntrada, diferenciasDesdeElCierre, esPeriodo, extrasPorVenir, faltantes, gastosDeLiquidacion,
-  infoBase, liquidacionCsv, liquidacionVacia, mesesParaExtra, moverPeriodo, nombrePeriodo, periodoDe, plata, rangoDePeriodo, textoParaEnviar,
+  infoBase, informeParaEnviar, liquidacionCsv, liquidacionVacia, mesesParaExtra, moverPeriodo, nombrePeriodo, periodoDe, plata, rangoDePeriodo, textoParaEnviar,
 } from "@/lib/honorarios";
 import type {
   EntradaLiquidacion, EstadoApp, ExtraLiquidacion, LineaLiquidada, Liquidacion, Moneda, PersonaLiquidada, ResultadoLiquidacion,
@@ -140,10 +140,10 @@ export function LiquidacionMes({ onVerPersona, soloMirar = false, onVerReglas }:
 
   /* Un monto a mano para este mes o para uno que viene: se anota en la
      liquidación de ese mes (se crea si todavía no existe). */
-  const agregarExtra = (persona: PersonaLiquidada, x: { concepto: string; monto: number; moneda: Moneda; nota: string; periodo: string }): boolean => {
+  const agregarExtra = (persona: PersonaLiquidada, x: { concepto: string; monto: number; moneda: Moneda; nota: string; periodo: string; adelantoDe?: string }): boolean => {
     const extra: ExtraLiquidacion = {
       id: nuevoId("ext"), miembroId: persona.miembroId, concepto: x.concepto, monto: x.monto, moneda: x.moneda,
-      ...(x.nota ? { nota: x.nota } : {}),
+      ...(x.nota ? { nota: x.nota } : {}), ...(x.adelantoDe ? { adelantoDe: x.adelantoDe } : {}),
       creadoEn: new Date().toISOString(), creadoPor: yo.nombre,
       ...(x.periodo !== periodo ? { desdePeriodo: periodo } : {}),
     };
@@ -158,6 +158,11 @@ export function LiquidacionMes({ onVerPersona, soloMirar = false, onVerReglas }:
   };
   const quitarExtra = (liquidacionId: string, extraId: string) => {
     if (!acciones.quitarExtraLiquidacion(liquidacionId, extraId)) toast("No se pudo sacar: esa liquidación ya se cerró.", "err");
+  };
+  /* Un monto a mano que ya incluía un renglón que se calcula solo (el bono que se pagó antes de llegar): se marca, también en un mes cerrado. */
+  const marcarAdelanto = (liquidacionId: string, extraId: string, conceptoId: string | null) => {
+    if (!acciones.marcarAdelantoDeExtra(liquidacionId, extraId, conceptoId)) { toast("No encontré ese monto.", "err"); return; }
+    toast(conceptoId ? "Listo: ese monto queda como adelanto y no se paga dos veces." : "Listo: ya no figura como adelanto.");
   };
 
   /* Quién tiene algo para cobrar: a quien le toca cero no se le paga nada, así que no cuenta en «pagados». Lo mismo en el paso «Pagarle al equipo». */
@@ -187,10 +192,14 @@ export function LiquidacionMes({ onVerPersona, soloMirar = false, onVerReglas }:
       abierta={abiertos.has(persona.miembroId)} onAlternar={() => alternar(persona.miembroId)}
       onEntrada={(conceptoId, cambio) => guardarEntrada(persona.miembroId, conceptoId, cambio)}
       meses={mesesParaMonto} porVenir={porVenir.get(persona.miembroId)}
-      onAgregarExtra={(x) => agregarExtra(persona, x)} onQuitarExtra={quitarExtra}
+      onAgregarExtra={(x) => agregarExtra(persona, x)} onQuitarExtra={quitarExtra} onMarcarAdelanto={marcarAdelanto}
       onVerDesglose={(clave) => setVerDesglose({ miembroId: persona.miembroId, clave })}
       onPagado={(v) => acciones.marcarPagado(liq, persona.miembroId, v, yo.nombre)}
       onVerPersona={onVerPersona ? () => onVerPersona(persona.miembroId) : undefined}
+      onCopiarDetalle={async () => {
+        try { await navigator.clipboard.writeText(informeParaEnviar(persona, periodo, corte)); toast(`Copiado el detalle completo: pegáselo a ${persona.nombre.split(" ")[0]}.`); }
+        catch { toast("No pude copiar. Probá de nuevo.", "err"); }
+      }}
       onCopiar={async () => {
         try { await navigator.clipboard.writeText(textoParaEnviar(persona, periodo, corte)); toast(`Copiado: pegáselo a ${persona.nombre.split(" ")[0]}.`); }
         catch { toast("No pude copiar. Probá de nuevo.", "err"); }
@@ -563,8 +572,8 @@ function CampoNumero({ valor, onCambiar, etiqueta, placeholder, autoFocus }: {
 /* ---------- Una persona ---------- */
 
 function FilaPersona({
-  persona, liq, cerrada, soloMirar, tope, abierta, onAlternar, onEntrada, meses, porVenir, onAgregarExtra, onQuitarExtra, onVerDesglose,
-  onPagado, onVerPersona, onCopiar,
+  persona, liq, cerrada, soloMirar, tope, abierta, onAlternar, onEntrada, meses, porVenir, onAgregarExtra, onQuitarExtra, onMarcarAdelanto, onVerDesglose,
+  onPagado, onVerPersona, onCopiar, onCopiarDetalle,
 }: {
   persona: PersonaLiquidada; liq: Liquidacion; cerrada: boolean; soloMirar: boolean;
   /* Lo que cobra el que más cobra: de ahí sale el largo de la barra de cada uno. */
@@ -574,13 +583,18 @@ function FilaPersona({
   /* Los meses en los que se puede anotar un monto, y lo ya anotado para los que vienen. */
   meses: string[];
   porVenir?: ReturnType<typeof extrasPorVenir>;
-  onAgregarExtra: (x: { concepto: string; monto: number; moneda: Moneda; nota: string; periodo: string }) => boolean;
+  onAgregarExtra: (x: { concepto: string; monto: number; moneda: Moneda; nota: string; periodo: string; adelantoDe?: string }) => boolean;
   onQuitarExtra: (liquidacionId: string, extraId: string) => void;
+  onMarcarAdelanto: (liquidacionId: string, extraId: string, conceptoId: string | null) => void;
   onVerDesglose: (clave: string) => void;
-  onPagado: (v: boolean) => void; onVerPersona?: () => void; onCopiar: () => void;
+  onPagado: (v: boolean) => void; onVerPersona?: () => void; onCopiar: () => void; onCopiarDetalle: () => void;
 }) {
   const faltan = persona.lineas.filter((l) => l.falta).length;
   const conNota = persona.lineas.some((l) => l.nota);
+  /* Los renglones que se calculan solos y de los que un monto a mano puede ser el adelanto (el bono que se pagó antes de llegar). */
+  const adelantables = persona.lineas
+    .filter((l) => l.conceptoId && ["bono", "tramo", "porcentaje", "unidad"].includes(l.tipo))
+    .map((l) => ({ id: l.conceptoId as string, nombre: l.nombre }));
   const pago = liq.pagos[persona.miembroId];
   const [agregando, setAgregando] = useState(false);
 
@@ -666,6 +680,8 @@ function FilaPersona({
               key={l.clave} l={l} cerrada={cerrada} soloMirar={soloMirar} entrada={l.conceptoId ? liq.entradas[claveEntrada(persona.miembroId, l.conceptoId)] : undefined}
               onEntrada={(cambio) => l.conceptoId && onEntrada(l.conceptoId, cambio)}
               onBorrarExtra={() => l.extraId && onQuitarExtra(liq.id, l.extraId)}
+              adelantables={adelantables} adelantoActual={liq.extras.find((x) => x.id === l.extraId)?.adelantoDe}
+              onAdelanto={(conceptoId) => l.extraId && onMarcarAdelanto(liq.id, l.extraId, conceptoId)}
               onVerDesglose={() => onVerDesglose(l.clave)}
             />
           ))}
@@ -689,7 +705,7 @@ function FilaPersona({
           )}
           {agregando && (
             <NuevoExtra
-              periodo={liq.periodo} meses={meses}
+              periodo={liq.periodo} meses={meses} adelantables={adelantables}
               onCancelar={() => setAgregando(false)}
               onAgregar={(x) => { if (onAgregarExtra(x)) setAgregando(false); }}
             />
@@ -700,6 +716,7 @@ function FilaPersona({
                 <Button sm variante="ghost" icono={<Plus size={15} />} onClick={() => setAgregando(true)}>Sumar o descontar un monto</Button>
               )}
               <Button sm variante="ghost" icono={<Copy size={15} />} onClick={onCopiar}>Copiar para mandarle</Button>
+              <Button sm variante="ghost" icono={<Copy size={15} />} onClick={onCopiarDetalle} title="La cuenta de cada renglón, paso a paso, con los cobros que cuentan">Copiar el detalle</Button>
               {onVerPersona && <Button sm variante="ghost" icono={<UserRound size={15} />} onClick={onVerPersona}>Ver lo que cobra</Button>}
               {cerrada && pago && <span className="t-sm t-subtle liq__pagado">Pagado el {fechaLarga(pago.pagadoEn)}{pago.por ? ` por ${pago.por}` : ""}</span>}
             </div>
@@ -712,10 +729,11 @@ function FilaPersona({
 
 /* ---------- Un renglón ---------- */
 
-function Linea({ l, cerrada, soloMirar, entrada, onEntrada, onBorrarExtra, onVerDesglose }: {
+function Linea({ l, cerrada, soloMirar, entrada, onEntrada, onBorrarExtra, adelantables, adelantoActual, onAdelanto, onVerDesglose }: {
   l: LineaLiquidada; cerrada: boolean; soloMirar: boolean; entrada?: EntradaLiquidacion;
   onEntrada: (cambio: Partial<EntradaLiquidacion> | null) => void;
   onBorrarExtra: () => void;
+  adelantables: { id: string; nombre: string }[]; adelantoActual?: string; onAdelanto: (conceptoId: string | null) => void;
   onVerDesglose: () => void;
 }) {
   const [corrigiendo, setCorrigiendo] = useState(false);
@@ -772,6 +790,16 @@ function Linea({ l, cerrada, soloMirar, entrada, onEntrada, onBorrarExtra, onVer
                 <button type="button" className="link t-sm" onClick={() => setCorrigiendo((v) => !v)}>{corrigiendo ? "Cancelar" : "Corregir"}</button>
               )}
             </>)}
+            {/* Un monto a mano que ya incluía un renglón que se calcula solo: se marca (también en un mes cerrado) y cuando el renglón da no se paga dos veces. */}
+            {l.tipo === "extra" && !soloMirar && l.monto > 0 && adelantables.length > 0 && (
+              <span style={{ minWidth: 210 }}>
+                <Select
+                  value={adelantoActual ?? ""} placeholder="No es un adelanto" aria-label={`${l.nombre}: es adelanto de`}
+                  opciones={adelantables.map((x) => ({ valor: x.id, texto: `Adelanto de «${x.nombre}»` }))}
+                  onChange={(ev) => onAdelanto(ev.target.value || null)}
+                />
+              </span>
+            )}
             {/* Siempre al final, pegado al monto: así queda en la misma columna en todos los renglones. */}
             {l.tipo !== "extra" && (
               <button type="button" className="link t-sm liq__ver" onClick={onVerDesglose}>
@@ -822,11 +850,14 @@ function etiquetaMes(mes: string, mirando: string): string {
   return `${nombrePeriodo(mes)}${marca}`;
 }
 
-function NuevoExtra({ periodo, meses, onCancelar, onAgregar }: {
+function NuevoExtra({ periodo, meses, adelantables, onCancelar, onAgregar }: {
   periodo: string; meses: string[];
+  /* Los renglones que se calculan solos: un monto que suma puede ser el adelanto de uno. */
+  adelantables: { id: string; nombre: string }[];
   onCancelar: () => void;
-  onAgregar: (x: { concepto: string; monto: number; moneda: Moneda; nota: string; periodo: string }) => void;
+  onAgregar: (x: { concepto: string; monto: number; moneda: Moneda; nota: string; periodo: string; adelantoDe?: string }) => void;
 }) {
+  const [adelantoDe, setAdelantoDe] = useState("");
   const [concepto, setConcepto] = useState("");
   const [monto, setMonto] = useState("");
   const [moneda, setMoneda] = useState<Moneda>("USD");
@@ -862,6 +893,17 @@ function NuevoExtra({ periodo, meses, onCancelar, onAgregar }: {
             onChange={(ev) => setDestino(ev.target.value)}
           />
         </div>
+        {!resta && adelantables.length > 0 && (
+          <div className="hk-field" style={{ flex: "2 1 100%" }}>
+            <label className="hk-label">¿Es el adelanto de algo que se calcula solo? (opcional)</label>
+            <Select
+              value={adelantoDe} placeholder="No, es un monto aparte" aria-label="Es el adelanto de"
+              opciones={adelantables.map((x) => ({ valor: x.id, texto: `Adelanto de «${x.nombre}»` }))}
+              onChange={(ev) => setAdelantoDe(ev.target.value)}
+            />
+            <span className="hk-help">Si se paga antes de que el renglón dé (un bono que se sabe que se llega), marcalo: cuando el renglón dé, se resta lo adelantado y no se paga dos veces.</span>
+          </div>
+        )}
         <div className="hk-field" style={{ flex: "2 1 100%" }}>
           <label className="hk-label">Nota para quien paga (opcional)</label>
           <Input
@@ -878,7 +920,7 @@ function NuevoExtra({ periodo, meses, onCancelar, onAgregar }: {
           <Button sm variante="ghost" onClick={onCancelar}>Cancelar</Button>
           <Button
             sm variante="secondary" disabled={!listo}
-            onClick={() => onAgregar({ concepto: concepto.trim(), monto: resta ? -n : n, moneda, nota: nota.trim(), periodo: destino })}
+            onClick={() => onAgregar({ concepto: concepto.trim(), monto: resta ? -n : n, moneda, nota: nota.trim(), periodo: destino, ...(adelantoDe && !resta ? { adelantoDe } : {}) })}
           >
             {paraOtroMes ? `Anotar para ${nombrePeriodo(destino)}` : "Agregar"}
           </Button>

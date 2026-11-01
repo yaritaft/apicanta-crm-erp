@@ -19,7 +19,7 @@ import { cobrosAnulados, NOTA_ANULADO } from "./mercury";
 import { MOTIVO_ANULADO } from "./motivos";
 import { categoriaDe } from "./gastos";
 import { esPagoDeTarjeta, problemaDelReparto, type CompraDeTarjeta } from "./reparto-tarjeta";
-import { conExtraEnMes, mismasTasas, nombrePeriodo, sinExtraEnLiquidacion, tasaParaFinanzas, tasasPorServicio } from "./honorarios";
+import { conAdelantoEnExtra, conExtraEnMes, mismasTasas, nombrePeriodo, sinExtraEnLiquidacion, tasaParaFinanzas, tasasPorServicio } from "./honorarios";
 import { sinConfirmarSiCambio } from "./reglas";
 import {
   alumnoDeVenta, cuotaMensualDeVenta, etapaDelAlumno, etapaInicialDeServicio, etapasDeServicio,
@@ -4547,6 +4547,22 @@ export const acciones = {
     if (!r) return false;
     guardar({ ...e, liquidaciones: r.liquidaciones });
     empujar({ tipo: "upsert", tabla: "liquidaciones", filas: [r.liquidacion] });
+    return true;
+  },
+
+  /* Marca un monto a mano como adelanto de un renglón (o lo desmarca): vale también en una liquidación cerrada (lib/honorarios.ts, conAdelantoEnExtra). */
+  marcarAdelantoDeExtra(liquidacionId: ID, extraId: ID, conceptoId: ID | null): boolean {
+    const e = snapshot();
+    const r = conAdelantoEnExtra(e.liquidaciones, liquidacionId, extraId, conceptoId, ahora());
+    if (!r) return false;
+    const extra = r.liquidacion.extras.find((x) => x.id === extraId);
+    const { lista, nuevo } = registrar(
+      e, "transaccion", liquidacionId, `Monto a mano de ${extra?.concepto ?? "la liquidación"}`, "actualizo",
+      conceptoId ? "Se marcó como adelanto de un renglón de la liquidación: no se paga dos veces." : "Se desmarcó como adelanto.",
+    );
+    guardar({ ...e, liquidaciones: r.liquidaciones, actividad: lista });
+    empujar({ tipo: "upsert", tabla: "liquidaciones", filas: [r.liquidacion] });
+    empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
     return true;
   },
 

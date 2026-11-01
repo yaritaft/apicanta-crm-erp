@@ -1726,6 +1726,9 @@ export interface ExtraLiquidacion {
   creadoPor?: string;
   /* Si se cargó mirando la liquidación de otro mes: cuál ("2026-09"). */
   desdePeriodo?: string;
+  /* Si es un adelanto de un renglón que se calcula solo (el bono por cada US$ 100.000 de cash que se pagó antes de llegar): cuál. Cuando ese
+     renglón da, lo ya adelantado se resta y no se paga dos veces (Aldana, 01/11: «a Manu se le cuenta el bono otra vez»). */
+  adelantoDe?: ID;
 }
 
 /* ---------- Cómo se llegó al monto de un renglón ----------
