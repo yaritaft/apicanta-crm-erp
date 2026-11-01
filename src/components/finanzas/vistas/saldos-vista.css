@@ -1,0 +1,63 @@
+/* Saldos (Finanzas → Caja): una barra por cuenta con lo que hay, y lo que entró y salió. Los colores salen de la rampa de visual.css:
+   violeta es el ambiente, el color queda para el estado (ámbar: falta algo). */
+
+.sd-cuentas { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; container: cuentas / inline-size; }
+.sd-cuenta {
+  display: grid; grid-template-columns: minmax(150px, 230px) minmax(0, 1fr) minmax(88px, auto); align-items: center; column-gap: var(--space-3);
+  min-height: 36px; padding: 5px 0; border-top: 1px solid var(--border);
+}
+.sd-cuenta:first-child, .sd-grupo + .sd-cuenta { border-top: 0; }
+.sd-grupo { display: flex; align-items: center; gap: 8px; padding: 10px 0 4px; font-size: 12px; line-height: 16px; font-weight: 600; color: var(--ink-subtle); }
+.sd-grupo:first-child { padding-top: 0; }
+.sd-grupo__muestra { display: inline-block; width: 18px; height: 8px; border-radius: 2px; background: var(--viz-3); }
+.sd-cuenta__nombre { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.sd-cuenta__texto { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; line-height: 20px; font-weight: 500; color: var(--ink); }
+.sd-cuenta__nombre .hk-badge { flex: none; }
+.sd-cuenta__pista { position: relative; height: 10px; border-radius: 4px; background: var(--viz-base); overflow: hidden; }
+.sd-cuenta__barra { position: absolute; inset: 0 auto 0 0; min-width: 3px; border-radius: 4px; background: var(--viz-3); }
+/* Lo que la app espera (no se leyó del banco) va rayado: se ve de un vistazo qué está confirmado y qué no. */
+.sd-cuenta[data-origen="esperado"] .sd-cuenta__barra,
+.sd-cuenta[data-origen="parcial"] .sd-cuenta__barra,
+.sd-grupo__muestra[data-origen="esperado"] {
+  background-image: repeating-linear-gradient(135deg, transparent 0 4px, color-mix(in srgb, var(--surface-100) 55%, transparent) 4px 7px);
+}
+.sd-cuenta[data-origen="parcial"] .sd-cuenta__barra { background-color: var(--warning); }
+.sd-cuenta[data-no-da] .sd-cuenta__barra { background-color: var(--warning); }
+.sd-cuenta[data-origen="sin-dato"] .sd-cuenta__barra { display: none; }
+.sd-cuenta__monto { text-align: right; font-size: 14px; line-height: 20px; font-weight: 600; color: var(--ink); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.sd-cuenta__sub { grid-column: 1 / -1; display: flex; align-items: flex-start; gap: 6px; padding-top: 2px; font-size: 12px; line-height: 17px; color: var(--ink-subtle); overflow-wrap: anywhere; }
+.sd-cuenta__sub svg { flex: none; margin-top: 2px; color: var(--ink-subtle); }
+.sd-cuenta__sub[data-alerta] svg { color: var(--warning); }
+
+
+.sd-avisos { display: flex; flex-direction: column; gap: 4px; }
+.sd-avisos p { margin: 0; color: var(--ink-muted); }
+.sd-avisos p[data-alerta] { color: var(--warning); }
+
+/* Contra la Caja esperada: el resumen va debajo del título, no al lado (la columna es angosta). */
+.sd-caja .fz-plegable__resumen { white-space: normal; grid-column: 2 / -1; }
+.sd-concilia { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px var(--space-4); margin: 0; font-size: 13px; line-height: 19px; color: var(--ink-muted); font-variant-numeric: tabular-nums; }
+.sd-concilia dt, .sd-concilia dd { margin: 0; }
+.sd-concilia dd { text-align: right; white-space: nowrap; color: var(--ink); }
+.sd-concilia__total { padding-top: 6px; border-top: 1px solid var(--border); font-weight: 600; color: var(--ink); }
+.sd-concilia__parte { padding-left: var(--space-3); }
+dt.sd-concilia__parte { cursor: help; }
+
+/* Entró y salió */
+.sd-cifras { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-4); margin-bottom: var(--space-4); }
+.sd-cifra { display: flex; flex-direction: column; min-width: 0; }
+.sd-cifra__etiqueta { font-size: 13px; line-height: 18px; color: var(--ink-subtle); }
+.sd-cifra__valor { font-family: var(--font-display); font-size: 26px; line-height: 32px; font-weight: 600; letter-spacing: -.02em; color: var(--ink); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.sd-cifra__valor[data-tono="bien"] { color: var(--success); }
+.sd-cifra__valor[data-tono="mal"] { color: var(--danger); }
+
+/* Con la columna angosta (la pantalla chica, o la tarjeta al lado del total) la barra baja a su propia línea. Se mide la lista, no la pantalla. */
+@container cuentas (max-width: 480px) {
+  .sd-cuenta { grid-template-columns: minmax(0, 1fr) auto; row-gap: 4px; }
+  .sd-cuenta__pista { grid-column: 1 / -1; grid-row: 2; }
+  .sd-cuenta__monto { grid-row: 1; grid-column: 2; }
+}
+@media (max-width: 640px) {
+  .sd-cifras { gap: var(--space-3); }
+  .sd-cifra__valor { font-size: 20px; line-height: 26px; }
+}

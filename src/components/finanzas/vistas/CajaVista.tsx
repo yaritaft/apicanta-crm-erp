@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, ArrowRightLeft, Check, ChevronRight, HandCoins, Landmark, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { CabeceraVista } from "@/components/finanzas/vistas/CabeceraVista";
 import { Ayuda, Badge, Button, Card, CardHead, Empty, Field, IconButton, Input, Select, Textarea } from "@/components/ui/ui";
@@ -19,8 +19,10 @@ import {
 import "./arqueo-detalle.css";
 import { primerConteo } from "@/lib/primer-conteo";
 import { saldosEsperados } from "@/lib/traspasos";
-import { controlarSaldos, quePasa, saldoParaElArqueo, textoDeLoPendiente, TOLERANCIA_DE_SALDO, type ControlDeSaldos, type RespuestaDeSaldos } from "@/lib/saldos-reales";
+import { controlarSaldos, quePasa, saldoParaElArqueo, textoDeLoPendiente, TOLERANCIA_DE_SALDO, type ControlDeSaldos } from "@/lib/saldos-reales";
 import { traerSaldosReales } from "@/lib/saldos-cliente";
+import { useSaldosReales, type LecturaDeSaldos } from "@/lib/useSaldosReales";
+import { SaldosVista } from "@/components/finanzas/vistas/SaldosVista";
 import { nube } from "@/lib/supabase";
 import type { Arqueo, EstadoApp, Gasto, Moneda, Procesador, SaldoCuenta, Traspaso } from "@/lib/types";
 import { CopiarLink } from "@/components/ui/Filtros";
@@ -54,6 +56,8 @@ export function CajaVista({ embebido = false, rangoFijo }: {
   const toast = useToast();
   const mon = e.ajustes.monedaBase;
   const M = (n: number, d = 0) => money(n, mon, d);
+  /* Los saldos reales se leen una vez: los usan los Saldos de arriba y el Control de saldos. */
+  const lectura = useSaldosReales();
   /* «traer»: el arqueo se abre ya con los saldos reales leídos de las cuentas. */
   const [arqueando, setArqueando] = useState<false | "vacio" | "traer">(false);
   const [retirando, setRetirando] = useState(false);
@@ -91,6 +95,8 @@ export function CajaVista({ embebido = false, rangoFijo }: {
           </>
         }
       />
+
+      <SaldosVista e={e} lectura={lectura} rangoFijo={rangoFijo} />
 
       {!ultimo ? (
         <Card>
@@ -164,7 +170,7 @@ export function CajaVista({ embebido = false, rangoFijo }: {
 
       {ultimo && mov && <Movimiento mov={mov} M={M} sinVenta={sinVentaHoy} />}
 
-      <ControlDeSaldosCard e={e} onArquear={() => setArqueando("traer")} />
+      <ControlDeSaldosCard e={e} lectura={lectura} onArquear={() => setArqueando("traer")} />
 
       <PasesEntreCuentas e={e} rango={rangoFijo} plegable={!embebido} onNuevo={() => setPase("nuevo")} onEditar={(t) => setPase(t)} />
 
@@ -286,18 +292,9 @@ function Movimiento({ mov, M, sinVenta }: { mov: MovimientoCaja; M: (n: number, 
    Aldana (20/10): si el saldo real de una cuenta se puede leer solo, que la app lo compare con lo que esperaba y avise: si no da,
    falta cargar algo (un gasto, un retiro, un cobro, un movimiento entre cuentas). Se lee al abrir la Caja y a pedido. */
 
-function ControlDeSaldosCard({ e, onArquear }: { e: EstadoApp; onArquear: () => void }) {
-  const [estado, setEstado] = useState<{ cargando: boolean; resp?: RespuestaDeSaldos; error?: string; cuando?: string }>({ cargando: Boolean(nube) });
-  const leer = useCallback(async () => {
-    setEstado((x) => ({ ...x, cargando: true, error: undefined }));
-    try {
-      const resp = await traerSaldosReales();
-      setEstado({ cargando: false, resp, cuando: new Date().toISOString() });
-    } catch (err) {
-      setEstado((x) => ({ ...x, cargando: false, error: err instanceof Error ? err.message : "No se pudieron leer los saldos." }));
-    }
-  }, []);
-  useEffect(() => { if (nube) void leer(); }, [leer]);
+function ControlDeSaldosCard({ e, lectura, onArquear }: { e: EstadoApp; lectura: LecturaDeSaldos; onArquear: () => void }) {
+  const estado = lectura;
+  const leer = lectura.leer;
   const control: ControlDeSaldos | null = useMemo(
     () => (estado.resp && estado.cuando ? controlarSaldos(e, estado.resp.saldos, estado.cuando) : null),
     [e, estado.resp, estado.cuando],
