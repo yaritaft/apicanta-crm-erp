@@ -20,6 +20,7 @@ import {
 import {
   caminoSugerido, CAMINOS, otroCaminoDe, propuestasPara, textoDeCamino, type CaminoId, type Pendiente, type Propuesta,
 } from "@/lib/pendientes-conciliar";
+import { AvisarAlDirector } from "./AvisarAlDirector";
 import { usePendientesDelMes, type DatosDePendientes } from "./usePendientes";
 import "./conciliacion.css";
 
@@ -44,13 +45,14 @@ const diaCorto = (dia: string) => `${dia.slice(8, 10)}/${dia.slice(5, 7)}`;
 const COMO: Record<string, string> = { mail: "mismo mail", telefono: "mismo teléfono", nombre: "nombre parecido" };
 const CANALES = (["webinar", "vsl", "setter", "otro"] as const);
 
-/** El mes con su pantalla armada. `onMes` muestra el selector de mes (Marketing); sin él, el mes lo fija quien la usa (Finanzas). */
-export function PendientesDeConciliar({ mes, onMes }: { mes: string; onMes?: (m: string) => void }) {
+/** El mes con su pantalla armada. `onMes` muestra el selector de mes (Marketing, el panel del director); sin él, el mes lo fija quien la usa (Finanzas).
+ *  `avisar` suma el botón para avisarle al director (Finanzas); `soloMirar`, un dueño mirando el panel de otro. */
+export function PendientesDeConciliar({ mes, onMes, avisar, soloMirar }: { mes: string; onMes?: (m: string) => void; avisar?: boolean; soloMirar?: boolean }) {
   const datos = usePendientesDelMes(mes);
-  return <PantallaPendientes datos={datos} onMes={onMes} />;
+  return <PantallaPendientes datos={soloMirar ? { ...datos, puedeEditar: false } : datos} onMes={onMes} avisar={avisar} />;
 }
 
-export function PantallaPendientes({ datos, onMes }: { datos: DatosDePendientes; onMes?: (m: string) => void }) {
+export function PantallaPendientes({ datos, onMes, avisar }: { datos: DatosDePendientes; onMes?: (m: string) => void; avisar?: boolean }) {
   const { mes, carga, resumen, pendientes, marcados, puedeEditar } = datos;
   const listo = carga === "listo";
   const [quien, setQuien] = useState<"todos" | "venta" | "agenda">("todos");
@@ -89,7 +91,7 @@ export function PantallaPendientes({ datos, onMes }: { datos: DatosDePendientes;
         <Card><Empty icono={<GitMerge size={22} />} titulo="Esto necesita la base en la nube" texto="Los formularios viven en Supabase; en la demo local no hay nada para conciliar." /></Card>
       )}
       {carga === "sin-permiso" && (
-        <Card><Empty icono={<GitMerge size={22} />} titulo="Tu tipo de cuenta no ve esto" texto="Lo ven quienes tienen Finanzas, Marketing o Webinars." /></Card>
+        <Card><Empty icono={<GitMerge size={22} />} titulo="Tu tipo de cuenta no ve esto" texto="Lo ven quienes tienen Finanzas, Marketing, Webinars o toda la venta." /></Card>
       )}
       {carga === "error" && (
         <Card><Empty icono={<GitMerge size={22} />} titulo="No pude consultar los formularios" texto={datos.error} accion={<Button variante="secondary" onClick={datos.recargar}>Reintentar</Button>} /></Card>
@@ -135,6 +137,7 @@ export function PantallaPendientes({ datos, onMes }: { datos: DatosDePendientes;
               <CardHead
                 titulo={listo ? `Para conciliar (${num(visibles.length)}${visibles.length !== pendientes.length ? ` de ${num(pendientes.length)}` : ""})` : "Para conciliar"}
                 sub="Unilos con su formulario o marcá que vinieron por otro camino."
+                acciones={avisar && listo && datos.puedeEditar && pendientes.length > 0 ? <AvisarAlDirector mes={mes} resumen={resumen} /> : undefined}
               />
               <div className="pc-filtros">
                 <Chip activo={quien === "todos"} onClick={() => setQuien("todos")} count={listo ? pendientes.length : undefined}>Todos</Chip>

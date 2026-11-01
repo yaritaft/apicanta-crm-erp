@@ -48,10 +48,11 @@ export interface DatosDePendientes {
 
 const VACIO: ResumenPendientes = { total: 0, conVenta: 0, soloAgenda: 0, montos: {} };
 
-export function usePendientesDelMes(mes: string, activo = true): DatosDePendientes {
+/** `soloLista`: sólo quién queda pendiente, sin buscar los formularios parecidos (lo lento): para la tarjeta del panel. */
+export function usePendientesDelMes(mes: string, activo = true, soloLista = false): DatosDePendientes {
   const e = useEstado();
   const { acceso } = useAcceso();
-  const nivel = Math.max(nivelEn(acceso, "finanzas"), nivelEn(acceso, "marketing"), nivelEn(acceso, "webinars"));
+  const nivel = Math.max(nivelEn(acceso, "finanzas"), nivelEn(acceso, "marketing"), nivelEn(acceso, "webinars"), nivelEn(acceso, "ventas"));
   const datos: DatosPendientes = useMemo(
     () => ({ contactos: e.contactos, sesiones: e.sesiones, leads: e.leads, ventas: e.ventas }),
     [e.contactos, e.sesiones, e.leads, e.ventas],
@@ -80,8 +81,9 @@ export function usePendientesDelMes(mes: string, activo = true): DatosDePendient
     setError("");
     (async () => {
       try {
-        const [u, c] = await Promise.all([pedirUnidos(idsDelMes), pedirEstadoDelCruce().catch(() => null)]);
+        const [u, c] = await Promise.all([pedirUnidos(idsDelMes), soloLista ? null : pedirEstadoDelCruce().catch(() => null)]);
         if (mio !== pedido.current) return;
+        if (soloLista) { setLeido({ mes, unidos: u }); return; }
         /* La lista se ve en cuanto se sabe quién ya tiene formulario; los formularios parecidos (lo lento) llegan después. */
         setCruce(c);
         setLeido({ mes, unidos: u });

@@ -30,6 +30,13 @@ export interface Aviso {
 
 export const AVISOS_A_MOSTRAR = 50;
 
+/* Finanzas le avisa al director que hay ventas y agendas sin origen (Aldana, 31/10). El mes va en el id: de ahí sale a qué mes lleva el aviso, y
+   con el día y el mail no se manda dos veces lo mismo el mismo día. */
+export const TIPO_AVISO_ORIGEN = "origen";
+export const prefijoAvisoOrigen = (mes: string) => `avi_ori_${mes}_`;
+export const idDeAvisoOrigen = (mes: string, dia: string, para: string) => `${prefijoAvisoOrigen(mes)}${dia}_${para.toLowerCase().replace(/[^a-z0-9]/g, "")}`;
+export const mesDeAvisoOrigen = (id: string): string | null => /^avi_ori_(\d{4}-\d{2})_/.exec(id)?.[1] ?? null;
+
 export const sinLeer = (avisos: readonly Aviso[]): number => avisos.filter((a) => !a.leidoEn).length;
 
 /** «recién», «hace 5 min», «hace 3 h», «ayer», «hace 4 días»: lo que lleva el aviso a la derecha. */
@@ -46,6 +53,7 @@ export function hace(iso: string, ahora: number = Date.now()): string {
 /** El renglón de abajo del título: de qué ficha es. */
 export const dondeEs = (a: Pick<Aviso, "persona"> & Partial<Pick<Aviso, "tipo">>): string =>
   a.persona ? `En la ficha de ${a.persona}` : a.tipo === "pandadoc" ? "Contratos de PandaDoc" : a.tipo === "acceso" ? "Pedido de acceso · se resuelve en Equipo"
+    : a.tipo === TIPO_AVISO_ORIGEN ? "Conciliar el origen · se resuelve en tu panel"
     : a.tipo === "reporte-semanal" ? "Formularios de alumnos" : a.tipo === "fathom" ? "Grabaciones de Fathom" : a.tipo === "calendly" ? "Formulario de agenda (Calendly)" : "En el chat de una ficha";
 
 /** Un aviso nuevo en la lista: arriba, sin repetir (llega por Realtime y también al volver a leer). */

@@ -60,3 +60,29 @@
 }
 
 .pc-aviso { margin: 0; padding: var(--space-3) var(--space-4); border-top: 1px solid var(--border); background: var(--surface-000); color: var(--ink); }
+
+/* El aviso al director, a la derecha de «Para conciliar». */
+.pc-aviso-dir { display: inline-flex; align-items: center; flex-wrap: wrap; justify-content: flex-end; gap: var(--space-2) var(--space-3); }
+.pc-aviso-dir__estado { display: inline-flex; align-items: center; gap: 6px; }
+
+/* La tarjeta del panel del director. */
+.pc-tarjeta__sub { margin: 2px 0 var(--space-3); font-size: 13px; line-height: 19px; color: var(--ink-subtle); }
+.pc-tarjeta__lista { display: flex; flex-direction: column; }
+.pc-tarjeta__fila {
+  display: grid; grid-template-columns: 140px minmax(0, 1fr) auto; align-items: center; gap: var(--space-4);
+  width: 100%; padding: var(--space-3) 0; border: 0; border-top: 1px solid var(--border); background: none;
+  font: inherit; color: inherit; text-align: left; cursor: pointer;
+}
+.pc-tarjeta__fila:first-child { border-top: 0; padding-top: 0; }
+.pc-tarjeta__fila:last-child { padding-bottom: 0; }
+.pc-tarjeta__fila:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: var(--radius-sm); }
+.pc-tarjeta__fila:hover .pc-tarjeta__ir { color: var(--ink); transform: translateX(2px); }
+.pc-tarjeta__mes { display: flex; flex-direction: column; min-width: 0; }
+.pc-tarjeta__mes b { font-size: 28px; line-height: 32px; font-weight: 650; letter-spacing: -0.02em; color: var(--ink); }
+.pc-tarjeta__partes { min-width: 0; }
+.pc-tarjeta__ir { color: var(--ink-subtle); transition: transform 160ms ease-out, color 160ms ease-out; }
+@media (max-width: 640px) {
+  .pc-tarjeta__fila { grid-template-columns: minmax(0, 1fr) auto; }
+  .pc-tarjeta__partes { grid-column: 1 / -1; grid-row: 2; }
+}
+

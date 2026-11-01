@@ -66,7 +66,7 @@ function HerramientaInterna({ h, cadencia, periodo, ahora }: { h: Herramienta; c
       return <ResultadosVista embebido rangoFijo={rango} />;
     case "origen":
       /* Es una lista de un mes: el del paso, o el en curso cuando el paso es de un día o una semana. */
-      return <PendientesDeConciliar mes={cadencia === "mes" ? periodo : hoy.slice(0, 7)} />;
+      return <PendientesDeConciliar avisar mes={cadencia === "mes" ? periodo : hoy.slice(0, 7)} />;
     case "liquidacion":
       return (
         <LiquidacionMes

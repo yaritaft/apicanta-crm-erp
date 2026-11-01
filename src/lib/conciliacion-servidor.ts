@@ -1,6 +1,9 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { CLAVE_CRUCE, type EstadoDelCruce } from "./cruce-nube";
 import { palabrasDeNombre } from "./cruce-formularios";
+import { diaDeNegocio } from "./dia-negocio";
+import { idDeAvisoOrigen, prefijoAvisoOrigen, TIPO_AVISO_ORIGEN } from "./avisos";
+import { textoDelAvisoDeOrigen, type ResumenPendientes } from "./pendientes-conciliar";
 import type { MetodoCruce } from "./registros-webinar";
 
 /* ==================================================================
@@ -140,4 +143,46 @@ export async function estadoDelCruce(db: SupabaseClient): Promise<EstadoLeido> {
     throw new Error(`cron_estado: ${r.error.message}`);
   }
   return { estado: ((r.data ?? [])[0] as EstadoDelCruce | undefined) ?? null };
+}
+
+/* ---------- El aviso al director ----------
+   Conciliar el origen es en buena parte de Comercial (Aldana, 31/10): Finanzas sigue viendo la lista y, con un botón, le avisa al director para que lo
+   resuelva en su panel. Los avisos los escribe el servidor: la base no deja insertarlos desde el navegador. */
+
+export interface EstadoDelAvisoOrigen {
+  /* A quién le llegaría, con el nombre como está en Accesos. */
+  directores: string[];
+  /* El último aviso de ese mes, con si ya lo leyó. */
+  ultimo: { creadoEn: string; leidoEn: string | null } | null;
+}
+
+async function directores(db: SupabaseClient, salvo: string): Promise<{ email: string; nombre: string }[]> {
+  const r = await db.from("usuarios_permitidos").select("email,nombre").eq("rol", "director");
+  if (r.error) throw new Error(r.error.message);
+  return ((r.data ?? []) as { email: string; nombre: string | null }[])
+    .map((u) => ({ email: u.email.trim().toLowerCase(), nombre: u.nombre?.trim() || u.email }))
+    .filter((u) => u.email && u.email !== salvo.trim().toLowerCase());
+}
+
+export async function estadoDelAvisoOrigen(db: SupabaseClient, mes: string, quien: string): Promise<EstadoDelAvisoOrigen> {
+  const [lista, ultimo] = await Promise.all([
+    directores(db, quien),
+    db.from("avisos").select("creadoEn,leidoEn").eq("tipo", TIPO_AVISO_ORIGEN).like("id", `${prefijoAvisoOrigen(mes)}%`).order("creadoEn", { ascending: false }).limit(1),
+  ]);
+  if (ultimo.error) throw new Error(ultimo.error.message);
+  return { directores: lista.map((d) => d.nombre), ultimo: ((ultimo.data ?? [])[0] as EstadoDelAvisoOrigen["ultimo"]) ?? null };
+}
+
+/** Le deja el aviso a cada director. Una vez por día y por mes de pendientes: apretar de nuevo no le repite la campanita. */
+export async function avisarOrigen(db: SupabaseClient, mes: string, resumen: ResumenPendientes, quien: string, ahora = Date.now()): Promise<{ avisados: string[] }> {
+  const a = await directores(db, quien);
+  if (a.length === 0) return { avisados: [] };
+  const yo = await db.from("usuarios_permitidos").select("nombre").eq("email", quien.trim().toLowerCase()).maybeSingle();
+  const de = (yo.data as { nombre?: string | null } | null)?.nombre?.trim() || "";
+  const { titulo, cuerpo } = textoDelAvisoDeOrigen(mes, resumen, de);
+  const dia = diaDeNegocio(new Date(ahora).toISOString());
+  const filas = a.map((d) => ({ id: idDeAvisoOrigen(mes, dia, d.email), para: d.email, tipo: TIPO_AVISO_ORIGEN, titulo, cuerpo, de: de || "Finanzas", deEmail: quien.trim().toLowerCase() || null }));
+  const r = await db.from("avisos").upsert(filas, { onConflict: "id", ignoreDuplicates: true });
+  if (r.error) throw new Error(r.error.message);
+  return { avisados: a.map((d) => d.nombre) };
 }

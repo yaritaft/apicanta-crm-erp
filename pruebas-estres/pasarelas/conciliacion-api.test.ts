@@ -27,6 +27,7 @@ nube.nube.rpc.set("puede_entrar", () => YO.entra);
 nube.nube.rpc.set("nivel_area", () => YO.nivel);
 nube.nube.rpc.set("solo_lo_suyo", () => YO.soloLoSuyo);
 nube.nube.declarar("cron_estado", [["clave"]]);
+nube.nube.declarar("avisos", [["id"]]);
 const { POST } = await import("@/app/api/conciliacion/route");
 const { guardarEstadoDelCruce } = await import("@/lib/cruce-nube");
 const { nubeServidor } = await import("@/lib/servidor");
@@ -166,3 +167,71 @@ test("acción desconocida o cuerpo roto: 400, nunca un error del servidor", asyn
   assert.equal((await pedir("texto suelto")).status, 400);
   assert.equal((await pedir(null)).status, 400);
 });
+
+/* Finanzas le avisa al director que queda origen por conciliar (Aldana, 31/10). */
+const jwtDe = (email: string) => `x.${Buffer.from(JSON.stringify({ email })).toString("base64url")}.y`;
+const RESUMEN = { total: 45, conVenta: 10, soloAgenda: 35, montos: { USD: 20600 } };
+function sembrarAccesos() {
+  sembrar();
+  nube.nube.filas("usuarios_permitidos").push(
+    { email: "Santiago@Apicanta.com", nombre: "Santiago Burghiani", rol: "director" },
+    { email: "aldana@apicanta.com", nombre: "Aldana Ytzcovich", rol: "contenido_finanzas" },
+  );
+}
+
+test("avisar al director: le llega con quién lo pide y cuánto hay, una vez por día, y queda a la vista si lo leyó", async () => {
+  sembrarAccesos();
+  const aldana = jwtDe("aldana@apicanta.com");
+  const antes = await pedir({ accion: "aviso-origen", mes: "2026-10" }, aldana);
+  assert.deepEqual(antes.json, { directores: ["Santiago Burghiani"], ultimo: null });
+
+  const r = await pedir({ accion: "avisar-origen", mes: "2026-10", resumen: RESUMEN }, aldana);
+  assert.equal(r.status, 200);
+  assert.deepEqual(r.json.avisados, ["Santiago Burghiani"]);
+  const [aviso, ...resto] = nube.nube.filas("avisos");
+  assert.equal(resto.length, 0);
+  assert.equal(aviso.para, "santiago@apicanta.com", "en minúsculas: es lo que compara la política y la campanita");
+  assert.equal(aviso.tipo, "origen");
+  assert.equal(aviso.titulo, "Aldana te pide conciliar octubre 2026");
+  assert.match(String(aviso.cuerpo), /^10 ventas \(US\$ 20\.600\) y 35 agendas sin su origen/);
+  assert.equal(aviso.deEmail, "aldana@apicanta.com");
+
+  await pedir({ accion: "avisar-origen", mes: "2026-10", resumen: RESUMEN }, aldana);
+  assert.equal(nube.nube.filas("avisos").length, 1, "apretar de nuevo el mismo día no le repite el aviso");
+  await pedir({ accion: "avisar-origen", mes: "2026-09", resumen: RESUMEN }, aldana);
+  assert.equal(nube.nube.filas("avisos").length, 2, "otro mes es otro aviso");
+
+  const guardado = nube.nube.filas("avisos").find((a) => String(a.id).startsWith("avi_ori_2026-10_"))!;
+  Object.assign(guardado, { creadoEn: "2026-11-01T13:00:00.000Z", leidoEn: "2026-11-01T14:00:00.000Z" });
+  const despues = await pedir({ accion: "aviso-origen", mes: "2026-10" }, aldana);
+  assert.deepEqual(despues.json.ultimo, { creadoEn: "2026-11-01T13:00:00.000Z", leidoEn: "2026-11-01T14:00:00.000Z" });
+});
+
+test("avisar al director: el que sólo mira o ve sólo lo suyo no manda, nadie se avisa a sí mismo y sin mes o sin pendientes no hay aviso", async () => {
+  sembrarAccesos();
+  const aldana = jwtDe("aldana@apicanta.com");
+  YO.nivel = 1;
+  assert.equal((await pedir({ accion: "avisar-origen", mes: "2026-10", resumen: RESUMEN }, aldana)).status, 403);
+  YO.nivel = 2; YO.soloLoSuyo = true;
+  assert.equal((await pedir({ accion: "avisar-origen", mes: "2026-10", resumen: RESUMEN }, aldana)).status, 403);
+  YO.soloLoSuyo = false;
+  assert.equal((await pedir({ accion: "avisar-origen", mes: "octubre", resumen: RESUMEN }, aldana)).status, 400);
+  assert.equal((await pedir({ accion: "avisar-origen", mes: "2026-10", resumen: { conVenta: -3, soloAgenda: "x" } }, aldana)).status, 400);
+  assert.equal(nube.nube.filas("avisos").length, 0);
+
+  const santi = jwtDe("santiago@apicanta.com");
+  assert.deepEqual((await pedir({ accion: "aviso-origen", mes: "2026-10" }, santi)).json.directores, []);
+  assert.deepEqual((await pedir({ accion: "avisar-origen", mes: "2026-10", resumen: RESUMEN }, santi)).json.avisados, []);
+  assert.equal(nube.nube.filas("avisos").length, 0);
+});
+
+test("el director resuelve desde su panel: con Ventas, y sin Finanzas, Marketing ni Webinars para editar, puede unir", async () => {
+  sembrarAccesos();
+  nube.nube.rpc.set("nivel_area", (a) => (a.area === "ventas" ? 2 : a.area === "webinars" ? 1 : 0));
+  try {
+    const r = await pedir({ accion: "unir", registroId: "r_mail", contactoId: "c1", cruce: "manual" });
+    assert.equal(r.status, 200);
+    assert.equal(filaDe("r_mail").contactoId, "c1");
+  } finally { nube.nube.rpc.set("nivel_area", () => YO.nivel); }
+});
+

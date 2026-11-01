@@ -2,9 +2,9 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Plus } from "lucide-react";
+import { ArrowLeft, Plus } from "lucide-react";
 import { PageHead } from "@/components/shell/PageHead";
-import { Empty } from "@/components/ui/ui";
+import { Button, Empty } from "@/components/ui/ui";
 import { DateRangePicker, rangoStr } from "@/components/ui/DateRangePicker";
 import { useEstado } from "@/lib/store";
 import { useAcceso } from "@/lib/acceso";
@@ -23,6 +23,8 @@ import { TarjetaSimulacro } from "@/components/simulacros/Simulacros";
 import { TarjetaConsultas } from "@/components/consultas/Consultas";
 import { LlamadasParaCerrar } from "./LlamadasParaCerrar";
 import { CuotasVencidas } from "./CuotasVencidas";
+import { PendientesDeConciliar } from "@/components/conciliacion/PendientesDeConciliar";
+import { TarjetaOrigen } from "@/components/conciliacion/TarjetaOrigen";
 import { TOMAN_SIMULACROS } from "@/lib/simulacros";
 import { PanelSetter } from "./PanelSetter";
 import { Rendimiento } from "./Rendimiento";
@@ -49,7 +51,7 @@ export function MiPanel() {
   const e = useEstado();
   const yo = useUsuarioActual();
   const { acceso, esDueno } = useAcceso();
-  const [v, cambiar] = useParamsURL({ persona: "" });
+  const [v, cambiar] = useParamsURL({ persona: "", origen: "" });
   const [rangoSel, setRango] = useRangoURL("mes");
 
   /* A quién se mira: la persona elegida (sólo un dueño elige) o uno mismo. */
@@ -109,6 +111,19 @@ export function MiPanel() {
 
   const totalComision = esDirector ? datos.comisionCloser + datos.comisionDirector : datos.comisionCloser;
 
+  /* Las ventas y agendas sin origen: el director las resuelve acá, sin necesitar Marketing ni Finanzas (Aldana, 31/10). */
+  if (esDirector && /^\d{4}-\d{2}$/.test(v.origen)) {
+    return (
+      <div className="mp">
+        {esDueno && candidatos.length > 0 && (
+          <BarraVerComo candidatos={candidatos} elegido={miembro} yoId={yo.miembro?.id} viendoOtro={viendoOtro} onElegir={(id) => cambiar({ persona: id })} />
+        )}
+        <div><Button sm variante="ghost" icono={<ArrowLeft size={15} />} onClick={() => cambiar({ origen: "" })}>Volver al panel</Button></div>
+        <PendientesDeConciliar mes={v.origen} onMes={(m) => cambiar({ origen: m })} soloMirar={viendoOtro} />
+      </div>
+    );
+  }
+
   return (
     <div className="mp">
       {esDueno && candidatos.length > 0 && (
@@ -131,6 +146,8 @@ export function MiPanel() {
           )}
         </div>
       </header>
+
+      {esDirector && <TarjetaOrigen ahora={ahora} onAbrir={(m) => cambiar({ origen: m })} />}
 
       {/* Yari y Nahuel toman los simulacros de entrevista de los martes (Lili, 23/10) y responden las consultas de los jueves (24/10). */}
       {TOMAN_SIMULACROS.includes(miembro.id) && <TarjetaSimulacro />}

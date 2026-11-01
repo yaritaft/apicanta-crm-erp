@@ -1,7 +1,8 @@
 import test from "node:test";
 import { readFileSync } from "node:fs";
 import assert from "node:assert/strict";
-import { alCambiarAvisos, avisarCambioDeAvisos, dondeEs, hace, marcarEnLista, sinLeer, sumarAviso, type Aviso } from "@/lib/avisos";
+import { alCambiarAvisos, avisarCambioDeAvisos, dondeEs, hace, idDeAvisoOrigen, marcarEnLista, mesDeAvisoOrigen, sinLeer, sumarAviso, type Aviso } from "@/lib/avisos";
+import { textoDelAvisoDeOrigen } from "@/lib/pendientes-conciliar";
 import { textoDeNota, TIPOS_DE_NOTA } from "@/lib/nota-de-charla";
 import { partesConMenciones } from "@/lib/chat-equipo";
 import { etapaDelFollowUp, FIJADOS_POR_DEFECTO, mismoFollowUp, renglonesCartera, validarFijados, type FilaCartera } from "@/lib/panel-servicio";
@@ -89,3 +90,18 @@ test("la campanita dice de dónde viene el aviso: la ficha de la persona, o Cont
   assert.equal(dondeEs({ persona: null, tipo: "pandadoc" } as never), "Contratos de PandaDoc");
   assert.equal(dondeEs({ persona: null } as never), "En el chat de una ficha");
 });
+
+test("el aviso de conciliar el origen dice qué mes es y cuánto hay, con el singular y sin lo que no hay", () => {
+  const id = idDeAvisoOrigen("2026-10", "2026-11-01", "Santiago@Apicanta.com");
+  assert.equal(id, "avi_ori_2026-10_2026-11-01_santiagoapicantacom");
+  assert.equal(mesDeAvisoOrigen(id), "2026-10");
+  assert.equal(mesDeAvisoOrigen("avi_cuo_abc"), null);
+  assert.equal(dondeEs({ persona: null, tipo: "origen" }), "Conciliar el origen · se resuelve en tu panel");
+  const uno = textoDelAvisoDeOrigen("2026-10", { total: 1, conVenta: 1, soloAgenda: 0, montos: { USD: 3000 } }, "Aldana Ytzcovich");
+  assert.equal(uno.titulo, "Aldana te pide conciliar octubre 2026");
+  assert.match(uno.cuerpo, /^1 venta \(US\$ 3\.000\) sin su origen/);
+  const sinVenta = textoDelAvisoDeOrigen("2026-09", { total: 2, conVenta: 0, soloAgenda: 2, montos: {} }, "");
+  assert.equal(sinVenta.titulo, "Finanzas te pide conciliar septiembre 2026");
+  assert.match(sinVenta.cuerpo, /^2 agendas sin su origen/);
+});
+

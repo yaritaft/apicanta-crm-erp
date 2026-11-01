@@ -3,6 +3,8 @@ import { nuevoRegistro, telefonoNormDe, type MetodoCruce, type RegistroForm } fr
 import { palabrasDeNombre } from "./cruce-formularios";
 import type { Pendiente } from "./pendientes-conciliar";
 import type { EstadoDelCruce } from "./cruce-nube";
+import type { EstadoDelAvisoOrigen } from "./conciliacion-servidor";
+import type { ResumenPendientes } from "./pendientes-conciliar";
 
 /* ==================================================================
    Conciliación del origen, del lado del navegador: habla con /api/conciliacion
@@ -78,3 +80,6 @@ export type EstadoDelCruceLeido = { sinTabla: true } | { sinTabla?: false; estad
 export async function pedirEstadoDelCruce(): Promise<EstadoDelCruceLeido> {
   return llamar<EstadoDelCruceLeido>({ accion: "estado" });
 }
+
+export const pedirAvisoOrigen = (mes: string) => llamar<EstadoDelAvisoOrigen>({ accion: "aviso-origen", mes });
+export const mandarAvisoOrigen = (mes: string, resumen: ResumenPendientes) => llamar<{ avisados: string[] }>({ accion: "avisar-origen", mes, resumen });

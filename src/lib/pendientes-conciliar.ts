@@ -2,6 +2,8 @@ import { personaDeVenta, personasDeAgendaYVentas } from "./cruce-auto";
 import { cruzarRegistros, type Candidato, type PersonaAgenda } from "./cruce-formularios";
 import { claveEmail } from "./contactos";
 import { diaDeNegocio } from "./dia-negocio";
+import { money } from "./format";
+import { nombrePeriodo } from "./periodos";
 import type { RegistroForm } from "./registros-webinar";
 import type { CanalOrigen, Contacto, Lead, Moneda, Sesion, Venta } from "./types";
 
@@ -156,6 +158,20 @@ export function resumirPendientes(lista: Pendiente[]): ResumenPendientes {
   for (const p of lista) for (const e of p.eventos) if (e.tipo === "venta" && e.monto && e.moneda) montos[e.moneda] = (montos[e.moneda] ?? 0) + e.monto;
   const conVenta = lista.filter((p) => p.tipo !== "agenda").length;
   return { total: lista.length, conVenta, soloAgenda: lista.length - conVenta, montos };
+}
+
+/** Lo que dice el aviso que Finanzas le manda al director: quién lo pide y cuánto hay para resolver. */
+export function textoDelAvisoDeOrigen(mes: string, r: ResumenPendientes, de: string): { titulo: string; cuerpo: string } {
+  const quien = de.trim().split(/\s+/)[0] || "Finanzas";
+  const plata = [r.montos.USD ? money(r.montos.USD, "USD") : "", r.montos.ARS ? money(r.montos.ARS, "ARS") : ""].filter(Boolean).join(" + ");
+  const partes = [
+    r.conVenta ? `${r.conVenta === 1 ? "1 venta" : `${r.conVenta} ventas`}${plata ? ` (${plata})` : ""}` : "",
+    r.soloAgenda ? (r.soloAgenda === 1 ? "1 agenda" : `${r.soloAgenda} agendas`) : "",
+  ].filter(Boolean);
+  return {
+    titulo: `${quien} te pide conciliar ${nombrePeriodo(mes)}`,
+    cuerpo: `${partes.join(" y ")} sin su origen. Sin esto no se sabe de qué estrategia vino cada una.`,
+  };
 }
 
 export interface Propuesta { registro: RegistroForm; candidato: Candidato }

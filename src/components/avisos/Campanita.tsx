@@ -12,7 +12,7 @@ import { useAcceso } from "@/lib/acceso";
 import { useEstado } from "@/lib/store";
 import { personaDe } from "@/lib/persona";
 import { fotoDe, mapaDeFotos } from "@/lib/fotos-perfil";
-import { alCambiarAvisos, dondeEs, hace, marcarEnLista, sinLeer, sumarAviso, type Aviso } from "@/lib/avisos";
+import { alCambiarAvisos, dondeEs, hace, marcarEnLista, mesDeAvisoOrigen, sinLeer, sumarAviso, TIPO_AVISO_ORIGEN, type Aviso } from "@/lib/avisos";
 import { leerAvisos, marcarLeidos, marcarTodosLeidos } from "./avisos-nube";
 import "./avisos.css";
 
@@ -120,6 +120,8 @@ export function Campanita() {
     if (a.tipo === "reporte-semanal") { router.push("/reportes?seccion=alumnos"); return; }
     /* Las grabaciones de Fathom que no llegan: quien puede, ve la lista por closer en Ajustes; el closer, sus llamadas en la Agenda. */
     if (a.tipo === "fathom") { router.push(esDueno ? "/ajustes?seccion=integraciones" : "/agenda"); return; }
+    /* Finanzas pide conciliar el origen de un mes: lleva a esa lista, en el panel de quien la resuelve. */
+    if (a.tipo === TIPO_AVISO_ORIGEN) { router.push(`/mi-panel?origen=${mesDeAvisoOrigen(a.id) ?? ""}`); return; }
     if (!a.contactoId) return;
     /* Si la persona es alumna, en Servicio; si no, en Ventas. El chat está en las dos. */
     const p = personaDe(e, a.contactoId);
