@@ -4,6 +4,9 @@ import { readFileSync } from "node:fs";
 import { armarUtm, CASOS, FUENTES, fuenteDeUtm } from "@/lib/utm-estandar";
 import { embudoDe } from "@/lib/agendas-webinar";
 import { COLUMNA, COLUMNAS_SUMADAS, VISIBLES_POR_DEFECTO } from "@/lib/crm-tabla";
+import { origenDe, origenDeUtm } from "@/lib/utms";
+import { estrategiaDeLaVenta } from "@/lib/estrategia-de-venta";
+import type { EstadoApp } from "@/lib/types";
 
 /* Santi, 02/11: «necesitaría ver sólo las llamadas de YouTube». El filtro de canal juntaba todo el VSL y YouTube
    llegaba escrito de tres formas. Estos son los valores que hay en producción: si alguien cambia el traductor y
@@ -85,4 +88,45 @@ test("la Agenda filtra y la tabla del CRM muestra con el mismo traductor", () =>
   assert.ok(COLUMNAS_SUMADAS.some((x) => x.claves.includes("fuente")), "quien ya tenía sus columnas guardadas también la recibe");
   /* Nadie vuelve a leer el utm_source crudo para decir de dónde vino. */
   assert.doesNotMatch(agenda, /utm_source/);
+});
+
+/* Lo definido con Yari: la estrategia sale del link de quien compró, el último antes de la venta. */
+const conEmbudos = (extra: Partial<EstadoApp> = {}) => ({
+  embudos: [{ id: "yt", nombre: "VSL YOUTUBE" }, { id: "web", nombre: "Webinar", esWebinar: true }, { id: "land", nombre: "VSL Landing" }],
+  webinars: [], equipo: [], leads: [], contactos: [], sesiones: [], ajustes: {}, ...extra,
+}) as unknown as EstadoApp;
+const AHORA = "2026-10-27T12:00:00.000Z";
+
+test("los links de YouTube escritos a mano van a VSL YOUTUBE, igual que el estándar", () => {
+  const e = conEmbudos();
+  for (const utm of [{ source: "YT", medium: "Bio" }, { source: "YouTube", medium: "17SEP" }, { source: "Landing-Organic", medium: "YT" }, { source: "youtube", medium: "organic", campaign: "vsl-yt" }]) {
+    assert.equal(origenDe(e, utm, AHORA)?.embudoId, "yt", JSON.stringify(utm));
+  }
+});
+
+test("lo que no es YouTube no cambia: la landing de Instagram no dice estrategia, y una campaña de webinar sigue siendo webinar", () => {
+  const e = conEmbudos();
+  assert.equal(origenDe(e, { source: "Landing-Organic", medium: "IG" }, AHORA), null);
+  assert.equal(origenDe(e, { source: "youtube", campaign: "webinar_20261021", content: "vivo" }, AHORA)?.embudoId, "web");
+});
+
+test("una regla de Ajustes manda sobre la lectura de YouTube", () => {
+  const e = conEmbudos({ ajustes: { reglasUtm: [{ id: "r", source: "Landing-Organic", medium: "YT", embudoId: "land", creadoEn: AHORA }] } } as never);
+  assert.equal(origenDe(e, { source: "Landing-Organic", medium: "YT" }, AHORA)?.embudoId, "land");
+});
+
+test("cuenta el último link antes de la venta: fue a un webinar y después agendó por YouTube", () => {
+  const sesion = (id: string, creadoEn: string, utm: Record<string, string>) => ({ id, contactoId: "c", creadoEn, utm });
+  const e = conEmbudos({
+    contactos: [{ id: "c", creadoEn: "2026-10-01T00:00:00.000Z" }],
+    sesiones: [
+      sesion("web", "2026-10-16T12:00:00.000Z", { utm_source: "email", utm_medium: "email", utm_campaign: "webinar_20261021" }),
+      sesion("yt", "2026-10-26T12:00:00.000Z", { utm_source: "Landing-Organic", utm_medium: "YT" }),
+    ],
+  } as never);
+  assert.equal(origenDeUtm(e, "c", AHORA)?.embudoId, "yt");
+  /* El closer no la cambia a mano: manda el link. */
+  assert.equal(estrategiaDeLaVenta(e, "c", AHORA, "web"), "yt");
+  /* Una venta anterior al link de YouTube sigue siendo del webinar. */
+  assert.equal(origenDeUtm(e, "c", "2026-10-20T12:00:00.000Z")?.embudoId, "web");
 });

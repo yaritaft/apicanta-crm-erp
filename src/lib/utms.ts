@@ -1,7 +1,7 @@
 import type { EstadoApp, ID, ReglaUtm, Venta } from "./types";
 import { webinarDeUtm } from "./calendly";
 import { proyectoDeWebinar } from "./angelo";
-import { EVENTOS, leerUtm, slugUtm, type Funnel } from "./utm-estandar";
+import { EVENTOS, fuenteDeUtm, leerUtm, slugUtm, type Funnel } from "./utm-estandar";
 
 /* ==================================================================
    De dónde viene una venta, por las UTMs.
@@ -22,7 +22,10 @@ import { EVENTOS, leerUtm, slugUtm, type Funnel } from "./utm-estandar";
      y en la clase cero y el Q&A, del webinar que dice el link
      (clase0_webinar_aaaammdd);
    - el setter, de setter_{nombre}; el referidor, de utm_content.
-   Los links viejos del webinar (source Webinar + medium 23-09) también.
+   Los links viejos del webinar (source Webinar + medium 23-09) también, y
+   los de YouTube escritos a mano (YT, YouTube, Landing-Organic con medium
+   YT), que son vsl-yt aunque no lo digan: sin esto la estrategia quedaba a
+   mano y caían en cualquiera (Juan Cruz, 02/11).
 
    Las reglas de Ajustes → UTMs mandan sobre eso: sirven para lo que no
    sigue el estándar o para cambiar la estrategia de un funnel. Una regla
@@ -119,7 +122,8 @@ export interface OrigenUtm {
 /** Lo que dice una UTM del origen, o null si no dice nada. */
 export function origenDe(e: EstadoApp, utm: Utm, cuando: string): OrigenUtm | null {
   const crudo = crudoDe(utm);
-  const l = leerUtm(crudo);
+  const leida = leerUtm(crudo);
+  const l = !leida.funnel && fuenteDeUtm(crudo)?.valor === "youtube" ? { ...leida, funnel: "vsl-yt" as const } : leida;
   const o: OrigenUtm = { utm, funnel: l.funnel };
   if (l.funnel) {
     o.embudoId = estrategiaDeFunnel(e, l.funnel, l.detalle);
