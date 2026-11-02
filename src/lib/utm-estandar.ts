@@ -280,6 +280,67 @@ export function leerUtm(crudo: Record<string, string | undefined> | null | undef
   return { formato: "otro", contenido };
 }
 
+/* ---------- La fuente: de dónde vino, con un solo nombre ----------
+
+   Los links se escriben a mano y la misma fuente llega de muchas formas: a
+   YouTube entran utm_source=YT, =YouTube y =Landing-Organic con utm_medium=YT
+   (Santi, 02/11: no había cómo ver sólo las llamadas de YouTube). Todo lo que
+   quiera saber de dónde vino alguien lo pregunta acá, y no al utm_source
+   crudo: el filtro de la Agenda, su etiqueta, la columna del CRM, la descarga
+   y lo que muestra Ajustes.
+
+   Un valor que no está en la lista no se pierde: sale con su nombre, como
+   una fuente más, y Ajustes → UTMs avisa que no se reconoció. */
+
+export interface FuenteUtm {
+  /* Lo que va en la URL de un filtro: siempre igual, se escriba como se escriba. */
+  valor: string;
+  texto: string;
+  /* Está en la lista de abajo: no es un valor nuevo que alguien inventó. */
+  conocida: boolean;
+}
+
+const FUENTES_CONOCIDAS: { valor: string; texto: string; alias: RegExp }[] = [
+  { valor: "youtube", texto: "YouTube", alias: /^(yt|ytb|you-?tube|youtu-?be)$/ },
+  { valor: "meta", texto: "Meta", alias: /^(meta|facebook|fb)$/ },
+  { valor: "instagram", texto: "Instagram", alias: /^(instagram|insta|ig)$/ },
+  { valor: "tiktok", texto: "TikTok", alias: /^(tiktok|tik-tok|tt)$/ },
+  { valor: "google", texto: "Google", alias: /^(google|gads|adwords)$/ },
+  { valor: "email", texto: "Email", alias: /^(email|e-mail|mail)$/ },
+  { valor: "whatsapp", texto: "WhatsApp", alias: /^(whatsapp|whats-app|wpp|wsp|wa)$/ },
+  { valor: "setter-ia", texto: "Setter IA", alias: /^setter-ia$/ },
+  { valor: "setter", texto: "Setter", alias: /^setter$/ },
+  { valor: "referido", texto: "Referido", alias: /^referidos?$/ },
+  { valor: "resell", texto: "Resell", alias: /^resells?$/ },
+  { valor: "webinar", texto: "Webinar", alias: /^webinar$/ },
+  { valor: "directo", texto: "Directo", alias: /^(direct|directo)$/ },
+];
+
+const LANDING = /^landing(-org[a-z]*)?$/;
+const LANDING_ORGANICA: FuenteUtm = { valor: "landing", texto: "Landing orgánica", conocida: true };
+const conocida = (crudo: string): FuenteUtm | undefined => {
+  const s = slugUtm(crudo);
+  const f = FUENTES_CONOCIDAS.find((x) => x.alias.test(s));
+  return f && { valor: f.valor, texto: f.texto, conocida: true };
+};
+const PAGO = /^(paid|ppc|cpc|ads?|pauta)$/;
+
+/** De dónde vino, con un solo nombre; null si el link no dice nada. Acepta las claves con o sin "utm_". */
+export function fuenteDeUtm(crudo: Record<string, string | undefined> | null | undefined): FuenteUtm | null {
+  const u = Object.fromEntries(Object.entries(crudo ?? {}).map(([k, v]) => [k.toLowerCase().replace(/^utm_/, ""), (v ?? "").trim()]));
+  /* El estándar lo dice en la campaña, aunque la fuente esté mal escrita. */
+  if (/^vsl-yt(_|$)/i.test(u.campaign ?? "")) return { valor: "youtube", texto: "YouTube", conocida: true };
+  /* Sin source, el medium sólo cuenta si nombra una fuente: una fecha (23-09) no lo es. */
+  const fuente = u.source || (conocida(u.medium ?? "") ? u.medium : "");
+  if (!fuente) return null;
+  /* La landing es a dónde llegó, no de dónde vino: eso lo dice el medium (YT, IG). */
+  if (LANDING.test(slugUtm(fuente))) return conocida(u.medium ?? "") ?? LANDING_ORGANICA;
+  const f = conocida(fuente);
+  /* La pauta de Instagram se compra en Meta: es la misma plata que la de Facebook. */
+  if (f?.valor === "instagram" && PAGO.test(slugUtm(u.medium ?? ""))) return conocida("meta")!;
+  return f ?? { valor: slugUtm(fuente) || fuente, texto: fuente, conocida: false };
+}
+
 /* ---------- De qué webinar es un evento ---------- */
 
 /** El día del webinar (aaaa-mm-dd, en Argentina) de un instante. */

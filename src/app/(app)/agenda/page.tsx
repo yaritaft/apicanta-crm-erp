@@ -16,7 +16,7 @@ import { ETIQUETA_CANAL } from "@/lib/calendly";
 import { atribucionDe, claveDeFecha, embudoDe, viaDe } from "@/lib/agendas-webinar";
 import { DescargarTranscripciones } from "@/components/fathom/DescargarTranscripciones";
 import { bajarCSV, clasesDe, crmDeDescarga, tablaDeDescarga, type FilaDescarga } from "@/lib/agendas-descarga";
-import { diaUtm } from "@/lib/utm-estandar";
+import { diaUtm, fuenteDeUtm } from "@/lib/utm-estandar";
 import { aURL, elegidosValidos, pasaFiltro } from "@/lib/filtro-multiple";
 import { estadoAutomatico, opcionesDe as opcionesDelCrm } from "@/lib/crm";
 import { esDeVenta, estadoVisible, HECHA, POR_VENIR, SIN_CARGAR } from "@/lib/estados";
@@ -47,23 +47,26 @@ const DOW = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"];
    lo que antes era la pestaña Próximas — y el resto acá. Vacío es "todos".
    - estado: el Estado de Llamada tal cual se ve (Compra Full, Inasistió…,
      o Sin cargar / Por venir si todavía no tiene). Estado, webinar, tipo,
-     anfitrión y canal admiten VARIOS a la vez, separados por «|»
+     anfitrión, canal y fuente admiten VARIOS a la vez, separados por «|»
      (?estado=Inasistió|Reagendó: lib/filtro-multiple.ts)
    - tipo: el tipo de sesión tal cual, o "sin"
    - anfitrion: quien la atiende (el closer en Calendly), o "sin"
    - webinar: el webinar al que pertenece la agenda (su link, su clase cero o su
      Q&A: lib/agendas-webinar.ts, igual que en la ficha del webinar), o "sin"
    - canal: webinar · vsl · setter · otro · sin (Calendly sin canal) · manual
+   - fuente: de dónde vino dentro del canal, con un solo nombre aunque el link
+     lo escriba distinto (youtube junta YT, YouTube y la landing con medium YT:
+     fuenteDeUtm en lib/utm-estandar.ts), o "sin"
    - calificada: si · no (invierte +1000, inglés y carrera: lib/calificacion.ts)
    - pag: la página, desde 1 */
-const VISTA_AGENDA = { estado: "", webinar: "", tipo: "", anfitrion: "", canal: "", calificada: "", pag: "1" };
+const VISTA_AGENDA = { estado: "", webinar: "", tipo: "", anfitrion: "", canal: "", fuente: "", calificada: "", pag: "1" };
 
 /* Llamadas por página. Se corta entre un día y otro, nunca en el medio de
    uno: ver `paginas` más abajo. */
 const POR_PAGINA = 30;
 
-type Faceta = "estado" | "webinar" | "tipo" | "anfitrion" | "canal" | "calificada";
-const FACETAS: Faceta[] = ["estado", "webinar", "tipo", "anfitrion", "canal", "calificada"];
+type Faceta = "estado" | "webinar" | "tipo" | "anfitrion" | "canal" | "fuente" | "calificada";
+const FACETAS: Faceta[] = ["estado", "webinar", "tipo", "anfitrion", "canal", "fuente", "calificada"];
 
 /* De dónde vino: el canal de Calendly o, si se cargó a mano, eso. Son
    excluyentes, así que van en un solo desplegable. */
@@ -83,6 +86,7 @@ const valorDe: Record<Exclude<Faceta, "estado" | "webinar">, (s: Sesion, persona
   tipo: (s) => s.tipo?.trim() || SIN,
   anfitrion: (s) => s.anfitrion?.trim() || SIN,
   canal: canalDe,
+  fuente: (s) => fuenteDeUtm(s.utm)?.valor ?? SIN,
   calificada: (s, persona) => (evaluarAgenda(s, persona).calificada ? "si" : "no"),
 };
 
@@ -210,6 +214,7 @@ export default function Agenda() {
      el orden del Airtable y, al final, lo que todavía no tiene estado. */
   const opciones = useMemo<Record<Faceta, OpcionFiltro[]>>(() => {
     const orden = [...opcionesDelCrm(e.ajustes, "estadoLlamada").map((o) => o.nombre), HECHA, SIN_CARGAR, POR_VENIR];
+    const textoDeFuente = new Map(e.sesiones.flatMap((s) => { const x = fuenteDeUtm(s.utm); return x ? [[x.valor, x.texto] as const] : []; }));
     const lugar = (t: string) => { const i = orden.indexOf(t); return i < 0 ? orden.length : i; };
     return {
     estado: [...new Set(e.sesiones.map((s) => estadoDeSesion(s).texto))].filter(Boolean).sort((a, b) => lugar(a) - lugar(b) || a.localeCompare(b, "es")).map((t) => ({ valor: t, texto: t })),
@@ -222,6 +227,7 @@ export default function Agenda() {
     tipo: opcionesDe(e.sesiones.map((s) => valorDe.tipo(s)), (t) => t, "Sin tipo"),
     anfitrion: opcionesDe(e.sesiones.map((s) => valorDe.anfitrion(s)), (a) => a, "Sin anfitrión"),
     canal: CANALES.filter((c) => e.sesiones.some((s) => canalDe(s) === c.valor)),
+    fuente: opcionesDe(e.sesiones.map((s) => valorDe.fuente(s)), (v) => textoDeFuente.get(v) ?? v, "Sin fuente"),
     calificada: CALIFICACION,
     };
   }, [e.sesiones, e.ajustes, e.webinars, estadoDeSesion, webinarDe]);
@@ -289,12 +295,14 @@ export default function Agenda() {
   /* Cambiar un filtro vuelve a la primera página. */
   const filtrar = (faceta: Faceta, valores: string[]) => setVista({ [faceta]: aURL(valores), pag: null });
   const conCuenta = (xs: OpcionFiltro[], m: Map<string, number>) => xs.map((o) => ({ ...o, cuenta: m.get(o.valor) ?? 0 }));
+  /* Las fuentes son muchas y dependen del canal: con VSL elegido no se ofrece «Setter (0)». */
+  const fuentesAOfrecer = conCuenta(opciones.fuente, cuentas.fuente).filter((o) => o.cuenta > 0 || f.fuente.includes(o.valor));
 
   /* Limpia lo que recorta la lista; el período queda, que se elige arriba. */
   const hayFiltros = FACETAS.some((k) => f[k].length > 0) || busca.trim() !== "";
   function limpiarFiltros() {
     setBusca("");
-    setVista({ estado: null, webinar: null, tipo: null, anfitrion: null, canal: null, calificada: null, pag: null }, { q: null });
+    setVista({ estado: null, webinar: null, tipo: null, anfitrion: null, canal: null, fuente: null, calificada: null, pag: null }, { q: null });
   }
 
   const sesionVista = e.sesiones.find((s) => s.id === ver) ?? null;
@@ -395,6 +403,10 @@ export default function Agenda() {
           {opciones.canal.length > 1 && (
             <FiltroMulti etiqueta="Filtrar por canal" todos="Canal" valores={f.canal}
               opciones={conCuenta(opciones.canal, cuentas.canal)} onCambiar={(v) => filtrar("canal", v)} />
+          )}
+          {opciones.fuente.length > 1 && (
+            <FiltroMulti etiqueta="Filtrar por fuente" todos="Fuente" valores={f.fuente}
+              opciones={fuentesAOfrecer} onCambiar={(v) => filtrar("fuente", v)} />
           )}
           <span className="t-sm t-subtle t-num agenda-barra__cuenta"
             title={visibles.length > 1 ? (alReves ? "De la última a la primera" : "De la primera a la última") : undefined}>
@@ -743,7 +755,7 @@ export default function Agenda() {
 }
 
 /* De qué embudo vino la llamada, por los UTMs de la agenda: "Webinar 23-09 ·
-   EnVivo", "Webinar 23-09 · PostWebinar", "VSL · Landing-Organic"… Un link
+   EnVivo", "Webinar 23-09 · PostWebinar", "VSL · YouTube"… Un link
    viejo del webinar (sin EnVivo ni PostWebinar) va en amarillo. Sin canal
    ni UTMs (una llamada cargada a mano) no muestra nada. */
 function BadgeEmbudo({ s }: { s: Sesion }) {

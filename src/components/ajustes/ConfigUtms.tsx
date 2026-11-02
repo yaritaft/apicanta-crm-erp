@@ -13,7 +13,7 @@ import {
   type CampoUtm, type OrigenUtm, type Utm,
 } from "@/lib/utms";
 import {
-  armarPaqueteWebinar, armarUtm, CASOS, diaUtm, EVENTOS, FUENTES, FUNNELS, linkConUtm, MEDIOS, MOMENTOS_EVENTO, problemasDeUtm, queryUtm, slugUtm,
+  armarPaqueteWebinar, armarUtm, CASOS, diaUtm, EVENTOS, FUENTES, fuenteDeUtm, FUNNELS, linkConUtm, MEDIOS, MOMENTOS_EVENTO, problemasDeUtm, queryUtm, slugUtm,
   textoDelPaquete,
   type CasoUtm, type Funnel, type GrupoArmado, type IdCaso, type Utm as UtmCruda, type ValoresCaso,
 } from "@/lib/utm-estandar";
@@ -538,6 +538,7 @@ function UtmsQueLlegaron() {
           <div className="catalogo-lista lista-scroll">
             {ordenadas.map((d) => {
               const problemas = problemasDeUtm(crudo(d.utm));
+              const fuente = fuenteDeUtm(crudo(d.utm));
               return (
                 <div className="utm-detectada" key={CAMPOS_UTM.map((c) => `${c}=${d.utm[c] ?? ""}`).join("&")}>
                   <span className="utm-detectada__utm">
@@ -547,6 +548,9 @@ function UtmsQueLlegaron() {
                   </span>
                   <span className="t-sm t-subtle t-num">{num(d.personas)} {d.personas === 1 ? "persona" : "personas"} · última {fechaLarga(d.ultima)}</span>
                   <span className="utm-detectada__origen t-sm">
+                    {fuente && (fuente.conocida
+                      ? <span className="t-subtle">Fuente: {fuente.texto} · </span>
+                      : <span title="Sale con este nombre en el filtro Fuente de la Agenda. Si es otra forma de escribir una fuente que ya existe, hay que sumarla a la lista."><Badge variante="warning">Fuente nueva</Badge>{" "}</span>)}
                     {d.origen ? <span>{textoOrigen(e, d.origen)}</span> : <Badge variante="warning">Sin asignar</Badge>}
                     {problemas.length > 0 && <span className="t-subtle" title={problemas.join(" · ")}> · no sigue el estándar</span>}
                   </span>

@@ -1,5 +1,5 @@
 import { evaluarAgenda } from "./calificacion";
-import { diaDelWebinar, diaUtm, EVENTOS, leerUtm, MOMENTOS_EVENTO, NOMBRE_FUNNEL, textoUtm } from "./utm-estandar";
+import { diaDelWebinar, diaUtm, EVENTOS, fuenteDeUtm, leerUtm, MOMENTOS_EVENTO, NOMBRE_FUNNEL, textoUtm } from "./utm-estandar";
 
 /* ==================================================================
    Las agendas de Calendly de un webinar: cuáles son suyas, por qué vía
@@ -71,7 +71,7 @@ export function atribucionDe(extra: Record<string, unknown> | null | undefined):
 
 /* ---------- De qué embudo vino ----------
    El badge de cada agenda: "Webinar 23-09 · EnVivo", "Webinar 23-09 · link
-   viejo", "VSL · IG"… Sale de los UTMs y, si no hay, del tipo de evento. */
+   viejo", "VSL · Instagram"… Sale de los UTMs y, si no hay, del tipo de evento. */
 
 /* EnVivo y PostWebinar son los links viejos; vivo, replay y seguimiento, los
    del estándar. "viejo" es un link del webinar que no dice cuál es. */
@@ -107,9 +107,12 @@ export function embudoDe(s: { canal?: string | null; utm?: Record<string, string
     const link: LinkWebinar = CONTENIDO_VIVO.test(c) ? "EnVivo" : CONTENIDO_DESPUES.test(c) ? "PostWebinar" : "viejo";
     return { texto: `Webinar${fecha ? ` ${fecha}` : ""}`, link, utm };
   }
-  const base = CANAL[s.canal ?? ""] ?? (u.utm_source ? u.utm_source : "Sin UTMs");
-  const detalle = u.utm_source && CANAL[s.canal ?? ""] ? u.utm_source : u.utm_medium;
-  return { texto: detalle && detalle !== base ? `${base} · ${detalle}` : base, utm };
+  /* La fuente con un solo nombre: «YT» y «YouTube» dicen lo mismo. Los que traen
+     el canal en el nombre («Setter IA» en Setter) no lo repiten. */
+  const fuente = fuenteDeUtm(u)?.texto;
+  const canal = CANAL[s.canal ?? ""];
+  if (!canal) return { texto: fuente ?? "Sin UTMs", utm };
+  return { texto: !fuente || fuente === canal ? canal : fuente.startsWith(canal) ? fuente : `${canal} · ${fuente}`, utm };
 }
 
 export interface AgendaDelWebinar {

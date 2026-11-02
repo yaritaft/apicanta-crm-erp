@@ -1,7 +1,7 @@
 import type { Ajustes, CampoOpcionesCrm, ColorCrm, Contacto, EstadoApp, ID, Lead, Pago, Sesion, Venta } from "./types";
 import { filasCrm, opcionesDe, partir, sinTildes, type FilaCrm } from "./crm";
 import { diaDeNegocio } from "./dia-negocio";
-import { EVENTOS, leerUtm, NOMBRE_FUNNEL } from "./utm-estandar";
+import { EVENTOS, fuenteDeUtm, leerUtm, NOMBRE_FUNNEL } from "./utm-estandar";
 import { CANCELADA, CON_CIERRE, estadoDe, NO_SE_PRESENTO, POR_VENIR, SIN_CARGAR, SIN_CIERRE } from "./estados";
 import { conCorrecciones, corregidoDe, edadDeDia, nacimientoDeRespuestas, respuestaPerfil, textoDeDia, type CampoPerfil, type Corregido } from "./perfil";
 import type { CambiosLlamada } from "./store";
@@ -52,6 +52,8 @@ export interface FilaTabla {
   oferta: string;        // Sí · No · ""
   cierre: string;        // aaaa-mm-dd
   via: string;
+  /* De dónde vino, con un solo nombre: YouTube, Meta, Instagram… (fuenteDeUtm). */
+  fuente: string;
   ad: string;
   /* El ad sin copias ni formato (anguloDe): las copias de un anuncio son el mismo ángulo. */
   angulo: string;
@@ -227,6 +229,7 @@ export function filasTabla(
       oferta: s.hizoOferta === true ? "Sí" : s.hizoOferta === false ? "No" : "",
       cierre: s.cierreEstimado ?? "",
       via: viaDe(s, f),
+      fuente: fuenteDeUtm(s.utm)?.texto ?? "",
       ad, angulo: anguloDe(ad), campania,
       pais: c?.pais?.trim() || l?.pais?.trim() || paisDeTelefono(f.telefono),
       paisCargado: c?.pais?.trim() || l?.pais?.trim() || "",
@@ -259,7 +262,7 @@ export function filasTabla(
 
 export type ClaveColumna =
   | "llamada" | "nombre" | "closer" | "estadoPreCall" | "estadoLlamada" | "preCall" | "objecion" | "oferta" | "cierre"
-  | "via" | "ad" | "angulo" | "campania" | "pais" | "edad" | "nacimiento" | "tecnologias" | "ingles" | "experiencia" | "formacion"
+  | "via" | "fuente" | "ad" | "angulo" | "campania" | "pais" | "edad" | "nacimiento" | "tecnologias" | "ingles" | "experiencia" | "formacion"
   | "ingreso" | "inversion" | "calificada" | "grabacion" | "venta" | "producto" | "cobrado" | "comprobante" | "conciliado" | "cargo" | "chequeo" | "email" | "telefono" | "agendo" | "notas";
 
 export interface ColumnaTabla {
@@ -383,6 +386,7 @@ export const COLUMNAS: ColumnaTabla[] = [
   { clave: "cargo", titulo: "Cargó", grupo: "Resultado", valores: (f) => (f.cobros === null ? [SIN_VENTA] : f.cobros.total === 0 ? [SIN_COBROS] : f.cargo), orden: (f) => f.cargo.join(", "), ancho: 150 },
   { clave: "chequeo", titulo: "Chequeo", grupo: "Resultado", valores: (f) => valoresChequeo(f.cobros), orden: (f) => rangoCobros(valoresChequeo(f.cobros)), ancho: 150 },
   { clave: "via", titulo: "Vía", grupo: "Origen", valores: (f) => uno(f.via), ancho: 170 },
+  { clave: "fuente", titulo: "Fuente", grupo: "Origen", valores: (f) => uno(f.fuente), ancho: 150 },
   { clave: "ad", titulo: "Ad", grupo: "Origen", valores: (f) => uno(f.ad), ancho: 200 },
   { clave: "angulo", titulo: "Ángulo", grupo: "Origen", valores: (f) => uno(f.angulo), ancho: 190 },
   { clave: "campania", titulo: "Campaña", grupo: "Origen", valores: (f) => uno(f.campania), ancho: 200 },
@@ -417,7 +421,7 @@ export function celdaParaCsv(c: ColumnaTabla, f: FilaTabla): string {
 export const esColumna = (k: string): k is ClaveColumna => Object.prototype.hasOwnProperty.call(COLUMNA, k);
 
 export const VISIBLES_POR_DEFECTO: ClaveColumna[] = [
-  "llamada", "nombre", "telefono", "email", "closer", "estadoPreCall", "estadoLlamada", "objecion", "oferta", "cierre", "via", "ad", "pais",
+  "llamada", "nombre", "telefono", "email", "closer", "estadoPreCall", "estadoLlamada", "objecion", "oferta", "cierre", "via", "fuente", "ad", "pais",
   "tecnologias", "ingles", "ingreso", "inversion", "calificada", "grabacion", "notas", "venta", "comprobante", "conciliado",
 ];
 
@@ -428,6 +432,8 @@ export const COLUMNAS_SUMADAS: { id: string; despuesDe: string; claves: ClaveCol
   { id: "contacto-1910", despuesDe: "nombre", claves: ["telefono", "email"] },
   /* Mariano (19/10): «un lugar para poner comentarios de la llamada». La columna ya existía pero había que sumarla. */
   { id: "notas-1910", despuesDe: "cierre", claves: ["notas"] },
+  /* Santi (02/11): ver sólo lo de YouTube. La Vía dice «VSL»; la Fuente, de cuál de todos. */
+  { id: "fuente-0211", despuesDe: "via", claves: ["fuente"] },
 ];
 
 /* Las dos columnas que miran los cobros de la venta: sólo las ve quien puede leer los cobros. */
@@ -468,6 +474,7 @@ export const EDITOR: Partial<Record<ClaveColumna, EditorColumna>> = {
 export const POR_QUE_NO: Partial<Record<ClaveColumna, string>> = {
   agendo: "Cuándo agendó, según Calendly.",
   via: "Sale del link con el que agendó.",
+  fuente: "Sale del link con el que agendó: YT, YouTube y la landing con medium YT son YouTube.",
   ad: "Sale del link del anuncio con el que llegó.",
   angulo: "Sale del nombre del anuncio.",
   campania: "Sale del link del anuncio con el que llegó.",
