@@ -24,6 +24,7 @@ import { traerSaldosReales } from "@/lib/saldos-cliente";
 import { useSaldosReales, type LecturaDeSaldos } from "@/lib/useSaldosReales";
 import { SaldosVista } from "@/components/finanzas/vistas/SaldosVista";
 import { nube } from "@/lib/supabase";
+import { finDelDiaDeNegocio } from "@/lib/dia-negocio";
 import type { Arqueo, EstadoApp, Gasto, Moneda, Procesador, SaldoCuenta, Traspaso } from "@/lib/types";
 import { CopiarLink } from "@/components/ui/Filtros";
 import { FormTraspaso, PasesEntreCuentas } from "@/components/finanzas/PasesEntreCuentas";
@@ -402,8 +403,8 @@ function NuevoArqueo({ e, onCerrar, onListo, traerAlAbrir = false }: { e: Estado
   const [leyendo, setLeyendo] = useState(false);
   const [avisos, setAvisos] = useState<string[]>([]);
 
-  /* Si es hoy, ahora; si es otro día, a las 20 de ese día. */
-  const fecha = dia === diaAr(hoyIso()) ? hoyIso() : new Date(`${dia}T23:00:00.000Z`).toISOString();
+  /* Si es hoy, ahora; si es otro día, el final de ese día (a las 20 dejaba afuera los cobros de la noche: Aldana, 01/11). */
+  const fecha = dia === diaAr(hoyIso()) ? hoyIso() : finDelDiaDeNegocio(dia);
   const previo = ultimoArqueo(e, fecha);
   /* Lo que tendría que haber en cada cuenta, en su moneda. */
   const porCuenta = useMemo(() => saldosEsperados(e, previo, fecha), [e, previo, fecha]);

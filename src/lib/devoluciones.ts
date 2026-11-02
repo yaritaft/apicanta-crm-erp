@@ -1,4 +1,4 @@
-import type { Devolucion, EstadoApp, ID, Liquidacion, Pago, Sesion, Venta } from "./types";
+import type { Devolucion, EstadoApp, ID, Liquidacion, MiembroEquipo, Pago, Sesion, Venta } from "./types";
 import type { RangoMes } from "./metricas";
 import { closerDeCuota, cobraDirector, cobraEnFecha, tasaDeComision } from "./comision";
 import { moverPeriodo, periodoDeFecha } from "./periodos";
@@ -158,6 +158,18 @@ export interface ParteReversa {
   reversa: number;
   /* El closer de la venta, si esta parte es de cuotas que heredó otro. */
   heredadaDe?: string;
+  /* Se le comisionó por una regla de su liquidación (no la que calcula Finanzas con su `comisionRate`): esa comisión es un costo de la
+     liquidación y su reversa también, no «ya está en Finanzas». */
+  propia?: boolean;
+}
+
+/** Cómo se le comisionó a alguien que cobra por una regla de su liquidación: el % de esa regla y qué cobros entran en ella. */
+export interface ReglaPropia { tasa: number; cuentaCobro: (p: Pago) => boolean }
+
+export interface OpcionesDeReversas {
+  /** Si a esa persona se la comisiona por su propia regla (la liquidación sabe cuál), no por el `comisionRate` de su ficha. Sin respuesta, lo de siempre.
+   *  Sin esto, quien tiene su 5% en la regla y 0 en la ficha (el director) quedaba sin descuento cuando se devolvía una venta (Aldana, 01/11). */
+  propia?: (miembro: MiembroEquipo, rol: "closer" | "director", venta: Venta) => ReglaPropia | undefined;
 }
 
 export interface Reversa {
@@ -184,7 +196,7 @@ type EstadoDeReversas = Pick<EstadoApp, "ventas" | "cuotas" | "pagos" | "equipo"
  *  saca), así que no hay nada que revertir. Con varias devoluciones de una
  *  misma venta se van descontando en orden: cada una revierte lo que
  *  quedaba por revertir, así entre todas no pueden pasar de lo comisionado. */
-export function reversasDeComision(e: EstadoDeReversas): Reversa[] {
+export function reversasDeComision(e: EstadoDeReversas, opciones: OpcionesDeReversas = {}): Reversa[] {
   const todas = devolucionesDe(e).filter((d) => esDevolucionConfirmada(d) && d.ventaId);
   if (todas.length === 0) return [];
 
@@ -231,7 +243,7 @@ export function reversasDeComision(e: EstadoDeReversas): Reversa[] {
       const parte = quedaba > 0 ? devuelto / quedaba : 0;
 
       const parteDe = (
-        clave: string, rol: ParteReversa["rol"], cobros: Pago[], quien: { id?: ID; nombre: string } | undefined, tasa: number, heredadaDe?: string,
+        clave: string, rol: ParteReversa["rol"], cobros: Pago[], quien: { id?: ID; nombre: string } | undefined, tasa: number, heredadaDe?: string, propia = false,
       ): ParteReversa => {
         const cobrado = r2(cobros.reduce((a, p) => a + p.monto, 0));
         const fees = r2(cobros.reduce((a, p) => a + p.feeMonto, 0));
@@ -243,7 +255,7 @@ export function reversasDeComision(e: EstadoDeReversas): Reversa[] {
         yaRevertido.set(clave, r2(antes + reversa));
         return {
           rol, miembroId: quien?.id, nombre: quien?.nombre ?? "Sin asignar", tasa, cobros, cobrado, fees, neto, comision,
-          yaRevertido: antes, quedaba: queda, reversa, ...(heredadaDe ? { heredadaDe } : {}),
+          yaRevertido: antes, quedaba: queda, reversa, ...(heredadaDe ? { heredadaDe } : {}), ...(propia ? { propia } : {}),
         };
       };
 
@@ -257,17 +269,21 @@ export function reversasDeComision(e: EstadoDeReversas): Reversa[] {
       }
       for (const [k, cobrosDelCloser] of porCloser) {
         const closer = k ? miembro.get(k) : undefined;
+        const regla = closer ? opciones.propia?.(closer, "closer", venta) : undefined;
         partes.push(parteDe(
-          `c:${k}`, "closer", cobrosDelCloser.filter((p) => cobraEnFecha(closer, p.fecha)),
+          `c:${k}`, "closer", cobrosDelCloser.filter((p) => (regla ? regla.cuentaCobro(p) : cobraEnFecha(closer, p.fecha))),
           closer ? { id: closer.id, nombre: closer.nombre } : undefined,
-          sinComision || descuentaPorCierre(sinCierre, venta, k) ? 0 : tasaDeComision(closer, venta.productoId),
+          (regla ? false : sinComision) || descuentaPorCierre(sinCierre, venta, k) ? 0 : regla ? regla.tasa : tasaDeComision(closer, venta.productoId),
           k && k !== venta.closerId ? deLaVenta?.nombre ?? "otro closer" : undefined,
+          Boolean(regla),
         ));
       }
       if (director) {
+        const regla = opciones.propia?.(director, "director", venta);
         partes.push(parteDe(
-          "d", "director", hasta.filter((p) => cobraDirector(director, p.fecha)),
-          { id: director.id, nombre: director.nombre }, sinComision ? 0 : tasaDeComision(director, venta.productoId),
+          "d", "director", hasta.filter((p) => (regla ? regla.cuentaCobro(p) : cobraDirector(director, p.fecha))),
+          { id: director.id, nombre: director.nombre }, regla ? regla.tasa : sinComision ? 0 : tasaDeComision(director, venta.productoId),
+          undefined, Boolean(regla),
         ));
       }
 

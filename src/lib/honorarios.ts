@@ -15,7 +15,7 @@ import {
   desgloseReversa, LIMITE_LISTA, listaDeCobros, listaDeItems, listaDeVentas, paso,
   type CobroContado, type CobroExcluido, type Fuente, type PartesProfit,
 } from "./desglose";
-import { devolucionesDelMes, liquidadaEn, mesDeLiquidacion, reversasDeComision, type ParteReversa, type Reversa } from "./devoluciones";
+import { devolucionesDelMes, liquidadaEn, mesDeLiquidacion, reversasDeComision, type OpcionesDeReversas, type ParteReversa, type Reversa } from "./devoluciones";
 import { descuentaPorCierre, descuentoDesde, diaSinCierreDe, reglaDeCierre, ventasSinCierre } from "./cierre-del-dia";
 import { instanteDeAgenda } from "./resells-agendados";
 
@@ -1070,6 +1070,19 @@ function lineaDeAdelanto(cx: Contexto, x: ExtraLiquidacion, concepto: LineaLiqui
 
 const conceptoDeReversa = (r: Reversa, p: ParteReversa) => `devolucion:${r.devolucion.id}:${p.rol}`;
 
+/** Cómo se le comisionó a quien cobra por una regla de su liquidación (el director: «Comisión de director», 5% con sus propias condiciones) y no por la que
+ *  calcula Finanzas con el `comisionRate` de su ficha: la reversa sale de ESA regla, con las mismas ventas y cobros que contó. Sin regla propia, lo de siempre. */
+function reglasPropias(cx: Contexto, esquemaDe: Map<ID, EsquemaPago>): NonNullable<OpcionesDeReversas["propia"]> {
+  return (m, rol, venta) => {
+    const delRol = (esquemaDe.get(m.id)?.conceptos ?? []).filter((c) => esComisionDeVentas(c) && c.alcance === rol);
+    if (!delRol.length || delRol.some((c) => calculaFinanzas(m, c))) return undefined;
+    const c = delRol.find((x) => veredicto(cx, x, m, venta, undefined, delRol).cuenta);
+    /* Esa venta no le comisionó nada por su regla: no hay qué revertir. */
+    if (!c) return { tasa: 0, cuentaCobro: () => false };
+    return { tasa: c.tasa ?? 0, cuentaCobro: (p) => veredicto(cx, c, m, venta, p, delRol).cuenta };
+  };
+}
+
 function lineaDeReversa(cx: Contexto, r: Reversa, parte: ParteReversa, entrada: EntradaLiquidacion | undefined): LineaLiquidada {
   const cliente = r.venta.contactoNombre?.trim() || "una venta";
   const clave = conceptoDeReversa(r, parte);
@@ -1094,7 +1107,7 @@ function lineaDeReversa(cx: Contexto, r: Reversa, parte: ParteReversa, entrada: 
   return {
     clave, conceptoId: clave, devolucionId: r.devolucion.id, tipo: "devolucion",
     nombre: `Devolución de ${cliente}`, detalle, moneda: cx.base, monto, montoBase: monto,
-    variable: true, enFinanzas: true, corregido, desglose,
+    variable: true, enFinanzas: !parte.propia, corregido, desglose,
   };
 }
 
@@ -1324,7 +1337,7 @@ export function calcularLiquidacion(e: EstadoApp, periodo: string, liq?: Liquida
      igual aunque ya no esté entre los que se liquidan: una deuda no puede
      perderse en silencio. */
   const liquidadas = liquidadaEn(e.liquidaciones);
-  const reversas = reversasDeComision(e).filter((r) => !r.sinDescuento && mesDeLiquidacion(r.devolucion, e.liquidaciones, liquidadas) === periodo
+  const reversas = reversasDeComision(e, { propia: reglasPropias(cx, esquemaDe) }).filter((r) => !r.sinDescuento && mesDeLiquidacion(r.devolucion, e.liquidaciones, liquidadas) === periodo
     && (!corte || new Date(r.devolucion.fecha).getTime() <= corte.getTime()));
   const conReversa = new Set(reversas.flatMap((r) => r.partes.filter((x) => x.reversa >= 0.005 && x.miembroId).map((x) => x.miembroId as ID)));
   const mesAnterior = moverPeriodo(periodo, -1);
@@ -1627,40 +1640,64 @@ export function textoParaEnviar(p: PersonaLiquidada, periodo: string, corte?: st
   return [`Hola ${p.nombre.split(" ")[0]}, tu liquidación de ${nombrePeriodo(periodo)}${hasta}:`, ...lineas, `Total: ${total || plata(0, "USD")}`].join("\n");
 }
 
-/** El detalle de lo que cobra una persona, para mandarle: cada renglón con su regla, su cuenta paso a paso y los cobros que cuentan
- *  (Aldana, 01/11: «un reporte que le pueda mandar a Nahuel, a Agustín, a Santi y a Yari, con el detalle de qué es lo que cobran»). */
+/** El detalle de lo que cobra una persona, para mandarle: cada renglón con su regla y su cuenta paso a paso, con la misma forma que el informe de Angelo
+ *  (Paso · Cálculo · Monto, y abajo lo que se paga), más los cobros que cuentan
+ *  (Aldana, 01/11: «un reporte que le pueda mandar a Nahuel, a Agustín, a Santi y a Yari, con el detalle de qué es lo que cobran»; y el ejemplo de Angelo para Agustín). */
 export function informeParaEnviar(p: PersonaLiquidada, periodo: string, corte?: string | null): string {
   const hasta = corte ? ` (hasta el ${corte.slice(8, 10)}/${corte.slice(5, 7)})` : "";
   const dia = (iso: string) => { const d = diaDe(iso); return `${d.slice(8, 10)}/${d.slice(5, 7)}`; };
-  const valor = (x: PasoDesglose, mon: Moneda): string =>
-    x.formato === "plata" ? plata(x.valor, x.moneda ?? mon)
-    : x.formato === "tasa" ? pct(x.valor * 100, decimalesTasa(x.valor))
-    : x.formato === "fraccion" ? `${num(x.valor, 0)} de ${num(x.de ?? 0, 0)}`
-    : num(x.valor, Number.isInteger(x.valor) ? 0 : 2);
-  const signo = (op: PasoDesglose["op"]) => (op === "menos" ? "− " : op === "mas" ? "+ " : op === "por" ? "× " : op === "igual" ? "= " : "");
-  const bloques = p.lineas.map((l, i) => {
-    const d = l.desglose;
-    const partes: string[] = [`${i + 1}. ${l.nombre}: ${plata(l.monto, l.moneda)}`];
-    if (d?.regla) partes.push(`   Regla: ${d.regla}.`);
-    if (d?.pasos.length) {
-      partes.push("   La cuenta:");
-      for (const x of d.pasos) partes.push(`     ${signo(x.op)}${x.texto}: ${valor(x, l.moneda)}${x.nota ? ` (${x.nota})` : ""}`);
-    } else if (l.detalle) {
-      partes.push(`   ${l.detalle}`);
+  /* El valor de un paso como se lee dentro de una cuenta: sin el signo de la moneda, como en la hoja de Angelo («74.529,14 × 66,67%»). */
+  const enCuenta = (x: PasoDesglose): string =>
+    x.formato === "tasa" ? pct(x.valor * 100, decimalesTasa(x.valor))
+    : x.formato === "fraccion" ? `${num(x.valor, 0)}/${num(x.de ?? 0, 0)}`
+    : num(x.valor, x.formato === "plata" ? 2 : Number.isInteger(x.valor) ? 0 : 2);
+  const suelto = (n: number) => num(n, Number.isInteger(n) ? 0 : 2);
+  /* Cada paso con lo que va dando la cuenta: «Cálculo» muestra de dónde sale y «Monto», cómo queda. El «igual» no es un paso más: es lo que se paga. */
+  const filasDe = (pasos: PasoDesglose[], mon: Moneda): string[] => {
+    let acc = 0, n = 0;
+    const filas: string[] = [];
+    for (const x of pasos) {
+      if (x.op === "igual") { acc = x.valor; continue; }
+      const antes = acc;
+      let calculo = "", cuantos = false;
+      switch (x.op) {
+        case "base": acc = x.valor; calculo = x.nota ?? ""; cuantos = x.formato === "cantidad" || x.formato === "fraccion"; break;
+        case "mas": acc += x.valor; calculo = `${suelto(antes)} + ${enCuenta(x)}`; break;
+        case "menos": acc -= x.valor; calculo = `${suelto(antes)} − ${enCuenta(x)}`; break;
+        case "por": acc *= x.formato === "fraccion" ? x.valor / (x.de || 1) : x.valor; calculo = `${suelto(antes)} × ${enCuenta(x)}`; break;
+        case "tramos": acc = x.valor > 0 ? Math.floor(acc / x.valor + 1e-9) : 0; calculo = `${suelto(antes)} ÷ ${enCuenta(x)}, los tramos completos`; cuantos = true; break;
+      }
+      if (x.op !== "base" && x.nota) calculo += ` (${x.nota})`;
+      const monto = x.op === "base" && x.formato === "tasa" ? pct(x.valor * 100, decimalesTasa(x.valor)) : cuantos ? suelto(acc) : plata(acc, x.moneda ?? mon);
+      n++;
+      filas.push(`   ${n}. ${x.texto}${calculo ? ` · ${calculo}` : ""} · ${monto}`);
     }
-    if (l.nota) partes.push(`   Nota: ${l.nota}`);
+    return filas;
+  };
+  const bloques = p.lineas.map((l) => {
+    const d = l.desglose;
+    const partes: string[] = [`${l.nombre.toUpperCase()}`];
+    if (d?.regla) partes.push(`Regla: ${d.regla}.`);
+    if (d?.pasos.length) {
+      partes.push("Paso · Cálculo · Monto");
+      partes.push(...filasDe(d.pasos, l.moneda).map((f) => f.trimStart()));
+    } else if (l.detalle) {
+      partes.push(l.detalle);
+    }
+    if (l.nota) partes.push(`Nota: ${l.nota}`);
     const lista = d?.lista;
     if (lista && lista.tipo === "cobros") {
       const filas = lista.todos ?? lista.items;
-      partes.push(`   ${lista.titulo.replace(/^Los \d+ cobros más grandes/, "Los cobros")} (${lista.total}):`);
+      partes.push("", `${lista.titulo.replace(/^Los \d+ cobros más grandes/, "Los cobros")} (${lista.total}):`);
       for (const c of filas) {
-        partes.push(`     • ${dia(c.fecha)} · ${c.cliente}${c.servicio ? ` · ${c.servicio}` : ""}${c.procesador ? ` · ${c.procesador}` : ""} · ${plata(c.monto, lista.moneda)}${c.neto !== undefined && Math.abs((c.fee ?? 0)) > 0.004 ? ` (neto ${plata(c.neto, lista.moneda)})` : ""}`);
+        partes.push(`• ${dia(c.fecha)} · ${c.cliente}${c.servicio ? ` · ${c.servicio}` : ""}${c.procesador ? ` · ${c.procesador}` : ""} · ${plata(c.monto, lista.moneda)}${c.neto !== undefined && Math.abs((c.fee ?? 0)) >= 0.005 ? ` (neto ${plata(c.neto, lista.moneda)})` : ""}`);
       }
-      if (!lista.todos && lista.resto) partes.push(`     … y ${lista.resto.cantidad} más por ${plata(lista.resto.monto, lista.moneda)}`);
+      if (!lista.todos && lista.resto) partes.push(`… y ${lista.resto.cantidad} más por ${plata(lista.resto.monto, lista.moneda)}`);
     } else if (lista && lista.tipo === "ventas") {
-      partes.push(`   ${lista.titulo} (${lista.total}):`);
-      for (const c of lista.items) partes.push(`     • ${dia(c.fecha)} · ${c.cliente}${c.servicio ? ` · ${c.servicio}` : ""} · ${plata(c.monto, lista.moneda)}`);
+      partes.push("", `${lista.titulo} (${lista.total}):`);
+      for (const c of lista.items) partes.push(`• ${dia(c.fecha)} · ${c.cliente}${c.servicio ? ` · ${c.servicio}` : ""} · ${plata(c.monto, lista.moneda)}`);
     }
+    partes.push("", `Lo que se paga por esto: ${plata(l.monto, l.moneda)}`);
     return partes.join("\n");
   });
   const total = (Object.entries(p.aPagar) as [Moneda, number][])
@@ -1668,7 +1705,7 @@ export function informeParaEnviar(p: PersonaLiquidada, periodo: string, corte?: 
   return [
     `Hola ${p.nombre.split(" ")[0]}, el detalle de tu liquidación de ${nombrePeriodo(periodo)}${hasta}:`,
     "",
-    ...bloques.flatMap((b) => [b, ""]),
+    ...bloques.flatMap((b) => [b, "", "――――――――", ""]),
     `Total: ${total || plata(0, "USD")}`,
   ].join("\n");
 }

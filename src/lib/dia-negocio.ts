@@ -36,6 +36,10 @@ export function diaDeNegocio(fecha: string | undefined | null): string {
   }
 }
 
+/** El último instante de un día del negocio («aaaa-mm-dd»): 23:59:59.999 en Argentina (UTC−3, sin horario de verano). Un arqueo «al 31/10» cuenta todo lo del
+ *  31/10: antes cortaba a las 20:00 y dejaba afuera lo cobrado de noche (la venta de Whop de las 21:22 del 31/10 caía en el arqueo siguiente). */
+export const finDelDiaDeNegocio = (dia: string): string => new Date(Date.parse(`${dia.slice(0, 10)}T00:00:00.000Z`) + 27 * 3600000 - 1).toISOString();
+
 /** Un rango de días «aaaa-mm-dd» (los dos incluidos), como lo usan Finanzas en pasos y las pantallas embebidas. */
 export interface RangoDeDias { desde: string; hasta: string }
 

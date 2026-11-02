@@ -108,6 +108,11 @@ export function CargaDeGastosMasiva({ e, onCerrar, onListo }: {
     return pagosDeTarjetaDelRango(e.gastos, dias[0], dias[dias.length - 1], (g) => diaDeNegocio(fechaDePago(g)));
   }, [esMercury, filas, e.gastos]);
   const sinCategoria = filas.filter((f) => f.incluir && !f.categoria.trim());
+  /* Lo pegado con el monto en negativo se toma como plata que volvió; en un extracto del banco es lo contrario, y se lo avisa para dar vuelta de un toque. */
+  const negativasComoIngreso = useMemo(
+    () => filas.filter((f) => f.ingreso && f.incluir && !f.afuera && !f.id.startsWith("m") && !/cashback|reembolso|reintegro|refund|devoluci|nota de cr[eé]dito/i.test(`${f.concepto} ${f.proveedor}`)),
+    [filas],
+  );
   /* Lo escrito en una fila leída se descarta al volver a leer la planilla; las filas agregadas a mano no. */
   const editar = (id: string, cambios: Partial<FilaMasiva>) => {
     if (id.startsWith("m")) setManuales((m) => m.map((f) => (f.id === id ? { ...f, ...cambios } : f)));
@@ -183,6 +188,19 @@ export function CargaDeGastosMasiva({ e, onCerrar, onListo }: {
             Leí {tabla.length - (conTitulos ? 1 : 0)} {tabla.length - (conTitulos ? 1 : 0) === 1 ? "fila" : "filas"} y {columnas} {columnas === 1 ? "columna" : "columnas"}.
             Las fechas se leen día/mes (07/10 es el 7 de octubre).
           </p>
+        )}
+        {!esMercury && negativasComoIngreso.length > 0 && (
+          <div className="aviso-duplicado" role="status">
+            <div className="aviso-duplicado__fila">
+              <span className="aviso-duplicado__texto">
+                <strong>{negativasComoIngreso.length === 1 ? "Una fila viene" : `${negativasComoIngreso.length} filas vienen`} con el monto en negativo y {negativasComoIngreso.length === 1 ? "la tomé" : "las tomé"} como plata que volvió (ingreso). </strong>
+                Si pegaste un extracto del banco, ahí el menos es lo que salió: son gastos.
+              </span>
+              <Button sm variante="secondary" onClick={() => negativasComoIngreso.forEach((f) => editar(f.id, { ingreso: false }))}>
+                {negativasComoIngreso.length === 1 ? "Es un gasto" : "Son gastos"}
+              </Button>
+            </div>
+          </div>
         )}
         {esMercury && (
           <div className="aviso-duplicado" role="status">
