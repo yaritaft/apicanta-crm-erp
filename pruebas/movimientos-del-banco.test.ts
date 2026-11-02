@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-  borradorDesdeElBanco, cruzarConLaApp, movimientoDeMercury, movimientoDeStripe, resumenDeLoQueFalta, type MovimientoDelBanco,
+  borradorDesdeElBanco, comprasDeTarjetaQueFaltan, cruzarConLaApp, movimientoDeMercury, movimientoDeStripe, resumenDeLoQueFalta, type MovimientoDelBanco,
 } from "@/lib/movimientos-del-banco";
 import { borradorInicial, datosDelGasto } from "@/lib/carga-gasto";
 import { saldosEsperados } from "@/lib/traspasos";
@@ -77,7 +77,7 @@ const gasto = (extra: Partial<Gasto> & Record<string, unknown>): Gasto => ({
   extra: { cuenta: "ACH-WIRE Mercury" }, ...extra,
 } as Gasto);
 
-test("cruzar con la app: lo que ya está como cobro, pase o gasto se marca; lo parecido se ofrece; lo demás falta; el pago de la tarjeta no se carga", () => {
+test("cruzar con la app: lo que ya está como cobro, pase o gasto se marca; lo parecido se ofrece; lo demás falta", () => {
   const e = estadoBase();
   e.movimientos = [{ id: "mov1", proveedor: "mercury", referencia: "cobro1", estado: "pendiente" } as Movimiento];
   e.traspasos = [{ id: "t1", llegadaRef: "mercury:pase1", salidaRef: "stripe:po_1" } as Traspaso];
@@ -93,27 +93,68 @@ test("cruzar con la app: lo que ya está como cobro, pase o gasto se marca; lo p
     banco({ ref: "mercury:ck", refApp: ["ck"], tipo: "cashback", monto: 12.4, contraparte: "Mercury" }),
   ];
   const r = cruzarConLaApp(e, movs);
-  assert.deepEqual(r.map((x) => x.estadoApp), ["cargado", "cargado", "cargado", "parecido", "falta", "falta", "falta", "falta"]);
+  assert.deepEqual(r.map((x) => x.estadoApp), ["cargado", "cargado", "cargado", "parecido", "falta", "falta", "no-se-carga", "falta"]);
   assert.match(r[0].donde ?? "", /cobro/);
   assert.match(r[1].donde ?? "", /entre cuentas/);
   assert.match(r[2].donde ?? "", /Ya cargado/);
   assert.equal(r[3].gastoId, "g_parecido");
-  /* Lo que falta: sólo lo asentado (el pago de la tarjeta también sale de la cuenta). */
+  /* Lo que falta: sólo lo asentado, y sin el pago de la tarjeta. */
   const faltan = resumenDeLoQueFalta([...r, { ...r[5], ref: "mercury:pend", pendiente: true, monto: -999 }]);
-  assert.deepEqual(faltan, { n: 4, sale: 5092.5, entra: 12.4 });
+  assert.deepEqual(faltan, { n: 3, sale: 92.5, entra: 12.4 });
 });
 
-test("el pago de la tarjeta es lo que de verdad sale de la cuenta y se carga; las compras con la tarjeta de crédito no (sería contarlas dos veces)", () => {
+test("la tarjeta de crédito, como en «Cargar varios»: las compras se cargan una por una y el pago no (sería contarlas dos veces)", () => {
   const e = estadoBase();
   const pago = banco({ ref: "mercury:pt", refApp: ["pt"], tipo: "pago-tarjeta", monto: -2310.5, contraparte: "Mercury Credit" });
-  assert.equal(cruzarConLaApp(e, [pago])[0].estadoApp, "falta");
-  const compra = cruzarConLaApp(e, [pago, banco({ ref: "mercury:c", refApp: ["c"], tipo: "compra-credito", monto: -85 })]);
-  assert.equal(compra[0].estadoApp, "falta", "aunque se vean las compras, el pago se carga");
-  assert.equal(compra[1].estadoApp, "no-se-carga");
-  assert.match(compra[1].donde ?? "", /cuando se paga la tarjeta/);
+  const compraDelBanco = banco({ ref: "mercury:c", refApp: ["c"], tipo: "compra-credito", monto: -85, contraparte: "Uber" });
+  const [elPago, laCompra] = cruzarConLaApp(e, [pago, compraDelBanco]);
+  assert.equal(elPago.estadoApp, "no-se-carga");
+  assert.match(elPago.donde ?? "", /las duplica/);
+  assert.equal(laCompra.estadoApp, "falta");
+  /* La compra que entró con el export (sin referencia del banco) se reconoce por monto, cuenta y días. */
+  e.gastos = [gasto({ id: "g_export", concepto: "Uber", monto: 85, extra: { cuenta: "Mercury", origen: "mercury-export-27-10", tarjeta: "3120" } })];
+  const delExport = cruzarConLaApp(e, [compraDelBanco])[0];
+  assert.deepEqual([delExport.estadoApp, delExport.gastoId], ["parecido", "g_export"]);
+  /* Un pago que ya se cargó, o que se repartió en compras, sigue como cargado: no pide nada. */
+  e.gastos = [gasto({ id: "g_pago", concepto: "Pago de la tarjeta de crédito Mercury", monto: 2310.5, extra: { cuenta: "ACH-WIRE Mercury", bancoRef: "mercury:pt" } })];
+  assert.deepEqual([cruzarConLaApp(e, [pago])[0].estadoApp, cruzarConLaApp(e, [pago])[0].gastoId], ["cargado", "g_pago"]);
   const inicial = borradorDesdeElBanco(pago, "ACH-WIRE Mercury", false);
   assert.deepEqual([inicial.concepto, inicial.monto, inicial.proveedor], ["Pago de la tarjeta de crédito Mercury", "2.310,50", "Mercury"]);
   assert.match(inicial.notas, /compras de esos días/);
+});
+
+test("las compras de la tarjeta que faltan: hasta qué día están cargadas y cuánto se pagó después (el «todo está cargado» no puede mentir)", () => {
+  const e = estadoBase();
+  const pagoDel = (dia: string, monto: number, extra: Partial<MovimientoDelBanco> = {}) => banco({ ref: `mercury:${dia}`, refApp: [dia], tipo: "pago-tarjeta", fecha: `${dia}T15:00:00.000Z`, monto, contraparte: "Mercury Credit", ...extra });
+  const movs = [pagoDel("2026-10-26", -100), pagoDel("2026-10-28", -300), pagoDel("2026-10-29", -40.5), pagoDel("2026-10-30", -999, { pendiente: true })];
+  /* Sin ninguna compra cargada con el export: todo lo pagado (menos lo no asentado). */
+  assert.deepEqual(comprasDeTarjetaQueFaltan(e, cruzarConLaApp(e, movs)), { cargadasHasta: null, pagado: 440.5 });
+  /* Cargadas hasta el 27: cuenta lo pagado del 28 en adelante. Los gastos sin tarjeta (la planilla) no mueven la fecha. */
+  e.gastos = [
+    gasto({ id: "c1", monto: 20, fecha: "2026-10-27T12:00:00.000Z", extra: { cuenta: "Mercury", tarjeta: "3120" } }),
+    gasto({ id: "c2", monto: 30, fecha: "2026-10-05T12:00:00.000Z", extra: { cuenta: "Mercury", tarjeta: "3120" } }),
+    gasto({ id: "pl", monto: 50, fecha: "2026-10-30T12:00:00.000Z", extra: { cuenta: "Mercury" } }),
+  ];
+  assert.deepEqual(comprasDeTarjetaQueFaltan(e, cruzarConLaApp(e, movs)), { cargadasHasta: "2026-10-27", pagado: 340.5 });
+  /* Una tabla pegada sin los títulos del banco no dice «tarjeta» y puede no tener cuenta: igual corre la fecha (lo de Aldana del 27 al 31/10). Lo que entra
+     de vuelta en esa tanda o una carga de otra cuenta, no. */
+  e.gastos = [
+    gasto({ id: "c1", monto: 20, fecha: "2026-10-27T12:00:00.000Z", extra: { cuenta: "Mercury", tarjeta: "3120" } }),
+    gasto({ id: "pegada", monto: 300, fecha: "2026-10-28T12:00:00.000Z", extra: { cargaMasiva: "lote_y" } }),
+    gasto({ id: "cash", monto: -7, fecha: "2026-10-29T12:00:00.000Z", extra: { cargaMasiva: "lote_y", ingreso: true } }),
+    gasto({ id: "otra", monto: 9, fecha: "2026-10-29T12:00:00.000Z", extra: { cargaMasiva: "lote_z", cuenta: "Stripe" } }),
+  ];
+  assert.deepEqual(comprasDeTarjetaQueFaltan(e, cruzarConLaApp(e, movs)), { cargadasHasta: "2026-10-28", pagado: 40.5 });
+  /* Al día, o sin pagos en esos días: no hay nada que avisar. */
+  e.gastos = [gasto({ id: "c3", monto: 20, fecha: "2026-10-29T12:00:00.000Z", extra: { cuenta: "Mercury", tarjeta: "3120" } })];
+  assert.equal(comprasDeTarjetaQueFaltan(e, cruzarConLaApp(e, movs)), null);
+  assert.equal(comprasDeTarjetaQueFaltan(e, []), null);
+  /* Un pago ya cargado como gasto no vuelve a contar. */
+  e.gastos = [gasto({ id: "gp", monto: 300, extra: { cuenta: "ACH-WIRE Mercury", bancoRef: "mercury:2026-10-28" } })];
+  assert.deepEqual(comprasDeTarjetaQueFaltan(e, cruzarConLaApp(e, movs)), { cargadasHasta: null, pagado: 140.5 });
+  /* Si el banco trae las compras, cada una ya está en la lista. */
+  e.gastos = [];
+  assert.equal(comprasDeTarjetaQueFaltan(e, cruzarConLaApp(e, [...movs, banco({ ref: "mercury:c", refApp: ["c"], tipo: "compra-credito", monto: -85 })])), null);
 });
 
 test("un contracargo de Stripe: falta hasta que está como devolución (se propone con «Sincronizar»); cargado, avisa de la comisión de más", () => {

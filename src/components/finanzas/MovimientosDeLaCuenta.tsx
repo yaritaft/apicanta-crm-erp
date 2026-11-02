@@ -11,7 +11,7 @@ import { useEstado } from "@/lib/store";
 import { fechaLarga, money } from "@/lib/format";
 import { traerMovimientosDelBanco } from "@/lib/saldos-cliente";
 import {
-  borradorDesdeElBanco, cruzarConLaApp, resumenDeLoQueFalta, TEXTO_DEL_TIPO, type EstadoEnLaApp, type MovimientoCruzado, type MovimientoDelBanco,
+  borradorDesdeElBanco, comprasDeTarjetaQueFaltan, cruzarConLaApp, resumenDeLoQueFalta, TEXTO_DEL_TIPO, type EstadoEnLaApp, type MovimientoCruzado, type MovimientoDelBanco,
 } from "@/lib/movimientos-del-banco";
 
 /* ==================================================================
@@ -49,6 +49,7 @@ export function MovimientosDeLaCuenta({ cuentaId, desde, onCerrar }: { cuentaId:
 
   const cruzados: Fila[] = useMemo(() => cruzarConLaApp(e, estado.movs).map((m) => ({ ...m, id: m.ref })), [e, estado.movs]);
   const faltan = useMemo(() => resumenDeLoQueFalta(cruzados), [cruzados]);
+  const tarjeta = useMemo(() => comprasDeTarjetaQueFaltan(e, cruzados), [e, cruzados]);
   const pendientes = cruzados.filter((m) => m.estadoApp === "falta" || m.estadoApp === "parecido" || m.estadoApp === "en-disputa");
   const visibles = filtro === "falta" ? pendientes : cruzados;
   const enDisputa = cruzados.filter((m) => m.estadoApp === "en-disputa");
@@ -108,13 +109,22 @@ export function MovimientosDeLaCuenta({ cuentaId, desde, onCerrar }: { cuentaId:
         {estado.cargando && <p className="t-sm t-muted">Leyendo los movimientos de {nombre}…</p>}
         {!estado.cargando && estado.conectada && !estado.error && (
           <div className="stack-3">
-            <p className="t-sm" style={{ margin: 0 }}>
-              {faltan.n === 0
-                ? <><strong>Todo lo que movió la cuenta ya está en la app.</strong> Si el saldo no da, puede ser plata que el banco todavía no asentó.</>
-                : <><strong>{faltan.n} {faltan.n === 1 ? "movimiento falta" : "movimientos faltan"} cargar</strong>
-                  {faltan.sale > 0 ? <> · salieron {M(faltan.sale)}</> : null}{faltan.entra > 0 ? <> · entraron {M(faltan.entra)}</> : null}.
-                  Cargalos y el saldo vuelve a dar.</>}
-            </p>
+            {(faltan.n > 0 || !tarjeta) && (
+              <p className="t-sm" style={{ margin: 0 }}>
+                {faltan.n === 0
+                  ? <><strong>Todo lo que movió la cuenta ya está en la app.</strong> Si el saldo no da, puede ser plata que el banco todavía no asentó.</>
+                  : <><strong>{faltan.n} {faltan.n === 1 ? "movimiento falta" : "movimientos faltan"} cargar</strong>
+                    {faltan.sale > 0 ? <> · salieron {M(faltan.sale)}</> : null}{faltan.entra > 0 ? <> · entraron {M(faltan.entra)}</> : null}.
+                    Cargalos y el saldo vuelve a dar.</>}
+              </p>
+            )}
+            {tarjeta && (
+              <p className="t-sm" style={{ margin: 0, color: "var(--warning)" }}>
+                <strong>Faltan compras de la tarjeta.</strong>{" "}
+                {tarjeta.cargadasHasta ? `Están cargadas hasta el ${fechaLarga(`${tarjeta.cargadasHasta}T12:00:00.000Z`)} y después se pagaron ${M(tarjeta.pagado)}.` : `Se pagaron ${M(tarjeta.pagado)} y no hay ninguna cargada.`}{" "}
+                Pegá el export de Mercury en Transacciones → «Cargar varios».
+              </p>
+            )}
             {enDisputa.length > 0 && (
               <p className="t-sm" style={{ margin: 0, color: "var(--warning)" }}>
                 {enDisputa.length === 1 ? "1 disputa en curso" : `${enDisputa.length} disputas en curso`}: Stripe retuvo {M(retenido)} mientras se resuelven. Si se ganan, vuelve y no pasa nada;

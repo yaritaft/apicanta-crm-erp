@@ -3,6 +3,7 @@ import type { EstadoApp, Gasto, ID } from "./types";
 import { clasificarMercury } from "./mercury";
 import { cuentaDeGasto } from "./traspasos";
 import { diaDeNegocio } from "./dia-negocio";
+import { fechaDePago } from "./gastos";
 
 /* ==================================================================
    Qué pasó de verdad en una cuenta (Mercury, Stripe) y cuánto de eso ya está en la app.
@@ -21,8 +22,8 @@ import { diaDeNegocio } from "./dia-negocio";
 
 export type TipoDelBanco =
   | "compra-tarjeta"      // una compra con la tarjeta de débito: la plata sale de la cuenta, es un gasto
-  | "compra-credito"      // una compra con la tarjeta de crédito: todavía no salió plata de la cuenta, sale cuando se paga la tarjeta
-  | "pago-tarjeta"        // el pago de la tarjeta de crédito: es lo que de verdad sale de la cuenta (las compras de la tarjeta, juntas)
+  | "compra-credito"      // una compra con la tarjeta de crédito: es el gasto, se carga una por una
+  | "pago-tarjeta"        // el pago de la tarjeta de crédito: son esas compras juntas, no se carga
   | "cashback"            // lo que devuelve la tarjeta
   | "cobro"               // plata que entra de un tercero (un cliente, una pasarela cobrando)
   | "pase"                // plata entre cuentas propias (un retiro de Stripe, un depósito de Whop)
@@ -148,15 +149,15 @@ export function cruzarConLaApp(
 
   return movs.map((m): MovimientoCruzado => {
     const proveedor = m.ref.split(":")[0];
-    /* Lo que se compra con la tarjeta de crédito no saca plata de la cuenta: sale cuando se paga la tarjeta, y ESE pago es lo que baja el saldo (se
-       carga una vez, el pago). Cargar las compras además sería contarlas dos veces. */
-    if (m.tipo === "compra-credito") return { ...m, estadoApp: "no-se-carga", donde: "Compra con la tarjeta de crédito: la plata sale de la cuenta cuando se paga la tarjeta (se carga el pago)." };
     if (m.tipo === "interno") return { ...m, estadoApp: "no-se-carga", donde: "Plata entre cuentas del mismo banco: no es ingreso ni gasto." };
     if (m.refApp.some((r) => cobros.has(`${proveedor}:${r}`))) return { ...m, estadoApp: "cargado", donde: "Está como cobro en Conciliación." };
     if (m.refApp.some((r) => pases.has(`${proveedor}:${r}`)) || pases.has(m.ref)) return { ...m, estadoApp: "cargado", donde: "Está como movimiento entre cuentas." };
     /* Lo que ya se cargó como gasto desde este mismo movimiento (una disputa perdida, por ejemplo) está cargado, diga lo que diga la propuesta. */
     const propioAntes = (e.gastos ?? []).find((g) => gastoApunta(g, m.ref));
     if (propioAntes) return { ...m, estadoApp: "cargado", donde: `Está como ${propioAntes.monto < 0 ? "ingreso" : "gasto"}: ${propioAntes.concepto}.`, gastoId: propioAntes.id };
+    /* Aldana (27/10), como en la planilla de Finance: se cargan las compras de la tarjeta una por una, con su categoría; el pago son esas mismas compras
+       juntas. Cargarlo además las cuenta dos veces. Uno que ya se cargó, o se repartió en compras, entró arriba como cargado. */
+    if (m.tipo === "pago-tarjeta") return { ...m, estadoApp: "no-se-carga", donde: "Es el pago de la tarjeta: las compras se cargan una por una, cargarlo también las duplica." };
     /* Stripe devolviendo la plata de una disputa que se ganó: ya está en el saldo, no hay nada que cargar. */
     if (m.tipo === "contracargo" && m.monto > 0) return { ...m, estadoApp: "no-se-carga", donde: "Stripe devolvió la plata de una disputa que se ganó: no hay nada que cargar." };
     const devuelta = m.refApp.flatMap((r) => [`${proveedor}:${r}`, `${proveedor}:disputa:${r}`, `${proveedor}:reembolso:${r}`]).map((k) => devoluciones.get(k)).find(Boolean);
@@ -209,6 +210,28 @@ export function resumenDeLoQueFalta(movs: readonly MovimientoCruzado[]): { n: nu
     if (m.monto < 0) sale += -m.monto; else entra += m.monto;
   }
   return { n, sale: r2(sale), entra: r2(entra) };
+}
+
+/** Las compras de la tarjeta que todavía no están. El banco no las muestra por su API (sólo el pago), así que lo que se ve es hasta qué día llegan las cargas
+ *  en masa y cuánto se pagó de la tarjeta después: esa plata ya bajó el saldo real y todavía no bajó el esperado. Vale cualquier carga en masa de esta cuenta
+ *  o sin cuenta, no sólo la del export (`extra.tarjeta`): pegada sin los títulos del banco, una compra no dice que fue con tarjeta (Aldana, 27–31/10). Tampoco
+ *  se compara el pago contra las compras, por lo mismo. Null si no falta nada. */
+export function comprasDeTarjetaQueFaltan(
+  e: Pick<EstadoApp, "gastos" | "procesadores">, movs: readonly MovimientoCruzado[],
+): { cargadasHasta: string | null; pagado: number } | null {
+  /* Si el banco trae las compras, cada una ya está en la lista con su estado. */
+  if (movs.some((m) => m.tipo === "compra-credito")) return null;
+  const pagos = movs.filter((m) => m.tipo === "pago-tarjeta" && m.estadoApp === "no-se-carga" && !m.pendiente);
+  if (pagos.length === 0) return null;
+  const cargadasHasta = (e.gastos ?? []).reduce<string | null>((max, g) => {
+    if (!(g.monto > 0) || !(g.extra?.tarjeta || g.extra?.cargaMasiva)) return max;
+    const cuenta = cuentaDeGasto(g, e.procesadores);
+    if (cuenta && cuenta !== pagos[0].cuentaId) return max;
+    const dia = diaDeNegocio(fechaDePago(g));
+    return max === null || dia > max ? dia : max;
+  }, null);
+  const pagado = r2(pagos.reduce((a, m) => (cargadasHasta === null || diaDeNegocio(m.fecha) > cargadasHasta ? a + Math.abs(m.monto) : a), 0));
+  return pagado > 0 ? { cargadasHasta, pagado } : null;
 }
 
 /** Lo que se le pone al asistente de gastos para cargar este movimiento: el concepto, el monto, el día y la cuenta ya puestos. */
