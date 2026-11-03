@@ -37,7 +37,7 @@ import { hayNube, nube, tablaFaltante, TABLAS, TABLAS_DE_DUENOS, TABLAS_OPCIONAL
 import { idAd, idAdset, idCampaign } from "./meta";
 import { entraEnTabla, esCompra, opcionesDe, tablasDe, ventaEsDeLlamada } from "./crm";
 import { etapaTrasEventos, eventosDeLlamada, leadDeSesion, type EventoEtapa } from "./etapas-auto";
-import { estadoDeAgenda, marcaDeAgenda, opcionDeCompraPara } from "./estados";
+import { estadoDeAgenda, marcaDeAgenda, opcionDeCompraPara, preguntaDe } from "./estados";
 import { personaDe } from "./persona";
 import { buscarMismaPersona, conOtroEmail, palabrasDelNombre, type PlanSeparar, type PlanUnificar } from "./duplicados";
 import type { OtroCamino } from "./pendientes-conciliar";
@@ -2989,10 +2989,12 @@ export const acciones = {
     }
 
     /* El CRM se entera: la llamada de la que salió la venta toma el estado
-       de compra que corresponde (si nadie le había puesto uno) y su lead
-       pasa a la etapa ganada (lib/etapas-auto.ts). */
+       de compra que corresponde (si nadie le había puesto uno, o si había
+       quedado en seguimiento: ya no lo está, Santi 30/10) y su lead pasa a la
+       etapa ganada (lib/etapas-auto.ts). */
     const t = nuevaTanda();
-    if (llamada && !llamada.estadoLlamada && puedo("sesiones")) {
+    const quedoEnSeguimiento = preguntaDe(opcionesDe(e.ajustes, "estadoLlamada").find((o) => o.nombre === llamada?.estadoLlamada)) === "seguimiento";
+    if (llamada && (!llamada.estadoLlamada || quedoEnSeguimiento) && puedo("sesiones")) {
       const op = opcionDeCompra(e, venta, cuotas);
       if (op) {
         cargarLlamadas(t, e, [{

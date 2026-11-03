@@ -137,6 +137,27 @@ test("al registrar una venta desde una llamada queda su id en la venta, y la lla
   assert.ok(marca && hace(marca) < 5000, "la venta también marca cuándo se cargó el estado");
 });
 
+test("una llamada en seguimiento pasa a compra al cargar la venta; una con otro estado cargado no se toca (Santi, 30/10)", () => {
+  const conEstado = (id: string, estadoLlamada: string) => {
+    const e = estado();
+    assert.equal(acciones.importar(JSON.stringify({ ...e, sesiones: e.sesiones.map((x) => (x.id === id ? { ...x, estadoLlamada } : x)) })), true);
+  };
+  const casos: [string, number, string][] = [
+    ["Seguimiento de Pago", 1, "Compra Full"],
+    ["Seguimiento Nutrición", 2, "Compra Cuotas"],
+    ["Lead descartado", 1, "Lead descartado"],
+    ["Compra Downsell", 1, "Compra Downsell"],
+  ];
+  casos.forEach(([antes, cantidad, despues], i) => {
+    const { s, lead } = personaConUnaLlamada(10 + i);
+    conEstado(s.id, antes);
+    const { venta, cuotas } = nuevaVenta(`v_seg_${i}`, lead, new Date(Date.parse(s.inicia) + 3600_000).toISOString());
+    const plan = cantidad === 1 ? cuotas : [...cuotas, { ...cuotas[0], id: `v_seg_${i}_c2`, numero: 2 }];
+    acciones.registrarVenta({ venta, cuotas: plan, cobros: [], sesionId: s.id });
+    assert.equal(sesionDe(s.id).estadoLlamada, despues, antes);
+  });
+});
+
 test("sin el id del cierre del día, la venta guarda la llamada que se infiere en ese momento", () => {
   const { s, lead } = personaConUnaLlamada(2);
   const { venta, cuotas } = nuevaVenta("v_prueba_2", lead, new Date(Date.parse(s.inicia) + 3600_000).toISOString());
