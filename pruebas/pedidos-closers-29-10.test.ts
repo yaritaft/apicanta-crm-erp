@@ -5,6 +5,8 @@ import { acciones } from "@/lib/store";
 import { construirSemilla } from "@/lib/seed";
 import { avisoDeImportada, estadoDe, SIN_CARGAR, SIN_DATO_AIRTABLE } from "@/lib/estados";
 import { rearmarPlan } from "@/lib/cambio-de-plan";
+import { pideCierre } from "@/lib/cierre-del-dia";
+import { opcionesDe } from "@/lib/crm";
 import type { Cuota, EstadoApp, Pago, Sesion, Venta } from "@/lib/types";
 
 /* Pedidos de Mariano y Dante del 27–29/10. */
@@ -28,6 +30,24 @@ test("una llamada vieja del Airtable sin estado no es una pendiente: dice lo que
   /* Si alguien le carga un estado, vale ése. */
   const cargada = { ...vieja, estadoLlamada: "Lead descartado" } as unknown as Sesion;
   assert.equal(estadoDe(cargada, { opciones: [{ nombre: "Lead descartado" } as never] }).texto, "Lead descartado");
+});
+
+test("una llamada del Airtable no es una pendiente con ningún estado (Mariano, 02/11: 34 con «2da Agenda (auto)»)", () => {
+  const vieja = { estado: "agendada", inicia: "2026-04-16T21:00:00.000Z", origen: "airtable", extra: {} } as unknown as Sesion;
+  const opciones = opcionesDe(construirSemilla().ajustes, "estadoLlamada");
+  const nombres = ["", ...opciones.map((o) => o.nombre)];
+  for (const nombre of nombres) {
+    assert.equal(estadoDe({ ...vieja, estadoLlamada: nombre || undefined }, { opciones }).sinCargar, false, `cargada: «${nombre}»`);
+    assert.equal(estadoDe(vieja, { opciones, auto: nombre }).sinCargar, false, `automática: «${nombre}»`);
+  }
+  /* Tampoco es un strike; si alguien la cargó tarde, cuenta como cualquiera. */
+  assert.equal(pideCierre(vieja, "2026-11-02"), false);
+  assert.equal(pideCierre({ ...vieja, estadoLlamada: "Lead descartado" }, "2026-11-02"), true);
+  /* Una de Calendly con la misma agenda sigue pidiéndose, con «2da Agenda (auto)» o sin nada. */
+  const deCalendly = { ...vieja, origen: "calendly" } as unknown as Sesion;
+  assert.equal(estadoDe(deCalendly, { opciones, auto: "2da Agenda (auto)" }).sinCargar, true);
+  assert.equal(estadoDe(deCalendly, { opciones }).sinCargar, true);
+  assert.equal(pideCierre(deCalendly, "2026-11-02"), true);
 });
 
 /* ---------- Dante: la cuota debía 950 y pagó 1.000 ---------- */

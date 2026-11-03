@@ -34,9 +34,14 @@ export const POR_VENIR = "Por venir";
    ése. Las de Calendly (las de la app) siguen pidiéndose todas. */
 export const SIN_DATO_AIRTABLE = "Sin dato (Airtable)";
 
+/** Una llamada traída del Airtable nunca es una pendiente, diga lo que diga: sin estado o con el «2da Agenda (auto)» que
+    se le pone sola. Mariano (02/11) seguía viendo 34 por ese segundo caso. Es la única regla: la usan el Estado de Llamada
+    y los strikes del cierre del día. */
+export const esImportada = (s: { origen?: string }) => s.origen === "airtable";
+
 /** Lo que se lee de una llamada importada del Airtable sin estado, o null si no es una. */
 export function avisoDeImportada(s: { origen?: string; extra?: Record<string, unknown> }): string | null {
-  if (s.origen !== "airtable") return null;
+  if (!esImportada(s)) return null;
   const at = s.extra?.airtable as { estadoAirtable?: unknown } | undefined;
   /* «❌ NO USAR (No compra)» era una opción vieja del Airtable: queda lo de adentro. */
   const limpio = String(at?.estadoAirtable ?? "").replace(/^[❌\s]*NO USAR\s*\(?/i, "").replace(/\)\s*$/, "").trim();
@@ -203,7 +208,7 @@ export function estadoDe(
   const cargada = s.estadoLlamada ? o.opciones.find((x) => x.nombre === s.estadoLlamada) : undefined;
   const desenlace = desenlaceDe(s, cargada, { venta: Boolean(o.venta), paso });
   const nombre = s.estadoLlamada || o.auto || "";
-  const base = { desenlace, sinCargar: desenlace === SIN_CARGAR, deVenta };
+  const base = { desenlace, sinCargar: desenlace === SIN_CARGAR && !esImportada(s), deVenta };
   if (nombre) {
     const opcion = cargada ?? o.opciones.find((x) => x.nombre === nombre);
     return { ...base, texto: nombre, opcion, color: opcion?.color ?? "gris1", auto: !s.estadoLlamada, vacio: false };

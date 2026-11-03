@@ -2,7 +2,7 @@ import type { Ajustes, EstadoApp, ID, Sesion, Venta } from "./types";
 import { esLlamadaDeResell } from "./resells";
 import { entraEnTabla, miembroDeCloser, tablasDe } from "./crm";
 import { diaDeNegocio } from "./dia-negocio";
-import { esReagendar } from "./estados";
+import { esImportada, esReagendar } from "./estados";
 
 /* ==================================================================
    El cierre del día: strikes y el interruptor del descuento.
@@ -66,7 +66,7 @@ export const hoyDeNegocio = (ahora: number = Date.now()) => diaDeNegocio(new Dat
 
 /* ---------- Qué llamadas piden cierre ---------- */
 
-type DeLlamada = Pick<Sesion, "estado" | "estadoLlamada" | "estadoPreCall" | "resultado" | "inicia">;
+type DeLlamada = Pick<Sesion, "estado" | "estadoLlamada" | "estadoPreCall" | "resultado" | "inicia"> & { origen?: string };
 
 /** Si una llamada de venta tiene que quedar cargada ese día: ya empezó y no
  *  se canceló. Sin estado cargado, tampoco pide cierre si fue «no vino» (lo
@@ -76,7 +76,7 @@ type DeLlamada = Pick<Sesion, "estado" | "estadoLlamada" | "estadoPreCall" | "re
  *  que no vino), cuenta: lo que importa es cuándo la cargó. */
 export function pideCierre(s: DeLlamada, hoy: string): boolean {
   if (s.estado === "cancelada") return false;
-  if (!s.estadoLlamada && (s.estado === "no-show" || esReagendar(s.estadoPreCall) || s.resultado)) return false;
+  if (!s.estadoLlamada && (s.estado === "no-show" || esReagendar(s.estadoPreCall) || s.resultado || esImportada(s))) return false;
   return diaDeNegocio(s.inicia) <= hoy;
 }
 
