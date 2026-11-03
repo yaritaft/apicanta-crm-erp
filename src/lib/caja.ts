@@ -157,7 +157,8 @@ export function cajaEsperada(
   const viajando = enCamino(e, hasta, tipoCambio);
   /* `cashCollected` ya viene sin lo devuelto: acá se parte en lo que entró y
      lo que salió para que se vean las dos cosas. */
-  const esperado = r2(desde.total + enCaminoAntes + p.cobrado - p.devoluciones - p.feesProcesador - equipo - gastos - retiros);
+  /* Todo lo que salió de una vez: partirlo en equipo, gastos y retiros no puede mover el redondeo (marcar un pago de equipo no cambia la caja). */
+  const esperado = r2(desde.total + enCaminoAntes + p.cobrado - p.devoluciones - p.feesProcesador - suma(salieron));
   return {
     desde: desde.fecha, hasta,
     inicial: desde.total, enCaminoAntes,

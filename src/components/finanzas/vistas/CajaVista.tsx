@@ -14,10 +14,10 @@ import { acciones, nuevoId, useEstado } from "@/lib/store";
 import { fechaLarga, money, num } from "@/lib/format";
 import { aMonedaBase, escribirMonto, fechaDePago, leerMonto } from "@/lib/gastos";
 import {
-  MESES_DE_COLCHON, cajaEsperada, cobrosSinVenta, cobrosSinVentaPorCuenta, detalleDeSaldo, efectoDelCambio, enOtros, monedasDelSaldo, runway, totalDelDetalle, ultimoArqueo, type MovimientoCaja,
+  MESES_DE_COLCHON, cajaEsperada, cobrosSinVenta, detalleDeSaldo, enOtros, monedasDelSaldo, runway, totalDelDetalle, ultimoArqueo, type MovimientoCaja,
 } from "@/lib/caja";
 import "./arqueo-detalle.css";
-import { primerConteo } from "@/lib/primer-conteo";
+import { arqueoVivo, cuentasDelArqueo, esperadoDelArqueo } from "@/lib/arqueo";
 import { saldosEsperados } from "@/lib/traspasos";
 import { controlarSaldos, quePasa, saldoParaElArqueo, textoDeLoPendiente, TOLERANCIA_DE_SALDO, type ControlDeSaldos } from "@/lib/saldos-reales";
 import { traerSaldosReales } from "@/lib/saldos-cliente";
@@ -76,6 +76,8 @@ export function CajaVista({ embebido = false, rangoFijo }: {
   const caja = mov?.esperado ?? null;
   const vida = useMemo(() => runway(e, caja ?? 0), [e, caja]);
   const arqueos = useMemo(() => [...(e.arqueos ?? [])].sort((a, b) => +new Date(b.fecha) - +new Date(a.fecha)), [e.arqueos]);
+  /* La diferencia de cada arqueo con los datos de hoy: si se cargó lo que faltaba, se mueve sola (lib/arqueo.ts). */
+  const vivos = useMemo(() => new Map(arqueos.map((a) => [a.id, arqueoVivo(e, a)])), [e, arqueos]);
   const retiros = useMemo(
     () => e.gastos.filter((g) => g.grupo === "retiro").sort((a, b) => +new Date(fechaDePago(b)) - +new Date(fechaDePago(a))),
     [e.gastos],
@@ -178,7 +180,7 @@ export function CajaVista({ embebido = false, rangoFijo }: {
         <div className="fz-cabtabla">
           <div className="fz-cabtabla__tit">
             <h2 className="card-head__title">Arqueos</h2>
-            <InfoMetrica titulo="Arqueos" ayuda="Cada vez que se contó la plata. La diferencia es contra lo que la app esperaba ese día: si no da, falta cargar un gasto, una venta o un cobro." />
+            <InfoMetrica titulo="Arqueos" ayuda="Cada vez que se contó la plata. La diferencia es contra lo que la app espera para ese día con los datos de hoy: si no da, falta cargar un gasto, una venta o un cobro, y al cargarlo se mueve sola. «hoy» marca las que cambiaron desde que se guardaron." />
           </div>
         </div>
         <DataTable
@@ -189,8 +191,15 @@ export function CajaVista({ embebido = false, rangoFijo }: {
           columnas={[
             { clave: "fecha", titulo: "Fecha", tipo: "primary", orden: (a) => a.fecha, celda: (a) => fechaLarga(a.fecha) },
             { clave: "total", titulo: "Contado", tipo: "num", orden: (a) => a.total, celda: (a) => M(a.total) },
-            { clave: "esperado", titulo: "Esperado", tipo: "num", orden: (a) => a.esperado ?? 0, celda: (a) => (a.esperado === null || a.esperado === undefined ? <span className="t-subtle">Punto de partida</span> : M(a.esperado)) },
-            { clave: "dif", titulo: "Diferencia", tipo: "num", orden: (a) => a.diferencia ?? 0, celda: (a) => <Diferencia d={a.diferencia} M={M} /> },
+            { clave: "esperado", titulo: "Esperado", tipo: "num", orden: (a) => vivos.get(a.id)?.esperado ?? 0, celda: (a) => { const v = vivos.get(a.id)!; return v.esperado === null ? <span className="t-subtle">Punto de partida</span> : M(v.esperado); } },
+            { clave: "dif", titulo: "Diferencia", tipo: "num", orden: (a) => vivos.get(a.id)?.diferencia ?? 0, celda: (a) => {
+              const v = vivos.get(a.id)!;
+              return (
+                <span title={v.cambio ? `Con los datos de hoy. Al guardarlo daba ${v.guardada.diferencia === null ? "—" : `${v.guardada.diferencia > 0 ? "+" : "−"}${M(Math.abs(v.guardada.diferencia))}`}: desde entonces se cargó o se corrigió algo de esas fechas.` : undefined}>
+                  <Diferencia d={v.diferencia} M={M} />{v.cambio && <span className="t-sm t-subtle" data-arqueo="recalculado"> · hoy</span>}
+                </span>
+              );
+            } },
             { clave: "por", titulo: "Lo cargó", tipo: "secondary", orden: (a) => a.por ?? "", celda: (a) => a.por ?? "—" },
           ]}
           acciones={(a) => <IconButton etiqueta="Borrar el arqueo" onClick={() => setBorrar(a)}><Trash2 size={15} /></IconButton>}
@@ -414,10 +423,7 @@ function NuevoArqueo({ e, onCerrar, onListo, traerAlAbrir = false }: { e: Estado
   const previo = ultimoArqueo(e, fecha);
   /* Lo que tendría que haber en cada cuenta, en su moneda. */
   const porCuenta = useMemo(() => saldosEsperados(e, previo, fecha), [e, previo, fecha]);
-  const cuentas = e.procesadores.filter((p) => {
-    const s = porCuenta.get(p.id);
-    return p.activo || Boolean(s && (s.entro || s.pases || s.salio)) || previo?.saldos.some((x) => x.procesadorId === p.id);
-  });
+  const cuentas = cuentasDelArqueo(e, porCuenta, previo);
   const tipoCambio = leerMonto(tc);
   /* El tipo de cambio de cada moneda arranca en el del último arqueo (dLocal usa el suyo, no el de Ajustes); los pesos argentinos, en el del arqueo. */
   const tcInicial = (p: Procesador, moneda: string): number =>
@@ -458,26 +464,16 @@ function NuevoArqueo({ e, onCerrar, onListo, traerAlAbrir = false }: { e: Estado
     }];
   });
   const total = Math.round(saldos.reduce((a, s) => a + s.montoBase, 0) * 100) / 100;
-  /* Contra lo que tiene que dar al contar: lo que viaja entre cuentas no está en ninguna. */
-  const mov = previo ? cajaEsperada(e, previo, fecha, tipoCambio) : null;
-  /* Una cuenta que no estaba en el arqueo anterior (dLocal y las Financieras, «en revisión» el 7/10) no tiene de dónde partir: lo que ya tenía se
-     deduce de lo contado menos lo que se movió, y se suma a lo esperado. Queda dicho en cada cuenta (lib/primer-conteo.ts). */
-  const primer = primerConteo(saldos, porCuenta, Boolean(previo), (m, mo) => money(m, mo, 2));
-  const sinVenta = useMemo(() => cobrosSinVenta(e, previo?.fecha ?? null, fecha, tipoCambio), [e, previo?.fecha, fecha, tipoCambio]);
-  /* Lo que ya entró a cada cuenta y todavía no tiene su venta (está en la cuenta, no en «Cobrado») y lo que cambió el valor de lo que había en cada
-     moneda por moverse el tipo de cambio: es plata que está o que vale distinto, no plata que falte. Se le suma a lo que esa cuenta tendría que tener
-     (Aldana, 24/10: «había diferencia en Whop y en dLocal»: eran dos cobros de Whop sin venta y el cambio). */
-  const sinVentaPorCuenta = useMemo(() => cobrosSinVentaPorCuenta(e, previo?.fecha ?? null, fecha, tipoCambio), [e, previo?.fecha, fecha, tipoCambio]);
-  const sinVentaDe = (p: Procesador) => (p.moneda === "ARS" ? undefined : sinVentaPorCuenta.get(p.id));
-  const cambioDe = (p: Procesador) => {
-    const anterior = previo?.saldos.find((x) => x.procesadorId === p.id)?.detalle;
-    return monedasDelSaldo(p).length && anterior?.length
-      ? efectoDelCambio(anterior, lineasDe(p).map((l) => ({ moneda: l.codigo, tipoCambio: l.tipoCambio })))
-      : { total: 0, lineas: [] };
-  };
-  const ajusteDe = (p: Procesador) => Math.round(((sinVentaDe(p)?.monto ?? 0) + cambioDe(p).total) * 100) / 100;
-  const ajusteTotal = Math.round(cuentas.reduce((a, p) => a + ajusteDe(p), 0) * 100) / 100;
-  const esperado = mov ? Math.round((mov.enCuentas + primer.totalBase + ajusteTotal) * 100) / 100 : null;
+  /* Lo que tiene que dar: la MISMA cuenta que la tabla de arqueos y el paso del cierre (lib/arqueo.ts). Incluye lo que viaja entre cuentas, las
+     cuentas que se cuentan por primera vez (lo que ya tenían se deduce de lo contado menos lo que se movió), los cobros sin venta y el efecto del
+     cambio en las cuentas con varias monedas. */
+  const cambios = new Map(cuentas.filter((p) => monedasDelSaldo(p).length).map((p) => [p.id, lineasDe(p).map((l) => ({ moneda: l.codigo, tipoCambio: l.tipoCambio }))]));
+  const calculo = esperadoDelArqueo(e, { fecha, saldos, total, tipoCambio: tipoCambio > 0 ? tipoCambio : undefined }, { previo: previo ?? null, cambios, dinero: (m, mo) => money(m, mo, 2) });
+  const { mov, primer, sinVenta, esperado } = calculo;
+  const deLaCuenta = (p: Procesador) => calculo.cuentas.find((c) => c.procesador.id === p.id);
+  const sinVentaDe = (p: Procesador) => deLaCuenta(p)?.sinVenta;
+  const cambioDe = (p: Procesador) => deLaCuenta(p)?.cambio ?? { total: 0, lineas: [] };
+  const ajusteDe = (p: Procesador) => deLaCuenta(p)?.ajuste ?? 0;
   const deEstaCuenta = (id: string) => primer.cuentas.find((c) => c.procesadorId === id);
   const hayPesos = cuentas.some((p) => p.moneda === "ARS");
   const faltaTc = hayPesos && saldos.some((s) => s.moneda === "ARS") && !(tipoCambio > 0);
@@ -759,6 +755,7 @@ function NuevoArqueo({ e, onCerrar, onListo, traerAlAbrir = false }: { e: Estado
 
 function VerArqueo({ e, a, onCerrar }: { e: EstadoApp; a: Arqueo; onCerrar: () => void }) {
   const M = (n: number) => money(n, e.ajustes.monedaBase);
+  const v = useMemo(() => arqueoVivo(e, a), [e, a]);
   return (
     <Modal abierto onCerrar={onCerrar} titulo={`Arqueo del ${fechaLarga(a.fecha)}`} sub={a.por ? `Lo cargó ${a.por}` : undefined}>
       <dl className="caja-mov">
@@ -778,7 +775,13 @@ function VerArqueo({ e, a, onCerrar }: { e: EstadoApp; a: Arqueo; onCerrar: () =
         ))}
         <dt className="caja-mov__total">Total</dt>
         <dd className="caja-mov__total t-num">{M(a.total)}</dd>
-        {a.esperado !== null && a.esperado !== undefined && (<><dt>Esperado</dt><dd className="t-num">{M(a.esperado)}</dd></>)}
+        {v.esperado !== null && (<><dt>Esperado hoy</dt><dd className="t-num">{M(v.esperado)}</dd></>)}
+        {v.diferencia !== null && (<><dt>Diferencia</dt><dd className="t-num"><Diferencia d={v.diferencia} M={M} /></dd></>)}
+        {v.cambio && (
+          <dd className="t-sm t-subtle" style={{ gridColumn: "1 / -1", textAlign: "left" }}>
+            Al guardarlo esperaba {M(v.guardada.esperado ?? 0)} ({v.guardada.diferencia === null ? "—" : `${v.guardada.diferencia > 0 ? "sobraban" : "faltaban"} ${M(Math.abs(v.guardada.diferencia))}`}): desde entonces se cargó o se corrigió algo de esas fechas.
+          </dd>
+        )}
       </dl>
       {a.notas && <p className="t-sm t-muted" style={{ whiteSpace: "pre-wrap", marginTop: 12 }}>{a.notas}</p>}
     </Modal>

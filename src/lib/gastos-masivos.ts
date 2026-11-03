@@ -491,7 +491,7 @@ const borradorDe = (f: FilaMasiva, e: EstadoApp, cat: Catalogo): BorradorGasto =
 
 /** Lo que está mal de una fila, campo por campo (vacío si se puede cargar). Una categoría que no existe también cuenta. */
 export function problemasDeFila(f: FilaMasiva, e: EstadoApp, cat: Catalogo = catalogoDe(e)): ProblemasGasto & { cuenta?: string } {
-  const p: ProblemasGasto & { cuenta?: string } = problemasDelGasto(borradorDe(f, e, cat), e.ajustes.monedaBase);
+  const p: ProblemasGasto = problemasDelGasto(borradorDe(f, e, cat), e.ajustes.monedaBase, e.procesadores);
   if (!f.fecha) p.fecha = "Poné la fecha";
   if (f.categoria && !cat.has(f.categoria)) p.categoria = "Esa categoría no existe";
   /* Sin una cuenta que se reconozca, el control de saldos no descuenta el gasto de ninguna: las 52 compras pegadas el 01/11 dejaron a Mercury sin dar. */

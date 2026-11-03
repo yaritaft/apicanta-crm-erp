@@ -2,6 +2,7 @@ import type { EstadoApp, Moneda, Pago } from "./types";
 import { esLlamadaDeResell } from "./resells";
 import { diaDeNegocio } from "./dia-negocio";
 import { ultimoArqueo } from "./caja";
+import { arqueoVivo } from "./arqueo";
 import { nombrePeriodo, periodoDe } from "./periodos";
 import { resumenConciliacion, restoDeMovimiento } from "./conciliacion";
 import { controlDeCobro, pasaControl } from "./control-cobros";
@@ -308,7 +309,9 @@ export function pasosDelTramo(e: EstadoApp, tramo: Tramo, { ahora = Date.now(), 
   const arqueos = (e.arqueos ?? []).filter((a) => { const d = diaDeNegocio(a.fecha); return d >= sumarDias(hasta, -6) && d <= sumarDias(hasta, 10); })
     .sort((a, b) => b.fecha.localeCompare(a.fecha));
   const ultimo = arqueos[0];
-  const conDiferencia = ultimo && Math.abs(ultimo.diferencia ?? 0) > 1;
+  /* La diferencia de hoy, no la foto de cuando se guardó: cargado lo que faltaba, el paso se pone verde solo (lib/arqueo.ts). */
+  const difUltimo = ultimo ? arqueoVivo(e, ultimo).diferencia : null;
+  const conDiferencia = ultimo && Math.abs(difUltimo ?? 0) > 1;
   const enCurso = !terminado && desde <= hoy;
   const caja = enCurso ? estadoDeLaCaja(e, ahora) : null;
   paso({
@@ -318,11 +321,11 @@ export function pasosDelTramo(e: EstadoApp, tramo: Tramo, { ahora = Date.now(), 
         ? `${caja.detalle} El arqueo de cierre se hace con los saldos reales cuando termine ${nombre}.`
         : `El ${unidad} todavía no empezó: el arqueo se hace cuando haya movimientos.`)
       : !ultimo ? `Falta contar la caja de verdad: no hay un arqueo de los últimos días de ${nombre}.`
-        : conDiferencia ? `El arqueo del ${diaDeNegocio(ultimo.fecha).slice(8, 10)}/${diaDeNegocio(ultimo.fecha).slice(5, 7)} tiene una diferencia de US$ ${Math.round(ultimo.diferencia ?? 0).toLocaleString("es-AR")} contra lo que la app esperaba: hay que explicarla.`
+        : conDiferencia ? `El arqueo del ${diaDeNegocio(ultimo.fecha).slice(8, 10)}/${diaDeNegocio(ultimo.fecha).slice(5, 7)} tiene una diferencia de US$ ${Math.round(difUltimo ?? 0).toLocaleString("es-AR")} contra lo que la app esperaba: hay que explicarla.`
           : `Arqueo hecho el ${diaDeNegocio(ultimo.fecha).slice(8, 10)}/${diaDeNegocio(ultimo.fecha).slice(5, 7)}: la caja cuadra con lo que la app esperaba.`,
     pendientes: caja ? (caja.alDia ? [] : [{ clave: "arqueo", titulo: caja.titulo, monto: caja.diferencia, moneda: "USD", destino: { href: "/finanzas/caja" } }])
       : !terminado ? []
-        : !ultimo || conDiferencia ? [{ clave: "arqueo", titulo: !ultimo ? "Sin arqueo al cierre" : "Arqueo con diferencia", monto: ultimo?.diferencia ?? undefined, moneda: "USD", destino: { href: "/finanzas/caja" } }] : [],
+        : !ultimo || conDiferencia ? [{ clave: "arqueo", titulo: !ultimo ? "Sin arqueo al cierre" : "Arqueo con diferencia", monto: difUltimo ?? undefined, moneda: "USD", destino: { href: "/finanzas/caja" } }] : [],
     estado: !terminado && !enCurso ? "bloqueado" : undefined,
     ir: { href: "/finanzas/caja", texto: "Ir a la Caja" },
   });
@@ -421,13 +424,14 @@ export function avanceDelMes(pasos: PasoCierre[], esDueno: boolean): { listos: n
 
 /** Cómo está la caja respecto del arqueo de la semana: lo que ven el paso del mes y la tarea de todos los días. Un arqueo vale una semana;
  *  uno viejo, o que no dio, hay que rehacerlo. */
-export function estadoDeLaCaja(e: Pick<EstadoApp, "arqueos">, ahora: number): { alDia: boolean; detalle: string; titulo: string; diferencia?: number } {
-  const ult = ultimoArqueo(e as EstadoApp);
+export function estadoDeLaCaja(e: EstadoApp, ahora: number): { alDia: boolean; detalle: string; titulo: string; diferencia?: number } {
+  const ult = ultimoArqueo(e);
   const fecha = (iso: string) => { const d = diaDeNegocio(iso); return `${d.slice(8, 10)}/${d.slice(5, 7)}`; };
   if (!ult) return { alDia: false, titulo: "Sin arqueo", detalle: "Todavía no hay ningún arqueo: contá lo que hay en cada cuenta para que la app pueda controlar la caja." };
   const edad = Math.floor((ahora - new Date(ult.fecha).getTime()) / DIA);
-  const dif = Math.abs(ult.diferencia ?? 0);
+  const viva = arqueoVivo(e, ult).diferencia;
+  const dif = Math.abs(viva ?? 0);
   if (edad > 7) return { alDia: false, titulo: "Arqueo atrasado", detalle: `El último arqueo es de hace ${edad} días: toca volver a contar lo que hay en cada cuenta (se hace cada semana).` };
-  if (dif > 1) return { alDia: false, titulo: "Arqueo con diferencia", diferencia: ult.diferencia ?? undefined, detalle: `El último arqueo (${fecha(ult.fecha)}) tiene una diferencia de US$ ${Math.round(dif).toLocaleString("es-AR")} contra lo que la app esperaba: hay que explicarla.` };
+  if (dif > 1) return { alDia: false, titulo: "Arqueo con diferencia", diferencia: viva ?? undefined, detalle: `El último arqueo (${fecha(ult.fecha)}) tiene una diferencia de US$ ${Math.round(dif).toLocaleString("es-AR")} contra lo que la app esperaba: hay que explicarla.` };
   return { alDia: true, titulo: "Arqueo al día", detalle: `Arqueo de hace ${edad === 0 ? "hoy" : `${edad} ${edad === 1 ? "día" : "días"}`}: la caja cuadra con lo que la app esperaba.` };
 }

@@ -78,7 +78,7 @@ export function AsistenteGasto({ gasto, inicial, onCerrar, onListo }: {
 
   const actual = Math.max(0, pasos.findIndex((p) => p.id === pasoId));
   const paso = pasos[actual];
-  const problema = problemaDelPaso(paso.id, b, base);
+  const problema = problemaDelPaso(paso.id, b, base, e.procesadores);
 
   const opciones = useMemo(
     () => opcionesProveedor({ equipo: e.equipo, gastos: e.gastos }, b.categoria, b.grupo),
@@ -105,7 +105,7 @@ export function AsistenteGasto({ gasto, inicial, onCerrar, onListo }: {
   };
 
   function guardar() {
-    if (problemaDelPaso("revisar", b, base)) return;
+    if (problemaDelPaso("revisar", b, base, e.procesadores)) return;
     const datos = datosDelGasto(b, { base, previo: gasto, opciones });
     if (gasto) {
       acciones.actualizar<Gasto>("gastos", gasto.id, datos, datos.concepto);
@@ -506,7 +506,7 @@ function PasoRevisar({ b, set, e, M, base, convertido, modo, opciones }: {
     if (b.cuenta && !nombres.includes(b.cuenta)) nombres.push(b.cuenta);
     return nombres.map((n) => ({ valor: n, texto: n }));
   }, [e.procesadores, b.cuenta]);
-  const problemas = problemasDelGasto(b, base);
+  const problemas = problemasDelGasto(b, base, e.procesadores);
   const otra = b.moneda !== base;
   const origen = modo === "repetir" ? e.gastos.find((x) => x.id === b.copiadoDe) : undefined;
 
@@ -628,7 +628,9 @@ function PasoRevisar({ b, set, e, M, base, convertido, modo, opciones }: {
             onChange={(ev) => set({ cuenta: ev.target.value })}
             opciones={cuentasParaElegir}
           />
-          <span className="hk-help">{b.ingreso ? "A qué cuenta volvió la plata." : "De qué cuenta salió la plata."} Aparece en Transacciones.</span>
+          {problemas.cuenta
+            ? <span className="hk-help" role="alert" data-error="cuenta" style={{ color: "var(--danger, #e5484d)" }}>{problemas.cuenta}</span>
+            : <span className="hk-help">{b.ingreso ? "A qué cuenta volvió la plata." : "De qué cuenta salió la plata."} Aparece en Transacciones.</span>}
         </div>
         {webinars.length > 0 && (
           <div className="hk-field">

@@ -527,7 +527,8 @@ export function saldosEsperados(
     const s = p.procesadorId ? out.get(p.procesadorId) : undefined;
     if (!s || !entre(fechaDeAcreditacion(p, retencion), desde, hasta)) continue;
     if (s.moneda === "ARS") {
-      const tc = p.tipoCambio ?? 0;
+      /* Sin el cambio del cobro, el de Ajustes: ignorarlo dejaba la cuenta corta y el total no (un cobro de US$ 65 a la Financiera ARS, 10/10). */
+      const tc = p.tipoCambio ?? (e.ajustes?.tipoCambio ?? 0);
       const bruto = p.montoArs ?? (tc > 0 ? p.monto * tc : NaN);
       if (Number.isFinite(bruto)) s.entro += bruto - (tc > 0 ? p.feeMonto * tc : 0);
     } else {
@@ -553,8 +554,12 @@ export function saldosEsperados(
     /* El costo de un pase no sale aparte: ya está en su diferencia. */
     if (!s || g.extra?.traspasoId || !entre(fechaDePago(g), desde, hasta)) continue;
     const original = montoOriginal(g);
-    if (s.moneda === "ARS") { if (original?.moneda === "ARS") s.salio += original.monto; }
-    else s.salio += g.monto;
+    if (s.moneda === "ARS") {
+      /* Un gasto cargado en dólares que salió de la cuenta en pesos también sale de ella, al cambio del día de Ajustes (el pago a ARCA del 10/10,
+         US$ 3.311,69 desde la Financiera ARS, no la bajaba: el total sí lo restaba y la suma de las cuentas no daba). */
+      if (original?.moneda === "ARS") s.salio += original.monto;
+      else if ((e.ajustes?.tipoCambio ?? 0) > 0) s.salio += g.monto * e.ajustes!.tipoCambio;
+    } else s.salio += g.monto;
   }
   for (const s of out.values()) {
     s.entro = r2(s.entro); s.salio = r2(s.salio);

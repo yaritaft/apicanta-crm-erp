@@ -1,4 +1,5 @@
-import type { Ajustes, EstadoApp, Gasto, GrupoGasto, ID, MiembroEquipo, Moneda, RolEquipo } from "./types";
+import type { Ajustes, EstadoApp, Gasto, GrupoGasto, ID, MiembroEquipo, Moneda, Procesador, RolEquipo } from "./types";
+import { cuentaDeGasto } from "./traspasos";
 import { aMonedaBase, escribirMonto, leerMonto, montoOriginal, normalizar, tieneOtraFechaDePago } from "./gastos";
 import { embudoDeGasto } from "./embudos";
 import { fechaLarga, isoDia } from "./format";
@@ -162,7 +163,7 @@ export function cambiosAlRepetir(g: Gasto, tipoCambioDeHoy: string): Partial<Bor
 
 /* ---------- Lo que falta para poder cargarlo ---------- */
 
-export type CampoGasto = "concepto" | "categoria" | "proveedor" | "monto" | "tipoCambio" | "fecha" | "fechaPago";
+export type CampoGasto = "concepto" | "categoria" | "proveedor" | "monto" | "tipoCambio" | "fecha" | "fechaPago" | "cuenta";
 export type ProblemasGasto = Partial<Record<CampoGasto, string>>;
 
 /* Una sola letra no es un nombre: seguro es un error de tipeo. */
@@ -173,8 +174,9 @@ export const MENSAJE_PROVEEDOR = "Elegí o escribí a quién le pagaste";
 /** Todo lo que falta o está mal, campo por campo. Sirve para pintar cada
  *  casillero y para decidir si se puede cargar. */
 export function problemasDelGasto(
-  b: Pick<BorradorGasto, "concepto" | "categoria" | "proveedor" | "monto" | "moneda" | "tipoCambio" | "fecha"> & Partial<Pick<BorradorGasto, "fechaPago">>,
+  b: Pick<BorradorGasto, "concepto" | "categoria" | "proveedor" | "monto" | "moneda" | "tipoCambio" | "fecha"> & Partial<Pick<BorradorGasto, "fechaPago" | "cuenta">>,
   base: Moneda,
+  cuentas?: readonly Pick<Procesador, "id" | "nombre" | "moneda">[],
 ): ProblemasGasto {
   const p: ProblemasGasto = {};
   if (b.concepto.trim().length < 2) p.concepto = "Contá qué pagaste";
@@ -184,22 +186,28 @@ export function problemasDelGasto(
   if (b.moneda !== base && !(leerMonto(b.tipoCambio) > 0)) p.tipoCambio = "Escribí el tipo de cambio";
   if (Number.isNaN(new Date(b.fecha).getTime())) p.fecha = "Elegí la fecha";
   if (b.fechaPago && Number.isNaN(new Date(b.fechaPago).getTime())) p.fechaPago = "Elegí el día que se pagó";
+  /* Lo que sale de una cuenta en pesos se carga en pesos: si no, la cuenta no sabe cuántos salieron y el arqueo no da (03/11: el pago a ARCA,
+     US$ 3.311,69 desde la Financiera ARS, no la bajaba). */
+  const id = cuentas && b.cuenta ? cuentaDeGasto({ extra: { cuenta: b.cuenta } }, cuentas) : undefined;
+  if (id && cuentas?.find((c) => c.id === id)?.moneda === "ARS" && b.moneda !== "ARS") p.cuenta = MENSAJE_CUENTA_EN_PESOS;
   return p;
 }
+
+export const MENSAJE_CUENTA_EN_PESOS = "Esa cuenta es en pesos: cargá el gasto en pesos, con los pesos que salieron";
 
 /** Lo que impide pasar de este paso (null: se puede seguir). En el último
  *  paso cuenta todo, en el orden en que se lee la pantalla. */
 export function problemaDelPaso(
-  paso: PasoId, b: Parameters<typeof problemasDelGasto>[0], base: Moneda,
+  paso: PasoId, b: Parameters<typeof problemasDelGasto>[0], base: Moneda, cuentas?: Parameters<typeof problemasDelGasto>[2],
 ): string | null {
-  const p = problemasDelGasto(b, base);
+  const p = problemasDelGasto(b, base, cuentas);
   switch (paso) {
     case "concepto": return p.concepto ?? null;
     case "categoria": return p.categoria ?? null;
     case "proveedor": return p.proveedor ?? null;
     case "monto": return p.monto ?? p.tipoCambio ?? null;
     case "fecha": return p.fecha ?? p.fechaPago ?? null;
-    default: return p.concepto ?? p.categoria ?? p.monto ?? p.tipoCambio ?? p.fecha ?? p.fechaPago ?? p.proveedor ?? null;
+    default: return p.concepto ?? p.categoria ?? p.monto ?? p.tipoCambio ?? p.fecha ?? p.fechaPago ?? p.proveedor ?? p.cuenta ?? null;
   }
 }
 
