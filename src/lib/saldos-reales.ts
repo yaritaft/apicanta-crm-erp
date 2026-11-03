@@ -225,26 +225,40 @@ export interface SaldoParaArqueo {
     «esperado» del arqueo siguiente arrancaría de ahí, y cuando el banco asiente lo que estaba en camino el control diría «faltan X» sin que falte
     nada. Por eso, si la diferencia es justo lo que está en camino (lo que la app ya había descontado o sumado), se guarda el saldo que va a
     quedar cuando el banco lo asiente: lo que marca menos lo por debitar, más lo por acreditar. Si la diferencia no se explica (o no hay con
-    qué comparar), no se toca nada: restar lo que la app nunca descontó sería inventar plata. */
+    qué comparar), no se toca nada: restar lo que la app nunca descontó sería inventar plata.
+    La tarjeta se descuenta siempre: lo que se debe son compras anteriores a este arqueo, y cuando se paguen van a bajar el saldo del banco sin que nada
+    las espere. Guardarlo sin restar es por qué Mercury no daba aunque estuviera todo cargado (el arqueo del 26/10: US$ 603,77 pagados horas después). */
 export function saldoParaElArqueo(real: SaldoReal, esperado: number | undefined): SaldoParaArqueo {
   const delBanco = real.saldo;
-  if (esperado === undefined) return { monto: delBanco, delBanco };
-  const diferencia = Math.round((delBanco - esperado) * 100) / 100;
-  const explicado = Math.abs(diferencia) < TOLERANCIA_DE_SALDO ? null : explicarConPendientes(diferencia, real.pendientes);
-  if (!explicado) return { monto: delBanco, delBanco, diferencia };
-  const monto = Math.round((delBanco - explicado.porDebitar + explicado.porAcreditar) * 100) / 100;
+  const diferencia = esperado === undefined ? undefined : Math.round((delBanco - esperado) * 100) / 100;
+  const explicado = diferencia === undefined || Math.abs(diferencia) < TOLERANCIA_DE_SALDO ? null : explicarConPendientes(diferencia, real.pendientes);
+  const ajuste = conLaTarjeta(explicado, real.pendientes?.tarjeta ?? 0);
+  if (!ajuste) return { monto: delBanco, delBanco, ...(diferencia === undefined ? {} : { diferencia }) };
+  const monto = Math.round((delBanco - ajuste.porDebitar + ajuste.porAcreditar) * 100) / 100;
   return {
-    monto, delBanco, diferencia, ajuste: explicado,
-    nota: `El banco marcaba ${money(delBanco, real.moneda, 2)}; se guardó ${money(monto, real.moneda, 2)} porque tiene ${textoDeLoPendiente(explicado, real.moneda)}.`,
+    monto, delBanco, ...(diferencia === undefined ? {} : { diferencia }), ajuste,
+    nota: `El banco marcaba ${money(delBanco, real.moneda, 2)}; se guardó ${money(monto, real.moneda, 2)} porque tiene ${textoDeLoPendiente(ajuste, real.moneda)}.`,
   };
 }
 
+function conLaTarjeta(explicado: ExplicadoPorPendientes | null, tarjeta: number): ExplicadoPorPendientes | null {
+  if (tarjeta < 0.005 || explicado?.tarjeta) return explicado;
+  const base = explicado ?? { porDebitar: 0, porAcreditar: 0, salidas: 0, nSalidas: 0, tarjeta: 0, entradas: 0, nEntradas: 0 };
+  return { ...base, tarjeta, porDebitar: Math.round((base.porDebitar + tarjeta) * 100) / 100 };
+}
+
 /** Lo que significa una diferencia, en una frase para quien carga las cosas. */
-export function quePasa(f: Pick<FilaDeControl, "lectura" | "diferencia" | "moneda" | "nombre" | "explicadoPor">): string {
+export function quePasa(f: Pick<FilaDeControl, "lectura" | "diferencia" | "moneda" | "nombre" | "explicadoPor"> & Partial<Pick<FilaDeControl, "cuentaId">>): string {
   if (f.lectura === "da") return "Da con lo que la app esperaba.";
   if (f.lectura === "da-con-pendientes") return f.explicadoPor ? `Da, con ${textoDeLoPendiente(f.explicadoPor, f.moneda)}.` : "Da con lo que la app esperaba.";
   if (f.lectura === "sin-punto-de-partida") return "Todavía no hay un arqueo de esta cuenta: con uno, la app compara.";
   const cuanto = money(Math.abs(f.diferencia ?? 0), f.moneda);
+  /* En Mercury lo más común es la tarjeta: Aldana buscó un cobro que no faltaba, y los +US$ 403,62 eran todos de la tarjeta (03/11). */
+  if (f.cuentaId === "proc_mercury") {
+    return f.lectura === "falta"
+      ? `Hay ${cuanto} menos de lo que la app esperaba: faltan compras de la tarjeta, o un gasto, un retiro o un movimiento entre cuentas que salió de ${f.nombre}.`
+      : `Hay ${cuanto} más de lo que la app esperaba: compras repetidas o un pago de la tarjeta cargado como gasto, o falta un cobro o un movimiento entre cuentas que llegó a ${f.nombre}.`;
+  }
   return f.lectura === "falta"
     ? `Hay ${cuanto} menos de lo que la app esperaba: falta cargar un gasto, un retiro o un movimiento entre cuentas que salió de ${f.nombre}.`
     : `Hay ${cuanto} más de lo que la app esperaba: falta cargar un cobro o un movimiento entre cuentas que llegó a ${f.nombre}.`;

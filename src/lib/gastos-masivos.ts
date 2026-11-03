@@ -3,6 +3,7 @@ import type { CategoriaGasto } from "./seed";
 import { aMonedaBase, categoriasDisponibles, fechaDePago, leerMonto, escribirMonto, montoOriginal, normalizar, sugerirCategoria } from "./gastos";
 import { datosDelGasto, opcionesProveedor, problemasDelGasto, tipoCambioDeAjustes, type BorradorGasto, type ProblemasGasto } from "./carga-gasto";
 import { diaDeNegocio } from "./dia-negocio";
+import { cuentaDeGasto } from "./traspasos";
 import {
   categoriaDeRubroMercury, esComisionDeProcesador, gastoParecido, indiceDeGastos, leerExportDeMercury, personaDelEquipo, queEsMercury,
   type FilaMercury,
@@ -405,10 +406,14 @@ const borradorDe = (f: FilaMasiva, e: EstadoApp, cat: Catalogo): BorradorGasto =
 });
 
 /** Lo que está mal de una fila, campo por campo (vacío si se puede cargar). Una categoría que no existe también cuenta. */
-export function problemasDeFila(f: FilaMasiva, e: EstadoApp, cat: Catalogo = catalogoDe(e)): ProblemasGasto {
-  const p = problemasDelGasto(borradorDe(f, e, cat), e.ajustes.monedaBase);
+export function problemasDeFila(f: FilaMasiva, e: EstadoApp, cat: Catalogo = catalogoDe(e)): ProblemasGasto & { cuenta?: string } {
+  const p: ProblemasGasto & { cuenta?: string } = problemasDelGasto(borradorDe(f, e, cat), e.ajustes.monedaBase);
   if (!f.fecha) p.fecha = "Poné la fecha";
   if (f.categoria && !cat.has(f.categoria)) p.categoria = "Esa categoría no existe";
+  /* Sin una cuenta que se reconozca, el control de saldos no descuenta el gasto de ninguna: las 52 compras pegadas el 01/11 dejaron a Mercury sin dar. */
+  const cuenta = f.cuenta.trim();
+  if (!cuenta) p.cuenta = "Decí de qué cuenta salió";
+  else if (!cuentaDeGasto({ extra: { cuenta } }, e.procesadores)) p.cuenta = "No conozco esa cuenta: elegí una de la lista";
   return p;
 }
 

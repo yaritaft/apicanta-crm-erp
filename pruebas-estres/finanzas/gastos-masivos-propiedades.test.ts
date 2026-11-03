@@ -97,7 +97,7 @@ test("G3 · cargar, volver a pegar la misma planilla y deshacer: lo cargado no s
     const hoy = () => JSON.parse(acciones.exportar()) as EstadoApp;
     const n = a.entero(1, 40);
     const texto = ["Fecha\tConcepto\tMonto", ...Array.from({ length: n }, (_, i) => `${dos(a.entero(1, 19))}/10/2026\t${a.pick(CONCEPTOS)} ${i + 1}\t${a.entero(1, 9000)},${dos(a.entero(0, 99))}`)].join("\n");
-    const leer = (e: EstadoApp) => { const t = parsearPegado(texto); return armarFilas(t, adivinarColumnas(t, true), true, { e, hoy: HOY }); };
+    const leer = (e: EstadoApp) => { const t = parsearPegado(texto); return armarFilas(t, adivinarColumnas(t, true), true, { e, hoy: HOY, cuenta: "Mercury" }); };
     const filas = leer(hoy()).map((f) => ({ ...f, categoria: f.categoria || "Software", proveedor: f.proveedor || f.concepto }));
     const antes = hoy().gastos.length;
     const datos = gastosDeFilas(filas, hoy(), "lote_x");

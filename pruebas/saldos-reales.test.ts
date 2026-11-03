@@ -93,7 +93,7 @@ test("control de saldos: da, sobra, falta o no hay con qué comparar; y la alarm
   c = controlarSaldos(e, [real("proc_mercury", 900), real("proc_trust", 500.4)], ahora);
   assert.equal(c.filas[0].lectura, "falta"); assert.equal(c.filas[0].diferencia, -70); assert.equal(c.hayAlarma, true);
   assert.equal(c.filas[1].lectura, "da", "menos de un dólar de diferencia es lo mismo");
-  assert.match(quePasa(c.filas[0]), /US\$\s*70.* menos de lo que la app esperaba: falta cargar un gasto, un retiro o un movimiento entre cuentas que salió de ACH-WIRE Mercury/);
+  assert.match(quePasa(c.filas[0]), /US\$\s*70.* menos de lo que la app esperaba: faltan compras de la tarjeta, o un gasto, un retiro o un movimiento entre cuentas que salió de ACH-WIRE Mercury/);
   /* Hay 185,50 más en Trust: falta cargar un cobro o un movimiento que llegó. */
   c = controlarSaldos(e, [real("proc_trust", 685.5)], ahora);
   assert.equal(c.filas[0].lectura, "sobra"); assert.equal(c.filas[0].diferencia, 185.5);
@@ -241,7 +241,7 @@ test("Mercury: si la diferencia es justo lo que el banco todavía no asentó, el
   c = controlarSaldos(e, [real("proc_mercury", 117794.5, { pendientes: enCamino() })], AHORA);
   assert.equal(c.filas[0].lectura, "sobra", "dos dólares y medio de más no se explican con lo que hay en camino"); assert.equal(c.hayAlarma, true);
   assert.equal(c.filas[0].explicadoPor, undefined);
-  assert.match(quePasa(c.filas[0]), /más de lo que la app esperaba: falta cargar un cobro/);
+  assert.match(quePasa(c.filas[0]), /más de lo que la app esperaba: compras repetidas o un pago de la tarjeta cargado como gasto, o falta un cobro/);
   /* Si lo en camino no coincide con nada, sigue la alarma de siempre. */
   c = controlarSaldos(e, [real("proc_mercury", 118500, { pendientes: enCamino() })], AHORA);
   assert.equal(c.filas[0].lectura, "sobra"); assert.equal(c.hayAlarma, true);
@@ -290,13 +290,34 @@ test("saldoParaElArqueo: si lo que el banco no asentó explica la diferencia, se
   assert.equal(d.monto, 114453.9);
 
   /* Lo que NO se toca: no hay con qué comparar, no hay nada en camino, ya da, o la diferencia no se explica (restar lo que la app nunca descontó sería inventar plata). */
-  assert.deepEqual(saldoParaElArqueo(real("proc_mercury", 117792, { pendientes: enCamino() }), undefined), { monto: 117792, delBanco: 117792 });
+  const sinTarjeta = enCamino({ tarjeta: undefined });
+  assert.deepEqual(saldoParaElArqueo(real("proc_mercury", 117792, { pendientes: sinTarjeta }), undefined), { monto: 117792, delBanco: 117792 });
   assert.equal(saldoParaElArqueo(real("proc_mercury", 117792), esperado).monto, 117792);
   assert.equal(saldoParaElArqueo(real("proc_mercury", 117792), esperado).ajuste, undefined);
-  const yaDa = saldoParaElArqueo(real("proc_mercury", 114453.4, { pendientes: enCamino() }), esperado);
+  const yaDa = saldoParaElArqueo(real("proc_mercury", 114453.4, { pendientes: sinTarjeta }), esperado);
   assert.equal(yaDa.monto, 114453.4); assert.equal(yaDa.ajuste, undefined);
-  const noSeExplica = saldoParaElArqueo(real("proc_mercury", 118500, { pendientes: enCamino() }), esperado);
+  const noSeExplica = saldoParaElArqueo(real("proc_mercury", 118500, { pendientes: sinTarjeta }), esperado);
   assert.equal(noSeExplica.monto, 118500); assert.equal(noSeExplica.ajuste, undefined); assert.equal(noSeExplica.nota, undefined);
+
+  /* La tarjeta se descuenta siempre: son compras anteriores al arqueo que el banco va a debitar después. La salida pending, si no explica, sigue sin tocarse. */
+  const sinComparar = saldoParaElArqueo(real("proc_mercury", 117792, { pendientes: enCamino() }), undefined);
+  assert.equal(sinComparar.monto, 115720); assert.equal(sinComparar.ajuste!.salidas, 0); assert.equal(sinComparar.diferencia, undefined);
+  assert.equal(saldoParaElArqueo(real("proc_mercury", 114453.4, { pendientes: enCamino() }), esperado).monto, 112381.4);
+  const conDiferencia = saldoParaElArqueo(real("proc_mercury", 118500, { pendientes: enCamino() }), esperado);
+  assert.equal(conDiferencia.monto, 116428); assert.equal(conDiferencia.diferencia, 4047);
+  assert.match(conDiferencia.nota!, /se guardó US\$\s*116\.428,00 porque tiene US\$\s*2\.072,00 todavía por debitar \(lo gastado con la tarjeta/);
+  /* Y si lo que se explica es sólo una parte, la tarjeta se suma una sola vez. */
+  assert.equal(a.ajuste!.tarjeta, 2072);
+
+  /* De punta a punta: un arqueo con deuda de tarjeta, el banco la debita al otro día, y el control da sin cargar nada. */
+  const contado = saldoParaElArqueo(real("proc_mercury", 10000, { pendientes: { salidas: 0, nSalidas: 0, entradas: 0, nEntradas: 0, tarjeta: 600 } }), undefined).monto;
+  assert.equal(contado, 9400, "lo que va a quedar cuando se pague la tarjeta, que es lo que el banco marca al día siguiente");
+
+  /* En Mercury la frase no manda a buscar un cobro que no falta. */
+  const fraseDe = (lectura: "sobra" | "falta", cuentaId?: string) => quePasa({ lectura, diferencia: 403.62, moneda: "USD", nombre: "ACH-WIRE Mercury", cuentaId });
+  assert.match(fraseDe("sobra", "proc_mercury"), /compras repetidas o un pago de la tarjeta cargado como gasto/);
+  assert.match(fraseDe("falta", "proc_mercury"), /faltan compras de la tarjeta/);
+  assert.doesNotMatch(fraseDe("sobra"), /tarjeta/);
   /* Y el control de la misma cuenta, con ese esperado, es el que ya conocíamos. */
   assert.equal(controlarSaldos(e, [real("proc_mercury", 117792, { pendientes: enCamino() })], AHORA).filas[0].diferencia, 3339);
 });

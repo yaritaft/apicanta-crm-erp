@@ -117,7 +117,7 @@ test("categoría propuesta: la de la última vez que se le pagó a ese proveedor
 
 test("problemas: sin categoría, categoría inexistente, sin monto, en pesos sin tipo de cambio", () => {
   const e = base();
-  const ok: FilaMasiva = { id: "f1", incluir: true, fecha: "2026-10-07", concepto: "Uber", proveedor: "Uber", categoria: "Software", monto: "12,5", moneda: "USD", cuenta: "", notas: "", ingreso: false, yaCargada: false };
+  const ok: FilaMasiva = { id: "f1", incluir: true, fecha: "2026-10-07", concepto: "Uber", proveedor: "Uber", categoria: "Software", monto: "12,5", moneda: "USD", cuenta: "Mercury", notas: "", ingreso: false, yaCargada: false };
   assert.deepEqual(problemasDeFila(ok, e), {});
   assert.ok(problemasDeFila({ ...ok, categoria: "" }, e).categoria);
   assert.match(problemasDeFila({ ...ok, categoria: "Inventada" }, e).categoria ?? "", /no existe/);
@@ -128,6 +128,23 @@ test("problemas: sin categoría, categoría inexistente, sin monto, en pesos sin
   const sinTc = { ...e, ajustes: { ...e.ajustes, tipoCambio: 0 } };
   assert.ok(problemasDeFila({ ...ok, moneda: "ARS" }, sinTc).tipoCambio);
   assert.deepEqual(problemasDeFila({ ...ok, moneda: "ARS" }, e), {}, "con el tipo de cambio de Ajustes se puede");
+});
+
+test("la cuenta es obligatoria y tiene que reconocerse: sin ella el control de saldos no descuenta el gasto de ninguna (las 52 compras pegadas del 01/11)", () => {
+  const e = base();
+  const ok: FilaMasiva = { id: "f1", incluir: true, fecha: "2026-10-07", concepto: "Uber", proveedor: "Uber", categoria: "Software", monto: "12,5", moneda: "USD", cuenta: "", notas: "", ingreso: false, yaCargada: false };
+  assert.match(problemasDeFila(ok, e).cuenta ?? "", /de qué cuenta salió/);
+  assert.match(problemasDeFila({ ...ok, cuenta: "Tarjeta de mi tía" }, e).cuenta ?? "", /No conozco esa cuenta/);
+  assert.equal(problemasDeFila({ ...ok, cuenta: "Mercury" }, e).cuenta, undefined, "una palabra de una sola cuenta alcanza");
+  assert.equal(problemasDeFila({ ...ok, cuenta: "ACH-WIRE Mercury" }, e).cuenta, undefined);
+  /* Tabla pegada sin columna de cuenta: el casillero de arriba la completa en todas las filas; sin él, no se carga ninguna. */
+  const tabla = parsearPegado("Fecha\tConcepto\tProveedor\tMonto\n07/10/2026\tUber\tUber\t12");
+  const sinCuenta = armarFilas(tabla, adivinarColumnas(tabla, true), true, { e, hoy: HOY }).map((f) => ({ ...f, categoria: "Software" }));
+  assert.equal(gastosDeFilas(sinCuenta, e, "l").length, 0);
+  const conCuenta = armarFilas(tabla, adivinarColumnas(tabla, true), true, { e, hoy: HOY, cuenta: "Mercury" }).map((f) => ({ ...f, categoria: "Software" }));
+  const datos = gastosDeFilas(conCuenta, e, "l");
+  assert.equal(datos.length, 1);
+  assert.equal(datos[0].extra?.cuenta, "Mercury");
 });
 
 test("lo que se carga: sólo las filas marcadas y sin problemas, con el lote, el ingreso en negativo y el monto en la moneda base", () => {

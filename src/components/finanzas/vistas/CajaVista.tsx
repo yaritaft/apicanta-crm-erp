@@ -501,6 +501,7 @@ function NuevoArqueo({ e, onCerrar, onListo, traerAlAbrir = false }: { e: Estado
         if (p.ajuste) nuevos.push(`${nombre(x.cuentaId)} marca ${money(p.delBanco, x.moneda, 2)} pero tiene ${textoDeLoPendiente(p.ajuste, x.moneda)}: puse ${money(p.monto, x.moneda, 2)}, lo que va a quedar cuando el banco lo asiente. Así el próximo arqueo no marca una falta que no es. Si querés el saldo del banco tal cual, escribilo encima.`);
         else if (x.pendientes?.nSalidas && (p.diferencia ?? 0) >= TOLERANCIA_DE_SALDO) nuevos.push(`${nombre(x.cuentaId)} tiene ${money(x.pendientes.salidas, x.moneda, 2)} en salidas que el banco todavía no debitó, pero no explican toda la diferencia: no se descontó nada del saldo.`);
       }
+      if (!esHoy && r.saldos.some((x) => x.cuentaId === "proc_mercury")) nuevos.push("De un día pasado no se sabe cuánto debía la tarjeta de Mercury, así que no se descontó: el próximo control puede dar de menos por eso. Un arqueo de hoy lo deja justo.");
       if (r.soloHoy.length) nuevos.push(`${r.soloHoy.map(nombre).join(", ")} sólo se leen de hoy: este arqueo es de otro día, contalos vos.`);
       if (r.sinConexion.length) nuevos.push(`${r.sinConexion.map(nombre).join(", ")} no está${r.sinConexion.length === 1 ? "" : "n"} conectada${r.sinConexion.length === 1 ? "" : "s"}: contala${r.sinConexion.length === 1 ? "" : "s"} vos.`);
       for (const x of r.errores) nuevos.push(`${nombre(x.cuentaId)}: ${x.mensaje}`);

@@ -127,12 +127,8 @@ export function CargaDeGastosMasiva({ e, onCerrar, onListo }: {
     setFiltro("todas");
   };
 
-  /* Las cuentas que ya se usaron, para escribir una sin errores de tipeo. */
-  const cuentas = useMemo(() => {
-    const s = new Set<string>(e.procesadores.map((p) => p.nombre));
-    for (const g of e.gastos) { const c = typeof g.extra?.cuenta === "string" ? g.extra.cuenta.trim() : ""; if (c) s.add(c); }
-    return [...s].sort((a, b) => a.localeCompare(b, "es"));
-  }, [e]);
+  /* Las cuentas que se reconocen, para escribir una sin errores de tipeo. */
+  const cuentas = useMemo(() => e.procesadores.map((p) => p.nombre).sort((a, b) => a.localeCompare(b, "es")), [e.procesadores]);
 
   const columnas = Math.max(0, ...tabla.map((f) => f.length));
   const muestra = (i: number) => tabla.slice(conTitulos ? 1 : 0, conTitulos ? 4 : 3).map((f) => f[i] ?? "").filter(Boolean).join(" · ");
@@ -244,7 +240,7 @@ export function CargaDeGastosMasiva({ e, onCerrar, onListo }: {
             </label>
             <label className="gm-check">
               <span>Cuenta si no la dice</span>
-              <input className="gm-celda" list="gm-cuentas" aria-label="Cuenta por defecto" value={cuentaPorDefecto} placeholder="Mercury, USDT Trust…" onChange={(ev) => setCuentaPorDefecto(ev.target.value)} />
+              <input className={`gm-celda${!cuentaPorDefecto.trim() && filas.some((f) => f.incluir && !f.cuenta.trim()) ? " gm-celda--mal" : ""}`} list="gm-cuentas" aria-label="Cuenta por defecto" value={cuentaPorDefecto} placeholder="Mercury, USDT Trust…" onChange={(ev) => setCuentaPorDefecto(ev.target.value)} />
             </label>
           </div>
         </div>
@@ -308,7 +304,7 @@ export function CargaDeGastosMasiva({ e, onCerrar, onListo }: {
                           <option value="USD">USD</option><option value="ARS">ARS</option>
                         </select>
                       </td>
-                      <td><input className="gm-celda" list="gm-cuentas" aria-label={`Cuenta de la fila ${n}`} value={f.cuenta} onChange={(ev) => editar(f.id, { cuenta: ev.target.value })} /></td>
+                      <td><input className={`gm-celda${f.incluir && p.cuenta ? " gm-celda--mal" : ""}`} list="gm-cuentas" aria-label={`Cuenta de la fila ${n}`} title={f.incluir ? p.cuenta : undefined} value={f.cuenta} onChange={(ev) => editar(f.id, { cuenta: ev.target.value })} /></td>
                       <td className="gm-estado">
                         {f.yaCargada ? <Badge variante="neutral">Ya cargada</Badge>
                           : f.afuera ? (
