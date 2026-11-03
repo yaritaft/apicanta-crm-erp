@@ -9,6 +9,7 @@ import { isoDia, money } from "@/lib/format";
 import { diaDeNegocio } from "@/lib/dia-negocio";
 import { fechaDePago } from "@/lib/gastos";
 import { esExportDeMercury, pagosDeTarjetaDelRango, sumaDe } from "@/lib/gastos-mercury";
+import { esExportDeBofa } from "@/lib/gastos-bofa";
 import {
   adivinarColumnas, armarFilas, CAMPOS_MASIVOS, catalogoDe, clavesCargadas, gastosDeFilas, leerFecha, parsearPegado, problemasDeFila,
   resumenDeFilas, tieneTitulos, yaEstaCargada, type CampoMasivo, type FilaMasiva,
@@ -67,6 +68,8 @@ export function CargaDeGastosMasiva({ e, onCerrar, onListo }: {
   const mapa = mapaElegido && mapaElegido.length === mapaAuto.length ? mapaElegido : mapaAuto;
   /* Un export de Mercury (tarjeta y cuenta corriente) se lee solo, con las reglas del banco: no hace falta decir qué es cada columna. */
   const esMercury = useMemo(() => tabla.length > 1 && esExportDeMercury(tabla[0]), [tabla]);
+  /* Y uno de Bank of America (cuenta o tarjeta, lo que baja Online Banking en CSV): también se lee solo. */
+  const esBofa = useMemo(() => !esMercury && tabla.length > 1 && esExportDeBofa(tabla), [esMercury, tabla]);
 
   const catalogo = useMemo(() => catalogoDe(e), [e]);
   const categorias = useMemo(() => [...catalogo.values()], [catalogo]);
@@ -179,13 +182,24 @@ export function CargaDeGastosMasiva({ e, onCerrar, onListo }: {
           placeholder={"Pegá acá las filas copiadas de Excel.\nPor ejemplo:\n07/10/2026\tUber del aeropuerto\t12,50\n08/10/2026\tNotion\t20,00"}
           onChange={(ev) => { setTexto(ev.target.value); setTitulosElegido(null); setMapaElegido(null); }}
         />
-        {tabla.length > 0 && !esMercury && (
+        {tabla.length > 0 && !esMercury && !esBofa && (
           <p className="t-sm t-muted" role="status">
             Leí {tabla.length - (conTitulos ? 1 : 0)} {tabla.length - (conTitulos ? 1 : 0) === 1 ? "fila" : "filas"} y {columnas} {columnas === 1 ? "columna" : "columnas"}.
             Las fechas se leen día/mes (07/10 es el 7 de octubre).
           </p>
         )}
-        {!esMercury && negativasComoIngreso.length > 0 && (
+        {esBofa && (
+          <div className="aviso-duplicado" role="status">
+            <div className="aviso-duplicado__fila">
+              <span className="aviso-duplicado__texto">
+                <strong>Reconocí un export de Bank of America ({filas.length} {filas.length === 1 ? "movimiento" : "movimientos"}). </strong>
+                Lo que sale es gasto, de la cuenta Bank of America, uno por uno. Dejo afuera lo que no es un gasto: el pago de la tarjeta (se cargan las compras), los pagos de equipo
+                (se registran al cerrar la liquidación), lo que pasa entre cuentas propias y lo que entra. Marco lo que ya estaba cargado, aunque tenga otro día.
+              </span>
+            </div>
+          </div>
+        )}
+        {!esMercury && !esBofa && negativasComoIngreso.length > 0 && (
           <div className="aviso-duplicado" role="status">
             <div className="aviso-duplicado__fila">
               <span className="aviso-duplicado__texto">
@@ -211,7 +225,7 @@ export function CargaDeGastosMasiva({ e, onCerrar, onListo }: {
         )}
       </div>
 
-      {tabla.length > 0 && !esMercury && (
+      {tabla.length > 0 && !esMercury && !esBofa && (
         <div className="stack-2">
           <div className="row-wrap" style={{ alignItems: "center", gap: 12 }}>
             <span className="t-label">¿Qué es cada columna?</span>

@@ -46,6 +46,9 @@ export interface Transaccion {
   detalle: string;
   /* La cuenta por la que entró o salió, o vacío si no se sabe. */
   cuenta: string;
+  /* De un gasto: su categoría y su proveedor, para filtrar y sumar por ellos (Manu, 03/11: «poder encontrarlos y filtrarlos»). */
+  categoria?: string;
+  proveedor?: string;
   /* Siempre positivo: el tipo dice para qué lado va. */
   monto: number;
   moneda: Moneda;
@@ -134,6 +137,7 @@ function delGasto(g: Gasto): Transaccion {
     id: `gasto:${g.id}`, tipo: ingreso ? "ingreso" : "egreso", origen: ingreso ? "ingreso-cargado" : "gasto",
     dia: diaDeNegocio(f), fecha: f, titulo: g.concepto || g.categoria,
     detalle: [g.categoria, g.proveedor].filter(Boolean).join(" · "), cuenta: cuentaDeGasto(g),
+    ...(g.categoria ? { categoria: g.categoria } : {}), ...(g.proveedor?.trim() ? { proveedor: g.proveedor.trim() } : {}),
     monto: r2(Math.abs(g.monto)), moneda: g.moneda,
     estado: ingreso ? ESTADO_DE_ORIGEN["ingreso-cargado"] : g.grupo === "retiro" ? "Retiro del dueño" : ESTADO_DE_ORIGEN.gasto,
     gastoId: g.id,
@@ -225,4 +229,34 @@ export function cuentasDe(filas: readonly Transaccion[]): { cuenta: string; n: n
   const n = new Map<string, number>();
   for (const f of filas) n.set(f.cuenta, (n.get(f.cuenta) ?? 0) + 1);
   return [...n.entries()].map(([cuenta, c]) => ({ cuenta, n: c })).sort((a, b) => b.n - a.n || a.cuenta.localeCompare(b.cuenta, "es"));
+}
+
+/** Las categorías de los gastos de la lista, con cuántos son y cuánto suman (los egresos, y lo que volvió restando), de la más grande a la más chica. */
+export function categoriasDe(filas: readonly Transaccion[]): { categoria: string; n: number; total: number }[] {
+  const m = new Map<string, { n: number; total: number }>();
+  for (const f of filas) {
+    if (!f.categoria || f.origen !== "gasto" && f.origen !== "ingreso-cargado") continue;
+    const x = m.get(f.categoria) ?? { n: 0, total: 0 };
+    x.n++; x.total += f.tipo === "egreso" ? f.monto : -f.monto;
+    m.set(f.categoria, x);
+  }
+  return [...m.entries()].map(([categoria, x]) => ({ categoria, n: x.n, total: r2(x.total) })).sort((a, b) => b.total - a.total || a.categoria.localeCompare(b.categoria, "es"));
+}
+
+/** Los proveedores de los gastos de la lista, con cuántos gastos tiene cada uno. */
+export function proveedoresDe(filas: readonly Transaccion[]): { proveedor: string; n: number }[] {
+  const m = new Map<string, number>();
+  for (const f of filas) if (f.proveedor && (f.origen === "gasto" || f.origen === "ingreso-cargado")) m.set(f.proveedor, (m.get(f.proveedor) ?? 0) + 1);
+  return [...m.entries()].map(([proveedor, n]) => ({ proveedor, n })).sort((a, b) => b.n - a.n || a.proveedor.localeCompare(b.proveedor, "es"));
+}
+
+/** La lista como CSV (con tildes bien en Excel): una fila por transacción, con el monto con signo (los egresos en negativo). */
+export function csvDeTransacciones(filas: readonly Transaccion[]): string {
+  const q = (t: string | number | undefined) => `"${String(t ?? "").replace(/"/g, '""')}"`;
+  const cab = ["Fecha", "Tipo", "Qué", "Categoría", "Proveedor", "Cuenta", "Estado", "Monto", "Moneda", "Comisión"];
+  const lineas = filas.map((f) => [
+    f.dia, f.tipo === "egreso" ? "Egreso" : f.tipo === "ingreso" ? "Ingreso" : "Entre cuentas", q(f.titulo), q(f.categoria), q(f.proveedor), q(f.cuenta), q(f.estado),
+    (f.tipo === "egreso" ? -f.monto : f.monto).toFixed(2), f.moneda, f.comision !== undefined ? f.comision.toFixed(2) : "",
+  ].join(","));
+  return "\ufeff" + [cab.join(","), ...lineas].join("\n");
 }

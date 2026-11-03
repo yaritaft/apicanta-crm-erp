@@ -2,7 +2,7 @@
 
 import React, { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, ArrowLeftRight, ClipboardPaste, CreditCard, Plus, Search } from "lucide-react";
+import { AlertTriangle, ArrowLeftRight, ChevronDown, ClipboardPaste, CreditCard, Download, Plus, Search } from "lucide-react";
 import { InfoMetrica } from "@/components/ui/InfoMetrica";
 import { Cascada } from "@/components/finanzas/visual/visual";
 import { CabeceraVista } from "@/components/finanzas/vistas/CabeceraVista";
@@ -20,7 +20,7 @@ import { acciones, useEstado } from "@/lib/store";
 import { diaDeNegocio } from "@/lib/dia-negocio";
 import { fechaLarga, money, num } from "@/lib/format";
 import { nombrePeriodo } from "@/lib/periodos";
-import { cuentasDe, resumenDe, transaccionesDe, type Transaccion } from "@/lib/transacciones";
+import { categoriasDe, csvDeTransacciones, cuentasDe, proveedoresDe, resumenDe, transaccionesDe, type Transaccion } from "@/lib/transacciones";
 import { normalizar } from "@/lib/gastos";
 import { esPagoDeTarjeta } from "@/lib/reparto-tarjeta";
 import { esGastoDeComisionDeProcesador } from "@/lib/gastos-mercury";
@@ -41,7 +41,7 @@ import type { Gasto } from "@/lib/types";
    - q: lo que se busca
    ================================================================== */
 
-const VISTA = { mes: "", tipo: "", cuenta: "", dia: "" };
+const VISTA = { mes: "", tipo: "", cuenta: "", dia: "", categoria: "", proveedor: "" };
 const TIPOS = [
   ["", "Todo"],
   ["entradas", "Lo que entró"],
@@ -105,13 +105,23 @@ export function TransaccionesVista({ embebido = false }: { embebido?: boolean })
   const cuentas = useMemo(() => cuentasDe(delMes), [delMes]);
   const cuenta = vista.cuenta === SIN_CUENTA || cuentas.some((c) => c.cuenta === vista.cuenta) ? vista.cuenta : "";
 
+  /* Las categorías y los proveedores de los gastos del período (Manu, 03/11): para encontrarlos y sumarlos. */
+  const categorias = useMemo(() => categoriasDe(delMes), [delMes]);
+  const proveedores = useMemo(() => proveedoresDe(delMes), [delMes]);
+  const categoria = categorias.some((c) => c.categoria === vista.categoria) ? vista.categoria : "";
+  const proveedor = proveedores.some((p) => p.proveedor === vista.proveedor) ? vista.proveedor : "";
+
   /* Primero cuenta y búsqueda: los números de cada pestaña salen de ahí, y la pestaña recorta después. */
   const base = useMemo(() => {
     const q = normalizar(busca);
     return delMes.filter((f) =>
       (!cuenta || (cuenta === SIN_CUENTA ? f.cuenta === "" : f.cuenta === cuenta))
+      && (!categoria || f.categoria === categoria)
+      && (!proveedor || f.proveedor === proveedor)
       && (!q || normalizar([f.titulo, f.detalle, f.cuenta, f.estado].join(" ")).includes(q)));
-  }, [delMes, cuenta, busca]);
+  }, [delMes, cuenta, categoria, proveedor, busca]);
+  /* El total por categoría de lo que se está viendo (sin la categoría elegida, para poder cambiar de una a otra). */
+  const [verCategorias, setVerCategorias] = useState(false);
   const filas = useMemo(() => base.filter((f) => pasaTipo(f, tipo)), [base, tipo]);
   const resumen = useMemo(() => resumenDe(base), [base]);
   const cuentaN = (t: FiltroTipo) => base.filter((f) => pasaTipo(f, t)).length;
@@ -170,7 +180,16 @@ export function TransaccionesVista({ embebido = false }: { embebido?: boolean })
 
   const nombreDia = (d: string) => (d === hoy ? "hoy" : d === ayer ? "ayer" : `el ${d.slice(8, 10)}/${d.slice(5, 7)}`);
   const nombreMes = dia ? nombreDia(dia) : mes === "todos" ? "todos los meses" : nombrePeriodo(mes);
-  const hayFiltro = Boolean(busca.trim() || cuenta || tipo || dia);
+  const hayFiltro = Boolean(busca.trim() || cuenta || tipo || dia || categoria || proveedor);
+  const porCategoria = useMemo(() => categoriasDe(base.filter((f) => pasaTipo(f, tipo))), [base, tipo]);
+  function exportar() {
+    const blob = new Blob([csvDeTransacciones(filas)], { type: "text/csv;charset=utf-8" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `apicanta-transacciones-${dia || mes}.csv`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  }
 
   return (
     <div className="stack-5">
@@ -272,6 +291,24 @@ export function TransaccionesVista({ embebido = false }: { embebido?: boolean })
                 opciones={cuentas.map((c) => ({ valor: c.cuenta || SIN_CUENTA, texto: `${c.cuenta || "Sin cuenta"} (${c.n})` }))}
               />
             </div>
+            {categorias.length > 0 && (
+              <div style={{ width: 200 }}>
+                <Select
+                  aria-label="Categoría" value={categoria} placeholder="Todas las categorías"
+                  onChange={(ev) => setVista({ categoria: ev.target.value || null })}
+                  opciones={categorias.map((c) => ({ valor: c.categoria, texto: `${c.categoria} (${c.n})` }))}
+                />
+              </div>
+            )}
+            {proveedores.length > 0 && (
+              <div style={{ width: 200 }}>
+                <Select
+                  aria-label="Proveedor" value={proveedor} placeholder="Todos los proveedores"
+                  onChange={(ev) => setVista({ proveedor: ev.target.value || null })}
+                  opciones={proveedores.map((p) => ({ valor: p.proveedor, texto: `${p.proveedor} (${p.n})` }))}
+                />
+              </div>
+            )}
             <div className="fz-filtros__buscar">
               <Input
                 icono={<Search size={15} />} value={busca} onChange={(ev) => setBusca(ev.target.value)}
@@ -279,11 +316,38 @@ export function TransaccionesVista({ embebido = false }: { embebido?: boolean })
               />
             </div>
           </div>
-          <div className="row-wrap" style={{ marginTop: "var(--space-3)" }} role="group" aria-label="Tipo de movimiento">
+          <div className="row-wrap" style={{ marginTop: "var(--space-3)", alignItems: "center" }} role="group" aria-label="Tipo de movimiento">
             {TIPOS.map(([k, t]) => (
               <Chip key={k || "todo"} activo={tipo === k} onClick={() => setVista({ tipo: k || null })} count={cuentaN(k)}>{t}</Chip>
             ))}
+            <span style={{ flex: 1 }} />
+            {porCategoria.length > 0 && (
+              <Button sm variante="ghost" icono={<ChevronDown size={15} />} onClick={() => setVerCategorias((v) => !v)} aria-expanded={verCategorias}>
+                {verCategorias ? "Ocultar" : "Ver"} el total por categoría
+              </Button>
+            )}
+            <Button sm variante="ghost" icono={<Download size={15} />} onClick={exportar} disabled={filas.length === 0}
+              title="Baja en CSV lo que se está viendo (con los filtros)">Exportar</Button>
           </div>
+          {verCategorias && porCategoria.length > 0 && (
+            <ul style={{ listStyle: "none", margin: "var(--space-3) 0 0", padding: 0, display: "grid", gap: 6 }} aria-label="Total por categoría">
+              {porCategoria.map((c) => (
+                <li key={c.categoria}>
+                  <button
+                    type="button" onClick={() => setVista({ categoria: categoria === c.categoria ? null : c.categoria })} aria-pressed={categoria === c.categoria}
+                    style={{
+                      display: "flex", width: "100%", justifyContent: "space-between", alignItems: "center", gap: 16, padding: "8px 12px", textAlign: "left", cursor: "pointer",
+                      color: "inherit", background: categoria === c.categoria ? "var(--surface-300)" : "var(--surface-200)",
+                      border: `1px solid ${categoria === c.categoria ? "var(--border-strong)" : "var(--border)"}`, borderRadius: "var(--radius-md)",
+                    }}
+                  >
+                    <span className="truncate">{c.categoria}</span>
+                    <span className="t-sm t-muted" style={{ whiteSpace: "nowrap" }}>{c.n} {c.n === 1 ? "gasto" : "gastos"} · {M(c.total, 2)}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
 
         <DataTable
@@ -296,8 +360,8 @@ export function TransaccionesVista({ embebido = false }: { embebido?: boolean })
             <Empty
               icono={<ArrowLeftRight size={22} />}
               titulo={hayFiltro ? "Nada con estos filtros" : `Sin movimientos en ${nombreMes}`}
-              texto={hayFiltro ? "Probá con otra búsqueda, otra cuenta u otro tipo." : "Cuando entre un cobro o se cargue un gasto, aparece acá."}
-              accion={hayFiltro ? <Button variante="secondary" onClick={() => { setBusca(""); setVista({ tipo: null, cuenta: null, dia: null }); }}>Sacar los filtros</Button> : undefined}
+              texto={hayFiltro ? "Probá con otra búsqueda, otra cuenta, otra categoría u otro tipo." : "Cuando entre un cobro o se cargue un gasto, aparece acá."}
+              accion={hayFiltro ? <Button variante="secondary" onClick={() => { setBusca(""); setVista({ tipo: null, cuenta: null, dia: null, categoria: null, proveedor: null }); }}>Sacar los filtros</Button> : undefined}
             />
           }
         />

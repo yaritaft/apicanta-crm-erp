@@ -4,6 +4,7 @@ import { aMonedaBase, categoriasDisponibles, fechaDePago, leerMonto, escribirMon
 import { datosDelGasto, opcionesProveedor, problemasDelGasto, tipoCambioDeAjustes, type BorradorGasto, type ProblemasGasto } from "./carga-gasto";
 import { diaDeNegocio } from "./dia-negocio";
 import { cuentaDeGasto } from "./traspasos";
+import { esComisionDelBanco, leerExportDeBofa, limpiarDescripcionBofa, queEsBofa, refDeBofa, type FilaBofa } from "./gastos-bofa";
 import {
   categoriaDeRubroMercury, esComisionDeProcesador, gastoParecido, indiceDeGastos, leerExportDeMercury, personaDelEquipo, queEsMercury,
   type FilaMercury,
@@ -69,6 +70,8 @@ export function parsearPegado(texto: string): string[][] {
 /* Tabulación si hay (lo que copia Excel); si no, el separador que más se repite igual en todas las líneas. */
 function elegirSeparador(t: string): string {
   if (t.includes("\t")) return "\t";
+  /* El CSV de Bank of America trae un resumen arriba con otra cantidad de comas que los movimientos: se lo reconoce por sus títulos. */
+  if (/^(Date,Description,Amount,Running Bal|Posted Date,Reference Number)/im.test(t)) return ",";
   const lineas = t.split("\n").filter((l) => l.trim()).slice(0, 20);
   for (const s of [";", ","]) {
     const cuentas = lineas.map((l) => l.split(s).length - 1);
@@ -293,6 +296,9 @@ export function armarFilas(tabla: string[][], mapa: (CampoMasivo | null)[], conT
   /* Un export de Mercury se lee por sus títulos y con las reglas del banco: tarjeta, pagos de equipo, entre cuentas… */
   const deMercury = leerExportDeMercury(tabla);
   if (deMercury) return armarFilasDeMercury(deMercury, c);
+  /* Lo mismo con el export de Bank of America (cuenta o tarjeta): se lee por sus títulos y con las reglas del banco. */
+  const deBofa = leerExportDeBofa(tabla);
+  if (deBofa) return armarFilasDeBofa(deBofa, c);
   const hoy = c.hoy ?? new Date();
   const base = c.moneda ?? e.ajustes.monedaBase;
   const ya = clavesCargadas(e);
@@ -390,6 +396,50 @@ function armarFilasDeMercury(movs: readonly FilaMercury[], c: ContextoMasivo): F
         origen: "mercury-export", ...(m.timestamp ? { mercuryTs: m.timestamp } : {}), ...(m.tarjeta ? { tarjeta: m.tarjeta } : {}),
         ...(m.estado ? { mercuryEstado: m.estado } : {}), ...(m.rubroMercury ? { categoriaMercury: m.rubroMercury } : {}), ...(m.comercio ? { comercioMercury: m.comercio } : {}),
       },
+    });
+  }
+  return movs.map((_, n) => filas.get(n)).filter((f): f is FilaMasiva => f !== undefined);
+}
+
+/** Las filas de un export de Bank of America: cada movimiento con lo que es (gasto, plata que volvió o algo que se deja afuera), la categoría que corresponde
+ *  y si ya estaba cargado (por su referencia, o uno igual a menos de tres días). Los gastos salen de la cuenta «Bank of America»: así el control de saldos
+ *  los descuenta de ahí. */
+function armarFilasDeBofa(movs: readonly FilaBofa[], c: ContextoMasivo): FilaMasiva[] {
+  const { e } = c;
+  const catalogo = catalogoDe(e);
+  const dePrevio = categoriasPorNombre(e);
+  const dia = (g: { fecha: string; fechaPago?: string }) => diaDeNegocio(g.fechaPago ?? g.fecha);
+  const indice = indiceDeGastos(e.gastos.map((g) => ({ id: g.id, fecha: g.fecha, fechaPago: g.fechaPago, monto: g.monto, concepto: g.concepto, proveedor: g.proveedor })), dia);
+  const usados = new Set<string>();
+  const yaConRef = new Set(e.gastos.map((g) => g.extra?.bancoRef).filter((x): x is string => typeof x === "string"));
+  const hay = (cat: string) => (catalogo.has(cat) ? cat : "");
+  const sinRevisar = hay("Pendiente de revisión");
+
+  const orden = movs.map((m, n) => ({ m, n })).sort((a, b) => a.m.fecha.localeCompare(b.m.fecha) || a.n - b.n);
+  const filas = new Map<number, FilaMasiva>();
+  for (const { m, n } of orden) {
+    const que = queEsBofa(m, e);
+    const esIngreso = que.tipo === "ingreso" || (que.tipo === "afuera" && m.monto > 0);
+    const monto = Math.abs(m.monto);
+    const nombre = limpiarDescripcionBofa(m.descripcion);
+    const previa = dePrevio.get(normalizar(nombre)) ?? "";
+    const comision = que.tipo === "gasto" && esComisionDelBanco(m.descripcion) ? hay("Comisiones Financieras") || hay("Comisiones bancarias") : "";
+    const categoria = que.tipo === "afuera" ? "" : hay(previa) || comision || sugerirCategoria(nombre, e)?.categoria || sinRevisar;
+    const sinSaber = que.tipo !== "afuera" && !previa && !comision && !sugerirCategoria(nombre, e)?.categoria && Boolean(sinRevisar);
+    const ref = refDeBofa(m);
+    const exacta = yaConRef.has(ref);
+    const parecida = que.tipo === "afuera" || exacta ? null : gastoParecido(indice, usados, m.fecha, esIngreso ? -monto : monto, nombre);
+    const yaCargada = exacta || parecida !== null;
+    filas.set(n, {
+      id: `f${n + 1}`,
+      incluir: que.tipo !== "afuera" && !yaCargada,
+      fecha: m.fecha, concepto: nombre, proveedor: nombre, categoria,
+      monto: escribirMonto(monto), moneda: "USD", cuenta: "Bank of America",
+      notas: [sinSaber ? "Revisar: no sé a qué categoría va" : "", nombre !== m.descripcion ? `Banco: ${m.descripcion}` : ""].filter(Boolean).join(" · "),
+      ingreso: esIngreso && que.tipo !== "afuera",
+      yaCargada,
+      ...(que.tipo === "afuera" ? { afuera: que.motivo } : {}),
+      extraGasto: { origen: "bofa-export", bancoRef: ref, ...(m.origen === "tarjeta" ? { tarjeta: "Bank of America" } : {}) },
     });
   }
   return movs.map((_, n) => filas.get(n)).filter((f): f is FilaMasiva => f !== undefined);
