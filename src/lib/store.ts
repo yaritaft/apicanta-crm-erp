@@ -48,7 +48,7 @@ import { esIncobrable, notasDeIncobrable, notasSinIncobrable } from "./cuota-inc
 import { cuotasARepartir, problemaDelPlan, totalARepartir, type CuotaDePlan } from "./plan-de-cuotas";
 import { textoDeSeguimiento } from "./cobranza-seguimiento";
 import { atarPropuesta, conciliarReembolsos, quienDelReembolso, type ReembolsoCrudo, type ResultadoReembolsos } from "./reembolsos";
-import { setterDeAgendas } from "./setter-agendas";
+import { porcentajeDelSetterMarcado, setterDeAgendas } from "./setter-agendas";
 import { rearmarPlan } from "./cambio-de-plan";
 import {
   cambiosDeChequeo, conChequeo, conComprobanteNuevo, puedeCambiarComprobante, puedeUsarCasillero,
@@ -2898,7 +2898,11 @@ export const acciones = {
     /* Sin setter elegido, el que marcó la agenda como suya (Daniel, 24/10). La base hace lo mismo al guardarla
        (supabase/setter-marca-agendas.sql): acá es para que la pantalla lo muestre ya. */
     const setterMarcado = conLlamada.setterId ? undefined : setterDeAgendas(e.sesiones, conLlamada);
-    const venta: Venta = setterMarcado ? { ...conLlamada, setterId: setterMarcado } : conLlamada;
+    const conSetter: Venta = setterMarcado ? { ...conLlamada, setterId: setterMarcado } : conLlamada;
+    /* Si el setter tiene un % para lo que sale de una agenda que él marcó (Daniel: 2%), la venta ya lo trae: lo mismo que cargaría Aldana a mano, y lo mismo
+       que escribe la base al guardarla (supabase/comision-setter-marcada.sql). Un % que ya trae la venta no se pisa. */
+    const propio = conSetter.comisionSetter == null ? porcentajeDelSetterMarcado(e, conSetter) : undefined;
+    const venta: Venta = propio !== undefined ? { ...conSetter, comisionSetter: propio } : conSetter;
 
     let nuevosPagos: Pago[] = [];
 

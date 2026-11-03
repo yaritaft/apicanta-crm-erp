@@ -1323,6 +1323,9 @@ export interface MiembroEquipo {
      en esas ventas vale éste en vez de `comisionRate`. Como `comisionRate`,
      se escribe solo desde lo que cobra la persona (lib/honorarios.ts). */
   comisionServicios?: Record<ID, number>;
+  /* El % del setter cuando la venta sale de una agenda que ÉL marcó (por mensaje), como fracción (0,02 = 2%). Sin dato, comisiona lo de siempre.
+     La base lo escribe en `Venta.comisionSetter` cuando la venta toma a ese setter (supabase/comision-setter-marcada.sql). null borra el dato. */
+  comisionSetterMarcada?: number | null;
   activo: boolean;
   desde?: string;
   /* Yari: si figura como closer, no comisiona nadie */

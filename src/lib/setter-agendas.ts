@@ -41,6 +41,28 @@ export function setterDeAgendas(
   return mejor?.setterId;
 }
 
+/** El % que cobra el setter en una venta que sale de una agenda que ÉL marcó (la llamada misma o, si no está marcada, la última agenda marcada de esa
+    persona en los 45 días antes), si tiene uno para esos casos (`MiembroEquipo.comisionSetterMarcada`: Fede, 02/11, «Daniel setter comisión 2%»). Undefined:
+    no corresponde, comisiona lo de siempre. Es la misma regla que aplica la base al guardar la venta (supabase/comision-setter-marcada.sql); acá es para
+    que la pantalla lo muestre ya. */
+export function porcentajeDelSetterMarcado(
+  e: { sesiones: readonly Pick<Sesion, "id" | "contactoId" | "leadId" | "inicia" | "setterId" | "setterMarcadoEn">[]; equipo: readonly { id: ID; comisionSetterMarcada?: number | null }[] },
+  v: { setterId?: ID; sesionId?: ID; contactoId?: ID; fecha?: string },
+): number | undefined {
+  if (!v.setterId) return undefined;
+  const porc = e.equipo.find((m) => m.id === v.setterId)?.comisionSetterMarcada;
+  if (typeof porc !== "number" || !Number.isFinite(porc) || porc < 0 || porc > 1) return undefined;
+  const cuando = v.fecha ? Date.parse(v.fecha) : Date.now();
+  const marcada = e.sesiones.some((s) => {
+    if (s.setterId !== v.setterId || !s.setterMarcadoEn) return false;
+    if (v.sesionId && s.id === v.sesionId) return true;
+    if (!v.contactoId || (s.contactoId !== v.contactoId && s.leadId !== v.contactoId)) return false;
+    const t = Date.parse(s.inicia);
+    return t <= cuando + DIA && t >= cuando - DIAS_DE_LA_MARCA * DIA;
+  });
+  return marcada ? porc : undefined;
+}
+
 /* ---------- Mi panel → «Sumar agendas» ---------- */
 
 /** Las agendas que un setter puede marcar: de 3 semanas atrás a 2 adelante, sin las canceladas ni los resells. Primero

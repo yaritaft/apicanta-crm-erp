@@ -8,6 +8,8 @@ import { Confirmar } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toast";
 import { acciones, hayNube, useEstado } from "@/lib/store";
 import { useUsuarioActual } from "@/lib/usuario";
+import { tasaDeComision } from "@/lib/comision";
+import { tasaDeTexto, textoDeTasa, textoParaEditar } from "@/lib/comision-setter";
 import { emailValido, generarClave, tipoSugerido, useTiposCuenta, type useAccesos } from "@/lib/acceso";
 import { resumenDeTipo } from "@/lib/permisos";
 import { categoriasDisponibles, infoGrupo } from "@/lib/gastos";
@@ -114,6 +116,24 @@ export function FichaMiembro({ miembroId, accesos, onCerrar }: {
               />
             </Field>
           </div>
+          {m.rol === "setter" && (
+            <Field
+              label="Cuando marca la agenda él (%)"
+              ayuda={`Lo que cobra en las ventas de agendas que se marcó por mensaje. Vacío: lo de siempre (${textoDeTasa(tasaDeComision(m))}). Se escribe solo en cada venta nueva; las que ya están se cambian en Ventas.`}
+            >
+              <Input
+                key={`sm-${m.comisionSetterMarcada ?? ""}`} defaultValue={textoParaEditar(m.comisionSetterMarcada)} inputMode="decimal" aria-label="Porcentaje cuando marca la agenda él"
+                placeholder={textoParaEditar(tasaDeComision(m))}
+                onBlur={(ev) => {
+                  const nueva = tasaDeTexto(ev.target.value);
+                  if (nueva === undefined) { toast("Poné un número de 0 a 100, por ejemplo 2.", "err"); return; }
+                  if (nueva === (m.comisionSetterMarcada ?? null)) return;
+                  /* null y no undefined: undefined no viaja y la base se quedaría con el viejo. */
+                  cambiar({ comisionSetterMarcada: nueva }, nueva === null ? "Vuelve a cobrar lo de siempre." : `Cuando marca la agenda él cobra ${textoDeTasa(nueva)}.`);
+                }}
+              />
+            </Field>
+          )}
           <div className="row-wrap" style={{ gap: "var(--space-5)" }}>
             <label className="row" style={{ gap: 10 }}>
               <Switch checked={m.activo} onChange={(v) => cambiar({ activo: v }, v ? "Vuelve a estar en el equipo." : "Ya no está: no se liquida ni aparece al cargar ventas.")} etiqueta={`${m.nombre} está en el equipo`} />
