@@ -51,6 +51,7 @@ export function clasesDe(
 }
 
 type Persona = { nombre?: string; email?: string; telefono?: string; pais?: string } | undefined;
+type PersonaConId = NonNullable<Persona> & { id: string };
 
 export interface FilaDescarga {
   s: Sesion;
@@ -181,6 +182,21 @@ export function tablaDeDescarga(filas: FilaDescarga[], cabeceraExtra: string[] =
     }),
   ];
   return { tabla, personas: unicas.length };
+}
+
+/** Las llamadas que se ven en el CRM, listas para bajarlas (Daniel, 02/11: «desde el CRM es más fácil filtrar para no
+    shows»): el mismo CSV de la Agenda, con el estado tal cual se lee en la tabla. */
+export function filasDeDescargaDelCrm(
+  e: { leads: PersonaConId[]; contactos: PersonaConId[] },
+  filas: readonly Pick<FilaTabla, "sesion" | "estadoLlamada" | "aviso" | "resultado">[],
+): FilaDescarga[] {
+  const personas = new Map([...e.leads, ...e.contactos].map((p) => [p.id, p] as const));
+  return filas.map((f) => ({
+    s: f.sesion,
+    estado: f.estadoLlamada || f.aviso,
+    clases: clasesDe(f.sesion, f.resultado as Desenlace),
+    persona: personas.get(f.sesion.contactoId ?? "") ?? personas.get(f.sesion.leadId ?? ""),
+  }));
 }
 
 /** El archivo, con la marca que hace que Excel lea bien las tildes. */

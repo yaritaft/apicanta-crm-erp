@@ -3,7 +3,7 @@
 import { useAltoTabla } from "@/lib/useAltoTabla";
 import React, { useCallback, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { ArrowDown, ArrowRightLeft, ArrowUp, ClipboardCheck, ExternalLink, FileSpreadsheet, Pencil, Search, Star, X } from "lucide-react";
+import { ArrowDown, ArrowRightLeft, ArrowUp, ClipboardCheck, Download, ExternalLink, FileSpreadsheet, Pencil, Search, Star, X } from "lucide-react";
 import { Button, Card, Chip, Empty, Input, Tabs } from "@/components/ui/ui";
 import { DataTable, type Columna } from "@/components/ui/DataTable";
 import { DateRangePicker } from "@/components/ui/DateRangePicker";
@@ -34,6 +34,7 @@ import type { ColorCrm, OpcionCrm } from "@/lib/types";
 import { money, num } from "@/lib/format";
 import { diaDeNegocio } from "@/lib/dia-negocio";
 import { esLlamadaDeResell } from "@/lib/resells";
+import { bajarCSV, crmDeDescarga, filasDeDescargaDelCrm, tablaDeDescarga } from "@/lib/agendas-descarga";
 import { bajarExcel, excelCobros, filasExcelCobros } from "@/lib/excelCobros";
 import { paginaDeURL, useBusquedaURL, useEscribirURL, useParamsURL } from "@/lib/useParamsURL";
 import { useRangoURL } from "@/lib/useRango";
@@ -304,6 +305,14 @@ export function CrmTabla({ misLlamadas = false }: { misLlamadas?: boolean } = {}
     }
   }
 
+  /* Lo que se ve, filtrado, en el mismo CSV de la Agenda: una fila por persona, con lo que esta cuenta puede ver. */
+  function descargarCsv() {
+    const ve = { ventas: puedeLeer(acceso, "ventas"), cobros: puedeLeer(acceso, "pagos") };
+    const { tabla, personas } = tablaDeDescarga(filasDeDescargaDelCrm(e, filas), [], crmDeDescarga(e, ve));
+    bajarCSV(`crm-${rango.desde}-a-${rango.hasta}.csv`, tabla);
+    toast(`Se bajó la lista: ${num(personas)} ${personas === 1 ? "persona" : "personas"}, con teléfono y mail.`);
+  }
+
   const columnas: Columna<FilaTabla>[] = visibles.map((k) => {
     const col = COLUMNA[k as ClaveColumna];
     const puesto = ordenes.findIndex((o) => o.clave === col.clave);
@@ -404,6 +413,12 @@ export function CrmTabla({ misLlamadas = false }: { misLlamadas?: boolean } = {}
               <ConfigColumnas todas={veCobros ? DEFS : DEFS_SIN_COBROS} visibles={visibles} alternar={cols.alternar} mover={cols.mover} restaurar={cols.restaurar} compacto />
             )}
             <CopiarLink />
+            {!misLlamadas && !enInforme && (
+              <Button sm variante="secondary" icono={<Download size={15} />} disabled={filas.length === 0} onClick={descargarCsv}
+                title="Baja en CSV las llamadas que ves, con los filtros puestos: una fila por persona, con teléfono y mail">
+                Descargar
+              </Button>
+            )}
             {veCobros && !enInforme && (
               <Button sm variante="secondary" icono={<FileSpreadsheet size={15} />} disabled={pagosExcel.length === 0 || bajando} onClick={descargarCobros}
                 title="Los cobros de las ventas de las llamadas que ves, con su comprobante, conciliación y chequeo">

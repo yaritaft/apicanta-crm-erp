@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { clasesDe, crmDeDescarga, csvDeDescarga, tablaDeDescarga, type FilaDescarga } from "@/lib/agendas-descarga";
+import { clasesDe, crmDeDescarga, csvDeDescarga, filasDeDescargaDelCrm, tablaDeDescarga, type FilaDescarga } from "@/lib/agendas-descarga";
 import { construirSemilla } from "@/lib/seed";
 import { COLUMNAS, filasTabla } from "@/lib/crm-tabla";
 import { NO_SE_PRESENTO, REPROGRAMO } from "@/lib/estados";
@@ -93,6 +93,27 @@ test("la tarjeta de agendas del webinar filtra y baja el CSV; la Agenda filtra p
     assert.match(pantalla, /tablaDeDescarga\([^)]*crmDeDescarga\(/);
     assert.match(pantalla, /puedeLeer\(acceso, "pagos"\)/);
   }
+});
+
+/* ---------- Daniel (02/11): bajar desde el CRM lo que dejó filtrado ---------- */
+
+test("el CRM baja sólo las llamadas filtradas, con el estado de la tabla, el teléfono de la persona y una fila por persona", () => {
+  const e = { leads: [{ id: "lea_1", telefono: "+54 11 5555 0000", pais: "Argentina" }], contactos: [] };
+  const fila = (id: string, inicia: string, extra: Partial<Sesion> = {}) => ({
+    sesion: sesion({ id, leadId: "lea_1", contactoId: "lea_1", email: "ana@mail.com", inicia, estado: "no-show", ...extra }),
+    estadoLlamada: "Inasistió", aviso: "", resultado: NO_SE_PRESENTO,
+  });
+  const { tabla, personas } = tablaDeDescarga(filasDeDescargaDelCrm(e, [fila("a", "2026-10-20T15:00:00.000Z"), fila("b", "2026-10-22T15:00:00.000Z", { creadoEn: "2026-10-22T12:00:00.000Z" })]));
+  assert.equal(personas, 1);
+  assert.equal(tabla.length, 2);
+  const [cab, datos] = tabla;
+  assert.equal(datos[cab.indexOf("Estado de llamada")], "Inasistió");
+  assert.equal(datos[cab.indexOf("Qué pasó")], "No vinieron");
+  assert.ok(datos[cab.indexOf("Teléfono")].startsWith("+"), "con el + para pegarlo en WhatsApp");
+  /* El botón baja `filas` (lo filtrado) y respeta lo que ve la cuenta. */
+  const crm = fuente("src/components/crm-tabla/CrmTabla.tsx");
+  assert.match(crm, /filasDeDescargaDelCrm\(e, filas\)/);
+  assert.match(crm, /ventas: puedeLeer\(acceso, "ventas"\), cobros: puedeLeer\(acceso, "pagos"\)/);
 });
 
 /* ---------- Santi (24/10): «¿hay manera que en el csv me descargue datos como cash collected, producto y todo eso?» ----------
