@@ -209,6 +209,94 @@ test("un gasto parecido de otra cuenta, de otro monto o de otra semana no cuenta
   assert.equal(cruzarConLaApp(e, [banco({ ref: "mercury:k", refApp: ["k"], tipo: "cashback", monto: 12.4, contraparte: "Mercury", fecha: "2026-10-22T10:00:00.000Z" })])[0].estadoApp, "parecido");
 });
 
+const paseManual = (extra: Partial<Traspaso>): Traspaso => ({
+  id: "tra_1", fecha: "2026-10-26T15:00:00.000Z", origenId: "proc_mercury", destinoId: "proc_relay", montoSale: 30000, monedaSale: "USD", montoLlega: 30000, monedaLlega: "USD",
+  estado: "confirmado", origen: "manual", creadoEn: "2026-10-26T15:00:00.000Z", ...extra,
+});
+
+test("una salida que ya está como pase a mano no se ofrece como gasto: los tres de Mercury de octubre (US$ 88.302)", () => {
+  const e = estadoBase();
+  e.traspasos = [
+    paseManual({ id: "tra_relay" }),
+    paseManual({ id: "tra_financiera", destinoId: "proc_financiera_usd", montoSale: 40000, montoLlega: 40000 }),
+    paseManual({ id: "tra_bofa", destinoId: "proc_bofa", fecha: "2026-10-27T15:00:00.000Z", montoSale: 18302, montoLlega: 18302 }),
+  ];
+  const r = cruzarConLaApp(e, [
+    banco({ ref: "mercury:r", refApp: ["r"], tipo: "pase", monto: -30000, contraparte: "Apicanta LLC - Relay", fecha: "2026-10-26T18:00:00.000Z" }),
+    banco({ ref: "mercury:f", refApp: ["f"], tipo: "salida", monto: -40000, contraparte: "Juan Financiera", fecha: "2026-10-27T12:00:00.000Z" }),
+    banco({ ref: "mercury:b", refApp: ["b"], tipo: "salida", monto: -18302, contraparte: "Apicanta LLC", fecha: "2026-10-28T12:00:00.000Z" }),
+  ]);
+  assert.deepEqual(r.map((x) => [x.estadoApp, x.traspasoId]), [["cargado", "tra_relay"], ["cargado", "tra_financiera"], ["cargado", "tra_bofa"]]);
+  assert.match(r[1].donde ?? "", /entre cuentas, cargado a mano: a Financiera USD Juan \(26\/10\)/);
+  assert.match(r[2].donde ?? "", /a Bank of America \(27\/10\)/);
+  assert.deepEqual(resumenDeLoQueFalta(r), { n: 0, sale: 0, entra: 0 }, "el encabezado no pide cargarlos");
+  /* Es la plata que el pase ya bajó del saldo esperado: cargarla como gasto la bajaría dos veces. */
+  const previo = { fecha: "2026-10-20T00:00:00.000Z", saldos: [{ procesadorId: "proc_mercury", monto: 100000, moneda: "USD" as const, montoBase: 100000 }] };
+  assert.equal(saldosEsperados(e, previo, "2026-10-29T00:00:00.000Z").get("proc_mercury")!.esperado, 11698);
+});
+
+test("un pase a mano de otro monto, de otra cuenta, de otros días o descartado no reconoce la salida del banco", () => {
+  const salida = banco({ ref: "mercury:s", refApp: ["s"], tipo: "salida", monto: -30000, contraparte: "Apicanta LLC", fecha: "2026-10-26T18:00:00.000Z" });
+  const con = (t: Traspaso) => ({ ...estadoBase(), traspasos: [t] });
+  const falta = (t: Traspaso, por: string) => assert.equal(cruzarConLaApp(con(t), [salida])[0].estadoApp, "falta", por);
+  falta(paseManual({ montoSale: 30000.5, montoLlega: 30000.5 }), "otro monto");
+  falta(paseManual({ origenId: "proc_stripe" }), "sale de otra cuenta");
+  falta(paseManual({ origenId: "proc_bofa", destinoId: "proc_mercury" }), "es una llegada a esta cuenta, no una salida");
+  falta(paseManual({ fecha: "2026-10-31T15:00:00.000Z" }), "más de cuatro días después");
+  falta(paseManual({ estado: "ignorado" }), "descartado");
+  falta(paseManual({ estado: "propuesto" }), "por confirmar: todavía no movió el saldo");
+  falta(paseManual({ origen: "api" }), "lo detectó la sincronización: se ata por referencia");
+  falta(paseManual({ salidaRef: "mercury:otro" }), "esa punta ya es de otro movimiento");
+  /* A los cuatro días justos sí, como con los gastos. */
+  assert.equal(cruzarConLaApp(con(paseManual({ fecha: "2026-10-30T18:00:00.000Z" })), [salida])[0].estadoApp, "cargado");
+  /* Una compra con tarjeta o una comisión del mismo monto tienen su propio origen. */
+  assert.equal(cruzarConLaApp(con(paseManual({})), [{ ...salida, tipo: "compra-tarjeta" }])[0].estadoApp, "falta");
+  assert.equal(cruzarConLaApp(con(paseManual({})), [{ ...salida, tipo: "comision" }])[0].estadoApp, "falta");
+  /* El pago de la tarjeta sigue como siempre. */
+  assert.equal(cruzarConLaApp(con(paseManual({})), [{ ...salida, tipo: "pago-tarjeta" }])[0].estadoApp, "no-se-carga");
+  /* Si el banco nombra con seguridad a otra cuenta, no es ese pase; un nombre dudoso («Bridge» figura como Hotmart por las dudas) no descarta nada. */
+  assert.equal(cruzarConLaApp(con(paseManual({})), [{ ...salida, contraparte: "STRIPE" }])[0].estadoApp, "falta");
+  assert.equal(cruzarConLaApp(con(paseManual({})), [{ ...salida, contraparte: "Bridge" }])[0].estadoApp, "cargado");
+});
+
+test("un pase a mano sirve para un solo movimiento y el otro sigue en falta; con dos, cada uno toma el suyo", () => {
+  const e = estadoBase();
+  const movs = [
+    banco({ ref: "mercury:a", refApp: ["a"], tipo: "salida", monto: -30000, contraparte: "Apicanta LLC", fecha: "2026-10-26T18:00:00.000Z" }),
+    banco({ ref: "mercury:b", refApp: ["b"], tipo: "salida", monto: -30000, contraparte: "Un proveedor", fecha: "2026-10-27T18:00:00.000Z" }),
+  ];
+  e.traspasos = [paseManual({ id: "tra_uno" })];
+  const uno = cruzarConLaApp(e, movs);
+  assert.deepEqual(uno.map((x) => x.estadoApp), ["cargado", "falta"]);
+  assert.deepEqual(resumenDeLoQueFalta(uno), { n: 1, sale: 30000, entra: 0 });
+  /* Cada movimiento se queda con el pase de la fecha más cercana. */
+  e.traspasos = [paseManual({ id: "tra_lejos", fecha: "2026-10-24T15:00:00.000Z" }), paseManual({ id: "tra_cerca", fecha: "2026-10-26T15:00:00.000Z" })];
+  assert.deepEqual(cruzarConLaApp(e, movs).map((x) => x.traspasoId), ["tra_cerca", "tra_lejos"]);
+  /* Antes que un gasto parecido, y sin gastarlo: otra salida igual lo sigue encontrando. */
+  e.traspasos = [paseManual({ id: "tra_uno" })];
+  e.gastos = [gasto({ id: "g_igual", concepto: "Proveedor", monto: 30000, fecha: "2026-10-27T12:00:00.000Z" })];
+  assert.deepEqual(cruzarConLaApp(e, movs).map((x) => [x.estadoApp, x.traspasoId ?? x.gastoId]), [["cargado", "tra_uno"], ["parecido", "g_igual"]]);
+});
+
+test("una llegada a la cuenta se reconoce igual, por lo que llegó y el día que llegó", () => {
+  const e = estadoBase();
+  /* Del Bank of America a Mercury: salieron 5.000, llegaron 4.990 al otro día. Mercury lo ve como un cobro de alguien que no conoce. */
+  e.traspasos = [paseManual({ id: "tra_vuelve", origenId: "proc_bofa", destinoId: "proc_mercury", montoSale: 5000, montoLlega: 4990, fecha: "2026-10-26T15:00:00.000Z", fechaLlega: "2026-10-27T15:00:00.000Z" })];
+  const llegada = banco({ ref: "mercury:ll", refApp: ["ll"], tipo: "cobro", monto: 4990, contraparte: "Apicanta LLC", fecha: "2026-10-27T18:00:00.000Z" });
+  const r = cruzarConLaApp(e, [llegada])[0];
+  assert.deepEqual([r.estadoApp, r.traspasoId], ["cargado", "tra_vuelve"]);
+  assert.match(r.donde ?? "", /desde Bank of America \(27\/10\)/);
+  assert.equal(resumenDeLoQueFalta([r]).n, 0);
+  /* Lo que salió del otro lado (5.000) no es lo que llegó acá. */
+  assert.equal(cruzarConLaApp(e, [{ ...llegada, monto: 5000 }])[0].estadoApp, "falta");
+  /* Una llegada dada por hecha a mano («a-mano») no es una referencia del banco: la que aparece después es ésa. */
+  e.traspasos = [{ ...e.traspasos[0], llegadaRef: "a-mano" }];
+  assert.equal(cruzarConLaApp(e, [llegada])[0].estadoApp, "cargado");
+  /* El cobro ya entrado a Conciliación manda, como siempre. */
+  e.movimientos = [{ id: "mov1", proveedor: "mercury", referencia: "ll", estado: "pendiente" } as Movimiento];
+  assert.match(cruzarConLaApp(e, [llegada])[0].donde ?? "", /como cobro/);
+});
+
 test("cargar lo que falta: el gasto guarda de qué movimiento viene, baja lo que se esperaba en la cuenta y el movimiento pasa a cargado", () => {
   const e = estadoBase();
   const mov = banco({ ref: "mercury:teatro", refApp: ["teatro"], monto: -85, contraparte: "Teatro Colón", fecha: "2026-10-22T23:00:00.000Z" });
