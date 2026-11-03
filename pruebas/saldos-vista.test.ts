@@ -179,16 +179,15 @@ test("contra la Caja esperada: es la misma cuenta de la Caja, y las partes más 
   assert.equal(c.cajaEnCuentas, caja.enCuentas, "el mismo número de la Caja");
   assert.equal(c.sumaDeCuentas, v.total);
   assert.equal(c.diferencia, Math.round((v.total - caja.enCuentas) * 100) / 100);
-  assert.equal(c.comisiones, caja.comisiones);
   assert.equal(c.bancosMarcan, 5, "Mercury marca 5 más de lo que la app esperaba");
   /* Las partes más el resto dan la diferencia, siempre. */
-  const partes = c.comisiones + c.reparto + c.sinCuenta + c.sinVenta + c.bancosMarcan + c.resto;
+  const partes = c.sinCuenta + c.sinVenta + c.bancosMarcan + c.resto;
   assert.ok(Math.abs(partes - c.diferencia) < 0.011, `${partes} contra ${c.diferencia}`);
 });
 
-test("contra la Caja esperada, con el caso de Yari: la única diferencia son las comisiones de Mariano y Santi que la Caja ya descontó", () => {
+test("contra la Caja esperada, con el caso de Yari: las comisiones de Mariano y Santi que todavía no se pagaron no son una diferencia", () => {
   /* Stripe arranca con 10.000; el 01/10 cobra 1.500 con 45 de comisión (entran 1.455). Mariano (15%) y Santi (5%) ganan 291 que se pagan
-     a mes vencido: la Caja ya los descontó, Stripe no los pagó. */
+     a mes vencido: siguen en Stripe, y la Caja tampoco los descuenta hasta que se paguen (Aldana, 03/11). */
   const arqueo = { id: "a1", fecha: "2026-09-30T23:00:00.000Z", saldos: [{ procesadorId: "proc_stripe", monto: 10000, moneda: "USD" as const, montoBase: 10000 }], total: 10000, creadoEn: "2026-09-30T23:00:00.000Z" };
   const e = estadoDeYari({ arqueos: [arqueo] });
   const ahora = "2026-10-20T18:00:00.000Z";
@@ -196,10 +195,9 @@ test("contra la Caja esperada, con el caso de Yari: la única diferencia son las
   assert.equal(cuenta(v, "proc_stripe").control!.lectura, "da", "Stripe tiene lo que la app esperaba");
   assert.equal(v.total, 11455);
   const c = v.contraLaCaja!;
-  assert.equal(c.cajaEnCuentas, 11164, "10.000 + 1.500 cobrados − 45 de Stripe − 291 de comisiones");
-  assert.equal(c.diferencia, 291);
-  assert.equal(c.comisiones, 291);
-  assert.deepEqual([c.reparto, c.sinCuenta, c.sinVenta, c.bancosMarcan, c.resto], [0, 0, 0, 0, 0], "no queda nada sin explicar");
+  assert.equal(c.cajaEnCuentas, 11455, "10.000 + 1.500 cobrados − 45 de Stripe: las comisiones no salieron de ninguna cuenta");
+  assert.equal(c.diferencia, 0);
+  assert.deepEqual([c.sinCuenta, c.sinVenta, c.bancosMarcan, c.resto], [0, 0, 0, 0], "no queda nada sin explicar");
 });
 
 test("sin ningún arqueo no hay con qué comparar: sólo se ven las cuentas que se leen solas", () => {
@@ -233,7 +231,7 @@ test("entró y salió de un mes usa la cuenta de la Caja y el primer instante de
   const caja = cajaEsperada(e, { fecha: "2026-10-01T02:59:59.999Z", total: 0 }, "2026-11-01T02:59:59.999Z");
   assert.equal(f.entro, caja.cobrado);
   assert.equal(gastos, caja.gastos);
-  assert.deepEqual(f.partes.map((p) => p.id), ["gastos", "comisiones", "procesador", "devoluciones", "reparto", "retiros"]);
+  assert.deepEqual(f.partes.map((p) => p.id), ["gastos", "equipo", "procesador", "devoluciones", "retiros"]);
 });
 
 test("entró y salió de un período sin movimientos da cero, no se rompe", () => {

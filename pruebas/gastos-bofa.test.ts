@@ -64,12 +64,13 @@ test("lee fechas de Estados Unidos y montos con coma de miles; descarta el saldo
   assert.deepEqual(tarjeta.map((f) => [f.fecha, f.monto, f.origen]), [["2026-10-02", -5.3, "tarjeta"], ["2026-10-03", -89.99, "tarjeta"], ["2026-10-04", 1000, "tarjeta"]]);
 });
 
-test("cada movimiento: gasto, o afuera con su motivo (tarjeta, equipo, entre cuentas, lo que entra)", () => {
+test("cada movimiento: gasto, pago al equipo, o afuera con su motivo (tarjeta, entre cuentas, lo que entra)", () => {
   const e = base();
   const que = (desc: string, monto: number, origen: "cuenta" | "tarjeta" = "cuenta") => queEsBofa({ fecha: "2026-10-02", descripcion: desc, monto, origen, repetida: 1 }, e);
   assert.equal(que("CHECKCARD 1001 UBER *TRIP HELP.UBER.COM CA", -23.98).tipo, "gasto");
   assert.match((que("BANK OF AMERICA CREDIT CARD Bill Payment", -1658.48) as { motivo: string }).motivo, /pago de la tarjeta/i);
-  assert.match((que("Zelle payment to Angelo Nisi Conf# xyz789", -500) as { motivo: string }).motivo, /pago de equipo/i);
+  /* Un pago al equipo se carga (marcado): sale de la caja ese día; el costo del mes lo pone la liquidación (Aldana, 03/11). */
+  assert.deepEqual(que("Zelle payment to Angelo Nisi Conf# xyz789", -500), { tipo: "equipo", persona: "Angelo Nisi" });
   assert.match((que("Online Banking transfer to CHK 4321", -18302) as { motivo: string }).motivo, /entre cuentas propias/i);
   assert.match((que("Zelle payment from JOHN DOE", 1500) as { motivo: string }).motivo, /entra/i);
   assert.match((que("WISE US INC Transfer from Mercury", 250) as { motivo: string }).motivo, /cuenta propia/i);
@@ -86,13 +87,20 @@ test("Cargar varios: cada gasto sale de la cuenta Bank of America, con el nombre
   assert.deepEqual(gastos.map((f) => [f.fecha, f.concepto, f.monto]), [
     ["2026-10-02", "UBER *TRIP HELP.UBER.COM CA", "23,98"],
     ["2026-10-02", "UBER *TRIP HELP.UBER.COM CA", "23,98"],
+    ["2026-10-06", "Zelle payment to Angelo Nisi", "500"],
     ["2026-10-08", "MONTHLY MAINTENANCE FEE", "15"],
     ["2026-10-10", "NOTION LABS INC NOTION.SO CA", "20"],
   ], "los dos Uber iguales del mismo día son dos gastos");
   assert.ok(gastos.every((f) => f.cuenta === "Bank of America" && f.moneda === "USD" && !f.ingreso));
   assert.ok(gastos.every((f) => typeof f.extraGasto?.bancoRef === "string" && f.extraGasto.origen === "bofa-export"));
   const afuera = filas.filter((f) => f.afuera);
-  assert.equal(afuera.length, 5, "tarjeta, Angelo, traspaso, lo que entró de Zelle y lo que vino de Mercury");
+  assert.equal(afuera.length, 4, "tarjeta, traspaso, lo que entró de Zelle y lo que vino de Mercury");
+  /* El pago a Angelo sale de Bank of America marcado como pago de equipo: resta de la caja, no del profit. */
+  const angelo = gastos.find((f) => /Angelo/.test(f.concepto))!;
+  assert.equal(angelo.extraGasto?.pagoDeEquipo, true);
+  assert.equal(angelo.categoria, "Equipo / Salarios");
+  assert.match(angelo.notas, /Pago al equipo/);
+  assert.ok(gastos.filter((f) => f !== angelo).every((f) => !f.extraGasto?.pagoDeEquipo), "nada más se marca");
   assert.equal(new Set(gastos.map((f) => f.extraGasto?.bancoRef)).size, gastos.length, "cada gasto tiene su propia referencia (también los dos Uber)");
 });
 
@@ -104,7 +112,7 @@ test("bajar el archivo otra vez no repite lo que ya se cargó: por su referencia
   } as Gasto));
   const otra = armarFilas(parsearPegado(CUENTA), [], false, { e: base(cargados) });
   assert.equal(otra.filter((f) => f.incluir).length, 0, "nada nuevo para cargar");
-  assert.equal(otra.filter((f) => f.yaCargada).length, 4);
+  assert.equal(otra.filter((f) => f.yaCargada).length, 5);
   /* Un gasto cargado a mano el 10/09 (un día antes) por el mismo Notion de US$ 20 y sin referencia del banco. */
   const aMano: Gasto = { id: "m1", categoria: "Software", grupo: "operativo", concepto: "Notion", monto: 20, moneda: "USD", fecha: "2026-10-09T15:00:00.000Z", recurrente: false, creadoEn: "2026-10-09T15:00:00.000Z", extra: {} } as Gasto;
   const conMano = armarFilas(parsearPegado(CUENTA), [], false, { e: base([aMano]) });

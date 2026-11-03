@@ -90,12 +90,12 @@ test("queEsMercury: qué es cada movimiento", () => {
   assert.match((autopay as { motivo: string }).motivo, /pago de la tarjeta/i);
   /* Todo lo que sale por «Send Money» trae la referencia «From APICANTA LLC via mercury.com»: eso no hace que sea un pase entre cuentas. */
   const conReferencia = queEsMercury(mov({ cuentaOrigen: CORRIENTE, descripcion: "Mariano Arias (Closer) (Mariano Daniel Arias Kahale)", monto: -3383.22, descripcionBanco: "Send Money transaction initiated on Mercury", referencia: "From APICANTA LLC via mercury.com" }), e);
-  assert.match((conReferencia as { motivo: string }).motivo, /pago de equipo/i);
+  assert.deepEqual(conReferencia, { tipo: "equipo", persona: "Mariano Arias" });
   assert.deepEqual(queEsMercury(mov({ cuentaOrigen: CORRIENTE, descripcion: "Atlassian", monto: -24, descripcionBanco: "Send Money transaction initiated on Mercury", referencia: "From APICANTA LLC via mercury.com" }), e), { tipo: "gasto" });
   assert.match((queEsMercury(mov({ cuentaOrigen: CORRIENTE, descripcion: "GLOBAL BUSINESS COMMUNITY BLOCK LLC", monto: -40000, referencia: "For further credit to Apicanta LLC" }), e) as { motivo: string }).motivo, /entre cuentas propias/i);
   const equipoPago = queEsMercury(mov({ cuentaOrigen: CORRIENTE, descripcion: "Agustin Sica", monto: -2347.3, rubroMercury: "Payroll" }), e);
-  assert.match((equipoPago as { motivo: string }).motivo, /pago de equipo/i);
-  assert.match((queEsMercury(mov({ cuentaOrigen: CORRIENTE, descripcion: "Angelo Nisi (Emperador Financiero LLC)", monto: -500 }), e) as { motivo: string }).motivo, /pago de equipo/i);
+  assert.deepEqual(equipoPago, { tipo: "equipo", persona: "Agustín Sica" });
+  assert.equal(queEsMercury(mov({ cuentaOrigen: CORRIENTE, descripcion: "Angelo Nisi (Emperador Financiero LLC)", monto: -500 }), e).tipo, "equipo");
   assert.match((queEsMercury(mov({ cuentaOrigen: CORRIENTE, descripcion: "Apicanta LLC - Relay (Apicanta LLC)", monto: -30000, rubroMercury: "Transfer" }), e) as { motivo: string }).motivo, /entre cuentas propias/i);
   assert.match((queEsMercury(mov({ cuentaOrigen: CORRIENTE, descripcion: "Mercury IO Cashback", monto: 9.07, descripcionBanco: "" }), e) as { motivo: string }).motivo, /cashback/i);
   assert.match((queEsMercury(mov({ cuentaOrigen: CORRIENTE, descripcion: "Whop", monto: 5200, rubroMercury: "Revenue" }), e) as { motivo: string }).motivo, /plata que entra/i);
@@ -169,18 +169,21 @@ test("armarFilas con un export de Mercury: gastos, reintegro y lo que queda afue
   const pago = porConcepto.get("Mercury Checking xx5408")!;
   assert.deepEqual([pago.incluir, Boolean(pago.afuera)], [false, true]);
   assert.match(pago.afuera!, /pago de la tarjeta/i);
-  assert.match(porConcepto.get("Agustin Sica")!.afuera!, /pago de equipo/i);
+  /* El pago a Agustín se carga marcado: sale de la caja de Mercury ese día y no suma otra vez al costo del mes (Aldana, 03/11). */
+  const agustin = porConcepto.get("Agustin Sica")!;
+  assert.deepEqual([agustin.incluir, agustin.ingreso, agustin.afuera, agustin.categoria, agustin.extraGasto?.pagoDeEquipo], [true, false, undefined, "Equipo / Salarios", true]);
   assert.match(porConcepto.get("Hotmart")!.afuera!, /fallido/i);
   const apple = porConcepto.get("Apple")!;
   assert.equal(apple.categoria, "Pendiente de revisión", "lo que no se sabe, a revisar");
   assert.match(apple.notas, /Revisar/);
-  /* Lo que se carga: Uber, Facebook, Heritage (ingreso) y Apple; el resto queda afuera con motivo. */
+  /* Lo que se carga: Uber, Facebook, Heritage (ingreso), el pago a Agustín y Apple; el resto queda afuera con motivo. */
   const r = resumenDeFilas(filas, e);
-  assert.equal(r.aCargar, 4);
+  assert.equal(r.aCargar, 5);
   assert.equal(r.yaCargadas, 1);
-  assert.equal(r.afuera, 3);
+  assert.equal(r.afuera, 2);
   const datos = gastosDeFilas(filas, e, "lote_x");
-  assert.equal(datos.length, 4);
+  assert.equal(datos.length, 5);
+  assert.equal(datos.find((g) => g.concepto === "Agustin Sica")!.extra?.pagoDeEquipo, true, "el gasto queda marcado: Finanzas no lo cuenta como costo");
   assert.ok(datos.every((g) => g.extra?.origen === "mercury-export" && g.extra?.cargaMasiva === "lote_x"));
   assert.equal(datos.find((g) => g.concepto === "Uber")!.extra?.tarjeta, "4730");
   /* El pago de la tarjeta de esas fechas, cargado como un solo gasto, es lo que se reemplaza por las compras. */

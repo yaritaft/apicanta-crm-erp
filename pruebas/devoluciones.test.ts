@@ -220,8 +220,9 @@ test("la caja resta la devolución (y la de la cuenta de la que salió), pero no
   assert.equal(con.devoluciones, 3000);
   assert.equal(con.cobrado, sin.cobrado);          // lo que entró sigue siendo lo que entró
   assert.equal(con.procesador, sin.procesador);    // y Stripe se queda con lo suyo
-  /* Se va la plata devuelta; se recupera lo que se había comisionado. */
-  assert.equal(r2(con.esperado), r2(sin.esperado - 3000 + 436.5 + 145.5));
+  /* Se va la plata devuelta. Lo que se deja de comisionar no toca la caja: las comisiones salen cuando se pagan (Aldana, 03/11). */
+  assert.equal(r2(con.esperado), r2(sin.esperado - 3000));
+  assert.equal(r2(sin.comisiones - con.comisiones), 436.5 + 145.5, "lo que se deja de deber al equipo");
 
   /* Por cuenta: Stripe baja lo que se devolvió, entero. */
   const porCuenta = saldosEsperados(conTotal(), { fecha: arqueo.fecha, saldos: [{ procesadorId: "proc_stripe", monto: 5000, moneda: "USD", montoBase: 5000 }] }, hasta);

@@ -1,7 +1,7 @@
-import type { Arqueo, DetalleDeSaldo, EstadoApp, Procesador } from "./types";
+import type { Arqueo, DetalleDeSaldo, EstadoApp, Gasto, Procesador } from "./types";
 import { aMonedaBase } from "./gastos";
 import type { RangoMes } from "./metricas";
-import { calcularPyL, gastosPagadosEn } from "./finanzas";
+import { calcularPyL, esPagoDeEquipo, gastosPagadosEn } from "./finanzas";
 import { enCamino } from "./traspasos";
 import { finDelDia } from "./periodos";
 
@@ -16,18 +16,28 @@ import { finDelDia } from "./periodos";
      + lo cobrado
      − lo que se devolvió a clientes
      − lo que se quedaron los procesadores
-     − las comisiones de closers y del director
      − los gastos que se pagaron (directos, operativos y los honorarios del
        CEO), el día que se pagaron: un gasto de septiembre pagado el 2 de
        octubre resta en el estado de resultados de septiembre y en la caja
        de octubre (Gasto.fechaPago; sin ella, es el mismo día)
-     − el growth partner y el socio (su parte del profit)
+     − los pagos al equipo, el día que salieron de la cuenta
      − los retiros del dueño
      = la caja esperada
 
    Si lo contado no da con lo esperado, falta cargar algo (un gasto, una
-   venta) o hay un cobro que no entró. Las comisiones se pagan a mes
-   vencido: al principio de mes la diferencia puede ser eso.
+   venta, un pago) o hay un cobro que no entró.
+
+   Lo del equipo resta UNA vez, cuando la plata sale: con el pago cargado
+   desde su cuenta. Lo que se le debe y todavía no se pagó sigue en las
+   cuentas, así que no resta: ni las comisiones de closers y del director
+   que Finanzas calcula de cada cobro, ni el growth partner y el socio, ni
+   los gastos que deja el cierre de la liquidación (con fecha del último
+   día del mes aunque se paguen después). Esos son del estado de
+   resultados. (Aldana, 03/11: el arqueo del 31/10 dio US$ 30.084 de más
+   «como si ya se hubiera pagado todo lo del equipo»: eran los US$ 23.398
+   de la liquidación de octubre recién cerrada y US$ 4.852 de comisiones
+   de la semana, que nadie había pagado; los pagos del 26–27/10 ya habían
+   salido de Mercury y estaban cargados, así que contaba dos veces.)
 
    La plata que pasa de una cuenta a otra (lib/traspasos.ts) no cambia la
    caja, pero mientras viaja no está en ninguna cuenta: lo que tiene que
@@ -101,10 +111,15 @@ export interface MovimientoCaja {
      pasarela no vuelve: sigue en «procesador»). */
   devoluciones: number;
   procesador: number;
-  comisiones: number;
+  /* Lo que salió para el equipo: los gastos marcados como pago de equipo (Equipo → Liquidación). */
+  equipo: number;
   gastos: number;
-  reparto: number;
   retiros: number;
+  /* Lo que se le debe al equipo por este período y NO resta de la caja hasta que se paga: las comisiones de closers y
+     del director (Finanzas), el reparto del growth partner y el socio, y los gastos del cierre de la liquidación. */
+  comisiones: number;
+  reparto: number;
+  liquidacion: number;
   /* La plata del negocio, esté en una cuenta o viajando entre dos. */
   esperado: number;
   /* La que ahora está en camino: salió de una cuenta y no llegó a la otra. */
@@ -113,6 +128,9 @@ export interface MovimientoCaja {
      que está en camino. */
   enCuentas: number;
 }
+
+/** Un gasto que dejó el cierre de una liquidación: lo que se le debe al equipo ese mes, no un pago. */
+export const esDeLaLiquidacion = (g: Pick<Gasto, "extra">): boolean => Boolean(g.extra?.liquidacionId);
 
 /** Lo que la app espera que haya en la caja en `hasta`, partiendo de un
     arqueo. El tipo de cambio es para lo que viaje entre cuentas en pesos. */
@@ -126,20 +144,26 @@ export function cajaEsperada(
      iguales da lo mismo que `p.otrosDirectos + p.gastosOperativos +
      p.honorariosCeo`. */
   const pagados = gastosPagadosEn(e, m);
-  const retiros = pagados.filter((g) => g.grupo === "retiro").reduce((a, g) => a + g.monto, 0);
-  const gastos = pagados.filter((g) => g.grupo !== "retiro").reduce((a, g) => a + g.monto, 0);
+  const suma = (gs: Gasto[]) => gs.reduce((a, g) => a + g.monto, 0);
+  /* El cierre de la liquidación no es un pago: es lo que se debe (ver arriba). */
+  const salieron = pagados.filter((g) => !esDeLaLiquidacion(g));
+  const retiros = suma(salieron.filter((g) => g.grupo === "retiro"));
+  const equipo = suma(salieron.filter((g) => g.grupo !== "retiro" && esPagoDeEquipo(g)));
+  const gastos = suma(salieron.filter((g) => g.grupo !== "retiro" && !esPagoDeEquipo(g)));
+  const liquidacion = suma(pagados.filter(esDeLaLiquidacion));
   const comisiones = p.comisionCloser + p.comisionDirector;
   const reparto = p.growth + p.socio;
   const enCaminoAntes = enCamino(e, desde.fecha, tipoCambio);
   const viajando = enCamino(e, hasta, tipoCambio);
   /* `cashCollected` ya viene sin lo devuelto: acá se parte en lo que entró y
      lo que salió para que se vean las dos cosas. */
-  const esperado = r2(desde.total + enCaminoAntes + p.cobrado - p.devoluciones - p.feesProcesador - comisiones - gastos - reparto - retiros);
+  const esperado = r2(desde.total + enCaminoAntes + p.cobrado - p.devoluciones - p.feesProcesador - equipo - gastos - retiros);
   return {
     desde: desde.fecha, hasta,
     inicial: desde.total, enCaminoAntes,
-    cobrado: r2(p.cobrado), devoluciones: r2(p.devoluciones), procesador: r2(p.feesProcesador), comisiones: r2(comisiones),
-    gastos: r2(gastos), reparto: r2(reparto), retiros: r2(retiros),
+    cobrado: r2(p.cobrado), devoluciones: r2(p.devoluciones), procesador: r2(p.feesProcesador),
+    equipo: r2(equipo), gastos: r2(gastos), retiros: r2(retiros),
+    comisiones: r2(comisiones), reparto: r2(reparto), liquidacion: r2(liquidacion),
     esperado, enCamino: viajando, enCuentas: r2(esperado - viajando),
   };
 }

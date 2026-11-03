@@ -9,7 +9,8 @@ import { fechasDeMercury, montoDeMercury, personaDelEquipo, type QueEs } from ".
 
    Bank of America no tiene una API que la app pueda leer (sacó hasta el formato OFX): lo que deja es bajar los movimientos en CSV desde Online Banking
    («Download»). Acá está lo que sabe leer de ese archivo y qué hacer con cada movimiento, con las mismas reglas que el export de Mercury: cargarlo como
-   gasto, como plata que volvió, o dejarlo afuera con su motivo (pago de la tarjeta, pago de equipo, lo que pasa entre cuentas propias, lo que entra).
+   gasto, como plata que volvió, como pago al equipo (marcado: sale de la caja, no suma al costo), o dejarlo afuera con su motivo (pago de la tarjeta, lo que pasa
+   entre cuentas propias, lo que entra).
    Sin React ni red: se prueba con filas de ejemplo.
 
    Los dos formatos que baja el banco:
@@ -112,9 +113,8 @@ export function queEsBofa(m: FilaBofa, e: Pick<EstadoApp, "equipo">): QueEs {
     return { tipo: "afuera", motivo: "Es el pago de la tarjeta: las compras se cargan una por una (el archivo de la tarjeta), cargarlo también las duplica" };
   }
   if (propia) return { tipo: "afuera", motivo: "Es un movimiento entre cuentas propias: se carga en Caja → Movimiento entre cuentas, no es un gasto" };
-  if (NOMINA.test(d) || personaDelEquipo(d, e)) {
-    return { tipo: "afuera", motivo: "Es un pago de equipo: se registra al cerrar la liquidación del mes, cargarlo acá lo duplica" };
-  }
+  const persona = personaDelEquipo(d, e);
+  if (NOMINA.test(d) || persona) return { tipo: "equipo", persona };
   return { tipo: "gasto" };
 }
 

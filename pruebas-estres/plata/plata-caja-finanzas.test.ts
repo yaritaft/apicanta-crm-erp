@@ -129,13 +129,14 @@ test("P1b · la caja es aditiva: partir una ventana en dos no cambia lo cobrado,
     const iso = (t: number) => new Date(t).toISOString();
     const entero = cajaEsperada(e, { fecha: iso(t0), total: 0 }, iso(t2));
     const trozos = puntos.slice(1).map((t, i) => cajaEsperada(e, { fecha: iso(puntos[i]), total: 0 }, iso(t)));
-    for (const campo of ["cobrado", "devoluciones", "procesador", "comisiones", "gastos", "retiros"] as const) {
+    for (const campo of ["cobrado", "devoluciones", "procesador", "comisiones", "equipo", "gastos", "liquidacion", "retiros"] as const) {
       const suma = trozos.reduce((a, x) => a + x[campo], 0);
       assert.ok(cerca(suma, entero[campo], 0.01 * (trozos.length + 1)), d("campo", campo, suma, "vs", entero[campo], "cortes", cortes.map(iso).join(" | ")));
     }
-    /* La caja esperada es la suma de sus partes (cada una redondeada a centavos). */
+    /* La caja esperada es la suma de sus partes (cada una redondeada a centavos). Lo que se le debe al equipo (comisiones, reparto, cierre de la
+       liquidación) no está: sale cuando se paga, con el pago (Aldana, 03/11). */
     for (const mov of [entero, ...trozos]) {
-      const suma = mov.inicial + mov.enCaminoAntes + mov.cobrado - mov.devoluciones - mov.procesador - mov.comisiones - mov.gastos - mov.reparto - mov.retiros;
+      const suma = mov.inicial + mov.enCaminoAntes + mov.cobrado - mov.devoluciones - mov.procesador - mov.equipo - mov.gastos - mov.retiros;
       assert.ok(cerca(mov.esperado, suma, 0.0101 * 8), d("esperado", mov.esperado, "suma de partes", r2(suma)));
       assert.ok(cerca(mov.enCuentas, mov.esperado - mov.enCamino, 0.0101), d("enCuentas"));
     }

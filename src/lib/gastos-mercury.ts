@@ -8,10 +8,11 @@ import { cuentaDeContraparte } from "./traspasos";
    Aldana bajó todos los movimientos de octubre de Mercury (tarjeta y cuenta corriente) y vio dos cosas: (1) las compras de la tarjeta estaban
    cargadas como UN pago diario («Pago de la tarjeta de crédito Mercury», operativo) cuando gran parte son honorarios del CEO; (2) las «Comisiones»
    de procesadores que había exportado de la planilla Finance estaban de más, porque el sistema ya las calcula de cada cobro. Y avisó que los pagos
-   de equipo de fin de mes se registran dos veces si se cargan, porque ya los registra el cierre de la liquidación.
+   de equipo de fin de mes se registran dos veces si se cargan, porque ya los registra el cierre de la liquidación. (03/11: la liquidación pone el
+   costo del mes, no el pago: el pago se carga, marcado como pago de equipo, para que salga de la caja el día que salió del banco.)
 
-   Acá está lo que sabe leer un export de Mercury y qué hacer con cada movimiento: cargarlo como gasto, como plata que volvió, o dejarlo afuera con su
-   motivo (el pago de la tarjeta, el pago de equipo, lo que pasa entre cuentas propias, lo que falló, lo que entra). Sin React ni red: se prueba con
+   Acá está lo que sabe leer un export de Mercury y qué hacer con cada movimiento: cargarlo como gasto, como plata que volvió, como pago al equipo, o
+   dejarlo afuera con su motivo (el pago de la tarjeta, lo que pasa entre cuentas propias, lo que falló, lo que entra). Sin React ni red: se prueba con
    filas de ejemplo.
    ================================================================== */
 
@@ -36,7 +37,15 @@ export interface FilaMercury {
 export type QueEs =
   | { tipo: "gasto" }
   | { tipo: "ingreso" }
+  /* Un pago a alguien del equipo: se carga desde la cuenta y marcado como pago de equipo, así sale de la caja ese día y no suma otra vez al costo del
+     mes (el costo lo pone la liquidación). Antes quedaba afuera y la caja lo restaba al cerrar la liquidación aunque no se hubiera pagado (Aldana, 03/11). */
+  | { tipo: "equipo"; persona: string | null }
   | { tipo: "afuera"; motivo: string };
+
+/** Lo que dice en las notas un pago al equipo que trae el banco. */
+export const NOTA_PAGO_DE_EQUIPO = "Pago al equipo: sale de la caja el día que se pagó y no suma otra vez al costo del mes (ese lo pone la liquidación)";
+/** Lo que se guarda en el gasto de un pago al equipo: Finanzas no lo cuenta como costo (lib/finanzas.ts, esPagoDeEquipo). */
+export const EXTRA_PAGO_DE_EQUIPO = { pagoDeEquipo: true } as const;
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
 
@@ -185,9 +194,8 @@ export function queEsMercury(m: FilaMercury, e: Pick<EstadoApp, "equipo">): QueE
   if (rubro === "transfer" || cuentaDeContraparte(m.descripcion) !== null || /for further credit to apicanta/.test(banco)) {
     return { tipo: "afuera", motivo: "Es un movimiento entre cuentas propias: no es un gasto" };
   }
-  if (rubro === "payroll" || personaDelEquipo(m.descripcion, e)) {
-    return { tipo: "afuera", motivo: "Es un pago de equipo: se registra al cerrar la liquidación del mes, cargarlo acá lo duplica" };
-  }
+  const persona = personaDelEquipo(m.descripcion, e);
+  if (rubro === "payroll" || persona) return { tipo: "equipo", persona };
   return { tipo: "gasto" };
 }
 

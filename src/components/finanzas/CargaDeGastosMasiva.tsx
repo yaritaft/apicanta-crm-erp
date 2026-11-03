@@ -193,8 +193,9 @@ export function CargaDeGastosMasiva({ e, onCerrar, onListo }: {
             <div className="aviso-duplicado__fila">
               <span className="aviso-duplicado__texto">
                 <strong>Reconocí un export de Bank of America ({filas.length} {filas.length === 1 ? "movimiento" : "movimientos"}). </strong>
-                Lo que sale es gasto, de la cuenta Bank of America, uno por uno. Dejo afuera lo que no es un gasto: el pago de la tarjeta (se cargan las compras), los pagos de equipo
-                (se registran al cerrar la liquidación), lo que pasa entre cuentas propias y lo que entra. Marco lo que ya estaba cargado, aunque tenga otro día.
+                Lo que sale es gasto, de la cuenta Bank of America, uno por uno. Los pagos al equipo entran marcados: salen de la caja ese día y no suman otra vez al
+                costo del mes (lo pone la liquidación). Dejo afuera lo que no es un gasto: el pago de la tarjeta (se cargan las compras), lo que pasa entre cuentas propias y
+                lo que entra. Marco lo que ya estaba cargado, aunque tenga otro día.
               </span>
             </div>
           </div>
@@ -217,8 +218,9 @@ export function CargaDeGastosMasiva({ e, onCerrar, onListo }: {
             <div className="aviso-duplicado__fila">
               <span className="aviso-duplicado__texto">
                 <strong>Reconocí un export de Mercury ({tabla.length - 1} movimientos). </strong>
-                Lo que sale es gasto y lo que vuelve a la tarjeta, ingreso. Dejo afuera lo que no es un gasto: el pago de la tarjeta, los pagos de equipo (se registran al
-                cerrar la liquidación), lo que pasa entre cuentas propias, lo que entra y lo fallido. Marco lo que ya estaba cargado aunque tenga otro día o nombre.
+                Lo que sale es gasto y lo que vuelve a la tarjeta, ingreso. Los pagos al equipo entran marcados: salen de la caja ese día y no suman otra vez al costo
+                del mes (lo pone la liquidación). Dejo afuera lo que no es un gasto: el pago de la tarjeta, lo que pasa entre cuentas propias, lo que entra y lo fallido.
+                Marco lo que ya estaba cargado aunque tenga otro día o nombre.
               </span>
             </div>
           </div>

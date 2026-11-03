@@ -6,7 +6,7 @@ import { diaDeNegocio } from "./dia-negocio";
 import { cuentaDeGasto } from "./traspasos";
 import { esComisionDelBanco, leerExportDeBofa, limpiarDescripcionBofa, queEsBofa, refDeBofa, type FilaBofa } from "./gastos-bofa";
 import {
-  categoriaDeRubroMercury, esComisionDeProcesador, gastoParecido, indiceDeGastos, leerExportDeMercury, personaDelEquipo, queEsMercury,
+  categoriaDeRubroMercury, esComisionDeProcesador, EXTRA_PAGO_DE_EQUIPO, gastoParecido, indiceDeGastos, leerExportDeMercury, NOTA_PAGO_DE_EQUIPO, personaDelEquipo, queEsMercury,
   type FilaMercury,
 } from "./gastos-mercury";
 
@@ -310,6 +310,7 @@ export function armarFilas(tabla: string[][], mapa: (CampoMasivo | null)[], conT
     return i >= 0 ? (fila[i] ?? "").trim() : "";
   };
   const datos = conTitulos ? tabla.slice(1) : tabla;
+  const usadosEquipo = new Set<string>();
   return datos.map((fila, n) => {
     const concepto = celda(fila, "concepto");
     const leido = leerMontoPegado(celda(fila, "monto"));
@@ -336,6 +337,16 @@ export function armarFilas(tabla: string[][], mapa: (CampoMasivo | null)[], conT
       yaCargada: false,
     };
     f.yaCargada = Boolean(fecha) && Number.isFinite(monto) && (ya.has(clave(fecha, monto, concepto)) || repetidaConOtroDia(cercanos, fecha, monto, concepto));
+    /* Un pago a alguien del equipo se carga marcado: sale de la caja ese día y no suma otra vez al costo del mes. En un extracto del banco el menos
+       es lo que SALIÓ: nunca es plata que volvió (Aldana, 01/11: Angelo y Filmmaker entraron como ingresos de −500 y −615). */
+    if (esPagoDeEquipoPegado(f, e)) {
+      f.ingreso = false;
+      /* El pago ya cargado a mano suele tener otro nombre («Emperador Financiero LLC» y el banco «Angelo Nisi (Emperador…)»): se reconoce por monto y día. */
+      if (!f.yaCargada && Number.isFinite(monto)) f.yaCargada = pagoDeEquipoYaCargado(e, fecha, monto, `${f.concepto} ${f.proveedor}`, usadosEquipo);
+      if (!f.categoria) f.categoria = CATEGORIA_DE_EQUIPO;
+      f.notas = [f.notas, NOTA_PAGO_DE_EQUIPO].filter(Boolean).join(" · ");
+      f.extraGasto = { ...f.extraGasto, ...EXTRA_PAGO_DE_EQUIPO };
+    }
     /* Lo que duplicaría algo que el sistema ya calcula o registra queda afuera, con su motivo (se puede marcar igual). */
     f.afuera = razonParaDejarAfuera(f, e);
     f.incluir = !f.yaCargada && !f.afuera;
@@ -343,16 +354,35 @@ export function armarFilas(tabla: string[][], mapa: (CampoMasivo | null)[], conT
   });
 }
 
+/** Donde va un pago al equipo que trae el banco: no suma al costo (está marcado), así que la categoría sólo ordena Transacciones. */
+const CATEGORIA_DE_EQUIPO = "Equipo / Salarios";
+
 /** Por qué una fila pegada no se carga sola, aunque no esté repetida; undefined si se puede cargar. */
-export function razonParaDejarAfuera(f: Pick<FilaMasiva, "concepto" | "proveedor" | "ingreso">, e: Pick<EstadoApp, "equipo">): string | undefined {
-  /* Si la plata volvió, la comisión de un procesador no se duplica (es un reintegro). El pago de la tarjeta y el pago a alguien del equipo SÍ se dejan afuera con el
-     signo que tengan: en un extracto del banco el menos es lo que SALIÓ, y un pago de equipo nunca es «plata que volvió» (Aldana, 01/11: Angelo y Filmmaker
-     entraron como ingresos de −500 y −615 y duplicaron lo que ya estaba cargado). */
+export function razonParaDejarAfuera(f: Pick<FilaMasiva, "concepto" | "proveedor" | "ingreso">, _e: Pick<EstadoApp, "equipo">): string | undefined {
+  /* Si la plata volvió, la comisión de un procesador no se duplica (es un reintegro). El pago de la tarjeta SÍ se deja afuera con el signo que tenga. */
   if (!f.ingreso && esComisionDeProcesador(f.concepto, f.proveedor)) return "Es la comisión de un procesador: ya se calcula de cada cobro, cargarla también la duplica";
   if (/\b(autopay|pago de la tarjeta)\b/i.test(f.concepto)) return "Es el pago de la tarjeta: las compras se cargan una por una, cargarlo también las duplica";
-  /* Con el monto en negativo y el nombre de alguien del equipo no hace falta que diga «pago»: del banco, es un pago que le hicimos (el extracto de Mercury sólo trae el nombre). */
-  return personaDelEquipo(`${f.concepto} ${f.proveedor}`, e) && (f.ingreso || /\b(sueldo|salario|pago|honorario|comision|bono)\b/i.test(f.concepto))
-    ? "Parece un pago de equipo: se registra al cerrar la liquidación del mes, cargarlo acá lo duplica" : undefined;
+  return undefined;
+}
+
+/** ¿Ya hay un pago a esa persona por ese monto a menos de tres días? Cuenta uno marcado como pago de equipo o uno que nombra a la misma persona; cada gasto
+ *  sirve para una sola fila. */
+function pagoDeEquipoYaCargado(e: Pick<EstadoApp, "equipo" | "gastos">, fecha: string, monto: number, texto: string, usados: Set<string>): boolean {
+  if (!fecha) return false;
+  const persona = personaDelEquipo(texto, e);
+  const centavos = Math.round(Math.abs(monto) * 100);
+  const g = e.gastos.find((x) => !usados.has(x.id) && Math.round(Math.abs(x.monto) * 100) === centavos
+    && Math.abs(dias(diaDeNegocio(x.fechaPago ?? x.fecha)) - dias(fecha)) <= DIAS_DE_MARGEN
+    && (x.extra?.pagoDeEquipo === true || (persona !== null && personaDelEquipo(`${x.concepto} ${x.proveedor ?? ""}`, e) === persona)));
+  if (!g) return false;
+  usados.add(g.id);
+  return true;
+}
+
+/** ¿Una fila pegada es un pago a alguien del equipo? Con el monto en negativo y su nombre no hace falta que diga «pago»: del banco, es un pago que le
+ *  hicimos (el extracto de Mercury sólo trae el nombre). */
+export function esPagoDeEquipoPegado(f: Pick<FilaMasiva, "concepto" | "proveedor" | "ingreso">, e: Pick<EstadoApp, "equipo">): boolean {
+  return Boolean(personaDelEquipo(`${f.concepto} ${f.proveedor}`, e)) && (f.ingreso || /\b(sueldo|salario|pago|honorario|comision|bono)\b/i.test(f.concepto));
 }
 
 /** Las filas de un export de Mercury: cada movimiento con lo que es (gasto, plata que volvió o algo que se deja afuera), la categoría que corresponde y si ya
@@ -373,12 +403,14 @@ function armarFilasDeMercury(movs: readonly FilaMercury[], c: ContextoMasivo): F
   const filas = new Map<number, FilaMasiva>();
   for (const { m, n } of orden) {
     const que = queEsMercury(m, e);
+    const esEquipo = que.tipo === "equipo";
     const esIngreso = que.tipo === "ingreso" || (que.tipo === "afuera" && m.monto > 0);
     const monto = Math.abs(m.monto);
     const previa = dePrevio.get(normalizar(m.descripcion)) ?? "";
     const rubro = categoriaDeRubroMercury(m);
-    const categoria = que.tipo === "afuera" ? "" : hay(previa) || hay(rubro) || sugerirCategoria(m.descripcion, e)?.categoria || sinRevisar;
-    const sinSaber = que.tipo !== "afuera" && !previa && !rubro && Boolean(sinRevisar);
+    const categoria = que.tipo === "afuera" ? "" : esEquipo ? hay(CATEGORIA_DE_EQUIPO) || sinRevisar
+      : hay(previa) || hay(rubro) || sugerirCategoria(m.descripcion, e)?.categoria || sinRevisar;
+    const sinSaber = que.tipo !== "afuera" && !esEquipo && !previa && !rubro && Boolean(sinRevisar);
     /* Un movimiento ya cargado se reconoce por su hora de creación (única); lo demás se empareja de a uno, así tres Facebook de 600 el mismo día piden tres gastos. */
     const exacta = m.timestamp !== "" && yaConTs.has(m.timestamp);
     const parecida = que.tipo === "afuera" || exacta ? null : gastoParecido(indice, usados, m.fecha, esIngreso ? -monto : monto, m.descripcion);
@@ -388,12 +420,12 @@ function armarFilasDeMercury(movs: readonly FilaMercury[], c: ContextoMasivo): F
       incluir: que.tipo !== "afuera" && !yaCargada,
       fecha: m.fecha, concepto: m.descripcion, proveedor: m.descripcion, categoria,
       monto: escribirMonto(monto), moneda: "USD", cuenta: "Mercury",
-      notas: [m.nota, sinSaber ? "Revisar: no sé a qué categoría va" : ""].filter(Boolean).join(" · "),
+      notas: [m.nota, sinSaber ? "Revisar: no sé a qué categoría va" : "", esEquipo ? NOTA_PAGO_DE_EQUIPO : ""].filter(Boolean).join(" · "),
       ingreso: esIngreso && que.tipo !== "afuera",
       yaCargada,
       ...(que.tipo === "afuera" ? { afuera: que.motivo } : {}),
       extraGasto: {
-        origen: "mercury-export", ...(m.timestamp ? { mercuryTs: m.timestamp } : {}), ...(m.tarjeta ? { tarjeta: m.tarjeta } : {}),
+        origen: "mercury-export", ...(esEquipo ? EXTRA_PAGO_DE_EQUIPO : {}), ...(m.timestamp ? { mercuryTs: m.timestamp } : {}), ...(m.tarjeta ? { tarjeta: m.tarjeta } : {}),
         ...(m.estado ? { mercuryEstado: m.estado } : {}), ...(m.rubroMercury ? { categoriaMercury: m.rubroMercury } : {}), ...(m.comercio ? { comercioMercury: m.comercio } : {}),
       },
     });
@@ -419,13 +451,15 @@ function armarFilasDeBofa(movs: readonly FilaBofa[], c: ContextoMasivo): FilaMas
   const filas = new Map<number, FilaMasiva>();
   for (const { m, n } of orden) {
     const que = queEsBofa(m, e);
+    const esEquipo = que.tipo === "equipo";
     const esIngreso = que.tipo === "ingreso" || (que.tipo === "afuera" && m.monto > 0);
     const monto = Math.abs(m.monto);
     const nombre = limpiarDescripcionBofa(m.descripcion);
     const previa = dePrevio.get(normalizar(nombre)) ?? "";
     const comision = que.tipo === "gasto" && esComisionDelBanco(m.descripcion) ? hay("Comisiones Financieras") || hay("Comisiones bancarias") : "";
-    const categoria = que.tipo === "afuera" ? "" : hay(previa) || comision || sugerirCategoria(nombre, e)?.categoria || sinRevisar;
-    const sinSaber = que.tipo !== "afuera" && !previa && !comision && !sugerirCategoria(nombre, e)?.categoria && Boolean(sinRevisar);
+    const categoria = que.tipo === "afuera" ? "" : esEquipo ? hay(CATEGORIA_DE_EQUIPO) || sinRevisar
+      : hay(previa) || comision || sugerirCategoria(nombre, e)?.categoria || sinRevisar;
+    const sinSaber = que.tipo !== "afuera" && !esEquipo && !previa && !comision && !sugerirCategoria(nombre, e)?.categoria && Boolean(sinRevisar);
     const ref = refDeBofa(m);
     const exacta = yaConRef.has(ref);
     const parecida = que.tipo === "afuera" || exacta ? null : gastoParecido(indice, usados, m.fecha, esIngreso ? -monto : monto, nombre);
@@ -435,11 +469,11 @@ function armarFilasDeBofa(movs: readonly FilaBofa[], c: ContextoMasivo): FilaMas
       incluir: que.tipo !== "afuera" && !yaCargada,
       fecha: m.fecha, concepto: nombre, proveedor: nombre, categoria,
       monto: escribirMonto(monto), moneda: "USD", cuenta: "Bank of America",
-      notas: [sinSaber ? "Revisar: no sé a qué categoría va" : "", nombre !== m.descripcion ? `Banco: ${m.descripcion}` : ""].filter(Boolean).join(" · "),
+      notas: [sinSaber ? "Revisar: no sé a qué categoría va" : "", esEquipo ? NOTA_PAGO_DE_EQUIPO : "", nombre !== m.descripcion ? `Banco: ${m.descripcion}` : ""].filter(Boolean).join(" · "),
       ingreso: esIngreso && que.tipo !== "afuera",
       yaCargada,
       ...(que.tipo === "afuera" ? { afuera: que.motivo } : {}),
-      extraGasto: { origen: "bofa-export", bancoRef: ref, ...(m.origen === "tarjeta" ? { tarjeta: "Bank of America" } : {}) },
+      extraGasto: { origen: "bofa-export", bancoRef: ref, ...(esEquipo ? EXTRA_PAGO_DE_EQUIPO : {}), ...(m.origen === "tarjeta" ? { tarjeta: "Bank of America" } : {}) },
     });
   }
   return movs.map((_, n) => filas.get(n)).filter((f): f is FilaMasiva => f !== undefined);

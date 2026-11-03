@@ -580,7 +580,8 @@ export function resumenDePases(traspasos: Traspaso[], ahora = Date.now()): Resum
   return r;
 }
 
-/** Los gastos pagados en ese período que no dicen de qué cuenta salieron: la plata se fue de alguna cuenta y el control por cuenta no la ve. */
+/** Los gastos pagados en ese período que no dicen de qué cuenta salieron: la plata se fue de alguna cuenta y el control por cuenta no la ve.
+ *  Los del cierre de la liquidación no: no son un pago, no salieron de ninguna cuenta (lib/caja.ts). */
 export function gastosSinCuenta(
   e: Pick<EstadoApp, "procesadores" | "gastos">, desdeIso: string | null, hastaIso: string,
 ): { n: number; total: number } {
@@ -588,7 +589,7 @@ export function gastosSinCuenta(
   const hasta = Date.parse(hastaIso);
   let n = 0, total = 0;
   for (const g of e.gastos) {
-    if (g.extra?.traspasoId || cuentaDeGasto(g, e.procesadores) || !entre(fechaDePago(g), desde, hasta)) continue;
+    if (g.extra?.traspasoId || g.extra?.liquidacionId || cuentaDeGasto(g, e.procesadores) || !entre(fechaDePago(g), desde, hasta)) continue;
     n++; total += g.monto;
   }
   return { n, total: r2(total) };

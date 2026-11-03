@@ -27,19 +27,29 @@ const leer = (lineas: string[], e: EstadoApp) => {
   return armarFilas(tabla, adivinarColumnas(tabla, true), true, { e, hoy: HOY });
 };
 
-test("un pago a alguien del equipo con el monto en negativo (extracto del banco) no entra como ingreso: queda afuera como cualquier pago de equipo", () => {
+test("un pago a alguien del equipo con el monto en negativo (extracto del banco) no entra como ingreso: entra como salida, marcado como pago de equipo", () => {
   const filas = leer([
     "26/10/2026\tAngelo Nisi (Emperador Financiero LLC)\t-500",
     "26/10/2026\tFernando Filmmaker (Nicolás Fernando Ibañez)\t-615",
     "26/10/2026\tStarbucks\t11,13",
   ], base());
   const [angelo, fer, cafe] = filas;
-  assert.equal(angelo.incluir, false, "antes entraba como un ingreso de 500");
-  assert.match(angelo.afuera ?? "", /pago de equipo/i);
-  assert.equal(fer.incluir, false);
-  assert.match(fer.afuera ?? "", /pago de equipo/i);
+  /* 03/11: sale de la caja el día que salió del banco; el costo del mes lo pone la liquidación (marcado, Finanzas no lo suma otra vez). */
+  assert.deepEqual([angelo.incluir, angelo.ingreso, angelo.afuera, angelo.extraGasto?.pagoDeEquipo], [true, false, undefined, true], "antes entraba como un ingreso de 500");
+  assert.deepEqual([fer.incluir, fer.ingreso, fer.extraGasto?.pagoDeEquipo], [true, false, true]);
   assert.equal(cafe.incluir, true, "lo demás sigue entrando");
   assert.equal(cafe.ingreso, false);
+  assert.equal(cafe.extraGasto?.pagoDeEquipo, undefined);
+});
+
+test("los pagos de equipo que ya estaban cargados a mano con otro nombre (27/10) se reconocen por monto y día: no se cargan dos veces", () => {
+  const e = base([
+    gasto({ id: "gas_mvr3xzao000xydl", concepto: "Emperador Financiero LLC", categoria: "Equipo / Salarios", grupo: "operativo", monto: 500, fecha: "2026-10-26T19:18:00.000Z", extra: { pagoDeEquipo: true } }),
+    gasto({ id: "gas_mvr3vkhv000o347", concepto: "Nicolás Fernando Ibañez", categoria: "Filmmaker", grupo: "operativo", monto: 615, fecha: "2026-10-26T19:18:00.000Z", extra: {} }),
+  ]);
+  const [angelo, fer] = leer(["26/10/2026\tAngelo Nisi (Emperador Financiero LLC)\t-500", "27/10/2026\tFernando Filmmaker (Nicolás Fernando Ibañez)\t-615"], e);
+  assert.deepEqual([angelo.yaCargada, angelo.incluir], [true, false], "el marcado como pago de equipo, aunque diga otro nombre");
+  assert.deepEqual([fer.yaCargada, fer.incluir], [true, false], "el que nombra a la misma persona, un día antes");
 });
 
 test("el pago de la tarjeta queda afuera aunque venga en negativo", () => {

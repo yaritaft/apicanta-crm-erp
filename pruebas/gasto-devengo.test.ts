@@ -79,9 +79,9 @@ test("el estado de resultados lo ve en septiembre y la caja en octubre", () => {
   assert.equal(hastaOctubre.gastos, 1000, "en octubre sale de la caja");
   assert.equal(hastaOctubre.cobrado, 1500);
   assert.equal(hastaOctubre.procesador, 45);
-  assert.equal(hastaOctubre.comisiones, 291);
-  /* 5.000 + 1.500 − 45 − 291 − 1.000 */
-  assert.equal(hastaOctubre.esperado, 5164);
+  assert.equal(hastaOctubre.comisiones, 291, "se le deben al equipo");
+  /* 5.000 + 1.500 − 45 − 1.000: las comisiones de 291 siguen en la cuenta hasta que se paguen. */
+  assert.equal(hastaOctubre.esperado, 5455);
 });
 
 test("la plata no se cuenta dos veces ni se pierde: el gasto pasa una vez por el estado de resultados y una por la caja", () => {

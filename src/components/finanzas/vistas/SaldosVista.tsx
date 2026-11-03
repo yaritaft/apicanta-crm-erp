@@ -177,8 +177,6 @@ function Avisos({ vista, lectura, nombre }: { vista: VistaDeSaldos; lectura: Lec
 function ContraLaCaja({ c, M }: { c: NonNullable<VistaDeSaldos["contraLaCaja"]>; M: (n: number, d?: number) => string }) {
   const con = (n: number) => `${n < 0 ? "−" : "+"} ${M(Math.abs(n))}`;
   const lineas: [string, number, string][] = [
-    ["Comisiones de closers y director", c.comisiones, "La Caja ya las descontó (se pagan a mes vencido) y todavía no salieron de ninguna cuenta"],
-    ["Growth partner y socio", c.reparto, "La Caja ya lo descontó y no salió de ninguna cuenta"],
     ["Gastos que no dicen de qué cuenta salieron", c.sinCuenta, "La Caja los descontó; ninguna cuenta"],
     ["Cobros sin su venta", c.sinVenta, "Están en la cuenta; la Caja no los cuenta como cobrados hasta que se concilien"],
     ["Lo que marcan los bancos", c.bancosMarcan, "Hay de verdad contra lo que la app esperaba (la diferencia del Control de saldos)"],
@@ -235,8 +233,8 @@ function Flujo({ e, rangoFijo }: { e: EstadoApp; rangoFijo?: { desde: string; ha
           <h2 className="card-head__title">Entró y salió {etiqueta}</h2>
           <InfoMetrica
             titulo="Entró y salió" periodo={etiqueta}
-            ayuda="La plata que entró por las cuentas y la que salió en ese período, con la misma cuenta de la Caja. Un gasto cuenta el día que se pagó; las comisiones de closers y director, en el mes que se ganaron."
-            formula={"Entró = lo cobrado\nSalió = gastos pagados + comisiones de closers y director + procesadores + devoluciones + growth partner y socio + retiros\nQuedó = entró − salió"}
+            ayuda="La plata que entró por las cuentas y la que salió en ese período, con la misma cuenta de la Caja. Un gasto cuenta el día que se pagó, y lo del equipo el día que se le pagó (no el mes que se ganó)."
+            formula={"Entró = lo cobrado\nSalió = gastos pagados + pagos al equipo + procesadores + devoluciones + retiros\nQuedó = entró − salió"}
             componentes={() => [
               { concepto: "Cobrado", valor: M(flujo.entro, 2), signo: "+" },
               ...flujo.partes.filter((p) => Math.abs(p.monto) >= 0.005).map((p) => ({ concepto: p.nombre, valor: M(p.monto, 2), signo: "−" as const })),

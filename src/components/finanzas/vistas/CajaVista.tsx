@@ -115,16 +115,15 @@ export function CajaVista({ embebido = false, rangoFijo }: {
               <InfoMetrica
                 titulo="Caja esperada hoy" periodo={`desde el arqueo del ${fechaLarga(ultimo.fecha)}`}
                 ayuda="Cuánta plata tendría que haber hoy entre todas las cuentas, partiendo de lo que se contó en el último arqueo. Si al contar no da, falta cargar un gasto, una venta o un cobro."
-                formula={"Caja del último arqueo + lo que estaba en camino entre cuentas + lo cobrado − las devoluciones − procesadores − comisiones − gastos pagados − reparto (growth partner y socio) − retiros del dueño\nLo cobrado menos las devoluciones es el Cash Collected (CC) del período.\nUn gasto cuenta el día que se pagó, no el mes al que corresponde (ese es del estado de resultados)."}
+                formula={"Caja del último arqueo + lo que estaba en camino entre cuentas + lo cobrado − las devoluciones − procesadores − gastos pagados − pagos al equipo − retiros del dueño\nLo cobrado menos las devoluciones es el Cash Collected (CC) del período.\nUn gasto cuenta el día que se pagó, no el mes al que corresponde (ese es del estado de resultados).\nLo del equipo resta el día que se le paga: las comisiones y la liquidación que todavía no se pagaron siguen en las cuentas."}
                 componentes={mov ? () => [
                   { concepto: "Caja del último arqueo", valor: M(mov.inicial, 2) },
                   { concepto: "Estaba en camino al contarlo", valor: M(mov.enCaminoAntes, 2), signo: "+" },
                   { concepto: "Cobrado (lo que entró por las cuentas)", valor: M(mov.cobrado, 2), signo: "+" },
                   ...(mov.devoluciones ? [{ concepto: "Devoluciones a clientes", valor: M(mov.devoluciones, 2), signo: "−" as const, nota: "la comisión de la pasarela no vuelve" }] : []),
                   { concepto: "Procesadores de pago", valor: M(mov.procesador, 2), signo: "−" },
-                  { concepto: "Comisiones de closers y director", valor: M(mov.comisiones, 2), signo: "−" },
                   { concepto: "Gastos pagados (directos, operativos y honorarios)", valor: M(mov.gastos, 2), signo: "−", nota: "cuentan el día que se pagaron" },
-                  { concepto: "Reparto: growth partner y socio", valor: M(mov.reparto, 2), signo: "−" },
+                  { concepto: "Pagos al equipo", valor: M(mov.equipo, 2), signo: "−", nota: "el día que salieron de la cuenta" },
                   { concepto: "Retiros del dueño", valor: M(mov.retiros, 2), signo: "−" },
                   { concepto: "Caja esperada", valor: M(mov.esperado, 2), signo: "=" },
                 ] : undefined}
@@ -216,10 +215,11 @@ export function CajaVista({ embebido = false, rangoFijo }: {
       </Card>}
 
       <Plegable titulo="Cómo se calcula">
-        La caja esperada parte del último arqueo y le suma lo cobrado, menos procesadores, comisiones de closers y
-        director, los gastos pagados (cada uno el día que se pagó, aunque corresponda a otro mes del estado de resultados),
-        el growth partner y el socio, y los retiros. Las comisiones se pagan a mes
-        vencido: al principio de mes la diferencia puede ser eso. Los meses de vida son la caja sobre lo que cuesta un
+        La caja esperada parte del último arqueo y le suma lo cobrado, menos procesadores, los gastos pagados (cada uno
+        el día que se pagó, aunque corresponda a otro mes del estado de resultados), los pagos al equipo y los retiros.
+        Lo del equipo resta una sola vez, el día que la plata sale de la cuenta: las comisiones de closers y director, el
+        growth partner, el socio y lo que deja el cierre de la liquidación son del estado de resultados, y mientras no se
+        pagan siguen en las cuentas. Los meses de vida son la caja sobre lo que cuesta un
         mes sin vender (gastos operativos y honorarios del CEO: sueldos, ads, software). Un movimiento entre cuentas
         no cambia el total: sólo lo que tendría que haber en cada cuenta, y lo que costó el pase, que va como gasto.
         Mientras la plata viaja de una cuenta a otra sigue siendo de la caja, pero no está en ninguna: por eso el
@@ -258,11 +258,11 @@ function Movimiento({ mov, M, sinVenta }: { mov: MovimientoCaja; M: (n: number, 
   const restas: [string, string, number, string?][] = [
     ["devoluciones", "Devoluciones a clientes", mov.devoluciones, "La plata devuelta; la comisión de la pasarela no vuelve"],
     ["procesador", "Procesadores", mov.procesador],
-    ["comisiones", "Comisiones de closers y director", mov.comisiones, "Se pagan a mes vencido"],
     ["gastos", "Gastos pagados", mov.gastos, "Directos, operativos y honorarios del CEO, el día que se pagaron"],
-    ["reparto", "Growth partner y socio", mov.reparto],
+    ["equipo", "Pagos al equipo", mov.equipo, "Sueldos y comisiones, el día que salieron de la cuenta"],
     ["retiros", "Retiros del dueño", mov.retiros],
   ];
+  const debido = mov.comisiones + mov.reparto + mov.liquidacion;
   const pasos: PasoCascada[] = [
     { id: "inicial", nombre: "Último arqueo", valor: mov.inicial, texto: M(mov.inicial), tipo: "base" },
     ...(mov.enCaminoAntes ? [{ id: "camino", nombre: "Estaba en camino al contar", valor: mov.enCaminoAntes, texto: `+${M(mov.enCaminoAntes)}`, tipo: "suma" as const, ayuda: "Había salido de una cuenta y no había llegado a la otra" }] : []),
@@ -280,6 +280,12 @@ function Movimiento({ mov, M, sinVenta }: { mov: MovimientoCaja; M: (n: number, 
         </div>
       </div>
       <Cascada pasos={pasos} etiqueta="Del último arqueo a la caja esperada" />
+      {debido >= 1 && (
+        <p className="t-sm t-subtle" style={{ margin: "var(--space-3) 0 0" }} data-caja="debido-al-equipo"
+          title="Las comisiones de closers y director que Finanzas calcula de cada cobro, el growth partner y el socio, y lo que dejó el cierre de la liquidación. Son del estado de resultados: de la caja salen el día que se pagan, con el pago cargado desde su cuenta.">
+          Lo del equipo de estas fechas ({M(debido)}) no se resta hasta que se paga: mientras tanto sigue en las cuentas.
+        </p>
+      )}
       {sinVenta && sinVenta.n > 0 && (
         <p className="t-sm t-subtle" style={{ margin: "var(--space-3) 0 0" }} title="Están en la cuenta pero no en «Cobrado» hasta que se concilien. Si al contar sobra plata, puede ser esto.">
           Además {sinVenta.n === 1 ? "hay 1 cobro" : `hay ${sinVenta.n} cobros`} por {M(sinVenta.monto)} sin su venta cargada: si al contar sobra plata, puede ser esto.
@@ -716,8 +722,8 @@ function NuevoArqueo({ e, onCerrar, onListo, traerAlAbrir = false }: { e: Estado
         <p className="t-sm t-subtle arqueo-nota">
           «Tendría que haber» es lo del último arqueo más lo que cobró la cuenta (neto de la comisión de la pasarela: una planilla que cuenta el bruto da más), más o menos los movimientos entre cuentas
           {hayPases ? "" : " (todavía no hay ninguno cargado desde entonces)"} y menos los retiros, las devoluciones y los gastos que dicen de qué cuenta
-          salieron. Un gasto que no dice la cuenta (o los sueldos y las comisiones) no se descuenta de ninguna: en la cuenta desde la que
-          se pagó va a sobrar eso. El control que tiene que dar es el del total.
+          salieron (los pagos al equipo también: se cargan desde la cuenta de la que salieron). Un gasto que no dice la cuenta no se descuenta de ninguna: en la cuenta desde la que
+          se pagó va a sobrar eso. Lo que se le debe al equipo y todavía no se pagó no resta: sigue en las cuentas. El control que tiene que dar es el del total.
         </p>
       )}
       <div className="arqueo-resumen">

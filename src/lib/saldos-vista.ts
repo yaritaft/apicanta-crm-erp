@@ -55,9 +55,7 @@ export interface ContraLaCaja {
   sumaDeCuentas: number;
   /* Las cuentas menos la Caja: positivo, las cuentas tienen más. */
   diferencia: number;
-  /* Lo que la Caja ya descontó y todavía no salió de ninguna cuenta. */
-  comisiones: number;
-  reparto: number;
+  /* Gastos pagados que no dicen de qué cuenta salieron: la Caja los descuenta, ninguna cuenta. */
   sinCuenta: number;
   /* Cobros que ya están en las cuentas y todavía no tienen su venta: la Caja no los cuenta como cobrados. */
   sinVenta: number;
@@ -149,8 +147,8 @@ export function saldosPorCuenta(e: EstadoApp, reales: readonly SaldoReal[], ahor
     const diferencia = r2(total - mov.enCuentas);
     contraLaCaja = {
       cajaEnCuentas: mov.enCuentas, sumaDeCuentas: total, diferencia,
-      comisiones: mov.comisiones, reparto: mov.reparto, sinCuenta, sinVenta: conVenta, bancosMarcan,
-      resto: r2(diferencia - mov.comisiones - mov.reparto - sinCuenta - conVenta - bancosMarcan),
+      sinCuenta, sinVenta: conVenta, bancosMarcan,
+      resto: r2(diferencia - sinCuenta - conVenta - bancosMarcan),
     };
   }
 
@@ -159,14 +157,14 @@ export function saldosPorCuenta(e: EstadoApp, reales: readonly SaldoReal[], ahor
 
 /* ---------- Entró y salió ---------- */
 
-export interface ParteDelFlujo { id: "devoluciones" | "procesador" | "comisiones" | "gastos" | "reparto" | "retiros"; nombre: string; monto: number; ayuda?: string }
+export interface ParteDelFlujo { id: "devoluciones" | "procesador" | "equipo" | "gastos" | "retiros"; nombre: string; monto: number; ayuda?: string }
 
 export interface FlujoDeCaja {
   desde: string;
   hasta: string;
   /* Lo cobrado (lo que entró por las cuentas). */
   entro: number;
-  /* Todo lo que salió: devoluciones, procesadores, comisiones, gastos, reparto y retiros. */
+  /* Todo lo que salió: devoluciones, procesadores, pagos al equipo, gastos y retiros. */
   salio: number;
   neto: number;
   partes: ParteDelFlujo[];
@@ -179,10 +177,9 @@ export function flujoDelPeriodo(e: EstadoApp, desde: Date, hasta: Date): FlujoDe
   const m = cajaEsperada(e, { fecha: new Date(desde.getTime() - 1).toISOString(), total: 0 }, hasta.toISOString());
   const partes: ParteDelFlujo[] = [
     { id: "gastos", nombre: "Gastos pagados", monto: m.gastos, ayuda: "Directos, operativos y honorarios del CEO, el día que se pagaron" },
-    { id: "comisiones", nombre: "Comisiones de closers y director", monto: m.comisiones, ayuda: "Se pagan a mes vencido" },
+    { id: "equipo", nombre: "Pagos al equipo", monto: m.equipo, ayuda: "Sueldos y comisiones, el día que salieron de la cuenta" },
     { id: "procesador", nombre: "Procesadores", monto: m.procesador },
     { id: "devoluciones", nombre: "Devoluciones a clientes", monto: m.devoluciones, ayuda: "La plata devuelta; la comisión de la pasarela no vuelve" },
-    { id: "reparto", nombre: "Growth partner y socio", monto: m.reparto },
     { id: "retiros", nombre: "Retiros del dueño", monto: m.retiros },
   ];
   const salio = r2(partes.reduce((a, p) => a + p.monto, 0));
