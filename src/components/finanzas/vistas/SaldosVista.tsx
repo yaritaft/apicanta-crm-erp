@@ -1,15 +1,19 @@
 "use client";
 
 import React, { useMemo, useState } from "react";
-import { AlertTriangle, Check, RefreshCw } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { AlertTriangle, Check, Landmark, RefreshCw } from "lucide-react";
+import { CabeceraVista } from "@/components/finanzas/vistas/CabeceraVista";
+import { CopiarLink } from "@/components/ui/Filtros";
 import { Badge, Button, Card } from "@/components/ui/ui";
 import { InfoMetrica } from "@/components/ui/InfoMetrica";
 import { Cascada, Plegable, Segmentado, type PasoCascada } from "@/components/finanzas/visual/visual";
 import { fechaLarga, money } from "@/lib/format";
 import { moverPeriodo, nombrePeriodo, periodoDe, rangoDePeriodo } from "@/lib/periodos";
 import { flujoDelPeriodo, saldosPorCuenta, type SaldoDeCuenta, type VistaDeSaldos } from "@/lib/saldos-vista";
+import { useEstado } from "@/lib/store";
 import { nube } from "@/lib/supabase";
-import type { LecturaDeSaldos } from "@/lib/useSaldosReales";
+import { useSaldosReales, type LecturaDeSaldos } from "@/lib/useSaldosReales";
 import type { EstadoApp, ID, Moneda } from "@/lib/types";
 import "./saldos-vista.css";
 
@@ -24,6 +28,27 @@ import "./saldos-vista.css";
 
 const horaAr = (iso: string) => new Date(iso).toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "America/Argentina/Buenos_Aires" });
 const mes = (periodo: string) => { const n = nombrePeriodo(periodo).split(" ")[0]; return n.charAt(0).toUpperCase() + n.slice(1); };
+
+/* La pantalla propia del menú (/finanzas/saldos): lo mismo que va arriba de la Caja, sin el arqueo. Para contar o mover plata entre
+   cuentas se va a la Caja. */
+export function SaldosPantalla() {
+  const e = useEstado();
+  const lectura = useSaldosReales();
+  const router = useRouter();
+  return (
+    <div className="stack-5">
+      <CabeceraVista embebido={false} titulo="Saldos"
+        acciones={
+          <>
+            <CopiarLink variante="ghost" />
+            <Button sm variante="ghost" icono={<Landmark size={15} />} onClick={() => router.push("/finanzas/caja")}>Ir a la Caja</Button>
+          </>
+        }
+      />
+      <SaldosVista e={e} lectura={lectura} />
+    </div>
+  );
+}
 
 export function SaldosVista({ e, lectura, rangoFijo }: {
   e: EstadoApp;
