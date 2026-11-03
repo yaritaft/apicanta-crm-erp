@@ -1,7 +1,7 @@
 import { AVISO_EN_DISPUTA, AVISO_GANADA, disputaDe } from "./disputas";
-import type { EstadoApp, Gasto, ID } from "./types";
+import type { EstadoApp, Gasto, ID, Traspaso } from "./types";
 import { clasificarMercury } from "./mercury";
-import { cuentaDeGasto } from "./traspasos";
+import { cuentaDeContraparte, cuentaDeGasto, LLEGADA_A_MANO, SALIDA_A_MANO } from "./traspasos";
 import { diaDeNegocio } from "./dia-negocio";
 import { fechaDePago } from "./gastos";
 
@@ -127,6 +127,8 @@ export interface MovimientoCruzado extends MovimientoDelBanco {
   donde?: string;
   /* El gasto con el que se parece (para mirarlo). */
   gastoId?: ID;
+  /* El movimiento entre cuentas cargado a mano con el que se reconoció. */
+  traspasoId?: ID;
   /* Ya está propuesto como devolución y falta confirmarlo: se confirma ahí, no se carga como gasto. */
   enDevoluciones?: boolean;
   /* Una disputa que se perdió: lo que Stripe retiró ya no es «a ver qué pasa», se carga como gasto (aparece el botón). */
@@ -137,6 +139,30 @@ const DIA = 86400000;
 const DIAS_DE_MARGEN = 4;
 
 const gastoApunta = (g: Gasto, ref: string) => g.extra?.bancoRef === ref;
+
+/* Lo que puede ser una punta de un pase. Una compra, una comisión o un reembolso tienen su propio origen aunque el monto coincida. Mercury llama «cobro» a toda
+   plata que entra de alguien que no reconoce: una llegada desde el Bank of America entra así. */
+const PUEDE_SER_PASE: ReadonlySet<TipoDelBanco> = new Set<TipoDelBanco>(["salida", "pase", "cobro", "entrada", "otro"]);
+
+/** El pase cargado a mano al que corresponde este movimiento del banco: confirmado (es lo que ya movió el saldo esperado), de esta cuenta del lado que toca
+ *  (la que manda si sale, la que recibe si entra), el mismo monto y días cerca, sin una referencia del banco en esa punta. Si el banco nombra con seguridad a
+ *  otra cuenta, no es ése (un nombre dudoso no descarta nada: Bridge y ARX figuran como Hotmart por las dudas). Entre varios, el de la fecha más cercana. */
+function paseAMano(traspasos: readonly Traspaso[], m: MovimientoDelBanco, usados: ReadonlySet<ID>): Traspaso | undefined {
+  const sale = m.monto < 0;
+  const t = Date.parse(m.fecha);
+  const nombrada = cuentaDeContraparte(m.contraparte);
+  const dias = (x: Traspaso) => Math.abs(Date.parse(sale ? x.fecha : x.fechaLlega ?? x.fecha) - t);
+  return traspasos.filter((x) => {
+    if (usados.has(x.id) || x.origen !== "manual" || x.estado !== "confirmado") return false;
+    const [cuenta, otra, monto, moneda, ref, aMano] = sale
+      ? [x.origenId, x.destinoId, x.montoSale, x.monedaSale, x.salidaRef, SALIDA_A_MANO]
+      : [x.destinoId, x.origenId, x.montoLlega, x.monedaLlega, x.llegadaRef, LLEGADA_A_MANO];
+    if (cuenta !== m.cuentaId || moneda !== "USD" || (ref && ref !== aMano)) return false;
+    if (nombrada?.seguro && otra && nombrada.cuentaId !== otra) return false;
+    if (Math.abs(monto - Math.abs(m.monto)) > 0.01) return false;
+    return dias(x) <= DIAS_DE_MARGEN * DIA;
+  }).sort((a, b) => dias(a) - dias(b))[0];
+}
 
 /** Cada movimiento del banco con su estado en la app. */
 export function cruzarConLaApp(
@@ -185,6 +211,17 @@ export function cruzarConLaApp(
     if (m.tipo === "contracargo") return { ...m, estadoApp: "falta", donde: "El contracargo todavía no está como devolución: aparece con «Sincronizar» para confirmarlo en Devoluciones." };
     const propio = (e.gastos ?? []).find((g) => gastoApunta(g, m.ref));
     if (propio) return { ...m, estadoApp: "cargado", donde: `Está como ${propio.monto < 0 ? "ingreso" : "gasto"}: ${propio.concepto}.`, gastoId: propio.id };
+    /* Un pase cargado a mano no trae la referencia del banco. «Cargado» y no «Parece cargado»: ya bajó el saldo esperado de esta cuenta, así que no queda nada por
+       cargar ni por confirmar, y en «Parecido» quedaría para siempre en Pendiente. Si el pase era de otro movimiento, ese otro sigue en «Falta»: la plata no se esconde. */
+    if (PUEDE_SER_PASE.has(m.tipo)) {
+      const pase = paseAMano(e.traspasos ?? [], m, usados);
+      if (pase) {
+        usados.add(pase.id);
+        const otra = e.procesadores.find((p) => p.id === (m.monto < 0 ? pase.destinoId : pase.origenId))?.nombre;
+        const dia = diaDeNegocio(m.monto < 0 ? pase.fecha : pase.fechaLlega ?? pase.fecha);
+        return { ...m, estadoApp: "cargado", donde: `Está como movimiento entre cuentas, cargado a mano: ${m.monto < 0 ? "a" : "desde"} ${otra ?? "otra cuenta"} (${dia.slice(8, 10)}/${dia.slice(5, 7)}).`, traspasoId: pase.id };
+      }
+    }
     /* Algo que alguien cargó a mano: el mismo monto, de esa cuenta, en esos días. Se ofrece mirarlo, no se da por hecho. */
     if (m.tipo !== "cobro" && m.tipo !== "pase") {
       const t = Date.parse(m.fecha);
