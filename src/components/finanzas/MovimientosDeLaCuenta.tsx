@@ -82,6 +82,8 @@ export function MovimientosDeLaCuenta({ cuentaId, desde, onCerrar }: { cuentaId:
         /* Un contracargo no se carga como gasto: se confirma como devolución (la propone «Sincronizar»), que es lo que revierte la comisión. */
         if (m.estadoApp === "cargado" || m.estadoApp === "no-se-carga" || m.estadoApp === "en-disputa" || m.enDevoluciones) return null;
         if (m.tipo === "contracargo" && !m.cargableComoGasto) return null;
+        /* Bank of America no tiene «Sincronizar» para lo que le llega de otra cuenta: se carga a mano como movimiento entre cuentas. */
+        if (m.tipo === "pase" && m.cuentaId === "proc_bofa") return <span className="t-sm t-subtle">Se carga en Caja → Movimiento entre cuentas</span>;
         if (m.tipo === "cobro" || m.tipo === "pase") return <span className="t-sm t-subtle">Entra con «Sincronizar»</span>;
         return (
           <span className="row" style={{ gap: 6 }}>

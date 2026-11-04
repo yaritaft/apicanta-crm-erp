@@ -8,6 +8,7 @@ import { clasificarMercury, reglasExtraDeEntorno, type ResumenMercury } from "./
 import { movimientoDeMercury, movimientoDeStripe, type MovimientoDelBanco } from "./movimientos-del-banco";
 import { FUENTES_DE_SALDO, saldoDeBilleteraEn, type ErrorDeSaldo, type PendientesDeBanco, type RespuestaDeSaldos, type SaldoReal, type Transferencia } from "./saldos-reales";
 import { money } from "./format";
+import { saldoDeBofa } from "./plaid-servidor";
 
 /* ==================================================================
    Los adaptadores de cada pasarela, del lado del servidor.
@@ -1493,6 +1494,8 @@ const LECTORES: Record<string, (al?: Date) => Promise<SaldoReal | null>> = {
   proc_trust: saldoDeTrust,
   proc_mercury: () => saldoDeMercury(),
   proc_stripe: () => saldoDeStripe(),
+  /* Bank of America no tiene API: se lee por Plaid, si alguien conectó la cuenta desde Ajustes → Integraciones (lib/plaid-servidor.ts). */
+  proc_bofa: () => saldoDeBofa(),
 };
 
 /** El saldo real de las cuentas pedidas (por defecto, todas las que se leen solas). Un error de una no tumba a las otras; las que no

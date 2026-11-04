@@ -1,12 +1,14 @@
 import { NextResponse } from "next/server";
 import { exigirArea } from "@/lib/permisos-servidor";
 import { movimientosDeMercury, movimientosDeStripe } from "@/lib/pasarelas-api";
+import { ErrorDePlaid, movimientosDeBofa } from "@/lib/plaid-servidor";
 
 /* ==================================================================
    Qué pasó de verdad en una cuenta (lib/movimientos-del-banco.ts).
 
      GET /api/pasarelas/movimientos?cuenta=proc_mercury&desde=2026-10-21T00:00Z
      GET /api/pasarelas/movimientos?cuenta=proc_stripe&desde=…
+     GET /api/pasarelas/movimientos?cuenta=proc_bofa&desde=…       (Bank of America, por Plaid: lib/plaid-servidor.ts)
 
    → { movimientos: [{ ref, refApp, cuentaId, fecha, monto, contraparte, detalle?, tipo, pendiente? }], avisos, conectada }
 
@@ -25,16 +27,16 @@ export async function GET(req: Request) {
   if (noPuede) return noPuede;
   const url = new URL(req.url);
   const cuenta = url.searchParams.get("cuenta") ?? "";
-  if (cuenta !== "proc_mercury" && cuenta !== "proc_stripe") {
+  if (cuenta !== "proc_mercury" && cuenta !== "proc_stripe" && cuenta !== "proc_bofa") {
     return NextResponse.json({ error: "Esa cuenta no se puede leer sola." }, { status: 400, headers: SIN_CACHE });
   }
   const limite = new Date(Date.now() - DIAS_MAXIMOS * 86400000);
   const pedida = new Date(url.searchParams.get("desde") ?? "");
   const desde = Number.isNaN(pedida.getTime()) ? new Date(Date.now() - 14 * 86400000) : pedida < limite ? limite : pedida;
   try {
-    const r = cuenta === "proc_mercury" ? await movimientosDeMercury(desde) : await movimientosDeStripe(desde);
+    const r = cuenta === "proc_mercury" ? await movimientosDeMercury(desde) : cuenta === "proc_bofa" ? await movimientosDeBofa(desde) : await movimientosDeStripe(desde);
     return NextResponse.json({ ...r, desde: desde.toISOString() }, { headers: SIN_CACHE });
   } catch (err) {
-    return NextResponse.json({ error: err instanceof Error ? err.message : "No se pudieron leer los movimientos." }, { status: 502, headers: SIN_CACHE });
+    return NextResponse.json({ error: err instanceof Error ? err.message : "No se pudieron leer los movimientos." }, { status: err instanceof ErrorDePlaid && err.status === 503 ? 503 : 502, headers: SIN_CACHE });
   }
 }

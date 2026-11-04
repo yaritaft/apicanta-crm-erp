@@ -436,7 +436,7 @@ function armarFilasDeMercury(movs: readonly FilaMercury[], c: ContextoMasivo): F
 /** Las filas de un export de Bank of America: cada movimiento con lo que es (gasto, plata que volvió o algo que se deja afuera), la categoría que corresponde
  *  y si ya estaba cargado (por su referencia, o uno igual a menos de tres días). Los gastos salen de la cuenta «Bank of America»: así el control de saldos
  *  los descuenta de ahí. */
-function armarFilasDeBofa(movs: readonly FilaBofa[], c: ContextoMasivo): FilaMasiva[] {
+export function armarFilasDeBofa(movs: readonly FilaBofa[], c: ContextoMasivo): FilaMasiva[] {
   const { e } = c;
   const catalogo = catalogoDe(e);
   const dePrevio = categoriasPorNombre(e);

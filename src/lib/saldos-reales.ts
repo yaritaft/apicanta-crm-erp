@@ -10,7 +10,7 @@ import { money } from "./format";
    Aldana (20/10): el saldo de USDT Trust se puede saber exacto (es público
    en la red), así que contarlo a mano en la planilla es de más (y ya venía
    9 dólares abajo). Con el saldo real de cada cuenta que se puede leer
-   (USDT Trust por la red, Mercury y Stripe por sus API), la app lo compara
+   (USDT Trust por la red, Mercury y Stripe por sus API, Bank of America por Plaid), la app lo compara
    con lo que esperaba (lo del último arqueo más lo cobrado, los pases y lo
    pagado desde esa cuenta): si no da, falta cargar algo, y lo dice.
 
@@ -61,6 +61,7 @@ export interface RespuestaDeSaldos {
 export const FUENTES_DE_SALDO: Readonly<Record<ID, string>> = {
   proc_trust: "la red de USDT",
   proc_mercury: "el banco (Mercury)",
+  proc_bofa: "el banco (Bank of America)",
   proc_stripe: "Stripe",
 };
 

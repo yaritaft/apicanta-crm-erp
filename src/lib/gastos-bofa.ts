@@ -1,4 +1,5 @@
 import type { EstadoApp } from "./types";
+import type { TipoDelBanco } from "./movimientos-del-banco";
 import { normalizar } from "./gastos";
 import { cuentaDeContraparte } from "./traspasos";
 import { fechasDeMercury, montoDeMercury, personaDelEquipo, type QueEs } from "./gastos-mercury";
@@ -120,3 +121,20 @@ export function queEsBofa(m: FilaBofa, e: Pick<EstadoApp, "equipo">): QueEs {
 
 /** Las comisiones del banco tienen categoría propia si existe en el catálogo; el resto la sugiere el historial. */
 export const esComisionDelBanco = (d: string): boolean => COMISION_DEL_BANCO.test(d);
+
+/** Qué es el movimiento para la pantalla «Qué pasó en la cuenta» (lib/movimientos-del-banco.ts): las mismas reglas que `queEsBofa`, dichas con los tipos
+ *  de esa pantalla. Lo que el banco no deja distinguir (una compra con la tarjeta de débito de un cheque o una transferencia) queda en «salida». */
+export function tipoDelBancoDeBofa(m: FilaBofa): TipoDelBanco {
+  const d = m.descripcion;
+  const propia = cuentaDeContraparte(d) !== null || ENTRE_CUENTAS.test(d);
+  if (m.monto > 0) {
+    if (m.origen === "tarjeta" && /\bpayment\b/i.test(d)) return "pago-tarjeta";
+    if (propia) return "pase";
+    return REINTEGRO.test(d) ? "reembolso" : "entrada";
+  }
+  if (PAGO_DE_TARJETA.test(d) && m.origen === "cuenta") return "pago-tarjeta";
+  if (propia) return "pase";
+  if (COMISION_DEL_BANCO.test(d)) return "comision";
+  if (m.origen === "tarjeta") return "compra-credito";
+  return /^(checkcard|check card|purchase|debit card|debit purchase|recurring (payment|card))\b/i.test(d.trim()) ? "compra-tarjeta" : "salida";
+}

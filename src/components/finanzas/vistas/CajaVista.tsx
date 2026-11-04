@@ -369,7 +369,7 @@ function ControlDeSaldosCard({ e, lectura, onArquear }: { e: EstadoApp; lectura:
                 {/* Si lo que está en camino ya explica la diferencia, la frase lo dice con sus montos: la nota (que repite lo mismo) queda en el globito del saldo. */}
                 <span role="cell" className="t-sm t-muted">
                   {quePasa(f)}{f.nota && f.lectura !== "da-con-pendientes" ? ` ${f.nota}` : ""}
-                  {(f.cuentaId === "proc_mercury" || f.cuentaId === "proc_stripe") && (
+                  {(f.cuentaId === "proc_mercury" || f.cuentaId === "proc_stripe" || f.cuentaId === "proc_bofa") && (
                     <> <button type="button" className="link" onClick={() => setVerCuenta(f.cuentaId)}>Ver qué pasó en la cuenta</button></>
                   )}
                 </span>

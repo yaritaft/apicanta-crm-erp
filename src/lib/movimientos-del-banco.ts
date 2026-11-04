@@ -1,7 +1,7 @@
 import { AVISO_EN_DISPUTA, AVISO_GANADA, disputaDe } from "./disputas";
 import type { EstadoApp, Gasto, ID, Traspaso } from "./types";
 import { clasificarMercury } from "./mercury";
-import { cuentaDeContraparte, cuentaDeGasto, LLEGADA_A_MANO, SALIDA_A_MANO } from "./traspasos";
+import { cuentaDeContraparte, cuentaDeGasto, DESTINO_DE_RETIROS, destinoSupuesto, LLEGADA_A_MANO, SALIDA_A_MANO } from "./traspasos";
 import { diaDeNegocio } from "./dia-negocio";
 import { fechaDePago } from "./gastos";
 
@@ -149,11 +149,15 @@ const PUEDE_SER_PASE: ReadonlySet<TipoDelBanco> = new Set<TipoDelBanco>(["salida
  *  otra cuenta, no es ése (un nombre dudoso no descarta nada: Bridge y ARX figuran como Hotmart por las dudas). Entre varios, el de la fecha más cercana. */
 function paseAMano(traspasos: readonly Traspaso[], m: MovimientoDelBanco, usados: ReadonlySet<ID>): Traspaso | undefined {
   const sale = m.monto < 0;
+  /* Lo que retiran Stripe, Whop y Hotmart llega al Bank of America y nadie lo avisa: los retiros que la app ya anotó con ese destino (lo dio por supuesto una regla,
+     no una persona) son el pase de esa llegada, igual que uno cargado a mano. */
+  const llegadaSupuesta = !sale && m.cuentaId === DESTINO_DE_RETIROS.cuentaId;
   const t = Date.parse(m.fecha);
   const nombrada = cuentaDeContraparte(m.contraparte);
   const dias = (x: Traspaso) => Math.abs(Date.parse(sale ? x.fecha : x.fechaLlega ?? x.fecha) - t);
   return traspasos.filter((x) => {
-    if (usados.has(x.id) || x.origen !== "manual" || x.estado !== "confirmado") return false;
+    if (usados.has(x.id) || x.estado !== "confirmado") return false;
+    if (x.origen !== "manual" && !(llegadaSupuesta && destinoSupuesto(x))) return false;
     const [cuenta, otra, monto, moneda, ref, aMano] = sale
       ? [x.origenId, x.destinoId, x.montoSale, x.monedaSale, x.salidaRef, SALIDA_A_MANO]
       : [x.destinoId, x.origenId, x.montoLlega, x.monedaLlega, x.llegadaRef, LLEGADA_A_MANO];
@@ -219,7 +223,7 @@ export function cruzarConLaApp(
         usados.add(pase.id);
         const otra = e.procesadores.find((p) => p.id === (m.monto < 0 ? pase.destinoId : pase.origenId))?.nombre;
         const dia = diaDeNegocio(m.monto < 0 ? pase.fecha : pase.fechaLlega ?? pase.fecha);
-        return { ...m, estadoApp: "cargado", donde: `Está como movimiento entre cuentas, cargado a mano: ${m.monto < 0 ? "a" : "desde"} ${otra ?? "otra cuenta"} (${dia.slice(8, 10)}/${dia.slice(5, 7)}).`, traspasoId: pase.id };
+        return { ...m, estadoApp: "cargado", donde: `Está como movimiento entre cuentas${pase.origen === "manual" ? ", cargado a mano" : " (se dio por llegado cuando salió)"}: ${m.monto < 0 ? "a" : "desde"} ${otra ?? "otra cuenta"} (${dia.slice(8, 10)}/${dia.slice(5, 7)}).`, traspasoId: pase.id };
       }
     }
     /* Algo que alguien cargó a mano: el mismo monto, de esa cuenta, en esos días. Se ofrece mirarlo, no se da por hecho. */

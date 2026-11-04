@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { nivelDelPedido } from "@/lib/permisos-servidor";
 import { descartarAnuladosMercury, guardarMovimientos, guardarPuntas, guardarReembolsos, hayServidor, referenciasCompletas } from "@/lib/servidor";
 import { resumenVacio } from "@/lib/mercury";
+import { cargarGastosDelBanco, type ResultadoDeLaCarga } from "@/lib/plaid-servidor";
 import { hayClaves, listar, procesadorDe, PROVEEDORES, retirosDeStripe, type MovimientoApi } from "@/lib/pasarelas-api";
 import type { ReembolsoCrudo } from "@/lib/reembolsos";
 import type { Punta } from "@/lib/traspasos";
@@ -180,9 +181,18 @@ export async function GET(peticion: Request) {
     if (r.error) errores.push({ proveedor: "supabase", mensaje: r.error });
   }
 
+  /* Bank of America (por Plaid): cada hora, los gastos nuevos de la cuenta se cargan solos con las mismas reglas que el CSV (lib/plaid-servidor.ts).
+     Sólo el cron: si no está conectada o la carga automática está apagada, no hace nada. Un error de acá no tumba el resto. */
+  let banco: ResultadoDeLaCarga | undefined;
+  if (esCron && hayServidor && !soloPases) {
+    banco = await cargarGastosDelBanco();
+    if (banco.estado === "error") errores.push({ proveedor: "bofa", mensaje: banco.mensaje ?? "No se pudo leer Bank of America." });
+  }
+
   return NextResponse.json({
     conectadas,
     errores,
+    banco,
     guardados,
     completados,
     pases,

@@ -15,6 +15,7 @@ import { EstadosDeLlamada } from "@/components/ajustes/EstadosDeLlamada";
 import { FormulariosMeta } from "@/components/ajustes/FormulariosMeta";
 import { ConversionsApi } from "@/components/ajustes/ConversionsApi";
 import { YoutubeIntegracion } from "@/components/ajustes/YoutubeIntegracion";
+import { BancoIntegracion } from "@/components/ajustes/BancoIntegracion";
 import { FathomIntegracion } from "@/components/ajustes/FathomIntegracion";
 import { AccesosAlumnosIntegracion } from "@/components/ajustes/AccesosAlumnosIntegracion";
 import { WhatsappLector } from "@/components/ajustes/WhatsappLector";
@@ -548,6 +549,7 @@ function Integraciones() {
       <EstadoCalendly />
       <FathomIntegracion />
       <YoutubeIntegracion />
+      <BancoIntegracion />
       <AccesosAlumnosIntegracion />
     </div>
   );

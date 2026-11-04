@@ -184,12 +184,12 @@ test("saldosReales: lo que no está conectado, lo que falla y lo que sólo se sa
   const a = await conRespuestas({ TRUST_WALLET_ADDRESS: MI_BILLETERA, MERCURY_API_TOKEN: "abc" }, rutas, () => saldosReales());
   assert.deepEqual(a.r.saldos.map((s) => s.cuentaId), ["proc_trust"]);
   assert.deepEqual(a.r.errores.map((x) => x.cuentaId), ["proc_mercury"]); assert.match(a.r.errores[0].mensaje, /Mercury \(cuentas\) respondió 500/);
-  assert.deepEqual(a.r.sinConexion, ["proc_stripe"]); assert.deepEqual(a.r.soloHoy, []);
+  assert.deepEqual(a.r.sinConexion, ["proc_stripe", "proc_bofa"]); assert.deepEqual(a.r.soloHoy, []);
   /* Pedir un día pasado: la red lo reconstruye; el banco y Stripe sólo dicen lo de ahora. */
   const b = await conRespuestas({ TRUST_WALLET_ADDRESS: MI_BILLETERA, MERCURY_API_TOKEN: "abc", STRIPE_SECRET_KEY: "sk" }, (u) => (u.includes("transactions/trc20") ? { cuerpo: { data: [], meta: {} } } : rutas(u)), () => saldosReales(undefined, new Date(Date.now() - 5 * 86400000)));
   assert.deepEqual(b.r.saldos.map((s) => s.cuentaId), ["proc_trust"]);
-  assert.deepEqual(b.r.soloHoy.sort(), ["proc_mercury", "proc_stripe"]);
-  assert.equal(b.pedidos.some((u) => u.includes("mercury") || u.includes("stripe")), false, "no se les pregunta lo que no pueden responder");
+  assert.deepEqual(b.r.soloHoy.sort(), ["proc_bofa", "proc_mercury", "proc_stripe"]);
+  assert.equal(b.pedidos.some((u) => u.includes("mercury") || u.includes("stripe") || u.includes("plaid")), false, "no se les pregunta lo que no pueden responder");
   /* Pedir sólo una; una desconocida se ignora. */
   const c = await conRespuestas({ TRUST_WALLET_ADDRESS: MI_BILLETERA }, rutas, () => saldosReales(["proc_trust", "proc_inventada"]));
   assert.deepEqual(c.r.saldos.map((s) => s.cuentaId), ["proc_trust"]); assert.deepEqual(c.r.errores, []);
