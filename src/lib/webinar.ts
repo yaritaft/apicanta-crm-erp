@@ -4,6 +4,7 @@ import type {
 import { closerDeCuota, cobraDirector, cobraEnFecha, tasaDeComision } from "./finanzas";
 import { devolucionesDe, esDevolucionConfirmada, reversasDeComision } from "./devoluciones";
 import { descuentaPorCierre, ventasSinCierre } from "./cierre-del-dia";
+import { diaDeNegocio } from "./dia-negocio";
 
 /* ==================================================================
    Las métricas que Yari viene trackeando webinar a webinar desde 2023.
@@ -400,28 +401,41 @@ export function camposDeMeta(e: EstadoApp, w: Webinar): Set<CampoManual> {
   return out;
 }
 
+/** Las ventas de un webinar: las que tienen su webinar atado y no se cancelaron (una reembolsada se vendió: cuenta, y lo
+ *  devuelto resta aparte). `hasta` (aaaa-mm-dd, día de Argentina): sólo las vendidas hasta ese día. */
+export function ventasDelWebinar(e: Pick<EstadoApp, "ventas">, webinarId: string, hasta?: string): Venta[] {
+  return e.ventas.filter((v) => v.webinarId === webinarId && v.estado !== "cancelada" && (!hasta || diaDeNegocio(v.fecha) <= hasta));
+}
+
+/** La plata de unas ventas: lo FACTURADO (lo que valen: el valor total de cada una) y el CASH COLLECTED (lo que ya entró
+ *  de ellas menos lo devuelto). Es la única cuenta: la usan la ficha del webinar, su planilla, el Dashboard y el reporte
+ *  del equipo (lib/reporte-webinar.ts). Agustín y Santi (04/11) sacaron dos números distintos del mismo webinar porque
+ *  cada uno la hacía a mano con otra regla. `hasta`: lo cobrado y lo devuelto hasta ese día (aaaa-mm-dd, Argentina). */
+export function plataDeVentas(e: Pick<EstadoApp, "cuotas" | "pagos"> & Partial<Pick<EstadoApp, "devoluciones">>, ventas: readonly Venta[], hasta?: string) {
+  const facturado = ventas.reduce((a, v) => a + v.precioAcordado, 0);
+  /* De qué venta es cada cuota, sólo para estas ventas. Con índices y no con filter+includes anidados: la planilla
+     recalcula esto para cada webinar a cada celda que se carga. */
+  const ventaPorId = new Map(ventas.map((v) => [v.id, v] as const));
+  const cuotaDe = new Map<string, Cuota>();
+  for (const c of e.cuotas) if (ventaPorId.has(c.ventaId)) cuotaDe.set(c.id, c);
+  const pagos = e.pagos.filter((p) => cuotaDe.has(p.cuotaId) && (!hasta || diaDeNegocio(p.fecha) <= hasta));
+  const fees = pagos.reduce((a, p) => a + p.feeMonto, 0);
+  /* Lo devuelto de estas ventas resta de lo cobrado, igual que en Finanzas (la comisión de la pasarela sigue siendo la
+     de los cobros). */
+  const devoluciones = devolucionesDe(e)
+    .filter((d) => esDevolucionConfirmada(d) && d.ventaId && ventaPorId.has(d.ventaId) && (!hasta || diaDeNegocio(d.fecha) <= hasta));
+  const devuelto = devoluciones.reduce((a, d) => a + d.monto, 0);
+  const entro = pagos.reduce((a, p) => a + p.monto, 0);
+  return { facturado, pagos, cuotaDe, ventaPorId, fees, devoluciones, devuelto, entro, cobrado: entro - devuelto };
+}
+
 export function metricasDeWebinar(e: EstadoApp, webinar: Webinar): MetricasWebinar {
   const w = numerosDelWebinar(e, webinar);
   const inversionTotal = w.inversion + w.inversionDmAds + w.costoWhatsappApi;
   const llamadas = w.llamadasVivo + w.llamadasPosterior;
 
-  const ventas = e.ventas.filter((v) => v.webinarId === w.id && v.estado !== "cancelada");
-  const facturado = ventas.reduce((a, v) => a + v.precioAcordado, 0);
-
-  /* De qué venta es cada cuota, sólo para las ventas de este webinar. Con
-     índices y no con filter+includes anidados: la planilla recalcula esto
-     para cada webinar a cada celda que se carga. */
-  const ventaPorId = new Map(ventas.map((v) => [v.id, v] as const));
-  const cuotaDe = new Map<string, Cuota>();
-  for (const c of e.cuotas) if (ventaPorId.has(c.ventaId)) cuotaDe.set(c.id, c);
-  const pagos = e.pagos.filter((p) => cuotaDe.has(p.cuotaId));
-  const fees = pagos.reduce((a, p) => a + p.feeMonto, 0);
-  /* Lo devuelto de estas ventas resta de lo cobrado, igual que en Finanzas
-     (la comisión de la pasarela sigue siendo la de los cobros). */
-  const devuelto = devolucionesDe(e)
-    .filter((d) => esDevolucionConfirmada(d) && d.ventaId && ventaPorId.has(d.ventaId))
-    .reduce((a, d) => a + d.monto, 0);
-  const cobrado = pagos.reduce((a, p) => a + p.monto, 0) - devuelto;
+  const ventas = ventasDelWebinar(e, w.id);
+  const { facturado, pagos, cuotaDe, ventaPorId, fees, devuelto, cobrado } = plataDeVentas(e, ventas);
 
   /* Comisiones: closer + director sobre el neto de procesador de cada
      cobro, salvo que la venta la haya cerrado Yari. El closer es el de la

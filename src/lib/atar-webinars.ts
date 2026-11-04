@@ -17,6 +17,7 @@ import { diaDeNegocio } from "./dia-negocio";
    3. La fecha: una venta del embudo de webinar es del último webinar
       anterior a la venta (por día de Argentina: lo vendido durante el vivo
       es de ese vivo), hasta que empieza el siguiente y no más de 14 días.
+      Salvo que su último link diga otra estrategia (el VSL de YouTube).
 
    Sólo se llena lo que falta: un webinar elegido a mano no se pisa.
    ================================================================== */
@@ -58,9 +59,12 @@ export function ventasParaAtar(e: EstadoApp): VentaParaAtar[] {
     if (v.webinarId && e.webinars.some((w) => w.id === v.webinarId)) continue;
     const porProyecto = webinarDeProyecto(v.proyecto, e.webinars, v.fecha);
     if (porProyecto) { out.push({ venta: v, webinarId: porProyecto.id, motivo: "proyecto" }); continue; }
-    const porUtm = origenDeUtm(e, v.contactoId, v.fecha)?.webinarId;
-    if (porUtm) { out.push({ venta: v, webinarId: porUtm, motivo: "utm" }); continue; }
+    const o = origenDeUtm(e, v.contactoId, v.fecha);
+    if (o?.webinarId) { out.push({ venta: v, webinarId: o.webinarId, motivo: "utm" }); continue; }
     if (!v.embudoId || !deWebinar.has(v.embudoId)) continue;
+    /* El último link antes de la venta es de otra estrategia (agendó por el VSL de YouTube): no es del webinar aunque
+       el closer haya elegido «Webinar». Así se ataron al Taller 21/10 cinco ventas de YouTube (04/11). */
+    if (o?.embudoId && !deWebinar.has(o.embudoId)) continue;
     /* Un proyecto WEB- que no es de ningún webinar cargado no se adivina por fecha. */
     if (/^WEB-/i.test(v.proyecto ?? "")) continue;
     const porFecha = webinarPorFecha(e.webinars, v.fecha);

@@ -42,20 +42,23 @@ export function AccionesDeCuota({ cuota }: { cuota: Cuota }) {
     );
   }
   if (cuota.estado !== "pendiente") return null;
-  /* Cobrada en parte: lo que falta se puede dar por perdido de un clic (Manu, 24/10: Demian pagó 976 de 979 y no había cómo cerrarla). */
+  /* Cobrada en parte: lo que falta se puede dar por perdido de un clic (Manu, 24/10: Demian pagó 976 de 979 y no había cómo cerrarla).
+     Sin nada cobrado también: un arreglo de saldo (Mariano, 04/11: «le hicimos un total de $1000 por el saldo que debía, ya no
+     debe nada»; la cuota 3 de Alexander Torres seguía vencida). Antes había que adivinar que eso era «Quitar cuota». */
   const enParte = cobrado > 0.005 && cobrado < cuota.monto - 0.005;
+  const saldable = enParte || cobrado <= 0.005;
 
   return (
     <>
       <Button sm variante="ghost" icono={<CalendarClock size={14} />} style={{ alignSelf: "flex-start", marginTop: 6 }} onClick={() => setAbierto("fecha")}>Cambiar fecha</Button>
       <Button sm variante="ghost" icono={<Ban size={14} />} style={{ alignSelf: "flex-start", marginTop: 6 }} onClick={() => setAbierto("incobrable")}>Incobrable</Button>
-      {enParte && <Button sm variante="ghost" icono={<CheckCheck size={14} />} style={{ alignSelf: "flex-start", marginTop: 6 }} onClick={() => setAbierto("saldar")}>Dar por saldada</Button>}
+      {saldable && <Button sm variante="ghost" icono={<CheckCheck size={14} />} style={{ alignSelf: "flex-start", marginTop: 6 }} onClick={() => setAbierto("saldar")}>Dar por saldada</Button>}
       <Button sm variante="ghost" icono={<Pencil size={14} />} style={{ alignSelf: "flex-start", marginTop: 6 }} onClick={() => setAbierto("monto")}>Corregir monto</Button>
       {cobrado === 0 && <Button sm variante="ghost" icono={<Trash2 size={14} />} style={{ alignSelf: "flex-start", marginTop: 6 }} onClick={() => setAbierto("quitar")}>Quitar cuota</Button>}
       {abierto === "fecha" && <ModalFecha cuota={cuota} onCerrar={() => setAbierto(null)} />}
       {abierto === "incobrable" && <ModalIncobrable cuota={cuota} onCerrar={() => setAbierto(null)} />}
       {abierto === "monto" && <ModalCorregir cuota={cuota} cobrado={cobrado} onCerrar={() => setAbierto(null)} />}
-      {abierto === "saldar" && <ModalCorregir cuota={cuota} cobrado={cobrado} saldar onCerrar={() => setAbierto(null)} />}
+      {abierto === "saldar" && <ModalCorregir cuota={cuota} cobrado={cobrado} saldar quitar={cobrado <= 0.005} onCerrar={() => setAbierto(null)} />}
       {abierto === "quitar" && <ModalCorregir cuota={cuota} cobrado={cobrado} quitar onCerrar={() => setAbierto(null)} />}
     </>
   );
@@ -101,7 +104,8 @@ function ModalIncobrable({ cuota, onCerrar }: { cuota: Cuota; onCerrar: () => vo
 }
 
 /* Corregir cuánto vale una cuota o quitarla (Dante, 21/10): el precio de la venta se ajusta solo.
-   `saldar` es corregirla a lo ya cobrado sin escribir el monto: lo que falta no se cobra. */
+   `saldar` es corregirla a lo ya cobrado sin escribir el monto: lo que falta no se cobra. Sin nada cobrado, `saldar` y `quitar`
+   juntos: la cuota sale del plan y la venta pasa a valer lo que se cobró (es lo mismo que quitarla, dicho como se piensa). */
 function ModalCorregir({ cuota, cobrado, quitar, saldar, onCerrar }: { cuota: Cuota; cobrado: number; quitar?: boolean; saldar?: boolean; onCerrar: () => void }) {
   const toast = useToast();
   const e = useEstado();
@@ -125,14 +129,17 @@ function ModalCorregir({ cuota, cobrado, quitar, saldar, onCerrar }: { cuota: Cu
   function guardar() {
     const cambio = quitar ? { quitar: true as const } : { monto };
     if (acciones.corregirCuota(cuota.id, cambio, motivo)) {
-      toast(quitar ? `Se quitó ${nombreDe(cuota)}.`
+      toast(quitar && saldar ? `Listo: ${nombreDe(cuota)} no se cobra${precioNuevo !== undefined ? ` y la venta quedó en ${money(precioNuevo, mon, 2)}` : ""}.`
+        : quitar ? `Se quitó ${nombreDe(cuota)}.`
         : saldada ? `Listo: ${nombreDe(cuota)} quedó saldada en ${money(monto, mon, 2)}.`
           : `Listo: ${nombreDe(cuota)} ahora es de ${money(monto, mon, 2)}.`);
     } else toast("No se pudo cambiar la cuota.", "err");
     onCerrar();
   }
-  const titulo = quitar ? `Quitar ${nombreDe(cuota)}` : saldar ? `Dar por saldada ${nombreDe(cuota)}` : `Corregir el monto de ${nombreDe(cuota)}`;
-  const sub = saldar
+  const titulo = saldar ? `Dar por saldada ${nombreDe(cuota)}` : quitar ? `Quitar ${nombreDe(cuota)}` : `Corregir el monto de ${nombreDe(cuota)}`;
+  const sub = saldar && quitar
+    ? `Es de ${money(cuota.monto, mon, 2)} y no se cobró nada. Si se acordó que no la pague (un descuento, un arreglo por el saldo), sale del plan y no queda nada vencido.`
+    : saldar
     ? `Es de ${money(cuota.monto, mon, 2)} y se cobraron ${money(cobrado, mon, 2)}: los ${money(cuota.monto - cobrado, mon, 2)} que faltan no se cobran y la cuota queda pagada.`
     : `Hoy es de ${money(cuota.monto, mon, 2)}${cobrado > 0 ? ` y ya se cobraron ${money(cobrado, mon, 2)}` : ""}.`;
   return (
@@ -141,7 +148,7 @@ function ModalCorregir({ cuota, cobrado, quitar, saldar, onCerrar }: { cuota: Cu
       pie={<><span className="spacer" />
         {problema && <span className="modal__falta">{problema}</span>}
         <Button variante="secondary" onClick={onCerrar}>Cancelar</Button>
-        <Button variante={quitar ? "danger" : "primary"} disabled={problema !== null} onClick={guardar}>{quitar ? "Quitar la cuota" : saldar ? "Dar por saldada" : "Guardar el monto"}</Button></>}
+        <Button variante={quitar && !saldar ? "danger" : "primary"} disabled={problema !== null} onClick={guardar}>{saldar ? "Dar por saldada" : quitar ? "Quitar la cuota" : "Guardar el monto"}</Button></>}
     >
       {!quitar && !saldar && (
         <Field label="Monto correcto" ayuda={cobrado > 0
@@ -153,7 +160,7 @@ function ModalCorregir({ cuota, cobrado, quitar, saldar, onCerrar }: { cuota: Cu
       <Field label="Por qué" ayuda="Es obligatorio: queda anotado en la cuota y en la actividad.">
         <Textarea
           rows={3} value={motivo} onChange={(ev) => setMotivo(ev.target.value)} autoFocus={saldar}
-          placeholder={quitar ? "Ej.: el precio real era 450, esta cuota sobraba" : saldar ? "Ej.: diferencia de redondeo del plan, Stripe le cobra 976 por mes" : "Ej.: el cliente acordó 450 en total"}
+          placeholder={saldar && quitar ? "Ej.: le hicimos un total de 1.000 por el saldo que debía" : quitar ? "Ej.: el precio real era 450, esta cuota sobraba" : saldar ? "Ej.: diferencia de redondeo del plan, Stripe le cobra 976 por mes" : "Ej.: el cliente acordó 450 en total"}
         />
       </Field>
       {venta && precioNuevo !== undefined && precioNuevo !== venta.precioAcordado && (

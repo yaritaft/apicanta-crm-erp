@@ -61,6 +61,18 @@ export function useVistaFicha() {
   }, [router]);
 }
 
+/** Pasa la ficha abierta a la vista Ventas con esa venta abierta y a la vista (Servicio → Pagos → «Ver en Ventas»). */
+export function useVerVentaEnFicha() {
+  const router = useRouter();
+  return useCallback((ventaId: string) => {
+    const url = new URL(window.location.href);
+    url.searchParams.set("vista", "ventas");
+    url.searchParams.set("venta", ventaId);
+    url.searchParams.delete("hoja");
+    router.replace(url.pathname + url.search, { scroll: false });
+  }, [router]);
+}
+
 /** La solapa elegida de la vista Servicio, atada a ?hoja. `hay`: las que se muestran (el Chat no, si va en su columna). */
 export function useSolapaServicio(hay: readonly SolapaServicio[]): [SolapaServicio, (s: SolapaServicio) => void] {
   const router = useRouter();

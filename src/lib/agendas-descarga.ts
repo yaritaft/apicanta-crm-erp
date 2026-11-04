@@ -86,7 +86,7 @@ export interface CrmDeDescarga {
   porPersona: Map<string, FilaTabla>;
   /* Las columnas del CRM que van, en su orden. */
   columnas: ColumnaTabla[];
-  /* El valor de cada venta: con él van «Valor de la venta» y «Falta cobrar» (sólo quien ve los cobros). */
+  /* El valor de cada venta: con él van la Facturación y «Falta cobrar» (sólo quien ve los cobros). */
   valorDeVenta?: Map<string, number>;
 }
 
@@ -94,7 +94,11 @@ export interface CrmDeDescarga {
 const YA_ESTAN: ClaveColumna[] = ["llamada", "nombre", "closer", "estadoLlamada", "email", "telefono", "pais", "agendo"];
 /* Las que salen de las ventas: quien no las lee (un setter) vería «Sin venta» en todas. */
 const DE_VENTAS: ClaveColumna[] = ["venta", "producto"];
-const VALOR = "Valor de la venta";
+/* Con los nombres de las métricas (Santi, 05/11: «necesito que me descargue el campo de venta total así tengo esa
+   métrica»: estaba, pero como «Valor de la venta» y no la encontró). Facturación = lo que vale la venta; Cash collected =
+   lo que ya entró de ella, menos lo devuelto. Los mismos dos números que el reporte del webinar (lib/reporte-webinar.ts). */
+export const CASH = "Cash collected (lo cobrado)";
+export const VALOR = "Facturación (valor total de la venta)";
 const FALTA = "Falta cobrar";
 const numero = (n: number) => String(Math.round(n * 100) / 100);
 
@@ -123,14 +127,14 @@ export function crmDeDescarga(
 }
 
 /* La cabecera y la celda de cada columna del CRM; una que se llama igual que otra que ya está (la «Vía» del
-   webinar) no se repite. «Valor de la venta» y «Falta cobrar» van después de lo cobrado. */
+   webinar) no se repite. La Facturación y «Falta cobrar» van después de lo cobrado. */
 function columnasDelCrm(crm: CrmDeDescarga, yaEstan: string[]): { titulo: string; celda: (f: FilaTabla) => string }[] {
   const usados = new Set(yaEstan.map((t) => t.toLowerCase()));
   const out: { titulo: string; celda: (f: FilaTabla) => string }[] = [];
   const valor = (f: FilaTabla) => f.ventaIds.reduce((a, id) => a + (crm.valorDeVenta?.get(id) ?? 0), 0);
   for (const c of crm.columnas) {
     if (usados.has(c.titulo.toLowerCase())) continue;
-    out.push({ titulo: c.titulo, celda: (f) => celdaParaCsv(c, f) });
+    out.push({ titulo: c.clave === "cobrado" && crm.valorDeVenta ? CASH : c.titulo, celda: (f) => celdaParaCsv(c, f) });
     if (c.clave === "cobrado" && crm.valorDeVenta) {
       out.push({ titulo: VALOR, celda: (f) => (f.ventaIds.length ? numero(valor(f)) : "") });
       out.push({ titulo: FALTA, celda: (f) => (f.ventaIds.length ? numero(Math.max(0, valor(f) - (f.cobrado ?? 0))) : "") });

@@ -16,6 +16,7 @@ import { PersonasWebinar } from "@/components/webinars/PersonasWebinar";
 import { GrupoWhatsapp } from "@/components/webinars/GrupoWhatsapp";
 import { AgendasWebinar } from "@/components/webinars/AgendasWebinar";
 import { TarjetaVias } from "@/components/webinars/ViasWebinar";
+import { ReporteWebinar } from "@/components/webinars/ReporteWebinar";
 import { BotonInforme } from "@/components/webinars/BotonInforme";
 import { useWebinarsAlDia } from "@/components/webinars/useVivo";
 import {
@@ -165,6 +166,9 @@ export default function WebinarFicha() {
           <TarjetaLlamadas w={w} m={m} className="wb-o5" />
         </div>
       </div>
+
+      {/* A todo lo ancho: el reporte que se manda al grupo (Santi y Agustín, 04/11), con la facturación y el cash de esta ficha. */}
+      <ReporteWebinar w={w} />
 
       {/* A todo lo ancho: de dónde vinieron las agendas y cuánto vendió cada vía. */}
       <TarjetaVias w={w} />

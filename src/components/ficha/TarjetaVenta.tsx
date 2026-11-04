@@ -18,6 +18,7 @@ import { puedeDarDeBaja, puedeEditar, puedeFijarComisionDeSetter } from "@/lib/p
 import { EstrategiaRapida } from "@/components/ventas/EstrategiaRapida";
 import { textoDeTasa } from "@/lib/comision-setter";
 import { esIncobrable } from "@/lib/cuota-incobrable";
+import { cobroDeCuota } from "@/lib/estado-cuota";
 import { estaPorAcreditar, fechaDeAcreditacion, retenciones } from "@/lib/acreditacion";
 import { AccionesDeCuota } from "@/components/cobros/AccionesDeCuota";
 import { CambiarPlan } from "@/components/cobros/CambiarPlan";
@@ -69,11 +70,8 @@ export function TarjetaVenta({ e, venta, resaltada, abierta, onAlternar, onPagar
   /* Los cobros de una cuenta que retiene (Hotmart) que todavía no se acreditaron: no cuentan como plata hasta ese día. */
   const retencion = retenciones(e.procesadores);
   const filas = saldo.cuotas.map((c) => {
-    const pagos = e.pagos.filter((p) => p.cuotaId === c.id);
-    const pagado = pagos.reduce((a, p) => a + p.monto, 0);
-    const resta = c.monto - pagado;
-    const vencida = c.estado === "pendiente" && c.vence && new Date(c.vence) < new Date() && resta > 0.01;
-    return { c, pagos, pagado, resta, vencida };
+    const { pagos, pagado, resta, estado } = cobroDeCuota(c, e.pagos);
+    return { c, pagos, pagado, resta, vencida: estado === "vencida" };
   });
 
   /* Plegada, lo que importa del cobro en una palabra. */

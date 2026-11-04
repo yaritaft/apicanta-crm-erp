@@ -38,6 +38,7 @@ import { FormTestimonioCs } from "@/components/cs/TestimoniosCs";
 import { FormResell } from "@/components/cs/ResellsCs";
 import { SOLAPAS_SERVICIO, useSolapaServicio, type SolapaServicio } from "./abrir";
 import { HistorialPersona } from "./HistorialPersona";
+import { cuotasVencidas, PagosServicio } from "./PagosServicio";
 import { acciones } from "@/lib/store";
 import { useAcceso } from "@/lib/acceso";
 import { nivelEn, puedeEditar } from "@/lib/permisos";
@@ -197,7 +198,7 @@ function HojaDeUnServicio({ e, p, f, venta, producto, conChat, reserva }: {
   const cfg = configSeguimiento(e.ajustes.seguimiento);
   const filas = useMemo(() => filasClientes(e, hoy), [e, hoy]);
   const { listas, opcionesDe, sugerenciasDe, guardar } = useEdicionCliente(filas, hoy);
-  const permitidas = soloMira ? SOLAPAS_DEL_CLOSER : SOLAPAS_SERVICIO;
+  const permitidas = (soloMira ? SOLAPAS_DEL_CLOSER : SOLAPAS_SERVICIO).filter((s) => venta || s !== "pagos");
   const [solapa, setSolapa] = useSolapaServicio(conChat ? permitidas.filter((s) => s !== "chat") : permitidas);
   const solapasRef = useSolapasQueSeDeslizan(solapa);
   const [editando, setEditando] = useState<ClaveCliente | "programa" | null>(null);
@@ -307,6 +308,8 @@ function HojaDeUnServicio({ e, p, f, venta, producto, conChat, reserva }: {
 
   const todasLasSolapas: { id: Solapa; texto: string; n?: number }[] = [
     { id: "programa", texto: "Programa" },
+    /* Los pagos de la compra (Mariano, 04/11): sin salir del Servicio. Un alumno sin venta no tiene qué mostrar. */
+    ...(venta ? [{ id: "pagos" as Solapa, texto: "Pagos" }] : []),
     { id: "contrato", texto: "Contrato" },
     { id: "accesos", texto: "Accesos" },
     /* Las clases de Zoom a las que entró (Yari, 22/10: «saber si vino o no a las clases»), en su propia solapa. */
@@ -392,7 +395,8 @@ function HojaDeUnServicio({ e, p, f, venta, producto, conChat, reserva }: {
       <div ref={solapasRef} className="hs-solapas" role="tablist" aria-label="Qué ver del servicio">
         {solapas.map((s) => {
           const n = s.id === "datos" ? faltanEn(DE_DATOS) : s.id === "programa" ? faltanEn(DE_PROGRAMA) : s.id === "seguimiento" ? faltanEn(["followUp"])
-            : s.id === "contrato" ? faltanEn(["contrato"]) : s.id === "accesos" ? faltanEn(["acceso"]) : 0;
+            : s.id === "contrato" ? faltanEn(["contrato"]) : s.id === "accesos" ? faltanEn(["acceso"])
+            : s.id === "pagos" ? cuotasVencidas(e, venta) : 0;
           return (
             <button key={s.id} type="button" role="tab" aria-selected={solapa === s.id} className="hs-solapa" onClick={() => setSolapa(s.id)}>
               {s.texto}
@@ -494,6 +498,8 @@ function HojaDeUnServicio({ e, p, f, venta, producto, conChat, reserva }: {
           )}
         </>
       )}
+
+      {solapa === "pagos" && venta && <PagosServicio e={e} venta={venta} />}
 
       {/* El contrato de PandaDoc y los accesos (Wisboo, Telegram, Zoom), cada uno en su solapa y con las mismas filas
           (Juan Cruz, 21/10): lo que hizo la app y, donde todavía no hizo nada, lo marcado a mano en la ficha (con su

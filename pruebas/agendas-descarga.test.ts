@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { clasesDe, crmDeDescarga, csvDeDescarga, filasDeDescargaDelCrm, tablaDeDescarga, type FilaDescarga } from "@/lib/agendas-descarga";
+import { CASH, clasesDe, crmDeDescarga, csvDeDescarga, filasDeDescargaDelCrm, tablaDeDescarga, type FilaDescarga, VALOR } from "@/lib/agendas-descarga";
 import { construirSemilla } from "@/lib/seed";
 import { COLUMNAS, filasTabla } from "@/lib/crm-tabla";
 import { NO_SE_PRESENTO, REPROGRAMO } from "@/lib/estados";
@@ -142,15 +142,15 @@ test("con la venta: producto, lo cobrado (número), el valor y lo que falta, y l
   const { tabla } = tablaDeDescarga([{ s: conVenta.sesion, estado: "Compra Full", clases: [], extra: ["Después", "Replay"] }], ["Momento", "Vía"], crm);
   const [cab, fila] = tabla;
   const de = (t: string) => fila[cab.indexOf(t)];
-  for (const t of ["Producto", "Cobrado (CC)", "Valor de la venta", "Falta cobrar", "Venta", "Conciliado", "Ad", "Campaña", "Gana por mes", "Notas"]) {
+  for (const t of ["Producto", CASH, VALOR, "Falta cobrar", "Venta", "Conciliado", "Ad", "Campaña", "Gana por mes", "Notas"]) {
     assert.ok(cab.includes(t), `falta la columna ${t}`);
   }
   assert.equal(de("Producto"), conVenta.productos.join(", "));
-  assert.equal(Number(de("Cobrado (CC)")), conVenta.cobrado, "lo cobrado sale como número, para sumarlo");
+  assert.equal(Number(de(CASH)), conVenta.cobrado, "lo cobrado sale como número, para sumarlo");
   const valor = conVenta.ventaIds.reduce((a, id) => a + (e.ventas.find((v) => v.id === id)?.precioAcordado ?? 0), 0);
-  assert.equal(Number(de("Valor de la venta")), valor);
+  assert.equal(Number(de(VALOR)), valor);
   assert.equal(Number(de("Falta cobrar")), Math.max(0, Math.round((valor - (conVenta.cobrado ?? 0)) * 100) / 100));
-  assert.equal(cab.indexOf("Valor de la venta"), cab.indexOf("Cobrado (CC)") + 1, "el valor va al lado de lo cobrado");
+  assert.equal(cab.indexOf(VALOR), cab.indexOf(CASH) + 1, "el valor va al lado de lo cobrado");
   assert.equal(new Set(cab).size, cab.length, "ninguna columna se repite (la «Vía» del webinar, el mail, el teléfono)");
   /* Una agenda que el CRM no muestra (un evento que no es de sus tablas) trae lo de su persona: la llamada con venta,
      aunque después haya tenido otra sin venta. */
@@ -159,14 +159,15 @@ test("con la venta: producto, lo cobrado (número), el valor y lo que falta, y l
   assert.equal(filaOtra[cab.indexOf("Producto")], conVenta.productos.join(", "), "la de su persona");
   /* Una columna nueva del CRM sale sola: todas las del catálogo están, salvo las que ya iban. */
   const yaIban = ["Llamada", "Persona", "Closer", "Estado de Llamada", "Email", "Teléfono", "País", "Agendó el", "Vía"];
-  for (const c of COLUMNAS) if (!yaIban.includes(c.titulo)) assert.ok(cab.includes(c.titulo), `la columna del CRM «${c.titulo}» no salió`);
+  /* Lo cobrado sale con el nombre de la métrica (Cash collected), al lado de la Facturación. */
+  for (const c of COLUMNAS) if (!yaIban.includes(c.titulo)) assert.ok(cab.includes(c.clave === "cobrado" ? CASH : c.titulo), `la columna del CRM «${c.titulo}» no salió`);
 });
 
 test("quien no ve ventas ni cobros (un setter) baja lo del CRM sin la plata", () => {
   const e = construirSemilla() as EstadoApp;
   const s = e.sesiones[0];
   const { tabla } = tablaDeDescarga([{ s, estado: "", clases: [] }], [], crmDeDescarga(e, { ventas: false, cobros: false }));
-  for (const t of ["Producto", "Venta", "Cobrado (CC)", "Valor de la venta", "Falta cobrar", "Conciliado", "Chequeo"]) {
+  for (const t of ["Producto", "Venta", CASH, VALOR, "Falta cobrar", "Conciliado", "Chequeo"]) {
     assert.ok(!tabla[0].includes(t), `un setter no tendría que ver «${t}»`);
   }
   assert.ok(tabla[0].includes("Ad") && tabla[0].includes("Gana por mes"), "lo del origen y el perfil sí");
@@ -177,7 +178,7 @@ test("una agenda sin venta: lo de la venta dice «Sin venta» y los números que
   const sin = filasTabla(e).find((f) => f.ventaIds.length === 0)!;
   const { tabla: [cab, fila] } = tablaDeDescarga([{ s: sin.sesion, estado: "", clases: [] }], [], crmDeDescarga(e, { ventas: true, cobros: true }));
   assert.equal(fila[cab.indexOf("Producto")], "Sin venta");
-  assert.equal(fila[cab.indexOf("Cobrado (CC)")], "");
-  assert.equal(fila[cab.indexOf("Valor de la venta")], "");
+  assert.equal(fila[cab.indexOf(CASH)], "");
+  assert.equal(fila[cab.indexOf(VALOR)], "");
   assert.equal(fila[cab.indexOf("Falta cobrar")], "");
 });
