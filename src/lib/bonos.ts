@@ -20,6 +20,13 @@ export const MESES_DE_LAS_SESIONES = 3;
 /** Una sesión del contrato (con el mentor, sea quien sea) y no un acompañamiento de Customer Success. */
 export const esDelMentor = (s: Pick<SesionUnoAUno, "con">) => !s.con.trim().toLowerCase().startsWith("lili");
 
+/** Si una llamada de la agenda es una sesión 1 a 1 (el evento «Sesión 1 a 1» de Yari: calendly.com/yari-taft/sesion-1-a-1, Lili
+    04/11). Entran solas a la ficha (supabase/sesiones-1a1-y-avisos-de-resell.sql, es_sesion_uno_a_uno: el mismo criterio). */
+export function esSesionUnoAUno(s: { tipo?: string | null; titulo?: string | null }): boolean {
+  const t = `${s.tipo ?? ""} ${s.titulo ?? ""}`.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  return /(^|[^0-9])1\s*(a|:|-a-|-)\s*1([^0-9]|$)|uno a uno/.test(t);
+}
+
 /** Cómo se dice con quién fue: «Mentor» es «el mentor»; Yari, Lili o cualquier otro nombre, tal cual. */
 export const conQuien = (con: string) => (con.trim().toLowerCase() === "mentor" ? "el mentor" : con.trim());
 

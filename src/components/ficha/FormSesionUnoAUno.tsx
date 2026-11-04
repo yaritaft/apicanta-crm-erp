@@ -34,6 +34,7 @@ export function FormSesionUnoAUno({ alumnoId, nombre, sesion, con, onCerrar }: {
   function escribir(borrar: boolean) {
     const ahora = new Date().toISOString();
     const nueva: SesionUnoAUno = {
+      ...(sesion?.sesionId ? { sesionId: sesion.sesionId } : {}),
       id: sesion?.id ?? nuevoId("ses1a1"), fecha: b.fecha, con: b.con.trim() || "Mentor", notas: b.notas.trim(), grabacion: b.grabacion.trim(),
       creadoEn: sesion?.creadoEn ?? ahora, creadoPor: sesion?.creadoPor ?? "",
     };
@@ -64,7 +65,11 @@ export function FormSesionUnoAUno({ alumnoId, nombre, sesion, con, onCerrar }: {
         <Field label="Link de la grabación" span2 error={linkOk ? undefined : "Tiene que empezar con http:// o https://"}>
           <Input value={b.grabacion} onChange={(ev) => set("grabacion", ev.target.value)} placeholder="https://…" error={!linkOk} />
         </Field>
-        {sesion && (
+        {/* Una de Calendly sale sola si se cancela allá (supabase/sesiones-1a1-y-avisos-de-resell.sql): acá no se borra, porque
+            sigue agendada y la base la volvería a poner. */}
+        {sesion?.sesionId ? (
+          <p className="t-sm t-subtle" style={{ gridColumn: "1 / -1", margin: 0 }}>Se agendó por Calendly: si se cancela allá, sale sola de la ficha.</p>
+        ) : sesion && (
           <div style={{ gridColumn: "1 / -1" }}>
             <Button variante="ghost" sm icono={<Trash2 size={14} />} onClick={() => escribir(true)}>Borrar esta sesión</Button>
           </div>

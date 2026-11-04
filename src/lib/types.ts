@@ -348,6 +348,8 @@ export interface SesionUnoAUno {
   grabacion: string;
   creadoEn: string;
   creadoPor: string;
+  /* La llamada de Calendly de la que salió (supabase/sesiones-1a1-y-avisos-de-resell.sql la anota sola); sin esto, se anotó a mano. */
+  sesionId?: string;
 }
 
 export interface SeguimientoAlumno {

@@ -51,6 +51,16 @@ export function hace(iso: string, ahora: number = Date.now()): string {
 }
 
 /** El renglón de abajo del título: de qué ficha es. */
+/** La solapa de la ficha (vista Servicio) que abre cada aviso: el contrato, los accesos del outboarding (también el resell que
+    termina en Outboarding: si es alumno viejo, se sacan a mano), la llamada cerrada en Testimonio y la sesión 1 a 1 en Bonos. */
+export function hojaDelAviso(tipo: string): "contrato" | "accesos" | "testimonio" | "bonos" | undefined {
+  if (tipo === "contrato" || tipo === "roadmap") return "contrato";
+  if (tipo === "outboarding" || tipo === "resell-outboarding") return "accesos";
+  if (tipo === "resell-cerrado") return "testimonio";
+  if (tipo === "sesion-1a1") return "bonos";
+  return undefined;
+}
+
 export const dondeEs = (a: Pick<Aviso, "persona"> & Partial<Pick<Aviso, "tipo">>): string =>
   a.persona ? `En la ficha de ${a.persona}` : a.tipo === "pandadoc" ? "Contratos de PandaDoc" : a.tipo === "acceso" ? "Pedido de acceso · se resuelve en Equipo"
     : a.tipo === TIPO_AVISO_ORIGEN ? "Conciliar el origen · se resuelve en tu panel"

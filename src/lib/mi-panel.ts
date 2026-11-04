@@ -1,4 +1,4 @@
-import type { Cuota, EstadoApp, MiembroEquipo, Pago, Sesion, Venta } from "./types";
+import type { Alumno, Cuota, EstadoApp, MiembroEquipo, Pago, Sesion, Venta } from "./types";
 import { esLlamadaDeResell } from "./resells";
 import { rangoDeFechas, type RangoMes } from "./metricas";
 import { comisionesDelMes, comisionSetterDePago, closerDeCuota, pagosDelMes, ventasDelMes, type ComisionVenta } from "./finanzas";
@@ -16,6 +16,7 @@ import { haceCuanto, pedidosDeCloser, type PedidoDeVenta } from "./pedidos-de-ve
 import { rechazoDeCobro } from "./rechazos-de-cobro";
 import { medioDeMovimiento } from "./conciliacion";
 import { filasResells, resellAbierto, type FilaResell } from "./clientes-cs";
+import { esDelMentor, esSesionUnoAUno } from "./bonos";
 
 /* ==================================================================
    «Mi panel» (reunión del 15/10, armado sobre el Mi Panel de Blue OS): lo
@@ -430,4 +431,38 @@ export function llamadasParaCerrar(e: EstadoApp, m: MiembroEquipo, ahora = Date.
     .filter((f) => resellAbierto(f.resell, ahora)
       && (m.rol === "director" || esDe(f.resell.closer, m.nombre) || (VEN_LAS_DE_YARI.includes(m.id) && esDe(f.resell.closer, yari))))
     .sort((a, b) => a.resell.fechaHora.localeCompare(b.resell.fechaHora));
+}
+
+/* ---------- Las sesiones 1 a 1 que vienen (Lili, 04/11) ----------
+   Las que la persona da como mentor (es el anfitrión en Calendly: Yari, y Nahuel desde diciembre). Entran solas a la ficha del
+   alumno y le llega un aviso (supabase/sesiones-1a1-y-avisos-de-resell.sql); acá las tiene juntas, con cuántas lleva el alumno de
+   las que incluye su contrato. Desde hoy a la mañana, así la de hoy no desaparece al empezar. */
+export interface SesionUnoAUnoQueViene {
+  sesion: Sesion;
+  alumno?: Alumno;
+  /* Qué número de sesión con el mentor es (contando las de la ficha hasta ese día, ésta incluida) y cuántas incluye el contrato
+     (null: no se cargó). */
+  numero: number;
+  incluidas: number | null;
+}
+
+export function sesionesUnoAUnoQueVienen(e: Pick<EstadoApp, "sesiones" | "equipo" | "alumnos"> & Partial<Pick<EstadoApp, "seguimientos">>,
+  m: Pick<MiembroEquipo, "nombre">, ahora = Date.now()): SesionUnoAUnoQueViene[] {
+  const hoy = diaDeNegocio(new Date(ahora).toISOString());
+  const porMail = new Map<string, Alumno>();
+  for (const a of e.alumnos ?? []) {
+    const k = a.email.trim().toLowerCase();
+    if (k && (!porMail.has(k) || a.estado === "activo")) porMail.set(k, a);
+  }
+  const seg = new Map((e.seguimientos ?? []).map((x) => [x.alumnoId, x]));
+  return e.sesiones
+    .filter((s) => s.estado !== "cancelada" && esSesionUnoAUno(s) && diaDeNegocio(s.inicia) >= hoy && esDelCloser(s, m.nombre, e.equipo))
+    .sort((a, b) => a.inicia.localeCompare(b.inicia))
+    .map((sesion) => {
+      const alumno = (sesion.alumnoId ? e.alumnos.find((a) => a.id === sesion.alumnoId) : undefined) ?? porMail.get((sesion.email ?? "").trim().toLowerCase());
+      const f = alumno ? seg.get(alumno.id) : undefined;
+      const dia = diaDeNegocio(sesion.inicia);
+      const antes = (f?.sesionesUnoAUno ?? []).filter((x) => esDelMentor(x) && x.sesionId !== sesion.id && x.fecha <= dia).length;
+      return { sesion, alumno, numero: antes + 1, incluidas: f?.sesionesMentor ?? null };
+    });
 }

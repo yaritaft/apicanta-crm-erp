@@ -13,7 +13,7 @@ import { useParamsURL } from "@/lib/useParamsURL";
 import { useRangoURL } from "@/lib/useRango";
 import { nivelDeRuta } from "@/lib/permisos";
 import { money } from "@/lib/format";
-import { conPanel, miPanelDe, rangoDelPanel, vistaDePanel } from "@/lib/mi-panel";
+import { conPanel, miPanelDe, rangoDelPanel, sesionesUnoAUnoQueVienen, vistaDePanel } from "@/lib/mi-panel";
 import { Eye } from "lucide-react";
 import { BarraVerComo } from "./BarraVerComo";
 import { DetalleComisiones, DetalleMesa, type TramoMesa } from "./Detalles";
@@ -22,6 +22,7 @@ import { PanelServicio } from "./PanelServicio";
 import { TarjetaSimulacro } from "@/components/simulacros/Simulacros";
 import { TarjetaConsultas } from "@/components/consultas/Consultas";
 import { LlamadasParaCerrar } from "./LlamadasParaCerrar";
+import { SesionesUnoAUno } from "./SesionesUnoAUno";
 import { CuotasVencidas } from "./CuotasVencidas";
 import { PendientesDeConciliar } from "@/components/conciliacion/PendientesDeConciliar";
 import { TarjetaOrigen } from "@/components/conciliacion/TarjetaOrigen";
@@ -152,6 +153,8 @@ export function MiPanel() {
       {/* Yari y Nahuel toman los simulacros de entrevista de los martes (Lili, 23/10) y responden las consultas de los jueves (24/10). */}
       {TOMAN_SIMULACROS.includes(miembro.id) && <TarjetaSimulacro />}
       {TOMAN_SIMULACROS.includes(miembro.id) && <TarjetaConsultas />}
+      {/* Las sesiones 1 a 1 que da como mentor (Lili, 04/11): entran solas por Calendly. */}
+      <SesionesUnoAUno sesiones={sesionesUnoAUnoQueVienen(e, miembro, ahora)} ahora={ahora} />
       {/* Resells y testimonios que ya pasaron y no dicen cómo salieron (Lili, 24/10). */}
       <LlamadasParaCerrar e={e} miembro={miembro} llamadas={datos.llamadasParaCerrar} viendoOtro={viendoOtro} />
 

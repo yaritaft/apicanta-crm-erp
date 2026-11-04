@@ -887,6 +887,15 @@ type LlamadaParaCerrar = Pick<Resell, "fechaHora" | "estado"> & Partial<Pick<Res
 export const esDeTestimonio = (r: Pick<Resell, "fechaHora"> & Partial<Pick<Resell, "casoDeExito">>): boolean =>
   Boolean(r.casoDeExito) && r.fechaHora.slice(0, 10) >= TESTIMONIO_DESDE;
 
+/** El testimonio que corresponde a una llamada: el que se grabó (o se iba a grabar) ese día y, si no hay, el más nuevo. Igual que
+    resell_testimonio_a_ficha (supabase/sesiones-1a1-y-avisos-de-resell.sql): Jean Camacho tenía dos testimonios creados en el mismo
+    momento (del Airtable) y se elegía cualquiera. */
+export function testimonioDeLaLlamada<T extends Pick<Testimonio, "alumnoId" | "fechaGrabacion" | "creadoEn" | "id">>(lista: readonly T[], alumnoId: string, dia: string): T | undefined {
+  const delDia = (t: T) => String(t.fechaGrabacion ?? "").slice(0, 10) === dia;
+  return lista.filter((t) => t.alumnoId === alumnoId)
+    .sort((a, b) => Number(delDia(b)) - Number(delDia(a)) || b.creadoEn.localeCompare(a.creadoEn) || b.id.localeCompare(a.id))[0];
+}
+
 /** Lo que falta cargar de una llamada para cerrarla, en palabras (vacío: no falta nada). */
 export function faltaDeLaLlamada(r: LlamadaParaCerrar): string[] {
   if (r.testimonio === "Se reagenda") return [];

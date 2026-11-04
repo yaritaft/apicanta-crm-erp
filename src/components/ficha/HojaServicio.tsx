@@ -31,7 +31,7 @@ import { SimulacrosAlumno } from "@/components/simulacros/Simulacros";
 import { ConsultasAlumno } from "@/components/consultas/Consultas";
 import { textoDePausa } from "@/lib/pausas";
 import { ventaPendienteDe } from "@/lib/alumnos";
-import { resumenBonos } from "@/lib/bonos";
+import { esDelMentor, resumenBonos } from "@/lib/bonos";
 import { programaDeProducto, programasDe } from "@/lib/programas";
 import { reservaSinCompletar, type EstadoReserva } from "@/lib/reservas";
 import { FormTestimonioCs } from "@/components/cs/TestimoniosCs";
@@ -585,7 +585,8 @@ function HojaDeUnServicio({ e, p, f, venta, producto, conChat, reserva }: {
           : b.vencidas ? { tono: "hs-chip--rojo", texto: `Vencieron ${b.quedan} sin tomar` }
           : { tono: b.quedan ? "hs-chip--ok" : "", texto: b.quedan ? `Le ${b.quedan === 1 ? "queda" : "quedan"} ${b.quedan} de ${b.incluidas}` : `Tomó las ${b.incluidas}` };
         const sesion = (s: SesionUnoAUno) => (
-          <FilaServicio key={s.id} icono={<CalendarCheck size={15} />} rotulo={formatoDia(s.fecha, hoy)} detalle={s.notas || undefined}>
+          <FilaServicio key={s.id} icono={<CalendarCheck size={15} />} rotulo={formatoDia(s.fecha, hoy)}
+            detalle={[s.sesionId ? `Por Calendly${esDelMentor(s) && s.con !== "Mentor" ? `, con ${s.con}` : ""}${s.fecha > hoy ? " · todavía no pasó" : ""}` : "", s.notas].filter(Boolean).join(" · ") || undefined}>
             {s.grabacion ? <a className="link t-sm" href={s.grabacion} target="_blank" rel="noopener noreferrer">Grabación</a> : <span className="hs-guion">Sin grabación</span>}
             {puede && <Button sm variante="ghost" icono={<Pencil size={13} />} onClick={() => setFormSesion({ s })} aria-label={`Corregir la sesión del ${formatoDia(s.fecha, hoy)}`}>Editar</Button>}
           </FilaServicio>

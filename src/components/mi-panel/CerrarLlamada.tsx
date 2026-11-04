@@ -8,7 +8,7 @@ import { useToast } from "@/components/ui/Toast";
 import { acciones, useEstado } from "@/lib/store";
 import { diaDeNegocio } from "@/lib/dia-negocio";
 import { fechaLarga, money } from "@/lib/format";
-import { esDeTestimonio, testimonioNormal, type FilaResell } from "@/lib/clientes-cs";
+import { esDeTestimonio, testimonioDeLaLlamada, testimonioNormal, type FilaResell } from "@/lib/clientes-cs";
 import { leerMontoCs } from "@/lib/importar-cs";
 import type { Resell, Testimonio } from "@/lib/types";
 
@@ -87,7 +87,7 @@ export function CerrarLlamada({ fila, onCerrar, onListo }: { fila: FilaResell; o
     /* Lo del testimonio pasa solo a la ficha del alumno (su Testimonio) en la base, lo cierre quien lo cierre
        (supabase/resells-testimonio.sql): Mariano y el director no editan alumnos. Si el alumno ya tiene su testimonio y esta
        cuenta lo ve, se cambia también acá, para verlo al instante (con lo mismo que escribe la base); uno nuevo lo crea la base. */
-    const t0 = fila.alumno && resultadoT ? (e.testimonios ?? []).filter((t) => t.alumnoId === fila.alumno!.id).sort((a, b) => b.creadoEn.localeCompare(a.creadoEn))[0] : undefined;
+    const t0 = fila.alumno && resultadoT ? testimonioDeLaLlamada(e.testimonios ?? [], fila.alumno.id, diaDeNegocio(r.fechaHora)) : undefined;
     if (t0) {
       const base = testimonioNormal(t0);
       const resellT = resultado === "si" ? "Renueva" : resultado === "seguimiento" ? "Lo piensa" : resultado ? "No renueva" : base.resell;

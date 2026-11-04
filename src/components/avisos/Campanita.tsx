@@ -12,7 +12,7 @@ import { useAcceso } from "@/lib/acceso";
 import { useEstado } from "@/lib/store";
 import { personaDe } from "@/lib/persona";
 import { fotoDe, mapaDeFotos } from "@/lib/fotos-perfil";
-import { alCambiarAvisos, dondeEs, hace, marcarEnLista, mesDeAvisoOrigen, sinLeer, sumarAviso, TIPO_AVISO_ORIGEN, type Aviso } from "@/lib/avisos";
+import { alCambiarAvisos, dondeEs, hace, hojaDelAviso, marcarEnLista, mesDeAvisoOrigen, sinLeer, sumarAviso, TIPO_AVISO_ORIGEN, type Aviso } from "@/lib/avisos";
 import { leerAvisos, marcarLeidos, marcarTodosLeidos } from "./avisos-nube";
 import "./avisos.css";
 
@@ -126,8 +126,9 @@ export function Campanita() {
     /* Si la persona es alumna, en Servicio; si no, en Ventas. El chat está en las dos. */
     const p = personaDe(e, a.contactoId);
     /* Un contrato que no salió o se firmó, o el roadmap para mandar por WhatsApp: la solapa Contrato del servicio, si ya hay
-       servicio (si no, la venta lo muestra). El outboarding automático (lib/outboarding-servidor.ts): la solapa Accesos. */
-    const hoja = !p?.alumnos.length ? undefined : a.tipo === "contrato" || a.tipo === "roadmap" ? "contrato" as const : a.tipo === "outboarding" ? "accesos" as const : undefined;
+       servicio (si no, la venta lo muestra). El outboarding automático (lib/outboarding-servidor.ts): la solapa Accesos. El resto, en
+       hojaDelAviso (lib/avisos.ts). */
+    const hoja = !p?.alumnos.length ? undefined : hojaDelAviso(a.tipo);
     abrirFicha(a.contactoId, p?.alumnos.length ? "servicio" : "ventas", hoja ? { hoja } : undefined);
   };
   const todos = () => {
