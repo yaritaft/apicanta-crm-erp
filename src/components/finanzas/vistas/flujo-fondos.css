@@ -1,0 +1,56 @@
+/* Flujo de fondos (Finanzas): la plata disponible día por día. Los colores salen de la rampa de visual.css: violeta para la línea,
+   verde lo que entra, rojo sólo cuando falta plata. */
+
+.ff-cifra__sub { font-size: 12px; line-height: 16px; color: var(--ink-subtle); font-variant-numeric: tabular-nums; }
+.ff-alerta { margin: var(--space-3) 0 0; font-size: 13px; line-height: 19px; color: var(--danger); }
+.ff-titulo { margin: 0 0 var(--space-3); }
+
+/* El gráfico */
+.ff-grafico { position: relative; display: grid; grid-template-columns: auto minmax(0, 1fr); grid-template-rows: 180px auto; column-gap: var(--space-3); margin: 0; }
+.ff-grafico__ejes { display: flex; flex-direction: column; justify-content: space-between; font-size: 11px; line-height: 14px; color: var(--ink-subtle); text-align: right; font-variant-numeric: tabular-nums; }
+.ff-grafico__lienzo { position: relative; border-bottom: 1px solid var(--border); }
+.ff-grafico__lienzo svg { display: block; width: 100%; height: 100%; overflow: visible; }
+.ff-grafico__area { fill: color-mix(in srgb, var(--viz-3) 18%, transparent); }
+.ff-grafico__linea { fill: none; stroke: var(--viz-3); stroke-width: 2; vector-effect: non-scaling-stroke; stroke-linejoin: round; }
+.ff-grafico__cero { stroke: var(--danger); stroke-width: 1; stroke-dasharray: 4 4; vector-effect: non-scaling-stroke; }
+.ff-grafico__punto { position: absolute; width: 10px; height: 10px; margin: -5px 0 0 -5px; border-radius: 50%; background: var(--viz-3); box-shadow: 0 0 0 3px var(--surface-100); }
+.ff-grafico__punto[data-tono="mal"] { background: var(--danger); }
+.ff-grafico__fechas { grid-column: 2; display: flex; justify-content: space-between; padding-top: 6px; font-size: 12px; line-height: 16px; color: var(--ink-subtle); }
+
+/* Semanas y próximos días, lado a lado */
+.ff-dos { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-5); align-items: start; }
+.ff-tabla__marco { overflow-x: auto; }
+.ff-tabla { width: 100%; border-collapse: collapse; font-size: 14px; line-height: 20px; font-variant-numeric: tabular-nums; }
+.ff-tabla th { padding: 0 0 8px; font-size: 12px; font-weight: 600; color: var(--ink-subtle); text-align: right; }
+.ff-tabla th:first-child, .ff-tabla td:first-child { text-align: left; }
+.ff-tabla td { padding: 7px 0; border-top: 1px solid var(--border); text-align: right; color: var(--ink); white-space: nowrap; }
+.ff-tabla td + td, .ff-tabla th + th { padding-left: var(--space-3); }
+.ff-tabla td[data-tono="mal"] { color: var(--danger); font-weight: 600; }
+.ff-entra { color: var(--success); }
+.ff-sale { color: var(--ink-muted); }
+
+.ff-proximos { display: flex; flex-direction: column; gap: var(--space-3); }
+.ff-pub { margin: 0; font-size: 13px; line-height: 18px; color: var(--ink-subtle); }
+.ff-dia { display: grid; grid-template-columns: 82px minmax(0, 1fr); gap: var(--space-3); padding-top: var(--space-3); border-top: 1px solid var(--border); }
+.ff-dia:first-of-type { border-top: 0; padding-top: 0; }
+.ff-dia__fecha { font-size: 13px; line-height: 20px; font-weight: 600; color: var(--ink); }
+.ff-dia ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.ff-dia li { display: flex; justify-content: space-between; gap: var(--space-3); font-size: 14px; line-height: 20px; font-variant-numeric: tabular-nums; }
+.ff-dia__concepto { min-width: 0; color: var(--ink); overflow-wrap: anywhere; }
+.ff-dia__concepto small { font-size: 12px; color: var(--ink-subtle); }
+.ff-dia li > span:last-child { white-space: nowrap; }
+
+.ff-supuestos { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 8px; font-size: 14px; line-height: 21px; color: var(--ink-muted); }
+.ff-supuestos b { color: var(--ink); font-weight: 600; }
+.ff-categorias { display: block; margin-top: 2px; font-size: 12px; line-height: 18px; color: var(--ink-subtle); font-variant-numeric: tabular-nums; }
+
+@media (max-width: 900px) {
+  .ff-dos { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 640px) {
+  .ff-cifras { grid-template-columns: repeat(2, minmax(0, 1fr)); row-gap: var(--space-3); }
+  .ff-cifras .sd-cifra__valor { font-size: 21px; line-height: 28px; }
+  .ff-tabla { font-size: 13px; }
+  .ff-grafico { grid-template-rows: 140px auto; }
+  .ff-dia { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+}

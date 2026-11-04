@@ -336,7 +336,7 @@ test("los tipos de fábrica siguen con su menú de siempre", () => {
     closer: ["/mis-llamadas", "/mi-panel", "/crm", "/ventas", "/cerrar-el-dia", "/cargar-venta"],
     setter: ["/mi-panel", "/leads", "/crm", "/agenda"],
     director: ["/panel", "/mi-panel", "/leads", "/crm", "/agenda", "/ventas", "/clientes", "/webinars", "/formularios", "/grupos-whatsapp"],
-    admin: ["/panel", "/ventas", "/clientes", "/finanzas", "/finanzas/saldos", "/finanzas/end-of-day", "/finanzas/resultados", "/finanzas/transacciones"],
+    admin: ["/panel", "/ventas", "/clientes", "/finanzas", "/finanzas/saldos", "/finanzas/flujo", "/finanzas/end-of-day", "/finanzas/resultados", "/finanzas/transacciones"],
     /* El CRM y la Agenda para mirar (Agustín, 26/10); sin «Mi panel», que es de quien trabaja las llamadas. */
     marketing: ["/panel", "/leads", "/crm", "/agenda", "/webinars", "/formularios", "/grupos-whatsapp", "/marketing", "/marketing?nivel=conciliacion"],
     /* «Simulacros» (Lili, 23/10): la clase de entrevistas de los martes. */

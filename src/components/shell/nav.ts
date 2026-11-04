@@ -1,7 +1,7 @@
 import {
   LayoutDashboard, Users, Sheet, CalendarDays, Video, Megaphone,
   GraduationCap, ClipboardList, Wallet, Settings, HandCoins, ArrowDownUp, Banknote, Landmark, UserCheck,
-  ClipboardCheck, PhoneCall, ListChecks, FileInput, UserRound, CalendarCheck, TrendingUp, ArrowLeftRight, GitMerge, MessagesSquare,
+  ClipboardCheck, PhoneCall, ListChecks, FileInput, UserRound, CalendarCheck, TrendingUp, ArrowLeftRight, GitMerge, MessagesSquare, ChartLine,
 } from "lucide-react";
 import { MessageCircleQuestion, Mic, SquareKanban } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
@@ -70,11 +70,12 @@ export const NAV: GrupoNav[] = [
   {
     titulo: "Administración",
     items: [
-      /* Finanzas en cinco: los pasos del mes (conciliar, validar cobros, caja, gastos y liquidación adentro de cada paso), los
-         Saldos (cuánta plata hay en cada cuenta: lo de arriba de la Caja), el End of Day (el cierre del día, como el de los closers),
+      /* Finanzas en seis: los pasos del mes (conciliar, validar cobros, caja, gastos y liquidación adentro de cada paso), los
+         Saldos (cuánta plata hay en cada cuenta: lo de arriba de la Caja), el Flujo de fondos (cómo sigue), el End of Day (el cierre del día, como el de los closers),
          el P&L y Transacciones (todo lo que entró y salió, de todas las cuentas). Caja y Conciliación siguen andando por su link. */
       { href: "/finanzas", texto: "Finanzas", icono: Wallet, ayuda: "Los pasos del mes: conciliar, validar cobros, caja, gastos y liquidación" },
       { href: "/finanzas/saldos", texto: "Saldos", icono: Landmark, ayuda: "Cuánta plata hay en cada cuenta y cuánta entró y salió en el mes" },
+      { href: "/finanzas/flujo", texto: "Flujo de fondos", icono: ChartLine, ayuda: "Cuánta plata hay para operar y cómo sigue, día por día, con las cuotas que vencen y los gastos que vienen" },
       { href: "/finanzas/end-of-day", texto: "End of Day", icono: CalendarCheck, ayuda: "El cierre del día de Finanzas: contá tarea por tarea cómo te fue" },
       { href: "/finanzas/resultados", texto: "P&L", icono: TrendingUp, ayuda: "El estado de resultados: lo facturado y lo realmente cobrado, lado a lado" },
       { href: "/finanzas/transacciones", texto: "Transacciones", icono: ArrowLeftRight, ayuda: "Todo lo que entró y salió, de todas las cuentas: cobros, gastos, devoluciones y pases" },
