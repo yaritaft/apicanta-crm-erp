@@ -57,9 +57,9 @@ export function ReporteWebinar({ w }: { w: Webinar }) {
     <Card id="reporte" style={{ scrollMarginTop: 72 }}>
       <CardHead
         titulo="Reporte para el equipo"
-        sub="Las métricas del webinar como las manda Santi, sacadas de la app: facturación y cash son los mismos de esta ficha."
+        sub="Las métricas para mandar al grupo, sacadas de la app: la facturación y el cash son los de esta ficha."
         acciones={(
-          <span className="row-wrap" style={{ gap: 8, alignItems: "center" }}>
+          <span className="row" style={{ gap: 8, alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" }}>
             <span className="t-sm t-subtle">Hasta el</span>
             <CampoFecha value={hasta} max={hoy} onChange={(ev) => setHasta(String(ev.target.value || hoy))} aria-label="Hasta qué día" style={{ width: 150 }} />
             <Button sm variante="primary" icono={<ClipboardCopy size={15} />} onClick={() => void copiar()} disabled={r.estado === "cargando"}>
@@ -82,11 +82,15 @@ export function ReporteWebinar({ w }: { w: Webinar }) {
       </div>
 
       {reporte.deOtroOrigen.length > 0 && (
-        <div className="hs-aviso" role="note" style={{ marginTop: 12, alignItems: "flex-start" }}>
-          <AlertTriangle size={16} style={{ flexShrink: 0, color: "var(--warning)" }} />
-          <span>
-            {reporte.deOtroOrigen.length === 1 ? "Una venta está atada a este webinar pero parece de otro embudo" : `${reporte.deOtroOrigen.length} ventas están atadas a este webinar pero parecen de otro embudo`}
-            {" "}(suman {M(reporte.deOtroOrigen.reduce((a, x) => a + x.venta.precioAcordado, 0))} de facturación). Revisá su estrategia:
+        <details className="hs-aviso" role="note" style={{ marginTop: 12, display: "block" }}>
+          <summary style={{ cursor: "pointer", display: "flex", gap: 10, alignItems: "flex-start" }}>
+            <AlertTriangle size={16} style={{ flexShrink: 0, marginTop: 2, color: "var(--warning)" }} />
+            <span>
+              {reporte.deOtroOrigen.length === 1 ? "Una venta atada a este webinar parece de otro embudo" : `${reporte.deOtroOrigen.length} ventas atadas a este webinar parecen de otro embudo`}
+              {" "}(suman {M(reporte.deOtroOrigen.reduce((a, x) => a + x.venta.precioAcordado, 0))} de facturación). <span className="link">Ver cuáles</span>
+            </span>
+          </summary>
+          <span style={{ display: "block", paddingLeft: 26, marginTop: 6 }}>
             {reporte.deOtroOrigen.map(({ venta, motivo }) => (
               <span key={venta.id} style={{ display: "block" }}>
                 <button type="button" className="link" onClick={() => abrirFicha(venta.contactoId ?? venta.id, "ventas", { venta: venta.id })}>{venta.contactoNombre}</button>
@@ -94,7 +98,7 @@ export function ReporteWebinar({ w }: { w: Webinar }) {
               </span>
             ))}
           </span>
-        </div>
+        </details>
       )}
 
       <details style={{ marginTop: 12 }}>
