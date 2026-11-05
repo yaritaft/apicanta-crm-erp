@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { movimientoDeHotmart, reembolsoDeHotmart } from "@/lib/pasarelas-api";
-import { feeDesconocido } from "@/lib/completar-cobros";
+import { feeConBrutoEnOtraMoneda, feeDesconocido } from "@/lib/completar-cobros";
 
 /* Aldana (05/11): un cobro de Hotmart de «US$ 3.320.400» con comisión de US$ 3.319.461,53 (100%). Eran 3.320.400 pesos colombianos:
    Hotmart da el precio en la moneda del comprador y lo que le queda al productor, en dólares. 17 de los 20 cobros de Hotmart estaban así. */
@@ -18,8 +18,10 @@ test("en pesos colombianos: entra lo que llega en dólares, sin comisión invent
   assert.equal(m.neto, 938.47);
   assert.equal(m.fee, 0, "la comisión en dólares no se sabe");
   assert.equal(m.moneda, "USD");
-  assert.match(m.descripcion ?? "", /IT Mentorship - Apicanta · pagó 3\.320\.400 COP/);
-  assert.equal(feeDesconocido(m as never), true, "al atarlo, el pago conserva la comisión de su cuenta (no 100%)");
+  assert.equal(m.brutoOriginal, "3.320.400 COP", "lo que pagó queda anotado");
+  assert.equal(m.descripcion, "IT Mentorship - Apicanta");
+  assert.equal(feeDesconocido(m as never), true, "no tiene comisión inventada (no 100%)");
+  assert.equal(feeConBrutoEnOtraMoneda({ monto: 1000 }, m), 61.53, "al atarlo al pago de US$ 1.000 del closer, la comisión es 1.000 − 938,47");
 });
 
 test("sin la comisión del productor no hay ningún número en dólares: no entra", () => {
@@ -30,6 +32,7 @@ test("en dólares sigue igual: el precio es el bruto y la comisión es lo que se
   const m = movimientoDeHotmart(venta(2300, "USD", "HPX"), new Map([["HPX", 2161]]));
   assert.deepEqual([m.monto, m.fee, m.neto, m.moneda], [2300, 139, 2161, "USD"]);
   assert.equal(m.descripcion, "IT Mentorship - Apicanta");
+  assert.equal(m.brutoOriginal, undefined);
 });
 
 test("un reembolso en otra moneda no se propone solo con millones de «dólares»; en dólares, sí", () => {

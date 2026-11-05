@@ -24,9 +24,21 @@ export const feeDesconocido = (m: Pick<Movimiento, "fee" | "proveedor">): boolea
 
 type DatosDeCobro = Pick<Movimiento,
   "proveedor" | "monto" | "fee" | "neto" | "clienteNombre" | "clienteEmail" | "clienteTelefono" | "metodo" | "descripcion">
-  & Partial<Pick<Movimiento, "fecha" | "estado">>;
+  & Partial<Pick<Movimiento, "fecha" | "estado" | "brutoOriginal">>;
 export type ParcheDeCobro = Partial<Pick<Movimiento,
-  "fee" | "neto" | "clienteNombre" | "clienteEmail" | "clienteTelefono" | "metodo" | "descripcion" | "fecha">>;
+  "fee" | "neto" | "clienteNombre" | "clienteEmail" | "clienteTelefono" | "metodo" | "descripcion" | "fecha" | "brutoOriginal">>;
+
+/* La comisión de un pago, si es más que esto del pago, no es una comisión: es otro cobro o un error de carga. */
+const COMISION_MAXIMA = 0.35;
+
+/** Un cobro que vino en otra moneda (Hotmart en pesos colombianos): la pasarela no dice el bruto en dólares, pero el pago que cargó el
+ *  closer sí, y lo que llegó (`neto`) también. La comisión real es la diferencia: 1.000 − 938,47 = 61,53. Null si no es ese caso o si la
+ *  diferencia no tiene sentido (negativa o más de un tercio del pago): entonces se queda la de la cuenta. */
+export function feeConBrutoEnOtraMoneda(pago: Pick<Pago, "monto">, mov: Pick<Movimiento, "brutoOriginal" | "neto">): number | null {
+  if (!mov.brutoOriginal || !(mov.neto > 0) || !(pago.monto > 0)) return null;
+  const fee = r2(pago.monto - mov.neto);
+  return fee >= 0 && fee <= pago.monto * COMISION_MAXIMA ? fee : null;
+}
 
 /* Un minuto de diferencia no es otra fecha: es la misma, escrita distinto. */
 const otraFecha = (a?: string, b?: string): boolean => {
@@ -62,6 +74,7 @@ export function parcheDeCobro(guardado: DatosDeCobro, traido: Partial<DatosDeCob
   if (guardado.proveedor === "mercury" && guardado.estado === "pendiente" && otraFecha(guardado.fecha, traido.fecha)) {
     p.fecha = traido.fecha;
   }
+  if (vacio(guardado.brutoOriginal) && !vacio(traido.brutoOriginal)) p.brutoOriginal = traido.brutoOriginal!.trim();
   /* La comisión real, sólo si el monto es el mismo cobro. */
   const fee = traido.fee ?? 0;
   if (feeDesconocido(guardado) && fee > 0 && Math.abs((traido.monto ?? guardado.monto) - guardado.monto) < 0.01) {

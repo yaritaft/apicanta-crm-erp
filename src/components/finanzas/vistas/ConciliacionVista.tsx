@@ -507,7 +507,7 @@ function FilaMovimiento({ mov, M, abierto, onAbrir, onNuevaVenta }: {
           {M(mov.monto, 2)}
           {cobraComision && (
             <span className="mov__fee" data-pendiente={sinFee}>
-              {sinFee ? `comisión estimada ${pct(tasaEstimada(e, mov) * 100, 1)}` : `comisión ${pct((mov.fee / mov.monto) * 100, 1)}`}
+              {mov.brutoOriginal ? `pagó ${mov.brutoOriginal}` : sinFee ? `comisión estimada ${pct(tasaEstimada(e, mov) * 100, 1)}` : `comisión ${pct((mov.fee / mov.monto) * 100, 1)}`}
             </span>
           )}
           {mov.estado === "pendiente" && resto < mov.monto - 0.009 && (
@@ -543,6 +543,14 @@ function FilaMovimiento({ mov, M, abierto, onAbrir, onNuevaVenta }: {
               </>
             )}
             {billetera && <><dt>Billetera</dt><dd className="t-num" style={{ wordBreak: "break-all" }}>{billetera}</dd></>}
+            {mov.brutoOriginal ? (
+              <>
+                <dt>Pagó</dt><dd className="t-num">{mov.brutoOriginal} <span className="t-subtle">· {nombrePasarela(mov.proveedor)} no lo da en dólares</span></dd>
+                <dt>Llegó</dt><dd className="t-num">{M(mov.neto, 2)}</dd>
+                <dt>Comisión</dt>
+                <dd>Al atarlo al pago que cargó el closer: ese pago menos lo que llegó.</dd>
+              </>
+            ) : (<>
             <dt>Bruto</dt><dd className="t-num">{M(mov.monto, 2)}</dd>
             <dt>Comisión</dt>
             <dd className="t-num">
@@ -551,6 +559,7 @@ function FilaMovimiento({ mov, M, abierto, onAbrir, onNuevaVenta }: {
                 : <>{M(mov.fee, 2)} {mov.monto > 0 && <span className="t-subtle">({pct((mov.fee / mov.monto) * 100, 1)})</span>}</>}
             </dd>
             <dt>Neto</dt><dd className="t-num">{sinFee ? "Cuando llegue la comisión" : M(mov.neto, 2)}</dd>
+            </>)}
             <dt>Referencia</dt><dd className="t-sm" style={{ wordBreak: "break-all" }}>{mov.referencia}{mov.descripcion && !billetera ? ` · ${mov.descripcion}` : ""}</dd>
           </dl>
           {quien.fichaId && (

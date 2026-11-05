@@ -1,7 +1,7 @@
 import type { Cuota, EstadoApp, ID, Movimiento, Pago, Venta } from "./types";
 import { nombrePasarela } from "./pasarelas";
 import { claveEmail } from "./contactos";
-import { feeDesconocido } from "./completar-cobros";
+import { feeConBrutoEnOtraMoneda, feeDesconocido } from "./completar-cobros";
 
 /* ==================================================================
    Conciliación.
@@ -296,14 +296,18 @@ export function pagosYaCargados(e: EstadoApp, mov: Movimiento): PagoYaCargado[] 
   const out: PagoYaCargado[] = [];
   const t = new Date(mov.fecha).getTime();
   for (const p of ix.sueltosPorCuenta.get(proc.id) ?? []) {
-    if (Math.abs(p.monto - mov.monto) > Math.max(1, mov.monto * 0.02)) continue;
+    /* Pagado en otra moneda: no hay bruto en dólares para comparar; el pago que cargó el closer tiene que poder ser lo que llegó más una
+       comisión razonable (Juan Camilo Salgado: pagó 1.000, llegaron 938,47). */
+    const otraMoneda = mov.brutoOriginal ? feeConBrutoEnOtraMoneda(p, mov) !== null : false;
+    if (!otraMoneda && Math.abs(p.monto - mov.monto) > Math.max(1, mov.monto * 0.02)) continue;
     const dias = Math.abs(new Date(p.fecha).getTime() - t) / DIA;
     if (dias > 7) continue;
     const cuota = ix.cuota.get(p.cuotaId);
     const venta = cuota ? ix.venta.get(cuota.ventaId) : undefined;
     const motivos: string[] = [];
     let puntaje = 0;
-    if (Math.abs(p.monto - mov.monto) <= 0.01) { puntaje += 40; motivos.push("mismo monto"); } else { puntaje += 25; motivos.push("monto casi igual"); }
+    if (otraMoneda) { puntaje += 25; motivos.push(`llegó ${mov.neto.toLocaleString("es-AR")} de ese pago`); }
+    else if (Math.abs(p.monto - mov.monto) <= 0.01) { puntaje += 40; motivos.push("mismo monto"); } else { puntaje += 25; motivos.push("monto casi igual"); }
     const diferencia = Math.round(dias) === 1 ? "un día de diferencia" : `${Math.round(dias)} días de diferencia`;
     if (dias < 1) { puntaje += 30; motivos.push("mismo día"); } else if (dias <= 3) { puntaje += 20; motivos.push(diferencia); } else { puntaje += 8; motivos.push(diferencia); }
     const nombre = Math.max(parecido(mov.clienteNombre, venta?.contactoNombre), parecido(mov.clienteNombre, p.pagador));

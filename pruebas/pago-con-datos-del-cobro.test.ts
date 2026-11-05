@@ -59,3 +59,20 @@ test("si la pasarela todavía no mandó la comisión, el pago conserva la que te
   assert.equal(pagoDe("pag_3").feeMonto, 6, "sin comisión real no se pisa con 0");
   assert.equal(pagoDe("pag_3").fecha, "2026-10-24T16:17:19.000Z");
 });
+
+/* 05/11: Hotmart cobró en pesos colombianos (3.320.400 COP) y sólo dice en dólares lo que llegó (938,47). El closer cargó US$ 1.000: al atarlos, la
+   comisión real es la diferencia, no la estimada de la cuenta ni el «100%» de antes. */
+test("un cobro pagado en otra moneda: al atarlo, la comisión es el pago menos lo que llegó", () => {
+  armar([mov("mov_hotmart_HP1", "hotmart", { monto: 938.47, fee: 0, neto: 938.47, brutoOriginal: "3.320.400 COP" })], [pago("pag_h", { monto: 1000, procesadorId: "proc_hotmart", feeRate: 0.099, feeMonto: 99 })]);
+  assert.equal(acciones.vincularConPagos([{ movimientoId: "mov_hotmart_HP1", pagoId: "pag_h" }]), 1);
+  const p = pagoDe("pag_h");
+  assert.equal(p.feeMonto, 61.53);
+  assert.equal(p.feeRate, 0.0615);
+  assert.equal(p.monto, 1000, "lo cobrado no cambia");
+});
+
+test("si la diferencia no tiene sentido (el pago es menos de lo que llegó), se queda la comisión de la cuenta", () => {
+  armar([mov("mov_hotmart_HP2", "hotmart", { monto: 938.47, fee: 0, neto: 938.47, brutoOriginal: "3.320.400 COP" })], [pago("pag_h2", { monto: 500, procesadorId: "proc_hotmart", feeRate: 0.099, feeMonto: 49.5 })]);
+  assert.equal(acciones.vincularConPagos([{ movimientoId: "mov_hotmart_HP2", pagoId: "pag_h2" }]), 1);
+  assert.equal(pagoDe("pag_h2").feeMonto, 49.5);
+});

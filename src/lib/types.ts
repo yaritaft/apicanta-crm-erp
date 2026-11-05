@@ -1264,6 +1264,10 @@ export interface Movimiento {
   /* Lo que se quedó la pasarela, tal como vino. No es una estimación. */
   fee: number;
   neto: number;
+  /* Si el cliente pagó en otra moneda y la pasarela no dice cuánto es en dólares (Hotmart cobra en la moneda de cada país): lo que pagó,
+     tal cual («3.320.400 COP»). Entonces `monto` y `neto` son lo que llegó en dólares, `fee` queda en 0 (no se sabe) y al atarlo a un pago
+     ya cargado la comisión real es ese pago menos lo que llegó (completar-cobros.ts → feeConBrutoEnOtraMoneda). */
+  brutoOriginal?: string;
   fecha: string;
   /* Quién pagó, según la pasarela. Si no lo manda (una billetera de USDT,
      una transferencia), la conciliación lo busca entre los contactos. */

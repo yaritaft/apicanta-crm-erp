@@ -47,6 +47,8 @@ export interface MovimientoApi {
   clienteTelefono?: string;
   metodo?: string;
   descripcion?: string;
+  /* Lo que pagó en otra moneda, si la pasarela no lo da en dólares (ver Movimiento.brutoOriginal). */
+  brutoOriginal?: string;
 }
 
 /* Para la sync: qué cobros necesitan que se pida su detalle (los que ya
@@ -355,8 +357,8 @@ export async function hotmart(desde: Date, hasta: Date): Promise<MovimientoApi[]
 const enOtraMoneda = (codigo?: string) => Boolean(codigo) && !["USD", "ARS"].includes(String(codigo).toUpperCase());
 
 /** Una venta de Hotmart como cobro. La comisión del productor (`neto`, de sales/commissions) viene en dólares; el precio, en la moneda del
- *  comprador. Si es otra moneda, el bruto en dólares no se sabe: el cobro entra con lo que llega (el neto) y la comisión queda «sin saber»
- *  (0): al atarlo, el pago conserva la de su cuenta (completar-cobros.ts → feeDesconocido). Antes entraba el precio como si fueran dólares
+ *  comprador. Si es otra moneda, el bruto en dólares no se sabe: el cobro entra con lo que llega (el neto), la comisión queda «sin saber»
+ *  (0) y lo que pagó va en `brutoOriginal`: al atarlo al pago que cargó el closer, la comisión real es ese pago menos lo que llegó. Antes entraba el precio como si fueran dólares
  *  y la comisión daba 100% (Aldana, 05/11: un cobro de «US$ 3.320.400» con comisión de US$ 3.319.461); atarlo le hubiera puesto a un pago
  *  de US$ 1.000 una comisión de casi US$ 1.000. Sin neto, no entra: no hay ningún número en dólares. */
 export function movimientoDeHotmart(it: Record<string, never>, netoPorTransaccion: ReadonlyMap<string, number>): MovimientoApi {
@@ -371,7 +373,7 @@ export function movimientoDeHotmart(it: Record<string, never>, netoPorTransaccio
   const comprador = (it.buyer ?? {}) as { name?: string; email?: string; phone?: string; checkout_phone?: string };
   const pago = (compra.payment ?? {}) as { type?: string; installments_number?: number };
   const producto = (it.product ?? {}) as { name?: string };
-  const pagoEn = otra ? `pagó ${enSuMoneda.toLocaleString("es-AR")} ${String(precio.currency_code).toUpperCase()}` : "";
+  const original = otra ? `${enSuMoneda.toLocaleString("es-AR")} ${String(precio.currency_code).toUpperCase()}` : "";
   return {
     proveedor: "hotmart" as const,
     referencia,
@@ -384,7 +386,8 @@ export function movimientoDeHotmart(it: Record<string, never>, netoPorTransaccio
     clienteEmail: comprador.email?.toLowerCase(),
     clienteTelefono: txt(comprador.phone) ?? txt(comprador.checkout_phone),
     metodo: metodoHotmart(pago.type, pago.installments_number),
-    descripcion: [producto.name, pagoEn].filter(Boolean).join(" · ") || undefined,
+    descripcion: producto.name ?? undefined,
+    ...(original ? { brutoOriginal: original } : {}),
   };
 }
 

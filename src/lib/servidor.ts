@@ -75,7 +75,7 @@ async function completarGuardados(db: SupabaseClient, filas: MovimientoNuevo[]):
     for (let i = 0; i < lista.length; i += 50) {
       const refs = lista.slice(i, i + 50).map((f) => f.referencia);
       const q = await db.from("movimientos")
-        .select("id, proveedor, referencia, monto, fee, neto, clienteNombre, clienteEmail, clienteTelefono, metodo, descripcion, fecha, estado")
+        .select("id, proveedor, referencia, monto, fee, neto, clienteNombre, clienteEmail, clienteTelefono, metodo, descripcion, fecha, estado, brutoOriginal")
         .eq("proveedor", proveedor).in("referencia", refs);
       if (q.error) return { completados, error: q.error.message };
       for (const g of (q.data ?? []) as (Movimiento & { id: string })[]) {
