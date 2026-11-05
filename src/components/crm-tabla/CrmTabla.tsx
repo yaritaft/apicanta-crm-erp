@@ -1,7 +1,7 @@
 "use client";
 
 import { useAltoTabla } from "@/lib/useAltoTabla";
-import React, { useCallback, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { ArrowDown, ArrowRightLeft, ArrowUp, ClipboardCheck, Download, ExternalLink, FileSpreadsheet, Pencil, Search, Star, X } from "lucide-react";
 import { Button, Card, Chip, Empty, Input, Tabs } from "@/components/ui/ui";
@@ -41,7 +41,7 @@ import { useRangoURL } from "@/lib/useRango";
 import {
   CAMPO_DE_OPCIONES, COLOR_SIN_RECONTACTAR, COLUMNA, COLUMNAS, COLUMNAS_DE_ANTES, COLUMNAS_DE_COBROS, COLUMNAS_SUMADAS, COLOR_COBROS, EDITOR, escrituraDe, filasTabla, filtroAURL, filtrosDeURL, llamadasQueSeVen,
   hayFiltro, MAX_ORDENES, opcionesDeColumna, ORDEN_CHEQUEO, ORDEN_COMPROBANTE, ORDEN_CONCILIADO, ORDEN_POR_DEFECTO, ordenarFilas, pagosDeLlamadas, totalCobrado, ordenesAURL, ordenesDeURL, PAISES, pasaFiltros, POR_QUE_NO,
-  followUpVisible, SIN_RECONTACTAR, textoDeFiltro, VACIAS, valorEditable, VISIBLES_POR_DEFECTO,
+  campoDeColumna, clavesPropias, esColumnaPropia, followUpVisible, opcionesDeCampoPropio, registrarCamposPropios, SIN_RECONTACTAR, textoDeCampoPropio, textoDeFiltro, VACIAS, valorEditable, VISIBLES_POR_DEFECTO,
   type ClaveColumna, type FilaTabla, type FiltroColumna as Filtro, type OrdenColumna,
 } from "@/lib/crm-tabla";
 import { textoDeDia, tituloPerfil, type CampoPerfil } from "@/lib/perfil";
@@ -77,16 +77,18 @@ import { Eod } from "./Eod";
    lib/crm-tabla (escrituraDe).
    ================================================================== */
 
-const DEFS: DefColumna[] = COLUMNAS.map((c) => ({ clave: c.clave, titulo: c.titulo, grupo: c.grupo, fija: c.clave === "nombre" }));
+/* Se arma con las columnas de hoy: las propias (Ajustes → Campos propios → Sesiones) se suman y se sacan solas. */
+const defsDe = (): DefColumna[] => COLUMNAS.map((c) => ({ clave: c.clave, titulo: c.titulo, grupo: c.grupo, fija: c.clave === "nombre" }));
 /* Quien no puede leer los cobros (un setter) no ve las dos columnas que salen de ellos:
    sin los cobros dirían «sin venta» en todas las filas y confundirían. */
-const DEFS_SIN_COBROS = DEFS.filter((d) => !COLUMNAS_DE_COBROS.includes(d.clave as ClaveColumna));
 const esDeCobros = (k: string) => COLUMNAS_DE_COBROS.includes(k as ClaveColumna);
 const HORA = new Intl.DateTimeFormat("es-AR", { timeZone: "America/Argentina/Buenos_Aires", hour: "2-digit", minute: "2-digit", hour12: false });
 
 /* Lo que es de la persona (se guarda en su contacto) y lo que es de la llamada. */
 const DE_LA_PERSONA = new Set<ClaveColumna>(["nombre", "email", "telefono", "pais", "edad", "nacimiento", "tecnologias", "ingles", "experiencia", "formacion", "ingreso", "inversion"]);
 /* Las que se eligen de una lista y se pueden dejar vacías. */
+/* Dónde se anota qué campos propios ya se sumaron a la vista de este navegador. */
+const CLAVE_PROPIAS = "apicanta:columnas:crm:propias";
 const VACIABLES = new Set<ClaveColumna>(["estadoPreCall", "estadoLlamada", "preCall", "followUp", "objecion", "oferta"]);
 const PERFIL: Partial<Record<ClaveColumna, CampoPerfil>> = {
   edad: "edad", nacimiento: "nacimiento", tecnologias: "tecnologias", ingles: "ingles", experiencia: "experiencia", formacion: "formacion", ingreso: "ingreso", inversion: "inversion",
@@ -98,6 +100,8 @@ const opciones = (xs: string[], color: (x: string) => ColorCrm = () => "gris1"):
    el día» va en ese aviso (entrada propia) y no en la barra. */
 export function CrmTabla({ misLlamadas = false }: { misLlamadas?: boolean } = {}) {
   const e = useEstado();
+  /* Antes que nada: las columnas propias al día (todo lo de abajo las busca en COLUMNA). `propias` cambia cuando cambian. */
+  const propias = registrarCamposPropios(e.campos);
   const params = useSearchParams();
   const escribir = useEscribirURL();
   const abrirFicha = useAbrirFicha();
@@ -158,7 +162,7 @@ export function CrmTabla({ misLlamadas = false }: { misLlamadas?: boolean } = {}
     /* Un link o una vista con un filtro de las columnas de cobros, para quien no las tiene, no recorta nada. */
     if (!veCobros) for (const k of COLUMNAS_DE_COBROS) delete f[k];
     return f;
-  }, [textoParams, veCobros]);
+  }, [textoParams, veCobros, propias]);
   /* «Sin cargar»: las que ya pasaron y nadie cargó cómo terminaron (también
      las que sólo tienen el estado que pone la app, como «2da Agenda»). */
   const soloSinCargar = params.get("pendientes") === "1";
@@ -197,7 +201,7 @@ export function CrmTabla({ misLlamadas = false }: { misLlamadas?: boolean } = {}
     if (veCobros) return o;
     const sin = o.filter((x) => !COLUMNAS_DE_COBROS.includes(x.clave));
     return sin.length ? sin : ORDEN_POR_DEFECTO;
-  }, [params, veCobros]);
+  }, [params, veCobros, propias]);
   const filas = useMemo(
     /* A igual valor, la llamada más nueva primero. */
     () => ordenarFilas(filtradas, ordenes.some((o) => o.clave === "llamada") ? ordenes : [...ordenes, ...ORDEN_POR_DEFECTO], ordenValores),
@@ -208,7 +212,28 @@ export function CrmTabla({ misLlamadas = false }: { misLlamadas?: boolean } = {}
 
   /* Siempre con la lista completa: el acceso llega después del primer dibujo, y si el hook arrancara sin las
      dos columnas, quien sí las ve no las tendría de entrada. Quien no puede leer los cobros no las ve. */
-  const cols = useColumnas("crm", DEFS, VISIBLES_POR_DEFECTO, COLUMNAS_DE_ANTES, COLUMNAS_SUMADAS);
+  const defs = useMemo(defsDe, [propias]);
+  const defsSinCobros = useMemo(() => defs.filter((d) => !COLUMNAS_DE_COBROS.includes(d.clave as ClaveColumna)), [defs]);
+  const cols = useColumnas("crm", defs, VISIBLES_POR_DEFECTO, COLUMNAS_DE_ANTES, COLUMNAS_SUMADAS);
+  /* Un campo propio nuevo aparece solo, una vez, en la vista de cada persona (si no lo quiere, lo saca y no vuelve). */
+  const { fijar: fijarColumnas } = cols;
+  const columnasDelLink = params.has("cols-crm");
+  useEffect(() => {
+    const claves = clavesPropias();
+    /* Con las columnas de un link copiado no se toca nada: la vista no es de esta persona. */
+    if (!claves.length || columnasDelLink) return;
+    try {
+      const vistas: string[] = JSON.parse(localStorage.getItem(CLAVE_PROPIAS) ?? "[]");
+      const nuevas = claves.filter((k) => !vistas.includes(k));
+      if (!nuevas.length) return;
+      /* La lista guardada se lee de acá y no de `cols`: el hook la trae recién después del primer dibujo. */
+      const guardada = JSON.parse(localStorage.getItem("apicanta:columnas:crm") ?? "null") as string[] | null;
+      const base = Array.isArray(guardada) ? guardada : VISIBLES_POR_DEFECTO;
+      localStorage.setItem(CLAVE_PROPIAS, JSON.stringify([...vistas, ...nuevas]));
+      fijarColumnas([...base.filter((k) => k !== "nombre"), ...nuevas.filter((k) => !base.includes(k))]);
+    } catch { /* modo privado: queda en el menú de columnas */ }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [propias, columnasDelLink]);
   const visibles = useMemo(() => (veCobros ? cols.visibles : cols.visibles.filter((k) => !esDeCobros(k))), [veCobros, cols.visibles]);
 
   const cambiarFiltro = useCallback((clave: ClaveColumna, fc: Filtro | null) => {
@@ -236,8 +261,13 @@ export function CrmTabla({ misLlamadas = false }: { misLlamadas?: boolean } = {}
       ...estados,
       objecion: opciones(objecionesDe(e.ajustes), () => "amarillo1"),
       oferta: [{ nombre: "Sí", color: "verde1" }, { nombre: "No", color: "gris1" }],
+      ...Object.fromEntries(clavesPropias().flatMap((k) => {
+        const lista = opcionesDeCampoPropio(campoDeColumna(k)!);
+        return lista ? [[k, opciones(lista)]] : [];
+      })),
     };
-  }, [e, estados]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [e, estados, propias]);
   /* Para escribir menos: los valores que ya existen en esa columna. */
   const sugerenciasDe = (clave: ClaveColumna): string[] | undefined => {
     if (clave === "pais") return PAISES;
@@ -411,7 +441,7 @@ export function CrmTabla({ misLlamadas = false }: { misLlamadas?: boolean } = {}
               opciones={[{ valor: "tabla", texto: "Tabla" }, { valor: "resumen", texto: "Informe" }]}
             />
             {!enInforme && (
-              <ConfigColumnas todas={veCobros ? DEFS : DEFS_SIN_COBROS} visibles={visibles} alternar={cols.alternar} mover={cols.mover} restaurar={cols.restaurar} compacto />
+              <ConfigColumnas todas={veCobros ? defs : defsSinCobros} visibles={visibles} alternar={cols.alternar} mover={cols.mover} restaurar={cols.restaurar} compacto />
             )}
             <CopiarLink />
             {!misLlamadas && !enInforme && (
@@ -542,7 +572,7 @@ function CeldaCrm({ clave, f, puede, abierta, onAbrir, onCerrar, onGuardar, onFi
     <CeldaEditable
       editor={editor} valor={valorEditable(f, clave)} titulo={titulo} abierta={abierta}
       onAbrir={onAbrir} onCerrar={onCerrar} onGuardar={onGuardar}
-      opciones={opciones} sugerencias={sugerencias} vaciable={VACIABLES.has(clave)}
+      opciones={opciones} sugerencias={sugerencias} vaciable={VACIABLES.has(clave) || esColumnaPropia(clave)}
       className={corregida ? "crm-t__editable--corregida" : undefined}
       ayuda={corregida && campo ? `${tituloPerfil(campo)} corregido a mano. Vaciá la celda para volver a lo que contestó al agendar.` : undefined}
     >
@@ -595,6 +625,16 @@ function Celda({ clave, f, color }: { clave: ClaveColumna; f: FilaTabla; color?:
     case "telefono": return f.telefono ? <Telefono valor={f.telefono} pais={f.pais} compacto /> : nada;
     case "email": return f.email ? <Correo valor={f.email} compacto /> : nada;
     default: {
+      /* Un campo propio: lo que cargó el equipo, como texto (las opciones, con su pastilla). */
+      const propio = campoDeColumna(clave);
+      if (propio) {
+        const t = textoDeCampoPropio(propio, f.sesion.extra);
+        if (!t) return nada;
+        if (propio.tipo === "seleccion" || propio.tipo === "booleano") return <PastillaEstado texto={t} color="gris1" />;
+        if (propio.tipo === "fecha") return <span className="t-num">{textoFecha(t)}</span>;
+        if (propio.tipo === "numero" || propio.tipo === "moneda") return <span className="t-num">{t}</span>;
+        return <span className="truncate" title={t}>{t}</span>;
+      }
       const v = (f as unknown as Record<string, string>)[clave] ?? "";
       return v ? <span className="truncate" title={v}>{v}</span> : nada;
     }

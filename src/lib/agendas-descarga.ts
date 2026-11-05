@@ -2,7 +2,7 @@ import { esReagendar, NO_SE_PRESENTO, REPROGRAMO, type Desenlace } from "./estad
 import { numeroParaCopiar } from "./contacto-telefono";
 import { claveEmail } from "./contactos";
 import { aCSV } from "./exportarPlanilla";
-import { celdaParaCsv, COLUMNAS, COLUMNAS_DE_COBROS, filasTabla, type ClaveColumna, type ColumnaTabla, type FilaTabla } from "./crm-tabla";
+import { celdaParaCsv, COLUMNAS, COLUMNAS_DE_COBROS, filasTabla, registrarCamposPropios, type ClaveColumna, type ColumnaTabla, type FilaTabla } from "./crm-tabla";
 import type { Sesion } from "./types";
 
 /* ==================================================================
@@ -105,8 +105,10 @@ const numero = (n: number) => String(Math.round(n * 100) / 100);
 /** Lo que suma el CRM a la descarga, según lo que puede ver quien la baja: las ventas (producto, venta) y los
     cobros (lo cobrado, el valor, lo que falta, comprobante, conciliado, chequeo). Igual que la tabla del CRM. */
 export function crmDeDescarga(
-  e: Parameters<typeof filasTabla>[0], ve: { ventas: boolean; cobros: boolean }, ahora = Date.now(),
+  e: Parameters<typeof filasTabla>[0] & { campos?: Parameters<typeof registrarCamposPropios>[0] }, ve: { ventas: boolean; cobros: boolean }, ahora = Date.now(),
 ): CrmDeDescarga {
+  /* Los campos propios de las llamadas (Ajustes → Campos propios → Sesiones) salen en el CSV como cualquier otra columna. */
+  registrarCamposPropios(e.campos);
   const columnas = COLUMNAS.filter((c) => !YA_ESTAN.includes(c.clave)
     && (ve.ventas || !DE_VENTAS.includes(c.clave))
     && (ve.cobros || !COLUMNAS_DE_COBROS.includes(c.clave)));

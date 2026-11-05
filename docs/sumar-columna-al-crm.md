@@ -16,5 +16,9 @@ pantallas (grilla, tabla, Ajustes, vistas guardadas, orden, colores, edición ma
 
 `pruebas/follow-up.test.ts` falla si alguna pantalla vuelve a escribir la lista de campos a mano.
 
-Ojo: **Ajustes → Campos propios → Sesiones** crea campos que se guardan en `sesion.extra`, pero hoy sólo se ven en
-el formulario y la ficha de la Agenda, no en el CRM. Hasta que se conecten, una columna nueva del CRM se pide por código.
+## Sin código: Ajustes → Campos propios → Sesiones
+
+Si la columna es un dato simple (texto, número, fecha, sí/no o lista de opciones) no hace falta nada de lo de arriba: el
+equipo la crea en **Ajustes → Campos propios**, eligiendo la ficha «Sesiones». Se guarda en `sesion.extra` y aparece sola en
+la tabla de `/crm` (con filtro, orden, edición en la celda y en el CSV). El código está en `registrarCamposPropios`
+(`src/lib/crm-tabla.ts`). Usá el camino de código sólo si el campo tiene reglas propias (como «Sin recontactar» del follow-up).

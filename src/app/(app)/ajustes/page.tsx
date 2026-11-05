@@ -537,7 +537,7 @@ function Campos() {
         <ModalForm
           abierto onCerrar={() => setForm(null)} onGuardar={guardar}
           titulo={form.id ? "Editar campo" : "Nuevo campo"}
-          sub="Elegí en qué ficha aparece y qué tipo de dato guarda."
+          sub={form.entidad === "sesion" ? "Elegí en qué ficha aparece y qué tipo de dato guarda. En Sesiones, además, es una columna del CRM." : "Elegí en qué ficha aparece y qué tipo de dato guarda."}
           guardarTexto={form.id ? "Guardar" : "Agregar campo"}
           puedeGuardar={form.nombre.trim().length > 0}
         >

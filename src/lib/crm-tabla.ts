@@ -1,4 +1,4 @@
-import type { Ajustes, CampoOpcionesCrm, ColorCrm, Contacto, EstadoApp, ID, Lead, Pago, Sesion, Venta } from "./types";
+import type { Ajustes, CampoOpcionesCrm, CampoPersonalizado, ColorCrm, Contacto, EstadoApp, ID, Lead, Pago, Sesion, Venta } from "./types";
 import { filasCrm, opcionesDe, partir, sinTildes, type FilaCrm } from "./crm";
 import { diaDeNegocio } from "./dia-negocio";
 import { EVENTOS, fuenteDeUtm, leerUtm, NOMBRE_FUNNEL } from "./utm-estandar";
@@ -267,12 +267,14 @@ export function filasTabla(
 export type ClaveColumna =
   | "llamada" | "nombre" | "closer" | "estadoPreCall" | "estadoLlamada" | "followUp" | "preCall" | "objecion" | "oferta" | "cierre"
   | "via" | "fuente" | "ad" | "angulo" | "campania" | "pais" | "edad" | "nacimiento" | "tecnologias" | "ingles" | "experiencia" | "formacion"
-  | "ingreso" | "inversion" | "calificada" | "grabacion" | "venta" | "producto" | "cobrado" | "comprobante" | "conciliado" | "cargo" | "chequeo" | "email" | "telefono" | "agendo" | "notas";
+  | "ingreso" | "inversion" | "calificada" | "grabacion" | "venta" | "producto" | "cobrado" | "comprobante" | "conciliado" | "cargo" | "chequeo" | "email" | "telefono" | "agendo" | "notas"
+  /* Un campo propio de las llamadas (Ajustes → Campos propios → Sesiones): «extra:» + su clave. Ver registrarCamposPropios. */
+  | `extra:${string}`;
 
 export interface ColumnaTabla {
   clave: ClaveColumna;
   titulo: string;
-  grupo: "Llamada" | "Resultado" | "Origen" | "Perfil" | "Contacto";
+  grupo: "Llamada" | "Resultado" | "Origen" | "Perfil" | "Contacto" | "Campos propios";
   /* Los valores por los que se filtra (una lista: una fila con varios
      lenguajes aparece tildando cualquiera de ellos). */
   valores: (f: FilaTabla) => string[];
@@ -426,6 +428,88 @@ export const COLUMNAS: ColumnaTabla[] = [
 
 export const COLUMNA: Record<ClaveColumna, ColumnaTabla> = Object.fromEntries(COLUMNAS.map((c) => [c.clave, c])) as Record<ClaveColumna, ColumnaTabla>;
 
+/* ---------- Columnas propias ----------
+   Ajustes → Campos propios → «Sesiones» crea un dato más de cada llamada (se guarda en `sesion.extra`). Cada uno es una
+   columna más de esta tabla, con su filtro, su orden, su edición en la celda y su lugar en el CSV, sin tocar código
+   (Daniel pidió «Estado follow-up» y el equipo no tenía cómo sumarlo solo, 06/11).
+
+   La tabla recorre COLUMNAS / COLUMNA / EDITOR, que son los mismos objetos de siempre: registrarCamposPropios les suma
+   (o les saca) las columnas propias, y todo lo demás (filtros de la URL, orden, menú de columnas) las ve como cualquier
+   otra. Hay que llamarla antes de usarlas, con los campos de ese momento; no hace nada si no cambiaron. */
+export const PREFIJO_PROPIO = "extra:";
+export const esColumnaPropia = (k: string): k is `extra:${string}` => k.startsWith(PREFIJO_PROPIO);
+const PROPIAS = new Map<string, CampoPersonalizado>();
+/* Estas claves, como nombre de una propiedad, tocan el prototipo de `extra`: no se ofrecen. */
+const CLAVES_PELIGROSAS = new Set(["__proto__", "constructor", "prototype"]);
+const SI = "Sí";
+const NO = "No";
+
+/** El campo propio detrás de una columna `extra:…`, o undefined si no es una (o ya no existe). */
+export const campoDeColumna = (clave: string): CampoPersonalizado | undefined => PROPIAS.get(clave);
+
+/** Lo que dice una llamada en un campo propio, como texto; vacío si no cargó nada (o lo que cargó no es de ese tipo). */
+export function textoDeCampoPropio(campo: Pick<CampoPersonalizado, "clave" | "tipo">, extra: Record<string, unknown> | undefined): string {
+  if (!extra || !Object.prototype.hasOwnProperty.call(extra, campo.clave)) return "";
+  const v = extra[campo.clave];
+  if (v === undefined || v === null || v === "") return "";
+  if (campo.tipo === "booleano") return v === true ? SI : v === false ? NO : "";
+  if (typeof v === "object") return "";
+  if (campo.tipo === "numero" || campo.tipo === "moneda") return Number.isFinite(Number(v)) ? String(Number(v)) : "";
+  if (campo.tipo === "fecha") return ES_DIA_PROPIO.test(String(v)) ? String(v) : "";
+  return String(v).trim();
+}
+const ES_DIA_PROPIO = /^\d{4}-\d{2}-\d{2}$/;
+
+/** Las opciones de una columna propia que se elige de una lista (selección: las del campo; sí/no: Sí y No); undefined si se escribe. */
+export function opcionesDeCampoPropio(campo: Pick<CampoPersonalizado, "tipo" | "opciones">): string[] | undefined {
+  if (campo.tipo === "booleano") return [SI, NO];
+  return campo.tipo === "seleccion" ? campo.opciones ?? [] : undefined;
+}
+
+const EDITOR_DE_TIPO: Record<CampoPersonalizado["tipo"], EditorColumna> = {
+  texto: "texto", "texto-largo": "largo", numero: "texto", moneda: "texto", fecha: "fecha", seleccion: "opciones", booleano: "opciones",
+  email: "texto", telefono: "texto", url: "texto",
+};
+
+function columnaDeCampo(campo: CampoPersonalizado): ColumnaTabla {
+  const numerica = campo.tipo === "numero" || campo.tipo === "moneda";
+  const texto = (f: FilaTabla) => textoDeCampoPropio(campo, f.sesion.extra);
+  return {
+    clave: `${PREFIJO_PROPIO}${campo.clave}`, titulo: campo.nombre, grupo: "Campos propios",
+    valores: (f) => uno(texto(f)),
+    ...(numerica ? { orden: (f: FilaTabla) => (texto(f) === "" ? "" : Number(texto(f))), numerica: true } : {}),
+    ...(campo.tipo === "fecha" ? { fecha: true } : {}),
+    ...(campo.tipo === "texto-largo" ? { texto: texto } : {}),
+    ancho: campo.tipo === "texto-largo" ? 260 : 170,
+  };
+}
+
+/** Pone las columnas propias de las llamadas al día con los campos de Ajustes. Devuelve una firma que cambia cuando
+ *  cambian las columnas: sirve de dependencia a lo que se arma con ellas. */
+let firmaPropias = "";
+export function registrarCamposPropios(campos: readonly CampoPersonalizado[] | undefined): string {
+  const deSesion = (campos ?? []).filter((c) => c.entidad === "sesion" && c.clave && c.nombre && !CLAVES_PELIGROSAS.has(c.clave));
+  const firma = JSON.stringify(deSesion.map((c) => [c.clave, c.nombre, c.tipo, c.opciones ?? null]));
+  if (firma === firmaPropias) return firma;
+  for (let i = COLUMNAS.length - 1; i >= 0; i--) if (esColumnaPropia(COLUMNAS[i].clave)) COLUMNAS.splice(i, 1);
+  for (const k of Object.keys(COLUMNA)) if (esColumnaPropia(k)) delete (COLUMNA as Record<string, unknown>)[k];
+  for (const k of Object.keys(EDITOR)) if (esColumnaPropia(k)) delete (EDITOR as Record<string, unknown>)[k];
+  PROPIAS.clear();
+  for (const campo of deSesion) {
+    const col = columnaDeCampo(campo);
+    if (PROPIAS.has(col.clave)) continue;
+    PROPIAS.set(col.clave, campo);
+    COLUMNAS.push(col);
+    (COLUMNA as Record<string, ColumnaTabla>)[col.clave] = col;
+    (EDITOR as Record<string, EditorColumna>)[col.clave] = EDITOR_DE_TIPO[campo.tipo] ?? "texto";
+  }
+  firmaPropias = firma;
+  return firma;
+}
+
+/** Las claves de las columnas propias de hoy. */
+export const clavesPropias = (): ClaveColumna[] => [...PROPIAS.keys()] as ClaveColumna[];
+
 /** Lo que dice la celda, para un CSV (lib/agendas-descarga.ts): lo cobrado como número, para sumarlo en la
     planilla (vacío sin venta); el resto, lo que dice la celda y, si está vacía, sus valores («Sin venta»). */
 export function celdaParaCsv(c: ColumnaTabla, f: FilaTabla): string {
@@ -542,7 +626,11 @@ export function valorEditable(f: FilaTabla, clave: ClaveColumna): string {
     case "formacion": return f.formacion.join(", ");
     case "grabacion": return f.grabacion;
     case "notas": return f.notas;
-    default: return String((f as unknown as Record<string, unknown>)[clave] ?? "");
+    default: {
+      const propio = campoDeColumna(clave);
+      if (propio) return textoDeCampoPropio(propio, f.sesion.extra);
+      return String((f as unknown as Record<string, unknown>)[clave] ?? "");
+    }
   }
 }
 
@@ -581,6 +669,29 @@ export function escrituraDe(
   if (perfil) return { tipo: "perfil", id: f.personaId, campo: perfil, valor: lista ? limpio.split(", ").join("\n") : limpio, detalle };
 
   const llamada = (cambios: CambiosLlamada): Escritura => ({ tipo: "llamada", id: s.id, cambios, detalle });
+  /* Un campo propio: se guarda en `extra` de la llamada, con el tipo que dice el campo (número, sí/no, fecha, opción). */
+  const propio = campoDeColumna(clave);
+  if (propio) {
+    let valorNuevo: unknown;
+    if (limpio) {
+      if (propio.tipo === "numero" || propio.tipo === "moneda") {
+        valorNuevo = Number(limpio.replace(",", "."));
+        if (!Number.isFinite(valorNuevo)) return null;
+      } else if (propio.tipo === "booleano") {
+        if (limpio !== SI && limpio !== NO) return null;
+        valorNuevo = limpio === SI;
+      } else if (propio.tipo === "seleccion") {
+        if (!(propio.opciones ?? []).includes(limpio)) return null;
+        valorNuevo = limpio;
+      } else if (propio.tipo === "fecha") {
+        if (!ES_DIA_PROPIO.test(limpio)) return null;
+        valorNuevo = limpio;
+      } else valorNuevo = propio.tipo === "texto-largo" ? valor.trim() : limpio;
+    }
+    const resto = { ...(s.extra ?? {}) } as Record<string, unknown>;
+    delete resto[propio.clave];
+    return llamada({ extra: (valorNuevo === undefined ? resto : { ...resto, [propio.clave]: valorNuevo }) as CambiosLlamada["extra"] });
+  }
   switch (clave) {
     case "closer": return limpio ? { tipo: "closer", id: s.id, closer: limpio, detalle } : null;
     /* Pasar la llamada a otro día u hora. Calendly manda el día de cada agenda cada vez que la trae: lo cambiado a mano queda marcado
