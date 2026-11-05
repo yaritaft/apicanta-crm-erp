@@ -2,7 +2,7 @@
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { Check, Copy, Link2, Plus, Trash2 } from "lucide-react";
+import { Check, ChevronDown, Copy, Link2, Plus, Trash2 } from "lucide-react";
 import { Badge, Button, Card, CardHead, Empty, IconButton, Input, Select } from "@/components/ui/ui";
 import { useToast } from "@/components/ui/Toast";
 import { acciones, nuevoId, useEstado } from "@/lib/store";
@@ -53,10 +53,11 @@ function textoOrigen(e: EstadoApp, o: OrigenUtm | null): string {
 export function ConfigUtms() {
   return (
     <div className="stack-4">
+      <CompletarOrigen />
       <CreadorUtm />
-      <EstandarUtm />
-      <ReglasPropias />
       <UtmsQueLlegaron />
+      <ReglasPropias />
+      <EstandarUtm />
     </div>
   );
 }
@@ -155,7 +156,7 @@ function CreadorUtm() {
     <Card>
       <CardHead
         titulo="Creador de UTMs"
-        sub="Cada vía de agenda tiene un solo link, armado con el estándar de UTMs: minúsculas, sin tildes ni espacios, _ entre campos y - entre palabras, fechas aaaammdd. Para un webinar, elegí «Todos los links del webinar»: pegás el Calendly una vez y salen todos juntos."
+        sub="Un link por vía, con el estándar. Para un webinar elegí «Todos los links del webinar»: pegás el Calendly una vez y salen todos juntos."
       />
       <div className="stack-3">
         <div className="form-grid">
@@ -351,10 +352,10 @@ function EstandarUtm() {
     <Card>
       <CardHead
         titulo="El estándar"
-        sub="utm_campaign arranca con el funnel, y de ahí sale la estrategia de la venta. Lo que cambia en cada link (la fecha, el setter, el referidor) también lo lee la app."
+        sub="De qué estrategia es cada vía. Lo demás del link (la fecha, el setter, el referidor) lo lee la app sola."
       />
       <div className="stack-3">
-        <div className="lista-scroll catalogo-lista">
+        <div className="catalogo-lista utm-estandar-lista">
           {FILAS_ESTANDAR.map((f) => {
             const regla = reglaDe(f.regla);
             const actual = regla?.embudoId ?? estrategiaDeFunnel(e, f.funnel);
@@ -455,14 +456,14 @@ function ReglasPropias() {
     <Card>
       <CardHead
         titulo="Reglas propias"
-        sub="Para los links que no siguen el estándar (los de antes, una campaña especial): lo que tiene que traer el link y de qué es. Mandan sobre el estándar. Un valor que termina en * es «empieza con»."
-        acciones={<Button variante="secondary" icono={<Plus size={16} />} onClick={crear}>Agregar regla</Button>}
+        sub="Para los links que no siguen el estándar: lo que trae el link y de qué es. Mandan sobre el estándar; un valor con * al final es «empieza con»."
+        acciones={<Button sm variante="secondary" icono={<Plus size={15} />} onClick={crear}>Agregar regla</Button>}
       />
       {reglas.length === 0 ? (
         <Empty icono={<Link2 size={22} />} titulo="No hay reglas propias"
           texto="Con el estándar no hacen falta: sirven para los links que no lo siguen." />
       ) : (
-        <div className="catalogo-lista lista-scroll">
+        <div className="catalogo-lista">
           {reglas.map((r) => (
             <div className="utm-regla" key={r.id}>
               <div className="utm-regla__utm">
@@ -494,21 +495,43 @@ function ReglasPropias() {
 
 /* ---------- Lo que llegó ---------- */
 
+/* Lo que se puede hacer ya, arriba de todo: las ventas que llegaron con una UTM que dice de qué son. */
+function CompletarOrigen() {
+  const e = useEstado();
+  const toast = useToast();
+  const aCompletar = useMemo(() => ventasParaCompletar(e), [e]);
+  function completar() {
+    const n = acciones.completarOrigenes(aCompletar.map((x) => ({ id: x.venta.id, cambios: x.cambios })));
+    toast(`Se completó el origen de ${num(n)} ${n === 1 ? "venta" : "ventas"}.`);
+  }
+  if (!aCompletar.length) return null;
+  return (
+    <Card>
+      <CardHead
+        titulo={`${num(aCompletar.length)} ${aCompletar.length === 1 ? "venta no tiene" : "ventas no tienen"} el origen completo`}
+        sub="Llegaron con una UTM que ya dice de qué son. Se completa sólo lo que falta; lo que alguien eligió a mano queda."
+        acciones={<Button variante="primary" onClick={completar}>Completar el origen</Button>}
+      />
+    </Card>
+  );
+}
+
+/* Cuántas se ven sin pedir: primero las que no quedaron asignadas, que son las que piden algo. */
+const A_LA_VISTA = 6;
+
 function UtmsQueLlegaron() {
   const e = useEstado();
   const toast = useToast();
+  const [todas, setTodas] = useState(false);
   const detectadas = useMemo(() => utmsDetectadas(e), [e]);
-  const aCompletar = useMemo(() => ventasParaCompletar(e), [e]);
   /* Primero lo que no quedó asignado, después lo que no sigue el estándar. */
   const ordenadas = useMemo(() => [...detectadas].sort((a, b) =>
     Number(Boolean(a.origen)) - Number(Boolean(b.origen))
     || Number(problemasDeUtm(crudo(a.utm)).length === 0) - Number(problemasDeUtm(crudo(b.utm)).length === 0)
     || b.ultima.localeCompare(a.ultima)), [detectadas]);
 
-  function completar() {
-    const n = acciones.completarOrigenes(aCompletar.map((x) => ({ id: x.venta.id, cambios: x.cambios })));
-    toast(`Se completó el origen de ${num(n)} ${n === 1 ? "venta" : "ventas"}.`);
-  }
+  const sinAsignar = ordenadas.filter((d) => !d.origen).length;
+  const visibles = todas ? ordenadas : ordenadas.slice(0, Math.max(A_LA_VISTA, Math.min(sinAsignar, 12)));
   function crearRegla(u: Utm) {
     const todas = e.ajustes.reglasUtm ?? [];
     acciones.ajustes({ reglasUtm: [{ id: nuevoId("utm"), ...u, creadoEn: new Date().toISOString() }, ...todas] }, `Se agregó la regla «${textoUtm(u)}».`);
@@ -517,26 +540,18 @@ function UtmsQueLlegaron() {
 
   return (
     <>
-      {aCompletar.length > 0 && (
-        <Card>
-          <CardHead
-            titulo={`${num(aCompletar.length)} ${aCompletar.length === 1 ? "venta no tiene" : "ventas no tienen"} el origen completo`}
-            sub="Quien compró llegó con una UTM que ya dice de qué es. Se completa sólo lo que falta (estrategia, proyecto, webinar, setter o referidor); lo que alguien eligió a mano queda."
-            acciones={<Button variante="primary" onClick={completar}>Completar el origen</Button>}
-          />
-        </Card>
-      )}
-
       <Card>
         <CardHead
           titulo="UTMs que llegaron"
-          sub="Los links con los que llegó gente (de sus agendas de Calendly y de su primer contacto), de qué quedó cada uno y si sigue el estándar."
+          sub={sinAsignar
+            ? `Con qué links llegó la gente y de qué quedó cada uno. ${num(sinAsignar)} sin asignar: con una regla quedan de una estrategia.`
+            : "Con qué links llegó la gente y de qué quedó cada uno."}
         />
         {ordenadas.length === 0 ? (
           <p className="t-sm t-subtle">Todavía no llegó nadie con UTMs.</p>
         ) : (
-          <div className="catalogo-lista lista-scroll">
-            {ordenadas.map((d) => {
+          <div className="catalogo-lista">
+            {visibles.map((d) => {
               const problemas = problemasDeUtm(crudo(d.utm));
               const fuente = fuenteDeUtm(crudo(d.utm));
               return (
@@ -562,6 +577,11 @@ function UtmsQueLlegaron() {
             })}
           </div>
         )}
+        {ordenadas.length > visibles.length || todas ? (
+          <button type="button" className="catalogo-apagados" aria-expanded={todas} onClick={() => setTodas(!todas)}>
+            <ChevronDown size={14} aria-hidden />{todas ? "Ver menos" : `Ver las ${num(ordenadas.length)}`}
+          </button>
+        ) : null}
       </Card>
     </>
   );

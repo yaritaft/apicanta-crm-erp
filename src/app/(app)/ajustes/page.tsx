@@ -1,29 +1,22 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
-import Link from "next/link";
-import { useSearchParams } from "next/navigation";
 import { EtapasServicio } from "@/components/alumnos/EtapasServicio";
 import {
-  AlertTriangle, Check, Database, Download, GripVertical, Info, Layers, ListPlus,
-  Moon, Plug, Plus, RefreshCw, Settings2, Sun, Trash2, Upload, X,
+  Ban, ChevronDown, ChevronUp, Columns3, Database, Download, FileSignature, GraduationCap, GripVertical, Layers, Link2,
+  ListPlus, MessageCircle, Moon, Package, PhoneCall, Plug, Plus, RefreshCw, Settings2, ShieldAlert, Sun, Trash2, Trophy, Upload, X,
 } from "lucide-react";
 import { CatalogosVenta } from "@/components/ajustes/CatalogosVenta";
 import { CierreDelDiaAjustes } from "@/components/ajustes/CierreDelDiaAjustes";
 import { ConfigUtms } from "@/components/ajustes/ConfigUtms";
 import { EstadosDeLlamada } from "@/components/ajustes/EstadosDeLlamada";
-import { FormulariosMeta } from "@/components/ajustes/FormulariosMeta";
-import { ConversionsApi } from "@/components/ajustes/ConversionsApi";
-import { YoutubeIntegracion } from "@/components/ajustes/YoutubeIntegracion";
-import { BancoIntegracion } from "@/components/ajustes/BancoIntegracion";
-import { FathomIntegracion } from "@/components/ajustes/FathomIntegracion";
-import { AccesosAlumnosIntegracion } from "@/components/ajustes/AccesosAlumnosIntegracion";
 import { WhatsappLector } from "@/components/ajustes/WhatsappLector";
-import { PageHead } from "@/components/shell/PageHead";
+import { Integraciones } from "@/components/ajustes/Integraciones";
+import { ContratosYAccesos } from "@/components/ajustes/AccesosAlumnosIntegracion";
 import {
-  Ayuda, Badge, Button, Card, CardHead, Empty, Field, IconButton, Input,
-  Select, Switch, Tabs, Tag,
+  Badge, Button, Card, CardHead, Empty, Field, IconButton, Input, Select, Switch,
 } from "@/components/ui/ui";
+import { Plegable, Segmentado } from "@/components/finanzas/visual/visual";
 import { InputMonto } from "@/components/ui/InputMonto";
 import { montoDe } from "@/lib/monto";
 import { ModalForm, Confirmar } from "@/components/ui/Modal";
@@ -33,11 +26,29 @@ import { useAcceso } from "@/lib/acceso";
 import { num, relativo } from "@/lib/format";
 import type { Ajustes as TAjustes, CampoPersonalizado, EntidadNombre, Etapa, TipoCampo } from "@/lib/types";
 import { objecionesDe } from "@/lib/eod";
-import { cabeceras } from "@/components/webinars/useYoutube";
 import { marcarRecargaPropia } from "@/components/shell/AvisoVersion";
 import { hayNube } from "@/lib/supabase";
+import { useParamsURL } from "@/lib/useParamsURL";
+import { Fila } from "@/components/ajustes/Fila";
+import "@/components/ajustes/ajustes.css";
 
-type Seccion = "negocio" | "ventas" | "utms" | "pipeline" | "listas" | "crm" | "campos" | "integraciones" | "whatsapp" | "datos";
+/* ==================================================================
+   Ajustes: cómo funciona Apicanta.
+
+   Antes eran diez pestañas iguales, en una fila, con la URL fija en la
+   primera y un párrafo de ayuda en casi todas (05/11, revisión de UX).
+   Ahora es un menú a la izquierda, agrupado por para qué sirve cada cosa
+   —como los ajustes de un teléfono—, y la sección elegida vive en la URL
+   (?seccion=), así un link abre exactamente esa sección.
+
+   Los links viejos siguen andando: ?seccion=listas abre CRM (las dos
+   listas que se usan quedaron ahí) y ?seccion=pipeline&pipeline=servicio
+   abre las etapas del servicio.
+   ================================================================== */
+
+type Seccion =
+  | "negocio" | "ventas" | "utms" | "pipeline" | "crm" | "servicio" | "contratos"
+  | "integraciones" | "whatsapp" | "campos" | "datos";
 
 const ENTIDADES: { valor: EntidadNombre; texto: string }[] = [
   { valor: "lead", texto: "Leads" },
@@ -63,75 +74,116 @@ const TIPOS: { valor: TipoCampo; texto: string }[] = [
 
 const VARIANTES: Etapa["variante"][] = ["info", "brand", "accent", "warning", "success", "danger", "neutral"];
 
-const SECCIONES: Seccion[] = ["negocio", "ventas", "utms", "pipeline", "listas", "crm", "campos", "integraciones", "whatsapp", "datos"];
+interface ItemMenu { valor: Seccion; texto: string; icono: React.ReactNode; sub: string; soloDuenos?: boolean }
+
+const MENU: { grupo?: string; items: ItemMenu[] }[] = [
+  { items: [{ valor: "negocio", texto: "General", icono: <Settings2 size={16} />, sub: "El nombre, la moneda y el tipo de cambio." }] },
+  {
+    grupo: "Ventas",
+    items: [
+      { valor: "ventas", texto: "Catálogo", icono: <Package size={16} />, sub: "Lo que se elige al cargar una venta: servicios, cuentas, estrategias y proyectos." },
+      { valor: "utms", texto: "UTMs", icono: <Link2 size={16} />, sub: "Los links de cada vía y de qué estrategia es cada agenda." },
+      { valor: "pipeline", texto: "Pipeline", icono: <Columns3 size={16} />, sub: "Las columnas del tablero de leads, en orden." },
+      { valor: "crm", texto: "CRM y cierre del día", icono: <PhoneCall size={16} />, sub: "Los estados de cada llamada, los strikes y las listas que eligen los closers." },
+    ],
+  },
+  {
+    grupo: "Programa",
+    items: [
+      { valor: "servicio", texto: "Etapas del servicio", icono: <GraduationCap size={16} />, sub: "Las columnas del tablero de alumnos, desde que compran hasta que terminan." },
+      { valor: "contratos", texto: "Contratos y accesos", icono: <FileSignature size={16} />, sub: "El contrato que sale con cada venta y lo que se le da al alumno cuando firma.", soloDuenos: true },
+    ],
+  },
+  {
+    grupo: "Conexiones",
+    items: [
+      { valor: "integraciones", texto: "Integraciones", icono: <Plug size={16} />, sub: "Lo que entra solo: Meta, Calendly, Fathom, YouTube y el banco." },
+      { valor: "whatsapp", texto: "Lector de WhatsApp", icono: <MessageCircle size={16} />, sub: "El número que lee los grupos de los talleres y a qué webinar va cada grupo." },
+    ],
+  },
+  {
+    grupo: "Avanzado",
+    items: [
+      { valor: "campos", texto: "Campos propios", icono: <ListPlus size={16} />, sub: "Datos de más en las fichas." },
+      { valor: "datos", texto: "Datos", icono: <Database size={16} />, sub: "Qué hay cargado y el respaldo.", soloDuenos: true },
+    ],
+  },
+];
+
+const TODAS = MENU.flatMap((g) => g.items);
 
 export default function Ajustes() {
-  /* Se puede entrar directo a una sección por link: el pipeline de alumnos
-     lleva a /ajustes?seccion=pipeline&pipeline=servicio para editar sus etapas. */
-  const params = useSearchParams();
-  const [seccion, setSeccion] = useState<Seccion>(() => {
-    const s = params.get("seccion") as Seccion | null;
-    return s && SECCIONES.includes(s) ? s : "negocio";
-  });
-  const [tema, setTema] = useTema();
-  /* Datos (respaldos, restaurar, volver a la demo, vaciar) es sólo de los
-     dueños: la base le deja borrar a quien edita cada área, así que esto lo
-     cuida la pantalla. */
+  const [url, cambiar] = useParamsURL({ seccion: "negocio", pipeline: "" });
   const { esDueno } = useAcceso();
-  const verSeccion = seccion === "datos" && !esDueno ? "negocio" : seccion;
+  /* Los links viejos: la pestaña Listas y las dos del pipeline. */
+  const pedida: string = url.seccion === "listas" ? "crm" : url.seccion === "pipeline" && url.pipeline === "servicio" ? "servicio" : url.seccion;
+  const item = TODAS.find((i) => i.valor === pedida && (!i.soloDuenos || esDueno)) ?? TODAS[0];
+  const seccion = item.valor;
+  const ir = (s: Seccion) => cambiar({ seccion: s, pipeline: null }, { webinar: null });
+  /* En el teléfono el menú es una tira que se corre de costado: la sección elegida queda a la vista. */
+  const menu = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const nav = menu.current;
+    const el = nav?.querySelector<HTMLElement>('[aria-current="page"]');
+    if (!nav || !el || nav.scrollWidth <= nav.clientWidth) return;
+    const dx = el.getBoundingClientRect().left - nav.getBoundingClientRect().left;
+    nav.scrollLeft += dx - (nav.clientWidth - el.offsetWidth) / 2;
+  }, [seccion]);
 
   return (
-    <div className="stack-5">
-      <PageHead
-        titulo="Ajustes"
-        sub="Acá cambiás cómo funciona Apicanta: las etapas, las listas, los campos de cada ficha y las conexiones. Nada está fijo."
-      />
+    <div className="aj">
+      <nav className="aj-menu" aria-label="Secciones de Ajustes" ref={menu}>
+        {MENU.map((g, i) => {
+          const items = g.items.filter((x) => !x.soloDuenos || esDueno);
+          if (!items.length) return null;
+          return (
+            <div className="aj-menu__grupo" key={g.grupo ?? i}>
+              {g.grupo && <span className="aj-menu__titulo">{g.grupo}</span>}
+              {items.map((x) => (
+                <button
+                  key={x.valor} type="button" className="aj-menu__item" aria-current={x.valor === seccion ? "page" : undefined}
+                  onClick={() => ir(x.valor)}
+                >
+                  {x.icono}<span>{x.texto}</span>
+                </button>
+              ))}
+            </div>
+          );
+        })}
+      </nav>
 
-      <Tabs
-        valor={verSeccion} onChange={setSeccion}
-        opciones={[
-          { valor: "negocio", texto: "Negocio" },
-          { valor: "ventas", texto: "Ventas" },
-          { valor: "utms", texto: "UTMs" },
-          { valor: "pipeline", texto: "Etapas" },
-          { valor: "listas", texto: "Listas" },
-          { valor: "crm", texto: "CRM" },
-          { valor: "campos", texto: "Campos propios" },
-          { valor: "integraciones", texto: "Integraciones" },
-          { valor: "whatsapp", texto: "WhatsApp" },
-          ...(esDueno ? [{ valor: "datos" as const, texto: "Datos" }] : []),
-        ]}
-      />
-
-      {verSeccion === "negocio" && <Negocio tema={tema} setTema={setTema} />}
-      {verSeccion === "ventas" && <CatalogosVenta />}
-      {verSeccion === "utms" && <ConfigUtms />}
-      {verSeccion === "pipeline" && <EtapasDeLosPipelines />}
-      {verSeccion === "listas" && <Listas />}
-      {verSeccion === "crm" && <CrmAjustes />}
-      {verSeccion === "campos" && <Campos />}
-      {verSeccion === "integraciones" && <Integraciones />}
-      {verSeccion === "whatsapp" && <WhatsappLector />}
-      {verSeccion === "datos" && <Datos />}
-
-      {verSeccion === "negocio" && (
-        <Ayuda titulo="Los cambios se guardan al instante" icono={<Info size={18} />}>
-          No hay botón de «guardar todo»: cada cosa que tocás queda aplicada apenas salís del campo,
-          y el cambio se registra en Actividad por si después querés saber qué pasó.
-        </Ayuda>
-      )}    </div>
+      <div className="aj-cuerpo">
+        <header className="aj-cab">
+          <h1 className="aj-cab__titulo">{item.texto}</h1>
+          <p className="aj-cab__sub">{item.sub}</p>
+        </header>
+        {seccion === "negocio" && <Negocio />}
+        {seccion === "ventas" && <CatalogosVenta />}
+        {seccion === "utms" && <ConfigUtms />}
+        {seccion === "pipeline" && <Etapas />}
+        {seccion === "crm" && <CrmAjustes />}
+        {seccion === "servicio" && <EtapasServicio />}
+        {seccion === "contratos" && <ContratosYAccesos />}
+        {seccion === "integraciones" && <Integraciones />}
+        {seccion === "whatsapp" && <WhatsappLector />}
+        {seccion === "campos" && <Campos />}
+        {seccion === "datos" && <Datos />}
+      </div>
+    </div>
   );
 }
 
-/* ---------------- Negocio ---------------- */
+/* ---------------- General ---------------- */
 
-function Negocio({ tema, setTema }: { tema: "dark" | "light"; setTema: (t: "dark" | "light") => void }) {
+function Negocio() {
   const e = useEstado();
   const toast = useToast();
   const { esDueno } = useAcceso();
+  const [tema, setTema] = useTema();
   const [borrador, setBorrador] = useState<Partial<TAjustes>>({});
   const v = <K extends keyof TAjustes>(k: K): TAjustes[K] => (borrador[k] ?? e.ajustes[k]) as TAjustes[K];
 
+  /* Cada campo se guarda al salir de él: no hay «guardar todo». */
   function aplicar<K extends keyof TAjustes>(k: K) {
     if (borrador[k] === undefined || borrador[k] === e.ajustes[k]) return;
     acciones.ajustes({ [k]: borrador[k] } as Partial<TAjustes>);
@@ -142,38 +194,41 @@ function Negocio({ tema, setTema }: { tema: "dark" | "light"; setTema: (t: "dark
   return (
     <div className="stack-4">
       <Card>
-        <CardHead titulo="Tu negocio" sub="Cómo se llama y quién lo maneja. Aparece en la barra lateral y en los registros de actividad." />
+        <CardHead titulo="Tu negocio" sub="Cada campo se guarda al salir de él." />
         <div className="form-grid">
-          <Field label="Nombre del negocio">
+          <Field label="Nombre del negocio" ayuda="Aparece en la barra lateral.">
             <Input value={v("negocio")} onChange={(ev) => setBorrador({ ...borrador, negocio: ev.target.value })} onBlur={() => aplicar("negocio")} placeholder="Hackear IT" />
           </Field>
-          <Field label="Responsable" ayuda="Quién queda como autor de los cambios.">
+          <Field label="Responsable" ayuda="Queda como autor de los cambios.">
             <Input value={v("responsable")} onChange={(ev) => setBorrador({ ...borrador, responsable: ev.target.value })} onBlur={() => aplicar("responsable")} placeholder="Yari Taft" />
           </Field>
-          <Field label="Moneda base" ayuda="En la que se muestran todos los totales.">
+          <Field label="Moneda base" ayuda="La de todos los totales.">
             <Select value={v("monedaBase")} onChange={(ev) => { acciones.ajustes({ monedaBase: ev.target.value as "USD" | "ARS" }); toast("Moneda actualizada."); }} opciones={["USD", "ARS"]} />
           </Field>
-          <Field label="Tipo de cambio" ayuda="Cuántos pesos vale un dólar.">
+          <Field label="Tipo de cambio" ayuda="Pesos por dólar.">
             <InputMonto decimales={4} value={v("tipoCambio")} onChange={(ev) => setBorrador({ ...borrador, tipoCambio: montoDe(ev.target.value) })} onBlur={() => aplicar("tipoCambio")} />
           </Field>
         </div>
       </Card>
 
-      <Card>
-        <CardHead titulo="Apariencia" sub="El oscuro es el tema de la marca. El claro va bien para sesiones largas o para imprimir." />
-        <div className="row-wrap">
-          <Button variante={tema === "dark" ? "brand" : "secondary"} icono={<Moon size={16} />} onClick={() => setTema("dark")}>Oscuro</Button>
-          <Button variante={tema === "light" ? "brand" : "secondary"} icono={<Sun size={16} />} onClick={() => setTema("light")}>Claro</Button>
-        </div>
-      </Card>
-
-      {esDueno && hayNube && <PedirActualizar />}
-
-      <Card>
-        <CardHead titulo="Guía de bienvenida" sub="El recorrido de 5 pasos que se muestra la primera vez." />
-        <div className="row-3">
-          <Switch checked={!e.ajustes.tourVisto} onChange={(x) => { acciones.ajustesSilencioso({ tourVisto: !x }); toast(x ? "Se va a mostrar al recargar." : "Desactivada."); }} etiqueta="Mostrar la guía" />
-          <span className="t-body t-muted">Volver a mostrar la guía la próxima vez que abra Apicanta</span>
+      <Card style={{ padding: 0 }}>
+        <div className="aj-filas">
+          <Fila titulo="Apariencia" sub="Sólo en este navegador. El oscuro es el de la marca.">
+            <Segmentado
+              etiqueta="Apariencia" valor={tema} onCambiar={setTema}
+              opciones={[
+                { valor: "dark", texto: <><Moon size={14} aria-hidden /> Oscuro</> },
+                { valor: "light", texto: <><Sun size={14} aria-hidden /> Claro</> },
+              ]}
+            />
+          </Fila>
+          <Fila titulo="Guía de bienvenida" sub="El recorrido de 5 pasos, otra vez al abrir la app.">
+            <Switch
+              checked={!e.ajustes.tourVisto} etiqueta="Volver a mostrar la guía de bienvenida"
+              onChange={(x) => { acciones.ajustesSilencioso({ tourVisto: !x }); toast(x ? "Se va a mostrar al recargar." : "Desactivada."); }}
+            />
+          </Fila>
+          {esDueno && hayNube && <PedirActualizar />}
         </div>
       </Card>
     </div>
@@ -181,65 +236,64 @@ function Negocio({ tema, setTema }: { tema: "dark" | "light"; setTema: (t: "dark
 }
 
 /* Cada versión publicada ya pide actualizar sola (components/shell/AvisoVersion). Esto es para cuando un dueño cambia algo
-   de Ajustes que el equipo tiene que ver ya. */
+   de Ajustes que el equipo tiene que ver ya: a todos les aparece el cartel y a los 2 minutos la app se bloquea hasta actualizar. */
 function PedirActualizar() {
   const e = useEstado();
   const toast = useToast();
   return (
-    <Card>
-      <CardHead titulo="Actualizar la app de todo el equipo"
-        sub="Cuando se publica una versión nueva, a todos les aparece un cartel para actualizar y a los 2 minutos la app se bloquea hasta que lo hagan. Usá esto si cambiaste algo de Ajustes que el equipo tiene que ver ya." />
-      <div className="row-wrap" style={{ gap: 12 }}>
-        <Button variante="secondary" icono={<RefreshCw size={16} />} onClick={() => {
-          const recargaPedida = new Date().toISOString();
-          marcarRecargaPropia(recargaPedida);
-          acciones.ajustes({ recargaPedida }, "Se pidió a todo el equipo que actualice la app.");
-          toast("Listo: en menos de dos minutos a todos les aparece el cartel para actualizar.");
-        }}>Pedir a todos que actualicen</Button>
-        {e.ajustes.recargaPedida && <span className="t-sm t-muted">Último pedido: {relativo(e.ajustes.recargaPedida)}</span>}
-      </div>
-    </Card>
+    <Fila
+      titulo="Actualizar la app de todo el equipo"
+      sub={e.ajustes.recargaPedida ? `Para que vean ya un cambio de Ajustes. Último pedido: ${relativo(e.ajustes.recargaPedida)}.` : "Para que vean ya un cambio de Ajustes."}
+    >
+      <Button sm variante="secondary" icono={<RefreshCw size={15} />} onClick={() => {
+        const recargaPedida = new Date().toISOString();
+        marcarRecargaPropia(recargaPedida);
+        acciones.ajustes({ recargaPedida }, "Se pidió a todo el equipo que actualice la app.");
+        toast("Listo: en menos de dos minutos a todos les aparece el cartel para actualizar.");
+      }}>Pedir que actualicen</Button>
+    </Fila>
   );
 }
 
-/* ---------------- Etapas ---------------- */
-
-/* Hay dos tableros: el de ventas (leads, lo de siempre) y el de servicio
-   (alumnos, desde que compran hasta que terminan). Cada uno con sus etapas. */
-function EtapasDeLosPipelines() {
-  const params = useSearchParams();
-  const [cual, setCual] = useState<"ventas" | "servicio">(
-    params.get("pipeline") === "servicio" ? "servicio" : "ventas",
-  );
-  return (
-    <div className="stack-4">
-      <Tabs
-        valor={cual} onChange={setCual}
-        opciones={[
-          { valor: "ventas", texto: "Pipeline de ventas" },
-          { valor: "servicio", texto: "Pipeline de servicio" },
-        ]}
-      />
-      {cual === "ventas" ? <Etapas /> : <EtapasServicio />}
-    </div>
-  );
-}
+/* ---------------- Pipeline (las etapas de los leads) ---------------- */
 
 function Etapas() {
   const e = useEstado();
   const toast = useToast();
   const [form, setForm] = useState<(Omit<Etapa, "id"> & { id?: string }) | null>(null);
   const [borrar, setBorrar] = useState<Etapa | null>(null);
+  const [arrastrando, setArrastrando] = useState<string | null>(null);
+  const [sobre, setSobre] = useState<string | null>(null);
 
   const ordenadas = [...e.etapas].sort((a, b) => a.orden - b.orden);
+  const leads = (id: string) => e.leads.filter((l) => l.etapaId === id).length;
+  const max = Math.max(1, ...ordenadas.map((et) => leads(et.id)));
 
-  function mover(et: Etapa, dir: -1 | 1) {
-    const i = ordenadas.findIndex((x) => x.id === et.id);
+  /* El orden nuevo, escrito sólo en las etapas que cambiaron de lugar. */
+  function ordenar(ids: string[]) {
+    ids.forEach((id, i) => {
+      const et = ordenadas.find((x) => x.id === id);
+      if (et && et.orden !== i) acciones.actualizarSilencioso<Etapa>("etapas", id, { orden: i });
+    });
+  }
+  function mover(i: number, dir: -1 | 1) {
     const j = i + dir;
     if (j < 0 || j >= ordenadas.length) return;
-    const a = ordenadas[i], b = ordenadas[j];
-    acciones.actualizarSilencioso<Etapa>("etapas", a.id, { orden: b.orden });
-    acciones.actualizarSilencioso<Etapa>("etapas", b.id, { orden: a.orden });
+    const ids = ordenadas.map((x) => x.id);
+    [ids[i], ids[j]] = [ids[j], ids[i]];
+    ordenar(ids);
+  }
+  function soltar(sobreId: string) {
+    const origen = arrastrando;
+    setArrastrando(null);
+    setSobre(null);
+    if (!origen || origen === sobreId) return;
+    const desde = ordenadas.findIndex((x) => x.id === origen);
+    const hasta = ordenadas.findIndex((x) => x.id === sobreId);
+    const ids = ordenadas.map((x) => x.id).filter((x) => x !== origen);
+    const i = ids.indexOf(sobreId);
+    ids.splice(desde < hasta ? i + 1 : i, 0, origen);
+    ordenar(ids);
   }
 
   function guardar() {
@@ -254,39 +308,55 @@ function Etapas() {
     <div className="stack-4">
       <Card>
         <CardHead
-          titulo="Etapas del pipeline"
-          sub="Las columnas del tablero, en orden. La probabilidad se usa para calcular el pipeline ponderado."
+          titulo={`${num(ordenadas.length)} etapas`}
+          sub="Arrastrá para cambiar el orden. La de ganado cuenta los inscriptos; la de perdido sale del pipeline abierto."
           acciones={<Button sm variante="primary" icono={<Plus size={15} />} onClick={() => setForm({ nombre: "", variante: "brand", probabilidad: 50, orden: e.etapas.length })}>Nueva etapa</Button>}
         />
-        <div className="stack-2">
-          {ordenadas.map((et, i) => (
-            <div key={et.id} className="agenda-item" style={{ cursor: "default" }}>
-              <span style={{ display: "flex", flexDirection: "column", gap: 0 }}>
-                <IconButton etiqueta="Subir" onClick={() => mover(et, -1)} disabled={i === 0} style={{ height: 18 }}>▲</IconButton>
-                <IconButton etiqueta="Bajar" onClick={() => mover(et, 1)} disabled={i === ordenadas.length - 1} style={{ height: 18 }}>▼</IconButton>
-              </span>
-              <GripVertical size={16} color="var(--ink-subtle)" />
-              <span style={{ flex: 1, minWidth: 0 }}>
-                <Badge variante={et.variante}>{et.nombre}</Badge>
-              </span>
-              <span className="t-sm t-subtle t-num">{et.probabilidad}% de cierre</span>
-              <span className="t-sm t-subtle">{e.leads.filter((l) => l.etapaId === et.id).length} leads</span>
-              {et.esGanada && <Tag>Ganada</Tag>}
-              {et.esPerdida && <Tag>Perdida</Tag>}
-              <span style={{ display: "flex", gap: 2 }}>
-                <IconButton etiqueta="Editar" onClick={() => setForm({ ...et })}><Settings2 size={15} /></IconButton>
-                <IconButton etiqueta="Eliminar" onClick={() => setBorrar(et)}><Trash2 size={15} /></IconButton>
-              </span>
-            </div>
-          ))}
+        <div className="aj-etapas" role="list">
+          <div className="aj-etapa aj-etapa--cabeza" aria-hidden>
+            <span /><span>Etapa</span><span>Leads</span><span className="aj-num">Cierre</span><span />
+          </div>
+          {ordenadas.map((et, i) => {
+            const n = leads(et.id);
+            return (
+              <div
+                key={et.id} role="listitem"
+                className={`aj-etapa${sobre === et.id ? " aj-etapa--sobre" : ""}${arrastrando === et.id ? " aj-etapa--arrastrando" : ""}`}
+                onDragOver={(ev) => { if (!arrastrando) return; ev.preventDefault(); if (sobre !== et.id) setSobre(et.id); }}
+                onDrop={(ev) => { ev.preventDefault(); soltar(et.id); }}
+              >
+                <span className="aj-etapa__mover">
+                  <span
+                    className="aj-etapa__asa" draggable title="Arrastrá para cambiar el orden"
+                    onDragStart={(ev) => { ev.dataTransfer.setData("text/plain", et.id); ev.dataTransfer.effectAllowed = "move"; setArrastrando(et.id); }}
+                    onDragEnd={() => { setArrastrando(null); setSobre(null); }}
+                  >
+                    <GripVertical size={16} />
+                  </span>
+                  <span className="aj-etapa__flechas">
+                    <IconButton etiqueta={`Subir «${et.nombre}»`} onClick={() => mover(i, -1)} disabled={i === 0} style={{ width: 24, height: 18 }}><ChevronUp size={14} /></IconButton>
+                    <IconButton etiqueta={`Bajar «${et.nombre}»`} onClick={() => mover(i, 1)} disabled={i === ordenadas.length - 1} style={{ width: 24, height: 18 }}><ChevronDown size={14} /></IconButton>
+                  </span>
+                </span>
+                <span className="aj-etapa__nombre">
+                  <Badge variante={et.variante}>{et.nombre}</Badge>
+                  {et.esGanada && <span className="aj-etapa__marca" title="Es la de ganado: cuenta los inscriptos"><Trophy size={14} aria-label="Ganado" /></span>}
+                  {et.esPerdida && <span className="aj-etapa__marca" title="Es la de perdido: sale del pipeline abierto"><Ban size={14} aria-label="Perdido" /></span>}
+                </span>
+                <span className="aj-etapa__cuantos">
+                  <span className="aj-barra" aria-hidden><span style={{ width: `${(n / max) * 100}%` }} /></span>
+                  <span className="t-num">{num(n)}</span>
+                </span>
+                <span className="aj-num t-num" title="Probabilidad de cierre: se usa para el pipeline ponderado">{et.probabilidad}%</span>
+                <span className="aj-etapa__acciones">
+                  <IconButton etiqueta={`Editar «${et.nombre}»`} onClick={() => setForm({ ...et })}><Settings2 size={15} /></IconButton>
+                  <IconButton etiqueta={`Eliminar «${et.nombre}»`} onClick={() => setBorrar(et)}><Trash2 size={15} /></IconButton>
+                </span>
+              </div>
+            );
+          })}
         </div>
       </Card>
-
-      <Ayuda titulo="Qué pasa si borrás una etapa" icono={<AlertTriangle size={18} />}>
-        Los leads que estaban ahí no se borran, pero quedan sin etapa hasta que los muevas. Conviene mover los leads
-        primero y borrar la etapa después. La etapa marcada como <strong>ganada</strong> es la que dispara el
-        contador de inscriptos; la <strong>perdida</strong> queda fuera del pipeline abierto.
-      </Ayuda>
 
       {form && (
         <ModalForm
@@ -307,11 +377,11 @@ function Etapas() {
           </Field>
           <div className="row-3">
             <Switch checked={Boolean(form.esGanada)} onChange={(x) => setForm({ ...form, esGanada: x, esPerdida: x ? false : form.esPerdida })} etiqueta="Es la etapa ganada" />
-            <span className="t-body t-muted">Es la etapa de <strong>cerrado ganado</strong> (cuenta como inscripto)</span>
+            <span className="t-body t-muted">Es la de <strong>ganado</strong>: cuenta como inscripto</span>
           </div>
           <div className="row-3">
             <Switch checked={Boolean(form.esPerdida)} onChange={(x) => setForm({ ...form, esPerdida: x, esGanada: x ? false : form.esGanada })} etiqueta="Es la etapa perdida" />
-            <span className="t-body t-muted">Es la etapa de <strong>perdido</strong> (sale del pipeline abierto)</span>
+            <span className="t-body t-muted">Es la de <strong>perdido</strong>: sale del pipeline abierto</span>
           </div>
         </ModalForm>
       )}
@@ -319,36 +389,32 @@ function Etapas() {
       <Confirmar
         abierto={borrar !== null} onCerrar={() => setBorrar(null)}
         titulo={`¿Eliminar la etapa «${borrar?.nombre}»?`}
-        texto={`${e.leads.filter((l) => l.etapaId === borrar?.id).length} leads están en esta etapa y van a quedar sin columna. Movelos primero si querés conservarlos ordenados.`}
+        texto={`${num(borrar ? leads(borrar.id) : 0)} leads están en esta etapa y van a quedar sin columna (no se borran). Movelos primero si querés conservarlos ordenados.`}
         onConfirmar={() => { if (borrar) { acciones.eliminar("etapas", borrar.id, borrar.nombre); toast("Etapa eliminada."); } }}
       />
     </div>
   );
 }
 
-/* ---------------- Listas ---------------- */
+/* ---------------- CRM ---------------- */
 
-const LISTAS: { clave: keyof TAjustes; titulo: string; sub: string }[] = [
-  { clave: "fuentes", titulo: "Fuentes de leads", sub: "De dónde puede venir alguien." },
-  { clave: "planes", titulo: "Planes", sub: "Los programas que vendés." },
-  { clave: "tiposSesion", titulo: "Tipos de sesión", sub: "Las clases de llamada que hacés." },
-  { clave: "categoriasIngreso", titulo: "Categorías de ingreso", sub: "Cómo clasificás la plata que entra." },
-  { clave: "categoriasEgreso", titulo: "Categorías de egreso", sub: "Cómo clasificás la plata que sale." },
-  { clave: "metodosPago", titulo: "Métodos de pago", sub: "Por dónde cobrás y pagás." },
-];
-
-function Listas() {
+/* El cierre del día (strikes y descuento), los estados de llamada y las dos listas que se usan: de dónde viene un
+   lead y por qué no cerró. Las otras listas viejas (planes, tipos de sesión, categorías y métodos de pago) no las leía
+   ninguna pantalla —Finanzas tiene sus propias categorías—, así que no se ofrecen: el dato queda en los ajustes. */
+function CrmAjustes() {
   const e = useEstado();
   return (
-    <div className="grid-2">
-      {LISTAS.map((l) => <ListaEditable key={String(l.clave)} clave={l.clave} titulo={l.titulo} sub={l.sub} />)}
-      {/* Las objeciones que elige el closer en su cierre del día (lib/eod.ts):
-          viven en la configuración del CRM. */}
-      <ListaEditable
-        titulo="Objeciones del cierre del día" sub="Por qué no cerró: lo que elige el closer en su EOD, con un clic."
-        items={objecionesDe(e.ajustes)}
-        onGuardar={(objeciones, detalle) => acciones.ajustes({ crm: { ...(e.ajustes.crm ?? {}), objeciones } }, detalle)}
-      />
+    <div className="stack-5">
+      <CierreDelDiaAjustes />
+      <EstadosDeLlamada />
+      <div className="grid-2">
+        <ListaEditable clave="fuentes" titulo="Fuentes de leads" sub="De dónde puede venir alguien, al cargar un lead a mano." />
+        <ListaEditable
+          titulo="Objeciones del cierre del día" sub="Por qué no cerró: lo que elige el closer en su EOD."
+          items={objecionesDe(e.ajustes)}
+          onGuardar={(objeciones, detalle) => acciones.ajustes({ crm: { ...(e.ajustes.crm ?? {}), objeciones } }, detalle)}
+        />
+      </div>
     </div>
   );
 }
@@ -384,40 +450,20 @@ function ListaEditable({ clave, titulo, sub, items: propios, onGuardar }: {
   return (
     <Card>
       <CardHead titulo={titulo} sub={sub} />
-      <div className="row-wrap" style={{ marginBottom: 14, minHeight: 32 }}>
-        {items.length === 0 && <span className="t-sm t-subtle">La lista está vacía. Agregá la primera opción abajo.</span>}
+      <div className="aj-chips">
+        {items.length === 0 && <span className="t-sm t-subtle">Vacía.</span>}
         {items.map((x) => (
-          <span key={x} className="chip" style={{ cursor: "default" }}>
+          <span key={x} className="chip aj-chip">
             {x}
-            <button
-              type="button" aria-label={`Quitar ${x}`} onClick={() => quitar(x)}
-              style={{ background: "none", border: 0, cursor: "pointer", display: "grid", placeItems: "center", padding: 0, marginLeft: 2, color: "var(--ink-subtle)" }}
-            >
-              <X size={14} />
-            </button>
+            <button type="button" className="aj-chip__quitar" aria-label={`Quitar ${x}`} onClick={() => quitar(x)}><X size={13} /></button>
           </span>
         ))}
+        <form onSubmit={(ev) => { ev.preventDefault(); agregar(); }} className="aj-chip-nuevo">
+          <Plus size={13} aria-hidden />
+          <input value={nuevo} onChange={(ev) => setNuevo(ev.target.value)} placeholder="Agregar" aria-label={`Agregar a ${titulo}`} />
+        </form>
       </div>
-      <form onSubmit={(ev) => { ev.preventDefault(); agregar(); }} className="row" style={{ gap: 8 }}>
-        <div style={{ flex: 1 }}>
-          <Input value={nuevo} onChange={(ev) => setNuevo(ev.target.value)} placeholder="Agregar una opción…" aria-label={`Agregar a ${titulo}`} />
-        </div>
-        <Button variante="secondary" type="submit" icono={<Plus size={16} />} disabled={!nuevo.trim()}>Agregar</Button>
-      </form>
     </Card>
-  );
-}
-
-/* ---------------- CRM ---------------- */
-
-/* El cierre del día (strikes y el interruptor del descuento) y los estados de
-   llamada, que se pueden ocultar. */
-function CrmAjustes() {
-  return (
-    <div className="stack-5">
-      <CierreDelDiaAjustes />
-      <EstadosDeLlamada />
-    </div>
   );
 }
 
@@ -429,6 +475,7 @@ function Campos() {
   const [form, setForm] = useState<(Omit<CampoPersonalizado, "id"> & { id?: string }) | null>(null);
   const [borrar, setBorrar] = useState<CampoPersonalizado | null>(null);
   const [opciones, setOpciones] = useState("");
+  const nuevo = () => { setForm({ entidad: "lead", nombre: "", clave: "", tipo: "texto", requerido: false }); setOpciones(""); };
 
   function guardar() {
     if (!form) return;
@@ -442,26 +489,22 @@ function Campos() {
 
   return (
     <div className="stack-4">
-      <Ayuda titulo="Agregá los datos que a vos te importan" icono={<ListPlus size={18} />}>
-        Un campo propio aparece en el formulario y en la ficha de la entidad que elijas. Por ejemplo: «Nivel de inglés»
-        en los leads, o «Empresa donde entró» en los alumnos. Los campos que crees se aplican a todos los registros
-        nuevos y a los que ya existen.
-      </Ayuda>
-
-      <Card>
-        <CardHead
-          titulo="Campos personalizados"
-          sub={`${e.campos.length} campos propios definidos.`}
-          acciones={<Button sm variante="primary" icono={<Plus size={15} />} onClick={() => { setForm({ entidad: "lead", nombre: "", clave: "", tipo: "texto", requerido: false }); setOpciones(""); }}>Nuevo campo</Button>}
-        />
-        {e.campos.length === 0 ? (
+      {e.campos.length === 0 ? (
+        <Card>
           <Empty
             icono={<Layers size={22} />}
-            titulo="Todavía no agregaste campos propios"
-            texto="Las fichas ya traen lo básico. Si necesitás guardar algo más — nivel de inglés, empresa, seniority — agregalo acá y aparece en el formulario."
-            accion={<Button variante="brand" icono={<Plus size={16} />} onClick={() => { setForm({ entidad: "lead", nombre: "", clave: "", tipo: "texto", requerido: false }); setOpciones(""); }}>Agregar un campo</Button>}
+            titulo="Todavía no hay campos propios"
+            texto="Las fichas ya traen lo básico. Si querés guardar algo más —nivel de inglés en los leads, la empresa donde entró en los alumnos— agregalo y aparece en su formulario y en su ficha."
+            accion={<Button variante="primary" icono={<Plus size={16} />} onClick={nuevo}>Agregar un campo</Button>}
           />
-        ) : (
+        </Card>
+      ) : (
+        <Card>
+          <CardHead
+            titulo={`${num(e.campos.length)} ${e.campos.length === 1 ? "campo propio" : "campos propios"}`}
+            sub="Aparecen en el formulario y en la ficha de lo que elegiste, en los registros nuevos y en los que ya estaban."
+            acciones={<Button sm variante="primary" icono={<Plus size={15} />} onClick={nuevo}>Nuevo campo</Button>}
+          />
           <div className="stack-2">
             {ENTIDADES.filter((en) => e.campos.some((c) => c.entidad === en.valor)).map((en) => (
               <div key={en.valor}>
@@ -487,8 +530,8 @@ function Campos() {
               </div>
             ))}
           </div>
-        )}
-      </Card>
+        </Card>
+      )}
 
       {form && (
         <ModalForm
@@ -532,139 +575,18 @@ function Campos() {
   );
 }
 
-/* ---------------- Integraciones ---------------- */
-
-function Integraciones() {
-  return (
-    <div className="stack-4">
-      <Ayuda titulo="Apicanta funciona sin conectar nada" icono={<Info size={18} />}>
-        Todo lo que ves anda cargando los datos a mano. Estas conexiones son para ahorrarte ese trabajo: cuando estén
-        puestas, la inversión de Meta, las sesiones de Calendly, las grabaciones de Fathom y los vivos de YouTube entran solos. Las claves viven
-        en el servidor (en Vercel), nunca en esta pantalla.
-      </Ayuda>
-
-      <EstadoMeta />
-      <FormulariosMeta />
-      <ConversionsApi />
-      <EstadoCalendly />
-      <FathomIntegracion />
-      <YoutubeIntegracion />
-      <BancoIntegracion />
-      <AccesosAlumnosIntegracion />
-    </div>
-  );
-}
-
-/* Meta se conecta del lado del servidor: con el token del negocio
-   (META_SYSTEM_TOKEN, en Vercel) o con el login de Meta desde Marketing.
-   Acá se muestra si está andando preguntándole a la misma ruta que usa
-   Marketing. Antes había dos campos para pegar la cuenta y el token a mano,
-   pero nada los leía: decían "Sin configurar" con Meta conectado. */
-function EstadoMeta() {
-  const [estado, setEstado] = useState<
-    { conectado: boolean; porSistema?: boolean; cuentas?: { id: string; nombre: string }[]; motivo?: string } | null
-  >(null);
-  useEffect(() => {
-    let vivo = true;
-    cabeceras()
-      .then((headers) => fetch("/api/meta/cuentas", { cache: "no-store", headers }))
-      .then((r) => r.json())
-      .then((j) => { if (vivo) setEstado(j); })
-      .catch(() => { if (vivo) setEstado({ conectado: false, motivo: "error" }); });
-    return () => { vivo = false; };
-  }, []);
-
-  /* Meta frenó por límite: la conexión está bien, sólo hay que esperar. */
-  const conectado = Boolean(estado?.conectado || estado?.motivo === "limite");
-  const cuentas = estado?.cuentas ?? [];
-
-  return (
-    <Card>
-      <CardHead
-        titulo="Meta Ads"
-        sub="La inversión, las campañas y los anuncios entran solos a Marketing."
-        acciones={
-          <Badge variante={conectado ? "success" : "neutral"} icono={conectado ? <Check size={13} /> : <Plug size={13} />}>
-            {estado === null ? "Revisando…" : conectado ? "Conectado" : "Sin conectar"}
-          </Badge>
-        }
-      />
-      <p className="t-sm t-muted">
-        {estado === null
-          ? "Preguntándole a Meta…"
-          : conectado
-            ? estado.porSistema
-              ? "Conectado con el token del negocio, configurado en el servidor: no depende de quién tenga la sesión abierta."
-              : "Conectado con tu sesión de Meta, en este navegador."
-            : estado.motivo === "sin-configurar"
-              ? "Falta configurar en el servidor el token del negocio (META_SYSTEM_TOKEN) o la app de Meta."
-              : estado.motivo === "error"
-                ? "Meta no respondió bien. Probá de nuevo en un rato."
-                : "Falta conectar tu cuenta de Meta: se hace con un clic desde Marketing."}
-      </p>
-      <p className="t-sm t-subtle" style={{ marginTop: 8 }}>
-        {conectado && cuentas.length > 0
-          ? `${num(cuentas.length)} ${cuentas.length === 1 ? "cuenta publicitaria" : "cuentas publicitarias"}: ${cuentas.map((c) => c.nombre).join(", ")}. `
-          : ""}
-        <Link href="/marketing" className="link">{conectado ? "Ver en Marketing" : "Ir a Marketing para conectar"}</Link>
-      </p>
-    </Card>
-  );
-}
-
-/* Calendly se conecta del lado del servidor: el token vive en Vercel, no en
-   esta pantalla (antes se guardaba en Ajustes, donde lo podía leer cualquiera
-   que abriera la app). Acá sólo se muestra si está andando, preguntándole al
-   propio webhook, y qué entró. */
-function EstadoCalendly() {
-  const e = useEstado();
-  const [listo, setListo] = useState<boolean | null>(null);
-  useEffect(() => {
-    let vivo = true;
-    fetch("/api/calendly/webhook")
-      .then((r) => r.json())
-      .then((j: { listo?: boolean }) => { if (vivo) setListo(Boolean(j.listo)); })
-      .catch(() => { if (vivo) setListo(false); });
-    return () => { vivo = false; };
-  }, []);
-  /* Sólo las que trajo la integración: tienen el invitado de Calendly. Los
-     datos de ejemplo también dicen origen "calendly" y harían creer que ya
-     entraron llamadas que nunca existieron. */
-  const deCalendly = e.sesiones.filter((s) => s.calendlyInvitadoUri);
-  const ultima = deCalendly.reduce<string | null>((m, s) => (!m || s.creadoEn > m ? s.creadoEn : m), null);
-
-  return (
-    <Card>
-      <CardHead
-        titulo="Calendly"
-        sub="Cada agenda, cancelación y no-show de la organización entra sola a la Agenda."
-        acciones={
-          <Badge variante={listo ? "success" : "neutral"} icono={listo ? <Check size={13} /> : <Plug size={13} />}>
-            {listo === null ? "Revisando…" : listo ? "Conectado" : "Sin configurar"}
-          </Badge>
-        }
-      />
-      <p className="t-sm t-muted">
-        {listo
-          ? "Entra en segundos por webhook, y cada 30 minutos se repescan las que se hayan perdido. Trae el canal, los UTMs y lo que la persona contestó en el formulario."
-          : "Falta configurar en el servidor el token de Calendly y la clave de firma del webhook."}
-      </p>
-      <p className="t-sm t-subtle" style={{ marginTop: 8 }}>
-        {deCalendly.length
-          ? `${num(deCalendly.length)} ${deCalendly.length === 1 ? "llamada entró" : "llamadas entraron"} por Calendly · la última, ${relativo(ultima ?? "")}.`
-          : "Todavía no entró ninguna llamada por Calendly."}
-      </p>
-    </Card>
-  );
-}
-
 /* ---------------- Datos ---------------- */
 
+/* Con la app en la nube, «Volver a los datos de ejemplo», «Vaciar todo» y «Restaurar» vacían la base de producción
+   (store: vaciarNube) y no se pueden deshacer. Antes estaban a dos clics, con un texto que decía que todo vivía en
+   este navegador (05/11). Ahora, en la nube, sólo queda bajar el respaldo; restaurar uno va escondido y pregunta
+   con el archivo ya elegido. Ejemplo y vaciar quedan para la app de prueba, sin base. */
 function Datos() {
   const e = useEstado();
   const toast = useToast();
   const archivo = useRef<HTMLInputElement>(null);
   const [confirmar, setConfirmar] = useState<"demo" | "vaciar" | null>(null);
+  const [aRestaurar, setARestaurar] = useState<{ nombre: string; texto: string } | null>(null);
 
   function exportar() {
     const blob = new Blob([acciones.exportar()], { type: "application/json" });
@@ -676,62 +598,71 @@ function Datos() {
     toast("Respaldo descargado.");
   }
 
-  function importar(f: File) {
+  function elegir(f: File) {
     const lector = new FileReader();
-    lector.onload = () => {
-      const ok = acciones.importar(String(lector.result));
-      toast(ok ? "Datos restaurados." : "El archivo no tiene el formato correcto.", ok ? "ok" : "err");
-    };
+    lector.onload = () => setARestaurar({ nombre: f.name, texto: String(lector.result) });
     lector.readAsText(f);
   }
 
   const conteos = [
-    ["Leads", e.leads.length], ["Alumnos", e.alumnos.length], ["Sesiones", e.sesiones.length],
-    ["Webinars", e.webinars.length], ["Campañas", e.campaigns.length],
-    ["Ventas", e.ventas.length], ["Pagos", e.pagos.length], ["Gastos", e.gastos.length],
-    ["Reportes", e.reportes.length], ["Metas", e.metas.length],
+    ["Leads", e.leads.length], ["Alumnos", e.alumnos.length], ["Llamadas", e.sesiones.length],
+    ["Webinars", e.webinars.length], ["Ventas", e.ventas.length], ["Cobros", e.pagos.length],
+    ["Gastos", e.gastos.length], ["Reportes", e.reportes.length],
   ] as const;
 
   return (
     <div className="stack-4">
-      <Card>
-        <CardHead titulo="Qué hay cargado" sub="Todo esto vive en este navegador." />
-        <div className="grid-stats" style={{ gap: 12 }}>
+      <Card style={{ padding: 0 }}>
+        <div className="aj-conteos">
           {conteos.map(([k, n]) => (
-            <div key={k} style={{ background: "var(--surface-200)", border: "1px solid var(--border)", borderRadius: "var(--radius-md)", padding: "12px 14px" }}>
-              <div className="t-label" style={{ marginBottom: 4 }}>{k}</div>
-              <div className="t-num" style={{ fontSize: 22, fontWeight: 600 }}>{n}</div>
+            <div key={k} className="aj-conteo">
+              <span className="aj-conteo__n t-num">{num(n)}</span>
+              <span className="aj-conteo__k">{k}</span>
             </div>
           ))}
         </div>
-      </Card>
-
-      <Card>
-        <CardHead titulo="Respaldo" sub="Bajate todo en un archivo, o restaurá uno que hayas guardado antes." />
-        <div className="row-wrap">
-          <Button variante="secondary" icono={<Download size={16} />} onClick={exportar}>Descargar respaldo</Button>
-          <Button variante="secondary" icono={<Upload size={16} />} onClick={() => archivo.current?.click()}>Restaurar desde archivo</Button>
-          <input
-            ref={archivo} type="file" accept="application/json" style={{ display: "none" }}
-            onChange={(ev) => { const f = ev.target.files?.[0]; if (f) importar(f); ev.target.value = ""; }}
-          />
+        <div className="aj-filas aj-filas--borde">
+          <Fila titulo="Respaldo" sub={hayNube ? "Todo vive en la nube y se guarda solo. Esto baja una copia en un archivo, para guardar aparte." : "Todo vive en este navegador: bajate una copia de vez en cuando."}>
+            <Button sm variante="secondary" icono={<Download size={15} />} onClick={exportar}>Descargar respaldo</Button>
+          </Fila>
         </div>
       </Card>
 
-      <Card>
-        <CardHead titulo="Empezar de nuevo" sub="Cuando termines de probar y quieras cargar tus datos de verdad." />
-        <div className="row-wrap">
-          <Button variante="secondary" onClick={() => setConfirmar("demo")}>Volver a los datos de ejemplo</Button>
-          <Button variante="danger" icono={<Trash2 size={16} />} onClick={() => setConfirmar("vaciar")}>Vaciar todo</Button>
+      <Plegable titulo={<span className="aj-riesgo"><ShieldAlert size={15} aria-hidden /> Zona de riesgo</span>} resumen={hayNube ? "Restaurar un respaldo" : "Restaurar, ejemplo y vaciar"}>
+        <div className="aj-filas">
+          <Fila titulo="Restaurar desde un archivo" sub={hayNube ? "Reemplaza todo lo que hay en la nube, para todo el equipo, por lo del archivo." : "Reemplaza lo de este navegador por lo del archivo."}>
+            <Button sm variante="danger" icono={<Upload size={15} />} onClick={() => archivo.current?.click()}>Elegir archivo</Button>
+            <input
+              ref={archivo} type="file" accept="application/json" style={{ display: "none" }}
+              onChange={(ev) => { const f = ev.target.files?.[0]; if (f) elegir(f); ev.target.value = ""; }}
+            />
+          </Fila>
+          {!hayNube && (
+            <>
+              <Fila titulo="Volver a los datos de ejemplo" sub="Reemplaza todo por la demostración.">
+                <Button sm variante="secondary" onClick={() => setConfirmar("demo")}>Cargar ejemplo</Button>
+              </Fila>
+              <Fila titulo="Vaciar todo" sub="Borra leads, alumnos, llamadas, webinars y movimientos. Las etapas y las listas quedan.">
+                <Button sm variante="danger" icono={<Trash2 size={15} />} onClick={() => setConfirmar("vaciar")}>Vaciar todo</Button>
+              </Fila>
+            </>
+          )}
         </div>
-      </Card>
+      </Plegable>
 
-      <Ayuda titulo="Dónde vive tu información" icono={<Database size={18} />}>
-        Por ahora Apicanta guarda todo en este navegador, así que es privado y funciona sin internet, pero no se
-        comparte entre dispositivos. Bajate un respaldo de vez en cuando. Cuando conectemos la base de datos, los
-        datos pasan a estar en la nube y se sincronizan solos — la app no cambia en nada.
-      </Ayuda>
-
+      <Confirmar
+        abierto={aRestaurar !== null} onCerrar={() => setARestaurar(null)}
+        titulo={`¿Restaurar «${aRestaurar?.nombre ?? ""}»?`}
+        texto={hayNube
+          ? "Se borra todo lo que hay en la nube —leads, ventas, cobros, gastos, todo— y se carga lo del archivo, para todo el equipo. No se puede deshacer: bajate un respaldo de hoy antes."
+          : "Se reemplaza todo lo que hay en este navegador por lo del archivo."}
+        confirmarTexto="Restaurar y reemplazar todo"
+        onConfirmar={() => {
+          if (!aRestaurar) return;
+          const ok = acciones.importar(aRestaurar.texto);
+          toast(ok ? "Datos restaurados." : "El archivo no tiene el formato correcto.", ok ? "ok" : "err");
+        }}
+      />
       <Confirmar
         abierto={confirmar === "demo"} onCerrar={() => setConfirmar(null)}
         titulo="¿Volver a los datos de ejemplo?"

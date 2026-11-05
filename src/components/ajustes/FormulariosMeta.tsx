@@ -1,5 +1,6 @@
 "use client";
 
+import { Conexion, type EstadoConexion } from "./Conexion";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Check, Download, Plug, TriangleAlert, Zap } from "lucide-react";
 import { Badge, Button, Card, CardHead } from "@/components/ui/ui";
@@ -105,17 +106,15 @@ export function FormulariosMeta() {
     }
   }
 
+  const tono: EstadoConexion = estado === null && !errorEstado
+    ? { tono: "revisando", texto: "Revisando…" }
+    : activos
+      ? { tono: "bien", texto: "Avisos activos" }
+      : problemas.length
+        ? { tono: "atencion", texto: "Falta un permiso", detalle: "Meta no deja leer los formularios: al usuario del sistema le falta un permiso." }
+        : { tono: "atencion", texto: "Sin activar", detalle: "Falta activar los avisos: hoy las inscripciones no entran solas." };
   return (
-    <Card>
-      <CardHead
-        titulo="Formularios de Meta"
-        sub="Quien se anota en un formulario instantáneo de Facebook o Instagram entra al instante a Leads, con sus respuestas, su anuncio y su webinar: Meta avisa cada lead nuevo, no hay consultas cada tanto. La columna Formularios de cada webinar se completa sola."
-        acciones={
-          <Badge variante={activos ? "success" : "neutral"} icono={activos ? <Check size={13} /> : <Plug size={13} />}>
-            {estado === null && !errorEstado ? "Revisando…" : activos ? "Avisos activos" : "Sin activar"}
-          </Badge>
-        }
-      />
+    <Conexion id="formularios-meta" titulo="Formularios de Meta" que="Las inscripciones de los formularios instantáneos entran solas a Leads." estado={tono}>
 
       <div className="stack-2">
         <p className="t-sm t-muted">
@@ -168,6 +167,6 @@ export function FormulariosMeta() {
           ))}
         </div>
       )}
-    </Card>
+    </Conexion>
   );
 }

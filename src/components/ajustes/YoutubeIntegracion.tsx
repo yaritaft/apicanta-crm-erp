@@ -1,5 +1,6 @@
 "use client";
 
+import { Conexion, type EstadoConexion } from "./Conexion";
 import React, { useEffect, useState } from "react";
 import { Check, Link2, Plug, RefreshCw, Unplug } from "lucide-react";
 import { Badge, Button, Card, CardHead } from "@/components/ui/ui";
@@ -54,21 +55,16 @@ export function YoutubeIntegracion() {
     if (error) { toast(error, "err"); setYendo(false); }
   }
 
-  const badge = !d
-    ? <Badge variante="neutral">{estado.estado === "error" ? "Sin datos" : "Revisando…"}</Badge>
-    : d.conectado
-      ? <Badge variante="success" icono={<Check size={13} />}>Conectado</Badge>
-      : d.hayClave
-        ? <Badge variante="warning" icono={<Plug size={13} />}>Falta Analytics</Badge>
-        : <Badge variante="neutral" icono={<Plug size={13} />}>Sin configurar</Badge>;
 
+  const tono: EstadoConexion = !d
+    ? { tono: estado.estado === "error" ? "atencion" : "revisando", texto: estado.estado === "error" ? "Sin datos" : "Revisando…", detalle: "No pude preguntarle al servidor." }
+    : d.conectado
+      ? { tono: "bien", texto: "Conectado" }
+      : d.hayClave
+        ? { tono: "atencion", texto: "Falta Analytics", detalle: "Falta conectar el canal para ver la retención y los vivos pasados." }
+        : { tono: "apagada", texto: "Sin configurar" };
   return (
-    <Card>
-      <CardHead
-        titulo="YouTube"
-        sub="Los vivos de los webinars minuto a minuto, el chat, los comentarios y YouTube Analytics."
-        acciones={badge}
-      />
+    <Conexion id="youtube" titulo="YouTube" que="Los vivos minuto a minuto, el chat, los comentarios y Analytics." estado={tono}>
 
       {estado.estado === "error" && (
         <div className="row-wrap">
@@ -137,6 +133,6 @@ export function YoutubeIntegracion() {
           else { toast("YouTube Analytics quedó desconectado."); estado.recargar(); }
         }}
       />
-    </Card>
+    </Conexion>
   );
 }

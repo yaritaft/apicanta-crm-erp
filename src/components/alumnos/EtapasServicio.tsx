@@ -1,8 +1,8 @@
 "use client";
 
 import React, { useState } from "react";
-import { ChevronDown, ChevronUp, GripVertical, Info, Plus, Settings2, Trash2 } from "lucide-react";
-import { Ayuda, Badge, Button, Card, CardHead, Field, IconButton, Input, Select, Tag } from "@/components/ui/ui";
+import { ChevronDown, ChevronUp, GripVertical, Plus, Settings2, Trash2 } from "lucide-react";
+import { Badge, Button, Card, CardHead, Field, IconButton, Input, Select, Tag } from "@/components/ui/ui";
 import { Confirmar, Modal, ModalForm } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toast";
 import { acciones, useEstado } from "@/lib/store";
@@ -95,53 +95,63 @@ export function EtapasServicio() {
     setBorrar(null);
   }
 
+  const max = Math.max(1, ...etapas.map((et) => cuantos(et.id)));
+
   return (
     <div className="stack-4">
       <Card>
         <CardHead
-          titulo="Etapas del servicio"
-          sub="Las columnas del pipeline de alumnos, en orden: por dónde pasa cada alumno desde que compra hasta que termina."
+          titulo={`${etapas.length} etapas`}
+          sub="Arrastrá para cambiar el orden. Cada venta crea su alumno en la primera; al borrar una con alumnos, se elige a cuál pasan. Se los mueve en Alumnos → Pipeline."
           acciones={
             <Button sm variante="primary" icono={<Plus size={15} />} onClick={() => setForm({ nombre: "", color: "brand" })}>
               Nueva etapa
             </Button>
           }
         />
-        <div className="stack-2">
+        <div className="aj-etapas" role="list">
+          <div className="aj-etapa aj-etapa--sin-prob aj-etapa--cabeza" aria-hidden>
+            <span /><span>Etapa</span><span>Alumnos</span><span />
+          </div>
           {etapas.map((et, i) => {
             const n = cuantos(et.id);
             return (
               <div
-                key={et.id}
-                className={`agenda-item etapa-fila${sobre === et.id ? " etapa-fila--sobre" : ""}${arrastrando === et.id ? " etapa-fila--arrastrando" : ""}`}
+                key={et.id} role="listitem"
+                className={`aj-etapa aj-etapa--sin-prob${sobre === et.id ? " aj-etapa--sobre" : ""}${arrastrando === et.id ? " aj-etapa--arrastrando" : ""}`}
                 onDragOver={(ev) => { if (!arrastrando) return; ev.preventDefault(); if (sobre !== et.id) setSobre(et.id); }}
                 onDrop={(ev) => { ev.preventDefault(); soltar(et.id); }}
               >
-                <span className="etapa-fila__flechas">
-                  <IconButton etiqueta={`Subir «${et.nombre}»`} onClick={() => subirBajar(i, -1)} disabled={i === 0} style={{ height: 18 }}>
-                    <ChevronUp size={14} />
-                  </IconButton>
-                  <IconButton etiqueta={`Bajar «${et.nombre}»`} onClick={() => subirBajar(i, 1)} disabled={i === etapas.length - 1} style={{ height: 18 }}>
-                    <ChevronDown size={14} />
-                  </IconButton>
+                <span className="aj-etapa__mover">
+                  <span
+                    className="aj-etapa__asa" draggable title="Arrastrá para cambiar el orden"
+                    onDragStart={(ev) => {
+                      ev.dataTransfer.setData("text/plain", et.id);
+                      ev.dataTransfer.effectAllowed = "move";
+                      setArrastrando(et.id);
+                    }}
+                    onDragEnd={() => { setArrastrando(null); setSobre(null); }}
+                  >
+                    <GripVertical size={16} />
+                  </span>
+                  <span className="aj-etapa__flechas">
+                    <IconButton etiqueta={`Subir «${et.nombre}»`} onClick={() => subirBajar(i, -1)} disabled={i === 0} style={{ width: 24, height: 18 }}>
+                      <ChevronUp size={14} />
+                    </IconButton>
+                    <IconButton etiqueta={`Bajar «${et.nombre}»`} onClick={() => subirBajar(i, 1)} disabled={i === etapas.length - 1} style={{ width: 24, height: 18 }}>
+                      <ChevronDown size={14} />
+                    </IconButton>
+                  </span>
                 </span>
-                <span
-                  className="etapa-fila__asa" draggable title="Arrastrá para cambiar el orden"
-                  onDragStart={(ev) => {
-                    ev.dataTransfer.setData("text/plain", et.id);
-                    ev.dataTransfer.effectAllowed = "move";
-                    setArrastrando(et.id);
-                  }}
-                  onDragEnd={() => { setArrastrando(null); setSobre(null); }}
-                >
-                  <GripVertical size={16} />
-                </span>
-                <span className="etapa-fila__nombre">
+                <span className="aj-etapa__nombre">
                   <Badge variante={et.color}>{et.nombre}</Badge>
                   {i === 0 && <Tag>Entran acá</Tag>}
                 </span>
-                <span className="t-sm t-subtle t-num">{n} {n === 1 ? "alumno" : "alumnos"}</span>
-                <span style={{ display: "flex", gap: 2 }}>
+                <span className="aj-etapa__cuantos">
+                  <span className="aj-barra" aria-hidden><span style={{ width: `${(n / max) * 100}%` }} /></span>
+                  <span className="t-num">{n.toLocaleString("es-AR")}</span>
+                </span>
+                <span className="aj-etapa__acciones">
                   <IconButton etiqueta={`Editar «${et.nombre}»`} onClick={() => setForm({ id: et.id, nombre: et.nombre, color: et.color })}>
                     <Settings2 size={15} />
                   </IconButton>
@@ -157,12 +167,6 @@ export function EtapasServicio() {
           })}
         </div>
       </Card>
-
-      <Ayuda titulo="Cómo se usan" icono={<Info size={18} />}>
-        Cada venta que registrás crea su alumno en la <strong>primera etapa</strong>, así que conviene que sea la de
-        recién comprado. Si borrás una etapa que tiene alumnos, te preguntamos a cuál pasan: nadie queda afuera del
-        tablero. Los alumnos se mueven desde <strong>Alumnos → Pipeline</strong>.
-      </Ayuda>
 
       {form && (
         <ModalForm

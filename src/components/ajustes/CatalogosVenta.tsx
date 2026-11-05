@@ -1,8 +1,9 @@
 "use client";
 
 import React, { useState } from "react";
-import { Landmark, Link2, Plus, Trash2, X } from "lucide-react";
-import { Badge, Button, Card, CardHead, Field, IconButton, Input, Select, Switch } from "@/components/ui/ui";
+import { Fila as FilaAjuste } from "./Fila";
+import { ChevronDown, Landmark, Link2, Plus, Trash2, X } from "lucide-react";
+import { Button, Card, CardHead, Field, IconButton, Input, Select, Switch } from "@/components/ui/ui";
 import { InputMonto } from "@/components/ui/InputMonto";
 import { montoDe } from "@/lib/monto";
 import { enOtros } from "@/lib/caja";
@@ -38,11 +39,23 @@ export function CatalogosVenta() {
       <Servicios />
       <Cuentas />
       <Estrategias />
-      <div className="grid-2">
-        <Proyectos />
-        <Referidor />
-      </div>
+      <Proyectos />
+      <Referidor />
     </div>
+  );
+}
+
+/* Lo apagado no se borra (las ventas viejas siguen diciendo qué compraron o por dónde pagaron), así que las listas sólo
+   crecen. Antes iban con scroll adentro y cortaban filas a la mitad; ahora se ve lo activo entero y lo apagado, al pedirlo. */
+const VerApagadas = (x: { n: number; abierto: boolean; onCambiar: (v: boolean) => void }) => <VerApagados {...x} que="apagadas" />;
+
+function VerApagados({ n, abierto, onCambiar, que }: { n: number; abierto: boolean; onCambiar: (v: boolean) => void; que: string }) {
+  if (!n) return null;
+  return (
+    <button type="button" className="catalogo-apagados" aria-expanded={abierto} onClick={() => onCambiar(!abierto)}>
+      <ChevronDown size={14} aria-hidden />
+      {abierto ? `Ocultar ${que}` : `Ver ${n === 1 ? `1 ${que.replace(/s$/, "")}` : `${n} ${que}`}`}
+    </button>
   );
 }
 
@@ -51,7 +64,10 @@ export function CatalogosVenta() {
 function Servicios() {
   const e = useEstado();
   const toast = useToast();
-  const lista = [...e.productos].sort((a, b) => a.orden - b.orden);
+  const [verApagados, setVerApagados] = useState(false);
+  const todos = [...e.productos].sort((a, b) => a.orden - b.orden);
+  const apagados = todos.filter((p) => !p.activo).length;
+  const lista = verApagados ? todos : todos.filter((p) => p.activo);
   const cambiar = (p: Producto, cambios: Partial<Producto>, aviso?: string) => {
     acciones.actualizarSilencioso<Producto>("productos", p.id, cambios);
     if (aviso) toast(aviso);
@@ -67,15 +83,13 @@ function Servicios() {
   return (
     <Card>
       <CardHead
-        titulo="Servicios / Productos"
+        titulo="Servicios"
         sub="Lo que se vende. El tipo separa las mentorías de los downsells y los eventos en el Dashboard."
-        acciones={<Button variante="secondary" icono={<Plus size={16} />} onClick={agregar}>Agregar servicio</Button>}
+        acciones={<Button sm variante="secondary" icono={<Plus size={15} />} onClick={agregar}>Agregar servicio</Button>}
       />
-      {/* Nada se borra (lo viejo se apaga), así que estas listas sólo crecen:
-          con scroll adentro y los títulos de las columnas pegados arriba. */}
-      <div className="catalogo-lista lista-scroll">
+      <div className="catalogo-lista">
         <div className="catalogo-fila catalogo-fila--cabeza catalogo-fila--servicio" aria-hidden>
-          <span>Nombre</span><span>Precio de lista</span><span>Tipo</span><span />
+          <span>Nombre</span><span>Precio de lista</span><span>Tipo</span><span>Activo</span>
         </div>
         {lista.map((p) => (
           <div className="catalogo-fila catalogo-fila--servicio" key={p.id} data-inactivo={!p.activo || undefined}>
@@ -89,13 +103,11 @@ function Servicios() {
             />
             <Select aria-label={`Tipo de ${p.nombre}`} value={p.tipo} opciones={TIPOS}
               onChange={(ev) => cambiar(p, { tipo: ev.target.value as Producto["tipo"] }, "Tipo guardado.")} />
-            <label className="row" style={{ gap: 8 }}>
-              <Switch checked={p.activo} etiqueta={`${p.nombre} activo`} onChange={(v) => cambiar(p, { activo: v })} />
-              <span className="t-sm t-muted">Activo</span>
-            </label>
+            <Switch checked={p.activo} etiqueta={`${p.nombre} activo`} onChange={(v) => cambiar(p, { activo: v })} />
           </div>
         ))}
       </div>
+      <VerApagados n={apagados} abierto={verApagados} onCambiar={setVerApagados} que="apagados" />
     </Card>
   );
 }
@@ -116,6 +128,11 @@ function Cuentas() {
   /* La cuenta a la que se le acaba de cambiar la comisión y tiene cobros
      cargados con la tasa vieja: se pregunta si pasan a la nueva. */
   const [recalcular, setRecalcular] = useState<{ id: string; nombre: string; tasa: number; n: number; antes: number; despues: number } | null>(null);
+  const [verApagadas, setVerApagadas] = useState(false);
+  /* La retención (Hotmart) es rara: se ve sólo en las cuentas que retienen o en la que se abrió. */
+  const [abierta, setAbierta] = useState<string | null>(null);
+  const apagadas = e.procesadores.filter((p) => !p.activo).length;
+  const lista = verApagadas ? e.procesadores : e.procesadores.filter((p) => p.activo);
   const cambiar = (p: Procesador, cambios: Partial<Procesador>, aviso?: string) => {
     acciones.actualizarSilencioso<Procesador>("procesadores", p.id, cambios);
     if (aviso) toast(aviso);
@@ -142,61 +159,62 @@ function Cuentas() {
     <Card>
       <CardHead
         titulo="Cuentas recaudadoras"
-        sub="Por dónde entra la plata. La comisión es la que cobra cada una: si el cobro se concilia con la pasarela manda el fee real; si no, se usa esta y se puede corregir a mano en Finanzas. Al cambiarla, elegís si los cobros que ya la usaban pasan a la nueva. Las que reciben pesos piden el tipo de cambio del cobro, y sus cuentas bancarias salen en el reporte para la Financiera."
-        acciones={<Button variante="secondary" icono={<Plus size={16} />} onClick={agregar}>Agregar cuenta</Button>}
+        sub="Por dónde entra la plata y cuánto cobra cada una. Si el cobro se concilia con la pasarela, manda la comisión real; si no, esta."
+        acciones={<Button sm variante="secondary" icono={<Plus size={15} />} onClick={agregar}>Agregar cuenta</Button>}
       />
-      {/* Con scroll, como los servicios: las cuentas apagadas quedan. */}
-      <div className="catalogo-lista lista-scroll">
+      <div className="catalogo-lista">
         <div className="catalogo-fila catalogo-fila--cabeza catalogo-fila--cuenta" aria-hidden>
-          <span>Nombre</span><span>Comisión (%)</span><span>Moneda</span><span>Cómo se prueba</span><span>Cuentas bancarias</span><span />
+          <span>Nombre</span><span>Comisión</span><span>Moneda</span><span>Se concilia con</span><span title="Las cuentas a las que transfiere el cliente: salen en el reporte para la Financiera">Bancos</span>
+          <span title="Se ofrece al cargar una venta">Activa</span><span title="Va al final del arqueo, plegada, con las que no se usan seguido">Otros</span><span />
         </div>
-        {e.procesadores.map((p) => {
+        {lista.map((p) => {
           const n = p.cuentasBancarias?.length ?? 0;
+          const retiene = (p.diasDeRetencion ?? 0) > 0;
+          const verRetencion = retiene || abierta === p.id;
           return (
             <div className="catalogo-fila catalogo-fila--cuenta" key={p.id} data-inactivo={!p.activo || undefined}>
               <Input
                 id={`cat-${p.id}`} aria-label="Nombre de la cuenta" defaultValue={p.nombre}
                 onBlur={(ev) => { const v = ev.target.value.trim(); if (v && v !== p.nombre) cambiar(p, { nombre: v }, "Nombre guardado."); }}
               />
-              <Input
-                aria-label={`Comisión de ${p.nombre} (%)`} type="number" min={0} max={100} step={0.1}
-                defaultValue={Math.round(p.feeRate * 10000) / 100}
-                onBlur={(ev) => {
-                  const v = Number(ev.target.value);
-                  if (Number.isFinite(v) && v >= 0 && v <= 100 && v / 100 !== p.feeRate) cambiarTasa(p, v / 100);
-                }}
-              />
+              <span className="catalogo-pct">
+                <Input
+                  aria-label={`Comisión de ${p.nombre} (%)`} type="number" min={0} max={100} step={0.1}
+                  defaultValue={Math.round(p.feeRate * 10000) / 100}
+                  onBlur={(ev) => {
+                    const v = Number(ev.target.value);
+                    if (Number.isFinite(v) && v >= 0 && v <= 100 && v / 100 !== p.feeRate) cambiarTasa(p, v / 100);
+                  }}
+                />
+                <span aria-hidden>%</span>
+              </span>
               <Select
                 aria-label={`Moneda en la que recibe ${p.nombre}`} value={p.moneda ?? "USD"} opciones={MONEDAS}
                 onChange={(ev) => cambiar(p, { moneda: ev.target.value as Moneda }, `${p.nombre} recibe ${ev.target.value === "ARS" ? "pesos" : "dólares"}.`)}
               />
-              <span>
-                {p.proveedor
-                  ? <Badge variante="success"><Link2 size={13} />Se concilia con {nombrePasarela(p.proveedor)}</Badge>
-                  : <Badge variante="neutral">Con comprobante</Badge>}
+              <span className="catalogo-concilia" data-auto={p.proveedor ? true : undefined} title={p.proveedor ? `Los cobros se concilian solos con ${nombrePasarela(p.proveedor)}` : "Se prueba con el comprobante"}>
+                {p.proveedor ? <><Link2 size={13} aria-hidden />{nombrePasarela(p.proveedor).replace(/\s*\(.*\)$/, "")}</> : "Comprobante"}
               </span>
-              <Button
-                sm variante={n ? "secondary" : "ghost"} icono={<Landmark size={15} />}
-                aria-label={`Cuentas bancarias de ${p.nombre}`} title={`Cuentas bancarias de ${p.nombre}`}
-                onClick={() => setBancarias(p.id)}
+              {n ? (
+                <Button sm variante="secondary" icono={<Landmark size={15} />} aria-label={`Cuentas bancarias de ${p.nombre}`} title={`Cuentas bancarias de ${p.nombre}`} onClick={() => setBancarias(p.id)}>
+                  {n}
+                </Button>
+              ) : (
+                <IconButton etiqueta={`Agregar las cuentas bancarias de ${p.nombre}`} onClick={() => setBancarias(p.id)}><Plus size={15} /></IconButton>
+              )}
+              <Switch checked={p.activo} etiqueta={`${p.nombre} activa`} onChange={(v) => cambiar(p, { activo: v })} />
+              <Switch
+                checked={enOtros(p)} etiqueta={`${p.nombre} va en «Otros» del arqueo`}
+                onChange={(v) => cambiar(p, { cajaOtros: v }, v ? `${p.nombre} va en «Otros» del arqueo.` : `${p.nombre} va con las cuentas de siempre en el arqueo.`)}
+              />
+              <IconButton
+                etiqueta={verRetencion ? `Ocultar la retención de ${p.nombre}` : `Retención de ${p.nombre}`} aria-expanded={verRetencion}
+                className="catalogo-mas" onClick={() => setAbierta(abierta === p.id ? null : p.id)} disabled={retiene}
               >
-                {n ? `${n} ${n === 1 ? "cuenta" : "cuentas"}` : "Agregar"}
-              </Button>
-              <div className="catalogo-switches">
-                <label className="row" style={{ gap: 8 }}>
-                  <Switch checked={p.activo} etiqueta={`${p.nombre} activa`} onChange={(v) => cambiar(p, { activo: v })} />
-                  <span className="t-sm t-muted">Activa</span>
-                </label>
-                <label className="row" style={{ gap: 8 }} title="Va al final del arqueo de la Caja, plegada, con las cuentas que no se usan seguido">
-                  <Switch
-                    checked={enOtros(p)} etiqueta={`${p.nombre} va en «Otros» del arqueo`}
-                    onChange={(v) => cambiar(p, { cajaOtros: v }, v ? `${p.nombre} va en «Otros» del arqueo.` : `${p.nombre} va con las cuentas de siempre en el arqueo.`)}
-                  />
-                  <span className="t-sm t-muted">Otros</span>
-                </label>
-              </div>
+                <ChevronDown size={15} />
+              </IconButton>
               {/* Cuentas que retienen lo cobrado unos días (Hotmart, 28/10): el cobro cuenta en la caja y en las comisiones el día que se acredita. */}
-              <div className="row-wrap" style={{ gridColumn: "1 / -1", gap: 8, alignItems: "center" }}>
+              {verRetencion && <div className="catalogo-retencion">
                 <span className="t-sm t-muted">Retiene lo cobrado</span>
                 <div style={{ width: 84 }}>
                   <Input
@@ -216,11 +234,12 @@ function Cuentas() {
                   />
                 </div>
                 <span className="t-sm t-subtle">Mientras no se acredita, el cobro no cuenta en la caja ni en las comisiones.</span>
-              </div>
+              </div>}
             </div>
           );
         })}
       </div>
+      <VerApagadas n={apagadas} abierto={verApagadas} onCambiar={setVerApagadas} />
       {enEdicion && <CuentasBancarias key={enEdicion.id} p={enEdicion} onCerrar={() => setBancarias(null)} />}
       {recalcular && (
         <Modal
@@ -373,7 +392,10 @@ function CuentasBancarias({ p, onCerrar }: { p: Procesador; onCerrar: () => void
 function Estrategias() {
   const e = useEstado();
   const toast = useToast();
-  const lista = [...e.embudos].sort((a, b) => a.orden - b.orden);
+  const [verApagadas, setVerApagadas] = useState(false);
+  const todas = [...e.embudos].sort((a, b) => a.orden - b.orden);
+  const apagadas = todas.filter((x) => !x.activo).length;
+  const lista = verApagadas ? todas : todas.filter((x) => x.activo);
   const cambiar = (x: Embudo, cambios: Partial<Embudo>, aviso?: string) => {
     acciones.actualizarSilencioso<Embudo>("embudos", x.id, cambios);
     if (aviso) toast(aviso);
@@ -389,30 +411,27 @@ function Estrategias() {
   return (
     <Card>
       <CardHead
-        titulo="Estrategias utilizadas"
-        sub="De dónde salió cada venta. La que es el embudo de webinar suma los números de la planilla de webinars en el Dashboard."
-        acciones={<Button variante="secondary" icono={<Plus size={16} />} onClick={agregar}>Agregar estrategia</Button>}
+        titulo="Estrategias"
+        sub="De dónde salió cada venta. La del embudo de webinar suma los números de los webinars en el Dashboard."
+        acciones={<Button sm variante="secondary" icono={<Plus size={15} />} onClick={agregar}>Agregar estrategia</Button>}
       />
-      {/* Con scroll, como los servicios: las estrategias apagadas quedan. */}
-      <div className="catalogo-lista lista-scroll">
+      <div className="catalogo-lista">
+        <div className="catalogo-fila catalogo-fila--cabeza catalogo-fila--estrategia" aria-hidden>
+          <span>Nombre</span><span>Embudo de webinar</span><span>Activa</span>
+        </div>
         {lista.map((x) => (
           <div className="catalogo-fila catalogo-fila--estrategia" key={x.id} data-inactivo={!x.activo || undefined}>
             <Input
               id={`cat-${x.id}`} aria-label="Nombre de la estrategia" defaultValue={x.nombre}
               onBlur={(ev) => { const v = ev.target.value.trim(); if (v && v !== x.nombre) cambiar(x, { nombre: v }, "Nombre guardado."); }}
             />
-            <label className="row" style={{ gap: 8 }}>
-              <Switch checked={Boolean(x.esWebinar)} etiqueta={`${x.nombre} es el embudo de webinar`}
-                onChange={(v) => cambiar(x, { esWebinar: v }, v ? `${x.nombre} es ahora el embudo de webinar.` : undefined)} />
-              <span className="t-sm t-muted">Embudo de webinar</span>
-            </label>
-            <label className="row" style={{ gap: 8 }}>
-              <Switch checked={x.activo} etiqueta={`${x.nombre} activa`} onChange={(v) => cambiar(x, { activo: v })} />
-              <span className="t-sm t-muted">Activa</span>
-            </label>
+            <Switch checked={Boolean(x.esWebinar)} etiqueta={`${x.nombre} es el embudo de webinar`}
+              onChange={(v) => cambiar(x, { esWebinar: v }, v ? `${x.nombre} es ahora el embudo de webinar.` : undefined)} />
+            <Switch checked={x.activo} etiqueta={`${x.nombre} activa`} onChange={(v) => cambiar(x, { activo: v })} />
           </div>
         ))}
       </div>
+      <VerApagadas n={apagadas} abierto={verApagadas} onCambiar={setVerApagadas} />
     </Card>
   );
 }
@@ -440,28 +459,19 @@ function Proyectos() {
 
   return (
     <Card>
-      <CardHead titulo="Proyectos" sub="MENT, DOWN, WEB-13/04/26… Un proyecto WEB-día/mes/año queda atado solo al webinar de ese día." />
-      {/* Uno por webinar, y la importación suma los de la planilla: con scroll. */}
-      <div className="row-wrap lista-scroll" style={{ marginBottom: 14, minHeight: 32 }}>
-        {items.length === 0 && <span className="t-sm t-subtle">La lista está vacía. Agregá el primero abajo.</span>}
+      <CardHead titulo={`Proyectos · ${items.length}`} sub="MENT, DOWN, WEB-13/04/26… Un proyecto WEB-día/mes/año queda atado solo al webinar de ese día." />
+      <div className="aj-chips">
         {items.map((x) => (
-          <span key={x} className="chip" style={{ cursor: "default" }}>
+          <span key={x} className="chip aj-chip">
             {x}
-            <button
-              type="button" aria-label={`Quitar ${x}`} onClick={() => quitar(x)}
-              style={{ background: "none", border: 0, cursor: "pointer", display: "grid", placeItems: "center", padding: 0, marginLeft: 2, color: "var(--ink-subtle)" }}
-            >
-              <X size={14} />
-            </button>
+            <button type="button" className="aj-chip__quitar" aria-label={`Quitar ${x}`} onClick={() => quitar(x)}><X size={13} /></button>
           </span>
         ))}
+        <form onSubmit={(ev) => { ev.preventDefault(); agregar(); }} className="aj-chip-nuevo">
+          <Plus size={13} aria-hidden />
+          <input value={nuevo} onChange={(ev) => setNuevo(ev.target.value)} placeholder="WEB-27/10/26" aria-label="Agregar un proyecto" />
+        </form>
       </div>
-      <form onSubmit={(ev) => { ev.preventDefault(); agregar(); }} className="row" style={{ gap: 8 }}>
-        <div style={{ flex: 1 }}>
-          <Input value={nuevo} onChange={(ev) => setNuevo(ev.target.value)} placeholder="WEB-27/10/26" aria-label="Agregar un proyecto" />
-        </div>
-        <Button variante="secondary" type="submit" icono={<Plus size={16} />} disabled={!nuevo.trim()}>Agregar</Button>
-      </form>
     </Card>
   );
 }
@@ -473,22 +483,23 @@ function Referidor() {
   const toast = useToast();
   const actual = e.ajustes.comisionReferidor ?? 0.1;
   return (
-    <Card>
-      <CardHead titulo="Comisión del referidor" sub="Lo que cobra quien refiere una venta, sobre lo que entra post pasarelas. La del setter se pone en Equipo y honorarios." />
-      <div className="row" style={{ gap: 8, maxWidth: 220 }}>
-        <Input
-          aria-label="Comisión del referidor (%)" type="number" min={0} max={100} step={0.5}
-          defaultValue={Math.round(actual * 1000) / 10}
-          onBlur={(ev) => {
-            const v = Number(ev.target.value);
-            if (Number.isFinite(v) && v >= 0 && v <= 100 && v / 100 !== actual) {
-              acciones.ajustes({ comisionReferidor: v / 100 }, `La comisión del referidor pasó a ${v}%.`);
-              toast("Comisión guardada.");
-            }
-          }}
-        />
-        <span className="t-muted">%</span>
-      </div>
+    <Card style={{ padding: 0 }}>
+      <FilaAjuste titulo="Comisión del referidor" sub="Sobre lo que entra post pasarelas. La del setter va en Equipo y honorarios.">
+        <span className="catalogo-pct catalogo-pct--ancho">
+          <Input
+            aria-label="Comisión del referidor (%)" type="number" min={0} max={100} step={0.5}
+            defaultValue={Math.round(actual * 1000) / 10}
+            onBlur={(ev) => {
+              const v = Number(ev.target.value);
+              if (Number.isFinite(v) && v >= 0 && v <= 100 && v / 100 !== actual) {
+                acciones.ajustes({ comisionReferidor: v / 100 }, `La comisión del referidor pasó a ${v}%.`);
+                toast("Comisión guardada.");
+              }
+            }}
+          />
+          <span aria-hidden>%</span>
+        </span>
+      </FilaAjuste>
     </Card>
   );
 }

@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { esCompra, opcionesDe, OPCIONES_POR_DEFECTO } from "@/lib/crm";
 import {
-  estadoDeAgenda, estadoDe, ofrecidas, opcionDeCompraPara, preguntaDe, queMueve, revisarOcultar,
+  estadoDeAgenda, estadoDe, ofrecidas, opcionDeCompraPara, preguntaDe, queMueve, queMueveCorto, revisarOcultar,
 } from "@/lib/estados";
 import { escrituraDe, filasTabla } from "@/lib/crm-tabla";
 import { eventosDeLlamada } from "@/lib/etapas-auto";
@@ -151,5 +151,16 @@ test("lo que pasa con el lead no cambia por ocultar: ocultar no toca las reglas 
   for (const nuevo of ["NO Calificado", "Devolución", "Compra Full", "Seguimiento Nutrición"]) {
     const a = { estado: "agendada" as const, estadoLlamada: undefined }, d = { estado: "hecha" as const, estadoLlamada: nuevo };
     assert.deepEqual(eventosDeLlamada(a, d, ocultas), eventosDeLlamada(a, d, completas), nuevo);
+  }
+});
+
+test("queMueveCorto: lo mismo que queMueve, en etiquetas cortas y una por cada cosa que mueve", () => {
+  const por = (n: string) => OPCIONES_POR_DEFECTO.estadoLlamada.find((o) => o.nombre === n)!;
+  assert.deepEqual(queMueveCorto(por("Compra Cuotas"), "estadoLlamada"), ["Agenda: hecha", "Pide la venta", "Lead → Inscripto"]);
+  assert.deepEqual(queMueveCorto(por("Devolución"), "estadoLlamada"), ["Lead → Perdido, aunque compró"]);
+  assert.deepEqual(queMueveCorto(OPCIONES_POR_DEFECTO.estadoPreCall[1], "estadoPreCall"), ["Vale como otra fecha"]);
+  assert.deepEqual(queMueveCorto(OPCIONES_POR_DEFECTO.preCall[0], "preCall"), []);
+  for (const campo of ["estadoLlamada", "estadoPreCall", "preCall"] as const) {
+    for (const o of OPCIONES_POR_DEFECTO[campo]) assert.equal(queMueveCorto(o, campo).length > 0, queMueve(o, campo).length > 0, `${campo} · ${o.nombre}`);
   }
 });

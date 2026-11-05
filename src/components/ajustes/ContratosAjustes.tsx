@@ -2,7 +2,7 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { ChevronDown, ChevronRight, Plug, Plus, RefreshCw, RotateCcw, Unplug, X } from "lucide-react";
-import { Badge, Button, Chip, Field, Input, Select, Switch, Textarea } from "@/components/ui/ui";
+import { Badge, Button, Card, CardHead, Chip, Field, Input, Select, Switch, Textarea } from "@/components/ui/ui";
 import { Confirmar } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toast";
 import { cabeceras } from "@/components/webinars/useYoutube";
@@ -51,7 +51,7 @@ export function ContratosAjustes({ pruebas }: { pruebas: Pruebas | null }) {
   const config: ConfigContratos = e.ajustes.contratos ?? { estado: "apagado" };
   if (!esDueno) return null;
   return (
-    <div className="stack-4" style={{ borderTop: "1px solid var(--border)", paddingTop: 16, marginTop: 8 }}>
+    <div className="stack-4">
       <EstadoContratos config={config} />
       <AvisoPandadoc />
       <BotTelegram />
@@ -60,18 +60,14 @@ export function ContratosAjustes({ pruebas }: { pruebas: Pruebas | null }) {
   );
 }
 
+/* Cada parte, en su propia tarjeta: desde el 05/11 Contratos y accesos es una sección de Ajustes y no un bloque al
+   final de Integraciones. */
 function Seccion({ titulo, sub, children, acciones: extra }: { titulo: string; sub?: string; children: React.ReactNode; acciones?: React.ReactNode }) {
   return (
-    <section className="stack-2">
-      <div className="row-wrap" style={{ justifyContent: "space-between", gap: 8 }}>
-        <div style={{ minWidth: 0 }}>
-          <h3 className="t-body" style={{ margin: 0, fontWeight: 500 }}>{titulo}</h3>
-          {sub && <p className="t-sm t-subtle" style={{ margin: 0 }}>{sub}</p>}
-        </div>
-        {extra}
-      </div>
-      {children}
-    </section>
+    <Card>
+      <CardHead titulo={titulo} sub={sub} acciones={extra} />
+      <div className="stack-2">{children}</div>
+    </Card>
   );
 }
 

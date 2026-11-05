@@ -1,5 +1,6 @@
 "use client";
 
+import { Conexion, type EstadoConexion } from "./Conexion";
 import React, { useEffect, useState } from "react";
 import { Check, Plug, TriangleAlert } from "lucide-react";
 import { Badge, Card, CardHead } from "@/components/ui/ui";
@@ -43,17 +44,13 @@ export function ConversionsApi() {
   const obligatorias = r?.faltan.filter((f) => f.obligatoria) ?? [];
   const recomendadas = r?.faltan.filter((f) => !f.obligatoria) ?? [];
 
+  const tono: EstadoConexion = r === null && !error
+    ? { tono: "revisando", texto: "Revisando…" }
+    : lista
+      ? { tono: "bien", texto: r?.prueba ? "En modo prueba" : "Mandando eventos" }
+      : { tono: "apagada", texto: "Sin configurar" };
   return (
-    <Card>
-      <CardHead
-        titulo="Conversions API de Meta"
-        sub="La app le cuenta a Meta, desde el servidor, quién se registró, quién califica, quién agendó y quién compró."
-        acciones={
-          <Badge variante={lista ? "success" : "neutral"} icono={lista ? <Check size={13} /> : <Plug size={13} />}>
-            {r === null && !error ? "Revisando…" : lista ? (r?.prueba ? "En modo prueba" : "Mandando eventos") : "Sin configurar"}
-          </Badge>
-        }
-      />
+    <Conexion id="capi" titulo="Conversions API de Meta" que="Le cuenta a Meta quién se registró, calificó, agendó y compró." estado={tono}>
       {error ? (
         <p className="t-sm t-muted">{error}</p>
       ) : r === null ? (
@@ -115,6 +112,6 @@ export function ConversionsApi() {
           )}
         </div>
       )}
-    </Card>
+    </Conexion>
   );
 }

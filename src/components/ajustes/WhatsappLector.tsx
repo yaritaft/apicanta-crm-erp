@@ -2,7 +2,7 @@
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, Check, Lock, MessageCircle, Plug, QrCode, RefreshCw, Smartphone, WifiOff } from "lucide-react";
-import { Badge, Button, Card, CardHead, Empty, Select } from "@/components/ui/ui";
+import { Badge, Button, Card, CardHead, Chip, Empty, Select } from "@/components/ui/ui";
 import { type Columna, DataTable } from "@/components/ui/DataTable";
 import { useToast } from "@/components/ui/Toast";
 import { diaCorto } from "@/components/webinars/fechas";
@@ -52,6 +52,11 @@ export function WhatsappLector() {
   const datos = l.datos;
   const lector = datos?.lector ?? null;
   const grupos = useMemo(() => ordenarGrupos(datos?.grupos ?? []), [datos?.grupos]);
+  /* Lo que pide algo primero: los grupos sin webinar. Los 85 juntos eran 6.800 px con la misma ayuda en cada fila (05/11). */
+  const sinWebinar = grupos.filter((g) => !g.webinarId).length;
+  const [filtro, setFiltro] = useState<"sin" | "con" | "todos" | null>(null);
+  const verFiltro = filtro ?? (sinWebinar > 0 ? "sin" : "todos");
+  const filtrados = verFiltro === "sin" ? grupos.filter((g) => !g.webinarId) : verFiltro === "con" ? grupos.filter((g) => g.webinarId) : grupos;
   const estado = useMemo(() => estadoDelLector(lector, ahora), [lector, ahora]);
 
   /* Al conectarse (con la pantalla abierta, después de haber estado esperando o reconectando) se avisa. */
@@ -116,7 +121,6 @@ export function WhatsappLector() {
             {g.nombre || "Sin nombre"}
             {rotuloDeGrupo(g.nombre) && <span className="wa-rotulo"><Badge variante="neutral">{rotuloDeGrupo(g.nombre)}</Badge></span>}
           </span>
-          <span className="t-sm t-subtle">Lo detectó el lector {relativo(g.creadoEn)}</span>
         </span>
       ),
     },
@@ -134,10 +138,6 @@ export function WhatsappLector() {
       ),
     },
     {
-      clave: "foto", titulo: "Última lista", tipo: "secondary", orden: (g) => (g.ultimaFoto ? Date.parse(g.ultimaFoto) : 0),
-      celda: (g) => (g.ultimaFoto ? relativo(g.ultimaFoto) : <span className="t-subtle">Todavía ninguna</span>),
-    },
-    {
       clave: "webinar", titulo: "Webinar", orden: (g) => (g.webinarId ? tituloDe(g.webinarId).toLowerCase() : ""),
       celda: (g) => {
         const s = sugerido(g);
@@ -153,7 +153,7 @@ export function WhatsappLector() {
                 <Button sm variante="secondary" onClick={() => void atar(g, s.webinarId)}>Atar</Button>
               </span>
             )}
-            {!g.webinarId && !s && <span className="wa-sugerencia">El nombre no trae una fecha de un webinar cargado: elegilo a mano.</span>}
+
           </div>
         );
       },
@@ -167,8 +167,8 @@ export function WhatsappLector() {
     <div className="stack-4">
       <Card>
         <CardHead
-          titulo="Lector de WhatsApp"
-          sub="Un número de WhatsApp dedicado (no el principal del negocio: es una conexión no oficial de WhatsApp Web), conectado en un servidor propio, que lee los grupos de los talleres para saber solo quién se unió. Nunca manda mensajes ni marca nada como leído."
+          titulo="Conexión"
+          sub="Un número dedicado, no el del negocio, que lee los grupos de los talleres para saber quién se unió. Nunca manda mensajes ni marca nada como leído."
           acciones={<Button sm variante="ghost" icono={<RefreshCw size={14} />} cargando={actualizando} onClick={() => void actualizar()}>Actualizar</Button>}
         />
         {l.cargando && !datos ? (
@@ -259,7 +259,6 @@ export function WhatsappLector() {
 
             {lector && (
               <dl className="dl wb-dl">
-                <dt>Último latido</dt><dd>{relativo(lector.ultimoLatido)}</dd>
                 <dt>Conectado a WhatsApp</dt>
                 <dd>
                   {lector.conectado
@@ -283,14 +282,21 @@ export function WhatsappLector() {
           <div className="wa-cabeza">
             <CardHead
               titulo="Grupos detectados"
-              sub="Los grupos en los que está el número del lector. Cada taller tiene varios (WhatsApp deja 1.024 por grupo: «Taller Online 08/10/26 #1», #2…): se atan todos al mismo webinar, y la app sugiere cuál por la fecha del nombre."
+              sub={verFiltro === "sin"
+                ? "Cada taller tiene varios grupos (#1, #2…) y van todos al mismo webinar. La app sugiere cuál por la fecha del nombre; si el nombre no la trae, se elige a mano."
+                : "Cada taller tiene varios grupos (#1, #2…) y van todos al mismo webinar."}
               acciones={porAtar.length > 0 && puedeAtar
                 ? <Button sm variante="secondary" onClick={() => void atarSugeridos()}>Atar los {num(porAtar.length)} {porAtar.length === 1 ? "sugerido" : "sugeridos"}</Button>
                 : undefined}
             />
           </div>
+          <div className="row-wrap aj-wa-filtros" role="group" aria-label="Qué grupos mostrar">
+            <Chip activo={verFiltro === "sin"} count={sinWebinar} onClick={() => setFiltro("sin")}>Sin webinar</Chip>
+            <Chip activo={verFiltro === "con"} count={grupos.length - sinWebinar} onClick={() => setFiltro("con")}>Con webinar</Chip>
+            <Chip activo={verFiltro === "todos"} count={grupos.length} onClick={() => setFiltro("todos")}>Todos</Chip>
+          </div>
           <DataTable
-            filas={grupos}
+            filas={filtrados}
             columnas={columnas}
             ordenInicial={{ clave: "nombre", desc: false }}
             etiquetaFila={(g) => g.nombre || g.id}

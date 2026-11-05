@@ -80,7 +80,7 @@ export const NAV: GrupoNav[] = [
       { href: "/finanzas/resultados", texto: "P&L", icono: TrendingUp, ayuda: "El estado de resultados: lo facturado y lo realmente cobrado, lado a lado" },
       { href: "/finanzas/transacciones", texto: "Transacciones", icono: ArrowLeftRight, ayuda: "Todo lo que entró y salió, de todas las cuentas: cobros, gastos, devoluciones y pases" },
       { href: "/equipo", texto: "Equipo y honorarios", icono: Banknote, ayuda: "Quién es quién, con qué entra a la app y cuánto cobra" },
-      { href: "/ajustes", texto: "Ajustes", icono: Settings, ayuda: "Etapas, categorías, campos e integraciones" },
+      { href: "/ajustes", texto: "Ajustes", icono: Settings, ayuda: "Cómo funciona la app: el catálogo, el CRM, las conexiones y los datos" },
     ],
   },
 ];

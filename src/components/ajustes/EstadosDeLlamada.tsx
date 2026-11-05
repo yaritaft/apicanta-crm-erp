@@ -1,8 +1,8 @@
 "use client";
 
 import React, { useMemo, useState } from "react";
-import { AlertTriangle, Eye, EyeOff, Info, Pencil } from "lucide-react";
-import { Ayuda, Button, Card, CardHead, Switch } from "@/components/ui/ui";
+import { AlertTriangle, EyeOff, Pencil } from "lucide-react";
+import { Button, Card, CardHead, Switch } from "@/components/ui/ui";
 import { Modal } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toast";
 import { Chip } from "@/components/crm/piezas";
@@ -11,7 +11,7 @@ import { acciones, useEstado } from "@/lib/store";
 import { useAcceso } from "@/lib/acceso";
 import { puedeEditar } from "@/lib/permisos";
 import { conConfig, opcionesDe } from "@/lib/crm";
-import { queMueve, revisarOcultar, type RevisionOcultar } from "@/lib/estados";
+import { queMueve, queMueveCorto, revisarOcultar, type RevisionOcultar } from "@/lib/estados";
 import { num } from "@/lib/format";
 import type { CampoOpcionesCrm, OpcionCrm } from "@/lib/types";
 
@@ -68,11 +68,6 @@ export function EstadosDeLlamada() {
 
   return (
     <div className="stack-4">
-      <Ayuda titulo="Ocultar no borra nada" icono={<Info size={18} />}>
-        Un estado oculto no se ofrece al cargar una llamada, pero las llamadas que ya lo tienen lo siguen mostrando, con su color, y lo que
-        pone la app sola sigue andando. Antes de ocultarlo ves qué mueve (la Agenda, la etapa del lead y lo que pregunta el cierre del día) y
-        si ocultarlo rompe algo. Se puede volver a mostrar cuando quieras. Santi marca cuáles usa de verdad y el resto se oculta desde acá.
-      </Ayuda>
       {!puede && <p className="t-sm t-subtle">Sólo lo cambian quienes editan Ajustes.</p>}
 
       {LISTAS.map(({ campo, titulo, sub }) => {
@@ -82,7 +77,7 @@ export function EstadosDeLlamada() {
           <Card key={campo}>
             <CardHead
               titulo={titulo}
-              sub={`${sub} ${ocultas ? `${num(lista.length - ocultas)} a la vista y ${num(ocultas)} ${ocultas === 1 ? "oculto" : "ocultos"}.` : `${num(lista.length)} a la vista.`}`}
+              sub={`${sub} ${ocultas ? `${num(lista.length - ocultas)} a la vista y ${num(ocultas)} ${ocultas === 1 ? "oculto" : "ocultos"}.` : `${num(lista.length)} a la vista.`} Ocultar uno no lo borra: deja de ofrecerse, y antes se ve qué rompe.`}
               acciones={puede && (
                 <Button sm variante="secondary" icono={<Pencil size={14} />} onClick={(ev) => setEditando({ campo, titulo, ancla: ev.currentTarget })}>
                   Nombres, colores y orden
@@ -90,18 +85,21 @@ export function EstadosDeLlamada() {
               )}
             />
             <div className="est-lista" role="list">
+              <div className="est-fila est-fila--cabeza" aria-hidden>
+                <span>Estado</span><span>Qué hace</span><span className="est-fila__usos">Llamadas</span><span className="est-fila__vista">A la vista</span>
+              </div>
               {lista.map((o) => {
                 const n = usos[campo].get(o.nombre) ?? 0;
                 const mueve = queMueve(o, campo);
                 return (
                   <div key={o.nombre} role="listitem" className={`est-fila${o.oculta ? " est-fila--oculta" : ""}`}>
                     <span className="est-fila__nombre"><Chip texto={o.nombre} color={o.color} /></span>
-                    <span className="est-fila__mueve">
+                    <span className="est-fila__mueve" title={mueve.join(". ") || undefined}>
                       {mueve.length > 0
-                        ? <ul>{mueve.map((m) => <li key={m}>{m}</li>)}</ul>
-                        : <span className="t-subtle">No mueve nada más: es una etiqueta.</span>}
+                        ? queMueveCorto(o, campo).map((m) => <span key={m} className="est-tag">{m}</span>)
+                        : <span className="t-subtle">Sólo etiqueta</span>}
                     </span>
-                    <span className="est-fila__usos t-sm t-subtle t-num">{n === 0 ? "Sin llamadas" : `${num(n)} ${n === 1 ? "llamada" : "llamadas"}`}</span>
+                    <span className="est-fila__usos t-sm t-num">{n === 0 ? <span className="t-subtle">—</span> : num(n)}</span>
                     <label className="est-fila__vista">
                       <Switch
                         checked={!o.oculta} etiqueta={`${o.nombre}: a la vista`}
@@ -111,7 +109,7 @@ export function EstadosDeLlamada() {
                           setRevisando({ campo, titulo, nombre: o.nombre, revision: revisarOcultar(e.ajustes, campo, o.nombre, n) });
                         }}
                       />
-                      <span className="t-sm">{o.oculta ? <><EyeOff size={13} aria-hidden /> Oculto</> : <><Eye size={13} aria-hidden /> A la vista</>}</span>
+                      {o.oculta && <span className="t-sm t-subtle"><EyeOff size={13} aria-hidden /> Oculto</span>}
                     </label>
                   </div>
                 );

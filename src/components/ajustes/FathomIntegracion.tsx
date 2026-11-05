@@ -1,5 +1,6 @@
 "use client";
 
+import { Conexion, type EstadoConexion } from "./Conexion";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Check, Download, Plug, RefreshCw, Unplug } from "lucide-react";
 import { Badge, Button, Card, CardHead } from "@/components/ui/ui";
@@ -156,15 +157,15 @@ export function FathomIntegracion() {
   /* Las que llegaron antes de que se descartaran las que no tienen llamada. */
   const sinAtar = estado ? estado.grabaciones - estado.atadas : 0;
 
+  const tono: EstadoConexion = !hayNube
+    ? { tono: "apagada", texto: "Sin base" }
+    : !estado
+      ? { tono: "revisando", texto: "Revisando…" }
+      : estado.conectado
+        ? { tono: "bien", texto: "Conectado" }
+        : { tono: "atencion", texto: "Sin conectar", detalle: !estado.clave ? "Falta la clave de Fathom en Vercel." : "Falta conectar: las grabaciones no llegan solas." };
   return (
-    <Card>
-      <CardHead
-        titulo="Fathom"
-        sub="Cada llamada de venta con su grabación: el link, el resumen, los accionables y la transcripción llegan solos y se ven en la ficha de la persona, en Llamadas."
-        acciones={estado?.conectado
-          ? <Badge variante="success" icono={<Check size={12} />}>Conectado</Badge>
-          : <Badge variante="neutral">Sin conectar</Badge>}
-      />
+    <Conexion id="fathom" titulo="Fathom" que="La grabación, el resumen y la transcripción de cada llamada, en su ficha." estado={tono}>
       {!hayNube ? (
         <p className="t-sm t-subtle">La app corre en este navegador, sin base: Fathom se conecta en la app publicada.</p>
       ) : !estado ? (
@@ -202,18 +203,14 @@ export function FathomIntegracion() {
                 cargando={trabajando === "conectar"} onClick={() => void conectar()}>Conectar</Button>
             )}
             <Button variante="secondary" icono={<Download size={16} />} disabled={!estado.clave || estado.tablas === false || Boolean(trabajando)}
-              cargando={trabajando === "importar"} onClick={() => void importar()}>Traer lo anterior</Button>
+              cargando={trabajando === "importar"} onClick={() => void importar()}
+              title={`${estado.desde ? `Busca desde el ${fecha(estado.desde)}: antes no hay llamadas de Calendly en la app para atarlas.` : "Busca desde la primera llamada de Calendly que haya en la app."} Pide todo lo que ve la clave y también las llamadas de cada equipo de ventas de Fathom (Sales, Ventas o Closers; si se llama distinto, FATHOM_EQUIPOS en Vercel).`}
+            >Traer lo anterior</Button>
             <Button sm variante="ghost" icono={<RefreshCw size={14} />} disabled={Boolean(trabajando)} onClick={() => void recargar()}>Actualizar</Button>
             {estado.conectado && !estado.aMano && (
               <Button sm variante="ghost" icono={<Unplug size={14} />} disabled={Boolean(trabajando)} onClick={() => setDesconectar(true)}>Desconectar</Button>
             )}
           </div>
-          <p className="t-sm t-subtle">
-            {estado.desde
-              ? `«Traer lo anterior» busca desde el ${fecha(estado.desde)}: antes no hay llamadas de Calendly en la app para atarlas.`
-              : "«Traer lo anterior» busca desde la primera llamada de Calendly que haya en la app."}
-            {" "}Pide todo lo que ve la clave y también las llamadas de cada equipo de ventas de Fathom (el que se llame Sales, Ventas o Closers; si se llama distinto, se lo dice con FATHOM_EQUIPOS en Vercel).
-          </p>
           {trabajando === "importar" && avance && (
             <p className="t-sm t-subtle" role="status">
               {pausa
@@ -240,9 +237,8 @@ export function FathomIntegracion() {
                   : ". Las nuevas llegan solas."}
               </p>
               {estado.links.pendientes > 0 && !estado.links.enCurso && (estado.links.faltanPorCloser?.length ?? 0) > 0 && (
-                <p className="t-sm t-subtle">
-                  Faltan por closer: {estado.links.faltanPorCloser!.map((x) => `${x.closer} ${num(x.n)}`).join(" · ")}. Si una persona tiene muchas, sus grabaciones no están compartidas
-                  con el equipo en Fathom: que las comparta con el equipo de ventas (o que el administrador de Fathom le dé a esta cuenta acceso a todas las llamadas compartidas) y la app las trae sola.
+                <p className="t-sm t-subtle" title="Si una persona tiene muchas, sus grabaciones no están compartidas con el equipo en Fathom: que las comparta con el equipo de ventas (o que el administrador de Fathom le dé a esta cuenta acceso a todas las llamadas compartidas) y la app las trae sola.">
+                  Faltan por closer: {estado.links.faltanPorCloser!.map((x) => `${x.closer} ${num(x.n)}`).join(" · ")}. Si alguien tiene muchas, no las comparte con el equipo en Fathom.
                 </p>
               )}
               {estado.links.pendientes > 0 && (
@@ -271,7 +267,7 @@ export function FathomIntegracion() {
           await recargar();
         }}
       />
-    </Card>
+    </Conexion>
   );
 }
 

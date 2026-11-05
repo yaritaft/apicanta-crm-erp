@@ -8,6 +8,7 @@ import { hayNube } from "@/lib/store";
 import type { EstadoConexion } from "@/lib/accesos-alumnos";
 import type { PruebaPandadoc, PruebaTelegram, PruebaWisboo, PruebaZoom } from "@/lib/accesos-alumnos-servidor";
 import { ContratosAjustes } from "./ContratosAjustes";
+import { Conexion, type EstadoConexion as EstadoDeFila } from "./Conexion";
 
 /* ==================================================================
    Accesos de alumnos, en Ajustes → Integraciones: cuál de las cuatro
@@ -27,7 +28,8 @@ const ROTULO: Record<EstadoConexion, { texto: string; variante: VarianteBadge }>
   error: { texto: "Con error", variante: "danger" },
 };
 
-export function AccesosAlumnosIntegracion() {
+/* Las cuatro pruebas, pedidas una vez por pantalla. */
+function usePruebas() {
   const [pruebas, setPruebas] = useState<Pruebas | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [probando, setProbando] = useState(false);
@@ -45,25 +47,63 @@ export function AccesosAlumnosIntegracion() {
     setProbando(false);
   }, []);
   useEffect(() => { void probar(); }, [probar]);
+  return { pruebas, error, probando, probar };
+}
 
+function Pruebas({ pruebas, error }: { pruebas: Pruebas | null; error: string | null }) {
+  return !hayNube ? (
+    <p className="t-sm t-subtle">La app corre en este navegador, sin base: las conexiones se prueban en la app publicada.</p>
+  ) : error ? (
+    <p className="t-sm" style={{ color: "var(--danger)" }}>{error}</p>
+  ) : !pruebas ? (
+    <div className="skeleton" style={{ height: 160 }} />
+  ) : (
+    <ListaDeConexiones pruebas={pruebas} />
+  );
+}
+
+/** En Integraciones: Telegram, Wisboo, PandaDoc y Zoom, en una fila con su estado. Lo que se configura (el contrato y
+    lo que se da al firmar) está en su propia sección, Ajustes → Contratos y accesos. */
+export function AccesosAlumnosIntegracion({ onConfigurar }: { onConfigurar?: () => void }) {
+  const { pruebas, error, probando, probar } = usePruebas();
+  const conProblema = pruebas ? (Object.entries(pruebas) as [string, { estado: EstadoConexion }][]).filter(([, x]) => x.estado !== "ok").map(([k]) => k) : [];
+  const NOMBRES: Record<string, string> = { telegram: "Telegram", wisboo: "Wisboo", pandadoc: "PandaDoc", zoom: "Zoom" };
+  const tono: EstadoDeFila = !hayNube
+    ? { tono: "apagada", texto: "Sin base" }
+    : error
+      ? { tono: "atencion", texto: "Sin datos", detalle: error }
+      : !pruebas
+        ? { tono: "revisando", texto: "Revisando…" }
+        : conProblema.length
+          ? { tono: "atencion", texto: `${conProblema.length} con problemas`, detalle: `Revisá ${conProblema.map((k) => NOMBRES[k] ?? k).join(", ")}.` }
+          : { tono: "bien", texto: "Las 4 activas" };
   return (
-    <Card>
-      <CardHead
-        titulo="Contratos y accesos de alumnos"
-        sub="El contrato de PandaDoc sale desde la carga de la venta y, cuando el alumno firma, entra solo a sus grupos, sus cursos y sus reuniones."
-        acciones={<Button sm variante="ghost" icono={<RefreshCw size={14} />} disabled={probando || !hayNube} cargando={probando} onClick={() => void probar()}>Probar de nuevo</Button>}
-      />
-      {!hayNube ? (
-        <p className="t-sm t-subtle">La app corre en este navegador, sin base: las conexiones se prueban en la app publicada.</p>
-      ) : error ? (
-        <p className="t-sm" style={{ color: "var(--danger)" }}>{error}</p>
-      ) : !pruebas ? (
-        <div className="skeleton" style={{ height: 160 }} />
-      ) : (
-        <ListaDeConexiones pruebas={pruebas} />
-      )}
+    <Conexion
+      id="accesos" titulo="Contratos y accesos de alumnos" que="Telegram, Wisboo, PandaDoc y Zoom: el contrato y los accesos al firmar." estado={tono}
+      acciones={<Button sm variante="ghost" icono={<RefreshCw size={14} />} disabled={probando || !hayNube} cargando={probando} onClick={() => void probar()}>Probar de nuevo</Button>}
+    >
+      <Pruebas pruebas={pruebas} error={error} />
+      {onConfigurar && <p className="t-sm" style={{ marginTop: 10 }}><button type="button" className="link" onClick={onConfigurar}>Configurar los contratos y los accesos</button></p>}
+    </Conexion>
+  );
+}
+
+/** Ajustes → Contratos y accesos: el contrato que sale con cada venta y lo que se da al firmar. Las cuatro conexiones
+    arriba, porque sin ellas no sale nada. */
+export function ContratosYAccesos() {
+  const { pruebas, error, probando, probar } = usePruebas();
+  return (
+    <div className="stack-4">
+      <Card>
+        <CardHead
+          titulo="Las conexiones"
+          sub="El contrato sale por PandaDoc; al firmar, el alumno entra a Telegram, a Wisboo y a Zoom."
+          acciones={<Button sm variante="ghost" icono={<RefreshCw size={14} />} disabled={probando || !hayNube} cargando={probando} onClick={() => void probar()}>Probar de nuevo</Button>}
+        />
+        <Pruebas pruebas={pruebas} error={error} />
+      </Card>
       {hayNube && <ContratosAjustes pruebas={pruebas} />}
-    </Card>
+    </div>
   );
 }
 

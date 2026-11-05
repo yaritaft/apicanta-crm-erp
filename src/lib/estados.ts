@@ -320,6 +320,34 @@ export function queMueve(o: OpcionCrm, campo: CampoOpcionesCrm): string[] {
   return out;
 }
 
+/** Lo mismo que `queMueve`, en etiquetas de dos o tres palabras para la lista de Ajustes (la frase entera va en el
+ *  globito). En una fila, «Marca la llamada como hecha en la Agenda» más «El cierre del día pregunta por qué no cerró…»
+ *  eran tres renglones por estado (05/11). */
+export function queMueveCorto(o: OpcionCrm, campo: CampoOpcionesCrm): string[] {
+  const out: string[] = [];
+  if (campo === "estadoPreCall") {
+    if (esReagendar(o.nombre)) out.push("Vale como otra fecha");
+    return out;
+  }
+  if (campo !== "estadoLlamada") return out;
+  if (o.llamada === "hecha") out.push("Agenda: hecha");
+  if (o.llamada === "no-show") out.push("Agenda: no vino");
+  if (o.auto === "cancelada") out.push("Solo, si se canceló");
+  if (o.auto === "no-show") out.push("Solo, si no vino");
+  if (o.auto === "segunda") out.push("Solo, si ya había agendado");
+  switch (o.oportunidad) {
+    case "compra-full": case "compra-cuotas": case "reserva": case "downsell":
+      out.push("Pide la venta", "Lead → Inscripto");
+      break;
+    case "perdida": out.push("Lead → Perdido"); break;
+    case "devolucion": out.push("Lead → Perdido, aunque compró"); break;
+  }
+  const que = preguntaDe(o);
+  if (que === "seguimiento") out.push("Pregunta por qué no cerró");
+  if (que === "perdida") out.push("Pregunta por qué se perdió");
+  return out;
+}
+
 export interface RevisionOcultar {
   /* Lo que mueve hoy el estado (queMueve). */
   mueve: string[];

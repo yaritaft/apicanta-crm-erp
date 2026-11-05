@@ -1,5 +1,6 @@
 "use client";
 
+import { Conexion, type EstadoConexion } from "./Conexion";
 import React, { useCallback, useEffect, useState } from "react";
 import { AlertTriangle, Check, Download, Link2, Plug, RefreshCw, Unplug } from "lucide-react";
 import { Badge, Button, Card, CardHead, Switch } from "@/components/ui/ui";
@@ -73,23 +74,18 @@ export function BancoIntegracion() {
     setOcupado("");
   }
 
-  const badge = !d
-    ? <Badge variante="neutral">{"error" in estado ? "Sin datos" : "Revisando…"}</Badge>
+
+  const tono: EstadoConexion = !d
+    ? { tono: "error" in estado ? "atencion" : "revisando", texto: "error" in estado ? "Sin datos" : "Revisando…", detalle: "No pude preguntarle al servidor." }
     : c
       ? c.pideReautorizar
-        ? <Badge variante="warning" icono={<AlertTriangle size={13} />}>Pide volver a autorizar</Badge>
-        : <Badge variante="success" icono={<Check size={13} />}>Conectado</Badge>
+        ? { tono: "atencion", texto: "Pide volver a entrar", detalle: "El banco pide volver a autorizar: hasta entonces no entra nada." }
+        : { tono: "bien", texto: "Conectado" }
       : d.configurado
-        ? <Badge variante="warning" icono={<Plug size={13} />}>Sin conectar</Badge>
-        : <Badge variante="neutral" icono={<Plug size={13} />}>Sin configurar</Badge>;
-
+        ? { tono: "atencion", texto: "Sin conectar", detalle: "Falta conectar la cuenta: se hace una vez, con el usuario del banco." }
+        : { tono: "apagada", texto: "Sin configurar" };
   return (
-    <Card>
-      <CardHead
-        titulo="Bank of America"
-        sub="Los gastos y el saldo de la cuenta, directo del banco (por Plaid), sin pegar el CSV."
-        acciones={badge}
-      />
+    <Conexion id="banco" titulo="Bank of America" que="Los gastos y el saldo, directo del banco por Plaid." estado={tono}>
 
       {"error" in estado && (
         <div className="row-wrap">
@@ -190,6 +186,6 @@ export function BancoIntegracion() {
           catch (err) { toast(err instanceof Error ? err.message : "No pude desconectar el banco.", "err"); }
         }}
       />
-    </Card>
+    </Conexion>
   );
 }

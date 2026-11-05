@@ -1,8 +1,10 @@
 "use client";
 
 import React, { useMemo, useState } from "react";
-import { AlertTriangle, ClipboardCheck } from "lucide-react";
-import { Ayuda, Badge, Button, Card, CardHead, Field, Input, Switch } from "@/components/ui/ui";
+import { ClipboardCheck } from "lucide-react";
+import { Badge, Button, Card, CardHead, Input, Switch } from "@/components/ui/ui";
+import { Plegable } from "@/components/finanzas/visual/visual";
+import { Fila } from "./Fila";
 import { Confirmar } from "@/components/ui/Modal";
 import { InfoMetrica } from "@/components/ui/InfoMetrica";
 import { useToast } from "@/components/ui/Toast";
@@ -60,85 +62,73 @@ export function CierreDelDiaAjustes() {
     };
   }, [e, regla]);
 
+  const textoEfecto = efecto && (regla.descuenta
+    ? efecto.monto > 0
+      ? `Este mes se descuentan ${money(efecto.monto, "USD", 2)} de ${num(efecto.ventas)} ${efecto.ventas === 1 ? "venta" : "ventas"} (${efecto.closers.join(", ")}).`
+      : "Este mes todavía no se descuenta nada: todos los días se cerraron a tiempo."
+    : efecto.monto > 0
+      ? `Prendido desde el ${textoFecha(regla.cuentaDesde ?? hoy)}, en ${efecto.mes} se habrían dejado de comisionar ${money(efecto.monto, "USD", 2)} de ${num(efecto.ventas)} ${efecto.ventas === 1 ? "venta" : "ventas"} (${efecto.closers.join(", ")}).`
+      : `Prendido desde el ${textoFecha(regla.cuentaDesde ?? hoy)}, este mes no se habría descontado nada.`);
+
   return (
     <>
-      <Card>
-        <CardHead
-          titulo="Cierre del día"
-          sub="Cada closer cierra su día cargando cómo terminó cada llamada. Un strike es un día en que alguna llamada no quedó cargada el mismo día."
-          acciones={<Badge variante={regla.descuenta ? "warning" : "neutral"} icono={<ClipboardCheck size={13} />}>{regla.descuenta ? "Descuento prendido" : "Descuento apagado"}</Badge>}
-        />
-        <div className="stack-4">
-          <Field
-            label="Los strikes se cuentan desde"
-            ayuda={regla.cuentaDesde
-              ? "Es la fecha de arranque del CRM para los closers: sólo cuentan las llamadas de ese día en adelante, así lo de antes no suma strikes."
-              : "Todavía no se cuentan strikes: elegí la fecha de arranque del CRM para los closers. Los strikes se le muestran al closer en «Tu día» aunque el descuento esté apagado."}
+      <Card style={{ padding: 0 }}>
+        <div className="aj-card-cab">
+          <CardHead
+            titulo="Cierre del día"
+            sub="Cada closer carga cómo terminó cada llamada. Un strike es un día con alguna llamada sin cargar ese mismo día."
+            acciones={<Badge variante={regla.descuenta ? "warning" : "neutral"} icono={<ClipboardCheck size={13} />}>{regla.descuenta ? "Descuento prendido" : "Descuento apagado"}</Badge>}
+          />
+        </div>
+        <div className="aj-filas aj-filas--borde">
+          <Fila
+            titulo="Los strikes se cuentan desde"
+            sub={regla.cuentaDesde ? "Sólo cuentan las llamadas de ese día en adelante. El closer los ve en «Tu día»." : "Todavía no se cuentan: elegí el día en que arrancó el CRM para los closers."}
           >
-            <div className="row-wrap" style={{ gap: 8 }}>
-              <div style={{ minWidth: 200 }}>
-                <Input
-                  type="date" value={regla.cuentaDesde ?? ""} disabled={!puede} aria-label="Los strikes se cuentan desde"
-                  onChange={(ev) => {
-                    const v = ev.target.value;
-                    if (v && v !== regla.cuentaDesde) { guardar({ cuentaDesde: v }, `Los strikes del cierre del día se cuentan desde el ${v}.`); toast("Guardado."); }
-                  }}
-                />
-              </div>
-              {!regla.cuentaDesde && puede && (
-                <Button variante="secondary" onClick={() => { guardar({ cuentaDesde: hoy }, `Los strikes del cierre del día se cuentan desde hoy (${hoy}).`); toast("Los strikes empiezan a contar desde hoy."); }}>Empezar hoy</Button>
-              )}
-              {regla.cuentaDesde && puede && !regla.descuenta && (
-                <button type="button" className="link t-sm" onClick={() => { guardar({ cuentaDesde: undefined }, "Se dejó de contar los strikes del cierre del día."); toast("Los strikes dejaron de contarse."); }}>Dejar de contar</button>
-              )}
-            </div>
-          </Field>
-
-          <div className="stack-2">
-            <div className="row-3">
-              <Switch
-                checked={regla.descuenta} etiqueta="Descontar la comisión de los días sin cierre"
-                onChange={(v) => {
-                  if (!puede) return;
-                  if (v) setPrendiendo(true);
-                  else { guardar({ descuenta: false }, "Se apagó el descuento por cierre del día."); toast("Descuento apagado: vuelve todo a como estaba."); }
+            <div style={{ width: 180 }}>
+              <Input
+                type="date" value={regla.cuentaDesde ?? ""} disabled={!puede} aria-label="Los strikes se cuentan desde"
+                onChange={(ev) => {
+                  const v = ev.target.value;
+                  if (v && v !== regla.cuentaDesde) { guardar({ cuentaDesde: v }, `Los strikes del cierre del día se cuentan desde el ${v}.`); toast("Guardado."); }
                 }}
               />
-              <span className="t-strong">Descontar la comisión de los días sin cierre</span>
             </div>
-            <ul className="t-sm t-muted" style={{ margin: 0, paddingLeft: 18, display: "flex", flexDirection: "column", gap: 4 }}>
-              <li>
-                <strong>Apagado</strong> (como empieza): los strikes se cuentan y se le muestran al closer, pero no cambia ningún número: ni Finanzas,
-                ni la liquidación, ni el resultado de cada webinar.
-              </li>
-              <li>
-                <strong>Prendido</strong>: no se comisiona lo de un día cuyo cierre no se cargó el mismo día. La comisión del closer de las ventas que
-                salieron de las llamadas de ese día no se paga; la del director, el setter y el referidor no se toca.
-              </li>
-            </ul>
-            {regla.descuenta && (
-              <div className="row-wrap" style={{ gap: 8 }}>
-                <Field label="Rige para las llamadas desde" ayuda="Prender el descuento no cambia lo que ya se liquidó: rige desde el día en que se prendió. Si lo corrés a antes, cambian las comisiones de esos días.">
-                  <div style={{ maxWidth: 220 }}>
-                    <Input
-                      type="date" value={regla.descuentaDesde ?? regla.cuentaDesde ?? ""} disabled={!puede} aria-label="Rige para las llamadas desde"
-                      onChange={(ev) => { const v = ev.target.value; if (v) { guardar({ descuentaDesde: v }, `El descuento por cierre del día rige desde las llamadas del ${v}.`); toast("Guardado."); } }}
-                    />
-                  </div>
-                </Field>
-              </div>
+            {!regla.cuentaDesde && puede && (
+              <Button sm variante="secondary" onClick={() => { guardar({ cuentaDesde: hoy }, `Los strikes del cierre del día se cuentan desde hoy (${hoy}).`); toast("Los strikes empiezan a contar desde hoy."); }}>Empezar hoy</Button>
             )}
-          </div>
-
+            {regla.cuentaDesde && puede && !regla.descuenta && (
+              <button type="button" className="link t-sm" onClick={() => { guardar({ cuentaDesde: undefined }, "Se dejó de contar los strikes del cierre del día."); toast("Los strikes dejaron de contarse."); }}>Dejar de contar</button>
+            )}
+          </Fila>
+          <Fila
+            titulo="Descontar la comisión de los días sin cierre"
+            sub={regla.descuenta
+              ? "No se le paga al closer la comisión de las ventas de un día que no cerró a tiempo. La del director, el setter y el referidor no se toca."
+              : "Apagado, los strikes se muestran pero no cambian ningún número: ni Finanzas, ni la liquidación, ni los webinars."}
+          >
+            <Switch
+              checked={regla.descuenta} etiqueta="Descontar la comisión de los días sin cierre"
+              onChange={(v) => {
+                if (!puede) return;
+                if (v) setPrendiendo(true);
+                else { guardar({ descuenta: false }, "Se apagó el descuento por cierre del día."); toast("Descuento apagado: vuelve todo a como estaba."); }
+              }}
+            />
+          </Fila>
+          {regla.descuenta && (
+            <Fila titulo="Rige para las llamadas desde" sub="Lo que ya se liquidó no cambia. Si lo corrés a antes, cambian las comisiones de esos días.">
+              <div style={{ width: 180 }}>
+                <Input
+                  type="date" value={regla.descuentaDesde ?? regla.cuentaDesde ?? ""} disabled={!puede} aria-label="Rige para las llamadas desde"
+                  onChange={(ev) => { const v = ev.target.value; if (v) { guardar({ descuentaDesde: v }, `El descuento por cierre del día rige desde las llamadas del ${v}.`); toast("Guardado."); } }}
+                />
+              </div>
+            </Fila>
+          )}
           {efecto && (
-            <p className="t-sm" style={{ color: efecto.monto > 0 ? "var(--warning)" : "var(--ink-muted)" }}>
-              {regla.descuenta
-                ? efecto.monto > 0
-                  ? `Este mes ya se descuentan ${money(efecto.monto, "USD", 2)} de ${num(efecto.ventas)} ${efecto.ventas === 1 ? "venta" : "ventas"} (${efecto.closers.join(", ")}).`
-                  : "Este mes todavía no se descuenta nada: todos los días se cerraron el mismo día."
-                : efecto.monto > 0
-                  ? `Para que te hagas una idea: con el descuento prendido desde el ${textoFecha(regla.cuentaDesde ?? hoy)}, en ${efecto.mes} se habrían dejado de comisionar ${money(efecto.monto, "USD", 2)} de ${num(efecto.ventas)} ${efecto.ventas === 1 ? "venta" : "ventas"} (${efecto.closers.join(", ")}).`
-                  : `Para que te hagas una idea: con el descuento prendido desde el ${textoFecha(regla.cuentaDesde ?? hoy)}, este mes no se habría descontado nada.`}
+            <div className="aj-nota" data-tono={efecto.monto > 0 ? "atencion" : undefined}>
+              <span>{textoEfecto}</span>
               <InfoMetrica
                 titulo="Lo que se descuenta este mes"
                 ayuda="La comisión de closer de las ventas que salieron de llamadas de días con strike, en el mes."
@@ -149,18 +139,18 @@ export function CierreDelDiaAjustes() {
                 ]}
                 periodo={efecto.mes}
               />
-            </p>
+            </div>
           )}
-          {!puede && <p className="t-sm t-subtle">Sólo lo cambian quienes editan Ajustes.</p>}
+          {!puede && <p className="aj-nota">Sólo lo cambian quienes editan Ajustes.</p>}
         </div>
       </Card>
 
-      <Ayuda titulo="Cómo se arma el descuento" icono={<AlertTriangle size={18} />}>
-        La venta se ata a la llamada de la que salió en el momento de cargarla. Las ventas de antes de este cambio no traen ese dato:
-        se siguen viendo en el CRM, pero no entran en el descuento. El día se cierra a tiempo si el Estado de Llamada de todas las llamadas
-        de venta del closer se cargó ese mismo día (hora de Argentina), sea desde el cierre del día, la tabla del CRM, la Agenda, la ficha o una venta.
-        Las llamadas canceladas, las que no vinieron y las que pidieron otra fecha no piden cierre.
-      </Ayuda>
+      <Plegable titulo="Cómo se arma el descuento">
+        La venta se ata a la llamada de la que salió en el momento de cargarla: las de antes de este cambio no traen ese dato y
+        no entran en el descuento. El día se cierra a tiempo si el Estado de Llamada de todas las llamadas de venta del closer se
+        cargó ese mismo día (hora de Argentina), desde cualquier lado: el cierre del día, el CRM, la Agenda, la ficha o una venta.
+        Las canceladas, las que no vinieron y las que pidieron otra fecha no piden cierre.
+      </Plegable>
 
       <Confirmar
         abierto={prendiendo} onCerrar={() => setPrendiendo(false)} variante="primary" confirmarTexto="Prender el descuento"
