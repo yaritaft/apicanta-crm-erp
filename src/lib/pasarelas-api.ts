@@ -347,31 +347,45 @@ export async function hotmart(desde: Date, hasta: Date): Promise<MovimientoApi[]
     if (nuestra !== undefined) netoPorTransaccion.set(String(c.transaction ?? ""), Number(nuestra));
   }
 
-  return ventas.map((it) => {
-    const compra = (it.purchase ?? {}) as Record<string, never>;
-    const precio = (compra.price ?? {}) as { value?: number; currency_code?: string };
-    const referencia = String(compra.transaction ?? "");
-    const monto = dinero(Number(precio.value ?? 0));
-    const nuestra = netoPorTransaccion.get(referencia);
-    const neto = nuestra !== undefined ? dinero(nuestra) : monto;
-    const comprador = (it.buyer ?? {}) as { name?: string; email?: string; phone?: string; checkout_phone?: string };
-    const pago = (compra.payment ?? {}) as { type?: string; installments_number?: number };
-    const producto = (it.product ?? {}) as { name?: string };
-    return {
-      proveedor: "hotmart" as const,
-      referencia,
-      monto, fee: dinero(Math.max(monto - neto, 0)), neto,
-      moneda: moneda(precio.currency_code),
-      /* La fecha que importa es cuándo se aprobó el pago, no cuándo se
-         generó la orden: un boleto puede aprobarse días después. */
-      fecha: new Date(Number(compra.approved_date ?? compra.order_date ?? Date.now())).toISOString(),
-      clienteNombre: comprador.name ?? undefined,
-      clienteEmail: comprador.email?.toLowerCase(),
-      clienteTelefono: txt(comprador.phone) ?? txt(comprador.checkout_phone),
-      metodo: metodoHotmart(pago.type, pago.installments_number),
-      descripcion: producto.name ?? undefined,
-    };
-  }).filter((m) => m.referencia && m.monto > 0);
+  return ventas.map((it) => movimientoDeHotmart(it, netoPorTransaccion)).filter((m) => m.referencia && m.monto > 0);
+}
+
+/** ¿El precio vino en la moneda del comprador y no en una que la app maneja? Hotmart cobra en la moneda de cada país (pesos colombianos,
+ *  soles, pesos mexicanos…): «3.320.400» de Juan Camilo Salgado son pesos colombianos, no dólares. */
+const enOtraMoneda = (codigo?: string) => Boolean(codigo) && !["USD", "ARS"].includes(String(codigo).toUpperCase());
+
+/** Una venta de Hotmart como cobro. La comisión del productor (`neto`, de sales/commissions) viene en dólares; el precio, en la moneda del
+ *  comprador. Si es otra moneda, el bruto en dólares no se sabe: el cobro entra con lo que llega (el neto) y la comisión queda «sin saber»
+ *  (0): al atarlo, el pago conserva la de su cuenta (completar-cobros.ts → feeDesconocido). Antes entraba el precio como si fueran dólares
+ *  y la comisión daba 100% (Aldana, 05/11: un cobro de «US$ 3.320.400» con comisión de US$ 3.319.461); atarlo le hubiera puesto a un pago
+ *  de US$ 1.000 una comisión de casi US$ 1.000. Sin neto, no entra: no hay ningún número en dólares. */
+export function movimientoDeHotmart(it: Record<string, never>, netoPorTransaccion: ReadonlyMap<string, number>): MovimientoApi {
+  const compra = (it.purchase ?? {}) as Record<string, never>;
+  const precio = (compra.price ?? {}) as { value?: number; currency_code?: string };
+  const referencia = String(compra.transaction ?? "");
+  const nuestra = netoPorTransaccion.get(referencia);
+  const otra = enOtraMoneda(precio.currency_code);
+  const enSuMoneda = dinero(Number(precio.value ?? 0));
+  const monto = otra ? (nuestra !== undefined ? dinero(nuestra) : 0) : enSuMoneda;
+  const neto = nuestra !== undefined ? dinero(nuestra) : monto;
+  const comprador = (it.buyer ?? {}) as { name?: string; email?: string; phone?: string; checkout_phone?: string };
+  const pago = (compra.payment ?? {}) as { type?: string; installments_number?: number };
+  const producto = (it.product ?? {}) as { name?: string };
+  const pagoEn = otra ? `pagó ${enSuMoneda.toLocaleString("es-AR")} ${String(precio.currency_code).toUpperCase()}` : "";
+  return {
+    proveedor: "hotmart" as const,
+    referencia,
+    monto, fee: otra ? 0 : dinero(Math.max(monto - neto, 0)), neto,
+    moneda: otra ? "USD" : moneda(precio.currency_code),
+    /* La fecha que importa es cuándo se aprobó el pago, no cuándo se
+       generó la orden: un boleto puede aprobarse días después. */
+    fecha: new Date(Number(compra.approved_date ?? compra.order_date ?? Date.now())).toISOString(),
+    clienteNombre: comprador.name ?? undefined,
+    clienteEmail: comprador.email?.toLowerCase(),
+    clienteTelefono: txt(comprador.phone) ?? txt(comprador.checkout_phone),
+    metodo: metodoHotmart(pago.type, pago.installments_number),
+    descripcion: [producto.name, pagoEn].filter(Boolean).join(" · ") || undefined,
+  };
 }
 
 /* ---------- Whop ----------
@@ -732,6 +746,9 @@ export function reembolsoDeHotmart(it: Record<string, never>, contracargo = fals
   const transaccion = String(compra.transaction ?? "");
   const monto = dinero(Number(precio.value ?? 0));
   if (!transaccion || !(monto > 0)) return null;
+  /* En la moneda del comprador (pesos colombianos…) no se sabe cuánto es en dólares: no se propone sola. Antes entraba como si fueran dólares
+     (una propuesta de «US$ 708.092» de Fabian Vega, 708.092 pesos colombianos). Se carga a mano con el monto en dólares. */
+  if (enOtraMoneda(precio.currency_code)) return null;
   const comprador = (it.buyer ?? {}) as { name?: string; email?: string };
   return {
     proveedor: "hotmart", referencia: `reembolso:${transaccion}`, referenciasCobro: [transaccion],
