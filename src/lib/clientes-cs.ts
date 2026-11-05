@@ -116,6 +116,8 @@ function sesionesNormales(x: unknown): SesionUnoAUno[] {
     .map((s) => ({
       id: String(s.id ?? ""), fecha: String(s.fecha).slice(0, 10), con: String(s.con ?? ""), notas: String(s.notas ?? ""),
       grabacion: String(s.grabacion ?? ""), creadoEn: String(s.creadoEn ?? ""), creadoPor: String(s.creadoPor ?? ""),
+      /* La de Calendly dice de qué llamada salió: sin esto, guardar la ficha la soltaba de su llamada. */
+      ...(typeof s.sesionId === "string" && s.sesionId ? { sesionId: s.sesionId } : {}),
     }));
 }
 

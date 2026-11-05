@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { esSesionUnoAUno } from "@/lib/bonos";
 import { sesionesUnoAUnoQueVienen } from "@/lib/mi-panel";
-import { testimonioDeLaLlamada } from "@/lib/clientes-cs";
+import { seguimientoCompleto, testimonioDeLaLlamada } from "@/lib/clientes-cs";
+import { CONFIG_POR_DEFECTO } from "@/lib/seguimiento";
 import { hojaDelAviso } from "@/lib/avisos";
 import type { Alumno, EstadoApp, SeguimientoAlumno, Sesion } from "@/lib/types";
 
@@ -61,4 +62,11 @@ test("al cerrar la llamada, el testimonio de ese día (Jean Camacho tenía dos c
 test("cada aviso abre la ficha en su solapa", () => {
   assert.deepEqual(["sesion-1a1", "resell-cerrado", "resell-outboarding", "outboarding", "contrato", "mencion"].map(hojaDelAviso),
     ["bonos", "testimonio", "accesos", "accesos", "contrato", undefined]);
+});
+
+test("la ficha conserva de qué llamada de Calendly salió cada sesión (guardarla no la suelta)", () => {
+  const f = seguimientoCompleto({ id: "seg_a", alumnoId: "a", sesionesUnoAUno: [
+    { id: "x", fecha: "2026-11-16", con: "Yari", sesionId: "cal_1" }, { id: "y", fecha: "2026-10-02", con: "Lili" },
+  ] } as never, CONFIG_POR_DEFECTO);
+  assert.deepEqual(f.sesionesUnoAUno?.map((s) => s.sesionId ?? null), ["cal_1", null]);
 });
