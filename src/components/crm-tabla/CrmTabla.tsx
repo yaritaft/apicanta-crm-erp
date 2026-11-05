@@ -25,12 +25,12 @@ import { destinosDePase } from "@/lib/pasar-llamadas";
 import { sePuedePasar, usePasarLlamadas } from "@/components/closers/usePasarLlamadas";
 import { PasarLlamadas } from "@/components/closers/PasarLlamadas";
 import { AvisoMisLlamadas } from "@/components/closers/MisLlamadas";
-import { miembroDeCloser, opcionesDe as opcionesDelCrm } from "@/lib/crm";
+import { CAMPOS_DE_OPCIONES, miembroDeCloser, opcionesDe as opcionesDelCrm } from "@/lib/crm";
 import { COLOR_AVISO, POR_VENIR, SIN_CARGAR } from "@/lib/estados";
 import { leadDeSesion } from "@/lib/etapas-auto";
 import { aLista } from "@/lib/compartirLink";
 import { PARAM_VISTA } from "@/lib/vistas-guardadas";
-import type { ColorCrm, OpcionCrm } from "@/lib/types";
+import type { CampoOpcionesCrm, ColorCrm, OpcionCrm } from "@/lib/types";
 import { money, num } from "@/lib/format";
 import { diaDeNegocio } from "@/lib/dia-negocio";
 import { esLlamadaDeResell } from "@/lib/resells";
@@ -39,9 +39,9 @@ import { bajarExcel, excelCobros, filasExcelCobros } from "@/lib/excelCobros";
 import { paginaDeURL, useBusquedaURL, useEscribirURL, useParamsURL } from "@/lib/useParamsURL";
 import { useRangoURL } from "@/lib/useRango";
 import {
-  CAMPO_DE_OPCIONES, COLUMNA, COLUMNAS, COLUMNAS_DE_ANTES, COLUMNAS_DE_COBROS, COLUMNAS_SUMADAS, COLOR_COBROS, EDITOR, escrituraDe, filasTabla, filtroAURL, filtrosDeURL, llamadasQueSeVen,
+  CAMPO_DE_OPCIONES, COLOR_SIN_RECONTACTAR, COLUMNA, COLUMNAS, COLUMNAS_DE_ANTES, COLUMNAS_DE_COBROS, COLUMNAS_SUMADAS, COLOR_COBROS, EDITOR, escrituraDe, filasTabla, filtroAURL, filtrosDeURL, llamadasQueSeVen,
   hayFiltro, MAX_ORDENES, opcionesDeColumna, ORDEN_CHEQUEO, ORDEN_COMPROBANTE, ORDEN_CONCILIADO, ORDEN_POR_DEFECTO, ordenarFilas, pagosDeLlamadas, totalCobrado, ordenesAURL, ordenesDeURL, PAISES, pasaFiltros, POR_QUE_NO,
-  textoDeFiltro, VACIAS, valorEditable, VISIBLES_POR_DEFECTO,
+  followUpVisible, SIN_RECONTACTAR, textoDeFiltro, VACIAS, valorEditable, VISIBLES_POR_DEFECTO,
   type ClaveColumna, type FilaTabla, type FiltroColumna as Filtro, type OrdenColumna,
 } from "@/lib/crm-tabla";
 import { textoDeDia, tituloPerfil, type CampoPerfil } from "@/lib/perfil";
@@ -87,7 +87,7 @@ const HORA = new Intl.DateTimeFormat("es-AR", { timeZone: "America/Argentina/Bue
 /* Lo que es de la persona (se guarda en su contacto) y lo que es de la llamada. */
 const DE_LA_PERSONA = new Set<ClaveColumna>(["nombre", "email", "telefono", "pais", "edad", "nacimiento", "tecnologias", "ingles", "experiencia", "formacion", "ingreso", "inversion"]);
 /* Las que se eligen de una lista y se pueden dejar vacías. */
-const VACIABLES = new Set<ClaveColumna>(["estadoPreCall", "estadoLlamada", "preCall", "objecion", "oferta"]);
+const VACIABLES = new Set<ClaveColumna>(["estadoPreCall", "estadoLlamada", "preCall", "followUp", "objecion", "oferta"]);
 const PERFIL: Partial<Record<ClaveColumna, CampoPerfil>> = {
   edad: "edad", nacimiento: "nacimiento", tecnologias: "tecnologias", ingles: "ingles", experiencia: "experiencia", formacion: "formacion", ingreso: "ingreso", inversion: "inversion",
 };
@@ -166,16 +166,16 @@ export function CrmTabla({ misLlamadas = false }: { misLlamadas?: boolean } = {}
   const filtradas = useMemo(() => base.filter((f) => pasaFiltros(f, filtros)), [base, filtros]);
 
   /* Las opciones de los estados, las del Airtable: las mismas que en la grilla. */
-  const estados = useMemo(() => ({
-    estadoLlamada: opcionesDelCrm(e.ajustes, "estadoLlamada"),
-    estadoPreCall: opcionesDelCrm(e.ajustes, "estadoPreCall"),
-    preCall: opcionesDelCrm(e.ajustes, "preCall"),
-  }), [e.ajustes]);
+  const estados = useMemo(() => Object.fromEntries(
+    CAMPOS_DE_OPCIONES.map((c) => [c, opcionesDelCrm(e.ajustes, c)]),
+  ) as Record<CampoOpcionesCrm, OpcionCrm[]>, [e.ajustes]);
   /* Sus valores van en el orden del Airtable, no alfabético. */
   const ordenValores = useMemo<Partial<Record<ClaveColumna, string[]>>>(() => ({
     estadoLlamada: [...estados.estadoLlamada.map((o) => o.nombre), SIN_CARGAR, POR_VENIR],
     estadoPreCall: estados.estadoPreCall.map((o) => o.nombre),
     preCall: estados.preCall.map((o) => o.nombre),
+    /* A quién falta recontactar, primero. */
+    followUp: [SIN_RECONTACTAR, ...estados.followUp.map((o) => o.nombre)],
     comprobante: ORDEN_COMPROBANTE,
     conciliado: ORDEN_CONCILIADO,
     chequeo: ORDEN_CHEQUEO,
@@ -184,6 +184,7 @@ export function CrmTabla({ misLlamadas = false }: { misLlamadas?: boolean } = {}
     estadoLlamada: new Map<string, ColorCrm>([...Object.entries(COLOR_AVISO), ...estados.estadoLlamada.map((o) => [o.nombre, o.color] as const)]),
     estadoPreCall: new Map(estados.estadoPreCall.map((o) => [o.nombre, o.color] as const)),
     preCall: new Map(estados.preCall.map((o) => [o.nombre, o.color] as const)),
+    followUp: new Map<string, ColorCrm>([[SIN_RECONTACTAR, COLOR_SIN_RECONTACTAR], ...estados.followUp.map((o) => [o.nombre, o.color] as const)]),
     comprobante: new Map(Object.entries(COLOR_COBROS)),
     conciliado: new Map(Object.entries(COLOR_COBROS)),
     chequeo: new Map(Object.entries(COLOR_COBROS)),
@@ -562,6 +563,13 @@ function Celda({ clave, f, color }: { clave: ClaveColumna; f: FilaTabla; color?:
     case "estadoPreCall": case "preCall": {
       const v = f[clave];
       return v ? <PastillaEstado texto={v} color={color?.get(v) ?? "gris1"} /> : nada;
+    }
+    /* El casillero mismo avisa a quién falta recontactar: en un no-show sin follow-up, «Sin recontactar» en ámbar. */
+    case "followUp": {
+      const v = followUpVisible(f);
+      if (!v) return nada;
+      const pastilla = <PastillaEstado texto={v} color={color?.get(v) ?? "gris1"} />;
+      return f.followUp ? pastilla : <span title="No vino y todavía nadie lo recontactó. Elegí cómo seguiste con esta persona.">{pastilla}</span>;
     }
     case "llamada": return <span className="t-num">{textoFecha(f.dia)} · {HORA.format(new Date(f.llamada))}</span>;
     case "agendo": return <span className="t-num">{textoFecha(diaDeNegocio(f.agendo))}</span>;

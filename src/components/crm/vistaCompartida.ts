@@ -1,4 +1,4 @@
-import { CAMPO, type ClaveCampo, type Condicion, type Operador, type Orden } from "@/lib/crm";
+import { CAMPO, CAMPOS_DE_OPCIONES, type ClaveCampo, type Condicion, type Operador, type Orden } from "@/lib/crm";
 import type { CampoOpcionesCrm } from "@/lib/types";
 import { ALTOS, type AltoFila } from "./Grilla";
 import type { AjusteVista } from "./useVistas";
@@ -25,7 +25,7 @@ export type VistaEnLink = {
 const OPERADORES: readonly Operador[] = [
   "contiene", "no-contiene", "es", "no-es", "alguno", "ninguno", "todos", "vacio", "no-vacio", "periodo",
 ];
-const CAMPOS_CON_OPCIONES: readonly CampoOpcionesCrm[] = ["preCall", "estadoLlamada", "estadoPreCall"];
+const CAMPOS_CON_OPCIONES: readonly CampoOpcionesCrm[] = CAMPOS_DE_OPCIONES;
 
 const esCampo = (k: unknown): k is ClaveCampo => typeof k === "string" && (k === "lanzamiento" || k in CAMPO);
 const esTexto = (x: unknown): x is string => typeof x === "string";

@@ -8,7 +8,7 @@ import {
 import { useToast } from "@/components/ui/Toast";
 import { aportesAlLink } from "@/lib/compartirLink";
 import {
-  CAMPO, CAMPOS, PERIODOS, completa, nuevaCondicion, operadoresDe, sinTildes, tipoDeFiltro, valoresDe,
+  CAMPO, CAMPOS, CAMPOS_DE_OPCIONES, PERIODOS, TITULO_DE_OPCIONES, completa, nuevaCondicion, operadoresDe, sinTildes, tipoDeFiltro, valoresDe,
   type ClaveCampo, type Condicion, type FilaCrm, type Orden, type Pintor, type VistaCrm,
 } from "@/lib/crm";
 import type { CampoOpcionesCrm, OpcionCrm } from "@/lib/types";
@@ -60,11 +60,7 @@ const ALTOS_TEXTO: { valor: AltoFila; texto: string }[] = [
   { valor: "alta", texto: "Alta" }, { valor: "extra", texto: "Extra alta" },
 ];
 
-const CAMPOS_COLOR: { valor: CampoOpcionesCrm; texto: string }[] = [
-  { valor: "estadoLlamada", texto: "Estado de Llamada" },
-  { valor: "preCall", texto: "Pre-Call" },
-  { valor: "estadoPreCall", texto: "Estado Pre-Call" },
-];
+const CAMPOS_COLOR: { valor: CampoOpcionesCrm; texto: string }[] = CAMPOS_DE_OPCIONES.map((valor) => ({ valor, texto: TITULO_DE_OPCIONES[valor] }));
 
 export function BarraVista(p: PropsBarra) {
   const toast = useToast();

@@ -33,7 +33,7 @@ const COLUMNAS_SIN_CAMPO: Record<string, string[]> = {
 
 /* Los campos que se agregaron en los lotes del 07/10 (diferencia de types.ts contra la versión del 02/10). */
 const NUEVOS_DE_HOY: Record<string, string[]> = {
-  sesiones: ["estadoLlamadaEn", "estadoPreCallEn", "ventaPorOtro"],
+  sesiones: ["estadoLlamadaEn", "estadoPreCallEn", "ventaPorOtro", "followUp"],
   ventas: ["sesionId"],
   pagos: ["chequeoDirector", "chequeoDirectorPor", "chequeoDirectorEn", "chequeoDirectorNota", "chequeoFinanzas", "chequeoFinanzasPor", "chequeoFinanzasEn", "chequeoFinanzasNota", "cargadoPor"],
   gastos: ["fechaPago"],

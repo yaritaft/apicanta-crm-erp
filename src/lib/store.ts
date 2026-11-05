@@ -7,7 +7,7 @@ import type {
   Adjunto, Arqueo, Campania, CampoPersonalizado, Comentario, Comprobante, Reaccion, Cuota, EntidadNombre, EstadoApp, Etapa, ID,
   Lead, Meta, Movimiento, OpcionCrm, OportunidadCrm, Pago, Reporte, Sesion, Venta, Webinar,
 } from "./types";
-import type { ChatLectura, ConfigSeguimiento, FotoPerfil, GrupoWppResumen, Resell, RevisionCv, SeguimientoAlumno, Testimonio } from "./types";
+import type { CampoOpcionesCrm, ChatLectura, ConfigSeguimiento, FotoPerfil, GrupoWppResumen, Resell, RevisionCv, SeguimientoAlumno, Testimonio } from "./types";
 import { lecturaAlLeer, recibidosAlLlegar } from "./chat-equipo";
 import { configSeguimiento, seguimientoVacio } from "./seguimiento";
 import { resellNormal, seguimientoCompleto, siguienteNumero, testimonioNormal } from "./clientes-cs";
@@ -836,7 +836,7 @@ function moverFilas<T extends { id: ID }>(lista: T[], cambios: ({ id: ID } & Par
    (devuelve la llamada a como estaba) y la tabla del CRM, que corrige el
    estado y el closer en la celda. `extra` lo manda pasar una llamada a otro
    closer (lib/pasar-llamadas.ts), que deja anotado ahí que se eligió a mano. */
-export type CambiosLlamada = Partial<Pick<Sesion, "preCall" | "estadoPreCall" | "estadoLlamada" | "notas" | "grabacion" | "estado"
+export type CambiosLlamada = Partial<Pick<Sesion, "preCall" | "estadoPreCall" | "estadoLlamada" | "followUp" | "notas" | "grabacion" | "estado"
   | "resultado" | "objecion" | "hizoOferta" | "cierreEstimado" | "eodEn" | "eodPor" | "anfitrion" | "extra" | "inicia"
   | "estadoLlamadaEn" | "estadoPreCallEn" | "ventaPorOtro">>;
 type PedidoLlamada = { id: ID; cambios: CambiosLlamada; detalle: string };
@@ -1853,7 +1853,7 @@ export const acciones = {
   /* La configuración del CRM (opciones de cada campo, qué agendas entran en
      cada tabla). Renombrar una opción renombra también lo que ya estaba
      cargado con ella, como en Airtable. */
-  configurarCrm(crm: NonNullable<Ajustes["crm"]>, renombres: { campo: "preCall" | "estadoPreCall" | "estadoLlamada"; de: string; a: string }[] = [], detalle = "Se cambió la configuración del CRM.") {
+  configurarCrm(crm: NonNullable<Ajustes["crm"]>, renombres: { campo: CampoOpcionesCrm; de: string; a: string }[] = [], detalle = "Se cambió la configuración del CRM.") {
     const e = snapshot();
     /* Todos los renombres de una vez, desde el valor original: intercambiar
        dos nombres (A→B y B→A) o renombrar a uno que se borra no se pisan. */

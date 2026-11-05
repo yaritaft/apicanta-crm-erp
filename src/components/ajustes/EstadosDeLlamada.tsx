@@ -10,7 +10,7 @@ import { EditarOpciones } from "@/components/crm/MenuColumna";
 import { acciones, useEstado } from "@/lib/store";
 import { useAcceso } from "@/lib/acceso";
 import { puedeEditar } from "@/lib/permisos";
-import { conConfig, opcionesDe } from "@/lib/crm";
+import { CAMPOS_DE_OPCIONES, conConfig, opcionesDe } from "@/lib/crm";
 import { queMueve, queMueveCorto, revisarOcultar, type RevisionOcultar } from "@/lib/estados";
 import { num } from "@/lib/format";
 import type { CampoOpcionesCrm, OpcionCrm } from "@/lib/types";
@@ -30,6 +30,7 @@ const LISTAS: { campo: CampoOpcionesCrm; titulo: string; sub: string }[] = [
   { campo: "estadoLlamada", titulo: "Estado de Llamada", sub: "Cómo terminó la llamada: lo elige el closer en su cierre del día." },
   { campo: "estadoPreCall", titulo: "Estado Pre-Call", sub: "Lo que pasó antes de la llamada: si confirmó, si pidió otra fecha o no contestó." },
   { campo: "preCall", titulo: "Pre-Call", sub: "El seguimiento antes de la llamada: los mensajes y llamados para que se presente." },
+  { campo: "followUp", titulo: "Estado follow-up", sub: "El seguimiento de después: a quién se recontactó tras un no-show y a quién todavía no." },
 ];
 
 export function EstadosDeLlamada() {
@@ -42,7 +43,7 @@ export function EstadosDeLlamada() {
 
   /* Cuántas llamadas tiene cada estado. */
   const usos = useMemo(() => {
-    const m: Record<CampoOpcionesCrm, Map<string, number>> = { estadoLlamada: new Map(), estadoPreCall: new Map(), preCall: new Map() };
+    const m = Object.fromEntries(CAMPOS_DE_OPCIONES.map((c) => [c, new Map<string, number>()])) as Record<CampoOpcionesCrm, Map<string, number>>;
     for (const s of e.sesiones) {
       for (const campo of Object.keys(m) as CampoOpcionesCrm[]) {
         const v = s[campo];

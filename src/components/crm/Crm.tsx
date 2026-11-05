@@ -8,7 +8,7 @@ import { acciones, escrituraPendiente, estadoSync, useEstado, type CambioEtapa }
 import { nube } from "@/lib/supabase";
 import { AGENDAR_A_MANO } from "@/lib/funciones";
 import {
-  CAMPO, CAMPOS, coincideBusqueda, esCompra, estiloColor, filasCrm, ocultosDeTabla, opcionesDe, ordenar, pasa,
+  CAMPO, CAMPOS, CAMPOS_DE_OPCIONES, coincideBusqueda, esCompra, estiloColor, filasCrm, ocultosDeTabla, opcionesDe, ordenar, pasa,
   miembroDeCloser, pintor, tablasDe, valorDe, vistasDe,
   type ClaveCampo, type FilaCrm, type VistaCrm,
 } from "@/lib/crm";
@@ -66,11 +66,9 @@ export function Crm() {
   const filasTodas = useMemo(() => filasCrm(e), [e]);
   const filasTabla = useMemo(() => filasTodas.filter((f) => f.tabla === tablaId), [filasTodas, tablaId]);
   const pintar = useMemo(() => pintor(e.ajustes, filasTabla, e.equipo), [e.ajustes, filasTabla, e.equipo]);
-  const opciones = useMemo<Record<CampoOpcionesCrm, OpcionCrm[]>>(() => ({
-    preCall: opcionesDe(e.ajustes, "preCall"),
-    estadoLlamada: opcionesDe(e.ajustes, "estadoLlamada"),
-    estadoPreCall: opcionesDe(e.ajustes, "estadoPreCall"),
-  }), [e.ajustes]);
+  const opciones = useMemo(() => Object.fromEntries(
+    CAMPOS_DE_OPCIONES.map((c) => [c, opcionesDe(e.ajustes, c)]),
+  ) as Record<CampoOpcionesCrm, OpcionCrm[]>, [e.ajustes]);
 
   /* ---------- Vistas ---------- */
   const guardadas = useVistasGuardadas(tablaId);
@@ -634,7 +632,7 @@ function Masivo({ n, opciones, onAplicar, onSoltar }: {
   onSoltar: () => void;
 }) {
   const [abierto, setAbierto] = useState<{ clave: CampoOpcionesCrm; el: HTMLElement } | null>(null);
-  const campos: CampoOpcionesCrm[] = ["preCall", "estadoLlamada", "estadoPreCall"];
+  const campos = CAMPOS_DE_OPCIONES;
   return (
     <span className="crm-anadir crm-masivo">
       <strong>{n} {n === 1 ? "elegida" : "elegidas"}</strong>

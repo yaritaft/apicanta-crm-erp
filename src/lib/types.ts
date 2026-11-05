@@ -194,6 +194,9 @@ export interface Sesion {
   preCall?: string;          // 1° Mje Enviado, 1° Llamada, 2° Mje Enviado…
   estadoPreCall?: string;    // Confirmado, Reagendar, Sin Respuesta
   estadoLlamada?: string;    // Compra Full, Seguimiento Nutrición, Inasistió…
+  /* Estado follow-up: a quién se recontactó después de que no vino (o no cerró) y a quién todavía no. Lo carga el setter o el closer
+     en el CRM, con las opciones de ajustes.crm (supabase/follow-up.sql). Sin nada cargado, en un no-show dice «Sin recontactar». */
+  followUp?: string;         // 1° Mje Enviado, Respondió, Reagendó, Sin respuesta…
   grabacion?: string;        // El link de Fathom
   /* El cierre del día del closer (EOD, lib/eod.ts): si no cerró, por qué,
      si hizo la oferta y para cuándo estima cerrarlo. Cómo terminó lo dice
@@ -753,7 +756,9 @@ export interface OpcionCrm {
 
 export type OportunidadCrm = "compra-full" | "compra-cuotas" | "reserva" | "downsell" | "perdida" | "devolucion";
 
-export type CampoOpcionesCrm = "preCall" | "estadoLlamada" | "estadoPreCall";
+/* Los campos de la llamada que el equipo elige de una lista. Para sumar uno: acá, sus opciones en OPCIONES_POR_DEFECTO (lib/crm.ts, el
+   compilador lo exige) y su columna en CAMPOS y en COLUMNAS; el resto de las pantallas recorre CAMPOS_DE_OPCIONES. */
+export type CampoOpcionesCrm = "preCall" | "estadoLlamada" | "estadoPreCall" | "followUp";
 
 /* Una tabla del CRM (Booking Calls, Agendas Resells): qué tipos de evento
    de Calendly entran. Cada tabla tiene su regla (asesoramiento, auditoría) y

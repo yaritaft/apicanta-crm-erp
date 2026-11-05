@@ -7,7 +7,7 @@ import { useToast } from "@/components/ui/Toast";
 import { acciones, useEstado, type CambiosLlamada } from "@/lib/store";
 import { useAcceso } from "@/lib/acceso";
 import { puedeEditar } from "@/lib/permisos";
-import { esCompra, opcionesDe } from "@/lib/crm";
+import { esCompra, opcionesDe, TITULO_DE_OPCIONES } from "@/lib/crm";
 import { estadoVisible, type EstadoVisible } from "@/lib/estados";
 import type { CampoOpcionesCrm, ColorCrm, OpcionCrm, Sesion } from "@/lib/types";
 
@@ -23,9 +23,7 @@ import type { CampoOpcionesCrm, ColorCrm, OpcionCrm, Sesion } from "@/lib/types"
    otras.
    ================================================================== */
 
-export const TITULO_ESTADO: Record<CampoOpcionesCrm, string> = {
-  estadoLlamada: "Estado de Llamada", estadoPreCall: "Estado Pre-Call", preCall: "Pre-Call",
-};
+export const TITULO_ESTADO: Record<CampoOpcionesCrm, string> = TITULO_DE_OPCIONES;
 
 const VACIAR = "Vaciar";
 

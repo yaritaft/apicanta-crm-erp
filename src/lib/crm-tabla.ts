@@ -2,7 +2,7 @@ import type { Ajustes, CampoOpcionesCrm, ColorCrm, Contacto, EstadoApp, ID, Lead
 import { filasCrm, opcionesDe, partir, sinTildes, type FilaCrm } from "./crm";
 import { diaDeNegocio } from "./dia-negocio";
 import { EVENTOS, fuenteDeUtm, leerUtm, NOMBRE_FUNNEL } from "./utm-estandar";
-import { CANCELADA, CON_CIERRE, estadoDe, NO_SE_PRESENTO, POR_VENIR, SIN_CARGAR, SIN_CIERRE } from "./estados";
+import { CANCELADA, CON_CIERRE, esImportada, estadoDe, NO_SE_PRESENTO, POR_VENIR, SIN_CARGAR, SIN_CIERRE } from "./estados";
 import { conCorrecciones, corregidoDe, edadDeDia, nacimientoDeRespuestas, respuestaPerfil, textoDeDia, type CampoPerfil, type Corregido } from "./perfil";
 import type { CambiosLlamada } from "./store";
 import { COBROS_EN_CERO, cobrosPorVenta, quienEs, sumarCobros, type CobrosDeVenta } from "./control-cobros";
@@ -45,6 +45,9 @@ export interface FilaTabla {
   aviso: string;
   /* Lo que hizo el setter antes: 1° Mje Enviado, 1° Llamada… */
   preCall: string;
+  /* El Estado follow-up que se cargó (1° Mje Enviado, Respondió, Reagendó…); vacío si nadie lo cargó. Lo que dice la celda
+     (con «Sin recontactar» en un no-show) es `followUpVisible`. */
+  followUp: string;
   /* Cómo terminó, para el Informe: Con cierre, Sin cierre, No se presentó…
      Se deduce del Estado de Llamada; no se carga. */
   resultado: string;
@@ -224,6 +227,7 @@ export function filasTabla(
       estadoAuto: ver.auto && !ver.vacio,
       aviso: ver.vacio ? ver.texto : "",
       preCall: f.preCall,
+      followUp: f.followUp,
       resultado: ver.desenlace,
       objecion: s.objecion ?? "",
       oferta: s.hizoOferta === true ? "Sí" : s.hizoOferta === false ? "No" : "",
@@ -261,7 +265,7 @@ export function filasTabla(
 /* ---------- Las columnas ---------- */
 
 export type ClaveColumna =
-  | "llamada" | "nombre" | "closer" | "estadoPreCall" | "estadoLlamada" | "preCall" | "objecion" | "oferta" | "cierre"
+  | "llamada" | "nombre" | "closer" | "estadoPreCall" | "estadoLlamada" | "followUp" | "preCall" | "objecion" | "oferta" | "cierre"
   | "via" | "fuente" | "ad" | "angulo" | "campania" | "pais" | "edad" | "nacimiento" | "tecnologias" | "ingles" | "experiencia" | "formacion"
   | "ingreso" | "inversion" | "calificada" | "grabacion" | "venta" | "producto" | "cobrado" | "comprobante" | "conciliado" | "cargo" | "chequeo" | "email" | "telefono" | "agendo" | "notas";
 
@@ -365,6 +369,17 @@ const RANGO_COBROS: Record<string, number> = {
 };
 const rangoCobros = (valores: string[]) => Math.min(...valores.map((v) => RANGO_COBROS[v] ?? 5));
 
+/* Un no-show al que todavía nadie le escribió ni lo llamó (Daniel, setter, 06/11): no es una opción, es el aviso de que falta,
+   como «Sin cargar» en el Estado de Llamada. Se ve en la celda vacía de toda llamada en la que no vinieron. */
+export const SIN_RECONTACTAR = "Sin recontactar";
+/* Naranja fuerte: es lo que falta hacer (el naranja es la acción en el design system). */
+export const COLOR_SIN_RECONTACTAR: ColorCrm = "naranja3";
+
+/** Lo que dice el Estado follow-up de una llamada: el cargado o, si no vino y nadie lo cargó, «Sin recontactar». Vacío si no hay nada que decir.
+    Una llamada traída del Airtable viejo no es una pendiente de nadie (esImportada, la misma regla del cierre del día): sin follow-up, no dice nada. */
+export const followUpVisible = (f: Pick<FilaTabla, "followUp" | "resultado"> & { sesion?: { origen?: string } }): string =>
+  f.followUp || (f.resultado === NO_SE_PRESENTO && !esImportada(f.sesion ?? {}) ? SIN_RECONTACTAR : "");
+
 export const COLUMNAS: ColumnaTabla[] = [
   { clave: "llamada", titulo: "Llamada", grupo: "Llamada", valores: (f) => [f.dia], orden: (f) => f.llamada, fecha: true, ancho: 150 },
   { clave: "nombre", titulo: "Persona", grupo: "Llamada", valores: (f) => uno(f.nombre), ancho: 220 },
@@ -372,6 +387,8 @@ export const COLUMNAS: ColumnaTabla[] = [
   { clave: "estadoPreCall", titulo: "Estado Pre-Call", grupo: "Llamada", valores: (f) => uno(f.estadoPreCall), ancho: 150 },
   /* Sin estado se filtra por el aviso: «Sin cargar» o «Por venir». */
   { clave: "estadoLlamada", titulo: "Estado de Llamada", grupo: "Llamada", valores: (f) => uno(f.estadoLlamada || f.aviso), ancho: 190 },
+  /* Después del Estado de Llamada: es lo que se hace con quien no vino. Se filtra por «Sin recontactar» para ver a quién falta escribirle. */
+  { clave: "followUp", titulo: "Estado follow-up", grupo: "Llamada", valores: (f) => uno(followUpVisible(f)), ancho: 170 },
   { clave: "preCall", titulo: "Pre-Call", grupo: "Llamada", valores: (f) => uno(f.preCall), ancho: 150 },
   { clave: "objecion", titulo: "Objeción", grupo: "Resultado", valores: (f) => uno(f.objecion), ancho: 170 },
   { clave: "oferta", titulo: "¿Oferta?", grupo: "Resultado", valores: (f) => uno(f.oferta), ancho: 100 },
@@ -421,7 +438,7 @@ export function celdaParaCsv(c: ColumnaTabla, f: FilaTabla): string {
 export const esColumna = (k: string): k is ClaveColumna => Object.prototype.hasOwnProperty.call(COLUMNA, k);
 
 export const VISIBLES_POR_DEFECTO: ClaveColumna[] = [
-  "llamada", "nombre", "telefono", "email", "closer", "estadoPreCall", "estadoLlamada", "objecion", "oferta", "cierre", "via", "fuente", "ad", "pais",
+  "llamada", "nombre", "telefono", "email", "closer", "estadoPreCall", "estadoLlamada", "followUp", "objecion", "oferta", "cierre", "via", "fuente", "ad", "pais",
   "tecnologias", "ingles", "ingreso", "inversion", "calificada", "grabacion", "notas", "venta", "comprobante", "conciliado",
 ];
 
@@ -434,6 +451,8 @@ export const COLUMNAS_SUMADAS: { id: string; despuesDe: string; claves: ClaveCol
   { id: "notas-1910", despuesDe: "cierre", claves: ["notas"] },
   /* Santi (02/11): ver sólo lo de YouTube. La Vía dice «VSL»; la Fuente, de cuál de todos. */
   { id: "fuente-0211", despuesDe: "via", claves: ["fuente"] },
+  /* Daniel (06/11): saber a quién de los no-show ya se recontactó. */
+  { id: "followup-0611", despuesDe: "estadoLlamada", claves: ["followUp"] },
 ];
 
 /* Las dos columnas que miran los cobros de la venta: sólo las ve quien puede leer los cobros. */
@@ -446,7 +465,7 @@ export const COLUMNAS_DE_ANTES: Record<string, ClaveColumna[]> = { resultado: ["
 
 /* Las columnas que guardan una opción del Airtable (Ajustes → crm.opciones). */
 export const CAMPO_DE_OPCIONES: Partial<Record<ClaveColumna, CampoOpcionesCrm>> = {
-  estadoPreCall: "estadoPreCall", estadoLlamada: "estadoLlamada", preCall: "preCall",
+  estadoPreCall: "estadoPreCall", estadoLlamada: "estadoLlamada", preCall: "preCall", followUp: "followUp",
 };
 
 /* ---------- Editar ----------
@@ -463,7 +482,7 @@ export type EditorColumna = "texto" | "largo" | "fecha" | "fechahora" | "opcione
 
 export const EDITOR: Partial<Record<ClaveColumna, EditorColumna>> = {
   nombre: "texto", email: "texto", telefono: "texto",
-  closer: "opciones", estadoPreCall: "opciones", estadoLlamada: "opciones", preCall: "opciones", objecion: "opciones", oferta: "opciones",
+  closer: "opciones", estadoPreCall: "opciones", estadoLlamada: "opciones", preCall: "opciones", followUp: "opciones", objecion: "opciones", oferta: "opciones",
   /* La llamada se puede pasar a mano: si reagendaron por fuera de Calendly (Dante, 19/10: «reagendó para el lunes y quedó en el sábado»). */
   llamada: "fechahora", cierre: "fecha", grabacion: "texto", notas: "largo",
   pais: "sugerencias", edad: "texto", nacimiento: "fecha", ingles: "sugerencias", experiencia: "sugerencias", ingreso: "sugerencias", inversion: "sugerencias",
@@ -578,7 +597,7 @@ export function escrituraDe(
     }
     /* Una opción del Airtable, o vacío. El Estado de Llamada además deja
        la agenda como hecha, que no vino o cancelada (lo hace el store). */
-    case "estadoLlamada": case "estadoPreCall": case "preCall":
+    case "estadoLlamada": case "estadoPreCall": case "preCall": case "followUp":
       return !limpio || opcionesDe(ctx.ajustes, clave).some((o) => o.nombre === limpio) ? llamada({ [clave]: limpio }) : null;
     case "objecion": return llamada({ objecion: limpio || undefined });
     case "oferta": return llamada({ hizoOferta: limpio === "Sí" ? true : limpio === "No" ? false : undefined });

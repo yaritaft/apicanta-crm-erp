@@ -92,6 +92,27 @@ export const OPCIONES_POR_DEFECTO: Record<CampoOpcionesCrm, OpcionCrm[]> = {
     { nombre: "Lead descartado", color: "naranja5" },
     { nombre: "❌Núm inválido", color: "gris4" },
   ],
+  /* Estado follow-up (Daniel, setter, 06/11): a quién se recontactó después de un no-show y a quién todavía no. «Sin recontactar» no es
+     una opción: es lo que dice la celda vacía de una llamada en la que no vinieron (lib/crm-tabla.ts). */
+  followUp: [
+    { nombre: "1° Mje Enviado", color: "amarillo1" },
+    { nombre: "2° Mje Enviado", color: "amarillo2" },
+    { nombre: "Llamado", color: "naranja2" },
+    { nombre: "Respondió", color: "azul2" },
+    { nombre: "Reagendó", color: "verde4" },
+    { nombre: "Sin respuesta", color: "rojo2" },
+    { nombre: "No le interesa", color: "gris3" },
+  ],
+};
+
+/* Todos los campos que se eligen de una lista: salen de OPCIONES_POR_DEFECTO, que el compilador obliga a completar cuando se suma uno a
+   CampoOpcionesCrm. Las pantallas (grilla, tabla, Ajustes, vistas guardadas, orden y colores) recorren ESTA lista en vez de repetir los
+   nombres: así una columna nueva de opciones no queda a medias en ninguna. */
+export const CAMPOS_DE_OPCIONES = Object.keys(OPCIONES_POR_DEFECTO) as CampoOpcionesCrm[];
+
+/* Cómo se llama cada uno donde se nombra (avisos, deshacer, el selector de la barra). */
+export const TITULO_DE_OPCIONES: Record<CampoOpcionesCrm, string> = {
+  preCall: "Pre-Call", estadoLlamada: "Estado de Llamada", estadoPreCall: "Estado Pre-Call", followUp: "Estado follow-up",
 };
 
 export function opcionesDe(a: Pick<Ajustes, "crm">, campo: CampoOpcionesCrm): OpcionCrm[] {
@@ -154,7 +175,7 @@ export type ClaveCampo =
   | "nombre" | "llamada" | "closer" | "telefono" | "email"
   | "preCall" | "estadoLlamada" | "notas" | "funnel"
   | "utmSource" | "utmMedium" | "utmContent" | "grabacion"
-  | "anios" | "ingles" | "lenguajes" | "inversion" | "mes" | "id" | "estadoPreCall"
+  | "anios" | "ingles" | "lenguajes" | "inversion" | "mes" | "id" | "estadoPreCall" | "followUp"
   | "formacion" | "ingreso" | "instagram" | "agendo" | "tipo" | "utmCampaign" | "calificada"
   | "lanzamiento";
 
@@ -215,6 +236,8 @@ export const CAMPOS: CampoCrm[] = [
     fuente: "El id de la agenda en el ERP." },
   { clave: "estadoPreCall", titulo: "Estado Pre-Call", tipo: "seleccion", origen: "equipo", ancho: 180, opciones: "estadoPreCall",
     fuente: "Si confirmó que se presenta a la llamada." },
+  { clave: "followUp", titulo: "Estado follow-up", tipo: "seleccion", origen: "equipo", ancho: 190, opciones: "followUp",
+    fuente: "El seguimiento de después: a quién se recontactó tras un no-show y a quién todavía no." },
   /* Ocultas de entrada: se prenden en «Ocultar campos». */
   { clave: "calificada", titulo: "Agenda calificada", tipo: "formula", origen: "calculado", ancho: 170, etiqueta: true,
     fuente: "Invierte 1000 USD o más, tiene inglés conversacional y carrera (la estrellita de la Agenda)." },
@@ -272,6 +295,7 @@ export interface FilaCrm {
   inversion: string;
   mes: string;
   estadoPreCall: string;
+  followUp: string;
   calificada: string;
   formacion: string[];
   ingreso: string;
@@ -565,6 +589,7 @@ function armarFila(
     inversion: respuestaPerfil(qa, "inversion") ?? "",
     mes: mesDe(s.inicia),
     estadoPreCall: s.estadoPreCall ?? "",
+    followUp: s.followUp ?? "",
     calificada: evaluarAgenda(s, c ?? l).calificada ? "Sí" : "No",
     formacion: partir(respuestaPerfil(qa, "formacion") ?? c?.formacion),
     ingreso: respuestaPerfil(qa, "ingreso") ?? c?.sueldoUsd ?? "",
@@ -706,15 +731,13 @@ export interface Pintor {
 }
 
 export function pintor(a: Ajustes, filas: FilaCrm[], equipo: Pick<MiembroEquipo, "nombre">[] = []): Pintor {
-  const opciones = {
-    preCall: new Map(opcionesDe(a, "preCall").map((o) => [o.nombre, o.color])),
-    estadoLlamada: new Map(opcionesDe(a, "estadoLlamada").map((o) => [o.nombre, o.color])),
-    estadoPreCall: new Map(opcionesDe(a, "estadoPreCall").map((o) => [o.nombre, o.color])),
-  };
+  const opciones = Object.fromEntries(
+    CAMPOS_DE_OPCIONES.map((c) => [c, new Map(opcionesDe(a, c).map((o) => [o.nombre, o.color]))]),
+  ) as Record<CampoOpcionesCrm, Map<string, ColorCrm>>;
   const closers = coloresDeCloser(filas, equipo);
   return (clave, valor) => {
     switch (clave) {
-      case "preCall": case "estadoLlamada": case "estadoPreCall":
+      case "preCall": case "estadoLlamada": case "estadoPreCall": case "followUp":
         return opciones[clave].get(valor) ?? "gris1";
       case "anios": return colorAnios(valor);
       case "ingles": return colorIngles(valor);
@@ -734,7 +757,7 @@ export function pintor(a: Ajustes, filas: FilaCrm[], equipo: Pick<MiembroEquipo,
 
 export type Periodo =
   | "hoy" | "ayer" | "manana" | "semana" | "semana-pasada" | "mes" | "mes-pasado"
-  | "proximos-7" | "ultimos-7" | "pasado" | "proximo";
+  | "proximos-7" | "ultimos-7" | "ultimos-30" | "pasado" | "proximo";
 
 export const PERIODOS: { valor: Periodo; texto: string }[] = [
   { valor: "hoy", texto: "hoy" },
@@ -746,6 +769,7 @@ export const PERIODOS: { valor: Periodo; texto: string }[] = [
   { valor: "mes-pasado", texto: "el mes pasado" },
   { valor: "proximos-7", texto: "los próximos 7 días" },
   { valor: "ultimos-7", texto: "los últimos 7 días" },
+  { valor: "ultimos-30", texto: "los últimos 30 días" },
   { valor: "proximo", texto: "desde ahora" },
   { valor: "pasado", texto: "antes de ahora" },
 ];
@@ -802,6 +826,7 @@ export function enPeriodo(iso: string, p: Periodo, ahora = Date.now()): boolean 
     case "mes-pasado": return dia.slice(0, 7) === sumarDias(`${hoy.slice(0, 7)}-01`, -1).slice(0, 7);
     case "proximos-7": return dia >= hoy && dia <= sumarDias(hoy, 6);
     case "ultimos-7": return dia <= hoy && dia >= sumarDias(hoy, -6);
+    case "ultimos-30": return dia <= hoy && dia >= sumarDias(hoy, -29);
     /* La llamada que está empezando sigue en «desde ahora» una hora. */
     case "proximo": return Date.parse(iso) >= ahora - 3_600_000;
     case "pasado": return Date.parse(iso) < ahora;
@@ -860,7 +885,7 @@ export interface Orden { campo: ClaveCampo; desc: boolean }
 export function ordenar(filas: FilaCrm[], orden: Orden[], a: Ajustes): FilaCrm[] {
   if (orden.length === 0) return filas;
   const posicion = (campo: CampoOpcionesCrm) => new Map(opcionesDe(a, campo).map((o, i) => [o.nombre, i]));
-  const pos = { preCall: posicion("preCall"), estadoLlamada: posicion("estadoLlamada"), estadoPreCall: posicion("estadoPreCall") };
+  const pos = Object.fromEntries(CAMPOS_DE_OPCIONES.map((c) => [c, posicion(c)])) as Record<CampoOpcionesCrm, Map<string, number>>;
   return [...filas].sort((x, y) => {
     for (const o of orden) {
       const vx = valorDe(x, o.campo), vy = valorDe(y, o.campo);
@@ -973,6 +998,8 @@ export function vistasDe(
   const sinRespuesta = opcion(estadosPre, /sin respuesta/);
   const reagendar = opcion(estadosPre, /reagendar/);
   const inasistio = estados.find((o) => o.auto === "no-show")?.nombre;
+  /* Todos los estados que dicen que no vino (Inasistió, Dejó de Contestar…): el follow-up se lleva sobre ellos. */
+  const noVinieron = estados.filter((o) => o.llamada === "no-show").map((o) => o.nombre);
   for (const m of e.equipo.filter((x) => x.rol === "setter" && x.activo)) {
     const pila = m.nombre.split(/\s+/)[0];
     const marca = { color: PALETA.amarillo3, forma: "cuadrado" as const };
@@ -983,6 +1010,16 @@ export function vistasDe(
     ];
     if (sinRespuesta) vistas.push(vista({ id: `${id}-sin-respuesta`, nombre: "Sin Respuesta", marca, de, filtros: [{ campo: "estadoPreCall", op: "alguno", valor: [sinRespuesta] }], orden: [{ campo: "llamada", desc: false }] }));
     if (reagendar) vistas.push(vista({ id: `${id}-reagendar`, nombre: "Reagendar", marca, de, filtros: [{ campo: "estadoPreCall", op: "alguno", valor: [reagendar] }], orden: [{ campo: "llamada", desc: false }] }));
+    /* El pedido de Daniel (06/11): los no-show que todavía nadie recontactó, primero los de más tiempo. */
+    if (noVinieron.length) vistas.push(vista({
+      id: `${id}-sin-recontactar`, nombre: "No-shows sin recontactar", marca, de,
+      /* Los últimos 30 días: lo de antes (las 423 llamadas del Airtable viejo) no es para recontactar. */
+      filtros: [
+        { campo: "estadoLlamada", op: "alguno", valor: noVinieron }, { campo: "followUp", op: "vacio" },
+        { campo: "llamada", op: "periodo", valor: "ultimos-30" },
+      ],
+      orden: [{ campo: "llamada", desc: false }],
+    }));
     if (inasistio) vistas.push(vista({ id: `${id}-no-asistio`, nombre: "No asistió", marca, de, filtros: [{ campo: "estadoLlamada", op: "alguno", valor: [inasistio] }], orden: [{ campo: "llamada", desc: true }] }));
     secciones.push({ id, titulo: de, marca, vistas });
   }
