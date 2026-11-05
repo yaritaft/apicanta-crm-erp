@@ -1161,7 +1161,7 @@ export interface RestoDeCorte {
   /* Lo que se cerró (sin el resto de otro mes) y lo que daría hoy con todo el mes. */
   cerrado: number;
   hoy: number;
-  /* El día del corte (aaaa-mm-dd), para decirlo. */
+  /* El día del corte (aaaa-mm-dd), para decirlo. Vacío si se cerró el mes entero: entonces es lo que cambió después de cerrar. */
   corte: string;
   /* Si sus renglones variables los calcula Finanzas (los closers): el resto ya está en los costos de ese mes, no se vuelve a cargar al cerrar. */
   enFinanzas: boolean;
@@ -1174,17 +1174,22 @@ export interface RestoDeCorte {
 /** Un renglón de una persona: lo que se cerró y lo que da hoy con todo el mes. */
 export interface CambioDeRenglon { clave: string; nombre: string; cerrado: number; hoy: number }
 
+/* Con o sin fecha de corte: lo que cambió después de cerrar el mes anterior pasa solo a este, a cada uno lo suyo. Antes, cerrado sin corte, había
+   que sumarlo a mano, y a mano se pierde la cadena (05/11: al corregir 5 ventas de YouTube de octubre, a Agustín le tocaban US$ 495 menos y a
+   Nahuel, cuya comisión resta la de Agustín, US$ 49,50 más; el descuento de Agustín se hizo a mano y lo de Nahuel se pasaba por alto). */
 function restoDelMesAnterior(e: EstadoApp, mesAnterior: string): Map<ID, RestoDeCorte> {
   const out = new Map<ID, RestoDeCorte>();
-  const prev = e.liquidaciones.find((l) => l.periodo === mesAnterior && l.estado === "cerrada" && l.resultado && l.corte);
+  const prev = e.liquidaciones.find((l) => l.periodo === mesAnterior && l.estado === "cerrada" && l.resultado);
   if (!prev?.resultado) return out;
+  /* Un corte el último día (o ninguno) es el mes entero: lo que queda es lo que cambió, no lo que entró después. */
+  const conCorte = corteDe(prev.periodo, prev.corte) ? String(prev.corte).slice(0, 10) : "";
   for (const d of diferenciasDesdeElCierre(e, prev)) {
     const lineas = prev.resultado.personas.find((p) => p.miembroId === d.miembroId)?.lineas ?? [];
     /* Las que calcula Finanzas son las comisiones de las ventas (y lo que se les revierte): un descuento o un monto a mano a un closer no
        cambia de qué lado va su resto. */
     const comisiones = lineas.filter((l) => ["porcentaje", "tramo", "devolucion"].includes(l.tipo) && Math.abs(l.montoBase) >= 0.005 && !l.clave.startsWith(PREFIJO_DE_RESTO));
     out.set(d.miembroId, {
-      miembroId: d.miembroId, cerrado: d.cerrado, hoy: d.hoy, corte: String(prev.corte).slice(0, 10),
+      miembroId: d.miembroId, cerrado: d.cerrado, hoy: d.hoy, corte: conCorte,
       enFinanzas: comisiones.length > 0 && comisiones.every((l) => l.enFinanzas),
       renglones: d.renglones, despues: d.despues,
     });
@@ -1196,12 +1201,14 @@ function lineaDeResto(cx: Contexto, m: MiembroEquipo, r: RestoDeCorte, entrada: 
   const mesAnterior = moverPeriodo(cx.rango.clave, -1);
   const clave = claveDeResto(mesAnterior);
   const nombreMes = nombrePeriodo(mesAnterior);
-  const dia = `${r.corte.slice(8, 10)}/${r.corte.slice(5, 7)}`;
-  const nombre = `Resto de ${nombreMes}, después del ${dia}`;
+  const dia = r.corte ? `${r.corte.slice(8, 10)}/${r.corte.slice(5, 7)}` : "";
+  const nombre = r.corte ? `Resto de ${nombreMes}, después del ${dia}` : `Ajuste de ${nombreMes}: cambió después de cerrar`;
   const mon = cx.base;
   let monto = r2(r.hoy - r.cerrado);
   let desglose: DesgloseLinea | undefined = {
-    regla: `${nombreMes} se cerró con fecha de corte el ${dia}: lo que entró después y lo que cambió desde el cierre se paga en esta liquidación, a cada uno lo suyo.`,
+    regla: r.corte
+      ? `${nombreMes} se cerró con fecha de corte el ${dia}: lo que entró después y lo que cambió desde el cierre se paga en esta liquidación, a cada uno lo suyo.`
+      : `${nombreMes} ya está cerrado: lo que cambió después (una venta corregida, un cobro que se concilió tarde) se paga o se descuenta en esta liquidación, a cada uno lo suyo, con las comisiones que dependen de otras.`,
     moneda: mon,
     pasos: [
       plataPaso("base", `Lo que da ${nombreMes} entero, con los datos de hoy`, r.hoy, mon),
@@ -1217,7 +1224,9 @@ function lineaDeResto(cx: Contexto, m: MiembroEquipo, r: RestoDeCorte, entrada: 
     ],
     ...(r.despues.length ? { lista: listaDeItems(r.despues, mon, `Los cobros después del ${dia} que cuentan en lo suyo`, `Los ${LIMITE_LISTA} cobros más grandes después del ${dia} que cuentan en lo suyo`) } : {}),
   };
-  let detalle = `Con todo ${nombreMes} da ${plata(r.hoy, mon)} y se pagaron ${plata(r.cerrado, mon)} al cerrar hasta el ${dia}`;
+  let detalle = r.corte
+    ? `Con todo ${nombreMes} da ${plata(r.hoy, mon)} y se pagaron ${plata(r.cerrado, mon)} al cerrar hasta el ${dia}`
+    : `Con los datos de hoy ${nombreMes} da ${plata(r.hoy, mon)} y se liquidaron ${plata(r.cerrado, mon)} al cerrarlo`;
   let corregido = false;
   if (entrada?.monto !== undefined && Number.isFinite(entrada.monto)) {
     detalle = `Corregido a mano: la cuenta daba ${plata(monto, mon)}${entrada.nota?.trim() ? ` · ${entrada.nota.trim()}` : ""}`;
@@ -1512,6 +1521,12 @@ export function faltantes(r: ResultadoLiquidacion) {
   const pendientes = r.personas.filter((p) => !p.inactivo && (p.pendiente || p.sinCargar));
   const sinCambio = !(r.tipoCambio > 0) && r.personas.some((p) => p.lineas.some((l) => l.moneda !== "USD" && l.monto !== 0));
   return { lineas, pendientes, sinCambio };
+}
+
+/** Lo que cambió después de cerrar este mes, ¿pasa solo al que sigue? Sí mientras el siguiente no esté cerrado (restoDelMesAnterior). */
+export function pasaAlMesQueSigue(liquidaciones: readonly Liquidacion[], periodo: string): boolean {
+  const siguiente = moverPeriodo(periodo, 1);
+  return !liquidaciones.some((l) => l.periodo === siguiente && l.estado === "cerrada");
 }
 
 /** Lo que cambió desde que se cerró: un cobro que se concilió tarde, una

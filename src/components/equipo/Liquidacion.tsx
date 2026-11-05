@@ -22,7 +22,7 @@ import { fechaLarga, money, num } from "@/lib/format";
 import { escribirMonto, infoGrupo, categoriaDe, leerMonto } from "@/lib/gastos";
 import { pedirBlue } from "@/lib/dolar";
 import {
-  calcularLiquidacion, claveEntrada, diferenciasDesdeElCierre, esPeriodo, extrasPorVenir, faltantes, gastosDeLiquidacion,
+  calcularLiquidacion, claveEntrada, diferenciasDesdeElCierre, esPeriodo, pasaAlMesQueSigue, extrasPorVenir, faltantes, gastosDeLiquidacion,
   infoBase, informeParaEnviar, liquidacionCsv, liquidacionVacia, mesesParaExtra, moverPeriodo, nombrePeriodo, periodoDe, plata, rangoDePeriodo, textoParaEnviar,
 } from "@/lib/honorarios";
 import type {
@@ -337,7 +337,9 @@ export function LiquidacionMes({ onVerPersona, soloMirar = false, onVerReglas }:
               titulo={corte
                 ? <>Después del {diaCorto(corte)} entraron comisiones por <b>{money(sumaCambios, base)}</b></>
                 : <>Algo del mes cambió después de cerrar: <b>{money(sumaCambios, base)}</b></>}
-              sub={corte ? `Pasan solas a ${mesQueSigue}, a cada uno lo suyo. Lo pagado no se toca.` : "Lo pagado no se toca: se suma a mano en el mes que viene, o se reabre esta."}
+              sub={pasaAlMesQueSigue(e.liquidaciones, periodo)
+                ? `Lo pagado no se toca: la diferencia pasa sola a ${mesQueSigue}, a cada uno lo suyo (también a quien cobra sobre la comisión de otro). No hace falta cargarla a mano.`
+                : `${mesQueSigue} ya está cerrado: esta diferencia no pasa sola. Se carga a mano en la liquidación abierta, o se reabre esta.`}
               der={<span className="t-sm t-muted">{cambios.length} {cambios.length === 1 ? "persona" : "personas"}</span>}
             >
               <ul className="liq-difs">

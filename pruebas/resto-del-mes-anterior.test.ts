@@ -1,8 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { calcularLiquidacion, diferenciasDesdeElCierre, PREFIJO_DE_RESTO } from "@/lib/honorarios";
+import { readFileSync } from "node:fs";
+import { calcularLiquidacion, diferenciasDesdeElCierre, pasaAlMesQueSigue, PREFIJO_DE_RESTO } from "@/lib/honorarios";
 import type { EstadoApp, Liquidacion } from "@/lib/types";
-import { estadoDePrueba, PERIODO } from "./estado-liquidacion";
+import { concepto, esquema, estadoDePrueba, miembro, PERIODO } from "./estado-liquidacion";
 
 /* ==================================================================
    Lo que entra después del corte pasa solo a la liquidación que sigue (Aldana, 29/10): «el próximo cierre tiene que cubrir todo lo que pase
@@ -44,10 +45,50 @@ test("los closers, cuyas comisiones calcula Finanzas, dejan el resto en Finanzas
   assert.ok(sinFinanzas.every((x) => x.l.variable));
 });
 
-test("sin corte, o con el mes cerrado entero, no queda resto", () => {
+test("sin corte, o con el mes cerrado entero, si nada cambió no queda resto", () => {
   assert.equal(restos(cerradaConCorte(null).e).length, 0);
   /* Cerrado con corte pero después de todo lo que entró: nada cambia. */
   assert.equal(restos(cerradaConCorte("2026-09-30").e).length, 0);
+});
+
+/* 05/11: octubre se cerró y después se corrigieron 5 ventas que eran del VSL de YouTube, no del webinar. La comisión de Agustín no cuenta
+   YouTube (le tocaban US$ 495 menos) y la de Nahuel resta la de Agustín (le tocaban US$ 49,50 más). El descuento de Agustín se hizo a
+   mano y lo de Nahuel se pasaba por alto (Aldana: «eso también influye en la comisión de Nahuel»). Ahora lo que cambió después de
+   cerrar pasa solo, con o sin corte, a cada uno lo suyo, con las comisiones que dependen de otras. */
+for (const corte of [null, "2026-09-30"]) {
+  test(`cerrado ${corte ? "con corte el último día" : "sin corte"}: una venta corregida después pasa sola, también a quien cobra sobre la comisión de otro`, () => {
+    const e0 = estadoDePrueba();
+    const conCadena = {
+      ...e0,
+      equipo: [...e0.equipo, miembro("nahuel", "Nahuel Abadía", "otro")],
+      honorarios: [
+        ...e0.honorarios.filter((h) => h.miembroId !== "agus"),
+        esquema("agus", [concepto({ id: "c_pp", tipo: "porcentaje", nombre: "Comisión de Agustín", tasa: 0.05, base: "profit", profitPropio: true, sinEmbudoIds: ["emb_yt"] })]),
+        esquema("nahuel", [concepto({ id: "c_pp", tipo: "porcentaje", nombre: "Comisión de Nahuel", tasa: 0.10, base: "profit", profitPropio: true, descuentaComisionDe: ["agus"] })]),
+      ],
+      ventas: e0.ventas.map((v) => ({ ...v, embudoId: "emb_web" })),
+      embudos: [{ id: "emb_web", nombre: "Webinar", esWebinar: true }, { id: "emb_yt", nombre: "VSL YOUTUBE" }],
+    } as EstadoApp;
+    const base = { id: `liq_${PERIODO}`, periodo: PERIODO, estado: "abierta", corte, entradas: {}, extras: [] } as unknown as Liquidacion;
+    const cerrada = { ...base, estado: "cerrada", resultado: calcularLiquidacion(conCadena, PERIODO, base) } as unknown as Liquidacion;
+    /* Después de cerrar: la venta de Belén Godoy (US$ 3.000 cobrados) era de YouTube. */
+    const e = { ...conCadena, liquidaciones: [cerrada], ventas: conCadena.ventas.map((v) => (v.id === "v1" ? { ...v, embudoId: "emb_yt" } : v)) } as EstadoApp;
+    const r = restos(e);
+    const de = (id: string) => r.find((x) => x.p.miembroId === id)?.l;
+    assert.equal(de("agus")?.montoBase, -150, "a Agustín se le descuenta el 5% de los 3.000 que ya no cuentan");
+    assert.equal(de("nahuel")?.montoBase, 15, "a Nahuel le suma el 10% de lo que dejó de restarle la comisión de Agustín");
+    assert.match(de("agus")!.nombre, /^Ajuste de septiembre 2026: cambió después de cerrar$/i);
+    assert.match(de("agus")!.desglose!.avisos!.join(" "), /Comisión de Agustín/);
+  });
+}
+
+test("la pantalla de un mes cerrado no pide cargar a mano lo que pasa solo", () => {
+  const liq = readFileSync("src/components/equipo/Liquidacion.tsx", "utf8");
+  assert.doesNotMatch(liq, /se suma a mano en el mes que viene/);
+  assert.match(liq, /pasaAlMesQueSigue\(/);
+  const cerradaSept = { periodo: "2026-09", estado: "cerrada" } as Liquidacion;
+  assert.equal(pasaAlMesQueSigue([cerradaSept], "2026-09"), true, "octubre abierta: pasa sola");
+  assert.equal(pasaAlMesQueSigue([cerradaSept, { periodo: "2026-10", estado: "cerrada" } as Liquidacion], "2026-09"), false, "octubre cerrada: no");
 });
 
 test("el resto no cuenta como costo del mes que sigue (ya estaba en los del mes anterior) y no se arrastra de un mes al otro", () => {
