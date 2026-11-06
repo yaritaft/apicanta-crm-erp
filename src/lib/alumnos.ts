@@ -1,6 +1,7 @@
 import type { Alumno, Cuota, EstadoApp, EtapaServicio, ID, Venta } from "./types";
 import { claveEmail } from "./contactos";
 import { esLaMismaPersona } from "./duplicados";
+import { diaDeNegocio } from "./dia-negocio";
 
 /* ------------------------------------------------------------------
    Reglas del alumno.
@@ -78,6 +79,28 @@ export function alumnoDeVenta(e: EstadoApp, v: Venta): Alumno | undefined {
   const telefonoDe = (a: Alumno) => (e.seguimientos ?? []).find((s) => s.alumnoId === a.id)?.telefono
     || (a.leadId ? e.leads.find((l) => l.id === a.leadId)?.telefono : "") || "";
   return e.alumnos.find((a) => !a.ventaId && esLaMismaPersona({ nombre: a.nombre, telefono: telefonoDe(a) }, persona));
+}
+
+/* ---------- La renovación arranca un programa nuevo (Liliana, 07/11) ----------
+   Gerardo Nava renovó el 06/11 (venta, contrato y accesos cargados) y su ficha seguía diciendo que inició el 30/10/25: al
+   «Demorar el inicio» la app contaba los días desde ahí (433, no los 61 que pidió) y el fin del programa también. El
+   `inicio` del alumno es el del programa en curso, así que una compra que renueva lo corre a su fecha. Renuevan las de un
+   producto principal o upsell (Hackear IT/AI/Biz, Resell Mentoría, Upsell, Upgrade AI); no las de un evento (Mastermind,
+   cenas) ni un downsell. */
+export function renuevaElPrograma(e: Pick<EstadoApp, "productos">, v: Pick<Venta, "estado" | "productoId">): boolean {
+  if (v.estado !== "activa") return false;
+  const tipo = e.productos.find((p) => p.id === v.productoId)?.tipo;
+  return tipo === "principal" || tipo === "upsell";
+}
+
+/* El alumno con el inicio corrido a la fecha de esta compra, o null si no corresponde: la compra no renueva, es la primera del
+   alumno (nace con su fecha) o no es posterior a su inicio (una venta cargada tarde no lo atrasa). */
+export function alumnoRenovadoPor(e: EstadoApp, v: Venta): Alumno | null {
+  if (!renuevaElPrograma(e, v)) return null;
+  const a = alumnoDeVenta(e, v);
+  if (!a || !a.ventaId || a.ventaId === v.id) return null;
+  if (diaDeNegocio(v.fecha) <= diaDeNegocio(a.inicio)) return null;
+  return { ...a, inicio: v.fecha };
 }
 
 /* ---------- Compró, pero el closer todavía no cargó la venta (Lili y Juan Cruz, 23/10) ----------

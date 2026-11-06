@@ -8,7 +8,7 @@ import {
   situacionDe, type SituacionSeguimiento,
 } from "./seguimiento";
 import { crearMotor, numeroComoValor, siNo, SI, NO, uno, varios, type ColumnaCs, type OrdenCs } from "./tabla-cs";
-import { finConPausas, inicioReal, pausaEnCurso, pausasNormales } from "./pausas";
+import { finConPausas, inicioReal, pausaEnCurso, pausasDelCiclo, pausasNormales } from "./pausas";
 import { followUpDeReserva, reservaSinCompletar } from "./reservas";
 import type {
   Alumno, ConfigSeguimiento, Contacto, Cuota, EstadoApp, ID, ListasCs, PausaServicio, Resell, SeguimientoAlumno, SesionUnoAUno, Testimonio, Venta,
@@ -247,14 +247,20 @@ export const egresoAutomatico = (inicio: string, duracion: number | null): strin
     5/8 con 60 días de demora y 45 de pausa, termina el 20/02; ella escribió «20/02» y la app lo corría otros 106 días). */
 export function egresoEscritoAMano(inicio: string, egresoPropio: string | null, duracion: number | null): boolean {
   const auto = egresoAutomatico(inicio, duracion);
-  return egresoPropio !== null && auto !== null && egresoPropio !== auto;
+  return egresoPropio !== null && auto !== null && egresoPropio !== auto && !egresoDeOtroCiclo(inicio, egresoPropio);
 }
+
+/** Un egreso guardado que cae antes (o el mismo día) del inicio es del programa anterior: el alumno renovó y el inicio pasó a la
+    fecha de la renovación (lib/alumnos.ts → alumnoRenovadoPor). No es la fecha definitiva del programa nuevo. */
+const egresoDeOtroCiclo = (inicio: string, egresoPropio: string | null): boolean => Boolean(inicio && egresoPropio && egresoPropio <= inicio);
 
 /** El fin del programa: la fecha escrita a mano tal cual (es la definitiva) o, si no, el inicio más la duración corrido por la demora de
  *  inicio y las pausas (lib/pausas.ts); calculado, la demora corre los meses enteros. */
-export function egresoDelPrograma(inicio: string, egresoPropio: string | null, duracion: number | null, pausas: readonly PausaServicio[]): string | null {
+export function egresoDelPrograma(inicio: string, egresoGuardado: string | null, duracion: number | null, todasLasPausas: readonly PausaServicio[]): string | null {
+  const egresoPropio = egresoDeOtroCiclo(inicio, egresoGuardado) ? null : egresoGuardado;
   if (egresoEscritoAMano(inicio, egresoPropio, duracion)) return egresoPropio;
   const base = egresoPropio ?? egresoAutomatico(inicio, duracion);
+  const pausas = pausasDelCiclo(todasLasPausas, inicio);
   if (!inicio || !pausas.length) return base;
   return finConPausas(inicio, base, pausas, egresoPropio === null && duracion !== null ? (desde) => sumarMeses(desde, duracion) : undefined);
 }

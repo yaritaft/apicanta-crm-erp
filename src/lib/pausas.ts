@@ -46,9 +46,15 @@ export const demoraDe = (pausas: readonly PausaServicio[]) => [...pausas].revers
 export const soloPausas = (pausas: readonly PausaServicio[]) => pausas.filter((p) => p.tipo === "pausa");
 export const diasDePausa = (pausas: readonly PausaServicio[]) => soloPausas(pausas).reduce((n, p) => n + diasDe(p), 0);
 
+/* Las demoras y pausas del programa en curso. Cuando el alumno renueva, su inicio pasa a la fecha de la renovación
+   (lib/alumnos.ts → alumnoRenovadoPor) y lo que terminó antes de ese día es del programa anterior: sigue en el historial,
+   pero no corre el fin del programa nuevo. */
+export const pausasDelCiclo = (pausas: readonly PausaServicio[], inicio: string): PausaServicio[] =>
+  inicio ? pausas.filter((p) => p.hasta > inicio) : [...pausas];
+
 /* El día en que arranca de verdad: el ingreso o, con demora, el día en que termina la demora. */
 export function inicioReal(inicio: string, pausas: readonly PausaServicio[]): string {
-  return demoraDe(pausas)?.hasta ?? inicio;
+  return demoraDe(pausasDelCiclo(pausas, inicio))?.hasta ?? inicio;
 }
 
 /* El fin del programa con la demora y las pausas. `fin` es el que ya se calculaba (inicio + duración, o el que alguien

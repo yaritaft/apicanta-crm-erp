@@ -21,8 +21,9 @@ import { categoriaDe } from "./gastos";
 import { esPagoDeTarjeta, problemaDelReparto, type CompraDeTarjeta } from "./reparto-tarjeta";
 import { conAdelantoEnExtra, conExtraEnMes, mismasTasas, nombrePeriodo, sinExtraEnLiquidacion, tasaParaFinanzas, tasasPorServicio } from "./honorarios";
 import { sinConfirmarSiCambio } from "./reglas";
+import { diaDeNegocio } from "./dia-negocio";
 import {
-  alumnoDeVenta, cuotaMensualDeVenta, etapaDelAlumno, etapaInicialDeServicio, etapasDeServicio,
+  alumnoDeVenta, alumnoRenovadoPor, cuotaMensualDeVenta, etapaDelAlumno, etapaInicialDeServicio, etapasDeServicio,
   personaDeVenta, planDeVenta, sinVentaPendiente,
 } from "./alumnos";
 import { pagoDesdeMovimiento, tasaEstimada } from "./conciliacion";
@@ -2975,7 +2976,12 @@ export const acciones = {
 
     /* Quien compra pasa a ser alumno (o se enlaza al que ya era), y eso
        también queda en la actividad: si no, el alumno aparecía de la nada. */
-    const conAlumno = alumnoDesdeVenta(e, venta, cuotas);
+    const desdeVenta = alumnoDesdeVenta(e, venta, cuotas);
+    /* Si ya era alumno y esta compra renueva, su inicio pasa a esta fecha (lib/alumnos.ts → alumnoRenovadoPor). */
+    const renovado = desdeVenta.tocado ? null : alumnoRenovadoPor(e, venta);
+    const conAlumno = renovado
+      ? { alumnos: e.alumnos.map((a) => (a.id === renovado.id ? renovado : a)), tocado: renovado }
+      : desdeVenta;
     let actividad = lista;
     const registros = [nuevo];
     const alumnoNuevo = conAlumno.tocado && !e.alumnos.some((a) => a.id === conAlumno.tocado!.id) ? conAlumno.tocado : null;
@@ -2983,6 +2989,15 @@ export const acciones = {
       const r = registrar(
         { ...e, actividad: lista }, "alumno", alumnoNuevo.id, alumnoNuevo.nombre, "creo",
         `${alumnoNuevo.nombre} pasó a Alumnos con su compra (${alumnoNuevo.plan || "sin plan"}).`,
+      );
+      actividad = r.lista;
+      registros.push(r.nuevo);
+    }
+    if (renovado) {
+      const antes = e.alumnos.find((a) => a.id === renovado.id);
+      const r = registrar(
+        { ...e, actividad }, "alumno", renovado.id, renovado.nombre, "actualizo",
+        `${renovado.nombre} renovó: su programa arranca el ${diaDeNegocio(renovado.inicio)} (antes ${antes ? diaDeNegocio(antes.inicio) : "—"}).`,
       );
       actividad = r.lista;
       registros.push(r.nuevo);

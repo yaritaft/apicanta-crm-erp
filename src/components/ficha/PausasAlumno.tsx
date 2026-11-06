@@ -7,7 +7,7 @@ import { ModalForm } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toast";
 import { acciones, nuevoId, useEstado } from "@/lib/store";
 import { egresoDelPrograma, egresoEscritoAMano, type FilaCliente } from "@/lib/clientes-cs";
-import { conPausa, demoraDe, diasDe, diasDePausa, MAX_DEMORA_DIAS, MAX_PAUSA_DIAS, pasaDelTope, problemaDePausa, textoDePausa } from "@/lib/pausas";
+import { conPausa, demoraDe, diasDe, diasDePausa, MAX_DEMORA_DIAS, MAX_PAUSA_DIAS, pasaDelTope, pausasDelCiclo, problemaDePausa, textoDePausa } from "@/lib/pausas";
 import { diasEntre, formatoDia, sumarDias } from "@/lib/seguimiento";
 import type { PausaServicio, SeguimientoAlumno } from "@/lib/types";
 import { BloqueServicio, FilaServicio } from "./FilaServicio";
@@ -26,8 +26,9 @@ export function PausasAlumno({ f, hoy, puede }: { f: FilaCliente; hoy: string; p
   const [editandoFin, setEditandoFin] = useState(false);
   const pausas = f.seg.pausas ?? [];
   const aMano = egresoEscritoAMano(f.inicio, f.seg.fechaEgreso, f.duracion);
-  const demora = demoraDe(pausas);
-  const corrido = (demora ? diasDe(demora) : 0) + diasDePausa(pausas);
+  const delCiclo = pausasDelCiclo(pausas, f.inicio);
+  const demora = demoraDe(delCiclo);
+  const corrido = (demora ? diasDe(demora) : 0) + diasDePausa(delCiclo);
   const quedan = f.egreso ? diasEntre(hoy, f.egreso) : null;
   const fmt = (d: string) => formatoDia(d, hoy);
 
