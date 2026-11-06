@@ -4384,6 +4384,8 @@ span.kpis__etiqueta:hover { color: var(--ink); text-decoration: none; }
 .fm-icono:hover { background: var(--surface-200); color: var(--ink); }
 .fm-icono--wa { color: var(--success); }
 .fm-marcas { display: inline-flex; gap: 4px; }
+/* Con tres marcas y la insignia del lector, la celda pasa los 280px que le pone `.crm-t .hk-table td`: si no, la insignia queda cortada. */
+.crm-t .hk-table td:has(> .fm-marcas) { max-width: none; }
 /* El estado va en el casillero: prendido se pinta de verde (unido, contactado) o ámbar (no unido). */
 .fm-marca {
   display: inline-flex; align-items: center; gap: 4px; height: 28px; padding: 0 10px; white-space: nowrap;

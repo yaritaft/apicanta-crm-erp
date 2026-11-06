@@ -230,7 +230,7 @@ export function VistaFormularios() {
           </button>
           <button type="button" className={`fm-marca fm-marca--inv${r.grupo === "invalido" ? " is-on" : ""}`} aria-pressed={r.grupo === "invalido"} disabled={!puedeEditar}
             title={r.grupo === "invalido" ? `Número inválido: lo marcó ${r.grupoPor ?? "alguien"}. Un clic y se desmarca.` : "El teléfono no sirve (incompleto o equivocado): marcarlo como número inválido"} onClick={() => void ponerGrupo(r, "invalido")}>
-            Nº inválido
+            Inválido
           </button>
           {lector.insignia(r)}
         </span>
