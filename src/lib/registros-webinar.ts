@@ -16,7 +16,7 @@ import { diaArgentina } from "./reporteFinanciera";
    (en el servidor), el importador, la pantalla Formularios y las pruebas.
    ================================================================== */
 
-export type GrupoWpp = "unido" | "no-unido";
+export type GrupoWpp = "unido" | "no-unido" | "invalido";
 export type OrigenRegistro = "landing" | "excel" | "meta" | "whatsapp" | "otro";
 export type MetodoCruce = "mail" | "telefono" | "nombre" | "manual";
 
@@ -435,7 +435,7 @@ export function planificarImportacion(hojas: HojaLeida[], existentes: Map<string
    La vista Formularios: filtros y cuentas.
    ================================================================== */
 
-export type FiltroMarca = "" | "unido" | "no-unido" | "sin-revisar" | "contactado" | "sin-contactar";
+export type FiltroMarca = "" | "unido" | "no-unido" | "invalido" | "sin-revisar" | "contactado" | "sin-contactar";
 
 export interface FiltrosRegistros {
   /** La fecha del webinar (aaaa-mm-dd) o su id. Vacío: todos. */
@@ -448,6 +448,7 @@ export function pasaMarca(r: RegistroForm, marca: FiltroMarca): boolean {
   switch (marca) {
     case "unido": return r.grupo === "unido";
     case "no-unido": return r.grupo === "no-unido";
+    case "invalido": return r.grupo === "invalido";
     case "sin-revisar": return !r.grupo;
     case "contactado": return r.contactado;
     case "sin-contactar": return !r.contactado;
@@ -472,6 +473,8 @@ export interface CuentaRegistros {
   total: number;
   unidos: number;
   noUnidos: number;
+  /** El equipo marcó el número como inválido. */
+  invalidos: number;
   sinRevisar: number;
   contactados: number;
   /** De los que no se unieron, a cuántos ya se les escribió. */
@@ -480,10 +483,11 @@ export interface CuentaRegistros {
 }
 
 export function contarRegistros(rs: RegistroForm[]): CuentaRegistros {
-  const c: CuentaRegistros = { total: rs.length, unidos: 0, noUnidos: 0, sinRevisar: 0, contactados: 0, noUnidosContactados: 0, conTelefono: 0 };
+  const c: CuentaRegistros = { total: rs.length, unidos: 0, noUnidos: 0, invalidos: 0, sinRevisar: 0, contactados: 0, noUnidosContactados: 0, conTelefono: 0 };
   for (const r of rs) {
     if (r.grupo === "unido") c.unidos++;
     else if (r.grupo === "no-unido") c.noUnidos++;
+    else if (r.grupo === "invalido") c.invalidos++;
     else c.sinRevisar++;
     if (r.contactado) c.contactados++;
     if (r.contactado && r.grupo !== "unido") c.noUnidosContactados++;

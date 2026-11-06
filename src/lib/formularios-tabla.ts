@@ -38,13 +38,14 @@ export interface ColumnaForm extends ColumnaFiltrable<RegistroForm> {
 
 export const GRUPO_UNIDO = "Unido";
 export const GRUPO_NO_UNIDO = "No unido";
+export const GRUPO_INVALIDO = "Número inválido";
 export const GRUPO_SIN_REVISAR = "Sin revisar";
 export const CONTACTADO_SI = "Contactado";
 export const CONTACTADO_NO = "Sin contactar";
 export const CON_AGENDA = "Con agenda";
 export const SIN_AGENDA = "Sin agenda";
 
-const FIJOS_GRUPO = [GRUPO_UNIDO, GRUPO_NO_UNIDO, GRUPO_SIN_REVISAR];
+const FIJOS_GRUPO = [GRUPO_UNIDO, GRUPO_NO_UNIDO, GRUPO_INVALIDO, GRUPO_SIN_REVISAR];
 
 /** Cómo se anotó una persona: la landing o la hoja del Excel de la que vino. */
 export const origenDe = (r: RegistroForm) => (r.origen === "landing" ? "Landing" : r.origenDetalle ? `Excel · ${r.origenDetalle}` : "Excel");
@@ -82,8 +83,8 @@ export function columnasDeFormularios(ctx: ContextoForm): ColumnaForm[] {
     },
     {
       clave: "grupo", titulo: "Grupo de WhatsApp", grupo: "Seguimiento", calculo: `valor:${GRUPO_UNIDO}`, conDato: "Revisados", fijos: FIJOS_GRUPO,
-      valores: (r) => [r.grupo === "unido" ? GRUPO_UNIDO : r.grupo === "no-unido" ? GRUPO_NO_UNIDO : GRUPO_SIN_REVISAR],
-      orden: (r) => (r.grupo === "unido" ? 2 : r.grupo === "no-unido" ? 1 : 0), lleno: (r) => Boolean(r.grupo),
+      valores: (r) => [r.grupo === "unido" ? GRUPO_UNIDO : r.grupo === "no-unido" ? GRUPO_NO_UNIDO : r.grupo === "invalido" ? GRUPO_INVALIDO : GRUPO_SIN_REVISAR],
+      orden: (r) => (r.grupo === "unido" ? 3 : r.grupo === "no-unido" ? 2 : r.grupo === "invalido" ? 1 : 0), lleno: (r) => Boolean(r.grupo),
     },
     {
       clave: "contactado", titulo: "Contactado", grupo: "Seguimiento", calculo: `valor:${CONTACTADO_SI}`, conDato: "Contactados", fijos: [CONTACTADO_SI, CONTACTADO_NO],

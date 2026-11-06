@@ -153,6 +153,47 @@ function conCodigo(d: string, r: Regla, seguro: boolean): string[] {
   return claves(resto, r, seguro);
 }
 
+/* ---------- Errores comunes al escribir ---------- */
+
+/** ¿Este número nacional es válido para el país? (sin exigir que sea celular) */
+function nacionalValido(r: Regla, resto: string): boolean {
+  if (r.iso === "AR") return nacionalAR(resto, false) !== null;
+  if (r.iso === "MX") return nacionalMX(resto) !== null || (resto.length === 11 && resto.startsWith("1"));
+  return nacionalGenerico(resto, r, true) !== null;
+}
+
+/** El formulario antepone el código del país y mucha gente lo escribe de nuevo
+    («+57 57 300 123 4567»). Si los dígitos no forman un número válido pero sin el
+    segundo código sí, devuelve la clave del número sin repetir; si no, null. */
+export function claveSinCodigoRepetido(d: string): string | null {
+  for (const r of REGLAS) {
+    if (!d.startsWith(r.cc)) continue;
+    const resto = d.slice(r.cc.length);
+    if (!resto.startsWith(r.cc) || nacionalValido(r, resto)) continue;
+    const c = internacional(d.slice(r.cc.length));
+    if (c && c.startsWith(r.cc) && nacionalValido(r, c.slice(r.cc.length))) return c;
+  }
+  return null;
+}
+
+/** Los últimos 8 dígitos de cada número escrito: último recurso para encontrar a
+    alguien en un grupo cuando el número está mal escrito (país equivocado, un dígito
+    de menos…). Con 8 dígitos dos personas distintas casi nunca coinciden. */
+export function colasDeTelefono(crudo: string | null | undefined): string[] {
+  const salida: string[] = [];
+  for (const parte of String(crudo ?? "").split(/[\n/;,|]|\s+y\s+|\s+o\s+/i)) {
+    const d = soloDigitos(parte);
+    if (d.length >= 8 && d.length <= 15) {
+      const c = d.slice(-8);
+      if (!salida.includes(c)) salida.push(c);
+    }
+  }
+  return salida;
+}
+
+/** Los últimos 8 dígitos de una clave ya normalizada. */
+export const colaDeClave = (clave: string): string => clave.slice(-8);
+
 /* ---------- Lo público ---------- */
 
 /** La clave de un número que ya trae el código de país (el +54…, o los
@@ -220,6 +261,8 @@ function clavesDeUno(texto: string, pais: string | null | undefined): string[] {
 
   /* Con el + (o el 00) es internacional: el país no se discute. */
   if (conMas) {
+    const sinRepetir = claveSinCodigoRepetido(d);
+    if (sinRepetir) return [sinRepetir];
     const c = internacional(d);
     return c ? [c] : [];
   }

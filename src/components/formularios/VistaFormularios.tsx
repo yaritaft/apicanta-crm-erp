@@ -56,6 +56,7 @@ const MARCAS: { valor: FiltroMarca; texto: string; ayuda: string }[] = [
   { valor: "", texto: "Todos", ayuda: "Todos los registros del webinar" },
   { valor: "unido", texto: "Unidos", ayuda: "Ya están en el grupo de WhatsApp" },
   { valor: "no-unido", texto: "No unidos", ayuda: "Se revisó y todavía no entraron al grupo" },
+  { valor: "invalido", texto: "Nº inválido", ayuda: "El teléfono que dejaron no sirve (incompleto o equivocado): no se les puede escribir por WhatsApp" },
   { valor: "sin-revisar", texto: "Sin revisar", ayuda: "Todavía nadie miró si entraron al grupo" },
   { valor: "contactado", texto: "Contactados", ayuda: "Ya se les escribió" },
   { valor: "sin-contactar", texto: "Sin contactar", ayuda: "Todavía nadie les escribió" },
@@ -146,7 +147,7 @@ export function VistaFormularios() {
     const res = await cambiarRegistro(r.id, cambios, quitar);
     if (!res.ok) toast(res.error ?? "No se pudo guardar.", "err");
   }
-  const ponerGrupo = (r: RegistroForm, g: "unido" | "no-unido") =>
+  const ponerGrupo = (r: RegistroForm, g: "unido" | "no-unido" | "invalido") =>
     r.grupo === g
       ? marcar(r, {}, ["grupo", "grupoPor", "grupoEn"])
       : marcar(r, { grupo: g, grupoPor: quien, grupoEn: new Date().toISOString() });
@@ -216,7 +217,7 @@ export function VistaFormularios() {
       celda: (r) => (r.respuestas.length ? <span title={r.respuestas.map((x) => `${x.pregunta}: ${x.respuesta}`).join("\n")}>{r.respuestas[0].respuesta}{r.respuestas.length > 1 ? ` +${r.respuestas.length - 1}` : ""}</span> : "—"),
     },
     grupo: {
-      clave: "grupo", titulo: "Grupo de WhatsApp", orden: (r) => (r.grupo === "unido" ? 2 : r.grupo === "no-unido" ? 1 : 0),
+      clave: "grupo", titulo: "Grupo de WhatsApp", orden: (r) => (r.grupo === "unido" ? 3 : r.grupo === "no-unido" ? 2 : r.grupo === "invalido" ? 1 : 0),
       celda: (r) => (
         <span className="fm-marcas" onClick={(ev) => ev.stopPropagation()}>
           <button type="button" className={`fm-marca fm-marca--ok${r.grupo === "unido" ? " is-on" : ""}`} aria-pressed={r.grupo === "unido"} disabled={!puedeEditar}
@@ -226,6 +227,10 @@ export function VistaFormularios() {
           <button type="button" className={`fm-marca fm-marca--no${r.grupo === "no-unido" ? " is-on" : ""}`} aria-pressed={r.grupo === "no-unido"} disabled={!puedeEditar}
             title={r.grupo === "no-unido" ? `No unido: lo marcó ${r.grupoPor ?? "alguien"}. Un clic y se desmarca.` : "Marcar como no unido al grupo"} onClick={() => void ponerGrupo(r, "no-unido")}>
             No unido
+          </button>
+          <button type="button" className={`fm-marca fm-marca--inv${r.grupo === "invalido" ? " is-on" : ""}`} aria-pressed={r.grupo === "invalido"} disabled={!puedeEditar}
+            title={r.grupo === "invalido" ? `Número inválido: lo marcó ${r.grupoPor ?? "alguien"}. Un clic y se desmarca.` : "El teléfono no sirve (incompleto o equivocado): marcarlo como número inválido"} onClick={() => void ponerGrupo(r, "invalido")}>
+            Nº inválido
           </button>
           {lector.insignia(r)}
         </span>
@@ -366,7 +371,7 @@ export function VistaFormularios() {
                 {MARCAS.filter((m) => m.valor).map((m) => (
                   <Chip key={m.valor} activo={v.marca === m.valor} title={m.ayuda}
                     onClick={() => cambiar({ marca: v.marca === m.valor ? null : m.valor }, { pag: null })}
-                    count={m.valor === "unido" ? cuenta.unidos : m.valor === "no-unido" ? cuenta.noUnidos : m.valor === "sin-revisar" ? cuenta.sinRevisar : m.valor === "contactado" ? cuenta.contactados : cuenta.total - cuenta.contactados}>
+                    count={m.valor === "unido" ? cuenta.unidos : m.valor === "no-unido" ? cuenta.noUnidos : m.valor === "invalido" ? cuenta.invalidos : m.valor === "sin-revisar" ? cuenta.sinRevisar : m.valor === "contactado" ? cuenta.contactados : cuenta.total - cuenta.contactados}>
                     {m.texto}
                   </Chip>
                 ))}
@@ -456,7 +461,7 @@ function DetalleRegistro({ r, anuncio, puedeEditar, onCerrar, onAbrirPersona }: 
           <dt>Webinar</dt><dd>{r.fechaWebinar ? r.fechaWebinar.split("-").reverse().join("/") : "Sin fecha"}</dd>
           <dt>Teléfono</dt><dd>{r.telefono ? telefonoLegible(r.telefono, isoDePais(r.pais)) : "—"}</dd>
           <dt>País</dt><dd>{r.pais || "—"}</dd>
-          <dt>Grupo</dt><dd>{r.grupo === "unido" ? "Unido" : r.grupo === "no-unido" ? "No unido" : "Sin revisar"}{r.grupoPor ? ` · ${r.grupoPor}` : ""}</dd>
+          <dt>Grupo</dt><dd>{r.grupo === "unido" ? "Unido" : r.grupo === "no-unido" ? "No unido" : r.grupo === "invalido" ? "Número inválido" : "Sin revisar"}{r.grupoPor ? ` · ${r.grupoPor}` : ""}</dd>
           <dt>Contactado</dt><dd>{r.contactado ? `Sí${r.contactadoPor ? ` · ${r.contactadoPor}` : ""}${r.contactadoEn ? ` · ${diaCorto(r.contactadoEn)}` : ""}` : "No"}</dd>
           <dt>Anuncio</dt><dd>{anuncio || "—"}</dd>
           <dt>UTMs</dt>

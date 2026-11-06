@@ -1,5 +1,5 @@
 import { esCuentaDeCloser, nivelEn, type MiAcceso } from "./permisos";
-import { claveInternacional, clavesDeTelefono, digitosDe, numeroParaWhatsapp } from "./telefonos-wpp";
+import { claveInternacional, colaDeClave, colasDeTelefono, clavesDeTelefono, digitosDe, numeroParaWhatsapp } from "./telefonos-wpp";
 
 /* ==================================================================
    WhatsApp de lectura: quién se unió al grupo de cada webinar.
@@ -591,6 +591,20 @@ export interface UnionDePersona {
   salio?: string;
   /** Hay un teléfono escrito pero no se entiende como tal. */
   ilegible?: boolean;
+  /** Se lo encontró sólo porque su número termina igual que el de alguien del grupo. */
+  porTerminacion?: boolean;
+}
+
+/* Últimos 8 dígitos → número del grupo, por cada conjunto de «los de adentro» (se arma una vez). */
+const COLAS = new WeakMap<ReadonlySet<string>, Map<string, string>>();
+function colasDeLosDeAdentro(dentro: ReadonlySet<string>): Map<string, string> {
+  let m = COLAS.get(dentro);
+  if (!m) {
+    m = new Map();
+    for (const k of dentro) { const c = colaDeClave(k); if (!m.has(c)) m.set(c, k); }
+    COLAS.set(dentro, m);
+  }
+  return m;
 }
 
 export const ETIQUETA_UNION: Record<EstadoUnion, string> = {
@@ -610,6 +624,12 @@ export function unionDePersona(
   if (claves.length === 0) return { estado: "sin-telefono", clave: null, numero: "", completo: false, ilegible: true };
   const hallada = claves.find((c) => dentro.has(c));
   if (hallada) return { estado: "unida", clave: hallada, numero: hallada, completo: true };
+  /* Último recurso: el número está mal escrito (otro país, un dígito de menos…) pero termina igual que alguien del grupo. */
+  const colas = colasDeLosDeAdentro(dentro);
+  for (const c of colasDeTelefono(escrito)) {
+    const miembro = colas.get(c);
+    if (miembro) return { estado: "unida", clave: miembro, numero: miembro, completo: true, porTerminacion: true };
+  }
   const numero = numeroParaWhatsapp(escrito, pais) || digitosDe(escrito);
   return {
     estado: "no-unida", clave: claves[0], numero, completo: claves.includes(numero),
@@ -640,7 +660,12 @@ export function unionesDeRegistros(
 ): Map<string, UnionDePersona> {
   const adentro = new Set(dentro);
   const afuera = new Map(Object.entries(salieron));
-  return new Map(registros.map((r) => [r.id, unionDePersona(r.telefono, r.pais, adentro, afuera)] as const));
+  return new Map(registros.map((r) => {
+    const u = unionDePersona(r.telefono, r.pais, adentro, afuera);
+    /* El equipo marcó el número como inválido y el lector no lo ve en el grupo: no hay a quién escribirle. */
+    const invalido = r.grupo === "invalido" && u.estado === "no-unida";
+    return [r.id, invalido ? { ...u, estado: "sin-telefono" as const, numero: "", completo: false, ilegible: true } : u] as const;
+  }));
 }
 
 export interface ResumenDeRegistros { total: number; conTelefono: number; dentro: number; fuera: number; sinTelefono: number; porMarcar: number }
@@ -656,6 +681,28 @@ export function resumenDeRegistros(registros: readonly RegistroParaCruzar[], uni
     if (u.estado === "unida") { x.dentro++; if (r.grupo !== "unido") x.porMarcar++; } else x.fuera++;
   }
   return x;
+}
+
+export interface RepartoDelGrupo {
+  /** Lo que cuenta WhatsApp en «Info. del grupo»: con teléfono y con el número oculto. */
+  total: number;
+  /** Con teléfono que coincide con alguien que se anotó. */
+  coinciden: number;
+  /** Con teléfono, pero ninguna inscripción lo tiene: entraron con otro número, o son del equipo o invitados. */
+  otros: number;
+  /** WhatsApp no deja ver su teléfono. */
+  ocultos: number;
+}
+
+/** Por qué «ya están en el grupo» es menos que lo que cuenta WhatsApp: se suman las tres partes. */
+export function repartoDelGrupo(
+  grupos: readonly { miembros: number; sinTelefono: number }[], dentro: ReadonlySet<string>, uniones: ReadonlyMap<string, UnionDePersona>,
+): RepartoDelGrupo {
+  const hallados = new Set<string>();
+  for (const u of uniones.values()) if (u.estado === "unida" && u.clave && dentro.has(u.clave)) hallados.add(u.clave);
+  const ocultos = grupos.reduce((a, g) => a + g.sinTelefono, 0);
+  const conTelefono = dentro.size;
+  return { total: conTelefono + ocultos, coinciden: hallados.size, otros: Math.max(0, conTelefono - hallados.size), ocultos };
 }
 
 export type FiltroDeLector = "" | "dentro" | "fuera" | "sin-telefono";

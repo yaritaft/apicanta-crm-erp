@@ -124,3 +124,6 @@
 /* El aviso de «este webinar no tiene grupo atado», con su botón al costado. */
 .wb-sin-grupo { align-items: center; flex-wrap: wrap; }
 .wb-sin-grupo__acciones { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; }
+
+.wa-panel__reparto { margin: 10px 0 2px; line-height: 1.45; }
+.wa-panel__reparto strong { color: var(--ink); font-weight: 600; }

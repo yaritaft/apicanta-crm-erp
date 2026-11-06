@@ -4394,6 +4394,7 @@ span.kpis__etiqueta:hover { color: var(--ink); text-decoration: none; }
 .fm-marca:disabled { cursor: default; opacity: .75; }
 .fm-marca--ok.is-on { background: var(--success-soft); border-color: var(--success); color: var(--success); font-weight: 600; }
 .fm-marca--no.is-on { background: var(--warning-soft); border-color: var(--warning); color: var(--warning); font-weight: 600; }
+.fm-marca--inv.is-on { background: var(--danger-soft); border-color: var(--danger); color: var(--danger); font-weight: 600; }
 
 .fm-imp-anio { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; }
 .fm-imp-hojas { display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: var(--radius-md); max-height: 300px; overflow-y: auto; }

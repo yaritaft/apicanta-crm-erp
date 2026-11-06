@@ -15,7 +15,7 @@ import type { RegistroForm } from "@/lib/registros-webinar";
 import { diaArgentina } from "@/lib/reporteFinanciera";
 import { useEstado } from "@/lib/store";
 import {
-  duracionTexto, filtrarPorLector, listaParaCopiar, puedeVerWhatsapp, resumenDeRegistros, unionesDeRegistros, type FiltroDeLector, type ResumenDeRegistros, type UnionDePersona,
+  duracionTexto, filtrarPorLector, listaParaCopiar, puedeVerWhatsapp, repartoDelGrupo, resumenDeRegistros, unionesDeRegistros, type FiltroDeLector, type RepartoDelGrupo, type ResumenDeRegistros, type UnionDePersona,
 } from "@/lib/whatsapp";
 import { useGrupoDeWebinar } from "@/lib/whatsapp-cliente";
 import "@/components/webinars/whatsapp.css";
@@ -55,6 +55,8 @@ export interface LectorDeFormularios {
   /** La insignia de una fila, para la celda del grupo. */
   insignia: (r: RegistroForm) => React.ReactNode;
   resumen: ResumenDeRegistros;
+  /** Cómo se reparten los que cuenta WhatsApp en el grupo (ver `repartoDelGrupo`). */
+  reparto: RepartoDelGrupo;
   webinar?: { id: string; titulo: string; fecha: string };
   estado: ReturnType<typeof useEstadoDelLector>;
   grupo: ReturnType<typeof useGrupoDeWebinar>;
@@ -79,6 +81,10 @@ export function useLectorDeFormularios(dia: string, registros: readonly Registro
     [hayGrupo, datos, registros],
   );
   const resumen = useMemo(() => resumenDeRegistros(registros, uniones), [registros, uniones]);
+  const reparto = useMemo(
+    () => repartoDelGrupo(datos?.grupos ?? [], new Set(datos?.dentro ?? []), uniones),
+    [datos, uniones],
+  );
   const union = (r: RegistroForm) => uniones.get(r.id);
   const filtrar = (rs: RegistroForm[], filtro: FiltroLector) => (hayGrupo ? filtrarPorLector(rs, filtro, uniones) : rs);
 
@@ -97,8 +103,8 @@ export function useLectorDeFormularios(dia: string, registros: readonly Registro
       <span
         className="wa-lector-insignia"
         title={yaMarcado
-          ? "El equipo lo marcó unido, pero el lector no lo ve en el grupo: puede haber salido o haber entrado con otro número."
-          : u.salio ? `El lector no lo ve en el grupo: salió el ${fecha(u.salio)}.` : "El lector no ve este teléfono en el grupo."}
+          ? "El equipo lo marcó unido, pero el lector no lo ve en el grupo: puede haber salido, haber entrado con otro número o tenerlo oculto. Confirmalo en WhatsApp."
+          : u.salio ? `El lector no lo ve en el grupo: salió el ${fecha(u.salio)}.` : "El lector no ve este teléfono en el grupo. Puede haber entrado con otro número o tenerlo oculto: si lo ves en WhatsApp, marcalo «Unido» a mano."}
       >
         <Badge variante="warning">{u.salio ? "Salió" : "No está"}</Badge>
       </span>
@@ -106,7 +112,7 @@ export function useLectorDeFormularios(dia: string, registros: readonly Registro
   };
 
   return {
-    aplica: ve && Boolean(webinar), hayLector: estado.hayLector, hayGrupo, union, uniones, filtrar, insignia, resumen,
+    aplica: ve && Boolean(webinar), hayLector: estado.hayLector, hayGrupo, union, uniones, filtrar, insignia, resumen, reparto,
     webinar: webinar ? { id: webinar.id, titulo: webinar.titulo, fecha: webinar.fecha } : undefined,
     estado, grupo,
   };
@@ -171,6 +177,7 @@ export function BarraDelLector({ lector, registros, visibles, filtro, onFiltro, 
   });
   const conexion = textoDeConexion(estado);
   const alternar = (f: FiltroLector) => onFiltro(filtro === f ? "" : f);
+  const rep = lector.reparto;
   const pctDentro = r.conTelefono > 0 ? (r.dentro / r.conTelefono) * 100 : 0;
 
   function bajarParaManyChat() {
@@ -235,8 +242,8 @@ export function BarraDelLector({ lector, registros, visibles, filtro, onFiltro, 
         </button>
         <button type="button" className="wa-cifra" aria-pressed={filtro === "sin-telefono"} onClick={() => alternar("sin-telefono")} title="Ver sólo a los que no dejaron un teléfono que se entienda">
           <span className="wa-cifra__num">{num(r.sinTelefono)}</span>
-          <span className="wa-cifra__txt">sin teléfono</span>
-          <span className="wa-cifra__sub">no se puede saber si entraron</span>
+          <span className="wa-cifra__txt">sin teléfono válido</span>
+          <span className="wa-cifra__sub">vacío, incompleto o marcado «Nº inválido»</span>
         </button>
         <div className="wa-cifra wa-cifra--fija" title="La columna «Grupo de WhatsApp» de la tabla: la marca el equipo a mano. Puede no coincidir con lo que ve WhatsApp (los números de arriba); «Marcar como Unido» las pone al día.">
           <span className="wa-cifra__num">{num(marcadosAMano)}</span>
@@ -244,6 +251,11 @@ export function BarraDelLector({ lector, registros, visibles, filtro, onFiltro, 
           <span className="wa-cifra__sub">por el equipo, en la tabla: no es lo que ve WhatsApp</span>
         </div>
       </div>
+      {/* Por qué «ya están en el grupo» no es lo que cuenta WhatsApp: las tres partes suman el total. */}
+      <p className="wa-panel__reparto t-sm t-subtle">
+        WhatsApp cuenta <strong>{num(rep.total)}</strong> en el grupo: <strong>{num(rep.coinciden)}</strong> coinciden con alguien que se anotó,{" "}
+        <strong>{num(rep.otros)}</strong> entraron con un número distinto al que dejaron (o son del equipo o invitados) y <strong>{num(rep.ocultos)}</strong> tienen el número oculto, que WhatsApp no deja ver.
+      </p>
       <div className="wa-panel__progreso" role="img" aria-label={`${pct(pctDentro, 0)} ya están en el grupo`}><span style={{ width: `${Math.min(100, pctDentro)}%` }} /></div>
 
       <div className="wa-panel__acciones">
