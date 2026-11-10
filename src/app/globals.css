@@ -3966,6 +3966,14 @@ span.kpis__etiqueta:hover { color: var(--ink); text-decoration: none; }
 .tipos-tabla__celda--editar { background: color-mix(in srgb, var(--success) 10%, transparent); }
 .tipos-tabla__celda--ver { background: color-mix(in srgb, var(--info) 10%, transparent); }
 .tipos-tabla__num { text-align: right; padding-right: var(--space-3); }
+/* Equipo → Accesos → «Permisos de más»: un área por fila; el casillero de la derecha se pinta con lo que termina pudiendo. */
+.permisos-mas th, .permisos-mas td { vertical-align: middle; }
+.permisos-mas tbody th { padding: var(--space-2) var(--space-3); font-weight: 400; text-align: left; }
+.permisos-mas tbody th .t-subtle { white-space: normal; line-height: 16px; }
+.permisos-mas td.t-sm { white-space: nowrap; color: var(--ink-subtle); padding: 0 var(--space-3); }
+.permisos-mas .tipos-tabla__celda { min-width: 190px; }
+.permisos-mas tbody td.tipos-tabla__celda--editar, .permisos-mas tbody tr:hover > td.tipos-tabla__celda--editar { background: color-mix(in srgb, var(--success) 16%, var(--surface-100)); }
+.permisos-mas tbody td.tipos-tabla__celda--ver, .permisos-mas tbody tr:hover > td.tipos-tabla__celda--ver { background: color-mix(in srgb, var(--info) 18%, var(--surface-100)); }
 
 /* La grabación de Fathom de una llamada, en la ficha (GrabacionFathom). */
 .fathom {

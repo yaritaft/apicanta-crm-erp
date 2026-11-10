@@ -63,7 +63,7 @@ begin
       dest.email, 'acceso',
       v_nombre || case when v_quiere = 'editar' then ' pidió poder editar ' else ' pidió acceso a ' end || v_pantalla,
       left('Tiene la cuenta «' || v_tipo_nombre || '».' || coalesce(' Dice: «' || v_mensaje || '».', '')
-        || ' Para dárselo: Equipo → Accesos (cambiarle el tipo) o Equipo → Tipos de cuenta (cambiar lo que ve ese tipo).', 400),
+        || ' Para dárselo sin cambiarle el tipo: Equipo → Accesos → «Permisos de más» en su fila. Para todos los de ese tipo: Equipo → Tipos de cuenta.', 400),
       v_nombre, v_email)
     on conflict (id) do nothing;
     n := n + 1;

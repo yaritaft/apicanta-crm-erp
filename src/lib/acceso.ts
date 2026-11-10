@@ -2,8 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { useSesion } from "./auth";
-import { ACCESO_DUENO, TIPOS_POR_DEFECTO, type MiAcceso } from "./permisos";
-import type { RolEquipo, TipoCuenta } from "./types";
+import { ACCESO_DUENO, TIPOS_POR_DEFECTO, extraLimpio, type MiAcceso } from "./permisos";
+import type { AreasDeTipo, RolEquipo, TipoCuenta } from "./types";
 import { useSelector } from "./store";
 import { hayNube, nube } from "./supabase";
 
@@ -34,6 +34,7 @@ function acceso(json: unknown): MiAcceso | null {
   return {
     tipo: x.tipo, nombre: String(x.nombre ?? x.tipo),
     areas: (x.areas && typeof x.areas === "object" ? x.areas : {}) as MiAcceso["areas"],
+    areasExtra: extraLimpio(x.areasExtra),
     soloLoSuyo: Boolean(x.soloLoSuyo), veTodosLosLeads: Boolean(x.soloLoSuyo && x.veTodosLosLeads), miembroId: typeof x.miembroId === "string" ? x.miembroId : undefined,
   };
 }
@@ -152,6 +153,8 @@ export interface Acceso {
   nombre: string;
   /* El id del tipo de cuenta. */
   rol: string;
+  /* Lo que tiene de más sobre su tipo (sólo suma). */
+  areasExtra: AreasDeTipo;
   creadoEn: string;
 }
 
@@ -173,6 +176,7 @@ export function useAccesos(activo = true) {
       email: normalEmail(String(x.email ?? "")),
       nombre: String(x.nombre ?? ""),
       rol: String(x.rol ?? "equipo"),
+      areasExtra: extraLimpio(x.areasExtra),
       creadoEn: String(x.creadoEn ?? ""),
     })));
   }, []);
@@ -191,6 +195,17 @@ export function useAccesos(activo = true) {
     return null;
   }, [recargar]);
 
+  /* Lo que una persona tiene de más sobre su tipo. No toca el tipo: por eso es un update aparte y no pasa por `guardar`. */
+  const guardarExtra = useCallback(async (email: string, areasExtra: AreasDeTipo): Promise<string | null> => {
+    if (!nube) return "Sin base configurada.";
+    const r = await nube.from("usuarios_permitidos").update({ areasExtra: extraLimpio(areasExtra) }).eq("email", normalEmail(email)).select("email");
+    if (r.error) return traducir(r.error.message);
+    /* La base no avisa cuando RLS no deja: devuelve cero filas. */
+    if (!r.data?.length) return "Sólo un dueño puede dar o quitar accesos.";
+    await recargar();
+    return null;
+  }, [recargar]);
+
   const quitar = useCallback(async (email: string): Promise<string | null> => {
     if (!nube) return "Sin base configurada.";
     const r = await nube.from("usuarios_permitidos").delete().eq("email", normalEmail(email));
@@ -199,12 +214,13 @@ export function useAccesos(activo = true) {
     return null;
   }, [recargar]);
 
-  return { lista, error, recargar, guardar, quitar };
+  return { lista, error, recargar, guardar, guardarExtra, quitar };
 }
 
 function traducir(m: string): string {
   if (/al menos un due/i.test(m)) return "Tiene que quedar al menos un dueño con acceso.";
   if (/row-level security|permission denied/i.test(m)) return "Sólo un dueño puede dar o quitar accesos.";
+  if (/areasExtra/i.test(m)) return "Falta actualizar la base para los permisos de más (supabase/permisos-por-persona.sql).";
   return m;
 }
 

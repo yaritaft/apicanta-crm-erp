@@ -1,5 +1,5 @@
 import type { SeccionKpi } from "./kpis";
-import type { AreaId, AreasDeTipo, TipoCuenta } from "./types";
+import type { AreaId, AreasDeTipo, NivelArea, TipoCuenta } from "./types";
 
 export type { AreaId, AreasDeTipo, NivelArea, TipoCuenta } from "./types";
 
@@ -83,12 +83,59 @@ export const TIPOS_POR_DEFECTO: TipoCuenta[] = [
   CUSTOMER_SUCCESS,
 ];
 
+/* ---------- lo que una persona tiene de más ----------
+   Manuel, 10/11: quiso que Santiago (Director comercial) viera Finanzas y lo único que había era cambiarle el tipo, con lo que perdía lo
+   de director. Cada acceso lleva ahora áreas de más sobre su tipo (`usuarios_permitidos."areasExtra"`, supabase/permisos-por-persona.sql).
+   Sólo suman: por área vale lo más alto entre el tipo y la persona. Es la misma cuenta que areas_con_extra() en la base. */
+
+const VALOR: Record<NivelArea, 1 | 2> = { ver: 1, editar: 2 };
+
+/** Las áreas de más, limpias: sólo áreas que existen, con «ver» o «editar». */
+export function extraLimpio(extra: unknown): AreasDeTipo {
+  const limpio: AreasDeTipo = {};
+  if (!extra || typeof extra !== "object") return limpio;
+  for (const a of AREAS) {
+    const n = (extra as Record<string, unknown>)[a.id];
+    if (n === "ver" || n === "editar") limpio[a.id] = n;
+  }
+  return limpio;
+}
+
+/** Lo que da el tipo más lo de la persona: por área, lo más alto de los dos. */
+export function areasConExtra(base: AreasDeTipo | undefined, extra: AreasDeTipo | undefined): AreasDeTipo {
+  const junto: AreasDeTipo = { ...(base ?? {}) };
+  for (const [area, n] of Object.entries(extraLimpio(extra)) as [AreaId, NivelArea][]) {
+    if (VALOR[n] > (junto[area] ? VALOR[junto[area]!] : 0)) junto[area] = n;
+  }
+  return junto;
+}
+
+/** De lo que tiene de más, lo que de verdad le suma a ese tipo (lo que el tipo ya da, o da más alto, no cuenta). */
+export function extraQueSuma(tipo: Pick<TipoCuenta, "id" | "areas"> | undefined, extra: AreasDeTipo | undefined): AreasDeTipo {
+  const suma: AreasDeTipo = {};
+  if (tipo?.id === "dueno") return suma;
+  for (const [area, n] of Object.entries(extraLimpio(extra)) as [AreaId, NivelArea][]) {
+    if (VALOR[n] > nivelDeAreas(tipo?.areas, area)) suma[area] = n;
+  }
+  return suma;
+}
+
+/** «Ve Finanzas» · «Edita Alumnos; ve Finanzas». Vacío si no tiene nada de más. */
+export function resumenDeExtra(extra: AreasDeTipo | undefined): string {
+  const de = (n: NivelArea) => AREAS.filter((a) => extra?.[a.id] === n).map((a) => a.nombre).join(", ");
+  const edita = de("editar"), ve = de("ver");
+  return [edita ? `Edita ${edita}` : "", ve ? `${edita ? "ve" : "Ve"} ${ve}` : ""].filter(Boolean).join("; ");
+}
+
 /* ---------- quién está usando la app ---------- */
 
 export interface MiAcceso {
   tipo: string;
   nombre: string;
+  /* Lo que puede: lo de su tipo MÁS lo que tiene de más como persona (ya viene sumado de la base). */
   areas: AreasDeTipo;
+  /* Sólo lo de más, para mostrarlo. */
+  areasExtra?: AreasDeTipo;
   soloLoSuyo: boolean;
   /* «Sólo lo suyo» en ventas y cobros, pero con los leads, las llamadas y el chat de todos abiertos (ver TipoCuenta.veTodosLosLeads). */
   veTodosLosLeads?: boolean;

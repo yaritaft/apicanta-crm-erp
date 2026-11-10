@@ -48,13 +48,30 @@ end $$;
 alter table public.tipos_cuenta add column if not exists "veTodosLosLeads" boolean not null default false;
 
 -- Lo mismo que tipos-cuenta.sql, con la clave nueva (la pantalla la lee de acá).
+-- Las áreas de más por persona (supabase/permisos-por-persona.sql): acá por si este archivo corre en una base que no las tiene.
+alter table public.usuarios_permitidos add column if not exists "areasExtra" jsonb not null default '{}'::jsonb;
+-- Lo del tipo más lo de la persona: por área, el más alto de los dos.
+create or replace function public.areas_con_extra(base jsonb, extra jsonb)
+returns jsonb
+language sql immutable
+as $$
+  select coalesce(jsonb_object_agg(s.k, case when s.b = 'editar' or s.x = 'editar' then 'editar' else 'ver' end), '{}'::jsonb)
+  from (
+    select coalesce(a.key, e.key) as k, a.value as b, e.value as x
+    from jsonb_each_text(case when jsonb_typeof(base) = 'object' then base else '{}'::jsonb end) a
+    full join jsonb_each_text(case when jsonb_typeof(extra) = 'object' then extra else '{}'::jsonb end) e on e.key = a.key
+  ) s
+  where s.b in ('ver', 'editar') or s.x in ('ver', 'editar');
+$$;
+
 create or replace function public.mi_acceso()
 returns jsonb
 language sql stable security definer
 set search_path = public
 as $$
   select jsonb_build_object(
-    'tipo', t.id, 'nombre', t.nombre, 'areas', t.areas, 'soloLoSuyo', t."soloLoSuyo",
+    'tipo', t.id, 'nombre', t.nombre, 'areas', public.areas_con_extra(t.areas, u."areasExtra"), 'areasExtra', u."areasExtra",
+    'soloLoSuyo', t."soloLoSuyo",
     'veTodosLosLeads', t."soloLoSuyo" and t."veTodosLosLeads" and t.id <> 'dueno',
     'miembroId', (select e.id from public.equipo e
                   where coalesce(e.email, '') <> '' and lower(trim(e.email)) = lower(u.email)

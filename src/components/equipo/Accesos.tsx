@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useMemo, useState } from "react";
-import { KeyRound, ShieldCheck, UserPlus, UserX } from "lucide-react";
+import { KeyRound, Plus, ShieldCheck, UserPlus, UserX } from "lucide-react";
 import { Badge, Button, Card, CardHead, Empty, Field, IconButton, Input, Select } from "@/components/ui/ui";
 import { DataTable, type Columna } from "@/components/ui/DataTable";
 import { Confirmar, ModalForm } from "@/components/ui/Modal";
@@ -9,8 +9,8 @@ import { useToast } from "@/components/ui/Toast";
 import { hayNube, useEstado } from "@/lib/store";
 import { useUsuarioActual } from "@/lib/usuario";
 import { emailValido, generarClave, tipoSugerido, useTiposCuenta, type Acceso, type useAccesos } from "@/lib/acceso";
-import { resumenDeTipo } from "@/lib/permisos";
-import type { RolEquipo, TipoCuenta } from "@/lib/types";
+import { AREAS, extraQueSuma, nivelDeAreas, resumenDeExtra, resumenDeTipo } from "@/lib/permisos";
+import type { AreaId, AreasDeTipo, NivelArea, RolEquipo, TipoCuenta } from "@/lib/types";
 import { fechaLarga } from "@/lib/format";
 import type { EstadoDeClosers as EstadoClosers } from "@/lib/cuenta-closer";
 import { EstadoDeClosers } from "@/components/closers/EstadoDeClosers";
@@ -19,7 +19,10 @@ import { ClaveGenerada } from "./ClaveGenerada";
 /* ==================================================================
    Quién entra a la app y con qué tipo de cuenta. Es la misma lista que
    mira la base (usuarios_permitidos): quien no está, entra al login y no
-   ve nada. Qué ve cada tipo se arma en «Tipos de cuenta». También están
+   ve nada. Qué ve cada tipo se arma en «Tipos de cuenta», y a una persona
+   se le puede sumar algo sin cambiarle el tipo («Permisos de más»: Manuel,
+   10/11, quiso darle Finanzas a Santiago y cambiarle el tipo le sacaba lo
+   de director). También están
    los que no son del equipo que cobra (el correo de Apicanta, el de
    pruebas). Arriba, closer por closer, si va a ver sus llamadas (su correo
    en Equipo y su nombre en Calendly tienen que coincidir): si no, entra y
@@ -42,6 +45,8 @@ export function AccesosApp({ accesos, closers, onVerMiembro }: {
   const [nuevo, setNuevo] = useState<{ email: string; nombre: string; rol: string } | null>(null);
   const [clave, setClave] = useState<{ nombre: string; email: string; clave: string } | null>(null);
   const [quitando, setQuitando] = useState<Acceso | null>(null);
+  /* «Permisos de más» abierto: el correo de quién. */
+  const [sumando, setSumando] = useState<string | null>(null);
   const [trabajando, setTrabajando] = useState<string | null>(null);
 
   const filas = useMemo<Fila[]>(() => (accesos.lista ?? []).map((a) => ({
@@ -98,6 +103,24 @@ export function AccesosApp({ accesos, closers, onVerMiembro }: {
       ),
     },
     {
+      clave: "extra", titulo: "Permisos de más", orden: (f) => -Object.keys(extraQueSuma(tipos.find((t) => t.id === f.rol), f.areasExtra)).length,
+      celda: (f) => {
+        if (f.rol === "dueno") return <span className="t-sm t-subtle">Ya ve todo</span>;
+        const suma = extraQueSuma(tipos.find((t) => t.id === f.rol), f.areasExtra);
+        const hay = Object.keys(suma).length > 0;
+        return (
+          <span className="row-wrap" style={{ gap: 6 }} onClick={(ev) => ev.stopPropagation()}>
+            {(Object.entries(suma) as [AreaId, NivelArea][]).map(([area, n]) => (
+              <Badge key={area} variante={n === "editar" ? "success" : "info"}>{n === "editar" ? "Edita" : "Ve"} {AREAS.find((a) => a.id === area)?.nombre ?? area}</Badge>
+            ))}
+            <button type="button" className="chip" aria-label={`Permisos de más de ${f.nombre || f.email}`} onClick={() => setSumando(f.email)}>
+              {hay ? "Cambiar" : <><Plus size={13} aria-hidden /> Sumar</>}
+            </button>
+          </span>
+        );
+      },
+    },
+    {
       clave: "miembro", titulo: "En el equipo", orden: (f) => (f.miembro ? 0 : 1),
       celda: (f) => (f.miembro
         ? <button type="button" className="link" onClick={(ev) => { ev.stopPropagation(); onVerMiembro(f.miembro!); }}>{e.equipo.find((m) => m.id === f.miembro)?.nombre}</button>
@@ -112,7 +135,7 @@ export function AccesosApp({ accesos, closers, onVerMiembro }: {
       <Card>
         <CardHead
           titulo="Accesos a la app"
-          sub="Quién entra y con qué tipo de cuenta. Qué ve y edita cada tipo se arma en «Tipos de cuenta»; lo controla la base, no sólo la pantalla."
+          sub="Quién entra y con qué tipo de cuenta. Para darle algo más a una sola persona, sin cambiarle el tipo, usá «Permisos de más». Lo controla la base, no sólo la pantalla."
           acciones={<Button variante="primary" icono={<UserPlus size={16} />} onClick={() => setNuevo({ email: "", nombre: "", rol: "equipo" })}>Dar acceso</Button>}
         />
         {accesos.error && <p className="t-sm" style={{ color: "var(--danger)", marginBottom: 12 }}>{accesos.error}</p>}
@@ -152,6 +175,25 @@ export function AccesosApp({ accesos, closers, onVerMiembro }: {
             }}
           />
         )}
+        {sumando && (() => {
+          const f = filas.find((x) => x.email === sumando);
+          if (!f) return null;
+          return (
+            <PermisosDeMas
+              quien={f.nombre || f.email} tipo={tipos.find((t) => t.id === f.rol)} inicial={f.areasExtra}
+              onCerrar={() => setSumando(null)}
+              onGuardar={async (extra) => {
+                const error = await accesos.guardarExtra(f.email, extra);
+                if (error) { toast(error, "err"); return; }
+                setSumando(null);
+                const resumen = resumenDeExtra(extra);
+                toast(resumen
+                  ? `${f.nombre || f.email}: sigue con su tipo y además ${resumen.charAt(0).toLowerCase()}${resumen.slice(1)}. Lo ve cuando recargue la app.`
+                  : `${f.nombre || f.email}: queda sólo con lo de su tipo.`);
+              }}
+            />
+          );
+        })()}
         {clave && <ClaveGenerada {...clave} onCerrar={() => setClave(null)} />}
         <Confirmar
           abierto={Boolean(quitando)} onCerrar={() => setQuitando(null)} confirmarTexto="Quitar el acceso"
@@ -231,6 +273,69 @@ function DarAcceso({ tipos, inicial, sugerencias, onCerrar, onDar }: {
         <p className="t-sm" style={{ color: "var(--warning)", marginTop: 12 }}>
           Un dueño ve lo que cobra cada uno y puede dar y quitar accesos, incluido el tuyo.
         </p>
+      )}
+    </ModalForm>
+  );
+}
+
+/* Lo que una persona tiene de más sobre su tipo, área por área. Sólo suma: lo que el tipo ya da no se baja desde acá
+   (para eso está el tipo). El casillero se pinta con lo que termina pudiendo. */
+function PermisosDeMas({ quien, tipo, inicial, onCerrar, onGuardar }: {
+  quien: string; tipo: TipoCuenta | undefined; inicial: AreasDeTipo;
+  onCerrar: () => void; onGuardar: (extra: AreasDeTipo) => Promise<void>;
+}) {
+  const [extra, setExtra] = useState<AreasDeTipo>(() => extraQueSuma(tipo, inicial));
+  const [guardando, setGuardando] = useState(false);
+  const cambio = JSON.stringify(extra) !== JSON.stringify(extraQueSuma(tipo, inicial));
+  const TEXTO = ["No ve", "Ve", "Edita"] as const;
+
+  return (
+    <ModalForm
+      abierto onCerrar={onCerrar} titulo={`Permisos de más de ${quien}`} guardarTexto={guardando ? "Guardando…" : "Guardar"}
+      sub={`Sigue siendo «${tipo?.nombre ?? "su tipo"}» y no pierde nada de eso: acá sólo se le suma.`}
+      puedeGuardar={cambio && !guardando}
+      onGuardar={() => { setGuardando(true); void onGuardar(extra).finally(() => setGuardando(false)); }}
+    >
+      <table className="planilla permisos-mas" aria-label={`Permisos de más de ${quien}`}>
+        <thead>
+          <tr><th scope="col">Área</th><th scope="col">Por su tipo</th><th scope="col">Para {quien.split(" ")[0]}</th></tr>
+        </thead>
+        <tbody>
+          {AREAS.map((a) => {
+            const base = nivelDeAreas(tipo?.areas, a.id);
+            const de = extra[a.id];
+            const queda = Math.max(base, de === "editar" ? 2 : de === "ver" ? 1 : 0);
+            const clase = queda === 2 ? "editar" : queda === 1 ? "ver" : "no";
+            const opciones = [
+              { valor: "", texto: `Lo de su tipo (${TEXTO[base].toLowerCase()})` },
+              ...(base < 1 ? [{ valor: "ver", texto: "Ve" }] : []),
+              ...(base < 2 ? [{ valor: "editar", texto: "Edita" }] : []),
+            ];
+            return (
+              <tr key={a.id}>
+                <th scope="row">
+                  <span className="stack-1"><span className="t-strong">{a.nombre}</span><span className="t-sm t-subtle">{a.pantallas}</span></span>
+                </th>
+                <td className="t-sm">{TEXTO[base]}</td>
+                <td className={`tipos-tabla__celda tipos-tabla__celda--${clase}`}>
+                  {base === 2 ? <span className="t-sm">Ya lo edita</span> : (
+                    <Select
+                      value={de ?? ""} aria-label={`${quien}: ${a.nombre}`} opciones={opciones}
+                      onChange={(ev) => setExtra((x) => {
+                        const y = { ...x };
+                        if (ev.target.value === "ver" || ev.target.value === "editar") y[a.id] = ev.target.value; else delete y[a.id];
+                        return y;
+                      })}
+                    />
+                  )}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+      {tipo?.soloLoSuyo && (
+        <p className="t-sm t-subtle" style={{ marginTop: 12 }}>Su tipo ve sólo lo suyo: en ventas, cobros y llamadas eso no cambia.</p>
       )}
     </ModalForm>
   );
