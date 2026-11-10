@@ -10,7 +10,7 @@ import type {
 import type { CampoOpcionesCrm, ChatLectura, ConfigSeguimiento, FotoPerfil, GrupoWppResumen, Resell, RevisionCv, SeguimientoAlumno, Testimonio } from "./types";
 import { lecturaAlLeer, recibidosAlLlegar } from "./chat-equipo";
 import { configSeguimiento, seguimientoVacio } from "./seguimiento";
-import { resellNormal, seguimientoCompleto, siguienteNumero, testimonioNormal } from "./clientes-cs";
+import { resellNormal, retiroDelTestimonioAgendado, seguimientoCompleto, siguienteNumero, testimonioNormal } from "./clientes-cs";
 import { revisionCvNormal } from "./revision-cv";
 import type { EsquemaPago, EstadoSeguimientoCobro, SeguimientoCobro, EstadoTraspaso, EtapaServicio, ExtraLiquidacion, Gasto, GastoRecurrente, ID as IdMiembro, Liquidacion, MiembroEquipo, ResultadoLiquidacion, TipoCuenta, Traspaso } from "./types";
 import { conciliarPuntas, llegadaDeCobro, motivoDelMovimiento, paseDelCobro, rutaDe, type Punta } from "./traspasos";
@@ -2553,8 +2553,23 @@ export const acciones = {
     const e = snapshot();
     const quien = firma(e);
     const r = resellNormal({ ...r0, actualizadoEn: ahora(), actualizadoPor: quien });
-    guardar({ ...e, resells: [r, ...(e.resells ?? []).filter((x) => x.id !== r.id)] });
+    const antes = (e.resells ?? []).find((x) => x.id === r.id);
+    /* Si era caso de éxito y deja de serlo (y no tiene resultado de testimonio), el testimonio que su agenda había puesto en la ficha
+       se retira (Lili, 10/11: Darío Vargas). Lo hace la base para todos (supabase/testimonio-se-desescribe.sql); acá, para que quien
+       lo cambia lo vea al instante. */
+    const alumnoId = antes?.casoDeExito && !r.casoDeExito && !antes.testimonio && r.email.trim()
+      ? e.alumnos.find((a) => a.email.trim().toLowerCase() === r.email.trim().toLowerCase())?.id : undefined;
+    const retiro = alumnoId ? retiroDelTestimonioAgendado(e.testimonios ?? [], alumnoId, antes!.fechaHora ? diaDeNegocio(antes!.fechaHora) : "") : null;
+    const t0 = retiro?.tipo === "volver" ? (e.testimonios ?? []).find((x) => x.id === retiro.id) : undefined;
+    const t = t0 ? testimonioNormal({ ...t0, followUp: "Pendiente de agendar", fechaGrabacion: null }) : undefined;
+    const testimonios = !retiro ? null
+      : retiro.tipo === "borrar" ? (e.testimonios ?? []).filter((x) => x.id !== retiro.id)
+        : (e.testimonios ?? []).map((x) => (t && x.id === t.id ? t : x));
+    guardar({ ...e, resells: [r, ...(e.resells ?? []).filter((x) => x.id !== r.id)], ...(testimonios ? { testimonios } : {}) });
     empujar({ tipo: "upsert", tabla: "resells", filas: [r] });
+    /* El mismo cambio en la base (la base lo hace sola con el disparador; así no depende de eso para la pantalla de quien edita). */
+    if (retiro?.tipo === "borrar") empujar({ tipo: "delete", tabla: "testimonios", ids: [retiro.id] });
+    else if (t) empujar({ tipo: "upsert", tabla: "testimonios", filas: [t] });
   },
 
   borrarResell(id: ID): void {

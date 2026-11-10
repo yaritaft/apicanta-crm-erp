@@ -225,3 +225,22 @@ button.ps-dato:hover, a.ps-dato:hover, button.ps-dato:hover b, a.ps-dato:hover b
   .ps-clases .sim-tarjeta .spacer { display: none; }
   .ps-rs__fin { margin-left: 0; }
 }
+
+/* ---------- todos los testimonios (Lili, 10/11) ---------- */
+.ps-tes__filtros { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 14px; }
+.ps-tes__chip { border: 0; font: inherit; font-size: 13px; cursor: pointer; background: none; }
+.ps-tes__chip:hover { background: var(--mp-bloque-alto); }
+.ps-tes__chip:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+.ps-tes__chip[aria-pressed="true"] { box-shadow: inset 0 0 0 1.5px var(--brand); background: var(--mp-bloque-alto); color: var(--ink); }
+.ps-tes__buscar { margin-left: auto; flex: 0 1 220px; min-width: 160px; }
+.ps-tes__tabla { font-size: 13px; font-weight: 600; color: var(--brand); text-decoration: none; padding: 6px 4px; border-radius: 8px; }
+.ps-tes__tabla:hover { text-decoration: underline; }
+.ps-tes__tabla:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+.ps-tes__estado { display: inline-flex; align-items: center; justify-content: flex-end; gap: 10px; }
+.ps-tes__abrir { display: inline-flex; align-items: center; gap: 3px; font-size: 12px; font-weight: 600; color: var(--brand); text-decoration: none; }
+.ps-tes__abrir:hover { text-decoration: underline; }
+.ps-tes__vacio { margin: 18px 0 4px; }
+.ps-tes__mas { margin-top: 8px; }
+@media (max-width: 720px) {
+  .ps-tes__buscar { flex: 1 1 100%; margin-left: 0; }
+}

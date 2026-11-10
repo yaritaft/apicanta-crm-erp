@@ -32,6 +32,7 @@ import { alumnosRepetidos } from "@/lib/alumnos-repetidos";
 import { personaDe } from "@/lib/persona";
 import { plural, saludoDe } from "./util";
 import { ResellsDelMes } from "./ResellsDelMes";
+import { TestimoniosDelPanel } from "./TestimoniosDelPanel";
 import { Avance, PartesDeUnTotal } from "@/components/finanzas/visual/visual";
 import { InfoMetrica } from "@/components/ui/InfoMetrica";
 import "./mi-panel.css";
@@ -295,6 +296,9 @@ export function PanelServicio({ miembro, viendoOtro }: { miembro: MiembroEquipo;
 
       {/* Lo que agendó en el mes, para la liquidación (Lili, 26/10). */}
       <ResellsDelMes hoy={hoy} viendoOtro={viendoOtro} />
+
+      {/* Todos los testimonios, grabados o no (Lili, 10/11). */}
+      <TestimoniosDelPanel hoy={hoy} />
 
       <section className="mp-card ps-cartera" id="ps-cartera" aria-label="Cartera">
         <div className="ps-cartera__head">

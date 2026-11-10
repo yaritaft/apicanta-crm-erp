@@ -42,7 +42,7 @@ function Tarjeta({ f, hoy, onAbrir }: { f: FilaCartera; hoy: string; onAbrir: (i
 export function TableroFollowUp({ cartera, hoy, q, setQ, base, setBase, etapa, setEtapa, onAbrir, cambio, botones }: {
   cartera: FilaCartera[]; hoy: string;
   q: string; setQ: (t: string) => void;
-  /* «En servicio» deja afuera a los que ya cerraron (outboarding, caso de éxito) o se les terminó el contrato. */
+  /* «En servicio» deja afuera a los que ya cerraron (outboarding) o se les terminó el contrato. */
   base: "servicio" | "todos"; setBase: (b: "servicio" | "todos") => void;
   etapa?: EtapaAlumnoId; setEtapa: (x: EtapaAlumnoId | null) => void;
   onAbrir: (id: string) => void;

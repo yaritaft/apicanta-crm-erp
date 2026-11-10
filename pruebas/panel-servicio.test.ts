@@ -213,13 +213,37 @@ test("lo urgente se cuenta sobre toda la lista", () => {
   assert.equal(p.urgentes, 12);
 });
 
-test("outboarding y caso de éxito, con o sin tildes y en mayúsculas o minúsculas, son «terminó el servicio»; lo demás no", () => {
-  for (const f of ["OUTBOARDING", "Outboarding", "outbording", "CASO DE EXITO", "Caso de Éxito", " caso de éxito "]) assert.ok(terminoElServicio(f), f);
-  for (const f of ["", "RESERVA", "Roadmap", "Avanzando", "Módulo 3", "MAS ENTREVISTAS", "No contesta", undefined, null]) assert.ok(!terminoElServicio(f), String(f));
+test("sólo outboarding, con o sin tildes y en mayúsculas o minúsculas, es «terminó el servicio»; lo demás no (caso de éxito tampoco)", () => {
+  for (const f of ["OUTBOARDING", "Outboarding", "outbording", " outboarding "]) assert.ok(terminoElServicio(f), f);
+  for (const f of ["", "RESERVA", "Roadmap", "Avanzando", "Módulo 3", "MAS ENTREVISTAS", "No contesta", "CASO DE EXITO", "Caso de Éxito", " caso de éxito ", undefined, null]) assert.ok(!terminoElServicio(f), String(f));
   /* En la lista de seguimiento ya no le toca el contacto, aunque el alumno siga «activo» y tenga el atraso vencido. */
   assert.equal(situacionDe("activo", false, 30, "OUTBOARDING"), "fuera");
   assert.equal(situacionDe("activo", false, 30, "Avanzando"), "vencido");
   assert.equal(situacionDe("activo", false, 30), "vencido", "sin Follow Up, como siempre");
+});
+
+test("Lili 10/11: marcar «Caso de éxito» en el Follow Up no anula el próximo contacto mientras el contrato siga vigente", () => {
+  /* Un caso de éxito con el contrato vigente (empezó hace 2 meses, dura 6) y el contacto vencido: tiene que seguir en «A contactar hoy». */
+  const hoy = panelDeServicio(estado({
+    alumnos: [alumno("exito", "Caso Exito", "2026-08-20"), alumno("exito-viejo", "Caso Viejo", "2026-01-05"), alumno("outb2", "Outb Dos", "2026-08-20")] as never,
+    seguimientos: [
+      seg("exito", { contratoFirmado: "Firmado", contactoInicial: "2026-08-25", ultimoContacto: "2026-10-01", duracionMeses: 6, followUp: "Caso de éxito" }),
+      seg("exito-viejo", { contratoFirmado: "Firmado", contactoInicial: "2026-01-06", ultimoContacto: "2026-02-01", fechaEgreso: "2026-04-05", followUp: "Caso de éxito" }),
+      seg("outb2", { contratoFirmado: "Firmado", contactoInicial: "2026-08-25", ultimoContacto: "2026-10-01", duracionMeses: 6, followUp: "OUTBOARDING" }),
+    ],
+    testimonios: [], resells: [], revisionesCv: [],
+  }), HOY, AHORA);
+  const contactar = nombres(seccion(hoy, "contactar"));
+  assert.ok(contactar.includes("Caso Exito"), "el próximo contacto sigue: le toca hablarle");
+  assert.ok(!contactar.includes("Outb Dos"), "outboarding sí lo saca (como siempre)");
+  assert.ok(!contactar.includes("Caso Viejo"), "con el contrato terminado hace meses sale como cualquier otro, por el egreso");
+  assert.equal(hoy.enOutboarding, 1, "sólo cuenta el de outboarding");
+  const fila = hoy.cartera.find((f) => f.nombre === "Caso Exito")!;
+  assert.equal(fila.etapa, "exito", "sigue figurando como caso de éxito en la cartera");
+  assert.ok(fila.enServicio, "y en servicio");
+  assert.ok(fila.proximo, "con su próximo contacto");
+  assert.equal(situacionDe("activo", false, 5, "Caso de éxito"), "vencido");
+  assert.equal(situacionDe("activo", false, 0, "CASO DE EXITO"), "hoy");
 });
 
 test("«contar desde»: arranca de cero, nadie figura vencido por un contacto o un ingreso anterior a esa fecha", () => {

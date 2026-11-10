@@ -229,11 +229,15 @@ export function indiceDeContactos(e: Pick<EstadoApp, "contactos" | "leads">) {
   };
 }
 
-/** Lili ya lo pasó a «outboarding» o «caso de éxito» en el Follow Up (como en su Airtable): terminó el programa, aunque en la app
- *  siga «activo». Se lo trata como fuera del servicio hasta que ella lo actualice: no se toca el estado del alumno. */
+/** Lili ya lo pasó a «outboarding» en el Follow Up (como en su Airtable): terminó el programa, aunque en la app siga «activo». Se lo
+ *  trata como fuera del servicio hasta que ella lo actualice: no se toca el estado del alumno.
+ *
+ *  «Caso de éxito» NO es terminar: un caso de éxito puede seguir con el contrato vigente y entonces hay que seguir contactándolo
+ *  (Lili, 10/11: «que no se me anule el próximo contacto»). Antes contaba igual que outboarding: al marcarlo, el alumno salía de «A
+ *  contactar hoy» y del servicio. Cuando su contrato termina, sale como cualquier otro (por la fecha de egreso, panel-servicio.ts). */
 export function terminoElServicio(followUp: string | null | undefined): boolean {
   const f = (followUp ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
-  return f.startsWith("outboarding") || f.startsWith("outbording") || f.startsWith("caso de exito");
+  return f.startsWith("outboarding") || f.startsWith("outbording");
 }
 
 /** La situación de un alumno según cuándo le toca el próximo contacto. */

@@ -86,7 +86,7 @@ export interface PanelDeServicio {
   hoy: string;
   /* Alumnos en servicio (activos y con el contrato vigente o recién terminado): la base de todo. */
   activos: number;
-  /* Figuran como activos pero su Follow Up ya dice «outboarding» o «caso de éxito» (como en el Airtable de Lili): terminaron el programa y no entran al panel. */
+  /* Figuran como activos pero su Follow Up ya dice «outboarding» (como en el Airtable de Lili): terminaron el programa y no entran al panel. «Caso de éxito» no cuenta: puede seguir con el contrato vigente. */
   enOutboarding: number;
   /* Figuran como activos, no están en outboarding y su contrato terminó hace más de `DIAS_DE_GRACIA` días: no entran al panel; Lili los actualiza (Follow Up, egreso o estado). */
   desactualizados: number;
@@ -138,7 +138,7 @@ export interface FilaCartera {
   followUp: string;
   etapa: EtapaAlumnoId;
   estadoAlumno: string;
-  /* Activo, no cerró (outboarding o caso de éxito) y su contrato no terminó hace más de `DIAS_DE_GRACIA` días. */
+  /* Activo, no cerró (outboarding) y su contrato no terminó hace más de `DIAS_DE_GRACIA` días. */
   enServicio: boolean;
   inicio: string;
   egreso: string | null;

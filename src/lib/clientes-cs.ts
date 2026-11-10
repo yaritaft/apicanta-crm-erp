@@ -904,6 +904,26 @@ export function testimonioDeLaLlamada<T extends Pick<Testimonio, "alumnoId" | "f
     .sort((a, b) => Number(delDia(b)) - Number(delDia(a)) || b.creadoEn.localeCompare(a.creadoEn) || b.id.localeCompare(a.id))[0];
 }
 
+/** Lo que hay que retirar del testimonio de un alumno cuando una llamada deja de ser «caso de éxito» (Lili, 10/11: Darío Vargas). La
+    agenda de una llamada de caso de éxito deja su testimonio en «Llamada agendada» el día de la llamada (resell_agenda_a_testimonio);
+    si después se aclara que no era para testimonio, eso se retira. Igual que la base (supabase/testimonio-se-desescribe.sql), que es la
+    que manda: esto sólo hace que se vea al instante en la pantalla de quien lo cambia.
+      · borrar: lo creó la agenda («tes_rs_…») y nadie le cargó nada más;
+      · volver: ya existía (o se le cargó algo): vuelve a «Pendiente de agendar» y sin fecha;
+      · null: no se toca (con link, con estado de video, o no es el de esa llamada). */
+export type RetiroDeTestimonio = { tipo: "borrar" | "volver"; id: ID } | null;
+export function retiroDelTestimonioAgendado(
+  lista: readonly Pick<Testimonio, "id" | "alumnoId" | "followUp" | "fechaGrabacion" | "link" | "estadoVideo" | "resell" | "tecnologias" | "situacionPrevia" | "situacionActual" | "notas" | "creadoEn">[],
+  alumnoId: string, dia: string,
+): RetiroDeTestimonio {
+  const t = lista.filter((x) => x.alumnoId === alumnoId && x.followUp === "Llamada agendada" && String(x.fechaGrabacion ?? "").slice(0, 10) === dia
+    && !String(x.link ?? "").trim() && !String(x.estadoVideo ?? "").trim())
+    .sort((a, b) => b.creadoEn.localeCompare(a.creadoEn) || b.id.localeCompare(a.id))[0];
+  if (!t) return null;
+  const sinNada = [t.resell, t.tecnologias, t.situacionPrevia, t.situacionActual, t.notas].every((x) => !String(x ?? "").trim());
+  return { tipo: t.id.startsWith("tes_rs_") && sinNada ? "borrar" : "volver", id: t.id };
+}
+
 /** Lo que falta cargar de una llamada para cerrarla, en palabras (vacío: no falta nada). */
 export function faltaDeLaLlamada(r: LlamadaParaCerrar): string[] {
   if (r.testimonio === "Se reagenda") return [];
