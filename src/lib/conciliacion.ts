@@ -427,6 +427,59 @@ export function restoDeMovimiento(e: EstadoApp, mov: Movimiento): number {
   return Math.round((mov.monto - imputado) * 100) / 100;
 }
 
+/* ---------- Buscar un cobro entre los que ya no están pendientes ----------
+
+   El selector de pagos sólo ofrece los pendientes. Quien busca el pago de un
+   cliente que ya está conciliado (o ignorado) veía una lista vacía o vieja y
+   no sabía si el pago no llegó o ya estaba resuelto (Mariano, 07/11). */
+
+/** ¿El cobro coincide con lo que se escribió en el buscador? Por monto, nombre,
+ *  correo, referencia o descripción. */
+export function coincideConBusqueda(mov: Movimiento, busqueda: string): boolean {
+  const texto = busqueda.trim().toLowerCase();
+  if (!texto) return true;
+  const numero = Number(texto.replace(/\./g, "").replace(",", "."));
+  if (Number.isFinite(numero) && numero > 0 && Math.abs(mov.monto - numero) < 1) return true;
+  return [mov.clienteNombre, mov.clienteEmail, mov.referencia, mov.descripcion]
+    .some((c) => c?.toLowerCase().includes(texto));
+}
+
+/** A dónde fue a parar un cobro que ya no está pendiente: «Reserva de Fulano»,
+ *  «Cuota 2 de Fulano», «Ignorado»… */
+export function destinoDeMovimiento(e: EstadoApp, mov: Movimiento): string {
+  if (mov.estado === "ignorado") return "Ignorado: no cuenta como venta";
+  const cuota = mov.cuotaId ? e.cuotas.find((c) => c.id === mov.cuotaId) : undefined;
+  const venta = e.ventas.find((v) => v.id === (mov.ventaId ?? cuota?.ventaId));
+  const que = cuota ? (cuota.esReserva ? "Reserva" : `Cuota ${cuota.numero}`) : "Conciliado";
+  return venta?.contactoNombre ? `${que} de ${venta.contactoNombre}` : que;
+}
+
+export interface CobroResuelto { mov: Movimiento; destino: string }
+
+/** Los cobros ya conciliados o ignorados que coinciden con la búsqueda, del más
+ *  nuevo al más viejo. Sin búsqueda no devuelve nada: serían cientos. */
+export function resueltosQueCoinciden(
+  e: EstadoApp, busqueda: string, delAmbito: (m: Movimiento) => boolean, limite = 8,
+): CobroResuelto[] {
+  if (!busqueda.trim()) return [];
+  return e.movimientos
+    .filter((m) => m.estado !== "pendiente" && delAmbito(m) && coincideConBusqueda(m, busqueda))
+    .sort((a, b) => +new Date(b.fecha) - +new Date(a.fecha))
+    .slice(0, limite)
+    .map((mov) => ({ mov, destino: destinoDeMovimiento(e, mov) }));
+}
+
+/** El último cobro recibido (de cualquier estado) dentro del ámbito: dice hasta
+ *  cuándo llegaron pagos, que no es lo mismo que hasta cuándo hay pendientes. */
+export function ultimoCobroRecibido(movs: Movimiento[], delAmbito: (m: Movimiento) => boolean): Movimiento | undefined {
+  let ultimo: Movimiento | undefined;
+  for (const m of movs) {
+    if (!delAmbito(m)) continue;
+    if (!ultimo || +new Date(m.fecha) > +new Date(ultimo.fecha)) ultimo = m;
+  }
+  return ultimo;
+}
+
 /** La tasa de la cuenta del cobro: lo que se usa mientras la pasarela no
  *  mande la comisión real. */
 export const tasaEstimada = (e: EstadoApp, mov: Movimiento): number => procesadorDeMovimiento(e, mov)?.feeRate ?? 0;

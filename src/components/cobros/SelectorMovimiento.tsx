@@ -6,7 +6,7 @@ import { Badge, Button, Chip, Empty, Input } from "@/components/ui/ui";
 import { Modal } from "@/components/ui/Modal";
 import { useEstado } from "@/lib/store";
 import { fechaLarga, money } from "@/lib/format";
-import { medioDeMovimiento, quienPagoVsCliente } from "@/lib/conciliacion";
+import { coincideConBusqueda, medioDeMovimiento, quienPagoVsCliente, resueltosQueCoinciden, ultimoCobroRecibido } from "@/lib/conciliacion";
 import { nombrePasarela } from "@/lib/pasarelas";
 import type { ID, Movimiento, ProveedorPasarela } from "@/lib/types";
 
@@ -63,18 +63,11 @@ export function SelectorMovimiento({ abierto, onCerrar, proveedor, cliente, mont
   const [dudoso, setDudoso] = useState<ID | null>(null);
 
   const lista = useMemo(() => {
-    const texto = q.trim().toLowerCase();
-    const numero = Number(texto.replace(/\./g, "").replace(",", "."));
     return e.movimientos
       .filter((m) => (m.estado === "pendiente" || (liberar?.movimientoId && m.id === liberar.movimientoId)) && (todas || !proveedor || m.proveedor === proveedor))
       .map((m) => ({ mov: m, disponible: disponibleDe(m, liberar ? e.pagos.filter((p) => p.id !== liberar.pagoId) : e.pagos, usado) }))
       .filter((x) => x.disponible > 0.009)
-      .filter(({ mov }) => {
-        if (!texto) return true;
-        if (Number.isFinite(numero) && numero > 0 && Math.abs(mov.monto - numero) < 1) return true;
-        return [mov.clienteNombre, mov.clienteEmail, mov.referencia, mov.descripcion]
-          .some((c) => c?.toLowerCase().includes(texto));
-      })
+      .filter(({ mov }) => coincideConBusqueda(mov, q))
       .map((x) => {
         const quien = quienPagoVsCliente(x.mov, cliente);
         const mismoMonto = Boolean(monto && Math.abs(x.disponible - monto) < 0.5);
@@ -85,6 +78,17 @@ export function SelectorMovimiento({ abierto, onCerrar, proveedor, cliente, mont
 
   const nombre = proveedor ? nombrePasarela(proveedor) : "las pasarelas";
   const mon = e.ajustes.monedaBase;
+
+  /* Lo que explica por qué un pago no figura: hasta cuándo llegaron cobros y,
+     si se busca algo, a dónde fue a parar lo que ya no está pendiente. */
+  const ultimo = useMemo(
+    () => ultimoCobroRecibido(e.movimientos, (m) => todas || !proveedor || m.proveedor === proveedor),
+    [e.movimientos, proveedor, todas],
+  );
+  const resueltos = useMemo(
+    () => resueltosQueCoinciden(e, q, (m) => todas || !proveedor || m.proveedor === proveedor),
+    [e, q, proveedor, todas],
+  );
 
   return (
     <Modal
@@ -104,12 +108,23 @@ export function SelectorMovimiento({ abierto, onCerrar, proveedor, cliente, mont
           </div>
         )}
 
-        {lista.length === 0 ? (
+        {ultimo && (
+          <p className="t-sm t-subtle" data-testid="selector-ultimo-cobro">
+            Último cobro recibido{proveedor && !todas ? ` de ${nombre}` : ""}: {fechaLarga(ultimo.fecha)}.
+            Acá sólo figuran los que todavía no están conciliados: si no ves un pago, buscalo por nombre o monto.
+          </p>
+        )}
+
+        {lista.length === 0 && resueltos.length === 0 ? (
           <Empty
             icono={<Search size={22} />}
             titulo={q ? "Ningún pago coincide" : `No hay pagos de ${nombre} sin conciliar`}
-            texto="Si la plata entró por otro lado, cerrá esto y subí el comprobante."
+            texto={q
+              ? "Tampoco hay ningún cobro ya conciliado o ignorado con eso. Si la plata entró por otro lado, cerrá esto y subí el comprobante."
+              : "Los cobros ya conciliados no aparecen acá. Si la plata entró por otro lado, cerrá esto y subí el comprobante."}
           />
+        ) : lista.length === 0 ? (
+          <p className="t-sm t-muted">Ningún pendiente coincide, pero hay cobros que ya se resolvieron:</p>
         ) : (
           <div className="pagos-lista" role="list">
             {lista.slice(0, tope).map(({ mov, disponible, quien, mismoMonto }) => (
@@ -155,6 +170,31 @@ export function SelectorMovimiento({ abierto, onCerrar, proveedor, cliente, mont
                 Mostrar más ({lista.length - tope})
               </Button>
             )}
+          </div>
+        )}
+
+        {resueltos.length > 0 && (
+          <div className="stack-3" data-testid="selector-ya-resueltos">
+            {lista.length > 0 && <p className="t-sm t-muted">Ya conciliados o ignorados con esa búsqueda (no se pueden elegir):</p>}
+            <div className="pagos-lista" role="list">
+              {resueltos.map(({ mov, destino }) => (
+                <div key={mov.id} role="listitem" className="pago-fila" style={{ opacity: 0.7, cursor: "default" }}>
+                  <span className="pago-fila__fecha t-sm t-subtle">{fechaLarga(mov.fecha)}</span>
+                  <span style={{ minWidth: 0, flex: 1 }}>
+                    <span className="truncate t-strong" style={{ display: "block" }}>
+                      {mov.clienteNombre || "Sin nombre"}
+                    </span>
+                    <span className="truncate t-sm t-subtle" style={{ display: "block" }}>
+                      {[mov.clienteEmail, mov.referencia].filter(Boolean).join(" · ")}
+                    </span>
+                  </span>
+                  <Badge variante="neutral">{destino}</Badge>
+                  <span className="pago-fila__monto">
+                    <span className="t-num t-strong">{money(mov.monto, mov.moneda ?? mon, 2)}</span>
+                  </span>
+                </div>
+              ))}
+            </div>
           </div>
         )}
       </div>
