@@ -12,6 +12,8 @@
    La tz entra en un solo lugar, que es decidir que dia es "hoy". */
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { ubicarPopover, type UbicacionPopover } from "@/lib/ubicar-popover";
 
 export type RangoFechas = { preset: string; desde: string; hasta: string };
 
@@ -204,21 +206,6 @@ function Calendario({ vista, desde, hasta, onPick, permitirFuturo = false, hoy }
   );
 }
 
-/* Caja donde el popover se recorta de verdad: el ancestro mas cercano que
-   clipea, o el viewport. Ojo que `overflow-y:auto` fuerza a `overflow-x` a
-   computar `auto` por la spec, asi que un contenedor que "solo scrollea
-   vertical" igual corta a los costados. */
-function cajaDeRecorte(el: HTMLElement): { left: number; right: number } {
-  for (let n = el.parentElement; n && n !== document.body; n = n.parentElement) {
-    const s = getComputedStyle(n);
-    if (s.overflowX !== "visible" || s.overflowY !== "visible") {
-      const r = n.getBoundingClientRect();
-      return { left: Math.max(0, r.left), right: Math.min(window.innerWidth, r.right) };
-    }
-  }
-  return { left: 0, right: window.innerWidth };
-}
-
 export function DateRangePicker({
   value, minDate, onApply, footerNota = "Días calendario", placement = "auto",
   futuro = false, tz = TZ_NEGOCIO, etiqueta, maxDate = null,
@@ -247,52 +234,54 @@ export function DateRangePicker({
   const [dDesde, setDDesde] = useState<string | null>(value.desde);
   const [dHasta, setDHasta] = useState<string | null>(value.hasta);
   const [vista, setVista] = useState(0);
-  const [up, setUp] = useState(false);
-  /* El popover ancla a la derecha del boton; si el boton no esta contra el
-     borde derecho, el ancho se sale por la izquierda → se corre lo justo. */
-  const [dx, setDx] = useState(0);
+  /* Dónde está el popover (null mientras se mide: se dibuja invisible un instante). */
+  const [ubic, setUbic] = useState<UbicacionPopover | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const popRef = useRef<HTMLDivElement>(null);
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const footRef = useRef<HTMLDivElement>(null);
   const railRef = useRef<HTMLDivElement>(null);
 
-  /* Si no entra ni arriba ni abajo, scrollea lo minimo para que se vea entero.
-     El borde que recorta no siempre es el viewport: con el sidebar, el picker
-     puede vivir dentro de una columna con scroll propio, y esa columna clipea
-     aunque el popover entre en la pantalla. */
+  const acomodar = () => {
+    const pill = rootRef.current, pop = popRef.current, body = bodyRef.current, foot = footRef.current;
+    if (!pill || !pop || !body || !foot) return;
+    const r = pill.getBoundingClientRect();
+    /* El alto "entero": lo que mide el contenido de los calendarios más el pie, no lo que hoy muestra. */
+    const alto = body.scrollHeight + foot.offsetHeight + 2;
+    const ancho = Math.max(pop.offsetWidth, body.scrollWidth + 2);
+    setUbic(ubicarPopover(r, { ancho, alto }, { ancho: window.innerWidth, alto: window.innerHeight }, placement));
+  };
+
+  /* Se mide recién dibujado y se vuelve a acomodar si cambia la ventana o se
+     desplaza algo: el popover está fijo en la pantalla, el botón no. */
   useLayoutEffect(() => {
-    if (!open) return;
-    const p = popRef.current;
-    if (!p) return;
-    const clip = cajaDeRecorte(p);
-    const r0 = p.getBoundingClientRect();
-    const zoom = p.offsetWidth > 0 ? r0.width / p.offsetWidth : 1;
-    const anchoUtil = clip.right - clip.left - 16;
-    p.style.maxWidth = anchoUtil > 0 ? `${anchoUtil / zoom}px` : "";
-    const r = p.getBoundingClientRect();
-    if (r.left < clip.left + 8) setDx((d) => d + (clip.left + 8 - r.left));
-    p.scrollIntoView({ block: "nearest" });
-    /* El rail entra en 340px pero los presets son 13 o 16: si el activo esta
-       abajo, abrir el picker no muestra cual esta puesto. */
-    railRef.current?.querySelector(".dp-preset--on")?.scrollIntoView({ block: "nearest" });
-  }, [open, up]);
+    if (!open) { setUbic(null); return; }
+    acomodar();
+    /* El preset activo a la vista (el rail scrollea: son 13 o 16). A mano y no
+       con `scrollIntoView`, que además desplaza la página entera. */
+    const rail = railRef.current, on = rail?.querySelector<HTMLElement>(".dp-preset--on");
+    if (rail && on) rail.scrollTop = Math.max(0, on.offsetTop - (rail.clientHeight - on.offsetHeight) / 2);
+    window.addEventListener("resize", acomodar);
+    window.addEventListener("scroll", acomodar, true);
+    return () => { window.removeEventListener("resize", acomodar); window.removeEventListener("scroll", acomodar, true); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, placement]);
 
   const abrir = () => {
     setDPreset(value.preset); setDDesde(value.desde); setDHasta(value.hasta);
     const s = deIso(value.desde), e = deIso(value.hasta);
     const sI = s.getFullYear() * 12 + s.getMonth(), eI = e.getFullYear() * 12 + e.getMonth();
     setVista(sI < eI ? sI : eI - 1);
-    if (placement === "auto") {
-      const r = rootRef.current?.getBoundingClientRect();
-      setUp(!!r && r.bottom + 510 > window.innerHeight && r.top > window.innerHeight - r.bottom);
-    }
-    setDx(0);
+    setUbic(null);
     setOpen(true);
   };
 
   useEffect(() => {
     if (!open) return;
     const onDown = (e: MouseEvent) => {
-      if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpen(false);
+      const t = e.target as Node;
+      if (rootRef.current?.contains(t) || popRef.current?.contains(t)) return;
+      setOpen(false);
     };
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
     document.addEventListener("mousedown", onDown);
@@ -310,13 +299,14 @@ export function DateRangePicker({
     }
   };
 
+  /* Un preset («Ayer», «Máximo», «Este mes») se aplica con el clic y cierra: no
+     hace falta encontrar «Actualizar». El botón queda para lo que se arma a
+     mano en el calendario. */
   const elegirPreset = (id: string) => {
     const p = presets(minDate, futuro, tz, maxDate).find((x) => x.id === id)!;
     const [s, e] = p.rango();
-    setDPreset(id); setDDesde(s); setDHasta(e);
-    const sd = deIso(s), ed = deIso(e);
-    const sI = sd.getFullYear() * 12 + sd.getMonth(), eI = ed.getFullYear() * 12 + ed.getMonth();
-    setVista(sI < eI ? sI : eI - 1);
+    onApply({ preset: id, desde: s, hasta: e });
+    setOpen(false);
   };
 
   /* Un solo clic en el calendario y Actualizar = ese día solo. Antes había que
@@ -343,13 +333,15 @@ export function DateRangePicker({
         <span className="dp-caret">▾</span>
       </button>
 
-      {open && (
+      {open && createPortal(
         <div
           ref={popRef}
-          className={`dp-pop${placement === "top" || (placement === "auto" && up) ? " dp-pop--up" : ""}`}
-          style={dx ? { right: -dx } : undefined}
+          className={`dp-pop${ubic ? "" : " dp-pop--midiendo"}`}
+          style={ubic ? { left: ubic.left, top: ubic.top, bottom: ubic.bottom, maxHeight: ubic.maxHeight, maxWidth: ubic.maxWidth } : undefined}
+          data-flotante-abierto=""
+          onClick={(ev) => ev.stopPropagation()}
         >
-          <div className="dp-body">
+          <div className="dp-body" ref={bodyRef}>
             <div className="dp-rail" ref={railRef}>
               {presets(minDate, futuro, tz, maxDate).map((p) => (
                 <div key={p.id} className={`dp-preset${dPreset === p.id ? " dp-preset--on" : ""}`} onClick={() => elegirPreset(p.id)}>
@@ -375,7 +367,7 @@ export function DateRangePicker({
               </div>
             </div>
           </div>
-          <div className="dp-foot">
+          <div className="dp-foot" ref={footRef}>
             <span className="dp-nota">{footerNota}</span>
             <button type="button" className="hk-btn hk-btn--ghost hk-btn--sm" onClick={() => setOpen(false)}>Cancelar</button>
             <button
@@ -387,7 +379,8 @@ export function DateRangePicker({
               Actualizar
             </button>
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   );

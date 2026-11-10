@@ -215,18 +215,6 @@ function rangoDeLaPantalla(mes: RangoMes): RangoFechas {
   return { preset: preset ?? "custom", desde, hasta };
 }
 
-/* El selector de fechas no avisa cuando tiene el calendario abierto: sin
-   esta marca, Esc cerraría el modal entero en vez del calendario. */
-function useMarcaFlotante(ref: React.RefObject<HTMLDivElement | null>) {
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const obs = new MutationObserver(() => el.toggleAttribute("data-flotante-abierto", Boolean(el.querySelector(".dp-pop"))));
-    obs.observe(el, { childList: true, subtree: true });
-    return () => obs.disconnect();
-  }, [ref]);
-}
-
 const enLista = (xs: string[]) => (xs.length > 1 ? `${xs.slice(0, -1).join(", ")} y ${xs[xs.length - 1]}` : xs[0] ?? "");
 const diaCorto = (dia: string) => dia.split("-").slice(1).reverse().map(Number).join("/");
 
@@ -236,8 +224,6 @@ function ReporteFinanciera({ e, mes, onCerrar }: { e: EstadoApp; mes: RangoMes; 
   const [cuentaId, setCuentaId] = useState(() => cuentaPorDefecto(cuentas)?.id ?? "");
   const [rango, setRango] = useState<RangoFechas>(() => rangoDeLaPantalla(mes));
   const [bajando, setBajando] = useState(false);
-  const selector = useRef<HTMLDivElement>(null);
-  useMarcaFlotante(selector);
 
   const corte = useMemo(
     () => (cuentas.some((p) => p.id === cuentaId) ? corteFinanciera(e, cuentaId, rango.desde, rango.hasta) : null),
@@ -298,7 +284,7 @@ function ReporteFinanciera({ e, mes, onCerrar }: { e: EstadoApp; mes: RangoMes; 
               />
             </Field>
             <Field label="Período">
-              <div ref={selector}>
+              <div>
                 <DateRangePicker value={rango} minDate={primerDia} onApply={setRango} footerNota="Días calendario · zona horaria de Argentina" />
               </div>
             </Field>
