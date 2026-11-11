@@ -2714,6 +2714,21 @@ export const acciones = {
     empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
   },
 
+  /* Lo que alguien dijo de la llegada de uno o varios movimientos (al contar el arqueo, o desde la lista): cuáles siguen en camino y cuáles ya
+     llegaron (lib/traspasos.ts: `cambioDeLlegada`). Lo que se apaga viaja como null: una clave que falta no pisa lo que hay en la base. */
+  guardarLlegadas(cambios: { id: ID; cambios: Partial<Traspaso> }[], detalle: string): void {
+    const e = snapshot();
+    const por = new Map(cambios.map((c) => [c.id, c.cambios] as const));
+    const tocados = (e.traspasos ?? []).filter((t) => por.has(t.id));
+    if (!tocados.length) return;
+    const { lista: act, nuevo } = registrar(e, "transaccion", tocados[0].id, "Movimiento entre cuentas", "actualizo", detalle);
+    guardar({ ...e, traspasos: (e.traspasos ?? []).map((t) => (por.has(t.id) ? { ...t, ...por.get(t.id) } : t)), actividad: act });
+    for (const t of tocados) {
+      empujarUpdate("traspasos", [t.id], Object.fromEntries(Object.entries(por.get(t.id)!).map(([k, v]) => [k, v === undefined ? null : v])));
+    }
+    empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
+  },
+
   borrarTraspaso(id: ID): void {
     const e = snapshot();
     const t = (e.traspasos ?? []).find((x) => x.id === id);

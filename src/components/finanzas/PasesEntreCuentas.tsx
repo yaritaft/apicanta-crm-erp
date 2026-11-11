@@ -15,9 +15,10 @@ import { acciones, nuevoId } from "@/lib/store";
 import { nube } from "@/lib/supabase";
 import { fecha, fechaLarga, money, num } from "@/lib/format";
 import { escribirMonto, leerMonto } from "@/lib/gastos";
+import { ultimoArqueo } from "@/lib/caja";
 import { useParamsURL, useTablaURL } from "@/lib/useParamsURL";
 import {
-  AYUDA_SITUACION, cambioDe, CATEGORIA_COSTO, cobroDeLaLlegada, conComisionDelRetiro, costoDe, esperaLlegada, faltaComisionDelRetiro, gastoDelCosto,
+  AYUDA_SITUACION, cambioDe, cambioDeLlegada, CATEGORIA_COSTO, cobroDeLaLlegada, conComisionDelRetiro, costoDe, esperaLlegada, faltaComisionDelRetiro, gastoDelCosto,
   llegadaDeCobro, LLEGADA_A_MANO, parecidos, paseQuePisaUnCobro, problemasDelMovimiento, resumenDePases, rutaDe, SALIDA_A_MANO, situacionDe, TEXTO_SITUACION, type Punta, type Situacion,
 } from "@/lib/traspasos";
 import type { EstadoApp, EstadoTraspaso, Moneda, Movimiento, Traspaso } from "@/lib/types";
@@ -234,6 +235,16 @@ export function PasesEntreCuentas({ e, onNuevo, onEditar, rango, plegable = fals
             <IconButton etiqueta="Volver a contarlo" onClick={() => { acciones.marcarTraspaso(t.id, "confirmado"); toast("Vuelve a contar como movimiento entre cuentas."); }}><RotateCcw size={15} /></IconButton>
           ) : (
             <>
+              {(t.situacion === "en-camino" || t.situacion === "no-llego") && (
+                <Button sm variante="secondary" icono={<Check size={14} />} aria-label={`Ya llegó: ${rutaDe(e, t)}`}
+                  title="El banco ya lo acreditó en la cuenta de destino: deja de figurar en camino"
+                  onClick={() => {
+                    const orig = (e.traspasos ?? []).find((x) => x.id === t.id);
+                    if (!orig) return;
+                    acciones.guardarLlegadas([{ id: t.id, cambios: cambioDeLlegada(orig, false, ultimoArqueo(e)?.fecha ?? null, new Date().toISOString()) }], `Se marcó que llegó el movimiento de ${rutaDe(e, orig)}.`);
+                    toast("Listo: ya llegó. Deja de figurar en camino.");
+                  }}>Ya llegó</Button>
+              )}
               <IconButton etiqueta="Corregir" onClick={() => editar(t.id)}><Pencil size={15} /></IconButton>
               {t.origen === "api" && (
                 <IconButton etiqueta="No es un movimiento entre cuentas"
@@ -364,6 +375,10 @@ export function FormTraspaso({ e, traspaso, desdeCobro, onCerrar, onListo }: {
   const aMano = t0?.llegadaRef === LLEGADA_A_MANO;
   const [yaLlego, setYaLlego] = useState(aMano);
   const faltaLlegar = Boolean(t0) && esperaLlegada({ salidaRef: t0?.salidaRef, llegadaRef: aMano ? undefined : t0?.llegadaRef, destinoId: destinoId || undefined });
+  /* ¿Ya llegó a la cuenta de destino? Si el banco todavía no lo acreditó, la cuenta de destino no lo espera en el arqueo (Aldana, 11/11: un pase de
+     US$ 100 cargado el día que salió figuraba llegado, y Mercury «faltaba» esa plata al contar). Lo que ya vio llegar un banco no se pregunta. */
+  const [todavia, setTodavia] = useState(Boolean(t0?.todaviaNoLlego));
+  const sePregunta = !cobro && !faltaLlegar && !(t0?.llegadaRef && t0.llegadaRef !== LLEGADA_A_MANO);
 
   /* Sin saber de dónde salió (sólo para un cobro) no hay otra moneda ni otro monto: sale lo mismo que llegó. */
   const sinOrigen = Boolean(cobro) && !origenId;
@@ -386,6 +401,11 @@ export function FormTraspaso({ e, traspaso, desdeCobro, onCerrar, onListo }: {
     notas: notas.trim() || undefined,
     ...(cobro ? { llegadaRef: llegadaDeCobro(cobro) } : {}),
     ...(faltaLlegar || aMano ? { llegadaRef: faltaLlegar && yaLlego ? LLEGADA_A_MANO : undefined } : {}),
+    /* Lo que ya vio llegar un banco no se toca; de lo demás, lo que se dijo. Si estaba en camino y ahora llegó, el día de llegada es el de hoy. */
+    ...(sePregunta
+      ? todavia ? { todaviaNoLlego: true, ...(aMano ? { llegadaRef: undefined } : {}) }
+        : t0?.todaviaNoLlego ? cambioDeLlegada(t0, false, ultimoArqueo(e)?.fecha ?? null, new Date().toISOString()) : {}
+      : {}),
   };
   /* Si era un retiro sin comisión y se corrigió cuánto salió, ya se miró. */
   if (t0 && faltaComisionDelRetiro(t0) && borrador.montoSale !== t0.montoSale) borrador.salidaRef = SALIDA_A_MANO;
@@ -472,6 +492,7 @@ export function FormTraspaso({ e, traspaso, desdeCobro, onCerrar, onListo }: {
       ...(sinOrigen ? [] : [{ etiqueta: "Salió", valor: plata(borrador.montoSale, monedaSale), falta: problemas.some((p) => p.paso === "sale"), onCambiar: cambiar("sale") }]),
       { etiqueta: "Llegó", valor: plata(borrador.montoLlega, monedaLlega), falta: problemas.some((p) => p.paso === "llega"), onCambiar: cambiar("llega") },
       { etiqueta: "Día", valor: fechaLarga(fechaIso), falta: problemas.some((p) => p.paso === "dia"), onCambiar: cambiar("dia") },
+      ...(sePregunta ? [{ etiqueta: `¿Ya llegó a ${destinoId ? nombreCuenta(e, destinoId) : "la otra cuenta"}?`, valor: todavia ? "Todavía no: está en camino" : "Sí, ya llegó", onCambiar: cambiar("dia") }] : []),
       ...(cuentaComoPase && costo > 0 ? [{
         etiqueta: "Costo", valor: conGasto ? `${plata(costo, monedaSale)} · va como gasto en «${CATEGORIA_COSTO}»` : `${plata(costo, monedaSale)} · sin gasto`,
         falta: problemas.some((p) => p.paso === "costo"), onCambiar: cambiar("costo"),
@@ -580,13 +601,28 @@ export function FormTraspaso({ e, traspaso, desdeCobro, onCerrar, onListo }: {
 
       {pasoId === "dia" && (
         <>
-          <Pregunta texto="¿Qué día fue?" sub="El día en que la plata salió de una cuenta y llegó a la otra." />
+          <Pregunta texto="¿Qué día fue?" sub={sePregunta ? "El día en que la plata salió de la cuenta." : "El día en que la plata salió de una cuenta y llegó a la otra."} />
           <div className="stack-3">
             <Input type="date" value={dia} max={hoy} onChange={(ev) => setDia(ev.target.value || hoy)} aria-label="Día del movimiento" />
             <div className="row-wrap">
               <Chip activo={dia === hoy} onClick={() => setDia(hoy)}>Hoy</Chip>
               <Chip activo={dia === ayer} onClick={() => setDia(ayer)}>Ayer</Chip>
             </div>
+            {sePregunta && (
+              <>
+                <p className="t-sm t-muted" style={{ margin: "var(--space-2) 0 0" }}>¿Ya llegó a {destinoId ? nombreCuenta(e, destinoId) : "la otra cuenta"}?</p>
+                <div className="row-wrap" role="group" aria-label="¿Ya llegó a la cuenta de destino?">
+                  <Chip activo={!todavia} onClick={() => setTodavia(false)}>Sí, ya llegó</Chip>
+                  <Chip activo={todavia} onClick={() => setTodavia(true)}>Todavía no llegó</Chip>
+                </div>
+                {todavia && (
+                  <p className="t-sm t-muted pases__nota">
+                    Queda «en camino»: {destinoId ? nombreCuenta(e, destinoId) : "la cuenta de destino"} no lo espera en el arqueo hasta que lo marques como llegado
+                    (desde la lista de movimientos o al contar el arqueo).
+                  </p>
+                )}
+              </>
+            )}
           </div>
           {volverARevisar}
         </>

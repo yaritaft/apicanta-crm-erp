@@ -1,0 +1,26 @@
+/* «¿Hay plata en camino?» dentro del arqueo: lo que salió de una cuenta y el banco todavía no acreditó en la otra. */
+.camino {
+  display: flex; flex-direction: column; gap: var(--space-3);
+  margin: 0 0 var(--space-4); padding: var(--space-4);
+  border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface-100);
+}
+/* Cuando una cuenta no da por justo lo de un pase de acá, el cuadro se nota (ámbar, como el casillero que no da). */
+.camino--pista { border-color: var(--warning); }
+.camino__cabeza { display: flex; flex-direction: column; gap: var(--space-1); }
+.camino__titulo { margin: 0; font-size: 15px; line-height: 20px; font-weight: 600; color: var(--ink); }
+.camino__sub { margin: 0; line-height: 19px; }
+.camino__lista { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.camino__fila {
+  display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1.1fr) auto; align-items: center; gap: var(--space-1) var(--space-3);
+  padding: var(--space-2) 0; border-top: 1px solid var(--border);
+}
+.camino__fila:first-child { border-top: 0; }
+.camino__ruta { display: flex; align-items: center; gap: var(--space-2); min-width: 0; font-weight: 500; color: var(--ink); }
+.camino__ruta svg { flex: none; color: var(--ink-subtle); }
+.camino__datos { min-width: 0; }
+.camino__elegir { display: flex; gap: var(--space-2); justify-self: end; }
+.camino__pista { grid-column: 1 / -1; color: var(--warning); line-height: 18px; }
+@media (max-width: 760px) {
+  .camino__fila { grid-template-columns: 1fr; }
+  .camino__elegir { justify-self: start; }
+}

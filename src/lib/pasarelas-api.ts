@@ -1,7 +1,7 @@
 import { estadoDeDisputaStripe } from "./disputas";
 import { createHmac } from "node:crypto";
 import type { Moneda, ProveedorPasarela } from "./types";
-import { cuentaDeContraparte, type Punta } from "./traspasos";
+import { cuentaDeContraparteEnMercury, type Punta } from "./traspasos";
 import type { ReembolsoCrudo } from "./reembolsos";
 import { MOTIVO_LIQUIDACION_PROBABLE } from "./motivos";
 import { clasificarMercury, reglasExtraDeEntorno, type ResumenMercury } from "./mercury";
@@ -214,6 +214,11 @@ export function puntaDeRetiroStripe(p: Record<string, unknown>): Punta | null {
   const monto = dinero(Number(p.amount ?? 0) / 100);
   const creado = Number(p.created ?? 0);
   if (!monto || !p.id || !(creado > 0)) return null;
+  /* Stripe dice qué día llega al banco (`arrival_date`, a medianoche UTC): hasta ese día la plata está en camino y la cuenta de destino no la
+     tiene. Se guarda a las 12 de Argentina de ese día (como lo cargado a mano): contando esa noche ya llegó. Sin eso se daba por llegada el día que
+     Stripe la mandó, y un arqueo hecho al otro día marcaba de menos en la cuenta de destino. */
+  const llegada = Number(p.arrival_date ?? 0);
+  const llegaEl = monto > 0 && llegada > 0 ? `${new Date(llegada * 1000).toISOString().slice(0, 10)}T15:00:00.000Z` : undefined;
   return {
     lado: monto > 0 ? "salida" : "llegada",
     cuentaId: procesadorDe("stripe"),
@@ -223,6 +228,7 @@ export function puntaDeRetiroStripe(p: Record<string, unknown>): Punta | null {
     ref: `stripe:${String(p.id)}`,
     contraparte: txt(p.statement_descriptor) ?? txt(p.description),
     seguro: true,
+    ...(llegaEl ? { llegaEl } : {}),
   };
 }
 
@@ -1101,7 +1107,7 @@ export function puntaDeMercury(t: Record<string, unknown>, extras: readonly stri
      ni lo interno (tarjeta, subcuentas), ni lo que sigue pending. */
   if (clasificarMercury(t, extras).tipo !== "pase") return null;
   const contraparte = String(t.counterpartyName ?? t.counterpartyNickname ?? "").trim();
-  const otra = cuentaDeContraparte(contraparte);
+  const otra = cuentaDeContraparteEnMercury(contraparte);
   if (!otra) return null;
   const fecha = String(t.postedAt ?? t.createdAt ?? "");
   if (!fecha || Number.isNaN(Date.parse(fecha))) return null;

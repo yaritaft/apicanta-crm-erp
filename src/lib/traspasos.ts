@@ -84,6 +84,8 @@ export interface Punta {
   /* Seguro que es un pase entre cuentas propias (un depósito de Stripe en
      Mercury). Si no, queda propuesto hasta que alguien lo confirme. */
   seguro: boolean;
+  /* Sólo en una salida: el día en que la cuenta dice que la plata llega al banco (Stripe lo sabe: `arrival_date`). Hasta ese día está en camino. */
+  llegaEl?: string;
 }
 
 /* Con quién fue un movimiento del banco, si es una cuenta propia. Los ids
@@ -112,6 +114,17 @@ export function cuentaDeContraparte(texto: string | undefined | null): { cuentaI
   return null;
 }
 
+/* Lo que Mercury llama a nuestra cuenta de Bank of America: «Bank of America - Checking ••4…». Sólo vale mirando a Mercury: en el extracto del propio
+   Bank of America el nombre del banco está en cualquier línea (comisiones, tarjeta), así que `cuentaDeContraparte` no lo incluye. Se propone, no se
+   da por seguro: un cliente que paga desde su cuenta del mismo banco podría figurar igual (Aldana, 11/11: la llegada de los US$ 100 que salieron de BofA
+   quedó afuera y la app los dio por llegados el día que salieron). */
+const BANCO_PROPIO_EN_MERCURY = /\b(bank\s*of\s*america|bofa)\b/i;
+export function cuentaDeContraparteEnMercury(texto: string | undefined | null): { cuentaId: ID; seguro: boolean } | null {
+  const propia = cuentaDeContraparte(texto);
+  if (propia) return propia;
+  return BANCO_PROPIO_EN_MERCURY.test((texto ?? "").trim()) ? { cuentaId: "proc_bofa", seguro: false } : null;
+}
+
 /* Si una punta puede ser de ese pase: las cuentas no se contradicen (y
    coinciden en al menos una), el monto de ese lado es el mismo (un 2% de
    margen, o un dólar) y la llegada es entre un día antes y diez después
@@ -138,6 +151,8 @@ function distancia(t: Traspaso, p: Punta): number | null {
   return (dif / Math.max(1, p.monto)) * 100 + (p.lado === "llegada" ? 10 - dias : dias + 1.5) / 100;
 }
 
+/* Un retiro que la cuenta dice que llega al banco otro día: el pase queda en camino hasta ese día. */
+const llegaDespues = (p: Punta): boolean => Boolean(p.llegaEl) && p.llegaEl!.slice(0, 10) > p.fecha.slice(0, 10);
 const idDePunta = (ref: string) => `tra_${ref.replace(/[^a-zA-Z0-9]+/g, "_")}`.slice(0, 120);
 const otroDia = (a: string, b: string) => a.slice(0, 10) !== b.slice(0, 10);
 
@@ -191,6 +206,8 @@ export function conciliarPuntas(existentes: Traspaso[], puntas: Punta[], ahora: 
         }
       } else {
         c.llegadaRef = p.ref;
+        /* La cuenta lo vio llegar: ya no hace falta que alguien diga que sigue en camino. */
+        if (mejor.todaviaNoLlego) c.todaviaNoLlego = false;
         if (!mejor.destinoId || destinoSupuesto(mejor)) c.destinoId = p.cuentaId;
         if (!mejor.origenId && p.otraCuentaId) c.origenId = p.otraCuentaId;
         if (otroDia(mejor.fecha, p.fecha)) c.fechaLlega = p.fecha;
@@ -216,6 +233,7 @@ export function conciliarPuntas(existentes: Traspaso[], puntas: Punta[], ahora: 
       montoLlega: p.monto, monedaLlega: p.moneda,
       estado: p.seguro ? "confirmado" : "propuesto",
       ...(salida ? { salidaRef: p.ref } : { llegadaRef: p.ref }),
+      ...(salida && llegaDespues(p) ? { fechaLlega: p.llegaEl } : {}),
       contraparte: p.contraparte,
       origen: "api",
       creadoEn: ahora,
@@ -256,13 +274,13 @@ export const AYUDA_SITUACION: Record<Situacion, string> = {
   "diferencia": "Esta cuenta no cobra por mandar la plata al banco y salió un monto distinto del que llegó: revisalo (corregí el monto o cargá la diferencia como gasto).",
 };
 
-/** La sincronización lo vio salir y falta verlo llegar a una cuenta que
-    avisa (o a ninguna, si todavía no se sabe a cuál fue). */
-export const esperaLlegada = (t: Pick<Traspaso, "salidaRef" | "llegadaRef" | "destinoId">) =>
-  Boolean(t.salidaRef) && !t.llegadaRef && (!t.destinoId || AVISAN_LLEGADAS.has(t.destinoId));
+/** Falta verlo llegar: la sincronización lo vio salir y la cuenta de destino avisa (o todavía no se sabe a cuál fue), o alguien dijo que el banco
+    todavía no lo acreditó (`todaviaNoLlego`, para cualquier cuenta y también para lo cargado a mano). Una llegada confirmada a mano cuenta como llegada. */
+export const esperaLlegada = (t: Pick<Traspaso, "salidaRef" | "llegadaRef" | "destinoId"> & Partial<Pick<Traspaso, "todaviaNoLlego">>) =>
+  !t.llegadaRef && (Boolean(t.todaviaNoLlego) || (Boolean(t.salidaRef) && (!t.destinoId || AVISAN_LLEGADAS.has(t.destinoId))));
 
 type DatosDeSituacion = Pick<Traspaso, "estado" | "salidaRef" | "llegadaRef" | "fecha" | "destinoId">
-  & Partial<Pick<Traspaso, "origenId" | "origen" | "montoSale" | "montoLlega" | "monedaSale" | "monedaLlega" | "gastoId">>;
+  & Partial<Pick<Traspaso, "origenId" | "origen" | "montoSale" | "montoLlega" | "monedaSale" | "monedaLlega" | "gastoId" | "todaviaNoLlego">>;
 
 /** La llegada de una cuenta que cobra por el retiro (Hotmart → Mercury) a la
     que todavía nadie le cargó cuánto salió: ni a mano (`salidaRef`), ni con
@@ -485,10 +503,106 @@ export function enCamino(e: Pick<EstadoApp, "traspasos" | "ajustes">, alIso: str
   let total = 0;
   for (const t of e.traspasos ?? []) {
     if (t.estado !== "confirmado" || !(Date.parse(t.fecha) <= al)) continue;
-    if (!llego(t)) total += aMonedaBase(t.montoSale, t.monedaSale, base, tipoCambio);
+    if (!llego(t)) {
+      /* Lo que viaja es lo que ya no está en la cuenta de origen y todavía no está en la de destino. Si lo que costó el pase ya se cargó como gasto
+         (y el total ya lo restó), lo que falta llegar es lo que va a llegar; si no, es todo lo que salió. */
+      const viaja = t.gastoId && t.monedaSale === t.monedaLlega ? t.montoLlega : t.montoSale;
+      total += aMonedaBase(viaja, t.monedaSale, base, tipoCambio);
+    }
     else if (Date.parse(t.fechaLlega ?? t.fecha) > al) total += aMonedaBase(t.montoLlega, t.monedaLlega, base, tipoCambio);
   }
   return r2(total);
+}
+
+/* ---------- Lo que puede estar en camino al contar ----------
+   Aldana (11/11): «el lunes hice cierre de caja y siempre me queda con diferencias por la plata que salió de una cuenta pero aún no llega a la otra.
+   ¿Eso está bien así? Yo igual justifico todas las diferencias». No estaba bien: la app ya sabía descontar lo que viaja entre cuentas, pero sólo si
+   una cuenta conectada lo había visto salir y el destino era Mercury. Un pase cargado a mano, o hacia Bank of America, Relay o la Financiera, se daba
+   por llegado el mismo día que salió; el banco tarda 1 a 3 días hábiles, y al contar justo en el medio la cuenta de destino «faltaba» esa plata (y al
+   contar de nuevo «sobraba»). Quien cuenta es quien sabe si ya llegó: se le pregunta ahí, y la respuesta queda en el pase. */
+
+/** Hasta cuántos días antes del corte puede haber salido una plata que todavía no llegó (una transferencia tarda 1 a 3 días hábiles: con un fin de
+    semana en el medio, 5 corridos). Los pases más viejos se dan por llegados sin preguntar. */
+export const DIAS_PARA_PREGUNTAR = 5;
+
+/** Si, al momento `alIso`, la plata del pase ya había salido y todavía no estaba en la cuenta de destino. */
+export function estabaEnCamino(t: Traspaso, alIso: string): boolean {
+  const al = Date.parse(alIso);
+  if (t.estado !== "confirmado" || !(Date.parse(t.fecha) <= al)) return false;
+  return !llego(t) || Date.parse(t.fechaLlega ?? t.fecha) > al;
+}
+
+/** Los pases sobre los que vale preguntar al contar (corte = el momento del arqueo; previo = el del arqueo anterior): lo que salió hace poco y ningún
+    banco vio llegar, lo que ya figura en camino y lo que alguien dijo que sigue sin llegar (aunque sea de antes). Un depósito que un banco vio llegar no
+    se pregunta: el día que llegó manda. Con `dias` = Infinity, todo lo que salió desde el arqueo anterior (para buscar cuál explica lo que no da). */
+export function pasesParaPreguntar(e: Pick<EstadoApp, "traspasos">, previoIso: string | null, corteIso: string, dias = DIAS_PARA_PREGUNTAR): Traspaso[] {
+  const corte = Date.parse(corteIso);
+  const previo = previoIso ? Date.parse(previoIso) : -Infinity;
+  return (e.traspasos ?? []).filter((t) => {
+    if (t.estado !== "confirmado" || !(Date.parse(t.fecha) <= corte)) return false;
+    if (t.llegadaRef && t.llegadaRef !== LLEGADA_A_MANO) return false;
+    if (t.todaviaNoLlego) return true;
+    const salio = Date.parse(t.fecha);
+    return salio > previo && (esperaLlegada(t) || salio > corte - dias * DIA);
+  }).sort((a, b) => Date.parse(b.fecha) - Date.parse(a.fecha));
+}
+
+/** Lo que cambia en un pase cuando alguien dice, al contar, que al corte la plata seguía en camino o ya había llegado. Sin cambio de día: si la
+    plata salió antes del arqueo anterior y ahora llegó, el día que llegó es a más tardar el de este arqueo (así cae en la ventana de este y no en la
+    del anterior, que la contó en camino). */
+export function cambioDeLlegada(t: Traspaso, enCamino: boolean, previoIso: string | null, corteIso: string): Partial<Traspaso> {
+  if (enCamino) return { todaviaNoLlego: true, fechaLlega: undefined, ...(t.llegadaRef === LLEGADA_A_MANO ? { llegadaRef: undefined } : {}) };
+  const salioAntes = previoIso !== null && Date.parse(t.fecha) <= Date.parse(previoIso);
+  const llegoAntes = Boolean(t.fechaLlega) && Date.parse(t.fechaLlega!) <= Date.parse(corteIso);
+  return {
+    todaviaNoLlego: false,
+    llegadaRef: t.llegadaRef ?? LLEGADA_A_MANO,
+    fechaLlega: llegoAntes ? t.fechaLlega : salioAntes ? corteIso : undefined,
+  };
+}
+
+/** Los pases con lo que se dijo al contar (`respuestas`: id → sigue en camino): lo que hay que guardar y lo que se usa para calcular lo esperado. */
+export function conLlegadasDichas(
+  traspasos: readonly Traspaso[] | undefined, respuestas: ReadonlyMap<ID, boolean>, previoIso: string | null, corteIso: string,
+): Traspaso[] {
+  return (traspasos ?? []).map((t) => (respuestas.has(t.id) ? { ...t, ...cambioDeLlegada(t, respuestas.get(t.id)!, previoIso, corteIso) } : t));
+}
+
+export interface PistaDeLlegada {
+  traspasoId: ID;
+  cuentaId: ID;
+  /* Lo que hay menos lo que se esperaba, en la moneda de la cuenta. */
+  diferencia: number;
+  /* «camino»: la cuenta marca menos justo lo que se cree llegado; «llego»: marca más justo lo que figura en camino. */
+  sugiere: "camino" | "llego";
+}
+
+/** Qué pases explican lo que no da en una cuenta: si falta (o sobra) justo el monto de uno o de unos pocos (hasta tres) pases que llegan a esa cuenta,
+    probablemente es plata que todavía no llegó (o que ya llegó). `preguntas` trae cómo está cada uno ahora. No cambia nada: sólo avisa. */
+export function pistasDeLlegada(
+  filas: readonly { cuentaId: ID; moneda: Moneda; diferencia: number }[],
+  preguntas: readonly { t: Traspaso; enCamino: boolean }[],
+  tolerancia = 1,
+): PistaDeLlegada[] {
+  const out: PistaDeLlegada[] = [];
+  for (const f of filas) {
+    if (!(Math.abs(f.diferencia) >= tolerancia)) continue;
+    /* Falta plata (diferencia negativa): se espera algo que no llegó. Sobra: figura en camino algo que ya llegó. */
+    const sugiere: PistaDeLlegada["sugiere"] = f.diferencia < 0 ? "camino" : "llego";
+    const objetivo = Math.abs(f.diferencia);
+    const posibles = preguntas.filter((p) => p.t.destinoId === f.cuentaId && p.t.monedaLlega === f.moneda && p.enCamino === (sugiere === "llego"));
+    const margen = Math.max(tolerancia, objetivo * 0.005);
+    let hallado: typeof posibles | null = null;
+    const probar = (desde: number, elegidos: typeof posibles, suma: number): void => {
+      if (hallado) return;
+      if (elegidos.length > 0 && Math.abs(suma - objetivo) <= margen) { hallado = elegidos; return; }
+      if (elegidos.length === 3) return;
+      for (let i = desde; i < posibles.length; i++) probar(i + 1, [...elegidos, posibles[i]], suma + posibles[i].t.montoLlega);
+    };
+    probar(0, [], 0);
+    for (const p of (hallado ?? []) as typeof posibles) out.push({ traspasoId: p.t.id, cuentaId: f.cuentaId, diferencia: f.diferencia, sugiere });
+  }
+  return out;
 }
 
 export interface SaldoEsperado {

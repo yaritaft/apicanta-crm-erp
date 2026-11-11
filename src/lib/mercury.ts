@@ -1,5 +1,5 @@
 import type { Movimiento } from "./types";
-import { cuentaDeContraparte } from "./traspasos";
+import { cuentaDeContraparteEnMercury } from "./traspasos";
 
 /* ==================================================================
    Reglas de Mercury: qué es cada movimiento del banco.
@@ -69,7 +69,7 @@ export function clasificarMercury(t: Record<string, unknown>, extras: readonly s
   if (extra) return { tipo: "interno", motivo: `Regla de la lista: «${extra}»` };
 
   const contraparte = String(t.counterpartyName ?? t.counterpartyNickname ?? "").trim();
-  const pase = cuentaDeContraparte(contraparte) !== null;
+  const pase = cuentaDeContraparteEnMercury(contraparte) !== null;
   if (estado === "pending") return { tipo: "en-proceso", motivo: "Pending: todavía no se asentó (24 a 48 h)" };
   if (pase) return { tipo: "pase", motivo: `La otra parte es una cuenta propia («${contraparte}»)` };
   return Number(t.amount ?? 0) >= 0 ? { tipo: "cobro", motivo: "Plata que entra de un tercero" } : { tipo: "gasto", motivo: "Plata que sale" };

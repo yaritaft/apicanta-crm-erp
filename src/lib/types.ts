@@ -1166,6 +1166,9 @@ export interface Traspaso {
   monedaLlega: Moneda;
   /* Cuándo llegó, si fue otro día. */
   fechaLlega?: string;
+  /* Alguien dijo que todavía no llegó a la cuenta de destino (el banco no lo acreditó): mientras tanto no se espera ahí, está en camino. Se apaga
+     cuando una cuenta lo ve llegar o alguien lo confirma (Aldana, 11/11: el arqueo marcaba la falta de una plata que ya había salido). */
+  todaviaNoLlego?: boolean;
   estado: EstadoTraspaso;
   /* Las dos puntas, como las vio la sincronización: la salida
      ("stripe:po_1Q…") y la llegada ("mercury:6f1c…"). Con las dos, el pase

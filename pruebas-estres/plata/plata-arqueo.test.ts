@@ -6,7 +6,7 @@ import { cajaEsperada, rangoEntre } from "@/lib/caja";
 import { arqueoVivo, esperadoDelArqueo } from "@/lib/arqueo";
 import { costosDelMes } from "@/lib/finanzas";
 import { calcularLiquidacion, gastosDeLiquidacion } from "@/lib/honorarios";
-import { saldosEsperados } from "@/lib/traspasos";
+import { cambioDeLlegada, saldosEsperados } from "@/lib/traspasos";
 import { aMonedaBase } from "@/lib/gastos";
 import type { Arqueo, EstadoApp, Gasto, SaldoCuenta, Traspaso } from "@/lib/types";
 
@@ -27,6 +27,8 @@ import type { Arqueo, EstadoApp, Gasto, SaldoCuenta, Traspaso } from "@/lib/type
    A4  el arqueo guardado se mueve solo: cargar después un gasto de esas fechas cambia su diferencia en exactamente ese gasto.
    A5  el orden de las listas no cambia nada.
    A6  una cadena de arqueos contados «justo» da cero en cada eslabón.
+   A7  la plata en camino (11/11): decir al contar que un pase sigue en camino y, en un arqueo posterior, que ya llegó, deja cada eslabón en cero
+       —al contarlo y después, en vivo con todo guardado— y la suma de las cuentas siempre da con el total.
    ================================================================== */
 
 test("A1 · contando en cada cuenta lo que tendría que haber, el total no marca nada sin nombre", () => {
@@ -179,4 +181,49 @@ test("A6 · una cadena de arqueos contados justo da cero en cada eslabón (en d�
     cadenas++;
   }
   assert.ok(cadenas >= 50, `cadenas probadas: ${cadenas}`);
+});
+
+test("A7 · plata en camino: decir que sigue en camino y después que llegó mantiene cada eslabón en cero, al contar y en vivo", () => {
+  let cadenas = 0, viajes = 0;
+  for (let semilla = 1; semilla <= 150; semilla++) {
+    const { e: e1, r, meses, tc } = mundoCompleto(semilla, false);
+    const e: EstadoApp = {
+      ...e1,
+      gastos: e1.gastos.map((g) => (g.extra?.traspasoId || g.extra?.liquidacionId || g.extra?.cuentaId ? g : { ...g, extra: { ...(g.extra ?? {}), cuentaId: r.elige(CUENTAS_USD) } })),
+      traspasos: e1.traspasos.map((t) => { const { fechaLlega: _f, ...resto } = t; return resto as Traspaso; }),
+    };
+    const ts = [0, 1, 2, 3].map(() => { const [a, m] = r.elige(meses).split("-").map(Number); return art(a, m, r.entre(1, 28), r.entre(0, 23)); }).sort();
+    if (new Set(ts).size < 4) continue;
+    /* Cuáles pases viajan y en qué arqueo se ve que ya llegaron (siempre después de que salieron). */
+    const llegaEn = new Map<string, number>();
+    for (const t of e.traspasos) {
+      if (!r.si(0.6)) continue;
+      const posibles = [1, 2, 3].filter((j) => Date.parse(ts[j]) > Date.parse(t.fecha));
+      if (posibles.length) llegaEn.set(t.id, r.elige(posibles));
+    }
+    let traspasos = e.traspasos;
+    let previo = arqueoDePartida(e, r, ts[0], tc);
+    const arqueos: Arqueo[] = [previo];
+    for (let i = 1; i < ts.length; i++) {
+      /* Lo que se dice al contar: lo que salió y sigue en camino, y lo que ya llegó. */
+      traspasos = traspasos.map((t) => {
+        const j = llegaEn.get(t.id);
+        if (j === undefined || Date.parse(t.fecha) > Date.parse(ts[i])) return t;
+        if (j > i) return t.todaviaNoLlego ? t : { ...t, ...cambioDeLlegada(t, true, ts[i - 1], ts[i]) };
+        if (j === i) { viajes++; return { ...t, ...cambioDeLlegada(t, false, ts[i - 1], ts[i]) }; }
+        return t;
+      });
+      const hasta = { ...e, traspasos, arqueos };
+      const { a, x } = contarJusto(hasta, r, previo, ts[i], tc, `a${i}`);
+      assert.ok(Math.abs(x.diferencia!) <= 0.05, donde(semilla, "eslabón", i, "dio", x.diferencia!, JSON.stringify(x.conciliacion)));
+      assert.ok(Math.abs(x.conciliacion!.sinExplicar) <= 0.05 + 0.01 * e.procesadores.length, donde(semilla, "sin explicar", i, x.conciliacion!.sinExplicar));
+      arqueos.push(a);
+      previo = a;
+    }
+    /* Con todo guardado (cada pase con su día de llegada), cada arqueo sigue dando cero en vivo. */
+    for (const a of arqueos.slice(1)) assert.ok(Math.abs(arqueoVivo({ ...e, traspasos, arqueos }, a).diferencia!) <= 0.05, donde(semilla, "vivo", a.id));
+    cadenas++;
+  }
+  assert.ok(cadenas >= 50, `cadenas probadas: ${cadenas}`);
+  assert.ok(viajes >= 50, `pases que llegaron después de contarse en camino: ${viajes}`);
 });

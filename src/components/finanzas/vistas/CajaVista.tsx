@@ -18,7 +18,7 @@ import {
 } from "@/lib/caja";
 import "./arqueo-detalle.css";
 import { arqueoVivo, cuentasDelArqueo, esperadoDelArqueo } from "@/lib/arqueo";
-import { saldosEsperados } from "@/lib/traspasos";
+import { cambioDeLlegada, conLlegadasDichas, estabaEnCamino, pasesParaPreguntar, pistasDeLlegada, rutaDe, saldosEsperados } from "@/lib/traspasos";
 import { controlarSaldos, quePasa, saldoParaElArqueo, textoDeLoPendiente, TOLERANCIA_DE_SALDO, type ControlDeSaldos } from "@/lib/saldos-reales";
 import { traerSaldosReales } from "@/lib/saldos-cliente";
 import { useSaldosReales, type LecturaDeSaldos } from "@/lib/useSaldosReales";
@@ -28,6 +28,7 @@ import { finDelDiaDeNegocio } from "@/lib/dia-negocio";
 import type { Arqueo, EstadoApp, Gasto, Moneda, Procesador, SaldoCuenta, Traspaso } from "@/lib/types";
 import { CopiarLink } from "@/components/ui/Filtros";
 import { FormTraspaso, PasesEntreCuentas } from "@/components/finanzas/PasesEntreCuentas";
+import { PlataEnCamino } from "@/components/finanzas/PlataEnCamino";
 import { MovimientosDeLaCuenta } from "@/components/finanzas/MovimientosDeLaCuenta";
 import { useTablaURL } from "@/lib/useParamsURL";
 
@@ -421,8 +422,23 @@ function NuevoArqueo({ e, onCerrar, onListo, traerAlAbrir = false }: { e: Estado
   /* Si es hoy, ahora; si es otro día, el final de ese día (a las 20 dejaba afuera los cobros de la noche: Aldana, 01/11). */
   const fecha = dia === diaAr(hoyIso()) ? hoyIso() : finDelDiaDeNegocio(dia);
   const previo = ultimoArqueo(e, fecha);
+  /* Lo que se dijo en este arqueo sobre la plata que viaja entre cuentas: movimiento → si al contar seguía en camino. Sólo lo que cambia lo que la app
+     creía; se guarda al guardar el arqueo (lib/traspasos.ts: cambioDeLlegada). */
+  const [llegadas, setLlegadas] = useState<Record<string, boolean>>({});
+  const previoIso = previo?.fecha ?? null;
+  /* Todo lo que salió desde el arqueo anterior sin que un banco lo viera llegar (para buscar cuál explica lo que no da) y, de eso, lo reciente. */
+  const pasesEnPregunta = pasesParaPreguntar(e, previoIso, fecha, Infinity);
+  const pasesRecientes = new Set(pasesParaPreguntar(e, previoIso, fecha).map((t) => t.id));
+  const eConLlegadas: EstadoApp = Object.keys(llegadas).length
+    ? { ...e, traspasos: conLlegadasDichas(e.traspasos, new Map(Object.entries(llegadas)), previoIso, fecha) } : e;
+  function decirLlegada(id: string, enCamino: boolean) {
+    const t = pasesEnPregunta.find((x) => x.id === id);
+    if (!t) return;
+    const comoEstaba = estabaEnCamino(t, fecha);
+    setLlegadas((l) => { const { [id]: _x, ...resto } = l; return enCamino === comoEstaba ? resto : { ...l, [id]: enCamino }; });
+  }
   /* Lo que tendría que haber en cada cuenta, en su moneda. */
-  const porCuenta = useMemo(() => saldosEsperados(e, previo, fecha), [e, previo, fecha]);
+  const porCuenta = saldosEsperados(eConLlegadas, previo, fecha);
   const cuentas = cuentasDelArqueo(e, porCuenta, previo);
   const tipoCambio = leerMonto(tc);
   /* El tipo de cambio de cada moneda arranca en el del último arqueo (dLocal usa el suyo, no el de Ajustes); los pesos argentinos, en el del arqueo. */
@@ -468,13 +484,27 @@ function NuevoArqueo({ e, onCerrar, onListo, traerAlAbrir = false }: { e: Estado
      cuentas que se cuentan por primera vez (lo que ya tenían se deduce de lo contado menos lo que se movió), los cobros sin venta y el efecto del
      cambio en las cuentas con varias monedas. */
   const cambios = new Map(cuentas.filter((p) => monedasDelSaldo(p).length).map((p) => [p.id, lineasDe(p).map((l) => ({ moneda: l.codigo, tipoCambio: l.tipoCambio }))]));
-  const calculo = esperadoDelArqueo(e, { fecha, saldos, total, tipoCambio: tipoCambio > 0 ? tipoCambio : undefined }, { previo: previo ?? null, cambios, dinero: (m, mo) => money(m, mo, 2) });
+  const calculo = esperadoDelArqueo(eConLlegadas, { fecha, saldos, total, tipoCambio: tipoCambio > 0 ? tipoCambio : undefined }, { previo: previo ?? null, cambios, dinero: (m, mo) => money(m, mo, 2) });
   const { mov, primer, sinVenta, esperado } = calculo;
   const deLaCuenta = (p: Procesador) => calculo.cuentas.find((c) => c.procesador.id === p.id);
   const sinVentaDe = (p: Procesador) => deLaCuenta(p)?.sinVenta;
   const cambioDe = (p: Procesador) => deLaCuenta(p)?.cambio ?? { total: 0, lineas: [] };
   const ajusteDe = (p: Procesador) => deLaCuenta(p)?.ajuste ?? 0;
   const deEstaCuenta = (id: string) => primer.cuentas.find((c) => c.procesadorId === id);
+  /* Lo contado menos lo que tendría que haber en esa cuenta, en su moneda (null: falta lo contado o de dónde partir). */
+  const difDeLaCuenta = (p: Procesador): number | null => {
+    const esperadoCuenta = porCuenta.get(p.id)?.esperado;
+    const contado = textos[p.id]?.trim() ? leerMonto(textos[p.id]) : NaN;
+    return esperadoCuenta === undefined || !Number.isFinite(contado) ? null : Math.round((contado - Math.round((esperadoCuenta + ajusteDe(p)) * 100) / 100) * 100) / 100;
+  };
+  /* Cómo está cada pase de los últimos días, y cuáles explican justo lo que no da en una cuenta. */
+  const todasLasPreguntas = pasesEnPregunta.map((t) => ({ t, enCamino: llegadas[t.id] ?? estabaEnCamino(t, fecha) }));
+  const pistasDeCamino = pistasDeLlegada(
+    cuentas.flatMap((p) => { const d = difDeLaCuenta(p); return d === null ? [] : [{ cuentaId: p.id, moneda: p.moneda ?? "USD", diferencia: d }]; }),
+    todasLasPreguntas,
+  );
+  /* Se muestran los de los últimos días, los que ya se tocaron y los que explican justo lo que no da (aunque sean más viejos). */
+  const preguntasDeLlegada = todasLasPreguntas.filter((x) => pasesRecientes.has(x.t.id) || llegadas[x.t.id] !== undefined || pistasDeCamino.some((p) => p.traspasoId === x.t.id));
   const hayPesos = cuentas.some((p) => p.moneda === "ARS");
   const faltaTc = hayPesos && saldos.some((s) => s.moneda === "ARS") && !(tipoCambio > 0);
 
@@ -524,11 +554,24 @@ function NuevoArqueo({ e, onCerrar, onListo, traerAlAbrir = false }: { e: Estado
   function guardar() {
     /* Las cuentas que se cuentan por primera vez llevan su constancia (se ve en el arqueo guardado). */
     const conNota = saldos.map((s) => { const c = deEstaCuenta(s.procesadorId); return c ? { ...s, nota: [s.nota, c.nota].filter(Boolean).join(" ") } : s; });
+    /* Lo que se dijo de la plata en camino queda en cada movimiento, y en el arqueo queda la constancia: no hace falta justificarlo a mano. */
+    const cambiosDeLlegada = Object.entries(llegadas).flatMap(([id, camino]) => {
+      const t = (e.traspasos ?? []).find((x) => x.id === id);
+      return t ? [{ id, cambios: cambioDeLlegada(t, camino, previoIso, fecha) }] : [];
+    });
+    if (cambiosDeLlegada.length) {
+      const aCamino = Object.values(llegadas).filter(Boolean).length;
+      acciones.guardarLlegadas(cambiosDeLlegada, `Al contar el arqueo del ${fechaLarga(fecha)} se marcó ${aCamino ? `que ${aCamino === 1 ? "1 movimiento entre cuentas sigue" : `${aCamino} movimientos entre cuentas siguen`} en camino` : ""}${aCamino && aCamino < cambiosDeLlegada.length ? " y " : ""}${cambiosDeLlegada.length - aCamino ? `que ${cambiosDeLlegada.length - aCamino === 1 ? "1 ya llegó" : `${cambiosDeLlegada.length - aCamino} ya llegaron`}` : ""}.`);
+    }
+    const viajando = (eConLlegadas.traspasos ?? []).filter((t) => estabaEnCamino(t, fecha));
+    const constancia = viajando.length
+      ? `En camino al contar (la cuenta de destino no lo esperaba): ${viajando.slice(0, 6).map((t) => `${rutaDe(e, t)} ${money(t.montoLlega, t.monedaLlega, 2)}, salió el ${fechaLarga(t.fecha)}`).join("; ")}${viajando.length > 6 ? ` y ${viajando.length - 6} más` : ""}.`
+      : "";
     const a: Arqueo = {
       id: nuevoId("arq"), fecha, saldos: conNota, total,
       tipoCambio: tipoCambio > 0 ? tipoCambio : undefined,
       esperado, diferencia: esperado === null ? null : Math.round((total - esperado) * 100) / 100,
-      notas: notas.trim() || undefined, por: e.ajustes.responsable || undefined, creadoEn: hoyIso(),
+      notas: [notas.trim(), constancia].filter(Boolean).join("\n\n") || undefined, por: e.ajustes.responsable || undefined, creadoEn: hoyIso(),
     };
     acciones.guardarArqueo(a);
     onListo(a);
@@ -544,7 +587,7 @@ function NuevoArqueo({ e, onCerrar, onListo, traerAlAbrir = false }: { e: Estado
       const cambio = cambioDe(p);
       const ajuste = ajusteDe(p);
       const esperadoCuenta = s?.esperado !== undefined ? Math.round((s.esperado + ajuste) * 100) / 100 : undefined;
-      const dif = esperadoCuenta !== undefined && Number.isFinite(contado) ? Math.round((contado - esperadoCuenta) * 100) / 100 : null;
+      const dif = difDeLaCuenta(p);
       /* Lo contado contra lo que tendría que haber: el casillero se pinta
          (verde si da, ámbar si no) y adentro va el tilde o la diferencia. */
       const da = dif !== null && Math.abs(dif) < 1;
@@ -714,6 +757,7 @@ function NuevoArqueo({ e, onCerrar, onListo, traerAlAbrir = false }: { e: Estado
           </>
         )}
       </div>
+      <PlataEnCamino e={e} preguntas={preguntasDeLlegada} pistas={pistasDeCamino} onCambiar={decirLlegada} />
       {previo && (
         <p className="t-sm t-subtle arqueo-nota">
           «Tendría que haber» es lo del último arqueo más lo que cobró la cuenta (neto de la comisión de la pasarela: una planilla que cuenta el bruto da más), más o menos los movimientos entre cuentas
