@@ -27,6 +27,8 @@ import "./pagar-equipo.css";
 const hoyIso = () => new Date().toISOString();
 const diaAr = (iso: string) => new Date(new Date(iso).getTime() - 3 * 3600000).toISOString().slice(0, 10);
 const r2 = (n: number) => Math.round(n * 100) / 100;
+/* Lo que falta registrar: menos de 50 centavos es redondeo (los pagos del banco y la liquidación difieren en centavos), no un pago. */
+const restoQueCuenta = (n: number): number => (n < 0.5 ? 0 : r2(n));
 
 interface Fila {
   persona: PersonaLiquidada;
@@ -63,7 +65,7 @@ export function PagarEquipo({ e, liq, personas, onCerrar, onListo }: {
       /* Si ya figuraba pagado, el día en que se marcó; si no, hoy. */
       dia: pago ? diaAr(pago.pagadoEn) : hoy,
       cuentaId: pago?.cuentaId ?? cuentaSugerida(e, persona.miembroId, candidatos.filter((c) => elegidos.has(c.gasto.id)).map((c) => c.gasto)),
-      monto: escribirMonto(Math.max(0, r2(restante - suma))),
+      monto: escribirMonto(restoQueCuenta(restante - suma)),
     };
   }));
 
@@ -130,7 +132,7 @@ export function PagarEquipo({ e, liq, personas, onCerrar, onListo }: {
                           const s = new Set(f.elegidos);
                           if (ev.target.checked) s.add(c.gasto.id); else s.delete(c.gasto.id);
                           const suma = candidatos.filter((x) => s.has(x.gasto.id)).reduce((a, x) => a + x.gasto.monto, 0);
-                          cambiar(i, { elegidos: s, monto: escribirMonto(Math.max(0, r2(f.persona.total - f.yaRegistrado - suma))) });
+                          cambiar(i, { elegidos: s, monto: escribirMonto(restoQueCuenta(f.persona.total - f.yaRegistrado - suma)) });
                         }}
                       />
                       <span className="pagar__gasto-texto">
