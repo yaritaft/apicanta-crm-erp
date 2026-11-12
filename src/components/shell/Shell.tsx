@@ -391,7 +391,8 @@ export function Shell({ children }: { children: React.ReactNode }) {
           ) : (
             <>
               {/* Mi panel es lo de cada uno: el setter (que mira el CRM) suma ahí sus agendas, y eso sí se guarda. */}
-              {nivelRuta === 1 && areaDeRuta(ruta) !== "panel" && ruta !== "/mi-panel" && (
+              {/* Ventas y cash tampoco: no tiene nada para editar, así que «pedir permiso para editar» no tendría a qué. */}
+              {nivelRuta === 1 && areaDeRuta(ruta) !== "panel" && areaDeRuta(ruta) !== "cash" && ruta !== "/mi-panel" && (
                 <div className="aviso-tipo" role="note">
                   <Eye size={15} aria-hidden />
                   <span>Con tu tipo de cuenta esta pantalla es para mirar: lo que cambies no se guarda.</span>
