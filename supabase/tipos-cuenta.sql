@@ -183,16 +183,21 @@ $$;
 -- «Sólo lo suyo» PARA ESTA TABLA. Es lo que miran las políticas de leads,
 -- contactos, sesiones, comentarios y chat_lecturas (y las ramas de lead,
 -- contacto y sesión de actividad): un closer con «ve los leads de todos» las
--- ve enteras. Todo lo demás (ventas, cuotas, pagos, devoluciones, resells...)
--- sigue con solo_lo_suyo(). Si mañana hace falta abrir otra tabla, se agrega
--- acá a la lista y en ningún otro lado.
+-- ve enteras. Y las tablas que cuelgan de una llamada (grabaciones de Fathom y
+-- capturas de la pre-call) se abren con ella: ver la llamada sin su grabación
+-- no sirve para retomar un lead (Dante, 13/11). Todo lo demás (ventas, cuotas,
+-- pagos, devoluciones, resells...) sigue con solo_lo_suyo().
+-- Para abrir otra tabla hay dos cosas: agregarla a esta lista Y escribir su
+-- política con solo_lo_suyo_en('tabla'). Lo segundo lo cuida
+-- pruebas/politicas-de-closer-decididas.test.ts: toda política con
+-- solo_lo_suyo() a secas tiene que estar anotada ahí como cerrada A PROPÓSITO.
 create or replace function public.solo_lo_suyo_en(tabla text)
 returns boolean
 language sql stable security definer
 set search_path = public
 as $$
   select public.solo_lo_suyo()
-     and not (tabla in ('leads', 'contactos', 'sesiones', 'comentarios', 'chat_lecturas') and public.ve_todos_los_leads());
+     and not (tabla in ('leads', 'contactos', 'sesiones', 'comentarios', 'chat_lecturas', 'grabaciones', 'precall_capturas') and public.ve_todos_los_leads());
 $$;
 
 create or replace function public.mi_miembro_id()

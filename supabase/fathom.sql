@@ -8,7 +8,8 @@
 --
 --   1. `grabaciones`: una fila por reunión de Fathom. La lee quien ve las
 --      llamadas, y el closer sólo las de sus llamadas (mis_sesiones(), de
---      supabase/tipos-cuenta.sql). La crea sólo el servidor, con la clave
+--      supabase/tipos-cuenta.sql), salvo el que «ve los leads de todos»: ése
+--      ve las de todas las llamadas (solo_lo_suyo_en('grabaciones')). La crea sólo el servidor, con la clave
 --      de servicio; atarla a otra llamada, quien edita las llamadas.
 --   2. `fathom_conexion`: el webhook creado desde la app y su secreto. Sin
 --      políticas: la lee y la escribe sólo el servidor.
@@ -19,7 +20,8 @@
 -- Idempotente. Necesita supabase/tipos-cuenta.sql corrido antes.
 
 do $$ begin
-  if to_regclass('public.sesiones') is null or to_regprocedure('public.mis_sesiones()') is null then
+  if to_regclass('public.sesiones') is null or to_regprocedure('public.mis_sesiones()') is null
+     or to_regprocedure('public.solo_lo_suyo_en(text)') is null then
     raise exception 'Falta la tabla sesiones o supabase/tipos-cuenta.sql: esta no es la base del ERP o está sin la fase 3.';
   end if;
 end $$;
@@ -60,15 +62,15 @@ alter table public.grabaciones enable row level security;
 drop policy if exists ver_grabaciones on public.grabaciones;
 create policy ver_grabaciones on public.grabaciones for select to authenticated using (
   (select public.ve('sesiones'))
-  and ((select not public.solo_lo_suyo()) or "sesionId" = any((select public.mis_sesiones())::text[])));
+  and ((select not public.solo_lo_suyo_en('grabaciones')) or "sesionId" = any((select public.mis_sesiones())::text[])));
 
 -- Atar a mano una grabación a su llamada (o desatarla).
 drop policy if exists editar_grabaciones on public.grabaciones;
 create policy editar_grabaciones on public.grabaciones for update to authenticated
   using ((select public.edita('sesiones'))
-    and ((select not public.solo_lo_suyo()) or "sesionId" = any((select public.mis_sesiones())::text[])))
+    and ((select not public.solo_lo_suyo_en('grabaciones')) or "sesionId" = any((select public.mis_sesiones())::text[])))
   with check ((select public.edita('sesiones'))
-    and ((select not public.solo_lo_suyo()) or "sesionId" = any((select public.mis_sesiones())::text[])));
+    and ((select not public.solo_lo_suyo_en('grabaciones')) or "sesionId" = any((select public.mis_sesiones())::text[])));
 
 create table if not exists public.fathom_conexion (
   id              integer primary key default 1 check (id = 1),

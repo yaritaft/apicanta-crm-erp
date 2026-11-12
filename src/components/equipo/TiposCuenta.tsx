@@ -107,7 +107,7 @@ export function TiposCuenta({ accesos }: { accesos: Accesos }) {
                 <th key={a.id} scope="col" title={a.pantallas}>{a.nombre}</th>
               ))}
               <th scope="col" title="Llamadas, ventas y personas: sólo las suyas">Sólo lo suyo</th>
-              <th scope="col" title="Con «sólo lo suyo»: ve además los leads, las personas, las llamadas y el chat de todos los closers. Sus ventas y cobros siguen siendo sólo los suyos.">Leads de todos</th>
+              <th scope="col" title="Con «sólo lo suyo»: ve además los leads, las personas, las llamadas (con su grabación de Fathom y su transcripción) y el chat de todos los closers, también de los que ya no están. Sus ventas y cobros siguen siendo sólo los suyos.">Leads de todos</th>
               <th scope="col" className="tipos-tabla__num">Personas</th>
               <th scope="col" aria-label="Acciones" />
             </tr>
@@ -157,8 +157,8 @@ export function TiposCuenta({ accesos }: { accesos: Accesos }) {
                       <Switch
                         checked={Boolean(t.veTodosLosLeads)} etiqueta={`${t.nombre}: ve los leads de todos`}
                         onChange={(v) => {
-                          acciones.guardarTipoCuenta(tipoLimpio({ ...t, veTodosLosLeads: v }), `${t.nombre}: ${v ? "ahora ve los leads, llamadas y chat de todos" : "ya no ve los leads de todos"}.`);
-                          toast(v ? `${t.nombre}: ve los leads, llamadas y chat de todos los closers. Sus ventas y cobros siguen siendo sólo los suyos. Se ve la próxima vez que entren.` : `${t.nombre}: vuelve a ver sólo sus leads y llamadas.`);
+                          acciones.guardarTipoCuenta(tipoLimpio({ ...t, veTodosLosLeads: v }), `${t.nombre}: ${v ? "ahora ve los leads, llamadas (con su grabación) y chat de todos" : "ya no ve los leads de todos"}.`);
+                          toast(v ? `${t.nombre}: ve los leads, llamadas (con su grabación) y chat de todos los closers. Sus ventas y cobros siguen siendo sólo los suyos. Se ve la próxima vez que entren.` : `${t.nombre}: vuelve a ver sólo sus leads y llamadas.`);
                         }}
                       />
                     )}

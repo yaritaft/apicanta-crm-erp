@@ -38,7 +38,7 @@ as $$
   select coalesce(
     public.ve('sesiones')
     and (
-      not public.solo_lo_suyo()
+      not public.solo_lo_suyo_en('precall_capturas')
       or p_sesion = any((select public.mis_sesiones())::text[])
       or exists (select 1 from public.sesiones s
                   where s.id = p_sesion and s."setterId" is not null and s."setterId" = public.mi_miembro_id())

@@ -99,7 +99,7 @@ language sql stable security definer
 set search_path = public
 as $$
   select public.solo_lo_suyo()
-     and not (tabla in ('leads', 'contactos', 'sesiones', 'comentarios', 'chat_lecturas') and public.ve_todos_los_leads());
+     and not (tabla in ('leads', 'contactos', 'sesiones', 'comentarios', 'chat_lecturas', 'grabaciones', 'precall_capturas') and public.ve_todos_los_leads());
 $$;
 
 grant execute on function public.mi_acceso() to authenticated;

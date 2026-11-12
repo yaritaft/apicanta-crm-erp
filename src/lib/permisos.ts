@@ -468,7 +468,7 @@ export function resumenDeTipo(t: Pick<TipoCuenta, "id" | "areas" | "soloLoSuyo" 
     : xs.some((x) => x.includes(" y ")) ? xs.join(", ") : `${xs.slice(0, -1).join(", ")} y ${xs[xs.length - 1]}`);
   const partes = [edita.length ? `Edita ${lista(edita)}` : "", ve.length ? `${edita.length ? "ve" : "Ve"} ${lista(ve)}` : ""].filter(Boolean);
   if (partes.length === 0) return "No ve nada todavía.";
-  return `${partes.join("; ")}.${t.soloLoSuyo ? (t.veTodosLosLeads ? " Sólo sus ventas y cobros; los leads, llamadas y chat de todos." : " Sólo lo suyo.") : ""}`;
+  return `${partes.join("; ")}.${t.soloLoSuyo ? (t.veTodosLosLeads ? " Sólo sus ventas y cobros; los leads, llamadas (con su grabación) y chat de todos." : " Sólo lo suyo.") : ""}`;
 }
 
 /* Para el aviso cuando la base no deja guardar algo: «no puede cambiar las ventas». */
