@@ -8,6 +8,8 @@ import { InfoMetrica, type ComponenteMetrica } from "@/components/ui/InfoMetrica
 import { money, num, pct } from "@/lib/format";
 import { SECCIONES, valorEn, type Contexto, type Corte, type DefKpi, type FormatoKpi, type SeccionKpi } from "@/lib/kpis";
 import { componentesDe, explicacionDe } from "@/lib/kpis-formulas";
+import { useAcceso } from "@/lib/acceso";
+import { nivelDeRuta } from "@/lib/permisos";
 import type { Moneda } from "@/lib/types";
 
 /* ==================================================================
@@ -189,15 +191,23 @@ function conPeriodo(href: string, periodo: string | undefined, foto: boolean | u
   return `${ruta}?${q.toString()}`;
 }
 
+/* El link de una fila sólo existe si quien mira puede entrar a esa pantalla: sin esto, el Dashboard mandaba a Santiago a Finanzas con el
+   Cash Collected (12/11) y, para que no rebotara, le habían abierto Finanzas entera. Mientras no se sabe quién es, el link se deja. */
+function useAdondeLleva(href: string | undefined): string | undefined {
+  const { acceso } = useAcceso();
+  return href && (!acceso || nivelDeRuta(acceso, href) > 0) ? href : undefined;
+}
+
 function Etiqueta({ def, periodo }: { def: DefKpi; periodo?: string }) {
+  const href = useAdondeLleva(def.href);
   const texto = (
     <>
       <span className="truncate">{def.etiqueta}</span>
       {def.foto && <span className="kpis__hoy" title="Es una foto de hoy, no depende del período">hoy</span>}
     </>
   );
-  return def.href
-    ? <Link href={conPeriodo(def.href, periodo, def.foto)} className="planilla__enlace kpis__etiqueta" title={def.ayuda}>{texto}</Link>
+  return href
+    ? <Link href={conPeriodo(href, periodo, def.foto)} className="planilla__enlace kpis__etiqueta" title={def.ayuda}>{texto}</Link>
     : <span className="planilla__enlace kpis__etiqueta" title={def.ayuda}>{texto}</span>;
 }
 
@@ -206,10 +216,11 @@ function Etiqueta({ def, periodo }: { def: DefKpi; periodo?: string }) {
    resultado es el valor de la columna Total: lo que se ve acá es lo de la celda. */
 function InfoFila({ def, explicar, moneda, href }: { def: DefKpi; explicar: ExplicarKpis; moneda: Moneda; href?: string }) {
   const ex = explicacionDe(def);
+  const adonde = useAdondeLleva(href);
   return (
     <InfoMetrica
       titulo={def.etiqueta} ayuda={def.ayuda} formula={ex?.formula} ejemplo={ex?.ejemplo}
-      periodo={explicar.periodo} href={href}
+      periodo={explicar.periodo} href={adonde}
       componentes={() => armarComponentes(def, explicar, moneda)}
     />
   );

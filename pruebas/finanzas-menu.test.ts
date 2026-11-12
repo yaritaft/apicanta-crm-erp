@@ -10,10 +10,11 @@ const acceso = (t: { id: string; nombre: string; areas: MiAcceso["areas"]; soloL
 const FINANZAS = ["/finanzas", "/finanzas/saldos", "/finanzas/flujo", "/finanzas/end-of-day", "/finanzas/resultados", "/finanzas/transacciones"];
 const hrefs = (a: MiAcceso) => navPara(a).flatMap((g) => g.items.map((i) => i.href));
 
-test("las seis entradas de Finanzas están en Administración, en ese orden, junto a Equipo y Ajustes", () => {
+test("las seis entradas de Finanzas están en Administración, en ese orden, y después Ventas y cash, Equipo y Ajustes", () => {
   const admin = NAV.find((g) => g.titulo === "Administración")!;
-  assert.deepEqual(admin.items.map((i) => i.href), [...FINANZAS, "/equipo", "/ajustes"]);
-  assert.deepEqual(admin.items.slice(0, 6).map((i) => i.texto), ["Finanzas", "Saldos", "Flujo de fondos", "End of Day", "P&L", "Transacciones"]);
+  /* «Ventas y cash» (12/11) va después de las de Finanzas: el inicio de quien lleva Finanzas sigue siendo /finanzas. */
+  assert.deepEqual(admin.items.map((i) => i.href), [...FINANZAS, "/finanzas/ventas-y-cash", "/equipo", "/ajustes"]);
+  assert.deepEqual(admin.items.slice(0, 7).map((i) => i.texto), ["Finanzas", "Saldos", "Flujo de fondos", "End of Day", "P&L", "Transacciones", "Ventas y cash"]);
 });
 
 test("cada tipo de cuenta ve las seis o ninguna, según su nivel en Finanzas, y entra por link igual que por el menú", () => {

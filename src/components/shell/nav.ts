@@ -2,6 +2,7 @@ import {
   LayoutDashboard, Users, Sheet, CalendarDays, Video, Megaphone,
   GraduationCap, ClipboardList, Wallet, Settings, HandCoins, ArrowDownUp, Banknote, Landmark, UserCheck,
   ClipboardCheck, PhoneCall, ListChecks, FileInput, UserRound, CalendarCheck, TrendingUp, ArrowLeftRight, GitMerge, MessagesSquare, ChartLine,
+  CircleDollarSign,
 } from "lucide-react";
 import { MessageCircleQuestion, Mic, SquareKanban } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
@@ -79,6 +80,8 @@ export const NAV: GrupoNav[] = [
       { href: "/finanzas/end-of-day", texto: "End of Day", icono: CalendarCheck, ayuda: "El cierre del día de Finanzas: contá tarea por tarea cómo te fue" },
       { href: "/finanzas/resultados", texto: "P&L", icono: TrendingUp, ayuda: "El estado de resultados: lo facturado y lo realmente cobrado, lado a lado" },
       { href: "/finanzas/transacciones", texto: "Transacciones", icono: ArrowLeftRight, ayuda: "Todo lo que entró y salió, de todas las cuentas: cobros, gastos, devoluciones y pases" },
+      /* Lo único de Finanzas para quien tiene el permiso «Ventas y cash» (Santiago, 12/11): sin gastos, cuentas, caja ni honorarios. */
+      { href: "/finanzas/ventas-y-cash", texto: "Ventas y cash", icono: CircleDollarSign, ayuda: "Lo vendido y lo cobrado (Cash Collected) del período, por servicio, por vendedor y día por día" },
       { href: "/equipo", texto: "Equipo y honorarios", icono: Banknote, ayuda: "Quién es quién, con qué entra a la app y cuánto cobra" },
       { href: "/ajustes", texto: "Ajustes", icono: Settings, ayuda: "Cómo funciona la app: el catálogo, el CRM, las conexiones y los datos" },
     ],

@@ -693,11 +693,11 @@ export function catalogo(e: EstadoApp): DefKpi[] {
   const clientesAtrasados = (c: Contexto, dias: number) => new Set(c.vencidas().filter((x) => x.diasAtraso >= dias).map((x) => x.ventaId)).size;
 
   add("cobranza", "Cobrado", [
-    { id: "c_cc", etiqueta: "Cash Collected (CC)", formato: "moneda", mejor: "sube", href: "/finanzas", desglose: { tipo: "ingresos" },
+    { id: "c_cc", etiqueta: "Cash Collected (CC)", formato: "moneda", mejor: "sube", href: "/finanzas/ventas-y-cash", desglose: { tipo: "ingresos" },
       ayuda: "Cash Collected (CC): la plata que entró en el período, de ventas de cualquier fecha, menos lo que se devolvió en el período.", valor: (c) => c.cobrado() },
     { id: "c_devoluciones", etiqueta: "Devoluciones", formato: "moneda", mejor: "baja", ocultarEnCero: true, href: "/finanzas/detalle?seccion=devoluciones",
       ayuda: "La plata que se le devolvió a clientes en el período. Resta en el mes en que se devuelve la plata, no en el de la venta.", valor: (c) => c.devuelto() },
-    { id: "c_tasa", etiqueta: "Tasa de cobro", formato: "pct", mejor: "sube", href: "/finanzas",
+    { id: "c_tasa", etiqueta: "Tasa de cobro", formato: "pct", mejor: "sube", href: "/finanzas/ventas-y-cash",
       ayuda: "Cash Collected (CC) sobre Revenue: de todo lo que vendemos, cuánto entra.", valor: (c) => pctDe(c.cobrado(), c.facturado()) },
     { id: "c_reservas", etiqueta: "Cobrado en reservas", formato: "moneda", href: "/ventas",
       ayuda: "Lo que entró como reserva o seña.",

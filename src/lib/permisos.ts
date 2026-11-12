@@ -30,7 +30,11 @@ export const AREAS: { id: AreaId; nombre: string; pantallas: string }[] = [
   { id: "webinars", nombre: "Webinars", pantallas: "Webinars" },
   { id: "marketing", nombre: "Marketing", pantallas: "Marketing (Meta)" },
   { id: "alumnos", nombre: "Alumnos", pantallas: "Alumnos, Pipeline de servicio y Reportes" },
-  { id: "finanzas", nombre: "Finanzas", pantallas: "Finanzas, Caja y Conciliación" },
+  { id: "finanzas", nombre: "Finanzas", pantallas: "Finanzas, Caja y Conciliación: incluye gastos, saldos de las cuentas, el P&L con honorarios y la liquidación" },
+  /* Santiago (12/11): «nada más quiere ver los números de ventas y el cash collected». Finanzas era todo o nada (con «Ve Finanzas» le
+     llegaron hasta los 588 gastos), así que lo que se vende y lo que se cobra tiene su propio permiso: una sola pantalla, sin gastos, sin
+     cuentas, sin caja y sin honorarios. Quien ve Finanzas ya la ve (ver nivelDeAreas). Sólo se mira: «editar» no cambia nada. */
+  { id: "cash", nombre: "Ventas y cash", pantallas: "Ventas y cash: lo vendido, lo cobrado (Cash Collected) y lo que falta cobrar. Sin gastos, cuentas, caja ni honorarios" },
   { id: "ajustes", nombre: "Ajustes", pantallas: "Ajustes" },
   /* Aldana (26/10): hacer el cierre de comisiones sola, sin ser dueña. Ve la liquidación del mes (lo que se le paga a cada uno) y, con «editar», la
      carga y la cierra y marca quién cobró. Lo que cobra cada uno, los accesos y los tipos de cuenta siguen siendo sólo de los dueños. */
@@ -180,7 +184,10 @@ export const veElServicio = (a: MiAcceso | null | undefined, compro: boolean): b
     solo, más alto o más bajo, para Customer Success. */
 export function nivelDeAreas(areas: AreasDeTipo | undefined, area: AreaId): 0 | 1 | 2 {
   const de = (x: AreaId) => (areas?.[x] === "editar" ? 2 : areas?.[x] === "ver" ? 1 : 0);
-  return area === "clientes" ? (Math.max(de("clientes"), de("ventas")) as 0 | 1 | 2) : de(area);
+  if (area === "clientes") return Math.max(de("clientes"), de("ventas")) as 0 | 1 | 2;
+  /* Ventas y cash es un pedazo de Finanzas: quien ve Finanzas ya ve esa pantalla (y al revés no). */
+  if (area === "cash") return Math.max(de("cash"), de("finanzas")) as 0 | 1 | 2;
+  return de(area);
 }
 
 /** 0: no la ve · 1: la ve · 2: la edita. */
@@ -198,6 +205,8 @@ export function nivelEn(a: MiAcceso | null | undefined, area: AreaId): 0 | 1 | 2
 
 const PERSONAS: AreaId[] = ["leads", "crm", "ventas", "clientes", "webinars", "alumnos", "finanzas", "marketing"];
 const VENTAS: AreaId[] = ["ventas", "clientes", "finanzas", "webinars", "marketing", "alumnos"];
+/* Lo único de la plata que lee «Ventas y cash»: las ventas, sus cuotas y lo que se cobró. Nada de gastos, movimientos ni cuentas. */
+export const TABLAS_DE_CASH = ["ventas", "cuotas", "pagos"] as const;
 const YOUTUBE: AreaId[] = ["webinars", "marketing"];
 
 export const LEEN: Record<string, AreaId[]> = {
@@ -205,9 +214,9 @@ export const LEEN: Record<string, AreaId[]> = {
   contactos: PERSONAS,
   comentarios: ["leads", "crm", "ventas", "clientes", "alumnos", "finanzas"],
   sesiones: ["crm", "leads", "webinars", "marketing", "ventas"],
-  ventas: VENTAS,
-  cuotas: VENTAS,
-  pagos: VENTAS,
+  ventas: [...VENTAS, "cash"],
+  cuotas: [...VENTAS, "cash"],
+  pagos: [...VENTAS, "cash"],
   alumnos: ["alumnos"],
   reportes: ["alumnos"],
   /* Customer Success (supabase/customer-success.sql). */
@@ -222,7 +231,7 @@ export const LEEN: Record<string, AreaId[]> = {
   traspasos: ["finanzas"],
   /* Las devoluciones las ve quien ve las ventas (el closer, sólo las de sus
      ventas): sin ellas, los números de cada área no darían igual. */
-  devoluciones: VENTAS,
+  devoluciones: [...VENTAS, "cash"],
   gastos_recurrentes: ["finanzas"],
   transacciones: ["finanzas"],
   ad_insights: ["marketing", "webinars", "finanzas"],
@@ -381,6 +390,8 @@ const RUTAS: [string, AreaId | "equipo"][] = [
   ["/reportes", "alumnos"],
   ["/simulacros", "alumnos"],
   ["/consultas", "alumnos"],
+  /* Antes que «/finanzas»: se busca por el comienzo de la ruta y gana la primera. */
+  ["/finanzas/ventas-y-cash", "cash"],
   ["/finanzas", "finanzas"],
   ["/conciliacion", "finanzas"],
   ["/equipo", "equipo"],

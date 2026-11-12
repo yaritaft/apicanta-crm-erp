@@ -968,7 +968,7 @@ export interface Adjunto {
    closer). Tabla `tipos_cuenta`; las reglas, en lib/permisos.ts y en la
    base (supabase/tipos-cuenta.sql). */
 
-export type AreaId = "panel" | "leads" | "crm" | "ventas" | "clientes" | "webinars" | "marketing" | "alumnos" | "finanzas" | "ajustes" | "liquidacion";
+export type AreaId = "panel" | "leads" | "crm" | "ventas" | "clientes" | "webinars" | "marketing" | "alumnos" | "finanzas" | "cash" | "ajustes" | "liquidacion";
 export type NivelArea = "ver" | "editar";
 export type AreasDeTipo = Partial<Record<AreaId, NivelArea>>;
 

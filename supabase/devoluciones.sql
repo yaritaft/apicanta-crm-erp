@@ -115,7 +115,8 @@ create policy ver_devoluciones on public.devoluciones
       or (select public.nivel_area('webinars')) >= 1
       or (select public.nivel_area('marketing')) >= 1
       or (select public.nivel_area('alumnos')) >= 1
-      or (select public.nivel_area('clientes')) >= 1)
+      or (select public.nivel_area('clientes')) >= 1
+      or (select public.nivel_area('cash')) >= 1)
     and ((select not public.solo_lo_suyo()) or "ventaId" = any((select public.mis_ventas())::text[]))
   );
 

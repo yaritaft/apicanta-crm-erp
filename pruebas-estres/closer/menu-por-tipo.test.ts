@@ -46,18 +46,18 @@ function tipoAlAzar(r: Azar, i: number): TipoCuenta {
 const MENU_ESPERADO: Record<string, { menu: string[]; inicio: string }> = {
   dueno: {
     menu: ["/panel", "/mi-panel", "/leads", "/crm", "/agenda", "/ventas", "/clientes", "/webinars", "/formularios", "/grupos-whatsapp", "/marketing", "/marketing?nivel=conciliacion", "/alumnos", "/alumnos?seccion=pipeline", "/reportes",
-      "/simulacros", "/consultas", "/alumnos?seccion=hoy", "/alumnos?seccion=clientes", "/finanzas", "/finanzas/saldos", "/finanzas/flujo", "/finanzas/end-of-day", "/finanzas/resultados", "/finanzas/transacciones", "/equipo", "/ajustes"],
+      "/simulacros", "/consultas", "/alumnos?seccion=hoy", "/alumnos?seccion=clientes", "/finanzas", "/finanzas/saldos", "/finanzas/flujo", "/finanzas/end-of-day", "/finanzas/resultados", "/finanzas/transacciones", "/finanzas/ventas-y-cash", "/equipo", "/ajustes"],
     inicio: "/panel",
   },
   equipo: {
     menu: ["/panel", "/mi-panel", "/leads", "/crm", "/agenda", "/ventas", "/clientes", "/webinars", "/formularios", "/grupos-whatsapp", "/marketing", "/marketing?nivel=conciliacion", "/alumnos", "/alumnos?seccion=pipeline", "/reportes",
-      "/simulacros", "/consultas", "/alumnos?seccion=hoy", "/alumnos?seccion=clientes", "/finanzas", "/finanzas/saldos", "/finanzas/flujo", "/finanzas/end-of-day", "/finanzas/resultados", "/finanzas/transacciones", "/ajustes"],
+      "/simulacros", "/consultas", "/alumnos?seccion=hoy", "/alumnos?seccion=clientes", "/finanzas", "/finanzas/saldos", "/finanzas/flujo", "/finanzas/end-of-day", "/finanzas/resultados", "/finanzas/transacciones", "/finanzas/ventas-y-cash", "/ajustes"],
     inicio: "/panel",
   },
   director: { menu: ["/panel", "/mi-panel", "/leads", "/crm", "/agenda", "/ventas", "/clientes", "/webinars", "/formularios", "/grupos-whatsapp"], inicio: "/panel" },
   closer: { menu: ["/mis-llamadas", "/mi-panel", "/crm", "/ventas", "/cerrar-el-dia", "/cargar-venta"], inicio: "/mis-llamadas" },
   setter: { menu: ["/mi-panel", "/leads", "/crm", "/agenda"], inicio: "/mi-panel" },
-  admin: { menu: ["/panel", "/ventas", "/clientes", "/finanzas", "/finanzas/saldos", "/finanzas/flujo", "/finanzas/end-of-day", "/finanzas/resultados", "/finanzas/transacciones"], inicio: "/panel" },
+  admin: { menu: ["/panel", "/ventas", "/clientes", "/finanzas", "/finanzas/saldos", "/finanzas/flujo", "/finanzas/end-of-day", "/finanzas/resultados", "/finanzas/transacciones", "/finanzas/ventas-y-cash"], inicio: "/panel" },
   marketing: { menu: ["/panel", "/leads", "/crm", "/agenda", "/webinars", "/formularios", "/grupos-whatsapp", "/marketing", "/marketing?nivel=conciliacion"], inicio: "/panel" },
   customer_success: {
     menu: ["/mi-panel", "/clientes", "/alumnos", "/alumnos?seccion=pipeline", "/reportes", "/simulacros", "/consultas", "/alumnos?seccion=hoy", "/alumnos?seccion=clientes"],
@@ -303,6 +303,8 @@ const LEE_LA_PANTALLA: Record<string, string[]> = {
   "/alumnos": ["alumnos", "reportes", "seguimiento_alumnos", "testimonios"],
   "/reportes": ["alumnos", "reportes"],
   "/finanzas": ["gastos", "ventas", "cuotas", "pagos", "movimientos"],
+  /* Ventas y cash (12/11): sólo lo que ya lee quien ve Ventas; ni gastos ni movimientos. */
+  "/finanzas/ventas-y-cash": ["ventas", "cuotas", "pagos", "devoluciones"],
   "/finanzas/caja": ["arqueos", "movimientos", "traspasos"],
   "/conciliacion": ["movimientos", "ventas", "cuotas", "pagos", "transacciones"],
 };
@@ -338,11 +340,22 @@ test("resumenDeTipo nombra exactamente las áreas que el tipo edita y las que s�
     const ve = AREAS.filter((a) => nivelEn(acceso(t), a.id) === 1).map((a) => a.nombre);
     if (edita.length === 0 && ve.length === 0) { assert.equal(cuerpo, "No ve nada todavía."); return; }
     const [parteEdita, parteVe] = edita.length ? (() => { const m = cuerpo.match(/^Edita (.*?)(?:; ve (.*))?\.$/)!; return [m[1], m[2]]; })() : [undefined, cuerpo.match(/^Ve (.*)\.$/)![1]];
-    const nombresEn = (texto?: string) => (texto === undefined ? [] : AREAS.map((a) => NOMBRE.get(a.id)!).filter((n) => texto.includes(n)));
+    /* Un nombre puede contener a otro («Ventas y cash» contiene «Ventas»): se busca el más largo primero y se lo saca del texto. */
+    const nombresEn = (texto?: string) => {
+      if (texto === undefined) return [];
+      const todos = AREAS.map((a) => NOMBRE.get(a.id)!);
+      const hallados = new Set<string>();
+      let resto = texto;
+      for (const n of [...todos].sort((x, y) => y.length - x.length)) if (resto.includes(n)) { hallados.add(n); resto = resto.split(n).join("\u0000"); }
+      return todos.filter((n) => hallados.has(n));
+    };
     assert.deepEqual(nombresEn(parteEdita), edita, `edita: «${parteEdita}»`);
     assert.deepEqual(nombresEn(parteVe), ve, `ve: «${parteVe}»`);
     /* Nada que no esté. */
-    for (const a of AREAS) if (nivelEn(acceso(t), a.id) === 0) assert.ok(!cuerpo.includes(a.nombre), `${a.nombre} aparece y no la ve`);
+    /* Se sacan primero los nombres de las que sí ve (el más largo primero): «Ventas y cash» no cuenta como «Ventas». */
+    let sinLasQueVe = cuerpo;
+    for (const a of [...AREAS].filter((x) => nivelEn(acceso(t), x.id) > 0).sort((x, y) => y.nombre.length - x.nombre.length)) sinLasQueVe = sinLasQueVe.split(a.nombre).join("\u0000");
+    for (const a of AREAS) if (nivelEn(acceso(t), a.id) === 0) assert.ok(!sinLasQueVe.includes(a.nombre), `${a.nombre} aparece y no la ve`);
   });
   assert.equal(resumenDeTipo({ id: "dueno", areas: {}, soloLoSuyo: true }), "Todo, incluidos Equipo y honorarios.");
 });
