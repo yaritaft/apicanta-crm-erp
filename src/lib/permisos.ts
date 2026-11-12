@@ -34,7 +34,7 @@ export const AREAS: { id: AreaId; nombre: string; pantallas: string }[] = [
   /* Santiago (12/11): «nada más quiere ver los números de ventas y el cash collected». Finanzas era todo o nada (con «Ve Finanzas» le
      llegaron hasta los 588 gastos), así que lo que se vende y lo que se cobra tiene su propio permiso: una sola pantalla, sin gastos, sin
      cuentas, sin caja y sin honorarios. Quien ve Finanzas ya la ve (ver nivelDeAreas). Sólo se mira: «editar» no cambia nada. */
-  { id: "cash", nombre: "Ventas y cash", pantallas: "Ventas y cash: lo vendido, lo cobrado (Cash Collected) y lo que falta cobrar. Sin gastos, cuentas, caja ni honorarios" },
+  { id: "cash", nombre: "Ventas y cash", pantallas: "Ventas y cash: lo vendido, lo cobrado (Cash Collected) y lo que falta cobrar. Sólo se mira, y sin gastos, cuentas, caja ni honorarios" },
   { id: "ajustes", nombre: "Ajustes", pantallas: "Ajustes" },
   /* Aldana (26/10): hacer el cierre de comisiones sola, sin ser dueña. Ve la liquidación del mes (lo que se le paga a cada uno) y, con «editar», la
      carga y la cierra y marca quién cobró. Lo que cobra cada uno, los accesos y los tipos de cuenta siguen siendo sólo de los dueños. */

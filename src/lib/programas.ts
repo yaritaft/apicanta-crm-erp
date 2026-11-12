@@ -42,8 +42,48 @@ export interface Programa {
   zoom: string[];
   /* Los bonos que el closer puede elegir al mandar el contrato. */
   bonos: string[];
+  /* Los accesos que se cortan solos: `plataforma:recurso` (`telegram:-100…`, `zoom:849…`, `wisboo:PRO-…`) → meses desde que se dan (o desde
+     el inicio del servicio, si arranca después). Lo que no está acá no se corta nunca. Manuel, 12/11: en el Hackear IA MID, al terminar el mes se
+     saca sólo la mentoría grupal y se conserva el contenido grabado. */
+  vencen?: Record<string, number>;
   activo: boolean;
 }
+
+export type PlataformaDeAcceso = "wisboo" | "telegram" | "zoom";
+
+/** La clave de un acceso dentro de `vencen`. */
+export const claveDeCorte = (plataforma: PlataformaDeAcceso, recurso: string): string => `${plataforma}:${recurso}`;
+
+/** Los meses que dura ese acceso en este programa, o null si no se corta. */
+export function mesesDeCorte(programa: Pick<Programa, "vencen">, plataforma: PlataformaDeAcceso, recurso: string): number | null {
+  const n = programa.vencen?.[claveDeCorte(plataforma, recurso)];
+  return typeof n === "number" && Number.isInteger(n) && n > 0 ? n : null;
+}
+
+/** Los cortes leídos de la base: sólo plataformas conocidas y meses enteros de 1 a 36 (lo demás se descarta). */
+export function cortesNormales(v: unknown): Record<string, number> {
+  const salida: Record<string, number> = {};
+  if (!v || typeof v !== "object" || Array.isArray(v)) return salida;
+  for (const [k, n] of Object.entries(v as Record<string, unknown>)) {
+    if (/^(wisboo|telegram|zoom):.+$/.test(k) && typeof n === "number" && Number.isInteger(n) && n >= 1 && n <= 36) salida[k] = n;
+  }
+  return salida;
+}
+
+/** `desde` más N meses calendario (el 31 de enero más un mes es el 28 o 29 de febrero, no el 3 de marzo). */
+export function sumarMeses(desde: string | Date, meses: number): string {
+  const d = new Date(desde);
+  const r = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + meses, 1, d.getUTCHours(), d.getUTCMinutes(), d.getUTCSeconds(), d.getUTCMilliseconds()));
+  const ultimo = new Date(Date.UTC(r.getUTCFullYear(), r.getUTCMonth() + 1, 0)).getUTCDate();
+  r.setUTCDate(Math.min(d.getUTCDate(), ultimo));
+  return r.toISOString();
+}
+
+/* Los tres downsells (Manuel, 12/11): el de siempre (US$ 497, sólo el contenido grabado), el Plus+ (US$ 997: contenido, bolsa de trabajo y corrección
+   de CV y LinkedIn) y el Hackear IA MID (US$ 1.497: contenido y un mes de mentoría grupal). Para la ficha («Acceso: Downsell») y la bienvenida
+   son lo mismo: no son el programa completo. */
+export const PROGRAMAS_DOWNSELL: readonly string[] = ["downsell", "downsell-plus", "hackear-ia-mid"];
+export const esProgramaDownsell = (id: string | null | undefined): boolean => Boolean(id) && PROGRAMAS_DOWNSELL.includes(id!);
 
 export const WISBOO = {
   hackearIt: "PRO-019fd69d87b070648850ba3e5e53e",
@@ -82,6 +122,18 @@ export const PROGRAMAS_POR_DEFECTO: Programa[] = [
     plantillaId: "7uUS5z4i2f3FAPXwuNHkUC", plantillaNombre: "Contrato de acceso al contenido grabado - XXXXX",
     wisboo: [WISBOO.hackearIt, WISBOO.hackearAi], telegram: [], zoom: [], bonos: [], activo: true,
   },
+  {
+    /* Contenido + bolsa de trabajo (el grupo de Telegram se elige en Ajustes) + corrección de CV y LinkedIn, que la hace el equipo a mano. */
+    id: "downsell-plus", nombre: "Downsell Plus+", productos: ["prod_downsell_plus"],
+    plantillaId: "7uUS5z4i2f3FAPXwuNHkUC", plantillaNombre: "Contrato de acceso al contenido grabado - XXXXX",
+    wisboo: [WISBOO.hackearIt, WISBOO.hackearAi], telegram: [], zoom: [], bonos: [], activo: true,
+  },
+  {
+    /* Contenido grabado + un mes de mentoría grupal: los grupos y las reuniones se eligen en Ajustes y se cortan al mes (`vencen`). */
+    id: "hackear-ia-mid", nombre: "Hackear IA MID", productos: ["prod_hackear_ia_mid"],
+    plantillaId: "7uUS5z4i2f3FAPXwuNHkUC", plantillaNombre: "Contrato de acceso al contenido grabado - XXXXX",
+    wisboo: [WISBOO.hackearIt, WISBOO.hackearAi], telegram: [], zoom: [], bonos: [], vencen: {}, activo: true,
+  },
 ];
 
 const lista = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string" && x.trim() !== "") : []);
@@ -103,6 +155,7 @@ export function programaNormal(v: unknown): Programa | null {
     plantillaSinSesionesId: typeof o.plantillaSinSesionesId === "string" ? o.plantillaSinSesionesId : "",
     plantillaSinSesionesNombre: typeof o.plantillaSinSesionesNombre === "string" ? o.plantillaSinSesionesNombre : "",
     wisboo: lista(o.wisboo), telegram: lista(o.telegram), zoom: lista(o.zoom), bonos: lista(o.bonos),
+    vencen: cortesNormales(o.vencen),
     activo: o.activo !== false,
   };
 }

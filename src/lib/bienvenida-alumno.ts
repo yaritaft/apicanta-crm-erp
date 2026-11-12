@@ -18,6 +18,7 @@
 
 import { enlaceWhatsapp } from "./contacto-telefono";
 import { enlaceDelAlumno } from "./links-alumno";
+import { esProgramaDownsell } from "./programas";
 
 export const PERFILES = ["Full Stack", "Mobile Developer", "Data Engineer", "AI Engineer"] as const;
 export type PerfilAlumno = (typeof PERFILES)[number];
@@ -73,7 +74,7 @@ export type ModeloBienvenida = "completo" | "downsell" | "reserva";
 /** El modelo según el contrato: la reserva manda; después, el programa. Hackear Biz y Principals: null (no hay texto). */
 export function modeloDeBienvenida(c: { reserva?: boolean; programa: string }): ModeloBienvenida | null {
   if (c.reserva) return "reserva";
-  if (c.programa === "downsell") return "downsell";
+  if (esProgramaDownsell(c.programa)) return "downsell";
   if (c.programa === "hackear-ai") return "completo";
   return null;
 }

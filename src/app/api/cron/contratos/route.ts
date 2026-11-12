@@ -7,6 +7,7 @@ import { randomBytes } from "node:crypto";
 import { hayTelegram, revisarGruposDeTelegram, telegram } from "@/lib/accesos-servidor";
 import { leerWebhookTelegram, RUTA_WEBHOOK_TELEGRAM } from "@/lib/accesos-alumnos";
 import { pasarOutboardings } from "@/lib/outboarding-servidor";
+import { pasarCortes } from "@/lib/accesos-vencimientos-servidor";
 
 /* ==================================================================
    La red de seguridad del aviso de PandaDoc: cada hora se le pregunta el
@@ -60,7 +61,9 @@ export async function GET(req: Request) {
   }
   /* Después de los contratos: un alumno que firmó y ya estaba en outboarding no recibe y pierde accesos en la misma pasada. */
   const outboarding = await pasarOutboardings(db).catch((e) => ({ error: e instanceof Error ? e.message : String(e) }));
-  return NextResponse.json({ ok: true, aviso, bot, grupos, revisados: lista.length, cambiaron, fallaron, outboarding, ...(sueltos.error ? { sueltos: sueltos.error.message } : {}) });
+  /* Los accesos que se cortan solos al vencer (la mentoría grupal del Hackear IA MID): sólo esos, el resto de lo que tiene se queda. */
+  const cortes = await pasarCortes(db).catch((e) => ({ error: e instanceof Error ? e.message : String(e) }));
+  return NextResponse.json({ ok: true, aviso, bot, grupos, revisados: lista.length, cambiaron, fallaron, outboarding, cortes, ...(sueltos.error ? { sueltos: sueltos.error.message } : {}) });
 }
 
 /* El aviso de PandaDoc de producción se conecta solo la primera vez (Juan Cruz, 20/10: «dejalo listo»): la clave

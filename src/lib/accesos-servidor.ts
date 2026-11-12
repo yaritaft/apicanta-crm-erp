@@ -1,7 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { partirNombre } from "./contratos";
 import { PRODUCTOS_WISBOO } from "./accesos-alumnos";
-import { cambiarGrupoEnProgramas, type Programa } from "./programas";
+import { cambiarGrupoEnProgramas, esProgramaDownsell, mesesDeCorte, sumarMeses, type Programa } from "./programas";
 import { idSeguimiento } from "./seguimiento";
 
 /* ==================================================================
@@ -37,6 +37,8 @@ export interface Acceso {
   plataforma: Plataforma; recurso: string; recursoNombre: string; estado: EstadoAcceso;
   externo: Record<string, unknown>; error: string | null;
   dadoEn: string | null; quitadoEn: string | null; origen: "automatico" | "manual"; quien: string;
+  /* Cuándo se corta solo (la mentoría grupal del Hackear IA MID, al mes). null: no se corta. */
+  venceEn?: string | null;
   creadoEn?: string; actualizadoEn?: string;
 }
 
@@ -371,8 +373,16 @@ export async function darAccesos(db: SupabaseClient, a: {
   origen: "automatico" | "manual"; quien: string;
   /* Sólo algunos (un reintento puntual). Sin esto, todos los del programa. */
   solo?: { plataforma: Plataforma; recurso: string }[];
+  /* Cuándo arranca el servicio (el del contrato): si es después de hoy, los cortes automáticos cuentan desde ahí. */
+  desde?: string | null;
 }): Promise<ResultadoAccesos> {
   const ahora = new Date().toISOString();
+  /* Lo que se corta solo cuenta los meses desde que se da, o desde el inicio del servicio si todavía no empezó. */
+  const empieza = a.desde && !Number.isNaN(new Date(a.desde).getTime()) && a.desde > ahora ? a.desde : ahora;
+  const corteDe = (pl: Plataforma, rec: string): string | null => {
+    const meses = mesesDeCorte(a.programa, pl, rec);
+    return meses ? sumarMeses(empieza, meses) : null;
+  };
   const previos = await accesosDe(db, a.alumnoId);
   const previo = (pl: Plataforma, rec: string) => previos.find((x) => x.plataforma === pl && x.recurso === rec);
   const quiere = (pl: Plataforma, rec: string) => !a.solo || a.solo.some((s) => s.plataforma === pl && s.recurso === rec);
@@ -383,11 +393,19 @@ export async function darAccesos(db: SupabaseClient, a: {
     const fila: Acceso = {
       id: idDeAcceso(a.alumnoId, x.plataforma, x.recurso), alumnoId: a.alumnoId, contratoId: a.contratoId ?? null,
       programa: a.programa.id, origen: a.origen, quien: a.quien, ...x,
+      venceEn: x.estado === "dado" ? corteDe(x.plataforma, x.recurso) : null,
     };
     await db.from("accesos_alumno").upsert({ ...fila, actualizadoEn: new Date().toISOString() }, { onConflict: "id" });
     salida.accesos.push(fila);
     if (x.estado === "fallo") salida.fallaron++;
     else salida.dados++;
+  };
+
+  /* Lo que ya tenía (de un programa con corte, como el MID) y este programa da SIN corte: se le levanta. Si no, quien pasa del MID al
+     programa completo perdería al mes la mentoría que acaba de pagar. Si este programa también lo corta, se deja el corte que ya tenía. */
+  const sinCorte = async (ya: Acceso, pl: Plataforma) => {
+    if (!ya.venceEn || mesesDeCorte(a.programa, pl, ya.recurso) !== null) return;
+    await db.from("accesos_alumno").update({ venceEn: null, actualizadoEn: new Date().toISOString() }).eq("id", ya.id);
   };
 
   /* Wisboo: un usuario, un acceso por curso. */
@@ -402,7 +420,7 @@ export async function darAccesos(db: SupabaseClient, a: {
     for (const producto of cursos) {
       const nombre = PRODUCTOS_WISBOO.find((p) => p.id === producto)?.nombre ?? producto;
       const ya = previo("wisboo", producto);
-      if (ya && (ya.estado === "dado" || ya.estado === "entro")) { salida.yaEstaban++; salida.accesos.push(ya); continue; }
+      if (ya && (ya.estado === "dado" || ya.estado === "entro")) { salida.yaEstaban++; salida.accesos.push(ya); await sinCorte(ya, "wisboo"); continue; }
       if (!usuarioId) { await anotar({ plataforma: "wisboo", recurso: producto, recursoNombre: nombre, estado: "fallo", externo: {}, error: errorUsuario, dadoEn: null, quitadoEn: null }); continue; }
       try {
         const r = await darCursoWisboo(usuarioId, producto);
@@ -426,6 +444,7 @@ export async function darAccesos(db: SupabaseClient, a: {
     const ya = previo("telegram", chat);
     if (ya && (ya.estado === "dado" || ya.estado === "entro")) {
       salida.yaEstaban++; salida.accesos.push(ya);
+      await sinCorte(ya, "telegram");
       const link = typeof ya.externo.link === "string" ? ya.externo.link : null;
       if (link && ya.estado === "dado") salida.links.push({ plataforma: "telegram", nombre, url: link });
       continue;
@@ -456,6 +475,7 @@ export async function darAccesos(db: SupabaseClient, a: {
       const ya = previo("zoom", reunion);
       if (ya && (ya.estado === "dado" || ya.estado === "entro")) {
         salida.yaEstaban++; salida.accesos.push(ya);
+        await sinCorte(ya, "zoom");
         let joinUrl = typeof ya.externo.joinUrl === "string" ? ya.externo.joinUrl : null;
         /* Dado pero sin su link (se perdió en una reactivación): se lo busca en la lista de aprobados. */
         if (!joinUrl && token) {
@@ -600,7 +620,7 @@ export async function cambiarFicha(db: SupabaseClient, alumnoId: string, cambios
 export function marcasDeLaFicha(accesos: Pick<Acceso, "plataforma" | "estado" | "programa">[]): { acceso: string; accesoWibo: boolean; accesoZoom: boolean } {
   const vigentes = accesos.filter((x) => x.estado === "dado" || x.estado === "entro");
   return {
-    acceso: vigentes.length === 0 ? "Sin acceso" : vigentes.every((x) => x.programa === "downsell") ? "Downsell" : "Completos",
+    acceso: vigentes.length === 0 ? "Sin acceso" : vigentes.every((x) => esProgramaDownsell(x.programa)) ? "Downsell" : "Completos",
     accesoWibo: vigentes.some((x) => x.plataforma === "wisboo"),
     accesoZoom: vigentes.some((x) => x.plataforma === "zoom"),
   };

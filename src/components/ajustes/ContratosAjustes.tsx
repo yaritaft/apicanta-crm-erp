@@ -9,7 +9,7 @@ import { cabeceras } from "@/components/webinars/useYoutube";
 import { acciones, useEstado } from "@/lib/store";
 import { useAcceso } from "@/lib/acceso";
 import { fecha, relativo } from "@/lib/format";
-import { PROGRAMAS_POR_DEFECTO, programasDe, type Programa } from "@/lib/programas";
+import { claveDeCorte, mesesDeCorte, PROGRAMAS_POR_DEFECTO, programasDe, type PlataformaDeAcceso, type Programa } from "@/lib/programas";
 import { nombreDeReunion, PRODUCTOS_WISBOO } from "@/lib/accesos-alumnos";
 import type { ConfigContratos } from "@/lib/types";
 import type { Pruebas } from "./AccesosAlumnosIntegracion";
@@ -293,6 +293,7 @@ function Programas({ pruebas }: { pruebas: Pruebas | null }) {
             `${p.wisboo.length} ${p.wisboo.length === 1 ? "curso" : "cursos"}`,
             `${p.telegram.length} ${p.telegram.length === 1 ? "grupo" : "grupos"}`,
             p.zoom.length ? `${p.zoom.length} ${p.zoom.length === 1 ? "reunión" : "reuniones"}` : "",
+            Object.keys(p.vencen ?? {}).length ? `${Object.keys(p.vencen ?? {}).length} se cortan solos` : "",
           ].filter(Boolean).join(" · ");
           return (
             <li key={p.id} style={{ borderTop: k ? "1px solid var(--border)" : undefined, padding: "8px 0" }}>
@@ -346,6 +347,14 @@ function Programas({ pruebas }: { pruebas: Pruebas | null }) {
                   {p.zoom.some((id) => reuniones.find((m) => m.id === id)?.inscripcion === false) && (
                     <p className="t-sm" style={{ color: "var(--warning)" }}>Hay una reunión sin inscripción: en Zoom activale «Registro» (y que no sea recurrente sin horario fijo), si no, no se puede anotar a nadie.</p>
                   )}
+                  <Cortes
+                    programa={p} onCambio={(vencen) => cambiar(p.id, { vencen })}
+                    filas={[
+                      ...p.wisboo.map((id) => ({ plataforma: "wisboo" as const, id, nombre: `Wisboo · ${cursos.find((x) => x.id === id)?.nombre ?? id}` })),
+                      ...p.telegram.map((id) => ({ plataforma: "telegram" as const, id, nombre: `Telegram · ${grupos.find((g) => g.chatId === id)?.titulo || id}` })),
+                      ...p.zoom.map((id) => ({ plataforma: "zoom" as const, id, nombre: `Zoom · ${(() => { const m = reuniones.find((x) => x.id === id); return m ? nombreDeReunion(m, reuniones) : id; })()}` })),
+                    ]}
+                  />
                   <Bonos bonos={p.bonos} onCambio={(bonos) => cambiar(p.id, { bonos })} />
                 </div>
               )}
@@ -373,6 +382,47 @@ function Opciones({ titulo, opciones, valores, onAlternar, vacio }: {
           {todas.map((o) => <Chip key={o.id} activo={valores.includes(o.id)} onClick={() => onAlternar(o.id)}>{o.nombre}</Chip>)}
         </div>
       )}
+    </div>
+  );
+}
+
+/* Qué accesos de este programa se sacan solos y a los cuántos meses (Manuel, 12/11: en el Hackear IA MID, al mes se saca sólo la mentoría grupal y
+   queda el contenido grabado). Lo que dice «No se corta» se queda hasta que se lo saquen a mano o termine el programa (el outboarding). */
+const MESES_DE_CORTE = [1, 2, 3, 4, 5, 6, 9, 12];
+function Cortes({ programa, filas, onCambio }: {
+  programa: Programa; filas: { plataforma: PlataformaDeAcceso; id: string; nombre: string }[]; onCambio: (vencen: Record<string, number>) => void;
+}) {
+  if (filas.length === 0) return null;
+  const poner = (f: { plataforma: PlataformaDeAcceso; id: string }, valor: string) => {
+    const sig = { ...(programa.vencen ?? {}) };
+    const clave = claveDeCorte(f.plataforma, f.id);
+    if (valor === "") delete sig[clave]; else sig[clave] = Number(valor);
+    onCambio(sig);
+  };
+  return (
+    <div className="stack-1">
+      <span className="hk-label">Cortes automáticos</span>
+      <span className="t-sm t-subtle">A los cuántos meses de darle el acceso se le saca solo. Lo que dice «No se corta» se queda hasta que lo saquen a mano o termine el programa.</span>
+      <div className="stack-1">
+        {filas.map((f) => {
+          const meses = mesesDeCorte(programa, f.plataforma, f.id);
+          return (
+            <div key={`${f.plataforma}:${f.id}`} className="row-wrap" style={{ gap: 8, justifyContent: "space-between", alignItems: "center" }}>
+              <span className="t-sm" style={{ minWidth: 0, flex: "1 1 220px" }}>{f.nombre}</span>
+              <span style={{ width: 170 }}>
+                <Select
+                  value={meses === null ? "" : String(meses)} aria-label={`Corte de ${f.nombre}`}
+                  onChange={(ev) => poner(f, ev.target.value)}
+                  opciones={[
+                    { valor: "", texto: "No se corta" },
+                    ...[...new Set([...MESES_DE_CORTE, ...(meses !== null ? [meses] : [])])].sort((a, b) => a - b).map((n) => ({ valor: String(n), texto: n === 1 ? "Al mes" : `A los ${n} meses` })),
+                  ]}
+                />
+              </span>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }

@@ -133,7 +133,9 @@ export function formularioQueSeLePide(
  *  completan los dos cada semana). «Hackear IA» y «Hackear AI» son el mismo programa que Hackear IT (se vende con ese nombre), y
  *  «Mentoría», el plan de su venta. Principals y los demás programas no tienen formulario: lista vacía. */
 export function formulariosDe(textos: readonly (string | null | undefined)[] | null | undefined): FormularioReporte[] {
-  const ts = (textos ?? []).map((t) => sinTildes(String(t ?? "")));
+  /* «Hackear IA MID» (12/11) es un downsell —contenido grabado y un mes de mentoría grupal—: «ia» lo haría pasar por el programa completo y
+     le llegaría el formulario de cada semana durante meses. */
+  const ts = (textos ?? []).map((t) => sinTildes(String(t ?? ""))).filter((t) => !ES_MID.test(t));
   const biz = ts.some((t) => ES_BIZ.test(t));
   const it = ts.some((t) => ES_IT.test(t));
   return [...(biz ? [FORMULARIO_BIZ] : []), ...(it ? [FORMULARIO_IT] : [])];
@@ -146,8 +148,10 @@ export function formulariosDe(textos: readonly (string | null | undefined)[] | n
    sin reconocer» y se avisa. */
 const ES_BIZ = /\bbiz\b|business/;
 const ES_IT = /\bit\b|\bia\b|\bai\b|mentoria/;
-/* Programas que no completan un formulario semanal: el Downsell (contenido grabado), Principals y su Mastermind, y las devoluciones. */
-const SIN_FORMULARIO = /downsell|principal|mastermind|devolucion|reembolso|no aplica/;
+const ES_MID = /\bmid\b/;
+/* Programas que no completan un formulario semanal: el Downsell (contenido grabado) y sus hermanos (Plus+ y Hackear IA MID), Principals y su
+   Mastermind, y las devoluciones. */
+const SIN_FORMULARIO = /downsell|\bmid\b|principal|mastermind|devolucion|reembolso|no aplica/;
 
 /** Los textos de programa (o plan) que la app no sabe qué hacer: ni de un formulario ni de un programa que no lo lleva. */
 export function programasSinReconocer(programas: unknown, plan: unknown): string[] {

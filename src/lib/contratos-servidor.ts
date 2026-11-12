@@ -478,6 +478,8 @@ export async function alFirmar(db: SupabaseClient, c: Contrato, opciones: { quie
   const r = await darAccesos(db, {
     alumnoId, contratoId: c.id, programa, origen: opciones.quien ? "manual" : "automatico", quien: opciones.quien ?? "Al firmar el contrato",
     persona: { nombre: c.destinatario.nombre ?? "", email: c.destinatario.email ?? "", telefono: c.destinatario.telefono },
+    /* Los cortes automáticos (la mentoría del MID) cuentan desde que arranca el servicio, a las 12 de Argentina como el inicio del alumno. */
+    desde: typeof c.datos.inicio === "string" && /^\d{4}-\d{2}-\d{2}$/.test(c.datos.inicio) ? `${c.datos.inicio}T15:00:00.000Z` : null,
   });
   await evento(db, c.id, "accesos", opciones.quien ?? "Apicanta", "app", { dados: r.dados, fallaron: r.fallaron, yaEstaban: r.yaEstaban });
   return { accesos: r };

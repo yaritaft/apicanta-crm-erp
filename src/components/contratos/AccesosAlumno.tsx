@@ -10,7 +10,7 @@ import { useAcceso } from "@/lib/acceso";
 import { nivelEn } from "@/lib/permisos";
 import { nube } from "@/lib/supabase";
 import { cabeceras } from "@/components/webinars/useYoutube";
-import { relativo } from "@/lib/format";
+import { fecha, relativo } from "@/lib/format";
 import { formatoDia, hoyDelNegocio } from "@/lib/seguimiento";
 import { programaDeProducto, programasDe } from "@/lib/programas";
 import type { Alumno, Venta } from "@/lib/types";
@@ -65,8 +65,13 @@ function estadoDe(x: Acceso): { texto: string; variante: VarianteBadge } {
   return ESTADO[x.estado];
 }
 
-/* Debajo del nombre: cuándo y cómo se dio (o se quitó), o el error. */
+/* Debajo del nombre: cuándo y cómo se dio (o se quitó), o el error; y si se corta solo, cuándo (el Hackear IA MID: la mentoría, al mes). */
 function detalleDe(x: Acceso): string {
+  const corte = x.venceEn && (x.estado === "dado" || x.estado === "entro") ? `Se corta solo el ${fecha(x.venceEn)}` : "";
+  return [detalleBase(x), corte].filter(Boolean).join(" · ");
+}
+
+function detalleBase(x: Acceso): string {
   if (x.estado === "fallo") return x.error ?? "No se pudo dar";
   if (x.estado === "quitado" && x.quitadoEn) return `Quitado ${relativo(x.quitadoEn)}`;
   if (x.estado === "entro") return `Entró${typeof x.externo.telegramUsuario === "string" ? ` como @${x.externo.telegramUsuario}` : ""}`;
