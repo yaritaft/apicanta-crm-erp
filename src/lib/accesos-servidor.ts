@@ -362,6 +362,8 @@ async function tokenZoom(): Promise<string> {
 
 export interface ResultadoAccesos {
   dados: number; fallaron: number; yaEstaban: number;
+  /* Los que ya tenía con corte y se le sumó tiempo (programas de extensión). */
+  extendidos: number;
   accesos: Acceso[];
   /* Los links de Telegram y el de Wisboo, para mandarle al alumno. */
   links: { plataforma: Plataforma; nombre: string; url: string }[];
@@ -386,7 +388,7 @@ export async function darAccesos(db: SupabaseClient, a: {
   const previos = await accesosDe(db, a.alumnoId);
   const previo = (pl: Plataforma, rec: string) => previos.find((x) => x.plataforma === pl && x.recurso === rec);
   const quiere = (pl: Plataforma, rec: string) => !a.solo || a.solo.some((s) => s.plataforma === pl && s.recurso === rec);
-  const salida: ResultadoAccesos = { dados: 0, fallaron: 0, yaEstaban: 0, accesos: [], links: [] };
+  const salida: ResultadoAccesos = { dados: 0, fallaron: 0, yaEstaban: 0, extendidos: 0, accesos: [], links: [] };
   const grupos = await nombresDeGrupos(db);
 
   const anotar = async (x: Omit<Acceso, "id" | "alumnoId" | "contratoId" | "programa" | "origen" | "quien">) => {
@@ -408,6 +410,22 @@ export async function darAccesos(db: SupabaseClient, a: {
     await db.from("accesos_alumno").update({ venceEn: null, actualizadoEn: new Date().toISOString() }).eq("id", ya.id);
   };
 
+  /* Un programa de extensión (el MID con 2 meses más): lo que ya tiene vigente CON corte no se vuelve a dar, se le suma el tiempo al corte que
+     tiene (o desde hoy / el inicio, si ya venció). Una vez por contrato: «Dar los accesos» dos veces no suma dos veces. Sin contrato (a mano
+     desde la ficha) no suma nada. Lo que no tiene corte (el programa completo) ya lo tiene para siempre. */
+  const extiende = async (ya: Acceso, pl: Plataforma): Promise<void> => {
+    if (!a.programa.sumaTiempo || !a.contratoId || !ya.venceEn) return;
+    const meses = mesesDeCorte(a.programa, pl, ya.recurso);
+    if (!meses) return;
+    const hechos = Array.isArray(ya.externo.extendidoPor) ? (ya.externo.extendidoPor as unknown[]).filter((x): x is string => typeof x === "string") : [];
+    if (hechos.includes(a.contratoId)) return;
+    const base = new Date(ya.venceEn).getTime() > new Date(empieza).getTime() ? ya.venceEn : empieza;
+    const venceEn = sumarMeses(base, meses);
+    await db.from("accesos_alumno").update({ venceEn, externo: { ...ya.externo, extendidoPor: [...hechos, a.contratoId] }, actualizadoEn: new Date().toISOString() }).eq("id", ya.id);
+    ya.venceEn = venceEn;
+    salida.extendidos++;
+  };
+
   /* Wisboo: un usuario, un acceso por curso. */
   const cursos = a.programa.wisboo.filter((p) => quiere("wisboo", p));
   if (cursos.length) {
@@ -420,7 +438,7 @@ export async function darAccesos(db: SupabaseClient, a: {
     for (const producto of cursos) {
       const nombre = PRODUCTOS_WISBOO.find((p) => p.id === producto)?.nombre ?? producto;
       const ya = previo("wisboo", producto);
-      if (ya && (ya.estado === "dado" || ya.estado === "entro")) { salida.yaEstaban++; salida.accesos.push(ya); await sinCorte(ya, "wisboo"); continue; }
+      if (ya && (ya.estado === "dado" || ya.estado === "entro")) { salida.yaEstaban++; salida.accesos.push(ya); await sinCorte(ya, "wisboo"); await extiende(ya, "wisboo"); continue; }
       if (!usuarioId) { await anotar({ plataforma: "wisboo", recurso: producto, recursoNombre: nombre, estado: "fallo", externo: {}, error: errorUsuario, dadoEn: null, quitadoEn: null }); continue; }
       try {
         const r = await darCursoWisboo(usuarioId, producto);
@@ -445,6 +463,7 @@ export async function darAccesos(db: SupabaseClient, a: {
     if (ya && (ya.estado === "dado" || ya.estado === "entro")) {
       salida.yaEstaban++; salida.accesos.push(ya);
       await sinCorte(ya, "telegram");
+      await extiende(ya, "telegram");
       const link = typeof ya.externo.link === "string" ? ya.externo.link : null;
       if (link && ya.estado === "dado") salida.links.push({ plataforma: "telegram", nombre, url: link });
       continue;
@@ -476,6 +495,7 @@ export async function darAccesos(db: SupabaseClient, a: {
       if (ya && (ya.estado === "dado" || ya.estado === "entro")) {
         salida.yaEstaban++; salida.accesos.push(ya);
         await sinCorte(ya, "zoom");
+        await extiende(ya, "zoom");
         let joinUrl = typeof ya.externo.joinUrl === "string" ? ya.externo.joinUrl : null;
         /* Dado pero sin su link (se perdió en una reactivación): se lo busca en la lista de aprobados. */
         if (!joinUrl && token) {

@@ -450,12 +450,19 @@ export const esCodigoBienvenida = (x: unknown): x is string => typeof x === "str
 /** Lo que el contrato firmado deja en la ficha de Customer Success: firmado, las sesiones 1 a 1 que se le dieron y, si la
     ficha todavía no tenía programa, el del contrato. Lo que Lili ya cargó a mano en el programa no se pisa. */
 export function fichaAlFirmar(datos: Partial<DatosContrato>, programa: string, programasDeLaFicha: string[] | null | undefined): Record<string, unknown> {
+  const tiene = programasDeLaFicha ?? [];
   return {
     contratoFirmado: "Firmado", estadoContrato: "Firmado en PandaDoc",
     ...(typeof datos.sesiones === "number" && datos.sesiones > 0 ? { sesionesMentor: datos.sesiones } : {}),
-    ...(programa && !(programasDeLaFicha ?? []).length ? { programas: [programa] } : {}),
+    ...(programa && !tiene.length ? { programas: [programa] } : {}),
+    /* Quien sube de un downsell (Plus+ o MID) al programa completo pasa a cursar también ese: se SUMA a lo que ya tenía (Lili sigue viendo su
+       Downsell y el formulario semanal empieza a llegarle). Sólo de downsell a programa; nada de lo cargado a mano se saca. */
+    ...(programa && tiene.length && !tiene.includes(programa) && tiene.some(esDeDownsell) && !esDeDownsell(programa) ? { programas: [...tiene, programa] } : {}),
   };
 }
+
+/** «Downsell», «Downsell Plus+», «Hackear IA MID» (y su extensión): lo que no es el programa completo. */
+const esDeDownsell = (nombre: string): boolean => /downsell|\bmid\b/i.test(nombre);
 
 /** ¿Al firmar se dan los accesos solos? Encendidos o sólo dueños, siempre; en «prueba», sólo los contratos de prueba. */
 export function accesosAlFirmar(estado: ConfigContratos["estado"] | undefined, modo: ModoContrato): boolean {

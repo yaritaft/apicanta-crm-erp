@@ -46,6 +46,9 @@ export interface Programa {
      el inicio del servicio, si arranca después). Lo que no está acá no se corta nunca. Manuel, 12/11: en el Hackear IA MID, al terminar el mes se
      saca sólo la mentoría grupal y se conserva el contenido grabado. */
   vencen?: Record<string, number>;
+  /* Un programa de extensión (Manuel, 13/11: «subirse» al MID con 2 meses más de mentoría por US$ 1.000): lo que la persona ya tiene con corte no
+     se vuelve a dar, se le SUMA el tiempo al corte que tiene; lo que ya perdió se le vuelve a dar por esos meses. No mueve el inicio del alumno. */
+  sumaTiempo?: boolean;
   activo: boolean;
 }
 
@@ -82,7 +85,9 @@ export function sumarMeses(desde: string | Date, meses: number): string {
 /* Los tres downsells (Manuel, 12/11): el de siempre (US$ 497, sólo el contenido grabado), el Plus+ (US$ 997: contenido, bolsa de trabajo y corrección
    de CV y LinkedIn) y el Hackear IA MID (US$ 1.497: contenido y un mes de mentoría grupal). Para la ficha («Acceso: Downsell») y la bienvenida
    son lo mismo: no son el programa completo. */
-export const PROGRAMAS_DOWNSELL: readonly string[] = ["downsell", "downsell-plus", "hackear-ia-mid"];
+export const PROGRAMAS_DE_EXTENSION: readonly string[] = ["hackear-ia-mid-extension"];
+export const esProgramaDeExtension = (id: string | null | undefined): boolean => Boolean(id) && PROGRAMAS_DE_EXTENSION.includes(id!);
+export const PROGRAMAS_DOWNSELL: readonly string[] = ["downsell", "downsell-plus", "hackear-ia-mid", ...PROGRAMAS_DE_EXTENSION];
 export const esProgramaDownsell = (id: string | null | undefined): boolean => Boolean(id) && PROGRAMAS_DOWNSELL.includes(id!);
 
 export const WISBOO = {
@@ -99,7 +104,8 @@ const PLANTILLA_PRINCIPALS = { plantillaId: "LA84NtSudaTUWc3TC8nvxK", plantillaN
 export const PROGRAMAS_POR_DEFECTO: Programa[] = [
   {
     id: "hackear-ai", nombre: "Hackear AI",
-    productos: ["prod_mentoria", "prod_hackear_ai", "prod_hackear_it", "prod_resell", "prod_upgrade_ai"],
+    /* «Upgrade a mentoría» (desde el Plus+, US$ 1.500) es el mismo programa completo: se le da lo que le falta y se le levanta el corte. */
+    productos: ["prod_mentoria", "prod_hackear_ai", "prod_hackear_it", "prod_resell", "prod_upgrade_ai", "prod_upgrade_mentoria"],
     plantillaId: "u8ZTSsZ8U3urHmUGjyUYmT", plantillaNombre: "Contrato de Mentoría - Hackear AI",
     wisboo: [WISBOO.hackearIt, WISBOO.hackearAi, WISBOO.bonos], telegram: [], zoom: [], bonos: [], activo: true,
   },
@@ -134,6 +140,11 @@ export const PROGRAMAS_POR_DEFECTO: Programa[] = [
     plantillaId: "7uUS5z4i2f3FAPXwuNHkUC", plantillaNombre: "Contrato de acceso al contenido grabado - XXXXX",
     wisboo: [WISBOO.hackearIt, WISBOO.hackearAi], telegram: [], zoom: [], bonos: [], vencen: {}, activo: true,
   },
+  {
+    /* Dos meses más de mentoría grupal para quien tiene el MID (US$ 1.000 pagando de una): sin cursos, y los grupos y reuniones se eligen en Ajustes. */
+    id: "hackear-ia-mid-extension", nombre: "Hackear IA MID · extensión", productos: ["prod_extension_mid"],
+    plantillaId: "", plantillaNombre: "", wisboo: [], telegram: [], zoom: [], bonos: [], vencen: {}, sumaTiempo: true, activo: true,
+  },
 ];
 
 const lista = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string" && x.trim() !== "") : []);
@@ -156,6 +167,7 @@ export function programaNormal(v: unknown): Programa | null {
     plantillaSinSesionesNombre: typeof o.plantillaSinSesionesNombre === "string" ? o.plantillaSinSesionesNombre : "",
     wisboo: lista(o.wisboo), telegram: lista(o.telegram), zoom: lista(o.zoom), bonos: lista(o.bonos),
     vencen: cortesNormales(o.vencen),
+    sumaTiempo: o.sumaTiempo === true,
     activo: o.activo !== false,
   };
 }

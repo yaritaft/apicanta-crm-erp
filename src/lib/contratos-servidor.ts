@@ -435,13 +435,15 @@ export async function alFirmar(db: SupabaseClient, c: Contrato, opciones: { quie
   }
   if (alumnoId && c.modo === "produccion") {
     const ficha = await db.from("seguimiento_alumnos").select("programas").eq("alumnoId", alumnoId).maybeSingle();
-    const nombre = programaPorId(programas, c.programa)?.nombre ?? "";
+    const delPrograma = programaPorId(programas, c.programa);
+    const nombre = delPrograma?.nombre ?? "";
     await cambiarFicha(db, alumnoId, fichaAlFirmar(c.datos, nombre, (ficha.data?.programas as string[] | null) ?? null))
       .catch((e) => console.error("[contratos] no se marcó la ficha", alumnoId, mensajeDe(e)));
     /* El servicio arranca cuando dice el contrato (puede ser una semana después del pago). */
     /* A las 12 de Argentina: «2026-10-26» a secas es la medianoche UTC, que en Argentina todavía es el 25. */
     const inicio = typeof c.datos.inicio === "string" && /^\d{4}-\d{2}-\d{2}$/.test(c.datos.inicio) ? `${c.datos.inicio}T15:00:00.000Z` : null;
-    if (inicio) await db.from("alumnos").update({ inicio }).eq("id", alumnoId);
+    /* Una extensión (el MID con 2 meses más) suma mentoría a quien ya cursa: no cambia cuándo empezó. */
+    if (inicio && !delPrograma?.sumaTiempo) await db.from("alumnos").update({ inicio }).eq("id", alumnoId);
   }
 
   if (c.accesosEn) return { accesos: null };
@@ -481,7 +483,7 @@ export async function alFirmar(db: SupabaseClient, c: Contrato, opciones: { quie
     /* Los cortes automáticos (la mentoría del MID) cuentan desde que arranca el servicio, a las 12 de Argentina como el inicio del alumno. */
     desde: typeof c.datos.inicio === "string" && /^\d{4}-\d{2}-\d{2}$/.test(c.datos.inicio) ? `${c.datos.inicio}T15:00:00.000Z` : null,
   });
-  await evento(db, c.id, "accesos", opciones.quien ?? "Apicanta", "app", { dados: r.dados, fallaron: r.fallaron, yaEstaban: r.yaEstaban });
+  await evento(db, c.id, "accesos", opciones.quien ?? "Apicanta", "app", { dados: r.dados, fallaron: r.fallaron, yaEstaban: r.yaEstaban, ...(r.extendidos ? { extendidos: r.extendidos } : {}) });
   return { accesos: r };
 }
 
