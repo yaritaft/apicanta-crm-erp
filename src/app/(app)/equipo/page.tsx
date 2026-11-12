@@ -13,7 +13,7 @@ import { ReglasAcordadas } from "@/components/equipo/Reglas";
 import { reglasSinConfirmar } from "@/lib/reglas";
 import { useEstadoDeClosers } from "@/components/closers/EstadoDeClosers";
 import { useAcceso, useAccesos } from "@/lib/acceso";
-import { nivelDeLiquidacion } from "@/lib/permisos";
+import { nivelDeLiquidacion, puedeArmarElEquipo } from "@/lib/permisos";
 import { useEstado, useSelector, useSync } from "@/lib/store";
 import { useParamsURL } from "@/lib/useParamsURL";
 import { CopiarLink } from "@/components/ui/Filtros";
@@ -32,10 +32,11 @@ import "@/components/finanzas/visual/visual.css";
    "Sin cargar" de todos.
 
    Quien tiene el permiso «Liquidación» (Aldana: el cierre de comisiones, 26/10)
-   entra sólo a «Liquidación del mes» y «Comisiones», para mirar: lo que cobra
-   cada uno, los accesos y los tipos de cuenta siguen siendo de los dueños. Con
-   «ver» sólo mira; con «editar» carga lo que falta, cierra el mes y marca quién
-   cobró. La base lo dice igual (supabase/permiso-liquidacion.sql).
+   entra a «Liquidación del mes», «Comisiones» y «Reglas». Con «ver» sólo mira;
+   con «editar» carga lo que falta, cierra el mes, marca quién cobró y además arma
+   el equipo: altas, bajas y lo que cobra cada uno (11/11), menos lo suyo. Los
+   accesos a la app y los tipos de cuenta siguen siendo de los dueños. La base lo
+   dice igual (supabase/permiso-liquidacion.sql y equipo-liquidacion-edita.sql).
 
    En la URL: ?seccion= (liquidacion, equipo, comisiones, reglas, accesos, tipos), ?mes=2026-09 y
    ?persona=<id> para la ficha abierta. No se usa ?vista= porque es de la
@@ -51,7 +52,8 @@ export default function EquipoYHonorarios() {
   const nivelLiq = nivelDeLiquidacion(acceso.acceso);
   const [p, cambiar] = useParamsURL({ seccion: "liquidacion", persona: "" });
   /* Quien no es dueño sólo tiene la liquidación y las comisiones. */
-  const permitidas = acceso.esDueno ? SECCIONES : SECCIONES_DE_LIQUIDACION;
+  const armaElEquipo = puedeArmarElEquipo(acceso.acceso);
+  const permitidas = acceso.esDueno ? SECCIONES : armaElEquipo ? [...SECCIONES_DE_LIQUIDACION, "equipo" as Seccion] : SECCIONES_DE_LIQUIDACION;
   const seccion = (permitidas as string[]).includes(p.seccion) ? (p.seccion as Seccion) : "liquidacion";
   const accesos = useAccesos(acceso.esDueno);
   /* Si cada closer va a ver sus llamadas (su correo en Equipo y su nombre en Calendly): se avisa en la solapa. */
@@ -111,7 +113,7 @@ export default function EquipoYHonorarios() {
         valor={seccion} onChange={(v) => cambiar({ seccion: v })}
         opciones={[
           { valor: "liquidacion", texto: "Liquidación del mes" },
-          ...(acceso.esDueno ? [{ valor: "equipo" as Seccion, texto: "Equipo y lo que cobra" }] : []),
+          ...(armaElEquipo ? [{ valor: "equipo" as Seccion, texto: "Equipo y lo que cobra" }] : []),
           { valor: "comisiones", texto: "Comisiones" },
           {
             valor: "reglas" as Seccion,
@@ -132,13 +134,13 @@ export default function EquipoYHonorarios() {
       />
       {acceso.esDueno && <div className="fz-barra__der"><CopiarLink variante="ghost" /></div>}
       </div>
-      {seccion === "liquidacion" && <LiquidacionMes onVerPersona={acceso.esDueno ? ver : undefined} soloMirar={nivelLiq < 2} onVerReglas={() => cambiar({ seccion: "reglas" })} />}
-      {seccion === "equipo" && <ListaEquipo accesos={accesos} onVer={ver} />}
-      {seccion === "comisiones" && <Comisiones onVer={acceso.esDueno ? ver : undefined} editable={acceso.esDueno} />}
+      {seccion === "liquidacion" && <LiquidacionMes onVerPersona={armaElEquipo ? ver : undefined} soloMirar={nivelLiq < 2} onVerReglas={() => cambiar({ seccion: "reglas" })} />}
+      {seccion === "equipo" && <ListaEquipo accesos={accesos} onVer={ver} conAccesos={acceso.esDueno} />}
+      {seccion === "comisiones" && <Comisiones onVer={armaElEquipo ? ver : undefined} editable={armaElEquipo} />}
       {seccion === "reglas" && <ReglasAcordadas editable={acceso.esDueno} onEditar={acceso.esDueno ? ver : undefined} />}
       {seccion === "accesos" && <AccesosApp accesos={accesos} closers={closers} onVerMiembro={ver} />}
       {seccion === "tipos" && <TiposCuenta accesos={accesos} />}
-      {acceso.esDueno && p.persona && <FichaMiembro key={p.persona} miembroId={p.persona} accesos={accesos} onCerrar={() => cambiar({ persona: null })} />}
+      {armaElEquipo && p.persona && <FichaMiembro key={p.persona} miembroId={p.persona} accesos={accesos} onCerrar={() => cambiar({ persona: null })} />}
     </div>
   );
 }

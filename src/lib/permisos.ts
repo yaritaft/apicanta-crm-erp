@@ -149,6 +149,9 @@ export const esDueno = (a: MiAcceso | null | undefined) => a?.tipo === "dueno";
 
 /** La liquidación del mes: 0 no la ve · 1 la mira · 2 la carga, la cierra y marca quién cobró. Los dueños, siempre 2. */
 export const nivelDeLiquidacion = (a: MiAcceso | null | undefined): 0 | 1 | 2 => (esDueno(a) ? 2 : nivelEn(a, "liquidacion"));
+/** Armar el equipo (altas, bajas, lo que cobra cada uno): los dueños y quien tiene «Liquidación: editar». Los accesos a la app, sólo los dueños. */
+export const puedeArmarElEquipo = (a: MiAcceso | null | undefined): boolean => nivelDeLiquidacion(a) >= 2;
+
 /** ¿Puede ver la liquidación (y los pasos de Finanzas que dependen de ella)? Un dueño, o quien tiene el permiso «Liquidación». */
 /** Fijar el % del setter en una venta (Venta.comisionSetter): lo hace quien liquida, los dueños y «Liquidación: editar». */
 export const puedeFijarComisionDeSetter = (a: MiAcceso | null | undefined): boolean => nivelDeLiquidacion(a) >= 2;
@@ -336,6 +339,9 @@ export function puedeEditar(a: MiAcceso | null | undefined, tabla: string): bool
   /* La liquidación: cargarla, cerrarla y marcar quién cobró es de quien tiene «Liquidación: editar» (Aldana, 26/10: «Tu tipo de cuenta no
      puede cambiar la liquidación» al querer descontarle un monto a un closer). Los esquemas (honorarios) siguen siendo sólo de los dueños. */
   if (tabla === "liquidaciones") return nivelDeLiquidacion(a) >= 2;
+  /* Quien liquida también arma el equipo y lo que cobra cada uno (Aldana, 11/11: altas, bajas y esquemas); la base le impide cambiar lo suyo
+     (supabase/equipo-liquidacion-edita.sql). Los accesos a la app y los tipos de cuenta siguen siendo de los dueños. */
+  if (tabla === "equipo" || tabla === "honorarios") return nivelDeLiquidacion(a) >= 2;
   if (tabla === "devoluciones") return puedeCargarDevolucion(a);
   if (tabla === "alumnos" && nivelEn(a, "ventas") === 2) return true;
   /* Quien registra pagos concilia el cobro con el pago de la pasarela: la base le deja ver los

@@ -10,7 +10,7 @@ import { acciones, hayNube, useEstado } from "@/lib/store";
 import { useUsuarioActual } from "@/lib/usuario";
 import { tasaDeComision } from "@/lib/comision";
 import { tasaDeTexto, textoDeTasa, textoParaEditar } from "@/lib/comision-setter";
-import { emailValido, generarClave, tipoSugerido, useTiposCuenta, type useAccesos } from "@/lib/acceso";
+import { emailValido, generarClave, tipoSugerido, useAcceso, useTiposCuenta, type useAccesos } from "@/lib/acceso";
 import { resumenDeTipo } from "@/lib/permisos";
 import { categoriasDisponibles, infoGrupo } from "@/lib/gastos";
 import {
@@ -48,6 +48,7 @@ export function FichaMiembro({ miembroId, accesos, onCerrar }: {
   const e = useEstado();
   const toast = useToast();
   const yo = useUsuarioActual();
+  const acceso = useAcceso();
   const m = e.equipo.find((x) => x.id === miembroId);
   const esq = e.honorarios.find((h) => h.miembroId === miembroId);
 
@@ -79,8 +80,14 @@ export function FichaMiembro({ miembroId, accesos, onCerrar }: {
     if (aviso) toast(aviso);
   };
 
+  /* Quien arma el equipo sin ser dueño (Aldana) no cambia los accesos a la app, el correo de nadie ni lo suyo: la base tampoco la deja. */
+  const esDueno = acceso.esDueno;
+  const esMia = !esDueno && Boolean(yo.email) && (m.email ?? "").trim().toLowerCase() === (yo.email ?? "").toLowerCase();
+
   return (
     <Drawer abierto onCerrar={onCerrar} titulo={m.nombre} sub={[m.puesto, textoRol(m.rol), m.activo ? "" : "ya no está"].filter(Boolean).join(" · ")}>
+      {esMia && <p className="t-sm t-muted" role="status">Esta es tu ficha: la cambia un dueño. Acá sólo la podés mirar.</p>}
+      <fieldset disabled={esMia} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
       <div className="stack-6">
         {/* ---------- Quién es ---------- */}
         <section className="stack-3">
@@ -101,9 +108,9 @@ export function FichaMiembro({ miembroId, accesos, onCerrar }: {
             <Field label="Rol en las ventas" ayuda="Dice en qué lista aparece al cargar una venta: vendedor, setter o director.">
               <Select value={m.rol} opciones={ROLES} aria-label="Rol en las ventas" onChange={(ev) => cambiar({ rol: ev.target.value as RolEquipo }, "Rol guardado.")} />
             </Field>
-            <Field label="Correo con el que entra" ayuda="Con esto la app sabe quién es y se le puede dar acceso.">
+            <Field label="Correo con el que entra" ayuda={esDueno ? "Con esto la app sabe quién es y se le puede dar acceso." : "Lo cambia un dueño: es lo que ata a la persona con su cuenta de la app."}>
               <Input
-                key={`e-${m.email ?? ""}`} type="email" defaultValue={m.email ?? ""} aria-label="Correo" placeholder="nombre@apicanta.com"
+                key={`e-${m.email ?? ""}`} type="email" defaultValue={m.email ?? ""} aria-label="Correo" placeholder="nombre@apicanta.com" disabled={!esDueno}
                 onBlur={(ev) => {
                   const v = ev.target.value.trim().toLowerCase();
                   if (v === (m.email ?? "")) return;
@@ -211,15 +218,18 @@ export function FichaMiembro({ miembroId, accesos, onCerrar }: {
           </Field>
         </section>
 
-        {/* ---------- Acceso a la app ---------- */}
-        <section className="stack-3">
-          <h3 className="t-label">Acceso a la app</h3>
-          <AccesoMiembro m={m} accesos={accesos} yoEmail={yo.email} />
-        </section>
+        {/* ---------- Acceso a la app (sólo los dueños) ---------- */}
+        {esDueno && (
+          <section className="stack-3">
+            <h3 className="t-label">Acceso a la app</h3>
+            <AccesoMiembro m={m} accesos={accesos} yoEmail={yo.email} />
+          </section>
+        )}
 
         {/* ---------- Lo que se le liquidó, mes por mes, con su «Ver cómo se calculó» ---------- */}
         <HistorialLiquidado miembroId={m.id} />
       </div>
+      </fieldset>
 
       {editando && (
         <AsistenteConcepto

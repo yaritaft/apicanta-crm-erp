@@ -13,6 +13,7 @@ import { configSeguimiento, seguimientoVacio } from "./seguimiento";
 import { resellNormal, retiroDelTestimonioAgendado, seguimientoCompleto, siguienteNumero, testimonioNormal } from "./clientes-cs";
 import { revisionCvNormal } from "./revision-cv";
 import type { EsquemaPago, EstadoSeguimientoCobro, SeguimientoCobro, EstadoTraspaso, EtapaServicio, ExtraLiquidacion, Gasto, GastoRecurrente, ID as IdMiembro, Liquidacion, MiembroEquipo, ResultadoLiquidacion, TipoCuenta, Traspaso } from "./types";
+import { alDesmarcar, gastoDelPago, type PagoARegistrar } from "./pagos-liquidacion";
 import { conciliarPuntas, llegadaDeCobro, motivoDelMovimiento, paseDelCobro, rutaDe, type Punta } from "./traspasos";
 import { gastoAprobado, plantillasDesdeGastos } from "./gastos-recurrentes";
 import { cobrosAnulados, NOTA_ANULADO } from "./mercury";
@@ -4675,6 +4676,86 @@ export const acciones = {
     if (sacar.length) empujar({ tipo: "delete", tabla: "gastos", ids: sacar });
     empujar({ tipo: "upsert", tabla: "liquidaciones", filas: [abierta] });
     empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
+  },
+
+  /* Marcar un pago de la liquidación cerrada = registrar de qué cuenta salió la plata (lib/pagos-liquidacion.ts): se enlazan los gastos que ya estaban
+     cargados (se marcan como pago al equipo: restan de la caja y no suman otra vez como costo) y lo que falta se crea ya marcado, con su cuenta. Sirve
+     también para las personas que ya figuraban pagadas sin cuenta. */
+  registrarPagosDeEquipo(liqId: ID, items: readonly PagoARegistrar[], por?: string): { personas: number; creados: number; enlazados: number } {
+    const e = snapshot();
+    const liq = e.liquidaciones.find((x) => x.id === liqId);
+    const vacio = { personas: 0, creados: 0, enlazados: 0 };
+    if (!liq?.resultado || liq.estado !== "cerrada" || items.length === 0) return vacio;
+    const ahoraIso = ahora();
+    const pagos = { ...liq.pagos };
+    const nuevos: Gasto[] = [];
+    const marcar = new Set<ID>();
+    let personas = 0;
+    for (const it of items) {
+      const persona = liq.resultado.personas.find((x) => x.miembroId === it.miembroId);
+      if (!persona) continue;
+      const antes = pagos[it.miembroId];
+      const yaEnlazados = new Set(antes?.gastoIds ?? []);
+      const enlazar = it.elegidos.filter((id) => !yaEnlazados.has(id) && e.gastos.some((g) => g.id === id));
+      const paraMarcar = enlazar.filter((id) => { const g = e.gastos.find((x) => x.id === id); return g && g.grupo !== "dueno" && g.extra?.pagoDeEquipo !== true; });
+      paraMarcar.forEach((id) => marcar.add(id));
+      const gasto = it.monto > 0.005 ? gastoDelPago(e, liq, persona, it, nuevoId("gas"), ahoraIso) : undefined;
+      if (gasto) nuevos.push(gasto);
+      const quien = antes?.por ?? por;
+      pagos[it.miembroId] = {
+        pagadoEn: antes?.pagadoEn ?? ahoraIso, ...(quien ? { por: quien } : {}), cuentaId: it.cuentaId,
+        gastoIds: [...(antes?.gastoIds ?? []), ...enlazar, ...(gasto ? [gasto.id] : [])],
+        creados: [...(antes?.creados ?? []), ...(gasto ? [gasto.id] : [])],
+        marcados: [...(antes?.marcados ?? []), ...paraMarcar],
+      };
+      personas++;
+    }
+    if (personas === 0) return vacio;
+    const tocados: Gasto[] = [];
+    const gastos = e.gastos.map((g) => {
+      if (!marcar.has(g.id)) return g;
+      const marcado = { ...g, extra: { ...(g.extra ?? {}), pagoDeEquipo: true } };
+      tocados.push(marcado);
+      return marcado;
+    });
+    const actualizada: Liquidacion = { ...liq, pagos, actualizadoEn: ahoraIso };
+    const { lista: act, nuevo } = registrar(
+      e, "transaccion", liq.id, "Pagos al equipo", "actualizo",
+      `Se registraron los pagos de ${nombrePeriodo(liq.periodo)} de ${personas} ${personas === 1 ? "persona" : "personas"}: ${nuevos.length} ${nuevos.length === 1 ? "gasto nuevo" : "gastos nuevos"} (${Math.round(nuevos.reduce((a, g) => a + g.monto, 0) * 100) / 100} ${e.ajustes.monedaBase}) y ${marcar.size} ${marcar.size === 1 ? "ya cargado" : "ya cargados"} que se marcaron como pago al equipo.`,
+    );
+    guardar({ ...e, gastos: [...gastos, ...nuevos], liquidaciones: e.liquidaciones.map((x) => (x.id === liq.id ? actualizada : x)), actividad: act });
+    const filas = [...tocados, ...nuevos];
+    for (let i = 0; i < filas.length; i += 100) empujar({ tipo: "upsert", tabla: "gastos", filas: filas.slice(i, i + 100) });
+    empujar({ tipo: "upsert", tabla: "liquidaciones", filas: [actualizada] });
+    empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
+    return { personas, creados: nuevos.length, enlazados: marcar.size };
+  },
+
+  /* Desmarcar un pago registrado: el gasto que creó el registro se va y los que sólo se marcaron vuelven a como estaban. */
+  desmarcarPagoDeEquipo(liqId: ID, miembroId: IdMiembro): boolean {
+    const e = snapshot();
+    const liq = e.liquidaciones.find((x) => x.id === liqId);
+    const pago = liq?.pagos?.[miembroId];
+    if (!liq || !pago) return false;
+    const { borrar, desmarcar } = alDesmarcar(pago);
+    const pagos = { ...liq.pagos };
+    delete pagos[miembroId];
+    const sacar = new Set(borrar);
+    const volver = new Set(desmarcar);
+    const tocados: Gasto[] = [];
+    const gastos = e.gastos.filter((g) => !sacar.has(g.id)).map((g) => {
+      if (!volver.has(g.id)) return g;
+      const { pagoDeEquipo: _quitar, ...resto } = g.extra ?? {};
+      const suelto = { ...g, extra: resto };
+      tocados.push(suelto);
+      return suelto;
+    });
+    const actualizada: Liquidacion = { ...liq, pagos, actualizadoEn: ahora() };
+    guardar({ ...e, gastos, liquidaciones: e.liquidaciones.map((x) => (x.id === liq.id ? actualizada : x)) });
+    if (borrar.length) empujar({ tipo: "delete", tabla: "gastos", ids: borrar });
+    for (let i = 0; i < tocados.length; i += 100) empujar({ tipo: "upsert", tabla: "gastos", filas: tocados.slice(i, i + 100) });
+    empujar({ tipo: "upsert", tabla: "liquidaciones", filas: [actualizada] });
+    return true;
   },
 
   marcarPagado(liq: Liquidacion, miembroId: IdMiembro, pagado: boolean, por?: string) {

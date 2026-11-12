@@ -66,9 +66,13 @@ test("la app deja guardar la liquidación a quien tiene «Liquidación: editar»
   assert.equal(puedeEditar(aldana(), "liquidaciones"), false);
   for (const id of ["equipo", "admin", "closer", "director", "setter", "marketing", "customer_success"]) assert.equal(puedeEditar(tipo(id), "liquidaciones"), false, id);
   assert.equal(puedeEditar(null, "liquidaciones"), false);
-  /* Lo que cobra cada uno (los esquemas) lo cambian sólo los dueños, tenga el permiso que tenga. */
+  /* Lo que cobra cada uno (los esquemas) y el equipo: los dueños y, desde el 11/11 (Aldana arma el equipo), quien tiene «Liquidación: editar»; «ver» no
+     (supabase/equipo-liquidacion-edita.sql; la base le impide cambiar lo suyo). Los accesos a la app siguen siendo sólo de los dueños. */
   assert.equal(puedeEditar(ACCESO_DUENO, "honorarios"), true);
-  assert.equal(puedeEditar(aldana("editar"), "honorarios"), false);
+  assert.equal(puedeEditar(aldana("editar"), "honorarios"), true);
+  assert.equal(puedeEditar(aldana("editar"), "equipo"), true);
+  assert.equal(puedeEditar(aldana("ver"), "honorarios") || puedeEditar(aldana("ver"), "equipo"), false);
+  assert.equal(puedeEditar(aldana("editar"), "usuarios_permitidos"), false);
   /* Lo que la liquidación carga en Finanzas (los gastos) lo puede cargar quien edita Finanzas, como siempre. */
   assert.equal(puedeEditar(aldana("editar"), "gastos"), true);
 });

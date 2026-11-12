@@ -1915,6 +1915,13 @@ export interface ResultadoLiquidacion {
 export interface PagoLiquidacion {
   pagadoEn: string;
   por?: string;
+  /* De qué cuenta salió la plata (la última que se registró). Sin esto, el pago es sólo una marca: la caja no sabe de dónde salió (Aldana, 11/11). */
+  cuentaId?: ID;
+  /* Los gastos de la caja que son este pago: los que ya estaban cargados (del banco o a mano) y los que se crearon al registrarlo. */
+  gastoIds?: ID[];
+  /* De esos, los que creó el registro (se borran si se desmarca) y los que ya existían y el registro marcó como pago al equipo (se desmarcan). */
+  creados?: ID[];
+  marcados?: ID[];
 }
 
 export interface Liquidacion {

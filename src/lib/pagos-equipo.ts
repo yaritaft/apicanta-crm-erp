@@ -30,7 +30,7 @@ export function coincideConNombre(texto: string, nombre: string): boolean {
 }
 
 /* Categorías que nunca son un pago de equipo: aunque el monto coincida, es otra cosa. */
-const NUNCA = new Set(["Meta Ads", "Google Ads", "TikTok Ads", "Software", "Cashback", "Mantenimiento LLC"]);
+export const NUNCA = new Set(["Meta Ads", "Google Ads", "TikTok Ads", "Software", "Cashback", "Mantenimiento LLC"]);
 
 export interface PagoSospechoso {
   gasto: Gasto;

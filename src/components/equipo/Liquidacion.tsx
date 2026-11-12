@@ -12,7 +12,7 @@ import { InfoMetrica } from "@/components/ui/InfoMetrica";
 import { InputMonto } from "@/components/ui/InputMonto";
 import { Avance, PartesDeUnTotal, Segmentado, Senal, Senales } from "@/components/finanzas/visual/visual";
 import { equipoPorTipo } from "@/lib/equipo-por-tipo";
-import { Modal } from "@/components/ui/Modal";
+import { Confirmar, Modal } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toast";
 import { acciones, nuevoId, useEstado } from "@/lib/store";
 import { useParamsURL } from "@/lib/useParamsURL";
@@ -34,6 +34,8 @@ import Link from "next/link";
 import { EquipoPorTipo } from "./EquipoPorTipo";
 import { mesDelAviso, settersConComisionInusual } from "@/lib/comision-inusual";
 import { pagosSospechosos } from "@/lib/pagos-equipo";
+import { pagosSinRegistrar } from "@/lib/pagos-liquidacion";
+import { PagarEquipo } from "./PagarEquipo";
 
 /* ==================================================================
    La liquidación del mes.
@@ -127,6 +129,11 @@ export function LiquidacionMes({ onVerPersona, soloMirar = false, onVerReglas }:
 
   const [cerrando, setCerrando] = useState(false);
   const [reabriendo, setReabriendo] = useState(false);
+  /* Marcar como pagado deja el pago registrado en la caja: con qué cuenta salió (lib/pagos-liquidacion.ts). `pagando` son las personas del diálogo. */
+  const [pagando, setPagando] = useState<PersonaLiquidada[] | null>(null);
+  const [desmarcando, setDesmarcando] = useState<PersonaLiquidada | null>(null);
+  /* Las que figuran pagadas y la caja no sabe de dónde salió su plata. */
+  const sinRegistrar = useMemo(() => (cerrada && !soloMirar ? pagosSinRegistrar(e, liq) : []), [cerrada, soloMirar, e, liq]);
 
   const guardar = (cambio: Partial<Liquidacion>) => acciones.guardarLiquidacion({ ...liq, ...cambio });
 
@@ -194,7 +201,8 @@ export function LiquidacionMes({ onVerPersona, soloMirar = false, onVerReglas }:
       meses={mesesParaMonto} porVenir={porVenir.get(persona.miembroId)}
       onAgregarExtra={(x) => agregarExtra(persona, x)} onQuitarExtra={quitarExtra} onMarcarAdelanto={marcarAdelanto}
       onVerDesglose={(clave) => setVerDesglose({ miembroId: persona.miembroId, clave })}
-      onPagado={(v) => acciones.marcarPagado(liq, persona.miembroId, v, yo.nombre)}
+      onPagado={(v) => { if (v) setPagando([persona]); else setDesmarcando(persona); }}
+      sinRegistrar={sinRegistrar.some((x) => x.miembroId === persona.miembroId)}
       onVerPersona={onVerPersona ? () => onVerPersona(persona.miembroId) : undefined}
       onCopiarDetalle={async () => {
         try { await navigator.clipboard.writeText(informeParaEnviar(persona, periodo, corte)); toast(`Copiado el detalle completo: pegáselo a ${persona.nombre.split(" ")[0]}.`); }
@@ -227,7 +235,7 @@ export function LiquidacionMes({ onVerPersona, soloMirar = false, onVerReglas }:
       : <Badge variante="brand" icono={<Lock size={12} />}>Cerrada</Badge>
     : <Badge variante="neutral">Abierta</Badge>;
   const mesQueSigue = nombrePeriodo(moverPeriodo(periodo, 1));
-  const haySenales = cambios.length > 0 || settersInusuales.length > 0 || sinConfirmar.length > 0 || notas.length > 0;
+  const haySenales = cambios.length > 0 || settersInusuales.length > 0 || sinConfirmar.length > 0 || notas.length > 0 || sinRegistrar.length > 0;
 
   return (
     <div className="stack-4">
@@ -323,6 +331,14 @@ export function LiquidacionMes({ onVerPersona, soloMirar = false, onVerReglas }:
               )}
             />
           ))}
+          {sinRegistrar.length > 0 && (
+            <Senal
+              tono="atencion" icono={<AlertTriangle size={16} />}
+              titulo={sinRegistrar.length === 1 ? <><b>Un pago</b> está marcado pero la caja no sabe de qué cuenta salió</> : <><b>{sinRegistrar.length} pagos</b> están marcados pero la caja no sabe de qué cuenta salieron</>}
+              sub={`${sinRegistrar.map((x) => x.nombre.split(" ")[0]).join(", ")}. Registralos para que el arqueo descuente cada pago de su cuenta (Daniel, por ejemplo, cobra por Binance). Lo que ya está cargado desde el banco se enlaza: no cuenta dos veces.`}
+              der={<Button sm variante="secondary" onClick={() => setPagando(sinRegistrar)}>Registrar de qué cuenta salieron</Button>}
+            />
+          )}
           {sinConfirmar.length > 0 && (
             <Senal
               tono="atencion" icono={<AlertTriangle size={16} />}
@@ -456,6 +472,27 @@ export function LiquidacionMes({ onVerPersona, soloMirar = false, onVerReglas }:
         />
       )}
 
+      {pagando && (
+        <PagarEquipo
+          e={e} liq={liq} personas={pagando} onCerrar={() => setPagando(null)}
+          onListo={(m) => { setPagando(null); toast(m); }}
+        />
+      )}
+      {desmarcando && (
+        <Confirmar
+          abierto onCerrar={() => setDesmarcando(null)} confirmarTexto="Desmarcar" variante="primary"
+          titulo={`¿Desmarcar el pago a ${desmarcando.nombre}?`}
+          texto={(liq.pagos[desmarcando.miembroId]?.creados?.length ?? 0) > 0
+            ? "Vuelve a figurar por pagar y se quita de la caja lo que se registró al marcarlo. Los pagos que ya estaban cargados desde el banco quedan como estaban."
+            : "Vuelve a figurar por pagar."}
+          onConfirmar={() => {
+            const p = liq.pagos[desmarcando.miembroId];
+            if (p?.gastoIds?.length) acciones.desmarcarPagoDeEquipo(liq.id, desmarcando.miembroId);
+            else acciones.marcarPagado(liq, desmarcando.miembroId, false, yo.nombre);
+            setDesmarcando(null);
+          }}
+        />
+      )}
       {reabriendo && (
         <Modal
           abierto onCerrar={() => setReabriendo(false)} titulo={`Reabrir ${nombrePeriodo(periodo)}`}
@@ -469,7 +506,8 @@ export function LiquidacionMes({ onVerPersona, soloMirar = false, onVerReglas }:
         >
           <p className="t-body t-muted">
             Se vuelve a calcular con los datos de hoy, sus gastos salen de Finanzas hasta que la vuelvas a cerrar y se
-            desmarca lo que estaba marcado como pagado. Lo que cargaste a mano (piezas, bonos, correcciones) queda.
+            desmarca lo que estaba marcado como pagado. Lo que cargaste a mano (piezas, bonos, correcciones) queda, y también lo que ya registraste
+            en la caja de los pagos (la plata salió igual).
           </p>
         </Modal>
       )}
@@ -575,7 +613,7 @@ function CampoNumero({ valor, onCambiar, etiqueta, placeholder, autoFocus }: {
 
 function FilaPersona({
   persona, liq, cerrada, soloMirar, tope, abierta, onAlternar, onEntrada, meses, porVenir, onAgregarExtra, onQuitarExtra, onMarcarAdelanto, onVerDesglose,
-  onPagado, onVerPersona, onCopiar, onCopiarDetalle,
+  onPagado, sinRegistrar, onVerPersona, onCopiar, onCopiarDetalle,
 }: {
   persona: PersonaLiquidada; liq: Liquidacion; cerrada: boolean; soloMirar: boolean;
   /* Lo que cobra el que más cobra: de ahí sale el largo de la barra de cada uno. */
@@ -589,7 +627,7 @@ function FilaPersona({
   onQuitarExtra: (liquidacionId: string, extraId: string) => void;
   onMarcarAdelanto: (liquidacionId: string, extraId: string, conceptoId: string | null) => void;
   onVerDesglose: (clave: string) => void;
-  onPagado: (v: boolean) => void; onVerPersona?: () => void; onCopiar: () => void; onCopiarDetalle: () => void;
+  onPagado: (v: boolean) => void; sinRegistrar?: boolean; onVerPersona?: () => void; onCopiar: () => void; onCopiarDetalle: () => void;
 }) {
   const faltan = persona.lineas.filter((l) => l.falta).length;
   const conNota = persona.lineas.some((l) => l.nota);
@@ -599,6 +637,8 @@ function FilaPersona({
     .map((l) => ({ id: l.conceptoId as string, nombre: l.nombre }));
   const pago = liq.pagos[persona.miembroId];
   const [agregando, setAgregando] = useState(false);
+  const cuentas = useEstado().procesadores;
+  const cuentaNombre = (id: string) => cuentas.find((x) => x.id === id)?.nombre ?? "otra cuenta";
 
   return (
     <div role="rowgroup" className="liq__persona" data-abierta={abierta || undefined}>
@@ -720,7 +760,12 @@ function FilaPersona({
               <Button sm variante="ghost" icono={<Copy size={15} />} onClick={onCopiar}>Copiar para mandarle</Button>
               <Button sm variante="ghost" icono={<Copy size={15} />} onClick={onCopiarDetalle} title="La cuenta de cada renglón, paso a paso, con los cobros que cuentan">Copiar el detalle</Button>
               {onVerPersona && <Button sm variante="ghost" icono={<UserRound size={15} />} onClick={onVerPersona}>Ver lo que cobra</Button>}
-              {cerrada && pago && <span className="t-sm t-subtle liq__pagado">Pagado el {fechaLarga(pago.pagadoEn)}{pago.por ? ` por ${pago.por}` : ""}</span>}
+              {cerrada && pago && (
+                <span className="t-sm t-subtle liq__pagado">
+                  Pagado el {fechaLarga(pago.pagadoEn)}{pago.por ? ` por ${pago.por}` : ""}
+                  {pago.cuentaId ? ` · salió de ${cuentaNombre(pago.cuentaId)}` : sinRegistrar ? " · sin cuenta registrada en la caja" : ""}
+                </span>
+              )}
             </div>
           </div>
         </>

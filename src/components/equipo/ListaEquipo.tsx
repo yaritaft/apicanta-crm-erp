@@ -21,7 +21,7 @@ type Accesos = ReturnType<typeof useAccesos>;
 
 interface Fila extends MiembroEquipo { cobra: string; aDefinir: boolean; acceso: string | null }
 
-export function ListaEquipo({ accesos, onVer }: { accesos: Accesos; onVer: (id: string) => void }) {
+export function ListaEquipo({ accesos, onVer, conAccesos = true }: { accesos: Accesos; onVer: (id: string) => void; conAccesos?: boolean }) {
   const tipos = useTiposCuenta();
   const e = useEstado();
   const toast = useToast();
@@ -63,15 +63,16 @@ export function ListaEquipo({ accesos, onVer }: { accesos: Accesos; onVer: (id: 
           </span>
         )),
     },
-    {
+    /* Los accesos a la app los ven y los dan los dueños: quien sólo arma el equipo no ve esta columna. */
+    ...(conAccesos ? [{
       clave: "acceso", titulo: "Acceso a la app",
-      orden: (f) => (f.acceso === "dueno" ? 0 : f.acceso ? 1 : 2),
-      celda: (f) => !hayNube
+      orden: (f: Fila) => (f.acceso === "dueno" ? 0 : f.acceso ? 1 : 2),
+      celda: (f: Fila) => !hayNube
         ? <span className="t-subtle">—</span>
         : f.acceso === "dueno" ? <Badge variante="brand">Dueño</Badge>
           : f.acceso ? <Badge variante="success">{tipos.find((t) => t.id === f.acceso)?.nombre ?? "Tiene acceso"}</Badge>
             : <span className="t-subtle">{f.email ? "Sin acceso" : "Sin correo"}</span>,
-    },
+    }] : []),
     {
       clave: "activo", titulo: "", celda: (f) => (f.activo ? null : <Badge variante="neutral">Ya no está</Badge>),
     },
@@ -81,7 +82,7 @@ export function ListaEquipo({ accesos, onVer }: { accesos: Accesos; onVer: (id: 
     <Card>
       <CardHead
         titulo="El equipo y lo que cobra"
-        sub="Tocá a alguien para cargar su sueldo, sus variables y sobre qué se miden, o para darle acceso a la app."
+        sub={conAccesos ? "Tocá a alguien para cargar su sueldo, sus variables y sobre qué se miden, o para darle acceso a la app." : "Tocá a alguien para cargar su sueldo, sus variables y sobre qué se miden, o para darlo de baja. El acceso a la app lo da un dueño."}
         acciones={<Button variante="primary" icono={<Plus size={16} />} onClick={() => setNueva(true)}>Agregar persona</Button>}
       />
       {/* La lista sólo crece (los que se van quedan apagados): scroll propio, como las demás. */}
@@ -98,7 +99,7 @@ export function ListaEquipo({ accesos, onVer }: { accesos: Accesos; onVer: (id: 
       )}
       {nueva && (
         <NuevaPersona
-          onCerrar={() => setNueva(false)}
+          conAccesos={conAccesos} onCerrar={() => setNueva(false)}
           onCrear={(m) => {
             acciones.guardarMiembro(m);
             setNueva(false);
@@ -112,8 +113,8 @@ export function ListaEquipo({ accesos, onVer }: { accesos: Accesos; onVer: (id: 
   );
 }
 
-function NuevaPersona({ onCerrar, onCrear, emailsUsados }: {
-  onCerrar: () => void; onCrear: (m: MiembroEquipo) => void; emailsUsados: Set<string>;
+function NuevaPersona({ onCerrar, onCrear, emailsUsados, conAccesos }: {
+  onCerrar: () => void; onCrear: (m: MiembroEquipo) => void; emailsUsados: Set<string>; conAccesos: boolean;
 }) {
   const [nombre, setNombre] = useState("");
   const [puesto, setPuesto] = useState("");
