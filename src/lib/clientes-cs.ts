@@ -4,7 +4,7 @@ import { diaAInstante, diaDeNegocio } from "./dia-negocio";
 import { rachasAHoy } from "./reportes";
 import { edadDeDia, nacimientoDeRespuestas, RANGO_EDAD, respuestaPerfil } from "./perfil";
 import {
-  aplicarCorreccion, CLAVES_DE_LISTAS, configSeguimiento, diasEntre, indiceDeContactos, listasPropias, proximoDe, seguimientoVacio,
+  aplicarCorreccion, CLAVES_DE_LISTAS, configSeguimiento, diasEntre, indiceDeContactos, listasPropias, proximoConPausas, proximoDe, seguimientoVacio,
   situacionDe, type SituacionSeguimiento,
 } from "./seguimiento";
 import { crearMotor, numeroComoValor, siNo, SI, NO, uno, varios, type ColumnaCs, type OrdenCs } from "./tabla-cs";
@@ -466,7 +466,12 @@ export function filasClientes(e: EstadoApp, hoy: string): FilaCliente[] {
     const arranca = inicio ? inicioReal(inicio, seg.pausas ?? []) : "";
     const pausa = pausaEnCurso(seg.pausas ?? [], hoy);
 
-    const planSug = seg.planDePago ? "" : venta ? planDePagoDe(cuotasDe.get(venta.id) ?? []) : "";
+    /* «Reserva» a secas en el Plan de pago, con la reserva ya completada, es de cuando era sólo la reserva (Lili, 13/11: Fernando Cabrera
+       reservó el 12/9, pagó todo el 27/9 y el plan seguía diciendo «Reserva»): se muestra lo que dicen sus cuotas. Un plan escrito de otra
+       forma («Reserva + 3 cuotas de 500») no se toca. */
+    const planDeReservaVencido = !enReserva && /^reserva[\s.]*$/.test(seg.planDePago.trim().toLowerCase());
+    const planSug = seg.planDePago && !planDeReservaVencido ? "" : venta ? planDePagoDe(cuotasDe.get(venta.id) ?? []) : "";
+    const planActualizado = planDeReservaVencido && planSug !== "" && planSug.toLowerCase() !== "reserva";
     const llamada = contacto ? ultimaLlamada.get(contacto.id) : undefined;
     const edadNac = edadDeNacimiento(seg.nacimiento, hoy);
     const edadSug = edadNac === null && seg.edad === null ? (edadDeTexto(respuestaPerfil(llamada?.respuestas, "edad")) ?? edadDeNacimiento(nacimientoDeRespuestas(llamada?.respuestas), hoy)) : null;
@@ -476,9 +481,9 @@ export function filasClientes(e: EstadoApp, hoy: string): FilaCliente[] {
     const esDownsell = /downsell/i.test(producto || a.plan || "");
     const contratoSug = !seg.contratoFirmado && inicio !== "" && inicio < CONTRATO_RESERVA_DOWNSELL_DESDE && (enReserva || esDownsell)
       ? NO_SE_HACIA_CONTRATO : "";
-    /* En pausa (o antes de arrancar) no toca el contacto de seguimiento: el próximo es el día en que retoma. */
-    const proximoSinPausa = proximoDe(seg, a, cfg.contarDesde);
-    const proximo = pausa && proximoSinPausa < pausa.hasta ? pausa.hasta : proximoSinPausa;
+    /* En pausa (o antes de arrancar) no toca el contacto de seguimiento: el próximo es el día en que retoma (también si la pausa viene
+       justo después de una demora: seguimiento.ts → proximoConPausas). */
+    const proximo = proximoConPausas(proximoDe(seg, a, cfg.contarDesde), seg.pausas ?? [], hoy);
     const atraso = diasEntre(proximo, hoy);
     const testimonio = testimonioDe.get(a.id);
 
@@ -491,7 +496,7 @@ export function filasClientes(e: EstadoApp, hoy: string): FilaCliente[] {
       otrosMails: seg.otrosMails, stack: seg.stack, dni: seg.dni, domicilio: seg.domicilio,
       inicio, egreso, egresoSugerido: egresoPropio === null && egreso !== null, inicioReal: arranca, pausa,
       programas, programasSugeridos: programasSug.length > 0,
-      plan: seg.planDePago || planSug, planSugerido: !seg.planDePago && planSug !== "",
+      plan: planActualizado ? planSug : seg.planDePago || planSug, planSugerido: (!seg.planDePago || planActualizado) && planSug !== "",
       duracion, duracionSugerida: duracionSug !== null,
       mentor: seg.sesionesMentor, comentarios: seg.notas,
       contactoInicial: seg.contactoInicial, contactoSemana: seg.contactoSemana,

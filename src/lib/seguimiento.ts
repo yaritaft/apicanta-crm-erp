@@ -127,6 +127,25 @@ export function proximoDe(s: Pick<SeguimientoAlumno, "ultimoContacto" | "proximo
   return s.proximoContacto ?? sumarDias(baseDeCadencia(s, alumno, contarDesde), s.cadenciaDias);
 }
 
+/** El próximo contacto con la demora de inicio y las pausas (lib/pausas.ts): mientras no cursa no le toca el contacto, el próximo es
+ *  el día en que retoma. Vale la que corre hoy (empuja cualquier contacto anterior a su fin) y también las que vienen: si el que tocaba
+ *  cae adentro de una pausa que todavía no empezó, pasa al día en que termina (Lili, 13/11: Marco Mazzetti, demora hasta el 21/11 y
+ *  pausa del 22/11 al 22/12, y la ficha decía «en 15 días lo tenés que contactar»: sólo miraba la demora que corría hoy). Si ese día
+ *  cae en otra pausa, al fin de ésa. `hasta` es el día en que retoma. */
+export function proximoConPausas(proximo: string, pausas: readonly { desde: string; hasta: string }[], hoy: string): string {
+  const bloques = [...pausas].filter((b) => b.desde && b.hasta).sort((a, b) => a.desde.localeCompare(b.desde));
+  let p = proximo;
+  for (let vuelta = 0; vuelta <= bloques.length; vuelta++) {
+    const antes = p;
+    for (const b of bloques) {
+      const correHoy = b.desde <= hoy && hoy < b.hasta;
+      if ((b.desde <= p && p < b.hasta) || (correHoy && p < b.hasta)) p = b.hasta;
+    }
+    if (p === antes) break;
+  }
+  return p;
+}
+
 /** «Lo contacté»: queda como último contacto hoy y el próximo toca a la cadencia. Corta la racha de «no contestó». */
 export function aplicarContacto(s: SeguimientoAlumno, hoy: string, quien = "", cuando = new Date().toISOString()): SeguimientoAlumno {
   return {
@@ -258,7 +277,8 @@ export function filasDeSeguimiento(e: EstadoApp, hoy: string): FilaSeguimiento[]
     const s = seg.get(a.id) ?? null;
     const base = s ?? seguimientoVacio(a.id, cfg);
     const contacto = contactoDe(a);
-    const proximo = proximoDe(base, a, cfg.contarDesde);
+    /* En pausa (o antes de arrancar) no toca el contacto: lo mismo que en Clientes y en el panel de Servicio. */
+    const proximo = proximoConPausas(proximoDe(base, a, cfg.contarDesde), base.pausas ?? [], hoy);
     const atraso = diasEntre(proximo, hoy);
     return {
       id: a.id, alumno: a, seguimiento: s, contacto,
