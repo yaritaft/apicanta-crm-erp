@@ -117,9 +117,11 @@ export function datosDeVenta(e: EstadoApp, venta: Pick<Venta, "id" | "contactoId
   /* La que ya está en su ficha de alumno; si no, la que contestó al agendar en Calendly (el closer no se la vuelve a pedir). */
   const nacimiento = seg?.nacimiento || nacimientoDeLaPersona(e, venta.contactoId) || undefined;
   const plan = cuotas ?? e.cuotas.filter((c) => c.ventaId === venta.id && c.estado !== "cancelada").sort((a, b) => a.numero - b.numero);
-  /* Una venta que es sólo la reserva lleva el contrato de la reserva, con el monto (si el programa lo tiene). */
+  /* Una venta que es sólo la reserva lleva el contrato de la reserva, con el monto. Si el programa no tiene contrato de reserva
+     (Ajustes → Programas), igual es «reserva»: antes caía al contrato del programa, que da los accesos al firmar (Ramiro Bogado,
+     13/11). Sin plantilla, la ficha avisa que falta y no manda nada. */
   const programa = programaDeProducto(programasDe(e.ajustes), venta.productoId);
-  const soloReserva = plan.length > 0 && plan.every((c) => c.esReserva) && Boolean(programa?.plantillaReservaId);
+  const soloReserva = plan.length > 0 && plan.every((c) => c.esReserva);
   const moneda = venta.moneda || "USD";
   return {
     programa,

@@ -31,7 +31,7 @@ test("con un pago de cualquier cuota del programa, o sin evidencia, o sin reserv
   assert.equal(motivoSinPagoDelPrograma([], []), null);
   assert.equal(motivoSinPagoDelPrograma(null, null), null);
   assert.equal(motivoSinPagoDelPrograma([{ id: "a", monto: 3000, esReserva: false }], [{ cuotaId: "a", monto: 3000 }]), null);
-  assert.equal(motivoSinPagoDelPrograma([{ id: "r", monto: 100, esReserva: true }], [{ cuotaId: "r", monto: 100 }]), null, "una venta que es sólo la reserva no tiene cuotas por cobrar");
+  /* Una venta que es sólo la reserva SÍ espera: pruebas/reserva-y-reagendo-13-11.test.ts. */
 });
 
 test("en la carga de la venta: sólo se cobró la reserva ⇒ le toca el contrato de la reserva", () => {
@@ -40,7 +40,8 @@ test("en la carga de la venta: sólo se cobró la reserva ⇒ le toca el contrat
   assert.equal(soloSeCobroLaReserva([l(true, 100, 1), l(false, 1400, 1), l(false, 750)]), false);
   assert.equal(soloSeCobroLaReserva([l(true, 100), l(false, 1400), l(false, 750)]), false, "sin cobros cargados no se sabe");
   assert.equal(soloSeCobroLaReserva([l(false, 3000, 1)]), false, "un pago único no tiene reserva");
-  assert.equal(soloSeCobroLaReserva([l(true, 100, 1)]), false, "ya es de sólo la reserva (otro camino)");
+  assert.equal(soloSeCobroLaReserva([l(true, 100, 1)]), true, "una venta que es sólo la reserva también (Ramiro Bogado, 13/11)");
+  assert.equal(soloSeCobroLaReserva([l(true, 129, 1), l(false, 0)]), true, "precio igual a la reserva: la cuota que queda es de monto 0");
 });
 
 /* ---------- Testimonio y renovación ---------- */

@@ -71,6 +71,13 @@ export function DatosDelContrato({ datos, onCambio, programas, programaId, onPro
           opciones={opcionesPrograma}
         />
       </Field>
+      {/* Una reserva en un programa sin contrato de reserva no puede salir: el del programa daría los accesos al firmar (Ramiro Bogado, 13/11). */}
+      {reserva && programa && !plantilla.id && (
+        <p className="t-sm span-2" style={{ color: "var(--warning)" }}>
+          {programa.nombre} no tiene contrato de reserva: no se puede mandar así. Elegí la reserva de otro programa en «Programa» o pedile a Manu que
+          le ponga uno en Ajustes → Integraciones → Programas. El contrato del programa NO sirve para una reserva: da todos los accesos al firmar.
+        </p>
+      )}
       {/* Lili, 22/10: con el perfil le llega al alumno el roadmap que le corresponde (lib/bienvenida-alumno.ts). */}
       {modeloDeBienvenida({ reserva, programa: programaId }) && (
         <Field label="Perfil del alumno" span2

@@ -166,7 +166,9 @@ export function desenlaceDe(
   if (s.estado === "no-show" || cargada?.llamada === "no-show") return NO_SE_PRESENTO;
   if (cargada && (cargada.llamada === "hecha" || cargada.oportunidad === "perdida" || cargada.oportunidad === "devolucion")) return SIN_CIERRE;
   if (s.resultado) return DE_RESULTADO[s.resultado];
-  if (esReagendar(s.estadoPreCall)) return REPROGRAMO;
+  /* «Reagendar» del Pre-Call o «Reagendó» cargado como Estado de Llamada: pidió otra fecha. Va en el mismo lugar de la prioridad: una agenda que
+     Calendly ya dio por no-show o cancelada sigue contando como tal. */
+  if (esReagendar(s.estadoPreCall) || (cargada && esReagendar(cargada.nombre))) return REPROGRAMO;
   return o.paso ? SIN_CARGAR : POR_VENIR;
 }
 
@@ -302,6 +304,7 @@ export function queMueve(o: OpcionCrm, campo: CampoOpcionesCrm): string[] {
     return out;
   }
   if (campo !== "estadoLlamada") return out;
+  if (esReagendar(o.nombre)) out.push("Vale como «pidió otra fecha»: no cuenta como hecha ni como que no vino, y la agenda nueva entra sola");
   if (o.llamada === "hecha") out.push("Marca la llamada como hecha en la Agenda");
   if (o.llamada === "no-show") out.push("Marca que no vino en la Agenda");
   if (o.auto === "cancelada") out.push("Se pone sola si la llamada se canceló y no volvió a agendar (la marca cancelada)");
@@ -330,6 +333,7 @@ export function queMueveCorto(o: OpcionCrm, campo: CampoOpcionesCrm): string[] {
     return out;
   }
   if (campo !== "estadoLlamada") return out;
+  if (esReagendar(o.nombre)) out.push("Vale como otra fecha");
   if (o.llamada === "hecha") out.push("Agenda: hecha");
   if (o.llamada === "no-show") out.push("Agenda: no vino");
   if (o.auto === "cancelada") out.push("Solo, si se canceló");

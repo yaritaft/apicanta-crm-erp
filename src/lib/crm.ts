@@ -75,6 +75,9 @@ export const OPCIONES_POR_DEFECTO: Record<CampoOpcionesCrm, OpcionCrm[]> = {
     { nombre: "Llamada Interrumpida", color: "azul2", llamada: "hecha" },
     { nombre: "Dejó de Contestar", color: "rojo2", llamada: "no-show" },
     { nombre: "Inasistió", color: "rojo2", llamada: "no-show", auto: "no-show" },
+    /* Mariano (13/11): el closer también necesita dejar «Reagendó» donde carga cómo terminó: pidió otra fecha. No es hecha ni no vino
+       (no mueve la agenda) y vale como «otra fecha» en el cierre del día: la agenda nueva entra sola desde Calendly. */
+    { nombre: "Reagendó", color: "verde2" },
     { nombre: "Lead descartado", color: "rojo3", oportunidad: "perdida" },
     { nombre: "NO Calificado", color: "naranja5", llamada: "hecha", oportunidad: "perdida" },
     { nombre: "Devolución", color: "rojo4", oportunidad: "devolucion" },

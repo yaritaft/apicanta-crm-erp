@@ -222,6 +222,23 @@ test("sólo pagó la reserva: quien aprieta «Dar los accesos» decide y se dan 
   assert.equal(t.accesos_alumno[0].quien, "lili@x.com");
 });
 
+test("Ramiro Bogado (13/11): una venta de US$ 129 que es SÓLO la reserva, con una sola cuota, tampoco da los accesos al firmar el contrato del programa", async () => {
+  const { c, t, db } = ventaConReserva();
+  t.cuotas = t.cuotas.filter((q) => q.id === "cuo_0");
+  t.pagos[0].monto = 129;
+  t.cuotas[0].monto = 129;
+  const atado = await vincular(db, c);
+  const r = await alFirmar(db, atado);
+  assert.equal(r.accesos, null, "antes entraba por el hueco: no había cuotas del programa por cobrar");
+  assert.equal(t.accesos_alumno.length, 0);
+  assert.match(String((eventos(t)[0].detalle as Fila).motivo), /^Sólo pagó la reserva \(US\$ 129\)/);
+  /* Cuando se carga el plan del programa y entra el primer pago, se dan. */
+  t.cuotas.push({ id: "cuo_1", ventaId: "ven_1", numero: 1, monto: 185, esReserva: false, estado: "pagada" });
+  t.pagos.push({ id: "pag_1", cuotaId: "cuo_1", monto: 185 });
+  await alFirmar(db, atado);
+  assert.ok(t.contratos[0].accesosEn);
+});
+
 test("sin pagos cargados no hay evidencia de que sea sólo la reserva: se dan como siempre", async () => {
   const { c, t, db } = ventaConReserva();
   t.pagos.length = 0;

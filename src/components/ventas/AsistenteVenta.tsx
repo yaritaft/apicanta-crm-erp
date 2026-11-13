@@ -1282,7 +1282,7 @@ function PasoContrato({ b, setB, e, esDueno, modo, encendido }: {
     const nacimiento = seg?.nacimiento || nacimientoDeLaPersona(e, b.contactoId) || undefined;
     /* Si por ahora sólo se cobró la reserva, el contrato que sale es el de la reserva (el del programa da los accesos al
        firmar: Luis Mejía, 27/10). Se puede cambiar en «Programa». */
-    const deReserva = b.soloReserva || (soloSeCobroLaReserva(b.cuotas) && Boolean(plantillaDelContrato(programa, true).id));
+    const deReserva = b.soloReserva || soloSeCobroLaReserva(b.cuotas);
     const datos: DatosContrato = {
       nombre: (contacto?.nombre || lead?.nombre || b.contactoNombre).trim(),
       email: (b.contactoEmail || contacto?.email || lead?.email || "").trim(),
@@ -1291,7 +1291,7 @@ function PasoContrato({ b, setB, e, esDueno, modo, encendido }: {
       domicilio: seg?.domicilio ?? "",
       ...(nacimiento ? { nacimiento } : {}),
       pais: (b.contactoPais || contacto?.pais || lead?.pais || "").trim(),
-      modalidad: deReserva ? modalidadDeReserva(b.reserva, e.ajustes.monedaBase || "USD") : modalidadDeCuotas(b.cuotas, e.ajustes.monedaBase || "USD"),
+      modalidad: deReserva ? modalidadDeReserva(b.reserva > 0 ? b.reserva : b.cuotas.filter((l) => l.esReserva).reduce((n, l) => n + l.monto, 0), e.ajustes.monedaBase || "USD") : modalidadDeCuotas(b.cuotas, e.ajustes.monedaBase || "USD"),
       sesiones: seg?.sesionesMentor ?? 0,
       bonos: [],
       fecha: diaDeNegocio(new Date().toISOString()),

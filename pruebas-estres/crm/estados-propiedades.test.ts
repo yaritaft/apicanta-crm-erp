@@ -26,7 +26,9 @@ function esperado(estado: EstadoSesion, cargada: OpcionCrm | undefined, venta: b
   if (estado === "no-show" || cargada?.llamada === "no-show") return NO_SE_PRESENTO;
   if (cargada && (cargada.llamada === "hecha" || cargada.oportunidad === "perdida" || cargada.oportunidad === "devolucion")) return SIN_CIERRE;
   if (resultado) return ({ compro: CON_CIERRE, "no-compro": SIN_CIERRE, "no-vino": NO_SE_PRESENTO, reprogramo: REPROGRAMO } as const)[resultado];
-  if (/reagend|reprogram/.test((preCall ?? "").normalize("NFD").replace(/\p{M}/gu, "").toLowerCase())) return REPROGRAMO;
+  /* El Pre-Call «Reagendar» y el Estado de Llamada «Reagendó» (13/11) ocupan el mismo lugar de la prioridad. */
+  const pidioOtraFecha = (t: string | undefined) => /reagend|reprogram/.test((t ?? "").normalize("NFD").replace(/\p{M}/gu, "").toLowerCase());
+  if (pidioOtraFecha(preCall) || pidioOtraFecha(cargada?.nombre)) return REPROGRAMO;
   return paso ? SIN_CARGAR : POR_VENIR;
 }
 

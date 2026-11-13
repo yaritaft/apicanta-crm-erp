@@ -5,9 +5,13 @@
    «plan de cuotas» en vez de «sólo la reserva»), la app le dio todos los accesos: Wisboo, Telegram y Zoom. Dante: «a pesar de
    haber pagado solamente 100 dólares, el sistema ya le da todos los accesos; como que no haya un mínimo».
 
-   El mínimo: si lo único que entró de la venta es la reserva y el plan todavía tiene cuotas por cobrar, los accesos esperan al
-   primer pago del programa. No frena nada más: sin pagos cargados no hay evidencia de que sea sólo la reserva (el contrato a
-   veces se manda antes de cargar los cobros), y quien lo decide a mano con «Dar los accesos» siempre puede.
+   El mínimo: si lo único que entró de la venta es la reserva, los accesos esperan al primer pago del programa. No frena nada más:
+   sin pagos cargados no hay evidencia de que sea sólo la reserva (el contrato a veces se manda antes de cargar los cobros), y quien
+   lo decide a mano con «Dar los accesos» siempre puede.
+
+   13/11, Ramiro Bogado: una venta de US$ 129 de reserva, cargada con UNA sola cuota (la reserva, sin cuotas del programa por cobrar),
+   recibió los accesos del Downsell al firmar. El mínimo sólo miraba planes con cuotas por cobrar y ése no entraba; pero una venta que
+   es sólo la reserva tampoco cobró el programa, tenga o no más cuotas cargadas.
 
    Puro: sin red ni base, para poder probarlo.
    ================================================================== */
@@ -23,8 +27,7 @@ export function motivoSinPagoDelPrograma(
 ): string | null {
   if (!cuotas?.length) return null;
   const reserva = new Set(cuotas.filter((c) => c.esReserva).map((c) => c.id));
-  const delPrograma = cuotas.filter((c) => !c.esReserva && c.monto > 0);
-  if (reserva.size === 0 || delPrograma.length === 0) return null;
+  if (reserva.size === 0) return null;
   let pagadoReserva = 0, pagadoPrograma = 0;
   for (const p of pagos ?? []) {
     if (reserva.has(p.cuotaId)) pagadoReserva += p.monto;
@@ -32,13 +35,14 @@ export function motivoSinPagoDelPrograma(
   }
   if (pagadoReserva <= 0 || pagadoPrograma > 0) return null;
   const total = cuotas.reduce((n, c) => n + c.monto, 0);
-  return `Sólo pagó la reserva (${plata(pagadoReserva, moneda)} de ${plata(total, moneda)}): los accesos se dan solos apenas entre el primer pago del programa, o con «Dar los accesos».`;
+  const de = total > pagadoReserva ? ` de ${plata(total, moneda)}` : "";
+  return `Sólo pagó la reserva (${plata(pagadoReserva, moneda)}${de}): los accesos se dan solos apenas entre el primer pago del programa, o con «Dar los accesos».`;
 }
 
-/** En la carga de la venta (el asistente): ¿lo único que se cobró es la reserva y el plan sigue con cuotas por cobrar? Con eso, el
+/** En la carga de la venta (el asistente): ¿lo único que se cobró es la reserva (haya o no más cuotas en el plan)? Con eso, el
     contrato que corresponde es el de la reserva: el del programa da los accesos al firmar. */
 export function soloSeCobroLaReserva(lineas: readonly { esReserva: boolean; monto: number; cobros: readonly unknown[] }[]): boolean {
   const reserva = lineas.filter((l) => l.esReserva);
   const resto = lineas.filter((l) => !l.esReserva && l.monto > 0);
-  return reserva.some((l) => l.cobros.length > 0) && resto.length > 0 && resto.every((l) => l.cobros.length === 0);
+  return reserva.some((l) => l.cobros.length > 0) && resto.every((l) => l.cobros.length === 0);
 }

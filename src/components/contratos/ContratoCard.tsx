@@ -17,7 +17,7 @@ import {
   type Contrato, type DatosContrato, type EventoContrato,
 } from "@/lib/contratos";
 import { diaDeNegocio } from "@/lib/dia-negocio";
-import { programasDe, type Programa } from "@/lib/programas";
+import { plantillaDelContrato, programasDe, type Programa } from "@/lib/programas";
 import type { Venta } from "@/lib/types";
 import { abrirPdf, contratosPrendidos, datosDeVenta, leerContratos, pedirContrato, subirContratoFirmado } from "./cliente";
 import { DatosDelContrato } from "./DatosDelContrato";
@@ -194,6 +194,10 @@ export function ContratoCard({ venta, alumnoId, sesionId, manual, forma = "tarje
     const modo = edicion.prueba ? "prueba" : "produccion";
     const problema = !edicion.programaId ? "Elegí el programa." : problemaDeDatos(edicion.datos, edicion.contrato?.modo ?? modo, undefined, edicion.programaId);
     if (problema) { toast(problema, "err"); return; }
+    /* Sin contrato de reserva en ese programa no hay nada que mandar: el servidor tampoco lo arma, pero acá se dice antes. */
+    if (edicion.tipo === "crear" && edicion.datos.reserva && !plantillaDelContrato(programas.find((p) => p.id === edicion.programaId), true).id) {
+      toast("Ese programa no tiene contrato de reserva: elegí otro «— sólo la reserva» o pedile a Manu que lo cargue en Ajustes.", "err"); return;
+    }
     setTrabajando("edicion");
     try {
       if (edicion.tipo === "corregir" && edicion.contrato) {
