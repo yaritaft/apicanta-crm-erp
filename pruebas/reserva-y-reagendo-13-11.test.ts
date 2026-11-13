@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { motivoSinPagoDelPrograma, soloSeCobroLaReserva } from "@/lib/accesos-minimo";
-import { datosDeVenta } from "@/components/contratos/cliente";
+import { datosDeVenta, datosParaOtroContrato } from "@/components/contratos/cliente";
 import { plantillaDelContrato, programaDeProducto, programasDe } from "@/lib/programas";
 import { OPCIONES_POR_DEFECTO } from "@/lib/crm";
 import { CANCELADA, desenlaceDe, estadoDe, estadoDeAgenda, NO_SE_PRESENTO, preguntaDe, queMueve, queMueveCorto, REPROGRAMO } from "@/lib/estados";
@@ -85,4 +85,18 @@ test("«Reagendó» no cambia cómo está la agenda y, en una agendada, cuenta c
 test("Ajustes explica qué hace «Reagendó»", () => {
   assert.match(queMueve(reagendo!, "estadoLlamada").join(" "), /otra fecha/);
   assert.deepEqual(queMueveCorto(reagendo!, "estadoLlamada"), ["Vale como otra fecha"]);
+});
+
+test("«Mandar otro contrato» sobre el del programa firmado, en una venta de sólo la reserva: sale la reserva con su monto", () => {
+  const delPlan = { nombre: "R", email: "r@x.com", telefono: "", documento: "", domicilio: "", pais: "", modalidad: "129 USD", sesiones: 0, bonos: [], fecha: "2026-11-13", reserva: true as const };
+  const previo = { nombre: "Ramiro B.", documento: "42", domicilio: "Calle 1", modalidad: "Un pago único de 129 USD", fecha: "2026-11-12" };
+  const d = datosParaOtroContrato(delPlan, previo);
+  assert.equal(d.reserva, true);
+  assert.equal(d.modalidad, "129 USD");
+  assert.equal(d.documento, "42", "los datos de la persona salen del anterior");
+  assert.equal(d.fecha, "2026-11-13");
+  /* Con una venta con plan, el anterior manda como siempre. */
+  const conPlan = datosParaOtroContrato({ ...delPlan, reserva: undefined, modalidad: "2 cuotas" }, previo);
+  assert.equal(conPlan.modalidad, "Un pago único de 129 USD");
+  assert.equal(conPlan.reserva, undefined);
 });

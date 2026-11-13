@@ -141,3 +141,12 @@ export function datosDeVenta(e: EstadoApp, venta: Pick<Venta, "id" | "contactoId
     },
   };
 }
+
+/** Los datos de otro contrato armado sobre uno anterior (reenviar, mandar otro): los de la persona salen del anterior. Si la venta es sólo la
+    reserva y el anterior era del programa (Ramiro Bogado, 13/11: le salió el del Downsell), lo que sale es la reserva con su monto, no la
+    modalidad del anterior («Un pago único de 129 USD»). */
+export function datosParaOtroContrato(delPlan: DatosContrato, previo: Partial<DatosContrato>): DatosContrato {
+  const datos = { ...delPlan, ...previo, fecha: delPlan.fecha };
+  if (delPlan.reserva && !previo.reserva) return { ...datos, reserva: true, modalidad: delPlan.modalidad };
+  return datos;
+}

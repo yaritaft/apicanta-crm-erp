@@ -19,7 +19,7 @@ import {
 import { diaDeNegocio } from "@/lib/dia-negocio";
 import { plantillaDelContrato, programasDe, type Programa } from "@/lib/programas";
 import type { Venta } from "@/lib/types";
-import { abrirPdf, contratosPrendidos, datosDeVenta, leerContratos, pedirContrato, subirContratoFirmado } from "./cliente";
+import { abrirPdf, contratosPrendidos, datosDeVenta, datosParaOtroContrato, leerContratos, pedirContrato, subirContratoFirmado } from "./cliente";
 import { DatosDelContrato } from "./DatosDelContrato";
 import { AccionesServicio, BloqueServicio, FilaServicio } from "@/components/ficha/FilaServicio";
 
@@ -136,7 +136,7 @@ export function ContratoCard({ venta, alumnoId, sesionId, manual, forma = "tarje
     }
     setEdicion({
       tipo: "crear",
-      datos: base?.datos ? { ...d.datos, ...(base.datos as Partial<DatosContrato>), fecha: d.datos.fecha } : d.datos,
+      datos: base?.datos ? datosParaOtroContrato(d.datos, base.datos as Partial<DatosContrato>) : d.datos,
       programaId: base?.programa ?? d.programa?.id ?? "",
       prueba: modoPrueba,
       reemplaza: base?.estado === "firmado",
