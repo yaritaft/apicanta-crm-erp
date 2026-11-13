@@ -23,7 +23,8 @@ import type { Alumno, ConfigSeguimiento, Contacto, EstadoApp, ID, ListasCs, Segu
 
 export const CONFIG_POR_DEFECTO: ConfigSeguimiento = {
   cadencias: [7, 15, 20],
-  cadenciaPorDefecto: 15,
+  /* Día 1 (bienvenida), día 7 y después cada 20 días (Lili, 13/11: en 15 días «suele ser poco el avance que podemos evaluar»). */
+  cadenciaPorDefecto: 20,
   reintentoDias: 3,
   intentosHastaDejar: 3,
 };
@@ -146,10 +147,60 @@ export function proximoConPausas(proximo: string, pausas: readonly { desde: stri
   return p;
 }
 
-/** «Lo contacté»: queda como último contacto hoy y el próximo toca a la cadencia. Corta la racha de «no contestó». */
-export function aplicarContacto(s: SeguimientoAlumno, hoy: string, quien = "", cuando = new Date().toISOString()): SeguimientoAlumno {
+/* ---------- Los dos primeros contactos del alumno nuevo (Lili, 13/11) ----------
+   Día 1 (el día que entra): bienvenida y primer contacto. Día 7: contacto semanal. Después, cada 20 días desde el último.
+   Los dos primeros son los que no se pueden dejar pasar: tienen su lista propia en Mi panel (lib/panel-servicio.ts).
+   «Ingreso» es el día de la venta; con demora de inicio, la semana se cuenta desde que arranca de verdad. */
+
+/** A los cuántos días de empezar toca el contacto semanal. */
+export const DIA_CONTACTO_SEMANAL = 7;
+/** Hasta cuántos días después de entrar se lo busca en las listas del ingreso: de ahí en más sigue el seguimiento de cada 20 días. */
+export const DIAS_DEL_INGRESO = 20;
+
+export interface ContactosDeIngreso {
+  /** Falta la bienvenida / primer contacto. */
+  inicial: boolean;
+  /** Cumplió la semana y falta el contacto semanal. */
+  semanal: boolean;
+  /** Días desde que entró (negativo si todavía no empezó). */
+  desdeElIngreso: number;
+  /** Días desde que arrancó de verdad. */
+  desdeElInicio: number;
+}
+
+/** Qué contactos del ingreso faltan. Un contacto cargado en la ficha vale, y también cualquier «Último contacto» posterior al día
+ *  que correspondía (Lili marcaba el último contacto y la lista seguía diciendo que faltaba el primero: 13/11). */
+export function contactosDeIngreso(
+  x: { inicio: string; inicioReal?: string; contactoInicial: string | null; contactoSemana: string | null; ultimoContacto: string | null },
+  hoy: string,
+): ContactosDeIngreso {
+  const ingreso = x.inicio.slice(0, 10);
+  const arranque = (x.inicioReal || x.inicio).slice(0, 10);
+  const uc = (x.ultimoContacto ?? "").slice(0, 10);
+  if (!ingreso) return { inicial: false, semanal: false, desdeElIngreso: 0, desdeElInicio: 0 };
+  const desdeElIngreso = diasEntre(ingreso, hoy);
+  const desdeElInicio = diasEntre(arranque, hoy);
+  const inicialHecho = Boolean(x.contactoInicial) || (uc !== "" && uc >= ingreso);
+  const semanalHecho = Boolean(x.contactoSemana) || (uc !== "" && diasEntre(arranque, uc) >= DIA_CONTACTO_SEMANAL);
   return {
-    ...s, ultimoContacto: hoy, proximoContacto: sumarDias(hoy, s.cadenciaDias),
+    inicial: !inicialHecho && desdeElIngreso >= 0 && desdeElIngreso <= DIAS_DEL_INGRESO,
+    semanal: !semanalHecho && desdeElInicio >= DIA_CONTACTO_SEMANAL && desdeElInicio <= DIAS_DEL_INGRESO,
+    desdeElIngreso, desdeElInicio,
+  };
+}
+
+/** «Lo contacté»: queda como último contacto hoy y el próximo toca a la cadencia. Corta la racha de «no contestó». Con el día de
+ *  ingreso del alumno (`inicio`), si es de las primeras semanas también deja marcado el contacto inicial o el semanal. */
+export function aplicarContacto(s: SeguimientoAlumno, hoy: string, quien = "", cuando = new Date().toISOString(), inicio?: string): SeguimientoAlumno {
+  const k = inicio ? diasEntre(inicio.slice(0, 10), hoy) : -1;
+  const delIngreso: Partial<SeguimientoAlumno> = {};
+  if (k >= 0 && k <= DIAS_DEL_INGRESO) {
+    if (!s.contactoInicial) delIngreso.contactoInicial = hoy;
+    /* Con el primero ya hecho, un contacto de la semana 1 en adelante es el semanal (dos días de margen: no esperar al día justo). */
+    else if (!s.contactoSemana && k >= DIA_CONTACTO_SEMANAL - 2) delIngreso.contactoSemana = hoy;
+  }
+  return {
+    ...s, ...delIngreso, ultimoContacto: hoy, proximoContacto: sumarDias(hoy, s.cadenciaDias),
     intentosSinRespuesta: 0, ultimoIntento: null, dejoDeContestar: false,
     actualizadoEn: cuando, actualizadoPor: quien,
   };

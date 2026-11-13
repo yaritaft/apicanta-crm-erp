@@ -53,7 +53,9 @@ export function hace(iso: string, ahora: number = Date.now()): string {
 /** El renglón de abajo del título: de qué ficha es. */
 /** La solapa de la ficha (vista Servicio) que abre cada aviso: el contrato, los accesos del outboarding (también el resell que
     termina en Outboarding: si es alumno viejo, se sacan a mano), la llamada cerrada en Testimonio y la sesión 1 a 1 en Bonos. */
-export function hojaDelAviso(tipo: string): "contrato" | "accesos" | "testimonio" | "bonos" | undefined {
+export function hojaDelAviso(tipo: string): "contrato" | "accesos" | "testimonio" | "bonos" | "seguimiento" | undefined {
+  /* Una venta nueva (supabase/avisos-de-ventas.sql): donde Lili marca la bienvenida. */
+  if (tipo === "venta-nueva") return "seguimiento";
   if (tipo === "contrato" || tipo === "roadmap") return "contrato";
   if (tipo === "outboarding" || tipo === "resell-outboarding") return "accesos";
   if (tipo === "resell-cerrado") return "testimonio";

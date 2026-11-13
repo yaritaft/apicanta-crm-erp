@@ -57,11 +57,11 @@ test("la configuración se sanea y la cadencia de arranque es una de las elegibl
 
 test("a quien nunca se contactó le toca desde que entró, con la cadencia de arranque", () => {
   const f = filasDeSeguimiento(estado(), HOY).find((x) => x.id === "a1")!;
-  /* Entró el 28/08 y la cadencia es 15: tocaba el 12/09, hace 25 días. */
-  assert.equal(f.cadenciaDias, 15);
+  /* Entró el 28/08 y la cadencia es 20 (día 1, día 7 y después cada 20; Lili, 13/11): tocaba el 17/09, hace 20 días. */
+  assert.equal(f.cadenciaDias, 20);
   assert.equal(f.ultimoContacto, null);
-  assert.equal(f.proximoContacto, "2026-09-12");
-  assert.equal(f.atraso, 25);
+  assert.equal(f.proximoContacto, "2026-09-17");
+  assert.equal(f.atraso, 20);
   assert.equal(f.situacion, "vencido");
   /* Los datos de la persona salen del contacto, por el lead. */
   assert.equal(f.pais, "Chile");
@@ -93,8 +93,8 @@ test("la lista de hoy deja afuera a los que dejaron de contestar y a los inactiv
 test("a igual atraso, primero el que lleva más intentos sin respuesta", () => {
   const e = estado({
     seguimientos: [
-      { ...seguimientoVacio("a2", CFG), ultimoContacto: "2026-09-22", intentosSinRespuesta: 0 },
-      { ...seguimientoVacio("a3", CFG), ultimoContacto: "2026-09-22", intentosSinRespuesta: 2 },
+      { ...seguimientoVacio("a2", CFG), cadenciaDias: 15, ultimoContacto: "2026-09-22", intentosSinRespuesta: 0 },
+      { ...seguimientoVacio("a3", CFG), cadenciaDias: 15, ultimoContacto: "2026-09-22", intentosSinRespuesta: 2 },
     ],
   });
   const lista = aContactarHoy(filasDeSeguimiento(e, HOY)).filter((f) => f.id === "a2" || f.id === "a3");

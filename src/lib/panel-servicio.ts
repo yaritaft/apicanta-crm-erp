@@ -1,6 +1,6 @@
 import type { EstadoApp, ID } from "./types";
 import { DIAS_PARA_CERRAR_RESELL, DURACION_POR_DEFECTO, esDeTestimonio, estadosDeResell, faltaDeLaLlamada, filasClientes, filasResells, filasTestimonios, NO_SE_HACIA_CONTRATO, resellAbierto, sumarMeses } from "./clientes-cs";
-import { diasEntre, formatoDia, terminoElServicio } from "./seguimiento";
+import { contactosDeIngreso, DIA_CONTACTO_SEMANAL, DIAS_DEL_INGRESO, diasEntre, formatoDia, sumarDias, terminoElServicio } from "./seguimiento";
 import { diasDe } from "./pausas";
 import { ventaPendienteDe } from "./alumnos";
 import { diaDeNegocio } from "./dia-negocio";
@@ -14,8 +14,9 @@ import { crearMotor, uno, varios, type ColumnaCs, type OrdenCs } from "./tabla-c
    de baja) y de quien graba los testimonios. Este panel junta en una pantalla
    lo que hoy le toca hacer a ella, con las reglas a la vista:
 
-     · A contactar hoy      el seguimiento que ya venció o toca hoy.
-     · Nuevos               entraron hace poco y todavía no tienen el primer contacto.
+     · Alumnos nuevos       el día 1: bienvenida y primer contacto (también las reservas).
+     · Contacto semanal     el día 7: cumplieron la primera semana y falta el contacto.
+     · Seguimiento 20D      después, cada 20 días desde el último contacto.
      · Contrato por vencer  se les acaba en los próximos 30 días (o ya se acabó y siguen activos): renovar o dar de baja.
      · Resells y testimonios sin cierre   la llamada ya pasó y quien la tomó no cargó cómo salió (más de una semana, en rojo).
      · Testimonios          por agendar la grabación, o grabados sin el link del video.
@@ -26,8 +27,8 @@ import { crearMotor, uno, varios, type ColumnaCs, type OrdenCs } from "./tabla-c
    fila): este archivo ordena y no inventa otra cuenta. No guarda nada.
    ================================================================== */
 
-/** Desde cuándo un alumno deja de ser «nuevo». */
-export const DIAS_NUEVO = 14;
+/** Hasta cuándo un alumno es «nuevo» (y hasta cuándo se lo busca para el contacto semanal): de ahí en más lo toma el seguimiento de cada 20 días. */
+export const DIAS_NUEVO = DIAS_DEL_INGRESO;
 /** Cuántos días antes de que termine el contrato se avisa para renovar. */
 export const DIAS_PARA_RENOVAR = 30;
 /* Una semana para cerrar un resell y qué lo deja resuelto: la regla vive en lib/clientes-cs.ts (la usan también el closer y su cierre del día). */
@@ -65,7 +66,7 @@ export interface ItemServicio {
 }
 
 export interface SeccionServicio {
-  id: "contactar" | "vuelven" | "nuevos" | "esperanVenta" | "renovar" | "resells" | "testimonios" | "reportes" | "contratos";
+  id: "contactar" | "vuelven" | "nuevos" | "semanal" | "esperanVenta" | "renovar" | "resells" | "testimonios" | "reportes" | "contratos";
   titulo: string;
   /* El nombre para la tarjeta chica de arriba, donde el título entero no entra. */
   corto: string;
@@ -234,24 +235,38 @@ export function panelDeServicio(e: EstadoApp, hoy: string, ahora: Date = new Dat
     };
   });
 
-  /* ---------- A contactar hoy ---------- */
-  const contactar = activos.filter((c) => (c.situacion === "vencido" || c.situacion === "hoy") && !vuelve.has(c.id)).map((c): ItemServicio => ({
+  /* ---------- Los dos primeros contactos: la bienvenida (día 1) y el semanal (día 7) ----------
+     Lili, 13/11: «los dos primeros son los más importantes y necesitamos tenerlos bien identificados para no dejar pasar ningún
+     ingreso ni el primer seguimiento». La bienvenida es de TODOS, también de las reservas (el 12/11 entraron cuatro reservas y la
+     lista decía «1»: las reservas estaban excluidas). El semanal y el de cada 20 días sí esperan a que pague lo que falta. */
+  const deIngreso = new Map(activos.map((c) => [c.id, contactosDeIngreso(c, hoy)] as const));
+  const nuevos = activos.filter((c) => deIngreso.get(c.id)!.inicial)
+    .map((c): ItemServicio => {
+      const d = deIngreso.get(c.id)!.desdeElIngreso;
+      return {
+        clave: c.id, alumnoId: c.id, nombre: c.nombre, dias: d, cuando: cuandoEs(d), ...contactoDe(c),
+        detalle: `Entró el ${formatoDia(c.inicio, hoy)}${c.enReserva ? " · reserva" : ""}${c.plan ? ` · ${c.plan}` : ""} · falta la bienvenida`,
+        /* El día que entra todavía está a tiempo; desde el día siguiente, tarde. */
+        tono: d >= 1 ? "rojo" : "ambar",
+      };
+    });
+  const semanal = activos.filter((c) => !c.enReserva && deIngreso.get(c.id)!.semanal)
+    .map((c): ItemServicio => {
+      const d = deIngreso.get(c.id)!.desdeElInicio - DIA_CONTACTO_SEMANAL;
+      return {
+        clave: c.id, alumnoId: c.id, nombre: c.nombre, dias: d, cuando: cuandoEs(d), ...contactoDe(c),
+        detalle: `Cumplió la semana el ${formatoDia(sumarDias(c.inicioReal || c.inicio, DIA_CONTACTO_SEMANAL), hoy)}${c.ultimoContacto ? ` · último contacto el ${formatoDia(c.ultimoContacto, hoy)}` : ""} · falta el contacto semanal`,
+        tono: d >= 2 ? "rojo" : "ambar",
+      };
+    });
+  const enIngreso = new Set([...nuevos, ...semanal].map((i) => i.clave));
+
+  /* ---------- Seguimiento 20D (los que ya pasaron el ingreso) ---------- */
+  const contactar = activos.filter((c) => (c.situacion === "vencido" || c.situacion === "hoy") && !vuelve.has(c.id) && !enIngreso.has(c.id)).map((c): ItemServicio => ({
     clave: c.id, alumnoId: c.id, nombre: c.nombre, dias: c.atraso, cuando: cuandoEs(c.atraso), ...contactoDe(c),
     detalle: `${c.ultimoContacto ? `Último contacto el ${formatoDia(c.ultimoContacto, hoy)}` : "Sin contacto registrado"}${c.intentos > 0 ? ` · ${c.intentos} ${c.intentos === 1 ? "intento" : "intentos"} sin respuesta` : ""}`,
     tono: tonoPorDias(c.atraso, 7),
   }));
-
-  /* ---------- Nuevos sin el primer contacto ---------- */
-  /* Las reservas todavía no arrancaron (Lili, 22/10): el primer contacto les toca cuando pagan lo que falta. */
-  const nuevos = activos.filter((c) => !c.enReserva && c.inicio && !c.contactoInicial && diasEntre(c.inicio, hoy) >= 0 && diasEntre(c.inicio, hoy) <= DIAS_NUEVO)
-    .map((c): ItemServicio => {
-      const d = diasEntre(c.inicio, hoy);
-      return {
-        clave: c.id, alumnoId: c.id, nombre: c.nombre, dias: d, cuando: cuandoEs(d), ...contactoDe(c),
-        detalle: `Entró el ${formatoDia(c.inicio, hoy)}${c.plan ? ` · ${c.plan}` : ""} · falta el primer contacto`,
-        tono: d >= 3 ? "rojo" : "ambar",
-      };
-    });
 
   /* ---------- Esperan la venta del closer (lib/alumnos.ts → ventaPendienteDe) ----------
      Lili los dio de alta porque compraron y el closer todavía no cargó la venta. Se van de la lista solos cuando la carga. */
@@ -362,9 +377,10 @@ export function panelDeServicio(e: EstadoApp, hoy: string, ahora: Date = new Dat
   });
 
   const secciones: SeccionServicio[] = [
-    seccion({ id: "contactar", titulo: "A contactar hoy", corto: "Contactar", regla: "Su próximo contacto de seguimiento ya venció o toca hoy.", vacio: "Nadie para contactar hoy. La lista se llena a medida que vencen los días de cada alumno.", verTodos: { texto: "Ver la lista completa", href: "/alumnos?seccion=hoy" } }, contactar, masViejoPrimero),
+    seccion({ id: "nuevos", titulo: "Alumnos nuevos", corto: "Nuevos", vacio: "No entró nadie nuevo sin su bienvenida.", regla: `Día 1: el día que entra se le da la bienvenida y se hace el primer contacto (también las reservas). Queda acá hasta que se lo contacta, hasta ${DIAS_NUEVO} días después de entrar.`, verTodos: { texto: "Ver Clientes del programa", href: "/alumnos?seccion=clientes" } }, nuevos, masViejoPrimero),
+    seccion({ id: "semanal", titulo: "Contacto semanal", corto: "Semanal", vacio: "Nadie cumplió la primera semana sin su contacto.", regla: `Día ${DIA_CONTACTO_SEMANAL}: a los ${DIA_CONTACTO_SEMANAL} días de haber arrancado se le hace el seguimiento de la primera semana. Las reservas esperan a pagar lo que falta.`, verTodos: { texto: "Ver Clientes del programa", href: "/alumnos?seccion=clientes" } }, semanal, masViejoPrimero),
+    seccion({ id: "contactar", titulo: "Seguimiento 20D", corto: "20D", regla: "Después del día 1 y del día 7, se los contacta cada 20 días desde el último contacto: su próximo seguimiento ya venció o toca hoy.", vacio: "Nadie para el seguimiento de hoy. La lista se llena a medida que vencen los 20 días de cada alumno.", verTodos: { texto: "Ver la lista completa", href: "/alumnos?seccion=hoy" } }, contactar, masViejoPrimero),
     seccion({ id: "vuelven", titulo: "Arrancan o retoman", corto: "Retoman", regla: "Termina su demora de inicio o su pausa: hablale para que arranque.", vacio: "Nadie termina una pausa ni una demora de inicio en estos días.", verTodos: { texto: "Ver Clientes del programa", href: "/alumnos?seccion=clientes" } }, vuelven, masViejoPrimero),
-    seccion({ id: "nuevos", titulo: "Alumnos nuevos", corto: "Nuevos", vacio: "No entró nadie nuevo sin su primer contacto.", regla: `Entraron en los últimos ${DIAS_NUEVO} días y todavía no tienen el primer contacto.`, verTodos: { texto: "Ver Clientes del programa", href: "/alumnos?seccion=clientes" } }, nuevos, masViejoPrimero),
     seccion({ id: "esperanVenta", titulo: "Esperan la venta del closer", corto: "Sin venta", regla: "Los diste de alta antes de que el closer cargara la venta: se unen solos cuando la carga. A los 3 días queda en rojo: avisale al closer.", vacio: "Todos los alumnos tienen su venta cargada.", verTodos: { texto: "Ver Clientes del programa", href: "/alumnos?seccion=clientes" } }, esperanVenta, masViejoPrimero),
     seccion({ id: "renovar", titulo: "Se les termina el contrato", corto: "Renovar", vacio: "Ningún contrato por vencer en los próximos 30 días.", regla: `Les quedan ${DIAS_PARA_RENOVAR} días o menos (o ya terminó y siguen activos): renovar o dar de baja.`, verTodos: { texto: "Ver Clientes del programa", href: "/alumnos?seccion=clientes" } }, renovar, masCercanoPrimero),
     seccion({ id: "resells", titulo: "Resells y testimonios sin cierre", corto: "Resells", vacio: "Todos los resells y testimonios ya tienen su resultado.", regla: `La llamada ya pasó y quien la tomó no cargó cómo salió (si grabó el testimonio y el link, si compró). Le aparece en su panel hasta que lo cargue; a los ${DIAS_PARA_CERRAR_RESELL} días queda en rojo.`, verTodos: { texto: "Ver la agenda de resells", href: "/alumnos?seccion=resells" } }, sinCierre, masViejoPrimero),

@@ -56,14 +56,15 @@ import "./panel-servicio.css";
 /* La solapa de la ficha que abre cada lista de «Para hoy». */
 const HOJA_DE_LISTA: Partial<Record<SeccionServicio["id"], SolapaServicio>> = {
   /* «Renovar» abre Programa, donde está «¿Renueva?» con la llamada de resell y los botones. */
-  contactar: "seguimiento", vuelven: "seguimiento", nuevos: "seguimiento", esperanVenta: "programa", renovar: "programa", resells: "testimonio", testimonios: "testimonio", reportes: "reportes", contratos: "contrato",
+  contactar: "seguimiento", vuelven: "seguimiento", nuevos: "seguimiento", semanal: "seguimiento", esperanVenta: "programa", renovar: "programa", resells: "testimonio", testimonios: "testimonio", reportes: "reportes", contratos: "contrato",
 };
 
 /* Cómo se ve cada tarea de «Para hoy»: su ícono, su color y lo que pide. */
 const TAREA: Record<SeccionServicio["id"], { icono: React.ReactNode; tono: string; pide: string }> = {
-  contactar: { icono: <PhoneCall size={16} />, tono: "var(--danger)", pide: "su seguimiento ya venció" },
+  nuevos: { icono: <UserPlus size={16} />, tono: "var(--info)", pide: "día 1: falta la bienvenida" },
+  semanal: { icono: <CalendarCheck size={16} />, tono: "var(--brand)", pide: "día 7: falta el contacto semanal" },
+  contactar: { icono: <PhoneCall size={16} />, tono: "var(--danger)", pide: "cada 20 días: ya le toca" },
   vuelven: { icono: <PlayCircle size={16} />, tono: "var(--success)", pide: "termina su pausa o su demora" },
-  nuevos: { icono: <UserPlus size={16} />, tono: "var(--info)", pide: "falta el primer contacto" },
   esperanVenta: { icono: <Hourglass size={16} />, tono: "var(--warning)", pide: "el closer no cargó la venta" },
   renovar: { icono: <CalendarClock size={16} />, tono: "var(--warning)", pide: "renovar o dar de baja" },
   resells: { icono: <Repeat2 size={16} />, tono: "var(--brand)", pide: "el closer no dijo en qué quedó" },
@@ -379,8 +380,8 @@ export function PanelServicio({ miembro, viendoOtro }: { miembro: MiembroEquipo;
             : { titulo: etapa ? "Nadie en esta etapa" : "No hay alumnos", texto: todos ? "Probá con otra etapa." : "Probá con «Todos»: hay alumnos que ya no están en servicio.",
               accion: !todos ? <button type="button" className="ps-accion" onClick={() => cambiar({ base: "todos" }, PRIMERA_HOJA)}>Ver todos</button> : undefined }}
           onFila={abrir} etiquetaFila={(r) => (r.alumnoId ? `Abrir la ficha de ${r.nombre}` : `${r.nombre} no es un alumno de la app`)}
-          filaAcciones={lista?.id === "contactar" && puedeEscribir ? (r) => (r.alumnoId ? (
-            <button type="button" className="ps-accion" onClick={(ev) => { ev.stopPropagation(); contacte(r.alumnoId as string); }} title="Lo contacté hoy: el próximo toca según su cadencia">
+          filaAcciones={(lista?.id === "contactar" || lista?.id === "nuevos" || lista?.id === "semanal") && puedeEscribir ? (r) => (r.alumnoId ? (
+            <button type="button" className="ps-accion" onClick={(ev) => { ev.stopPropagation(); contacte(r.alumnoId as string); }} title={lista?.id === "nuevos" ? "Le di la bienvenida hoy: queda marcado el primer contacto" : lista?.id === "semanal" ? "Hice el contacto semanal hoy" : "Lo contacté hoy: el próximo toca según su cadencia"}>
               <Check size={14} aria-hidden />Lo contacté
             </button>
           ) : null) : undefined}

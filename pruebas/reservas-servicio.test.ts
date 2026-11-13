@@ -48,7 +48,7 @@ function estado(): EstadoApp {
   } as unknown as EstadoApp;
 }
 
-test("la reserva sin completar no entra al seguimiento: ni el primer contacto, ni la lista de hoy", () => {
+test("la reserva sin completar no entra al seguimiento de cada 20 días ni al semanal, pero sí a la bienvenida (Lili, 13/11)", () => {
   const e = estado();
   const filas = filasClientes(e, HOY);
   const ricardo = filas.find((f) => f.id === "ricardo")!;
@@ -58,7 +58,8 @@ test("la reserva sin completar no entra al seguimiento: ni el primer contacto, n
   assert.equal(filas.find((f) => f.id === "ana")!.enReserva, false);
   const p = panelDeServicio(e, HOY, AHORA);
   const nuevos = p.secciones.find((s) => s.id === "nuevos")!.items.map((i) => i.alumnoId);
-  assert.ok(!nuevos.includes("ricardo"), "no le falta el primer contacto: todavía no arrancó");
+  assert.ok(nuevos.includes("ricardo"), "la bienvenida es de todos: el 12/11 entraron cuatro reservas y a Lili no le llegó ningún aviso");
+  assert.ok(!p.secciones.find((s) => s.id === "semanal")!.items.some((i) => i.alumnoId === "ricardo"), "el semanal espera a que pague lo que falta");
   assert.ok(nuevos.includes("ana"));
   assert.equal(filasDeSeguimiento(e, HOY).find((f) => f.id === "ricardo")?.situacion, "reserva", "tampoco en «A contactar hoy»");
 });

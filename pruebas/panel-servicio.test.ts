@@ -46,7 +46,7 @@ function estado(extra: Partial<EstadoApp> = {}): EstadoApp {
     seguimientos: [
       seg("vence", { ...firmado, ultimoContacto: "2026-10-15", duracionMeses: 3 }),
       seg("termino", { ...firmado, ultimoContacto: "2026-10-12", fechaEgreso: "2026-10-10" }),
-      seg("atrasada", { ...firmado, ultimoContacto: "2026-09-25", reporteManual: { activo: false, completo: false, semanasSin: 4, en: "2026-10-12" } }),
+      seg("atrasada", { ...firmado, cadenciaDias: 15, ultimoContacto: "2026-09-25", reporteManual: { activo: false, completo: false, semanasSin: 4, en: "2026-10-12" } }),
       seg("sinfirma", { contactoInicial: "2026-10-02", ultimoContacto: "2026-10-15" }),
       seg("outb", { followUp: "OUTBOARDING" }),
     ],
@@ -78,7 +78,7 @@ const nombres = (s: SeccionServicio) => s.items.map((i) => i.nombre);
 
 test("el panel trae las listas de la reunión (y «Arrancan o retoman», 22/10), cada una con su regla escrita", () => {
   const p = panelDeServicio(estado(), HOY, AHORA);
-  assert.deepEqual(p.secciones.map((s) => s.id), ["contactar", "vuelven", "nuevos", "esperanVenta", "renovar", "resells", "testimonios", "reportes", "contratos"]);
+  assert.deepEqual(p.secciones.map((s) => s.id), ["nuevos", "semanal", "contactar", "vuelven", "esperanVenta", "renovar", "resells", "testimonios", "reportes", "contratos"]);
   for (const s of p.secciones) {
     assert.ok(s.regla.length > 20, `${s.id}: falta decir qué la hace aparecer`);
     assert.ok(s.verTodos?.href.startsWith("/"), `${s.id}: a dónde ir a ver la lista entera`);
@@ -106,10 +106,10 @@ test("A contactar hoy: sólo a quien se le venció el seguimiento, con los días
   assert.match(s.items[0].detalle, /Último contacto el 25 sep/);
 });
 
-test("Nuevos: entraron hace menos de dos semanas sin el primer contacto; el que lleva 3 días o más está en rojo y va primero", () => {
+test("Alumnos nuevos (día 1): sin la bienvenida; desde el día siguiente a la entrada está en rojo y va primero", () => {
   const s = seccion(panelDeServicio(estado(), HOY, AHORA), "nuevos");
   assert.deepEqual(nombres(s), ["Nueva Cinco", "Nueva"]);
-  assert.deepEqual(s.items.map((i) => i.tono), ["rojo", "ambar"]);
+  assert.deepEqual(s.items.map((i) => i.tono), ["rojo", "rojo"]);
 });
 
 test("Se les termina el contrato: lo ya vencido arriba y en rojo, después el que falta menos", () => {
@@ -183,8 +183,8 @@ test("Contrato sin firmar: el que ya recibió el contrato aparece desde el día 
 
 test("el resumen de arriba cuenta lo que está en rojo", () => {
   const p = panelDeServicio(estado(), HOY, AHORA);
-  /* contactar 1 + nuevos 1 + renovar 1 + resells 1 + testimonios 1 + reportes 1 + contratos 1 */
-  assert.equal(p.urgentes, 7);
+  /* contactar 1 + nuevos 2 + renovar 1 + resells 1 + testimonios 1 + reportes 1 + contratos 1 */
+  assert.equal(p.urgentes, 8);
 });
 
 test("CV y LinkedIn: cuántas revisiones siguen en curso por estado, y las que no tienen alumno", () => {
@@ -195,11 +195,11 @@ test("CV y LinkedIn: cuántas revisiones siguen en curso por estado, y las que n
 });
 
 test("cada lista trae a todos, lo más urgente arriba, para poder buscarlos y paginarlos en la pantalla", () => {
-  const muchos = Array.from({ length: 12 }, (_, i) => alumno(`a${i}`, `Alumno ${String(i).padStart(2, "0")}`, "2026-10-19"));
+  const muchos = Array.from({ length: 12 }, (_, i) => alumno(`a${i}`, `Alumno ${String(i).padStart(2, "0")}`, "2026-10-20"));
   const s = seccion(panelDeServicio(estado({ alumnos: muchos as never, seguimientos: [], testimonios: [], resells: [], revisionesCv: [] }), HOY, AHORA), "nuevos");
   assert.equal(s.total, 12);
   assert.equal(s.items.length, 12, "no se recorta: la pantalla muestra de a 25");
-  assert.equal(s.rojos, 0, "entraron ayer: están a tiempo");
+  assert.equal(s.rojos, 0, "entraron hoy: están a tiempo para la bienvenida");
 });
 
 test("lo urgente se cuenta sobre toda la lista", () => {
@@ -227,7 +227,7 @@ test("Lili 10/11: marcar «Caso de éxito» en el Follow Up no anula el próximo
   const hoy = panelDeServicio(estado({
     alumnos: [alumno("exito", "Caso Exito", "2026-08-20"), alumno("exito-viejo", "Caso Viejo", "2026-01-05"), alumno("outb2", "Outb Dos", "2026-08-20")] as never,
     seguimientos: [
-      seg("exito", { contratoFirmado: "Firmado", contactoInicial: "2026-08-25", ultimoContacto: "2026-10-01", duracionMeses: 6, followUp: "Caso de éxito" }),
+      seg("exito", { contratoFirmado: "Firmado", contactoInicial: "2026-08-25", cadenciaDias: 15, ultimoContacto: "2026-10-01", duracionMeses: 6, followUp: "Caso de éxito" }),
       seg("exito-viejo", { contratoFirmado: "Firmado", contactoInicial: "2026-01-06", ultimoContacto: "2026-02-01", fechaEgreso: "2026-04-05", followUp: "Caso de éxito" }),
       seg("outb2", { contratoFirmado: "Firmado", contactoInicial: "2026-08-25", ultimoContacto: "2026-10-01", duracionMeses: 6, followUp: "OUTBOARDING" }),
     ],

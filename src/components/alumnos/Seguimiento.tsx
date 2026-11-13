@@ -12,6 +12,7 @@ import { useToast } from "@/components/ui/Toast";
 import { useAbrirFicha } from "@/components/ficha/abrir";
 import { acciones, useEstado } from "@/lib/store";
 import { useAcceso } from "@/lib/acceso";
+import { diaDeNegocio } from "@/lib/dia-negocio";
 import { puedeEditar } from "@/lib/permisos";
 import { useTablaURL } from "@/lib/useParamsURL";
 import {
@@ -54,7 +55,7 @@ export function useGestos() {
 
   return {
     contacte: (f: FilaDeGesto) => hacer(
-      f, (s, q) => aplicarContacto(s, hoy, q),
+      f, (s, q) => aplicarContacto(s, hoy, q, undefined, diaDeNegocio(f.alumno.inicio)),
       (s) => `Se lo contactó. Próximo contacto: ${formatoDia(s.proximoContacto)} (cada ${s.cadenciaDias} días).`,
       (s) => `Listo: contactaste a ${f.alumno.nombre}. Le toca de nuevo el ${formatoDia(s.proximoContacto)}.`,
     ),
