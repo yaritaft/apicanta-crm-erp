@@ -3,6 +3,7 @@ import { escribirXlsx, letraDeColumna, serialDeDia, TIPO_XLSX, type Celda, type 
 import { comprobanteDe, diaArgentina, linksDeComprobantes } from "./reporteFinanciera";
 import { conciliacionDe, controlDeCobro, primerNombre, quienEs, ROL_DE_CASILLERO } from "./control-cobros";
 import { fechaHora } from "./format";
+import { enSuMoneda } from "./moneda-local";
 
 /* ==================================================================
    Los cobros que se ven, en un Excel.
@@ -32,6 +33,9 @@ export interface FilaExcelCobro {
   montoUsd: number;
   montoArs?: number;
   tipoCambio?: number;
+  /** dLocal: la moneda en la que pagó la persona y cuánto pagó en ella (lib/moneda-local.ts). */
+  monedaLocal?: string;
+  montoLocal?: number;
   /** Lo que va en la celda: el link, el archivo guardado en la nube (se firma
    *  al bajar el Excel) o lo que se escribió en la planilla. */
   comprobante: { texto: string; url?: string; ruta?: string };
@@ -61,7 +65,9 @@ export function filasExcelCobros(
       const cuota = cuotaDe.get(p.cuotaId);
       const venta = cuota ? ventaDe.get(cuota.ventaId) : undefined;
       const control = controlDeCobro(p);
-      const ars = p.montoArs ? p.montoArs : p.tipoCambio ? p.monto * p.tipoCambio : undefined;
+      const local = enSuMoneda(p);
+      /* Un cobro de dLocal en pesos mexicanos o soles no tiene pesos argentinos: su cambio es de su moneda. */
+      const ars = local && local.moneda !== "ARS" ? undefined : p.montoArs ? p.montoArs : p.tipoCambio ? p.monto * p.tipoCambio : undefined;
       const quienes = control.chequeos.length ? control.chequeos : control.rechazos;
       const ultimo = quienes[quienes.length - 1];
       const nombreDe = (por?: string) => quienEs(e.equipo, por) || por || "";
@@ -80,6 +86,8 @@ export function filasExcelCobros(
         montoUsd: redondear(p.monto),
         montoArs: ars === undefined ? undefined : redondear(ars),
         tipoCambio: p.tipoCambio,
+        monedaLocal: local?.moneda,
+        montoLocal: local ? redondear(local.monto) : undefined,
         comprobante: comprobanteDe(p),
         conciliado: conc === "conciliado" ? "Sí" : conc === "sin-conciliar" ? "No" : "A mano",
         chequeo: control.estado === "chequeado" ? "Chequeado" : control.estado === "rechazado" ? "Rechazado" : "Sin chequear",
@@ -140,6 +148,8 @@ const COLUMNAS: ColumnaExcel[] = [
   { titulo: "Monto USD", ancho: 14, estilo: { formato: DOLARES }, celda: (f) => ({ valor: f.montoUsd }) },
   { titulo: "Monto ARS", ancho: 16, estilo: { formato: PESOS }, celda: (f) => ({ valor: f.montoArs }) },
   { titulo: "Tipo de cambio", ancho: 14, estilo: { formato: PESOS }, celda: (f) => ({ valor: f.tipoCambio }) },
+  { titulo: "Moneda en que pagó", ancho: 12, estilo: { alineacion: { horizontal: "center", vertical: "center" } }, celda: (f) => ({ valor: f.monedaLocal }) },
+  { titulo: "Monto en su moneda", ancho: 18, estilo: { formato: PESOS }, celda: (f) => ({ valor: f.montoLocal }) },
   {
     titulo: "Comprobante", ancho: 46,
     celda: (f, links) => {

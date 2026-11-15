@@ -12,6 +12,8 @@ import { candadoDeCobro } from "@/lib/candado-cobro";
 import { planDePago, tipoDePago } from "@/lib/angelo";
 import { CabezaPlegable } from "./Plegable";
 import { ChequeoDeCobro } from "@/components/cobros/ControlCobro";
+import { MonedaLocalDeCobro } from "@/components/cobros/MonedaLocalDeCobro";
+import { pideMonedaLocal } from "@/lib/moneda-local";
 import { DevolucionesDeVenta } from "@/components/devoluciones/DevolucionesDeVenta";
 import { useAcceso } from "@/lib/acceso";
 import { puedeDarDeBaja, puedeEditar, puedeFijarComisionDeSetter } from "@/lib/permisos";
@@ -171,7 +173,9 @@ export function TarjetaVenta({ e, venta, resaltada, abierta, onAlternar, onPagar
                         {/* Control cruzado: el director o finanzas chequean el comprobante (un clic abre la ventana). */}
                         <ChequeoDeCobro pago={p} />
                         {p.pagador && <span className="t-subtle" title="Nombre de quien transfirió">de {p.pagador}</span>}
-                        {p.tipoCambio && (
+                        {/* dLocal: lo que pagó en su moneda y el cambio, o que falta (Aldana, 13/11). */}
+                        <MonedaLocalDeCobro pago={p} />
+                        {p.tipoCambio && !pideMonedaLocal(e.procesadores.find((x) => x.id === p.procesadorId)) && (
                           <span
                             className="t-subtle t-num"
                             title={p.tipoCambioBlue ? `Propuesto: ${money(p.tipoCambioBlue, "ARS", 2)}${p.tipoCambioFuente ? ` (${p.tipoCambioFuente})` : ""}` : "Tipo de cambio ARS"}

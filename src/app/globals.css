@@ -2317,6 +2317,23 @@ a.wb-canal:hover { background: var(--surface-200); border-color: var(--border-st
 .cambio-campo .hk-input { height: 36px; font-size: 14px; }
 .cambio-campo__fila { display: grid; grid-template-columns: minmax(0, 170px) minmax(0, 230px); gap: var(--space-3); align-items: center; }
 
+/* dLocal: lo que pagó la persona en su moneda (lib/moneda-local.ts). El estado
+   va en el casillero: ámbar mientras falta, verde con el dato adentro. */
+.moneda-local { padding: var(--space-2) var(--space-3); border-radius: var(--radius-md); border: 1px solid var(--success); background: var(--success-soft); }
+.moneda-local[data-falta] { border-color: var(--warning); background: var(--warning-soft); }
+.moneda-local .cambio-campo__fila { grid-template-columns: minmax(0, 200px) minmax(0, 230px); }
+@media (max-width: 520px) { .moneda-local .cambio-campo__fila { grid-template-columns: minmax(0, 1fr); } }
+.moneda-local__pildora { cursor: pointer; border: 0; font: inherit; max-width: 100%; white-space: normal; text-align: left; height: auto; line-height: 1.35; }
+.moneda-local__pildora:disabled { cursor: default; }
+.moneda-local__pildora:not(:disabled):hover { filter: brightness(1.08); }
+.moneda-local__dato { display: flex; flex-direction: column; gap: var(--space-2); margin-top: 4px; }
+.moneda-local__dato--ok { color: var(--success); }
+.moneda-local__dato--falta { color: var(--warning); }
+.moneda-local__dato--falta .t-muted { color: var(--ink-muted); }
+.moneda-local__en-linea .moneda-local { color: var(--ink); }
+/* En la ventana de chequeo va en la columna angosta de los datos: uno abajo del otro. */
+.moneda-local__en-linea .moneda-local .cambio-campo__fila { grid-template-columns: minmax(0, 1fr); gap: var(--space-2); }
+
 /* ---------- Ajustes → Ventas: servicios, cuentas y estrategias ---------- */
 /* Ajustes → UTMs: cada regla en dos renglones, lo que tiene que traer el
    link y de qué es; abajo, las que llegaron sin asignar. */

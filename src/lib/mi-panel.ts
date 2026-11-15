@@ -17,6 +17,7 @@ import { rechazoDeCobro } from "./rechazos-de-cobro";
 import { medioDeMovimiento } from "./conciliacion";
 import { filasResells, resellAbierto, type FilaResell } from "./clientes-cs";
 import { esDelMentor, esSesionUnoAUno } from "./bonos";
+import { AVISAR_DESDE, faltaMonedaLocal } from "./moneda-local";
 
 /* ==================================================================
    «Mi panel» (reunión del 15/10, armado sobre el Mi Panel de Blue OS): lo
@@ -350,7 +351,7 @@ function avisosDePedidos(e: EstadoApp, pedidos: PedidoDeVenta[]): Aviso[] {
 }
 
 function avisosDe(
-  e: Pick<EstadoApp, "productos">,
+  e: Pick<EstadoApp, "productos" | "procesadores">,
   c: { equipo: Pick<EstadoApp, "equipo">; sinEstrategia: Venta[]; dia: ResumenDelDia; porCobrar: CuotaPendiente[]; cobros: CobroCargado[]; ahora: number; pedidos: Aviso[]; totalPedidos: number },
 ): { avisos: Aviso[]; total: number } {
   const avisos: Aviso[] = [];
@@ -383,6 +384,18 @@ function avisosDe(
       clave: `rc|${x.pago.id}`, tono: "danger", resaltado: x.venta?.contactoNombre ?? "Un cobro",
       texto: `tiene un cobro de US$ ${Math.round(x.pago.monto).toLocaleString("es-AR")} rechazado por ${r.quien} (${r.cuando}): «${r.nota.replace(/[.\s]+$/, "")}». Corregilo, o avisale que está bien.`,
       accion: x.venta ? { texto: "Ver", ir: "ficha", id: x.venta.id } : undefined,
+    });
+  }
+
+  /* Cobros de dLocal sin lo que pagó la persona en su moneda (Aldana, 13/11: «sin eso no puedo pasar los comprobantes a Financiera»). El
+     closer tiene el comprobante: se completa en la ficha, en el cobro, donde dice «Falta lo que pagó en su moneda». */
+  const sinMoneda = c.cobros.filter((x) => x.pago.fecha.slice(0, 10) >= AVISAR_DESDE && faltaMonedaLocal(e.procesadores, x.pago));
+  total += sinMoneda.length;
+  for (const x of sinMoneda.slice(0, POR_RECHAZO)) {
+    avisos.push({
+      clave: `ml|${x.pago.id}`, tono: "warning", resaltado: x.venta?.contactoNombre ?? "Un cobro",
+      texto: `pagó US$ ${Math.round(x.pago.monto).toLocaleString("es-AR")} por dLocal el ${x.pago.fecha.slice(8, 10)}/${x.pago.fecha.slice(5, 7)} y falta cuánto pagó en su moneda: Finanzas no lo puede pasar a la Financiera. Abrí la ficha y completalo en el cobro, mirando el comprobante.`,
+      accion: x.venta ? { texto: "Completar", ir: "ficha", id: x.venta.id } : undefined,
     });
   }
 

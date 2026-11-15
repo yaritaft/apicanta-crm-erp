@@ -27,6 +27,8 @@
 --      cerrado).
 --
 -- Hace falta haber corrido tipos-cuenta.sql y control-cruzado.sql. Idempotente.
+-- OJO (15/11): si se vuelve a correr, correr DESPUÉS dlocal-moneda-local.sql, que
+-- rehace pagos_candado_de_cobro y control_cruzado_pagos con lo de dLocal.
 -- Para deshacerlo:
 --   drop policy if exists ver_movimientos_ventas on public.movimientos;
 --   drop policy if exists editar_movimientos_ventas on public.movimientos;

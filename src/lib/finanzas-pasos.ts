@@ -10,6 +10,7 @@ import { propuestas as gastosFijosPorAprobar } from "./gastos-recurrentes";
 import { mesesCerrados } from "./mes-cerrado";
 import { situacionDe, TEXTO_SITUACION, type Situacion } from "./traspasos";
 import { rangoDeFechas } from "./metricas";
+import { cobrosSinMonedaLocal } from "./moneda-local";
 import {
   estadoDeLaCaja, pasoCerrar, pasosDelMes, pasosDelTramo, tramoDeDias,
   type AreaPaso, type Cadencia, type Chequeo, type EstadoPaso, type Herramienta, type ItemPaso, type PasoCierre, type TipoPaso,
@@ -202,12 +203,22 @@ function pasosDelDia(e: EstadoApp, ahora: number): PasoCierre[] {
   /* 2. Los ingresos validados y las cuentas por cobrar. */
   const desde45 = ahora - 45 * DIA;
   const aValidar = e.pagos.filter((p) => new Date(p.fecha).getTime() >= desde45 && !p.movimientoId && controlDeCobro(p).estado !== "chequeado");
+  /* dLocal sin lo que pagó la persona en su moneda: no se puede pasar a la Financiera (Aldana, 13/11). Aunque ya esté chequeado. */
+  const yaListados = new Set(aValidar.map((p) => p.id));
+  const sinMoneda = cobrosSinMonedaLocal(e);
+  const sinMonedaAparte = sinMoneda.filter((p) => !yaListados.has(p.id));
+  const textoSinMoneda = sinMoneda.length
+    ? ` ${pl(sinMoneda.length, "cobro de dLocal no tiene", "cobros de dLocal no tienen")} cuánto pagó la persona en su moneda: completalo en el cobro (filtro «dLocal sin su moneda»), mirando el comprobante.`
+    : "";
   const ingresos = auto({
     id: "d-ingresos", area: "cobros", titulo: "Validar los ingresos contra el comprobante",
-    detalle: aValidar.length
+    detalle: (aValidar.length
       ? `${pl(aValidar.length, "cobro de los últimos 45 días espera", "cobros de los últimos 45 días esperan")} que alguien compare el comprobante con lo cargado (o lo rechace).`
-      : "Todos los cobros de los últimos 45 días están validados o conciliados con su pasarela.",
-    pendientes: aValidar.map((p) => ({ clave: p.id, titulo: nombreDelPago(p.cuotaId), sub: `${controlDeCobro(p).estado === "rechazado" ? "Rechazado" : "Sin validar"} · ${fechaCorta(p.fecha)}`, monto: p.monto, moneda: p.moneda })),
+      : "Todos los cobros de los últimos 45 días están validados o conciliados con su pasarela.") + textoSinMoneda,
+    pendientes: [
+      ...aValidar.map((p) => ({ clave: p.id, titulo: nombreDelPago(p.cuotaId), sub: `${controlDeCobro(p).estado === "rechazado" ? "Rechazado" : "Sin validar"}${sinMoneda.includes(p) ? " · dLocal sin su moneda" : ""} · ${fechaCorta(p.fecha)}`, monto: p.monto, moneda: p.moneda })),
+      ...sinMonedaAparte.map((p) => ({ clave: p.id, titulo: nombreDelPago(p.cuotaId), sub: `dLocal: falta lo que pagó en su moneda · ${fechaCorta(p.fecha)}`, monto: p.monto, moneda: p.moneda })),
+    ],
     herramienta: { tipo: "cobros", mostrar: "sin-chequear" },
   });
 

@@ -28,7 +28,8 @@ import {
   personaDeVenta, planDeVenta, sinVentaPendiente,
 } from "./alumnos";
 import { pagoDesdeMovimiento, tasaEstimada } from "./conciliacion";
-import { candadoDeCobro } from "./candado-cobro";
+import { candadoDeCobro, puedeCompletarMonedaLocal } from "./candado-cobro";
+import { camposDeMonedaLocal, enSuMoneda } from "./moneda-local";
 import { cobrosConOtraTasa, conTasa } from "./finanzas";
 import { ventasParaAtar, webinarNuevoDeProyecto, webinarsQueFaltan } from "./atar-webinars";
 import { caracteristicaDePago, estadoDespuesDeImportar, montoArsDe, tipoVentaDePago, type ResultadoImport } from "./angelo";
@@ -1172,7 +1173,8 @@ function conDatosDePlanilla(nuevos: Pago[], cuotasVenta: Cuota[], pagosVentaAnte
       caracteristica: p.caracteristica
         ?? (cuota ? caracteristicaDePago({ cuota, cuotasVenta, cobradoAntes, cobradoAhora }) : undefined),
       tipoVenta: p.tipoVenta ?? tipoVenta,
-      montoArs: p.montoArs ?? montoArsDe(p.monto, p.tipoCambio),
+      /* Un cobro de dLocal en otra moneda (pesos mexicanos, soles…) no tiene pesos argentinos: su cambio es de esa moneda. */
+      montoArs: p.montoArs ?? (p.monedaLocal && p.monedaLocal !== "ARS" ? undefined : montoArsDe(p.monto, p.tipoCambio)),
     };
   });
 }
@@ -1183,6 +1185,8 @@ export interface DatosCobro {
   movimientoId?: ID; comprobante?: Comprobante;
   tipoCambio?: number; montoArs?: number; pagador?: string; cuit?: string;
   cvu?: string; tipoCambioBlue?: number; tipoCambioFuente?: string;
+  /* dLocal: la moneda del cliente y lo que pagó en ella (lib/moneda-local.ts). */
+  monedaLocal?: string; montoLocal?: number;
 }
 
 /* Lo que se carga de una devolución (lib/devoluciones.ts). */
@@ -1216,6 +1220,15 @@ export interface DatosDevolucion {
    tilde de «chequeado» ya no lo pone quien carga: lo chequea otra persona
    (lib/control-cobros.ts). */
 function extrasDeCobro(c: DatosCobro): Partial<Pago> {
+  /* dLocal: la moneda, lo que pagó en ella y el cambio que resulta van juntos (lib/moneda-local.ts). */
+  const local = c.monedaLocal && c.montoLocal && c.montoLocal > 0 ? camposDeMonedaLocal(c.monedaLocal, c.montoLocal, c.monto) : null;
+  if (local) {
+    return {
+      ...local,
+      ...(c.pagador?.trim() ? { pagador: c.pagador.trim() } : {}),
+      ...(c.cuit?.trim() ? { cuit: c.cuit.trim() } : {}),
+    };
+  }
   const conCambio = Boolean(c.tipoCambio && c.tipoCambio > 0);
   return {
     ...(conCambio ? { tipoCambio: c.tipoCambio } : {}),
@@ -3364,7 +3377,7 @@ export const acciones = {
       movimientos: e.movimientos.map((m) => movimientosTocados.get(m.id) ?? m),
     });
     const COLUMNAS = ["procesadorId", "movimientoId", "monto", "moneda", "feeRate", "feeMonto", "fecha", "referencia", "comprobante",
-      "tipoCambio", "montoArs", "pagador", "cuit", "cvu", "tipoCambioBlue", "tipoCambioFuente", "chequeado"] as const;
+      "tipoCambio", "montoArs", "monedaLocal", "montoLocal", "pagador", "cuit", "cvu", "tipoCambioBlue", "tipoCambioFuente", "chequeado"] as const;
     const aLaBase: Record<string, unknown> = {};
     for (const k of COLUMNAS) aLaBase[k] = (nuevo as unknown as Record<string, unknown>)[k] ?? null;
     if (sustancial) for (const k of CHEQUEOS) aLaBase[k] = null;
@@ -3910,6 +3923,42 @@ export const acciones = {
     const act = { ...nuevo, actor: yo };
     guardar({ ...e, pagos: e.pagos.map((p) => (p.id === id ? actualizado : p)), actividad: [act, ...e.actividad].slice(0, 400) });
     empujarUpdate("pagos", [id], cambiosDeChequeo(datos.casillero, datos.veredicto, quien));
+    empujar({ tipo: "upsert", tabla: "actividad", filas: [act] });
+    return true;
+  },
+
+  /* Lo que pagó la persona en su moneda en un cobro de dLocal ya cargado
+     (Aldana, 13/11: sin eso no lo puede pasar a la Financiera). Se escribe
+     mirando el comprobante; el tipo de cambio sale de los dos montos. No toca
+     el monto en dólares, la fecha ni el comprobante: lo chequeado sigue
+     chequeado. Va a la base como un UPDATE de esas columnas nada más
+     (supabase/dlocal-moneda-local.sql deja completarlo aunque Finanzas ya lo
+     haya chequeado). */
+  completarMonedaLocal(id: ID, datos: { moneda: string; montoLocal: number }): boolean {
+    const e = snapshot();
+    const pago = e.pagos.find((p) => p.id === id);
+    if (!pago) return false;
+    if (acceso && !puedeCompletarMonedaLocal(pago, acceso)) {
+      negada("pagos", "Lo que pagó en su moneda ya estaba y Finanzas lo chequeó: lo cambia Finanzas.");
+      return false;
+    }
+    const campos = camposDeMonedaLocal(datos.moneda, datos.montoLocal, pago.monto);
+    if (!campos) return false;
+    const actualizado: Pago = { ...pago, ...campos, ...(campos.montoArs ? {} : { montoArs: undefined }) };
+    const cuota = e.cuotas.find((c) => c.id === pago.cuotaId);
+    const venta = cuota ? e.ventas.find((v) => v.id === cuota.ventaId) : undefined;
+    const yo = nombreDeQuien(e, quienSoy(e));
+    const habia = enSuMoneda(pago);
+    const { nuevo } = registrar(
+      e, "transaccion", venta?.id ?? pago.id, venta?.contactoNombre ?? "Cobro", "actualizo",
+      `Cobro de dLocal del ${pago.fecha.slice(0, 10)}${venta ? ` de ${venta.contactoNombre}` : ""}: ${habia ? "se corrigió" : "se completó"} lo que pagó en su moneda, `
+      + `${campos.monedaLocal} ${campos.montoLocal.toLocaleString("es-AR", { maximumFractionDigits: 2 })} (cambio ${campos.tipoCambio.toLocaleString("es-AR", { maximumFractionDigits: 4 })}) (${yo}).`,
+    );
+    const act = { ...nuevo, actor: yo };
+    guardar({ ...e, pagos: e.pagos.map((p) => (p.id === id ? actualizado : p)), actividad: [act, ...e.actividad].slice(0, 400) });
+    empujarUpdate("pagos", [id], {
+      monedaLocal: campos.monedaLocal, montoLocal: campos.montoLocal, tipoCambio: campos.tipoCambio, montoArs: campos.montoArs ?? null,
+    });
     empujar({ tipo: "upsert", tabla: "actividad", filas: [act] });
     return true;
   },

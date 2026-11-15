@@ -16,6 +16,8 @@ registerHooks({
     /* Las rutas de /api importan «next/server» sin la extensión: el empaquetador
        de Next lo entiende y el ESM de node no. */
     if (especificador === "next/server") return siguiente("next/server.js", contexto);
+    /* Lo mismo con «next/link», «next/navigation»…: los componentes los importan así. */
+    if (/^next\/[a-z-]+$/.test(especificador)) return siguiente(`${especificador}.js`, contexto);
     let ruta = null;
     if (especificador.startsWith("@/")) ruta = rutaDe(raiz, "src", especificador.slice(2));
     else if ((especificador.startsWith("./") || especificador.startsWith("../")) && contexto.parentURL?.startsWith("file:")) {

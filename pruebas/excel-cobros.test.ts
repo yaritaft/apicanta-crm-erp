@@ -25,7 +25,7 @@ test("la hoja tiene los encabezados arriba, un cobro por fila y los totales al p
 
   assert.deepEqual(celdasDe(hoja, 1), TITULOS_EXCEL_COBROS, "los encabezados en la fila 1: se pueden filtrar o subir tal cual");
   for (let k = 0; k < filas.length; k++) assert.ok(celdasDe(hoja, 2 + k).length >= 1, `fila ${2 + k}`);
-  assert.equal(hoja.filtro, "A1:R41", "el filtro cubre los encabezados y los cobros, no los totales");
+  assert.equal(hoja.filtro, "A1:T41", "el filtro cubre los encabezados y los cobros, no los totales");
 
   const filaTotal = filas.length + 3;
   const total = hoja.celdas.filter((c) => c.fila === filaTotal);

@@ -20,6 +20,9 @@ import { descargarComprobante, descartarComprobante, tamanioLegible, urlDeCompro
 import { vistaPreviaDeLink } from "@/lib/comprobante-vista";
 import { fechaHora, fechaLarga, money } from "@/lib/format";
 import { nombrePasarela } from "@/lib/pasarelas";
+import { enMoneda, enSuMoneda, faltaMonedaLocal, pideMonedaLocal, textoDeCambio } from "@/lib/moneda-local";
+import { puedeCompletarMonedaLocal } from "@/lib/candado-cobro";
+import { CompletarMonedaLocal } from "@/components/cobros/MonedaLocalDeCobro";
 import type { Comprobante, EstadoApp, Pago } from "@/lib/types";
 
 /* ==================================================================
@@ -215,7 +218,7 @@ function FilaDeCasillero({ casillero, chequeo, nombreDe, esMio }: {
 
 /* ---------- La ventana ---------- */
 
-const MOTIVOS = ["No coincide el monto", "No coincide el nombre", "Falta una parte del pago", "Es de otro cliente", "No se lee bien"];
+const MOTIVOS = ["No coincide el monto", "No coincide el nombre", "Falta una parte del pago", "Es de otro cliente", "No se lee bien", "Falta lo que pagó en su moneda"];
 
 type Paso = "ver" | "confirmar" | "rechazar";
 
@@ -257,6 +260,11 @@ export function ModalChequeo({ pagoId, onCerrar }: { pagoId: string; onCerrar: (
   const nombreCliente = venta?.contactoNombre ?? "este cliente";
   const monto = money(pago.monto, "USD", 2);
   const pagadoEnCuota = hermanos.reduce((a, p) => a + p.monto, 0);
+  /* dLocal sin lo que pagó en su moneda no se da por bueno: la Financiera lo necesita (lib/moneda-local.ts). */
+  const pideLocal = pideMonedaLocal(proc) && !pago.movimientoId;
+  const local = enSuMoneda(pago);
+  const faltaLocal = faltaMonedaLocal(e.procesadores, pago);
+  const puedeLocal = puedeCompletarMonedaLocal(pago, acceso);
 
   function chequear() {
     if (!miCasillero) return;
@@ -307,6 +315,12 @@ export function ModalChequeo({ pagoId, onCerrar }: { pagoId: string; onCerrar: (
                 <span>Este cobro lo cargaste vos. El control cruzado es que lo mire <strong>otra persona</strong>: si podés, que lo chequee alguien más.</span>
               </p>
             )}
+            {faltaLocal && !sinNadaQueComparar && (
+              <p className="chequeo__aviso">
+                <AlertTriangle size={15} aria-hidden />
+                <span>Falta cuánto pagó la persona en su moneda. Escribilo arriba mirando el comprobante (o rechazalo para que lo complete el closer): sin eso no se puede pasar a la Financiera.</span>
+              </p>
+            )}
             {sinNadaQueComparar && (
               <p className="chequeo__aviso">
                 <AlertTriangle size={15} aria-hidden />
@@ -324,7 +338,7 @@ export function ModalChequeo({ pagoId, onCerrar }: { pagoId: string; onCerrar: (
                 <Button variante="secondary" icono={<X size={15} />} onClick={() => { setMotivo(""); setPaso("rechazar"); }}>Rechazar…</Button>
               )}
               {miVeredicto?.veredicto !== "chequeado" && (
-                <Button variante="primary" icono={<ShieldCheck size={15} />} disabled={sinNadaQueComparar} onClick={() => setPaso("confirmar")}>Chequeado</Button>
+                <Button variante="primary" icono={<ShieldCheck size={15} />} disabled={sinNadaQueComparar || faltaLocal} onClick={() => setPaso("confirmar")}>Chequeado</Button>
               )}
             </div>
           </>
@@ -418,7 +432,25 @@ export function ModalChequeo({ pagoId, onCerrar }: { pagoId: string; onCerrar: (
             <dt>Monto</dt>
             <dd>
               <strong className="t-num">{monto}</strong>
-              {pago.montoArs ? (
+              {pideLocal ? (
+                /* dLocal: lo que pagó en su moneda, al lado del comprobante para leerlo de ahí (Aldana, 13/11). */
+                local ? (
+                  <span className="moneda-local__dato moneda-local__dato--ok t-sm t-num">
+                    Pagó {enMoneda(local.monto, local.moneda)} · {textoDeCambio(local.tipoCambio, local.moneda)}
+                  </span>
+                ) : (
+                  <span className="moneda-local__dato moneda-local__dato--falta">
+                    <span className="t-sm t-strong" style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                      <AlertTriangle size={14} aria-hidden />Falta cuánto pagó en su moneda
+                    </span>
+                    {puedeLocal ? (
+                      <CompletarMonedaLocal pago={pago} enLinea />
+                    ) : (
+                      <span className="t-sm t-muted">Lo completa quien cargó el cobro, o finanzas.</span>
+                    )}
+                  </span>
+                )
+              ) : pago.montoArs ? (
                 <span className="t-sm t-subtle t-num" style={{ display: "block" }}>
                   {money(pago.montoArs, "ARS", 2)}{pago.tipoCambio ? ` · cambio ${money(pago.tipoCambio, "ARS", 2)}` : ""}
                 </span>

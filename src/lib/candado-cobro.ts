@@ -1,4 +1,4 @@
-import { esDueno, nivelEn, type MiAcceso } from "./permisos";
+import { esDueno, nivelEn, puedeEditar, type MiAcceso } from "./permisos";
 import type { Pago } from "./types";
 
 /* ==================================================================
@@ -39,4 +39,16 @@ export function candadoDeCobro(
     : mesCerrado ? "La liquidación de ese mes ya se cerró: la comisión ya no se recalcula." : undefined;
   if (!motivo) return { bloqueado: false };
   return corrigeSiempre(a) ? { bloqueado: false, motivo } : { bloqueado: true, motivo };
+}
+
+/** ¿Puede esta cuenta escribir lo que pagó la persona en su moneda (dLocal) en un cobro ya cargado? Completarlo cuando falta lo puede quien
+ *  registra pagos aunque Finanzas ya lo haya chequeado: no cambia ni el monto ni la fecha ni el comprobante que se chequearon. Cambiarlo cuando ya
+ *  estaba, una vez chequeado, sólo Finanzas y los dueños. Lo mismo decide la base (supabase/dlocal-moneda-local.sql). */
+export function puedeCompletarMonedaLocal(
+  pago: Pick<Pago, "chequeoFinanzas" | "montoLocal" | "montoArs">, a: MiAcceso | null | undefined,
+): boolean {
+  if (corrigeSiempre(a)) return true;
+  if (!puedeEditar(a, "pagos")) return false;
+  const yaEstaba = Boolean((pago.montoLocal && pago.montoLocal > 0) || (pago.montoArs && pago.montoArs > 0));
+  return !(yaEstaba && pago.chequeoFinanzas === "chequeado");
 }

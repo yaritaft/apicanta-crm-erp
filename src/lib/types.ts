@@ -1476,6 +1476,11 @@ export interface Pago {
   /* Si se pagó en pesos: el tipo de cambio y lo que entró en ARS. */
   tipoCambio?: number;
   montoArs?: number;
+  /* dLocal cobra en la moneda del cliente: cuál fue ("ARS", "MXN", "COP"…) y
+     cuánto pagó en ella, como dice el comprobante. El tipo de cambio de
+     arriba es entonces el de esa moneda (lib/moneda-local.ts). */
+  monedaLocal?: string;
+  montoLocal?: number;
   pagador?: string;          // Nombre de quien transfirió
   cuit?: string;             // Cuit (Si pagó a financiera)
   /* El CBU/CVU desde el que transfirió el cliente. Ya no se pide (Angelo,

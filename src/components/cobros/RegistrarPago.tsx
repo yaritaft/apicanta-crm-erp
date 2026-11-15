@@ -14,6 +14,7 @@ import { puedeEditar } from "@/lib/permisos";
 import { nube } from "@/lib/supabase";
 import { candadoDeCobro, corrigeSiempre } from "@/lib/candado-cobro";
 import { fechaLarga, isoDia, money } from "@/lib/format";
+import { cambioQueResulta, enMoneda, enSuMoneda, pideMonedaLocal, textoDeCambio } from "@/lib/moneda-local";
 import type { Cuota, Pago } from "@/lib/types";
 
 /* ==================================================================
@@ -69,9 +70,13 @@ const r2 = (n: number) => Math.round(n * 100) / 100;
 const enDias = (dias: number) => isoDia(new Date(Date.now() + dias * 86_400_000).toISOString());
 const finDeMes = () => { const h = new Date(); return isoDia(new Date(h.getFullYear(), h.getMonth() + 1, 0, 12).toISOString()); };
 
-/* El cobro tal como está, como borrador para volver a pasarlo por el asistente. */
-function borradorDe(p: Pago): CobroBorrador {
+/* El cobro tal como está, como borrador para volver a pasarlo por el asistente.
+   Uno de dLocal de antes con los pesos y el cambio (la planilla) arranca con
+   esos pesos como lo que pagó en su moneda. */
+function borradorDe(p: Pago, pideLocal: boolean): CobroBorrador {
+  const local = pideLocal ? enSuMoneda(p) : null;
   return {
+    ...(local ? { monedaLocal: local.moneda, montoLocal: local.monto } : {}),
     id: nuevoId("cob"), procesadorId: p.procesadorId ?? "", monto: p.monto, fecha: p.fecha, referencia: p.referencia ?? "",
     movimientoId: p.movimientoId, comprobante: p.comprobante, tipoCambio: p.tipoCambio, montoArs: p.montoArs,
     pagador: p.pagador, cuit: p.cuit, cvu: p.cvu, tipoCambioBlue: p.tipoCambioBlue, tipoCambioFuente: p.tipoCambioFuente,
@@ -96,7 +101,7 @@ export function RegistrarPago({ cuota, onCerrar, onGuardado, embebido = false, p
     : undefined;
 
   const [cobros, setCobros] = useState<CobroBorrador[]>(
-    () => (editando ? [borradorDe(editando)] : agregarMedio([], resta, e.procesadores.find((p) => p.activo)?.id ?? "")),
+    () => (editando ? [borradorDe(editando, pideMonedaLocal(e.procesadores.find((x) => x.id === editando.procesadorId)))] : agregarMedio([], resta, e.procesadores.find((p) => p.activo)?.id ?? "")),
   );
   const [borrando, setBorrando] = useState(false);
   /* El mes cerrado sólo lo sabe quien ve las liquidaciones (los dueños); para
@@ -350,7 +355,9 @@ export function RegistrarPago({ cuota, onCerrar, onGuardado, embebido = false, p
             texto="Los datos de la transferencia"
             sub={aFinanciera
               ? "Van al reporte para la Financiera: con el nombre y el CUIT de quien transfirió la encuentra."
-              : "Quién mandó la plata y, si fue en pesos, a qué cambio."}
+              : cobros.some((p) => !p.movimientoId && pideMonedaLocal(procDe(p)))
+                ? "dLocal le cobra en la moneda de su país: cuánto pagó en ella (el tipo de cambio sale solo) y quién mandó la plata."
+                : "Quién mandó la plata y, si fue en pesos, a qué cambio."}
           />
           {editor(["datos"])}
         </>
@@ -507,6 +514,9 @@ export function RegistrarPago({ cuota, onCerrar, onGuardado, embebido = false, p
                         cambio {money(p.tipoCambio, "ARS", 2)} · {money(p.montoArs ?? p.monto * p.tipoCambio, "ARS", 2)}
                         {aMano ? ` (a mano; el promedio era ${money(p.tipoCambioBlue!, "ARS", 2)})` : " (promedio blue y cripto)"}
                       </span>
+                    ) : null}
+                    {pideMonedaLocal(proc) && p.monedaLocal && p.montoLocal ? (
+                      <span>pagó {enMoneda(p.montoLocal, p.monedaLocal)} · cambio {textoDeCambio(cambioQueResulta(p.montoLocal, p.monto) ?? 0, p.monedaLocal)}</span>
                     ) : null}
                     {p.pagador && <span>de {p.pagador}</span>}
                     {p.cuit && <span>CUIT {p.cuit}</span>}

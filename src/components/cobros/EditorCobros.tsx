@@ -17,6 +17,7 @@ import { descartarComprobante } from "@/lib/comprobantes";
 import { nombrePasarela } from "@/lib/pasarelas";
 import { fuenteDe, useBlue } from "@/lib/dolar";
 import { esCuentaEnPesos } from "@/lib/reporteFinanciera";
+import { cambioQueResulta, enMoneda, MONEDAS_LOCALES, monedaPropuesta, nombreDeMoneda, pideMonedaLocal, textoDeCambio, textoDeMonedaLocalQueFalta } from "@/lib/moneda-local";
 import type { Comprobante, EstadoApp, ID, Procesador } from "@/lib/types";
 
 /* ==================================================================
@@ -54,6 +55,10 @@ export interface CobroBorrador {
      de dónde salió: si el closer lo cambia, esto queda para compararlo. */
   tipoCambioBlue?: number;
   tipoCambioFuente?: string;
+  /* dLocal: la moneda del cliente y cuánto pagó en ella, del comprobante
+     (lib/moneda-local.ts). El tipo de cambio sale de los dos montos. */
+  monedaLocal?: string;
+  montoLocal?: number;
 }
 
 /* Lo que va al store de un cobro: el mismo borrador, sin el id de pantalla. */
@@ -63,6 +68,7 @@ export function datosDeCobro(p: CobroBorrador) {
     referencia: p.referencia, movimientoId: p.movimientoId, comprobante: p.comprobante,
     tipoCambio: p.tipoCambio, montoArs: p.montoArs, pagador: p.pagador, cuit: p.cuit,
     cvu: p.cvu, tipoCambioBlue: p.tipoCambioBlue, tipoCambioFuente: p.tipoCambioFuente,
+    monedaLocal: p.monedaLocal, montoLocal: p.montoLocal,
   };
 }
 
@@ -121,6 +127,8 @@ export function problemaDeDatos(e: EstadoApp, cobros: CobroBorrador[], nombre: s
   for (const p of cobros) {
     if (p.movimientoId) continue;
     const proc = e.procesadores.find((x) => x.id === p.procesadorId);
+    /* dLocal cobra en la moneda del cliente: sin lo que pagó en ella no se puede pasar a la Financiera (Aldana, 13/11). */
+    if (pideMonedaLocal(proc) && !(p.monedaLocal && p.montoLocal && p.montoLocal > 0)) return textoDeMonedaLocalQueFalta(nombre);
     if (enPesos(proc) && !(p.tipoCambio && p.tipoCambio > 0)) return `Poné el tipo de cambio de ${nombre}`;
     /* Un cobro nuevo en pesos lleva los pesos que ENTRARON, escritos (lib/pesos-reales.ts). */
     if (faltanLosPesos(e, p, enPesos(proc))) return textoDePesosQueFaltan(nombre);
@@ -186,6 +194,12 @@ export function EditorCobros({ e, cobros, onCambio, objetivo, cliente, usadoFuer
   /* Mostrando una sola parte, cada cobro lleva arriba de qué cuenta es:
      con dos medios en la misma cuota, si no, no se sabe cuál es cuál. */
   const conTitulo = !ver("cuenta") && cobros.length > 1;
+  /* De dónde es la persona: propone la moneda en la que pagó por dLocal. */
+  const persona = useMemo(() => {
+    const mail = cliente.email?.trim().toLowerCase();
+    if (!mail) return undefined;
+    return e.contactos.find((c) => c.email?.trim().toLowerCase() === mail) ?? e.leads.find((l) => l.email?.trim().toLowerCase() === mail);
+  }, [cliente.email, e.contactos, e.leads]);
 
   const editar = useCallback((id: string, cambios: Partial<CobroBorrador>) =>
     onCambio((xs) => xs.map((p) => (p.id === id ? { ...p, ...cambios } : p))), [onCambio]);
@@ -249,7 +263,7 @@ export function EditorCobros({ e, cobros, onCambio, objetivo, cliente, usadoFuer
                 <Select
                   value={p.procesadorId} placeholder="Cuenta recaudadora" aria-label="Cuenta recaudadora"
                   disabled={Boolean(p.movimientoId)}
-                  onChange={(ev) => editar(p.id, { procesadorId: ev.target.value })}
+                  onChange={(ev) => editar(p.id, { procesadorId: ev.target.value, monedaLocal: undefined, montoLocal: undefined })}
                   opciones={procesadores.map((x) => ({ valor: x.id, texto: x.nombre }))}
                 />
                 <InputMonto value={p.monto} aria-label="Monto abonado USD" title="Monto abonado USD"
@@ -324,6 +338,7 @@ export function EditorCobros({ e, cobros, onCambio, objetivo, cliente, usadoFuer
                     (nombre y CUIT). Es lo que después se usa para conciliar a
                     mano y lo que va en el reporte para la Financiera. */}
                 {enPesos(proc) && <CampoCambio cobro={p} proc={proc} onCambio={(c) => editar(p.id, c)} />}
+                {pideMonedaLocal(proc) && <CampoMonedaLocal cobro={p} persona={persona} onCambio={(c) => editar(p.id, c)} />}
                 <div className="cobro-extra">
                   <Input
                     value={p.pagador ?? ""} placeholder={pideNombreYCuit(proc) ? "Nombre de quien transfirió (obligatorio)" : "Nombre de quien transfirió"}
@@ -450,6 +465,49 @@ function CampoCambio({ cobro, proc, onCambio }: {
           <span className="t-num t-strong">{money(costo, "USD", 2)}</span>
         </span>
       )}
+    </div>
+  );
+}
+
+/* dLocal: en qué moneda pagó la persona y cuánto, como dice el comprobante
+   (Aldana, 13/11: «no me ponen el valor de conversión ni el monto real pagado
+   por la persona»). El tipo de cambio sale solo de los dos montos, en
+   unidades de su moneda por dólar. La moneda se propone por el país o el
+   prefijo del teléfono de la persona. No se llena con una cotización: tiene
+   que ser lo que pagó de verdad. */
+export function CampoMonedaLocal({ cobro, persona, onCambio }: {
+  cobro: Pick<CobroBorrador, "monto" | "monedaLocal" | "montoLocal">;
+  persona?: { pais?: string; telefono?: string };
+  onCambio: (c: Partial<CobroBorrador>) => void;
+}) {
+  const propuesta = monedaPropuesta(persona);
+  const moneda = cobro.monedaLocal ?? propuesta;
+  /* La moneda queda escrita en el cobro apenas se muestra: es la que se ve elegida. */
+  useEffect(() => { if (!cobro.monedaLocal) onCambio({ monedaLocal: propuesta }); }, [cobro.monedaLocal, propuesta, onCambio]);
+  const tc = cambioQueResulta(cobro.montoLocal, cobro.monto);
+  const falta = !(cobro.montoLocal && cobro.montoLocal > 0);
+  return (
+    <div className="cambio-campo moneda-local" data-falta={falta || undefined}>
+      <div className="cambio-campo__fila">
+        <Select
+          value={moneda} aria-label="Moneda en la que pagó" title="Moneda en la que pagó por dLocal"
+          onChange={(ev) => onCambio({ monedaLocal: ev.target.value })}
+          opciones={MONEDAS_LOCALES.map((m) => ({ valor: m.codigo, texto: `${m.codigo} · ${m.nombre}` }))}
+        />
+        <InputMonto
+          value={cobro.montoLocal ?? ""} placeholder="Cuánto pagó" icono={<span className="t-subtle">{moneda}</span>}
+          aria-label={`Cuánto pagó en ${moneda}`} title="Lo que pagó la persona en su moneda, como dice el comprobante de dLocal"
+          error={falta}
+          onChange={(ev) => { const n = ev.target.value ? montoDe(ev.target.value) : 0; onCambio({ montoLocal: n > 0 ? n : undefined }); }}
+        />
+      </div>
+      <span className={`t-sm ${falta ? "t-strong" : "t-subtle"}`}>
+        {falta
+          ? `Escribí cuánto pagó en ${nombreDeMoneda(moneda).toLowerCase()}, como figura en el comprobante de dLocal: la Financiera lo necesita con el tipo de cambio.`
+          : tc
+            ? <>Pagó {enMoneda(cobro.montoLocal!, moneda)} por {money(cobro.monto, "USD", 2)}: el tipo de cambio es <span className="t-num t-strong">{textoDeCambio(tc, moneda)}</span>.</>
+            : "Poné también el monto en dólares para que salga el tipo de cambio."}
+      </span>
     </div>
   );
 }

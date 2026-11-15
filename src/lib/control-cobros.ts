@@ -3,6 +3,7 @@ import type {
 } from "./types";
 import { fechaHora } from "./format";
 import { nivelEn, puedeEditar, type MiAcceso } from "./permisos";
+import { faltaMonedaLocal } from "./moneda-local";
 
 export type { CasilleroChequeo, VeredictoChequeo } from "./types";
 
@@ -254,8 +255,8 @@ export function filasDeCobros(e: Pick<EstadoApp, "cuotas" | "ventas">, pagos: re
   });
 }
 
-export type FiltroControl = "todos" | "sin-chequear" | "rechazados" | "chequeados" | "sin-comprobante" | "sin-conciliar";
-export const FILTROS_CONTROL: readonly FiltroControl[] = ["todos", "sin-chequear", "rechazados", "chequeados", "sin-comprobante", "sin-conciliar"];
+export type FiltroControl = "todos" | "sin-chequear" | "rechazados" | "chequeados" | "sin-comprobante" | "sin-conciliar" | "sin-moneda-local";
+export const FILTROS_CONTROL: readonly FiltroControl[] = ["todos", "sin-chequear", "rechazados", "chequeados", "sin-comprobante", "sin-conciliar", "sin-moneda-local"];
 
 export const TEXTO_DE_FILTRO: Record<FiltroControl, string> = {
   todos: "Todos",
@@ -264,6 +265,7 @@ export const TEXTO_DE_FILTRO: Record<FiltroControl, string> = {
   chequeados: "Chequeados",
   "sin-comprobante": "Sin comprobante",
   "sin-conciliar": "Sin conciliar",
+  "sin-moneda-local": "dLocal sin su moneda",
 };
 
 export function pasaControl(p: Pago, procesadores: readonly Pick<Procesador, "id" | "proveedor">[], f: FiltroControl): boolean {
@@ -274,6 +276,8 @@ export function pasaControl(p: Pago, procesadores: readonly Pick<Procesador, "id
     /* Un cobro atado a la pasarela tiene su prueba ahí: no le falta comprobante. */
     case "sin-comprobante": return !tieneComprobante(p) && !p.movimientoId;
     case "sin-conciliar": return conciliacionDe(procesadores, p) === "sin-conciliar";
+    /* dLocal sin lo que pagó la persona en su moneda: no se puede pasar a la Financiera (lib/moneda-local.ts). */
+    case "sin-moneda-local": return faltaMonedaLocal(procesadores, p);
     default: return true;
   }
 }
