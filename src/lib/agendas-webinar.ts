@@ -55,6 +55,16 @@ export interface SesionCalendly {
 /* Por qué vía del lanzamiento llegó una agenda. */
 export type ViaLanzamiento = "webinar" | "clase0" | "qa";
 
+/* Por qué vía del lanzamiento llegó una agenda, mirando sólo su link (no de qué webinar es):
+   el webinar, la clase cero o el Q&A (la charla de Nahuel). Las que no vienen de uno de esos
+   links (VSL, setter, cargadas a mano) no tienen vía: son null. Para filtrar la Agenda
+   (Manuel, 15/11: «las llamadas de la clase cero y la clase de Nahu»), donde el filtro de
+   Webinar las juntaba con las del vivo. */
+export function viaDeLink(utm: Record<string, string> | null | undefined): ViaLanzamiento | null {
+  const l = leerUtm(utm);
+  return l.funnel && EVENTOS.includes(l.funnel) ? (l.funnel as ViaLanzamiento) : null;
+}
+
 /* La corrección a mano, guardada en sesiones.extra.atribucion. */
 export interface Atribucion {
   momento?: "vivo" | "despues";

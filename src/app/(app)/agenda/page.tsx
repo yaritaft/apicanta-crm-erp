@@ -13,7 +13,7 @@ import { EstadoDeLlamada, EstadoEditable } from "@/components/estados/EstadoLlam
 import { PasarLlamadas } from "@/components/closers/PasarLlamadas";
 import { sePuedePasar, usePuedePasarLlamadas } from "@/components/closers/usePasarLlamadas";
 import { ETIQUETA_CANAL } from "@/lib/calendly";
-import { atribucionDe, claveDeFecha, embudoDe, viaDe } from "@/lib/agendas-webinar";
+import { atribucionDe, claveDeFecha, embudoDe, viaDe, viaDeLink } from "@/lib/agendas-webinar";
 import { DescargarTranscripciones } from "@/components/fathom/DescargarTranscripciones";
 import { bajarCSV, clasesDe, crmDeDescarga, tablaDeDescarga, type FilaDescarga } from "@/lib/agendas-descarga";
 import { diaUtm, fuenteDeUtm } from "@/lib/utm-estandar";
@@ -53,20 +53,31 @@ const DOW = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"];
    - anfitrion: quien la atiende (el closer en Calendly), o "sin"
    - webinar: el webinar al que pertenece la agenda (su link, su clase cero o su
      Q&A: lib/agendas-webinar.ts, igual que en la ficha del webinar), o "sin"
+   - via: por qué link agendó, sin importar de qué webinar: webinar · clase0 · qa
+     (la charla de Nahuel y el Q&A) · sin (VSL, setter, a mano: viaDeLink)
    - canal: webinar · vsl · setter · otro · sin (Calendly sin canal) · manual
    - fuente: de dónde vino dentro del canal, con un solo nombre aunque el link
      lo escriba distinto (youtube junta YT, YouTube y la landing con medium YT:
      fuenteDeUtm en lib/utm-estandar.ts), o "sin"
    - calificada: si · no (invierte +1000, inglés y carrera: lib/calificacion.ts)
    - pag: la página, desde 1 */
-const VISTA_AGENDA = { estado: "", webinar: "", tipo: "", anfitrion: "", canal: "", fuente: "", calificada: "", pag: "1" };
+const VISTA_AGENDA = { estado: "", webinar: "", via: "", tipo: "", anfitrion: "", canal: "", fuente: "", calificada: "", pag: "1" };
 
 /* Llamadas por página. Se corta entre un día y otro, nunca en el medio de
    uno: ver `paginas` más abajo. */
 const POR_PAGINA = 30;
 
-type Faceta = "estado" | "webinar" | "tipo" | "anfitrion" | "canal" | "fuente" | "calificada";
-const FACETAS: Faceta[] = ["estado", "webinar", "tipo", "anfitrion", "canal", "fuente", "calificada"];
+type Faceta = "estado" | "webinar" | "via" | "tipo" | "anfitrion" | "canal" | "fuente" | "calificada";
+const FACETAS: Faceta[] = ["estado", "webinar", "via", "tipo", "anfitrion", "canal", "fuente", "calificada"];
+
+/* Por qué link agendó: el filtro de Webinar junta las del vivo con las de su clase cero y su Q&A
+   (son del mismo lanzamiento); éste las separa. «Q&A» es la charla de Nahuel. */
+const VIAS: OpcionFiltro[] = [
+  { valor: "webinar", texto: "Webinar" },
+  { valor: "clase0", texto: "Clase cero" },
+  { valor: "qa", texto: "Q&A (charla de Nahuel)" },
+  { valor: SIN, texto: "Otras (VSL, setter…)" },
+];
 
 /* De dónde vino: el canal de Calendly o, si se cargó a mano, eso. Son
    excluyentes, así que van en un solo desplegable. */
@@ -86,6 +97,7 @@ const valorDe: Record<Exclude<Faceta, "estado" | "webinar">, (s: Sesion, persona
   tipo: (s) => s.tipo?.trim() || SIN,
   anfitrion: (s) => s.anfitrion?.trim() || SIN,
   canal: canalDe,
+  via: (s) => viaDeLink(s.utm) ?? SIN,
   fuente: (s) => fuenteDeUtm(s.utm)?.valor ?? SIN,
   calificada: (s, persona) => (evaluarAgenda(s, persona).calificada ? "si" : "no"),
 };
@@ -224,6 +236,7 @@ export default function Agenda() {
         .filter((w) => [...webinarDe.values()].includes(w.id)).map((w) => ({ valor: w.id, texto: w.titulo })),
       ...(e.sesiones.some((s) => !webinarDe.has(s.id)) && webinarDe.size > 0 ? [{ valor: SIN, texto: "Sin webinar" }] : []),
     ],
+    via: VIAS.filter((o) => e.sesiones.some((s) => valorDe.via(s) === o.valor)),
     tipo: opcionesDe(e.sesiones.map((s) => valorDe.tipo(s)), (t) => t, "Sin tipo"),
     anfitrion: opcionesDe(e.sesiones.map((s) => valorDe.anfitrion(s)), (a) => a, "Sin anfitrión"),
     canal: CANALES.filter((c) => e.sesiones.some((s) => canalDe(s) === c.valor)),
@@ -302,7 +315,7 @@ export default function Agenda() {
   const hayFiltros = FACETAS.some((k) => f[k].length > 0) || busca.trim() !== "";
   function limpiarFiltros() {
     setBusca("");
-    setVista({ estado: null, webinar: null, tipo: null, anfitrion: null, canal: null, fuente: null, calificada: null, pag: null }, { q: null });
+    setVista({ estado: null, webinar: null, via: null, tipo: null, anfitrion: null, canal: null, fuente: null, calificada: null, pag: null }, { q: null });
   }
 
   const sesionVista = e.sesiones.find((s) => s.id === ver) ?? null;
@@ -389,6 +402,10 @@ export default function Agenda() {
           {opciones.webinar.length > 0 && (
             <FiltroMulti etiqueta="Filtrar por webinar" todos="Webinar" valores={f.webinar}
               opciones={conCuenta(opciones.webinar, cuentas.webinar)} onCambiar={(v) => filtrar("webinar", v)} />
+          )}
+          {opciones.via.length > 1 && (
+            <FiltroMulti etiqueta="Filtrar por vía (webinar, clase cero o Q&A)" todos="Vía" valores={f.via}
+              opciones={conCuenta(opciones.via, cuentas.via)} onCambiar={(v) => filtrar("via", v)} />
           )}
           <Filtro etiqueta="Filtrar por calificación" todos="Califica" valor={f.calificada[0] ?? ""}
             opciones={conCuenta(opciones.calificada, cuentas.calificada)} onCambiar={(v) => filtrar("calificada", v ? [v] : [])} />
