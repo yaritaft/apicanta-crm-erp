@@ -1,6 +1,7 @@
 import { Contexto, type Corte } from "./kpis";
 import { diaDeNegocio } from "./dia-negocio";
 import { cuotasPorCobrar } from "./finanzas";
+import { corridoPorRetencion, diaQueCuenta, retenciones, type ConRetencion } from "./acreditacion";
 import type { EstadoApp, ID } from "./types";
 
 /* ==================================================================
@@ -23,7 +24,10 @@ export interface FilaCash {
   cobrado: number;
 }
 
-export interface DiaCash { dia: string; cobrado: number; cobros: number }
+/* `dia` es el día en que la plata CUENTA (su acreditación), no el del pago: un cobro de Hotmart pagado el 27/10 figura el 11/11 (lib/acreditacion.ts).
+   `pagadosEl` son los días de pago de los cobros de esa fila que se pagaron otro día (sólo las cuentas que retienen). */
+export interface DiaCash { dia: string; cobrado: number; cobros: number; pagadosEl: string[] }
+
 
 export interface ResumenCash {
   etiqueta: string;
@@ -44,6 +48,10 @@ export interface ResumenCash {
   porServicio: FilaCash[];
   porVendedor: FilaCash[];
   porDia: DiaCash[];
+  /* Lo que cuenta en el período pero se pagó antes (se acreditó adentro): ya está en el CC. */
+  acreditadoDeAntes: ConRetencion;
+  /* Lo que se pagó en el período pero se acredita después: todavía NO está en el CC. */
+  acreditaDespues: ConRetencion;
 }
 
 const SIN = { servicio: "Sin servicio", vendedor: "Sin vendedor" };
@@ -71,10 +79,11 @@ export function resumenDeCash(e: EstadoApp, desde: string, hasta: string, etique
     }
     return f;
   };
+  const ret = retenciones(e.procesadores);
   const dias = new Map<string, DiaCash>();
   const dia = (d: string) => {
     let x = dias.get(d);
-    if (!x) { x = { dia: d, cobrado: 0, cobros: 0 }; dias.set(d, x); }
+    if (!x) { x = { dia: d, cobrado: 0, cobros: 0, pagadosEl: [] }; dias.set(d, x); }
     return x;
   };
 
@@ -90,9 +99,14 @@ export function resumenDeCash(e: EstadoApp, desde: string, hasta: string, etique
     const venta = c.ix.ventaPorId.get(c.ix.cuotaPorId.get(p.cuotaId)?.ventaId ?? "");
     fila("servicio", venta?.productoId).cobrado += p.monto;
     fila("vendedor", venta?.closerId).cobrado += p.monto;
-    const d = dia(diaDeNegocio(p.fecha));
+    const cuenta = diaQueCuenta(p, ret);
+    const pago = diaDeNegocio(p.fecha);
+    const d = dia(cuenta);
     d.cobrado += p.monto;
     d.cobros += 1;
+    if (pago !== cuenta) {
+      if (!d.pagadosEl.includes(pago)) d.pagadosEl.push(pago);
+    }
   }
   for (const dv of c.devoluciones()) {
     const venta = dv.ventaId ? c.ix.ventaPorId.get(dv.ventaId) : undefined;
@@ -107,6 +121,7 @@ export function resumenDeCash(e: EstadoApp, desde: string, hasta: string, etique
       .filter((f) => f.ventas > 0 || Math.abs(f.cobrado) >= 0.005 || f.facturado > 0)
       .sort((a, b) => b.cobrado - a.cobrado || b.facturado - a.facturado || a.nombre.localeCompare(b.nombre, "es"));
 
+  const corrido = corridoPorRetencion(e, desde, hasta);
   const cobrado = c.cobrado();
   const facturado = c.facturado();
   const ventas = c.ventasContables().length;
@@ -122,6 +137,8 @@ export function resumenDeCash(e: EstadoApp, desde: string, hasta: string, etique
     vencido: redondo(c.vencidas().reduce((a, x) => a + x.saldo, 0)),
     porServicio: ordenadas(filas.servicio),
     porVendedor: ordenadas(filas.vendedor),
-    porDia: [...dias.values()].map((d) => ({ ...d, cobrado: redondo(d.cobrado) })).sort((a, b) => b.dia.localeCompare(a.dia)),
+    porDia: [...dias.values()].map((d) => ({ ...d, cobrado: redondo(d.cobrado), pagadosEl: d.pagadosEl.sort() })).sort((a, b) => b.dia.localeCompare(a.dia)),
+    acreditadoDeAntes: corrido.deAntes,
+    acreditaDespues: corrido.despues,
   };
 }

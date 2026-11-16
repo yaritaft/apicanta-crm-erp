@@ -59,3 +59,34 @@ export function porAcreditar(
   }
   return { cobros, monto: Math.round(monto * 100) / 100 };
 }
+
+/** El día del negocio («aaaa-mm-dd») en que el cobro cuenta como plata: el de su acreditación. Es EL criterio para decir «este cobro es de tal período»:
+ *  lo usan el Cash Collected (pagosDelMes), el día por día de Ventas y cash y la lista de cobros, así los tres suman lo mismo. Un cobro de Hotmart
+ *  pagado el 27/10 cuenta el 11/11: en el período de noviembre entra, en el de octubre no. */
+export function diaQueCuenta(p: Pick<Pago, "fecha" | "procesadorId">, ret: ReadonlyMap<ID, Retencion>): string {
+  return diaDeNegocio(fechaDeAcreditacion(p, ret));
+}
+
+export interface ConRetencion { cobros: number; monto: number }
+
+/** Lo que la retención corre entre el día del pago y el día que cuenta, mirando un período («aaaa-mm-dd», los dos incluidos):
+ *  - `deAntes`: cobros pagados ANTES del período que se acreditan adentro (ya están en su Cash Collected);
+ *  - `despues`: cobros pagados EN el período que se acreditan después (todavía no están).
+ *  Es lo que explica por qué la lista de cobros por fecha de pago y el Cash Collected no coinciden. */
+export function corridoPorRetencion(
+  e: { pagos: readonly Pick<Pago, "fecha" | "procesadorId" | "monto">[]; procesadores: readonly Cuenta[] },
+  desde: string, hasta: string,
+): { deAntes: ConRetencion; despues: ConRetencion } {
+  const deAntes = { cobros: 0, monto: 0 }, despues = { cobros: 0, monto: 0 };
+  const ret = retenciones(e.procesadores);
+  if (ret.size > 0) {
+    for (const p of e.pagos) {
+      const pago = diaDeNegocio(p.fecha), cuenta = diaQueCuenta(p, ret);
+      if (pago === cuenta) continue;
+      if (pago < desde && cuenta >= desde && cuenta <= hasta) { deAntes.cobros++; deAntes.monto += p.monto; }
+      else if (pago >= desde && pago <= hasta && cuenta > hasta) { despues.cobros++; despues.monto += p.monto; }
+    }
+  }
+  const redondo = (n: number) => Math.round(n * 100) / 100;
+  return { deAntes: { cobros: deAntes.cobros, monto: redondo(deAntes.monto) }, despues: { cobros: despues.cobros, monto: redondo(despues.monto) } };
+}

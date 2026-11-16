@@ -44,7 +44,16 @@ export function VentasYCashVista() {
     { clave: "cobrado", titulo: "Cash Collected", tipo: "num", celda: (f) => M(f.cobrado), orden: (f) => f.cobrado, pie: <strong className="t-num">{M(r.cobrado)}</strong> },
   ];
   const columnasDias: Columna<DiaCash & { id: string }>[] = [
-    { clave: "dia", titulo: "Día", tipo: "primary", celda: (f) => fechaLarga(f.dia), orden: (f) => f.dia, pie: <strong>Total</strong> },
+    { clave: "dia", titulo: "Día", tipo: "primary", celda: (f) => (
+      <span style={{ display: "block", minWidth: 0 }}>
+        <span className="truncate" style={{ display: "block" }}>{fechaLarga(f.dia)}</span>
+        {f.pagadosEl.length > 0 && (
+          <span className="t-sm t-subtle truncate" style={{ display: "block" }}>
+            Incluye cobros pagados el {f.pagadosEl.map((d) => fechaLarga(d).replace(/ \d{4}$/, "")).join(" y el ")}, que se acreditaron hoy
+          </span>
+        )}
+      </span>
+    ), orden: (f) => f.dia, pie: <strong>Total</strong> },
     { clave: "cobros", titulo: "Cobros", tipo: "num", celda: (f) => num(f.cobros), orden: (f) => f.cobros, pie: <strong className="t-num">{num(r.cobros)}</strong> },
     { clave: "cobrado", titulo: "Cash Collected", tipo: "num", celda: (f) => M(f.cobrado), orden: (f) => f.cobrado, pie: <strong className="t-num">{M(r.cobrado)}</strong> },
   ];
@@ -69,7 +78,7 @@ export function VentasYCashVista() {
             Cash Collected (CC) · {etiqueta}
             <InfoMetrica
               titulo="Cash Collected (CC)" periodo={etiqueta}
-              ayuda="La plata que entró en el período, de ventas de cualquier fecha, menos lo que se devolvió en el período. Es el mismo número que el Cash Collected del Dashboard."
+              ayuda="La plata que entró en el período, de ventas de cualquier fecha, menos lo que se devolvió en el período. Un cobro cuenta el día que se acredita: los de Hotmart, 15 días después del pago. Es el mismo número que el Cash Collected del Dashboard."
               formula={"Cash Collected (CC) = lo que entró en el período − lo que se devolvió en el período"}
               componentes={() => [
                 { concepto: "Lo que entró", valor: M(r.entrado, 2), signo: "+" as const, nota: `${num(r.cobros)} ${r.cobros === 1 ? "cobro" : "cobros"}` },
@@ -83,6 +92,16 @@ export function VentasYCashVista() {
             {r.tasaDeCobro !== null ? <><b>{pct(r.tasaDeCobro, 1)}</b> de lo facturado</> : "Sin ventas en el período"}
           </p>
           {r.devuelto > 0 && <p className="fz-hero__sub">Ya descontadas devoluciones por <b>{M(r.devuelto)}</b></p>}
+          {r.acreditadoDeAntes.cobros > 0 && (
+            <p className="fz-hero__sub">
+              Incluye <b>{num(r.acreditadoDeAntes.cobros)} {r.acreditadoDeAntes.cobros === 1 ? "cobro" : "cobros"}</b> ({M(r.acreditadoDeAntes.monto)}) pagados antes de {fechaLarga(rango.desde).replace(/ \d{4}$/, "")} que se acreditaron en estas fechas
+            </p>
+          )}
+          {r.acreditaDespues.cobros > 0 && (
+            <p className="fz-hero__sub">
+              No incluye <b>{num(r.acreditaDespues.cobros)} {r.acreditaDespues.cobros === 1 ? "cobro" : "cobros"}</b> ({M(r.acreditaDespues.monto)}) pagados en estas fechas que todavía no se acreditaron
+            </p>
+          )}
         </div>
 
         <dl className="vc-datos" aria-label="Los números del período">
@@ -109,7 +128,7 @@ export function VentasYCashVista() {
             </Card>
           </div>
           <Card style={{ padding: 0, overflow: "hidden" }}>
-            <Cab titulo="Día por día" sub="Lo que entró cada día, menos lo devuelto ese día" />
+            <Cab titulo="Día por día" sub="Lo que entró cada día (el día que se acredita), menos lo devuelto ese día" />
             <DataTable filas={r.porDia.map((d) => ({ ...d, id: d.dia }))} columnas={columnasDias} ordenInicial={{ clave: "dia", desc: true }} porPagina={31} vacio={vacio("Sin cobros")} />
           </Card>
         </>

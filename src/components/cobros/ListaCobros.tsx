@@ -16,6 +16,7 @@ import {
 } from "@/lib/control-cobros";
 import { bajarExcel, excelCobros, filasExcelCobros } from "@/lib/excelCobros";
 import { diaDeNegocio } from "@/lib/dia-negocio";
+import { corridoPorRetencion, estaPorAcreditar, fechaDeAcreditacion, retenciones } from "@/lib/acreditacion";
 import { fechaLarga, money, num } from "@/lib/format";
 import { useParamsURL, useTablaURL } from "@/lib/useParamsURL";
 import type { EstadoApp, Venta } from "@/lib/types";
@@ -83,10 +84,26 @@ export function ListaCobros({ e, desde, hasta, filtros, busca, hayFiltros, onLim
   const cuenta = (m: FiltroControl) => enLaLista.filter((f) => pasaControl(f.pago, e.procesadores, m)).length;
   const total = sumarCobros(filas);
 
+  /* Esta lista va por la fecha del PAGO (se controla cuando el closer lo carga); el Cash Collected, por la de acreditación. Si hay cobros
+     que caen de un lado y no del otro, se dice acá en vez de dejar dos totales que no cierran sin explicación. */
+  const retencion = useMemo(() => retenciones(e.procesadores), [e.procesadores]);
+  const corrido = useMemo(() => corridoPorRetencion(e, desde, hasta), [e.pagos, e.procesadores, desde, hasta]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const tabla = useTablaURL("cobros", { clave: "fecha", desc: true }, ["fecha", "cliente", "monto", "chequeo", "comprobante", "conciliado", "cuenta", "cargo"]);
 
   const columnas: Columna<FilaCobro>[] = [
-    { clave: "fecha", titulo: "Fecha", tipo: "secondary", orden: (f) => f.pago.fecha, celda: (f) => fechaLarga(f.pago.fecha) },
+    { clave: "fecha", titulo: "Fecha", tipo: "secondary", orden: (f) => f.pago.fecha, celda: (f) => {
+        const acredita = fechaDeAcreditacion(f.pago, retencion);
+        if (acredita === f.pago.fecha) return fechaLarga(f.pago.fecha);
+        return (
+          <span style={{ display: "block" }}>
+            {fechaLarga(f.pago.fecha)}
+            <span className="t-sm t-subtle" style={{ display: "block" }}>
+              {estaPorAcreditar(f.pago, retencion) ? "Se acredita" : "Se acreditó"} el {fechaLarga(diaDeNegocio(acredita)).replace(/ \d{4}$/, "")}
+            </span>
+          </span>
+        );
+      } },
     {
       clave: "cliente", titulo: "Cliente", tipo: "primary", orden: (f) => f.venta?.contactoNombre ?? "",
       celda: (f) => {
@@ -108,11 +125,11 @@ export function ListaCobros({ e, desde, hasta, filtros, busca, hayFiltros, onLim
       clave: "monto", titulo: "Monto USD", tipo: "num", orden: (f) => f.pago.monto, celda: (f) => money(f.pago.monto, "USD", 2),
       pie: <strong className="t-num">{money(total, "USD", 2)}</strong>,
       info: {
-        ayuda: "Lo que entró en este cobro, en dólares. Abajo, la suma de todos los cobros de la vista (de todas las páginas): es el Cash Collected (CC) de lo que estás mirando.",
-        formula: "Cash Collected (CC) de la vista = suma de «Monto USD» de los cobros que cumplen el período y los filtros",
+        ayuda: "Lo que entró en este cobro, en dólares. Abajo, la suma de todos los cobros de la vista (de todas las páginas), por la fecha en que se pagaron. Es el Cash Collected (CC) sólo si ninguna cuenta retiene la plata: el CC de Ventas y cash cuenta cada cobro el día que se acredita (Hotmart, 15 días después) y resta las devoluciones.",
+        formula: "Suma de «Monto USD» de los cobros pagados en el período que cumplen los filtros",
         componentes: () => [
           { concepto: "Cobros en la vista", valor: num(filas.length) },
-          { concepto: "Cash Collected (CC) de la vista", valor: money(total, "USD", 2), signo: "=" },
+          { concepto: "Suma de la vista", valor: money(total, "USD", 2), signo: "=" },
         ],
       },
     },
@@ -175,6 +192,14 @@ export function ListaCobros({ e, desde, hasta, filtros, busca, hayFiltros, onLim
           )}
         />
       </Card>
+
+      {!hayFiltros && !busca && (corrido.deAntes.cobros > 0 || corrido.despues.cobros > 0) && (
+        <p className="t-sm t-subtle" role="note" style={{ margin: 0 }}>
+          Esta lista va por la fecha del pago; el Cash Collected, por la de acreditación.
+          {corrido.deAntes.cobros > 0 && <> Se acreditan en estas fechas {num(corrido.deAntes.cobros)} {corrido.deAntes.cobros === 1 ? "cobro pagado" : "cobros pagados"} antes ({money(corrido.deAntes.monto, "USD", 2)}): están en el CC y no en la lista.</>}
+          {corrido.despues.cobros > 0 && <> {num(corrido.despues.cobros)} {corrido.despues.cobros === 1 ? "cobro de la lista se acredita" : "cobros de la lista se acreditan"} después ({money(corrido.despues.monto, "USD", 2)}): todavía no {corrido.despues.cobros === 1 ? "está" : "están"} en el CC.</>}
+        </p>
+      )}
 
       <Plegable titulo="Cómo se chequea un cobro">
         El closer carga el cobro y sube su comprobante; después <strong>otra persona</strong> lo mira: el director comercial o finanzas.

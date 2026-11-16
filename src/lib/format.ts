@@ -41,16 +41,24 @@ const MESES = [
   "jul", "ago", "sep", "oct", "nov", "dic",
 ];
 
+/* Un día suelto («2026-11-01», sin hora) es un día del calendario, no un instante: `new Date("2026-11-01")` lo lee como la medianoche UTC, que en
+   Argentina es el 31/10 a las 21:00, y todo lo que se mostraba de ese texto salía un día antes (Ventas y cash: el cobro del 1/11 figuraba el
+   «31 oct»). Se arma al mediodía local para que ningún huso lo corra de día. Con hora (un instante) se lee como siempre. */
+const aFecha = (iso: string): Date => {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+  return m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), 12) : new Date(iso);
+};
+
 export function fecha(iso?: string | null): string {
   if (!iso) return "—";
-  const d = new Date(iso);
+  const d = aFecha(iso);
   if (Number.isNaN(d.getTime())) return "—";
   return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 
 export function fechaLarga(iso?: string | null): string {
   if (!iso) return "—";
-  const d = new Date(iso);
+  const d = aFecha(iso);
   if (Number.isNaN(d.getTime())) return "—";
   return `${d.getDate()} ${MESES[d.getMonth()]} ${d.getFullYear()}`;
 }
@@ -99,7 +107,7 @@ export function relativo(iso?: string | null): string {
 /* ISO date (yyyy-mm-dd) para inputs type="date" */
 export function isoDia(iso?: string | null): string {
   if (!iso) return "";
-  const d = new Date(iso);
+  const d = aFecha(iso);
   if (Number.isNaN(d.getTime())) return "";
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
