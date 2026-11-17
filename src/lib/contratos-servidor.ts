@@ -13,7 +13,7 @@ import { motivoSinPagoDelPrograma, type CuotaDelPlan, type PagoDeCuota } from ".
 import { plantillaDelContrato, programaDePlantilla, programaPorId, programasDe, type Programa } from "./programas";
 import type { ConfigContratos } from "./types";
 import { conCodigoDelAlumno, esPerfil, guiaDeBienvenida, htmlDeBienvenida, perfilEfectivo, roadmapYaEnviado, textoDeBienvenida, textoDelRoadmap, type ConfigBienvenida } from "./bienvenida-alumno";
-import { codigoDeAlumno, configResend, enviarPorResend, estadoEnResend } from "./reporte-servidor";
+import { codigoDeAlumno, configResend, enviarPorResend, estadoEnResend, leerMailEnResend } from "./reporte-servidor";
 import { diaDeNegocio } from "./dia-negocio";
 
 /* ==================================================================
@@ -695,6 +695,29 @@ export async function anotarVistaDeBienvenida(db: SupabaseClient, c: Pick<Contra
     .order("cuando", { ascending: false }).limit(1).maybeSingle();
   if (ultimo.data?.cuando && Date.now() - new Date(ultimo.data.cuando as string).getTime() < ENTRE_VISTAS_MS) return;
   await evento(db, c.id, "bienvenida-vista", "Alumno", "app", {});
+}
+
+export interface MailDeBienvenida { asunto: string; texto: string; para: string; cuando: string | null; estado: string | null; reconstruido: boolean }
+
+/** El mail de bienvenida tal como le salió al alumno (Lili, 17/11: «en la ficha poder ver cómo se envió el mail: si me hacen una consulta
+    sobre lo que dice, no tengo cómo verlo»). `envioId`: uno de los envíos del historial (si no, el último). Se lee de Resend, que guarda el
+    contenido que salió, así que sirve también para los envíos de antes de esta pantalla. Si Resend ya no lo tiene, se arma con el texto de
+    hoy y se dice (`reconstruido`). */
+export async function mailEnviadoDeBienvenida(db: SupabaseClient, c: Contrato, envioId?: string | null): Promise<MailDeBienvenida | null> {
+  const ev = await db.from("contrato_eventos").select("detalle, cuando").eq("contratoId", c.id).eq("evento", "bienvenida");
+  const ids = new Set(((ev.data ?? []) as { detalle: { id?: unknown; enviado?: unknown } }[])
+    .filter((e) => e.detalle?.enviado === true && typeof e.detalle.id === "string").map((e) => e.detalle.id as string));
+  if (c.bienvenidaMailId) ids.add(c.bienvenidaMailId);
+  /* Sólo ids de ESTE contrato: no se puede leer un mail ajeno de Resend por acá. */
+  const id = envioId && ids.has(envioId) ? envioId : c.bienvenidaMailId ?? [...ids].pop() ?? null;
+  const cfg = configResend();
+  if (cfg && id) {
+    const r = await leerMailEnResend(cfg, id);
+    if (r.ok) return { ...r.mail, reconstruido: false };
+  }
+  const mail = await armarMailDeBienvenida(db, c, await alumnoDelContrato(db, c));
+  if (!mail) return null;
+  return { asunto: mail.asunto, texto: mail.texto, para: (c.destinatario?.email ?? c.datos?.email ?? "").trim(), cuando: c.bienvenidaMailEn ?? null, estado: null, reconstruido: true };
 }
 
 /** Cómo salió el último mail de bienvenida según Resend («delivered», «bounced», «opened»…); null si no hay mail o no se pudo ver. */

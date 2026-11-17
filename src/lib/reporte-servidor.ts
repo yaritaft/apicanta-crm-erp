@@ -209,6 +209,27 @@ export async function estadoEnResend(
   return { ok: true, estado: j.last_event ?? "sent" };
 }
 
+/** El mail tal como salió, según Resend (asunto, texto, a quién y cuándo): para que Servicio vea qué le llegó al alumno (Lili, 17/11). */
+export async function leerMailEnResend(
+  cfg: ConfigResend, id: string, pedir: Pedir = fetch,
+): Promise<{ ok: true; mail: { asunto: string; texto: string; para: string; cuando: string | null; estado: string | null } } | { ok: false; error: string }> {
+  let r: Response;
+  try {
+    r = await pedir(`https://api.resend.com/emails/${encodeURIComponent(id)}`, { headers: { Authorization: `Bearer ${cfg.clave}` } });
+  } catch {
+    return { ok: false, error: "No se pudo conectar con Resend." };
+  }
+  const j = (await r.json().catch(() => ({}))) as { subject?: string; text?: string | null; html?: string | null; to?: string[] | string; created_at?: string; last_event?: string; message?: string };
+  if (!r.ok) return { ok: false, error: (j.message ?? `Resend respondió ${r.status}.`).toString().slice(0, 200) };
+  /* Si Resend sólo guardó el HTML, se lo pasa a texto plano. */
+  const deHtml = (h: string) => h.replace(/<br\s*\/?>/gi, "\n").replace(/<\/p>/gi, "\n\n").replace(/<[^>]+>/g, "")
+    .replace(/&quot;/g, '"').replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&").trim();
+  const texto = (j.text ?? "").trim() || (j.html ? deHtml(j.html) : "");
+  if (!texto) return { ok: false, error: "Resend ya no tiene el contenido de ese mail." };
+  const para = Array.isArray(j.to) ? j.to.join(", ") : (j.to ?? "");
+  return { ok: true, mail: { asunto: j.subject ?? "", texto, para, cuando: j.created_at ?? null, estado: j.last_event ?? null } };
+}
+
 /** Anota el último aviso mandado a un alumno (para ver cuándo y si le llegó). */
 export async function anotarAviso(db: SupabaseClient, alumnoId: string, aviso: { id?: string; estado: string }): Promise<void> {
   const r = await db.from("reporte_codigos").update({

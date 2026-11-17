@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from "react";
 import { Copy, Eye, Mail, Map as MapaIcono, MessageCircle, Send } from "lucide-react";
 import { Button, Select } from "@/components/ui/ui";
+import { Modal } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toast";
 import { copiarTexto } from "@/components/ui/Telefono";
 import { cabeceras } from "@/components/webinars/useYoutube";
@@ -15,7 +16,7 @@ import { acciones, useEstado } from "@/lib/store";
 import { useAcceso } from "@/lib/acceso";
 import { puedeEditar } from "@/lib/permisos";
 import type { Contrato, EventoContrato } from "@/lib/contratos";
-import { leerContratos, pedirContratoYRoadmap, type RoadmapPedido } from "./cliente";
+import { leerContratos, pedirContratoYRoadmap, type MailEnviado, type RoadmapPedido } from "./cliente";
 
 /* ==================================================================
    La bienvenida del alumno en Servicio → Contrato (Lili, 22/10): qué
@@ -64,6 +65,8 @@ export function BienvenidaAlumno({ alumnoId, ventaId }: { alumnoId: string; vent
   const [eligiendo, setEligiendo] = useState(false);
   const [guardando, setGuardando] = useState(false);
   const [reenviando, setReenviando] = useState(false);
+  /* «Ver cómo salió»: el mail tal como le llegó al alumno (Lili, 17/11). `envio`: cuál de los envíos (el último por defecto). */
+  const [verMail, setVerMail] = useState<{ cargando: boolean; mail: MailEnviado | null; error: string; envio: string } | null>(null);
   /* Cómo le salió el último mail según el servicio de mails (llegó, rebotó…): se pregunta al abrir y después de reenviar. */
   const [estadoMail, setEstadoMail] = useState<string | null>(null);
 
@@ -128,6 +131,22 @@ export function BienvenidaAlumno({ alumnoId, ventaId }: { alumnoId: string; vent
     setMandando(false);
   };
 
+  const abrirMail = async (envio = "") => {
+    setVerMail({ cargando: true, mail: null, error: "", envio });
+    try {
+      const { mailEnviado } = await pedirContratoYRoadmap({ accion: "ver-mail", id: contrato.id, ...(envio ? { envioId: envio } : {}) });
+      setVerMail({ cargando: false, mail: mailEnviado ?? null, error: mailEnviado ? "" : "Este programa no tiene mail de bienvenida.", envio });
+    } catch (err) {
+      setVerMail({ cargando: false, mail: null, error: err instanceof Error ? err.message : "No se pudo traer el mail.", envio });
+    }
+  };
+
+  const copiarMail = async () => {
+    if (!verMail?.mail) return;
+    const ok = await copiarTexto(verMail.mail.texto);
+    toast(ok ? "Mail copiado." : "No se pudo copiar.", ok ? "ok" : "err");
+  };
+
   /* «Reenviar»: vuelve a mandar el mismo mail de bienvenida (Lili, 17/11: por si el alumno lo perdió). */
   const reenviarBienvenida = async () => {
     setReenviando(true);
@@ -163,6 +182,7 @@ export function BienvenidaAlumno({ alumnoId, ventaId }: { alumnoId: string; vent
 
   const firmado = contrato.estado === "firmado";
   const seg = seguimientoDeBienvenida(eventos);
+  const envios = eventos.filter((x) => x.evento === "bienvenida" && x.detalle?.enviado === true && typeof x.detalle?.id === "string");
   const mail = estadoDelMail(estadoMail);
   return (
     <BloqueServicio titulo="Bienvenida" extra={
@@ -222,6 +242,9 @@ export function BienvenidaAlumno({ alumnoId, ventaId }: { alumnoId: string; vent
             <Button sm variante={contrato.bienvenidaMailEn ? "secondary" : "primary"} icono={<Send size={14} />} disabled={reenviando}
               onClick={() => void reenviarBienvenida()}>{contrato.bienvenidaMailEn ? "Reenviar" : "Mandar el mail"}</Button>
           )}
+          {contrato.bienvenidaMailEn && (
+            <Button sm variante="secondary" icono={<Eye size={14} />} onClick={() => void abrirMail()}>Ver cómo salió</Button>
+          )}
           <Button sm variante="secondary" icono={<Copy size={14} />} disabled={copiando} onClick={() => void copiar()}>Copiar el mensaje</Button>
         </span>
       </FilaServicio>
@@ -235,6 +258,28 @@ export function BienvenidaAlumno({ alumnoId, ventaId }: { alumnoId: string; vent
             : <span className="hs-guion">Todavía no</span>}
         </FilaServicio>
       )}
+      <Modal abierto={verMail !== null} onCerrar={() => setVerMail(null)} titulo="Mail de bienvenida"
+        sub={verMail?.mail ? `Para ${verMail.mail.para || "—"}${verMail.mail.cuando ? ` · ${fechaHora(verMail.mail.cuando)}` : ""}` : undefined} ancho
+        pie={verMail?.mail ? <Button sm variante="secondary" icono={<Copy size={14} />} onClick={() => void copiarMail()}>Copiar</Button> : undefined}>
+        {verMail?.cargando && <p className="t-sm t-subtle">Trayendo el mail…</p>}
+        {verMail?.error && <p className="t-sm" style={{ color: "var(--danger)" }}>{verMail.error}</p>}
+        {verMail?.mail && (
+          <div className="stack-2">
+            {envios.length > 1 && (
+              <Select value={verMail.envio || (envios[envios.length - 1].detalle.id as string)} aria-label="Qué envío ver"
+                onChange={(ev) => void abrirMail(ev.target.value)}
+                opciones={[...envios].reverse().map((x, i) => ({ valor: x.detalle.id as string, texto: `${fechaHora(x.cuando)}${x.detalle.reenvio ? " · reenvío" : i === envios.length - 1 ? " · el primero" : ""}` }))} />
+            )}
+            {verMail.mail.reconstruido && (
+              <p className="t-sm hs-guion">Resend ya no guarda este mail: te mostramos el texto que saldría hoy, que puede diferir del que recibió.</p>
+            )}
+            <div className="t-label">Asunto</div>
+            <div className="t-strong">{verMail.mail.asunto}</div>
+            <div className="t-label">Mensaje</div>
+            <div style={{ whiteSpace: "pre-wrap", fontSize: 14, lineHeight: 1.55, maxHeight: "55vh", overflowY: "auto" }}>{verMail.mail.texto}</div>
+          </div>
+        )}
+      </Modal>
     </BloqueServicio>
   );
 }

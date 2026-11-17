@@ -66,15 +66,18 @@ export interface RoadmapPedido { mail: boolean; motivo?: string; yaEstaba?: bool
 /** Si salió el reenvío del mail de bienvenida (Lili, 17/11). */
 export interface BienvenidaPedida { mail: boolean; motivo?: string }
 
-export async function pedirContratoYRoadmap(cuerpo: Record<string, unknown>): Promise<{ contrato: Contrato; roadmap?: RoadmapPedido; bienvenida?: BienvenidaPedida; estadoMail?: string | null }> {
+/** El mail de bienvenida tal como salió (`reconstruido`: Resend ya no lo tenía y se armó con el texto de hoy). */
+export interface MailEnviado { asunto: string; texto: string; para: string; cuando: string | null; estado: string | null; reconstruido: boolean }
+
+export async function pedirContratoYRoadmap(cuerpo: Record<string, unknown>): Promise<{ contrato: Contrato; roadmap?: RoadmapPedido; bienvenida?: BienvenidaPedida; estadoMail?: string | null; mailEnviado?: MailEnviado | null }> {
   const r = await fetch("/api/contratos", {
     method: "POST", cache: "no-store",
     headers: { ...(await cabeceras()), "Content-Type": "application/json" }, body: JSON.stringify(cuerpo),
   });
-  const j = (await r.json().catch(() => ({}))) as { contrato?: Contrato; roadmap?: RoadmapPedido; bienvenida?: BienvenidaPedida; estadoMail?: string | null; error?: string };
+  const j = (await r.json().catch(() => ({}))) as { contrato?: Contrato; roadmap?: RoadmapPedido; bienvenida?: BienvenidaPedida; estadoMail?: string | null; mailEnviado?: MailEnviado | null; error?: string };
   if (!r.ok && !j.contrato) throw new Error(j.error ?? `Error ${r.status}`);
   if (j.contrato?.estado === "error") throw new Error(j.contrato.error ?? "El contrato no salió.");
-  return { contrato: j.contrato!, roadmap: j.roadmap, bienvenida: j.bienvenida, estadoMail: j.estadoMail };
+  return { contrato: j.contrato!, roadmap: j.roadmap, bienvenida: j.bienvenida, estadoMail: j.estadoMail, mailEnviado: j.mailEnviado };
 }
 
 /** Sube el PDF de un contrato firmado fuera de PandaDoc (ver api/contratos/subir). */

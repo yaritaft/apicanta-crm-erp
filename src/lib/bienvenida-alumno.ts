@@ -155,14 +155,14 @@ const salaTexto = (s?: SalaZoom): string => {
 const pasosCompleto = (aldana: string) => `1. Comenzá en Wisboo – Hackear IT
 • Realizá la Introducción, el Módulo 0 y el Módulo 1.
 
-2. Definí tu roadmap y alineación técnica
-• Seguí las indicaciones de tu roadmap para definir tu stack y alinearte con el mercado.
-• Si mantenés tu stack actual, continuá con el recorrido de Hackear IT.
-• Si elegís Python + FastAPI, nuestro stack fuertemente recomendado, completá primero el Módulo 0 de Hackear AI y luego retomá Hackear IT.
+2. Realizá tu roadmap para alinearte con el mercado
+Una vez definido tu roadmap, tenés dos caminos:
+• Si decidís mantener tu stack actual, continuá normalmente con el paso a paso de Hackear IT.
+• Si decidís alinearte con Python y FastAPI, que es el stack que recomendamos fuertemente por su demanda actual en el mercado, dirigite a Hackear AI – Módulo 0 para aprender ambas tecnologías. Una vez completado, volvé a Hackear IT y continuá con el siguiente paso.
 
-3. Completá el Módulo 8 – Take Home Challenge (THC)
-• Realizá el desafío sin utilizar IA.
-• Si elegiste Python + FastAPI, completá previamente el Módulo 0 de Hackear AI.
+3. Completá el Take Home Challenge del Módulo 8
+• Mirá todo el Módulo 8 y luego realizá el THC sin IA.
+• El THC lo encontrás en el drive «herramientas», que está en la descripción del grupo de novedades en Telegram: vas a encontrar dos THC, el de Full Stack y el de Data Engineer.
 
 4. Avanzá del Módulo 2 al 5
 • Prepará tu perfil para comenzar a conseguir entrevistas de HR.
@@ -185,35 +185,28 @@ const pasosCompleto = (aldana: string) => `1. Comenzá en Wisboo – Hackear IT
 
 ⚠️ Importante: no intentes estudiar todo al mismo tiempo. Primero alineate con el mercado, definí tu stack y avanzá hacia las entrevistas de HR. Incorporá los conocimientos de IA de forma estratégica, según las necesidades reales de tu perfil y de las posiciones a las que apuntes.`;
 
-const PASOS_DOWNSELL = `1. Comenzá en Wisboo – Hackear IA
-• Realizá la Introducción, el Módulo 0 y el Módulo 1 del contenido correspondiente a tu recorrido.
+const PASOS_DOWNSELL = `1. Comenzá en Wisboo – Hackear IT
+• Introducción, Módulo 0 y Módulo 1.
 
-2. Definí tu roadmap y alineación técnica
-• Seguí las indicaciones de tu roadmap para definir tu stack y alinearte con el mercado.
-• Si decidís mantener tu stack actual, continuá con el recorrido indicado.
-• Si elegís Python + FastAPI, nuestro stack fuertemente recomendado, completá primero el Módulo 0 de Hackear IA para aprender ambas tecnologías y alinearte con el mercado.
+2. Realizá tu roadmap para alinearte con el mercado
+Una vez definido tu roadmap, tenés dos caminos:
+• Si decidís mantener tu stack actual, continuá normalmente con el paso a paso de Hackear IT.
+• Si decidís alinearte con Python y FastAPI, que es el stack que recomendamos fuertemente por su demanda actual en el mercado, dirigite a Hackear IA – Módulo 0 para aprender ambas tecnologías. Una vez completado, volvé a Hackear IT y continuá con el siguiente paso.
 
-3. Completá el Módulo 8 – Take Home Challenge (THC)
-• Realizá el desafío sin utilizar IA.
-• Si elegiste Python + FastAPI, completá previamente el Módulo 0 de Hackear IA.
+3. Completá el Take Home Challenge del Módulo 8
+• Mirá todo el Módulo 8 y luego realizá el THC sin IA.
+• El THC lo encontrás en el drive «herramientas», que está en la descripción del grupo de novedades en Telegram: vas a encontrar dos THC, el de Full Stack y el de Data Engineer.
 
-4. Avanzá del Módulo 2 al 5
-• Prepará tu perfil para comenzar a postularte y conseguir entrevistas de HR.
-• Seguí las recomendaciones de los módulos para avanzar con una estrategia alineada al mercado.
+4. Continuá del Módulo 2 al 5
+• Para editar tu CV y LinkedIn y comenzar a conseguir entrevistas de HR.
 
 5. Del Módulo 6 al 12
-• Enfocate en la preparación para las entrevistas técnicas.
+• Preparación para las entrevistas técnicas.
 
-6. Incorporá los conocimientos de IA estratégicamente
-• Aprovechá el contenido de IA disponible dentro de Hackear IA.
-• Priorizá los conocimientos y herramientas que realmente necesites según las búsquedas y posiciones a las que estés aplicando.
+6. Incorporá el contenido de IA
+• Una vez que llegues a la etapa de entrevistas técnicas, incorporá el módulo de IA de Hackear IT y el contenido de Hackear IA según lo que realmente esté solicitando el mercado y las posiciones a las que estés aplicando.
 
-7. Aprovechá los bonos disponibles
-• Si tu programa incluye contenido extra, utilizalo para complementar tu formación y reforzar tus conocimientos.
-
-⚠️ Importante: no intentes estudiar todo al mismo tiempo. Primero alineate con el mercado, definí tu stack y avanzá hacia las entrevistas de HR. Incorporá los conocimientos y herramientas de IA de forma estratégica, según las necesidades reales de tu perfil y de las posiciones a las que apuntes.
-
-Si elegís Python + FastAPI, recordá completar el Módulo 0 de Hackear IA antes del Take Home Challenge.`;
+👉 No sirve estudiar IA ahora simplemente porque aparece en algunas búsquedas. Primero necesitás alinearte con el mercado, definir tu stack, comenzar con las entrevistas de HR y, cuando llegues a las entrevistas técnicas, identificar qué conocimientos de IA necesitás incorporar.`;
 
 const roadmapTexto = (g: GuiaBienvenida) => g.roadmap
   ? `Tu roadmap personalizado (${g.perfil}): ${g.roadmap}`
@@ -338,11 +331,11 @@ Recordá: completarlo todos los lunes es parte de tu proceso de seguimiento.${g.
 Es tuyo y sirve para todo: el formulario de los lunes, los simulacros de los martes y las consultas de los jueves. Tus links ya lo traen, así que no hace falta escribirlo; guardalo por las dudas.` : ""}
 
 🎥 3. Aprovechá las salas de Zoom
-Hora 18hs hora Argentina
-• Martes: práctica y simulacros de entrevistas o tema nuevo.${g.simulacro ? ` Para que te tomen un simulacro, anotate acá:
+Son tres días por semana, todos a las 18:00 (hora de Argentina):
+• Martes 18:00: simulacros de entrevistas y tema nuevo.${g.simulacro ? ` Para que te tomen un simulacro, anotate acá:
 👉 ${g.simulacro}` : ""}${salaTexto(g.salas.martes)}
-• Miércoles: consultas exclusivamente sobre IA.${salaTexto(g.salas.miercoles)}
-• Jueves: consultas generales.${g.consulta ? ` Si no podés venir, dejá tu consulta acá y mirá la respuesta en la grabación:
+• Miércoles 18:00: consultas exclusivas de IA.${salaTexto(g.salas.miercoles)}
+• Jueves 18:00: seguimiento y consultas en general.${g.consulta ? ` Si no podés venir, dejá tu consulta acá y mirá la respuesta en la grabación:
 👉 ${g.consulta}` : ""}${salaTexto(g.salas.jueves)}${Object.keys(g.salas).length ? `
 
 Si con el link no podés ingresar, bajá la app de Zoom e ingresá con el ID y la clave de la sala.` : ""}
