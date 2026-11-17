@@ -33,7 +33,10 @@ test("Programa completo: el punto 2 y el 3 también, sin repetir Python, y conse
   assert.match(t, /3\. Completá el Take Home Challenge del Módulo 8/);
   assert.equal((t.match(/Python/g) ?? []).length, 1);
   assert.match(t, /Contacto de Aldana: \+54 9 11 1/);
+  assert.match(t, /6\. Incorporá el contenido de IA\n• Una vez que llegues a la etapa de entrevistas técnicas, incorporá el módulo de IA de Hackear IT y el contenido de Hackear AI/);
   assert.match(t, /7\. Aprovechá los bonos disponibles/);
+  assert.match(t, /No sirve estudiar IA ahora simplemente porque aparece en algunas búsquedas\./);
+  assert.doesNotMatch(t, /no intentes estudiar todo al mismo tiempo/);
 });
 
 test("el mail del programa completo detalla los días y la hora de las salas de Zoom", () => {

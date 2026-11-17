@@ -175,15 +175,13 @@ Una vez definido tu roadmap, tenés dos caminos:
 5. Del Módulo 6 al 12
 • Enfocate en la preparación para las entrevistas técnicas.
 
-6. Incorporá el contenido de IA en el momento adecuado
-• En Hackear IT, aprovechá el contenido de IA disponible.
-• También tenés todo el contenido de Hackear AI para profundizar tus conocimientos y herramientas.
-• Priorizá lo que realmente necesites según las búsquedas y posiciones a las que estés aplicando.
+6. Incorporá el contenido de IA
+• Una vez que llegues a la etapa de entrevistas técnicas, incorporá el módulo de IA de Hackear IT y el contenido de Hackear AI según lo que realmente esté solicitando el mercado y las posiciones a las que estés aplicando.
 
 7. Aprovechá los bonos disponibles
 • Tenés contenido extra para complementar tu formación.
 
-⚠️ Importante: no intentes estudiar todo al mismo tiempo. Primero alineate con el mercado, definí tu stack y avanzá hacia las entrevistas de HR. Incorporá los conocimientos de IA de forma estratégica, según las necesidades reales de tu perfil y de las posiciones a las que apuntes.`;
+👉 No sirve estudiar IA ahora simplemente porque aparece en algunas búsquedas. Primero necesitás alinearte con el mercado, definir tu stack, comenzar con las entrevistas de HR y, cuando llegues a las entrevistas técnicas, identificar qué conocimientos de IA necesitás incorporar.`;
 
 const PASOS_DOWNSELL = `1. Comenzá en Wisboo – Hackear IT
 • Introducción, Módulo 0 y Módulo 1.
