@@ -123,6 +123,29 @@ for (const viejas of [false, true]) {
     await b.ejecutar(`delete from public.ventas where id = 'vM'`);
   });
 
+  /* 17/11: Dante le pasó un lead a Mariano; Mariano cerró y cargó la venta desde la llamada (de Dante). La base la rechazó
+     («no puede atar una venta a la llamada de otro») y el contrato no salió. Quien ve las llamadas de todos carga la venta de cualquiera. */
+  test(`${como}: con el permiso, carga la venta que cerró en la llamada de otro closer (y el closer común sigue sin poder)`, { skip: saltear }, async () => {
+    const b = await banco();
+    const venta = await b.intentar("mari@x.com", `insert into public.ventas (id, "closerId", "contactoId", "sesionId", monto) values ('vK', 'm_mari', 'leadO', 'sO', 2500)`);
+    assert.ok(venta.ok, venta.ok ? "" : venta.mensaje);
+    const cuota = await b.intentar("mari@x.com", `insert into public.cuotas (id, "ventaId") values ('cK', 'vK')`);
+    assert.ok(cuota.ok, cuota.ok ? "" : cuota.mensaje);
+    const pago = await b.intentar("mari@x.com", `insert into public.pagos (id, "cuotaId", monto) values ('pK', 'cK', 2500)`);
+    assert.ok(pago.ok, pago.ok ? "" : pago.mensaje);
+    assert.deepEqual(await ids(b, "mari@x.com", "ventas"), ["vK"], "ve la suya y ninguna de los otros");
+    /* Una venta que ya existía sin llamada: también la puede atar a la llamada de otro. */
+    await b.ejecutar(`insert into public.ventas (id, "closerId", "contactoId", monto) values ('vK2', 'm_mari', 'leadO', 100)`);
+    const atar = await b.intentar("mari@x.com", `update public.ventas set "sesionId" = 'sO' where id = 'vK2'`);
+    assert.ok(atar.ok && atar.n === 1, JSON.stringify(atar));
+    /* Lo que NO cambia: la venta de otro sigue sin tocarse, y el closer común no ata nada a la llamada de otro. */
+    const robo = await b.intentar("mari@x.com", `update public.ventas set monto = 1 where id = 'vO'`);
+    assert.ok(robo.ok && robo.n === 0, "la venta de otro sigue cerrada");
+    const comun = await b.intentar("dante@x.com", `insert into public.ventas (id, "closerId", "sesionId") values ('vZ', 'm_dante', 'sO')`);
+    assert.ok(!comun.ok && comun.codigo === "42501", `el closer común sigue sin atar una venta a la llamada de otro: ${JSON.stringify(comun)}`);
+    await b.ejecutar(`delete from public.pagos where id = 'pK'; delete from public.cuotas where id = 'cK'; delete from public.ventas where id in ('vK', 'vK2')`);
+  });
+
   test(`${como}: el permiso no hace nada sin «sólo lo suyo» ni en Dueño, y apagarlo vuelve a lo suyo`, { skip: saltear }, async () => {
     const b = await banco();
     await b.ejecutar(`update public.tipos_cuenta set "veTodosLosLeads" = true where id in ('director', 'dueno')`);
@@ -144,6 +167,7 @@ for (const viejas of [false, true]) {
     const antes = await b.servicio<{ polname: string; q: string }>(`select polname || ' ' || polrelid::regclass::text as polname, coalesce(pg_get_expr(polqual, polrelid), '') || '|' || coalesce(pg_get_expr(polwithcheck, polrelid), '') q from pg_policy order by 1`);
     await b.ejecutar(sqlDe("closer-ve-todos-los-leads.sql"));
     await b.ejecutar(sqlDe("solo-lo-suyo-seguro.sql"));
+    await b.ejecutar(sqlDe("venta-de-llamada-ajena.sql"));
     const despues = await b.servicio<{ polname: string; q: string }>(`select polname || ' ' || polrelid::regclass::text as polname, coalesce(pg_get_expr(polqual, polrelid), '') || '|' || coalesce(pg_get_expr(polwithcheck, polrelid), '') q from pg_policy order by 1`);
     assert.deepEqual(despues, antes);
     const sueltas = await b.servicio<{ t: string; p: string }>(`

@@ -28,6 +28,7 @@ import { PendientesDeConciliar } from "@/components/conciliacion/PendientesDeCon
 import { TarjetaOrigen } from "@/components/conciliacion/TarjetaOrigen";
 import { TOMAN_SIMULACROS } from "@/lib/simulacros";
 import { PanelSetter } from "./PanelSetter";
+import { PanelSocio } from "./PanelSocio";
 import { Rendimiento } from "./Rendimiento";
 import { TarjetaComisiones, TarjetaMesa } from "./Tarjetas";
 import { plural, saludoDe } from "./util";
@@ -100,11 +101,17 @@ export function MiPanel() {
 
   const esSetter = datos.vista === "setter";
   const esDirector = datos.vista === "director";
+  /* Quien no vende (un socio, un mentor): no lleva llamadas ni cierre del día. Se le muestra lo que le corresponde, no el panel del closer (Nahuel, 17/11). */
+  const noVende = datos.vista === "otro";
+  /* Lo suyo se liquida por mes: el del final del rango elegido. */
+  const periodo = rangoSel.hasta.slice(0, 7);
   const primerNombre = miembro.nombre.split(" ")[0];
   const sinCargar = datos.dia.sinCargarHoy + datos.dia.sinCargarAntes;
   const puedeCargarVenta = !viendoOtro && !esSetter && nivelDeRuta(acceso, "/cargar-venta") >= 2;
 
-  const resumen = esSetter
+  const resumen = noVende
+    ? miembro.puesto?.trim() || "Lo que te corresponde este mes y de dónde sale."
+    : esSetter
     ? `${plural(datos.agendasDeSetter.length, "agenda", "agendas")} en el rango`
     : esDirector
       ? "Tu comisión sale de las ventas de todos los closers."
@@ -137,10 +144,10 @@ export function MiPanel() {
           <p className="mp-resumen">{resumen}</p>
         </div>
         <div className="mp-acciones">
-          {!esSetter && !esDirector && sinCargar > 0 && <span className="mp-pildora">Cierre del día pendiente</span>}
+          {!esSetter && !esDirector && !noVende && sinCargar > 0 && <span className="mp-pildora">Cierre del día pendiente</span>}
           <DateRangePicker
             value={rangoSel} minDate={null} onApply={(r) => setRango(r)}
-            footerNota="Comisiones por fecha de cobro · el resto por fecha de la llamada"
+            footerNota={noVende ? "Lo tuyo se liquida por mes: se muestra el mes en que termina el rango" : "Comisiones por fecha de cobro · el resto por fecha de la llamada"}
           />
           {puedeCargarVenta && (
             <Link href="/cargar-venta" className="hk-btn hk-btn--primary"><Plus size={16} aria-hidden />Cargar venta</Link>
@@ -158,7 +165,9 @@ export function MiPanel() {
       {/* Resells y testimonios que ya pasaron y no dicen cómo salieron (Lili, 24/10). */}
       <LlamadasParaCerrar e={e} miembro={miembro} llamadas={datos.llamadasParaCerrar} viendoOtro={viendoOtro} />
 
-      {esSetter ? (
+      {noVende ? (
+        <PanelSocio miembro={miembro} periodo={periodo} viendoOtro={viendoOtro} />
+      ) : esSetter ? (
         <PanelSetter datos={datos} rangoTxt={rangoTxt} ahora={ahora} puedeMarcar={!viendoOtro} />
       ) : (
         <>

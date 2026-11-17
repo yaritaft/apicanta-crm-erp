@@ -2,7 +2,7 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import {
-  Copy, GraduationCap, Mail, MessageCircle, Pencil, Phone, Plus, ShoppingBag, X,
+  Copy, GraduationCap, Mail, MapPin, MessageCircle, Pencil, Phone, Plus, ShoppingBag, X,
 } from "lucide-react";
 import {
   Avatar, Badge, Button, Empty, IconButton, Select, Tabs,
@@ -30,7 +30,9 @@ import { usePlegado } from "./Plegable";
 import type { VistaFicha } from "./abrir";
 import { acciones, cuotasQueCancelaLaBaja, useEstado, useSync } from "@/lib/store";
 import { useAcceso } from "@/lib/acceso";
-import { nivelEn, veElServicio, type MiAcceso } from "@/lib/permisos";
+import { nivelEn, puedeEditar, veElServicio, type MiAcceso } from "@/lib/permisos";
+import { CeldaEditable } from "@/components/crm-tabla/CeldaEditable";
+import { PAISES } from "@/lib/pais-de-telefono";
 import { filasDePersona, filasTabla, type FilaTabla } from "@/lib/crm-tabla";
 import { personaDe, type Persona } from "@/lib/persona";
 import type { Contrato } from "@/lib/contratos";
@@ -255,6 +257,7 @@ function Lateral({ e, p, filas, contratos, recargarContratos, onVerVentas }: {
         <Fila onCopiar={copiar} icono={<Phone size={15} />} valor={p.telefono} vacio="Sin teléfono" que="el teléfono"
           accion={whatsapp ? <a className="link t-sm" href={whatsapp} target="_blank" rel="noopener noreferrer" title="Abrir el chat de WhatsApp" aria-label="Abrir el chat de WhatsApp"><MessageCircle size={15} /></a> : undefined} />
         {c?.instagram && <Fila onCopiar={copiar} icono={<span className="t-sm">@</span>} valor={c.instagram.replace(/^@/, "")} vacio="" que="el Instagram" />}
+        <FilaPais p={p} />
       </section>
 
       {lead && (
@@ -313,6 +316,37 @@ function Lateral({ e, p, filas, contratos, recargarContratos, onVerVentas }: {
 
 /* Un dato de contacto con su botón de copiar: lo que se hace el 100% de
    las veces es llevárselo a otra herramienta (el celular, el mail). */
+/* El país, a la vista en todas las solapas y corregible ahí mismo (Aldana, 17/11: cargó una venta, «me quedó sin país» y no encontró
+   dónde cambiarlo: sólo se editaba en «Quién es», dentro de Llamadas). Si nadie lo cargó, es el del prefijo del teléfono. */
+function FilaPais({ p }: { p: Persona }) {
+  const toast = useToast();
+  const { acceso } = useAcceso();
+  const puede = puedeEditar(acceso, "contactos");
+  const [abierta, setAbierta] = useState(false);
+  const cargado = (p.contacto?.pais || p.leads[0]?.pais || "").trim();
+  const pais = p.pais ?? "";
+  if (!puede && !pais) return null;
+  const guardar = (escrito: string) => {
+    const valor = escrito.trim();
+    if (valor === cargado) return;
+    if (!acciones.corregirPerfil(p.clave, "pais", valor)) { toast("No se pudo cambiar el país de esta ficha.", "err"); return; }
+    toast(valor ? `País de ${p.nombre}: ${valor}.` : `País de ${p.nombre}: vuelve al de su teléfono.`, "ok",
+      { texto: "Deshacer", onClick: () => { acciones.corregirPerfil(p.clave, "pais", cargado, `${p.nombre}: se deshizo el cambio de País.`); } });
+  };
+  return (
+    <div className="dato-fila">
+      <span className="t-subtle" style={{ display: "inline-flex" }}><MapPin size={15} /></span>
+      {puede ? (
+        <CeldaEditable editor="sugerencias" valor={pais} titulo="País" abierta={abierta} sugerencias={PAISES}
+          onAbrir={() => setAbierta(true)} onCerrar={() => setAbierta(false)} onGuardar={guardar}
+          className="ficha__editable" ayuda={cargado ? undefined : pais ? "Sale del prefijo de su teléfono. Tocá para corregirlo." : undefined}>
+          {pais ? <span className="t-sm">{pais}</span> : <span className="t-sm t-subtle">Agregar país</span>}
+        </CeldaEditable>
+      ) : <span className="truncate t-sm" style={{ flex: 1, minWidth: 0 }}>{pais}</span>}
+    </div>
+  );
+}
+
 function Fila({ icono, valor, vacio, que, accion, onCopiar }: {
   icono: React.ReactNode; valor?: string; vacio: string; que: string; accion?: React.ReactNode;
   onCopiar: (valor: string, que: string) => void;

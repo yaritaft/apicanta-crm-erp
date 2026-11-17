@@ -127,6 +127,7 @@ button.mp-tile:focus-visible { outline: 2px solid var(--focus); outline-offset: 
 .mp-lista__hora { font-variant-numeric: tabular-nums; font-weight: 600; color: var(--ink); }
 .mp-lista__nombre { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink); font-weight: 500; }
 /* Las agendas del setter: hora, persona, closer y cómo terminó. En el celular se apilan (las columnas fijas dejaban el nombre en 12 px). */
+.mp-lista__fila--socio { grid-template-columns: minmax(0, 1fr) auto 16px; align-items: start; }
 .mp-lista__fila--setter { grid-template-columns: 128px minmax(0, 1fr) 190px 170px; }
 @media (max-width: 720px) {
   .mp-lista__fila--setter { grid-template-columns: minmax(0, 1fr) auto; row-gap: 2px; }

@@ -130,13 +130,18 @@ as $$
   select coalesce(a, '') <> '' and a = any((select public.son_mios(array[a]))::text[]);
 $$;
 
--- ¿Esta llamada es mía? (mis_sesiones())
+-- ¿Esta llamada es mía? (mis_sesiones()) Quien ve los leads de todos ya ve y
+-- edita las llamadas de todos (solo_lo_suyo_en('sesiones')): también puede
+-- cargar la venta que cerró en la llamada de otro closer (17/11: Dante le pasó
+-- un lead a Mariano, la venta se rechazó acá y la app dijo que había quedado).
+-- La venta sigue siendo sólo suya: lo que se abre es de qué llamada salió.
 create or replace function public.es_mi_llamada(sid text)
 returns boolean
 language sql stable security definer
 set search_path = public
 as $$
-  select exists (select 1 from public.sesiones s where s.id = sid and public.anfitrion_es_mio(s.anfitrion));
+  select public.ve_todos_los_leads()
+      or exists (select 1 from public.sesiones s where s.id = sid and public.anfitrion_es_mio(s.anfitrion));
 $$;
 
 -- ¿Esta venta es mía? Soy su closer o su setter, o heredé una cuota. (mis_ventas())

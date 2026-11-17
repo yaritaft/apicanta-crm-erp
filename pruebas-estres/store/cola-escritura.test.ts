@@ -17,6 +17,7 @@ import { conDemo, estadoDe, recargado, yEsperar } from "./_escenas";
 import { storeNuevo } from "./_fresco";
 import { TIPOS_POR_DEFECTO, type MiAcceso } from "@/lib/permisos";
 import type { E } from "./_acciones";
+import { rechazoDe } from "@/lib/rechazos";
 
 const base = new BaseFalsa();
 instalar(base);
@@ -131,6 +132,40 @@ test("sin permiso en la base (42501): se descarta, se avisa y lo que viene atrá
   assert.deepEqual(negadas, ["ventas"]);
   assert.equal(base.tabla("leads").get(lead.id)!.notas, "pasa");
   base.puedeEscribir = null;
+});
+
+/* 17/11: Mariano cargó la venta de un lead que era de Dante. El candado de closers la rechazó, la app igual dijo «la venta quedó
+   registrada» y el contrato falló con «No encuentro esa venta». Ahora queda anotado qué fila no entró y por qué (lib/rechazos.ts):
+   el asistente de ventas lo lee antes de decir nada y antes de pedir el contrato. */
+test("una venta que la base rechaza queda anotada con el motivo del candado, y deja de estarlo si después entra", async () => {
+  const S = await conDemo(base);
+  const motivo = "Tu tipo de cuenta no puede atar una venta a la llamada de otro.";
+  const avisos: (string | undefined)[] = [];
+  const baja = S.alNegarseEscritura((_t, m) => avisos.push(m));
+  base.falla = (pet) => (pet.tipo === "upsert" && ["ventas", "cuotas", "pagos"].includes(pet.tabla)
+    ? { status: 403, body: { code: "42501", message: pet.tabla === "ventas" ? motivo : `new row violates row-level security policy for table "${pet.tabla}"` } } : null);
+  const e0 = estadoDe(S);
+  const modelo = e0.ventas[0];
+  const venta = { ...modelo, id: "ven_rechazada", sesionId: undefined, creadoEn: "2026-11-17T10:00:00.000Z" };
+  const cuota = { id: "cuo_rechazada", ventaId: venta.id, numero: 1, monto: 100, vence: "2026-11-17", estado: "pendiente" };
+  S.acciones.registrarVenta({ venta, cuotas: [cuota], cobros: [] } as never);
+  const lead = e0.leads[0];
+  S.acciones.actualizar("leads", lead.id, { notas: "esto sí pasa" } as never, "l");
+  assert.equal(await S.esperarGuardado(5000), true, "la cola se vacía: nada queda trabado");
+  baja();
+  assert.equal(S.estadoSync(), "listo", S.errorSync());
+  assert.equal(rechazoDe("ventas", venta.id), motivo, "queda anotado el motivo, tal cual lo dijo la base");
+  assert.ok(rechazoDe("cuotas", cuota.id), "y la cuota que no entró, con un motivo genérico");
+  assert.equal(avisos[0], motivo, "el aviso de la app dice el motivo del candado, no uno genérico");
+  assert.ok(!base.tabla("ventas").has(venta.id), "la venta no está en la base");
+  assert.equal(base.tabla("leads").get(lead.id)!.notas, "esto sí pasa", "lo que venía atrás se guardó");
+  assert.equal(rechazoDe("ventas", "ven_que_nadie_rechazo"), null, "una venta que nadie rechazó no figura");
+  /* La misma venta, cuando la base la acepta: deja de estar rechazada. */
+  base.falla = null;
+  S.acciones.registrarVenta({ venta, cuotas: [cuota], cobros: [] } as never);
+  assert.equal(await S.esperarGuardado(5000), true);
+  assert.ok(base.tabla("ventas").has(venta.id));
+  assert.equal(rechazoDe("ventas", venta.id), null);
 });
 
 test("con un tipo de cuenta que no edita la tabla, la cola ni lo intenta (no manda a la base lo que va a rechazar)", async () => {

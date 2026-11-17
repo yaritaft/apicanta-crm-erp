@@ -54,6 +54,7 @@ import { atarPropuesta, conciliarReembolsos, quienDelReembolso, type ReembolsoCr
 import { porcentajeDelSetterMarcado, setterDeAgendas } from "./setter-agendas";
 import { paseDeLaVenta, responsableTrasPase } from "./pasar-llamadas";
 import { rearmarPlan } from "./cambio-de-plan";
+import { anotarRechazo, motivoDeLaBase, olvidarRechazo } from "./rechazos";
 import {
   cambiosDeChequeo, conChequeo, conComprobanteNuevo, puedeCambiarComprobante, puedeUsarCasillero,
   quienEs, quienFirma, ROL_DE_CASILLERO, sinColumnasDelControl, type CasilleroChequeo, type VeredictoChequeo,
@@ -418,8 +419,11 @@ async function drenar() {
            viene atrás, y se avisa. */
         if (r.error.code === "42501") {
           cola.shift();
-          /* Los candados de los cobros (supabase/cobros-de-closers.sql) dicen por qué: se muestra tal cual. */
-          negada(op.tabla, /^(Este cobro|Ese cobro|Un pago de la pasarela|Esta venta)/.test(r.error.message) ? r.error.message : undefined);
+          /* Los candados (supabase/cobros-de-closers.sql, solo-lo-suyo-seguro.sql) dicen por qué: se muestra tal cual. Y queda
+             anotado qué fila no entró: quien la cargó (el asistente de ventas) no puede decir que quedó guardada (lib/rechazos.ts). */
+          const motivo = motivoDeLaBase(r.error.message);
+          anotarRechazo(op.tabla, op.tipo === "upsert" ? (op.filas as { id?: ID }[]).map((f) => f.id) : op.ids, motivo);
+          negada(op.tabla, motivo);
           continue;
         }
         /* Un borrado que la base frena porque otra cosa todavía lo usa (un
@@ -460,6 +464,7 @@ async function drenar() {
         }
         throw errorDeTabla(op.tabla, r.error);
       }
+      if (op.tipo !== "delete") olvidarRechazo(op.tabla, op.tipo === "upsert" ? (op.filas as { id?: ID }[]).map((f) => f.id) : op.ids);
       cola.shift();
     }
     marcar("listo");

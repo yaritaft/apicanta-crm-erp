@@ -1,5 +1,6 @@
 import { claveEmail } from "./contactos";
 import { corregidoDe, nacimientoDePersona } from "./perfil";
+import { paisCon } from "./pais-de-telefono";
 import type {
   Actividad, Alumno, Comentario, Contacto, EstadoApp, ID, Lead, Sesion, Venta,
 } from "./types";
@@ -99,7 +100,8 @@ export function personaDe(e: EstadoApp, id: ID): Persona | null {
     nombre: contacto?.nombre || principal?.nombre || alumnoSuelto?.nombre || "Sin nombre",
     email: contacto?.email || principal?.email || alumnoSuelto?.email || "",
     telefono: contacto?.telefono || principal?.telefono,
-    pais: contacto?.pais || principal?.pais || alumnoSuelto?.pais,
+    /* Sin país cargado, el del prefijo de su teléfono (lo mismo que muestra el CRM). */
+    pais: paisCon(contacto?.pais || principal?.pais || alumnoSuelto?.pais, contacto?.telefono || principal?.telefono) || undefined,
     leads, sesiones, ventas, alumnos, comentarios,
   };
 }

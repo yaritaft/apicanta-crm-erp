@@ -29,6 +29,8 @@ import { origenDeUtm, textoUtm } from "@/lib/utms";
 import { setterDeAgendas } from "@/lib/setter-agendas";
 import { useUsuarioActual } from "@/lib/usuario";
 import { esperarGuardado } from "@/lib/store";
+import { avisoDeVentaRechazada, rechazoDe } from "@/lib/rechazos";
+import { paisCon } from "@/lib/pais-de-telefono";
 import { useAcceso } from "@/lib/acceso";
 import { useToast } from "@/components/ui/Toast";
 import { modalidadDeCuotas, modalidadDeReserva, problemaDeDatos, ROTULO_ESTADO, type Contrato, type DatosContrato } from "@/lib/contratos";
@@ -364,25 +366,34 @@ export function AsistenteVenta({ onCerrar, onListo, desdeMovimiento, cliente, cl
     acciones.registrarVenta({ venta, cuotas, cobros, sesionId });
     onListo(ventaId, venta.contactoNombre);
 
-    /* El contrato sale después de que la venta llegó a la base (el servidor la lee con la sesión de quien
-       carga). La venta ya quedó: si el contrato falla, se avisa y se manda desde la ficha. */
+    /* La venta se ve en pantalla enseguida, pero recién existe cuando la base la acepta. Si la rechaza (17/11: Mariano cerró un lead
+       que era de Dante y el candado de closers no la dejó entrar), se dice con todas las letras: antes el aviso decía «la venta quedó
+       registrada» y el contrato fallaba con «No encuentro esa venta». Sin venta en la base no se pide contrato. */
     const ct = b.contrato;
-    if (conContrato && ct.decision === "mandar" && ct.datos) {
+    const pideContrato = conContrato && ct.decision === "mandar" && Boolean(ct.datos);
+    void (async () => {
+      const llego = await esperarGuardado();
+      const rechazo = rechazoDe("ventas", ventaId);
+      if (rechazo) {
+        toast(avisoDeVentaRechazada(venta.contactoNombre, rechazo), "err",
+          { texto: "Abrir su ficha", onClick: () => { if (contactoId) abrirFicha(contactoId, "ventas"); } });
+        return;
+      }
+      if (!pideContrato || !ct.datos) return;
       const datos = ct.datos;
-      void (async () => {
-        await esperarGuardado();
-        try {
-          await pedirContrato({
-            accion: "crear", ventaId, sesionId, leadId: contactoId, programa: ct.programaId, datos, prueba: modoContrato === "prueba",
-          });
-          toast(`Contrato mandado a ${datos.email} para firmar.`);
-        } catch (err) {
-          /* Con botón, el aviso dura más; y en la ficha queda el contrato en rojo con «Volver a intentar» (y la campanita lo avisa). */
-          toast(`La venta quedó registrada, pero el contrato NO salió y la persona no recibió nada: ${err instanceof Error ? err.message : "no se pudo"}`, "err",
-            { texto: "Abrir su ficha", onClick: () => { if (contactoId) abrirFicha(contactoId, "ventas"); } });
-        }
-      })();
-    }
+      try {
+        await pedirContrato({
+          accion: "crear", ventaId, sesionId, leadId: contactoId, programa: ct.programaId, datos, prueba: modoContrato === "prueba",
+        });
+        toast(`Contrato mandado a ${datos.email} para firmar.`);
+      } catch (err) {
+        /* Con botón, el aviso dura más; y en la ficha queda el contrato en rojo con «Volver a intentar» (y la campanita lo avisa).
+           Sólo se dice que la venta quedó si la base lo confirmó. */
+        const queVenta = llego ? "La venta quedó registrada" : "No pude confirmar que la venta se haya guardado (revisá tu conexión y mirá su ficha)";
+        toast(`${queVenta}, pero el contrato NO salió y la persona no recibió nada: ${err instanceof Error ? err.message : "no se pudo"}`, "err",
+          { texto: "Abrir su ficha", onClick: () => { if (contactoId) abrirFicha(contactoId, "ventas"); } });
+      }
+    })();
   }
 
   /* Teclado: Enter avanza, Esc sale. En un textarea Enter escribe. */
@@ -1304,7 +1315,8 @@ function PasoContrato({ b, setB, e, esDueno, modo, encendido }: {
       documento: seg?.dni ?? "",
       domicilio: seg?.domicilio ?? "",
       ...(nacimiento ? { nacimiento } : {}),
-      pais: (b.contactoPais || contacto?.pais || lead?.pais || "").trim(),
+      /* Sin país cargado, el del prefijo de su teléfono: el contrato no sale con el país vacío. */
+      pais: paisCon(b.contactoPais || contacto?.pais || lead?.pais, b.contactoTelefono || (contacto as { telefono?: string } | undefined)?.telefono || lead?.telefono || seg?.telefono),
       modalidad: deReserva ? modalidadDeReserva(b.reserva > 0 ? b.reserva : b.cuotas.filter((l) => l.esReserva).reduce((n, l) => n + l.monto, 0), e.ajustes.monedaBase || "USD") : modalidadDeCuotas(b.cuotas, e.ajustes.monedaBase || "USD"),
       sesiones: seg?.sesionesMentor ?? 0,
       bonos: [],

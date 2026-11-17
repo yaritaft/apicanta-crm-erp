@@ -1,5 +1,6 @@
 import { sinTildes } from "./crm";
 import { ESTADOS_CV } from "./revision-cv";
+import { paisCon } from "./pais-de-telefono";
 import { diaAInstante, diaDeNegocio } from "./dia-negocio";
 import { rachasAHoy } from "./reportes";
 import { edadDeDia, nacimientoDeRespuestas, RANGO_EDAD, respuestaPerfil } from "./perfil";
@@ -491,7 +492,7 @@ export function filasClientes(e: EstadoApp, hoy: string): FilaCliente[] {
       id: a.id, alumno: a, seg, tieneSeg: Boolean(guardado), contacto, venta,
       numero: seg.numero, nombre: a.nombre, email: a.email,
       telefono: (contacto?.telefono ?? "").trim() || seg.telefono,
-      pais: (a.pais ?? "").trim() || (contacto?.pais ?? "").trim(),
+      pais: paisCon((a.pais ?? "").trim() || (contacto?.pais ?? "").trim(), (contacto?.telefono ?? "").trim() || seg.telefono),
       edad: edadNac ?? seg.edad ?? edadSug, edadSugerida: edadNac === null && seg.edad === null && edadSug !== null, nacimiento: seg.nacimiento,
       otrosMails: seg.otrosMails, stack: seg.stack, dni: seg.dni, domicilio: seg.domicilio,
       inicio, egreso, egresoSugerido: egresoPropio === null && egreso !== null, inicioReal: arranca, pausa,

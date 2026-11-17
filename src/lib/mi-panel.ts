@@ -49,9 +49,9 @@ export function vistaDePanel(m: Pick<MiembroEquipo, "rol"> & Partial<Pick<Miembr
   return "otro";
 }
 
-/** Quién puede tener un panel: los que venden o comisionan y quien lleva el servicio. */
+/** Quién puede tener un panel: los que venden o comisionan, quien lleva el servicio y el socio (ve lo que le corresponde del mes: components/mi-panel/PanelSocio). */
 export const conPanel = (m: Pick<MiembroEquipo, "rol" | "activo"> & Partial<Pick<MiembroEquipo, "puesto">>) =>
-  m.activo && (["closer", "setter", "director"].includes(m.rol) || esDeServicio(m));
+  m.activo && (["closer", "setter", "director", "socio"].includes(m.rol) || esDeServicio(m));
 
 export interface CobroCargado {
   pago: Pago;
