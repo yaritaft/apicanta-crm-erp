@@ -13,7 +13,7 @@ import { motivoSinPagoDelPrograma, type CuotaDelPlan, type PagoDeCuota } from ".
 import { plantillaDelContrato, programaDePlantilla, programaPorId, programasDe, type Programa } from "./programas";
 import type { ConfigContratos } from "./types";
 import { conCodigoDelAlumno, esPerfil, guiaDeBienvenida, htmlDeBienvenida, perfilEfectivo, roadmapYaEnviado, textoDeBienvenida, textoDelRoadmap, type ConfigBienvenida } from "./bienvenida-alumno";
-import { codigoDeAlumno, configResend, enviarPorResend } from "./reporte-servidor";
+import { codigoDeAlumno, configResend, enviarPorResend, estadoEnResend } from "./reporte-servidor";
 import { diaDeNegocio } from "./dia-negocio";
 
 /* ==================================================================
@@ -626,27 +626,83 @@ export async function mandarBienvenida(db: SupabaseClient, c: Contrato, alumnoId
   /* Sólo recién firmado: la pasada de cada hora vuelve a pasar por acá los contratos viejos a los que les falta el PDF o
      los accesos, y el día que se prenda Resend no les tiene que llegar la bienvenida a alumnos que ya arrancaron. */
   if (!c.firmadoEn || Date.now() - new Date(c.firmadoEn).getTime() > DIAS_PARA_BIENVENIDA * 86_400_000) return;
-  const config = await configBienvenida(db);
-  let guia = guiaDeBienvenida({ reserva: c.datos.reserva, programa: c.programa, perfil: await perfilDelContrato(db, c, alumnoId), config });
-  if (!guia) return;
-  const origen = process.env.APP_URL?.trim() || baseDeLaApp(null);
-  if (guia.modelo === "completo" && alumnoId && origen) {
-    const codigo = await codigoDeAlumno(db, alumnoId).catch(() => null);
-    guia = conCodigoDelAlumno(guia, origen, codigo);
-  }
+  const mail = await armarMailDeBienvenida(db, c, alumnoId);
+  if (!mail) return;
   /* Se marca ANTES de mandar: si dos avisos llegan juntos, sale uno solo. */
   const toma = await db.from("contratos").update({ bienvenidaMailEn: ahora() }).eq("id", c.id).is("bienvenidaMailEn", null).select("id");
   if (!toma.data?.length) return;
-  const { asunto, texto } = textoDeBienvenida(guia, origen ? paginaDeBienvenida(origen, c.bienvenida) : null);
-  const responderA = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(config?.responderA ?? "") ? config!.responderA : undefined;
-  const r = await enviarPorResend(cfg, { para, asunto, texto, html: htmlDeBienvenida(texto), responderA });
+  const r = await enviarPorResend(cfg, { para, asunto: mail.asunto, texto: mail.texto, html: htmlDeBienvenida(mail.texto), responderA: mail.responderA });
   if (!r.ok) {
     await db.from("contratos").update({ bienvenidaMailEn: null }).eq("id", c.id);
     await evento(db, c.id, "bienvenida", "Apicanta", "app", { enviado: false, error: r.error });
     return;
   }
   await db.from("contratos").update({ bienvenidaMailId: r.id }).eq("id", c.id);
-  await evento(db, c.id, "bienvenida", "Apicanta", "app", { enviado: true, id: r.id, modelo: guia.modelo, perfil: guia.perfil });
+  await evento(db, c.id, "bienvenida", "Apicanta", "app", { enviado: true, id: r.id, modelo: mail.modelo, perfil: mail.perfil });
+}
+
+/** El texto del mail de bienvenida de un contrato (el mismo para el primer envío y para el reenvío); null si el programa no tiene. */
+async function armarMailDeBienvenida(db: SupabaseClient, c: Contrato, alumnoId: string | null) {
+  const config = await configBienvenida(db);
+  let guia = guiaDeBienvenida({ reserva: c.datos.reserva, programa: c.programa, perfil: await perfilDelContrato(db, c, alumnoId), config });
+  if (!guia) return null;
+  const origen = process.env.APP_URL?.trim() || baseDeLaApp(null);
+  if (guia.modelo === "completo" && alumnoId && origen) {
+    const codigo = await codigoDeAlumno(db, alumnoId).catch(() => null);
+    guia = conCodigoDelAlumno(guia, origen, codigo);
+  }
+  const { asunto, texto } = textoDeBienvenida(guia, origen ? paginaDeBienvenida(origen, c.bienvenida) : null);
+  const responderA = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(config?.responderA ?? "") ? config!.responderA : undefined;
+  return { asunto, texto, responderA, modelo: guia.modelo, perfil: guia.perfil };
+}
+
+export interface ResultadoBienvenida { mail: boolean; motivo?: string }
+
+const ESPERA_ENTRE_REENVIOS_MS = 60_000;
+
+/** «Reenviar el mail de bienvenida» (Lili, 17/11: «para el caso que el alumno lo pierda»): vuelve a mandar el mismo mail, con su
+    página y sus links, cuantas veces haga falta. Queda en el historial con quién lo pidió. Sólo con el contrato firmado: antes de
+    eso la bienvenida sale sola al firmar. Un doble clic no manda dos. */
+export async function reenviarBienvenida(db: SupabaseClient, c: Contrato, quien: string): Promise<ResultadoBienvenida> {
+  if (c.estado !== "firmado") return { mail: false, motivo: "El contrato todavía no está firmado: la bienvenida le llega sola cuando firma." };
+  const cfg = configResend();
+  if (!cfg) return { mail: false, motivo: "El envío de mails no está configurado: copiá el mensaje y mandáselo por WhatsApp." };
+  const para = (c.destinatario?.email ?? c.datos?.email ?? "").trim();
+  if (!para) return { mail: false, motivo: "El contrato no tiene el mail del alumno." };
+  const ultimo = await db.from("contrato_eventos").select("cuando").eq("contratoId", c.id).eq("evento", "bienvenida")
+    .order("cuando", { ascending: false }).limit(1).maybeSingle();
+  if (ultimo.data?.cuando && Date.now() - new Date(ultimo.data.cuando as string).getTime() < ESPERA_ENTRE_REENVIOS_MS) {
+    return { mail: false, motivo: "Se lo acabás de mandar: esperá un minuto antes de reenviarlo." };
+  }
+  const mail = await armarMailDeBienvenida(db, c, await alumnoDelContrato(db, c));
+  if (!mail) return { mail: false, motivo: "Este programa no tiene mail de bienvenida." };
+  const r = await enviarPorResend(cfg, { para, asunto: mail.asunto, texto: mail.texto, html: htmlDeBienvenida(mail.texto), responderA: mail.responderA });
+  if (!r.ok) {
+    await evento(db, c.id, "bienvenida", quien, "app", { enviado: false, reenvio: true, error: r.error });
+    return { mail: false, motivo: r.error };
+  }
+  await db.from("contratos").update({ bienvenidaMailId: r.id, ...(c.bienvenidaMailEn ? {} : { bienvenidaMailEn: ahora() }) }).eq("id", c.id);
+  await evento(db, c.id, "bienvenida", quien, "app", { enviado: true, reenvio: true, id: r.id, modelo: mail.modelo, perfil: mail.perfil });
+  return { mail: true };
+}
+
+const ENTRE_VISTAS_MS = 3 * 3_600_000;
+
+/** Anota que el alumno abrió su página de bienvenida (Lili, 17/11: «saber que el alumno lo vio», como el seguimiento del contrato).
+    La primera vez siempre; después, una cada tantas horas, para que la historia diga cuándo la volvió a mirar sin llenarse. */
+export async function anotarVistaDeBienvenida(db: SupabaseClient, c: Pick<Contrato, "id">): Promise<void> {
+  const ultimo = await db.from("contrato_eventos").select("cuando").eq("contratoId", c.id).eq("evento", "bienvenida-vista")
+    .order("cuando", { ascending: false }).limit(1).maybeSingle();
+  if (ultimo.data?.cuando && Date.now() - new Date(ultimo.data.cuando as string).getTime() < ENTRE_VISTAS_MS) return;
+  await evento(db, c.id, "bienvenida-vista", "Alumno", "app", {});
+}
+
+/** Cómo salió el último mail de bienvenida según Resend («delivered», «bounced», «opened»…); null si no hay mail o no se pudo ver. */
+export async function estadoDelMailDeBienvenida(c: Pick<Contrato, "bienvenidaMailId">): Promise<string | null> {
+  const cfg = configResend();
+  if (!cfg || !c.bienvenidaMailId) return null;
+  const r = await estadoEnResend(cfg, c.bienvenidaMailId);
+  return r.ok ? r.estado : null;
 }
 
 /** El alumno del contrato: el que tiene guardado, el de su venta o el de su persona. */

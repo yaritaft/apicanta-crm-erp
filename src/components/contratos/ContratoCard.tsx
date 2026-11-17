@@ -57,6 +57,7 @@ const ICONO_EVENTO: Record<string, React.ReactNode> = {
   creado: <FileSignature size={15} />, enviado: <Send size={15} />, visto: <Eye size={15} />, firmado: <PenLine size={15} />,
   rechazado: <Ban size={15} />, anulado: <Ban size={15} />, reenviado: <Send size={15} />, corregido: <Pencil size={15} />,
   enlace: <Link2 size={15} />, accesos: <KeyRound size={15} />, error: <AlertTriangle size={15} />,
+  bienvenida: <Mail size={15} />, "bienvenida-vista": <Eye size={15} />,
 };
 
 export function ContratoCard({ venta, alumnoId, sesionId, manual, forma = "tarjeta" }: {

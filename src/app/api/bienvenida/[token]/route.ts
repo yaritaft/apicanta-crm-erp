@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { nubeServidor } from "@/lib/servidor";
 import { accesosAlFirmar, armarBienvenida, esCodigoBienvenida, type AccesoParaBienvenida, type Contrato } from "@/lib/contratos";
-import { configBienvenida, perfilDelContrato, programasGuardados, sincronizar } from "@/lib/contratos-servidor";
+import { anotarVistaDeBienvenida, configBienvenida, perfilDelContrato, programasGuardados, sincronizar } from "@/lib/contratos-servidor";
 import { linkMagicoWisboo } from "@/lib/accesos-servidor";
 import { programaPorId } from "@/lib/programas";
 import { conCodigoDelAlumno, guiaDeBienvenida } from "@/lib/bienvenida-alumno";
@@ -38,6 +38,9 @@ export async function GET(peticion: Request, ctx: { params: Promise<{ token?: st
     try { c = await sincronizar(db, c, "sincronizacion"); }
     catch (e) { console.error("[bienvenida] no se pudo consultar a PandaDoc", c.id, e instanceof Error ? e.message : String(e)); }
   }
+
+  /* Que el alumno la abrió (Lili, 17/11): se ve en su ficha, en Contrato → Bienvenida. Nunca frena la página. */
+  if (c.estado === "firmado") await anotarVistaDeBienvenida(db, c).catch((e) => console.error("[bienvenida] no se pudo anotar la vista", c.id, e instanceof Error ? e.message : String(e)));
 
   const { programas, config } = await programasGuardados(db);
   const accesosAutomaticos = accesosAlFirmar(config.estado, c.modo);

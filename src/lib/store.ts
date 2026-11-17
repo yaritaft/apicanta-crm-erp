@@ -1314,6 +1314,14 @@ export function cuotasQueCancelaLaBaja(e: EstadoApp, ventaId: ID): Cuota[] {
   return e.cuotas.filter((c) => c.ventaId === ventaId && c.estado === "pendiente" && (pagado.get(c.id) ?? 0) < 0.01);
 }
 
+/** La venta activa más reciente de la misma persona, distinta de la que se da de baja (null si no hay otra). */
+export function ventaVigenteDe(e: Pick<EstadoApp, "ventas">, venta: Pick<Venta, "id" | "contactoId">): Venta | null {
+  if (!venta.contactoId) return null;
+  return e.ventas
+    .filter((v) => v.id !== venta.id && v.contactoId === venta.contactoId && v.estado === "activa")
+    .sort((a, b) => (b.fecha ?? "").localeCompare(a.fecha ?? ""))[0] ?? null;
+}
+
 function efectoDeBaja(e: EstadoApp, antes: Venta, despues: Venta): { venta: Venta; cuotas: Cuota[]; alumnos: Alumno[] } | null {
   if (esBaja(antes) === esBaja(despues)) {
     /* Editar una venta que sigue de baja no le borra qué cuotas canceló. */
@@ -1324,8 +1332,14 @@ function efectoDeBaja(e: EstadoApp, antes: Venta, despues: Venta): { venta: Vent
   }
   if (esBaja(despues)) {
     const cuotas = cuotasQueCancelaLaBaja(e, despues.id).map((c) => ({ ...c, estado: "cancelada" as const }));
-    const alumnos = e.alumnos.filter((a) => a.ventaId === despues.id && a.estado !== "baja")
-      .map((a) => ({ ...a, estado: "baja" as const, extra: { ...a.extra, [ESTADO_ANTES_DE_LA_BAJA]: a.estado } }));
+    /* Si la persona tiene OTRA venta activa (la que se cargó de más y se cancela: Alan Vargas, 16/11: la reserva y la venta que la completó
+       quedaron en dos ventas), el servicio sigue siendo suyo: se pasa a esa venta, no a baja. Si no, Servicio lo veía de baja o como una
+       reserva que nunca arranca, y no se lo dejaba corregir. */
+    const vigente = ventaVigenteDe(e, despues);
+    const alumnos = e.alumnos.filter((a) => a.ventaId === despues.id && (vigente || a.estado !== "baja"))
+      .map((a) => vigente
+        ? { ...a, ventaId: vigente.id, extra: { ...a.extra, ventaAntesDeLaBaja: despues.id } }
+        : { ...a, estado: "baja" as const, extra: { ...a.extra, [ESTADO_ANTES_DE_LA_BAJA]: a.estado } });
     return {
       venta: { ...despues, extra: { ...despues.extra, [CUOTAS_DE_LA_BAJA]: cuotas.map((c) => c.id), bajaEn: ahora() } },
       cuotas, alumnos,
@@ -1334,11 +1348,19 @@ function efectoDeBaja(e: EstadoApp, antes: Venta, despues: Venta): { venta: Vent
   /* Vuelve: lo que canceló la baja, pendiente otra vez. */
   const ids = new Set((antes.extra?.[CUOTAS_DE_LA_BAJA] as ID[] | undefined) ?? []);
   const cuotas = e.cuotas.filter((c) => ids.has(c.id) && c.estado === "cancelada").map((c) => ({ ...c, estado: "pendiente" as const }));
-  const alumnos = e.alumnos.filter((a) => a.ventaId === despues.id && a.estado === "baja" && a.extra?.[ESTADO_ANTES_DE_LA_BAJA])
-    .map((a) => {
-      const { [ESTADO_ANTES_DE_LA_BAJA]: previo, ...extra } = a.extra;
-      return { ...a, estado: previo as Alumno["estado"], extra };
-    });
+  const alumnos = [
+    ...e.alumnos.filter((a) => a.ventaId === despues.id && a.estado === "baja" && a.extra?.[ESTADO_ANTES_DE_LA_BAJA])
+      .map((a) => {
+        const { [ESTADO_ANTES_DE_LA_BAJA]: previo, ...extra } = a.extra;
+        return { ...a, estado: previo as Alumno["estado"], extra };
+      }),
+    /* El que se había pasado a otra venta activa al darla de baja vuelve a esta si se reactiva. */
+    ...e.alumnos.filter((a) => a.extra?.ventaAntesDeLaBaja === despues.id)
+      .map((a) => {
+        const { ventaAntesDeLaBaja: _v, ...extra } = a.extra;
+        return { ...a, ventaId: despues.id, extra };
+      }),
+  ];
   const { [CUOTAS_DE_LA_BAJA]: _c, bajaEn: _b, ...extra } = { ...antes.extra, ...despues.extra };
   return { venta: { ...despues, extra }, cuotas, alumnos };
 }

@@ -1,16 +1,16 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { Copy, Mail, Map as MapaIcono, MessageCircle, Send } from "lucide-react";
+import { Copy, Eye, Mail, Map as MapaIcono, MessageCircle, Send } from "lucide-react";
 import { Button, Select } from "@/components/ui/ui";
 import { useToast } from "@/components/ui/Toast";
 import { copiarTexto } from "@/components/ui/Telefono";
 import { cabeceras } from "@/components/webinars/useYoutube";
 import { BloqueServicio, FilaServicio } from "@/components/ficha/FilaServicio";
 import {
-  conCodigoDelAlumno, guiaDeBienvenida, mensajeDelRoadmap, perfilDeStack, perfilEfectivo, PERFILES, roadmapYaEnviado, textoDeBienvenida,
+  conCodigoDelAlumno, estadoDelMail, guiaDeBienvenida, mensajeDelRoadmap, perfilDeStack, perfilEfectivo, PERFILES, roadmapYaEnviado, seguimientoDeBienvenida, textoDeBienvenida,
 } from "@/lib/bienvenida-alumno";
-import { fechaLarga } from "@/lib/format";
+import { fechaHora, fechaLarga } from "@/lib/format";
 import { acciones, useEstado } from "@/lib/store";
 import { useAcceso } from "@/lib/acceso";
 import { puedeEditar } from "@/lib/permisos";
@@ -63,6 +63,9 @@ export function BienvenidaAlumno({ alumnoId, ventaId }: { alumnoId: string; vent
   const [copiando, setCopiando] = useState(false);
   const [eligiendo, setEligiendo] = useState(false);
   const [guardando, setGuardando] = useState(false);
+  const [reenviando, setReenviando] = useState(false);
+  /* Cómo le salió el último mail según el servicio de mails (llegó, rebotó…): se pregunta al abrir y después de reenviar. */
+  const [estadoMail, setEstadoMail] = useState<string | null>(null);
 
   useEffect(() => {
     let vivo = true;
@@ -75,6 +78,15 @@ export function BienvenidaAlumno({ alumnoId, ventaId }: { alumnoId: string; vent
     });
     return () => { vivo = false; };
   }, [alumnoId, ventaId, vuelta]);
+
+  const mailId = contrato?.bienvenidaMailId ?? null;
+  const contratoId = contrato?.id ?? null;
+  useEffect(() => {
+    if (!contratoId || !mailId) { setEstadoMail(null); return; }
+    let vivo = true;
+    void pedirContratoYRoadmap({ accion: "estado-mail", id: contratoId }).then((r) => { if (vivo) setEstadoMail(r.estadoMail ?? null); }).catch(() => { if (vivo) setEstadoMail(null); });
+    return () => { vivo = false; };
+  }, [contratoId, mailId, vuelta]);
 
   if (!contrato) return null;
   const guia = guiaDeBienvenida({ reserva: contrato.datos.reserva, programa: contrato.programa, perfil: perfilEfectivo(contrato.datos.perfil, stackDeLaFicha), config });
@@ -116,6 +128,19 @@ export function BienvenidaAlumno({ alumnoId, ventaId }: { alumnoId: string; vent
     setMandando(false);
   };
 
+  /* «Reenviar»: vuelve a mandar el mismo mail de bienvenida (Lili, 17/11: por si el alumno lo perdió). */
+  const reenviarBienvenida = async () => {
+    setReenviando(true);
+    try {
+      const { bienvenida } = await pedirContratoYRoadmap({ accion: "bienvenida", id: contrato.id });
+      toast(bienvenida?.mail ? "Le reenviamos el mail de bienvenida." : `No salió el mail: ${bienvenida?.motivo ?? "probá de nuevo"}`, bienvenida?.mail ? "ok" : "err");
+      setVuelta((x) => x + 1);
+    } catch (err) {
+      toast(err instanceof Error ? err.message : "No se pudo reenviar.", "err");
+    }
+    setReenviando(false);
+  };
+
   /* Lo elegido queda en el contrato (de ahí sale el mail de bienvenida) y en Programa → Perfil de la ficha. */
   const elegirPerfil = async (perfil: string) => {
     if (!perfil) return;
@@ -137,11 +162,20 @@ export function BienvenidaAlumno({ alumnoId, ventaId }: { alumnoId: string; vent
   };
 
   const firmado = contrato.estado === "firmado";
+  const seg = seguimientoDeBienvenida(eventos);
+  const mail = estadoDelMail(estadoMail);
   return (
     <BloqueServicio titulo="Bienvenida" extra={
-      contrato.bienvenidaMailEn
-        ? <span className="hs-chip hs-chip--ok">Le llegó por mail</span>
-        : <span className={`hs-chip${firmado ? " hs-chip--ambar" : ""}`}>{firmado ? "Mandásela vos" : "Sale al firmar"}</span>
+      <span style={{ display: "inline-flex", gap: 6, flexWrap: "wrap" }}>
+        {contrato.bienvenidaMailEn
+          ? mail?.tono === "malo"
+            ? <span className="hs-chip hs-chip--rojo" title={mail.texto}>El mail no le llegó</span>
+            : <span className="hs-chip hs-chip--ok">Le llegó por mail</span>
+          : <span className={`hs-chip${firmado ? " hs-chip--ambar" : ""}`}>{firmado ? "Mandásela vos" : "Sale al firmar"}</span>}
+        {firmado && contrato.bienvenida && (seg.vistas > 0
+          ? <span className="hs-chip hs-chip--ok" title="Abrió su página de bienvenida">La vio</span>
+          : contrato.bienvenidaMailEn ? <span className="hs-chip hs-chip--ambar" title="Todavía no abrió su página de bienvenida">Todavía no la abrió</span> : null)}
+      </span>
     }>
       <FilaServicio icono={<MapaIcono size={15} />} rotulo="Perfil y roadmap" detalle={MODELO[guia.modelo]}>
         {eligiendo || (!guia.perfil && puedeCambiar) ? (
@@ -175,11 +209,32 @@ export function BienvenidaAlumno({ alumnoId, ventaId }: { alumnoId: string; vent
         </FilaServicio>
       )}
       <FilaServicio icono={<Mail size={15} />} rotulo="Mail de bienvenida"
-        detalle={contrato.bienvenidaMailEn ? undefined : "Todavía no sale solo: copiá el mensaje y mandáselo por WhatsApp o mail."}>
-        {contrato.bienvenidaMailEn
-          ? <span className="t-num">{fechaLarga(contrato.bienvenidaMailEn)}</span>
-          : <Button sm variante="secondary" icono={<Copy size={14} />} disabled={copiando} onClick={() => void copiar()}>Copiar el mensaje</Button>}
+        detalle={contrato.bienvenidaMailEn
+          ? [seg.envios > 1 ? `Salió ${seg.envios} veces` : "", mail?.texto ?? ""].filter(Boolean).join(" · ") || undefined
+          : "Todavía no sale solo: copiá el mensaje y mandáselo por WhatsApp o mail."}>
+        <span style={{ display: "inline-flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end", alignItems: "center" }}>
+          {contrato.bienvenidaMailEn && (
+            <span className="t-num" style={mail?.tono === "malo" ? { color: "var(--danger)" } : undefined} title={seg.ultimoEnvio ? `Último envío: ${fechaHora(seg.ultimoEnvio)}` : undefined}>
+              {fechaLarga(seg.ultimoEnvio ?? contrato.bienvenidaMailEn)}
+            </span>
+          )}
+          {firmado && puedeCambiar && (
+            <Button sm variante={contrato.bienvenidaMailEn ? "secondary" : "primary"} icono={<Send size={14} />} disabled={reenviando}
+              onClick={() => void reenviarBienvenida()}>{contrato.bienvenidaMailEn ? "Reenviar" : "Mandar el mail"}</Button>
+          )}
+          <Button sm variante="secondary" icono={<Copy size={14} />} disabled={copiando} onClick={() => void copiar()}>Copiar el mensaje</Button>
+        </span>
       </FilaServicio>
+      {firmado && contrato.bienvenida && (
+        <FilaServicio icono={<Eye size={15} />} rotulo="Página de bienvenida"
+          detalle={seg.vistas > 0 ? "Ya la abrió: los links de la página son los que usa para entrar." : "Todavía no la abrió: puede que no haya visto el mail."}>
+          {seg.primeraVista
+            ? <span className="t-num" title={seg.ultimaVista && seg.ultimaVista !== seg.primeraVista ? `Última vez: ${fechaHora(seg.ultimaVista)}` : undefined}>
+              {fechaHora(seg.primeraVista)}{seg.vistas > 1 ? ` · volvió ${seg.vistas - 1} ${seg.vistas - 1 === 1 ? "vez" : "veces"}` : ""}
+            </span>
+            : <span className="hs-guion">Todavía no</span>}
+        </FilaServicio>
+      )}
     </BloqueServicio>
   );
 }

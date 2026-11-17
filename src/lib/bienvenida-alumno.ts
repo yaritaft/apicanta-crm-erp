@@ -423,3 +423,42 @@ export function roadmapYaEnviado(eventos: readonly { evento: string; detalle: Re
   }
   return null;
 }
+
+/* ---------- Si el alumno la vio y cómo le llegó (Lili, 17/11) ---------- */
+
+export interface SeguimientoDeBienvenida {
+  /* Cuántos mails le salieron (el primero y los reenvíos) y cuándo salió el último. */
+  envios: number;
+  ultimoEnvio: string | null;
+  /* Cuándo abrió su página de bienvenida por primera y por última vez que quedó anotada (una cada pocas horas), y cuántas quedaron. */
+  primeraVista: string | null;
+  ultimaVista: string | null;
+  vistas: number;
+}
+
+/** Lo que dice el historial del contrato sobre la bienvenida: cuántas veces se mandó y si el alumno abrió su página. */
+export function seguimientoDeBienvenida(eventos: readonly { evento: string; detalle?: Record<string, unknown> | null; cuando: string }[]): SeguimientoDeBienvenida {
+  const porFecha = [...eventos].sort((a, b) => a.cuando.localeCompare(b.cuando));
+  const envios = porFecha.filter((e) => e.evento === "bienvenida" && e.detalle?.enviado !== false);
+  const vistas = porFecha.filter((e) => e.evento === "bienvenida-vista");
+  return {
+    envios: envios.length, ultimoEnvio: envios.length ? envios[envios.length - 1].cuando : null,
+    primeraVista: vistas[0]?.cuando ?? null, ultimaVista: vistas.length ? vistas[vistas.length - 1].cuando : null, vistas: vistas.length,
+  };
+}
+
+/** Lo último que le pasó al mail según el servicio de mails, en palabras de Servicio. `malo`: no le llegó, hay que mandárselo por otro lado. */
+export function estadoDelMail(estado: string | null | undefined): { texto: string; tono: "ok" | "neutro" | "malo" } | null {
+  switch ((estado ?? "").trim().toLowerCase()) {
+    case "": return null;
+    case "delivered": return { texto: "Le llegó a su casilla", tono: "ok" };
+    case "opened": return { texto: "Abrió el mail", tono: "ok" };
+    case "clicked": return { texto: "Abrió el mail y entró al link", tono: "ok" };
+    case "bounced": return { texto: "No le llegó: el mail rebotó", tono: "malo" };
+    case "complained": return { texto: "Lo marcó como spam", tono: "malo" };
+    case "delivery_delayed": return { texto: "Se demora en llegar", tono: "neutro" };
+    case "failed": return { texto: "No se pudo mandar", tono: "malo" };
+    case "sent": return { texto: "Salió; todavía sin confirmar la entrega", tono: "neutro" };
+    default: return null;
+  }
+}

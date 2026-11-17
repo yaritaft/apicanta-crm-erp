@@ -126,6 +126,8 @@ export const ROTULO_EVENTO: Record<string, string> = {
   corregido: "Se corrigió y se mandó de nuevo",
   enlace: "Se generó el link para firmar",
   accesos: "Se dieron los accesos",
+  bienvenida: "Mail de bienvenida",
+  "bienvenida-vista": "Abrió su página de bienvenida",
   subido: "Se subió firmado a mano",
   plantilla: "La plantilla no lleva lo que se cargó",
   error: "No salió",
@@ -137,6 +139,9 @@ export function rotuloEvento(ev: Pick<EventoContrato, "evento" | "detalle">): st
   const d = ev.detalle ?? {};
   if (ev.evento === "accesos" && Number(d.dados ?? 0) === 0 && !Number(d.fallaron ?? 0) && !Number(d.yaEstaban ?? 0) && typeof d.motivo === "string" && d.motivo) {
     return "Los accesos todavía no se dieron";
+  }
+  if (ev.evento === "bienvenida") {
+    return d.enviado === false ? "No salió el mail de bienvenida" : d.reenvio ? "Se le reenvió el mail de bienvenida" : "Se le mandó el mail de bienvenida";
   }
   return ROTULO_EVENTO[ev.evento] ?? ev.evento;
 }

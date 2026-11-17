@@ -3,7 +3,8 @@ import { nubeServidor } from "@/lib/servidor";
 import { baseDelPedido, correoDelPedido, esDuenoDelPedido, exigirArea } from "@/lib/permisos-servidor";
 import { datosLimpios, problemaDeDatos, soloDuenos, type DatosContrato, type ModoContrato } from "@/lib/contratos";
 import {
-  anular, contratoPorId, corregir, crearContrato, darAccesosAhora, mandarBorrador, mandarRoadmap, nuevoEnlace, ponerPerfil, programasGuardados, reenviar, sincronizar, type ResultadoRoadmap,
+  anular, contratoPorId, corregir, crearContrato, darAccesosAhora, estadoDelMailDeBienvenida, mandarBorrador, mandarRoadmap, nuevoEnlace, ponerPerfil, programasGuardados, reenviar, reenviarBienvenida, sincronizar,
+  type ResultadoBienvenida, type ResultadoRoadmap,
 } from "@/lib/contratos-servidor";
 import { cambiaLaPlantilla, programaPorId } from "@/lib/programas";
 import { ErrorPandadoc } from "@/lib/pandadoc-servidor";
@@ -90,6 +91,9 @@ export async function POST(peticion: Request) {
     const { config, programas } = await programasGuardados(db);
     /* «perfil» y «roadmap»: si le salió (o no) el mail con su roadmap (lib/contratos-servidor.ts, mandarRoadmap). */
     let roadmap: ResultadoRoadmap | null = null;
+    /* «bienvenida»: si salió el reenvío del mail de bienvenida. «estado-mail»: cómo salió según el servicio de mails (Lili, 17/11). */
+    let bienvenida: ResultadoBienvenida | null = null;
+    let estadoMail: string | null | undefined;
 
     if (accion === "mandar") await mandarBorrador(db, c, quien, config);
     else if (accion === "reenviar") await reenviar(db, c, quien);
@@ -111,9 +115,11 @@ export async function POST(peticion: Request) {
     else if (accion === "accesos") await darAccesosAhora(db, c, quien || "Apicanta");
     else if (accion === "perfil") roadmap = await ponerPerfil(db, c, typeof b.perfil === "string" ? b.perfil : "", quien || "Apicanta");
     else if (accion === "roadmap") roadmap = await mandarRoadmap(db, c, quien || "Apicanta");
+    else if (accion === "bienvenida") bienvenida = await reenviarBienvenida(db, c, quien || "Apicanta");
+    else if (accion === "estado-mail") estadoMail = await estadoDelMailDeBienvenida(c);
     else return mal("No sé hacer eso.");
 
-    return NextResponse.json({ contrato: await contratoPorId(db, id), ...(roadmap ? { roadmap } : {}) }, { headers: { "Cache-Control": "no-store" } });
+    return NextResponse.json({ contrato: await contratoPorId(db, id), ...(roadmap ? { roadmap } : {}), ...(bienvenida ? { bienvenida } : {}), ...(estadoMail !== undefined ? { estadoMail } : {}) }, { headers: { "Cache-Control": "no-store" } });
   } catch (e) {
     const status = e instanceof ErrorPandadoc ? (e.status >= 500 ? 502 : 409) : 500;
     if (e instanceof ErrorPandadoc) console.error("[contratos]", accion, e.status, e.detalle);
