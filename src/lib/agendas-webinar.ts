@@ -1,5 +1,5 @@
 import { evaluarAgenda } from "./calificacion";
-import { diaDelWebinar, diaUtm, EVENTOS, fuenteDeUtm, leerUtm, MOMENTOS_EVENTO, NOMBRE_FUNNEL, textoUtm } from "./utm-estandar";
+import { diaDelWebinar, diaUtm, EVENTOS, eventoDeUtm, fuenteDeUtm, leerUtm, MOMENTOS_EVENTO, NOMBRE_FUNNEL, textoUtm } from "./utm-estandar";
 
 /* ==================================================================
    Las agendas de Calendly de un webinar: cuáles son suyas, por qué vía
@@ -61,8 +61,7 @@ export type ViaLanzamiento = "webinar" | "clase0" | "qa";
    (Manuel, 15/11: «las llamadas de la clase cero y la clase de Nahu»), donde el filtro de
    Webinar las juntaba con las del vivo. */
 export function viaDeLink(utm: Record<string, string> | null | undefined): ViaLanzamiento | null {
-  const l = leerUtm(utm);
-  return l.funnel && EVENTOS.includes(l.funnel) ? (l.funnel as ViaLanzamiento) : null;
+  return (eventoDeUtm(leerUtm(utm)) as ViaLanzamiento | undefined) ?? null;
 }
 
 /* La corrección a mano, guardada en sesiones.extra.atribucion. */
@@ -115,7 +114,11 @@ export function embudoDe(s: { canal?: string | null; utm?: Record<string, string
     const fecha = normalFecha(u.utm_medium) ?? normalFecha(u.utm_content) ?? normalFecha(u.utm_campaign);
     const c = (u.utm_content ?? "").trim();
     const link: LinkWebinar = CONTENIDO_VIVO.test(c) ? "EnVivo" : CONTENIDO_DESPUES.test(c) ? "PostWebinar" : "viejo";
-    return { texto: `Webinar${fecha ? ` ${fecha}` : ""}`, link, utm };
+    /* Los links de antes de la clase cero y del Q&A también eran de la fuente Webinar (el evento va en el
+       content): se nombran como en el estándar, «Clase cero del webinar 13-04». */
+    const evento = eventoDeUtm(l);
+    const nombre = evento && evento !== "webinar" ? `${NOMBRE_FUNNEL[evento]} del webinar` : "Webinar";
+    return { texto: `${nombre}${fecha ? ` ${fecha}` : ""}`, link, utm };
   }
   /* La fuente con un solo nombre: «YT» y «YouTube» dicen lo mismo. Los que traen
      el canal en el nombre («Setter IA» en Setter) no lo repiten. */

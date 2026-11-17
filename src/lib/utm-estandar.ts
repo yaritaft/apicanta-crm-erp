@@ -280,6 +280,25 @@ export function leerUtm(crudo: Record<string, string | undefined> | null | undef
   return { formato: "otro", contenido };
 }
 
+/* De qué evento del lanzamiento es un link (webinar, clase cero o Q&A), o undefined si no es de uno.
+   El estándar lo dice en la campaña (clase0_webinar_…, qa_webinar_…). Los links de antes, en
+   cambio, eran todos utm_source=Webinar y el evento iba en el utm_content: EnVivo y PostWebinar
+   son el webinar, Clase_0 la clase cero, y NahuelHistoria y Q_and_A la charla de Nahuel y el Q&A
+   (en producción, 37 agendas de Clase_0 y 16 de la charla se leían como «webinar»; Manuel, 17/11:
+   «¿acá debería estar para filtrar las clases cero?»).
+   leerUtm sigue leyendo a todos esos como «webinar»: de eso cuelgan los lanzamientos, el reporte
+   del webinar y el Funnel del CRM, que no se mueven. Esto sólo dice de cuál evento es, para el
+   filtro y la columna «Vía». */
+const CLASE_CERO_VIEJA = /^clase[\s_-]?(0|cero)$/i;
+const QA_VIEJO = /^(qa|q[\s_-]?(and|y|&)[\s_-]?a|nahuel[\s_-]?historia)$/i;
+
+export function eventoDeUtm(l: UtmLeida): Funnel | undefined {
+  if (!l.funnel || !EVENTOS.includes(l.funnel)) return undefined;
+  if (l.formato !== "viejo") return l.funnel;
+  const c = (l.contenido ?? "").trim();
+  return CLASE_CERO_VIEJA.test(c) ? "clase0" : QA_VIEJO.test(c) ? "qa" : l.funnel;
+}
+
 /* ---------- La fuente: de dónde vino, con un solo nombre ----------
 
    Los links se escriben a mano y la misma fuente llega de muchas formas: a

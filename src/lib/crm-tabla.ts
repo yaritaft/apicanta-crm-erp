@@ -1,7 +1,7 @@
 import type { Ajustes, CampoOpcionesCrm, CampoPersonalizado, ColorCrm, Contacto, EstadoApp, ID, Lead, Pago, Sesion, Venta } from "./types";
 import { filasCrm, opcionesDe, partir, sinTildes, type FilaCrm } from "./crm";
 import { diaDeNegocio } from "./dia-negocio";
-import { EVENTOS, fuenteDeUtm, leerUtm, NOMBRE_FUNNEL } from "./utm-estandar";
+import { eventoDeUtm, fuenteDeUtm, leerUtm, NOMBRE_FUNNEL } from "./utm-estandar";
 import { CANCELADA, CON_CIERRE, esImportada, estadoDe, NO_SE_PRESENTO, POR_VENIR, SIN_CARGAR, SIN_CIERRE } from "./estados";
 import { conCorrecciones, corregidoDe, edadDeDia, nacimientoDeRespuestas, respuestaPerfil, textoDeDia, type CampoPerfil, type Corregido } from "./perfil";
 import type { CambiosLlamada } from "./store";
@@ -115,10 +115,12 @@ const esPauta = (u: Record<string, string> | undefined | null) =>
 /** "Webinar · vivo", "Clase cero · replay", "VSL", "Setter"… */
 export function viaDe(s: Pick<Sesion, "utm">, f: Pick<FilaCrm, "funnel">): string {
   const l = leerUtm(s.utm);
-  if (l.funnel && EVENTOS.includes(l.funnel)) {
+  /* El evento de los links de antes (Clase_0, Q_and_A…) sale del content: ver eventoDeUtm. */
+  const evento = eventoDeUtm(l);
+  if (evento) {
     const link = /^(vivo|replay|seguimiento)$/i.test(l.contenido ?? "") ? l.contenido!.toLowerCase()
       : l.momento === "vivo" ? "vivo" : l.momento === "despues" ? "después" : "";
-    return link ? `${NOMBRE_FUNNEL[l.funnel]} · ${link}` : NOMBRE_FUNNEL[l.funnel];
+    return link ? `${NOMBRE_FUNNEL[evento]} · ${link}` : NOMBRE_FUNNEL[evento];
   }
   if (utmDe(s.utm, "source") === "direct") return "Directo";
   return f.funnel || "Sin UTMs";
