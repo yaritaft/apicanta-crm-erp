@@ -52,6 +52,7 @@ import { cuotasARepartir, problemaDelPlan, totalARepartir, type CuotaDePlan } fr
 import { textoDeSeguimiento } from "./cobranza-seguimiento";
 import { atarPropuesta, conciliarReembolsos, quienDelReembolso, type ReembolsoCrudo, type ResultadoReembolsos } from "./reembolsos";
 import { porcentajeDelSetterMarcado, setterDeAgendas } from "./setter-agendas";
+import { paseDeLaVenta, responsableTrasPase } from "./pasar-llamadas";
 import { rearmarPlan } from "./cambio-de-plan";
 import {
   cambiosDeChequeo, conChequeo, conComprobanteNuevo, puedeCambiarComprobante, puedeUsarCasillero,
@@ -3065,6 +3066,18 @@ export const acciones = {
     const lead = (venta.contactoId ? e.leads.find((l) => l.id === venta.contactoId) : undefined)
       ?? (venta.contactoId ? leadDeSesion(e.leads, { contactoId: venta.contactoId }) : undefined)
       ?? (llamada ? leadDeSesion(e.leads, llamada) : undefined);
+    /* El vendedor es quien atendió la llamada: si figuraba a nombre de otro (Calendly se la asignó a Dante y la tomó Mariano, 17/11),
+       pasa a su nombre junto con la venta, y la oportunidad con ella (lib/pasar-llamadas.ts → paseDeLaVenta). */
+    const pase = llamada && puedo("sesiones") ? paseDeLaVenta(llamada, venta.closerId, e, { por: nombreDeQuien(e, quienSoy(e)), cuando: t.cuando }) : null;
+    let responsableNuevo: { id: ID; responsable: string } | null = null;
+    if (pase) {
+      cargarLlamadas(t, e, [{ id: pase.plan.id, cambios: pase.plan.cambios, detalle: pase.plan.detalle }]);
+      const r = lead && puedo("leads") ? responsableTrasPase(lead, pase.plan.de, pase.destino, e.equipo) : null;
+      if (lead && r) {
+        t.leads.set(lead.id, { ...(t.leads.get(lead.id) ?? lead), responsable: r, actualizadoEn: t.cuando });
+        responsableNuevo = { id: lead.id, responsable: r };
+      }
+    }
     if (lead) moverEnTanda(t, e, t.leads.get(lead.id) ?? lead, ["compro"], "cargó la venta");
 
     guardar(conTanda({
@@ -3084,6 +3097,7 @@ export const acciones = {
     empujarMovimientos(movimientosTocados);
     empujar({ tipo: "upsert", tabla: "actividad", filas: registros });
     empujarTanda(t);
+    if (responsableNuevo) empujarUpdate("leads", [responsableNuevo.id], { responsable: responsableNuevo.responsable });
     return venta.id;
   },
 

@@ -11,9 +11,10 @@ import type { CambiosLlamada } from "./store";
    escribir el anfitrión nuevo, y anotar en `extra.pasada` que se eligió a
    mano para que Calendly no lo vuelva a pisar (lib/pasada-closer.ts). Lo
    demás sale de ahí solo, porque la base decide qué ve cada closer por el
-   anfitrión de la llamada: el nuevo la ve y el viejo deja de verla. Sólo
-   dueños y director pasan llamadas: a un closer la base le rechaza
-   cambiarlas de dueño.
+   anfitrión de la llamada: el nuevo la ve y el viejo deja de verla. Dueños
+   y director las pasan a cualquiera; el closer que ve las llamadas de todos
+   sólo pone a su nombre la que atendió él (lib/permisos.ts → paseDeLlamadas),
+   y la venta cargada a nombre de otro vendedor la pasa sola (paseDeLaVenta).
 
    Quién comisiona la venta: el que atendió la llamada. Una venta que sale
    de la llamada se carga con el closer de su anfitrión, así que después del
@@ -72,6 +73,17 @@ export function destinosDePase(e: Pick<EstadoApp, "equipo" | "sesiones">): Desti
     .filter((m) => m.activo && (m.rol === "closer" || suyos.has(m.id)))
     .map((m) => ({ miembro: m, anfitrion: suyos.get(m.id)?.[0]?.nombre ?? m.nombre, sinCorreo: !m.email?.trim() }))
     .sort((a, b) => a.miembro.nombre.localeCompare(b.miembro.nombre, "es"));
+}
+
+/** Cómo queda escrita una persona del equipo como closer de una llamada:
+ *  la de `destinosDePase` si está ahí y, si no (alguien que todavía no figura
+ *  como closer), con su nombre de Equipo. Sin esa persona, nada. */
+export function destinoDe(e: Pick<EstadoApp, "equipo" | "sesiones">, miembroId: ID | undefined): DestinoDePase | undefined {
+  if (!miembroId) return undefined;
+  const ya = destinosDePase(e).find((d) => d.miembro.id === miembroId);
+  if (ya) return ya;
+  const m = e.equipo.find((x) => x.id === miembroId);
+  return m ? { miembro: m, anfitrion: m.nombre, sinCorreo: !m.email?.trim() } : undefined;
 }
 
 /** Quién la atiende ahora, con el nombre que tiene en Equipo; sin Equipo, el
@@ -205,4 +217,37 @@ export function avisosDePase(
     out.conVenta.push({ id: s.id, persona: s.invitado?.trim() || "Sin nombre", closer });
   }
   return out;
+}
+
+/* ---------- La venta dice quién atendió ---------- */
+
+/** Una venta cargada a nombre de un vendedor que no es quien figura
+ *  atendiendo su llamada (Mariano, 17/11: Calendly le había asignado la
+ *  llamada a Dante, la tomó y la cerró él). La venta manda: el vendedor es
+ *  quien la atendió, así que la llamada pasa a su nombre junto con la venta,
+ *  con la misma marca que un pase a mano (Calendly no la vuelve a pisar).
+ *  null si no hay nada que cambiar: sin vendedor, la llamada ya es suya o
+ *  está cancelada. */
+export function paseDeLaVenta(
+  llamada: Pick<Sesion, "id" | "invitado" | "anfitrion" | "extra" | "estado">,
+  closerId: ID | undefined,
+  e: Pick<EstadoApp, "equipo" | "sesiones">,
+  ctx: { por: string; cuando: string },
+): { plan: PlanDePase; destino: DestinoDePase } | null {
+  if (llamada.estado === "cancelada") return null;
+  const destino = destinoDe(e, closerId);
+  if (!destino) return null;
+  const plan = planDePase(llamada, destino, { equipo: e.equipo, por: ctx.por, cuando: ctx.cuando });
+  if (!plan) return null;
+  const persona = llamada.invitado?.trim() || "La llamada";
+  const de = closerDeLlamada({ anfitrion: plan.de }, e.equipo).nombre;
+  return {
+    destino,
+    plan: {
+      ...plan,
+      detalle: de
+        ? `${persona}: la llamada pasó de ${de} a ${destino.miembro.nombre}, que es el vendedor de la venta.`
+        : `${persona}: la llamada quedó a nombre de ${destino.miembro.nombre}, que es el vendedor de la venta (no tenía closer).`,
+    },
+  };
 }

@@ -21,7 +21,8 @@ import { compararTelefonos } from "@/lib/telefonos";
 import { palabrasEnComun } from "@/lib/duplicados";
 import { nube } from "@/lib/supabase";
 import { descartarComprobante } from "@/lib/comprobantes";
-import type { Cuota, EstadoApp, MiembroEquipo, Movimiento, Venta } from "@/lib/types";
+import type { Cuota, EstadoApp, MiembroEquipo, Movimiento, Sesion, Venta } from "@/lib/types";
+import { closerDeLlamada, paseDeLaVenta } from "@/lib/pasar-llamadas";
 import { PAISES, planDePago, webinarDeProyecto } from "@/lib/angelo";
 import { estrategiaDeLaVenta, FALTA_ESTRATEGIA } from "@/lib/estrategia-de-venta";
 import { origenDeUtm, textoUtm } from "@/lib/utms";
@@ -462,7 +463,8 @@ export function AsistenteVenta({ onCerrar, onListo, desdeMovimiento, cliente, cl
               <AvisoVentaIdentica e={e} identicas={identicas} />
             </>
           )}
-          {paso.id === "equipo" && <PasoEquipo b={b} set={set} e={e} sinComision={sinComision} yo={yo.miembro} setterMarcado={setterMarcado} />}
+          {paso.id === "equipo" && <PasoEquipo b={b} set={set} e={e} sinComision={sinComision} yo={yo.miembro} setterMarcado={setterMarcado}
+            llamada={sesionId ? e.sesiones.find((x) => x.id === sesionId) : undefined} />}
           {paso.id === "plan" && <PasoPlan b={b} setB={setB} M={M} diferencia={diferenciaPlan} moneda={e.ajustes.monedaBase || "USD"} />}
           {paso.id === "cobros" && <PasoCobros b={b} setB={setB} e={e} M={M} onSubiendo={onSubiendo} />}
           {paso.id === "contrato" && (
@@ -921,9 +923,11 @@ function PasoPrecio({ b, set, e, M }: {
 
 /* ---------- Paso 4: vendedor, director, setter y referido ---------- */
 
-function PasoEquipo({ b, set, e, sinComision, yo, setterMarcado }: {
+function PasoEquipo({ b, set, e, sinComision, yo, setterMarcado, llamada }: {
   b: Borrador; set: (c: Partial<Borrador>) => void; e: EstadoApp; sinComision: boolean;
   yo?: MiembroEquipo;
+  /* La llamada desde la que se carga la venta: si figura a nombre de otro closer, al guardar pasa al vendedor. */
+  llamada?: Sesion;
   /* El setter que marcó la agenda de esta persona (lib/setter-agendas.ts). */
   setterMarcado?: string;
 }) {
@@ -934,6 +938,9 @@ function PasoEquipo({ b, set, e, sinComision, yo, setterMarcado }: {
   /* El director es siempre el que está activo (Santi): quien ya no está (Noelia) no se ofrece. */
   const directores = e.equipo.filter((x) => x.rol === "director" && x.activo);
   const setters = e.equipo.filter((x) => x.activo && x.rol === "setter");
+  /* El vendedor es quien atendió: si la llamada figura de otro, se avisa acá que cambia de nombre con la venta (lib/pasar-llamadas.ts). */
+  const plan = llamada ? paseDeLaVenta(llamada, b.closerId || undefined, e, { por: "", cuando: "" }) : null;
+  const pase = plan ? { de: closerDeLlamada({ anfitrion: plan.plan.de }, e.equipo).nombre, a: plan.destino.miembro.nombre } : null;
   return (
     <>
       <Pregunta texto="¿Quién es el vendedor?" sub="De acá salen las comisiones: el vendedor cobra sobre lo que entra, neto de procesador." />
@@ -944,6 +951,13 @@ function PasoEquipo({ b, set, e, sinComision, yo, setterMarcado }: {
           onChange={(ev) => set({ closerId: ev.target.value })}
           opciones={closers.map((x) => ({ valor: x.id, texto: x.nombre }))}
         />
+        {pase && (
+          <span className="hk-help">
+            {pase.de
+              ? `La llamada figura a nombre de ${pase.de}. Al guardar la venta pasa a nombre de ${pase.a}, que es quien la atendió.`
+              : `La llamada no tiene closer. Al guardar la venta queda a nombre de ${pase.a}.`}
+          </span>
+        )}
       </div>
 
       <div className="form-grid">

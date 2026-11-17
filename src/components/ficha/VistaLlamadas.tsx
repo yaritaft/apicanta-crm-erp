@@ -8,7 +8,7 @@ import { Eod } from "@/components/crm-tabla/Eod";
 import { textoFecha } from "@/components/crm-tabla/FiltroColumna";
 import { EstadoEditable } from "@/components/estados/EstadoLlamada";
 import { PasarLlamadas } from "@/components/closers/PasarLlamadas";
-import { sePuedePasar, usePuedePasarLlamadas } from "@/components/closers/usePasarLlamadas";
+import { sePuedePasar, usePuedePasarLlamadas, useTomarLlamada } from "@/components/closers/usePasarLlamadas";
 import type { FilaTabla } from "@/lib/crm-tabla";
 import { pasadaDe } from "@/lib/pasada-closer";
 import type { Sesion } from "@/lib/types";
@@ -44,6 +44,8 @@ export function VistaLlamadas({ p, filas, contratos }: {
   const [cargar, setCargar] = useState<string | null>(null);
   const [pasando, setPasando] = useState<Sesion | null>(null);
   const puedePasar = usePuedePasarLlamadas();
+  /* El closer que la atendió y figura a nombre de otro: la pone a su nombre. */
+  const tomar = useTomarLlamada();
   const { porSesion } = useGrabaciones(filas.map((f) => f.id));
   const visibles = contratosAMostrar(contratos ?? []);
 
@@ -64,7 +66,8 @@ export function VistaLlamadas({ p, filas, contratos }: {
       {filas.map((f) => (
         <Llamada key={f.id} f={f} grabaciones={porSesion.get(f.id) ?? []} onCargar={() => setCargar(f.id)}
           contrato={contratoDeLlamada(visibles, f)}
-          onPasar={puedePasar && sePuedePasar(f.sesion) ? () => setPasando(f.sesion) : undefined} />
+          onPasar={puedePasar && sePuedePasar(f.sesion) ? () => setPasando(f.sesion) : undefined}
+          onTomar={tomar.puede(f.sesion) ? () => tomar.tomar(f.sesion) : undefined} />
       ))}
       {cargar && <Eod soloSesionId={cargar} onCerrar={() => setCargar(null)} />}
       {pasando && <PasarLlamadas llamadas={[pasando]} onCerrar={() => setPasando(null)} />}
@@ -72,10 +75,12 @@ export function VistaLlamadas({ p, filas, contratos }: {
   );
 }
 
-function Llamada({ f, grabaciones, onCargar, onPasar, contrato }: {
+function Llamada({ f, grabaciones, onCargar, onPasar, onTomar, contrato }: {
   f: FilaTabla; grabaciones: Grabacion[]; onCargar: () => void; contrato?: Contrato;
   /* Sólo para quien dirige las ventas: pasarla a otro closer. */
   onPasar?: () => void;
+  /* «La atendí yo»: el closer la pone a su nombre. */
+  onTomar?: () => void;
 }) {
   /* Con algo cargado se puede completar o corregir lo del cierre del día. */
   const cargable = f.sinCargar || Boolean(f.sesion.estadoLlamada || f.sesion.estadoPreCall);
@@ -117,7 +122,7 @@ function Llamada({ f, grabaciones, onCargar, onPasar, contrato }: {
       {grabaciones.map((g) => <GrabacionFathom key={g.id} g={g} />)}
       {/* El chat de antes de la llamada: para la comisión del setter y como prueba si se cancela. */}
       <CapturasPrecall sesionId={f.id} />
-      {(cargable || onPasar) && (
+      {(cargable || onPasar || onTomar) && (
         <div className="row-wrap">
           {cargable && (
             <Button sm variante={f.sinCargar ? "primary" : "ghost"} icono={f.sinCargar ? <ClipboardCheck size={14} /> : <Pencil size={14} />} onClick={onCargar}>
@@ -125,6 +130,12 @@ function Llamada({ f, grabaciones, onCargar, onPasar, contrato }: {
             </Button>
           )}
           {onPasar && <Button sm variante="ghost" icono={<ArrowRightLeft size={14} />} onClick={onPasar}>Pasar a otro closer</Button>}
+          {onTomar && (
+            <Button sm variante="ghost" icono={<ArrowRightLeft size={14} />} onClick={onTomar}
+              title={f.closer ? `Figura a nombre de ${f.closer}. Si la atendiste vos, queda a tu nombre.` : "No tiene closer. Si la atendiste vos, queda a tu nombre."}>
+              La atendí yo
+            </Button>
+          )}
         </div>
       )}
     </article>

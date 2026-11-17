@@ -172,6 +172,15 @@ export const esCuentaDeCloser = (a: MiAcceso | null | undefined) => Boolean(a?.s
 /** ¿La base ya le recortó las llamadas, los leads y las personas a lo suyo? Un closer sí, salvo el que ve los leads de todos: a ése le llega
  *  todo y la pantalla tiene que separar «las mías» (como con el director). */
 export const laBaseLeRecortaLlamadas = (a: MiAcceso | null | undefined) => Boolean(a?.soloLoSuyo) && !a?.veTodosLosLeads;
+/** Qué puede hacer esta cuenta con el closer de una llamada. «pasar»: dársela a cualquiera (un dueño, el director, quien edita las
+ *  llamadas y ve todo). «tomar»: sólo ponerla a su nombre: el closer que ve las llamadas de todos y atendió una que Calendly le había
+ *  asignado a otro (Mariano, 17/11: «esta llamada la tomé yo y la cerré, ¿cómo cambio el propietario?»). Repartirlas sigue siendo del
+ *  director. Al closer de «sólo lo suyo» a secas la base no le muestra las de otros: no hay nada que tomar. */
+export function paseDeLlamadas(a: MiAcceso | null | undefined): "pasar" | "tomar" | null {
+  if (!puedeEditar(a, "sesiones")) return null;
+  if (!a?.soloLoSuyo) return "pasar";
+  return a.veTodosLosLeads ? "tomar" : null;
+}
 /** ¿La ficha le muestra el servicio de una persona que compró? Quien ve Alumnos, y el closer: el servicio de SUS alumnos, para
  *  mirar (Juan Cruz, 26/10: «que el closer también vea esa parte de sus clientes»; la base se lo abre en
  *  supabase/servicio-del-closer.sql y no le deja cambiar nada). */

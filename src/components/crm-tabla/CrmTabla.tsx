@@ -18,11 +18,11 @@ import { PastillaEstado, useCambiarEstado } from "@/components/estados/EstadoLla
 import { acciones, useEstado, type CambiosLlamada } from "@/lib/store";
 import { personasQueCoinciden } from "@/lib/buscar-persona";
 import { useAcceso } from "@/lib/acceso";
-import { laBaseLeRecortaLlamadas, nivelEn, puedeEditar, puedeLeer } from "@/lib/permisos";
+import { laBaseLeRecortaLlamadas, nivelEn, paseDeLlamadas, puedeEditar, puedeLeer } from "@/lib/permisos";
 import { useUsuarioActual } from "@/lib/usuario";
 import { closersConLlamadas, esDelCloser, objecionesDe } from "@/lib/eod";
 import { destinosDePase } from "@/lib/pasar-llamadas";
-import { sePuedePasar, usePasarLlamadas } from "@/components/closers/usePasarLlamadas";
+import { sePuedePasar, usePasarLlamadas, useTomarLlamada } from "@/components/closers/usePasarLlamadas";
 import { PasarLlamadas } from "@/components/closers/PasarLlamadas";
 import { AvisoMisLlamadas } from "@/components/closers/MisLlamadas";
 import { CAMPOS_DE_OPCIONES, miembroDeCloser, opcionesDe as opcionesDelCrm } from "@/lib/crm";
@@ -125,8 +125,10 @@ export function CrmTabla({ misLlamadas = false }: { misLlamadas?: boolean } = {}
   const abreVentas = nivelEn(acceso, "ventas") >= 1 || nivelEn(acceso, "clientes") >= 1 || nivelEn(acceso, "finanzas") >= 1;
   const puedePersonas = puedeEditar(acceso, "contactos");
   /* Cambiar el closer de una llamada es pasarla a otro: lo hace quien dirige las
-     ventas (un dueño, el director). A un closer la base se lo rechaza, así que ni se le ofrece. */
-  const puedePasar = puedeLlamadas && !acceso?.soloLoSuyo;
+     ventas (un dueño, el director). El closer no reparte, pero la que atendió él y
+     figura a nombre de otro la pone a su nombre: en esa celda su única opción es él (lib/permisos.ts → paseDeLlamadas). */
+  const puedePasar = paseDeLlamadas(acceso) === "pasar";
+  const tomar = useTomarLlamada();
 
   /* El período, por el día de la llamada. De entrada, este mes (hoy, en «Mis llamadas»). */
   const hoy = diaDeNegocio(new Date().toISOString());
@@ -257,7 +259,7 @@ export function CrmTabla({ misLlamadas = false }: { misLlamadas?: boolean } = {}
   /* ---------- Corregir en la celda ---------- */
   const opcionesDe = useMemo<Partial<Record<ClaveColumna, OpcionCrm[]>>>(() => {
     return {
-      closer: opciones(destinosDePase(e).map((d) => d.miembro.nombre)),
+      closer: opciones(puedePasar ? destinosDePase(e).map((d) => d.miembro.nombre) : tomar.yo ? [tomar.yo.miembro.nombre] : []),
       ...estados,
       objecion: opciones(objecionesDe(e.ajustes), () => "amarillo1"),
       oferta: [{ nombre: "Sí", color: "verde1" }, { nombre: "No", color: "gris1" }],
@@ -267,7 +269,7 @@ export function CrmTabla({ misLlamadas = false }: { misLlamadas?: boolean } = {}
       })),
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [e, estados, propias]);
+  }, [e, estados, propias, puedePasar, tomar.yo?.miembro.id]);
   /* Para escribir menos: los valores que ya existen en esa columna. */
   const sugerenciasDe = (clave: ClaveColumna): string[] | undefined => {
     if (clave === "pais") return PAISES;
@@ -283,6 +285,8 @@ export function CrmTabla({ misLlamadas = false }: { misLlamadas?: boolean } = {}
     if (!w) return;
     /* El closer: se pasa la llamada (queda con quien la atiende y Calendly no la vuelve a pisar). */
     if (w.tipo === "closer") {
+      /* El closer que la atendió: sólo a su nombre. */
+      if (!puedePasar) { if (tomar.yo && w.closer === tomar.yo.miembro.nombre && tomar.puede(f.sesion)) tomar.tomar(f.sesion); return; }
       const destino = destinosDePase(e).find((d) => d.miembro.nombre === w.closer);
       if (!destino) toast(`${w.closer} no está entre los closers del equipo: cargalo en Equipo para poder pasarle llamadas.`, "err");
       else if (pasarLlamadas([f.sesion], destino) === 0) toast(`${destino.miembro.nombre} ya atiende esta llamada.`, "info");
@@ -380,7 +384,7 @@ export function CrmTabla({ misLlamadas = false }: { misLlamadas?: boolean } = {}
         return (
           <CeldaCrm
             clave={col.clave} f={f}
-            puede={DE_LA_PERSONA.has(col.clave) ? puedePersonas : col.clave === "closer" ? puedePasar : puedeLlamadas}
+            puede={DE_LA_PERSONA.has(col.clave) ? puedePersonas : col.clave === "closer" ? puedePasar || tomar.puede(f.sesion) : puedeLlamadas}
             abierta={abierta} onAbrir={() => setEditando({ id: f.id, clave: col.clave })}
             onCerrar={() => setEditando((x) => (x?.id === f.id && x.clave === col.clave ? null : x))}
             onGuardar={(v) => guardarCelda(f, col.clave, v)} onFicha={() => verFicha(f)} onCobros={abreVentas ? () => verCobros(f) : undefined}

@@ -4,19 +4,21 @@ import { useCallback } from "react";
 import { useToast } from "@/components/ui/Toast";
 import { acciones, useEstado } from "@/lib/store";
 import { useAcceso } from "@/lib/acceso";
-import { puedeEditar } from "@/lib/permisos";
+import { paseDeLlamadas } from "@/lib/permisos";
+import { hayNube } from "@/lib/supabase";
+import { miembroDeCloser } from "@/lib/crm";
 import { useUsuarioActual } from "@/lib/usuario";
 import { leadDeSesion } from "@/lib/etapas-auto";
-import { closerDeLlamada, planDePase, responsableTrasPase, type DestinoDePase } from "@/lib/pasar-llamadas";
+import { closerDeLlamada, destinoDe, planDePase, responsableTrasPase, type DestinoDePase } from "@/lib/pasar-llamadas";
 import type { Lead, Sesion } from "@/lib/types";
 
-/* Quién puede pasar llamadas: quien edita las llamadas y no ve «sólo lo
-   suyo». A un closer la base le rechaza cambiarlas de dueño (la llamada
-   deja de ser suya: el cambio no pasa el filtro de lo suyo), así que ni se
-   le ofrece. Un dueño, el director y los tipos que ven todo, sí. */
+/* Quién puede pasar llamadas a cualquiera: quien edita las llamadas y no ve
+   «sólo lo suyo» (un dueño, el director y los tipos que ven todo). El closer
+   no reparte llamadas; la que atendió él sí la pone a su nombre
+   (useTomarLlamada, más abajo). La regla está en lib/permisos.ts. */
 export function usePuedePasarLlamadas(): boolean {
   const { acceso } = useAcceso();
-  return puedeEditar(acceso, "sesiones") && !acceso?.soloLoSuyo;
+  return paseDeLlamadas(acceso) === "pasar";
 }
 
 /* Se puede pasar una llamada que no se canceló. */
@@ -34,7 +36,7 @@ export function usePasarLlamadas() {
   const toast = useToast();
   const yo = useUsuarioActual();
 
-  return useCallback((llamadas: Sesion[], destino: DestinoDePase): number => {
+  return useCallback((llamadas: Sesion[], destino: DestinoDePase, opciones?: { /* La toma quien la atendió: el aviso le habla a él. */ mia?: boolean }): number => {
     const cuando = new Date().toISOString();
     const planes = llamadas
       .map((s) => planDePase(s, destino, { equipo: e.equipo, por: yo.nombre, cuando }))
@@ -61,7 +63,9 @@ export function usePasarLlamadas() {
     const quien = destino.miembro.nombre;
     const persona = llamadas.find((s) => s.id === planes[0].id)?.invitado?.trim() || "la persona";
     toast(
-      planes.length === 1
+      opciones?.mia
+        ? `Listo: la llamada con ${persona} quedó a tu nombre${de.length === 1 ? ` (figuraba ${de[0]})` : ""}.`
+        : planes.length === 1
         ? `La llamada con ${persona} ahora la atiende ${quien}.${de.length === 1 ? ` ${de[0]} ya no la ve.` : ""}`
         : `Pasaste ${frase(planes.length, "llamada", "llamadas")}${de.length === 1 ? ` de ${de[0]}` : ""} a ${quien}.`,
       "ok",
@@ -77,4 +81,23 @@ export function usePasarLlamadas() {
     );
     return planes.length;
   }, [e.equipo, e.leads, toast, yo.nombre]);
+}
+
+/** «La atendí yo»: el closer que ve las llamadas de todos pone a su nombre
+ *  una que figura a nombre de otro (o de nadie). Sólo a su nombre: repartir
+ *  llamadas sigue siendo del director. `puede` dice si a esa llamada le
+ *  corresponde el botón; `tomar` la pasa (con «Deshacer», como cualquier pase). */
+export function useTomarLlamada(): { yo?: DestinoDePase; puede: (s: Pick<Sesion, "estado" | "anfitrion">) => boolean; tomar: (s: Sesion) => void } {
+  const e = useEstado();
+  const { acceso } = useAcceso();
+  const usuario = useUsuarioActual();
+  const pasar = usePasarLlamadas();
+  /* Quién soy en Equipo: por el correo de la sesión. Sin nube nadie inicia sesión: vale el nombre del «Responsable» de Ajustes. */
+  const miembro = usuario.miembro ?? (hayNube ? undefined : miembroDeCloser(usuario.nombre, e.equipo));
+  const yo = paseDeLlamadas(acceso) === "tomar" && miembro?.activo ? destinoDe(e, miembro.id) : undefined;
+  return {
+    yo,
+    puede: (s) => Boolean(yo) && sePuedePasar(s) && closerDeLlamada(s, e.equipo).miembro?.id !== yo!.miembro.id,
+    tomar: (s) => { if (yo) pasar([s], yo, { mia: true }); },
+  };
 }
